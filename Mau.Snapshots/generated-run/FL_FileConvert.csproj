@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Mau.Generated.Run</RootNamespace>
+    <AssemblyName>FL_FileConvert</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\expected\FL_FileConvert.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Mau.Runtime\Mau.Runtime.csproj" />
+    <ProjectReference Include="..\..\Mau.Bricks.Standard\Mau.Bricks.Standard.csproj" />
+  </ItemGroup>
+
+</Project>

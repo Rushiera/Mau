@@ -1,0 +1,265 @@
+﻿using System.Collections.Generic;
+using Mau.Contracts;
+
+namespace Mau.Translator
+{
+    /// <summary>
+    /// Mau 静态验证器——构筑期 11 项检查，任何一项失败拒绝生成
+    /// </summary>
+    public static class MauValidator
+    {
+        /// <summary>
+        /// 执行静态验证
+        /// </summary>
+        /// <param name="doc">解析后的文档</param>
+        /// <returns>诊断列表——空表示全部通过</returns>
+        public static List<MauDiagnostic> Validate(MauDocument doc)
+        {
+            List<MauDiagnostic> diags = new List<MauDiagnostic>();
+
+            // [段1] 第 1 项：积木存在性——每个变迁的动作必须在注册表
+            for (int i = 0; i < doc.Transitions.Count; i++)
+            {
+                IrTransition t = doc.Transitions[i];
+                if (t.BrickName.Length == 0)
+                {
+                    diags.Add(new MauDiagnostic("E001", t.Line, "变迁 " + t.Name + " 缺少动作积木"));
+                    continue;
+                }
+                BrickContract? contract;
+                if (!BrickRegistry.TryGet(t.BrickName, out contract))
+                {
+                    diags.Add(new MauDiagnostic("E001", t.Line, "积木未注册: " + t.BrickName));
+                }
+            }
+
+            // [段2] 第 2 项：参数端口匹配——参数端口名必须在积木输入端口集
+            for (int i = 0; i < doc.Transitions.Count; i++)
+            {
+                IrTransition t = doc.Transitions[i];
+                if (t.BrickName.Length == 0)
+                {
+                    continue;
+                }
+                BrickContract? contract;
+                if (!BrickRegistry.TryGet(t.BrickName, out contract))
+                {
+                    continue;
+                }
+                for (int p = 0; p < t.Params.Count; p++)
+                {
+                    string portName = t.Params[p].PortName;
+                    if (!HasInputPort(contract, portName))
+                    {
+                        diags.Add(new MauDiagnostic("E002", t.Line, "参数端口 " + portName + " 不在积木 " + t.BrickName + " 的输入端口集"));
+                    }
+                }
+            }
+
+            // [段3] 第 3 项：命题引用完整性——前置/后置引用必须已声明
+            for (int i = 0; i < doc.Transitions.Count; i++)
+            {
+                IrTransition t = doc.Transitions[i];
+                for (int p = 0; p < t.Preconditions.Count; p++)
+                {
+                    if (doc.FindProposition(t.Preconditions[p]) == null)
+                    {
+                        diags.Add(new MauDiagnostic("E003", t.Line, "前置引用未声明的命题: " + t.Preconditions[p]));
+                    }
+                }
+                if (t.PostOk.Count == 0 && t.PostError.Count == 0)
+                {
+                    diags.Add(new MauDiagnostic("E012", t.Line, "变迁 " + t.Name + " 缺少后置声明"));
+                }
+                for (int p = 0; p < t.PostOk.Count; p++)
+                {
+                    if (doc.FindProposition(t.PostOk[p]) == null)
+                    {
+                        diags.Add(new MauDiagnostic("E003", t.Line, "后置引用未声明的命题: " + t.PostOk[p]));
+                    }
+                }
+                for (int p = 0; p < t.PostError.Count; p++)
+                {
+                    if (doc.FindProposition(t.PostError[p]) == null)
+                    {
+                        diags.Add(new MauDiagnostic("E003", t.Line, "错误后置引用未声明的命题: " + t.PostError[p]));
+                    }
+                }
+            }
+
+            // [段4] 第 4 项：有界环判定——变迁依赖图 DFS 找环，第一期无资源声明，有环即拒绝
+            List<string>? cycle = FindCycle(doc);
+            if (cycle != null)
+            {
+                string path = string.Join(" → ", cycle.ToArray());
+                diags.Add(new MauDiagnostic("E004", 0, "无界环——环路上无消耗性资源: " + path));
+            }
+
+            // [段5] 第 5 项：事实互斥冲突——同一变迁的正常/错误后置不得重叠
+            for (int i = 0; i < doc.Transitions.Count; i++)
+            {
+                IrTransition t = doc.Transitions[i];
+                for (int a = 0; a < t.PostOk.Count; a++)
+                {
+                    for (int b = 0; b < t.PostError.Count; b++)
+                    {
+                        if (t.PostOk[a] == t.PostError[b])
+                        {
+                            diags.Add(new MauDiagnostic("E005", t.Line, "变迁 " + t.Name + " 的正常/错误后置重叠: " + t.PostOk[a]));
+                        }
+                    }
+                }
+                if (t.PostError.Count > 1)
+                {
+                    diags.Add(new MauDiagnostic("E013", t.Line, "变迁 " + t.Name + " 的错误后置超过 1 个——第一期仅支持双后置（正常/错误）"));
+                }
+            }
+
+            // [段6] 第 8 项：线程/汇合合法性——worker 线程变迁必须声明 inbox 汇合
+            for (int i = 0; i < doc.Transitions.Count; i++)
+            {
+                IrTransition t = doc.Transitions[i];
+                if (t.Thread == "worker" && t.Join != "inbox")
+                {
+                    diags.Add(new MauDiagnostic("E008", t.Line, "worker 线程变迁必须声明 汇合: inbox——结果无法回主线程: " + t.Name));
+                }
+            }
+
+            // [段7] 第 10 项：基座兼容——基座声明必须指向 Mau.Runtime
+            if (doc.BaseName.Length > 0 && !doc.BaseName.StartsWith("Mau.Runtime"))
+            {
+                diags.Add(new MauDiagnostic("E010", 0, "基座声明与当前运行基座不匹配——需要 Mau.Runtime: " + doc.BaseName));
+            }
+
+            // 第 4 项已做；第 6/7/9/11 项第一期无对应块（时限在解析层校验，资源/组合/通道块未实现）
+            return diags;
+        }
+
+        /// <summary>
+        /// 检查契约是否有指定输入端口
+        /// </summary>
+        /// <param name="contract">积木契约</param>
+        /// <param name="portName">端口名</param>
+        /// <returns>存在为真</returns>
+        private static bool HasInputPort(BrickContract contract, string portName)
+        {
+            for (int i = 0; i < contract.Inputs.Count; i++)
+            {
+                if (contract.Inputs[i].Name == portName)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 变迁依赖图找环——T1 后置命题出现在 T2 前置中则 T1 → T2
+        /// </summary>
+        /// <param name="doc">文档</param>
+        /// <returns>环路径（变迁名列表）或空</returns>
+        private static List<string>? FindCycle(MauDocument doc)
+        {
+            int count = doc.Transitions.Count;
+            int[] state = new int[count];
+            List<int> path = new List<int>();
+
+            for (int start = 0; start < count; start++)
+            {
+                if (state[start] == 0)
+                {
+                    List<string>? cycle = Dfs(start, doc, state, path);
+                    if (cycle != null)
+                    {
+                        return cycle;
+                    }
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// DFS 三色标记找环
+        /// </summary>
+        /// <param name="node">当前变迁索引</param>
+        /// <param name="doc">文档</param>
+        /// <param name="state">访问状态——0 未访问/1 访问中/2 已访问</param>
+        /// <param name="path">当前路径</param>
+        /// <returns>环路径或空</returns>
+        private static List<string>? Dfs(int node, MauDocument doc, int[] state, List<int> path)
+        {
+            state[node] = 1;
+            path.Add(node);
+
+            IrTransition t = doc.Transitions[node];
+            List<int> nexts = FindNexts(t, doc);
+            for (int i = 0; i < nexts.Count; i++)
+            {
+                int next = nexts[i];
+                if (state[next] == 1)
+                {
+                    // 找到环——从路径中截取
+                    int startIndex = path.IndexOf(next);
+                    List<string> cycle = new List<string>();
+                    for (int k = startIndex; k < path.Count; k++)
+                    {
+                        cycle.Add(doc.Transitions[path[k]].Name);
+                    }
+                    cycle.Add(doc.Transitions[next].Name);
+                    return cycle;
+                }
+                if (state[next] == 0)
+                {
+                    List<string>? cycle = Dfs(next, doc, state, path);
+                    if (cycle != null)
+                    {
+                        return cycle;
+                    }
+                }
+            }
+
+            path.RemoveAt(path.Count - 1);
+            state[node] = 2;
+            return null;
+        }
+
+        /// <summary>
+        /// 计算变迁的后继变迁索引——后置命题出现在其他变迁前置中
+        /// </summary>
+        /// <param name="t">当前变迁</param>
+        /// <param name="doc">文档</param>
+        /// <returns>后继索引列表</returns>
+        private static List<int> FindNexts(IrTransition t, MauDocument doc)
+        {
+            List<int> nexts = new List<int>();
+            for (int i = 0; i < doc.Transitions.Count; i++)
+            {
+                IrTransition other = doc.Transitions[i];
+                if (other == t)
+                {
+                    continue;
+                }
+                bool linked = false;
+                for (int a = 0; a < t.PostOk.Count && !linked; a++)
+                {
+                    if (other.Preconditions.Contains(t.PostOk[a]))
+                    {
+                        linked = true;
+                    }
+                }
+                for (int a = 0; a < t.PostError.Count && !linked; a++)
+                {
+                    if (other.Preconditions.Contains(t.PostError[a]))
+                    {
+                        linked = true;
+                    }
+                }
+                if (linked)
+                {
+                    nexts.Add(i);
+                }
+            }
+            return nexts;
+        }
+    }
+}
