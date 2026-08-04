@@ -1,0 +1,54 @@
+// inbox_consume.mau —— Inbox 消费模板
+// 来源：CH3 Core/CH_MainThreadInbox.cs（262 行）——后台只写队列，主 Tick 排空
+// 用途：任何后台 IO/网络结果回投主线程的桥——LLM 回调/工具结果/异步事件
+// 积木状态：inbox.enqueue / inbox.drain / inbox.process —— 🔴 待实现（CH4 P3.4）
+// 结构：worker 写（汇合: inbox）+ main 读（帧: 每帧）+ 配额限深 + 断流时限
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题:
+  P_ItemProduced    信号    // 后台产出数据（携带 payload）
+  P_ItemQueued      事实    // 已入队——待排空
+  P_ItemConsumed    信号    // 已消费（每件一个）
+  P_QueueEmpty      事实    // 排空完成——可触发后续批处理
+  P_QueueStalled    事实    // 断流——队列空闲超时
+
+资源:
+  R_InboxSlot       配额: 64 // 队列深度上限——防积压爆内存
+
+变迁 T_Produce:
+  前置: P_ItemProduced ∧ R_InboxSlot
+  动作: inbox.enqueue
+  时限: 空闲30帧              // 断流检测——超过 30 帧无新数据
+  后置: P_ItemQueued / P_QueueStalled
+  线程: worker                // 后台线程——只写队列
+  汇合: inbox
+
+变迁 T_Drain:
+  前置: P_ItemQueued
+  动作: inbox.drain
+  时限: 5帧
+  后置: P_ItemConsumed / P_QueueEmpty
+  线程: main                  // 主线程——只读队列
+  帧: 每帧
+
+变迁 T_Process:
+  前置: P_ItemConsumed
+  动作: inbox.process
+  时限: 300帧
+  后置: P_ItemConsumed        // 处理完成——消费该件
+  线程: main
+  帧: 每帧
+
+变迁 T_Batch:
+  前置: P_QueueEmpty
+  动作: inbox.batch            // 整批排空后的批量回调
+  后置: P_ItemProduced         // 批处理后可能产出新数据（继续消费）
+  线程: main
+  帧: 每帧
+
+组合 InboxFlow:
+  并行: T_Produce ‖ T_Drain
+  序列: T_Process
+  选择: T_Batch → 重入 T_Drain
+  汇合: P_QueueStalled / P_QueueEmpty

@@ -22,6 +22,7 @@
     <ProjectReference Include="..\Mau.Bricks.Log\Mau.Bricks.Log.csproj" />
     <ProjectReference Include="..\Mau.Runtime\Mau.Runtime.csproj" />
     <ProjectReference Include="..\Mau.Observer\Mau.Observer.csproj" />
+    <ProjectReference Include="..\Mau.Serve\Mau.Serve.csproj" />
   </ItemGroup>
 
 </Project>

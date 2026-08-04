@@ -43,6 +43,21 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: 积木测试项目构建失败");
                 return 1;
             }
+            if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Development.Tests", "Mau.Development.Tests.csproj") + "\" -v q --nologo"))
+            {
+                Console.WriteLine("FAIL: 开发工具测试项目构建失败");
+                return 1;
+            }
+            if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Serve.Tests", "Mau.Serve.Tests.csproj") + "\" -v q --nologo"))
+            {
+                Console.WriteLine("FAIL: 服务测试项目构建失败");
+                return 1;
+            }
+            if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Cli", "Mau.Cli.csproj") + "\" -v q --nologo"))
+            {
+                Console.WriteLine("FAIL: Mau.Cli 构建失败（serve 进程测试依赖 Mau.exe）");
+                return 1;
+            }
 
             // [段2] 翻译器测试（L2）
             Console.WriteLine("[2/4] 翻译器测试（L2）");
@@ -50,6 +65,24 @@ namespace Mau.Cli
             if (!RunProcess(translatorExe, ""))
             {
                 Console.WriteLine("FAIL: 翻译器测试失败");
+                return 1;
+            }
+
+            // [段2b] 开发工具测试（PocketCompiler + RoslynSourceWorkspace）
+            Console.WriteLine("[2b/4] 开发工具测试（L2.5）");
+            string developmentExe = Path.Combine(root, "Mau.Development.Tests", "bin", "Debug", "net8.0", "Mau.Development.Tests.exe");
+            if (!RunProcess(developmentExe, ""))
+            {
+                Console.WriteLine("FAIL: 开发工具测试失败");
+                return 1;
+            }
+
+            // [段2c] 服务测试（协议 + 进程闭环）
+            Console.WriteLine("[2c/4] 服务测试（L2.6）");
+            string serveExe = Path.Combine(root, "Mau.Serve.Tests", "bin", "Debug", "net8.0", "Mau.Serve.Tests.exe");
+            if (!RunProcess(serveExe, ""))
+            {
+                Console.WriteLine("FAIL: 服务测试失败");
                 return 1;
             }
 

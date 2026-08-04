@@ -1,0 +1,61 @@
+// cat_lifecycle.mau —— Cat 生命周期模板
+// 来源：CH3 ModState/LifeState——Discovered→Validated→Loaded→Disabled→Unloaded
+// 用途：任何有生命周期实体的状态机骨架（Cat/Dog/Mod/插件）
+// 积木状态：cat.scan / cat.validate / cat.init / cat.enable / cat.disable / cat.unload —— 🔴 待实现（CH4 P3.2）
+// 结构：事实链（单调推进）+ 资源独占（同一时刻唯一状态）+ 互斥终态
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题:
+  P_Discovered       事实    // 扫描发现
+  P_Validated        事实    // 身份验证通过
+  P_ValidationFailed 事实    // 验证失败——终态互斥
+  P_Initialized      事实    // 初始化完成
+  P_InitFailed       事实    // 初始化失败——终态互斥
+  P_Active           条件    // 运行中（可反复置位/清除）
+  P_Disabled         事实    // 已禁用
+  P_Unloaded         事实    // 已卸载——终态互斥
+  P_Leaked           事实    // 卸载后 ALC 未回收——终态互斥
+  P_NoDependents     条件    // 无反向依赖（卸载前置）
+  P_RequestIdle      条件    // 系统请求空闲
+
+资源:
+  R_StateSlot        独占    // 生命周期状态——独占推进
+  R_ALC              独占    // 程序集加载上下文——卸载确认
+
+变迁 T_Discover:
+  动作: cat.scan
+  后置: P_Discovered
+
+变迁 T_Validate:
+  前置: P_Discovered ∧ R_StateSlot
+  动作: cat.validate
+  时限: 30帧
+  后置: P_Validated / P_ValidationFailed
+
+变迁 T_Initialize:
+  前置: P_Validated
+  动作: cat.init
+  时限: 60帧
+  后置: P_Initialized / P_InitFailed
+
+变迁 T_Enable:
+  前置: P_Initialized
+  动作: cat.enable
+  后置: P_Active
+
+变迁 T_Disable:
+  前置: P_Active
+  动作: cat.disable
+  时限: 30帧
+  后置: P_Disabled
+
+变迁 T_Unload:
+  前置: P_Disabled ∧ P_NoDependents ∧ P_RequestIdle ∧ R_ALC
+  动作: cat.unload
+  时限: 60帧                     // 有限 Cube 确认 GC 回收
+  后置: P_Unloaded / P_Leaked
+
+组合 Lifecycle:
+  序列: T_Discover, T_Validate, T_Initialize, T_Enable
+  序列: T_Disable, T_Unload

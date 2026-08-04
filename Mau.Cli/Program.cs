@@ -36,7 +36,7 @@ namespace Mau.Cli
             if (args.Length == 0)
             {
                 Console.WriteLine("Mau Translator v0.1");
-                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau> -o <dir> | mau test | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] | mau serve <file.mau> [--port N]");
+                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau> -o <dir> | mau test | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket>");
                 return 0;
             }
 
@@ -77,7 +77,20 @@ namespace Mau.Cli
                 {
                     serveArgs[i] = args[i + 1];
                 }
+                if (serveArgs.Length > 0 && IsServeSubCommand(serveArgs[0]))
+                {
+                    return CommandServeManager.Execute(serveArgs);
+                }
                 return CommandServe.Execute(serveArgs);
+            }
+            if (command == "serve-work")
+            {
+                string[] workArgs = new string[args.Length - 1];
+                for (int i = 0; i < workArgs.Length; i = i + 1)
+                {
+                    workArgs[i] = args[i + 1];
+                }
+                return CommandServeWork.Execute(workArgs);
             }
 
             Console.WriteLine("未知命令: " + command);
@@ -335,5 +348,16 @@ private static int CommandChecksum(string[] args)
 
     Console.WriteLine("完成: " + updated + " 份黄金文件校验尾已更新");
     return 0;
-}}
+}
+
+    /// <summary>
+    /// 判断 serve 子命令——spawn/stop/status/call 走服务管理，其余走 HTTP 面板
+    /// </summary>
+    /// <param name="first">第一个参数</param>
+    /// <returns>是否服务管理子命令</returns>
+    private static bool IsServeSubCommand(string first)
+    {
+        return first == "spawn" || first == "stop" || first == "status" || first == "call";
+    }
+}
 }

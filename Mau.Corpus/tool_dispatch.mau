@@ -1,0 +1,68 @@
+// tool_dispatch.mau —— 工具分发模板
+// 来源：CH3 ToolProvider 体系——IToolProvider/IToolTask/IToolResultSink（Provider 化工具）
+// 用途：工具请求 → 审批 → 分发执行 → 结果回收（含拒绝与失败路径）
+// 积木状态：tool.request / tool.approve / tool.reject / tool.exec / tool.collect —— 🔴 待实现（CH4 P3.3）
+// 结构：信号入口 + 审批互斥 + 配额并发 + 结果双路径
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题:
+  P_ToolRequested   信号    // 工具调用请求（携带 工具名+参数）
+  P_ToolApproved    事实    // 审批通过
+  P_ToolRejected    事实    // 审批拒绝——终态互斥
+  P_ToolRunning     条件    // 执行中（可反复）
+  P_ToolDone        事实    // 执行成功——结果已回收
+  P_ToolFailed      事实    // 执行失败——终态互斥
+
+资源:
+  R_ApprovalToken   独占    // 审批令牌——同一时刻一个审批
+  R_ToolSlot        配额: 2 // 工具并发上限——防资源挤占
+
+变迁 T_Request:
+  前置: P_ToolRequested
+  动作: tool.request
+  时限: 10帧
+  后置: P_ToolApproved / P_ToolRejected
+  汇合: inbox                 // 外部请求信号——主线程消费
+
+变迁 T_Approve:
+  前置: P_ToolApproved ∧ R_ApprovalToken ∧ R_ToolSlot
+  动作: tool.approve
+  时限: 5帧
+  后置: P_ToolRunning
+
+变迁 T_Execute:
+  前置: P_ToolRunning
+  动作: tool.exec
+  时限: 300帧
+  后置: P_ToolDone / P_ToolFailed
+  线程: worker
+  汇合: inbox
+
+变迁 T_Collect:
+  前置: P_ToolDone
+  动作: tool.collect
+  后置: P_ToolRequested         // 释放槽位——允许下一请求
+  线程: main
+  帧: 每帧
+
+变迁 T_Reject:
+  前置: P_ToolRejected
+  动作: tool.reject
+  时限: 5帧
+  后置: P_ToolRequested         // 拒绝后回到空闲——等待新请求
+  线程: main
+  帧: 每帧
+
+变迁 T_Fail:
+  前置: P_ToolFailed
+  动作: tool.collect             // 失败也回收结果（错误信息）
+  时限: 30帧
+  后置: P_ToolRequested
+  线程: main
+  帧: 每帧
+
+组合 Dispatch:
+  序列: T_Request
+  选择: T_Approve → T_Execute → T_Collect | T_Fail → T_Reject
+  重试: 2                        // 失败重投有限次
