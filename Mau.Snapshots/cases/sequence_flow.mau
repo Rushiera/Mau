@@ -1,3 +1,4 @@
+﻿// sequence_flow.mau —— 序列组合流程（三步序列 + 重试 + 汇合验证）
 Mau 0.1
 基座: Mau.Runtime/v0.1
 

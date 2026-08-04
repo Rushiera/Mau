@@ -2,6 +2,7 @@
 using System.IO;
 using System.Text;
 using Mau.Translator;
+using System.Security.Cryptography;
 
 namespace Mau.Cli
 {
@@ -24,7 +25,7 @@ namespace Mau.Cli
             if (args.Length == 0)
             {
                 Console.WriteLine("Mau Translator v0.1");
-                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau> -o <dir> | mau test");
+                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau> -o <dir> | mau test | mau checksum --update");
                 return 0;
             }
 
@@ -44,6 +45,10 @@ namespace Mau.Cli
             if (command == "test")
             {
                 return MauTestRunner.Run();
+            }
+            if (command == "checksum")
+            {
+                return CommandChecksum(args);
             }
 
             Console.WriteLine("未知命令: " + command);
@@ -177,5 +182,129 @@ namespace Mau.Cli
             }
             return sb.ToString();
         }
+/// <summary>
+/// 计算 SHA256 哈希——UTF-8 字节转 64 位十六进制大写
+/// </summary>
+/// <param name = "text">输入文本</param>
+/// <returns>64 位十六进制哈希（大写）</returns>
+private static string ComputeSha256(string text)
+{
+    byte[] bytes = Encoding.UTF8.GetBytes(text);
+    byte[] hash = SHA256.HashData(bytes);
+    StringBuilder hex = new StringBuilder();
+    for (int i = 0; i < hash.Length; i++)
+    {
+        hex.Append(hash[i].ToString("X2"));
     }
+
+    return hex.ToString();
+}    /// <summary>
+/// 查找 workspace 根——含 Mau.sln 的目录
+/// </summary>
+/// <returns>workspace 根或空</returns>
+private static string? FindWorkspaceRoot()
+{
+    DirectoryInfo? dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+    while (dir != null)
+    {
+        string sln = Path.Combine(dir.FullName, "Mau.sln");
+        if (File.Exists(sln))
+        {
+            return dir.FullName;
+        }
+
+        dir = dir.Parent;
+    }
+
+    return null;
+}/// <summary>
+/// checksum 命令——更新黄金文件 SHA256 校验尾
+/// </summary>
+/// <param name = "args">命令行参数：checksum --update</param>
+/// <returns>退出码</returns>
+private static int CommandChecksum(string[] args)
+{
+    if (args.Length < 2 || args[1] != "--update")
+    {
+        Console.WriteLine("用法: mau checksum --update");
+        Console.WriteLine("  遍历 Mau.Snapshots/expected/*.cs，计算 SHA256 并更新校验尾");
+        return 1;
+    }
+
+    string? root = FindWorkspaceRoot();
+    if (root == null)
+    {
+        Console.WriteLine("FAIL: 未找到 Mau.sln");
+        return 1;
+    }
+
+    string expectedDir = Path.Combine(root, "Mau.Snapshots", "expected");
+    if (!Directory.Exists(expectedDir))
+    {
+        Console.WriteLine("FAIL: 目录不存在——" + expectedDir);
+        return 1;
+    }
+
+    string[] files = Directory.GetFiles(expectedDir, "*.cs");
+    if (files.Length == 0)
+    {
+        Console.WriteLine("无黄金文件——" + expectedDir);
+        return 0;
+    }
+
+    string checksumPrefix = "// #MAU_CHECKSUM:SHA256:";
+    int updated = 0;
+    for (int i = 0; i < files.Length; i++)
+    {
+        string file = files[i];
+        string content;
+        try
+        {
+            content = File.ReadAllText(file).Replace("\r\n", "\n");
+        }
+        catch
+        {
+            Console.WriteLine("SKIP: 不可读——" + Path.GetFileName(file));
+            continue;
+        }
+
+        // 去掉末尾已有校验尾（可能多行 + 空行）
+        string[] lines = content.Split('\n');
+        int bodyEnd = lines.Length;
+        while (bodyEnd > 0)
+        {
+            string last = lines[bodyEnd - 1].Trim();
+            if (last.Length == 0 || last.StartsWith(checksumPrefix))
+            {
+                bodyEnd = bodyEnd - 1;
+            }
+            else
+            {
+                break;
+            }
+        }
+        if (bodyEnd < lines.Length)
+        {
+            StringBuilder sb = new StringBuilder();
+            for (int j = 0; j < bodyEnd; j++)
+            {
+                if (j > 0)
+                {
+                    sb.Append('\n');
+                }
+                sb.Append(lines[j]);
+            }
+            content = sb.ToString();
+        }
+
+        string hash = ComputeSha256(content);
+        string newContent = content + "\n" + checksumPrefix + hash;
+        File.WriteAllText(file, newContent);
+        Console.WriteLine("UPDATED: " + Path.GetFileName(file) + " → " + hash);
+        updated = updated + 1;
+    }
+
+    Console.WriteLine("完成: " + updated + " 份黄金文件校验尾已更新");
+    return 0;
+}}
 }

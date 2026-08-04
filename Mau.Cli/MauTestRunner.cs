@@ -2,6 +2,8 @@
 using System.Diagnostics;
 using System.IO;
 using Mau.Translator;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Mau.Cli
 {
@@ -55,112 +57,18 @@ namespace Mau.Cli
                 return 1;
             }
 
-            // [段4] 黄金文件对比（L3）——纯 C# 内存对比
+            // [段4] 黄金文件对比（L3）——含 SHA256 校验尾验证
             Console.WriteLine("[4/4] 黄金文件对比（L3）");
-            string caseFile = Path.Combine(root, "Mau.Snapshots", "cases", "file_convert.mau");
-            string expectedFile = Path.Combine(root, "Mau.Snapshots", "expected", "FL_FileConvert.cs");
-            string source;
-            try
+            if (!VerifyGolden(root, "file_convert.mau", "FL_FileConvert.cs", "FileConvert"))
             {
-                source = File.ReadAllText(caseFile);
-            }
-            catch
-            {
-                Console.WriteLine("FAIL: 黄金文件源缺失——" + caseFile);
                 return 1;
             }
-            CompileResult result = MauCompiler.Compile(source, "FileConvert");
-            if (!result.Success)
+            if (!VerifyGolden(root, "worker_convert.mau", "FL_WorkerConvert.cs", "WorkerConvert"))
             {
-                Console.WriteLine("FAIL: 黄金文件源编译失败");
                 return 1;
             }
-            string expected;
-            try
+            if (!VerifyGolden(root, "sequence_flow.mau", "FL_SequenceFlow.cs", "SequenceFlow"))
             {
-                expected = File.ReadAllText(expectedFile).Replace("\r\n", "\n");
-            }
-            catch
-            {
-                Console.WriteLine("FAIL: 黄金文件缺失——" + expectedFile);
-                return 1;
-            }
-            string actual = result.GeneratedCode.Replace("\r\n", "\n");
-            if (expected != actual)
-            {
-                Console.WriteLine("FAIL: 生成漂移——黄金文件不一致");
-                return 1;
-            }
-
-            // worker_convert 黄金文件对比
-            string caseFile2 = Path.Combine(root, "Mau.Snapshots", "cases", "worker_convert.mau");
-            string expectedFile2 = Path.Combine(root, "Mau.Snapshots", "expected", "FL_WorkerConvert.cs");
-            string source2;
-            try
-            {
-                source2 = File.ReadAllText(caseFile2);
-            }
-            catch
-            {
-                Console.WriteLine("FAIL: 黄金文件源缺失——" + caseFile2);
-                return 1;
-            }
-            CompileResult result2 = MauCompiler.Compile(source2, "WorkerConvert");
-            if (!result2.Success)
-            {
-                Console.WriteLine("FAIL: 黄金文件源编译失败");
-                return 1;
-            }
-            string expected2;
-            try
-            {
-                expected2 = File.ReadAllText(expectedFile2).Replace("\r\n", "\n");
-            }
-            catch
-            {
-                Console.WriteLine("FAIL: 黄金文件缺失——" + expectedFile2);
-                return 1;
-            }
-            string actual2 = result2.GeneratedCode.Replace("\r\n", "\n");
-            if (expected2 != actual2)
-            {
-                Console.WriteLine("FAIL: 生成漂移——黄金文件不一致 (worker_convert)");
-                return 1;
-            }
-
-            // sequence_flow 黄金文件对比
-            string caseFile3 = Path.Combine(root, "Mau.Snapshots", "cases", "sequence_flow.mau");
-            string expectedFile3 = Path.Combine(root, "Mau.Snapshots", "expected", "FL_SequenceFlow.cs");
-            string source3;
-            try
-            {
-                source3 = File.ReadAllText(caseFile3);
-            }
-            catch
-            {
-                Console.WriteLine("FAIL: 黄金文件源缺失——" + caseFile3);
-                return 1;
-            }
-            CompileResult result3 = MauCompiler.Compile(source3, "SequenceFlow");
-            if (!result3.Success)
-            {
-                Console.WriteLine("FAIL: 黄金文件源编译失败");
-                return 1;
-            }
-            string expected3;
-            try
-            {
-                expected3 = File.ReadAllText(expectedFile3).Replace("\r\n", "\n");
-            }
-            catch
-            {
-                Console.WriteLine("FAIL: 黄金文件缺失——" + expectedFile3);
-                return 1;
-            }
-            string actual3 = result3.GeneratedCode.Replace("\r\n", "\n");
-            if (expected3 != actual3)
-            {
-                Console.WriteLine("FAIL: 生成漂移——黄金文件不一致 (sequence_flow)");
                 return 1;
             }
 
@@ -228,5 +136,145 @@ namespace Mau.Cli
             p.WaitForExit();
             return p.ExitCode == 0;
         }
+/// <summary>
+/// 计算字符串的 SHA256 哈希——UTF-8 字节转 64 位十六进制大写
+/// </summary>
+/// <param name = "text">输入文本</param>
+/// <returns>64 位十六进制哈希（大写）</returns>
+private static string ComputeSha256(string text)
+{
+    byte[] bytes = Encoding.UTF8.GetBytes(text);
+    byte[] hash = SHA256.HashData(bytes);
+    StringBuilder hex = new StringBuilder();
+    for (int i = 0; i < hash.Length; i++)
+    {
+        hex.Append(hash[i].ToString("X2"));
     }
+
+    return hex.ToString();
+}    /// <summary>
+/// 验证黄金文件校验尾——读文件，提取末行 MAU_CHECKSUM，验证 SHA256，返回去掉校验行的文件体
+/// </summary>
+/// <param name = "filePath">黄金文件路径</param>
+/// <param name = "body">去掉校验行的文件体</param>
+/// <returns>校验通过</returns>
+private static bool VerifyChecksum(string filePath, out string body)
+{
+        body = "";
+        string full;
+        try
+        {
+            full = File.ReadAllText(filePath).Replace("\r\n", "\n");
+        }
+        catch
+        {
+            Console.WriteLine("FAIL: 黄金文件不可读——" + filePath);
+            return false;
+        }
+
+        string[] lines = full.Split('\n');
+        if (lines.Length == 0)
+        {
+            Console.WriteLine("FAIL: 黄金文件为空——" + filePath);
+            return false;
+        }
+
+        // 从后往前找第一个非空行作为校验尾——容忍末尾多余换行
+        string prefix = "// #MAU_CHECKSUM:SHA256:";
+        int checksumIdx = -1;
+        for (int i = lines.Length - 1; i >= 0; i--)
+        {
+            string trimmed = lines[i].Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+            if (trimmed.StartsWith(prefix))
+            {
+                checksumIdx = i;
+            }
+            break;
+        }
+
+        if (checksumIdx < 0)
+        {
+            Console.WriteLine("FAIL: 黄金文件缺少校验尾——" + filePath);
+            return false;
+        }
+
+        string lastLine = lines[checksumIdx].Trim();
+        string claimedHash = lastLine.Substring(prefix.Length).Trim();
+        if (claimedHash.Length != 64)
+        {
+            Console.WriteLine("FAIL: 校验尾哈希长度异常——" + filePath);
+            return false;
+        }
+
+        // 去掉校验行及之后的所有行——重新拼接
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < checksumIdx; i++)
+        {
+            if (i > 0)
+            {
+                sb.Append('\n');
+            }
+            sb.Append(lines[i]);
+        }
+        body = sb.ToString();
+
+        // 计算 SHA256
+        string computedHash = ComputeSha256(body);
+        if (!string.Equals(computedHash, claimedHash, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("FAIL: 黄金文件校验失败——" + filePath);
+            Console.WriteLine("  期望: " + claimedHash);
+            Console.WriteLine("  实际: " + computedHash);
+            return false;
+        }
+
+        return true;
+    }/// <summary>
+/// 单份黄金文件验证——编译 Mau 源 → 黄金文件校验尾验证 → 逐字节对比
+/// </summary>
+/// <param name = "root">workspace 根</param>
+/// <param name = "caseName">cases/ 下的 .mau 文件名</param>
+/// <param name = "expectedName">expected/ 下的黄金文件名</param>
+/// <param name = "flowName">流程名——PascalCase</param>
+/// <returns>通过</returns>
+private static bool VerifyGolden(string root, string caseName, string expectedName, string flowName)
+{
+    string caseFile = Path.Combine(root, "Mau.Snapshots", "cases", caseName);
+    string expectedFile = Path.Combine(root, "Mau.Snapshots", "expected", expectedName);
+    string source;
+    try
+    {
+        source = File.ReadAllText(caseFile);
+    }
+    catch
+    {
+        Console.WriteLine("FAIL: 黄金文件源缺失——" + caseFile);
+        return false;
+    }
+
+    CompileResult result = MauCompiler.Compile(source, flowName);
+    if (!result.Success)
+    {
+        Console.WriteLine("FAIL: 黄金文件源编译失败——" + caseName);
+        return false;
+    }
+
+    if (!VerifyChecksum(expectedFile, out string expectedBody))
+    {
+        return false;
+    }
+
+    string actual = result.GeneratedCode.Replace("\r\n", "\n").TrimEnd('\n');
+    if (expectedBody.TrimEnd('\n') != actual)
+    {
+        Console.WriteLine("FAIL: 生成漂移——黄金文件不一致 (" + caseName + ")");
+        return false;
+    }
+
+    return true;
+}}
 }
