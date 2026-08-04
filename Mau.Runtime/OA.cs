@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Mau.Runtime
@@ -125,7 +125,7 @@ namespace Mau.Runtime
         /// <param name="timeoutTicks">超时帧数</param>
         /// <returns>Office ID</returns>
         public long Post(long dogId, string officeType, string officeName,
-            string[] texts, string[] paths, long timeoutTicks)
+            string[]? texts, string[]? paths, long timeoutTicks)
         {
             Office office;
             long officeId;
@@ -250,7 +250,7 @@ namespace Mau.Runtime
         /// <param name="resultTexts">结果文本</param>
         /// <param name="resultPaths">结果路径</param>
         public void Complete(long officeId, long catId,
-            string[] resultTexts, string[] resultPaths)
+            string[]? resultTexts, string[]? resultPaths)
         {
             Office office;
 
