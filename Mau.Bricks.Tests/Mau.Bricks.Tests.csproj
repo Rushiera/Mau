@@ -16,6 +16,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Mau.Bricks.Standard\Mau.Bricks.Standard.csproj" />
+    <ProjectReference Include="..\Mau.Bricks.Data\Mau.Bricks.Data.csproj" />
+    <ProjectReference Include="..\Mau.Bricks.Text\Mau.Bricks.Text.csproj" />
+    <ProjectReference Include="..\Mau.Bricks.Shell\Mau.Bricks.Shell.csproj" />
     <ProjectReference Include="..\Mau.Contracts\Mau.Contracts.csproj" />
   </ItemGroup>
 

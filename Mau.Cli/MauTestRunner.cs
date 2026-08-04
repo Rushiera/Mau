@@ -38,6 +38,11 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: 运行时测试项目构建失败");
                 return 1;
             }
+            if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Bricks.Tests", "Mau.Bricks.Tests.csproj") + "\" -v q --nologo"))
+            {
+                Console.WriteLine("FAIL: 积木测试项目构建失败");
+                return 1;
+            }
 
             // [段2] 翻译器测试（L2）
             Console.WriteLine("[2/4] 翻译器测试（L2）");
@@ -54,6 +59,15 @@ namespace Mau.Cli
             if (!RunProcess(runtimeExe, ""))
             {
                 Console.WriteLine("FAIL: 运行时测试失败");
+                return 1;
+            }
+
+            // [段3b] 积木库测试（L4——积木层）
+            Console.WriteLine("[3b/4] 积木库测试（L4）");
+            string bricksExe = Path.Combine(root, "Mau.Bricks.Tests", "bin", "Debug", "net8.0", "Mau.Bricks.Tests.exe");
+            if (!RunProcess(bricksExe, ""))
+            {
+                Console.WriteLine("FAIL: 积木库测试失败");
                 return 1;
             }
 
@@ -75,7 +89,6 @@ namespace Mau.Cli
             Console.WriteLine("MAU_CHECKS_OK");
             return 0;
         }
-
         /// <summary>
         /// 查找 workspace 根——含 Mau.sln 的目录；当前目录向上优先，程序集位置兜底
         /// </summary>

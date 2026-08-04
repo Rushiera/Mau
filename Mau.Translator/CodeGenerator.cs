@@ -62,7 +62,7 @@ namespace Mau.Translator
                 sb.AppendLine();
             }
 
-            // [段4] 动作参数字段——参数名 = 端口名
+            // [段4] 动作参数字段——输入参数名 = 端口名；输出端口字段从契约声明
             HashSet<string> _paramFields = new HashSet<string>();
             for (int i = 0; i < doc.Transitions.Count; i++)
             {
@@ -82,6 +82,26 @@ namespace Mau.Translator
                     sb.AppendLine("        /// </summary>");
                     sb.AppendLine("        private " + typeName + " " + fieldName + initializer);
                     sb.AppendLine();
+                }
+                // 输出端口字段——从积木契约 Outputs 声明
+                if (t.BrickName.Length > 0 && BrickRegistry.TryGet(t.BrickName, out BrickContract? outContract))
+                {
+                    for (int o = 0; o < outContract.Outputs.Count; o++)
+                    {
+                        string outField = "_" + outContract.Outputs[o].Name;
+                        if (_paramFields.Contains(outField))
+                        {
+                            continue;
+                        }
+                        _paramFields.Add(outField);
+                        string outType = TypeName(outContract.Outputs[o].Type);
+                        string outInit = outContract.Outputs[o].Type.IsValueType ? ";" : " = null!;";
+                        sb.AppendLine("        /// <summary>");
+                        sb.AppendLine("        /// 变迁 " + t.Name + " 的输出端口——" + outContract.Outputs[o].Name);
+                        sb.AppendLine("        /// </summary>");
+                        sb.AppendLine("        private " + outType + " " + outField + outInit);
+                        sb.AppendLine();
+                    }
                 }
             }
 
@@ -858,7 +878,7 @@ private static string DebugLogLine(IrTransition t, string phase, string indent)
         }
 
         /// <summary>
-        /// 积木调用文本——完整限定名
+        /// 积木调用文本——完整限定名，输出端口以 out 前缀传递
         /// </summary>
         /// <param name="doc">文档</param>
         /// <param name="t">变迁</param>
@@ -881,6 +901,18 @@ private static string DebugLogLine(IrTransition t, string phase, string indent)
                     sb.Append(", ");
                 }
                 sb.Append("_" + t.Params[i].PortName);
+            }
+            // 输出端口——out 传递，与输入参数拼接
+            if (contract != null)
+            {
+                for (int o = 0; o < contract.Outputs.Count; o++)
+                {
+                    if (t.Params.Count > 0 || o > 0)
+                    {
+                        sb.Append(", ");
+                    }
+                    sb.Append("out _" + contract.Outputs[o].Name);
+                }
             }
             sb.Append(")");
             return sb.ToString();

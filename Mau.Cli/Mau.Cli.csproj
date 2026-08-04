@@ -13,6 +13,9 @@
     <ProjectReference Include="..\Mau.Contracts\Mau.Contracts.csproj" />
     <ProjectReference Include="..\Mau.Translator\Mau.Translator.csproj" />
     <ProjectReference Include="..\Mau.Bricks.Standard\Mau.Bricks.Standard.csproj" />
+    <ProjectReference Include="..\Mau.Bricks.Data\Mau.Bricks.Data.csproj" />
+    <ProjectReference Include="..\Mau.Bricks.Text\Mau.Bricks.Text.csproj" />
+    <ProjectReference Include="..\Mau.Bricks.Shell\Mau.Bricks.Shell.csproj" />
     <ProjectReference Include="..\Mau.Runtime\Mau.Runtime.csproj" />
     <ProjectReference Include="..\Mau.Observer\Mau.Observer.csproj" />
   </ItemGroup>

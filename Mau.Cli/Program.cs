@@ -20,6 +20,11 @@ namespace Mau.Cli
         {
             // [段1] 注册标准积木——编译期注册表
             Mau.Bricks.StandardBrickRegistration.RegisterAll();
+            Mau.Bricks.MathBrickRegistration.RegisterAll();
+            Mau.Bricks.DataBrickRegistration.RegisterAll();
+            Mau.Bricks.BoxBrickRegistration.RegisterAll();
+            Mau.Bricks.TextBrickRegistration.RegisterAll();
+            Mau.Bricks.ShellBrickRegistration.RegisterAll();
 
             // [段2] 命令路由
             if (args.Length == 0)
