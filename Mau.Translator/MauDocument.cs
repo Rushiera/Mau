@@ -165,7 +165,10 @@ namespace Mau.Translator
         /// 声明行号——诊断定位
         /// </summary>
         public int Line;
-
+/// <summary>
+/// 调试消息——Mau 语句中声明的调试文本，含 {{端口名}} 插值模板。空=无调试
+/// </summary>
+public string DebugMessage;
         /// <summary>
         /// 构造变迁
         /// </summary>
@@ -185,6 +188,7 @@ namespace Mau.Translator
             Thread = "main";
             FrameSpec = "每帧";
             Join = "直连";
+            DebugMessage = "";
             Line = line;
         }
     }

@@ -56,6 +56,47 @@ namespace Mau.Translator
                 }
             }
 
+            // [段2b] 调试插值验证——{{端口名}} 中的端口必须在参数声明中有匹配
+            for (int i = 0; i < doc.Transitions.Count; i++)
+            {
+                IrTransition t = doc.Transitions[i];
+                if (t.DebugMessage.Length == 0)
+                {
+                    continue;
+                }
+                int pos = 0;
+                string msg = t.DebugMessage;
+                while (pos < msg.Length - 3)
+                {
+                    int open = msg.IndexOf("{{", pos);
+                    if (open < 0)
+                    {
+                        break;
+                    }
+                    int close = msg.IndexOf("}}", open + 2);
+                    if (close < 0)
+                    {
+                        diags.Add(new MauDiagnostic("E014", t.Line, "调试消息中 {{ 缺少匹配的 }}: " + msg));
+                        break;
+                    }
+                    string portRef = msg.Substring(open + 2, close - open - 2).Trim();
+                    bool found = false;
+                    for (int p = 0; p < t.Params.Count; p++)
+                    {
+                        if (t.Params[p].PortName == portRef)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                    {
+                        diags.Add(new MauDiagnostic("E014", t.Line, "调试消息中 {{" + portRef + "}} 引用了未在参数中声明的端口"));
+                    }
+                    pos = close + 2;
+                }
+            }
+
             // [段3] 第 3 项：命题引用完整性——前置/后置引用必须已声明
             for (int i = 0; i < doc.Transitions.Count; i++)
             {

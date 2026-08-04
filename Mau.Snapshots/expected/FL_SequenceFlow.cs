@@ -10,8 +10,18 @@ namespace Mau.Generated.Flows
     /// <summary>
     /// SequenceFlow 流程——由 Mau 声明生成
     /// </summary>
-    public sealed class FL_SequenceFlow
+    public sealed class FL_SequenceFlow : IObservableFlow
     {
+        /// <summary>
+        /// 内部帧号——每 Tick 自增
+        /// </summary>
+        private long _frame;
+
+        /// <summary>
+        /// 环形调试日志——200 条上限
+        /// </summary>
+        private FlowLog _logs;
+
         /// <summary>
         /// 命题 P_Start：信号，消费即清除
         /// </summary>
@@ -63,10 +73,11 @@ namespace Mau.Generated.Flows
         private Cube T_Step3_Cube;
 
         /// <summary>
-        /// 构造：初始化 Cube 与 Inbox
+        /// 构造：初始化日志缓冲与 Cube/Inbox
         /// </summary>
         public FL_SequenceFlow()
         {
+            _logs = new FlowLog();
             T_Step1_Cube = new Cube(100);
             T_Step2_Cube = new Cube(100);
             T_Step3_Cube = new Cube(100);
@@ -89,6 +100,7 @@ namespace Mau.Generated.Flows
         /// </summary>
         public void Tick()
         {
+            _frame = _frame + 1;
             // [T_Step1] 前置检查
             if (P_Start && T_Step1_Cube.IsIdle())
             {
@@ -191,6 +203,35 @@ namespace Mau.Generated.Flows
             }
         }
 
+        /// <summary>
+        /// 获取运行时状态快照——全量截面
+        /// </summary>
+        /// <returns>当前帧状态</returns>
+        public RuntimeStatus GetStatus()
+        {
+            PropSnapshot[] props = new PropSnapshot[5];
+            props[0] = new PropSnapshot("P_Start", "Signal", P_Start);
+            props[1] = new PropSnapshot("P_Step1Done", "Fact", P_Step1Done);
+            props[2] = new PropSnapshot("P_Step2Done", "Fact", P_Step2Done);
+            props[3] = new PropSnapshot("P_Step3Done", "Fact", P_Step3Done);
+            props[4] = new PropSnapshot("P_Failed", "Fact", P_Failed);
+            TransSnapshot[] trans = new TransSnapshot[3];
+            trans[0] = new TransSnapshot("T_Step1", T_Step1_Cube.State.ToString(), T_Step1_Cube.ElapsedFrames, T_Step1_Cube.LimitFrames);
+            trans[1] = new TransSnapshot("T_Step2", T_Step2_Cube.State.ToString(), T_Step2_Cube.ElapsedFrames, T_Step2_Cube.LimitFrames);
+            trans[2] = new TransSnapshot("T_Step3", T_Step3_Cube.State.ToString(), T_Step3_Cube.ElapsedFrames, T_Step3_Cube.LimitFrames);
+            ResSnapshot[] res = new ResSnapshot[0];
+            return new RuntimeStatus(_frame, props, trans, res);
+        }
+
+        /// <summary>
+        /// 获取全量调试日志
+        /// </summary>
+        /// <returns>日志数组，时间顺序</returns>
+        public MauDebug[] GetLogs()
+        {
+            return _logs.GetAll();
+        }
+
         // 组合 FL_Main:
         //   序列: T_Step1, T_Step2, T_Step3
         //   重试: 2
@@ -234,4 +275,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:586C1F9C7683A7FD76F1D0CF0C240AF45854099D95520A337F8061F52BF8F5F5
+// #MAU_CHECKSUM:SHA256:CFCB6E77177E78CBE5B4AB0AD33A3AA2D2BD6BC29326060212DD7F9B1EEC7361

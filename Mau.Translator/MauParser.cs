@@ -416,6 +416,16 @@ namespace Mau.Translator
                 t.Join = value;
                 return;
             }
+            if (key == "调试")
+            {
+                string msg = value;
+                if (msg.StartsWith("\"") && msg.EndsWith("\""))
+                {
+                    msg = msg.Substring(1, msg.Length - 2);
+                }
+                t.DebugMessage = msg;
+                return;
+            }
 
             diags.Add(new MauDiagnostic("E108", lineNo, "未知变迁字段: " + key));
         }

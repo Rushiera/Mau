@@ -25,7 +25,7 @@ namespace Mau.Cli
             if (args.Length == 0)
             {
                 Console.WriteLine("Mau Translator v0.1");
-                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau> -o <dir> | mau test | mau checksum --update");
+                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau> -o <dir> | mau test | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] | mau serve <file.mau> [--port N]");
                 return 0;
             }
 
@@ -49,6 +49,24 @@ namespace Mau.Cli
             if (command == "checksum")
             {
                 return CommandChecksum(args);
+            }
+            if (command == "run")
+            {
+                string[] runArgs = new string[args.Length - 1];
+                for (int i = 0; i < runArgs.Length; i = i + 1)
+                {
+                    runArgs[i] = args[i + 1];
+                }
+                return CommandRun.Execute(runArgs);
+            }
+            if (command == "serve")
+            {
+                string[] serveArgs = new string[args.Length - 1];
+                for (int i = 0; i < serveArgs.Length; i = i + 1)
+                {
+                    serveArgs[i] = args[i + 1];
+                }
+                return CommandServe.Execute(serveArgs);
             }
 
             Console.WriteLine("未知命令: " + command);
