@@ -56,9 +56,28 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: 服务测试项目构建失败");
                 return 1;
             }
+            if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Contracts.Tests", "Mau.Contracts.Tests.csproj") + "\" -v q --nologo"))
+            {
+                Console.WriteLine("FAIL: 契约测试项目构建失败");
+                return 1;
+            }
+            if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.E2E", "Mau.E2E.csproj") + "\" -v q --nologo"))
+            {
+                Console.WriteLine("FAIL: 端到端测试项目构建失败");
+                return 1;
+            }
             if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Cli", "Mau.Cli.csproj") + "\" -v q --nologo"))
             {
                 Console.WriteLine("FAIL: Mau.Cli 构建失败（serve 进程测试依赖 Mau.exe）");
+                return 1;
+            }
+
+            // [段1b] 契约层测试（L0）
+            Console.WriteLine("[1b/4] 契约层测试（L0）");
+            string contractsExe = Path.Combine(root, "Mau.Contracts.Tests", "bin", "Debug", "net8.0", "Mau.Contracts.Tests.exe");
+            if (!RunProcess(contractsExe, ""))
+            {
+                Console.WriteLine("FAIL: 契约层测试失败");
                 return 1;
             }
 
@@ -121,12 +140,29 @@ namespace Mau.Cli
             {
                 return 1;
             }
+            if (!VerifyGolden(root, "hello_cat.mau", "FL_HelloCat.cs", "HelloCat"))
+            {
+                return 1;
+            }
+            if (!VerifyGolden(root, "tool_cat.mau", "FL_ToolCat.cs", "ToolCat"))
+            {
+                return 1;
+            }
 
             // [段5] build 闭环验证（L6——Roslyn Emit + ALC 加载 + 真实运行）
             Console.WriteLine("[5/5] build 闭环验证（L6）");
             if (!VerifyBuildLoop(root))
             {
                 Console.WriteLine("FAIL: build 闭环验证失败");
+                return 1;
+            }
+
+            // [段5b] 端到端测试（L6——.mau → Roslyn Emit → ALC 加载 → 行为断言）
+            Console.WriteLine("[5b/5] 端到端测试（L6）");
+            string e2eExe = Path.Combine(root, "Mau.E2E", "bin", "Debug", "net8.0", "Mau.E2E.exe");
+            if (!RunProcess(e2eExe, ""))
+            {
+                Console.WriteLine("FAIL: 端到端测试失败");
                 return 1;
             }
 

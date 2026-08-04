@@ -1,7 +1,7 @@
-﻿# Mau — .gitignore
-# .NET 8 项目，排除构建产物与 IDE 临时文件
+# Mau .gitignore
+# .NET 8 build artifacts and IDE temp files
 
-# === 构建产物 ===
+# === Build output ===
 [Bb]in/
 [Oo]bj/
 [Dd]ebug/
@@ -19,9 +19,11 @@ artifacts/
 project.assets.json
 project.nuget.cache
 
-# === Mau 产物 ===
+# === Mau runtime artifacts ===
 build/
 publish/
+CatTemp/
+Mau.Snapshots/generated-run/
 
 # === IDE ===
 .vs/
@@ -32,14 +34,14 @@ publish/
 *.userosscache
 *.sln.docstates
 
-# === 测试 ===
+# === Test ===
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
 *.coverage
 *.coveragexml
 TestResult.xml
 
-# === 杂项 ===
+# === Misc ===
 *.cache
 *.log
 .DS_Store
