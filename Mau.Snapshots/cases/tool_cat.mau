@@ -1,0 +1,24 @@
+// tool_cat.mau —— 工具猫（CH4 试点 T1：读写工具组——file.read/file.write，输出端口宿主只读）
+Mau 0.1
+基座: Mau.Runtime/v0.1
+实现: CH4.Contracts.ICat
+
+命题:
+  P_Read    信号
+  P_Write   信号
+  P_ReadDone   事实
+  P_ReadFailed 事实
+  P_WriteDone  事实
+  P_WriteFailed 事实
+
+变迁 T_Read:
+  前置: P_Read
+  动作: file.read
+  参数: path
+  后置: P_ReadDone / P_ReadFailed
+
+变迁 T_Write:
+  前置: P_Write
+  动作: file.write
+  参数: path, content
+  后置: P_WriteDone / P_WriteFailed

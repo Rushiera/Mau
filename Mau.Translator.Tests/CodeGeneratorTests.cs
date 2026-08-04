@@ -103,5 +103,22 @@ namespace Mau.Translator.Tests
             Assert.Empty(diags);
             return CodeGenerator.Generate(parsed.Document, flowName);
         }
+/// <summary>
+/// 实现接口声明——生成类追加接口（全限定名）
+/// </summary>
+[Fact]
+public void GenerateWithInterfaceDeclarationAppendsInterface()
+{
+    string source = "Mau 0.1\n" + "实现: CH4.Contracts.ICat\n" + "命题:\n" + "  P_Go 信号\n" + "  P_Done 事实\n" + "变迁 T_Go:\n" + "  前置: P_Go\n" + "  动作: file.convert\n" + "  参数: input, output\n" + "  后置: P_Done / P_Go\n";
+    ParseResult parsed = MauParser.Parse(source);
+    Assert.Empty(parsed.Diagnostics);
+    string code = CodeGenerator.Generate(parsed.Document, "HelloCat");
+    Assert.Contains("public sealed class FL_HelloCat : IObservableFlow, CH4.Contracts.ICat", code);
+} 
+/// <summary>
+/// 输出端口公开属性——宿主只读
+/// </summary>
+ [ Fact ]  public  void  GenerateOutputPortProducesPublicProperty ( ) { BrickContract  read  =  new  BrickContract ( "file.read" ,  "Mau.Bricks.FileBrick.Read" ) ;  read . Inputs . Add ( new  BrickPort ( "path" ,  typeof ( string ) ,  "受控文件路径" ) ) ;  read . Outputs . Add ( new  BrickPort ( "content" ,  typeof ( string ) ,  "完整文本" ) ) ;  read . Return  =  BrickReturnKind . Bool ;  BrickRegistry . Register ( read ) ;  string  source  =  "Mau 0.1\n" + "命题:\n" + "  P_Go 信号\n" + "  P_Done 事实\n" + "变迁 T_Go:\n" + "  前置: P_Go\n" + "  动作: file.read\n" + "  参数: path\n" + "  后置: P_Done / P_Go\n" ;  ParseResult  parsed  =  MauParser . Parse ( source ) ;  Assert . Empty ( parsed . Diagnostics ) ;  string  code  =  CodeGenerator . Generate ( parsed . Document ,  "ReadCat" ) ;  Assert . Contains ( "public string content" ,  code ) ;  Assert . Contains ( "get { return _content; }" ,  code ) ;  }
+
     }
 }

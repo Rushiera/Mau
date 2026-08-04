@@ -88,6 +88,22 @@ namespace Mau.Translator
                     continue;
                 }
 
+                // [段3b] 实现接口声明
+                if (trimmed.StartsWith("实现:"))
+                {
+                    string val = trimmed.Substring(3).Trim();
+                    string[] items = val.Split(',');
+                    for (int k = 0; k < items.Length; k++)
+                    {
+                        string item = items[k].Trim();
+                        if (item.Length > 0)
+                        {
+                            doc.Interfaces.Add(item);
+                        }
+                    }
+                    continue;
+                }
+
                 // [段4] 命题块入口
                 if (trimmed == "命题:")
                 {

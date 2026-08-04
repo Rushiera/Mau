@@ -1,0 +1,15 @@
+// hello_cat.mau —— hello 猫（CH4 试点 T1：实现 ICat 的生成物——OA 工单 → log 记录 → 完成回执）
+Mau 0.1
+基座: Mau.Runtime/v0.1
+实现: CH4.Contracts.ICat
+
+命题:
+  P_Ask    信号
+  P_Done   事实
+  P_Failed 事实
+
+变迁 T_Hello:
+  前置: P_Ask
+  动作: log.write
+  参数: module, level, message
+  后置: P_Done / P_Failed

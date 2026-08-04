@@ -348,7 +348,10 @@ public string DebugMessage;
         /// 基座声明
         /// </summary>
         public string BaseName;
-
+/// <summary>
+/// 实现接口——全限定名列表（可选，生成类追加实现）
+/// </summary>
+public List<string> Interfaces;
         /// <summary>
         /// 命题表
         /// </summary>
@@ -379,6 +382,7 @@ public string DebugMessage;
         {
             Version = "";
             BaseName = "";
+            Interfaces = new List<string>();
             Propositions = new List<IrProposition>();
             Transitions = new List<IrTransition>();
             Resources = new List<IrResource>();

@@ -36,7 +36,12 @@ namespace Mau.Translator
             sb.AppendLine("    /// <summary>");
             sb.AppendLine("    /// " + flowName + " 流程——由 Mau 声明生成");
             sb.AppendLine("    /// </summary>");
-            sb.AppendLine("    public sealed class " + className + " : IObservableFlow");
+            string classLine = "    public sealed class " + className + " : IObservableFlow";
+            for (int k = 0; k < doc.Interfaces.Count; k++)
+            {
+                classLine = classLine + ", " + doc.Interfaces[k];
+            }
+            sb.AppendLine(classLine);
             sb.AppendLine("    {");
 
             // [段2b] 观察协议字段——帧号 + 调试日志
@@ -100,6 +105,13 @@ namespace Mau.Translator
                         sb.AppendLine("        /// 变迁 " + t.Name + " 的输出端口——" + outContract.Outputs[o].Name);
                         sb.AppendLine("        /// </summary>");
                         sb.AppendLine("        private " + outType + " " + outField + outInit);
+                        sb.AppendLine("        /// <summary>");
+                        sb.AppendLine("        /// 输出端口 " + outContract.Outputs[o].Name + "——宿主只读");
+                        sb.AppendLine("        /// </summary>");
+                        sb.AppendLine("        public " + outType + " " + outContract.Outputs[o].Name);
+                        sb.AppendLine("        {");
+                        sb.AppendLine("            get { return " + outField + "; }");
+                        sb.AppendLine("        }");
                         sb.AppendLine();
                     }
                 }
