@@ -384,9 +384,9 @@ namespace Mau.Cli
         /// <summary>
         /// JSON 字符串转义
         /// </summary>
-        /// <param name="s">原始字符串</param>
+        /// <param name="s">原始字符串，可为 null</param>
         /// <returns>转义后字符串</returns>
-        private static string JsonEscape(string s)
+        private static string JsonEscape(string? s)
         {
             if (s == null)
             {

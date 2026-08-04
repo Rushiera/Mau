@@ -10,6 +10,10 @@ namespace Mau.Runtime
     {
         private readonly FlowHost _host;
         private IObserverTransport? _transport;
+        private IOA? _oa;
+        private ICommandBus? _commandBus;
+        private IdAllocator? _idAllocator;
+        private ThreadGuard? _threadGuard;
         private long _frame;
         private AggregatedSnapshot? _latestSnapshot;
 
@@ -29,6 +33,10 @@ namespace Mau.Runtime
         {
             _host = host;
             _transport = null;
+            _oa = null;
+            _commandBus = null;
+            _idAllocator = null;
+            _threadGuard = null;
             _frame = 0;
         }
 
@@ -39,6 +47,22 @@ namespace Mau.Runtime
         public void Bind(IObserverTransport transport)
         {
             _transport = transport;
+        }
+
+        /// <summary>
+        /// 绑定宿主机制——OA/Command/ID/线程守卫的透明度暴露
+        /// </summary>
+        /// <param name="oa">OA 工单机制，可为 null</param>
+        /// <param name="commandBus">指令总线，可为 null</param>
+        /// <param name="idAllocator">ID 分配器，可为 null</param>
+        /// <param name="threadGuard">线程守卫，可为 null</param>
+        public void BindHostMechanisms(IOA? oa, ICommandBus? commandBus,
+            IdAllocator? idAllocator, ThreadGuard? threadGuard)
+        {
+            _oa = oa;
+            _commandBus = commandBus;
+            _idAllocator = idAllocator;
+            _threadGuard = threadGuard;
         }
 
         /// <summary>
@@ -66,11 +90,6 @@ namespace Mau.Runtime
             }
 
             FlowHandle[] handles = _host.Handles as FlowHandle[] ?? Array.Empty<FlowHandle>();
-            if (handles.Length == 0)
-            {
-                return;
-            }
-
             System.Collections.Generic.List<SystemEvent> sysEvents = new System.Collections.Generic.List<SystemEvent>();
             FlowSnapshotEntry[] entries = new FlowSnapshotEntry[handles.Length];
             for (int i = 0; i < handles.Length; i = i + 1)
@@ -127,7 +146,8 @@ namespace Mau.Runtime
                 Timestamp = DateTime.UtcNow,
                 HostFrame = _frame,
                 Flows = entries,
-                SystemEvents = sysEvents.ToArray()
+                SystemEvents = sysEvents.ToArray(),
+                Host = BuildHostSnapshot()
             };
 
             _latestSnapshot = snapshot;
@@ -139,5 +159,39 @@ namespace Mau.Runtime
             catch
             {
             }
-        }    }
+        }
+
+        /// <summary>
+        /// 构建宿主机制快照——OA/Command/ID/线程守卫统一截面
+        /// </summary>
+        /// <returns>宿主快照，未绑定任何机制时为 null</returns>
+        private HostSnapshot? BuildHostSnapshot()
+        {
+            if (_oa == null && _commandBus == null && _idAllocator == null
+                && _threadGuard == null)
+            {
+                return null;
+            }
+            HostSnapshot host = new HostSnapshot();
+            host.Frame = _frame;
+            if (_threadGuard != null)
+            {
+                host.IsMainThread = _threadGuard.IsMainThread;
+            }
+            if (_oa != null)
+            {
+                host.OA = _oa.GetSnapshot();
+            }
+            if (_commandBus != null)
+            {
+                host.Command = _commandBus.GetSnapshot();
+            }
+            if (_idAllocator != null)
+            {
+                host.IdTypeCounts = _idAllocator.GetTypeCountSnapshot();
+                host.NextId = _idAllocator.NextId;
+            }
+            return host;
+        }
+    }
 }

@@ -28,6 +28,11 @@ namespace Mau.Runtime
         public SystemEvent[] SystemEvents { get; set; }
 
         /// <summary>
+        /// 宿主机制快照——OA/Command/ID/线程守卫统一截面，未注入时为 null
+        /// </summary>
+        public HostSnapshot? Host { get; set; }
+
+        /// <summary>
         /// 构造统合快照
         /// </summary>
         public AggregatedSnapshot()
@@ -36,6 +41,7 @@ namespace Mau.Runtime
             HostFrame = 0;
             Flows = Array.Empty<FlowSnapshotEntry>();
             SystemEvents = Array.Empty<SystemEvent>();
+            Host = null;
         }
     }
 

@@ -24,11 +24,29 @@ namespace Mau.Observer
     /// </summary>
     public sealed class HttpTransport : IObserverTransport, IDisposable
     {
+/// <summary>
+/// 监听端口
+/// </summary>
         private readonly int _port;
+/// <summary>
+/// 最近一次推送的快照
+/// </summary>
         private AggregatedSnapshot? _latest;
+/// <summary>
+/// 活跃 WebSocket 客户端集合
+/// </summary>
         private readonly ConcurrentBag<WebSocket> _sockets;
+/// <summary>
+/// ASP.NET Core 主机实例
+/// </summary>
         private IHost? _host;
+/// <summary>
+/// 服务器生命周期取消源
+/// </summary>
         private CancellationTokenSource? _cts;
+/// <summary>
+/// 快照读写锁
+/// </summary>
         private readonly object _lock;
 
         /// <summary>
@@ -312,7 +330,60 @@ namespace Mau.Observer
             {
                 sb.AppendLine();
             }
-            sb.AppendLine("  ]");
+            sb.AppendLine("  ],");
+            sb.AppendLine("  \"host\": " + SerializeHost(snapshot.Host));
+            sb.Append("}");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 序列化宿主机制快照——OA/Command/ID/线程守卫
+        /// </summary>
+        /// <param name="host">宿主快照，null=未注入机制</param>
+        /// <returns>JSON 对象文本</returns>
+        private static string SerializeHost(HostSnapshot? host)
+        {
+            if (host == null)
+            {
+                return "null";
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("{");
+            sb.AppendLine("  \"frame\": " + host.Frame.ToString() + ",");
+            sb.AppendLine("  \"isMainThread\": " + (host.IsMainThread ? "true" : "false") + ",");
+            if (host.OA.HasValue)
+            {
+                OAView oa = host.OA.Value;
+                sb.AppendLine("  \"oa\": {");
+                sb.AppendLine("    \"version\": " + oa.Version.ToString() + ",");
+                sb.AppendLine("    \"open\": " + oa.OpenCount.ToString() + ",");
+                sb.AppendLine("    \"work\": " + oa.WorkCount.ToString() + ",");
+                sb.AppendLine("    \"closed\": " + oa.ClosedCount.ToString() + ",");
+                sb.AppendLine("    \"timeout\": " + oa.TimeoutCount.ToString());
+                sb.AppendLine("  },");
+            }
+            else
+            {
+                sb.AppendLine("  \"oa\": null,");
+            }
+            if (host.Command.HasValue)
+            {
+                CommandSnapshot cmd = host.Command.Value;
+                sb.AppendLine("  \"command\": {");
+                sb.AppendLine("    \"version\": " + cmd.Version.ToString() + ",");
+                sb.AppendLine("    \"registeredOwners\": " + cmd.RegisteredOwnerCount.ToString() + ",");
+                sb.AppendLine("    \"registeredKeys\": " + cmd.RegisteredKeyCount.ToString() + ",");
+                sb.AppendLine("    \"pendingKeys\": " + cmd.PendingKeyCount.ToString() + ",");
+                sb.AppendLine("    \"frozenKeys\": " + cmd.FrozenKeyCount.ToString() + ",");
+                sb.AppendLine("    \"acceptingInput\": " + (cmd.IsAcceptingInput ? "true" : "false") + ",");
+                sb.AppendLine("    \"rejectedInputs\": " + cmd.RejectedInputCount.ToString());
+                sb.AppendLine("  },");
+            }
+            else
+            {
+                sb.AppendLine("  \"command\": null,");
+            }
+            sb.AppendLine("  \"nextId\": " + host.NextId.ToString());
             sb.Append("}");
             return sb.ToString();
         }
