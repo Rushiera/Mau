@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -127,7 +127,7 @@ namespace Mau.Cli
         }
 
         /// <summary>
-        /// 生成临时 .csproj——引用 Mau.Runtime + Mau.Bricks.Standard
+        /// 生成临时 .csproj——引用 Mau.Runtime + 全部积木项目
         /// </summary>
         /// <param name="className">类名</param>
         /// <returns>.csproj 内容</returns>
@@ -150,7 +150,15 @@ namespace Mau.Cli
             sb.AppendLine("  </ItemGroup>");
             sb.AppendLine("  <ItemGroup>");
             sb.AppendLine("    <ProjectReference Include=\"" + Path.Combine(mauRoot, "Mau.Runtime", "Mau.Runtime.csproj") + "\" />");
+            sb.AppendLine("    <ProjectReference Include=\"" + Path.Combine(mauRoot, "Mau.Contracts", "Mau.Contracts.csproj") + "\" />");
             sb.AppendLine("    <ProjectReference Include=\"" + Path.Combine(mauRoot, "Mau.Bricks.Standard", "Mau.Bricks.Standard.csproj") + "\" />");
+            sb.AppendLine("    <ProjectReference Include=\"" + Path.Combine(mauRoot, "Mau.Bricks.Data", "Mau.Bricks.Data.csproj") + "\" />");
+            sb.AppendLine("    <ProjectReference Include=\"" + Path.Combine(mauRoot, "Mau.Bricks.Text", "Mau.Bricks.Text.csproj") + "\" />");
+            sb.AppendLine("    <ProjectReference Include=\"" + Path.Combine(mauRoot, "Mau.Bricks.Shell", "Mau.Bricks.Shell.csproj") + "\" />");
+            sb.AppendLine("    <ProjectReference Include=\"" + Path.Combine(mauRoot, "Mau.Bricks.LLM", "Mau.Bricks.LLM.csproj") + "\" />");
+            sb.AppendLine("    <ProjectReference Include=\"" + Path.Combine(mauRoot, "Mau.Bricks.Approval", "Mau.Bricks.Approval.csproj") + "\" />");
+            sb.AppendLine("    <ProjectReference Include=\"" + Path.Combine(mauRoot, "Mau.Bricks.Office", "Mau.Bricks.Office.csproj") + "\" />");
+            sb.AppendLine("    <ProjectReference Include=\"" + Path.Combine(mauRoot, "Mau.Bricks.Log", "Mau.Bricks.Log.csproj") + "\" />");
             sb.AppendLine("  </ItemGroup>");
             sb.AppendLine("</Project>");
             return sb.ToString();

@@ -2,6 +2,7 @@
 using System.IO;
 using System.Text;
 using Mau.Translator;
+using Mau.Development;
 using System.Security.Cryptography;
 
 namespace Mau.Cli
@@ -36,7 +37,7 @@ namespace Mau.Cli
             if (args.Length == 0)
             {
                 Console.WriteLine("Mau Translator v0.1");
-                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau> -o <dir> | mau test | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket>");
+                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau> -o <dir> [--sdk] | mau publish -o <dir> | mau test | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket>");
                 return 0;
             }
 
@@ -52,6 +53,15 @@ namespace Mau.Cli
             if (command == "build")
             {
                 return CommandBuild(args);
+            }
+            if (command == "publish")
+            {
+                string[] publishArgs = new string[args.Length - 1];
+                for (int i = 0; i < publishArgs.Length; i = i + 1)
+                {
+                    publishArgs[i] = args[i + 1];
+                }
+                return CommandPublish.Execute(publishArgs);
             }
             if (command == "test")
             {
@@ -177,14 +187,121 @@ namespace Mau.Cli
         }
 
         /// <summary>
-        /// build 命令——验证 + 生成 + 编译（生成后调环境 dotnet build）
+        /// build 命令——验证 + 生成 + 编译（默认 Roslyn Emit 无 SDK；--sdk 走环境 dotnet build）
         /// </summary>
         /// <param name="args">命令行参数</param>
         /// <returns>退出码</returns>
         private static int CommandBuild(string[] args)
         {
-            Console.WriteLine("build 待实现——第一期先走 gen + mau test 门禁");
-            return 1;
+            string? mauFile = null;
+            string outDir = ".";
+            bool useSdk = false;
+
+            for (int i = 1; i < args.Length; i = i + 1)
+            {
+                if (args[i] == "-o" && i + 1 < args.Length)
+                {
+                    outDir = args[i + 1];
+                    i = i + 1;
+                }
+                else if (args[i] == "--sdk")
+                {
+                    useSdk = true;
+                }
+                else if (mauFile == null)
+                {
+                    mauFile = args[i];
+                }
+            }
+            if (mauFile == null)
+            {
+                Console.WriteLine("用法: mau build <file.mau> -o <dir> [--sdk]");
+                Console.WriteLine("  默认: Roslyn 内存编译（无需 .NET SDK）");
+                Console.WriteLine("  --sdk: 走环境 dotnet build（开发调试用）");
+                return 1;
+            }
+            if (!File.Exists(mauFile))
+            {
+                Console.WriteLine("文件不存在: " + mauFile);
+                return 1;
+            }
+
+            // [1] 解析 + 验证
+            string source = File.ReadAllText(mauFile);
+            string flowName = FlowNameFromPath(mauFile);
+            CompileResult result = MauCompiler.Compile(source, flowName);
+            PrintDiagnostics(mauFile, result.Diagnostics);
+            if (!result.Success)
+            {
+                Console.WriteLine("构建失败: 验证未通过——" + flowName);
+                return 1;
+            }
+
+            // [2] 输出目录
+            if (!Directory.Exists(outDir))
+            {
+                Directory.CreateDirectory(outDir);
+            }
+            string className = "FL_" + flowName;
+            string dllPath = Path.Combine(outDir, className + ".dll");
+
+            // [3] 编译
+            if (useSdk)
+            {
+                string tempDir = Path.Combine(Path.GetTempPath(), "mau_build_sdk_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+                TempProjectBuilder.BuildResult buildResult = TempProjectBuilder.Build(result.GeneratedCode, className, tempDir);
+                if (!buildResult.Success)
+                {
+                    Console.WriteLine("构建失败: C# 编译错误");
+                    if (buildResult.BuildOutput != null)
+                    {
+                        Console.WriteLine(buildResult.BuildOutput);
+                    }
+                    return 2;
+                }
+                File.Copy(buildResult.DllPath!, dllPath, true);
+                try
+                {
+                    if (Directory.Exists(tempDir))
+                    {
+                        Directory.Delete(tempDir, true);
+                    }
+                }
+                catch
+                {
+                    // 临时目录清理失败不影响结果
+                }
+            }
+            else
+            {
+                string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_build_pocket_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+                MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
+                MauPocketCompileResult compileResult = compiler.Compile(result.GeneratedCode, className);
+                if (!compileResult.Success)
+                {
+                    Console.WriteLine("构建失败: Roslyn 编译错误");
+                    for (int i = 0; i < compileResult.Diagnostics.Length; i = i + 1)
+                    {
+                        Console.WriteLine("  " + compileResult.Diagnostics[i]);
+                    }
+                    return 2;
+                }
+                File.Copy(compileResult.AssemblyPath, dllPath, true);
+                try
+                {
+                    if (Directory.Exists(pocketRoot))
+                    {
+                        Directory.Delete(pocketRoot, true);
+                    }
+                }
+                catch
+                {
+                    // 临时目录清理失败不影响结果
+                }
+            }
+
+            Console.WriteLine("构建成功: " + dllPath + "（" + (useSdk ? "dotnet build" : "Roslyn Emit") + "）");
+            return 0;
         }
 
         /// <summary>

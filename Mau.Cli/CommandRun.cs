@@ -5,12 +5,13 @@ using System.Text;
 using System.Text.Json;
 using Mau.Runtime;
 using Mau.Translator;
+using Mau.Development;
 
 namespace Mau.Cli
 {
     /// <summary>
     /// mau run 命令——六步闭环：翻译→编译→加载→fire→Tick→观测
-    /// 需要环境 .NET 8 SDK
+    /// 默认 Roslyn 内存编译（无需 .NET SDK）；--sdk 走环境 dotnet build
     /// </summary>
     public static class CommandRun
     {
@@ -30,6 +31,30 @@ namespace Mau.Cli
         }
 
         /// <summary>
+        /// 从文件路径推导流程名——file_convert.mau → FileConvert（与 gen/build 一致）
+        /// </summary>
+        /// <param name="path">文件路径</param>
+        /// <returns>PascalCase 流程名</returns>
+        private static string FlowNameFromPath(string path)
+        {
+            string baseName = Path.GetFileNameWithoutExtension(path);
+            string[] parts = baseName.Split('_');
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < parts.Length; i = i + 1)
+            {
+                if (parts[i].Length == 0)
+                {
+                    continue;
+                }
+                string head = parts[i].Substring(0, 1).ToUpperInvariant();
+                string tail = parts[i].Length > 1 ? parts[i].Substring(1) : "";
+                sb.Append(head);
+                sb.Append(tail);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
         /// 执行 mau run
         /// </summary>
         /// <param name="args">命令行参数——不含 "run" 本身</param>
@@ -40,6 +65,7 @@ namespace Mau.Cli
             List<FireCommand> fireCommands = new List<FireCommand>();
             int ticks = 1;
             int timeout = 30;
+            bool useSdk = false;
 
             // 解析参数
             FireCommand? currentFire = null;
@@ -75,6 +101,10 @@ namespace Mau.Cli
                     }
                     i = i + 1;
                 }
+                else if (arg == "--sdk")
+                {
+                    useSdk = true;
+                }
                 else if (arg.Contains("=") && currentFire != null)
                 {
                     int eq = arg.IndexOf('=');
@@ -90,8 +120,9 @@ namespace Mau.Cli
 
             if (mauFile == null)
             {
-                Console.Error.WriteLine("用法: mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--timeout N]");
-                Console.Error.WriteLine("需要环境 .NET 8 SDK");
+                Console.Error.WriteLine("用法: mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--timeout N] [--sdk]");
+                Console.Error.WriteLine("  默认: Roslyn 内存编译（无需 .NET SDK）");
+                Console.Error.WriteLine("  --sdk: 走环境 dotnet build（开发调试用）");
                 return 1;
             }
 
@@ -119,28 +150,50 @@ namespace Mau.Cli
             }
 
             // [2] 生成 C# 源码
-            string flowName = Path.GetFileNameWithoutExtension(mauFile);
+            string flowName = FlowNameFromPath(mauFile);
             string csSource = CodeGenerator.Generate(doc, flowName);
             string className = "FL_" + flowName;
 
-            // [3] 临时编译
-            string tempDir = Path.Combine(Path.GetTempPath(), "mau_run_" + Guid.NewGuid().ToString("N").Substring(0, 8));
-            TempProjectBuilder.BuildResult buildResult = TempProjectBuilder.Build(csSource, className, tempDir);
-            if (!buildResult.Success)
+            // [3] 编译——默认 Roslyn 内存编译；--sdk 走环境 dotnet build
+            string tempDir;
+            string dllPath;
+            if (useSdk)
             {
-                PrintRunError(2, "C# 编译失败", null);
-                if (buildResult.BuildOutput != null)
+                tempDir = Path.Combine(Path.GetTempPath(), "mau_run_sdk_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+                TempProjectBuilder.BuildResult sdkResult = TempProjectBuilder.Build(csSource, className, tempDir);
+                if (!sdkResult.Success)
                 {
-                    Console.Error.WriteLine(buildResult.BuildOutput);
+                    PrintRunError(2, "C# 编译失败", null);
+                    if (sdkResult.BuildOutput != null)
+                    {
+                        Console.Error.WriteLine(sdkResult.BuildOutput);
+                    }
+                    return 2;
                 }
-                return 2;
+                dllPath = sdkResult.DllPath!;
+            }
+            else
+            {
+                tempDir = Path.Combine(Path.GetTempPath(), "mau_run_pocket_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+                MauPocketCompiler compiler = new MauPocketCompiler(tempDir);
+                MauPocketCompileResult pocketResult = compiler.Compile(csSource, className);
+                if (!pocketResult.Success)
+                {
+                    PrintRunError(2, "Roslyn 编译失败", null);
+                    for (int i = 0; i < pocketResult.Diagnostics.Length; i = i + 1)
+                    {
+                        Console.Error.WriteLine("  " + pocketResult.Diagnostics[i]);
+                    }
+                    return 2;
+                }
+                dllPath = pocketResult.AssemblyPath;
             }
 
             // [4] 加载 DLL
             FlowHandle? handle = null;
             try
             {
-                handle = FlowHandle.Load(buildResult.DllPath!);
+                handle = FlowHandle.Load(dllPath);
             }
             catch (Exception ex)
             {

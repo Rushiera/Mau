@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using Mau.Translator;
+using Mau.Runtime;
+using Mau.Development;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -119,8 +122,128 @@ namespace Mau.Cli
                 return 1;
             }
 
+            // [段5] build 闭环验证（L6——Roslyn Emit + ALC 加载 + 真实运行）
+            Console.WriteLine("[5/5] build 闭环验证（L6）");
+            if (!VerifyBuildLoop(root))
+            {
+                Console.WriteLine("FAIL: build 闭环验证失败");
+                return 1;
+            }
+
             Console.WriteLine("MAU_CHECKS_OK");
             return 0;
+        }
+
+        /// <summary>
+        /// build 闭环验证——.mau → Roslyn Emit → ALC 加载 → Fire/Tick → 断言
+        /// </summary>
+        /// <param name="root">workspace 根</param>
+        /// <returns>通过</returns>
+        private static bool VerifyBuildLoop(string root)
+        {
+            // [1] 编译 file_convert 生成物（Roslyn Emit，无 SDK）
+            string caseFile = Path.Combine(root, "Mau.Snapshots", "cases", "file_convert.mau");
+            string source;
+            try
+            {
+                source = File.ReadAllText(caseFile);
+            }
+            catch
+            {
+                Console.WriteLine("FAIL: build 闭环用例缺失——" + caseFile);
+                return false;
+            }
+            CompileResult compileResult = MauCompiler.Compile(source, "FileConvert");
+            if (!compileResult.Success)
+            {
+                Console.WriteLine("FAIL: build 闭环——翻译失败");
+                return false;
+            }
+            string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_gate_pocket_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
+            MauPocketCompileResult pocketResult = compiler.Compile(compileResult.GeneratedCode, "FL_FileConvert");
+            if (!pocketResult.Success)
+            {
+                Console.WriteLine("FAIL: build 闭环——Roslyn Emit 失败");
+                for (int i = 0; i < pocketResult.Diagnostics.Length; i = i + 1)
+                {
+                    Console.WriteLine("  " + pocketResult.Diagnostics[i]);
+                }
+                return false;
+            }
+
+            // [2] ALC 加载 + Fire + Tick + 断言
+            FlowHandle? handle = null;
+            string inputFile = Path.Combine(Path.GetTempPath(), "mau_gate_input_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
+            string outputFile = Path.Combine(Path.GetTempPath(), "mau_gate_output_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
+            try
+            {
+                File.WriteAllText(inputFile, "mau-gate-check");
+                handle = FlowHandle.Load(pocketResult.AssemblyPath);
+                Type flowType = handle.Flow.GetType();
+                MethodInfo? fire = flowType.GetMethod("FireInput");
+                if (fire == null)
+                {
+                    Console.WriteLine("FAIL: build 闭环——未找到 FireInput");
+                    return false;
+                }
+                fire.Invoke(handle.Flow, new object[] { inputFile, outputFile });
+                for (int i = 0; i < 400; i = i + 1)
+                {
+                    handle.Flow.Tick();
+                }
+                RuntimeStatus status = handle.Flow.GetStatus();
+                bool done = false;
+                for (int i = 0; i < status.Propositions.Length; i = i + 1)
+                {
+                    if (status.Propositions[i].Name == "P_Done")
+                    {
+                        done = status.Propositions[i].Value;
+                    }
+                }
+                if (!done)
+                {
+                    Console.WriteLine("FAIL: build 闭环——P_Done 未置位（文件转换未完成）");
+                    return false;
+                }
+                if (!File.Exists(outputFile))
+                {
+                    Console.WriteLine("FAIL: build 闭环——输出文件不存在");
+                    return false;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("FAIL: build 闭环——运行时异常: " + ex.Message);
+                return false;
+            }
+            finally
+            {
+                if (handle != null)
+                {
+                    handle.TryUnload(3);
+                }
+                try
+                {
+                    if (File.Exists(inputFile))
+                    {
+                        File.Delete(inputFile);
+                    }
+                    if (File.Exists(outputFile))
+                    {
+                        File.Delete(outputFile);
+                    }
+                    if (Directory.Exists(pocketRoot))
+                    {
+                        Directory.Delete(pocketRoot, true);
+                    }
+                }
+                catch
+                {
+                    // 清理失败不影响结果
+                }
+            }
         }
         /// <summary>
         /// 查找 workspace 根——含 Mau.sln 的目录；当前目录向上优先，程序集位置兜底
