@@ -19,6 +19,10 @@
     <ProjectReference Include="..\Mau.Bricks.Data\Mau.Bricks.Data.csproj" />
     <ProjectReference Include="..\Mau.Bricks.Text\Mau.Bricks.Text.csproj" />
     <ProjectReference Include="..\Mau.Bricks.Shell\Mau.Bricks.Shell.csproj" />
+    <ProjectReference Include="..\Mau.Bricks.LLM\Mau.Bricks.LLM.csproj" />
+    <ProjectReference Include="..\Mau.Bricks.Approval\Mau.Bricks.Approval.csproj" />
+    <ProjectReference Include="..\Mau.Bricks.Office\Mau.Bricks.Office.csproj" />
+    <ProjectReference Include="..\Mau.Bricks.Log\Mau.Bricks.Log.csproj" />
     <ProjectReference Include="..\Mau.Contracts\Mau.Contracts.csproj" />
   </ItemGroup>
 

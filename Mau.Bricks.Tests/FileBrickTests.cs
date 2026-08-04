@@ -244,6 +244,12 @@ namespace Mau.Bricks.Tests
             BoxBrickRegistration.RegisterAll();
             TextBrickRegistration.RegisterAll();
             ShellBrickRegistration.RegisterAll();
+            LlmBrickRegistration.RegisterAll();
+            ContextBrickRegistration.RegisterAll();
+            ApprovalBrickRegistration.RegisterAll();
+            ExcelBrickRegistration.RegisterAll();
+            DocxBrickRegistration.RegisterAll();
+            LogBrickRegistration.RegisterAll();
 
             Assert.True(Mau.Contracts.BrickRegistry.TryGet("file.convert", out _));
             Assert.True(Mau.Contracts.BrickRegistry.TryGet("file.read", out _));
@@ -267,6 +273,12 @@ namespace Mau.Bricks.Tests
             Assert.True(Mau.Contracts.BrickRegistry.TryGet("data.box_get_dic", out _));
             Assert.True(Mau.Contracts.BrickRegistry.TryGet("text.md_parse", out _));
             Assert.True(Mau.Contracts.BrickRegistry.TryGet("shell.exec", out _));
+            Assert.True(Mau.Contracts.BrickRegistry.TryGet("llm.chat", out _));
+            Assert.True(Mau.Contracts.BrickRegistry.TryGet("llm.ctx_trim", out _));
+            Assert.True(Mau.Contracts.BrickRegistry.TryGet("approval.request", out _));
+            Assert.True(Mau.Contracts.BrickRegistry.TryGet("excel.read", out _));
+            Assert.True(Mau.Contracts.BrickRegistry.TryGet("docx.write", out _));
+            Assert.True(Mau.Contracts.BrickRegistry.TryGet("log.write", out _));
         }
     }
 }

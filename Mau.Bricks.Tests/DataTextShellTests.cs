@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════
 // 测试: Mau.Bricks.Data + Mau.Bricks.Text + Mau.Bricks.Shell
 // 引用: Mau.Bricks.Tests → Mau.Bricks.Data / Mau.Bricks.Text / Mau.Bricks.Shell
 // 原理: CH3 测试随迁改写——直接调用静态积木方法验证
@@ -6,6 +6,8 @@
 // ═══════════════════════════════════════════════
 using System;
 using System.Collections.Generic;
+using System.IO;
+using Mau.Bricks;
 using Xunit;
 
 namespace Mau.Bricks.Tests
@@ -172,3 +174,125 @@ namespace Mau.Bricks.Tests
         }
     }
 }
+
+    /// <summary>
+    /// LLM/Approval/Office/Log 积木测试
+    /// </summary>
+    public sealed class ExtendedBrickTests
+    {
+        /// <summary>
+        /// 上下文管理——System 保留 + 截断
+        /// </summary>
+        [Fact]
+        public void ContextBrickKeepsSystemAndTrims()
+        {
+            ContextBrick.CtxClear();
+            Assert.True(ContextBrick.CtxSetSystem("你是一只猫"));
+            Assert.True(ContextBrick.CtxPushUser("你好"));
+            Assert.True(ContextBrick.CtxPushAssistant("喵"));
+            Assert.True(ContextBrick.CtxCount(out int count));
+            Assert.Equal(3, count);
+
+            Assert.True(ContextBrick.CtxBuildPrompt(out string prompt));
+            Assert.Contains("你是一只猫", prompt);
+
+            Assert.True(ContextBrick.CtxTrim(5, out int removed));
+            Assert.True(removed > 0);
+            Assert.True(ContextBrick.CtxCount(out int after));
+            Assert.True(after <= 2);
+        }
+
+        /// <summary>
+        /// 审批——请求/解析/拒绝/快照
+        /// </summary>
+        [Fact]
+        public void ApprovalBrickRequestResolveReject()
+        {
+            Assert.True(ApprovalBrick.Request("ap-1", "允许吗？",
+                new string[] { "允许", "拒绝" }, 0, 20));
+            Assert.False(ApprovalBrick.Request("ap-1", "重复", 
+                new string[] { "允许", "拒绝" }, 0, 20));
+            Assert.True(ApprovalBrick.PendingCount(out int count));
+            Assert.Equal(1, count);
+
+            Assert.True(ApprovalBrick.Resolve("ap-1", 1, out ApprovalResult result));
+            Assert.Equal(1, result.SelectedIndex);
+            Assert.Equal("拒绝", result.SelectedLabel);
+
+            Assert.True(ApprovalBrick.Request("ap-2", "拒绝测试？",
+                new string[] { "允许", "拒绝" }, 0, 20));
+            Assert.True(ApprovalBrick.Reject("ap-2"));
+            Assert.True(ApprovalBrick.PendingCount(out int after));
+            Assert.Equal(0, after);
+        }
+
+        /// <summary>
+        /// 日志——写入/读取/清空
+        /// </summary>
+        [Fact]
+        public void LogBrickWriteGetClear()
+        {
+            LogBrick.Clear();
+            Assert.True(LogBrick.Write("TEST", 0, "hello"));
+            Assert.True(LogBrick.Write("TEST", 3, "error"));
+            Assert.True(LogBrick.Count(out int count));
+            Assert.Equal(2, count);
+            Assert.True(LogBrick.GetAll(out string logs));
+            Assert.Contains("hello", logs);
+            Assert.Contains("ERROR", logs);
+            Assert.True(LogBrick.Clear());
+            Assert.True(LogBrick.Count(out int cleared));
+            Assert.Equal(0, cleared);
+        }
+
+        /// <summary>
+        /// Excel 写入/读取往返
+        /// </summary>
+        [Fact]
+        public void ExcelBrickWriteReadRoundTrip()
+        {
+            string path = Path.Combine(Path.GetTempPath(), "mau-excel-"
+                + Guid.NewGuid().ToString("N") + ".xlsx");
+            try
+            {
+                Assert.True(ExcelBrick.Write(path, "姓名\t年龄\n张三\t25\n", "Sheet1",
+                    out string result));
+                Assert.Contains("写入成功", result);
+                Assert.True(ExcelBrick.Read(path, "", "tsv", out string content));
+                Assert.Contains("张三", content);
+                Assert.Contains("25", content);
+            }
+            finally
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Word 写入/读取往返
+        /// </summary>
+        [Fact]
+        public void DocxBrickWriteReadRoundTrip()
+        {
+            string path = Path.Combine(Path.GetTempPath(), "mau-docx-"
+                + Guid.NewGuid().ToString("N") + ".docx");
+            try
+            {
+                Assert.True(DocxBrick.Write(path, "第一段\n第二段", out string result));
+                Assert.Contains("写入成功", result);
+                Assert.True(DocxBrick.Read(path, out string content));
+                Assert.Contains("第一段", content);
+                Assert.Contains("第二段", content);
+            }
+            finally
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+        }
+    }

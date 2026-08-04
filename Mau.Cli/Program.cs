@@ -25,6 +25,12 @@ namespace Mau.Cli
             Mau.Bricks.BoxBrickRegistration.RegisterAll();
             Mau.Bricks.TextBrickRegistration.RegisterAll();
             Mau.Bricks.ShellBrickRegistration.RegisterAll();
+            Mau.Bricks.LlmBrickRegistration.RegisterAll();
+            Mau.Bricks.ContextBrickRegistration.RegisterAll();
+            Mau.Bricks.ApprovalBrickRegistration.RegisterAll();
+            Mau.Bricks.ExcelBrickRegistration.RegisterAll();
+            Mau.Bricks.DocxBrickRegistration.RegisterAll();
+            Mau.Bricks.LogBrickRegistration.RegisterAll();
 
             // [段2] 命令路由
             if (args.Length == 0)
