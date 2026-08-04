@@ -39,7 +39,7 @@ namespace Mau.Translator
         /// <param name="sourceText">Mau 源文本</param>
         /// <returns>解析结果</returns>
         public static ParseResult Parse(string sourceText)
-        {
+{
             ParseResult result = new ParseResult();
             MauDocument doc = result.Document;
             List<MauDiagnostic> diags = result.Diagnostics;
@@ -48,6 +48,9 @@ namespace Mau.Translator
             bool headerDone = false;
             bool inPropositionBlock = false;
             IrTransition? currentTransition = null;
+            IrResource? currentResource = null;
+            IrChannel? currentChannel = null;
+            IrComposition? currentComposition = null;
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -76,7 +79,6 @@ namespace Mau.Translator
                     }
                     diags.Add(new MauDiagnostic("E101", lineNo, "缺少文件头版本声明（Mau <版本>）"));
                     headerDone = true;
-                    // 不跳过本行——块入口（命题:/变迁）仍按正常流程解析
                 }
 
                 // [段3] 基座声明
@@ -91,6 +93,9 @@ namespace Mau.Translator
                 {
                     inPropositionBlock = true;
                     currentTransition = null;
+                    currentResource = null;
+                    currentChannel = null;
+                    currentComposition = null;
                     continue;
                 }
 
@@ -98,6 +103,9 @@ namespace Mau.Translator
                 if (trimmed.StartsWith("变迁 "))
                 {
                     inPropositionBlock = false;
+                    currentResource = null;
+                    currentChannel = null;
+                    currentComposition = null;
                     string rest = trimmed.Substring(3).Trim();
                     string name = rest.EndsWith(":") ? rest.Substring(0, rest.Length - 1) : rest;
                     name = name.Trim();
@@ -108,6 +116,66 @@ namespace Mau.Translator
                     }
                     currentTransition = new IrTransition(name, lineNo);
                     doc.Transitions.Add(currentTransition);
+                    continue;
+                }
+
+                // [段5b] 资源块入口
+                if (trimmed.StartsWith("资源 "))
+                {
+                    inPropositionBlock = false;
+                    currentTransition = null;
+                    currentChannel = null;
+                    currentComposition = null;
+                    string rest = trimmed.Substring(3).Trim();
+                    string name = rest.EndsWith(":") ? rest.Substring(0, rest.Length - 1) : rest;
+                    name = name.Trim();
+                    if (name.Length == 0)
+                    {
+                        diags.Add(new MauDiagnostic("E120", lineNo, "资源名缺失"));
+                        name = "R_Unknown";
+                    }
+                    currentResource = new IrResource(name, lineNo);
+                    doc.Resources.Add(currentResource);
+                    continue;
+                }
+
+                // [段5c] 通道块入口
+                if (trimmed.StartsWith("通道 "))
+                {
+                    inPropositionBlock = false;
+                    currentTransition = null;
+                    currentResource = null;
+                    currentComposition = null;
+                    string rest = trimmed.Substring(3).Trim();
+                    string name = rest.EndsWith(":") ? rest.Substring(0, rest.Length - 1) : rest;
+                    name = name.Trim();
+                    if (name.Length == 0)
+                    {
+                        diags.Add(new MauDiagnostic("E130", lineNo, "通道名缺失"));
+                        name = "C_Unknown";
+                    }
+                    currentChannel = new IrChannel(name, lineNo);
+                    doc.Channels.Add(currentChannel);
+                    continue;
+                }
+
+                // [段5d] 组合块入口
+                if (trimmed.StartsWith("组合 "))
+                {
+                    inPropositionBlock = false;
+                    currentTransition = null;
+                    currentResource = null;
+                    currentChannel = null;
+                    string rest = trimmed.Substring(3).Trim();
+                    string name = rest.EndsWith(":") ? rest.Substring(0, rest.Length - 1) : rest;
+                    name = name.Trim();
+                    if (name.Length == 0)
+                    {
+                        diags.Add(new MauDiagnostic("E140", lineNo, "组合名缺失"));
+                        name = "FL_Unknown";
+                    }
+                    currentComposition = new IrComposition(name, lineNo);
+                    doc.Compositions.Add(currentComposition);
                     continue;
                 }
 
@@ -125,13 +193,119 @@ namespace Mau.Translator
                     continue;
                 }
 
+                // [段7b] 资源块内的字段行
+                if (currentResource != null)
+                {
+                    if (trimmed == "独占")
+                    {
+                        currentResource.Kind = "独占";
+                    }
+                    else if (trimmed.StartsWith("配额:"))
+                    {
+                        currentResource.Kind = "配额";
+                        string quotaText = trimmed.Substring(3).Trim();
+                        long quota;
+                        if (long.TryParse(quotaText, out quota) && quota >= 0)
+                        {
+                            currentResource.Quota = quota;
+                        }
+                        else
+                        {
+                            diags.Add(new MauDiagnostic("E121", lineNo, "配额值非法——需要非负整数: " + quotaText));
+                        }
+                    }
+                    else
+                    {
+                        diags.Add(new MauDiagnostic("E122", lineNo, "资源块内无法识别的字段: " + trimmed));
+                    }
+                    continue;
+                }
+
+                // [段7c] 通道块内的字段行
+                if (currentChannel != null)
+                {
+                    if (trimmed.StartsWith("源:"))
+                    {
+                        currentChannel.Source = trimmed.Substring(2).Trim();
+                    }
+                    else if (trimmed.StartsWith("目标:"))
+                    {
+                        currentChannel.Target = trimmed.Substring(3).Trim();
+                    }
+                    else if (trimmed.StartsWith("类型:"))
+                    {
+                        currentChannel.ChannelType = trimmed.Substring(3).Trim();
+                    }
+                    else
+                    {
+                        diags.Add(new MauDiagnostic("E131", lineNo, "通道块内无法识别的字段: " + trimmed));
+                    }
+                    continue;
+                }
+
+                // [段7d] 组合块内的字段行
+                if (currentComposition != null)
+                {
+                    if (trimmed.StartsWith("序列:"))
+                    {
+                        string val = trimmed.Substring(3).Trim();
+                        string[] items = val.Split(',');
+                        for (int s = 0; s < items.Length; s++)
+                        {
+                            string item = items[s].Trim();
+                            if (item.Length > 0)
+                            {
+                                currentComposition.Sequence.Add(item);
+                            }
+                        }
+                    }
+                    else if (trimmed.StartsWith("并行:"))
+                    {
+                        string val = trimmed.Substring(3).Trim();
+                        string[] items = val.Split(',');
+                        for (int p = 0; p < items.Length; p++)
+                        {
+                            string item = items[p].Trim();
+                            if (item.Length > 0)
+                            {
+                                currentComposition.Parallel.Add(item);
+                            }
+                        }
+                    }
+                    else if (trimmed.StartsWith("选择:"))
+                    {
+                        currentComposition.Choice = trimmed.Substring(3).Trim();
+                    }
+                    else if (trimmed.StartsWith("重试:"))
+                    {
+                        string retryText = trimmed.Substring(3).Trim();
+                        long retry;
+                        if (long.TryParse(retryText, out retry) && retry >= 0)
+                        {
+                            currentComposition.Retry = retry;
+                        }
+                        else
+                        {
+                            diags.Add(new MauDiagnostic("E141", lineNo, "重试次数非法——需要非负整数: " + retryText));
+                        }
+                    }
+                    else if (trimmed.StartsWith("汇合:"))
+                    {
+                        currentComposition.Merge = trimmed.Substring(3).Trim();
+                    }
+                    else
+                    {
+                        diags.Add(new MauDiagnostic("E142", lineNo, "组合块内无法识别的字段: " + trimmed));
+                    }
+                    continue;
+                }
+
                 // [段8] 无法识别
                 diags.Add(new MauDiagnostic("E103", lineNo, "无法识别的行: " + trimmed));
             }
 
             return result;
         }
-
         /// <summary>
         /// 解析命题行——P_Name 类型
         /// </summary>

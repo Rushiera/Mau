@@ -190,6 +190,147 @@ namespace Mau.Translator
     }
 
     /// <summary>
+    /// 资源——IR 节点（独占/配额）
+    /// </summary>
+    public sealed class IrResource
+    {
+        /// <summary>
+        /// 资源名——R_ 前缀
+        /// </summary>
+        public string Name;
+
+        /// <summary>
+        /// 资源类型——独占/配额
+        /// </summary>
+        public string Kind;
+
+        /// <summary>
+        /// 配额数——Kind=配额时有效，默认0
+        /// </summary>
+        public long Quota;
+
+        /// <summary>
+        /// 声明行号——诊断定位
+        /// </summary>
+        public int Line;
+
+        /// <summary>
+        /// 构造资源
+        /// </summary>
+        /// <param name="name">资源名</param>
+        /// <param name="line">声明行号</param>
+        public IrResource(string name, int line)
+        {
+            Name = name;
+            Kind = "独占";
+            Quota = 0;
+            Line = line;
+        }
+    }
+
+    /// <summary>
+    /// 通道——IR 节点（六类型）
+    /// </summary>
+    public sealed class IrChannel
+    {
+        /// <summary>
+        /// 通道名——C_ 前缀
+        /// </summary>
+        public string Name;
+
+        /// <summary>
+        /// 数据源声明
+        /// </summary>
+        public string Source;
+
+        /// <summary>
+        /// 数据目标声明
+        /// </summary>
+        public string Target;
+
+        /// <summary>
+        /// 通道类型——直连/inbox/工单/命令/快照/跨进程
+        /// </summary>
+        public string ChannelType;
+
+        /// <summary>
+        /// 声明行号——诊断定位
+        /// </summary>
+        public int Line;
+
+        /// <summary>
+        /// 构造通道
+        /// </summary>
+        /// <param name="name">通道名</param>
+        /// <param name="line">声明行号</param>
+        public IrChannel(string name, int line)
+        {
+            Name = name;
+            Source = "";
+            Target = "";
+            ChannelType = "直连";
+            Line = line;
+        }
+    }
+
+    /// <summary>
+    /// 组合——IR 节点（序列/并行/选择/重试）
+    /// </summary>
+    public sealed class IrComposition
+    {
+        /// <summary>
+        /// 组合名——FL_ 前缀
+        /// </summary>
+        public string Name;
+
+        /// <summary>
+        /// 序列变迁名列表
+        /// </summary>
+        public List<string> Sequence;
+
+        /// <summary>
+        /// 并行变迁名列表
+        /// </summary>
+        public List<string> Parallel;
+
+        /// <summary>
+        /// 选择分支——T_A → T_B | T_C
+        /// </summary>
+        public string Choice;
+
+        /// <summary>
+        /// 重试次数——0=不重试
+        /// </summary>
+        public long Retry;
+
+        /// <summary>
+        /// 汇合命题——A / B 互斥
+        /// </summary>
+        public string Merge;
+
+        /// <summary>
+        /// 声明行号——诊断定位
+        /// </summary>
+        public int Line;
+
+        /// <summary>
+        /// 构造组合
+        /// </summary>
+        /// <param name="name">组合名</param>
+        /// <param name="line">声明行号</param>
+        public IrComposition(string name, int line)
+        {
+            Name = name;
+            Sequence = new List<string>();
+            Parallel = new List<string>();
+            Choice = "";
+            Retry = 0;
+            Merge = "";
+            Line = line;
+        }
+    }
+
+    /// <summary>
     /// Mau 文档——解析产物，即 IR 图（第一期 AST 与 IR 合一）
     /// </summary>
     public sealed class MauDocument
@@ -213,7 +354,20 @@ namespace Mau.Translator
         /// 变迁表
         /// </summary>
         public List<IrTransition> Transitions;
+        /// <summary>
+        /// 资源表
+        /// </summary>
+        public List<IrResource> Resources;
 
+        /// <summary>
+        /// 通道表
+        /// </summary>
+        public List<IrChannel> Channels;
+
+        /// <summary>
+        /// 组合表
+        /// </summary>
+        public List<IrComposition> Compositions;
         /// <summary>
         /// 构造文档
         /// </summary>
@@ -223,6 +377,9 @@ namespace Mau.Translator
             BaseName = "";
             Propositions = new List<IrProposition>();
             Transitions = new List<IrTransition>();
+            Resources = new List<IrResource>();
+            Channels = new List<IrChannel>();
+            Compositions = new List<IrComposition>();
         }
 
         /// <summary>
@@ -254,6 +411,57 @@ namespace Mau.Translator
                 if (Transitions[i].Name == name)
                 {
                     return Transitions[i];
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 按名查资源
+        /// </summary>
+        /// <param name="name">资源名</param>
+        /// <returns>资源或空</returns>
+        public IrResource? FindResource(string name)
+        {
+            for (int i = 0; i < Resources.Count; i++)
+            {
+                if (Resources[i].Name == name)
+                {
+                    return Resources[i];
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 按名查通道
+        /// </summary>
+        /// <param name="name">通道名</param>
+        /// <returns>通道或空</returns>
+        public IrChannel? FindChannel(string name)
+        {
+            for (int i = 0; i < Channels.Count; i++)
+            {
+                if (Channels[i].Name == name)
+                {
+                    return Channels[i];
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 按名查组合
+        /// </summary>
+        /// <param name="name">组合名</param>
+        /// <returns>组合或空</returns>
+        public IrComposition? FindComposition(string name)
+        {
+            for (int i = 0; i < Compositions.Count; i++)
+            {
+                if (Compositions[i].Name == name)
+                {
+                    return Compositions[i];
                 }
             }
             return null;

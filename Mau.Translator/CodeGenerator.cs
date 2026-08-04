@@ -27,6 +27,7 @@ namespace Mau.Translator
             sb.AppendLine("// 基座: " + (doc.BaseName.Length > 0 ? doc.BaseName : "Mau.Runtime/v0.1"));
             sb.AppendLine();
             sb.AppendLine("using Mau.Runtime;");
+            sb.AppendLine("using System.Threading.Tasks;");
             sb.AppendLine();
             sb.AppendLine("namespace Mau.Generated.Flows");
             sb.AppendLine("{");
@@ -50,12 +51,18 @@ namespace Mau.Translator
             }
 
             // [段4] 动作参数字段——参数名 = 端口名
+            HashSet<string> _paramFields = new HashSet<string>();
             for (int i = 0; i < doc.Transitions.Count; i++)
             {
                 IrTransition t = doc.Transitions[i];
                 for (int p = 0; p < t.Params.Count; p++)
                 {
                     string fieldName = "_" + t.Params[p].PortName;
+                    if (_paramFields.Contains(fieldName))
+                    {
+                        continue;
+                    }
+                    _paramFields.Add(fieldName);
                     string typeName = PortTypeName(doc, t, t.Params[p].PortName);
                     string initializer = IsReferenceType(doc, t, t.Params[p].PortName) ? " = null!;" : ";";
                     sb.AppendLine("        /// <summary>");
@@ -80,12 +87,35 @@ namespace Mau.Translator
                 }
             }
 
+            // [段5b] Inbox 字段——worker 线程 + inbox 汇合的变迁
+            for (int i = 0; i < doc.Transitions.Count; i++)
+            {
+                IrTransition t = doc.Transitions[i];
+                if (t.Thread == "worker" && t.Join == "inbox")
+                {
+                    sb.AppendLine("        /// <summary>");
+                    sb.AppendLine("        /// 变迁 " + t.Name + " 的 Inbox 双缓冲——后台结果回投");
+                    sb.AppendLine("        /// </summary>");
+                    sb.AppendLine("        private Inbox<bool> " + t.Name + "_Inbox;");
+                    sb.AppendLine();
+                }
+            }
+
             // [段6] 构造——Cube 初始化
             bool hasCube = HasCube(doc);
-            if (hasCube)
+            bool hasInbox = false;
+            for (int i = 0; i < doc.Transitions.Count; i++)
+            {
+                if (doc.Transitions[i].Thread == "worker" && doc.Transitions[i].Join == "inbox")
+                {
+                    hasInbox = true;
+                    break;
+                }
+            }
+            if (hasCube || hasInbox)
             {
                 sb.AppendLine("        /// <summary>");
-                sb.AppendLine("        /// 构造：初始化时限 Cube");
+                sb.AppendLine("        /// 构造：初始化 Cube 与 Inbox");
                 sb.AppendLine("        /// </summary>");
                 sb.AppendLine("        public " + className + "()");
                 sb.AppendLine("        {");
@@ -95,6 +125,14 @@ namespace Mau.Translator
                     if (t.HasTimeout && t.TimeoutMode != "None")
                     {
                         sb.AppendLine("            " + t.Name + "_Cube = new Cube(" + CubeInit(t) + ");");
+                    }
+                }
+                for (int i = 0; i < doc.Transitions.Count; i++)
+                {
+                    IrTransition t = doc.Transitions[i];
+                    if (t.Thread == "worker" && t.Join == "inbox")
+                    {
+                        sb.AppendLine("            " + t.Name + "_Inbox = new Inbox<bool>();");
                     }
                 }
                 sb.AppendLine("        }");
@@ -114,6 +152,52 @@ namespace Mau.Translator
 
             // [段8] Tick 方法
             AppendTickMethod(sb, doc, className);
+
+            // [段8b] 组合声明——文档化序列/并行/选择/重试
+            for (int i = 0; i < doc.Compositions.Count; i++)
+            {
+                IrComposition c = doc.Compositions[i];
+                sb.AppendLine("        // 组合 " + c.Name + ":");
+                if (c.Sequence.Count > 0)
+                {
+                    sb.Append("        //   序列: ");
+                    for (int s = 0; s < c.Sequence.Count; s++)
+                    {
+                        if (s > 0)
+                        {
+                            sb.Append(", ");
+                        }
+                        sb.Append(c.Sequence[s]);
+                    }
+                    sb.AppendLine();
+                }
+                if (c.Parallel.Count > 0)
+                {
+                    sb.Append("        //   并行: ");
+                    for (int p = 0; p < c.Parallel.Count; p++)
+                    {
+                        if (p > 0)
+                        {
+                            sb.Append(", ");
+                        }
+                        sb.Append(c.Parallel[p]);
+                    }
+                    sb.AppendLine();
+                }
+                if (c.Choice.Length > 0)
+                {
+                    sb.AppendLine("        //   选择: " + c.Choice);
+                }
+                if (c.Retry > 0)
+                {
+                    sb.AppendLine("        //   重试: " + c.Retry);
+                }
+                if (c.Merge.Length > 0)
+                {
+                    sb.AppendLine("        //   汇合: " + c.Merge);
+                }
+                sb.AppendLine();
+            }
 
             // [段9] 查询方法——每个事实命题一个 IsXxx
             for (int i = 0; i < doc.Propositions.Count; i++)
@@ -439,11 +523,96 @@ namespace Mau.Translator
         /// <param name="doc">文档</param>
         /// <param name="t">变迁</param>
         private static void AppendTransitionBlock(StringBuilder sb, MauDocument doc, IrTransition t)
-        {
+{
             bool hasCube = t.HasTimeout && t.TimeoutMode != "None";
             string cubeName = t.Name + "_Cube";
+            bool isWorkerInbox = t.Thread == "worker" && t.Join == "inbox";
 
-            // [段A] 前置检查块
+            if (isWorkerInbox)
+            {
+                string inboxName = t.Name + "_Inbox";
+
+                // [段A] worker+inbox 前置检查 + 启动后台任务
+                sb.AppendLine("            // [" + t.Name + "] worker+inbox 前置检查");
+                sb.AppendLine("            if (" + PreconditionText(t, hasCube, cubeName) + ")");
+                sb.AppendLine("            {");
+                for (int p = 0; p < t.Preconditions.Count; p++)
+                {
+                    IrProposition? prop = doc.FindProposition(t.Preconditions[p]);
+                    if (prop != null && prop.Kind == PropositionKind.Signal)
+                    {
+                        sb.AppendLine("                // 信号消费");
+                        sb.AppendLine("                " + prop.Name + " = false;");
+                    }
+                }
+                if (hasCube)
+                {
+                    sb.AppendLine("                " + cubeName + ".Start();");
+                }
+                sb.AppendLine("                // 启动后台任务——积木在 worker 线程执行，结果回投 inbox");
+                sb.AppendLine("                var inbox = " + inboxName + ";");
+                sb.AppendLine("                Task.Run(() =>");
+                sb.AppendLine("                {");
+                sb.AppendLine("                    bool ok = " + BrickCallText(doc, t) + ";");
+                sb.AppendLine("                    inbox.Enqueue(ok);");
+                sb.AppendLine("                });");
+                sb.AppendLine("            }");
+                sb.AppendLine();
+
+                // [段B] inbox 排空——主线程处理后台结果
+                sb.AppendLine("            // [" + t.Name + "] inbox 排空");
+                sb.AppendLine("            " + inboxName + ".Drain(ok =>");
+                sb.AppendLine("            {");
+                if (hasCube)
+                {
+                    sb.AppendLine("                if (!" + cubeName + ".IsRunning())");
+                    sb.AppendLine("                {");
+                    sb.AppendLine("                    return;");
+                    sb.AppendLine("                }");
+                }
+                sb.AppendLine("                if (ok)");
+                sb.AppendLine("                {");
+                for (int p = 0; p < t.PostOk.Count; p++)
+                {
+                    sb.AppendLine("                    " + t.PostOk[p] + " = true;");
+                }
+                sb.AppendLine("                }");
+                sb.AppendLine("                else");
+                sb.AppendLine("                {");
+                for (int p = 0; p < t.PostError.Count; p++)
+                {
+                    sb.AppendLine("                    " + t.PostError[p] + " = true;");
+                }
+                sb.AppendLine("                }");
+                if (hasCube)
+                {
+                    sb.AppendLine("                " + cubeName + ".Complete();");
+                }
+                sb.AppendLine("            });");
+
+                // [段C] 时限检查——与主线程变迁相同
+                if (hasCube)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("            // [" + t.Name + "] 时限检查");
+                    sb.AppendLine("            if (" + cubeName + ".IsRunning())");
+                    sb.AppendLine("            {");
+                    sb.AppendLine("                " + cubeName + ".TickFrame();");
+                    sb.AppendLine("                if (" + cubeName + ".IsExpired())");
+                    sb.AppendLine("                {");
+                    for (int p = 0; p < t.PostError.Count; p++)
+                    {
+                        sb.AppendLine("                    // 超时 → 错误后置");
+                        sb.AppendLine("                    " + t.PostError[p] + " = true;");
+                    }
+                    sb.AppendLine("                    " + cubeName + ".Complete();");
+                    sb.AppendLine("                }");
+                    sb.AppendLine("            }");
+                }
+                return;
+            }
+
+            // [段A] 前置检查块（主线程同步变迁——原有逻辑）
             sb.AppendLine("            // [" + t.Name + "] 前置检查");
             sb.AppendLine("            if (" + PreconditionText(t, hasCube, cubeName) + ")");
             sb.AppendLine("            {");
@@ -515,7 +684,6 @@ namespace Mau.Translator
                 sb.AppendLine("            }");
             }
         }
-
         /// <summary>
         /// 前置检查条件文本
         /// </summary>

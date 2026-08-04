@@ -1,0 +1,35 @@
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题:
+  P_Start   信号
+  P_Step1Done  事实
+  P_Step2Done  事实
+  P_Step3Done  事实
+  P_Failed  事实
+
+变迁 T_Step1:
+  前置: P_Start
+  动作: file.convert
+  参数: input, output
+  时限: 100帧
+  后置: P_Step1Done / P_Failed
+
+变迁 T_Step2:
+  前置: P_Step1Done
+  动作: file.convert
+  参数: input, output
+  时限: 100帧
+  后置: P_Step2Done / P_Failed
+
+变迁 T_Step3:
+  前置: P_Step2Done
+  动作: file.convert
+  参数: input, output
+  时限: 100帧
+  后置: P_Step3Done / P_Failed
+
+组合 FL_Main:
+  序列: T_Step1, T_Step2, T_Step3
+  重试: 2
+  汇合: P_Step3Done / P_Failed

@@ -1,0 +1,16 @@
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题:
+  P_Input   信号
+  P_Done    事实
+  P_Failed  事实
+
+变迁 T_WorkerConvert:
+  前置: P_Input
+  动作: file.convert
+  参数: input, output
+  时限: 300帧
+  线程: worker
+  汇合: inbox
+  后置: P_Done / P_Failed

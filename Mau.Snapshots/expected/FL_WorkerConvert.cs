@@ -1,5 +1,5 @@
 // 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
-// 流程: FileConvert
+// 流程: WorkerConvert
 // 基座: Mau.Runtime/v0.1
 
 using Mau.Runtime;
@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 namespace Mau.Generated.Flows
 {
     /// <summary>
-    /// FileConvert 流程——由 Mau 声明生成
+    /// WorkerConvert 流程——由 Mau 声明生成
     /// </summary>
-    public sealed class FL_FileConvert
+    public sealed class FL_WorkerConvert
     {
         /// <summary>
         /// 命题 P_Input：信号，消费即清除
@@ -28,26 +28,32 @@ namespace Mau.Generated.Flows
         private bool P_Failed;
 
         /// <summary>
-        /// 变迁 T_Convert 的动作参数——input
+        /// 变迁 T_WorkerConvert 的动作参数——input
         /// </summary>
         private string _input = null!;
 
         /// <summary>
-        /// 变迁 T_Convert 的动作参数——output
+        /// 变迁 T_WorkerConvert 的动作参数——output
         /// </summary>
         private string _output = null!;
 
         /// <summary>
-        /// 变迁 T_Convert 的时限 Cube（300 帧有限模式）
+        /// 变迁 T_WorkerConvert 的时限 Cube（300 帧有限模式）
         /// </summary>
-        private Cube T_Convert_Cube;
+        private Cube T_WorkerConvert_Cube;
+
+        /// <summary>
+        /// 变迁 T_WorkerConvert 的 Inbox 双缓冲——后台结果回投
+        /// </summary>
+        private Inbox<bool> T_WorkerConvert_Inbox;
 
         /// <summary>
         /// 构造：初始化 Cube 与 Inbox
         /// </summary>
-        public FL_FileConvert()
+        public FL_WorkerConvert()
         {
-            T_Convert_Cube = new Cube(300);
+            T_WorkerConvert_Cube = new Cube(300);
+            T_WorkerConvert_Inbox = new Inbox<bool>();
         }
 
         /// <summary>
@@ -67,38 +73,48 @@ namespace Mau.Generated.Flows
         /// </summary>
         public void Tick()
         {
-            // [T_Convert] 前置检查
-            if (P_Input && T_Convert_Cube.IsIdle())
+            // [T_WorkerConvert] worker+inbox 前置检查
+            if (P_Input && T_WorkerConvert_Cube.IsIdle())
             {
                 // 信号消费
                 P_Input = false;
-                T_Convert_Cube.Start();
-                // 执行动作（积木调用）
-                bool ok = Mau.Bricks.FileBrick.Convert(_input, _output);
+                T_WorkerConvert_Cube.Start();
+                // 启动后台任务——积木在 worker 线程执行，结果回投 inbox
+                var inbox = T_WorkerConvert_Inbox;
+                Task.Run(() =>
+                {
+                    bool ok = Mau.Bricks.FileBrick.Convert(_input, _output);
+                    inbox.Enqueue(ok);
+                });
+            }
+
+            // [T_WorkerConvert] inbox 排空
+            T_WorkerConvert_Inbox.Drain(ok =>
+            {
+                if (!T_WorkerConvert_Cube.IsRunning())
+                {
+                    return;
+                }
                 if (ok)
                 {
-                    // 正常后置注册
                     P_Done = true;
                 }
                 else
                 {
-                    // 错误后置注册（互斥）
                     P_Failed = true;
                 }
+                T_WorkerConvert_Cube.Complete();
+            });
 
-                // 同步积木当帧完成
-                T_Convert_Cube.Complete();
-            }
-
-            // [T_Convert] 时限检查
-            if (T_Convert_Cube.IsRunning())
+            // [T_WorkerConvert] 时限检查
+            if (T_WorkerConvert_Cube.IsRunning())
             {
-                T_Convert_Cube.TickFrame();
-                if (T_Convert_Cube.IsExpired())
+                T_WorkerConvert_Cube.TickFrame();
+                if (T_WorkerConvert_Cube.IsExpired())
                 {
                     // 超时 → 错误后置
                     P_Failed = true;
-                    T_Convert_Cube.Complete();
+                    T_WorkerConvert_Cube.Complete();
                 }
             }
         }

@@ -92,6 +92,78 @@ namespace Mau.Cli
                 return 1;
             }
 
+            // worker_convert 黄金文件对比
+            string caseFile2 = Path.Combine(root, "Mau.Snapshots", "cases", "worker_convert.mau");
+            string expectedFile2 = Path.Combine(root, "Mau.Snapshots", "expected", "FL_WorkerConvert.cs");
+            string source2;
+            try
+            {
+                source2 = File.ReadAllText(caseFile2);
+            }
+            catch
+            {
+                Console.WriteLine("FAIL: 黄金文件源缺失——" + caseFile2);
+                return 1;
+            }
+            CompileResult result2 = MauCompiler.Compile(source2, "WorkerConvert");
+            if (!result2.Success)
+            {
+                Console.WriteLine("FAIL: 黄金文件源编译失败");
+                return 1;
+            }
+            string expected2;
+            try
+            {
+                expected2 = File.ReadAllText(expectedFile2).Replace("\r\n", "\n");
+            }
+            catch
+            {
+                Console.WriteLine("FAIL: 黄金文件缺失——" + expectedFile2);
+                return 1;
+            }
+            string actual2 = result2.GeneratedCode.Replace("\r\n", "\n");
+            if (expected2 != actual2)
+            {
+                Console.WriteLine("FAIL: 生成漂移——黄金文件不一致 (worker_convert)");
+                return 1;
+            }
+
+            // sequence_flow 黄金文件对比
+            string caseFile3 = Path.Combine(root, "Mau.Snapshots", "cases", "sequence_flow.mau");
+            string expectedFile3 = Path.Combine(root, "Mau.Snapshots", "expected", "FL_SequenceFlow.cs");
+            string source3;
+            try
+            {
+                source3 = File.ReadAllText(caseFile3);
+            }
+            catch
+            {
+                Console.WriteLine("FAIL: 黄金文件源缺失——" + caseFile3);
+                return 1;
+            }
+            CompileResult result3 = MauCompiler.Compile(source3, "SequenceFlow");
+            if (!result3.Success)
+            {
+                Console.WriteLine("FAIL: 黄金文件源编译失败");
+                return 1;
+            }
+            string expected3;
+            try
+            {
+                expected3 = File.ReadAllText(expectedFile3).Replace("\r\n", "\n");
+            }
+            catch
+            {
+                Console.WriteLine("FAIL: 黄金文件缺失——" + expectedFile3);
+                return 1;
+            }
+            string actual3 = result3.GeneratedCode.Replace("\r\n", "\n");
+            if (expected3 != actual3)
+            {
+                Console.WriteLine("FAIL: 生成漂移——黄金文件不一致 (sequence_flow)");
+                return 1;
+            }
+
             Console.WriteLine("MAU_CHECKS_OK");
             return 0;
         }

@@ -139,6 +139,76 @@ namespace Mau.Translator.Tests
         }
 
         /// <summary>
+        /// 非法时限模式——E006（绕过解析器，手工构造非法值）
+        /// </summary>
+        [Fact]
+        public void BadTimeoutModeReportsE006()
+        {
+            MauDocument doc = new MauDocument();
+            IrProposition p = new IrProposition("P_X", PropositionKind.Signal, 1);
+            doc.Propositions.Add(p);
+            IrTransition t = new IrTransition("T_X", 2);
+            t.HasTimeout = true;
+            t.TimeoutMode = "Bogus";
+            t.TimeoutFrames = 0;
+            t.BrickName = "file.convert";
+            t.Preconditions.Add("P_X");
+            t.PostOk.Add("P_X");
+            doc.Transitions.Add(t);
+
+            var diags = MauValidator.Validate(doc);
+            Assert.Contains(diags, d => d.Code == "E006");
+        }
+
+        /// <summary>
+        /// 配额值非法——E007（配额为0）
+        /// </summary>
+        [Fact]
+        public void ZeroQuotaReportsE007()
+        {
+            string source = "Mau 0.1\n" +
+                "命题:\n  P_X 信号\n" +
+                "变迁 T_X:\n  前置: P_X\n  动作: file.convert\n  后置: P_X\n" +
+                "资源 R_Pool:\n  配额: 0\n";
+            MauDocument doc = ParseOk(source);
+
+            var diags = MauValidator.Validate(doc);
+            Assert.Contains(diags, d => d.Code == "E007");
+        }
+
+        /// <summary>
+        /// 组合引用未声明变迁——E009
+        /// </summary>
+        [Fact]
+        public void CompositionMissingTransitionReportsE009()
+        {
+            string source = "Mau 0.1\n" +
+                "命题:\n  P_X 信号\n" +
+                "变迁 T_X:\n  前置: P_X\n  动作: file.convert\n  后置: P_X\n" +
+                "组合 FL_Main:\n  序列: T_Ghost\n";
+            MauDocument doc = ParseOk(source);
+
+            var diags = MauValidator.Validate(doc);
+            Assert.Contains(diags, d => d.Code == "E009");
+        }
+
+        /// <summary>
+        /// 非法通道类型——E011
+        /// </summary>
+        [Fact]
+        public void BadChannelTypeReportsE011()
+        {
+            string source = "Mau 0.1\n" +
+                "命题:\n  P_X 信号\n" +
+                "变迁 T_X:\n  前置: P_X\n  动作: file.convert\n  后置: P_X\n" +
+                "通道 C_Link:\n  源: a.b\n  目标: c.d\n  类型: 魔法\n";
+            MauDocument doc = ParseOk(source);
+
+            var diags = MauValidator.Validate(doc);
+            Assert.Contains(diags, d => d.Code == "E011");
+        }
+
+        /// <summary>
         /// 解析并断言无语法错误
         /// </summary>
         /// <param name="source">源文本</param>

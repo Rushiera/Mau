@@ -14,7 +14,7 @@ namespace Mau.Translator
         /// <param name="doc">解析后的文档</param>
         /// <returns>诊断列表——空表示全部通过</returns>
         public static List<MauDiagnostic> Validate(MauDocument doc)
-        {
+{
             List<MauDiagnostic> diags = new List<MauDiagnostic>();
 
             // [段1] 第 1 项：积木存在性——每个变迁的动作必须在注册表
@@ -115,7 +115,40 @@ namespace Mau.Translator
                 }
             }
 
-            // [段6] 第 8 项：线程/汇合合法性——worker 线程变迁必须声明 inbox 汇合
+            // [段5b] 第 6 项：时限格式防线——解析层已做基本校验，此处二次防线
+            for (int i = 0; i < doc.Transitions.Count; i++)
+            {
+                IrTransition t = doc.Transitions[i];
+                if (t.HasTimeout)
+                {
+                    if (t.TimeoutMode == "Total" || t.TimeoutMode == "Idle")
+                    {
+                        if (t.TimeoutFrames <= 0)
+                        {
+                            diags.Add(new MauDiagnostic("E006", t.Line, "时限帧数必须为正整数: " + t.TimeoutFrames));
+                        }
+                    }
+                    else if (t.TimeoutMode != "None")
+                    {
+                        diags.Add(new MauDiagnostic("E006", t.Line, "时限模式非法——需要 Total/Idle/None: " + t.TimeoutMode));
+                    }
+                }
+            }
+
+            // [段6] 第 7 项：配额合法性——配额资源必须有正整数配额值
+            for (int i = 0; i < doc.Resources.Count; i++)
+            {
+                IrResource r = doc.Resources[i];
+                if (r.Kind == "配额")
+                {
+                    if (r.Quota <= 0)
+                    {
+                        diags.Add(new MauDiagnostic("E007", r.Line, "配额资源 " + r.Name + " 的配额值必须为正整数: " + r.Quota));
+                    }
+                }
+            }
+
+            // [段7] 第 8 项：线程/汇合合法性——worker 线程变迁必须声明 inbox 汇合
             for (int i = 0; i < doc.Transitions.Count; i++)
             {
                 IrTransition t = doc.Transitions[i];
@@ -125,16 +158,54 @@ namespace Mau.Translator
                 }
             }
 
-            // [段7] 第 10 项：基座兼容——基座声明必须指向 Mau.Runtime
+            // [段8] 第 9 项：组合引用存在——组合中引用的变迁必须已声明
+            string[] validChannelTypes = new string[] { "直连", "inbox", "工单", "命令", "快照", "跨进程" };
+            for (int i = 0; i < doc.Compositions.Count; i++)
+            {
+                IrComposition comp = doc.Compositions[i];
+                for (int s = 0; s < comp.Sequence.Count; s++)
+                {
+                    if (doc.FindTransition(comp.Sequence[s]) == null)
+                    {
+                        diags.Add(new MauDiagnostic("E009", comp.Line, "组合 " + comp.Name + " 序列引用了未声明的变迁: " + comp.Sequence[s]));
+                    }
+                }
+                for (int p = 0; p < comp.Parallel.Count; p++)
+                {
+                    if (doc.FindTransition(comp.Parallel[p]) == null)
+                    {
+                        diags.Add(new MauDiagnostic("E009", comp.Line, "组合 " + comp.Name + " 并行引用了未声明的变迁: " + comp.Parallel[p]));
+                    }
+                }
+            }
+
+            // [段9] 第 10 项：基座兼容——基座声明必须指向 Mau.Runtime
             if (doc.BaseName.Length > 0 && !doc.BaseName.StartsWith("Mau.Runtime"))
             {
                 diags.Add(new MauDiagnostic("E010", 0, "基座声明与当前运行基座不匹配——需要 Mau.Runtime: " + doc.BaseName));
             }
 
-            // 第 4 项已做；第 6/7/9/11 项第一期无对应块（时限在解析层校验，资源/组合/通道块未实现）
+            // [段10] 第 11 项：通道类型合法——必须在六类型集合
+            for (int i = 0; i < doc.Channels.Count; i++)
+            {
+                IrChannel c = doc.Channels[i];
+                bool valid = false;
+                for (int t = 0; t < validChannelTypes.Length; t++)
+                {
+                    if (c.ChannelType == validChannelTypes[t])
+                    {
+                        valid = true;
+                        break;
+                    }
+                }
+                if (!valid)
+                {
+                    diags.Add(new MauDiagnostic("E011", c.Line, "通道类型非法——需要直连/inbox/工单/命令/快照/跨进程: " + c.ChannelType));
+                }
+            }
+
             return diags;
         }
-
         /// <summary>
         /// 检查契约是否有指定输入端口
         /// </summary>
