@@ -161,21 +161,15 @@ namespace Mau.E2E
         }
 
         /// <summary>
-        /// 确保积木注册只执行一次——BrickRegistry 同名重复注册抛异常
-        /// </summary>
-        private static bool _registered;
-
-        /// <summary>
-        /// 幂等注册标准积木
+        /// 幂等注册标准积木——注册表感知（共享注册表是唯一真相，类内标志会跨类重复注册）
         /// </summary>
         private static void EnsureBricksRegistered()
         {
-            if (_registered)
+            if (Mau.Contracts.BrickRegistry.TryGet("file.convert", out _))
             {
                 return;
             }
             StandardBrickRegistration.RegisterAll();
-            _registered = true;
         }
 
         /// <summary>

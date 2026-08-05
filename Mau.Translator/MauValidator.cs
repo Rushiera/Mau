@@ -203,6 +203,16 @@ namespace Mau.Translator
                 }
             }
 
+            // [段6b] 事实初始真拒绝——事实单调置位，初始必须假
+            for (int i = 0; i < doc.Propositions.Count; i++)
+            {
+                IrProposition p = doc.Propositions[i];
+                if (p.Kind == PropositionKind.Fact && p.Initial)
+                {
+                    diags.Add(new MauDiagnostic("E015", p.Line, "事实命题不允许初始真——单调置位，必须假: " + p.Name));
+                }
+            }
+
             // [段7] 第 8 项：线程/汇合合法性——worker 线程变迁必须声明 inbox 汇合
             for (int i = 0; i < doc.Transitions.Count; i++)
             {

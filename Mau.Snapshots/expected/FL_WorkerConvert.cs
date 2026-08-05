@@ -166,6 +166,14 @@ namespace Mau.Generated.Flows
         }
 
         /// <summary>
+        /// 重置结果：Done
+        /// </summary>
+        public void ResetDone()
+        {
+            P_Done = false;
+        }
+
+        /// <summary>
         /// 查询结果：Failed
         /// </summary>
         /// <returns>Failed成立</returns>
@@ -174,6 +182,14 @@ namespace Mau.Generated.Flows
             return P_Failed;
         }
 
+        /// <summary>
+        /// 重置结果：Failed
+        /// </summary>
+        public void ResetFailed()
+        {
+            P_Failed = false;
+        }
+
     }
 }
-// #MAU_CHECKSUM:SHA256:33556F22AB27737A9F89B6188173ACDC85759E86D87445E6CEB85F04969D5B99
+// #MAU_CHECKSUM:SHA256:00FBB4B0CBB6BB99D75B844E0BDB0587DD66D44B0750F488F3E83CA7E29D3F71

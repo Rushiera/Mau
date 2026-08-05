@@ -183,12 +183,28 @@ namespace Mau.Generated.Flows
         }
 
         /// <summary>
+        /// 重置结果：ReadDone
+        /// </summary>
+        public void ResetReadDone()
+        {
+            P_ReadDone = false;
+        }
+
+        /// <summary>
         /// 查询结果：ReadFailed
         /// </summary>
         /// <returns>ReadFailed成立</returns>
         public bool IsReadFailed()
         {
             return P_ReadFailed;
+        }
+
+        /// <summary>
+        /// 重置结果：ReadFailed
+        /// </summary>
+        public void ResetReadFailed()
+        {
+            P_ReadFailed = false;
         }
 
         /// <summary>
@@ -201,6 +217,14 @@ namespace Mau.Generated.Flows
         }
 
         /// <summary>
+        /// 重置结果：WriteDone
+        /// </summary>
+        public void ResetWriteDone()
+        {
+            P_WriteDone = false;
+        }
+
+        /// <summary>
         /// 查询结果：WriteFailed
         /// </summary>
         /// <returns>WriteFailed成立</returns>
@@ -209,6 +233,14 @@ namespace Mau.Generated.Flows
             return P_WriteFailed;
         }
 
+        /// <summary>
+        /// 重置结果：WriteFailed
+        /// </summary>
+        public void ResetWriteFailed()
+        {
+            P_WriteFailed = false;
+        }
+
     }
 }
-// #MAU_CHECKSUM:SHA256:382EA305FCFF33A2859BB498D698B7489DC7F1FD1CACA4F4CDB07B0D0A930090
+// #MAU_CHECKSUM:SHA256:9235118F980D64A5A5DFA58ED0D263C84185F5B31F8BCE104413D5964AEDCFCA

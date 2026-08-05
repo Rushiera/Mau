@@ -341,6 +341,18 @@ namespace Mau.Translator
                 sb.AppendLine("            return " + p.Name + ";");
                 sb.AppendLine("        }");
                 sb.AppendLine();
+                // 显式重置——重置: 显式（默认）生成 Reset 方法，宿主按需调用
+                if (p.Reset != "轮末")
+                {
+                    sb.AppendLine("        /// <summary>");
+                    sb.AppendLine("        /// 重置结果：" + p.Name.Substring(2));
+                    sb.AppendLine("        /// </summary>");
+                    sb.AppendLine("        public void Reset" + p.Name.Substring(2) + "()");
+                    sb.AppendLine("        {");
+                    sb.AppendLine("            " + p.Name + " = false;");
+                    sb.AppendLine("        }");
+                    sb.AppendLine();
+                }
             }
 
             // [段10] 类收尾
@@ -625,7 +637,7 @@ namespace Mau.Translator
         /// <param name="doc">文档</param>
         /// <param name="className">类名</param>
         private static void AppendTickMethod(StringBuilder sb, MauDocument doc, string className)
-        {
+{
             sb.AppendLine("        /// <summary>");
             sb.AppendLine("        /// 每帧驱动——由主 Tick 调用");
             sb.AppendLine("        /// </summary>");
@@ -643,10 +655,20 @@ namespace Mau.Translator
                 }
             }
 
+            // 轮末重置——重置: 轮末 的事实命题每帧自动清
+            for (int i = 0; i < doc.Propositions.Count; i++)
+            {
+                IrProposition p = doc.Propositions[i];
+                if (p.Kind == PropositionKind.Fact && p.Reset == "轮末")
+                {
+                    sb.AppendLine("            // 轮末重置——" + p.Name);
+                    sb.AppendLine("            " + p.Name + " = false;");
+                }
+            }
+
             sb.AppendLine("        }");
             sb.AppendLine();
         }
-
         /// <summary>
         /// 生成单个变迁的 Tick 块
         /// </summary>

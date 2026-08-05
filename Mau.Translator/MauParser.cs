@@ -51,6 +51,7 @@ namespace Mau.Translator
             IrResource? currentResource = null;
             IrChannel? currentChannel = null;
             IrComposition? currentComposition = null;
+            IrProposition? currentProposition = null;
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -110,10 +111,11 @@ namespace Mau.Translator
                     continue;
                 }
 
-                // [段4] 命题块入口
+                // [段4] 命题块入口——无名字块（多命题单行格式）
                 if (trimmed == "命题:")
                 {
                     inPropositionBlock = true;
+                    currentProposition = null;
                     currentTransition = null;
                     currentResource = null;
                     currentChannel = null;
@@ -121,10 +123,36 @@ namespace Mau.Translator
                     continue;
                 }
 
+                // [段4b] 命题块入口——带名字块（单命题字段格式）
+                if (trimmed.StartsWith("命题 "))
+                {
+                    inPropositionBlock = false;
+                    currentTransition = null;
+                    currentResource = null;
+                    currentChannel = null;
+                    currentComposition = null;
+                    string rest = trimmed.Substring(3).Trim();
+                    string name = rest.EndsWith(":") ? rest.Substring(0, rest.Length - 1) : rest;
+                    name = name.Trim();
+                    if (name.Length == 0)
+                    {
+                        diags.Add(new MauDiagnostic("E105", lineNo, "命题名缺失"));
+                        name = "P_Unknown";
+                    }
+                    if (!name.StartsWith("P_"))
+                    {
+                        diags.Add(new MauDiagnostic("E104", lineNo, "命题名必须以 P_ 前缀: " + name));
+                    }
+                    currentProposition = new IrProposition(name, PropositionKind.Condition, lineNo);
+                    doc.Propositions.Add(currentProposition);
+                    continue;
+                }
+
                 // [段5] 变迁块入口
                 if (trimmed.StartsWith("变迁 "))
                 {
                     inPropositionBlock = false;
+                    currentProposition = null;
                     currentResource = null;
                     currentChannel = null;
                     currentComposition = null;
@@ -145,6 +173,7 @@ namespace Mau.Translator
                 if (trimmed.StartsWith("资源 "))
                 {
                     inPropositionBlock = false;
+                    currentProposition = null;
                     currentTransition = null;
                     currentChannel = null;
                     currentComposition = null;
@@ -165,6 +194,7 @@ namespace Mau.Translator
                 if (trimmed.StartsWith("通道 "))
                 {
                     inPropositionBlock = false;
+                    currentProposition = null;
                     currentTransition = null;
                     currentResource = null;
                     currentComposition = null;
@@ -185,6 +215,7 @@ namespace Mau.Translator
                 if (trimmed.StartsWith("组合 "))
                 {
                     inPropositionBlock = false;
+                    currentProposition = null;
                     currentTransition = null;
                     currentResource = null;
                     currentChannel = null;
@@ -205,6 +236,56 @@ namespace Mau.Translator
                 if (inPropositionBlock)
                 {
                     ParsePropositionLine(trimmed, lineNo, doc, diags);
+                    continue;
+                }
+
+                // [段6b] 单命题块内的字段行——类型/初始/重置
+                if (currentProposition != null)
+                {
+                    if (trimmed.StartsWith("类型:"))
+                    {
+                        string typeWord = trimmed.Substring(3).Trim();
+                        if (typeWord == "条件")
+                        {
+                            currentProposition.Kind = PropositionKind.Condition;
+                        }
+                        else if (typeWord == "信号")
+                        {
+                            currentProposition.Kind = PropositionKind.Signal;
+                        }
+                        else if (typeWord == "事实")
+                        {
+                            currentProposition.Kind = PropositionKind.Fact;
+                        }
+                        else
+                        {
+                            diags.Add(new MauDiagnostic("E150", lineNo, "命题类型非法——需要 条件/信号/事实: " + typeWord));
+                        }
+                    }
+                    else if (trimmed.StartsWith("初始:"))
+                    {
+                        string initText = trimmed.Substring(3).Trim();
+                        if (initText == "真")
+                        {
+                            currentProposition.Initial = true;
+                        }
+                        else if (initText == "假")
+                        {
+                            currentProposition.Initial = false;
+                        }
+                        else
+                        {
+                            diags.Add(new MauDiagnostic("E151", lineNo, "初始值非法——需要 真/假: " + initText));
+                        }
+                    }
+                    else if (trimmed.StartsWith("重置:"))
+                    {
+                        currentProposition.Reset = trimmed.Substring(3).Trim();
+                    }
+                    else
+                    {
+                        diags.Add(new MauDiagnostic("E152", lineNo, "命题块内无法识别的字段: " + trimmed));
+                    }
                     continue;
                 }
 
