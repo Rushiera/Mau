@@ -1,4 +1,4 @@
-// inbox_consume.mau —— Inbox 消费模板
+﻿// inbox_consume.mau —— Inbox 消费模板
 // 来源：CH3 Core/CH_MainThreadInbox.cs（262 行）——后台只写队列，主 Tick 排空
 // 用途：任何后台 IO/网络结果回投主线程的桥——LLM 回调/工具结果/异步事件
 // 积木状态：inbox.enqueue / inbox.drain / inbox.process —— 🔴 待实现（CH4 P3.4）
@@ -13,8 +13,8 @@ Mau 0.1
   P_QueueEmpty      事实    // 排空完成——可触发后续批处理
   P_QueueStalled    事实    // 断流——队列空闲超时
 
-资源:
-  R_InboxSlot       配额: 64 // 队列深度上限——防积压爆内存
+资源 R_InboxSlot:
+  配额: 64                // 队列深度上限——防积压爆内存
 
 变迁 T_Produce:
   前置: P_ItemProduced ∧ R_InboxSlot

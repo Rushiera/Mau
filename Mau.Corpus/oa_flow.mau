@@ -1,4 +1,4 @@
-// oa_flow.mau —— OA 工单撮合模板
+﻿// oa_flow.mau —— OA 工单撮合模板
 // 来源：CH3 Core/CH_OA.cs（540 行）——Post→Claim→Complete→超时结算
 // 用途：多消费者按能力认领工单，生产者不关心谁处理
 // 积木状态：oa.post / oa.claim / oa.complete / oa.settle —— 🔴 待实现（CH4 P3.1）
@@ -14,9 +14,10 @@ Mau 0.1
   P_WorkTimedOut    事实    // 认领后超时未完成——回收重投
   P_WorkerAvailable 条件    // 有消费者空闲（认领窗口）
 
-资源:
-  R_WorkQueue       独占    // 工单队列——同一时刻只有一个认领者
-  R_WorkerSlot      配额: 4 // 并发执行上限
+资源 R_WorkQueue:
+  独占                    // 工单队列——同一时刻只有一个认领者
+资源 R_WorkerSlot:
+  配额: 4                 // 并发执行上限
 
 变迁 T_Post:
   动作: oa.post

@@ -66,6 +66,17 @@ namespace Mau.Translator
                 sb.AppendLine("        private bool " + p.Name + ";");
                 sb.AppendLine();
             }
+            // [段3b] 资源字段——独占=1 配额=N；前置检查槽位
+            for (int i = 0; i < doc.Resources.Count; i++)
+            {
+                IrResource r = doc.Resources[i];
+                string resInit = r.Kind == "独占" ? "1" : r.Quota.ToString();
+                sb.AppendLine("        /// <summary>");
+                sb.AppendLine("        /// 资源 " + r.Name + "：槽位 " + resInit + "（" + r.Kind + "）");
+                sb.AppendLine("        /// </summary>");
+                sb.AppendLine("        private int " + r.Name + "_avail;");
+                sb.AppendLine();
+            }
 
             // [段4] 动作参数字段——输入参数名 = 端口名；输出端口字段从契约声明
             HashSet<string> _paramFields = new HashSet<string>();
@@ -180,6 +191,12 @@ namespace Mau.Translator
                     sb.AppendLine("            " + t.Name + "_Inbox = new Inbox<bool>();");
                 }
             }
+            for (int i = 0; i < doc.Resources.Count; i++)
+            {
+                IrResource r = doc.Resources[i];
+                string resInit = r.Kind == "独占" ? "1" : r.Quota.ToString();
+                sb.AppendLine("            " + r.Name + "_avail = " + resInit + ";");
+            }
             sb.AppendLine("        }");
             sb.AppendLine();
 
@@ -231,7 +248,21 @@ namespace Mau.Translator
                     sb.AppendLine("            trans[" + i.ToString() + "] = new TransSnapshot(\"" + t.Name + "\", \"Idle\", 0, 0);");
                 }
             }
-            sb.AppendLine("            ResSnapshot[] res = new ResSnapshot[0];");
+            sb.Append("            ResSnapshot[] res = new ResSnapshot[");
+            sb.Append(doc.Resources.Count.ToString());
+            sb.AppendLine("];");
+            for (int i = 0; i < doc.Resources.Count; i++)
+            {
+                IrResource r = doc.Resources[i];
+                if (r.Kind == "独占")
+                {
+                    sb.AppendLine("            res[" + i.ToString() + "] = new ResSnapshot(\"" + r.Name + "\", true, 1 - " + r.Name + "_avail, 1);");
+                }
+                else
+                {
+                    sb.AppendLine("            res[" + i.ToString() + "] = new ResSnapshot(\"" + r.Name + "\", false, " + r.Quota.ToString() + " - " + r.Name + "_avail, " + r.Quota.ToString() + ");");
+                }
+            }
             sb.AppendLine("            return new RuntimeStatus(_frame, props, trans, res);");
             sb.AppendLine("        }");
             sb.AppendLine();
@@ -463,6 +494,11 @@ namespace Mau.Translator
         /// <returns>类型名</returns>
         private static string TypeName(Type type)
         {
+            if (type.IsArray)
+            {
+                Type element = type.GetElementType()!;
+                return TypeName(element) + "[]";
+            }
             if (type == typeof(string))
             {
                 return "string";
@@ -629,7 +665,7 @@ namespace Mau.Translator
 
                 // [段A] worker+inbox 前置检查 + 启动后台任务
                 sb.AppendLine("            // [" + t.Name + "] worker+inbox 前置检查");
-                sb.AppendLine("            if (" + PreconditionText(t, hasCube, cubeName) + ")");
+                sb.AppendLine("            if (" + PreconditionText(t, hasCube, cubeName, doc) + ")");
                 sb.AppendLine("            {");
                 for (int p = 0; p < t.Preconditions.Count; p++)
                 {
@@ -651,6 +687,7 @@ namespace Mau.Translator
             }
                 sb.AppendLine("                // 启动后台任务——积木在 worker 线程执行，结果回投 inbox");
                 sb.AppendLine("                var inbox = " + inboxName + ";");
+                AppendResourceAcquire(sb, doc, t, "                ");
                 sb.AppendLine("                Task.Run(() =>");
                 sb.AppendLine("                {");
                 sb.AppendLine("                    bool ok = " + BrickCallText(doc, t) + ";");
@@ -681,8 +718,10 @@ namespace Mau.Translator
             {
                 sb.AppendLine(debugOkW);
             }
+                    AppendResourceRelease(sb, doc, t, "                    ");
                 sb.AppendLine("                }");
                 sb.AppendLine("                else");
+
                 sb.AppendLine("                {");
                 for (int p = 0; p < t.PostError.Count; p++)
                 {
@@ -693,8 +732,10 @@ namespace Mau.Translator
             {
                 sb.AppendLine(debugErrorW);
             }
+                    AppendResourceRelease(sb, doc, t, "                    ");
                 sb.AppendLine("                }");
                 if (hasCube)
+
                 {
                     sb.AppendLine("                " + cubeName + ".Complete();");
                 }
@@ -715,6 +756,7 @@ namespace Mau.Translator
                         sb.AppendLine("                    // 超时 → 错误后置");
                         sb.AppendLine("                    " + t.PostError[p] + " = true;");
                     }
+                    AppendResourceRelease(sb, doc, t, "                    ");
             string debugTimeoutW = DebugLogLine(t, "Timeout", "                    ");
             if (debugTimeoutW.Length > 0)
             {
@@ -722,6 +764,7 @@ namespace Mau.Translator
             }
                     sb.AppendLine("                    " + cubeName + ".Complete();");
                     sb.AppendLine("                }");
+
                     sb.AppendLine("            }");
                 }
                 return;
@@ -729,7 +772,7 @@ namespace Mau.Translator
 
             // [段A] 前置检查块（主线程同步变迁——原有逻辑）
             sb.AppendLine("            // [" + t.Name + "] 前置检查");
-            sb.AppendLine("            if (" + PreconditionText(t, hasCube, cubeName) + ")");
+            sb.AppendLine("            if (" + PreconditionText(t, hasCube, cubeName, doc) + ")");
             sb.AppendLine("            {");
 
             // 信号前置消费
@@ -753,6 +796,7 @@ namespace Mau.Translator
                 sb.AppendLine(debugFired);
             }
 
+            AppendResourceAcquire(sb, doc, t, "                ");
             // 动作调用——参数用字段名
             sb.AppendLine("                // 执行动作（积木调用）");
             sb.AppendLine("                bool ok = " + BrickCallText(doc, t) + ";");
@@ -772,6 +816,7 @@ namespace Mau.Translator
             }
             sb.AppendLine("                }");
             sb.AppendLine("                else");
+
             sb.AppendLine("                {");
             for (int p = 0; p < t.PostError.Count; p++)
             {
@@ -784,6 +829,7 @@ namespace Mau.Translator
                 sb.AppendLine(debugError);
             }
             sb.AppendLine("                }");
+                    AppendResourceRelease(sb, doc, t, "                    ");
 
             if (hasCube)
             {
@@ -814,6 +860,7 @@ namespace Mau.Translator
             {
                 sb.AppendLine(debugTimeout);
             }
+                    AppendResourceRelease(sb, doc, t, "                    ");
                 sb.AppendLine("                    " + cubeName + ".Complete();");
                 sb.AppendLine("                }");
                 sb.AppendLine("            }");
@@ -862,9 +909,10 @@ private static string DebugLogLine(IrTransition t, string phase, string indent)
         /// <param name="t">变迁</param>
         /// <param name="hasCube">是否有时限 Cube</param>
         /// <param name="cubeName">Cube 字段名</param>
+        /// <param name="doc">文档</param>
         /// <returns>条件文本</returns>
-        private static string PreconditionText(IrTransition t, bool hasCube, string cubeName)
-        {
+        private static string PreconditionText(IrTransition t, bool hasCube, string cubeName, MauDocument doc)
+{
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < t.Preconditions.Count; i++)
             {
@@ -872,7 +920,29 @@ private static string DebugLogLine(IrTransition t, string phase, string indent)
                 {
                     sb.Append(" && ");
                 }
-                sb.Append(t.Preconditions[i]);
+                string item = t.Preconditions[i];
+                if (item.IndexOf('∨') >= 0)
+                {
+                    string[] orParts = item.Split('∨');
+                    sb.Append("(");
+                    for (int o = 0; o < orParts.Length; o++)
+                    {
+                        if (o > 0)
+                        {
+                            sb.Append(" || ");
+                        }
+                        string atom = orParts[o].Trim();
+                        if (atom.Length > 0)
+                        {
+                            sb.Append(PreconditionAtom(doc, atom));
+                        }
+                    }
+                    sb.Append(")");
+                }
+                else
+                {
+                    sb.Append(PreconditionAtom(doc, item));
+                }
             }
             if (hasCube)
             {
@@ -888,7 +958,6 @@ private static string DebugLogLine(IrTransition t, string phase, string indent)
             }
             return sb.ToString();
         }
-
         /// <summary>
         /// 积木调用文本——完整限定名，输出端口以 out 前缀传递
         /// </summary>
@@ -929,5 +998,47 @@ private static string DebugLogLine(IrTransition t, string phase, string indent)
             sb.Append(")");
             return sb.ToString();
         }
+/// <summary>
+/// 前置项文本——命题直接输出；资源输出槽位检查；析取组由调用方展开
+/// </summary>
+/// <param name = "doc">文档</param>
+/// <param name = "name">前置项名</param>
+/// <returns>条件文本</returns>
+private static string PreconditionAtom(MauDocument doc, string name)
+{
+    for (int i = 0; i < doc.Resources.Count; i++)
+    {
+        if (doc.Resources[i].Name == name)
+        {
+            return name + "_avail > 0";
+        }
+    }
+
+    return name;
+} 
+/// <summary>
+/// 判断名字是否为已声明资源
+/// </summary>
+/// <param name = "doc">文档</param>
+/// <param name = "name">名字</param>
+/// <returns>是资源为真</returns>
+ private  static  bool  IsResource ( MauDocument  doc ,  string  name ) { for  ( int  i  =  0 ;  i < doc . Resources . Count ;  i ++ ) { if  ( doc . Resources [ i ] . Name == name ) { return  true ;  } } return  false ;  } 
+/// <summary>
+/// 变迁占用资源——触发时槽位扣减；析取组不占资源
+/// </summary>
+/// <param name = "sb">输出缓冲</param>
+/// <param name = "doc">文档</param>
+/// <param name = "t">变迁</param>
+/// <param name = "indent">缩进前缀</param>
+ private  static  void  AppendResourceAcquire ( StringBuilder  sb ,  MauDocument  doc ,  IrTransition  t ,  string  indent ) { for  ( int  i  =  0 ;  i < t . Preconditions . Count ;  i ++ ) { string  item  =  t . Preconditions [ i ] ;  if  ( item . IndexOf ( '∨' ) >= 0 ) { continue ;  } if  ( IsResource ( doc ,  item ) ) { sb . AppendLine ( indent + item + "_avail = " + item + "_avail - 1;" ) ;  } } } 
+/// <summary>
+/// 变迁归还资源——完成/失败/超时后槽位归还
+/// </summary>
+/// <param name = "sb">输出缓冲</param>
+/// <param name = "doc">文档</param>
+/// <param name = "t">变迁</param>
+/// <param name = "indent">缩进前缀</param>
+ private  static  void  AppendResourceRelease ( StringBuilder  sb ,  MauDocument  doc ,  IrTransition  t ,  string  indent ) { for  ( int  i  =  0 ;  i < t . Preconditions . Count ;  i ++ ) { string  item  =  t . Preconditions [ i ] ;  if  ( item . IndexOf ( '∨' ) >= 0 ) { continue ;  } if  ( IsResource ( doc ,  item ) ) { sb . AppendLine ( indent + item + "_avail = " + item + "_avail + 1;" ) ;  } } }
+
     }
 }

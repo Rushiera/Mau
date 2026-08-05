@@ -3,7 +3,7 @@
 > 版本：v2.0 | 创建：2026-08-04 | 更新：2026-08-04（全部积木完成落地）
 > 全量积木登记——一行一条。ID 永不重用。
 
-## 全部积木（41 个）
+## 全部积木（47 个）
 
 | ID | 名字 | 类别 | 工程路径 | 状态 | 来源 |
 |:--|:--|:--|:--|:--|:--|
@@ -50,7 +50,27 @@
 | BRIK-LOG-002 | log.all | LOG | Mau.Bricks.Log/LogBrick.cs | ✅ | CH2 CH_Tool_Log |
 | BRIK-LOG-003 | log.count | LOG | Mau.Bricks.Log/LogBrick.cs | ✅ | CH2 CH_Tool_Log |
 | BRIK-LOG-004 | log.clear | LOG | Mau.Bricks.Log/LogBrick.cs | ✅ | CH2 CH_Tool_Log |
+| BRIK-OA-001 | oa.post | OA | Mau.Bricks.Standard/OaBrick.cs | ✅ | CH4 P1.3 机制积木（包装 Mau.Runtime.OA） |
+| BRIK-OA-002 | oa.list | OA | Mau.Bricks.Standard/OaBrick.cs | ✅ | CH4 P1.3 机制积木（包装 Mau.Runtime.OA） |
+| BRIK-OA-003 | oa.claim | OA | Mau.Bricks.Standard/OaBrick.cs | ✅ | CH4 P1.3 机制积木（包装 Mau.Runtime.OA） |
+| BRIK-OA-004 | oa.complete | OA | Mau.Bricks.Standard/OaBrick.cs | ✅ | CH4 P1.3 机制积木（包装 Mau.Runtime.OA） |
+| BRIK-OA-005 | oa.settle | OA | Mau.Bricks.Standard/OaBrick.cs | ✅ | CH4 P1.3 机制积木（包装 Mau.Runtime.OA） |
+| BRIK-TOOL-001 | tool.exec | TOOL | Mau.Bricks.Standard/ToolBrick.cs | ✅ | CH4 P2 机制积木（工具分发执行器） |
 
 ---
 
-_版本：v2.0 | 2026-08-04 | 41 积木全部落地_
+_版本：v2.1 | 2026-08-05 | +OA 机制积木 5 个（BRIK-OA-001~005）——CH4 P1.3 前置_
+
+> 2026-08-05 追加：+TOOL 机制积木 1 个（BRIK-TOOL-001 tool.exec）——工具分发执行器，Mau.Corpus oa_flow/tool_dispatch 模板前置
+
+## 机制积木说明（OA）
+
+> OA 积木与叶子积木的区别：叶子积木（file.*/log.* 等）自带实现；机制积木（oa.*）包装 Mau.Runtime 机制，实例由宿主注入（`OaBrick.Configure(IOA)`）——语料只声明拓扑动作，机制留基座。
+
+| 积木 | 语义 | 线程 |
+|:--|:--|:--|
+| oa.post | 上架工单——挂单方投递，返回 OfficeId | main |
+| oa.list | 查 Open 单——大类 + 候选 OfficeName | main |
+| oa.claim | 锁单——逐个尝试认领，返回锁成功名单 | main |
+| oa.complete | 完成——写回执 → Closed | main |
+| oa.settle | 结算——Work 单退回 Open（重投）；已终结单确认 | main |

@@ -32,6 +32,8 @@ namespace Mau.Cli
             Mau.Bricks.ExcelBrickRegistration.RegisterAll();
             Mau.Bricks.DocxBrickRegistration.RegisterAll();
             Mau.Bricks.LogBrickRegistration.RegisterAll();
+            Mau.Bricks.OaBrickRegistration.RegisterAll();
+            Mau.Bricks.ToolBrickRegistration.RegisterAll();
 
             // [段2] 命令路由
             if (args.Length == 0)

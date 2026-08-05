@@ -55,6 +55,12 @@ namespace Mau.Translator
             for (int i = 0; i < lines.Length; i++)
             {
                 string line = lines[i].Replace("\r", "");
+                // 剥离行尾注释——引号外 // 起截断（调试消息内 // 保留）
+                int commentPos = FindCommentStart(line);
+                if (commentPos >= 0)
+                {
+                    line = line.Substring(0, commentPos);
+                }
                 string trimmed = line.Trim();
                 int lineNo = i + 1;
 
@@ -278,7 +284,7 @@ namespace Mau.Translator
                     else if (trimmed.StartsWith("并行:"))
                     {
                         string val = trimmed.Substring(3).Trim();
-                        string[] items = val.Split(',');
+                        string[] items = val.Split(new char[] { ',', '‖' });
                         for (int p = 0; p < items.Length; p++)
                         {
                             string item = items[p].Trim();
@@ -322,7 +328,31 @@ namespace Mau.Translator
 
             return result;
         }
-        /// <summary>
+/// <summary>
+/// 找行尾注释起点——引号外第一个 //；双引号内的 // 视为内容保留
+/// </summary>
+/// <param name = "line">原始行文本</param>
+/// <returns>注释起点索引，无注释返回 -1</returns>
+private static int FindCommentStart(string line)
+{
+    bool inQuote = false;
+    for (int i = 0; i < line.Length - 1; i = i + 1)
+    {
+        char c = line[i];
+        if (c == '"')
+        {
+            inQuote = !inQuote;
+            continue;
+        }
+
+        if (!inQuote && c == '/' && line[i + 1] == '/')
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}        /// <summary>
         /// 解析命题行——P_Name 类型
         /// </summary>
         /// <param name="line">去缩进后的行</param>

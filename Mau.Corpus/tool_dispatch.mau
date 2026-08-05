@@ -1,4 +1,4 @@
-// tool_dispatch.mau —— 工具分发模板
+﻿// tool_dispatch.mau —— 工具分发模板
 // 来源：CH3 ToolProvider 体系——IToolProvider/IToolTask/IToolResultSink（Provider 化工具）
 // 用途：工具请求 → 审批 → 分发执行 → 结果回收（含拒绝与失败路径）
 // 积木状态：tool.request / tool.approve / tool.reject / tool.exec / tool.collect —— 🔴 待实现（CH4 P3.3）
@@ -14,9 +14,10 @@ Mau 0.1
   P_ToolDone        事实    // 执行成功——结果已回收
   P_ToolFailed      事实    // 执行失败——终态互斥
 
-资源:
-  R_ApprovalToken   独占    // 审批令牌——同一时刻一个审批
-  R_ToolSlot        配额: 2 // 工具并发上限——防资源挤占
+资源 R_ApprovalToken:
+  独占                    // 审批令牌——同一时刻一个审批
+资源 R_ToolSlot:
+  配额: 2                 // 工具并发上限——防资源挤占
 
 变迁 T_Request:
   前置: P_ToolRequested

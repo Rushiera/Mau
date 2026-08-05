@@ -24,6 +24,7 @@
     <ProjectReference Include="..\Mau.Bricks.Office\Mau.Bricks.Office.csproj" />
     <ProjectReference Include="..\Mau.Bricks.Log\Mau.Bricks.Log.csproj" />
     <ProjectReference Include="..\Mau.Contracts\Mau.Contracts.csproj" />
+    <ProjectReference Include="..\Mau.Runtime\Mau.Runtime.csproj" />
   </ItemGroup>
 
 </Project>

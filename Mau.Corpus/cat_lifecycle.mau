@@ -1,4 +1,4 @@
-// cat_lifecycle.mau —— Cat 生命周期模板
+﻿// cat_lifecycle.mau —— Cat 生命周期模板
 // 来源：CH3 ModState/LifeState——Discovered→Validated→Loaded→Disabled→Unloaded
 // 用途：任何有生命周期实体的状态机骨架（Cat/Dog/Mod/插件）
 // 积木状态：cat.scan / cat.validate / cat.init / cat.enable / cat.disable / cat.unload —— 🔴 待实现（CH4 P3.2）
@@ -19,9 +19,10 @@ Mau 0.1
   P_NoDependents     条件    // 无反向依赖（卸载前置）
   P_RequestIdle      条件    // 系统请求空闲
 
-资源:
-  R_StateSlot        独占    // 生命周期状态——独占推进
-  R_ALC              独占    // 程序集加载上下文——卸载确认
+资源 R_StateSlot:
+  独占                    // 生命周期状态——独占推进
+资源 R_ALC:
+  独占                    // 程序集加载上下文——卸载确认
 
 变迁 T_Discover:
   动作: cat.scan

@@ -103,9 +103,23 @@ namespace Mau.Translator
                 IrTransition t = doc.Transitions[i];
                 for (int p = 0; p < t.Preconditions.Count; p++)
                 {
-                    if (doc.FindProposition(t.Preconditions[p]) == null)
+                    string[] orParts = t.Preconditions[p].Split('∨');
+                    for (int o = 0; o < orParts.Length; o++)
                     {
-                        diags.Add(new MauDiagnostic("E003", t.Line, "前置引用未声明的命题: " + t.Preconditions[p]));
+                        string name = orParts[o].Trim();
+                        if (name.Length == 0)
+                        {
+                            continue;
+                        }
+                        if (FindResource(doc, name) != null)
+                        {
+                            continue;
+                        }
+                        if (doc.FindProposition(name) == null)
+                        {
+                            diags.Add(new MauDiagnostic("E003", t.Line, "前置引用未声明的命题: " + t.Preconditions[p]));
+                            break;
+                        }
                     }
                 }
                 if (t.PostOk.Count == 0 && t.PostError.Count == 0)
@@ -291,6 +305,54 @@ namespace Mau.Translator
         }
 
         /// <summary>
+        /// 按名字查资源——资源可出现在前置（槽位检查）
+        /// </summary>
+        /// <param name="doc">文档</param>
+        /// <param name="name">资源名</param>
+        /// <returns>资源节点或空</returns>
+        private static IrResource? FindResource(MauDocument doc, string name)
+        {
+            for (int i = 0; i < doc.Resources.Count; i++)
+            {
+                if (doc.Resources[i].Name == name)
+                {
+                    return doc.Resources[i];
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 环是否经过资源前置的变迁——资源提供有界性（配额拦无限循环）
+        /// </summary>
+        /// <param name="doc">文档</param>
+        /// <param name="cycle">环路径（变迁名列表）</param>
+        /// <returns>有资源为真</returns>
+        private static bool CycleHasResource(MauDocument doc, List<string> cycle)
+        {
+            for (int i = 0; i < cycle.Count; i++)
+            {
+                IrTransition? t = doc.FindTransition(cycle[i]);
+                if (t == null)
+                {
+                    continue;
+                }
+                for (int p = 0; p < t.Preconditions.Count; p++)
+                {
+                    string[] orParts = t.Preconditions[p].Split('∨');
+                    for (int o = 0; o < orParts.Length; o++)
+                    {
+                        if (FindResource(doc, orParts[o].Trim()) != null)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// DFS 三色标记找环
         /// </summary>
         /// <param name="node">当前变迁索引</param>
@@ -318,6 +380,10 @@ namespace Mau.Translator
                         cycle.Add(doc.Transitions[path[k]].Name);
                     }
                     cycle.Add(doc.Transitions[next].Name);
+                    if (CycleHasResource(doc, cycle))
+                    {
+                        continue;  // 环上有资源前置——配额提供有界性，豁免
+                    }
                     return cycle;
                 }
                 if (state[next] == 0)
