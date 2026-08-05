@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Mau.Runtime
@@ -291,6 +291,7 @@ namespace Mau.Runtime
                 }
                 if (changed)
                 {
+                    result.HasCommands = true;
                     _version = _version + 1;
                 }
             }
@@ -503,6 +504,7 @@ namespace Mau.Runtime
             email.CmdKeys = keyCopy;
             email.CmdValues = new int[keyCopy.Length];
             email.CmdTexts = new string[keyCopy.Length];
+            email.HasCommands = false;
             return email;
         }
 

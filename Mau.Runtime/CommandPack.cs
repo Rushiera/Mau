@@ -1,4 +1,4 @@
-namespace Mau.Runtime
+﻿namespace Mau.Runtime
 {
     /// <summary>
     /// 指令邮件。一个模块一次收到的所有指令。由 CommandBus 在 Tick 中汇集并分发给注册者。
@@ -25,5 +25,10 @@ namespace Mau.Runtime
         /// string payload——通过 SetText(key, string) 写入。未写入时为 null
         /// </summary>
         public string[] CmdTexts;
+
+        /// <summary>
+        /// 是否有实际写入的指令——false=模板邮件（本轮无新指令）
+        /// </summary>
+        public bool HasCommands;
     }
 }
