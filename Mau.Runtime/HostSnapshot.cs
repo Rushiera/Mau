@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace Mau.Runtime
 {
@@ -39,6 +39,11 @@ namespace Mau.Runtime
         public long NextId;
 
         /// <summary>
+        /// 实体条目快照——FlowRegistry 条目（冻结深复制）；未注册时为 null
+        /// </summary>
+        public FlowEntry[]? Flows;
+
+        /// <summary>
         /// 构造空宿主快照
         /// </summary>
         public HostSnapshot()
@@ -49,6 +54,7 @@ namespace Mau.Runtime
             Command = null;
             IdTypeCounts = null;
             NextId = 0;
+            Flows = null;
         }
     }
 }

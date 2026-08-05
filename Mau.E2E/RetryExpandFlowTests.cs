@@ -81,14 +81,14 @@ namespace Mau.E2E
                 {
                     return;
                 }
-                if (!Mau.Contracts.BrickRegistry.TryGet("file.convert", out _))
+                Mau.Contracts.BrickRegistry.EnsureRegistered("file.convert", delegate
                 {
                     StandardBrickRegistration.RegisterAll();
-                }
-                if (!Mau.Contracts.BrickRegistry.TryGet("log.write", out _))
+                });
+                Mau.Contracts.BrickRegistry.EnsureRegistered("log.write", delegate
                 {
                     LogBrickRegistration.RegisterAll();
-                }
+                });
                 _ready = true;
             }
         }

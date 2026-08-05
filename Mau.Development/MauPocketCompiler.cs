@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -296,7 +296,8 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 附加宿主输出目录的全部 Mau.*.dll——基座 + 契约 + 积木
+        /// 附加宿主输出目录的全部 dll——基座 + 契约 + 积木 + 宿主自定义（如 CH4.Contracts）
+        /// 全量引用语义：生成物编译引用集 = 宿主目录全量（Learn H15 判例——发布完整性=探测路径完整性）
         /// </summary>
         /// <param name="references">引用集合</param>
         private void AddMauReferences(List<MetadataReference> references)
@@ -306,7 +307,7 @@ namespace Mau.Development
             {
                 return;
             }
-            string[] dlls = Directory.GetFiles(baseDir, "Mau.*.dll",
+            string[] dlls = Directory.GetFiles(baseDir, "*.dll",
                 SearchOption.TopDirectoryOnly);
             Array.Sort(dlls, StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < dlls.Length; i = i + 1)

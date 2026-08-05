@@ -1,0 +1,256 @@
+﻿using System;
+using System.Collections.Generic;
+
+namespace Mau.Runtime
+{
+    /// <summary>
+    /// 帧序宿主——实体注册 + 帧序编排（冻结→排空→分发→驱动→结算）+ Inbox 桥 + 透明化。
+    /// 裁决落点：CH4.Core Tick 调度/字典/分发机制下沉（boundary-map D2/D4）。
+    /// 产品语义（ICat 生命周期、指令接收者）由宿主钩子承担——本层零产品感知。
+    /// 注：既有 FlowHost（HotReload/）是句柄管理器；本类是帧序编排器——职责正交。
+    /// </summary>
+    public sealed class FlowRunner
+    {
+        /// <summary>
+        /// 线程归属守卫——构造绑定宿主主线程
+        /// </summary>
+        private readonly ThreadGuard _guard;
+
+        /// <summary>
+        /// 实体注册表——Flow 注册/查找/回收
+        /// </summary>
+        private readonly FlowRegistry _registry;
+
+        /// <summary>
+        /// OA 工单平台——超时结算
+        /// </summary>
+        private readonly IOA _oa;
+
+        /// <summary>
+        /// 指令总线——输入冻结 + 邮件分发
+        /// </summary>
+        private readonly ICommandBus _cmd;
+
+        /// <summary>
+        /// 主线程 Inbox——后台回调投递，Tick 开头排空
+        /// </summary>
+        private readonly Inbox<Action> _mainInbox = new Inbox<Action>();
+
+        /// <summary>
+        /// 指令分发钩子——宿主注册（id, mail），本层不感知产品类型
+        /// </summary>
+        private Action<long, CommandPack>? _commandDispatch;
+
+        /// <summary>
+        /// 内部帧号——每 Tick 自增
+        /// </summary>
+        private long _frame;
+
+        /// <summary>
+        /// 是否已初始化
+        /// </summary>
+        private bool _inited;
+
+        /// <summary>
+        /// 构造宿主——注入全部机制
+        /// </summary>
+        /// <param name="guard">线程归属守卫</param>
+        /// <param name="oa">OA 工单平台</param>
+        /// <param name="cmd">指令总线</param>
+        /// <param name="ids">全局 ID 分配器</param>
+        public FlowRunner(ThreadGuard guard, IOA oa, ICommandBus cmd, IdAllocator ids)
+        {
+            if (guard == null)
+            {
+                throw new ArgumentNullException("guard");
+            }
+            if (oa == null)
+            {
+                throw new ArgumentNullException("oa");
+            }
+            if (cmd == null)
+            {
+                throw new ArgumentNullException("cmd");
+            }
+            if (ids == null)
+            {
+                throw new ArgumentNullException("ids");
+            }
+            _guard = guard;
+            _oa = oa;
+            _cmd = cmd;
+            _registry = new FlowRegistry(guard, ids);
+            _inited = true;
+        }
+
+        /// <summary>
+        /// 实体注册表——透明化暴露
+        /// </summary>
+        public FlowRegistry Registry
+        {
+            get
+            {
+                _guard.AssertMainThread("FlowHost.Registry");
+                return _registry;
+            }
+        }
+
+        /// <summary>
+        /// 指令分发钩子——宿主每帧取邮件后投递产品逻辑（如 ICommandReceiver）
+        /// </summary>
+        /// <param name="dispatch">分发委托（实体 ID, 指令邮件）</param>
+        public void SetCommandDispatch(Action<long, CommandPack>? dispatch)
+        {
+            _guard.AssertMainThread("FlowHost.SetCommandDispatch");
+            _commandDispatch = dispatch;
+        }
+
+        /// <summary>
+        /// 注册实体——分配 ID 并入注册表
+        /// </summary>
+        /// <param name="flow">Flow 实例</param>
+        /// <param name="name">实体名字</param>
+        /// <returns>分配的全局 ID</returns>
+        public long RegisterFlow(IFlow flow, string name)
+        {
+            _guard.AssertMainThread("FlowHost.RegisterFlow");
+            EnsureInited();
+            return _registry.Register(flow, name);
+        }
+
+        /// <summary>
+        /// 回收实体——从注册表移除
+        /// </summary>
+        /// <param name="id">实体 ID</param>
+        /// <returns>true=回收成功</returns>
+        public bool UnregisterFlow(long id)
+        {
+            _guard.AssertMainThread("FlowHost.UnregisterFlow");
+            return _registry.Unregister(id);
+        }
+
+        /// <summary>
+        /// 按 ID 查找实体
+        /// </summary>
+        /// <param name="id">实体 ID</param>
+        /// <returns>Flow 实例或 null</returns>
+        public IFlow? GetFlow(long id)
+        {
+            _guard.AssertMainThread("FlowHost.GetFlow");
+            return _registry.Get(id);
+        }
+
+        /// <summary>
+        /// 后台→主线程投递——任意线程调用（不做线程断言），回调在下一帧主线程执行
+        /// </summary>
+        /// <param name="action">待执行回调</param>
+        public void PostToMain(Action action)
+        {
+            if (action == null)
+            {
+                throw new ArgumentNullException("action");
+            }
+            _mainInbox.Enqueue(action);
+        }
+
+        /// <summary>
+        /// 每帧驱动——帧序：指令冻结 → Inbox 排空 → 指令分发 → 实体驱动 → OA 结算
+        /// </summary>
+        public void Tick()
+        {
+            _guard.AssertMainThread("FlowHost.Tick");
+            EnsureInited();
+            _frame = _frame + 1;
+            // [段0] 指令输入冻结——此前到达的 Set 指令进入可消费池（帧间生效）
+            _cmd.BeginTickInput();
+            // [段1] Inbox 排空——后台回调在主线程执行（功能隔离：单回调异常不中断帧）
+            _mainInbox.Drain(delegate (Action action)
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine("[FlowRunner] Inbox 回调异常: " + ex.Message);
+                }
+            });
+            // [段2] 指令分发——每实体取邮件（有指令时调宿主钩子）
+            if (_commandDispatch != null)
+            {
+                long[] ids = _registry.Ids;
+                for (int i = 0; i < ids.Length; i++)
+                {
+                    CommandPack mail = _cmd.GetCommandEmail(ids[i]);
+                    if (!mail.HasCommands)
+                    {
+                        continue;
+                    }
+                    try
+                    {
+                        _commandDispatch(ids[i], mail);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine("[FlowRunner] 指令分发异常: " + ex.Message);
+                    }
+                }
+            }
+            // [段3] 实体帧驱动
+            long[] flowIds = _registry.Ids;
+            for (int i = 0; i < flowIds.Length; i++)
+            {
+                IFlow? flow = _registry.Get(flowIds[i]);
+                if (flow != null)
+                {
+                    flow.Tick();
+                }
+            }
+            // [段4] OA 超时结算
+            _oa.Tick();
+        }
+
+        /// <summary>
+        /// 关闭——清空注册（实体生命周期由宿主负责）
+        /// </summary>
+        public void Shutdown()
+        {
+            _guard.AssertMainThread("FlowHost.Shutdown");
+            if (!_inited)
+            {
+                return;
+            }
+            _registry.Clear();
+            _inited = false;
+        }
+
+        /// <summary>
+        /// 透明化快照——帧号 + 实体条目 + OA/Command 域摘要（冻结）
+        /// </summary>
+        /// <returns>宿主状态快照</returns>
+        public HostSnapshot GetStatus()
+        {
+            _guard.AssertMainThread("FlowHost.GetStatus");
+            EnsureInited();
+            HostSnapshot snapshot = new HostSnapshot();
+            snapshot.Frame = _frame;
+            snapshot.IsMainThread = _guard.IsMainThread;
+            snapshot.OA = _oa.GetSnapshot();
+            snapshot.Command = _cmd.GetSnapshot();
+            snapshot.Flows = _registry.Entries;
+            return snapshot;
+        }
+
+        /// <summary>
+        /// 校验已初始化
+        /// </summary>
+        /// <exception cref="InvalidOperationException">未初始化</exception>
+        private void EnsureInited()
+        {
+            if (!_inited)
+            {
+                throw new InvalidOperationException("FlowHost 已关闭——不可再驱动");
+            }
+        }
+    }
+}

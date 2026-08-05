@@ -165,11 +165,10 @@ namespace Mau.E2E
         /// </summary>
         private static void EnsureBricksRegistered()
         {
-            if (Mau.Contracts.BrickRegistry.TryGet("file.convert", out _))
+            Mau.Contracts.BrickRegistry.EnsureRegistered("file.convert", delegate
             {
-                return;
-            }
-            StandardBrickRegistration.RegisterAll();
+                StandardBrickRegistration.RegisterAll();
+            });
         }
 
         /// <summary>

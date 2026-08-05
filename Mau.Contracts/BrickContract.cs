@@ -145,11 +145,13 @@ namespace Mau.Contracts
     }
 
     /// <summary>
-    /// 积木注册表——编译期注册，翻译器构筑期查询
+    /// 积木注册表——编译期注册，翻译器构筑期查询。线程安全（多测试类并发注册/查询）。
     /// </summary>
     public static class BrickRegistry
     {
         private static readonly Dictionary<string, BrickContract> _entries = new Dictionary<string, BrickContract>();
+
+        private static readonly object Sync = new object();
 
         /// <summary>
         /// 注册积木——重复注册同名抛异常
@@ -157,11 +159,31 @@ namespace Mau.Contracts
         /// <param name="contract">积木契约</param>
         public static void Register(BrickContract contract)
         {
-            if (_entries.ContainsKey(contract.Name))
+            lock (Sync)
             {
-                throw new InvalidOperationException("积木重复注册: " + contract.Name);
+                if (_entries.ContainsKey(contract.Name))
+                {
+                    throw new InvalidOperationException("积木重复注册: " + contract.Name);
+                }
+                _entries.Add(contract.Name, contract);
             }
-            _entries.Add(contract.Name, contract);
+        }
+
+        /// <summary>
+        /// 原子注册保障——锁内检查+注册（跨调用方并发安全）
+        /// </summary>
+        /// <param name="probeKey">探针 key——已存在则跳过注册动作</param>
+        /// <param name="registerAll">注册动作</param>
+        public static void EnsureRegistered(string probeKey, Action registerAll)
+        {
+            lock (Sync)
+            {
+                if (_entries.ContainsKey(probeKey))
+                {
+                    return;
+                }
+                registerAll();
+            }
         }
 
         /// <summary>
@@ -172,7 +194,10 @@ namespace Mau.Contracts
         /// <returns>是否命中</returns>
         public static bool TryGet(string name, [NotNullWhen(true)] out BrickContract? contract)
         {
-            return _entries.TryGetValue(name, out contract);
+            lock (Sync)
+            {
+                return _entries.TryGetValue(name, out contract);
+            }
         }
 
         /// <summary>
@@ -180,7 +205,15 @@ namespace Mau.Contracts
         /// </summary>
         public static IReadOnlyCollection<BrickContract> All
         {
-            get { return _entries.Values; }
+            get
+            {
+                lock (Sync)
+                {
+                    BrickContract[] array = new BrickContract[_entries.Count];
+                    _entries.Values.CopyTo(array, 0);
+                    return array;
+                }
+            }
         }
 
         /// <summary>
@@ -188,7 +221,13 @@ namespace Mau.Contracts
         /// </summary>
         public static int Count
         {
-            get { return _entries.Count; }
+            get
+            {
+                lock (Sync)
+                {
+                    return _entries.Count;
+                }
+            }
         }
     }
 }
