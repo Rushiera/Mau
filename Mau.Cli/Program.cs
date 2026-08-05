@@ -108,6 +108,14 @@ namespace Mau.Cli
             {
                 return CommandSupervisor.Ps();
             }
+            if (command == "status")
+            {
+                return CommandSupervisor.Status(args.Length > 1 ? args[1] : "");
+            }
+            if (command == "snapshot")
+            {
+                return CommandSupervisor.Snapshot(args.Length > 1 ? args[1] : "");
+            }
             if (command == "kill")
             {
                 string? name = args.Length > 1 ? args[1] : null;

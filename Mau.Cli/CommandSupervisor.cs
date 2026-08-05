@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using Mau.Runtime;
 
@@ -41,7 +41,88 @@ namespace Mau.Cli
         }
 
         /// <summary>
-        /// 执行 kill——按名终止程序：进程强杀（管道优雅终止后续版本）+ 清理注册文件
+        /// 执行 status——注册信息 + 存活状态 + 运行快照（若管道可用）
+        /// </summary>
+        /// <param name="name">程序名</param>
+        /// <returns>退出码</returns>
+        public static int Status(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                Console.WriteLine("用法: mau status <程序名>");
+                return 1;
+            }
+            AppIdentity? app = AppRegistry.Get(name);
+            if (app == null)
+            {
+                Console.WriteLine("未注册的程序: " + name + "（mau ps 查看列表）");
+                return 1;
+            }
+            bool alive = AppRegistry.IsAlive(app);
+            Console.WriteLine("程序:   " + app.Name);
+            Console.WriteLine("版本:   " + app.Version);
+            Console.WriteLine("PID:    " + app.Pid + (alive ? "（存活）" : "（已死——zombie）"));
+            Console.WriteLine("入口:   " + app.Exe);
+            Console.WriteLine("启动:   " + app.StartedAt);
+            Console.WriteLine("模块:   " + app.Modules);
+            Console.WriteLine("管道:   " + (app.PipeName.Length > 0 ? app.PipeName : "未开启"));
+            if (!alive)
+            {
+                Console.WriteLine("快照:   进程不存在——无法拉取（mau kill --clean 清理）");
+                return 0;
+            }
+            string? snapshot = PipeRequest(app, "{\"cmd\":\"snapshot\"}");
+            if (snapshot == null)
+            {
+                Console.WriteLine("快照:   管道不可用（程序未开启快照服务）");
+            }
+            else
+            {
+                Console.WriteLine("快照:   " + snapshot);
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// 执行 snapshot——远程拉取运行态快照（NamedPipe 协议）
+        /// </summary>
+        /// <param name="name">程序名</param>
+        /// <returns>退出码</returns>
+        public static int Snapshot(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                Console.WriteLine("用法: mau snapshot <程序名>");
+                return 1;
+            }
+            AppIdentity? app = AppRegistry.Get(name);
+            if (app == null)
+            {
+                Console.WriteLine("未注册的程序: " + name + "（mau ps 查看列表）");
+                return 1;
+            }
+            if (!AppRegistry.IsAlive(app))
+            {
+                Console.WriteLine("进程不存在（zombie）: " + name + " — mau kill --clean 清理");
+                return 1;
+            }
+            if (app.PipeName.Length == 0)
+            {
+                Console.WriteLine("程序未开启快照管道: " + name);
+                return 1;
+            }
+            string? snapshot = PipeRequest(app, "{\"cmd\":\"snapshot\"}");
+            if (snapshot == null)
+            {
+                Console.WriteLine("快照拉取失败——管道不可用: " + app.PipeName);
+                return 1;
+            }
+            Console.WriteLine(snapshot);
+            return 0;
+        }
+
+        /// <summary>
+        /// 执行 kill——按名终止程序：管道优雅请求 → 等 3 秒 → 超时强杀 → 清理注册文件
         /// </summary>
         /// <param name="name">程序名</param>
         /// <param name="clean">true=清理全部僵尸注册（不杀进程）</param>
@@ -70,7 +151,24 @@ namespace Mau.Cli
                 AppRegistry.Unregister(name);
                 return 0;
             }
-            // 强杀（优雅终止请求 = 管道协议，SnapshotServer 接入后启用）
+            // [1] 优雅终止——管道 kill 请求（程序自退）
+            if (app.PipeName.Length > 0)
+            {
+                string? response = PipeRequest(app, "{\"cmd\":\"kill\"}");
+                if (response != null)
+                {
+                    Console.WriteLine("已请求优雅终止: " + name + "（等 3 秒确认）");
+                    System.Threading.Thread.Sleep(3000);
+                    if (!AppRegistry.IsAlive(app))
+                    {
+                        Console.WriteLine("已优雅退出: " + name + "（PID " + app.Pid + "）");
+                        AppRegistry.Unregister(name);
+                        return 0;
+                    }
+                    Console.WriteLine("优雅终止超时——强杀: " + name);
+                }
+            }
+            // [2] 强杀兜底
             try
             {
                 using (Process? process = Process.GetProcessById(app.Pid))
@@ -87,6 +185,39 @@ namespace Mau.Cli
             }
             AppRegistry.Unregister(name);
             return 0;
+        }
+
+        /// <summary>
+        /// NamedPipe 客户端请求——发送一行 JSON，等待一行响应
+        /// </summary>
+        /// <param name="app">目标程序身份</param>
+        /// <param name="cmdJson">请求 JSON</param>
+        /// <returns>响应 JSON 行，失败返回 null</returns>
+        private static string? PipeRequest(AppIdentity app, string cmdJson)
+        {
+            if (app == null || app.PipeName.Length == 0)
+            {
+                return null;
+            }
+            try
+            {
+                using (System.IO.Pipes.NamedPipeClientStream client = new System.IO.Pipes.NamedPipeClientStream(".", app.PipeName, System.IO.Pipes.PipeDirection.InOut))
+                {
+                    client.Connect(2000);
+                    using (System.IO.StreamReader reader = new System.IO.StreamReader(client, System.Text.Encoding.UTF8, false, 1024, true))
+                    using (System.IO.StreamWriter writer = new System.IO.StreamWriter(client, new System.Text.UTF8Encoding(false), 1024, true))
+                    {
+                        writer.WriteLine(cmdJson);
+                        writer.Flush();
+                        string? line = reader.ReadLine();
+                        return line;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         /// <summary>
