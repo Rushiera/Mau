@@ -1,4 +1,4 @@
-# Mau
+﻿# Mau
 
 > 埃及语"猫"（mau/mjw）。古埃及太阳神 Ra 亦被称为"伟大的猫 Mau"。
 
@@ -15,7 +15,7 @@
     ↓ 生成 C# 源码
 积木层（C#）— 语义原语（叶子黑盒）
     ↓ Roslyn Emit
-运行时（CH 内核）— Tick / ALC / OA / 快照
+运行时（Mau.Runtime）— Tick / ALC / OA / 快照
 ```
 
 - **公式层是宪法，C# 是执行者** —— 系统结构真相全部由 Mau 承载
