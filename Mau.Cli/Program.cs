@@ -104,6 +104,16 @@ namespace Mau.Cli
                 }
                 return CommandServeWork.Execute(workArgs);
             }
+            if (command == "ps")
+            {
+                return CommandSupervisor.Ps();
+            }
+            if (command == "kill")
+            {
+                string? name = args.Length > 1 ? args[1] : null;
+                bool clean = args.Length > 1 && args[1] == "--clean";
+                return CommandSupervisor.Kill(name, clean);
+            }
 
             Console.WriteLine("未知命令: " + command);
             return 1;
