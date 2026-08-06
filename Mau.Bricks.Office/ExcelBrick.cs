@@ -3,6 +3,7 @@
 // ID:   BRIK-OFFICE-001 ~ 002
 // 作用: Excel 读写——.xlsx ↔ TSV/CSV 纯文本
 // 引用: Mau.Bricks.Office → Mau.Contracts（BrickRegistry）· ClosedXML
+// 依赖: ClosedXML
 // 原理: XLWorkbook 打开/创建——≤2000 行×100 列，CSV 引号转义
 // 常用: CH4 IO 工具组 / 表格数据处理 / 报表导出
 // ═══════════════════════════════════════════════

@@ -4,6 +4,7 @@
 // ID:   BRIK-FILE-001 ~ 011
 // 作用: 受控文件操作全集——读写/追加/替换/行读/目录树/搜索/移动/软删/批量
 // 引用: Mau.Bricks.Standard → Mau.Contracts（BrickRegistry）· FileSystemService
+// 依赖: FileSystemService
 // 原理: 静态方法 + BrickContract 注册——白名单边界由 FileSystemService 提供
 // 常用: CH4 IO 工具组 / 任意文件读取场景 / 批量文件变更
 // ═══════════════════════════════════════════════

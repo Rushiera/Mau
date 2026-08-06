@@ -1,8 +1,9 @@
-// ═══════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════
 // 积木: approval.request / approval.resolve / approval.reject / approval.pending
 // ID:   BRIK-APPROVAL-001 ~ 004
 // 作用: 人机确认审批中枢——Pending 队列 + Resolve/Reject + 超时默认项
 // 引用: Mau.Bricks.Approval → Mau.Contracts（BrickRegistry）
+// 依赖: 无
 // 原理: 线程安全 Pending 表 + 超时任务——外观层读取快照并显式 Resolve
 // 常用: CH4 HumanAsk / Shell 命令确认 / 破坏性操作审批
 // ═══════════════════════════════════════════════

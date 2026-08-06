@@ -3,6 +3,7 @@
 // ID:   BRIK-CMD-001 ~ 005
 // 作用: 指令总线机制积木——语料声明指令拓扑（注册 key / 消费邮件 / 投递指令），宿主注入 CommandBus 实例
 // 引用: Mau.Bricks.Standard → Mau.Runtime（ICommandBus/CommandPack）· Mau.Contracts
+// 依赖: Mau.Runtime.CommandBus
 // 原理: 静态宿主桥 Configure(ICommandBus) 注入单例；积木方法包装 Mau.Runtime.CommandBus 操作
 // 常用: talkcat_fsm.mau 指令入口——CH4 P2.2 TalkCat 核心
 // ═══════════════════════════════════════════════

@@ -4,6 +4,7 @@
 // ID:   BRIK-LLM-003 ~ 009
 // 作用: LLM 对话上下文管理——按 sessionKey 隔离的会话历史（多 Cat 各自独立）
 // 引用: Mau.Bricks.LLM → Mau.Contracts（BrickRegistry）
+// 依赖: 无
 // 原理: 静态会话表（sessionKey → 会话）；sessionKey 由宿主注入（Cat GlobeID 派生）
 // 常用: CH4 TalkCat 多轮对话 / 多 Cat 并发上下文隔离
 // ═══════════════════════════════════════════════

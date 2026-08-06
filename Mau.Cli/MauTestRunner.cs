@@ -126,6 +126,19 @@ namespace Mau.Cli
                 return 1;
             }
 
+            // [段3c] 积木索引校验（L4.5）——注册表与 INDEX.md 一致性
+            Console.WriteLine("[3c/4] 积木索引校验（L4.5）");
+            if (CommandBricks.VerifyIndex() != 0)
+            {
+                Console.WriteLine("FAIL: 积木索引校验失败");
+                return 1;
+            }
+            if (CommandBricks.CheckLicense() != 0)
+            {
+                Console.WriteLine("FAIL: 积木文件头校验失败");
+                return 1;
+            }
+
             // [段4] 黄金文件对比（L3）——含 SHA256 校验尾验证
             Console.WriteLine("[4/4] 黄金文件对比（L3）");
             if (!VerifyGolden(root, "file_convert.mau", "FL_FileConvert.cs", "FileConvert"))

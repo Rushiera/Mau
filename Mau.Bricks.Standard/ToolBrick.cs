@@ -3,6 +3,7 @@
 // ID:   BRIK-TOOL-001
 // 作用: 工具执行机制积木——语料声明工具分发拓扑，宿主注入执行器
 // 引用: Mau.Bricks.Standard → Mau.Contracts
+// 依赖: Mau.Runtime.OA（dispatch/collect 用）· 宿主执行器（exec 用）
 // 原理: 静态宿主桥 Configure(Func) 注入执行器；工具名+参数 → 结果文本
 // 常用: tool_dispatch.mau 工具分发拓扑——CH4 P2 前置；oa_flow.mau T_Execute 动作
 // ═══════════════════════════════════════════════

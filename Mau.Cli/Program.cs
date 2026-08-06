@@ -26,6 +26,7 @@ namespace Mau.Cli
             Mau.Bricks.BoxBrickRegistration.RegisterAll();
             Mau.Bricks.TextBrickRegistration.RegisterAll();
             Mau.Bricks.ShellBrickRegistration.RegisterAll();
+            Mau.Bricks.ShellToolBrickRegistration.RegisterAll();
             Mau.Bricks.LlmBrickRegistration.RegisterAll();
             Mau.Bricks.ContextBrickRegistration.RegisterAll();
             Mau.Bricks.ApprovalBrickRegistration.RegisterAll();
@@ -39,7 +40,7 @@ namespace Mau.Cli
             if (args.Length == 0)
             {
                 Console.WriteLine("Mau Translator v0.1");
-                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau> -o <dir> [--sdk] | mau publish -o <dir> | mau test | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket>");
+                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau> -o <dir> [--sdk] | mau publish -o <dir> | mau test | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket> | mau ps | mau status <名> | mau snapshot <名> | mau kill <名> | mau bricks list|index|test");
                 return 0;
             }
 
@@ -121,6 +122,15 @@ namespace Mau.Cli
                 string? name = args.Length > 1 ? args[1] : null;
                 bool clean = args.Length > 1 && args[1] == "--clean";
                 return CommandSupervisor.Kill(name, clean);
+            }
+            if (command == "bricks")
+            {
+                string[] bricksArgs = new string[args.Length - 1];
+                for (int i = 0; i < bricksArgs.Length; i = i + 1)
+                {
+                    bricksArgs[i] = args[i + 1];
+                }
+                return CommandBricks.Execute(bricksArgs);
             }
 
             Console.WriteLine("未知命令: " + command);

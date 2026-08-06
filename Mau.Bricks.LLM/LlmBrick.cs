@@ -3,6 +3,7 @@
 // ID:   BRIK-LLM-001 ~ 002
 // 作用: LLM 非流式/流式调用——OpenAI 兼容 Chat Completions 端点
 // 引用: Mau.Bricks.LLM → Mau.Contracts（BrickRegistry）· System.Net.Http
+// 依赖: System.Net.Http
 // 原理: HTTP POST + SSE 解析——后台任务只解析不可变结果，回调投递分片
 // 常用: CH4 TalkCat / LLM 工具调用 / 对话中枢
 // ═══════════════════════════════════════════════

@@ -3,6 +3,7 @@
 // ID:   BRIK-OA-001 ~ 005
 // 作用: OA 工单机制积木——语料声明拓扑动作（谁发布/谁认领/什么工具响应），宿主注入 OA 实例
 // 引用: Mau.Bricks.Standard → Mau.Runtime（IOA/Office/OfficeState）· Mau.Contracts
+// 依赖: Mau.Runtime.OA
 // 原理: 静态宿主桥 Configure(IOA) 注入单例；积木方法包装 Mau.Runtime.OA 操作
 // 常用: oa_flow.mau 工单撮合拓扑——CH4 P1.3 核心
 // ═══════════════════════════════════════════════

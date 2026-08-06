@@ -1,8 +1,9 @@
-// ═══════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════
 // 积木: math.is_all_digits / math.format_size / math.result_preview
 // ID:   BRIK-MATH-001 ~ 003
 // 作用: 确定性纯文本数学——数字校验 / B-K-M 数量格式化 / 结果预览
 // 引用: Mau.Bricks.Standard → Mau.Contracts（BrickRegistry）
+// 依赖: 无
 // 原理: 静态方法 + BrickContract 注册——文化无关格式化（InvariantCulture）
 // 常用: CH4 工具系统参数校验 / 日志大小展示 / 结果摘要
 // ═══════════════════════════════════════════════

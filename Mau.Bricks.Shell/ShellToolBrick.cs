@@ -1,9 +1,10 @@
-// ═══════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════
 // 积木: tool.run_shell_exec
 // ID:   BRIK-SHELL-002
 // 作用: Shell 工具适配器——读单展平参数（args.command/args.timeoutSeconds）→ ShellBrick.Exec
 //       → 写回执 content → Complete（ToolExec 语料执行分支用）
 // 引用: Mau.Bricks.Shell → Mau.Contracts（BrickRegistry）· Mau.Runtime（OA/OfficeData）
+// 依赖: Mau.Runtime.OA · BRIK-SHELL-001
 // 原理: 与 ToolBrick.RunFileRead/Write 同款适配器模式——OA 单参数展平读取 → 积木执行 → 回执写入
 // 常用: CH4 ToolExec / shell 工具执行链路
 // ═══════════════════════════════════════════════

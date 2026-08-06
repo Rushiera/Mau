@@ -1,8 +1,9 @@
-// ═══════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════
 // 积木: docx.read / docx.write
 // ID:   BRIK-OFFICE-003 ~ 004
 // 作用: Word 读写——.docx ↔ 纯文本（段落间空行分隔）
 // 引用: Mau.Bricks.Office → Mau.Contracts（BrickRegistry）· DocumentFormat.OpenXml
+// 依赖: DocumentFormat.OpenXml
 // 原理: WordprocessingDocument 打开/创建——Body 段落遍历/构建
 // 常用: CH4 IO 工具组 / 文档处理 / 报告生成
 // ═══════════════════════════════════════════════
