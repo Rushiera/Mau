@@ -439,7 +439,7 @@ namespace Mau.Bricks
                 return false;
             }
             Office[] open = oa.ListOpen("TOOL",
-                new string[] { "file.read", "file.write" }).ToArray();
+                new string[] { "file.read", "file.write", "shell.exec" }).ToArray();
             for (int i = 0; i < open.Length; i = i + 1)
             {
                 List<Office> claimed = oa.ClaimBatch(catId,
