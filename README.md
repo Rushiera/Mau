@@ -80,9 +80,14 @@ dotnet build Mau.sln
 # 运行门禁
 dotnet run --project Mau.Cli test
 
-# 翻译 .mau 文件
-dotnet run --project Mau.Cli gen --input cases/demo.mau
+# 验证 .mau 文件（语法 + 静态验证）
+dotnet run --project Mau.Cli verify Mau.Snapshots/cases/file_convert.mau
+
+# 翻译 .mau 文件（生成 C# 源码）
+dotnet run --project Mau.Cli gen Mau.Snapshots/cases/file_convert.mau -o generated-run/
 ```
+
+> 完整命令见 `mau-usage.md`（CCBP 知识网络：`Data/CatCatBigParty/Project/Mau/mau-usage.md`）。
 
 ---
 
