@@ -332,7 +332,34 @@ namespace Mau.Bricks
             toolCallsJson = last.ToolCallsJson;
             return isTool;
         }
+/// <summary>
+/// 判断最后消费分片是否带 LLM 错误——返回=判断结果（true=有错误；false=无错误或不可判）
+/// 语义与 is_end/is_tool 同款：错误码是 LLM 的正常返回值，业务层消费（终止+回滚），非框架级错误
+/// </summary>
+/// <param name = "requestId">流式会话 ID</param>
+/// <param name = "hasError">是否带错误码</param>
+/// <param name = "errorCode">错误码（有错误时输出）</param>
+/// <returns>true=最后分片带错误码</returns>
+public static bool HasError(string requestId, out bool hasError, out string errorCode)
+{
+    hasError = false;
+    errorCode = "";
+    LlmStreamSession? session;
+    if (!_sessions.TryGetValue(SafeText(requestId), out session) || session == null)
+    {
+        return false;
+    }
 
+    LlmStreamChunk? last = session.LastChunk;
+    if (last == null)
+    {
+        return false;
+    }
+
+    hasError = last.ErrorCode.Length > 0;
+    errorCode = last.ErrorCode;
+    return hasError;
+}
         /// <summary>
         /// 终止流式会话——取消请求并清理资源
         /// </summary>
@@ -1062,6 +1089,7 @@ namespace Mau.Bricks
             RegisterIsEnd();
             RegisterIsTool();
             RegisterFinish();
+            RegisterHasError();
         }
 
         /// <summary>
@@ -1160,7 +1188,20 @@ namespace Mau.Bricks
             contract.Thread = "main";
             BrickRegistry.Register(contract);
         }
-
+/// <summary>
+/// 注册 llm.has_error——最后分片是否带错误码（返回=判断结果）
+/// </summary>
+private static void RegisterHasError()
+{
+    BrickContract contract = new BrickContract("llm.has_error", "Mau.Bricks.LlmBrick.HasError");
+    contract.Inputs.Add(new BrickPort("requestId", typeof(string), "流式会话 ID"));
+    contract.Outputs.Add(new BrickPort("hasError", typeof(bool), "是否带错误码"));
+    contract.Outputs.Add(new BrickPort("errorCode", typeof(string), "错误码（有错误时输出）"));
+    contract.Return = BrickReturnKind.Bool;
+    contract.Duration = BrickDuration.Sync;
+    contract.Thread = "main";
+    BrickRegistry.Register(contract);
+}
         /// <summary>
         /// 注册 llm.finish——终止流式会话
         /// </summary>

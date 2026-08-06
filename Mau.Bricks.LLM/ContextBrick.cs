@@ -213,6 +213,38 @@ namespace Mau.Bricks
             }
             return true;
         }
+/// <summary>
+/// 记录回滚断点——当前消息数量（对话开始前调用；错误时回滚到此处）
+/// </summary>
+/// <param name = "sessionKey">会话 Key</param>
+/// <param name = "checkpoint">断点（消息数量）</param>
+/// <returns>true=成功</returns>
+public static bool CtxCheckpoint(string sessionKey, out int checkpoint)
+{
+    ContextSession session = GetOrCreate(SafeKey(sessionKey));
+    lock (_gate)
+    {
+        checkpoint = session.History.Count;
+    }
+
+    return true;
+} 
+/// <summary>
+/// 回滚到断点——移除断点之后的所有消息（System 之前的永久消息保留）
+/// 错误自救：LLM 错误 → 终止对话 + 回滚（与 CH2 ContextRollback 对齐）
+/// </summary>
+/// <param name = "sessionKey">会话 Key</param>
+/// <param name = "checkpoint">断点（消息数量）</param>
+/// <returns>true=成功</returns>
+ public  static  bool  CtxRollback ( string  sessionKey ,  int  checkpoint ) { if  ( checkpoint < 0 ) { return  false ;  } ContextSession  session  =  GetOrCreate ( SafeKey ( sessionKey ) ) ;  lock  ( _gate ) { if  ( checkpoint >= session . History . Count ) { return  true ;  } session . History . RemoveRange ( checkpoint ,  session . History . Count - checkpoint ) ;  } return  true ;  } 
+/// <summary>
+/// 追加错误消息——错误码入持久流（与 CH2 Error 条目对齐；不参与 LLM 请求构建）
+/// </summary>
+/// <param name = "sessionKey">会话 Key</param>
+/// <param name = "errorCode">错误码</param>
+/// <returns>true=成功</returns>
+ public  static  bool  CtxPushError ( string  sessionKey ,  string  errorCode ) { ContextSession  session  =  GetOrCreate ( SafeKey ( sessionKey ) ) ;  string  safe  =  SafeText ( errorCode ) ;  if  ( safe . Length > 0 ) { lock  ( _gate ) { LlmMessage  message  =  CreateMessage ( "Error" ,  safe ) ;  session . History . Add ( message ) ;  } } return  true ;  }
+
 
         /// <summary>
         /// 拼接 System、User 和 Assistant 正文供单次文本模式使用
@@ -229,7 +261,7 @@ namespace Mau.Bricks
                 for (int i = 0; i < session.History.Count; i = i + 1)
                 {
                     LlmMessage message = session.History[i];
-                    if (message.Role != "Tool" && message.Content.Length > 0)
+                    if (message.Role != "Tool" && message.Role != "Error" && message.Content.Length > 0)
                     {
                         if (builder.Length > 0)
                         {
@@ -328,6 +360,10 @@ namespace Mau.Bricks
                     for (int i = 0; i < session.History.Count; i = i + 1)
                     {
                         LlmMessage message = session.History[i];
+                        if (message.Role == "Error")
+                        {
+                            continue;
+                        }
                         writer.WriteStartObject();
                         writer.WriteString("role", message.Role.ToLowerInvariant());
                         writer.WriteString("content", SafeText(message.Content));
@@ -436,6 +472,9 @@ namespace Mau.Bricks
             RegisterCtxCount();
             RegisterCtxBuildPrompt();
             RegisterCtxClear();
+            RegisterCtxCheckpoint();
+            RegisterCtxRollback();
+            RegisterCtxPushError();
         }
 
         /// <summary>
@@ -565,6 +604,28 @@ namespace Mau.Bricks
             contract.Thread = "main";
             BrickRegistry.Register(contract);
         }
+/// <summary>
+/// 注册 llm.ctx_checkpoint——记录回滚断点
+/// </summary>
+private static void RegisterCtxCheckpoint()
+{
+    BrickContract contract = new BrickContract("llm.ctx_checkpoint", "Mau.Bricks.ContextBrick.CtxCheckpoint");
+    contract.Inputs.Add(new BrickPort("sessionKey", typeof(string), "会话 Key"));
+    contract.Outputs.Add(new BrickPort("checkpoint", typeof(int), "断点（消息数量）"));
+    contract.Return = BrickReturnKind.Bool;
+    contract.Duration = BrickDuration.Sync;
+    contract.Thread = "main";
+    BrickRegistry.Register(contract);
+} 
+/// <summary>
+/// 注册 llm.ctx_rollback——回滚到断点
+/// </summary>
+ private  static  void  RegisterCtxRollback ( ) { BrickContract  contract  =  new  BrickContract ( "llm.ctx_rollback" ,  "Mau.Bricks.ContextBrick.CtxRollback" ) ;  contract . Inputs . Add ( new  BrickPort ( "sessionKey" ,  typeof ( string ) ,  "会话 Key" ) ) ;  contract . Inputs . Add ( new  BrickPort ( "checkpoint" ,  typeof ( int ) ,  "断点（消息数量）" ) ) ;  contract . Return  =  BrickReturnKind . Bool ;  contract . Duration  =  BrickDuration . Sync ;  contract . Thread  =  "main" ;  BrickRegistry . Register ( contract ) ;  } 
+/// <summary>
+/// 注册 llm.ctx_push_error——错误码入持久流
+/// </summary>
+ private  static  void  RegisterCtxPushError ( ) { BrickContract  contract  =  new  BrickContract ( "llm.ctx_push_error" ,  "Mau.Bricks.ContextBrick.CtxPushError" ) ;  contract . Inputs . Add ( new  BrickPort ( "sessionKey" ,  typeof ( string ) ,  "会话 Key" ) ) ;  contract . Inputs . Add ( new  BrickPort ( "errorCode" ,  typeof ( string ) ,  "错误码" ) ) ;  contract . Return  =  BrickReturnKind . Bool ;  contract . Duration  =  BrickDuration . Sync ;  contract . Thread  =  "main" ;  BrickRegistry . Register ( contract ) ;  }
+
 
         /// <summary>
         /// 注册 llm.ctx_clear
