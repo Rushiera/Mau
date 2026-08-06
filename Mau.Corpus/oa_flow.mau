@@ -1,7 +1,7 @@
 ﻿// oa_flow.mau —— OA 工单撮合模板
 // 来源：CH3 Core/CH_OA.cs（540 行）——Post→Claim→Complete→超时结算
 // 用途：多消费者按能力认领工单，生产者不关心谁处理
-// 积木状态：oa.post / oa.claim / oa.complete / oa.settle —— 🔴 待实现（CH4 P3.1）
+// 积木状态：oa.post / oa.claim / oa.complete / oa.settle —— ✅ 已实现（BRIK-OA-001~005；双字典载荷 oa.set_int/set_str/get_int/get_str 见 BRIK-OA-006~009）
 // 结构：工单入队（信号）→ 消费者认领（配额限制并发）→ 执行 → 结算
 Mau 0.1
 基座: Mau.Runtime/v0.1
