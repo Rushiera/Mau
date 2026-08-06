@@ -132,6 +132,54 @@ namespace Mau.Development
         }
 
         /// <summary>
+        /// 多源码一次编译——组模式（多个生成物 → 一个 DLL）
+        /// </summary>
+        /// <param name="sources">完整 C# 源码数组（与 classNames 一一对应）</param>
+        /// <param name="classNames">逻辑类名数组（仅用于校验，实际类名在源码内）</param>
+        /// <param name="assemblyName">输出程序集名（安全逻辑名）</param>
+        /// <returns>编译结果</returns>
+        public MauPocketCompileResult CompileMany(string[] sources,
+            string[] classNames, string assemblyName)
+        {
+            ValidateLogicalName(assemblyName);
+            string buildId = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ")
+                + "-" + Guid.NewGuid().ToString("N");
+            string buildRoot = Path.Combine(MauPocketCompiler_Root, buildId);
+            Directory.CreateDirectory(buildRoot);
+            string assemblyPath = Path.Combine(buildRoot, assemblyName + ".dll");
+            List<SyntaxTree> trees = new List<SyntaxTree>();
+            for (int i = 0; i < sources.Length; i = i + 1)
+            {
+                if (i < classNames.Length)
+                {
+                    ValidateLogicalName(classNames[i]);
+                }
+                trees.Add(CSharpSyntaxTree.ParseText(SafeText(sources[i]),
+                    new CSharpParseOptions(LanguageVersion.Latest)));
+            }
+            MetadataReference[] references = BuildReferences();
+            CSharpCompilation compilation = CSharpCompilation.Create(
+                assemblyName + "_" + Guid.NewGuid().ToString("N"),
+                trees, references,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                    optimizationLevel: OptimizationLevel.Release,
+                    allowUnsafe: false));
+            MauPocketCompileResult result = new MauPocketCompileResult();
+            result.AssemblyPath = assemblyPath;
+            using (MemoryStream assembly = new MemoryStream())
+            {
+                EmitResult emit = compilation.Emit(assembly);
+                result.Diagnostics = FormatDiagnostics(emit.Diagnostics);
+                result.Success = emit.Success;
+                if (emit.Success)
+                {
+                    WriteAtomic(assemblyPath, assembly.ToArray());
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
         /// 列出 DLL 中所有带 MauExport 的 public static 方法
         /// </summary>
         /// <param name="assemblyPath">口袋 DLL</param>

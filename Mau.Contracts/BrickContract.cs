@@ -128,6 +128,11 @@ namespace Mau.Contracts
         public string Thread;
 
         /// <summary>
+        /// 主值端口——数组输出时的语义主产出端口名（翻译器数组→标量绑定时用）
+        /// </summary>
+        public string MainOutput;
+
+        /// <summary>
         /// 构造积木契约
         /// </summary>
         /// <param name="name">积木名称</param>
@@ -141,6 +146,7 @@ namespace Mau.Contracts
             Return = BrickReturnKind.Bool;
             Duration = BrickDuration.Sync;
             Thread = "any";
+            MainOutput = "";
         }
     }
 

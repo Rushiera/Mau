@@ -85,6 +85,11 @@ namespace Mau.Translator
                 IrTransition t = doc.Transitions[i];
                 for (int p = 0; p < t.Params.Count; p++)
                 {
+                    // 箭头绑定（变量→端口）不生成端口字段——参数值来自源变量字段（其他变迁输出）；常量绑定不生成字段（字面量直传）
+                    if (t.Params[p].IsArrow || t.Params[p].IsConstant)
+                    {
+                        continue;
+                    }
                     string fieldName = "_" + t.Params[p].PortName;
                     if (_paramFields.Contains(fieldName))
                     {
@@ -542,17 +547,23 @@ namespace Mau.Translator
         /// <param name="p">信号命题</param>
         private static void AppendFireMethod(StringBuilder sb, MauDocument doc, IrProposition p)
         {
-            // 收集引用该信号的所有变迁的动作参数（去重）
+            // 收集引用该信号的所有变迁的动作参数（去重）——仅简写绑定（外部注入），箭头绑定来自积木输出
             List<IrParamBinding> params_ = new List<IrParamBinding>();
             for (int i = 0; i < doc.Transitions.Count; i++)
             {
                 IrTransition t = doc.Transitions[i];
-                if (!t.Preconditions.Contains(p.Name))
+                // 前置含信号——支持析取组（∨）内匹配
+                if (!TransitionReferencesSignal(doc, t, p.Name))
                 {
                     continue;
                 }
                 for (int a = 0; a < t.Params.Count; a++)
                 {
+                    // 仅收简写注入（非箭头非常量）——箭头绑定来自字段/常量，不来自 Fire
+                    if (t.Params[a].IsArrow || t.Params[a].IsConstant)
+                    {
+                        continue;
+                    }
                     bool exists = false;
                     for (int b = 0; b < params_.Count; b++)
                     {
@@ -604,6 +615,34 @@ namespace Mau.Translator
         }
 
         /// <summary>
+        /// 变迁前置是否引用指定信号——支持析取组（∨）内匹配
+        /// </summary>
+        /// <param name="doc">文档</param>
+        /// <param name="t">变迁</param>
+        /// <param name="signalName">信号名</param>
+        /// <returns>引用为真</returns>
+        private static bool TransitionReferencesSignal(MauDocument doc,
+            IrTransition t, string signalName)
+        {
+            for (int p = 0; p < t.Preconditions.Count; p = p + 1)
+            {
+                if (t.Preconditions[p] == signalName)
+                {
+                    return true;
+                }
+                string[] orParts = t.Preconditions[p].Split('∨');
+                for (int o = 0; o < orParts.Length; o = o + 1)
+                {
+                    if (orParts[o].Trim() == signalName)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// 找引用指定信号且含指定端口的变迁
         /// </summary>
         /// <param name="doc">文档</param>
@@ -615,7 +654,7 @@ namespace Mau.Translator
             for (int i = 0; i < doc.Transitions.Count; i++)
             {
                 IrTransition t = doc.Transitions[i];
-                if (!t.Preconditions.Contains(signalName))
+                if (!TransitionReferencesSignal(doc, t, signalName))
                 {
                     continue;
                 }
@@ -691,11 +730,16 @@ namespace Mau.Translator
                 sb.AppendLine("            {");
                 for (int p = 0; p < t.Preconditions.Count; p++)
                 {
-                    IrProposition? prop = doc.FindProposition(t.Preconditions[p]);
-                    if (prop != null && prop.Kind == PropositionKind.Signal)
+                    // 析取前置（∨）内的信号同样消费——拆分解析
+                    string[] orParts = t.Preconditions[p].Split('∨');
+                    for (int o = 0; o < orParts.Length; o = o + 1)
                     {
-                        sb.AppendLine("                // 信号消费");
-                        sb.AppendLine("                " + prop.Name + " = false;");
+                        IrProposition? prop = doc.FindProposition(orParts[o].Trim());
+                        if (prop != null && prop.Kind == PropositionKind.Signal)
+                        {
+                            sb.AppendLine("                // 信号消费");
+                            sb.AppendLine("                " + prop.Name + " = false;");
+                        }
                     }
                 }
                 if (hasCube)
@@ -734,6 +778,11 @@ namespace Mau.Translator
                 for (int p = 0; p < t.PostOk.Count; p++)
                 {
                     sb.AppendLine("                    " + t.PostOk[p] + " = true;");
+                }
+                if (hasCube && t.TimeoutMode == "Idle")
+                {
+                    sb.AppendLine("                    // 空闲时限——事件到达重置空闲计数");
+                    sb.AppendLine("                    " + cubeName + ".Touch();");
                 }
             string debugOkW = DebugLogLine(t, "Ok", "                    ");
             if (debugOkW.Length > 0)
@@ -797,14 +846,18 @@ namespace Mau.Translator
             sb.AppendLine("            if (" + PreconditionText(t, hasCube, cubeName, doc) + ")");
             sb.AppendLine("            {");
 
-            // 信号前置消费
+            // 信号前置消费——含析取组拆分
             for (int p = 0; p < t.Preconditions.Count; p++)
             {
-                IrProposition? prop = doc.FindProposition(t.Preconditions[p]);
-                if (prop != null && prop.Kind == PropositionKind.Signal)
+                string[] orParts = t.Preconditions[p].Split('∨');
+                for (int o = 0; o < orParts.Length; o = o + 1)
                 {
-                    sb.AppendLine("                // 信号消费");
-                    sb.AppendLine("                " + prop.Name + " = false;");
+                    IrProposition? prop = doc.FindProposition(orParts[o].Trim());
+                    if (prop != null && prop.Kind == PropositionKind.Signal)
+                    {
+                        sb.AppendLine("                // 信号消费");
+                        sb.AppendLine("                " + prop.Name + " = false;");
+                    }
                 }
             }
 
@@ -830,6 +883,11 @@ namespace Mau.Translator
             {
                 sb.AppendLine("                    // 正常后置注册");
                 sb.AppendLine("                    " + t.PostOk[p] + " = true;");
+            }
+            if (hasCube && t.TimeoutMode == "Idle")
+            {
+                sb.AppendLine("                    // 空闲时限——事件到达重置空闲计数");
+                sb.AppendLine("                    " + cubeName + ".Touch();");
             }
             string debugOk = DebugLogLine(t, "Ok", "                    ");
             if (debugOk.Length > 0)
@@ -1003,7 +1061,24 @@ private static string DebugLogLine(IrTransition t, string phase, string indent)
                 {
                     sb.Append(", ");
                 }
-                sb.Append("_" + t.Params[i].PortName);
+                if (t.Params[i].IsConstant)
+                {
+                    // 常量字面量——数字原样，字符串加引号
+                    long num;
+                    if (long.TryParse(t.Params[i].ConstantValue, out num))
+                    {
+                        sb.Append(t.Params[i].ConstantValue);
+                    }
+                    else
+                    {
+                        sb.Append("\"" + t.Params[i].ConstantValue + "\"");
+                    }
+                }
+                else
+                {
+                    // 变量引用——简写（变量=端口名）→ _端口；箭头绑定（变量→端口）→ _变量（源输出字段）
+                    sb.Append("_" + t.Params[i].Variable);
+                }
             }
             // 输出端口——out 传递，与输入参数拼接
             if (contract != null)

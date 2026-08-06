@@ -115,17 +115,15 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 上架一个工单
+        /// 上架一个工单——空双字典载荷随单生成
         /// </summary>
         /// <param name="dogId">所有者 ID</param>
         /// <param name="officeType">工单大类</param>
         /// <param name="officeName">工单名称</param>
-        /// <param name="texts">文本参数</param>
-        /// <param name="paths">路径参数</param>
         /// <param name="timeoutTicks">超时帧数</param>
         /// <returns>Office ID</returns>
         public long Post(long dogId, string officeType, string officeName,
-            string[]? texts, string[]? paths, long timeoutTicks)
+            long timeoutTicks)
         {
             Office office;
             long officeId;
@@ -143,19 +141,117 @@ namespace Mau.Runtime
             office.OfficeType = officeType;
             office.OfficeName = officeName;
             office.DogId = dogId;
-            office.Texts = CopyArray(texts);
-            office.Paths = CopyArray(paths);
+            office.Data = OfficeData.Empty();
             office.Status = OfficeState.Open;
             office.ClaimByCatId = 0;
             office.PostFrame = _tickNumber;
             office.ClaimFrame = 0;
             office.TimeoutFrames = timeoutTicks;
-            office.ResultTexts = new string[0];
-            office.ResultPaths = new string[0];
+            office.Result = OfficeData.Empty();
             _offices[officeId] = office;
             _version = _version + 1;
             WriteLog("OA | POST | #" + officeId + " | " + officeType + "/" + officeName, 0);
             return officeId;
+        }
+
+        /// <summary>
+        /// 写入请求载荷 int 值——仅 Open 状态 + 本人（挂单方）可操作
+        /// </summary>
+        /// <param name="officeId">Office ID</param>
+        /// <param name="dogId">所有者 ID</param>
+        /// <param name="key">Key</param>
+        /// <param name="value">int 值</param>
+        /// <returns>true=写入成功</returns>
+        public bool SetInt(long officeId, long dogId, string key, int value)
+        {
+            Office office;
+
+            _threadGuard.AssertMainThread("OA.SetInt");
+            if (!_offices.TryGetValue(officeId, out office))
+            {
+                return false;
+            }
+            if (office.Status != OfficeState.Open || office.DogId != dogId)
+            {
+                return false;
+            }
+            office.Data.Ints[key] = value;
+            _offices[officeId] = office;
+            _version = _version + 1;
+            return true;
+        }
+
+        /// <summary>
+        /// 写入请求载荷 str 值——仅 Open 状态 + 本人（挂单方）可操作
+        /// </summary>
+        /// <param name="officeId">Office ID</param>
+        /// <param name="dogId">所有者 ID</param>
+        /// <param name="key">Key</param>
+        /// <param name="value">str 值</param>
+        /// <returns>true=写入成功</returns>
+        public bool SetStr(long officeId, long dogId, string key, string value)
+        {
+            Office office;
+
+            _threadGuard.AssertMainThread("OA.SetStr");
+            if (!_offices.TryGetValue(officeId, out office))
+            {
+                return false;
+            }
+            if (office.Status != OfficeState.Open || office.DogId != dogId)
+            {
+                return false;
+            }
+            office.Data.Strs[key] = value;
+            _offices[officeId] = office;
+            _version = _version + 1;
+            return true;
+        }
+
+        /// <summary>
+        /// 读取请求载荷 int 值——执行方消费
+        /// </summary>
+        /// <param name="officeId">Office ID</param>
+        /// <param name="key">Key</param>
+        /// <param name="value">int 值</param>
+        /// <returns>true=Key 存在</returns>
+        public bool GetInt(long officeId, string key, out int value)
+        {
+            Office office;
+
+            _threadGuard.AssertMainThread("OA.GetInt");
+            value = 0;
+            if (!_offices.TryGetValue(officeId, out office))
+            {
+                return false;
+            }
+            return office.Data.Ints.TryGetValue(key, out value);
+        }
+
+        /// <summary>
+        /// 读取请求载荷 str 值——执行方消费
+        /// </summary>
+        /// <param name="officeId">Office ID</param>
+        /// <param name="key">Key</param>
+        /// <param name="value">str 值</param>
+        /// <returns>true=Key 存在</returns>
+        public bool GetStr(long officeId, string key, out string value)
+        {
+            Office office;
+
+            _threadGuard.AssertMainThread("OA.GetStr");
+            value = "";
+            if (!_offices.TryGetValue(officeId, out office))
+            {
+                return false;
+            }
+            string? raw;
+            if (!office.Data.Strs.TryGetValue(key, out raw) || raw == null)
+            {
+                return false;
+            }
+            value = raw;
+            return true;
         }
 
         /// <summary>
@@ -243,14 +339,12 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 由持单执行方完成工单
+        /// 由持单执行方完成工单——写入回执双字典载荷 → 状态变 Closed
         /// </summary>
         /// <param name="officeId">Office ID</param>
         /// <param name="catId">持单执行方 ID</param>
-        /// <param name="resultTexts">结果文本</param>
-        /// <param name="resultPaths">结果路径</param>
-        public void Complete(long officeId, long catId,
-            string[]? resultTexts, string[]? resultPaths)
+        /// <param name="result">回执双字典载荷</param>
+        public void Complete(long officeId, long catId, OfficeData result)
         {
             Office office;
 
@@ -270,8 +364,7 @@ namespace Mau.Runtime
                 WriteLog("OA | COMPLETE | REJECT | #" + officeId + " 状态或权限不符", 2);
                 return;
             }
-            office.ResultTexts = CopyArray(resultTexts);
-            office.ResultPaths = CopyArray(resultPaths);
+            office.Result = result.Copy();
             office.Status = OfficeState.Closed;
             _offices[officeId] = office;
             _totalDone = _totalDone + 1;
@@ -342,10 +435,8 @@ namespace Mau.Runtime
             office = new Office();
             office.OfficeType = "";
             office.OfficeName = "";
-            office.Texts = new string[0];
-            office.Paths = new string[0];
-            office.ResultTexts = new string[0];
-            office.ResultPaths = new string[0];
+            office.Data = OfficeData.Empty();
+            office.Result = OfficeData.Empty();
             office.Status = OfficeState.TimeOut;
             return office;
         }
@@ -604,16 +695,14 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 深复制工单中的数组字段
+        /// 深复制工单中的双字典载荷字段
         /// </summary>
         /// <param name="source">源工单</param>
         /// <returns>工单副本</returns>
         private Office CopyOffice(Office source)
         {
-            source.Texts = CopyArray(source.Texts);
-            source.Paths = CopyArray(source.Paths);
-            source.ResultTexts = CopyArray(source.ResultTexts);
-            source.ResultPaths = CopyArray(source.ResultPaths);
+            source.Data = source.Data.Copy();
+            source.Result = source.Result.Copy();
             return source;
         }
 

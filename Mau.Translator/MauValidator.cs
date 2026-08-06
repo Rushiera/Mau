@@ -1,6 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using Mau.Contracts;
-
 namespace Mau.Translator
 {
     /// <summary>
@@ -190,6 +190,132 @@ namespace Mau.Translator
                 }
             }
 
+            // [段5c] 第 6b 项：参数绑定完整性——变量存在性 + 类型匹配 + 输入端口全覆盖
+            {
+                // 构建全流程字段表——输出端口 + 外部注入参数（简写绑定）
+                Dictionary<string, System.Type> fieldTypes = new Dictionary<string, System.Type>(StringComparer.Ordinal);
+                for (int i = 0; i < doc.Transitions.Count; i++)
+                {
+                    IrTransition t = doc.Transitions[i];
+                    if (t.BrickName.Length == 0)
+                    {
+                        continue;
+                    }
+                    BrickContract? contract;
+                    if (!BrickRegistry.TryGet(t.BrickName, out contract))
+                    {
+                        continue;
+                    }
+                    for (int o = 0; o < contract.Outputs.Count; o++)
+                    {
+                        if (!fieldTypes.ContainsKey(contract.Outputs[o].Name))
+                        {
+                            fieldTypes[contract.Outputs[o].Name] = contract.Outputs[o].Type;
+                        }
+                    }
+                    for (int p = 0; p < t.Params.Count; p++)
+                    {
+                        // 简写注入字段（非箭头非常量）注册到字段表——外部注入参数
+                        if (!t.Params[p].IsArrow && !t.Params[p].IsConstant)
+                        {
+                            string portName = t.Params[p].PortName;
+                            System.Type? portType = FindInputPortType(contract, portName);
+                            if (portType != null && !fieldTypes.ContainsKey(portName))
+                            {
+                                fieldTypes[portName] = portType;
+                            }
+                        }
+                    }
+                }
+                // 箭头绑定校验——变量存在 + 类型匹配
+                for (int i = 0; i < doc.Transitions.Count; i++)
+                {
+                    IrTransition t = doc.Transitions[i];
+                    if (t.BrickName.Length == 0)
+                    {
+                        continue;
+                    }
+                    BrickContract? contract;
+                    if (!BrickRegistry.TryGet(t.BrickName, out contract))
+                    {
+                        continue;
+                    }
+                    for (int p = 0; p < t.Params.Count; p++)
+                    {
+                        // 常量绑定——类型匹配：字符串字面量→string 端口；数字字面量→int/long 端口
+                        if (t.Params[p].IsConstant)
+                        {
+                            System.Type? constPortType = FindInputPortType(contract, t.Params[p].PortName);
+                            if (constPortType != null)
+                            {
+                                long num;
+                                bool isNumber = long.TryParse(t.Params[p].ConstantValue, out num);
+                                if (isNumber)
+                                {
+                                    if (constPortType != typeof(int) && constPortType != typeof(long))
+                                    {
+                                        diags.Add(new MauDiagnostic("E018", t.Line, "常量类型不匹配: " + t.Params[p].ConstantValue + " → " + t.Params[p].PortName + "(" + constPortType.Name + ")——数字常量仅可绑定 int/long 端口"));
+                                    }
+                                }
+                                else if (constPortType != typeof(string))
+                                {
+                                    diags.Add(new MauDiagnostic("E018", t.Line, "常量类型不匹配: \"" + t.Params[p].ConstantValue + "\" → " + t.Params[p].PortName + "(" + constPortType.Name + ")——字符串常量仅可绑定 string 端口"));
+                                }
+                            }
+                            continue;
+                        }
+                        // 箭头绑定（含同名箭头）——变量必须是字段表内的字段引用
+                        if (!t.Params[p].IsArrow)
+                        {
+                            continue;
+                        }
+                        string variable = t.Params[p].Variable;
+                        System.Type? varType;
+                        if (!fieldTypes.TryGetValue(variable, out varType) || varType == null)
+                        {
+                            diags.Add(new MauDiagnostic("E015", t.Line, "绑定变量 " + variable + " 未定义——必须引用某变迁的输出端口或外部注入参数"));
+                            continue;
+                        }
+                        System.Type? portType = FindInputPortType(contract, t.Params[p].PortName);
+                        if (portType != null && varType != portType)
+                        {
+                            diags.Add(new MauDiagnostic("E016", t.Line, "绑定类型不匹配: " + variable + "(" + varType.Name + ") → " + t.Params[p].PortName + "(" + portType.Name + ")"));
+                        }
+                    }
+                }
+                // 输入端口全覆盖——契约每个输入端口必须有绑定
+                for (int i = 0; i < doc.Transitions.Count; i++)
+                {
+                    IrTransition t = doc.Transitions[i];
+                    if (t.BrickName.Length == 0)
+                    {
+                        continue;
+                    }
+                    BrickContract? contract;
+                    if (!BrickRegistry.TryGet(t.BrickName, out contract))
+                    {
+                        continue;
+                    }
+                    for (int ip = 0; ip < contract.Inputs.Count; ip++)
+                    {
+                        string portName = contract.Inputs[ip].Name;
+                        bool bound = false;
+                        for (int p = 0; p < t.Params.Count; p++)
+                        {
+                            if (t.Params[p].PortName == portName)
+                            {
+                                bound = true;
+                                break;
+                            }
+                        }
+                        if (!bound)
+                        {
+                            diags.Add(new MauDiagnostic("E017", t.Line, "积木 " + t.BrickName + " 输入端口 " + portName + " 未绑定——参数声明必须覆盖全部输入端口"));
+                        }
+                    }
+                }
+            }
+
             // [段6] 第 7 项：配额合法性——配额资源必须有正整数配额值
             for (int i = 0; i < doc.Resources.Count; i++)
             {
@@ -271,6 +397,25 @@ namespace Mau.Translator
 
             return diags;
         }
+
+        /// <summary>
+        /// 查积木契约输入端口类型
+        /// </summary>
+        /// <param name="contract">积木契约</param>
+        /// <param name="portName">端口名</param>
+        /// <returns>端口类型，不存在返回 null</returns>
+        private static System.Type? FindInputPortType(BrickContract contract, string portName)
+        {
+            for (int i = 0; i < contract.Inputs.Count; i++)
+            {
+                if (contract.Inputs[i].Name == portName)
+                {
+                    return contract.Inputs[i].Type;
+                }
+            }
+            return null;
+        }
+
         /// <summary>
         /// 检查契约是否有指定输入端口
         /// </summary>

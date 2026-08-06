@@ -85,14 +85,34 @@ namespace Mau.Translator
         public string PortName;
 
         /// <summary>
+        /// 箭头写法——true=显式绑定（变量→端口）；false=简写（端口名即变量名）
+        /// 简写 = 外部注入（Fire 参数）；箭头 = 字段引用（输出端口/常量/注入字段）
+        /// </summary>
+        public bool IsArrow;
+
+        /// <summary>
+        /// 常量标志——true=字面量绑定（Variable 为字面量文本，不查字段）
+        /// </summary>
+        public bool IsConstant;
+
+        /// <summary>
+        /// 常量值——IsConstant 时有效（字符串字面量原文/数字字面量文本）
+        /// </summary>
+        public string ConstantValue;
+
+        /// <summary>
         /// 构造参数绑定
         /// </summary>
         /// <param name="variable">变量名</param>
         /// <param name="portName">端口名</param>
-        public IrParamBinding(string variable, string portName)
+        /// <param name="isArrow">是否箭头写法</param>
+        public IrParamBinding(string variable, string portName, bool isArrow)
         {
             Variable = variable;
             PortName = portName;
+            IsArrow = isArrow;
+            IsConstant = false;
+            ConstantValue = "";
         }
     }
 
@@ -278,6 +298,48 @@ public string DebugMessage;
     }
 
     /// <summary>
+    /// 对外条目——模块 OA 边界契约（dll 分发流程一环，design-mau-syntax B9）
+    /// 接收：OA Key → 模块端口；发送：模块端口 → OA Key
+    /// </summary>
+    public sealed class IrExternal
+    {
+        /// <summary>
+        /// 方向——接收（OA→模块）/ 发送（模块→OA）
+        /// </summary>
+        public string Direction;
+
+        /// <summary>
+        /// OA 字典 Key——接收时在左（Key → 端口）；发送时在右（端口 → Key）
+        /// </summary>
+        public string Key;
+
+        /// <summary>
+        /// 模块内端口——接收时在右（Key → 端口）；发送时在左（端口 → Key）
+        /// </summary>
+        public string Port;
+
+        /// <summary>
+        /// 声明行号——诊断定位
+        /// </summary>
+        public int Line;
+
+        /// <summary>
+        /// 构造对外条目
+        /// </summary>
+        /// <param name="direction">方向——接收/发送</param>
+        /// <param name="key">OA 字典 Key</param>
+        /// <param name="port">模块内端口</param>
+        /// <param name="line">声明行号</param>
+        public IrExternal(string direction, string key, string port, int line)
+        {
+            Direction = direction;
+            Key = key;
+            Port = port;
+            Line = line;
+        }
+    }
+
+    /// <summary>
     /// 组合——IR 节点（序列/并行/选择/重试）
     /// </summary>
     public sealed class IrComposition
@@ -375,6 +437,12 @@ public List<string> Interfaces;
         /// 组合表
         /// </summary>
         public List<IrComposition> Compositions;
+
+        /// <summary>
+        /// 对外契约表——模块 OA 边界（接收/发送 Key 声明）
+        /// </summary>
+        public List<IrExternal> Externals;
+
         /// <summary>
         /// 构造文档
         /// </summary>
@@ -388,6 +456,7 @@ public List<string> Interfaces;
             Resources = new List<IrResource>();
             Channels = new List<IrChannel>();
             Compositions = new List<IrComposition>();
+            Externals = new List<IrExternal>();
         }
 
         /// <summary>

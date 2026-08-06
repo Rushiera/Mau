@@ -407,6 +407,7 @@ namespace Mau.Bricks
             RegisterFileMove();
             RegisterFileDelete();
             RegisterFileBatch();
+            CmdBrickRegistration.RegisterAll();
         }
 
         /// <summary>

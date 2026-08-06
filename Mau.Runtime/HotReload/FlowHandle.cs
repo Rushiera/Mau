@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 
@@ -120,6 +121,74 @@ namespace Mau.Runtime
 
             IObservableFlow flow = (IObservableFlow)instance;
             return new FlowHandle(alc, flow);
+        }
+
+        /// <summary>
+        /// 全量加载 DLL（组模式）——dll 内全部 IObservableFlow 实现各一个独立实例（每实例独立 ALC）
+        /// </summary>
+        /// <param name="dllPath">FL_xxx.dll 完整路径</param>
+        /// <returns>句柄数组（与 dll 内实现一一对应）</returns>
+        /// <exception cref="FileNotFoundException">DLL 不存在</exception>
+        /// <exception cref="InvalidOperationException">DLL 内未找到 IObservableFlow 实现</exception>
+        public static FlowHandle[] LoadAll(string dllPath)
+        {
+            if (!File.Exists(dllPath))
+            {
+                throw new FileNotFoundException("口袋 DLL 不存在: " + dllPath);
+            }
+
+            // [段1] 探测类型清单——独立探针 ALC，卸载后正式加载
+            string baseName = Path.GetFileNameWithoutExtension(dllPath);
+            FlowALC probe = new FlowALC("FlowProbe_" + baseName + "_" + Guid.NewGuid().ToString("N"));
+            List<Type> flowTypes = new List<Type>();
+            try
+            {
+                Assembly asm = probe.LoadFromAssemblyPath(dllPath);
+                Type[] types = asm.GetExportedTypes();
+                for (int i = 0; i < types.Length; i = i + 1)
+                {
+                    if (typeof(IObservableFlow).IsAssignableFrom(types[i]) && !types[i].IsAbstract)
+                    {
+                        flowTypes.Add(types[i]);
+                    }
+                }
+            }
+            finally
+            {
+                probe.Unload();
+            }
+            if (flowTypes.Count == 0)
+            {
+                throw new InvalidOperationException("DLL 内未找到 IObservableFlow 实现: " + dllPath);
+            }
+
+            // [段2] 每类型独立 ALC 实例化
+            FlowHandle[] handles = new FlowHandle[flowTypes.Count];
+            for (int i = 0; i < flowTypes.Count; i = i + 1)
+            {
+                FlowALC alc = new FlowALC("Flow_" + baseName + "_" + i.ToString());
+                Assembly asm = alc.LoadFromAssemblyPath(dllPath);
+                string? fullName = flowTypes[i].FullName;
+                if (fullName == null)
+                {
+                    alc.Unload();
+                    continue;
+                }
+                Type? type = asm.GetType(fullName);
+                if (type == null)
+                {
+                    alc.Unload();
+                    throw new InvalidOperationException("类型加载失败: " + fullName);
+                }
+                object? instance = Activator.CreateInstance(type);
+                if (instance == null)
+                {
+                    alc.Unload();
+                    throw new InvalidOperationException("无法实例化生成流程: " + type.FullName);
+                }
+                handles[i] = new FlowHandle(alc, (IObservableFlow)instance);
+            }
+            return handles;
         }
 
         /// <summary>

@@ -47,6 +47,7 @@ namespace Mau.Translator
             string[] lines = sourceText.Split('\n');
             bool headerDone = false;
             bool inPropositionBlock = false;
+            bool inExternalBlock = false;
             IrTransition? currentTransition = null;
             IrResource? currentResource = null;
             IrChannel? currentChannel = null;
@@ -232,6 +233,19 @@ namespace Mau.Translator
                     continue;
                 }
 
+                // [段5e] 对外块入口——模块 OA 边界契约（接收/发送 Key 声明）
+                if (trimmed == "对外:")
+                {
+                    inPropositionBlock = false;
+                    currentProposition = null;
+                    currentTransition = null;
+                    currentResource = null;
+                    currentChannel = null;
+                    currentComposition = null;
+                    inExternalBlock = true;
+                    continue;
+                }
+
                 // [段6] 命题块内的命题行
                 if (inPropositionBlock)
                 {
@@ -403,15 +417,70 @@ namespace Mau.Translator
                     continue;
                 }
 
+                // [段7e] 对外块内的字段行——接收: OAKey → 端口 / 发送: 端口 → OAKey
+                if (inExternalBlock)
+                {
+                    if (trimmed.StartsWith("接收:"))
+                    {
+                        ParseExternalEntry("接收", trimmed.Substring(3).Trim(), lineNo, doc, diags);
+                    }
+                    else if (trimmed.StartsWith("发送:"))
+                    {
+                        ParseExternalEntry("发送", trimmed.Substring(3).Trim(), lineNo, doc, diags);
+                    }
+                    else
+                    {
+                        diags.Add(new MauDiagnostic("E150", lineNo, "对外块内无法识别的字段: " + trimmed));
+                    }
+                    continue;
+                }
+
                 // [段8] 无法识别
                 diags.Add(new MauDiagnostic("E103", lineNo, "无法识别的行: " + trimmed));
             }
 
             return result;
         }
-/// <summary>
-/// 找行尾注释起点——引号外第一个 //；双引号内的 // 视为内容保留
-/// </summary>
+
+        /// <summary>
+        /// 解析对外条目——接收: OAKey → 端口；发送: 端口 → OAKey
+        /// </summary>
+        /// <param name="direction">方向——接收/发送</param>
+        /// <param name="value">条目文本</param>
+        /// <param name="lineNo">行号</param>
+        /// <param name="doc">文档</param>
+        /// <param name="diags">诊断列表</param>
+        private static void ParseExternalEntry(string direction, string value,
+            int lineNo, MauDocument doc, List<MauDiagnostic> diags)
+        {
+            int arrow = value.IndexOf("→");
+            if (arrow < 0)
+            {
+                diags.Add(new MauDiagnostic("E151", lineNo, "对外条目缺少 → 分隔——接收: OAKey → 端口 / 发送: 端口 → OAKey"));
+                return;
+            }
+            string left = value.Substring(0, arrow).Trim();
+            string right = value.Substring(arrow + 1).Trim();
+            if (left.Length == 0 || right.Length == 0)
+            {
+                diags.Add(new MauDiagnostic("E151", lineNo, "对外条目两侧不能为空"));
+                return;
+            }
+            if (direction == "接收")
+            {
+                // 接收: OAKey → 模块端口
+                doc.Externals.Add(new IrExternal("接收", left, right, lineNo));
+            }
+            else
+            {
+                // 发送: 模块端口 → OAKey
+                doc.Externals.Add(new IrExternal("发送", right, left, lineNo));
+            }
+        }
+
+        /// <summary>
+        /// 找行尾注释起点——引号外第一个 //；双引号内的 // 视为内容保留
+        /// </summary>
 /// <param name = "line">原始行文本</param>
 /// <returns>注释起点索引，无注释返回 -1</returns>
 private static int FindCommentStart(string line)
@@ -597,13 +666,29 @@ private static int FindCommentStart(string line)
                 int arrow = item.IndexOf("→");
                 if (arrow < 0)
                 {
-                    // 简写格式：端口名即变量名
-                    t.Params.Add(new IrParamBinding(item, item));
+                    // 简写格式：端口名即变量名（外部注入）
+                    t.Params.Add(new IrParamBinding(item, item, false));
                     continue;
                 }
                 string variable = item.Substring(0, arrow).Trim();
                 string port = item.Substring(arrow + 1).Trim();
-                t.Params.Add(new IrParamBinding(variable, port));
+                IrParamBinding binding = new IrParamBinding(variable, port, true);
+                // 常量字面量绑定——字符串（"..."）或数字字面量（0/-1/300 等）
+                if (variable.Length >= 2 && variable.StartsWith("\"") && variable.EndsWith("\""))
+                {
+                    binding.IsConstant = true;
+                    binding.ConstantValue = variable.Substring(1, variable.Length - 2);
+                }
+                else
+                {
+                    long number;
+                    if (long.TryParse(variable, out number))
+                    {
+                        binding.IsConstant = true;
+                        binding.ConstantValue = variable;
+                    }
+                }
+                t.Params.Add(binding);
             }
         }
 

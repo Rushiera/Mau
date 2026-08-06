@@ -1,8 +1,10 @@
+using System.Collections.Generic;
+
 namespace Mau.Runtime
 {
     /// <summary>
     /// OA 工单。挂单方投递到 OA 的不可变描述 + OA 维护的可变状态。
-    /// 参数和结果均为数组——快生命周期不做复杂容器（不用 Dictionary）。
+    /// 载荷为双字典（OfficeData）——int/str 两通道按 Key 存取（design-mau-module.md §二）。
     /// </summary>
     public struct Office
     {
@@ -27,14 +29,9 @@ namespace Mau.Runtime
         public long DogId;
 
         /// <summary>
-        /// 文本参数数组
+        /// 请求载荷——双字典（Dog 按 Key 写，Cat 按 Key 读）
         /// </summary>
-        public string[] Texts;
-
-        /// <summary>
-        /// 文件路径参数数组
-        /// </summary>
-        public string[] Paths;
+        public OfficeData Data;
 
         /// <summary>
         /// 当前状态
@@ -62,13 +59,8 @@ namespace Mau.Runtime
         public long TimeoutFrames;
 
         /// <summary>
-        /// 回执文本数组（Closed 后有效）
+        /// 回执载荷——双字典（Closed 后有效，Cat 按 Key 写）
         /// </summary>
-        public string[] ResultTexts;
-
-        /// <summary>
-        /// 回执路径数组（Closed 后有效）
-        /// </summary>
-        public string[] ResultPaths;
+        public OfficeData Result;
     }
 }

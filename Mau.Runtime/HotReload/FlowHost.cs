@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Mau.Runtime
@@ -47,6 +47,24 @@ namespace Mau.Runtime
                 _handles.Add(handle);
             }
             return handle;
+        }
+
+        /// <summary>
+        /// 全量加载 DLL（组模式）——dll 内全部 IObservableFlow 实现各一个实例并注册
+        /// </summary>
+        /// <param name="dllPath">FL_xxx.dll 完整路径</param>
+        /// <returns>加载句柄数组（与 dll 内实现一一对应）</returns>
+        public FlowHandle[] LoadAll(string dllPath)
+        {
+            FlowHandle[] handles = FlowHandle.LoadAll(dllPath);
+            lock (_lock)
+            {
+                for (int i = 0; i < handles.Length; i = i + 1)
+                {
+                    _handles.Add(handles[i]);
+                }
+            }
+            return handles;
         }
 
         /// <summary>

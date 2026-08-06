@@ -181,25 +181,44 @@ namespace Mau.Bricks.Tests
     public sealed class ExtendedBrickTests
     {
         /// <summary>
-        /// 上下文管理——System 保留 + 截断
+        /// 上下文管理——System 保留 + 截断 + sessionKey 隔离
         /// </summary>
         [Fact]
         public void ContextBrickKeepsSystemAndTrims()
         {
-            ContextBrick.CtxClear();
-            Assert.True(ContextBrick.CtxSetSystem("你是一只猫"));
-            Assert.True(ContextBrick.CtxPushUser("你好"));
-            Assert.True(ContextBrick.CtxPushAssistant("喵"));
-            Assert.True(ContextBrick.CtxCount(out int count));
+            ContextBrick.CtxClear("test-ctx");
+            Assert.True(ContextBrick.CtxSetSystem("test-ctx", "你是一只猫"));
+            Assert.True(ContextBrick.CtxPushUser("test-ctx", "你好"));
+            Assert.True(ContextBrick.CtxPushAssistant("test-ctx", "喵"));
+            Assert.True(ContextBrick.CtxCount("test-ctx", out int count));
             Assert.Equal(3, count);
 
-            Assert.True(ContextBrick.CtxBuildPrompt(out string prompt));
+            Assert.True(ContextBrick.CtxBuildPrompt("test-ctx", out string prompt));
             Assert.Contains("你是一只猫", prompt);
 
-            Assert.True(ContextBrick.CtxTrim(5, out int removed));
+            Assert.True(ContextBrick.CtxTrim("test-ctx", 5, out int removed));
             Assert.True(removed > 0);
-            Assert.True(ContextBrick.CtxCount(out int after));
+            Assert.True(ContextBrick.CtxCount("test-ctx", out int after));
             Assert.True(after <= 2);
+        }
+
+        /// <summary>
+        /// 上下文隔离——不同 sessionKey 互不串话
+        /// </summary>
+        [Fact]
+        public void ContextBrickSessionKey_IsolatesSessions()
+        {
+            ContextBrick.CtxClear("ctx-a");
+            ContextBrick.CtxClear("ctx-b");
+            Assert.True(ContextBrick.CtxPushUser("ctx-a", "A 的消息"));
+            Assert.True(ContextBrick.CtxPushUser("ctx-b", "B 的消息"));
+
+            Assert.True(ContextBrick.CtxBuildPrompt("ctx-a", out string promptA));
+            Assert.True(ContextBrick.CtxBuildPrompt("ctx-b", out string promptB));
+            Assert.Contains("A 的消息", promptA);
+            Assert.DoesNotContain("B 的消息", promptA);
+            Assert.Contains("B 的消息", promptB);
+            Assert.DoesNotContain("A 的消息", promptB);
         }
 
         /// <summary>
@@ -294,5 +313,40 @@ namespace Mau.Bricks.Tests
                     File.Delete(path);
                 }
             }
+        }
+
+        /// <summary>
+        /// 结构化消息——Tool 结果回执 + Assistant 工具声明 + messages JSON 导出（OpenAI 协议）
+        /// </summary>
+        [Fact]
+        public void ContextBrickStructuredMessages_RoundTrip()
+        {
+            ContextBrick.CtxClear("ctx-struct");
+            Assert.True(ContextBrick.CtxSetSystem("ctx-struct", "你是猫"));
+            Assert.True(ContextBrick.CtxPushUser("ctx-struct", "读文件"));
+            Assert.True(ContextBrick.CtxPushAssistantToolCalls("ctx-struct",
+                "[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"file.read\",\"arguments\":\"{\\\"path\\\":\\\"a.txt\\\"}\"}}]"));
+            Assert.True(ContextBrick.CtxPushTool("ctx-struct", "call_1", "文件内容"));
+
+            Assert.True(ContextBrick.CtxBuildMessagesJson("ctx-struct", out string messagesJson));
+            using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(messagesJson))
+            {
+                System.Text.Json.JsonElement root = doc.RootElement;
+                Assert.Equal(System.Text.Json.JsonValueKind.Array, root.ValueKind);
+                Assert.Equal(4, root.GetArrayLength());
+                // [0] system
+                Assert.Equal("system", root[0].GetProperty("role").GetString());
+                // [2] assistant 带 tool_calls
+                Assert.Equal("assistant", root[2].GetProperty("role").GetString());
+                Assert.True(root[2].TryGetProperty("tool_calls", out _));
+                // [3] tool 带 tool_call_id
+                Assert.Equal("tool", root[3].GetProperty("role").GetString());
+                Assert.Equal("call_1", root[3].GetProperty("tool_call_id").GetString());
+                Assert.Equal("文件内容", root[3].GetProperty("content").GetString());
+            }
+
+            // 纯文本拼接模式跳过 Tool 角色（结构化回填不影响文本模式）
+            Assert.True(ContextBrick.CtxBuildPrompt("ctx-struct", out string prompt));
+            Assert.DoesNotContain("文件内容", prompt);
         }
     }

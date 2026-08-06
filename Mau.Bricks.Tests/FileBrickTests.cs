@@ -13,6 +13,7 @@ namespace Mau.Bricks.Tests
     /// <summary>
     /// 文件积木测试——CH3 FileToolTests 随迁（受控文件系统 + 边界）
     /// </summary>
+    [Collection("FileBrickShared")]
     public sealed class FileBrickTests
     {
         /// <summary>

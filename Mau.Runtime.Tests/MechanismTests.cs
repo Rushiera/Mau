@@ -105,7 +105,7 @@ namespace Mau.Runtime.Tests
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
             long dogId = 1;
-            long officeId = oa.Post(dogId, "TEST", "TIMEOUT", new string[0], new string[0], 1);
+            long officeId = oa.Post(dogId, "TEST", "TIMEOUT", 1);
             bool firstTickObservedOpen = false;
             bool secondTickObservedTimeout = false;
             int observations = 0;
@@ -132,31 +132,31 @@ namespace Mau.Runtime.Tests
         }
 
         /// <summary>
-        /// OA 的认领、回执和数组副本边界
+        /// OA 的认领、回执和双字典副本边界
         /// </summary>
         [Fact]
         public void OAClaimAndCompleteKeepIndependentCopies()
         {
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
-            string[] inputTexts = new string[] { "input" };
-            string[] resultTexts = new string[] { "result" };
             long dogId = 1;
             long catId = 2;
 
-            // [段1] 发布和认领工单后修改调用方数组
-            long officeId = oa.Post(dogId, "TEST", "COPY", inputTexts, new string[0], 100);
+            // [段1] 发布和认领工单后修改调用方载荷
+            long officeId = oa.Post(dogId, "TEST", "COPY", 100);
+            oa.SetStr(officeId, dogId, "input", "input-value");
             List<Office> claimed = oa.ClaimBatch(catId, new long[] { officeId });
-            inputTexts[0] = "changed-input";
-            oa.Complete(officeId, catId, resultTexts, new string[0]);
-            resultTexts[0] = "changed-result";
+            OfficeData result = OfficeData.Empty();
+            result.Strs["output"] = "result-value";
+            oa.Complete(officeId, catId, result);
+            result.Strs["output"] = "changed-result";
 
-            // [段2] OA 中的参数和结果必须保持独立副本
+            // [段2] OA 中的载荷和回执必须保持独立副本
             Office office = oa.GetOffice(officeId);
             Assert.Single(claimed);
             Assert.Equal(OfficeState.Closed, office.Status);
-            Assert.Equal("input", office.Texts[0]);
-            Assert.Equal("result", office.ResultTexts[0]);
+            Assert.Equal("input-value", office.Data.Strs["input"]);
+            Assert.Equal("result-value", office.Result.Strs["output"]);
         }
 
         /// <summary>
@@ -170,7 +170,7 @@ namespace Mau.Runtime.Tests
             long dogId = 1;
             long catA = 2;
             long catB = 3;
-            long officeId = oa.Post(dogId, "TEST", "RE", new string[0], new string[0], 100);
+            long officeId = oa.Post(dogId, "TEST", "RE", 100);
 
             oa.ClaimBatch(catA, new long[] { officeId });
             oa.Relist(officeId, catA);
@@ -191,7 +191,7 @@ namespace Mau.Runtime.Tests
             OA oa = new OA(guard);
             long dogId = 1;
             long catId = 2;
-            long officeId = oa.Post(dogId, "TEST", "RELEASE", new string[0], new string[0], 100);
+            long officeId = oa.Post(dogId, "TEST", "RELEASE", 100);
 
             oa.ClaimBatch(catId, new long[] { officeId });
             oa.ReleaseByCat(catId);
@@ -211,12 +211,14 @@ namespace Mau.Runtime.Tests
             OA oa = new OA(guard);
             long dogId = 1;
             long catId = 2;
-            long openId = oa.Post(dogId, "TEST", "OPEN", new string[0], new string[0], 100);
-            long workId = oa.Post(dogId, "TEST", "WORK", new string[0], new string[0], 100);
+            long openId = oa.Post(dogId, "TEST", "OPEN", 100);
+            long workId = oa.Post(dogId, "TEST", "WORK", 100);
             oa.ClaimBatch(catId, new long[] { workId });
-            long doneId = oa.Post(dogId, "TEST", "DONE", new string[0], new string[0], 100);
+            long doneId = oa.Post(dogId, "TEST", "DONE", 100);
             oa.ClaimBatch(catId, new long[] { doneId });
-            oa.Complete(doneId, catId, new string[] { "ok" }, new string[0]);
+            OfficeData doneResult = OfficeData.Empty();
+            doneResult.Strs["status"] = "ok";
+            oa.Complete(doneId, catId, doneResult);
 
             OAView view = oa.GetSnapshot();
 
@@ -369,7 +371,7 @@ namespace Mau.Runtime.Tests
             // [段1] 注入机制后产生业务状态
             long dogId = ids.Alloc("Dog", out _);
             long catId = ids.Alloc("Cat", out _);
-            long officeId = oa.Post(dogId, "TEST", "OBS", new string[0], new string[0], 100);
+            long officeId = oa.Post(dogId, "TEST", "OBS", 100);
             oa.ClaimBatch(catId, new long[] { officeId });
             bus.Register(77, new string[] { "Cat_Observer_Send" });
             bus.Set("Cat_Observer_Send", 5);

@@ -1,10 +1,11 @@
-// ═══════════════════════════════════════════════
-// 积木: llm.ctx_push / llm.ctx_trim
-// ID:   BRIK-LLM-003 ~ 004
-// 作用: LLM 对话上下文管理——消息历史 + 工具调用结构完整性 + 字符预算截断
+﻿// ═══════════════════════════════════════════════
+// 积木: llm.ctx_set_system / llm.ctx_push_user / llm.ctx_push_assistant /
+//       llm.ctx_trim / llm.ctx_count / llm.ctx_build_prompt / llm.ctx_clear
+// ID:   BRIK-LLM-003 ~ 009
+// 作用: LLM 对话上下文管理——按 sessionKey 隔离的会话历史（多 Cat 各自独立）
 // 引用: Mau.Bricks.LLM → Mau.Contracts（BrickRegistry）
-// 原理: 实例历史列表 + System Prompt 唯一保留 + 工具块不可拆分截断
-// 常用: CH4 TalkCat 多轮对话 / 上下文持久化前整理
+// 原理: 静态会话表（sessionKey → 会话）；sessionKey 由宿主注入（Cat GlobeID 派生）
+// 常用: CH4 TalkCat 多轮对话 / 多 Cat 并发上下文隔离
 // ═══════════════════════════════════════════════
 using System;
 using System.Collections.Generic;
@@ -44,38 +45,80 @@ namespace Mau.Bricks
     }
 
     /// <summary>
-    /// 上下文管理积木——静态作用域隔离的对话历史。
-    /// 由 CH3 CH_Kit_ContextManager 移植（简化：文本消息 + 字符预算截断）。
+    /// 上下文会话——单个 sessionKey 的对话历史 + System Prompt
     /// </summary>
-    public static class ContextBrick
+    internal sealed class ContextSession
     {
         /// <summary>
         /// 消息列表——按时间顺序
         /// </summary>
-        private static readonly List<LlmMessage> _history = new List<LlmMessage>();
+        internal readonly List<LlmMessage> History = new List<LlmMessage>();
 
         /// <summary>
         /// 唯一 System Prompt——Clear 时恢复
         /// </summary>
-        private static string _systemPrompt = "";
+        internal string SystemPrompt = "";
+    }
+
+    /// <summary>
+    /// 上下文管理积木——按 sessionKey 隔离的静态会话表（多 Cat 安全）。
+    /// sessionKey 由宿主注入（Cat GlobeID 派生），持久化由宿主侧负责。
+    /// </summary>
+    public static class ContextBrick
+    {
+        /// <summary>
+        /// 会话表锁——多 Cat 并发安全
+        /// </summary>
+        private static readonly object _gate = new object();
+
+        /// <summary>
+        /// 会话表——sessionKey → 会话（Key 由宿主注入）
+        /// </summary>
+        private static readonly Dictionary<string, ContextSession> _sessions =
+            new Dictionary<string, ContextSession>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 获取或创建会话——按 sessionKey 隔离
+        /// </summary>
+        /// <param name="sessionKey">会话 Key（Cat GlobeID 派生）</param>
+        /// <returns>会话</returns>
+        private static ContextSession GetOrCreate(string sessionKey)
+        {
+            lock (_gate)
+            {
+                ContextSession? session;
+                if (!_sessions.TryGetValue(sessionKey, out session) || session == null)
+                {
+                    session = new ContextSession();
+                    _sessions[sessionKey] = session;
+                }
+                return session;
+            }
+        }
 
         /// <summary>
         /// 设置唯一 System Prompt——空文本表示移除
         /// </summary>
+        /// <param name="sessionKey">会话 Key</param>
         /// <param name="prompt">System Prompt</param>
-        public static bool CtxSetSystem(string prompt)
+        /// <returns>true=成功</returns>
+        public static bool CtxSetSystem(string sessionKey, string prompt)
         {
-            _systemPrompt = SafeText(prompt);
-            for (int i = _history.Count - 1; i >= 0; i = i - 1)
+            ContextSession session = GetOrCreate(SafeKey(sessionKey));
+            lock (_gate)
             {
-                if (_history[i].Role == "System")
+                session.SystemPrompt = SafeText(prompt);
+                for (int i = session.History.Count - 1; i >= 0; i = i - 1)
                 {
-                    _history.RemoveAt(i);
+                    if (session.History[i].Role == "System")
+                    {
+                        session.History.RemoveAt(i);
+                    }
                 }
-            }
-            if (_systemPrompt.Length > 0)
-            {
-                _history.Insert(0, CreateMessage("System", _systemPrompt));
+                if (session.SystemPrompt.Length > 0)
+                {
+                    session.History.Insert(0, CreateMessage("System", session.SystemPrompt));
+                }
             }
             return true;
         }
@@ -83,14 +126,19 @@ namespace Mau.Bricks
         /// <summary>
         /// 追加 User 消息
         /// </summary>
+        /// <param name="sessionKey">会话 Key</param>
         /// <param name="text">正文</param>
         /// <returns>true=成功</returns>
-        public static bool CtxPushUser(string text)
+        public static bool CtxPushUser(string sessionKey, string text)
         {
+            ContextSession session = GetOrCreate(SafeKey(sessionKey));
             string safeText = SafeText(text);
             if (safeText.Length > 0)
             {
-                _history.Add(CreateMessage("User", safeText));
+                lock (_gate)
+                {
+                    session.History.Add(CreateMessage("User", safeText));
+                }
             }
             return true;
         }
@@ -98,14 +146,19 @@ namespace Mau.Bricks
         /// <summary>
         /// 追加 Assistant 消息
         /// </summary>
+        /// <param name="sessionKey">会话 Key</param>
         /// <param name="text">正文</param>
         /// <returns>true=成功</returns>
-        public static bool CtxPushAssistant(string text)
+        public static bool CtxPushAssistant(string sessionKey, string text)
         {
+            ContextSession session = GetOrCreate(SafeKey(sessionKey));
             string safeText = SafeText(text);
             if (safeText.Length > 0)
             {
-                _history.Add(CreateMessage("Assistant", safeText));
+                lock (_gate)
+                {
+                    session.History.Add(CreateMessage("Assistant", safeText));
+                }
             }
             return true;
         }
@@ -113,29 +166,34 @@ namespace Mau.Bricks
         /// <summary>
         /// 按字符预算从最早业务消息删除——System 永久保留
         /// </summary>
+        /// <param name="sessionKey">会话 Key</param>
         /// <param name="maxChars">最大字符预算</param>
         /// <param name="removed">删除的消息数量</param>
         /// <returns>true=成功</returns>
-        public static bool CtxTrim(int maxChars, out int removed)
+        public static bool CtxTrim(string sessionKey, int maxChars, out int removed)
         {
             removed = 0;
             if (maxChars < 0)
             {
                 return false;
             }
-            while (CountAllChars() > maxChars)
+            ContextSession session = GetOrCreate(SafeKey(sessionKey));
+            lock (_gate)
             {
-                int start = 0;
-                if (_history.Count > 0 && _history[0].Role == "System")
+                while (CountAllChars(session) > maxChars)
                 {
-                    start = 1;
+                    int start = 0;
+                    if (session.History.Count > 0 && session.History[0].Role == "System")
+                    {
+                        start = 1;
+                    }
+                    if (start >= session.History.Count)
+                    {
+                        return true;
+                    }
+                    session.History.RemoveAt(start);
+                    removed = removed + 1;
                 }
-                if (start >= _history.Count)
-                {
-                    return true;
-                }
-                _history.RemoveAt(start);
-                removed = removed + 1;
             }
             return true;
         }
@@ -143,32 +201,42 @@ namespace Mau.Bricks
         /// <summary>
         /// 读取当前消息数量
         /// </summary>
+        /// <param name="sessionKey">会话 Key</param>
         /// <param name="count">消息数量</param>
         /// <returns>true=成功</returns>
-        public static bool CtxCount(out int count)
+        public static bool CtxCount(string sessionKey, out int count)
         {
-            count = _history.Count;
+            ContextSession session = GetOrCreate(SafeKey(sessionKey));
+            lock (_gate)
+            {
+                count = session.History.Count;
+            }
             return true;
         }
 
         /// <summary>
         /// 拼接 System、User 和 Assistant 正文供单次文本模式使用
         /// </summary>
+        /// <param name="sessionKey">会话 Key</param>
         /// <param name="prompt">拼接文本</param>
         /// <returns>true=成功</returns>
-        public static bool CtxBuildPrompt(out string prompt)
+        public static bool CtxBuildPrompt(string sessionKey, out string prompt)
         {
+            ContextSession session = GetOrCreate(SafeKey(sessionKey));
             System.Text.StringBuilder builder = new System.Text.StringBuilder();
-            for (int i = 0; i < _history.Count; i = i + 1)
+            lock (_gate)
             {
-                LlmMessage message = _history[i];
-                if (message.Role != "Tool" && message.Content.Length > 0)
+                for (int i = 0; i < session.History.Count; i = i + 1)
                 {
-                    if (builder.Length > 0)
+                    LlmMessage message = session.History[i];
+                    if (message.Role != "Tool" && message.Content.Length > 0)
                     {
-                        builder.Append("\n\n");
+                        if (builder.Length > 0)
+                        {
+                            builder.Append("\n\n");
+                        }
+                        builder.Append(message.Content);
                     }
-                    builder.Append(message.Content);
                 }
             }
             prompt = builder.ToString();
@@ -178,30 +246,126 @@ namespace Mau.Bricks
         /// <summary>
         /// 清除业务历史并恢复唯一 System Prompt
         /// </summary>
+        /// <param name="sessionKey">会话 Key</param>
         /// <returns>true=成功</returns>
-        public static bool CtxClear()
+        public static bool CtxClear(string sessionKey)
         {
-            _history.Clear();
-            if (_systemPrompt.Length > 0)
+            ContextSession session = GetOrCreate(SafeKey(sessionKey));
+            lock (_gate)
             {
-                _history.Add(CreateMessage("System", _systemPrompt));
+                session.History.Clear();
+                if (session.SystemPrompt.Length > 0)
+                {
+                    session.History.Add(CreateMessage("System", session.SystemPrompt));
+                }
             }
+            return true;
+        }
+
+        /// <summary>
+        /// 追加 Tool 结果消息——工具调用回执（OpenAI 协议 role=tool）
+        /// </summary>
+        /// <param name="sessionKey">会话 Key</param>
+        /// <param name="toolCallId">工具调用 ID（assistant tool_calls 对应）</param>
+        /// <param name="content">工具结果正文</param>
+        /// <returns>true=成功</returns>
+        public static bool CtxPushTool(string sessionKey, string toolCallId, string content)
+        {
+            ContextSession session = GetOrCreate(SafeKey(sessionKey));
+            string safeContent = SafeText(content);
+            string safeId = SafeText(toolCallId);
+            if (safeContent.Length > 0 || safeId.Length > 0)
+            {
+                lock (_gate)
+                {
+                    LlmMessage message = CreateMessage("Tool", safeContent);
+                    message.ToolCallId = safeId;
+                    session.History.Add(message);
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 追加 Assistant 工具声明消息——LLM 请求了工具（OpenAI 协议 assistant tool_calls）
+        /// </summary>
+        /// <param name="sessionKey">会话 Key</param>
+        /// <param name="toolCallsJson">tool_calls JSON 数组</param>
+        /// <returns>true=成功</returns>
+        public static bool CtxPushAssistantToolCalls(string sessionKey, string toolCallsJson)
+        {
+            ContextSession session = GetOrCreate(SafeKey(sessionKey));
+            string safeCalls = SafeText(toolCallsJson);
+            if (safeCalls.Length > 0)
+            {
+                lock (_gate)
+                {
+                    LlmMessage message = CreateMessage("Assistant", "");
+                    message.ToolCallsJson = safeCalls;
+                    session.History.Add(message);
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 导出 OpenAI 兼容 messages 数组 JSON——结构化过程积木（llm.completions）的请求正文源
+        /// System/User/Assistant（含 tool_calls）/Tool 全角色结构保留
+        /// </summary>
+        /// <param name="sessionKey">会话 Key</param>
+        /// <param name="messagesJson">messages 数组 JSON</param>
+        /// <returns>true=成功</returns>
+        public static bool CtxBuildMessagesJson(string sessionKey, out string messagesJson)
+        {
+            messagesJson = "";
+            ContextSession session = GetOrCreate(SafeKey(sessionKey));
+            using System.IO.MemoryStream stream = new System.IO.MemoryStream();
+            using (System.Text.Json.Utf8JsonWriter writer = new System.Text.Json.Utf8JsonWriter(stream))
+            {
+                writer.WriteStartArray();
+                lock (_gate)
+                {
+                    for (int i = 0; i < session.History.Count; i = i + 1)
+                    {
+                        LlmMessage message = session.History[i];
+                        writer.WriteStartObject();
+                        writer.WriteString("role", message.Role.ToLowerInvariant());
+                        writer.WriteString("content", SafeText(message.Content));
+                        if (message.Role == "Tool" && message.ToolCallId.Length > 0)
+                        {
+                            writer.WriteString("tool_call_id", message.ToolCallId);
+                        }
+                        if (message.Role == "Assistant" && message.ToolCallsJson.Length > 0)
+                        {
+                            writer.WritePropertyName("tool_calls");
+                            using (System.Text.Json.JsonDocument calls = System.Text.Json.JsonDocument.Parse(message.ToolCallsJson))
+                            {
+                                calls.RootElement.WriteTo(writer);
+                            }
+                        }
+                        writer.WriteEndObject();
+                    }
+                }
+                writer.WriteEndArray();
+            }
+            messagesJson = System.Text.Encoding.UTF8.GetString(stream.ToArray());
             return true;
         }
 
         /// <summary>
         /// 统计所有消息字段的 UTF-16 字符数
         /// </summary>
+        /// <param name="session">会话</param>
         /// <returns>字符总数</returns>
-        private static int CountAllChars()
+        private static int CountAllChars(ContextSession session)
         {
             int total = 0;
-            for (int i = 0; i < _history.Count; i = i + 1)
+            for (int i = 0; i < session.History.Count; i = i + 1)
             {
-                total = total + SafeText(_history[i].Content).Length
-                    + SafeText(_history[i].ToolCallId).Length
-                    + SafeText(_history[i].ToolName).Length
-                    + SafeText(_history[i].ToolCallsJson).Length;
+                total = total + SafeText(session.History[i].Content).Length
+                    + SafeText(session.History[i].ToolCallId).Length
+                    + SafeText(session.History[i].ToolName).Length
+                    + SafeText(session.History[i].ToolCallsJson).Length;
             }
             return total;
         }
@@ -221,6 +385,20 @@ namespace Mau.Bricks
             message.ToolName = "";
             message.ToolCallsJson = "";
             return message;
+        }
+
+        /// <summary>
+        /// 会话 Key 空值兜底——空 Key 归 "" 会话
+        /// </summary>
+        /// <param name="value">Key</param>
+        /// <returns>非空 Key</returns>
+        private static string SafeKey(string? value)
+        {
+            if (value == null)
+            {
+                return "";
+            }
+            return value;
         }
 
         /// <summary>
@@ -251,10 +429,56 @@ namespace Mau.Bricks
             RegisterCtxSetSystem();
             RegisterCtxPushUser();
             RegisterCtxPushAssistant();
+            RegisterCtxPushTool();
+            RegisterCtxPushAssistantToolCalls();
+            RegisterCtxBuildMessagesJson();
             RegisterCtxTrim();
             RegisterCtxCount();
             RegisterCtxBuildPrompt();
             RegisterCtxClear();
+        }
+
+        /// <summary>
+        /// 注册 llm.ctx_push_tool——工具结果回执
+        /// </summary>
+        private static void RegisterCtxPushTool()
+        {
+            BrickContract contract = new BrickContract("llm.ctx_push_tool", "Mau.Bricks.ContextBrick.CtxPushTool");
+            contract.Inputs.Add(new BrickPort("sessionKey", typeof(string), "会话 Key"));
+            contract.Inputs.Add(new BrickPort("toolCallId", typeof(string), "工具调用 ID"));
+            contract.Inputs.Add(new BrickPort("content", typeof(string), "工具结果正文"));
+            contract.Return = BrickReturnKind.Bool;
+            contract.Duration = BrickDuration.Sync;
+            contract.Thread = "main";
+            BrickRegistry.Register(contract);
+        }
+
+        /// <summary>
+        /// 注册 llm.ctx_push_assistant_tool_calls——Assistant 工具声明
+        /// </summary>
+        private static void RegisterCtxPushAssistantToolCalls()
+        {
+            BrickContract contract = new BrickContract("llm.ctx_push_assistant_tool_calls", "Mau.Bricks.ContextBrick.CtxPushAssistantToolCalls");
+            contract.Inputs.Add(new BrickPort("sessionKey", typeof(string), "会话 Key"));
+            contract.Inputs.Add(new BrickPort("toolCallsJson", typeof(string), "tool_calls JSON 数组"));
+            contract.Return = BrickReturnKind.Bool;
+            contract.Duration = BrickDuration.Sync;
+            contract.Thread = "main";
+            BrickRegistry.Register(contract);
+        }
+
+        /// <summary>
+        /// 注册 llm.ctx_build_messages_json——结构化 messages 导出
+        /// </summary>
+        private static void RegisterCtxBuildMessagesJson()
+        {
+            BrickContract contract = new BrickContract("llm.ctx_build_messages_json", "Mau.Bricks.ContextBrick.CtxBuildMessagesJson");
+            contract.Inputs.Add(new BrickPort("sessionKey", typeof(string), "会话 Key"));
+            contract.Outputs.Add(new BrickPort("messagesJson", typeof(string), "messages 数组 JSON"));
+            contract.Return = BrickReturnKind.Bool;
+            contract.Duration = BrickDuration.Sync;
+            contract.Thread = "main";
+            BrickRegistry.Register(contract);
         }
 
         /// <summary>
@@ -263,6 +487,7 @@ namespace Mau.Bricks
         private static void RegisterCtxSetSystem()
         {
             BrickContract contract = new BrickContract("llm.ctx_set_system", "Mau.Bricks.ContextBrick.CtxSetSystem");
+            contract.Inputs.Add(new BrickPort("sessionKey", typeof(string), "会话 Key"));
             contract.Inputs.Add(new BrickPort("prompt", typeof(string), "System Prompt"));
             contract.Return = BrickReturnKind.Bool;
             contract.Duration = BrickDuration.Sync;
@@ -276,6 +501,7 @@ namespace Mau.Bricks
         private static void RegisterCtxPushUser()
         {
             BrickContract contract = new BrickContract("llm.ctx_push_user", "Mau.Bricks.ContextBrick.CtxPushUser");
+            contract.Inputs.Add(new BrickPort("sessionKey", typeof(string), "会话 Key"));
             contract.Inputs.Add(new BrickPort("text", typeof(string), "User 正文"));
             contract.Return = BrickReturnKind.Bool;
             contract.Duration = BrickDuration.Sync;
@@ -289,6 +515,7 @@ namespace Mau.Bricks
         private static void RegisterCtxPushAssistant()
         {
             BrickContract contract = new BrickContract("llm.ctx_push_assistant", "Mau.Bricks.ContextBrick.CtxPushAssistant");
+            contract.Inputs.Add(new BrickPort("sessionKey", typeof(string), "会话 Key"));
             contract.Inputs.Add(new BrickPort("text", typeof(string), "Assistant 正文"));
             contract.Return = BrickReturnKind.Bool;
             contract.Duration = BrickDuration.Sync;
@@ -302,6 +529,7 @@ namespace Mau.Bricks
         private static void RegisterCtxTrim()
         {
             BrickContract contract = new BrickContract("llm.ctx_trim", "Mau.Bricks.ContextBrick.CtxTrim");
+            contract.Inputs.Add(new BrickPort("sessionKey", typeof(string), "会话 Key"));
             contract.Inputs.Add(new BrickPort("maxChars", typeof(int), "最大字符预算"));
             contract.Outputs.Add(new BrickPort("removed", typeof(int), "删除的消息数量"));
             contract.Return = BrickReturnKind.Bool;
@@ -316,6 +544,7 @@ namespace Mau.Bricks
         private static void RegisterCtxCount()
         {
             BrickContract contract = new BrickContract("llm.ctx_count", "Mau.Bricks.ContextBrick.CtxCount");
+            contract.Inputs.Add(new BrickPort("sessionKey", typeof(string), "会话 Key"));
             contract.Outputs.Add(new BrickPort("count", typeof(int), "消息数量"));
             contract.Return = BrickReturnKind.Bool;
             contract.Duration = BrickDuration.Sync;
@@ -329,6 +558,7 @@ namespace Mau.Bricks
         private static void RegisterCtxBuildPrompt()
         {
             BrickContract contract = new BrickContract("llm.ctx_build_prompt", "Mau.Bricks.ContextBrick.CtxBuildPrompt");
+            contract.Inputs.Add(new BrickPort("sessionKey", typeof(string), "会话 Key"));
             contract.Outputs.Add(new BrickPort("prompt", typeof(string), "拼接文本"));
             contract.Return = BrickReturnKind.Bool;
             contract.Duration = BrickDuration.Sync;
@@ -342,6 +572,7 @@ namespace Mau.Bricks
         private static void RegisterCtxClear()
         {
             BrickContract contract = new BrickContract("llm.ctx_clear", "Mau.Bricks.ContextBrick.CtxClear");
+            contract.Inputs.Add(new BrickPort("sessionKey", typeof(string), "会话 Key"));
             contract.Return = BrickReturnKind.Bool;
             contract.Duration = BrickDuration.Sync;
             contract.Thread = "main";

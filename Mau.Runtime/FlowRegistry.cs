@@ -35,6 +35,11 @@ namespace Mau.Runtime
         private readonly Dictionary<long, string> _typeNames = new Dictionary<long, string>();
 
         /// <summary>
+        /// 类型工厂表——类型键 → 实例工厂（基座按参数生成实体的通道）
+        /// </summary>
+        private readonly Dictionary<string, Func<IFlow>> _factories = new Dictionary<string, Func<IFlow>>(StringComparer.Ordinal);
+
+        /// <summary>
         /// 构造注册表
         /// </summary>
         /// <param name="guard">线程归属守卫——构造于宿主主线程</param>
@@ -126,6 +131,61 @@ namespace Mau.Runtime
                 return name;
             }
             return "";
+        }
+
+        /// <summary>
+        /// 注册类型工厂——宿主加载业务模块时登记（类型键全局唯一）
+        /// </summary>
+        /// <param name="typeKey">类型键——业务模块声明的实体类型（如 DogType）</param>
+        /// <param name="factory">实例工厂</param>
+        /// <returns>true=注册成功；false=键重复或参数非法</returns>
+        public bool RegisterFactory(string typeKey, Func<IFlow> factory)
+        {
+            _guard.AssertMainThread("FlowRegistry.RegisterFactory");
+            if (string.IsNullOrWhiteSpace(typeKey) || factory == null)
+            {
+                return false;
+            }
+            if (_factories.ContainsKey(typeKey))
+            {
+                return false;
+            }
+            _factories[typeKey] = factory;
+            return true;
+        }
+
+        /// <summary>
+        /// 按类型键生成实体——工厂实例化 → 注册 → 返回全局 ID（基座生成通道）
+        /// </summary>
+        /// <param name="typeKey">类型键</param>
+        /// <param name="name">实体名字</param>
+        /// <returns>全局 ID；工厂不存在返回 -1</returns>
+        public long Create(string typeKey, string name)
+        {
+            _guard.AssertMainThread("FlowRegistry.Create");
+            Func<IFlow>? factory;
+            if (!_factories.TryGetValue(typeKey, out factory) || factory == null)
+            {
+                return -1;
+            }
+            IFlow flow = factory();
+            if (flow == null)
+            {
+                return -1;
+            }
+            return Register(flow, name);
+        }
+
+        /// <summary>
+        /// 已注册工厂数量
+        /// </summary>
+        public int FactoryCount
+        {
+            get
+            {
+                _guard.AssertMainThread("FlowRegistry.FactoryCount");
+                return _factories.Count;
+            }
         }
 
         /// <summary>
