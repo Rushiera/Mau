@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -88,6 +88,16 @@ namespace Mau.Runtime
             {
                 DataBox.Set<int>("llm", "timeoutSeconds", timeoutSeconds);
             }
+        }
+
+        /// <summary>
+        /// 文本规范化——转发 BrickText.SafeText（积木文本兼容入口）
+        /// </summary>
+        /// <param name="value">原始文本</param>
+        /// <returns>非空文本</returns>
+        public static string SafeText(string? value)
+        {
+            return BrickText.SafeText(value);
         }
 
         /// <summary>

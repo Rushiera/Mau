@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Mau.Runtime;
 
 namespace Mau.Runtime
@@ -53,5 +53,30 @@ namespace Mau.Runtime
             message.ToolCallsJson = "";
             return message;
         }
+
+        /// <summary>
+        /// 会话键规范化——转发 BrickText.SafeKey（积木文本兼容入口）
+        /// </summary>
+        /// <param name="sessionKey">会话 Key</param>
+        /// <returns>规范化键</returns>
+        public static string SafeKey(string sessionKey)
+        {
+            return BrickText.SafeKey(sessionKey);
+        }
+
+        /// <summary>
+        /// 文本规范化——转发 BrickText.SafeText（积木文本兼容入口）
+        /// </summary>
+        /// <param name="text">原始文本</param>
+        /// <returns>非空文本</returns>
+        public static string SafeText(string text)
+        {
+            return BrickText.SafeText(text);
+        }
+
+        /// <summary>
+        /// 会话表操作锁——积木文本 lock 语义（History 读写的会话级串行）
+        /// </summary>
+        public static readonly object Gate = new object();
     }
 }

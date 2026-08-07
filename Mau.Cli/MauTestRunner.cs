@@ -41,11 +41,7 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: 运行时测试项目构建失败");
                 return 1;
             }
-            if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Bricks.Tests", "Mau.Bricks.Tests.csproj") + "\" -v q --nologo"))
-            {
-                Console.WriteLine("FAIL: 积木测试项目构建失败");
-                return 1;
-            }
+
             if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Development.Tests", "Mau.Development.Tests.csproj") + "\" -v q --nologo"))
             {
                 Console.WriteLine("FAIL: 开发工具测试项目构建失败");
@@ -56,11 +52,7 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: 服务测试项目构建失败");
                 return 1;
             }
-            if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Contracts.Tests", "Mau.Contracts.Tests.csproj") + "\" -v q --nologo"))
-            {
-                Console.WriteLine("FAIL: 契约测试项目构建失败");
-                return 1;
-            }
+
             if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.E2E", "Mau.E2E.csproj") + "\" -v q --nologo"))
             {
                 Console.WriteLine("FAIL: 端到端测试项目构建失败");
@@ -72,14 +64,7 @@ namespace Mau.Cli
                 return 1;
             }
 
-            // [段1b] 契约层测试（L0）
-            Console.WriteLine("[1b/4] 契约层测试（L0）");
-            string contractsExe = Path.Combine(root, "Mau.Contracts.Tests", "bin", "Debug", "net8.0", "Mau.Contracts.Tests.exe");
-            if (!RunProcess(contractsExe, ""))
-            {
-                Console.WriteLine("FAIL: 契约层测试失败");
-                return 1;
-            }
+
 
             // [段2] 翻译器测试（L2）
             Console.WriteLine("[2/4] 翻译器测试（L2）");
@@ -117,10 +102,9 @@ namespace Mau.Cli
                 return 1;
             }
 
-            // [段3b] 积木库测试（L4——积木层）
+            // [段3b] 积木库测试（L4——积木谱全局跑测；Mau.Bricks 程序集已退役，积木验证 = 文本库内嵌编译跑测）
             Console.WriteLine("[3b/4] 积木库测试（L4）");
-            string bricksExe = Path.Combine(root, "Mau.Bricks.Tests", "bin", "Debug", "net8.0", "Mau.Bricks.Tests.exe");
-            if (!RunProcess(bricksExe, ""))
+            if (CommandBricks.RunGlobalTest() != 0)
             {
                 Console.WriteLine("FAIL: 积木库测试失败");
                 return 1;

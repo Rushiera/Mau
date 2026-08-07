@@ -133,6 +133,8 @@ namespace Mau.Translator
                         {
                             return false;
                         }
+                        // 依赖补齐——积木文件头 // 依赖: 行为权威（index.json 依赖字段可能缺失/过期）
+                        MergeHeaderDependencies(entry);
                         _byName[entry.Name] = entry;
                         _byId[entry.Id] = entry;
                     }
@@ -175,6 +177,21 @@ namespace Mau.Translator
                     if (d.ValueKind == JsonValueKind.String)
                     {
                         entry.Dependencies.Add(d.GetString() ?? "");
+                    }
+                }
+            }
+            else if (b.TryGetProperty("dependencies", out deps)
+                && deps.ValueKind == JsonValueKind.String)
+            {
+                // 兼容字符串形态（逗号分隔）——旧 UpdateIndex 曾输出字符串；数组为标准形态
+                string depText = deps.GetString() ?? "";
+                string[] parts = depText.Split(',');
+                for (int p = 0; p < parts.Length; p++)
+                {
+                    string part = parts[p].Trim();
+                    if (part.Length > 0)
+                    {
+                        entry.Dependencies.Add(part);
                     }
                 }
             }
@@ -356,5 +373,60 @@ namespace Mau.Translator
             }
             return "";
         }
+/// <summary>
+/// 依赖补齐——积木文件头 // 依赖: 行为权威（index.json 依赖字段可能缺失/过期）
+/// 与文件头依赖行合并（index.json 已有依赖保留，文件头新增补充；"无" 跳过）
+/// </summary>
+/// <param name = "entry">条目（Path 相对 Bricks 根）</param>
+private static void MergeHeaderDependencies(BrickIndexEntry entry)
+{
+    try
+    {
+        string file = Path.Combine(_root, entry.Path);
+        if (!File.Exists(file))
+        {
+            return;
+        }
+
+        string[] lines = File.ReadAllLines(file);
+        for (int i = 0; i < lines.Length && i < 14; i++)
+        {
+            string line = lines[i].Trim();
+            if (line.StartsWith("// 依赖:", StringComparison.Ordinal))
+            {
+                string depText = line.Substring(6).Trim();
+                string[] parts = depText.Split(',');
+                for (int p = 0; p < parts.Length; p++)
+                {
+                    string part = parts[p].Trim();
+                    if (part.Length == 0 || part == "无")
+                    {
+                        continue;
+                    }
+
+                    bool exists = false;
+                    for (int e = 0; e < entry.Dependencies.Count; e++)
+                    {
+                        if (string.Equals(entry.Dependencies[e], part, StringComparison.Ordinal))
+                        {
+                            exists = true;
+                            break;
+                        }
+                    }
+
+                    if (!exists)
+                    {
+                        entry.Dependencies.Add(part);
+                    }
+                }
+
+                return;
+            }
+        }
     }
+    catch
+    {
+    // 文件头读取失败不影响索引加载
+    }
+}    }
 }

@@ -161,7 +161,7 @@ namespace Mau.Translator.Tests
             CompileResult compile = MauCompiler.Compile(source, "ProbeFlow");
 
             Assert.True(compile.Success);
-            Assert.Contains("Probe.Sink(_text, _b, out _result)", compile.GeneratedCode);
+            Assert.Contains("Mau.Bricks.BRIK_TEST_002.Sink(_text, _b, out _result)", compile.GeneratedCode);
             Assert.Contains("public void FireS(long ownerId)", compile.GeneratedCode);
             Assert.DoesNotContain("FireS(long ownerId, string a", compile.GeneratedCode);
         }
@@ -223,7 +223,7 @@ namespace Mau.Translator.Tests
             CompileResult compile = MauCompiler.Compile(source, "ProbeFlow");
 
             Assert.True(compile.Success);
-            Assert.Contains("Probe.Sink(\"file.read\", 5, out _result)", compile.GeneratedCode);
+            Assert.Contains("Mau.Bricks.BRIK_TEST_002.Sink(\"file.read\", 5, out _result)", compile.GeneratedCode);
             Assert.Contains("public void FireS()", compile.GeneratedCode);
         }
 

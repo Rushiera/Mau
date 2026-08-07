@@ -34,7 +34,7 @@ namespace Mau.Translator.Tests
             Assert.Contains("public void Tick()", code);
             Assert.Contains("public bool IsDone()", code);
             Assert.Contains("public bool IsFailed()", code);
-            Assert.Contains("Mau.Bricks.FileBrick.Convert(_input, _output)", code);
+            Assert.Contains("Mau.Bricks.BRIK_FILE_001.Convert(_input, _output)", code);
             Assert.Contains("P_Input = false;", code);
             Assert.Contains("P_Done = true;", code);
             Assert.Contains("P_Failed = true;", code);

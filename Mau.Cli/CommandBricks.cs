@@ -74,6 +74,12 @@ namespace Mau.Cli
         /// <returns>退出码</returns>
         public static int Execute(string[] args)
         {
+            // [段0] 积木索引——R1：BrickIndex 文件索引（枚举前置；bricks 命令不经过 MauCompiler.Compile）
+            if (!EnsureIndexLoaded())
+            {
+                Console.WriteLine("FAIL: 积木索引不可用——未找到 Bricks/index.json（环境变量 MAU_BRICKS_ROOT 或仓库根）");
+                return 1;
+            }
             if (args.Length == 0)
             {
                 Console.WriteLine("用法: mau bricks list | mau bricks index --verify | mau bricks index --update | mau bricks index --check-license | mau bricks test");
@@ -140,9 +146,8 @@ namespace Mau.Cli
             List<BrickIndexEntry> entries = new List<BrickIndexEntry>();
             string[] dirs = new string[]
             {
-                "Mau.Bricks.Standard", "Mau.Bricks.Data", "Mau.Bricks.Text",
-                "Mau.Bricks.Shell", "Mau.Bricks.LLM", "Mau.Bricks.Approval",
-                "Mau.Bricks.Office", "Mau.Bricks.Log"
+                "APPROVAL", "CMD", "DATA", "FILE", "LLM", "LOG", "MATH",
+                "OA", "OFFICE", "SHELL", "TEST", "TEXT", "TOOL"
             };
             for (int d = 0; d < dirs.Length; d++)
             {
@@ -357,7 +362,7 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: 未找到 Mau.sln");
                 return 1;
             }
-            string indexPath = Path.Combine(root, "BricksCatalog", "INDEX.md");
+            string indexPath = Path.Combine(root, "Bricks", "INDEX.md");
             if (!File.Exists(indexPath))
             {
                 Console.WriteLine("FAIL: INDEX.md 不存在——" + indexPath);
@@ -426,7 +431,7 @@ namespace Mau.Cli
                 string path = kv.Value.Path;
                 if (path.Length > 0)
                 {
-                    string full = Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar));
+                    string full = Path.Combine(root, "Bricks", path.Replace('/', Path.DirectorySeparatorChar));
                     if (!File.Exists(full))
                     {
                         Console.WriteLine("V6 FAIL: 路径不存在——" + path + "（" + kv.Key + "）");
@@ -531,9 +536,9 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: 未找到 Mau.sln");
                 return 1;
             }
-            string catalogDir = Path.Combine(root, "BricksCatalog");
+            string catalogDir = Path.Combine(root, "Bricks");
             string indexPath = Path.Combine(catalogDir, "INDEX.md");
-            Dictionary<string, BrickIndexEntry> oldTable = ReadIndexTable(indexPath);
+
 
             // 从注册表构建——ID 从旧表继承，新积木按类别 max+1 分配
             StringBuilder md = new StringBuilder();
@@ -549,50 +554,19 @@ namespace Mau.Cli
 
             // 按类别+序号排序输出
             List<BrickIndexEntry> entries = new List<BrickIndexEntry>();
-            Dictionary<string, int> categoryMax = new Dictionary<string, int>(StringComparer.Ordinal);
+            // 从 BrickIndex（index.json）真相源构建——ID/类别/路径/依赖全部继承，ID 永不重用
             foreach (Mau.Translator.BrickIndexEntry brickEntry in BrickIndex.All)
             {
                 BrickContract contract = brickEntry.Contract;
-                BrickIndexEntry entry;
-                if (oldTable.TryGetValue(contract.Name, out entry!))
-                {
-                    entry.Contract = contract;
-                }
-                else
-                {
-                    entry = new BrickIndexEntry();
-                    entry.Name = contract.Name;
-                    entry.Category = CategoryFromName(contract.Name);
-                    entry.Path = "";
-                    entry.Dependencies = "";
-                    entry.Status = "active";
-                    entry.Source = "";
-                    entry.Contract = contract;
-                    // 新 ID——类别 max+1
-                    int max = 0;
-                    if (categoryMax.ContainsKey(entry.Category))
-                    {
-                        max = categoryMax[entry.Category];
-                    }
-                    else
-                    {
-                        foreach (KeyValuePair<string, BrickIndexEntry> kv in oldTable)
-                        {
-                            if (kv.Value.Category == entry.Category && IsValidIdFormat(kv.Value.Id))
-                            {
-                                string seqStr = kv.Value.Id.Substring(kv.Value.Id.LastIndexOf('-') + 1);
-                                int seq;
-                                if (int.TryParse(seqStr, out seq) && seq > max)
-                                {
-                                    max = seq;
-                                }
-                            }
-                        }
-                    }
-                    max = max + 1;
-                    entry.Id = "BRIK-" + entry.Category + "-" + max.ToString("D3");
-                    categoryMax[entry.Category] = max;
-                }
+                BrickIndexEntry entry = new BrickIndexEntry();
+                entry.Id = brickEntry.Id;
+                entry.Name = contract.Name;
+                entry.Category = brickEntry.Category;
+                entry.Path = brickEntry.Path;
+                entry.Dependencies = string.Join(",", brickEntry.Dependencies);
+                entry.Status = "active";
+                entry.Source = "";
+                entry.Contract = contract;
                 entries.Add(entry);
             }
             // 排序——类别 + 序号
@@ -629,7 +603,27 @@ namespace Mau.Cli
             for (int i = 0; i < count; i++)
             {
                 BrickIndexEntry e = entries[i];
-                json.Append("    {\"id\":\"" + JsonEscape(e.Id) + "\",\"name\":\"" + JsonEscape(e.Name) + "\",\"category\":\"" + JsonEscape(e.Category) + "\",\"path\":\"" + JsonEscape(e.Path) + "\",\"dependencies\":\"" + JsonEscape(e.Dependencies) + "\",\"status\":\"" + JsonEscape(e.Status) + "\"");
+                string depText = e.Dependencies.Length > 0 ? e.Dependencies : "";
+                string[] depParts = depText.Split(',');
+                List<string> depList = new List<string>();
+                for (int d = 0; d < depParts.Length; d = d + 1)
+                {
+                    string part = depParts[d].Trim();
+                    if (part.Length > 0)
+                    {
+                        depList.Add(part);
+                    }
+                }
+                json.Append("    {\"id\":\"" + JsonEscape(e.Id) + "\",\"name\":\"" + JsonEscape(e.Name) + "\",\"category\":\"" + JsonEscape(e.Category) + "\",\"path\":\"" + JsonEscape(e.Path) + "\",\"dependencies\":[");
+                for (int d = 0; d < depList.Count; d = d + 1)
+                {
+                    if (d > 0)
+                    {
+                        json.Append(",");
+                    }
+                    json.Append("\"" + JsonEscape(depList[d]) + "\"");
+                }
+                json.Append("],\"status\":\"" + JsonEscape(e.Status) + "\"");
                 if (e.Contract != null)
                 {
                     json.Append(",\"contract\":{\"implementation\":\"" + JsonEscape(e.Contract.Implementation) + "\",\"inputs\":[");
@@ -724,7 +718,7 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: 未找到 Mau.sln");
                 return 1;
             }
-            List<BrickIndexEntry> entries = ScanBrickHeaders(root);
+            List<BrickIndexEntry> entries = ScanBrickHeaders(Path.Combine(root, "Bricks"));
             int errors = 0;
             Dictionary<string, bool> seen = new Dictionary<string, bool>(StringComparer.Ordinal);
             for (int i = 0; i < entries.Count; i++)
@@ -767,6 +761,12 @@ namespace Mau.Cli
         /// <returns>退出码</returns>
         public static int RunGlobalTest()
         {
+            // [段0] 积木索引——mau test 直接调用本方法（不经 Execute）——枚举前置
+            if (!EnsureIndexLoaded())
+            {
+                Console.WriteLine("FAIL: 积木索引不可用——未找到 Bricks/index.json");
+                return 1;
+            }
             int total = 0;
             int pass = 0;
             int skip = 0;
@@ -883,7 +883,20 @@ namespace Mau.Cli
                 MauPocketCompileResult pocketResult = compiler.Compile(compileResult.GeneratedCode, className);
                 if (!pocketResult.Success)
                 {
-                    return "编译失败: " + (pocketResult.Diagnostics.Length > 0 ? pocketResult.Diagnostics[0] : "未知");
+                    if (pocketResult.Diagnostics.Length == 0)
+                    {
+                        return "编译失败: 未知";
+                    }
+                    string diagJoined = "";
+                    for (int d = 0; d < pocketResult.Diagnostics.Length && d < 3; d = d + 1)
+                    {
+                        if (d > 0)
+                        {
+                            diagJoined = diagJoined + " | ";
+                        }
+                        diagJoined = diagJoined + pocketResult.Diagnostics[d];
+                    }
+                    return "编译失败: " + diagJoined;
                 }
 
                 // [3] ALC 加载
@@ -1009,32 +1022,72 @@ namespace Mau.Cli
         /// <param name="t">参数类型</param>
         /// <returns>默认值对象</returns>
         private static object? DefaultValue(Type t)
-        {
-            if (t == typeof(string))
-            {
-                return "t";
-            }
-            if (t == typeof(int))
-            {
-                return 1;
-            }
-            if (t == typeof(long))
-            {
-                return 1L;
-            }
-            if (t == typeof(bool))
-            {
-                return true;
-            }
-            if (t == typeof(double))
-            {
-                return 1.0;
-            }
-            if (t.IsValueType)
-            {
-                return Activator.CreateInstance(t);
-            }
-            return null;
-        }
+{
+    if (t == typeof(string))
+    {
+        // 唯一值——全局跑测共享参数名但值必须隔离（判例：ctx_push_assistant_tool_calls 写 ToolCallsJson="t" → ctx_build_messages_json 解析 "t" 失败）
+        return "t-" + Guid.NewGuid().ToString("N").Substring(0, 8);
     }
+    if (t == typeof(int))
+    {
+        return 1;
+    }
+    if (t == typeof(long))
+    {
+        return 1L;
+    }
+    if (t == typeof(bool))
+    {
+        return true;
+    }
+    if (t == typeof(double))
+    {
+        return 1.0;
+    }
+    if (t.IsValueType)
+    {
+        return Activator.CreateInstance(t);
+    }
+    return null;
+}/// <summary>
+/// 确保积木索引已加载——探测顺序：环境变量 MAU_BRICKS_ROOT → 当前目录向上 → 程序集目录向上
+/// </summary>
+/// <returns>索引可用</returns>
+private static bool EnsureIndexLoaded()
+{
+    if (BrickIndex.Count > 0)
+    {
+        return true;
+    }
+
+    string? probe = Environment.GetEnvironmentVariable("MAU_BRICKS_ROOT");
+    if (!string.IsNullOrWhiteSpace(probe) && BrickIndex.Load(probe))
+    {
+        return true;
+    }
+
+    string? dir = Directory.GetCurrentDirectory();
+    while (dir != null)
+    {
+        if (BrickIndex.Load(Path.Combine(dir, "Bricks")))
+        {
+            return true;
+        }
+
+        dir = Path.GetDirectoryName(dir);
+    }
+
+    dir = AppContext.BaseDirectory;
+    while (dir != null)
+    {
+        if (BrickIndex.Load(Path.Combine(dir, "Bricks")))
+        {
+            return true;
+        }
+
+        dir = Path.GetDirectoryName(dir);
+    }
+
+    return false;
+}    }
 }

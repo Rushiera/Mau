@@ -1,3 +1,5 @@
+using System;
+using Mau.Runtime;
 // 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
 // 流程: FileConvert
 // 基座: Mau.Runtime/v0.1
@@ -64,8 +66,8 @@ namespace Mau.Generated.Flows
         /// <summary>
         /// 外部投递信号：Input
         /// </summary>
-        /// <param name="input">输入文件路径</param>
-        /// <param name="output">输出文件路径</param>
+        /// <param name="input">参数 input</param>
+        /// <param name="output">参数 output</param>
         public void FireInput(string input, string output)
         {
             _input = input;
@@ -87,7 +89,7 @@ namespace Mau.Generated.Flows
                 T_Convert_Cube.Start();
             _logs.Add(new MauDebug(_frame, "T_Convert", "Fired", $"开始转换 {_input} → {_output}"));
                 // 执行动作（积木调用）
-                bool ok = Mau.Bricks.FileBrick.Convert(_input, _output);
+                bool ok = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
                 if (ok)
                 {
                     // 正常后置注册
@@ -180,4 +182,37 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:C1DC8835082C3CDB6FD63682DA779F07EF2C38E204886EEA564770C331B16FA2
+
+    // #BRICK:BRIK-FILE-001 BEGIN
+namespace Mau.Bricks
+{
+    /// <summary>
+    /// 文件积木——file.convert 转换文件（独立实现，不走受控根）
+    /// </summary>
+    public static class BRIK_FILE_001
+    {
+        /// <summary>
+        /// 转换文件——真实实现（读取→转码→写入）
+        /// </summary>
+        /// <param name="input">输入文件路径</param>
+        /// <param name="output">输出文件路径</param>
+        /// <returns>转换是否成功</returns>
+        public static bool Convert(string input, string output)
+        {
+            try
+            {
+                byte[] bytes = System.IO.File.ReadAllBytes(input);
+                // 第一期：转码 = 读取后原样写出——编码转换算法留积木内部后续实现
+                System.IO.File.WriteAllBytes(output, bytes);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+}
+
+    // #BRICK:BRIK-FILE-001 END
+// #MAU_CHECKSUM:SHA256:BC2CDE46830C6D5EB49DA84C891470624FABBE8DFE1CE3C316213EC2B8EF9B2D

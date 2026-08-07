@@ -1,3 +1,5 @@
+using System;
+using Mau.Runtime;
 // 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
 // 流程: ToolCat
 // 基座: Mau.Runtime/v0.1
@@ -80,7 +82,7 @@ namespace Mau.Generated.Flows
         /// <summary>
         /// 外部投递信号：Read
         /// </summary>
-        /// <param name="path">受控文件路径</param>
+        /// <param name="path">参数 path</param>
         public void FireRead(string path)
         {
             _path = path;
@@ -90,8 +92,8 @@ namespace Mau.Generated.Flows
         /// <summary>
         /// 外部投递信号：Write
         /// </summary>
-        /// <param name="path">受控文件路径</param>
-        /// <param name="content">完整正文</param>
+        /// <param name="path">参数 path</param>
+        /// <param name="content">参数 content</param>
         public void FireWrite(string path, string content)
         {
             _path = path;
@@ -111,7 +113,7 @@ namespace Mau.Generated.Flows
                 // 信号消费
                 P_Read = false;
                 // 执行动作（积木调用）
-                bool ok = Mau.Bricks.FileBrick.Read(_path, out _content);
+                bool ok = Mau.Bricks.BRIK_FILE_002.Read(_path, out _content);
                 if (ok)
                 {
                     // 正常后置注册
@@ -130,7 +132,7 @@ namespace Mau.Generated.Flows
                 // 信号消费
                 P_Write = false;
                 // 执行动作（积木调用）
-                bool ok = Mau.Bricks.FileBrick.Write(_path, _content);
+                bool ok = Mau.Bricks.BRIK_FILE_003.Write(_path, _content);
                 if (ok)
                 {
                     // 正常后置注册
@@ -243,4 +245,66 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:9235118F980D64A5A5DFA58ED0D263C84185F5B31F8BCE104413D5964AEDCFCA
+
+    // #BRICK:BRIK-FILE-002 BEGIN
+namespace Mau.Bricks
+{
+    /// <summary>
+    /// 文件积木——file.read 读取文本（依赖 FileBridge）
+    /// </summary>
+    public static class BRIK_FILE_002
+    {
+        /// <summary>
+        /// 读取 UTF-8 文本
+        /// </summary>
+        /// <param name="path">受控路径</param>
+        /// <param name="content">完整文本——成功时填充</param>
+        /// <returns>true=成功</returns>
+        public static bool Read(string path, out string content)
+        {
+            try
+            {
+                content = FileBridge.CurrentFileSystem().ReadText(path);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                content = "ERR|" + ex.GetType().Name + "|" + ex.Message;
+                return false;
+            }
+        }
+    }
+}
+
+    // #BRICK:BRIK-FILE-002 END
+    // #BRICK:BRIK-FILE-003 BEGIN
+namespace Mau.Bricks
+{
+    /// <summary>
+    /// 文件积木——file.write 原子覆写（依赖 FileBridge）
+    /// </summary>
+    public static class BRIK_FILE_003
+    {
+        /// <summary>
+        /// 原子覆写 UTF-8 文本
+        /// </summary>
+        /// <param name="path">受控路径</param>
+        /// <param name="content">完整正文</param>
+        /// <returns>true=成功</returns>
+        public static bool Write(string path, string content)
+        {
+            try
+            {
+                FileBridge.CurrentFileSystem().WriteText(path, content);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+}
+
+    // #BRICK:BRIK-FILE-003 END
+// #MAU_CHECKSUM:SHA256:3424FC18E6F68CDF7D7B138E898F8E3065EC7652F902D79D33317A09AD4C243D
