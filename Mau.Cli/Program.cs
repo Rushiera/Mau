@@ -40,7 +40,7 @@ namespace Mau.Cli
             if (args.Length == 0)
             {
                 Console.WriteLine("Mau Translator v0.1");
-                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau> -o <dir> [--sdk] | mau publish -o <dir> | mau test | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket> | mau ps | mau status <名> | mau snapshot <名> | mau kill <名> | mau bricks list|index|test");
+                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau|组.mauproj> -o <dir> [--sdk] | mau publish -o <dir> | mau test | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket> | mau ps | mau status <名> | mau snapshot <名> | mau kill <名> | mau bricks list|index|test | mau export <组.mauproj> [-o <dir>] | mau import <组包目录> -o <目录> [--force]");
                 return 0;
             }
 
@@ -131,6 +131,38 @@ namespace Mau.Cli
                     bricksArgs[i] = args[i + 1];
                 }
                 return CommandBricks.Execute(bricksArgs);
+            }
+            if (command == "export")
+            {
+                string mauprojPath = args.Length > 1 ? args[1] : "";
+                string? exportDir = null;
+                for (int i = 2; i < args.Length - 1; i = i + 1)
+                {
+                    if (args[i] == "-o")
+                    {
+                        exportDir = args[i + 1];
+                    }
+                }
+                return CommandMauProj.Export(mauprojPath, exportDir);
+            }
+            if (command == "import")
+            {
+                string packageDir = args.Length > 1 ? args[1] : "";
+                string targetDir = ".";
+                bool force = false;
+                for (int i = 2; i < args.Length; i = i + 1)
+                {
+                    if (args[i] == "-o" && i + 1 < args.Length)
+                    {
+                        targetDir = args[i + 1];
+                        i = i + 1;
+                    }
+                    else if (args[i] == "--force")
+                    {
+                        force = true;
+                    }
+                }
+                return CommandMauProj.Import(packageDir, targetDir, force);
             }
 
             Console.WriteLine("未知命令: " + command);
@@ -256,6 +288,11 @@ namespace Mau.Cli
                 return 1;
             }
 
+            if (mauFile.EndsWith(".mauproj", StringComparison.OrdinalIgnoreCase))
+            {
+                return CommandMauProj.Build(mauFile, outDir, useSdk);
+            }
+
             // [1] 解析 + 验证
             string source = File.ReadAllText(mauFile);
             string flowName = FlowNameFromPath(mauFile);
@@ -339,7 +376,7 @@ namespace Mau.Cli
         /// </summary>
         /// <param name="path">源文件路径</param>
         /// <param name="diags">诊断列表</param>
-        private static void PrintDiagnostics(string path, System.Collections.Generic.List<MauDiagnostic> diags)
+        public static void PrintDiagnostics(string path, System.Collections.Generic.List<MauDiagnostic> diags)
         {
             for (int i = 0; i < diags.Count; i++)
             {
@@ -353,7 +390,7 @@ namespace Mau.Cli
         /// </summary>
         /// <param name="path">文件路径</param>
         /// <returns>PascalCase 流程名</returns>
-        private static string FlowNameFromPath(string path)
+        public static string FlowNameFromPath(string path)
         {
             string baseName = Path.GetFileNameWithoutExtension(path);
             string[] parts = baseName.Split('_');
@@ -391,7 +428,7 @@ private static string ComputeSha256(string text)
 /// 查找 workspace 根——含 Mau.sln 的目录
 /// </summary>
 /// <returns>workspace 根或空</returns>
-private static string? FindWorkspaceRoot()
+public static string? FindWorkspaceRoot()
 {
     DirectoryInfo? dir = new DirectoryInfo(Directory.GetCurrentDirectory());
     while (dir != null)

@@ -43,35 +43,42 @@ namespace Mau.Bricks
         /// 按十进制 B/K/M 阈值格式化数量
         /// </summary>
         /// <param name="bytes">数量</param>
-        /// <returns>稳定、文化无关的格式文本</returns>
-        public static string FormatSize(long bytes)
+        /// <param name="formatted">格式文本</param>
+        /// <returns>true=成功</returns>
+        public static bool FormatSize(long bytes, out string formatted)
         {
             if (bytes >= 1000000)
             {
-                return (bytes / 1000000.0).ToString("F2", CultureInfo.InvariantCulture) + " M";
+                formatted = (bytes / 1000000.0).ToString("F2", CultureInfo.InvariantCulture) + " M";
+                return true;
             }
             if (bytes >= 1000)
             {
-                return (bytes / 1000.0).ToString("F2", CultureInfo.InvariantCulture) + " K";
+                formatted = (bytes / 1000.0).ToString("F2", CultureInfo.InvariantCulture) + " K";
+                return true;
             }
-            return bytes.ToString(CultureInfo.InvariantCulture) + " B";
+            formatted = bytes.ToString(CultureInfo.InvariantCulture) + " B";
+            return true;
         }
 
         /// <summary>
         /// 生成单行、最多十五 UTF-16 字符头部的结果预览
         /// </summary>
         /// <param name="result">完整工具结果</param>
-        /// <returns>OK 或空结果返回空字符串，否则返回预览</returns>
-        public static string ResultPreview(string? result)
+        /// <param name="preview">预览文本——OK 或空结果返回空字符串，否则返回预览</param>
+        /// <returns>true=成功</returns>
+        public static bool ResultPreview(string? result, out string preview)
         {
             if (string.IsNullOrEmpty(result))
             {
-                return "";
+                preview = "";
+                return true;
             }
             if (result == "OK" || result.StartsWith("OK\n", StringComparison.Ordinal)
                 || result.StartsWith("OK\r", StringComparison.Ordinal))
             {
-                return "";
+                preview = "";
+                return true;
             }
             int headLength = result.Length;
             if (headLength > 15)
@@ -85,7 +92,10 @@ namespace Mau.Bricks
                 }
             }
             string head = result.Substring(0, headLength).Replace('\r', ' ').Replace('\n', ' ');
-            return "（" + head + "…总" + FormatSize(result.Length) + "）";
+            string sizeText = "";
+            FormatSize(result.Length, out sizeText);
+            preview = "（" + head + "…总" + sizeText + "）";
+            return true;
         }
     }
 

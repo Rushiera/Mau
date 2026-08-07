@@ -206,9 +206,15 @@ namespace Mau.Bricks.Tests
             Assert.False(MathBrick.IsAllDigits(""));
             Assert.False(MathBrick.IsAllDigits(null));
 
-            Assert.Equal("999 B", MathBrick.FormatSize(999));
-            Assert.Equal("1.00 K", MathBrick.FormatSize(1000));
-            Assert.Equal("1.00 M", MathBrick.FormatSize(1000000));
+            string formatted1 = "";
+            Assert.True(MathBrick.FormatSize(999, out formatted1));
+            Assert.Equal("999 B", formatted1);
+            string formatted2 = "";
+            Assert.True(MathBrick.FormatSize(1000, out formatted2));
+            Assert.Equal("1.00 K", formatted2);
+            string formatted3 = "";
+            Assert.True(MathBrick.FormatSize(1000000, out formatted3));
+            Assert.Equal("1.00 M", formatted3);
         }
 
         /// <summary>
@@ -217,12 +223,21 @@ namespace Mau.Bricks.Tests
         [Fact]
         public void MathBrickResultPreviewTruncates()
         {
-            Assert.Equal("", MathBrick.ResultPreview("OK"));
-            Assert.Equal("", MathBrick.ResultPreview(""));
-            Assert.Equal("", MathBrick.ResultPreview(null));
-            Assert.Equal("（hello world!…总12 B）", MathBrick.ResultPreview("hello world!"));
+            string p1 = "";
+            Assert.True(MathBrick.ResultPreview("OK", out p1));
+            Assert.Equal("", p1);
+            string p2 = "";
+            Assert.True(MathBrick.ResultPreview("", out p2));
+            Assert.Equal("", p2);
+            string p3 = "";
+            Assert.True(MathBrick.ResultPreview(null, out p3));
+            Assert.Equal("", p3);
+            string p4 = "";
+            Assert.True(MathBrick.ResultPreview("hello world!", out p4));
+            Assert.Equal("（hello world!…总12 B）", p4);
             string longText = "012345678901234567890123456789";
-            string preview = MathBrick.ResultPreview(longText);
+            string preview = "";
+            Assert.True(MathBrick.ResultPreview(longText, out preview));
             Assert.Contains("012345678901234", preview);
             Assert.Contains("总30 B", preview);
         }

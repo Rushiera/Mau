@@ -536,6 +536,29 @@ namespace Mau.Translator
             {
                 return "double";
             }
+            if (type.IsGenericType)
+            {
+                string baseName = type.Name;
+                int tick = baseName.IndexOf('`');
+                if (tick >= 0)
+                {
+                    baseName = baseName.Substring(0, tick);
+                }
+                StringBuilder sb = new StringBuilder();
+                sb.Append(baseName);
+                sb.Append("<");
+                Type[] args = type.GetGenericArguments();
+                for (int i = 0; i < args.Length; i = i + 1)
+                {
+                    if (i > 0)
+                    {
+                        sb.Append(", ");
+                    }
+                    sb.Append(TypeName(args[i]));
+                }
+                sb.Append(">");
+                return sb.ToString();
+            }
             return type.Name;
         }
 
