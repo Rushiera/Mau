@@ -106,6 +106,7 @@
 | BRIK-TOOL-010 | tool.dispatch | TOOL | TOOL/BRIK-TOOL-010_tool.dispatch.cs | 无 | active |  |
 | BRIK-TOOL-011 | tool.collect | TOOL | TOOL/BRIK-TOOL-011_tool.collect.cs | 无 | active |  |
 | BRIK-TOOL-012 | tool.create_next | TOOL | TOOL/BRIK-TOOL-012_tool.create_next.cs | 无 | active |  |
+| BRIK-TOOL-013 | tool.run_generic | TOOL | TOOL/BRIK-TOOL-013_tool.run_generic.cs | file.read, file.write, file.append, file.replace, file.read_lines, file.tree, file.find, file.move, file.delete, file.convert, file.batch, shell.exec | active |  |
 
 ---
 
