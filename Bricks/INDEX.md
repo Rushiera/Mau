@@ -84,6 +84,8 @@
 | BRIK-OA-012 | oa.complete_simple | OA | OA/BRIK-OA-012_oa.complete_simple.cs | 无 | active |  |
 | BRIK-OA-013 | oa.complete_str | OA | OA/BRIK-OA-013_oa.complete_str.cs | 无 | active |  |
 | BRIK-OA-014 | oa.claim_one_simple | OA | OA/BRIK-OA-014_oa.claim_one_simple.cs | 无 | active |  |
+| BRIK-OA-015 | oa.complete_result | OA | OA/BRIK-OA-015_oa.complete_result.cs | 无 | active |  |
+| BRIK-OA-016 | oa.claim_next_simple | OA | OA/BRIK-OA-016_oa.claim_next_simple.cs | 无 | active |  |
 | BRIK-OFFICE-001 | excel.read | OFFICE | OFFICE/BRIK-OFFICE-001_excel.read.cs | 无 | active |  |
 | BRIK-OFFICE-002 | excel.write | OFFICE | OFFICE/BRIK-OFFICE-002_excel.write.cs | 无 | active |  |
 | BRIK-OFFICE-003 | docx.read | OFFICE | OFFICE/BRIK-OFFICE-003_docx.read.cs | 无 | active |  |
