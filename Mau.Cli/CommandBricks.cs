@@ -1025,8 +1025,9 @@ namespace Mau.Cli
 {
     if (t == typeof(string))
     {
-        // 唯一值——全局跑测共享参数名但值必须隔离（判例：ctx_push_assistant_tool_calls 写 ToolCallsJson="t" → ctx_build_messages_json 解析 "t" 失败）
-        return "t-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+        // 唯一值——隔离共享参数状态（判例：ctx_push_assistant_tool_calls 写 ToolCallsJson="t" → ctx_build_messages_json 解析失败）
+        // 路径参数（file.write 等）落系统临时目录——不污染仓库根（判例：v0.52 误提交 8 个 t-* 文件）
+        return Path.Combine(Path.GetTempPath(), "t-" + Guid.NewGuid().ToString("N").Substring(0, 8));
     }
     if (t == typeof(int))
     {
