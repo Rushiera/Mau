@@ -21,15 +21,7 @@ namespace Mau.Runtime
         /// </summary>
         public static string ApiKey
         {
-            get
-            {
-                string key;
-                if (DataBox.TryGet<string>("llm", "apiKey", out key))
-                {
-                    return key;
-                }
-                return "";
-            }
+            get { return CredentialStore.Get("llm.apiKey"); }
         }
 
         /// <summary>
@@ -70,7 +62,8 @@ namespace Mau.Runtime
         /// <param name="apiKey">API Key</param>
         public static void ConfigureApiKey(string apiKey)
         {
-            DataBox.Set<string>("llm", "apiKey", apiKey == null ? "" : apiKey.Trim());
+            // 凭证隔离——API Key 不入 DataBox（Capture 全量快照不暴露；安全审查项 P0-6）
+            CredentialStore.Set("llm.apiKey", apiKey == null ? "" : apiKey.Trim());
         }
 
         /// <summary>

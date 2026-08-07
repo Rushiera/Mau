@@ -116,7 +116,7 @@ namespace Mau.Runtime
                 catch (Exception ex)
                 {
                     // 管道竞争/停止中——忽略；服务端异常保留日志（诊断快照管道）
-                    Console.Error.WriteLine("[SnapshotServer] 监听异常: " + ex.Message);
+                    RuntimeLog.ErrorOut("[SnapshotServer] 监听异常: " + ex.Message);
                 }
                 finally
                 {
@@ -173,7 +173,7 @@ namespace Mau.Runtime
             catch (Exception ex)
             {
                 // 客户端异常断开/处理异常——保留日志（诊断快照管道）
-                Console.Error.WriteLine("[SnapshotServer] 处理异常: " + ex.Message);
+                RuntimeLog.ErrorOut("[SnapshotServer] 处理异常: " + ex.Message);
             }
         }
     }

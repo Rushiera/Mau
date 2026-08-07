@@ -172,7 +172,7 @@ namespace Mau.Runtime
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine("[FlowRunner] Inbox 回调异常: " + ex.Message);
+                    RuntimeLog.ErrorOut("[FlowRunner] Inbox 回调异常: " + ex.Message);
                 }
             });
             // [段2] 指令分发——每实体取邮件（有指令时调宿主钩子）
@@ -192,7 +192,7 @@ namespace Mau.Runtime
                     }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine("[FlowRunner] 指令分发异常: " + ex.Message);
+                        RuntimeLog.ErrorOut("[FlowRunner] 指令分发异常: " + ex.Message);
                     }
                 }
             }

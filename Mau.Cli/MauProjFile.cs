@@ -189,6 +189,11 @@ namespace Mau.Cli
                 result.Error = "组名为空——组: 指令值不能为空";
                 return result;
             }
+            if (!IsSafeName(file.Name))
+            {
+                result.Error = "组名非法——仅允许字母/数字/下划线（防路径逃逸）: " + file.Name;
+                return result;
+            }
 
             // [段3] 转义解码——所有值统一 Unescape
             file.Name = Unescape(file.Name);
@@ -222,9 +227,16 @@ namespace Mau.Cli
                 for (int i = 0; i < Files.Count; i++)
                 {
                     string abs = Path.Combine(DirectoryPath, Files[i]);
-                    if (File.Exists(abs))
+                    // 路径逃逸防护——GetFullPath 后必须仍位于组目录内（../ 或绝对路径拒绝；安全审查项 P0-7）
+                    string full = Path.GetFullPath(abs);
+                    string rootFull = Path.GetFullPath(DirectoryPath);
+                    if (!full.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                     {
-                        collected.Add(abs);
+                        continue;
+                    }
+                    if (File.Exists(full))
+                    {
+                        collected.Add(full);
                     }
                 }
             }
@@ -334,7 +346,29 @@ namespace Mau.Cli
                 list.Add(lastPart);
             }
         }
+/// <summary>
+/// 安全逻辑名——仅字母/数字/下划线（组名类名防路径逃逸；安全审查项 P0-7）
+/// </summary>
+/// <param name = "name">名称</param>
+/// <returns>安全为真</returns>
+internal static bool IsSafeName(string name)
+{
+    if (name.Length == 0)
+    {
+        return false;
     }
+
+    for (int i = 0; i < name.Length; i++)
+    {
+        char c = name[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}    }
 
     /// <summary>
     /// mauproj 解析结果

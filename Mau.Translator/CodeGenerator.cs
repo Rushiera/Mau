@@ -308,10 +308,11 @@ namespace Mau.Translator
             sb.AppendLine();
 
             // [段8b] 组合声明——文档化序列/并行/选择/重试
+            // ⚠️ Composition 为 experimental（documentation-only）——执行语义未实现，勿作为生产构筑依赖
             for (int i = 0; i < doc.Compositions.Count; i++)
             {
                 IrComposition c = doc.Compositions[i];
-                sb.AppendLine("        // 组合 " + c.Name + ":");
+                sb.AppendLine("        // 组合 " + c.Name + ":  [experimental — documentation-only，执行语义未实现]");
                 if (c.Sequence.Count > 0)
                 {
                     sb.Append("        //   序列: ");

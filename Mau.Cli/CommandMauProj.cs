@@ -356,7 +356,13 @@ namespace Mau.Cli
             for (int i = 0; i < entries.Count; i++)
             {
                 ManifestEntry entry = entries[i];
+                // 路径逃逸防护——manifest 条目必须位于包目录内（安全审查项 P0-7）
                 string absPath = Path.Combine(packageDir, entry.Path);
+                if (!IsWithinRoot(packageDir, absPath))
+                {
+                    Console.WriteLine("FAIL: manifest 路径逃逸——" + entry.Path);
+                    return 1;
+                }
                 if (!File.Exists(absPath))
                 {
                     Console.WriteLine("FAIL: 包内文件缺失——" + entry.Path);
@@ -375,7 +381,7 @@ namespace Mau.Cli
             for (int i = 0; i < brickDeps.Count; i++)
             {
                 string dep = brickDeps[i];
-                if (dep.Length > 0 && !BrickIndex.TryGet(dep, out BrickIndexEntry? _))
+                if (dep.Length > 0 && !BrickIndex.TryGetById(dep, out BrickIndexEntry? _))
                 {
                     Console.WriteLine("FAIL: 依赖积木不可用——" + dep + "（本环境未注册）");
                     return 1;
@@ -387,6 +393,11 @@ namespace Mau.Cli
             }
 
             // [段4] 落盘——目标 &lt;targetDir&gt;/&lt;组名&gt;/...
+            if (!MauProjFile.IsSafeName(name))
+            {
+                Console.WriteLine("FAIL: 组名非法（防路径逃逸）——" + name);
+                return 1;
+            }
             string groupDir = Path.Combine(targetDir, name);
             if (Directory.Exists(groupDir) && !force)
             {
@@ -399,6 +410,11 @@ namespace Mau.Cli
                 ManifestEntry entry = entries[i];
                 string src = Path.Combine(packageDir, entry.Path);
                 string dest = Path.Combine(groupDir, entry.Path);
+                if (!IsWithinRoot(groupDir, dest))
+                {
+                    Console.WriteLine("FAIL: 导入路径逃逸——" + entry.Path);
+                    return 1;
+                }
                 string? destDir = Path.GetDirectoryName(dest);
                 if (destDir != null && !Directory.Exists(destDir))
                 {
@@ -652,7 +668,18 @@ namespace Mau.Cli
             }
             return sb.ToString();
         }
-    }
+/// <summary>
+/// 路径根内校验——GetFullPath 后必须位于 root 内（防 ../ 逃逸；安全审查项 P0-7）
+/// </summary>
+/// <param name = "root">根目录</param>
+/// <param name = "path">候选路径</param>
+/// <returns>在根内为真</returns>
+private static bool IsWithinRoot(string root, string path)
+{
+    string full = Path.GetFullPath(path);
+    string rootFull = Path.GetFullPath(root);
+    return full.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+}    }
 
     /// <summary>
     /// manifest 文件条目——导入校验依据

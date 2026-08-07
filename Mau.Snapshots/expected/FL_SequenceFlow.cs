@@ -234,7 +234,7 @@ namespace Mau.Generated.Flows
             return _logs.GetAll();
         }
 
-        // 组合 FL_Main:
+        // 组合 FL_Main:  [experimental — documentation-only，执行语义未实现]
         //   序列: T_Step1, T_Step2, T_Step3
         //   重试: 2
         //   汇合: P_Step3Done / P_Failed
@@ -342,4 +342,4 @@ namespace Mau.Bricks
 }
 
     // #BRICK:BRIK-FILE-001 END
-// #MAU_CHECKSUM:SHA256:74DDFC11A23B3CB691E8DEE13AB6D84BFA80186B73A75836E460E20AAB0C9CED
+// #MAU_CHECKSUM:SHA256:91841B60F4601A9F213FAFB2C0449EE95C78B88EDC216F7C780757E4F0F50F9C

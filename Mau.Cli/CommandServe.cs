@@ -58,33 +58,20 @@ namespace Mau.Cli
                 return 1;
             }
 
-            // [1] 解析 + 验证 + 生成
+            // [1] 唯一入口——MauCompiler.Compile（R1：BrickIndex 加载 + BRIKGROUP 内嵌；禁止独立拼装 Parser→Validator→Generator）
             string sourceText = File.ReadAllText(mauFile, Encoding.UTF8);
-            ParseResult parseResult = MauParser.Parse(sourceText);
-            if (parseResult.Diagnostics.Count > 0)
-            {
-                Console.Error.WriteLine("Mau 语法错误:");
-                for (int i = 0; i < parseResult.Diagnostics.Count; i = i + 1)
-                {
-                    Console.Error.WriteLine("  " + parseResult.Diagnostics[i].ToString());
-                }
-                return 1;
-            }
-
-            MauDocument doc = parseResult.Document;
-            System.Collections.Generic.List<MauDiagnostic> diags = MauValidator.Validate(doc);
-            if (diags.Count > 0)
+            string flowName = Path.GetFileNameWithoutExtension(mauFile);
+            CompileResult compileResult = MauCompiler.Compile(sourceText, flowName);
+            if (!compileResult.Success)
             {
                 Console.Error.WriteLine("Mau 验证失败:");
-                for (int i = 0; i < diags.Count; i = i + 1)
+                for (int i = 0; i < compileResult.Diagnostics.Count; i = i + 1)
                 {
-                    Console.Error.WriteLine("  " + diags[i].ToString());
+                    Console.Error.WriteLine("  " + compileResult.Diagnostics[i].ToString());
                 }
                 return 1;
             }
-
-            string flowName = Path.GetFileNameWithoutExtension(mauFile);
-            string csSource = CodeGenerator.Generate(doc, flowName);
+            string csSource = compileResult.GeneratedCode;
             string className = "FL_" + flowName;
 
             // [2] 临时编译

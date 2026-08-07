@@ -132,26 +132,16 @@ namespace Mau.Cli
                 return 1;
             }
 
-            // [1] 解析 + 验证
+            // [1] 唯一入口——MauCompiler.Compile（R1：BrickIndex 加载 + BRIKGROUP 内嵌；禁止独立拼装 Parser→Validator→Generator）
             string sourceText = File.ReadAllText(mauFile, Encoding.UTF8);
-            ParseResult parseResult = MauParser.Parse(sourceText);
-            if (parseResult.Diagnostics.Count > 0)
-            {
-                PrintRunError(1, "Mau 语法错误", parseResult.Diagnostics);
-                return 1;
-            }
-
-            MauDocument doc = parseResult.Document;
-            List<MauDiagnostic> diags = MauValidator.Validate(doc);
-            if (diags.Count > 0)
-            {
-                PrintRunError(1, "Mau 验证失败", diags);
-                return 1;
-            }
-
-            // [2] 生成 C# 源码
             string flowName = FlowNameFromPath(mauFile);
-            string csSource = CodeGenerator.Generate(doc, flowName);
+            CompileResult compileResult = MauCompiler.Compile(sourceText, flowName);
+            if (!compileResult.Success)
+            {
+                PrintRunError(1, "Mau 验证失败", compileResult.Diagnostics);
+                return 1;
+            }
+            string csSource = compileResult.GeneratedCode;
             string className = "FL_" + flowName;
 
             // [3] 编译——默认 Roslyn 内存编译；--sdk 走环境 dotnet build
