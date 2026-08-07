@@ -1,11 +1,10 @@
-using System;
-using Mau.Runtime;
-// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
+﻿// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
 // 流程: ToolCat
 // 基座: Mau.Runtime/v0.1
 
 using Mau.Runtime;
 using System.Threading.Tasks;
+using System;
 
 namespace Mau.Generated.Flows
 {
@@ -307,4 +306,4 @@ namespace Mau.Bricks
 }
 
     // #BRICK:BRIK-FILE-003 END
-// #MAU_CHECKSUM:SHA256:3424FC18E6F68CDF7D7B138E898F8E3065EC7652F902D79D33317A09AD4C243D
+// #MAU_CHECKSUM:SHA256:D0B7D2604A783275251C79244A538D9C75DAAF5199D4ACD420242C02FAE8162B

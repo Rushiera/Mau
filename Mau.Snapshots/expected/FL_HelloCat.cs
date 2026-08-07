@@ -1,13 +1,12 @@
-using System;
-using System.IO;
-using System.Text;
-using Mau.Runtime;
-// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
+﻿// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
 // 流程: HelloCat
 // 基座: Mau.Runtime/v0.1
 
 using Mau.Runtime;
 using System.Threading.Tasks;
+using System;
+using System.IO;
+using System.Text;
 
 namespace Mau.Generated.Flows
 {
@@ -212,4 +211,4 @@ namespace Mau.Bricks
 }
 
     // #BRICK:BRIK-LOG-001 END
-// #MAU_CHECKSUM:SHA256:505773C7A06E128D6F39EAA1E150E395532A97A0F6F0853F5B06B44D9CF19E9B
+// #MAU_CHECKSUM:SHA256:1B669486FFC52BA43281CFEC2938DEE46CAE4ADDEC706AB5679D3758E56B5B37

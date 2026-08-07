@@ -4,6 +4,7 @@
 
 using Mau.Runtime;
 using System.Threading.Tasks;
+using System;
 
 namespace Mau.Generated.Flows
 {
@@ -58,8 +59,8 @@ namespace Mau.Generated.Flows
         /// <summary>
         /// 外部投递信号：Start
         /// </summary>
-        /// <param name="input">输入文件路径</param>
-        /// <param name="output">输出文件路径</param>
+        /// <param name="input">参数 input</param>
+        /// <param name="output">参数 output</param>
         public void FireStart(string input, string output)
         {
             _input = input;
@@ -79,7 +80,7 @@ namespace Mau.Generated.Flows
                 // 信号消费
                 P_Start = false;
                 // 执行动作（积木调用）
-                bool ok = Mau.Bricks.FileBrick.Convert(_input, _output);
+                bool ok = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
                 if (ok)
                 {
                     // 正常后置注册
@@ -154,4 +155,37 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:8D61AC21364BB36AB8DBD9B9C997B893249353C2B65528B32835F00F0974F6E7
+
+    // #BRICK:BRIK-FILE-001 BEGIN
+namespace Mau.Bricks
+{
+    /// <summary>
+    /// 文件积木——file.convert 转换文件（独立实现，不走受控根）
+    /// </summary>
+    public static class BRIK_FILE_001
+    {
+        /// <summary>
+        /// 转换文件——真实实现（读取→转码→写入）
+        /// </summary>
+        /// <param name="input">输入文件路径</param>
+        /// <param name="output">输出文件路径</param>
+        /// <returns>转换是否成功</returns>
+        public static bool Convert(string input, string output)
+        {
+            try
+            {
+                byte[] bytes = System.IO.File.ReadAllBytes(input);
+                // 第一期：转码 = 读取后原样写出——编码转换算法留积木内部后续实现
+                System.IO.File.WriteAllBytes(output, bytes);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+}
+
+    // #BRICK:BRIK-FILE-001 END
+// #MAU_CHECKSUM:SHA256:1D168F33B098310AED5532FB6ED7627BCE1BA567038A9D94389CB16FE72F1D58

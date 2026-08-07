@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
+using Microsoft.CodeAnalysis;
 using Mau.Contracts;
 using Mau.Translator;
 using Mau.Runtime;
@@ -185,10 +187,13 @@ namespace Mau.Cli
             }
             string relPath = dir + "/" + Path.GetFileName(file);
             bool inHeader = false;
-            string brickNames = "";
+            string brickName = "";
             string ids = "";
+            string category = "";
             string deps = "";
-            for (int i = 0; i < lines.Length && i < 14; i++)
+            string duration = "";
+            string thread = "";
+            for (int i = 0; i < lines.Length && i < 16; i++)
             {
                 string line = lines[i].Trim();
                 if (line.StartsWith("// ═"))
@@ -202,65 +207,158 @@ namespace Mau.Cli
                 }
                 if (line.StartsWith("// 积木:"))
                 {
-                    brickNames = line.Substring(6).Trim();
+                    brickName = line.Substring(6).Trim();
                 }
                 else if (line.StartsWith("// ID:"))
                 {
                     ids = line.Substring(6).Trim();
                 }
+                else if (line.StartsWith("// 类别:"))
+                {
+                    category = line.Substring(6).Trim();
+                }
                 else if (line.StartsWith("// 依赖:"))
                 {
                     deps = line.Substring(7).Trim();
                 }
+                else if (line.StartsWith("// 时长:"))
+                {
+                    duration = line.Substring(6).Trim();
+                }
+                else if (line.StartsWith("// 线程:"))
+                {
+                    thread = line.Substring(6).Trim();
+                }
             }
-            if (brickNames.Length == 0)
+            if (brickName.Length == 0)
             {
                 return;
             }
-            // 展开多积木——"a / b" 或 "a / b / c"
-            string[] names = brickNames.Split('/');
-            for (int n = 0; n < names.Length; n++)
-            {
-                string name = names[n].Trim();
-                if (name.Length == 0)
-                {
-                    continue;
-                }
-                BrickIndexEntry entry = new BrickIndexEntry();
-                entry.Name = name;
-                entry.Path = relPath;
-                entry.Dependencies = deps;
-                entry.Status = "active";
-                entry.Source = "";
-                entry.FileIdText = ids;
-                // ID 分配：单 ID 或范围（~）——范围时从 INDEX 已有行匹配；否则按名称序号
-                entry.Id = ResolveId(ids, name, entries.Count);
-                entry.Category = CategoryFromName(name);
-                entries.Add(entry);
-            }
+            // 一积木一文件——R1 文本库形态，无多积木展开
+            BrickIndexEntry entry = new BrickIndexEntry();
+            entry.Name = brickName;
+            entry.Path = relPath;
+            entry.Dependencies = deps;
+            entry.Status = "active";
+            entry.Source = "";
+            entry.FileIdText = ids;
+            entry.Id = ids;
+            // 类别以文件头 类别: 字段为权威（docx.* 属 OFFICE 类，名前缀推断会错位）
+            entry.Category = category.Length > 0 ? category : CategoryFromName(brickName);
+            entry.Contract = ExtractContract(file, brickName, duration, thread);
+            entries.Add(entry);
         }
 
         /// <summary>
-        /// 解析文件头 ID 声明——单 ID / 范围（001 ~ 011）
+        /// Roslyn 提取积木静态方法签名——类名/方法名/参数（out 判定）/返回类型 → BrickContract
+        /// 文件头 时长:/线程: 为契约元数据（缺省 Sync/main）
         /// </summary>
-        /// <param name="idText">ID 声明文本</param>
+        /// <param name="file">积木 .cs 文件</param>
         /// <param name="name">积木名</param>
-        /// <param name="index">当前索引</param>
-        /// <returns>解析出的 ID</returns>
-        private static string ResolveId(string idText, string name, int index)
+        /// <param name="durationText">时长声明（空=Sync）</param>
+        /// <param name="threadText">线程声明（空=main）</param>
+        /// <returns>契约（提取失败返回 null）</returns>
+        private static BrickContract? ExtractContract(string file, string name, string durationText, string threadText)
         {
-            string trimmed = idText.Replace(" ", "");
-            if (trimmed.Length == 0)
+            try
             {
-                return "";
+                string code = File.ReadAllText(file);
+                Microsoft.CodeAnalysis.SyntaxTree tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(code);
+                Microsoft.CodeAnalysis.SyntaxNode root = tree.GetRoot();
+                foreach (Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax cls in
+                    root.DescendantNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax>())
+                {
+                    // 契约方法选择——首个 public static 且返回 bool 的方法（辅助方法如 Configure/Classify 返回 void/int 自动跳过）；
+                    // 无 bool 方法时回退首个 public static void（排除 Configure 命名辅助）
+                    Microsoft.CodeAnalysis.CSharp.Syntax.MethodDeclarationSyntax? pick = null;
+                    foreach (Microsoft.CodeAnalysis.CSharp.Syntax.MethodDeclarationSyntax m in
+                        cls.Members.OfType<Microsoft.CodeAnalysis.CSharp.Syntax.MethodDeclarationSyntax>())
+                    {
+                        if (!m.Modifiers.Any(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PublicKeyword)
+                            || !m.Modifiers.Any(Microsoft.CodeAnalysis.CSharp.SyntaxKind.StaticKeyword))
+                        {
+                            continue;
+                        }
+                        string ret = m.ReturnType.ToString();
+                        if (ret == "bool")
+                        {
+                            pick = m;
+                            break;
+                        }
+                        if (ret == "void" && pick == null
+                            && !m.Identifier.Text.StartsWith("Configure", StringComparison.Ordinal))
+                        {
+                            pick = m;
+                        }
+                    }
+                    if (pick == null)
+                    {
+                        continue;
+                    }
+                    string implementation = "Mau.Bricks." + cls.Identifier.Text + "." + pick.Identifier.Text;
+                    BrickContract contract = new BrickContract(name, implementation);
+                    foreach (Microsoft.CodeAnalysis.CSharp.Syntax.ParameterSyntax p in pick.ParameterList.Parameters)
+                    {
+                        bool isOut = p.Modifiers.Any(Microsoft.CodeAnalysis.CSharp.SyntaxKind.OutKeyword);
+                        string typeText = p.Type != null ? p.Type.ToString() : "string";
+                        if (isOut)
+                        {
+                            contract.Outputs.Add(new BrickPort(p.Identifier.Text, TypeFromName(typeText)));
+                        }
+                        else
+                        {
+                            contract.Inputs.Add(new BrickPort(p.Identifier.Text, TypeFromName(typeText)));
+                        }
+                    }
+                    contract.Return = pick.ReturnType.ToString() == "void"
+                        ? BrickReturnKind.Void : BrickReturnKind.Bool;
+                    contract.Duration = durationText == "Streaming" ? BrickDuration.Streaming
+                        : durationText == "Async" ? BrickDuration.Async : BrickDuration.Sync;
+                    contract.Thread = threadText.Length > 0 ? threadText : "main";
+                    return contract;
+                }
             }
-            int tilde = trimmed.IndexOf('~');
-            if (tilde < 0)
+            catch
             {
-                return trimmed;
+                return null;
             }
-            // 范围形态——按 INDEX 已有行无法解析时用序号推导（类别-序号段）
-            return "";
+            return null;
+        }
+
+        /// <summary>
+        /// C# 类型文本 → Type——覆盖积木契约全量类型（与 BrickIndex.MapType 同表）
+        /// </summary>
+        /// <param name="typeText">类型文本</param>
+        /// <returns>Type（未知回退 string）</returns>
+        private static Type TypeFromName(string typeText)
+        {
+            string t = typeText.Trim();
+            if (t.EndsWith("?"))
+            {
+                t = t.Substring(0, t.Length - 1);
+            }
+            switch (t)
+            {
+                case "string": return typeof(string);
+                case "long": return typeof(long);
+                case "int": return typeof(int);
+                case "bool": return typeof(bool);
+                case "double": return typeof(double);
+                case "string[]": return typeof(string[]);
+                case "long[]": return typeof(long[]);
+                case "int[]": return typeof(int[]);
+                case "bool[]": return typeof(bool[]);
+                case "Office[]": return typeof(Office[]);
+                case "Office": return typeof(Office);
+                case "OfficeData": return typeof(OfficeData);
+                case "ApprovalResult": return typeof(ApprovalResult);
+                case "MarkdownPart": return typeof(MarkdownPart);
+                case "LlmMessage": return typeof(LlmMessage);
+                case "List<MarkdownPart>": return typeof(List<MarkdownPart>);
+                case "Dictionary<string, List<string>>": return typeof(Dictionary<string, List<string>>);
+                default:
+                    return typeof(string);
+            }
         }
 
         /// <summary>
@@ -339,9 +437,9 @@ namespace Mau.Cli
                 entry.Name = cells[2].Trim();
                 entry.Category = cells[3].Trim();
                 entry.Path = cells[4].Trim();
-                entry.Status = cells[5].Trim();
-                entry.Source = cells[6].Trim();
-                entry.Dependencies = "";
+                entry.Dependencies = cells[5].Trim();
+                entry.Status = cells[6].Trim();
+                entry.Source = cells[7].Trim();
                 if (!table.ContainsKey(entry.Name))
                 {
                     table[entry.Name] = entry;
@@ -415,6 +513,20 @@ namespace Mau.Cli
                     idToName[id] = kv.Key;
                 }
             }
+            // V4: 名称全系统唯一（BrickIndex 内不重复）
+            Dictionary<string, string> nameToId = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (Mau.Translator.BrickIndexEntry brickEntry in BrickIndex.All)
+            {
+                if (nameToId.ContainsKey(brickEntry.Name))
+                {
+                    Console.WriteLine("V4 FAIL: 名称重复——" + brickEntry.Name + "（" + nameToId[brickEntry.Name] + " 与 " + brickEntry.Id + "）");
+                    errors = errors + 1;
+                }
+                else
+                {
+                    nameToId[brickEntry.Name] = brickEntry.Id;
+                }
+            }
             // V5: ID 格式——BRIK-{类别}-{三位序号}
             foreach (KeyValuePair<string, BrickIndexEntry> kv in table)
             {
@@ -435,6 +547,32 @@ namespace Mau.Cli
                     if (!File.Exists(full))
                     {
                         Console.WriteLine("V6 FAIL: 路径不存在——" + path + "（" + kv.Key + "）");
+                        errors = errors + 1;
+                    }
+                }
+            }
+            // V7: 依赖声明一致——INDEX 依赖列 vs 文件头（文件头权威）+ 声明 BRIK-ID 存在性
+            List<BrickIndexEntry> headerEntries = ScanBrickHeaders(Path.Combine(root, "Bricks"));
+            for (int h = 0; h < headerEntries.Count; h++)
+            {
+                BrickIndexEntry he = headerEntries[h];
+                BrickIndexEntry? indexEntry;
+                if (table.TryGetValue(he.Name, out indexEntry))
+                {
+                    string indexDeps = indexEntry.Dependencies ?? "";
+                    if (indexDeps != he.Dependencies)
+                    {
+                        Console.WriteLine("V7 FAIL: 依赖列不一致——" + he.Name + "（INDEX='" + indexDeps + "' 文件头='" + he.Dependencies + "'）");
+                        errors = errors + 1;
+                    }
+                }
+                string[] depParts = he.Dependencies.Split(',');
+                for (int d = 0; d < depParts.Length; d++)
+                {
+                    string dep = depParts[d].Trim();
+                    if (dep.StartsWith("BRIK-", StringComparison.Ordinal) && !idToName.ContainsKey(dep))
+                    {
+                        Console.WriteLine("V7 FAIL: 依赖 ID 不存在——" + he.Name + " 声明 " + dep);
                         errors = errors + 1;
                     }
                 }
@@ -529,7 +667,7 @@ namespace Mau.Cli
         /// </summary>
         /// <returns>退出码</returns>
         public static int UpdateIndex()
-        {
+{
             string? root = FindWorkspaceRoot();
             if (root == null)
             {
@@ -539,37 +677,9 @@ namespace Mau.Cli
             string catalogDir = Path.Combine(root, "Bricks");
             string indexPath = Path.Combine(catalogDir, "INDEX.md");
 
-
-            // 从注册表构建——ID 从旧表继承，新积木按类别 max+1 分配
-            StringBuilder md = new StringBuilder();
-            md.AppendLine("# Mau 积木索引 — INDEX");
-            md.AppendLine();
-            md.AppendLine("> 版本：v3.0 | 创建：2026-08-04 | 更新：2026-08-06（v3.0：`mau bricks index --update` 自动生成——注册表唯一真相源）");
-            md.AppendLine("> 全量积木登记——一行一条。ID 永不重用。");
-            md.AppendLine();
-            md.AppendLine("## 全部积木");
-            md.AppendLine();
-            md.AppendLine("| ID | 名字 | 类别 | 工程路径 | 依赖 | 状态 | 来源 |");
-            md.AppendLine("|:--|:--|:--|:--|:--|:--|:--|");
-
-            // 按类别+序号排序输出
-            List<BrickIndexEntry> entries = new List<BrickIndexEntry>();
-            // 从 BrickIndex（index.json）真相源构建——ID/类别/路径/依赖全部继承，ID 永不重用
-            foreach (Mau.Translator.BrickIndexEntry brickEntry in BrickIndex.All)
-            {
-                BrickContract contract = brickEntry.Contract;
-                BrickIndexEntry entry = new BrickIndexEntry();
-                entry.Id = brickEntry.Id;
-                entry.Name = contract.Name;
-                entry.Category = brickEntry.Category;
-                entry.Path = brickEntry.Path;
-                entry.Dependencies = string.Join(",", brickEntry.Dependencies);
-                entry.Status = "active";
-                entry.Source = "";
-                entry.Contract = contract;
-                entries.Add(entry);
-            }
-            // 排序——类别 + 序号
+            // [段1] 源码扫描——文件头八字段 + 时长/线程 + Roslyn 静态签名 = 契约唯一真相源
+            // （index.json 不再自引用重建：新积木/契约变更后 --update 从 Bricks/*.cs 全量提取）
+            List<BrickIndexEntry> entries = ScanBrickHeaders(catalogDir);
             entries.Sort(delegate (BrickIndexEntry a, BrickIndexEntry b)
             {
                 int c = string.CompareOrdinal(a.Category, b.Category);
@@ -579,6 +689,18 @@ namespace Mau.Cli
                 }
                 return string.CompareOrdinal(a.Id, b.Id);
             });
+
+            // [段2] INDEX.md——五维表 + 依赖列（文件头权威）
+            StringBuilder md = new StringBuilder();
+            md.AppendLine("# Mau 积木索引 — INDEX");
+            md.AppendLine();
+            md.AppendLine("> 版本：v3.1 | 创建：2026-08-04 | 更新：2026-08-07（v3.1：`mau bricks index --update` 源码驱动——文件头 + 静态签名 = 契约唯一真相源）");
+            md.AppendLine("> 全量积木登记——一行一条。ID 永不重用。");
+            md.AppendLine();
+            md.AppendLine("## 全部积木");
+            md.AppendLine();
+            md.AppendLine("| ID | 名字 | 类别 | 工程路径 | 依赖 | 状态 | 来源 |");
+            md.AppendLine("|:--|:--|:--|:--|:--|:--|:--|");
 
             int count = entries.Count;
             for (int i = 0; i < count; i++)
@@ -591,13 +713,13 @@ namespace Mau.Cli
             md.AppendLine();
             md.AppendLine("---");
             md.AppendLine();
-            md.AppendLine("_版本：v3.0 | 2026-08-06 | 自动生成——`mau bricks index --update`（注册表唯一真相源；来源/依赖列为人工维护区）_");
+            md.AppendLine("_版本：v3.1 | 2026-08-07 | 自动生成——`mau bricks index --update`（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_");
             File.WriteAllText(indexPath, md.ToString(), new UTF8Encoding(true));
 
-            // index.json——含 contract 镜像
+            // [段3] index.json——version 3 + contract 全量（inputs/outputs/return/duration/thread 从源码提取）
             StringBuilder json = new StringBuilder();
             json.AppendLine("{");
-            json.AppendLine("  \"version\": 2,");
+            json.AppendLine("  \"version\": 3,");
             json.AppendLine("  \"generatedAt\": \"" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") + "\",");
             json.AppendLine("  \"bricks\": [");
             for (int i = 0; i < count; i++)
@@ -609,7 +731,7 @@ namespace Mau.Cli
                 for (int d = 0; d < depParts.Length; d = d + 1)
                 {
                     string part = depParts[d].Trim();
-                    if (part.Length > 0)
+                    if (part.Length > 0 && part != "无")
                     {
                         depList.Add(part);
                     }
@@ -658,10 +780,9 @@ namespace Mau.Cli
             File.WriteAllText(Path.Combine(catalogDir, "index.json"), json.ToString(), new UTF8Encoding(true));
 
             Console.WriteLine("已生成: " + indexPath + "（" + count + " 积木）");
-            Console.WriteLine("已生成: " + Path.Combine(catalogDir, "index.json"));
+            Console.WriteLine("已生成: " + Path.Combine(catalogDir, "index.json") + "（v3 源码驱动）");
             return 0;
         }
-
         /// <summary>
         /// Type 到类型名字符串
         /// </summary>
@@ -1054,7 +1175,7 @@ namespace Mau.Cli
 /// 确保积木索引已加载——探测顺序：环境变量 MAU_BRICKS_ROOT → 当前目录向上 → 程序集目录向上
 /// </summary>
 /// <returns>索引可用</returns>
-private static bool EnsureIndexLoaded()
+public static bool EnsureIndexLoaded()
 {
     if (BrickIndex.Count > 0)
     {

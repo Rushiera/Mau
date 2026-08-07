@@ -4,6 +4,9 @@
 
 using Mau.Runtime;
 using System.Threading.Tasks;
+using System;
+using System.IO;
+using System.Text;
 
 namespace Mau.Generated.Flows
 {
@@ -69,9 +72,9 @@ namespace Mau.Generated.Flows
         /// <summary>
         /// 外部投递信号：Start
         /// </summary>
-        /// <param name="module">模块名</param>
-        /// <param name="level">0=INFO 2=WARN 3=ERROR</param>
-        /// <param name="message">消息</param>
+        /// <param name="module">参数 module</param>
+        /// <param name="level">参数 level</param>
+        /// <param name="message">参数 message</param>
         public void FireStart(string module, int level, string message)
         {
             _module = module;
@@ -93,7 +96,7 @@ namespace Mau.Generated.Flows
                 P_Start = false;
                 T_Run_Cube.Start();
                 // 执行动作（积木调用）
-                bool ok = Mau.Bricks.LogBrick.Write(_module, _level, _message);
+                bool ok = Mau.Bricks.BRIK_LOG_001.Write(_module, _level, _message);
                 if (ok)
                 {
                     // 正常后置注册
@@ -183,4 +186,51 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:19672A6D751B274191FA016A85915A986C02A6C3C6F1382F052988091B213801
+
+    // #BRICK:BRIK-LOG-001 BEGIN
+namespace Mau.Bricks
+{
+    /// <summary>
+    /// 日志积木——log.write 写入一条结构化日志（依赖 LogStore）
+    /// </summary>
+    public static class BRIK_LOG_001
+    {
+        /// <summary>
+        /// 写入一条日志
+        /// </summary>
+        /// <param name="module">模块名</param>
+        /// <param name="level">级别——0=INFO 2=WARN 3=ERROR</param>
+        /// <param name="message">消息</param>
+        /// <returns>true=成功</returns>
+        public static bool Write(string module, int level, string message)
+        {
+            LogStore.LogEntry entry;
+            entry.Time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            entry.Module = LogStore.SafeText(module);
+            entry.Level = level;
+            entry.Message = LogStore.SafeText(message);
+            lock (LogStore.Sync)
+            {
+                LogStore.AllLog.Add(entry);
+            }
+            if (LogStore.LogFilePath.Length > 0)
+            {
+                try
+                {
+                    string line = entry.Time + " | " + entry.Module + " | "
+                        + LogStore.LevelText(level) + " | " + entry.Message;
+                    File.AppendAllText(LogStore.LogFilePath, line + "\n",
+                        new UTF8Encoding(false));
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+}
+
+    // #BRICK:BRIK-LOG-001 END
+// #MAU_CHECKSUM:SHA256:FA4E1E6F99B329A11EA5DB8E8D52A83D12E938AFD31E2431773B441582226D39

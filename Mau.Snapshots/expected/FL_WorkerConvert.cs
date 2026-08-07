@@ -1,11 +1,10 @@
-using System;
-using Mau.Runtime;
-// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
+﻿// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
 // 流程: WorkerConvert
 // 基座: Mau.Runtime/v0.1
 
 using Mau.Runtime;
 using System.Threading.Tasks;
+using System;
 
 namespace Mau.Generated.Flows
 {
@@ -95,10 +94,20 @@ namespace Mau.Generated.Flows
                 T_WorkerConvert_Cube.Start();
                 // 启动后台任务——积木在 worker 线程执行，结果回投 inbox
                 var inbox = T_WorkerConvert_Inbox;
+                string f_input = _input;
+                string f_output = _output;
                 Task.Run(() =>
                 {
-                    bool ok = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
-                    inbox.Enqueue(ok);
+                    try
+                    {
+                        bool ok = Mau.Bricks.BRIK_FILE_001.Convert(f_input, f_output);
+                        inbox.Enqueue(ok);
+                    }
+                    catch
+                    {
+                        // 后台异常——回投失败，走错误后置
+                        inbox.Enqueue(false);
+                    }
                 });
             }
 
@@ -227,4 +236,4 @@ namespace Mau.Bricks
 }
 
     // #BRICK:BRIK-FILE-001 END
-// #MAU_CHECKSUM:SHA256:F096CB957C0507D97D4E170DDB83E88F1FB0D9DF7B22CF8E6E6B708BD733DA3F
+// #MAU_CHECKSUM:SHA256:8B503F6539F66BC633704800DCAEEBFD307A84B2CFC62BA1BCFFE0BA5E772A9C

@@ -72,5 +72,13 @@ namespace Mau.Runtime
                 throw new ArgumentException("Snapshot section name is invalid.", "sectionName");
             }
         }
-    }
+/// <summary>
+/// 把可空文本规范为空字符串——积木文本兼容入口（转发 BrickText.SafeText）
+/// </summary>
+/// <param name = "value">输入</param>
+/// <returns>非空文本</returns>
+public static string SafeText(string? value)
+{
+    return BrickText.SafeText(value);
+}    }
 }

@@ -206,9 +206,10 @@ namespace Mau.Cli
         /// 积木谱——BrickRegistry 枚举 → 契约生成最小语料 → 翻译 → CompileMany 一次组编译
         /// </summary>
         private static void RunBrickCorpus()
-        {
-            List<string> sources = new List<string>();
-            List<string> classNames = new List<string>();
+{
+            // [段1] 枚举 + 契约生成最小语料文本（不编译——组模式统一构筑）
+            List<string> sourceTexts = new List<string>();
+            List<string> flowNames = new List<string>();
             List<string> brickNames = new List<string>();
             List<BrickContract> all = new List<BrickContract>();
             foreach (BrickIndexEntry brickEntry in BrickIndex.All)
@@ -216,8 +217,6 @@ namespace Mau.Cli
                 all.Add(brickEntry.Contract);
             }
             all.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
-
-            // [段1] 枚举 + 契约生成最小语料 + 翻译
             for (int i = 0; i < all.Count; i = i + 1)
             {
                 BrickContract c = all[i];
@@ -233,41 +232,67 @@ namespace Mau.Cli
                 }
                 string flowName = "BrickCheck" + c.Name.Replace(".", "");
                 string source = "Mau 0.1\n基座: Mau.Runtime/v0.1\n\n命题:\n  P_Go 信号\n  P_Done 事实\n  P_Failed 事实\n\n变迁 T_Run:\n  前置: P_Go\n  动作: " + c.Name + "\n  参数: " + paramLines.ToString() + "\n  时限: 60帧\n  后置: P_Done / P_Failed\n";
-                CompileResult compileResult = MauCompiler.Compile(source, flowName);
-                if (!compileResult.Success)
-                {
-                    sBrickFail = sBrickFail + 1;
-                    sErrors.Add("[C] " + c.Name + ": 翻译失败——" + FirstDiagnostic(compileResult));
-                    continue;
-                }
-                sources.Add(compileResult.GeneratedCode);
-                classNames.Add("FL_" + flowName);
+                sourceTexts.Add(source);
+                flowNames.Add(flowName);
                 brickNames.Add(c.Name);
             }
-            if (sources.Count == 0)
+            if (sourceTexts.Count == 0)
             {
                 return;
             }
 
-            // [段2] 组编译——失败按文件名归因到积木
+            // [段2] 组编译——CompileGroup（骨架 + 共享 BRIKGROUP，闭包去重；R1 内嵌模型下禁止逐文件内嵌再组编译）
+            GroupCompileResult group = MauCompiler.CompileGroup(sourceTexts.ToArray(), flowNames.ToArray());
+            List<string> skeletonSources = new List<string>();
+            List<string> skeletonNames = new List<string>();
+            bool anyFail = false;
+            for (int i = 0; i < group.Results.Length; i = i + 1)
+            {
+                if (!group.Results[i].Success)
+                {
+                    anyFail = true;
+                    sBrickFail = sBrickFail + 1;
+                    sErrors.Add("[C] " + brickNames[i] + ": 翻译失败——" + FirstDiagnostic(group.Results[i]));
+                }
+                else
+                {
+                    skeletonSources.Add(group.Results[i].GeneratedCode);
+                    skeletonNames.Add(flowNames[i]);
+                }
+            }
+            if (anyFail || skeletonSources.Count == 0)
+            {
+                return;
+            }
+            if (group.BrickGroupSource.Length > 0)
+            {
+                skeletonSources.Add(group.BrickGroupSource);
+                skeletonNames.Add("MauCheckBrickGroup");
+            }
+
+            // [段3] 组编译——失败按文件名归因到积木（仅 Error 级诊断；Warning/Info 不判失败）
             string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_check_bricks_" + Guid.NewGuid().ToString("N").Substring(0, 8));
             try
             {
                 MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
-                MauPocketCompileResult result = compiler.CompileMany(sources.ToArray(), classNames.ToArray(), "MauCheckBricks");
+                MauPocketCompileResult result = compiler.CompileMany(skeletonSources.ToArray(), skeletonNames.ToArray(), "MauCheckBricks");
                 if (result.Success)
                 {
-                    for (int i = 0; i < sources.Count; i = i + 1)
+                    for (int i = 0; i < brickNames.Count; i = i + 1)
                     {
                         sBrickPass = sBrickPass + 1;
                     }
                     return;
                 }
 
-                // 失败——诊断含文件名（FL_BrickCheckxxx.cs），按文件归因
+                // 失败——诊断含文件名（FL_BrickCheckxxx.cs / MauCheckBrickGroup.cs），按文件归因
                 Dictionary<string, List<string>> diagByFile = new Dictionary<string, List<string>>();
                 for (int d = 0; d < result.Diagnostics.Length; d = d + 1)
                 {
+                    if (!result.Diagnostics[d].StartsWith("Error:", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
                     string file = ExtractDiagFile(result.Diagnostics[d]);
                     if (file.Length > 0)
                     {
@@ -278,9 +303,9 @@ namespace Mau.Cli
                         diagByFile[file].Add(result.Diagnostics[d]);
                     }
                 }
-                for (int i = 0; i < classNames.Count; i = i + 1)
+                for (int i = 0; i < brickNames.Count; i = i + 1)
                 {
-                    string fileKey = classNames[i] + ".cs";
+                    string fileKey = flowNames[i] + ".cs";
                     if (diagByFile.ContainsKey(fileKey))
                     {
                         sBrickFail = sBrickFail + 1;
@@ -307,9 +332,7 @@ namespace Mau.Cli
                     }
                 }
             }
-        }
-
-        /// <summary>
+        }        /// <summary>
         /// 负例——断言编译失败且含预期错误码（文件头 // 预期: E0xx）
         /// </summary>
         /// <param name="negativeDir">负例目录</param>

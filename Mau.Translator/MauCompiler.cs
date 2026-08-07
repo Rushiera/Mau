@@ -221,7 +221,7 @@ namespace Mau.Translator
         /// <param name="embedded">内嵌段（using + namespace 块）</param>
         /// <returns>合并后源码</returns>
         private static string MergeEmbedded(string skeleton, string embedded)
-        {
+{
             // [段1] 提取内嵌段 using 行
             List<string> usings = new List<string>();
             string[] embeddedLines = embedded.Split('\n');
@@ -254,7 +254,7 @@ namespace Mau.Translator
                     embeddedBody.Append('\n');
                 }
             }
-            // [段2] 提取骨架 using 区结束位置（首个非 using 非空行）
+            // [段2] 提取骨架 using 区结束位置——头部注释行跳过，首个非注释非空行判定
             string[] skeletonLines = skeleton.Split('\n');
             int insertAt = 0;
             for (int i = 0; i < skeletonLines.Length; i++)
@@ -263,6 +263,10 @@ namespace Mau.Translator
                 if (trimmed.StartsWith("using ", StringComparison.Ordinal))
                 {
                     insertAt = i + 1;
+                    continue;
+                }
+                if (trimmed.StartsWith("//", StringComparison.Ordinal))
+                {
                     continue;
                 }
                 if (trimmed.Length == 0)
@@ -304,7 +308,6 @@ namespace Mau.Translator
             sb.Append(embeddedBody.ToString());
             return sb.ToString();
         }
-
         /// <summary>
         /// 确保积木索引已加载——未加载时按序探测：环境变量 MAU_BRICKS_ROOT → 当前目录向上 → 程序集目录向上
         /// </summary>

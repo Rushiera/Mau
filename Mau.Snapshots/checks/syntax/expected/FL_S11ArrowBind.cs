@@ -4,6 +4,8 @@
 
 using Mau.Runtime;
 using System.Threading.Tasks;
+using System;
+using System.Globalization;
 
 namespace Mau.Generated.Flows
 {
@@ -94,7 +96,7 @@ namespace Mau.Generated.Flows
         /// <summary>
         /// 外部投递信号：Start
         /// </summary>
-        /// <param name="path">受控文件路径</param>
+        /// <param name="path">参数 path</param>
         public void FireStart(string path)
         {
             _path = path;
@@ -114,7 +116,7 @@ namespace Mau.Generated.Flows
                 P_Start = false;
                 T_Read_Cube.Start();
                 // 执行动作（积木调用）
-                bool ok = Mau.Bricks.FileBrick.Read(_path, out _content);
+                bool ok = Mau.Bricks.BRIK_FILE_002.Read(_path, out _content);
                 if (ok)
                 {
                     // 正常后置注册
@@ -147,7 +149,7 @@ namespace Mau.Generated.Flows
             {
                 T_Preview_Cube.Start();
                 // 执行动作（积木调用）
-                bool ok = Mau.Bricks.MathBrick.ResultPreview(_content, out _preview);
+                bool ok = Mau.Bricks.BRIK_MATH_003.ResultPreview(_content, out _preview);
                 if (ok)
                 {
                     // 正常后置注册
@@ -256,4 +258,117 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:D16C37091209D4C52D4EAF2A0B5C0E7F141E3068F560B6B7BD10C3DA1665B9FB
+
+    // #BRICK:BRIK-FILE-002 BEGIN
+namespace Mau.Bricks
+{
+    /// <summary>
+    /// 文件积木——file.read 读取文本（依赖 FileBridge）
+    /// </summary>
+    public static class BRIK_FILE_002
+    {
+        /// <summary>
+        /// 读取 UTF-8 文本
+        /// </summary>
+        /// <param name="path">受控路径</param>
+        /// <param name="content">完整文本——成功时填充</param>
+        /// <returns>true=成功</returns>
+        public static bool Read(string path, out string content)
+        {
+            try
+            {
+                content = FileBridge.CurrentFileSystem().ReadText(path);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                content = "ERR|" + ex.GetType().Name + "|" + ex.Message;
+                return false;
+            }
+        }
+    }
+}
+
+    // #BRICK:BRIK-FILE-002 END
+    // #BRICK:BRIK-MATH-002 BEGIN
+namespace Mau.Bricks
+{
+    /// <summary>
+    /// 数学积木——math.format_size 按十进制 B/K/M 阈值格式化数量
+    /// </summary>
+    public static class BRIK_MATH_002
+    {
+        /// <summary>
+        /// 按十进制 B/K/M 阈值格式化数量
+        /// </summary>
+        /// <param name="bytes">数量</param>
+        /// <param name="formatted">格式文本</param>
+        /// <returns>true=成功</returns>
+        public static bool FormatSize(long bytes, out string formatted)
+        {
+            if (bytes >= 1000000)
+            {
+                formatted = (bytes / 1000000.0).ToString("F2", CultureInfo.InvariantCulture) + " M";
+                return true;
+            }
+            if (bytes >= 1000)
+            {
+                formatted = (bytes / 1000.0).ToString("F2", CultureInfo.InvariantCulture) + " K";
+                return true;
+            }
+            formatted = bytes.ToString(CultureInfo.InvariantCulture) + " B";
+            return true;
+        }
+    }
+}
+
+    // #BRICK:BRIK-MATH-002 END
+    // #BRICK:BRIK-MATH-003 BEGIN
+namespace Mau.Bricks
+{
+    /// <summary>
+    /// 数学积木——math.result_preview 生成单行结果预览（依赖 math.format_size）
+    /// </summary>
+    public static class BRIK_MATH_003
+    {
+        /// <summary>
+        /// 生成单行、最多十五 UTF-16 字符头部的结果预览
+        /// </summary>
+        /// <param name="result">完整工具结果</param>
+        /// <param name="preview">预览文本——OK 或空结果返回空字符串，否则返回预览</param>
+        /// <returns>true=成功</returns>
+        public static bool ResultPreview(string? result, out string preview)
+        {
+            if (string.IsNullOrEmpty(result))
+            {
+                preview = "";
+                return true;
+            }
+            if (result == "OK" || result.StartsWith("OK\n", StringComparison.Ordinal)
+                || result.StartsWith("OK\r", StringComparison.Ordinal))
+            {
+                preview = "";
+                return true;
+            }
+            int headLength = result.Length;
+            if (headLength > 15)
+            {
+                headLength = 15;
+                if (headLength < result.Length && headLength > 0
+                    && char.IsHighSurrogate(result[headLength - 1])
+                    && char.IsLowSurrogate(result[headLength]))
+                {
+                    headLength = headLength + 1;
+                }
+            }
+            string head = result.Substring(0, headLength).Replace('\r', ' ').Replace('\n', ' ');
+            string sizeText = "";
+            BRIK_MATH_002.FormatSize(result.Length, out sizeText);
+            preview = "（" + head + "…总" + sizeText + "）";
+            return true;
+        }
+    }
+}
+
+    // #BRICK:BRIK-MATH-003 END
+// #MAU_CHECKSUM:SHA256:2A340650FCF7A29E0ACEFFCB9BC9D911557AEFA233F6679648C2CFACAF2868CC

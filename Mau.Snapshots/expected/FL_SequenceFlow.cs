@@ -1,11 +1,10 @@
-using System;
-using Mau.Runtime;
-// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
+﻿// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
 // 流程: SequenceFlow
 // 基座: Mau.Runtime/v0.1
 
 using Mau.Runtime;
 using System.Threading.Tasks;
+using System;
 
 namespace Mau.Generated.Flows
 {
@@ -342,4 +341,4 @@ namespace Mau.Bricks
 }
 
     // #BRICK:BRIK-FILE-001 END
-// #MAU_CHECKSUM:SHA256:91841B60F4601A9F213FAFB2C0449EE95C78B88EDC216F7C780757E4F0F50F9C
+// #MAU_CHECKSUM:SHA256:9BA9663D2FFD26EEC2D436C4F45DBD0EC718E92DC66C4CDEEFDA9AC74DD3A05A

@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════
 // 积木: llm.completions
 // ID:   BRIK-LLM-013
 // 类别: LLM
@@ -7,6 +7,8 @@
 // 引用: System · System.IO · System.Net.Http · System.Net.Http.Headers · System.Text · System.Text.Json
 // 原理: messagesJson 透传（tool 角色消息结构化回填的请求端）→ 后台 SSE → 分片入队
 // 常用: TalkCat 结构化上下文请求（ctx_build_messages_json → completions）
+// 时长: Streaming
+// 线程: worker
 // ═══════════════════════════════════════════════════
 using System;
 using System.IO;
@@ -180,3 +182,4 @@ namespace Mau.Bricks
     }
 }
 // #MAU_CHECKSUM:SHA256:ED68854B096905E8128695B10B39C54FEE5192D6A9DA3B1B128F3427DE082C12
+// #MAU_CHECKSUM:SHA256:27C93582FF1B9438484C325059EB226582017F817C5114296016B03DA9862E22

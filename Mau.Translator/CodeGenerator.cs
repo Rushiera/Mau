@@ -171,7 +171,7 @@ namespace Mau.Translator
                 }
             }
 
-            // [段5b] Inbox 字段——worker 线程 + inbox 汇合的变迁
+            // [段5b] Inbox 字段——worker 线程 + inbox 汇合的变迁；无时限 worker 另加 Busy 门
             for (int i = 0; i < doc.Transitions.Count; i++)
             {
                 IrTransition t = doc.Transitions[i];
@@ -181,6 +181,15 @@ namespace Mau.Translator
                     sb.AppendLine("        /// 变迁 " + t.Name + " 的 Inbox 双缓冲——后台结果回投");
                     sb.AppendLine("        /// </summary>");
                     sb.AppendLine("        private Inbox<bool> " + t.Name + "_Inbox;");
+                    sb.AppendLine();
+                }
+                if (t.Thread == "worker" && t.Join == "inbox"
+                    && !(t.HasTimeout && t.TimeoutMode != "None"))
+                {
+                    sb.AppendLine("        /// <summary>");
+                    sb.AppendLine("        /// 变迁 " + t.Name + " 的 Busy 门——无时限 worker 防重复启动");
+                    sb.AppendLine("        /// </summary>");
+                    sb.AppendLine("        private bool " + t.Name + "_Busy;");
                     sb.AppendLine();
                 }
             }
@@ -778,8 +787,16 @@ namespace Mau.Translator
                 string inboxName = t.Name + "_Inbox";
 
                 // [段A] worker+inbox 前置检查 + 启动后台任务
+                string workerGate = PreconditionText(t, hasCube, cubeName, doc);
+                if (!hasCube)
+                {
+                    // 无时限 worker——Busy 门防止重复启动（有 Cube 时 IsIdle 已防重入）
+                    workerGate = (workerGate.Length > 0 && workerGate != "true")
+                        ? (workerGate + " && !" + t.Name + "_Busy")
+                        : ("!" + t.Name + "_Busy");
+                }
                 sb.AppendLine("            // [" + t.Name + "] worker+inbox 前置检查");
-                sb.AppendLine("            if (" + PreconditionText(t, hasCube, cubeName, doc) + ")");
+                sb.AppendLine("            if (" + workerGate + ")");
                 sb.AppendLine("            {");
                 for (int p = 0; p < t.Preconditions.Count; p++)
                 {
@@ -806,11 +823,25 @@ namespace Mau.Translator
             }
                 sb.AppendLine("                // 启动后台任务——积木在 worker 线程执行，结果回投 inbox");
                 sb.AppendLine("                var inbox = " + inboxName + ";");
+                if (!hasCube)
+                {
+                    sb.AppendLine("                " + t.Name + "_Busy = true;");
+                }
+                // 输入冻结——参数快照为局部变量（后台线程读主线程字段存在竞态）
+                AppendInputFreeze(sb, doc, t, "                ");
                 AppendResourceAcquire(sb, doc, t, "                ");
                 sb.AppendLine("                Task.Run(() =>");
                 sb.AppendLine("                {");
-                sb.AppendLine("                    bool ok = " + BrickCallText(doc, t) + ";");
-                sb.AppendLine("                    inbox.Enqueue(ok);");
+                sb.AppendLine("                    try");
+                sb.AppendLine("                    {");
+                sb.AppendLine("                        bool ok = " + BrickCallText(doc, t, true) + ";");
+                sb.AppendLine("                        inbox.Enqueue(ok);");
+                sb.AppendLine("                    }");
+                sb.AppendLine("                    catch");
+                sb.AppendLine("                    {");
+                sb.AppendLine("                        // 后台异常——回投失败，走错误后置");
+                sb.AppendLine("                        inbox.Enqueue(false);");
+                sb.AppendLine("                    }");
                 sb.AppendLine("                });");
                 sb.AppendLine("            }");
                 sb.AppendLine();
@@ -859,9 +890,13 @@ namespace Mau.Translator
                     AppendResourceRelease(sb, doc, t, "                    ");
                 sb.AppendLine("                }");
                 if (hasCube)
-
                 {
                     sb.AppendLine("                " + cubeName + ".Complete();");
+                }
+                else
+                {
+                    // 无时限 worker——任务结束复位 Busy 门
+                    sb.AppendLine("                " + t.Name + "_Busy = false;");
                 }
                 sb.AppendLine("            });");
 
@@ -927,7 +962,7 @@ namespace Mau.Translator
             AppendResourceAcquire(sb, doc, t, "                ");
             // 动作调用——参数用字段名
             sb.AppendLine("                // 执行动作（积木调用）");
-            sb.AppendLine("                bool ok = " + BrickCallText(doc, t) + ";");
+            sb.AppendLine("                bool ok = " + BrickCallText(doc, t, false) + ";");
 
             // 后置注册
             sb.AppendLine("                if (ok)");
@@ -1112,8 +1147,9 @@ private static string RewriteImplementation(string implementation, string brickI
         /// </summary>
         /// <param name="doc">文档</param>
         /// <param name="t">变迁</param>
+        /// <param name="frozen">冻结模式——输入引用 f_ 局部变量（worker 后台线程安全；主线程传 false）</param>
         /// <returns>调用文本</returns>
-        private static string BrickCallText(MauDocument doc, IrTransition t)
+        private static string BrickCallText(MauDocument doc, IrTransition t, bool frozen)
 {
             BrickIndexEntry? entry;
             string implementation = "";
@@ -1144,6 +1180,11 @@ private static string RewriteImplementation(string implementation, string brickI
                         sb.Append("\"" + t.Params[i].ConstantValue + "\"");
                     }
                 }
+                else if (frozen)
+                {
+                    // 冻结模式——输入引用 f_ 局部变量（AppendInputFreeze 生成的快照）
+                    sb.Append("f_" + t.Params[i].Variable);
+                }
                 else
                 {
                     // 变量引用——简写（变量=端口名）→ _端口；箭头绑定（变量→端口）→ _变量（源输出字段）
@@ -1165,6 +1206,26 @@ private static string RewriteImplementation(string implementation, string brickI
             }
             sb.Append(")");
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// 输入冻结行——worker 启动前把非常量参数快照为局部变量（f_ 前缀），后台线程不直接读主线程字段
+        /// </summary>
+        /// <param name="sb">输出缓冲</param>
+        /// <param name="doc">文档</param>
+        /// <param name="t">变迁</param>
+        /// <param name="indent">缩进前缀</param>
+        private static void AppendInputFreeze(StringBuilder sb, MauDocument doc, IrTransition t, string indent)
+        {
+            for (int p = 0; p < t.Params.Count; p++)
+            {
+                if (t.Params[p].IsConstant)
+                {
+                    continue;
+                }
+                string typeName = PortTypeName(doc, t, t.Params[p].PortName);
+                sb.AppendLine(indent + typeName + " f_" + t.Params[p].Variable + " = _" + t.Params[p].Variable + ";");
+            }
         }/// <summary>
 /// 前置项文本——命题直接输出；资源输出槽位检查；析取组由调用方展开
 /// </summary>
@@ -1183,29 +1244,68 @@ private static string PreconditionAtom(MauDocument doc, string name)
 
     return name;
 } 
-/// <summary>
-/// 判断名字是否为已声明资源
-/// </summary>
-/// <param name = "doc">文档</param>
-/// <param name = "name">名字</param>
-/// <returns>是资源为真</returns>
- private  static  bool  IsResource ( MauDocument  doc ,  string  name ) { for  ( int  i  =  0 ;  i < doc . Resources . Count ;  i ++ ) { if  ( doc . Resources [ i ] . Name == name ) { return  true ;  } } return  false ;  } 
-/// <summary>
-/// 变迁占用资源——触发时槽位扣减；析取组不占资源
-/// </summary>
-/// <param name = "sb">输出缓冲</param>
-/// <param name = "doc">文档</param>
-/// <param name = "t">变迁</param>
-/// <param name = "indent">缩进前缀</param>
- private  static  void  AppendResourceAcquire ( StringBuilder  sb ,  MauDocument  doc ,  IrTransition  t ,  string  indent ) { for  ( int  i  =  0 ;  i < t . Preconditions . Count ;  i ++ ) { string  item  =  t . Preconditions [ i ] ;  if  ( item . IndexOf ( '∨' ) >= 0 ) { continue ;  } if  ( IsResource ( doc ,  item ) ) { sb . AppendLine ( indent + item + "_avail = " + item + "_avail - 1;" ) ;  } } } 
-/// <summary>
-/// 变迁归还资源——完成/失败/超时后槽位归还
-/// </summary>
-/// <param name = "sb">输出缓冲</param>
-/// <param name = "doc">文档</param>
-/// <param name = "t">变迁</param>
-/// <param name = "indent">缩进前缀</param>
- private  static  void  AppendResourceRelease ( StringBuilder  sb ,  MauDocument  doc ,  IrTransition  t ,  string  indent ) { for  ( int  i  =  0 ;  i < t . Preconditions . Count ;  i ++ ) { string  item  =  t . Preconditions [ i ] ;  if  ( item . IndexOf ( '∨' ) >= 0 ) { continue ;  } if  ( IsResource ( doc ,  item ) ) { sb . AppendLine ( indent + item + "_avail = " + item + "_avail + 1;" ) ;  } } }
+        /// <summary>
+        /// 判断名字是否为已声明资源
+        /// </summary>
+        /// <param name="doc">文档</param>
+        /// <param name="name">名字</param>
+        /// <returns>是资源为真</returns>
+        private static bool IsResource(MauDocument doc, string name)
+        {
+            for (int i = 0; i < doc.Resources.Count; i++)
+            {
+                if (doc.Resources[i].Name == name)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
 
+        /// <summary>
+        /// 变迁占用资源——触发时槽位扣减；析取组不占资源
+        /// </summary>
+        /// <param name="sb">输出缓冲</param>
+        /// <param name="doc">文档</param>
+        /// <param name="t">变迁</param>
+        /// <param name="indent">缩进前缀</param>
+        private static void AppendResourceAcquire(StringBuilder sb, MauDocument doc, IrTransition t, string indent)
+        {
+            for (int i = 0; i < t.Preconditions.Count; i++)
+            {
+                string item = t.Preconditions[i];
+                if (item.IndexOf('∨') >= 0)
+                {
+                    continue;
+                }
+                if (IsResource(doc, item))
+                {
+                    sb.AppendLine(indent + item + "_avail = " + item + "_avail - 1;");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 变迁归还资源——完成/失败/超时后槽位归还
+        /// </summary>
+        /// <param name="sb">输出缓冲</param>
+        /// <param name="doc">文档</param>
+        /// <param name="t">变迁</param>
+        /// <param name="indent">缩进前缀</param>
+        private static void AppendResourceRelease(StringBuilder sb, MauDocument doc, IrTransition t, string indent)
+        {
+            for (int i = 0; i < t.Preconditions.Count; i++)
+            {
+                string item = t.Preconditions[i];
+                if (item.IndexOf('∨') >= 0)
+                {
+                    continue;
+                }
+                if (IsResource(doc, item))
+                {
+                    sb.AppendLine(indent + item + "_avail = " + item + "_avail + 1;");
+                }
+            }
+        }
     }
 }

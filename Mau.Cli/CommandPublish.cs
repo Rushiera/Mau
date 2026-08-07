@@ -221,11 +221,20 @@ private static bool SmokeTest(string publishDir)
             return false;
         }
 
-        // [2] 最小语料 build——Mau.Corpus 随行样例
-        string sample = Path.Combine(publishDir, "Mau.Corpus", "hello_cat.mau");
-        if (!File.Exists(sample))
+        // [2] 最小语料 build——Mau.Corpus 随行任一语料（目录即清单，不依赖固定文件名）
+        string corpusDir = Path.Combine(publishDir, "Mau.Corpus");
+        string? sample = null;
+        if (Directory.Exists(corpusDir))
         {
-            Console.Error.WriteLine("冒烟: Mau.Corpus/hello_cat.mau 缺失——跳过 build 段");
+            string[] corpusFiles = Directory.GetFiles(corpusDir, "*.mau", SearchOption.TopDirectoryOnly);
+            if (corpusFiles.Length > 0)
+            {
+                sample = corpusFiles[0];
+            }
+        }
+        if (sample == null)
+        {
+            Console.Error.WriteLine("冒烟: Mau.Corpus 无语料——跳过 build 段");
             return true;
         }
 

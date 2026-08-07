@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════
 // 积木: llm.stream
 // ID:   BRIK-LLM-002
 // 类别: LLM
@@ -7,6 +7,8 @@
 // 引用: System · System.IO · System.Net.Http · System.Net.Http.Headers · System.Text · System.Text.Json
 // 原理: 创建会话 → 后台任务 SSE 解析（分片入队）→ ReadChunk 消费
 // 常用: CH4 TalkCat 流式对话（P2.2）
+// 时长: Streaming
+// 线程: worker
 // ═══════════════════════════════════════════════════
 using System;
 using System.IO;
@@ -190,3 +192,4 @@ namespace Mau.Bricks
     }
 }
 // #MAU_CHECKSUM:SHA256:2A8136D8F544784DB22A9011963660C8F55623A5518E12A35D5424BCDBB32B7B
+// #MAU_CHECKSUM:SHA256:483EAC1DFBE861185ED13C76C10BF3DF7FAF588263A4B5360EBD38D895ABB520
