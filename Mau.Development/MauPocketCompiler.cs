@@ -165,8 +165,9 @@ private bool _keepSources;
                 {
                     ValidateLogicalName(classNames[i]);
                 }
+                string sourcePath = i < classNames.Length ? (classNames[i] + ".cs") : ("Part" + (i + 1).ToString() + ".cs");
                 trees.Add(CSharpSyntaxTree.ParseText(SafeText(sources[i]),
-                    new CSharpParseOptions(LanguageVersion.Latest)));
+                    new CSharpParseOptions(LanguageVersion.Latest), path: sourcePath));
             }
             MetadataReference[] references = BuildReferences();
             CSharpCompilation compilation = CSharpCompilation.Create(
@@ -394,8 +395,9 @@ private bool _keepSources;
             for (int i = 0; i < diagnostics.Length; i = i + 1)
             {
                 FileLinePositionSpan span = diagnostics[i].Location.GetLineSpan();
+                string filePart = span.Path.Length > 0 ? (span.Path + ":") : "";
                 result[i] = diagnostics[i].Severity.ToString() + ":"
-                    + diagnostics[i].Id + ":"
+                    + filePart + diagnostics[i].Id + ":"
                     + (span.StartLinePosition.Line + 1).ToString() + ":"
                     + diagnostics[i].GetMessage();
             }

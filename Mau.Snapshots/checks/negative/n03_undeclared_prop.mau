@@ -1,0 +1,16 @@
+// 预期: E003
+// n03 负例——前置引用未声明命题必须拒绝
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题:
+  P_Start 信号
+  P_Done 事实
+  P_Failed 事实
+
+变迁 T_Run:
+  前置: P_NotDeclared
+  动作: file.convert
+  参数: input, output
+  时限: 60帧
+  后置: P_Done / P_Failed

@@ -1,0 +1,24 @@
+// s11 语法谱——箭头绑定（变量 → 端口，字段引用）
+// 特性：前变迁输出端口作为后变迁输入（跨变迁字段引用）
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题:
+  P_Start 信号
+  P_Mid 事实
+  P_Done 事实
+  P_Failed 事实
+
+变迁 T_Read:
+  前置: P_Start
+  动作: file.read
+  参数: path
+  时限: 60帧
+  后置: P_Mid / P_Failed
+
+变迁 T_Preview:
+  前置: P_Mid
+  动作: math.result_preview
+  参数: content → result
+  时限: 60帧
+  后置: P_Done / P_Failed

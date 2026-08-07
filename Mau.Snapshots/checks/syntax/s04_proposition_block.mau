@@ -1,0 +1,22 @@
+// s04 语法谱——命题-块格式（v1.3：类型/初始/重置）
+// 特性：块格式命题字段
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题 P_Start:
+  类型: 信号
+命题 P_Ready:
+  类型: 条件
+  初始: 假
+命题 P_Done:
+  类型: 事实
+  重置: 显式
+命题 P_Failed:
+  类型: 事实
+
+变迁 T_Run:
+  前置: P_Ready
+  动作: file.convert
+  参数: input, output
+  时限: 60帧
+  后置: P_Done / P_Failed

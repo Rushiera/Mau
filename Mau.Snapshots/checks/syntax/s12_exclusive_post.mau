@@ -1,0 +1,16 @@
+﻿// s12 语法谱——互斥后置（A / B）
+// 特性：动作结果决定注册哪个子命题
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题:
+  P_Start 信号
+  P_Ok 事实
+  P_Err 事实
+
+变迁 T_Run:
+  前置: P_Start
+  动作: log.write
+  参数: module, level, message
+  时限: 60帧
+  后置: P_Ok / P_Err

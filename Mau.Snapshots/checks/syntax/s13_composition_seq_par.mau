@@ -1,0 +1,37 @@
+﻿// s13 语法谱——组合-序列 + 并行（文档化 + 静态校验）
+// 特性：组合块引用存在变迁
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题:
+  P_Start 信号
+  P_A 事实
+  P_B 事实
+  P_Done 事实
+  P_Failed 事实
+
+变迁 T_A:
+  前置: P_Start
+  动作: log.write
+  参数: module, level, message
+  时限: 60帧
+  后置: P_A / P_Failed
+
+变迁 T_B:
+  前置: P_Start
+  动作: log.write
+  参数: module, level, message
+  时限: 60帧
+  后置: P_B / P_Failed
+
+变迁 T_Finish:
+  前置: P_A ∧ P_B
+  动作: log.write
+  参数: module, level, message
+  时限: 60帧
+  后置: P_Done / P_Failed
+
+组合 FL_Seq:
+  序列: T_A, T_B, T_Finish
+组合 FL_Par:
+  并行: T_A ‖ T_B

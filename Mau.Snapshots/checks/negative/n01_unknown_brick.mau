@@ -1,0 +1,15 @@
+// 预期: E001
+// n01 负例——未知积木必须拒绝
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题:
+  P_Start 信号
+  P_Done 事实
+  P_Failed 事实
+
+变迁 T_Run:
+  前置: P_Start
+  动作: no.such_brick
+  时限: 60帧
+  后置: P_Done / P_Failed

@@ -1,0 +1,17 @@
+// s19 语法谱——调试字段（{{端口}} 插值）
+// 特性：调试消息引用参数端口
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题:
+  P_Start 信号
+  P_Done 事实
+  P_Failed 事实
+
+变迁 T_Run:
+  前置: P_Start
+  动作: file.convert
+  参数: input, output
+  时限: 60帧
+  后置: P_Done / P_Failed
+  调试: "转换 {{input}} → {{output}}"

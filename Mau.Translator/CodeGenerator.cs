@@ -544,8 +544,10 @@ namespace Mau.Translator
                 {
                     baseName = baseName.Substring(0, tick);
                 }
+                string fullBase = (type.Namespace ?? "").Length > 0
+                    ? ((type.Namespace ?? "") + "." + baseName) : baseName;
                 StringBuilder sb = new StringBuilder();
-                sb.Append(baseName);
+                sb.Append(fullBase);
                 sb.Append("<");
                 Type[] args = type.GetGenericArguments();
                 for (int i = 0; i < args.Length; i = i + 1)
@@ -559,7 +561,10 @@ namespace Mau.Translator
                 sb.Append(">");
                 return sb.ToString();
             }
-            return type.Name;
+            // 引用类型——全限定名（生成物 using 仅基座，端口类型须可解析）
+            string full = (type.Namespace ?? "").Length > 0
+                ? ((type.Namespace ?? "") + "." + type.Name) : type.Name;
+            return full;
         }
 
         /// <summary>

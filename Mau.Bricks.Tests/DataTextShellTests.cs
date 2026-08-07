@@ -27,8 +27,10 @@ namespace Mau.Bricks.Tests
             sections["Core"] = new List<string> { "Frame=1", "State=Running" };
             sections["OA"] = new List<string> { "Open=2", "Work=1" };
 
-            string encoded = DataBrick.SnapshotEncode(sections);
-            Dictionary<string, List<string>> decoded = DataBrick.SnapshotDecode(encoded);
+            string encoded = "";
+            Assert.True(DataBrick.SnapshotEncode(sections, out encoded));
+            Dictionary<string, List<string>> decoded = new Dictionary<string, List<string>>();
+            Assert.True(DataBrick.SnapshotDecode(encoded, out decoded));
 
             Assert.Equal(2, decoded.Count);
             Assert.Equal("Frame=1", decoded["Core"][0]);
@@ -41,9 +43,15 @@ namespace Mau.Bricks.Tests
         [Fact]
         public void SnapshotEmptyRoundTrip()
         {
-            Assert.Equal("", DataBrick.SnapshotEncode(null));
-            Assert.Empty(DataBrick.SnapshotDecode(""));
-            Assert.Empty(DataBrick.SnapshotDecode(null));
+            string emptyEncoded = "";
+            Assert.True(DataBrick.SnapshotEncode(null, out emptyEncoded));
+            Assert.Equal("", emptyEncoded);
+            Dictionary<string, List<string>> emptyDecoded1 = new Dictionary<string, List<string>>();
+            Assert.True(DataBrick.SnapshotDecode("", out emptyDecoded1));
+            Assert.Empty(emptyDecoded1);
+            Dictionary<string, List<string>> emptyDecoded2 = new Dictionary<string, List<string>>();
+            Assert.True(DataBrick.SnapshotDecode(null, out emptyDecoded2));
+            Assert.Empty(emptyDecoded2);
         }
 
         /// <summary>
@@ -55,8 +63,10 @@ namespace Mau.Bricks.Tests
             Dictionary<string, List<string>> sections = new Dictionary<string, List<string>>();
             sections["S"] = new List<string> { "[LooksLikeSection]", "plain" };
 
-            string encoded = DataBrick.SnapshotEncode(sections);
-            Dictionary<string, List<string>> decoded = DataBrick.SnapshotDecode(encoded);
+            string encoded = "";
+            Assert.True(DataBrick.SnapshotEncode(sections, out encoded));
+            Dictionary<string, List<string>> decoded = new Dictionary<string, List<string>>();
+            Assert.True(DataBrick.SnapshotDecode(encoded, out decoded));
 
             Assert.Equal("[LooksLikeSection]", decoded["S"][0]);
         }
@@ -69,7 +79,8 @@ namespace Mau.Bricks.Tests
         {
             Assert.Throws<FormatException>(delegate
             {
-                DataBrick.SnapshotDecode("[A]\nx\n[A]\ny");
+                Dictionary<string, List<string>> ignored = new Dictionary<string, List<string>>();
+                DataBrick.SnapshotDecode("[A]\nx\n[A]\ny", out ignored);
             });
         }
 

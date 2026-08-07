@@ -1,0 +1,16 @@
+// s03 语法谱——命题-事实（单调保持）
+// 特性：行内格式事实命题
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+命题:
+  P_Seen 事实
+  P_Done 事实
+  P_Failed 事实
+
+变迁 T_Run:
+  前置: P_Seen
+  动作: file.convert
+  参数: input, output
+  时限: 60帧
+  后置: P_Done / P_Failed

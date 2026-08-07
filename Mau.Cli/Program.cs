@@ -40,7 +40,7 @@ namespace Mau.Cli
             if (args.Length == 0)
             {
                 Console.WriteLine("Mau Translator v0.1");
-                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau|组.mauproj> -o <dir> [--sdk] | mau publish -o <dir> | mau test | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket> | mau ps | mau status <名> | mau snapshot <名> | mau kill <名> | mau bricks list|index|test | mau export <组.mauproj> [-o <dir>] | mau import <组包目录> -o <目录> [--force]");
+                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau|组.mauproj> -o <dir> [--sdk] | mau publish -o <dir> | mau test | mau check [--update|--syntax|--bricks] | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket> | mau ps | mau status <名> | mau snapshot <名> | mau kill <名> | mau bricks list|index|test | mau export <组.mauproj> [-o <dir>] | mau import <组包目录> -o <目录> [--force]");
                 return 0;
             }
 
@@ -163,6 +163,15 @@ namespace Mau.Cli
                     }
                 }
                 return CommandMauProj.Import(packageDir, targetDir, force);
+            }
+            if (command == "check")
+            {
+                string[] checkArgs = new string[args.Length - 1];
+                for (int i = 0; i < checkArgs.Length; i = i + 1)
+                {
+                    checkArgs[i] = args[i + 1];
+                }
+                return CommandCheck.Execute(checkArgs);
             }
 
             Console.WriteLine("未知命令: " + command);

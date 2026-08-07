@@ -1,4 +1,4 @@
-# Mau .gitignore
+﻿# Mau .gitignore
 # .NET 8 build artifacts and IDE temp files
 
 # === Build output ===
@@ -44,5 +44,6 @@ TestResult.xml
 # === Misc ===
 *.cache
 *.log
+!Mau.Bricks.Log/
 .DS_Store
 Thumbs.db

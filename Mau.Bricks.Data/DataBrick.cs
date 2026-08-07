@@ -23,12 +23,14 @@ namespace Mau.Bricks
         /// 把有序字典编码为 `[Section]` 分节文本
         /// </summary>
         /// <param name="sections">分节和行列表</param>
-        /// <returns>分节文本；空字典返回空字符串</returns>
-        public static string SnapshotEncode(Dictionary<string, List<string>>? sections)
+        /// <param name="encoded">分节文本；空字典返回空字符串</param>
+        /// <returns>true=成功</returns>
+        public static bool SnapshotEncode(Dictionary<string, List<string>>? sections, out string encoded)
         {
             if (sections == null || sections.Count == 0)
             {
-                return "";
+                encoded = "";
+                return true;
             }
             StringBuilder builder = new StringBuilder();
             int sectionIndex = 0;
@@ -58,21 +60,24 @@ namespace Mau.Bricks
                 }
                 sectionIndex = sectionIndex + 1;
             }
-            return builder.ToString();
+            encoded = builder.ToString();
+            return true;
         }
 
         /// <summary>
         /// 把分节文本解码为独立字典和行列表
         /// </summary>
         /// <param name="raw">分节文本</param>
-        /// <returns>解码结果</returns>
-        public static Dictionary<string, List<string>> SnapshotDecode(string? raw)
+        /// <param name="sections">解码结果——空输入返回空字典</param>
+        /// <returns>true=成功</returns>
+        public static bool SnapshotDecode(string? raw, out Dictionary<string, List<string>> sections)
         {
             Dictionary<string, List<string>> result =
                 new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            sections = result;
             if (string.IsNullOrEmpty(raw))
             {
-                return result;
+                return true;
             }
             string normalized = raw.Replace("\r\n", "\n").Replace('\r', '\n');
             string[] lines = normalized.Split('\n');
@@ -108,7 +113,8 @@ namespace Mau.Bricks
             {
                 result.Add(currentSection, currentLines);
             }
-            return result;
+            sections = result;
+            return true;
         }
 
         /// <summary>
