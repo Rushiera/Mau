@@ -1,6 +1,6 @@
 ﻿{
   "version": 3,
-  "generatedAt": "2026-08-07T10:36:10Z",
+  "generatedAt": "2026-08-07T10:54:28Z",
   "bricks": [
     {"id":"BRIK-APPROVAL-001","name":"approval.request","category":"APPROVAL","path":"APPROVAL/BRIK-APPROVAL-001_approval.request.cs","dependencies":[],"status":"active","contract":{"implementation":"Mau.Bricks.ApprovalRequestBrick.Request","inputs":[{"name":"requestId","type":"string"},{"name":"question","type":"string"},{"name":"options","type":"string[]"},{"name":"defaultIndex","type":"int"},{"name":"timeoutSeconds","type":"int"}],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},
     {"id":"BRIK-APPROVAL-002","name":"approval.resolve","category":"APPROVAL","path":"APPROVAL/BRIK-APPROVAL-002_approval.resolve.cs","dependencies":[],"status":"active","contract":{"implementation":"Mau.Bricks.ApprovalResolveBrick.Resolve","inputs":[{"name":"requestId","type":"string"},{"name":"selectedIndex","type":"int"}],"outputs":[{"name":"result","type":"ApprovalResult"}],"return":"Bool","duration":"Sync","thread":"main"}},
