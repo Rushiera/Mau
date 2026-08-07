@@ -25,8 +25,9 @@ namespace Mau.Bricks
         /// <param name="officeName">工单固定词汇</param>
         /// <param name="timeoutTicks">超时帧数</param>
         /// <param name="dogId">Flow 注册 ID</param>
+        /// <param name="officeId">OA 单 ID</param>
         /// <returns>true=创建并建单成功</returns>
-        public static bool Create(string name, string officeType, string officeName, long timeoutTicks, out long dogId)
+        public static bool Create(string name, string officeType, string officeName, long timeoutTicks, out long dogId, out long officeId)
         {
             IOA? oa;
             FlowRunner? runner;
@@ -35,13 +36,20 @@ namespace Mau.Bricks
             if (oa == null || runner == null)
             {
                 dogId = 0;
+                officeId = 0;
                 return false;
             }
             DogBase dog = new DogBase(oa, name);
             dogId = runner.RegisterFlow(dog, name);
             dog.BindId(dogId);
-            return dog.Post(officeType, officeName, timeoutTicks);
+            if (!dog.Post(officeType, officeName, timeoutTicks))
+            {
+                officeId = 0;
+                return false;
+            }
+            officeId = dog.OfficeId;
+            return true;
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:38A825FD105E26785E264DC7F09F42B889D9019D83804C96310DC92B419C458E
+// #MAU_CHECKSUM:SHA256:37CF5E75496FD1E76F6B3FD3EDED0BF3D7B467BF18940C33579DCFAC4E21F599
