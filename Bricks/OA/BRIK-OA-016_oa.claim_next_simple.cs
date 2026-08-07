@@ -34,7 +34,7 @@ namespace Mau.Bricks
                 officeId = 0;
                 return false;
             }
-            string[] names = officeNames.Split(',');
+            string[] names = officeNames.Split(',', ';');
             for (int i = 0; i < names.Length; i = i + 1)
             {
                 names[i] = names[i].Trim();
@@ -54,4 +54,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:85D4A6EF0100540D4E575AEB80C57046782D24EF32630E3645807C590846038E
+// #MAU_CHECKSUM:SHA256:8C2B08727F0F389BE1A41D278BA420C98C5BEEDC8FDC8D5809D9F19B1AADFF66

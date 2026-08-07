@@ -130,6 +130,14 @@
         bool GetResultStr(string key, out string value);
 
         /// <summary>
+        /// 读请求载荷 str——请求方信息（session/call_id 等，任意阶段可读）
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="value">str 值</param>
+        /// <returns>true=Key 存在</returns>
+        bool GetPayloadStr(string key, out string value);
+
+        /// <summary>
         /// 持久化落盘——原子写（临时文件 + 改名）
         /// </summary>
         /// <param name="path">目标路径</param>

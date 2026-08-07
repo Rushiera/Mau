@@ -31,6 +31,7 @@
 | BRIK-DOG-006 | dog.get_int | DOG | DOG/BRIK-DOG-006_dog.get_int.cs | 无 | active |  |
 | BRIK-DOG-007 | dog.get_str | DOG | DOG/BRIK-DOG-007_dog.get_str.cs | 无 | active |  |
 | BRIK-DOG-008 | dog.finish | DOG | DOG/BRIK-DOG-008_dog.finish.cs | 无 | active |  |
+| BRIK-DOG-009 | dog.collect_result | DOG | DOG/BRIK-DOG-009_dog.collect_result.cs | 无 | active |  |
 | BRIK-FILE-001 | file.convert | FILE | FILE/BRIK-FILE-001_file.convert.cs | 无 | active |  |
 | BRIK-FILE-002 | file.read | FILE | FILE/BRIK-FILE-002_file.read.cs | 无 | active |  |
 | BRIK-FILE-003 | file.write | FILE | FILE/BRIK-FILE-003_file.write.cs | 无 | active |  |
