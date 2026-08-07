@@ -105,6 +105,7 @@
 | BRIK-TOOL-009 | tool.dispatch_one | TOOL | TOOL/BRIK-TOOL-009_tool.dispatch_one.cs | 无 | active |  |
 | BRIK-TOOL-010 | tool.dispatch | TOOL | TOOL/BRIK-TOOL-010_tool.dispatch.cs | 无 | active |  |
 | BRIK-TOOL-011 | tool.collect | TOOL | TOOL/BRIK-TOOL-011_tool.collect.cs | 无 | active |  |
+| BRIK-TOOL-012 | tool.create_next | TOOL | TOOL/BRIK-TOOL-012_tool.create_next.cs | 无 | active |  |
 
 ---
 
