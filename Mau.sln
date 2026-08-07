@@ -9,17 +9,14 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Runtime", "Mau.Runtime\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Translator", "Mau.Translator\Mau.Translator.csproj", "{A0000003-0000-0000-0000-000000000003}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Bricks.Standard", "Mau.Bricks.Standard\Mau.Bricks.Standard.csproj", "{A0000004-0000-0000-0000-000000000004}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Cli", "Mau.Cli\Mau.Cli.csproj", "{A0000005-0000-0000-0000-000000000005}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Contracts.Tests", "Mau.Contracts.Tests\Mau.Contracts.Tests.csproj", "{A0000006-0000-0000-0000-000000000006}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Runtime.Tests", "Mau.Runtime.Tests\Mau.Runtime.Tests.csproj", "{A0000007-0000-0000-0000-000000000007}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Translator.Tests", "Mau.Translator.Tests\Mau.Translator.Tests.csproj", "{A0000008-0000-0000-0000-000000000008}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Bricks.Tests", "Mau.Bricks.Tests\Mau.Bricks.Tests.csproj", "{A0000009-0000-0000-0000-000000000009}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.E2E", "Mau.E2E\Mau.E2E.csproj", "{A000000A-0000-0000-0000-00000000000A}"
 EndProject
@@ -27,19 +24,12 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Host", "Mau.Host\Mau.Ho
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mau.Observer", "Mau.Observer\Mau.Observer.csproj", "{19FF3876-BA71-4EB6-86AF-D80A052803D6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mau.Bricks.Data", "Mau.Bricks.Data\Mau.Bricks.Data.csproj", "{CFC5CC55-17DB-432D-9A8E-B81BB7C65167}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mau.Bricks.Text", "Mau.Bricks.Text\Mau.Bricks.Text.csproj", "{705C72FA-764A-4DD6-B33C-AF6566B8554F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mau.Bricks.Shell", "Mau.Bricks.Shell\Mau.Bricks.Shell.csproj", "{FA800B91-CD98-47C2-AAED-595FD47FF855}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mau.Bricks.LLM", "Mau.Bricks.LLM\Mau.Bricks.LLM.csproj", "{801318C1-C0B8-4A2B-91D2-5501026BA7EA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mau.Bricks.Approval", "Mau.Bricks.Approval\Mau.Bricks.Approval.csproj", "{9D9AA3A6-5C94-4688-ADBD-4135D47C5F0E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mau.Bricks.Office", "Mau.Bricks.Office\Mau.Bricks.Office.csproj", "{967DE8A4-C526-4A25-8AAE-BC78830854DC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mau.Bricks.Log", "Mau.Bricks.Log\Mau.Bricks.Log.csproj", "{C32C5DA0-A6A3-4AB3-9931-0BDBD826FB9F}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Development", "Mau.Development\Mau.Development.csproj", "{A000000C-0000-0000-0000-00000000000C}"
 EndProject

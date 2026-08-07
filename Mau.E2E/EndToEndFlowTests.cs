@@ -1,7 +1,6 @@
 ﻿using System;
 using System.IO;
 using System.Reflection;
-using Mau.Bricks;
 using Mau.Development;
 using Mau.Runtime;
 using Mau.Translator;
@@ -161,14 +160,11 @@ namespace Mau.E2E
         }
 
         /// <summary>
-        /// 幂等注册标准积木——注册表感知（共享注册表是唯一真相，类内标志会跨类重复注册）
+        /// 幂等积木索引——注册表已退役（翻译器构筑期自动加载 Bricks/index.json）
         /// </summary>
         private static void EnsureBricksRegistered()
         {
-            Mau.Contracts.BrickRegistry.EnsureRegistered("file.convert", delegate
-            {
-                StandardBrickRegistration.RegisterAll();
-            });
+            // 积木注册表已退役——MauCompiler 段0 自动加载 Bricks/index.json
         }
 
         /// <summary>

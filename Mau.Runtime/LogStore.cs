@@ -1,0 +1,98 @@
+﻿using System.Collections.Generic;
+
+namespace Mau.Runtime
+{
+    /// <summary>
+    /// 日志总账（程序级）——状态经 DataBox scope 存储（BRIK 唯一数据协议）
+    /// </summary>
+    public static class LogStore
+    {
+        /// <summary>
+        /// 日志条目类型——已归 Mau.Runtime
+        /// </summary>
+        public struct LogEntry
+        {
+            /// <summary>
+            /// 时间戳
+            /// </summary>
+            public string Time;
+
+            /// <summary>
+            /// 模块名
+            /// </summary>
+            public string Module;
+
+            /// <summary>
+            /// 级别——0=INFO 2=WARN 3=ERROR
+            /// </summary>
+            public int Level;
+
+            /// <summary>
+            /// 消息
+            /// </summary>
+            public string Message;
+        }
+
+        /// <summary>
+        /// 总账列表——DataBox scope "log"
+        /// </summary>
+        public static List<LogEntry> AllLog
+        {
+            get { return DataBox.GetOrCreate<List<LogEntry>>("log", "entries"); }
+        }
+
+        /// <summary>
+        /// 总账锁——DataBox scope "log"
+        /// </summary>
+        public static object Sync
+        {
+            get { return DataBox.GetOrCreate<object>("log", "sync"); }
+        }
+
+        /// <summary>
+        /// 磁盘持久化路径——空=仅内存
+        /// </summary>
+        public static string LogFilePath
+        {
+            get
+            {
+                string path;
+                if (DataBox.TryGet<string>("log", "filePath", out path))
+                {
+                    return path;
+                }
+                return "";
+            }
+            set { DataBox.Set<string>("log", "filePath", value); }
+        }
+
+        /// <summary>
+        /// 配置磁盘日志文件——宿主启动时调用
+        /// </summary>
+        /// <param name="path">日志文件路径，空=仅内存</param>
+        public static void ConfigureLogFile(string path)
+        {
+            LogFilePath = path == null ? "" : path;
+        }
+
+        /// <summary>
+        /// 级别文本
+        /// </summary>
+        /// <param name="level">级别数字</param>
+        /// <returns>文本</returns>
+        public static string LevelText(int level)
+        {
+            return BrickText.LevelText(level);
+        }
+
+        /// <summary>
+        /// 把可空文本规范为空字符串
+        /// </summary>
+        /// <param name="value">输入</param>
+        /// <returns>非空文本</returns>
+        public static string SafeText(string? value)
+        {
+            return BrickText.SafeText(value);
+        }
+    }
+}

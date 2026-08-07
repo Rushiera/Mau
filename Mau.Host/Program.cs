@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace Mau.Host
 {
@@ -14,8 +14,7 @@ namespace Mau.Host
         /// <param name="args">命令行参数</param>
         public static void Main(string[] args)
         {
-            // [段1] 基座环境准备——注册标准积木
-            Mau.Bricks.StandardBrickRegistration.RegisterAll();
+            // [段1] 入口就绪——等待引导方驱动（积木注册表已退役——翻译器构筑期经 BrickIndex）
 
             // [段2] 入口就绪——等待引导方驱动
             Console.WriteLine("Mau Host 入口就绪——等待引导");

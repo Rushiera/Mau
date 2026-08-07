@@ -16,12 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\Mau.Snapshots\expected\FL_FileConvert.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\Mau.Runtime\Mau.Runtime.csproj" />
-    <ProjectReference Include="..\Mau.Bricks.Standard\Mau.Bricks.Standard.csproj" />
   </ItemGroup>
 
 </Project>

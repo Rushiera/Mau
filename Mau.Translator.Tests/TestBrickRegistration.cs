@@ -1,10 +1,10 @@
-﻿using System;
-using Mau.Contracts;
+using System;
+using Mau.Translator;
 
 namespace Mau.Translator.Tests
 {
     /// <summary>
-    /// 测试积木注册——共享单例，线程安全，避免 xunit 并行下的重复注册
+    /// 测试积木索引——共享单例，线程安全（积木注册表已退役——翻译器构筑期经 BrickIndex 加载 Bricks/index.json）
     /// </summary>
     internal static class TestBrickRegistration
     {
@@ -12,7 +12,7 @@ namespace Mau.Translator.Tests
         private static bool _done;
 
         /// <summary>
-        /// 确保 file.convert 积木已注册——幂等，线程安全
+        /// 确保积木索引已加载——幂等，线程安全（探测：MAU_BRICKS_ROOT → 当前目录向上找 Bricks/）
         /// </summary>
         public static void Ensure()
         {
@@ -22,14 +22,25 @@ namespace Mau.Translator.Tests
                 {
                     return;
                 }
-                BrickContract? existing;
-                if (!BrickRegistry.TryGet("file.convert", out existing))
+                if (BrickIndex.Count == 0)
                 {
-                    BrickContract convert = new BrickContract("file.convert", "Mau.Bricks.FileBrick.Convert");
-                    convert.Inputs.Add(new BrickPort("input", typeof(string), "输入文件路径"));
-                    convert.Inputs.Add(new BrickPort("output", typeof(string), "输出文件路径"));
-                    convert.Return = BrickReturnKind.Bool;
-                    BrickRegistry.Register(convert);
+                    string? probe = Environment.GetEnvironmentVariable("MAU_BRICKS_ROOT");
+                    if (!string.IsNullOrWhiteSpace(probe))
+                    {
+                        BrickIndex.Load(probe);
+                    }
+                    if (BrickIndex.Count == 0)
+                    {
+                        string? dir = System.IO.Directory.GetCurrentDirectory();
+                        while (dir != null)
+                        {
+                            if (BrickIndex.Load(System.IO.Path.Combine(dir, "Bricks")))
+                            {
+                                break;
+                            }
+                            dir = System.IO.Directory.GetParent(dir)?.FullName;
+                        }
+                    }
                 }
                 _done = true;
             }

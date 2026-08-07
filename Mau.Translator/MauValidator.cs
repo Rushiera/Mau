@@ -27,7 +27,7 @@ namespace Mau.Translator
                     continue;
                 }
                 BrickContract? contract;
-                if (!BrickRegistry.TryGet(t.BrickName, out contract))
+                if (!BrickIndex.TryGet(t.BrickName, out BrickIndexEntry entry) || (contract = entry.Contract) == null)
                 {
                     diags.Add(new MauDiagnostic("E001", t.Line, "积木未注册: " + t.BrickName));
                 }
@@ -42,7 +42,7 @@ namespace Mau.Translator
                     continue;
                 }
                 BrickContract? contract;
-                if (!BrickRegistry.TryGet(t.BrickName, out contract))
+                if (!BrickIndex.TryGet(t.BrickName, out BrickIndexEntry entry) || (contract = entry.Contract) == null)
                 {
                     continue;
                 }
@@ -202,7 +202,7 @@ namespace Mau.Translator
                         continue;
                     }
                     BrickContract? contract;
-                    if (!BrickRegistry.TryGet(t.BrickName, out contract))
+                    if (!BrickIndex.TryGet(t.BrickName, out BrickIndexEntry entry) || (contract = entry.Contract) == null)
                     {
                         continue;
                     }
@@ -236,7 +236,7 @@ namespace Mau.Translator
                         continue;
                     }
                     BrickContract? contract;
-                    if (!BrickRegistry.TryGet(t.BrickName, out contract))
+                    if (!BrickIndex.TryGet(t.BrickName, out BrickIndexEntry entry) || (contract = entry.Contract) == null)
                     {
                         continue;
                     }
@@ -292,7 +292,7 @@ namespace Mau.Translator
                         continue;
                     }
                     BrickContract? contract;
-                    if (!BrickRegistry.TryGet(t.BrickName, out contract))
+                    if (!BrickIndex.TryGet(t.BrickName, out BrickIndexEntry entry) || (contract = entry.Contract) == null)
                     {
                         continue;
                     }

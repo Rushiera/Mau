@@ -46,24 +46,35 @@ namespace Mau.Cli
             }
             Console.WriteLine("组 " + proj.Name + "：成员 " + files.Count + " 个");
 
-            // [段3] 逐个验证 + 生成——任何失败整组拒绝
-            List<string> sources = new List<string>();
-            List<string> classNames = new List<string>();
+            // [段3] 逐个验证 + 生成——任何失败整组拒绝（组编译：骨架数组 + 共享 BRIKGROUP）
+            string[] texts = new string[files.Count];
+            string[] names = new string[files.Count];
             for (int i = 0; i < files.Count; i++)
             {
-                string path = files[i];
-                string source = File.ReadAllText(path);
-                string flowName = Program.FlowNameFromPath(Path.GetFileNameWithoutExtension(path));
-                CompileResult result = MauCompiler.Compile(source, flowName);
+                texts[i] = File.ReadAllText(files[i]);
+                names[i] = Program.FlowNameFromPath(Path.GetFileNameWithoutExtension(files[i]));
+            }
+            GroupCompileResult groupResult = MauCompiler.CompileGroup(texts, names);
+            List<string> sources = new List<string>();
+            List<string> classNames = new List<string>();
+            for (int i = 0; i < groupResult.Results.Length; i++)
+            {
+                CompileResult result = groupResult.Results[i];
                 if (!result.Success)
                 {
-                    Program.PrintDiagnostics(path, result.Diagnostics);
-                    Console.WriteLine("构建失败: " + Path.GetFileName(path) + " 验证未通过——整组拒绝");
+                    Program.PrintDiagnostics(files[i], result.Diagnostics);
+                    Console.WriteLine("构建失败: " + Path.GetFileName(files[i]) + " 验证未通过——整组拒绝");
                     return 1;
                 }
                 sources.Add(result.GeneratedCode);
-                classNames.Add("FL_" + flowName);
-                Console.WriteLine("  验证通过: " + Path.GetFileName(path) + " → FL_" + flowName);
+                classNames.Add("FL_" + names[i]);
+                Console.WriteLine("  验证通过: " + Path.GetFileName(files[i]) + " → FL_" + names[i]);
+            }
+            if (groupResult.BrickGroupSource.Length > 0)
+            {
+                sources.Add(groupResult.BrickGroupSource);
+                classNames.Add("FL_BRIKGROUP");
+                Console.WriteLine("  内嵌闭包: " + (sources.Count - 1) + " 个 BRIK（共享 BRIKGROUP）");
             }
 
             // [段4] 输出目录
@@ -364,7 +375,7 @@ namespace Mau.Cli
             for (int i = 0; i < brickDeps.Count; i++)
             {
                 string dep = brickDeps[i];
-                if (dep.Length > 0 && !BrickRegistry.TryGet(dep, out BrickContract? _))
+                if (dep.Length > 0 && !BrickIndex.TryGet(dep, out BrickIndexEntry? _))
                 {
                     Console.WriteLine("FAIL: 依赖积木不可用——" + dep + "（本环境未注册）");
                     return 1;

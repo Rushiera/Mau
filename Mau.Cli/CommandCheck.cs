@@ -210,7 +210,11 @@ namespace Mau.Cli
             List<string> sources = new List<string>();
             List<string> classNames = new List<string>();
             List<string> brickNames = new List<string>();
-            List<BrickContract> all = new List<BrickContract>(BrickRegistry.All);
+            List<BrickContract> all = new List<BrickContract>();
+            foreach (BrickIndexEntry brickEntry in BrickIndex.All)
+            {
+                all.Add(brickEntry.Contract);
+            }
             all.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
 
             // [段1] 枚举 + 契约生成最小语料 + 翻译

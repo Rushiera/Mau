@@ -36,10 +36,33 @@ namespace Mau.Translator
             sb.AppendLine("    /// <summary>");
             sb.AppendLine("    /// " + flowName + " 流程——由 Mau 声明生成");
             sb.AppendLine("    /// </summary>");
-            string classLine = "    public sealed class " + className + " : IObservableFlow";
+            string classLine = "    public sealed class " + className;
+            bool hasFlowInterface = false;
             for (int k = 0; k < doc.Interfaces.Count; k++)
             {
-                classLine = classLine + ", " + doc.Interfaces[k];
+                if (doc.Interfaces[k].EndsWith("IObservableFlow", StringComparison.Ordinal))
+                {
+                    hasFlowInterface = true;
+                }
+            }
+            if (!hasFlowInterface)
+            {
+                classLine = classLine + " : IObservableFlow";
+            }
+            for (int k = 0; k < doc.Interfaces.Count; k++)
+            {
+                if (k == 0 && !hasFlowInterface)
+                {
+                    classLine = classLine + ", " + doc.Interfaces[k];
+                }
+                else if (hasFlowInterface)
+                {
+                    classLine = classLine + (k == 0 ? " : " : ", ") + doc.Interfaces[k];
+                }
+                else
+                {
+                    classLine = classLine + ", " + doc.Interfaces[k];
+                }
             }
             sb.AppendLine(classLine);
             sb.AppendLine("    {");
@@ -105,7 +128,8 @@ namespace Mau.Translator
                     sb.AppendLine();
                 }
                 // 输出端口字段——从积木契约 Outputs 声明
-                if (t.BrickName.Length > 0 && BrickRegistry.TryGet(t.BrickName, out BrickContract? outContract))
+                BrickContract? outContract = null;
+                if (t.BrickName.Length > 0 && BrickIndex.TryGet(t.BrickName, out BrickIndexEntry outEntry) && (outContract = outEntry.Contract) != null)
                 {
                     for (int o = 0; o < outContract.Outputs.Count; o++)
                     {
@@ -441,7 +465,7 @@ namespace Mau.Translator
         private static string PortTypeName(MauDocument doc, IrTransition t, string portName)
         {
             BrickContract? contract;
-            if (BrickRegistry.TryGet(t.BrickName, out contract))
+            if (BrickIndex.TryGet(t.BrickName, out BrickIndexEntry entry) && (contract = entry.Contract) != null)
             {
                 for (int i = 0; i < contract.Inputs.Count; i++)
                 {
@@ -464,7 +488,7 @@ namespace Mau.Translator
         private static bool IsReferenceType(MauDocument doc, IrTransition t, string portName)
         {
             BrickContract? contract;
-            if (BrickRegistry.TryGet(t.BrickName, out contract))
+            if (BrickIndex.TryGet(t.BrickName, out BrickIndexEntry entry) && (contract = entry.Contract) != null)
             {
                 for (int i = 0; i < contract.Inputs.Count; i++)
                 {
@@ -487,7 +511,7 @@ namespace Mau.Translator
         private static string PortDescription(MauDocument doc, IrTransition t, string portName)
         {
             BrickContract? contract;
-            if (BrickRegistry.TryGet(t.BrickName, out contract))
+            if (BrickIndex.TryGet(t.BrickName, out BrickIndexEntry entry) && (contract = entry.Contract) != null)
             {
                 for (int i = 0; i < contract.Inputs.Count; i++)
                 {
@@ -1066,19 +1090,36 @@ private static string DebugLogLine(IrTransition t, string phase, string indent)
             }
             return sb.ToString();
         }
-        /// <summary>
+/// <summary>
+/// 内嵌实现重写——完整限定名 Mau.Bricks.XxxBrick.Yyy → BRIK_ID.Yyy（BRIK-ID 类名）
+/// </summary>
+/// <param name = "implementation">积木契约实现签名</param>
+/// <param name = "brickId">BRIK-ID</param>
+/// <returns>重写后的调用签名</returns>
+private static string RewriteImplementation(string implementation, string brickId)
+{
+    int lastDot = implementation.LastIndexOf('.');
+    if (lastDot < 0)
+    {
+        return implementation;
+    }
+
+    string method = implementation.Substring(lastDot + 1);
+    return "Mau.Bricks." + BrickIndex.IdClassName(brickId) + "." + method;
+}        /// <summary>
         /// 积木调用文本——完整限定名，输出端口以 out 前缀传递
         /// </summary>
         /// <param name="doc">文档</param>
         /// <param name="t">变迁</param>
         /// <returns>调用文本</returns>
         private static string BrickCallText(MauDocument doc, IrTransition t)
-        {
-            BrickContract? contract;
-            string implementation = "Mau.Bricks.FileBrick.Convert";
-            if (BrickRegistry.TryGet(t.BrickName, out contract))
+{
+            BrickIndexEntry? entry;
+            string implementation = "";
+            if (BrickIndex.TryGet(t.BrickName, out entry))
             {
-                implementation = contract.Implementation;
+                // 内嵌重命名——完整限定名 Mau.Bricks.XxxBrick.Yyy → BRIK_ID.Yyy（BRIK-ID 类名）
+                implementation = RewriteImplementation(entry.Contract.Implementation, entry.Id);
             }
             StringBuilder sb = new StringBuilder();
             sb.Append(implementation);
@@ -1109,8 +1150,9 @@ private static string DebugLogLine(IrTransition t, string phase, string indent)
                 }
             }
             // 输出端口——out 传递，与输入参数拼接
-            if (contract != null)
+            if (entry != null)
             {
+                BrickContract contract = entry.Contract;
                 for (int o = 0; o < contract.Outputs.Count; o++)
                 {
                     if (t.Params.Count > 0 || o > 0)
@@ -1122,8 +1164,7 @@ private static string DebugLogLine(IrTransition t, string phase, string indent)
             }
             sb.Append(")");
             return sb.ToString();
-        }
-/// <summary>
+        }/// <summary>
 /// 前置项文本——命题直接输出；资源输出槽位检查；析取组由调用方展开
 /// </summary>
 /// <param name = "doc">文档</param>

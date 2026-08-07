@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Reflection;
-using Mau.Bricks;
 using Mau.Development;
 using Mau.Runtime;
 using Mau.Translator;
@@ -81,14 +80,7 @@ namespace Mau.E2E
                 {
                     return;
                 }
-                Mau.Contracts.BrickRegistry.EnsureRegistered("file.convert", delegate
-                {
-                    StandardBrickRegistration.RegisterAll();
-                });
-                Mau.Contracts.BrickRegistry.EnsureRegistered("log.write", delegate
-                {
-                    LogBrickRegistration.RegisterAll();
-                });
+                // 积木注册表已退役——翻译器构筑期自动加载 Bricks/index.json（MauCompiler 段0）
                 _ready = true;
             }
         }

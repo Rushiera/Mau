@@ -121,9 +121,9 @@ namespace Mau.Cli
         public static int ListBricks()
         {
             int count = 0;
-            foreach (BrickContract contract in BrickRegistry.All)
+            foreach (Mau.Translator.BrickIndexEntry entry in BrickIndex.All)
             {
-                Console.WriteLine(contract.Name + " → " + contract.Implementation);
+                Console.WriteLine(entry.Name + " → " + entry.Contract.Implementation);
                 count = count + 1;
             }
             Console.WriteLine("合计: " + count + " 积木");
@@ -366,14 +366,14 @@ namespace Mau.Cli
             Dictionary<string, BrickIndexEntry> table = ReadIndexTable(indexPath);
             int errors = 0;
 
-            // V1: 注册表积木全部登记
+            // V1: 积木索引全部登记
             List<string> registryNames = new List<string>();
-            foreach (BrickContract contract in BrickRegistry.All)
+            foreach (Mau.Translator.BrickIndexEntry brickEntry in BrickIndex.All)
             {
-                registryNames.Add(contract.Name);
-                if (!table.ContainsKey(contract.Name))
+                registryNames.Add(brickEntry.Name);
+                if (!table.ContainsKey(brickEntry.Name))
                 {
-                    Console.WriteLine("V1 FAIL: 注册表积木未登记——" + contract.Name);
+                    Console.WriteLine("V1 FAIL: 积木未登记——" + brickEntry.Name);
                     errors = errors + 1;
                 }
             }
@@ -550,8 +550,9 @@ namespace Mau.Cli
             // 按类别+序号排序输出
             List<BrickIndexEntry> entries = new List<BrickIndexEntry>();
             Dictionary<string, int> categoryMax = new Dictionary<string, int>(StringComparer.Ordinal);
-            foreach (BrickContract contract in BrickRegistry.All)
+            foreach (Mau.Translator.BrickIndexEntry brickEntry in BrickIndex.All)
             {
+                BrickContract contract = brickEntry.Contract;
                 BrickIndexEntry entry;
                 if (oldTable.TryGetValue(contract.Name, out entry!))
                 {
@@ -770,7 +771,11 @@ namespace Mau.Cli
             int pass = 0;
             int skip = 0;
             int fail = 0;
-            List<BrickContract> contracts = new List<BrickContract>(BrickRegistry.All);
+            List<BrickContract> contracts = new List<BrickContract>();
+            foreach (Mau.Translator.BrickIndexEntry brickEntry in BrickIndex.All)
+            {
+                contracts.Add(brickEntry.Contract);
+            }
             for (int i = 0; i < contracts.Count; i++)
             {
                 BrickContract c = contracts[i];

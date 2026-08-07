@@ -1,0 +1,2684 @@
+{
+    "version":  3,
+    "generatedAt":  "2026-08-07T15:15:06Z",
+    "note":  "formal - rebuilt from src/ scan (design-mau-brickfile.md section 8); contract merged from v2",
+    "bricks":  [
+                   {
+                       "id":  "BRIK-APPROVAL-001",
+                       "name":  "approval.request",
+                       "category":  "APPROVAL",
+                       "path":  "APPROVAL/BRIK-APPROVAL-001_approval.request.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "269D126ABEDC74532738BAADAFD42CC19CA17AFD5D48BCA4E8928503BE300F59",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ApprovalRequestBrick.Request",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "requestId",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "question",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "options",
+                                                           "type":  "string[]"
+                                                       },
+                                                       {
+                                                           "name":  "defaultIndex",
+                                                           "type":  "int"
+                                                       },
+                                                       {
+                                                           "name":  "timeoutSeconds",
+                                                           "type":  "int"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-APPROVAL-002",
+                       "name":  "approval.resolve",
+                       "category":  "APPROVAL",
+                       "path":  "APPROVAL/BRIK-APPROVAL-002_approval.resolve.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "53F8318E8ECF6802256E6B03F4C6BE20123626EC9D8976B666989753A0902888",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ApprovalResolveBrick.Resolve",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "requestId",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "selectedIndex",
+                                                           "type":  "int"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "result",
+                                                            "type":  "ApprovalResult"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-APPROVAL-003",
+                       "name":  "approval.reject",
+                       "category":  "APPROVAL",
+                       "path":  "APPROVAL/BRIK-APPROVAL-003_approval.reject.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "6CB9369B484E9C798F139F27199349E0B4F53BBCA7EEFF0AF9E65B09DC3CBA67",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ApprovalRejectBrick.Reject",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "requestId",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-APPROVAL-004",
+                       "name":  "approval.pending",
+                       "category":  "APPROVAL",
+                       "path":  "APPROVAL/BRIK-APPROVAL-004_approval.pending.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "A195F93039FC194181929B5E73E9FDCD42EEAFCA6C73B3EF5F7C5888EECC68E8",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ApprovalPendingBrick.GetPending",
+                                        "inputs":  [
+
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "pending",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-CMD-001",
+                       "name":  "cmd.register",
+                       "category":  "CMD",
+                       "path":  "CMD/BRIK-CMD-001_cmd.register.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "5054B1431B72485B2B8864E1F99E1D7238E7854DA4ECEAACBDA637C531DC7BB3",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CmdRegisterBrick.Register",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "ownerId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "cmdKeys",
+                                                           "type":  "string[]"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-CMD-002",
+                       "name":  "cmd.unregister",
+                       "category":  "CMD",
+                       "path":  "CMD/BRIK-CMD-002_cmd.unregister.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "CFABF7F04BFCE96FF3D30E9CB19872316F13C555CE25EC23982BB0B5EF5ADF77",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CmdUnregisterBrick.Unregister",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "ownerId",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-CMD-003",
+                       "name":  "cmd.consume",
+                       "category":  "CMD",
+                       "path":  "CMD/BRIK-CMD-003_cmd.consume.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "DED43743FE81C0F24AA1F94102B75AF340E701945EF66365EEFA3AFE474BEF68",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CmdConsumeBrick.Consume",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "ownerId",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "hasCommands",
+                                                            "type":  "bool"
+                                                        },
+                                                        {
+                                                            "name":  "cmdKeys",
+                                                            "type":  "string[]"
+                                                        },
+                                                        {
+                                                            "name":  "cmdValues",
+                                                            "type":  "int[]"
+                                                        },
+                                                        {
+                                                            "name":  "cmdTexts",
+                                                            "type":  "string[]"
+                                                        },
+                                                        {
+                                                            "name":  "text",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-CMD-004",
+                       "name":  "cmd.set",
+                       "category":  "CMD",
+                       "path":  "CMD/BRIK-CMD-004_cmd.set.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "BEEDC87F36F9671D85870D19CBE115052BD46BD133D8672D73ADEEB4264E591C",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CmdSetBrick.Set",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "key",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "value",
+                                                           "type":  "int"
+                                                       },
+                                                       {
+                                                           "name":  "text",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-CMD-005",
+                       "name":  "cmd.clean",
+                       "category":  "CMD",
+                       "path":  "CMD/BRIK-CMD-005_cmd.clean.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "6B3F8D5D2B953E758FDF3A849BA4A75F55B1E7DF5ABA8AC4273D8B125EAA2859",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CmdCleanBrick.Clean",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "ownerId",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-DATA-001",
+                       "name":  "data.snapshot_encode",
+                       "category":  "DATA",
+                       "path":  "DATA/BRIK-DATA-001_data.snapshot_encode.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "540A235C81FE4994D823825C9E157F62515B62523C59B00FFACC6508213B2211",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.DataSnapshotEncodeBrick.SnapshotEncode",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sections",
+                                                           "type":  "Dictionary`2"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "encoded",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-DATA-002",
+                       "name":  "data.snapshot_decode",
+                       "category":  "DATA",
+                       "path":  "DATA/BRIK-DATA-002_data.snapshot_decode.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "2516B097C68B076EA71987C367C2A9844110B12B77A8433A7E3F84CC39788A15",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.DataSnapshotDecodeBrick.SnapshotDecode",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "raw",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "sections",
+                                                            "type":  "Dictionary`2"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-DATA-003",
+                       "name":  "data.box_set",
+                       "category":  "DATA",
+                       "path":  "DATA/BRIK-DATA-003_data.box_set.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "FA4689384AD621A678826907217CCD3DC17182F57C373495B527F0F668FA6F0A",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.DataBoxSetBrick.Set",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "boxId",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "key",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "value",
+                                                           "type":  "int"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-DATA-004",
+                       "name":  "data.box_get",
+                       "category":  "DATA",
+                       "path":  "DATA/BRIK-DATA-004_data.box_get.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "20D785C0B956DECBD7C25C704312EEA82E433FA61EB721AFBCCC60B6FBC6EE65",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.DataBoxGetBrick.Get",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "boxId",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "key",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "defaultValue",
+                                                           "type":  "int"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "value",
+                                                            "type":  "int"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-DATA-005",
+                       "name":  "data.box_set_dic",
+                       "category":  "DATA",
+                       "path":  "DATA/BRIK-DATA-005_data.box_set_dic.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "60539DA675D3ACD415C09C2F9589E960B6EF277FD4DCDE7F926A6959B9D10DEA",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.DataBoxSetDicBrick.SetDic",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "boxId",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "packetKey",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "dataJson",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-DATA-006",
+                       "name":  "data.box_get_dic",
+                       "category":  "DATA",
+                       "path":  "DATA/BRIK-DATA-006_data.box_get_dic.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "42167C021D0AA938F5C0FE36CA6024E2F98E76D9E8A5D7AA08339197770C17AC",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.DataBoxGetDicBrick.GetDic",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "boxId",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "packetKey",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "dataJson",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-FILE-001",
+                       "name":  "file.convert",
+                       "category":  "FILE",
+                       "path":  "FILE/BRIK-FILE-001_file.convert.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "DC76C91967A32FAA66253BDB3D8BFE300D6770E69341F528E135B50A30DAD4A5",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.FileConvertBrick.Convert",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "input",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "output",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-FILE-002",
+                       "name":  "file.read",
+                       "category":  "FILE",
+                       "path":  "FILE/BRIK-FILE-002_file.read.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "7D1FB216430A6EFD579485DC3B033A2E4C1BD0DF99E8AAB692B16BA6DF501146",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.FileReadBrick.Read",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "path",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "content",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-FILE-003",
+                       "name":  "file.write",
+                       "category":  "FILE",
+                       "path":  "FILE/BRIK-FILE-003_file.write.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "6E404A18CE9290E84FDEC0069CD08E545BECF94A5C4B599F5A3E48AB8E1F36EB",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.FileWriteBrick.Write",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "path",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "content",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-FILE-004",
+                       "name":  "file.append",
+                       "category":  "FILE",
+                       "path":  "FILE/BRIK-FILE-004_file.append.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "2849D2EC873ED658AF0B1CD3E85A53932F8DC17636B4608657994FB1FC5B7482",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.FileAppendBrick.Append",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "path",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "content",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-FILE-005",
+                       "name":  "file.replace",
+                       "category":  "FILE",
+                       "path":  "FILE/BRIK-FILE-005_file.replace.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "E5EBE3B2EE06DB33BC6DF1022957FD12B27301B72A6722A6C37B11826FE7E457",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.FileReplaceBrick.Replace",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "path",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "oldText",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "newText",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-FILE-006",
+                       "name":  "file.read_lines",
+                       "category":  "FILE",
+                       "path":  "FILE/BRIK-FILE-006_file.read_lines.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "8C0F19239689D18F4B3B75489A56ECD2E280A8DDDF062648350ECC2CEB81917F",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.FileReadLinesBrick.ReadLines",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "path",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "startLine",
+                                                           "type":  "int"
+                                                       },
+                                                       {
+                                                           "name":  "endLine",
+                                                           "type":  "int"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "lines",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-FILE-007",
+                       "name":  "file.tree",
+                       "category":  "FILE",
+                       "path":  "FILE/BRIK-FILE-007_file.tree.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "B8ADC9D79C617989738CE12A839059A18838B4FBF21F9EBE14D972F93EC165C9",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.FileTreeBrick.Tree",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "path",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "depth",
+                                                           "type":  "int"
+                                                       },
+                                                       {
+                                                           "name":  "limit",
+                                                           "type":  "int"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "tree",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-FILE-008",
+                       "name":  "file.find",
+                       "category":  "FILE",
+                       "path":  "FILE/BRIK-FILE-008_file.find.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "40D1230A37D05B9634F65B2F88211957FE351313DA9547BBAB00D605668EFB79",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.FileFindBrick.Find",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "directory",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "pattern",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "recursive",
+                                                           "type":  "bool"
+                                                       },
+                                                       {
+                                                           "name":  "limit",
+                                                           "type":  "int"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "found",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-FILE-009",
+                       "name":  "file.move",
+                       "category":  "FILE",
+                       "path":  "FILE/BRIK-FILE-009_file.move.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "4FD17FFD1AD10EDFBF64B9F34D0D06812158E0ACE3DFC95CA04B23072FA3B790",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.FileMoveBrick.Move",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "source",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "destination",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-FILE-010",
+                       "name":  "file.delete",
+                       "category":  "FILE",
+                       "path":  "FILE/BRIK-FILE-010_file.delete.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "E56013E53E37CB6F92B9C24F0DEF4D4421FBAC6D1EB2FF0099C905867EBF3E30",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.FileDeleteBrick.Delete",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "path",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "recycled",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-FILE-011",
+                       "name":  "file.batch",
+                       "category":  "FILE",
+                       "path":  "FILE/BRIK-FILE-011_file.batch.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "28A826097BE5F6CC74928CE2D4EA2EF3A85E297FB55F63E4F9B184DFC1ECEBD7",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.FileBatchBrick.Batch",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "operations",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "stopOnError",
+                                                           "type":  "bool"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "summary",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-001",
+                       "name":  "llm.chat",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-001_llm.chat.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "45308AA58615CA9EFC3A5DAEAD777280994ED7AE694128A4F650A3245C740C5A",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.LlmChatBrick.Chat",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "model",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "systemPrompt",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "userMessage",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "content",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-002",
+                       "name":  "llm.stream",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-002_llm.stream.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "2A8136D8F544784DB22A9011963660C8F55623A5518E12A35D5424BCDBB32B7B",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.LlmStreamBrick.Stream",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "model",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "systemPrompt",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "userMessage",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "toolsJson",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "requestId",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Streaming",
+                                        "thread":  "worker"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-003",
+                       "name":  "llm.ctx_set_system",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-003_llm.ctx_set_system.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "9A75A5F9567788461E1AEBA770CDB12B0B4A854BC1C9A8F67BBA1473DCCEDD39",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxSetSystemBrick.CtxSetSystem",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "prompt",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-004",
+                       "name":  "llm.ctx_push_user",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-004_llm.ctx_push_user.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "7C716BAA5AE16CB5A94BB1F8CE4F044DB2921740E2FF75799D1FB6E0192E65D0",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxPushUserBrick.CtxPushUser",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "text",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-005",
+                       "name":  "llm.ctx_push_assistant",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-005_llm.ctx_push_assistant.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "657941A1BB0C963B38AA8B28B678FE80923804D2A8C41F3BA5F8A78CE05D0E89",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxPushAssistantBrick.CtxPushAssistant",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "text",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-006",
+                       "name":  "llm.ctx_trim",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-006_llm.ctx_trim.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "F047D84FE44D3C2E41E6E45C9D92DFCDBACCFBAB3FD10E5DF8236B53F34A1A93",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxTrimBrick.CtxTrim",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "maxChars",
+                                                           "type":  "int"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "removed",
+                                                            "type":  "int"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-007",
+                       "name":  "llm.ctx_count",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-007_llm.ctx_count.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "9ABE80A6B3A090FD537D9BEC972299E0C408FE8157076191E96BC0EE9973E250",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxCountBrick.CtxCount",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "count",
+                                                            "type":  "int"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-008",
+                       "name":  "llm.ctx_build_prompt",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-008_llm.ctx_build_prompt.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "E8A46A1A66EFDD5F6A525EF415144502C925C7CB6DC2AB985EB59E34CF2D4DA0",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxBuildPromptBrick.CtxBuildPrompt",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "prompt",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-009",
+                       "name":  "llm.ctx_clear",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-009_llm.ctx_clear.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "10B9E154957C48E4CECD7B0B40F1D5EA5C1791AFD150D03FE0F10DBA0D4B17D5",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxClearBrick.CtxClear",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-010",
+                       "name":  "llm.ctx_push_tool",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-010_llm.ctx_push_tool.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "60BFAFFF93546887EE29E9102361C9B27541C569A18404D49E5E0C69A3CE2D86",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxPushToolBrick.CtxPushTool",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "toolCallId",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "content",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-011",
+                       "name":  "llm.ctx_push_assistant_tool_calls",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-011_llm.ctx_push_assistant_tool_calls.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "5498B408F91CC8225D1A29DCC54B6C357940BC8350BE6ADEC28319BD082B636C",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxPushAssistantToolCallsBrick.CtxPushAssistantToolCalls",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "toolCallsJson",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-012",
+                       "name":  "llm.ctx_build_messages_json",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-012_llm.ctx_build_messages_json.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "A0DBB293FE2A55FB48C8C9E0FF3D37048DFF463F0B1040B18CF7DA145C4E7367",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxBuildMessagesJsonBrick.CtxBuildMessagesJson",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "messagesJson",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-013",
+                       "name":  "llm.completions",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-013_llm.completions.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "ED68854B096905E8128695B10B39C54FEE5192D6A9DA3B1B128F3427DE082C12",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.LlmCompletionsBrick.Completions",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "model",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "messagesJson",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "toolsJson",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "requestId",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Streaming",
+                                        "thread":  "worker"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-014",
+                       "name":  "llm.is_end",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-014_llm.is_end.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "F664ADEECDA17E9E61671FFA3ECD307359D41D481289A4D9665FCD266DFDFF45",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.LlmIsEndBrick.IsEnd",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "requestId",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "ended",
+                                                            "type":  "bool"
+                                                        },
+                                                        {
+                                                            "name":  "errorCode",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-015",
+                       "name":  "llm.is_tool",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-015_llm.is_tool.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "58615FE218F5CD09FCCC2E1E0BE3DA55005006F49C40B7C56642E576E51BA541",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.LlmIsToolBrick.IsTool",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "requestId",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "isTool",
+                                                            "type":  "bool"
+                                                        },
+                                                        {
+                                                            "name":  "toolCallsJson",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-016",
+                       "name":  "llm.has_error",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-016_llm.has_error.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "3686E31F9515CA6460D1F888A2C28598DFF6551A6887BF11ABE7453E8EA690E4",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.LlmHasErrorBrick.HasError",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "requestId",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "hasError",
+                                                            "type":  "bool"
+                                                        },
+                                                        {
+                                                            "name":  "errorCode",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-017",
+                       "name":  "llm.ctx_checkpoint",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-017_llm.ctx_checkpoint.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "36D3616FAAA05B56B39F8D04AC89C1A5A1BD30EB311C04ECC2D0B8DBD373F507",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxCheckpointBrick.CtxCheckpoint",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "checkpoint",
+                                                            "type":  "int"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-018",
+                       "name":  "llm.ctx_rollback",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-018_llm.ctx_rollback.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "C4515E1E46A98F4F172BAD88F54768B188D8FDA91DB8DC532AFFBAD7C8BA0310",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxRollbackBrick.CtxRollback",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "checkpoint",
+                                                           "type":  "int"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-019",
+                       "name":  "llm.ctx_push_error",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-019_llm.ctx_push_error.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "45F2AA2276E3CD0A67E4D80B8C524ECCF4F4783E054D32EBBD2AD968A75EE35F",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.CtxPushErrorBrick.CtxPushError",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "errorCode",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-020",
+                       "name":  "llm.read_chunk",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-020_llm.read_chunk.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "BAAD90440915CBE95542212E32F1A304CB8909135548E92A929D50337A91E545",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.LlmReadChunkBrick.ReadChunk",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "requestId",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "contentDelta",
+                                                            "type":  "string"
+                                                        },
+                                                        {
+                                                            "name":  "reasoningDelta",
+                                                            "type":  "string"
+                                                        },
+                                                        {
+                                                            "name":  "toolCallsJson",
+                                                            "type":  "string"
+                                                        },
+                                                        {
+                                                            "name":  "finished",
+                                                            "type":  "bool"
+                                                        },
+                                                        {
+                                                            "name":  "errorCode",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LLM-021",
+                       "name":  "llm.finish",
+                       "category":  "LLM",
+                       "path":  "LLM/BRIK-LLM-021_llm.finish.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "10E696D80309F3E08272D21DF7564C5FBF85D3F2071D17B6C15708F811BE25E1",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.LlmFinishBrick.Finish",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "requestId",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LOG-001",
+                       "name":  "log.write",
+                       "category":  "LOG",
+                       "path":  "LOG/BRIK-LOG-001_log.write.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "C5C8D95BC41683E5762DD6E819594B680AFFF07DA7A9FD8A510397740F585118",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.LogWriteBrick.Write",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "module",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "level",
+                                                           "type":  "int"
+                                                       },
+                                                       {
+                                                           "name":  "message",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LOG-002",
+                       "name":  "log.all",
+                       "category":  "LOG",
+                       "path":  "LOG/BRIK-LOG-002_log.all.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "CFA9236B8138F2CCC23F6C4395EC9B8A5FDA72C16FF8A8B36B3949531F37AD44",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.LogAllBrick.GetAll",
+                                        "inputs":  [
+
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "logs",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LOG-003",
+                       "name":  "log.count",
+                       "category":  "LOG",
+                       "path":  "LOG/BRIK-LOG-003_log.count.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "C0F5B5908EA37538F8CE27BE09564BBEB43315AA5FF9CDABF8378BF9D5C9E7E1",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.LogCountBrick.Count",
+                                        "inputs":  [
+
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "count",
+                                                            "type":  "int"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-LOG-004",
+                       "name":  "log.clear",
+                       "category":  "LOG",
+                       "path":  "LOG/BRIK-LOG-004_log.clear.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "1DE7BB01954D5B85790D772310380357A6AA7D3FD3D37DC1C47EC6FC365DA806",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.LogClearBrick.Clear",
+                                        "inputs":  [
+
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-MATH-001",
+                       "name":  "math.is_all_digits",
+                       "category":  "MATH",
+                       "path":  "MATH/BRIK-MATH-001_math.is_all_digits.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "4D9B98B20EF3CA81AC77F2CE58559CF763E725AFF7AB8B33F0B43273A2670D60",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.MathIsAllDigitsBrick.IsAllDigits",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "text",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-MATH-002",
+                       "name":  "math.format_size",
+                       "category":  "MATH",
+                       "path":  "MATH/BRIK-MATH-002_math.format_size.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "B9E8A0716A08C4E91CE6CA40438502E42D634B0F48FB2258A09637B0A0BFC13A",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.MathFormatSizeBrick.FormatSize",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "bytes",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "formatted",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-MATH-003",
+                       "name":  "math.result_preview",
+                       "category":  "MATH",
+                       "path":  "MATH/BRIK-MATH-003_math.result_preview.cs",
+                       "dependencies":  [
+                                            "math.format_size"
+                                        ],
+                       "checksum":  "A8D1AAE8A9C1ADE7C6339B54991C1918D5377CA5B4E69CF1C169729E36EF232B",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.MathResultPreviewBrick.ResultPreview",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "result",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "preview",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OA-001",
+                       "name":  "oa.post",
+                       "category":  "OA",
+                       "path":  "OA/BRIK-OA-001_oa.post.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "8EF2A9287BD68972C6B80EE63D24EA11A0CFF0661D5E72011A19725B6153B448",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.OaPostBrick.Post",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "dogId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "officeType",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "officeName",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "timeoutTicks",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "officeId",
+                                                            "type":  "long"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OA-002",
+                       "name":  "oa.list",
+                       "category":  "OA",
+                       "path":  "OA/BRIK-OA-002_oa.list.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "04B3045B0A4C2BE9DAD5492A9F16D691F32A27CA26E92030B1E1FD03FFC4F1A0",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.OaListBrick.List",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeType",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "officeNames",
+                                                           "type":  "string[]"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "offices",
+                                                            "type":  "Office[]"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OA-003",
+                       "name":  "oa.claim",
+                       "category":  "OA",
+                       "path":  "OA/BRIK-OA-003_oa.claim.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "5E137CA6AF8CA2B727B8B86BAB598AF66558C67877FE9584993E823C14898081",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.OaClaimBrick.Claim",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "catId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "officeIds",
+                                                           "type":  "long[]"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "claimed",
+                                                            "type":  "Office[]"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OA-004",
+                       "name":  "oa.complete",
+                       "category":  "OA",
+                       "path":  "OA/BRIK-OA-004_oa.complete.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "BD5BBAABF48ABC1F79053B9E3A42B81D70C7948DC9AE15E0D00516DD805EFCC0",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.OaCompleteBrick.Complete",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "catId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "result",
+                                                           "type":  "OfficeData"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OA-005",
+                       "name":  "oa.settle",
+                       "category":  "OA",
+                       "path":  "OA/BRIK-OA-005_oa.settle.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "3A7915D4F382D5CCAE5CB6336C65B2AF6544992FDEC756D8BBA360F7B25218F5",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.OaSettleBrick.Settle",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "catId",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OA-006",
+                       "name":  "oa.set_int",
+                       "category":  "OA",
+                       "path":  "OA/BRIK-OA-006_oa.set_int.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "D99723F9C37456C420522B14890C0C1189B2CA1E746449A5DA7E355451E2A1A2",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.OaSetIntBrick.SetInt",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "dogId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "key",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "value",
+                                                           "type":  "int"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OA-007",
+                       "name":  "oa.set_str",
+                       "category":  "OA",
+                       "path":  "OA/BRIK-OA-007_oa.set_str.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "5C602B968E02BB694AF30BF433DC16DAC4E33E6512784808C7DD7CF9E95AB6D6",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.OaSetStrBrick.SetStr",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "dogId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "key",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "value",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OA-008",
+                       "name":  "oa.get_int",
+                       "category":  "OA",
+                       "path":  "OA/BRIK-OA-008_oa.get_int.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "57104BC28B5D530D2F8B737C3F1E255C9BF08746CC7A3B70AF3EC6804A7BFDC4",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.OaGetIntBrick.GetInt",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "key",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "value",
+                                                            "type":  "int"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OA-009",
+                       "name":  "oa.get_str",
+                       "category":  "OA",
+                       "path":  "OA/BRIK-OA-009_oa.get_str.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "2E0ECBBB5AB65190380E76BD53E306C7B674FF64605C9CF8D21278BC931A3F75",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.OaGetStrBrick.GetStr",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "key",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "value",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OA-010",
+                       "name":  "oa.claim_one",
+                       "category":  "OA",
+                       "path":  "OA/BRIK-OA-010_oa.claim_one.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "B17344E94B821DDD6F5FFB2A2B4170AA38232BAE4CCBDF495624916043D0ABF2",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.OaClaimOneBrick.ClaimOne",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "catId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "claimed",
+                                                            "type":  "Office"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OA-011",
+                       "name":  "oa.is_closed",
+                       "category":  "OA",
+                       "path":  "OA/BRIK-OA-011_oa.is_closed.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "C4BA980F961DC59DCEDBBB5FFBE5AA74F61E2696BCB1D7DE3069F217D112C9F7",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.OaIsClosedBrick.IsClosed",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "closed",
+                                                            "type":  "bool"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OFFICE-001",
+                       "name":  "excel.read",
+                       "category":  "OFFICE",
+                       "path":  "OFFICE/BRIK-OFFICE-001_excel.read.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "A816496BCA4BA408A0155A838D4097FB2FEECB15106A045A38D0ABFCB8FC1C9A",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ExcelReadBrick.Read",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "path",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "sheet",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "format",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "content",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OFFICE-002",
+                       "name":  "excel.write",
+                       "category":  "OFFICE",
+                       "path":  "OFFICE/BRIK-OFFICE-002_excel.write.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "22609EC260B683323E36CE087A13E0E700BAC841FC57A6C8B173A9F799EBC0FF",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ExcelWriteBrick.Write",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "path",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "content",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "sheet",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "result",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OFFICE-003",
+                       "name":  "docx.read",
+                       "category":  "OFFICE",
+                       "path":  "OFFICE/BRIK-OFFICE-003_docx.read.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "2266320CC6F586BD2A7E678C1AE99D96CF7E8FC90481C939EDAAEC58AA203507",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.DocxReadBrick.Read",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "path",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "content",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-OFFICE-004",
+                       "name":  "docx.write",
+                       "category":  "OFFICE",
+                       "path":  "OFFICE/BRIK-OFFICE-004_docx.write.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "E7B630ED43BBDA48B17F24C57B9DAA06A0BCC6ED2BFA8A0E58753B4822100EE6",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.DocxWriteBrick.Write",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "path",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "content",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "result",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-SHELL-001",
+                       "name":  "shell.exec",
+                       "category":  "SHELL",
+                       "path":  "SHELL/BRIK-SHELL-001_shell.exec.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "C98C10EE8A352D3A77F3DD2BC3DDA1352F4EBC748DD83DA7BA2FF593DD713AAD",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ShellExecBrick.Exec",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "command",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "timeoutSeconds",
+                                                           "type":  "int"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "output",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TEXT-001",
+                       "name":  "text.md_parse",
+                       "category":  "TEXT",
+                       "path":  "TEXT/BRIK-TEXT-001_text.md_parse.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "F9749DF61FA015C1AFECEF2644E3629FBF55DB887A5791A72B6F79DC51260B94",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.TextMdParseBrick.MdParse",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "markdown",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "parts",
+                                                            "type":  "List`1"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TOOL-001",
+                       "name":  "tool.exec",
+                       "category":  "TOOL",
+                       "path":  "TOOL/BRIK-TOOL-001_tool.exec.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "D0DACE3241F7D961E47F026EABC4234D4179E556AFA0F851B726B905C67A5018",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ToolExecBrick.Exec",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "toolName",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "args",
+                                                           "type":  "string[]"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "resultTexts",
+                                                            "type":  "string[]"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "worker"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TOOL-002",
+                       "name":  "tool.dispatch_next",
+                       "category":  "TOOL",
+                       "path":  "TOOL/BRIK-TOOL-002_tool.dispatch_next.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "A83173E8F405A24C9DF769097DDF10EFE330A1081E66BBDA5304D3C49228275E",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ToolDispatchNextBrick.DispatchNext",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "toolCallsJson",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "sessionKey",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "dogId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "timeoutTicks",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "officeId",
+                                                            "type":  "long"
+                                                        },
+                                                        {
+                                                            "name":  "toolName",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TOOL-003",
+                       "name":  "tool.claim_next",
+                       "category":  "TOOL",
+                       "path":  "TOOL/BRIK-TOOL-003_tool.claim_next.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "7C060E8D9BFCA3ED31A4B1827C66D0B64FC9394A7CCC99EEDF6F9EDD1A053F09",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ToolClaimNextBrick.ClaimNext",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "catId",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "officeId",
+                                                            "type":  "long"
+                                                        },
+                                                        {
+                                                            "name":  "toolName",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TOOL-004",
+                       "name":  "tool.collect_one",
+                       "category":  "TOOL",
+                       "path":  "TOOL/BRIK-TOOL-004_tool.collect_one.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "79F3D245F2BAB411D3DE20E92792D5F9981AA0B243BECC003AC976F6AE2D5708",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ToolCollectOneBrick.CollectOne",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "callId",
+                                                            "type":  "string"
+                                                        },
+                                                        {
+                                                            "name":  "content",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TOOL-005",
+                       "name":  "tool.is_name",
+                       "category":  "TOOL",
+                       "path":  "TOOL/BRIK-TOOL-005_tool.is_name.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "24368513815FDE97FB34A44AD479222998438CFB7E355C9717134503FA5D233D",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ToolIsNameBrick.IsName",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "target",
+                                                           "type":  "string"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "matched",
+                                                            "type":  "bool"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TOOL-006",
+                       "name":  "tool.run_file_read",
+                       "category":  "TOOL",
+                       "path":  "TOOL/BRIK-TOOL-006_tool.run_file_read.cs",
+                       "dependencies":  [
+                                            "file.read"
+                                        ],
+                       "checksum":  "D18BEBB97A60AB6A6509994E27B6C6B3C9312D3F8879013BFD852F4CF2DFCEA8",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ToolRunFileReadBrick.RunFileRead",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "catId",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "result",
+                                                            "type":  "string"
+                                                        },
+                                                        {
+                                                            "name":  "callId",
+                                                            "type":  "string"
+                                                        },
+                                                        {
+                                                            "name":  "session",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TOOL-007",
+                       "name":  "tool.run_file_write",
+                       "category":  "TOOL",
+                       "path":  "TOOL/BRIK-TOOL-007_tool.run_file_write.cs",
+                       "dependencies":  [
+                                            "file.write"
+                                        ],
+                       "checksum":  "9DC9C5CEB131ACF816DCB5710D177988710E1DC465EF7A198C8ECE906B6411F6",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ToolRunFileWriteBrick.RunFileWrite",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "catId",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "result",
+                                                            "type":  "string"
+                                                        },
+                                                        {
+                                                            "name":  "callId",
+                                                            "type":  "string"
+                                                        },
+                                                        {
+                                                            "name":  "session",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TOOL-008",
+                       "name":  "tool.run_shell_exec",
+                       "category":  "TOOL",
+                       "path":  "TOOL/BRIK-TOOL-008_tool.run_shell_exec.cs",
+                       "dependencies":  [
+                                            "shell.exec"
+                                        ],
+                       "checksum":  "FE988ED6ACFF0DA7BD59FC0F9FA54E2892FA74BDE449D50FDC3907656E24DE02",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ToolRunShellExecBrick.RunShellExec",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "catId",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "result",
+                                                            "type":  "string"
+                                                        },
+                                                        {
+                                                            "name":  "callId",
+                                                            "type":  "string"
+                                                        },
+                                                        {
+                                                            "name":  "session",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TOOL-009",
+                       "name":  "tool.dispatch_one",
+                       "category":  "TOOL",
+                       "path":  "TOOL/BRIK-TOOL-009_tool.dispatch_one.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "57AE9F8998C5E262D5D4314BDF64F777A2FAC67409C9E06C81F3E13BBAE02294",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ToolDispatchOneBrick.DispatchOne",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "toolCallsJson",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "index",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "dogId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "timeoutTicks",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "officeId",
+                                                            "type":  "long"
+                                                        },
+                                                        {
+                                                            "name":  "toolName",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TOOL-010",
+                       "name":  "tool.dispatch",
+                       "category":  "TOOL",
+                       "path":  "TOOL/BRIK-TOOL-010_tool.dispatch.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "A8AE64314E3BC29D25E173E1674E676CF01CAE17FFEE35270068CA6EE694BADB",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ToolDispatchBrick.Dispatch",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "toolCallsJson",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "dogId",
+                                                           "type":  "long"
+                                                       },
+                                                       {
+                                                           "name":  "timeoutTicks",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "officeIds",
+                                                            "type":  "long[]"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TOOL-011",
+                       "name":  "tool.collect",
+                       "category":  "TOOL",
+                       "path":  "TOOL/BRIK-TOOL-011_tool.collect.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "DC74627BCB4A0987BD675632C56AD13A9373E1C9C8B9690FCC0A3D10402965E0",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ToolCollectBrick.Collect",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "officeIds",
+                                                           "type":  "long[]"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "toolCallsJson",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TEST-001",
+                       "name":  "probe.source",
+                       "category":  "TEST",
+                       "path":  "TEST/BRIK-TEST-001_probe.source.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "FBEAA28D371E0B2C2ECEC7F8454E91750A57A075AB54422FF811A269AD58A50E",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ProbeSourceBrick.Source",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "ownerId",
+                                                           "type":  "long"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "text",
+                                                            "type":  "string"
+                                                        },
+                                                        {
+                                                            "name":  "texts",
+                                                            "type":  "string[]"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   },
+                   {
+                       "id":  "BRIK-TEST-002",
+                       "name":  "probe.sink",
+                       "category":  "TEST",
+                       "path":  "TEST/BRIK-TEST-002_probe.sink.cs",
+                       "dependencies":  [
+
+                                        ],
+                       "checksum":  "70C58391B3EF6848F0C99AE941C1E0B74400625715F19A27777595DBDC6D3DC0",
+                       "contract":  {
+                                        "implementation":  "Mau.Bricks.ProbeSinkBrick.Sink",
+                                        "inputs":  [
+                                                       {
+                                                           "name":  "a",
+                                                           "type":  "string"
+                                                       },
+                                                       {
+                                                           "name":  "b",
+                                                           "type":  "int"
+                                                       }
+                                                   ],
+                                        "outputs":  [
+                                                        {
+                                                            "name":  "result",
+                                                            "type":  "string"
+                                                        }
+                                                    ],
+                                        "return":  "Bool",
+                                        "duration":  "Sync",
+                                        "thread":  "main"
+                                    }
+                   }
+               ]
+}

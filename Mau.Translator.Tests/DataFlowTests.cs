@@ -17,29 +17,7 @@ namespace Mau.Translator.Tests
     /// </summary>
     public class DataFlowTests
     {
-        /// <summary>
-        /// 确保探针积木注册——幂等
-        /// </summary>
-        private static void EnsureProbeBricks()
-        {
-            BrickRegistry.EnsureRegistered("probe.sink", delegate
-            {
-                BrickContract source = new BrickContract("probe.source", "Probe.Source");
-                source.Inputs.Add(new BrickPort("ownerId", typeof(long), "所有者"));
-                source.Outputs.Add(new BrickPort("text", typeof(string), "主值文本"));
-                source.Outputs.Add(new BrickPort("texts", typeof(string[]), "完整数组"));
-                source.Return = BrickReturnKind.Bool;
-                BrickRegistry.Register(source);
-
-                BrickContract sink = new BrickContract("probe.sink", "Probe.Sink");
-                sink.Inputs.Add(new BrickPort("a", typeof(string), "文本输入"));
-                sink.Inputs.Add(new BrickPort("b", typeof(int), "整数输入"));
-                sink.Outputs.Add(new BrickPort("result", typeof(string), "结果"));
-                sink.Return = BrickReturnKind.Bool;
-                BrickRegistry.Register(sink);
-            });
-        }
-
+        
         /// <summary>
         /// 箭头绑定解析——变量 → 端口 分离存储
         /// </summary>
@@ -68,7 +46,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void ValidateArrowBinding_CompleteBindings_Passes()
         {
-            EnsureProbeBricks();
+            TestBrickRegistration.Ensure();
             string source = "Mau 0.1\n" +
                 "命题:\n  P_S 信号\n  P_D 事实\n  P_F 事实\n" +
                 "变迁 T_A:\n  前置: P_S\n  动作: probe.source\n  参数: ownerId\n  后置: P_D / P_F\n" +
@@ -85,7 +63,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void ValidateArrowBinding_UnknownVariable_ReportsE015()
         {
-            EnsureProbeBricks();
+            TestBrickRegistration.Ensure();
             string source = "Mau 0.1\n" +
                 "命题:\n  P_S 信号\n  P_D 事实\n  P_F 事实\n" +
                 "变迁 T_A:\n  前置: P_S\n  动作: probe.source\n  参数: ownerId\n  后置: P_D / P_F\n" +
@@ -102,7 +80,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void ValidateArrowBinding_TypeMismatch_ReportsE016()
         {
-            EnsureProbeBricks();
+            TestBrickRegistration.Ensure();
             string source = "Mau 0.1\n" +
                 "命题:\n  P_S 信号\n  P_D 事实\n  P_F 事实\n" +
                 "变迁 T_A:\n  前置: P_S\n  动作: probe.source\n  参数: ownerId\n  后置: P_D / P_F\n" +
@@ -119,7 +97,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void ValidateArrowBinding_MissingInput_ReportsE017()
         {
-            EnsureProbeBricks();
+            TestBrickRegistration.Ensure();
             string source = "Mau 0.1\n" +
                 "命题:\n  P_S 信号\n  P_D 事实\n  P_F 事实\n" +
                 "变迁 T_A:\n  前置: P_S\n  动作: probe.source\n  参数: ownerId\n  后置: P_D / P_F\n" +
@@ -172,7 +150,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void GenerateArrowBinding_SourceFieldAndFireShorthand()
         {
-            EnsureProbeBricks();
+            TestBrickRegistration.Ensure();
             string source = "Mau 0.1\n" +
                 "命题:\n  P_S 信号\n  P_D 事实\n  P_F 事实\n" +
                 "变迁 T_A:\n  前置: P_S\n  动作: probe.source\n  参数: ownerId\n  后置: P_D / P_F\n" +
@@ -194,7 +172,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void GenerateIdleTimeout_TouchOnSuccess()
         {
-            EnsureProbeBricks();
+            TestBrickRegistration.Ensure();
             string source = "Mau 0.1\n" +
                 "命题:\n  P_S 信号\n  P_D 事实\n  P_F 事实\n" +
                 "变迁 T_A:\n  前置: P_S\n  动作: probe.source\n  参数: ownerId\n  时限: 空闲60帧\n  后置: P_D / P_F\n";
@@ -235,7 +213,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void GenerateConstantBinding_LiteralInCall()
         {
-            EnsureProbeBricks();
+            TestBrickRegistration.Ensure();
             string source = "Mau 0.1\n" +
                 "命题:\n  P_S 信号\n  P_D 事实\n  P_F 事实\n" +
                 "变迁 T_X:\n  前置: P_S\n  动作: probe.sink\n  参数: \"file.read\" → a, 5 → b\n  后置: P_D / P_F\n";
@@ -255,7 +233,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void ValidateConstantBinding_TypeMismatch_ReportsE018()
         {
-            EnsureProbeBricks();
+            TestBrickRegistration.Ensure();
             string source = "Mau 0.1\n" +
                 "命题:\n  P_S 信号\n  P_D 事实\n  P_F 事实\n" +
                 "变迁 T_X:\n  前置: P_S\n  动作: probe.sink\n  参数: \"abc\" → b, \"file.read\" → a\n  后置: P_D / P_F\n";

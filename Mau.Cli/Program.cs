@@ -19,24 +19,7 @@ namespace Mau.Cli
         /// <returns>退出码——0 成功，非 0 失败</returns>
         public static int Main(string[] args)
         {
-            // [段1] 注册标准积木——编译期注册表
-            Mau.Bricks.StandardBrickRegistration.RegisterAll();
-            Mau.Bricks.MathBrickRegistration.RegisterAll();
-            Mau.Bricks.DataBrickRegistration.RegisterAll();
-            Mau.Bricks.BoxBrickRegistration.RegisterAll();
-            Mau.Bricks.TextBrickRegistration.RegisterAll();
-            Mau.Bricks.ShellBrickRegistration.RegisterAll();
-            Mau.Bricks.ShellToolBrickRegistration.RegisterAll();
-            Mau.Bricks.LlmBrickRegistration.RegisterAll();
-            Mau.Bricks.ContextBrickRegistration.RegisterAll();
-            Mau.Bricks.ApprovalBrickRegistration.RegisterAll();
-            Mau.Bricks.ExcelBrickRegistration.RegisterAll();
-            Mau.Bricks.DocxBrickRegistration.RegisterAll();
-            Mau.Bricks.LogBrickRegistration.RegisterAll();
-            Mau.Bricks.OaBrickRegistration.RegisterAll();
-            Mau.Bricks.ToolBrickRegistration.RegisterAll();
-
-            // [段2] 命令路由
+            // [段1] 命令路由（积木注册表已退役——翻译器构筑期经 BrickIndex 查询 Bricks/index.json）
             if (args.Length == 0)
             {
                 Console.WriteLine("Mau Translator v0.1");
