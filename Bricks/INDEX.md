@@ -23,6 +23,14 @@
 | BRIK-DATA-004 | data.box_get | DATA | DATA/BRIK-DATA-004_data.box_get.cs | 无 | active |  |
 | BRIK-DATA-005 | data.box_set_dic | DATA | DATA/BRIK-DATA-005_data.box_set_dic.cs | 无 | active |  |
 | BRIK-DATA-006 | data.box_get_dic | DATA | DATA/BRIK-DATA-006_data.box_get_dic.cs | 无 | active |  |
+| BRIK-DOG-001 | dog.create | DOG | DOG/BRIK-DOG-001_dog.create.cs | 无 | active |  |
+| BRIK-DOG-002 | dog.set_int | DOG | DOG/BRIK-DOG-002_dog.set_int.cs | 无 | active |  |
+| BRIK-DOG-003 | dog.set_str | DOG | DOG/BRIK-DOG-003_dog.set_str.cs | 无 | active |  |
+| BRIK-DOG-004 | dog.is_closed | DOG | DOG/BRIK-DOG-004_dog.is_closed.cs | 无 | active |  |
+| BRIK-DOG-005 | dog.is_timeout | DOG | DOG/BRIK-DOG-005_dog.is_timeout.cs | 无 | active |  |
+| BRIK-DOG-006 | dog.get_int | DOG | DOG/BRIK-DOG-006_dog.get_int.cs | 无 | active |  |
+| BRIK-DOG-007 | dog.get_str | DOG | DOG/BRIK-DOG-007_dog.get_str.cs | 无 | active |  |
+| BRIK-DOG-008 | dog.finish | DOG | DOG/BRIK-DOG-008_dog.finish.cs | 无 | active |  |
 | BRIK-FILE-001 | file.convert | FILE | FILE/BRIK-FILE-001_file.convert.cs | 无 | active |  |
 | BRIK-FILE-002 | file.read | FILE | FILE/BRIK-FILE-002_file.read.cs | 无 | active |  |
 | BRIK-FILE-003 | file.write | FILE | FILE/BRIK-FILE-003_file.write.cs | 无 | active |  |

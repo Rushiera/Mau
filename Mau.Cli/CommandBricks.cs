@@ -141,7 +141,7 @@ namespace Mau.Cli
             string catalogDir = Path.Combine(root, "Bricks");
             string[] dirs = new string[]
             {
-                "APPROVAL", "CMD", "DATA", "FILE", "LLM", "LOG", "MATH",
+                "APPROVAL", "CMD", "DATA", "DOG", "FILE", "LLM", "LOG", "MATH",
                 "OA", "OFFICE", "SHELL", "TEST", "TEXT", "TOOL"
             };
             int resealed = 0;
@@ -246,7 +246,7 @@ namespace Mau.Cli
             List<BrickIndexEntry> entries = new List<BrickIndexEntry>();
             string[] dirs = new string[]
             {
-                "APPROVAL", "CMD", "DATA", "FILE", "LLM", "LOG", "MATH",
+                "APPROVAL", "CMD", "DATA", "DOG", "FILE", "LLM", "LOG", "MATH",
                 "OA", "OFFICE", "SHELL", "TEST", "TEXT", "TOOL"
             };
             for (int d = 0; d < dirs.Length; d++)

@@ -35,6 +35,11 @@ namespace Mau.Runtime
         private readonly Dictionary<long, string> _typeNames = new Dictionary<long, string>();
 
         /// <summary>
+        /// 种类名册——ID 到种类（dog/pet/flow——is 推断）
+        /// </summary>
+        private readonly Dictionary<long, string> _kinds = new Dictionary<long, string>();
+
+        /// <summary>
         /// 类型工厂表——类型键 → 实例工厂（基座按参数生成实体的通道）
         /// </summary>
         private readonly Dictionary<string, Func<IFlow>> _factories = new Dictionary<string, Func<IFlow>>(StringComparer.Ordinal);
@@ -80,6 +85,7 @@ namespace Mau.Runtime
             _flows[id] = flow;
             _names[id] = name;
             _typeNames[id] = flow.GetType().Name;
+            _kinds[id] = ClassifyKind(flow);
             return id;
         }
 
@@ -98,6 +104,7 @@ namespace Mau.Runtime
             _flows.Remove(id);
             _names.Remove(id);
             _typeNames.Remove(id);
+            _kinds.Remove(id);
             return true;
         }
 
@@ -177,6 +184,24 @@ namespace Mau.Runtime
         }
 
         /// <summary>
+        /// 种类分类——is IDog → dog；is IPet → pet；其余 flow
+        /// </summary>
+        /// <param name="flow">Flow 实例</param>
+        /// <returns>种类名</returns>
+        private static string ClassifyKind(IFlow flow)
+        {
+            if (flow is IDog)
+            {
+                return "dog";
+            }
+            if (flow is IPet)
+            {
+                return "pet";
+            }
+            return "flow";
+        }
+
+        /// <summary>
         /// 已注册工厂数量
         /// </summary>
         public int FactoryCount
@@ -226,6 +251,11 @@ namespace Mau.Runtime
                     {
                         entry.TypeName = typeName;
                     }
+                    string? kind;
+                    if (_kinds.TryGetValue(ids[i], out kind) && kind != null)
+                    {
+                        entry.Kind = kind;
+                    }
                     entries[i] = entry;
                 }
                 return entries;
@@ -253,6 +283,7 @@ namespace Mau.Runtime
             _flows.Clear();
             _names.Clear();
             _typeNames.Clear();
+            _kinds.Clear();
         }
     }
 
@@ -275,5 +306,10 @@ namespace Mau.Runtime
         /// 实现类型名
         /// </summary>
         public string TypeName = null!;
+
+        /// <summary>
+        /// 种类——dog/pet/flow（is 推断）
+        /// </summary>
+        public string Kind = "flow";
     }
 }
