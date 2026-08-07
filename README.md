@@ -1,8 +1,10 @@
-# Mau
+﻿# Mau
 
 > 埃及语"猫"（mau/mjw）。古埃及太阳神 Ra 亦被称为"伟大的猫 Mau"。
 
 **Mau** 是一门架在 .NET 8 之上的声明式方言环境——把程序逻辑的定义权从框架转移到语句，由约定协议规定程序最顶层的设计和时序关系。
+
+> 版本：v0.55 | 更新：2026-08-07（审查修复 v0.54 + 防护定性 v0.55）
 
 ---
 
@@ -29,9 +31,11 @@
 |:--|:--|:--|
 | `Mau.exe` | `Mau.Cli/` | 唯一工具集——翻译 / 构筑 / 测试 / 检测（verify / gen / build / test / check / bricks / serve ...） |
 | `MauRuntime` | `Mau.Runtime/` | 基座 lib——机制（Cube/OA/Command/FlowALC/Inbox/ThreadGuard）+ **DataBox 中台**（BRIK 唯一数据协议）+ 程序级服务 |
-| `Bricks/` | 仓库根 | **文本资产库**——84 积木（BRIK-{ID}_{name}.cs，单文件 + 文件头八字段 + SHA256 校验尾）+ index.json（契约/闭包/checksum 索引） |
+| `Bricks/` | 仓库根 | **文本资产库**——84 积木（BRIK-{ID}_{name}.cs，单文件 + 文件头十字段 + SHA256 校验尾）+ index.json v3（**源码驱动**契约索引） |
 
 **构筑闭环：** `.mau` → Mau.exe（BrickIndex 查索引 → 闭包收集 → 校验尾验证 → BRIK-ID 重命名 → BRIKGROUP 内嵌）→ Roslyn Emit → 自包含 dll。组模式多语料共享 BRIKGROUP。
+
+**索引闭环（唯一寻路）：** `Bricks/{类别}/*.cs`（文件头十字段 + 静态方法签名 = 契约唯一真相源）→ `mau bricks index --update`（Roslyn 提取 inputs/outputs/return + 文件头时长/线程）→ index.json v3 + INDEX.md → 翻译器 / bricks 命令 / check 积木谱全部经 BrickIndex 查询——不存在第二条积木寻路。
 
 ---
 
@@ -55,6 +59,10 @@
 
 **所有 BRIK 的共享状态/服务必须经 DataBox（Bind/Resolve + scope 存储 + Capture），禁止绕过中台直连。** 严格封装——BRIK 只见 API。SUPPORT 类目已消亡：契约类型入 Mau.Runtime、状态表走 DataBox scope、纯辅助内联或程序级。
 
+### 纲领五：包依赖红线
+
+**Mau 是 .NET 生态的方言层——产物 = dll，运行 = Mau.exe（依赖 .NET 环境），SDK 本身就是生态集合（Roslyn 是独立开源包但即 .NET 一部分，Mau 同理）。** 依赖一切 NuGet 生态可拉取、来源稳定、质量合格的包（ClosedXML/OpenXml/Roslyn 全部直引）——**直接引用，不设中间层**。唯一禁区：**拉不到的包（私有闭源/手工分发/来源不明）一律禁止进入 Bricks 依赖**。不做"自包含闭合第三方包"式工程——那是对 .NET 生态的重复劳动。
+
 ---
 
 ## 五逻辑单元
@@ -73,7 +81,7 @@
 
 | 项目 | 定位 |
 |:--|:--|
-| `Bricks/` | 文本资产库——84 积木 + index.json（复制即单包） |
+| `Bricks/` | 文本资产库——84 积木（十字段 + 校验尾）+ index.json v3（源码驱动） |
 | `Mau.Runtime` | 基座——机制 + DataBox 中台 + 程序级服务（FileSystemService/LlmBridge/LogStore 等） |
 | `Mau.Contracts` | 契约类型——BrickContract/端口/导出属性 |
 | `Mau.Translator` | 翻译器——解析→IR→静态验证→生成（BrickIndex/BrickEmbedder/CompileGroup） |
@@ -175,8 +183,16 @@ dotnet run --project Mau.Cli gen <file.mau>
 # 构筑（单文件 / 组 mauproj）
 dotnet run --project Mau.Cli build <file.mau|组.mauproj> -o <dir>
 
-# 积木索引查询
+# 积木索引——查询 / 源码重建 / 一致性校验（V1-V9）
 dotnet run --project Mau.Cli bricks list
+dotnet run --project Mau.Cli bricks index --update
+dotnet run --project Mau.Cli bricks index --verify
+
+# 独立部署 + 发布后冒烟
+dotnet run --project Mau.Cli publish -o <dir>
+
+# 黄金文件校验尾更新（翻译器变更重建黄金后必跑）
+dotnet run --project Mau.Cli checksum --update
 ```
 
 > 完整命令见 `mau-usage.md`（CCBP 知识网络：`Data/CatCatBigParty/Project/Mau/mau-usage.md`）。

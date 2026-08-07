@@ -84,7 +84,7 @@ namespace Mau.Cli
             }
             if (args.Length == 0)
             {
-                Console.WriteLine("用法: mau bricks list | mau bricks index --verify | mau bricks index --update | mau bricks index --check-license | mau bricks test");
+                Console.WriteLine("用法: mau bricks list | mau bricks index --verify | mau bricks index --update | mau bricks index --check-license | mau bricks test | mau bricks reseal");
                 return 1;
             }
             string sub = args[0];
@@ -118,8 +118,106 @@ namespace Mau.Cli
             {
                 return RunGlobalTest();
             }
+            if (sub == "reseal")
+            {
+                return ResealAll();
+            }
             Console.WriteLine("未知 bricks 子命令: " + sub);
             return 1;
+        }
+
+        /// <summary>
+        /// 重算全部积木文件 SHA256 校验尾——文件头/实现变更后调用（工具链全 C#：不依赖外部脚本）
+        /// </summary>
+        /// <returns>退出码</returns>
+        public static int ResealAll()
+        {
+            string? root = FindWorkspaceRoot();
+            if (root == null)
+            {
+                Console.WriteLine("FAIL: 未找到 Mau.sln");
+                return 1;
+            }
+            string catalogDir = Path.Combine(root, "Bricks");
+            string[] dirs = new string[]
+            {
+                "APPROVAL", "CMD", "DATA", "FILE", "LLM", "LOG", "MATH",
+                "OA", "OFFICE", "SHELL", "TEST", "TEXT", "TOOL"
+            };
+            int resealed = 0;
+            for (int d = 0; d < dirs.Length; d++)
+            {
+                string dirPath = Path.Combine(catalogDir, dirs[d]);
+                if (!Directory.Exists(dirPath))
+                {
+                    continue;
+                }
+                string[] files = Directory.GetFiles(dirPath, "*.cs");
+                for (int f = 0; f < files.Length; f++)
+                {
+                    if (ResealOneFile(files[f]))
+                    {
+                        resealed = resealed + 1;
+                    }
+                }
+            }
+            Console.WriteLine("BRICKS_RESEAL_OK (" + resealed + " 文件校验尾已更新)");
+            return 0;
+        }
+
+        /// <summary>
+        /// 单文件重算校验尾——去旧校验尾行 → 计算正文 SHA256 → 追加新校验尾
+        /// </summary>
+        /// <param name="file">积木文件</param>
+        /// <returns>是否更新</returns>
+        private static bool ResealOneFile(string file)
+        {
+            try
+            {
+                string full = File.ReadAllText(file).Replace("\r\n", "\n");
+                string[] lines = full.Split('\n');
+                int bodyEnd = lines.Length;
+                while (bodyEnd > 0)
+                {
+                    string last = lines[bodyEnd - 1].Trim();
+                    if (last.Length == 0)
+                    {
+                        bodyEnd = bodyEnd - 1;
+                        continue;
+                    }
+                    if (last.StartsWith("// #MAU_CHECKSUM:SHA256:", StringComparison.Ordinal))
+                    {
+                        bodyEnd = bodyEnd - 1;
+                        continue;
+                    }
+                    break;
+                }
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < bodyEnd; i++)
+                {
+                    if (i > 0)
+                    {
+                        sb.Append('\n');
+                    }
+                    sb.Append(lines[i]);
+                }
+                string body = sb.ToString();
+                byte[] bytes = System.Text.Encoding.UTF8.GetBytes(body);
+                byte[] hash = System.Security.Cryptography.SHA256.HashData(bytes);
+                StringBuilder hex = new StringBuilder();
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    hex.Append(hash[i].ToString("X2"));
+                }
+                string content = body + "\n// #MAU_CHECKSUM:SHA256:" + hex.ToString() + "\n";
+                // 无 BOM 写入——与现有积木文件编码一致（带 BOM 会导致全部文件被标记修改）
+                File.WriteAllText(file, content, new UTF8Encoding(false));
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>
