@@ -1,4 +1,4 @@
-# 指令机制积木 — CMD
+﻿# 指令机制积木 — CMD
 
 > 类别码：CMD | ID 段：BRIK-CMD-### | 类别说明：指令总线机制积木——语料声明指令拓扑（注册 key / 消费邮件 / 投递指令），执行器由宿主注入
 
@@ -9,6 +9,11 @@
 | BRIK-CMD-003 | cmd.consume | Mau.Bricks.Standard/CmdBrick.cs | ✅ | 消费指令邮件——HasCommands=false=模板邮件（本轮无新指令） |
 | BRIK-CMD-004 | cmd.set | Mau.Bricks.Standard/CmdBrick.cs | ✅ | 投递指令——int 与 text 双轨（text 空=不写文本） |
 | BRIK-CMD-005 | cmd.clean | Mau.Bricks.Standard/CmdBrick.cs | ✅ | 清空模块残留指令 |
+| BRIK-CMD-006 | cmd.is_key | Mau.Bricks.Standard/CmdBrick.cs | ✅ | 指令分派判断——指令文本等于目标 key（返回=判断结果，M9） |
+
+---
+
+_版本：v1.1 | 2026-08-08 | +BRIK-CMD-006 is_key（生命周期指令分派——CH4 P3.5 指令闭环）_
 
 ---
 

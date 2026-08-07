@@ -16,6 +16,7 @@
 | BRIK-CMD-003 | cmd.consume | CMD | CMD/BRIK-CMD-003_cmd.consume.cs | 无 | active |  |
 | BRIK-CMD-004 | cmd.set | CMD | CMD/BRIK-CMD-004_cmd.set.cs | 无 | active |  |
 | BRIK-CMD-005 | cmd.clean | CMD | CMD/BRIK-CMD-005_cmd.clean.cs | 无 | active |  |
+| BRIK-CMD-006 | cmd.is_key | CMD | CMD/BRIK-CMD-006_cmd.is_key.cs | 无 | active |  |
 | BRIK-DATA-001 | data.snapshot_encode | DATA | DATA/BRIK-DATA-001_data.snapshot_encode.cs | 无 | active |  |
 | BRIK-DATA-002 | data.snapshot_decode | DATA | DATA/BRIK-DATA-002_data.snapshot_decode.cs | 无 | active |  |
 | BRIK-DATA-003 | data.box_set | DATA | DATA/BRIK-DATA-003_data.box_set.cs | 无 | active |  |
