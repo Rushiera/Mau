@@ -1231,7 +1231,7 @@ namespace Mau.Cli
                         return "编译失败: 未知";
                     }
                     string diagJoined = "";
-                    for (int d = 0; d < pocketResult.Diagnostics.Length && d < 3; d = d + 1)
+                    for (int d = 0; d < pocketResult.Diagnostics.Length && d < 10; d = d + 1)
                     {
                         if (d > 0)
                         {

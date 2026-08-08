@@ -1,30 +1,33 @@
 // ═══════════════════════════════════════════════════
-// 积木: csharp.compile
-// ID:   BRIK-CSHARP-001
+// 积木: csharp.line_insert
+// ID:   BRIK-CSHARP-008
 // 类别: CSHARP
-// 作用: 编译项目——默认仅返回错误/警告计数；full=true 返回完整诊断列表
+// 作用: 在方法内指定行后插入——afterLine=0=body 头（编译通过才写盘）
 // 依赖: 无
 // 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → GetDiagnostics(full)
-// 常用: CSharpCat 工具 Cat——编译验证（M2d.1 照搬 CH2 csharpcode_compile）
+// 原理: DataBox 解析 ICSharpBridge → LineInsert（行号越界保护）
+// 常用: CSharpCat 工具 Cat——行级插入（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
 
 namespace Mau.Bricks
 {
     /// <summary>
-    /// C# 积木——csharp.compile 项目编译（调度 ICSharpBridge）
+    /// C# 积木——csharp.line_insert 行插入（调度 ICSharpBridge）
     /// </summary>
-    public static class CSharpCompileBrick
+    public static class CSharpLineInsertBrick
     {
         /// <summary>
-        /// 编译项目——full=true 返回完整诊断
+        /// 在方法内指定行后插入——0=body 头
         /// </summary>
-        /// <param name="full">true=完整诊断</param>
+        /// <param name="className">类名</param>
+        /// <param name="methodName">方法名</param>
+        /// <param name="afterLine">插入位置（方法内行号，0=body头）</param>
+        /// <param name="newText">插入文本</param>
         /// <param name="result">结果 JSON</param>
         /// <returns>true=调用成功</returns>
-        public static bool Compile(bool full, out string result)
+        public static bool LineInsert(string className, string methodName, int afterLine, string newText, out string result)
         {
             result = "";
             Mau.Runtime.ICSharpBridge bridge;
@@ -34,9 +37,9 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.GetDiagnostics(full);
+            result = bridge.LineInsert(className, methodName, afterLine, newText == null ? "" : newText);
             return true;
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:067A25FA573A7CA9865E989BAF8D0FBB56EA8C76F285200C57059616CD61AFA6
+// #MAU_CHECKSUM:SHA256:30505146D5FE1F09F055AB2B927D65FD7CC173744375EAEA659529CE06EEF39E

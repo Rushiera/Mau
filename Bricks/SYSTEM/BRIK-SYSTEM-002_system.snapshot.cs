@@ -26,7 +26,7 @@ namespace Mau.Bricks
         /// <returns>true=成功</returns>
         public static bool Snapshot(out string snapshot)
         {
-            Mau.Runtime.FlowRunner? runner;
+            Mau.Runtime.FlowRunner runner;
             Mau.Runtime.DataBox.TryResolve<Mau.Runtime.FlowRunner>(out runner);
             if (runner == null)
             {
@@ -74,4 +74,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:17F0D8BC347C201812B46E45D7CC2AC284419F3F9CB1E935A08EA82AA98C972A
+// #MAU_CHECKSUM:SHA256:A99BE7CAF7AC64933AE2F45E7C01931920FBB6008DEF81B12BE346FFA5F37A0D

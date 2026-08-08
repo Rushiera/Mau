@@ -1,30 +1,32 @@
 // ═══════════════════════════════════════════════════
-// 积木: csharp.compile
-// ID:   BRIK-CSHARP-001
+// 积木: csharp.member_rename
+// ID:   BRIK-CSHARP-013
 // 类别: CSHARP
-// 作用: 编译项目——默认仅返回错误/警告计数；full=true 返回完整诊断列表
+// 作用: 重命名成员——全项目引用同步更新（含 using）；编译检查通过才写盘
 // 依赖: 无
 // 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → GetDiagnostics(full)
-// 常用: CSharpCat 工具 Cat——编译验证（M2d.1 照搬 CH2 csharpcode_compile）
+// 原理: DataBox 解析 ICSharpBridge → RenameMember（Renamer + 编译回滚）
+// 常用: CSharpCat 工具 Cat——重构重命名（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
 
 namespace Mau.Bricks
 {
     /// <summary>
-    /// C# 积木——csharp.compile 项目编译（调度 ICSharpBridge）
+    /// C# 积木——csharp.member_rename 重命名（调度 ICSharpBridge）
     /// </summary>
-    public static class CSharpCompileBrick
+    public static class CSharpMemberRenameBrick
     {
         /// <summary>
-        /// 编译项目——full=true 返回完整诊断
+        /// 重命名成员——全项目引用同步
         /// </summary>
-        /// <param name="full">true=完整诊断</param>
+        /// <param name="className">类名</param>
+        /// <param name="oldName">旧名</param>
+        /// <param name="newName">新名</param>
         /// <param name="result">结果 JSON</param>
         /// <returns>true=调用成功</returns>
-        public static bool Compile(bool full, out string result)
+        public static bool MemberRename(string className, string oldName, string newName, out string result)
         {
             result = "";
             Mau.Runtime.ICSharpBridge bridge;
@@ -34,9 +36,9 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.GetDiagnostics(full);
+            result = bridge.RenameMember(className, oldName, newName);
             return true;
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:067A25FA573A7CA9865E989BAF8D0FBB56EA8C76F285200C57059616CD61AFA6
+// #MAU_CHECKSUM:SHA256:A1025ECCBA1B6121D335BA7A2D9B2A261DC8E0DFB848A8C79A6C900AA77469F1

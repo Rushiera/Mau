@@ -1,30 +1,30 @@
 // ═══════════════════════════════════════════════════
-// 积木: csharp.compile
-// ID:   BRIK-CSHARP-001
+// 积木: csharp.list
+// ID:   BRIK-CSHARP-004
 // 类别: CSHARP
-// 作用: 编译项目——默认仅返回错误/警告计数；full=true 返回完整诊断列表
+// 作用: 列出类/成员签名——class 空=全项目类名；指定类=成员列表+注释摘要
 // 依赖: 无
 // 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → GetDiagnostics(full)
-// 常用: CSharpCat 工具 Cat——编译验证（M2d.1 照搬 CH2 csharpcode_compile）
+// 原理: DataBox 解析 ICSharpBridge → ListMembers(className)
+// 常用: CSharpCat 工具 Cat——结构浏览（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
 
 namespace Mau.Bricks
 {
     /// <summary>
-    /// C# 积木——csharp.compile 项目编译（调度 ICSharpBridge）
+    /// C# 积木——csharp.list 类/成员清单（调度 ICSharpBridge）
     /// </summary>
-    public static class CSharpCompileBrick
+    public static class CSharpListBrick
     {
         /// <summary>
-        /// 编译项目——full=true 返回完整诊断
+        /// 列出类/成员——class 空=全项目类名
         /// </summary>
-        /// <param name="full">true=完整诊断</param>
-        /// <param name="result">结果 JSON</param>
+        /// <param name="className">类名（空=全项目）</param>
+        /// <param name="result">清单文本</param>
         /// <returns>true=调用成功</returns>
-        public static bool Compile(bool full, out string result)
+        public static bool List(string className, out string result)
         {
             result = "";
             Mau.Runtime.ICSharpBridge bridge;
@@ -34,9 +34,9 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.GetDiagnostics(full);
+            result = bridge.ListMembers(className == null ? "" : className);
             return true;
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:067A25FA573A7CA9865E989BAF8D0FBB56EA8C76F285200C57059616CD61AFA6
+// #MAU_CHECKSUM:SHA256:81647E300216842552C2DA1C64C3EE4A2E78F127704CE29FE26DBAFB7E9F3CB7

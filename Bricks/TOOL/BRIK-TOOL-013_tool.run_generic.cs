@@ -514,8 +514,15 @@ namespace Mau.Bricks
             {
                 if (toolName == "csharp.compile")
                 {
+                    bool full = false;
+                    string rawFull;
+                    if (oa.GetStr(officeId, "args.full", out rawFull) && rawFull != null
+                        && bool.TryParse(rawFull, out full))
+                    {
+                        // 使用解析值
+                    }
                     string summary;
-                    if (!CSharpCompileBrick.Compile(Arg("source"), Arg("className"), out summary))
+                    if (!CSharpCompileBrick.Compile(full, out summary))
                     {
                         error = "ERR|CSHARP_COMPILE_FAILED|" + summary;
                         return false;
@@ -580,4 +587,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:6C9B2A6007C764F9DE5503CD15C0B260805F546261361D716C1DCF4BA9AA50E9
+// #MAU_CHECKSUM:SHA256:CE7D4A200D57E757DA8F55EC146F57A69146D027A823B8E11A70D612FD806EF5

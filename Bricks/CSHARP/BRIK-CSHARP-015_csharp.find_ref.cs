@@ -1,30 +1,31 @@
 // ═══════════════════════════════════════════════════
-// 积木: csharp.compile
-// ID:   BRIK-CSHARP-001
+// 积木: csharp.find_ref
+// ID:   BRIK-CSHARP-015
 // 类别: CSHARP
-// 作用: 编译项目——默认仅返回错误/警告计数；full=true 返回完整诊断列表
+// 作用: 查找成员的所有引用位置——返回文件+行号+引用行内容
 // 依赖: 无
 // 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → GetDiagnostics(full)
-// 常用: CSharpCat 工具 Cat——编译验证（M2d.1 照搬 CH2 csharpcode_compile）
+// 原理: DataBox 解析 ICSharpBridge → FindReferences（SymbolFinder 语义定位）
+// 常用: CSharpCat 工具 Cat——引用定位（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
 
 namespace Mau.Bricks
 {
     /// <summary>
-    /// C# 积木——csharp.compile 项目编译（调度 ICSharpBridge）
+    /// C# 积木——csharp.find_ref 引用查找（调度 ICSharpBridge）
     /// </summary>
-    public static class CSharpCompileBrick
+    public static class CSharpFindRefBrick
     {
         /// <summary>
-        /// 编译项目——full=true 返回完整诊断
+        /// 查找成员引用——文件+行号+文本
         /// </summary>
-        /// <param name="full">true=完整诊断</param>
+        /// <param name="className">类名</param>
+        /// <param name="memberName">成员名</param>
         /// <param name="result">结果 JSON</param>
         /// <returns>true=调用成功</returns>
-        public static bool Compile(bool full, out string result)
+        public static bool FindRef(string className, string memberName, out string result)
         {
             result = "";
             Mau.Runtime.ICSharpBridge bridge;
@@ -34,9 +35,9 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.GetDiagnostics(full);
+            result = bridge.FindReferences(className, memberName == null ? "" : memberName);
             return true;
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:067A25FA573A7CA9865E989BAF8D0FBB56EA8C76F285200C57059616CD61AFA6
+// #MAU_CHECKSUM:SHA256:E8815058AB066D20C43BDDF965AC6033218DF566970F712F963DC4C6D5C776B1
