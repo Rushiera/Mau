@@ -3,10 +3,10 @@
 // ID:   BRIK-TOOL-013
 // 类别: TOOL
 // 作用: 通用工具适配器——按 domain + toolName 路由到域积木执行，result/error 回执 + Complete
-// 依赖: file.read, file.write, file.append, file.replace, file.read_lines, file.tree, file.find, file.move, file.delete, file.convert, file.batch, shell.exec, excel.read, excel.write, docx.read, docx.write
+// 依赖: file.read, file.write, file.append, file.replace, file.read_lines, file.tree, file.find, file.move, file.delete, file.convert, file.batch, shell.exec, excel.read, excel.write, docx.read, docx.write, system.info, system.snapshot, system.env, math.random_int, csharp.compile, mau.build
 // 引用: Mau.Runtime
 // 原理: 读单（toolName=OfficeName + args.* 展平载荷）→ 域路由表 → 域积木执行 → result/error 回执 → Complete
-// 常用: 工具 Cat 语料统一执行动作（M2b：FileCat 接单 → run_generic("file") → 自动回执；M2c：+office 域 excel/docx）
+// 常用: 工具 Cat 语料统一执行动作（M2b：FileCat 接单 → run_generic("file") → 自动回执；M2c：+office/system/csharp/mau 域）
 // ═══════════════════════════════════════════════════
 using Mau.Runtime;
 
@@ -63,6 +63,18 @@ namespace Mau.Bricks
             else if (domain == "office")
             {
                 ok = RunOfficeTool(oa, officeId, toolName, out result, out error);
+            }
+            else if (domain == "system")
+            {
+                ok = RunSystemTool(oa, officeId, toolName, out result, out error);
+            }
+            else if (domain == "csharp")
+            {
+                ok = RunCSharpTool(oa, officeId, toolName, out result, out error);
+            }
+            else if (domain == "mau")
+            {
+                ok = RunMauTool(oa, officeId, toolName, out result, out error);
             }
             else
             {
@@ -416,6 +428,156 @@ namespace Mau.Bricks
                 return false;
             }
         }
+        /// <summary>
+        /// System 域路由——按 toolName 调 system.* 积木（info/snapshot/env）
+        /// </summary>
+        /// <param name="oa">OA</param>
+        /// <param name="officeId">Office ID</param>
+        /// <param name="toolName">工具名</param>
+        /// <param name="result">结果文本</param>
+        /// <param name="error">错误摘要</param>
+        /// <returns>true=执行成功</returns>
+        private static bool RunSystemTool(IOA oa, long officeId, string toolName,
+            out string result, out string error)
+        {
+            result = "";
+            error = "";
+            try
+            {
+                if (toolName == "system.info")
+                {
+                    string info;
+                    if (!SystemInfoBrick.Info(out info))
+                    {
+                        error = "ERR|SYSTEM_INFO_FAILED";
+                        return false;
+                    }
+                    result = info;
+                    return true;
+                }
+                if (toolName == "system.snapshot")
+                {
+                    string snapshot;
+                    if (!SystemSnapshotBrick.Snapshot(out snapshot))
+                    {
+                        error = "ERR|SYSTEM_SNAPSHOT_FAILED";
+                        return false;
+                    }
+                    result = snapshot;
+                    return true;
+                }
+                if (toolName == "system.env")
+                {
+                    string env;
+                    if (!SystemEnvBrick.Env(out env))
+                    {
+                        error = "ERR|SYSTEM_ENV_FAILED";
+                        return false;
+                    }
+                    result = env;
+                    return true;
+                }
+                error = "ERR|UNSUPPORTED_TOOL|" + toolName;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = "ERR|" + ex.GetType().Name + "|" + ex.Message;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// CSharp 域路由——按 toolName 调 csharp.* 积木
+        /// </summary>
+        /// <param name="oa">OA</param>
+        /// <param name="officeId">Office ID</param>
+        /// <param name="toolName">工具名</param>
+        /// <param name="result">结果文本</param>
+        /// <param name="error">错误摘要</param>
+        /// <returns>true=执行成功</returns>
+        private static bool RunCSharpTool(IOA oa, long officeId, string toolName,
+            out string result, out string error)
+        {
+            result = "";
+            error = "";
+            string Arg(string key)
+            {
+                string value;
+                if (oa.GetStr(officeId, "args." + key, out value) && value != null)
+                {
+                    return value;
+                }
+                return "";
+            }
+            try
+            {
+                if (toolName == "csharp.compile")
+                {
+                    string summary;
+                    if (!CSharpCompileBrick.Compile(Arg("source"), Arg("className"), out summary))
+                    {
+                        error = "ERR|CSHARP_COMPILE_FAILED|" + summary;
+                        return false;
+                    }
+                    result = summary;
+                    return true;
+                }
+                error = "ERR|UNSUPPORTED_TOOL|" + toolName;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = "ERR|" + ex.GetType().Name + "|" + ex.Message;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Mau 域路由——按 toolName 调 mau.* 积木（CLI 指令封装）
+        /// </summary>
+        /// <param name="oa">OA</param>
+        /// <param name="officeId">Office ID</param>
+        /// <param name="toolName">工具名</param>
+        /// <param name="result">结果文本</param>
+        /// <param name="error">错误摘要</param>
+        /// <returns>true=执行成功</returns>
+        private static bool RunMauTool(IOA oa, long officeId, string toolName,
+            out string result, out string error)
+        {
+            result = "";
+            error = "";
+            string Arg(string key)
+            {
+                string value;
+                if (oa.GetStr(officeId, "args." + key, out value) && value != null)
+                {
+                    return value;
+                }
+                return "";
+            }
+            try
+            {
+                if (toolName == "mau.build")
+                {
+                    string summary;
+                    if (!MauBuildBrick.Build(Arg("command"), Arg("args"), out summary))
+                    {
+                        error = "ERR|MAU_BUILD_FAILED|" + summary;
+                        return false;
+                    }
+                    result = summary;
+                    return true;
+                }
+                error = "ERR|UNSUPPORTED_TOOL|" + toolName;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = "ERR|" + ex.GetType().Name + "|" + ex.Message;
+                return false;
+            }
+        }
     }
 }
-// #MAU_CHECKSUM:SHA256:300746D54C29FC348BC87429D43159DAAA6D74A987D266DD7E823E51747AFED6
+// #MAU_CHECKSUM:SHA256:6C9B2A6007C764F9DE5503CD15C0B260805F546261361D716C1DCF4BA9AA50E9

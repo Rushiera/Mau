@@ -17,6 +17,7 @@
 | BRIK-CMD-004 | cmd.set | CMD | CMD/BRIK-CMD-004_cmd.set.cs | 无 | active |  |
 | BRIK-CMD-005 | cmd.clean | CMD | CMD/BRIK-CMD-005_cmd.clean.cs | 无 | active |  |
 | BRIK-CMD-006 | cmd.is_key | CMD | CMD/BRIK-CMD-006_cmd.is_key.cs | 无 | active |  |
+| BRIK-CSHARP-001 | csharp.compile | CSHARP | CSHARP/BRIK-CSHARP-001_csharp.compile.cs | 无 | active |  |
 | BRIK-DATA-001 | data.snapshot_encode | DATA | DATA/BRIK-DATA-001_data.snapshot_encode.cs | 无 | active |  |
 | BRIK-DATA-002 | data.snapshot_decode | DATA | DATA/BRIK-DATA-002_data.snapshot_decode.cs | 无 | active |  |
 | BRIK-DATA-003 | data.box_set | DATA | DATA/BRIK-DATA-003_data.box_set.cs | 无 | active |  |
@@ -72,6 +73,8 @@
 | BRIK-MATH-001 | math.is_all_digits | MATH | MATH/BRIK-MATH-001_math.is_all_digits.cs | 无 | active |  |
 | BRIK-MATH-002 | math.format_size | MATH | MATH/BRIK-MATH-002_math.format_size.cs | 无 | active |  |
 | BRIK-MATH-003 | math.result_preview | MATH | MATH/BRIK-MATH-003_math.result_preview.cs | math.format_size | active |  |
+| BRIK-MATH-004 | math.random_int | MATH | MATH/BRIK-MATH-004_math.random_int.cs | 无 | active |  |
+| BRIK-MAU-001 | mau.build | MAU | MAU/BRIK-MAU-001_mau.build.cs | 无 | active |  |
 | BRIK-OA-001 | oa.post | OA | OA/BRIK-OA-001_oa.post.cs | 无 | active |  |
 | BRIK-OA-002 | oa.list | OA | OA/BRIK-OA-002_oa.list.cs | 无 | active |  |
 | BRIK-OA-003 | oa.claim | OA | OA/BRIK-OA-003_oa.claim.cs | 无 | active |  |
@@ -93,6 +96,9 @@
 | BRIK-OFFICE-003 | docx.read | OFFICE | OFFICE/BRIK-OFFICE-003_docx.read.cs | 无 | active |  |
 | BRIK-OFFICE-004 | docx.write | OFFICE | OFFICE/BRIK-OFFICE-004_docx.write.cs | 无 | active |  |
 | BRIK-SHELL-001 | shell.exec | SHELL | SHELL/BRIK-SHELL-001_shell.exec.cs | 无 | active |  |
+| BRIK-SYSTEM-001 | system.info | SYSTEM | SYSTEM/BRIK-SYSTEM-001_system.info.cs | 无 | active |  |
+| BRIK-SYSTEM-002 | system.snapshot | SYSTEM | SYSTEM/BRIK-SYSTEM-002_system.snapshot.cs | 无 | active |  |
+| BRIK-SYSTEM-003 | system.env | SYSTEM | SYSTEM/BRIK-SYSTEM-003_system.env.cs | 无 | active |  |
 | BRIK-TEST-001 | probe.source | TEST | TEST/BRIK-TEST-001_probe.source.cs | 无 | active |  |
 | BRIK-TEST-002 | probe.sink | TEST | TEST/BRIK-TEST-002_probe.sink.cs | 无 | active |  |
 | BRIK-TEXT-001 | text.md_parse | TEXT | TEXT/BRIK-TEXT-001_text.md_parse.cs | 无 | active |  |
@@ -108,7 +114,7 @@
 | BRIK-TOOL-010 | tool.dispatch | TOOL | TOOL/BRIK-TOOL-010_tool.dispatch.cs | 无 | active |  |
 | BRIK-TOOL-011 | tool.collect | TOOL | TOOL/BRIK-TOOL-011_tool.collect.cs | 无 | active |  |
 | BRIK-TOOL-012 | tool.create_next | TOOL | TOOL/BRIK-TOOL-012_tool.create_next.cs | 无 | active |  |
-| BRIK-TOOL-013 | tool.run_generic | TOOL | TOOL/BRIK-TOOL-013_tool.run_generic.cs | file.read, file.write, file.append, file.replace, file.read_lines, file.tree, file.find, file.move, file.delete, file.convert, file.batch, shell.exec, excel.read, excel.write, docx.read, docx.write | active |  |
+| BRIK-TOOL-013 | tool.run_generic | TOOL | TOOL/BRIK-TOOL-013_tool.run_generic.cs | file.read, file.write, file.append, file.replace, file.read_lines, file.tree, file.find, file.move, file.delete, file.convert, file.batch, shell.exec, excel.read, excel.write, docx.read, docx.write, system.info, system.snapshot, system.env, math.random_int, csharp.compile, mau.build | active |  |
 
 ---
 
