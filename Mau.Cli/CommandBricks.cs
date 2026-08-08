@@ -787,6 +787,145 @@ namespace Mau.Cli
                 }
             }
 
+            // V11: PACK 契约 schema 校验——调用方 Invoke(method) + argsJson 参数名 vs PACK 文件头 方法: 声明（漂移即 FAIL，--verify 阶段抓不等编译期）
+            Dictionary<string, List<string>> packMethods = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            for (int ph = 0; ph < headerEntries.Count; ph++)
+            {
+                BrickIndexEntry phe = headerEntries[ph];
+                if (!phe.Id.StartsWith("BRIK-PACK-", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                string packPath = Path.Combine(root, "Bricks", phe.Path.Replace('/', Path.DirectorySeparatorChar));
+                if (!File.Exists(packPath))
+                {
+                    continue;
+                }
+                string[] packLines = File.ReadAllLines(packPath);
+                bool inMethodBlock = false;
+                for (int pl = 0; pl < packLines.Length; pl++)
+                {
+                    string pLine = packLines[pl].Trim();
+                    if (pLine.StartsWith("// 方法:", StringComparison.Ordinal))
+                    {
+                        inMethodBlock = true;
+                        ParsePackMethodLine(pLine.Substring("// 方法:".Length).Trim(), packMethods);
+                        continue;
+                    }
+                    if (!inMethodBlock)
+                    {
+                        continue;
+                    }
+                    if (!pLine.StartsWith("//", StringComparison.Ordinal))
+                    {
+                        inMethodBlock = false;
+                        continue;
+                    }
+                    string pRest = pLine.Substring(2).Trim();
+                    if (pRest.Length == 0 || pRest.StartsWith("作用:", StringComparison.Ordinal) || pRest.StartsWith("依赖:", StringComparison.Ordinal) || pRest.StartsWith("包:", StringComparison.Ordinal) || pRest.StartsWith("引用:", StringComparison.Ordinal) || pRest.StartsWith("原理:", StringComparison.Ordinal) || pRest.StartsWith("常用:", StringComparison.Ordinal) || pRest.StartsWith("══", StringComparison.Ordinal))
+                    {
+                        inMethodBlock = false;
+                        continue;
+                    }
+                    ParsePackMethodLine(pRest, packMethods);
+                }
+            }
+            // 扫描调用方积木——Invoke("X") 字符串字面量 + JSON key 对照声明
+            for (int ph = 0; ph < headerEntries.Count; ph++)
+            {
+                BrickIndexEntry he = headerEntries[ph];
+                if (he.Id.StartsWith("BRIK-PACK-", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                string brickPath = Path.Combine(root, "Bricks", he.Path.Replace('/', Path.DirectorySeparatorChar));
+                if (!File.Exists(brickPath))
+                {
+                    continue;
+                }
+                string brickText = File.ReadAllText(brickPath);
+                // 提取 Invoke("method" 调用
+                List<string> usedMethods = new List<string>();
+                int pos = 0;
+                while (true)
+                {
+                    int idx = brickText.IndexOf("Invoke(\"", pos, StringComparison.Ordinal);
+                    if (idx < 0)
+                    {
+                        break;
+                    }
+                    int qStart = idx + "Invoke(\"".Length;
+                    int qEnd = brickText.IndexOf('"', qStart);
+                    if (qEnd < 0)
+                    {
+                        break;
+                    }
+                    string methodName = brickText.Substring(qStart, qEnd - qStart);
+                    if (!usedMethods.Contains(methodName))
+                    {
+                        usedMethods.Add(methodName);
+                    }
+                    pos = qEnd + 1;
+                }
+                if (usedMethods.Count == 0)
+                {
+                    continue;
+                }
+                // 提取 JSON key（逐行去注释）
+                List<string> jsonKeys = new List<string>();
+                string[] brickLines = brickText.Split('\n');
+                for (int bl = 0; bl < brickLines.Length; bl++)
+                {
+                    string code = brickLines[bl];
+                    int cIdx = code.IndexOf("//", StringComparison.Ordinal);
+                    if (cIdx >= 0)
+                    {
+                        code = code.Substring(0, cIdx);
+                    }
+                    int kPos = 0;
+                    while (true)
+                    {
+                        // 匹配转义 JSON 键 "key":——C# 源码字符串中的 JSON 键闭合（开引号向前回溯）
+                        int qb = code.IndexOf("\\\":", kPos, StringComparison.Ordinal);
+                        if (qb < 0)
+                        {
+                            break;
+                        }
+                        int closeQ = qb + 1;
+                        int openQ = code.LastIndexOf('"', closeQ - 1);
+                        if (openQ > 0 && code[openQ - 1] == '\\' && closeQ - openQ - 2 <= 64)
+                        {
+                            string key = code.Substring(openQ + 1, closeQ - openQ - 2);
+                            if (IsJsonKeyName(key) && !jsonKeys.Contains(key))
+                            {
+                                jsonKeys.Add(key);
+                            }
+                        }
+                        kPos = qb + 3;
+                    }
+                }
+                // 校验——method 白名单 + 参数 schema 漂移
+                for (int m = 0; m < usedMethods.Count; m++)
+                {
+                    string methodName = usedMethods[m];
+                    if (!packMethods.ContainsKey(methodName))
+                    {
+                        Console.WriteLine("V11 FAIL: 未声明 PACK 方法——" + he.Name + " 调用 Invoke(\"" + methodName + "\")——PACK 文件头 方法: 缺声明");
+                        errors = errors + 1;
+                        continue;
+                    }
+                    List<string> declaredParams = packMethods[methodName];
+                    for (int k = 0; k < jsonKeys.Count; k++)
+                    {
+                        if (!declaredParams.Contains(jsonKeys[k]))
+                        {
+                            Console.WriteLine("V11 FAIL: 参数漂移——" + he.Name + " Invoke(\"" + methodName + "\") 参数 '" + jsonKeys[k] + "' 未声明（" + methodName + " → " + string.Join(",", declaredParams) + "）");
+                            errors = errors + 1;
+                        }
+                    }
+                }
+            }
+
             if (errors == 0)
             {
                 Console.WriteLine("BRICKS_INDEX_OK (" + table.Count + " 积木)");
@@ -1335,30 +1474,34 @@ namespace Mau.Cli
         /// <param name="t">端口类型</param>
         /// <returns>基元为真</returns>
         private static bool IsPrimitivePort(Type t)
-        {
-            if (t == typeof(string))
-            {
-                return true;
-            }
-            if (t == typeof(int))
-            {
-                return true;
-            }
-            if (t == typeof(long))
-            {
-                return true;
-            }
-            if (t == typeof(bool))
-            {
-                return true;
-            }
-            if (t == typeof(double))
-            {
-                return true;
-            }
-            return false;
-        }
-
+{
+    if (t == typeof(string))
+    {
+        return true;
+    }
+    if (t == typeof(int))
+    {
+        return true;
+    }
+    if (t == typeof(long))
+    {
+        return true;
+    }
+    if (t == typeof(bool))
+    {
+        return true;
+    }
+    if (t == typeof(double))
+    {
+        return true;
+    }
+    // 数组端口——元素基元即可构造（B2 数组字面量已落地——E2 解锁 cmd.register/oa.claim 等）
+    if (t.IsArray)
+    {
+        return IsPrimitivePort(t.GetElementType()!);
+    }
+    return false;
+}
         /// <summary>
         /// 生成基元默认值——最小样例
         /// </summary>
@@ -1387,6 +1530,14 @@ namespace Mau.Cli
     if (t == typeof(double))
     {
         return 1.0;
+    }
+    // 数组端口——单元素数组（元素用基元默认值）——E2 数组跑测解锁
+    if (t.IsArray)
+    {
+        Type elemType = t.GetElementType()!;
+        Array arr = Array.CreateInstance(elemType, 1);
+        arr.SetValue(DefaultValue(elemType), 0);
+        return arr;
     }
     if (t.IsValueType)
     {
@@ -1433,5 +1584,63 @@ public static bool EnsureIndexLoaded()
     }
 
     return false;
-}    }
+}    /// <summary>
+/// 解析 PACK 方法声明行——"方法: excel.read → path,sheet,format"（V11 校验）
+/// </summary>
+/// <param name = "line">方法声明行（不含 方法: 前缀）</param>
+/// <param name = "result">方法→参数列表 映射</param>
+private static void ParsePackMethodLine(string line, Dictionary<string, List<string>> result)
+{
+    int arrow = line.IndexOf("→", StringComparison.Ordinal);
+    if (arrow <= 0)
+    {
+        return;
+    }
+
+    string method = line.Substring(0, arrow).Trim();
+    string paramsText = line.Substring(arrow + 1).Trim();
+    List<string> ps = new List<string>();
+    if (paramsText.Length > 0)
+    {
+        string[] parts = paramsText.Split(',');
+        for (int i = 0; i < parts.Length; i++)
+        {
+            string p = parts[i].Trim();
+            if (p.Length > 0)
+            {
+                ps.Add(p);
+            }
+        }
+    }
+
+    result[method] = ps;
+} 
+/// <summary>
+/// 是否合法 JSON 键名——首字符字母/下划线，其余字母数字/下划线（V11 校验）
+/// </summary>
+/// <param name="key">键名</param>
+/// <returns>合法为真</returns>
+private static bool IsJsonKeyName(string key)
+{
+    if (key.Length == 0)
+    {
+        return false;
+    }
+    char first = key[0];
+    if (!(first >= 'a' && first <= 'z') && !(first >= 'A' && first <= 'Z') && first != '_')
+    {
+        return false;
+    }
+    for (int i = 1; i < key.Length; i++)
+    {
+        char c = key[i];
+        if (!(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && c != '_')
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+}
 }
