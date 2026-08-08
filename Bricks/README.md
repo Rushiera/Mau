@@ -1,8 +1,8 @@
 ﻿# Mau 积木百科全书 — Bricks
 
-> 版本：v2.0 | 更新：2026-08-07（R1 文本库形态 + 源码驱动索引）
-> 定位：Mau 积木的**文本资产库**——84 个 BRIK 单文件（复制即单包），翻译器内嵌进生成物。
-> 积木是 Mau 生态的"包"。CH4 所需积木预计 100+，从第一天建立统一登记。
+> 版本：v3.0 | 更新：2026-08-08（PACK v2——外部包接口隔离，普通积木零包声明）
+> 定位：Mau 积木的**文本资产库**——125 个 BRIK 单文件（复制即单包），翻译器内嵌进生成物。
+> 积木是 Mau 生态的"包"。CH4 所需积木 100+，从第一天建立统一登记。
 
 ---
 
@@ -13,7 +13,7 @@
 | 段 | 规则 |
 |:--|:--|
 | `BRIK` | 固定前缀——Mau Brick 命名空间 |
-| `{类别}` | 大写类别码：FILE / MATH / DATA / TEXT / SHELL / LLM / APPROVAL / OFFICE / LOG / CMD / OA / TOOL / TEST |
+| `{类别}` | 大写类别码：FILE / MATH / DATA / TEXT / SHELL / LLM / APPROVAL / OFFICE / LOG / CMD / OA / DOG / TOOL / TEST / SYSTEM / CSHARP / MAU / PACK |
 | `{三位序号}` | 001 起顺序分配，**永不重用**（废弃积木保留 ID 标记 Deprecated） |
 
 **编号铁律（🔴）：**
@@ -38,7 +38,7 @@
 // 类别: FILE
 // 作用: 读取 UTF-8 文本（受控路径）
 // 依赖: 无
-// 包: ClosedXML@0.104.2; DocumentFormat.OpenXml@3.2.0   ← 无外部包写"无"
+// 包: 无                                  ← PACK 类声明包；普通积木零包（V10 违规）
 // 引用: System
 // 原理: 经 FileBridge 受控文件系统 ReadText——白名单边界内置
 // 常用: CH4 IO 工具组 / 任意文件读取场景
@@ -58,7 +58,7 @@
 | `类别:` | 类别码——**权威**（docx.* 属 OFFICE，不按名前缀推断） |
 | `作用:` | 一句话职责 |
 | `依赖:` | 依赖声明——L1 基座能力 / L2 积木 ID（BRIK-xxx）/ L3 外部库，逗号分隔；无则写"无" |
-| `包:` | **外部 NuGet 包声明**——`包名@版本`，多个用分号分隔；无则写"无"。**版本唯一真相源**（V10 门禁校验与 Mau.Cli.csproj 引用一致）；本地程序集（Mau.Runtime 等）写 `Mau.Runtime@local` 不校验 |
+| `包:` | **PACK 类积木的外部包声明**——`包名@版本`，多个分号分隔；**普通积木必须写"无"**（V10 非 PACK 类声明包=违规——纯净性铁律）；本地程序集（Mau.Runtime 等）写 `Mau.Runtime@local` 不校验 |
 | `引用:` | 依赖链——引用了哪些库/服务 |
 | `原理:` | 核心机制——怎么做（≤一行） |
 | `常用:` | 典型使用场景 |
@@ -111,40 +111,44 @@ Bricks/{类别}/*.cs（文件头十字段 + 静态方法签名）
 
 ---
 
-## 七、外部包接入协议（PACK）
+## 七、外部包接入协议（PACK——v2 定稿）
 
-> 目标：Mau 生态引入 .NET 官方开源包时有固定路径，版本单一真相源，依赖者无感。
+> 目标：Mau 生态引入 .NET 开源包时**不污染 BRIK 库**——外部包能力经 PACK 类 BRIK（接口）隔离，普通积木零包声明。长期方向：开源包源码积木化（引用包利好人类，源码积木利好 AI——Mau 第一读者是 AI）。
 
-### 7.1 包归属三层判定
+### 7.1 包归属判定（v2 修订）
 
 | 判定 | 落层 | 例子 |
 |:--|:--|:--|
 | Q1 运行时机制（任何软件都需要）？ | Mau.Runtime（零 NuGet 铁律） | OA/Command/DataBox 已是 |
-| Q2 开发工具（编译/语法分析）？ | Mau.Development | Roslyn（MauPocketCompiler/MauRoslynSourceWorkspace） |
-| Q3 领域能力（Excel/PDF/图像）？ | **积木直接引用**（`包:` 声明） | ClosedXML / DocumentFormat.OpenXml |
-| Q4 重型有状态（需宿主交互）？ | Runtime 接口 + Development 实现 + DataBox 服务 | ICSharpBridge（M2d.1 规划） |
+| Q2 开发工具（编译/语法分析）？ | Mau.Development（Mau 编译链必要内部支持） | Roslyn（MauPocketCompiler/MauRoslynBridge） |
+| Q3 领域能力（Excel/PDF/图像）？ | **独立程序集**（Mau.Office 等增量包——有无不影响 Mau 本体） | ClosedXML / DocumentFormat.OpenXml |
+| Q4 重型有状态（需宿主交互）？ | Runtime PACK 接口 + 实现程序集 + DataBox 服务 | ICSharpBridge / IExcelBridge / IWordBridge |
 
-### 7.2 接入流程（新包四步）
+### 7.2 PACK 类 BRIK（v2 核心——取代 v1 的"普通积木直接引用包"）
 
-1. **声明** — 积木文件头加 `// 包: 包名@版本`（无外部包写"无"）
-2. **引用** — Mau.Cli.csproj 加 `<PackageReference Include="包名" Version="版本" />`（V10 门禁校验一致性）
-3. **索引** — `mau bricks index --update`（index.json 自动汇总 `packages` 全量字段）
-4. **验证** — `mau bricks index --verify`（V10 包声明 vs csproj 引用一致）+ `mau test`
+- **类别 `PACK`**——接口积木（`excel.bridge` / `word.bridge` / `csharp.bridge`），只声明能力，不含实现
+- **单方法调度**：`bool Invoke(string method, string argsJson, out string result)`——PACK 包低频调用接受 JSON 损失，统一包管理；不同包体制风格差异被单方法吸收
+- **方法白名单**：文件头 `方法:` 字段声明（`excel.read → path,sheet,format`）——V11 门禁校验调用方
+- **实现隔离**：接口在 Mau.Runtime（零依赖），实现在独立程序集（Mau.Office/Mau.Development），宿主选装 DataBox.Bind
+- **普通积木零包声明**：非 PACK 类声明任何包 = V10 违规（纯净性铁律——移植性关键是包体纯净，不在协议打补丁）
 
-### 7.3 版本真相源
+### 7.3 接入流程（新包五步）
 
-- **积木文件头 `包:` 字段 = 版本唯一真相源**
-- Mau.Cli.csproj 引用必须与之一致（V10 门禁）
-- 依赖者（CH4 等）宿主引用由 `index.json packages` 字段快速查询，版本以积木声明为准
+1. **判定** — 按 §7.1 定落层（领域能力 → 独立程序集）
+2. **接口** — Mau.Runtime 加 `IXxxBridge : IPackBridge`（零依赖）
+3. **实现** — 独立程序集实现接口（自包含包逻辑）
+4. **桥积木** — `Bricks/PACK/BRIK-PACK-xxx_name.bridge.cs`（`方法:` schema + DataBox 调度薄壳）
+5. **消费积木** — 普通积木改调 PACK 桥（`DataBox.TryResolve<IXxxBridge>() → Invoke`），零包声明
 
-### 7.4 Roslyn 接入路径（M2d.1 参考）
+### 7.4 门禁
 
-```
-Mau.Runtime      ICSharpBridge（纯接口·零依赖·string 基元）
-Mau.Development  MauRoslynBridge : ICSharpBridge（多树隔离 + MSBuildWorkspace + ApplyDocChange）
-Bricks           BRIK-CSHARP-xxx（DataBox 调度薄壳 + `包:` 声明）
-CH4              宿主引 Mau.Development（Roslyn 已在其中，无需额外包）
-```
+- **V10**：非 PACK 类声明 `包:` = 违规；PACK 类声明包与实现程序集 csproj 一致
+- **V11**（规划）：调用方积木 method+参数 vs PACK 桥 `方法:` schema 漂移 = FAIL
+- **依赖者**：宿主只需引实现程序集（Mau.Office/Mau.Development），不再背 NuGet 包
+
+### 7.5 长期方向：源码积木化
+
+高频开源包功能 → 精简移植为自包含源码积木（算法路径提取，非全量复制）——零版本漂移、AI 可读可改、许可证保留声明。PACK 接口是过渡期兜底。
 
 ---
 
