@@ -4,9 +4,9 @@
 // 类别: CSHARP
 // 作用: 在方法内指定行后插入——afterLine=0=body 头（编译通过才写盘）
 // 依赖: 无
-// 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
+// 包: 无
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → LineInsert（行号越界保护）
+// 原理: DataBox.TryResolve<ICSharpBridge> → Invoke("line_insert", argsJson)——PACK 协议
 // 常用: CSharpCat 工具 Cat——行级插入（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
@@ -37,9 +37,20 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.LineInsert(className, methodName, afterLine, newText == null ? "" : newText);
-            return true;
+            string argsJson = "{\"class\":\"" + Safe(className) + "\",\"method\":\"" + Safe(methodName) + "\",\"afterLine\":" + afterLine + ",\"newText\":\"" + Safe(newText) + "\"}";
+            return bridge.Invoke("line_insert", argsJson, out result);
+        }
+
+        /// <summary>
+        /// JSON 字符串安全转义
+        /// </summary>
+        /// <param name="value">原始值</param>
+        /// <returns>转义后</returns>
+        private static string Safe(string value)
+        {
+            if (value == null) { return ""; }
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:30505146D5FE1F09F055AB2B927D65FD7CC173744375EAEA659529CE06EEF39E
+// #MAU_CHECKSUM:SHA256:8EEEE48017CAD105BFAE2C1EA735DB18F6DD6808115F3DE30BFB2DB5AE9D0BC1

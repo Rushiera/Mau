@@ -4,9 +4,9 @@
 // 类别: CSHARP
 // 作用: 列出类/成员签名——class 空=全项目类名；指定类=成员列表+注释摘要
 // 依赖: 无
-// 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
+// 包: 无
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → ListMembers(className)
+// 原理: DataBox.TryResolve<ICSharpBridge> → Invoke("list", argsJson)——PACK 协议
 // 常用: CSharpCat 工具 Cat——结构浏览（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
@@ -34,9 +34,10 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.ListMembers(className == null ? "" : className);
-            return true;
+            string safe = className == null ? "" : className.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            string argsJson = "{\"class\":\"" + safe + "\"}";
+            return bridge.Invoke("list", argsJson, out result);
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:81647E300216842552C2DA1C64C3EE4A2E78F127704CE29FE26DBAFB7E9F3CB7
+// #MAU_CHECKSUM:SHA256:AFAC140C915171AD5665C294456146617FC06778CCCD0FB85C07BB732DF17372

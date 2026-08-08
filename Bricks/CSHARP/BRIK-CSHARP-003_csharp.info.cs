@@ -4,9 +4,9 @@
 // 类别: CSHARP
 // 作用: 查询当前 C# 工具组绑定状态——项目名/csproj/文档数/类数
 // 依赖: 无
-// 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
+// 包: 无
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → GetInfo()
+// 原理: DataBox.TryResolve<ICSharpBridge> → Invoke("info", "{}")——PACK 协议
 // 常用: CSharpCat 工具 Cat——绑定状态查询（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
@@ -33,9 +33,8 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.GetInfo();
-            return true;
+            return bridge.Invoke("info", "{}", out result);
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:83C95DB25F20DA16AC87156CB05D065948F56D5BD0434B02447D833F1E10E54A
+// #MAU_CHECKSUM:SHA256:374531AC903DCEE6F0F1894C9CE57A0F0567BFA533A3A65209D8EEC80EA065CA

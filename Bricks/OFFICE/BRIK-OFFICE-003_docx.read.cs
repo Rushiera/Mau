@@ -2,22 +2,20 @@
 // 积木: docx.read
 // ID:   BRIK-OFFICE-003
 // 类别: OFFICE
-// 作用: 读取 .docx 文件，提取纯文本内容（段落间空行分隔）
+// 作用: 读取 .docx 文件，提取纯文本内容（PACK 调度——经 word.bridge）
 // 依赖: 无
-// 包: DocumentFormat.OpenXml@3.2.0
-// 引用: System · System.Text · DocumentFormat.OpenXml
-// 原理: WordprocessingDocument 打开——Body 段落遍历 InnerText 拼接
-// 常用: CH4 IO 工具组 / 文档处理
+// 包: 无
+// 引用: Mau.Runtime（IWordBridge）· System
+// 原理: DataBox.TryResolve<IWordBridge> → Invoke("word.read", argsJson)
+//       实现 = Mau.Office.OfficeBridge（OpenXml 封装——PACK 隔离）
+// 常用: OfficeCat 工具 Cat——文档读取（PACK 协议）
 // ═══════════════════════════════════════════════════
 using System;
-using System.Text;
-using DocumentFormat.OpenXml.Packaging;
-using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace Mau.Bricks
 {
     /// <summary>
-    /// Word 积木——docx.read 读取 .docx（纯函数无状态）
+    /// Word 积木——docx.read 读取 .docx（PACK 调度 IWordBridge）
     /// </summary>
     public static class DocxReadBrick
     {
@@ -30,46 +28,27 @@ namespace Mau.Bricks
         public static bool Read(string path, out string content)
         {
             content = "";
-            try
+            Mau.Runtime.IWordBridge? bridge;
+            Mau.Runtime.DataBox.TryResolve<Mau.Runtime.IWordBridge>(out bridge);
+            if (bridge == null)
             {
-                using WordprocessingDocument doc = WordprocessingDocument.Open(
-                    path, false);
-                Body? body;
-                if (doc.MainDocumentPart != null)
-                {
-                    body = doc.MainDocumentPart.Document.Body;
-                }
-                else
-                {
-                    body = null;
-                }
-                if (body == null)
-                {
-                    content = "(空文档)";
-                    return true;
-                }
-
-                StringBuilder sb = new StringBuilder();
-                bool first = true;
-                foreach (Paragraph para in body.Elements<Paragraph>())
-                {
-                    if (!first)
-                    {
-                        sb.Append("\n\n");
-                    }
-                    first = false;
-                    sb.Append(para.InnerText);
-                }
-
-                content = sb.ToString();
-                return true;
-            }
-            catch (Exception e)
-            {
-                content = "[错误] Word 读取失败: " + e.Message;
+                content = "ERR|WORD_NO_BRIDGE|宿主未注入 IWordBridge（Mau.Office.OfficeBridge）";
                 return false;
             }
+            string argsJson = "{\"path\":\"" + Safe(path) + "\"}";
+            return bridge.Invoke("word.read", argsJson, out content);
+        }
+
+        /// <summary>
+        /// JSON 字符串安全转义
+        /// </summary>
+        /// <param name="value">原始值</param>
+        /// <returns>转义后</returns>
+        private static string Safe(string value)
+        {
+            if (value == null) { return ""; }
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:0C9B3B3FCE20B387DB118AAFE412AC513F13483B177939E302BE1F9758325506
+// #MAU_CHECKSUM:SHA256:D6C77EB822489F115DD9106FF6918F4C9C3E127314138ED2A03983A0E4E71BFC

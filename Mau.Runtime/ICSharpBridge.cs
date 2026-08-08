@@ -1,13 +1,22 @@
-namespace Mau.Runtime
+﻿namespace Mau.Runtime
 {
     /// <summary>
     /// C# 工具桥接口——Mau 积木的 Roslyn 能力入口（纯接口，零依赖）。
     /// 实现位于 Mau.Development（MauRoslynBridge——多树隔离 + 编译与提交分离）。
-    /// 设计原则：全部方法 string 基元（返回 JSON/文本），不暴露 Roslyn 类型——
-    /// 积木内嵌代码只引用本接口，BRIKGROUP 编译引用不膨胀。
+    /// PACK 类：单方法调度入口 Invoke(method, argsJson) + 特化方法（实现内部使用）。
+    /// 契约：Bricks/PACK/BRIK-PACK-003_csharp.bridge.cs `方法:` 字段（V11 校验）。
     /// </summary>
     public interface ICSharpBridge
     {
+        /// <summary>
+        /// PACK 单方法调度——method 白名单 + argsJson 展平参数（积木统一入口）
+        /// </summary>
+        /// <param name="method">操作名（init/info/list/read/compile/body_replace/...）</param>
+        /// <param name="argsJson">展平参数 JSON</param>
+        /// <param name="result">结果文本</param>
+        /// <returns>true=调用成功（业务错误码进 result）</returns>
+        bool Invoke(string method, string argsJson, out string result);
+
         /// <summary>
         /// 绑定 csproj 项目——建立类索引 + 初始编译诊断
         /// </summary>
@@ -137,3 +146,4 @@ namespace Mau.Runtime
         void Shutdown();
     }
 }
+

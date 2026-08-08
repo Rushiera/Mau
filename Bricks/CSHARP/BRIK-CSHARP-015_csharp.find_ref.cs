@@ -4,9 +4,9 @@
 // 类别: CSHARP
 // 作用: 查找成员的所有引用位置——返回文件+行号+引用行内容
 // 依赖: 无
-// 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
+// 包: 无
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → FindReferences（SymbolFinder 语义定位）
+// 原理: DataBox.TryResolve<ICSharpBridge> → Invoke("find_ref", argsJson)——PACK 协议
 // 常用: CSharpCat 工具 Cat——引用定位（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
@@ -35,9 +35,20 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.FindReferences(className, memberName == null ? "" : memberName);
-            return true;
+            string argsJson = "{\"class\":\"" + Safe(className) + "\",\"member\":\"" + Safe(memberName) + "\"}";
+            return bridge.Invoke("find_ref", argsJson, out result);
+        }
+
+        /// <summary>
+        /// JSON 字符串安全转义
+        /// </summary>
+        /// <param name="value">原始值</param>
+        /// <returns>转义后</returns>
+        private static string Safe(string value)
+        {
+            if (value == null) { return ""; }
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:E8815058AB066D20C43BDDF965AC6033218DF566970F712F963DC4C6D5C776B1
+// #MAU_CHECKSUM:SHA256:D5558C1C6B4AE0341C630249CB827DC1F023C880D0A1A840F58CA167F2CD6AA2

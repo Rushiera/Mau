@@ -4,9 +4,9 @@
 // 类别: CSHARP
 // 作用: 读取成员源码——含 XML 注释 + 方法内行号标注（// LN）；member 空=类概览
 // 依赖: 无
-// 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
+// 包: 无
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → ReadMember(className, memberName)
+// 原理: DataBox.TryResolve<ICSharpBridge> → Invoke("read", argsJson)——PACK 协议
 // 常用: CSharpCat 工具 Cat——源码阅读（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
@@ -35,9 +35,11 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.ReadMember(className, memberName == null ? "" : memberName);
-            return true;
+            string safeClass = className == null ? "" : className.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            string safeMember = memberName == null ? "" : memberName.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            string argsJson = "{\"class\":\"" + safeClass + "\",\"member\":\"" + safeMember + "\"}";
+            return bridge.Invoke("read", argsJson, out result);
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:16B70B586DBDAD05DEDF928FACEEA2AF9F7940B9F0746D44E6069FBF7F3ACB00
+// #MAU_CHECKSUM:SHA256:D30E04A11148DDBF5715E7AE6C86C1767F666AF0AA5560146636565D14690763

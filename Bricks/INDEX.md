@@ -109,6 +109,9 @@
 | BRIK-OFFICE-002 | excel.write | OFFICE | OFFICE/BRIK-OFFICE-002_excel.write.cs | 无 | active |  |
 | BRIK-OFFICE-003 | docx.read | OFFICE | OFFICE/BRIK-OFFICE-003_docx.read.cs | 无 | active |  |
 | BRIK-OFFICE-004 | docx.write | OFFICE | OFFICE/BRIK-OFFICE-004_docx.write.cs | 无 | active |  |
+| BRIK-PACK-001 | excel.bridge | PACK | PACK/BRIK-PACK-001_excel.bridge.cs | 无 | active |  |
+| BRIK-PACK-002 | word.bridge | PACK | PACK/BRIK-PACK-002_word.bridge.cs | 无 | active |  |
+| BRIK-PACK-003 | csharp.bridge | PACK | PACK/BRIK-PACK-003_csharp.bridge.cs | 无 | active |  |
 | BRIK-SHELL-001 | shell.exec | SHELL | SHELL/BRIK-SHELL-001_shell.exec.cs | 无 | active |  |
 | BRIK-SYSTEM-001 | system.info | SYSTEM | SYSTEM/BRIK-SYSTEM-001_system.info.cs | 无 | active |  |
 | BRIK-SYSTEM-002 | system.snapshot | SYSTEM | SYSTEM/BRIK-SYSTEM-002_system.snapshot.cs | 无 | active |  |

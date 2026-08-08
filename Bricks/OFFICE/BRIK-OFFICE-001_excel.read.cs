@@ -2,21 +2,20 @@
 // 积木: excel.read
 // ID:   BRIK-OFFICE-001
 // 类别: OFFICE
-// 作用: 读取 .xlsx 文件，返回 TSV/CSV 格式文本
+// 作用: 读取 .xlsx 文件，返回 TSV/CSV 格式文本（PACK 调度——经 excel.bridge）
 // 依赖: 无
-// 包: ClosedXML@0.104.2
-// 引用: System · System.Text · ClosedXML.Excel
-// 原理: XLWorkbook 打开——≤2000 行×100 列，CSV 引号转义
-// 常用: CH4 IO 工具组 / 表格数据处理
+// 包: 无
+// 引用: Mau.Runtime（IExcelBridge）· System
+// 原理: DataBox.TryResolve<IExcelBridge> → Invoke("excel.read", argsJson)
+//       实现 = Mau.Office.OfficeBridge（ClosedXML 封装——PACK 隔离）
+// 常用: OfficeCat 工具 Cat——表格读取（PACK 协议）
 // ═══════════════════════════════════════════════════
 using System;
-using System.Text;
-using ClosedXML.Excel;
 
 namespace Mau.Bricks
 {
     /// <summary>
-    /// Excel 积木——excel.read 读取 .xlsx（纯函数无状态）
+    /// Excel 积木——excel.read 读取 .xlsx（PACK 调度 IExcelBridge）
     /// </summary>
     public static class ExcelReadBrick
     {
@@ -28,97 +27,30 @@ namespace Mau.Bricks
         /// <param name="format">输出格式：tsv/csv</param>
         /// <param name="content">表格文本</param>
         /// <returns>true=成功</returns>
-        public static bool Read(string path, string sheet, string format,
-            out string content)
+        public static bool Read(string path, string sheet, string format, out string content)
         {
             content = "";
-            if (string.IsNullOrEmpty(format))
+            Mau.Runtime.IExcelBridge? bridge;
+            Mau.Runtime.DataBox.TryResolve<Mau.Runtime.IExcelBridge>(out bridge);
+            if (bridge == null)
             {
-                format = "tsv";
-            }
-            try
-            {
-                using XLWorkbook wb = new XLWorkbook(path);
-                IXLWorksheet ws;
-                if (!string.IsNullOrEmpty(sheet))
-                {
-                    if (int.TryParse(sheet, out int idx) && idx >= 1)
-                    {
-                        if (idx > wb.Worksheets.Count)
-                        {
-                            idx = 1;
-                        }
-                        ws = wb.Worksheet(idx);
-                    }
-                    else
-                    {
-                        ws = wb.Worksheet(sheet);
-                    }
-                }
-                else
-                {
-                    ws = wb.Worksheet(1);
-                }
-
-                IXLRange? range = ws.RangeUsed();
-                if (range == null)
-                {
-                    content = "(空工作表)";
-                    return true;
-                }
-
-                int maxRow = Math.Min(range.RowCount(), 2000);
-                int maxCol = Math.Min(range.ColumnCount(), 100);
-                char delim;
-                if (format == "csv")
-                {
-                    delim = ',';
-                }
-                else
-                {
-                    delim = '\t';
-                }
-
-                StringBuilder sb = new StringBuilder();
-                int fr = range.FirstRow().RowNumber();
-                int fc = range.FirstColumn().ColumnNumber();
-                for (int r = fr; r < fr + maxRow; r = r + 1)
-                {
-                    for (int c = fc; c < fc + maxCol; c = c + 1)
-                    {
-                        if (c > fc)
-                        {
-                            sb.Append(delim);
-                        }
-                        string val = ws.Cell(r, c).GetString();
-                        if (format == "csv" && (val.Contains(',') || val.Contains('"')))
-                        {
-                            val = "\"" + val.Replace("\"", "\"\"") + "\"";
-                        }
-                        sb.Append(val);
-                    }
-                    sb.Append('\n');
-                }
-
-                string trunc;
-                if (range.RowCount() > 2000 || range.ColumnCount() > 100)
-                {
-                    trunc = "（原始 " + range.RowCount() + "行×" + range.ColumnCount()
-                        + "列，已截断）";
-                }
-                else
-                {
-                    trunc = "";
-                }
-                content = sb.ToString().TrimEnd('\n') + trunc;
-                return true;
-            }
-            catch (Exception e)
-            {
-                content = "[错误] Excel 读取失败: " + e.Message;
+                content = "ERR|EXCEL_NO_BRIDGE|宿主未注入 IExcelBridge（Mau.Office.OfficeBridge）";
                 return false;
             }
+            string argsJson = "{\"path\":\"" + Safe(path) + "\",\"sheet\":\"" + Safe(sheet) + "\",\"format\":\"" + Safe(format) + "\"}";
+            return bridge.Invoke("excel.read", argsJson, out content);
+        }
+
+        /// <summary>
+        /// JSON 字符串安全转义
+        /// </summary>
+        /// <param name="value">原始值</param>
+        /// <returns>转义后</returns>
+        private static string Safe(string value)
+        {
+            if (value == null) { return ""; }
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:9A7F346C05AEB27B4B578B953E9A8AFA8D3B79979433A45B4663B602B9A408ED
+// #MAU_CHECKSUM:SHA256:6901EA210B921E692E2306E6A28F2226BEFD14915220661D8F2946976A024C6D

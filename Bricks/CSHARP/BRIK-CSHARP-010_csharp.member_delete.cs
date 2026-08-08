@@ -4,9 +4,9 @@
 // 类别: CSHARP
 // 作用: 删除指定成员（含注释）——编译通过才写盘
 // 依赖: 无
-// 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
+// 包: 无
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → DeleteMember
+// 原理: DataBox.TryResolve<ICSharpBridge> → Invoke("member_delete", argsJson)——PACK 协议
 // 常用: CSharpCat 工具 Cat——成员删除（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
@@ -35,9 +35,20 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.DeleteMember(className, memberName == null ? "" : memberName);
-            return true;
+            string argsJson = "{\"class\":\"" + Safe(className) + "\",\"member\":\"" + Safe(memberName) + "\"}";
+            return bridge.Invoke("member_delete", argsJson, out result);
+        }
+
+        /// <summary>
+        /// JSON 字符串安全转义
+        /// </summary>
+        /// <param name="value">原始值</param>
+        /// <returns>转义后</returns>
+        private static string Safe(string value)
+        {
+            if (value == null) { return ""; }
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:E5D8A6A33FBE1D8B768C2D5CBD11E3E9E32B385B081C4E81B73F08530FEE02A0
+// #MAU_CHECKSUM:SHA256:F41FD3917E1F9338A0B6D9BA3B0F12F3CF7FBD5703FE81A79FBAFE6A4DC6F09F

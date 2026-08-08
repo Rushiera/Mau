@@ -4,9 +4,9 @@
 // 类别: CSHARP
 // 作用: 扫描全项目零引用 private/internal 成员——跳过 public 和构造函数
 // 依赖: 无
-// 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
+// 包: 无
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → DeadCode（SymbolFinder 语义引用）
+// 原理: DataBox.TryResolve<ICSharpBridge> → Invoke("dead", "{}")——PACK 协议
 // 常用: CSharpCat 工具 Cat——死代码清理（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
@@ -33,9 +33,8 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.DeadCode();
-            return true;
+            return bridge.Invoke("dead", "{}", out result);
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:0C15620A5416166163CAEF876452EC0A55B9EBB736B93616427173EB98E7CCE7
+// #MAU_CHECKSUM:SHA256:F893026599FACA384B037F3C57DA15F99866C03A9B6C85CFD41A35AB92EE8A62

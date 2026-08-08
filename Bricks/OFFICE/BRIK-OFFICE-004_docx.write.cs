@@ -2,22 +2,20 @@
 // 积木: docx.write
 // ID:   BRIK-OFFICE-004
 // 类别: OFFICE
-// 作用: 将纯文本写入 .docx 文件（覆盖已有文件，换行符分割段落）
+// 作用: 将纯文本写入 .docx 文件（PACK 调度——经 word.bridge）
 // 依赖: 无
-// 包: DocumentFormat.OpenXml@3.2.0
-// 引用: System · DocumentFormat.OpenXml
-// 原理: WordprocessingDocument 创建——Body 段落构建（每行一段）
-// 常用: CH4 IO 工具组 / 报告生成
+// 包: 无
+// 引用: Mau.Runtime（IWordBridge）· System
+// 原理: DataBox.TryResolve<IWordBridge> → Invoke("word.write", argsJson)
+//       实现 = Mau.Office.OfficeBridge（OpenXml 封装——PACK 隔离）
+// 常用: OfficeCat 工具 Cat——报告生成（PACK 协议）
 // ═══════════════════════════════════════════════════
 using System;
-using DocumentFormat.OpenXml;
-using DocumentFormat.OpenXml.Packaging;
-using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace Mau.Bricks
 {
     /// <summary>
-    /// Word 积木——docx.write 写入 .docx（纯函数无状态）
+    /// Word 积木——docx.write 写入 .docx（PACK 调度 IWordBridge）
     /// </summary>
     public static class DocxWriteBrick
     {
@@ -31,39 +29,27 @@ namespace Mau.Bricks
         public static bool Write(string path, string content, out string result)
         {
             result = "";
-            try
+            Mau.Runtime.IWordBridge? bridge;
+            Mau.Runtime.DataBox.TryResolve<Mau.Runtime.IWordBridge>(out bridge);
+            if (bridge == null)
             {
-                using WordprocessingDocument doc = WordprocessingDocument.Create(
-                    path, WordprocessingDocumentType.Document);
-                MainDocumentPart mainPart = doc.AddMainDocumentPart();
-                mainPart.Document = new Document();
-                Body body = new Body();
-
-                string[] lines = content.Split('\n');
-                int paraCount = 0;
-                foreach (string rawLine in lines)
-                {
-                    string line = rawLine.TrimEnd('\r');
-                    Paragraph para = new Paragraph();
-                    Run run = new Run();
-                    run.Append(new Text(line));
-                    para.Append(run);
-                    body.Append(para);
-                    paraCount = paraCount + 1;
-                }
-
-                mainPart.Document.Append(body);
-                mainPart.Document.Save();
-
-                result = "写入成功: " + path + " (" + paraCount + "段)";
-                return true;
-            }
-            catch (Exception e)
-            {
-                result = "[错误] Word 写入失败: " + e.Message;
+                result = "ERR|WORD_NO_BRIDGE|宿主未注入 IWordBridge（Mau.Office.OfficeBridge）";
                 return false;
             }
+            string argsJson = "{\"path\":\"" + Safe(path) + "\",\"content\":\"" + Safe(content) + "\"}";
+            return bridge.Invoke("word.write", argsJson, out result);
+        }
+
+        /// <summary>
+        /// JSON 字符串安全转义
+        /// </summary>
+        /// <param name="value">原始值</param>
+        /// <returns>转义后</returns>
+        private static string Safe(string value)
+        {
+            if (value == null) { return ""; }
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:DE937BC8FD09C106E500A7EAEB546F3EE13301CF82D99387925D29F86DF71D8F
+// #MAU_CHECKSUM:SHA256:DE592089AB2C67442F1A37B2D6FD7AD306430177731A63B4901AE5199A1103DE

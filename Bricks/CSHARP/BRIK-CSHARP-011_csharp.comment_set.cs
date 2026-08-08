@@ -4,9 +4,9 @@
 // 类别: CSHARP
 // 作用: 设置 XML 注释——type: summary/param/returns；member 空=设类
 // 依赖: 无
-// 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
+// 包: 无
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → SetComment
+// 原理: DataBox.TryResolve<ICSharpBridge> → Invoke("comment_set", argsJson)——PACK 协议
 // 常用: CSharpCat 工具 Cat——注释维护（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
@@ -38,9 +38,20 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.SetComment(className, memberName == null ? "" : memberName, commentType, text == null ? "" : text, paramName == null ? "" : paramName);
-            return true;
+            string argsJson = "{\"class\":\"" + Safe(className) + "\",\"member\":\"" + Safe(memberName) + "\",\"type\":\"" + Safe(commentType) + "\",\"text\":\"" + Safe(text) + "\",\"param\":\"" + Safe(paramName) + "\"}";
+            return bridge.Invoke("comment_set", argsJson, out result);
+        }
+
+        /// <summary>
+        /// JSON 字符串安全转义
+        /// </summary>
+        /// <param name="value">原始值</param>
+        /// <returns>转义后</returns>
+        private static string Safe(string value)
+        {
+            if (value == null) { return ""; }
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:0D7D63322F3A4B94D8C093EC0D96E7DEA076EA704A2CD68E7D3D48B24904A010
+// #MAU_CHECKSUM:SHA256:EED12C06354FA6E4DF911D32CAEBD8B26F39AE40C6BE8134FFAE0294324B3FA8

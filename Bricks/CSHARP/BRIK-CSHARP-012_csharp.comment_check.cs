@@ -4,9 +4,9 @@
 // 类别: CSHARP
 // 作用: 扫描全项目缺 summary 的类/方法/字段/属性——返回清单+统计
 // 依赖: 无
-// 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
+// 包: 无
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → CommentCheck
+// 原理: DataBox.TryResolve<ICSharpBridge> → Invoke("comment_check", "{}")——PACK 协议
 // 常用: CSharpCat 工具 Cat——注释门禁（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
@@ -33,9 +33,8 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.CommentCheck();
-            return true;
+            return bridge.Invoke("comment_check", "{}", out result);
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:D3474BBCFB852A93B8B4935C77C3191C122F2AE2253DCF420938371EC80CD315
+// #MAU_CHECKSUM:SHA256:7081B80E004AB09E4E8B70D523DCA3EEA3A86DFAD68FCA3F96A71D6AE10499BD

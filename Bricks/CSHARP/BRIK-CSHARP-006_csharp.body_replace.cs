@@ -4,9 +4,9 @@
 // 类别: CSHARP
 // 作用: 替换整个方法体——签名+注释不动，只换 { } 内部（编译通过才写盘）
 // 依赖: 无
-// 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
+// 包: 无
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → ReplaceMethodBody（编译与提交分离）
+// 原理: DataBox.TryResolve<ICSharpBridge> → Invoke("body_replace", argsJson)——PACK 协议
 // 常用: CSharpCat 工具 Cat——方法体重写（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
@@ -36,9 +36,20 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.ReplaceMethodBody(className, methodName, body == null ? "" : body);
-            return true;
+            string argsJson = "{\"class\":\"" + Safe(className) + "\",\"method\":\"" + Safe(methodName) + "\",\"body\":\"" + Safe(body) + "\"}";
+            return bridge.Invoke("body_replace", argsJson, out result);
+        }
+
+        /// <summary>
+        /// JSON 字符串安全转义
+        /// </summary>
+        /// <param name="value">原始值</param>
+        /// <returns>转义后</returns>
+        private static string Safe(string value)
+        {
+            if (value == null) { return ""; }
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:949A6B0285501D7C480D4E6877A192A17B48B066CB787DDEFD0C41A2B5380D8B
+// #MAU_CHECKSUM:SHA256:B0CEEC3AEE6FF67047265E9DE5177CAF4360652260D2C3DC43D375AB15779208

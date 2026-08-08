@@ -4,9 +4,9 @@
 // 类别: CSHARP
 // 作用: 重命名成员——全项目引用同步更新（含 using）；编译检查通过才写盘
 // 依赖: 无
-// 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
+// 包: 无
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → RenameMember（Renamer + 编译回滚）
+// 原理: DataBox.TryResolve<ICSharpBridge> → Invoke("member_rename", argsJson)——PACK 协议
 // 常用: CSharpCat 工具 Cat——重构重命名（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
@@ -36,9 +36,20 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.RenameMember(className, oldName, newName);
-            return true;
+            string argsJson = "{\"class\":\"" + Safe(className) + "\",\"oldName\":\"" + Safe(oldName) + "\",\"newName\":\"" + Safe(newName) + "\"}";
+            return bridge.Invoke("member_rename", argsJson, out result);
+        }
+
+        /// <summary>
+        /// JSON 字符串安全转义
+        /// </summary>
+        /// <param name="value">原始值</param>
+        /// <returns>转义后</returns>
+        private static string Safe(string value)
+        {
+            if (value == null) { return ""; }
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:A1025ECCBA1B6121D335BA7A2D9B2A261DC8E0DFB848A8C79A6C900AA77469F1
+// #MAU_CHECKSUM:SHA256:117608DCFC2485CB0D42634317DF1ABB798E39C8FEE924B9E9D485060B91BD42

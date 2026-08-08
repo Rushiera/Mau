@@ -237,6 +237,106 @@ namespace Mau.Development
         }
 
         /// <summary>
+        /// PACK 单方法调度——method 白名单 + argsJson 展平参数（积木统一入口）
+        /// </summary>
+        /// <param name="method">操作名</param>
+        /// <param name="argsJson">展平参数 JSON</param>
+        /// <param name="result">结果文本</param>
+        /// <returns>true=调用成功</returns>
+        public bool Invoke(string method, string argsJson, out string result)
+        {
+            result = "";
+            if (string.IsNullOrEmpty(method))
+            {
+                result = "{\"ok\":false, \"error\":\"PACK_NO_METHOD\", \"detail\":\"csharp.bridge 缺 method\"}";
+                return false;
+            }
+            string m = method.Trim();
+            try
+            {
+                if (m == "init") { result = Init(ReadArg(argsJson, "csproj")); return true; }
+                if (m == "info") { result = GetInfo(); return true; }
+                if (m == "list") { result = ListMembers(ReadArg(argsJson, "class")); return true; }
+                if (m == "read") { result = ReadMember(ReadArg(argsJson, "class"), ReadArg(argsJson, "member")); return true; }
+                if (m == "compile")
+                {
+                    bool full = false;
+                    string rawFull = ReadArg(argsJson, "full");
+                    if (rawFull.Length > 0 && bool.TryParse(rawFull, out full)) { }
+                    result = GetDiagnostics(full);
+                    return true;
+                }
+                if (m == "body_replace") { result = ReplaceMethodBody(ReadArg(argsJson, "class"), ReadArg(argsJson, "method"), ReadArg(argsJson, "body")); return true; }
+                if (m == "line_patch") { result = LinePatch(ReadArg(argsJson, "class"), ReadArg(argsJson, "method"), ReadInt(argsJson, "startLine"), ReadInt(argsJson, "endLine"), ReadArg(argsJson, "newText")); return true; }
+                if (m == "line_insert") { result = LineInsert(ReadArg(argsJson, "class"), ReadArg(argsJson, "method"), ReadInt(argsJson, "afterLine"), ReadArg(argsJson, "newText")); return true; }
+                if (m == "member_insert") { result = InsertMember(ReadArg(argsJson, "class"), ReadArg(argsJson, "position"), ReadArg(argsJson, "anchor"), ReadArg(argsJson, "code")); return true; }
+                if (m == "member_delete") { result = DeleteMember(ReadArg(argsJson, "class"), ReadArg(argsJson, "member")); return true; }
+                if (m == "comment_set") { result = SetComment(ReadArg(argsJson, "class"), ReadArg(argsJson, "member"), ReadArg(argsJson, "type"), ReadArg(argsJson, "text"), ReadArg(argsJson, "param")); return true; }
+                if (m == "comment_check") { result = CommentCheck(); return true; }
+                if (m == "member_rename") { result = RenameMember(ReadArg(argsJson, "class"), ReadArg(argsJson, "oldName"), ReadArg(argsJson, "newName")); return true; }
+                if (m == "dead") { result = DeadCode(); return true; }
+                if (m == "find_ref") { result = FindReferences(ReadArg(argsJson, "class"), ReadArg(argsJson, "member")); return true; }
+                result = "{\"ok\":false, \"error\":\"PACK_UNKNOWN_METHOD\", \"detail\":\"" + m + "\"}";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                result = "{\"ok\":false, \"error\":\"PACK_INVOKE_FAILED\", \"detail\":\"" + ex.Message + "\"}";
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 读取 argsJson 字符串参数
+        /// </summary>
+        /// <param name="argsJson">参数 JSON</param>
+        /// <param name="key">参数名</param>
+        /// <returns>值或空串</returns>
+        private static string ReadArg(string argsJson, string key)
+        {
+            if (string.IsNullOrEmpty(argsJson))
+            {
+                return "";
+            }
+            try
+            {
+                using System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(argsJson);
+                System.Text.Json.JsonElement value;
+                if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty(key, out value))
+                {
+                    if (value.ValueKind == System.Text.Json.JsonValueKind.String)
+                    {
+                        return value.GetString() ?? "";
+                    }
+                    return value.GetRawText();
+                }
+            }
+            catch
+            {
+                // 解析失败返回空串
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// 读取 argsJson int 参数
+        /// </summary>
+        /// <param name="argsJson">参数 JSON</param>
+        /// <param name="key">参数名</param>
+        /// <returns>int 值（解析失败 0）</returns>
+        private static int ReadInt(string argsJson, string key)
+        {
+            string raw = ReadArg(argsJson, key);
+            int value;
+            if (int.TryParse(raw, out value))
+            {
+                return value;
+            }
+            return 0;
+        }
+
+        /// <summary>
         /// 查询绑定状态
         /// </summary>
         /// <returns>JSON</returns>

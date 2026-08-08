@@ -4,9 +4,9 @@
 // 类别: CSHARP
 // 作用: 在类中插入新成员——position: after/before/end/after_fields（编译通过才写盘）
 // 依赖: 无
-// 包: Microsoft.CodeAnalysis.Workspaces.MSBuild@4.11.0
+// 包: 无
 // 引用: Mau.Runtime（ICSharpBridge）· System
-// 原理: DataBox 解析 ICSharpBridge → InsertMember（锚点定位 + 编译回滚）
+// 原理: DataBox.TryResolve<ICSharpBridge> → Invoke("member_insert", argsJson)——PACK 协议
 // 常用: CSharpCat 工具 Cat——成员新增（M2d.1）
 // ═══════════════════════════════════════════════════
 using System;
@@ -37,9 +37,20 @@ namespace Mau.Bricks
                 result = "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Mau.Development.MauRoslynBridge）";
                 return false;
             }
-            result = bridge.InsertMember(className, position, anchor == null ? "" : anchor, code == null ? "" : code);
-            return true;
+            string argsJson = "{\"class\":\"" + Safe(className) + "\",\"position\":\"" + Safe(position) + "\",\"anchor\":\"" + Safe(anchor) + "\",\"code\":\"" + Safe(code) + "\"}";
+            return bridge.Invoke("member_insert", argsJson, out result);
+        }
+
+        /// <summary>
+        /// JSON 字符串安全转义
+        /// </summary>
+        /// <param name="value">原始值</param>
+        /// <returns>转义后</returns>
+        private static string Safe(string value)
+        {
+            if (value == null) { return ""; }
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:C448A2322183013BA262BE9F4E2F82AE7E50E173529D64C2932BC0A2BCA0B45C
+// #MAU_CHECKSUM:SHA256:86539C932190F54D97E2EBDDDBC18F0AD4323B48D5D8EFF80BBB8AF567F791E2
