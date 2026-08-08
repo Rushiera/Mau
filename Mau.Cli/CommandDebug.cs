@@ -388,16 +388,24 @@ namespace Mau.Cli
         /// <returns>true=退出</returns>
         private static bool WaitForContinue()
         {
-            try
+            // 限时轮询——非交互（管道/CI）场景最多等 10 秒自动继续，防挂死
+            for (int i = 0; i < 200; i++)
             {
-                ConsoleKeyInfo key = Console.ReadKey(true);
-                return key.KeyChar == 'q' || key.KeyChar == 'Q';
+                if (Console.KeyAvailable)
+                {
+                    try
+                    {
+                        ConsoleKeyInfo key = Console.ReadKey(true);
+                        return key.KeyChar == 'q' || key.KeyChar == 'Q';
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                }
+                System.Threading.Thread.Sleep(50);
             }
-            catch
-            {
-                // 非交互环境——直接继续
-                return false;
-            }
+            return false;
         }
 
         /// <summary>

@@ -171,7 +171,8 @@ namespace Mau.Cli
                 }
                 else if (key == "文件")
                 {
-                    file.Files.Add(value);
+                    // 逗号分隔多文件——与 依赖/引用 同规（\, 转义字面逗号）
+                    AddList(file.Files, value);
                 }
                 else
                 {
