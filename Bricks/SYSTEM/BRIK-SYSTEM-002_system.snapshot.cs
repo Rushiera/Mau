@@ -4,6 +4,7 @@
 // 类别: SYSTEM
 // 作用: Runtime 快照大纲——FlowRunner 实体/OA/Command/DataBox 汇总（细则未来新增指令）
 // 依赖: 无
+// 包: 无
 // 引用: Mau.Runtime · System
 // 原理: FlowRunner.GetStatus + DataBox.Capture 聚合为大纲文本
 // 常用: SystemCat 工具 Cat——运行时状态总览（M2c 六+一域 System 域）
@@ -73,4 +74,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:3D23FDF3A36B7DB9146642D09B1AAD31D36055E78FD877A6D52C0E1802B46775
+// #MAU_CHECKSUM:SHA256:17F0D8BC347C201812B46E45D7CC2AC284419F3F9CB1E935A08EA82AA98C972A

@@ -4,6 +4,7 @@
 // 类别: OFFICE
 // 作用: 将 TSV/CSV 文本写入 .xlsx 文件（覆盖已有文件）
 // 依赖: 无
+// 包: ClosedXML@0.104.2
 // 引用: System · ClosedXML.Excel
 // 原理: XLWorkbook 创建——分隔符自动检测（\t 优先），CSV 引号还原
 // 常用: CH4 IO 工具组 / 报表导出
@@ -83,4 +84,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:22609EC260B683323E36CE087A13E0E700BAC841FC57A6C8B173A9F799EBC0FF
+// #MAU_CHECKSUM:SHA256:33820E428E4253123CFC06821E17625043EE2559D9A657C707A9AF46B31BB669

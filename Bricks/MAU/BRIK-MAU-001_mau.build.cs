@@ -4,6 +4,7 @@
 // 类别: MAU
 // 作用: Mau CLI 指令封装——输出带参指令（verify/gen/build/test/check/bricks/run/debug/publish/serve/ps）
 // 依赖: 无
+// 包: 无
 // 引用: System
 // 原理: 白名单命令校验 + 参数拼接 → 输出 "mau <command> <args>" 指令字符串（指令行中介）
 // 常用: MauCat 工具 Cat——Mau CLI 带参运行（M2c 六+一域 Mau 域）
@@ -72,4 +73,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:61F5E4DB901B792C55CE5E9E346F5FAB76634667D96DAB8F75C19C49EA049381
+// #MAU_CHECKSUM:SHA256:E225262E60934D577E93FCC0B6D4253887B2C1E239EE587807C4429D5DE567CE

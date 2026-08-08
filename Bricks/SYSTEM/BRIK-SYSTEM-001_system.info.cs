@@ -4,6 +4,7 @@
 // 类别: SYSTEM
 // 作用: 运行环境信息——工作目录/LLM 端点/时间/DataBox 服务/机器名（对标 CH2 CatInfo）
 // 依赖: 无
+// 包: 无
 // 引用: Mau.Runtime · System
 // 原理: Environment + LlmBridge + DataBox 聚合（运行时信息经 DataBox scope 读取）
 // 常用: SystemCat 工具 Cat——环境查询（M2c 六+一域 System 域）
@@ -61,4 +62,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:6B3F0FF32DC6C5D927C453995565F604FCDE9FEB496F4D59064E931A7C61A92C
+// #MAU_CHECKSUM:SHA256:301228758FDBA4F54009A3252E23036A5D2DE2BE648FAF79515E9BC201E815CB

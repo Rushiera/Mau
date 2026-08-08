@@ -4,6 +4,7 @@
 // 类别: OFFICE
 // 作用: 读取 .docx 文件，提取纯文本内容（段落间空行分隔）
 // 依赖: 无
+// 包: DocumentFormat.OpenXml@3.2.0
 // 引用: System · System.Text · DocumentFormat.OpenXml
 // 原理: WordprocessingDocument 打开——Body 段落遍历 InnerText 拼接
 // 常用: CH4 IO 工具组 / 文档处理
@@ -71,4 +72,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:2266320CC6F586BD2A7E678C1AE99D96CF7E8FC90481C939EDAAEC58AA203507
+// #MAU_CHECKSUM:SHA256:0C9B3B3FCE20B387DB118AAFE412AC513F13483B177939E302BE1F9758325506

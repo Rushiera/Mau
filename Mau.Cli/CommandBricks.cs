@@ -49,6 +49,11 @@ namespace Mau.Cli
             public string Dependencies = "";
 
             /// <summary>
+            /// 外部包声明——包名@版本 列表（文件头 `包:` 字段，分号分隔；无则空）
+            /// </summary>
+            public string Packages = "";
+
+            /// <summary>
             /// 状态——active / deprecated
             /// </summary>
             public string Status = "";
@@ -286,6 +291,7 @@ namespace Mau.Cli
             string ids = "";
             string category = "";
             string deps = "";
+            string packages = "";
             string duration = "";
             string thread = "";
             for (int i = 0; i < lines.Length && i < 16; i++)
@@ -316,6 +322,10 @@ namespace Mau.Cli
                 {
                     deps = line.Substring(7).Trim();
                 }
+                else if (line.StartsWith("// 包:"))
+                {
+                    packages = line.Substring(5).Trim();
+                }
                 else if (line.StartsWith("// 时长:"))
                 {
                     duration = line.Substring(6).Trim();
@@ -334,6 +344,7 @@ namespace Mau.Cli
             entry.Name = brickName;
             entry.Path = relPath;
             entry.Dependencies = deps;
+            entry.Packages = packages;
             entry.Status = "active";
             entry.Source = "";
             entry.FileIdText = ids;
@@ -716,6 +727,65 @@ namespace Mau.Cli
                     expected = expected + 1;
                 }
             }
+            // V10: 外部包声明一致——文件头 `包:` vs Mau.Cli.csproj PackageReference（文件头权威）
+            string cliProj = Path.Combine(root, "Mau.Cli", "Mau.Cli.csproj");
+            string csprojText = "";
+            try
+            {
+                csprojText = File.ReadAllText(cliProj);
+            }
+            catch
+            {
+                Console.WriteLine("V10 FAIL: 无法读取 Mau.Cli.csproj——" + cliProj);
+                errors = errors + 1;
+            }
+            if (csprojText.Length > 0)
+            {
+                for (int p = 0; p < headerEntries.Count; p++)
+                {
+                    BrickIndexEntry he = headerEntries[p];
+                    string[] pkgParts = (he.Packages ?? "").Split(';');
+                    for (int q = 0; q < pkgParts.Length; q++)
+                    {
+                        string part = pkgParts[q].Trim();
+                        if (part.Length == 0 || part == "无")
+                        {
+                            continue;
+                        }
+                        // 格式：包名@版本
+                        int at = part.LastIndexOf('@');
+                        if (at <= 0)
+                        {
+                            Console.WriteLine("V10 FAIL: 包声明格式非法——" + he.Name + " '" + part + "'（需要 包名@版本）");
+                            errors = errors + 1;
+                            continue;
+                        }
+                        string pkgName = part.Substring(0, at).Trim();
+                        string pkgVersion = part.Substring(at + 1).Trim();
+                        if (pkgVersion == "local")
+                        {
+                            // local = 本地项目程序集（Mau.Runtime 等）——跳过 csproj 校验
+                            continue;
+                        }
+                        // 校验 Mau.Cli.csproj 包含该包且版本一致
+                        string needle = "PackageReference Include=\"" + pkgName + "\"";
+                        int incIdx = csprojText.IndexOf(needle, StringComparison.Ordinal);
+                        if (incIdx < 0)
+                        {
+                            Console.WriteLine("V10 FAIL: 包未引用——" + he.Name + " 声明 " + part + "——Mau.Cli.csproj 缺 <PackageReference Include=\"" + pkgName + "\" />");
+                            errors = errors + 1;
+                            continue;
+                        }
+                        string verNeedle = "Version=\"" + pkgVersion + "\"";
+                        int verIdx = csprojText.IndexOf(verNeedle, incIdx, StringComparison.Ordinal);
+                        if (verIdx < 0)
+                        {
+                            Console.WriteLine("V10 FAIL: 包版本不符——" + he.Name + " 声明 " + part + "——Mau.Cli.csproj 的 " + pkgName + " 版本 ≠ " + pkgVersion);
+                            errors = errors + 1;
+                        }
+                    }
+                }
+            }
 
             if (errors == 0)
             {
@@ -816,6 +886,43 @@ namespace Mau.Cli
             json.AppendLine("{");
             json.AppendLine("  \"version\": 3,");
             json.AppendLine("  \"generatedAt\": \"" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") + "\",");
+            // [段3a] 全部引用包列表——汇总所有积木 `包:` 声明（去重保序）
+            List<string> allPackages = new List<string>();
+            for (int p = 0; p < count; p++)
+            {
+                string[] pkgParts = entries[p].Packages.Split(';');
+                for (int q = 0; q < pkgParts.Length; q++)
+                {
+                    string part = pkgParts[q].Trim();
+                    if (part.Length == 0 || part == "无")
+                    {
+                        continue;
+                    }
+                    bool exists = false;
+                    for (int r = 0; r < allPackages.Count; r++)
+                    {
+                        if (allPackages[r] == part)
+                        {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists)
+                    {
+                        allPackages.Add(part);
+                    }
+                }
+            }
+            json.Append("  \"packages\": [");
+            for (int p = 0; p < allPackages.Count; p++)
+            {
+                if (p > 0)
+                {
+                    json.Append(", ");
+                }
+                json.Append("\"" + JsonEscape(allPackages[p]) + "\"");
+            }
+            json.AppendLine("],");
             json.AppendLine("  \"bricks\": [");
             for (int i = 0; i < count; i++)
             {
@@ -831,6 +938,17 @@ namespace Mau.Cli
                         depList.Add(part);
                     }
                 }
+                // 外部包声明——文件头 `包:` 字段（包名@版本，分号分隔）
+                string[] pkgParts = e.Packages.Split(';');
+                List<string> pkgList = new List<string>();
+                for (int p = 0; p < pkgParts.Length; p = p + 1)
+                {
+                    string part = pkgParts[p].Trim();
+                    if (part.Length > 0 && part != "无")
+                    {
+                        pkgList.Add(part);
+                    }
+                }
                 json.Append("    {\"id\":\"" + JsonEscape(e.Id) + "\",\"name\":\"" + JsonEscape(e.Name) + "\",\"category\":\"" + JsonEscape(e.Category) + "\",\"path\":\"" + JsonEscape(e.Path) + "\",\"dependencies\":[");
                 for (int d = 0; d < depList.Count; d = d + 1)
                 {
@@ -839,6 +957,15 @@ namespace Mau.Cli
                         json.Append(",");
                     }
                     json.Append("\"" + JsonEscape(depList[d]) + "\"");
+                }
+                json.Append("],\"packages\":[");
+                for (int p = 0; p < pkgList.Count; p = p + 1)
+                {
+                    if (p > 0)
+                    {
+                        json.Append(",");
+                    }
+                    json.Append("\"" + JsonEscape(pkgList[p]) + "\"");
                 }
                 json.Append("],\"status\":\"" + JsonEscape(e.Status) + "\"");
                 if (e.Contract != null)

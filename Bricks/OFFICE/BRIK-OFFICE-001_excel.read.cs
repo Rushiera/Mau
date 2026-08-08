@@ -4,6 +4,7 @@
 // 类别: OFFICE
 // 作用: 读取 .xlsx 文件，返回 TSV/CSV 格式文本
 // 依赖: 无
+// 包: ClosedXML@0.104.2
 // 引用: System · System.Text · ClosedXML.Excel
 // 原理: XLWorkbook 打开——≤2000 行×100 列，CSV 引号转义
 // 常用: CH4 IO 工具组 / 表格数据处理
@@ -120,4 +121,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:A816496BCA4BA408A0155A838D4097FB2FEECB15106A045A38D0ABFCB8FC1C9A
+// #MAU_CHECKSUM:SHA256:9A7F346C05AEB27B4B578B953E9A8AFA8D3B79979433A45B4663B602B9A408ED

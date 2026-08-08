@@ -4,6 +4,7 @@
 // 类别: CSHARP
 // 作用: C# 编译占位——走通工具路径（未来接入 Roslyn，照搬 CH2 csharpcode 工具组体系）
 // 依赖: 无
+// 包: 无
 // 引用: System
 // 原理: 占位空返回——TODO：内置 Roslyn 后实现 csharpcode 全工具组（独立 todo）
 // 常用: CSharpCat 工具 Cat——工具路径验证（M2c 六+一域 CSharp 域）
@@ -31,4 +32,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:E76E51F0550D7B39A657F25B4DB752223F0C7A8542D97D3D40E52802CBCFFBBB
+// #MAU_CHECKSUM:SHA256:7F49F4D01D1A6CCBD6DB1C25D0B02FB54B15E028035A9BB239199DA670F2CE29

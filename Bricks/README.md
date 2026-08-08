@@ -1,4 +1,4 @@
-# Mau 积木百科全书 — Bricks
+﻿# Mau 积木百科全书 — Bricks
 
 > 版本：v2.0 | 更新：2026-08-07（R1 文本库形态 + 源码驱动索引）
 > 定位：Mau 积木的**文本资产库**——84 个 BRIK 单文件（复制即单包），翻译器内嵌进生成物。
@@ -38,6 +38,7 @@
 // 类别: FILE
 // 作用: 读取 UTF-8 文本（受控路径）
 // 依赖: 无
+// 包: ClosedXML@0.104.2; DocumentFormat.OpenXml@3.2.0   ← 无外部包写"无"
 // 引用: System
 // 原理: 经 FileBridge 受控文件系统 ReadText——白名单边界内置
 // 常用: CH4 IO 工具组 / 任意文件读取场景
@@ -57,6 +58,7 @@
 | `类别:` | 类别码——**权威**（docx.* 属 OFFICE，不按名前缀推断） |
 | `作用:` | 一句话职责 |
 | `依赖:` | 依赖声明——L1 基座能力 / L2 积木 ID（BRIK-xxx）/ L3 外部库，逗号分隔；无则写"无" |
+| `包:` | **外部 NuGet 包声明**——`包名@版本`，多个用分号分隔；无则写"无"。**版本唯一真相源**（V10 门禁校验与 Mau.Cli.csproj 引用一致）；本地程序集（Mau.Runtime 等）写 `Mau.Runtime@local` 不校验 |
 | `引用:` | 依赖链——引用了哪些库/服务 |
 | `原理:` | 核心机制——怎么做（≤一行） |
 | `常用:` | 典型使用场景 |
@@ -109,7 +111,44 @@ Bricks/{类别}/*.cs（文件头十字段 + 静态方法签名）
 
 ---
 
-## 六、类别目录
+## 七、外部包接入协议（PACK）
+
+> 目标：Mau 生态引入 .NET 官方开源包时有固定路径，版本单一真相源，依赖者无感。
+
+### 7.1 包归属三层判定
+
+| 判定 | 落层 | 例子 |
+|:--|:--|:--|
+| Q1 运行时机制（任何软件都需要）？ | Mau.Runtime（零 NuGet 铁律） | OA/Command/DataBox 已是 |
+| Q2 开发工具（编译/语法分析）？ | Mau.Development | Roslyn（MauPocketCompiler/MauRoslynSourceWorkspace） |
+| Q3 领域能力（Excel/PDF/图像）？ | **积木直接引用**（`包:` 声明） | ClosedXML / DocumentFormat.OpenXml |
+| Q4 重型有状态（需宿主交互）？ | Runtime 接口 + Development 实现 + DataBox 服务 | ICSharpBridge（M2d.1 规划） |
+
+### 7.2 接入流程（新包四步）
+
+1. **声明** — 积木文件头加 `// 包: 包名@版本`（无外部包写"无"）
+2. **引用** — Mau.Cli.csproj 加 `<PackageReference Include="包名" Version="版本" />`（V10 门禁校验一致性）
+3. **索引** — `mau bricks index --update`（index.json 自动汇总 `packages` 全量字段）
+4. **验证** — `mau bricks index --verify`（V10 包声明 vs csproj 引用一致）+ `mau test`
+
+### 7.3 版本真相源
+
+- **积木文件头 `包:` 字段 = 版本唯一真相源**
+- Mau.Cli.csproj 引用必须与之一致（V10 门禁）
+- 依赖者（CH4 等）宿主引用由 `index.json packages` 字段快速查询，版本以积木声明为准
+
+### 7.4 Roslyn 接入路径（M2d.1 参考）
+
+```
+Mau.Runtime      ICSharpBridge（纯接口·零依赖·string 基元）
+Mau.Development  MauRoslynBridge : ICSharpBridge（多树隔离 + MSBuildWorkspace + ApplyDocChange）
+Bricks           BRIK-CSHARP-xxx（DataBox 调度薄壳 + `包:` 声明）
+CH4              宿主引 Mau.Development（Roslyn 已在其中，无需额外包）
+```
+
+---
+
+## 八、类别目录
 
 | 目录 | 内容 | 数量 |
 |:--|:--|:--:|
