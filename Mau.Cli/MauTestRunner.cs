@@ -20,7 +20,7 @@ namespace Mau.Cli
         /// 执行门禁——成功输出 MAU_CHECKS_OK
         /// </summary>
         /// <returns>退出码——0 成功</returns>
-        public static int Run()
+        public static int Run(bool update)
         {
             string? root = FindWorkspaceRoot();
             if (root == null)
@@ -125,23 +125,23 @@ namespace Mau.Cli
 
             // [段4] 黄金文件对比（L3）——含 SHA256 校验尾验证
             Console.WriteLine("[4/4] 黄金文件对比（L3）");
-            if (!VerifyGolden(root, "file_convert.mau", "FL_FileConvert.cs", "FileConvert"))
+            if (!VerifyGolden(root, "file_convert.mau", "FL_FileConvert.cs", "FileConvert", update))
             {
                 return 1;
             }
-            if (!VerifyGolden(root, "worker_convert.mau", "FL_WorkerConvert.cs", "WorkerConvert"))
+            if (!VerifyGolden(root, "worker_convert.mau", "FL_WorkerConvert.cs", "WorkerConvert", update))
             {
                 return 1;
             }
-            if (!VerifyGolden(root, "sequence_flow.mau", "FL_SequenceFlow.cs", "SequenceFlow"))
+            if (!VerifyGolden(root, "sequence_flow.mau", "FL_SequenceFlow.cs", "SequenceFlow", update))
             {
                 return 1;
             }
-            if (!VerifyGolden(root, "hello_cat.mau", "FL_HelloCat.cs", "HelloCat"))
+            if (!VerifyGolden(root, "hello_cat.mau", "FL_HelloCat.cs", "HelloCat", update))
             {
                 return 1;
             }
-            if (!VerifyGolden(root, "tool_cat.mau", "FL_ToolCat.cs", "ToolCat"))
+            if (!VerifyGolden(root, "tool_cat.mau", "FL_ToolCat.cs", "ToolCat", update))
             {
                 return 1;
             }
@@ -443,7 +443,7 @@ private static bool VerifyChecksum(string filePath, out string body)
 /// <param name = "expectedName">expected/ 下的黄金文件名</param>
 /// <param name = "flowName">流程名——PascalCase</param>
 /// <returns>通过</returns>
-private static bool VerifyGolden(string root, string caseName, string expectedName, string flowName)
+private static bool VerifyGolden(string root, string caseName, string expectedName, string flowName, bool update)
 {
     string caseFile = Path.Combine(root, "Mau.Snapshots", "cases", caseName);
     string expectedFile = Path.Combine(root, "Mau.Snapshots", "expected", expectedName);
@@ -465,12 +465,24 @@ private static bool VerifyGolden(string root, string caseName, string expectedNa
         return false;
     }
 
+    // E1：黄金只存纯生成内容——剥离内嵌积木段（BRIKGROUP 由积木谱独立验证）
+    string stripped = MauCompiler.StripBrickSections(result.GeneratedCode);
+
+    if (update)
+    {
+        // 重建黄金——剥离版正文 + SHA256 校验尾
+        string hash = MauProjFile.ComputeSha256(stripped);
+        File.WriteAllText(expectedFile, stripped + "\n// #MAU_CHECKSUM:SHA256:" + hash);
+        Console.WriteLine("UPDATED: " + expectedName + " → " + hash);
+        return true;
+    }
+
     if (!VerifyChecksum(expectedFile, out string expectedBody))
     {
         return false;
     }
 
-    string actual = result.GeneratedCode.Replace("\r\n", "\n").TrimEnd('\n');
+    string actual = stripped.Replace("\r\n", "\n").TrimEnd('\n');
     if (expectedBody.TrimEnd('\n') != actual)
     {
         Console.WriteLine("FAIL: 生成漂移——黄金文件不一致 (" + caseName + ")");

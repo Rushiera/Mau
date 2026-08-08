@@ -23,7 +23,7 @@ namespace Mau.Cli
             if (args.Length == 0)
             {
                 Console.WriteLine("Mau Translator v0.1");
-                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau|组.mauproj> -o <dir> [--sdk] | mau publish -o <dir> | mau test | mau check [--update|--syntax|--bricks] | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket> | mau ps | mau status <名> | mau snapshot <名> | mau kill <名> | mau bricks list|index|test | mau export <组.mauproj> [-o <dir>] | mau import <组包目录> -o <目录> [--force]");
+                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau|组.mauproj> -o <dir> [--sdk] | mau publish -o <dir> | mau test [--update] | mau check [--update|--syntax|--bricks] | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau debug <file.mau> [--ticks N] [--step] [--pause-on T_X|P_Y] [--trace] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket> | mau ps | mau status <名> | mau snapshot <名> | mau kill <名> | mau bricks list|index|test | mau export <组.mauproj> [-o <dir>] | mau import <组包目录> -o <目录> [--force]");
                 return 0;
             }
 
@@ -51,7 +51,8 @@ namespace Mau.Cli
             }
             if (command == "test")
             {
-                return MauTestRunner.Run();
+                bool update = args.Length > 1 && args[1] == "--update";
+                return MauTestRunner.Run(update);
             }
             if (command == "checksum")
             {
@@ -65,6 +66,15 @@ namespace Mau.Cli
                     runArgs[i] = args[i + 1];
                 }
                 return CommandRun.Execute(runArgs);
+            }
+            if (command == "debug")
+            {
+                string[] debugArgs = new string[args.Length - 1];
+                for (int i = 0; i < debugArgs.Length; i = i + 1)
+                {
+                    debugArgs[i] = args[i + 1];
+                }
+                return CommandDebug.Execute(debugArgs);
             }
             if (command == "serve")
             {

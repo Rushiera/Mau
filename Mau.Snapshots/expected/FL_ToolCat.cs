@@ -1,4 +1,4 @@
-﻿// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
+// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
 // 流程: ToolCat
 // 基座: Mau.Runtime/v0.1
 
@@ -22,6 +22,11 @@ namespace Mau.Generated.Flows
         /// 环形调试日志——200 条上限
         /// </summary>
         private FlowLog _logs;
+
+        /// <summary>
+        /// 数据流追踪开关——SetTraceDataFlow 控制（D2 调试基建：输出赋值/信号投递消费记录）
+        /// </summary>
+        private bool _traceDataFlow;
 
         /// <summary>
         /// 命题 P_Read：信号，消费即清除
@@ -85,6 +90,7 @@ namespace Mau.Generated.Flows
         public void FireRead(string path)
         {
             _path = path;
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Read")); }
             P_Read = true;
         }
 
@@ -97,6 +103,7 @@ namespace Mau.Generated.Flows
         {
             _path = path;
             _content = content;
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Write")); }
             P_Write = true;
         }
 
@@ -110,9 +117,11 @@ namespace Mau.Generated.Flows
             if (P_Read)
             {
                 // 信号消费
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Read", "Consume", "P_Read")); }
                 P_Read = false;
                 // 执行动作（积木调用）
                 bool ok = Mau.Bricks.BRIK_FILE_002.Read(_path, out _content);
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Read", "Set", "_content=" + System.Convert.ToString(_content))); }
                 if (ok)
                 {
                     // 正常后置注册
@@ -129,6 +138,7 @@ namespace Mau.Generated.Flows
             if (P_Write)
             {
                 // 信号消费
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Write", "Consume", "P_Write")); }
                 P_Write = false;
                 // 执行动作（积木调用）
                 bool ok = Mau.Bricks.BRIK_FILE_003.Write(_path, _content);
@@ -172,6 +182,15 @@ namespace Mau.Generated.Flows
         public MauDebug[] GetLogs()
         {
             return _logs.GetAll();
+        }
+
+        /// <summary>
+        /// 开启数据流追踪——输出端口赋值/信号投递消费记录 MauDebug（D2 调试基建）
+        /// </summary>
+        /// <param name="enabled">true=记录数据流日志</param>
+        public void SetTraceDataFlow(bool enabled)
+        {
+            _traceDataFlow = enabled;
         }
 
         /// <summary>
@@ -244,66 +263,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-
-    // #BRICK:BRIK-FILE-002 BEGIN
-namespace Mau.Bricks
-{
-    /// <summary>
-    /// 文件积木——file.read 读取文本（依赖 FileBridge）
-    /// </summary>
-    public static class BRIK_FILE_002
-    {
-        /// <summary>
-        /// 读取 UTF-8 文本
-        /// </summary>
-        /// <param name="path">受控路径</param>
-        /// <param name="content">完整文本——成功时填充</param>
-        /// <returns>true=成功</returns>
-        public static bool Read(string path, out string content)
-        {
-            try
-            {
-                content = FileBridge.CurrentFileSystem().ReadText(path);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                content = "ERR|" + ex.GetType().Name + "|" + ex.Message;
-                return false;
-            }
-        }
-    }
-}
-
-    // #BRICK:BRIK-FILE-002 END
-    // #BRICK:BRIK-FILE-003 BEGIN
-namespace Mau.Bricks
-{
-    /// <summary>
-    /// 文件积木——file.write 原子覆写（依赖 FileBridge）
-    /// </summary>
-    public static class BRIK_FILE_003
-    {
-        /// <summary>
-        /// 原子覆写 UTF-8 文本
-        /// </summary>
-        /// <param name="path">受控路径</param>
-        /// <param name="content">完整正文</param>
-        /// <returns>true=成功</returns>
-        public static bool Write(string path, string content)
-        {
-            try
-            {
-                FileBridge.CurrentFileSystem().WriteText(path, content);
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-    }
-}
-
-    // #BRICK:BRIK-FILE-003 END
-// #MAU_CHECKSUM:SHA256:D0B7D2604A783275251C79244A538D9C75DAAF5199D4ACD420242C02FAE8162B
+// #MAU_CHECKSUM:SHA256:410929C7AE43622B129B4CE1ED44D5C006C4FBF7CCB293DB782FA235B5A0E764

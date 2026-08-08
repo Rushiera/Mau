@@ -131,7 +131,7 @@ namespace Mau.Cli
         /// </summary>
         /// <returns>退出码</returns>
         public static int ResealAll()
-        {
+{
             string? root = FindWorkspaceRoot();
             if (root == null)
             {
@@ -139,20 +139,13 @@ namespace Mau.Cli
                 return 1;
             }
             string catalogDir = Path.Combine(root, "Bricks");
-            string[] dirs = new string[]
-            {
-                "APPROVAL", "CMD", "DATA", "DOG", "FILE", "LLM", "LOG", "MATH",
-                "OA", "OFFICE", "SHELL", "TEST", "TEXT", "TOOL"
-            };
+            // 目录即清单——扫描 Bricks/ 全部子目录（新增类别自动进，不维护硬编码清单）
+            string[] dirs = Directory.GetDirectories(catalogDir);
+            System.Array.Sort(dirs, StringComparer.Ordinal);
             int resealed = 0;
             for (int d = 0; d < dirs.Length; d++)
             {
-                string dirPath = Path.Combine(catalogDir, dirs[d]);
-                if (!Directory.Exists(dirPath))
-                {
-                    continue;
-                }
-                string[] files = Directory.GetFiles(dirPath, "*.cs");
+                string[] files = Directory.GetFiles(dirs[d], "*.cs");
                 for (int f = 0; f < files.Length; f++)
                 {
                     if (ResealOneFile(files[f]))
@@ -164,17 +157,19 @@ namespace Mau.Cli
             Console.WriteLine("BRICKS_RESEAL_OK (" + resealed + " 文件校验尾已更新)");
             return 0;
         }
-
         /// <summary>
         /// 单文件重算校验尾——去旧校验尾行 → 计算正文 SHA256 → 追加新校验尾
         /// </summary>
         /// <param name="file">积木文件</param>
         /// <returns>是否更新</returns>
         private static bool ResealOneFile(string file)
-        {
+{
             try
             {
-                string full = File.ReadAllText(file).Replace("\r\n", "\n");
+                string original = File.ReadAllText(file);
+                // 行尾感知——保持原文件行尾风格（autocrlf 工作区 CRLF 不重写为 LF，防伪变更）
+                bool crlf = original.Contains("\r\n");
+                string full = original.Replace("\r\n", "\n");
                 string[] lines = full.Split('\n');
                 int bodyEnd = lines.Length;
                 while (bodyEnd > 0)
@@ -210,6 +205,17 @@ namespace Mau.Cli
                     hex.Append(hash[i].ToString("X2"));
                 }
                 string content = body + "\n// #MAU_CHECKSUM:SHA256:" + hex.ToString() + "\n";
+                // 伪变更检测——归一化比较（LF 基准）：重写结果与原文一致则不落盘（防 autocrlf 全 M 伪变更）
+                string originalNormalized = original.Replace("\r\n", "\n");
+                if (string.Equals(originalNormalized, content, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+                // 行尾还原——检测到原文件 CRLF 则写入 CRLF（保持 git 工作区行尾一致）
+                if (crlf)
+                {
+                    content = content.Replace("\n", "\r\n");
+                }
                 // 无 BOM 写入——与现有积木文件编码一致（带 BOM 会导致全部文件被标记修改）
                 File.WriteAllText(file, content, new UTF8Encoding(false));
                 return true;
@@ -218,9 +224,7 @@ namespace Mau.Cli
             {
                 return false;
             }
-        }
-
-        /// <summary>
+        }        /// <summary>
         /// 注册表实时枚举——全部积木契约
         /// </summary>
         /// <returns>退出码</returns>
@@ -242,29 +246,22 @@ namespace Mau.Cli
         /// <param name="root">仓库根</param>
         /// <returns>索引条目（按文件头块展开为单积木）</returns>
         private static List<BrickIndexEntry> ScanBrickHeaders(string root)
-        {
+{
             List<BrickIndexEntry> entries = new List<BrickIndexEntry>();
-            string[] dirs = new string[]
-            {
-                "APPROVAL", "CMD", "DATA", "DOG", "FILE", "LLM", "LOG", "MATH",
-                "OA", "OFFICE", "SHELL", "TEST", "TEXT", "TOOL"
-            };
+            // 目录即清单——扫描 Bricks/ 全部子目录（新增类别自动进，不维护硬编码清单）
+            string[] dirs = Directory.GetDirectories(root);
+            System.Array.Sort(dirs, StringComparer.Ordinal);
             for (int d = 0; d < dirs.Length; d++)
             {
-                string dirPath = Path.Combine(root, dirs[d]);
-                if (!Directory.Exists(dirPath))
-                {
-                    continue;
-                }
-                string[] files = Directory.GetFiles(dirPath, "*.cs");
+                string dirName = Path.GetFileName(dirs[d]);
+                string[] files = Directory.GetFiles(dirs[d], "*.cs");
                 for (int f = 0; f < files.Length; f++)
                 {
-                    ScanOneFile(files[f], dirs[d], root, entries);
+                    ScanOneFile(files[f], dirName, root, entries);
                 }
             }
             return entries;
         }
-
         /// <summary>
         /// 扫描单个 .cs 文件头注释块
         /// </summary>

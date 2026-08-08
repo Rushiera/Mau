@@ -264,6 +264,44 @@ namespace Mau.Translator
                             }
                             continue;
                         }
+                        // 数组字面量——元素类型按端口元素类型校验（B2：E019）
+                        if (t.Params[p].IsArray)
+                        {
+                            System.Type? arrPortType = FindInputPortType(contract, t.Params[p].PortName);
+                            if (arrPortType == null || !arrPortType.IsArray)
+                            {
+                                diags.Add(new MauDiagnostic("E019", t.Line, "数组字面量只能绑定数组端口: " + t.Params[p].PortName));
+                            }
+                            else
+                            {
+                                System.Type? elemType = arrPortType.GetElementType();
+                                if (elemType != null)
+                                {
+                                    for (int e = 0; e < t.Params[p].ArrayItems.Count; e++)
+                                    {
+                                        string elem = t.Params[p].ArrayItems[e];
+                                        long num;
+                                        bool isNum = long.TryParse(elem, out num);
+                                        bool isStr = elem.Length >= 2 && elem.StartsWith("\"") && elem.EndsWith("\"");
+                                        if (isNum)
+                                        {
+                                            if (elemType != typeof(int) && elemType != typeof(long))
+                                            {
+                                                diags.Add(new MauDiagnostic("E019", t.Line, "数组元素类型不匹配: " + elem + " → " + t.Params[p].PortName + "(" + elemType.Name + "[])——数字元素仅可绑定 int/long 数组"));
+                                            }
+                                        }
+                                        else if (isStr || elem.Length > 0)
+                                        {
+                                            if (elemType != typeof(string))
+                                            {
+                                                diags.Add(new MauDiagnostic("E019", t.Line, "数组元素类型不匹配: \"" + elem + "\" → " + t.Params[p].PortName + "(" + elemType.Name + "[])——字符串元素仅可绑定 string 数组"));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            continue;
+                        }
                         // 箭头绑定（含同名箭头）——变量必须是字段表内的字段引用
                         if (!t.Params[p].IsArrow)
                         {

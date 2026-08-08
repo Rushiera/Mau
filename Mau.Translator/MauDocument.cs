@@ -107,13 +107,22 @@ namespace Mau.Translator
         /// <param name="portName">端口名</param>
         /// <param name="isArrow">是否箭头写法</param>
         public IrParamBinding(string variable, string portName, bool isArrow)
-        {
+{
             Variable = variable;
             PortName = portName;
             IsArrow = isArrow;
             IsConstant = false;
             ConstantValue = "";
-        }
+            IsArray = false;
+            ArrayItems = new System.Collections.Generic.List<string>();
+        }/// <summary>
+/// 数组字面量标志——true=[a,b,c] 字面量绑定（多值常量，B2）
+/// </summary>
+public bool IsArray; 
+/// <summary>
+/// 数组元素——IsArray 时有效（元素原文：数字文本/带引号字符串）
+/// </summary>
+ public  System . Collections . Generic . List < string > ArrayItems ;
     }
 
     /// <summary>

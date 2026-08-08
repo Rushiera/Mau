@@ -166,7 +166,7 @@ namespace Mau.Cli
             {
                 tempDir = Path.Combine(Path.GetTempPath(), "mau_run_pocket_" + Guid.NewGuid().ToString("N").Substring(0, 8));
                 MauPocketCompiler compiler = new MauPocketCompiler(tempDir);
-                MauPocketCompileResult pocketResult = compiler.Compile(csSource, className);
+                MauPocketCompileResult pocketResult = compiler.Compile(csSource, className, compileResult.GeneratedMap);
                 if (!pocketResult.Success)
                 {
                     PrintRunError(2, "Roslyn 编译失败", null);

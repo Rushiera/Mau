@@ -26,6 +26,11 @@ namespace Mau.Generated.Flows
         private FlowLog _logs;
 
         /// <summary>
+        /// 数据流追踪开关——SetTraceDataFlow 控制（D2 调试基建：输出赋值/信号投递消费记录）
+        /// </summary>
+        private bool _traceDataFlow;
+
+        /// <summary>
         /// 命题 P_Start：信号，消费即清除
         /// </summary>
         private bool P_Start;
@@ -80,6 +85,7 @@ namespace Mau.Generated.Flows
             _module = module;
             _level = level;
             _message = message;
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Start")); }
             P_Start = true;
         }
 
@@ -93,6 +99,7 @@ namespace Mau.Generated.Flows
             if (P_Start && T_Run_Cube.IsIdle())
             {
                 // 信号消费
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Run", "Consume", "P_Start")); }
                 P_Start = false;
                 T_Run_Cube.Start();
                 // 执行动作（积木调用）
@@ -151,6 +158,15 @@ namespace Mau.Generated.Flows
         }
 
         /// <summary>
+        /// 开启数据流追踪——输出端口赋值/信号投递消费记录 MauDebug（D2 调试基建）
+        /// </summary>
+        /// <param name="enabled">true=记录数据流日志</param>
+        public void SetTraceDataFlow(bool enabled)
+        {
+            _traceDataFlow = enabled;
+        }
+
+        /// <summary>
         /// 查询结果：Ok
         /// </summary>
         /// <returns>Ok成立</returns>
@@ -186,51 +202,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-
-    // #BRICK:BRIK-LOG-001 BEGIN
-namespace Mau.Bricks
-{
-    /// <summary>
-    /// 日志积木——log.write 写入一条结构化日志（依赖 LogStore）
-    /// </summary>
-    public static class BRIK_LOG_001
-    {
-        /// <summary>
-        /// 写入一条日志
-        /// </summary>
-        /// <param name="module">模块名</param>
-        /// <param name="level">级别——0=INFO 2=WARN 3=ERROR</param>
-        /// <param name="message">消息</param>
-        /// <returns>true=成功</returns>
-        public static bool Write(string module, int level, string message)
-        {
-            LogStore.LogEntry entry;
-            entry.Time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            entry.Module = LogStore.SafeText(module);
-            entry.Level = level;
-            entry.Message = LogStore.SafeText(message);
-            lock (LogStore.Sync)
-            {
-                LogStore.AllLog.Add(entry);
-            }
-            if (LogStore.LogFilePath.Length > 0)
-            {
-                try
-                {
-                    string line = entry.Time + " | " + entry.Module + " | "
-                        + LogStore.LevelText(level) + " | " + entry.Message;
-                    File.AppendAllText(LogStore.LogFilePath, line + "\n",
-                        new UTF8Encoding(false));
-                }
-                catch
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-    }
-}
-
-    // #BRICK:BRIK-LOG-001 END
-// #MAU_CHECKSUM:SHA256:FA4E1E6F99B329A11EA5DB8E8D52A83D12E938AFD31E2431773B441582226D39
+// #MAU_CHECKSUM:SHA256:0CE8295558A370FC0C2B43E0134B1F4FD1A88267ABD04D4AA6002B35D3007329

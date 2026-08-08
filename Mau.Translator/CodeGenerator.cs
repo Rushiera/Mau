@@ -78,6 +78,11 @@ namespace Mau.Translator
             sb.AppendLine("        /// </summary>");
             sb.AppendLine("        private FlowLog _logs;");
             sb.AppendLine();
+            sb.AppendLine("        /// <summary>");
+            sb.AppendLine("        /// 数据流追踪开关——SetTraceDataFlow 控制（D2 调试基建：输出赋值/信号投递消费记录）");
+            sb.AppendLine("        /// </summary>");
+            sb.AppendLine("        private bool _traceDataFlow;");
+            sb.AppendLine();
 
             // [段3] 命题字段
             for (int i = 0; i < doc.Propositions.Count; i++)
@@ -313,6 +318,15 @@ namespace Mau.Translator
             sb.AppendLine("        public MauDebug[] GetLogs()");
             sb.AppendLine("        {");
             sb.AppendLine("            return _logs.GetAll();");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        /// <summary>");
+            sb.AppendLine("        /// 开启数据流追踪——输出端口赋值/信号投递消费记录 MauDebug（D2 调试基建）");
+            sb.AppendLine("        /// </summary>");
+            sb.AppendLine("        /// <param name=\"enabled\">true=记录数据流日志</param>");
+            sb.AppendLine("        public void SetTraceDataFlow(bool enabled)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            _traceDataFlow = enabled;");
             sb.AppendLine("        }");
             sb.AppendLine();
 
@@ -671,6 +685,7 @@ namespace Mau.Translator
             {
                 sb.AppendLine("            _" + params_[i].PortName + " = " + params_[i].PortName + ";");
             }
+            sb.AppendLine("            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, \"Fire\", \"Signal\", \"" + p.Name + "\")); }");
             sb.AppendLine("            " + p.Name + " = true;");
             sb.AppendLine("        }");
             sb.AppendLine();
@@ -808,6 +823,7 @@ namespace Mau.Translator
                         if (prop != null && prop.Kind == PropositionKind.Signal)
                         {
                             sb.AppendLine("                // 信号消费");
+                            sb.AppendLine("                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, \"" + t.Name + "\", \"Consume\", \"" + prop.Name + "\")); }");
                             sb.AppendLine("                " + prop.Name + " = false;");
                         }
                     }
@@ -944,6 +960,7 @@ namespace Mau.Translator
                     if (prop != null && prop.Kind == PropositionKind.Signal)
                     {
                         sb.AppendLine("                // 信号消费");
+                        sb.AppendLine("                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, \"" + t.Name + "\", \"Consume\", \"" + prop.Name + "\")); }");
                         sb.AppendLine("                " + prop.Name + " = false;");
                     }
                 }
@@ -963,6 +980,15 @@ namespace Mau.Translator
             // 动作调用——参数用字段名
             sb.AppendLine("                // 执行动作（积木调用）");
             sb.AppendLine("                bool ok = " + BrickCallText(doc, t, false) + ";");
+            // 输出端口赋值追踪（D2）——从契约遍历输出端口，记录赋值
+            BrickContract? traceContract = null;
+            if (t.BrickName.Length > 0 && BrickIndex.TryGet(t.BrickName, out BrickIndexEntry traceEntry) && (traceContract = traceEntry.Contract) != null)
+            {
+                for (int o = 0; o < traceContract.Outputs.Count; o++)
+                {
+                    sb.AppendLine("                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, \"" + t.Name + "\", \"Set\", \"_" + traceContract.Outputs[o].Name + "=\" + System.Convert.ToString(_" + traceContract.Outputs[o].Name + "))); }");
+                }
+            }
 
             // 后置注册
             sb.AppendLine("                if (ok)");
@@ -1179,6 +1205,51 @@ private static string RewriteImplementation(string implementation, string brickI
                     {
                         sb.Append("\"" + t.Params[i].ConstantValue + "\"");
                     }
+                }
+                else if (t.Params[i].IsArray)
+                {
+                    // 数组字面量——[a,b,c] → new T[] { ... }（B2：语料可构造数组端口）
+                    System.Type? elemType = null;
+                    if (entry != null)
+                    {
+                        for (int ip = 0; ip < entry.Contract.Inputs.Count; ip++)
+                        {
+                            if (entry.Contract.Inputs[ip].Name == t.Params[i].PortName
+                                && entry.Contract.Inputs[ip].Type.IsArray)
+                            {
+                                elemType = entry.Contract.Inputs[ip].Type.GetElementType();
+                                break;
+                            }
+                        }
+                    }
+                    if (elemType == null)
+                    {
+                        elemType = typeof(string);
+                    }
+                    sb.Append("new " + TypeName(elemType) + "[] { ");
+                    for (int e = 0; e < t.Params[i].ArrayItems.Count; e++)
+                    {
+                        if (e > 0)
+                        {
+                            sb.Append(", ");
+                        }
+                        string elem = t.Params[i].ArrayItems[e];
+                        long num;
+                        if (long.TryParse(elem, out num))
+                        {
+                            sb.Append(num.ToString());
+                        }
+                        else
+                        {
+                            string text = elem;
+                            if (text.Length >= 2 && text.StartsWith("\"") && text.EndsWith("\""))
+                            {
+                                text = text.Substring(1, text.Length - 2);
+                            }
+                            sb.Append("\"" + text + "\"");
+                        }
+                    }
+                    sb.Append(" }");
                 }
                 else if (frozen)
                 {

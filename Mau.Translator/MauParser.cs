@@ -654,9 +654,10 @@ private static int FindCommentStart(string line)
         /// <param name="lineNo">行号</param>
         /// <param name="diags">诊断列表</param>
         private static void ParseParams(string value, IrTransition t, int lineNo, List<MauDiagnostic> diags)
-        {
-            string[] items = value.Split(',');
-            for (int i = 0; i < items.Length; i++)
+{
+            // 深度感知分割——方括号内逗号属于数组字面量（B2），不分割
+            List<string> items = SplitParamBindings(value);
+            for (int i = 0; i < items.Count; i++)
             {
                 string item = items[i].Trim();
                 if (item.Length == 0)
@@ -673,8 +674,23 @@ private static int FindCommentStart(string line)
                 string variable = item.Substring(0, arrow).Trim();
                 string port = item.Substring(arrow + 1).Trim();
                 IrParamBinding binding = new IrParamBinding(variable, port, true);
+                // 数组字面量绑定——[a,b,c]（B2：语料可构造数组端口）
+                if (variable.Length >= 2 && variable.StartsWith("[") && variable.EndsWith("]"))
+                {
+                    binding.IsArray = true;
+                    string inner = variable.Substring(1, variable.Length - 2);
+                    string[] elems = inner.Split(',');
+                    for (int e = 0; e < elems.Length; e++)
+                    {
+                        string elem = elems[e].Trim();
+                        if (elem.Length > 0)
+                        {
+                            binding.ArrayItems.Add(elem);
+                        }
+                    }
+                }
                 // 常量字面量绑定——字符串（"..."）或数字字面量（0/-1/300 等）
-                if (variable.Length >= 2 && variable.StartsWith("\"") && variable.EndsWith("\""))
+                else if (variable.Length >= 2 && variable.StartsWith("\"") && variable.EndsWith("\""))
                 {
                     binding.IsConstant = true;
                     binding.ConstantValue = variable.Substring(1, variable.Length - 2);
@@ -691,7 +707,6 @@ private static int FindCommentStart(string line)
                 t.Params.Add(binding);
             }
         }
-
         /// <summary>
         /// 解析时限——N帧/空闲N帧/无
         /// </summary>
@@ -788,5 +803,39 @@ private static int FindCommentStart(string line)
             }
             return words;
         }
+/// <summary>
+/// 深度感知分割参数绑定——方括号内逗号不分割（数组字面量 [a,b,c]，B2）
+/// </summary>
+/// <param name = "value">参数声明文本</param>
+/// <returns>绑定片段列表</returns>
+private static List<string> SplitParamBindings(string value)
+{
+    List<string> result = new List<string>();
+    System.Text.StringBuilder current = new System.Text.StringBuilder();
+    int depth = 0;
+    for (int i = 0; i < value.Length; i++)
+    {
+        char c = value[i];
+        if (c == '[')
+        {
+            depth = depth + 1;
+        }
+        else if (c == ']')
+        {
+            depth = depth - 1;
+        }
+
+        if (c == ',' && depth == 0)
+        {
+            result.Add(current.ToString());
+            current.Clear();
+            continue;
+        }
+
+        current.Append(c);
     }
+
+    result.Add(current.ToString());
+    return result;
+}    }
 }

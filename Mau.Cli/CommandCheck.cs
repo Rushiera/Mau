@@ -166,7 +166,8 @@ namespace Mau.Cli
                 if (update)
                 {
                     Directory.CreateDirectory(expectedDir);
-                    WriteGolden(expectedPath, result.GeneratedCode);
+                    // E1：黄金只存纯生成内容——剥离内嵌积木段（BRIKGROUP 由积木谱独立验证）
+                    WriteGolden(expectedPath, MauCompiler.StripBrickSections(result.GeneratedCode));
                     continue;
                 }
                 // 2. 黄金校验尾 + 逐字节对比
@@ -184,7 +185,7 @@ namespace Mau.Cli
                     sErrors.Add("[B] " + fileName + ": 黄金被篡改——校验尾不匹配");
                     continue;
                 }
-                string generated = result.GeneratedCode.Replace("\r\n", "\n").TrimEnd();
+                string generated = MauCompiler.StripBrickSections(result.GeneratedCode).Replace("\r\n", "\n").TrimEnd();
                 if (goldenBody != generated)
                 {
                     sGoldenDrift = sGoldenDrift + 1;

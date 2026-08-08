@@ -34,13 +34,16 @@ namespace Mau.Translator
         /// 构造编译结果
         /// </summary>
         public CompileResult()
-        {
+{
             Success = false;
             Diagnostics = new List<MauDiagnostic>();
             Document = new MauDocument();
             GeneratedCode = "";
-        }
-    }
+            GeneratedMap = "";
+        }/// <summary>
+/// 行号映射文本——生成物行 → 语料行/积木源码行（D1 调试基建，编译诊断反查用）
+/// </summary>
+public string GeneratedMap;    }
 
     /// <summary>
     /// 组编译结果——多语料骨架数组 + 共享 BRIKGROUP 段（组模式：多 .mau → 一 dll）
@@ -200,6 +203,8 @@ namespace Mau.Translator
                     result.GeneratedCode = MergeEmbedded(result.GeneratedCode, embedded);
                 }
             }
+            // [段3c] 行号映射——生成物行 → 语料行/积木源码行（D1 调试基建）
+            result.GeneratedMap = BuildSourceMap(parsed.Document, result.GeneratedCode);
             result.Success = true;
             return result;
         }
@@ -343,5 +348,153 @@ namespace Mau.Translator
             }
             return false;
         }
+/// <summary>
+/// 统计积木源码剥离行数——文件头注释块 + using 行 + 前导空行（与 BrickEmbedder.StripWrapper 同规）
+/// </summary>
+/// <param name = "brickId">积木 ID</param>
+/// <returns>剥离行数——用于生成物行 → 积木源码行换算</returns>
+private static int CountStrippedLines(string brickId)
+{
+    BrickIndexEntry entry;
+    if (!BrickIndex.TryGetById(brickId, out entry))
+    {
+        return 0;
     }
+
+    string path = BrickIndex.ResolveSourcePath(entry);
+    string source;
+    try
+    {
+        source = File.ReadAllText(path).Replace("\r\n", "\n");
+    }
+    catch
+    {
+        return 0;
+    }
+
+    string[] lines = source.Split('\n');
+    bool inHeader = false;
+    bool bodyStarted = false;
+    int stripped = 0;
+    for (int i = 0; i < lines.Length; i++)
+    {
+        string trimmed = lines[i].Trim();
+        if (!bodyStarted)
+        {
+            if (trimmed.StartsWith("// ═══", StringComparison.Ordinal))
+            {
+                inHeader = !inHeader;
+                stripped = stripped + 1;
+                continue;
+            }
+
+            if (inHeader)
+            {
+                stripped = stripped + 1;
+                continue;
+            }
+
+            if (trimmed.StartsWith("using ", StringComparison.Ordinal))
+            {
+                stripped = stripped + 1;
+                continue;
+            }
+
+            if (trimmed.Length == 0)
+            {
+                stripped = stripped + 1;
+                continue;
+            }
+
+            bodyStarted = true;
+        }
+    }
+
+    return stripped;
+}    /// <summary>
+/// 构建行号映射文本——生成物行 → 语料行/积木源码行（D1 调试基建）
+/// </summary>
+/// <param name = "doc">解析文档</param>
+/// <param name = "generatedCode">最终生成物（含内嵌段）</param>
+/// <returns>映射文本——transition/brick 段记录，诊断反查用</returns>
+public static string BuildSourceMap(MauDocument doc, string generatedCode)
+{
+    StringBuilder sb = new StringBuilder();
+    sb.AppendLine("# Mau 行号映射 v1");
+    string[] lines = generatedCode.Split('\n');
+    for (int i = 0; i < lines.Length; i++)
+    {
+        string trimmed = lines[i].Trim();
+        // 变迁块标记——// [T_xxx] 前置检查 / worker+inbox 前置检查 / inbox 排空 / 时限检查
+        if (trimmed.StartsWith("// [T_", StringComparison.Ordinal))
+        {
+            int close = trimmed.IndexOf(']');
+            if (close > 4)
+            {
+                string tName = trimmed.Substring(4, close - 4);
+                IrTransition? t = doc.FindTransition(tName);
+                if (t != null)
+                {
+                    sb.Append("transition " + tName + ": generated " + (i + 1).ToString() + " source " + t.Line.ToString() + "\n");
+                }
+            }
+        }
+
+        // BRIK 段标记——// #BRICK:BRIK-xxx BEGIN
+        if (trimmed.StartsWith("// #BRICK:", StringComparison.Ordinal) && trimmed.Contains("BEGIN", StringComparison.Ordinal))
+        {
+            string brickId = trimmed.Substring(10).Replace(" BEGIN", "").Trim();
+            int endLine = i + 1;
+            for (int j = i + 1; j < lines.Length; j++)
+            {
+                if (lines[j].Contains("#BRICK:" + brickId + " END", StringComparison.Ordinal))
+                {
+                    endLine = j + 1;
+                    break;
+                }
+            }
+
+            sb.Append("brick " + brickId + ": generated " + (i + 1).ToString() + "-" + endLine.ToString() + " stripped " + CountStrippedLines(brickId).ToString() + "\n");
+        }
+    }
+
+    return sb.ToString();
+}/// <summary>
+/// 剥离内嵌积木段（BRIKGROUP）——黄金文件只存纯生成内容（E1：积木段由积木谱独立验证，不进黄金）
+/// </summary>
+/// <param name = "generatedCode">完整生成物（含内嵌段）</param>
+/// <returns>剥离后源码——骨架纯生成内容</returns>
+public static string StripBrickSections(string generatedCode)
+{
+            // 换行归一化——CodeGenerator 用 AppendLine 生成 CRLF，统一 LF 保证哈希稳定
+            generatedCode = generatedCode.Replace("\r\n", "\n");
+            string[] lines = generatedCode.Split('\n');
+            StringBuilder sb = new StringBuilder();
+            bool inBrick = false;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                string trimmed = line.Trim();
+                if (!inBrick && trimmed.StartsWith("// #BRICK:", StringComparison.Ordinal)
+                    && trimmed.Contains("BEGIN", StringComparison.Ordinal))
+                {
+                    inBrick = true;
+                    continue;
+                }
+                if (inBrick)
+                {
+                    if (trimmed.StartsWith("// #BRICK:", StringComparison.Ordinal)
+                        && trimmed.Contains("END", StringComparison.Ordinal))
+                    {
+                        inBrick = false;
+                    }
+                    continue;
+                }
+                sb.Append(line);
+                sb.Append('\n');
+            }
+            string result = sb.ToString();
+            // 尾部清理——剥离后可能残留尾部空行
+            return result.TrimEnd('\n');
+        }}
 }

@@ -1,4 +1,4 @@
-﻿// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
+// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
 // 流程: SequenceFlow
 // 基座: Mau.Runtime/v0.1
 
@@ -22,6 +22,11 @@ namespace Mau.Generated.Flows
         /// 环形调试日志——200 条上限
         /// </summary>
         private FlowLog _logs;
+
+        /// <summary>
+        /// 数据流追踪开关——SetTraceDataFlow 控制（D2 调试基建：输出赋值/信号投递消费记录）
+        /// </summary>
+        private bool _traceDataFlow;
 
         /// <summary>
         /// 命题 P_Start：信号，消费即清除
@@ -93,6 +98,7 @@ namespace Mau.Generated.Flows
         {
             _input = input;
             _output = output;
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Start")); }
             P_Start = true;
         }
 
@@ -106,6 +112,7 @@ namespace Mau.Generated.Flows
             if (P_Start && T_Step1_Cube.IsIdle())
             {
                 // 信号消费
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Step1", "Consume", "P_Start")); }
                 P_Start = false;
                 T_Step1_Cube.Start();
                 // 执行动作（积木调用）
@@ -233,6 +240,15 @@ namespace Mau.Generated.Flows
             return _logs.GetAll();
         }
 
+        /// <summary>
+        /// 开启数据流追踪——输出端口赋值/信号投递消费记录 MauDebug（D2 调试基建）
+        /// </summary>
+        /// <param name="enabled">true=记录数据流日志</param>
+        public void SetTraceDataFlow(bool enabled)
+        {
+            _traceDataFlow = enabled;
+        }
+
         // 组合 FL_Main:  [experimental — documentation-only，执行语义未实现]
         //   序列: T_Step1, T_Step2, T_Step3
         //   重试: 2
@@ -308,37 +324,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-
-    // #BRICK:BRIK-FILE-001 BEGIN
-namespace Mau.Bricks
-{
-    /// <summary>
-    /// 文件积木——file.convert 转换文件（独立实现，不走受控根）
-    /// </summary>
-    public static class BRIK_FILE_001
-    {
-        /// <summary>
-        /// 转换文件——真实实现（读取→转码→写入）
-        /// </summary>
-        /// <param name="input">输入文件路径</param>
-        /// <param name="output">输出文件路径</param>
-        /// <returns>转换是否成功</returns>
-        public static bool Convert(string input, string output)
-        {
-            try
-            {
-                byte[] bytes = System.IO.File.ReadAllBytes(input);
-                // 第一期：转码 = 读取后原样写出——编码转换算法留积木内部后续实现
-                System.IO.File.WriteAllBytes(output, bytes);
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-    }
-}
-
-    // #BRICK:BRIK-FILE-001 END
-// #MAU_CHECKSUM:SHA256:9BA9663D2FFD26EEC2D436C4F45DBD0EC718E92DC66C4CDEEFDA9AC74DD3A05A
+// #MAU_CHECKSUM:SHA256:B54A85D8EE7A3E6C534C99D11B45E49AAF9932169ACD2CA215F540E579BA9D1D
