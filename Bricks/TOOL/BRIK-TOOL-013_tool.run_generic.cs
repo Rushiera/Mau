@@ -3,10 +3,10 @@
 // ID:   BRIK-TOOL-013
 // 类别: TOOL
 // 作用: 通用工具适配器——按 domain + toolName 路由到域积木执行，result/error 回执 + Complete
-// 依赖: file.read, file.write, file.append, file.replace, file.read_lines, file.tree, file.find, file.move, file.delete, file.convert, file.batch, shell.exec
+// 依赖: file.read, file.write, file.append, file.replace, file.read_lines, file.tree, file.find, file.move, file.delete, file.convert, file.batch, shell.exec, excel.read, excel.write, docx.read, docx.write
 // 引用: Mau.Runtime
 // 原理: 读单（toolName=OfficeName + args.* 展平载荷）→ 域路由表 → 域积木执行 → result/error 回执 → Complete
-// 常用: 工具 Cat 语料统一执行动作（M2b：FileCat 接单 → run_generic("file") → 自动回执）
+// 常用: 工具 Cat 语料统一执行动作（M2b：FileCat 接单 → run_generic("file") → 自动回执；M2c：+office 域 excel/docx）
 // ═══════════════════════════════════════════════════
 using Mau.Runtime;
 
@@ -59,6 +59,10 @@ namespace Mau.Bricks
             else if (domain == "shell")
             {
                 ok = RunShellTool(oa, officeId, toolName, out result, out error);
+            }
+            else if (domain == "office")
+            {
+                ok = RunOfficeTool(oa, officeId, toolName, out result, out error);
             }
             else
             {
@@ -334,6 +338,84 @@ namespace Mau.Bricks
                 return false;
             }
         }
+        /// <summary>
+        /// Office 域路由——按 toolName 调 excel/docx 积木
+        /// </summary>
+        /// <param name="oa">OA</param>
+        /// <param name="officeId">Office ID</param>
+        /// <param name="toolName">工具名</param>
+        /// <param name="result">结果文本</param>
+        /// <param name="error">错误摘要</param>
+        /// <returns>true=执行成功</returns>
+        private static bool RunOfficeTool(IOA oa, long officeId, string toolName,
+            out string result, out string error)
+        {
+            result = "";
+            error = "";
+            string Arg(string key)
+            {
+                string value;
+                if (oa.GetStr(officeId, "args." + key, out value) && value != null)
+                {
+                    return value;
+                }
+                return "";
+            }
+            try
+            {
+                if (toolName == "excel.read")
+                {
+                    string content;
+                    if (!ExcelReadBrick.Read(Arg("path"), Arg("sheet"), Arg("format"), out content))
+                    {
+                        error = "ERR|EXCEL_READ_FAILED";
+                        return false;
+                    }
+                    result = content;
+                    return true;
+                }
+                if (toolName == "excel.write")
+                {
+                    string summary;
+                    if (!ExcelWriteBrick.Write(Arg("path"), Arg("content"), Arg("sheet"), out summary))
+                    {
+                        error = "ERR|EXCEL_WRITE_FAILED|" + summary;
+                        return false;
+                    }
+                    result = summary;
+                    return true;
+                }
+                if (toolName == "docx.read")
+                {
+                    string content;
+                    if (!DocxReadBrick.Read(Arg("path"), out content))
+                    {
+                        error = "ERR|DOCX_READ_FAILED";
+                        return false;
+                    }
+                    result = content;
+                    return true;
+                }
+                if (toolName == "docx.write")
+                {
+                    string summary;
+                    if (!DocxWriteBrick.Write(Arg("path"), Arg("content"), out summary))
+                    {
+                        error = "ERR|DOCX_WRITE_FAILED|" + summary;
+                        return false;
+                    }
+                    result = summary;
+                    return true;
+                }
+                error = "ERR|UNSUPPORTED_TOOL|" + toolName;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = "ERR|" + ex.GetType().Name + "|" + ex.Message;
+                return false;
+            }
+        }
     }
 }
-// #MAU_CHECKSUM:SHA256:CC3376C9E2AAF4C5E83CE8ACBBE762F5548B417D719DD55E4D70234742F1C11D
+// #MAU_CHECKSUM:SHA256:300746D54C29FC348BC87429D43159DAAA6D74A987D266DD7E823E51747AFED6

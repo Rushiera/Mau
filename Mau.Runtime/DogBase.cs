@@ -106,6 +106,14 @@ namespace Mau.Runtime
         /// 超时终态标记（PickingUp 细分——Closed 还是 TimeOut）
         /// </summary>
         private bool _timeouted;
+/// <summary>
+/// PickingUp 停留帧数——超时自动闭合计数（未闭合兜底）
+/// </summary>
+private int _pickUpFrames; 
+/// <summary>
+/// PickingUp 自动闭合阈值——停留超过该帧数自动进入 Done（发单方崩溃/遗忘时防泄漏）
+/// </summary>
+ public  const  int  AutoCloseFrames  =  600 ;
 
         /// <summary>
         /// 请求载荷快照（持久化用）
@@ -261,27 +269,37 @@ namespace Mau.Runtime
         /// IFlow.Tick——全局帧序驱动：轮询 OA 单状态
         /// </summary>
         public void Tick()
+{
+    if (_phase == DogPhase.Waiting)
+    {
+        OfficeState state = _oa.GetStatus(_officeId);
+        if (state == OfficeState.Closed)
         {
-            if (_phase != DogPhase.Waiting)
-            {
-                return;
-            }
-            OfficeState state = _oa.GetStatus(_officeId);
-            if (state == OfficeState.Closed)
-            {
-                Office office = _oa.GetOffice(_officeId);
-                _result = office.Result.Copy();
-                _timeouted = false;
-                _phase = DogPhase.PickingUp;
-            }
-            else if (state == OfficeState.TimeOut)
-            {
-                _result = OfficeData.Empty();
-                _timeouted = true;
-                _phase = DogPhase.PickingUp;
-            }
+            Office office = _oa.GetOffice(_officeId);
+            _result = office.Result.Copy();
+            _timeouted = false;
+            _phase = DogPhase.PickingUp;
+            _pickUpFrames = 0;
         }
-
+        else if (state == OfficeState.TimeOut)
+        {
+            _result = OfficeData.Empty();
+            _timeouted = true;
+            _phase = DogPhase.PickingUp;
+            _pickUpFrames = 0;
+        }
+    }
+    else if (_phase == DogPhase.PickingUp)
+    {
+        _pickUpFrames = _pickUpFrames + 1;
+        if (_pickUpFrames >= AutoCloseFrames)
+        {
+            // 超时未取回执——自动闭合（未闭合兜底：发单方崩溃/遗忘时防泄漏）
+            _phase = DogPhase.Done;
+            _officeId = 0;
+        }
+    }
+}
         /// <summary>
         /// 单是否已正常关闭（Closed 且可取回执）
         /// </summary>

@@ -23,6 +23,7 @@
 | BRIK-DATA-004 | data.box_get | DATA | DATA/BRIK-DATA-004_data.box_get.cs | 无 | active |  |
 | BRIK-DATA-005 | data.box_set_dic | DATA | DATA/BRIK-DATA-005_data.box_set_dic.cs | 无 | active |  |
 | BRIK-DATA-006 | data.box_get_dic | DATA | DATA/BRIK-DATA-006_data.box_get_dic.cs | 无 | active |  |
+| BRIK-DATA-007 | data.box_is | DATA | DATA/BRIK-DATA-007_data.box_is.cs | 无 | active |  |
 | BRIK-DOG-001 | dog.create | DOG | DOG/BRIK-DOG-001_dog.create.cs | 无 | active |  |
 | BRIK-DOG-002 | dog.set_int | DOG | DOG/BRIK-DOG-002_dog.set_int.cs | 无 | active |  |
 | BRIK-DOG-003 | dog.set_str | DOG | DOG/BRIK-DOG-003_dog.set_str.cs | 无 | active |  |
@@ -107,7 +108,7 @@
 | BRIK-TOOL-010 | tool.dispatch | TOOL | TOOL/BRIK-TOOL-010_tool.dispatch.cs | 无 | active |  |
 | BRIK-TOOL-011 | tool.collect | TOOL | TOOL/BRIK-TOOL-011_tool.collect.cs | 无 | active |  |
 | BRIK-TOOL-012 | tool.create_next | TOOL | TOOL/BRIK-TOOL-012_tool.create_next.cs | 无 | active |  |
-| BRIK-TOOL-013 | tool.run_generic | TOOL | TOOL/BRIK-TOOL-013_tool.run_generic.cs | file.read, file.write, file.append, file.replace, file.read_lines, file.tree, file.find, file.move, file.delete, file.convert, file.batch, shell.exec | active |  |
+| BRIK-TOOL-013 | tool.run_generic | TOOL | TOOL/BRIK-TOOL-013_tool.run_generic.cs | file.read, file.write, file.append, file.replace, file.read_lines, file.tree, file.find, file.move, file.delete, file.convert, file.batch, shell.exec, excel.read, excel.write, docx.read, docx.write | active |  |
 
 ---
 

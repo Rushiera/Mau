@@ -208,6 +208,17 @@ namespace Mau.Runtime
             }
             // [段4] OA 超时结算
             _oa.Tick();
+            // [段5] Dog 自动回收——Done 状态 Dog 若未显式 finish（发单方崩溃/遗忘），帧末兜底回收
+            long[] dogIds = _registry.Ids;
+            for (int i = 0; i < dogIds.Length; i = i + 1)
+            {
+                IFlow? flow = _registry.Get(dogIds[i]);
+                IDog? dog = flow as IDog;
+                if (dog != null && dog.Phase == DogPhase.Done)
+                {
+                    _registry.Unregister(dogIds[i]);
+                }
+            }
         }
 
         /// <summary>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using Mau.Runtime;
 using Xunit;
@@ -211,6 +211,46 @@ namespace Mau.Runtime.Tests
                 {
                     File.Delete(path);
                 }
+            }
+        }
+
+        /// <summary>
+        /// 自动闭合——PickingUp 停留超阈值 → 自动 Done → FlowRunner 帧末回收（未闭合兜底）
+        /// </summary>
+        [Fact]
+        public void Dog_AutoClose_RecyclesAfterPickUpStall()
+        {
+            FlowRunner runner;
+            OA oa;
+            runner = CreateRunner(out oa);
+            DogBase dog = RegisterDog(runner, oa, "DogAuto");
+            try
+            {
+                Assert.True(dog.Post("Demo", "没人收", 1));
+                // 跑 3 帧——OA 结算超时 + Dog 轮询到 TimeOut → PickingUp
+                runner.Tick();
+                runner.Tick();
+                runner.Tick();
+                Assert.Equal(DogPhase.PickingUp, dog.Phase);
+                Assert.True(dog.IsTimeout());
+
+                // 模拟发单方崩溃——不 finish，继续 Tick 到自动闭合阈值
+                for (int i = 0; i < DogBase.AutoCloseFrames + 10; i = i + 1)
+                {
+                    runner.Tick();
+                }
+                // 自动闭合 → Done → FlowRunner 帧末回收
+                Assert.True(dog.Phase == DogPhase.Done || runner.GetFlow(dog.DogId) == null);
+                if (runner.GetFlow(dog.DogId) != null)
+                {
+                    // 若恰好在闭合帧——再跑一帧让回收执行
+                    runner.Tick();
+                }
+                Assert.Null(runner.GetFlow(dog.DogId));
+            }
+            finally
+            {
+                runner.UnregisterFlow(dog.DogId);
             }
         }
 
