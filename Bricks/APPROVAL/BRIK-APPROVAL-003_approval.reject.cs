@@ -24,16 +24,9 @@ namespace Mau.Bricks
         /// <returns>true=完成仍等待的请求</returns>
         public static bool Reject(string requestId)
         {
-            lock (ApprovalStore.Gate)
-            {
-                if (!ApprovalStore.Pending.ContainsKey(requestId))
-                {
-                    return false;
-                }
-                ApprovalStore.Pending.Remove(requestId);
-            }
-            return true;
+            // 统一入口——ApprovalStore.Reject（结果留痕 + 锁内原子）
+            return ApprovalStore.Reject(requestId);
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:6CB9369B484E9C798F139F27199349E0B4F53BBCA7EEFF0AF9E65B09DC3CBA67
+// #MAU_CHECKSUM:SHA256:5B50E59D2FBE74ED1964021B8FB8479460B9366AE664018E66184FAB66E8027D

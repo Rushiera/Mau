@@ -28,23 +28,9 @@ namespace Mau.Bricks
         public static bool Resolve(string requestId, int selectedIndex,
             out ApprovalResult result)
         {
-            result = new ApprovalResult();
-            ApprovalRequest? request;
-            lock (ApprovalStore.Gate)
-            {
-                if (!ApprovalStore.Pending.TryGetValue(requestId, out request) || request == null
-                    || selectedIndex < 0 || selectedIndex >= request.Options.Length)
-                {
-                    return false;
-                }
-                ApprovalStore.Pending.Remove(requestId);
-            }
-            result.RequestId = requestId;
-            result.SelectedIndex = selectedIndex;
-            result.SelectedLabel = request.Options[selectedIndex];
-            result.TimedOut = false;
-            return true;
+            // 统一入口——ApprovalStore.Resolve（结果留痕 + 锁内原子）
+            return ApprovalStore.Resolve(requestId, selectedIndex, out result);
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:53F8318E8ECF6802256E6B03F4C6BE20123626EC9D8976B666989753A0902888
+// #MAU_CHECKSUM:SHA256:682EF7B311614DAB7BC6B163242FFB33C1CFB7E18ED4F9A13DD42C09D37F7A52

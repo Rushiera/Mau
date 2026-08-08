@@ -11,6 +11,7 @@
 | BRIK-APPROVAL-002 | approval.resolve | APPROVAL | APPROVAL/BRIK-APPROVAL-002_approval.resolve.cs | 无 | active |  |
 | BRIK-APPROVAL-003 | approval.reject | APPROVAL | APPROVAL/BRIK-APPROVAL-003_approval.reject.cs | 无 | active |  |
 | BRIK-APPROVAL-004 | approval.pending | APPROVAL | APPROVAL/BRIK-APPROVAL-004_approval.pending.cs | 无 | active |  |
+| BRIK-APPROVAL-005 | approval.result | APPROVAL | APPROVAL/BRIK-APPROVAL-005_approval.result.cs | 无 | active |  |
 | BRIK-CMD-001 | cmd.register | CMD | CMD/BRIK-CMD-001_cmd.register.cs | 无 | active |  |
 | BRIK-CMD-002 | cmd.unregister | CMD | CMD/BRIK-CMD-002_cmd.unregister.cs | 无 | active |  |
 | BRIK-CMD-003 | cmd.consume | CMD | CMD/BRIK-CMD-003_cmd.consume.cs | 无 | active |  |
