@@ -18,27 +18,73 @@ namespace Mau.Cli
         /// </summary>
         private const string GoldenPrefix = "// #MAU_CHECKSUM:SHA256:";
 
-        // 汇总计数——语法谱
+        /// <summary>
+        /// 汇总计数——语法谱总数
+        /// </summary>
         private static int sSyntaxTotal;
+        /// <summary>
+        /// 汇总计数——语法谱通过数
+        /// </summary>
         private static int sSyntaxPass;
+        /// <summary>
+        /// 汇总计数——语法谱失败数
+        /// </summary>
         private static int sSyntaxFail;
-        // 汇总计数——翻译器谱
+        /// <summary>
+        /// 汇总计数——翻译器谱总数
+        /// </summary>
         private static int sGoldenTotal;
+        /// <summary>
+        /// 汇总计数——翻译器谱通过数
+        /// </summary>
         private static int sGoldenPass;
+        /// <summary>
+        /// 汇总计数——翻译器谱漂移数（黄金不一致）
+        /// </summary>
         private static int sGoldenDrift;
+        /// <summary>
+        /// 汇总计数——翻译器谱黄金缺失数
+        /// </summary>
         private static int sGoldenMissing;
+        /// <summary>
+        /// 汇总计数——翻译器谱结构断言失败数
+        /// </summary>
         private static int sGoldenStructFail;
-        // 汇总计数——积木谱
+        /// <summary>
+        /// 汇总计数——积木谱总数
+        /// </summary>
         private static int sBrickTotal;
+        /// <summary>
+        /// 汇总计数——积木谱通过数
+        /// </summary>
         private static int sBrickPass;
+        /// <summary>
+        /// 汇总计数——积木谱失败数
+        /// </summary>
         private static int sBrickFail;
+        /// <summary>
+        /// 汇总计数——积木谱跳过数
+        /// </summary>
         private static int sBrickSkip;
-        // 汇总计数——负例
+        /// <summary>
+        /// 汇总计数——负例总数
+        /// </summary>
         private static int sNegTotal;
+        /// <summary>
+        /// 汇总计数——负例通过数
+        /// </summary>
         private static int sNegPass;
+        /// <summary>
+        /// 汇总计数——负例失败数
+        /// </summary>
         private static int sNegFail;
-        // 错误与跳过清单
+        /// <summary>
+        /// 错误清单——聚合报告输出
+        /// </summary>
         private static List<string> sErrors = new List<string>();
+        /// <summary>
+        /// 跳过清单——聚合报告输出
+        /// </summary>
         private static List<string> sSkips = new List<string>();
 
         /// <summary>
@@ -69,7 +115,7 @@ namespace Mau.Cli
             }
 
             // [段2] 定位谱目录
-            string? root = Program.FindWorkspaceRoot();
+            string? root = CliSupport.FindWorkspaceRoot();
             if (root == null)
             {
                 Console.WriteLine("FAIL: 未找到 Mau.sln——请从仓库内运行");
@@ -179,7 +225,7 @@ namespace Mau.Cli
                 }
                 string golden = File.ReadAllText(expectedPath).Replace("\r\n", "\n");
                 string goldenBody = StripChecksum(golden, out string goldenHash);
-                if (goldenHash.Length > 0 && goldenHash != MauProjFile.ComputeSha256(goldenBody))
+                if (goldenHash.Length > 0 && goldenHash != CliSupport.ComputeSha256(goldenBody))
                 {
                     sGoldenDrift = sGoldenDrift + 1;
                     sErrors.Add("[B] " + fileName + ": 黄金被篡改——校验尾不匹配");
@@ -204,7 +250,7 @@ namespace Mau.Cli
         }
 
         /// <summary>
-        /// 积木谱——BrickRegistry 枚举 → 契约生成最小语料 → 翻译 → CompileMany 一次组编译
+        /// 积木谱——BrickIndex 枚举 → 契约生成最小语料 → 翻译 → CompileMany 一次组编译
         /// </summary>
         private static void RunBrickCorpus()
 {
@@ -471,7 +517,7 @@ namespace Mau.Cli
         private static void WriteGolden(string path, string generated)
         {
             string body = generated.Replace("\r\n", "\n").TrimEnd();
-            string content = body + "\n" + GoldenPrefix + MauProjFile.ComputeSha256(body) + "\n";
+            string content = body + "\n" + GoldenPrefix + CliSupport.ComputeSha256(body) + "\n";
             File.WriteAllText(path, content, new UTF8Encoding(true));
         }
 

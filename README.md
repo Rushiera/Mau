@@ -31,7 +31,7 @@
 |:--|:--|:--|
 | `Mau.exe` | `Mau.Cli/` | 唯一工具集——翻译 / 构筑 / 测试 / 检测（verify / gen / build / test / check / bricks / serve ...） |
 | `MauRuntime` | `Mau.Runtime/` | 基座 lib——机制（Cube/OA/Command/FlowALC/Inbox/ThreadGuard）+ **DataBox 中台**（BRIK 唯一数据协议）+ 程序级服务 |
-| `Bricks/` | 仓库根 | **文本资产库**——84 积木（BRIK-{ID}_{name}.cs，单文件 + 文件头十字段 + SHA256 校验尾）+ index.json v3（**源码驱动**契约索引） |
+| `Bricks/` | 仓库根 | **文本资产库**——125 积木（BRIK-{ID}_{name}.cs，单文件 + 文件头十字段 + SHA256 校验尾）+ index.json v3（**源码驱动**契约索引） |
 
 **构筑闭环：** `.mau` → Mau.exe（BrickIndex 查索引 → 闭包收集 → 校验尾验证 → BRIK-ID 重命名 → BRIKGROUP 内嵌）→ Roslyn Emit → 自包含 dll。组模式多语料共享 BRIKGROUP。
 
@@ -81,7 +81,7 @@
 
 | 项目 | 定位 |
 |:--|:--|
-| `Bricks/` | 文本资产库——84 积木（十字段 + 校验尾）+ index.json v3（源码驱动） |
+| `Bricks/` | 文本资产库——125 积木（十字段 + 校验尾）+ index.json v3（源码驱动） |
 | `Mau.Runtime` | 基座——机制 + DataBox 中台 + 程序级服务（FileSystemService/LlmBridge/LogStore 等） |
 | `Mau.Contracts` | 契约类型——BrickContract/端口/导出属性 |
 | `Mau.Translator` | 翻译器——解析→IR→静态验证→生成（BrickIndex/BrickEmbedder/CompileGroup） |
@@ -149,7 +149,7 @@
 
 **变更检查清单：**
 1. 翻译器/积木文本变更 → 跑 `mau test` + `mau check`
-2. Bricks 文本变更 → **校验尾由工具更新（re-seal），不得手改校验尾行**——校验失败 = 门禁拒绝
+2. Bricks 文本变更 → **校验尾由工具更新（`mau bricks reseal`），不得手改校验尾行**——修改积木文件后先 reseal 再 `index --update`；校验失败 = 门禁拒绝
 3. 黄金文件对比失败 → 确认差异是预期行为 → 更新 `expected/` → 一并提交，提交信息说明原因
 4. 门禁标记（MAU_CHECKS_OK）不得随代码提交——它是运行结果不是文件
 
@@ -183,10 +183,13 @@ dotnet run --project Mau.Cli gen <file.mau>
 # 构筑（单文件 / 组 mauproj）
 dotnet run --project Mau.Cli build <file.mau|组.mauproj> -o <dir>
 
-# 积木索引——查询 / 源码重建 / 一致性校验（V1-V9）
+# 积木索引——查询 / 源码重建 / 一致性校验（V1-V11）/ 文件头校验 / 全局跑测 / 校验尾重算
 dotnet run --project Mau.Cli bricks list
 dotnet run --project Mau.Cli bricks index --update
 dotnet run --project Mau.Cli bricks index --verify
+dotnet run --project Mau.Cli bricks index --check-license
+dotnet run --project Mau.Cli bricks test
+dotnet run --project Mau.Cli bricks reseal
 
 # 独立部署 + 发布后冒烟
 dotnet run --project Mau.Cli publish -o <dir>

@@ -7,7 +7,7 @@
 // 包: 无
 // 引用: Mau.Runtime（IWordBridge）· System
 // 原理: DataBox.TryResolve<IWordBridge> → Invoke(method, argsJson, out result)
-//       实现 = Mau.Office.OfficeBridge（DocumentFormat.OpenXml 封装，依赖者宿主选装 Bind）
+//       实现 = Mau.WorkApp.WorkAppBridge（DocumentFormat.OpenXml 封装，依赖者宿主选装 Bind）
 // 方法: word.read → path
 //        word.write → path,content
 // 常用: docx.read/write 积木的调度底座（PACK 协议——外部包与积木解耦）
@@ -35,11 +35,11 @@ namespace Mau.Bricks
             Mau.Runtime.DataBox.TryResolve<Mau.Runtime.IWordBridge>(out bridge);
             if (bridge == null)
             {
-                result = "ERR|WORD_NO_BRIDGE|宿主未注入 IWordBridge（Mau.Office.OfficeBridge）";
+                result = "ERR|WORD_NO_BRIDGE|宿主未注入 IWordBridge（Mau.WorkApp.WorkAppBridge）";
                 return false;
             }
             return bridge.Invoke(method, argsJson, out result);
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:C18FB30ED3EC7E3EB2FB0C7C9286C3A7A3A1AD96325FF534F3BEF6B143E66972
+// #MAU_CHECKSUM:SHA256:E67FF36D016D75973F946AB03E5EC6B83CD8DD3D80D8D5A3DD5E96A6BE47B15E

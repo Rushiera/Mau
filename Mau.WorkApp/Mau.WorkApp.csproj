@@ -1,10 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <OutputType>Library</OutputType>
-    <RootNamespace>Mau.Office</RootNamespace>
-    <AssemblyName>Mau.Office</AssemblyName>
+    <RootNamespace>Mau.WorkApp</RootNamespace>
+    <AssemblyName>Mau.WorkApp</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>

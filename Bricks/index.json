@@ -1,6 +1,6 @@
 ﻿{
   "version": 3,
-  "generatedAt": "2026-08-08T15:11:03Z",
+  "generatedAt": "2026-08-08T16:45:03Z",
   "packages": ["Microsoft.CodeAnalysis.CSharp@4.11.0"],
   "bricks": [
     {"id":"BRIK-APPROVAL-001","name":"approval.request","category":"APPROVAL","path":"APPROVAL/BRIK-APPROVAL-001_approval.request.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.ApprovalRequestBrick.Request","inputs":[{"name":"requestId","type":"string"},{"name":"question","type":"string"},{"name":"options","type":"string[]"},{"name":"defaultIndex","type":"int"},{"name":"timeoutSeconds","type":"int"}],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},

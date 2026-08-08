@@ -4,4 +4,4 @@
 
 | ID | 名字 | 工程路径 | 状态 | 说明 |
 |:--|:--|:--|:--|:--|
-| BRIK-TEXT-001 | text.md_parse | Mau.Bricks.Text/TextBrick.cs | ✅ | Markdown 解析为段结构 |
+| BRIK-TEXT-001 | text.md_parse | Bricks/TEXT/BRIK-TEXT-001_text.md_parse.cs | ✅ | Markdown 解析为段结构 |

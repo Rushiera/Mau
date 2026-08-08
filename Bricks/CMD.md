@@ -4,12 +4,12 @@
 
 | ID | 名字 | 工程路径 | 状态 | 说明 |
 |:--|:--|:--|:--|:--|
-| BRIK-CMD-001 | cmd.register | Mau.Bricks.Standard/CmdBrick.cs | ✅ | 注册模块指令 key 列表（key 三段式 Category_Module_Name） |
-| BRIK-CMD-002 | cmd.unregister | Mau.Bricks.Standard/CmdBrick.cs | ✅ | 注销模块并清理残留指令 |
-| BRIK-CMD-003 | cmd.consume | Mau.Bricks.Standard/CmdBrick.cs | ✅ | 消费指令邮件——HasCommands=false=模板邮件（本轮无新指令） |
-| BRIK-CMD-004 | cmd.set | Mau.Bricks.Standard/CmdBrick.cs | ✅ | 投递指令——int 与 text 双轨（text 空=不写文本） |
-| BRIK-CMD-005 | cmd.clean | Mau.Bricks.Standard/CmdBrick.cs | ✅ | 清空模块残留指令 |
-| BRIK-CMD-006 | cmd.is_key | Mau.Bricks.Standard/CmdBrick.cs | ✅ | 指令分派判断——指令文本等于目标 key（返回=判断结果，M9） |
+| BRIK-CMD-001 | cmd.register | Bricks/CMD/BRIK-CMD-001_cmd.register.cs | ✅ | 注册模块指令 key 列表（key 三段式 Category_Module_Name） |
+| BRIK-CMD-002 | cmd.unregister | Bricks/CMD/BRIK-CMD-002_cmd.unregister.cs | ✅ | 注销模块并清理残留指令 |
+| BRIK-CMD-003 | cmd.consume | Bricks/CMD/BRIK-CMD-003_cmd.consume.cs | ✅ | 消费指令邮件——HasCommands=false=模板邮件（本轮无新指令） |
+| BRIK-CMD-004 | cmd.set | Bricks/CMD/BRIK-CMD-004_cmd.set.cs | ✅ | 投递指令——int 与 text 双轨（text 空=不写文本） |
+| BRIK-CMD-005 | cmd.clean | Bricks/CMD/BRIK-CMD-005_cmd.clean.cs | ✅ | 清空模块残留指令 |
+| BRIK-CMD-006 | cmd.is_key | Bricks/CMD/BRIK-CMD-006_cmd.is_key.cs | ✅ | 指令分派判断——指令文本等于目标 key（返回=判断结果，M9） |
 
 ---
 

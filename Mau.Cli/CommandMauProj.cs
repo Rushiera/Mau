@@ -183,7 +183,7 @@ namespace Mau.Cli
             string projContent = File.ReadAllText(mauprojPath).Replace("\r\n", "\n").TrimEnd();
             if (projContent.IndexOf(MauProjFile.ChecksumPrefix) < 0)
             {
-                projContent = projContent + "\n" + MauProjFile.ChecksumPrefix + MauProjFile.ComputeSha256(projContent);
+                projContent = projContent + "\n" + MauProjFile.ChecksumPrefix + CliSupport.ComputeSha256(projContent);
             }
             File.WriteAllText(Path.Combine(targetDir, projFileName), projContent + "\n", Encoding.UTF8);
             exportedFiles.Add(projFileName);

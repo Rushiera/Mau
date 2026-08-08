@@ -4,6 +4,7 @@
 
 | ID | 名字 | 工程路径 | 状态 | 说明 |
 |:--|:--|:--|:--|:--|
-| BRIK-MATH-001 | math.is_all_digits | Mau.Bricks.Standard/MathBrick.cs | ✅ | 判断文本是否全为 ASCII 数字 |
-| BRIK-MATH-002 | math.format_size | Mau.Bricks.Standard/MathBrick.cs | ✅ | B/K/M 十进制数量格式化 |
-| BRIK-MATH-003 | math.result_preview | Mau.Bricks.Standard/MathBrick.cs | ✅ | 单行结果预览（15 字符头） |
+| BRIK-MATH-001 | math.is_all_digits | Bricks/MATH/BRIK-MATH-001_math.is_all_digits.cs | ✅ | 判断文本是否全为 ASCII 数字 |
+| BRIK-MATH-002 | math.format_size | Bricks/MATH/BRIK-MATH-002_math.format_size.cs | ✅ | B/K/M 十进制数量格式化 |
+| BRIK-MATH-003 | math.result_preview | Bricks/MATH/BRIK-MATH-003_math.result_preview.cs | ✅ | 单行结果预览（15 字符头） |
+| BRIK-MATH-004 | math.random_int | Bricks/MATH/BRIK-MATH-004_math.random_int.cs | ✅ | [min,max) 随机整数（CH2 RandomInt 对标） |

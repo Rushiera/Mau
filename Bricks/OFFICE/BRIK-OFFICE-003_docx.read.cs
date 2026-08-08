@@ -7,7 +7,7 @@
 // 包: 无
 // 引用: Mau.Runtime（IWordBridge）· System
 // 原理: DataBox.TryResolve<IWordBridge> → Invoke("word.read", argsJson)
-//       实现 = Mau.Office.OfficeBridge（OpenXml 封装——PACK 隔离）
+//       实现 = Mau.WorkApp.WorkAppBridge（OpenXml 封装——PACK 隔离）
 // 常用: OfficeCat 工具 Cat——文档读取（PACK 协议）
 // ═══════════════════════════════════════════════════
 using System;
@@ -32,7 +32,7 @@ namespace Mau.Bricks
             Mau.Runtime.DataBox.TryResolve<Mau.Runtime.IWordBridge>(out bridge);
             if (bridge == null)
             {
-                content = "ERR|WORD_NO_BRIDGE|宿主未注入 IWordBridge（Mau.Office.OfficeBridge）";
+                content = "ERR|WORD_NO_BRIDGE|宿主未注入 IWordBridge（Mau.WorkApp.WorkAppBridge）";
                 return false;
             }
             string argsJson = "{\"path\":\"" + Safe(path) + "\"}";
@@ -51,4 +51,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:D6C77EB822489F115DD9106FF6918F4C9C3E127314138ED2A03983A0E4E71BFC
+// #MAU_CHECKSUM:SHA256:1F78F8F905C95471876EDF3B466E80A42649DC3452A5E9817915E6AAECF3990A

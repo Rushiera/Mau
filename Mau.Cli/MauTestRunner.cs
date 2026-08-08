@@ -22,7 +22,7 @@ namespace Mau.Cli
         /// <returns>退出码——0 成功</returns>
         public static int Run(bool update)
         {
-            string? root = FindWorkspaceRoot();
+            string? root = CliSupport.FindWorkspaceRoot();
             if (root == null)
             {
                 Console.WriteLine("FAIL: 未找到 Mau.sln——请在 Mau workspace 下运行 mau test");
@@ -125,25 +125,19 @@ namespace Mau.Cli
 
             // [段4] 黄金文件对比（L3）——含 SHA256 校验尾验证
             Console.WriteLine("[4/4] 黄金文件对比（L3）");
-            if (!VerifyGolden(root, "file_convert.mau", "FL_FileConvert.cs", "FileConvert", update))
+            // 目录即清单——扫描 cases/*.mau → expected/ 对照（新增语料自动进 L3，固定文件名清单退役）
+            string casesDir = Path.Combine(root, "Mau.Snapshots", "cases");
+            string[] caseFiles = Directory.GetFiles(casesDir, "*.mau");
+            System.Array.Sort(caseFiles, StringComparer.Ordinal);
+            for (int g = 0; g < caseFiles.Length; g++)
             {
-                return 1;
-            }
-            if (!VerifyGolden(root, "worker_convert.mau", "FL_WorkerConvert.cs", "WorkerConvert", update))
-            {
-                return 1;
-            }
-            if (!VerifyGolden(root, "sequence_flow.mau", "FL_SequenceFlow.cs", "SequenceFlow", update))
-            {
-                return 1;
-            }
-            if (!VerifyGolden(root, "hello_cat.mau", "FL_HelloCat.cs", "HelloCat", update))
-            {
-                return 1;
-            }
-            if (!VerifyGolden(root, "tool_cat.mau", "FL_ToolCat.cs", "ToolCat", update))
-            {
-                return 1;
+                string caseName = Path.GetFileName(caseFiles[g]);
+                string flowName = Program.FlowNameFromPath(caseFiles[g]);
+                string expectedName = "FL_" + flowName + ".cs";
+                if (!VerifyGolden(root, caseName, expectedName, flowName, update))
+                {
+                    return 1;
+                }
             }
 
             // [段5] build 闭环验证（L6——Roslyn Emit + ALC 加载 + 真实运行）
@@ -278,35 +272,6 @@ namespace Mau.Cli
                 }
             }
         }
-        /// <summary>
-        /// 查找 workspace 根——含 Mau.sln 的目录；当前目录向上优先，程序集位置兜底
-        /// </summary>
-        /// <returns>workspace 根或空</returns>
-        private static string? FindWorkspaceRoot()
-        {
-            DirectoryInfo? dir = new DirectoryInfo(Directory.GetCurrentDirectory());
-            while (dir != null)
-            {
-                string sln = Path.Combine(dir.FullName, "Mau.sln");
-                if (File.Exists(sln))
-                {
-                    return dir.FullName;
-                }
-                dir = dir.Parent;
-            }
-
-            DirectoryInfo? exeDir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (exeDir != null)
-            {
-                string sln = Path.Combine(exeDir.FullName, "Mau.sln");
-                if (File.Exists(sln))
-                {
-                    return exeDir.FullName;
-                }
-                exeDir = exeDir.Parent;
-            }
-            return null;
-        }
 
         /// <summary>
         /// 运行子进程并检查退出码——输出直接继承控制台
@@ -339,22 +304,6 @@ namespace Mau.Cli
             return p.ExitCode == 0;
         }
 /// <summary>
-/// 计算字符串的 SHA256 哈希——UTF-8 字节转 64 位十六进制大写
-/// </summary>
-/// <param name = "text">输入文本</param>
-/// <returns>64 位十六进制哈希（大写）</returns>
-private static string ComputeSha256(string text)
-{
-    byte[] bytes = Encoding.UTF8.GetBytes(text);
-    byte[] hash = SHA256.HashData(bytes);
-    StringBuilder hex = new StringBuilder();
-    for (int i = 0; i < hash.Length; i++)
-    {
-        hex.Append(hash[i].ToString("X2"));
-    }
-
-    return hex.ToString();
-}    /// <summary>
 /// 验证黄金文件校验尾——读文件，提取末行 MAU_CHECKSUM，验证 SHA256，返回去掉校验行的文件体
 /// </summary>
 /// <param name = "filePath">黄金文件路径</param>
@@ -425,7 +374,7 @@ private static bool VerifyChecksum(string filePath, out string body)
         body = sb.ToString();
 
         // 计算 SHA256
-        string computedHash = ComputeSha256(body);
+        string computedHash = CliSupport.ComputeSha256(body);
         if (!string.Equals(computedHash, claimedHash, StringComparison.OrdinalIgnoreCase))
         {
             Console.WriteLine("FAIL: 黄金文件校验失败——" + filePath);
@@ -471,7 +420,7 @@ private static bool VerifyGolden(string root, string caseName, string expectedNa
     if (update)
     {
         // 重建黄金——剥离版正文 + SHA256 校验尾
-        string hash = MauProjFile.ComputeSha256(stripped);
+        string hash = CliSupport.ComputeSha256(stripped);
         File.WriteAllText(expectedFile, stripped + "\n// #MAU_CHECKSUM:SHA256:" + hash);
         Console.WriteLine("UPDATED: " + expectedName + " → " + hash);
         return true;

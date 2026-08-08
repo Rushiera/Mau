@@ -7,7 +7,7 @@
 // 包: 无
 // 引用: Mau.Runtime（IExcelBridge）· System
 // 原理: DataBox.TryResolve<IExcelBridge> → Invoke("excel.write", argsJson)
-//       实现 = Mau.Office.OfficeBridge（ClosedXML 封装——PACK 隔离）
+//       实现 = Mau.WorkApp.WorkAppBridge（ClosedXML 封装——PACK 隔离）
 // 常用: OfficeCat 工具 Cat——报表导出（PACK 协议）
 // ═══════════════════════════════════════════════════
 using System;
@@ -34,7 +34,7 @@ namespace Mau.Bricks
             Mau.Runtime.DataBox.TryResolve<Mau.Runtime.IExcelBridge>(out bridge);
             if (bridge == null)
             {
-                result = "ERR|EXCEL_NO_BRIDGE|宿主未注入 IExcelBridge（Mau.Office.OfficeBridge）";
+                result = "ERR|EXCEL_NO_BRIDGE|宿主未注入 IExcelBridge（Mau.WorkApp.WorkAppBridge）";
                 return false;
             }
             string argsJson = "{\"path\":\"" + Safe(path) + "\",\"content\":\"" + Safe(content) + "\",\"sheet\":\"" + Safe(sheet) + "\"}";
@@ -53,4 +53,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:598E8EB46F4A702E345C384E3C051FA5DDACCF50736B309D637E2BEA64AE4410
+// #MAU_CHECKSUM:SHA256:F105896A2C8E3169376D4D602AC6637AE20FE9642929035E7FAE399BBC980FEF

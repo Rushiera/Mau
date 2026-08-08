@@ -137,7 +137,7 @@ namespace Mau.Cli
         /// <returns>退出码</returns>
         public static int ResealAll()
 {
-            string? root = FindWorkspaceRoot();
+            string? root = CliSupport.FindWorkspaceRoot();
             if (root == null)
             {
                 Console.WriteLine("FAIL: 未找到 Mau.sln");
@@ -483,33 +483,6 @@ namespace Mau.Cli
         }
 
         /// <summary>
-        /// 查找仓库根——含 Mau.sln 的目录
-        /// </summary>
-        /// <returns>仓库根或空</returns>
-        private static string? FindWorkspaceRoot()
-        {
-            DirectoryInfo? dir = new DirectoryInfo(Directory.GetCurrentDirectory());
-            while (dir != null)
-            {
-                if (File.Exists(Path.Combine(dir.FullName, "Mau.sln")))
-                {
-                    return dir.FullName;
-                }
-                dir = dir.Parent;
-            }
-            DirectoryInfo? exeDir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (exeDir != null)
-            {
-                if (File.Exists(Path.Combine(exeDir.FullName, "Mau.sln")))
-                {
-                    return exeDir.FullName;
-                }
-                exeDir = exeDir.Parent;
-            }
-            return null;
-        }
-
-        /// <summary>
         /// 读取 INDEX.md 表格行——ID/名字/类别/路径/来源
         /// </summary>
         /// <param name="indexPath">INDEX.md 路径</param>
@@ -560,7 +533,7 @@ namespace Mau.Cli
         /// <returns>退出码</returns>
         public static int VerifyIndex()
         {
-            string? root = FindWorkspaceRoot();
+            string? root = CliSupport.FindWorkspaceRoot();
             if (root == null)
             {
                 Console.WriteLine("FAIL: 未找到 Mau.sln");
@@ -689,6 +662,11 @@ namespace Mau.Cli
             {
                 string id = kv.Value.Id;
                 if (!IsValidIdFormat(id))
+                {
+                    continue;
+                }
+                // 废弃积木保留 ID 但跳号豁免——不参与序号连续性检查（注释与实现对齐）
+                if (kv.Value.Status == "Deprecated")
                 {
                     continue;
                 }
@@ -941,7 +919,7 @@ namespace Mau.Cli
         /// <param name="id">ID</param>
         /// <returns>合法为真</returns>
         private static bool IsValidIdFormat(string id)
-        {
+{
             if (!id.StartsWith("BRIK-"))
             {
                 return false;
@@ -950,6 +928,19 @@ namespace Mau.Cli
             if (lastDash <= 5)
             {
                 return false;
+            }
+            // 类别段——大写字母 2-8 位（BRIK-{类别}-{三位序号}）
+            string cat = id.Substring(5, lastDash - 5);
+            if (cat.Length < 2 || cat.Length > 8)
+            {
+                return false;
+            }
+            for (int c = 0; c < cat.Length; c++)
+            {
+                if (cat[c] < 'A' || cat[c] > 'Z')
+                {
+                    return false;
+                }
             }
             string seq = id.Substring(lastDash + 1);
             if (seq.Length != 3)
@@ -965,14 +956,13 @@ namespace Mau.Cli
             }
             return true;
         }
-
         /// <summary>
         /// index --update——生成 INDEX.md + index.json（含 contract 镜像）
         /// </summary>
         /// <returns>退出码</returns>
         public static int UpdateIndex()
 {
-            string? root = FindWorkspaceRoot();
+            string? root = CliSupport.FindWorkspaceRoot();
             if (root == null)
             {
                 Console.WriteLine("FAIL: 未找到 Mau.sln");
@@ -1194,7 +1184,7 @@ namespace Mau.Cli
         /// <returns>退出码</returns>
         public static int CheckLicense()
         {
-            string? root = FindWorkspaceRoot();
+            string? root = CliSupport.FindWorkspaceRoot();
             if (root == null)
             {
                 Console.WriteLine("FAIL: 未找到 Mau.sln");

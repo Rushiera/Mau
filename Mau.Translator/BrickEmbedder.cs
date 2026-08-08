@@ -181,7 +181,7 @@ namespace Mau.Translator
             }
             if (checksumIdx < 0)
             {
-                error = "积木文件缺少校验尾: " + entry.Name;
+                error = "积木文件缺少校验尾: " + entry.Name + "（修复: mau bricks reseal）";
                 return false;
             }
             string claimed = lines[checksumIdx].Trim().Substring(24).Trim();
@@ -198,7 +198,7 @@ namespace Mau.Translator
             string computed = ComputeSha256(body);
             if (!string.Equals(computed, claimed, StringComparison.OrdinalIgnoreCase))
             {
-                error = "积木文件校验失败: " + entry.Name + "——文本已变更，请 re-seal";
+                error = "积木文件校验失败: " + entry.Name + "——文本已变更，请执行 mau bricks reseal 重算校验尾";
                 return false;
             }
             source = body;

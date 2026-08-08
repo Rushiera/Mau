@@ -95,7 +95,7 @@ Bricks/{类别}/*.cs（文件头十字段 + 静态方法签名）
 1. **写代码** — `Bricks/{类别}/BRIK-{类别}-{序号}_{name}.cs`：文件头十字段 + 静态方法（bool 返回，out 参数 = 输出端口）
 2. **写校验尾** — 计算文件 SHA256 追加 `// #MAU_CHECKSUM:SHA256:{hash}`（可参照现有文件格式）
 3. **重建索引** — `mau bricks index --update`（自动生成 index.json + INDEX.md，新积木自动登记）
-4. **验证** — `mau bricks index --verify` + `mau check`（积木谱 84/84 全过）
+4. **验证** — `mau bricks index --verify` + `mau check`（积木谱 125/125 全过）
 
 **删除流程：** 标记 `🗑️ Deprecated` + 保留 ID + 在 INDEX 注明废弃原因。代码可删，登记保留（ID 不释放）。
 
@@ -121,7 +121,7 @@ Bricks/{类别}/*.cs（文件头十字段 + 静态方法签名）
 |:--|:--|:--|
 | Q1 运行时机制（任何软件都需要）？ | Mau.Runtime（零 NuGet 铁律） | OA/Command/DataBox 已是 |
 | Q2 开发工具（编译/语法分析）？ | Mau.Development（Mau 编译链必要内部支持） | Roslyn（MauPocketCompiler/MauRoslynBridge） |
-| Q3 领域能力（Excel/PDF/图像）？ | **独立程序集**（Mau.Office 等增量包——有无不影响 Mau 本体） | ClosedXML / DocumentFormat.OpenXml |
+| Q3 领域能力（Excel/PDF/图像）？ | **独立程序集**（Mau.WorkApp 等增量包——有无不影响 Mau 本体） | ClosedXML / DocumentFormat.OpenXml |
 | Q4 重型有状态（需宿主交互）？ | Runtime PACK 接口 + 实现程序集 + DataBox 服务 | ICSharpBridge / IExcelBridge / IWordBridge |
 
 ### 7.2 PACK 类 BRIK（v2 核心——取代 v1 的"普通积木直接引用包"）
@@ -129,7 +129,7 @@ Bricks/{类别}/*.cs（文件头十字段 + 静态方法签名）
 - **类别 `PACK`**——接口积木（`excel.bridge` / `word.bridge` / `csharp.bridge`），只声明能力，不含实现
 - **单方法调度**：`bool Invoke(string method, string argsJson, out string result)`——PACK 包低频调用接受 JSON 损失，统一包管理；不同包体制风格差异被单方法吸收
 - **方法白名单**：文件头 `方法:` 字段声明（`excel.read → path,sheet,format`）——V11 门禁校验调用方
-- **实现隔离**：接口在 Mau.Runtime（零依赖），实现在独立程序集（Mau.Office/Mau.Development），宿主选装 DataBox.Bind
+- **实现隔离**：接口在 Mau.Runtime（零依赖），实现在独立程序集（Mau.WorkApp/Mau.Development），宿主选装 DataBox.Bind
 - **普通积木零包声明**：非 PACK 类声明任何包 = V10 违规（纯净性铁律——移植性关键是包体纯净，不在协议打补丁）
 
 ### 7.3 接入流程（新包五步）
@@ -143,8 +143,8 @@ Bricks/{类别}/*.cs（文件头十字段 + 静态方法签名）
 ### 7.4 门禁
 
 - **V10**：非 PACK 类声明 `包:` = 违规；PACK 类声明包与实现程序集 csproj 一致
-- **V11**（规划）：调用方积木 method+参数 vs PACK 桥 `方法:` schema 漂移 = FAIL
-- **依赖者**：宿主只需引实现程序集（Mau.Office/Mau.Development），不再背 NuGet 包
+- **V11**：调用方积木 method+参数 vs PACK 桥 `方法:` schema 漂移 = FAIL（v0.73 已落地）
+- **依赖者**：宿主只需引实现程序集（Mau.WorkApp/Mau.Development），不再背 NuGet 包
 
 ### 7.5 长期方向：源码积木化
 
@@ -157,18 +157,25 @@ Bricks/{类别}/*.cs（文件头十字段 + 静态方法签名）
 | 目录 | 内容 | 数量 |
 |:--|:--|:--:|
 | `FILE/` | 文件类积木 | 11 |
-| `MATH/` | 数学类积木 | 3 |
-| `DATA/` | 数据类积木（snapshot/box） | 6 |
+| `MATH/` | 数学类积木 | 4 |
+| `DATA/` | 数据类积木（snapshot/box） | 7 |
 | `TEXT/` | 文本类积木 | 1 |
-| `SHELL/` | Shell 类积木（能力分类 + 审批制） | 1 |
+| `SHELL/` | Shell 类积木（超时/进程树） | 1 |
 | `LLM/` | LLM 类积木（chat/stream/ctx 族） | 21 |
 | `APPROVAL/` | 审批类积木 | 4 |
-| `OFFICE/` | Office 类积木（excel/docx） | 4 |
+| `OFFICE/` | Office 类积木（excel/docx——PACK 调度） | 4 |
 | `LOG/` | 日志类积木 | 4 |
-| `CMD/` | 指令机制积木 | 5 |
-| `OA/` | OA 机制积木（双字典） | 11 |
-| `TOOL/` | 工具机制积木（分发/认领/适配器） | 11 |
+| `CMD/` | 指令机制积木 | 6 |
+| `OA/` | OA 机制积木（双字典） | 16 |
+| `TOOL/` | 工具机制积木（分发/认领/适配器） | 13 |
 | `TEST/` | 测试探针积木 | 2 |
+| `DOG/` | Dog 载体机制积木 | 9 |
+| `SYSTEM/` | 系统信息积木 | 3 |
+| `CSHARP/` | C# 语言工具积木（Roslyn 桥调度） | 15 |
+| `MAU/` | Mau 工具链积木（mau.build） | 1 |
+| `PACK/` | 外部包接口积木（excel/word/csharp 桥） | 3 |
+
+> 数量权威 = index.json（`mau bricks index --update` 机器重建）；本表为展示页，漂移时以 index.json 为准。
 
 ---
 

@@ -7,7 +7,7 @@
 // 包: 无
 // 引用: Mau.Runtime（IExcelBridge）· System
 // 原理: DataBox.TryResolve<IExcelBridge> → Invoke(method, argsJson, out result)
-//       实现 = Mau.Office.OfficeBridge（ClosedXML 封装，依赖者宿主选装 Bind）
+//       实现 = Mau.WorkApp.WorkAppBridge（ClosedXML 封装，依赖者宿主选装 Bind）
 // 方法: excel.read → path,sheet,format
 //        excel.write → path,content,sheet
 // 常用: excel.read/write 积木的调度底座（PACK 协议——外部包与积木解耦）
@@ -35,11 +35,11 @@ namespace Mau.Bricks
             Mau.Runtime.DataBox.TryResolve<Mau.Runtime.IExcelBridge>(out bridge);
             if (bridge == null)
             {
-                result = "ERR|EXCEL_NO_BRIDGE|宿主未注入 IExcelBridge（Mau.Office.OfficeBridge）";
+                result = "ERR|EXCEL_NO_BRIDGE|宿主未注入 IExcelBridge（Mau.WorkApp.WorkAppBridge）";
                 return false;
             }
             return bridge.Invoke(method, argsJson, out result);
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:B976A29260472FEB37BFB9633F2AFA77A27E3CA7BD1939B745839A47D1452AB2
+// #MAU_CHECKSUM:SHA256:BD8593B7E42FCEDF0DCCB7A3A073947BF7184FB6415317C7F1962A683768BACF

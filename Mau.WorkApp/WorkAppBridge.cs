@@ -3,14 +3,14 @@ using System;
 using System.Text;
 using Mau.Runtime;
 
-namespace Mau.Office
+namespace Mau.WorkApp
 {
     /// <summary>
-    /// Office 桥——IExcelBridge + IWordBridge 实现（PACK 类）。
+    /// 工作应用桥——IExcelBridge + IWordBridge 实现（PACK 类）。
     /// 单方法调度：method 白名单 + argsJson 展平参数；封装 ClosedXML / DocumentFormat.OpenXml。
     /// 契约：Bricks/PACK/BRIK-PACK-001_excel.bridge.cs + BRIK-PACK-002_word.bridge.cs。
     /// </summary>
-    public sealed class OfficeBridge : IExcelBridge, IWordBridge
+    public sealed class WorkAppBridge : IExcelBridge, IWordBridge
     {
         /// <summary>
         /// 单方法调度——method 白名单 + argsJson 展平参数

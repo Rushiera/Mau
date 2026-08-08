@@ -109,7 +109,7 @@ namespace Mau.Cli
                     }
                     sb.Append(lines[i]);
                 }
-                string expected = ComputeSha256(sb.ToString());
+                string expected = CliSupport.ComputeSha256(sb.ToString());
                 if (actualChecksum != expected)
                 {
                     result.Error = "校验尾不匹配——mauproj 已被篡改或损坏";
@@ -254,23 +254,6 @@ namespace Mau.Cli
         }
 
         /// <summary>
-        /// 计算 SHA256——UTF-8 字节转 64 位十六进制大写
-        /// </summary>
-        /// <param name="text">输入文本</param>
-        /// <returns>64 位十六进制哈希（大写）</returns>
-        public static string ComputeSha256(string text)
-        {
-            byte[] bytes = Encoding.UTF8.GetBytes(text);
-            byte[] hash = SHA256.HashData(bytes);
-            StringBuilder hex = new StringBuilder();
-            for (int i = 0; i < hash.Length; i++)
-            {
-                hex.Append(hash[i].ToString("X2"));
-            }
-            return hex.ToString();
-        }
-
-        /// <summary>
         /// 计算文件 SHA256——读取文本后按 UTF-8 字节计算
         /// </summary>
         /// <param name="path">文件路径</param>
@@ -278,7 +261,7 @@ namespace Mau.Cli
         public static string ComputeFileSha256(string path)
         {
             string text = File.ReadAllText(path).Replace("\r\n", "\n");
-            return ComputeSha256(text);
+            return CliSupport.ComputeSha256(text);
         }
 
         /// <summary>

@@ -20,9 +20,19 @@ namespace Mau.Cli
         /// </summary>
         private sealed class FireCommand
         {
+            /// <summary>
+            /// 信号方法名——FireXxx
+            /// </summary>
             public string MethodName;
+            /// <summary>
+            /// 参数表——key=value
+            /// </summary>
             public Dictionary<string, string> Args;
 
+            /// <summary>
+            /// 构造 Fire 指令
+            /// </summary>
+            /// <param name="methodName">信号方法名</param>
             public FireCommand(string methodName)
             {
                 MethodName = methodName;

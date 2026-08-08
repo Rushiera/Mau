@@ -46,7 +46,7 @@ namespace Mau.Cli
             copied = copied + CopyFile(Path.Combine(baseDir, "Mau.deps.json"), outDir, ref failed);
             copied = copied + CopyFile(Path.Combine(baseDir, "Mau.runtimeconfig.json"), outDir, ref failed);
 
-            // [2] 全部程序集——Mau.* + Roslyn + 第三方依赖（ClosedXML/OpenXml 等 Office 积木包）
+            // [2] 全部程序集——Mau.* + Roslyn + 第三方依赖（全量拷贝，发布目录与宿主目录等价）
             // 完整性优先：发布目录必须与宿主目录等价，TPA 引用链不缺环
             string[] allDlls = Directory.GetFiles(baseDir, "*.dll", SearchOption.TopDirectoryOnly);
             Array.Sort(allDlls, StringComparer.OrdinalIgnoreCase);
@@ -55,7 +55,7 @@ namespace Mau.Cli
                 copied = copied + CopyFile(allDlls[i], outDir, ref failed);
             }
             // [4] 知识资产——Bricks（积木文本库：翻译器构筑期 BrickIndex 必需）+ Mau.Corpus + 工程文档
-            string? root = FindWorkspaceRoot();
+            string? root = CliSupport.FindWorkspaceRoot();
             if (root != null)
             {
                 copied = copied + CopyDirectory(Path.Combine(root, "Bricks"),
@@ -137,46 +137,6 @@ namespace Mau.Cli
                 count = count + CopyFile(files[i], Path.GetDirectoryName(target)!, ref failed);
             }
             return count;
-        }
-
-        /// <summary>
-        /// 查找 workspace 根——含 Mau.sln 的目录；当前目录优先，程序集位置兜底
-        /// </summary>
-        /// <returns>workspace 根或空</returns>
-        private static string? FindWorkspaceRoot()
-        {
-            DirectoryInfo? dir = new DirectoryInfo(Directory.GetCurrentDirectory());
-            while (dir != null)
-            {
-                string sln = Path.Combine(dir.FullName, "Mau.sln");
-                if (File.Exists(sln))
-                {
-                    return dir.FullName;
-                }
-                DirectoryInfo? parent = Directory.GetParent(dir.FullName);
-                if (parent == null)
-                {
-                    break;
-                }
-                dir = parent;
-            }
-
-            DirectoryInfo? exeDir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (exeDir != null)
-            {
-                string sln = Path.Combine(exeDir.FullName, "Mau.sln");
-                if (File.Exists(sln))
-                {
-                    return exeDir.FullName;
-                }
-                DirectoryInfo? exeParent = Directory.GetParent(exeDir.FullName);
-                if (exeParent == null)
-                {
-                    break;
-                }
-                exeDir = exeParent;
-            }
-            return null;
         }
 /// <summary>
 /// 发布目录冒烟——Mau.exe check --syntax（Bricks 索引随行可用）+ 最小语料 build 闭环
