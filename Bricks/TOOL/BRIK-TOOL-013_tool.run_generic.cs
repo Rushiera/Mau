@@ -3,7 +3,7 @@
 // ID:   BRIK-TOOL-013
 // 类别: TOOL
 // 作用: 通用工具适配器——按 domain + toolName 路由到域积木执行，result/error 回执 + Complete
-// 依赖: file.read, file.write, file.append, file.replace, file.read_lines, file.tree, file.find, file.move, file.delete, file.convert, file.batch, shell.exec, excel.read, excel.write, docx.read, docx.write, system.info, system.snapshot, system.env, math.random_int, csharp.compile, mau.build
+// 依赖: file.read, file.write, file.append, file.replace, file.read_lines, file.tree, file.find, file.move, file.delete, file.convert, file.batch, shell.exec, excel.read, excel.write, docx.read, docx.write, system.info, system.snapshot, system.env, math.random_int, csharp.init, csharp.info, csharp.list, csharp.read, csharp.body_replace, csharp.line_patch, csharp.line_insert, csharp.member_insert, csharp.member_delete, csharp.comment_set, csharp.comment_check, csharp.member_rename, csharp.dead, csharp.find_ref, csharp.compile, mau.build
 // 引用: Mau.Runtime
 // 原理: 读单（toolName=OfficeName + args.* 展平载荷）→ 域路由表 → 域积木执行 → result/error 回执 → Complete
 // 常用: 工具 Cat 语料统一执行动作（M2b：FileCat 接单 → run_generic("file") → 自动回执；M2c：+office/system/csharp/mau 域）
@@ -530,6 +530,147 @@ namespace Mau.Bricks
                     result = summary;
                     return true;
                 }
+                if (toolName == "csharp.init")
+                {
+                    if (!CSharpInitBrick.Init(Arg("csproj"), out result))
+                    {
+                        error = "ERR|CSHARP_INIT_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.info")
+                {
+                    if (!CSharpInfoBrick.Info(out result))
+                    {
+                        error = "ERR|CSHARP_INFO_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.list")
+                {
+                    if (!CSharpListBrick.List(Arg("class"), out result))
+                    {
+                        error = "ERR|CSHARP_LIST_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.read")
+                {
+                    if (!CSharpReadBrick.Read(Arg("class"), Arg("member"), out result))
+                    {
+                        error = "ERR|CSHARP_READ_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.body_replace")
+                {
+                    if (!CSharpBodyReplaceBrick.BodyReplace(Arg("class"), Arg("method"), Arg("body"), out result))
+                    {
+                        error = "ERR|CSHARP_BODY_REPLACE_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.line_patch")
+                {
+                    int startLine;
+                    int endLine;
+                    if (!int.TryParse(Arg("startLine"), out startLine))
+                    {
+                        startLine = 0;
+                    }
+                    if (!int.TryParse(Arg("endLine"), out endLine))
+                    {
+                        endLine = 0;
+                    }
+                    if (!CSharpLinePatchBrick.LinePatch(Arg("class"), Arg("method"), startLine, endLine, Arg("newText"), out result))
+                    {
+                        error = "ERR|CSHARP_LINE_PATCH_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.line_insert")
+                {
+                    int afterLine;
+                    if (!int.TryParse(Arg("afterLine"), out afterLine))
+                    {
+                        afterLine = 0;
+                    }
+                    if (!CSharpLineInsertBrick.LineInsert(Arg("class"), Arg("method"), afterLine, Arg("newText"), out result))
+                    {
+                        error = "ERR|CSHARP_LINE_INSERT_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.member_insert")
+                {
+                    if (!CSharpMemberInsertBrick.MemberInsert(Arg("class"), Arg("position"), Arg("anchor"), Arg("code"), out result))
+                    {
+                        error = "ERR|CSHARP_MEMBER_INSERT_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.member_delete")
+                {
+                    if (!CSharpMemberDeleteBrick.MemberDelete(Arg("class"), Arg("member"), out result))
+                    {
+                        error = "ERR|CSHARP_MEMBER_DELETE_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.comment_set")
+                {
+                    if (!CSharpCommentSetBrick.CommentSet(Arg("class"), Arg("member"), Arg("type"), Arg("text"), Arg("param"), out result))
+                    {
+                        error = "ERR|CSHARP_COMMENT_SET_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.comment_check")
+                {
+                    if (!CSharpCommentCheckBrick.CommentCheck(out result))
+                    {
+                        error = "ERR|CSHARP_COMMENT_CHECK_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.member_rename")
+                {
+                    if (!CSharpMemberRenameBrick.MemberRename(Arg("class"), Arg("oldName"), Arg("newName"), out result))
+                    {
+                        error = "ERR|CSHARP_MEMBER_RENAME_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.dead")
+                {
+                    if (!CSharpDeadBrick.Dead(out result))
+                    {
+                        error = "ERR|CSHARP_DEAD_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
+                if (toolName == "csharp.find_ref")
+                {
+                    if (!CSharpFindRefBrick.FindRef(Arg("class"), Arg("member"), out result))
+                    {
+                        error = "ERR|CSHARP_FIND_REF_FAILED|" + result;
+                        return false;
+                    }
+                    return true;
+                }
                 error = "ERR|UNSUPPORTED_TOOL|" + toolName;
                 return false;
             }
@@ -587,4 +728,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:CE7D4A200D57E757DA8F55EC146F57A69146D027A823B8E11A70D612FD806EF5
+// #MAU_CHECKSUM:SHA256:355AF04713A0A400EF5E78C87DFD02F04DD1C7521CE62BE246B0E2B8BB81D674
