@@ -21,7 +21,20 @@ namespace Mau.Runtime
         /// </summary>
         public static string ApiKey
         {
-            get { return CredentialStore.Get("llm.apiKey"); }
+            get
+            {
+                // [段1] 生效档案优先——密钥随档案（llm.apiKey.{profileId}）
+                if (_activeProfileId.Length > 0)
+                {
+                    string profileKey = CredentialStore.Get("llm.apiKey." + _activeProfileId);
+                    if (profileKey.Length > 0)
+                    {
+                        return profileKey;
+                    }
+                }
+                // [段2] 回落单配置——旧键兼容（llm.apiKey）
+                return CredentialStore.Get("llm.apiKey");
+            }
         }
 
         /// <summary>
@@ -82,6 +95,79 @@ namespace Mau.Runtime
                 DataBox.Set<int>("llm", "timeoutSeconds", timeoutSeconds);
             }
         }
+/// <summary>
+/// 配置档案表——当前全部 LLM API 档案（普通配置，不含密钥）
+/// </summary>
+private static readonly System.Collections.Generic.List<LlmProfile> _profiles = new System.Collections.Generic.List<LlmProfile>(); 
+/// <summary>
+/// 当前生效档案 Id——空=未指定（回落单配置模式）
+/// </summary>
+ private  static  string  _activeProfileId  =  "" ;  
+/// <summary>
+/// 档案持久化存储——宿主 ConfigureProfileStore 注入（null=不持久化）
+/// </summary>
+ private  static  ConfigStore ? _profileStore ;  
+/// <summary>
+/// 绑定档案持久化存储——宿主启动时调用（Load 已存档案）
+/// </summary>
+/// <param name = "store">ConfigStore 实例（可空=关闭持久化）</param>
+ public  static  void  ConfigureProfileStore ( ConfigStore ? store ) { _profileStore  =  store ;  if  ( _profileStore == null ) { return ;  } string  profilesJson  =  _profileStore . Get ( "profiles" ,  "" ) ;  if  ( profilesJson . Length > 0 ) { try  { System . Text . Json . JsonSerializerOptions  options  =  new  System . Text . Json . JsonSerializerOptions ( ) ;  options . IncludeFields  =  true ;  LlmProfile [ ] ? loaded  =  System . Text . Json . JsonSerializer . Deserialize < LlmProfile [ ] > ( profilesJson ,  options ) ;  if  ( loaded != null ) { _profiles . Clear ( ) ;  for  ( int  i  =  0 ;  i < loaded . Length ;  i  =  i + 1 ) { _profiles . Add ( loaded [ i ] ) ;  } } } catch  { // 档案损坏——保持空表（防御式）
+} } _activeProfileId  =  _profileStore . Get ( "active" ,  "" ) ;  } 
+/// <summary>
+/// 全部档案——只读拷贝（无密钥）
+/// </summary>
+/// <returns>档案数组</returns>
+ public  static  LlmProfile [ ]  GetAllProfiles ( ) { lock  ( _profiles ) { LlmProfile [ ]  copy  =  new  LlmProfile [ _profiles . Count ] ;  for  ( int  i  =  0 ;  i < _profiles . Count ;  i  =  i + 1 ) { copy [ i ]  =  CopyProfile ( _profiles [ i ] ) ;  } return  copy ;  } } 
+/// <summary>
+/// 当前生效档案 Id
+/// </summary>
+ public  static  string  ActiveProfileId { get { return  _activeProfileId ;  } } 
+/// <summary>
+/// 按 Id 读取档案（无密钥）
+/// </summary>
+/// <param name = "profileId">档案 Id</param>
+/// <returns>档案副本；不存在返回 null</returns>
+ public  static  LlmProfile ? GetProfile ( string  profileId ) { lock  ( _profiles ) { for  ( int  i  =  0 ;  i < _profiles . Count ;  i  =  i + 1 ) { if  ( _profiles [ i ] . ProfileId == profileId ) { return  CopyProfile ( _profiles [ i ] ) ;  } } return  null ;  } } 
+/// <summary>
+/// 保存档案——新增或更新（普通配置落盘；密钥独立走 CredentialStore）
+/// </summary>
+/// <param name = "profile">档案（ProfileId 空=新建生成）</param>
+/// <returns>最终档案 Id</returns>
+ public  static  string  SaveProfile ( LlmProfile  profile ) { if  ( profile == null ) { throw  new  ArgumentNullException ( "profile" ) ;  } if  ( string . IsNullOrWhiteSpace ( profile . ProfileId ) ) { profile . ProfileId  =  Guid . NewGuid ( ) . ToString ( "N" ) ;  } if  ( string . IsNullOrWhiteSpace ( profile . DisplayName ) ) { profile . DisplayName  =  "未命名" ;  } lock  ( _profiles ) { bool  replaced  =  false ;  for  ( int  i  =  0 ;  i < _profiles . Count ;  i  =  i + 1 ) { if  ( _profiles [ i ] . ProfileId == profile . ProfileId ) { _profiles [ i ]  =  CopyProfile ( profile ) ;  replaced  =  true ;  break ;  } } if  ( ! replaced ) { _profiles . Add ( CopyProfile ( profile ) ) ;  } PersistProfilesLocked ( ) ;  } return  profile . ProfileId ;  } 
+/// <summary>
+/// 删除档案——同时清除其密钥
+/// </summary>
+/// <param name = "profileId">档案 Id</param>
+/// <returns>true=删除成功</returns>
+ public  static  bool  DeleteProfile ( string  profileId ) { lock  ( _profiles ) { for  ( int  i  =  0 ;  i < _profiles . Count ;  i  =  i + 1 ) { if  ( _profiles [ i ] . ProfileId == profileId ) { _profiles . RemoveAt ( i ) ;  PersistProfilesLocked ( ) ;  CredentialStore . Set ( "llm.apiKey." + profileId ,  "" ) ;  if  ( _activeProfileId == profileId ) { _activeProfileId  =  "" ;  PersistProfilesLocked ( ) ;  } return  true ;  } } } return  false ;  } 
+/// <summary>
+/// 切换生效档案——应用其端点/模型到 DataBox scope "llm"（密钥随 ApiKey 属性切换）
+/// </summary>
+/// <param name = "profileId">档案 Id</param>
+/// <returns>true=切换成功</returns>
+ public  static  bool  SetActiveProfile ( string  profileId ) { lock  ( _profiles ) { for  ( int  i  =  0 ;  i < _profiles . Count ;  i  =  i + 1 ) { if  ( _profiles [ i ] . ProfileId == profileId ) { _activeProfileId  =  profileId ;  if  ( ! string . IsNullOrWhiteSpace ( _profiles [ i ] . Endpoint ) ) { DataBox . Set < string > ( "llm" ,  "endpoint" ,  _profiles [ i ] . Endpoint ) ;  } if  ( ! string . IsNullOrWhiteSpace ( _profiles [ i ] . Model ) ) { DataBox . Set < string > ( "llm" ,  "model" ,  _profiles [ i ] . Model ) ;  } PersistProfilesLocked ( ) ;  return  true ;  } } } return  false ;  } 
+/// <summary>
+/// 写入档案密钥——CredentialStore 隔离（键 llm.apiKey.{profileId}；空=清除）
+/// </summary>
+/// <param name = "profileId">档案 Id</param>
+/// <param name = "key">API Key（空=清除）</param>
+ public  static  void  SetProfileSecret ( string  profileId ,  string  key ) { CredentialStore . Set ( "llm.apiKey." + profileId ,  key == null ? "" :  key . Trim ( ) ) ;  } 
+/// <summary>
+/// 读取档案密钥——CredentialStore 隔离（不存在返回空串）
+/// </summary>
+/// <param name = "profileId">档案 Id</param>
+/// <returns>密钥或空串</returns>
+ public  static  string  GetProfileSecret ( string  profileId ) { return  CredentialStore . Get ( "llm.apiKey." + profileId ) ;  } 
+/// <summary>
+/// 档案持久化——锁内调用（JSON 数组 + 生效 Id）
+/// </summary>
+ private  static  void  PersistProfilesLocked ( ) { if  ( _profileStore == null ) { return ;  } System . Text . Json . JsonSerializerOptions  options  =  new  System . Text . Json . JsonSerializerOptions ( ) ;  options . IncludeFields  =  true ;  string  json  =  System . Text . Json . JsonSerializer . Serialize ( _profiles ,  options ) ;  _profileStore . Set ( "profiles" ,  json ) ;  _profileStore . Set ( "active" ,  _activeProfileId ) ;  _profileStore . Save ( ) ;  } 
+/// <summary>
+/// 复制档案
+/// </summary>
+/// <param name = "source">源档案</param>
+/// <returns>副本</returns>
+ private  static  LlmProfile  CopyProfile ( LlmProfile  source ) { LlmProfile  copy  =  new  LlmProfile ( ) ;  copy . ProfileId  =  source . ProfileId ;  copy . DisplayName  =  source . DisplayName ;  copy . ApiType  =  source . ApiType ;  copy . Endpoint  =  source . Endpoint ;  copy . Model  =  source . Model ;  return  copy ;  }
 
         /// <summary>
         /// 文本规范化——转发 BrickText.SafeText（积木文本兼容入口）
