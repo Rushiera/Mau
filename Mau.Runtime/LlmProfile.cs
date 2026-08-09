@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace Mau.Runtime
 {
@@ -33,6 +33,11 @@ namespace Mau.Runtime
         /// 默认模型
         /// </summary>
         public string Model = "";
+
+        /// <summary>
+        /// 密钥传输字段（仅保存投递用——不入持久化表/快照；LlmBridge.SaveProfile 处理后清空）
+        /// </summary>
+        public string Secret = "";
 
         /// <summary>
         /// 构造空档案

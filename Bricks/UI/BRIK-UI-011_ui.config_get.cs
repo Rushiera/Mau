@@ -52,6 +52,7 @@ namespace Mau.Bricks
                     writer.WriteString("Theme", store.Get("theme", "灰色"));
                     writer.WriteString("Whitelist", store.Get("whitelist", ""));
                     writer.WriteString("Tools", store.Get("tools", ""));
+                    writer.WriteString("LlmProfile", store.Get("llmProfile", ""));
                     writer.WriteEndObject();
                 }
                 json = Encoding.UTF8.GetString(stream.ToArray());
@@ -60,4 +61,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:818059728A8B3204F394B7F5BB57419AE73C4A2E8D216FF5F9F17CAD49AFF54E
+// #MAU_CHECKSUM:SHA256:F520A1D494484B889599879AC3A2CF34664A0964AFE6A62CFB369A714C356D7C

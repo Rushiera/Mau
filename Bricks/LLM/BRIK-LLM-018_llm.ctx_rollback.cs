@@ -26,7 +26,7 @@ namespace Mau.Bricks
         /// <returns>true=成功</returns>
         public static bool CtxRollback(string sessionKey, int checkpoint)
         {
-            if (checkpoint < 0)
+            if (checkpoint <= 0)
             {
                 return false;
             }
@@ -43,4 +43,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:C4515E1E46A98F4F172BAD88F54768B188D8FDA91DB8DC532AFFBAD7C8BA0310
+// #MAU_CHECKSUM:SHA256:A28A969F77A797AD8C72F50A6C0B29A473DFD6717BF70FF03D48AC69DE0F414C

@@ -148,6 +148,9 @@
 | BRIK-UI-009 | ui.profile_secret | UI | UI/BRIK-UI-009_ui.profile_secret.cs | 无 | active |  |
 | BRIK-UI-010 | ui.config_set | UI | UI/BRIK-UI-010_ui.config_set.cs | 无 | active |  |
 | BRIK-UI-011 | ui.config_get | UI | UI/BRIK-UI-011_ui.config_get.cs | 无 | active |  |
+| BRIK-WIN-001 | win.open_dir | WIN | WIN/BRIK-WIN-001_win.open_dir.cs | 无 | active |  |
+| BRIK-WIN-002 | win.flash_taskbar | WIN | WIN/BRIK-WIN-002_win.flash_taskbar.cs | 无 | active |  |
+| BRIK-WIN-003 | win.notify | WIN | WIN/BRIK-WIN-003_win.notify.cs | 无 | active |  |
 
 ---
 

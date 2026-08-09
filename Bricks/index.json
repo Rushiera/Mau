@@ -1,6 +1,6 @@
 ﻿{
   "version": 3,
-  "generatedAt": "2026-08-09T10:27:43Z",
+  "generatedAt": "2026-08-09T15:18:30Z",
   "packages": ["Microsoft.CodeAnalysis.CSharp@4.11.0"],
   "bricks": [
     {"id":"BRIK-APPROVAL-001","name":"approval.request","category":"APPROVAL","path":"APPROVAL/BRIK-APPROVAL-001_approval.request.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.ApprovalRequestBrick.Request","inputs":[{"name":"requestId","type":"string"},{"name":"question","type":"string"},{"name":"options","type":"string[]"},{"name":"defaultIndex","type":"int"},{"name":"timeoutSeconds","type":"int"}],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},
@@ -143,6 +143,9 @@
     {"id":"BRIK-UI-008","name":"ui.profile_active","category":"UI","path":"UI/BRIK-UI-008_ui.profile_active.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.UiProfileActiveBrick.ProfileActive","inputs":[{"name":"profileId","type":"string"}],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},
     {"id":"BRIK-UI-009","name":"ui.profile_secret","category":"UI","path":"UI/BRIK-UI-009_ui.profile_secret.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.UiProfileSecretBrick.ProfileSecret","inputs":[{"name":"flat","type":"string"}],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},
     {"id":"BRIK-UI-010","name":"ui.config_set","category":"UI","path":"UI/BRIK-UI-010_ui.config_set.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.UiConfigSetBrick.ConfigSet","inputs":[{"name":"flat","type":"string"}],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},
-    {"id":"BRIK-UI-011","name":"ui.config_get","category":"UI","path":"UI/BRIK-UI-011_ui.config_get.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.UiConfigGetBrick.ConfigGet","inputs":[{"name":"catName","type":"string"}],"outputs":[{"name":"json","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}}
+    {"id":"BRIK-UI-011","name":"ui.config_get","category":"UI","path":"UI/BRIK-UI-011_ui.config_get.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.UiConfigGetBrick.ConfigGet","inputs":[{"name":"catName","type":"string"}],"outputs":[{"name":"json","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}},
+    {"id":"BRIK-WIN-001","name":"win.open_dir","category":"WIN","path":"WIN/BRIK-WIN-001_win.open_dir.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.WinOpenDirBrick.OpenDir","inputs":[{"name":"target","type":"string"}],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},
+    {"id":"BRIK-WIN-002","name":"win.flash_taskbar","category":"WIN","path":"WIN/BRIK-WIN-002_win.flash_taskbar.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.WinFlashTaskbarBrick.FlashTaskbar","inputs":[],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},
+    {"id":"BRIK-WIN-003","name":"win.notify","category":"WIN","path":"WIN/BRIK-WIN-003_win.notify.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.WinNotifyBrick.Notify","inputs":[{"name":"flat","type":"string"}],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}}
   ]
 }

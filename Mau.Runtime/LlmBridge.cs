@@ -32,7 +32,19 @@ namespace Mau.Runtime
                         return profileKey;
                     }
                 }
-                // [段2] 回落单配置——旧键兼容（llm.apiKey）
+                // [段2] 回落：任意档案密钥——active 未设/无密钥时找第一个有密钥的档案（M3.4：重启无 Key 兜底）
+                lock (_profiles)
+                {
+                    for (int i = 0; i < _profiles.Count; i = i + 1)
+                    {
+                        string anyKey = CredentialStore.Get("llm.apiKey." + _profiles[i].ProfileId);
+                        if (anyKey.Length > 0)
+                        {
+                            return anyKey;
+                        }
+                    }
+                }
+                // [段3] 回落单配置——旧键兼容（llm.apiKey）
                 return CredentialStore.Get("llm.apiKey");
             }
         }
@@ -159,7 +171,8 @@ private static readonly System.Collections.Generic.List<LlmProfile> _profiles = 
 /// </summary>
 /// <param name = "profile">档案（ProfileId 空=新建生成）</param>
 /// <returns>最终档案 Id</returns>
- public  static  string  SaveProfile ( LlmProfile  profile ) { if  ( profile == null ) { throw  new  ArgumentNullException ( "profile" ) ;  } if  ( string . IsNullOrWhiteSpace ( profile . ProfileId ) ) { profile . ProfileId  =  Guid . NewGuid ( ) . ToString ( "N" ) ;  } if  ( string . IsNullOrWhiteSpace ( profile . DisplayName ) ) { profile . DisplayName  =  "未命名" ;  } lock  ( _profiles ) { bool  replaced  =  false ;  for  ( int  i  =  0 ;  i < _profiles . Count ;  i  =  i + 1 ) { if  ( _profiles [ i ] . ProfileId == profile . ProfileId ) { _profiles [ i ]  =  CopyProfile ( profile ) ;  replaced  =  true ;  break ;  } } if  ( ! replaced ) { _profiles . Add ( CopyProfile ( profile ) ) ;  } PersistProfilesLocked ( ) ;  } return  profile . ProfileId ;  } 
+ public  static  string  SaveProfile ( LlmProfile  profile ) { if  ( profile == null ) { throw  new  ArgumentNullException ( "profile" ) ;  } if  ( string . IsNullOrWhiteSpace ( profile . ProfileId ) ) { profile . ProfileId  =  Guid . NewGuid ( ) . ToString ( "N" ) ;  } if  ( string . IsNullOrWhiteSpace ( profile . DisplayName ) ) { profile . DisplayName  =  "未命名" ;  } string  secret  =  profile . Secret != null ? profile . Secret . Trim ( ) : "" ;  profile . Secret  =  "" ;  if  ( secret . Length > 0 ) { CredentialStore . Set ( "llm.apiKey." + profile . ProfileId ,  secret ) ;  CredentialStore . SavePersisted ( ) ;  } lock  ( _profiles ) { bool  replaced  =  false ;  for  ( int  i  =  0 ;  i < _profiles . Count ;  i  =  i + 1 ) { if  ( _profiles [ i ] . ProfileId == profile . ProfileId ) { _profiles [ i ]  =  CopyProfile ( profile ) ;  replaced  =  true ;  break ;  } } if  ( ! replaced ) { _profiles . Add ( CopyProfile ( profile ) ) ;  } // 生效档案兜底——active 空时首个档案自动生效（M3.4：保存 Key 后重启无 Key——active 空导致 ApiKey 回落旧键）
+            if  ( _activeProfileId . Length == 0 ) { _activeProfileId  =  profile . ProfileId ;  } PersistProfilesLocked ( ) ;  } return  profile . ProfileId ;  } 
 /// <summary>
 /// 删除档案——同时清除其密钥
 /// </summary>
