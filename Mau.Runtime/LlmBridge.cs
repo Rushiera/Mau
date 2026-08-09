@@ -74,11 +74,11 @@ namespace Mau.Runtime
         /// </summary>
         /// <param name="apiKey">API Key</param>
         public static void ConfigureApiKey(string apiKey)
-        {
+{
             // 凭证隔离——API Key 不入 DataBox（Capture 全量快照不暴露；安全审查项 P0-6）
             CredentialStore.Set("llm.apiKey", apiKey == null ? "" : apiKey.Trim());
+            CredentialStore.SavePersisted();
         }
-
         /// <summary>
         /// 配置端点和超时
         /// </summary>
@@ -111,9 +111,35 @@ private static readonly System.Collections.Generic.List<LlmProfile> _profiles = 
 /// 绑定档案持久化存储——宿主启动时调用（Load 已存档案）
 /// </summary>
 /// <param name = "store">ConfigStore 实例（可空=关闭持久化）</param>
- public  static  void  ConfigureProfileStore ( ConfigStore ? store ) { _profileStore  =  store ;  if  ( _profileStore == null ) { return ;  } string  profilesJson  =  _profileStore . Get ( "profiles" ,  "" ) ;  if  ( profilesJson . Length > 0 ) { try  { System . Text . Json . JsonSerializerOptions  options  =  new  System . Text . Json . JsonSerializerOptions ( ) ;  options . IncludeFields  =  true ;  LlmProfile [ ] ? loaded  =  System . Text . Json . JsonSerializer . Deserialize < LlmProfile [ ] > ( profilesJson ,  options ) ;  if  ( loaded != null ) { _profiles . Clear ( ) ;  for  ( int  i  =  0 ;  i < loaded . Length ;  i  =  i + 1 ) { _profiles . Add ( loaded [ i ] ) ;  } } } catch  { // 档案损坏——保持空表（防御式）
-} } _activeProfileId  =  _profileStore . Get ( "active" ,  "" ) ;  } 
-/// <summary>
+ public  static  void  ConfigureProfileStore ( ConfigStore ? store ) {
+            // 持久化存储绑定——null/空 = AppDataConfig 默认（%LOCALAPPDATA%/Mau_wls/CatHome4/llm.cfg）
+            _profileStore = store != null ? store : AppDataConfig.Store;
+            // 凭证内存加载——llm.apiKey.* 键（启动时同步持久化密钥）
+            CredentialStore.LoadPersisted();
+            string profilesJson = _profileStore.Get("profiles", "");
+            if (profilesJson.Length > 0)
+            {
+                try
+                {
+                    System.Text.Json.JsonSerializerOptions options = new System.Text.Json.JsonSerializerOptions();
+                    options.IncludeFields = true;
+                    LlmProfile[]? loaded = System.Text.Json.JsonSerializer.Deserialize<LlmProfile[]>(profilesJson, options);
+                    if (loaded != null)
+                    {
+                        _profiles.Clear();
+                        for (int i = 0; i < loaded.Length; i = i + 1)
+                        {
+                            _profiles.Add(loaded[i]);
+                        }
+                    }
+                }
+                catch
+                {
+                    // 档案损坏——保持空表（防御式）
+                }
+            }
+            _activeProfileId = _profileStore.Get("active", "");
+        }/// <summary>
 /// 全部档案——只读拷贝（无密钥）
 /// </summary>
 /// <returns>档案数组</returns>
@@ -139,8 +165,28 @@ private static readonly System.Collections.Generic.List<LlmProfile> _profiles = 
 /// </summary>
 /// <param name = "profileId">档案 Id</param>
 /// <returns>true=删除成功</returns>
- public  static  bool  DeleteProfile ( string  profileId ) { lock  ( _profiles ) { for  ( int  i  =  0 ;  i < _profiles . Count ;  i  =  i + 1 ) { if  ( _profiles [ i ] . ProfileId == profileId ) { _profiles . RemoveAt ( i ) ;  PersistProfilesLocked ( ) ;  CredentialStore . Set ( "llm.apiKey." + profileId ,  "" ) ;  if  ( _activeProfileId == profileId ) { _activeProfileId  =  "" ;  PersistProfilesLocked ( ) ;  } return  true ;  } } } return  false ;  } 
-/// <summary>
+ public  static  bool  DeleteProfile ( string  profileId ) {
+            lock (_profiles)
+            {
+                for (int i = 0; i < _profiles.Count; i = i + 1)
+                {
+                    if (_profiles[i].ProfileId == profileId)
+                    {
+                        _profiles.RemoveAt(i);
+                        PersistProfilesLocked();
+                        CredentialStore.Set("llm.apiKey." + profileId, "");
+                        CredentialStore.SavePersisted();
+                        if (_activeProfileId == profileId)
+                        {
+                            _activeProfileId = "";
+                            PersistProfilesLocked();
+                        }
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }/// <summary>
 /// 切换生效档案——应用其端点/模型到 DataBox scope "llm"（密钥随 ApiKey 属性切换）
 /// </summary>
 /// <param name = "profileId">档案 Id</param>
@@ -151,8 +197,10 @@ private static readonly System.Collections.Generic.List<LlmProfile> _profiles = 
 /// </summary>
 /// <param name = "profileId">档案 Id</param>
 /// <param name = "key">API Key（空=清除）</param>
- public  static  void  SetProfileSecret ( string  profileId ,  string  key ) { CredentialStore . Set ( "llm.apiKey." + profileId ,  key == null ? "" :  key . Trim ( ) ) ;  } 
-/// <summary>
+ public  static  void  SetProfileSecret ( string  profileId ,  string  key ) {
+            CredentialStore.Set("llm.apiKey." + profileId, key == null ? "" : key.Trim());
+            CredentialStore.SavePersisted();
+        }/// <summary>
 /// 读取档案密钥——CredentialStore 隔离（不存在返回空串）
 /// </summary>
 /// <param name = "profileId">档案 Id</param>

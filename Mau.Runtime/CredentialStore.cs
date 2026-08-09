@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Mau.Runtime
@@ -84,6 +84,48 @@ namespace Mau.Runtime
             {
                 _secrets.Clear();
             }
+        }
+
+        /// <summary>
+        /// 从 AppDataConfig 加载持久化凭证（宿主启动时调用）——llm.apiKey.* 键入内存。
+        /// 持久化介质：%LOCALAPPDATA%/Mau_wls/CatHome4/llm.cfg（明文——个人工具链）。
+        /// </summary>
+        public static void LoadPersisted()
+        {
+            System.Collections.Generic.KeyValuePair<string, string>[] all = AppDataConfig.All();
+            lock (Gate)
+            {
+                for (int i = 0; i < all.Length; i = i + 1)
+                {
+                    string key = all[i].Key;
+                    // 单配置（llm.apiKey）+ 多档案（llm.apiKey.{id}）都加载
+                    if (key != null
+                        && (key == "llm.apiKey"
+                            || key.StartsWith("llm.apiKey.", StringComparison.Ordinal)))
+                    {
+                        _secrets[key] = all[i].Value;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 保存全部凭证到 AppDataConfig（写入后调用）——内存态保持，文件是持久化介质
+        /// </summary>
+        public static void SavePersisted()
+        {
+            System.Collections.Generic.KeyValuePair<string, string>[] snapshot;
+            lock (Gate)
+            {
+                snapshot = new System.Collections.Generic.KeyValuePair<string, string>[_secrets.Count];
+                int i = 0;
+                foreach (System.Collections.Generic.KeyValuePair<string, string> pair in _secrets)
+                {
+                    snapshot[i] = pair;
+                    i = i + 1;
+                }
+            }
+            AppDataConfig.SetMany(snapshot);
         }
     }
 }

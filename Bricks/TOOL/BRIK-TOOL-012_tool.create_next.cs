@@ -82,6 +82,10 @@ namespace Mau.Bricks
                     }
                     return false;
                 }
+                // 🔴 工具名归一化——LLM 声明名（下划线版 file_write）转回路由名（点号版 file.write）
+                //   DeepSeek 工具名禁点号（实测 400）——cat.tools_json 声明点转下划线；
+                //   发单即归一化——后续 claim 匹配/run_generic 路由全用点号名
+                name = name.Replace('_', '.');
                 // 建 Dog 载体 + Post TOOL 单
                 DogBase dog = new DogBase(oa, "Tool_" + name);
                 dogId = runner.RegisterFlow(dog, "Tool_" + name);
@@ -165,4 +169,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:FC96DFED80BCFF568882EE70539C9287234C4CC8DC6D3EC715CAAC8705580AF0
+// #MAU_CHECKSUM:SHA256:B5986B39BB85641EFAD1F799C6F9C1A2489F50134EA4ED4861CFD265A3E3F63D

@@ -39,6 +39,12 @@ namespace Mau.Bricks
             }
             Office office = oa.GetOffice(officeId);
             string toolName = office.OfficeName;
+            // 🔴 工具名归一化——LLM 工具声明名（下划线版 system_info）映射回路由名（点号版 system.info）
+            //   DeepSeek 工具名禁止点号（实测 400）——cat.tools_json 声明时点转下划线，执行侧转回
+            if (toolName != null)
+            {
+                toolName = toolName.Replace('_', '.');
+            }
             string rawCall;
             if (oa.GetStr(officeId, "call_id", out rawCall) && rawCall != null)
             {
@@ -728,4 +734,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:355AF04713A0A400EF5E78C87DFD02F04DD1C7521CE62BE246B0E2B8BB81D674
+// #MAU_CHECKSUM:SHA256:C2ACB31214C483A250E56E34C4C0AB0E56BE646CFAA0418666D21E1E0276F4D8

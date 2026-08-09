@@ -12,12 +12,16 @@
 | BRIK-APPROVAL-003 | approval.reject | APPROVAL | APPROVAL/BRIK-APPROVAL-003_approval.reject.cs | 无 | active |  |
 | BRIK-APPROVAL-004 | approval.pending | APPROVAL | APPROVAL/BRIK-APPROVAL-004_approval.pending.cs | 无 | active |  |
 | BRIK-APPROVAL-005 | approval.result | APPROVAL | APPROVAL/BRIK-APPROVAL-005_approval.result.cs | 无 | active |  |
+| BRIK-CAT-001 | cat.scan_instances | CAT | CAT/BRIK-CAT-001_cat.scan_instances.cs | 无 | active |  |
+| BRIK-CAT-002 | cat.tools_json | CAT | CAT/BRIK-CAT-002_cat.tools_json.cs | 无 | active |  |
 | BRIK-CMD-001 | cmd.register | CMD | CMD/BRIK-CMD-001_cmd.register.cs | 无 | active |  |
 | BRIK-CMD-002 | cmd.unregister | CMD | CMD/BRIK-CMD-002_cmd.unregister.cs | 无 | active |  |
 | BRIK-CMD-003 | cmd.consume | CMD | CMD/BRIK-CMD-003_cmd.consume.cs | 无 | active |  |
 | BRIK-CMD-004 | cmd.set | CMD | CMD/BRIK-CMD-004_cmd.set.cs | 无 | active |  |
 | BRIK-CMD-005 | cmd.clean | CMD | CMD/BRIK-CMD-005_cmd.clean.cs | 无 | active |  |
 | BRIK-CMD-006 | cmd.is_key | CMD | CMD/BRIK-CMD-006_cmd.is_key.cs | 无 | active |  |
+| BRIK-CMD-007 | cmd.is_key_first | CMD | CMD/BRIK-CMD-007_cmd.is_key_first.cs | 无 | active |  |
+| BRIK-CMD-008 | cmd.active_key | CMD | CMD/BRIK-CMD-008_cmd.active_key.cs | 无 | active |  |
 | BRIK-CSHARP-001 | csharp.compile | CSHARP | CSHARP/BRIK-CSHARP-001_csharp.compile.cs | 无 | active |  |
 | BRIK-CSHARP-002 | csharp.init | CSHARP | CSHARP/BRIK-CSHARP-002_csharp.init.cs | 无 | active |  |
 | BRIK-CSHARP-003 | csharp.info | CSHARP | CSHARP/BRIK-CSHARP-003_csharp.info.cs | 无 | active |  |
@@ -136,6 +140,14 @@
 | BRIK-UI-001 | ui.snapshot_chat | UI | UI/BRIK-UI-001_ui.snapshot_chat.cs | 无 | active |  |
 | BRIK-UI-002 | ui.snapshot_push | UI | UI/BRIK-UI-002_ui.snapshot_push.cs | 无 | active |  |
 | BRIK-UI-003 | ui.window_event | UI | UI/BRIK-UI-003_ui.window_event.cs | 无 | active |  |
+| BRIK-UI-004 | ui.snapshot_home | UI | UI/BRIK-UI-004_ui.snapshot_home.cs | 无 | active |  |
+| BRIK-UI-005 | ui.snapshot_config | UI | UI/BRIK-UI-005_ui.snapshot_config.cs | 无 | active |  |
+| BRIK-UI-006 | ui.profile_save | UI | UI/BRIK-UI-006_ui.profile_save.cs | 无 | active |  |
+| BRIK-UI-007 | ui.profile_delete | UI | UI/BRIK-UI-007_ui.profile_delete.cs | 无 | active |  |
+| BRIK-UI-008 | ui.profile_active | UI | UI/BRIK-UI-008_ui.profile_active.cs | 无 | active |  |
+| BRIK-UI-009 | ui.profile_secret | UI | UI/BRIK-UI-009_ui.profile_secret.cs | 无 | active |  |
+| BRIK-UI-010 | ui.config_set | UI | UI/BRIK-UI-010_ui.config_set.cs | 无 | active |  |
+| BRIK-UI-011 | ui.config_get | UI | UI/BRIK-UI-011_ui.config_get.cs | 无 | active |  |
 
 ---
 
