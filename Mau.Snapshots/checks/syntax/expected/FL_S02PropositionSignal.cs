@@ -2,6 +2,9 @@
 // 流程: S02PropositionSignal
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireStart(string input, string output)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -171,4 +174,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:6E3DAD4E4C995DAD97EA70B17E80A920D44C2F372DB1926B66054CC872F5EA70
+// #MAU_CHECKSUM:SHA256:305B531B557F42897927887437D36A7E8A553A958D3912926CA77712B6BA6E6E

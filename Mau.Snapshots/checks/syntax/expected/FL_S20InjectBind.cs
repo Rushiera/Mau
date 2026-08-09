@@ -1,21 +1,19 @@
 ﻿// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
-// 流程: S09Conjunction
+// 流程: S20InjectBind
 // 基座: Mau.Runtime/v0.1
 
 // Fire 契约:
-//   FireA(string input, string output)
-//   FireB(string input, string output)
+//   FireStart()
 
 using Mau.Runtime;
 using System.Threading.Tasks;
-using System;
 
 namespace Mau.Generated.Flows
 {
     /// <summary>
-    /// S09Conjunction 流程——由 Mau 声明生成
+    /// S20InjectBind 流程——由 Mau 声明生成
     /// </summary>
-    public sealed class FL_S09Conjunction : IObservableFlow
+    public sealed class FL_S20InjectBind : IObservableFlow
     {
         /// <summary>
         /// 内部帧号——每 Tick 自增
@@ -33,14 +31,9 @@ namespace Mau.Generated.Flows
         private bool _traceDataFlow;
 
         /// <summary>
-        /// 命题 P_A：信号，消费即清除
+        /// 命题 P_Start：信号，消费即清除
         /// </summary>
-        private bool P_A;
-
-        /// <summary>
-        /// 命题 P_B：信号，消费即清除
-        /// </summary>
-        private bool P_B;
+        private bool P_Start;
 
         /// <summary>
         /// 命题 P_Done：终态事实，置位后保持
@@ -53,53 +46,40 @@ namespace Mau.Generated.Flows
         private bool P_Failed;
 
         /// <summary>
-        /// 变迁 T_Run 的动作参数——input
+        /// 注入配置——sessionKey（实例级，宿主 Set 注入）
         /// </summary>
-        private string _input = null!;
+        private string _sessionKey;
 
         /// <summary>
-        /// 变迁 T_Run 的动作参数——output
+        /// 注入配置——sessionKey（纯赋值，不置位信号）
         /// </summary>
-        private string _output = null!;
+        /// <param name="value">sessionKey 值</param>
+        public void SetSessionKey(string value)
+        {
+            _sessionKey = value;
+        }
 
         /// <summary>
-        /// 变迁 T_Run 的时限 Cube（60 帧有限模式）
+        /// 变迁 T_Bind 的时限 Cube（5 帧有限模式）
         /// </summary>
-        private Cube T_Run_Cube;
+        private Cube T_Bind_Cube;
 
         /// <summary>
         /// 构造：初始化日志缓冲与 Cube/Inbox
         /// </summary>
-        public FL_S09Conjunction()
+        public FL_S20InjectBind()
         {
             _logs = new FlowLog();
-            T_Run_Cube = new Cube(60);
+            T_Bind_Cube = new Cube(5);
         }
 
         /// <summary>
-        /// 外部投递信号：A
+        /// 外部投递信号：Start
         /// </summary>
-        /// <param name="input">参数 input</param>
-        /// <param name="output">参数 output</param>
-        public void FireA(string input, string output)
+        public void FireStart()
         {
-            _input = input;
-            _output = output;
-            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_A")); }
-            P_A = true;
-        }
-
-        /// <summary>
-        /// 外部投递信号：B
-        /// </summary>
-        /// <param name="input">参数 input</param>
-        /// <param name="output">参数 output</param>
-        public void FireB(string input, string output)
-        {
-            _input = input;
-            _output = output;
-            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_B")); }
-            P_B = true;
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Start")); }
+            P_Start = true;
         }
 
         /// <summary>
@@ -108,18 +88,15 @@ namespace Mau.Generated.Flows
         public void Tick()
         {
             _frame = _frame + 1;
-            // [T_Run] 前置检查
-            if (P_A && P_B && T_Run_Cube.IsIdle())
+            // [T_Bind] 前置检查
+            if (P_Start && T_Bind_Cube.IsIdle())
             {
                 // 信号消费
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Run", "Consume", "P_A")); }
-                P_A = false;
-                // 信号消费
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Run", "Consume", "P_B")); }
-                P_B = false;
-                T_Run_Cube.Start();
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Bind", "Consume", "P_Start")); }
+                P_Start = false;
+                T_Bind_Cube.Start();
                 // 执行动作（积木调用）
-                bool ok = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
+                bool ok = Mau.Bricks.BRIK_DATA_003.Set(_sessionKey, "flag", 1);
                 if (ok)
                 {
                     // 正常后置注册
@@ -132,18 +109,18 @@ namespace Mau.Generated.Flows
                 }
 
                 // 同步积木当帧完成
-                T_Run_Cube.Complete();
+                T_Bind_Cube.Complete();
             }
 
-            // [T_Run] 时限检查
-            if (T_Run_Cube.IsRunning())
+            // [T_Bind] 时限检查
+            if (T_Bind_Cube.IsRunning())
             {
-                T_Run_Cube.TickFrame();
-                if (T_Run_Cube.IsExpired())
+                T_Bind_Cube.TickFrame();
+                if (T_Bind_Cube.IsExpired())
                 {
                     // 超时 → 错误后置
                     P_Failed = true;
-                    T_Run_Cube.Complete();
+                    T_Bind_Cube.Complete();
                 }
             }
         }
@@ -154,13 +131,12 @@ namespace Mau.Generated.Flows
         /// <returns>当前帧状态</returns>
         public RuntimeStatus GetStatus()
         {
-            PropSnapshot[] props = new PropSnapshot[4];
-            props[0] = new PropSnapshot("P_A", "Signal", P_A);
-            props[1] = new PropSnapshot("P_B", "Signal", P_B);
-            props[2] = new PropSnapshot("P_Done", "Fact", P_Done);
-            props[3] = new PropSnapshot("P_Failed", "Fact", P_Failed);
+            PropSnapshot[] props = new PropSnapshot[3];
+            props[0] = new PropSnapshot("P_Start", "Signal", P_Start);
+            props[1] = new PropSnapshot("P_Done", "Fact", P_Done);
+            props[2] = new PropSnapshot("P_Failed", "Fact", P_Failed);
             TransSnapshot[] trans = new TransSnapshot[1];
-            trans[0] = new TransSnapshot("T_Run", T_Run_Cube.State.ToString(), T_Run_Cube.ElapsedFrames, T_Run_Cube.LimitFrames);
+            trans[0] = new TransSnapshot("T_Bind", T_Bind_Cube.State.ToString(), T_Bind_Cube.ElapsedFrames, T_Bind_Cube.LimitFrames);
             ResSnapshot[] res = new ResSnapshot[0];
             return new RuntimeStatus(_frame, props, trans, res);
         }
@@ -219,4 +195,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:FA246E68D92D71A0D75A7CAE18C532318759B6CB776454F40100BDFD947CBA1E
+// #MAU_CHECKSUM:SHA256:C1F6FDC74847B042F260A4906DFE5E9F5C1B896692F3A202BBC0E19F7020B871

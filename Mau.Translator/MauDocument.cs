@@ -423,7 +423,10 @@ public string DebugMessage;
 /// 实现接口——全限定名列表（可选，生成类追加实现）
 /// </summary>
 public List<string> Interfaces;
-        /// <summary>
+/// <summary>
+/// 注入字段表——实例级配置（宿主 Set 注入，纯赋值不置位信号）
+/// </summary>
+public List<string> Injections;        /// <summary>
         /// 命题表
         /// </summary>
         public List<IrProposition> Propositions;
@@ -456,10 +459,11 @@ public List<string> Interfaces;
         /// 构造文档
         /// </summary>
         public MauDocument()
-        {
+{
             Version = "";
             BaseName = "";
             Interfaces = new List<string>();
+            Injections = new List<string>();
             Propositions = new List<IrProposition>();
             Transitions = new List<IrTransition>();
             Resources = new List<IrResource>();
@@ -467,7 +471,6 @@ public List<string> Interfaces;
             Compositions = new List<IrComposition>();
             Externals = new List<IrExternal>();
         }
-
         /// <summary>
         /// 按名查命题
         /// </summary>

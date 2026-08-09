@@ -1285,12 +1285,13 @@ namespace Mau.Cli
         /// <param name="c">契约</param>
         /// <returns>是宿主桥为真</returns>
         private static bool IsHostBridge(BrickContract c)
-        {
+{
+            // 真宿主桥——实现依赖 Configure 注入的基座服务（LlmBridge 端点/密钥——无 Key 无法真跑）
+            // 类名精确匹配，避免误伤静态读取积木（LlmIsToolBrick/CtxPushToolBrick 含 "ToolBrick" 子串但无 Configure 依赖）
             string impl = c.Implementation;
-            return impl.Contains("OaBrick") || impl.Contains("ToolBrick") || impl.Contains("CmdBrick")
-                || impl.Contains("ApprovalBrick") || impl.Contains("LlmBrick") || impl.Contains("ContextBrick");
+            return impl.Contains("LlmChatBrick.") || impl.Contains("LlmStreamBrick.")
+                || impl.Contains("LlmCompletionsBrick.");
         }
-
         /// <summary>
         /// 跑测单个积木——生成最小 .mau 语料 → 翻译 → 编译 → ALC 加载 → Fire/Tick → 断言
         /// </summary>

@@ -1,0 +1,18 @@
+// 预期: E021
+// n07 负例——注入字段与简写参数重名必须拒绝（简写=Fire 投递注入，注入=Set 配置注入，二选一）
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+注入: boxId
+
+命题:
+  P_Start 信号
+  P_Done 事实
+  P_Failed 事实
+
+变迁 T_Bind:
+  前置: P_Start
+  动作: data.box_set
+  参数: boxId, "flag" → key, 1 → value
+  时限: 5帧
+  后置: P_Done / P_Failed

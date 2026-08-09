@@ -2,6 +2,9 @@
 // 流程: S18HeaderImplement
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireStart(string input, string output)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -193,4 +196,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:E008600B97FFDF0992E26586CDD0AFB7F23250EA0A6FDA83DB162B0E3C9F7218
+// #MAU_CHECKSUM:SHA256:08BED066B1C9BEE754378DBD8A4D60701062F566A1F7B164BAF0F60927D0E098

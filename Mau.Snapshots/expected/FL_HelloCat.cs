@@ -2,6 +2,9 @@
 // 流程: HelloCat
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireAsk(string module, int level, string message)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -180,4 +183,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:5D421BD59FC232F5CEF48039255FA8694DC3C3358950704417DE40F6235A67CB
+// #MAU_CHECKSUM:SHA256:7DEF4BD3E45D44E6186515F291BD917ADC995C27F7563F51C7E8232CDAD1953D

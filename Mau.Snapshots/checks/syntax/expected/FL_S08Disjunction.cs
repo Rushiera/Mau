@@ -2,6 +2,10 @@
 // 流程: S08Disjunction
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireA(string input, string output)
+//   FireB(string input, string output)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -215,4 +219,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:DF9850F7B81687C7FC514A57BD9B8A9EAC1708019B384E9B900AC9AB86A162EF
+// #MAU_CHECKSUM:SHA256:4ACF17750505C13A3BB253E001A286178F32EC3772E8F96717BAFCD4DF4E3054

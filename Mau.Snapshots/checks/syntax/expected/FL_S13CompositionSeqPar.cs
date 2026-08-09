@@ -2,6 +2,9 @@
 // 流程: S13CompositionSeqPar
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireStart(string module, int level, string message)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -337,4 +340,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:ECE9217615B5A806B846094EA110CC3F56681F33FCF96CE871F60D8C34960FB0
+// #MAU_CHECKSUM:SHA256:D66A76B13D2E4E29FE91D74FD85431A6902306D7F171F6C7407CE19594DBA47E

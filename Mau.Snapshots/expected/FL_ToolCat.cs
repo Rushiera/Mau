@@ -2,6 +2,10 @@
 // 流程: ToolCat
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireRead(string path)
+//   FireWrite(string path, string content)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -263,4 +267,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:410929C7AE43622B129B4CE1ED44D5C006C4FBF7CCB293DB782FA235B5A0E764
+// #MAU_CHECKSUM:SHA256:2187FB6BE19EE293E7EF7D8B552F72AD629767EF54CA34EC78600F04A30D15DC

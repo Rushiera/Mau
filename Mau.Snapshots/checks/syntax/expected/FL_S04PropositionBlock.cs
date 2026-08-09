@@ -2,6 +2,9 @@
 // 流程: S04PropositionBlock
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireStart()
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -192,4 +195,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:575BE1D5D1FEC0982C93A924363F725922D353DD0CDEC38BEF31659BE325EE12
+// #MAU_CHECKSUM:SHA256:8E0C76C74A6A9CFEBE849C5EA3B5B141FCB1B38ACA055BDFE604562DF90B1A57

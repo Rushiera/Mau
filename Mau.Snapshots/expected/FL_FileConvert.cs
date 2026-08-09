@@ -2,6 +2,9 @@
 // 流程: FileConvert
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireInput(string input, string output)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -197,4 +200,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:2379AC513F19151B6BA88393651BA1C1A57198A8E7D89BFEE0FA991DB70DADDD
+// #MAU_CHECKSUM:SHA256:E967E72E19B0F7B1331DEBDF8F45107E4EE6D6F022C2A3168557E404779AE652

@@ -2,6 +2,9 @@
 // 流程: S12ExclusivePost
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireStart(string module, int level, string message)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -202,4 +205,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:0CE8295558A370FC0C2B43E0134B1F4FD1A88267ABD04D4AA6002B35D3007329
+// #MAU_CHECKSUM:SHA256:E2BCA6F18BA616A08FED7E1D57FE5C9B456D83D1A0A3FB508E55E9BD5FAB75CB

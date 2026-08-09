@@ -227,6 +227,96 @@ namespace Mau.Translator
                         }
                     }
                 }
+                // 注入字段注册——类型从引用它的箭头绑定端口推导（宿主 Set 注入，纯赋值不置位信号）
+                for (int inj = 0; inj < doc.Injections.Count; inj++)
+                {
+                    string injName = doc.Injections[inj];
+                    if (!IsValidInjectionName(injName))
+                    {
+                        diags.Add(new MauDiagnostic("E020", 0, "注入字段名格式非法——需要字母/数字/下划线且非数字开头: " + injName));
+                        continue;
+                    }
+                    // 重名校验——与简写参数重名 = 歧义（简写=Fire 投递注入，注入=Set 配置注入，二选一）
+                    bool nameConflict = false;
+                    for (int i2 = 0; i2 < doc.Transitions.Count && !nameConflict; i2++)
+                    {
+                        IrTransition t2 = doc.Transitions[i2];
+                        for (int p2 = 0; p2 < t2.Params.Count; p2++)
+                        {
+                            if (!t2.Params[p2].IsArrow && !t2.Params[p2].IsConstant && t2.Params[p2].PortName == injName)
+                            {
+                                diags.Add(new MauDiagnostic("E021", t2.Line, "注入字段 " + injName + " 与简写参数重名——简写=Fire 投递注入，注入=Set 配置注入，二选一"));
+                                nameConflict = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (nameConflict)
+                    {
+                        continue;
+                    }
+                    // 类型推导——遍历全部箭头绑定引用（注入字段只支持箭头引用）
+                    System.Type? injType = null;
+                    bool unreferenced = true;
+                    bool typeConflict = false;
+                    for (int i3 = 0; i3 < doc.Transitions.Count; i3++)
+                    {
+                        IrTransition t3 = doc.Transitions[i3];
+                        if (t3.BrickName.Length == 0)
+                        {
+                            continue;
+                        }
+                        BrickContract? contract3;
+                        if (!BrickIndex.TryGet(t3.BrickName, out BrickIndexEntry entry3) || (contract3 = entry3.Contract) == null)
+                        {
+                            continue;
+                        }
+                        for (int p3 = 0; p3 < t3.Params.Count; p3++)
+                        {
+                            if (!t3.Params[p3].IsArrow || t3.Params[p3].IsConstant)
+                            {
+                                continue;
+                            }
+                            if (t3.Params[p3].Variable != injName)
+                            {
+                                continue;
+                            }
+                            unreferenced = false;
+                            System.Type? portType3 = FindInputPortType(contract3, t3.Params[p3].PortName);
+                            if (portType3 == null)
+                            {
+                                continue;
+                            }
+                            if (injType == null)
+                            {
+                                injType = portType3;
+                            }
+                            else if (injType != portType3)
+                            {
+                                diags.Add(new MauDiagnostic("E023", t3.Line, "注入字段 " + injName + " 类型冲突——引用端口类型不一致（" + injType.Name + " vs " + portType3.Name + "）"));
+                                typeConflict = true;
+                                break;
+                            }
+                        }
+                        if (typeConflict)
+                        {
+                            break;
+                        }
+                    }
+                    if (typeConflict)
+                    {
+                        continue;
+                    }
+                    if (unreferenced || injType == null)
+                    {
+                        diags.Add(new MauDiagnostic("E022", 0, "注入字段 " + injName + " 未被任何参数绑定引用——无法推导类型"));
+                        continue;
+                    }
+                    if (!fieldTypes.ContainsKey(injName))
+                    {
+                        fieldTypes[injName] = injType;
+                    }
+                }
                 // 箭头绑定校验——变量存在 + 类型匹配
                 for (int i = 0; i < doc.Transitions.Count; i++)
                 {
@@ -632,5 +722,33 @@ namespace Mau.Translator
             }
             return nexts;
         }
+/// <summary>
+/// 注入字段名格式校验——字母/数字/下划线，非数字开头，非空
+/// </summary>
+/// <param name = "name">注入字段名</param>
+/// <returns>格式合法为真</returns>
+private static bool IsValidInjectionName(string name)
+{
+    if (name.Length == 0)
+    {
+        return false;
     }
+
+    char first = name[0];
+    if (!(first >= 'a' && first <= 'z') && !(first >= 'A' && first <= 'Z') && first != '_')
+    {
+        return false;
+    }
+
+    for (int i = 0; i < name.Length; i++)
+    {
+        char c = name[i];
+        if (!(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && c != '_')
+        {
+            return false;
+        }
+    }
+
+    return true;
+}    }
 }

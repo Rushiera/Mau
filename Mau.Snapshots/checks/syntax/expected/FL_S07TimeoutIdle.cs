@@ -2,6 +2,9 @@
 // 流程: S07TimeoutIdle
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireStart(string input, string output)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -195,4 +198,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:D5C1D4349B12BE76A958D6DE20161680D730641ABAAD0C2170B27F0EC476EC66
+// #MAU_CHECKSUM:SHA256:13F7E14F025B0165D24165D80666CAFFFC0A35565440ADB45311599F702B2E41

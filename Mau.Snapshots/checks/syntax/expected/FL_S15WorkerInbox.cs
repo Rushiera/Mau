@@ -2,6 +2,9 @@
 // 流程: S15WorkerInbox
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireStart(string module, int level, string message)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -229,4 +232,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:94EDBEA9C09CFDDA160342E64078203DAEF358E21B3DA5846DF992191E4AF52C
+// #MAU_CHECKSUM:SHA256:2D5FD456DE9ED24808A1842AA75EBADDAC36CD520831709A2B648F09D8E49E7B

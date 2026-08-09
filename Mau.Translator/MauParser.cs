@@ -112,6 +112,22 @@ namespace Mau.Translator
                     continue;
                 }
 
+                // [段3c] 注入字段声明——实例级配置（宿主 Set 注入，纯赋值不置位信号）
+                if (trimmed.StartsWith("注入:"))
+                {
+                    string val = trimmed.Substring(3).Trim();
+                    string[] items = val.Split(',');
+                    for (int k = 0; k < items.Length; k++)
+                    {
+                        string item = items[k].Trim();
+                        if (item.Length > 0)
+                        {
+                            doc.Injections.Add(item);
+                        }
+                    }
+                    continue;
+                }
+
                 // [段4] 命题块入口——无名字块（多命题单行格式）
                 if (trimmed == "命题:")
                 {

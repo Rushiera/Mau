@@ -2,6 +2,9 @@
 // 流程: S19DebugField
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireStart(string input, string output)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -197,4 +200,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:759DC05C7440FD17C59E6CE9FF0A09B30B2AB4162F554EA3E639C01B429545E4
+// #MAU_CHECKSUM:SHA256:ED1938E7256DE1BD3F77E4F79340BEE3EE3A39574F09B161A82F4639BCFCC45D

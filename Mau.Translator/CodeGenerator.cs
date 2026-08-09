@@ -26,6 +26,18 @@ namespace Mau.Translator
             sb.AppendLine("// 流程: " + flowName);
             sb.AppendLine("// 基座: " + (doc.BaseName.Length > 0 ? doc.BaseName : "Mau.Runtime/v0.1"));
             sb.AppendLine();
+
+            // [段1b] Fire 契约清单——宿主反射调用点对照（语料简写参数变化 → 签名漂移黄金抓出，M53 契约化）
+            List<string> fireContracts = CollectFireContracts(doc);
+            if (fireContracts.Count > 0)
+            {
+                sb.AppendLine("// Fire 契约:");
+                for (int f = 0; f < fireContracts.Count; f++)
+                {
+                    sb.AppendLine("//   " + fireContracts[f]);
+                }
+                sb.AppendLine();
+            }
             sb.AppendLine("using Mau.Runtime;");
             sb.AppendLine("using System.Threading.Tasks;");
             sb.AppendLine();
@@ -160,6 +172,33 @@ namespace Mau.Translator
                         sb.AppendLine();
                     }
                 }
+            }
+
+            // [段4b] 注入字段——实例级配置（宿主 Set 注入，纯赋值不置位信号）
+            for (int inj = 0; inj < doc.Injections.Count; inj++)
+            {
+                string injName = doc.Injections[inj];
+                System.Type? injType = FindInjectionType(doc, injName);
+                if (injType == null)
+                {
+                    continue;
+                }
+                string injTypeName = TypeName(injType);
+                string setterName = "Set" + injName.Substring(0, 1).ToUpperInvariant() + injName.Substring(1);
+                sb.AppendLine("        /// <summary>");
+                sb.AppendLine("        /// 注入配置——" + injName + "（实例级，宿主 Set 注入）");
+                sb.AppendLine("        /// </summary>");
+                sb.AppendLine("        private " + injTypeName + " _" + injName + ";");
+                sb.AppendLine();
+                sb.AppendLine("        /// <summary>");
+                sb.AppendLine("        /// 注入配置——" + injName + "（纯赋值，不置位信号）");
+                sb.AppendLine("        /// </summary>");
+                sb.AppendLine("        /// <param name=\"value\">" + injName + " 值</param>");
+                sb.AppendLine("        public void " + setterName + "(" + injTypeName + " value)");
+                sb.AppendLine("        {");
+                sb.AppendLine("            _" + injName + " = value;");
+                sb.AppendLine("        }");
+                sb.AppendLine();
             }
 
             // [段5] Cube 字段——有时限的变迁
@@ -622,39 +661,9 @@ namespace Mau.Translator
         /// <param name="doc">文档</param>
         /// <param name="p">信号命题</param>
         private static void AppendFireMethod(StringBuilder sb, MauDocument doc, IrProposition p)
-        {
+{
             // 收集引用该信号的所有变迁的动作参数（去重）——仅简写绑定（外部注入），箭头绑定来自积木输出
-            List<IrParamBinding> params_ = new List<IrParamBinding>();
-            for (int i = 0; i < doc.Transitions.Count; i++)
-            {
-                IrTransition t = doc.Transitions[i];
-                // 前置含信号——支持析取组（∨）内匹配
-                if (!TransitionReferencesSignal(doc, t, p.Name))
-                {
-                    continue;
-                }
-                for (int a = 0; a < t.Params.Count; a++)
-                {
-                    // 仅收简写注入（非箭头非常量）——箭头绑定来自字段/常量，不来自 Fire
-                    if (t.Params[a].IsArrow || t.Params[a].IsConstant)
-                    {
-                        continue;
-                    }
-                    bool exists = false;
-                    for (int b = 0; b < params_.Count; b++)
-                    {
-                        if (params_[b].PortName == t.Params[a].PortName)
-                        {
-                            exists = true;
-                        }
-                    }
-                    if (!exists)
-                    {
-                        params_.Add(t.Params[a]);
-                    }
-                }
-            }
-
+            List<IrParamBinding> params_ = CollectFireParams(doc, p);
             string methodName = "Fire" + p.Name.Substring(2);
             sb.AppendLine("        /// <summary>");
             sb.AppendLine("        /// 外部投递信号：" + p.Name.Substring(2));
@@ -665,7 +674,6 @@ namespace Mau.Translator
                 string desc = PortDescription(doc, t!, params_[i].PortName);
                 sb.AppendLine("        /// <param name=\"" + params_[i].PortName + "\">" + desc + "</param>");
             }
-
             StringBuilder signature = new StringBuilder();
             signature.Append("public void " + methodName + "(");
             for (int i = 0; i < params_.Count; i++)
@@ -690,7 +698,6 @@ namespace Mau.Translator
             sb.AppendLine("        }");
             sb.AppendLine();
         }
-
         /// <summary>
         /// 变迁前置是否引用指定信号——支持析取组（∨）内匹配
         /// </summary>
@@ -1378,5 +1385,144 @@ private static string PreconditionAtom(MauDocument doc, string name)
                 }
             }
         }
+/// <summary>
+/// 查积木契约输入端口类型
+/// </summary>
+/// <param name = "contract">积木契约</param>
+/// <param name = "portName">端口名</param>
+/// <returns>类型或空</returns>
+private static System.Type? FindInputPortType(BrickContract contract, string portName)
+{
+    for (int i = 0; i < contract.Inputs.Count; i++)
+    {
+        if (contract.Inputs[i].Name == portName)
+        {
+            return contract.Inputs[i].Type;
+        }
     }
+
+    return null;
+}    /// <summary>
+/// 注入字段类型推导——从引用它的箭头绑定端口类型查询
+/// </summary>
+/// <param name = "doc">文档</param>
+/// <param name = "injectionName">注入字段名</param>
+/// <returns>类型或空</returns>
+private static System.Type? FindInjectionType(MauDocument doc, string injectionName)
+{
+    for (int i = 0; i < doc.Transitions.Count; i++)
+    {
+        IrTransition t = doc.Transitions[i];
+        if (t.BrickName.Length == 0)
+        {
+            continue;
+        }
+
+        BrickContract? contract;
+        if (!BrickIndex.TryGet(t.BrickName, out BrickIndexEntry entry) || (contract = entry.Contract) == null)
+        {
+            continue;
+        }
+
+        for (int p = 0; p < t.Params.Count; p++)
+        {
+            if (!t.Params[p].IsArrow || t.Params[p].IsConstant)
+            {
+                continue;
+            }
+
+            if (t.Params[p].Variable != injectionName)
+            {
+                continue;
+            }
+
+            System.Type? portType = FindInputPortType(contract, t.Params[p].PortName);
+            if (portType != null)
+            {
+                return portType;
+            }
+        }
+    }
+
+    return null;
+}/// <summary>
+/// 收集信号 Fire 参数——引用该信号变迁的简写参数（去重；箭头/常量绑定不来自 Fire）
+/// </summary>
+/// <param name = "doc">文档</param>
+/// <param name = "p">信号命题</param>
+/// <returns>参数绑定列表</returns>
+private static List<IrParamBinding> CollectFireParams(MauDocument doc, IrProposition p)
+{
+    List<IrParamBinding> params_ = new List<IrParamBinding>();
+    for (int i = 0; i < doc.Transitions.Count; i++)
+    {
+        IrTransition t = doc.Transitions[i];
+        // 前置含信号——支持析取组（∨）内匹配
+        if (!TransitionReferencesSignal(doc, t, p.Name))
+        {
+            continue;
+        }
+
+        for (int a = 0; a < t.Params.Count; a++)
+        {
+            // 仅收简写注入（非箭头非常量）——箭头绑定来自字段/常量，不来自 Fire
+            if (t.Params[a].IsArrow || t.Params[a].IsConstant)
+            {
+                continue;
+            }
+
+            bool exists = false;
+            for (int b = 0; b < params_.Count; b++)
+            {
+                if (params_[b].PortName == t.Params[a].PortName)
+                {
+                    exists = true;
+                }
+            }
+
+            if (!exists)
+            {
+                params_.Add(t.Params[a]);
+            }
+        }
+    }
+
+    return params_;
+}/// <summary>
+/// 收集全部 Fire 契约签名——宿主反射调用点对照（M53 契约化：语料简写参数变化 → 签名漂移黄金抓出）
+/// </summary>
+/// <param name = "doc">文档</param>
+/// <returns>签名文本列表（FireXxx(类型 参数)）</returns>
+private static List<string> CollectFireContracts(MauDocument doc)
+{
+    List<string> result = new List<string>();
+    for (int i = 0; i < doc.Propositions.Count; i++)
+    {
+        IrProposition p = doc.Propositions[i];
+        if (p.Kind != PropositionKind.Signal)
+        {
+            continue;
+        }
+
+        List<IrParamBinding> params_ = CollectFireParams(doc, p);
+        StringBuilder sig = new StringBuilder();
+        sig.Append("Fire" + p.Name.Substring(2) + "(");
+        for (int a = 0; a < params_.Count; a++)
+        {
+            if (a > 0)
+            {
+                sig.Append(", ");
+            }
+
+            IrTransition? t = FindTransitionByPort(doc, p.Name, params_[a].PortName);
+            string typeName = PortTypeName(doc, t!, params_[a].PortName);
+            sig.Append(typeName + " " + params_[a].PortName);
+        }
+
+        sig.Append(")");
+        result.Add(sig.ToString());
+    }
+
+    return result;
+}}
 }

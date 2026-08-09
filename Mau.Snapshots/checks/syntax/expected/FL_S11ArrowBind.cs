@@ -2,6 +2,9 @@
 // 流程: S11ArrowBind
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireStart(string path)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -276,4 +279,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:C01F9EE02387F528F0AC509B820577D720F16F77506CA51F8EF79C0806E2E172
+// #MAU_CHECKSUM:SHA256:6876FD1235B71A6571A8E5C68BA7F548B7C02C69E85C3AFFBD50F176106A8340

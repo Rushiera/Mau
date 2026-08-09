@@ -1,0 +1,18 @@
+// s20 语法谱——注入字段（实例级配置，宿主 Set 注入）
+// 特性：注入: 声明 + 箭头绑定引用——纯赋值不置位信号，Fire 无参
+Mau 0.1
+基座: Mau.Runtime/v0.1
+
+注入: sessionKey
+
+命题:
+  P_Start 信号
+  P_Done 事实
+  P_Failed 事实
+
+变迁 T_Bind:
+  前置: P_Start
+  动作: data.box_set
+  参数: sessionKey → boxId, "flag" → key, 1 → value
+  时限: 5帧
+  后置: P_Done / P_Failed

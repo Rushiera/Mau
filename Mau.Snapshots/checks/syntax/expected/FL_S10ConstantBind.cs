@@ -2,6 +2,9 @@
 // 流程: S10ConstantBind
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireStart()
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -179,4 +182,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:2774B8C2EEF244E1537E253F9512DFCB7182965537B39D5D612FA0974DA6BB0E
+// #MAU_CHECKSUM:SHA256:85EAA8216D0209514BD158892611EC1A8F94023E4A935273E7A46479B88B8DFE

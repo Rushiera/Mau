@@ -2,6 +2,9 @@
 // 流程: SequenceFlow
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireStart(string input, string output)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -324,4 +327,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:B54A85D8EE7A3E6C534C99D11B45E49AAF9932169ACD2CA215F540E579BA9D1D
+// #MAU_CHECKSUM:SHA256:21574D76D36BE8A1F9B2B6A102462372F98CCF43F817F44D142DAB8AEA2B03E5

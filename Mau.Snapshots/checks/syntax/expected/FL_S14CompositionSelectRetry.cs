@@ -2,6 +2,9 @@
 // 流程: S14CompositionSelectRetry
 // 基座: Mau.Runtime/v0.1
 
+// Fire 契约:
+//   FireStart(string module, int level, string message)
+
 using Mau.Runtime;
 using System.Threading.Tasks;
 using System;
@@ -396,4 +399,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:8B63B60D98E880EC49134F69995C686306439F9CA70583BFB1A4E7CF24E37D40
+// #MAU_CHECKSUM:SHA256:95BA7C7A7B4C687E2849E257C0F23AF72DDDACF47BFB52EB4FF35D4DAB14456C
