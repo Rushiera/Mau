@@ -64,7 +64,8 @@
             try
             {
                 using System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(dataJson);
-                if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object
+                    && doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
                 {
                     return false;
                 }

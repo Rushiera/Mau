@@ -5,7 +5,7 @@
 // 作用: 写入数据包（JSON 文本）——boxId 作用域隔离
 // 依赖: 无
 // 引用: 无
-// 原理: 委托 BoxStore.SetDic（JSON 对象校验内置）
+// 原理: 委托 BoxStore.SetDic（JSON 校验内置——对象/数组均可）
 // 常用: 可序列化暂存 / 结构化数据包
 // ═══════════════════════════════════════════════════
 
@@ -18,7 +18,7 @@ namespace Mau.Bricks
     public static class DataBoxSetDicBrick
     {
         /// <summary>
-        /// 写入数据包（JSON 文本）
+        /// 写入数据包（JSON 文本——对象/数组均可；F9 修复：toolCallsJson 数组可存）
         /// </summary>
         /// <param name="boxId">作用域 ID</param>
         /// <param name="packetKey">包名</param>
@@ -30,4 +30,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:60539DA675D3ACD415C09C2F9589E960B6EF277FD4DCDE7F926A6959B9D10DEA
+// #MAU_CHECKSUM:SHA256:CFECAB979ECD02899DF1376E1346F14A0854136BDB2988404325BC59701F891E
