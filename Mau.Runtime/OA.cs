@@ -160,7 +160,8 @@ namespace Mau.Runtime
                     new AuditProp("timeout", timeoutTicks.ToString())
                 });
             }
-            WriteLog("OA | POST | #" + officeId + " | " + officeType + "/" + officeName, 0);
+            // O 类 Log——提单（INFO 分支 Category=OA）
+            LogStore.Add("OA", 0, "OA | POST | #" + officeId + " | " + officeType + "/" + officeName, "OA");
             return officeId;
         }
 
@@ -387,6 +388,8 @@ namespace Mau.Runtime
             _offices[officeId] = office;
             _totalDone = _totalDone + 1;
             _version = _version + 1;
+            // O 类 Log——单结束（成功完成；INFO 分支 Category=OA）
+            LogStore.Add("OA", 0, "OA | DONE | #" + officeId + " | cat=" + catId, "OA");
             if (Audit != null)
             {
                 Audit.Record("OA", "oa.complete", -1, new AuditProp[] {
@@ -516,6 +519,8 @@ namespace Mau.Runtime
                 _offices[office.OfficeId] = office;
                 _totalTimeout = _totalTimeout + 1;
                 _version = _version + 1;
+                // O 类 Log——单结束（超时结算；INFO 分支 Category=OA）
+                LogStore.Add("OA", 0, "OA | TIMEOUT | #" + office.OfficeId, "OA");
                 if (Audit != null)
                 {
                     Audit.Record("OA", "oa.settle", -1, new AuditProp[] {

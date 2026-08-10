@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using Mau.Runtime;
 using Xunit;
@@ -139,7 +139,7 @@ namespace Mau.Runtime.Tests
             bus.Register(owner, new string[] { "chat_talk_msg" });
             try
             {
-                pump.PushText("chat_talk_msg", "你好");
+                pump.PushText("chat_talk_msg", "你好", "test");
                 bus.BeginTickInput();
                 CommandPack mail = bus.GetCommandEmail(owner);
                 Assert.True(mail.HasCommands);
@@ -165,7 +165,7 @@ namespace Mau.Runtime.Tests
             bus.Register(owner, new string[] { "chat_talk_msg" });
             try
             {
-                pump.Push("chat_talk_msg", 42);
+                pump.Push("chat_talk_msg", 42, "test");
                 bus.BeginTickInput();
                 CommandPack mail = bus.GetCommandEmail(owner);
                 Assert.True(mail.HasCommands);

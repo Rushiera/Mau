@@ -240,18 +240,21 @@ namespace Mau.Runtime
         /// </summary>
         /// <param name="key">已注册 key</param>
         /// <param name="value">整数值</param>
-        public void Set(string key, int value)
-        {
+        public void Set(string key, int value, string source)
+{
             lock (_lock)
             {
                 if (!_isAcceptingInput)
                 {
                     _rejectedInputCount = _rejectedInputCount + 1;
                     _version = _version + 1;
+                    // C 类 Log——所有投递留痕（含未接受输入；level=WARN 但 Category=CMD 区分）
+                    LogStore.Add("CommandBus", 2, "CMD | SET | " + key + " | " + source + " | REJECT 未接受输入", "CMD");
                     if (Audit != null)
                     {
                         Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
                             new AuditProp("key", key),
+                            new AuditProp("source", source),
                             new AuditProp("result", "rejected"),
                             new AuditProp("reason", "未接受输入")
                         });
@@ -261,10 +264,13 @@ namespace Mau.Runtime
                 if (!_keyOwners.ContainsKey(key))
                 {
                     WriteLog("COMMAND | SET | REJECT | " + key + " 未注册", 2);
+                    // C 类 Log——投递失败（未注册）
+                    LogStore.Add("CommandBus", 2, "CMD | SET | " + key + " | " + source + " | REJECT 未注册", "CMD");
                     if (Audit != null)
                     {
                         Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
                             new AuditProp("key", key),
+                            new AuditProp("source", source),
                             new AuditProp("result", "rejected"),
                             new AuditProp("reason", "未注册")
                         });
@@ -273,34 +279,39 @@ namespace Mau.Runtime
                 }
                 _pendingCommandPool[key] = value;
                 _version = _version + 1;
+                // C 类 Log——投递成功（已注册）
+                LogStore.Add("CommandBus", 0, "CMD | SET | " + key + " | " + source + " | ACCEPT", "CMD");
                 if (Audit != null)
                 {
                     Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
                         new AuditProp("key", key),
+                        new AuditProp("source", source),
                         new AuditProp("payload", value.ToString()),
                         new AuditProp("result", "accepted")
                     });
                 }
             }
         }
-
         /// <summary>
         /// 从任意线程写入文本指令
         /// </summary>
         /// <param name="key">已注册 key</param>
         /// <param name="text">文本值</param>
-        public void SetText(string key, string text)
-        {
+        public void SetText(string key, string text, string source)
+{
             lock (_lock)
             {
                 if (!_isAcceptingInput)
                 {
                     _rejectedInputCount = _rejectedInputCount + 1;
                     _version = _version + 1;
+                    // C 类 Log——所有投递留痕（含未接受输入）
+                    LogStore.Add("CommandBus", 2, "CMD | SET_TEXT | " + key + " | " + source + " | REJECT 未接受输入", "CMD");
                     if (Audit != null)
                     {
                         Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
                             new AuditProp("key", key),
+                            new AuditProp("source", source),
                             new AuditProp("result", "rejected"),
                             new AuditProp("reason", "未接受输入")
                         });
@@ -310,10 +321,13 @@ namespace Mau.Runtime
                 if (!_keyOwners.ContainsKey(key))
                 {
                     WriteLog("COMMAND | SET_TEXT | REJECT | " + key + " 未注册", 2);
+                    // C 类 Log——投递失败（未注册）
+                    LogStore.Add("CommandBus", 2, "CMD | SET_TEXT | " + key + " | " + source + " | REJECT 未注册", "CMD");
                     if (Audit != null)
                     {
                         Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
                             new AuditProp("key", key),
+                            new AuditProp("source", source),
                             new AuditProp("result", "rejected"),
                             new AuditProp("reason", "未注册")
                         });
@@ -321,10 +335,13 @@ namespace Mau.Runtime
                     return;
                 }
                 _pendingTextPool[key] = text;
+                // C 类 Log——投递成功（已注册）
+                LogStore.Add("CommandBus", 0, "CMD | SET_TEXT | " + key + " | " + source + " | ACCEPT", "CMD");
                 if (Audit != null)
                 {
                     Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
                         new AuditProp("key", key),
+                        new AuditProp("source", source),
                         new AuditProp("payload", AuditStore.Summarize(text)),
                         new AuditProp("result", "accepted")
                     });
@@ -332,7 +349,6 @@ namespace Mau.Runtime
                 _version = _version + 1;
             }
         }
-
         /// <summary>
         /// 消费指定模块当前收到的指令
         /// </summary>

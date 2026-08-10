@@ -18,7 +18,7 @@ namespace Mau.Bricks
     public static class CmdSetBrick
     {
         /// <summary>
-        /// 投递指令——int 与 text 双轨；text 非空时同时写入文本池
+        /// 投递指令——int 与 text 双轨；text 非空时同时写入文本池（source="brick"——C 类 Log 来源标识 2026-08-10）
         /// </summary>
         /// <param name="key">指令 key（必须已注册）</param>
         /// <param name="value">int 指令值</param>
@@ -32,13 +32,13 @@ namespace Mau.Bricks
             {
                 return false;
             }
-            bus.Set(key, value);
+            bus.Set(key, value, "brick");
             if (!string.IsNullOrEmpty(text))
             {
-                bus.SetText(key, text);
+                bus.SetText(key, text, "brick");
             }
             return true;
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:BEEDC87F36F9671D85870D19CBE115052BD46BD133D8672D73ADEEB4264E591C
+// #MAU_CHECKSUM:SHA256:29521ADAAA32ABF8E24AF0F933EE36E55C9EE48179E7F4D2B8336AB7B64C014F

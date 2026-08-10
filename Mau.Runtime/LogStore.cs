@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace Mau.Runtime
 {
@@ -31,6 +32,11 @@ namespace Mau.Runtime
             /// 消息
             /// </summary>
             public string Message;
+
+            /// <summary>
+            /// 类别——""=普通 / "CMD"=Command 总线（C 类）/ "OA"=工单系统（O 类）——INFO 分支（2026-08-10）
+            /// </summary>
+            public string Category;
 
             /// <summary>
             /// 帧号——写入时全局帧号（FlowRunner 驱动；-1=无帧号来源）
@@ -78,6 +84,42 @@ namespace Mau.Runtime
         public static void ConfigureLogFile(string path)
         {
             LogFilePath = path == null ? "" : path;
+        }
+
+        /// <summary>
+        /// 写入一条结构化日志（内存总账 + 可选磁盘持久化）——C/O 类机制埋点统一入口（2026-08-10）
+        /// </summary>
+        /// <param name="module">模块名</param>
+        /// <param name="level">级别——0=INFO 2=WARN 3=ERROR</param>
+        /// <param name="message">消息</param>
+        /// <param name="category">类别——""/CMD/OA（INFO 分支）</param>
+        public static void Add(string module, int level, string message, string category)
+        {
+            LogEntry entry;
+            entry.Time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            entry.Module = SafeText(module);
+            entry.Level = level;
+            entry.Message = SafeText(message);
+            entry.Category = category == null ? "" : category;
+            entry.Frame = FlowRunner.GlobalFrame;
+            lock (Sync)
+            {
+                AllLog.Add(entry);
+            }
+            if (LogFilePath.Length > 0)
+            {
+                try
+                {
+                    string line = entry.Time + " | " + entry.Module + " | "
+                        + LevelText(level) + " | " + entry.Message;
+                    System.IO.File.AppendAllText(LogFilePath, line + "\n",
+                        new System.Text.UTF8Encoding(false));
+                }
+                catch
+                {
+                    // 磁盘写失败——内存总账已保留
+                }
+            }
         }
 
         /// <summary>

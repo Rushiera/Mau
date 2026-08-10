@@ -245,8 +245,8 @@ namespace Mau.Runtime.Tests
 
             // [段1] 注册后写入双轨载荷，冻结后消费
             bus.Register(ownerID, new string[] { "Test_Module_Command" });
-            bus.Set("Test_Module_Command", 7);
-            bus.SetText("Test_Module_Command", "payload");
+            bus.Set("Test_Module_Command", 7, "test");
+            bus.SetText("Test_Module_Command", "payload", "test");
             bus.BeginTickInput();
             CommandPack firstEmail = bus.GetCommandEmail(ownerID);
 
@@ -274,7 +274,7 @@ namespace Mau.Runtime.Tests
                 "Cat_TalkCat51_Send",
                 "MalformedKey"
             });
-            bus.Set("Cat_TalkCat51_Send", 1);
+            bus.Set("Cat_TalkCat51_Send", 1, "test");
             CommandPack email = bus.GetCommandEmail(ownerID);
 
             Assert.Equal(0, email.OwnerLongId);
@@ -294,8 +294,8 @@ namespace Mau.Runtime.Tests
             bus.Register(61, new string[] { "Cat_TalkCat61_Send" });
             bus.Register(62, new string[] { "Cat_TalkCat62_Send" });
             bus.Register(63, new string[] { "Cat_TalkCat61_Send" });
-            bus.Set("Cat_TalkCat61_Send", 1);
-            bus.Set("Cat_TalkCat62_Send", 2);
+            bus.Set("Cat_TalkCat61_Send", 1, "test");
+            bus.Set("Cat_TalkCat62_Send", 2, "test");
             bus.BeginTickInput();
 
             CommandPack first = bus.GetCommandEmail(61);
@@ -317,7 +317,7 @@ namespace Mau.Runtime.Tests
             string key = "Cat_Duplicate_Send";
 
             bus.Register(71, new string[] { key, key });
-            bus.Set(key, 1);
+            bus.Set(key, 1, "test");
 
             Assert.Empty(bus.GetCommandEmail(71).CmdKeys);
             Assert.Single(bus.GetKeyDic());
@@ -334,7 +334,7 @@ namespace Mau.Runtime.Tests
             CommandBus bus = new CommandBus(guard);
 
             bus.Register(81, new string[] { "Cat_TalkCat81_Send" });
-            bus.Set("Cat_TalkCat81_Send", 1);
+            bus.Set("Cat_TalkCat81_Send", 1, "test");
             CommandSnapshot before = bus.GetSnapshot();
             bus.BeginTickInput();
             CommandSnapshot after = bus.GetSnapshot();
@@ -374,7 +374,7 @@ namespace Mau.Runtime.Tests
             long officeId = oa.Post(dogId, "TEST", "OBS", 100);
             oa.ClaimBatch(catId, new long[] { officeId });
             bus.Register(77, new string[] { "Cat_Observer_Send" });
-            bus.Set("Cat_Observer_Send", 5);
+            bus.Set("Cat_Observer_Send", 5, "test");
 
             observer.Tick();
 

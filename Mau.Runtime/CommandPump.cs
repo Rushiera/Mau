@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace Mau.Runtime
 {
@@ -32,21 +32,19 @@ namespace Mau.Runtime
         /// </summary>
         /// <param name="key">指令 key</param>
         /// <param name="text">指令文本</param>
-        public void PushText(string key, string text)
-        {
-            _bus.SetText(key, text);
+        public void PushText(string key, string text, string source)
+{
+            _bus.SetText(key, text, source);
         }
-
         /// <summary>
         /// 投递值指令——key 必须已被模块注册（Set 语义）
         /// </summary>
         /// <param name="key">指令 key</param>
         /// <param name="value">指令值</param>
-        public void Push(string key, int value)
-        {
-            _bus.Set(key, value);
+        public void Push(string key, int value, string source)
+{
+            _bus.Set(key, value, source);
         }
-
         /// <summary>
         /// 底层总线访问——宿主/UI 高级操作（注册/清理）
         /// </summary>

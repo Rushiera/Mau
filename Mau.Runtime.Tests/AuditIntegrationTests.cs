@@ -62,8 +62,8 @@ namespace Mau.Runtime.Tests
             try
             {
                 bus.Register(1, new string[] { "chat_x_msg", "talk_x_stop" });
-                bus.SetText("chat_x_msg", "你好世界");
-                bus.SetText("nokey", "x");
+                bus.SetText("chat_x_msg", "你好世界", "test");
+                bus.SetText("nokey", "x", "test");
                 bus.BeginTickInput();
                 bus.GetCommandEmail(1);
                 bus.Unregister(1);

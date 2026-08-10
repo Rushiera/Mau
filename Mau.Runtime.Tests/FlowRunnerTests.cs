@@ -155,7 +155,7 @@ namespace Mau.Runtime.Tests
             // 注册指令 key（三段式）
             cmd.Register(id, new string[] { "CH4_Ping_Cat" });
 
-            cmd.Set("CH4_Ping_Cat", 42);
+            cmd.Set("CH4_Ping_Cat", 42, "test");
             runner.Tick();
             Assert.NotNull(received);
             Assert.Equal(id, receivedId);

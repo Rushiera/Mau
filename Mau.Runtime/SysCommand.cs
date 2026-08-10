@@ -79,6 +79,14 @@ public sealed class SysCommand
             {
                 return SysLogs(args);
             }
+            if (cmd == "sys.cmdlog")
+            {
+                return SysCmdLog(args);
+            }
+            if (cmd == "sys.olog")
+            {
+                return SysOLog(args);
+            }
             if (cmd == "sys.box")
             {
                 return SysBox(args);
@@ -108,6 +116,8 @@ public sealed class SysCommand
             sb.AppendLine("- sys.oa id=<单ID> | list=true [status=]");
             sb.AppendLine("- sys.trace flow=<实体名> [tail=N]");
             sb.AppendLine("- sys.logs [tail=N]");
+            sb.AppendLine("- sys.cmdlog [tail=N]（C 类——Command 总线投递留痕：key/source/ACCEPT/REJECT）");
+            sb.AppendLine("- sys.olog [tail=N]（O 类——OA 工单生命周期：POST/DONE/TIMEOUT）");
             sb.AppendLine("- sys.box [scope=] [key=]");
             sb.AppendLine("- sys.conf [key=] [tail=N]");
             sb.AppendLine("- sys.flow [tail=N]");
@@ -294,6 +304,70 @@ public sealed class SysCommand
             events = FilterCategoryPrefix(events, "log.");
             events = Tail(events, tail);
             return Header("SYS.LOGS", args) + _audit.FormatEvents(events);
+        }
+
+        /// <summary>
+        /// sys.cmdlog——C 类 Log 查询（Command 总线投递留痕：key/source/ACCEPT/REJECT——2026-08-10）
+        /// </summary>
+        /// <param name="args">参数（tail=N 尾截断）</param>
+        /// <returns>MD 输出</returns>
+        private string SysCmdLog(Dictionary<string, string> args)
+        {
+            return SysCategoryLog("SYS.CMDLOG", "CMD", args);
+        }
+
+        /// <summary>
+        /// sys.olog——O 类 Log 查询（OA 工单生命周期：POST/DONE/TIMEOUT——2026-08-10）
+        /// </summary>
+        /// <param name="args">参数（tail=N 尾截断）</param>
+        /// <returns>MD 输出</returns>
+        private string SysOLog(Dictionary<string, string> args)
+        {
+            return SysCategoryLog("SYS.OLOG", "OA", args);
+        }
+
+        /// <summary>
+        /// 按类别查询 LogStore——锁定复制 → 类别过滤 → tail 截断 → MD 输出
+        /// </summary>
+        /// <param name="title">输出标题</param>
+        /// <param name="category">类别（CMD/OA）</param>
+        /// <param name="args">参数</param>
+        /// <returns>MD 输出</returns>
+        private string SysCategoryLog(string title, string category, Dictionary<string, string> args)
+        {
+            int tail = ArgInt(args, "tail", 0);
+            List<LogStore.LogEntry> all;
+            lock (LogStore.Sync)
+            {
+                all = new List<LogStore.LogEntry>(LogStore.AllLog);
+            }
+            List<LogStore.LogEntry> filtered = new List<LogStore.LogEntry>();
+            for (int i = 0; i < all.Count; i = i + 1)
+            {
+                if (all[i].Category == category)
+                {
+                    filtered.Add(all[i]);
+                }
+            }
+            int start = 0;
+            if (tail > 0 && filtered.Count > tail)
+            {
+                start = filtered.Count - tail;
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine(Header(title, args));
+            if (filtered.Count == 0)
+            {
+                sb.AppendLine("（无 " + category + " 类日志）");
+                return sb.ToString();
+            }
+            for (int i = start; i < filtered.Count; i = i + 1)
+            {
+                LogStore.LogEntry entry = filtered[i];
+                string lv = LogStore.LevelText(entry.Level).Substring(0, 1);
+                sb.AppendLine("#" + entry.Frame + " [" + lv + "] " + entry.Module + " | " + entry.Time + " | " + entry.Message);
+            }
+            return sb.ToString();
         }
 
         /// <summary>

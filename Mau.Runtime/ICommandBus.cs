@@ -31,14 +31,16 @@ namespace Mau.Runtime
         /// </summary>
         /// <param name="key">指令 key，必须已被注册</param>
         /// <param name="value">指令值</param>
-        void Set(string key, int value);
+        /// <param name="source">投递来源标识（ui/brick/pipe/cli/test 等——C 类 Log 携带，区分输入方）</param>
+        void Set(string key, int value, string source);
 
         /// <summary>
         /// 向文本池写入一条 string 指令
         /// </summary>
         /// <param name="key">指令 key，必须已被注册</param>
         /// <param name="text">指令文本</param>
-        void SetText(string key, string text);
+        /// <param name="source">投递来源标识（ui/brick/pipe/cli/test 等——C 类 Log 携带，区分输入方）</param>
+        void SetText(string key, string text, string source);
 
         /// <summary>
         /// 获取指定模块的指令邮件并清空其在池中的指令

@@ -34,6 +34,7 @@ namespace Mau.Bricks
             entry.Module = LogStore.SafeText(module);
             entry.Level = level;
             entry.Message = LogStore.SafeText(message);
+            entry.Category = "";
             entry.Frame = FlowRunner.GlobalFrame;
             lock (LogStore.Sync)
             {
@@ -57,4 +58,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:3D7EA4DA56CB2C122741DF481F16D7F8F453DEAC85AE0819B29034521F62A371
+// #MAU_CHECKSUM:SHA256:527BFB7248CAF7322BA3D0CCDF7C1CE5D490D6BC9B9B49DE306126727704472A

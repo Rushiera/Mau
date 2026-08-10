@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using Mau.Runtime;
@@ -9,7 +9,9 @@ namespace Mau.Runtime.Tests
     /// <summary>
     /// DataBox 中台测试——接口逻辑 + 纠错 + 并发压力
     /// 隔离：每个测试 finally ClearAll 恢复现场（静态全局配置测试隔离——空串不覆盖是静默陷阱）
+    /// 串行：AuditSerial——CommandBus C 类埋点（LogStore 写 DataBox "log" scope）并行污染（2026-08-10）
     /// </summary>
+    [Collection("AuditSerial")]
     public sealed class DataBoxTests
     {
         /// <summary>
@@ -189,6 +191,8 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void Capture_ContainsServicesAndData()
         {
+            // 开头清理——防静态污染（CommandBus C 类埋点写入 LogStore 后 log scope 有 sync/entries；2026-08-10）
+            DataBox.ClearAll();
             try
             {
                 DataBox.Bind<ITestService>(new TestService());
