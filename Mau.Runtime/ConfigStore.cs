@@ -141,6 +141,13 @@ namespace Mau.Runtime
             lock (_gate)
             {
                 _values[key] = value;
+                if (Audit != null)
+                {
+                    Audit.Record("ConfigStore", "cfg.change", -1, new AuditProp[] {
+                        new AuditProp("key", key),
+                        new AuditProp("value", AuditStore.Summarize(value))
+                    });
+                }
             }
         }
 
@@ -208,5 +215,8 @@ namespace Mau.Runtime
                 return copy;
             }
         }
-    }
+/// <summary>
+/// 审计存储——宿主注入后配置变更事件写入（null = 不审计）。零业务侵入：仅记录，不改流程。
+/// </summary>
+public AuditStore? Audit { get; set; }    }
 }

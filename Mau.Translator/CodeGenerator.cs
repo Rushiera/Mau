@@ -368,6 +368,26 @@ namespace Mau.Translator
             sb.AppendLine("            _traceDataFlow = enabled;");
             sb.AppendLine("        }");
             sb.AppendLine();
+            // [段8e] TraceAudit 辅助——数据流追踪事件可选写审计（A.3：AuditStore.Default 存在时记录，L3 级不落盘）
+            sb.AppendLine("        /// <summary>");
+            sb.AppendLine("        /// trace 审计写入——数据流追踪事件可选写审计（A.3：AuditStore.Default 存在时记录，L3 级不落盘）");
+            sb.AppendLine("        /// </summary>");
+            sb.AppendLine("        /// <param name=\"kind\">trace 类别（fire/consume/set）</param>");
+            sb.AppendLine("        /// <param name=\"name\">命题或变迁名</param>");
+            sb.AppendLine("        /// <param name=\"result\">结果文本</param>");
+            sb.AppendLine("        private void TraceAudit(string kind, string name, string result)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            if (AuditStore.Default != null)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                AuditStore.Default.Record(\"Flow\", \"trace.\" + kind, -1, new AuditProp[] {");
+            sb.AppendLine("                    new AuditProp(\"flow\", this.GetType().Name),");
+            sb.AppendLine("                    new AuditProp(\"name\", name),");
+            sb.AppendLine("                    new AuditProp(\"result\", result),");
+            sb.AppendLine("                    new AuditProp(\"flow_frame\", _frame.ToString())");
+            sb.AppendLine("                }, false);");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine();
 
             // [段8b] 组合声明——文档化序列/并行/选择/重试
             // ⚠️ Composition 为 experimental（documentation-only）——执行语义未实现，勿作为生产构筑依赖
@@ -693,7 +713,7 @@ namespace Mau.Translator
             {
                 sb.AppendLine("            _" + params_[i].PortName + " = " + params_[i].PortName + ";");
             }
-            sb.AppendLine("            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, \"Fire\", \"Signal\", \"" + p.Name + "\")); }");
+            sb.AppendLine("            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, \"Fire\", \"Signal\", \"" + p.Name + "\")); TraceAudit(\"fire\", \"" + p.Name + "\", \"fire\"); }");
             sb.AppendLine("            " + p.Name + " = true;");
             sb.AppendLine("        }");
             sb.AppendLine();
@@ -830,7 +850,7 @@ namespace Mau.Translator
                         if (prop != null && prop.Kind == PropositionKind.Signal)
                         {
                             sb.AppendLine("                // 信号消费");
-                            sb.AppendLine("                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, \"" + t.Name + "\", \"Consume\", \"" + prop.Name + "\")); }");
+                            sb.AppendLine("                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, \"" + t.Name + "\", \"Consume\", \"" + prop.Name + "\")); TraceAudit(\"consume\", \"" + prop.Name + "\", \"consume\"); }");
                             sb.AppendLine("                " + prop.Name + " = false;");
                         }
                     }
@@ -967,7 +987,7 @@ namespace Mau.Translator
                     if (prop != null && prop.Kind == PropositionKind.Signal)
                     {
                         sb.AppendLine("                // 信号消费");
-                        sb.AppendLine("                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, \"" + t.Name + "\", \"Consume\", \"" + prop.Name + "\")); }");
+                        sb.AppendLine("                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, \"" + t.Name + "\", \"Consume\", \"" + prop.Name + "\")); TraceAudit(\"consume\", \"" + prop.Name + "\", \"consume\"); }");
                         sb.AppendLine("                " + prop.Name + " = false;");
                     }
                 }
@@ -993,7 +1013,7 @@ namespace Mau.Translator
             {
                 for (int o = 0; o < traceContract.Outputs.Count; o++)
                 {
-                    sb.AppendLine("                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, \"" + t.Name + "\", \"Set\", \"_" + traceContract.Outputs[o].Name + "=\" + System.Convert.ToString(_" + traceContract.Outputs[o].Name + "))); }");
+                    sb.AppendLine("                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, \"" + t.Name + "\", \"Set\", \"_" + traceContract.Outputs[o].Name + "=\" + System.Convert.ToString(_" + traceContract.Outputs[o].Name + "))); TraceAudit(\"set\", \"_" + traceContract.Outputs[o].Name + "\", \"set\"); }");
                 }
             }
 

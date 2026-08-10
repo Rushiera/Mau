@@ -223,5 +223,105 @@ namespace Mau.E2E
                 // 清理失败不影响测试结果
             }
         }
+
+        /// <summary>
+        /// A.3 trace 审计提升——生成物 SetTraceDataFlow(true) 时 trace 事件写入 AuditStore（L3 级不落盘）
+        /// </summary>
+        [Fact]
+        public void TraceAudit_WritesEventsWhenEnabled()
+        {
+            string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_e2e_audit_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            string inputFile = Path.Combine(Path.GetTempPath(), "mau_e2e_ainput_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
+            string outputFile = Path.Combine(Path.GetTempPath(), "mau_e2e_aoutput_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
+            FlowHandle? handle = null;
+            AuditStore audit = new AuditStore();
+            AuditStore.Default = audit;
+            try
+            {
+                EnsureBricksRegistered();
+                CompileResult compile = MauCompiler.Compile(FileConvertSource, "FileConvert");
+                Assert.True(compile.Success);
+                MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
+                MauPocketCompileResult pocket = compiler.Compile(compile.GeneratedCode, "FL_FileConvert");
+                Assert.True(pocket.Success);
+                handle = FlowHandle.Load(pocket.AssemblyPath);
+                Type flowType = handle.Flow.GetType();
+                // 开启数据流追踪——trace 审计随 _traceDataFlow 生效
+                MethodInfo? trace = flowType.GetMethod("SetTraceDataFlow");
+                Assert.NotNull(trace);
+                trace.Invoke(handle.Flow, new object[] { true });
+                File.WriteAllText(inputFile, "mau-audit-check");
+                MethodInfo? fire = flowType.GetMethod("FireInput");
+                Assert.NotNull(fire);
+                fire.Invoke(handle.Flow, new object[] { inputFile, outputFile });
+                bool done = false;
+                for (int i = 0; i < 400; i = i + 1)
+                {
+                    handle.Flow.Tick();
+                    RuntimeStatus status = handle.Flow.GetStatus();
+                    for (int j = 0; j < status.Propositions.Length; j = j + 1)
+                    {
+                        if (status.Propositions[j].Name == "P_Done" && status.Propositions[j].Value)
+                        {
+                            done = true;
+                        }
+                    }
+                    if (done)
+                    {
+                        break;
+                    }
+                }
+                Assert.True(done);
+                // trace 审计事件——fire + consume 已写入（L3 不落盘标记）
+                AuditEvent[] snap = audit.Snapshot();
+                bool hasFire = false;
+                bool hasConsume = false;
+                for (int i = 0; i < snap.Length; i = i + 1)
+                {
+                    if (snap[i].Category == "trace.fire")
+                    {
+                        hasFire = true;
+                        Assert.Equal("FL_FileConvert", FindAuditProp(snap[i], "flow"));
+                        Assert.False(snap[i].Persistable);
+                    }
+                    if (snap[i].Category == "trace.consume")
+                    {
+                        hasConsume = true;
+                    }
+                }
+                Assert.True(hasFire);
+                Assert.True(hasConsume);
+            }
+            finally
+            {
+                AuditStore.Default = null;
+                audit.Shutdown();
+                if (handle != null)
+                {
+                    handle.TryUnload(3);
+                }
+                Cleanup(inputFile);
+                Cleanup(outputFile);
+                CleanupDir(pocketRoot);
+            }
+        }
+
+        /// <summary>
+        /// 从审计事件属性中取指定键的值——不存在返回空串
+        /// </summary>
+        /// <param name="e">事件</param>
+        /// <param name="key">属性键</param>
+        /// <returns>属性值</returns>
+        private static string FindAuditProp(AuditEvent e, string key)
+        {
+            for (int i = 0; i < e.Props.Length; i = i + 1)
+            {
+                if (e.Props[i].Key == key)
+                {
+                    return e.Props[i].Value;
+                }
+            }
+            return "";
+        }
     }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using Xunit;
 
@@ -7,8 +7,9 @@ namespace Mau.Runtime.Tests
     /// <summary>
     /// AppDataConfig 持久化测试——LLM 档案 + 密钥的用户级配置介质（%LOCALAPPDATA%/Mau_wls/CatHome4/）。
     /// 覆盖：读写落盘 / CredentialStore 往返 / LlmBridge 档案重启恢复（ConfigureProfileStore null=AppData 默认）。
-    /// 隔离：ConfigureRoot 注入临时目录——不影响真实 AppData。
+    /// 隔离：ConfigureRoot 注入临时目录——不影响真实 AppData；AuditSerial 串行——LlmBridge 静态状态
     /// </summary>
+    [Collection("AuditSerial")]
     public sealed class AppDataConfigTests
     {
         /// <summary>

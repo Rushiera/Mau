@@ -151,6 +151,10 @@ private static readonly System.Collections.Generic.List<LlmProfile> _profiles = 
                 }
             }
             _activeProfileId = _profileStore.Get("active", "");
+            AuditStore.Default?.Record("LlmBridge", "cfg.load", -1, new AuditProp[] {
+                new AuditProp("profiles", _profiles.Count.ToString()),
+                new AuditProp("active", _activeProfileId)
+            });
         }/// <summary>
 /// 全部档案——只读拷贝（无密钥）
 /// </summary>
@@ -171,9 +175,56 @@ private static readonly System.Collections.Generic.List<LlmProfile> _profiles = 
 /// </summary>
 /// <param name = "profile">档案（ProfileId 空=新建生成）</param>
 /// <returns>最终档案 Id</returns>
- public  static  string  SaveProfile ( LlmProfile  profile ) { if  ( profile == null ) { throw  new  ArgumentNullException ( "profile" ) ;  } if  ( string . IsNullOrWhiteSpace ( profile . ProfileId ) ) { profile . ProfileId  =  Guid . NewGuid ( ) . ToString ( "N" ) ;  } if  ( string . IsNullOrWhiteSpace ( profile . DisplayName ) ) { profile . DisplayName  =  "未命名" ;  } string  secret  =  profile . Secret != null ? profile . Secret . Trim ( ) : "" ;  profile . Secret  =  "" ;  if  ( secret . Length > 0 ) { CredentialStore . Set ( "llm.apiKey." + profile . ProfileId ,  secret ) ;  CredentialStore . SavePersisted ( ) ;  } lock  ( _profiles ) { bool  replaced  =  false ;  for  ( int  i  =  0 ;  i < _profiles . Count ;  i  =  i + 1 ) { if  ( _profiles [ i ] . ProfileId == profile . ProfileId ) { _profiles [ i ]  =  CopyProfile ( profile ) ;  replaced  =  true ;  break ;  } } if  ( ! replaced ) { _profiles . Add ( CopyProfile ( profile ) ) ;  } // 生效档案兜底——active 空时首个档案自动生效（M3.4：保存 Key 后重启无 Key——active 空导致 ApiKey 回落旧键）
-            if  ( _activeProfileId . Length == 0 ) { _activeProfileId  =  profile . ProfileId ;  } PersistProfilesLocked ( ) ;  } return  profile . ProfileId ;  } 
-/// <summary>
+ public  static  string  SaveProfile ( LlmProfile  profile ) {
+            if (profile == null)
+            {
+                throw new ArgumentNullException("profile");
+            }
+            if (string.IsNullOrWhiteSpace(profile.ProfileId))
+            {
+                profile.ProfileId = Guid.NewGuid().ToString("N");
+            }
+            if (string.IsNullOrWhiteSpace(profile.DisplayName))
+            {
+                profile.DisplayName = "未命名";
+            }
+            string secret = profile.Secret != null ? profile.Secret.Trim() : "";
+            profile.Secret = "";
+            if (secret.Length > 0)
+            {
+                CredentialStore.Set("llm.apiKey." + profile.ProfileId, secret);
+                CredentialStore.SavePersisted();
+            }
+            lock (_profiles)
+            {
+                bool replaced = false;
+                for (int i = 0; i < _profiles.Count; i = i + 1)
+                {
+                    if (_profiles[i].ProfileId == profile.ProfileId)
+                    {
+                        _profiles[i] = CopyProfile(profile);
+                        replaced = true;
+                        break;
+                    }
+                }
+                if (!replaced)
+                {
+                    _profiles.Add(CopyProfile(profile));
+                }
+                // 生效档案兜底——active 空时首个档案自动生效（M3.4：保存 Key 后重启无 Key——active 空导致 ApiKey 回落旧键）
+                if (_activeProfileId.Length == 0)
+                {
+                    _activeProfileId = profile.ProfileId;
+                }
+                PersistProfilesLocked();
+            }
+            AuditStore.Default?.Record("LlmBridge", "cfg.change", -1, new AuditProp[] {
+                new AuditProp("profileId", profile.ProfileId),
+                new AuditProp("action", "save"),
+                new AuditProp("secret", secret.Length > 0 ? "configured" : "missing")
+            });
+            return profile.ProfileId;
+        }/// <summary>
 /// 删除档案——同时清除其密钥
 /// </summary>
 /// <param name = "profileId">档案 Id</param>
@@ -213,6 +264,11 @@ private static readonly System.Collections.Generic.List<LlmProfile> _profiles = 
  public  static  void  SetProfileSecret ( string  profileId ,  string  key ) {
             CredentialStore.Set("llm.apiKey." + profileId, key == null ? "" : key.Trim());
             CredentialStore.SavePersisted();
+            AuditStore.Default?.Record("LlmBridge", "cfg.change", -1, new AuditProp[] {
+                new AuditProp("profileId", profileId),
+                new AuditProp("action", "set_secret"),
+                new AuditProp("secret", key != null && key.Trim().Length > 0 ? "configured" : "missing")
+            });
         }/// <summary>
 /// 读取档案密钥——CredentialStore 隔离（不存在返回空串）
 /// </summary>

@@ -85,7 +85,7 @@ namespace Mau.Generated.Flows
         {
             _input = input;
             _output = output;
-            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Input")); }
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Input")); TraceAudit("fire", "P_Input", "fire"); }
             P_Input = true;
         }
 
@@ -99,7 +99,7 @@ namespace Mau.Generated.Flows
             if (P_Input && T_WorkerConvert_Cube.IsIdle())
             {
                 // 信号消费
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_WorkerConvert", "Consume", "P_Input")); }
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_WorkerConvert", "Consume", "P_Input")); TraceAudit("consume", "P_Input", "consume"); }
                 P_Input = false;
                 T_WorkerConvert_Cube.Start();
                 // 启动后台任务——积木在 worker 线程执行，结果回投 inbox
@@ -187,6 +187,25 @@ namespace Mau.Generated.Flows
         }
 
         /// <summary>
+        /// trace 审计写入——数据流追踪事件可选写审计（A.3：AuditStore.Default 存在时记录，L3 级不落盘）
+        /// </summary>
+        /// <param name="kind">trace 类别（fire/consume/set）</param>
+        /// <param name="name">命题或变迁名</param>
+        /// <param name="result">结果文本</param>
+        private void TraceAudit(string kind, string name, string result)
+        {
+            if (AuditStore.Default != null)
+            {
+                AuditStore.Default.Record("Flow", "trace." + kind, -1, new AuditProp[] {
+                    new AuditProp("flow", this.GetType().Name),
+                    new AuditProp("name", name),
+                    new AuditProp("result", result),
+                    new AuditProp("flow_frame", _frame.ToString())
+                }, false);
+            }
+        }
+
+        /// <summary>
         /// 查询结果：Done
         /// </summary>
         /// <returns>Done成立</returns>
@@ -222,4 +241,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:D9609758033C51BD4C6BAA97F610DA5812D22475CC80326A173ADCD3E55F91D3
+// #MAU_CHECKSUM:SHA256:8860296A2A49FCD5A6F2DEC5FAE0A7CF79C64FC213BA69E8B8028881ACE96C62

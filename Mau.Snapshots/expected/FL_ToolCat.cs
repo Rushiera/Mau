@@ -94,7 +94,7 @@ namespace Mau.Generated.Flows
         public void FireRead(string path)
         {
             _path = path;
-            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Read")); }
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Read")); TraceAudit("fire", "P_Read", "fire"); }
             P_Read = true;
         }
 
@@ -107,7 +107,7 @@ namespace Mau.Generated.Flows
         {
             _path = path;
             _content = content;
-            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Write")); }
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Write")); TraceAudit("fire", "P_Write", "fire"); }
             P_Write = true;
         }
 
@@ -121,11 +121,11 @@ namespace Mau.Generated.Flows
             if (P_Read)
             {
                 // 信号消费
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Read", "Consume", "P_Read")); }
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Read", "Consume", "P_Read")); TraceAudit("consume", "P_Read", "consume"); }
                 P_Read = false;
                 // 执行动作（积木调用）
                 bool ok = Mau.Bricks.BRIK_FILE_002.Read(_path, out _content);
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Read", "Set", "_content=" + System.Convert.ToString(_content))); }
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Read", "Set", "_content=" + System.Convert.ToString(_content))); TraceAudit("set", "_content", "set"); }
                 if (ok)
                 {
                     // 正常后置注册
@@ -142,7 +142,7 @@ namespace Mau.Generated.Flows
             if (P_Write)
             {
                 // 信号消费
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Write", "Consume", "P_Write")); }
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Write", "Consume", "P_Write")); TraceAudit("consume", "P_Write", "consume"); }
                 P_Write = false;
                 // 执行动作（积木调用）
                 bool ok = Mau.Bricks.BRIK_FILE_003.Write(_path, _content);
@@ -195,6 +195,25 @@ namespace Mau.Generated.Flows
         public void SetTraceDataFlow(bool enabled)
         {
             _traceDataFlow = enabled;
+        }
+
+        /// <summary>
+        /// trace 审计写入——数据流追踪事件可选写审计（A.3：AuditStore.Default 存在时记录，L3 级不落盘）
+        /// </summary>
+        /// <param name="kind">trace 类别（fire/consume/set）</param>
+        /// <param name="name">命题或变迁名</param>
+        /// <param name="result">结果文本</param>
+        private void TraceAudit(string kind, string name, string result)
+        {
+            if (AuditStore.Default != null)
+            {
+                AuditStore.Default.Record("Flow", "trace." + kind, -1, new AuditProp[] {
+                    new AuditProp("flow", this.GetType().Name),
+                    new AuditProp("name", name),
+                    new AuditProp("result", result),
+                    new AuditProp("flow_frame", _frame.ToString())
+                }, false);
+            }
         }
 
         /// <summary>
@@ -267,4 +286,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:2187FB6BE19EE293E7EF7D8B552F72AD629767EF54CA34EC78600F04A30D15DC
+// #MAU_CHECKSUM:SHA256:FC72DE16060789EA90D79BF822213892AC4A2CCAA6077BDDAB8E4BCA2E87F954

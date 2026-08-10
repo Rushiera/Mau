@@ -154,10 +154,28 @@ namespace Mau.Runtime
                 {
                     WriteLog("COMMAND | REGISTER | REJECT | #" + ownerLongId
                         + " 重复注册", 2);
+                    if (Audit != null)
+                    {
+                        Audit.Record("CommandBus", "cmd.register", -1, new AuditProp[] {
+                            new AuditProp("owner", ownerLongId.ToString()),
+                            new AuditProp("keys", string.Join(",", keyCopy)),
+                            new AuditProp("result", "rejected"),
+                            new AuditProp("reason", "重复注册")
+                        });
+                    }
                     return;
                 }
                 if (!CanRegisterKeys(ownerLongId, keyCopy))
                 {
+                    if (Audit != null)
+                    {
+                        Audit.Record("CommandBus", "cmd.register", -1, new AuditProp[] {
+                            new AuditProp("owner", ownerLongId.ToString()),
+                            new AuditProp("keys", string.Join(",", keyCopy)),
+                            new AuditProp("result", "rejected"),
+                            new AuditProp("reason", "key 冲突")
+                        });
+                    }
                     return;
                 }
                 CommandPack email = CreateEmptyEmail(ownerLongId, keyCopy);
@@ -167,6 +185,14 @@ namespace Mau.Runtime
                     _keyOwners[keyCopy[i]] = ownerLongId;
                 }
                 _version = _version + 1;
+                if (Audit != null)
+                {
+                    Audit.Record("CommandBus", "cmd.register", -1, new AuditProp[] {
+                        new AuditProp("owner", ownerLongId.ToString()),
+                        new AuditProp("keys", string.Join(",", keyCopy)),
+                        new AuditProp("result", "accepted")
+                    });
+                }
             }
         }
 
@@ -198,6 +224,14 @@ namespace Mau.Runtime
                 }
                 _keyDic.Remove(ownerLongId);
                 _version = _version + 1;
+                if (Audit != null)
+                {
+                    Audit.Record("CommandBus", "cmd.clean", -1, new AuditProp[] {
+                        new AuditProp("owner", ownerLongId.ToString()),
+                        new AuditProp("keys", string.Join(",", email.CmdKeys)),
+                        new AuditProp("reason", "unregister")
+                    });
+                }
             }
         }
 
@@ -214,15 +248,39 @@ namespace Mau.Runtime
                 {
                     _rejectedInputCount = _rejectedInputCount + 1;
                     _version = _version + 1;
+                    if (Audit != null)
+                    {
+                        Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
+                            new AuditProp("key", key),
+                            new AuditProp("result", "rejected"),
+                            new AuditProp("reason", "未接受输入")
+                        });
+                    }
                     return;
                 }
                 if (!_keyOwners.ContainsKey(key))
                 {
                     WriteLog("COMMAND | SET | REJECT | " + key + " 未注册", 2);
+                    if (Audit != null)
+                    {
+                        Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
+                            new AuditProp("key", key),
+                            new AuditProp("result", "rejected"),
+                            new AuditProp("reason", "未注册")
+                        });
+                    }
                     return;
                 }
                 _pendingCommandPool[key] = value;
                 _version = _version + 1;
+                if (Audit != null)
+                {
+                    Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
+                        new AuditProp("key", key),
+                        new AuditProp("payload", value.ToString()),
+                        new AuditProp("result", "accepted")
+                    });
+                }
             }
         }
 
@@ -239,14 +297,38 @@ namespace Mau.Runtime
                 {
                     _rejectedInputCount = _rejectedInputCount + 1;
                     _version = _version + 1;
+                    if (Audit != null)
+                    {
+                        Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
+                            new AuditProp("key", key),
+                            new AuditProp("result", "rejected"),
+                            new AuditProp("reason", "未接受输入")
+                        });
+                    }
                     return;
                 }
                 if (!_keyOwners.ContainsKey(key))
                 {
                     WriteLog("COMMAND | SET_TEXT | REJECT | " + key + " 未注册", 2);
+                    if (Audit != null)
+                    {
+                        Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
+                            new AuditProp("key", key),
+                            new AuditProp("result", "rejected"),
+                            new AuditProp("reason", "未注册")
+                        });
+                    }
                     return;
                 }
                 _pendingTextPool[key] = text;
+                if (Audit != null)
+                {
+                    Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
+                        new AuditProp("key", key),
+                        new AuditProp("payload", AuditStore.Summarize(text)),
+                        new AuditProp("result", "accepted")
+                    });
+                }
                 _version = _version + 1;
             }
         }
@@ -271,6 +353,7 @@ namespace Mau.Runtime
             lock (_lock)
             {
                 bool changed = false;
+                List<string> takenKeys = new List<string>();
                 for (int i = 0; i < result.CmdKeys.Length; i = i + 1)
                 {
                     string key = result.CmdKeys[i];
@@ -280,12 +363,14 @@ namespace Mau.Runtime
                     {
                         result.CmdValues[i] = intValue;
                         _commandPool.Remove(key);
+                        takenKeys.Add(key);
                         changed = true;
                     }
                     if (_textPool.TryGetValue(key, out textValue) && textValue != null)
                     {
                         result.CmdTexts[i] = textValue;
                         _textPool.Remove(key);
+                        takenKeys.Add(key);
                         changed = true;
                     }
                 }
@@ -293,6 +378,13 @@ namespace Mau.Runtime
                 {
                     result.HasCommands = true;
                     _version = _version + 1;
+                    if (Audit != null)
+                    {
+                        Audit.Record("CommandBus", "cmd.consume", -1, new AuditProp[] {
+                            new AuditProp("owner", ownerLongId.ToString()),
+                            new AuditProp("keys", string.Join(",", takenKeys))
+                        });
+                    }
                 }
             }
             return result;
@@ -336,6 +428,13 @@ namespace Mau.Runtime
                 if (changed)
                 {
                     _version = _version + 1;
+                    if (Audit != null)
+                    {
+                        Audit.Record("CommandBus", "cmd.clean", -1, new AuditProp[] {
+                            new AuditProp("owner", ownerLongId.ToString()),
+                            new AuditProp("keys", string.Join(",", email.CmdKeys))
+                        });
+                    }
                 }
             }
         }
@@ -645,5 +744,8 @@ public static string KeySegment(string raw)
                 _logWriter(message, level);
             }
         }
-    }
+/// <summary>
+/// 审计存储——宿主注入后机制事件写入（null = 不审计）。零业务侵入：仅记录，不改流程。
+/// </summary>
+public AuditStore? Audit { get; set; }    }
 }

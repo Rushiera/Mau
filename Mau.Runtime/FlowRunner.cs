@@ -112,23 +112,46 @@ namespace Mau.Runtime
         /// <param name="name">实体名字</param>
         /// <returns>分配的全局 ID</returns>
         public long RegisterFlow(IFlow flow, string name)
-        {
+{
             _guard.AssertMainThread("FlowHost.RegisterFlow");
             EnsureInited();
-            return _registry.Register(flow, name);
+            long id = _registry.Register(flow, name);
+            if (Audit != null)
+            {
+                string kind = "flow";
+                if (flow is IDog)
+                {
+                    kind = "dog";
+                }
+                else if (flow is IPet)
+                {
+                    kind = "pet";
+                }
+                Audit.Record("FlowRunner", "flow.register", -1, new AuditProp[] {
+                    new AuditProp("flowId", id.ToString()),
+                    new AuditProp("name", name),
+                    new AuditProp("kind", kind)
+                });
+            }
+            return id;
         }
-
         /// <summary>
         /// 回收实体——从注册表移除
         /// </summary>
         /// <param name="id">实体 ID</param>
         /// <returns>true=回收成功</returns>
         public bool UnregisterFlow(long id)
-        {
+{
             _guard.AssertMainThread("FlowHost.UnregisterFlow");
-            return _registry.Unregister(id);
+            bool ok = _registry.Unregister(id);
+            if (Audit != null && ok)
+            {
+                Audit.Record("FlowRunner", "flow.unregister", -1, new AuditProp[] {
+                    new AuditProp("flowId", id.ToString())
+                });
+            }
+            return ok;
         }
-
         /// <summary>
         /// 按 ID 查找实体
         /// </summary>
@@ -161,6 +184,10 @@ namespace Mau.Runtime
             _guard.AssertMainThread("FlowHost.Tick");
             EnsureInited();
             _frame = _frame + 1;
+            if (Audit != null)
+            {
+                Audit.TickFrame(_frame);
+            }
             // [段0] 指令输入冻结——此前到达的 Set 指令进入可消费池（帧间生效）
             _cmd.BeginTickInput();
             // [段1] Inbox 排空——后台回调在主线程执行（功能隔离：单回调异常不中断帧）
@@ -219,6 +246,14 @@ namespace Mau.Runtime
                     _registry.Unregister(dogIds[i]);
                 }
             }
+            // [段6] flow.tick 审计——默认关（EnableTickEvents 开启时每帧记录实体数）
+            if (Audit != null && Audit.EnableTickEvents)
+            {
+                Audit.Record("FlowRunner", "flow.tick", -1, new AuditProp[] {
+                    new AuditProp("frame", _frame.ToString()),
+                    new AuditProp("entities", _registry.Ids.Length.ToString())
+                });
+            }
         }
 
         /// <summary>
@@ -263,5 +298,8 @@ namespace Mau.Runtime
                 throw new InvalidOperationException("FlowHost 已关闭——不可再驱动");
             }
         }
-    }
+/// <summary>
+/// 审计存储——宿主注入后机制事件写入（null = 不审计）。零业务侵入：仅记录，不改流程。
+/// </summary>
+public AuditStore? Audit { get; set; }    }
 }

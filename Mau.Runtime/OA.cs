@@ -150,6 +150,16 @@ namespace Mau.Runtime
             office.Result = OfficeData.Empty();
             _offices[officeId] = office;
             _version = _version + 1;
+            if (Audit != null)
+            {
+                Audit.Record("OA", "oa.post", -1, new AuditProp[] {
+                    new AuditProp("officeId", officeId.ToString()),
+                    new AuditProp("dogId", dogId.ToString()),
+                    new AuditProp("type", officeType),
+                    new AuditProp("name", officeName),
+                    new AuditProp("timeout", timeoutTicks.ToString())
+                });
+            }
             WriteLog("OA | POST | #" + officeId + " | " + officeType + "/" + officeName, 0);
             return officeId;
         }
@@ -333,6 +343,14 @@ namespace Mau.Runtime
                 office.ClaimFrame = _tickNumber;
                 _offices[office.OfficeId] = office;
                 _version = _version + 1;
+                if (Audit != null)
+                {
+                    Audit.Record("OA", "oa.claim", -1, new AuditProp[] {
+                        new AuditProp("officeId", office.OfficeId.ToString()),
+                        new AuditProp("catId", catId.ToString()),
+                        new AuditProp("result", "claimed")
+                    });
+                }
                 claimed.Add(CopyOffice(office));
             }
             return claimed;
@@ -369,6 +387,14 @@ namespace Mau.Runtime
             _offices[officeId] = office;
             _totalDone = _totalDone + 1;
             _version = _version + 1;
+            if (Audit != null)
+            {
+                Audit.Record("OA", "oa.complete", -1, new AuditProp[] {
+                    new AuditProp("officeId", officeId.ToString()),
+                    new AuditProp("catId", catId.ToString()),
+                    new AuditProp("result", "ints:" + result.Ints.Count + ",strs:" + result.Strs.Count)
+                });
+            }
         }
 
         /// <summary>
@@ -490,6 +516,13 @@ namespace Mau.Runtime
                 _offices[office.OfficeId] = office;
                 _totalTimeout = _totalTimeout + 1;
                 _version = _version + 1;
+                if (Audit != null)
+                {
+                    Audit.Record("OA", "oa.settle", -1, new AuditProp[] {
+                        new AuditProp("officeId", office.OfficeId.ToString()),
+                        new AuditProp("reason", "timeout")
+                    });
+                }
             }
         }
 
@@ -718,5 +751,8 @@ namespace Mau.Runtime
                 _logWriter(message, level);
             }
         }
-    }
+/// <summary>
+/// 审计存储——宿主注入后机制事件写入（null = 不审计）。零业务侵入：仅记录，不改流程。
+/// </summary>
+public AuditStore? Audit { get; set; }    }
 }

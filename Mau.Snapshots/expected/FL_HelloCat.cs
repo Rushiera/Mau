@@ -82,7 +82,7 @@ namespace Mau.Generated.Flows
             _module = module;
             _level = level;
             _message = message;
-            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Ask")); }
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Ask")); TraceAudit("fire", "P_Ask", "fire"); }
             P_Ask = true;
         }
 
@@ -96,7 +96,7 @@ namespace Mau.Generated.Flows
             if (P_Ask)
             {
                 // 信号消费
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Hello", "Consume", "P_Ask")); }
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Hello", "Consume", "P_Ask")); TraceAudit("consume", "P_Ask", "consume"); }
                 P_Ask = false;
                 // 执行动作（积木调用）
                 bool ok = Mau.Bricks.BRIK_LOG_001.Write(_module, _level, _message);
@@ -148,6 +148,25 @@ namespace Mau.Generated.Flows
         }
 
         /// <summary>
+        /// trace 审计写入——数据流追踪事件可选写审计（A.3：AuditStore.Default 存在时记录，L3 级不落盘）
+        /// </summary>
+        /// <param name="kind">trace 类别（fire/consume/set）</param>
+        /// <param name="name">命题或变迁名</param>
+        /// <param name="result">结果文本</param>
+        private void TraceAudit(string kind, string name, string result)
+        {
+            if (AuditStore.Default != null)
+            {
+                AuditStore.Default.Record("Flow", "trace." + kind, -1, new AuditProp[] {
+                    new AuditProp("flow", this.GetType().Name),
+                    new AuditProp("name", name),
+                    new AuditProp("result", result),
+                    new AuditProp("flow_frame", _frame.ToString())
+                }, false);
+            }
+        }
+
+        /// <summary>
         /// 查询结果：Done
         /// </summary>
         /// <returns>Done成立</returns>
@@ -183,4 +202,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:7DEF4BD3E45D44E6186515F291BD917ADC995C27F7563F51C7E8232CDAD1953D
+// #MAU_CHECKSUM:SHA256:E5BE52E5B3A92210519155D7F8129FA59CD57475E3661BD7B0EA4393EC12756F

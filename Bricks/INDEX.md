@@ -12,6 +12,9 @@
 | BRIK-APPROVAL-003 | approval.reject | APPROVAL | APPROVAL/BRIK-APPROVAL-003_approval.reject.cs | 无 | active |  |
 | BRIK-APPROVAL-004 | approval.pending | APPROVAL | APPROVAL/BRIK-APPROVAL-004_approval.pending.cs | 无 | active |  |
 | BRIK-APPROVAL-005 | approval.result | APPROVAL | APPROVAL/BRIK-APPROVAL-005_approval.result.cs | 无 | active |  |
+| BRIK-AUDIT-001 | audit.stat | AUDIT | AUDIT/BRIK-AUDIT-001_audit.stat.cs | 无 | active |  |
+| BRIK-AUDIT-002 | audit.read | AUDIT | AUDIT/BRIK-AUDIT-002_audit.read.cs | 无 | active |  |
+| BRIK-AUDIT-003 | audit.find | AUDIT | AUDIT/BRIK-AUDIT-003_audit.find.cs | 无 | active |  |
 | BRIK-CAT-001 | cat.scan_instances | CAT | CAT/BRIK-CAT-001_cat.scan_instances.cs | 无 | active |  |
 | BRIK-CAT-002 | cat.tools_json | CAT | CAT/BRIK-CAT-002_cat.tools_json.cs | 无 | active |  |
 | BRIK-CMD-001 | cmd.register | CMD | CMD/BRIK-CMD-001_cmd.register.cs | 无 | active |  |
