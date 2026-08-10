@@ -88,6 +88,11 @@
 | BRIK-LLM-019 | llm.ctx_push_error | LLM | LLM/BRIK-LLM-019_llm.ctx_push_error.cs | 无 | active |  |
 | BRIK-LLM-020 | llm.read_chunk | LLM | LLM/BRIK-LLM-020_llm.read_chunk.cs | 无 | active |  |
 | BRIK-LLM-021 | llm.finish | LLM | LLM/BRIK-LLM-021_llm.finish.cs | 无 | active |  |
+| BRIK-LLM-022 | llm.content_empty | LLM | LLM/BRIK-LLM-022_llm.content_empty.cs | 无 | active |  |
+| BRIK-LLM-023 | llm.retry_empty | LLM | LLM/BRIK-LLM-023_llm.retry_empty.cs | 无 | active |  |
+| BRIK-LLM-024 | llm.round_stats_text | LLM | LLM/BRIK-LLM-024_llm.round_stats_text.cs | 无 | active |  |
+| BRIK-LLM-025 | llm.ctx_push_system | LLM | LLM/BRIK-LLM-025_llm.ctx_push_system.cs | 无 | active |  |
+| BRIK-LLM-026 | llm.has_active_session | LLM | LLM/BRIK-LLM-026_llm.has_active_session.cs | 无 | active |  |
 | BRIK-LOG-001 | log.write | LOG | LOG/BRIK-LOG-001_log.write.cs | 无 | active |  |
 | BRIK-LOG-002 | log.all | LOG | LOG/BRIK-LOG-002_log.all.cs | 无 | active |  |
 | BRIK-LOG-003 | log.count | LOG | LOG/BRIK-LOG-003_log.count.cs | 无 | active |  |
@@ -140,7 +145,8 @@
 | BRIK-TOOL-011 | tool.collect | TOOL | TOOL/BRIK-TOOL-011_tool.collect.cs | 无 | active |  |
 | BRIK-TOOL-012 | tool.create_next | TOOL | TOOL/BRIK-TOOL-012_tool.create_next.cs | 无 | active |  |
 | BRIK-TOOL-013 | tool.run_generic | TOOL | TOOL/BRIK-TOOL-013_tool.run_generic.cs | file.read, file.write, file.append, file.replace, file.read_lines, file.tree, file.find, file.move, file.delete, file.convert, file.batch, shell.exec, excel.read, excel.write, docx.read, docx.write, system.info, system.snapshot, system.env, math.random_int, csharp.init, csharp.info, csharp.list, csharp.read, csharp.body_replace, csharp.line_patch, csharp.line_insert, csharp.member_insert, csharp.member_delete, csharp.comment_set, csharp.comment_check, csharp.member_rename, csharp.dead, csharp.find_ref, csharp.compile, mau.build | active |  |
-| BRIK-UI-001 | ui.snapshot_chat | UI | UI/BRIK-UI-001_ui.snapshot_chat.cs | 无 | active |  |
+| BRIK-TOOL-014 | tool.display | TOOL | TOOL/BRIK-TOOL-014_tool.display.cs | 无 | active |  |
+| BRIK-UI-001 | ui.snapshot_chat | UI | UI/BRIK-UI-001_ui.snapshot_chat.cs | tool.display | active |  |
 | BRIK-UI-002 | ui.snapshot_push | UI | UI/BRIK-UI-002_ui.snapshot_push.cs | 无 | active |  |
 | BRIK-UI-003 | ui.window_event | UI | UI/BRIK-UI-003_ui.window_event.cs | 无 | active |  |
 | BRIK-UI-004 | ui.snapshot_home | UI | UI/BRIK-UI-004_ui.snapshot_home.cs | 无 | active |  |

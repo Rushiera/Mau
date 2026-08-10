@@ -32,6 +32,7 @@ namespace Mau.Runtime
                 total = total + BrickText.SafeText(session.History[i].Content).Length
                     + BrickText.SafeText(session.History[i].ToolCallId).Length
                     + BrickText.SafeText(session.History[i].ToolName).Length
+                    + BrickText.SafeText(session.History[i].ArgsJson).Length
                     + BrickText.SafeText(session.History[i].ToolCallsJson).Length;
             }
             return total;
@@ -50,6 +51,7 @@ namespace Mau.Runtime
             message.Content = content;
             message.ToolCallId = "";
             message.ToolName = "";
+            message.ArgsJson = "";
             message.ToolCallsJson = "";
             return message;
         }

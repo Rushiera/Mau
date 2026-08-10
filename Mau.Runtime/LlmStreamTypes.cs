@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Threading;
 
 namespace Mau.Runtime
@@ -32,6 +32,36 @@ namespace Mau.Runtime
         /// 最后消费的分片——判断积木（is_end/is_tool）的查询源
         /// </summary>
         public LlmStreamChunk? LastChunk;
+
+        /// <summary>
+        /// 本轮累计正文（content）字符数——空回复检测源（llm.content_empty；2026-08-10 续传链路）
+        /// </summary>
+        public long ContentChars;
+
+        /// <summary>
+        /// 本轮 prompt token（usage 解析——轮次统计 llm.round_stats_text；2026-08-10）
+        /// </summary>
+        public long UsagePrompt;
+
+        /// <summary>
+        /// 本轮 completion token（usage 解析）
+        /// </summary>
+        public long UsageCompletion;
+
+        /// <summary>
+        /// 本轮缓存命中 token（usage 解析）
+        /// </summary>
+        public long UsageCacheHit;
+
+        /// <summary>
+        /// 请求起始时间戳（Stopwatch——耗时统计基准）
+        /// </summary>
+        public long StartTimestamp;
+
+        /// <summary>
+        /// 请求结束时间戳（Stopwatch——耗时统计）
+        /// </summary>
+        public long FinishedTimestamp;
 /// <summary>
 /// 创建时间（UTC）——活跃会话查询（GAP.7 sys.llm）的时间轴
 /// </summary>
@@ -47,6 +77,12 @@ public readonly System.DateTime CreatedAt;
             IsTerminal = 0;
             LastChunk = null;
             CreatedAt = System.DateTime.UtcNow;
+            ContentChars = 0;
+            UsagePrompt = 0;
+            UsageCompletion = 0;
+            UsageCacheHit = 0;
+            StartTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            FinishedTimestamp = 0;
         }    }
 
     /// <summary>

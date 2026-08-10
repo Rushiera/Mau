@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -124,6 +124,8 @@ public static KeyValuePair<string, LlmStreamSession>[] GetActiveSessions()
             {
                 return;
             }
+            // 结束时间戳——轮次统计耗时基准（Stopwatch 精度；2026-08-10）
+            session.FinishedTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
             LlmStreamChunk chunk = new LlmStreamChunk();
             chunk.Finished = true;
             chunk.ErrorCode = errorCode;
@@ -194,6 +196,18 @@ public static KeyValuePair<string, LlmStreamSession>[] GetActiveSessions()
             sawFinish = false;
             using (System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(payload))
             {
+                // usage——最后一条 chunk 携带 token 统计（轮次统计 llm.round_stats_text 数据源）
+                System.Text.Json.JsonElement usageElement;
+                if (document.RootElement.TryGetProperty("usage", out usageElement)
+                    && usageElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    long prompt = ReadLong(usageElement, "prompt_tokens");
+                    if (prompt > 0) { session.UsagePrompt = prompt; }
+                    long completion = ReadLong(usageElement, "completion_tokens");
+                    if (completion > 0) { session.UsageCompletion = completion; }
+                    long cacheHit = ReadLong(usageElement, "prompt_cache_hit_tokens");
+                    if (cacheHit > 0) { session.UsageCacheHit = cacheHit; }
+                }
                 System.Text.Json.JsonElement choices;
                 if (!document.RootElement.TryGetProperty("choices", out choices)
                     || choices.ValueKind != System.Text.Json.JsonValueKind.Array
@@ -224,6 +238,11 @@ public static KeyValuePair<string, LlmStreamSession>[] GetActiveSessions()
                 }
                 if (content.Length > 0 || reasoning.Length > 0)
                 {
+                    if (content.Length > 0)
+                    {
+                        // 空回复检测源——正文累计（2026-08-10 续传链路）
+                        session.ContentChars = session.ContentChars + content.Length;
+                    }
                     LlmStreamChunk chunk = new LlmStreamChunk();
                     chunk.ContentDelta = content;
                     chunk.ReasoningDelta = reasoning;
@@ -284,6 +303,27 @@ public static KeyValuePair<string, LlmStreamSession>[] GetActiveSessions()
                 writer.WriteEndArray();
             }
             return Encoding.UTF8.GetString(stream.ToArray());
+        }
+
+        /// <summary>
+        /// 读取对象内的可选长整型属性（usage 解析）
+        /// </summary>
+        /// <param name="element">JSON 对象</param>
+        /// <param name="name">属性名</param>
+        /// <returns>长整型值或 0</returns>
+        private static long ReadLong(System.Text.Json.JsonElement element, string name)
+        {
+            System.Text.Json.JsonElement value;
+            if (element.TryGetProperty(name, out value)
+                && value.ValueKind == System.Text.Json.JsonValueKind.Number)
+            {
+                long result;
+                if (value.TryGetInt64(out result))
+                {
+                    return result;
+                }
+            }
+            return 0;
         }
 
         /// <summary>

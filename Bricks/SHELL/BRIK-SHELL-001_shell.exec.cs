@@ -28,21 +28,20 @@ namespace Mau.Bricks
         private const int MaxOutputChars = 8192;
 
         /// <summary>
-        /// 固定工作目录
+        /// 固定工作目录——经 ShellBridge 配置/读取（宿主配置入口；2026-08-10：Mau.Runtime 桥化）
         /// </summary>
-        private static string _workingDirectory = Environment.CurrentDirectory;
+        private static string WorkingDirectory
+        {
+            get { return Mau.Runtime.ShellBridge.WorkingDirectory; }
+        }
 
         /// <summary>
-        /// 配置固定工作目录——宿主启动时调用
+        /// 配置固定工作目录——转发 ShellBridge（兼容旧调用点；宿主统一走 Mau.Runtime.ShellBridge）
         /// </summary>
         /// <param name="workingDirectory">工作目录</param>
         public static void ConfigureWorkingDirectory(string workingDirectory)
         {
-            if (string.IsNullOrWhiteSpace(workingDirectory))
-            {
-                throw new ArgumentException("Working directory is empty.", "workingDirectory");
-            }
-            _workingDirectory = System.IO.Path.GetFullPath(workingDirectory);
+            Mau.Runtime.ShellBridge.ConfigureWorkingDirectory(workingDirectory);
         }
 
         /// <summary>
@@ -69,7 +68,7 @@ namespace Mau.Bricks
             {
                 ProcessStartInfo start = new ProcessStartInfo();
                 start.FileName = "powershell.exe";
-                start.WorkingDirectory = _workingDirectory;
+                start.WorkingDirectory = WorkingDirectory;
                 start.UseShellExecute = false;
                 start.CreateNoWindow = true;
                 start.RedirectStandardOutput = true;
@@ -149,4 +148,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:C2E77E3B749311519C7AB5A7002773B0957FE773B5B49ABF8EDC0D381FC9EEE1
+// #MAU_CHECKSUM:SHA256:186960C22893408C1069E9D0266E771E677E11A0054022C26D67EA03836A57EB

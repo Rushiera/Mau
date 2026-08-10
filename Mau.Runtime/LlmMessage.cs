@@ -1,4 +1,4 @@
-namespace Mau.Runtime
+﻿namespace Mau.Runtime
 {
     /// <summary>
     /// 厂商无关 LLM 消息（契约类型——上下文存储的消息单元）
@@ -24,6 +24,11 @@ namespace Mau.Runtime
         /// 工具名
         /// </summary>
         public string ToolName;
+
+        /// <summary>
+        /// 工具参数 JSON 原文——Tool 消息（UI 摘要显示 tool.display 数据源；2026-08-10 摘要链路）
+        /// </summary>
+        public string ArgsJson;
 
         /// <summary>
         /// 工具调用 JSON 数组文本——Assistant 工具声明
