@@ -11,7 +11,6 @@ namespace Mau.Runtime
     /// </summary>
     public sealed class SysCommand
     {
-        /// <summary>审计查询——读取三形态内核</summary>
         private readonly AuditQuery _audit;
 
         /// <summary>
@@ -172,8 +171,26 @@ namespace Mau.Runtime
         /// <param name="args">参数</param>
         /// <returns>MD 输出</returns>
         private string SysKeys(Dictionary<string, string> args)
-        {
+{
             string? owner = Arg(args, "owner");
+            StringBuilder sb = new StringBuilder();
+            sb.Append(Header("SYS.KEYS", args));
+            // [段1] 实时注册态——DataBox 有 ICommandBus 时输出当前注册清单（G2 实时源：当前态可查）
+            ICommandBus? bus;
+            if (DataBox.TryResolve<ICommandBus>(out bus))
+            {
+                CommandSnapshot snap = bus.GetSnapshot();
+                sb.AppendLine("## 当前注册（实时）");
+                sb.AppendLine("- owners=" + snap.RegisteredOwnerCount + " keys=" + snap.RegisteredKeyCount
+                    + " frozen=" + snap.FrozenKeyCount + " pending=" + snap.PendingKeyCount
+                    + " rejected=" + snap.RejectedInputCount + " accepting=" + snap.IsAcceptingInput);
+                string[] keyLines = bus.GetKeyDic();
+                for (int i = 0; i < keyLines.Length; i = i + 1)
+                {
+                    sb.AppendLine("- " + keyLines[i]);
+                }
+            }
+            // [段2] 历史注册事件（cmd.register——accepted/rejected/原因）
             AuditEvent[] events = _audit.Segment(0, long.MaxValue, "cmd.register", null);
             if (owner != null)
             {
@@ -187,23 +204,39 @@ namespace Mau.Runtime
                 }
                 events = filtered.ToArray();
             }
-            return Header("SYS.KEYS", args) + _audit.FormatEvents(events);
+            sb.AppendLine("## 注册历史（审计）");
+            sb.Append(_audit.FormatEvents(events));
+            return sb.ToString();
         }
-
         /// <summary>
         /// sys.oa——工单生命周期（id= 单号全链路；list= 全部 oa.* 事件）
         /// </summary>
         /// <param name="args">参数</param>
         /// <returns>MD 输出</returns>
         private string SysOa(Dictionary<string, string> args)
-        {
+{
             string? id = Arg(args, "id");
+            StringBuilder sb = new StringBuilder();
+            sb.Append(Header("SYS.OA", args));
+            // [段1] 实时工单统计——DataBox 有 IOA 时输出当前状态（G2 实时源）
+            IOA? oa;
+            if (DataBox.TryResolve<IOA>(out oa))
+            {
+                OAView view = oa.GetSnapshot();
+                sb.AppendLine("## 当前工单（实时）");
+                sb.AppendLine("- open=" + view.OpenCount + " work=" + view.WorkCount
+                    + " closed=" + view.ClosedCount + " timeout=" + view.TimeoutCount + " version=" + view.Version);
+            }
+            // [段2] 生命周期查询（id= 单号全链路）
             if (id != null)
             {
                 AuditEvent[] events = _audit.FindByProp("officeId", id);
                 events = FilterCategoryPrefix(events, "oa.");
-                return Header("SYS.OA", args) + _audit.FormatEvents(events);
+                sb.AppendLine("## 生命周期（审计）");
+                sb.Append(_audit.FormatEvents(events));
+                return sb.ToString();
             }
+            // [段3] 工单历史（oa.* 事件，可 status 过滤）
             string? status = Arg(args, "status");
             AuditEvent[] all = _audit.Segment(0, long.MaxValue, null, "OA");
             if (status != null && status.Length > 0)
@@ -218,9 +251,10 @@ namespace Mau.Runtime
                 }
                 all = filtered.ToArray();
             }
-            return Header("SYS.OA", args) + _audit.FormatEvents(all);
+            sb.AppendLine("## 工单历史（审计）");
+            sb.Append(_audit.FormatEvents(all));
+            return sb.ToString();
         }
-
         /// <summary>
         /// sys.trace——生成物命题/变迁执行序列（trace.* 事件，flow 过滤）
         /// </summary>
@@ -325,14 +359,34 @@ namespace Mau.Runtime
         /// <param name="args">参数</param>
         /// <returns>MD 输出</returns>
         private string SysFlow(Dictionary<string, string> args)
-        {
+{
             int tail = ArgInt(args, "tail", 0);
+            StringBuilder sb = new StringBuilder();
+            sb.Append(Header("SYS.FLOW", args));
+            // [段1] 实时实体清单——DataBox 有 FlowRunner 时输出当前实体（G2 实时源：admin.list 当前态）
+            FlowRunner? runner;
+            if (DataBox.TryResolve<FlowRunner>(out runner))
+            {
+                HostSnapshot snap = runner.GetStatus();
+                sb.AppendLine("## 当前实体（实时）");
+                if (snap.Flows != null)
+                {
+                    for (int i = 0; i < snap.Flows.Length; i = i + 1)
+                    {
+                        sb.AppendLine("- #" + snap.Flows[i].Id + " " + snap.Flows[i].Name
+                            + " (" + snap.Flows[i].TypeName + ") [" + snap.Flows[i].Kind + "]");
+                    }
+                }
+                sb.AppendLine("- 帧: " + snap.Frame);
+            }
+            // [段2] 历史生命周期（flow.* 事件）
             AuditEvent[] events = _audit.Segment(0, long.MaxValue, null, "FlowRunner");
             events = FilterCategoryPrefix(events, "flow.");
             events = Tail(events, tail);
-            return Header("SYS.FLOW", args) + _audit.FormatEvents(events);
+            sb.AppendLine("## 生命周期（审计）");
+            sb.Append(_audit.FormatEvents(events));
+            return sb.ToString();
         }
-
         /// <summary>
         /// 输出头——指令名 + 参数回显
         /// </summary>

@@ -1,4 +1,4 @@
-using Mau.Runtime;
+﻿using Mau.Runtime;
 using Xunit;
 
 namespace Mau.Runtime.Tests
@@ -194,6 +194,82 @@ namespace Mau.Runtime.Tests
             SysCommand sys = CreateSysWithEvents();
             string text = sys.Execute("sys.trace flow=FL_Nope");
             Assert.Contains("（无匹配）", text);
+        }
+
+        /// <summary>
+        /// G2 实时源——sys.keys 输出当前注册态（ICommandBus 绑定时）
+        /// </summary>
+        [Fact]
+        public void SysKeys_RealtimeSection_WhenCommandBusBound()
+        {
+            ThreadGuard guard = new ThreadGuard();
+            CommandBus bus = new CommandBus(guard);
+            bus.OpenInput();
+            bus.Register(1, new string[] { "chat_a_msg" });
+            bus.Register(2, new string[] { "talk_a_stop" });
+            try
+            {
+                DataBox.Bind<ICommandBus>(bus);
+                SysCommand sys = CreateSysWithEvents();
+                string text = sys.Execute("sys.keys");
+                Assert.Contains("## 当前注册（实时）", text);
+                Assert.Contains("chat_a_msg", text);
+                Assert.Contains("talk_a_stop", text);
+                Assert.Contains("## 注册历史（审计）", text);
+            }
+            finally
+            {
+                DataBox.Unbind<ICommandBus>();
+                bus.Unregister(1);
+                bus.Unregister(2);
+            }
+        }
+
+        /// <summary>
+        /// G2 实时源——sys.flow 输出当前实体清单（FlowRunner 绑定时）
+        /// </summary>
+        [Fact]
+        public void SysFlow_RealtimeSection_WhenRunnerBound()
+        {
+            ThreadGuard guard = new ThreadGuard();
+            OA oa = new OA(guard);
+            CommandBus cmd = new CommandBus(guard);
+            IdAllocator ids = new IdAllocator();
+            FlowRunner runner = new FlowRunner(guard, oa, cmd, ids);
+            try
+            {
+                DataBox.Bind<FlowRunner>(runner);
+                SysCommand sys = CreateSysWithEvents();
+                string text = sys.Execute("sys.flow");
+                Assert.Contains("## 当前实体（实时）", text);
+                Assert.Contains("## 生命周期（审计）", text);
+            }
+            finally
+            {
+                DataBox.Unbind<FlowRunner>();
+            }
+        }
+
+        /// <summary>
+        /// G2 实时源——sys.oa 输出当前工单统计（IOA 绑定时）
+        /// </summary>
+        [Fact]
+        public void SysOa_RealtimeSection_WhenOaBound()
+        {
+            ThreadGuard guard = new ThreadGuard();
+            OA oa = new OA(guard);
+            try
+            {
+                DataBox.Bind<IOA>(oa);
+                SysCommand sys = CreateSysWithEvents();
+                string text = sys.Execute("sys.oa");
+                Assert.Contains("## 当前工单（实时）", text);
+                Assert.Contains("## 工单历史（审计）", text);
+            }
+            finally
+            {
+                DataBox.Unbind<IOA>();
+            }
         }
     }
 }
