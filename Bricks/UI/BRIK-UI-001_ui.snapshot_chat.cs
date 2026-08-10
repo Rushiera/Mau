@@ -41,10 +41,8 @@ namespace Mau.Bricks
                     for (int i = 0; i < session.History.Count; i = i + 1)
                     {
                         LlmMessage message = session.History[i];
-                        if (message.Role == "Tool" || message.Role == "Error")
-                        {
-                            continue;
-                        }
+                        // v1.5b 修复：放行 Tool/Error 角色——CH2 AppendEntry 有 Tool 分支（RenderQuoted 引用显示 + ColToolText）；
+                        // 跳过导致工具结果在对话区不显示（BRIK-UI-001 原 `continue` 吞掉工具条目）
                         writer.WriteStartObject();
                         writer.WriteString("role", message.Role);
                         writer.WriteString("content", ContextStore.SafeText(message.Content));
@@ -96,4 +94,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:ED52F1F0F86F45F578782F80F18CFC8B8A7536E0EB018074727FDB2AF490DFD0
+// #MAU_CHECKSUM:SHA256:E8FA424C3F25B29F3928B002F40FCCC16B49A9659F89D4F2A63E92E6FF7D6059
