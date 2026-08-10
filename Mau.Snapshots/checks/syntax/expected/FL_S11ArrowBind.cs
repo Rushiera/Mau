@@ -108,7 +108,7 @@ namespace Mau.Generated.Flows
         public void FireStart(string path)
         {
             _path = path;
-            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Start")); }
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Start")); TraceAudit("fire", "P_Start", "fire"); }
             P_Start = true;
         }
 
@@ -122,12 +122,12 @@ namespace Mau.Generated.Flows
             if (P_Start && T_Read_Cube.IsIdle())
             {
                 // 信号消费
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Read", "Consume", "P_Start")); }
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Read", "Consume", "P_Start")); TraceAudit("consume", "P_Start", "consume"); }
                 P_Start = false;
                 T_Read_Cube.Start();
                 // 执行动作（积木调用）
                 bool ok = Mau.Bricks.BRIK_FILE_002.Read(_path, out _content);
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Read", "Set", "_content=" + System.Convert.ToString(_content))); }
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Read", "Set", "_content=" + System.Convert.ToString(_content))); TraceAudit("set", "_content", "set"); }
                 if (ok)
                 {
                     // 正常后置注册
@@ -161,7 +161,7 @@ namespace Mau.Generated.Flows
                 T_Preview_Cube.Start();
                 // 执行动作（积木调用）
                 bool ok = Mau.Bricks.BRIK_MATH_003.ResultPreview(_content, out _preview);
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Preview", "Set", "_preview=" + System.Convert.ToString(_preview))); }
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Preview", "Set", "_preview=" + System.Convert.ToString(_preview))); TraceAudit("set", "_preview", "set"); }
                 if (ok)
                 {
                     // 正常后置注册
@@ -227,6 +227,25 @@ namespace Mau.Generated.Flows
         }
 
         /// <summary>
+        /// trace 审计写入——数据流追踪事件可选写审计（A.3：AuditStore.Default 存在时记录，L3 级不落盘）
+        /// </summary>
+        /// <param name="kind">trace 类别（fire/consume/set）</param>
+        /// <param name="name">命题或变迁名</param>
+        /// <param name="result">结果文本</param>
+        private void TraceAudit(string kind, string name, string result)
+        {
+            if (AuditStore.Default != null)
+            {
+                AuditStore.Default.Record("Flow", "trace." + kind, -1, new AuditProp[] {
+                    new AuditProp("flow", this.GetType().Name),
+                    new AuditProp("name", name),
+                    new AuditProp("result", result),
+                    new AuditProp("flow_frame", _frame.ToString())
+                }, false);
+            }
+        }
+
+        /// <summary>
         /// 查询结果：Mid
         /// </summary>
         /// <returns>Mid成立</returns>
@@ -279,4 +298,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:6876FD1235B71A6571A8E5C68BA7F548B7C02C69E85C3AFFBD50F176106A8340
+// #MAU_CHECKSUM:SHA256:48872C90BCD579A4F09D755C1EB3059910B3E54E0B7FDE245268D809BA91CE3A

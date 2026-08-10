@@ -78,7 +78,7 @@ namespace Mau.Generated.Flows
         /// </summary>
         public void FireStart()
         {
-            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Start")); }
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Start")); TraceAudit("fire", "P_Start", "fire"); }
             P_Start = true;
         }
 
@@ -92,7 +92,7 @@ namespace Mau.Generated.Flows
             if (P_Start && T_Bind_Cube.IsIdle())
             {
                 // 信号消费
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Bind", "Consume", "P_Start")); }
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Bind", "Consume", "P_Start")); TraceAudit("consume", "P_Start", "consume"); }
                 P_Start = false;
                 T_Bind_Cube.Start();
                 // 执行动作（积木调用）
@@ -160,6 +160,25 @@ namespace Mau.Generated.Flows
         }
 
         /// <summary>
+        /// trace 审计写入——数据流追踪事件可选写审计（A.3：AuditStore.Default 存在时记录，L3 级不落盘）
+        /// </summary>
+        /// <param name="kind">trace 类别（fire/consume/set）</param>
+        /// <param name="name">命题或变迁名</param>
+        /// <param name="result">结果文本</param>
+        private void TraceAudit(string kind, string name, string result)
+        {
+            if (AuditStore.Default != null)
+            {
+                AuditStore.Default.Record("Flow", "trace." + kind, -1, new AuditProp[] {
+                    new AuditProp("flow", this.GetType().Name),
+                    new AuditProp("name", name),
+                    new AuditProp("result", result),
+                    new AuditProp("flow_frame", _frame.ToString())
+                }, false);
+            }
+        }
+
+        /// <summary>
         /// 查询结果：Done
         /// </summary>
         /// <returns>Done成立</returns>
@@ -195,4 +214,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:C1F6FDC74847B042F260A4906DFE5E9F5C1B896692F3A202BBC0E19F7020B871
+// #MAU_CHECKSUM:SHA256:C3507E8830C79306F098C760C17478F483B9E73391EC37560D6B5E5387C54634

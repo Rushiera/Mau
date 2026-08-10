@@ -45,7 +45,10 @@ namespace Mau.Runtime
         /// 内部帧号——每 Tick 自增
         /// </summary>
         private long _frame;
-
+/// <summary>
+/// 全局当前帧号——每 Tick 更新（日志/积木静态读取；0=未驱动）
+/// </summary>
+public static long GlobalFrame;
         /// <summary>
         /// 是否已初始化
         /// </summary>
@@ -238,6 +241,8 @@ public bool InvokeOnMain(Action action, int timeoutMs)
             _guard.AssertMainThread("FlowHost.Tick");
             EnsureInited();
             _frame = _frame + 1;
+            GlobalFrame = _frame;
+            if (Audit != null)
             if (Audit != null)
             {
                 Audit.TickFrame(_frame);

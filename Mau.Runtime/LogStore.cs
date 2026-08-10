@@ -31,6 +31,11 @@ namespace Mau.Runtime
             /// 消息
             /// </summary>
             public string Message;
+
+            /// <summary>
+            /// 帧号——写入时全局帧号（FlowRunner 驱动；-1=无帧号来源）
+            /// </summary>
+            public long Frame;
         }
 
         /// <summary>

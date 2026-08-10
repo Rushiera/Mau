@@ -142,6 +142,25 @@ namespace Mau.Generated.Flows
         }
 
         /// <summary>
+        /// trace 审计写入——数据流追踪事件可选写审计（A.3：AuditStore.Default 存在时记录，L3 级不落盘）
+        /// </summary>
+        /// <param name="kind">trace 类别（fire/consume/set）</param>
+        /// <param name="name">命题或变迁名</param>
+        /// <param name="result">结果文本</param>
+        private void TraceAudit(string kind, string name, string result)
+        {
+            if (AuditStore.Default != null)
+            {
+                AuditStore.Default.Record("Flow", "trace." + kind, -1, new AuditProp[] {
+                    new AuditProp("flow", this.GetType().Name),
+                    new AuditProp("name", name),
+                    new AuditProp("result", result),
+                    new AuditProp("flow_frame", _frame.ToString())
+                }, false);
+            }
+        }
+
+        /// <summary>
         /// 查询结果：Seen
         /// </summary>
         /// <returns>Seen成立</returns>
@@ -194,4 +213,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:4B818A0DEE439CD0E799F9AC2528CF8A82FC34C6F422940838B71532EC2C8888
+// #MAU_CHECKSUM:SHA256:CCCDF0017CD9AC3FD637B2A383D399100BBA6623704D1E3EC61C367327309B98

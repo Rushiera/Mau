@@ -110,7 +110,7 @@ namespace Mau.Generated.Flows
             _module = module;
             _level = level;
             _message = message;
-            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Start")); }
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Start")); TraceAudit("fire", "P_Start", "fire"); }
             P_Start = true;
         }
 
@@ -124,7 +124,7 @@ namespace Mau.Generated.Flows
             if (P_Start && T_A_Cube.IsIdle())
             {
                 // 信号消费
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_A", "Consume", "P_Start")); }
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_A", "Consume", "P_Start")); TraceAudit("consume", "P_Start", "consume"); }
                 P_Start = false;
                 T_A_Cube.Start();
                 // 执行动作（积木调用）
@@ -160,7 +160,7 @@ namespace Mau.Generated.Flows
             if (P_Start && T_B_Cube.IsIdle())
             {
                 // 信号消费
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_B", "Consume", "P_Start")); }
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_B", "Consume", "P_Start")); TraceAudit("consume", "P_Start", "consume"); }
                 P_Start = false;
                 T_B_Cube.Start();
                 // 执行动作（积木调用）
@@ -264,6 +264,25 @@ namespace Mau.Generated.Flows
             _traceDataFlow = enabled;
         }
 
+        /// <summary>
+        /// trace 审计写入——数据流追踪事件可选写审计（A.3：AuditStore.Default 存在时记录，L3 级不落盘）
+        /// </summary>
+        /// <param name="kind">trace 类别（fire/consume/set）</param>
+        /// <param name="name">命题或变迁名</param>
+        /// <param name="result">结果文本</param>
+        private void TraceAudit(string kind, string name, string result)
+        {
+            if (AuditStore.Default != null)
+            {
+                AuditStore.Default.Record("Flow", "trace." + kind, -1, new AuditProp[] {
+                    new AuditProp("flow", this.GetType().Name),
+                    new AuditProp("name", name),
+                    new AuditProp("result", result),
+                    new AuditProp("flow_frame", _frame.ToString())
+                }, false);
+            }
+        }
+
         // 组合 FL_Seq:  [experimental — documentation-only，执行语义未实现]
         //   序列: T_A, T_B, T_Finish
 
@@ -340,4 +359,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:D66A76B13D2E4E29FE91D74FD85431A6902306D7F171F6C7407CE19594DBA47E
+// #MAU_CHECKSUM:SHA256:C952378AAEA5007A9D16467EEB7C7F9744F553132D1EF4F7C6C888B9313BC1AD

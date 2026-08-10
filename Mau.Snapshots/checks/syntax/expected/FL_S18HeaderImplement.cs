@@ -79,7 +79,7 @@ namespace Mau.Generated.Flows
         {
             _input = input;
             _output = output;
-            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Start")); }
+            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Start")); TraceAudit("fire", "P_Start", "fire"); }
             P_Start = true;
         }
 
@@ -93,7 +93,7 @@ namespace Mau.Generated.Flows
             if (P_Start && T_Run_Cube.IsIdle())
             {
                 // 信号消费
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Run", "Consume", "P_Start")); }
+                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Run", "Consume", "P_Start")); TraceAudit("consume", "P_Start", "consume"); }
                 P_Start = false;
                 T_Run_Cube.Start();
                 // 执行动作（积木调用）
@@ -161,6 +161,25 @@ namespace Mau.Generated.Flows
         }
 
         /// <summary>
+        /// trace 审计写入——数据流追踪事件可选写审计（A.3：AuditStore.Default 存在时记录，L3 级不落盘）
+        /// </summary>
+        /// <param name="kind">trace 类别（fire/consume/set）</param>
+        /// <param name="name">命题或变迁名</param>
+        /// <param name="result">结果文本</param>
+        private void TraceAudit(string kind, string name, string result)
+        {
+            if (AuditStore.Default != null)
+            {
+                AuditStore.Default.Record("Flow", "trace." + kind, -1, new AuditProp[] {
+                    new AuditProp("flow", this.GetType().Name),
+                    new AuditProp("name", name),
+                    new AuditProp("result", result),
+                    new AuditProp("flow_frame", _frame.ToString())
+                }, false);
+            }
+        }
+
+        /// <summary>
         /// 查询结果：Done
         /// </summary>
         /// <returns>Done成立</returns>
@@ -196,4 +215,4 @@ namespace Mau.Generated.Flows
 
     }
 }
-// #MAU_CHECKSUM:SHA256:08BED066B1C9BEE754378DBD8A4D60701062F566A1F7B164BAF0F60927D0E098
+// #MAU_CHECKSUM:SHA256:9461903ECD9A5188F1254AD266821B7B0D13A5C209FF1728DBD12470785A9CDC
