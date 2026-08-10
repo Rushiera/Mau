@@ -78,7 +78,39 @@ namespace Mau.Cli
             Console.WriteLine("  运行: " + Path.Combine(Path.GetFullPath(outDir), "Mau.exe") + " test");
             return failed > 0 ? 1 : 0;
         }
+/// <summary>
+/// 探测文件是否被进程占用——以写方式独占打开（成功=未锁；IOException=被锁）
+/// </summary>
+/// <param name = "paths">待探测路径</param>
+/// <returns>第一个被锁路径；全部未锁返回空串</returns>
+private static string FindLockedFile(string[] paths)
+{
+    for (int i = 0; i < paths.Length; i = i + 1)
+    {
+        if (!File.Exists(paths[i]))
+        {
+            continue;
+        }
 
+        try
+        {
+            using (FileStream fs = new FileStream(paths[i], FileMode.Open, FileAccess.Write, FileShare.None))
+            {
+            // 探测成功——未锁
+            }
+        }
+        catch (IOException)
+        {
+            return paths[i];
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return paths[i];
+        }
+    }
+
+    return "";
+}
         /// <summary>
         /// 拷贝单文件——已存在则覆盖
         /// </summary>
@@ -87,7 +119,7 @@ namespace Mau.Cli
         /// <param name="failed">失败计数</param>
         /// <returns>成功拷贝数</returns>
         private static int CopyFile(string source, string outDir, ref int failed)
-        {
+{
             if (!File.Exists(source))
             {
                 failed = failed + 1;
@@ -98,6 +130,13 @@ namespace Mau.Cli
                 File.Copy(source, Path.Combine(outDir, Path.GetFileName(source)), true);
                 return 1;
             }
+            catch (IOException)
+            {
+                // GAP.5——目标被进程占用（运行实例锁定）
+                Console.Error.WriteLine("拷贝失败（文件被占用——先停止运行实例）: " + source);
+                failed = failed + 1;
+                return 0;
+            }
             catch (Exception ex)
             {
                 Console.Error.WriteLine("拷贝失败: " + source + " — " + ex.Message);
@@ -105,7 +144,6 @@ namespace Mau.Cli
                 return 0;
             }
         }
-
         /// <summary>
         /// 拷贝目录——递归
         /// </summary>

@@ -99,7 +99,7 @@ public sealed class SysCommand
         /// </summary>
         /// <returns>指令清单文本</returns>
         public static string Usage()
-        {
+{
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("## SYS USAGE");
             sb.AppendLine("- sys.audit [category=] [source=] [tail=N] [from=] [to=]");
@@ -111,9 +111,14 @@ public sealed class SysCommand
             sb.AppendLine("- sys.box [scope=] [key=]");
             sb.AppendLine("- sys.conf [key=] [tail=N]");
             sb.AppendLine("- sys.flow [tail=N]");
+            sb.AppendLine();
+            // GAP.4 数据分层与落盘策略——段来源透明化（查询与留痕分离）
+            sb.AppendLine("## 数据分层与落盘");
+            sb.AppendLine("- 实时态: DataBox 当前状态（sys.keys/oa/flow 实时段——有服务绑定才输出）");
+            sb.AppendLine("- 历史: 内存环形缓冲（10000 条满覆盖——sys.audit/cmd/trace/logs/conf + 实时段的历史部分；查询唯一数据源）");
+            sb.AppendLine("- 落盘: Data/audit/{session}/{date}.md MD 留痕（1s 批量 flush——强杀进程丢 ≤1s；优雅退出 Shutdown 全落盘；不参与查询——人类/AI 阅读用）");
             return sb.ToString();
         }
-
         /// <summary>
         /// sys.audit——审计流查询（多条件：类别/来源/帧范围/tail）
         /// </summary>

@@ -6,7 +6,9 @@ namespace Mau.Runtime.Tests
     /// <summary>
     /// sys.* 指令解析器测试——A.5 基座能力（--cmd/UI/管道统一指令入口）
     /// 隔离：AuditStore 内存模式（不触碰 Default）；DataBox 测试后 ClearAll
+    /// 集合：AuditSerial（DataBox 全局静态 Bind/Unbind——M60 静态污染同族；全量跑实时态段竞态）
     /// </summary>
+    [Collection("AuditSerial")]
     public sealed class SysCommandTests
     {
         /// <summary>

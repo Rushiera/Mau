@@ -1,4 +1,4 @@
-using Mau.Runtime;
+﻿using Mau.Runtime;
 using Xunit;
 
 namespace Mau.Runtime.Tests
@@ -103,7 +103,10 @@ namespace Mau.Runtime.Tests
         public void Format_EmptyAndEvents()
         {
             AuditQuery query = CreateQueryWithEvents();
-            Assert.Equal("（无匹配）", query.FormatEvents(new AuditEvent[0]));
+            // GAP.4 段来源标注——空事件输出含数据源行 + （无匹配）
+            string emptyText = query.FormatEvents(new AuditEvent[0]);
+            Assert.Contains("数据源", emptyText);
+            Assert.Contains("（无匹配）", emptyText);
             AuditEvent[] events = query.Segment(10, 10, null, null);
             string text = query.FormatEvents(events);
             Assert.Contains("## E0000001", text);

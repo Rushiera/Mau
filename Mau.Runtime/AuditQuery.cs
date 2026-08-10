@@ -195,9 +195,11 @@ namespace Mau.Runtime
         /// <param name="frameTo">结束帧（含）</param>
         /// <returns>MD 文本</returns>
         public string FormatStats(AuditStat[] stats, long frameFrom, long frameTo)
-        {
+{
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("## AUDIT STAT");
+            // GAP.4 段来源标注——统计同样读环形缓冲
+            sb.AppendLine("- 数据源: 环形缓冲（内存 " + _store.RingCapacity + " 条，满则覆盖最旧；落盘 MD 文件不参与查询）");
             sb.AppendLine("- frame: " + frameFrom + "-" + frameTo);
             long total = 0;
             for (int i = 0; i < stats.Length; i = i + 1)
@@ -211,24 +213,25 @@ namespace Mau.Runtime
             }
             return sb.ToString();
         }
-
         /// <summary>
         /// 事件序列 MD 格式化——每事件标题行 + 属性行；空数组输出（无匹配）
         /// </summary>
         /// <param name="events">事件数组</param>
         /// <returns>MD 文本</returns>
         public string FormatEvents(AuditEvent[] events)
-        {
+{
+            // GAP.4 段来源标注——查询数据源 = 环形缓冲（内存）；落盘文件为 MD 留痕不参与查询
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("- 数据源: 环形缓冲（内存 " + _store.RingCapacity + " 条，满则覆盖最旧；落盘 MD 文件不参与查询）");
             if (events.Length == 0)
             {
-                return "（无匹配）";
+                sb.AppendLine("（无匹配）");
+                return sb.ToString();
             }
-            StringBuilder sb = new StringBuilder();
             for (int i = 0; i < events.Length; i = i + 1)
             {
                 sb.Append(AuditStore.FormatEvent(events[i]));
             }
             return sb.ToString();
-        }
-    }
+        }    }
 }

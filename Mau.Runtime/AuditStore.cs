@@ -93,7 +93,19 @@ private long _currentFrame;
                 }
             }
         }
-
+/// <summary>
+/// 环形缓冲容量——查询数据源边界（AuditQuery 输出标注用；落盘文件为 MD 留痕不参与查询）
+/// </summary>
+public int RingCapacity
+{
+    get
+    {
+        lock (_gate)
+        {
+            return _capacity;
+        }
+    }
+}
         /// <summary>
         /// 注入审计根目录——创建会话目录 + 写会话头 + 启动过期清理。宿主启动时调用一次（幂等）。
         /// </summary>
