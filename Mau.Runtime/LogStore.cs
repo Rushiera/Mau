@@ -110,8 +110,14 @@ namespace Mau.Runtime
             {
                 try
                 {
+                    // 类别段——C/O 类落盘保留类别（G1 覆盖：非空显示 [{category}]）
                     string line = entry.Time + " | " + entry.Module + " | "
                         + LevelText(level) + " | " + entry.Message;
+                    if (entry.Category.Length > 0)
+                    {
+                        line = entry.Time + " | " + entry.Module + " | "
+                            + LevelText(level) + " | [" + entry.Category + "] | " + entry.Message;
+                    }
                     System.IO.File.AppendAllText(LogFilePath, line + "\n",
                         new System.Text.UTF8Encoding(false));
                 }

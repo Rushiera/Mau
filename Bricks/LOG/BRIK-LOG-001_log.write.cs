@@ -44,8 +44,14 @@ namespace Mau.Bricks
             {
                 try
                 {
+                    // 类别段——C/O 类落盘保留类别（G1 覆盖：非空显示 [{category}]）
                     string line = entry.Time + " | " + entry.Module + " | "
                         + LogStore.LevelText(level) + " | " + entry.Message;
+                    if (entry.Category.Length > 0)
+                    {
+                        line = entry.Time + " | " + entry.Module + " | "
+                            + LogStore.LevelText(level) + " | [" + entry.Category + "] | " + entry.Message;
+                    }
                     File.AppendAllText(LogStore.LogFilePath, line + "\n",
                         new UTF8Encoding(false));
                 }
@@ -58,4 +64,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:527BFB7248CAF7322BA3D0CCDF7C1CE5D490D6BC9B9B49DE306126727704472A
+// #MAU_CHECKSUM:SHA256:34CAAAA0CF7CDB0C514260ED1B0F460999ED8A419527E7C00F6D0316DAB72B42

@@ -31,8 +31,15 @@ namespace Mau.Bricks
                 for (int i = 0; i < LogStore.AllLog.Count; i = i + 1)
                 {
                     LogStore.LogEntry entry = LogStore.AllLog[i];
+                    // 类别段——C/O 类输出保留类别（G2 覆盖）
+                    string cat = "";
+                    if (entry.Category.Length > 0)
+                    {
+                        cat = " | [" + entry.Category + "]";
+                    }
                     sb.Append(entry.Time).Append(" | ").Append(entry.Module)
                         .Append(" | ").Append(LogStore.LevelText(entry.Level))
+                        .Append(cat)
                         .Append(" | ").Append(entry.Message).Append('\n');
                 }
             }
@@ -41,4 +48,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:CFA9236B8138F2CCC23F6C4395EC9B8A5FDA72C16FF8A8B36B3949531F37AD44
+// #MAU_CHECKSUM:SHA256:7BF978D2478B47F3353BDF79CE805CE96334AEC4972B4DBAD823C18D6EAA33AB
