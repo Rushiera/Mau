@@ -1,21 +1,20 @@
-﻿using System;
-using System.IO;
-using System.IO.Pipes;
-using System.Text;
+using System;
 using Mau.Development;
+using Mau.Runtime;
 
 namespace Mau.Serve
 {
     /// <summary>
     /// Roslyn 查看器工作进程——NamedPipe 常驻，服务 csharpcode 读/查/改 + 口袋编译。
     /// Roslyn 状态单写者：请求串行处理，天然无并发冲突。
+    /// 基建评审 GAP.3（v0.84）：监听样板下沉 PipeService（多请求连接模式）——本类只保留协议分发。
     /// </summary>
     public sealed class MauServeWorker
     {
         /// <summary>
-        /// 管道名
+        /// 管道服务基座——监听循环 + 连接管理（多请求：连接内循环直到 EOF/stop）
         /// </summary>
-        private readonly string MauServeWorker_PipeName;
+        private readonly PipeService _service;
 
         /// <summary>
         /// 源码工作区——读/查/改
@@ -33,6 +32,11 @@ namespace Mau.Serve
         private volatile bool MauServeWorker_Stopped;
 
         /// <summary>
+        /// 停止等待事件——Run 阻塞直到 stop
+        /// </summary>
+        private readonly System.Threading.ManualResetEventSlim _stopEvent = new System.Threading.ManualResetEventSlim(false);
+
+        /// <summary>
         /// 绑定工作区并准备监听
         /// </summary>
         /// <param name="pipeName">管道名</param>
@@ -44,128 +48,50 @@ namespace Mau.Serve
             {
                 throw new ArgumentException("Pipe name is empty.", "pipeName");
             }
-            MauServeWorker_PipeName = pipeName;
             MauServeWorker_Workspace = new MauRoslynSourceWorkspace(projectRoot);
             MauServeWorker_Compiler = new MauPocketCompiler(pocketRoot);
+            _service = new PipeService(pipeName, HandleLine, false);
         }
 
         /// <summary>
-        /// 进入监听循环——阻塞直到 stop 请求或管道关闭
+        /// 进入监听——阻塞直到 stop 请求（原 Run 语义保持：调用方 Task 驱动）
         /// </summary>
         public void Run()
         {
-            using (NamedPipeServerStream server = new NamedPipeServerStream(
-                MauServeWorker_PipeName, PipeDirection.InOut, 1,
-                PipeTransmissionMode.Byte, PipeOptions.Asynchronous))
+            _service.Start();
+            while (!MauServeWorker_Stopped)
             {
-                while (!MauServeWorker_Stopped)
-                {
-                    try
-                    {
-                        server.WaitForConnection();
-                    }
-                    catch (Exception ex)
-                    {
-                        if (!MauServeWorker_Stopped)
-                        {
-                            Console.Error.WriteLine("等待连接失败: " + ex.Message);
-                        }
-                        break;
-                    }
-                    try
-                    {
-                        ServeConnection(server);
-                    }
-                    catch (Exception ex)
-                    {
-                        if (!MauServeWorker_Stopped)
-                        {
-                            Console.Error.WriteLine("连接处理失败: " + ex.GetType().Name + ": " + ex.Message);
-                            Console.Error.WriteLine(ex.StackTrace);
-                        }
-                    }
-                    try
-                    {
-                        server.Disconnect();
-                    }
-                    catch
-                    {
-                        // 客户端已断开——忽略
-                    }
-                }
+                System.Threading.Thread.Sleep(50);
             }
+            _service.Dispose();
+            _stopEvent.Set();
         }
 
         /// <summary>
-        /// 处理一次连接的请求循环
+        /// 请求行处理器——解析 ServeRequest → 分发 → 响应行；stop 关闭连接
         /// </summary>
-        /// <param name="server">管道服务端</param>
-        private void ServeConnection(NamedPipeServerStream server)
-        {
-            // leaveOpen: true——reader/writer 释放时不关闭底层管道，支持重连
-            StreamReader reader = new StreamReader(server, Encoding.UTF8,
-                false, 1024, true);
-            StreamWriter writer = new StreamWriter(server, new UTF8Encoding(false),
-                1024, true);
+        /// <param name="line">请求行 JSON</param>
+        /// <returns>响应行 JSON；null=关闭连接</returns>
+        private string? HandleLine(string line)
+{
+            ServeRequest request;
             try
             {
-                writer.AutoFlush = true;
-                while (!MauServeWorker_Stopped)
-                {
-                    string? line = reader.ReadLine();
-                    if (line == null)
-                    {
-                        break;
-                    }
-                    ServeRequest request;
-                    try
-                    {
-                        request = ServeRequest.FromJsonLine(line);
-                    }
-                    catch (Exception ex)
-                    {
-                        WriteError(writer, "请求解析失败: " + ex.Message);
-                        continue;
-                    }
-                    ServeResponse response = Dispatch(request);
-                    try
-                    {
-                        writer.WriteLine(response.ToJsonLine());
-                    }
-                    catch
-                    {
-                        // 客户端已断开——结束本连接
-                        break;
-                    }
-                    if (request.Op == "stop")
-                    {
-                        MauServeWorker_Stopped = true;
-                        break;
-                    }
-                }
+                request = ServeRequest.FromJsonLine(line);
             }
-            finally
+            catch (Exception ex)
             {
-                // 对端断开后 Flush 必抛 broken——吞掉，不干扰重连
-                try
-                {
-                    reader.Dispose();
-                }
-                catch
-                {
-                    // 忽略
-                }
-                try
-                {
-                    writer.Dispose();
-                }
-                catch
-                {
-                    // 忽略
-                }
+                return ErrorResponse("请求解析失败: " + ex.Message);
             }
+            ServeResponse response = Dispatch(request);
+            if (request.Op == "stop")
+            {
+                // 写 "stopping" 响应后停止——MauServeClient.Stop 期望读到响应行（协议兼容）
+                MauServeWorker_Stopped = true;
+                return response.ToJsonLine();
+            }
+            return response.ToJsonLine();
         }
-
         /// <summary>
         /// 分发请求到工作区或编译器
         /// </summary>
@@ -246,16 +172,16 @@ namespace Mau.Serve
         }
 
         /// <summary>
-        /// 写出错误响应
+        /// 生成错误响应行
         /// </summary>
-        /// <param name="writer">写入器</param>
         /// <param name="message">错误消息</param>
-        private void WriteError(StreamWriter writer, string message)
+        /// <returns>响应行 JSON</returns>
+        private static string ErrorResponse(string message)
         {
             ServeResponse response = new ServeResponse();
             response.Ok = false;
             response.Error = message;
-            writer.WriteLine(response.ToJsonLine());
+            return response.ToJsonLine();
         }
     }
 }
