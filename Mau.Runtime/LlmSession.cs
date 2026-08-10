@@ -97,7 +97,20 @@ public static bool HasActiveSession()
 {
     return !Sessions.IsEmpty;
 }
-        /// <summary>
+/// <summary>
+/// 活跃会话清单快照——GAP.7 sys.llm 查询源（requestId → 会话；ConcurrentDictionary 枚举线程安全）
+/// </summary>
+/// <returns>会话键值对数组</returns>
+public static KeyValuePair<string, LlmStreamSession>[] GetActiveSessions()
+{
+    List<KeyValuePair<string, LlmStreamSession>> list = new List<KeyValuePair<string, LlmStreamSession>>();
+    foreach (KeyValuePair<string, LlmStreamSession> pair in Sessions)
+    {
+        list.Add(pair);
+    }
+
+    return list.ToArray();
+}        /// <summary>
         /// 入队终态分片——Interlocked 保证只入队一次
         /// </summary>
         /// <param name="session">会话</param>

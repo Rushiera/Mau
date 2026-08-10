@@ -273,5 +273,29 @@ namespace Mau.Runtime.Tests
                 DataBox.Unbind<IOA>();
             }
         }
+
+        /// <summary>
+        /// GAP.7——sys.llm 输出活跃会话清单（requestId/创建时间/队列深度）
+        /// </summary>
+        [Fact]
+        public void SysLlm_ListsActiveSessions()
+        {
+            string requestId = "";
+            LlmStreamSession? session = LlmSession.CreateSession(out requestId);
+            try
+            {
+                Assert.NotNull(session);
+                SysCommand sys = CreateSysWithEvents();
+                string text = sys.Execute("sys.llm");
+                Assert.Contains("## SYS.LLM", text);
+                Assert.Contains(requestId, text);
+                Assert.Contains("queue=", text);
+                Assert.Contains("created=", text);
+            }
+            finally
+            {
+                LlmSession.RemoveSession(requestId);
+            }
+        }
     }
 }

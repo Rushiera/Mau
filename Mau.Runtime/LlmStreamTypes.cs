@@ -32,19 +32,22 @@ namespace Mau.Runtime
         /// 最后消费的分片——判断积木（is_end/is_tool）的查询源
         /// </summary>
         public LlmStreamChunk? LastChunk;
-
+/// <summary>
+/// 创建时间（UTC）——活跃会话查询（GAP.7 sys.llm）的时间轴
+/// </summary>
+public readonly System.DateTime CreatedAt;
         /// <summary>
         /// 构造带超时的会话
         /// </summary>
         /// <param name="timeout">请求超时</param>
         public LlmStreamSession(System.TimeSpan timeout)
-        {
+{
             Cancel = new CancellationTokenSource(timeout);
             Worker = null;
             IsTerminal = 0;
             LastChunk = null;
-        }
-    }
+            CreatedAt = System.DateTime.UtcNow;
+        }    }
 
     /// <summary>
     /// 流式分片——单次 read_chunk 的载荷

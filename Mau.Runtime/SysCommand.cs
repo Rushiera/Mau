@@ -99,6 +99,10 @@ public sealed class SysCommand
             {
                 return SysFlow(args);
             }
+            if (cmd == "sys.llm")
+            {
+                return SysLlm(args);
+            }
             return "未知指令: " + cmd + "\n" + Usage();
         }
 
@@ -121,6 +125,7 @@ public sealed class SysCommand
             sb.AppendLine("- sys.box [scope=] [key=]");
             sb.AppendLine("- sys.conf [key=] [tail=N]");
             sb.AppendLine("- sys.flow [tail=N]");
+            sb.AppendLine("- sys.llm（活跃 LLM 会话列表：requestId/创建时间/队列深度）");
             sb.AppendLine();
             // GAP.4 数据分层与落盘策略——段来源透明化（查询与留痕分离）
             sb.AppendLine("## 数据分层与落盘");
@@ -465,7 +470,33 @@ public sealed class SysCommand
             sb.Append(_audit.FormatEvents(events));
             return sb.ToString();
         }
-        /// <summary>
+/// <summary>
+/// sys.llm——活跃 LLM 会话清单（GAP.7：requestId/创建时间/队列深度——CH4 v1.5b 会话残留观测缺口）
+/// </summary>
+/// <param name = "args">参数</param>
+/// <returns>MD 输出</returns>
+private string SysLlm(Dictionary<string, string> args)
+{
+    StringBuilder sb = new StringBuilder();
+    sb.Append(Header("SYS.LLM", args));
+    KeyValuePair<string, LlmStreamSession>[] sessions = LlmSession.GetActiveSessions();
+    sb.AppendLine("## 活跃会话（实时）");
+    sb.AppendLine("- count=" + sessions.Length);
+    if (sessions.Length == 0)
+    {
+        sb.AppendLine("（无活跃会话）");
+        return sb.ToString();
+    }
+
+    for (int i = 0; i < sessions.Length; i = i + 1)
+    {
+        KeyValuePair<string, LlmStreamSession> pair = sessions[i];
+        LlmStreamSession session = pair.Value;
+        sb.AppendLine("- " + pair.Key + " | created=" + session.CreatedAt.ToLocalTime().ToString("HH:mm:ss") + " | queue=" + session.Chunks.Count + " | terminal=" + (session.IsTerminal != 0 ? "true" : "false"));
+    }
+
+    return sb.ToString();
+}        /// <summary>
         /// 输出头——指令名 + 参数回显
         /// </summary>
         /// <param name="name">指令名</param>
