@@ -175,6 +175,60 @@ namespace Mau.Runtime
             }
             _mainInbox.Enqueue(action);
         }
+/// <summary>
+/// 主线程投递并等待完成——任意线程调用；回调经 Inbox 在下一帧主线程执行。
+/// 超时语义：主线程未驱动/已退出时等待至多 timeoutMs 返回 false；回调异常在调用线程重抛。
+/// 适用：外部线程需要同步查询主线程状态/执行主线程操作（管道/插件/后台线程）。
+/// </summary>
+/// <param name = "action">待执行回调</param>
+/// <param name = "timeoutMs">最长等待毫秒数</param>
+/// <returns>true=已执行完成；false=超时未执行</returns>
+public bool InvokeOnMain(Action action, int timeoutMs)
+{
+    if (action == null)
+    {
+        throw new ArgumentNullException("action");
+    }
+
+    System.Threading.ManualResetEventSlim done = new System.Threading.ManualResetEventSlim(false);
+    System.Exception? error = null;
+    _mainInbox.Enqueue(delegate ()
+    {
+        try
+        {
+            action();
+        }
+        catch (System.Exception ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            done.Set();
+        }
+    });
+    bool completed = done.Wait(timeoutMs);
+    if (!completed)
+    {
+        return false;
+    }
+
+    if (error != null)
+    {
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+    }
+
+    return true;
+} 
+/// <summary>
+/// 主线程投递并等待结果——泛型版本（回调异常在调用线程重抛）
+/// </summary>
+/// <param name = "action">返回结果的回调</param>
+/// <param name = "timeoutMs">最长等待毫秒数</param>
+/// <param name = "result">回调结果（超时时为 default）</param>
+/// <returns>true=已执行完成；false=超时未执行</returns>
+ public  bool  InvokeOnMain < T > ( Func < T > action ,  int  timeoutMs ,  out  T  result ) { if  ( action == null ) { throw  new  ArgumentNullException ( "action" ) ;  } result  =  default  ! ;  System . Threading . ManualResetEventSlim  done  =  new  System . Threading . ManualResetEventSlim ( false ) ;  System . Exception ? error  =  null ;  T  value  =  default  ! ;  _mainInbox . Enqueue ( delegate  ( ) { try  { value  =  action ( ) ;  } catch  ( System . Exception  ex ) { error  =  ex ;  } finally  { done . Set ( ) ;  } } ) ;  bool  completed  =  done . Wait ( timeoutMs ) ;  if  ( ! completed ) { return  false ;  } if  ( error != null ) { System . Runtime . ExceptionServices . ExceptionDispatchInfo . Capture ( error ) . Throw ( ) ;  } result  =  value ;  return  true ;  }
+
 
         /// <summary>
         /// 每帧驱动——帧序：指令冻结 → Inbox 排空 → 指令分发 → 实体驱动 → OA 结算

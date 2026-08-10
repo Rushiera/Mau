@@ -438,12 +438,13 @@ namespace Mau.Runtime
                 }
             }
         }
+/// <summary>
+/// 返回不含 int/text 正文的 Command 域独立摘要——透明度暴露。线程安全：锁内快照，任意线程可调（管道/外部线程查询首选）
+/// </summary>
+///
 
-        /// <summary>
-        /// 返回不含 int/text 正文的 Command 域独立摘要——透明度暴露
-        /// </summary>
-        /// <returns>必要观察事实</returns>
-        public CommandSnapshot GetSnapshot()
+        ///
+public CommandSnapshot GetSnapshot()
         {
             lock (_lock)
             {
@@ -473,25 +474,27 @@ namespace Mau.Runtime
                 return snapshot;
             }
         }
+/// <summary>
+/// 获取注册表调试快照——线程安全：锁内快照，任意线程可调（GetSnapshot 同规）
+/// </summary>
+///
 
-        /// <summary>
-        /// 获取注册表调试快照
-        /// </summary>
-        /// <returns>注册模块文本行</returns>
-        public string[] GetKeyDic()
-        {
+        ///
+public string[] GetKeyDic()
+{
             List<string> lines = new List<string>();
-
-            _threadGuard.AssertMainThread("CommandBus.GetKeyDic");
-            lines.Add("[KeyDic] (" + _keyDic.Count + "个模块)");
-            foreach (KeyValuePair<long, CommandPack> pair in _keyDic)
+            // 线程安全快照——_lock 内遍历（与 GetSnapshot 同规；任意线程可调——管道/外部线程查询）
+            lock (_lock)
             {
-                lines.Add("  " + pair.Key + " (" + pair.Value.CmdKeys.Length + "条) "
-                    + string.Join(", ", pair.Value.CmdKeys));
+                lines.Add("[KeyDic] (" + _keyDic.Count + "个模块)");
+                foreach (KeyValuePair<long, CommandPack> pair in _keyDic)
+                {
+                    lines.Add("  " + pair.Key + " (" + pair.Value.CmdKeys.Length + "条) "
+                        + string.Join(", ", pair.Value.CmdKeys));
+                }
             }
             return lines.ToArray();
         }
-
         /// <summary>
         /// 获取待消费池调试快照
         /// </summary>

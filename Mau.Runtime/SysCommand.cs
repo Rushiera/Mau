@@ -4,12 +4,11 @@ using System.Text;
 
 namespace Mau.Runtime
 {
-    /// <summary>
-    /// sys.* 指令解析器——审计查询的统一指令入口（design-mau-audit.md §八）。
-    /// 基座能力：任何宿主复用（--cmd 观测 / UI Console / 未来管道——同一套指令）。
-    /// 查询内核 = 读取三形态（AuditQuery）+ DataBox 当前态；输出统一 MD 键值格式。
-    /// </summary>
-    public sealed class SysCommand
+/// <summary>
+/// sys.* 指令解析器——审计查询的统一指令入口（design-mau-audit.md §八）。基座能力：任何宿主复用（--cmd 观测 / UI Console / 未来管道——同一套指令）。查询内核 = 读取三形态（AuditQuery）+ DataBox 当前态；输出统一 MD 键值格式。线程契约（2026-08-10 基建评审 #1）：Execute 须宿主主线程调用——实时态段访问守卫组件（OA.GetSnapshot / FlowRunner.GetStatus）；非主线程调用须经 FlowRunner.InvokeOnMain 投递（CH4 Ch4ServeServer.RunSysOnMain 样板归零）；历史段（AuditQuery）与 DataBox 查询线程安全
+/// </summary>
+///
+public sealed class SysCommand
     {
         private readonly AuditQuery _audit;
 
