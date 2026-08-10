@@ -89,7 +89,14 @@ namespace Mau.Runtime
             session.Cancel.Dispose();
             return true;
         }
-
+/// <summary>
+/// 是否存在活跃 LLM 会话——流式进行中判定源（llm.finish 移除会话后返回 false）
+/// </summary>
+/// <returns>存在活跃会话为真</returns>
+public static bool HasActiveSession()
+{
+    return !Sessions.IsEmpty;
+}
         /// <summary>
         /// 入队终态分片——Interlocked 保证只入队一次
         /// </summary>

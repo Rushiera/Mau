@@ -53,6 +53,8 @@ namespace Mau.Bricks
                 }
                 writer.WriteEndArray();
                 // [段1] 末尾连续 Assistant 分片 → 流式尾部（打字机数据源）
+                // 🔴 streaming 判定（2026-08-10 修复）：以"活跃 LLM 会话"为准（llm.finish 移除会话后 false）——
+                // 原"末尾有 Assistant = streaming"把已完成的回复误判为流式中（UI 按钮永久锁定）
                 lock (ContextStore.Gate)
                 {
                     int end = session.History.Count;
@@ -61,9 +63,9 @@ namespace Mau.Bricks
                     {
                         start = start - 1;
                     }
-                    bool streaming = start < end;
+                    bool streaming = LlmSession.HasActiveSession();
                     writer.WriteBoolean("streaming", streaming);
-                    if (streaming)
+                    if (streaming && start < end)
                     {
                         StringBuilder sb = new StringBuilder();
                         for (int i = start; i < end; i = i + 1)
@@ -94,4 +96,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:3BFA0EE99B7749A08906F9C351F09DF007476DA7229C1B0B1B5505753545DC74
+// #MAU_CHECKSUM:SHA256:ED52F1F0F86F45F578782F80F18CFC8B8A7536E0EB018074727FDB2AF490DFD0
