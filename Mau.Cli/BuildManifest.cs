@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
@@ -65,6 +65,11 @@ namespace Mau.Cli
         public string DirectoryPath = "";
 
         /// <summary>
+        /// 输入基准目录——仓库根（输入 glob 相对仓库根解析；清单位于 CH4.Corpus/ 等次级时自动向上找）
+        /// </summary>
+        public string InputBaseDir = "";
+
+        /// <summary>
         /// 解析错误——空=成功
         /// </summary>
         public string Error = "";
@@ -103,6 +108,24 @@ namespace Mau.Cli
             }
             manifest.ManifestPath = Path.GetFullPath(path);
             manifest.DirectoryPath = Path.GetDirectoryName(manifest.ManifestPath) ?? ".";
+            // 输入基准 = 仓库根——向上找含 .sln 或 .git 的目录（输入 glob 相对仓库根解析；P2：清单放 CH4.Corpus/ 次级）
+            string? repoProbe = manifest.DirectoryPath;
+            while (repoProbe != null)
+            {
+                if (File.Exists(Path.Combine(repoProbe, ".git"))
+                    || Directory.Exists(Path.Combine(repoProbe, ".git"))
+                    || File.Exists(Path.Combine(repoProbe, "Mau.sln"))
+                    || File.Exists(Path.Combine(repoProbe, "CH4.sln")))
+                {
+                    manifest.InputBaseDir = repoProbe;
+                    break;
+                }
+                repoProbe = Directory.GetParent(repoProbe)?.FullName;
+            }
+            if (manifest.InputBaseDir.Length == 0)
+            {
+                manifest.InputBaseDir = manifest.DirectoryPath;
+            }
 
             string content = File.ReadAllText(path).Replace("\r\n", "\n");
             string[] lines = content.Split('\n');
@@ -317,17 +340,17 @@ namespace Mau.Cli
         }
 
         /// <summary>
-        /// 展开输入 glob——相对清单目录；支持 ** 递归 + 单段 *；返回绝对路径列表（排序去重）
+        /// 展开输入 glob——相对输入基准（仓库根）；支持 ** 递归 + 单段 *；返回绝对路径列表（排序去重）
         /// </summary>
         /// <param name="step">环节</param>
         /// <returns>文件绝对路径列表</returns>
         public List<string> ExpandInputs(BuildStep step)
         {
             List<string> files = new List<string>();
+            string baseDir = InputBaseDir.Length > 0 ? InputBaseDir : DirectoryPath;
             for (int g = 0; g < step.Inputs.Count; g++)
             {
                 string pattern = step.Inputs[g].Replace('\\', '/');
-                string baseDir = DirectoryPath;
                 string fullPattern = pattern;
                 bool recursive = false;
                 int dstar = pattern.IndexOf("**", StringComparison.Ordinal);
@@ -348,7 +371,13 @@ namespace Mau.Cli
                             recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
                         for (int i = 0; i < all.Length; i++)
                         {
-                            files.Add(Path.GetFullPath(all[i]));
+                            string full = Path.GetFullPath(all[i]);
+                            // 排除编译产物目录（bin/obj/Debug/Release）——产物不参与指纹，否则 dotnet build 每次漂移
+                            if (IsArtifactPath(full))
+                            {
+                                continue;
+                            }
+                            files.Add(full);
                         }
                     }
                     continue;
@@ -367,7 +396,12 @@ namespace Mau.Cli
                         string[] matched = Directory.GetFiles(fullDir, filePart, SearchOption.TopDirectoryOnly);
                         for (int i = 0; i < matched.Length; i++)
                         {
-                            files.Add(Path.GetFullPath(matched[i]));
+                            string full = Path.GetFullPath(matched[i]);
+                            if (IsArtifactPath(full))
+                            {
+                                continue;
+                            }
+                            files.Add(full);
                         }
                     }
                 }
@@ -376,12 +410,43 @@ namespace Mau.Cli
                     string fullFile = Path.Combine(baseDir, pattern.Replace('/', Path.DirectorySeparatorChar));
                     if (File.Exists(fullFile))
                     {
-                        files.Add(Path.GetFullPath(fullFile));
+                        string full = Path.GetFullPath(fullFile);
+                        if (!IsArtifactPath(full))
+                        {
+                            files.Add(full);
+                        }
                     }
                 }
             }
             files.Sort(StringComparer.OrdinalIgnoreCase);
             return files;
+        }
+
+        /// <summary>
+        /// 编译产物路径判定——路径段含 bin/obj/Debug/Release（大小写不敏感）
+        /// </summary>
+        /// <param name="fullPath">文件绝对路径</param>
+        /// <returns>是产物路径</returns>
+        private static bool IsArtifactPath(string fullPath)
+        {
+            string normalized = fullPath.Replace('/', Path.DirectorySeparatorChar);
+            string[] segments = normalized.Split(Path.DirectorySeparatorChar);
+            for (int i = 0; i < segments.Length; i++)
+            {
+                string seg = segments[i];
+                if (seg.Length == 0)
+                {
+                    continue;
+                }
+                if (string.Equals(seg, "bin", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(seg, "obj", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(seg, "Debug", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(seg, "Release", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>
