@@ -192,7 +192,7 @@ public static KeyValuePair<string, LlmStreamSession>[] GetActiveSessions()
         /// <param name="sawFinish">是否观察到 finish_reason</param>
         private static void ParseStreamEvent(string payload, LlmStreamSession session,
             Dictionary<int, LlmToolCallBuilder> toolCalls, out bool sawFinish)
-        {
+{
             sawFinish = false;
             using (System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(payload))
             {
@@ -242,6 +242,13 @@ public static KeyValuePair<string, LlmStreamSession>[] GetActiveSessions()
                     {
                         // 空回复检测源——正文累计（2026-08-10 续传链路）
                         session.ContentChars = session.ContentChars + content.Length;
+                        // D.2 分片合并——完整正文累积（BRIK-LLM-027 ctx_push_stream 数据源；2026-08-11）
+                        session.ContentBuilder.Append(content);
+                    }
+                    if (reasoning.Length > 0)
+                    {
+                        // G.2 思考显示——完整推理累积（2026-08-11）
+                        session.ReasoningBuilder.Append(reasoning);
                     }
                     LlmStreamChunk chunk = new LlmStreamChunk();
                     chunk.ContentDelta = content;
@@ -250,7 +257,6 @@ public static KeyValuePair<string, LlmStreamSession>[] GetActiveSessions()
                 }
             }
         }
-
         /// <summary>
         /// 聚合事件内的工具调用分片
         /// </summary>

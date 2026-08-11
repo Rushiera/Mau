@@ -5,7 +5,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>Mau.Cli</RootNamespace>
     <AssemblyName>Mau</AssemblyName>
-    <Version>0.97</Version>
+    <Version>0.99</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>

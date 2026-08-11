@@ -5,7 +5,7 @@
 // 作用: 会话快照合成——读 ContextStore 合成 ChatSnapshot JSON（entries + streaming + streamText + stats）
 // 依赖: tool.display
 // 引用: System.IO · System.Text
-// 原理: 历史遍历 → Utf8JsonWriter 全角色结构保留；Tool 条目经 tool.display 摘要为单行；末尾连续 Assistant 分片标记为流式尾部
+// 原理: 历史遍历 → Utf8JsonWriter 全角色结构保留；Tool 条目经 tool.display 摘要为单行；流式尾部读活跃会话 ContentBuilder 累积（D.2 分片合并——2026-08-11）
 // 常用: UiPet 每帧快照合成（Pet-UI 模式——快照经 DataBox 原子 push 到 UI 线程）
 // ═══════════════════════════════════════════════════
 using System.IO;
@@ -21,7 +21,7 @@ namespace Mau.Bricks
     public static class UiSnapshotChatBrick
     {
         /// <summary>
-        /// 合成 ChatSnapshot JSON——entries 全量 + 末尾连续 Assistant 分片为流式尾部
+        /// 合成 ChatSnapshot JSON——entries 全量 + 流式尾部读活跃会话累积（D.2 分片合并）
         /// </summary>
         /// <param name="sessionKey">会话 Key</param>
         /// <param name="chatJson">ChatSnapshot JSON</param>
@@ -61,34 +61,28 @@ namespace Mau.Bricks
                     }
                 }
                 writer.WriteEndArray();
-                // [段1] 末尾连续 Assistant 分片 → 流式尾部（打字机数据源）
+                // [段1] 流式尾部 → 打字机数据源（D.2 分片合并：流式期间分片不再 push ContextStore——改为读 LlmStreamSession.ContentBuilder 累积）
                 // 🔴 streaming 判定（2026-08-10 修复）：以"活跃 LLM 会话"为准（llm.finish 移除会话后 false）——
                 // 原"末尾有 Assistant = streaming"把已完成的回复误判为流式中（UI 按钮永久锁定）
+                // 🔴 streamText 数据源（2026-08-11 D.2）：原"末尾连续 Assistant 分片拼接"——T_Append 逐分片 push 的膨胀残留；
+                //    修复后分片只在会话累积（SSE 解析 ContentBuilder），快照直接从活跃会话读累积正文
                 lock (ContextStore.Gate)
                 {
-                    int end = session.History.Count;
-                    int start = end;
-                    while (start > 0 && session.History[start - 1].Role == "Assistant")
-                    {
-                        start = start - 1;
-                    }
                     bool streaming = LlmSession.HasActiveSession();
                     writer.WriteBoolean("streaming", streaming);
-                    if (streaming && start < end)
+                    string streamText = "";
+                    if (streaming)
                     {
-                        StringBuilder sb = new StringBuilder();
-                        for (int i = start; i < end; i = i + 1)
+                        // 活跃会话累积正文——与 T_PushStream（BRIK-LLM-027 完成时合并 push）同源
+                        KeyValuePair<string, LlmStreamSession>[] sessions = LlmSession.GetActiveSessions();
+                        if (sessions.Length > 0)
                         {
-                            sb.Append(session.History[i].Content);
+                            streamText = sessions[0].Value.ContentBuilder.ToString();
                         }
-                        writer.WriteString("streamText", sb.ToString());
                     }
-                    else
-                    {
-                        writer.WriteString("streamText", "");
-                    }
-                    // [段1.5] 动效子状态（P2-7——CH2 PushAnimState 移植）：Think/Reply（活跃会话 LastChunk 分片类型）/ WaitTools（工具等待通道）/ 空=空闲
-                    //   Think = 活跃但无 content 分片（思考中）；Reply = 最近分片是 content；WaitTools = tool_req_flag 置位且 tools_done 未置位
+                    writer.WriteString("streamText", streamText);
+                    // [段1.5] 动效子状态（P2-7——CH2 PushAnimState 移植）：Think/Reply（活跃会话 ContentBuilder 累积）/ WaitTools（工具等待通道）/ 空=空闲
+                    //   Think = 活跃但无正文累积（思考中）；Reply = 正文累积非空（回复中）；WaitTools = tool_req_flag 置位且 tools_done 未置位
                     string subState = "";
                     if (streaming)
                     {
@@ -96,14 +90,10 @@ namespace Mau.Bricks
                         KeyValuePair<string, LlmStreamSession>[] sessions = LlmSession.GetActiveSessions();
                         if (sessions.Length > 0)
                         {
-                            LlmStreamChunk? last = sessions[0].Value.LastChunk;
-                            if (last != null && last.ContentDelta.Length > 0)
+                            // D.2 分片合并：正文累积非空 = 已开始回复（比 LastChunk 更稳——累积不被消费清空）
+                            if (sessions[0].Value.ContentBuilder.Length > 0)
                             {
                                 subState = "Reply";
-                            }
-                            else if (last != null && last.ReasoningDelta.Length > 0)
-                            {
-                                subState = "Think";
                             }
                         }
                     }
@@ -138,4 +128,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:64242CE3D3CABC4919FE7D28A90D43DE2251C9A7E8918CE16043DFA1635E8085
+// #MAU_CHECKSUM:SHA256:4C83EEA659E39EE79C1E08E13487623C36C7FE40BB0E7121E99755E90CB5B71F

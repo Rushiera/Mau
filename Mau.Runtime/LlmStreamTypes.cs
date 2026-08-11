@@ -37,6 +37,14 @@ namespace Mau.Runtime
         /// 本轮累计正文（content）字符数——空回复检测源（llm.content_empty；2026-08-10 续传链路）
         /// </summary>
         public long ContentChars;
+/// <summary>
+/// 本轮完整正文累积——流式分片合并源（D.2 分片合并；2026-08-11）
+/// </summary>
+public readonly System.Text.StringBuilder ContentBuilder = new System.Text.StringBuilder(); 
+/// <summary>
+/// 本轮完整推理累积——思考显示数据源（G.2 思考显示；2026-08-11）
+/// </summary>
+ public  readonly  System . Text . StringBuilder  ReasoningBuilder  =  new  System . Text . StringBuilder ( ) ;
 
         /// <summary>
         /// 本轮 prompt token（usage 解析——轮次统计 llm.round_stats_text；2026-08-10）
@@ -83,7 +91,7 @@ public readonly System.DateTime CreatedAt;
             UsageCacheHit = 0;
             StartTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
             FinishedTimestamp = 0;
-        }    }
+        }}
 
     /// <summary>
     /// 流式分片——单次 read_chunk 的载荷

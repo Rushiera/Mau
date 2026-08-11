@@ -93,6 +93,7 @@
 | BRIK-LLM-024 | llm.round_stats_text | LLM | LLM/BRIK-LLM-024_llm.round_stats_text.cs | 无 | active |  |
 | BRIK-LLM-025 | llm.ctx_push_system | LLM | LLM/BRIK-LLM-025_llm.ctx_push_system.cs | 无 | active |  |
 | BRIK-LLM-026 | llm.has_active_session | LLM | LLM/BRIK-LLM-026_llm.has_active_session.cs | 无 | active |  |
+| BRIK-LLM-027 | llm.ctx_push_stream | LLM | LLM/BRIK-LLM-027_llm.ctx_push_stream.cs | 无 | active |  |
 | BRIK-LOG-001 | log.write | LOG | LOG/BRIK-LOG-001_log.write.cs | 无 | active |  |
 | BRIK-LOG-002 | log.all | LOG | LOG/BRIK-LOG-002_log.all.cs | 无 | active |  |
 | BRIK-LOG-003 | log.count | LOG | LOG/BRIK-LOG-003_log.count.cs | 无 | active |  |
