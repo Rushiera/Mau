@@ -216,5 +216,92 @@ namespace Mau.Runtime.Tests
                 Assert.Equal("T_Test", logs[i].TransitionName);
             }
         }
+
+        // ──────────────────────────────────────
+        // V9: FlowHost.ReloadFlows——热重载（② 热感知 D8/D10）
+        // ──────────────────────────────────────
+
+        /// <summary>
+        /// 热重载——同 dll 加载新版本替换旧 handle，SourceDll 匹配
+        /// </summary>
+        [Fact]
+        public void ReloadFlows_ValidDll_ReplacesOldHandle()
+        {
+            AssertFixturesExist();
+            using (FlowHost host = new FlowHost())
+            {
+                FlowHandle[] olds = host.LoadAll(ValidDllPath);
+                Assert.NotEmpty(olds);
+                Assert.Equal(olds.Length, host.Count);
+
+                string[] report = host.ReloadFlows(new string[] { ValidDllPath });
+                Assert.Single(report);
+                Assert.Contains("热重载成功", report[0]);
+                Assert.Equal(olds.Length, host.Count);
+            }
+        }
+
+        /// <summary>
+        /// 热重载失败——坏 dll 加载失败保留旧 handle（D8 失败回滚）
+        /// </summary>
+        [Fact]
+        public void ReloadFlows_BadDll_KeepsOldHandle()
+        {
+            AssertFixturesExist();
+            using (FlowHost host = new FlowHost())
+            {
+                FlowHandle[] olds = host.LoadAll(ValidDllPath);
+                Assert.Equal(olds.Length, host.Count);
+
+                // 损坏 dll——不是有效 .NET 程序集
+                string badDll = Path.Combine(FixtureDir, "bad-reload.dll");
+                File.WriteAllText(badDll, "this is not a real dll at all");
+                try
+                {
+                    string[] report = host.ReloadFlows(new string[] { badDll });
+                    Assert.Single(report);
+                    Assert.Contains("加载失败", report[0]);
+                    // 旧 handle 保留——数量不变
+                    Assert.Equal(olds.Length, host.Count);
+                }
+                finally
+                {
+                    if (File.Exists(badDll))
+                    {
+                        File.Delete(badDll);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 热重载无 IObservableFlow 的 dll——失败保留旧（验证 LoadAll 校验）
+        /// </summary>
+        [Fact]
+        public void ReloadFlows_NoInterface_KeepsOldHandle()
+        {
+            AssertFixturesExist();
+            using (FlowHost host = new FlowHost())
+            {
+                FlowHandle[] olds = host.LoadAll(ValidDllPath);
+                Assert.Equal(olds.Length, host.Count);
+
+                string[] report = host.ReloadFlows(new string[] { NoInterfaceDllPath });
+                Assert.Single(report);
+                Assert.Contains("加载失败", report[0]);
+                Assert.Equal(olds.Length, host.Count);
+            }
+        }
+
+        /// <summary>
+        /// FlowHandle.SourceDll——热重载按 dll 粒度匹配（D7）
+        /// </summary>
+        [Fact]
+        public void Load_SourceDll_Populated()
+        {
+            AssertFixturesExist();
+            using FlowHandle handle = FlowHandle.Load(ValidDllPath);
+            Assert.Equal(Path.GetFullPath(ValidDllPath), handle.SourceDll);
+        }
     }
 }

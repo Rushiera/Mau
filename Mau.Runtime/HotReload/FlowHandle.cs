@@ -16,7 +16,10 @@ namespace Mau.Runtime
         private bool _disposed;
         private bool _isFaulted;
         private string _faultReason;
-
+/// <summary>
+/// 来源 DLL 路径——热重载按 dll 粒度匹配（D7 单 dll = 单 Flow 组）
+/// </summary>
+private string _sourceDll;
         /// <summary>
         /// Flow 是否因异常而隔离——Tick 不会再被调用
         /// </summary>
@@ -57,11 +60,21 @@ namespace Mau.Runtime
                 return _flow!;
             }
         }
-
-        private FlowHandle(FlowALC alc, IObservableFlow flow)
+/// <summary>
+/// 来源 DLL 路径——热重载按 dll 粒度匹配（D7 单 dll = 单 Flow 组）
+/// </summary>
+public string SourceDll
+{
+    get
+    {
+        return _sourceDll;
+    }
+}
+        private FlowHandle(FlowALC alc, IObservableFlow flow, string sourceDll)
         {
             _alc = alc;
             _flow = flow;
+            _sourceDll = sourceDll;
             _alcRef = new WeakReference(alc);
             _disposed = false;
             _isFaulted = false;
@@ -88,7 +101,7 @@ namespace Mau.Runtime
             Assembly asm;
             try
             {
-                asm = alc.LoadFromAssemblyPath(dllPath);
+                asm = alc.LoadShared(dllPath);
             }
             catch (BadImageFormatException)
             {
@@ -120,7 +133,7 @@ namespace Mau.Runtime
             }
 
             IObservableFlow flow = (IObservableFlow)instance;
-            return new FlowHandle(alc, flow);
+            return new FlowHandle(alc, flow, Path.GetFullPath(dllPath));
         }
 
         /// <summary>
@@ -143,7 +156,7 @@ namespace Mau.Runtime
             List<Type> flowTypes = new List<Type>();
             try
             {
-                Assembly asm = probe.LoadFromAssemblyPath(dllPath);
+                Assembly asm = probe.LoadShared(dllPath);
                 Type[] types = asm.GetExportedTypes();
                 for (int i = 0; i < types.Length; i = i + 1)
                 {
@@ -167,7 +180,7 @@ namespace Mau.Runtime
             for (int i = 0; i < flowTypes.Count; i = i + 1)
             {
                 FlowALC alc = new FlowALC("Flow_" + baseName + "_" + i.ToString());
-                Assembly asm = alc.LoadFromAssemblyPath(dllPath);
+                Assembly asm = alc.LoadShared(dllPath);
                 string? fullName = flowTypes[i].FullName;
                 if (fullName == null)
                 {
@@ -186,7 +199,7 @@ namespace Mau.Runtime
                     alc.Unload();
                     throw new InvalidOperationException("无法实例化生成流程: " + type.FullName);
                 }
-                handles[i] = new FlowHandle(alc, (IObservableFlow)instance);
+                handles[i] = new FlowHandle(alc, (IObservableFlow)instance, Path.GetFullPath(dllPath));
             }
             return handles;
         }

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace Mau.Runtime
 {
@@ -99,7 +100,65 @@ namespace Mau.Runtime
             }
             return newHandle;
         }
+/// <summary>
+/// 热重载——按 dll 粒度原子替换（D8：新 ALC 加载成功 → 卸旧；失败 → 保留旧 + 报告）。
+/// pending 来自 FlowWatchService（② 热感知）——宿主主动调用（D10 纯手动 API）。
+/// </summary>
+/// <param name = "pendingDlls">待重载 dll 路径清单（完整路径）</param>
+/// <returns>重载报告——每 dll：成功/失败（失败原因）</returns>
+public string[] ReloadFlows(string[] pendingDlls)
+{
+    List<string> report = new List<string>();
+    for (int i = 0; i < pendingDlls.Length; i = i + 1)
+    {
+        string dllPath = Path.GetFullPath(pendingDlls[i]);
+        string fileName = Path.GetFileName(dllPath);
+        FlowHandle[] newHandles;
+        try
+        {
+            // 先加载新版本——验证通过才进入替换（失败保留旧）
+            newHandles = FlowHandle.LoadAll(dllPath);
+            for (int h = 0; h < newHandles.Length; h = h + 1)
+            {
+                newHandles[h].Flow.GetStatus();
+            }
+        }
+        catch (Exception ex)
+        {
+            report.Add("❌ " + fileName + ": 新版本加载失败——" + ex.Message);
+            continue;
+        }
 
+        lock (_lock)
+        {
+            // 卸载同 dll 旧 handle（SourceDll 匹配）
+            List<FlowHandle> olds = new List<FlowHandle>();
+            for (int h = _handles.Count - 1; h >= 0; h = h - 1)
+            {
+                if (string.Equals(_handles[h].SourceDll, dllPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    olds.Add(_handles[h]);
+                    _handles.RemoveAt(h);
+                }
+            }
+
+            for (int o = 0; o < olds.Count; o = o + 1)
+            {
+                olds[o].TryUnload(3);
+            }
+
+            // 注册新 handle
+            for (int n = 0; n < newHandles.Length; n = n + 1)
+            {
+                _handles.Add(newHandles[n]);
+            }
+        }
+
+        report.Add("✅ " + fileName + ": 热重载成功（" + newHandles.Length + " 个 Flow）");
+    }
+
+    return report.ToArray();
+}
         /// <summary>
         /// 卸载所有活跃 Handle
         /// </summary>

@@ -23,12 +23,22 @@ namespace Mau.Runtime
         /// <param name="name">程序集名</param>
         /// <returns>null=回落默认 ALC 或自身已加载</returns>
         protected override Assembly? Load(AssemblyName name)
-        {
+{
             if (name.Name == "Mau.Runtime")
             {
                 return null;
             }
             return null;
-        }
+        }    /// <summary>
+/// 共享句柄加载——FileStream + FileShare.ReadWrite|Delete（不锁文件，支持热重载原子替换）
+/// </summary>
+/// <param name = "assemblyPath">dll 路径</param>
+/// <returns>程序集</returns>
+public Assembly LoadShared(string assemblyPath)
+{
+    using (System.IO.FileStream stream = new System.IO.FileStream(assemblyPath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete))
+    {
+        return LoadFromStream(stream);
     }
+}}
 }
