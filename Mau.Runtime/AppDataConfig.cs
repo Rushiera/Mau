@@ -90,7 +90,13 @@ namespace Mau.Runtime
                 _store = null;
             }
         }
-
+/// <summary>
+/// 重置——恢复默认根目录并清除缓存存储（D26 统一 Reset 契约；宿主切换/测试隔离调用）
+/// </summary>
+public static void Reset()
+{
+    ConfigureRoot("");
+}
         /// <summary>
         /// 读取配置值——不存在返回默认值
         /// </summary>

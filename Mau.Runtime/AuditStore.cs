@@ -60,7 +60,18 @@ private long _currentFrame;
 /// 程序级默认实例——RuntimeLog 静态埋点入口（ConfigureAudit 时设置）
 /// </summary>
  public  static  AuditStore ? Default { get ;  set ;  }
-
+/// <summary>
+/// 重置程序级默认实例——关闭并置空（D26 统一 Reset 契约；宿主切换/测试隔离调用）
+/// </summary>
+public static void Reset()
+{
+    AuditStore? current = Default;
+    Default = null;
+    if (current != null)
+    {
+        current.Shutdown();
+    }
+}
         /// <summary>
         /// 构造审计存储——环形缓冲容量（默认 10000，满则覆盖最旧）
         /// </summary>

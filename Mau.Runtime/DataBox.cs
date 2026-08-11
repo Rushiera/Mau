@@ -313,7 +313,13 @@ namespace Mau.Runtime
             }
             _data.Clear();
         }
-
+/// <summary>
+/// 重置全部——服务 + 数据（D26 统一 Reset 契约；宿主切换/测试隔离调用）
+/// </summary>
+public static void Reset()
+{
+    ClearAll();
+}
         /// <summary>
         /// 全量快照——只读深拷贝（测试断言/观测/审计统一出口）
         /// </summary>

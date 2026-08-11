@@ -204,7 +204,60 @@ private string? _mapText;
             }
             return result;
         }
-        /// <summary>
+/// <summary>
+/// 多源码一次编译（显式引用集 D25）——组模式 mauproj 引用: 确定性：TPA + 基座必需（Mau.Runtime/Mau.Contracts）+ 显式引用清单。
+/// 禁止隐式宿主目录全量引用——生成物只引用声明过的程序集，缺引用即编译失败（确定性）。
+/// </summary>
+/// <param name = "sources">完整 C# 源码数组（与 classNames 一一对应）</param>
+/// <param name = "classNames">逻辑类名数组（仅用于校验，实际类名在源码内）</param>
+/// <param name = "assemblyName">输出程序集名（安全逻辑名）</param>
+/// <param name = "extraReferences">显式引用 dll 绝对路径清单（mauproj 引用: 解析结果）</param>
+/// <returns>编译结果</returns>
+public MauPocketCompileResult CompileManyWithRefs(string[] sources, string[] classNames, string assemblyName, string[] extraReferences)
+{
+    ValidateLogicalName(assemblyName);
+    string buildId = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ") + "-" + Guid.NewGuid().ToString("N");
+    string buildRoot = Path.Combine(MauPocketCompiler_Root, buildId);
+    Directory.CreateDirectory(buildRoot);
+    string assemblyPath = Path.Combine(buildRoot, assemblyName + ".dll");
+    List<SyntaxTree> trees = new List<SyntaxTree>();
+    for (int i = 0; i < sources.Length; i = i + 1)
+    {
+        if (i < classNames.Length)
+        {
+            ValidateLogicalName(classNames[i]);
+        }
+
+        string sourcePath = i < classNames.Length ? (classNames[i] + ".cs") : ("Part" + (i + 1).ToString() + ".cs");
+        trees.Add(CSharpSyntaxTree.ParseText(SafeText(sources[i]), new CSharpParseOptions(LanguageVersion.Latest), path: sourcePath));
+    }
+
+    MetadataReference[] references = BuildReferences(extraReferences);
+    CSharpCompilation compilation = CSharpCompilation.Create(assemblyName + "_" + Guid.NewGuid().ToString("N"), trees, references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release, allowUnsafe: false));
+    MauPocketCompileResult result = new MauPocketCompileResult();
+    result.AssemblyPath = assemblyPath;
+    using (MemoryStream assembly = new MemoryStream())
+    {
+        EmitResult emit = compilation.Emit(assembly);
+        result.Diagnostics = FormatDiagnostics(emit.Diagnostics);
+        result.Success = emit.Success;
+        if (emit.Success)
+        {
+            WriteAtomic(assemblyPath, assembly.ToArray());
+            List<string> sourceNames = new List<string>();
+            for (int s = 0; s < sources.Length; s = s + 1)
+            {
+                string logical = s < classNames.Length ? classNames[s] : ("Part" + (s + 1).ToString());
+                KeepArtifacts(sources[s], logical, buildRoot);
+                sourceNames.Add(logical + ".cs");
+            }
+
+            WriteProjectFile(buildRoot, assemblyName, sourceNames.ToArray());
+        }
+    }
+
+    return result;
+}        /// <summary>
         /// 列出 DLL 中所有带 MauExport 的 public static 方法
         /// </summary>
         /// <param name="assemblyPath">口袋 DLL</param>
@@ -350,7 +403,7 @@ private string? _mapText;
         /// </summary>
         /// <returns>元数据引用</returns>
         private MetadataReference[] BuildReferences()
-        {
+{
             List<MetadataReference> references = new List<MetadataReference>();
             string? trusted = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string;
             if (trusted == null)
@@ -367,8 +420,69 @@ private string? _mapText;
             AddMauReferences(references);
             return references.ToArray();
         }
+/// <summary>
+/// 附加基座必需程序集——Mau.Runtime/Mau.Contracts（宿主目录，大小写不敏感匹配文件名）
+/// </summary>
+/// <param name = "baseDir">宿主目录</param>
+/// <param name = "references">引用集合</param>
+private static void AddBaseRequired(string baseDir, List<MetadataReference> references)
+{
+    string[] required = new string[]
+    {
+        "Mau.Runtime.dll",
+        "Mau.Contracts.dll"
+    };
+    string[] dlls = Directory.GetFiles(baseDir, "*.dll", SearchOption.TopDirectoryOnly);
+    for (int i = 0; i < dlls.Length; i = i + 1)
+    {
+        string name = Path.GetFileName(dlls[i]);
+        for (int r = 0; r < required.Length; r = r + 1)
+        {
+            if (string.Equals(name, required[r], StringComparison.OrdinalIgnoreCase))
+            {
+                references.Add(MetadataReference.CreateFromFile(dlls[i]));
+            }
+        }
+    }
+}        /// <summary>
+/// 建立引用集（显式模式 D25）——TPA + 基座必需（Mau.Runtime/Mau.Contracts）+ 显式引用清单。
+/// 显式引用缺失时静默跳过（解析阶段已校验存在性，此处容错兜底）。
+/// </summary>
+/// <param name = "extraReferences">显式引用 dll 绝对路径清单（mauproj 引用: 解析结果）</param>
+/// <returns>元数据引用</returns>
+private MetadataReference[] BuildReferences(string[] extraReferences)
+{
+    List<MetadataReference> references = new List<MetadataReference>();
+    string? trusted = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string;
+    if (trusted == null)
+    {
+        throw new InvalidOperationException("Trusted platform assemblies are unavailable.");
+    }
 
-        /// <summary>
+    string[] paths = trusted.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+    for (int i = 0; i < paths.Length; i = i + 1)
+    {
+        references.Add(MetadataReference.CreateFromFile(paths[i]));
+    }
+
+    // 基座必需——宿主目录中 Mau.Runtime / Mau.Contracts（生成物契约依赖）
+    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+    if (Directory.Exists(baseDir))
+    {
+        AddBaseRequired(baseDir, references);
+    }
+
+    // 显式引用清单——mauproj 引用: 解析结果（去重）
+    for (int i = 0; i < extraReferences.Length; i = i + 1)
+    {
+        if (File.Exists(extraReferences[i]))
+        {
+            references.Add(MetadataReference.CreateFromFile(extraReferences[i]));
+        }
+    }
+
+    return references.ToArray();
+}/// <summary>
         /// 附加宿主输出目录的全部 dll——基座 + 契约 + 积木 + 宿主自定义（如 CH4.Contracts）
         /// 全量引用语义：生成物编译引用集 = 宿主目录全量（Learn H15 判例——发布完整性=探测路径完整性）
         /// </summary>

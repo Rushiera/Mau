@@ -32,5 +32,11 @@ namespace Mau.Runtime
             }
             _workingDirectory = System.IO.Path.GetFullPath(workingDirectory);
         }
-    }
+/// <summary>
+/// 重置——恢复默认工作目录（进程当前目录）（D26 统一 Reset 契约；宿主切换/测试隔离调用）
+/// </summary>
+public static void Reset()
+{
+    _workingDirectory = Environment.CurrentDirectory;
+}    }
 }

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Text;
 
 namespace Mau.Cli
 {
@@ -53,6 +54,12 @@ namespace Mau.Cli
             for (int i = 0; i < allDlls.Length; i = i + 1)
             {
                 copied = copied + CopyFile(allDlls[i], outDir, ref failed);
+            }
+            // [3] 运行时资产——runtimes/ 递归拷贝（Roslyn/System.Windows.Extensions 等 RID 特定 dll；TopDirectoryOnly 全量拷贝会漏）
+            string runtimesDir = Path.Combine(baseDir, "runtimes");
+            if (Directory.Exists(runtimesDir))
+            {
+                copied = copied + CopyDirectory(runtimesDir, Path.Combine(outDir, "runtimes"), ref failed);
             }
             // [4] 知识资产——Bricks（积木文本库：翻译器构筑期 BrickIndex 必需）+ Mau.Corpus + 工程文档
             string? root = CliSupport.FindWorkspaceRoot();
@@ -177,110 +184,100 @@ private static string FindLockedFile(string[] paths)
             return count;
         }
 /// <summary>
-/// 发布目录冒烟——Mau.exe check --syntax（Bricks 索引随行可用）+ 最小语料 build 闭环
+/// 发布目录冒烟——Mau.exe check --selftest（Bricks 索引随行自检）+ 最小语料 build 闭环
 /// </summary>
-/// <param name = "publishDir">发布目录</param>
-/// <returns>通过</returns>
+///
+
+///
 private static bool SmokeTest(string publishDir)
 {
-    string mauExe = Path.Combine(publishDir, "Mau.exe");
-    if (!File.Exists(mauExe))
-    {
-        Console.Error.WriteLine("冒烟: Mau.exe 缺失——" + mauExe);
-        return false;
-    }
-
-    try
-    {
-        // [1] check --syntax——验证 Bricks/ 已随行且翻译器可用
-        System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo();
-        psi.FileName = mauExe;
-        psi.Arguments = "check --syntax";
-        psi.WorkingDirectory = publishDir;
-        psi.UseShellExecute = false;
-        psi.CreateNoWindow = true;
-        psi.RedirectStandardOutput = true;
-        psi.RedirectStandardError = true;
-        System.Diagnostics.Process? p = System.Diagnostics.Process.Start(psi);
-        if (p == null)
-        {
-            Console.Error.WriteLine("冒烟: 无法启动 Mau.exe check");
-            return false;
-        }
-
-        string stdout = p.StandardOutput.ReadToEnd() ?? "";
-        string stderr = p.StandardError.ReadToEnd() ?? "";
-        p.WaitForExit(120000);
-        if (p.ExitCode != 0)
-        {
-            Console.Error.WriteLine("冒烟: check --syntax 失败（退出码 " + p.ExitCode + "）");
-            Console.Error.WriteLine(stdout);
-            Console.Error.WriteLine(stderr);
-            return false;
-        }
-
-        // [2] 最小语料 build——Mau.Corpus 随行任一语料（目录即清单，不依赖固定文件名）
-        string corpusDir = Path.Combine(publishDir, "Mau.Corpus");
-        string? sample = null;
-        if (Directory.Exists(corpusDir))
-        {
-            string[] corpusFiles = Directory.GetFiles(corpusDir, "*.mau", SearchOption.TopDirectoryOnly);
-            if (corpusFiles.Length > 0)
+            string mauExe = Path.Combine(publishDir, "Mau.exe");
+            if (!File.Exists(mauExe))
             {
-                sample = corpusFiles[0];
+                Console.Error.WriteLine("冒烟: Mau.exe 缺失——" + mauExe);
+                return false;
             }
-        }
-        if (sample == null)
-        {
-            Console.Error.WriteLine("冒烟: Mau.Corpus 无语料——跳过 build 段");
-            return true;
-        }
 
-        string smokeOut = Path.Combine(publishDir, "CatTemp", "smoke");
-        System.Diagnostics.ProcessStartInfo buildPsi = new System.Diagnostics.ProcessStartInfo();
-        buildPsi.FileName = mauExe;
-        buildPsi.Arguments = "build \"" + sample + "\" -o \"" + smokeOut + "\"";
-        buildPsi.WorkingDirectory = publishDir;
-        buildPsi.UseShellExecute = false;
-        buildPsi.CreateNoWindow = true;
-        buildPsi.RedirectStandardOutput = true;
-        buildPsi.RedirectStandardError = true;
-        System.Diagnostics.Process? buildP = System.Diagnostics.Process.Start(buildPsi);
-        if (buildP == null)
-        {
-            Console.Error.WriteLine("冒烟: 无法启动 Mau.exe build");
-            return false;
-        }
-
-        string buildOut = buildP.StandardOutput.ReadToEnd() ?? "";
-        string buildErr = buildP.StandardError.ReadToEnd() ?? "";
-        buildP.WaitForExit(120000);
-        if (buildP.ExitCode != 0)
-        {
-            Console.Error.WriteLine("冒烟: 最小 build 失败（退出码 " + buildP.ExitCode + "）");
-            Console.Error.WriteLine(buildOut);
-            Console.Error.WriteLine(buildErr);
-            return false;
-        }
-
-        try
-        {
-            if (Directory.Exists(smokeOut))
+            try
             {
-                Directory.Delete(smokeOut, true);
-            }
-        }
-        catch
-        {
-        // 冒烟产物清理失败不影响结果
-        }
+                // [1] check --selftest——发布包随行资源自检（不要求 Mau.sln；D24 check-source/selftest 分级）
+                System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo();
+                psi.FileName = mauExe;
+                psi.Arguments = "check --selftest";
+                psi.WorkingDirectory = publishDir;
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                System.Diagnostics.Process? p = System.Diagnostics.Process.Start(psi);
+                if (p == null)
+                {
+                    Console.Error.WriteLine("冒烟: 无法启动 Mau.exe check");
+                    return false;
+                }
 
-        return true;
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine("冒烟: 异常——" + ex.Message);
-        return false;
-    }
-}    }
+                string stdout = p.StandardOutput.ReadToEnd() ?? "";
+                string stderr = p.StandardError.ReadToEnd() ?? "";
+                p.WaitForExit(120000);
+                if (p.ExitCode != 0)
+                {
+                    Console.Error.WriteLine("冒烟: check --selftest 失败（退出码 " + p.ExitCode + "）");
+                    Console.Error.WriteLine(stdout);
+                    Console.Error.WriteLine(stderr);
+                    return false;
+                }
+
+                // [2] 最小构筑闭环——内置最小语料（file.read，随行 Bricks 必然存在），不依赖 Mau.Corpus 内容质量
+                string smokeDir = Path.Combine(publishDir, "CatTemp", "smoke");
+                Directory.CreateDirectory(smokeDir);
+                string smokeMau = Path.Combine(smokeDir, "Smoke.mau");
+                string smokeSource = "Mau 0.1\n基座: Mau.Runtime/v0.1\n\n命题:\n  P_Go 信号\n  P_Done 事实\n  P_Failed 事实\n\n变迁 T_Smoke:\n  前置: P_Go\n  动作: file.read\n  参数: path\n  时限: 60帧\n  后置: P_Done / P_Failed\n";
+                File.WriteAllText(smokeMau, smokeSource, Encoding.UTF8);
+                string smokeOut = Path.Combine(smokeDir, "out");
+                System.Diagnostics.ProcessStartInfo buildPsi = new System.Diagnostics.ProcessStartInfo();
+                buildPsi.FileName = mauExe;
+                buildPsi.Arguments = "build \"" + smokeMau + "\" -o \"" + smokeOut + "\"";
+                buildPsi.WorkingDirectory = publishDir;
+                buildPsi.UseShellExecute = false;
+                buildPsi.CreateNoWindow = true;
+                buildPsi.RedirectStandardOutput = true;
+                buildPsi.RedirectStandardError = true;
+                System.Diagnostics.Process? buildP = System.Diagnostics.Process.Start(buildPsi);
+                if (buildP == null)
+                {
+                    Console.Error.WriteLine("冒烟: 无法启动 Mau.exe build");
+                    return false;
+                }
+
+                string buildOut = buildP.StandardOutput.ReadToEnd() ?? "";
+                string buildErr = buildP.StandardError.ReadToEnd() ?? "";
+                buildP.WaitForExit(120000);
+                if (buildP.ExitCode != 0)
+                {
+                    Console.Error.WriteLine("冒烟: 最小 build 失败（退出码 " + buildP.ExitCode + "）");
+                    Console.Error.WriteLine(buildOut);
+                    Console.Error.WriteLine(buildErr);
+                    return false;
+                }
+
+                try
+                {
+                    if (Directory.Exists(smokeDir))
+                    {
+                        Directory.Delete(smokeDir, true);
+                    }
+                }
+                catch
+                {
+                    // 冒烟产物清理失败不影响结果
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("冒烟: 异常——" + ex.Message);
+                return false;
+            }
+        }}
 }

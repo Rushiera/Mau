@@ -10,6 +10,7 @@
 //       🔴 参数预处理（CH2 CreateToolDogs 移植）：字符串值白名单路径映射——workspace/→Data/Cats/{session}/workspace、CatCatBigParty//CatTemp/→Data 根
 // 常用: ToolPoster 发单 Cat——Dog-OA 工具循环（M2b：Chat 工具调用 → Dog 载体工单）
 // ═══════════════════════════════════════════════════
+using System;
 using Mau.Runtime;
 
 namespace Mau.Bricks
@@ -236,4 +237,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:FEEEEF13FEAD710CD5FEDD2D2312401C927F1FD08525571DADA4BEE071AA2153
+// #MAU_CHECKSUM:SHA256:ACAC95022231F8F9553EBBAAD25C7EAAAA9FB31361E0F97842EAF7E7DD738B5A

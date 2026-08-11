@@ -86,18 +86,19 @@ namespace Mau.Cli
         /// 跳过清单——聚合报告输出
         /// </summary>
         private static List<string> sSkips = new List<string>();
+/// <summary>
+/// check 命令入口——全谱遍历一次返回全部错误；--selftest = 发布包随行资源自检（不要求 Mau.sln）
+/// </summary>
+///
 
-        /// <summary>
-        /// check 命令入口——全谱遍历一次返回全部错误
-        /// </summary>
-        /// <param name="args">参数——--update 生成黄金 / --syntax 仅语法+翻译器谱 / --bricks 仅积木谱</param>
-        /// <returns>退出码——0 全过 / 1 有失败 / 2 内部错误</returns>
-        public static int Execute(string[] args)
-        {
+        ///
+public static int Execute(string[] args)
+{
             // [段1] 参数解析
             bool update = false;
             bool onlySyntax = false;
             bool onlyBricks = false;
+            bool selftest = false;
             for (int i = 0; i < args.Length; i = i + 1)
             {
                 if (args[i] == "--update")
@@ -112,58 +113,92 @@ namespace Mau.Cli
                 {
                     onlyBricks = true;
                 }
+                else if (args[i] == "--selftest")
+                {
+                    selftest = true;
+                }
             }
 
-            // [段2] 定位谱目录
-            string? root = CliSupport.FindWorkspaceRoot();
-            if (root == null)
+            // [段2] 定位谱目录——selftest 模式不要求 Mau.sln（发布包随行资源自检）
+            if (!selftest)
             {
-                Console.WriteLine("FAIL: 未找到 Mau.sln——请从仓库内运行");
-                return 2;
-            }
-            string checksDir = Path.Combine(root, "Mau.Snapshots", "checks");
-            string syntaxDir = Path.Combine(checksDir, "syntax");
-            string negativeDir = Path.Combine(checksDir, "negative");
-            if (!Directory.Exists(syntaxDir) && !Directory.Exists(negativeDir))
-            {
-                Console.WriteLine("FAIL: checks 目录不存在——" + checksDir);
-                return 2;
+                string? root = CliSupport.FindWorkspaceRoot();
+                if (root == null)
+                {
+                    Console.WriteLine("FAIL: 未找到 Mau.sln——请从仓库内运行");
+                    return 2;
+                }
+                string checksDir = Path.Combine(root, "Mau.Snapshots", "checks");
+                string syntaxDir = Path.Combine(checksDir, "syntax");
+                string negativeDir = Path.Combine(checksDir, "negative");
+                if (!Directory.Exists(syntaxDir) && !Directory.Exists(negativeDir))
+                {
+                    Console.WriteLine("FAIL: checks 目录不存在——" + checksDir);
+                    return 2;
+                }
+
+                // [段3] 初始化计数
+                sSyntaxTotal = 0;
+                sSyntaxPass = 0;
+                sSyntaxFail = 0;
+                sGoldenTotal = 0;
+                sGoldenPass = 0;
+                sGoldenDrift = 0;
+                sGoldenMissing = 0;
+                sGoldenStructFail = 0;
+                sBrickTotal = 0;
+                sBrickPass = 0;
+                sBrickFail = 0;
+                sBrickSkip = 0;
+                sNegTotal = 0;
+                sNegPass = 0;
+                sNegFail = 0;
+                sErrors = new List<string>();
+                sSkips = new List<string>();
+
+                // [段4] 执行谱——A+B（语法+翻译器）与 C+D（积木+负例）可独立
+                if (!onlyBricks)
+                {
+                    RunSyntaxAndGolden(syntaxDir, update);
+                }
+                if (!onlySyntax)
+                {
+                    RunBrickCorpus();
+                    RunNegative(negativeDir);
+                }
+
+                // [段5] 聚合报告 + 退出码
+                return PrintReport(onlySyntax, onlyBricks, update);
             }
 
-            // [段3] 初始化计数
-            sSyntaxTotal = 0;
-            sSyntaxPass = 0;
-            sSyntaxFail = 0;
-            sGoldenTotal = 0;
-            sGoldenPass = 0;
-            sGoldenDrift = 0;
-            sGoldenMissing = 0;
-            sGoldenStructFail = 0;
+            // [段2b] selftest——发布包随行资源自检：Bricks 索引 + 积木谱 + 最小语料编译闭环（不要求 Mau.sln）
+            if (!CommandBricks.EnsureIndexLoaded())
+            {
+                Console.WriteLine("FAIL: selftest——Bricks 索引不可用（发布包缺少随行 Bricks/）");
+                return 2;
+            }
             sBrickTotal = 0;
             sBrickPass = 0;
             sBrickFail = 0;
             sBrickSkip = 0;
-            sNegTotal = 0;
-            sNegPass = 0;
-            sNegFail = 0;
             sErrors = new List<string>();
             sSkips = new List<string>();
-
-            // [段4] 执行谱——A+B（语法+翻译器）与 C+D（积木+负例）可独立
-            if (!onlyBricks)
+            RunBrickCorpus();
+            Console.WriteLine();
+            Console.WriteLine("=== MAU_SELFTEST 汇总（发布包随行资源） ===");
+            Console.WriteLine("[C] 积木谱      " + sBrickPass + "/" + sBrickTotal + " 通过（" + sBrickFail + " 失败 " + sBrickSkip + " 跳过）");
+            for (int i = 0; i < sErrors.Count; i = i + 1)
             {
-                RunSyntaxAndGolden(syntaxDir, update);
+                Console.WriteLine("    ❌ " + sErrors[i]);
             }
-            if (!onlySyntax)
+            if (sBrickFail == 0)
             {
-                RunBrickCorpus();
-                RunNegative(negativeDir);
+                Console.WriteLine("MAU_SELFTEST_OK");
+                return 0;
             }
-
-            // [段5] 聚合报告 + 退出码
-            return PrintReport(onlySyntax, onlyBricks, update);
+            Console.WriteLine("MAU_SELFTEST_FAIL");
+            return 1;
         }
-
         /// <summary>
         /// 语法谱 + 翻译器谱——遍历 syntax/*.mau，编译 + 确定性 + 黄金对比 + 结构断言
         /// </summary>

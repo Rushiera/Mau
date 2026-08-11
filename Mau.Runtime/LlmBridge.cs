@@ -124,38 +124,54 @@ private static readonly System.Collections.Generic.List<LlmProfile> _profiles = 
 /// </summary>
 /// <param name = "store">ConfigStore 实例（可空=关闭持久化）</param>
  public  static  void  ConfigureProfileStore ( ConfigStore ? store ) {
-            // 持久化存储绑定——null/空 = AppDataConfig 默认（%LOCALAPPDATA%/Mau_wls/CatHome4/llm.cfg）
-            _profileStore = store != null ? store : AppDataConfig.Store;
-            // 凭证内存加载——llm.apiKey.* 键（启动时同步持久化密钥）
-            CredentialStore.LoadPersisted();
-            string profilesJson = _profileStore.Get("profiles", "");
-            if (profilesJson.Length > 0)
+            lock (_profiles)
             {
-                try
+                // D27 绑定先清空——空配置也必须清空；加载失败保持确定空状态
+                _profiles.Clear();
+                _activeProfileId = "";
+                _profileStore = store != null ? store : AppDataConfig.Store;
+                // 凭证内存重载——先清后载（llm.apiKey.* 键）
+                CredentialStore.LoadPersisted();
+                string profilesJson = _profileStore.Get("profiles", "");
+                if (profilesJson.Length > 0)
                 {
-                    System.Text.Json.JsonSerializerOptions options = new System.Text.Json.JsonSerializerOptions();
-                    options.IncludeFields = true;
-                    LlmProfile[]? loaded = System.Text.Json.JsonSerializer.Deserialize<LlmProfile[]>(profilesJson, options);
-                    if (loaded != null)
+                    try
                     {
-                        _profiles.Clear();
-                        for (int i = 0; i < loaded.Length; i = i + 1)
+                        System.Text.Json.JsonSerializerOptions options = new System.Text.Json.JsonSerializerOptions();
+                        options.IncludeFields = true;
+                        LlmProfile[]? loaded = System.Text.Json.JsonSerializer.Deserialize<LlmProfile[]>(profilesJson, options);
+                        if (loaded != null)
                         {
-                            _profiles.Add(loaded[i]);
+                            for (int i = 0; i < loaded.Length; i = i + 1)
+                            {
+                                _profiles.Add(loaded[i]);
+                            }
+                            // 加载成功——恢复生效档案
+                            _activeProfileId = _profileStore.Get("active", "");
                         }
                     }
-                }
-                catch
-                {
-                    // 档案损坏——保持空表（防御式）
+                    catch
+                    {
+                        // 档案损坏——已清空，保持确定空状态（D27），active 不指向不存在档案
+                    }
                 }
             }
-            _activeProfileId = _profileStore.Get("active", "");
             AuditStore.Default?.Record("LlmBridge", "cfg.load", -1, new AuditProp[] {
                 new AuditProp("profiles", _profiles.Count.ToString()),
                 new AuditProp("active", _activeProfileId)
             });
         }/// <summary>
+/// 重置程序级状态——清空档案表/生效 Id/存储绑定（D26 统一 Reset 契约；宿主切换/测试隔离调用）
+/// </summary>
+public static void Reset()
+{
+    lock (_profiles)
+    {
+        _profiles.Clear();
+        _activeProfileId = "";
+        _profileStore = null;
+    }
+}/// <summary>
 /// 全部档案——只读拷贝（无密钥）
 /// </summary>
 /// <returns>档案数组</returns>

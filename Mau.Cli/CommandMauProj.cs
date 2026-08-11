@@ -22,7 +22,7 @@ namespace Mau.Cli
         /// <param name="useSdk">true=走环境 dotnet build（--sdk），false=Roslyn Emit</param>
         /// <returns>退出码——0 成功</returns>
         public static int Build(string mauprojPath, string outDir, bool useSdk)
-        {
+{
             // [段1] 解析 mauproj
             MauProjParseResult parsed = MauProjFile.Load(mauprojPath);
             if (parsed.Error.Length > 0)
@@ -36,6 +36,30 @@ namespace Mau.Cli
             }
             MauProjFile proj = parsed.File!;
             string assemblyName = "FL_" + proj.Name;
+
+            // [段1b] 引用确定性（D25）——解析引用: 声明 → 输出解析后引用清单；缺失即失败
+            List<string> refErrors;
+            List<string> refs = proj.ResolveReferences(AppDomain.CurrentDomain.BaseDirectory, out refErrors);
+            if (refErrors.Count > 0)
+            {
+                for (int i = 0; i < refErrors.Count; i = i + 1)
+                {
+                    Console.WriteLine("FAIL: " + refErrors[i]);
+                }
+                return 1;
+            }
+            if (refs.Count > 0)
+            {
+                Console.WriteLine("引用解析: " + refs.Count + " 个");
+                for (int i = 0; i < refs.Count; i = i + 1)
+                {
+                    Console.WriteLine("  " + Path.GetFileName(refs[i]) + " → " + refs[i]);
+                }
+            }
+            else
+            {
+                Console.WriteLine("引用解析: 无（仅基座必需 Mau.Runtime/Mau.Contracts）");
+            }
 
             // [段2] 收集成员文件
             List<string> files = proj.CollectFiles();
@@ -84,10 +108,10 @@ namespace Mau.Cli
             }
             string dllPath = Path.Combine(outDir, assemblyName + ".dll");
 
-            // [段5] 编译——默认 Roslyn Emit（CompileMany 组模式）；--sdk 走临时项目 dotnet build
+            // [段5] 编译——默认 Roslyn Emit（CompileManyWithRefs 显式引用集）；--sdk 走临时项目 dotnet build
             if (useSdk)
             {
-                if (!BuildSdkGroup(sources, classNames, assemblyName, dllPath))
+                if (!BuildSdkGroup(sources, classNames, assemblyName, dllPath, refs.ToArray()))
                 {
                     return 2;
                 }
@@ -96,7 +120,7 @@ namespace Mau.Cli
             {
                 string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_build_group_" + Guid.NewGuid().ToString("N").Substring(0, 8));
                 MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
-                MauPocketCompileResult compileResult = compiler.CompileMany(sources.ToArray(), classNames.ToArray(), assemblyName);
+                MauPocketCompileResult compileResult = compiler.CompileManyWithRefs(sources.ToArray(), classNames.ToArray(), assemblyName, refs.ToArray());
                 if (!compileResult.Success)
                 {
                     Console.WriteLine("构建失败: Roslyn 编译错误");
@@ -123,7 +147,6 @@ namespace Mau.Cli
             Console.WriteLine("构建成功: " + dllPath + "（组模式 " + (useSdk ? "dotnet build" : "Roslyn Emit") + "）");
             return 0;
         }
-
         /// <summary>
         /// 导出组包——源 + mauproj（补校验尾）+ 黄金基准 + manifest.json 到规范中介目录
         /// </summary>
@@ -435,8 +458,8 @@ namespace Mau.Cli
         /// <param name="assemblyName">程序集名</param>
         /// <param name="dllPath">输出 DLL 路径</param>
         /// <returns>true=成功</returns>
-        private static bool BuildSdkGroup(List<string> sources, List<string> classNames, string assemblyName, string dllPath)
-        {
+        private static bool BuildSdkGroup(List<string> sources, List<string> classNames, string assemblyName, string dllPath, string[] refs)
+{
             string tempDir = Path.Combine(Path.GetTempPath(), "mau_build_group_sdk_" + Guid.NewGuid().ToString("N").Substring(0, 8));
             try
             {
@@ -448,7 +471,7 @@ namespace Mau.Cli
                     File.WriteAllText(Path.Combine(tempDir, classNames[i] + ".cs"), sources[i], Encoding.UTF8);
                 }
 
-                // [段2] 写 .csproj——引用宿主输出目录全部 dll（与 Roslyn 引用集同语义）
+                // [段2] 写 .csproj——引用基座必需（宿主目录 Mau.Runtime/Mau.Contracts）+ 显式引用清单（D25 引用确定性；禁止隐式宿主目录全量）
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine("<Project Sdk=\"Microsoft.NET.Sdk\">");
                 sb.AppendLine("  <PropertyGroup>");
@@ -467,17 +490,33 @@ namespace Mau.Cli
                 sb.AppendLine("  </ItemGroup>");
                 sb.AppendLine("  <ItemGroup>");
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                List<string> sdkRefs = new List<string>();
                 if (Directory.Exists(baseDir))
                 {
                     string[] dlls = Directory.GetFiles(baseDir, "*.dll", SearchOption.TopDirectoryOnly);
                     Array.Sort(dlls, StringComparer.OrdinalIgnoreCase);
                     for (int i = 0; i < dlls.Length; i++)
                     {
-                        string name = Path.GetFileNameWithoutExtension(dlls[i]);
-                        sb.AppendLine("    <Reference Include=\"" + name + "\">");
-                        sb.AppendLine("      <HintPath>" + Path.GetFullPath(dlls[i]) + "</HintPath>");
-                        sb.AppendLine("    </Reference>");
+                        string name = Path.GetFileName(dlls[i]);
+                        if (name == "Mau.Runtime.dll" || name == "Mau.Contracts.dll")
+                        {
+                            sdkRefs.Add(dlls[i]);
+                        }
                     }
+                }
+                for (int i = 0; i < refs.Length; i++)
+                {
+                    if (!sdkRefs.Contains(refs[i]))
+                    {
+                        sdkRefs.Add(refs[i]);
+                    }
+                }
+                for (int i = 0; i < sdkRefs.Count; i++)
+                {
+                    string name = Path.GetFileNameWithoutExtension(sdkRefs[i]);
+                    sb.AppendLine("    <Reference Include=\"" + name + "\">");
+                    sb.AppendLine("      <HintPath>" + Path.GetFullPath(sdkRefs[i]) + "</HintPath>");
+                    sb.AppendLine("    </Reference>");
                 }
                 sb.AppendLine("  </ItemGroup>");
                 sb.AppendLine("</Project>");
@@ -554,7 +593,6 @@ namespace Mau.Cli
                 }
             }
         }
-
         /// <summary>
         /// 从 mauproj 所在目录向上查找仓库根——含 Mau.sln 的目录（不依赖 CWD）
         /// </summary>

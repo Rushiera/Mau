@@ -252,7 +252,58 @@ namespace Mau.Cli
             }
             return collected;
         }
+/// <summary>
+/// 解析引用清单——把 引用: 声明解析为绝对 dll 路径（D25 引用确定性）。
+/// 形态判定：含路径分隔符或以 .dll 结尾 = 相对路径（相对组目录解析）；
+/// 纯程序集名 = 宿主目录查找 {name}.dll。
+/// </summary>
+/// <param name = "hostDir">宿主目录（Mau.exe 所在目录——基座/契约/积木 dll 所在地）</param>
+/// <returns>解析后的 dll 绝对路径列表；解析失败项写入 errors</returns>
+public List<string> ResolveReferences(string hostDir, out List<string> errors)
+{
+    errors = new List<string>();
+    List<string> resolved = new List<string>();
+    for (int i = 0; i < References.Count; i++)
+    {
+        string raw = References[i];
+        if (raw.Length == 0)
+        {
+            continue;
+        }
 
+        bool isPath = raw.IndexOf('/') >= 0 || raw.IndexOf('\\') >= 0 || raw.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+        string full = "";
+        if (isPath)
+        {
+            // 相对路径——相对组目录解析 + 根内校验（复用 CollectFiles 安全模式）
+            full = Path.GetFullPath(Path.Combine(DirectoryPath, raw));
+            string rootFull = Path.GetFullPath(DirectoryPath);
+            if (!full.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                errors.Add("引用 " + raw + " 越出组目录——拒绝");
+                continue;
+            }
+        }
+        else
+        {
+            // 纯程序集名——宿主目录查找
+            full = Path.Combine(hostDir, raw + ".dll");
+        }
+
+        if (!File.Exists(full))
+        {
+            errors.Add("引用 " + raw + " 未找到——" + full);
+            continue;
+        }
+
+        if (!resolved.Contains(full))
+        {
+            resolved.Add(full);
+        }
+    }
+
+    return resolved;
+}
         /// <summary>
         /// 计算文件 SHA256——读取文本后按 UTF-8 字节计算
         /// </summary>

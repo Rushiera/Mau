@@ -85,16 +85,37 @@ namespace Mau.Runtime
                 _secrets.Clear();
             }
         }
-
+/// <summary>
+/// 重置全部凭证——统一 Reset 契约（D26；宿主切换/测试隔离调用）
+/// </summary>
+public static void Reset()
+{
+    ClearAll();
+}
         /// <summary>
         /// 从 AppDataConfig 加载持久化凭证（宿主启动时调用）——llm.apiKey.* 键入内存。
         /// 持久化介质：%LOCALAPPDATA%/Mau_wls/CatHome4/llm.cfg（明文——个人工具链）。
         /// </summary>
         public static void LoadPersisted()
-        {
+{
             System.Collections.Generic.KeyValuePair<string, string>[] all = AppDataConfig.All();
             lock (Gate)
             {
+                // 先清后载——介质中已删除的凭证不残留内存（D27 绑定先清空）
+                System.Collections.Generic.List<string> stale = new System.Collections.Generic.List<string>();
+                foreach (System.Collections.Generic.KeyValuePair<string, string> pair in _secrets)
+                {
+                    if (pair.Key != null
+                        && (pair.Key == "llm.apiKey"
+                            || pair.Key.StartsWith("llm.apiKey.", StringComparison.Ordinal)))
+                    {
+                        stale.Add(pair.Key);
+                    }
+                }
+                for (int i = 0; i < stale.Count; i = i + 1)
+                {
+                    _secrets.Remove(stale[i]);
+                }
                 for (int i = 0; i < all.Length; i = i + 1)
                 {
                     string key = all[i].Key;
@@ -108,7 +129,6 @@ namespace Mau.Runtime
                 }
             }
         }
-
         /// <summary>
         /// 保存全部凭证到 AppDataConfig（写入后调用）——内存态保持，文件是持久化介质
         /// </summary>
