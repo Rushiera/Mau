@@ -1,10 +1,10 @@
-# Mau
+﻿# Mau
 
 > 埃及语"猫"（mau/mjw）。古埃及太阳神 Ra 亦被称为"伟大的猫 Mau"。
 
 **Mau** 是一门架在 .NET 8 之上的声明式方言环境——把程序逻辑的定义权从框架转移到语句，由约定协议规定程序最顶层的设计和时序关系。
 
-> 版本：v0.79 | 更新：2026-08-09（多猫框架基座——CAT 积木 / 工具名规范 / AppDataConfig 配置持久化）
+> 版本：v0.97 | 更新：2026-08-11（文档治理轮——design 大瘦身 14→5 + 五维修复 + 身份反蒸；v0.96：代码审查修复轮——死代码删除 + 重复实现收拢 + 版本号唯一事实源；RB.3 重构七块全落地）
 
 ---
 
@@ -31,7 +31,7 @@
 |:--|:--|:--|
 | `Mau.exe` | `Mau.Cli/` | 唯一工具集——翻译 / 构筑 / 测试 / 检测（verify / gen / build / test / check / bricks / serve / ps ...） |
 | `MauRuntime` | `Mau.Runtime/` | 基座 lib——机制（FlowRunner/OA/CommandBus/FlowALC/ThreadGuard/DogBase/PetBase）+ **DataBox 中台**（BRIK 唯一数据协议）+ 程序级服务（FileSystemService/LlmBridge/LogStore/ConfigStore/**AppDataConfig**/CredentialStore） |
-| `Bricks/` | 仓库根 | **文本资产库**——**141 积木**（BRIK-{类别}-{序号}_{name}.cs，单文件 + 文件头十字段 + SHA256 校验尾）+ index.json v3（**源码驱动**契约索引） |
+| `Bricks/` | 仓库根 | **文本资产库**——**153 积木**（BRIK-{类别}-{序号}_{name}.cs，单文件 + 文件头十字段 + SHA256 校验尾）+ index.json v3（**源码驱动**契约索引） |
 
 **构筑闭环：** `.mau` → Mau.exe（BrickIndex 查索引 → 闭包收集 → 校验尾验证 → BRIK-ID 重命名 → BRIKGROUP 内嵌）→ Roslyn Emit → 自包含 dll。组模式（mauproj）多语料共享 BRIKGROUP。
 
@@ -39,13 +39,13 @@
 
 ---
 
-## 积木体系（141 积木 · 数量权威 = index.json）
+## 积木体系（153 积木 · 数量权威 = index.json）
 
 | 类别 | 数量 | 说明 |
 |:--|:--|:--|
 | FILE | 11 | convert/read/write/append/replace/read_lines/tree/find/move/delete/batch |
-| MATH | 4 | 数学运算（含 random_int） |
-| DATA | 7 | snapshot×2 + box×4 + box_is |
+| MATH | 3 | 数学运算 |
+| DATA | 6 | snapshot×2 + box×4 |
 | TEXT | 1 | md_parse |
 | SHELL | 1 | exec |
 | LLM | 21 | chat/stream/read_chunk/finish/completions/is_end/is_tool/has_error + ctx_* 上下文（checkpoint/rollback/push_error） |
@@ -58,10 +58,11 @@
 | TOOL | 13 | exec/dispatch 族/claim 族/collect 族/run_*/create_next/run_generic |
 | PACK | 3 | excel.bridge/word.bridge/csharp.bridge（外部包接口——IPackBridge 单方法调度） |
 | UI | 11 | snapshot_chat/home/config + snapshot_push + window_event + profile_* + config_set/get（Pet-UI 模式） |
-| **CAT** | **2** | **scan_instances（宿主 ICatScanner 桥——Data/Cats 目录即猫清单）/ tools_json（六域工具声明表 × 域过滤——TalkCat 自阻断）** |
+| CAT | 2 | scan_instances（宿主 ICatScanner 桥——Data/Cats 目录即猫清单）/ tools_json（六域工具声明表 × 域过滤——TalkCat 自阻断） |
 | CSHARP | 15 | csharp.* 15 工具（Roslyn 桥 PACK 调度） |
 | SYSTEM | 3 | info/snapshot/env |
 | MAU | 1 | build |
+| AUDIT | 3 | audit.stat/read/find（审计查询——DataBox 寻路） |
 | TEST | 2 | probe.source/sink |
 
 **工具名规范：** DeepSeek 工具名禁点号（实测 400 `^[a-zA-Z0-9_-]+$`）——`cat.tools_json` 声明名点转下划线（LLM 感知 `system_info`），`tool.create_next` 发单归一化回点号（`system.info` 路由）——全链路兼容两种命名。
@@ -110,13 +111,14 @@
 
 | 项目 | 定位 |
 |:--|:--|
-| `Bricks/` | 文本资产库——141 积木（十字段 + 校验尾）+ index.json v3（源码驱动）+ 类别目录即清单 |
+| `Bricks/` | 文本资产库——153 积木（十字段 + 校验尾）+ index.json v3（源码驱动）+ 类别目录即清单 |
 | `Mau.Runtime` | 基座——机制 + DataBox 中台 + 程序级服务（FileSystemService/LlmBridge/LogStore/ConfigStore/**AppDataConfig**/CredentialStore/ApprovalStore/ContextStore） |
 | `Mau.Contracts` | 契约类型——BrickContract/端口/导出属性/**ICatScanner** |
 | `Mau.Translator` | 翻译器——解析→IR→静态验证→生成（BrickIndex/BrickEmbedder/CompileGroup） |
-| `Mau.Cli` | 唯一工具——命令分发（verify/gen/build/test/check/bricks/serve/ps/debug 等） |
+| `Mau.Cli` | 唯一工具——命令分发（verify/gen/build/test/check/bricks/serve/ps/debug/up 等） |
 | `Mau.Development` | 口袋编译——Roslyn Emit/源码工作区/Roslyn 桥 |
 | `Mau.Serve` / `Mau.Observer` | NamedPipe 服务层 / 观测器 |
+| `Mau.WorkApp` | 增量包——OfficeBridge（Excel/Word PACK 实现，宿主选装 Bind） |
 | `Mau.Host` | 入口壳——引导/组装/启动 |
 | `Mau.Corpus` | 语料模板蓝图（设计蓝图，不入门禁） |
 | `Mau.Snapshots` | 门禁基准——cases（语料）/ expected（黄金）/ checks（全谱） |
