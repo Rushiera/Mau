@@ -145,11 +145,12 @@ namespace Mau.Cli
             int space = command.IndexOf(' ');
             string head = space > 0 ? command.Substring(0, space) : command;
             string rest = space > 0 ? command.Substring(space + 1).Trim() : "";
+            string workDir = FindRepoRoot(manifest.DirectoryPath);
             if (head == "mau")
             {
-                // 进程内执行——不产生第二实例（D22）；工作目录切到清单目录（相对路径命令基于仓库根解析）
+                // 进程内执行——不产生第二实例（D22）；工作目录切到仓库根（相对路径命令基于仓库根解析）
                 string oldCwd = Environment.CurrentDirectory;
-                Environment.CurrentDirectory = manifest.DirectoryPath;
+                Environment.CurrentDirectory = workDir;
                 try
                 {
                     string[] innerArgs = rest.Length > 0 ? rest.Split(' ') : new string[0];
@@ -160,11 +161,11 @@ namespace Mau.Cli
                     Environment.CurrentDirectory = oldCwd;
                 }
             }
-            // 外部命令子进程——工作目录 = 清单目录
+            // 外部命令子进程——工作目录 = 仓库根（清单所在仓库；相对路径命令基于仓库根解析）
             ProcessStartInfo psi = new ProcessStartInfo();
             psi.FileName = head;
             psi.Arguments = rest;
-            psi.WorkingDirectory = manifest.DirectoryPath;
+            psi.WorkingDirectory = workDir;
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
             psi.RedirectStandardOutput = true;
@@ -201,8 +202,7 @@ namespace Mau.Cli
                 Console.Error.WriteLine("  子进程执行失败: " + head + "——" + ex.Message);
                 return 2;
             }
-        }
-        /// <summary>
+        }        /// <summary>
         /// 加载上次状态——{环节}.fp → 指纹
         /// </summary>
         /// <param name="stateFile">状态文件路径</param>
