@@ -40,39 +40,55 @@ namespace Mau.Cli
                 Directory.CreateDirectory(outDir);
             }
 
+            // ⑦ 遇锁即失败（D31）——发布目标已被运行实例占用时立即失败，不浪费拷贝（诊断归一出入口：CliSupport.FindLockedFile）
+            string locked = CliSupport.FindLockedFile(new string[] { Path.Combine(outDir, "Mau.exe"), Path.Combine(outDir, "Mau.dll") });
+            if (locked.Length > 0)
+            {
+                Console.Error.WriteLine("FAIL: 发布目标文件被占用——先停止运行实例: " + locked);
+                return 1;
+            }
+
             int copied = 0;
             int failed = 0;
+            try
+            {
+                // [1] 可执行文件 + 配置（framework-dependent 必需）
+                copied = copied + CopyFile(Path.Combine(baseDir, "Mau.exe"), outDir, ref failed);
+                copied = copied + CopyFile(Path.Combine(baseDir, "Mau.dll"), outDir, ref failed);
+                copied = copied + CopyFile(Path.Combine(baseDir, "Mau.deps.json"), outDir, ref failed);
+                copied = copied + CopyFile(Path.Combine(baseDir, "Mau.runtimeconfig.json"), outDir, ref failed);
 
-            // [1] 可执行文件 + 配置（framework-dependent 必需）
-            copied = copied + CopyFile(Path.Combine(baseDir, "Mau.exe"), outDir, ref failed);
-            copied = copied + CopyFile(Path.Combine(baseDir, "Mau.dll"), outDir, ref failed);
-            copied = copied + CopyFile(Path.Combine(baseDir, "Mau.deps.json"), outDir, ref failed);
-            copied = copied + CopyFile(Path.Combine(baseDir, "Mau.runtimeconfig.json"), outDir, ref failed);
-
-            // [2] 全部程序集——Mau.* + Roslyn + 第三方依赖（全量拷贝，发布目录与宿主目录等价）
-            // 完整性优先：发布目录必须与宿主目录等价，TPA 引用链不缺环
-            string[] allDlls = Directory.GetFiles(baseDir, "*.dll", SearchOption.TopDirectoryOnly);
-            Array.Sort(allDlls, StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < allDlls.Length; i = i + 1)
-            {
-                copied = copied + CopyFile(allDlls[i], outDir, ref failed);
+                // [2] 全部程序集——Mau.* + Roslyn + 第三方依赖（全量拷贝，发布目录与宿主目录等价）
+                // 完整性优先：发布目录必须与宿主目录等价，TPA 引用链不缺环
+                string[] allDlls = Directory.GetFiles(baseDir, "*.dll", SearchOption.TopDirectoryOnly);
+                Array.Sort(allDlls, StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < allDlls.Length; i = i + 1)
+                {
+                    copied = copied + CopyFile(allDlls[i], outDir, ref failed);
+                }
+                // [3] 运行时资产——runtimes/ 递归拷贝（Roslyn/System.Windows.Extensions 等 RID 特定 dll；TopDirectoryOnly 全量拷贝会漏）
+                string runtimesDir = Path.Combine(baseDir, "runtimes");
+                if (Directory.Exists(runtimesDir))
+                {
+                    copied = copied + CopyDirectory(runtimesDir, Path.Combine(outDir, "runtimes"), ref failed);
+                }
+                // [4] 知识资产——Bricks（积木文本库：翻译器构筑期 BrickIndex 必需）+ Mau.Corpus + 工程文档
+                string? root = CliSupport.FindWorkspaceRoot();
+                if (root != null)
+                {
+                    copied = copied + CopyDirectory(Path.Combine(root, "Bricks"),
+                        Path.Combine(outDir, "Bricks"), ref failed);
+                    copied = copied + CopyDirectory(Path.Combine(root, "Mau.Corpus"),
+                        Path.Combine(outDir, "Mau.Corpus"), ref failed);
+                    copied = copied + CopyFile(Path.Combine(root, "README.md"), outDir, ref failed);
+                    copied = copied + CopyFile(Path.Combine(root, "LICENSE"), outDir, ref failed);
+                }
             }
-            // [3] 运行时资产——runtimes/ 递归拷贝（Roslyn/System.Windows.Extensions 等 RID 特定 dll；TopDirectoryOnly 全量拷贝会漏）
-            string runtimesDir = Path.Combine(baseDir, "runtimes");
-            if (Directory.Exists(runtimesDir))
+            catch (IOException ex)
             {
-                copied = copied + CopyDirectory(runtimesDir, Path.Combine(outDir, "runtimes"), ref failed);
-            }
-            // [4] 知识资产——Bricks（积木文本库：翻译器构筑期 BrickIndex 必需）+ Mau.Corpus + 工程文档
-            string? root = CliSupport.FindWorkspaceRoot();
-            if (root != null)
-            {
-                copied = copied + CopyDirectory(Path.Combine(root, "Bricks"),
-                    Path.Combine(outDir, "Bricks"), ref failed);
-                copied = copied + CopyDirectory(Path.Combine(root, "Mau.Corpus"),
-                    Path.Combine(outDir, "Mau.Corpus"), ref failed);
-                copied = copied + CopyFile(Path.Combine(root, "README.md"), outDir, ref failed);
-                copied = copied + CopyFile(Path.Combine(root, "LICENSE"), outDir, ref failed);
+                // ⑦ 遇锁即失败——拷贝中断立即返回（防静默部分成功）
+                Console.Error.WriteLine("FAIL: 发布拷贝中断（文件被占用）——" + ex.Message);
+                return 1;
             }
 
             // [5] 发布后冒烟——发布目录自检（Bricks/ 随行 + 翻译器可用 + 最小构筑闭环）
@@ -86,40 +102,7 @@ namespace Mau.Cli
             Console.WriteLine("  文件: " + copied + " 个" + (failed > 0 ? "，失败 " + failed + " 个" : ""));
             Console.WriteLine("  运行: " + Path.Combine(Path.GetFullPath(outDir), "Mau.exe") + " test");
             return failed > 0 ? 1 : 0;
-        }/// <summary>
-/// 探测文件是否被进程占用——以写方式独占打开（成功=未锁；IOException=被锁）
-/// </summary>
-/// <param name = "paths">待探测路径</param>
-/// <returns>第一个被锁路径；全部未锁返回空串</returns>
-private static string FindLockedFile(string[] paths)
-{
-    for (int i = 0; i < paths.Length; i = i + 1)
-    {
-        if (!File.Exists(paths[i]))
-        {
-            continue;
-        }
-
-        try
-        {
-            using (FileStream fs = new FileStream(paths[i], FileMode.Open, FileAccess.Write, FileShare.None))
-            {
-            // 探测成功——未锁
-            }
-        }
-        catch (IOException)
-        {
-            return paths[i];
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return paths[i];
-        }
-    }
-
-    return "";
-}
-        /// <summary>
+        }        /// <summary>
         /// 拷贝单文件——已存在则覆盖
         /// </summary>
         /// <param name="source">源文件</param>
@@ -140,10 +123,8 @@ private static string FindLockedFile(string[] paths)
             }
             catch (IOException)
             {
-                // GAP.5——目标被进程占用（运行实例锁定）
-                Console.Error.WriteLine("拷贝失败（文件被占用——先停止运行实例）: " + source);
-                failed = failed + 1;
-                return 0;
+                // ⑦ 遇锁即失败（D31）——文件被占用立即失败（防静默部分成功——GAP.5 教训），由 Execute 统一中断
+                throw new IOException("文件被占用（先停止运行实例）: " + source);
             }
             catch (Exception ex)
             {
@@ -151,8 +132,7 @@ private static string FindLockedFile(string[] paths)
                 failed = failed + 1;
                 return 0;
             }
-        }
-        /// <summary>
+        }        /// <summary>
         /// 拷贝目录——递归
         /// </summary>
         /// <param name="sourceDir">源目录</param>
@@ -202,6 +182,7 @@ private static bool SmokeTest(string publishDir)
             try
             {
                 // [1] check --selftest——发布包随行资源自检（不要求 Mau.sln；D24 check-source/selftest 分级）
+                // MAU_INNER_CHILD=1——父进程（publish）已持单实例互斥，内部子进程豁免（⑦ D22/D31）
                 System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo();
                 psi.FileName = mauExe;
                 psi.Arguments = "check --selftest";
@@ -210,6 +191,7 @@ private static bool SmokeTest(string publishDir)
                 psi.CreateNoWindow = true;
                 psi.RedirectStandardOutput = true;
                 psi.RedirectStandardError = true;
+                psi.EnvironmentVariables["MAU_INNER_CHILD"] = "1";
                 System.Diagnostics.Process? p = System.Diagnostics.Process.Start(psi);
                 if (p == null)
                 {
@@ -219,7 +201,8 @@ private static bool SmokeTest(string publishDir)
 
                 string stdout = p.StandardOutput.ReadToEnd() ?? "";
                 string stderr = p.StandardError.ReadToEnd() ?? "";
-                p.WaitForExit(120000);
+                // ⑦ D31——不设神秘超时（由调用方工具层 shell_exec 决定策略）；无限等待子进程
+                p.WaitForExit();
                 if (p.ExitCode != 0)
                 {
                     Console.Error.WriteLine("冒烟: check --selftest 失败（退出码 " + p.ExitCode + "）");
@@ -243,6 +226,7 @@ private static bool SmokeTest(string publishDir)
                 buildPsi.CreateNoWindow = true;
                 buildPsi.RedirectStandardOutput = true;
                 buildPsi.RedirectStandardError = true;
+                buildPsi.EnvironmentVariables["MAU_INNER_CHILD"] = "1";
                 System.Diagnostics.Process? buildP = System.Diagnostics.Process.Start(buildPsi);
                 if (buildP == null)
                 {
@@ -252,7 +236,8 @@ private static bool SmokeTest(string publishDir)
 
                 string buildOut = buildP.StandardOutput.ReadToEnd() ?? "";
                 string buildErr = buildP.StandardError.ReadToEnd() ?? "";
-                buildP.WaitForExit(120000);
+                // ⑦ D31——不设神秘超时
+                buildP.WaitForExit();
                 if (buildP.ExitCode != 0)
                 {
                     Console.Error.WriteLine("冒烟: 最小 build 失败（退出码 " + buildP.ExitCode + "）");

@@ -78,12 +78,14 @@ namespace Mau.Serve
             string pocketRoot = PocketRootFor(root);
             ProcessStartInfo psi = new ProcessStartInfo();
             psi.FileName = executable;
-            psi.UseShellExecute = true;
+            psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
             psi.ArgumentList.Add("serve-work");
             psi.ArgumentList.Add(root);
             psi.ArgumentList.Add(pipe);
             psi.ArgumentList.Add(pocketRoot);
+            // ⑦ 单实例互斥豁免（D22/D31）——serve-work 是服务工作进程（管道通讯常驻），由父进程 spawn 协调，不参与指令互斥
+            psi.EnvironmentVariables["MAU_INNER_CHILD"] = "1";
             Process? process = Process.Start(psi);
             if (process == null)
             {

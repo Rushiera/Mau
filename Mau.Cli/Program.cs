@@ -18,10 +18,22 @@ namespace Mau.Cli
         /// <param name="args">命令行参数</param>
         /// <returns>退出码——0 成功，非 0 失败</returns>
         public static int Main(string[] args)
-        {
+{
+            // ⑦ 单实例互斥（D22 + D31）——同一时刻仅一个交互式 Mau 进程，从时序上排除自锁（MSB3027 家族）。
+            // 豁免：serve-work（服务工作进程——管道通讯常驻，与指令不竞争）；MAU_INNER_CHILD=1（父进程已协调的内部子进程——publish 冒烟等）
+            if (!IsInnerProcess(args))
+            {
+                using (System.Threading.Mutex? mutex = AcquireCommandMutex())
+                {
+                    if (mutex == null)
+                    {
+                        return 1;
+                    }
+                    return Dispatch(args);
+                }
+            }
             return Dispatch(args);
         }
-
         /// <summary>
         /// 命令路由——独立入口（Main 与聚合器进程内调用共用）
         /// </summary>
@@ -29,6 +41,7 @@ namespace Mau.Cli
         /// <returns>退出码——0 成功，非 0 失败</returns>
         public static int Dispatch(string[] args)
         {
+            CliSupport.ParseVerbose(args);
             // [段1] 命令路由（积木注册表已退役——翻译器构筑期经 BrickIndex 查询 Bricks/index.json）
             if (args.Length == 0)
             {
@@ -529,5 +542,27 @@ namespace Mau.Cli
     {
         return first == "spawn" || first == "stop" || first == "status" || first == "call";
     }
+/// <summary>
+/// 内部子进程判定——serve-work 服务进程或 MAU_INNER_CHILD=1（父进程已协调）豁免单实例互斥
+/// </summary>
+/// <param name = "args">命令行参数</param>
+/// <returns>true=豁免</returns>
+private static bool IsInnerProcess(string[] args)
+{
+    if (args.Length > 0 && args[0] == "serve-work")
+    {
+        return true;
+    }
+
+    string? inner = Environment.GetEnvironmentVariable("MAU_INNER_CHILD");
+    return inner != null && inner == "1";
+} 
+/// <summary>
+/// 获取指令互斥——获取失败返回 null（另一 Mau.exe 运行中，输出残留 PID 诊断后立即失败）
+/// </summary>
+/// <returns>互斥句柄；null=获取失败</returns>
+ private  static  System . Threading . Mutex ? AcquireCommandMutex ( ) { bool  createdNew  =  false ;  System . Threading . Mutex  mutex  =  new  System . Threading . Mutex ( false ,  "MauCmdMutex_v1" ,  out  createdNew ) ;  bool  acquired  =  false ;  try  { acquired  =  mutex . WaitOne ( 0 ) ;  } catch  ( System . Threading . AbandonedMutexException ) { // 原持有者已崩溃——视为可获取（残留互斥自动回收）
+acquired  =  true ;  } catch  ( Exception  ex ) { Console . Error . WriteLine ( "FAIL: 指令互斥获取异常——" + ex . Message ) ;  mutex . Dispose ( ) ;  return  null ;  } if  ( ! acquired ) { Console . Error . WriteLine ( "FAIL: 另一 Mau.exe 运行中——单实例互斥（D22/D31），先结束它再执行指令:" ) ;  System . Diagnostics . Process [ ]  processes  =  System . Diagnostics . Process . GetProcessesByName ( "Mau" ) ;  for  ( int  i  =  0 ;  i < processes . Length ;  i  =  i + 1 ) { if  ( processes [ i ] . Id != System . Diagnostics . Process . GetCurrentProcess ( ) . Id ) { Console . Error . WriteLine ( "  PID " + processes [ i ] . Id + " | " + processes [ i ] . ProcessName ) ;  } } mutex . Dispose ( ) ;  return  null ;  } return  mutex ;  }
+
 }
 }

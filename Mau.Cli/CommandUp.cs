@@ -185,13 +185,10 @@ namespace Mau.Cli
                     int exitCode = process.ExitCode;
                     if (exitCode != 0)
                     {
-                        if (stdout.Trim().Length > 0)
+                        // 失败——尾部保留输出（D19：错误/结论在尾部——替代全量透传降噪音）
+                        if (stdout.Trim().Length > 0 || stderr.Trim().Length > 0)
                         {
-                            Console.Error.WriteLine(stdout.Trim());
-                        }
-                        if (stderr.Trim().Length > 0)
-                        {
-                            Console.Error.WriteLine(stderr.Trim());
+                            Console.Error.WriteLine(CliSupport.TailLines(stdout + "\n" + stderr, 20));
                         }
                     }
                     return exitCode;
@@ -202,7 +199,7 @@ namespace Mau.Cli
                 Console.Error.WriteLine("  子进程执行失败: " + head + "——" + ex.Message);
                 return 2;
             }
-        }        /// <summary>
+        }/// <summary>
         /// 加载上次状态——{环节}.fp → 指纹
         /// </summary>
         /// <param name="stateFile">状态文件路径</param>

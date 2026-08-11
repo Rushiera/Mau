@@ -16,14 +16,24 @@ public sealed class SysCommand
         /// 构造指令解析器——绑定审计查询（宿主 DataBox.Bind&lt;AuditQuery&gt; 后由 audit 积木族共用）
         /// </summary>
         /// <param name="audit">审计查询</param>
-        public SysCommand(AuditQuery audit)
-        {
+        /// <param name="queryBus">统一查询通道（③ QueryBus——sys.query/sys.summary 出口；null = 不启用）</param>
+        public SysCommand(AuditQuery audit, QueryBus? queryBus = null)
+{
             if (audit == null)
             {
                 throw new ArgumentNullException("audit");
             }
             _audit = audit;
+            _queryBus = queryBus;
+            if (_queryBus != null)
+            {
+                _queryBus.Register("summary", QueryDomain.Main, BuildSummary);
+            }
         }
+        /// <summary>
+        /// 统一查询通道——sys.query/sys.summary 出口（③ QueryBus D11-D13；null = 未绑定）
+        /// </summary>
+        private readonly QueryBus? _queryBus;
 
         /// <summary>
         /// 执行指令——首词为指令名，其余 key=value 参数（裸词 = 布尔开关 true）
@@ -103,6 +113,14 @@ public sealed class SysCommand
             {
                 return SysLlm(args);
             }
+            if (cmd == "sys.query")
+            {
+                return SysQuery(args);
+            }
+            if (cmd == "sys.summary")
+            {
+                return SysSummary(args);
+            }
             return "未知指令: " + cmd + "\n" + Usage();
         }
 
@@ -126,6 +144,8 @@ public sealed class SysCommand
             sb.AppendLine("- sys.conf [key=] [tail=N]");
             sb.AppendLine("- sys.flow [tail=N]");
             sb.AppendLine("- sys.llm（活跃 LLM 会话列表：requestId/创建时间/队列深度）");
+            sb.AppendLine("- sys.query name=<处理器名> [key=value...]（③ QueryBus 统一查询通道出口——Main 域自动投递，任何线程可调）");
+            sb.AppendLine("- sys.summary（④ 快照聚合视图——帧号/实体/Command/OA/DataBox/LLM/审计 一屏看全）");
             sb.AppendLine();
             // GAP.4 数据分层与落盘策略——段来源透明化（查询与留痕分离）
             sb.AppendLine("## 数据分层与落盘");
@@ -671,5 +691,50 @@ private static int CompareBySeq(AuditEvent a, AuditEvent b)
     }
 
     return 0;
-}    }
+}    /// <summary>
+/// sys.query——经统一查询通道执行查询（③ D13：指令解析 → QueryBus 投递 → 格式化输出；任何线程可调——Main 域自动投递）
+/// </summary>
+/// <param name = "args">参数（name=处理器名 + 处理器自有参数）</param>
+/// <returns>MD 输出</returns>
+private string SysQuery(Dictionary<string, string> args)
+{
+    if (_queryBus == null)
+    {
+        return "错误: QueryBus 未绑定（构造 SysCommand 时注入 queryBus）\n" + Usage();
+    }
+
+    string? name = Arg(args, "name");
+    if (name == null)
+    {
+        return "用法: sys.query name=<处理器名> [key=value...]\n已注册: " + string.Join(" ", _queryBus.Names());
+    }
+
+    string result;
+    if (_queryBus.TryExecute(name, args, out result))
+    {
+        return result;
+    }
+
+    return result;
+} 
+/// <summary>
+/// sys.summary——快照聚合视图（④ D16：一屏看全——帧号 + 实体 + Command/OA 域 + DataBox + LLM 会话 + 审计摘要，时间对齐）
+/// </summary>
+/// <param name = "args">参数</param>
+/// <returns>MD 输出</returns>
+ private  string  SysSummary ( Dictionary < string ,  string > args ) { if  ( _queryBus == null ) { return  "错误: QueryBus 未绑定（构造 SysCommand 时注入 queryBus）\n" + Usage ( ) ;  } string  result ;  if  ( _queryBus . TryExecute ( "summary" ,  args ,  out  result ) ) { return  result ;  } return  result ;  } 
+/// <summary>
+/// summary 聚合处理器——④ 快照聚合视图（Main 域：经 QueryBus 自动投递主线程，安全访问 FlowRunner/OA 守卫组件）
+/// </summary>
+/// <param name = "args">参数（未使用）</param>
+/// <returns>MD 聚合视图</returns>
+ private  string  BuildSummary ( Dictionary < string ,  string > args ) { StringBuilder  sb  =  new  StringBuilder ( ) ;  sb . AppendLine ( "## SYS.SUMMARY" ) ;  // [段1] 宿主帧号 + 实体
+FlowRunner ? runner ;  if  ( DataBox . TryResolve < FlowRunner > ( out  runner ) ) { HostSnapshot  snap  =  runner . GetStatus ( ) ;  sb . AppendLine ( "- frame=" + snap . Frame ) ;  sb . AppendLine ( "- flows=" + ( snap . Flows == null ? "0" :  snap . Flows . Length . ToString ( ) ) ) ;  } else  { sb . AppendLine ( "- frame=（无 FlowRunner）" ) ;  } // [段2] Command 域
+ICommandBus ? bus ;  if  ( DataBox . TryResolve < ICommandBus > ( out  bus ) ) { CommandSnapshot  snap  =  bus . GetSnapshot ( ) ;  sb . AppendLine ( "- cmd owners=" + snap . RegisteredOwnerCount + " keys=" + snap . RegisteredKeyCount + " frozen=" + snap . FrozenKeyCount + " pending=" + snap . PendingKeyCount + " rejected=" + snap . RejectedInputCount ) ;  } // [段3] OA 域
+IOA ? oa ;  if  ( DataBox . TryResolve < IOA > ( out  oa ) ) { OAView  view  =  oa . GetSnapshot ( ) ;  sb . AppendLine ( "- oa open=" + view . OpenCount + " work=" + view . WorkCount + " closed=" + view . ClosedCount + " timeout=" + view . TimeoutCount ) ;  } // [段4] DataBox scope 摘要
+DataBoxSnapshot  box  =  DataBox . Capture ( ) ;  Dictionary < string ,  int > scopeCounts  =  new  Dictionary < string ,  int > ( StringComparer . Ordinal ) ;  for  ( int  i  =  0 ;  i < box . Data . Length ;  i  =  i + 1 ) { DataBoxDataEntry  entry  =  box . Data [ i ] ;  if  ( scopeCounts . ContainsKey ( entry . Scope ) ) { scopeCounts [ entry . Scope ]  =  scopeCounts [ entry . Scope ] + 1 ;  } else  { scopeCounts [ entry . Scope ]  =  1 ;  } } sb . AppendLine ( "- box scopes=" + scopeCounts . Count + " keys=" + box . Data . Length ) ;  string [ ]  scopeNames  =  new  string [ scopeCounts . Count ] ;  scopeCounts . Keys . CopyTo ( scopeNames ,  0 ) ;  for  ( int  i  =  0 ;  i < scopeNames . Length ;  i  =  i + 1 ) { sb . AppendLine ( "  - " + scopeNames [ i ] + "=" + scopeCounts [ scopeNames [ i ] ] ) ;  } // [段5] LLM 活跃会话
+KeyValuePair < string ,  LlmStreamSession > [ ]  sessions  =  LlmSession . GetActiveSessions ( ) ;  sb . AppendLine ( "- llm sessions=" + sessions . Length ) ;  // [段6] 审计统计摘要
+AuditStat [ ]  stats  =  _audit . Stats ( null ,  null ,  0 ,  long . MaxValue ) ;  long  total  =  0 ;  for  ( int  i  =  0 ;  i < stats . Length ;  i  =  i + 1 ) { total  =  total + stats [ i ] . Count ;  } sb . AppendLine ( "- audit events=" + total + " categories=" + stats . Length ) ;  return  sb . ToString ( ) ;  }
+
+}
 }

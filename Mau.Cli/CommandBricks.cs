@@ -1232,7 +1232,7 @@ namespace Mau.Cli
         /// </summary>
         /// <returns>退出码</returns>
         public static int RunGlobalTest()
-        {
+{
             // [段0] 积木索引——mau test 直接调用本方法（不经 Execute）——枚举前置
             if (!EnsureIndexLoaded())
             {
@@ -1256,24 +1256,23 @@ namespace Mau.Cli
                 if (result == "PASS")
                 {
                     pass = pass + 1;
-                    Console.WriteLine("PASS: " + c.Name);
+                    CliSupport.Detail("PASS: " + c.Name);
                 }
                 else if (result == "SKIP")
                 {
                     skip = skip + 1;
-                    Console.WriteLine("SKIP: " + c.Name + "（" + skipReason + "）");
+                    CliSupport.Detail("SKIP: " + c.Name + "（" + skipReason + "）");
                 }
                 else
                 {
                     fail = fail + 1;
-                    Console.WriteLine("FAIL: " + c.Name + "（" + result + "）");
+                    CliSupport.Info("FAIL: " + c.Name + "（" + result + "）");
                 }
             }
-            Console.WriteLine("=== BRICKS_TEST 汇总 ===");
-            Console.WriteLine("总计 " + total + "  通过 " + pass + "  跳过 " + skip + "  失败 " + fail);
+            CliSupport.Info("=== BRICKS_TEST 汇总 ===");
+            CliSupport.Info("总计 " + total + "  通过 " + pass + "  跳过 " + skip + "  失败 " + fail);
             return fail == 0 ? 0 : 1;
         }
-
         /// <summary>
         /// 当前跳过原因——RunOneBrick 设置
         /// </summary>

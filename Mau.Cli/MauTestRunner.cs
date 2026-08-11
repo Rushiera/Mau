@@ -280,11 +280,14 @@ namespace Mau.Cli
         /// <param name="arguments">参数</param>
         /// <returns>退出码为 0</returns>
         private static bool RunProcess(string fileName, string arguments)
-        {
+{
             ProcessStartInfo psi = new ProcessStartInfo();
             psi.FileName = fileName;
             psi.Arguments = arguments;
             psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
             Process? p;
             try
             {
@@ -300,10 +303,24 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: 进程启动失败——" + fileName);
                 return false;
             }
+            // [段1] 收集输出——成功静默 / 失败尾部保留（D19：错误/结论在尾部）/ --verbose 全透传
+            string stdout = p.StandardOutput.ReadToEnd();
+            string stderr = p.StandardError.ReadToEnd();
             p.WaitForExit();
-            return p.ExitCode == 0;
-        }
-/// <summary>
+            if (p.ExitCode == 0)
+            {
+                // 成功——默认静默（环节标题已是关键节点）；--verbose 输出全部细节
+                CliSupport.Detail(stdout);
+                if (stderr.Trim().Length > 0)
+                {
+                    CliSupport.Detail(stderr);
+                }
+                return true;
+            }
+            // 失败——尾部保留输出（错误/结论在尾部）+ 错误流
+            Console.WriteLine(CliSupport.TailLines(stdout + "\n" + stderr, 20));
+            return false;
+        }/// <summary>
 /// 验证黄金文件校验尾——读文件，提取末行 MAU_CHECKSUM，验证 SHA256，返回去掉校验行的文件体
 /// </summary>
 /// <param name = "filePath">黄金文件路径</param>
