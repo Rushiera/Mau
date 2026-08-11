@@ -1,93 +1,251 @@
-﻿// talkcat_fsm.mau —— TalkCat 六态 FSM 模板
-// 来源：CH3 StandardLibrary/CH_Cat_TalkCat（1600 行）——对话 Cat 六态状态机
-// 用途：LLM 对话 Cat 的完整生命周期——空闲/思考/流式/工具/完成/失败
-// 积木状态：llm.chat ✅（Mau.Bricks.LLM）· llm.stream 🔴 占位 · ctx.load/ctx.append ✅（ContextBrick）· tool.exec ✅（待接入）
-// 结构：六态互斥事实链 + 流式多实例信号 + 断流时限 + 工具调用旁路
+﻿// talkcat_fsm.mau —— TalkCat 六态 FSM 模板（空闲/思考/流式/工具/完成/失败）
+// 来源：CH3 StandardLibrary/CH_Cat_TalkCat（1600 行）+ CH4 P2.2 落地（CH4.Corpus/CH4_Cat_TalkCat/CH4_Cat_Talk.mau——完整版 70+ 变迁）
+// 用途：LLM 对话 Cat 的完整生命周期骨架——指令轮询 + 流式请求 + 工具分支 + 错误消费 + 轮次统计
+// 积木：cmd.consume / cmd.is_key / cmd.set（BRIK-CMD-003/006/004）+ llm.ctx_* / llm.completions / llm.read_chunk
+//       / llm.is_end / llm.is_tool / llm.has_error / llm.finish / llm.round_stats_text（BRIK-LLM 族）
+//       + cat.tools_json（BRIK-CAT-002）+ data.box_*（BRIK-DATA-003/006/007——工具请求通道，多猫隔离）
+// 结构：初始化 → 指令轮询（stop 控制）→ 检查点 → 用户消息入上下文 → 构建结构化上下文 + 工具组前文
+//       → 流式请求（llm.completions）→ 分片消费 → 分类（终态/内容）→ 工具分支（DataBox 投递 ToolPoster → 轮询完成）
+//       → 错误链（finish → rollback → push_error）→ 轮次统计 → 完成 → 复位（Tick 重入）
+// 注：工具执行委托 ToolPoster（发单 Cat）——TalkCat 只投递/轮询，不执行；完成标记经 DataBox boxId=sessionKey 隔离
 Mau 0.1
 基座: Mau.Runtime/v0.1
 
 命题:
-  P_Idle            事实    // 态1 空闲——等待用户消息
-  P_Thinking        事实    // 态2 思考——LLM 请求中
-  P_Streaming       事实    // 态3 流式——回复分片到达中
-  P_ToolCall        事实    // 态4 工具调用——模型请求工具
-  P_Done            事实    // 态5 完成——回复完整
-  P_Failed          事实    // 态6 失败——请求异常
-  P_UserMessage     信号    // 用户消息到达（携带文本）
-  P_ChunkArrived    信号    // 流式分片到达（多实例——每分片一个）
-  P_ToolResultReady 信号    // 工具结果就绪
+  P_Init            信号    // 初始化投递（sessionKey/prompt payload——宿主投递）
+  P_Idle            信号    // 空闲轮询门
+  P_CmdArrived      信号    // 指令到达
+  P_NotStop         信号    // 非终止指令
+  P_StopCmd         信号    // 终止指令（text="stop"）
+  P_Checkpointed    信号    // 回滚断点已记录（用户消息入上下文前）
+  P_UserStored      信号    // 用户消息已入上下文
+  P_PromptReady     信号    // 结构化上下文已构建（messagesJson 就绪）
+  P_ToolsReady      信号    // 工具组前文已构建（toolsJson 就绪——按猫域配置拼接）
+  P_Waiting         信号    // 暂无分片——下帧重试
+  P_ChunkReady      信号    // 分片就绪
+  P_NotEnd          信号    // 非终态分片（内容）
+  P_ChunkEnd        信号    // 终态分片
+  P_NoError         信号    // 终态分片无错误（正常终态）
+  P_LlmError        信号    // 终态分片带错误码（LLM 报错——正常返回值，终止+回滚）
+  P_ErrorFinished   信号    // 错误会话已清理
+  P_RolledBack      信号    // 上下文已回滚到断点
+  P_ErrorRecorded   信号    // 错误码已入持久流
+  P_ToolCall        信号    // 终态分片含工具
+  P_NoTool          信号    // 终态分片无工具（纯对话完成）
+  P_ToolCallsRecorded 信号  // Assistant 工具声明已入上下文
+  P_OldSessionClosed 信号  // 旧 LLM 会话已 finish（工具分支清理——防会话残留）
+  P_ReqStored       信号    // 工具请求已写入 DataBox（boxId=sessionKey——多猫隔离）
+  P_ToolPosted      信号    // 工具请求已投递 ToolPoster（等待批次完成）
+  P_PollWait        信号    // 批次未完成——下帧再轮询
+  P_ToolsDone       信号    // 批次完成标记已置（ToolPoster 全部回填）
+  P_ToolsCollected  信号    // 全部工具结果已回填——重新构建
+  P_StatsBuilt      信号    // 统计行文本已生成（llm.round_stats_text）
+  P_StatsDone       信号    // 统计行已入上下文（llm.ctx_push_system）
+命题 P_Done:
+  类型: 事实    // 完成——事实（可查询 IsDone）
+
+命题 P_Failed:
+  类型: 事实    // 失败——事实（可查询 IsFailed）
+
+命题 P_Thinking:
+  类型: 事实    // 流式请求进行中——LLM 活跃期持续
+
+命题 P_Streaming:
+  类型: 事实    // 分片接收中——LLM 活跃期持续
 
 资源 R_ReplySlot:
-  独占                    // 回复会话——同一时刻一个对话
-资源 R_ChunkBuffer:
-  配额: 64                // 分片缓冲上限
+  独占                    // 回复会话令牌——T_Start 占用
 
-变迁 T_Enter:
-  前置: P_UserMessage ∧ R_ReplySlot ∧ P_Idle
-  动作: ctx.append
+变迁 T_Init:
+  前置: P_Init
+  动作: llm.ctx_set_system
+  参数: sessionKey, prompt
+  时限: 5帧
+  后置: P_Idle / P_Failed
+
+变迁 T_CheckCmd:
+  前置: P_Idle
+  动作: cmd.consume
+  参数: ownerId
+  后置: P_CmdArrived / P_Idle
+  帧: 每帧
+
+变迁 T_RouteStop:
+  前置: P_CmdArrived
+  动作: cmd.is_key
+  参数: text → text, "stop" → target
+  时限: 5帧
+  后置: P_StopCmd / P_NotStop
+
+变迁 T_DoStop:
+  前置: P_StopCmd
+  动作: llm.finish
+  参数: requestId → requestId
+  时限: 5帧
+  后置: P_Done / P_Failed
+
+变迁 T_Checkpoint:
+  前置: P_NotStop
+  动作: llm.ctx_checkpoint
+  参数: sessionKey → sessionKey
+  时限: 5帧
+  后置: P_Checkpointed / P_Failed
+
+变迁 T_PushUser:
+  前置: P_Checkpointed
+  动作: llm.ctx_push_user
+  参数: sessionKey, text → text
+  时限: 5帧
+  后置: P_UserStored / P_Failed
+
+变迁 T_BuildMessages:
+  前置: P_UserStored ∨ P_ToolsCollected
+  动作: llm.ctx_build_messages_json
+  参数: sessionKey
+  时限: 5帧
+  后置: P_PromptReady / P_Failed
+
+变迁 T_BuildTools:
+  前置: P_PromptReady
+  动作: cat.tools_json
+  参数: sessionKey → catName
+  时限: 5帧
+  后置: P_ToolsReady / P_Failed
+
+变迁 T_Start:
+  前置: P_ToolsReady ∧ R_ReplySlot
+  动作: llm.completions
+  参数: model, messagesJson → messagesJson, toolsJson
   时限: 10帧
-  后置: P_Thinking
-  汇合: inbox                 // 用户消息——主线程消费
+  后置: P_Thinking / P_Failed
 
-变迁 T_Request:
-  前置: P_Thinking
-  动作: llm.chat
-  时限: 600帧                // 整体回复期限
-  后置: P_Streaming / P_Failed
-  线程: worker
-  汇合: inbox
-
-变迁 T_Receive:
-  前置: P_Streaming ∧ R_ChunkBuffer
+变迁 T_Pump:
+  前置: P_Thinking ∨ P_Streaming ∨ P_Waiting
   动作: llm.read_chunk
-  时限: 空闲60帧             // 断流检测——60 帧无分片即超时
-  后置: P_ChunkArrived / P_Failed
-  线程: worker
-  汇合: inbox
+  参数: requestId → requestId
+  后置: P_ChunkReady / P_Waiting
+  帧: 每帧
+
+变迁 T_Classify:
+  前置: P_ChunkReady
+  动作: llm.is_end
+  参数: requestId → requestId
+  时限: 5帧
+  后置: P_ChunkEnd / P_NotEnd
+  帧: 每帧
+
+变迁 T_Append:
+  前置: P_NotEnd
+  动作: llm.ctx_push_assistant
+  参数: sessionKey, contentDelta → text
+  时限: 5帧
+  后置: P_Streaming / P_Failed
+  帧: 每帧
+
+变迁 T_CheckError:
+  前置: P_ChunkEnd
+  动作: llm.has_error
+  参数: requestId → requestId
+  时限: 5帧
+  后置: P_LlmError / P_NoError
+  帧: 每帧
+
+变迁 T_HandleError:
+  前置: P_LlmError
+  动作: llm.finish
+  参数: requestId → requestId
+  时限: 10帧
+  后置: P_ErrorFinished / P_Failed
+
+变迁 T_Rollback:
+  前置: P_ErrorFinished
+  动作: llm.ctx_rollback
+  参数: sessionKey → sessionKey, checkpoint → checkpoint
+  时限: 5帧
+  后置: P_RolledBack / P_Failed
+
+变迁 T_RecordError:
+  前置: P_RolledBack
+  动作: llm.ctx_push_error
+  参数: sessionKey → sessionKey, errorCode → errorCode
+  时限: 5帧
+  后置: P_ErrorRecorded / P_Failed
 
 变迁 T_CheckTool:
-  前置: P_ChunkArrived
-  动作: stream.detect_tool
+  前置: P_NoError
+  动作: llm.is_tool
+  参数: requestId → requestId
   时限: 5帧
-  后置: P_ToolCall / P_ChunkArrived   // 检测到工具→切换；否则继续消费分片
-  线程: main
+  后置: P_ToolCall / P_NoTool
   帧: 每帧
 
-变迁 T_ToolExec:
+变迁 T_RecordToolCalls:
   前置: P_ToolCall
-  动作: tool.exec
-  时限: 300帧
-  后置: P_ToolResultReady / P_Failed
-  线程: worker
-  汇合: inbox
+  动作: llm.ctx_push_assistant_tool_calls
+  参数: sessionKey, toolCallsJson → toolCallsJson
+  时限: 5帧
+  后置: P_ToolCallsRecorded / P_Failed
 
-变迁 T_Resume:
-  前置: P_ToolResultReady
-  动作: ctx.append            // 工具结果回填上下文 → 重新请求
-  时限: 10帧
-  后置: P_Thinking
-  线程: main
+变迁 T_CloseOldSession:
+  前置: P_ToolCallsRecorded
+  动作: llm.finish
+  参数: requestId → requestId
+  时限: 5帧
+  后置: P_OldSessionClosed / P_Failed
+
+变迁 T_StoreReq:
+  前置: P_OldSessionClosed
+  动作: data.box_set_dic
+  参数: sessionKey → boxId, "tool_req" → packetKey, toolCallsJson → dataJson
+  时限: 5帧
+  后置: P_ReqStored / P_Failed
+
+变迁 T_MarkReq:
+  前置: P_ReqStored
+  动作: data.box_set
+  参数: sessionKey → boxId, "tool_req_flag" → key, 1 → value
+  时限: 5帧
+  后置: P_ToolPosted / P_Failed
+
+变迁 T_WaitTools:
+  前置: P_ToolPosted ∨ P_PollWait
+  动作: data.box_is
+  参数: sessionKey → boxId, "tools_done" → key, 1 → expected
+  时限: 5帧
+  后置: P_ToolsDone / P_PollWait
   帧: 每帧
+
+变迁 T_ClearDone:
+  前置: P_ToolsDone
+  动作: data.box_set
+  参数: sessionKey → boxId, "tools_done" → key, 0 → value
+  时限: 5帧
+  后置: P_ToolsCollected / P_Failed
+
+变迁 T_StatsBuild:
+  前置: P_NoTool
+  动作: llm.round_stats_text
+  参数: requestId → requestId, sessionKey → sessionKey
+  时限: 5帧
+  后置: P_StatsBuilt / P_Failed
+
+变迁 T_Stats:
+  前置: P_StatsBuilt
+  动作: llm.ctx_push_system
+  参数: sessionKey → sessionKey, text → content
+  时限: 5帧
+  后置: P_StatsDone / P_Failed
 
 变迁 T_Finish:
-  前置: P_Streaming ∧ P_ChunkArrived
+  前置: P_StatsDone
   动作: llm.finish
-  时限: 30帧
-  后置: P_Done
-  线程: main
-  帧: 每帧
+  参数: requestId → requestId
+  时限: 10帧
+  后置: P_Done / P_Failed
 
 变迁 T_Reset:
-  前置: P_Done ∨ P_Failed
-  动作: ctx.save
-  时限: 10帧
-  后置: P_Idle               // 回到空闲——等待下一条用户消息
-  线程: main
-  帧: 每帧
-
-组合 TalkCat:
-  序列: T_Enter, T_Request
-  并行: T_Receive ‖ T_CheckTool
-  选择: T_ToolExec → T_Resume → 重入 T_Request
-  序列: T_Finish, T_Reset
-  汇合: P_Done / P_Failed / P_Idle
+  前置: P_Done ∨ P_Failed ∨ P_ErrorRecorded
+  动作: llm.ctx_count
+  参数: sessionKey
+  时限: 5帧
+  后置: P_Idle / P_Failed

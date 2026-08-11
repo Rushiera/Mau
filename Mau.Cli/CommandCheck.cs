@@ -87,6 +87,18 @@ namespace Mau.Cli
         /// </summary>
         private static List<string> sSkips = new List<string>();
 /// <summary>
+/// 汇总计数——模板库总数
+/// </summary>
+private static int sCorpusTotal = 0; 
+/// <summary>
+/// 汇总计数——模板库通过数
+/// </summary>
+ private  static  int  sCorpusPass  =  0 ;  
+/// <summary>
+/// 汇总计数——模板库失败数
+/// </summary>
+ private  static  int  sCorpusFail  =  0 ;
+/// <summary>
 /// check 命令入口——全谱遍历一次返回全部错误；--selftest = 发布包随行资源自检（不要求 Mau.sln）
 /// </summary>
 ///
@@ -153,10 +165,14 @@ public static int Execute(string[] args)
                 sNegTotal = 0;
                 sNegPass = 0;
                 sNegFail = 0;
+                sCorpusTotal = 0;
+                sCorpusPass = 0;
+                sCorpusFail = 0;
                 sErrors = new List<string>();
                 sSkips = new List<string>();
 
                 // [段4] 执行谱——A+B（语法+翻译器）与 C+D（积木+负例）可独立
+                    RunCorpusTemplates(root);
                 if (!onlyBricks)
                 {
                     RunSyntaxAndGolden(syntaxDir, update);
@@ -483,8 +499,9 @@ public static int Execute(string[] args)
             {
                 Console.WriteLine("[A] 语法谱      " + sSyntaxPass + "/" + sSyntaxTotal + " 通过（" + sSyntaxFail + " 失败）");
                 Console.WriteLine("[B] 翻译器谱    " + sGoldenPass + "/" + sGoldenTotal + " 黄金一致（" + sGoldenDrift + " 漂移 " + sGoldenMissing + " 缺失 " + sGoldenStructFail + " 结构断言失败）");
-                total = total + sSyntaxTotal + sGoldenTotal;
-                fail = fail + sSyntaxFail + sGoldenDrift + sGoldenMissing + sGoldenStructFail;
+                Console.WriteLine("[E] 模板库      " + sCorpusPass + "/" + sCorpusTotal + " verify 通过（" + sCorpusFail + " 失败）");
+                total = total + sSyntaxTotal + sGoldenTotal + sCorpusTotal;
+                fail = fail + sSyntaxFail + sGoldenDrift + sGoldenMissing + sGoldenStructFail + sCorpusFail;
             }
             if (!onlySyntax)
             {
@@ -658,5 +675,37 @@ public static int Execute(string[] args)
             }
             return "未知";
         }
+/// <summary>
+/// 模板库——遍历 Mau.Corpus/*.mau，逐个静态验证（目录即清单——模板漂移阻断门禁）
+/// </summary>
+/// <param name = "root">仓库根</param>
+private static void RunCorpusTemplates(string root)
+{
+    string corpusDir = Path.Combine(root, "Mau.Corpus");
+    if (!Directory.Exists(corpusDir))
+    {
+        Console.WriteLine("WARN: 模板库目录不存在——" + corpusDir);
+        return;
     }
+
+    string[] files = Directory.GetFiles(corpusDir, "*.mau", SearchOption.TopDirectoryOnly);
+    Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+    for (int i = 0; i < files.Length; i = i + 1)
+    {
+        string path = files[i];
+        string fileName = Path.GetFileName(path);
+        string flowName = Program.FlowNameFromPath(Path.GetFileNameWithoutExtension(path));
+        string source = File.ReadAllText(path);
+        sCorpusTotal = sCorpusTotal + 1;
+        CompileResult result = MauCompiler.Compile(source, flowName);
+        if (!result.Success)
+        {
+            sCorpusFail = sCorpusFail + 1;
+            sErrors.Add("[E] " + fileName + ": verify 失败——" + FirstDiagnostic(result));
+            continue;
+        }
+
+        sCorpusPass = sCorpusPass + 1;
+    }
+}    }
 }

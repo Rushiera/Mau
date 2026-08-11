@@ -1,62 +1,105 @@
-﻿// cat_lifecycle.mau —— Cat 生命周期模板
-// 来源：CH3 ModState/LifeState——Discovered→Validated→Loaded→Disabled→Unloaded
+// cat_lifecycle.mau —— Cat 生命周期模板（指令总线驱动）
+// 来源：CH3 ModState/LifeState + CH4 P3.2/P3.5 落地（CH4.Corpus/Demo/CH4_Cat_Lifecycle.mau）
 // 用途：任何有生命周期实体的状态机骨架（Cat/Dog/Mod/插件）
-// 积木状态：cat.scan / cat.validate / cat.init / cat.enable / cat.disable / cat.unload —— 🔴 待实现（CH4 P3.2）
-// 结构：事实链（单调推进）+ 资源独占（同一时刻唯一状态）+ 互斥终态
+// 积木：cat.scan_instances（BRIK-CAT-001）/ cmd.register / cmd.consume / cmd.is_key（BRIK-CMD-001/003/006）
+//       + log.write（BRIK-LOG-001——状态记录占位，可替换为真实动作）
+// 结构：注册指令 key（cmd.register——自描述）→ 事实链单调推进（发现→验证→初始化→启用→运行）
+//       → 指令轮询（cmd.consume 每帧——Active/Disabled 态均收）→ 分派（cmd.is_key disable/unload）
+//       → 互斥终态（验证失败/初始化失败/卸载泄漏）+ 禁用→卸载（ALC 回收确认）
 Mau 0.1
 基座: Mau.Runtime/v0.1
 
 命题:
-  P_Discovered       事实    // 扫描发现
-  P_Validated        事实    // 身份验证通过
-  P_ValidationFailed 事实    // 验证失败——终态互斥
-  P_Initialized      事实    // 初始化完成
-  P_InitFailed       事实    // 初始化失败——终态互斥
-  P_Active           条件    // 运行中（可反复置位/清除）
-  P_Disabled         事实    // 已禁用
-  P_Unloaded         事实    // 已卸载——终态互斥
-  P_Leaked           事实    // 卸载后 ALC 未回收——终态互斥
-  P_NoDependents     条件    // 无反向依赖（卸载前置）
-  P_RequestIdle      条件    // 系统请求空闲
+  P_ScanDone        信号    // 入口——扫描触发（ownerId/cmdKeys payload——宿主投递）
+  P_RegDone         信号    // 指令 key 注册完成
+  P_Discovered      事实    // 扫描发现
+  P_Validated       事实    // 身份验证通过
+  P_ValidationFailed 事实   // 验证失败——终态互斥
+  P_Initialized     事实    // 初始化完成
+  P_InitFailed      事实    // 初始化失败——终态互斥
+  P_Active          条件    // 运行中（指令轮询窗口）
+  P_CmdArrived      信号    // 指令邮件已消费
+  P_NoCmd           信号    // 无指令——下帧继续轮询
+  P_NotDisable      信号    // 非 disable 指令
+  P_DisableAsk      信号    // disable 指令到达
+  P_Disabled        事实    // 已禁用（仍轮询——可收 unload）
+  P_NotUnload       信号    // 非 unload 指令
+  P_UnloadAsk       信号    // unload 指令到达
+  P_Unloaded        事实    // 已卸载——终态互斥
+  P_Leaked          事实    // 卸载后 ALC 未回收——终态互斥
 
 资源 R_StateSlot:
   独占                    // 生命周期状态——独占推进
 资源 R_ALC:
   独占                    // 程序集加载上下文——卸载确认
 
+变迁 T_Register:
+  前置: P_ScanDone
+  动作: cmd.register
+  参数: ownerId, cmdKeys
+  时限: 5帧
+  后置: P_RegDone / P_ValidationFailed
+
 变迁 T_Discover:
-  动作: cat.scan
-  后置: P_Discovered
+  前置: P_RegDone ∧ R_StateSlot
+  动作: log.write
+  参数: "Mau.Lifecycle" → module, 0 → level, "discovered" → message
+  时限: 5帧
+  后置: P_Discovered / P_ValidationFailed
 
 变迁 T_Validate:
   前置: P_Discovered ∧ R_StateSlot
-  动作: cat.validate
+  动作: log.write
+  参数: "Mau.Lifecycle" → module, 0 → level, "validated" → message
   时限: 30帧
   后置: P_Validated / P_ValidationFailed
 
 变迁 T_Initialize:
   前置: P_Validated
-  动作: cat.init
+  动作: log.write
+  参数: "Mau.Lifecycle" → module, 0 → level, "initialized" → message
   时限: 60帧
   后置: P_Initialized / P_InitFailed
 
 变迁 T_Enable:
   前置: P_Initialized
-  动作: cat.enable
-  后置: P_Active
+  动作: log.write
+  参数: "Mau.Lifecycle" → module, 0 → level, "enabled" → message
+  时限: 5帧
+  后置: P_Active / P_InitFailed
+
+变迁 T_CheckCmd:
+  前置: P_Active ∨ P_Disabled
+  动作: cmd.consume
+  参数: ownerId
+  时限: 5帧
+  后置: P_CmdArrived / P_NoCmd
+  帧: 每帧
+
+变迁 T_CheckDisable:
+  前置: P_CmdArrived
+  动作: cmd.is_key
+  参数: text → text, "disable" → target
+  时限: 5帧
+  后置: P_DisableAsk / P_NotDisable
+
+变迁 T_CheckUnload:
+  前置: P_NotDisable
+  动作: cmd.is_key
+  参数: text → text, "unload" → target
+  时限: 5帧
+  后置: P_UnloadAsk / P_NotUnload
 
 变迁 T_Disable:
-  前置: P_Active
-  动作: cat.disable
+  前置: P_Active ∧ P_DisableAsk
+  动作: log.write
+  参数: "Mau.Lifecycle" → module, 0 → level, "disabled" → message
   时限: 30帧
-  后置: P_Disabled
+  后置: P_Disabled / P_Leaked
 
 变迁 T_Unload:
-  前置: P_Disabled ∧ P_NoDependents ∧ P_RequestIdle ∧ R_ALC
-  动作: cat.unload
-  时限: 60帧                     // 有限 Cube 确认 GC 回收
+  前置: P_Disabled ∧ R_ALC ∧ P_UnloadAsk
+  动作: log.write
+  参数: "Mau.Lifecycle" → module, 0 → level, "unloaded" → message
+  时限: 60帧                    // 有限 Cube 确认 GC 回收
   后置: P_Unloaded / P_Leaked
-
-组合 Lifecycle:
-  序列: T_Discover, T_Validate, T_Initialize, T_Enable
-  序列: T_Disable, T_Unload

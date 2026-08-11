@@ -44,18 +44,18 @@
 | 类别 | 数量 | 说明 |
 |:--|:--|:--|
 | FILE | 11 | convert/read/write/append/replace/read_lines/tree/find/move/delete/batch |
-| MATH | 3 | 数学运算 |
-| DATA | 6 | snapshot×2 + box×4 |
+| MATH | 4 | 数学运算（is_all_digits/format_size/result_preview/random_int） |
+| DATA | 7 | snapshot×2 + box×5 |
 | TEXT | 1 | md_parse |
 | SHELL | 1 | exec |
-| LLM | 21 | chat/stream/read_chunk/finish/completions/is_end/is_tool/has_error + ctx_* 上下文（checkpoint/rollback/push_error） |
+| LLM | 26 | chat/stream/read_chunk/finish/completions/is_end/is_tool/has_error/content_empty/retry_empty/round_stats_text/has_active_session + ctx_* 上下文（checkpoint/rollback/push_error/push_system） |
 | APPROVAL | 5 | request/resolve/reject/pending/result |
 | OFFICE | 4 | excel.read/write + docx.read/write |
 | LOG | 4 | write/all/count/clear |
 | CMD | 8 | register/unregister/consume/set/clean/is_key/is_key_first/active_key |
 | OA | 16 | post/claim 族/complete 族/settle/is_closed（工单撮合） |
 | DOG | 9 | create/set_*/get_*/is_*/finish/collect_result（工单载体） |
-| TOOL | 13 | exec/dispatch 族/claim 族/collect 族/run_*/create_next/run_generic |
+| TOOL | 14 | exec/dispatch 族/claim 族/collect 族/run_*/create_next/run_generic/display |
 | PACK | 3 | excel.bridge/word.bridge/csharp.bridge（外部包接口——IPackBridge 单方法调度） |
 | UI | 11 | snapshot_chat/home/config + snapshot_push + window_event + profile_* + config_set/get（Pet-UI 模式） |
 | CAT | 2 | scan_instances（宿主 ICatScanner 桥——Data/Cats 目录即猫清单）/ tools_json（六域工具声明表 × 域过滤——TalkCat 自阻断） |
@@ -64,6 +64,7 @@
 | MAU | 1 | build |
 | AUDIT | 3 | audit.stat/read/find（审计查询——DataBox 寻路） |
 | TEST | 2 | probe.source/sink |
+| WIN | 3 | open_dir/flash_taskbar/notify（Windows 能力——目录即清单自动进索引） |
 
 **工具名规范：** DeepSeek 工具名禁点号（实测 400 `^[a-zA-Z0-9_-]+$`）——`cat.tools_json` 声明名点转下划线（LLM 感知 `system_info`），`tool.create_next` 发单归一化回点号（`system.info` 路由）——全链路兼容两种命名。
 
@@ -101,9 +102,11 @@
 |:--|:--|
 | 命题 Proposition | "什么成立"——状态：条件/信号/事实（终态/结算用信号消费即清除；状态/条件用事实单调可见） |
 | 变迁 Transition | "什么触发什么"——前置→动作→双后置（参数声明顺序 = 积木签名顺序铁律） |
-| 通道 Channel | "什么流向什么"——跨线程/跨进程 |
-| 组合 Composition | "什么与什么并列/串/选择/重试"（展开优于隐式——Mau 不可循环） |
+| 通道 Channel | ⚠️ **experimental**——语法解析/校验已实现，生成器未接线（文档化） |
+| 组合 Composition | ⚠️ **experimental**——documentation-only（执行语义未实现；语义由命题链显式展开承担——展开优于隐式） |
 | 资源 Resource | "什么被消耗/独占"——令牌/引用/配额 |
+
+> ⚠️ **experimental 说明（2026-08-11 外部评审定标）：** 组合/通道/对外（`对外:` 块）目前为语法面完成——解析、IR、静态校验已实现，**执行语义未接线**（组合仅生成文档注释；通道无生成物消费；对外仅 IR 测试）。勿作为生产构筑依赖——运行时语义全部由命题链 + 显式展开承担。
 
 ---
 

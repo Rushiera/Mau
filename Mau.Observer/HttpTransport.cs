@@ -95,7 +95,7 @@ namespace Mau.Observer
                 })
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
-                    webBuilder.UseUrls("http://0.0.0.0:" + _port.ToString());
+                    webBuilder.UseUrls("http://127.0.0.1:" + _port.ToString());
                     webBuilder.Configure(app =>
                     {
                         app.UseWebSockets();

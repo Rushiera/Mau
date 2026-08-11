@@ -145,13 +145,15 @@ namespace Mau.Runtime.Tests
         {
             AssertFixturesExist();
             FlowHandle handle = FlowHandle.Load(ValidDllPath);
-            handle.Flow.Tick();
+            IObservableFlow? flow = handle.Flow;
+            flow.Tick();
+            flow = null;    // 释放局部引用——减少调用方栈帧残留
 
             // TryUnload 不应抛异常，且完成后 Flow 不可访问
             bool result = handle.TryUnload(5);
 
-            // 无论 GC 是否立即回收，卸载流程本身应正常完成
-            // result 可能为 false（ALC 异步卸载），这不代表泄漏
+            // ⚠️ 不检查 result：TryUnload 的 GC 确认受调用方栈帧引用影响（flow 临时槽可能残留到方法尾），
+            // false 不必然泄漏。真实回收断言见 V10 TryUnload_AssemblyWeakRef_ReclaimedAfterScopeExit（作用域外弱引用死亡）。
             Assert.Throws<ObjectDisposedException>(() => handle.Flow);
         }
 
@@ -302,6 +304,46 @@ namespace Mau.Runtime.Tests
             AssertFixturesExist();
             using FlowHandle handle = FlowHandle.Load(ValidDllPath);
             Assert.Equal(Path.GetFullPath(ValidDllPath), handle.SourceDll);
+        }
+
+        // ──────────────────────────────────────
+        // V10: ALC 真实回收断言——作用域退出后 assembly 弱引用死亡（外部评审补）
+        // ──────────────────────────────────────
+
+        /// <summary>
+        /// 卸载后 ALC 真实回收——独立作用域加载/卸载，方法返回（栈帧消失）后 GC 循环断言 assembly 弱引用死亡。
+        /// 不依赖 TryUnload 返回值（受调用方栈帧引用影响，false 不必然泄漏）——直接验证回收结果。
+        /// </summary>
+        [Fact]
+        public void TryUnload_AssemblyWeakRef_ReclaimedAfterScopeExit()
+        {
+            AssertFixturesExist();
+            WeakReference assemblyRef;
+            RunUnloadInScope(out assemblyRef);
+
+            // 作用域外 GC 循环——ALC 内 assembly 弱引用死亡 = ALC 真实回收（长期热重载无泄漏前提）
+            for (int i = 0; i < 20; i = i + 1)
+            {
+                GC.Collect(2, GCCollectionMode.Forced, true, true);
+                GC.WaitForPendingFinalizers();
+                if (!assemblyRef.IsAlive)
+                {
+                    break;
+                }
+            }
+            Assert.False(assemblyRef.IsAlive, "卸载后 ALC 应被回收（assembly 弱引用死亡）——否则长期热重载会累积泄漏");
+        }
+
+        /// <summary>
+        /// V10 辅助——独立作用域加载+卸载+取 Assembly 弱引用（方法返回后调用栈无生成物引用残留）
+        /// </summary>
+        /// <param name="assemblyRef">ALC 内 assembly 的弱引用</param>
+        private static void RunUnloadInScope(out WeakReference assemblyRef)
+        {
+            FlowHandle handle = FlowHandle.Load(ValidDllPath);
+            handle.Flow.Tick();
+            assemblyRef = new WeakReference(handle.Flow.GetType().Assembly);
+            handle.TryUnload(10);
         }
     }
 }

@@ -205,10 +205,10 @@ public string SourceDll
         }
 
         /// <summary>
-        /// 尝试卸载 ALC 并确认 GC 回收
+        /// 尝试卸载 ALC 并尽力确认 GC 回收
         /// </summary>
         /// <param name="gcAttempts">GC 尝试次数，默认 3</param>
-        /// <returns>true=回收成功 / false=泄漏</returns>
+        /// <returns>true=确认弱引用死亡；false=确认未完成——⚠️ 不必然泄漏：调用方栈帧上仍持有生成物引用（局部变量/属性求值残留）时 ALC 无法回收，确认必然失败。强确认 = 释放全部引用并退出作用域后另行 GC 验证（见 HotReloadTests.TryUnload_AssemblyWeakRef_ReclaimedAfterScopeExit）</returns>
         public bool TryUnload(int gcAttempts = 3)
         {
             if (_disposed)
