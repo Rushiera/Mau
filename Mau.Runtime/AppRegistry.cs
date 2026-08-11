@@ -39,7 +39,7 @@ namespace Mau.Runtime
         /// </summary>
         /// <param name="identity">程序身份</param>
         public static void Register(AppIdentity identity)
-        {
+{
             if (identity == null)
             {
                 throw new ArgumentNullException("identity");
@@ -50,11 +50,9 @@ namespace Mau.Runtime
             }
             Directory.CreateDirectory(AppsDir);
             string json = JsonSerializer.Serialize(identity, JsonOptions);
-            string tmp = FilePath(identity.Name) + ".tmp";
-            File.WriteAllText(tmp, json);
-            File.Move(tmp, FilePath(identity.Name), true);
+            // 原子写——统一实现 ConfigStore.AtomicWrite（审查修复轮 2026-08-11 决策3）
+            ConfigStore.AtomicWrite(FilePath(identity.Name), json);
         }
-
         /// <summary>
         /// 注销——删除注册文件
         /// </summary>

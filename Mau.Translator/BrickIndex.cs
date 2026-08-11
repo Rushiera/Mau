@@ -275,46 +275,10 @@ namespace Mau.Translator
         /// <param name="typeName">JSON 类型名</param>
         /// <returns>Type（未知类型回退 string）</returns>
         private static Type MapType(string typeName)
-        {
-            switch (typeName)
-            {
-                case "string":
-                    return typeof(string);
-                case "long":
-                    return typeof(long);
-                case "int":
-                    return typeof(int);
-                case "bool":
-                    return typeof(bool);
-                case "string[]":
-                    return typeof(string[]);
-                case "long[]":
-                    return typeof(long[]);
-                case "int[]":
-                    return typeof(int[]);
-                case "bool[]":
-                    return typeof(bool[]);
-                case "Office[]":
-                    return typeof(Office[]);
-                case "Office":
-                    return typeof(Office);
-                case "OfficeData":
-                    return typeof(OfficeData);
-                case "ApprovalResult":
-                    return typeof(ApprovalResult);
-                case "MarkdownPart":
-                    return typeof(MarkdownPart);
-                case "LlmMessage":
-                    return typeof(LlmMessage);
-                case "List`1":
-                    return typeof(List<MarkdownPart>);
-                case "Dictionary`2":
-                    return typeof(Dictionary<string, List<string>>);
-                default:
-                    return typeof(string);
-            }
+{
+            // 统一映射——TypeMap（审查修复轮 2026-08-11：BrickIndex.MapType 与 CommandBricks.TypeFromName 同表收拢）
+            return Mau.Runtime.TypeMap.Map(typeName);
         }
-
         /// <summary>
         /// 按积木名查询
         /// </summary>

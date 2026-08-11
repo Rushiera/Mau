@@ -408,23 +408,11 @@ namespace Mau.Runtime
         /// <param name="path">目标路径</param>
         /// <param name="content">正文</param>
         private void WriteAtomic(string path, string content)
-        {
+{
             EnsureParentDirectory(path);
-            string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            try
-            {
-                File.WriteAllText(temporary, content, new UTF8Encoding(false));
-                File.Move(temporary, path, true);
-            }
-            finally
-            {
-                if (File.Exists(temporary))
-                {
-                    File.Delete(temporary);
-                }
-            }
+            // 原子写——统一实现 ConfigStore.AtomicWrite（审查修复轮 2026-08-11 决策3）
+            ConfigStore.AtomicWrite(path, content);
         }
-
         /// <summary>
         /// 创建目标父目录
         /// </summary>

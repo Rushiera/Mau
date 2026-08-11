@@ -272,7 +272,7 @@ namespace Mau.Observer
                 }
                 FlowSnapshotEntry entry = snapshot.Flows[i];
                 sb.AppendLine("    {");
-                sb.AppendLine("      \"flowName\": \"" + JsonEscape(entry.FlowName) + "\",");
+                sb.AppendLine("      \"flowName\": \"" + Mau.Runtime.TextUtil.JsonEscape(entry.FlowName) + "\",");
                 sb.AppendLine("      \"status\": {");
                 sb.AppendLine("        \"frame\": " + entry.Status.Frame.ToString() + ",");
                 sb.Append("        \"propositions\": [");
@@ -283,7 +283,7 @@ namespace Mau.Observer
                         sb.Append(", ");
                     }
                     PropSnapshot prop = entry.Status.Propositions[p];
-                    sb.Append("{\"name\":\"" + JsonEscape(prop.Name) + "\",\"kind\":\"" + prop.Kind + "\",\"value\":" + (prop.Value ? "true" : "false") + "}");
+                    sb.Append("{\"name\":\"" + Mau.Runtime.TextUtil.JsonEscape(prop.Name) + "\",\"kind\":\"" + prop.Kind + "\",\"value\":" + (prop.Value ? "true" : "false") + "}");
                 }
                 sb.AppendLine("],");
                 sb.Append("        \"transitions\": [");
@@ -294,7 +294,7 @@ namespace Mau.Observer
                         sb.Append(", ");
                     }
                     TransSnapshot trans = entry.Status.Transitions[t];
-                    sb.Append("{\"name\":\"" + JsonEscape(trans.Name) + "\",\"cubeState\":\"" + trans.CubeState + "\",\"elapsedFrames\":" + trans.ElapsedFrames.ToString() + ",\"limitFrames\":" + trans.LimitFrames.ToString() + "}");
+                    sb.Append("{\"name\":\"" + Mau.Runtime.TextUtil.JsonEscape(trans.Name) + "\",\"cubeState\":\"" + trans.CubeState + "\",\"elapsedFrames\":" + trans.ElapsedFrames.ToString() + ",\"limitFrames\":" + trans.LimitFrames.ToString() + "}");
                 }
                 sb.AppendLine("]");
                 sb.AppendLine("      },");
@@ -306,7 +306,7 @@ namespace Mau.Observer
                         sb.Append(", ");
                     }
                     MauDebug log = entry.Logs[l];
-                    sb.Append("{\"frame\":" + log.Frame.ToString() + ",\"transition\":\"" + JsonEscape(log.TransitionName) + "\",\"phase\":\"" + log.Phase + "\",\"message\":\"" + JsonEscape(log.Message) + "\"}");
+                    sb.Append("{\"frame\":" + log.Frame.ToString() + ",\"transition\":\"" + Mau.Runtime.TextUtil.JsonEscape(log.TransitionName) + "\",\"phase\":\"" + log.Phase + "\",\"message\":\"" + Mau.Runtime.TextUtil.JsonEscape(log.Message) + "\"}");
                 }
                 sb.AppendLine("]");
                 sb.Append("    }");
@@ -324,7 +324,7 @@ namespace Mau.Observer
                     sb.AppendLine(",");
                 }
                 SystemEvent ev = snapshot.SystemEvents[e];
-                sb.Append("    {\"hostFrame\":" + ev.HostFrame.ToString() + ",\"timestamp\":\"" + ev.Timestamp.ToString("o") + "\",\"level\":\"" + ev.Level + "\",\"source\":\"" + JsonEscape(ev.Source) + "\",\"message\":\"" + JsonEscape(ev.Message) + "\"}");
+                sb.Append("    {\"hostFrame\":" + ev.HostFrame.ToString() + ",\"timestamp\":\"" + ev.Timestamp.ToString("o") + "\",\"level\":\"" + ev.Level + "\",\"source\":\"" + Mau.Runtime.TextUtil.JsonEscape(ev.Source) + "\",\"message\":\"" + Mau.Runtime.TextUtil.JsonEscape(ev.Message) + "\"}");
             }
             if (snapshot.SystemEvents.Length > 0)
             {
@@ -386,20 +386,6 @@ namespace Mau.Observer
             sb.AppendLine("  \"nextId\": " + host.NextId.ToString());
             sb.Append("}");
             return sb.ToString();
-        }
-
-        /// <summary>
-        /// JSON 字符串转义
-        /// </summary>
-        /// <param name="s">原始字符串</param>
-        /// <returns>转义后字符串</returns>
-        private static string JsonEscape(string s)
-        {
-            if (s == null)
-            {
-                return "";
-            }
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
         }
 
         /// <summary>

@@ -53,5 +53,5 @@ namespace Mau.Runtime
             }
             return "";
         }
-    }
+}
 }

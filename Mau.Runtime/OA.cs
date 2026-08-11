@@ -718,22 +718,6 @@ public OAView GetSnapshot()
         }
 
         /// <summary>
-        /// 复制字符串数组，null 统一为空数组
-        /// </summary>
-        /// <param name="source">源数组</param>
-        /// <returns>独立数组</returns>
-        private string[] CopyArray(string[]? source)
-        {
-            if (source == null)
-            {
-                return new string[0];
-            }
-            string[] result = new string[source.Length];
-            Array.Copy(source, result, source.Length);
-            return result;
-        }
-
-        /// <summary>
         /// 深复制工单中的双字典载荷字段
         /// </summary>
         /// <param name="source">源工单</param>

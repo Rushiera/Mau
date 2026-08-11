@@ -108,24 +108,9 @@ namespace Mau.Cli
             }
             manifest.ManifestPath = Path.GetFullPath(path);
             manifest.DirectoryPath = Path.GetDirectoryName(manifest.ManifestPath) ?? ".";
-            // 输入基准 = 仓库根——向上找含 .sln 或 .git 的目录（输入 glob 相对仓库根解析；P2：清单放 CH4.Corpus/ 次级）
-            string? repoProbe = manifest.DirectoryPath;
-            while (repoProbe != null)
-            {
-                if (File.Exists(Path.Combine(repoProbe, ".git"))
-                    || Directory.Exists(Path.Combine(repoProbe, ".git"))
-                    || File.Exists(Path.Combine(repoProbe, "Mau.sln"))
-                    || File.Exists(Path.Combine(repoProbe, "CH4.sln")))
-                {
-                    manifest.InputBaseDir = repoProbe;
-                    break;
-                }
-                repoProbe = Directory.GetParent(repoProbe)?.FullName;
-            }
-            if (manifest.InputBaseDir.Length == 0)
-            {
-                manifest.InputBaseDir = manifest.DirectoryPath;
-            }
+            // 输入基准 = 仓库根——统一探针 FindRepoRoot（审查修复轮 2026-08-11 决策2；.git/Mau.sln/CH4.sln 标记）
+            string? repoRoot = CliSupport.FindRepoRoot(manifest.DirectoryPath, new string[] { ".git", "Mau.sln", "CH4.sln" });
+            manifest.InputBaseDir = repoRoot ?? manifest.DirectoryPath;
 
             string content = File.ReadAllText(path).Replace("\r\n", "\n");
             string[] lines = content.Split('\n');
@@ -483,7 +468,7 @@ namespace Mau.Cli
         /// <param name="files">文件列表</param>
         /// <returns>失配文件数（0=全匹配或非积木输入）</returns>
         public static int CountBrickChecksumMismatch(List<string> files)
-        {
+{
             int mismatch = 0;
             for (int i = 0; i < files.Count; i++)
             {
@@ -517,9 +502,9 @@ namespace Mau.Cli
                             bodyEnd = bodyEnd - 1;
                             continue;
                         }
-                        if (last.StartsWith("// #MAU_CHECKSUM:SHA256:", StringComparison.Ordinal))
+                        if (last.StartsWith(Mau.Runtime.HashUtil.ChecksumPrefix, StringComparison.Ordinal))
                         {
-                            actualChecksum = last.Substring("// #MAU_CHECKSUM:SHA256:".Length).Trim();
+                            actualChecksum = last.Substring(Mau.Runtime.HashUtil.ChecksumPrefix.Length).Trim();
                             bodyEnd = bodyEnd - 1;
                             continue;
                         }
@@ -551,7 +536,6 @@ namespace Mau.Cli
             }
             return mismatch;
         }
-
         /// <summary>
         /// 追加列表值——按未转义逗号拆分（\, 保留为字面逗号，解码延后）
         /// </summary>

@@ -299,19 +299,10 @@ namespace Mau.Cli
         /// <param name="startDir">起始目录</param>
         /// <returns>仓库根（找不到返回起始目录）</returns>
         private static string FindRepoRoot(string startDir)
-        {
+{
+            // 统一探针——FindRepoRoot（审查修复轮 2026-08-11 决策2；CatTemp/.git 标记）
             string? dir = new DirectoryInfo(startDir).FullName;
-            while (dir != null)
-            {
-                if (Directory.Exists(Path.Combine(dir, "CatTemp"))
-                    || File.Exists(Path.Combine(dir, ".git"))
-                    || Directory.Exists(Path.Combine(dir, ".git")))
-                {
-                    return dir;
-                }
-                dir = Directory.GetParent(dir)?.FullName;
-            }
-            return new DirectoryInfo(startDir).FullName;
-        }
-    }
+            string? root = CliSupport.FindRepoRoot(dir, new string[] { "CatTemp", ".git" });
+            return root ?? dir;
+        }    }
 }

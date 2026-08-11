@@ -86,7 +86,7 @@ namespace Mau.Cli
 
             // [1] 编译——MauCompiler 唯一入口（BrickIndex + BRIKGROUP 内嵌）
             string sourceText = File.ReadAllText(mauFile, Encoding.UTF8);
-            string flowName = FlowNameFromPath(mauFile);
+            string flowName = Program.FlowNameFromPath(mauFile);
             CompileResult compileResult = MauCompiler.Compile(sourceText, flowName);
             if (!compileResult.Success)
             {
@@ -441,27 +441,8 @@ namespace Mau.Cli
         }
 
         /// <summary>
-        /// 从文件路径推导流程名——file_convert.mau → FileConvert
+        /// <summary>
+        /// 从文件路径推导流程名——file_convert.mau → FileConvert（统一 Program.FlowNameFromPath）
         /// </summary>
-        /// <param name="path">文件路径</param>
-        /// <returns>PascalCase 流程名</returns>
-        private static string FlowNameFromPath(string path)
-        {
-            string baseName = Path.GetFileNameWithoutExtension(path);
-            string[] parts = baseName.Split('_');
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < parts.Length; i++)
-            {
-                if (parts[i].Length == 0)
-                {
-                    continue;
-                }
-                string head = parts[i].Substring(0, 1).ToUpperInvariant();
-                string tail = parts[i].Length > 1 ? parts[i].Substring(1) : "";
-                sb.Append(head);
-                sb.Append(tail);
-            }
-            return sb.ToString();
-        }
     }
 }

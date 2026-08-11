@@ -16,7 +16,7 @@ namespace Mau.Cli
         /// <summary>
         /// 黄金校验尾前缀——与门禁 L3 同格式
         /// </summary>
-        private const string GoldenPrefix = "// #MAU_CHECKSUM:SHA256:";
+        // 黄金校验尾前缀——统一常量（HashUtil.ChecksumPrefix，审查修复轮 2026-08-11 收拢 6 处硬编码）
 
         /// <summary>
         /// 汇总计数——语法谱总数
@@ -313,7 +313,7 @@ public static int Execute(string[] args)
                     paramLines.Append(c.Inputs[p].Name);
                 }
                 string flowName = "BrickCheck" + c.Name.Replace(".", "");
-                string source = "Mau 0.1\n基座: Mau.Runtime/v0.1\n\n命题:\n  P_Go 信号\n  P_Done 事实\n  P_Failed 事实\n\n变迁 T_Run:\n  前置: P_Go\n  动作: " + c.Name + "\n  参数: " + paramLines.ToString() + "\n  时限: 60帧\n  后置: P_Done / P_Failed\n";
+                string source = CliSupport.BuildMinimalCorpus(c.Name, paramLines.ToString(), "T_Run");
                 sourceTexts.Add(source);
                 flowNames.Add(flowName);
                 brickNames.Add(c.Name);
@@ -552,7 +552,7 @@ public static int Execute(string[] args)
         private static void WriteGolden(string path, string generated)
         {
             string body = generated.Replace("\r\n", "\n").TrimEnd();
-            string content = body + "\n" + GoldenPrefix + CliSupport.ComputeSha256(body) + "\n";
+            string content = body + "\n" + Mau.Runtime.HashUtil.ChecksumPrefix + CliSupport.ComputeSha256(body) + "\n";
             File.WriteAllText(path, content, new UTF8Encoding(true));
         }
 
@@ -575,9 +575,9 @@ public static int Execute(string[] args)
                     bodyEnd = bodyEnd - 1;
                     continue;
                 }
-                if (last.StartsWith(GoldenPrefix))
+                if (last.StartsWith(Mau.Runtime.HashUtil.ChecksumPrefix))
                 {
-                    hash = last.Substring(GoldenPrefix.Length).Trim();
+                    hash = last.Substring(Mau.Runtime.HashUtil.ChecksumPrefix.Length).Trim();
                     bodyEnd = bodyEnd - 1;
                     continue;
                 }

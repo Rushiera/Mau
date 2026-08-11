@@ -169,24 +169,9 @@ namespace Mau.Cli
         /// </summary>
         /// <returns>Mau 根目录路径</returns>
         private static string FindMauRoot()
-        {
-            // 从当前程序集位置向上查找 Mau.sln
-            string? dir = AppDomain.CurrentDomain.BaseDirectory;
-            while (dir != null)
-            {
-                if (File.Exists(Path.Combine(dir, "Mau.sln")))
-                {
-                    return dir;
-                }
-                DirectoryInfo? parent = Directory.GetParent(dir);
-                if (parent == null)
-                {
-                    break;
-                }
-                dir = parent.FullName;
-            }
-            // Fallback
-            return AppDomain.CurrentDomain.BaseDirectory;
-        }
-    }
+{
+            // 统一探针——FindRepoRoot（审查修复轮 2026-08-11 决策2；程序集位置向上，兜底返回程序集目录）
+            string? root = CliSupport.FindRepoRoot(AppDomain.CurrentDomain.BaseDirectory, new string[] { "Mau.sln" });
+            return root ?? AppDomain.CurrentDomain.BaseDirectory;
+        }    }
 }

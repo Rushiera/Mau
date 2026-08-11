@@ -45,7 +45,7 @@ namespace Mau.Cli
             // [段1] 命令路由（积木注册表已退役——翻译器构筑期经 BrickIndex 查询 Bricks/index.json）
             if (args.Length == 0)
             {
-                Console.WriteLine("Mau Translator v0.1");
+                Console.WriteLine("Mau Translator " + Mau.Runtime.VersionInfo.GetEntryVersion());
                 Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau|组.mauproj> -o <dir> [--sdk] | mau publish -o <dir> | mau test [--update] | mau check [--update|--syntax|--bricks|--selftest] | mau up [-f 清单] [--force] | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau debug <file.mau> [--ticks N] [--step] [--pause-on T_X|P_Y] [--trace] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket> | mau ps | mau status <名> | mau snapshot <名> | mau kill <名> | mau bricks list|index|test|reseal | mau export <组.mauproj> [-o <dir>] | mau import <组包目录> -o <目录> [--force]");
                 return 0;
             }
@@ -448,7 +448,7 @@ namespace Mau.Cli
         /// <param name="args">命令行参数：checksum --update</param>
         /// <returns>退出码</returns>
         private static int CommandChecksum(string[] args)
-        {
+{
             if (args.Length < 2 || args[1] != "--update")
             {
                 Console.WriteLine("用法: mau checksum --update");
@@ -477,7 +477,8 @@ namespace Mau.Cli
                 return 0;
             }
 
-            string checksumPrefix = "// #MAU_CHECKSUM:SHA256:";
+            // 统一常量——HashUtil.ChecksumPrefix（审查修复轮 2026-08-11）
+            string checksumPrefix = Mau.Runtime.HashUtil.ChecksumPrefix;
             int updated = 0;
             for (int i = 0; i < files.Length; i++)
             {
@@ -532,7 +533,6 @@ namespace Mau.Cli
             Console.WriteLine("完成: " + updated + " 份黄金文件校验尾已更新");
             return 0;
         }
-
     /// <summary>
     /// 判断 serve 子命令——spawn/stop/status/call 走服务管理，其余走 HTTP 面板
     /// </summary>

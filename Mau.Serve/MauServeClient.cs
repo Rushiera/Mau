@@ -19,27 +19,11 @@ namespace Mau.Serve
         /// <param name="timeoutMs">连接超时（毫秒）</param>
         /// <returns>响应</returns>
         public static ServeResponse Request(string pipeName, ServeRequest request, int timeoutMs)
-        {
-            using (NamedPipeClientStream client = new NamedPipeClientStream(
-                ".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous))
-            {
-                client.Connect(timeoutMs);
-                // leaveOpen: true——reader/writer 释放时不关闭底层管道，由 client 统一关闭
-                using (StreamWriter writer = new StreamWriter(client, new UTF8Encoding(false), 1024, true))
-                using (StreamReader reader = new StreamReader(client, Encoding.UTF8, false, 1024, true))
-                {
-                    writer.AutoFlush = true;
-                    writer.WriteLine(request.ToJsonLine());
-                    string? line = reader.ReadLine();
-                    if (line == null)
-                    {
-                        throw new InvalidOperationException("服务端未返回响应。");
-                    }
-                    return ServeResponse.FromJsonLine(line);
-                }
-            }
+{
+            // 统一客户端——PipeClient（审查修复轮 2026-08-11 决策3；协议载荷由 ServeRequest 序列化）
+            string line = Mau.Runtime.PipeClient.Request(pipeName, request.ToJsonLine(), timeoutMs);
+            return ServeResponse.FromJsonLine(line);
         }
-
         /// <summary>
         /// 探测管道是否可用
         /// </summary>

@@ -398,7 +398,7 @@ private int _pickUpFrames;
         /// <param name="path">目标路径</param>
         /// <returns>true=保存成功</returns>
         public bool Save(string path)
-        {
+{
             if (path == null || path.Length == 0)
             {
                 return false;
@@ -415,17 +415,11 @@ private int _pickUpFrames;
             state.Result = _result.Copy();
             try
             {
-                string? dir = Path.GetDirectoryName(path);
-                if (dir != null && dir.Length > 0)
-                {
-                    Directory.CreateDirectory(dir);
-                }
                 System.Text.Json.JsonSerializerOptions options = new System.Text.Json.JsonSerializerOptions();
                 options.IncludeFields = true;
                 string json = System.Text.Json.JsonSerializer.Serialize(state, options);
-                string tmp = path + ".tmp";
-                File.WriteAllText(tmp, json);
-                File.Move(tmp, path, true);
+                // 原子写——统一实现 ConfigStore.AtomicWrite（审查修复轮 2026-08-11 决策3）
+                ConfigStore.AtomicWrite(path, json);
                 return true;
             }
             catch (Exception)
@@ -433,7 +427,6 @@ private int _pickUpFrames;
                 return false;
             }
         }
-
         /// <summary>
         /// 从磁盘恢复——重建 Dog + OA 重建单（载荷写回）；注册由调用方负责
         /// </summary>

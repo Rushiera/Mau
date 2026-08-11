@@ -740,17 +740,7 @@ public static string KeySegment(string raw)
     }
 
     return sb.ToString();
-}        /// <summary>
-        /// 判断字符是否为 ASCII 英文字母
-        /// </summary>
-        /// <param name="character">字符</param>
-        /// <returns>是否为 A-Z 或 a-z</returns>
-        private bool IsAsciiLetter(char character)
-        {
-            return (character >= 'A' && character <= 'Z')
-                || (character >= 'a' && character <= 'z');
-        }
-
+}        
         /// <summary>
         /// 写入可选日志
         /// </summary>

@@ -243,17 +243,17 @@ namespace Mau.Cli
             string baseVersion = ReadBaseVersion();
             StringBuilder json = new StringBuilder();
             json.AppendLine("{");
-            json.AppendLine("  \"name\": \"" + JsonEscape(proj.Name) + "\",");
-            json.AppendLine("  \"version\": \"" + JsonEscape(proj.Version) + "\",");
+            json.AppendLine("  \"name\": \"" + CliSupport.JsonEscape(proj.Name) + "\",");
+            json.AppendLine("  \"version\": \"" + CliSupport.JsonEscape(proj.Version) + "\",");
             json.AppendLine("  \"exportedAt\": \"" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") + "\",");
-            json.AppendLine("  \"mauVersion\": \"" + JsonEscape(mauVersion) + "\",");
-            json.AppendLine("  \"baseVersion\": \"" + JsonEscape(baseVersion) + "\",");
+            json.AppendLine("  \"mauVersion\": \"" + CliSupport.JsonEscape(mauVersion) + "\",");
+            json.AppendLine("  \"baseVersion\": \"" + CliSupport.JsonEscape(baseVersion) + "\",");
             json.AppendLine("  \"files\": [");
             for (int i = 0; i < exportedFiles.Count; i++)
             {
                 string rel = exportedFiles[i];
                 string hash = MauProjFile.ComputeFileSha256(Path.Combine(targetDir, rel));
-                json.Append("    {\"path\": \"" + JsonEscape(rel) + "\", \"sha256\": \"" + hash + "\"}");
+                json.Append("    {\"path\": \"" + CliSupport.JsonEscape(rel) + "\", \"sha256\": \"" + hash + "\"}");
                 if (i < exportedFiles.Count - 1)
                 {
                     json.Append(",");
@@ -265,7 +265,7 @@ namespace Mau.Cli
             json.AppendLine("    \"bricks\": [");
             for (int i = 0; i < proj.Dependencies.Count; i++)
             {
-                json.Append("      \"" + JsonEscape(proj.Dependencies[i]) + "\"");
+                json.Append("      \"" + CliSupport.JsonEscape(proj.Dependencies[i]) + "\"");
                 if (i < proj.Dependencies.Count - 1)
                 {
                     json.Append(",");
@@ -276,7 +276,7 @@ namespace Mau.Cli
             json.AppendLine("    \"projects\": [");
             for (int i = 0; i < proj.References.Count; i++)
             {
-                json.Append("      \"" + JsonEscape(proj.References[i]) + "\"");
+                json.Append("      \"" + CliSupport.JsonEscape(proj.References[i]) + "\"");
                 if (i < proj.References.Count - 1)
                 {
                     json.Append(",");
@@ -599,20 +599,10 @@ namespace Mau.Cli
         /// <param name="mauprojPath">mauproj 文件路径</param>
         /// <returns>仓库根或空</returns>
         private static string? FindWorkspaceRootFrom(string mauprojPath)
-        {
-            DirectoryInfo? dir = new DirectoryInfo(Path.GetDirectoryName(Path.GetFullPath(mauprojPath)) ?? ".");
-            while (dir != null)
-            {
-                string sln = Path.Combine(dir.FullName, "Mau.sln");
-                if (File.Exists(sln))
-                {
-                    return dir.FullName;
-                }
-                dir = dir.Parent;
-            }
-            return null;
+{
+            // 统一探针——FindRepoRoot（审查修复轮 2026-08-11 决策2；从 mauproj 目录向上，不依赖 CWD）
+            return CliSupport.FindRepoRoot(Path.GetDirectoryName(Path.GetFullPath(mauprojPath)) ?? ".", new string[] { "Mau.sln" });
         }
-
         /// <summary>
         /// 读取 .mau 文件头 Mau 版本——首行 Mau &lt;版本&gt;
         /// </summary>
@@ -662,49 +652,6 @@ namespace Mau.Cli
                 // 读取失败不阻塞导出
             }
             return "unknown";
-        }
-
-        /// <summary>
-        /// JSON 字符串转义——引号/反斜杠/控制字符
-        /// </summary>
-        /// <param name="value">原始字符串</param>
-        /// <returns>转义后文本</returns>
-        private static string JsonEscape(string value)
-        {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < value.Length; i++)
-            {
-                char c = value[i];
-                if (c == '"')
-                {
-                    sb.Append("\\\"");
-                }
-                else if (c == '\\')
-                {
-                    sb.Append("\\\\");
-                }
-                else if (c == '\n')
-                {
-                    sb.Append("\\n");
-                }
-                else if (c == '\r')
-                {
-                    sb.Append("\\r");
-                }
-                else if (c == '\t')
-                {
-                    sb.Append("\\t");
-                }
-                else if (c < 0x20)
-                {
-                    sb.Append("\\u" + ((int)c).ToString("X4"));
-                }
-                else
-                {
-                    sb.Append(c);
-                }
-            }
-            return sb.ToString();
         }
 /// <summary>
 /// 路径根内校验——GetFullPath 后必须位于 root 内（防 ../ 逃逸；安全审查项 P0-7）

@@ -41,30 +41,6 @@ namespace Mau.Cli
         }
 
         /// <summary>
-        /// 从文件路径推导流程名——file_convert.mau → FileConvert（与 gen/build 一致）
-        /// </summary>
-        /// <param name="path">文件路径</param>
-        /// <returns>PascalCase 流程名</returns>
-        private static string FlowNameFromPath(string path)
-        {
-            string baseName = Path.GetFileNameWithoutExtension(path);
-            string[] parts = baseName.Split('_');
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < parts.Length; i = i + 1)
-            {
-                if (parts[i].Length == 0)
-                {
-                    continue;
-                }
-                string head = parts[i].Substring(0, 1).ToUpperInvariant();
-                string tail = parts[i].Length > 1 ? parts[i].Substring(1) : "";
-                sb.Append(head);
-                sb.Append(tail);
-            }
-            return sb.ToString();
-        }
-
-        /// <summary>
         /// 执行 mau run
         /// </summary>
         /// <param name="args">命令行参数——不含 "run" 本身</param>
@@ -144,7 +120,7 @@ namespace Mau.Cli
 
             // [1] 唯一入口——MauCompiler.Compile（R1：BrickIndex 加载 + BRIKGROUP 内嵌；禁止独立拼装 Parser→Validator→Generator）
             string sourceText = File.ReadAllText(mauFile, Encoding.UTF8);
-            string flowName = FlowNameFromPath(mauFile);
+            string flowName = Program.FlowNameFromPath(mauFile);
             CompileResult compileResult = MauCompiler.Compile(sourceText, flowName);
             if (!compileResult.Success)
             {
@@ -357,7 +333,7 @@ namespace Mau.Cli
                     json.Append(", ");
                 }
                 PropSnapshot p = status.Propositions[i];
-                json.Append("{\"name\":\"" + JsonEscape(p.Name) + "\",\"kind\":\"" + p.Kind + "\",\"value\":" + (p.Value ? "true" : "false") + "}");
+                json.Append("{\"name\":\"" + CliSupport.JsonEscape(p.Name) + "\",\"kind\":\"" + p.Kind + "\",\"value\":" + (p.Value ? "true" : "false") + "}");
             }
             json.AppendLine("],");
             json.Append("    \"transitions\": [");
@@ -368,7 +344,7 @@ namespace Mau.Cli
                     json.Append(", ");
                 }
                 TransSnapshot t = status.Transitions[i];
-                json.Append("{\"name\":\"" + JsonEscape(t.Name) + "\",\"cubeState\":\"" + t.CubeState + "\",\"elapsedFrames\":" + t.ElapsedFrames.ToString() + ",\"limitFrames\":" + t.LimitFrames.ToString() + "}");
+                json.Append("{\"name\":\"" + CliSupport.JsonEscape(t.Name) + "\",\"cubeState\":\"" + t.CubeState + "\",\"elapsedFrames\":" + t.ElapsedFrames.ToString() + ",\"limitFrames\":" + t.LimitFrames.ToString() + "}");
             }
             json.AppendLine("],");
             json.AppendLine("    \"resources\": []");
@@ -383,7 +359,7 @@ namespace Mau.Cli
                     json.AppendLine(",");
                 }
                 MauDebug d = logs[i];
-                json.Append("    {\"frame\":" + d.Frame.ToString() + ",\"transition\":\"" + JsonEscape(d.TransitionName) + "\",\"phase\":\"" + d.Phase + "\",\"message\":\"" + JsonEscape(d.Message) + "\"}");
+                json.Append("    {\"frame\":" + d.Frame.ToString() + ",\"transition\":\"" + CliSupport.JsonEscape(d.TransitionName) + "\",\"phase\":\"" + d.Phase + "\",\"message\":\"" + CliSupport.JsonEscape(d.Message) + "\"}");
             }
             if (logs.Length > 0)
             {
@@ -399,7 +375,7 @@ namespace Mau.Cli
                 {
                     json.Append(", ");
                 }
-                json.Append("\"" + JsonEscape(errors[i]) + "\"");
+                json.Append("\"" + CliSupport.JsonEscape(errors[i]) + "\"");
             }
             json.AppendLine("]");
             json.AppendLine("}");
@@ -421,31 +397,17 @@ namespace Mau.Cli
             json.AppendLine("  \"ticks\": 0,");
             json.AppendLine("  \"status\": null,");
             json.AppendLine("  \"logs\": [],");
-            json.Append("  \"errors\": [\"" + JsonEscape(message) + "\"");
+            json.Append("  \"errors\": [\"" + CliSupport.JsonEscape(message) + "\"");
             if (diags != null)
             {
                 for (int i = 0; i < diags.Count; i = i + 1)
                 {
-                    json.Append(", \"" + JsonEscape(diags[i].ToString()) + "\"");
+                    json.Append(", \"" + CliSupport.JsonEscape(diags[i].ToString()) + "\"");
                 }
             }
             json.AppendLine("]");
             json.AppendLine("}");
             Console.WriteLine(json.ToString());
-        }
-
-        /// <summary>
-        /// JSON 字符串转义
-        /// </summary>
-        /// <param name="s">原始字符串，可为 null</param>
-        /// <returns>转义后字符串</returns>
-        private static string JsonEscape(string? s)
-        {
-            if (s == null)
-            {
-                return "";
-            }
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
         }
     }
 }

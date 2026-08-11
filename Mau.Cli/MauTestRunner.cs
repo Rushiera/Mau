@@ -348,7 +348,7 @@ private static bool VerifyChecksum(string filePath, out string body)
         }
 
         // 从后往前找第一个非空行作为校验尾——容忍末尾多余换行
-        string prefix = "// #MAU_CHECKSUM:SHA256:";
+        string prefix = Mau.Runtime.HashUtil.ChecksumPrefix;
         int checksumIdx = -1;
         for (int i = lines.Length - 1; i >= 0; i--)
         {
@@ -438,7 +438,7 @@ private static bool VerifyGolden(string root, string caseName, string expectedNa
     {
         // 重建黄金——剥离版正文 + SHA256 校验尾
         string hash = CliSupport.ComputeSha256(stripped);
-        File.WriteAllText(expectedFile, stripped + "\n// #MAU_CHECKSUM:SHA256:" + hash);
+        File.WriteAllText(expectedFile, stripped + "\n" + Mau.Runtime.HashUtil.ChecksumPrefix + hash);
         Console.WriteLine("UPDATED: " + expectedName + " → " + hash);
         return true;
     }

@@ -194,32 +194,21 @@ namespace Mau.Cli
         /// <param name="cmdJson">请求 JSON</param>
         /// <returns>响应 JSON 行，失败返回 null</returns>
         private static string? PipeRequest(AppIdentity app, string cmdJson)
-        {
+{
             if (app == null || app.PipeName.Length == 0)
             {
                 return null;
             }
             try
             {
-                using (System.IO.Pipes.NamedPipeClientStream client = new System.IO.Pipes.NamedPipeClientStream(".", app.PipeName, System.IO.Pipes.PipeDirection.InOut))
-                {
-                    client.Connect(2000);
-                    using (System.IO.StreamReader reader = new System.IO.StreamReader(client, System.Text.Encoding.UTF8, false, 1024, true))
-                    using (System.IO.StreamWriter writer = new System.IO.StreamWriter(client, new System.Text.UTF8Encoding(false), 1024, true))
-                    {
-                        writer.WriteLine(cmdJson);
-                        writer.Flush();
-                        string? line = reader.ReadLine();
-                        return line;
-                    }
-                }
+                // 统一客户端——PipeClient（审查修复轮 2026-08-11 决策3；supervisor 快照协议——请求即 cmdJson 行）
+                return Mau.Runtime.PipeClient.Request(app.PipeName, cmdJson, 2000);
             }
             catch (Exception)
             {
                 return null;
             }
         }
-
         /// <summary>
         /// 清理僵尸注册——PID 不存在的注册文件全部删除
         /// </summary>

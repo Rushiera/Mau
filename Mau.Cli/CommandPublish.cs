@@ -215,7 +215,7 @@ private static bool SmokeTest(string publishDir)
                 string smokeDir = Path.Combine(publishDir, "CatTemp", "smoke");
                 Directory.CreateDirectory(smokeDir);
                 string smokeMau = Path.Combine(smokeDir, "Smoke.mau");
-                string smokeSource = "Mau 0.1\n基座: Mau.Runtime/v0.1\n\n命题:\n  P_Go 信号\n  P_Done 事实\n  P_Failed 事实\n\n变迁 T_Smoke:\n  前置: P_Go\n  动作: file.read\n  参数: path\n  时限: 60帧\n  后置: P_Done / P_Failed\n";
+                string smokeSource = CliSupport.BuildMinimalCorpus("file.read", "path", "T_Smoke");
                 File.WriteAllText(smokeMau, smokeSource, Encoding.UTF8);
                 string smokeOut = Path.Combine(smokeDir, "out");
                 System.Diagnostics.ProcessStartInfo buildPsi = new System.Diagnostics.ProcessStartInfo();

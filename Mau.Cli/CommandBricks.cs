@@ -185,7 +185,7 @@ namespace Mau.Cli
                         bodyEnd = bodyEnd - 1;
                         continue;
                     }
-                    if (last.StartsWith("// #MAU_CHECKSUM:SHA256:", StringComparison.Ordinal))
+                    if (last.StartsWith(Mau.Runtime.HashUtil.ChecksumPrefix, StringComparison.Ordinal))
                     {
                         bodyEnd = bodyEnd - 1;
                         continue;
@@ -202,14 +202,8 @@ namespace Mau.Cli
                     sb.Append(lines[i]);
                 }
                 string body = sb.ToString();
-                byte[] bytes = System.Text.Encoding.UTF8.GetBytes(body);
-                byte[] hash = System.Security.Cryptography.SHA256.HashData(bytes);
-                StringBuilder hex = new StringBuilder();
-                for (int i = 0; i < hash.Length; i++)
-                {
-                    hex.Append(hash[i].ToString("X2"));
-                }
-                string content = body + "\n// #MAU_CHECKSUM:SHA256:" + hex.ToString() + "\n";
+                string hash = Mau.Runtime.HashUtil.ComputeSha256(body);
+                string content = body + "\n" + Mau.Runtime.HashUtil.ChecksumPrefix + hash + "\n";
                 // 伪变更检测——归一化比较（LF 基准）：重写结果与原文一致则不落盘（防 autocrlf 全 M 伪变更）
                 string originalNormalized = original.Replace("\r\n", "\n");
                 if (string.Equals(originalNormalized, content, StringComparison.Ordinal))
@@ -229,7 +223,7 @@ namespace Mau.Cli
             {
                 return false;
             }
-        }        /// <summary>
+        }/// <summary>
         /// 注册表实时枚举——全部积木契约
         /// </summary>
         /// <returns>退出码</returns>
@@ -437,36 +431,10 @@ namespace Mau.Cli
         /// <param name="typeText">类型文本</param>
         /// <returns>Type（未知回退 string）</returns>
         private static Type TypeFromName(string typeText)
-        {
-            string t = typeText.Trim();
-            if (t.EndsWith("?"))
-            {
-                t = t.Substring(0, t.Length - 1);
-            }
-            switch (t)
-            {
-                case "string": return typeof(string);
-                case "long": return typeof(long);
-                case "int": return typeof(int);
-                case "bool": return typeof(bool);
-                case "double": return typeof(double);
-                case "string[]": return typeof(string[]);
-                case "long[]": return typeof(long[]);
-                case "int[]": return typeof(int[]);
-                case "bool[]": return typeof(bool[]);
-                case "Office[]": return typeof(Office[]);
-                case "Office": return typeof(Office);
-                case "OfficeData": return typeof(OfficeData);
-                case "ApprovalResult": return typeof(ApprovalResult);
-                case "MarkdownPart": return typeof(MarkdownPart);
-                case "LlmMessage": return typeof(LlmMessage);
-                case "List<MarkdownPart>": return typeof(List<MarkdownPart>);
-                case "Dictionary<string, List<string>>": return typeof(Dictionary<string, List<string>>);
-                default:
-                    return typeof(string);
-            }
+{
+            // 统一映射——TypeMap（审查修复轮 2026-08-11：与 BrickIndex.MapType 同表收拢；TypeMap 已处理 ? 后缀与泛型两种格式）
+            return Mau.Runtime.TypeMap.Map(typeText);
         }
-
         /// <summary>
         /// 类别码推断——积木名前缀
         /// </summary>
@@ -1049,7 +1017,7 @@ namespace Mau.Cli
                 {
                     json.Append(", ");
                 }
-                json.Append("\"" + JsonEscape(allPackages[p]) + "\"");
+                json.Append("\"" + CliSupport.JsonEscape(allPackages[p]) + "\"");
             }
             json.AppendLine("],");
             json.AppendLine("  \"bricks\": [");
@@ -1078,14 +1046,14 @@ namespace Mau.Cli
                         pkgList.Add(part);
                     }
                 }
-                json.Append("    {\"id\":\"" + JsonEscape(e.Id) + "\",\"name\":\"" + JsonEscape(e.Name) + "\",\"category\":\"" + JsonEscape(e.Category) + "\",\"path\":\"" + JsonEscape(e.Path) + "\",\"dependencies\":[");
+                json.Append("    {\"id\":\"" + CliSupport.JsonEscape(e.Id) + "\",\"name\":\"" + CliSupport.JsonEscape(e.Name) + "\",\"category\":\"" + CliSupport.JsonEscape(e.Category) + "\",\"path\":\"" + CliSupport.JsonEscape(e.Path) + "\",\"dependencies\":[");
                 for (int d = 0; d < depList.Count; d = d + 1)
                 {
                     if (d > 0)
                     {
                         json.Append(",");
                     }
-                    json.Append("\"" + JsonEscape(depList[d]) + "\"");
+                    json.Append("\"" + CliSupport.JsonEscape(depList[d]) + "\"");
                 }
                 json.Append("],\"packages\":[");
                 for (int p = 0; p < pkgList.Count; p = p + 1)
@@ -1094,19 +1062,19 @@ namespace Mau.Cli
                     {
                         json.Append(",");
                     }
-                    json.Append("\"" + JsonEscape(pkgList[p]) + "\"");
+                    json.Append("\"" + CliSupport.JsonEscape(pkgList[p]) + "\"");
                 }
-                json.Append("],\"status\":\"" + JsonEscape(e.Status) + "\"");
+                json.Append("],\"status\":\"" + CliSupport.JsonEscape(e.Status) + "\"");
                 if (e.Contract != null)
                 {
-                    json.Append(",\"contract\":{\"implementation\":\"" + JsonEscape(e.Contract.Implementation) + "\",\"inputs\":[");
+                    json.Append(",\"contract\":{\"implementation\":\"" + CliSupport.JsonEscape(e.Contract.Implementation) + "\",\"inputs\":[");
                     for (int p = 0; p < e.Contract.Inputs.Count; p++)
                     {
                         if (p > 0)
                         {
                             json.Append(",");
                         }
-                        json.Append("{\"name\":\"" + JsonEscape(e.Contract.Inputs[p].Name) + "\",\"type\":\"" + JsonEscape(TypeName(e.Contract.Inputs[p].Type)) + "\"}");
+                        json.Append("{\"name\":\"" + CliSupport.JsonEscape(e.Contract.Inputs[p].Name) + "\",\"type\":\"" + CliSupport.JsonEscape(TypeName(e.Contract.Inputs[p].Type)) + "\"}");
                     }
                     json.Append("],\"outputs\":[");
                     for (int p = 0; p < e.Contract.Outputs.Count; p++)
@@ -1115,9 +1083,9 @@ namespace Mau.Cli
                         {
                             json.Append(",");
                         }
-                        json.Append("{\"name\":\"" + JsonEscape(e.Contract.Outputs[p].Name) + "\",\"type\":\"" + JsonEscape(TypeName(e.Contract.Outputs[p].Type)) + "\"}");
+                        json.Append("{\"name\":\"" + CliSupport.JsonEscape(e.Contract.Outputs[p].Name) + "\",\"type\":\"" + CliSupport.JsonEscape(TypeName(e.Contract.Outputs[p].Type)) + "\"}");
                     }
-                    json.Append("],\"return\":\"" + e.Contract.Return.ToString() + "\",\"duration\":\"" + e.Contract.Duration.ToString() + "\",\"thread\":\"" + JsonEscape(e.Contract.Thread) + "\"}");
+                    json.Append("],\"return\":\"" + e.Contract.Return.ToString() + "\",\"duration\":\"" + e.Contract.Duration.ToString() + "\",\"thread\":\"" + CliSupport.JsonEscape(e.Contract.Thread) + "\"}");
                 }
                 json.Append("}");
                 if (i < count - 1)
@@ -1166,16 +1134,6 @@ namespace Mau.Cli
                 return "double";
             }
             return type.Name;
-        }
-
-        /// <summary>
-        /// JSON 转义
-        /// </summary>
-        /// <param name="s">输入</param>
-        /// <returns>转义后</returns>
-        private static string JsonEscape(string s)
-        {
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
         }
 
         /// <summary>
@@ -1336,7 +1294,7 @@ namespace Mau.Cli
                 paramLines.Append(c.Inputs[p].Name);
             }
             string flowName = "BrickTest" + c.Name.Replace(".", "");
-            string source = "Mau 0.1\n基座: Mau.Runtime/v0.1\n\n命题:\n  P_Go 信号\n  P_Done 事实\n  P_Failed 事实\n\n变迁 T_Run:\n  前置: P_Go\n  动作: " + c.Name + "\n  参数: " + paramLines.ToString() + "\n  时限: 60帧\n  后置: P_Done / P_Failed\n";
+            string source = CliSupport.BuildMinimalCorpus(c.Name, paramLines.ToString());
 
             // [1] 翻译
             CompileResult compileResult = MauCompiler.Compile(source, flowName);

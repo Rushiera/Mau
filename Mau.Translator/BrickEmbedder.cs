@@ -148,7 +148,7 @@ namespace Mau.Translator
         /// <param name="error">失败原因</param>
         /// <returns>验证通过</returns>
         private static bool ReadAndVerify(BrickIndexEntry entry, out string source, out string error)
-        {
+{
             source = "";
             error = "";
             string path = BrickIndex.ResolveSourcePath(entry);
@@ -173,7 +173,7 @@ namespace Mau.Translator
                 {
                     continue;
                 }
-                if (trimmed.StartsWith("// #MAU_CHECKSUM:SHA256:", StringComparison.Ordinal))
+                if (trimmed.StartsWith(Mau.Runtime.HashUtil.ChecksumPrefix, StringComparison.Ordinal))
                 {
                     checksumIdx = i;
                 }
@@ -184,7 +184,7 @@ namespace Mau.Translator
                 error = "积木文件缺少校验尾: " + entry.Name + "（修复: mau bricks reseal）";
                 return false;
             }
-            string claimed = lines[checksumIdx].Trim().Substring(24).Trim();
+            string claimed = lines[checksumIdx].Trim().Substring(Mau.Runtime.HashUtil.ChecksumPrefix.Length).Trim();
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < checksumIdx; i++)
             {
@@ -195,7 +195,7 @@ namespace Mau.Translator
                 sb.Append(lines[i]);
             }
             string body = sb.ToString().TrimEnd('\n');
-            string computed = ComputeSha256(body);
+            string computed = Mau.Runtime.HashUtil.ComputeSha256(body);
             if (!string.Equals(computed, claimed, StringComparison.OrdinalIgnoreCase))
             {
                 error = "积木文件校验失败: " + entry.Name + "——文本已变更，请执行 mau bricks reseal 重算校验尾";
@@ -204,7 +204,6 @@ namespace Mau.Translator
             source = body;
             return true;
         }
-
         /// <summary>
         /// 提取源码中的静态类名——public static class XxxBrick
         /// </summary>
@@ -340,23 +339,6 @@ namespace Mau.Translator
         {
             return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
                 || (c >= '0' && c <= '9') || c == '_';
-        }
-
-        /// <summary>
-        /// 计算 SHA256——UTF-8 字节转 64 位十六进制大写（与黄金/校验尾同规）
-        /// </summary>
-        /// <param name="text">输入文本</param>
-        /// <returns>64 位十六进制哈希（大写）</returns>
-        private static string ComputeSha256(string text)
-        {
-            byte[] bytes = Encoding.UTF8.GetBytes(text);
-            byte[] hash = SHA256.HashData(bytes);
-            StringBuilder hex = new StringBuilder();
-            for (int i = 0; i < hash.Length; i++)
-            {
-                hex.Append(hash[i].ToString("X2"));
-            }
-            return hex.ToString();
         }
     }
 }
