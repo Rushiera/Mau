@@ -13,21 +13,40 @@ namespace Mau.Cli
     public static class Program
     {
         /// <summary>
-        /// 入口
+        /// 入口——命令路由转发（Dispatch 独立成公开方法：聚合器进程内调用复用，D22 不产生第二实例）
         /// </summary>
         /// <param name="args">命令行参数</param>
         /// <returns>退出码——0 成功，非 0 失败</returns>
         public static int Main(string[] args)
         {
+            return Dispatch(args);
+        }
+
+        /// <summary>
+        /// 命令路由——独立入口（Main 与聚合器进程内调用共用）
+        /// </summary>
+        /// <param name="args">命令行参数</param>
+        /// <returns>退出码——0 成功，非 0 失败</returns>
+        public static int Dispatch(string[] args)
+        {
             // [段1] 命令路由（积木注册表已退役——翻译器构筑期经 BrickIndex 查询 Bricks/index.json）
             if (args.Length == 0)
             {
                 Console.WriteLine("Mau Translator v0.1");
-                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau|组.mauproj> -o <dir> [--sdk] | mau publish -o <dir> | mau test [--update] | mau check [--update|--syntax|--bricks] | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau debug <file.mau> [--ticks N] [--step] [--pause-on T_X|P_Y] [--trace] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket> | mau ps | mau status <名> | mau snapshot <名> | mau kill <名> | mau bricks list|index|test | mau export <组.mauproj> [-o <dir>] | mau import <组包目录> -o <目录> [--force]");
+                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau|组.mauproj> -o <dir> [--sdk] | mau publish -o <dir> | mau test [--update] | mau check [--update|--syntax|--bricks|--selftest] | mau up [-f 清单] [--force] | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau debug <file.mau> [--ticks N] [--step] [--pause-on T_X|P_Y] [--trace] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket> | mau ps | mau status <名> | mau snapshot <名> | mau kill <名> | mau bricks list|index|test|reseal | mau export <组.mauproj> [-o <dir>] | mau import <组包目录> -o <目录> [--force]");
                 return 0;
             }
 
             string command = args[0];
+            if (command == "up")
+            {
+                string[] upArgs = new string[args.Length - 1];
+                for (int i = 0; i < upArgs.Length; i = i + 1)
+                {
+                    upArgs[i] = args[i + 1];
+                }
+                return CommandUp.Execute(upArgs);
+            }
             if (command == "verify")
             {
                 return CommandVerify(args);

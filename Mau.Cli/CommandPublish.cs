@@ -16,7 +16,7 @@ namespace Mau.Cli
         /// <param name="args">命令行参数——不含 "publish" 本身</param>
         /// <returns>退出码</returns>
         public static int Execute(string[] args)
-        {
+{
             string outDir = ".";
             for (int i = 0; i < args.Length; i = i + 1)
             {
@@ -26,6 +26,8 @@ namespace Mau.Cli
                     i = i + 1;
                 }
             }
+            // 绝对路径规范化——相对 CWD 的 outDir 在冒烟子进程中会解析错位（WorkingDirectory 相对路径陷阱）
+            outDir = Path.GetFullPath(outDir);
 
             string baseDir = AppContext.BaseDirectory;
             if (!Directory.Exists(baseDir))
@@ -84,8 +86,7 @@ namespace Mau.Cli
             Console.WriteLine("  文件: " + copied + " 个" + (failed > 0 ? "，失败 " + failed + " 个" : ""));
             Console.WriteLine("  运行: " + Path.Combine(Path.GetFullPath(outDir), "Mau.exe") + " test");
             return failed > 0 ? 1 : 0;
-        }
-/// <summary>
+        }/// <summary>
 /// 探测文件是否被进程占用——以写方式独占打开（成功=未锁；IOException=被锁）
 /// </summary>
 /// <param name = "paths">待探测路径</param>

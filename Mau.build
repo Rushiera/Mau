@@ -1,0 +1,23 @@
+// Mau.build —— Mau 自检构建清单（design-mau-rebuild.md §一 格式）
+// 声明"从源码到完全可用"的环节链；聚合器（mau up）通用执行——指纹判定 + 拓扑序 + 报告
+构建: mau
+版本: 1.0
+
+环节 reseal:
+  输入: Bricks/**
+  命令: mau bricks reseal
+
+环节 check:
+  输入: Bricks/**, Mau.Cli/**, Mau.Runtime/**, Mau.Translator/**, Mau.Development/**, Mau.Snapshots/**
+  前置: reseal
+  命令: mau check
+
+环节 test:
+  输入: Bricks/**, Mau.Cli/**, Mau.Runtime/**, Mau.Translator/**, Mau.Development/**, Mau.Serve/**, Mau.Snapshots/**, Mau.E2E/**
+  前置: check
+  命令: mau test
+
+环节 publish:
+  输入: Bricks/**, Mau.Cli/**, Mau.Runtime/**, Mau.Translator/**, Mau.Development/**, Mau.Serve/**, Mau.WorkApp/**
+  前置: test
+  命令: mau publish -o public/publish
