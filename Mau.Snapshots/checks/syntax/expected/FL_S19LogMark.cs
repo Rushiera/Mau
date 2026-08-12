@@ -127,6 +127,8 @@ namespace Mau.Generated
                     S_Run_Enter_Failed();
                     if (LogStore.AllLog != null) { LogStore.Add("LAW", 0, "T_Run | 失败 | frame=" + frame, ""); }
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Run_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (P_Go && T_Run_Cube.IsRunning())
@@ -136,6 +138,7 @@ namespace Mau.Generated
                 {
                     if (LogStore.AllLog != null) { LogStore.Add("LAW", 0, "T_Run | 超时 | frame=" + frame, ""); }
                     S_Run_Enter_Failed();
+                    T_Run_Cube.Reset();
                 }
             }
         }
@@ -169,4 +172,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:3EB700010B80AFBAF4010DF12A4D8CDAFE38E20E4FC420206539543C063EAF16
+// #MAU_CHECKSUM:SHA256:9BAFF5AAA9F3B58DBB7AB07B90AEC36EB5F696C6840CAEF7BA847759205699A3

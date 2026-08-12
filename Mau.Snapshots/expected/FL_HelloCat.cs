@@ -21,23 +21,19 @@ namespace Mau.Generated
         /// 注入字段设置——module（纯赋值，不置位信号）
         /// </summary>
         /// <param name="value">注入值</param>
-        public void Setmodule(string? value) { _module = value; }
+        public void SetModule(string? value) { _module = value; }
 
         /// <summary>
         /// 注入字段设置——message（纯赋值，不置位信号）
         /// </summary>
         /// <param name="value">注入值</param>
-        public void Setmessage(string? value) { _message = value; }
+        public void SetMessage(string? value) { _message = value; }
 
         private enum S_Hello_State { Idle, Done, Failed }
         private S_Hello_State _S_Hello_State;
 
         // [命题]
         private bool P_Ask;
-
-        // [积木输出端口]
-        private string _module = default;
-        private string _message = default;
 
         // [控制律 Cube]
 
@@ -178,4 +174,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:4963B9AD864EACF95363EB686FD5F4CC8FC2B97A7D946087AD3F1E66D5C7764C
+// #MAU_CHECKSUM:SHA256:34E9D93C176D04933B6E396BE7FFB97D7E86AD4D50155F3D247002872267C0F7

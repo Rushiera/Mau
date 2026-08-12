@@ -20,6 +20,20 @@ namespace Mau.Generated
         // [控制律 Cube]
         private readonly Cube T_Work_Cube = new Cube(10);
 
+        // [worker 汇合 T_Work——∥ 后台执行 + ⋈ Inbox 回投]
+        private readonly Inbox<T_Work_WorkerResult> _T_Work_Inbox = new Inbox<T_Work_WorkerResult>();
+        private bool _T_Work_Busy;
+        private bool _T_Work_TimedOut;
+
+        /// <summary>
+        /// worker 结果载荷——T_Work 后台执行结果（Ok + out 端口回投）
+        /// </summary>
+        private sealed class T_Work_WorkerResult
+        {
+            /// <summary>执行成功</summary>
+            public bool Ok;
+        }
+
         /// <summary>
         /// 构造——初始状态置位
         /// </summary>
@@ -91,53 +105,78 @@ namespace Mau.Generated
         }
 
         /// <summary>
-        /// T_Work 控制律——条件 + 操作 → 结果
+        /// T_Work 控制律（∥ worker）——主线程守卫 + 后台操作 + ⋈ 汇合应用
         /// </summary>
         /// <param name="frame">全局帧号</param>
         private void T_Work_Execute(int frame)
         {
-            // [段1] 条件守卫——全部成立 → 触发
-            if (P_Go && T_Work_Cube.IsIdle())
+            // [段1] 条件守卫——Busy 门防重入（worker 执行中不重复触发）
+            if ((P_Go) && !_T_Work_Busy)
             {
                 // [段2] 信号消费——触发即清除
                 P_Go = false;
+                // [段4] 输入冻结——f_ 局部快照（后台线程不读主线程字段）
+                string f_src = _src;
+                string f_dst = _dst;
+                AuditBrick("invoke", "T_Work", "file.convert", frame);
+                // [段5] worker 后台执行（∥——Task.Run + Inbox 回投）
+                _T_Work_Busy = true;
+                _T_Work_TimedOut = false;
                 T_Work_Cube.Start();
-                // [段4] 操作——顺序执行 + try-catch 隔离 + 自动审计
-                bool ok = false;
-                try
+                System.Threading.Tasks.Task.Run(delegate ()
                 {
-                    AuditBrick("invoke", "T_Work", "file.convert", frame);
-                    ok = Mau.Bricks.BRIK_FILE_001.Convert(_src, _dst);
-                    AuditBrick("ok", "T_Work", "file.convert", frame);
-                }
-                catch (Exception ex)
-                {
-                    ok = false;
-                    AuditBrick("error", "T_Work", "file.convert", frame);
-                }
-                if (LogStore.AllLog != null) { LogStore.Add("LAW", 0, "T_Work | 触发 | frame=" + frame, ""); }
-                // [段5] 结果转移——bool 驱动首项成功 / 次项失败 / 多路 switch 分发
-                if (ok)
-                {
-                    S_Run_Enter_Done();
-                    if (LogStore.AllLog != null) { LogStore.Add("LAW", 0, "T_Work | 成功 | frame=" + frame, ""); }
-                }
-                else
-                {
-                    S_Run_Enter_Failed();
-                    if (LogStore.AllLog != null) { LogStore.Add("LAW", 0, "T_Work | 失败 | frame=" + frame, ""); }
-                }
+                    bool ok = false;
+                    try
+                    {
+                        ok = Mau.Bricks.BRIK_FILE_001.Convert(f_src, f_dst);
+                    }
+                    catch (Exception ex)
+                    {
+                        ok = false;
+                    }
+                    T_Work_WorkerResult r0 = new T_Work_WorkerResult();
+                    r0.Ok = ok;
+                    _T_Work_Inbox.Enqueue(r0);
+                });
             }
-            // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
-            else if (P_Go && T_Work_Cube.IsRunning())
+            // [段6] τ 时限——worker 运行期间 Cube 步进 + 耗尽 → 失败后置
+            else if (_T_Work_Busy && T_Work_Cube.IsRunning())
             {
                 T_Work_Cube.TickFrame();
                 if (T_Work_Cube.IsExpired())
                 {
+                    _T_Work_TimedOut = true;
                     if (LogStore.AllLog != null) { LogStore.Add("LAW", 0, "T_Work | 超时 | frame=" + frame, ""); }
                     S_Run_Enter_Failed();
+                    T_Work_Cube.Reset();
                 }
             }
+            // [段7] inbox 汇合（⋈）——后台结果主线程应用
+            _T_Work_Inbox.Drain(delegate (T_Work_WorkerResult r)
+            {
+                _T_Work_Busy = false;
+                string stage = "ok";
+                if (!r.Ok)
+                {
+                    stage = "error";
+                }
+                AuditBrick(stage, "T_Work", "file.convert", frame);
+                if (LogStore.AllLog != null) { LogStore.Add("LAW", 0, "T_Work | " + stage + " | frame=" + frame, ""); }
+                if (_T_Work_TimedOut)
+                {
+                    // 超时后到达——结果丢弃（超时分支已应用失败后置与资源释放）
+                    return;
+                }
+                T_Work_Cube.Complete();
+                if (r.Ok)
+                {
+                    S_Run_Enter_Done();
+                }
+                else
+                {
+                    S_Run_Enter_Failed();
+                }
+            });
         }
 
         /// <summary>
@@ -169,4 +208,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:6EA968C60BB08F4846EEBCDFB3528D4C36CDBBB368EAAD9F2F8752909D4BE482
+// #MAU_CHECKSUM:SHA256:57C6D1038686521F72FD9A52E3BA246B1550C82F51389B2298A7826FC3CCEE36

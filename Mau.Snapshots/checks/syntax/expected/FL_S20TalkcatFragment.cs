@@ -264,6 +264,8 @@ namespace Mau.Generated
                 {
                     S_Talk_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Init_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (P_Init && T_Init_Cube.IsRunning())
@@ -272,6 +274,7 @@ namespace Mau.Generated
                 if (T_Init_Cube.IsExpired())
                 {
                     S_Talk_Enter_Failed();
+                    T_Init_Cube.Reset();
                 }
             }
         }
@@ -308,6 +311,8 @@ namespace Mau.Generated
                 {
                     S_Talk_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Start_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_Talk_State == S_Talk_State.Building && T_Start_Cube.IsRunning())
@@ -316,6 +321,7 @@ namespace Mau.Generated
                 if (T_Start_Cube.IsExpired())
                 {
                     S_Talk_Enter_Failed();
+                    T_Start_Cube.Reset();
                 }
             }
         }
@@ -352,6 +358,8 @@ namespace Mau.Generated
                 {
                     S_Active_Enter_Thinking();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Classify_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (P_ChunkReady && T_Classify_Cube.IsRunning())
@@ -360,6 +368,7 @@ namespace Mau.Generated
                 if (T_Classify_Cube.IsExpired())
                 {
                     S_Active_Enter_Thinking();
+                    T_Classify_Cube.Reset();
                 }
             }
         }
@@ -396,6 +405,8 @@ namespace Mau.Generated
                 {
                     S_Active_Enter_Thinking();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_CheckTool_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_Active_State == S_Active_State.Streaming && T_CheckTool_Cube.IsRunning())
@@ -404,6 +415,7 @@ namespace Mau.Generated
                 if (T_CheckTool_Cube.IsExpired())
                 {
                     S_Active_Enter_Thinking();
+                    T_CheckTool_Cube.Reset();
                 }
             }
         }
@@ -422,6 +434,8 @@ namespace Mau.Generated
                 bool ok = true;
                 // [段5] 结果转移——bool 驱动首项成功 / 次项失败 / 多路 switch 分发
                 S_Talk_Enter_Done();
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Finish_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_Active_State == S_Active_State.Streaming && T_Finish_Cube.IsRunning())
@@ -429,6 +443,7 @@ namespace Mau.Generated
                 T_Finish_Cube.TickFrame();
                 if (T_Finish_Cube.IsExpired())
                 {
+                    T_Finish_Cube.Reset();
                 }
             }
         }
@@ -462,4 +477,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:818B6EB7F4758894FD1CEA47659D8F8EDB0C55854D7FDF4EB1F14AD8E2390766
+// #MAU_CHECKSUM:SHA256:1C5A7674CDDC7A6A938E8FE13CB22D32693FED5ABCEFAE61C500188F8D0452CC

@@ -19,13 +19,13 @@ namespace Mau.Generated
         /// 注入字段设置——input（纯赋值，不置位信号）
         /// </summary>
         /// <param name="value">注入值</param>
-        public void Setinput(string? value) { _input = value; }
+        public void SetInput(string? value) { _input = value; }
 
         /// <summary>
         /// 注入字段设置——output（纯赋值，不置位信号）
         /// </summary>
         /// <param name="value">注入值</param>
-        public void Setoutput(string? value) { _output = value; }
+        public void SetOutput(string? value) { _output = value; }
 
         private enum S_Flow_State { Idle, A, B, C }
         private S_Flow_State _S_Flow_State;
@@ -35,10 +35,6 @@ namespace Mau.Generated
 
         // [命题]
         private bool P_Start;
-
-        // [积木输出端口]
-        private string _input = default;
-        private string _output = default;
 
         // [控制律 Cube]
         private readonly Cube T_Step1_Cube = new Cube(100);
@@ -234,6 +230,8 @@ namespace Mau.Generated
                 {
                     S_Flow_Enter_Idle();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Step1_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (P_Start && T_Step1_Cube.IsRunning())
@@ -242,6 +240,7 @@ namespace Mau.Generated
                 if (T_Step1_Cube.IsExpired())
                 {
                     S_Flow_Enter_Idle();
+                    T_Step1_Cube.Reset();
                 }
             }
         }
@@ -279,6 +278,8 @@ namespace Mau.Generated
                 {
                     S_Flow_Enter_Idle();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Step2_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_Flow_State == S_Flow_State.A && T_Step2_Cube.IsRunning())
@@ -287,6 +288,7 @@ namespace Mau.Generated
                 if (T_Step2_Cube.IsExpired())
                 {
                     S_Flow_Enter_Idle();
+                    T_Step2_Cube.Reset();
                 }
             }
         }
@@ -324,6 +326,8 @@ namespace Mau.Generated
                 {
                     S_Flow_Enter_Idle();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Step3_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_Flow_State == S_Flow_State.B && T_Step3_Cube.IsRunning())
@@ -332,6 +336,7 @@ namespace Mau.Generated
                 if (T_Step3_Cube.IsExpired())
                 {
                     S_Flow_Enter_Idle();
+                    T_Step3_Cube.Reset();
                 }
             }
         }
@@ -367,4 +372,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:EE2F1FA5E7A0E44AB336C985640A3B243B7A4533BA675945A01EA60795855400
+// #MAU_CHECKSUM:SHA256:3D8D1BA7F4DAF477251560EBF5EE3A6F6D152F092FDF5504E3EA3CA83C25C6FA

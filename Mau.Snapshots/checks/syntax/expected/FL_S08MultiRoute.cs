@@ -142,6 +142,8 @@ namespace Mau.Generated
                     case "Select": S_Ui_Enter_Select(); break;
                     default: S_Ui_Enter_Idle(); break;
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Route_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (P_Cmd && T_Route_Cube.IsRunning())
@@ -150,6 +152,7 @@ namespace Mau.Generated
                 if (T_Route_Cube.IsExpired())
                 {
                     S_Ui_Enter_Toggle();
+                    T_Route_Cube.Reset();
                 }
             }
         }
@@ -184,4 +187,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:514C9F1110CD9B65C76332BE61C9A1CA435CA2DA4D545117B2138A020F73C960
+// #MAU_CHECKSUM:SHA256:154670FA3BADE2A2C7598596950A3C14EAC6A44EAF5916438BE7D0DCC46595B5

@@ -24,19 +24,19 @@ namespace Mau.Generated
         /// 注入字段设置——sessionKey（纯赋值，不置位信号）
         /// </summary>
         /// <param name="value">注入值</param>
-        public void SetsessionKey(string? value) { _sessionKey = value; }
+        public void SetSessionKey(string? value) { _sessionKey = value; }
 
         /// <summary>
         /// 注入字段设置——ownerId（纯赋值，不置位信号）
         /// </summary>
         /// <param name="value">注入值</param>
-        public void SetownerId(long? value) { _ownerId = value; }
+        public void SetOwnerId(long? value) { _ownerId = value; }
 
         /// <summary>
         /// 注入字段设置——cmdKeyList（纯赋值，不置位信号）
         /// </summary>
         /// <param name="value">注入值</param>
-        public void SetcmdKeyList(string[]? value) { _cmdKeyList = value; }
+        public void SetCmdKeyList(string[]? value) { _cmdKeyList = value; }
 
         private enum S_UiPet_State { Idle, Reg, SnapChat, PushChat, SnapHome, PushHome, SnapConfig, PushConfig, PollCmd, Route, Route2, Open, Toggle, Select, PushCatCfg, Save, ProfSave, ProfDel, ProfAct, OpenDir, Flash, Notify, Failed }
         private S_UiPet_State _S_UiPet_State;
@@ -486,6 +486,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Init_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (P_Init && T_Init_Cube.IsRunning())
@@ -494,6 +496,7 @@ namespace Mau.Generated
                 if (T_Init_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_Init_Cube.Reset();
                 }
             }
         }
@@ -530,6 +533,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Register_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.Reg && T_Register_Cube.IsRunning())
@@ -538,6 +543,7 @@ namespace Mau.Generated
                 if (T_Register_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_Register_Cube.Reset();
                 }
             }
         }
@@ -574,6 +580,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_SnapHome();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_SnapChat_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.SnapChat && T_SnapChat_Cube.IsRunning())
@@ -582,6 +590,7 @@ namespace Mau.Generated
                 if (T_SnapChat_Cube.IsExpired())
                 {
                     S_UiPet_Enter_SnapHome();
+                    T_SnapChat_Cube.Reset();
                 }
             }
         }
@@ -618,6 +627,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_PushChat_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.PushChat && T_PushChat_Cube.IsRunning())
@@ -626,6 +637,7 @@ namespace Mau.Generated
                 if (T_PushChat_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_PushChat_Cube.Reset();
                 }
             }
         }
@@ -662,6 +674,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_SnapConfig();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_SnapHome_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.SnapHome && T_SnapHome_Cube.IsRunning())
@@ -670,6 +684,7 @@ namespace Mau.Generated
                 if (T_SnapHome_Cube.IsExpired())
                 {
                     S_UiPet_Enter_SnapConfig();
+                    T_SnapHome_Cube.Reset();
                 }
             }
         }
@@ -706,6 +721,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_PushHome_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.PushHome && T_PushHome_Cube.IsRunning())
@@ -714,6 +731,7 @@ namespace Mau.Generated
                 if (T_PushHome_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_PushHome_Cube.Reset();
                 }
             }
         }
@@ -750,6 +768,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_PollCmd();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_SnapConfig_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.SnapConfig && T_SnapConfig_Cube.IsRunning())
@@ -758,6 +778,7 @@ namespace Mau.Generated
                 if (T_SnapConfig_Cube.IsExpired())
                 {
                     S_UiPet_Enter_PollCmd();
+                    T_SnapConfig_Cube.Reset();
                 }
             }
         }
@@ -794,6 +815,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_PushConfig_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.PushConfig && T_PushConfig_Cube.IsRunning())
@@ -802,6 +825,7 @@ namespace Mau.Generated
                 if (T_PushConfig_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_PushConfig_Cube.Reset();
                 }
             }
         }
@@ -838,6 +862,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_SnapChat();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_PollCmd_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.PollCmd && T_PollCmd_Cube.IsRunning())
@@ -846,6 +872,7 @@ namespace Mau.Generated
                 if (T_PollCmd_Cube.IsExpired())
                 {
                     S_UiPet_Enter_SnapChat();
+                    T_PollCmd_Cube.Reset();
                 }
             }
         }
@@ -882,6 +909,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_SnapChat();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_GetKey_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.Route && T_GetKey_Cube.IsRunning())
@@ -890,6 +919,7 @@ namespace Mau.Generated
                 if (T_GetKey_Cube.IsExpired())
                 {
                     S_UiPet_Enter_SnapChat();
+                    T_GetKey_Cube.Reset();
                 }
             }
         }
@@ -934,6 +964,8 @@ namespace Mau.Generated
                     case "Chat_UI_Notify": S_UiPet_Enter_Notify(); break;
                     default: S_UiPet_Enter_SnapChat(); break;
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Route_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.Route2 && T_Route_Cube.IsRunning())
@@ -942,6 +974,7 @@ namespace Mau.Generated
                 if (T_Route_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Toggle();
+                    T_Route_Cube.Reset();
                 }
             }
         }
@@ -978,6 +1011,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Open_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.Open && T_Open_Cube.IsRunning())
@@ -986,6 +1021,7 @@ namespace Mau.Generated
                 if (T_Open_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_Open_Cube.Reset();
                 }
             }
         }
@@ -1022,6 +1058,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Toggle_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.Toggle && T_Toggle_Cube.IsRunning())
@@ -1030,6 +1068,7 @@ namespace Mau.Generated
                 if (T_Toggle_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_Toggle_Cube.Reset();
                 }
             }
         }
@@ -1066,6 +1105,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_SnapChat();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Select_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.Select && T_Select_Cube.IsRunning())
@@ -1074,6 +1115,7 @@ namespace Mau.Generated
                 if (T_Select_Cube.IsExpired())
                 {
                     S_UiPet_Enter_SnapChat();
+                    T_Select_Cube.Reset();
                 }
             }
         }
@@ -1110,6 +1152,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_PushCatCfg_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.PushCatCfg && T_PushCatCfg_Cube.IsRunning())
@@ -1118,6 +1162,7 @@ namespace Mau.Generated
                 if (T_PushCatCfg_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_PushCatCfg_Cube.Reset();
                 }
             }
         }
@@ -1154,6 +1199,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Save_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.Save && T_Save_Cube.IsRunning())
@@ -1162,6 +1209,7 @@ namespace Mau.Generated
                 if (T_Save_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_Save_Cube.Reset();
                 }
             }
         }
@@ -1198,6 +1246,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_ProfSave_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.ProfSave && T_ProfSave_Cube.IsRunning())
@@ -1206,6 +1256,7 @@ namespace Mau.Generated
                 if (T_ProfSave_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_ProfSave_Cube.Reset();
                 }
             }
         }
@@ -1242,6 +1293,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_ProfDel_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.ProfDel && T_ProfDel_Cube.IsRunning())
@@ -1250,6 +1303,7 @@ namespace Mau.Generated
                 if (T_ProfDel_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_ProfDel_Cube.Reset();
                 }
             }
         }
@@ -1286,6 +1340,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_ProfAct_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.ProfAct && T_ProfAct_Cube.IsRunning())
@@ -1294,6 +1350,7 @@ namespace Mau.Generated
                 if (T_ProfAct_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_ProfAct_Cube.Reset();
                 }
             }
         }
@@ -1330,6 +1387,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_OpenDir_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.OpenDir && T_OpenDir_Cube.IsRunning())
@@ -1338,6 +1397,7 @@ namespace Mau.Generated
                 if (T_OpenDir_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_OpenDir_Cube.Reset();
                 }
             }
         }
@@ -1374,6 +1434,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Flash_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.Flash && T_Flash_Cube.IsRunning())
@@ -1382,6 +1444,7 @@ namespace Mau.Generated
                 if (T_Flash_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_Flash_Cube.Reset();
                 }
             }
         }
@@ -1418,6 +1481,8 @@ namespace Mau.Generated
                 {
                     S_UiPet_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Notify_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_UiPet_State == S_UiPet_State.Notify && T_Notify_Cube.IsRunning())
@@ -1426,6 +1491,7 @@ namespace Mau.Generated
                 if (T_Notify_Cube.IsExpired())
                 {
                     S_UiPet_Enter_Failed();
+                    T_Notify_Cube.Reset();
                 }
             }
         }
@@ -1459,4 +1525,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:7E50A4C78036270DC090FEA0B3E7957BD7067F6C85B1E2394B2B4ACF920DC637
+// #MAU_CHECKSUM:SHA256:FE385531C89169951F991D0455D39C2E92E87CD868972F76FAB2D9DA4099B5D4

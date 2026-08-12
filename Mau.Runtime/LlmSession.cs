@@ -66,30 +66,24 @@ namespace Mau.Runtime
         /// <param name="requestId">会话 ID</param>
         /// <returns>是否找到</returns>
         public static bool RemoveSession(string requestId)
-        {
+{
             LlmStreamSession? session;
             if (!Sessions.TryRemove(BrickText.SafeText(requestId), out session)
                 || session == null)
             {
                 return false;
             }
+            // RT.1（2026-08-13）——去同步等待：Cancel 后不 Wait，后台 Worker 自退
+            //   根因：Worker 挂起（SSE 无响应/测试连接无人 accept）时 worker.Wait(2000)
+            //   同步阻塞调用线程——帧循环内每轮 finish 卡 2 秒（CH4 TalkCat_ToolLoop
+            //   40-50 秒无响应实锤）。
+            //   取消链路完整（SendAsync/ReadAsStreamAsync/ReadLineAsync 全部传 token），
+            //   Cancel 后 Worker 在下一读取点自行退出并 PushTerminal("LLM_TIMEOUT")。
+            //   CTS 不 Dispose——Worker 尚在运行时 Dispose 会引发 ObjectDisposedException
+            //   竞态；CTS 由 GC 随会话对象回收（超时模式 CTS 无定时器资源泄漏）。
             session.Cancel.Cancel();
-            System.Threading.Tasks.Task? worker = session.Worker;
-            if (worker != null)
-            {
-                try
-                {
-                    worker.Wait(2000);
-                }
-                catch (AggregateException)
-                {
-                    // 后台任务异常已入队终态分片——等待超时不影响清理
-                }
-            }
-            session.Cancel.Dispose();
             return true;
-        }
-/// <summary>
+        }/// <summary>
 /// 是否存在活跃 LLM 会话——流式进行中判定源（llm.finish 移除会话后返回 false）
 /// </summary>
 /// <returns>存在活跃会话为真</returns>

@@ -21,7 +21,7 @@ namespace Mau.Generated
         private bool P_Go;
 
         // [资源]
-        private int R_Parallel_Count;
+        private int R_Parallel_Count = 2;
 
         // [控制律 Cube]
         private readonly Cube T_A_Cube = new Cube(5);
@@ -190,6 +190,8 @@ namespace Mau.Generated
                 }
                 // [段6] 资源释放
                 R_Parallel_Count = R_Parallel_Count + 1;
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_A_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if ((P_Go) && (R_Parallel_Count > 0) && T_A_Cube.IsRunning())
@@ -198,6 +200,7 @@ namespace Mau.Generated
                 if (T_A_Cube.IsExpired())
                 {
                     S_A_Enter_Failed();
+                    T_A_Cube.Reset();
                 }
             }
         }
@@ -240,6 +243,8 @@ namespace Mau.Generated
                 }
                 // [段6] 资源释放
                 R_Parallel_Count = R_Parallel_Count + 1;
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_B_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if ((P_Go) && (R_Parallel_Count > 0) && T_B_Cube.IsRunning())
@@ -248,6 +253,7 @@ namespace Mau.Generated
                 if (T_B_Cube.IsExpired())
                 {
                     S_B_Enter_Failed();
+                    T_B_Cube.Reset();
                 }
             }
         }
@@ -281,4 +287,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:C775B68FEB03A8F0A5555DC46282D932551CD3DB46B264F267F418DD86FD8052
+// #MAU_CHECKSUM:SHA256:3062A8B46E966A39D4D523A65E6F43C29FCF20B4E9104E44C072E3EA14F4FBD8

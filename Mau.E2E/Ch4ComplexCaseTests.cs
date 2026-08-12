@@ -216,5 +216,57 @@ namespace Mau.E2E
                 setter.Invoke(flow, new object[] { value });
             }
         }
+/// <summary>
+/// worker 律（∥ ⋈）E2E——Fire 触发 → Task.Run 后台转换 → Inbox 汇合 → 主线程应用后置（RT.3 异步链路）
+/// </summary>
+[Fact]
+public void WorkerConvert_Async_CompletesAndWrites()
+{
+    (object flow, Type flowType) = CompileAndLoad("worker_convert");
+    MethodInfo? tick = flowType.GetMethod("Tick");
+    MethodInfo? fire = flowType.GetMethod("FireInput");
+    MethodInfo? isDone = flowType.GetMethod("IsConvDone");
+    MethodInfo? isFailed = flowType.GetMethod("IsConvFailed");
+    Assert.NotNull(tick);
+    Assert.NotNull(fire);
+    Assert.NotNull(isDone);
+    Assert.NotNull(isFailed);
+    string workRoot = Directory.GetCurrentDirectory();
+    string inputFile = Path.Combine(workRoot, "wc_in_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
+    string outputFile = Path.Combine(workRoot, "wc_out_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
+    File.WriteAllText(inputFile, "worker-convert-e2e");
+    try
+    {
+        fire!.Invoke(flow, new object[] { inputFile, outputFile });
+        bool done = false;
+        bool failed = false;
+        for (int i = 0; i < 3000 && !done && !failed; i++)
+        {
+            tick!.Invoke(flow, new object[] { i });
+            done = (bool)isDone!.Invoke(flow, null)!;
+            failed = (bool)isFailed!.Invoke(flow, null)!;
+            if (i % 200 == 0)
+            {
+                System.Threading.Thread.Sleep(1); // 后台 worker 调度窗口
+            }
+        }
+
+        Assert.True(done, "worker 异步转换未完成——failed=" + failed.ToString());
+        Assert.False(failed);
+        Assert.True(File.Exists(outputFile), "输出文件不存在");
+        Assert.Contains("worker-convert-e2e", File.ReadAllText(outputFile));
     }
+    finally
+    {
+        if (File.Exists(inputFile))
+        {
+            File.Delete(inputFile);
+        }
+
+        if (File.Exists(outputFile))
+        {
+            File.Delete(outputFile);
+        }
+    }
+}    }
 }

@@ -34,33 +34,39 @@ namespace Mau.Cli
             if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Translator.Tests", "Mau.Translator.Tests.csproj") + "\" -v q --nologo"))
             {
                 Console.WriteLine("FAIL: 翻译器测试项目构建失败");
+                DiagnoseBuildLock(Path.Combine(root, "Mau.Translator.Tests", "bin", "Debug", "net8.0", "Mau.Translator.Tests.exe"));
                 return 1;
             }
             if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Runtime.Tests", "Mau.Runtime.Tests.csproj") + "\" -v q --nologo"))
             {
                 Console.WriteLine("FAIL: 运行时测试项目构建失败");
+                DiagnoseBuildLock(Path.Combine(root, "Mau.Runtime.Tests", "bin", "Debug", "net8.0", "Mau.Runtime.Tests.exe"));
                 return 1;
             }
 
             if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Development.Tests", "Mau.Development.Tests.csproj") + "\" -v q --nologo"))
             {
                 Console.WriteLine("FAIL: 开发工具测试项目构建失败");
+                DiagnoseBuildLock(Path.Combine(root, "Mau.Development.Tests", "bin", "Debug", "net8.0", "Mau.Development.Tests.exe"));
                 return 1;
             }
             if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Serve.Tests", "Mau.Serve.Tests.csproj") + "\" -v q --nologo"))
             {
                 Console.WriteLine("FAIL: 服务测试项目构建失败");
+                DiagnoseBuildLock(Path.Combine(root, "Mau.Serve.Tests", "bin", "Debug", "net8.0", "Mau.Serve.Tests.exe"));
                 return 1;
             }
 
             if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.E2E", "Mau.E2E.csproj") + "\" -v q --nologo"))
             {
                 Console.WriteLine("FAIL: 端到端测试项目构建失败");
+                DiagnoseBuildLock(Path.Combine(root, "Mau.E2E", "bin", "Debug", "net8.0", "Mau.E2E.exe"));
                 return 1;
             }
             if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Cli", "Mau.Cli.csproj") + "\" -v q --nologo"))
             {
                 Console.WriteLine("FAIL: Mau.Cli 构建失败（serve 进程测试依赖 Mau.exe）");
+                DiagnoseBuildLock(Path.Combine(root, "Mau.Cli", "bin", "Debug", "net8.0", "Mau.exe"));
                 return 1;
             }
 
@@ -291,6 +297,8 @@ namespace Mau.Cli
         /// <returns>退出码为 0</returns>
         private static bool RunProcess(string fileName, string arguments)
 {
+            // RT.5（2026-08-13）——测试进程级 watchdog：默认 120 秒预算，卡死测试不再无限挂起
+            int timeoutMs = 120000;
             ProcessStartInfo psi = new ProcessStartInfo();
             psi.FileName = fileName;
             psi.Arguments = arguments;
@@ -313,10 +321,38 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: 进程启动失败——" + fileName);
                 return false;
             }
-            // [段1] 收集输出——成功静默 / 失败尾部保留（D19：错误/结论在尾部）/ --verbose 全透传
+            // [段1] 超时等待——先等退出再收输出（RT.4 进程树强杀：子进程一并终结，杜绝残留锁文件）
+            bool exited = p.WaitForExit(timeoutMs);
+            if (!exited)
+            {
+                try
+                {
+                    p.Kill(true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // 进程已在强杀前自行退出——正常路径
+                }
+                try
+                {
+                    p.WaitForExit(5000);
+                }
+                catch (Exception)
+                {
+                    // 强杀等待失败不阻塞主流程
+                }
+            }
+            // [段2] 收集输出——成功静默 / 失败尾部保留（D19：错误/结论在尾部）/ --verbose 全透传
             string stdout = p.StandardOutput.ReadToEnd();
             string stderr = p.StandardError.ReadToEnd();
-            p.WaitForExit();
+            if (!exited)
+            {
+                // RT.5 卡死 dump——超时预算透明 + 卡死点输出留证（尾部 20 行）
+                Console.WriteLine("FAIL: 测试进程超时（" + (timeoutMs / 1000).ToString()
+                    + "s 未退出）已强杀进程树: " + fileName);
+                Console.WriteLine(CliSupport.TailLines(stdout + "\n" + stderr, 20));
+                return false;
+            }
             if (p.ExitCode == 0)
             {
                 // 成功——默认静默（环节标题已是关键节点）；--verbose 输出全部细节
@@ -331,6 +367,18 @@ namespace Mau.Cli
             Console.WriteLine(CliSupport.TailLines(stdout + "\n" + stderr, 20));
             return false;
         }/// <summary>
+/// build 失败文件锁诊断——探测目标 exe 是否被残留进程占用（RT.4——2026-08-13）
+/// </summary>
+/// <param name = "exePath">构建产物可执行文件路径</param>
+private static void DiagnoseBuildLock(string exePath)
+{
+    string locked = CliSupport.FindLockedFile(new string[] { exePath });
+    if (locked.Length > 0)
+    {
+        Console.WriteLine("  诊断: 构建产物被进程占用（残留测试进程未退出）——" + locked);
+        Console.WriteLine("  对策: 结束残留 dotnet/测试进程后重试（mau kill --clean 清理僵尸注册）");
+    }
+}/// <summary>
 /// 验证黄金文件校验尾——读文件，提取末行 MAU_CHECKSUM，验证 SHA256，返回去掉校验行的文件体
 /// </summary>
 /// <param name = "filePath">黄金文件路径</param>

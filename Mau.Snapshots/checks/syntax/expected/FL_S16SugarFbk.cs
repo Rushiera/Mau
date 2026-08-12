@@ -168,6 +168,8 @@ namespace Mau.Generated
                 {
                     S_Fb_Enter_Working();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Work_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if ((P_Ready) && (P_Go) && (_S_Fb_State == S_Fb_State.Waiting) && T_Work_Cube.IsRunning())
@@ -176,6 +178,7 @@ namespace Mau.Generated
                 if (T_Work_Cube.IsExpired())
                 {
                     S_Fb_Enter_Working();
+                    T_Work_Cube.Reset();
                 }
             }
         }
@@ -209,4 +212,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:0C27462D653D31AA6C080F4A168CA000D3B668009B549FEB6B92F327A37B7670
+// #MAU_CHECKSUM:SHA256:BF766DD87C7DEE6304D74461B37D8F483D7647F857C7B1F13BFE751997B3C6CB

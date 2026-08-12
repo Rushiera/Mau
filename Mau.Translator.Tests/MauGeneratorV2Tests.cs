@@ -212,5 +212,38 @@ namespace Mau.Translator.Tests
             }
             return s;
         }
+/// <summary>
+/// worker 律（∥ ⋈）——后台执行形态：Inbox 汇合 + Task.Run + Busy 门 + 输入冻结
+/// </summary>
+[Fact]
+public void Generate_WorkerLaw_AsyncShape()
+{
+    TestBrickRegistration.Ensure();
+    string code = Generate("§'Mau' 2.0\n" + "§$'src', 'dst'\n" + "§'S_Conv' = { 'Idle', 'Done', 'Failed' }\n" + "§'P_Input'\n" + "§⇐ 'P_Input'\n" + "§'T_Conv'[τ=300, ∥, ⋈]: 'P_Input' + 'file.convert'['src', 'dst'] → 'S_Conv' = 'Done' | 'S_Conv' = 'Failed'\n");
+    // 汇合字段 + Busy 门 + 超时标记
+    Assert.Contains("private readonly Inbox<T_Conv_WorkerResult> _T_Conv_Inbox", code);
+    Assert.Contains("private bool _T_Conv_Busy;", code);
+    Assert.Contains("private bool _T_Conv_TimedOut;", code);
+    // 结果载荷类
+    Assert.Contains("private sealed class T_Conv_WorkerResult", code);
+    // 后台执行 + 回投
+    Assert.Contains("System.Threading.Tasks.Task.Run(delegate ()", code);
+    Assert.Contains("_T_Conv_Inbox.Enqueue(r0);", code);
+    // 汇合排空——主线程应用
+    Assert.Contains("_T_Conv_Inbox.Drain(delegate (T_Conv_WorkerResult r)", code);
+    // 输入冻结——f_ 快照
+    Assert.Contains("string? f_src = _src;", code);
+    Assert.Contains("string? f_dst = _dst;", code);
+    // 守卫——Busy 门防重入
+    Assert.Contains("!_T_Conv_Busy", code);
+    // τ 超时分支——worker 运行期间 Cube 步进
+    Assert.Contains("else if (_T_Conv_Busy && T_Conv_Cube.IsRunning())", code);
+    Assert.Contains("_T_Conv_TimedOut = true;", code);
+} 
+/// <summary>
+/// worker 律约束——名称返回积木不允许 ∥ 后台执行（E208）
+/// </summary>
+ [ Fact ]  public  void  Validate_WorkerLaw_NameReturnRejected ( ) { TestBrickRegistration . Ensure ( ) ;  string  code  =  Generate ( "§'Mau' 2.0\n" + "§'S_Ui' = { 'Idle', 'Open' }\n" + "§'P_Cmd'\n" + "§⇐ 'P_Cmd'\n" + "§'T_Route'[∥, ⋈]: 'P_Cmd' + 'cmd.match'['key', [\"Open\"]] → 'S_Ui' = 'Open' | 'S_Ui' = 'Idle'\n" ) ;  Assert . Contains ( "E208" ,  code ) ;  }
+
     }
 }

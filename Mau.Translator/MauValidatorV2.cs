@@ -299,6 +299,20 @@ namespace Mau.Translator
                     AddError(result, "E207", 0, "控制律 '" + law.Name + "' 声明 ∥ 但未声明 ⋈——worker 结果无法回主线程");
                     return;
                 }
+                // worker 律操作约束——名称返回积木 switch 分发依赖同步结果，不允许 ∥ 后台执行（RT.3）
+                if (law.Attrs.IsWorker)
+                {
+                    for (int o = 0; o < law.Ops.Count; o++)
+                    {
+                        BrickIndexEntry entry;
+                        if (BrickIndex.TryGet(law.Ops[o].BrickName, out entry) && entry.Contract != null
+                            && entry.Contract.Return == Mau.Contracts.BrickReturnKind.String)
+                        {
+                            AddError(result, "E208", 0, "worker 控制律 '" + law.Name + "' 操作含名称返回积木 '" + law.Ops[o].BrickName + "'——switch 分发依赖同步结果，不允许 ∥ 后台执行");
+                            return;
+                        }
+                    }
+                }
                 // 条件引用完整性
                 CheckCondTree(doc, law, law.Conditions, result, law.Name);
                 if (!result.Success)

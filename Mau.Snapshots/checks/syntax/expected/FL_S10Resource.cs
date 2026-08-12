@@ -18,7 +18,7 @@ namespace Mau.Generated
         private bool P_Go;
 
         // [资源]
-        private int R_Slot_Count;
+        private int R_Slot_Count = 1;
 
         // [控制律 Cube]
         private readonly Cube T_Run_Cube = new Cube(5);
@@ -131,6 +131,8 @@ namespace Mau.Generated
                 }
                 // [段6] 资源释放
                 R_Slot_Count = R_Slot_Count + 1;
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Run_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if ((P_Go) && (R_Slot_Count > 0) && T_Run_Cube.IsRunning())
@@ -139,6 +141,7 @@ namespace Mau.Generated
                 if (T_Run_Cube.IsExpired())
                 {
                     S_Run_Enter_Failed();
+                    T_Run_Cube.Reset();
                 }
             }
         }
@@ -172,4 +175,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:744C86FC1DC283DD84B18AB5434A7CFB226803DB1541DAA4241576E3A1BE0127
+// #MAU_CHECKSUM:SHA256:5212EACFF0F217348D467C4A2E1CB217E3B225AF27B1644AC36BAEBA60D38DC7

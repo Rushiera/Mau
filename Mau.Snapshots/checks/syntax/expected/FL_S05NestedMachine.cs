@@ -212,6 +212,8 @@ namespace Mau.Generated
                 {
                     S_Talk_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Go_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (P_Go && T_Go_Cube.IsRunning())
@@ -220,6 +222,7 @@ namespace Mau.Generated
                 if (T_Go_Cube.IsExpired())
                 {
                     S_Talk_Enter_Failed();
+                    T_Go_Cube.Reset();
                 }
             }
         }
@@ -245,6 +248,8 @@ namespace Mau.Generated
                 {
                     S_Active_Enter_Thinking();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Stream_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if ((_S_Active_State == S_Active_State.Thinking) && (P_Chunk) && T_Stream_Cube.IsRunning())
@@ -253,6 +258,7 @@ namespace Mau.Generated
                 if (T_Stream_Cube.IsExpired())
                 {
                     S_Active_Enter_Thinking();
+                    T_Stream_Cube.Reset();
                 }
             }
         }
@@ -278,6 +284,8 @@ namespace Mau.Generated
                 {
                     S_Talk_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Done_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_Active_State == S_Active_State.Streaming && T_Done_Cube.IsRunning())
@@ -286,6 +294,7 @@ namespace Mau.Generated
                 if (T_Done_Cube.IsExpired())
                 {
                     S_Talk_Enter_Failed();
+                    T_Done_Cube.Reset();
                 }
             }
         }
@@ -319,4 +328,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:4F84066A00676EAD692660667C9E259D4F50139D7FD96AA9EAC8A87944DB9785
+// #MAU_CHECKSUM:SHA256:8882D0C99B6A73F18FB260927F185731E616F5B9AFF014276846C51B90F7E380

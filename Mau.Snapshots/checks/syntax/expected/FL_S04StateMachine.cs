@@ -142,6 +142,8 @@ namespace Mau.Generated
                 {
                     S_Flow_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Go_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (P_Go && T_Go_Cube.IsRunning())
@@ -150,6 +152,7 @@ namespace Mau.Generated
                 if (T_Go_Cube.IsExpired())
                 {
                     S_Flow_Enter_Failed();
+                    T_Go_Cube.Reset();
                 }
             }
         }
@@ -186,6 +189,8 @@ namespace Mau.Generated
                 {
                     S_Flow_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Done_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (_S_Flow_State == S_Flow_State.Working && T_Done_Cube.IsRunning())
@@ -194,6 +199,7 @@ namespace Mau.Generated
                 if (T_Done_Cube.IsExpired())
                 {
                     S_Flow_Enter_Failed();
+                    T_Done_Cube.Reset();
                 }
             }
         }
@@ -212,6 +218,8 @@ namespace Mau.Generated
                 bool ok = true;
                 // [段5] 结果转移——bool 驱动首项成功 / 次项失败 / 多路 switch 分发
                 S_Flow_Enter_Idle();
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Back_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if ((_S_Flow_State == S_Flow_State.Done) || (_S_Flow_State == S_Flow_State.Failed) && T_Back_Cube.IsRunning())
@@ -219,6 +227,7 @@ namespace Mau.Generated
                 T_Back_Cube.TickFrame();
                 if (T_Back_Cube.IsExpired())
                 {
+                    T_Back_Cube.Reset();
                 }
             }
         }
@@ -252,4 +261,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:896F72AF39B285D676BDD6AA7E8E224939F84752D5B8EEB75751B30D90BD6263
+// #MAU_CHECKSUM:SHA256:BCB382729B2B54D93E1E4A933E0CE35FF9A7123CCF4A710E504E478D208FEB93

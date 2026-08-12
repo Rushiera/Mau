@@ -19,11 +19,6 @@ namespace Mau.Runtime
         public readonly CancellationTokenSource Cancel;
 
         /// <summary>
-        /// 后台任务句柄——Finish 时等待
-        /// </summary>
-        public System.Threading.Tasks.Task? Worker;
-
-        /// <summary>
         /// 是否已入队终态分片——保证只提交一个终态
         /// </summary>
         public int IsTerminal;
@@ -81,7 +76,7 @@ public readonly System.DateTime CreatedAt;
         public LlmStreamSession(System.TimeSpan timeout)
 {
             Cancel = new CancellationTokenSource(timeout);
-            Worker = null;
+            IsTerminal = 0; // L8
             IsTerminal = 0;
             LastChunk = null;
             CreatedAt = System.DateTime.UtcNow;

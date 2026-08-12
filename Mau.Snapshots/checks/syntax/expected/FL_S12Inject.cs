@@ -19,13 +19,13 @@ namespace Mau.Generated
         /// 注入字段设置——input（纯赋值，不置位信号）
         /// </summary>
         /// <param name="value">注入值</param>
-        public void Setinput(string? value) { _input = value; }
+        public void SetInput(string? value) { _input = value; }
 
         /// <summary>
         /// 注入字段设置——output（纯赋值，不置位信号）
         /// </summary>
         /// <param name="value">注入值</param>
-        public void Setoutput(string? value) { _output = value; }
+        public void SetOutput(string? value) { _output = value; }
 
         private enum S_Run_State { Idle, Done, Failed }
         private S_Run_State _S_Run_State;
@@ -140,6 +140,8 @@ namespace Mau.Generated
                 {
                     S_Run_Enter_Failed();
                 }
+                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）
+                T_Run_Cube.Complete();
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
             else if (P_Go && T_Run_Cube.IsRunning())
@@ -148,6 +150,7 @@ namespace Mau.Generated
                 if (T_Run_Cube.IsExpired())
                 {
                     S_Run_Enter_Failed();
+                    T_Run_Cube.Reset();
                 }
             }
         }
@@ -181,4 +184,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:6273CD2D87DD0881B37E29AF00929BE390F62EDF75DFE2D7FC31BE880ECAA9D6
+// #MAU_CHECKSUM:SHA256:5455FF94E98518F8966AE71402999F2BE8748117BC70B6F2271F7F3E37F304AE

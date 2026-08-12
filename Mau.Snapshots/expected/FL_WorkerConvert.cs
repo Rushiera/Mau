@@ -19,13 +19,13 @@ namespace Mau.Generated
         /// 注入字段设置——input（纯赋值，不置位信号）
         /// </summary>
         /// <param name="value">注入值</param>
-        public void Setinput(string? value) { _input = value; }
+        public void SetInput(string? value) { _input = value; }
 
         /// <summary>
         /// 注入字段设置——output（纯赋值，不置位信号）
         /// </summary>
         /// <param name="value">注入值</param>
-        public void Setoutput(string? value) { _output = value; }
+        public void SetOutput(string? value) { _output = value; }
 
         private enum S_Conv_State { Idle, Done, Failed }
         private S_Conv_State _S_Conv_State;
@@ -33,12 +33,22 @@ namespace Mau.Generated
         // [命题]
         private bool P_Input;
 
-        // [积木输出端口]
-        private string _input = default;
-        private string _output = default;
-
         // [控制律 Cube]
         private readonly Cube T_WorkerConvert_Cube = new Cube(300);
+
+        // [worker 汇合 T_WorkerConvert——∥ 后台执行 + ⋈ Inbox 回投]
+        private readonly Inbox<T_WorkerConvert_WorkerResult> _T_WorkerConvert_Inbox = new Inbox<T_WorkerConvert_WorkerResult>();
+        private bool _T_WorkerConvert_Busy;
+        private bool _T_WorkerConvert_TimedOut;
+
+        /// <summary>
+        /// worker 结果载荷——T_WorkerConvert 后台执行结果（Ok + out 端口回投）
+        /// </summary>
+        private sealed class T_WorkerConvert_WorkerResult
+        {
+            /// <summary>执行成功</summary>
+            public bool Ok;
+        }
 
         /// <summary>
         /// 构造——初始状态置位
@@ -111,32 +121,68 @@ namespace Mau.Generated
         }
 
         /// <summary>
-        /// T_WorkerConvert 控制律——条件 + 操作 → 结果
+        /// T_WorkerConvert 控制律（∥ worker）——主线程守卫 + 后台操作 + ⋈ 汇合应用
         /// </summary>
         /// <param name="frame">全局帧号</param>
         private void T_WorkerConvert_Execute(int frame)
         {
-            // [段1] 条件守卫——全部成立 → 触发
-            if (P_Input && T_WorkerConvert_Cube.IsIdle())
+            // [段1] 条件守卫——Busy 门防重入（worker 执行中不重复触发）
+            if ((P_Input) && !_T_WorkerConvert_Busy)
             {
                 // [段2] 信号消费——触发即清除
                 P_Input = false;
+                // [段4] 输入冻结——f_ 局部快照（后台线程不读主线程字段）
+                string? f_input = _input;
+                string? f_output = _output;
+                AuditBrick("invoke", "T_WorkerConvert", "file.convert", frame);
+                // [段5] worker 后台执行（∥——Task.Run + Inbox 回投）
+                _T_WorkerConvert_Busy = true;
+                _T_WorkerConvert_TimedOut = false;
                 T_WorkerConvert_Cube.Start();
-                // [段4] 操作——顺序执行 + try-catch 隔离 + 自动审计
-                bool ok = false;
-                try
+                System.Threading.Tasks.Task.Run(delegate ()
                 {
-                    AuditBrick("invoke", "T_WorkerConvert", "file.convert", frame);
-                    ok = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
-                    AuditBrick("ok", "T_WorkerConvert", "file.convert", frame);
-                }
-                catch (Exception ex)
+                    bool ok = false;
+                    try
+                    {
+                        ok = Mau.Bricks.BRIK_FILE_001.Convert(f_input, f_output);
+                    }
+                    catch (Exception ex)
+                    {
+                        ok = false;
+                    }
+                    T_WorkerConvert_WorkerResult r0 = new T_WorkerConvert_WorkerResult();
+                    r0.Ok = ok;
+                    _T_WorkerConvert_Inbox.Enqueue(r0);
+                });
+            }
+            // [段6] τ 时限——worker 运行期间 Cube 步进 + 耗尽 → 失败后置
+            else if (_T_WorkerConvert_Busy && T_WorkerConvert_Cube.IsRunning())
+            {
+                T_WorkerConvert_Cube.TickFrame();
+                if (T_WorkerConvert_Cube.IsExpired())
                 {
-                    ok = false;
-                    AuditBrick("error", "T_WorkerConvert", "file.convert", frame);
+                    _T_WorkerConvert_TimedOut = true;
+                    S_Conv_Enter_Failed();
+                    T_WorkerConvert_Cube.Reset();
                 }
-                // [段5] 结果转移——bool 驱动首项成功 / 次项失败 / 多路 switch 分发
-                if (ok)
+            }
+            // [段7] inbox 汇合（⋈）——后台结果主线程应用
+            _T_WorkerConvert_Inbox.Drain(delegate (T_WorkerConvert_WorkerResult r)
+            {
+                _T_WorkerConvert_Busy = false;
+                string stage = "ok";
+                if (!r.Ok)
+                {
+                    stage = "error";
+                }
+                AuditBrick(stage, "T_WorkerConvert", "file.convert", frame);
+                if (_T_WorkerConvert_TimedOut)
+                {
+                    // 超时后到达——结果丢弃（超时分支已应用失败后置与资源释放）
+                    return;
+                }
+                T_WorkerConvert_Cube.Complete();
+                if (r.Ok)
                 {
                     S_Conv_Enter_Done();
                 }
@@ -144,16 +190,7 @@ namespace Mau.Generated
                 {
                     S_Conv_Enter_Failed();
                 }
-            }
-            // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
-            else if (P_Input && T_WorkerConvert_Cube.IsRunning())
-            {
-                T_WorkerConvert_Cube.TickFrame();
-                if (T_WorkerConvert_Cube.IsExpired())
-                {
-                    S_Conv_Enter_Failed();
-                }
-            }
+            });
         }
 
         /// <summary>
@@ -187,4 +224,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:8476868453BD4D2C939EDF5DE025CD64DA319420901E759DB0917976170EE120
+// #MAU_CHECKSUM:SHA256:E99A2C43CC4E602624C96A37518A90CB2D9F76E45E2536528C9667DB1F5DCDE1

@@ -148,6 +148,14 @@ namespace Mau.Translator
                     }
                 }
                 sb.Append("\n");
+            // [段6b] worker 律汇合字段——∥ 后台执行 + ⋈ Inbox 回投（RT.3 生成器 ∥ 落地，2026-08-13）
+            for (int w = 0; w < doc.Laws.Count; w++)
+            {
+                if (doc.Laws[w].Attrs.IsWorker)
+                {
+                    GenerateWorkerFields(sb, doc, doc.Laws[w]);
+                }
+            }
             }
 
             // [段7] 构造函数——初始状态置位
@@ -396,6 +404,12 @@ namespace Mau.Translator
             for (int i = 0; i < doc.Laws.Count; i++)
             {
                 LawV2 law = doc.Laws[i];
+                if (law.Attrs.IsWorker)
+                {
+                    // RT.3——∥ worker 律分叉（后台执行 + Inbox 汇合形态）
+                    GenerateWorkerLaw(sb, doc, law);
+                    continue;
+                }
                 string name = SanitizeName(law.Name);
                 sb.Append("        /// <summary>\n");
                 sb.Append("        /// " + law.Name + " 控制律——条件 + 操作 → 结果\n");
@@ -956,7 +970,7 @@ private static string InferInjectionType(MauDocV2 doc, string injectionName)
         /// </summary>
         /// <param name="call">积木调用</param>
         /// <returns>C# 表达式</returns>
-        private static string BuildBrickCall(BrickCallV2 call, MauDocV2 doc)
+        private static string BuildBrickCall(BrickCallV2 call, MauDocV2 doc, string refPrefix = "_", string outPrefix = "_")
 {
             // 积木契约查询——索引已加载时生成真实调用（完整限定名 + 输出端口 out）；未加载回退占位（纯结构生成）
             BrickIndexEntry? entry = null;
@@ -987,7 +1001,7 @@ private static string InferInjectionType(MauDocV2 doc, string injectionName)
                     portType = entry.Contract.Inputs[p].Type;
                 }
                 bool isInjection = call.Params[p].Kind == MauParamKindV2.Ref && doc.Injections.Contains(call.Params[p].Text);
-                sb.Append(BuildParamExpr(call.Params[p], portType, isInjection));
+                sb.Append(BuildParamExpr(call.Params[p], portType, isInjection, refPrefix));
             }
             // 输出端口——out 传递（与输入参数拼接）；名称返回积木无 out（返回即名称）
             if (hasContract && !isNameReturn)
@@ -998,7 +1012,7 @@ private static string InferInjectionType(MauDocV2 doc, string injectionName)
                     {
                         sb.Append(", ");
                     }
-                    sb.Append("out _");
+                    sb.Append("out " + outPrefix);
                     sb.Append(SanitizeName(entry.Contract.Outputs[o].Name));
                 }
             }
@@ -1010,12 +1024,12 @@ private static string InferInjectionType(MauDocV2 doc, string injectionName)
         /// <param name="param">参数项</param>
         /// <param name="portType">输入端口类型（契约查询；null = 未知回退默认）</param>
         /// <returns>C# 表达式</returns>
-        private static string BuildParamExpr(MauParamV2 param, System.Type? portType, bool nullableField = false)
+        private static string BuildParamExpr(MauParamV2 param, System.Type? portType, bool nullableField = false, string prefix = "_")
 {
             if (param.Kind == MauParamKindV2.Ref)
             {
-                // 注入字段引用——_前缀；可空注入字段传值类型端口时非空化（?? 0 兜底）
-                string field = "_" + SanitizeName(param.Text);
+                // 注入/输出端口字段引用——prefix 前缀（worker 律 f_ 快照；同步律 _ 字段）
+                string field = prefix + SanitizeName(param.Text);
                 if (nullableField && portType != null && (portType == typeof(long) || portType == typeof(int)
                     || portType == typeof(bool) || portType == typeof(double) || portType == typeof(float)))
                 {
@@ -1081,7 +1095,7 @@ private static string InferInjectionType(MauDocV2 doc, string injectionName)
                     }
                     else
                     {
-                        sb.Append(BuildParamExpr(param.Items[i], null));
+                        sb.Append(BuildParamExpr(param.Items[i], null, false, prefix));
                     }
                 }
                 sb.Append(" }");
@@ -1481,6 +1495,11 @@ private static void GenerateOutputFields(StringBuilder sb, MauDocV2 doc)
                 }
                 for (int p = 0; p < boundary.Params.Count; p++)
                 {
+                    // 注入字段段已声明同名字段——跳过（注入与 Fire 载荷同源——RT.3 E2E 重复声明修复）
+                    if (doc.Injections.Contains(boundary.Params[p].Text))
+                    {
+                        continue;
+                    }
                     string fieldName = "_" + SanitizeName(boundary.Params[p].Text);
                     if (!fields.ContainsKey(fieldName))
                     {
@@ -1497,6 +1516,357 @@ private static void GenerateOutputFields(StringBuilder sb, MauDocV2 doc)
             {
                 sb.Append("        private " + kv.Value + " " + kv.Key + " = default;\n");
             }
+            sb.Append("\n");
+        }/// <summary>
+/// 输出端口字段类型查找——全文档积木调用契约 Outputs 名匹配
+/// </summary>
+/// <param name = "doc">文档</param>
+/// <param name = "rawName">引用名（未加前缀）</param>
+/// <param name = "typeName">匹配到的 C# 类型名</param>
+/// <returns>找到</returns>
+private static bool TryFindOutType(MauDocV2 doc, string rawName, out string typeName)
+{
+    List<BrickCallV2> calls = new List<BrickCallV2>();
+    for (int i = 0; i < doc.Laws.Count; i++)
+    {
+        for (int o = 0; o < doc.Laws[i].Ops.Count; o++)
+        {
+            calls.Add(doc.Laws[i].Ops[o]);
+        }
+    }
+
+    for (int m = 0; m < doc.Measures.Count; m++)
+    {
+        if (doc.Measures[m].Sample != null)
+        {
+            calls.Add(doc.Measures[m].Sample);
+        }
+    }
+
+    for (int c = 0; c < calls.Count; c++)
+    {
+        BrickIndexEntry entry;
+        if (!BrickIndex.TryGet(calls[c].BrickName, out entry) || entry.Contract == null)
+        {
+            continue;
+        }
+
+        for (int o = 0; o < entry.Contract.Outputs.Count; o++)
+        {
+            if (entry.Contract.Outputs[o].Name == rawName)
+            {
+                typeName = TypeName(entry.Contract.Outputs[o].Type);
+                return true;
+            }
+        }
+    }
+
+    typeName = "string";
+    return false;
+}/// <summary>
+/// worker 引用收集递归——Ref 参数登记冻结字段；数组递归展开
+/// </summary>
+/// <param name = "param">参数项</param>
+/// <param name = "doc">文档</param>
+/// <param name = "names">字段名列表</param>
+/// <param name = "types">类型文本列表</param>
+/// <param name = "nullables">可空标记列表</param>
+private static void CollectWorkerRefsParam(MauParamV2 param, MauDocV2 doc, List<string> names, List<string> types, List<bool> nullables)
+{
+    if (param.Kind == MauParamKindV2.Ref)
+    {
+        string field = "_" + SanitizeName(param.Text);
+        if (names.Contains(field))
+        {
+            return;
+        }
+
+        if (doc.Injections.Contains(param.Text))
+        {
+            names.Add(field);
+            types.Add(InferInjectionType(doc, param.Text));
+            nullables.Add(true);
+            return;
+        }
+
+        string outType;
+        if (TryFindOutType(doc, param.Text, out outType))
+        {
+            names.Add(field);
+            types.Add(outType);
+            nullables.Add(false);
+            return;
+        }
+
+        names.Add(field);
+        types.Add("string");
+        nullables.Add(false);
+        return;
+    }
+
+    if (param.Kind == MauParamKindV2.Array && param.Items != null)
+    {
+        for (int i = 0; i < param.Items.Count; i++)
+        {
+            CollectWorkerRefsParam(param.Items[i], doc, names, types, nullables);
+        }
+    }
+}/// <summary>
+/// worker 律操作段字段引用收集——输入冻结源（_字段名 + 类型文本 + 可空标记三平行列表）
+/// </summary>
+/// <param name = "call">积木调用</param>
+/// <param name = "doc">文档</param>
+/// <param name = "names">字段名列表（_前缀，去重）</param>
+/// <param name = "types">类型文本列表</param>
+/// <param name = "nullables">可空标记列表</param>
+private static void CollectWorkerRefs(BrickCallV2 call, MauDocV2 doc, List<string> names, List<string> types, List<bool> nullables)
+{
+    for (int p = 0; p < call.Params.Count; p++)
+    {
+        CollectWorkerRefsParam(call.Params[p], doc, names, types, nullables);
+    }
+}/// <summary>
+/// worker 律字段段——Inbox 汇合队列 + Busy 门 + 超时放弃标记 + 结果载荷类
+/// </summary>
+/// <param name = "sb">输出</param>
+/// <param name = "doc">文档</param>
+/// <param name = "law">控制律</param>
+private static void GenerateWorkerFields(StringBuilder sb, MauDocV2 doc, LawV2 law)
+{
+    string name = SanitizeName(law.Name);
+    sb.Append("        // [worker 汇合 " + law.Name + "——∥ 后台执行 + ⋈ Inbox 回投]\n");
+    sb.Append("        private readonly Inbox<" + name + "_WorkerResult> _" + name + "_Inbox = new Inbox<" + name + "_WorkerResult>();\n");
+    sb.Append("        private bool _" + name + "_Busy;\n");
+    sb.Append("        private bool _" + name + "_TimedOut;\n");
+    sb.Append("\n");
+    // 结果载荷类——Ok + out 端口回投字段（全 ops 契约 Outputs 去重）
+    List<string> outNames = new List<string>();
+    List<string> outTypes = new List<string>();
+    for (int o = 0; o < law.Ops.Count; o++)
+    {
+        BrickIndexEntry entry;
+        if (!BrickIndex.TryGet(law.Ops[o].BrickName, out entry) || entry.Contract == null)
+        {
+            continue;
+        }
+
+        for (int p = 0; p < entry.Contract.Outputs.Count; p++)
+        {
+            string outName = SanitizeName(entry.Contract.Outputs[p].Name);
+            if (!outNames.Contains(outName))
+            {
+                outNames.Add(outName);
+                outTypes.Add(TypeName(entry.Contract.Outputs[p].Type));
+            }
+        }
+    }
+
+    sb.Append("        /// <summary>\n");
+    sb.Append("        /// worker 结果载荷——" + law.Name + " 后台执行结果（Ok + out 端口回投）\n");
+    sb.Append("        /// </summary>\n");
+    sb.Append("        private sealed class " + name + "_WorkerResult\n");
+    sb.Append("        {\n");
+    sb.Append("            /// <summary>执行成功</summary>\n");
+    sb.Append("            public bool Ok;\n");
+    for (int p = 0; p < outNames.Count; p++)
+    {
+        sb.Append("            /// <summary>out 端口 " + outNames[p] + " 回投</summary>\n");
+        sb.Append("            public " + outTypes[p] + " " + outNames[p] + ";\n");
+    }
+
+    sb.Append("        }\n");
+    sb.Append("\n");
+}/// <summary>
+/// worker 律生成——∥ 后台执行：守卫/信号消费/资源获取主线程触发帧完成，
+/// 操作 Task.Run 后台执行（输入冻结 f_ 快照），结果 ⋈ Inbox 回投主线程应用
+/// </summary>
+/// <param name = "sb">输出</param>
+/// <param name = "doc">文档</param>
+/// <param name = "law">控制律</param>
+private static void GenerateWorkerLaw(StringBuilder sb, MauDocV2 doc, LawV2 law)
+{
+            string name = SanitizeName(law.Name);
+            string guard = BuildCondGuard(law.Conditions);
+            bool hasTimeout = law.Attrs.Timeout != null;
+            List<string> signals = CollectSignalConsumes(law.Conditions, doc);
+            List<string> resources = CollectResources(law.Conditions);
+            // 输入冻结集合——操作段全部字段引用
+            List<string> refNames = new List<string>();
+            List<string> refTypes = new List<string>();
+            List<bool> refNullables = new List<bool>();
+            for (int o = 0; o < law.Ops.Count; o++)
+            {
+                CollectWorkerRefs(law.Ops[o], doc, refNames, refTypes, refNullables);
+            }
+            // out 端口集合——后台局部 r_ 变量 + 结果对象字段
+            List<string> outNames = new List<string>();
+            List<string> outTypes = new List<string>();
+            for (int o = 0; o < law.Ops.Count; o++)
+            {
+                BrickIndexEntry entry;
+                if (!BrickIndex.TryGet(law.Ops[o].BrickName, out entry) || entry.Contract == null)
+                {
+                    continue;
+                }
+                for (int p = 0; p < entry.Contract.Outputs.Count; p++)
+                {
+                    string outName = SanitizeName(entry.Contract.Outputs[p].Name);
+                    if (!outNames.Contains(outName))
+                    {
+                        outNames.Add(outName);
+                        outTypes.Add(TypeName(entry.Contract.Outputs[p].Type));
+                    }
+                }
+            }
+            string brickLabel = law.Ops.Count > 0 ? law.Ops[0].BrickName : "";
+
+            sb.Append("        /// <summary>\n");
+            sb.Append("        /// " + law.Name + " 控制律（∥ worker）——主线程守卫 + 后台操作 + ⋈ 汇合应用\n");
+            sb.Append("        /// </summary>\n");
+            sb.Append("        /// <param name=\"frame\">全局帧号</param>\n");
+            sb.Append("        private void " + name + "_Execute(int frame)\n");
+            sb.Append("        {\n");
+            // [段1] 触发分支——守卫/信号/资源/冻结全在主线程
+            sb.Append("            // [段1] 条件守卫——Busy 门防重入（worker 执行中不重复触发）\n");
+            sb.Append("            if ((" + guard + ") && !_" + name + "_Busy)\n");
+            sb.Append("            {\n");
+            if (signals.Count > 0)
+            {
+                sb.Append("                // [段2] 信号消费——触发即清除\n");
+                for (int s = 0; s < signals.Count; s++)
+                {
+                    sb.Append("                " + signals[s] + " = false;\n");
+                }
+            }
+            if (resources.Count > 0)
+            {
+                sb.Append("                // [段3] 资源获取——动作完成后释放\n");
+                for (int r = 0; r < resources.Count; r++)
+                {
+                    sb.Append("                " + resources[r] + "_Count = " + resources[r] + "_Count - 1;\n");
+                }
+            }
+            if (refNames.Count > 0)
+            {
+                sb.Append("                // [段4] 输入冻结——f_ 局部快照（后台线程不读主线程字段）\n");
+                for (int f = 0; f < refNames.Count; f++)
+                {
+                    string declType = refTypes[f] + (refNullables[f] ? "?" : "");
+                    sb.Append("                " + declType + " f_" + refNames[f].Substring(1) + " = " + refNames[f] + ";\n");
+                }
+            }
+            // 审计 invoke——主线程触发帧（后台不打审计——线程安全 + 帧语义清晰）
+            sb.Append("                AuditBrick(\"invoke\", \"" + law.Name + "\", \"" + brickLabel + "\", frame);\n");
+            // [段5] worker 后台执行——Task.Run + Inbox 回投
+            sb.Append("                // [段5] worker 后台执行（∥——Task.Run + Inbox 回投）\n");
+            sb.Append("                _" + name + "_Busy = true;\n");
+            sb.Append("                _" + name + "_TimedOut = false;\n");
+            if (hasTimeout)
+            {
+                sb.Append("                " + name + "_Cube.Start();\n");
+            }
+            sb.Append("                System.Threading.Tasks.Task.Run(delegate ()\n");
+            sb.Append("                {\n");
+            for (int p = 0; p < outNames.Count; p++)
+            {
+                sb.Append("                    " + outTypes[p] + " r_" + outNames[p] + " = default;\n");
+            }
+            sb.Append("                    bool ok = false;\n");
+            sb.Append("                    try\n");
+            sb.Append("                    {\n");
+            for (int o = 0; o < law.Ops.Count; o++)
+            {
+                sb.Append("                        ok = " + BuildBrickCall(law.Ops[o], doc, "f_", "r_") + ";\n");
+            }
+            sb.Append("                    }\n");
+            sb.Append("                    catch (Exception ex)\n");
+            sb.Append("                    {\n");
+            sb.Append("                        ok = false;\n");
+            sb.Append("                    }\n");
+            sb.Append("                    " + name + "_WorkerResult r0 = new " + name + "_WorkerResult();\n");
+            sb.Append("                    r0.Ok = ok;\n");
+            for (int p = 0; p < outNames.Count; p++)
+            {
+                sb.Append("                    r0." + outNames[p] + " = r_" + outNames[p] + ";\n");
+            }
+            sb.Append("                    _" + name + "_Inbox.Enqueue(r0);\n");
+            sb.Append("                });\n");
+            sb.Append("            }\n");
+            // [段6] τ 超时分支——worker 运行期间 Cube 步进 + 耗尽 → 失败后置
+            if (hasTimeout)
+            {
+                sb.Append("            // [段6] τ 时限——worker 运行期间 Cube 步进 + 耗尽 → 失败后置\n");
+                sb.Append("            else if (_" + name + "_Busy && " + name + "_Cube.IsRunning())\n");
+                sb.Append("            {\n");
+                sb.Append("                " + name + "_Cube.TickFrame();\n");
+                sb.Append("                if (" + name + "_Cube.IsExpired())\n");
+                sb.Append("                {\n");
+                sb.Append("                    _" + name + "_TimedOut = true;\n");
+                if (law.Attrs.IsLogging)
+                {
+                    sb.Append("                    if (LogStore.AllLog != null) { LogStore.Add(\"LAW\", 0, \"" + law.Name + " | 超时 | frame=\" + frame, \"\"); }\n");
+                }
+                for (int r = 0; r < resources.Count; r++)
+                {
+                    sb.Append("                    " + resources[r] + "_Count = " + resources[r] + "_Count + 1;\n");
+                }
+                if (law.Results.Count >= 2)
+                {
+                    sb.Append("                    " + BuildResultStatement(law.Results[1]) + "\n");
+                }
+                sb.Append("                    " + name + "_Cube.Reset();\n");
+                sb.Append("                }\n");
+                sb.Append("            }\n");
+            }
+            // [段7] inbox 汇合（⋈）——后台结果主线程应用
+            sb.Append("            // [段7] inbox 汇合（⋈）——后台结果主线程应用\n");
+            sb.Append("            _" + name + "_Inbox.Drain(delegate (" + name + "_WorkerResult r)\n");
+            sb.Append("            {\n");
+            sb.Append("                _" + name + "_Busy = false;\n");
+            for (int p = 0; p < outNames.Count; p++)
+            {
+                sb.Append("                _" + outNames[p] + " = r." + outNames[p] + ";\n");
+            }
+            sb.Append("                string stage = \"ok\";\n");
+            sb.Append("                if (!r.Ok)\n");
+            sb.Append("                {\n");
+            sb.Append("                    stage = \"error\";\n");
+            sb.Append("                }\n");
+            sb.Append("                AuditBrick(stage, \"" + law.Name + "\", \"" + brickLabel + "\", frame);\n");
+            if (law.Attrs.IsLogging)
+            {
+                sb.Append("                if (LogStore.AllLog != null) { LogStore.Add(\"LAW\", 0, \"" + law.Name + " | \" + stage + \" | frame=\" + frame, \"\"); }\n");
+            }
+            sb.Append("                if (_" + name + "_TimedOut)\n");
+            sb.Append("                {\n");
+            sb.Append("                    // 超时后到达——结果丢弃（超时分支已应用失败后置与资源释放）\n");
+            sb.Append("                    return;\n");
+            sb.Append("                }\n");
+            for (int r = 0; r < resources.Count; r++)
+            {
+                sb.Append("                " + resources[r] + "_Count = " + resources[r] + "_Count + 1;\n");
+            }
+            if (hasTimeout)
+            {
+                sb.Append("                " + name + "_Cube.Complete();\n");
+            }
+            if (law.Results.Count == 1)
+            {
+                sb.Append("                " + BuildResultStatement(law.Results[0]) + "\n");
+            }
+            else if (law.Results.Count >= 2)
+            {
+                sb.Append("                if (r.Ok)\n");
+                sb.Append("                {\n");
+                sb.Append("                    " + BuildResultStatement(law.Results[0]) + "\n");
+                sb.Append("                }\n");
+                sb.Append("                else\n");
+                sb.Append("                {\n");
+                sb.Append("                    " + BuildResultStatement(law.Results[1]) + "\n");
+                sb.Append("                }\n");
+            }
+            sb.Append("            });\n");
+            sb.Append("        }\n");
             sb.Append("\n");
         }}
 }

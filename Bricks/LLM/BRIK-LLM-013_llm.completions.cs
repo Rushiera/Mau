@@ -51,9 +51,9 @@ namespace Mau.Bricks
             {
                 return false;
             }
-            Task worker = RunCompletionsAsync(requestId, model, messagesJson,
+            // RT.1——Worker 句柄字段退役：会话移除即取消，后台任务自退（不等待）
+            _ = RunCompletionsAsync(requestId, model, messagesJson,
                 toolsJson, session);
-            session.Worker = worker;
             return true;
         }
 
@@ -198,4 +198,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:D4D506D314FEC149BCADD9A7F137CAA8D006396743CCCFB4FC0207F615D68F32
+// #MAU_CHECKSUM:SHA256:7E66E24F32E193361EA78E3F39AC8A28698E4613472DA17C5784CFCC9360AC25
