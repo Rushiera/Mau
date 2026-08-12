@@ -19,6 +19,11 @@ namespace Mau.Cli
         /// <returns>退出码——0 成功，非 0 失败</returns>
         public static int Main(string[] args)
 {
+            // 时序报告——每个指令输出头尾两行（工具主动观测：指令名/起始/耗时/退出码；失败也报，直接可见）
+            DateTime start = DateTime.Now;
+            string commandName = args.Length > 0 ? args[0] : "(help)";
+            Console.WriteLine("[mau " + commandName + "] 起始 " + start.ToString("HH:mm:ss.fff"));
+            int exitCode;
             // ⑦ 单实例互斥（D22 + D31）——同一时刻仅一个交互式 Mau 进程，从时序上排除自锁（MSB3027 家族）。
             // 豁免：serve-work（服务工作进程——管道通讯常驻，与指令不竞争）；MAU_INNER_CHILD=1（父进程已协调的内部子进程——publish 冒烟等）
             if (!IsInnerProcess(args))
@@ -27,38 +32,48 @@ namespace Mau.Cli
                 {
                     if (mutex == null)
                     {
-                        return 1;
+                        exitCode = 1;
                     }
-                    return Dispatch(args);
+                    else
+                    {
+                        exitCode = Dispatch(args);
+                    }
                 }
             }
-            return Dispatch(args);
-        }
-        /// <summary>
+            else
+            {
+                exitCode = Dispatch(args);
+            }
+
+            DateTime end = DateTime.Now;
+            long elapsedMs = (long)(end - start).TotalMilliseconds;
+            Console.WriteLine("[mau " + commandName + "] 完成 " + end.ToString("HH:mm:ss.fff") + " | " + elapsedMs + "ms | exit " + exitCode);
+            return exitCode;
+        }        /// <summary>
         /// 命令路由——独立入口（Main 与聚合器进程内调用共用）
         /// </summary>
         /// <param name="args">命令行参数</param>
         /// <returns>退出码——0 成功，非 0 失败</returns>
         public static int Dispatch(string[] args)
-        {
+{
             CliSupport.ParseVerbose(args);
             // [段1] 命令路由（积木注册表已退役——翻译器构筑期经 BrickIndex 查询 Bricks/index.json）
             if (args.Length == 0)
             {
                 Console.WriteLine("Mau Translator " + Mau.Runtime.VersionInfo.GetEntryVersion());
-                Console.WriteLine("用法: mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau|组.mauproj> -o <dir> [--sdk] | mau publish -o <dir> | mau test [--update] | mau check [--update|--syntax|--bricks|--selftest] | mau up [-f 清单] [--force] | mau checksum --update | mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau debug <file.mau> [--ticks N] [--step] [--pause-on T_X|P_Y] [--trace] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ... | mau serve-work <项目> <管道> <pocket> | mau ps | mau status <名> | mau snapshot <名> | mau kill <名> | mau bricks list|index|test|reseal | mau export <组.mauproj> [-o <dir>] | mau import <组包目录> -o <目录> [--force]");
+                Console.WriteLine("构筑:   mau verify <file.mau> | mau gen <file.mau> -o <dir> | mau build <file.mau|组.mauproj> -o <dir> [--sdk] | mau publish -o <dir> | mau up [-f 清单] [--force]");
+                Console.WriteLine("验证:   mau test [--update] | mau check [--update|--syntax|--bricks|--selftest]");
+                Console.WriteLine("运行:   mau run <file.mau> [--fire Method key=val ...] [--ticks N] [--sdk] | mau debug <file.mau> [--ticks N] [--step] [--pause-on T_X|P_Y] [--trace] | mau serve <file.mau> [--port N] | mau serve spawn|stop|status|call ...");
+                Console.WriteLine("进程:   mau ps | mau status <名> | mau snapshot <名> | mau kill <名|--all|--clean>");
+                Console.WriteLine("积木:   mau bricks list|index|test|reseal");
+                Console.WriteLine("组工程: mau export <组.mauproj> [-o <dir>] | mau import <组包目录> -o <目录> [--force]");
                 return 0;
             }
 
             string command = args[0];
             if (command == "up")
             {
-                string[] upArgs = new string[args.Length - 1];
-                for (int i = 0; i < upArgs.Length; i = i + 1)
-                {
-                    upArgs[i] = args[i + 1];
-                }
-                return CommandUp.Execute(upArgs);
+                return CommandUp.Execute(CliSupport.Tail(args));
             }
             if (command == "verify")
             {
@@ -74,47 +89,24 @@ namespace Mau.Cli
             }
             if (command == "publish")
             {
-                string[] publishArgs = new string[args.Length - 1];
-                for (int i = 0; i < publishArgs.Length; i = i + 1)
-                {
-                    publishArgs[i] = args[i + 1];
-                }
-                return CommandPublish.Execute(publishArgs);
+                return CommandPublish.Execute(CliSupport.Tail(args));
             }
             if (command == "test")
             {
                 bool update = args.Length > 1 && args[1] == "--update";
                 return MauTestRunner.Run(update);
             }
-            if (command == "checksum")
-            {
-                return CommandChecksum(args);
-            }
             if (command == "run")
             {
-                string[] runArgs = new string[args.Length - 1];
-                for (int i = 0; i < runArgs.Length; i = i + 1)
-                {
-                    runArgs[i] = args[i + 1];
-                }
-                return CommandRun.Execute(runArgs);
+                return CommandRun.Execute(CliSupport.Tail(args));
             }
             if (command == "debug")
             {
-                string[] debugArgs = new string[args.Length - 1];
-                for (int i = 0; i < debugArgs.Length; i = i + 1)
-                {
-                    debugArgs[i] = args[i + 1];
-                }
-                return CommandDebug.Execute(debugArgs);
+                return CommandDebug.Execute(CliSupport.Tail(args));
             }
             if (command == "serve")
             {
-                string[] serveArgs = new string[args.Length - 1];
-                for (int i = 0; i < serveArgs.Length; i = i + 1)
-                {
-                    serveArgs[i] = args[i + 1];
-                }
+                string[] serveArgs = CliSupport.Tail(args);
                 if (serveArgs.Length > 0 && IsServeSubCommand(serveArgs[0]))
                 {
                     return CommandServeManager.Execute(serveArgs);
@@ -123,12 +115,7 @@ namespace Mau.Cli
             }
             if (command == "serve-work")
             {
-                string[] workArgs = new string[args.Length - 1];
-                for (int i = 0; i < workArgs.Length; i = i + 1)
-                {
-                    workArgs[i] = args[i + 1];
-                }
-                return CommandServeWork.Execute(workArgs);
+                return CommandServeWork.Execute(CliSupport.Tail(args));
             }
             if (command == "ps")
             {
@@ -146,64 +133,33 @@ namespace Mau.Cli
             {
                 string? name = args.Length > 1 ? args[1] : null;
                 bool clean = args.Length > 1 && args[1] == "--clean";
+                bool all = args.Length > 1 && args[1] == "--all";
+                if (all)
+                {
+                    return CommandSupervisor.KillAll();
+                }
                 return CommandSupervisor.Kill(name, clean);
             }
             if (command == "bricks")
             {
-                string[] bricksArgs = new string[args.Length - 1];
-                for (int i = 0; i < bricksArgs.Length; i = i + 1)
-                {
-                    bricksArgs[i] = args[i + 1];
-                }
-                return CommandBricks.Execute(bricksArgs);
+                return CommandBricks.Execute(CliSupport.Tail(args));
             }
             if (command == "export")
             {
-                string mauprojPath = args.Length > 1 ? args[1] : "";
-                string? exportDir = null;
-                for (int i = 2; i < args.Length - 1; i = i + 1)
-                {
-                    if (args[i] == "-o")
-                    {
-                        exportDir = args[i + 1];
-                    }
-                }
-                return CommandMauProj.Export(mauprojPath, exportDir);
+                return CommandMauProj.ExecuteExport(CliSupport.Tail(args));
             }
             if (command == "import")
             {
-                string packageDir = args.Length > 1 ? args[1] : "";
-                string targetDir = ".";
-                bool force = false;
-                for (int i = 2; i < args.Length; i = i + 1)
-                {
-                    if (args[i] == "-o" && i + 1 < args.Length)
-                    {
-                        targetDir = args[i + 1];
-                        i = i + 1;
-                    }
-                    else if (args[i] == "--force")
-                    {
-                        force = true;
-                    }
-                }
-                return CommandMauProj.Import(packageDir, targetDir, force);
+                return CommandMauProj.ExecuteImport(CliSupport.Tail(args));
             }
             if (command == "check")
             {
-                string[] checkArgs = new string[args.Length - 1];
-                for (int i = 0; i < checkArgs.Length; i = i + 1)
-                {
-                    checkArgs[i] = args[i + 1];
-                }
-                return CommandCheck.Execute(checkArgs);
+                return CommandCheck.Execute(CliSupport.Tail(args));
             }
 
             Console.WriteLine("未知命令: " + command);
             return 1;
-        }
-
-        /// <summary>
+        }        /// <summary>
         /// verify 命令——只静态验证
         /// </summary>
         /// <param name="args">命令行参数</param>
@@ -328,7 +284,7 @@ namespace Mau.Cli
             // [1] 解析 + 验证
             string source = File.ReadAllText(mauFile);
             string flowName = FlowNameFromPath(mauFile);
-            CompileResult result = MauCompiler.Compile(source, flowName);
+            CompileResultV2 result = MauCompilerV2.Compile(source, flowName);
             PrintDiagnostics(mauFile, result.Diagnostics);
             if (!result.Success)
             {
@@ -439,97 +395,6 @@ namespace Mau.Cli
                 sb.Append(tail);
             }
             return sb.ToString();
-        }
-        /// <summary>
-        /// checksum 命令——更新黄金文件 SHA256 校验尾
-        /// </summary>
-        /// <param name="args">命令行参数：checksum --update</param>
-        /// <returns>退出码</returns>
-        private static int CommandChecksum(string[] args)
-{
-            if (args.Length < 2 || args[1] != "--update")
-            {
-                Console.WriteLine("用法: mau checksum --update");
-                Console.WriteLine("  遍历 Mau.Snapshots/expected/*.cs，计算 SHA256 并更新校验尾");
-                return 1;
-            }
-
-            string? root = CliSupport.FindWorkspaceRoot();
-            if (root == null)
-            {
-                Console.WriteLine("FAIL: 未找到 Mau.sln");
-                return 1;
-            }
-
-            string expectedDir = Path.Combine(root, "Mau.Snapshots", "expected");
-            if (!Directory.Exists(expectedDir))
-            {
-                Console.WriteLine("FAIL: 目录不存在——" + expectedDir);
-                return 1;
-            }
-
-            string[] files = Directory.GetFiles(expectedDir, "*.cs");
-            if (files.Length == 0)
-            {
-                Console.WriteLine("无黄金文件——" + expectedDir);
-                return 0;
-            }
-
-            // 统一常量——HashUtil.ChecksumPrefix（审查修复轮 2026-08-11）
-            string checksumPrefix = Mau.Runtime.HashUtil.ChecksumPrefix;
-            int updated = 0;
-            for (int i = 0; i < files.Length; i++)
-            {
-                string file = files[i];
-                string content;
-                try
-                {
-                    content = File.ReadAllText(file).Replace("\r\n", "\n");
-                }
-                catch
-                {
-                    Console.WriteLine("SKIP: 不可读——" + Path.GetFileName(file));
-                    continue;
-                }
-
-                // 去掉末尾已有校验尾（可能多行 + 空行）
-                string[] lines = content.Split('\n');
-                int bodyEnd = lines.Length;
-                while (bodyEnd > 0)
-                {
-                    string last = lines[bodyEnd - 1].Trim();
-                    if (last.Length == 0 || last.StartsWith(checksumPrefix))
-                    {
-                        bodyEnd = bodyEnd - 1;
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
-                if (bodyEnd < lines.Length)
-                {
-                    StringBuilder sb = new StringBuilder();
-                    for (int j = 0; j < bodyEnd; j++)
-                    {
-                        if (j > 0)
-                        {
-                            sb.Append('\n');
-                        }
-                        sb.Append(lines[j]);
-                    }
-                    content = sb.ToString();
-                }
-
-                string hash = CliSupport.ComputeSha256(content);
-                string newContent = content + "\n" + checksumPrefix + hash;
-                File.WriteAllText(file, newContent);
-                Console.WriteLine("UPDATED: " + Path.GetFileName(file) + " → " + hash);
-                updated = updated + 1;
-            }
-
-            Console.WriteLine("完成: " + updated + " 份黄金文件校验尾已更新");
-            return 0;
         }
     /// <summary>
     /// 判断 serve 子命令——spawn/stop/status/call 走服务管理，其余走 HTTP 面板

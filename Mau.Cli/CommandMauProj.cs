@@ -78,12 +78,12 @@ namespace Mau.Cli
                 texts[i] = File.ReadAllText(files[i]);
                 names[i] = Program.FlowNameFromPath(Path.GetFileNameWithoutExtension(files[i]));
             }
-            GroupCompileResult groupResult = MauCompiler.CompileGroup(texts, names);
+            GroupCompileResultV2 groupResult = MauCompilerV2.CompileGroupV2(texts, names);
             List<string> sources = new List<string>();
             List<string> classNames = new List<string>();
-            for (int i = 0; i < groupResult.Results.Length; i++)
+            for (int i = 0; i < groupResult.Results.Count; i++)
             {
-                CompileResult result = groupResult.Results[i];
+                CompileResultV2 result = groupResult.Results[i];
                 if (!result.Success)
                 {
                     Program.PrintDiagnostics(files[i], result.Diagnostics);
@@ -664,7 +664,33 @@ private static bool IsWithinRoot(string root, string path)
     string full = Path.GetFullPath(path);
     string rootFull = Path.GetFullPath(root);
     return full.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-}    }
+}    /// <summary>
+/// export 命令入口——参数解析 + 分发（参数解析下放：Dispatch 只做命令名路由）
+/// </summary>
+/// <param name = "args">命令名之后的参数</param>
+/// <returns>退出码</returns>
+public static int ExecuteExport(string[] args)
+{
+    string mauprojPath = args.Length > 0 ? args[0] : "";
+    string? exportDir = null;
+    for (int i = 1; i < args.Length - 1; i = i + 1)
+    {
+        if (args[i] == "-o")
+        {
+            exportDir = args[i + 1];
+        }
+    }
+
+    return Export(mauprojPath, exportDir);
+} 
+/// <summary>
+/// import 命令入口——参数解析 + 分发（参数解析下放：Dispatch 只做命令名路由）
+/// </summary>
+/// <param name = "args">命令名之后的参数</param>
+/// <returns>退出码</returns>
+ public  static  int  ExecuteImport ( string [ ]  args ) { string  packageDir  =  args . Length > 0 ? args [ 0 ] :  "" ;  string  targetDir  =  "." ;  bool  force  =  false ;  for  ( int  i  =  1 ;  i < args . Length ;  i  =  i + 1 ) { if  ( args [ i ] == "-o" && i + 1 < args . Length ) { targetDir  =  args [ i + 1 ] ;  i  =  i + 1 ;  } else  if  ( args [ i ] == "--force" ) { force  =  true ;  } } return  Import ( packageDir ,  targetDir ,  force ) ;  }
+
+}
 
     /// <summary>
     /// manifest 文件条目——导入校验依据

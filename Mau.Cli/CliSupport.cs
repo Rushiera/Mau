@@ -207,5 +207,24 @@ private static string BrickParamLiteral(Type type)
 public static string BuildMinimalCorpus(string brickName, string paramLines, string transitionName = "T_Run")
 {
     return "Mau 0.1\n基座: Mau.Runtime/v0.1\n\n命题:\n  P_Go 信号\n  P_Done 事实\n  P_Failed 事实\n\n变迁 " + transitionName + ":\n  前置: P_Go\n  动作: " + brickName + "\n  参数: " + paramLines + "\n  时限: 60帧\n  后置: P_Done / P_Failed\n";
+}/// <summary>
+/// 取子参数数组——args[1..]（命令名之后；统一分发样板，消灭逐命令手动搬运循环）
+/// </summary>
+/// <param name = "args">完整命令行参数</param>
+/// <returns>命令名之后的子数组（无则空数组）</returns>
+public static string[] Tail(string[] args)
+{
+    if (args == null || args.Length <= 1)
+    {
+        return Array.Empty<string>();
+    }
+
+    string[] tail = new string[args.Length - 1];
+    for (int i = 1; i < args.Length; i = i + 1)
+    {
+        tail[i - 1] = args[i];
+    }
+
+    return tail;
 }}
 }

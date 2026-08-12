@@ -87,7 +87,7 @@ namespace Mau.Cli
             // [1] 编译——MauCompiler 唯一入口（BrickIndex + BRIKGROUP 内嵌）
             string sourceText = File.ReadAllText(mauFile, Encoding.UTF8);
             string flowName = Program.FlowNameFromPath(mauFile);
-            CompileResult compileResult = MauCompiler.Compile(sourceText, flowName);
+            CompileResultV2 compileResult = MauCompilerV2.Compile(sourceText, flowName);
             if (!compileResult.Success)
             {
                 Console.WriteLine("Mau 验证失败:");
@@ -102,7 +102,7 @@ namespace Mau.Cli
             // [2] Roslyn 编译（口袋编译——诊断带 D1 行号映射）
             string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_debug_pocket_" + Guid.NewGuid().ToString("N").Substring(0, 8));
             MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
-            MauPocketCompileResult pocketResult = compiler.Compile(compileResult.GeneratedCode, "FL_" + flowName, compileResult.GeneratedMap);
+            MauPocketCompileResult pocketResult = compiler.Compile(compileResult.GeneratedCode, "FL_" + flowName);
             if (!pocketResult.Success)
             {
                 Console.WriteLine("C# 编译失败:");

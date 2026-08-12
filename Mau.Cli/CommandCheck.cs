@@ -111,6 +111,7 @@ public static int Execute(string[] args)
             bool onlySyntax = false;
             bool onlyBricks = false;
             bool selftest = false;
+            bool analyze = false;
             for (int i = 0; i < args.Length; i = i + 1)
             {
                 if (args[i] == "--update")
@@ -129,6 +130,10 @@ public static int Execute(string[] args)
                 {
                     selftest = true;
                 }
+                else if (args[i] == "--analyze")
+                {
+                    analyze = true;
+                }
             }
 
             // [段2] 定位谱目录——selftest 模式不要求 Mau.sln（发布包随行资源自检）
@@ -139,6 +144,11 @@ public static int Execute(string[] args)
                 {
                     Console.WriteLine("FAIL: 未找到 Mau.sln——请从仓库内运行");
                     return 2;
+                }
+                // --analyze 独立段——分析能力路由（V2.0.7 扩展稳定性/可达性/扰动覆盖/可观性）
+                if (analyze)
+                {
+                    return RunAnalyze(root);
                 }
                 string checksDir = Path.Combine(root, "Mau.Snapshots", "checks");
                 string syntaxDir = Path.Combine(checksDir, "syntax");
@@ -489,7 +499,7 @@ public static int Execute(string[] args)
             {
                 Console.WriteLine("[A] 语法谱      " + sSyntaxPass + "/" + sSyntaxTotal + " 通过（" + sSyntaxFail + " 失败）");
                 Console.WriteLine("[B] 翻译器谱    " + sGoldenPass + "/" + sGoldenTotal + " 黄金一致（" + sGoldenDrift + " 漂移 " + sGoldenMissing + " 缺失 " + sGoldenStructFail + " 结构断言失败）");
-                Console.WriteLine("[E] 模板库      " + sCorpusPass + "/" + sCorpusTotal + " verify 通过（" + sCorpusFail + " 失败）");
+                Console.WriteLine("[E] CH4 案例谱  " + sCorpusPass + "/" + sCorpusTotal + " verify 通过（" + sCorpusFail + " 失败）");
                 total = total + sSyntaxTotal + sGoldenTotal + sCorpusTotal;
                 fail = fail + sSyntaxFail + sGoldenDrift + sGoldenMissing + sGoldenStructFail + sCorpusFail;
             }
@@ -650,21 +660,6 @@ public static int Execute(string[] args)
             }
             return "";
         }
-
-        /// <summary>
-        /// 首条诊断文本
-        /// </summary>
-        /// <param name="result">编译结果</param>
-        /// <returns>诊断文本</returns>
-        private static string FirstDiagnostic(CompileResult result)
-        {
-            if (result.Diagnostics.Count > 0)
-            {
-                MauDiagnostic d = result.Diagnostics[0];
-                return d.Code + ": " + d.Message;
-            }
-            return "未知";
-        }
 /// <summary>
 /// 首条诊断文本（v2 编译结果）
 /// </summary>
@@ -685,14 +680,15 @@ private static string FirstDiagnosticV2(CompileResultV2 result)
 /// <param name = "root">仓库根</param>
 private static void RunCorpusTemplates(string root)
 {
-    string corpusDir = Path.Combine(root, "Mau.Corpus");
+    // CH4 真实案例谱——Mau.Snapshots/cases/ch4_*.mau（V2.0.5 从 CH4 仓库提取的复杂案例 v2 语料）
+    string corpusDir = Path.Combine(root, "Mau.Snapshots", "cases");
     if (!Directory.Exists(corpusDir))
     {
-        Console.WriteLine("WARN: 模板库目录不存在——" + corpusDir);
+        Console.WriteLine("WARN: CH4 案例谱目录不存在——" + corpusDir);
         return;
     }
 
-    string[] files = Directory.GetFiles(corpusDir, "*.mau", SearchOption.TopDirectoryOnly);
+    string[] files = Directory.GetFiles(corpusDir, "ch4_*.mau", SearchOption.TopDirectoryOnly);
     Array.Sort(files, StringComparer.OrdinalIgnoreCase);
     for (int i = 0; i < files.Length; i = i + 1)
     {
@@ -701,15 +697,57 @@ private static void RunCorpusTemplates(string root)
         string flowName = Program.FlowNameFromPath(Path.GetFileNameWithoutExtension(path));
         string source = File.ReadAllText(path);
         sCorpusTotal = sCorpusTotal + 1;
-        CompileResult result = MauCompiler.Compile(source, flowName);
+        CompileResultV2 result = MauCompilerV2.Compile(source, flowName);
         if (!result.Success)
         {
             sCorpusFail = sCorpusFail + 1;
-            sErrors.Add("[E] " + fileName + ": verify 失败——" + FirstDiagnostic(result));
+            sErrors.Add("[E] " + fileName + ": verify 失败——" + FirstDiagnosticV2(result));
             continue;
         }
 
         sCorpusPass = sCorpusPass + 1;
     }
-}    }
+}/// <summary>
+/// --analyze 分析段——对 cases 全谱跑 v2 编译，聚合分析报告（V2.0.7 扩展：稳定性/可达性/扰动覆盖/可观性）
+/// </summary>
+/// <param name = "root">仓库根</param>
+/// <returns>退出码</returns>
+private static int RunAnalyze(string root)
+{
+    string casesDir = Path.Combine(root, "Mau.Snapshots", "cases");
+    if (!Directory.Exists(casesDir))
+    {
+        Console.WriteLine("FAIL: cases 目录不存在——" + casesDir);
+        return 2;
+    }
+
+    string[] files = Directory.GetFiles(casesDir, "*.mau", SearchOption.TopDirectoryOnly);
+    Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+    int total = 0;
+    int ok = 0;
+    Console.WriteLine();
+    Console.WriteLine("=== MAU_ANALYZE（关键路径——V2.0.7 扩展稳定性/可达性/扰动覆盖/可观性） ===");
+    for (int i = 0; i < files.Length; i++)
+    {
+        string path = files[i];
+        string fileName = Path.GetFileName(path);
+        string flowName = Program.FlowNameFromPath(Path.GetFileNameWithoutExtension(path));
+        string source = File.ReadAllText(path);
+        CompileResultV2 result = MauCompilerV2.Compile(source, flowName);
+        total = total + 1;
+        if (!result.Success)
+        {
+            Console.WriteLine("  ❌ " + fileName + ": " + FirstDiagnosticV2(result));
+            continue;
+        }
+
+        ok = ok + 1;
+        string keyPath = result.KeyPathReport;
+        Console.WriteLine("  ✅ " + fileName + (keyPath.Length > 0 ? " | " + keyPath.Replace("\n", " | ") : ""));
+    }
+
+    Console.WriteLine("分析 " + ok + "/" + total + " 案例通过");
+    Console.WriteLine(ok == total ? "MAU_ANALYZE_OK" : "MAU_ANALYZE_FAIL");
+    return ok == total ? 0 : 1;
+}}
 }

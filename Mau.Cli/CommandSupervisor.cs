@@ -135,7 +135,7 @@ namespace Mau.Cli
             }
             if (string.IsNullOrEmpty(name))
             {
-                Console.WriteLine("用法: mau kill <程序名> | mau kill --clean");
+                Console.WriteLine("用法: mau kill <程序名> | mau kill --all | mau kill --clean");
                 return 1;
             }
             AppIdentity? app = AppRegistry.Get(name);
@@ -229,5 +229,42 @@ namespace Mau.Cli
             Console.WriteLine("完成: 清理 " + cleaned + " 个僵尸注册");
             return 0;
         }
+/// <summary>
+/// kill --all——终止全部注册 Mau 程序（主动全杀：只杀 AppRegistry 注册过的，进程名/路径匹配天然防误杀）
+/// </summary>
+/// <returns>退出码——0 全部成功，1 有失败</returns>
+public static int KillAll()
+{
+    AppIdentity[] apps = AppRegistry.List();
+    if (apps.Length == 0)
+    {
+        Console.WriteLine("无注册程序");
+        return 0;
     }
+
+    int killed = 0;
+    int failed = 0;
+    for (int i = 0; i < apps.Length; i++)
+    {
+        AppIdentity app = apps[i];
+        if (app.Pid == Process.GetCurrentProcess().Id)
+        {
+            continue;
+        }
+
+        Console.WriteLine("── " + app.Name + "（PID " + app.Pid + "）");
+        int code = Kill(app.Name, false);
+        if (code == 0)
+        {
+            killed = killed + 1;
+        }
+        else
+        {
+            failed = failed + 1;
+        }
+    }
+
+    Console.WriteLine("kill --all 完成: 终止 " + killed + " 个" + (failed > 0 ? "，失败 " + failed + " 个" : ""));
+    return failed > 0 ? 1 : 0;
+}    }
 }

@@ -12,32 +12,6 @@ namespace Mau.Translator
     /// </summary>
     public static class BrickEmbedder
     {
-        /// <summary>
-        /// 收集语料动作闭包——动作积木 + 依赖递归（去重按 BRIK-ID，环防护）
-        /// </summary>
-        /// <param name="doc">解析文档</param>
-        /// <returns>闭包条目（按 ID 稳定排序）</returns>
-        public static List<BrickIndexEntry> CollectClosure(MauDocument doc)
-        {
-            Dictionary<string, BrickIndexEntry> result =
-                new Dictionary<string, BrickIndexEntry>(StringComparer.Ordinal);
-            HashSet<string> visiting = new HashSet<string>(StringComparer.Ordinal);
-            for (int i = 0; i < doc.Transitions.Count; i++)
-            {
-                IrTransition t = doc.Transitions[i];
-                if (t.BrickName.Length == 0)
-                {
-                    continue;
-                }
-                CollectEntry(t.BrickName, result, visiting);
-            }
-            List<BrickIndexEntry> sorted = new List<BrickIndexEntry>(result.Values);
-            sorted.Sort(delegate (BrickIndexEntry a, BrickIndexEntry b)
-            {
-                return string.CompareOrdinal(a.Id, b.Id);
-            });
-            return sorted;
-        }
 /// <summary>
 /// 收集 v2 文档积木闭包——控制律操作 + 测量采样（去重按 BRIK-ID，环防护）
 /// </summary>

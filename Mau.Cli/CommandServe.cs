@@ -58,10 +58,10 @@ namespace Mau.Cli
                 return 1;
             }
 
-            // [1] 唯一入口——MauCompiler.Compile（R1：BrickIndex 加载 + BRIKGROUP 内嵌；禁止独立拼装 Parser→Validator→Generator）
+            // [1] 唯一入口——MauCompilerV2.Compile（v2 五阶段流水线：词法→解析→糖展开→验证→分析→生成；BrickIndex + BRIKGROUP 内嵌）
             string sourceText = File.ReadAllText(mauFile, Encoding.UTF8);
             string flowName = Path.GetFileNameWithoutExtension(mauFile);
-            CompileResult compileResult = MauCompiler.Compile(sourceText, flowName);
+            CompileResultV2 compileResult = MauCompilerV2.Compile(sourceText, flowName);
             if (!compileResult.Success)
             {
                 Console.Error.WriteLine("Mau 验证失败:");
