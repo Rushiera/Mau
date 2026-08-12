@@ -124,6 +124,26 @@ public static KeyValuePair<string, LlmStreamSession>[] GetActiveSessions()
             {
                 return;
             }
+            // 🔴 LLM 轮次结束观测（2026-08-12 诊断补透明性——LLM 是否发起工具调用不可见）：
+            //   llm.terminal 事件落盘——toolCalls 摘要（前 300 字符）+ 内容长度 + usage + 错误码
+            //   定位"LLM 未调用工具" vs "调用被下游丢弃"
+            //   🔴 观测零副作用——try-catch 保护：埋点异常绝不阻断终态分片入队（2026-08-12 测试卡死教训）
+            try
+            {
+                AuditStore.Default?.Record("LlmSession", "llm.terminal", -1, new AuditProp[] {
+                    new AuditProp("errorCode", errorCode),
+                    new AuditProp("contentChars", session.ContentChars.ToString()),
+                    new AuditProp("toolCalls", toolCallsJson.Length > 300
+                        ? toolCallsJson.Substring(0, 300) : toolCallsJson),
+                    new AuditProp("usage", session.UsagePrompt.ToString() + "/"
+                        + session.UsageCompletion.ToString() + "/"
+                        + session.UsageCacheHit.ToString())
+                });
+            }
+            catch (Exception)
+            {
+                // 观测失败不影响主链路
+            }
             // 结束时间戳——轮次统计耗时基准（Stopwatch 精度；2026-08-10）
             session.FinishedTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
             LlmStreamChunk chunk = new LlmStreamChunk();

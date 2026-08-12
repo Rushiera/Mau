@@ -72,6 +72,23 @@ namespace Mau.Bricks
         {
             try
             {
+                // 🔴 LLM 请求观测（2026-08-12 诊断补透明性）：toolsJson 是否传给了 LLM——
+                //   定位"请求无工具声明"（T_BuildTools/cat.tools_json 问题）vs "LLM 不调用"（声明质量/行为）
+                //   🔴 观测零副作用——try-catch 保护：埋点异常绝不导致请求误判失败（2026-08-12 测试卡死教训）
+                try
+                {
+                    AuditStore.Default?.Record("LlmSession", "llm.request", -1, new AuditProp[] {
+                        new AuditProp("model", model),
+                        new AuditProp("toolsLen", toolsJson.Length.ToString()),
+                        new AuditProp("tools", toolsJson.Length > 200
+                            ? toolsJson.Substring(0, 200) : toolsJson),
+                        new AuditProp("messagesLen", messagesJson.Length.ToString())
+                    });
+                }
+                catch (Exception)
+                {
+                    // 观测失败不影响主链路
+                }
                 string apiKey = LlmBridge.ApiKey;
                 if (apiKey.Length == 0)
                 {
@@ -181,4 +198,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:02C2AAC2AFEBD8E3304512F4291DC750E366BA6FC26AF63B7BB32A3FAA85CB8B
+// #MAU_CHECKSUM:SHA256:D4D506D314FEC149BCADD9A7F137CAA8D006396743CCCFB4FC0207F615D68F32

@@ -88,17 +88,21 @@ namespace Mau.Bricks
                 ok = false;
             }
             OfficeData data = OfficeData.Empty();
-            if (result.Length > 0)
-            {
-                data.Strs["result"] = result;
-            }
             if (error.Length > 0)
             {
+                // 🔴 错误可见性（2026-08-12 诊断）：回填链路（ToolPoster collect_result → ctx_push_tool）
+                // 只读 result 键——失败时 result 冗余错误文本，LLM 才能看到真实原因
+                // （否则永远只看到防护注入 "[工具执行失败或超时]"——LLM 盲飞重试死循环）
                 data.Strs["error"] = error;
+                data.Strs["result"] = "[工具失败] " + error;
             }
-            if (ok && error.Length == 0)
+            else if (ok)
             {
                 data.Strs["result"] = result.Length > 0 ? result : "ok";
+            }
+            else
+            {
+                data.Strs["result"] = "[工具失败] 未知错误";
             }
             oa.Complete(officeId, catId, data);
             return true;
@@ -734,4 +738,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:C2ACB31214C483A250E56E34C4C0AB0E56BE646CFAA0418666D21E1E0276F4D8
+// #MAU_CHECKSUM:SHA256:EA0C30AC859004A544F9F11690094AE751721D20FCA1814F262D2B311EFD31F9
