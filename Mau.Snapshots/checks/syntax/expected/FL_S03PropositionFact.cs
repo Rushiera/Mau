@@ -1,216 +1,113 @@
-﻿// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
-// 流程: S03PropositionFact
-// 基座: Mau.Runtime/v0.1
-
-using Mau.Runtime;
-using System.Threading.Tasks;
+﻿// ═══ S03PropositionFact 生成物 — Mau v2.0 翻译器 ═══
+// 生成物由翻译器确定性输出——手工修改无效，改 .mau 后重新生成
 using System;
+using System.Collections.Generic;
+using Mau.Runtime;
 
-namespace Mau.Generated.Flows
+namespace Mau.Generated
 {
     /// <summary>
-    /// S03PropositionFact 流程——由 Mau 声明生成
+    /// 生成物——S03PropositionFact 受控系统
     /// </summary>
-    public sealed class FL_S03PropositionFact : IObservableFlow
+    public sealed class S03PropositionFact
     {
-        /// <summary>
-        /// 内部帧号——每 Tick 自增
-        /// </summary>
-        private long _frame;
-
-        /// <summary>
-        /// 环形调试日志——200 条上限
-        /// </summary>
-        private FlowLog _logs;
-
-        /// <summary>
-        /// 数据流追踪开关——SetTraceDataFlow 控制（D2 调试基建：输出赋值/信号投递消费记录）
-        /// </summary>
-        private bool _traceDataFlow;
-
-        /// <summary>
-        /// 命题 P_Seen：终态事实，置位后保持
-        /// </summary>
-        private bool P_Seen;
-
-        /// <summary>
-        /// 命题 P_Done：终态事实，置位后保持
-        /// </summary>
-        private bool P_Done;
-
-        /// <summary>
-        /// 命题 P_Failed：终态事实，置位后保持
-        /// </summary>
+        // [命题]
+        private bool P_Go;
+        private bool P_Recorded;
         private bool P_Failed;
 
-        /// <summary>
-        /// 变迁 T_Run 的动作参数——input
-        /// </summary>
-        private string _input = null!;
+        // [控制律 Cube]
+        private readonly Cube T_Run_Cube = new Cube(5);
 
         /// <summary>
-        /// 变迁 T_Run 的动作参数——output
+        /// 构造——初始状态置位
         /// </summary>
-        private string _output = null!;
-
-        /// <summary>
-        /// 变迁 T_Run 的时限 Cube（60 帧有限模式）
-        /// </summary>
-        private Cube T_Run_Cube;
-
-        /// <summary>
-        /// 构造：初始化日志缓冲与 Cube/Inbox
-        /// </summary>
-        public FL_S03PropositionFact()
+        public S03PropositionFact()
         {
-            _logs = new FlowLog();
-            T_Run_Cube = new Cube(60);
         }
 
         /// <summary>
-        /// 每帧驱动——由主 Tick 调用
+        /// 帧驱动——测量采样 + 控制律守卫（声明顺序）
         /// </summary>
-        public void Tick()
+        /// <param name="frame">全局帧号</param>
+        public void Tick(int frame)
         {
-            _frame = _frame + 1;
-            // [T_Run] 前置检查
-            if (P_Seen && T_Run_Cube.IsIdle())
+            T_Run_Execute(frame);
+        }
+
+        /// <summary>
+        /// T_Run 控制律——条件 + 操作 → 结果
+        /// </summary>
+        /// <param name="frame">全局帧号</param>
+        private void T_Run_Execute(int frame)
+        {
+            // [段1] 条件守卫——全部成立 → 触发
+            if (P_Go && T_Run_Cube.IsIdle())
             {
+                // [段2] 信号消费——触发即清除
+                P_Go = false;
                 T_Run_Cube.Start();
-                // 执行动作（积木调用）
-                bool ok = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
+                // [段4] 操作——顺序执行 + try-catch 隔离 + 自动审计
+                bool ok = false;
+                try
+                {
+                    AuditBrick("invoke", "T_Run", "file.convert", frame);
+                    ok = Mau.Bricks.BRIK_FILE_001.Convert(_src, _dst);
+                    AuditBrick("ok", "T_Run", "file.convert", frame);
+                }
+                catch (Exception ex)
+                {
+                    ok = false;
+                    AuditBrick("error", "T_Run", "file.convert", frame);
+                }
+                // [段5] 结果转移——bool 驱动首项成功 / 次项失败 / 多路 switch 分发
                 if (ok)
                 {
-                    // 正常后置注册
-                    P_Done = true;
+                    P_Recorded = true;
                 }
                 else
                 {
-                    // 错误后置注册（互斥）
                     P_Failed = true;
                 }
-
-                // 同步积木当帧完成
-                T_Run_Cube.Complete();
             }
-
-            // [T_Run] 时限检查
-            if (T_Run_Cube.IsRunning())
+            // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
+            else if (P_Go && T_Run_Cube.IsRunning())
             {
                 T_Run_Cube.TickFrame();
                 if (T_Run_Cube.IsExpired())
                 {
-                    // 超时 → 错误后置
                     P_Failed = true;
-                    T_Run_Cube.Complete();
                 }
             }
         }
 
         /// <summary>
-        /// 获取运行时状态快照——全量截面
+        /// 外部投递——P_Go
         /// </summary>
-        /// <returns>当前帧状态</returns>
-        public RuntimeStatus GetStatus()
+        public void FireGo()
         {
-            PropSnapshot[] props = new PropSnapshot[3];
-            props[0] = new PropSnapshot("P_Seen", "Fact", P_Seen);
-            props[1] = new PropSnapshot("P_Done", "Fact", P_Done);
-            props[2] = new PropSnapshot("P_Failed", "Fact", P_Failed);
-            TransSnapshot[] trans = new TransSnapshot[1];
-            trans[0] = new TransSnapshot("T_Run", T_Run_Cube.State.ToString(), T_Run_Cube.ElapsedFrames, T_Run_Cube.LimitFrames);
-            ResSnapshot[] res = new ResSnapshot[0];
-            return new RuntimeStatus(_frame, props, trans, res);
+            P_Go = true;
         }
 
         /// <summary>
-        /// 获取全量调试日志
+        /// 积木调用审计——brick.invoke/ok/error（自动审计埋点，观测不改变系统）
         /// </summary>
-        /// <returns>日志数组，时间顺序</returns>
-        public MauDebug[] GetLogs()
-        {
-            return _logs.GetAll();
-        }
-
-        /// <summary>
-        /// 开启数据流追踪——输出端口赋值/信号投递消费记录 MauDebug（D2 调试基建）
-        /// </summary>
-        /// <param name="enabled">true=记录数据流日志</param>
-        public void SetTraceDataFlow(bool enabled)
-        {
-            _traceDataFlow = enabled;
-        }
-
-        /// <summary>
-        /// trace 审计写入——数据流追踪事件可选写审计（A.3：AuditStore.Default 存在时记录，L3 级不落盘）
-        /// </summary>
-        /// <param name="kind">trace 类别（fire/consume/set）</param>
-        /// <param name="name">命题或变迁名</param>
-        /// <param name="result">结果文本</param>
-        private void TraceAudit(string kind, string name, string result)
+        /// <param name="stage">阶段——invoke/ok/error</param>
+        /// <param name="law">控制律名</param>
+        /// <param name="brick">积木名</param>
+        /// <param name="frame">全局帧号</param>
+        private void AuditBrick(string stage, string law, string brick, int frame)
         {
             if (AuditStore.Default != null)
             {
-                AuditStore.Default.Record("Flow", "trace." + kind, -1, new AuditProp[] {
+                AuditStore.Default.Record("Flow", "brick." + stage, frame, new AuditProp[] {
                     new AuditProp("flow", this.GetType().Name),
-                    new AuditProp("name", name),
-                    new AuditProp("result", result),
-                    new AuditProp("flow_frame", _frame.ToString())
+                    new AuditProp("law", law),
+                    new AuditProp("brick", brick)
                 }, false);
             }
         }
 
-        /// <summary>
-        /// 查询结果：Seen
-        /// </summary>
-        /// <returns>Seen成立</returns>
-        public bool IsSeen()
-        {
-            return P_Seen;
-        }
-
-        /// <summary>
-        /// 重置结果：Seen
-        /// </summary>
-        public void ResetSeen()
-        {
-            P_Seen = false;
-        }
-
-        /// <summary>
-        /// 查询结果：Done
-        /// </summary>
-        /// <returns>Done成立</returns>
-        public bool IsDone()
-        {
-            return P_Done;
-        }
-
-        /// <summary>
-        /// 重置结果：Done
-        /// </summary>
-        public void ResetDone()
-        {
-            P_Done = false;
-        }
-
-        /// <summary>
-        /// 查询结果：Failed
-        /// </summary>
-        /// <returns>Failed成立</returns>
-        public bool IsFailed()
-        {
-            return P_Failed;
-        }
-
-        /// <summary>
-        /// 重置结果：Failed
-        /// </summary>
-        public void ResetFailed()
-        {
-            P_Failed = false;
-        }
-
     }
 }
-// #MAU_CHECKSUM:SHA256:CCCDF0017CD9AC3FD637B2A383D399100BBA6623704D1E3EC61C367327309B98
+// #MAU_CHECKSUM:SHA256:5203FE1B6C266077C25FB3D285DBC65E7A5FF26714E9A6FFB5902A6626B696A2

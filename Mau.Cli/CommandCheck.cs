@@ -221,7 +221,7 @@ public static int Execute(string[] args)
         /// <param name="syntaxDir">语法谱目录</param>
         /// <param name="update">true=生成/更新黄金（不对比）</param>
         private static void RunSyntaxAndGolden(string syntaxDir, bool update)
-        {
+{
             if (!Directory.Exists(syntaxDir))
             {
                 Console.WriteLine("WARN: 语法谱目录不存在——" + syntaxDir);
@@ -236,13 +236,13 @@ public static int Execute(string[] args)
                 string flowName = Program.FlowNameFromPath(Path.GetFileNameWithoutExtension(path));
                 string source = File.ReadAllText(path);
 
-                // [A] 语法校验——编译必须成功
+                // [A] 语法校验——v2 门面编译必须成功
                 sSyntaxTotal = sSyntaxTotal + 1;
-                CompileResult result = MauCompiler.Compile(source, flowName);
+                CompileResultV2 result = MauCompilerV2.Compile(source, flowName);
                 if (!result.Success)
                 {
                     sSyntaxFail = sSyntaxFail + 1;
-                    sErrors.Add("[A] " + fileName + ": 编译失败——" + FirstDiagnostic(result));
+                    sErrors.Add("[A] " + fileName + ": 编译失败——" + FirstDiagnosticV2(result));
                     continue;
                 }
                 sSyntaxPass = sSyntaxPass + 1;
@@ -250,13 +250,14 @@ public static int Execute(string[] args)
                 // [B] 翻译器校验
                 sGoldenTotal = sGoldenTotal + 1;
                 // 1. 确定性——两次生成字节一致
-                CompileResult result2 = MauCompiler.Compile(source, flowName);
+                CompileResultV2 result2 = MauCompilerV2.Compile(source, flowName);
                 if (result.GeneratedCode != result2.GeneratedCode)
                 {
                     sGoldenDrift = sGoldenDrift + 1;
                     sErrors.Add("[B] " + fileName + ": 确定性失败——两次生成不一致");
                     continue;
                 }
+                // v2 生成物类名 = flowName（无 FL_ 前缀）；黄金文件名保留 FL_ 前缀（与 L3 cases 同规）
                 string className = "FL_" + flowName;
                 string expectedDir = Path.Combine(syntaxDir, "expected");
                 string expectedPath = Path.Combine(expectedDir, className + ".cs");
@@ -264,7 +265,7 @@ public static int Execute(string[] args)
                 {
                     Directory.CreateDirectory(expectedDir);
                     // E1：黄金只存纯生成内容——剥离内嵌积木段（BRIKGROUP 由积木谱独立验证）
-                    WriteGolden(expectedPath, MauCompiler.StripBrickSections(result.GeneratedCode));
+                    WriteGolden(expectedPath, MauCompilerV2.StripBrickSectionsV2(result.GeneratedCode));
                     continue;
                 }
                 // 2. 黄金校验尾 + 逐字节对比
@@ -282,15 +283,15 @@ public static int Execute(string[] args)
                     sErrors.Add("[B] " + fileName + ": 黄金被篡改——校验尾不匹配");
                     continue;
                 }
-                string generated = MauCompiler.StripBrickSections(result.GeneratedCode).Replace("\r\n", "\n").TrimEnd();
+                string generated = MauCompilerV2.StripBrickSectionsV2(result.GeneratedCode).Replace("\r\n", "\n").TrimEnd();
                 if (goldenBody != generated)
                 {
                     sGoldenDrift = sGoldenDrift + 1;
                     sErrors.Add("[B] " + fileName + ": 生成漂移——与黄金不一致");
                     continue;
                 }
-                // 3. 结构断言——类名/Tick/Fire
-                if (!AssertStructure(result.GeneratedCode, className, source, out string structError))
+                // 3. 结构断言——类名/Tick/Fire（v2 生成物）
+                if (!AssertStructure(result.GeneratedCode, flowName, source, out string structError))
                 {
                     sGoldenStructFail = sGoldenStructFail + 1;
                     sErrors.Add("[B] " + fileName + ": 结构断言失败——" + structError);
@@ -299,13 +300,12 @@ public static int Execute(string[] args)
                 sGoldenPass = sGoldenPass + 1;
             }
         }
-
         /// <summary>
         /// 积木谱——BrickIndex 枚举 → 契约生成最小语料 → 翻译 → CompileMany 一次组编译
         /// </summary>
         private static void RunBrickCorpus()
 {
-            // [段1] 枚举 + 契约生成最小语料文本（不编译——组模式统一构筑）
+            // [段1] 枚举 + 契约生成最小语料文本（v2 全符号语法——按端口类型生成参数字面量）
             List<string> sourceTexts = new List<string>();
             List<string> flowNames = new List<string>();
             List<string> brickNames = new List<string>();
@@ -319,17 +319,8 @@ public static int Execute(string[] args)
             {
                 BrickContract c = all[i];
                 sBrickTotal = sBrickTotal + 1;
-                StringBuilder paramLines = new StringBuilder();
-                for (int p = 0; p < c.Inputs.Count; p = p + 1)
-                {
-                    if (p > 0)
-                    {
-                        paramLines.Append(", ");
-                    }
-                    paramLines.Append(c.Inputs[p].Name);
-                }
                 string flowName = "BrickCheck" + c.Name.Replace(".", "");
-                string source = CliSupport.BuildMinimalCorpus(c.Name, paramLines.ToString(), "T_Run");
+                string source = CliSupport.BuildMinimalCorpusV2(c, "T_Run");
                 sourceTexts.Add(source);
                 flowNames.Add(flowName);
                 brickNames.Add(c.Name);
@@ -339,18 +330,18 @@ public static int Execute(string[] args)
                 return;
             }
 
-            // [段2] 组编译——CompileGroup（骨架 + 共享 BRIKGROUP，闭包去重；R1 内嵌模型下禁止逐文件内嵌再组编译）
-            GroupCompileResult group = MauCompiler.CompileGroup(sourceTexts.ToArray(), flowNames.ToArray());
+            // [段2] 组编译 v2——逐语料翻译（词法/解析/糖展开/验证/分析）+ 共享 BRIKGROUP 闭包去重
+            GroupCompileResultV2 group = MauCompilerV2.CompileGroupV2(sourceTexts.ToArray(), flowNames.ToArray());
             List<string> skeletonSources = new List<string>();
             List<string> skeletonNames = new List<string>();
             bool anyFail = false;
-            for (int i = 0; i < group.Results.Length; i = i + 1)
+            for (int i = 0; i < group.Results.Count; i = i + 1)
             {
                 if (!group.Results[i].Success)
                 {
                     anyFail = true;
                     sBrickFail = sBrickFail + 1;
-                    sErrors.Add("[C] " + brickNames[i] + ": 翻译失败——" + FirstDiagnostic(group.Results[i]));
+                    sErrors.Add("[C] " + brickNames[i] + ": 翻译失败——" + FirstDiagnosticV2(group.Results[i]));
                 }
                 else
                 {
@@ -430,12 +421,12 @@ public static int Execute(string[] args)
                     }
                 }
             }
-        }        /// <summary>
+        }/// <summary>
         /// 负例——断言编译失败且含预期错误码（文件头 // 预期: E0xx）
         /// </summary>
         /// <param name="negativeDir">负例目录</param>
         private static void RunNegative(string negativeDir)
-        {
+{
             if (!Directory.Exists(negativeDir))
             {
                 return;
@@ -456,7 +447,7 @@ public static int Execute(string[] args)
                     continue;
                 }
                 string flowName = Program.FlowNameFromPath(Path.GetFileNameWithoutExtension(path));
-                CompileResult result = MauCompiler.Compile(source, flowName);
+                CompileResultV2 result = MauCompilerV2.Compile(source, flowName);
                 if (result.Success)
                 {
                     sNegFail = sNegFail + 1;
@@ -475,13 +466,12 @@ public static int Execute(string[] args)
                 if (!found)
                 {
                     sNegFail = sNegFail + 1;
-                    sErrors.Add("[D] " + fileName + ": 期望 " + expectedCode + " 但诊断为 " + FirstDiagnostic(result));
+                    sErrors.Add("[D] " + fileName + ": 期望 " + expectedCode + " 但诊断为 " + FirstDiagnosticV2(result));
                     continue;
                 }
                 sNegPass = sNegPass + 1;
             }
         }
-
         /// <summary>
         /// 聚合报告——全谱汇总 + 错误清单 + 退出码
         /// </summary>
@@ -541,26 +531,26 @@ public static int Execute(string[] args)
         /// <param name="error">失败原因</param>
         /// <returns>true=通过</returns>
         private static bool AssertStructure(string generated, string className, string source, out string error)
-        {
+{
             error = "";
             if (generated.IndexOf("class " + className) < 0)
             {
                 error = "未找到类 " + className;
                 return false;
             }
-            if (generated.IndexOf("public void Tick") < 0)
+            if (generated.IndexOf("public void Tick(int frame)") < 0 && generated.IndexOf("public void Tick()") < 0)
             {
                 error = "未找到 Tick 方法";
                 return false;
             }
-            if (source.IndexOf("信号") >= 0 && generated.IndexOf("Fire") < 0)
+            // Fire 信号断言——仅 ⇐ 'P_X'（纯信号投递）生成 Fire 方法；OA 接收（⇐ 'msg' →）不生成
+            if (source.IndexOf("⇐ 'P_") >= 0 && generated.IndexOf("Fire") < 0)
             {
                 error = "信号命题存在但未生成 Fire 方法";
                 return false;
             }
             return true;
         }
-
         /// <summary>
         /// 写黄金文件——正文 + SHA256 校验尾
         /// </summary>
@@ -676,6 +666,20 @@ public static int Execute(string[] args)
             return "未知";
         }
 /// <summary>
+/// 首条诊断文本（v2 编译结果）
+/// </summary>
+/// <param name = "result">编译结果 v2</param>
+/// <returns>诊断文本</returns>
+private static string FirstDiagnosticV2(CompileResultV2 result)
+{
+    if (result.Diagnostics.Count > 0)
+    {
+        MauDiagnostic d = result.Diagnostics[0];
+        return d.Code + ": " + d.Message;
+    }
+
+    return "未知";
+}/// <summary>
 /// 模板库——遍历 Mau.Corpus/*.mau，逐个静态验证（目录即清单——模板漂移阻断门禁）
 /// </summary>
 /// <param name = "root">仓库根</param>

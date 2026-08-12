@@ -385,6 +385,12 @@ namespace Mau.Cli
                             pick = m;
                             break;
                         }
+                        if (ret == "string" && pick == null)
+                        {
+                            // 名称返回积木——多路匹配（cmd.match 等）
+                            pick = m;
+                            break;
+                        }
                         if (ret == "void" && pick == null
                             && !m.Identifier.Text.StartsWith("Configure", StringComparison.Ordinal))
                         {
@@ -410,8 +416,10 @@ namespace Mau.Cli
                             contract.Inputs.Add(new BrickPort(p.Identifier.Text, TypeFromName(typeText)));
                         }
                     }
-                    contract.Return = pick.ReturnType.ToString() == "void"
-                        ? BrickReturnKind.Void : BrickReturnKind.Bool;
+                    string retType = pick.ReturnType.ToString();
+                    contract.Return = retType == "void"
+                        ? BrickReturnKind.Void
+                        : (retType == "string" ? BrickReturnKind.String : BrickReturnKind.Bool);
                     contract.Duration = durationText == "Streaming" ? BrickDuration.Streaming
                         : durationText == "Async" ? BrickDuration.Async : BrickDuration.Sync;
                     contract.Thread = threadText.Length > 0 ? threadText : "main";
@@ -658,19 +666,19 @@ namespace Mau.Cli
                     }
                 }
             }
-            // V9 连续检查——类别内序号从 001 连续延伸（Deprecated 跳号豁免）
+            // V9 递增检查——类别内序号严格递增（允许退役删除跳号；重复 = 已使用编号不可再赋值）
             foreach (KeyValuePair<string, SortedSet<int>> kv in categorySeqs)
             {
-                int expected = 1;
+                int prev = -1;
                 foreach (int seq in kv.Value)
                 {
-                    if (seq != expected)
+                    if (seq <= prev)
                     {
-                        Console.WriteLine("V9 FAIL: 类别 " + kv.Key + " 序号跳号——期望 " + expected + " 实际 " + seq);
+                        Console.WriteLine("V9 FAIL: 类别 " + kv.Key + " 序号异常——期望递增，实际 " + prev + " → " + seq);
                         errors = errors + 1;
                         break;
                     }
-                    expected = expected + 1;
+                    prev = seq;
                 }
             }
             // V10: 外部包声明一致——文件头 `包:` vs Mau.Cli.csproj PackageReference（文件头权威）
@@ -1255,7 +1263,7 @@ namespace Mau.Cli
         /// <param name="c">积木契约</param>
         /// <returns>PASS / FAIL(原因) / SKIP(原因)</returns>
         private static string RunOneBrick(BrickContract c)
-        {
+{
             skipReason = "";
             // 宿主桥积木——需要 Configure 注入，全局夹具未注入 → SKIP
             if (IsHostBridge(c))
@@ -1263,7 +1271,7 @@ namespace Mau.Cli
                 skipReason = "宿主桥积木——需 Configure 注入";
                 return "SKIP";
             }
-            // 复杂端口类型（非基元）——CLI 无法构造最小样例 → SKIP
+            // 复杂输入端口类型（非基元）——CLI 无法构造最小样例 → SKIP
             for (int p = 0; p < c.Inputs.Count; p++)
             {
                 Type t = c.Inputs[p].Type;
@@ -1273,40 +1281,20 @@ namespace Mau.Cli
                     return "SKIP";
                 }
             }
-            // 输出端口含非基元——翻译器复杂类型生成能力未覆盖 → SKIP（已知问题：data.snapshot/text.md_parse）
-            for (int p = 0; p < c.Outputs.Count; p++)
-            {
-                Type t = c.Outputs[p].Type;
-                if (!IsPrimitivePort(t))
-                {
-                    skipReason = "复杂输出端口 " + t.Name + "——翻译器复杂类型生成待支持";
-                    return "SKIP";
-                }
-            }
-            // 最小语料——信号触发 + 变迁调用 + 双后置
-            StringBuilder paramLines = new StringBuilder();
-            for (int p = 0; p < c.Inputs.Count; p++)
-            {
-                if (p > 0)
-                {
-                    paramLines.Append(", ");
-                }
-                paramLines.Append(c.Inputs[p].Name);
-            }
+            // v2 最小语料——全符号语法 + 按端口类型生成参数字面量（信号 P_Go → S_Run Done/Failed）
             string flowName = "BrickTest" + c.Name.Replace(".", "");
-            string source = CliSupport.BuildMinimalCorpus(c.Name, paramLines.ToString());
+            string source = CliSupport.BuildMinimalCorpusV2(c);
 
-            // [1] 翻译
-            CompileResult compileResult = MauCompiler.Compile(source, flowName);
+            // [1] 翻译（v2 门面——词法/解析/糖展开/验证/分析 + 内嵌 BRIKGROUP）
+            CompileResultV2 compileResult = MauCompilerV2.Compile(source, flowName);
             if (!compileResult.Success)
             {
-                return "翻译失败: " + (compileResult.Diagnostics.Count > 0 ? compileResult.Diagnostics[0].ToString() : "未知");
+                return "翻译失败: " + (compileResult.Diagnostics.Count > 0 ? compileResult.Diagnostics[0].Code + ": " + compileResult.Diagnostics[0].Message : "未知");
             }
 
-            // [2] 编译——Roslyn Emit
-            string className = "FL_" + flowName;
+            // [2] 编译——Roslyn Emit（单文件——生成物自带内嵌积木段）
+            string className = flowName;
             string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_bricks_test_" + Guid.NewGuid().ToString("N").Substring(0, 8));
-            FlowHandle? handle = null;
             try
             {
                 MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
@@ -1329,10 +1317,19 @@ namespace Mau.Cli
                     return "编译失败: " + diagJoined;
                 }
 
-                // [3] ALC 加载
+                // [3] 反射加载（v2 生成物——枚举状态机，不经 FlowHandle/IObservableFlow）
+                System.Reflection.Assembly asm;
+                object flow;
+                Type flowType;
                 try
                 {
-                    handle = FlowHandle.Load(pocketResult.AssemblyPath);
+                    asm = System.Reflection.Assembly.LoadFrom(pocketResult.AssemblyPath)!;
+                    flowType = asm.GetType("Mau.Generated." + className)!;
+                    if (flowType == null)
+                    {
+                        return "加载失败: 未找到生成物类型 Mau.Generated." + className;
+                    }
+                    flow = Activator.CreateInstance(flowType)!;
                 }
                 catch (Exception ex)
                 {
@@ -1340,7 +1337,6 @@ namespace Mau.Cli
                 }
 
                 // [4] Fire——按信号名反射调用（FireGo），基元参数生成最小样例
-                Type flowType = handle.Flow.GetType();
                 System.Reflection.MethodInfo? fire = flowType.GetMethod("FireGo");
                 if (fire == null)
                 {
@@ -1354,29 +1350,30 @@ namespace Mau.Cli
                 }
                 try
                 {
-                    fire.Invoke(handle.Flow, args);
+                    fire.Invoke(flow, args);
                 }
                 catch (Exception ex)
                 {
                     return "Fire 调用失败: " + ex.Message;
                 }
 
-                // [5] Tick 60 帧——结构冒烟断言（P_Done 或 P_Failed 任一成立 = 变迁执行、积木被调用）
+                // [5] Tick 60 帧——结构冒烟断言（IsRunDone 或 IsRunFailed 任一成立 = 控制律执行、积木被调用）
                 // 行为正确性归 L4 测试——全局跑测只验证"能被语料调用 + 不崩溃"
+                System.Reflection.MethodInfo? tick = flowType.GetMethod("Tick");
+                System.Reflection.MethodInfo? isDone = flowType.GetMethod("IsRunDone");
+                System.Reflection.MethodInfo? isFailed = flowType.GetMethod("IsRunFailed");
+                if (tick == null || isDone == null || isFailed == null)
+                {
+                    return "生成物缺 Tick/IsRunDone/IsRunFailed";
+                }
+                bool settled = false;
                 for (int t = 0; t < 60; t = t + 1)
                 {
-                    handle.Flow.Tick();
-                }
-                RuntimeStatus status = handle.Flow.GetStatus();
-                bool settled = false;
-                for (int s = 0; s < status.Propositions.Length; s = s + 1)
-                {
-                    if (status.Propositions[s].Name == "P_Done" || status.Propositions[s].Name == "P_Failed")
+                    tick.Invoke(flow, new object[] { t });
+                    if ((bool)isDone.Invoke(flow, null)! || (bool)isFailed.Invoke(flow, null)!)
                     {
-                        if (status.Propositions[s].Value)
-                        {
-                            settled = true;
-                        }
+                        settled = true;
+                        break;
                     }
                 }
                 if (!settled)
@@ -1391,17 +1388,6 @@ namespace Mau.Cli
             }
             finally
             {
-                if (handle != null)
-                {
-                    try
-                    {
-                        handle.TryUnload(3);
-                    }
-                    catch
-                    {
-                        // 卸载失败不影响结果
-                    }
-                }
                 try
                 {
                     if (Directory.Exists(pocketRoot))
@@ -1415,7 +1401,6 @@ namespace Mau.Cli
                 }
             }
         }
-
         /// <summary>
         /// 是否基元端口——全局跑测可构造最小样例的类型
         /// </summary>

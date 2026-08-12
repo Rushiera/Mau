@@ -131,7 +131,8 @@ private string? _mapText;
                 new SyntaxTree[] { syntax }, references,
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
                     optimizationLevel: OptimizationLevel.Release,
-                    allowUnsafe: false));
+                    allowUnsafe: false,
+                    nullableContextOptions: NullableContextOptions.Enable));
             MauPocketCompileResult result = new MauPocketCompileResult();
             result.AssemblyPath = assemblyPath;
             using (MemoryStream assembly = new MemoryStream())
@@ -181,7 +182,8 @@ private string? _mapText;
                 trees, references,
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
                     optimizationLevel: OptimizationLevel.Release,
-                    allowUnsafe: false));
+                    allowUnsafe: false,
+                    nullableContextOptions: NullableContextOptions.Enable));
             MauPocketCompileResult result = new MauPocketCompileResult();
             result.AssemblyPath = assemblyPath;
             using (MemoryStream assembly = new MemoryStream())
@@ -233,7 +235,7 @@ public MauPocketCompileResult CompileManyWithRefs(string[] sources, string[] cla
     }
 
     MetadataReference[] references = BuildReferences(extraReferences);
-    CSharpCompilation compilation = CSharpCompilation.Create(assemblyName + "_" + Guid.NewGuid().ToString("N"), trees, references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release, allowUnsafe: false));
+    CSharpCompilation compilation = CSharpCompilation.Create(assemblyName + "_" + Guid.NewGuid().ToString("N"), trees, references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release, allowUnsafe: false, nullableContextOptions: NullableContextOptions.Enable));
     MauPocketCompileResult result = new MauPocketCompileResult();
     result.AssemblyPath = assemblyPath;
     using (MemoryStream assembly = new MemoryStream())

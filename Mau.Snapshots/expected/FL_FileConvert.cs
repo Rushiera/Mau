@@ -11,7 +11,6 @@ namespace Mau.Generated
     /// </summary>
     public sealed class FileConvert
     {
-        // [状态机 S_Conv]
         private enum S_Conv_State { Idle, Done, Failed }
         private S_Conv_State _S_Conv_State;
 
@@ -172,4 +171,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:B92C430010A6E42EFA3F4592ED588C3FD05CDE221CA469492B72D071F4FC2D3A
+// #MAU_CHECKSUM:SHA256:BDD03D40A550106835A33DE86E8C4CDF366DD124CDF9E1D77FB547FC8AFB68FA

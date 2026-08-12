@@ -1,19 +1,10 @@
-// 预期: E009
-// n05 负例——组合引用不存在变迁必须拒绝
-Mau 0.1
-基座: Mau.Runtime/v0.1
-
-命题:
-  P_Start 信号
-  P_Done 事实
-  P_Failed 事实
-
-变迁 T_Run:
-  前置: P_Start
-  动作: file.convert
-  参数: input, output
-  时限: 60帧
-  后置: P_Done / P_Failed
-
-组合 FL_Bad:
-  序列: T_NotExist
+// n05 负例——写入源冲突（两个测量写同一条件）
+// 预期: E201
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§'S_Run' = { 'Idle', 'Done', 'Failed' }
+§'P_Go', 'P_Ready'
+§⇐ 'P_Go'
+§'M_Poll1'[ω=1]: 'P_Ready' := 'data.box_is'['k', 'f', 1]
+§'M_Poll2'[ω=1]: 'P_Ready' := 'data.box_is'['k', 'f', 1]
+§'T_Run'[τ=5]: 'P_Go' ∧ 'P_Ready' + 'file.convert'['a', 'b'] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

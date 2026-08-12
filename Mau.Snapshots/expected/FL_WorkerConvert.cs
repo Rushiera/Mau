@@ -15,7 +15,18 @@ namespace Mau.Generated
         private string? _input;
         private string? _output;
 
-        // [状态机 S_Conv]
+        /// <summary>
+        /// 注入字段设置——input（纯赋值，不置位信号）
+        /// </summary>
+        /// <param name="value">注入值</param>
+        public void Setinput(string? value) { _input = value; }
+
+        /// <summary>
+        /// 注入字段设置——output（纯赋值，不置位信号）
+        /// </summary>
+        /// <param name="value">注入值</param>
+        public void Setoutput(string? value) { _output = value; }
+
         private enum S_Conv_State { Idle, Done, Failed }
         private S_Conv_State _S_Conv_State;
 
@@ -176,4 +187,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:3BE61473AEAFBBD9330F5050357B83A13B4E34EAEA44D0AF0EDF39540D7764D8
+// #MAU_CHECKSUM:SHA256:8476868453BD4D2C939EDF5DE025CD64DA319420901E759DB0917976170EE120

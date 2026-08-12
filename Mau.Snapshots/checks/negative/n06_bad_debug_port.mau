@@ -1,17 +1,8 @@
-// 预期: E014
-// n06 负例——调试消息引用未声明端口必须拒绝
-Mau 0.1
-基座: Mau.Runtime/v0.1
-
-命题:
-  P_Start 信号
-  P_Done 事实
-  P_Failed 事实
-
-变迁 T_Run:
-  前置: P_Start
-  动作: file.convert
-  参数: input, output
-  时限: 60帧
-  后置: P_Done / P_Failed
-  调试: "处理 {{unknown_port}}"
+// n06 负例——名称返回积木结果路数不足（switch 分发至少 2 路）
+// 预期: E223
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§'S_Ui' = { 'Idle', 'Open' }
+§'P_Cmd'
+§⇐ 'P_Cmd'
+§'T_Route'[τ=5]: 'P_Cmd' + 'cmd.match'['key', ["Open"]] → 'S_Ui' = 'Open'

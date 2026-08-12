@@ -1,0 +1,11 @@
+// s15 语法谱——PAR 语法糖（并联）
+// 特性：隐式资源配额 + 各控制律条件追加
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§'S_A' = { 'Idle', 'Done', 'Failed' }
+§'S_B' = { 'Idle', 'Done', 'Failed' }
+§'P_Go'
+§⇐ 'P_Go'
+§'T_A'[τ=5]: 'P_Go' + 'file.convert'['src1', 'dst1'] → 'S_A' = 'Done' | 'S_A' = 'Failed'
+§'T_B'[τ=5]: 'P_Go' + 'file.convert'['src2', 'dst2'] → 'S_B' = 'Done' | 'S_B' = 'Failed'
+§'PAR'['T_A' ∥ 'T_B']

@@ -1,0 +1,32 @@
+﻿// ch4_uipet.mau —— CH4 UiPet 轮转链 + 多路路由 v2（状态机化 + cmd.match 10 路）
+// 源：CH4_Cat_UiPet.mau（旧 v1：46 信号 + 12 路 is_key 路由链 378 行）——v2 塌缩为 1 状态机 + 1 多路 + 18 控制律
+// 结构：注册 → 轮转链（chat→home→config 快照合成推送）→ 指令轮询 → 活跃 key 提取 → cmd.match 多路分发
+//       → 各指令动作（窗口事件/配置/档案/系统通知）→ 回轮转
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§$'sessionKey', 'ownerId', 'cmdKeyList'
+§'S_UiPet' = { 'Idle', 'Reg', 'SnapChat', 'PushChat', 'SnapHome', 'PushHome', 'SnapConfig', 'PushConfig', 'PollCmd', 'Route', 'Route2', 'Open', 'Toggle', 'Select', 'PushCatCfg', 'Save', 'ProfSave', 'ProfDel', 'ProfAct', 'OpenDir', 'Flash', 'Notify', 'Failed' }
+§'P_Init'
+§⇐ 'P_Init'
+§'T_Init'[τ=5]: 'P_Init' + 'log.write'["CH4.UiPet", 0, "ready"] → 'S_UiPet' = 'Reg' | 'S_UiPet' = 'Failed'
+§'T_Register'[τ=5]: 'S_UiPet' = 'Reg' + 'cmd.register'['ownerId', 'cmdKeyList'] → 'S_UiPet' = 'SnapChat' | 'S_UiPet' = 'Failed'
+§'T_SnapChat'[τ=5]: 'S_UiPet' = 'SnapChat' + 'ui.snapshot_chat'['sessionKey'] → 'S_UiPet' = 'PushChat' | 'S_UiPet' = 'SnapHome'
+§'T_PushChat'[τ=5]: 'S_UiPet' = 'PushChat' + 'ui.snapshot_push'['sessionKey', 'chatJson'] → 'S_UiPet' = 'SnapHome' | 'S_UiPet' = 'Failed'
+§'T_SnapHome'[τ=5]: 'S_UiPet' = 'SnapHome' + 'ui.snapshot_home'[] → 'S_UiPet' = 'PushHome' | 'S_UiPet' = 'SnapConfig'
+§'T_PushHome'[τ=5]: 'S_UiPet' = 'PushHome' + 'ui.snapshot_push'["home", 'homeJson'] → 'S_UiPet' = 'SnapConfig' | 'S_UiPet' = 'Failed'
+§'T_SnapConfig'[τ=5]: 'S_UiPet' = 'SnapConfig' + 'ui.snapshot_config'[] → 'S_UiPet' = 'PushConfig' | 'S_UiPet' = 'PollCmd'
+§'T_PushConfig'[τ=5]: 'S_UiPet' = 'PushConfig' + 'ui.snapshot_push'["config", 'configJson'] → 'S_UiPet' = 'PollCmd' | 'S_UiPet' = 'Failed'
+§'T_PollCmd'[ω=1, τ=5]: 'S_UiPet' = 'PollCmd' + 'cmd.consume'['ownerId'] → 'S_UiPet' = 'Route' | 'S_UiPet' = 'SnapChat'
+§'T_GetKey'[τ=5]: 'S_UiPet' = 'Route' + 'cmd.active_key'['cmdKeys', 'cmdValues', 'cmdTexts'] → 'S_UiPet' = 'Route2' | 'S_UiPet' = 'SnapChat'
+§'T_Route'[τ=5]: 'S_UiPet' = 'Route2' + 'cmd.match'['activeKey', ["Chat_UI_Open","Chat_UI_Toggle","Chat_UI_Select","Chat_UI_SaveConfig","Chat_UI_ProfileSave","Chat_UI_ProfileDelete","Chat_UI_ProfileActive","Chat_UI_OpenDir","Chat_UI_Flash","Chat_UI_Notify"]] → 'S_UiPet' = 'Open' | 'S_UiPet' = 'Toggle' | 'S_UiPet' = 'Select' | 'S_UiPet' = 'Save' | 'S_UiPet' = 'ProfSave' | 'S_UiPet' = 'ProfDel' | 'S_UiPet' = 'ProfAct' | 'S_UiPet' = 'OpenDir' | 'S_UiPet' = 'Flash' | 'S_UiPet' = 'Notify' | 'S_UiPet' = 'SnapChat'
+§'T_Open'[τ=5]: 'S_UiPet' = 'Open' + 'ui.window_event'["Chat_UI_Open", 'activeKey'] → 'S_UiPet' = 'SnapChat' | 'S_UiPet' = 'Failed'
+§'T_Toggle'[τ=5]: 'S_UiPet' = 'Toggle' + 'ui.window_event'["Chat_UI_Toggle", 'activeKey'] → 'S_UiPet' = 'SnapChat' | 'S_UiPet' = 'Failed'
+§'T_Select'[τ=5]: 'S_UiPet' = 'Select' + 'ui.config_get'["active"] → 'S_UiPet' = 'PushCatCfg' | 'S_UiPet' = 'SnapChat'
+§'T_PushCatCfg'[τ=5]: 'S_UiPet' = 'PushCatCfg' + 'ui.snapshot_push'["catcfg", 'json'] → 'S_UiPet' = 'SnapChat' | 'S_UiPet' = 'Failed'
+§'T_Save'[τ=5]: 'S_UiPet' = 'Save' + 'ui.config_set'["cat|key|value"] → 'S_UiPet' = 'SnapChat' | 'S_UiPet' = 'Failed'
+§'T_ProfSave'[τ=5]: 'S_UiPet' = 'ProfSave' + 'ui.profile_save'["{}"] → 'S_UiPet' = 'SnapChat' | 'S_UiPet' = 'Failed'
+§'T_ProfDel'[τ=5]: 'S_UiPet' = 'ProfDel' + 'ui.profile_delete'["default"] → 'S_UiPet' = 'SnapChat' | 'S_UiPet' = 'Failed'
+§'T_ProfAct'[τ=5]: 'S_UiPet' = 'ProfAct' + 'ui.profile_active'["default"] → 'S_UiPet' = 'SnapChat' | 'S_UiPet' = 'Failed'
+§'T_OpenDir'[τ=5]: 'S_UiPet' = 'OpenDir' + 'win.open_dir'["config"] → 'S_UiPet' = 'SnapChat' | 'S_UiPet' = 'Failed'
+§'T_Flash'[τ=5]: 'S_UiPet' = 'Flash' + 'win.flash_taskbar'[] → 'S_UiPet' = 'SnapChat' | 'S_UiPet' = 'Failed'
+§'T_Notify'[τ=5]: 'S_UiPet' = 'Notify' + 'win.notify'["title|text"] → 'S_UiPet' = 'SnapChat' | 'S_UiPet' = 'Failed'

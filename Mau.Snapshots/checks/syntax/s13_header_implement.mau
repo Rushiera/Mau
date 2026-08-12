@@ -1,0 +1,9 @@
+// s13 语法谱——实现接口（@ 声明）
+// 特性：生成类追加接口实现
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§@'CH4.Contracts.ICat'
+§'S_Run' = { 'Idle', 'Done', 'Failed' }
+§'P_Go'
+§⇐ 'P_Go'
+§'T_Run'[τ=5]: 'P_Go' + 'file.convert'['src', 'dst'] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

@@ -1,0 +1,8 @@
+// s07 语法谱——控制律 τ 时限 + 两路结果
+// 特性：τ 有限时限 Cube，bool 驱动首项成功/次项失败
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§'S_Run' = { 'Idle', 'Done', 'Failed' }
+§'P_Go'
+§⇐ 'P_Go'
+§'T_Run'[τ=10]: 'P_Go' + 'file.convert'['src', 'dst'] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

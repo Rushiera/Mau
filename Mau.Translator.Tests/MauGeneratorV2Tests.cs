@@ -94,12 +94,14 @@ namespace Mau.Translator.Tests
         [Fact]
         public void Generate_LawMultiResultSwitch()
         {
+            // 加载真实积木索引——cmd.match 名称返回积木契约（isNameReturn 判定依赖）
+            TestBrickRegistration.Ensure();
             string code = Generate(
                 "§'Mau' 2.0\n" +
                 "§'S_Ui' = { 'Idle', 'Open', 'Toggle' }\n" +
                 "§'P_Cmd'\n" +
                 "§⇐ 'P_Cmd'\n" +
-                "§'T_Route'[τ=5]: 'P_Cmd' + 'cmd.active_key'['key', 'A', 'B'] → 'S_Ui' = 'Open' | 'S_Ui' = 'Toggle' | 'S_Ui' = 'Idle'\n");
+                "§'T_Route'[τ=5]: 'P_Cmd' + 'cmd.match'['key', [\"Open\",\"Toggle\"]] → 'S_Ui' = 'Open' | 'S_Ui' = 'Toggle' | 'S_Ui' = 'Idle'\n");
 
             // switch 分发（多路——名称返回积木）
             Assert.Contains("switch (matched)", code);

@@ -1,16 +1,8 @@
-// 预期: E003
-// n03 负例——前置引用未声明命题必须拒绝
-Mau 0.1
-基座: Mau.Runtime/v0.1
-
-命题:
-  P_Start 信号
-  P_Done 事实
-  P_Failed 事实
-
-变迁 T_Run:
-  前置: P_NotDeclared
-  动作: file.convert
-  参数: input, output
-  时限: 60帧
-  后置: P_Done / P_Failed
+// n03 负例——命题无写入源（拼写错误兜底）
+// 预期: E202
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§'S_Run' = { 'Idle', 'Done', 'Failed' }
+§'P_Go', 'P_Ghost'
+§⇐ 'P_Go'
+§'T_Run'[τ=5]: 'P_Go' ∧ 'P_Ghost' + 'file.convert'['a', 'b'] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

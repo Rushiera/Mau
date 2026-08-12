@@ -1,0 +1,9 @@
+// s06 语法谱——测量帧门控（ω=N 第 N 帧采样）
+// 特性：ω=3 每 3 帧采样一次
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§'S_Run' = { 'Idle', 'Done', 'Failed' }
+§'P_Go', 'P_Ready'
+§⇐ 'P_Go'
+§'M_Poll'[ω=3]: 'P_Ready' := 'data.box_is'['key', 'flag', 1]
+§'T_Run'[τ=5]: 'P_Go' ∧ 'P_Ready' + 'file.convert'['src', 'dst'] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

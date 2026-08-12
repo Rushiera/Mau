@@ -25,6 +25,7 @@
 | BRIK-CMD-006 | cmd.is_key | CMD | CMD/BRIK-CMD-006_cmd.is_key.cs | 无 | active |  |
 | BRIK-CMD-007 | cmd.is_key_first | CMD | CMD/BRIK-CMD-007_cmd.is_key_first.cs | 无 | active |  |
 | BRIK-CMD-008 | cmd.active_key | CMD | CMD/BRIK-CMD-008_cmd.active_key.cs | 无 | active |  |
+| BRIK-CMD-009 | cmd.match | CMD | CMD/BRIK-CMD-009_cmd.match.cs | 无 | active |  |
 | BRIK-CSHARP-001 | csharp.compile | CSHARP | CSHARP/BRIK-CSHARP-001_csharp.compile.cs | 无 | active |  |
 | BRIK-CSHARP-002 | csharp.init | CSHARP | CSHARP/BRIK-CSHARP-002_csharp.init.cs | 无 | active |  |
 | BRIK-CSHARP-003 | csharp.info | CSHARP | CSHARP/BRIK-CSHARP-003_csharp.info.cs | 无 | active |  |
@@ -40,7 +41,6 @@
 | BRIK-CSHARP-013 | csharp.member_rename | CSHARP | CSHARP/BRIK-CSHARP-013_csharp.member_rename.cs | 无 | active |  |
 | BRIK-CSHARP-014 | csharp.dead | CSHARP | CSHARP/BRIK-CSHARP-014_csharp.dead.cs | 无 | active |  |
 | BRIK-CSHARP-015 | csharp.find_ref | CSHARP | CSHARP/BRIK-CSHARP-015_csharp.find_ref.cs | 无 | active |  |
-| BRIK-DATA-001 | data.snapshot_encode | DATA | DATA/BRIK-DATA-001_data.snapshot_encode.cs | 无 | active |  |
 | BRIK-DATA-002 | data.snapshot_decode | DATA | DATA/BRIK-DATA-002_data.snapshot_decode.cs | 无 | active |  |
 | BRIK-DATA-003 | data.box_set | DATA | DATA/BRIK-DATA-003_data.box_set.cs | 无 | active |  |
 | BRIK-DATA-004 | data.box_get | DATA | DATA/BRIK-DATA-004_data.box_get.cs | 无 | active |  |
@@ -108,7 +108,6 @@
 | BRIK-OA-001 | oa.post | OA | OA/BRIK-OA-001_oa.post.cs | 无 | active |  |
 | BRIK-OA-002 | oa.list | OA | OA/BRIK-OA-002_oa.list.cs | 无 | active |  |
 | BRIK-OA-003 | oa.claim | OA | OA/BRIK-OA-003_oa.claim.cs | 无 | active |  |
-| BRIK-OA-004 | oa.complete | OA | OA/BRIK-OA-004_oa.complete.cs | 无 | active |  |
 | BRIK-OA-005 | oa.settle | OA | OA/BRIK-OA-005_oa.settle.cs | 无 | active |  |
 | BRIK-OA-006 | oa.set_int | OA | OA/BRIK-OA-006_oa.set_int.cs | 无 | active |  |
 | BRIK-OA-007 | oa.set_str | OA | OA/BRIK-OA-007_oa.set_str.cs | 无 | active |  |

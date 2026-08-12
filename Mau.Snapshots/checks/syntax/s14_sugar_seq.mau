@@ -1,0 +1,11 @@
+// s14 语法谱——SEQ 语法糖（级联）
+// 特性：隐式状态机 + 结果侧追加转移（成功追加）
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§'S_Flow' = { 'Idle', 'A', 'B' }
+§$'input', 'output'
+§'P_Start'
+§⇐ 'P_Start'['input', 'output']
+§'T_Step1'[τ=100]: 'P_Start' + 'file.convert'['input', 'output'] → 'S_Flow' = 'A' | 'S_Flow' = 'Idle'
+§'T_Step2'[τ=100]: 'S_Flow' = 'A' + 'file.convert'['input', 'output'] → 'S_Flow' = 'B' | 'S_Flow' = 'Idle'
+§'SEQ'['T_Step1' → 'T_Step2']

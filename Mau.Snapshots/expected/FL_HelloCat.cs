@@ -17,7 +17,18 @@ namespace Mau.Generated
         private string? _module;
         private string? _message;
 
-        // [状态机 S_Hello]
+        /// <summary>
+        /// 注入字段设置——module（纯赋值，不置位信号）
+        /// </summary>
+        /// <param name="value">注入值</param>
+        public void Setmodule(string? value) { _module = value; }
+
+        /// <summary>
+        /// 注入字段设置——message（纯赋值，不置位信号）
+        /// </summary>
+        /// <param name="value">注入值</param>
+        public void Setmessage(string? value) { _message = value; }
+
         private enum S_Hello_State { Idle, Done, Failed }
         private S_Hello_State _S_Hello_State;
 
@@ -167,4 +178,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:5D9F163125AA2125F7AA00B54EF2B57BDF22BC7A17E2ACC463AB13C206B32C79
+// #MAU_CHECKSUM:SHA256:4963B9AD864EACF95363EB686FD5F4CC8FC2B97A7D946087AD3F1E66D5C7764C

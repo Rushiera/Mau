@@ -85,6 +85,17 @@ namespace Mau.Translator
 
             // [段8] 边界完整性——信号引用存在
             CheckBoundaries(doc, result);
+            if (!result.Success)
+            {
+                return result;
+            }
+
+            // [段9] 积木契约校验——存在性/参数数量/测量采样（E220-222）
+            CheckBricks(doc, result);
+            if (!result.Success)
+            {
+                return result;
+            }
 
             result.Success = result.Diagnostics.Count == 0;
             return result;
@@ -269,7 +280,7 @@ namespace Mau.Translator
         /// <param name="doc">文档</param>
         /// <param name="result">验证结果</param>
         private static void CheckLaws(MauDocV2 doc, ValidateResultV2 result)
-        {
+{
             for (int i = 0; i < doc.Laws.Count; i++)
             {
                 LawV2 law = doc.Laws[i];
@@ -322,9 +333,21 @@ namespace Mau.Translator
                         }
                     }
                 }
+                // 名称返回积木校验——操作积木 String 返回（多路 switch 分发源）：结果分支 ≥ 2（候选名对应）
+                if (law.Ops.Count == 1 && BrickIndex.Count > 0)
+                {
+                    BrickIndexEntry? routeEntry = null;
+                    bool isNameReturn = BrickIndex.TryGet(law.Ops[0].BrickName, out routeEntry)
+                        && routeEntry != null && routeEntry.Contract != null
+                        && routeEntry.Contract.Return == Mau.Contracts.BrickReturnKind.String;
+                    if (isNameReturn && law.Results.Count < 2)
+                    {
+                        AddError(result, "E223", 0, "名称返回积木 '" + law.Ops[0].BrickName + "' 至少需要 2 路互斥结果（switch 按名分发）——当前 " + law.Results.Count + " 路");
+                        return;
+                    }
+                }
             }
         }
-
         /// <summary>
         /// 条件树检查——递归
         /// </summary>

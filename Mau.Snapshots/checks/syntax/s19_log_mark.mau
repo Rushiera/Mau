@@ -1,0 +1,8 @@
+// s19 语法谱——日志标记 [!]
+// 特性：观测属性——自动生成结构化日志，零语义影响
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§'S_Run' = { 'Idle', 'Done', 'Failed' }
+§'P_Go'
+§⇐ 'P_Go'
+§'T_Run'[τ=5, !]: 'P_Go' + 'file.convert'['src', 'dst'] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

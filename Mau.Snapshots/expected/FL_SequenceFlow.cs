@@ -15,11 +15,21 @@ namespace Mau.Generated
         private string? _input;
         private string? _output;
 
-        // [状态机 S_Flow]
+        /// <summary>
+        /// 注入字段设置——input（纯赋值，不置位信号）
+        /// </summary>
+        /// <param name="value">注入值</param>
+        public void Setinput(string? value) { _input = value; }
+
+        /// <summary>
+        /// 注入字段设置——output（纯赋值，不置位信号）
+        /// </summary>
+        /// <param name="value">注入值</param>
+        public void Setoutput(string? value) { _output = value; }
+
         private enum S_Flow_State { Idle, A, B, C }
         private S_Flow_State _S_Flow_State;
 
-        // [状态机 S_Seq]
         private enum S_Seq_State { Step1, Step2, Step3, Done }
         private S_Seq_State _S_Seq_State;
 
@@ -215,11 +225,14 @@ namespace Mau.Generated
                     AuditBrick("error", "T_Step1", "file.convert", frame);
                 }
                 // [段5] 结果转移——bool 驱动首项成功 / 次项失败 / 多路 switch 分发
-                string matched = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
-                switch (matched)
+                if (ok)
                 {
-                    case "output": S_Flow_Enter_A(); break;
-                    default: S_Seq_Enter_Step2(); break;
+                    S_Flow_Enter_A();
+                    S_Seq_Enter_Step2();
+                }
+                else
+                {
+                    S_Flow_Enter_Idle();
                 }
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
@@ -257,11 +270,14 @@ namespace Mau.Generated
                     AuditBrick("error", "T_Step2", "file.convert", frame);
                 }
                 // [段5] 结果转移——bool 驱动首项成功 / 次项失败 / 多路 switch 分发
-                string matched = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
-                switch (matched)
+                if (ok)
                 {
-                    case "output": S_Flow_Enter_B(); break;
-                    default: S_Seq_Enter_Step3(); break;
+                    S_Flow_Enter_B();
+                    S_Seq_Enter_Step3();
+                }
+                else
+                {
+                    S_Flow_Enter_Idle();
                 }
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
@@ -299,11 +315,14 @@ namespace Mau.Generated
                     AuditBrick("error", "T_Step3", "file.convert", frame);
                 }
                 // [段5] 结果转移——bool 驱动首项成功 / 次项失败 / 多路 switch 分发
-                string matched = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
-                switch (matched)
+                if (ok)
                 {
-                    case "output": S_Flow_Enter_C(); break;
-                    default: S_Seq_Enter_Done(); break;
+                    S_Flow_Enter_C();
+                    S_Seq_Enter_Done();
+                }
+                else
+                {
+                    S_Flow_Enter_Idle();
                 }
             }
             // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
@@ -348,4 +367,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:2DBDF9C7213FA3B46A320E3775FA6EF51694DB9D00FD3CAD109354A0721EF0AB
+// #MAU_CHECKSUM:SHA256:EE2F1FA5E7A0E44AB336C985640A3B243B7A4533BA675945A01EA60795855400

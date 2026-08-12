@@ -1,0 +1,10 @@
+// s04 语法谱——状态机集合定义 + 终态析取复位
+// 特性：首元素=初始，出度 0=终态，终态析取复位控制律
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§'S_Flow' = { 'Idle', 'Working', 'Done', 'Failed' }
+§'P_Go'
+§⇐ 'P_Go'
+§'T_Go'[τ=5]: 'P_Go' + 'file.convert'['src', 'dst'] → 'S_Flow' = 'Working' | 'S_Flow' = 'Failed'
+§'T_Done'[τ=5]: 'S_Flow' = 'Working' + 'file.convert'['src2', 'dst2'] → 'S_Flow' = 'Done' | 'S_Flow' = 'Failed'
+§'T_Back'[τ=5]: 'S_Flow' = 'Done' ∨ 'S_Flow' = 'Failed' → 'S_Flow' = 'Idle'

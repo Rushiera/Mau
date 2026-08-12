@@ -15,7 +15,18 @@ namespace Mau.Generated
         private string? _path;
         private string? _content;
 
-        // [状态机 S_Tool]
+        /// <summary>
+        /// 注入字段设置——path（纯赋值，不置位信号）
+        /// </summary>
+        /// <param name="value">注入值</param>
+        public void Setpath(string? value) { _path = value; }
+
+        /// <summary>
+        /// 注入字段设置——content（纯赋值，不置位信号）
+        /// </summary>
+        /// <param name="value">注入值</param>
+        public void Setcontent(string? value) { _content = value; }
+
         private enum S_Tool_State { Idle, ReadDone, ReadFailed, WriteDone, WriteFailed }
         private S_Tool_State _S_Tool_State;
 
@@ -240,4 +251,4 @@ namespace Mau.Generated
 
     }
 }
-// #MAU_CHECKSUM:SHA256:2993871F064AF4AF5679A533CBB7D574FAFDD453F946C5C732EE30D7C1DF0A89
+// #MAU_CHECKSUM:SHA256:C76A1989D05E0868A758FD2CF9A629D5BE7143D56FC403484772C17DB8071A26

@@ -84,7 +84,12 @@ namespace Mau.Contracts
         /// <summary>
         /// void——无返回，结果经输出端口表达
         /// </summary>
-        Void
+        Void,
+
+        /// <summary>
+        /// string——名称返回（多路匹配积木——switch(matched) 按名分发）
+        /// </summary>
+        String
     }
 
     /// <summary>

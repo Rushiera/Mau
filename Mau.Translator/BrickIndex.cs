@@ -70,7 +70,10 @@ namespace Mau.Translator
         /// Bricks/ 根目录——已加载则为非空
         /// </summary>
         private static string _root = "";
-
+/// <summary>
+/// 加载锁——Load 串行化（并发探测时防止交错破坏；原子替换 + 锁双保险）
+/// </summary>
+private static readonly object Sync = new object ();
         /// <summary>
         /// Bricks/ 根目录（空=未加载）
         /// </summary>
@@ -101,53 +104,70 @@ namespace Mau.Translator
         /// <param name="bricksRoot">Bricks/ 目录</param>
         /// <returns>加载成功（含全量校验通过）</returns>
         public static bool Load(string bricksRoot)
-        {
-            _byName.Clear();
-            _byId.Clear();
-            _root = "";
-            if (string.IsNullOrWhiteSpace(bricksRoot))
+{
+            lock (Sync)
             {
-                return false;
-            }
-            string indexFile = Path.Combine(bricksRoot, "index.json");
-            if (!File.Exists(indexFile))
-            {
-                return false;
-            }
-            _root = Path.GetFullPath(bricksRoot);
-            try
-            {
-                using (JsonDocument doc = JsonDocument.Parse(File.ReadAllText(indexFile)))
+                // 原子加载——先构建本地表，全部成功才替换（失败不破坏现有索引——并发安全）
+                Dictionary<string, BrickIndexEntry> newByName = new Dictionary<string, BrickIndexEntry>(StringComparer.Ordinal);
+                Dictionary<string, BrickIndexEntry> newById = new Dictionary<string, BrickIndexEntry>(StringComparer.Ordinal);
+                if (string.IsNullOrWhiteSpace(bricksRoot))
                 {
-                    JsonElement root = doc.RootElement;
-                    JsonElement bricks;
-                    if (!root.TryGetProperty("bricks", out bricks)
-                        || bricks.ValueKind != JsonValueKind.Array)
+                    return false;
+                }
+                string indexFile = Path.Combine(bricksRoot, "index.json");
+                if (!File.Exists(indexFile))
+                {
+                    return false;
+                }
+                string newRoot = Path.GetFullPath(bricksRoot);
+                try
+                {
+                    using (JsonDocument doc = JsonDocument.Parse(File.ReadAllText(indexFile)))
                     {
-                        return false;
-                    }
-                    foreach (JsonElement b in bricks.EnumerateArray())
-                    {
-                        BrickIndexEntry? entry = ParseEntry(b);
-                        if (entry == null || entry.Name.Length == 0)
+                        JsonElement root = doc.RootElement;
+                        JsonElement bricks;
+                        if (!root.TryGetProperty("bricks", out bricks)
+                            || bricks.ValueKind != JsonValueKind.Array)
                         {
                             return false;
                         }
-                        // 依赖补齐——积木文件头 // 依赖: 行为权威（index.json 依赖字段可能缺失/过期）
-                        MergeHeaderDependencies(entry);
-                        _byName[entry.Name] = entry;
-                        _byId[entry.Id] = entry;
+                        foreach (JsonElement b in bricks.EnumerateArray())
+                        {
+                            BrickIndexEntry? entry = ParseEntry(b);
+                            if (entry == null || entry.Name.Length == 0)
+                            {
+                                return false;
+                            }
+                            // 依赖补齐——积木文件头 // 依赖: 行为权威（index.json 依赖字段可能缺失/过期）
+                            MergeHeaderDependencies(entry);
+                            newByName[entry.Name] = entry;
+                            newById[entry.Id] = entry;
+                        }
                     }
                 }
+                catch
+                {
+                    return false;
+                }
+                if (newByName.Count == 0)
+                {
+                    return false;
+                }
+                // 成功——原子替换
+                _byName.Clear();
+                foreach (KeyValuePair<string, BrickIndexEntry> kv in newByName)
+                {
+                    _byName[kv.Key] = kv.Value;
+                }
+                _byId.Clear();
+                foreach (KeyValuePair<string, BrickIndexEntry> kv in newById)
+                {
+                    _byId[kv.Key] = kv.Value;
+                }
+                _root = newRoot;
+                return true;
             }
-            catch
-            {
-                return false;
-            }
-            return _byName.Count > 0;
-        }
-
-        /// <summary>
+        }        /// <summary>
         /// 解析单条积木索引
         /// </summary>
         /// <param name="b">bricks 数组元素</param>
@@ -243,6 +263,10 @@ namespace Mau.Translator
             if (ret == "Void")
             {
                 contract.Return = BrickReturnKind.Void;
+            }
+            else if (ret == "String")
+            {
+                contract.Return = BrickReturnKind.String;
             }
             else
             {

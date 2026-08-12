@@ -27,6 +27,21 @@ namespace Mau.Translator
     }
 
     /// <summary>
+    /// 组编译结果 v2——骨架数组 + 共享 BRIKGROUP 段
+    /// </summary>
+    public sealed class GroupCompileResultV2
+    {
+        /// <summary>是否成功——无任何错误诊断</summary>
+        public bool Success;
+
+        /// <summary>逐语料编译结果（骨架——已剥离内嵌段）</summary>
+        public List<CompileResultV2> Results = new List<CompileResultV2>();
+
+        /// <summary>共享 BRIKGROUP 段——闭包并集（组编译唯一内嵌源）</summary>
+        public string BrickGroupSource = "";
+    }
+
+    /// <summary>
     /// 编译门面 v2——五阶段流水线：词法 → 解析 → 糖展开 → 验证 → 分析 → 生成
     /// </summary>
     public static class MauCompilerV2
@@ -151,6 +166,74 @@ private static bool EnsureIndexLoaded()
             result.Success = true;
             return result;
         }/// <summary>
+/// 组编译 v2——多语料骨架 + 共享 BRIKGROUP（组模式：多 .mau → 一 dll，闭包去重）
+/// </summary>
+/// <param name = "sourceTexts">语料数组</param>
+/// <param name = "flowNames">流程名数组（与语料一一对应）</param>
+/// <returns>组编译结果</returns>
+public static GroupCompileResultV2 CompileGroupV2(string[] sourceTexts, string[] flowNames)
+{
+    GroupCompileResultV2 group = new GroupCompileResultV2();
+    if (sourceTexts == null || sourceTexts.Length == 0)
+    {
+        group.Success = false;
+        return group;
+    }
+
+    // [段1] 逐语料编译（骨架——剥离内嵌段，内嵌统一由共享 BRIKGROUP 承担）
+    for (int i = 0; i < sourceTexts.Length; i++)
+    {
+        string flowName = i < flowNames.Length ? flowNames[i] : ("Flow" + (i + 1).ToString());
+        CompileResultV2 result = Compile(sourceTexts[i], flowName);
+        if (result.Success)
+        {
+            // 剥离内嵌段——组编译由共享 BRIKGROUP 提供积木实现
+            result.GeneratedCode = StripBrickSectionsV2(result.GeneratedCode);
+        }
+
+        group.Results.Add(result);
+    }
+
+    // [段2] 闭包并集——全组动作积木去重
+    Dictionary<string, BrickIndexEntry> closure = new Dictionary<string, BrickIndexEntry>(StringComparer.Ordinal);
+    for (int i = 0; i < group.Results.Count; i++)
+    {
+        if (!group.Results[i].Success)
+        {
+            continue;
+        }
+
+        List<BrickIndexEntry> docClosure = BrickEmbedder.CollectClosureV2(group.Results[i].Doc);
+        for (int c = 0; c < docClosure.Count; c++)
+        {
+            if (!closure.ContainsKey(docClosure[c].Id))
+            {
+                closure[docClosure[c].Id] = docClosure[c];
+            }
+        }
+    }
+
+    List<BrickIndexEntry> sorted = new List<BrickIndexEntry>(closure.Values);
+    sorted.Sort(delegate (BrickIndexEntry a, BrickIndexEntry b)
+    {
+        return string.CompareOrdinal(a.Id, b.Id);
+    });
+    // [段3] 共享 BRIKGROUP 段
+    group.BrickGroupSource = BrickEmbedder.BuildEmbeddedSection(sorted, out string embedError);
+    if (sorted.Count > 0 && embedError.Length > 0)
+    {
+        CompileResultV2 fail = new CompileResultV2();
+        fail.Success = false;
+        fail.Diagnostics.Add(new MauDiagnostic("E901", 0, embedError));
+        group.Results.Clear();
+        group.Results.Add(fail);
+        group.Success = false;
+        return group;
+    }
+
+    group.Success = true;
+    return group;
+}/// <summary>
 /// 剥离内嵌积木段（BRIKGROUP）——黄金文件只存纯生成内容（E1：积木段由积木谱独立验证，不进黄金）
 /// </summary>
 /// <param name = "generatedCode">完整生成物（含内嵌段）</param>

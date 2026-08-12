@@ -838,7 +838,7 @@ namespace Mau.Translator
         /// <param name="kind">类型</param>
         /// <param name="source">写入源</param>
         private static void SetPropKind(MauDocV2 doc, string propName, PropKindV2 kind, string source)
-        {
+{
             PropositionV2? prop = doc.FindProposition(propName);
             if (prop == null)
             {
@@ -846,16 +846,18 @@ namespace Mau.Translator
                 prop = new PropositionV2 { Name = propName };
                 doc.Propositions.Add(prop);
             }
-            if (prop.Kind != PropKindV2.Unknown && prop.Kind != kind)
+            if (prop.Kind != PropKindV2.Unknown)
             {
-                // 写入冲突——多个写入源（E201 在验证层；此处保守记录为 Unknown 冲突标记）
-                prop.WriteSource = prop.WriteSource + "+" + source;
+                // 已定类型——多写入源（同 kind 多测量/多结果注册也算冲突；E201 在验证层拦截）
+                if (prop.WriteSource != source)
+                {
+                    prop.WriteSource = prop.WriteSource + "+" + source;
+                }
                 return;
             }
             prop.Kind = kind;
             prop.WriteSource = source;
         }
-
         // ==================== 工具 ====================
 
         /// <summary>

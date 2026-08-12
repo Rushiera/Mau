@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -138,6 +138,66 @@ public static string JsonEscape(string? s)
             // 统一实现下沉 Mau.Runtime.TextUtil（审查修复轮 2026-08-11——原四份独立实现收拢）
             return Mau.Runtime.TextUtil.JsonEscape(s);
         }/// <summary>
+/// 构建最小语料 v2——全符号语法 + 按契约输入端口类型生成参数字面量（积木谱 v2 用）
+/// </summary>
+/// <param name = "contract">积木契约</param>
+/// <param name = "transitionName">控制律名（默认 T_Run）</param>
+/// <returns>.mau 源码</returns>
+public static string BuildMinimalCorpusV2(Mau.Contracts.BrickContract contract, string transitionName = "T_Run")
+{
+    StringBuilder paramSb = new StringBuilder();
+    for (int p = 0; p < contract.Inputs.Count; p++)
+    {
+        if (p > 0)
+        {
+            paramSb.Append(", ");
+        }
+        paramSb.Append(BrickParamLiteral(contract.Inputs[p].Type));
+    }
+    string header = "§'Mau' 2.0\n§'Mau.Runtime' 2.0\n";
+    string machine = "§'S_Run' = { 'Idle', 'Done', 'Failed' }\n";
+    string prop = "§'P_Go'\n§⇐ 'P_Go'\n";
+    string law = "§'" + transitionName + "'[τ=60]: 'P_Go' + '" + contract.Name + "'[" + paramSb.ToString() + "] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'\n";
+    return header + machine + prop + law;
+}
+/// <summary>
+/// 端口类型 → v2 参数字面量（可构造白名单——基元/数组；不可构造类型给占位暴露问题让积木谱归因）
+/// </summary>
+/// <param name = "type">端口类型</param>
+/// <returns>参数字面量文本</returns>
+private static string BrickParamLiteral(Type type)
+{
+    if (type == typeof(string))
+    {
+        return "\"x\"";
+    }
+    if (type == typeof(bool))
+    {
+        return "0";
+    }
+    if (type == typeof(int) || type == typeof(long) || type == typeof(double) || type == typeof(float))
+    {
+        return "0";
+    }
+    if (type.IsArray)
+    {
+        Type elem = type.GetElementType()!;
+        if (elem == typeof(string))
+        {
+            return "[\"a\",\"b\"]";
+        }
+        if (elem == typeof(bool))
+        {
+            return "[0,1]";
+        }
+        if (elem == typeof(int) || elem == typeof(long) || elem == typeof(double) || elem == typeof(float))
+        {
+            return "[0,1]";
+        }
+    }
+    return "\"<unconstructible>\"";
+}
+/// <summary>
 /// 构建最小语料——信号触发 + 单变迁 + 双后置（积木冒烟/积木谱/smoke 共用模板；审查修复轮 2026-08-11 决策6）
 /// </summary>
 /// <param name = "brickName">动作积木名</param>
