@@ -47,7 +47,7 @@ namespace Mau.Translator
                 for (int i = 0; i < doc.Injections.Count; i++)
                 {
                     string injType = InferInjectionType(doc, doc.Injections[i]);
-                    string setterName = "Set" + SanitizeName(doc.Injections[i]);
+                    string setterName = "Set" + ToPascal(SanitizeName(doc.Injections[i]));
                     sb.Append("        /// <summary>\n");
                     sb.Append("        /// 注入字段设置——" + doc.Injections[i] + "（纯赋值，不置位信号）\n");
                     sb.Append("        /// </summary>\n");
@@ -119,7 +119,7 @@ namespace Mau.Translator
                 sb.Append("        // [资源]\n");
                 for (int i = 0; i < doc.Resources.Count; i++)
                 {
-                    sb.Append("        private int " + SanitizeName(doc.Resources[i].Name) + "_Count;\n");
+                    sb.Append("        private int " + SanitizeName(doc.Resources[i].Name) + "_Count = " + doc.Resources[i].Quota + ";\n");
                 }
                 sb.Append("\n");
             }
@@ -565,6 +565,12 @@ namespace Mau.Translator
                         sb.Append("                " + resources[r] + "_Count = " + resources[r] + "_Count + 1;\n");
                     }
                 }
+                // Cube 复位——触发完成（成功/失败均复位：允许 cond 再次满足时重新触发；否则 Cube 挂 Running→Expired 永不复位）
+                if (law.Attrs.Timeout != null)
+                {
+                    sb.Append("                // [段6b] Cube 复位——触发完成（成功/失败均复位，允许再次触发）\n");
+                    sb.Append("                " + name + "_Cube.Complete();\n");
+                }
                 sb.Append("            }\n");
 
                 // [段7] τ 时限分支
@@ -584,6 +590,8 @@ namespace Mau.Translator
                     {
                         sb.Append("                    " + BuildResultStatement(law.Results[1]) + "\n");
                     }
+                    // Cube 复位——超时走失败分支后 Expired → Idle（允许后续 cond 满足时重新触发）
+                    sb.Append("                    " + name + "_Cube.Reset();\n");
                     sb.Append("                }\n");
                     sb.Append("            }\n");
                 }
