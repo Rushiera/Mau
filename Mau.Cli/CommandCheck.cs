@@ -237,6 +237,27 @@ public static int Execute(string[] args)
                 Console.WriteLine("WARN: 语法谱目录不存在——" + syntaxDir);
                 return;
             }
+            // 黄金哈希清单——golden-sha.txt（黄金哈希化 2026-08-13：全文退役，一颗哈希一行反证改动范围）
+            System.Collections.Generic.Dictionary<string, string> hashes =
+                new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
+            string hashListPath = Path.Combine(syntaxDir, "golden-sha.txt");
+            if (File.Exists(hashListPath) && !update)
+            {
+                string[] hashLines = File.ReadAllLines(hashListPath);
+                for (int h = 0; h < hashLines.Length; h++)
+                {
+                    string trimmed = hashLines[h].Trim();
+                    if (trimmed.Length == 0)
+                    {
+                        continue;
+                    }
+                    int space = trimmed.IndexOf(' ');
+                    if (space > 0)
+                    {
+                        hashes[trimmed.Substring(0, space)] = trimmed.Substring(space + 1);
+                    }
+                }
+            }
             string[] files = Directory.GetFiles(syntaxDir, "*.mau", SearchOption.TopDirectoryOnly);
             Array.Sort(files, StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < files.Length; i = i + 1)
@@ -267,37 +288,28 @@ public static int Execute(string[] args)
                     sErrors.Add("[B] " + fileName + ": 确定性失败——两次生成不一致");
                     continue;
                 }
-                // v2 生成物类名 = flowName（无 FL_ 前缀）；黄金文件名保留 FL_ 前缀（与 L3 cases 同规）
+                // 哈希对象 = 剥离内嵌积木段后的语料骨架（积木改动不漂移；语料/生成器改动漂移 = 改动影响面反证）
                 string className = "FL_" + flowName;
-                string expectedDir = Path.Combine(syntaxDir, "expected");
-                string expectedPath = Path.Combine(expectedDir, className + ".cs");
+                string stripped = MauCompilerV2.StripBrickSectionsV2(result.GeneratedCode);
+                string hash = CliSupport.ComputeSha256(stripped);
                 if (update)
                 {
-                    Directory.CreateDirectory(expectedDir);
-                    // E1：黄金只存纯生成内容——剥离内嵌积木段（BRIKGROUP 由积木谱独立验证）
-                    WriteGolden(expectedPath, MauCompilerV2.StripBrickSectionsV2(result.GeneratedCode));
+                    hashes[className] = hash;
+                    Console.WriteLine("UPDATE: 黄金哈希已生成——" + className);
                     continue;
                 }
-                // 2. 黄金校验尾 + 逐字节对比
-                if (!File.Exists(expectedPath))
+                // 2. 黄金哈希对比
+                string? recorded;
+                if (!hashes.TryGetValue(className, out recorded) || recorded == null)
                 {
                     sGoldenMissing = sGoldenMissing + 1;
-                    sErrors.Add("[B] " + fileName + ": 黄金缺失——" + className + ".cs（--update 生成）");
+                    sErrors.Add("[B] " + fileName + ": 黄金哈希缺失——" + className + "（--update 生成）");
                     continue;
                 }
-                string golden = File.ReadAllText(expectedPath).Replace("\r\n", "\n");
-                string goldenBody = StripChecksum(golden, out string goldenHash);
-                if (goldenHash.Length > 0 && goldenHash != CliSupport.ComputeSha256(goldenBody))
+                if (recorded != hash)
                 {
                     sGoldenDrift = sGoldenDrift + 1;
-                    sErrors.Add("[B] " + fileName + ": 黄金被篡改——校验尾不匹配");
-                    continue;
-                }
-                string generated = MauCompilerV2.StripBrickSectionsV2(result.GeneratedCode).Replace("\r\n", "\n").TrimEnd();
-                if (goldenBody != generated)
-                {
-                    sGoldenDrift = sGoldenDrift + 1;
-                    sErrors.Add("[B] " + fileName + ": 生成漂移——与黄金不一致");
+                    sErrors.Add("[B] " + fileName + ": 生成漂移——哈希不一致（清单 " + recorded.Substring(0, 8) + "… 实际 " + hash.Substring(0, 8) + "…）");
                     continue;
                 }
                 // 3. 结构断言——类名/Tick/Fire（v2 生成物）
@@ -309,8 +321,26 @@ public static int Execute(string[] args)
                 }
                 sGoldenPass = sGoldenPass + 1;
             }
-        }
-        /// <summary>
+            if (update)
+            {
+                System.Collections.Generic.List<string> names =
+                    new System.Collections.Generic.List<string>(hashes.Keys);
+                names.Sort(StringComparer.Ordinal);
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < names.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        sb.Append('\n');
+                    }
+                    sb.Append(names[i]);
+                    sb.Append(' ');
+                    sb.Append(hashes[names[i]]);
+                }
+                File.WriteAllText(hashListPath, sb.ToString());
+                Console.WriteLine("黄金哈希清单已更新: golden-sha.txt（" + names.Count.ToString() + " 份）");
+            }
+        }        /// <summary>
         /// 积木谱——BrickIndex 枚举 → 契约生成最小语料 → 翻译 → CompileMany 一次组编译
         /// </summary>
         private static void RunBrickCorpus()
@@ -560,56 +590,6 @@ public static int Execute(string[] args)
                 return false;
             }
             return true;
-        }
-        /// <summary>
-        /// 写黄金文件——正文 + SHA256 校验尾
-        /// </summary>
-        /// <param name="path">黄金路径</param>
-        /// <param name="generated">生成物源码</param>
-        private static void WriteGolden(string path, string generated)
-        {
-            string body = generated.Replace("\r\n", "\n").TrimEnd();
-            string content = body + "\n" + Mau.Runtime.HashUtil.ChecksumPrefix + CliSupport.ComputeSha256(body) + "\n";
-            File.WriteAllText(path, content, new UTF8Encoding(true));
-        }
-
-        /// <summary>
-        /// 提取黄金校验尾——返回去掉校验行后的正文
-        /// </summary>
-        /// <param name="content">黄金全文</param>
-        /// <param name="hash">校验尾哈希（无则空）</param>
-        /// <returns>正文（TrimEnd）</returns>
-        private static string StripChecksum(string content, out string hash)
-        {
-            hash = "";
-            string[] lines = content.Split('\n');
-            int bodyEnd = lines.Length;
-            while (bodyEnd > 0)
-            {
-                string last = lines[bodyEnd - 1].Trim();
-                if (last.Length == 0)
-                {
-                    bodyEnd = bodyEnd - 1;
-                    continue;
-                }
-                if (last.StartsWith(Mau.Runtime.HashUtil.ChecksumPrefix))
-                {
-                    hash = last.Substring(Mau.Runtime.HashUtil.ChecksumPrefix.Length).Trim();
-                    bodyEnd = bodyEnd - 1;
-                    continue;
-                }
-                break;
-            }
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < bodyEnd; i = i + 1)
-            {
-                if (i > 0)
-                {
-                    sb.Append('\n');
-                }
-                sb.Append(lines[i]);
-            }
-            return sb.ToString().TrimEnd();
         }
 
         /// <summary>
