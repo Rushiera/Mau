@@ -94,6 +94,7 @@
 | BRIK-LLM-025 | llm.ctx_push_system | LLM | LLM/BRIK-LLM-025_llm.ctx_push_system.cs | 无 | active |  |
 | BRIK-LLM-026 | llm.has_active_session | LLM | LLM/BRIK-LLM-026_llm.has_active_session.cs | 无 | active |  |
 | BRIK-LLM-027 | llm.ctx_push_stream | LLM | LLM/BRIK-LLM-027_llm.ctx_push_stream.cs | 无 | active |  |
+| BRIK-LLM-028 | llm.ctx_push_reasoning | LLM | LLM/BRIK-LLM-028_llm.ctx_push_reasoning.cs | 无 | active |  |
 | BRIK-LOG-001 | log.write | LOG | LOG/BRIK-LOG-001_log.write.cs | 无 | active |  |
 | BRIK-LOG-002 | log.all | LOG | LOG/BRIK-LOG-002_log.all.cs | 无 | active |  |
 | BRIK-LOG-003 | log.count | LOG | LOG/BRIK-LOG-003_log.count.cs | 无 | active |  |
@@ -103,6 +104,7 @@
 | BRIK-MATH-003 | math.result_preview | MATH | MATH/BRIK-MATH-003_math.result_preview.cs | math.format_size | active |  |
 | BRIK-MATH-004 | math.random_int | MATH | MATH/BRIK-MATH-004_math.random_int.cs | 无 | active |  |
 | BRIK-MAU-001 | mau.build | MAU | MAU/BRIK-MAU-001_mau.build.cs | 无 | active |  |
+| BRIK-NOTE-001 | note.exec | NOTE | NOTE/BRIK-NOTE-001_note.exec.cs | llm.ctx_push_tool | active |  |
 | BRIK-OA-001 | oa.post | OA | OA/BRIK-OA-001_oa.post.cs | 无 | active |  |
 | BRIK-OA-002 | oa.list | OA | OA/BRIK-OA-002_oa.list.cs | 无 | active |  |
 | BRIK-OA-003 | oa.claim | OA | OA/BRIK-OA-003_oa.claim.cs | 无 | active |  |

@@ -7,7 +7,7 @@
 // 引用: Mau.Runtime · System.Text
 // 原理: DataBox "catcfg"/{catName} ConfigStore 读 tools 域清单 → 六域工具声明表过滤 → DeepSeek tools 数组
 //       配置缺失/非法 → 默认域（system,file——莎 2026-08-09 损坏兜底）
-// 常用: TalkCat 会话构建（T_BuildTools）——配置变更只在会话边界生效（新会话重建工具组前文）
+// 常用: TalkCat 会话构建（T_BuildTools）——配置变更只在会话边界生效（新会话重建工具组前文）；内置工具 note.set/note.next 始终声明（G.5）
 // 包: 无
 // ═══════════════════════════════════════════════════
 using System.Collections.Generic;
@@ -84,6 +84,7 @@ namespace Mau.Bricks
                 using (System.Text.Json.Utf8JsonWriter writer = new System.Text.Json.Utf8JsonWriter(stream))
                 {
                     writer.WriteStartArray();
+                    // [段3.1] 域工具声明——按猫配置域过滤（六域 ToolTable）
                     for (int d = 0; d < domains.Count; d = d + 1)
                     {
                         string[] tools = ToolTable[domains[d]];
@@ -100,6 +101,21 @@ namespace Mau.Bricks
                             writer.WriteEndObject();
                         }
                     }
+                    // [段3.2] 内置工具声明——始终可用不依赖域（G.5 Note 面板 2026-08-11 D.3：
+                    //   note.set/note.next 会话内执行（note.exec——TalkCat 内置分流），不落 OA 工单）
+                    string[] builtinTools = new string[] { "note.set", "note.next" };
+                    for (int b = 0; b < builtinTools.Length; b = b + 1)
+                    {
+                        string declName = builtinTools[b].Replace('.', '_');
+                        writer.WriteStartObject();
+                        writer.WriteString("type", "function");
+                        writer.WritePropertyName("function");
+                        writer.WriteStartObject();
+                        writer.WriteString("name", declName);
+                        writer.WriteString("description", "调用 " + builtinTools[b]);
+                        writer.WriteEndObject();
+                        writer.WriteEndObject();
+                    }
                     writer.WriteEndArray();
                 }
                 toolsJson = Encoding.UTF8.GetString(stream.ToArray());
@@ -108,4 +124,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:B154FF42DAC26614E71EA2644BD4C7EC6E8B546EC52E84202AEC87417553E8BC
+// #MAU_CHECKSUM:SHA256:24DE3BF516CD98CC75B185DD73C6FE4E5FB67B4516F4DBC40E17247FDAC6A408

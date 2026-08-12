@@ -2,10 +2,11 @@
 // 积木: ui.snapshot_chat
 // ID:   BRIK-UI-001
 // 类别: UI
-// 作用: 会话快照合成——读 ContextStore 合成 ChatSnapshot JSON（entries + streaming + streamText + stats）
+// 作用: 会话快照合成——读 ContextStore 合成 ChatSnapshot JSON（entries + streaming + streamText + thinkingText + stats + token + note）
 // 依赖: tool.display
 // 引用: System.IO · System.Text
 // 原理: 历史遍历 → Utf8JsonWriter 全角色结构保留；Tool 条目经 tool.display 摘要为单行；流式尾部读活跃会话 ContentBuilder 累积（D.2 分片合并——2026-08-11）
+//       思考累积读 ReasoningBuilder（G.2 2026-08-11）；token 统计读会话累计 + catcfg maxContextTokens（G.4）；note 读 NoteStore（G.5）
 // 常用: UiPet 每帧快照合成（Pet-UI 模式——快照经 DataBox 原子 push 到 UI 线程）
 // ═══════════════════════════════════════════════════
 using System.IO;
@@ -81,6 +82,19 @@ namespace Mau.Bricks
                         }
                     }
                     writer.WriteString("streamText", streamText);
+                    // [段1.2] 思考累积 → 打字机数据源（G.2 思考显示——2026-08-11 D.3）
+                    //     ReasoningBuilder 累积（ParseStreamEvent 推理增量）——与 llm.ctx_push_reasoning（BRIK-LLM-028 完成时合并 push）同源；
+                    //     UI 流式浮层在思考阶段显示思考文字（CH2 缓存区语义：思考→回复切换前显示思考，切换后显示回复）
+                    string thinkingText = "";
+                    if (streaming)
+                    {
+                        KeyValuePair<string, LlmStreamSession>[] sessions = LlmSession.GetActiveSessions();
+                        if (sessions.Length > 0)
+                        {
+                            thinkingText = sessions[0].Value.ReasoningBuilder.ToString();
+                        }
+                    }
+                    writer.WriteString("thinkingText", thinkingText);
                     // [段1.5] 动效子状态（P2-7——CH2 PushAnimState 移植）：Think/Reply（活跃会话 ContentBuilder 累积）/ WaitTools（工具等待通道）/ 空=空闲
                     //   Think = 活跃但无正文累积（思考中）；Reply = 正文累积非空（回复中）；WaitTools = tool_req_flag 置位且 tools_done 未置位
                     string subState = "";
@@ -120,6 +134,26 @@ namespace Mau.Bricks
                     }
                     writer.WriteNumber("count", count);
                     writer.WriteNumber("chars", chars);
+                    // [段3] 标题 Token 统计（G.4——CH2 `[ 名 ] Xk Token Y%（Max. Zk）` 移植）：
+                    //   累计 prompt（llm.ctx_push_stream 完成时累加入会话）+ maxContextTokens（catcfg 配置，缺省 1000000）
+                    writer.WriteNumber("totalPromptTokens", session.TotalPromptTokens);
+                    writer.WriteNumber("totalCompletionTokens", session.TotalCompletionTokens);
+                    long maxTokens = 1000000;
+                    ConfigStore? tokenStore;
+                    DataBox.TryGet<ConfigStore>("catcfg", ContextStore.SafeKey(sessionKey), out tokenStore);
+                    if (tokenStore != null)
+                    {
+                        long parsed;
+                        string raw = tokenStore.Get("maxContextTokens", "");
+                        if (raw.Length > 0 && long.TryParse(raw, out parsed) && parsed > 0)
+                        {
+                            maxTokens = parsed;
+                        }
+                    }
+                    writer.WriteNumber("maxContextTokens", maxTokens);
+                    // [段4] Note 面板（G.5——CH2 RenderNotePanel 数据源）：NoteStore 序列化 "current|done\ntask1\ntask2..."——UI 渲染 [x]/[>]/[ ] 状态
+                    string noteText = NoteStore.Serialize(NoteStore.GetOrCreate(ContextStore.SafeKey(sessionKey)));
+                    writer.WriteString("note", noteText);
                 }
                 writer.WriteEndObject();
             }
@@ -128,4 +162,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:4C83EEA659E39EE79C1E08E13487623C36C7FE40BB0E7121E99755E90CB5B71F
+// #MAU_CHECKSUM:SHA256:EB2D0CB03B877536DD76C178CDB9706CCD060DF3967DCF60707A02AF10C5AFAB

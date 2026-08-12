@@ -2,7 +2,7 @@
 // 积木: llm.ctx_push_stream
 // ID:   BRIK-LLM-027
 // 类别: LLM
-// 作用: 流式分片合并 push——从活跃会话累积缓冲读完整回复，一次性追加 Assistant 消息
+// 作用: 流式分片合并 push——从活跃会话累积缓冲读完整回复，一次性追加 Assistant 消息；会话 usage 累计入会话（G.4 标题 Token 统计）
 // 依赖: 无
 // 包: 无
 // 引用: Mau.Runtime
@@ -41,8 +41,20 @@ namespace Mau.Bricks
                     ctx.History.Add(ContextStore.CreateMessage("Assistant", fullReply));
                 }
             }
+            // G.4 标题 Token 统计——本会话 usage 累计入会话（正常完成链/工具分支链唯一汇聚点；无回复文本也累计——2026-08-11 D.3）
+            if (session.UsagePrompt > 0 || session.UsageCompletion > 0)
+            {
+                ContextSession ctx2 = ContextStore.GetOrCreate(ContextStore.SafeKey(sessionKey));
+                lock (ContextStore.Gate)
+                {
+                    ctx2.TotalPromptTokens = ctx2.TotalPromptTokens + session.UsagePrompt;
+                    ctx2.TotalCompletionTokens = ctx2.TotalCompletionTokens + session.UsageCompletion;
+                    ctx2.TotalCacheHitTokens = ctx2.TotalCacheHitTokens + session.UsageCacheHit;
+                    ctx2.RoundCount = ctx2.RoundCount + 1;
+                }
+            }
             return true;
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:AEB75F47AA4DF2CF66B94073272605DEF7ED1ECEC7D339919E647727E717D5A1
+// #MAU_CHECKSUM:SHA256:CA9648E8FEC0F226EADD4EF4DF46462D970DC49F6C78F71DAF91C6291D031789
