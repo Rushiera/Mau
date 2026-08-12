@@ -167,8 +167,8 @@ namespace Mau.Cli
         /// <param name="root">workspace 根</param>
         /// <returns>通过</returns>
         private static bool VerifyBuildLoop(string root)
-        {
-            // [1] 编译 file_convert 生成物（Roslyn Emit，无 SDK）
+{
+            // [1] 编译 file_convert 生成物（v2 翻译器——Roslyn Emit，无 SDK）
             string caseFile = Path.Combine(root, "Mau.Snapshots", "cases", "file_convert.mau");
             string source;
             try
@@ -180,7 +180,7 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: build 闭环用例缺失——" + caseFile);
                 return false;
             }
-            CompileResult compileResult = MauCompiler.Compile(source, "FileConvert");
+            CompileResultV2 compileResult = MauCompilerV2.Compile(source, "FileConvert");
             if (!compileResult.Success)
             {
                 Console.WriteLine("FAIL: build 闭环——翻译失败");
@@ -188,7 +188,7 @@ namespace Mau.Cli
             }
             string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_gate_pocket_" + Guid.NewGuid().ToString("N").Substring(0, 8));
             MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
-            MauPocketCompileResult pocketResult = compiler.Compile(compileResult.GeneratedCode, "FL_FileConvert");
+            MauPocketCompileResult pocketResult = compiler.Compile(compileResult.GeneratedCode, "FileConvert");
             if (!pocketResult.Success)
             {
                 Console.WriteLine("FAIL: build 闭环——Roslyn Emit 失败");
@@ -199,38 +199,53 @@ namespace Mau.Cli
                 return false;
             }
 
-            // [2] ALC 加载 + Fire + Tick + 断言
-            FlowHandle? handle = null;
+            // [2] 反射加载 + Fire + Tick + 断言（v2 生成物——枚举状态机，不经 FlowHandle）
             string inputFile = Path.Combine(Path.GetTempPath(), "mau_gate_input_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
             string outputFile = Path.Combine(Path.GetTempPath(), "mau_gate_output_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
+            System.Reflection.Assembly? asm = null;
             try
             {
                 File.WriteAllText(inputFile, "mau-gate-check");
-                handle = FlowHandle.Load(pocketResult.AssemblyPath);
-                Type flowType = handle.Flow.GetType();
+                asm = System.Reflection.Assembly.LoadFrom(pocketResult.AssemblyPath);
+                Type? flowType = asm.GetType("Mau.Generated.FileConvert");
+                if (flowType == null)
+                {
+                    Console.WriteLine("FAIL: build 闭环——未找到生成物类型 Mau.Generated.FileConvert");
+                    return false;
+                }
+                object? flow = Activator.CreateInstance(flowType);
+                if (flow == null)
+                {
+                    Console.WriteLine("FAIL: build 闭环——无法实例化生成物");
+                    return false;
+                }
                 MethodInfo? fire = flowType.GetMethod("FireInput");
                 if (fire == null)
                 {
                     Console.WriteLine("FAIL: build 闭环——未找到 FireInput");
                     return false;
                 }
-                fire.Invoke(handle.Flow, new object[] { inputFile, outputFile });
+                fire.Invoke(flow, new object[] { inputFile, outputFile });
+                MethodInfo? tick = flowType.GetMethod("Tick");
+                MethodInfo? isDone = flowType.GetMethod("IsConvDone");
+                if (tick == null || isDone == null)
+                {
+                    Console.WriteLine("FAIL: build 闭环——未找到 Tick/IsConvDone");
+                    return false;
+                }
+                bool done = false;
                 for (int i = 0; i < 400; i = i + 1)
                 {
-                    handle.Flow.Tick();
-                }
-                RuntimeStatus status = handle.Flow.GetStatus();
-                bool done = false;
-                for (int i = 0; i < status.Propositions.Length; i = i + 1)
-                {
-                    if (status.Propositions[i].Name == "P_Done")
+                    tick.Invoke(flow, new object[] { i });
+                    done = (bool)isDone.Invoke(flow, null)!;
+                    if (done)
                     {
-                        done = status.Propositions[i].Value;
+                        break;
                     }
                 }
                 if (!done)
                 {
-                    Console.WriteLine("FAIL: build 闭环——P_Done 未置位（文件转换未完成）");
+                    Console.WriteLine("FAIL: build 闭环——S_Conv 未达 Done（文件转换未完成）");
                     return false;
                 }
                 if (!File.Exists(outputFile))
@@ -247,10 +262,6 @@ namespace Mau.Cli
             }
             finally
             {
-                if (handle != null)
-                {
-                    handle.TryUnload(3);
-                }
                 try
                 {
                     if (File.Exists(inputFile))
@@ -272,7 +283,6 @@ namespace Mau.Cli
                 }
             }
         }
-
         /// <summary>
         /// 运行子进程并检查退出码——输出直接继承控制台
         /// </summary>
@@ -411,50 +421,50 @@ private static bool VerifyChecksum(string filePath, out string body)
 /// <returns>通过</returns>
 private static bool VerifyGolden(string root, string caseName, string expectedName, string flowName, bool update)
 {
-    string caseFile = Path.Combine(root, "Mau.Snapshots", "cases", caseName);
-    string expectedFile = Path.Combine(root, "Mau.Snapshots", "expected", expectedName);
-    string source;
-    try
-    {
-        source = File.ReadAllText(caseFile);
-    }
-    catch
-    {
-        Console.WriteLine("FAIL: 黄金文件源缺失——" + caseFile);
-        return false;
-    }
+            string caseFile = Path.Combine(root, "Mau.Snapshots", "cases", caseName);
+            string expectedFile = Path.Combine(root, "Mau.Snapshots", "expected", expectedName);
+            string source;
+            try
+            {
+                source = File.ReadAllText(caseFile);
+            }
+            catch
+            {
+                Console.WriteLine("FAIL: 黄金文件源缺失——" + caseFile);
+                return false;
+            }
 
-    CompileResult result = MauCompiler.Compile(source, flowName);
-    if (!result.Success)
-    {
-        Console.WriteLine("FAIL: 黄金文件源编译失败——" + caseName);
-        return false;
-    }
+            CompileResultV2 result = MauCompilerV2.Compile(source, flowName);
+            if (!result.Success)
+            {
+                Console.WriteLine("FAIL: 黄金文件源编译失败——" + caseName);
+                return false;
+            }
 
-    // E1：黄金只存纯生成内容——剥离内嵌积木段（BRIKGROUP 由积木谱独立验证）
-    string stripped = MauCompiler.StripBrickSections(result.GeneratedCode);
+            // E1：黄金只存纯生成内容——剥离内嵌积木段（BRIKGROUP 由积木谱独立验证）
+            string stripped = MauCompilerV2.StripBrickSectionsV2(result.GeneratedCode);
 
-    if (update)
-    {
-        // 重建黄金——剥离版正文 + SHA256 校验尾
-        string hash = CliSupport.ComputeSha256(stripped);
-        File.WriteAllText(expectedFile, stripped + "\n" + Mau.Runtime.HashUtil.ChecksumPrefix + hash);
-        Console.WriteLine("UPDATED: " + expectedName + " → " + hash);
-        return true;
-    }
+            if (update)
+            {
+                // 重建黄金——剥离版正文 + SHA256 校验尾
+                string hash = CliSupport.ComputeSha256(stripped);
+                File.WriteAllText(expectedFile, stripped + "\n" + Mau.Runtime.HashUtil.ChecksumPrefix + hash);
+                Console.WriteLine("UPDATED: " + expectedName + " → " + hash);
+                return true;
+            }
 
-    if (!VerifyChecksum(expectedFile, out string expectedBody))
-    {
-        return false;
-    }
+            if (!VerifyChecksum(expectedFile, out string expectedBody))
+            {
+                return false;
+            }
 
-    string actual = stripped.Replace("\r\n", "\n").TrimEnd('\n');
-    if (expectedBody.TrimEnd('\n') != actual)
-    {
-        Console.WriteLine("FAIL: 生成漂移——黄金文件不一致 (" + caseName + ")");
-        return false;
-    }
+            string actual = stripped.Replace("\r\n", "\n").TrimEnd('\n');
+            if (expectedBody.TrimEnd('\n') != actual)
+            {
+                Console.WriteLine("FAIL: 生成漂移——黄金文件不一致 (" + caseName + ")");
+                return false;
+            }
 
-    return true;
-}}
+            return true;
+        }}
 }

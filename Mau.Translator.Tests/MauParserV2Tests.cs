@@ -244,7 +244,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void ParseConditionRef_NoImplicitProp()
         {
-            string source = "§'T_X'[τ=5]: 'P_Implicit' + 'llm.go'[] → 'S_X' = 'Done'\n§'S_X' = { 'Done' }\n";
+            string source = "§'T_X'[τ=5]: 'P_Implicit' + 'llm.chat'[] → 'S_X' = 'Done'\n§'S_X' = { 'Done' }\n";
 
             ParseResultV2 result = Parse(source);
 
@@ -259,7 +259,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void ParseLaw_MissingArrow_Error()
         {
-            string source = "§'T_X'[τ=5]: 'P_A' + 'llm.go'[]\n";
+            string source = "§'T_X'[τ=5]: 'P_A' + 'llm.chat'[]\n";
 
             ParseResultV2 result = Parse(source);
 

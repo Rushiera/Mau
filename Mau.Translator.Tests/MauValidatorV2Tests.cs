@@ -21,7 +21,7 @@ namespace Mau.Translator.Tests
                 "§'P_Init'\n" +
                 "§'R_ReplySlot': 1\n" +
                 "§⇐ 'P_Init'\n" +
-                "§'T_Start'[τ=10]: 'S_Talk' = 'Building' ∧ 'R_ReplySlot' + 'llm.go'['x'] → 'S_Talk' = 'Thinking' | 'S_Talk' = 'Failed'\n" +
+                "§'T_Start'[τ=10]: 'S_Talk' = 'Building' ∧ 'R_ReplySlot' + 'llm.chat'['x'] → 'S_Talk' = 'Thinking' | 'S_Talk' = 'Failed'\n" +
                 "§'M_Pump'[ω=1]: 'P_ChunkReady' := 'llm.read_chunk'['requestId']\n" +
                 "§'T_Classify': 'P_ChunkReady' + 'llm.is_end'['requestId'] → 'S_Talk' = 'Done' | 'S_Talk' = 'Thinking'\n";
 
@@ -194,7 +194,7 @@ namespace Mau.Translator.Tests
                 "§'S_X' = { 'Done' }\n" +
                 "§'P_A'\n" +
                 "§⇐ 'P_A'\n" +
-                "§'T_A'[∥]: 'P_A' + 'llm.go'['x'] → 'S_X' = 'Done'\n";
+                "§'T_A'[∥]: 'P_A' + 'llm.chat'['x'] → 'S_X' = 'Done'\n";
 
             ValidateResultV2 result = Validate(source);
 

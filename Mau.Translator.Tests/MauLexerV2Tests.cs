@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Mau.Translator;
 using Xunit;
@@ -76,7 +76,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void LexTalkCat_NamesInOrder()
         {
-            string source = "§'Mau' 2.0\n§'S_Talk' = { 'Idle', 'Building' }\n§'T_Init'[τ=5]: 'P_Init' + 'llm.go'['x'] → 'S_Talk' = 'Idle'";
+            string source = "§'Mau' 2.0\n§'S_Talk' = { 'Idle', 'Building' }\n§'T_Init'[τ=5]: 'P_Init' + 'llm.chat'['x'] → 'S_Talk' = 'Idle'";
 
             LexResultV2 result = MauLexerV2.Lex(source);
 
@@ -88,7 +88,7 @@ namespace Mau.Translator.Tests
             Assert.Equal("Building", result.Names[3]);
             Assert.Equal("T_Init", result.Names[4]);
             Assert.Equal("P_Init", result.Names[5]);
-            Assert.Equal("llm.go", result.Names[6]);
+            Assert.Equal("llm.chat", result.Names[6]);
             // 参数容器内引用——['x'] 由参数表承载（A1；A0=[τ=5] 属性容器）
             Assert.True(result.Params.Count == 2, "Params=" + result.Params.Count.ToString());
             Assert.Equal(MauParamKindV2.Ref, result.Params[1].Items![0].Kind);
@@ -165,7 +165,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void LexInvalidRef_NumberPrefixRejected()
         {
-            string source = "§'T_X'[τ=5]: 'P_A' + 'llm.go'['bad@name'] → 'S_X' = 'Done'";
+            string source = "§'T_X'[τ=5]: 'P_A' + 'llm.chat'['bad@name'] → 'S_X' = 'Done'";
 
             LexResultV2 result = MauLexerV2.Lex(source);
 
@@ -202,7 +202,7 @@ namespace Mau.Translator.Tests
         [Fact]
         public void LexUnclosedString_E004()
         {
-            string source = "§'T_X'[τ=5]: 'P_A' + 'llm.go'[\"abc] → 'S_X' = 'Done'";
+            string source = "§'T_X'[τ=5]: 'P_A' + 'llm.chat'[\"abc] → 'S_X' = 'Done'";
 
             LexResultV2 result = MauLexerV2.Lex(source);
 

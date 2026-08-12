@@ -26,7 +26,7 @@ namespace Mau.Translator
         /// <param name="doc">解析文档</param>
         /// <returns>验证结果</returns>
         public static ValidateResultV2 Validate(MauDocV2 doc)
-        {
+{
             ValidateResultV2 result = new ValidateResultV2();
             if (doc == null)
             {
@@ -88,9 +88,7 @@ namespace Mau.Translator
 
             result.Success = result.Diagnostics.Count == 0;
             return result;
-        }
-
-        /// <summary>
+        }        /// <summary>
         /// 版本兼容检查——声明 ≤ 2.0
         /// </summary>
         /// <param name="doc">文档</param>
@@ -506,8 +504,65 @@ namespace Mau.Translator
                 }
             }
         }
-
-        /// <summary>
+/// <summary>
+/// 积木契约校验——积木存在性 + 参数数量匹配（E220 积木未注册 / E221 参数数量超限 / E222 测量采样非 bool 返回）
+/// </summary>
+/// <param name = "doc">文档</param>
+/// <param name = "result">验证结果</param>
+private static void CheckBricks(MauDocV2 doc, ValidateResultV2 result)
+{
+            // [段0] 索引未加载跳过——积木契约校验依赖 Bricks/index.json（由 CLI/编译入口 EnsureIndexLoaded）
+            if (BrickIndex.Count == 0)
+            {
+                return;
+            }
+            // [段1] 控制律操作——每个积木调用：存在性 + 参数数量
+            for (int i = 0; i < doc.Laws.Count; i++)
+            {
+                LawV2 law = doc.Laws[i];
+                for (int o = 0; o < law.Ops.Count; o++)
+                {
+                    BrickCallV2 call = law.Ops[o];
+                    BrickIndexEntry entry;
+                    if (!BrickIndex.TryGet(call.BrickName, out entry) || entry.Contract == null)
+                    {
+                        AddError(result, "E220", 0, "控制律 '" + law.Name + "' 引用积木未注册——'" + call.BrickName + "'（Bricks/index.json 查询）");
+                        return;
+                    }
+                    if (call.Params.Count > entry.Contract.Inputs.Count)
+                    {
+                        AddError(result, "E221", 0, "控制律 '" + law.Name + "' 积木调用参数超限——'" + call.BrickName + "' 传 " + call.Params.Count + " 个参数，契约输入端口 " + entry.Contract.Inputs.Count + " 个");
+                        return;
+                    }
+                }
+            }
+            // [段2] 测量采样——积木存在 + 必须 bool 返回（判断积木语义——is_* 命名或 return == Bool）
+            for (int m = 0; m < doc.Measures.Count; m++)
+            {
+                MeasureV2 measure = doc.Measures[m];
+                if (measure.Sample == null || measure.Sample.BrickName.Length == 0)
+                {
+                    AddError(result, "E222", 0, "测量 '" + measure.Name + "' 缺少采样积木");
+                    return;
+                }
+                BrickIndexEntry entry;
+                if (!BrickIndex.TryGet(measure.Sample.BrickName, out entry) || entry.Contract == null)
+                {
+                    AddError(result, "E220", 0, "测量 '" + measure.Name + "' 引用积木未注册——'" + measure.Sample.BrickName + "'");
+                    return;
+                }
+                if (entry.Contract.Return != Mau.Contracts.BrickReturnKind.Bool)
+                {
+                    AddError(result, "E222", 0, "测量 '" + measure.Name + "' 采样积木 '" + measure.Sample.BrickName + "' 必须 bool 返回（判断积木语义——实测值写条件）");
+                    return;
+                }
+                if (measure.Sample.Params.Count > entry.Contract.Inputs.Count)
+                {
+                    AddError(result, "E221", 0, "测量 '" + measure.Name + "' 采样调用参数超限——'" + measure.Sample.BrickName + "' 传 " + measure.Sample.Params.Count + " 个参数，契约输入端口 " + entry.Contract.Inputs.Count + " 个");
+                    return;
+                }
+            }
+        }        /// <summary>
         /// 错误添加
         /// </summary>
         /// <param name="result">验证结果</param>

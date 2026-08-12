@@ -209,7 +209,7 @@ namespace Mau.Cli
         /// <param name="args">命令行参数</param>
         /// <returns>退出码</returns>
         private static int CommandVerify(string[] args)
-        {
+{
             if (args.Length < 2)
             {
                 Console.WriteLine("用法: mau verify <file.mau>");
@@ -224,7 +224,7 @@ namespace Mau.Cli
 
             string source = File.ReadAllText(path);
             string flowName = FlowNameFromPath(path);
-            CompileResult result = MauCompiler.Compile(source, flowName);
+            CompileResultV2 result = MauCompilerV2.Compile(source, flowName);
             PrintDiagnostics(path, result.Diagnostics);
 
             if (result.Success)
@@ -234,14 +234,13 @@ namespace Mau.Cli
             }
             return 1;
         }
-
         /// <summary>
         /// gen 命令——只生成 C# 源码
         /// </summary>
         /// <param name="args">命令行参数</param>
         /// <returns>退出码</returns>
         private static int CommandGen(string[] args)
-        {
+{
             if (args.Length < 2)
             {
                 Console.WriteLine("用法: mau gen <file.mau> -o <dir>");
@@ -269,7 +268,7 @@ namespace Mau.Cli
 
             string source = File.ReadAllText(path);
             string flowName = FlowNameFromPath(path);
-            CompileResult result = MauCompiler.Compile(source, flowName);
+            CompileResultV2 result = MauCompilerV2.Compile(source, flowName);
             PrintDiagnostics(path, result.Diagnostics);
             if (!result.Success)
             {
@@ -281,7 +280,6 @@ namespace Mau.Cli
             Console.WriteLine("生成: " + outFile);
             return 0;
         }
-
         /// <summary>
         /// build 命令——验证 + 生成 + 编译（默认 Roslyn Emit 无 SDK；--sdk 走环境 dotnet build）
         /// </summary>

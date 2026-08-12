@@ -92,7 +92,7 @@ namespace Mau.Translator.Tests
                 "§'S_X' = { 'A', 'B' }\n" +
                 "§'P_Ready'\n" +
                 "§'M_Poll'[ω=1]: 'P_Ready' := 'llm.read_chunk'['requestId']\n" +
-                "§'T_Work': 'P_Ready' + 'llm.go'[] → 'S_X' = 'B' | 'S_X' = 'A'\n" +
+                "§'T_Work': 'P_Ready' + 'llm.chat'[] → 'S_X' = 'B' | 'S_X' = 'A'\n" +
                 "§'FBK'['M_Poll' → 'T_Work' → 'M_Poll']\n";
 
             MauDocV2? doc = ParseAndValidate(source);
@@ -151,7 +151,7 @@ namespace Mau.Translator.Tests
                 "§'P_Init'\n" +
                 "§⇐ 'P_Init'\n" +
                 "§'T_Init'[τ=5]: 'P_Init' → 'S_Talk' = 'Building'\n" +
-                "§'T_Start'[τ=10]: 'S_Talk' = 'Building' + 'llm.go'[] → 'S_Talk' = 'Thinking' | 'S_Talk' = 'Failed'\n" +
+                "§'T_Start'[τ=10]: 'S_Talk' = 'Building' + 'llm.chat'[] → 'S_Talk' = 'Thinking' | 'S_Talk' = 'Failed'\n" +
                 "§'T_Finish': 'S_Talk' = 'Thinking' → 'S_Talk' = 'Done'\n";
 
             AnalyzeResultV2 result = Analyze(source);
@@ -230,7 +230,7 @@ namespace Mau.Translator.Tests
                 "§'P_Init'\n" +
                 "§⇐ 'P_Init'\n" +
                 "§'T_Go': 'P_Init' → 'S_X' = 'A'\n" +
-                "§'T_AB'[τ=5]: 'S_X' = 'A' + 'llm.go'[] → 'S_X' = 'B' | 'S_X' = 'C'\n" +
+                "§'T_AB'[τ=5]: 'S_X' = 'A' + 'llm.chat'[] → 'S_X' = 'B' | 'S_X' = 'C'\n" +
                 // 失败分支 C——C 无出边 = 终态，OK；需要 C 有出边但无法到终态
                 "§'T_CB': 'S_X' = 'C' → 'S_X' = 'B'\n" +
                 "§'T_BD': 'S_X' = 'B' → 'S_X' = 'Done'\n";

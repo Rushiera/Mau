@@ -38,7 +38,54 @@ namespace Mau.Translator
             });
             return sorted;
         }
+/// <summary>
+/// 收集 v2 文档积木闭包——控制律操作 + 测量采样（去重按 BRIK-ID，环防护）
+/// </summary>
+/// <param name = "doc">v2 解析文档</param>
+/// <returns>闭包条目（按 ID 稳定排序）</returns>
+public static List<BrickIndexEntry> CollectClosureV2(MauDocV2 doc)
+{
+    Dictionary<string, BrickIndexEntry> result = new Dictionary<string, BrickIndexEntry>(StringComparer.Ordinal);
+    HashSet<string> visiting = new HashSet<string>(StringComparer.Ordinal);
+    // 控制律操作积木
+    for (int i = 0; i < doc.Laws.Count; i++)
+    {
+        for (int o = 0; o < doc.Laws[i].Ops.Count; o++)
+        {
+            string brickName = doc.Laws[i].Ops[o].BrickName;
+            if (brickName.Length == 0)
+            {
+                continue;
+            }
 
+            CollectEntry(brickName, result, visiting);
+        }
+    }
+
+    // 测量采样积木
+    for (int m = 0; m < doc.Measures.Count; m++)
+    {
+        if (doc.Measures[m].Sample == null)
+        {
+            continue;
+        }
+
+        string brickName = doc.Measures[m].Sample.BrickName;
+        if (brickName.Length == 0)
+        {
+            continue;
+        }
+
+        CollectEntry(brickName, result, visiting);
+    }
+
+    List<BrickIndexEntry> sorted = new List<BrickIndexEntry>(result.Values);
+    sorted.Sort(delegate (BrickIndexEntry a, BrickIndexEntry b)
+    {
+        return string.CompareOrdinal(a.Id, b.Id);
+    });
+    return sorted;
+}
         /// <summary>
         /// 递归收集单条积木及其依赖
         /// </summary>

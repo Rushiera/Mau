@@ -1,349 +1,351 @@
-// 本文件由 Mau Translator v0.1 自动生成 —— 请勿手改
-// 流程: SequenceFlow
-// 基座: Mau.Runtime/v0.1
-
-// Fire 契约:
-//   FireStart(string input, string output)
-
-using Mau.Runtime;
-using System.Threading.Tasks;
+// ═══ SequenceFlow 生成物 — Mau v2.0 翻译器 ═══
+// 生成物由翻译器确定性输出——手工修改无效，改 .mau 后重新生成
 using System;
+using System.Collections.Generic;
+using Mau.Runtime;
 
-namespace Mau.Generated.Flows
+namespace Mau.Generated
 {
     /// <summary>
-    /// SequenceFlow 流程——由 Mau 声明生成
+    /// 生成物——SequenceFlow 受控系统
     /// </summary>
-    public sealed class FL_SequenceFlow : IObservableFlow
+    public sealed class SequenceFlow
     {
-        /// <summary>
-        /// 内部帧号——每 Tick 自增
-        /// </summary>
-        private long _frame;
+        // [注入字段]
+        private string? _input;
+        private string? _output;
 
-        /// <summary>
-        /// 环形调试日志——200 条上限
-        /// </summary>
-        private FlowLog _logs;
+        // [状态机 S_Flow]
+        private enum S_Flow_State { Idle, A, B, C }
+        private S_Flow_State _S_Flow_State;
 
-        /// <summary>
-        /// 数据流追踪开关——SetTraceDataFlow 控制（D2 调试基建：输出赋值/信号投递消费记录）
-        /// </summary>
-        private bool _traceDataFlow;
+        // [状态机 S_Seq]
+        private enum S_Seq_State { Step1, Step2, Step3, Done }
+        private S_Seq_State _S_Seq_State;
 
-        /// <summary>
-        /// 命题 P_Start：信号，消费即清除
-        /// </summary>
+        // [命题]
         private bool P_Start;
 
-        /// <summary>
-        /// 命题 P_Step1Done：终态事实，置位后保持
-        /// </summary>
-        private bool P_Step1Done;
+        // [积木输出端口]
+        private string _input = default;
+        private string _output = default;
+
+        // [控制律 Cube]
+        private readonly Cube T_Step1_Cube = new Cube(100);
+        private readonly Cube T_Step2_Cube = new Cube(100);
+        private readonly Cube T_Step3_Cube = new Cube(100);
 
         /// <summary>
-        /// 命题 P_Step2Done：终态事实，置位后保持
+        /// 构造——初始状态置位
         /// </summary>
-        private bool P_Step2Done;
-
-        /// <summary>
-        /// 命题 P_Step3Done：终态事实，置位后保持
-        /// </summary>
-        private bool P_Step3Done;
-
-        /// <summary>
-        /// 命题 P_Failed：终态事实，置位后保持
-        /// </summary>
-        private bool P_Failed;
-
-        /// <summary>
-        /// 变迁 T_Step1 的动作参数——input
-        /// </summary>
-        private string _input = null!;
-
-        /// <summary>
-        /// 变迁 T_Step1 的动作参数——output
-        /// </summary>
-        private string _output = null!;
-
-        /// <summary>
-        /// 变迁 T_Step1 的时限 Cube（100 帧有限模式）
-        /// </summary>
-        private Cube T_Step1_Cube;
-
-        /// <summary>
-        /// 变迁 T_Step2 的时限 Cube（100 帧有限模式）
-        /// </summary>
-        private Cube T_Step2_Cube;
-
-        /// <summary>
-        /// 变迁 T_Step3 的时限 Cube（100 帧有限模式）
-        /// </summary>
-        private Cube T_Step3_Cube;
-
-        /// <summary>
-        /// 构造：初始化日志缓冲与 Cube/Inbox
-        /// </summary>
-        public FL_SequenceFlow()
+        public SequenceFlow()
         {
-            _logs = new FlowLog();
-            T_Step1_Cube = new Cube(100);
-            T_Step2_Cube = new Cube(100);
-            T_Step3_Cube = new Cube(100);
+            S_Flow_Enter_Idle();
+            S_Seq_Enter_Step1();
         }
 
         /// <summary>
-        /// 外部投递信号：Start
+        /// 进入 S_Flow.Idle——单值赋值（互斥由类型系统保证）
         /// </summary>
-        /// <param name="input">参数 input</param>
-        /// <param name="output">参数 output</param>
-        public void FireStart(string input, string output)
+        private void S_Flow_Enter_Idle()
         {
-            _input = input;
-            _output = output;
-            if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "Fire", "Signal", "P_Start")); TraceAudit("fire", "P_Start", "fire"); }
-            P_Start = true;
+            _S_Flow_State = S_Flow_State.Idle;
         }
 
         /// <summary>
-        /// 每帧驱动——由主 Tick 调用
+        /// 进入 S_Flow.A——单值赋值（互斥由类型系统保证）
         /// </summary>
-        public void Tick()
+        private void S_Flow_Enter_A()
         {
-            _frame = _frame + 1;
-            // [T_Step1] 前置检查
+            _S_Flow_State = S_Flow_State.A;
+        }
+
+        /// <summary>
+        /// 进入 S_Flow.B——单值赋值（互斥由类型系统保证）
+        /// </summary>
+        private void S_Flow_Enter_B()
+        {
+            _S_Flow_State = S_Flow_State.B;
+        }
+
+        /// <summary>
+        /// 进入 S_Flow.C——单值赋值（互斥由类型系统保证）
+        /// </summary>
+        private void S_Flow_Enter_C()
+        {
+            _S_Flow_State = S_Flow_State.C;
+        }
+
+        /// <summary>
+        /// 进入 S_Seq.Step1——单值赋值（互斥由类型系统保证）
+        /// </summary>
+        private void S_Seq_Enter_Step1()
+        {
+            _S_Seq_State = S_Seq_State.Step1;
+        }
+
+        /// <summary>
+        /// 进入 S_Seq.Step2——单值赋值（互斥由类型系统保证）
+        /// </summary>
+        private void S_Seq_Enter_Step2()
+        {
+            _S_Seq_State = S_Seq_State.Step2;
+        }
+
+        /// <summary>
+        /// 进入 S_Seq.Step3——单值赋值（互斥由类型系统保证）
+        /// </summary>
+        private void S_Seq_Enter_Step3()
+        {
+            _S_Seq_State = S_Seq_State.Step3;
+        }
+
+        /// <summary>
+        /// 进入 S_Seq.Done——单值赋值（互斥由类型系统保证）
+        /// </summary>
+        private void S_Seq_Enter_Done()
+        {
+            _S_Seq_State = S_Seq_State.Done;
+        }
+
+        /// <summary>
+        /// S_Flow 是否处于 Idle
+        /// </summary>
+        public bool IsFlowIdle() { return _S_Flow_State == S_Flow_State.Idle; }
+
+        /// <summary>
+        /// S_Flow 是否处于 A
+        /// </summary>
+        public bool IsFlowA() { return _S_Flow_State == S_Flow_State.A; }
+
+        /// <summary>
+        /// S_Flow 是否处于 B
+        /// </summary>
+        public bool IsFlowB() { return _S_Flow_State == S_Flow_State.B; }
+
+        /// <summary>
+        /// S_Flow 是否处于 C
+        /// </summary>
+        public bool IsFlowC() { return _S_Flow_State == S_Flow_State.C; }
+
+        /// <summary>
+        /// S_Seq 是否处于 Step1
+        /// </summary>
+        public bool IsSeqStep1() { return _S_Seq_State == S_Seq_State.Step1; }
+
+        /// <summary>
+        /// S_Seq 是否处于 Step2
+        /// </summary>
+        public bool IsSeqStep2() { return _S_Seq_State == S_Seq_State.Step2; }
+
+        /// <summary>
+        /// S_Seq 是否处于 Step3
+        /// </summary>
+        public bool IsSeqStep3() { return _S_Seq_State == S_Seq_State.Step3; }
+
+        /// <summary>
+        /// S_Seq 是否处于 Done
+        /// </summary>
+        public bool IsSeqDone() { return _S_Seq_State == S_Seq_State.Done; }
+
+        /// <summary>
+        /// S_Flow 当前状态名
+        /// </summary>
+        public string GetFlowState()
+        {
+            switch (_S_Flow_State)
+            {
+                case S_Flow_State.Idle: return "Idle";
+                case S_Flow_State.A: return "A";
+                case S_Flow_State.B: return "B";
+                case S_Flow_State.C: return "C";
+                default: return "Unknown";
+            }
+        }
+
+        /// <summary>
+        /// S_Seq 当前状态名
+        /// </summary>
+        public string GetSeqState()
+        {
+            switch (_S_Seq_State)
+            {
+                case S_Seq_State.Step1: return "Step1";
+                case S_Seq_State.Step2: return "Step2";
+                case S_Seq_State.Step3: return "Step3";
+                case S_Seq_State.Done: return "Done";
+                default: return "Unknown";
+            }
+        }
+
+        /// <summary>
+        /// 帧驱动——测量采样 + 控制律守卫（声明顺序）
+        /// </summary>
+        /// <param name="frame">全局帧号</param>
+        public void Tick(int frame)
+        {
+            T_Step1_Execute(frame);
+            T_Step2_Execute(frame);
+            T_Step3_Execute(frame);
+        }
+
+        /// <summary>
+        /// T_Step1 控制律——条件 + 操作 → 结果
+        /// </summary>
+        /// <param name="frame">全局帧号</param>
+        private void T_Step1_Execute(int frame)
+        {
+            // [段1] 条件守卫——全部成立 → 触发
             if (P_Start && T_Step1_Cube.IsIdle())
             {
-                // 信号消费
-                if (_traceDataFlow) { _logs.Add(new MauDebug(_frame, "T_Step1", "Consume", "P_Start")); TraceAudit("consume", "P_Start", "consume"); }
+                // [段2] 信号消费——触发即清除
                 P_Start = false;
                 T_Step1_Cube.Start();
-                // 执行动作（积木调用）
-                bool ok = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
-                if (ok)
+                // [段4] 操作——顺序执行 + try-catch 隔离 + 自动审计
+                bool ok = false;
+                try
                 {
-                    // 正常后置注册
-                    P_Step1Done = true;
+                    AuditBrick("invoke", "T_Step1", "file.convert", frame);
+                    ok = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
+                    AuditBrick("ok", "T_Step1", "file.convert", frame);
                 }
-                else
+                catch (Exception ex)
                 {
-                    // 错误后置注册（互斥）
-                    P_Failed = true;
+                    ok = false;
+                    AuditBrick("error", "T_Step1", "file.convert", frame);
                 }
-
-                // 同步积木当帧完成
-                T_Step1_Cube.Complete();
+                // [段5] 结果转移——bool 驱动首项成功 / 次项失败 / 多路 switch 分发
+                string matched = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
+                switch (matched)
+                {
+                    case "output": S_Flow_Enter_A(); break;
+                    default: S_Seq_Enter_Step2(); break;
+                }
             }
-
-            // [T_Step1] 时限检查
-            if (T_Step1_Cube.IsRunning())
+            // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
+            else if (P_Start && T_Step1_Cube.IsRunning())
             {
                 T_Step1_Cube.TickFrame();
                 if (T_Step1_Cube.IsExpired())
                 {
-                    // 超时 → 错误后置
-                    P_Failed = true;
-                    T_Step1_Cube.Complete();
+                    S_Flow_Enter_Idle();
                 }
             }
+        }
 
-            // [T_Step2] 前置检查
-            if (P_Step1Done && T_Step2_Cube.IsIdle())
+        /// <summary>
+        /// T_Step2 控制律——条件 + 操作 → 结果
+        /// </summary>
+        /// <param name="frame">全局帧号</param>
+        private void T_Step2_Execute(int frame)
+        {
+            // [段1] 条件守卫——全部成立 → 触发
+            if (_S_Flow_State == S_Flow_State.A && T_Step2_Cube.IsIdle())
             {
                 T_Step2_Cube.Start();
-                // 执行动作（积木调用）
-                bool ok = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
-                if (ok)
+                // [段4] 操作——顺序执行 + try-catch 隔离 + 自动审计
+                bool ok = false;
+                try
                 {
-                    // 正常后置注册
-                    P_Step2Done = true;
+                    AuditBrick("invoke", "T_Step2", "file.convert", frame);
+                    ok = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
+                    AuditBrick("ok", "T_Step2", "file.convert", frame);
                 }
-                else
+                catch (Exception ex)
                 {
-                    // 错误后置注册（互斥）
-                    P_Failed = true;
+                    ok = false;
+                    AuditBrick("error", "T_Step2", "file.convert", frame);
                 }
-
-                // 同步积木当帧完成
-                T_Step2_Cube.Complete();
+                // [段5] 结果转移——bool 驱动首项成功 / 次项失败 / 多路 switch 分发
+                string matched = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
+                switch (matched)
+                {
+                    case "output": S_Flow_Enter_B(); break;
+                    default: S_Seq_Enter_Step3(); break;
+                }
             }
-
-            // [T_Step2] 时限检查
-            if (T_Step2_Cube.IsRunning())
+            // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
+            else if (_S_Flow_State == S_Flow_State.A && T_Step2_Cube.IsRunning())
             {
                 T_Step2_Cube.TickFrame();
                 if (T_Step2_Cube.IsExpired())
                 {
-                    // 超时 → 错误后置
-                    P_Failed = true;
-                    T_Step2_Cube.Complete();
+                    S_Flow_Enter_Idle();
                 }
             }
+        }
 
-            // [T_Step3] 前置检查
-            if (P_Step2Done && T_Step3_Cube.IsIdle())
+        /// <summary>
+        /// T_Step3 控制律——条件 + 操作 → 结果
+        /// </summary>
+        /// <param name="frame">全局帧号</param>
+        private void T_Step3_Execute(int frame)
+        {
+            // [段1] 条件守卫——全部成立 → 触发
+            if (_S_Flow_State == S_Flow_State.B && T_Step3_Cube.IsIdle())
             {
                 T_Step3_Cube.Start();
-                // 执行动作（积木调用）
-                bool ok = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
-                if (ok)
+                // [段4] 操作——顺序执行 + try-catch 隔离 + 自动审计
+                bool ok = false;
+                try
                 {
-                    // 正常后置注册
-                    P_Step3Done = true;
+                    AuditBrick("invoke", "T_Step3", "file.convert", frame);
+                    ok = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
+                    AuditBrick("ok", "T_Step3", "file.convert", frame);
                 }
-                else
+                catch (Exception ex)
                 {
-                    // 错误后置注册（互斥）
-                    P_Failed = true;
+                    ok = false;
+                    AuditBrick("error", "T_Step3", "file.convert", frame);
                 }
-
-                // 同步积木当帧完成
-                T_Step3_Cube.Complete();
+                // [段5] 结果转移——bool 驱动首项成功 / 次项失败 / 多路 switch 分发
+                string matched = Mau.Bricks.BRIK_FILE_001.Convert(_input, _output);
+                switch (matched)
+                {
+                    case "output": S_Flow_Enter_C(); break;
+                    default: S_Seq_Enter_Done(); break;
+                }
             }
-
-            // [T_Step3] 时限检查
-            if (T_Step3_Cube.IsRunning())
+            // [段7] τ 时限——Cube 步进 + 耗尽 → 次项（超时走失败分支）
+            else if (_S_Flow_State == S_Flow_State.B && T_Step3_Cube.IsRunning())
             {
                 T_Step3_Cube.TickFrame();
                 if (T_Step3_Cube.IsExpired())
                 {
-                    // 超时 → 错误后置
-                    P_Failed = true;
-                    T_Step3_Cube.Complete();
+                    S_Flow_Enter_Idle();
                 }
             }
         }
 
         /// <summary>
-        /// 获取运行时状态快照——全量截面
+        /// 外部投递——P_Start（带载荷）
         /// </summary>
-        /// <returns>当前帧状态</returns>
-        public RuntimeStatus GetStatus()
+        public void FireStart(string input, string output)
         {
-            PropSnapshot[] props = new PropSnapshot[5];
-            props[0] = new PropSnapshot("P_Start", "Signal", P_Start);
-            props[1] = new PropSnapshot("P_Step1Done", "Fact", P_Step1Done);
-            props[2] = new PropSnapshot("P_Step2Done", "Fact", P_Step2Done);
-            props[3] = new PropSnapshot("P_Step3Done", "Fact", P_Step3Done);
-            props[4] = new PropSnapshot("P_Failed", "Fact", P_Failed);
-            TransSnapshot[] trans = new TransSnapshot[3];
-            trans[0] = new TransSnapshot("T_Step1", T_Step1_Cube.State.ToString(), T_Step1_Cube.ElapsedFrames, T_Step1_Cube.LimitFrames);
-            trans[1] = new TransSnapshot("T_Step2", T_Step2_Cube.State.ToString(), T_Step2_Cube.ElapsedFrames, T_Step2_Cube.LimitFrames);
-            trans[2] = new TransSnapshot("T_Step3", T_Step3_Cube.State.ToString(), T_Step3_Cube.ElapsedFrames, T_Step3_Cube.LimitFrames);
-            ResSnapshot[] res = new ResSnapshot[0];
-            return new RuntimeStatus(_frame, props, trans, res);
+            _input = input;
+            _output = output;
+            P_Start = true;
         }
 
         /// <summary>
-        /// 获取全量调试日志
+        /// 积木调用审计——brick.invoke/ok/error（自动审计埋点，观测不改变系统）
         /// </summary>
-        /// <returns>日志数组，时间顺序</returns>
-        public MauDebug[] GetLogs()
-        {
-            return _logs.GetAll();
-        }
-
-        /// <summary>
-        /// 开启数据流追踪——输出端口赋值/信号投递消费记录 MauDebug（D2 调试基建）
-        /// </summary>
-        /// <param name="enabled">true=记录数据流日志</param>
-        public void SetTraceDataFlow(bool enabled)
-        {
-            _traceDataFlow = enabled;
-        }
-
-        /// <summary>
-        /// trace 审计写入——数据流追踪事件可选写审计（A.3：AuditStore.Default 存在时记录，L3 级不落盘）
-        /// </summary>
-        /// <param name="kind">trace 类别（fire/consume/set）</param>
-        /// <param name="name">命题或变迁名</param>
-        /// <param name="result">结果文本</param>
-        private void TraceAudit(string kind, string name, string result)
+        /// <param name="stage">阶段——invoke/ok/error</param>
+        /// <param name="law">控制律名</param>
+        /// <param name="brick">积木名</param>
+        /// <param name="frame">全局帧号</param>
+        private void AuditBrick(string stage, string law, string brick, int frame)
         {
             if (AuditStore.Default != null)
             {
-                AuditStore.Default.Record("Flow", "trace." + kind, -1, new AuditProp[] {
+                AuditStore.Default.Record("Flow", "brick." + stage, frame, new AuditProp[] {
                     new AuditProp("flow", this.GetType().Name),
-                    new AuditProp("name", name),
-                    new AuditProp("result", result),
-                    new AuditProp("flow_frame", _frame.ToString())
+                    new AuditProp("law", law),
+                    new AuditProp("brick", brick)
                 }, false);
             }
         }
 
-        // 组合 FL_Main:  [experimental — documentation-only，执行语义未实现]
-        //   序列: T_Step1, T_Step2, T_Step3
-        //   重试: 2
-        //   汇合: P_Step3Done / P_Failed
-
-        /// <summary>
-        /// 查询结果：Step1Done
-        /// </summary>
-        /// <returns>Step1Done成立</returns>
-        public bool IsStep1Done()
-        {
-            return P_Step1Done;
-        }
-
-        /// <summary>
-        /// 重置结果：Step1Done
-        /// </summary>
-        public void ResetStep1Done()
-        {
-            P_Step1Done = false;
-        }
-
-        /// <summary>
-        /// 查询结果：Step2Done
-        /// </summary>
-        /// <returns>Step2Done成立</returns>
-        public bool IsStep2Done()
-        {
-            return P_Step2Done;
-        }
-
-        /// <summary>
-        /// 重置结果：Step2Done
-        /// </summary>
-        public void ResetStep2Done()
-        {
-            P_Step2Done = false;
-        }
-
-        /// <summary>
-        /// 查询结果：Step3Done
-        /// </summary>
-        /// <returns>Step3Done成立</returns>
-        public bool IsStep3Done()
-        {
-            return P_Step3Done;
-        }
-
-        /// <summary>
-        /// 重置结果：Step3Done
-        /// </summary>
-        public void ResetStep3Done()
-        {
-            P_Step3Done = false;
-        }
-
-        /// <summary>
-        /// 查询结果：Failed
-        /// </summary>
-        /// <returns>Failed成立</returns>
-        public bool IsFailed()
-        {
-            return P_Failed;
-        }
-
-        /// <summary>
-        /// 重置结果：Failed
-        /// </summary>
-        public void ResetFailed()
-        {
-            P_Failed = false;
-        }
-
     }
 }
-// #MAU_CHECKSUM:SHA256:3A7A3DB05B128293F40F9880E844B7560826F3CD140D2138ABA597E6A6DA95D7
+// #MAU_CHECKSUM:SHA256:2DBDF9C7213FA3B46A320E3775FA6EF51694DB9D00FD3CAD109354A0721EF0AB

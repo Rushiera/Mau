@@ -19,9 +19,9 @@ namespace Mau.Translator.Tests
 
             // 枚举 + 单值字段
             Assert.Contains("private enum S_Talk_State { Idle, Building, Thinking, Done, Failed }", code);
-            Assert.Contains("private S_Talk_State S_Talk_State;", code);
+            Assert.Contains("private S_Talk_State _S_Talk_State;", code);
             // Enter 族——单值赋值
-            Assert.Contains("S_Talk_State = S_Talk_State.Idle;", code);
+            Assert.Contains("_S_Talk_State = S_Talk_State.Idle;", code);
             Assert.Contains("private void S_Talk_Enter_Idle()", code);
             // 构造函数初始置位
             Assert.Contains("S_Talk_Enter_Idle();", code);
@@ -48,9 +48,9 @@ namespace Mau.Translator.Tests
             // 父进 Active → 子机初始
             Assert.Contains("S_Active_Enter_Thinking();", code);
             // 父进其他状态 → 子机 None
-            Assert.Contains("S_Active_State = S_Active_State.None;", code);
+            Assert.Contains("_S_Active_State = S_Active_State.None;", code);
             // GetStatePath
-            Assert.Contains("return \"Active.\" + S_Active_State.ToString();", code);
+            Assert.Contains("return \"Active.\" + _S_Active_State.ToString();", code);
         }
 
         /// <summary>
@@ -62,7 +62,7 @@ namespace Mau.Translator.Tests
             string code = Generate(Source());
 
             // 守卫——状态断言 + 资源（原子括号包裹）
-            Assert.Contains("(S_Talk_State == S_Talk_State.Building) && (R_Slot_Count > 0)", code);
+            Assert.Contains("(_S_Talk_State == S_Talk_State.Building) && (R_Slot_Count > 0)", code);
             // 信号消费——P_A 置 false
             Assert.Contains("P_A = false;", code);
             // 资源获取/释放
@@ -81,7 +81,7 @@ namespace Mau.Translator.Tests
         {
             string code = Generate(Source());
 
-            Assert.Contains("private readonly Cube T_Start_Cube = new Cube();", code);
+            Assert.Contains("private readonly Cube T_Start_Cube = new Cube(10);", code);
             Assert.Contains("T_Start_Cube.Start();", code);
             Assert.Contains("T_Start_Cube.TickFrame();", code);
             Assert.Contains("T_Start_Cube.IsExpired()", code);
@@ -99,7 +99,7 @@ namespace Mau.Translator.Tests
                 "§'S_Ui' = { 'Idle', 'Open', 'Toggle' }\n" +
                 "§'P_Cmd'\n" +
                 "§⇐ 'P_Cmd'\n" +
-                "§'T_Route'[τ=5]: 'P_Cmd' + 'cmd.match'['key', 'A', 'B'] → 'S_Ui' = 'Open' | 'S_Ui' = 'Toggle' | 'S_Ui' = 'Idle'\n");
+                "§'T_Route'[τ=5]: 'P_Cmd' + 'cmd.active_key'['key', 'A', 'B'] → 'S_Ui' = 'Open' | 'S_Ui' = 'Toggle' | 'S_Ui' = 'Idle'\n");
 
             // switch 分发（多路——名称返回积木）
             Assert.Contains("switch (matched)", code);
@@ -168,7 +168,7 @@ namespace Mau.Translator.Tests
                 "§'R_Slot': 1\n" +
                 "§⇐ 'P_A'\n" +
                 "§'M_Pump'[ω=1]: 'P_Ready' := 'llm.read_chunk'['requestId']\n" +
-                "§'T_Start'[τ=10]: 'S_Talk' = 'Building' ∧ 'R_Slot' ∧ 'P_A' + 'llm.go'['x'] → 'S_Talk' = 'Thinking' | 'S_Talk' = 'Failed'\n";
+                "§'T_Start'[τ=10]: 'S_Talk' = 'Building' ∧ 'R_Slot' ∧ 'P_A' + 'llm.chat'['x'] → 'S_Talk' = 'Thinking' | 'S_Talk' = 'Failed'\n";
         }
 
         /// <summary>

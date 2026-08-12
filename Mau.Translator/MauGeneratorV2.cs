@@ -16,7 +16,7 @@ namespace Mau.Translator
         /// <param name="flowName">流程名——PascalCase，生成类名</param>
         /// <returns>生成物源码</returns>
         public static string Generate(MauDocV2 doc, string flowName)
-        {
+{
             StringBuilder sb = new StringBuilder();
             string className = SanitizeClassName(flowName);
 
@@ -46,7 +46,7 @@ namespace Mau.Translator
                 sb.Append("\n");
             }
 
-            // [段3] 状态机——枚举 + 字段
+            // [段3] 状态机——枚举 + 字段（字段 _ 前缀——类型与字段同名 C# 不允许）
             for (int i = 0; i < doc.Machines.Count; i++)
             {
                 MachineV2 m = doc.Machines[i];
@@ -66,7 +66,7 @@ namespace Mau.Translator
                     // 父机不需要 None（自身枚举）；子机 None 在子机声明处
                 }
                 sb.Append(" }\n");
-                sb.Append("        private " + m.Name + "_State " + m.Name + "_State;\n");
+                sb.Append("        private " + m.Name + "_State _" + m.Name + "_State;\n");
                 sb.Append("\n");
             }
             // 子机枚举——None 哨兵
@@ -83,7 +83,7 @@ namespace Mau.Translator
                         sb.Append(SanitizeName(m.States[s]));
                     }
                     sb.Append(" }\n");
-                    sb.Append("        private " + m.Name + "_State " + m.Name + "_State;\n");
+                    sb.Append("        private " + m.Name + "_State _" + m.Name + "_State;\n");
                     sb.Append("\n");
                 }
             }
@@ -110,6 +110,9 @@ namespace Mau.Translator
                 sb.Append("\n");
             }
 
+            // [段5b] 积木输出端口字段——契约输出端口 → _字段（生成物可编译前提）
+            GenerateOutputFields(sb, doc);
+
             // [段6] 测量帧计数 + 控制律 Cube
             if (doc.Measures.Count > 0)
             {
@@ -127,7 +130,7 @@ namespace Mau.Translator
                 {
                     if (doc.Laws[i].Attrs.Timeout != null)
                     {
-                        sb.Append("        private readonly Cube " + SanitizeName(doc.Laws[i].Name) + "_Cube = new Cube();\n");
+                        sb.Append("        private readonly Cube " + SanitizeName(doc.Laws[i].Name) + "_Cube = new Cube(" + doc.Laws[i].Attrs.Timeout + ");\n");
                     }
                 }
                 sb.Append("\n");
@@ -162,18 +165,37 @@ namespace Mau.Translator
             // [段12] 边界 Fire
             GenerateBoundaries(sb, doc);
 
+            // [段13] 积木审计辅助——brick.invoke/ok/error 埋点（T13：观测不改变系统）
+            sb.Append("        /// <summary>\n");
+            sb.Append("        /// 积木调用审计——brick.invoke/ok/error（自动审计埋点，观测不改变系统）\n");
+            sb.Append("        /// </summary>\n");
+            sb.Append("        /// <param name=\"stage\">阶段——invoke/ok/error</param>\n");
+            sb.Append("        /// <param name=\"law\">控制律名</param>\n");
+            sb.Append("        /// <param name=\"brick\">积木名</param>\n");
+            sb.Append("        /// <param name=\"frame\">全局帧号</param>\n");
+            sb.Append("        private void AuditBrick(string stage, string law, string brick, int frame)\n");
+            sb.Append("        {\n");
+            sb.Append("            if (AuditStore.Default != null)\n");
+            sb.Append("            {\n");
+            sb.Append("                AuditStore.Default.Record(\"Flow\", \"brick.\" + stage, frame, new AuditProp[] {\n");
+            sb.Append("                    new AuditProp(\"flow\", this.GetType().Name),\n");
+            sb.Append("                    new AuditProp(\"law\", law),\n");
+            sb.Append("                    new AuditProp(\"brick\", brick)\n");
+            sb.Append("                }, false);\n");
+            sb.Append("            }\n");
+            sb.Append("        }\n");
+            sb.Append("\n");
+
             sb.Append("    }\n");
             sb.Append("}\n");
             return sb.ToString();
-        }
-
-        /// <summary>
+        }        /// <summary>
         /// 状态机生成——Enter 族 + IsX + GetState/GetStatePath
         /// </summary>
         /// <param name="sb">输出</param>
         /// <param name="doc">文档</param>
         private static void GenerateMachines(StringBuilder sb, MauDocV2 doc)
-        {
+{
             // Enter 族
             for (int i = 0; i < doc.Machines.Count; i++)
             {
@@ -193,13 +215,13 @@ namespace Mau.Translator
                         MachineBindV2? myBind = FindBindByChild(doc, m.Name);
                         if (myBind != null)
                         {
-                            sb.Append("            if (" + SanitizeName(myBind.ParentName) + "_State != " + SanitizeName(myBind.ParentName) + "_State." + SanitizeName(myBind.ParentState) + ")\n");
+                            sb.Append("            if (_" + SanitizeName(myBind.ParentName) + "_State != " + SanitizeName(myBind.ParentName) + "_State." + SanitizeName(myBind.ParentState) + ")\n");
                             sb.Append("            {\n");
-                            sb.Append("                " + SanitizeName(myBind.ParentName) + "_State = " + SanitizeName(myBind.ParentName) + "_State." + SanitizeName(myBind.ParentState) + ";\n");
+                            sb.Append("                _" + SanitizeName(myBind.ParentName) + "_State = " + SanitizeName(myBind.ParentName) + "_State." + SanitizeName(myBind.ParentState) + ";\n");
                             sb.Append("            }\n");
                         }
                     }
-                    sb.Append("            " + m.Name + "_State = " + m.Name + "_State." + stateName + ";\n");
+                    sb.Append("            _" + m.Name + "_State = " + m.Name + "_State." + stateName + ";\n");
                     if (!isChild)
                     {
                         // 父机——嵌套钩子：进入绑定的父状态 → 子机初始；进入其他状态 → 子机 None
@@ -211,7 +233,7 @@ namespace Mau.Translator
                         else if (HasChildBind(doc, m.Name))
                         {
                             string child = GetChildName(doc, m.Name);
-                            sb.Append("            " + child + "_State = " + child + "_State.None;\n");
+                            sb.Append("            _" + child + "_State = " + child + "_State.None;\n");
                         }
                     }
                     sb.Append("        }\n");
@@ -229,7 +251,7 @@ namespace Mau.Translator
                     sb.Append("        /// <summary>\n");
                     sb.Append("        /// " + m.Name + " 是否处于 " + m.States[s] + "\n");
                     sb.Append("        /// </summary>\n");
-                    sb.Append("        public bool Is" + m.Name.Replace("S_", "") + stateName + "() { return " + m.Name + "_State == " + m.Name + "_State." + stateName + "; }\n");
+                    sb.Append("        public bool Is" + m.Name.Replace("S_", "") + stateName + "() { return _" + m.Name + "_State == " + m.Name + "_State." + stateName + "; }\n");
                     sb.Append("\n");
                 }
             }
@@ -248,7 +270,7 @@ namespace Mau.Translator
                 sb.Append("        /// </summary>\n");
                 sb.Append("        public string Get" + m.Name.Replace("S_", "") + "State()\n");
                 sb.Append("        {\n");
-                sb.Append("            switch (" + m.Name + "_State)\n");
+                sb.Append("            switch (_" + m.Name + "_State)\n");
                 sb.Append("            {\n");
                 for (int s = 0; s < m.States.Count; s++)
                 {
@@ -275,21 +297,20 @@ namespace Mau.Translator
                 sb.Append("        /// </summary>\n");
                 sb.Append("        public string Get" + m.Name.Replace("S_", "") + "StatePath()\n");
                 sb.Append("        {\n");
-                sb.Append("            switch (" + m.Name + "_State)\n");
+                sb.Append("            switch (_" + m.Name + "_State)\n");
                 sb.Append("            {\n");
                 for (int b = 0; b < m.Binds.Count; b++)
                 {
                     MachineBindV2 bind = m.Binds[b];
                     string child = SanitizeName(bind.ChildName);
-                    sb.Append("                case " + stateEnum + "." + SanitizeName(bind.ParentState) + ": return \"" + bind.ParentState + ".\" + " + child + "_State.ToString();\n");
+                    sb.Append("                case " + stateEnum + "." + SanitizeName(bind.ParentState) + ": return \"" + bind.ParentState + ".\" + _" + child + "_State.ToString();\n");
                 }
-                sb.Append("                default: return " + m.Name + "_State.ToString();\n");
+                sb.Append("                default: return _" + m.Name + "_State.ToString();\n");
                 sb.Append("            }\n");
                 sb.Append("        }\n");
                 sb.Append("\n");
             }
         }
-
         /// <summary>
         /// 测量生成——采样方法 + 帧门控
         /// </summary>
@@ -357,7 +378,7 @@ namespace Mau.Translator
         /// <param name="sb">输出</param>
         /// <param name="doc">文档</param>
         private static void GenerateLaws(StringBuilder sb, MauDocV2 doc)
-        {
+{
             for (int i = 0; i < doc.Laws.Count; i++)
             {
                 LawV2 law = doc.Laws[i];
@@ -401,25 +422,25 @@ namespace Mau.Translator
                 {
                     sb.Append("                " + name + "_Cube.Start();\n");
                 }
-                // [段4] 操作
+                // [段4] 操作——自动审计埋点（brick.invoke/ok/error，T13）
                 if (law.Ops.Count > 0)
                 {
-                    sb.Append("                // [段4] 操作——顺序执行 + try-catch 隔离\n");
+                    sb.Append("                // [段4] 操作——顺序执行 + try-catch 隔离 + 自动审计\n");
                     sb.Append("                bool ok = false;\n");
                     sb.Append("                try\n");
                     sb.Append("                {\n");
                     for (int o = 0; o < law.Ops.Count; o++)
                     {
                         BrickCallV2 call = law.Ops[o];
-                        sb.Append("                    // [AUDIT] brick.invoke | " + law.Name + " | " + call.BrickName + "\n");
+                        sb.Append("                    AuditBrick(\"invoke\", \"" + law.Name + "\", \"" + call.BrickName + "\", frame);\n");
                         sb.Append("                    ok = " + BuildBrickCall(call) + ";\n");
-                        sb.Append("                    // [AUDIT] brick.ok | " + law.Name + " | " + call.BrickName + "\n");
+                        sb.Append("                    AuditBrick(\"ok\", \"" + law.Name + "\", \"" + call.BrickName + "\", frame);\n");
                     }
                     sb.Append("                }\n");
                     sb.Append("                catch (Exception ex)\n");
                     sb.Append("                {\n");
                     sb.Append("                    ok = false;\n");
-                    sb.Append("                    // [AUDIT] brick.error | " + law.Name + " | \" + ex.Message + \"\n");
+                    sb.Append("                    AuditBrick(\"error\", \"" + law.Name + "\", \"" + (law.Ops.Count > 0 ? law.Ops[0].BrickName : "") + "\", frame);\n");
                     sb.Append("                }\n");
                 }
                 else
@@ -427,10 +448,10 @@ namespace Mau.Translator
                     sb.Append("                // [段4] 操作——无（纯转移控制律）\n");
                     sb.Append("                bool ok = true;\n");
                 }
-                // [段5] 日志标记
+                // [段5] 日志标记（[!] 属性——T14，零语义影响）
                 if (law.Attrs.IsLogging)
                 {
-                    sb.Append("                // [LOG] LAW | " + law.Name + " | frame=\" + frame + \" | 触发\n");
+                    sb.Append("                if (LogStore.AllLog != null) { LogStore.Add(\"LAW\", 0, \"" + law.Name + " | 触发 | frame=\" + frame, \"\"); }\n");
                 }
                 // [段6] 结果转移
                 sb.Append("                // [段5] 结果转移——bool 驱动首项成功 / 次项失败 / 多路 switch 分发\n");
@@ -445,7 +466,7 @@ namespace Mau.Translator
                     sb.Append("                    " + BuildResultStatement(law.Results[0]) + "\n");
                     if (law.Attrs.IsLogging)
                     {
-                        sb.Append("                    // [LOG] LAW | " + law.Name + " | frame=\" + frame + \" | 成功\n");
+                        sb.Append("                    if (LogStore.AllLog != null) { LogStore.Add(\"LAW\", 0, \"" + law.Name + " | 成功 | frame=\" + frame, \"\"); }\n");
                     }
                     sb.Append("                }\n");
                     sb.Append("                else\n");
@@ -453,7 +474,7 @@ namespace Mau.Translator
                     sb.Append("                    " + BuildResultStatement(law.Results[1]) + "\n");
                     if (law.Attrs.IsLogging)
                     {
-                        sb.Append("                    // [LOG] LAW | " + law.Name + " | frame=\" + frame + \" | 失败\n");
+                        sb.Append("                    if (LogStore.AllLog != null) { LogStore.Add(\"LAW\", 0, \"" + law.Name + " | 失败 | frame=\" + frame, \"\"); }\n");
                     }
                     sb.Append("                }\n");
                 }
@@ -493,7 +514,7 @@ namespace Mau.Translator
                     sb.Append("                {\n");
                     if (law.Attrs.IsLogging)
                     {
-                        sb.Append("                    // [LOG] LAW | " + law.Name + " | frame=\" + frame + \" | 超时\n");
+                        sb.Append("                    if (LogStore.AllLog != null) { LogStore.Add(\"LAW\", 0, \"" + law.Name + " | 超时 | frame=\" + frame, \"\"); }\n");
                     }
                     if (law.Results.Count >= 2)
                     {
@@ -507,7 +528,6 @@ namespace Mau.Translator
                 sb.Append("\n");
             }
         }
-
         /// <summary>
         /// 边界生成——Fire 方法 + OA 端口占位
         /// </summary>
@@ -603,7 +623,7 @@ namespace Mau.Translator
         /// <param name="cond">条件节点</param>
         /// <returns>守卫表达式</returns>
         private static string BuildCondGuard(CondV2 cond)
-        {
+{
             if (cond.Kind == CondKindV2.And)
             {
                 string expr = "";
@@ -632,7 +652,7 @@ namespace Mau.Translator
             }
             if (cond.Kind == CondKindV2.StateEquals)
             {
-                return SanitizeName(cond.MachineName!) + "_State == " + SanitizeName(cond.MachineName!) + "_State." + SanitizeName(cond.StateName!);
+                return "_" + SanitizeName(cond.MachineName!) + "_State == " + SanitizeName(cond.MachineName!) + "_State." + SanitizeName(cond.StateName!);
             }
             if (cond.Kind == CondKindV2.PropRef)
             {
@@ -644,7 +664,6 @@ namespace Mau.Translator
             }
             return "true";
         }
-
         /// <summary>
         /// 条件中的信号命题收集——触发即消费
         /// </summary>
@@ -738,17 +757,44 @@ namespace Mau.Translator
             }
             return SanitizeName(res.PropName!) + " = true;";
         }
+/// <summary>
+/// 内嵌实现重写——完整限定名 Mau.Bricks.XxxBrick.Yyy → Mau.Bricks.BRIK_ID.Yyy（BRIK-ID 类名）
+/// </summary>
+/// <param name = "implementation">积木契约实现签名</param>
+/// <param name = "brickId">BRIK-ID</param>
+/// <returns>重写后的调用签名</returns>
+private static string RewriteImplementation(string implementation, string brickId)
+{
+    int lastDot = implementation.LastIndexOf('.');
+    if (lastDot < 0)
+    {
+        return implementation;
+    }
 
+    string method = implementation.Substring(lastDot + 1);
+    return "Mau.Bricks." + BrickIndex.IdClassName(brickId) + "." + method;
+}
         /// <summary>
         /// 积木调用 → C# 调用表达式（Bricks 静态类占位——M7 按积木契约替换）
         /// </summary>
         /// <param name="call">积木调用</param>
         /// <returns>C# 表达式</returns>
         private static string BuildBrickCall(BrickCallV2 call)
-        {
+{
+            // 积木契约查询——索引已加载时生成真实调用（完整限定名 + 输出端口 out）；未加载回退占位（纯结构生成）
+            BrickIndexEntry? entry = null;
+            bool hasContract = BrickIndex.TryGet(call.BrickName, out entry) && entry != null && entry.Contract != null;
             StringBuilder sb = new StringBuilder();
-            sb.Append("Bricks.");
-            sb.Append(ToPascal(call.BrickName));
+            if (hasContract)
+            {
+                // 内嵌重命名——完整限定名 Mau.Bricks.XxxBrick.Yyy → Mau.Bricks.BRIK_ID.Yyy（BRIK-ID 类名，BRIKGROUP 内嵌段提供）
+                sb.Append(RewriteImplementation(entry!.Contract!.Implementation, entry.Id));
+            }
+            else
+            {
+                sb.Append("Bricks.");
+                sb.Append(ToPascal(call.BrickName));
+            }
             sb.Append("(");
             for (int p = 0; p < call.Params.Count; p++)
             {
@@ -758,20 +804,32 @@ namespace Mau.Translator
                 }
                 sb.Append(BuildParamExpr(call.Params[p]));
             }
+            // 输出端口——out 传递（与输入参数拼接）
+            if (hasContract)
+            {
+                for (int o = 0; o < entry!.Contract!.Outputs.Count; o++)
+                {
+                    if (call.Params.Count > 0 || o > 0)
+                    {
+                        sb.Append(", ");
+                    }
+                    sb.Append("out _");
+                    sb.Append(SanitizeName(entry.Contract.Outputs[o].Name));
+                }
+            }
             sb.Append(")");
             return sb.ToString();
-        }
-
-        /// <summary>
+        }        /// <summary>
         /// 参数项 → C# 表达式
         /// </summary>
         /// <param name="param">参数项</param>
         /// <returns>C# 表达式</returns>
         private static string BuildParamExpr(MauParamV2 param)
-        {
+{
             if (param.Kind == MauParamKindV2.Ref)
             {
-                return SanitizeName(param.Text);
+                // 注入字段引用——_前缀（生成物注入字段形态）
+                return "_" + SanitizeName(param.Text);
             }
             if (param.Kind == MauParamKindV2.Number)
             {
@@ -798,7 +856,6 @@ namespace Mau.Translator
             }
             return "\"\"";
         }
-
         /// <summary>
         /// 字符串转义——C# 字面量
         /// </summary>
@@ -1061,5 +1118,141 @@ namespace Mau.Translator
             }
             return sb.ToString();
         }
+/// <summary>
+/// Type 到 C# 类型名
+/// </summary>
+/// <param name = "type">类型</param>
+/// <returns>类型名</returns>
+private static string TypeName(Type type)
+{
+    if (type.IsArray)
+    {
+        Type element = type.GetElementType()!;
+        return TypeName(element) + "[]";
     }
+
+    if (type == typeof(string))
+    {
+        return "string";
+    }
+
+    if (type == typeof(bool))
+    {
+        return "bool";
+    }
+
+    if (type == typeof(int))
+    {
+        return "int";
+    }
+
+    if (type == typeof(long))
+    {
+        return "long";
+    }
+
+    if (type == typeof(double))
+    {
+        return "double";
+    }
+
+    if (type.IsGenericType)
+    {
+        string baseName = type.Name;
+        int tick = baseName.IndexOf('`');
+        if (tick >= 0)
+        {
+            baseName = baseName.Substring(0, tick);
+        }
+
+        string fullBase = (type.Namespace ?? "").Length > 0 ? ((type.Namespace ?? "") + "." + baseName) : baseName;
+        StringBuilder sb = new StringBuilder();
+        sb.Append(fullBase);
+        sb.Append("<");
+        Type[] args = type.GetGenericArguments();
+        for (int i = 0; i < args.Length; i = i + 1)
+        {
+            if (i > 0)
+            {
+                sb.Append(", ");
+            }
+
+            sb.Append(TypeName(args[i]));
+        }
+
+        sb.Append(">");
+        return sb.ToString();
+    }
+
+    string full = (type.Namespace ?? "").Length > 0 ? ((type.Namespace ?? "") + "." + type.Name) : type.Name;
+    return full;
+}    /// <summary>
+/// 输出端口字段生成——积木契约输出端口 → _字段声明（生成物可编译前提）
+/// </summary>
+/// <param name = "sb">输出</param>
+/// <param name = "doc">文档</param>
+private static void GenerateOutputFields(StringBuilder sb, MauDocV2 doc)
+{
+            // [段1] 收集全部积木调用——控制律操作 + 测量采样
+            List<BrickCallV2> calls = new List<BrickCallV2>();
+            for (int i = 0; i < doc.Laws.Count; i++)
+            {
+                for (int o = 0; o < doc.Laws[i].Ops.Count; o++)
+                {
+                    calls.Add(doc.Laws[i].Ops[o]);
+                }
+            }
+            for (int m = 0; m < doc.Measures.Count; m++)
+            {
+                if (doc.Measures[m].Sample != null)
+                {
+                    calls.Add(doc.Measures[m].Sample);
+                }
+            }
+            // [段2] 去重声明——输出端口名唯一
+            Dictionary<string, string> fields = new Dictionary<string, string>(StringComparer.Ordinal);
+            for (int c = 0; c < calls.Count; c++)
+            {
+                BrickIndexEntry entry;
+                if (!BrickIndex.TryGet(calls[c].BrickName, out entry) || entry.Contract == null)
+                {
+                    continue;
+                }
+                for (int o = 0; o < entry.Contract.Outputs.Count; o++)
+                {
+                    string fieldName = "_" + SanitizeName(entry.Contract.Outputs[o].Name);
+                    if (!fields.ContainsKey(fieldName))
+                    {
+                        fields[fieldName] = TypeName(entry.Contract.Outputs[o].Type);
+                    }
+                }
+            }
+            // [段3] 边界 Fire 载荷参数——_字段声明（⇐ 'P_X'['param'] → Fire 方法写入 _param）
+            for (int b = 0; b < doc.Boundaries.Count; b++)
+            {
+                BoundaryV2 boundary = doc.Boundaries[b];
+                if (boundary.Dir != BoundaryDirV2.In || boundary.MappedName != null || boundary.Params.Count == 0)
+                {
+                    continue;
+                }
+                for (int p = 0; p < boundary.Params.Count; p++)
+                {
+                    string fieldName = "_" + SanitizeName(boundary.Params[p].Text);
+                    if (!fields.ContainsKey(fieldName))
+                    {
+                        fields[fieldName] = "string";
+                    }
+                }
+            }
+            if (fields.Count == 0)
+            {
+                return;
+            }
+            sb.Append("        // [积木输出端口]\n");
+            foreach (KeyValuePair<string, string> kv in fields)
+            {
+                sb.Append("        private " + kv.Value + " " + kv.Key + " = default;\n");
+            }
+            sb.Append("\n");
+        }}
 }

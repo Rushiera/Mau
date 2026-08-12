@@ -1,36 +1,11 @@
-﻿// sequence_flow.mau —— 序列组合流程（三步序列 + 重试 + 汇合验证）
-Mau 0.1
-基座: Mau.Runtime/v0.1
-
-命题:
-  P_Start   信号
-  P_Step1Done  事实
-  P_Step2Done  事实
-  P_Step3Done  事实
-  P_Failed  事实
-
-变迁 T_Step1:
-  前置: P_Start
-  动作: file.convert
-  参数: input, output
-  时限: 100帧
-  后置: P_Step1Done / P_Failed
-
-变迁 T_Step2:
-  前置: P_Step1Done
-  动作: file.convert
-  参数: input, output
-  时限: 100帧
-  后置: P_Step2Done / P_Failed
-
-变迁 T_Step3:
-  前置: P_Step2Done
-  动作: file.convert
-  参数: input, output
-  时限: 100帧
-  后置: P_Step3Done / P_Failed
-
-组合 FL_Main:
-  序列: T_Step1, T_Step2, T_Step3
-  重试: 2
-  汇合: P_Step3Done / P_Failed
+// sequence_flow.mau —— 序列组合流程（三步序列 SEQ 语法糖——编译期展开为隐式状态机；Mau v2.0 语法）
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§'S_Flow' = { 'Idle', 'A', 'B', 'C' }
+§$'input', 'output'
+§'P_Start'
+§⇐ 'P_Start'['input', 'output']
+§'T_Step1'[τ=100]: 'P_Start' + 'file.convert'['input', 'output'] → 'S_Flow' = 'A' | 'S_Flow' = 'Idle'
+§'T_Step2'[τ=100]: 'S_Flow' = 'A' + 'file.convert'['input', 'output'] → 'S_Flow' = 'B' | 'S_Flow' = 'Idle'
+§'T_Step3'[τ=100]: 'S_Flow' = 'B' + 'file.convert'['input', 'output'] → 'S_Flow' = 'C' | 'S_Flow' = 'Idle'
+§'SEQ'['T_Step1' → 'T_Step2' → 'T_Step3']
