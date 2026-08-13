@@ -5,7 +5,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>Mau.Cli</RootNamespace>
     <AssemblyName>Mau</AssemblyName>
-    <Version>2.1.1</Version>
+    <Version>2.1.2</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
@@ -14,8 +14,7 @@
     <ProjectReference Include="..\Mau.Contracts\Mau.Contracts.csproj" />
     <ProjectReference Include="..\Mau.Translator\Mau.Translator.csproj" />
     <ProjectReference Include="..\Mau.Runtime\Mau.Runtime.csproj" />
-    <ProjectReference Include="..\Mau.Observer\Mau.Observer.csproj" />
-    <ProjectReference Include="..\Mau.Serve\Mau.Serve.csproj" />
+    <ProjectReference Include="..\Mau.Development\Mau.Development.csproj" />
   </ItemGroup>
 
   <ItemGroup>

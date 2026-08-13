@@ -118,7 +118,6 @@ public static int Execute(string[] args)
             bool onlySyntax = false;
             bool onlyBricks = false;
             bool selftest = false;
-            bool analyze = false;
             string? productBricks = null;
             for (int i = 0; i < args.Length; i = i + 1)
             {
@@ -147,10 +146,6 @@ public static int Execute(string[] args)
                 {
                     selftest = true;
                 }
-                else if (args[i] == "--analyze")
-                {
-                    analyze = true;
-                }
             }
 
             // [段2] 定位谱目录——selftest 模式不要求 Mau.sln（发布包随行资源自检）
@@ -162,11 +157,7 @@ public static int Execute(string[] args)
                     Console.WriteLine("FAIL: 未找到 Mau.sln——请从仓库内运行");
                     return 2;
                 }
-                // --analyze 独立段——分析能力路由（V2.0.7 扩展稳定性/可达性/扰动覆盖/可观性）
-                if (analyze)
-                {
-                    return RunAnalyze(root);
-                }
+                // --analyze 独立段已退役（2026-08-13 A 类清理——T7 有真实内容再立）
                 string checksDir = Path.Combine(root, "Mau.Snapshots", "checks");
                 string syntaxDir = Path.Combine(checksDir, "syntax");
                 string negativeDir = Path.Combine(checksDir, "negative");
@@ -783,47 +774,6 @@ private static void RunCorpusTemplates(string root)
 
         sCorpusPass = sCorpusPass + 1;
     }
-}/// <summary>
-/// --analyze 分析段——对 cases 全谱跑 v2 编译，聚合分析报告（V2.0.7 扩展：稳定性/可达性/扰动覆盖/可观性）
-/// </summary>
-/// <param name = "root">仓库根</param>
-/// <returns>退出码</returns>
-private static int RunAnalyze(string root)
-{
-    string casesDir = Path.Combine(root, "Mau.Snapshots", "cases");
-    if (!Directory.Exists(casesDir))
-    {
-        Console.WriteLine("FAIL: cases 目录不存在——" + casesDir);
-        return 2;
-    }
-
-    string[] files = Directory.GetFiles(casesDir, "*.mau", SearchOption.TopDirectoryOnly);
-    Array.Sort(files, StringComparer.OrdinalIgnoreCase);
-    int total = 0;
-    int ok = 0;
-    Console.WriteLine();
-    Console.WriteLine("=== MAU_ANALYZE（关键路径——V2.0.7 扩展稳定性/可达性/扰动覆盖/可观性） ===");
-    for (int i = 0; i < files.Length; i++)
-    {
-        string path = files[i];
-        string fileName = Path.GetFileName(path);
-        string flowName = Program.FlowNameFromPath(Path.GetFileNameWithoutExtension(path));
-        string source = File.ReadAllText(path);
-        CompileResultV2 result = MauCompilerV2.Compile(source, flowName);
-        total = total + 1;
-        if (!result.Success)
-        {
-            Console.WriteLine("  ❌ " + fileName + ": " + FirstDiagnosticV2(result));
-            continue;
-        }
-
-        ok = ok + 1;
-        string keyPath = result.KeyPathReport;
-        Console.WriteLine("  ✅ " + fileName + (keyPath.Length > 0 ? " | " + keyPath.Replace("\n", " | ") : ""));
-    }
-
-    Console.WriteLine("分析 " + ok + "/" + total + " 案例通过");
-    Console.WriteLine(ok == total ? "MAU_ANALYZE_OK" : "MAU_ANALYZE_FAIL");
-    return ok == total ? 0 : 1;
-}}
+}
+}
 }
