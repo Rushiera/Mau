@@ -25,6 +25,8 @@
 | BRIK-DATA-005 | data.box_set_dic | DATA | DATA/BRIK-DATA-005_data.box_set_dic.cs | 无 | active |  |
 | BRIK-DATA-006 | data.box_get_dic | DATA | DATA/BRIK-DATA-006_data.box_get_dic.cs | 无 | active |  |
 | BRIK-DATA-007 | data.box_is | DATA | DATA/BRIK-DATA-007_data.box_is.cs | 无 | active |  |
+| BRIK-DATA-008 | data.box_less | DATA | DATA/BRIK-DATA-008_data.box_less.cs | 无 | active |  |
+| BRIK-DATA-009 | data.box_inc | DATA | DATA/BRIK-DATA-009_data.box_inc.cs | 无 | active |  |
 | BRIK-FILE-001 | file.convert | FILE | FILE/BRIK-FILE-001_file.convert.cs | 无 | active |  |
 | BRIK-FILE-002 | file.read | FILE | FILE/BRIK-FILE-002_file.read.cs | 无 | active |  |
 | BRIK-FILE-003 | file.write | FILE | FILE/BRIK-FILE-003_file.write.cs | 无 | active |  |
@@ -44,6 +46,10 @@
 | BRIK-MATH-002 | math.format_size | MATH | MATH/BRIK-MATH-002_math.format_size.cs | 无 | active |  |
 | BRIK-MATH-003 | math.result_preview | MATH | MATH/BRIK-MATH-003_math.result_preview.cs | math.format_size | active |  |
 | BRIK-MATH-004 | math.random_int | MATH | MATH/BRIK-MATH-004_math.random_int.cs | 无 | active |  |
+| BRIK-MATH-005 | math.add | MATH | MATH/BRIK-MATH-005_math.add.cs | 无 | active |  |
+| BRIK-MATH-006 | math.sub | MATH | MATH/BRIK-MATH-006_math.sub.cs | 无 | active |  |
+| BRIK-MATH-007 | math.mul | MATH | MATH/BRIK-MATH-007_math.mul.cs | 无 | active |  |
+| BRIK-MATH-008 | math.is_less | MATH | MATH/BRIK-MATH-008_math.is_less.cs | 无 | active |  |
 | BRIK-OA-001 | oa.post | OA | OA/BRIK-OA-001_oa.post.cs | 无 | active |  |
 | BRIK-OA-002 | oa.list | OA | OA/BRIK-OA-002_oa.list.cs | 无 | active |  |
 | BRIK-OA-003 | oa.claim | OA | OA/BRIK-OA-003_oa.claim.cs | 无 | active |  |
@@ -68,6 +74,7 @@
 | BRIK-SYSTEM-003 | system.env | SYSTEM | SYSTEM/BRIK-SYSTEM-003_system.env.cs | 无 | active |  |
 | BRIK-TEST-001 | probe.source | TEST | TEST/BRIK-TEST-001_probe.source.cs | 无 | active |  |
 | BRIK-TEST-002 | probe.sink | TEST | TEST/BRIK-TEST-002_probe.sink.cs | 无 | active |  |
+| BRIK-TEST-003 | probe.sink_slow | TEST | TEST/BRIK-TEST-003_probe.sink_slow.cs | 无 | active |  |
 | BRIK-TEXT-001 | text.md_parse | TEXT | TEXT/BRIK-TEXT-001_text.md_parse.cs | 无 | active |  |
 
 ---

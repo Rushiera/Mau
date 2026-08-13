@@ -1,0 +1,35 @@
+// mau_task_pipeline.mau —— 任务流水线（T4 模块谱案例 2：生命周期 + ∥ 并行 worker + ⋈ 回投 + 并发配额压测台）
+// 模式：FireSubmit(count) 开始 → 测试侧按节奏 FireJob1-4（并发度由测试节奏控制）→ worker ∥ 后台处理（probe.sink_slow 延迟）→ 原子计数 → 全部完成 Done
+// 压测点：P=1 串行 / P=4 全并行 / 500 任务长跑 / 结果乱序回投 / 配额满拒绝 / 完成后信号滞留
+// 计数设计（2026-08-13 修复轮）：后台 data.box_inc 原子计数（BoxStore.Inc 锁内读改写——跨线程安全）；
+//   完成事件不做"事实+主线程计数"——事实无消费语义（保持）导致重复计数（压测台发现 #1）
+// 状态刷新：测量 P_AllDone 每帧采样 done==total → T_Complete（测量先行——完成后 1 帧内 Done）
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§'S_Pipe' = { 'Idle', 'Running', 'Done', 'Failed' }
+§$'taskCount', 'delayMs'
+§'P_Submit', 'P_Job1', 'P_Job2', 'P_Job3', 'P_Job4'
+§'P_Job1Done', 'P_Job2Done', 'P_Job3Done', 'P_Job4Done'
+§'P_Job1Failed', 'P_Job2Failed', 'P_Job3Failed', 'P_Job4Failed'
+§⇐ 'P_Submit'['count']
+§⇐ 'P_Job1'
+§⇐ 'P_Job2'
+§⇐ 'P_Job3'
+§⇐ 'P_Job4'
+§'R_WorkSlot': 4
+
+// 开始：Idle + 提交信号 → 任务计数初始化 → Running
+§'T_Start': 'S_Pipe' = 'Idle' ∧ 'P_Submit' + 'data.box_set'["task", "total", 'count'] + 'data.box_set'["task", "done", 0] → 'S_Pipe' = 'Running' | 'S_Pipe' = 'Failed'
+
+// 四个并行 worker（∥ 后台 + ⋈ 回投）：Job 信号 + 并发槽位 → 后台延迟处理 + 原子计数 → 回投注册完成/失败事实
+§'T_Worker1'[∥, ⋈]: 'S_Pipe' = 'Running' ∧ 'P_Job1' ∧ 'R_WorkSlot' + 'probe.sink_slow'["task-1", 'delayMs'] + 'data.box_inc'["task", "done"] → 'P_Job1Done' | 'P_Job1Failed'
+§'T_Worker2'[∥, ⋈]: 'S_Pipe' = 'Running' ∧ 'P_Job2' ∧ 'R_WorkSlot' + 'probe.sink_slow'["task-2", 'delayMs'] + 'data.box_inc'["task", "done"] → 'P_Job2Done' | 'P_Job2Failed'
+§'T_Worker3'[∥, ⋈]: 'S_Pipe' = 'Running' ∧ 'P_Job3' ∧ 'R_WorkSlot' + 'probe.sink_slow'["task-3", 'delayMs'] + 'data.box_inc'["task", "done"] → 'P_Job3Done' | 'P_Job3Failed'
+§'T_Worker4'[∥, ⋈]: 'S_Pipe' = 'Running' ∧ 'P_Job4' ∧ 'R_WorkSlot' + 'probe.sink_slow'["task-4", 'delayMs'] + 'data.box_inc'["task", "done"] → 'P_Job4Done' | 'P_Job4Failed'
+
+// 完成检测：done == total → Done（测量采样条件 + 无信号律每帧检查）
+§'M_AllDone'[ω=1]: 'P_AllDone' := 'data.box_is'["task", "done", 'taskCount']
+§'T_Complete': 'S_Pipe' = 'Running' ∧ 'P_AllDone' → 'S_Pipe' = 'Done'
+
+// 失败聚合：任一 worker 失败事实 → Failed（事实保持 → T_Fail 幂等触发无害）
+§'T_Fail': 'P_Job1Failed' ∨ 'P_Job2Failed' ∨ 'P_Job3Failed' ∨ 'P_Job4Failed' → 'S_Pipe' = 'Failed'

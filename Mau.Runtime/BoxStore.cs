@@ -6,7 +6,10 @@
     /// </summary>
     public static class BoxStore
     {
-        /// <summary>
+/// <summary>
+/// 原子递增锁（Inc 读改写互斥——跨线程安全）
+/// </summary>
+private static readonly object IncLock = new object ();        /// <summary>
         /// 写入单值
         /// </summary>
         /// <param name="boxId">作用域 ID</param>
@@ -125,5 +128,19 @@
                 return false;
             }
         }
+/// <summary>
+/// 原子递增——box[boxId, key] += 1（锁内读改写——跨线程安全；T4 模块谱并发计数新增 2026-08-13）
+/// </summary>
+/// <param name = "boxId">作用域 ID</param>
+/// <param name = "key">键</param>
+/// <returns>true=成功</returns>
+public static bool Inc(string boxId, string key)
+{
+    lock (IncLock)
+    {
+        int v;
+        Get(boxId, key, 0, out v);
+        return Set(boxId, key, v + 1);
     }
+}    }
 }

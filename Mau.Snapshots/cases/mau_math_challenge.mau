@@ -1,0 +1,26 @@
+// mau_math_challenge.mau —— 心算挑战（T4 模块谱案例 1：状态机六态 + 计时 + 回合 + 随机出题压测台）
+// 模式：FireStartAdd/Sub/Mul 开始（固定运算符模式）→ 自动出题 → FireAnswer 作答 → Scored/Timeout → 下一题或 Over
+// 压测点：τ 极限（timeLimit=1）/ 200 回合长跑 / 终态后注入拒绝 / 错误-超时-正确混合序列
+§'Mau' 2.0
+§'Mau.Runtime' 2.0
+§'S_Quiz' = { 'Ready', 'Answering', 'Scored', 'Timeout', 'Over', 'Failed' }
+§$'rounds', 'timeLimit', 'minNum', 'maxNum'
+§'P_StartAdd', 'P_StartSub', 'P_StartMul', 'P_Answer'
+§⇐ 'P_StartAdd'
+§⇐ 'P_StartSub'
+§⇐ 'P_StartMul'
+§⇐ 'P_Answer'['value']
+
+// 出题（三种运算符模式）：Ready + 起始信号 → 随机数 + 运算 → 答案存 box → Answering
+§'T_AskAdd': 'S_Quiz' = 'Ready' ∧ 'P_StartAdd' + 'math.random_int'['minNum', 'maxNum'] + 'math.add'['value', 3] + 'data.box_set'["quiz", "answer", 'sum'] → 'S_Quiz' = 'Answering' | 'S_Quiz' = 'Failed'
+§'T_AskSub': 'S_Quiz' = 'Ready' ∧ 'P_StartSub' + 'math.random_int'['minNum', 'maxNum'] + 'math.sub'['value', 3] + 'data.box_set'["quiz", "answer", 'difference'] → 'S_Quiz' = 'Answering' | 'S_Quiz' = 'Failed'
+§'T_AskMul': 'S_Quiz' = 'Ready' ∧ 'P_StartMul' + 'math.random_int'['minNum', 'maxNum'] + 'math.mul'['value', 3] + 'data.box_set'["quiz", "answer", 'product'] → 'S_Quiz' = 'Answering' | 'S_Quiz' = 'Failed'
+
+// 作答：Answering + 答案信号 → box 比对 → 答对 Scored / 答错自环（重答或等待超时）
+§'T_Check': 'S_Quiz' = 'Answering' ∧ 'P_Answer' + 'data.box_is'["quiz", "answer", 'value'] → 'S_Quiz' = 'Scored' | 'S_Quiz' = 'Answering'
+
+// 计时：Answering 每帧 elapsed+1，超过 timeLimit → Timeout
+§'T_Tick': 'S_Quiz' = 'Answering' + 'data.box_get'["quiz", "elapsed", 0] + 'math.add'['value', 1] + 'data.box_set'["quiz", "elapsed", 'sum'] + 'math.is_less'['timeLimit', 'sum'] → 'S_Quiz' = 'Timeout' | 'S_Quiz' = 'Answering'
+
+// 回合：Scored/Timeout → round+1 → 出下一题 → 末回合 Over（box_is 判断放最后驱动双结果）
+§'T_Next': 'S_Quiz' = 'Scored' ∨ 'S_Quiz' = 'Timeout' + 'data.box_get'["quiz", "round", 0] + 'math.add'['value', 1] + 'data.box_set'["quiz", "round", 'sum'] + 'math.random_int'['minNum', 'maxNum'] + 'math.add'['value', 3] + 'data.box_set'["quiz", "answer", 'sum'] + 'data.box_is'["quiz", "round", 'rounds'] → 'S_Quiz' = 'Over' | 'S_Quiz' = 'Answering'

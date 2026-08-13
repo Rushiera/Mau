@@ -517,6 +517,7 @@ private static BrickContext? _ctx;
                         sb.Append("                {\n");
                         sb.Append("                    ok = false;\n");
                         sb.Append("                    AuditBrick(\"error\", \"" + law.Name + "\", \"" + (law.Ops.Count > 0 ? law.Ops[0].BrickName : "") + "\", frame);\n");
+                    sb.Append("                    if (LogStore.AllLog != null) { LogStore.Add(\"LAW\", 3, \"" + law.Name + " | 异常 | \" + ex.GetType().Name + \": \" + ex.Message, \"\"); }\n");
                         sb.Append("                }\n");
                     }
                 }
@@ -634,87 +635,85 @@ private static BrickContext? _ctx;
         /// <param name="sb">输出</param>
         /// <param name="doc">文档</param>
         private static void GenerateBoundaries(StringBuilder sb, MauDocV2 doc)
+{
+    for (int i = 0; i < doc.Boundaries.Count; i++)
+    {
+        BoundaryV2 b = doc.Boundaries[i];
+        string signalName = b.MappedName != null ? b.MappedName : b.SignalName;
+        string methodName = "Fire" + ToPascal(StripPrefix(b.SignalName));
+        if (b.Dir == BoundaryDirV2.In)
         {
-            for (int i = 0; i < doc.Boundaries.Count; i++)
+            if (b.MappedName != null)
             {
-                BoundaryV2 b = doc.Boundaries[i];
-                string signalName = b.MappedName != null ? b.MappedName : b.SignalName;
-                string methodName = "Fire" + ToPascal(StripPrefix(b.SignalName));
-                if (b.Dir == BoundaryDirV2.In)
+                sb.Append("        /// <summary>\n");
+                sb.Append("        /// OA 接收——端口 '" + b.SignalName + "' 解包 → " + b.MappedName + "\n");
+                sb.Append("        /// </summary>\n");
+                sb.Append("        /// <param name=\"payload\">OA 载荷</param>\n");
+                sb.Append("        public void Receive" + ToPascal(b.SignalName) + "(string payload)\n");
+                sb.Append("        {\n");
+                sb.Append("            // [OA] 接收解包——宿主桥绑定后实现（oa.get 语义）\n");
+                sb.Append("            " + SanitizeName(b.MappedName) + " = true;\n");
+                sb.Append("        }\n");
+                sb.Append("\n");
+            }
+            else
+            {
+                if (b.Params.Count > 0)
                 {
-                    if (b.MappedName != null)
+                    sb.Append("        /// <summary>\n");
+                    sb.Append("        /// 外部投递——" + b.SignalName + "（带载荷）\n");
+                    sb.Append("        /// </summary>\n");
+                    string paramList = "";
+                    string assignList = "";
+                    for (int p = 0; p < b.Params.Count; p++)
                     {
-                        // OA 接收——端口解包
-                        sb.Append("        /// <summary>\n");
-                        sb.Append("        /// OA 接收——端口 '" + b.SignalName + "' 解包 → " + b.MappedName + "\n");
-                        sb.Append("        /// </summary>\n");
-                        sb.Append("        /// <param name=\"payload\">OA 载荷</param>\n");
-                        sb.Append("        public void Receive" + ToPascal(b.SignalName) + "(string payload)\n");
-                        sb.Append("        {\n");
-                        sb.Append("            // [OA] 接收解包——宿主桥绑定后实现（oa.get 语义）\n");
-                        sb.Append("            " + SanitizeName(b.MappedName) + " = true;\n");
-                        sb.Append("        }\n");
-                        sb.Append("\n");
-                    }
-                    else
-                    {
-                        // Fire 信号
-                        if (b.Params.Count > 0)
+                        MauParamV2 param = b.Params[p];
+                        string pname = SanitizeName(param.Text);
+                        // Fire 载荷类型推导——从引用端口（V2.0.5 注入字段同款；未引用/冲突兜底 string；T4 模块谱补全 2026-08-13）
+                        string ptype = InferInjectionType(doc, param.Text);
+                        if (p > 0)
                         {
-                            sb.Append("        /// <summary>\n");
-                            sb.Append("        /// 外部投递——" + b.SignalName + "（带载荷）\n");
-                            sb.Append("        /// </summary>\n");
-                            string paramList = "";
-                            string assignList = "";
-                            for (int p = 0; p < b.Params.Count; p++)
-                            {
-                                MauParamV2 param = b.Params[p];
-                                string pname = SanitizeName(param.Text);
-                                if (p > 0)
-                                {
-                                    paramList = paramList + ", ";
-                                    assignList = assignList + "\n";
-                                }
-                                paramList = paramList + "string " + pname;
-                                assignList = assignList + "            _" + pname + " = " + pname + ";";
-                            }
-                            sb.Append("        public void " + methodName + "(" + paramList + ")\n");
-                            sb.Append("        {\n");
-                            sb.Append(assignList + "\n");
-                            sb.Append("            " + SanitizeName(signalName) + " = true;\n");
-                            sb.Append("        }\n");
-                            sb.Append("\n");
+                            paramList = paramList + ", ";
+                            assignList = assignList + "\n";
                         }
-                        else
-                        {
-                            sb.Append("        /// <summary>\n");
-                            sb.Append("        /// 外部投递——" + b.SignalName + "\n");
-                            sb.Append("        /// </summary>\n");
-                            sb.Append("        public void " + methodName + "()\n");
-                            sb.Append("        {\n");
-                            sb.Append("            " + SanitizeName(signalName) + " = true;\n");
-                            sb.Append("        }\n");
-                            sb.Append("\n");
-                        }
+                        paramList = paramList + ptype + " " + pname;
+                        assignList = assignList + "            _" + pname + " = " + pname + ";";
                     }
+                    sb.Append("        public void " + methodName + "(" + paramList + ")\n");
+                    sb.Append("        {\n");
+                    sb.Append(assignList + "\n");
+                    sb.Append("            " + SanitizeName(signalName) + " = true;\n");
+                    sb.Append("        }\n");
+                    sb.Append("\n");
                 }
                 else
                 {
-                    // 输出边界——OA 发送
                     sb.Append("        /// <summary>\n");
-                    sb.Append("        /// OA 发送——端口 '" + b.SignalName + "' 打包 → '" + (b.MappedName ?? "?") + "'\n");
+                    sb.Append("        /// 外部投递——" + b.SignalName + "\n");
                     sb.Append("        /// </summary>\n");
-                    sb.Append("        /// <returns>输出载荷</returns>\n");
-                    sb.Append("        public string Send" + ToPascal(b.SignalName) + "()\n");
+                    sb.Append("        public void " + methodName + "()\n");
                     sb.Append("        {\n");
-                    sb.Append("            // [OA] 发送打包——宿主桥绑定后实现（oa.set 语义）\n");
-                    sb.Append("            return \"\";\n");
+                    sb.Append("            " + SanitizeName(signalName) + " = true;\n");
                     sb.Append("        }\n");
                     sb.Append("\n");
                 }
             }
         }
-
+        else
+        {
+            sb.Append("        /// <summary>\n");
+            sb.Append("        /// OA 发送——端口 '" + b.SignalName + "' 打包 → '" + (b.MappedName ?? "?") + "'\n");
+            sb.Append("        /// </summary>\n");
+            sb.Append("        /// <returns>输出载荷</returns>\n");
+            sb.Append("        public string Send" + ToPascal(b.SignalName) + "()\n");
+            sb.Append("        {\n");
+            sb.Append("            // [OA] 发送打包——宿主桥绑定后实现（oa.set 语义）\n");
+            sb.Append("            return \"\";\n");
+            sb.Append("        }\n");
+            sb.Append("\n");
+        }
+    }
+}
         // ==================== 表达式构建 ====================
 
         /// <summary>
@@ -1499,7 +1498,7 @@ private static void GenerateOutputFields(StringBuilder sb, MauDocV2 doc)
                     }
                 }
             }
-            // [段3] 边界 Fire 载荷参数——_字段声明（⇐ 'P_X'['param'] → Fire 方法写入 _param）
+            // [段3] 边界 Fire 载荷参数——_字段声明（⇐ 'P_X'['param'] → Fire 方法写入 _param；类型从引用端口推导——T4 模块谱补全 2026-08-13）
             for (int b = 0; b < doc.Boundaries.Count; b++)
             {
                 BoundaryV2 boundary = doc.Boundaries[b];
@@ -1517,7 +1516,7 @@ private static void GenerateOutputFields(StringBuilder sb, MauDocV2 doc)
                     string fieldName = "_" + SanitizeName(boundary.Params[p].Text);
                     if (!fields.ContainsKey(fieldName))
                     {
-                        fields[fieldName] = "string";
+                        fields[fieldName] = InferInjectionType(doc, boundary.Params[p].Text);
                     }
                 }
             }
@@ -1796,6 +1795,7 @@ private static void GenerateWorkerLaw(StringBuilder sb, MauDocV2 doc, LawV2 law)
             sb.Append("                    catch (Exception ex)\n");
             sb.Append("                    {\n");
             sb.Append("                        ok = false;\n");
+                    sb.Append("                        if (LogStore.AllLog != null) { LogStore.Add(\"LAW\", 3, \"" + law.Name + " | worker异常 | \" + ex.GetType().Name + \": \" + ex.Message, \"\"); }\n");
             sb.Append("                    }\n");
             sb.Append("                    " + name + "_WorkerResult r0 = new " + name + "_WorkerResult();\n");
             sb.Append("                    r0.Ok = ok;\n");
