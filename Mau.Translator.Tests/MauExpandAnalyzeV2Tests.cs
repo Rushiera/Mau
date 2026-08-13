@@ -288,7 +288,8 @@ namespace Mau.Translator.Tests
             {
                 return null;
             }
-            ValidateResultV2 valid = MauValidatorV2.Validate(parsed.Doc);
+            // 结构测试隔离——requireBricks: false 显式声明跳过积木契约（契约测试经 mau check [C] 段覆盖）
+            ValidateResultV2 valid = MauValidatorV2.Validate(parsed.Doc, requireBricks: false);
             if (!valid.Success)
             {
                 return null;
@@ -345,7 +346,8 @@ namespace Mau.Translator.Tests
                 fail.Success = false;
                 return fail;
             }
-            ValidateResultV2 valid = MauValidatorV2.Validate(parsed.Doc);
+            // 结构测试隔离——requireBricks: false 显式声明跳过积木契约（契约测试经 mau check [C] 段覆盖）
+            ValidateResultV2 valid = MauValidatorV2.Validate(parsed.Doc, requireBricks: false);
             if (!valid.Success)
             {
                 AnalyzeResultV2 fail = new AnalyzeResultV2();

@@ -158,25 +158,20 @@ Bricks/{类别}/*.cs（文件头十字段 + 静态方法签名）
 |:--|:--|:--:|
 | `FILE/` | 文件类积木 | 11 |
 | `MATH/` | 数学类积木 | 4 |
-| `DATA/` | 数据类积木（snapshot/box） | 7 |
+| `DATA/` | 数据类积木（box） | 6 |
 | `TEXT/` | 文本类积木 | 1 |
 | `SHELL/` | Shell 类积木（超时/进程树） | 1 |
-| `LLM/` | LLM 类积木（chat/stream/ctx 族） | 21 |
-| `APPROVAL/` | 审批类积木 | 4 |
-| `OFFICE/` | Office 类积木（excel/docx——PACK 调度） | 4 |
 | `LOG/` | 日志类积木 | 4 |
-| `CMD/` | 指令机制积木 | 6 |
-| `OA/` | OA 机制积木（双字典） | 16 |
-| `TOOL/` | 工具机制积木（分发/认领/适配器） | 13 |
+| `CMD/` | 指令机制积木 | 9 |
+| `OA/` | OA 机制积木（双字典） | 15 |
 | `TEST/` | 测试探针积木 | 2 |
-| `DOG/` | Dog 载体机制积木 | 9 |
 | `SYSTEM/` | 系统信息积木 | 3 |
-| `CSHARP/` | C# 语言工具积木（Roslyn 桥调度） | 15 |
-| `MAU/` | Mau 工具链积木（mau.build） | 1 |
+| `AUDIT/` | 审计读取积木 | 3 |
 | `PACK/` | 外部包接口积木（excel/word/csharp 桥） | 3 |
 
+> 纯化说明（2026-08-13 T3）：LLM/TOOL/NOTE/CAT/UI/DOG/OFFICE/WIN/APPROVAL/CSHARP/MAU 十一类迁至 CH4 仓库 CH4.Bricks/（产品积木机制——design-mau-boundary.md §五）。
 > 数量权威 = index.json（`mau bricks index --update` 机器重建）；本表为展示页，漂移时以 index.json 为准。
 
 ---
 
-_版本：v2.0 | 2026-08-07 | 重写：R1 文本库形态（一积木一文件 + 十字段 + 校验尾）+ 源码驱动索引（--update 契约提取）+ V1-V9 校验 + 登记四步骤_
+_版本：v2.1 | 2026-08-13 | T3 积木库纯化——十一类迁 CH4.Bricks（产品积木机制），类别目录收敛为基座十二类；v2.0 | 2026-08-07 | 重写：R1 文本库形态（一积木一文件 + 十字段 + 校验尾）+ 源码驱动索引（--update 契约提取）+ V1-V9 校验 + 登记四步骤_

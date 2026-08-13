@@ -37,6 +37,12 @@ namespace Mau.Cli
         public List<string> Files;
 
         /// <summary>
+        /// 产品积木目录——bricks: 声明（相对 mauproj 所在目录；分号分隔多目录）
+        /// 产品积木机制（design-mau-boundary.md §五）：项目自持积木目录 + index.json
+        /// </summary>
+        public List<string> Bricks;
+
+        /// <summary>
         /// 组目录——mauproj 所在目录（文件收集基准）
         /// </summary>
         public string DirectoryPath;
@@ -56,6 +62,7 @@ namespace Mau.Cli
             Dependencies = new List<string>();
             References = new List<string>();
             Files = new List<string>();
+            Bricks = new List<string>();
             DirectoryPath = "";
         }
 
@@ -173,6 +180,11 @@ namespace Mau.Cli
                 {
                     // 逗号分隔多文件——与 依赖/引用 同规（\, 转义字面逗号）
                     AddList(file.Files, value);
+                }
+                else if (key == "bricks")
+                {
+                    // 产品积木目录——分号分隔多目录（相对 mauproj 所在目录）
+                    AddList(file.Bricks, value, ';');
                 }
                 else
                 {
@@ -346,11 +358,12 @@ public List<string> ResolveReferences(string hostDir, out List<string> errors)
         }
 
         /// <summary>
-        /// 追加列表值——按未转义逗号拆分（\, 保留为字面逗号，解码延后）
+        /// 追加列表值——按未转义分隔符拆分（\, 保留为字面逗号，解码延后）
         /// </summary>
         /// <param name="list">目标列表</param>
-        /// <param name="value">逗号分隔文本</param>
-        private static void AddList(List<string> list, string value)
+        /// <param name="value">分隔文本</param>
+        /// <param name="separator">分隔符（默认逗号）</param>
+        private static void AddList(List<string> list, string value, char separator = ',')
         {
             StringBuilder current = new StringBuilder();
             for (int i = 0; i < value.Length; i++)
@@ -363,7 +376,7 @@ public List<string> ResolveReferences(string hostDir, out List<string> errors)
                     i = i + 1;
                     continue;
                 }
-                if (c == ',')
+                if (c == separator)
                 {
                     string part = current.ToString().Trim();
                     if (part.Length > 0)

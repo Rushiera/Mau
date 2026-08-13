@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Mau.Translator
@@ -24,8 +24,10 @@ namespace Mau.Translator
         /// 验证入口
         /// </summary>
         /// <param name="doc">解析文档</param>
+        /// <param name="requireBricks">积木契约强制——默认 true（fail closed）；结构测试传 false 显式隔离</param>
+        /// <param name="ctx">编译上下文——null=仅基座；产品积木契约错误走 E226 码段</param>
         /// <returns>验证结果</returns>
-        public static ValidateResultV2 Validate(MauDocV2 doc)
+        public static ValidateResultV2 Validate(MauDocV2 doc, bool requireBricks = true, BrickContext? ctx = null)
 {
             ValidateResultV2 result = new ValidateResultV2();
             if (doc == null)
@@ -89,9 +91,8 @@ namespace Mau.Translator
             {
                 return result;
             }
-
-            // [段9] 积木契约校验——存在性/参数数量/测量采样（E220-222）
-            CheckBricks(doc, result);
+            // [段9] 积木契约校验——存在性/参数数量/测量采样（E220-222；E224 索引不可用 fail closed）
+            CheckBricks(doc, result, requireBricks, ctx);
             if (!result.Success)
             {
                 return result;
@@ -546,14 +547,21 @@ namespace Mau.Translator
 /// </summary>
 /// <param name = "doc">文档</param>
 /// <param name = "result">验证结果</param>
-private static void CheckBricks(MauDocV2 doc, ValidateResultV2 result)
+/// <param name = "requireBricks">true=强制积木契约（fail closed）；false=结构测试隔离（显式跳过）</param>
+private static void CheckBricks(MauDocV2 doc, ValidateResultV2 result, bool requireBricks, BrickContext? ctx)
 {
-            // [段0] 索引未加载跳过——积木契约校验依赖 Bricks/index.json（由 CLI/编译入口 EnsureIndexLoaded）
-            if (BrickIndex.Count == 0)
+            // [段0] 结构测试隔离——requireBricks=false 显式声明跳过（结构测试不依赖 Bricks/index.json）
+            if (!requireBricks)
             {
                 return;
             }
-            // [段1] 控制律操作——每个积木调用：存在性 + 参数数量
+            // [段0b] fail closed——索引不可用即拒绝编译（积木契约是公式层宪法，静默跳过 = 假绿）
+            if (BrickIndex.Count == 0)
+            {
+                AddError(result, "E224", 0, "积木索引不可用——Bricks/index.json 未加载，积木契约校验无法执行（fail closed：索引加载失败即拒绝编译）");
+                return;
+            }
+            // [段1] 控制律操作——每个积木调用：存在性 + 参数数量（基座段 E220-222；产品段 E226）
             for (int i = 0; i < doc.Laws.Count; i++)
             {
                 LawV2 law = doc.Laws[i];
@@ -561,14 +569,38 @@ private static void CheckBricks(MauDocV2 doc, ValidateResultV2 result)
                 {
                     BrickCallV2 call = law.Ops[o];
                     BrickIndexEntry entry;
-                    if (!BrickIndex.TryGet(call.BrickName, out entry) || entry.Contract == null)
+                    BrickIndexView? sourceView;
+                    if (!TryBrick(ctx, call.BrickName, out entry, out sourceView) || entry.Contract == null)
                     {
-                        AddError(result, "E220", 0, "控制律 '" + law.Name + "' 引用积木未注册——'" + call.BrickName + "'（Bricks/index.json 查询）");
+                        if (ctx != null)
+                        {
+                            // E227 分类——隔离模式下命中基座 = 跨仓引用禁止（零跨仓引用铁律 §五.5）
+                            BrickIndexEntry? baseProbe;
+                            if (ctx.IsolateBase && BrickIndex.TryGet(call.BrickName, out baseProbe))
+                            {
+                                AddError(result, "E227", 0, "控制律 '" + law.Name + "' 跨仓引用基座积木禁止——'" + call.BrickName + "'（零跨仓引用铁律：基座积木是 Mau 自举资产不出仓；项目积木库完全自持）");
+                            }
+                            else
+                            {
+                                AddError(result, "E226", 0, "控制律 '" + law.Name + "' 引用产品积木未注册——'" + call.BrickName + "'（基座与产品索引均未命中）");
+                            }
+                        }
+                        else
+                        {
+                            AddError(result, "E220", 0, "控制律 '" + law.Name + "' 引用积木未注册——'" + call.BrickName + "'（Bricks/index.json 查询）");
+                        }
                         return;
                     }
                     if (call.Params.Count > entry.Contract.Inputs.Count)
                     {
-                        AddError(result, "E221", 0, "控制律 '" + law.Name + "' 积木调用参数超限——'" + call.BrickName + "' 传 " + call.Params.Count + " 个参数，契约输入端口 " + entry.Contract.Inputs.Count + " 个");
+                        if (sourceView != null)
+                        {
+                            AddError(result, "E226", 0, "控制律 '" + law.Name + "' 产品积木调用参数超限——'" + call.BrickName + "' 传 " + call.Params.Count + " 个参数，契约输入端口 " + entry.Contract.Inputs.Count + " 个（产品目录 " + sourceView.Root + "）");
+                        }
+                        else
+                        {
+                            AddError(result, "E221", 0, "控制律 '" + law.Name + "' 积木调用参数超限——'" + call.BrickName + "' 传 " + call.Params.Count + " 个参数，契约输入端口 " + entry.Contract.Inputs.Count + " 个");
+                        }
                         return;
                     }
                 }
@@ -583,23 +615,57 @@ private static void CheckBricks(MauDocV2 doc, ValidateResultV2 result)
                     return;
                 }
                 BrickIndexEntry entry;
-                if (!BrickIndex.TryGet(measure.Sample.BrickName, out entry) || entry.Contract == null)
+                BrickIndexView? sourceView;
+                if (!TryBrick(ctx, measure.Sample.BrickName, out entry, out sourceView) || entry.Contract == null)
                 {
-                    AddError(result, "E220", 0, "测量 '" + measure.Name + "' 引用积木未注册——'" + measure.Sample.BrickName + "'");
+                    if (ctx != null)
+                    {
+                        // E227 分类——隔离模式下命中基座 = 跨仓引用禁止（零跨仓引用铁律 §五.5）
+                        BrickIndexEntry? baseProbe;
+                        if (ctx.IsolateBase && BrickIndex.TryGet(measure.Sample.BrickName, out baseProbe))
+                        {
+                            AddError(result, "E227", 0, "测量 '" + measure.Name + "' 跨仓引用基座积木禁止——'" + measure.Sample.BrickName + "'（零跨仓引用铁律：基座积木是 Mau 自举资产不出仓；项目积木库完全自持）");
+                        }
+                        else
+                        {
+                            AddError(result, "E226", 0, "测量 '" + measure.Name + "' 引用产品积木未注册——'" + measure.Sample.BrickName + "'（基座与产品索引均未命中）");
+                        }
+                    }
+                    else
+                    {
+                        AddError(result, "E220", 0, "测量 '" + measure.Name + "' 引用积木未注册——'" + measure.Sample.BrickName + "'");
+                    }
                     return;
                 }
                 if (entry.Contract.Return != Mau.Contracts.BrickReturnKind.Bool)
                 {
-                    AddError(result, "E222", 0, "测量 '" + measure.Name + "' 采样积木 '" + measure.Sample.BrickName + "' 必须 bool 返回（判断积木语义——实测值写条件）");
+                    AddError(result, sourceView != null ? "E226" : "E222", 0, "测量 '" + measure.Name + "' 采样积木 '" + measure.Sample.BrickName + "' 必须 bool 返回（判断积木语义——实测值写条件）");
                     return;
                 }
                 if (measure.Sample.Params.Count > entry.Contract.Inputs.Count)
                 {
-                    AddError(result, "E221", 0, "测量 '" + measure.Name + "' 采样调用参数超限——'" + measure.Sample.BrickName + "' 传 " + measure.Sample.Params.Count + " 个参数，契约输入端口 " + entry.Contract.Inputs.Count + " 个");
+                    AddError(result, sourceView != null ? "E226" : "E221", 0, "测量 '" + measure.Name + "' 采样调用参数超限——'" + measure.Sample.BrickName + "' 传 " + measure.Sample.Params.Count + " 个参数，契约输入端口 " + entry.Contract.Inputs.Count + " 个");
                     return;
                 }
             }
-        }        /// <summary>
+        }/// <summary>
+/// 上下文感知积木查询——ctx null 走基座静态，否则先基座后产品
+/// </summary>
+/// <param name = "ctx">编译上下文</param>
+/// <param name = "name">积木名</param>
+/// <param name = "entry">命中条目</param>
+/// <param name = "sourceView">出处（null=基座）</param>
+/// <returns>是否命中</returns>
+private static bool TryBrick(BrickContext? ctx, string name, out BrickIndexEntry entry, out BrickIndexView? sourceView)
+{
+    if (ctx != null)
+    {
+        return ctx.TryGet(name, out entry, out sourceView);
+    }
+
+    sourceView = null;
+    return BrickIndex.TryGet(name, out entry!);
+}/// <summary>
         /// 错误添加
         /// </summary>
         /// <param name="result">验证结果</param>

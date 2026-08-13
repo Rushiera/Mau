@@ -9,14 +9,28 @@ namespace Mau.Translator
     /// </summary>
     public static class MauGeneratorV2
     {
+/// <summary>
+/// 当前构筑上下文——[ThreadStatic]（翻译器单线程流水线；Generate 入口每次重置，深链契约查询经 TryBrick）
+/// </summary>
+[ThreadStatic]
+private static BrickContext? _ctx; 
+/// <summary>
+/// 上下文感知积木查询——_ctx null 走基座静态，否则先基座后产品
+/// </summary>
+/// <param name = "name">积木名</param>
+/// <param name = "entry">命中条目</param>
+/// <returns>是否命中</returns>
+ private  static  bool  TryBrick ( string  name ,  out  BrickIndexEntry  entry ) { if  ( _ctx != null ) { return  _ctx . TryGet ( name ,  out  entry ,  out  BrickIndexView ? _ ) ;  } return  BrickIndex . TryGet ( name ,  out  entry ! ) ;  }
         /// <summary>
         /// 生成入口
         /// </summary>
         /// <param name="doc">解析文档（已验证）</param>
         /// <param name="flowName">流程名——PascalCase，生成类名</param>
+        /// <param name="ctx">编译上下文（null=仅基座）——深链契约查询经 [ThreadStatic] _ctx</param>
         /// <returns>生成物源码</returns>
-        public static string Generate(MauDocV2 doc, string flowName)
+        public static string Generate(MauDocV2 doc, string flowName, BrickContext? ctx = null)
 {
+            _ctx = ctx; // 构筑上下文重置——深链方法（BuildBrickCall/CollectInjectionPortType 等）经 TryBrick 查询
             StringBuilder sb = new StringBuilder();
             string className = SanitizeClassName(flowName);
 
@@ -426,7 +440,7 @@ namespace Mau.Translator
                 if (law.Ops.Count == 1)
                 {
                     BrickIndexEntry? routeEntry = null;
-                    isNameReturn = BrickIndex.TryGet(law.Ops[0].BrickName, out routeEntry)
+                    isNameReturn = TryBrick(law.Ops[0].BrickName, out routeEntry!)
                         && routeEntry != null && routeEntry.Contract != null
                         && routeEntry.Contract.Return == Mau.Contracts.BrickReturnKind.String;
                 }
@@ -913,7 +927,7 @@ private static string CSharpTypeName(Type t)
 private static void CollectInjectionPortType(BrickCallV2 call, string injectionName, ref string? found, ref bool conflict)
 {
     BrickIndexEntry? entry = null;
-    if (!BrickIndex.TryGet(call.BrickName, out entry) || entry == null || entry.Contract == null)
+    if (!TryBrick(call.BrickName, out entry!) || entry == null || entry.Contract == null)
     {
         return;
     }
@@ -974,7 +988,7 @@ private static string InferInjectionType(MauDocV2 doc, string injectionName)
 {
             // 积木契约查询——索引已加载时生成真实调用（完整限定名 + 输出端口 out）；未加载回退占位（纯结构生成）
             BrickIndexEntry? entry = null;
-            bool hasContract = BrickIndex.TryGet(call.BrickName, out entry) && entry != null && entry.Contract != null;
+            bool hasContract = TryBrick(call.BrickName, out entry!) && entry != null && entry.Contract != null;
             bool isNameReturn = hasContract && entry!.Contract!.Return == Mau.Contracts.BrickReturnKind.String;
             StringBuilder sb = new StringBuilder();
             if (hasContract)
@@ -1472,7 +1486,7 @@ private static void GenerateOutputFields(StringBuilder sb, MauDocV2 doc)
             for (int c = 0; c < calls.Count; c++)
             {
                 BrickIndexEntry entry;
-                if (!BrickIndex.TryGet(calls[c].BrickName, out entry) || entry.Contract == null)
+                if (!TryBrick(calls[c].BrickName, out entry) || entry.Contract == null)
                 {
                     continue;
                 }
@@ -1546,7 +1560,7 @@ private static bool TryFindOutType(MauDocV2 doc, string rawName, out string type
     for (int c = 0; c < calls.Count; c++)
     {
         BrickIndexEntry entry;
-        if (!BrickIndex.TryGet(calls[c].BrickName, out entry) || entry.Contract == null)
+        if (!TryBrick(calls[c].BrickName, out entry) || entry.Contract == null)
         {
             continue;
         }
@@ -1645,7 +1659,7 @@ private static void GenerateWorkerFields(StringBuilder sb, MauDocV2 doc, LawV2 l
     for (int o = 0; o < law.Ops.Count; o++)
     {
         BrickIndexEntry entry;
-        if (!BrickIndex.TryGet(law.Ops[o].BrickName, out entry) || entry.Contract == null)
+        if (!TryBrick(law.Ops[o].BrickName, out entry) || entry.Contract == null)
         {
             continue;
         }
@@ -1704,7 +1718,7 @@ private static void GenerateWorkerLaw(StringBuilder sb, MauDocV2 doc, LawV2 law)
             for (int o = 0; o < law.Ops.Count; o++)
             {
                 BrickIndexEntry entry;
-                if (!BrickIndex.TryGet(law.Ops[o].BrickName, out entry) || entry.Contract == null)
+                if (!TryBrick(law.Ops[o].BrickName, out entry) || entry.Contract == null)
                 {
                     continue;
                 }

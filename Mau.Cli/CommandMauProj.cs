@@ -70,6 +70,25 @@ namespace Mau.Cli
             }
             Console.WriteLine("组 " + proj.Name + "：成员 " + files.Count + " 个");
 
+            // [段2b] 产品积木上下文——bricks: 声明 → 绝对路径 → BrickContext（无声明 = null 仅基座）
+            BrickContext? ctx = null;
+            if (proj.Bricks.Count > 0)
+            {
+                List<string> brickDirs = new List<string>();
+                for (int i = 0; i < proj.Bricks.Count; i++)
+                {
+                    string dir = Path.GetFullPath(Path.Combine(proj.DirectoryPath, proj.Bricks[i]));
+                    brickDirs.Add(dir);
+                }
+                ctx = BrickContext.FromProductDirs(brickDirs);
+                if (ctx.ProductError.Length > 0)
+                {
+                    Console.WriteLine("FAIL: " + ctx.ProductError);
+                    return 1;
+                }
+                Console.WriteLine("产品积木: " + ctx.ProductCount + " 个（" + brickDirs.Count + " 目录）");
+            }
+
             // [段3] 逐个验证 + 生成——任何失败整组拒绝（组编译：骨架数组 + 共享 BRIKGROUP）
             string[] texts = new string[files.Count];
             string[] names = new string[files.Count];
@@ -78,7 +97,7 @@ namespace Mau.Cli
                 texts[i] = File.ReadAllText(files[i]);
                 names[i] = Program.FlowNameFromPath(Path.GetFileNameWithoutExtension(files[i]));
             }
-            GroupCompileResultV2 groupResult = MauCompilerV2.CompileGroupV2(texts, names);
+            GroupCompileResultV2 groupResult = MauCompilerV2.CompileGroupV2(texts, names, ctx);
             List<string> sources = new List<string>();
             List<string> classNames = new List<string>();
             for (int i = 0; i < groupResult.Results.Count; i++)

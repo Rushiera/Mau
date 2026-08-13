@@ -25,11 +25,11 @@ namespace Mau.Translator.Tests
                 "§'P_Init', 'P_CmdArrived', 'P_StopCmd'\n" +
                 "§'R_ReplySlot': 1\n" +
                 "§⇐ 'P_Init'\n" +
-                "§'T_Init'[τ=5]: 'P_Init' + 'llm.ctx_set_system'['sessionKey', 'prompt'] → 'S_Talk' = 'Building' | 'S_Talk' = 'Failed'\n" +
-                "§'T_Start'[τ=10]: 'S_Talk' = 'Building' ∧ 'R_ReplySlot' + 'llm.completions'['model', 'messagesJson', 'toolsJson'] → 'S_Active' = 'Thinking' | 'S_Talk' = 'Failed'\n" +
-                "§'M_Pump'[ω=1]: 'P_ChunkReady' := 'llm.read_chunk'['requestId']\n" +
-                "§'T_Classify': 'P_ChunkReady' + 'llm.is_end'['requestId'] → 'S_Active' = 'Streaming' | 'S_Active' = 'Thinking'\n" +
-                "§'T_CheckTool'[τ=5]: 'S_Active' = 'Streaming' + 'llm.is_tool'['requestId'] → 'S_Active' = 'ToolWait' | 'S_Active' = 'Thinking'\n" +
+                "§'T_Init'[τ=5]: 'P_Init' + 'file.read'['sessionKey'] → 'S_Talk' = 'Building' | 'S_Talk' = 'Failed'\n" +
+                "§'T_Start'[τ=10]: 'S_Talk' = 'Building' ∧ 'R_ReplySlot' + 'file.read'['model'] → 'S_Active' = 'Thinking' | 'S_Talk' = 'Failed'\n" +
+                "§'M_Pump'[ω=1]: 'P_ChunkReady' := 'data.box_is'['s', 'k', 0]\n" +
+                "§'T_Classify': 'P_ChunkReady' + 'data.box_is'['s', 'k', 0] → 'S_Active' = 'Streaming' | 'S_Active' = 'Thinking'\n" +
+                "§'T_CheckTool'[τ=5]: 'S_Active' = 'Streaming' + 'data.box_is'['s', 'k', 0] → 'S_Active' = 'ToolWait' | 'S_Active' = 'Thinking'\n" +
                 "§'T_Finish': 'S_Active' = 'Streaming' → 'S_Talk' = 'Done'\n" +
                 "§'T_Reset': 'S_Talk' = 'Done' ∨ 'S_Talk' = 'Failed' → 'S_Talk' = 'Idle'\n";
 

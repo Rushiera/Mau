@@ -45,7 +45,7 @@ V2.0 完成后本 README 将全量重写（版本自 2.001 起）。
 |:--|:--|:--|
 | `Mau.exe` | `Mau.Cli/` | 唯一工具集——翻译 / 构筑 / 测试 / 检测（verify / gen / build / test / check / bricks / serve / ps ...） |
 | `MauRuntime` | `Mau.Runtime/` | 基座 lib——机制（FlowRunner/OA/CommandBus/FlowALC/ThreadGuard/DogBase/PetBase）+ **DataBox 中台**（BRIK 唯一数据协议）+ 程序级服务（FileSystemService/LlmBridge/LogStore/ConfigStore/**AppDataConfig**/CredentialStore） |
-| `Bricks/` | 仓库根 | **文本资产库**——**153 积木**（BRIK-{类别}-{序号}_{name}.cs，单文件 + 文件头十字段 + SHA256 校验尾）+ index.json v3（**源码驱动**契约索引） |
+| `Bricks/` | 仓库根 | **文本资产库**——**62 积木**（BRIK-{类别}-{序号}_{name}.cs，单文件 + 文件头十字段 + SHA256 校验尾）+ index.json v3（**源码驱动**契约索引） |
 
 **构筑闭环：** `.mau` → Mau.exe（BrickIndex 查索引 → 闭包收集 → 校验尾验证 → BRIK-ID 重命名 → BRIKGROUP 内嵌）→ Roslyn Emit → 自包含 dll。组模式（mauproj）多语料共享 BRIKGROUP。
 
@@ -53,29 +53,22 @@ V2.0 完成后本 README 将全量重写（版本自 2.001 起）。
 
 ---
 
-## 积木体系（153 积木 · 数量权威 = index.json）
+## 积木体系（62 积木 · 数量权威 = index.json）
 
 | 类别 | 数量 | 说明 |
 |:--|:--|:--|
 | FILE | 11 | convert/read/write/append/replace/read_lines/tree/find/move/delete/batch |
 | MATH | 4 | 数学运算（is_all_digits/format_size/result_preview/random_int） |
-| DATA | 7 | snapshot×2 + box×5 |
+| DATA | 6 | box×6（snapshot_encode 已退役） |
 | TEXT | 1 | md_parse |
 | SHELL | 1 | exec |
-| LLM | 26 | chat/stream/read_chunk/finish/completions/is_end/is_tool/has_error/content_empty/retry_empty/round_stats_text/has_active_session + ctx_* 上下文（checkpoint/rollback/push_error/push_system） |
-| APPROVAL | 5 | request/resolve/reject/pending/result |
-| OFFICE | 4 | excel.read/write + docx.read/write |
 | LOG | 4 | write/all/count/clear |
-| CMD | 8 | register/unregister/consume/set/clean/is_key/is_key_first/active_key |
-| OA | 16 | post/claim 族/complete 族/settle/is_closed（工单撮合） |
-| DOG | 9 | create/set_*/get_*/is_*/finish/collect_result（工单载体） |
-| TOOL | 14 | exec/dispatch 族/claim 族/collect 族/run_*/create_next/run_generic/display |
+| CMD | 9 | register/unregister/consume/set/clean/is_key/is_key_first/active_key/match |
+| OA | 15 | post/claim 族/complete 族/settle/is_closed（工单撮合） |
 | PACK | 3 | excel.bridge/word.bridge/csharp.bridge（外部包接口——IPackBridge 单方法调度） |
-| UI | 11 | snapshot_chat/home/config + snapshot_push + window_event + profile_* + config_set/get（Pet-UI 模式） |
-| CAT | 2 | scan_instances（宿主 ICatScanner 桥——Data/Cats 目录即猫清单）/ tools_json（六域工具声明表 × 域过滤——TalkCat 自阻断） |
-| CSHARP | 15 | csharp.* 15 工具（Roslyn 桥 PACK 调度） |
 | SYSTEM | 3 | info/snapshot/env |
-| MAU | 1 | build |
+| AUDIT | 3 | stat/read/find（审计读取三形态） |
+| TEST | 2 | probe.source/probe.sink（测试探针） |
 | AUDIT | 3 | audit.stat/read/find（审计查询——DataBox 寻路） |
 | TEST | 2 | probe.source/sink |
 | WIN | 3 | open_dir/flash_taskbar/notify（Windows 能力——目录即清单自动进索引） |
@@ -128,7 +121,7 @@ V2.0 完成后本 README 将全量重写（版本自 2.001 起）。
 
 | 项目 | 定位 |
 |:--|:--|
-| `Bricks/` | 文本资产库——153 积木（十字段 + 校验尾）+ index.json v3（源码驱动）+ 类别目录即清单 |
+| `Bricks/` | 文本资产库——62 积木（十字段 + 校验尾）+ index.json v3（源码驱动）+ 类别目录即清单 |
 | `Mau.Runtime` | 基座——机制 + DataBox 中台 + 程序级服务（FileSystemService/LlmBridge/LogStore/ConfigStore/**AppDataConfig**/CredentialStore/ApprovalStore/ContextStore） |
 | `Mau.Contracts` | 契约类型——BrickContract/端口/导出属性/**ICatScanner** |
 | `Mau.Translator` | 翻译器——解析→IR→静态验证→生成（BrickIndex/BrickEmbedder/CompileGroup） |

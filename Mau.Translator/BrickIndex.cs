@@ -43,6 +43,11 @@ namespace Mau.Translator
         public string Checksum = "";
 
         /// <summary>
+        /// 源文件根目录——空=基座（BrickIndex 静态根）；非空=产品视图根（闭包收集时标注）
+        /// </summary>
+        public string SourceRoot = "";
+
+        /// <summary>
         /// 积木契约——端口/时长/线程（翻译器生成调用形态）
         /// </summary>
         public BrickContract Contract = null!;
@@ -139,7 +144,7 @@ private static readonly object Sync = new object ();
                                 return false;
                             }
                             // 依赖补齐——积木文件头 // 依赖: 行为权威（index.json 依赖字段可能缺失/过期）
-                            MergeHeaderDependencies(entry);
+                            MergeHeaderDependencies(entry, newRoot);
                             newByName[entry.Name] = entry;
                             newById[entry.Id] = entry;
                         }
@@ -172,7 +177,7 @@ private static readonly object Sync = new object ();
         /// </summary>
         /// <param name="b">bricks 数组元素</param>
         /// <returns>条目（解析失败返回 null）</returns>
-        private static BrickIndexEntry? ParseEntry(JsonElement b)
+        internal static BrickIndexEntry? ParseEntry(JsonElement b)
         {
             string id = ReadString(b, "id");
             string name = ReadString(b, "name");
@@ -235,7 +240,7 @@ private static readonly object Sync = new object ();
         /// <param name="c">contract 对象</param>
         /// <param name="name">积木名</param>
         /// <returns>契约</returns>
-        private static BrickContract ParseContract(JsonElement c, string name)
+        internal static BrickContract ParseContract(JsonElement c, string name)
         {
             string implementation = ReadString(c, "implementation");
             BrickContract contract = new BrickContract(name, implementation);
@@ -351,7 +356,7 @@ private static readonly object Sync = new object ();
         /// <param name="e">JSON 元素</param>
         /// <param name="name">属性名</param>
         /// <returns>字符串或空串</returns>
-        private static string ReadString(JsonElement e, string name)
+        internal static string ReadString(JsonElement e, string name)
         {
             JsonElement value;
             if (e.TryGetProperty(name, out value)
@@ -366,11 +371,11 @@ private static readonly object Sync = new object ();
 /// 与文件头依赖行合并（index.json 已有依赖保留，文件头新增补充；"无" 跳过）
 /// </summary>
 /// <param name = "entry">条目（Path 相对 Bricks 根）</param>
-private static void MergeHeaderDependencies(BrickIndexEntry entry)
+internal static void MergeHeaderDependencies(BrickIndexEntry entry, string root)
 {
     try
     {
-        string file = Path.Combine(_root, entry.Path);
+        string file = Path.Combine(root, entry.Path);
         if (!File.Exists(file))
         {
             return;

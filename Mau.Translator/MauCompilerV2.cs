@@ -91,12 +91,26 @@ private static bool EnsureIndexLoaded()
         /// </summary>
         /// <param name="sourceText">.mau 源文本</param>
         /// <param name="flowName">流程名——PascalCase，生成类名</param>
+        /// <param name="ctx">编译上下文——null=仅基座索引；非 null=基座+产品积木（mauproj bricks: 声明）</param>
         /// <returns>编译结果</returns>
-        public static CompileResultV2 Compile(string sourceText, string flowName)
+        public static CompileResultV2 Compile(string sourceText, string flowName, BrickContext? ctx = null)
 {
             CompileResultV2 result = new CompileResultV2();
-            // [阶段0] 积木索引——构筑期契约数据源（Bricks/index.json；加载失败 = 积木契约校验跳过）
-            EnsureIndexLoaded();
+            // [阶段0] 积木索引——构筑期契约数据源（Bricks/index.json；fail closed——加载失败 = 编译失败，绝不静默降级）
+            if (!EnsureIndexLoaded())
+            {
+                result.Diagnostics.Add(new MauDiagnostic("E224", 0, "积木索引不可用——Bricks/index.json 未找到或加载失败（fail closed：索引加载失败即拒绝编译）"));
+                result.Success = false;
+                return result;
+            }
+
+            // [阶段0b] 产品积木目录检查——声明无效即拒绝编译（E225 fail closed）
+            if (ctx != null && ctx.ProductError.Length > 0)
+            {
+                result.Diagnostics.Add(new MauDiagnostic("E225", 0, ctx.ProductError));
+                result.Success = false;
+                return result;
+            }
 
             // [阶段1] 词法——七步流水线（E0xx）
             LexResultV2 lex = MauLexerV2.Lex(sourceText);
@@ -127,7 +141,7 @@ private static bool EnsureIndexLoaded()
             }
 
             // [阶段4] 验证——引用完整性 + 积木契约（E2xx）
-            ValidateResultV2 valid = MauValidatorV2.Validate(result.Doc);
+            ValidateResultV2 valid = MauValidatorV2.Validate(result.Doc, true, ctx);
             if (!valid.Success)
             {
                 result.Diagnostics.AddRange(valid.Diagnostics);
@@ -146,10 +160,10 @@ private static bool EnsureIndexLoaded()
             }
 
             // [阶段6] 生成——骨架 + 内嵌积木段（BRIKGROUP，黄金剥离后对比）
-            string skeleton = MauGeneratorV2.Generate(result.Doc, flowName);
+            string skeleton = MauGeneratorV2.Generate(result.Doc, flowName, ctx);
             if (BrickIndex.Count > 0)
             {
-                List<BrickIndexEntry> closure = BrickEmbedder.CollectClosureV2(result.Doc);
+                List<BrickIndexEntry> closure = BrickEmbedder.CollectClosureV2(result.Doc, ctx);
                 string embedded = BrickEmbedder.BuildEmbeddedSection(closure, out string embedError);
                 if (closure.Count > 0 && embedError.Length > 0)
                 {
@@ -170,8 +184,9 @@ private static bool EnsureIndexLoaded()
 /// </summary>
 /// <param name = "sourceTexts">语料数组</param>
 /// <param name = "flowNames">流程名数组（与语料一一对应）</param>
+/// <param name = "ctx">编译上下文（null=仅基座）</param>
 /// <returns>组编译结果</returns>
-public static GroupCompileResultV2 CompileGroupV2(string[] sourceTexts, string[] flowNames)
+public static GroupCompileResultV2 CompileGroupV2(string[] sourceTexts, string[] flowNames, BrickContext? ctx = null)
 {
     GroupCompileResultV2 group = new GroupCompileResultV2();
     if (sourceTexts == null || sourceTexts.Length == 0)
@@ -184,7 +199,7 @@ public static GroupCompileResultV2 CompileGroupV2(string[] sourceTexts, string[]
     for (int i = 0; i < sourceTexts.Length; i++)
     {
         string flowName = i < flowNames.Length ? flowNames[i] : ("Flow" + (i + 1).ToString());
-        CompileResultV2 result = Compile(sourceTexts[i], flowName);
+        CompileResultV2 result = Compile(sourceTexts[i], flowName, ctx);
         if (result.Success)
         {
             // 剥离内嵌段——组编译由共享 BRIKGROUP 提供积木实现
@@ -203,7 +218,7 @@ public static GroupCompileResultV2 CompileGroupV2(string[] sourceTexts, string[]
             continue;
         }
 
-        List<BrickIndexEntry> docClosure = BrickEmbedder.CollectClosureV2(group.Results[i].Doc);
+        List<BrickIndexEntry> docClosure = BrickEmbedder.CollectClosureV2(group.Results[i].Doc, ctx);
         for (int c = 0; c < docClosure.Count; c++)
         {
             if (!closure.ContainsKey(docClosure[c].Id))

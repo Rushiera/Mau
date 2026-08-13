@@ -110,7 +110,13 @@ namespace Mau.Cli
                 }
                 if (args[1] == "--update")
                 {
-                    return UpdateIndex();
+                    // --bricks <path> = 产品积木目录（项目自持；默认 = Mau 仓库根 Bricks）
+                    string? productDir = null;
+                    if (args.Length > 3 && args[2] == "--bricks")
+                    {
+                        productDir = args[3];
+                    }
+                    return UpdateIndex(productDir);
                 }
                 if (args[1] == "--check-license")
                 {
@@ -934,17 +940,32 @@ namespace Mau.Cli
         }
         /// <summary>
         /// index --update——生成 INDEX.md + index.json（含 contract 镜像）
+        /// 产品积木目录（--bricks <path>）与基座同工具链——索引写到目标目录，不碰 Mau 仓库
         /// </summary>
+        /// <param name="productDir">产品积木目录（null=基座仓库根 Bricks）</param>
         /// <returns>退出码</returns>
-        public static int UpdateIndex()
+        public static int UpdateIndex(string? productDir = null)
 {
-            string? root = CliSupport.FindWorkspaceRoot();
-            if (root == null)
+            string catalogDir;
+            if (productDir != null)
             {
-                Console.WriteLine("FAIL: 未找到 Mau.sln");
-                return 1;
+                catalogDir = Path.GetFullPath(productDir);
+                if (!Directory.Exists(catalogDir))
+                {
+                    Console.WriteLine("FAIL: 产品积木目录不存在——" + catalogDir);
+                    return 1;
+                }
             }
-            string catalogDir = Path.Combine(root, "Bricks");
+            else
+            {
+                string? root = CliSupport.FindWorkspaceRoot();
+                if (root == null)
+                {
+                    Console.WriteLine("FAIL: 未找到 Mau.sln");
+                    return 1;
+                }
+                catalogDir = Path.Combine(root, "Bricks");
+            }
             string indexPath = Path.Combine(catalogDir, "INDEX.md");
 
             // [段1] 源码扫描——文件头八字段 + 时长/线程 + Roslyn 静态签名 = 契约唯一真相源

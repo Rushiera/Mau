@@ -169,8 +169,8 @@ namespace Mau.Translator.Tests
                 "§'P_A', 'P_Ready'\n" +
                 "§'R_Slot': 1\n" +
                 "§⇐ 'P_A'\n" +
-                "§'M_Pump'[ω=1]: 'P_Ready' := 'llm.read_chunk'['requestId']\n" +
-                "§'T_Start'[τ=10]: 'S_Talk' = 'Building' ∧ 'R_Slot' ∧ 'P_A' + 'llm.chat'['x'] → 'S_Talk' = 'Thinking' | 'S_Talk' = 'Failed'\n";
+                "§'M_Pump'[ω=1]: 'P_Ready' := 'data.box_is'['s', 'k', 0]\n" +
+                "§'T_Start'[τ=10]: 'S_Talk' = 'Building' ∧ 'R_Slot' ∧ 'P_A' + 'file.read'['x'] → 'S_Talk' = 'Thinking' | 'S_Talk' = 'Failed'\n";
         }
 
         /// <summary>

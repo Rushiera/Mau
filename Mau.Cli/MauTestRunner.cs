@@ -44,6 +44,20 @@ namespace Mau.Cli
                 return 1;
             }
 
+            // [段1b] 热重载 fixture 构建——干净克隆自给自足（HotReloadTests 依赖 fixtures/bin/*.dll，bin 不入库；2026-08-13 外部审查漏洞 1 修复）
+            Console.WriteLine("[1b/4] 热重载 fixture 构建");
+            string fixtureOut = Path.Combine(root, "Mau.Runtime.Tests", "fixtures", "bin");
+            if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Runtime.Tests", "fixtures", "valid", "FL_ValidFlow.csproj") + "\" -c Release -o \"" + fixtureOut + "\" -v q --nologo"))
+            {
+                Console.WriteLine("FAIL: 热重载 fixture 构建失败（fixtures/valid/FL_ValidFlow.csproj）");
+                return 1;
+            }
+            if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Runtime.Tests", "fixtures", "nointerface", "FL_NoInterface.csproj") + "\" -c Release -o \"" + fixtureOut + "\" -v q --nologo"))
+            {
+                Console.WriteLine("FAIL: 热重载 fixture 构建失败（fixtures/nointerface/FL_NoInterface.csproj）");
+                return 1;
+            }
+
             if (!RunProcess("dotnet", "build \"" + Path.Combine(root, "Mau.Development.Tests", "Mau.Development.Tests.csproj") + "\" -v q --nologo"))
             {
                 Console.WriteLine("FAIL: 开发工具测试项目构建失败");

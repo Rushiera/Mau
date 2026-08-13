@@ -17,7 +17,7 @@ namespace Mau.Translator
 /// </summary>
 /// <param name = "doc">v2 解析文档</param>
 /// <returns>闭包条目（按 ID 稳定排序）</returns>
-public static List<BrickIndexEntry> CollectClosureV2(MauDocV2 doc)
+public static List<BrickIndexEntry> CollectClosureV2(MauDocV2 doc, BrickContext? ctx = null)
 {
     Dictionary<string, BrickIndexEntry> result = new Dictionary<string, BrickIndexEntry>(StringComparer.Ordinal);
     HashSet<string> visiting = new HashSet<string>(StringComparer.Ordinal);
@@ -32,7 +32,7 @@ public static List<BrickIndexEntry> CollectClosureV2(MauDocV2 doc)
                 continue;
             }
 
-            CollectEntry(brickName, result, visiting);
+            CollectEntry(brickName, result, visiting, ctx);
         }
     }
 
@@ -50,7 +50,7 @@ public static List<BrickIndexEntry> CollectClosureV2(MauDocV2 doc)
             continue;
         }
 
-        CollectEntry(brickName, result, visiting);
+        CollectEntry(brickName, result, visiting, ctx);
     }
 
     List<BrickIndexEntry> sorted = new List<BrickIndexEntry>(result.Values);
@@ -66,13 +66,26 @@ public static List<BrickIndexEntry> CollectClosureV2(MauDocV2 doc)
         /// <param name="name">积木名</param>
         /// <param name="result">收集结果（按 ID）</param>
         /// <param name="visiting">环防护集合</param>
+        /// <param name="ctx">编译上下文（null=仅基座）——产品条目标注 SourceRoot</param>
         private static void CollectEntry(string name,
-            Dictionary<string, BrickIndexEntry> result, HashSet<string> visiting)
+            Dictionary<string, BrickIndexEntry> result, HashSet<string> visiting, BrickContext? ctx)
         {
             BrickIndexEntry entry;
-            if (!BrickIndex.TryGet(name, out entry))
+            BrickIndexView? sourceView;
+            if (ctx != null)
             {
-                return;
+                if (!ctx.TryGet(name, out entry, out sourceView))
+                {
+                    return;
+                }
+            }
+            else
+            {
+                if (!BrickIndex.TryGet(name, out entry))
+                {
+                    return;
+                }
+                sourceView = null;
             }
             if (result.ContainsKey(entry.Id))
             {
@@ -82,6 +95,11 @@ public static List<BrickIndexEntry> CollectClosureV2(MauDocV2 doc)
             {
                 return; // 环——依赖声明错误，静默截断（编译期由验证器报）
             }
+            // 产品条目标注源根——ReadAndVerify 按条目根拼接路径
+            if (sourceView != null && entry.SourceRoot.Length == 0)
+            {
+                entry.SourceRoot = sourceView.Root;
+            }
             for (int i = 0; i < entry.Dependencies.Count; i++)
             {
                 string dep = entry.Dependencies[i];
@@ -89,7 +107,7 @@ public static List<BrickIndexEntry> CollectClosureV2(MauDocV2 doc)
                 {
                     continue; // 支撑文件——基座提供（SUPPORT 过渡期），不内嵌
                 }
-                CollectEntry(dep, result, visiting);
+                CollectEntry(dep, result, visiting, ctx);
             }
             visiting.Remove(entry.Id);
             result[entry.Id] = entry;
@@ -172,7 +190,9 @@ public static List<BrickIndexEntry> CollectClosureV2(MauDocV2 doc)
 {
             source = "";
             error = "";
-            string path = BrickIndex.ResolveSourcePath(entry);
+            string path = entry.SourceRoot.Length > 0
+                ? Path.Combine(entry.SourceRoot, entry.Path)
+                : BrickIndex.ResolveSourcePath(entry);
             string full;
             try
             {

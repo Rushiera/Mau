@@ -86,6 +86,13 @@ namespace Mau.Cli
         /// 跳过清单——聚合报告输出
         /// </summary>
         private static List<string> sSkips = new List<string>();
+        /// <summary>
+        /// 产品积木谱 [P] 统计——check --bricks <path> 项目自证段
+        /// </summary>
+        private static int sProductTotal = 0;
+        private static int sProductPass = 0;
+        private static int sProductFail = 0;
+        private static int sProductSkip = 0;
 /// <summary>
 /// 汇总计数——模板库总数
 /// </summary>
@@ -112,6 +119,7 @@ public static int Execute(string[] args)
             bool onlyBricks = false;
             bool selftest = false;
             bool analyze = false;
+            string? productBricks = null;
             for (int i = 0; i < args.Length; i = i + 1)
             {
                 if (args[i] == "--update")
@@ -124,7 +132,16 @@ public static int Execute(string[] args)
                 }
                 else if (args[i] == "--bricks")
                 {
-                    onlyBricks = true;
+                    // 带值 = 产品积木目录（[P] 产品谱）；无值 = 只跑积木谱（旧语义）
+                    if (i + 1 < args.Length && !args[i + 1].StartsWith("--"))
+                    {
+                        productBricks = args[i + 1];
+                        i = i + 1;
+                    }
+                    else
+                    {
+                        onlyBricks = true;
+                    }
                 }
                 else if (args[i] == "--selftest")
                 {
@@ -191,6 +208,11 @@ public static int Execute(string[] args)
                 {
                     RunBrickCorpus();
                     RunNegative(negativeDir);
+                }
+                if (productBricks != null)
+                {
+                    // [段4b] 产品积木谱 [P]——--bricks <path> 项目自证段（产品积木机制 design-mau-boundary.md §五）
+                    RunProductBrickCorpus(productBricks);
                 }
 
                 // [段5] 聚合报告 + 退出码
@@ -341,6 +363,74 @@ public static int Execute(string[] args)
                 Console.WriteLine("黄金哈希清单已更新: golden-sha.txt（" + names.Count.ToString() + " 份）");
             }
         }        /// <summary>
+/// 产品积木谱 [P]——check --bricks <path> 项目自证段（产品积木机制 design-mau-boundary.md §五）。
+/// 翻译级验证：产品契约可构造 + 最小语料组编译通过（Roslyn 编译由项目侧构筑承担）。
+/// </summary>
+/// <param name = "productDir">产品积木目录</param>
+private static void RunProductBrickCorpus(string productDir)
+{
+    // [段1] 产品上下文——目录无效 fail closed（E225 语义）
+    BrickContext ctx = BrickContext.FromProductDirs(new List<string> { productDir });
+    if (ctx.ProductError.Length > 0)
+    {
+        sProductTotal = sProductTotal + 1;
+        sProductFail = sProductFail + 1;
+        sErrors.Add("[P] " + ctx.ProductError);
+        return;
+    }
+
+    // [段2] 枚举产品契约 → 最小语料 → 组编译（产品上下文）
+    List<string> sourceTexts = new List<string>();
+    List<string> flowNames = new List<string>();
+    List<string> brickNames = new List<string>();
+    List<BrickContract> all = new List<BrickContract>();
+    for (int v = 0; v < ctx.Products.Count; v++)
+    {
+        foreach (BrickIndexEntry brickEntry in ctx.Products[v].All)
+        {
+            all.Add(brickEntry.Contract);
+        }
+    }
+
+    all.Sort(delegate (BrickContract a, BrickContract b)
+    {
+        return string.CompareOrdinal(a.Name, b.Name);
+    });
+    for (int i = 0; i < all.Count; i = i + 1)
+    {
+        BrickContract c = all[i];
+        sProductTotal = sProductTotal + 1;
+        string flowName = "ProductCheck" + c.Name.Replace(".", "");
+        sourceTexts.Add(CliSupport.BuildMinimalCorpusV2(c, "T_Run"));
+        flowNames.Add(flowName);
+        brickNames.Add(c.Name);
+    }
+
+    if (sourceTexts.Count == 0)
+    {
+        return;
+    }
+
+    // [段3] 组编译（产品上下文）——失败逐积木归因
+    GroupCompileResultV2 group = MauCompilerV2.CompileGroupV2(sourceTexts.ToArray(), flowNames.ToArray(), ctx);
+    for (int i = 0; i < group.Results.Count; i = i + 1)
+    {
+        if (!group.Results[i].Success)
+        {
+            sProductFail = sProductFail + 1;
+            sErrors.Add("[P] " + brickNames[i] + ": 翻译失败——" + FirstDiagnosticV2(group.Results[i]));
+        }
+        else
+        {
+            sProductPass = sProductPass + 1;
+        }
+    }
+
+    if (group.BrickGroupSource.Length > 0)
+    {
+        Console.WriteLine("[P] 产品积木闭包: " + group.BrickGroupSource.Length + " 字符（BRIKGROUP 内嵌段已生成）");
+    }
+}/// <summary>
         /// 积木谱——BrickIndex 枚举 → 契约生成最小语料 → 翻译 → CompileMany 一次组编译
         /// </summary>
         private static void RunBrickCorpus()
@@ -539,6 +629,12 @@ public static int Execute(string[] args)
                 Console.WriteLine("[D] 负例        " + sNegPass + "/" + sNegTotal + " 正确拒绝（" + sNegFail + " 未达预期）");
                 total = total + sBrickTotal + sNegTotal;
                 fail = fail + sBrickFail + sNegFail;
+            }
+            if (sProductTotal > 0)
+            {
+                Console.WriteLine("[P] 产品积木谱  " + sProductPass + "/" + sProductTotal + " 通过（" + sProductFail + " 失败 " + sProductSkip + " 跳过）");
+                total = total + sProductTotal;
+                fail = fail + sProductFail;
             }
             for (int i = 0; i < sErrors.Count; i = i + 1)
             {
