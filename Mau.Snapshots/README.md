@@ -1,7 +1,28 @@
-# Mau.Snapshots — 黄金文件库
+﻿# Mau.Snapshots — 语法谱与黄金哨兵
 
-> 定位：L3 文本校验的基准——每个 .mau 源文件的期望生成输出（字节级稳定对比）。
-> 结构：
->   cases/<名称>.mau        —— Mau 源文件
->   expected/<名称>.cs      —— 期望生成的 C#（黄金文件，仅莎确认后更新）
-> 规范：见 Project/Mau/design-mau-verification.md §二 L3。
+> 定位：`mau check` / `mau test` 的门禁输入——行为样例 + 负例谱 + TokenId 流黄金哈希。
+
+## 结构
+
+```
+cases/<名称>.mau          —— 语法谱（5 行为样例：对话状态机/工具循环/UI 态/测量轮询/∥ 后台）
+checks/v3/n<序号>_*.mau   —— 负例谱（4 例：词法 E0xx / 无界环 E300 / 不可达 E301 / 无恢复 E302）
+generated-run/            —— 临时生成目录（mau gen 随时再生，git 排除）
+golden-sha-v3.txt         —— 黄金哈希哨兵（每行：文件名 TokenId流SHA256）
+```
+
+## 黄金哨兵
+
+- 哈希对象 = **TokenId 流**（外观无关）——换外观字符不漂移，语义变更漂移
+- 重建：`mau test --update`（语法谱变更后执行）
+- 校验：`mau test` [2/3] 段自动比对，漂移即 FAIL
+
+## 负例谱约定
+
+- 文件头声明预期错误码：`// 预期: E300`
+- `mau check` [D·L2] 段验证"正确拒绝"——编译必须失败且首诊与预期一致
+- 新增负例 = 新分析拦截能力上线时的验收方式
+
+---
+
+_版本：v3.0.2 | 2026-08-14 | 重写为 v3 黄金哨兵说明（v2 的 expected/ 字节级对比机制随 v2.1.2-final 退役）_

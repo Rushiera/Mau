@@ -35,7 +35,7 @@ namespace Mau.Runtime
         private readonly Dictionary<long, string> _typeNames = new Dictionary<long, string>();
 
         /// <summary>
-        /// 种类名册——ID 到种类（dog/pet/flow——is 推断）
+        /// 种类名册——ID 到种类（v3 机制层零产品语义：kind 恒 flow）
         /// </summary>
         private readonly Dictionary<long, string> _kinds = new Dictionary<long, string>();
 
@@ -143,7 +143,7 @@ namespace Mau.Runtime
         /// <summary>
         /// 注册类型工厂——宿主加载业务模块时登记（类型键全局唯一）
         /// </summary>
-        /// <param name="typeKey">类型键——业务模块声明的实体类型（如 DogType）</param>
+        /// <param name="typeKey">类型键——业务模块声明的实体类型</param>
         /// <param name="factory">实例工厂</param>
         /// <returns>true=注册成功；false=键重复或参数非法</returns>
         public bool RegisterFactory(string typeKey, Func<IFlow> factory)
