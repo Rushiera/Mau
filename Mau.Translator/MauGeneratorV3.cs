@@ -131,7 +131,7 @@ namespace Mau.Translator
                 for (int i = 0; i < sm.States.Count; i++)
                 {
                     string statePascal = NamePascal(sm.States[i]);
-                    sb.AppendLine("        public bool Is" + statePascal + "() { return " + NameField(sm.Name) + " == " + pascal + "State." + statePascal + "; }");
+                    sb.AppendLine("        public bool Is" + statePascal + "_" + pascal + "() { return " + NameField(sm.Name) + " == " + pascal + "State." + statePascal + "; }");
                 }
                 sb.AppendLine("        public string GetState_" + NamePascal(sm.Name) + "() { return " + NameField(sm.Name) + ".ToString(); }");
                 sb.AppendLine("");
@@ -229,7 +229,7 @@ namespace Mau.Translator
         /// <param name="sensor">传感器声明</param>
         /// <param name="doc">IR</param>
         private static void AppendSensorShell(StringBuilder sb, SensorDefV3 sensor, MauDocV3 doc)
-        {
+{
             string field = NameField(sensor.Name);
             string pascal = NameBodyPascal(sensor.Name);
             sb.AppendLine("        // ── 传感器 " + sensor.Name + "（主动壳——每 " + sensor.EveryFrames + " 帧探测）──");
@@ -250,7 +250,7 @@ namespace Mau.Translator
             sb.AppendLine("                ok = " + expr + ";");
             if (sensor.CaptureTarget.Length > 0)
             {
-                // 探测落盒——bool 返回值（探测积木 = 判断语义）落 DataBox 位置
+                // 探测落盒——bool 返回值（探测积木 = 判断语义——落盒即判断结果）
                 sb.AppendLine("                DataBox.Set<bool>(" + BoxScopeExpr(sensor.CaptureTarget) + ", \"" + BoxKey(sensor.CaptureTarget) + "\", ok);");
             }
             sb.AppendLine("            }");
@@ -559,15 +559,13 @@ namespace Mau.Translator
             AppendResultStatements(sb, wire, "ok", "frame");
             sb.AppendLine("        }");
         }/// <summary>
-        /// par 导线执行——Busy 门防重入 + 主线程冻结启程 + Task.Run 后台动作 + Inbox 回投（主线程 Drain 应用）。
-        /// 线程隔离：后台线程只调积木 handler + Inbox.Enqueue——零共享可变状态（RT.3 形态）。
-        /// </summary>
-        /// <param name="sb">输出缓冲</param>
-        /// <param name="wire">导线</param>
-        /// <param name="pascal">导线 PascalCase 名</param>
-        /// <param name="field">导线字段名</param>
-        private static void AppendWireExecuteParallel(StringBuilder sb, WireDefV3 wire, string pascal, string field, MauDocV3 doc)
-        {
+/// par 导线执行——Busy 门防重入 + 主线程冻结启程（@key 参数启程帧取数） + Task.Run 后台动作 + Inbox 回投（主线程 Drain 应用）。线程隔离：后台线程只调积木 handler + Inbox.Enqueue——lambda 捕获启程帧值快照，零共享可变状态（RT.3 形态）。
+/// </summary>
+///
+
+        ///
+private static void AppendWireExecuteParallel(StringBuilder sb, WireDefV3 wire, string pascal, string field, MauDocV3 doc)
+{
             sb.AppendLine("        private void " + pascal + "_Execute(int frame)");
             sb.AppendLine("        {");
             // [段1] Busy 门——后台动作在途防重入
@@ -589,7 +587,7 @@ namespace Mau.Translator
                 sb.AppendLine("            " + field + "_cube.Start();");
             }
             sb.AppendLine("            AuditStore.Default?.Record(\"Flow\", \"trace.fire\", -1, new AuditProp[] { new AuditProp(\"wire\", \"" + wire.Name + "\"), new AuditProp(\"frame\", frame.ToString()) });");
-            // [段3] 参数内联冻结——调用表达式字面量直嵌 lambda（零捕获零共享）
+            // [段3] 参数冻结取数——@key 引用在启程帧主线程前置取数（FlowContext 是 ThreadStatic——后台线程读不到 FlowId，取数必须在启程侧完成）
             string captureField = "";
             if (wire.CaptureTarget.Length > 0)
             {
@@ -599,6 +597,15 @@ namespace Mau.Translator
             StringBuilder prelude = new StringBuilder();
             string expr = BrickCallExpr(wire.BrickName, wire.BrickArgs, captureField, doc, prelude);
             string preludeText = prelude.ToString();
+            if (preludeText.Length > 0)
+            {
+                preludeText = preludeText.Replace("\n                ", "\n            ");
+                if (preludeText.StartsWith("                "))
+                {
+                    preludeText = preludeText.Substring(4);
+                }
+            }
+            sb.Append(preludeText);
             string captureDecl = "";
             if (wire.CaptureTarget.Length > 0)
             {
@@ -619,7 +626,7 @@ namespace Mau.Translator
                     captureDecl = "                string v_capture = \"\";";
                 }
             }
-            // [段4] Task.Run——后台线程只调积木 + Inbox 回投（零共享可变状态）
+            // [段4] Task.Run——后台线程只调积木 + Inbox 回投（lambda 捕获启程帧冻结的值快照——零共享可变状态）
             sb.AppendLine("            System.Threading.Tasks.Task.Run(delegate ()");
             sb.AppendLine("            {");
             sb.AppendLine("                bool ok = false;");
@@ -629,7 +636,6 @@ namespace Mau.Translator
             }
             sb.AppendLine("                try");
             sb.AppendLine("                {");
-            sb.Append(preludeText);
             sb.AppendLine("                    ok = " + expr + ";");
             sb.AppendLine("                }");
             sb.AppendLine("                catch (Exception ex)");
@@ -647,7 +653,7 @@ namespace Mau.Translator
             sb.AppendLine("            });");
             sb.AppendLine("        }");
             // [段5] 回投应用——主线程 Tick 开头 Drain（见 AppendTickInboxes）
-        }/// <summary>
+}/// <summary>
         /// 结果语句生成——同步路径（ok 变量 + 分支 + trace.state）
         /// </summary>
         /// <param name="sb">输出缓冲</param>
@@ -696,11 +702,28 @@ namespace Mau.Translator
             sb.AppendLine("        public void Tick(int frame)");
             sb.AppendLine("        {");
             sb.AppendLine("            _frame = frame;");
+            bool hasCmd = false;
+            for (int i = 0; i < doc.Sensors.Count; i++)
+            {
+                if (doc.Sensors[i].IsCmd)
+                {
+                    hasCmd = true;
+                    break;
+                }
+            }
+            if (hasCmd)
+            {
+                sb.AppendLine("            CmdPump();");
+            }
             sb.AppendLine("            TickInboxes(frame);");
             sb.AppendLine("            TickWires(frame);");
             sb.AppendLine("        }");
             sb.AppendLine("");
             AppendTickInboxes(sb, doc);
+            if (hasCmd)
+            {
+                AppendCommandPump(sb, doc);
+            }
             // 主动壳接口实现——ISensorLoop.TickSensors（宿主协程列表驱动，与 Flow.Tick 分离）
             bool hasActive = false;
             for (int i = 0; i < doc.Sensors.Count; i++)
@@ -733,7 +756,90 @@ namespace Mau.Translator
             }
             sb.AppendLine("        }");
         }
-        /// <summary>
+/// <summary>
+/// Command 泵生成——懒注册 CommandBus + 每帧拉邮件 → 传感器置沿 + CmdTexts 落全局盒。
+/// Command = 唯一外部输入总线：宿主演化投递（SetText），生成物 Tick 内拉取（主线程契约）。
+/// payload 落盒 key 名 = Command key（全局盒 "global"）——语料经 key 裸词引用。
+/// </summary>
+/// <param name = "sb">输出缓冲</param>
+/// <param name = "doc">IR</param>
+private static void AppendCommandPump(StringBuilder sb, MauDocV3 doc)
+{
+    // [段1] 字段——懒注册标记（构造期 FlowId 未设置——首次 Tick 注册）
+    sb.AppendLine("        private bool _cmdRegistered;");
+    sb.AppendLine("");
+    sb.AppendLine("        private void CmdPump()");
+    sb.AppendLine("        {");
+    // [段2] 懒注册——TryResolve 失败静默（宿主未绑 CommandBus = 无外部输入）
+    sb.AppendLine("            if (!_cmdRegistered)");
+    sb.AppendLine("            {");
+    sb.AppendLine("                ICommandBus bus;");
+    sb.AppendLine("                DataBox.TryResolve<ICommandBus>(out bus);");
+    sb.AppendLine("                if (bus == null)");
+    sb.AppendLine("                {");
+    sb.AppendLine("                    return;");
+    sb.AppendLine("                }");
+    StringBuilder keys = new StringBuilder();
+    int cmdCount = 0;
+    for (int s = 0; s < doc.Sensors.Count; s++)
+    {
+        if (doc.Sensors[s].IsCmd)
+        {
+            if (cmdCount > 0)
+            {
+                keys.Append(", ");
+            }
+            keys.Append("\"");
+            keys.Append(doc.Sensors[s].CmdKey);
+            keys.Append("\"");
+            cmdCount = cmdCount + 1;
+        }
+    }
+    sb.AppendLine("                bus.Register(FlowContext.CurrentFlowId, new string[] { " + keys.ToString() + " });");
+    sb.AppendLine("                _cmdRegistered = true;");
+    sb.AppendLine("            }");
+    // [段3] 拉邮件——无新指令即空转
+    sb.AppendLine("            ICommandBus cmd;");
+    sb.AppendLine("            DataBox.TryResolve<ICommandBus>(out cmd);");
+    sb.AppendLine("            if (cmd == null)");
+    sb.AppendLine("            {");
+    sb.AppendLine("                return;");
+    sb.AppendLine("            }");
+    sb.AppendLine("            CommandPack email = cmd.GetCommandEmail(FlowContext.CurrentFlowId);");
+    sb.AppendLine("            if (!email.HasCommands)");
+    sb.AppendLine("            {");
+    sb.AppendLine("                return;");
+    sb.AppendLine("            }");
+    // [段4] 逐 key 匹配传感器——有 payload 才置沿 + 落全局盒（模板邮件含全部注册 key——无 payload 的 key 不触发）
+    sb.AppendLine("            for (int i = 0; i < email.CmdKeys.Length; i = i + 1)");
+    sb.AppendLine("            {");
+    sb.AppendLine("                string key = email.CmdKeys[i];");
+    sb.AppendLine("                if (email.CmdTexts != null && i < email.CmdTexts.Length && email.CmdTexts[i] != null)");
+    sb.AppendLine("                {");
+    for (int s = 0; s < doc.Sensors.Count; s++)
+    {
+        if (!doc.Sensors[s].IsCmd)
+        {
+            continue;
+        }
+        if (s == 0)
+        {
+            sb.AppendLine("                    if (key == \"" + doc.Sensors[s].CmdKey + "\")");
+        }
+        else
+        {
+            sb.AppendLine("                    else if (key == \"" + doc.Sensors[s].CmdKey + "\")");
+        }
+        sb.AppendLine("                    {");
+        sb.AppendLine("                        DataBox.Signal(\"" + doc.Sensors[s].Name + "\");");
+        sb.AppendLine("                    }");
+    }
+    sb.AppendLine("                    DataBox.Set<string>(\"global\", key, email.CmdTexts[i]);");
+    sb.AppendLine("                }");
+    sb.AppendLine("            }");
+    sb.AppendLine("        }");
+    sb.AppendLine("");
+}/// <summary>
         /// GetStatus 生成——四柱快照组装（P3 观测支柱：状态机枚举值/主动传感器实测/槽余量/导线状态）
         /// </summary>
         /// <param name="sb">输出缓冲</param>
@@ -988,13 +1094,40 @@ namespace Mau.Translator
         /// <param name="name">参数引用名</param>
         /// <returns>true=盒子引用</returns>
         private static bool IsValueSensor(MauDocV3 doc, string name)
-        {
-            // 盒子 Key 引用判定——@ 前缀 = 私有盒（全局 Key 由写源表判定——生成器保守处理 @ 前缀即可）
-            if (name.Length > 0 && name[0] == '@')
+{
+            string t = name.Trim();
+            // 盒子 Key 引用判定——@ 前缀 = 私有盒 / 已注册写源全局盒 / 裸词 = 全局盒（外部写源——宿主 Command 落盒）
+            if (t.Length > 0 && t[0] == '@')
             {
                 return true;
             }
-            return GenBoxTypes(doc).ContainsKey(name);
+            if (GenBoxTypes(doc).ContainsKey(t))
+            {
+                return true;
+            }
+            // 字符串字面量（"..."）与纯数字——非盒子引用
+            if (t.Length >= 2 && t[0] == '"')
+            {
+                return false;
+            }
+            bool allDigits = t.Length > 0;
+            for (int i = 0; i < t.Length; i++)
+            {
+                char c = t[i];
+                bool digit = c >= '0' && c <= '9';
+                bool dot = c == '.';
+                if (!digit && !dot)
+                {
+                    allDigits = false;
+                    break;
+                }
+            }
+            if (allDigits)
+            {
+                return false;
+            }
+            // 全局盒裸词——动作参数中无 @ 的裸词即全局盒引用（B1 豁免面——类型默认 string）
+            return true;
         }/// <summary>
         /// 积木强类型调用表达式——Mau.Bricks.Xxx.Yyy(args, out _)——编译期验型（P5 协议 A）。
         /// 索引未命中兑底 false（E4xx 已拦，理论不可达）。

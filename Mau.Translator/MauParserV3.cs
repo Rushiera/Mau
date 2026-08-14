@@ -247,6 +247,20 @@ namespace Mau.Translator
                 doc.Sensors.Add(def);
                 return;
             }
+            if (section[1].Id == TokenIds.CmdIn)
+            {
+                // Command 传感器——CommandBus 外部指令源（唯一外部输入总线；payload 落全局盒 key 名）
+                def.Passive = true;
+                def.IsCmd = true;
+                if (section.Count < 3 || section[2].Id != TokenIds.Str)
+                {
+                    doc.Diagnostics.Add(new MauDiagnostic("E105", first.Line, "Command 传感器格式: § 'P_X' ⇚ \"CmdKey\"——key 字符串必填"));
+                    return;
+                }
+                def.CmdKey = section[2].Value;
+                doc.Sensors.Add(def);
+                return;
+            }
             if (section[1].Id == TokenIds.Sample)
             {
                 // 主动壳——帧门控 + 探测（可捕获）→ 分支动作（只读世界，零状态转移）
@@ -319,7 +333,7 @@ namespace Mau.Translator
                 doc.Sensors.Add(def);
                 return;
             }
-            doc.Diagnostics.Add(new MauDiagnostic("E105", first.Line, "传感器缺端口符号——⇐（被动）或 ↻（主动壳）"));
+            doc.Diagnostics.Add(new MauDiagnostic("E105", first.Line, "传感器缺端口符号——⇐（被动）/ ⇚（Command）/ ↻（主动壳）"));
         }
         /// <summary>
         /// 解析导线段——§ 'T_X' [属性] : 条件 & 条件 → 动作 | 结果 | 结果

@@ -74,6 +74,9 @@ namespace Mau.Contracts
         /// <summary>&gt; 捕获——导线动作 out 端口捕获落盒（@key 私有 / key 全局）</summary>
         public const uint Capture = 21;
 
+        /// <summary>⇚ Command 输入——传感器绑定 CommandBus 外部指令源（唯一外部输入总线）</summary>
+        public const uint CmdIn = 22;
+
         /// <summary>文件尾</summary>
         public const uint Eof = 20;
     }

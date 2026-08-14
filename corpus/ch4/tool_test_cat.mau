@@ -1,0 +1,57 @@
+﻿// tool_test_cat.mau —— ToolTestCat 语料（CH4 第一轮 P2c）
+// 角色：编排者（Dog 侧）——Command 接收 → 建单 → 写参数 → 结果收集 → 输出
+// Command 语义：⇚ 传感器 = 唯一外部输入总线（CommandBus）——宿主投递 → 生成物拉邮件 → 置沿 + payload 落全局盒
+// 双线拓扑：ReadText 线（单参 path）+ QuickCat 线（双参 system/content）——双状态机串行
+// 数据面：@rOffice/@qOffice/@rResult/@qResult 私有（FlowId 隔离）；ReadText/QuickCat_system/QuickCat_content 全局盒（宿主落盒——B1 豁免）
+// 线程模型：全部主线程同步（OA 动作）；结果等待走主动壳轮询（is_done 终态探测——超时单也可见）
+// 观测：trace 埋点 + log.write CMD 专属类别 + 盒子 DataBox 位置（sys.box 直读）
+
+// ── 状态机 ──
+§ 'S_Read' = { 'Idle', 'Posted', 'Ready', 'Done', 'Failed' }
+§ 'S_Quick' = { 'Idle', 'Posted', 'Ready', 'Waiting', 'Done', 'Failed' }
+
+// ── Command 传感器（外部指令——宿主投递触发；key 三段式 Category_Module_Name——CommandBus 注册契约）──
+§ 'P_ReadCmd' ⇚ "TOOL_Text_Read"
+§ 'P_QuickSys' ⇚ "TOOL_Quick_System"
+§ 'P_QuickCon' ⇚ "TOOL_Quick_Content"
+
+// ── 主动传感器壳——终态探测（is_done：Closed/TimeOut 均完成——超时单不悬挂）──
+§ 'P_RDone' ↻ [1]: 'oa.is_done'[@rOffice] > @rDone
+§ 'P_QDone' ↻ [1]: 'oa.is_done'[@qOffice] > @qDone
+
+// ── 导线链 —— ReadText 线 ──
+
+// T_RPost：指令沿 + Idle → 上架 ReadText 工单（超时 600 帧——P2d 宿主帧率定后校准）
+§ 'T_RPost' : 'P_ReadCmd' & 'S_Read' = 'Idle' → 'oa.post'["TOOL", "ReadText", 600] > @rOffice | 'S_Read' = 'Posted' | 'S_Read' = 'Idle'
+
+// T_RSet：写载荷 path（全局盒 TOOL_Text_Read——宿主投递的指令文本）
+§ 'T_RSet' : 'S_Read' = 'Posted' → 'oa.set_str'[@rOffice, "path", TOOL_Text_Read] | 'S_Read' = 'Ready' | 'S_Read' = 'Failed'
+
+// T_RCollect：终态到达 → 读回执 result（空 result = 超时或失败——输出侧可见）
+§ 'T_RCollect' : @rDone & 'S_Read' = 'Ready' → 'oa.get_result_str'[@rOffice] > @rResult | 'S_Read' = 'Done' | 'S_Read' = 'Failed'
+
+// T_ROut：成功输出（CMD 类别日志——独立 Log 渠道）
+§ 'T_ROut' : 'S_Read' = 'Done' → 'log.write'["TOOL | ReadText | DONE", 0, "CMD"] | 'S_Read' = 'Idle' | 'S_Read' = 'Idle'
+
+// T_RFailOut：失败输出（ERROR 级——失败可见性）
+§ 'T_RFailOut' : 'S_Read' = 'Failed' → 'log.write'["TOOL | ReadText | FAIL", 3, "CMD"] | 'S_Read' = 'Idle' | 'S_Read' = 'Idle'
+
+// ── 导线链 —— QuickCat 线 ──
+
+// T_QPost：双沿合取（system + content 同帧投递）+ Idle → 上架 QuickCat 工单
+§ 'T_QPost' : 'P_QuickSys' & 'P_QuickCon' & 'S_Quick' = 'Idle' → 'oa.post'["TOOL", "QuickCat", 600] > @qOffice | 'S_Quick' = 'Posted' | 'S_Quick' = 'Idle'
+
+// T_QSetS：写载荷 system（多参验证点 1/2）
+§ 'T_QSetS' : 'S_Quick' = 'Posted' → 'oa.set_str'[@qOffice, "system", TOOL_Quick_System] | 'S_Quick' = 'Ready' | 'S_Quick' = 'Failed'
+
+// T_QSetC：写载荷 content（多参验证点 2/2）
+§ 'T_QSetC' : 'S_Quick' = 'Ready' → 'oa.set_str'[@qOffice, "content", TOOL_Quick_Content] | 'S_Quick' = 'Waiting' | 'S_Quick' = 'Failed'
+
+// T_QCollect：终态到达 → 读回执 result
+§ 'T_QCollect' : @qDone & 'S_Quick' = 'Waiting' → 'oa.get_result_str'[@qOffice] > @qResult | 'S_Quick' = 'Done' | 'S_Quick' = 'Failed'
+
+// T_QOut：成功输出
+§ 'T_QOut' : 'S_Quick' = 'Done' → 'log.write'["TOOL | QuickCat | DONE", 0, "CMD"] | 'S_Quick' = 'Idle' | 'S_Quick' = 'Idle'
+
+// T_QFailOut：失败输出
+§ 'T_QFailOut' : 'S_Quick' = 'Failed' → 'log.write'["TOOL | QuickCat | FAIL", 3, "CMD"] | 'S_Quick' = 'Idle' | 'S_Quick' = 'Idle'

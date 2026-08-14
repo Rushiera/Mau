@@ -29,7 +29,8 @@ namespace Mau.Translator
             CheckNames(doc.Sensors, "传感器", kinds, doc);
             CheckNames(doc.Wires, "导线", kinds, doc);
             CheckNames(doc.Slots, "槽", kinds, doc);
-            // [段2] 引用完整性
+            // [段2] 引用完整性 + Command key 唯一性
+            CheckCmdKeys(doc);
             CheckReferences(doc);
             // [段3] 主动传感器积木存在性（解析层已保证非空——双保险）
             for (int i = 0; i < doc.Sensors.Count; i++)
@@ -73,7 +74,32 @@ namespace Mau.Translator
                 }
             }
         }
+/// <summary>
+/// Command key 唯一校验——一 key 一传感器（CommandBus 注册语义：key → 唯一注册者）
+/// </summary>
+/// <param name = "doc">FSM 网络 IR</param>
+private static void CheckCmdKeys(MauDocV3 doc)
+{
+    Dictionary<string, string> keys = new Dictionary<string, string>(StringComparer.Ordinal);
+    for (int i = 0; i < doc.Sensors.Count; i++)
+    {
+        SensorDefV3 sensor = doc.Sensors[i];
+        if (!sensor.IsCmd || sensor.CmdKey.Length == 0)
+        {
+            continue;
+        }
 
+        string? existing;
+        if (keys.TryGetValue(sensor.CmdKey, out existing) && existing != null)
+        {
+            doc.Diagnostics.Add(new MauDiagnostic("E206", sensor.Line, "Command key 重名: '" + sensor.CmdKey + "'——已属于传感器 '" + existing + "'（当前声明为 '" + sensor.Name + "'）"));
+        }
+        else
+        {
+            keys[sensor.CmdKey] = sensor.Name;
+        }
+    }
+}
         /// <summary>
         /// 引用完整性校验——导线条件/结果引用的传感器与状态必须存在
         /// </summary>
@@ -369,7 +395,7 @@ namespace Mau.Translator
         /// <param name="doc">诊断收集</param>
         /// <param name="boxTypes">盒子表</param>
         private static void CheckBoxArgs(List<string> args, string brickName, int line, MauDocV3 doc, Dictionary<string, string> boxTypes)
-        {
+{
             BrickIndexEntry entry;
             if (!BrickIndex.TryFind(brickName, out entry))
             {
@@ -382,13 +408,16 @@ namespace Mau.Translator
                 {
                     continue;
                 }
-                string boxType = "";
                 if (!boxTypes.ContainsKey(arg))
                 {
-                    doc.Diagnostics.Add(new MauDiagnostic("E407", line, "盒子 '" + arg + "' 读无写源——先有捕获落盒（> @key / > key）才能引用"));
+                    // B1 豁免——全局盒（无 @ 前缀）写源在语料外（宿主 Command 投递落盒）——数据全局性哲学：真实存在的东西都是全局的
+                    if (arg.Length == 0 || arg[0] == '@')
+                    {
+                        doc.Diagnostics.Add(new MauDiagnostic("E407", line, "盒子 '" + arg + "' 读无写源——先有捕获落盒（> @key / > key）才能引用"));
+                    }
                     continue;
                 }
-                boxType = boxTypes[arg];
+                string boxType = boxTypes[arg];
                 string inType = "";
                 if (i < entry.InputTypes.Count)
                 {
@@ -400,7 +429,6 @@ namespace Mau.Translator
                 }
             }
         }
-
         /// <summary>
         /// 单盒子读检查——条件判真引用需有写源
         /// </summary>
@@ -409,13 +437,16 @@ namespace Mau.Translator
         /// <param name="doc">诊断收集</param>
         /// <param name="boxTypes">盒子表</param>
         private static void CheckBoxRead(string key, int line, MauDocV3 doc, Dictionary<string, string> boxTypes)
-        {
+{
             if (!boxTypes.ContainsKey(key))
             {
-                doc.Diagnostics.Add(new MauDiagnostic("E407", line, "盒子 '" + key + "' 读无写源——先有捕获落盒（> @key / > key）才能引用"));
+                // B1 豁免——全局盒（无 @ 前缀）写源在语料外——数据全局性哲学
+                if (key.Length == 0 || key[0] == '@')
+                {
+                    doc.Diagnostics.Add(new MauDiagnostic("E407", line, "盒子 '" + key + "' 读无写源——先有捕获落盒（> @key / > key）才能引用"));
+                }
             }
         }
-
         /// <summary>
         /// 单次积木调用校验——E400 未知积木 / E401 参数数量 / E402 参数类别
         /// </summary>
@@ -425,7 +456,7 @@ namespace Mau.Translator
         /// <param name="doc">诊断收集</param>
         /// <param name="boxTypes">盒子表（Key → 类型）</param>
         private static void CheckBrickCall(string name, List<string> args, int line, MauDocV3 doc, Dictionary<string, string> boxTypes)
-        {
+{
             BrickIndexEntry entry;
             if (!BrickIndex.TryFind(name, out entry))
             {
@@ -439,10 +470,16 @@ namespace Mau.Translator
             }
             for (int i = 0; i < args.Count; i++)
             {
+                string trimmed = args[i].Trim();
                 string actualKind = ArgKind(args[i]);
-                if (actualKind == "name" && IsBoxRef(boxTypes, args[i].Trim()))
+                if (actualKind == "name" && IsBoxRef(boxTypes, trimmed))
                 {
                     // 盒子 Key 引用——存在性与类型匹配归 CheckBoxes 统一查
+                    continue;
+                }
+                if (actualKind == "name" && trimmed.Length > 0 && trimmed[0] != '@')
+                {
+                    // B1 豁免——全局盒裸词（无 @ 前缀）——外部写源（宿主 Command 落盒），类型信任 string
                     continue;
                 }
                 string expectedKind = ContractKind(entry.InputTypes[i]);
@@ -452,7 +489,6 @@ namespace Mau.Translator
                 }
             }
         }
-
         /// <summary>
         /// 参数原文类别——"..." → str / 纯数字 → num / 其他 → name
         /// </summary>

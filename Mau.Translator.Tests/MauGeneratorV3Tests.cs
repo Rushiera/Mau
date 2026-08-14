@@ -44,7 +44,7 @@ namespace Mau.Translator.Tests
             Assert.Contains("DataBox.RegisterSignal(\"P_Go\")", result.GeneratedCode);
             Assert.Contains("DataBox.TryPeek(\"P_Go\")", result.GeneratedCode);
             Assert.Contains("DataBox.TryPoll(\"P_Go\")", result.GeneratedCode);
-            Assert.Contains("public bool IsIdle()", result.GeneratedCode);
+            Assert.Contains("public bool IsIdle_STalk()", result.GeneratedCode);
             Assert.Contains("public FlowStatusV3 GetStatus()", result.GeneratedCode);
             Assert.Contains("trace.fire", result.GeneratedCode);
             Assert.Contains("trace.state", result.GeneratedCode);
@@ -338,6 +338,26 @@ namespace Mau.Translator.Tests
             CompileResultV3 result = MauCompilerV3.Compile(sample, "Multi");
             Assert.False(result.Success);
             Assert.Equal("E205", result.Diagnostics[0].Code);
+        }
+
+        /// <summary>
+        /// Command 传感器生成——CmdPump 拉邮件 + Signal 置沿 + payload 落全局盒 + 全局盒取数
+        /// </summary>
+        [Fact]
+        public void Generate_CmdSensor_PumpAndGlobalBox()
+        {
+            string sample =
+                "§ 'S_A' = { 'X', 'Y' }\n" +
+                "§ 'P_Cmd' ⇚ \"CmdKey\"\n" +
+                "§ 'T_Go' : 'P_Cmd' & 'S_A' = 'X' → 'probe.sink'[CmdKey, 0] | 'S_A' = 'Y' | 'S_A' = 'X'";
+            CompileResultV3 result = MauCompilerV3.Compile(sample, "CmdFlow");
+            Assert.True(result.Success);
+            Assert.Contains("CmdPump()", result.GeneratedCode);
+            Assert.Contains("bus.Register(FlowContext.CurrentFlowId, new string[] { \"CmdKey\" })", result.GeneratedCode);
+            Assert.Contains("GetCommandEmail(FlowContext.CurrentFlowId)", result.GeneratedCode);
+            Assert.Contains("DataBox.Signal(\"P_Cmd\")", result.GeneratedCode);
+            Assert.Contains("DataBox.Set<string>(\"global\", key, email.CmdTexts[i])", result.GeneratedCode);
+            Assert.Contains("DataBox.TryGet<string>(\"global\", \"CmdKey\"", result.GeneratedCode);
         }
     }
 }

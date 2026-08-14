@@ -93,5 +93,58 @@ namespace Mau.Translator.Tests
             Assert.False(doc.Success);
             Assert.Equal("E203", doc.Diagnostics[0].Code);
         }
+        /// <summary>
+        /// B1 正例——全局盒裸词（无 @ 前缀）动作参数——外部写源豁免 E407/E402
+        /// </summary>
+        [Fact]
+        public void Validate_GlobalBoxArg_ExternalWriter_Allowed()
+        {
+            MauDocV3 doc = Compile(
+                "§ 'S_A' = { 'X', 'Y' }\n" +
+                "§ 'P_Go' ⇐\n" +
+                "§ 'T_Go' : 'P_Go' & 'S_A' = 'X' → 'probe.sink'[ExtKey, 0] | 'S_A' = 'Y' | 'S_A' = 'X'");
+            Assert.True(doc.Success);
+        }
+
+        /// <summary>
+        /// 负例——私有盒（@ 前缀）读无写源仍被拦 → E407
+        /// </summary>
+        [Fact]
+        public void Validate_Reject_PrivateBoxNoWriter()
+        {
+            MauDocV3 doc = Compile(
+                "§ 'S_A' = { 'X', 'Y' }\n" +
+                "§ 'P_Go' ⇐\n" +
+                "§ 'T_Go' : 'P_Go' & 'S_A' = 'X' → 'probe.sink'[@NoWriter, 0] | 'S_A' = 'Y' | 'S_A' = 'X'");
+            Assert.False(doc.Success);
+            Assert.Equal("E407", doc.Diagnostics[0].Code);
+        }
+
+        /// <summary>
+        /// 正例——Command 传感器（⇚ 外部指令源）完整声明 + 导线沿引用
+        /// </summary>
+        [Fact]
+        public void Validate_CmdSensor_Valid()
+        {
+            MauDocV3 doc = Compile(
+                "§ 'S_A' = { 'X', 'Y' }\n" +
+                "§ 'P_Cmd' ⇚ \"CmdKey\"\n" +
+                "§ 'T_Go' : 'P_Cmd' & 'S_A' = 'X' → 'probe.sink'[\"x\", 0] | 'S_A' = 'Y' | 'S_A' = 'X'");
+            Assert.True(doc.Success);
+        }
+
+        /// <summary>
+        /// 负例——Command key 重名 → E206
+        /// </summary>
+        [Fact]
+        public void Validate_Reject_DuplicateCmdKey()
+        {
+            MauDocV3 doc = Compile(
+                "§ 'S_A' = { 'X' }\n" +
+                "§ 'P_C1' ⇚ \"SameKey\"\n" +
+                "§ 'P_C2' ⇚ \"SameKey\"");
+            Assert.False(doc.Success);
+            Assert.Equal("E206", doc.Diagnostics[0].Code);
+        }
     }
 }

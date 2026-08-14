@@ -23,6 +23,7 @@ project.nuget.cache
 build/
 publish/
 CatTemp/
+Data/
 Mau.Snapshots/generated-run/
 
 # === IDE ===

@@ -115,5 +115,18 @@ namespace Mau.Translator.Tests
             DefaultAppearance appearance = Create();
             Assert.Equal("v3-default", appearance.AppearanceName);
         }
+
+        /// <summary>
+        /// Command 传感器符号——⇚ 映射 CmdIn
+        /// </summary>
+        [Fact]
+        public void TryMap_CmdIn()
+        {
+            DefaultAppearance appearance = Create();
+            uint tokenId;
+            Assert.True(appearance.TryMap("⇚", out tokenId));
+            Assert.Equal(Mau.Contracts.TokenIds.CmdIn, tokenId);
+            Assert.Equal("⇚", appearance.Glyph(Mau.Contracts.TokenIds.CmdIn));
+        }
     }
 }

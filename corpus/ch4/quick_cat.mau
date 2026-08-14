@@ -1,0 +1,32 @@
+// quick_cat.mau —— QuickCat 语料（CH4 第一轮 P2b）
+// 角色：QuickCat 双参消费者——探测接单 → 读双参载荷 → llm.completions（后台）→ 回执 → 复位
+// 双参验证：system + content 经 OA 载荷传输（ToolTestCat set_str ×2 → 本语料 get_str ×2）
+// 数据面：盒子 Key——@office/@system/@content/@reply 私有（FlowId 隔离）；@anyOpen 探测落盒
+// 线程模型：接单/读参/回执主线程同步；LLM 调用 [par] 后台（Task.Run → Inbox 回投主线程）
+// 观测：trace 埋点生成器内建 + OA 机制专属 Log + 盒子 DataBox 位置（sys.box 直读）
+
+// ── 状态机 ──
+§ 'S_Quick' = { 'Idle', 'Claimed', 'Reading', 'Calling', 'Done', 'Failed' }
+
+// ── 主动传感器壳——探测 QuickCat Open 单（纯探测零副作用，帧门控 1）──
+§ 'P_AnyOpen' ↻ [1]: 'oa.is_open'["TOOL", "QuickCat"] > @anyOpen
+
+// ── 导线链 ──
+
+// T_Claim：盒子判真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_Claim' : @anyOpen & 'S_Quick' = 'Idle' → 'oa.claim_next_simple'["TOOL", "QuickCat"] > @office | 'S_Quick' = 'Claimed' | 'S_Quick' = 'Idle'
+
+// T_ReadSystem：读工单载荷 system（双参之一）
+§ 'T_ReadSystem' : 'S_Quick' = 'Claimed' → 'oa.get_str'[@office, "system"] > @system | 'S_Quick' = 'Reading' | 'S_Quick' = 'Failed'
+
+// T_ReadContent：读工单载荷 content（双参之二）
+§ 'T_ReadContent' : 'S_Quick' = 'Reading' → 'oa.get_str'[@office, "content"] > @content | 'S_Quick' = 'Calling' | 'S_Quick' = 'Failed'
+
+// T_Exec：LLM 调用——[par] 后台（同步 HTTP 不占主线程；Busy 门 + Task.Run + Inbox 回投）
+§ 'T_Exec' [par] : 'S_Quick' = 'Calling' → 'llm.completions'[@system, @content] > @reply | 'S_Quick' = 'Done' | 'S_Quick' = 'Failed'
+
+// T_Reply：成功回执（result=LLM 回复）
+§ 'T_Reply' : 'S_Quick' = 'Done' → 'oa.complete_str'[@office, @reply] | 'S_Quick' = 'Idle' | 'S_Quick' = 'Idle'
+
+// T_Abort：失败回执（@reply 空或 ERR| 文本——失败侧也回执，ToolTestCat 可见失败原因）
+§ 'T_Abort' : 'S_Quick' = 'Failed' → 'oa.complete_str'[@office, @reply] | 'S_Quick' = 'Idle' | 'S_Quick' = 'Idle'

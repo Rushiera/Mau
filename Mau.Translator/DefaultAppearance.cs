@@ -30,6 +30,7 @@ namespace Mau.Translator
             { '[', TokenIds.ParamOpen },
             { ']', TokenIds.ParamClose },
             { '>', TokenIds.Capture },
+            { '⇚', TokenIds.CmdIn },
         };
 
         /// <summary>
@@ -61,6 +62,7 @@ namespace Mau.Translator
             { TokenIds.ParamOpen, "[" },
             { TokenIds.ParamClose, "]" },
             { TokenIds.Capture, ">" },
+            { TokenIds.CmdIn, "⇚" },
         };
 
         /// <summary>
