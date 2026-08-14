@@ -4,9 +4,9 @@ namespace Mau.Contracts
 {
     /// <summary>
     /// Mau 语言内核 TokenId 表——翻译器只认编号，不认字符（design-mau-v3 §三）。
-    /// 词法级 token：符号 14 个 + 值 6 个 = 20 个。设计稿 §3.3 的语义项（T_STATE/T_SENSOR/
+    /// 词法级 token：符号 15 个 + 值 6 个 = 21 个。设计稿 §3.3 的语义项（T_STATE/T_SENSOR/
     /// T_WIRE/T_SLOT/T_ATTR_*/T_EVERY）由解析层按前缀与结构推导——单元关键字零化，
-    /// 符合词法宪法"语义词退化为符号或推导"。
+    /// 符合词法宪法"语义词退化为符号或推导"。新 token 一律追加编号末尾——黄金零漂移。
     /// </summary>
     public static class TokenIds
     {
