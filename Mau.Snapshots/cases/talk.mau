@@ -1,0 +1,6 @@
+﻿// 对话状态机——TalkCat 行为骨架（CH4 语料提炼形态）
+§ 'S_Talk' = { 'Idle', 'Thinking', 'Done' }
+§ 'P_Go' ⇐
+§ 'P_Fail' ⇐
+§ 'T_Start' [t=30] : 'P_Go' & 'S_Talk' = 'Idle' → 'llm.chat'["hi"] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'
+§ 'T_Retry' : 'P_Fail' & 'S_Talk' = 'Thinking' → 'llm.chat'["retry"] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'

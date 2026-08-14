@@ -135,7 +135,15 @@ namespace Mau.Runtime
         /// <returns>文本</returns>
         public static string LevelText(int level)
         {
-            return BrickText.LevelText(level);
+            if (level >= 3)
+            {
+                return "ERROR";
+            }
+            if (level == 2)
+            {
+                return "WARN";
+            }
+            return "INFO";
         }
 
         /// <summary>
@@ -145,7 +153,11 @@ namespace Mau.Runtime
         /// <returns>非空文本</returns>
         public static string SafeText(string? value)
         {
-            return BrickText.SafeText(value);
+            if (value == null)
+            {
+                return "";
+            }
+            return value;
         }
     }
 }

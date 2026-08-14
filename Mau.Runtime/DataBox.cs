@@ -375,5 +375,104 @@ public static void Reset()
             }
             return value;
         }
+
+        // ── 事件区（v3 新增——内部交互总线，P3 观测支柱）──
+
+        /// <summary>
+        /// 事件表——信号名 → 沿标志（1=置位待消费）。并发字典 + 原子标志。
+        /// </summary>
+        private static readonly ConcurrentDictionary<string, int> _signals =
+            new ConcurrentDictionary<string, int>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 注册事件信号——语料传感器声明期调用（生成物构造）；重复注册 = 幂等。
+        /// </summary>
+        /// <param name="name">信号名（语料传感器名——全局唯一）</param>
+        /// <exception cref="ArgumentException">name 为空</exception>
+        public static void RegisterSignal(string name)
+        {
+            string safeName = ValidateKey(name, "name");
+            _signals.TryAdd(safeName, 0);
+        }
+
+        /// <summary>
+        /// 投递事件沿——任意线程调用（原子置位）。消费前多次投递合并（信号无队列——覆盖合并是特征）。
+        /// </summary>
+        /// <param name="name">信号名</param>
+        /// <exception cref="InvalidOperationException">未注册的信号（与 CommandBus 未注册 Key REJECT 同语义——fail fast）</exception>
+        public static void Signal(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name) || !_signals.ContainsKey(name))
+            {
+                throw new InvalidOperationException("DataBox.Signal: 未注册的信号 '" + name + "'——先 RegisterSignal（语料传感器声明）");
+            }
+            // 原子置位——0→1 CAS（已是 1 保持 1；任意线程安全）
+            _signals.TryUpdate(name, 1, 0);
+            AuditStore.Default?.Record("DataBox", "signal.post", -1, new AuditProp[] {
+                new AuditProp("name", name),
+                new AuditProp("frame", FlowRunner.GlobalFrame.ToString())
+            });
+        }
+
+        /// <summary>
+        /// 预检事件沿——不消费（导线条件原子检查用：全过才消费）。
+        /// </summary>
+        /// <param name="name">信号名</param>
+        /// <returns>true=沿已置位（未消费）</returns>
+        /// <exception cref="InvalidOperationException">未注册的信号</exception>
+        public static bool TryPeek(string name)
+        {
+            int old;
+            if (string.IsNullOrWhiteSpace(name) || !_signals.TryGetValue(name, out old))
+            {
+                throw new InvalidOperationException("DataBox.TryPeek: 未注册的信号 '" + name + "'——先 RegisterSignal（语料传感器声明）");
+            }
+            return old == 1;
+        }
+
+        /// <summary>
+        /// 消费事件沿——主线程调用（生成物 Tick 内）。置位返回 true 并清除；未置位返回 false。
+        /// </summary>
+        /// <param name="name">信号名</param>
+        /// <returns>true=沿已消费</returns>
+        /// <exception cref="InvalidOperationException">未注册的信号</exception>
+        public static bool TryPoll(string name)
+        {
+            int old;
+            if (string.IsNullOrWhiteSpace(name) || !_signals.TryGetValue(name, out old))
+            {
+                throw new InvalidOperationException("DataBox.TryPoll: 未注册的信号 '" + name + "'——先 RegisterSignal（语料传感器声明）");
+            }
+            // 消费沿——值 1 → CAS 清零返回 true；值 0 → false（主线程消费语义）
+            if (old == 1)
+            {
+                _signals.TryUpdate(name, 0, 1);
+                AuditStore.Default?.Record("DataBox", "signal.consume", -1, new AuditProp[] {
+                    new AuditProp("name", name),
+                    new AuditProp("frame", FlowRunner.GlobalFrame.ToString())
+                });
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 已注册信号清单——观测（sys.box 信号段/调试用）
+        /// </summary>
+        /// <returns>信号名数组（排序稳定）</returns>
+        public static string[] SignalNames()
+        {
+            List<string> names = new List<string>(_signals.Keys);
+            names.Sort(StringComparer.Ordinal);
+            return names.ToArray();
+        }
+
+        /// <summary>
+        /// 事件区重置——测试隔离（清空全部信号注册）
+        /// </summary>
+        public static void ResetSignals()
+        {
+            _signals.Clear();
+        }
     }
 }

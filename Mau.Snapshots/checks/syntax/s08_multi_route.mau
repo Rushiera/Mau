@@ -1,8 +1,0 @@
-// s08 语法谱——多路路由（名称返回积木 switch 分发）
-// 特性：cmd.match 返回匹配名，| 分支忠实展开，末项 default 兜底
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Ui' = { 'Idle', 'Open', 'Toggle', 'Select' }
-§'P_Cmd'
-§⇐ 'P_Cmd'['activeKey']
-§'T_Route'[τ=5]: 'P_Cmd' + 'cmd.match'['activeKey', ["Open","Toggle","Select"]] → 'S_Ui' = 'Open' | 'S_Ui' = 'Toggle' | 'S_Ui' = 'Select' | 'S_Ui' = 'Idle'

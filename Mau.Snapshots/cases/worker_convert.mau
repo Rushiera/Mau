@@ -1,8 +1,0 @@
-// worker_convert.mau —— worker 线程文件转换（异步 inbox 汇合形态验证——∥ 属性 + ⋈ 汇合；Mau v2.0 语法）
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Conv' = { 'Idle', 'Done', 'Failed' }
-§$'input', 'output'
-§'P_Input'
-§⇐ 'P_Input'['input', 'output']
-§'T_WorkerConvert'[τ=300, ∥, ⋈]: 'P_Input' + 'file.convert'['input', 'output'] → 'S_Conv' = 'Done' | 'S_Conv' = 'Failed'

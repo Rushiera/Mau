@@ -1,0 +1,4 @@
+﻿// 热重载测试 fixture 语料——最小 v3 生成物（动态生成源；测试内 Compile → Emit → dll）
+§ 'S_Test' = { 'Idle', 'Done' }
+§ 'P_Go' ⇐
+§ 'T_Go' : 'P_Go' & 'S_Test' = 'Idle' → | 'S_Test' = 'Done' | 'S_Test' = 'Done'

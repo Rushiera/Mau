@@ -1,8 +1,0 @@
-// hello_cat.mau —— hello 猫（CH4 试点 T1：OA 工单 → log 记录 → 完成回执；Mau v2.0 语法）
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Hello' = { 'Idle', 'Done', 'Failed' }
-§$'module', 'message'
-§'P_Ask'
-§⇐ 'P_Ask'['module', 'message']
-§'T_Hello': 'P_Ask' + 'log.write'['module', 0, 'message'] → 'S_Hello' = 'Done' | 'S_Hello' = 'Failed'

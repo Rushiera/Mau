@@ -687,7 +687,7 @@ public string[] GetKeyDic()
             return true;
         }
 /// <summary>
-/// 验证 Command key 中的一个标识段——支持 Unicode 字母（中文猫名等）；首字符必须字母，其余字母或数字
+/// 验证 Command key 中的一个标识段——支持 Unicode 字母；首字符必须字母，其余字母或数字
 /// </summary>
 ///
 
@@ -707,40 +707,7 @@ private bool IsValidSegment(string segment)
             }
             return true;
         }
-/// <summary>
-/// 把任意标识规范化为合法 key 段——保留 Unicode 字母数字，其余字符删除；
-/// 空结果回落 "cat"；数字开头补 'c' 前缀（首字符必须字母）
-/// </summary>
-/// <param name = "raw">原始标识（猫名/会话 Key）</param>
-/// <returns>合法 key 段</returns>
-public static string KeySegment(string raw)
-{
-    if (raw == null || raw.Length == 0)
-    {
-        return "cat";
-    }
-
-    System.Text.StringBuilder sb = new System.Text.StringBuilder();
-    for (int i = 0; i < raw.Length; i = i + 1)
-    {
-        if (char.IsLetterOrDigit(raw[i]))
-        {
-            sb.Append(raw[i]);
-        }
-    }
-
-    if (sb.Length == 0)
-    {
-        return "cat";
-    }
-
-    if (!char.IsLetter(sb[0]))
-    {
-        sb.Insert(0, 'c');
-    }
-
-    return sb.ToString();
-}        
+        
         /// <summary>
         /// 写入可选日志
         /// </summary>

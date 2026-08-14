@@ -6,7 +6,8 @@ using System.Text;
 namespace Mau.Cli
 {
     /// <summary>
-    /// Mau.Cli 公共支撑——FindWorkspaceRoot / ComputeSha256 唯一实现（收敛原四份重复）
+    /// Mau.Cli 公共支撑（v3 最小面）——仓库根探测 / SHA256 / 输出分级 / 尾部截断 / 文件锁探测。
+    /// v2 的积木谱语料构造（BuildMinimalCorpus*）随积木体系退役（P5 重生后再立）。
     /// </summary>
     public static class CliSupport
     {
@@ -15,216 +16,185 @@ namespace Mau.Cli
         /// </summary>
         /// <returns>workspace 根或空</returns>
         public static string? FindWorkspaceRoot()
-{
-            // 统一探针——FindRepoRoot（审查修复轮 2026-08-11 决策2：5 处变体收敛）
-            return FindRepoRoot(Directory.GetCurrentDirectory(), new string[] { "Mau.sln" }, AppContext.BaseDirectory);
-        }/// <summary>
-/// 统一仓库根探针——从起始目录向上查找含任一标记（文件或目录）的目录；fallbackDir 向上兜底
-/// </summary>
-/// <param name = "startDir">起始目录（优先查找链）</param>
-/// <param name = "markers">标记集合——文件或目录名（如 Mau.sln / CatTemp / .git）</param>
-/// <param name = "fallbackDir">兜底目录（如程序集位置）；空=不兜底</param>
-/// <returns>仓库根或空</returns>
-public static string? FindRepoRoot(string startDir, string[] markers, string? fallbackDir = null)
-{
-    string? Probe(string? from)
-    {
-        string? dir = from == null ? null : new DirectoryInfo(from).FullName;
-        while (dir != null)
         {
-            for (int i = 0; i < markers.Length; i = i + 1)
-            {
-                string candidate = Path.Combine(dir, markers[i]);
-                if (File.Exists(candidate) || Directory.Exists(candidate))
-                {
-                    return dir;
-                }
-            }
-
-            dir = Directory.GetParent(dir)?.FullName;
+            return FindRepoRoot(Directory.GetCurrentDirectory(), new string[] { "Mau.sln" }, AppContext.BaseDirectory);
         }
 
-        return null;
-    }
+        /// <summary>
+        /// 统一仓库根探针——从起始目录向上查找含任一标记的目录；fallbackDir 向上兜底
+        /// </summary>
+        /// <param name="startDir">起始目录（优先查找链）</param>
+        /// <param name="markers">标记集合——文件或目录名（如 Mau.sln）</param>
+        /// <param name="fallbackDir">兜底目录（如程序集位置）；空=不兜底</param>
+        /// <returns>仓库根或空</returns>
+        public static string? FindRepoRoot(string startDir, string[] markers, string? fallbackDir = null)
+        {
+            string? found = Probe(startDir, markers);
+            if (found != null)
+            {
+                return found;
+            }
+            if (fallbackDir != null && fallbackDir.Length > 0)
+            {
+                return Probe(fallbackDir, markers);
+            }
+            return null;
+        }
 
-    string? found = Probe(startDir);
-    if (found != null)
-    {
-        return found;
-    }
+        /// <summary>
+        /// 向上探测标记
+        /// </summary>
+        /// <param name="from">起始目录</param>
+        /// <param name="markers">标记集合</param>
+        /// <returns>命中目录或空</returns>
+        private static string? Probe(string? from, string[] markers)
+        {
+            string? dir = from == null ? null : new DirectoryInfo(from).FullName;
+            while (dir != null)
+            {
+                for (int i = 0; i < markers.Length; i = i + 1)
+                {
+                    string candidate = Path.Combine(dir, markers[i]);
+                    if (File.Exists(candidate) || Directory.Exists(candidate))
+                    {
+                        return dir;
+                    }
+                }
+                dir = Directory.GetParent(dir)?.FullName;
+            }
+            return null;
+        }
 
-    if (fallbackDir != null && fallbackDir.Length > 0)
-    {
-        return Probe(fallbackDir);
-    }
-
-    return null;
-}
         /// <summary>
         /// 计算字符串的 SHA256 哈希——UTF-8 字节转 64 位十六进制大写
         /// </summary>
         /// <param name="text">输入文本</param>
         /// <returns>64 位十六进制哈希（大写）</returns>
         public static string ComputeSha256(string text)
-{
-            // 统一实现下沉 Mau.Runtime.HashUtil（审查修复轮 2026-08-11——原 Cli 私有实现与 Translator.BrickEmbedder 重复）
-            return Mau.Runtime.HashUtil.ComputeSha256(text);
-        }/// <summary>
-/// 详细输出开关——--verbose 全局生效（⑤ D18：两级分级——默认 + --verbose）
-/// </summary>
-public static bool Verbose = false; 
-/// <summary>
-/// 默认流——关键节点/结果/错误/摘要（⑤ D20 输出流工程条件：能进入流的条件）
-/// </summary>
-/// <param name = "message">输出行</param>
- public  static  void  Info ( string  message ) { Console . WriteLine ( message ) ;  } 
-/// <summary>
-/// 详细流——过程细节（--verbose 才输出；默认静默——源头降密度 D17）
-/// </summary>
-/// <param name = "message">输出行</param>
- public  static  void  Detail ( string  message ) { if  ( Verbose ) { Console . WriteLine ( message ) ;  } } 
-/// <summary>
-/// 解析 verbose 开关——命令参数含 --verbose 时启用（命令入口统一调用；全局静态，一次设置全命令生效）
-/// </summary>
-/// <param name = "args">命令参数</param>
- public  static  void  ParseVerbose ( string [ ]  args ) { for  ( int  i  =  0 ;  i < args . Length ;  i  =  i + 1 ) { if  ( args [ i ] == "--verbose" ) { Verbose  =  true ;  return ;  } } } 
-/// <summary>
-/// 尾部保留截断——从尾部保留最后 N 行（⑤ D19：错误/结论在尾部；正常流程不该触发）
-/// </summary>
-/// <param name = "text">原始文本</param>
-/// <param name = "maxLines">保留行数</param>
-/// <returns>截断后文本——空输入返回（无输出）</returns>
- public  static  string  TailLines ( string  text ,  int  maxLines ) { if  ( text == null  || text . Trim ( ) . Length == 0 ) { return  "（无输出）" ;  } string [ ]  lines  =  text . Replace ( "\r\n" ,  "\n" ) . Split ( '\n' ) ;  int  start  =  lines . Length > maxLines ? lines . Length - maxLines :  0 ;  StringBuilder  sb  =  new  StringBuilder ( ) ;  for  ( int  i  =  start ;  i < lines . Length ;  i  =  i + 1 ) { sb . AppendLine ( lines [ i ] ) ;  } return  sb . ToString ( ) ;  }
-/// <summary>
-/// 探测文件是否被进程占用——以写方式独占打开（成功=未锁；IOException=被锁）。
-/// ⑦ 统一遇锁即失败协议（D31）：自身指令遇锁冲突立即失败带诊断，不等待。
-/// </summary>
-/// <param name = "paths">待探测路径</param>
-/// <returns>第一个被锁路径；全部未锁返回空串</returns>
-public static string FindLockedFile(string[] paths)
-{
-    for (int i = 0; i < paths.Length; i = i + 1)
-    {
-        if (!File.Exists(paths[i]))
         {
-            continue;
+            byte[] bytes = Encoding.UTF8.GetBytes(text);
+            byte[] hash = SHA256.HashData(bytes);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < hash.Length; i++)
+            {
+                sb.Append(hash[i].ToString("X2"));
+            }
+            return sb.ToString();
         }
 
-        try
+        /// <summary>
+        /// 详细输出开关——--verbose 全局生效
+        /// </summary>
+        public static bool Verbose = false;
+
+        /// <summary>
+        /// 默认流——关键节点/结果/错误/摘要
+        /// </summary>
+        /// <param name="message">输出行</param>
+        public static void Info(string message)
         {
-            using (FileStream fs = new FileStream(paths[i], FileMode.Open, FileAccess.Write, FileShare.None))
+            Console.WriteLine(message);
+        }
+
+        /// <summary>
+        /// 详细流——过程细节（--verbose 才输出）
+        /// </summary>
+        /// <param name="message">输出行</param>
+        public static void Detail(string message)
+        {
+            if (Verbose)
             {
-            // 探测成功——未锁
+                Console.WriteLine(message);
             }
         }
-        catch (IOException)
-        {
-            return paths[i];
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return paths[i];
-        }
-    }
 
-    return "";
-}    /// <summary>
-/// JSON 字符串转义——统一实现（原 CommandBricks/CommandMauProj/CommandRun/HttpTransport 四份重复，审查修复轮收拢）
-/// </summary>
-/// <param name = "s">原始字符串，可为 null</param>
-/// <returns>转义后字符串</returns>
-public static string JsonEscape(string? s)
-{
-            // 统一实现下沉 Mau.Runtime.TextUtil（审查修复轮 2026-08-11——原四份独立实现收拢）
-            return Mau.Runtime.TextUtil.JsonEscape(s);
-        }/// <summary>
-/// 构建最小语料 v2——全符号语法 + 按契约输入端口类型生成参数字面量（积木谱 v2 用）
-/// </summary>
-/// <param name = "contract">积木契约</param>
-/// <param name = "transitionName">控制律名（默认 T_Run）</param>
-/// <returns>.mau 源码</returns>
-public static string BuildMinimalCorpusV2(Mau.Contracts.BrickContract contract, string transitionName = "T_Run")
-{
-    StringBuilder paramSb = new StringBuilder();
-    for (int p = 0; p < contract.Inputs.Count; p++)
-    {
-        if (p > 0)
+        /// <summary>
+        /// 解析 verbose 开关——命令参数含 --verbose 时启用
+        /// </summary>
+        /// <param name="args">命令参数</param>
+        public static void ParseVerbose(string[] args)
         {
-            paramSb.Append(", ");
+            for (int i = 0; i < args.Length; i = i + 1)
+            {
+                if (args[i] == "--verbose")
+                {
+                    Verbose = true;
+                    return;
+                }
+            }
         }
-        paramSb.Append(BrickParamLiteral(contract.Inputs[p].Type));
-    }
-    string header = "§'Mau' 2.0\n§'Mau.Runtime' 2.0\n";
-    string machine = "§'S_Run' = { 'Idle', 'Done', 'Failed' }\n";
-    string prop = "§'P_Go'\n§⇐ 'P_Go'\n";
-    string law = "§'" + transitionName + "'[τ=60]: 'P_Go' + '" + contract.Name + "'[" + paramSb.ToString() + "] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'\n";
-    return header + machine + prop + law;
-}
-/// <summary>
-/// 端口类型 → v2 参数字面量（可构造白名单——基元/数组；不可构造类型给占位暴露问题让积木谱归因）
-/// </summary>
-/// <param name = "type">端口类型</param>
-/// <returns>参数字面量文本</returns>
-private static string BrickParamLiteral(Type type)
-{
-    if (type == typeof(string))
-    {
-        return "\"x\"";
-    }
-    if (type == typeof(bool))
-    {
-        return "0";
-    }
-    if (type == typeof(int) || type == typeof(long) || type == typeof(double) || type == typeof(float))
-    {
-        return "0";
-    }
-    if (type.IsArray)
-    {
-        Type elem = type.GetElementType()!;
-        if (elem == typeof(string))
-        {
-            return "[\"a\",\"b\"]";
-        }
-        if (elem == typeof(bool))
-        {
-            return "[0,1]";
-        }
-        if (elem == typeof(int) || elem == typeof(long) || elem == typeof(double) || elem == typeof(float))
-        {
-            return "[0,1]";
-        }
-    }
-    return "\"<unconstructible>\"";
-}
-/// <summary>
-/// 构建最小语料——信号触发 + 单变迁 + 双后置（积木冒烟/积木谱/smoke 共用模板；审查修复轮 2026-08-11 决策6）
-/// </summary>
-/// <param name = "brickName">动作积木名</param>
-/// <param name = "paramLines">参数声明（已拼接，可为空串）</param>
-/// <param name = "transitionName">变迁名（默认 T_Run）</param>
-/// <returns>.mau 源码</returns>
-public static string BuildMinimalCorpus(string brickName, string paramLines, string transitionName = "T_Run")
-{
-    return "Mau 0.1\n基座: Mau.Runtime/v0.1\n\n命题:\n  P_Go 信号\n  P_Done 事实\n  P_Failed 事实\n\n变迁 " + transitionName + ":\n  前置: P_Go\n  动作: " + brickName + "\n  参数: " + paramLines + "\n  时限: 60帧\n  后置: P_Done / P_Failed\n";
-}/// <summary>
-/// 取子参数数组——args[1..]（命令名之后；统一分发样板，消灭逐命令手动搬运循环）
-/// </summary>
-/// <param name = "args">完整命令行参数</param>
-/// <returns>命令名之后的子数组（无则空数组）</returns>
-public static string[] Tail(string[] args)
-{
-    if (args == null || args.Length <= 1)
-    {
-        return Array.Empty<string>();
-    }
 
-    string[] tail = new string[args.Length - 1];
-    for (int i = 1; i < args.Length; i = i + 1)
-    {
-        tail[i - 1] = args[i];
-    }
+        /// <summary>
+        /// 尾部保留截断——从尾部保留最后 N 行（错误/结论在尾部）
+        /// </summary>
+        /// <param name="text">原始文本</param>
+        /// <param name="maxLines">保留行数</param>
+        /// <returns>截断后文本——空输入返回（无输出）</returns>
+        public static string TailLines(string text, int maxLines)
+        {
+            if (text == null || text.Trim().Length == 0)
+            {
+                return "（无输出）";
+            }
+            string[] lines = text.Replace("\r\n", "\n").Split('\n');
+            int start = lines.Length > maxLines ? lines.Length - maxLines : 0;
+            StringBuilder sb = new StringBuilder();
+            for (int i = start; i < lines.Length; i = i + 1)
+            {
+                sb.AppendLine(lines[i]);
+            }
+            return sb.ToString();
+        }
 
-    return tail;
-}}
+        /// <summary>
+        /// 探测文件是否被进程占用——以写方式独占打开（成功=未锁；IOException=被锁）
+        /// </summary>
+        /// <param name="paths">待探测路径</param>
+        /// <returns>第一个被锁路径；全部未锁返回空串</returns>
+        public static string FindLockedFile(string[] paths)
+        {
+            for (int i = 0; i < paths.Length; i = i + 1)
+            {
+                if (!File.Exists(paths[i]))
+                {
+                    continue;
+                }
+                try
+                {
+                    using (FileStream fs = new FileStream(paths[i], FileMode.Open, FileAccess.Write, FileShare.None))
+                    {
+                        // 探测成功——未锁
+                    }
+                }
+                catch (IOException)
+                {
+                    return paths[i];
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return paths[i];
+                }
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// 取子参数数组——args[1..]（命令名之后；统一分发样板）
+        /// </summary>
+        /// <param name="args">完整命令行参数</param>
+        /// <returns>命令名之后的子数组（无则空数组）</returns>
+        public static string[] Tail(string[] args)
+        {
+            if (args == null || args.Length <= 1)
+            {
+                return Array.Empty<string>();
+            }
+            string[] tail = new string[args.Length - 1];
+            for (int i = 1; i < args.Length; i = i + 1)
+            {
+                tail[i - 1] = args[i];
+            }
+            return tail;
+        }
+    }
 }

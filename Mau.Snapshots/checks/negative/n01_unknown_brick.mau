@@ -1,8 +1,0 @@
-// n01 负例——积木未注册
-// 预期: E220
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Run' = { 'Idle', 'Done', 'Failed' }
-§'P_Go'
-§⇐ 'P_Go'
-§'T_Run'[τ=5]: 'P_Go' + 'brick.not_exist'['x'] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

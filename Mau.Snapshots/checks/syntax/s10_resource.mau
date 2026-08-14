@@ -1,9 +1,0 @@
-// s10 语法谱——资源配额（独占 = 配额 1）
-// 特性：前置引用资源获取，动作完成释放
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Run' = { 'Idle', 'Done', 'Failed' }
-§'P_Go'
-§'R_Slot': 1
-§⇐ 'P_Go'
-§'T_Run'[τ=5]: 'P_Go' ∧ 'R_Slot' + 'file.convert'['src', 'dst'] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

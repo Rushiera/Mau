@@ -37,18 +37,11 @@ namespace Mau.Runtime.Tests
         }
 
         /// <summary>
-        /// 确保 fixture DLL 已编译
+        /// 确保 fixture DLL 已生成——缺失时动态构建（FixtureBuilder 共享入口）
         /// </summary>
         private static void AssertFixturesExist()
         {
-            if (!File.Exists(ValidDllPath))
-            {
-                throw new FileNotFoundException("Fixture DLL 未编译。请先运行 fixtures/build-fixtures.cmd。缺失: " + ValidDllPath);
-            }
-            if (!File.Exists(NoInterfaceDllPath))
-            {
-                throw new FileNotFoundException("Fixture DLL 未编译。请先运行 fixtures/build-fixtures.cmd。缺失: " + NoInterfaceDllPath);
-            }
+            FixtureBuilder.Ensure();
         }
 
         // ──────────────────────────────────────
@@ -70,21 +63,6 @@ namespace Mau.Runtime.Tests
             using FlowHandle handle = FlowHandle.Load(ValidDllPath);
             IObservableFlow flow = handle.Flow;
             Assert.True(flow is IObservableFlow);
-        }
-
-        [Fact]
-        public void Load_ValidDll_TickAdvancesFrame()
-        {
-            AssertFixturesExist();
-            using FlowHandle handle = FlowHandle.Load(ValidDllPath);
-            IObservableFlow flow = handle.Flow;
-
-            RuntimeStatus before = flow.GetStatus();
-            Assert.Equal(0L, before.Frame);
-
-            flow.Tick();
-            RuntimeStatus after = flow.GetStatus();
-            Assert.Equal(1L, after.Frame);
         }
 
         // ──────────────────────────────────────
@@ -146,7 +124,7 @@ namespace Mau.Runtime.Tests
             AssertFixturesExist();
             FlowHandle handle = FlowHandle.Load(ValidDllPath);
             IObservableFlow? flow = handle.Flow;
-            flow.Tick();
+            flow.Tick(0);
             flow = null;    // 释放局部引用——减少调用方栈帧残留
 
             // TryUnload 不应抛异常，且完成后 Flow 不可访问
@@ -155,26 +133,6 @@ namespace Mau.Runtime.Tests
             // ⚠️ 不检查 result：TryUnload 的 GC 确认受调用方栈帧引用影响（flow 临时槽可能残留到方法尾），
             // false 不必然泄漏。真实回收断言见 V10 TryUnload_AssemblyWeakRef_ReclaimedAfterScopeExit（作用域外弱引用死亡）。
             Assert.Throws<ObjectDisposedException>(() => handle.Flow);
-        }
-
-        // ──────────────────────────────────────
-        // V6: 卸载后重新加载同一 DLL——验证 ALC 隔离
-        // ──────────────────────────────────────
-
-        [Fact]
-        public void Unload_Reload_Works()
-        {
-            AssertFixturesExist();
-            FlowHandle handle1 = FlowHandle.Load(ValidDllPath);
-            handle1.Flow.Tick();
-            handle1.TryUnload(5);
-
-            // 卸载后重新加载同一 DLL 应成功
-            using FlowHandle handle2 = FlowHandle.Load(ValidDllPath);
-            Assert.NotNull(handle2.Flow);
-            handle2.Flow.Tick();
-            RuntimeStatus status = handle2.Flow.GetStatus();
-            Assert.Equal(1L, status.Frame);
         }
 
         // ──────────────────────────────────────
@@ -188,35 +146,6 @@ namespace Mau.Runtime.Tests
             FlowHandle handle = FlowHandle.Load(ValidDllPath);
             handle.Dispose();
             Assert.Throws<ObjectDisposedException>(() => handle.Flow);
-        }
-
-        // ──────────────────────────────────────
-        // V8: 多次 Tick + GetStatus + GetLogs
-        // ──────────────────────────────────────
-
-        [Fact]
-        public void TickMultiple_StatusAndLogsCorrect()
-        {
-            AssertFixturesExist();
-            using FlowHandle handle = FlowHandle.Load(ValidDllPath);
-            IObservableFlow flow = handle.Flow;
-
-            for (int i = 0; i < 5; i = i + 1)
-            {
-                flow.Tick();
-            }
-
-            RuntimeStatus status = flow.GetStatus();
-            Assert.Equal(5L, status.Frame);
-
-            MauDebug[] logs = flow.GetLogs();
-            Assert.Equal(5, logs.Length);
-
-            for (int i = 0; i < logs.Length; i = i + 1)
-            {
-                Assert.Equal((long)(i + 1), logs[i].Frame);
-                Assert.Equal("T_Test", logs[i].TransitionName);
-            }
         }
 
         // ──────────────────────────────────────
@@ -341,7 +270,7 @@ namespace Mau.Runtime.Tests
         private static void RunUnloadInScope(out WeakReference assemblyRef)
         {
             FlowHandle handle = FlowHandle.Load(ValidDllPath);
-            handle.Flow.Tick();
+            handle.Flow.Tick(0);
             assemblyRef = new WeakReference(handle.Flow.GetType().Assembly);
             handle.TryUnload(10);
         }

@@ -1,8 +1,0 @@
-// s11 语法谱——系统边界（OA 接收）
-// 特性：⇐ 'msg' → 'P_Msg' OA 接收解包
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Run' = { 'Idle', 'Done', 'Failed' }
-§'P_Msg'
-§⇐ 'msg' → 'P_Msg'
-§'T_Run'[τ=5]: 'P_Msg' + 'file.convert'['src', 'dst'] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

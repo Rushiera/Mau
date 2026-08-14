@@ -79,8 +79,8 @@ namespace Mau.Runtime
             try
             {
                 newHandle = FlowHandle.Load(dllPath);
-                // 最小验证：GetStatus 不抛异常
-                newHandle.Flow.GetStatus();
+                // 最小验证：Tick 不抛异常
+                newHandle.Flow.Tick(0);
             }
             catch
             {
@@ -120,7 +120,7 @@ public string[] ReloadFlows(string[] pendingDlls)
             newHandles = FlowHandle.LoadAll(dllPath);
             for (int h = 0; h < newHandles.Length; h = h + 1)
             {
-                newHandles[h].Flow.GetStatus();
+                newHandles[h].Flow.Tick(0);
             }
         }
         catch (Exception ex)
@@ -193,7 +193,7 @@ public string[] ReloadFlows(string[] pendingDlls)
                 }
                 try
                 {
-                    h.Flow.Tick();
+                    h.Flow.Tick(0);
                 }
                 catch (Exception ex)
                 {

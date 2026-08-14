@@ -1,9 +1,0 @@
-// n08 负例——测量采样非 bool 返回（名称返回积木不可作测量）
-// 预期: E222
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Run' = { 'Idle', 'Done', 'Failed' }
-§'P_Go', 'P_Match'
-§⇐ 'P_Go'
-§'M_Poll'[ω=1]: 'P_Match' := 'cmd.match'['key', ["A"]]
-§'T_Run'[τ=5]: 'P_Go' + 'file.convert'['a', 'b'] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

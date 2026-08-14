@@ -293,51 +293,6 @@ namespace Mau.Runtime.Tests
         }
 
         /// <summary>
-        /// sys.summary——快照聚合视图（④ D16：帧号/实体/Command/OA/DataBox/LLM/审计 一屏看全）
-        /// </summary>
-        [Fact]
-        public void SysSummary_AggregatesAllSections()
-        {
-            ThreadGuard guard = new ThreadGuard();
-            OA oa = new OA(guard);
-            CommandBus cmd = new CommandBus(guard);
-            IdAllocator ids = new IdAllocator();
-            FlowRunner runner = new FlowRunner(guard, oa, cmd, ids);
-            string requestId = "";
-            LlmStreamSession? session = LlmSession.CreateSession(out requestId);
-            try
-            {
-                DataBox.Set("llm", "endpoint", "https://api.example.com");
-                DataBox.Bind<FlowRunner>(runner);
-                DataBox.Bind<ICommandBus>(cmd);
-                DataBox.Bind<IOA>(oa);
-                SysCommand sys;
-                QueryBus bus;
-                sys = CreateSysWithQueryBus(out bus);
-                string text = sys.Execute("sys.summary");
-                Assert.Contains("## SYS.SUMMARY", text);
-                Assert.Contains("frame=", text);
-                Assert.Contains("flows=", text);
-                Assert.Contains("cmd owners=", text);
-                Assert.Contains("oa open=", text);
-                Assert.Contains("box scopes=", text);
-                Assert.Contains("llm sessions=", text);
-                Assert.Contains("audit events=", text);
-            }
-            finally
-            {
-                DataBox.Unbind<FlowRunner>();
-                DataBox.Unbind<ICommandBus>();
-                DataBox.Unbind<IOA>();
-                DataBox.ClearScope("llm");
-                if (session != null)
-                {
-                    LlmSession.RemoveSession(requestId);
-                }
-            }
-        }
-
-        /// <summary>
         /// sys.summary——无宿主绑定时降级输出（不炸）
         /// </summary>
         [Fact]

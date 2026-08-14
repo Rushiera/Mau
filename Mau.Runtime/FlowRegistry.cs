@@ -184,20 +184,12 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 种类分类——is IDog → dog；is IPet → pet；其余 flow
+        /// 种类分类——v3 机制层零产品语义：kind 恒 flow（v2 的 dog/pet 分类随产品组件退役）
         /// </summary>
         /// <param name="flow">Flow 实例</param>
         /// <returns>种类名</returns>
         private static string ClassifyKind(IFlow flow)
         {
-            if (flow is IDog)
-            {
-                return "dog";
-            }
-            if (flow is IPet)
-            {
-                return "pet";
-            }
             return "flow";
         }
 

@@ -23,9 +23,10 @@ namespace Mau.Runtime.Tests
             public int TickCount;
 
             /// <summary>
-            /// 每帧驱动——计数
+            /// 每帧驱动——计数（帧号注入忽略）
             /// </summary>
-            public void Tick()
+            /// <param name="frame">宿主帧号</param>
+            public void Tick(int frame)
             {
                 TickCount = TickCount + 1;
             }
@@ -267,119 +268,10 @@ namespace Mau.Runtime.Tests
     }
 
     /// <summary>
-    /// 审计静态测试集合定义——AuditStore.Default / LlmBridge 静态状态需串行执行
+    /// 审计静态测试集合定义——AuditStore.Default 静态状态需串行执行
     /// </summary>
     [CollectionDefinition("AuditSerial", DisableParallelization = true)]
     public sealed class AuditSerialCollection
     {
-    }
-
-    /// <summary>
-    /// LlmBridge 埋点——cfg.load（档案加载）+ cfg.change（保存/密钥标记，密钥永不进事件）
-    /// 隔离：临时 ConfigStore 注入（不落盘）；finally 恢复 Default + 删除档案
-    /// </summary>
-    [Collection("AuditSerial")]
-    public sealed class LlmBridgeAuditTests
-    {
-        /// <summary>
-        /// 从事件属性中取指定键的值
-        /// </summary>
-        /// <param name="e">事件</param>
-        /// <param name="key">属性键</param>
-        /// <returns>属性值</returns>
-        private static string FindProp(AuditEvent e, string key)
-        {
-            for (int i = 0; i < e.Props.Length; i = i + 1)
-            {
-                if (e.Props[i].Key == key)
-                {
-                    return e.Props[i].Value;
-                }
-            }
-            return "";
-        }
-
-        /// <summary>
-        /// ConfigureProfileStore——cfg.load 事件（档案数/生效档案）
-        /// </summary>
-        [Fact]
-        public void ConfigureProfileStore_RecordsCfgLoad()
-        {
-            AuditStore audit = new AuditStore();
-            AuditStore.Default = audit;
-            try
-            {
-                ConfigStore cfg = new ConfigStore();
-                LlmBridge.ConfigureProfileStore(cfg);
-                AuditEvent[] snap = audit.Snapshot();
-                Assert.Equal("cfg.load", snap[0].Category);
-                Assert.Equal("0", FindProp(snap[0], "profiles"));
-            }
-            finally
-            {
-                AuditStore.Default = null;
-                audit.Shutdown();
-            }
-        }
-
-        /// <summary>
-        /// SaveProfile——cfg.change 事件 + secret 标记（configured，不落密钥原文）
-        /// </summary>
-        [Fact]
-        public void SaveProfile_RecordsSecretMark()
-        {
-            AuditStore audit = new AuditStore();
-            AuditStore.Default = audit;
-            string profileId = "";
-            try
-            {
-                ConfigStore cfg = new ConfigStore();
-                LlmBridge.ConfigureProfileStore(cfg);
-                LlmProfile p = new LlmProfile();
-                p.DisplayName = "审计测试";
-                p.Secret = "sk-test-secret-value";
-                profileId = LlmBridge.SaveProfile(p);
-                AuditEvent[] snap = audit.Snapshot();
-                // [0]=cfg.load, [1]=cfg.change save
-                Assert.Equal(2, snap.Length);
-                Assert.Equal("cfg.change", snap[1].Category);
-                Assert.Equal("save", FindProp(snap[1], "action"));
-                Assert.Equal("configured", FindProp(snap[1], "secret"));
-            }
-            finally
-            {
-                if (profileId.Length > 0)
-                {
-                    LlmBridge.DeleteProfile(profileId);
-                }
-                AuditStore.Default = null;
-                audit.Shutdown();
-            }
-        }
-
-        /// <summary>
-        /// SetProfileSecret——secret 标记 missing（空密钥清除）
-        /// </summary>
-        [Fact]
-        public void SetProfileSecret_RecordsMissingMark()
-        {
-            AuditStore audit = new AuditStore();
-            AuditStore.Default = audit;
-            try
-            {
-                ConfigStore cfg = new ConfigStore();
-                LlmBridge.ConfigureProfileStore(cfg);
-                LlmBridge.SetProfileSecret("some-id", "");
-                AuditEvent[] snap = audit.Snapshot();
-                Assert.Equal("cfg.change", snap[1].Category);
-                Assert.Equal("set_secret", FindProp(snap[1], "action"));
-                Assert.Equal("missing", FindProp(snap[1], "secret"));
-            }
-            finally
-            {
-                AuditStore.Default = null;
-                audit.Shutdown();
-            }
-        }
     }
 }

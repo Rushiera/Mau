@@ -52,6 +52,7 @@ namespace Mau.Runtime.Tests
         /// <returns>目标路径</returns>
         private string CopyFixtureDll(string name)
         {
+            FixtureBuilder.Ensure();
             string src = Path.Combine(FixtureDir, "FL_ValidFlow.dll");
             string dst = Path.Combine(_watchDir, name);
             File.Copy(src, dst, true);

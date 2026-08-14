@@ -1,7 +1,0 @@
-// file_convert.mau —— 文件编码转换（Mau v2.0 语法——状态机 + 控制律 + τ 时限）
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Conv' = { 'Idle', 'Done', 'Failed' }
-§'P_Input'
-§⇐ 'P_Input'['input', 'output']
-§'T_Convert'[τ=300]: 'P_Input' + 'file.convert'['input', 'output'] → 'S_Conv' = 'Done' | 'S_Conv' = 'Failed'

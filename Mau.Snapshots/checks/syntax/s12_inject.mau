@@ -1,9 +1,0 @@
-// s12 语法谱——注入字段（$ 声明 + 引用绑定）
-// 特性：实例级配置注入，类型从引用端口推导
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Run' = { 'Idle', 'Done', 'Failed' }
-§$'input', 'output'
-§'P_Go'
-§⇐ 'P_Go'
-§'T_Run'[τ=5]: 'P_Go' + 'file.convert'['input', 'output'] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

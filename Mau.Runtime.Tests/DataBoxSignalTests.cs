@@ -1,0 +1,155 @@
+﻿#nullable disable
+using System;
+using System.Collections.Generic;
+using Mau.Runtime;
+using Xunit;
+
+namespace Mau.Runtime.Tests
+{
+    /// <summary>
+    /// DataBox 事件层测试——内部交互总线（P3.1）：注册/投递/消费/未注册抛异常/覆盖合并/审计埋点
+    /// </summary>
+    [CollectionDefinition("DataBoxSignalSerial", DisableParallelization = true)]
+    public sealed class DataBoxSignalSerialCollection
+    {
+    }
+
+    /// <summary>
+    /// 事件层行为测试——静态状态需串行
+    /// </summary>
+    [Collection("DataBoxSignalSerial")]
+    public sealed class DataBoxSignalTests
+    {
+        /// <summary>
+        /// 每个测试清理信号注册——finally 恢复现场
+        /// </summary>
+        public DataBoxSignalTests()
+        {
+            DataBox.ResetSignals();
+        }
+
+        /// <summary>
+        /// 注册 + 投递 + 消费——沿置位返回 true 并清除，二次查询 false
+        /// </summary>
+        [Fact]
+        public void Signal_Poll_EdgeConsumed()
+        {
+            DataBox.RegisterSignal("P_Go");
+            DataBox.Signal("P_Go");
+            Assert.True(DataBox.TryPoll("P_Go"));
+            Assert.False(DataBox.TryPoll("P_Go"));
+        }
+
+        /// <summary>
+        /// 覆盖合并——消费前多次投递只算一个沿（信号无队列——特征）
+        /// </summary>
+        [Fact]
+        public void Signal_MultiplePosts_MergeToSingleEdge()
+        {
+            DataBox.RegisterSignal("P_Go");
+            DataBox.Signal("P_Go");
+            DataBox.Signal("P_Go");
+            DataBox.Signal("P_Go");
+            Assert.True(DataBox.TryPoll("P_Go"));
+            Assert.False(DataBox.TryPoll("P_Go"));
+        }
+
+        /// <summary>
+        /// 未注册投递——InvalidOperationException（与 CommandBus 未注册 Key REJECT 同语义）
+        /// </summary>
+        [Fact]
+        public void Signal_Unregistered_Throws()
+        {
+            Assert.Throws<InvalidOperationException>(delegate ()
+            {
+                DataBox.Signal("P_NoSuch");
+            });
+        }
+
+        /// <summary>
+        /// 未注册消费——InvalidOperationException
+        /// </summary>
+        [Fact]
+        public void TryPoll_Unregistered_Throws()
+        {
+            Assert.Throws<InvalidOperationException>(delegate ()
+            {
+                DataBox.TryPoll("P_NoSuch");
+            });
+        }
+
+        /// <summary>
+        /// 重复注册幂等——不抛异常
+        /// </summary>
+        [Fact]
+        public void RegisterSignal_Idempotent()
+        {
+            DataBox.RegisterSignal("P_X");
+            DataBox.RegisterSignal("P_X");
+            Assert.Contains("P_X", DataBox.SignalNames());
+        }
+
+        /// <summary>
+        /// 信号清单——排序稳定
+        /// </summary>
+        [Fact]
+        public void SignalNames_Sorted()
+        {
+            DataBox.RegisterSignal("P_B");
+            DataBox.RegisterSignal("P_A");
+            string[] names = DataBox.SignalNames();
+            Assert.Equal(2, names.Length);
+            Assert.Equal("P_A", names[0]);
+            Assert.Equal("P_B", names[1]);
+        }
+
+        /// <summary>
+        /// 审计埋点——signal.post / signal.consume（帧号对齐，Default 可空）
+        /// </summary>
+        [Fact]
+        public void Signal_AuditEvents()
+        {
+            AuditStore audit = new AuditStore();
+            AuditStore.Default = audit;
+            try
+            {
+                DataBox.RegisterSignal("P_Audit");
+                DataBox.Signal("P_Audit");
+                DataBox.TryPoll("P_Audit");
+                AuditEvent[] snap = audit.Snapshot();
+                Assert.Equal(2, snap.Length);
+                Assert.Equal("signal.post", snap[0].Category);
+                Assert.Equal("signal.consume", snap[1].Category);
+                Assert.Equal("P_Audit", snap[0].Props[0].Value);
+            }
+            finally
+            {
+                AuditStore.Default = null;
+                audit.Shutdown();
+            }
+        }
+
+        /// <summary>
+        /// 未注册审计不产生（Signal 抛异常在审计前）
+        /// </summary>
+        [Fact]
+        public void Signal_Unregistered_NoAuditEvent()
+        {
+            AuditStore audit = new AuditStore();
+            AuditStore.Default = audit;
+            try
+            {
+                Assert.Throws<InvalidOperationException>(delegate ()
+                {
+                    DataBox.Signal("P_Ghost");
+                });
+                Assert.Empty(audit.Snapshot());
+            }
+            finally
+            {
+                AuditStore.Default = null;
+                audit.Shutdown();
+            }
+        }
+    }
+}

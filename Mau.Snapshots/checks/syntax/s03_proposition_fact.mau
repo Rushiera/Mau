@@ -1,7 +1,0 @@
-// s03 语法谱——事实命题注册（结果侧全命题）
-// 特性：结果侧注册事实（单调保持），互斥分支
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'P_Go', 'P_Recorded', 'P_Failed'
-§⇐ 'P_Go'
-§'T_Run'[τ=5]: 'P_Go' + 'file.convert'['src', 'dst'] → 'P_Recorded' | 'P_Failed'

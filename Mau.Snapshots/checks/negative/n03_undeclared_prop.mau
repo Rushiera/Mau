@@ -1,8 +1,0 @@
-// n03 负例——命题无写入源（拼写错误兜底）
-// 预期: E202
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Run' = { 'Idle', 'Done', 'Failed' }
-§'P_Go', 'P_Ghost'
-§⇐ 'P_Go'
-§'T_Run'[τ=5]: 'P_Go' ∧ 'P_Ghost' + 'file.convert'['a', 'b'] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

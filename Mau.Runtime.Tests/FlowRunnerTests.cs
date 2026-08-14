@@ -20,9 +20,10 @@ namespace Mau.Runtime.Tests
             public int TickCount;
 
             /// <summary>
-            /// 每帧驱动
+            /// 每帧驱动——帧号注入忽略
             /// </summary>
-            public void Tick()
+            /// <param name="frame">宿主帧号</param>
+            public void Tick(int frame)
             {
                 TickCount = TickCount + 1;
             }

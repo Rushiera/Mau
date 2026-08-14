@@ -1,0 +1,5 @@
+﻿// 并发槽位——槽声明 + 事件驱动作业循环（T4 压测台 R_WorkSlot 形态提炼）
+§ 'S_Counter' = { 'Running' }
+§ 'P_Job' ⇐
+§ 'R_Slots' : 3
+§ 'T_Take' : 'P_Job' & 'S_Counter' = 'Running' → 'job.run'[] | 'S_Counter' = 'Running' | 'S_Counter' = 'Running'

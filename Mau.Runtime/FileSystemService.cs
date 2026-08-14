@@ -266,9 +266,8 @@ namespace Mau.Runtime
         {
             if (string.IsNullOrWhiteSpace(path))
             {
-                // 🔴 LLM 参数习惯兼容（2026-08-12 诊断）：DeepSeek 常传空路径参数——
-                // 空路径回落工作根（roots[0]），file.tree("") 列出默认根，不抛异常
-                path = _roots[0];
+                // v3 机制纯净——空路径是调用方错误（参数校验，不做产品级回落；LLM 适配归自举层语料）
+                throw new ArgumentException("Path is empty.", "path");
             }
             string resolved;
             if (Path.IsPathFullyQualified(path))

@@ -1,8 +1,0 @@
-// n06 负例——名称返回积木结果路数不足（switch 分发至少 2 路）
-// 预期: E223
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Ui' = { 'Idle', 'Open' }
-§'P_Cmd'
-§⇐ 'P_Cmd'
-§'T_Route'[τ=5]: 'P_Cmd' + 'cmd.match'['key', ["Open"]] → 'S_Ui' = 'Open'

@@ -1,8 +1,0 @@
-// s18 语法谱——输出端口自动变量
-// 特性：操作输出端口自动变量（跨控制律可用）
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Run' = { 'Idle', 'Done', 'Failed' }
-§'P_Go'
-§⇐ 'P_Go'
-§'T_Run'[τ=5]: 'P_Go' + 'math.random_int'[1, 100] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

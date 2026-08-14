@@ -1,8 +1,0 @@
-// s17 语法谱——数组字面量（类型感知生成）
-// 特性：字符串数组/数值数组按契约端口类型生成
-§'Mau' 2.0
-§'Mau.Runtime' 2.0
-§'S_Run' = { 'Idle', 'Done', 'Failed' }
-§'P_Go'
-§⇐ 'P_Go'
-§'T_Run'[τ=5]: 'P_Go' + 'cmd.register'[0, ["key1","key2"]] → 'S_Run' = 'Done' | 'S_Run' = 'Failed'

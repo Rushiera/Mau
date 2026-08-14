@@ -4,10 +4,9 @@ using System.Collections.Generic;
 namespace Mau.Runtime
 {
     /// <summary>
-    /// 帧序宿主——实体注册 + 帧序编排（冻结→排空→分发→驱动→结算）+ Inbox 桥 + 透明化。
-    /// 裁决落点：CH4.Core Tick 调度/字典/分发机制下沉（boundary-map D2/D4）。
-    /// 产品语义（ICat 生命周期、指令接收者）由宿主钩子承担——本层零产品感知。
-    /// 注：既有 FlowHost（HotReload/）是句柄管理器；本类是帧序编排器——职责正交。
+    /// 帧序宿主——实体注册 + 帧序编排（冻结 → 排空 → 分发 → 驱动 → 结算）+ Inbox 桥 + 透明化。
+    /// v3 纯化：产品语义零残留（v2 的 Dog 自动回收/dog·pet 分类随产品组件退役）。
+    /// 数字电路映射：Tick = 时钟脉冲；帧序 = 组合逻辑时序；Inbox = 跨线程回投通道。
     /// </summary>
     public sealed class FlowRunner
     {
@@ -45,14 +44,21 @@ namespace Mau.Runtime
         /// 内部帧号——每 Tick 自增
         /// </summary>
         private long _frame;
-/// <summary>
-/// 全局当前帧号——每 Tick 更新（日志/积木静态读取；0=未驱动）
-/// </summary>
-public static long GlobalFrame;
+
+        /// <summary>
+        /// 全局当前帧号——每 Tick 更新（日志/积木静态读取；0=未驱动）
+        /// </summary>
+        public static long GlobalFrame;
+
         /// <summary>
         /// 是否已初始化
         /// </summary>
         private bool _inited;
+
+        /// <summary>
+        /// 审计存储——宿主注入后机制事件写入（null = 不审计）
+        /// </summary>
+        public AuditStore? Audit { get; set; }
 
         /// <summary>
         /// 构造宿主——注入全部机制
@@ -93,18 +99,18 @@ public static long GlobalFrame;
         {
             get
             {
-                _guard.AssertMainThread("FlowHost.Registry");
+                _guard.AssertMainThread("FlowRunner.Registry");
                 return _registry;
             }
         }
 
         /// <summary>
-        /// 指令分发钩子——宿主每帧取邮件后投递产品逻辑（如 ICommandReceiver）
+        /// 指令分发钩子——宿主每帧取邮件后投递产品逻辑
         /// </summary>
         /// <param name="dispatch">分发委托（实体 ID, 指令邮件）</param>
         public void SetCommandDispatch(Action<long, CommandPack>? dispatch)
         {
-            _guard.AssertMainThread("FlowHost.SetCommandDispatch");
+            _guard.AssertMainThread("FlowRunner.SetCommandDispatch");
             _commandDispatch = dispatch;
         }
 
@@ -115,37 +121,29 @@ public static long GlobalFrame;
         /// <param name="name">实体名字</param>
         /// <returns>分配的全局 ID</returns>
         public long RegisterFlow(IFlow flow, string name)
-{
-            _guard.AssertMainThread("FlowHost.RegisterFlow");
+        {
+            _guard.AssertMainThread("FlowRunner.RegisterFlow");
             EnsureInited();
             long id = _registry.Register(flow, name);
             if (Audit != null)
             {
-                string kind = "flow";
-                if (flow is IDog)
-                {
-                    kind = "dog";
-                }
-                else if (flow is IPet)
-                {
-                    kind = "pet";
-                }
                 Audit.Record("FlowRunner", "flow.register", -1, new AuditProp[] {
                     new AuditProp("flowId", id.ToString()),
                     new AuditProp("name", name),
-                    new AuditProp("kind", kind)
+                    new AuditProp("kind", "flow")
                 });
             }
             return id;
         }
+
         /// <summary>
         /// 回收实体——从注册表移除
         /// </summary>
         /// <param name="id">实体 ID</param>
         /// <returns>true=回收成功</returns>
         public bool UnregisterFlow(long id)
-{
-            _guard.AssertMainThread("FlowHost.UnregisterFlow");
+        {
+            _guard.AssertMainThread("FlowRunner.UnregisterFlow");
             bool ok = _registry.Unregister(id);
             if (Audit != null && ok)
             {
@@ -155,6 +153,7 @@ public static long GlobalFrame;
             }
             return ok;
         }
+
         /// <summary>
         /// 按 ID 查找实体
         /// </summary>
@@ -162,12 +161,12 @@ public static long GlobalFrame;
         /// <returns>Flow 实例或 null</returns>
         public IFlow? GetFlow(long id)
         {
-            _guard.AssertMainThread("FlowHost.GetFlow");
+            _guard.AssertMainThread("FlowRunner.GetFlow");
             return _registry.Get(id);
         }
 
         /// <summary>
-        /// 后台→主线程投递——任意线程调用（不做线程断言），回调在下一帧主线程执行
+        /// 后台→主线程投递——任意线程调用，回调在下一帧主线程执行
         /// </summary>
         /// <param name="action">待执行回调</param>
         public void PostToMain(Action action)
@@ -178,71 +177,105 @@ public static long GlobalFrame;
             }
             _mainInbox.Enqueue(action);
         }
-/// <summary>
-/// 主线程投递并等待完成——任意线程调用；回调经 Inbox 在下一帧主线程执行。
-/// 超时语义：主线程未驱动/已退出时等待至多 timeoutMs 返回 false；回调异常在调用线程重抛。
-/// 适用：外部线程需要同步查询主线程状态/执行主线程操作（管道/插件/后台线程）。
-/// </summary>
-/// <param name = "action">待执行回调</param>
-/// <param name = "timeoutMs">最长等待毫秒数</param>
-/// <returns>true=已执行完成；false=超时未执行</returns>
-public bool InvokeOnMain(Action action, int timeoutMs)
-{
-    if (action == null)
-    {
-        throw new ArgumentNullException("action");
-    }
 
-    System.Threading.ManualResetEventSlim done = new System.Threading.ManualResetEventSlim(false);
-    System.Exception? error = null;
-    _mainInbox.Enqueue(delegate ()
-    {
-        try
+        /// <summary>
+        /// 主线程投递并等待完成——任意线程调用；回调经 Inbox 在下一帧主线程执行。
+        /// 超时语义：主线程未驱动/已退出时等待至多 timeoutMs 返回 false；回调异常在调用线程重抛。
+        /// 适用：外部线程需要同步查询主线程状态（D31 确定性——阻塞即失败带诊断）。
+        /// </summary>
+        /// <param name="action">待执行回调</param>
+        /// <param name="timeoutMs">最长等待毫秒数</param>
+        /// <returns>true=已执行完成；false=超时未执行</returns>
+        public bool InvokeOnMain(Action action, int timeoutMs)
         {
-            action();
+            if (action == null)
+            {
+                throw new ArgumentNullException("action");
+            }
+            System.Threading.ManualResetEventSlim done = new System.Threading.ManualResetEventSlim(false);
+            Exception? error = null;
+            _mainInbox.Enqueue(delegate ()
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception ex)
+                {
+                    error = ex;
+                }
+                finally
+                {
+                    done.Set();
+                }
+            });
+            bool completed = done.Wait(timeoutMs);
+            if (!completed)
+            {
+                return false;
+            }
+            if (error != null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+            }
+            return true;
         }
-        catch (System.Exception ex)
+
+        /// <summary>
+        /// 主线程投递并等待结果——泛型版本（回调异常在调用线程重抛）
+        /// </summary>
+        /// <typeparam name="T">结果类型</typeparam>
+        /// <param name="action">返回结果的回调</param>
+        /// <param name="timeoutMs">最长等待毫秒数</param>
+        /// <param name="result">回调结果（超时时为 default）</param>
+        /// <returns>true=已执行完成；false=超时未执行</returns>
+        public bool InvokeOnMain<T>(Func<T> action, int timeoutMs, out T result)
         {
-            error = ex;
+            if (action == null)
+            {
+                throw new ArgumentNullException("action");
+            }
+            result = default!;
+            System.Threading.ManualResetEventSlim done = new System.Threading.ManualResetEventSlim(false);
+            Exception? error = null;
+            T value = default!;
+            _mainInbox.Enqueue(delegate ()
+            {
+                try
+                {
+                    value = action();
+                }
+                catch (Exception ex)
+                {
+                    error = ex;
+                }
+                finally
+                {
+                    done.Set();
+                }
+            });
+            bool completed = done.Wait(timeoutMs);
+            if (!completed)
+            {
+                return false;
+            }
+            if (error != null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+            }
+            result = value;
+            return true;
         }
-        finally
-        {
-            done.Set();
-        }
-    });
-    bool completed = done.Wait(timeoutMs);
-    if (!completed)
-    {
-        return false;
-    }
-
-    if (error != null)
-    {
-        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
-    }
-
-    return true;
-} 
-/// <summary>
-/// 主线程投递并等待结果——泛型版本（回调异常在调用线程重抛）
-/// </summary>
-/// <param name = "action">返回结果的回调</param>
-/// <param name = "timeoutMs">最长等待毫秒数</param>
-/// <param name = "result">回调结果（超时时为 default）</param>
-/// <returns>true=已执行完成；false=超时未执行</returns>
- public  bool  InvokeOnMain < T > ( Func < T > action ,  int  timeoutMs ,  out  T  result ) { if  ( action == null ) { throw  new  ArgumentNullException ( "action" ) ;  } result  =  default  ! ;  System . Threading . ManualResetEventSlim  done  =  new  System . Threading . ManualResetEventSlim ( false ) ;  System . Exception ? error  =  null ;  T  value  =  default  ! ;  _mainInbox . Enqueue ( delegate  ( ) { try  { value  =  action ( ) ;  } catch  ( System . Exception  ex ) { error  =  ex ;  } finally  { done . Set ( ) ;  } } ) ;  bool  completed  =  done . Wait ( timeoutMs ) ;  if  ( ! completed ) { return  false ;  } if  ( error != null ) { System . Runtime . ExceptionServices . ExceptionDispatchInfo . Capture ( error ) . Throw ( ) ;  } result  =  value ;  return  true ;  }
-
 
         /// <summary>
         /// 每帧驱动——帧序：指令冻结 → Inbox 排空 → 指令分发 → 实体驱动 → OA 结算
         /// </summary>
         public void Tick()
         {
-            _guard.AssertMainThread("FlowHost.Tick");
+            _guard.AssertMainThread("FlowRunner.Tick");
             EnsureInited();
             _frame = _frame + 1;
             GlobalFrame = _frame;
-            if (Audit != null)
             if (Audit != null)
             {
                 Audit.TickFrame(_frame);
@@ -282,30 +315,19 @@ public bool InvokeOnMain(Action action, int timeoutMs)
                     }
                 }
             }
-            // [段3] 实体帧驱动
+            // [段3] 实体帧驱动——帧号统一注入（时钟脉冲外部注入）
             long[] flowIds = _registry.Ids;
             for (int i = 0; i < flowIds.Length; i++)
             {
                 IFlow? flow = _registry.Get(flowIds[i]);
                 if (flow != null)
                 {
-                    flow.Tick();
+                    flow.Tick((int)_frame);
                 }
             }
             // [段4] OA 超时结算
             _oa.Tick();
-            // [段5] Dog 自动回收——Done 状态 Dog 若未显式 finish（发单方崩溃/遗忘），帧末兜底回收
-            long[] dogIds = _registry.Ids;
-            for (int i = 0; i < dogIds.Length; i = i + 1)
-            {
-                IFlow? flow = _registry.Get(dogIds[i]);
-                IDog? dog = flow as IDog;
-                if (dog != null && dog.Phase == DogPhase.Done)
-                {
-                    _registry.Unregister(dogIds[i]);
-                }
-            }
-            // [段6] flow.tick 审计——默认关（EnableTickEvents 开启时每帧记录实体数）
+            // [段5] flow.tick 审计——默认关（EnableTickEvents 开启时每帧记录实体数）
             if (Audit != null && Audit.EnableTickEvents)
             {
                 Audit.Record("FlowRunner", "flow.tick", -1, new AuditProp[] {
@@ -320,7 +342,7 @@ public bool InvokeOnMain(Action action, int timeoutMs)
         /// </summary>
         public void Shutdown()
         {
-            _guard.AssertMainThread("FlowHost.Shutdown");
+            _guard.AssertMainThread("FlowRunner.Shutdown");
             if (!_inited)
             {
                 return;
@@ -335,7 +357,7 @@ public bool InvokeOnMain(Action action, int timeoutMs)
         /// <returns>宿主状态快照</returns>
         public HostSnapshot GetStatus()
         {
-            _guard.AssertMainThread("FlowHost.GetStatus");
+            _guard.AssertMainThread("FlowRunner.GetStatus");
             EnsureInited();
             HostSnapshot snapshot = new HostSnapshot();
             snapshot.Frame = _frame;
@@ -354,11 +376,8 @@ public bool InvokeOnMain(Action action, int timeoutMs)
         {
             if (!_inited)
             {
-                throw new InvalidOperationException("FlowHost 已关闭——不可再驱动");
+                throw new InvalidOperationException("FlowRunner 已关闭——不可再驱动");
             }
         }
-/// <summary>
-/// 审计存储——宿主注入后机制事件写入（null = 不审计）。零业务侵入：仅记录，不改流程。
-/// </summary>
-public AuditStore? Audit { get; set; }    }
+    }
 }

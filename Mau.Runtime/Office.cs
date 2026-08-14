@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace Mau.Runtime
 {
@@ -14,7 +14,7 @@ namespace Mau.Runtime
         public long OfficeId;
 
         /// <summary>
-        /// 工单大类——"OI_IO" / "OI_LLM" / "OI_TCP" ...
+        /// 工单大类——"OI_IO" / "OI_TCP" ...（v3 纯化：OI_LLM 随 LLM 组件退役）
         /// </summary>
         public string OfficeType;
 
