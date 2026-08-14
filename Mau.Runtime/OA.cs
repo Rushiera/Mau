@@ -22,12 +22,12 @@ namespace Mau.Runtime
         /// <summary>
         /// 宿主提供的存活挂单方身份校验。
         /// </summary>
-        private readonly Func<long, bool>? _isLivingDog;
+        private readonly Func<long, bool>? _isLivingOwner;
 
         /// <summary>
         /// 宿主提供的存活执行方身份校验。
         /// </summary>
-        private readonly Func<long, bool>? _isLivingCat;
+        private readonly Func<long, bool>? _isLivingWorker;
 
         /// <summary>
         /// Office ID 到工单的主存储
@@ -76,8 +76,8 @@ namespace Mau.Runtime
             }
             _threadGuard = threadGuard;
             _logWriter = null;
-            _isLivingDog = null;
-            _isLivingCat = null;
+            _isLivingOwner = null;
+            _isLivingWorker = null;
             _offices = new Dictionary<long, Office>();
             _nextOfficeId = 1;
             _tickNumber = 0;
@@ -92,10 +92,10 @@ namespace Mau.Runtime
         /// </summary>
         /// <param name="threadGuard">宿主线程守卫</param>
         /// <param name="logWriter">日志写入器</param>
-        /// <param name="isLivingDog">挂单方存活校验，null=跳过</param>
-        /// <param name="isLivingCat">执行方存活校验，null=跳过</param>
+        /// <param name="isLivingOwner">挂单方存活校验，null=跳过</param>
+        /// <param name="isLivingWorker">执行方存活校验，null=跳过</param>
         public OA(ThreadGuard threadGuard, Action<string, int>? logWriter,
-            Func<long, bool>? isLivingDog, Func<long, bool>? isLivingCat)
+            Func<long, bool>? isLivingOwner, Func<long, bool>? isLivingWorker)
         {
             if (threadGuard == null)
             {
@@ -103,8 +103,8 @@ namespace Mau.Runtime
             }
             _threadGuard = threadGuard;
             _logWriter = logWriter;
-            _isLivingDog = isLivingDog;
-            _isLivingCat = isLivingCat;
+            _isLivingOwner = isLivingOwner;
+            _isLivingWorker = isLivingWorker;
             _offices = new Dictionary<long, Office>();
             _nextOfficeId = 1;
             _tickNumber = 0;
@@ -117,22 +117,22 @@ namespace Mau.Runtime
         /// <summary>
         /// 上架一个工单——空双字典载荷随单生成
         /// </summary>
-        /// <param name="dogId">所有者 ID</param>
+        /// <param name="ownerId">挂单方 ID</param>
         /// <param name="officeType">工单大类</param>
         /// <param name="officeName">工单名称</param>
         /// <param name="timeoutTicks">超时帧数</param>
         /// <returns>Office ID</returns>
-        public long Post(long dogId, string officeType, string officeName,
+        public long Post(long ownerId, string officeType, string officeName,
             long timeoutTicks)
         {
             Office office;
             long officeId;
 
             _threadGuard.AssertMainThread("OA.Post");
-            if (_isLivingDog != null && !_isLivingDog(dogId))
+            if (_isLivingOwner != null && !_isLivingOwner(ownerId))
             {
                 throw new ArgumentException(
-                    "OA owner must be a living Dog in this host.", "dogId");
+                    "OA owner must be a living owner in this host.", "ownerId");
             }
             officeId = _nextOfficeId;
             _nextOfficeId = _nextOfficeId + 1;
@@ -140,10 +140,10 @@ namespace Mau.Runtime
             office.OfficeId = officeId;
             office.OfficeType = officeType;
             office.OfficeName = officeName;
-            office.DogId = dogId;
+            office.OwnerId = ownerId;
             office.Data = OfficeData.Empty();
             office.Status = OfficeState.Open;
-            office.ClaimByCatId = 0;
+            office.ClaimByWorkerId = 0;
             office.PostFrame = _tickNumber;
             office.ClaimFrame = 0;
             office.TimeoutFrames = timeoutTicks;
@@ -154,7 +154,7 @@ namespace Mau.Runtime
             {
                 Audit.Record("OA", "oa.post", -1, new AuditProp[] {
                     new AuditProp("officeId", officeId.ToString()),
-                    new AuditProp("dogId", dogId.ToString()),
+                    new AuditProp("ownerId", ownerId.ToString()),
                     new AuditProp("type", officeType),
                     new AuditProp("name", officeName),
                     new AuditProp("timeout", timeoutTicks.ToString())
@@ -169,11 +169,11 @@ namespace Mau.Runtime
         /// 写入请求载荷 int 值——仅 Open 状态 + 本人（挂单方）可操作
         /// </summary>
         /// <param name="officeId">Office ID</param>
-        /// <param name="dogId">所有者 ID</param>
+        /// <param name="ownerId">挂单方 ID</param>
         /// <param name="key">Key</param>
         /// <param name="value">int 值</param>
         /// <returns>true=写入成功</returns>
-        public bool SetInt(long officeId, long dogId, string key, int value)
+        public bool SetInt(long officeId, long ownerId, string key, int value)
         {
             Office office;
 
@@ -182,7 +182,7 @@ namespace Mau.Runtime
             {
                 return false;
             }
-            if (office.Status != OfficeState.Open || office.DogId != dogId)
+            if (office.Status != OfficeState.Open || office.OwnerId != ownerId)
             {
                 return false;
             }
@@ -196,11 +196,11 @@ namespace Mau.Runtime
         /// 写入请求载荷 str 值——仅 Open 状态 + 本人（挂单方）可操作
         /// </summary>
         /// <param name="officeId">Office ID</param>
-        /// <param name="dogId">所有者 ID</param>
+        /// <param name="ownerId">挂单方 ID</param>
         /// <param name="key">Key</param>
         /// <param name="value">str 值</param>
         /// <returns>true=写入成功</returns>
-        public bool SetStr(long officeId, long dogId, string key, string value)
+        public bool SetStr(long officeId, long ownerId, string key, string value)
         {
             Office office;
 
@@ -209,7 +209,7 @@ namespace Mau.Runtime
             {
                 return false;
             }
-            if (office.Status != OfficeState.Open || office.DogId != dogId)
+            if (office.Status != OfficeState.Open || office.OwnerId != ownerId)
             {
                 return false;
             }
@@ -269,9 +269,9 @@ namespace Mau.Runtime
         /// 取消挂单方自己尚未被认领的工单
         /// </summary>
         /// <param name="officeId">Office ID</param>
-        /// <param name="dogId">请求者 ID</param>
+        /// <param name="ownerId">请求方 ID</param>
         /// <returns>是否成功</returns>
-        public bool Cancel(long officeId, long dogId)
+        public bool Cancel(long officeId, long ownerId)
         {
             Office office;
 
@@ -280,13 +280,13 @@ namespace Mau.Runtime
             {
                 return false;
             }
-            if (office.DogId != dogId || office.Status != OfficeState.Open)
+            if (office.OwnerId != ownerId || office.Status != OfficeState.Open)
             {
                 return false;
             }
             _offices.Remove(officeId);
             _version = _version + 1;
-            WriteLog("OA | CANCEL | #" + officeId + " | Dog#" + dogId, 0);
+            WriteLog("OA | CANCEL | #" + officeId + " | Owner#" + ownerId, 0);
             return true;
         }
 
@@ -314,15 +314,15 @@ namespace Mau.Runtime
         /// <summary>
         /// 按传入顺序尝试批量认领工单
         /// </summary>
-        /// <param name="catId">认领者 ID</param>
+        /// <param name="workerId">认领方 ID</param>
         /// <param name="officeIds">待认领 ID</param>
         /// <returns>成功认领的工单副本</returns>
-        public List<Office> ClaimBatch(long catId, long[] officeIds)
+        public List<Office> ClaimBatch(long workerId, long[] officeIds)
         {
             List<Office> claimed = new List<Office>();
 
             _threadGuard.AssertMainThread("OA.ClaimBatch");
-            if (officeIds == null || (_isLivingCat != null && !_isLivingCat(catId)))
+            if (officeIds == null || (_isLivingWorker != null && !_isLivingWorker(workerId)))
             {
                 return claimed;
             }
@@ -340,7 +340,7 @@ namespace Mau.Runtime
                     continue;
                 }
                 office.Status = OfficeState.Work;
-                office.ClaimByCatId = catId;
+                office.ClaimByWorkerId = workerId;
                 office.ClaimFrame = _tickNumber;
                 _offices[office.OfficeId] = office;
                 _version = _version + 1;
@@ -348,7 +348,7 @@ namespace Mau.Runtime
                 {
                     Audit.Record("OA", "oa.claim", -1, new AuditProp[] {
                         new AuditProp("officeId", office.OfficeId.ToString()),
-                        new AuditProp("catId", catId.ToString()),
+                        new AuditProp("workerId", workerId.ToString()),
                         new AuditProp("result", "claimed")
                     });
                 }
@@ -361,16 +361,16 @@ namespace Mau.Runtime
         /// 由持单执行方完成工单——写入回执双字典载荷 → 状态变 Closed
         /// </summary>
         /// <param name="officeId">Office ID</param>
-        /// <param name="catId">持单执行方 ID</param>
+        /// <param name="workerId">持单执行方 ID</param>
         /// <param name="result">回执双字典载荷</param>
-        public void Complete(long officeId, long catId, OfficeData result)
+        public void Complete(long officeId, long workerId, OfficeData result)
         {
             Office office;
 
             _threadGuard.AssertMainThread("OA.Complete");
-            if (_isLivingCat != null && !_isLivingCat(catId))
+            if (_isLivingWorker != null && !_isLivingWorker(workerId))
             {
-                WriteLog("OA | COMPLETE | REJECT | CAT_OWNER_INVALID", 2);
+                WriteLog("OA | COMPLETE | REJECT | WORKER_OWNER_INVALID", 2);
                 return;
             }
             if (!_offices.TryGetValue(officeId, out office))
@@ -378,7 +378,7 @@ namespace Mau.Runtime
                 WriteLog("OA | COMPLETE | REJECT | #" + officeId + " 不存在", 2);
                 return;
             }
-            if (office.Status != OfficeState.Work || office.ClaimByCatId != catId)
+            if (office.Status != OfficeState.Work || office.ClaimByWorkerId != workerId)
             {
                 WriteLog("OA | COMPLETE | REJECT | #" + officeId + " 状态或权限不符", 2);
                 return;
@@ -389,12 +389,12 @@ namespace Mau.Runtime
             _totalDone = _totalDone + 1;
             _version = _version + 1;
             // O 类 Log——单结束（成功完成；INFO 分支 Category=OA）
-            LogStore.Add("OA", 0, "OA | DONE | #" + officeId + " | cat=" + catId, "OA");
+            LogStore.Add("OA", 0, "OA | DONE | #" + officeId + " | worker=" + workerId, "OA");
             if (Audit != null)
             {
                 Audit.Record("OA", "oa.complete", -1, new AuditProp[] {
                     new AuditProp("officeId", officeId.ToString()),
-                    new AuditProp("catId", catId.ToString()),
+                    new AuditProp("workerId", workerId.ToString()),
                     new AuditProp("result", "ints:" + result.Ints.Count + ",strs:" + result.Strs.Count)
                 });
             }
@@ -404,13 +404,13 @@ namespace Mau.Runtime
         /// 由持单执行方把工单重新开放
         /// </summary>
         /// <param name="officeId">Office ID</param>
-        /// <param name="catId">持单执行方 ID</param>
-        public void Relist(long officeId, long catId)
+        /// <param name="workerId">持单执行方 ID</param>
+        public void Relist(long officeId, long workerId)
         {
             Office office;
 
             _threadGuard.AssertMainThread("OA.Relist");
-            if (_isLivingCat != null && !_isLivingCat(catId))
+            if (_isLivingWorker != null && !_isLivingWorker(workerId))
             {
                 return;
             }
@@ -418,12 +418,12 @@ namespace Mau.Runtime
             {
                 return;
             }
-            if (office.Status != OfficeState.Work || office.ClaimByCatId != catId)
+            if (office.Status != OfficeState.Work || office.ClaimByWorkerId != workerId)
             {
                 return;
             }
             office.Status = OfficeState.Open;
-            office.ClaimByCatId = 0;
+            office.ClaimByWorkerId = 0;
             office.ClaimFrame = 0;
             _offices[officeId] = office;
             _totalRelist = _totalRelist + 1;
@@ -570,18 +570,18 @@ public OAView GetSnapshot()
         /// <summary>
         /// 所属挂单方回收时移除它的全部工单
         /// </summary>
-        /// <param name="dogId">已经由宿主回收的全局 ID</param>
-        public void RemoveByDog(long dogId)
+        /// <param name="ownerId">已经由宿主回收的全局 ID</param>
+        public void RemoveByOwner(long ownerId)
         {
             List<long> ownedOfficeIds = new List<long>();
             long[] officeIds = new long[_offices.Count];
 
-            _threadGuard.AssertMainThread("OA.RemoveByDog");
+            _threadGuard.AssertMainThread("OA.RemoveByOwner");
             _offices.Keys.CopyTo(officeIds, 0);
             Array.Sort(officeIds);
             for (int i = 0; i < officeIds.Length; i = i + 1)
             {
-                if (_offices[officeIds[i]].DogId == dogId)
+                if (_offices[officeIds[i]].OwnerId == ownerId)
                 {
                     ownedOfficeIds.Add(officeIds[i]);
                 }
@@ -591,7 +591,7 @@ public OAView GetSnapshot()
                 Office office = _offices[ownedOfficeIds[i]];
                 _offices.Remove(ownedOfficeIds[i]);
                 _version = _version + 1;
-                WriteLog("OA | OWNER_RECYCLED | Dog#" + dogId + " | Office#"
+                WriteLog("OA | OWNER_RECYCLED | Owner#" + ownerId + " | Office#"
                     + office.OfficeId + " | Status=" + office.Status.ToString(), 0);
             }
         }
@@ -599,29 +599,29 @@ public OAView GetSnapshot()
         /// <summary>
         /// 执行方回收时释放其全部 Work 工单，重新开放给后续执行方。
         /// </summary>
-        /// <param name="catId">回收的全局 ID</param>
-        public void ReleaseByCat(long catId)
+        /// <param name="workerId">回收的全局 ID</param>
+        public void ReleaseByWorker(long workerId)
         {
             long[] officeIds = new long[_offices.Count];
 
-            _threadGuard.AssertMainThread("OA.ReleaseByCat");
+            _threadGuard.AssertMainThread("OA.ReleaseByWorker");
             _offices.Keys.CopyTo(officeIds, 0);
             Array.Sort(officeIds);
             for (int i = 0; i < officeIds.Length; i = i + 1)
             {
                 Office office = _offices[officeIds[i]];
                 if (office.Status != OfficeState.Work
-                    || office.ClaimByCatId != catId)
+                    || office.ClaimByWorkerId != workerId)
                 {
                     continue;
                 }
                 office.Status = OfficeState.Open;
-                office.ClaimByCatId = 0;
+                office.ClaimByWorkerId = 0;
                 office.ClaimFrame = 0;
                 _offices[office.OfficeId] = office;
                 _totalRelist = _totalRelist + 1;
                 _version = _version + 1;
-                WriteLog("OA | CAT_RECYCLED | Cat#" + catId.ToString()
+                WriteLog("OA | WORKER_RECYCLED | Worker#" + workerId.ToString()
                     + " | Office#" + office.OfficeId.ToString(), 0);
             }
         }

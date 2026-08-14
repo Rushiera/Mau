@@ -1,4 +1,4 @@
 ﻿// 轮询传感器——周期采样驱动转移（TalkCat 完成检测形态提炼）
 § 'S_Poll' = { 'Waiting', 'Got' }
-§ 'P_Q' ↻ [2] 'data.box_is'["done"]
+§ 'P_Q' ↻ [2] 'probe.sink'["done", 0]
 § 'T_Hit' : 'P_Q' & 'S_Poll' = 'Waiting' → | 'S_Poll' = 'Got' | 'S_Poll' = 'Got'

@@ -17,32 +17,33 @@ namespace Mau.Translator
         /// <param name="doc">FSM 网络 IR</param>
         /// <returns>true=全部校验通过</returns>
         public static bool Validate(MauDocV3 doc)
+{
+    if (doc == null)
+    {
+        return false;
+    }
+    int before = doc.Diagnostics.Count;
+    // [段1] 名称索引 + 唯一性（跨四柱重名 = 构筑期错误）
+    Dictionary<string, string> kinds = new Dictionary<string, string>(StringComparer.Ordinal);
+    CheckNames(doc.StateMachines, "状态机", kinds, doc);
+    CheckNames(doc.Sensors, "传感器", kinds, doc);
+    CheckNames(doc.Wires, "导线", kinds, doc);
+    CheckNames(doc.Slots, "槽", kinds, doc);
+    // [段2] 引用完整性
+    CheckReferences(doc);
+    // [段3] 主动传感器积木存在性（解析层已保证非空——双保险）
+    for (int i = 0; i < doc.Sensors.Count; i++)
+    {
+        SensorDefV3 sensor = doc.Sensors[i];
+        if (!sensor.Passive && sensor.BrickName.Length == 0)
         {
-            if (doc == null)
-            {
-                return false;
-            }
-            int before = doc.Diagnostics.Count;
-            // [段1] 名称索引 + 唯一性（跨四柱重名 = 构筑期错误）
-            Dictionary<string, string> kinds = new Dictionary<string, string>(StringComparer.Ordinal);
-            CheckNames(doc.StateMachines, "状态机", kinds, doc);
-            CheckNames(doc.Sensors, "传感器", kinds, doc);
-            CheckNames(doc.Wires, "导线", kinds, doc);
-            CheckNames(doc.Slots, "槽", kinds, doc);
-            // [段2] 引用完整性
-            CheckReferences(doc);
-            // [段3] 主动传感器积木存在性（解析层已保证非空——双保险）
-            for (int i = 0; i < doc.Sensors.Count; i++)
-            {
-                SensorDefV3 sensor = doc.Sensors[i];
-                if (!sensor.Passive && sensor.BrickName.Length == 0)
-                {
-                    doc.Diagnostics.Add(new MauDiagnostic("E204", sensor.Line, "主动传感器 '" + sensor.Name + "' 缺采样积木"));
-                }
-            }
-            return doc.Diagnostics.Count == before;
+            doc.Diagnostics.Add(new MauDiagnostic("E204", sensor.Line, "主动传感器 '" + sensor.Name + "' 缺采样积木"));
         }
-
+    }
+    // [段4] 积木门禁——导线动作 + 主动传感器采样（E4xx——BrickIndex 校验，P5 接入）
+    CheckBricks(doc);
+    return doc.Diagnostics.Count == before;
+}
         /// <summary>
         /// 名称唯一校验——单元自身与跨单元都不可重名
         /// </summary>
@@ -182,6 +183,114 @@ namespace Mau.Translator
                 return ((WireDefV3)def).Line;
             }
             return ((SlotDefV3)def).Line;
+        }
+
+        /// <summary>
+        /// 积木门禁——导线动作 + 主动传感器采样引用校验（E4xx）
+        /// </summary>
+        /// <param name="doc">FSM 网络 IR</param>
+        private static void CheckBricks(MauDocV3 doc)
+        {
+            for (int w = 0; w < doc.Wires.Count; w++)
+            {
+                WireDefV3 wire = doc.Wires[w];
+                if (wire.BrickName.Length > 0)
+                {
+                    CheckBrickCall(wire.BrickName, wire.BrickArgs, wire.Line, doc);
+                }
+            }
+            for (int s = 0; s < doc.Sensors.Count; s++)
+            {
+                SensorDefV3 sensor = doc.Sensors[s];
+                if (!sensor.Passive && sensor.BrickName.Length > 0)
+                {
+                    CheckBrickCall(sensor.BrickName, sensor.BrickArgs, sensor.Line, doc);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 单次积木调用校验——E400 未知积木 / E401 参数数量 / E402 参数类别
+        /// </summary>
+        /// <param name="name">积木名</param>
+        /// <param name="args">参数原文列表</param>
+        /// <param name="line">声明行号</param>
+        /// <param name="doc">诊断收集</param>
+        private static void CheckBrickCall(string name, List<string> args, int line, MauDocV3 doc)
+        {
+            BrickIndexEntry entry;
+            if (!BrickIndex.TryFind(name, out entry))
+            {
+                doc.Diagnostics.Add(new MauDiagnostic("E400", line, "未知积木: '" + name + "'——不在 Bricks/index.json 索引中"));
+                return;
+            }
+            if (args.Count != entry.InputTypes.Count)
+            {
+                doc.Diagnostics.Add(new MauDiagnostic("E401", line, "积木 '" + name + "' 参数数量不符——期望 " + entry.InputTypes.Count.ToString() + " 个，实际 " + args.Count.ToString() + " 个"));
+                return;
+            }
+            for (int i = 0; i < args.Count; i++)
+            {
+                string actualKind = ArgKind(args[i]);
+                string expectedKind = ContractKind(entry.InputTypes[i]);
+                if (actualKind.Length == 0 || actualKind != expectedKind)
+                {
+                    doc.Diagnostics.Add(new MauDiagnostic("E402", line, "积木 '" + name + "' 第 " + (i + 1).ToString() + " 参数类别不符——期望 " + entry.InputTypes[i] + "（" + expectedKind + "），实际 '" + args[i] + "'（" + actualKind + "）"));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 参数原文类别——"..." → str / 纯数字 → num / 其他 → name
+        /// </summary>
+        /// <param name="raw">参数原文</param>
+        /// <returns>类别标记（空 = 无法识别）</returns>
+        private static string ArgKind(string raw)
+        {
+            string t = raw.Trim();
+            if (t.Length >= 2 && t[0] == '"')
+            {
+                return "str";
+            }
+            bool allDigits = t.Length > 0;
+            for (int i = 0; i < t.Length; i++)
+            {
+                char c = t[i];
+                bool digit = c >= '0' && c <= '9';
+                bool dot = c == '.';
+                if (!digit && !dot)
+                {
+                    allDigits = false;
+                    break;
+                }
+            }
+            if (allDigits)
+            {
+                return "num";
+            }
+            return "name";
+        }
+
+        /// <summary>
+        /// 契约类型 → 类别标记——string → str / int,long,bool → num / string[] → name
+        /// </summary>
+        /// <param name="type">契约类型文本</param>
+        /// <returns>类别标记（空 = 未支持类型）</returns>
+        private static string ContractKind(string type)
+        {
+            if (type == "string")
+            {
+                return "str";
+            }
+            if (type == "int" || type == "long" || type == "bool")
+            {
+                return "num";
+            }
+            if (type == "string[]")
+            {
+                return "name";
+            }
+            return "";
         }
     }
 }

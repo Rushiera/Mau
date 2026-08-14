@@ -1,18 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 
 namespace Mau.Translator
 {
-    /// <summary>
-    /// 生成器 v3——FSM 网络 IR → C# 生成物（design-mau-v3 §八.6）。
-    /// 生成形态：状态机枚举单值 + IsXxx/GetState；被动传感器消费字段 + FireXxx；主动传感器帧门控采样；
-    /// 导线条件原子检查（全过才消费）+ 动作 try-catch + 结果分叉；槽计数字段 + TryAcquire/Release。
-    /// 内嵌 BrickRuntimeV3——积木调用占位（翻译器产物完备，P5 积木重生后接真实积木）。
-    /// 降级登记：par 同步执行（P3 观测支柱轮实现 Task.Run + Inbox 回投）；[t=] Cube 结构预留（P3 接时限）。
-    /// 限制：导线结果 >2 的多路分叉报 E205（名称返回积木体系随 P5 落地）。
-    /// </summary>
-    public static class MauGeneratorV3
+/// <summary>
+/// 生成器 v3——FSM 网络 IR → C# 生成物（design-mau-v3 §八.6）。生成形态：状态机枚举单值 + IsXxx/GetState；被动传感器消费字段 + FireXxx；主动传感器帧门控采样；导线条件原子检查（全过才消费）+ 动作 try-catch + 结果分叉；槽计数字段 + TryAcquire/Release。积木强类型直调（P5 协议 A——内嵌积木源 + 编译期验型）；par 后台 Task.Run + Inbox 回投；[t=] Cube 时限。限制：导线结果 >2 的多路分叉报 E205（名称返回积木体系随积木重生扩展）
+/// </summary>
+///
+public static class MauGeneratorV3
     {
         /// <summary>
         /// 生成 C# 产物——IR → 源码文本
@@ -52,7 +49,7 @@ namespace Mau.Translator
             AppendGetStatus(sb, doc);
             sb.AppendLine("    }");
             sb.AppendLine("}");
-            AppendBrickRuntime(sb);
+            AppendBrickSources(sb, doc);
             result.Code = sb.ToString();
             result.Success = true;
             return result;
@@ -72,6 +69,7 @@ namespace Mau.Translator
             sb.AppendLine("using System;");
             sb.AppendLine("using System.Collections.Generic;");
             sb.AppendLine("using Mau.Runtime;");
+            sb.AppendLine("using System.Threading;");
             sb.AppendLine("");
             sb.AppendLine("namespace Mau.Generated");
             sb.AppendLine("{");
@@ -325,7 +323,7 @@ namespace Mau.Translator
             {
                 sb.AppendLine("            try");
                 sb.AppendLine("            {");
-                sb.AppendLine("                ok = BrickRuntimeV3.TryInvoke(\"" + wire.BrickName + "\", new string[] { " + JoinArgs(wire.BrickArgs) + " });");
+                sb.AppendLine("                ok = " + BrickCallExpr(wire.BrickName, wire.BrickArgs) + ";");
                 sb.AppendLine("            }");
                 sb.AppendLine("            catch (Exception ex)");
                 sb.AppendLine("            {");
@@ -367,15 +365,14 @@ namespace Mau.Translator
                 sb.AppendLine("            " + field + "_cube.Start();");
             }
             sb.AppendLine("            AuditStore.Default?.Record(\"Flow\", \"trace.fire\", -1, new AuditProp[] { new AuditProp(\"wire\", \"" + wire.Name + "\"), new AuditProp(\"frame\", frame.ToString()) });");
-            // [段3] 参数冻结——后台线程不再读任何字段
-            sb.AppendLine("            string[] " + field + "_args = new string[] { " + JoinArgs(wire.BrickArgs) + " };");
+            // [段3] 参数内联冻结——调用表达式字面量直嵌 lambda（零捕获零共享）
             // [段4] Task.Run——后台线程只调积木 + Inbox 回投（零共享可变状态）
             sb.AppendLine("            System.Threading.Tasks.Task.Run(delegate ()");
             sb.AppendLine("            {");
             sb.AppendLine("                bool ok = false;");
             sb.AppendLine("                try");
             sb.AppendLine("                {");
-            sb.AppendLine("                    ok = BrickRuntimeV3.TryInvoke(\"" + wire.BrickName + "\", " + field + "_args);");
+            sb.AppendLine("                    ok = " + BrickCallExpr(wire.BrickName, wire.BrickArgs) + ";");
             sb.AppendLine("                }");
             sb.AppendLine("                catch (Exception ex)");
             sb.AppendLine("                {");
@@ -459,7 +456,7 @@ namespace Mau.Translator
                 }
                 sb.AppendLine("            try");
                 sb.AppendLine("            {");
-                sb.AppendLine("                " + field + " = BrickRuntimeV3.TryInvoke(\"" + sensor.BrickName + "\", new string[] { " + JoinArgs(sensor.BrickArgs) + " });");
+                sb.AppendLine("                " + field + " = " + BrickCallExpr(sensor.BrickName, sensor.BrickArgs) + ";");
                 sb.AppendLine("            }");
                 sb.AppendLine("            catch (Exception ex)");
                 sb.AppendLine("            {");
@@ -637,35 +634,111 @@ namespace Mau.Translator
         }
 
         /// <summary>
-        /// 内嵌积木运行时——翻译器产物完备（积木调用占位；P5 积木重生后接真实积木注册）
+        /// 内嵌积木源——收集生成物引用的积木，源文件原文贴入生成物（复制即单包，R1 形态）。
+        /// 依赖闭包：P5 最小化阶段积木零依赖（index.json dependencies 全空）——闭包解析随积木重生扩展。
         /// </summary>
         /// <param name="sb">输出缓冲</param>
-        private static void AppendBrickRuntime(StringBuilder sb)
-        {
-            sb.AppendLine("");
-            sb.AppendLine("// ═══ 内嵌积木运行时（翻译器产物完备——P5 接真实积木注册）═══");
-            sb.AppendLine("namespace Mau.Generated");
-            sb.AppendLine("{");
-            sb.AppendLine("    internal static class BrickRuntimeV3");
-            sb.AppendLine("    {");
-            sb.AppendLine("        private static readonly Dictionary<string, Func<string[], bool>> Handlers = new Dictionary<string, Func<string[], bool>>();");
-            sb.AppendLine("        public static void Register(string name, Func<string[], bool> handler)");
-            sb.AppendLine("        {");
-            sb.AppendLine("            Handlers[name] = handler;");
-            sb.AppendLine("        }");
-            sb.AppendLine("        public static bool TryInvoke(string name, string[] args)");
-            sb.AppendLine("        {");
-            sb.AppendLine("            Func<string[], bool>? handler;");
-            sb.AppendLine("            if (Handlers.TryGetValue(name, out handler) && handler != null)");
-            sb.AppendLine("            {");
-            sb.AppendLine("                return handler(args);");
-            sb.AppendLine("            }");
-            sb.AppendLine("            return false;");
-            sb.AppendLine("        }");
-            sb.AppendLine("    }");
-            sb.AppendLine("}");
+        /// <param name="doc">FSM 网络 IR</param>
+        private static void AppendBrickSources(StringBuilder sb, MauDocV3 doc)
+{
+            List<string> names = new List<string>();
+            for (int w = 0; w < doc.Wires.Count; w++)
+            {
+                if (doc.Wires[w].BrickName.Length > 0 && !names.Contains(doc.Wires[w].BrickName))
+                {
+                    names.Add(doc.Wires[w].BrickName);
+                }
+            }
+            for (int s = 0; s < doc.Sensors.Count; s++)
+            {
+                if (!doc.Sensors[s].Passive && doc.Sensors[s].BrickName.Length > 0 && !names.Contains(doc.Sensors[s].BrickName))
+                {
+                    names.Add(doc.Sensors[s].BrickName);
+                }
+            }
+            if (names.Count == 0)
+            {
+                return;
+            }
+            string root = BrickIndex.FindRepoRoot();
+            for (int i = 0; i < names.Count; i++)
+            {
+                BrickIndexEntry entry;
+                if (!BrickIndex.TryFind(names[i], out entry) || entry.Path.Length == 0)
+                {
+                    continue;
+                }
+                string path = Path.Combine(root, "Bricks", entry.Path);
+                if (!File.Exists(path))
+                {
+                    continue;
+                }
+                sb.AppendLine("// ═══ 内嵌积木: " + names[i] + "（来源 Bricks/" + entry.Path + "——复制即单包）═══");
+                // 剥 using 行——生成物文件级 using 统一在头部（CS1529 判例）
+                string source = File.ReadAllText(path);
+                string[] lines = source.Split('\n');
+                for (int l = 0; l < lines.Length; l++)
+                {
+                    string trimmed = lines[l].Trim();
+                    if (trimmed.StartsWith("using ", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+                    sb.AppendLine(lines[l].TrimEnd('\r'));
+                }
+                sb.AppendLine("");
+            }
         }
-
+        /// <summary>
+        /// 积木强类型调用表达式——Mau.Bricks.Xxx.Yyy(args, out _)——编译期验型（P5 协议 A）。
+        /// 索引未命中兑底 false（E4xx 已拦，理论不可达）。
+        /// </summary>
+        /// <param name="brickName">积木名</param>
+        /// <param name="args">参数原文列表</param>
+        /// <returns>调用表达式文本</returns>
+        private static string BrickCallExpr(string brickName, List<string> args)
+{
+            BrickIndexEntry entry;
+            if (!BrickIndex.TryFind(brickName, out entry) || entry.Implementation.Length == 0)
+            {
+                return "false";
+            }
+            string s = entry.Implementation + "(";
+            bool first = true;
+            for (int i = 0; i < args.Count; i++)
+            {
+                if (!first)
+                {
+                    s = s + ", ";
+                }
+                first = false;
+                string arg = args[i];
+                string type = i < entry.InputTypes.Count ? entry.InputTypes[i] : "";
+                if (type == "int" || type == "long")
+                {
+                    s = s + arg;
+                }
+                else if (arg.Length >= 2 && arg[0] == '"')
+                {
+                    s = s + arg;
+                }
+                else
+                {
+                    s = s + "\"" + arg + "\"";
+                }
+            }
+            for (int o = 0; o < entry.OutputCount; o++)
+            {
+                if (!first)
+                {
+                    s = s + ", ";
+                }
+                first = false;
+                s = s + "out _";
+            }
+            s = s + ")";
+            return s;
+        }
         /// <summary>
         /// 单元体名 PascalCase（去前缀）——P_Go → Go / R_Slot → Slot（方法名用）
         /// </summary>
@@ -677,26 +750,6 @@ namespace Mau.Translator
             string body = sep >= 0 ? name.Substring(sep + 1) : name;
             return NamePascal(body);
         }
-
-        /// <summary>
-        /// 参数文本拼接——"a", "b" 形态
-        /// </summary>
-        /// <param name="args">参数原文列表</param>
-        /// <returns>C# 参数文本</returns>
-        private static string JoinArgs(List<string> args)
-        {
-            string s = "";
-            for (int i = 0; i < args.Count; i++)
-            {
-                if (i > 0)
-                {
-                    s = s + ", ";
-                }
-                s = s + args[i];
-            }
-            return s;
-        }
-
         /// <summary>
         /// 名称字段化——S_Talk → _s_talk / P_Go → _p_go（前缀字母小写 + 下划线去尾）
         /// </summary>

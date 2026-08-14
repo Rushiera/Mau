@@ -6,5 +6,5 @@
 § 'P_StreamEnd' ⇐
 § 'T_ToChat' : 'P_OpenChat' & 'S_Win' = 'Home' → | 'S_Win' = 'Chat' | 'S_Win' = 'Home'
 § 'T_ToConfig' : 'P_OpenConfig' & 'S_Win' = 'Home' → | 'S_Win' = 'Config' | 'S_Win' = 'Home'
-§ 'T_Stream' : 'P_OpenChat' & 'S_Chat' = 'Idle' → 'ui.stream'[] | 'S_Chat' = 'Streaming' | 'S_Chat' = 'Done'
+§ 'T_Stream' : 'P_OpenChat' & 'S_Chat' = 'Idle' → 'probe.sink'["stream", 0] | 'S_Chat' = 'Streaming' | 'S_Chat' = 'Done'
 § 'T_End' : 'P_StreamEnd' & 'S_Chat' = 'Streaming' → | 'S_Chat' = 'Done' | 'S_Chat' = 'Streaming'

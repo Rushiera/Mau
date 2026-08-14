@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════
 // 积木: probe.sink_slow
 // ID:   BRIK-TEST-003
 // 类别: TEST
@@ -35,4 +35,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:89D25F5140647FA081BE1C27688DD6D944AFC71E8865D1961E753DDE5FA7F64E
+// #MAU_CHECKSUM:SHA256:7E88AD16C08A3068F5882E06362890923DAFD3358E5DA229C9F087D5268FAC82

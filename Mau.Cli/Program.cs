@@ -43,44 +43,46 @@ namespace Mau.Cli
         /// <param name="args">命令行参数</param>
         /// <returns>退出码</returns>
         public static int Dispatch(string[] args)
+{
+    CliSupport.ParseVerbose(args);
+    if (args.Length == 0)
+    {
+        PrintHelp();
+        return 0;
+    }
+    string command = args[0];
+    int commandId;
+    if (!CommandIds.TryResolve(command, out commandId))
+    {
+        Console.WriteLine("未知命令: " + command);
+        PrintHelp();
+        return 1;
+    }
+    switch (commandId)
+    {
+        case CommandIds.Verify:
+            return CommandVerify(args);
+        case CommandIds.Gen:
+            return CommandGen(args);
+        case CommandIds.Build:
+            return CommandBuild(args);
+        case CommandIds.Test:
         {
-            CliSupport.ParseVerbose(args);
-            if (args.Length == 0)
-            {
-                PrintHelp();
-                return 0;
-            }
-            string command = args[0];
-            if (command == "verify")
-            {
-                return CommandVerify(args);
-            }
-            if (command == "gen")
-            {
-                return CommandGen(args);
-            }
-            if (command == "build")
-            {
-                return CommandBuild(args);
-            }
-            if (command == "test")
-            {
-                bool update = args.Length > 1 && args[1] == "--update";
-                return MauTestRunner.Run(update);
-            }
-            if (command == "check")
-            {
-                return CommandCheckV3.Run();
-            }
-            if (command == "debug")
-            {
-                return CommandDebugV3.Run(CliSupport.Tail(args));
-            }
-            Console.WriteLine("未知命令: " + command);
+            bool update = args.Length > 1 && args[1] == "--update";
+            return MauTestRunner.Run(update);
+        }
+        case CommandIds.Check:
+            return CommandCheckV3.Run();
+        case CommandIds.Debug:
+            return CommandDebugV3.Run(CliSupport.Tail(args));
+        case CommandIds.Bricks:
+            return CommandBricksV3.Run(CliSupport.Tail(args));
+        default:
+            Console.WriteLine("未知指令编号: " + commandId);
             PrintHelp();
             return 1;
-        }
-
+    }
+}
         /// <summary>
         /// 帮助——最小命令面
         /// </summary>

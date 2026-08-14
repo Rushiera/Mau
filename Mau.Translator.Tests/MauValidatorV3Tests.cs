@@ -43,8 +43,8 @@ namespace Mau.Translator.Tests
             MauDocV3 doc = Compile(
                 "§ 'S_Talk' = { 'Idle', 'Thinking' }\n" +
                 "§ 'P_Go' ⇐\n" +
-                "§ 'P_Q' ↻ [3] 'data.box_is'[\"x\"]\n" +
-                "§ 'T_Start' : 'P_Go' & 'S_Talk' = 'Idle' → 'brick.act'[] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Idle'");
+                "§ 'P_Q' ↻ [3] 'probe.sink'[\"x\", 0]\n" +
+                "§ 'T_Start' : 'P_Go' & 'S_Talk' = 'Idle' → 'probe.sink'[\"x\", 0] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Idle'");
             Assert.True(doc.Success);
         }
 

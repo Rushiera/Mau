@@ -101,11 +101,11 @@ namespace Mau.Runtime.Tests
         /// </summary>
         [Fact]
         public void OAOpenWorkKeepsOneClaimOpportunityBeforeTimeout()
-        {
+{
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
-            long dogId = 1;
-            long officeId = oa.Post(dogId, "TEST", "TIMEOUT", 1);
+            long ownerId = 1;
+            long officeId = oa.Post(ownerId, "TEST", "TIMEOUT", 1);
             bool firstTickObservedOpen = false;
             bool secondTickObservedTimeout = false;
             int observations = 0;
@@ -130,25 +130,24 @@ namespace Mau.Runtime.Tests
             Assert.True(secondTickObservedTimeout);
             Assert.Equal(OfficeState.TimeOut, oa.GetStatus(officeId));
         }
-
         /// <summary>
         /// OA 的认领、回执和双字典副本边界
         /// </summary>
         [Fact]
         public void OAClaimAndCompleteKeepIndependentCopies()
-        {
+{
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
-            long dogId = 1;
-            long catId = 2;
+            long ownerId = 1;
+            long workerId = 2;
 
             // [段1] 发布和认领工单后修改调用方载荷
-            long officeId = oa.Post(dogId, "TEST", "COPY", 100);
-            oa.SetStr(officeId, dogId, "input", "input-value");
-            List<Office> claimed = oa.ClaimBatch(catId, new long[] { officeId });
+            long officeId = oa.Post(ownerId, "TEST", "COPY", 100);
+            oa.SetStr(officeId, ownerId, "input", "input-value");
+            List<Office> claimed = oa.ClaimBatch(workerId, new long[] { officeId });
             OfficeData result = OfficeData.Empty();
             result.Strs["output"] = "result-value";
-            oa.Complete(officeId, catId, result);
+            oa.Complete(officeId, workerId, result);
             result.Strs["output"] = "changed-result";
 
             // [段2] OA 中的载荷和回执必须保持独立副本
@@ -158,67 +157,64 @@ namespace Mau.Runtime.Tests
             Assert.Equal("input-value", office.Data.Strs["input"]);
             Assert.Equal("result-value", office.Result.Strs["output"]);
         }
-
         /// <summary>
         /// 干不了重挂后他人可认领
         /// </summary>
         [Fact]
         public void OARelistReopensForOthers()
-        {
+{
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
-            long dogId = 1;
-            long catA = 2;
-            long catB = 3;
-            long officeId = oa.Post(dogId, "TEST", "RE", 100);
+            long ownerId = 1;
+            long workerA = 2;
+            long workerB = 3;
+            long officeId = oa.Post(ownerId, "TEST", "RE", 100);
 
-            oa.ClaimBatch(catA, new long[] { officeId });
-            oa.Relist(officeId, catA);
-            List<Office> claimedByB = oa.ClaimBatch(catB, new long[] { officeId });
+            oa.ClaimBatch(workerA, new long[] { officeId });
+            oa.Relist(officeId, workerA);
+            List<Office> claimedByB = oa.ClaimBatch(workerB, new long[] { officeId });
 
             Assert.Single(claimedByB);
             Assert.Equal(OfficeState.Work, oa.GetStatus(officeId));
-            Assert.Equal(catB, oa.GetOffice(officeId).ClaimByCatId);
+            Assert.Equal(workerB, oa.GetOffice(officeId).ClaimByWorkerId);
         }
-
         /// <summary>
         /// 执行方回收时释放其全部 Work 工单
         /// </summary>
         [Fact]
-        public void OAReleaseByCatRelistsWork()
-        {
+        public void OAReleaseByWorkerRelistsWork()
+{
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
-            long dogId = 1;
-            long catId = 2;
-            long officeId = oa.Post(dogId, "TEST", "RELEASE", 100);
+            long ownerId = 1;
+            long workerId = 2;
+            long officeId = oa.Post(ownerId, "TEST", "RELEASE", 100);
 
-            oa.ClaimBatch(catId, new long[] { officeId });
-            oa.ReleaseByCat(catId);
+            oa.ClaimBatch(workerId, new long[] { officeId });
+            oa.ReleaseByWorker(workerId);
 
             Office released = oa.GetOffice(officeId);
             Assert.Equal(OfficeState.Open, released.Status);
-            Assert.Equal(0, released.ClaimByCatId);
+            Assert.Equal(0, released.ClaimByWorkerId);
         }
-
         /// <summary>
         /// OA 快照统计各状态数量
         /// </summary>
         [Fact]
         public void OAGetSnapshotCountsStates()
-        {
+{
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
-            long dogId = 1;
-            long catId = 2;
-            long openId = oa.Post(dogId, "TEST", "OPEN", 100);
-            long workId = oa.Post(dogId, "TEST", "WORK", 100);
-            oa.ClaimBatch(catId, new long[] { workId });
-            long doneId = oa.Post(dogId, "TEST", "DONE", 100);
-            oa.ClaimBatch(catId, new long[] { doneId });
+            long ownerId = 1;
+            long workerId = 2;
+            long openId = oa.Post(ownerId, "TEST", "OPEN", 100);
+            long workId = oa.Post(ownerId, "TEST", "WORK", 100);
+            oa.ClaimBatch(workerId, new long[] { workId });
+            long doneId = oa.Post(ownerId, "TEST", "DONE", 100);
+            oa.ClaimBatch(workerId, new long[] { doneId });
             OfficeData doneResult = OfficeData.Empty();
             doneResult.Strs["status"] = "ok";
-            oa.Complete(doneId, catId, doneResult);
+            oa.Complete(doneId, workerId, doneResult);
 
             OAView view = oa.GetSnapshot();
 
@@ -228,7 +224,6 @@ namespace Mau.Runtime.Tests
             Assert.Equal(0, view.TimeoutCount);
             Assert.True(view.Version > 0);
         }
-
         // ═══════════════════════════════════════════
         // CommandBus
         // ═══════════════════════════════════════════

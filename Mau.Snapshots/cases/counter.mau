@@ -2,4 +2,4 @@
 § 'S_Counter' = { 'Running' }
 § 'P_Job' ⇐
 § 'R_Slots' : 3
-§ 'T_Take' : 'P_Job' & 'S_Counter' = 'Running' → 'job.run'[] | 'S_Counter' = 'Running' | 'S_Counter' = 'Running'
+§ 'T_Take' : 'P_Job' & 'S_Counter' = 'Running' → 'probe.sink'["job", 0] | 'S_Counter' = 'Running' | 'S_Counter' = 'Running'

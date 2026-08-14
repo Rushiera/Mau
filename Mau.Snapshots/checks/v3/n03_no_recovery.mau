@@ -3,5 +3,5 @@
 § 'S_A' = { 'X', 'Y', 'Done' }
 § 'P_Go' ⇐
 § 'P_Tick' ⇐
-§ 'T_Go' : 'P_Go' & 'S_A' = 'X' → 'brick.run'[] | 'S_A' = 'Done' | 'S_A' = 'Y'
+§ 'T_Go' : 'P_Go' & 'S_A' = 'X' → 'probe.sink'["run", 0] | 'S_A' = 'Done' | 'S_A' = 'Y'
 § 'T_Loop' : 'P_Tick' & 'S_A' = 'Y' → | 'S_A' = 'Y' | 'S_A' = 'Y'

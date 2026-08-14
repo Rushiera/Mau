@@ -72,8 +72,8 @@ namespace Mau.Translator.Tests
                 "## 'S_Talk' = { 'Idle', 'Thinking', 'Done' }\n" +
                 "## 'P_Go' " + asciiIn + "\n" +
                 "## 'P_Fail' " + asciiIn + "\n" +
-                "## 'T_Start' [t=30] : 'P_Go' & 'S_Talk' = 'Idle' -> 'llm.chat'[\"hi\"] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'\n" +
-                "## 'T_Retry' : 'P_Fail' & 'S_Talk' = 'Thinking' -> 'llm.chat'[\"retry\"] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'";
+                "## 'T_Start' [t=30] : 'P_Go' & 'S_Talk' = 'Idle' -> 'probe.sink'[\"hi\", 0] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'\n" +
+                "## 'T_Retry' : 'P_Fail' & 'S_Talk' = 'Thinking' -> 'probe.sink'[\"retry\", 0] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'";
             string hashAscii = TokenFlowV3.Hash(asciiSource, new AsciiAppearance());
             Assert.Equal(hashDefault, hashAscii);
         }

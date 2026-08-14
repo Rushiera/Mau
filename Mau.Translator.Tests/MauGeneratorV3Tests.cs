@@ -29,7 +29,7 @@ namespace Mau.Translator.Tests
         private const string TalkSample =
             "§ 'S_Talk' = { 'Idle', 'Thinking', 'Done' }\n" +
             "§ 'P_Go' ⇐\n" +
-            "§ 'T_Start' : 'P_Go' & 'S_Talk' = 'Idle' → 'llm.chat'[] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'";
+            "§ 'T_Start' : 'P_Go' & 'S_Talk' = 'Idle' → 'probe.sink'[\"hi\", 0] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'";
 
         /// <summary>
         /// 生成物文本断言——IObservableFlow 接口 + DataBox 事件 + GetStatus + trace 埋点
@@ -48,129 +48,107 @@ namespace Mau.Translator.Tests
             Assert.Contains("public FlowStatusV3 GetStatus()", result.GeneratedCode);
             Assert.Contains("trace.fire", result.GeneratedCode);
             Assert.Contains("trace.state", result.GeneratedCode);
-            Assert.Contains("BrickRuntimeV3.TryInvoke(\"llm.chat\"", result.GeneratedCode);
+            Assert.Contains("ProbeSinkBrick.Sink(", result.GeneratedCode);
         }
-
-        /// <summary>
-        /// 行为断言——DataBox.Signal 驱动：无积木注册 → 失败侧 Done；注册成功积木 → 成功侧 Thinking；GetStatus 四柱快照
-        /// </summary>
-        [Fact]
+/// <summary>
+/// 行为断言——强类型直调真积木恒 true → 成功侧 Thinking；GetStatus 四柱快照（失败侧覆盖归 par 时限测试）
+/// </summary>
+///
+[Fact]
         public void Generate_Behavior_FailAndSuccess()
+{
+    CompileResultV3 result = MauCompilerV3.Compile(TalkSample, "Talk");
+    Assert.True(result.Success);
+    string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_v3_gen_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+    try
+    {
+        MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
+        MauPocketCompileResult pr = compiler.Compile(result.GeneratedCode, "FL_Talk");
+        Assert.True(pr.Success, "Emit 失败: " + string.Join("\n", pr.Diagnostics));
+        Assembly asm = Assembly.LoadFrom(pr.AssemblyPath);
+        DataBox.ResetSignals();
+        // 强类型直调——真积木 probe.sink 恒 true → 成功侧 Thinking（失败侧覆盖归 par 时限测试）
+        using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
         {
-            CompileResultV3 result = MauCompilerV3.Compile(TalkSample, "Talk");
-            Assert.True(result.Success);
-            string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_v3_gen_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            IObservableFlow flow = handle.Flow;
+            DataBox.Signal("P_Go");
+            flow.Tick(1);
+            FlowStatusV3 status = flow.GetStatus();
+            Assert.Contains("S_Talk=Thinking", status.StateLines);
+            Assert.Equal(1L, status.Frame);
+            Assert.Single(status.WireStatuses);
+            Assert.Equal(1L, status.WireStatuses[0].LastTriggerFrame);
+        }
+    }
+    finally
+    {
+        DataBox.ResetSignals();
+        if (Directory.Exists(pocketRoot))
+        {
             try
             {
-                MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
-                MauPocketCompileResult pr = compiler.Compile(result.GeneratedCode, "FL_Talk");
-                Assert.True(pr.Success, "Emit 失败: " + string.Join("\n", pr.Diagnostics));
-                Assembly asm = Assembly.LoadFrom(pr.AssemblyPath);
-                DataBox.ResetSignals();
-
-                // 场景一——无积木注册：TryInvoke 返回 false → 失败侧 Done（接口驱动）
-                using (FlowHandle handle1 = FlowHandle.Load(pr.AssemblyPath))
-                {
-                    IObservableFlow flow1 = handle1.Flow;
-                    DataBox.Signal("P_Go");
-                    flow1.Tick(1);
-                    FlowStatusV3 status1 = flow1.GetStatus();
-                    Assert.Contains("S_Talk=Done", status1.StateLines);
-                    Assert.Equal(1L, status1.Frame);
-                    Assert.Single(status1.WireStatuses);
-                    Assert.Equal(1L, status1.WireStatuses[0].LastTriggerFrame);
-                }
-
-                // 场景二——注册成功积木：返回 true → 成功侧 Thinking。
-                // 注册进当前 ALC 的 BrickRuntimeV3（静态字典 per-ALC——FlowHandle 每次 Load 独立 ALC）
-                DataBox.ResetSignals();
-                using (FlowHandle handle2 = FlowHandle.Load(pr.AssemblyPath))
-                {
-                    IObservableFlow flow2 = handle2.Flow;
-                    Type runtime2 = flow2.GetType().Assembly.GetType("Mau.Generated.BrickRuntimeV3");
-                    Assert.NotNull(runtime2);
-                    runtime2.GetMethod("Register").Invoke(null, new object[] { "llm.chat", (Func<string[], bool>)(delegate (string[] args) { return true; }) });
-                    DataBox.Signal("P_Go");
-                    flow2.Tick(1);
-                    FlowStatusV3 status2 = flow2.GetStatus();
-                    Assert.Contains("S_Talk=Thinking", status2.StateLines);
-                }
+                Directory.Delete(pocketRoot, true);
             }
-            finally
+            catch (Exception)
             {
-                DataBox.ResetSignals();
-                if (Directory.Exists(pocketRoot))
-                {
-                    try
-                    {
-                        Directory.Delete(pocketRoot, true);
-                    }
-                    catch (Exception)
-                    {
-                        // 清理失败不影响
-                    }
-                }
+                // 清理失败不影响
             }
         }
-
+    }
+}
         /// <summary>
         /// 主动传感器行为——帧门控采样 + 导线条件消费 + 快照实测值
         /// </summary>
         [Fact]
         public void Generate_Behavior_ActiveSensor()
+{
+    string sample =
+        "§ 'S_Poll' = { 'Waiting', 'Got' }\n" +
+        "§ 'P_Q' ↻ [2] 'probe.sink'[\"x\", 0]\n" +
+        "§ 'T_Hit' : 'P_Q' & 'S_Poll' = 'Waiting' → | 'S_Poll' = 'Got' | 'S_Poll' = 'Got'";
+    CompileResultV3 result = MauCompilerV3.Compile(sample, "Poll");
+    Assert.True(result.Success);
+    string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_v3_poll_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+    try
+    {
+        MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
+        MauPocketCompileResult pr = compiler.Compile(result.GeneratedCode, "FL_Poll");
+        Assert.True(pr.Success, "Emit 失败: " + string.Join("\n", pr.Diagnostics));
+        Assembly asm = Assembly.LoadFrom(pr.AssemblyPath);
+        using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
         {
-            string sample =
-                "§ 'S_Poll' = { 'Waiting', 'Got' }\n" +
-                "§ 'P_Q' ↻ [2] 'data.box_is'[\"x\"]\n" +
-                "§ 'T_Hit' : 'P_Q' & 'S_Poll' = 'Waiting' → | 'S_Poll' = 'Got' | 'S_Poll' = 'Got'";
-            CompileResultV3 result = MauCompilerV3.Compile(sample, "Poll");
-            Assert.True(result.Success);
-            string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_v3_poll_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            IObservableFlow flow = handle.Flow;
+            // 强类型直调——真积木 probe.sink 恒 true → 门控 2 帧采样命中（f=2 起 Got）
+            for (int f = 0; f < 10; f++)
+            {
+                flow.Tick(f);
+                FlowStatusV3 status = flow.GetStatus();
+                if (Array.IndexOf(status.StateLines, "S_Poll=Got") >= 0)
+                {
+                    Assert.True(f >= 2, "帧 " + f + " 时采样命中——门控 2 帧，最早第 2 帧");
+                    Assert.Single(status.SensorValues);
+                    Assert.True(status.SensorValues[0].Value);
+                    return;
+                }
+            }
+            Assert.Fail("10 帧内未转移 Got——采样链路断裂");
+        }
+    }
+    finally
+    {
+        if (Directory.Exists(pocketRoot))
+        {
             try
             {
-                MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
-                MauPocketCompileResult pr = compiler.Compile(result.GeneratedCode, "FL_Poll");
-                Assert.True(pr.Success, "Emit 失败: " + string.Join("\n", pr.Diagnostics));
-                Assembly asm = Assembly.LoadFrom(pr.AssemblyPath);
-                long current = 0;
-                using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
-                {
-                    IObservableFlow flow = handle.Flow;
-                    // 注册进当前 ALC 的 BrickRuntimeV3
-                    Type runtime = flow.GetType().Assembly.GetType("Mau.Generated.BrickRuntimeV3");
-                    runtime.GetMethod("Register").Invoke(null, new object[] { "data.box_is", (Func<string[], bool>)(delegate (string[] args) { return current >= 5; }) });
-                    for (int f = 0; f < 10; f++)
-                    {
-                        current = f;
-                        flow.Tick(f);
-                        FlowStatusV3 status = flow.GetStatus();
-                        if (Array.IndexOf(status.StateLines, "S_Poll=Got") >= 0)
-                        {
-                            Assert.True(f >= 6, "帧 " + f + " 时采样命中——门控 2 帧 + 第 5 帧起积木 true，最早 6 帧");
-                            Assert.Single(status.SensorValues);
-                            Assert.True(status.SensorValues[0].Value);
-                            return;
-                        }
-                    }
-                    Assert.Fail("10 帧内未转移 Got——采样链路断裂");
-                }
+                Directory.Delete(pocketRoot, true);
             }
-            finally
+            catch (Exception)
             {
-                if (Directory.Exists(pocketRoot))
-                {
-                    try
-                    {
-                        Directory.Delete(pocketRoot, true);
-                    }
-                    catch (Exception)
-                    {
-                        // 清理失败不影响
-                    }
-                }
+                // 清理失败不影响
             }
         }
-
+    }
+}
         /// <summary>
         /// trace 埋点——导线触发/状态转移进审计（帧号对齐）
         /// </summary>
@@ -237,7 +215,7 @@ namespace Mau.Translator.Tests
             string sample =
                 "§ 'S_Job' = { 'Idle', 'Running', 'Done' }\n" +
                 "§ 'P_Start' ⇐\n" +
-                "§ 'T_Run' [par] : 'P_Start' & 'S_Job' = 'Idle' → 'slow.brick'[] | 'S_Job' = 'Running' | 'S_Job' = 'Done'";
+                "§ 'T_Run' [par] : 'P_Start' & 'S_Job' = 'Idle' → 'probe.sink_slow'[\"job\", 200] | 'S_Job' = 'Running' | 'S_Job' = 'Done'";
             CompileResultV3 result = MauCompilerV3.Compile(sample, "ParJob");
             Assert.True(result.Success);
             string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_v3_par_" + Guid.NewGuid().ToString("N").Substring(0, 8));
@@ -251,9 +229,7 @@ namespace Mau.Translator.Tests
                 using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
                 {
                     IObservableFlow flow = handle.Flow;
-                    // 注册进当前 ALC 的 BrickRuntimeV3
-                    Type runtime = flow.GetType().Assembly.GetType("Mau.Generated.BrickRuntimeV3");
-                    runtime.GetMethod("Register").Invoke(null, new object[] { "slow.brick", (Func<string[], bool>)(delegate (string[] args) { System.Threading.Thread.Sleep(200); return true; }) });
+
                     // [段1] 触发——后台启动，主线程立即返回；转移在回投 Drain 时应用（此刻状态仍 Idle）
                     DataBox.Signal("P_Start");
                     flow.Tick(1);
@@ -299,7 +275,7 @@ namespace Mau.Translator.Tests
             string sample =
                 "§ 'S_Job' = { 'Idle', 'Running', 'Failed' }\n" +
                 "§ 'P_Start' ⇐\n" +
-                "§ 'T_Run' [par, t=2] : 'P_Start' & 'S_Job' = 'Idle' → 'slow.brick'[] | 'S_Job' = 'Running' | 'S_Job' = 'Failed'";
+                "§ 'T_Run' [par, t=2] : 'P_Start' & 'S_Job' = 'Idle' → 'probe.sink_slow'[\"job\", 500] | 'S_Job' = 'Running' | 'S_Job' = 'Failed'";
             CompileResultV3 result = MauCompilerV3.Compile(sample, "ParTimeout");
             Assert.True(result.Success);
             string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_v3_pto_" + Guid.NewGuid().ToString("N").Substring(0, 8));
@@ -313,9 +289,7 @@ namespace Mau.Translator.Tests
                 using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
                 {
                     IObservableFlow flow = handle.Flow;
-                    // 注册进当前 ALC 的 BrickRuntimeV3
-                    Type runtime = flow.GetType().Assembly.GetType("Mau.Generated.BrickRuntimeV3");
-                    runtime.GetMethod("Register").Invoke(null, new object[] { "slow.brick", (Func<string[], bool>)(delegate (string[] args) { System.Threading.Thread.Sleep(500); return true; }) });
+
                     DataBox.Signal("P_Start");
                     flow.Tick(1);
                     // 帧 2/3——Cube 推进（t=2：触发帧 + 2 帧后 Expired）
@@ -356,7 +330,7 @@ namespace Mau.Translator.Tests
             string sample =
                 "§ 'S_A' = { 'X', 'Y', 'Z' }\n" +
                 "§ 'P_Go' ⇐\n" +
-                "§ 'T_M' : 'P_Go' & 'S_A' = 'X' → 'cmd.match'[] | 'S_A' = 'X' | 'S_A' = 'Y' | 'S_A' = 'Z'";
+                "§ 'T_M' : 'P_Go' & 'S_A' = 'X' → 'probe.sink'[\"x\", 0] | 'S_A' = 'X' | 'S_A' = 'Y' | 'S_A' = 'Z'";
             CompileResultV3 result = MauCompilerV3.Compile(sample, "Multi");
             Assert.False(result.Success);
             Assert.Equal("E205", result.Diagnostics[0].Code);

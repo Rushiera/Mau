@@ -1,0 +1,5 @@
+﻿// 积木执行跑测谱——probe 系真执行（P5 跑测闭环：语料→编译→内嵌积木→Emit→ALC→运行→断言）
+§ 'S_Flow' = { 'Idle', 'Working', 'Done' }
+§ 'P_Go' ⇐
+§ 'T_Do' : 'P_Go' & 'S_Flow' = 'Idle' → 'probe.sink'["run", 1] | 'S_Flow' = 'Working' | 'S_Flow' = 'Done'
+§ 'T_Finish' : 'P_Go' & 'S_Flow' = 'Working' → 'probe.sink'["finish", 2] | 'S_Flow' = 'Done' | 'S_Flow' = 'Done'

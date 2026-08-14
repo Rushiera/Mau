@@ -1,8 +1,8 @@
-﻿// 工具循环——claim → exec → complete（ShellCat 原子编排形态提炼）
+﻿// 工具循环——claim → exec → complete（ShellCat 原子编排形态提炼；oa/shell/data 积木迁走——probe 系占位）
 § 'S_Loop' = { 'WaitWork', 'Executing', 'Closing', 'Done' }
 § 'P_Claimed' ⇐
 § 'P_CloseOk' ⇐
-§ 'P_Q_Work' ↻ [1] 'data.box_is'["work"]
-§ 'T_Claim' : 'P_Q_Work' & 'S_Loop' = 'WaitWork' → 'oa.claim'[] | 'S_Loop' = 'Executing' | 'S_Loop' = 'WaitWork'
-§ 'T_Exec' [par] : 'P_Claimed' & 'S_Loop' = 'Executing' → 'shell.exec'["run"] | 'S_Loop' = 'Closing' | 'S_Loop' = 'Done'
-§ 'T_Close' : 'P_CloseOk' & 'S_Loop' = 'Closing' → 'oa.complete'[] | 'S_Loop' = 'WaitWork' | 'S_Loop' = 'Done'
+§ 'P_Q_Work' ↻ [1] 'probe.sink'["work", 0]
+§ 'T_Claim' : 'P_Q_Work' & 'S_Loop' = 'WaitWork' → 'probe.source'[0] | 'S_Loop' = 'Executing' | 'S_Loop' = 'WaitWork'
+§ 'T_Exec' [par] : 'P_Claimed' & 'S_Loop' = 'Executing' → 'probe.sink_slow'["run", 0] | 'S_Loop' = 'Closing' | 'S_Loop' = 'Done'
+§ 'T_Close' : 'P_CloseOk' & 'S_Loop' = 'Closing' → 'probe.sink'["close", 0] | 'S_Loop' = 'WaitWork' | 'S_Loop' = 'Done'

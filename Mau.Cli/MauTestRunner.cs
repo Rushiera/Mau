@@ -27,7 +27,7 @@ namespace Mau.Cli
                 return 1;
             }
             // [段1] 翻译器测试 + 运行时机制测试（L2——v3 语言链 + 数字电路机制）
-            Console.WriteLine("[1/2] 翻译器测试（L2）");
+            Console.WriteLine("[1/3] 翻译器 + 运行时机制测试（L2）");
             string testProj = Path.Combine(root, "Mau.Translator.Tests", "Mau.Translator.Tests.csproj");
             if (!RunProcess("dotnet", "build \"" + testProj + "\" -v q --nologo"))
             {
@@ -53,7 +53,7 @@ namespace Mau.Cli
                 return 1;
             }
             // [段2] 语法谱黄金哈希（L3——TokenId 流哨兵）
-            Console.WriteLine("[2/2] 语法谱黄金哈希（L3）");
+            Console.WriteLine("[2/3] 语法谱黄金哈希（L3）");
             Dictionary<string, string> golden = LoadGolden(root);
             string casesDir = Path.Combine(root, "Mau.Snapshots", "cases");
             string[] caseFiles = Directory.GetFiles(casesDir, "*.mau");
@@ -93,6 +93,19 @@ namespace Mau.Cli
                 SaveGolden(root, golden);
                 Console.WriteLine("黄金哈希清单已更新: golden-sha-v3.txt（" + golden.Count + " 份）");
             }
+            // [段3] 积木谱（L4——brickflow 跑测：语料→内嵌→Emit→ALC→断言）
+            Console.WriteLine("[3/3] 积木谱（L4）");
+            Mau.Development.BrickSpecRunResult spec = Mau.Development.BrickSpecRunner.Run(root);
+            if (!spec.Success)
+            {
+                Console.WriteLine("FAIL: " + spec.Summary);
+                if (spec.Details.Length > 0)
+                {
+                    Console.WriteLine("  " + spec.Details);
+                }
+                return 1;
+            }
+            CliSupport.Detail(spec.Summary);
             Console.WriteLine("MAU_CHECKS_OK");
             return 0;
         }

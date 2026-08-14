@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════
 // 积木: csharp.bridge
 // ID:   BRIK-PACK-003
 // 类别: PACK
@@ -55,4 +55,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:EF6A5EAC2DBE7377AF03647F2391E9850411C67B6E0F556B64CC3787695F5D91
+// #MAU_CHECKSUM:SHA256:DE2978C2D554B338A0DECF793504B4956BE27D7F6F35463ADE123F273F35DB40

@@ -26,7 +26,7 @@ namespace Mau.Runtime
         /// <summary>
         /// 所有者（挂单方）的 LongId
         /// </summary>
-        public long DogId;
+        public long OwnerId;
 
         /// <summary>
         /// 请求载荷——双字典（Dog 按 Key 写，Cat 按 Key 读）
@@ -41,7 +41,7 @@ namespace Mau.Runtime
         /// <summary>
         /// 认领者 LongId（0=未认领）
         /// </summary>
-        public long ClaimByCatId;
+        public long ClaimByWorkerId;
 
         /// <summary>
         /// 上架帧号

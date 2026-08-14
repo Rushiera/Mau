@@ -52,8 +52,8 @@ namespace Mau.Translator.Tests
                 "§ 'S_Talk' = { 'Idle', 'Thinking', 'Done' }\n" +
                 "§ 'P_Go' ⇐\n" +
                 "§ 'P_Fail' ⇐\n" +
-                "§ 'T_Start' : 'P_Go' & 'S_Talk' = 'Idle' → 'llm.chat'[] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'\n" +
-                "§ 'T_Retry' : 'P_Fail' & 'S_Talk' = 'Thinking' → 'llm.chat'[] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'");
+                "§ 'T_Start' : 'P_Go' & 'S_Talk' = 'Idle' → 'probe.sink'[\"hi\", 0] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'\n" +
+                "§ 'T_Retry' : 'P_Fail' & 'S_Talk' = 'Thinking' → 'probe.sink'[\"retry\", 0] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'");
             Assert.True(result.Success, FormatErrors(result));
             Assert.True(result.Reports.Count > 0, "关键路径报告应产出");
         }
@@ -113,7 +113,7 @@ namespace Mau.Translator.Tests
                 "§ 'S_A' = { 'X', 'Y', 'Done' }\n" +
                 "§ 'P_Go' ⇐\n" +
                 "§ 'P_Tick' ⇐\n" +
-                "§ 'T_Go' : 'P_Go' & 'S_A' = 'X' → 'brick'[] | 'S_A' = 'Done' | 'S_A' = 'Y'\n" +
+                "§ 'T_Go' : 'P_Go' & 'S_A' = 'X' → 'probe.sink'[\"x\", 0] | 'S_A' = 'Done' | 'S_A' = 'Y'\n" +
                 "§ 'T_Loop' : 'P_Tick' & 'S_A' = 'Y' → | 'S_A' = 'Y' | 'S_A' = 'Y'");
             // 失败侧 Y——出度 1（自环），BFS 到不了终态 Done → E302（事件自环不触发 E300）
             Assert.False(result.Success);
@@ -129,9 +129,8 @@ namespace Mau.Translator.Tests
             AnalysisResultV3 result = Analyze(
                 "§ 'S_A' = { 'X', 'Done' }\n" +
                 "§ 'P_Go' ⇐\n" +
-                "§ 'T_Go' : 'P_Go' & 'S_A' = 'X' → 'brick'[] | 'S_A' = 'Done' | 'S_A' = 'Done'");
-            // Done 出度 0 是终态——失败侧目标 = 终态。但 E302 判据当前是"出度 0 且非终态"——终态集 = 出度 0 的全部。
-            // 当前实现：失败侧目标出度 0 → 报错——这里会误报！Done 是设计终态（正常失败归宿）。
+                "§ 'T_Go' : 'P_Go' & 'S_A' = 'X' → 'probe.sink'[\"x\", 0] | 'S_A' = 'Done' | 'S_A' = 'Done'");
+            // 失败侧目标 = 终态 Done——FindNoRecovery 判据：出度 0 终态归宿 → 通过，不误报
             Assert.True(result.Success, FormatErrors(result));
         }
 

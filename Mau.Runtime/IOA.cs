@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace Mau.Runtime
 {
@@ -12,32 +12,32 @@ namespace Mau.Runtime
         /// <summary>
         /// 上架一个工单——空双字典载荷随单生成。返回 OfficeId。
         /// </summary>
-        /// <param name="dogId">所有者 LongId</param>
+        /// <param name="ownerId">挂单方 LongId</param>
         /// <param name="officeType">工单大类</param>
         /// <param name="officeName">固定词汇——执行方据此判断能不能干</param>
         /// <param name="timeoutTicks">超时帧数，由挂单方自定义</param>
         /// <returns>新 Office 的 ID</returns>
-        long Post(long dogId, string officeType, string officeName, long timeoutTicks);
+        long Post(long ownerId, string officeType, string officeName, long timeoutTicks);
 
         /// <summary>
         /// 写入请求载荷 int 值——仅 Open 状态 + 本人（挂单方）可操作
         /// </summary>
         /// <param name="officeId">Office ID</param>
-        /// <param name="dogId">所有者 LongId</param>
+        /// <param name="ownerId">挂单方 LongId</param>
         /// <param name="key">Key（约定见 design-mau-module §二）</param>
         /// <param name="value">int 值</param>
         /// <returns>true=写入成功</returns>
-        bool SetInt(long officeId, long dogId, string key, int value);
+        bool SetInt(long officeId, long ownerId, string key, int value);
 
         /// <summary>
         /// 写入请求载荷 str 值——仅 Open 状态 + 本人（挂单方）可操作
         /// </summary>
         /// <param name="officeId">Office ID</param>
-        /// <param name="dogId">所有者 LongId</param>
+        /// <param name="ownerId">挂单方 LongId</param>
         /// <param name="key">Key</param>
         /// <param name="value">str 值</param>
         /// <returns>true=写入成功</returns>
-        bool SetStr(long officeId, long dogId, string key, string value);
+        bool SetStr(long officeId, long ownerId, string key, string value);
 
         /// <summary>
         /// 读取请求载荷 int 值——执行方消费
@@ -61,9 +61,9 @@ namespace Mau.Runtime
         /// 取消自己挂的单。仅 Open 状态 + 本人可操作。
         /// </summary>
         /// <param name="officeId">Office ID</param>
-        /// <param name="dogId">请求者 LongId</param>
+        /// <param name="ownerId">请求方 LongId</param>
         /// <returns>true=取消成功</returns>
-        bool Cancel(long officeId, long dogId);
+        bool Cancel(long officeId, long ownerId);
 
         /// <summary>
         /// 返回某大类下所有 Open 单。
@@ -84,26 +84,26 @@ namespace Mau.Runtime
         /// 逐个尝试锁单——已被别人取走的跳过。返回锁成功的名单。
         /// 执行方拿到后自行维护已认领列表，完成后逐个 Complete。
         /// </summary>
-        /// <param name="catId">认领者 LongId</param>
+        /// <param name="workerId">认领方 LongId</param>
         /// <param name="officeIds">待锁的 OfficeId 数组</param>
         /// <returns>锁成功的 Office 列表</returns>
-        List<Office> ClaimBatch(long catId, long[] officeIds);
+        List<Office> ClaimBatch(long workerId, long[] officeIds);
 
         /// <summary>
         /// 完成一个 Office——写入回执载荷 → 状态变 Closed。
         /// </summary>
         /// <param name="officeId">Office ID</param>
-        /// <param name="catId">认领者 LongId</param>
+        /// <param name="workerId">认领方 LongId</param>
         /// <param name="result">回执双字典载荷（可为空 OfficeData）</param>
-        void Complete(long officeId, long catId, OfficeData result);
+        void Complete(long officeId, long workerId, OfficeData result);
 
         /// <summary>
         /// 干不了/失败了——把单重新变回 Open 让别人试试。
         /// 仅 Work 状态 + 本人可操作。
         /// </summary>
         /// <param name="officeId">Office ID</param>
-        /// <param name="catId">请求者 LongId</param>
-        void Relist(long officeId, long catId);
+        /// <param name="workerId">请求方 LongId</param>
+        void Relist(long officeId, long workerId);
 
         /// <summary>
         /// 获取 Office 当前状态。

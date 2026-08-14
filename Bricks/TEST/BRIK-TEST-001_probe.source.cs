@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════
 // 积木: probe.source
 // ID:   BRIK-TEST-001
 // 类别: TEST
@@ -32,4 +32,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:FBEAA28D371E0B2C2ECEC7F8454E91750A57A075AB54422FF811A269AD58A50E
+// #MAU_CHECKSUM:SHA256:8FBAC399D17C0C799CFAF0E2BB01E0F2DD1E43CC02B3F8D81C53B148A4A3C9D2
