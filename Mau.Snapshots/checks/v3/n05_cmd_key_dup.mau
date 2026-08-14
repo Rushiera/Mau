@@ -1,0 +1,5 @@
+// 预期: E206
+// Command key 重名——一 key 一传感器（CommandBus 注册语义：key → 唯一注册者）
+§ 'S_A' = { 'X' }
+§ 'P_CmdA' ⇚ "TOOL_Text_Read"
+§ 'P_CmdB' ⇚ "TOOL_Text_Read"

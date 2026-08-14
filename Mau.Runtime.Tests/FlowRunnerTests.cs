@@ -194,5 +194,41 @@ namespace Mau.Runtime.Tests
             });
             Assert.Equal(0, runner.Registry.Count);
         }
-    }
+/// <summary>
+/// D1 修复验证——UnregisterFlow 同步注销 CommandBus key：旧 Flow 卸载后同 key 可被新 Flow 再注册
+/// </summary>
+[Fact]
+public void Runner_UnregisterFlow_ClearsCommandBusKeys()
+{
+    ThreadGuard guard = new ThreadGuard();
+    OA oa = new OA(guard);
+    CommandBus cmd = new CommandBus(guard);
+    IdAllocator ids = new IdAllocator();
+    FlowRunner runner = new FlowRunner(guard, oa, cmd, ids);
+    // [段1] 旧 Flow 注册 key（生成物首 Tick 懒注册形态——owner = FlowId）
+    CountingFlow oldFlow = new CountingFlow();
+    long oldId = runner.RegisterFlow(oldFlow, "OldCat");
+    string[] keys = new string[]
+    {
+        "TOOL_Text_Read"
+    };
+    cmd.Register(oldId, keys);
+    Assert.Contains("TOOL_Text_Read", cmd.GetKeyDic()[1]);
+    // [段2] 卸载旧 Flow——D1 修复：key 挂名同步清除（0 个模块）
+    Assert.True(runner.UnregisterFlow(oldId));
+    string[] keyDicAfterUnload = cmd.GetKeyDic();
+    Assert.StartsWith("[KeyDic] (0个模块)", keyDicAfterUnload[0]);
+    // [段3] 新 Flow 同 key 注册不被 REJECT——归属切换为新 owner
+    CountingFlow newFlow = new CountingFlow();
+    long newId = runner.RegisterFlow(newFlow, "NewCat");
+    cmd.Register(newId, keys);
+    string[] keyDicAfterRegister = cmd.GetKeyDic();
+    Assert.StartsWith("[KeyDic] (1个模块)", keyDicAfterRegister[0]);
+    Assert.Contains("TOOL_Text_Read", keyDicAfterRegister[1]);
+    Assert.Contains(newId.ToString(), keyDicAfterRegister[1]);
+    // [段4] 归属唯一——快照注册键清单恰好一条
+    CommandSnapshot snapshot = cmd.GetSnapshot();
+    Assert.Single(snapshot.RegisteredKeys);
+    Assert.Equal("TOOL_Text_Read", snapshot.RegisteredKeys[0]);
+}    }
 }

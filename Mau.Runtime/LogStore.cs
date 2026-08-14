@@ -98,7 +98,7 @@ namespace Mau.Runtime
         /// <param name="message">消息</param>
         /// <param name="category">类别——""/CMD/OA（INFO 分支）</param>
         public static void Add(string module, int level, string message, string category)
-        {
+{
             LogEntry entry;
             entry.Time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             entry.Module = SafeText(module);
@@ -118,12 +118,12 @@ namespace Mau.Runtime
             {
                 try
                 {
-                    // 类别段——C/O 类落盘保留类别（G1 覆盖：非空显示 [{category}]）
-                    string line = entry.Time + " | " + entry.Module + " | "
+                    // 落盘行——类别段 C/O 类保留 [{category}]；帧号段 F{frame}（P3c 观测全链——落盘帧号可回溯）
+                    string line = entry.Time + " | F" + entry.Frame + " | " + entry.Module + " | "
                         + LevelText(level) + " | " + entry.Message;
                     if (entry.Category.Length > 0)
                     {
-                        line = entry.Time + " | " + entry.Module + " | "
+                        line = entry.Time + " | F" + entry.Frame + " | " + entry.Module + " | "
                             + LevelText(level) + " | [" + entry.Category + "] | " + entry.Message;
                     }
                     System.IO.File.AppendAllText(LogFilePath, line + "\n",
@@ -135,7 +135,6 @@ namespace Mau.Runtime
                 }
             }
         }
-
         /// <summary>
         /// 级别文本
         /// </summary>

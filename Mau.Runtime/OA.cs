@@ -352,6 +352,8 @@ namespace Mau.Runtime
                         new AuditProp("result", "claimed")
                     });
                 }
+                // O 类 Log——接单（P3c 观测全链：Post/Claim/Complete/超时四态专属 Log 补齐）
+                LogStore.Add("OA", 0, "OA | CLAIM | #" + office.OfficeId + " | worker=" + workerId, "OA");
                 claimed.Add(CopyOffice(office));
             }
             return claimed;

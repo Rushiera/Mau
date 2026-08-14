@@ -34,12 +34,24 @@ namespace CH4
 
         /// <summary>三语料 Flow 句柄——加载/热重载面</summary>
         private static FlowHandle _toolHandle;
+/// <summary>
+/// IOTestCat Flow 句柄——热重载面
+/// </summary>
         private static FlowHandle _ioHandle;
+/// <summary>
+/// QuickCat Flow 句柄——热重载面
+/// </summary>
         private static FlowHandle _quickHandle;
 
         /// <summary>注册 ID——观测与回收用</summary>
         private static long _toolId;
+/// <summary>
+/// IOTestCat 注册 ID——观测与回收用
+/// </summary>
         private static long _ioId;
+/// <summary>
+/// QuickCat 注册 ID——观测与回收用
+/// </summary>
         private static long _quickId;
 
         /// <summary>命令总线——Command 投递器直接引用（SetText 面）</summary>
@@ -47,11 +59,13 @@ namespace CH4
 
         /// <summary>OA 工单平台——观测快照（诊断期）</summary>
         private static OA _oa;
+/// <summary>
+/// 主程序入口——参数路由：无参=交互模式 / --selfcheck=启动自检 / --run "指令"=单指令脚本模式 / --script <file>=指令文件批量模式（P3a 热重载实测通道）
+/// </summary>
+///
 
-        /// <summary>主程序入口——参数路由：无参=交互模式 / --selfcheck=启动自检 / --run "指令"=单指令脚本模式</summary>
-        /// <param name="args">命令行参数</param>
-        /// <returns>退出码</returns>
-        public static int Main(string[] args)
+        ///
+public static int Main(string[] args)
         {
             try
             {
@@ -92,6 +106,10 @@ namespace CH4
                 {
                     mode = "run:" + args[i + 1];
                 }
+                else if (args[i] == "--script" && i + 1 < args.Length)
+                {
+                    mode = "script:" + args[i + 1];
+                }
             }
             if (mode == "selfcheck")
             {
@@ -100,6 +118,10 @@ namespace CH4
             if (mode.StartsWith("run:", StringComparison.Ordinal))
             {
                 return RunSingle(mode.Substring(4));
+            }
+            if (mode.StartsWith("script:", StringComparison.Ordinal))
+            {
+                return RunScript(mode.Substring(7));
             }
             return RunInteractive();
         }
@@ -128,12 +150,19 @@ namespace CH4
                 apiKey = "";
             }
             DataBox.Bind<ILlmRuntime>(new DeepSeekLlmRuntime(LlmBaseUrl, apiKey, LlmModel));
-            // [段3] 审计——环形缓冲 + 寻路落盘（Data/audit/）
             AuditStore audit = new AuditStore(10000);
             audit.ConfigureAudit(Path.Combine(Directory.GetCurrentDirectory(), "Data", "audit"), "run", 3);
             AuditStore.Default = audit;
             _runner.Audit = audit;
+            // [段3b] LogStore 落盘——C/O 类专属 Log 持久化（P3c 观测全链——帧号可回溯；按会话命名）
+            string logDir = Path.Combine(Directory.GetCurrentDirectory(), "Data", "logs");
+            if (!Directory.Exists(logDir))
+            {
+                Directory.CreateDirectory(logDir);
+            }
+            LogStore.ConfigureLogFile(Path.Combine(logDir, "run_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".log"));
             // [段4] 三语料加载——编排者先注册（Command 键位分配稳定）
+            _toolHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_ToolTestCat.dll"));
             _toolHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_ToolTestCat.dll"));
             _ioHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_IoTestCat.dll"));
             _quickHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_QuickCat.dll"));
@@ -198,8 +227,8 @@ namespace CH4
         /// </summary>
         /// <returns>退出码</returns>
         private static int RunInteractive()
-        {
-            Console.WriteLine("指令: ReadText <path> | QuickCat <system>|<content> | status | quit");
+{
+            Console.WriteLine("指令: ReadText <path> | QuickCat <system>|<content> | status | reload <tool|io|quick> [dll] | run <n> | pid | quit");
             while (true)
             {
                 Console.Write("ch4> ");
@@ -213,26 +242,13 @@ namespace CH4
                 {
                     continue;
                 }
-                if (line == "quit")
+                if (!ExecuteLine(line))
                 {
                     break;
                 }
-                if (line == "status")
-                {
-                    PrintStatus();
-                    continue;
-                }
-                if (!DispatchCommand(line))
-                {
-                    Console.WriteLine("格式: ReadText <path> 或 QuickCat <system>|<content>");
-                    continue;
-                }
-                DriveUntilIdle();
-                PrintStatus();
             }
             return 0;
         }
-
         /// <summary>
         /// Command 解析与投递——宿主做字符串值识别（语料面零值比较）；QuickCat 双参同帧投两个 key
         /// </summary>
@@ -324,12 +340,12 @@ namespace CH4
         /// 观测出口——三 Cat 状态 + 导线在途 + 最近日志（透明性指标观测面）
         /// </summary>
         private static void PrintStatus()
-        {
+{
             Console.WriteLine("── 三 Cat 状态 ──");
             PrintFlowStatus("ToolTestCat", _toolHandle);
             PrintFlowStatus("IOTestCat", _ioHandle);
             PrintFlowStatus("QuickCat", _quickHandle);
-            // [段1b] OA 快照 + 盒子截面 + 审计帧序（诊断观测——P2e 闭环后收敛）
+            // [段1] OA 快照 + 盒子截面 + 审计帧序（杂音过滤——trace.sample 每帧采样隐藏，关键事件帧序可回溯）
             OAView oaView = _oa.GetSnapshot();
             Console.WriteLine("── OA 快照 ── Open=" + oaView.OpenCount + " Work=" + oaView.WorkCount + " Closed=" + oaView.ClosedCount + " Timeout=" + oaView.TimeoutCount);
             DataBoxSnapshot boxSnap = DataBox.Capture();
@@ -340,9 +356,9 @@ namespace CH4
             }
             AuditQuery query = new AuditQuery(AuditStore.Default);
             AuditEvent[] events = query.Segment(0, 999999, null, null);
-            Console.WriteLine("── 审计帧序（全量）──");
-            Console.WriteLine(query.FormatEvents(events));
-            // [段2] 最近日志——LogStore 内存总账尾部（CMD/OA 专属类别可见）
+            Console.WriteLine("── 审计帧序（trace.sample 已过滤）──");
+            Console.WriteLine(query.FormatEvents(FilterNoise(events)));
+            // [段2] 最近日志——LogStore 内存总账尾部（CMD/OA 专属类别 + 帧号可见）
             List<LogStore.LogEntry> logs = LogStore.AllLog;
             int start = logs.Count - 20;
             if (start < 0)
@@ -354,10 +370,9 @@ namespace CH4
             {
                 LogStore.LogEntry entry = logs[i];
                 string cat = entry.Category.Length > 0 ? "[" + entry.Category + "] " : "";
-                Console.WriteLine("  " + entry.Time + " | " + LogStore.LevelText(entry.Level) + " | " + cat + entry.Message);
+                Console.WriteLine("  " + entry.Time + " | F" + entry.Frame + " | " + LogStore.LevelText(entry.Level) + " | " + cat + entry.Message);
             }
         }
-
         /// <summary>
         /// 单 Flow 状态打印——状态行 + 忙碌导线
         /// </summary>
@@ -394,5 +409,247 @@ namespace CH4
             }
             Console.WriteLine("  " + name + " | " + stateText + (busyText.Length == 0 ? "" : " | " + busyText));
         }
+/// <summary>
+/// reload 热重载——tool|io|quick + 可选 dll 路径（缺省 = 当前 handle 同路径重读）
+/// 流程：新 Load + Tick 试跑验证（失败保留旧）→ UnregisterFlow 旧（D1：CommandBus key 同步清理）→ RegisterFlow 新 → 旧 TryUnload → 预热 → 报告
+/// </summary>
+/// <param name = "args">cat + 空格 + dll 路径（dll 可选）</param>
+private static void ExecuteReload(string args)
+{
+    string[] parts = args.Split(' ');
+    string cat = parts[0].Trim();
+    string dllPath = parts.Length > 1 ? parts[1].Trim() : "";
+    FlowHandle oldHandle;
+    long oldId;
+    string name;
+    if (cat == "tool")
+    {
+        oldHandle = _toolHandle;
+        oldId = _toolId;
+        name = "ToolTestCat";
     }
+    else if (cat == "io")
+    {
+        oldHandle = _ioHandle;
+        oldId = _ioId;
+        name = "IOTestCat";
+    }
+    else if (cat == "quick")
+    {
+        oldHandle = _quickHandle;
+        oldId = _quickId;
+        name = "QuickCat";
+    }
+    else
+    {
+        Console.WriteLine("[CH4.Entry] reload 目标无效——tool|io|quick");
+        return;
+    }
+    if (dllPath.Length == 0)
+    {
+        dllPath = oldHandle.SourceDll;
+    }
+    // [段1] 加载新版本（Load 异常 = dll 损坏——失败保留旧；试跑验证移到注册后 runner.Tick——FlowContext 正确注入）
+    FlowHandle newHandle;
+    try
+    {
+        newHandle = FlowHandle.Load(dllPath);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("[CH4.Entry] reload " + name + " 失败: 新版本加载未通过——" + ex.Message);
+        return;
+    }
+    // [段2] 换注册——卸旧（D1 修复：CommandBus key 同步清理）→ 注册新 → 试跑帧（runner 帧序注入 FlowContext=newId——CmdPump 真实注册，无幽灵 owner）
+    _runner.UnregisterFlow(oldId);
+    long newId = _runner.RegisterFlow(newHandle.Flow, name);
+    try
+    {
+        _runner.Tick();
+    }
+    catch (Exception ex)
+    {
+        // [段2b] 试跑异常回滚——重载旧 dll 全新实例（CmdPump 全新注册；旧 handle 弃用）
+        _runner.UnregisterFlow(newId);
+        newHandle.TryUnload(3);
+        FlowHandle rollback;
+        long rollbackId;
+        try
+        {
+            rollback = FlowHandle.Load(oldHandle.SourceDll);
+            rollbackId = _runner.RegisterFlow(rollback.Flow, name);
+            for (int i = 0; i < 10; i++)
+            {
+                _runner.Tick();
+            }
+        }
+        catch (Exception ex2)
+        {
+            Console.WriteLine("[CH4.Entry] reload " + name + " 失败: 试跑异常且回滚失败——" + ex.Message + " / " + ex2.Message);
+            return;
+        }
+        oldHandle.TryUnload(3);
+        SetCatHandle(cat, rollback, rollbackId);
+        Console.WriteLine("[CH4.Entry] reload " + name + " 失败: 试跑帧异常已回滚（旧版本全新实例 #" + rollbackId + "）——" + ex.Message);
+        return;
+    }
+    // [段3] 成功路径——换句柄 + 卸载旧 ALC + 预热帧
+    oldHandle.TryUnload(3);
+    SetCatHandle(cat, newHandle, newId);
+    for (int i = 0; i < 10; i++)
+    {
+        _runner.Tick();
+    }
+    string[] keyDic = _bus.GetKeyDic();
+    Console.WriteLine("[CH4.Entry] reload " + name + ": #" + oldId + " → #" + newId + " | pid=" + Environment.ProcessId + " | " + keyDic[0]);
+    for (int k = 0; k < keyDic.Length; k++)
+    {
+        Console.WriteLine("    " + keyDic[k]);
+    }
+}/// <summary>
+/// 单行指令执行——交互/脚本共用（true=继续，false=结束）
+/// </summary>
+/// <param name = "line">已 Trim 的指令行</param>
+/// <returns>false=结束会话</returns>
+private static bool ExecuteLine(string line)
+{
+    if (line == "quit")
+    {
+        return false;
+    }
+    if (line == "status")
+    {
+        PrintStatus();
+        return true;
+    }
+
+    if (line == "statusq")
+    {
+        PrintStatusShort();
+        return true;
+    }
+
+    if (line == "pid")
+    {
+        Console.WriteLine("[CH4.Entry] pid=" + Environment.ProcessId);
+        return true;
+    }
+
+    if (line.StartsWith("run ", StringComparison.Ordinal))
+    {
+        long frames;
+        if (!long.TryParse(line.Substring(4).Trim(), out frames) || frames < 0)
+        {
+            Console.WriteLine("[CH4.Entry] run 参数无效——需非负整数帧数");
+            return true;
+        }
+
+        for (long i = 0; i < frames; i++)
+        {
+            _runner.Tick();
+            Thread.Sleep(FrameSleepMs);
+        }
+
+        return true;
+    }
+    if (line.StartsWith("reload ", StringComparison.Ordinal))
+    {
+        ExecuteReload(line.Substring(7).Trim());
+        return true;
+    }
+
+    if (line.StartsWith("send ", StringComparison.Ordinal))
+    {
+        // 只投递不驱动——配合 run <n> 手动帧驱动（超时/挂单场景精确帧数控制）
+        if (!DispatchCommand(line.Substring(5).Trim()))
+        {
+            Console.WriteLine("格式: send ReadText <path> 或 send QuickCat <system>|<content>");
+        }
+        return true;
+    }
+
+    if (!DispatchCommand(line))
+    {
+        Console.WriteLine("格式: ReadText <path> 或 QuickCat <system>|<content>");
+        return true;
+    }
+    DriveUntilIdle();
+    PrintStatusShort();
+    return true;
+} 
+/// <summary>
+/// 脚本模式——指令文件逐行执行（P3a 热重载实测通道：全程同进程，pid 不变可证）
+/// </summary>
+/// <param name = "path">指令文件路径（# 开头行为注释）</param>
+/// <returns>退出码</returns>
+ private  static  int  RunScript ( string  path ) { if  ( ! File . Exists ( path ) ) { Console . WriteLine ( "[CH4.Entry] 脚本文件不存在: " + path ) ;  return  2 ;  } string [ ]  lines  =  File . ReadAllLines ( path ) ;  Console . WriteLine ( "[CH4.Entry] 脚本模式 | " + lines . Length + " 行 | pid=" + Environment . ProcessId ) ;  for  ( int  i  =  0 ;  i < lines . Length ;  i ++ ) { string  line  =  lines [ i ] . Trim ( ) ;  if  ( line . Length == 0 || line . StartsWith ( "#" ,  StringComparison . Ordinal ) ) { continue ;  } Console . WriteLine ( "── 脚本指令 " + ( i + 1 ) + ": " + line + " ──" ) ;  if  ( ! ExecuteLine ( line ) ) { break ;  } } Console . WriteLine ( "[CH4.Entry] 脚本结束 | pid=" + Environment . ProcessId ) ;  return  0 ;  }
+/// <summary>
+/// 精简观测出口——三 Cat 状态 + OA 快照 + 最近日志（跳过审计帧序/盒子截面——热重载实测断言面）
+/// </summary>
+private static void PrintStatusShort()
+{
+    Console.WriteLine("── 三 Cat 状态 ──");
+    PrintFlowStatus("ToolTestCat", _toolHandle);
+    PrintFlowStatus("IOTestCat", _ioHandle);
+    PrintFlowStatus("QuickCat", _quickHandle);
+    OAView oaView = _oa.GetSnapshot();
+    Console.WriteLine("── OA 快照 ── Open=" + oaView.OpenCount + " Work=" + oaView.WorkCount + " Closed=" + oaView.ClosedCount + " Timeout=" + oaView.TimeoutCount);
+    List<LogStore.LogEntry> logs = LogStore.AllLog;
+    int start = logs.Count - 10;
+    if (start < 0)
+    {
+        start = 0;
+    }
+
+    Console.WriteLine("── 最近日志 ──");
+    for (int i = start; i < logs.Count; i++)
+    {
+        LogStore.LogEntry entry = logs[i];
+        string cat = entry.Category.Length > 0 ? "[" + entry.Category + "] " : "";
+        Console.WriteLine("  " + entry.Time + " | F" + entry.Frame + " | " + LogStore.LevelText(entry.Level) + " | " + cat + entry.Message);
+    }
+}
+/// <summary>
+/// 更新指定 Cat 的句柄 + 注册 ID 字段
+/// </summary>
+/// <param name = "cat">tool|io|quick</param>
+/// <param name = "handle">新句柄</param>
+/// <param name = "id">新注册 ID</param>
+private static void SetCatHandle(string cat, FlowHandle handle, long id)
+{
+    if (cat == "tool")
+    {
+        _toolHandle = handle;
+        _toolId = id;
+    }
+    else if (cat == "io")
+    {
+        _ioHandle = handle;
+        _ioId = id;
+    }
+    else
+    {
+        _quickHandle = handle;
+        _quickId = id;
+    }
+}/// <summary>
+/// 审计事件杂音过滤——隐藏 trace.sample 类（主动传感器每帧采样刷屏；trace.fire/state 关键时序保留）
+/// </summary>
+/// <param name = "events">原始事件序列</param>
+/// <returns>过滤后事件序列</returns>
+private static AuditEvent[] FilterNoise(AuditEvent[] events)
+{
+    List<AuditEvent> kept = new List<AuditEvent>();
+    for (int i = 0; i < events.Length; i++)
+    {
+        if (events[i].Category == "trace.sample")
+        {
+            continue;
+        }
+
+        kept.Add(events[i]);
+    }
+
+    return kept.ToArray();
+}}
 }

@@ -1,0 +1,5 @@
+// 预期: E400
+// 未知积木——不在 Bricks/index.json 索引（LLM 编造积木名必拦）
+§ 'S_A' = { 'X', 'Y' }
+§ 'P_Go' ⇐
+§ 'T_Go' : 'P_Go' & 'S_A' = 'X' → 'not.a.brick'["x"] | 'S_A' = 'Y' | 'S_A' = 'X'

@@ -1,0 +1,6 @@
+// 预期: E408
+// 重复写源——同 Key 两个捕获点（数据全局性铁律：一个 Key 恰一个写入点）
+§ 'S_A' = { 'X', 'Y' }
+§ 'P_Go' ⇐
+§ 'T_A' : 'P_Go' & 'S_A' = 'X' → 'probe.source'[1] > @dup | 'S_A' = 'Y' | 'S_A' = 'X'
+§ 'T_B' : 'S_A' = 'Y' → 'probe.source'[1] > @dup | 'S_A' = 'X' | 'S_A' = 'Y'

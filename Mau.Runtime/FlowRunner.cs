@@ -156,11 +156,12 @@ namespace Mau.Runtime
         /// <param name="id">实体 ID</param>
         /// <returns>true=回收成功</returns>
         public bool UnregisterFlow(long id)
-        {
+{
             _guard.AssertMainThread("FlowRunner.UnregisterFlow");
             bool ok = _registry.Unregister(id);
             if (ok)
             {
+                // [段1] 传感器壳协程清理——主动传感器独立起点随 Flow 卸载
                 for (int i = _sensorLoops.Count - 1; i >= 0; i = i - 1)
                 {
                     if (_sensorLoops[i].FlowId == id)
@@ -168,6 +169,8 @@ namespace Mau.Runtime
                         _sensorLoops.RemoveAt(i);
                     }
                 }
+                // [段2] CommandBus 注销——D1 修复：旧 Flow 的 key 挂名不清理，新 Flow 同 key 注册被静默 REJECT
+                _cmd.Unregister(id);
             }
             if (Audit != null && ok)
             {
@@ -177,7 +180,6 @@ namespace Mau.Runtime
             }
             return ok;
         }
-
         /// <summary>
         /// 按 ID 查找实体
         /// </summary>
