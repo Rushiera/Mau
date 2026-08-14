@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace Mau.Runtime
 {
@@ -18,14 +18,19 @@ namespace Mau.Runtime
         /// </summary>
         /// <param name="message">消息</param>
         public static void ErrorOut(string message)
-{
+        {
             if (Error != null)
             {
                 Error(message);
             }
             // Log 并入审计——错误通道同步写审计（category=log.error；程序级 Default 未配置时不记录）
-            AuditStore.Default?.Record("RuntimeLog", "log.error", -1, new AuditProp[] {
-                new AuditProp("message", AuditStore.Summarize(message))
-            });
-        }    }
+            AuditStore? audit = AuditStore.Default;
+            if (audit != null)
+            {
+                audit.Record("RuntimeLog", "log.error", -1, new AuditProp[] {
+                    new AuditProp("message", AuditStore.Summarize(message))
+                });
+            }
+        }
+    }
 }

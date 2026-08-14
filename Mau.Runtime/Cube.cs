@@ -1,4 +1,4 @@
-namespace Mau.Runtime
+﻿namespace Mau.Runtime
 {
     /// <summary>
     /// Cube 时限模式——决定超时语义
@@ -47,10 +47,29 @@ namespace Mau.Runtime
     /// </summary>
     public sealed class Cube
     {
+        /// <summary>
+        /// 时限模式——Total 总时限 / IdleTimeout 空闲超时
+        /// </summary>
         private readonly CubeMode _mode;
+
+        /// <summary>
+        /// 时限帧数
+        /// </summary>
         private readonly long _limitFrames;
+
+        /// <summary>
+        /// 当前状态
+        /// </summary>
         private CubeState _state;
+
+        /// <summary>
+        /// 已推进帧数
+        /// </summary>
         private long _elapsed;
+
+        /// <summary>
+        /// 最近事件帧号——空闲超时起点
+        /// </summary>
         private long _idleSince;
 
         /// <summary>
@@ -74,7 +93,11 @@ namespace Mau.Runtime
         public Cube(CubeMode mode, long limitFrames)
         {
             _mode = mode;
-            _limitFrames = mode == CubeMode.Infinite ? 0 : limitFrames;
+            _limitFrames = limitFrames;
+            if (mode == CubeMode.Infinite)
+            {
+                _limitFrames = 0;
+            }
             _state = CubeState.Idle;
             _elapsed = 0;
             _idleSince = 0;

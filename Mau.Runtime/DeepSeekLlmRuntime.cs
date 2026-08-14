@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -39,9 +39,21 @@ namespace Mau.Runtime
         /// <param name="model">模型名</param>
         public DeepSeekLlmRuntime(string baseUrl, string apiKey, string model)
         {
-            _baseUrl = baseUrl == null ? "" : baseUrl;
-            _apiKey = apiKey == null ? "" : apiKey;
-            _model = model == null ? "" : model;
+            _baseUrl = baseUrl;
+            if (_baseUrl == null)
+            {
+                _baseUrl = "";
+            }
+            _apiKey = apiKey;
+            if (_apiKey == null)
+            {
+                _apiKey = "";
+            }
+            _model = model;
+            if (_model == null)
+            {
+                _model = "";
+            }
             _client = new HttpClient();
             _client.Timeout = TimeSpan.FromSeconds(60);
         }

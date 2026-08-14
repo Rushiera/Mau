@@ -63,7 +63,11 @@ namespace Mau.Runtime
         /// <summary>
         /// 审计存储——宿主注入后机制事件写入（null = 不审计）
         /// </summary>
-        public AuditStore? Audit { get; set; }
+        public AuditStore? Audit
+        {
+            get;
+            set;
+        }
 
         /// <summary>
         /// 构造宿主——注入全部机制

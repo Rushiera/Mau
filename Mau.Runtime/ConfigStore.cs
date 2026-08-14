@@ -218,22 +218,40 @@ namespace Mau.Runtime
 /// <summary>
 /// 审计存储——宿主注入后配置变更事件写入（null = 不审计）。零业务侵入：仅记录，不改流程。
 /// </summary>
-public AuditStore? Audit { get; set; }    /// <summary>
-/// 原子写文件——临时文件 + 改名（防半写文件被读到；统一实现——AppRegistry/DogBase/FileSystemService 原四处独立，审查修复轮 2026-08-11 决策3 收拢）
-/// </summary>
-/// <param name = "path">目标路径</param>
-/// <param name = "content">内容</param>
-/// <param name = "encoding">编码（默认 UTF-8 无 BOM）</param>
-public static void AtomicWrite(string path, string content, System.Text.Encoding? encoding = null)
-{
-    string? dir = Path.GetDirectoryName(path);
-    if (dir != null && dir.Length > 0)
-    {
-        Directory.CreateDirectory(dir);
-    }
+        /// <summary>
+        /// 审计存储——宿主注入后配置变更事件写入（null = 不审计）。零业务侵入：仅记录，不改流程。
+        /// </summary>
+        public AuditStore? Audit
+        {
+            get;
+            set;
+        }
 
-    string tmp = path + ".tmp";
-    System.IO.File.WriteAllText(tmp, content, encoding ?? new System.Text.UTF8Encoding(false));
-    System.IO.File.Move(tmp, path, true);
-}}
+        /// <summary>
+        /// 原子写文件——临时文件 + 改名（防半写文件被读到；统一实现——AppRegistry/DogBase/FileSystemService 原四处独立，审查修复轮 2026-08-11 决策3 收拢）
+        /// </summary>
+        /// <param name="path">目标路径</param>
+        /// <param name="content">内容</param>
+        /// <param name="encoding">编码（默认 UTF-8 无 BOM）</param>
+        public static void AtomicWrite(string path, string content, System.Text.Encoding? encoding = null)
+        {
+            string? dir = Path.GetDirectoryName(path);
+            if (dir != null && dir.Length > 0)
+            {
+                Directory.CreateDirectory(dir);
+            }
+            string tmp = path + ".tmp";
+            System.Text.Encoding effectiveEncoding;
+            if (encoding == null)
+            {
+                effectiveEncoding = new System.Text.UTF8Encoding(false);
+            }
+            else
+            {
+                effectiveEncoding = encoding;
+            }
+            System.IO.File.WriteAllText(tmp, content, effectiveEncoding);
+            System.IO.File.Move(tmp, path, true);
+        }
+    }
 }

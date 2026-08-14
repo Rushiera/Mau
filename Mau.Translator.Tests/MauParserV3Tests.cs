@@ -85,7 +85,6 @@ namespace Mau.Translator.Tests
             Assert.Equal(10, wire.Timeout);
             Assert.True(wire.Parallel);
             Assert.True(wire.Logging);
-            Assert.False(wire.Join);
             Assert.Equal(2, wire.Conditions.Count);
             Assert.False(wire.Conditions[0].IsStateAssert);
             Assert.Equal("P_Start", wire.Conditions[0].SensorName);

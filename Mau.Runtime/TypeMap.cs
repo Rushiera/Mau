@@ -16,7 +16,12 @@ namespace Mau.Runtime
         /// <returns>映射 Type</returns>
         public static Type Map(string typeName)
         {
-            string t = (typeName ?? "").Trim();
+            string t = typeName;
+            if (t == null)
+            {
+                t = "";
+            }
+            t = t.Trim();
             if (t.EndsWith("?"))
             {
                 t = t.Substring(0, t.Length - 1);

@@ -550,7 +550,12 @@ namespace Mau.Runtime
             {
                 HostSnapshot snap = runner.GetStatus();
                 sb.AppendLine("- frame=" + snap.Frame);
-                sb.AppendLine("- flows=" + (snap.Flows == null ? "0" : snap.Flows.Length.ToString()));
+                string flowCount = "0";
+                if (snap.Flows != null)
+                {
+                    flowCount = snap.Flows.Length.ToString();
+                }
+                sb.AppendLine("- flows=" + flowCount);
             }
             else
             {

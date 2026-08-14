@@ -83,7 +83,11 @@ namespace Mau.Runtime
         /// <param name="path">日志文件路径，空=仅内存</param>
         public static void ConfigureLogFile(string path)
         {
-            LogFilePath = path == null ? "" : path;
+            LogFilePath = path;
+            if (LogFilePath == null)
+            {
+                LogFilePath = "";
+            }
         }
 
         /// <summary>
@@ -100,7 +104,11 @@ namespace Mau.Runtime
             entry.Module = SafeText(module);
             entry.Level = level;
             entry.Message = SafeText(message);
-            entry.Category = category == null ? "" : category;
+            entry.Category = category;
+            if (entry.Category == null)
+            {
+                entry.Category = "";
+            }
             entry.Frame = FlowRunner.GlobalFrame;
             lock (Sync)
             {

@@ -720,8 +720,13 @@ private bool IsValidSegment(string segment)
                 _logWriter(message, level);
             }
         }
-/// <summary>
-/// 审计存储——宿主注入后机制事件写入（null = 不审计）。零业务侵入：仅记录，不改流程。
-/// </summary>
-public AuditStore? Audit { get; set; }    }
+        /// <summary>
+        /// 审计存储——宿主注入后机制事件写入（null = 不审计）。零业务侵入：仅记录，不改流程。
+        /// </summary>
+        public AuditStore? Audit
+        {
+            get;
+            set;
+        }
+    }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Reflection;
 
 namespace Mau.Runtime
@@ -21,7 +21,12 @@ namespace Mau.Runtime
             {
                 return "";
             }
-            return entry.GetName().Name ?? "";
+            string? name = entry.GetName().Name;
+            if (name == null)
+            {
+                name = "";
+            }
+            return name;
         }
 
         /// <summary>

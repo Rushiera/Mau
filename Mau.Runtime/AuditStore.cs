@@ -52,26 +52,37 @@ namespace Mau.Runtime
         private DateTime _lastCleanDate;
         /// <summary>已关闭标记——Shutdown 幂等</summary>
         private bool _disposed;
-/// <summary>全局当前帧号——FlowRunner.Tick 驱动（TickFrame 更新）</summary>
-private long _currentFrame; 
-/// <summary>flow.tick 事件开关——默认关（价值最低量最大）</summary>
- private  bool  _enableTickEvents ;  
-/// <summary>
-/// 程序级默认实例——RuntimeLog 静态埋点入口（ConfigureAudit 时设置）
-/// </summary>
- public  static  AuditStore ? Default { get ;  set ;  }
-/// <summary>
-/// 重置程序级默认实例——关闭并置空（D26 统一 Reset 契约；宿主切换/测试隔离调用）
-/// </summary>
-public static void Reset()
-{
-    AuditStore? current = Default;
-    Default = null;
-    if (current != null)
-    {
-        current.Shutdown();
-    }
-}
+        /// <summary>
+        /// 全局当前帧号——FlowRunner.Tick 驱动（TickFrame 更新）
+        /// </summary>
+        private long _currentFrame;
+
+        /// <summary>
+        /// flow.tick 事件开关——默认关（价值最低量最大）
+        /// </summary>
+        private bool _enableTickEvents;
+
+        /// <summary>
+        /// 程序级默认实例——RuntimeLog 静态埋点入口（ConfigureAudit 时设置）
+        /// </summary>
+        public static AuditStore? Default
+        {
+            get;
+            set;
+        }
+
+        /// <summary>
+        /// 重置程序级默认实例——关闭并置空（D26 统一 Reset 契约；宿主切换/测试隔离调用）
+        /// </summary>
+        public static void Reset()
+        {
+            AuditStore? current = Default;
+            Default = null;
+            if (current != null)
+            {
+                current.Shutdown();
+            }
+        }
         /// <summary>
         /// 构造审计存储——环形缓冲容量（默认 10000，满则覆盖最旧）
         /// </summary>
@@ -104,19 +115,19 @@ public static void Reset()
                 }
             }
         }
-/// <summary>
-/// 环形缓冲容量——查询数据源边界（AuditQuery 输出标注用；落盘文件为 MD 留痕不参与查询）
-/// </summary>
-public int RingCapacity
-{
-    get
-    {
-        lock (_gate)
+        /// <summary>
+        /// 环形缓冲容量——查询数据源边界（AuditQuery 输出标注用；落盘文件为 MD 留痕不参与查询）
+        /// </summary>
+        public int RingCapacity
         {
-            return _capacity;
+            get
+            {
+                lock (_gate)
+                {
+                    return _capacity;
+                }
+            }
         }
-    }
-}
         /// <summary>
         /// 注入审计根目录——创建会话目录 + 写会话头 + 启动过期清理。宿主启动时调用一次（幂等）。
         /// </summary>
@@ -186,8 +197,21 @@ public int RingCapacity
                     return;
                 }
                 _seq = _seq + 1;
-                long actualFrame = frame >= 0 ? frame : _currentFrame;
-                AuditEvent ev = new AuditEvent(_seq, actualFrame, _now().ToString("HH:mm:ss"), source, category, props ?? Array.Empty<AuditProp>(), persistable);
+                long actualFrame = _currentFrame;
+                if (frame >= 0)
+                {
+                    actualFrame = frame;
+                }
+                AuditProp[] effectiveProps;
+                if (props == null)
+                {
+                    effectiveProps = Array.Empty<AuditProp>();
+                }
+                else
+                {
+                    effectiveProps = props;
+                }
+                AuditEvent ev = new AuditEvent(_seq, actualFrame, _now().ToString("HH:mm:ss"), source, category, effectiveProps, persistable);
                 // [段2] 环形缓冲写入（满则覆盖最旧）
                 _ring[(int)(_writeIndex % _capacity)] = ev;
                 _writeIndex = _writeIndex + 1;
@@ -278,7 +302,7 @@ public int RingCapacity
         /// <param name="date">日期 yyyyMMdd</param>
         /// <param name="startFrame">会话头起始帧</param>
         private void OpenWriterForDate(string date, long startFrame)
-{
+        {
             // [段1] 关闭旧写入器
             if (_writer != null)
             {
@@ -293,23 +317,23 @@ public int RingCapacity
             // [段3] 文件头——会话头
             w.Write(BuildSessionHeader(startFrame));
             _writer = w;
-        }/// <summary>
-/// 构建会话头文本——版本/模式/加载数/起始帧/起始时间/sessionId（每文件一个）
-/// </summary>
-/// <param name = "startFrame">起始帧</param>
-/// <returns>会话头 MD 文本</returns>
-private string BuildSessionHeader(long startFrame)
-{
-    StringBuilder sb = new StringBuilder();
-    sb.Append("# Audit Session ").Append(_sessionId).AppendLine();
-    sb.Append("# 版本: ").Append(VersionInfo.GetEntryVersion()).AppendLine();
-    sb.Append("# 模式: ").Append(_mode).AppendLine();
-    sb.Append("# 加载数: ").Append(_loadCount).AppendLine();
-    sb.Append("# 起始帧: ").Append(startFrame).AppendLine();
-    sb.Append("# 起始时间: ").Append(_now().ToString("yyyy-MM-dd HH:mm:ss")).AppendLine();
-    sb.AppendLine();
-    return sb.ToString();
-}
+        }        /// <summary>
+        /// 构建会话头文本——版本/模式/加载数/起始帧/起始时间/sessionId（每文件一个）
+        /// </summary>
+        /// <param name="startFrame">起始帧</param>
+        /// <returns>会话头 MD 文本</returns>
+        private string BuildSessionHeader(long startFrame)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append("# Audit Session ").Append(_sessionId).AppendLine();
+            sb.Append("# 版本: ").Append(VersionInfo.GetEntryVersion()).AppendLine();
+            sb.Append("# 模式: ").Append(_mode).AppendLine();
+            sb.Append("# 加载数: ").Append(_loadCount).AppendLine();
+            sb.Append("# 起始帧: ").Append(startFrame).AppendLine();
+            sb.Append("# 起始时间: ").Append(_now().ToString("yyyy-MM-dd HH:mm:ss")).AppendLine();
+            sb.AppendLine();
+            return sb.ToString();
+        }
         /// <summary>
         /// 跨天滚动检查——日期变化则关旧开新（新文件带会话头）+ 按日清理
         /// </summary>
@@ -390,22 +414,24 @@ private string BuildSessionHeader(long startFrame)
             sb.AppendLine();
             return sb.ToString();
         }
-/// <summary>
-/// 全局当前帧号——FlowRunner.Tick 驱动（TickFrame 更新），埋点坐标统一来源
-/// </summary>
-public long CurrentFrame
-{
-    get
-    {
-        lock (_gate)
+        /// <summary>
+        /// 全局当前帧号——FlowRunner.Tick 驱动（TickFrame 更新），埋点坐标统一来源
+        /// </summary>
+        public long CurrentFrame
         {
-            return _currentFrame;
+            get
+            {
+                lock (_gate)
+                {
+                    return _currentFrame;
+                }
+            }
         }
-    }
-}    /// <summary>
-/// flow.tick 事件开关——默认关（价值最低量最大；需要时开，建议每 60 帧）
-/// </summary>
-public bool EnableTickEvents
+
+        /// <summary>
+        /// flow.tick 事件开关——默认关（价值最低量最大；需要时开，建议每 60 帧）
+        /// </summary>
+        public bool EnableTickEvents
 {
     get
     {
@@ -423,30 +449,37 @@ public bool EnableTickEvents
         }
     }
 }/// <summary>
-/// 推进全局帧号——FlowRunner.Tick 每帧调用（全局帧号坐标的唯一来源）
-/// </summary>
-/// <param name = "frame">宿主帧号</param>
-public void TickFrame(long frame)
-{
-    lock (_gate)
-    {
-        _currentFrame = frame;
-    }
-}/// <summary>
-/// 载荷摘要——{值类型}:{长度}:{前16字符}（设计 §五 按量级封魔）。密钥永不进事件——埋点侧只传 configured/missing 标记。
-/// </summary>
-/// <param name = "value">原始值（null → "null"）</param>
-/// <returns>摘要文本</returns>
-public static string Summarize(string? value)
-{
-    if (value == null)
-    {
-        return "null";
-    }
+        /// <summary>
+        /// 推进全局帧号——FlowRunner.Tick 每帧调用（全局帧号坐标的唯一来源）
+        /// </summary>
+        /// <param name="frame">宿主帧号</param>
+        public void TickFrame(long frame)
+        {
+            lock (_gate)
+            {
+                _currentFrame = frame;
+            }
+        }
 
-    int len = value.Length;
-    int take = len < 16 ? len : 16;
-    string head = value.Substring(0, take);
-    return "str:" + len + ":\"" + head + "\"";
-}}
+        /// <summary>
+        /// 载荷摘要——{值类型}:{长度}:{前16字符}（设计 §五 按量级封魔）。密钥永不进事件——埋点侧只传 configured/missing 标记。
+        /// </summary>
+        /// <param name="value">原始值（null → "null"）</param>
+        /// <returns>摘要文本</returns>
+        public static string Summarize(string? value)
+        {
+            if (value == null)
+            {
+                return "null";
+            }
+            int len = value.Length;
+            int take = len;
+            if (take > 16)
+            {
+                take = 16;
+            }
+            string head = value.Substring(0, take);
+            return "str:" + len + ":\"" + head + "\"";
+        }
+    }
 }

@@ -334,10 +334,14 @@ public static void Reset()
                 foreach (KeyValuePair<Type, object> pair in _services)
                 {
                     DataBoxServiceEntry entry = new DataBoxServiceEntry();
-                    entry.TypeName = pair.Key.FullName ?? pair.Key.Name;
+                    entry.TypeName = pair.Key.Name;
+                    if (pair.Key.FullName != null)
+                    {
+                        entry.TypeName = pair.Key.FullName;
+                    }
                     entry.Instance = pair.Value;
                     services[si] = entry;
-                    si++;
+                    si = si + 1;
                 }
                 snapshot.Services = services;
             }
@@ -408,10 +412,14 @@ public static void Reset()
             }
             // 原子置位——0→1 CAS（已是 1 保持 1；任意线程安全）
             _signals.TryUpdate(name, 1, 0);
-            AuditStore.Default?.Record("DataBox", "signal.post", -1, new AuditProp[] {
-                new AuditProp("name", name),
-                new AuditProp("frame", FlowRunner.GlobalFrame.ToString())
-            });
+            AuditStore? audit = AuditStore.Default;
+            if (audit != null)
+            {
+                audit.Record("DataBox", "signal.post", -1, new AuditProp[] {
+                    new AuditProp("name", name),
+                    new AuditProp("frame", FlowRunner.GlobalFrame.ToString())
+                });
+            }
         }
 
         /// <summary>
@@ -447,10 +455,14 @@ public static void Reset()
             if (old == 1)
             {
                 _signals.TryUpdate(name, 0, 1);
-                AuditStore.Default?.Record("DataBox", "signal.consume", -1, new AuditProp[] {
-                    new AuditProp("name", name),
-                    new AuditProp("frame", FlowRunner.GlobalFrame.ToString())
-                });
+                AuditStore? audit = AuditStore.Default;
+                if (audit != null)
+                {
+                    audit.Record("DataBox", "signal.consume", -1, new AuditProp[] {
+                        new AuditProp("name", name),
+                        new AuditProp("frame", FlowRunner.GlobalFrame.ToString())
+                    });
+                }
                 return true;
             }
             return false;

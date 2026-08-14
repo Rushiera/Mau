@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Mau.Translator
@@ -17,37 +17,39 @@ namespace Mau.Translator
         /// <param name="doc">FSM 网络 IR</param>
         /// <returns>true=全部校验通过</returns>
         public static bool Validate(MauDocV3 doc)
-{
-    if (doc == null)
-    {
-        return false;
-    }
-    int before = doc.Diagnostics.Count;
-    // [段1] 名称索引 + 唯一性（跨四柱重名 = 构筑期错误）
-    Dictionary<string, string> kinds = new Dictionary<string, string>(StringComparer.Ordinal);
-    CheckNames(doc.StateMachines, "状态机", kinds, doc);
-    CheckNames(doc.Sensors, "传感器", kinds, doc);
-    CheckNames(doc.Wires, "导线", kinds, doc);
-    CheckNames(doc.Slots, "槽", kinds, doc);
-    // [段2] 引用完整性
-    CheckReferences(doc);
-    // [段3] 主动传感器积木存在性（解析层已保证非空——双保险）
-    for (int i = 0; i < doc.Sensors.Count; i++)
-    {
-        SensorDefV3 sensor = doc.Sensors[i];
-        if (!sensor.Passive && sensor.BrickName.Length == 0)
         {
-            doc.Diagnostics.Add(new MauDiagnostic("E204", sensor.Line, "主动传感器 '" + sensor.Name + "' 缺采样积木"));
+            if (doc == null)
+            {
+                return false;
+            }
+            int before = doc.Diagnostics.Count;
+            // [段1] 名称索引 + 唯一性（跨四柱重名 = 构筑期错误）
+            Dictionary<string, string> kinds = new Dictionary<string, string>(StringComparer.Ordinal);
+            CheckNames(doc.StateMachines, "状态机", kinds, doc);
+            CheckNames(doc.Sensors, "传感器", kinds, doc);
+            CheckNames(doc.Wires, "导线", kinds, doc);
+            CheckNames(doc.Slots, "槽", kinds, doc);
+            // [段2] 引用完整性
+            CheckReferences(doc);
+            // [段3] 主动传感器积木存在性（解析层已保证非空——双保险）
+            for (int i = 0; i < doc.Sensors.Count; i++)
+            {
+                SensorDefV3 sensor = doc.Sensors[i];
+                if (!sensor.Passive && sensor.BrickName.Length == 0)
+                {
+                    doc.Diagnostics.Add(new MauDiagnostic("E204", sensor.Line, "主动传感器 '" + sensor.Name + "' 缺采样积木"));
+                }
+            }
+            // [段4] 盒子表构建——写源收集（写源唯一/类型白名单）
+            Dictionary<string, string> boxTypes = BuildBoxTypes(doc);
+            // [段5] 积木门禁——导线动作 + 主动传感器采样（E4xx——BrickIndex 校验，P5 接入）
+            CheckBricks(doc, boxTypes);
+            // [段6] 盒子规则——读需写源 + 参数类型匹配（数据全局性体系）
+            CheckBoxes(doc, boxTypes);
+            return doc.Diagnostics.Count == before;
         }
-    }
-    // [段4] 盒子表构建——写源收集（写源唯一/类型白名单）
-    Dictionary<string, string> boxTypes = BuildBoxTypes(doc);
-    // [段5] 积木门禁——导线动作 + 主动传感器采样（E4xx——BrickIndex 校验，P5 接入）
-    CheckBricks(doc, boxTypes);
-    // [段6] 盒子规则——读需写源 + 参数类型匹配（数据全局性体系）
-    CheckBoxes(doc, boxTypes);
-    return doc.Diagnostics.Count == before;
-}/// <summary>
+
+        /// <summary>
         /// 名称唯一校验——单元自身与跨单元都不可重名
         /// </summary>
         /// <param name="defs">声明集合</param>
@@ -191,35 +193,14 @@ namespace Mau.Translator
             }
             return ((SlotDefV3)def).Line;
         }
-/// <summary>
-/// 捕获子句校验——积木 out 端口存在性 + 捕获类型白名单（E405/E406）
-/// </summary>
-/// <param name = "wire">导线</param>
-/// <param name = "doc">IR</param>
-private static void CheckCapture(WireDefV3 wire, MauDocV3 doc)
-{
-            BrickIndexEntry entry;
-            if (!BrickIndex.TryFind(wire.BrickName, out entry))
-            {
-                return;
-            }
-            if (entry.OutputCount < 1)
-            {
-                doc.Diagnostics.Add(new MauDiagnostic("E405", wire.Line, "导线 '" + wire.Name + "' 捕获目标 '" + wire.CaptureTarget + "' 但积木 '" + wire.BrickName + "' 无输出端口"));
-                return;
-            }
-            string captureType = entry.OutputTypes.Count > 0 ? entry.OutputTypes[0] : "string";
-            if (captureType != "string" && captureType != "long" && captureType != "int" && captureType != "bool")
-            {
-                doc.Diagnostics.Add(new MauDiagnostic("E406", wire.Line, "导线 '" + wire.Name + "' 捕获类型 '" + captureType + "' 不支持——白名单 string/long/int/bool"));
-            }
-        }/// <summary>
+
+        /// <summary>
         /// 积木门禁——导线动作 + 主动传感器采样引用校验（E4xx）
         /// </summary>
         /// <param name="doc">FSM 网络 IR</param>
         /// <param name="boxTypes">盒子表（Key → 类型）</param>
         private static void CheckBricks(MauDocV3 doc, Dictionary<string, string> boxTypes)
-{
+        {
             for (int w = 0; w < doc.Wires.Count; w++)
             {
                 WireDefV3 wire = doc.Wires[w];
@@ -244,80 +225,198 @@ private static void CheckCapture(WireDefV3 wire, MauDocV3 doc)
                     CheckBrickCall(sensor.FalseActions[a].BrickName, sensor.FalseActions[a].BrickArgs, sensor.Line, doc, boxTypes);
                 }
             }
-        }/// <summary>
-/// 值传感器引用查询——参数位置引用的名称是否为已声明的值形态传感器
-/// </summary>
-/// <param name = "doc">IR</param>
-/// <param name = "name">参数原文</param>
-/// <returns>true=值传感器</returns>
-private static bool IsValueSensorRef(MauDocV3 doc, string name)
-{
-            for (int i = 0; i < doc.Sensors.Count; i++)
+        }
+
+        /// <summary>
+        /// 盒子 Key 引用判定——@ 前缀私有盒，或已注册写源的全局盒
+        /// </summary>
+        /// <param name="boxTypes">盒子表（Key → 类型）</param>
+        /// <param name="arg">参数原文</param>
+        /// <returns>true=盒子引用</returns>
+        private static bool IsBoxRef(Dictionary<string, string> boxTypes, string arg)
+        {
+            if (arg.Length > 0 && arg[0] == '@')
             {
-                if (doc.Sensors[i].Name == name)
+                return true;
+            }
+            return boxTypes.ContainsKey(arg);
+        }
+
+        /// <summary>
+        /// 盒子表构建——写源收集（导线捕获 + 壳探测捕获）：Key → 类型
+        /// </summary>
+        /// <param name="doc">IR</param>
+        /// <returns>盒子表</returns>
+        private static Dictionary<string, string> BuildBoxTypes(MauDocV3 doc)
+        {
+            Dictionary<string, string> boxTypes = new Dictionary<string, string>(StringComparer.Ordinal);
+            // [段1] 导线动作捕获落盒——类型从积木 out 端口推导
+            for (int w = 0; w < doc.Wires.Count; w++)
+            {
+                WireDefV3 wire = doc.Wires[w];
+                if (wire.CaptureTarget.Length > 0)
                 {
-                    return true;
+                    CollectBoxWriter(boxTypes, wire.CaptureTarget, wire.BrickName, wire.Line, doc);
                 }
             }
-            return false;
-        }        /// <summary>
-/// 盒子 Key 引用判定——@ 前缀私有盒，或已注册写源的全局盒
-/// </summary>
-/// <param name = "boxTypes">盒子表（Key → 类型）</param>
-/// <param name = "arg">参数原文</param>
-/// <returns>true=盒子引用</returns>
-private static bool IsBoxRef(Dictionary<string, string> boxTypes, string arg)
-{
-    if (arg.Length > 0 && arg[0] == '@')
-    {
-        return true;
-    }
+            // [段2] 主动传感器壳探测捕获——bool 判断语义固定落盒
+            for (int s = 0; s < doc.Sensors.Count; s++)
+            {
+                SensorDefV3 sensor = doc.Sensors[s];
+                if (!sensor.Passive && sensor.CaptureTarget.Length > 0)
+                {
+                    if (boxTypes.ContainsKey(sensor.CaptureTarget))
+                    {
+                        doc.Diagnostics.Add(new MauDiagnostic("E408", sensor.Line, "盒子 '" + sensor.CaptureTarget + "' 重复写源——一个 Key 恰一个写入点"));
+                    }
+                    else
+                    {
+                        boxTypes[sensor.CaptureTarget] = "bool";
+                    }
+                }
+            }
+            return boxTypes;
+        }
 
-    return boxTypes.ContainsKey(arg);
-} 
-/// <summary>
-/// 盒子表构建——写源收集（导线捕获 + 壳探测捕获）：Key → 类型
-/// </summary>
-/// <param name = "doc">IR</param>
-/// <returns>盒子表</returns>
- private  static  Dictionary < string ,  string > BuildBoxTypes ( MauDocV3  doc ) { Dictionary < string ,  string > boxTypes  =  new  Dictionary < string ,  string > ( StringComparer . Ordinal ) ;  for  ( int  w  =  0 ;  w < doc . Wires . Count ;  w ++ ) { WireDefV3  wire  =  doc . Wires [ w ] ;  if  ( wire . CaptureTarget . Length > 0 ) { CollectBoxWriter ( boxTypes ,  wire . CaptureTarget ,  wire . BrickName ,  wire . Line ,  doc ) ;  } } for  ( int  s  =  0 ;  s < doc . Sensors . Count ;  s ++ ) { SensorDefV3  sensor  =  doc . Sensors [ s ] ;  if  ( ! sensor . Passive && sensor . CaptureTarget . Length > 0 ) { if  ( boxTypes . ContainsKey ( sensor . CaptureTarget ) ) { doc . Diagnostics . Add ( new  MauDiagnostic ( "E408" ,  sensor . Line ,  "盒子 '" + sensor . CaptureTarget + "' 重复写源——一个 Key 恰一个写入点" ) ) ;  } else { boxTypes [ sensor . CaptureTarget ]  =  "bool" ;  } } } return  boxTypes ;  } 
-/// <summary>
-/// 单写源收集——同 Key 重复写 E408；类型白名单外 E406；积木无 out 端口 E405
-/// </summary>
-/// <param name = "boxTypes">盒子表</param>
-/// <param name = "key">盒子 Key</param>
-/// <param name = "brickName">写源积木</param>
-/// <param name = "line">行号</param>
-/// <param name = "doc">诊断收集</param>
- private  static  void  CollectBoxWriter ( Dictionary < string ,  string > boxTypes ,  string  key ,  string  brickName ,  int  line ,  MauDocV3  doc ) { if  ( boxTypes . ContainsKey ( key ) ) { doc . Diagnostics . Add ( new  MauDiagnostic ( "E408" ,  line ,  "盒子 '" + key + "' 重复写源——一个 Key 恰一个写入点（数据全局性铁律）" ) ) ;  return ;  } BrickIndexEntry  entry ;  if  ( ! BrickIndex . TryFind ( brickName ,  out  entry ) ) { boxTypes [ key ]  =  "string" ;  return ;  } if  ( entry . OutputCount < 1 ) { doc . Diagnostics . Add ( new  MauDiagnostic ( "E405" ,  line ,  "捕获目标 '" + key + "' 但积木 '" + brickName + "' 无输出端口" ) ) ;  return ;  } string  captureType  =  entry . OutputTypes . Count > 0 ? entry . OutputTypes [ 0 ] :  "string" ;  if  ( captureType != "string" && captureType != "long" && captureType != "int" && captureType != "bool" ) { doc . Diagnostics . Add ( new  MauDiagnostic ( "E406" ,  line ,  "捕获类型 '" + captureType + "' 不支持——白名单 string/long/int/bool" ) ) ;  return ;  } boxTypes [ key ]  =  captureType ;  } 
-/// <summary>
-/// 盒子规则校验——读需写源（E407）+ 参数类型匹配（E402 严格版）
-/// </summary>
-/// <param name = "doc">IR</param>
-/// <param name = "boxTypes">盒子表</param>
- private  static  void  CheckBoxes ( MauDocV3  doc ,  Dictionary < string ,  string > boxTypes ) { // [段1] 导线动作参数
-for  ( int  w  =  0 ;  w < doc . Wires . Count ;  w ++ ) { WireDefV3  wire  =  doc . Wires [ w ] ;  if  ( wire . BrickName . Length > 0 ) { CheckBoxArgs ( wire . BrickArgs ,  wire . BrickName ,  wire . Line ,  doc ,  boxTypes ) ;  } // [段2] 导线条件盒子判真
-for  ( int  c  =  0 ;  c < wire . Conditions . Count ;  c ++ ) { ConditionV3  cond  =  wire . Conditions [ c ] ;  if  ( cond . IsBoxAssert ) { CheckBoxRead ( cond . BoxName ,  wire . Line ,  doc ,  boxTypes ) ;  } } } // [段3] 壳动作参数
-for  ( int  s  =  0 ;  s < doc . Sensors . Count ;  s ++ ) { SensorDefV3  sensor  =  doc . Sensors [ s ] ;  if  ( sensor . Passive ) { continue ;  } for  ( int  a  =  0 ;  a < sensor . TrueActions . Count ;  a ++ ) { CheckBoxArgs ( sensor . TrueActions [ a ] . BrickArgs ,  sensor . TrueActions [ a ] . BrickName ,  sensor . Line ,  doc ,  boxTypes ) ;  } for  ( int  a  =  0 ;  a < sensor . FalseActions . Count ;  a ++ ) { CheckBoxArgs ( sensor . FalseActions [ a ] . BrickArgs ,  sensor . FalseActions [ a ] . BrickName ,  sensor . Line ,  doc ,  boxTypes ) ;  } } } 
-/// <summary>
-/// 单调用参数盒子检查——读需写源（E407）+ 类型匹配（E402）
-/// </summary>
-/// <param name = "args">参数原文</param>
-/// <param name = "brickName">积木名</param>
-/// <param name = "line">行号</param>
-/// <param name = "doc">诊断收集</param>
-/// <param name = "boxTypes">盒子表</param>
- private  static  void  CheckBoxArgs ( List < string > args ,  string  brickName ,  int  line ,  MauDocV3  doc ,  Dictionary < string ,  string > boxTypes ) { BrickIndexEntry  entry ;  if  ( ! BrickIndex . TryFind ( brickName ,  out  entry ) ) { return ;  } for  ( int  i  =  0 ;  i < args . Count ;  i ++ ) { string  arg  =  args [ i ] . Trim ( ) ;  if  ( ArgKind ( arg ) != "name" || ! IsBoxRef ( boxTypes ,  arg ) ) { continue ;  } string  boxType  =  "" ;  if  ( ! boxTypes . ContainsKey ( arg ) ) { doc . Diagnostics . Add ( new  MauDiagnostic ( "E407" ,  line ,  "盒子 '" + arg + "' 读无写源——先有捕获落盒（> @key / > key）才能引用" ) ) ;  continue ;  } boxType  =  boxTypes [ arg ] ;  string  inType  =  i < entry . InputTypes . Count ? entry . InputTypes [ i ] :  "" ;  if  ( inType != boxType ) { doc . Diagnostics . Add ( new  MauDiagnostic ( "E402" ,  line ,  "盒子 '" + arg + "' 类型 '" + boxType + "' 与积木 '" + brickName + "' 第 " + ( i + 1 ) . ToString ( ) + " 参数类型 '" + inType + "' 不匹配" ) ) ;  } } } 
-/// <summary>
-/// 单盒子读检查——条件判真引用需有写源
-/// </summary>
-/// <param name = "key">盒子 Key</param>
-/// <param name = "line">行号</param>
-/// <param name = "doc">诊断收集</param>
-/// <param name = "boxTypes">盒子表</param>
- private  static  void  CheckBoxRead ( string  key ,  int  line ,  MauDocV3  doc ,  Dictionary < string ,  string > boxTypes ) { if  ( ! boxTypes . ContainsKey ( key ) ) { doc . Diagnostics . Add ( new  MauDiagnostic ( "E407" ,  line ,  "盒子 '" + key + "' 读无写源——先有捕获落盒（> @key / > key）才能引用" ) ) ;  } }
+        /// <summary>
+        /// 单写源收集——同 Key 重复写 E408；类型白名单外 E406；积木无 out 端口 E405
+        /// </summary>
+        /// <param name="boxTypes">盒子表</param>
+        /// <param name="key">盒子 Key</param>
+        /// <param name="brickName">写源积木</param>
+        /// <param name="line">行号</param>
+        /// <param name="doc">诊断收集</param>
+        private static void CollectBoxWriter(Dictionary<string, string> boxTypes, string key, string brickName, int line, MauDocV3 doc)
+        {
+            if (boxTypes.ContainsKey(key))
+            {
+                doc.Diagnostics.Add(new MauDiagnostic("E408", line, "盒子 '" + key + "' 重复写源——一个 Key 恰一个写入点（数据全局性铁律）"));
+                return;
+            }
+            BrickIndexEntry entry;
+            if (!BrickIndex.TryFind(brickName, out entry))
+            {
+                boxTypes[key] = "string";
+                return;
+            }
+            if (entry.OutputCount < 1)
+            {
+                doc.Diagnostics.Add(new MauDiagnostic("E405", line, "捕获目标 '" + key + "' 但积木 '" + brickName + "' 无输出端口"));
+                return;
+            }
+            string captureType = "string";
+            if (entry.OutputTypes.Count > 0)
+            {
+                captureType = entry.OutputTypes[0];
+            }
+            if (captureType != "string" && captureType != "long" && captureType != "int" && captureType != "bool")
+            {
+                doc.Diagnostics.Add(new MauDiagnostic("E406", line, "捕获类型 '" + captureType + "' 不支持——白名单 string/long/int/bool"));
+                return;
+            }
+            boxTypes[key] = captureType;
+        }
 
-/// <summary>
+        /// <summary>
+        /// 盒子规则校验——读需写源（E407）+ 参数类型匹配（E402 严格版）
+        /// </summary>
+        /// <param name="doc">IR</param>
+        /// <param name="boxTypes">盒子表</param>
+        private static void CheckBoxes(MauDocV3 doc, Dictionary<string, string> boxTypes)
+        {
+            // [段1] 导线动作参数 + 条件盒子判真
+            for (int w = 0; w < doc.Wires.Count; w++)
+            {
+                WireDefV3 wire = doc.Wires[w];
+                if (wire.BrickName.Length > 0)
+                {
+                    CheckBoxArgs(wire.BrickArgs, wire.BrickName, wire.Line, doc, boxTypes);
+                }
+                for (int c = 0; c < wire.Conditions.Count; c++)
+                {
+                    ConditionV3 cond = wire.Conditions[c];
+                    if (cond.IsBoxAssert)
+                    {
+                        CheckBoxRead(cond.BoxName, wire.Line, doc, boxTypes);
+                    }
+                }
+            }
+            // [段2] 壳动作参数
+            for (int s = 0; s < doc.Sensors.Count; s++)
+            {
+                SensorDefV3 sensor = doc.Sensors[s];
+                if (sensor.Passive)
+                {
+                    continue;
+                }
+                for (int a = 0; a < sensor.TrueActions.Count; a++)
+                {
+                    CheckBoxArgs(sensor.TrueActions[a].BrickArgs, sensor.TrueActions[a].BrickName, sensor.Line, doc, boxTypes);
+                }
+                for (int a = 0; a < sensor.FalseActions.Count; a++)
+                {
+                    CheckBoxArgs(sensor.FalseActions[a].BrickArgs, sensor.FalseActions[a].BrickName, sensor.Line, doc, boxTypes);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 单调用参数盒子检查——读需写源（E407）+ 类型匹配（E402）
+        /// </summary>
+        /// <param name="args">参数原文</param>
+        /// <param name="brickName">积木名</param>
+        /// <param name="line">行号</param>
+        /// <param name="doc">诊断收集</param>
+        /// <param name="boxTypes">盒子表</param>
+        private static void CheckBoxArgs(List<string> args, string brickName, int line, MauDocV3 doc, Dictionary<string, string> boxTypes)
+        {
+            BrickIndexEntry entry;
+            if (!BrickIndex.TryFind(brickName, out entry))
+            {
+                return;
+            }
+            for (int i = 0; i < args.Count; i++)
+            {
+                string arg = args[i].Trim();
+                if (ArgKind(arg) != "name" || !IsBoxRef(boxTypes, arg))
+                {
+                    continue;
+                }
+                string boxType = "";
+                if (!boxTypes.ContainsKey(arg))
+                {
+                    doc.Diagnostics.Add(new MauDiagnostic("E407", line, "盒子 '" + arg + "' 读无写源——先有捕获落盒（> @key / > key）才能引用"));
+                    continue;
+                }
+                boxType = boxTypes[arg];
+                string inType = "";
+                if (i < entry.InputTypes.Count)
+                {
+                    inType = entry.InputTypes[i];
+                }
+                if (inType != boxType)
+                {
+                    doc.Diagnostics.Add(new MauDiagnostic("E402", line, "盒子 '" + arg + "' 类型 '" + boxType + "' 与积木 '" + brickName + "' 第 " + (i + 1).ToString() + " 参数类型 '" + inType + "' 不匹配"));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 单盒子读检查——条件判真引用需有写源
+        /// </summary>
+        /// <param name="key">盒子 Key</param>
+        /// <param name="line">行号</param>
+        /// <param name="doc">诊断收集</param>
+        /// <param name="boxTypes">盒子表</param>
+        private static void CheckBoxRead(string key, int line, MauDocV3 doc, Dictionary<string, string> boxTypes)
+        {
+            if (!boxTypes.ContainsKey(key))
+            {
+                doc.Diagnostics.Add(new MauDiagnostic("E407", line, "盒子 '" + key + "' 读无写源——先有捕获落盒（> @key / > key）才能引用"));
+            }
+        }
+
+        /// <summary>
         /// 单次积木调用校验——E400 未知积木 / E401 参数数量 / E402 参数类别
         /// </summary>
         /// <param name="name">积木名</param>
@@ -326,7 +425,7 @@ for  ( int  s  =  0 ;  s < doc . Sensors . Count ;  s ++ ) { SensorDefV3  sensor
         /// <param name="doc">诊断收集</param>
         /// <param name="boxTypes">盒子表（Key → 类型）</param>
         private static void CheckBrickCall(string name, List<string> args, int line, MauDocV3 doc, Dictionary<string, string> boxTypes)
-{
+        {
             BrickIndexEntry entry;
             if (!BrickIndex.TryFind(name, out entry))
             {
@@ -353,6 +452,7 @@ for  ( int  s  =  0 ;  s < doc . Sensors . Count ;  s ++ ) { SensorDefV3  sensor
                 }
             }
         }
+
         /// <summary>
         /// 参数原文类别——"..." → str / 纯数字 → num / 其他 → name
         /// </summary>

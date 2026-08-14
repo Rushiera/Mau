@@ -9,7 +9,14 @@ namespace Mau.Runtime
     /// </summary>
     public sealed class FlowHost : IDisposable
     {
+        /// <summary>
+        /// 活跃句柄列表——锁保护（宿主可跨线程访问）
+        /// </summary>
         private readonly List<FlowHandle> _handles;
+
+        /// <summary>
+        /// 句柄列表锁
+        /// </summary>
         private readonly object _lock;
 
         /// <summary>

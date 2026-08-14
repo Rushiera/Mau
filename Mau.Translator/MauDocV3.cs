@@ -134,11 +134,6 @@ namespace Mau.Translator
         public bool Parallel;
 
         /// <summary>
-        /// 汇合标记——后台结果回投主线程
-        /// </summary>
-        public bool Join;
-
-        /// <summary>
         /// 日志标记——[!] 触发观测（零语义影响）
         /// </summary>
         public bool Logging;

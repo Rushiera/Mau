@@ -274,7 +274,11 @@ namespace Mau.Translator
                             break;
                         }
                     }
-                    uint kind = allNumeric ? TokenIds.Num : TokenIds.Word;
+                    uint kind = TokenIds.Word;
+                    if (allNumeric)
+                    {
+                        kind = TokenIds.Num;
+                    }
                     tokens.Add(new TokenV3(kind, startLine, startCol, word));
                     i = j;
                     continue;

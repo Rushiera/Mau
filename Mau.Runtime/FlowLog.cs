@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace Mau.Runtime
 {
@@ -7,8 +7,19 @@ namespace Mau.Runtime
     /// </summary>
     public sealed class FlowLog
     {
+        /// <summary>
+        /// 环形缓冲——定长数组，自动覆盖最旧记录
+        /// </summary>
         private readonly MauDebug[] _buffer;
+
+        /// <summary>
+        /// 写入头——环形游标
+        /// </summary>
         private int _head;
+
+        /// <summary>
+        /// 当前有效条数
+        /// </summary>
         private int _count;
 
         /// <summary>

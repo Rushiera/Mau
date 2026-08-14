@@ -173,54 +173,57 @@ namespace Mau.Translator
 /// <summary>
 /// 解析壳分支动作——→ 动作 | 动作（成功侧/失败侧——各侧可多积木调用）
 /// </summary>
-/// <param name = "section">段 token</param>
-/// <param name = "start">动作区起点</param>
-/// <param name = "def">输出传感器</param>
-/// <param name = "doc">诊断收集</param>
-/// <param name = "isTrue">true=成功侧（| 之前）</param>
-private static void ParseSensorBranchActions(List<TokenV3> section, int start, SensorDefV3 def, MauDocV3 doc, bool isTrue)
+        /// <param name="section">段 token</param>
+        /// <param name="start">动作区起点</param>
+        /// <param name="def">输出传感器</param>
+        /// <param name="doc">诊断收集</param>
+        /// <param name="isTrue">true=成功侧（| 之前）</param>
+        private static void ParseSensorBranchActions(List<TokenV3> section, int start, SensorDefV3 def, MauDocV3 doc, bool isTrue)
 {
-    List<SensorActionV3> actions = isTrue ? def.TrueActions : def.FalseActions;
-    int i = start;
-    while (i < section.Count)
-    {
-        if (section[i].Id == TokenIds.Branch)
-        {
+            List<SensorActionV3> actions;
             if (isTrue)
             {
-                // | 切换失败侧——失败侧后续全部归 FalseActions
-                ParseSensorBranchActions(section, i + 1, def, doc, false);
-                return;
+                actions = def.TrueActions;
             }
-
-            // 失败侧不再有 |（双分支终止）
-            doc.Diagnostics.Add(new MauDiagnostic("E105", section[i].Line, "主动传感器分支最多两路: → 动作 | 动作"));
-            return;
-        }
-
-        if (section[i].Id != TokenIds.Name)
-        {
-            doc.Diagnostics.Add(new MauDiagnostic("E105", section[i].Line, "主动传感器动作区非法 token——期望积木名"));
-            return;
-        }
-
-        SensorActionV3 action = new SensorActionV3();
-        action.BrickName = section[i].Value;
-        i = i + 1;
-        if (i < section.Count && section[i].Id == TokenIds.ParamOpen)
-        {
-            action.BrickArgs = CollectArgs(section, i);
-            i = FindParamClose(section, i) + 1;
-            if (i == 0)
+            else
             {
-                i = section.Count;
+                actions = def.FalseActions;
             }
-        }
-
-        actions.Add(action);
-    }
-}
-        /// <summary>
+            int i = start;
+            while (i < section.Count)
+            {
+                if (section[i].Id == TokenIds.Branch)
+                {
+                    if (isTrue)
+                    {
+                        // | 切换失败侧——失败侧后续全部归 FalseActions
+                        ParseSensorBranchActions(section, i + 1, def, doc, false);
+                        return;
+                    }
+                    // 失败侧不再有 |（双分支终止）
+                    doc.Diagnostics.Add(new MauDiagnostic("E105", section[i].Line, "主动传感器分支最多两路: → 动作 | 动作"));
+                    return;
+                }
+                if (section[i].Id != TokenIds.Name)
+                {
+                    doc.Diagnostics.Add(new MauDiagnostic("E105", section[i].Line, "主动传感器动作区非法 token——期望积木名"));
+                    return;
+                }
+                SensorActionV3 action = new SensorActionV3();
+                action.BrickName = section[i].Value;
+                i = i + 1;
+                if (i < section.Count && section[i].Id == TokenIds.ParamOpen)
+                {
+                    action.BrickArgs = CollectArgs(section, i);
+                    i = FindParamClose(section, i) + 1;
+                    if (i == 0)
+                    {
+                        i = section.Count;
+                    }
+                }
+                actions.Add(action);
+            }
+        }        /// <summary>
         /// 解析传感器段——§ 'P_X' ⇐（被动）/ § 'P_Q' ↻ [N] 'brick'[...]（主动）
         /// </summary>
         /// <param name="name">传感器名</param>
@@ -228,7 +231,7 @@ private static void ParseSensorBranchActions(List<TokenV3> section, int start, S
         /// <param name="section">段 token</param>
         /// <param name="doc">输出 IR</param>
         private static void ParseSensor(string name, TokenV3 first, List<TokenV3> section, MauDocV3 doc)
-{
+        {
             SensorDefV3 def = new SensorDefV3();
             def.Name = name;
             def.Line = first.Line;
@@ -477,9 +480,9 @@ private static void ParseSensorBranchActions(List<TokenV3> section, int start, S
             def.Capacity = capacity;
             doc.Slots.Add(def);
         }
-
+/// <summary>
         /// <summary>
-        /// 解析导线属性——[t=10] [par] [join] [!]
+        /// 解析导线属性——[t=10] [par] [!]（join 已并入 par——P7a 收敛）
         /// </summary>
         /// <param name="section">段 token</param>
         /// <param name="start">属性内容起点</param>
@@ -515,11 +518,6 @@ private static void ParseSensorBranchActions(List<TokenV3> section, int start, S
                     def.Parallel = true;
                     i = i + 1;
                 }
-                else if (t.Id == TokenIds.Word && t.Value == "join")
-                {
-                    def.Join = true;
-                    i = i + 1;
-                }
                 else if (t.Id == TokenIds.Word && t.Value == "!")
                 {
                     def.Logging = true;
@@ -531,12 +529,11 @@ private static void ParseSensorBranchActions(List<TokenV3> section, int start, S
                 }
                 else
                 {
-                    doc.Diagnostics.Add(new MauDiagnostic("E103", t.Line, "未知导线属性: '" + t.Value + "'——只支持 t=N / par / join / !"));
+                    doc.Diagnostics.Add(new MauDiagnostic("E103", t.Line, "未知导线属性: '" + t.Value + "'——只支持 t=N / par / !"));
                     return;
                 }
             }
         }
-
         /// <summary>
         /// 解析条件区——传感器沿（'P_X'）或状态断言（'S_X' = 'Y'），& 合取
         /// </summary>

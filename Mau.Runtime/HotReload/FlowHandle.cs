@@ -10,16 +10,40 @@ namespace Mau.Runtime
     /// </summary>
     public sealed class FlowHandle : IDisposable
     {
+        /// <summary>
+        /// 独立 ALC——每生成物 DLL 一个实例（Mau.Runtime 回落默认 ALC）
+        /// </summary>
         private FlowALC? _alc;
+
+        /// <summary>
+        /// 生成物实例
+        /// </summary>
         private IObservableFlow? _flow;
+
+        /// <summary>
+        /// ALC 弱引用——卸载回收验证用
+        /// </summary>
         private WeakReference _alcRef;
+
+        /// <summary>
+        /// 已释放标记
+        /// </summary>
         private bool _disposed;
+
+        /// <summary>
+        /// Flow 异常隔离标记
+        /// </summary>
         private bool _isFaulted;
+
+        /// <summary>
+        /// 故障原因文本
+        /// </summary>
         private string _faultReason;
-/// <summary>
-/// 来源 DLL 路径——热重载按 dll 粒度匹配（D7 单 dll = 单 Flow 组）
-/// </summary>
-private string _sourceDll;
+
+        /// <summary>
+        /// 来源 DLL 路径——热重载按 dll 粒度匹配（D7 单 dll = 单 Flow 组）
+        /// </summary>
+        private string _sourceDll;
         /// <summary>
         /// Flow 是否因异常而隔离——Tick 不会再被调用
         /// </summary>
@@ -60,16 +84,23 @@ private string _sourceDll;
                 return _flow!;
             }
         }
-/// <summary>
-/// 来源 DLL 路径——热重载按 dll 粒度匹配（D7 单 dll = 单 Flow 组）
-/// </summary>
-public string SourceDll
-{
-    get
-    {
-        return _sourceDll;
-    }
-}
+        /// <summary>
+        /// 来源 DLL 路径——热重载按 dll 粒度匹配（D7 单 dll = 单 Flow 组）
+        /// </summary>
+        public string SourceDll
+        {
+            get
+            {
+                return _sourceDll;
+            }
+        }
+
+        /// <summary>
+        /// 构造句柄——私有（只能经 Load 创建）
+        /// </summary>
+        /// <param name="alc">独立 ALC</param>
+        /// <param name="flow">生成物实例</param>
+        /// <param name="sourceDll">来源 DLL 路径</param>
         private FlowHandle(FlowALC alc, IObservableFlow flow, string sourceDll)
         {
             _alc = alc;

@@ -5,11 +5,10 @@ using System.Text;
 
 namespace Mau.Translator
 {
-/// <summary>
-/// 生成器 v3——FSM 网络 IR → C# 生成物（design-mau-v3 §八.6）。生成形态：状态机枚举单值 + IsXxx/GetState；被动传感器消费字段 + FireXxx；主动传感器帧门控采样；导线条件原子检查（全过才消费）+ 动作 try-catch + 结果分叉；槽计数字段 + TryAcquire/Release。积木强类型直调（P5 协议 A——内嵌积木源 + 编译期验型）；par 后台 Task.Run + Inbox 回投；[t=] Cube 时限。限制：导线结果 >2 的多路分叉报 E205（名称返回积木体系随积木重生扩展）
+    /// <summary>
+    /// 生成器 v3——FSM 网络 IR → C# 生成物（design-mau-v3 §八.6）。生成形态：状态机枚举单值 + IsXxx/GetState；被动传感器消费字段 + FireXxx；主动传感器帧门控采样；导线条件原子检查（全过才消费）+ 动作 try-catch + 结果分叉；槽计数字段 + TryAcquire/Release。积木强类型直调（P5 协议 A——内嵌积木源 + 编译期验型）；par 后台 Task.Run + Inbox 回投；[t=] Cube 时限。限制：导线结果 >2 的多路分叉报 E205（名称返回积木体系随积木重生扩展）
 /// </summary>
-///
-public static class MauGeneratorV3
+    public static class MauGeneratorV3
     {
         /// <summary>
         /// 生成 C# 产物——IR → 源码文本
@@ -110,7 +109,7 @@ public static class MauGeneratorV3
         /// <param name="sb">输出缓冲</param>
         /// <param name="doc">IR</param>
         private static void AppendStateMachines(StringBuilder sb, MauDocV3 doc)
-        {
+{
             for (int s = 0; s < doc.StateMachines.Count; s++)
             {
                 StateMachineDefV3 sm = doc.StateMachines[s];
@@ -120,7 +119,12 @@ public static class MauGeneratorV3
                 sb.AppendLine("        {");
                 for (int i = 0; i < sm.States.Count; i++)
                 {
-                    sb.AppendLine("            " + NamePascal(sm.States[i]) + (i + 1 < sm.States.Count ? "," : ""));
+                    string sep = "";
+                    if (i + 1 < sm.States.Count)
+                    {
+                        sep = ",";
+                    }
+                    sb.AppendLine("            " + NamePascal(sm.States[i]) + sep);
                 }
                 sb.AppendLine("        }");
                 sb.AppendLine("        private " + pascal + "State " + NameField(sm.Name) + " = " + pascal + "State." + NamePascal(sm.States[0]) + ";");
@@ -133,14 +137,13 @@ public static class MauGeneratorV3
                 sb.AppendLine("");
             }
         }
-
         /// <summary>
         /// 传感器生成——被动消费字段 + FireXxx；主动帧门控采样
         /// </summary>
         /// <param name="sb">输出缓冲</param>
         /// <param name="doc">IR</param>
         private static void AppendSensors(StringBuilder sb, MauDocV3 doc)
-{
+        {
             for (int i = 0; i < doc.Sensors.Count; i++)
             {
                 SensorDefV3 sensor = doc.Sensors[i];
@@ -162,110 +165,105 @@ public static class MauGeneratorV3
 /// <summary>
 /// 盒子 Key 去 @ 前缀——@key → key（scope 由 BoxScopeExpr 决定）
 /// </summary>
-/// <param name = "boxRef">盒子引用原文</param>
-/// <returns>Key 原文</returns>
-private static string BoxKey(string boxRef)
-{
-    if (boxRef.Length > 0 && boxRef[0] == '@')
-    {
-        return boxRef.Substring(1);
-    }
-
-    return boxRef;
-}        /// <summary>
+        /// <param name="boxRef">盒子引用原文</param>
+        /// <returns>Key 原文</returns>
+        private static string BoxKey(string boxRef)
+        {
+            if (boxRef.Length > 0 && boxRef[0] == '@')
+            {
+                return boxRef.Substring(1);
+            }
+            return boxRef;
+        }/// <summary>
 /// 盒子 scope 表达式——@key → FlowId 私有；key → "global"
 /// </summary>
-/// <param name = "boxRef">盒子引用原文</param>
-/// <returns>C# scope 表达式文本</returns>
-private static string BoxScopeExpr(string boxRef)
-{
-    if (boxRef.Length > 0 && boxRef[0] == '@')
-    {
-        return "FlowContext.CurrentFlowId.ToString()";
-    }
-
-    return "\"global\"";
-}/// <summary>
+        /// <param name="boxRef">盒子引用原文</param>
+        /// <returns>C# scope 表达式文本</returns>
+        private static string BoxScopeExpr(string boxRef)
+        {
+            if (boxRef.Length > 0 && boxRef[0] == '@')
+            {
+                return "FlowContext.CurrentFlowId.ToString()";
+            }
+            return "\"global\"";
+        }/// <summary>
 /// 捕获写 C# 类型——按积木 out 端口契约
 /// </summary>
-/// <param name = "brickName">写源积木</param>
-/// <returns>C# 类型文本</returns>
-private static string CaptureCSType(string brickName)
-{
-    BrickIndexEntry entry;
-    if (BrickIndex.TryFind(brickName, out entry) && entry.OutputTypes.Count > 0)
-    {
-        return entry.OutputTypes[0];
-    }
-
-    return "string";
-}/// <summary>
+        /// <param name="brickName">写源积木</param>
+        /// <returns>C# 类型文本</returns>
+        private static string CaptureCSType(string brickName)
+        {
+            BrickIndexEntry entry;
+            if (BrickIndex.TryFind(brickName, out entry) && entry.OutputTypes.Count > 0)
+            {
+                return entry.OutputTypes[0];
+            }
+            return "string";
+        }/// <summary>
 /// 壳分支动作生成——条件包裹的积木调用序列（汇总写）
 /// </summary>
-/// <param name = "sb">输出缓冲</param>
-/// <param name = "actions">动作列表</param>
-/// <param name = "guard">条件守卫（"if (ok)" / "if (!ok)"）</param>
-/// <param name = "doc">IR（盒子引用查询）</param>
-private static void AppendShellActions(StringBuilder sb, List<SensorActionV3> actions, string guard, MauDocV3 doc)
-{
-    if (actions.Count == 0)
-    {
-        return;
-    }
-
-    sb.AppendLine("            " + guard);
-    sb.AppendLine("            {");
-    for (int i = 0; i < actions.Count; i++)
-    {
-        StringBuilder prelude = new StringBuilder();
-        string expr = BrickCallExpr(actions[i].BrickName, actions[i].BrickArgs, "", doc, prelude);
-        sb.Append(prelude);
-        sb.AppendLine("                " + expr + ";");
-    }
-
-    sb.AppendLine("            }");
-}/// <summary>
+        /// <param name="sb">输出缓冲</param>
+        /// <param name="actions">动作列表</param>
+        /// <param name="guard">条件守卫（"if (ok)" / "if (!ok)"）</param>
+        /// <param name="doc">IR（盒子引用查询）</param>
+        private static void AppendShellActions(StringBuilder sb, List<SensorActionV3> actions, string guard, MauDocV3 doc)
+        {
+            if (actions.Count == 0)
+            {
+                return;
+            }
+            sb.AppendLine("            " + guard);
+            sb.AppendLine("            {");
+            for (int i = 0; i < actions.Count; i++)
+            {
+                StringBuilder prelude = new StringBuilder();
+                string expr = BrickCallExpr(actions[i].BrickName, actions[i].BrickArgs, "", doc, prelude);
+                sb.Append(prelude);
+                sb.AppendLine("                " + expr + ";");
+            }
+            sb.AppendLine("            }");
+        }/// <summary>
 /// 主动传感器壳方法生成——帧门控 + 探测（可捕获落盒）+ 分支动作（只读世界零状态转移）
 /// </summary>
-/// <param name = "sb">输出缓冲</param>
-/// <param name = "sensor">传感器声明</param>
-/// <param name = "doc">IR</param>
-private static void AppendSensorShell(StringBuilder sb, SensorDefV3 sensor, MauDocV3 doc)
-{
-    string field = NameField(sensor.Name);
-    string pascal = NameBodyPascal(sensor.Name);
-    sb.AppendLine("        // ── 传感器 " + sensor.Name + "（主动壳——每 " + sensor.EveryFrames + " 帧探测）──");
-    sb.AppendLine("        private long " + field + "_frame;");
-    sb.AppendLine("        public void " + pascal + "_SensorExec(int frame)");
-    sb.AppendLine("        {");
-    if (sensor.EveryFrames > 0)
-    {
-        sb.AppendLine("            if ((frame - " + field + "_frame) < " + sensor.EveryFrames + ") { return; }");
-        sb.AppendLine("            " + field + "_frame = frame;");
-    }
-    sb.AppendLine("            bool ok = false;");
-    sb.AppendLine("            try");
-    sb.AppendLine("            {");
-    StringBuilder prelude = new StringBuilder();
-    string expr = BrickCallExpr(sensor.BrickName, sensor.BrickArgs, "", doc, prelude);
-    sb.Append(prelude);
-    sb.AppendLine("                ok = " + expr + ";");
-    if (sensor.CaptureTarget.Length > 0)
-    {
-        // 探测落盒——bool 返回值（探测积木 = 判断语义）落 DataBox 位置
-        sb.AppendLine("                DataBox.Set<bool>(" + BoxScopeExpr(sensor.CaptureTarget) + ", \"" + BoxKey(sensor.CaptureTarget) + "\", ok);");
-    }
-    sb.AppendLine("            }");
-    sb.AppendLine("            catch (Exception ex)");
-    sb.AppendLine("            {");
-    sb.AppendLine("                ok = false;");
-    sb.AppendLine("            }");
-    sb.AppendLine("            AuditStore.Default?.Record(\"Flow\", \"trace.sample\", -1, new AuditProp[] { new AuditProp(\"sensor\", \"" + sensor.Name + "\"), new AuditProp(\"value\", ok ? \"1\" : \"0\"), new AuditProp(\"frame\", frame.ToString()) });");
-    // 分支动作——成功侧/失败侧
-    AppendShellActions(sb, sensor.TrueActions, "if (ok)", doc);
-    AppendShellActions(sb, sensor.FalseActions, "if (!ok)", doc);
-    sb.AppendLine("        }");
-}/// <summary>
+        /// <param name="sb">输出缓冲</param>
+        /// <param name="sensor">传感器声明</param>
+        /// <param name="doc">IR</param>
+        private static void AppendSensorShell(StringBuilder sb, SensorDefV3 sensor, MauDocV3 doc)
+        {
+            string field = NameField(sensor.Name);
+            string pascal = NameBodyPascal(sensor.Name);
+            sb.AppendLine("        // ── 传感器 " + sensor.Name + "（主动壳——每 " + sensor.EveryFrames + " 帧探测）──");
+            sb.AppendLine("        private long " + field + "_frame;");
+            sb.AppendLine("        public void " + pascal + "_SensorExec(int frame)");
+            sb.AppendLine("        {");
+            if (sensor.EveryFrames > 0)
+            {
+                sb.AppendLine("            if ((frame - " + field + "_frame) < " + sensor.EveryFrames + ") { return; }");
+                sb.AppendLine("            " + field + "_frame = frame;");
+            }
+            sb.AppendLine("            bool ok = false;");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            StringBuilder prelude = new StringBuilder();
+            string expr = BrickCallExpr(sensor.BrickName, sensor.BrickArgs, "", doc, prelude);
+            sb.Append(prelude);
+            sb.AppendLine("                ok = " + expr + ";");
+            if (sensor.CaptureTarget.Length > 0)
+            {
+                // 探测落盒——bool 返回值（探测积木 = 判断语义）落 DataBox 位置
+                sb.AppendLine("                DataBox.Set<bool>(" + BoxScopeExpr(sensor.CaptureTarget) + ", \"" + BoxKey(sensor.CaptureTarget) + "\", ok);");
+            }
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch (Exception ex)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                ok = false;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            AuditStore.Default?.Record(\"Flow\", \"trace.sample\", -1, new AuditProp[] { new AuditProp(\"sensor\", \"" + sensor.Name + "\"), new AuditProp(\"value\", ok ? \"1\" : \"0\"), new AuditProp(\"frame\", frame.ToString()) });");
+            // 分支动作——成功侧/失败侧
+            AppendShellActions(sb, sensor.TrueActions, "if (ok)", doc);
+            AppendShellActions(sb, sensor.FalseActions, "if (!ok)", doc);
+            sb.AppendLine("        }");
+        }/// <summary>
         /// 槽生成——计数字段（初始=容量）+ TryAcquire/Release
         /// </summary>
         /// <param name="sb">输出缓冲</param>
@@ -297,57 +295,58 @@ private static void AppendSensorShell(StringBuilder sb, SensorDefV3 sensor, MauD
 /// <summary>
 /// 盒子判真方法生成——导线条件引用的盒子（@key 私有 / key 全局）：类型化读 + 判真
 /// </summary>
-/// <param name = "sb">输出缓冲</param>
-/// <param name = "doc">IR</param>
-private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
-{
-    Dictionary<string, string> boxTypes = GenBoxTypes(doc);
-    HashSet<string> used = new HashSet<string>(StringComparer.Ordinal);
-    for (int w = 0; w < doc.Wires.Count; w++)
-    {
-        WireDefV3 wire = doc.Wires[w];
-        for (int c = 0; c < wire.Conditions.Count; c++)
+        /// <param name="sb">输出缓冲</param>
+        /// <param name="doc">IR</param>
+        private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
         {
-            if (wire.Conditions[c].IsBoxAssert && !used.Contains(wire.Conditions[c].BoxName))
+            Dictionary<string, string> boxTypes = GenBoxTypes(doc);
+            HashSet<string> used = new HashSet<string>(StringComparer.Ordinal);
+            for (int w = 0; w < doc.Wires.Count; w++)
             {
-                used.Add(wire.Conditions[c].BoxName);
+                WireDefV3 wire = doc.Wires[w];
+                for (int c = 0; c < wire.Conditions.Count; c++)
+                {
+                    if (wire.Conditions[c].IsBoxAssert && !used.Contains(wire.Conditions[c].BoxName))
+                    {
+                        used.Add(wire.Conditions[c].BoxName);
+                    }
+                }
             }
-        }
-    }
-
-    foreach (string box in used)
-    {
-        string boxType = boxTypes.ContainsKey(box) ? boxTypes[box] : "bool";
-        string pascal = NameBodyPascal(box);
-        sb.AppendLine("        private bool BoxTrue_" + pascal + "()");
-        sb.AppendLine("        {");
-        if (boxType == "string")
-        {
-            sb.AppendLine("            string v = \"\";");
-            sb.AppendLine("            if (DataBox.TryGet<string>(" + BoxScopeExpr(box) + ", \"" + BoxKey(box) + "\", out v)) { return v.Length > 0; }");
-        }
-        else if (boxType == "bool")
-        {
-            sb.AppendLine("            bool v = false;");
-            sb.AppendLine("            if (DataBox.TryGet<bool>(" + BoxScopeExpr(box) + ", \"" + BoxKey(box) + "\", out v)) { return v; }");
-        }
-        else
-        {
-            sb.AppendLine("            " + boxType + " v = 0;");
-            sb.AppendLine("            if (DataBox.TryGet<" + boxType + ">(" + BoxScopeExpr(box) + ", \"" + BoxKey(box) + "\", out v)) { return v != 0; }");
-        }
-
-        sb.AppendLine("            return false;");
-        sb.AppendLine("        }");
-    }
-}
-        /// <summary>
+            foreach (string box in used)
+            {
+                string boxType = "bool";
+                if (boxTypes.ContainsKey(box))
+                {
+                    boxType = boxTypes[box];
+                }
+                string pascal = NameBodyPascal(box);
+                sb.AppendLine("        private bool BoxTrue_" + pascal + "()");
+                sb.AppendLine("        {");
+                if (boxType == "string")
+                {
+                    sb.AppendLine("            string v = \"\";");
+                    sb.AppendLine("            if (DataBox.TryGet<string>(" + BoxScopeExpr(box) + ", \"" + BoxKey(box) + "\", out v)) { return v.Length > 0; }");
+                }
+                else if (boxType == "bool")
+                {
+                    sb.AppendLine("            bool v = false;");
+                    sb.AppendLine("            if (DataBox.TryGet<bool>(" + BoxScopeExpr(box) + ", \"" + BoxKey(box) + "\", out v)) { return v; }");
+                }
+                else
+                {
+                    sb.AppendLine("            " + boxType + " v = 0;");
+                    sb.AppendLine("            if (DataBox.TryGet<" + boxType + ">(" + BoxScopeExpr(box) + ", \"" + BoxKey(box) + "\", out v)) { return v != 0; }");
+                }
+                sb.AppendLine("            return false;");
+                sb.AppendLine("        }");
+            }
+        }        /// <summary>
         /// 导线生成——条件检查 + 消费 + 执行 + 结果分叉 + 状态字段（观测）
         /// </summary>
         /// <param name="sb">输出缓冲</param>
         /// <param name="doc">IR</param>
         private static void AppendWires(StringBuilder sb, MauDocV3 doc)
-        {
+{
             // [段0] 捕获结构体——任意 par+捕获导线存在时生成（后台回投载荷）
             bool anyCapturePar = false;
             for (int w = 0; w < doc.Wires.Count; w++)
@@ -371,7 +370,16 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
             {
                 WireDefV3 wire = doc.Wires[w];
                 string pascal = NamePascal(wire.Name);
-                sb.AppendLine("        // ── 导线 " + wire.Name + " ──" + (wire.Parallel ? " [par]" : "") + (wire.Timeout > 0 ? " [t=" + wire.Timeout + "]" : ""));
+                string attrs = "";
+                if (wire.Parallel)
+                {
+                    attrs = attrs + " [par]";
+                }
+                if (wire.Timeout > 0)
+                {
+                    attrs = attrs + " [t=" + wire.Timeout + "]";
+                }
+                sb.AppendLine("        // ── 导线 " + wire.Name + " ──" + attrs);
                 if (wire.Timeout > 0)
                 {
                     sb.AppendLine("        private Cube " + NameField(wire.Name) + "_cube = new Cube(" + wire.Timeout + ");");
@@ -398,7 +406,6 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
                 sb.AppendLine("");
             }
         }
-
         /// <summary>
         /// 导线条件方法——原子检查（不消费——全过才消费）。
         /// 被动传感器 = DataBox 事件沿预检（TryPeek）；主动传感器 = 实测值字段读（反复查询不消费）。
@@ -408,7 +415,7 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
         /// <param name="pascal">导线 PascalCase 名</param>
         /// <param name="doc">IR（查传感器形态）</param>
         private static void AppendWireCondition(StringBuilder sb, WireDefV3 wire, string pascal, MauDocV3 doc)
-{
+        {
             sb.AppendLine("        private bool " + pascal + "_Condition()");
             sb.AppendLine("        {");
             for (int c = 0; c < wire.Conditions.Count; c++)
@@ -421,7 +428,12 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
                 else if (cond.IsBoxAssert)
                 {
                     // 盒子判真——类型化读 + 判真（bool 直取 / string 非空 / 数值非零）
-                    string boxType = GenBoxTypes(doc).ContainsKey(cond.BoxName) ? GenBoxTypes(doc)[cond.BoxName] : "bool";
+                    string boxType = "bool";
+                    Dictionary<string, string> boxTypes = GenBoxTypes(doc);
+                    if (boxTypes.ContainsKey(cond.BoxName))
+                    {
+                        boxType = boxTypes[cond.BoxName];
+                    }
                     sb.AppendLine("            if (!BoxTrue_" + NameBodyPascal(cond.BoxName) + "()) { return false; }");
                 }
                 else if (FindSensor(doc, cond.SensorName).Passive)
@@ -435,8 +447,7 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
             }
             sb.AppendLine("            return true;");
             sb.AppendLine("        }");
-        }
-        /// <summary>
+        }        /// <summary>
         /// 导线消费方法——条件全过后消费被动传感器事件沿（主动传感器实测值不消费）
         /// </summary>
         /// <param name="sb">输出缓冲</param>
@@ -483,7 +494,7 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
         /// <param name="pascal">导线 PascalCase 名</param>
         /// <param name="doc">IR（积木捕获与值传感器查询）</param>
         private static void AppendWireExecute(StringBuilder sb, WireDefV3 wire, string pascal, MauDocV3 doc)
-{
+        {
             string field = NameField(wire.Name);
             if (wire.Parallel)
             {
@@ -503,7 +514,11 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
             sb.AppendLine("            bool ok = true;");
             if (wire.BrickName.Length > 0)
             {
-                string captureField = wire.CaptureTarget.Length > 0 ? "v_capture" : "";
+                string captureField = "";
+                if (wire.CaptureTarget.Length > 0)
+                {
+                    captureField = "v_capture";
+                }
                 StringBuilder prelude = new StringBuilder();
                 string expr = BrickCallExpr(wire.BrickName, wire.BrickArgs, captureField, doc, prelude);
                 sb.AppendLine("            try");
@@ -552,7 +567,7 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
         /// <param name="pascal">导线 PascalCase 名</param>
         /// <param name="field">导线字段名</param>
         private static void AppendWireExecuteParallel(StringBuilder sb, WireDefV3 wire, string pascal, string field, MauDocV3 doc)
-{
+        {
             sb.AppendLine("        private void " + pascal + "_Execute(int frame)");
             sb.AppendLine("        {");
             // [段1] Busy 门——后台动作在途防重入
@@ -575,7 +590,11 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
             }
             sb.AppendLine("            AuditStore.Default?.Record(\"Flow\", \"trace.fire\", -1, new AuditProp[] { new AuditProp(\"wire\", \"" + wire.Name + "\"), new AuditProp(\"frame\", frame.ToString()) });");
             // [段3] 参数内联冻结——调用表达式字面量直嵌 lambda（零捕获零共享）
-            string captureField = wire.CaptureTarget.Length > 0 ? "v_capture" : "";
+            string captureField = "";
+            if (wire.CaptureTarget.Length > 0)
+            {
+                captureField = "v_capture";
+            }
             string captureType = CaptureCSType(wire.BrickName);
             StringBuilder prelude = new StringBuilder();
             string expr = BrickCallExpr(wire.BrickName, wire.BrickArgs, captureField, doc, prelude);
@@ -673,7 +692,7 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
         /// <param name="sb">输出缓冲</param>
         /// <param name="doc">IR</param>
         private static void AppendTick(StringBuilder sb, MauDocV3 doc)
-{
+        {
             sb.AppendLine("        public void Tick(int frame)");
             sb.AppendLine("        {");
             sb.AppendLine("            _frame = frame;");
@@ -732,10 +751,14 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
             {
                 StateMachineDefV3 sm = doc.StateMachines[i];
                 string line = "\"" + sm.Name + "=\" + " + NameField(sm.Name) + ".ToString()";
-                sb.AppendLine("                " + line + (i + 1 < doc.StateMachines.Count ? "," : ""));
+                string sep = "";
+                if (i + 1 < doc.StateMachines.Count)
+                {
+                    sep = ",";
+                }
+                sb.AppendLine("                " + line + sep);
             }
             sb.AppendLine("            };");
-            // [段2] 主动传感器实测值
             // [段2] 传感器实测——主动壳产物在 DataBox（sys.box 直读），快照不重复承载
             sb.AppendLine("            s.SensorValues = new SignalValueV3[]");
             sb.AppendLine("            {");
@@ -769,7 +792,7 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
         /// <param name="sb">输出缓冲</param>
         /// <param name="doc">IR</param>
         private static void AppendTickInboxes(StringBuilder sb, MauDocV3 doc)
-        {
+{
             bool anyParallel = false;
             for (int w = 0; w < doc.Wires.Count; w++)
             {
@@ -831,7 +854,13 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
                 sb.AppendLine("                {");
                 sb.AppendLine("                    " + field + "_timedout = true;");
                 sb.AppendLine("                    AuditStore.Default?.Record(\"Flow\", \"trace.timeout\", -1, new AuditProp[] { new AuditProp(\"wire\", \"" + wire.Name + "\"), new AuditProp(\"frame\", frame.ToString()) });");
-                AppendAssign(sb, wire.Results[wire.Results.Count > 1 ? 1 : 0]);
+                // 超时归宿——多结果导线走第二支（失败侧），单结果保持原归宿
+                ResultV3 timeoutResult = wire.Results[0];
+                if (wire.Results.Count > 1)
+                {
+                    timeoutResult = wire.Results[1];
+                }
+                AppendAssign(sb, timeoutResult);
                 sb.AppendLine("                }");
                 sb.AppendLine("                else");
                 sb.AppendLine("                {");
@@ -842,7 +871,6 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
             sb.AppendLine("        }");
             sb.AppendLine("");
         }
-
         /// <summary>
         /// 结果转移体生成（无缩进前缀——调用方提供）
         /// </summary>
@@ -879,7 +907,7 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
         /// <param name="sb">输出缓冲</param>
         /// <param name="doc">FSM 网络 IR</param>
         private static void AppendBrickSources(StringBuilder sb, MauDocV3 doc)
-{
+        {
             List<string> names = new List<string>();
             for (int w = 0; w < doc.Wires.Count; w++)
             {
@@ -931,38 +959,36 @@ private static void AppendBoxTruthMethods(StringBuilder sb, MauDocV3 doc)
 /// <summary>
 /// 生成器盒子表——写源收集（导线捕获 + 壳探测捕获）：Key → C# 类型
 /// </summary>
-/// <param name = "doc">IR</param>
-/// <returns>盒子表</returns>
-private static Dictionary<string, string> GenBoxTypes(MauDocV3 doc)
-{
-    Dictionary<string, string> boxTypes = new Dictionary<string, string>(StringComparer.Ordinal);
-    for (int w = 0; w < doc.Wires.Count; w++)
-    {
-        WireDefV3 wire = doc.Wires[w];
-        if (wire.CaptureTarget.Length > 0 && !boxTypes.ContainsKey(wire.CaptureTarget))
+        /// <param name="doc">IR</param>
+        /// <returns>盒子表</returns>
+        private static Dictionary<string, string> GenBoxTypes(MauDocV3 doc)
         {
-            boxTypes[wire.CaptureTarget] = CaptureCSType(wire.BrickName);
-        }
-    }
-
-    for (int s = 0; s < doc.Sensors.Count; s++)
-    {
-        SensorDefV3 sensor = doc.Sensors[s];
-        if (!sensor.Passive && sensor.CaptureTarget.Length > 0 && !boxTypes.ContainsKey(sensor.CaptureTarget))
-        {
-            boxTypes[sensor.CaptureTarget] = "bool";
-        }
-    }
-
-    return boxTypes;
-}/// <summary>
-/// 值传感器查询——参数引用是否指向值形态传感器（规范参数绑定）
+            Dictionary<string, string> boxTypes = new Dictionary<string, string>(StringComparer.Ordinal);
+            for (int w = 0; w < doc.Wires.Count; w++)
+            {
+                WireDefV3 wire = doc.Wires[w];
+                if (wire.CaptureTarget.Length > 0 && !boxTypes.ContainsKey(wire.CaptureTarget))
+                {
+                    boxTypes[wire.CaptureTarget] = CaptureCSType(wire.BrickName);
+                }
+            }
+            for (int s = 0; s < doc.Sensors.Count; s++)
+            {
+                SensorDefV3 sensor = doc.Sensors[s];
+                if (!sensor.Passive && sensor.CaptureTarget.Length > 0 && !boxTypes.ContainsKey(sensor.CaptureTarget))
+                {
+                    boxTypes[sensor.CaptureTarget] = "bool";
+                }
+            }
+            return boxTypes;
+        }/// <summary>
+/// 盒子 Key 引用判定——@ 前缀私有盒或已注册写源的全局盒
 /// </summary>
-/// <param name = "doc">IR</param>
-/// <param name = "name">参数引用名</param>
-/// <returns>true=值传感器</returns>
-private static bool IsValueSensor(MauDocV3 doc, string name)
-{
+        /// <param name="doc">IR</param>
+        /// <param name="name">参数引用名</param>
+        /// <returns>true=盒子引用</returns>
+        private static bool IsValueSensor(MauDocV3 doc, string name)
+        {
             // 盒子 Key 引用判定——@ 前缀 = 私有盒（全局 Key 由写源表判定——生成器保守处理 @ 前缀即可）
             if (name.Length > 0 && name[0] == '@')
             {
@@ -977,7 +1003,7 @@ private static bool IsValueSensor(MauDocV3 doc, string name)
         /// <param name="args">参数原文列表</param>
         /// <returns>调用表达式文本</returns>
         private static string BrickCallExpr(string brickName, List<string> args, string captureField, MauDocV3 doc, StringBuilder prelude)
-{
+        {
             BrickIndexEntry entry;
             if (!BrickIndex.TryFind(brickName, out entry) || entry.Implementation.Length == 0)
             {
@@ -993,11 +1019,20 @@ private static bool IsValueSensor(MauDocV3 doc, string name)
                 }
                 first = false;
                 string arg = args[i];
-                string type = i < entry.InputTypes.Count ? entry.InputTypes[i] : "";
+                string type = "";
+                if (i < entry.InputTypes.Count)
+                {
+                    type = entry.InputTypes[i];
+                }
                 if (IsValueSensor(doc, arg))
                 {
                     // 盒子 Key 引用——类型化前置取数（DataBox 位置），表达式用局部变量
-                    string boxType = GenBoxTypes(doc).ContainsKey(arg) ? GenBoxTypes(doc)[arg] : "string";
+                    string boxType = "string";
+                    Dictionary<string, string> boxTypes = GenBoxTypes(doc);
+                    if (boxTypes.ContainsKey(arg))
+                    {
+                        boxType = boxTypes[arg];
+                    }
                     string local = "v_" + i.ToString();
                     if (boxType == "long")
                     {
@@ -1056,20 +1091,27 @@ private static bool IsValueSensor(MauDocV3 doc, string name)
         /// <param name="name">声明名</param>
         /// <returns>去前缀 PascalCase</returns>
         private static string NameBodyPascal(string name)
-        {
+{
             int sep = name.IndexOf('_');
-            string body = sep >= 0 ? name.Substring(sep + 1) : name;
+            string body = name;
+            if (sep >= 0)
+            {
+                body = name.Substring(sep + 1);
+            }
             return NamePascal(body);
-        }
-        /// <summary>
+        }        /// <summary>
         /// 名称字段化——S_Talk → _s_talk / P_Go → _p_go（前缀字母小写 + 下划线去尾）
         /// </summary>
         /// <param name="name">声明名</param>
         /// <returns>C# 字段名</returns>
         private static string NameField(string name)
-        {
+{
             int sep = name.IndexOf('_');
-            string rest = sep >= 0 ? name.Substring(sep + 1) : name;
+            string rest = name;
+            if (sep >= 0)
+            {
+                rest = name.Substring(sep + 1);
+            }
             string result = "";
             for (int i = 0; i < rest.Length; i++)
             {
@@ -1089,7 +1131,6 @@ private static bool IsValueSensor(MauDocV3 doc, string name)
             }
             return "_" + result;
         }
-
         /// <summary>
         /// 名称 PascalCase——S_Talk → STalk / file.read → FileRead / Idle → Idle
         /// </summary>

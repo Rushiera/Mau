@@ -50,7 +50,11 @@ namespace Mau.Runtime
         public FlowWatchService(int pollEveryFrames = 60)
         {
             _watchDir = "";
-            _pollEveryFrames = pollEveryFrames > 0 ? pollEveryFrames : 60;
+            _pollEveryFrames = pollEveryFrames;
+            if (_pollEveryFrames <= 0)
+            {
+                _pollEveryFrames = 60;
+            }
             _lastPollFrame = -1;
             _fingerprints = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             _pending = new List<string>();

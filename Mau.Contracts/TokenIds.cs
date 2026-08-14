@@ -27,7 +27,7 @@ namespace Mau.Contracts
         /// <summary>⇐ 被动输入——传感器触发器端口（别名 &lt;-）</summary>
         public const uint In = 5;
 
-        /// <summary>↻ 主动采样——传感器周期采样（别名 @）</summary>
+        /// <summary>↻ 主动采样——传感器周期采样（壳协程探测）</summary>
         public const uint Sample = 6;
 
         /// <summary>→ 结果——导线结果转移</summary>
@@ -71,7 +71,7 @@ namespace Mau.Contracts
         /// <summary>// 行注释——词法丢弃（元信息，可作分组标题）</summary>
         public const uint Comment = 19;
 
-        /// <summary>&gt; 值捕获——导线动作 out 端口捕获到值传感器（第三形态）</summary>
+        /// <summary>&gt; 捕获——导线动作 out 端口捕获落盒（@key 私有 / key 全局）</summary>
         public const uint Capture = 21;
 
         /// <summary>文件尾</summary>

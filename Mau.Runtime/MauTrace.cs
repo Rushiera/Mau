@@ -67,6 +67,9 @@ namespace Mau.Runtime
     /// </summary>
     public sealed class MauTraceHub
     {
+        /// <summary>
+        /// 当前帧号——发布时携带
+        /// </summary>
         private long _frame;
 
         /// <summary>

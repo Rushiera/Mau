@@ -9,6 +9,9 @@ namespace Mau.Runtime
     /// <typeparam name="T">投递项类型</typeparam>
     public sealed class Inbox<T>
     {
+        /// <summary>
+        /// 线程安全队列——后台 Enqueue，主线程 TryDequeue
+        /// </summary>
         private readonly ConcurrentQueue<T> _queue = new ConcurrentQueue<T>();
 
         /// <summary>
