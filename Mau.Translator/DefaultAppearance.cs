@@ -29,7 +29,7 @@ namespace Mau.Translator
             { ',', TokenIds.Sep },
             { '[', TokenIds.ParamOpen },
             { ']', TokenIds.ParamClose },
-            { '@', TokenIds.Sample },
+            { '>', TokenIds.Capture },
         };
 
         /// <summary>
@@ -60,6 +60,7 @@ namespace Mau.Translator
             { TokenIds.Sep, "," },
             { TokenIds.ParamOpen, "[" },
             { TokenIds.ParamClose, "]" },
+            { TokenIds.Capture, ">" },
         };
 
         /// <summary>

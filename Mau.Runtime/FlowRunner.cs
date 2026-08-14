@@ -36,6 +36,11 @@ namespace Mau.Runtime
         private readonly Inbox<Action> _mainInbox = new Inbox<Action>();
 
         /// <summary>
+        /// 传感器壳协程列表——主动传感器独立起点（Pet 推动形态：与 Flow 帧驱动分离的循环实体）
+        /// </summary>
+        private readonly List<SensorLoopEntry> _sensorLoops = new List<SensorLoopEntry>();
+
+        /// <summary>
         /// 指令分发钩子——宿主注册（id, mail），本层不感知产品类型
         /// </summary>
         private Action<long, CommandPack>? _commandDispatch;
@@ -125,6 +130,11 @@ namespace Mau.Runtime
             _guard.AssertMainThread("FlowRunner.RegisterFlow");
             EnsureInited();
             long id = _registry.Register(flow, name);
+            // 传感器壳协程挂载——语料声明自己是主动传感器即自动入协程列表（ISensorLoop 接口实现）
+            if (flow is ISensorLoop loop)
+            {
+                _sensorLoops.Add(new SensorLoopEntry(id, loop));
+            }
             if (Audit != null)
             {
                 Audit.Record("FlowRunner", "flow.register", -1, new AuditProp[] {
@@ -145,6 +155,16 @@ namespace Mau.Runtime
         {
             _guard.AssertMainThread("FlowRunner.UnregisterFlow");
             bool ok = _registry.Unregister(id);
+            if (ok)
+            {
+                for (int i = _sensorLoops.Count - 1; i >= 0; i = i - 1)
+                {
+                    if (_sensorLoops[i].FlowId == id)
+                    {
+                        _sensorLoops.RemoveAt(i);
+                    }
+                }
+            }
             if (Audit != null && ok)
             {
                 Audit.Record("FlowRunner", "flow.unregister", -1, new AuditProp[] {
@@ -315,14 +335,35 @@ namespace Mau.Runtime
                     }
                 }
             }
-            // [段3] 实体帧驱动——帧号统一注入（时钟脉冲外部注入）
+            // [段3] 实体帧驱动——帧号统一注入（时钟脉冲外部注入）+ Flow 上下文（对象唯一 ID 运行时通道）
             long[] flowIds = _registry.Ids;
             for (int i = 0; i < flowIds.Length; i++)
             {
                 IFlow? flow = _registry.Get(flowIds[i]);
                 if (flow != null)
                 {
-                    flow.Tick((int)_frame);
+                    FlowContext.SetFlowId(flowIds[i]);
+                    try
+                    {
+                        flow.Tick((int)_frame);
+                    }
+                    finally
+                    {
+                        FlowContext.Clear();
+                    }
+                }
+            }
+            // [段3b] 传感器壳协程驱动——主动传感器独立起点（Flow 上下文注入，主线程帧驱动）
+            for (int i = 0; i < _sensorLoops.Count; i++)
+            {
+                FlowContext.SetFlowId(_sensorLoops[i].FlowId);
+                try
+                {
+                    _sensorLoops[i].Loop.TickSensors((int)_frame);
+                }
+                finally
+                {
+                    FlowContext.Clear();
                 }
             }
             // [段4] OA 超时结算
@@ -378,6 +419,33 @@ namespace Mau.Runtime
             {
                 throw new InvalidOperationException("FlowRunner 已关闭——不可再驱动");
             }
+        }
+    }
+
+    /// <summary>
+    /// 传感器壳协程条目——FlowId（上下文注入）+ 循环实例
+    /// </summary>
+    internal sealed class SensorLoopEntry
+    {
+        /// <summary>
+        /// 所属 Flow 全局 ID
+        /// </summary>
+        public long FlowId;
+
+        /// <summary>
+        /// 壳循环实例
+        /// </summary>
+        public ISensorLoop Loop;
+
+        /// <summary>
+        /// 构造条目
+        /// </summary>
+        /// <param name="flowId">Flow ID</param>
+        /// <param name="loop">循环实例</param>
+        public SensorLoopEntry(long flowId, ISensorLoop loop)
+        {
+            FlowId = flowId;
+            Loop = loop;
         }
     }
 }

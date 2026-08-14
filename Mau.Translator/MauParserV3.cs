@@ -170,7 +170,56 @@ namespace Mau.Translator
             }
             doc.StateMachines.Add(def);
         }
+/// <summary>
+/// 解析壳分支动作——→ 动作 | 动作（成功侧/失败侧——各侧可多积木调用）
+/// </summary>
+/// <param name = "section">段 token</param>
+/// <param name = "start">动作区起点</param>
+/// <param name = "def">输出传感器</param>
+/// <param name = "doc">诊断收集</param>
+/// <param name = "isTrue">true=成功侧（| 之前）</param>
+private static void ParseSensorBranchActions(List<TokenV3> section, int start, SensorDefV3 def, MauDocV3 doc, bool isTrue)
+{
+    List<SensorActionV3> actions = isTrue ? def.TrueActions : def.FalseActions;
+    int i = start;
+    while (i < section.Count)
+    {
+        if (section[i].Id == TokenIds.Branch)
+        {
+            if (isTrue)
+            {
+                // | 切换失败侧——失败侧后续全部归 FalseActions
+                ParseSensorBranchActions(section, i + 1, def, doc, false);
+                return;
+            }
 
+            // 失败侧不再有 |（双分支终止）
+            doc.Diagnostics.Add(new MauDiagnostic("E105", section[i].Line, "主动传感器分支最多两路: → 动作 | 动作"));
+            return;
+        }
+
+        if (section[i].Id != TokenIds.Name)
+        {
+            doc.Diagnostics.Add(new MauDiagnostic("E105", section[i].Line, "主动传感器动作区非法 token——期望积木名"));
+            return;
+        }
+
+        SensorActionV3 action = new SensorActionV3();
+        action.BrickName = section[i].Value;
+        i = i + 1;
+        if (i < section.Count && section[i].Id == TokenIds.ParamOpen)
+        {
+            action.BrickArgs = CollectArgs(section, i);
+            i = FindParamClose(section, i) + 1;
+            if (i == 0)
+            {
+                i = section.Count;
+            }
+        }
+
+        actions.Add(action);
+    }
+}
         /// <summary>
         /// 解析传感器段——§ 'P_X' ⇐（被动）/ § 'P_Q' ↻ [N] 'brick'[...]（主动）
         /// </summary>
@@ -179,25 +228,25 @@ namespace Mau.Translator
         /// <param name="section">段 token</param>
         /// <param name="doc">输出 IR</param>
         private static void ParseSensor(string name, TokenV3 first, List<TokenV3> section, MauDocV3 doc)
-        {
+{
             SensorDefV3 def = new SensorDefV3();
             def.Name = name;
             def.Line = first.Line;
             if (section.Count < 2)
             {
-                doc.Diagnostics.Add(new MauDiagnostic("E105", first.Line, "传感器格式: § 'P_X' ⇐（被动）或 § 'P_Q' ↻ [N] 'brick'[...]（主动）"));
+                doc.Diagnostics.Add(new MauDiagnostic("E105", first.Line, "传感器格式: § 'P_X' ⇐（被动）或 § 'P_Q' ↻ [N]: 'brick'[...] → 动作 | 动作（主动壳）"));
                 return;
             }
             if (section[1].Id == TokenIds.In)
             {
-                // 被动触发器——消费即清
+                // 被动触发器——事件沿，帧边界消费（导线/状态机之间的延迟接口）
                 def.Passive = true;
                 doc.Sensors.Add(def);
                 return;
             }
             if (section[1].Id == TokenIds.Sample)
             {
-                // 主动采样——可选周期 + 积木 + 参数
+                // 主动壳——帧门控 + 探测（可捕获）→ 分支动作（只读世界，零状态转移）
                 def.Passive = false;
                 int i = 2;
                 if (i < section.Count && section[i].Id == TokenIds.ParamOpen)
@@ -217,9 +266,15 @@ namespace Mau.Translator
                     def.EveryFrames = every;
                     i = close + 1;
                 }
+                if (i >= section.Count || section[i].Id != TokenIds.Colon)
+                {
+                    doc.Diagnostics.Add(new MauDiagnostic("E105", first.Line, "主动传感器缺冒号: § 'P_X' ↻ [N]: 'brick'[...] → 动作 | 动作"));
+                    return;
+                }
+                i = i + 1;
                 if (i >= section.Count || section[i].Id != TokenIds.Name)
                 {
-                    doc.Diagnostics.Add(new MauDiagnostic("E105", first.Line, "主动传感器缺采样积木名: ↻ [N] 'brick'[...]"));
+                    doc.Diagnostics.Add(new MauDiagnostic("E105", first.Line, "主动传感器缺探测积木名: ↻ [N]: 'brick'[...]"));
                     return;
                 }
                 def.BrickName = section[i].Value;
@@ -227,13 +282,42 @@ namespace Mau.Translator
                 if (i < section.Count && section[i].Id == TokenIds.ParamOpen)
                 {
                     def.BrickArgs = CollectArgs(section, i);
+                    i = FindParamClose(section, i) + 1;
+                    if (i == 0)
+                    {
+                        i = section.Count;
+                    }
+                }
+                // 探测捕获——> @key（探测 out 落盒）
+                if (i < section.Count && section[i].Id == TokenIds.Capture)
+                {
+                    i = i + 1;
+                    if (i < section.Count && section[i].Id == TokenIds.Name)
+                    {
+                        def.CaptureTarget = section[i].Value;
+                        i = i + 1;
+                    }
+                    else
+                    {
+                        doc.Diagnostics.Add(new MauDiagnostic("E105", first.Line, "探测捕获格式: > @key——缺盒子 Key"));
+                        return;
+                    }
+                }
+                // 分支动作——→ 动作 | 动作（成功侧/失败侧——各侧可多积木）
+                int arrow = FindArrow(section, i);
+                if (arrow >= 0)
+                {
+                    ParseSensorBranchActions(section, arrow + 1, def, doc, true);
+                    if (doc.Diagnostics.Count > 0)
+                    {
+                        return;
+                    }
                 }
                 doc.Sensors.Add(def);
                 return;
             }
-            doc.Diagnostics.Add(new MauDiagnostic("E105", first.Line, "传感器缺端口符号——⇐（被动）或 ↻（主动）"));
+            doc.Diagnostics.Add(new MauDiagnostic("E105", first.Line, "传感器缺端口符号——⇐（被动）或 ↻（主动壳）"));
         }
-
         /// <summary>
         /// 解析导线段——§ 'T_X' [属性] : 条件 & 条件 → 动作 | 结果 | 结果
         /// </summary>
@@ -309,6 +393,21 @@ namespace Mau.Translator
             else if (i < section.Count && section[i].Id == TokenIds.Branch)
             {
                 i = i + 1;
+            }
+            // [段4b] 捕获子句——> 'P_X'（动作积木首个 out 端口捕获到值传感器）
+            if (def.BrickName.Length > 0 && i < section.Count && section[i].Id == TokenIds.Capture)
+            {
+                i = i + 1;
+                if (i < section.Count && section[i].Id == TokenIds.Name)
+                {
+                    def.CaptureTarget = section[i].Value;
+                    i = i + 1;
+                }
+                else
+                {
+                    doc.Diagnostics.Add(new MauDiagnostic("E103", first.Line, "捕获格式: 动作 > 'P_X'——缺值传感器名"));
+                    return;
+                }
             }
             // [段5] 结果区——'S_X' = 'W' 每个 | 分支一条
             while (i < section.Count)
@@ -467,6 +566,14 @@ namespace Mau.Translator
                         cond.StateName = t.Value;
                         cond.StateValue = section[i + 2].Value;
                         i = i + 3;
+                    }
+                    else if (t.Value.Length > 0 && t.Value[0] == '@')
+                    {
+                        // 盒子判真——@key 私有盒（全局 Key 判真引用无 @ 前缀——与传感器沿同构，由验证器写源区分）
+                        cond.IsStateAssert = false;
+                        cond.IsBoxAssert = true;
+                        cond.BoxName = t.Value;
+                        i = i + 1;
                     }
                     else
                     {

@@ -140,9 +140,11 @@ namespace Mau.Translator.Tests
             LexResultV3 result2 = Lex("'P_X' " + asciiIn);
             Assert.True(result2.Success, FormatDiags(result2));
             Assert.Equal(TokenIds.In, result2.Tokens[1].Id);
-            LexResultV3 result3 = Lex("'P_Q' @ [5] 'brick'[]");
+            LexResultV3 result3 = Lex("> @key");
             Assert.True(result3.Success, FormatDiags(result3));
-            Assert.Equal(TokenIds.Sample, result3.Tokens[1].Id);
+            Assert.Equal(TokenIds.Capture, result3.Tokens[0].Id);
+            Assert.Equal(TokenIds.Name, result3.Tokens[1].Id);
+            Assert.Equal("@key", result3.Tokens[1].Value);
         }
 
         /// <summary>

@@ -43,7 +43,7 @@ namespace Mau.Translator.Tests
             MauDocV3 doc = Compile(
                 "§ 'S_Talk' = { 'Idle', 'Thinking' }\n" +
                 "§ 'P_Go' ⇐\n" +
-                "§ 'P_Q' ↻ [3] 'probe.sink'[\"x\", 0]\n" +
+                "§ 'P_Q' ↻ [3]: 'probe.sink'[\"x\", 0] > @q\n" +
                 "§ 'T_Start' : 'P_Go' & 'S_Talk' = 'Idle' → 'probe.sink'[\"x\", 0] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Idle'");
             Assert.True(doc.Success);
         }

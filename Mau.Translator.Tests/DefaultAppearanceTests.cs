@@ -71,9 +71,9 @@ namespace Mau.Translator.Tests
             Assert.True(ok2);
             Assert.Equal(Mau.Contracts.TokenIds.In, tokenId2);
             uint tokenId3;
-            bool ok3 = appearance.TryMap("@", out tokenId3);
+            bool ok3 = appearance.TryMap(">", out tokenId3);
             Assert.True(ok3);
-            Assert.Equal(Mau.Contracts.TokenIds.Sample, tokenId3);
+            Assert.Equal(Mau.Contracts.TokenIds.Capture, tokenId3);
         }
 
         /// <summary>

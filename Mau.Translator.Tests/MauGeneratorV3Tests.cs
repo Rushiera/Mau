@@ -97,15 +97,15 @@ namespace Mau.Translator.Tests
     }
 }
         /// <summary>
-        /// 主动传感器行为——帧门控采样 + 导线条件消费 + 快照实测值
+        /// 主动传感器行为——协程壳帧门控 + 捕获落盒 + 盒子判真条件 + 快照状态转移
         /// </summary>
         [Fact]
         public void Generate_Behavior_ActiveSensor()
 {
     string sample =
         "§ 'S_Poll' = { 'Waiting', 'Got' }\n" +
-        "§ 'P_Q' ↻ [2] 'probe.sink'[\"x\", 0]\n" +
-        "§ 'T_Hit' : 'P_Q' & 'S_Poll' = 'Waiting' → | 'S_Poll' = 'Got' | 'S_Poll' = 'Got'";
+        "§ 'P_Q' ↻ [2]: 'probe.sink'[\"x\", 0] > @q\n" +
+        "§ 'T_Hit' : @q & 'S_Poll' = 'Waiting' → | 'S_Poll' = 'Got' | 'S_Poll' = 'Got'";
     CompileResultV3 result = MauCompilerV3.Compile(sample, "Poll");
     Assert.True(result.Success);
     string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_v3_poll_" + Guid.NewGuid().ToString("N").Substring(0, 8));
@@ -118,16 +118,20 @@ namespace Mau.Translator.Tests
         using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
         {
             IObservableFlow flow = handle.Flow;
-            // 强类型直调——真积木 probe.sink 恒 true → 门控 2 帧采样命中（f=2 起 Got）
+            ISensorLoop shell = (ISensorLoop)flow;
+            // 协程壳驱动 + Flow 驱动分离——probe.sink 恒 true → 门控 2 帧采样命中（f=2 起 Got）
             for (int f = 0; f < 10; f++)
             {
+                shell.TickSensors(f);
                 flow.Tick(f);
                 FlowStatusV3 status = flow.GetStatus();
                 if (Array.IndexOf(status.StateLines, "S_Poll=Got") >= 0)
                 {
                     Assert.True(f >= 2, "帧 " + f + " 时采样命中——门控 2 帧，最早第 2 帧");
-                    Assert.Single(status.SensorValues);
-                    Assert.True(status.SensorValues[0].Value);
+                    // 探测落盒验证——bool 返回值落 DataBox（测试直驱 FlowContext 未注入——scope 为 "0"）
+                    bool q;
+                    Assert.True(DataBox.TryGet<bool>("0", "q", out q), "探测捕获未落盒");
+                    Assert.True(q, "盒子 q 应为探测返回值 true（probe.sink 恒 true）");
                     return;
                 }
             }

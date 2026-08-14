@@ -92,6 +92,21 @@ namespace Mau.Translator
         public List<string> BrickArgs = new List<string>();
 
         /// <summary>
+        /// 探测捕获盒子 Key——壳探测积木 out 端口落盒（空=无捕获）
+        /// </summary>
+        public string CaptureTarget = "";
+
+        /// <summary>
+        /// 成功侧动作——探测返回 true 时执行的积木调用列表（汇总写）
+        /// </summary>
+        public List<SensorActionV3> TrueActions = new List<SensorActionV3>();
+
+        /// <summary>
+        /// 失败侧动作——探测返回 false 时执行的积木调用列表
+        /// </summary>
+        public List<SensorActionV3> FalseActions = new List<SensorActionV3>();
+
+        /// <summary>
         /// 声明行号
         /// </summary>
         public int Line;
@@ -144,6 +159,11 @@ namespace Mau.Translator
         public List<string> BrickArgs = new List<string>();
 
         /// <summary>
+        /// 捕获目标——动作积木首个 out 端口落盒 Key（@key=私有 / key=全局；空=无捕获）
+        /// </summary>
+        public string CaptureTarget = "";
+
+        /// <summary>
         /// 结果列表——'S_X' = 'W' 状态转移，| 分叉顺序（首项=成功侧，次项=失败侧，多路=名称返回分发）
         /// </summary>
         public List<ResultV3> Results = new List<ResultV3>();
@@ -154,15 +174,27 @@ namespace Mau.Translator
         public int Line;
     }
 
+
+
     /// <summary>
-    /// 导线条件——传感器沿检测或状态断言
+    /// 导线条件——状态断言 / 传感器沿检测 / 盒子判真 三形态
     /// </summary>
     public sealed class ConditionV3
     {
         /// <summary>
-        /// true=状态断言（'S_X' = 'Y'）；false=传感器沿检测（'P_X'）
+        /// true=状态断言（'S_X' = 'Y'）；false=传感器沿（'P_X'）或盒子判真（@key）
         /// </summary>
         public bool IsStateAssert;
+
+        /// <summary>
+        /// 盒子判真标记——@key 引用（true=盒子 Key 判真，非沿）
+        /// </summary>
+        public bool IsBoxAssert;
+
+        /// <summary>
+        /// 盒子 Key（判真引用用；@key=私有 / key=全局）
+        /// </summary>
+        public string BoxName = "";
 
         /// <summary>
         /// 传感器名（沿检测用）
@@ -178,6 +210,22 @@ namespace Mau.Translator
         /// 状态值（状态断言用）
         /// </summary>
         public string StateValue = "";
+    }
+
+    /// <summary>
+    /// 传感器动作——壳分支侧积木调用（成功侧/失败侧汇总写）
+    /// </summary>
+    public sealed class SensorActionV3
+    {
+        /// <summary>
+        /// 积木名
+        /// </summary>
+        public string BrickName = "";
+
+        /// <summary>
+        /// 参数原文
+        /// </summary>
+        public List<string> BrickArgs = new List<string>();
     }
 
     /// <summary>

@@ -33,7 +33,13 @@ namespace Mau.Translator
 /// <summary>
 /// 输出端口数量（生成器 out _ 占位用）
 /// </summary>
-public int OutputCount;    }
+        public int OutputCount;
+
+        /// <summary>
+        /// 输出端口类型序列（契约声明顺序——值传感器类型推导用）
+        /// </summary>
+        public List<string> OutputTypes = new List<string>();
+    }
 
     /// <summary>
     /// 积木索引——Bricks/index.json 静态查询器（翻译器构筑期唯一积木寻路）。
@@ -177,6 +183,26 @@ public static Dictionary<string, BrickIndexEntry> All()
                 if (contract.TryGetProperty("outputs", out outputs) && outputs.ValueKind == JsonValueKind.Array)
                 {
                     entry.OutputCount = (int)outputs.GetArrayLength();
+                    for (int o = 0; o < entry.OutputCount; o = o + 1)
+                    {
+                        JsonElement outType;
+                        if (outputs[o].ValueKind == JsonValueKind.Object && outputs[o].TryGetProperty("type", out outType) && outType.ValueKind == JsonValueKind.String)
+                        {
+                            string outTypeText = outType.GetString();
+                            if (outTypeText != null)
+                            {
+                                entry.OutputTypes.Add(outTypeText);
+                            }
+                            else
+                            {
+                                entry.OutputTypes.Add("string");
+                            }
+                        }
+                        else
+                        {
+                            entry.OutputTypes.Add("string");
+                        }
+                    }
                 }
             }
             return entry;

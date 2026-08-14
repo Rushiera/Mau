@@ -137,6 +137,22 @@ namespace Mau.Translator
                     i = j;
                     continue;
                 }
+                // [段5c] 裸 @ 盒子 Key——@key（私有盒引用，参数外形态：捕获目标/条件判真）
+                if (c == '@')
+                {
+                    int j = i + 1;
+                    while (j < len && IsWordChar(source[j]))
+                    {
+                        j = j + 1;
+                    }
+                    if (j > i + 1)
+                    {
+                        tokens.Add(new TokenV3(TokenIds.Name, line, col, source.Substring(i, j - i)));
+                        col = col + (j - i);
+                        i = j;
+                        continue;
+                    }
+                }
                 // [段6] 符号集——外观映射（2 字符优先，1 字符兜底）
                 uint tokenId;
                 bool mapped = false;
@@ -289,19 +305,23 @@ namespace Mau.Translator
                 {
                     return false;
                 }
+                if (name[i] == '@' && i > 0)
+                {
+                    return false;
+                }
             }
             return true;
         }
 
         /// <summary>
-        /// 名词字符——字母/数字/下划线/点
+        /// 名词字符——字母/数字/下划线/点/@（@ 私有盒前缀——只允许出现在首位）
         /// </summary>
         /// <param name="c">字符</param>
         /// <returns>合法为真</returns>
         private static bool IsNameChar(char c)
         {
             return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-                || (c >= '0' && c <= '9') || c == '_' || c == '.';
+                || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '@';
         }
 
         /// <summary>

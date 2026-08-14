@@ -71,6 +71,9 @@ namespace Mau.Contracts
         /// <summary>// 行注释——词法丢弃（元信息，可作分组标题）</summary>
         public const uint Comment = 19;
 
+        /// <summary>&gt; 值捕获——导线动作 out 端口捕获到值传感器（第三形态）</summary>
+        public const uint Capture = 21;
+
         /// <summary>文件尾</summary>
         public const uint Eof = 20;
     }

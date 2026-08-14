@@ -52,7 +52,7 @@ namespace Mau.Translator.Tests
             MauDocV3 doc = Parse(
                 "§ 'S_Talk' = { 'Idle', 'Thinking', 'Done' }\n" +
                 "§ 'P_Start' ⇐\n" +
-                "§ 'P_Queue' ↻ [5] 'data.box_is'[\"tools_done\"]\n" +
+                "§ 'P_Queue' ↻ [5]: 'probe.sink'[\"tools_done\", 0] > @queue\n" +
                 "§ 'R_Slot' : 4\n" +
                 "§ 'T_Begin' [t=10, par, !] : 'P_Start' & 'S_Talk' = 'Idle' → 'llm.chat'[\"hi\"] | 'S_Talk' = 'Thinking' | 'S_Talk' = 'Done'");
             Assert.True(doc.Success, FormatDiags(doc));
@@ -71,8 +71,9 @@ namespace Mau.Translator.Tests
             Assert.Equal("P_Queue", active.Name);
             Assert.False(active.Passive);
             Assert.Equal(5, active.EveryFrames);
-            Assert.Equal("data.box_is", active.BrickName);
-            Assert.Single(active.BrickArgs);
+            Assert.Equal("probe.sink", active.BrickName);
+            Assert.Equal(2, active.BrickArgs.Count);
+            Assert.Equal("@queue", active.CaptureTarget);
 
             Assert.Single(doc.Slots);
             Assert.Equal("R_Slot", doc.Slots[0].Name);
@@ -124,17 +125,18 @@ namespace Mau.Translator.Tests
         }
 
         /// <summary>
-        /// 别名外观——&lt;- 与 @（显式 ASCII 构造）
+        /// 别名外观——&lt;-（显式 ASCII 构造）+ 主动壳新语法（↻ [N]: 探测 > 捕获）
         /// </summary>
         [Fact]
         public void Parse_AliasGlyphs()
         {
             string asciiIn = ((char)60).ToString() + ((char)45).ToString();
-            MauDocV3 doc = Parse("§ 'P_X' " + asciiIn + "\n§ 'P_Q' @ [2] 'file.tree'[]");
+            MauDocV3 doc = Parse("§ 'P_X' " + asciiIn + "\n§ 'P_Q' ↻ [2]: 'probe.sink'[\"a\", 0] > @q");
             Assert.True(doc.Success, FormatDiags(doc));
             Assert.True(doc.Sensors[0].Passive);
             Assert.False(doc.Sensors[1].Passive);
             Assert.Equal(2, doc.Sensors[1].EveryFrames);
+            Assert.Equal("@q", doc.Sensors[1].CaptureTarget);
         }
 
         /// <summary>
