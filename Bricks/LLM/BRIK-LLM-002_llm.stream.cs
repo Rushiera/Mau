@@ -9,6 +9,7 @@
 // 盒子: 全局 llm_chunk(最新增量) / llm_chunk_count(分片序号) / llm_reply(完整回复或 ERR|) / llm_done("1"=完成)
 // 常用: CH4 P4 quick_cat 语料——流式执行体（开始信号 = 本积木调用成功）
 // 注意: 后台线程写 DataBox（scope 级并发安全）；LogStore 帧号 = 分片序号（后台 GlobalFrame 不可靠）
+// 注意: 启动时失效调用方语料的探测盒 @hasDone/@hasChunk（配套约定）——会话边界信号清理（Remove 而非 Set false）
 // 注意: 全局盒单 Key 跨实例——P4 单猫语义；P9 多猫并发时 scope 化改造
 // ═══════════════════════════════════════════════════
 using System;
@@ -78,7 +79,15 @@ namespace Mau.Bricks
                         count = count + 1;
                         DataBox.Set<string>("global", "llm_chunk", ev.Text);
                         DataBox.Set<long>("global", "llm_chunk_count", count);
-                        string channel = ev.Kind == LlmStreamKind.Text ? "T" : "R";
+                        string channel;
+                        if (ev.Kind == LlmStreamKind.Text)
+                        {
+                            channel = "T";
+                        }
+                        else
+                        {
+                            channel = "R";
+                        }
                         LogStore.Add("LLM", 0, "CHUNK|" + count.ToString() + "|" + channel + "|" + TrimText(ev.Text, 120), "LLM");
                     }
                     else if (ev.Kind == LlmStreamKind.Done)
@@ -131,4 +140,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:5A58182B7160E93246649C8B6747911314946506A9A8067A4B1E8CD9E74B6B70
+// #MAU_CHECKSUM:SHA256:FDED9F2F9A548C039FF87AE0303C9C57965BCEE3C80610286D4536A6D14E9981
