@@ -9,4 +9,8 @@
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="System.Net.ServerSentEvents" Version="9.0.19" />
+  </ItemGroup>
+
 </Project>

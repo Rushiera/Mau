@@ -47,8 +47,8 @@
 // T_QSetC：写载荷 content（多参验证点 2/2）
 § 'T_QSetC' : 'S_Quick' = 'Ready' → 'oa.set_str'[@qOffice, "content", TOOL_Quick_Content] | 'S_Quick' = 'Waiting' | 'S_Quick' = 'Failed'
 
-// T_QCollect：终态到达 → 读回执 result
-§ 'T_QCollect' : @qDone & 'S_Quick' = 'Waiting' → 'oa.get_result_str'[@qOffice] > @qResult | 'S_Quick' = 'Done' | 'S_Quick' = 'Failed'
+// T_QCollect：终态到达 → 读回执 result（失败回 Waiting 重试——旧 @qDone 残留/探测滞后导致的误触发自愈）
+§ 'T_QCollect' : @qDone & 'S_Quick' = 'Waiting' → 'oa.get_result_str'[@qOffice] > @qResult | 'S_Quick' = 'Done' | 'S_Quick' = 'Waiting'
 
 // T_QOut：成功输出
 § 'T_QOut' : 'S_Quick' = 'Done' → 'log.write'["TOOL | QuickCat | DONE", 0, "CMD"] | 'S_Quick' = 'Idle' | 'S_Quick' = 'Idle'

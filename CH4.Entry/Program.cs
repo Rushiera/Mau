@@ -13,16 +13,7 @@ namespace CH4
     /// </summary>
     public static class Program
     {
-        // [段1] LLM 桥常量——第一轮固定写死（配置系统后置；key 经环境变量注入避免入库）
-        /// <summary>API 基址</summary>
-        private const string LlmBaseUrl = "https://api.deepseek.com";
-
-        /// <summary>模型名——官方现役 v4-pro / v4-flash（deepseek-chat 已废弃）</summary>
-        private const string LlmModel = "deepseek-v4-flash";
-
-        /// <summary>环境变量名——DEEPSEEK_API_KEY（未设置时为空串——QuickCat 会回 ERR|LLM_NO_RUNTIME 失败路径）</summary>
-        private const string LlmKeyEnv = "DEEPSEEK_API_KEY";
-
+        // [段1] LLM 桥常量——P4 配置项机制接管：llm.* 从 Data/config/llm.cfg 拉起（改配置不重编译）；key 优先级：配置 → 环境变量 DEEPSEEK_API_KEY
         /// <summary>宿主帧节流——每帧现实毫秒（600 帧工单超时 ≈ 30s；QuickCat LLM 回投窗口 5-60s）</summary>
         private const int FrameSleepMs = 50;
 
@@ -144,12 +135,10 @@ public static int Main(string[] args)
             // 文件系统服务——file.* 积木依赖（受控根 = 当前工作目录；回收站 CatTemp/fs_recycle）
             string workDir = Directory.GetCurrentDirectory();
             DataBox.Bind<FileSystemService>(new FileSystemService(new string[] { workDir }, Path.Combine(workDir, "CatTemp", "fs_recycle")));
-            string apiKey = Environment.GetEnvironmentVariable(LlmKeyEnv);
-            if (string.IsNullOrEmpty(apiKey))
-            {
-                apiKey = "";
-            }
-            DataBox.Bind<ILlmRuntime>(new DeepSeekLlmRuntime(LlmBaseUrl, apiKey, LlmModel));
+            string configDir = Path.Combine(Directory.GetCurrentDirectory(), "Data", "config");
+            ConfigStore llmConfig = ConfigStore.Load(Path.Combine(configDir, "llm.cfg"));
+            DataBox.Bind<ConfigStore>(llmConfig);
+            DataBox.Bind<ILlmRuntime>(new DeepSeekLlmRuntime(llmConfig));
             AuditStore audit = new AuditStore(10000);
             audit.ConfigureAudit(Path.Combine(Directory.GetCurrentDirectory(), "Data", "audit"), "run", 3);
             AuditStore.Default = audit;
@@ -163,13 +152,21 @@ public static int Main(string[] args)
             LogStore.ConfigureLogFile(Path.Combine(logDir, "run_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".log"));
             // [段4] 三语料加载——编排者先注册（Command 键位分配稳定）
             _toolHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_ToolTestCat.dll"));
-            _toolHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_ToolTestCat.dll"));
             _ioHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_IoTestCat.dll"));
             _quickHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_QuickCat.dll"));
             _toolId = _runner.RegisterFlow(_toolHandle.Flow, "ToolTestCat");
             _ioId = _runner.RegisterFlow(_ioHandle.Flow, "IOTestCat");
             _quickId = _runner.RegisterFlow(_quickHandle.Flow, "QuickCat");
-            Console.WriteLine("[CH4.Entry] 就绪 | 三 Cat: ToolTestCat#" + _toolId + " IOTestCat#" + _ioId + " QuickCat#" + _quickId + " | LLM: " + (apiKey.Length == 0 ? "未注入(ERR路径)" : "已注入") + " | 帧节流 " + FrameSleepMs + "ms");
+            string llmKeyProbe = llmConfig.Get("llm.api_key", "");
+            if (llmKeyProbe.Length == 0)
+            {
+                string envKeyProbe = Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY");
+                if (envKeyProbe != null)
+                {
+                    llmKeyProbe = envKeyProbe;
+                }
+            }
+            Console.WriteLine("[CH4.Entry] 就绪 | 三 Cat: ToolTestCat#" + _toolId + " IOTestCat#" + _ioId + " QuickCat#" + _quickId + " | LLM: " + (llmKeyProbe.Length == 0 ? "未注入(ERR路径)" : "已注入") + " | 帧节流 " + FrameSleepMs + "ms");
         }
 
         /// <summary>
@@ -310,7 +307,13 @@ public static int Main(string[] args)
         /// <returns>true=全部空闲</returns>
         private static bool AllIdle()
         {
-            return IsFlowIdle(_toolHandle) && IsFlowIdle(_ioHandle) && IsFlowIdle(_quickHandle);
+            if (!IsFlowIdle(_toolHandle) || !IsFlowIdle(_ioHandle) || !IsFlowIdle(_quickHandle))
+            {
+                return false;
+            }
+            // OA 无未完成工单——三 Cat Idle 但工单 Open = 接单窗口期（QuickCat 探测壳 1 帧延迟），不得判空闲提前退出
+            OAView view = _oa.GetSnapshot();
+            return view.OpenCount == 0 && view.WorkCount == 0;
         }
 
         /// <summary>
