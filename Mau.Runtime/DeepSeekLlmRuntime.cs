@@ -30,7 +30,10 @@ namespace Mau.Runtime
         /// 模型名
         /// </summary>
         private readonly string _model;
-
+/// <summary>
+/// 默认兜底模型名——官方现役 v4-pro / v4-flash（deepseek-chat 已废弃）
+/// </summary>
+private const string FallbackModel = "deepseek-v4-flash";
         /// <summary>
         /// 建立非流式适配器
         /// </summary>
@@ -38,7 +41,7 @@ namespace Mau.Runtime
         /// <param name="apiKey">API 密钥</param>
         /// <param name="model">模型名</param>
         public DeepSeekLlmRuntime(string baseUrl, string apiKey, string model)
-        {
+{
             _baseUrl = baseUrl;
             if (_baseUrl == null)
             {
@@ -50,14 +53,13 @@ namespace Mau.Runtime
                 _apiKey = "";
             }
             _model = model;
-            if (_model == null)
+            if (string.IsNullOrEmpty(_model))
             {
-                _model = "";
+                _model = FallbackModel;
             }
             _client = new HttpClient();
             _client.Timeout = TimeSpan.FromSeconds(60);
         }
-
         /// <summary>
         /// 非流式完成——POST /chat/completions，取 choices[0].message.content。
         /// </summary>

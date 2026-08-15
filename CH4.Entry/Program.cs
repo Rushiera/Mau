@@ -17,8 +17,8 @@ namespace CH4
         /// <summary>API 基址</summary>
         private const string LlmBaseUrl = "https://api.deepseek.com";
 
-        /// <summary>模型名</summary>
-        private const string LlmModel = "deepseek-chat";
+        /// <summary>模型名——官方现役 v4-pro / v4-flash（deepseek-chat 已废弃）</summary>
+        private const string LlmModel = "deepseek-v4-flash";
 
         /// <summary>环境变量名——DEEPSEEK_API_KEY（未设置时为空串——QuickCat 会回 ERR|LLM_NO_RUNTIME 失败路径）</summary>
         private const string LlmKeyEnv = "DEEPSEEK_API_KEY";
