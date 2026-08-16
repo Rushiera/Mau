@@ -2,7 +2,7 @@
 // 积木: llm.stream
 // ID:   BRIK-LLM-002
 // 类别: LLM
-// 作用: 流式启动器——后台消费 StreamCompletions，增量写全局盒（llm_chunk/llm_chunk_count/llm_reply/llm_done）+ LogStore 分片帧号落盘
+// 作用: 流式启动器——后台消费 ChatStream（单轮 messages），增量写全局盒（llm_chunk/llm_chunk_count/llm_reply/llm_done）+ LogStore 分片帧号落盘
 // 依赖: 无
 // 引用: Mau.Runtime（ILlmRuntime/DataBox/LogStore/LlmStreamEvent）
 // 原理: TryResolve<ILlmRuntime> → 主线程捕获 FlowId → Task.Run 后台消费 → 增量/完成写全局盒（B1 豁免：全局盒写源在语料外）
@@ -20,7 +20,7 @@ using Mau.Runtime;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// LLM 积木——llm.stream 流式启动器（薄壳转发 ILlmRuntime.StreamCompletions + 全局盒桥）
+    /// LLM 积木——llm.stream 流式启动器（薄壳转发 ILlmRuntime.ChatStream 单轮 + 全局盒桥）
     /// </summary>
     public static class LlmStreamBrick
     {
@@ -70,7 +70,10 @@ namespace Mau.Bricks
             long count = 0;
             try
             {
-                await foreach (LlmStreamEvent ev in runtime.StreamCompletions(system, content))
+                LlmMessage[] messages = new LlmMessage[2];
+                messages[0] = new LlmMessage { Role = LlmRole.System, Content = system };
+                messages[1] = new LlmMessage { Role = LlmRole.User, Content = content };
+                await foreach (LlmStreamEvent ev in runtime.ChatStream(messages, new ToolSpec[0]))
                 {
                     if (ev.Kind == LlmStreamKind.Text || ev.Kind == LlmStreamKind.Reasoning)
                     {
@@ -140,4 +143,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:FDED9F2F9A548C039FF87AE0303C9C57965BCEE3C80610286D4536A6D14E9981
+// #MAU_CHECKSUM:SHA256:A0CF1CFFAA1CE2FC6BC8297D148A72D8F0F82F2E40501310C0C2B496888F339A

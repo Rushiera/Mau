@@ -1,29 +1,21 @@
-﻿namespace Mau.Runtime
+using System.Collections.Generic;
+using System.Threading;
+
+namespace Mau.Runtime
 {
     /// <summary>
-    /// LLM 运行时接口——非流式一次完成（第一轮最小面）。
-    /// 流式/工具调用/reasoning 随 OS 能力阶段扩展（Project/Mau/design-llm-streaming.md 重生规格）。
+    /// LLM 运行时接口——OpenAI 兼容消息序列形态（P5 工具协调升级，旧字符串方法退役）。
     /// 宿主 Bind 注入实现：DataBox.Bind&lt;ILlmRuntime&gt;(new DeepSeekLlmRuntime(...))。
     /// </summary>
     public interface ILlmRuntime
     {
         /// <summary>
-        /// 非流式完成——system + content → reply。
+        /// 流式对话完成——消息序列 + 工具定义 → 事件流（文本/思考增量 + 工具调用 + 完成）。
         /// </summary>
-        /// <param name="system">系统提示词</param>
-        /// <param name="content">用户内容</param>
-        /// <param name="reply">回复——失败时携带 ERR| 错误文本</param>
-        /// <returns>true=成功</returns>
-        bool Completions(string system, string content, out string reply);
-
-        /// <summary>
-        /// 流式完成——思考/回复增量事件流（P4 最小面）。
-        /// Text/Reasoning 增量；Done 正常结束（[DONE] 到达）；Error 失败终止（Text 携带 ERR|码|详情）。
-        /// </summary>
-        /// <param name="system">系统提示词</param>
-        /// <param name="content">用户内容</param>
+        /// <param name="messages">完整消息序列（OpenAI 兼容 role：system/user/assistant/tool）</param>
+        /// <param name="tools">工具定义数组（可为空——纯对话）</param>
         /// <param name="ct">取消令牌</param>
         /// <returns>流式事件序列</returns>
-        System.Collections.Generic.IAsyncEnumerable<LlmStreamEvent> StreamCompletions(string system, string content, System.Threading.CancellationToken ct = default);
+        System.Collections.Generic.IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, CancellationToken ct = default);
     }
 }

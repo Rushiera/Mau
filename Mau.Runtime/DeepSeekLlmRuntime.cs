@@ -157,141 +157,6 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 非流式完成——POST /chat/completions，取 choices[0].message.content。
-        /// </summary>
-        /// <param name="system">系统提示词</param>
-        /// <param name="content">用户内容</param>
-        /// <param name="reply">回复——失败时携带 ERR| 错误文本</param>
-        /// <returns>true=成功</returns>
-        public bool Completions(string system, string content, out string reply)
-        {
-            try
-            {
-                // [段1] 构造 OpenAI 兼容请求体并发送
-                string body = BuildRequestBody(system, content);
-                using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, _baseUrl.TrimEnd('/') + "/chat/completions"))
-                {
-                    request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + _apiKey);
-                    request.Content = new StringContent(body, Encoding.UTF8, "application/json");
-                    using (HttpResponseMessage response = _client.Send(request))
-                    {
-                        string raw = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                        // [段2] HTTP 层失败——状态码进错误文本
-                        if (!response.IsSuccessStatusCode)
-                        {
-                            reply = "ERR|HTTP_" + ((int)response.StatusCode).ToString() + "|" + TrimText(raw, 200);
-                            return false;
-                        }
-                        // [段3] 业务层解析——choices[0].message.content
-                        reply = ParseReply(raw);
-                        return true;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                reply = "ERR|" + ex.GetType().Name + "|" + ex.Message;
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// 流式完成——SSE 增量事件流（P4：官方 SseParser + translate 状态机）。
-        /// Text/Reasoning 增量（双通道独立回收）；[DONE] → Done；错误 → Error（ERR|码|详情）。
-        /// 注意：C# 迭代器禁止 try-catch 内 yield——网络层错误用 catch 赋值 + catch 后 yield 模式。
-        /// </summary>
-        /// <param name="system">系统提示词</param>
-        /// <param name="content">用户内容</param>
-        /// <param name="ct">取消令牌</param>
-        /// <returns>流式事件序列</returns>
-        public async IAsyncEnumerable<LlmStreamEvent> StreamCompletions(string system, string content, [EnumeratorCancellation] CancellationToken ct = default)
-        {
-            // [段1] 构造流式请求体并发送（ResponseHeadersRead——流式读取）
-            string body = BuildStreamRequestBody(system, content);
-            using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, _baseUrl.TrimEnd('/') + "/chat/completions"))
-            {
-                request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + _apiKey);
-                request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
-                request.Content = new StringContent(body, Encoding.UTF8, "application/json");
-                HttpResponseMessage? response = null;
-                string netError = "";
-                try
-                {
-                    response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-                }
-                catch (Exception ex)
-                {
-                    netError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
-                }
-                if (netError.Length > 0)
-                {
-                    yield return new LlmStreamEvent(LlmStreamKind.Error, netError);
-                    yield break;
-                }
-                using (response)
-                {
-                    // [段2] HTTP 层失败——错误 JSON 双形态解析（error.type/message 兜底，HTTP 码不可作唯一判据）
-                    if (response == null)
-                    {
-                        yield return new LlmStreamEvent(LlmStreamKind.Error, "ERR|TRANSPORT|空响应");
-                        yield break;
-                    }
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        string? raw = "";
-                        string readError = "";
-                        try
-                        {
-                            raw = await response.Content.ReadAsStringAsync(ct);
-                        }
-                        catch (Exception ex)
-                        {
-                            readError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
-                        }
-                        if (readError.Length > 0)
-                        {
-                            yield return new LlmStreamEvent(LlmStreamKind.Error, readError);
-                            yield break;
-                        }
-                        string rawText;
-                        if (raw == null)
-                        {
-                            rawText = "";
-                        }
-                        else
-                        {
-                            rawText = raw;
-                        }
-                        yield return new LlmStreamEvent(LlmStreamKind.Error, ParseErrorText((int)response.StatusCode, rawText));
-                        yield break;
-                    }
-                    // [段3] SSE 解析——官方 SseParser（注释行/多行 data/空行分隔自动处理）
-                    Stream? stream = null;
-                    string streamError = "";
-                    try
-                    {
-                        stream = await response.Content.ReadAsStreamAsync(ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        streamError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
-                    }
-                    if (streamError.Length > 0)
-                    {
-                        yield return new LlmStreamEvent(LlmStreamKind.Error, streamError);
-                        yield break;
-                    }
-                    SseParser<string> parser = SseParser.Create(stream!);
-                    // [段4] translate——独立迭代器（零 catch：所有错误事件化；取消异常冒泡给调用方）
-                    await foreach (LlmStreamEvent ev in TranslateSse(parser, ct))
-                    {
-                        yield return ev;
-                    }
-                }
-            }
-        }
-
-        /// <summary>
         /// SSE 帧翻译——增量事件流（零 catch：畸形帧/缺 [DONE] 全部事件化；取消异常冒泡给调用方）。
         /// [DONE] 到达即终止（忽略余帧——实测 [DONE] 后可能有余帧）。
         /// </summary>
@@ -299,8 +164,13 @@ namespace Mau.Runtime
         /// <param name="ct">取消令牌</param>
         /// <returns>流式事件序列</returns>
         private static async IAsyncEnumerable<LlmStreamEvent> TranslateSse(SseParser<string> parser, [EnumeratorCancellation] CancellationToken ct)
-        {
+{
             bool done = false;
+            // [段0] 工具调用聚合——按 index 累积（design A.5：id/name 仅首帧；arguments 是累积增量需拼接后整体解析）
+            Dictionary<int, string> toolIds = new Dictionary<int, string>();
+            Dictionary<int, string> toolNames = new Dictionary<int, string>();
+            Dictionary<int, System.Text.StringBuilder> toolArgs = new Dictionary<int, System.Text.StringBuilder>();
+            List<int> toolOrder = new List<int>();
             await foreach (SseItem<string> item in parser.EnumerateAsync(ct))
             {
                 // [段1] [DONE] 哨兵——唯一可信终止；忽略余帧
@@ -323,6 +193,8 @@ namespace Mau.Runtime
                     {
                         yield return new LlmStreamEvent(LlmStreamKind.Reasoning, reasoning);
                     }
+                    // [段2b] tool_calls 增量——按 index 聚合（与文本/思考同帧可并存）
+                    AccumulateToolCalls(item.Data, toolIds, toolNames, toolArgs, toolOrder);
                 }
             }
             // [段3] 完整性检查——无 [DONE] 提前结束 = STREAM_CLOSED（模型调用不可信，按失败处理）
@@ -331,110 +203,13 @@ namespace Mau.Runtime
                 yield return new LlmStreamEvent(LlmStreamKind.Error, "ERR|STREAM_CLOSED|SSE 流未以 [DONE] 结束");
                 yield break;
             }
+            // [段4] 工具调用完整列表——finish 后一次性发出（聚合后的 arguments 为完整 JSON——消费方整体解析）
+            if (toolOrder.Count > 0)
+            {
+                yield return new LlmStreamEvent(LlmStreamKind.ToolCalls, BuildToolCallsJson(toolIds, toolNames, toolArgs, toolOrder));
+            }
             yield return new LlmStreamEvent(LlmStreamKind.Done, "");
         }
-
-        /// <summary>
-        /// 构造 OpenAI 兼容请求体——零依赖 JSON 序列化
-        /// </summary>
-        /// <param name="system">系统提示词</param>
-        /// <param name="content">用户内容</param>
-        /// <returns>请求体 JSON</returns>
-        private string BuildRequestBody(string system, string content)
-        {
-            object[] messages = new object[]
-            {
-                new { role = "system", content = system },
-                new { role = "user", content = content }
-            };
-            object payload = new { model = _model, messages = messages, stream = false };
-            return JsonSerializer.Serialize(payload);
-        }
-
-        /// <summary>
-        /// 构造流式请求体——stream:true；思考模式/推理强度按配置（P4 思考参数实测结论：v4 支持）。
-        /// 思考模式不传 temperature（官方：思考模式不生效）。
-        /// </summary>
-        /// <param name="system">系统提示词</param>
-        /// <param name="content">用户内容</param>
-        /// <returns>请求体 JSON</returns>
-        private string BuildStreamRequestBody(string system, string content)
-        {
-            // [段1] 消息数组——system + user
-            object[] messages = new object[]
-            {
-                new
-                {
-                    role = "system",
-                    content = system
-                },
-                new
-                {
-                    role = "user",
-                    content = content
-                }
-            };
-            // [段2] 思考模式——enabled 带 effort；disabled 关闭思考
-            if (_thinkingEnabled)
-            {
-                object payload = new
-                {
-                    model = _model,
-                    messages = messages,
-                    stream = true,
-                    thinking = new
-                    {
-                        type = "enabled"
-                    },
-                    reasoning_effort = _reasoningEffort
-                };
-                return JsonSerializer.Serialize(payload);
-            }
-            object payloadDisabled = new
-            {
-                model = _model,
-                messages = messages,
-                stream = true,
-                thinking = new
-                {
-                    type = "disabled"
-                }
-            };
-            return JsonSerializer.Serialize(payloadDisabled);
-        }
-
-        /// <summary>
-        /// 解析回复——防御式逐层检查
-        /// </summary>
-        /// <param name="raw">响应 JSON</param>
-        /// <returns>回复文本或 ERR| 错误文本</returns>
-        private static string ParseReply(string raw)
-        {
-            using (JsonDocument doc = JsonDocument.Parse(raw))
-            {
-                JsonElement root = doc.RootElement;
-                JsonElement choices;
-                if (root.TryGetProperty("choices", out choices) && choices.GetArrayLength() > 0)
-                {
-                    JsonElement first = choices[0];
-                    JsonElement message;
-                    if (first.TryGetProperty("message", out message))
-                    {
-                        JsonElement content;
-                        if (message.TryGetProperty("content", out content))
-                        {
-                            string? text = content.GetString();
-                            if (text != null)
-                            {
-                                return text;
-                            }
-                        }
-                    }
-                }
-                return "ERR|EMPTY_RESPONSE|响应无 choices[0].message.content";
-            }
-        }
-
         /// <summary>
         /// 解析 SSE 帧 JSON——提取 choices[0].delta.content / reasoning_content。
         /// 畸形帧返回 false（跳过不产事件）；choices 空数组返回 false（usage-only 尾帧）。
@@ -580,5 +355,380 @@ namespace Mau.Runtime
             }
             return text.Substring(0, max);
         }
+/// <summary>
+/// 流式对话完成——消息序列 + 工具定义 → 事件流（P5：OpenAI 兼容 tool_calls）。
+/// Text/Reasoning 增量；ToolCalls 完整工具调用 JSON（聚合后一次性发出）；[DONE] → Done；错误 → Error。
+/// 注意：C# 迭代器禁止 try-catch 内 yield——网络层错误用 catch 赋值 + catch 后 yield 模式。
+/// </summary>
+/// <param name = "messages">完整消息序列（system/user/assistant/tool 多 role）</param>
+/// <param name = "tools">工具定义数组（可为空——纯对话）</param>
+/// <param name = "ct">取消令牌</param>
+/// <returns>流式事件序列</returns>
+public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, [EnumeratorCancellation] CancellationToken ct = default)
+{
+    // [段1] 构造流式请求体并发送（ResponseHeadersRead——流式读取）
+    string body = BuildChatRequestBody(messages, tools);
+    using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, _baseUrl.TrimEnd('/') + "/chat/completions"))
+    {
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + _apiKey);
+        request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        HttpResponseMessage? response = null;
+        string netError = "";
+        try
+        {
+            response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        }
+        catch (Exception ex)
+        {
+            netError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
+        }
+
+        if (netError.Length > 0)
+        {
+            yield return new LlmStreamEvent(LlmStreamKind.Error, netError);
+            yield break;
+        }
+
+        using (response)
+        {
+            // [段2] HTTP 层失败——错误 JSON 双形态解析（error.type/message 兜底，HTTP 码不可作唯一判据）
+            if (response == null)
+            {
+                yield return new LlmStreamEvent(LlmStreamKind.Error, "ERR|TRANSPORT|空响应");
+                yield break;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                string? raw = "";
+                string readError = "";
+                try
+                {
+                    raw = await response.Content.ReadAsStringAsync(ct);
+                }
+                catch (Exception ex)
+                {
+                    readError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
+                }
+
+                if (readError.Length > 0)
+                {
+                    yield return new LlmStreamEvent(LlmStreamKind.Error, readError);
+                    yield break;
+                }
+
+                string rawText;
+                if (raw == null)
+                {
+                    rawText = "";
+                }
+                else
+                {
+                    rawText = raw;
+                }
+
+                yield return new LlmStreamEvent(LlmStreamKind.Error, ParseErrorText((int)response.StatusCode, rawText));
+                yield break;
+            }
+
+            // [段3] SSE 解析——官方 SseParser（注释行/多行 data/空行分隔自动处理）
+            Stream? stream = null;
+            string streamError = "";
+            try
+            {
+                stream = await response.Content.ReadAsStreamAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                streamError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
+            }
+
+            if (streamError.Length > 0)
+            {
+                yield return new LlmStreamEvent(LlmStreamKind.Error, streamError);
+                yield break;
+            }
+
+            SseParser<string> parser = SseParser.Create(stream!);
+            // [段4] translate——独立迭代器（零 catch：所有错误事件化；tool_calls 聚合在 translate 内）
+            await foreach (LlmStreamEvent ev in TranslateSse(parser, ct))
+            {
+                yield return ev;
+            }
+        }
     }
+}    /// <summary>
+/// assistant 消息序列化——tool_calls JSON 原样透传 + reasoning_content 回传铁律。
+/// 规则（A.6 ①⑦）：有 tool_calls 必带 reasoning_content（含空串）；无 tool_calls 但保留思考也带（多轮保留）。
+/// </summary>
+/// <param name = "m">assistant 消息</param>
+/// <returns>wire 消息对象</returns>
+private static object BuildAssistantMessage(LlmMessage m)
+{
+    Dictionary<string, object> wire = new Dictionary<string, object>();
+    wire["role"] = "assistant";
+    wire["content"] = m.Content;
+    bool hasTools = m.ToolCallsJson.Length > 0;
+    if (hasTools)
+    {
+        using (JsonDocument doc = JsonDocument.Parse(m.ToolCallsJson))
+        {
+            wire["tool_calls"] = doc.RootElement.Clone();
+        }
+    }
+
+    if (hasTools)
+    {
+        wire["reasoning_content"] = m.ReasoningContent;
+    }
+    else if (m.ReasoningContent.Length > 0)
+    {
+        wire["reasoning_content"] = m.ReasoningContent;
+    }
+
+    return wire;
+}/// <summary>
+/// tools 数组序列化——OpenAI function 定义；parameters JSON Schema 原样透传（空参数 = 空对象 schema）。
+/// </summary>
+/// <param name = "tools">工具规格数组</param>
+/// <returns>wire tools 数组</returns>
+private static object[] BuildWireTools(ToolSpec[] tools)
+{
+    if (tools == null || tools.Length == 0)
+    {
+        return new object[0];
+    }
+
+    object[] result = new object[tools.Length];
+    for (int i = 0; i < tools.Length; i++)
+    {
+        ToolSpec spec = tools[i];
+        Dictionary<string, object> function = new Dictionary<string, object>();
+        function["name"] = spec.Name;
+        function["description"] = spec.Description;
+        if (spec.ParametersJson.Length > 0)
+        {
+            using (JsonDocument doc = JsonDocument.Parse(spec.ParametersJson))
+            {
+                function["parameters"] = doc.RootElement.Clone();
+            }
+        }
+        else
+        {
+            function["parameters"] = new
+            {
+                type = "object",
+                properties = new object ()
+            };
+        }
+
+        Dictionary<string, object> tool = new Dictionary<string, object>();
+        tool["type"] = "function";
+        tool["function"] = function;
+        result[i] = tool;
+    }
+
+    return result;
+}/// <summary>
+/// 构造流式对话请求体——OpenAI 兼容消息序列 + tools（P5：接口端零创新，wire 标准）。
+/// system/user 文本直写；assistant 带 tool_calls（JSON 透传）+ reasoning_content（A.6 ①⑦ 回传铁律）；
+/// tool 独立消息（tool_call_id 配对）；思考模式 + effort 按配置；空 tools 省略字段。
+/// </summary>
+/// <param name = "messages">消息序列</param>
+/// <param name = "tools">工具定义数组</param>
+/// <returns>请求体 JSON</returns>
+private string BuildChatRequestBody(LlmMessage[] messages, ToolSpec[] tools)
+{
+            // [段1] 消息数组——多 role 序列化（null 字段防御归一——外部消息来源可能带 null）
+            List<object> wireMessages = new List<object>();
+            for (int i = 0; i < messages.Length; i++)
+            {
+                LlmMessage m = messages[i];
+                if (m.Content == null)
+                {
+                    m.Content = "";
+                }
+                if (m.ToolCallId == null)
+                {
+                    m.ToolCallId = "";
+                }
+                if (m.ToolCallsJson == null)
+                {
+                    m.ToolCallsJson = "";
+                }
+                if (m.ReasoningContent == null)
+                {
+                    m.ReasoningContent = "";
+                }
+                if (m.Role == LlmRole.System)
+                {
+                    wireMessages.Add(new { role = "system", content = m.Content });
+                }
+                else if (m.Role == LlmRole.User)
+                {
+                    wireMessages.Add(new { role = "user", content = m.Content });
+                }
+                else if (m.Role == LlmRole.Assistant)
+                {
+                    wireMessages.Add(BuildAssistantMessage(m));
+                }
+                else if (m.Role == LlmRole.Tool)
+                {
+                    string toolContent = m.Content;
+                    if (toolContent.Length == 0)
+                    {
+                        toolContent = "(no output)";
+                    }
+                    wireMessages.Add(new { role = "tool", tool_call_id = m.ToolCallId, content = toolContent });
+                }
+            }
+            // [段2] tools 数组——OpenAI function 定义（空数组省略字段——省略原则）
+            object[] wireTools = BuildWireTools(tools);
+            // [段3] 请求体——思考模式 enabled 带 effort；disabled 关闭思考；tools 非空才带
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["model"] = _model;
+            payload["messages"] = wireMessages;
+            payload["stream"] = true;
+            if (_thinkingEnabled)
+            {
+                payload["thinking"] = new { type = "enabled" };
+                payload["reasoning_effort"] = _reasoningEffort;
+            }
+            else
+            {
+                payload["thinking"] = new { type = "disabled" };
+            }
+            if (wireTools.Length > 0)
+            {
+                payload["tools"] = wireTools;
+            }
+            return JsonSerializer.Serialize(payload);
+        }/// <summary>
+/// 累积 SSE 帧的 tool_calls 增量——按 index 聚合（design A.5：id/name 仅首帧；arguments 累积增量拼接）。
+/// </summary>
+/// <param name = "data">帧 data 载荷</param>
+/// <param name = "ids">index → 调用 ID</param>
+/// <param name = "names">index → 工具名</param>
+/// <param name = "args">index → 参数拼接缓冲</param>
+/// <param name = "order">index 出现顺序</param>
+private static void AccumulateToolCalls(string data, Dictionary<int, string> ids, Dictionary<int, string> names, Dictionary<int, System.Text.StringBuilder> args, List<int> order)
+{
+    try
+    {
+        using (JsonDocument doc = JsonDocument.Parse(data))
+        {
+            JsonElement root = doc.RootElement;
+            JsonElement choices;
+            if (!root.TryGetProperty("choices", out choices) || choices.GetArrayLength() == 0)
+            {
+                return;
+            }
+
+            JsonElement delta;
+            if (!choices[0].TryGetProperty("delta", out delta))
+            {
+                return;
+            }
+
+            JsonElement calls;
+            if (!delta.TryGetProperty("tool_calls", out calls) || calls.ValueKind != JsonValueKind.Array)
+            {
+                return;
+            }
+
+            for (int i = 0; i < calls.GetArrayLength(); i++)
+            {
+                JsonElement call = calls[i];
+                JsonElement indexEl;
+                int index;
+                if (!call.TryGetProperty("index", out indexEl) || !indexEl.TryGetInt32(out index))
+                {
+                    continue;
+                }
+
+                System.Text.StringBuilder? builder;
+                if (!args.TryGetValue(index, out builder) || builder == null)
+                {
+                    builder = new System.Text.StringBuilder();
+                    args[index] = builder;
+                    ids[index] = "";
+                    names[index] = "";
+                    order.Add(index);
+                }
+
+                JsonElement idEl;
+                if (ids[index].Length == 0 && call.TryGetProperty("id", out idEl) && idEl.ValueKind == JsonValueKind.String)
+                {
+                    string? gotId = idEl.GetString();
+                    if (gotId != null)
+                    {
+                        ids[index] = gotId!;
+                    }
+                }
+
+                JsonElement funcEl;
+                if (call.TryGetProperty("function", out funcEl))
+                {
+                    if (names[index].Length == 0)
+                    {
+                        JsonElement nameEl;
+                        if (funcEl.TryGetProperty("name", out nameEl) && nameEl.ValueKind == JsonValueKind.String)
+                        {
+                            string? gotName = nameEl.GetString();
+                            if (gotName != null)
+                            {
+                                names[index] = gotName!;
+                            }
+                        }
+                    }
+
+                    JsonElement argsEl;
+                    if (funcEl.TryGetProperty("arguments", out argsEl) && argsEl.ValueKind == JsonValueKind.String)
+                    {
+                        string? gotArgs = argsEl.GetString();
+                        if (gotArgs != null)
+                        {
+                            builder.Append(gotArgs);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    catch
+    {
+    // 畸形帧跳过——容忍上游抖动
+    }
+}/// <summary>
+/// 聚合结果 → 完整 tool_calls JSON 数组（[{"id","name","arguments"}]——arguments 为完整 JSON 文本，消费方整体解析）。
+/// </summary>
+/// <param name = "ids">index → 调用 ID</param>
+/// <param name = "names">index → 工具名</param>
+/// <param name = "args">index → 参数拼接缓冲</param>
+/// <param name = "order">index 出现顺序</param>
+/// <returns>JSON 数组字符串</returns>
+private static string BuildToolCallsJson(Dictionary<int, string> ids, Dictionary<int, string> names, Dictionary<int, System.Text.StringBuilder> args, List<int> order)
+{
+            System.Text.StringBuilder builder = new System.Text.StringBuilder();
+            builder.Append("[");
+            for (int i = 0; i < order.Count; i++)
+            {
+                int index = order[i];
+                if (i > 0)
+                {
+                    builder.Append(",");
+                }
+                // OpenAI wire 标准：{"id","type":"function","function":{"name","arguments"}}——function 为嵌套对象（判例：missing field function）
+                builder.Append("{\"id\":");
+                builder.Append(JsonSerializer.Serialize(ids[index]));
+                builder.Append(",\"type\":\"function\",\"function\":{\"name\":");
+                builder.Append(JsonSerializer.Serialize(names[index]));
+                builder.Append(",\"arguments\":");
+                builder.Append(JsonSerializer.Serialize(args[index].ToString()));
+                builder.Append("}}");
+            }
+            builder.Append("]");
+            return builder.ToString();
+        }}
 }

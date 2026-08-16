@@ -1,10 +1,8 @@
-using System.Collections.Generic;
-
 namespace Mau.Runtime
 {
     /// <summary>
-    /// 流式事件种类——P4 最小面：思考/回复双通道 + 结束。
-    /// Text/Reasoning = 增量事件；Done = 流正常结束（[DONE] 到达）；Error = 失败终止。
+    /// 流式事件种类——P5 工具协调扩展：思考/回复双通道 + 工具调用 + 结束。
+    /// Text/Reasoning = 增量事件；ToolCalls = 完整工具调用列表（finish=tool_calls 时一次性发出）；Done = 流正常结束；Error = 失败终止。
     /// </summary>
     public enum LlmStreamKind
     {
@@ -19,6 +17,11 @@ namespace Mau.Runtime
         Reasoning,
 
         /// <summary>
+        /// 工具调用到达——Text 携带完整 tool_calls JSON 数组（[{"id","name","arguments"}]）；流随后 Done
+        /// </summary>
+        ToolCalls,
+
+        /// <summary>
         /// 流正常结束（[DONE] 到达）——Text 为空
         /// </summary>
         Done,
@@ -30,7 +33,7 @@ namespace Mau.Runtime
     }
 
     /// <summary>
-    /// 流式事件——增量/结束/错误统一载体（不可变）。
+    /// 流式事件——增量/工具调用/结束/错误统一载体（不可变）。
     /// </summary>
     public sealed class LlmStreamEvent
     {
@@ -43,7 +46,7 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 增量文本或错误文本（Done 时为空）
+        /// 增量文本 / 工具调用 JSON / 错误文本（Done 时为空）
         /// </summary>
         public string Text
         {
