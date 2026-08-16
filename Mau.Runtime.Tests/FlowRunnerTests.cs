@@ -230,5 +230,33 @@ public void Runner_UnregisterFlow_ClearsCommandBusKeys()
     CommandSnapshot snapshot = cmd.GetSnapshot();
     Assert.Single(snapshot.RegisteredKeys);
     Assert.Equal("TOOL_Text_Read", snapshot.RegisteredKeys[0]);
-}    }
+}    /// <summary>
+/// 热重载孤儿盒防护——UnregisterFlow 同步清理 DataBox FlowId scope：旧 Flow 私有盒不残留（ClearScope 原子原语）
+/// </summary>
+[Fact]
+public void Runner_UnregisterFlow_ClearsDataBoxScope()
+{
+    DataBox.Reset();
+    try
+    {
+        ThreadGuard guard = new ThreadGuard();
+        OA oa = new OA(guard);
+        CommandBus cmd = new CommandBus(guard);
+        IdAllocator ids = new IdAllocator();
+        FlowRunner runner = new FlowRunner(guard, oa, cmd, ids);
+        // [段1] Flow 注册 + 私有盒写入（模拟语料私有盒——scope = FlowId）
+        CountingFlow flow = new CountingFlow();
+        long id = runner.RegisterFlow(flow, "BoxCat");
+        DataBox.Set<string>(id.ToString(), "rOffice", "123");
+        string probe;
+        Assert.True(DataBox.TryGet<string>(id.ToString(), "rOffice", out probe));
+        // [段2] 卸载 Flow——DataBox scope 同步清理（热重载换 ID 后旧盒不残留）
+        Assert.True(runner.UnregisterFlow(id));
+        Assert.False(DataBox.TryGet<string>(id.ToString(), "rOffice", out probe));
+    }
+    finally
+    {
+        DataBox.Reset();
+    }
+}}
 }

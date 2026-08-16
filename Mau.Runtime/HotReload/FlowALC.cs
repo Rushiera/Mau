@@ -23,14 +23,10 @@ namespace Mau.Runtime
         /// <param name="name">程序集名</param>
         /// <returns>null=回落默认 ALC 或自身已加载</returns>
         protected override Assembly? Load(AssemblyName name)
-        {
-            if (name.Name == "Mau.Runtime")
-            {
-                return null;
-            }
+{
+            // 全部回落默认 ALC——基座 DLL 类型身份唯一；生成物自包含，其余程序集经 TPA 探测
             return null;
         }
-
         /// <summary>
         /// 共享句柄加载——FileStream + FileShare.ReadWrite|Delete（不锁文件，支持热重载原子替换）
         /// </summary>

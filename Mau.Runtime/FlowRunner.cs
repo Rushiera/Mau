@@ -171,6 +171,8 @@ namespace Mau.Runtime
                 }
                 // [段2] CommandBus 注销——D1 修复：旧 Flow 的 key 挂名不清理，新 Flow 同 key 注册被静默 REJECT
                 _cmd.Unregister(id);
+                // [段3] DataBox FlowId scope 清理——私有盒孤儿防泄漏（热重载换 ID 后旧盒残留；ClearScope 原子原语）
+                DataBox.ClearScope(id.ToString());
             }
             if (Audit != null && ok)
             {
@@ -179,8 +181,7 @@ namespace Mau.Runtime
                 });
             }
             return ok;
-        }
-        /// <summary>
+        }        /// <summary>
         /// 按 ID 查找实体
         /// </summary>
         /// <param name="id">实体 ID</param>

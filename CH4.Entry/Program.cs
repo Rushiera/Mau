@@ -456,97 +456,109 @@ public static int Main(string[] args)
 /// <param name = "args">cat + 空格 + dll 路径（dll 可选）</param>
 private static void ExecuteReload(string args)
 {
-    string[] parts = args.Split(' ');
-    string cat = parts[0].Trim();
-    string dllPath = parts.Length > 1 ? parts[1].Trim() : "";
-    FlowHandle oldHandle;
-    long oldId;
-    string name;
-    if (cat == "tool")
-    {
-        oldHandle = _toolHandle;
-        oldId = _toolId;
-        name = "ToolTestCat";
-    }
-    else if (cat == "io")
-    {
-        oldHandle = _ioHandle;
-        oldId = _ioId;
-        name = "IOTestCat";
-    }
-    else if (cat == "quick")
-    {
-        oldHandle = _quickHandle;
-        oldId = _quickId;
-        name = "QuickCat";
-    }
-    else
-    {
-        Console.WriteLine("[CH4.Entry] reload 目标无效——tool|io|quick");
-        return;
-    }
-    if (dllPath.Length == 0)
-    {
-        dllPath = oldHandle.SourceDll;
-    }
-    // [段1] 加载新版本（Load 异常 = dll 损坏——失败保留旧；试跑验证移到注册后 runner.Tick——FlowContext 正确注入）
-    FlowHandle newHandle;
-    try
-    {
-        newHandle = FlowHandle.Load(dllPath);
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine("[CH4.Entry] reload " + name + " 失败: 新版本加载未通过——" + ex.Message);
-        return;
-    }
-    // [段2] 换注册——卸旧（D1 修复：CommandBus key 同步清理）→ 注册新 → 试跑帧（runner 帧序注入 FlowContext=newId——CmdPump 真实注册，无幽灵 owner）
-    _runner.UnregisterFlow(oldId);
-    long newId = _runner.RegisterFlow(newHandle.Flow, name);
-    try
-    {
-        _runner.Tick();
-    }
-    catch (Exception ex)
-    {
-        // [段2b] 试跑异常回滚——重载旧 dll 全新实例（CmdPump 全新注册；旧 handle 弃用）
-        _runner.UnregisterFlow(newId);
-        newHandle.TryUnload(3);
-        FlowHandle rollback;
-        long rollbackId;
-        try
-        {
-            rollback = FlowHandle.Load(oldHandle.SourceDll);
-            rollbackId = _runner.RegisterFlow(rollback.Flow, name);
+            string[] parts = args.Split(' ');
+            string cat = parts[0].Trim();
+            string dllPath = parts.Length > 1 ? parts[1].Trim() : "";
+            // [段0] 忙时拒绝——工具批次执行中（Chat 处理中）reload 会导致旧批次完成信号永不置位（WaitForTools 空转帧上限）
+            if (_toolBatchActive)
+            {
+                Console.WriteLine("[CH4.Entry] reload 拒绝: 工具批次执行中（Chat 处理中）——等待完成后再试");
+                return;
+            }
+            FlowHandle oldHandle;
+            long oldId;
+            string name;
+            if (cat == "tool")
+            {
+                oldHandle = _toolHandle;
+                oldId = _toolId;
+                name = "ToolTestCat";
+            }
+            else if (cat == "io")
+            {
+                oldHandle = _ioHandle;
+                oldId = _ioId;
+                name = "IOTestCat";
+            }
+            else if (cat == "quick")
+            {
+                oldHandle = _quickHandle;
+                oldId = _quickId;
+                name = "QuickCat";
+            }
+            else if (cat == "major")
+            {
+                oldHandle = _majorHandle;
+                oldId = _majorId;
+                name = "MajorDomoCat";
+            }
+            else
+            {
+                Console.WriteLine("[CH4.Entry] reload 目标无效——tool|io|quick|major");
+                return;
+            }
+            if (dllPath.Length == 0)
+            {
+                dllPath = oldHandle.SourceDll;
+            }
+            // [段1] 加载新版本（Load 异常 = dll 损坏——失败保留旧；试跑验证移到注册后 runner.Tick——FlowContext 正确注入）
+            FlowHandle newHandle;
+            try
+            {
+                newHandle = FlowHandle.Load(dllPath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CH4.Entry] reload " + name + " 失败: 新版本加载未通过——" + ex.Message);
+                return;
+            }
+            // [段2] 换注册——卸旧（D1 修复：CommandBus key 同步清理 + DataBox FlowId scope 清理）→ 注册新 → 试跑帧（runner 帧序注入 FlowContext=newId——CmdPump 真实注册，无幽灵 owner）
+            _runner.UnregisterFlow(oldId);
+            long newId = _runner.RegisterFlow(newHandle.Flow, name);
+            try
+            {
+                _runner.Tick();
+            }
+            catch (Exception ex)
+            {
+                // [段2b] 试跑异常回滚——重载旧 dll 全新实例（CmdPump 全新注册；旧 handle 弃用）
+                _runner.UnregisterFlow(newId);
+                newHandle.TryUnload(3);
+                FlowHandle rollback;
+                long rollbackId;
+                try
+                {
+                    rollback = FlowHandle.Load(oldHandle.SourceDll);
+                    rollbackId = _runner.RegisterFlow(rollback.Flow, name);
+                    for (int i = 0; i < 10; i++)
+                    {
+                        _runner.Tick();
+                    }
+                }
+                catch (Exception ex2)
+                {
+                    Console.WriteLine("[CH4.Entry] reload " + name + " 失败: 试跑异常且回滚失败——" + ex.Message + " / " + ex2.Message);
+                    return;
+                }
+                oldHandle.TryUnload(3);
+                SetCatHandle(cat, rollback, rollbackId);
+                Console.WriteLine("[CH4.Entry] reload " + name + " 失败: 试跑帧异常已回滚（旧版本全新实例 #" + rollbackId + "）——" + ex.Message);
+                return;
+            }
+            // [段3] 成功路径——换句柄 + 卸载旧 ALC + 预热帧
+            oldHandle.TryUnload(3);
+            SetCatHandle(cat, newHandle, newId);
             for (int i = 0; i < 10; i++)
             {
                 _runner.Tick();
             }
-        }
-        catch (Exception ex2)
-        {
-            Console.WriteLine("[CH4.Entry] reload " + name + " 失败: 试跑异常且回滚失败——" + ex.Message + " / " + ex2.Message);
-            return;
-        }
-        oldHandle.TryUnload(3);
-        SetCatHandle(cat, rollback, rollbackId);
-        Console.WriteLine("[CH4.Entry] reload " + name + " 失败: 试跑帧异常已回滚（旧版本全新实例 #" + rollbackId + "）——" + ex.Message);
-        return;
-    }
-    // [段3] 成功路径——换句柄 + 卸载旧 ALC + 预热帧
-    oldHandle.TryUnload(3);
-    SetCatHandle(cat, newHandle, newId);
-    for (int i = 0; i < 10; i++)
-    {
-        _runner.Tick();
-    }
-    string[] keyDic = _bus.GetKeyDic();
-    Console.WriteLine("[CH4.Entry] reload " + name + ": #" + oldId + " → #" + newId + " | pid=" + Environment.ProcessId + " | " + keyDic[0]);
-    for (int k = 0; k < keyDic.Length; k++)
-    {
-        Console.WriteLine("    " + keyDic[k]);
-    }
-}/// <summary>
+            string[] keyDic = _bus.GetKeyDic();
+            Console.WriteLine("[CH4.Entry] reload " + name + ": #" + oldId + " → #" + newId + " | pid=" + Environment.ProcessId + " | " + keyDic[0]);
+            for (int k = 0; k < keyDic.Length; k++)
+            {
+                Console.WriteLine("    " + keyDic[k]);
+            }
+        }/// <summary>
 /// 单行指令执行——交互/脚本共用（true=继续，false=结束）
 /// </summary>
 /// <param name = "line">已 Trim 的指令行</param>
@@ -657,22 +669,27 @@ private static void PrintStatusShort()
 /// <param name = "id">新注册 ID</param>
 private static void SetCatHandle(string cat, FlowHandle handle, long id)
 {
-    if (cat == "tool")
-    {
-        _toolHandle = handle;
-        _toolId = id;
-    }
-    else if (cat == "io")
-    {
-        _ioHandle = handle;
-        _ioId = id;
-    }
-    else
-    {
-        _quickHandle = handle;
-        _quickId = id;
-    }
-}/// <summary>
+            if (cat == "tool")
+            {
+                _toolHandle = handle;
+                _toolId = id;
+            }
+            else if (cat == "io")
+            {
+                _ioHandle = handle;
+                _ioId = id;
+            }
+            else if (cat == "quick")
+            {
+                _quickHandle = handle;
+                _quickId = id;
+            }
+            else
+            {
+                _majorHandle = handle;
+                _majorId = id;
+            }
+        }/// <summary>
 /// 审计事件杂音过滤——隐藏 trace.sample 类（主动传感器每帧采样刷屏；trace.fire/state 关键时序保留）
 /// </summary>
 /// <param name = "events">原始事件序列</param>
@@ -993,6 +1010,7 @@ private static bool DispatchToolCalls(string toolCallsJson)
                     {
                         _bus.SetText("TOOL_Skip_Ask", "", "llm");
                     }
+                    _toolBatchActive = true;
                     return true;
                 }
                 return false;
@@ -1047,8 +1065,9 @@ private static void CollectToolResults()
                 }
                 _chatContext.AddToolResult(info.Id, info.Name, result);
                 Console.WriteLine("  [工具结果] " + info.Name + " → " + TrimDisplay(result, 120));
-            }
             _pendingToolCalls.Clear();
+            _toolBatchActive = false;
+        }
         }/// <summary>
 /// 会话中枢处理——Chat 指令入口（P5 工具协调核心）。
 /// 流程：追加用户消息 → 工具循环（≤3 轮）：LLM 后台流式 → 纯文本则完成 / tool_calls 则投递语料执行 → 结果回传续轮。
@@ -1101,5 +1120,8 @@ private static void HandleChat(string content)
     // [段4] 前文落盘——会话结束保存（重启恢复面）
     _sessionStore.Save(_chatContext.GetMessages());
     Console.WriteLine("[CH4.Entry] 会话前文已落盘: " + _chatContext.GetMessageCount() + " 条消息");
-}}
+}/// <summary>
+/// 工具批次执行中标志——DispatchToolCalls 置位 / CollectToolResults 复位；reload 忙时拒绝（防旧批次完成信号永不置位 → 空转 25 分钟）
+/// </summary>
+private static bool _toolBatchActive;}
 }
