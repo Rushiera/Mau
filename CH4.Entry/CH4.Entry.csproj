@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Mau.Runtime\Mau.Runtime.csproj" />
+    <ProjectReference Include="..\Mau.Providers\Mau.Providers.csproj" />
   </ItemGroup>
 
 </Project>

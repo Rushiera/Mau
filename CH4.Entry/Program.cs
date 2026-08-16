@@ -1,18 +1,20 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
 using Mau.Runtime;
+using Mau.Providers;
 
 namespace CH4
 {
     /// <summary>
     /// CH4.Entry —— Mau 自举循环宿主（第一轮）
-    /// 职责：Runtime 服务组装 + 三语料加载 + Command 投递器 + LLM 桥（写死）+ 观测出口。
+    /// 职责：Runtime 服务组装 + 语料加载 + Command 投递器 + LLM 桥 + 观测出口 + 指令路由。
     /// 业务代码 0 行——全部功能在 .mau 语料（热重载面）；无 UI（无头优先）。
+    /// ChatBridge（工具协调）分部在 Program.Chat.cs——agent 循环基建（2026-08-16 拆分定性）。
     /// </summary>
-    public static class Program
+    public static partial class Program
     {
         // [段1] LLM 桥常量——P4 配置项机制接管：llm.* 从 Data/config/llm.cfg 拉起（改配置不重编译）；key 优先级：配置 → 环境变量 DEEPSEEK_API_KEY
         /// <summary>宿主帧节流——每帧现实毫秒（600 帧工单超时 ≈ 30s；QuickCat LLM 回投窗口 5-60s）</summary>
@@ -26,38 +28,38 @@ namespace CH4
 
         /// <summary>三语料 Flow 句柄——加载/热重载面</summary>
         private static FlowHandle _toolHandle;
-/// <summary>
-/// IOTestCat Flow 句柄——热重载面
-/// </summary>
+
+        /// <summary>IOTestCat Flow 句柄——热重载面</summary>
         private static FlowHandle _ioHandle;
-/// <summary>
-/// QuickCat Flow 句柄——热重载面
-/// </summary>
+
+        /// <summary>QuickCat Flow 句柄——热重载面</summary>
         private static FlowHandle _quickHandle;
+
+        /// <summary>MajorDomoCat Flow 句柄——会话中枢工具执行器（P5 新猫）</summary>
+        private static FlowHandle _majorHandle;
 
         /// <summary>注册 ID——观测与回收用</summary>
         private static long _toolId;
-/// <summary>
-/// IOTestCat 注册 ID——观测与回收用
-/// </summary>
+
+        /// <summary>IOTestCat 注册 ID——观测与回收用</summary>
         private static long _ioId;
-/// <summary>
-/// QuickCat 注册 ID——观测与回收用
-/// </summary>
+
+        /// <summary>QuickCat 注册 ID——观测与回收用</summary>
         private static long _quickId;
+
+        /// <summary>MajorDomoCat 注册 ID——观测与回收用</summary>
+        private static long _majorId;
 
         /// <summary>命令总线——Command 投递器直接引用（SetText 面）</summary>
         private static CommandBus _bus;
 
         /// <summary>OA 工单平台——观测快照（诊断期）</summary>
         private static OA _oa;
-/// <summary>
-/// 主程序入口——参数路由：无参=交互模式 / --selfcheck=启动自检 / --run "指令"=单指令脚本模式 / --script <file>=指令文件批量模式（P3a 热重载实测通道）
-/// </summary>
-///
 
-        ///
-public static int Main(string[] args)
+        /// <summary>
+        /// 主程序入口——参数路由：无参=交互模式 / --selfcheck=启动自检 / --run "指令"=单指令脚本模式 / --script &lt;file&gt;=指令文件批量模式（P3a 热重载实测通道）
+        /// </summary>
+        public static int Main(string[] args)
         {
             try
             {
@@ -182,7 +184,16 @@ public static int Main(string[] args)
                     llmKeyProbe = envKeyProbe;
                 }
             }
-            Console.WriteLine("[CH4.Entry] 就绪 | 四 Cat: ToolTestCat#" + _toolId + " IOTestCat#" + _ioId + " QuickCat#" + _quickId + " MajorDomoCat#" + _majorId + " | LLM: " + (llmKeyProbe.Length == 0 ? "未注入(ERR路径)" : "已注入") + " | 帧节流 " + FrameSleepMs + "ms");
+            string llmState;
+            if (llmKeyProbe.Length == 0)
+            {
+                llmState = "未注入(ERR路径)";
+            }
+            else
+            {
+                llmState = "已注入";
+            }
+            Console.WriteLine("[CH4.Entry] 就绪 | 四 Cat: ToolTestCat#" + _toolId + " IOTestCat#" + _ioId + " QuickCat#" + _quickId + " MajorDomoCat#" + _majorId + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
         }
 
         /// <summary>
@@ -240,8 +251,8 @@ public static int Main(string[] args)
         /// </summary>
         /// <returns>退出码</returns>
         private static int RunInteractive()
-{
-            Console.WriteLine("指令: ReadText <path> | QuickCat <system>|<content> | status | reload <tool|io|quick> [dll] | run <n> | pid | quit");
+        {
+            Console.WriteLine("指令: ReadText <path> | QuickCat <system>|<content> | Chat <内容> | status | reload <tool|io|quick|major> [dll] | run <n> | pid | quit");
             while (true)
             {
                 Console.Write("ch4> ");
@@ -262,13 +273,14 @@ public static int Main(string[] args)
             }
             return 0;
         }
+
         /// <summary>
         /// Command 解析与投递——宿主做字符串值识别（语料面零值比较）；QuickCat 双参同帧投两个 key
         /// </summary>
         /// <param name="line">输入行</param>
         /// <returns>true=识别成功并已投递</returns>
         private static bool DispatchCommand(string line)
-{
+        {
             if (line.StartsWith("ReadText ", StringComparison.Ordinal))
             {
                 string path = line.Substring(9).Trim();
@@ -321,6 +333,7 @@ public static int Main(string[] args)
             }
             return false;
         }
+
         /// <summary>
         /// 驱动直到三 Cat 全部 Idle——指令投递后连续 Tick；帧上限兜底（LLM 60s 现实耗时 + OA 超时结算窗口）
         /// </summary>
@@ -380,7 +393,7 @@ public static int Main(string[] args)
         /// 观测出口——三 Cat 状态 + 导线在途 + 最近日志（透明性指标观测面）
         /// </summary>
         private static void PrintStatus()
-{
+        {
             Console.WriteLine("── 三 Cat 状态 ──");
             PrintFlowStatus("ToolTestCat", _toolHandle);
             PrintFlowStatus("IOTestCat", _ioHandle);
@@ -409,10 +422,19 @@ public static int Main(string[] args)
             for (int i = start; i < logs.Count; i++)
             {
                 LogStore.LogEntry entry = logs[i];
-                string cat = entry.Category.Length > 0 ? "[" + entry.Category + "] " : "";
+                string cat;
+                if (entry.Category.Length > 0)
+                {
+                    cat = "[" + entry.Category + "] ";
+                }
+                else
+                {
+                    cat = "";
+                }
                 Console.WriteLine("  " + entry.Time + " | F" + entry.Frame + " | " + LogStore.LevelText(entry.Level) + " | " + cat + entry.Message);
             }
         }
+
         /// <summary>
         /// 单 Flow 状态打印——状态行 + 忙碌导线
         /// </summary>
@@ -447,18 +469,36 @@ public static int Main(string[] args)
                     busyText = busyText + status.WireStatuses[i].Name + "(在途)";
                 }
             }
-            Console.WriteLine("  " + name + " | " + stateText + (busyText.Length == 0 ? "" : " | " + busyText));
+            string busySuffix;
+            if (busyText.Length == 0)
+            {
+                busySuffix = "";
+            }
+            else
+            {
+                busySuffix = " | " + busyText;
+            }
+            Console.WriteLine("  " + name + " | " + stateText + busySuffix);
         }
-/// <summary>
-/// reload 热重载——tool|io|quick + 可选 dll 路径（缺省 = 当前 handle 同路径重读）
-/// 流程：新 Load + Tick 试跑验证（失败保留旧）→ UnregisterFlow 旧（D1：CommandBus key 同步清理）→ RegisterFlow 新 → 旧 TryUnload → 预热 → 报告
-/// </summary>
-/// <param name = "args">cat + 空格 + dll 路径（dll 可选）</param>
-private static void ExecuteReload(string args)
-{
+
+        /// <summary>
+        /// reload 热重载——tool|io|quick|major + 可选 dll 路径（缺省 = 当前 handle 同路径重读）
+        /// 流程：新 Load + Tick 试跑验证（失败保留旧）→ UnregisterFlow 旧（D1：CommandBus key 同步清理）→ RegisterFlow 新 → 旧 TryUnload → 预热 → 报告
+        /// </summary>
+        /// <param name="args">cat + 空格 + dll 路径（dll 可选）</param>
+        private static void ExecuteReload(string args)
+        {
             string[] parts = args.Split(' ');
             string cat = parts[0].Trim();
-            string dllPath = parts.Length > 1 ? parts[1].Trim() : "";
+            string dllPath;
+            if (parts.Length > 1)
+            {
+                dllPath = parts[1].Trim();
+            }
+            else
+            {
+                dllPath = "";
+            }
             // [段0] 忙时拒绝——工具批次执行中（Chat 处理中）reload 会导致旧批次完成信号永不置位（WaitForTools 空转帧上限）
             if (_toolBatchActive)
             {
@@ -558,117 +598,154 @@ private static void ExecuteReload(string args)
             {
                 Console.WriteLine("    " + keyDic[k]);
             }
-        }/// <summary>
-/// 单行指令执行——交互/脚本共用（true=继续，false=结束）
-/// </summary>
-/// <param name = "line">已 Trim 的指令行</param>
-/// <returns>false=结束会话</returns>
-private static bool ExecuteLine(string line)
-{
-    if (line == "quit")
-    {
-        return false;
-    }
-    if (line == "status")
-    {
-        PrintStatus();
-        return true;
-    }
+        }
 
-    if (line == "statusq")
-    {
-        PrintStatusShort();
-        return true;
-    }
-
-    if (line == "pid")
-    {
-        Console.WriteLine("[CH4.Entry] pid=" + Environment.ProcessId);
-        return true;
-    }
-
-    if (line.StartsWith("run ", StringComparison.Ordinal))
-    {
-        long frames;
-        if (!long.TryParse(line.Substring(4).Trim(), out frames) || frames < 0)
+        /// <summary>
+        /// 单行指令执行——交互/脚本共用（true=继续，false=结束）
+        /// </summary>
+        /// <param name="line">已 Trim 的指令行</param>
+        /// <returns>false=结束会话</returns>
+        private static bool ExecuteLine(string line)
         {
-            Console.WriteLine("[CH4.Entry] run 参数无效——需非负整数帧数");
+            if (line == "quit")
+            {
+                return false;
+            }
+            if (line == "status")
+            {
+                PrintStatus();
+                return true;
+            }
+
+            if (line == "statusq")
+            {
+                PrintStatusShort();
+                return true;
+            }
+
+            if (line == "pid")
+            {
+                Console.WriteLine("[CH4.Entry] pid=" + Environment.ProcessId);
+                return true;
+            }
+
+            if (line.StartsWith("run ", StringComparison.Ordinal))
+            {
+                long frames;
+                if (!long.TryParse(line.Substring(4).Trim(), out frames) || frames < 0)
+                {
+                    Console.WriteLine("[CH4.Entry] run 参数无效——需非负整数帧数");
+                    return true;
+                }
+
+                for (long i = 0; i < frames; i++)
+                {
+                    _runner.Tick();
+                    Thread.Sleep(FrameSleepMs);
+                }
+
+                return true;
+            }
+            if (line.StartsWith("reload ", StringComparison.Ordinal))
+            {
+                ExecuteReload(line.Substring(7).Trim());
+                return true;
+            }
+
+            if (line.StartsWith("send ", StringComparison.Ordinal))
+            {
+                // 只投递不驱动——配合 run <n> 手动帧驱动（超时/挂单场景精确帧数控制）
+                if (!DispatchCommand(line.Substring(5).Trim()))
+                {
+                    Console.WriteLine("格式: send ReadText <path> 或 send QuickCat <system>|<content>");
+                }
+                return true;
+            }
+
+            if (!DispatchCommand(line))
+            {
+                Console.WriteLine("格式: ReadText <path> 或 QuickCat <system>|<content>");
+                return true;
+            }
+            DriveUntilIdle();
+            PrintStatusShort();
             return true;
         }
 
-        for (long i = 0; i < frames; i++)
+        /// <summary>
+        /// 脚本模式——指令文件逐行执行（P3a 热重载实测通道：全程同进程，pid 不变可证）
+        /// </summary>
+        /// <param name="path">指令文件路径（# 开头行为注释）</param>
+        /// <returns>退出码</returns>
+        private static int RunScript(string path)
         {
-            _runner.Tick();
-            Thread.Sleep(FrameSleepMs);
+            if (!File.Exists(path))
+            {
+                Console.WriteLine("[CH4.Entry] 脚本文件不存在: " + path);
+                return 2;
+            }
+            string[] lines = File.ReadAllLines(path);
+            Console.WriteLine("[CH4.Entry] 脚本模式 | " + lines.Length + " 行 | pid=" + Environment.ProcessId);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                Console.WriteLine("── 脚本指令 " + (i + 1) + ": " + line + " ──");
+                if (!ExecuteLine(line))
+                {
+                    break;
+                }
+            }
+            Console.WriteLine("[CH4.Entry] 脚本结束 | pid=" + Environment.ProcessId);
+            return 0;
         }
 
-        return true;
-    }
-    if (line.StartsWith("reload ", StringComparison.Ordinal))
-    {
-        ExecuteReload(line.Substring(7).Trim());
-        return true;
-    }
-
-    if (line.StartsWith("send ", StringComparison.Ordinal))
-    {
-        // 只投递不驱动——配合 run <n> 手动帧驱动（超时/挂单场景精确帧数控制）
-        if (!DispatchCommand(line.Substring(5).Trim()))
+        /// <summary>
+        /// 精简观测出口——三 Cat 状态 + OA 快照 + 最近日志（跳过审计帧序/盒子截面——热重载实测断言面）
+        /// </summary>
+        private static void PrintStatusShort()
         {
-            Console.WriteLine("格式: send ReadText <path> 或 send QuickCat <system>|<content>");
+            Console.WriteLine("── 三 Cat 状态 ──");
+            PrintFlowStatus("ToolTestCat", _toolHandle);
+            PrintFlowStatus("IOTestCat", _ioHandle);
+            PrintFlowStatus("QuickCat", _quickHandle);
+            OAView oaView = _oa.GetSnapshot();
+            Console.WriteLine("── OA 快照 ── Open=" + oaView.OpenCount + " Work=" + oaView.WorkCount + " Closed=" + oaView.ClosedCount + " Timeout=" + oaView.TimeoutCount);
+            List<LogStore.LogEntry> logs = LogStore.AllLog;
+            int start = logs.Count - 10;
+            if (start < 0)
+            {
+                start = 0;
+            }
+
+            Console.WriteLine("── 最近日志 ──");
+            for (int i = start; i < logs.Count; i++)
+            {
+                LogStore.LogEntry entry = logs[i];
+                string cat;
+                if (entry.Category.Length > 0)
+                {
+                    cat = "[" + entry.Category + "] ";
+                }
+                else
+                {
+                    cat = "";
+                }
+                Console.WriteLine("  " + entry.Time + " | F" + entry.Frame + " | " + LogStore.LevelText(entry.Level) + " | " + cat + entry.Message);
+            }
         }
-        return true;
-    }
 
-    if (!DispatchCommand(line))
-    {
-        Console.WriteLine("格式: ReadText <path> 或 QuickCat <system>|<content>");
-        return true;
-    }
-    DriveUntilIdle();
-    PrintStatusShort();
-    return true;
-} 
-/// <summary>
-/// 脚本模式——指令文件逐行执行（P3a 热重载实测通道：全程同进程，pid 不变可证）
-/// </summary>
-/// <param name = "path">指令文件路径（# 开头行为注释）</param>
-/// <returns>退出码</returns>
- private  static  int  RunScript ( string  path ) { if  ( ! File . Exists ( path ) ) { Console . WriteLine ( "[CH4.Entry] 脚本文件不存在: " + path ) ;  return  2 ;  } string [ ]  lines  =  File . ReadAllLines ( path ) ;  Console . WriteLine ( "[CH4.Entry] 脚本模式 | " + lines . Length + " 行 | pid=" + Environment . ProcessId ) ;  for  ( int  i  =  0 ;  i < lines . Length ;  i ++ ) { string  line  =  lines [ i ] . Trim ( ) ;  if  ( line . Length == 0 || line . StartsWith ( "#" ,  StringComparison . Ordinal ) ) { continue ;  } Console . WriteLine ( "── 脚本指令 " + ( i + 1 ) + ": " + line + " ──" ) ;  if  ( ! ExecuteLine ( line ) ) { break ;  } } Console . WriteLine ( "[CH4.Entry] 脚本结束 | pid=" + Environment . ProcessId ) ;  return  0 ;  }
-/// <summary>
-/// 精简观测出口——三 Cat 状态 + OA 快照 + 最近日志（跳过审计帧序/盒子截面——热重载实测断言面）
-/// </summary>
-private static void PrintStatusShort()
-{
-    Console.WriteLine("── 三 Cat 状态 ──");
-    PrintFlowStatus("ToolTestCat", _toolHandle);
-    PrintFlowStatus("IOTestCat", _ioHandle);
-    PrintFlowStatus("QuickCat", _quickHandle);
-    OAView oaView = _oa.GetSnapshot();
-    Console.WriteLine("── OA 快照 ── Open=" + oaView.OpenCount + " Work=" + oaView.WorkCount + " Closed=" + oaView.ClosedCount + " Timeout=" + oaView.TimeoutCount);
-    List<LogStore.LogEntry> logs = LogStore.AllLog;
-    int start = logs.Count - 10;
-    if (start < 0)
-    {
-        start = 0;
-    }
-
-    Console.WriteLine("── 最近日志 ──");
-    for (int i = start; i < logs.Count; i++)
-    {
-        LogStore.LogEntry entry = logs[i];
-        string cat = entry.Category.Length > 0 ? "[" + entry.Category + "] " : "";
-        Console.WriteLine("  " + entry.Time + " | F" + entry.Frame + " | " + LogStore.LevelText(entry.Level) + " | " + cat + entry.Message);
-    }
-}
-/// <summary>
-/// 更新指定 Cat 的句柄 + 注册 ID 字段
-/// </summary>
-/// <param name = "cat">tool|io|quick</param>
-/// <param name = "handle">新句柄</param>
-/// <param name = "id">新注册 ID</param>
-private static void SetCatHandle(string cat, FlowHandle handle, long id)
-{
+        /// <summary>
+        /// 更新指定 Cat 的句柄 + 注册 ID 字段
+        /// </summary>
+        /// <param name="cat">tool|io|quick|major</param>
+        /// <param name="handle">新句柄</param>
+        /// <param name="id">新注册 ID</param>
+        private static void SetCatHandle(string cat, FlowHandle handle, long id)
+        {
             if (cat == "tool")
             {
                 _toolHandle = handle;
@@ -689,439 +766,25 @@ private static void SetCatHandle(string cat, FlowHandle handle, long id)
                 _majorHandle = handle;
                 _majorId = id;
             }
-        }/// <summary>
-/// 审计事件杂音过滤——隐藏 trace.sample 类（主动传感器每帧采样刷屏；trace.fire/state 关键时序保留）
-/// </summary>
-/// <param name = "events">原始事件序列</param>
-/// <returns>过滤后事件序列</returns>
-private static AuditEvent[] FilterNoise(AuditEvent[] events)
-{
-    List<AuditEvent> kept = new List<AuditEvent>();
-    for (int i = 0; i < events.Length; i++)
-    {
-        if (events[i].Category == "trace.sample")
-        {
-            continue;
         }
 
-        kept.Add(events[i]);
-    }
-
-    return kept.ToArray();
-}/// <summary>
-/// LLM 运行时——ChatStream 调度（Bootstrap 注入）
-/// </summary>
-private static ILlmRuntime _llmRuntime; 
-/// <summary>
-/// MajorDomoCat Flow 句柄——会话中枢工具执行器（P5 新猫）
-/// </summary>
- private  static  FlowHandle  _majorHandle ;  
-/// <summary>
-/// MajorDomoCat 注册 ID——观测与回收用
-/// </summary>
- private  static  long  _majorId ;  
-/// <summary>
-/// 会话上下文——MajorDomoCat 消息历史（前文持久化面）
-/// </summary>
- private  static  ChatContext  _chatContext ;  
-/// <summary>
-/// 会话前文管理器——Data/sessions/majordomo.json 落盘（重启恢复）
-/// </summary>
- private  static  SessionStore  _sessionStore ;  
-/// <summary>
-/// 工具定义——P5 测试期写死两件（read_file 读 + ask 问）
-/// </summary>
- private  static  ToolSpec [ ]  _tools ;  
-/// <summary>
-/// LLM 后台运行中标志（Task.Run 消费 ChatStream）
-/// </summary>
- private  static  volatile  bool  _llmBusy ;  
-/// <summary>
-/// LLM 后台结果——完整回复文本
-/// </summary>
- private  static  string  _llmResultText ;  
-/// <summary>
-/// LLM 后台结果——完整思考文本（工具轮次回传铁律）
-/// </summary>
- private  static  string  _llmReasoning ;  
-/// <summary>
-/// LLM 后台结果——tool_calls JSON 数组（聚合后整体）
-/// </summary>
- private  static  string  _llmToolCallsJson ;  
-/// <summary>
-/// LLM 后台错误标志
-/// </summary>
- private  static  bool  _llmError ;  
-/// <summary>
-/// LLM 后台错误文本（ERR| 前缀——失败可见性）
-/// </summary>
- private  static  string  _llmErrorText ;  
-/// <summary>
-/// 待回传工具调用清单——与工具执行结果配对（按顺序回传）
-/// </summary>
- private  static  List < ToolCallInfo > _pendingToolCalls ;  
-/// <summary>
-/// 工具循环收敛上限——3 轮（莎拍板：单读/单问/并发读问覆盖测试场景）
-/// </summary>
- private  const  int  MaxToolRounds  =  3 ;
-/// <summary>
-/// 后台消费 LLM 流——消息序列 + 工具定义 → 文本/思考/tool_calls 累积（Task.Run——主线程零阻塞）。
-/// </summary>
-/// <param name = "messages">消息序列</param>
-/// <param name = "tools">工具定义</param>
-private static void RunLlmInBackground(LlmMessage[] messages, ToolSpec[] tools)
-{
-    _llmBusy = true;
-    _llmResultText = "";
-    _llmReasoning = "";
-    _llmToolCallsJson = "";
-    _llmError = false;
-    _llmErrorText = "";
-    System.Threading.Tasks.Task.Run(async delegate
-    {
-        try
+        /// <summary>
+        /// 审计事件杂音过滤——隐藏 trace.sample 类（主动传感器每帧采样刷屏；trace.fire/state 关键时序保留）
+        /// </summary>
+        /// <param name="events">原始事件序列</param>
+        /// <returns>过滤后事件序列</returns>
+        private static AuditEvent[] FilterNoise(AuditEvent[] events)
         {
-            System.Text.StringBuilder text = new System.Text.StringBuilder();
-            System.Text.StringBuilder reasoning = new System.Text.StringBuilder();
-            string toolCalls = "";
-            await foreach (LlmStreamEvent ev in _llmRuntime.ChatStream(messages, tools))
+            List<AuditEvent> kept = new List<AuditEvent>();
+            for (int i = 0; i < events.Length; i++)
             {
-                if (ev.Kind == LlmStreamKind.Text)
+                if (events[i].Category == "trace.sample")
                 {
-                    text.Append(ev.Text);
+                    continue;
                 }
-                else if (ev.Kind == LlmStreamKind.Reasoning)
-                {
-                    reasoning.Append(ev.Text);
-                }
-                else if (ev.Kind == LlmStreamKind.ToolCalls)
-                {
-                    toolCalls = ev.Text;
-                }
-                else if (ev.Kind == LlmStreamKind.Error)
-                {
-                    _llmError = true;
-                    _llmErrorText = ev.Text;
-                }
+                kept.Add(events[i]);
             }
-
-            _llmResultText = text.ToString();
-            _llmReasoning = reasoning.ToString();
-            _llmToolCallsJson = toolCalls;
-        }
-        catch (Exception ex)
-        {
-            _llmError = true;
-            _llmErrorText = "ERR|" + ex.GetType().Name + "|" + ex.Message;
-        }
-        finally
-        {
-            _llmBusy = false;
-        }
-    });
-}/// <summary>
-/// 等待 LLM 后台完成——帧驱动 + 帧上限兜底（超时按错误回传）
-/// </summary>
-private static void WaitForLlm()
-{
-    for (int i = 0; i < MaxFramesPerRun; i++)
-    {
-        if (!_llmBusy)
-        {
-            return;
-        }
-
-        _runner.Tick();
-        Thread.Sleep(FrameSleepMs);
-    }
-
-    _llmBusy = false;
-    _llmError = true;
-    _llmErrorText = "ERR|LLM_TIMEOUT|LLM 调用超时（帧上限 " + MaxFramesPerRun + "）";
-}/// <summary>
-/// 等待语料工具执行完成——轮询 llm_tool_done 标志（语料合流置位）+ 帧上限兜底
-/// </summary>
-private static void WaitForTools()
-{
-            for (int i = 0; i < MaxFramesPerRun; i++)
-            {
-                _runner.Tick();
-                string done;
-                if (DataBox.TryGet<string>("global", "llm_tool_done", out done) && done != null && done == "1")
-                {
-                    return;
-                }
-                Thread.Sleep(FrameSleepMs);
-            }
-            Console.WriteLine("[MajorDomoCat] 工具执行超时（帧上限 " + MaxFramesPerRun + "）——按空结果回传");
-            DataBox.Set<string>("global", "llm_tool_done", "");
-        }/// <summary>
-/// 构建系统提示词——MajorDomoCat 会话中枢身份 + 工具语义声明
-/// </summary>
-/// <returns>系统提示词</returns>
-private static string BuildSystemPrompt()
-{
-    return "你是 MajorDomoCat——CH4 自举宿主的管理员对话中枢（P5 工具协调测试）。" + System.Environment.NewLine + "你有两个工具：" + System.Environment.NewLine + "- read_file(path)：读取指定路径的文本文件内容" + System.Environment.NewLine + "- ask(question)：向 QuickCat 问答子工具提问，获取简洁回答" + System.Environment.NewLine + "需要文件内容时调用 read_file；需要独立问答时调用 ask；可以同时调用多个工具（并发执行）。" + System.Environment.NewLine + "工具结果返回后，基于结果继续回答用户。";
-}/// <summary>
-/// 构建工具定义——P5 测试期写死两件（read_file + ask——OpenAI function schema）
-/// </summary>
-/// <returns>工具数组</returns>
-private static ToolSpec[] BuildTools()
-{
-    ToolSpec read = new ToolSpec("read_file", "读取指定路径的文本文件内容", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"要读取的文件路径\"}},\"required\":[\"path\"]}");
-    ToolSpec ask = new ToolSpec("ask", "向 QuickCat 问答子工具提问，获取简洁回答", "{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"要提问的问题\"}},\"required\":[\"question\"]}");
-    return new ToolSpec[]
-    {
-        read,
-        ask
-    };
-}/// <summary>
-/// 读取 JSON 对象字符串属性——防御式（缺字段返回空串）
-/// </summary>
-/// <param name = "obj">JSON 对象</param>
-/// <param name = "prop">属性名</param>
-/// <returns>属性值</returns>
-private static string GetStringProp(JsonElement obj, string prop)
-{
-    JsonElement value;
-    if (obj.TryGetProperty(prop, out value) && value.ValueKind == JsonValueKind.String)
-    {
-        string got = value.GetString();
-        if (got != null)
-        {
-            return got;
+            return kept.ToArray();
         }
     }
-
-    return "";
-}/// <summary>
-/// 从 arguments JSON 提取参数——防御式（解析失败返回空串）
-/// </summary>
-/// <param name = "argumentsJson">参数 JSON</param>
-/// <param name = "key">参数名</param>
-/// <returns>参数值</returns>
-private static string ExtractArg(string argumentsJson, string key)
-{
-    try
-    {
-        using (JsonDocument doc = JsonDocument.Parse(argumentsJson))
-        {
-            return GetStringProp(doc.RootElement, key);
-        }
-    }
-    catch (Exception)
-    {
-        return "";
-    }
-}/// <summary>
-/// 待回传工具清单中是否含指定工具名
-/// </summary>
-/// <param name = "name">工具名</param>
-/// <returns>true=含</returns>
-private static bool HasTool(string name)
-{
-    for (int i = 0; i < _pendingToolCalls.Count; i++)
-    {
-        if (_pendingToolCalls[i].Name == name)
-        {
-            return true;
-        }
-    }
-
-    return false;
-}/// <summary>
-/// 截断显示文本——控制台防刷屏
-/// </summary>
-/// <param name = "text">原文</param>
-/// <param name = "max">上限</param>
-/// <returns>截断文本</returns>
-private static string TrimDisplay(string text, int max)
-{
-    if (text == null)
-    {
-        return "";
-    }
-
-    if (text.Length <= max)
-    {
-        return text;
-    }
-
-    return text.Substring(0, max) + "...";
-}/// <summary>
-/// 投递工具调用——解析 tool_calls JSON → 参数落全局盒 + 分支 key 投递（信号名即解析结果）。
-/// 已知工具（read_file/ask）投递语料；未知工具记录待回传 ERR。
-/// </summary>
-/// <param name = "toolCallsJson">tool_calls JSON 数组</param>
-/// <returns>true=有已知工具已投递（语料将执行）</returns>
-private static bool DispatchToolCalls(string toolCallsJson)
-{
-            _pendingToolCalls.Clear();
-            try
-            {
-                using (JsonDocument doc = JsonDocument.Parse(toolCallsJson))
-                {
-                    JsonElement root = doc.RootElement;
-                    for (int i = 0; i < root.GetArrayLength(); i++)
-                    {
-                        JsonElement call = root[i];
-                        string id = GetStringProp(call, "id");
-                        // OpenAI wire：name/arguments 在 function 嵌套对象内
-                        string name = "";
-                        string arguments = "";
-                        JsonElement funcEl;
-                        if (call.TryGetProperty("function", out funcEl))
-                        {
-                            name = GetStringProp(funcEl, "name");
-                            arguments = GetStringProp(funcEl, "arguments");
-                        }
-                        ToolCallInfo info = new ToolCallInfo(id, name, arguments);
-                        _pendingToolCalls.Add(info);
-                        if (name == "read_file")
-                        {
-                            _bus.SetText("TOOL_Read_Path", ExtractArg(arguments, "path"), "llm");
-                        }
-                        else if (name == "ask")
-                        {
-                            _bus.SetText("TOOL_Ask_Content", ExtractArg(arguments, "question"), "llm");
-                        }
-                    }
-                }
-                // [段2] 分支投递——批次开始沿 + 每线必投其一（要执行 / 跳过）
-                bool wantRead = HasTool("read_file");
-                bool wantAsk = HasTool("ask");
-                if (wantRead || wantAsk)
-                {
-                    // 批次开始——独立沿（与 Exec/Skip 分离，避免同帧沿竞争被先声明导线消费）
-                    _bus.SetText("TOOL_Batch_Start", "", "llm");
-                    if (wantRead)
-                    {
-                        _bus.SetText("TOOL_Exec_Read", "", "llm");
-                    }
-                    else
-                    {
-                        _bus.SetText("TOOL_Skip_Read", "", "llm");
-                    }
-                    if (wantAsk)
-                    {
-                        _bus.SetText("TOOL_Exec_Ask", "", "llm");
-                    }
-                    else
-                    {
-                        _bus.SetText("TOOL_Skip_Ask", "", "llm");
-                    }
-                    _toolBatchActive = true;
-                    return true;
-                }
-                return false;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("[MajorDomoCat] tool_calls 解析失败: " + ex.Message);
-                return false;
-            }
-        }/// <summary>
-/// 收集工具结果——读全局结果盒 → 按 tool_calls 顺序回传上下文 → 清盒。
-/// </summary>
-private static void CollectToolResults()
-{
-            string readResult = "";
-            string askResult = "";
-            DataBox.TryGet<string>("global", "llm_result_read", out readResult);
-            DataBox.TryGet<string>("global", "llm_result_ask", out askResult);
-            // TryGet 失败时 out 为 default(null)——防御归一（DataBox 契约：失败赋 default）
-            if (readResult == null)
-            {
-                readResult = "";
-            }
-            if (askResult == null)
-            {
-                askResult = "";
-            }
-            // [段1] 清盒——语料下批写入前干净（残留防护）
-            DataBox.Set<string>("global", "llm_tool_done", "");
-            DataBox.Set<string>("global", "llm_result_read", "");
-            DataBox.Set<string>("global", "llm_result_ask", "");
-            // [段2] 按 tool_calls 顺序回传——每调用一条 tool result；未知工具 ERR 文本
-            for (int i = 0; i < _pendingToolCalls.Count; i++)
-            {
-                ToolCallInfo info = _pendingToolCalls[i];
-                string result;
-                if (info.Name == "read_file")
-                {
-                    result = readResult;
-                }
-                else if (info.Name == "ask")
-                {
-                    result = askResult;
-                }
-                else
-                {
-                    result = "ERR|UNKNOWN_TOOL|未知工具: " + info.Name;
-                }
-                if (result.Length == 0)
-                {
-                    result = "ERR|EMPTY_RESULT|工具执行无结果（超时或失败）";
-                }
-                _chatContext.AddToolResult(info.Id, info.Name, result);
-                Console.WriteLine("  [工具结果] " + info.Name + " → " + TrimDisplay(result, 120));
-            _pendingToolCalls.Clear();
-            _toolBatchActive = false;
-        }
-        }/// <summary>
-/// 会话中枢处理——Chat 指令入口（P5 工具协调核心）。
-/// 流程：追加用户消息 → 工具循环（≤3 轮）：LLM 后台流式 → 纯文本则完成 / tool_calls 则投递语料执行 → 结果回传续轮。
-/// 消息维护与前文落盘在宿主（CH4 侧实现前文管理器）；工具执行在语料（MajorDomoCat）。
-/// </summary>
-/// <param name = "content">用户消息内容</param>
-private static void HandleChat(string content)
-{
-    _chatContext.AddUserMessage(content);
-    Console.WriteLine("── MajorDomoCat 处理中 ──");
-    for (int round = 0; round < MaxToolRounds; round++)
-    {
-        // [段1] LLM 调用——后台流式（消息序列 + 工具定义）
-        LlmMessage[] messages = _chatContext.GetMessages();
-        RunLlmInBackground(messages, _tools);
-        WaitForLlm();
-        if (_llmError)
-        {
-            _chatContext.AddAssistantMessage(_llmErrorText);
-            Console.WriteLine("[MajorDomoCat] LLM 错误: " + _llmErrorText);
-            break;
-        }
-
-        if (_llmToolCallsJson.Length == 0)
-        {
-            // [段2] 纯文本回复——本轮完成
-            _chatContext.AddAssistantMessage(_llmResultText);
-            Console.WriteLine("[MajorDomoCat] " + _llmResultText);
-            break;
-        }
-
-        // [段3] 工具调用——追加 assistant tool_calls + 投递语料执行
-        _chatContext.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning);
-        Console.WriteLine("[MajorDomoCat] 工具调用(" + (round + 1) + "/" + MaxToolRounds + "): " + TrimDisplay(_llmToolCallsJson, 200));
-        bool dispatched = DispatchToolCalls(_llmToolCallsJson);
-        if (dispatched)
-        {
-            WaitForTools();
-            CollectToolResults();
-            Console.WriteLine("[MajorDomoCat] 工具结果已回传，续轮");
-        }
-        else
-        {
-            // 无已知工具——直接按 ERR 回传（不经过语料）
-            CollectToolResults();
-            Console.WriteLine("[MajorDomoCat] 无已知工具可执行——按错误回传");
-        }
-    }
-
-    // [段4] 前文落盘——会话结束保存（重启恢复面）
-    _sessionStore.Save(_chatContext.GetMessages());
-    Console.WriteLine("[CH4.Entry] 会话前文已落盘: " + _chatContext.GetMessageCount() + " 条消息");
-}/// <summary>
-/// 工具批次执行中标志——DispatchToolCalls 置位 / CollectToolResults 复位；reload 忙时拒绝（防旧批次完成信号永不置位 → 空转 25 分钟）
-/// </summary>
-private static bool _toolBatchActive;}
 }

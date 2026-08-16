@@ -8,8 +8,9 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Mau.Runtime;
 
-namespace Mau.Runtime
+namespace Mau.Providers
 {
     /// <summary>
     /// DeepSeek 非流式/流式适配器——内建最小实现（OpenAI 兼容 /chat/completions）。

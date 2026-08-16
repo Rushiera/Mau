@@ -1,4 +1,4 @@
-namespace CH4
+﻿namespace Mau.Runtime
 {
     /// <summary>
     /// 待回传工具调用信息——LLM tool_calls 解析结果与工具执行结果的配对载体。

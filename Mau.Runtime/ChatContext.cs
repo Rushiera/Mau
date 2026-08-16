@@ -1,11 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using Mau.Runtime;
 
-namespace CH4
+namespace Mau.Runtime
 {
     /// <summary>
-    /// 会话上下文——MajorDomoCat 消息历史（借鉴 CH2/CH3 ContextManager 形态）。
+    /// 会话上下文——MajorDomoCat 消息历史（借鉴 CH2/CH3 ContextManager 形态，2026-08-16 下沉 Mau.Runtime）。
     /// System 提示词独立缓存永久保留；user/assistant/tool 轮次按序追加。
     /// 上下文策略（截断/预算/压缩）P5 不做——不做假设性工程（测试到不了软上限）。
     /// </summary>
@@ -35,7 +34,7 @@ namespace CH4
         /// </summary>
         /// <param name="prompt">系统提示词</param>
         public void SetSystemPrompt(string prompt)
-{
+        {
             if (prompt == null)
             {
                 prompt = "";
@@ -53,33 +52,36 @@ namespace CH4
                 _history.Insert(0, CreateMessage(LlmRole.System, prompt));
             }
         }
+
         /// <summary>
         /// 追加用户消息
         /// </summary>
         /// <param name="text">用户文本</param>
         public void AddUserMessage(string text)
-{
+        {
             if (text.Length == 0)
             {
                 return;
             }
             _history.Add(CreateMessage(LlmRole.User, text));
         }
+
         /// <summary>
         /// 追加助手文本回复
         /// </summary>
         /// <param name="text">回复文本</param>
         public void AddAssistantMessage(string text)
-{
+        {
             _history.Add(CreateMessage(LlmRole.Assistant, text));
         }
+
         /// <summary>
         /// 追加助手工具调用声明——tool_calls JSON 原样 + 思考内容（回传铁律）
         /// </summary>
         /// <param name="toolCallsJson">tool_calls JSON 数组</param>
         /// <param name="reasoning">思考内容（可为空串）</param>
         public void AddAssistantToolCalls(string toolCallsJson, string reasoning)
-{
+        {
             if (toolCallsJson.Length == 0)
             {
                 return;
@@ -89,6 +91,7 @@ namespace CH4
             msg.ReasoningContent = reasoning;
             _history.Add(msg);
         }
+
         /// <summary>
         /// 追加工具结果——与调用 ID 配对
         /// </summary>
@@ -96,12 +99,13 @@ namespace CH4
         /// <param name="toolName">工具名</param>
         /// <param name="result">结果正文（失败时 ERR| 前缀）</param>
         public void AddToolResult(string toolCallId, string toolName, string result)
-{
+        {
             LlmMessage msg = CreateMessage(LlmRole.Tool, result);
             msg.ToolCallId = toolCallId;
             msg.ToolName = toolName;
             _history.Add(msg);
         }
+
         /// <summary>
         /// 获取消息数组副本——直接传给 LLM API
         /// </summary>
@@ -124,7 +128,7 @@ namespace CH4
         /// 清除历史——保留系统提示词
         /// </summary>
         public void Clear()
-{
+        {
             if (_systemPrompt == null)
             {
                 _systemPrompt = "";
@@ -135,6 +139,7 @@ namespace CH4
                 _history.Add(CreateMessage(LlmRole.System, _systemPrompt));
             }
         }
+
         /// <summary>
         /// 以外部历史替换当前上下文（重启恢复）——结构修复：system 唯一（取第一条），tool 无配对 ID 丢弃
         /// </summary>
@@ -194,21 +199,23 @@ namespace CH4
                 _history.Add(m);
             }
         }
-/// <summary>
-/// 建立空 LlmMessage——全字段初始化（struct 默认字段为 null——serialize 判空会 NRE）
-/// </summary>
-/// <param name = "role">角色</param>
-/// <param name = "content">正文</param>
-/// <returns>初始化后的消息</returns>
-private static LlmMessage CreateMessage(LlmRole role, string content)
-{
-    LlmMessage msg = new LlmMessage();
-    msg.Role = role;
-    msg.Content = content;
-    msg.ToolCallId = "";
-    msg.ToolName = "";
-    msg.ToolCallsJson = "";
-    msg.ReasoningContent = "";
-    return msg;
-}    }
+
+        /// <summary>
+        /// 建立空 LlmMessage——全字段初始化（struct 默认字段为 null——serialize 判空会 NRE）
+        /// </summary>
+        /// <param name="role">角色</param>
+        /// <param name="content">正文</param>
+        /// <returns>初始化后的消息</returns>
+        private static LlmMessage CreateMessage(LlmRole role, string content)
+        {
+            LlmMessage msg = new LlmMessage();
+            msg.Role = role;
+            msg.Content = content;
+            msg.ToolCallId = "";
+            msg.ToolName = "";
+            msg.ToolCallsJson = "";
+            msg.ReasoningContent = "";
+            return msg;
+        }
+    }
 }
