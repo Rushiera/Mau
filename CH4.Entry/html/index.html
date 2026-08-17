@@ -78,6 +78,7 @@
             <button data-tab="state" class="active">状态</button>
             <button data-tab="log">日志</button>
             <button data-tab="raw">原始</button>
+            <button data-tab="config">配置</button>
         </nav>
         <main>
             <!-- 状态区 -->
@@ -112,6 +113,22 @@
                     <span id="rawInfo" style="color:#6a6a6a;font-size:11px"></span>
                 </div>
                 <pre id="rawJson"></pre>
+            </section>
+            <!-- 配置区 -->
+            <section id="tab-config" class="tab">
+                <div id="configbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid #222;align-items:center">
+                    <span style="color:#6a6a6a;font-size:11px">llm.cfg 读写——POST 落盘；运行时生效待 P7（改后重启宿主）</span>
+                    <button id="configRefresh" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:4px 10px;cursor:pointer;font-family:inherit;font-size:12px">刷新</button>
+                </div>
+                <div style="flex:1;overflow-y:auto;padding:8px 12px">
+                    <table class="box-table" id="configTable"><thead><tr><th style="width:28%">key</th><th style="width:42%">value</th><th style="width:8%">来源</th><th style="width:22%">操作</th></tr></thead><tbody></tbody></table>
+                    <div style="margin-top:10px;display:flex;gap:6px">
+                        <input id="cfgNewKey" placeholder="新 key（如 llm.model）" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
+                        <input id="cfgNewVal" placeholder="值" style="flex:2;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
+                        <button id="cfgAddBtn" style="background:#0e639c;border:none;color:#fff;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">添加/覆盖</button>
+                    </div>
+                    <div id="configMsg" style="color:#4ec9b0;font-size:11px;margin-top:6px"></div>
+                </div>
             </section>
         </main>
     </div>
@@ -160,8 +177,7 @@
             pushLog({ time: '', frame: d.frame, level: d.ok ? 'INFO' : 'ERROR', category: 'CMD', module: d.cmdId, message: d.ok ? 'ok' : ('err=' + (d.error || '')) });
             cmdResultEl.textContent = '回执: ' + d.cmdId + ' ok=' + d.ok + ' frame=' + d.frame + (d.error ? ' error=' + d.error : '');
         });
-        es.onerror = function () { if (!esClosed) { metaEl.textContent = 'SSE 断线——自动重连...'; } };
-        var esClosed = false;
+        es.onerror = function () { metaEl.textContent = 'SSE 断线——自动重连...'; };
 
         // 初始兜底——帧号守卫（旧快照不覆盖新）
         fetch('/api/v1/snapshot?logs=200')
@@ -405,6 +421,71 @@
                     cmdResultEl.textContent = '请求失败: ' + err;
                 });
         }
+
+        // [段12] 配置区——GET/POST /api/v1/config（v3 配置区；敏感键服务端掩码，POST 拒绝掩码回写）
+        var configTableBody = document.querySelector('#configTable tbody');
+        var configMsg = document.getElementById('configMsg');
+        function loadConfig() {
+            fetch('/api/v1/config')
+                .then(function (r) { return r.json(); })
+                .then(function (d) { renderConfig(d.items || []); })
+                .catch(function () {});
+        }
+        function renderConfig(items) {
+            configTableBody.textContent = '';
+            for (var i = 0; i < items.length; i++) {
+                var it = items[i];
+                var tr = document.createElement('tr');
+                var td1 = document.createElement('td');
+                td1.className = 'box-key';
+                td1.textContent = it.key;
+                var td2 = document.createElement('td');
+                var inp = document.createElement('input');
+                inp.value = it.value;
+                inp.style.cssText = 'width:100%;background:#1a1a1a;border:1px solid #2a2a2a;color:#d4d4d4;padding:3px 6px;font-family:inherit;font-size:11px;';
+                td2.appendChild(inp);
+                var td3 = document.createElement('td');
+                td3.className = 'box-tag';
+                td3.textContent = it.source;
+                var td4 = document.createElement('td');
+                var btn = document.createElement('button');
+                btn.textContent = '保存';
+                btn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:2px 8px;cursor:pointer;font-family:inherit;font-size:11px;';
+                btn.addEventListener('click', (function (k, input) {
+                    return function () { saveConfig(k, input.value); };
+                })(it.key, inp));
+                td4.appendChild(btn);
+                tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
+                configTableBody.appendChild(tr);
+            }
+        }
+        function saveConfig(key, value) {
+            fetch('/api/v1/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: key, value: value })
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d.ok) {
+                        configMsg.textContent = '已保存 ' + key + ' @F' + d.frame + '（运行时生效待重启宿主）';
+                        loadConfig();
+                    } else {
+                        configMsg.textContent = '失败: ' + (d.error || '未知错误');
+                    }
+                })
+                .catch(function (err) { configMsg.textContent = '请求失败: ' + err; });
+        }
+        document.getElementById('configRefresh').addEventListener('click', loadConfig);
+        document.getElementById('cfgAddBtn').addEventListener('click', function () {
+            var k = document.getElementById('cfgNewKey').value.trim();
+            var v = document.getElementById('cfgNewVal').value.trim();
+            if (k.length === 0 || v.length === 0) { configMsg.textContent = 'key 和 value 都不能为空'; return; }
+            saveConfig(k, v);
+            document.getElementById('cfgNewKey').value = '';
+            document.getElementById('cfgNewVal').value = '';
+        });
+        loadConfig();
     </script>
 </body>
 </html>
