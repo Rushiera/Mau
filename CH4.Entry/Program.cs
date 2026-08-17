@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
@@ -55,7 +55,8 @@ namespace CH4
 
         /// <summary>OA 工单平台——观测快照（诊断期）</summary>
         private static OA _oa;
-
+/// <summary>HTTP 外观层——Kestrel + Minimal API（P6：快照/SSE/指令/静态页）</summary>
+private static HttpHost _httpHost;
         /// <summary>
         /// 主程序入口——参数路由：无参=交互模式 / --selfcheck=启动自检 / --run "指令"=单指令脚本模式 / --script &lt;file&gt;=指令文件批量模式（P3a 热重载实测通道）
         /// </summary>
@@ -194,10 +195,13 @@ namespace CH4
                 llmState = "已注入";
             }
             Console.WriteLine("[CH4.Entry] 就绪 | 四 Cat: ToolTestCat#" + _toolId + " IOTestCat#" + _ioId + " QuickCat#" + _quickId + " MajorDomoCat#" + _majorId + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
+            // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
+            _httpHost = HttpHost.Start(8080, BuildSnapshotJson, DispatchCommand);
+            Console.WriteLine("[CH4.Entry] HTTP 外观层就绪: http://127.0.0.1:8080");
         }
 
         /// <summary>
-        /// 定位语料 dll 目录——参数 -dll 指定，否则默认 CatTemp/ch4_build
+        /// 定位语料 dll 目录——参数 -dll 指定，否则默认仓库根 public/app/Flows（统一构筑链部署区）；无仓库根回退 CatTemp/ch4_build
         /// </summary>
         /// <param name="args">命令行参数</param>
         /// <returns>dll 目录</returns>
@@ -209,6 +213,12 @@ namespace CH4
                 {
                     return args[i + 1];
                 }
+            }
+            // 统一构筑链默认——public/app/Flows/（design-ch4-deploy §2.1）；仓库根探测（向上找 Mau.sln）
+            string root = FindRepoRoot(Directory.GetCurrentDirectory());
+            if (root.Length > 0)
+            {
+                return Path.Combine(root, "public", "app", "Flows");
             }
             return Path.Combine(Directory.GetCurrentDirectory(), "CatTemp", "ch4_build");
         }
@@ -251,29 +261,39 @@ namespace CH4
         /// </summary>
         /// <returns>退出码</returns>
         private static int RunInteractive()
-        {
+{
             Console.WriteLine("指令: ReadText <path> | QuickCat <system>|<content> | Chat <内容> | status | reload <tool|io|quick|major> [dll] | run <n> | pid | quit");
             while (true)
             {
-                Console.Write("ch4> ");
-                string line = Console.ReadLine();
-                if (line == null)
+                // [段1] 帧驱动——HTTP 快照推送主线程泵（ThreadGuard：快照构建须宿主主线程；空闲时也持续 Tick）
+                _runner.Tick();
+                if (_httpHost != null)
                 {
-                    break;
+                    _httpHost.PumpMainThread();
                 }
-                line = line.Trim();
-                if (line.Length == 0)
+                // [段2] 按键轮询——有输入才 ReadLine（阻塞读会卡住帧驱动）
+                if (Console.KeyAvailable)
                 {
-                    continue;
+                    string line = Console.ReadLine();
+                    if (line == null)
+                    {
+                        break;
+                    }
+                    line = line.Trim();
+                    if (line.Length == 0)
+                    {
+                        Thread.Sleep(FrameSleepMs);
+                        continue;
+                    }
+                    if (!ExecuteLine(line))
+                    {
+                        break;
+                    }
                 }
-                if (!ExecuteLine(line))
-                {
-                    break;
-                }
+                Thread.Sleep(FrameSleepMs);
             }
             return 0;
         }
-
         /// <summary>
         /// Command 解析与投递——宿主做字符串值识别（语料面零值比较）；QuickCat 双参同帧投两个 key
         /// </summary>
@@ -338,10 +358,14 @@ namespace CH4
         /// 驱动直到三 Cat 全部 Idle——指令投递后连续 Tick；帧上限兜底（LLM 60s 现实耗时 + OA 超时结算窗口）
         /// </summary>
         private static void DriveUntilIdle()
-        {
+{
             for (int i = 0; i < MaxFramesPerRun; i++)
             {
                 _runner.Tick();
+                if (_httpHost != null)
+                {
+                    _httpHost.PumpMainThread();
+                }
                 if (AllIdle())
                 {
                     return;
@@ -350,7 +374,6 @@ namespace CH4
             }
             Console.WriteLine("[CH4.Entry] 驱动帧上限 " + MaxFramesPerRun + " 到达——仍有未闭环活动");
         }
-
         /// <summary>
         /// 三 Cat 全部 Idle 判定——状态行全部 =Idle（编排者双状态机都 Idle 才算空闲）
         /// </summary>
@@ -785,6 +808,124 @@ namespace CH4
                 kept.Add(events[i]);
             }
             return kept.ToArray();
+        }
+/// <summary>
+/// 单 Cat 快照 JSON 追加——协议 §3.2 cats[].status 四柱映射（FlowStatusV3 → 匿名对象）
+/// </summary>
+/// <param name = "cats">目标列表</param>
+/// <param name = "name">Cat 名</param>
+/// <param name = "id">注册 ID</param>
+/// <param name = "handle">Flow 句柄</param>
+private static void AppendCatJson(List<object> cats, string name, long id, FlowHandle handle)
+{
+    if (handle.IsFaulted)
+    {
+        cats.Add(new { name = name, id = id, faulted = true, faultReason = handle.FaultReason, status = (object)null });
+        return;
+    }
+
+    FlowStatusV3 status = handle.Flow.GetStatus();
+    List<object> sensors = new List<object>();
+    for (int i = 0; i < status.SensorValues.Length; i++)
+    {
+        SignalValueV3 s = status.SensorValues[i];
+        sensors.Add(new { name = s.Name, value = s.Value });
+    }
+
+    List<object> slots = new List<object>();
+    for (int i = 0; i < status.SlotLevels.Length; i++)
+    {
+        SlotValueV3 s = status.SlotLevels[i];
+        slots.Add(new { name = s.Name, available = s.Available, capacity = s.Capacity });
+    }
+
+    List<object> wires = new List<object>();
+    for (int i = 0; i < status.WireStatuses.Length; i++)
+    {
+        WireStatusV3 w = status.WireStatuses[i];
+        wires.Add(new { name = w.Name, busy = w.Busy, lastTriggerFrame = w.LastTriggerFrame, timedOut = w.TimedOut });
+    }
+
+    cats.Add(new { name = name, id = id, faulted = false, faultReason = "", status = new { frame = status.Frame, stateLines = status.StateLines, sensors = sensors, slots = slots, wires = wires } });
+}    /// <summary>
+/// 构建全量快照 JSON——协议 design-ch4-protocol.md §三（version/pid/frame/cats/oa/logs；logs 按 includeLogs 裁剪）
+/// </summary>
+/// <param name = "includeLogs">是否携带日志（GET 轮询 true / SSE 事件 false——协议 §4.2 snapshot 事件裁剪）</param>
+/// <returns>快照 JSON 文本</returns>
+private static string BuildSnapshotJson(bool includeLogs)
+{
+    List<object> cats = new List<object>();
+    AppendCatJson(cats, "ToolTestCat", _toolId, _toolHandle);
+    AppendCatJson(cats, "IOTestCat", _ioId, _ioHandle);
+    AppendCatJson(cats, "QuickCat", _quickId, _quickHandle);
+    AppendCatJson(cats, "MajorDomoCat", _majorId, _majorHandle);
+    OAView oa = _oa.GetSnapshot();
+    object logs;
+    if (includeLogs)
+    {
+        List<object> logList = new List<object>();
+        List<LogStore.LogEntry> all = LogStore.AllLog;
+        lock (LogStore.Sync)
+        {
+            int start = all.Count - 50;
+            if (start < 0)
+            {
+                start = 0;
+            }
+
+            for (int i = start; i < all.Count; i++)
+            {
+                LogStore.LogEntry entry = all[i];
+                logList.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, message = entry.Message });
+            }
+        }
+
+        logs = logList;
+    }
+    else
+    {
+        logs = new object[0];
+    }
+
+    var snapshot = new
+    {
+        version = 1,
+        pid = Environment.ProcessId,
+        frame = FlowRunner.GlobalFrame,
+        cats = cats,
+        oa = new
+        {
+            open = oa.OpenCount,
+            work = oa.WorkCount,
+            closed = oa.ClosedCount,
+            timeout = oa.TimeoutCount
+        },
+        logs = logs
+    };
+    return JsonSerializer.Serialize(snapshot);
+}
+
+        /// <summary>
+        /// 仓库根探测——从当前目录向上找含 Mau.sln 的目录（部署区定位用；CH4.Entry 可从任意工作目录启动）
+        /// </summary>
+        /// <param name="startDir">起始目录</param>
+        /// <returns>仓库根或空字符串</returns>
+        private static string FindRepoRoot(string startDir)
+        {
+            string dir = new DirectoryInfo(startDir).FullName;
+            while (true)
+            {
+                if (File.Exists(Path.Combine(dir, "Mau.sln")))
+                {
+                    return dir;
+                }
+                string parent = Directory.GetParent(dir)?.FullName;
+                if (parent == null)
+                {
+                    return "";
+                }
+                dir = parent;
+            }
         }
     }
 }

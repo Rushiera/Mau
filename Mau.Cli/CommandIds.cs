@@ -33,6 +33,9 @@ namespace Mau.Cli
         /// <summary>bricks——积木索引（list / index --update / index --verify）</summary>
         public const int Bricks = 7;
 
+        /// <summary>proj——组工程统一构筑链（翻译落盘 + dotnet build；design-ch4-deploy §三）</summary>
+        public const int Proj = 8;
+
         /// <summary>
         /// 命令名 → 编号匹配表——唯一入口（名称可后续改，编号不可变）
         /// </summary>
@@ -45,6 +48,7 @@ namespace Mau.Cli
             { "check", Check },
             { "debug", Debug },
             { "bricks", Bricks },
+            { "proj", Proj },
         };
 
         /// <summary>

@@ -77,6 +77,8 @@ namespace Mau.Cli
             return CommandDebugV3.Run(CliSupport.Tail(args));
         case CommandIds.Bricks:
             return CommandBricksV3.Run(CliSupport.Tail(args));
+        case CommandIds.Proj:
+            return CommandProjV3.Run(CliSupport.Tail(args));
         default:
             Console.WriteLine("未知指令编号: " + commandId);
             PrintHelp();
@@ -176,7 +178,7 @@ namespace Mau.Cli
         private static int CommandBuild(string[] args)
         {
             string? mauFile = null;
-            string outDir = ".";
+            string outDir = "";
             for (int i = 1; i < args.Length; i = i + 1)
             {
                 if (args[i] == "-o" && i + 1 < args.Length)
@@ -191,7 +193,7 @@ namespace Mau.Cli
             }
             if (mauFile == null)
             {
-                Console.WriteLine("用法: mau build <file.mau> -o <dir>");
+                Console.WriteLine("用法: mau build <组.mauproj> [--build] | mau proj <组.mauproj> [-o <srcDir>] [--build]");
                 return 1;
             }
             if (!File.Exists(mauFile))
@@ -199,52 +201,24 @@ namespace Mau.Cli
                 Console.WriteLine("文件不存在: " + mauFile);
                 return 1;
             }
-            string source = File.ReadAllText(mauFile);
-            string flowName = FlowNameFromPath(mauFile);
-            CompileResultV3 result = MauCompilerV3.Compile(source, flowName);
-            PrintDiagnostics(mauFile, result);
-            if (!result.Success)
+            // [段0] 统一构筑链路由——.mauproj 走组路径（Roslyn Emit 退役——design-ch4-deploy §六）；.mau 单文件提示建组
+            if (mauFile.EndsWith(".mauproj", StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine("构建失败: 验证未通过——" + flowName);
-                return 1;
-            }
-            if (!Directory.Exists(outDir))
-            {
-                Directory.CreateDirectory(outDir);
-            }
-            string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_build_v3_" + Guid.NewGuid().ToString("N").Substring(0, 8));
-            try
-            {
-                Mau.Development.MauPocketCompiler compiler = new Mau.Development.MauPocketCompiler(pocketRoot);
-                Mau.Development.MauPocketCompileResult compileResult = compiler.Compile(result.GeneratedCode, "FL_" + flowName);
-                if (!compileResult.Success)
+                string[] projArgs;
+                if (outDir.Length > 0)
                 {
-                    Console.WriteLine("构建失败: Roslyn 编译错误");
-                    for (int i = 0; i < compileResult.Diagnostics.Length; i = i + 1)
-                    {
-                        Console.WriteLine("  " + compileResult.Diagnostics[i]);
-                    }
-                    return 2;
+                    projArgs = new string[] { mauFile, "--build", "-o", outDir };
                 }
-                string dllPath = Path.Combine(outDir, "FL_" + flowName + ".dll");
-                File.Copy(compileResult.AssemblyPath, dllPath, true);
-                Console.WriteLine("构建成功: " + dllPath + "（Roslyn Emit）");
-                return 0;
-            }
-            finally
-            {
-                if (Directory.Exists(pocketRoot))
+                else
                 {
-                    try
-                    {
-                        Directory.Delete(pocketRoot, true);
-                    }
-                    catch (Exception)
-                    {
-                        // 清理失败不影响结果
-                    }
+                    projArgs = new string[] { mauFile, "--build" };
                 }
+                return CommandProjV3.Run(projArgs);
             }
+            Console.WriteLine("提示: 单 .mau 直接编译路径已退役（统一构筑链——design-ch4-deploy.md）。");
+            Console.WriteLine("      请为该语料创建 mauproj 组声明，然后: mau proj <组.mauproj> --build");
+            Console.WriteLine("      中间产物将落盘 public/src/<组名>/，dll 输出 public/app/Flows/FL_<组名>.dll");
+            return 1;
         }
 
         /// <summary>

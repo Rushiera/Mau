@@ -55,7 +55,8 @@
 |:--|:--|
 | `mau verify <file.mau>` | 全链编译（不产出） |
 | `mau gen <file.mau> -o <dir>` | 全链编译 + C# 生成物 |
-| `mau build <file.mau> -o <dir>` | 全链编译 + Roslyn Emit（无 SDK） |
+| `mau proj <组.mauproj> [-o <srcDir>] [--build] [--out <dllDir>]` | **统一构筑链**——组翻译落盘 public/src/<组>/（csproj+BRIKGROUP.cs+FL_*.cs）；--build 走 dotnet build → public/app/Flows/FL_<组>.dll |
+| `mau build <组.mauproj>` | 统一链路由——转发 mau proj --build（Roslyn Emit 退役；单 .mau 提示建组） |
 | `mau test [--update]` | 三段门禁——[1/3] L2 翻译器+Runtime 测试 [2/3] L3 黄金哈希 [3/3] L4 积木谱 |
 | `mau check` | 语法谱 5/5 + 负例谱 4/4 + 关键路径报告 |
 | `mau debug <file.mau> [--ticks N] [--step] [--pause-on S_X=Y]` | 四柱状态表 + 单步 + 状态断点 |
@@ -100,3 +101,19 @@ MIT License · 详见 [LICENSE](./LICENSE)
 ---
 
 _版本：v3.0.2 | 2026-08-14 | 基座阶段完成——README 重写为 v3 现状页（命令面/工程结构/积木最小化现状）；v3.0.0 重建期状态页见 git 历史 148bdeb 前_
+
+## 部署架构（2026-08-17 统一构筑链）
+
+**编译链：** `.mau → mauproj 打组 → public/src/<组>/（csproj + BRIKGROUP.cs + FL_*.cs）→ dotnet build → public/app/Flows/FL_<组>.dll`
+
+**产物双区：**
+- `public/`——CH4 部署区：`src/<组>/`（翻译中间产物，一组一文件夹）+ `app/`（CH4.exe publish 平铺 + `Flows/` 语料 dll）
+- `Mau-public/`——Mau 基座部署区（dotnet publish 平铺 + `Flows/` 未来自举语料占位）
+
+**引用源铁律：** FL csproj Reference `Mau-public/` dll（编译/运行时同源），不 ProjectReference 源码。改基座 → 先 publish Mau-public → 再 proj 编译 FL。
+
+**Roslyn 定位：** 退出构筑主链，保留基座工具能力（debug/bricks/test——Mau.Development 库形态）。
+
+**入口：** CH4.exe 无参启动 = 程序入口（FindRepoRoot 定位仓库根 → 默认 Flows/ 加载）。
+
+> 规格权威：CCBP `Project/CH4/design-ch4-deploy.md`

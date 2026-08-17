@@ -1,0 +1,388 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Channels;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Mau.Runtime;
+
+namespace CH4
+{
+    /// <summary>
+    /// HTTP 外观层宿主——Kestrel + Minimal API（P6 最小闭环）。
+    /// 通道：GET /api/v1/snapshot（全量快照）· GET /api/v1/stream（SSE 事件流）· POST /api/v1/command（指令入口）· GET /（静态页）。
+    /// 协议唯一权威：design-ch4-protocol.md（CCBP Project/CH4/）。归 CH4 业务区块（边界判据 7：外观层可选/可切换）。
+    /// </summary>
+    public sealed class HttpHost
+    {
+        // [段1] 服务字段——应用实例/端口/回调/事件状态
+        /// <summary>Kestrel 应用实例</summary>
+        private WebApplication _app;
+
+        /// <summary>绑定端口（配置项接入前写死 8080——协议 §二）</summary>
+        private int _port;
+
+        /// <summary>快照 JSON 构建回调——宿主侧注入（Program.BuildSnapshotJson，includeLogs 参数）</summary>
+        private Func<bool, string> _snapshotBuilder;
+
+        /// <summary>指令投递回调——宿主侧注入（Program.DispatchCommand）</summary>
+        private Func<string, bool> _dispatcher;
+
+        /// <summary>SSE 事件序号——单调递增（协议 §4.3 seq 锚点）</summary>
+        private int _seq;
+
+        /// <summary>SSE 客户端集合——锁保护（多连接独立广播）</summary>
+        private readonly List<SseClient> _clients = new List<SseClient>();
+
+        /// <summary>客户端集合锁</summary>
+        private readonly object _clientLock = new object();
+
+        /// <summary>LogStore 增量游标——已推送条目数（协议 §4.2 log 事件）</summary>
+        private int _logCursor;
+
+        /// <summary>后台推送任务取消源——宿主退出时停</summary>
+        private CancellationTokenSource _pumpCts;
+
+        /// <summary>后台推送任务——快照定时 + log 增量（协议 §4.1）</summary>
+        private Task _pumpTask;
+
+        /// <summary>停止标志——Stop 后 Push 静默丢弃</summary>
+        private bool _stopped;
+
+        /// <summary>快照缓存——主线程 PumpMainThread 构建，HTTP 线程只读（最近一帧主线程快照）</summary>
+        private string _snapshotCache = "{}";
+
+        /// <summary>快照待构建标志——PumpLoop 置位，主线程 PumpMainThread 消费</summary>
+        private volatile bool _snapshotPending;
+
+        /// <summary>快照推送间隔毫秒——250ms（协议 §4.2 snapshot 事件）</summary>
+        private const int SnapshotIntervalMs = 250;
+
+        /// <summary>
+        /// 启动 HTTP 外观层——Kestrel 绑定端口 + 注册四路由 + 后台推送任务启动。
+        /// </summary>
+        /// <param name="port">监听端口（127.0.0.1 回环）</param>
+        /// <param name="snapshotBuilder">快照 JSON 构建回调（includeLogs——快照轮询含日志/SSE 事件裁剪）</param>
+        /// <param name="dispatcher">指令投递回调（返回 true=识别并投递）</param>
+        /// <returns>HttpHost 实例</returns>
+        public static HttpHost Start(int port, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher)
+        {
+            HttpHost host = new HttpHost();
+            host._port = port;
+            host._snapshotBuilder = snapshotBuilder;
+            host._dispatcher = dispatcher;
+            host.BuildApp();
+            host._pumpCts = new CancellationTokenSource();
+            host._pumpTask = Task.Run(delegate
+            {
+                host.PumpLoop(host._pumpCts.Token);
+            });
+            return host;
+        }
+
+        /// <summary>
+        /// 构建 Kestrel 应用——路由注册（快照/流/指令/静态页）。
+        /// </summary>
+        private void BuildApp()
+        {
+            WebApplicationBuilder builder = WebApplication.CreateSlimBuilder();
+            builder.WebHost.ConfigureKestrel((options) =>
+            {
+                options.ListenLocalhost(_port);
+            });
+            _app = builder.Build();
+            _app.MapGet("/api/v1/snapshot", () =>
+            {
+                // 缓存快照——主线程 PumpMainThread 构建（ThreadGuard：OA.GetSnapshot 仅宿主主线程）
+                return Results.Text(_snapshotCache, "application/json");
+            });
+            _app.MapGet("/api/v1/stream", (RequestDelegate)StreamEvents);
+            _app.MapPost("/api/v1/command", (Delegate)HandleCommand);
+            _app.MapGet("/", () =>
+            {
+                return ServeIndex();
+            });
+            _app.StartAsync().GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// 后台推送循环——每 250ms 推全量快照 + LogStore 增量（协议 §4.2）。
+        /// </summary>
+        /// <param name="token">取消令牌</param>
+        private void PumpLoop(CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    Thread.Sleep(SnapshotIntervalMs);
+                    // 快照构建归主线程（ThreadGuard——OA.GetSnapshot 仅宿主主线程）——后台只置标志，主线程 PumpMainThread 消费
+                    _snapshotPending = true;
+                    PushLogIncrements();
+                }
+                catch (Exception)
+                {
+                    // 推送异常不炸宿主——静默跳过下一轮
+                }
+            }
+        }
+
+        /// <summary>
+        /// 主线程泵——宿主帧循环调用：快照待构建标志置位时在主线程构建 + 缓存 + 推送（ThreadGuard 契约）。
+        /// </summary>
+        public void PumpMainThread()
+        {
+            if (!_snapshotPending)
+            {
+                return;
+            }
+            _snapshotPending = false;
+            string json = _snapshotBuilder(false);
+            _snapshotCache = json;
+            PushEvent("snapshot", json);
+        }
+
+        /// <summary>
+        /// LogStore 增量推送——游标后新条目逐条推 log 事件（协议 §4.2）。
+        /// </summary>
+        private void PushLogIncrements()
+        {
+            List<LogStore.LogEntry> logs = LogStore.AllLog;
+            lock (LogStore.Sync)
+            {
+                while (_logCursor < logs.Count)
+                {
+                    LogStore.LogEntry entry = logs[_logCursor];
+                    _logCursor = _logCursor + 1;
+                    var obj = new
+                    {
+                        time = entry.Time,
+                        frame = entry.Frame,
+                        level = LogStore.LevelText(entry.Level),
+                        category = entry.Category,
+                        module = entry.Module,
+                        message = entry.Message
+                    };
+                    PushEvent("log", JsonSerializer.Serialize(obj));
+                }
+            }
+        }
+
+        /// <summary>
+        /// SSE 连接处理——注册客户端 + 事件队列消费（协议 §四：text/event-stream 帧格式）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>完成任务</returns>
+        private async Task StreamEvents(HttpContext ctx)
+        {
+            ctx.Response.Headers["Content-Type"] = "text/event-stream";
+            ctx.Response.Headers["Cache-Control"] = "no-cache";
+            ctx.Response.Headers["Connection"] = "keep-alive";
+            SseClient client = new SseClient(ctx.Response);
+            lock (_clientLock)
+            {
+                _clients.Add(client);
+            }
+            // 连接建立即推全量快照——重连兜底（协议 §4.3；缓存——主线程构建）
+            PushEvent("snapshot", _snapshotCache);
+            try
+            {
+                await foreach (string frame in client.Queue.Reader.ReadAllAsync(ctx.RequestAborted))
+                {
+                    await client.Response.WriteAsync(frame);
+                    await client.Response.Body.FlushAsync();
+                }
+            }
+            catch (Exception)
+            {
+                // 客户端断开——静默移除
+            }
+            finally
+            {
+                lock (_clientLock)
+                {
+                    _clients.Remove(client);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 指令入口处理——解析 JSON body → 投递 → 回执（协议 §五：投递即回执，结果异步可见）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>回执 JSON</returns>
+        private async Task<IResult> HandleCommand(HttpContext ctx)
+        {
+            string body = "";
+            using (System.IO.StreamReader reader = new System.IO.StreamReader(ctx.Request.Body))
+            {
+                body = await reader.ReadToEndAsync();
+            }
+            string text = ExtractText(body);
+            bool ok = _dispatcher(text);
+            string cmdId = "cmd-" + _seq;
+            long frame = FlowRunner.GlobalFrame;
+            if (ok)
+            {
+                var resp = new
+                {
+                    ok = true,
+                    cmdId = cmdId,
+                    frame = frame
+                };
+                PushEvent("cmd", JsonSerializer.Serialize(resp));
+                return Results.Json(resp);
+            }
+            var fail = new
+            {
+                ok = false,
+                cmdId = cmdId,
+                frame = frame,
+                error = "指令未识别: " + text
+            };
+            PushEvent("cmd", JsonSerializer.Serialize(fail));
+            return Results.Json(fail);
+        }
+
+        /// <summary>
+        /// 从请求 body 提取指令文本——防御式解析（协议 §5.1：{"text":"..."}）。
+        /// </summary>
+        /// <param name="body">原始 body</param>
+        /// <returns>指令文本（解析失败空串）</returns>
+        private static string ExtractText(string body)
+        {
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(body))
+                {
+                    JsonElement root = doc.RootElement;
+                    JsonElement textEl;
+                    if (root.TryGetProperty("text", out textEl) && textEl.ValueKind == JsonValueKind.String)
+                    {
+                        string text = textEl.GetString();
+                        if (text != null)
+                        {
+                            return text;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // 解析失败——按空指令处理（错误可见性：回执 ok=false）
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// 静态页服务——返回 index.html（协议 §六：GET / 本地面板）。
+        /// </summary>
+        /// <returns>HTML 响应</returns>
+        private static IResult ServeIndex()
+        {
+            string baseDir = AppContext.BaseDirectory;
+            string htmlPath = System.IO.Path.Combine(baseDir, "html", "index.html");
+            if (System.IO.File.Exists(htmlPath))
+            {
+                string html = System.IO.File.ReadAllText(htmlPath);
+                return Results.Text(html, "text/html");
+            }
+            return Results.Text("CH4 外观层——index.html 未找到: " + htmlPath + "（宿主需在 CH4.Entry/bin/.../html/ 放置静态页）", "text/plain");
+        }
+
+        /// <summary>
+        /// 广播 SSE 事件帧——event: 名 + data: JSON（协议 §4.1 标准 text/event-stream）。
+        /// </summary>
+        /// <param name="eventName">事件名（snapshot/llm/log/cmd）</param>
+        /// <param name="data">JSON 载荷</param>
+        private void PushEvent(string eventName, string data)
+        {
+            if (_stopped)
+            {
+                return;
+            }
+            _seq = _seq + 1;
+            string frame = "event: " + eventName + "\ndata: " + data + "\n\n";
+            lock (_clientLock)
+            {
+                for (int i = 0; i < _clients.Count; i++)
+                {
+                    SseClient client = _clients[i];
+                    if (!client.Queue.Writer.TryWrite(frame))
+                    {
+                        // 队列写失败（客户端断开）——完成该队列（消费端退出清理）
+                        client.Queue.Writer.TryComplete();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// LLM 流式事件转发——宿主 ChatBridge 调用（协议 §4.2 llm 事件：seq 单调 + kind 五态）。
+        /// </summary>
+        /// <param name="kind">事件态——text/reasoning/toolCalls/done/error（直映 LlmStreamKind）</param>
+        /// <param name="text">增量文本或错误文本</param>
+        public void PushLlm(string kind, string text)
+        {
+            var obj = new
+            {
+                seq = _seq,
+                kind = kind,
+                text = text
+            };
+            PushEvent("llm", JsonSerializer.Serialize(obj));
+        }
+
+        /// <summary>
+        /// 停止外观层——Kestrel 停止 + 后台推送取消。
+        /// </summary>
+        public void Stop()
+        {
+            _stopped = true;
+            if (_pumpCts != null)
+            {
+                _pumpCts.Cancel();
+                _pumpCts.Dispose();
+                _pumpCts = null;
+            }
+            if (_app != null)
+            {
+                _app.StopAsync().GetAwaiter().GetResult();
+                _app = null;
+            }
+        }
+
+        /// <summary>
+        /// 已绑定端口——对外查询（观测用）。
+        /// </summary>
+        public int Port
+        {
+            get { return _port; }
+        }
+
+        /// <summary>
+        /// SSE 客户端——每连接一个无界事件队列（协议 §4.3：多浏览器连接独立广播）。
+        /// </summary>
+        private sealed class SseClient
+        {
+            /// <summary>事件队列——宿主 Push 入队 / 连接消费写响应</summary>
+            public Channel<string> Queue;
+
+            /// <summary>HTTP 响应——写入 SSE 帧</summary>
+            public HttpResponse Response;
+
+            /// <summary>
+            /// 构造 SSE 客户端
+            /// </summary>
+            /// <param name="response">HTTP 响应</param>
+            public SseClient(HttpResponse response)
+            {
+                Response = response;
+                Queue = Channel.CreateUnbounded<string>();
+            }
+        }
+    }
+}

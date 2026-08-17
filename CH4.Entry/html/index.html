@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>CH4 外观层 v1</title>
+    <style>
+        body { font-family: "Consolas", "Microsoft YaHei", monospace; margin: 0; padding: 16px; background: #1e1e1e; color: #d4d4d4; }
+        h1 { font-size: 18px; color: #569cd6; margin: 0 0 12px 0; }
+        h2 { font-size: 14px; color: #4ec9b0; margin: 16px 0 8px 0; }
+        .meta { color: #808080; font-size: 12px; margin-bottom: 8px; }
+        .cat-card { border: 1px solid #333; border-radius: 4px; padding: 8px; margin-bottom: 8px; background: #252526; }
+        .cat-name { color: #c586c0; font-weight: bold; }
+        .cat-state { color: #d4d4d4; }
+        .cat-faulted { color: #f48771; }
+        .cat-wire { color: #808080; font-size: 12px; }
+        .oa { color: #ce9178; font-size: 13px; }
+        #events { height: 200px; overflow-y: auto; border: 1px solid #333; padding: 8px; background: #1a1a1a; font-size: 12px; }
+        .ev-llm { color: #6a9955; }
+        .ev-log { color: #808080; }
+        .ev-cmd { color: #569cd6; }
+        .ev-error { color: #f48771; }
+        #cmdInput { width: calc(100% - 100px); padding: 6px; background: #1a1a1a; border: 1px solid #333; color: #d4d4d4; }
+        #cmdBtn { width: 90px; padding: 6px; background: #0e639c; border: none; color: #fff; cursor: pointer; }
+        #cmdResult { font-size: 12px; color: #4ec9b0; margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <h1>CH4 外观层 v1</h1>
+    <div class="meta" id="meta">连接中...</div>
+
+    <h2>Cat 状态快照</h2>
+    <div id="cats"></div>
+
+    <h2>OA 工单</h2>
+    <div class="oa" id="oa">-</div>
+
+    <h2>实时事件流</h2>
+    <div id="events"></div>
+
+    <h2>指令入口</h2>
+    <div>
+        <input id="cmdInput" type="text" placeholder="如: ReadText C:/a.txt 或 Chat 你好" onkeydown="if(event.key==='Enter')sendCmd()">
+        <button id="cmdBtn" onclick="sendCmd()">发送</button>
+    </div>
+    <div id="cmdResult"></div>
+
+    <script>
+        // [段1] 初始化——元素引用 + 事件源 + 快照轮询兜底
+        var catsEl = document.getElementById('cats');
+        var oaEl = document.getElementById('oa');
+        var eventsEl = document.getElementById('events');
+        var metaEl = document.getElementById('meta');
+        var cmdResultEl = document.getElementById('cmdResult');
+        var seqLast = 0;
+
+        // SSE 事件流——实时（llm/log/cmd/snapshot 四类事件）
+        var es = new EventSource('/api/v1/stream');
+        es.addEventListener('snapshot', function (ev) {
+            applySnapshot(JSON.parse(ev.data));
+        });
+        es.addEventListener('llm', function (ev) {
+            var d = JSON.parse(ev.data);
+            appendEvent('llm', 'llm#' + d.seq + ' [' + d.kind + '] ' + d.text, d.kind === 'error' ? 'ev-error' : 'ev-llm');
+        });
+        es.addEventListener('log', function (ev) {
+            var d = JSON.parse(ev.data);
+            appendEvent('log', d.time + ' | F' + d.frame + ' | ' + d.level + ' | ' + d.module + ' | ' + d.message, 'ev-log');
+        });
+        es.addEventListener('cmd', function (ev) {
+            var d = JSON.parse(ev.data);
+            appendEvent('cmd', d.cmdId + ' ok=' + d.ok + ' frame=' + d.frame + (d.error ? ' err=' + d.error : ''), d.ok ? 'ev-cmd' : 'ev-error');
+        });
+        es.onerror = function () {
+            metaEl.textContent = 'SSE 断线——浏览器自动重连...';
+        };
+        es.onopen = function () {
+            metaEl.textContent = 'SSE 已连接';
+        };
+
+        // 初始全量快照兜底——EventSource 可能错过连接前事件
+        fetch('/api/v1/snapshot')
+            .then(function (r) { return r.json(); })
+            .then(applySnapshot)
+            .catch(function () {});
+
+        // [段2] 快照渲染——不可变数据只读展示（协议 §三）
+        function applySnapshot(s) {
+            metaEl.textContent = 'pid=' + s.pid + ' frame=' + s.frame + ' version=' + s.version;
+            var html = '';
+            for (var i = 0; i < s.cats.length; i++) {
+                var c = s.cats[i];
+                html = html + '<div class="cat-card"><span class="cat-name">' + c.name + ' #' + c.id + '</span>';
+                if (c.faulted) {
+                    html = html + ' <span class="cat-faulted">FAULTED: ' + c.faultReason + '</span>';
+                } else {
+                    var st = c.status;
+                    html = html + ' <span class="cat-state">' + st.stateLines.join(' ') + '</span>';
+                    var wires = [];
+                    for (var w = 0; w < st.wires.length; w++) {
+                        if (st.wires[w].busy) {
+                            wires.push(st.wires[w].name + '(在途)');
+                        }
+                    }
+                    if (wires.length > 0) {
+                        html = html + ' <span class="cat-wire">| ' + wires.join(' ') + '</span>';
+                    }
+                }
+                html = html + '</div>';
+            }
+            catsEl.innerHTML = html;
+            oaEl.textContent = 'Open=' + s.oa.open + ' Work=' + s.oa.work + ' Closed=' + s.oa.closed + ' Timeout=' + s.oa.timeout;
+        }
+
+        // [段3] 事件渲染——textContent 安全（HtmlUI 铁律）
+        function appendEvent(type, text, cls) {
+            var div = document.createElement('div');
+            div.className = cls;
+            div.textContent = text;
+            eventsEl.appendChild(div);
+            while (eventsEl.children.length > 200) {
+                eventsEl.removeChild(eventsEl.firstChild);
+            }
+            eventsEl.scrollTop = eventsEl.scrollHeight;
+        }
+
+        // [段4] 指令入口——POST /api/v1/command（协议 §五）
+        function sendCmd() {
+            var input = document.getElementById('cmdInput');
+            var text = input.value.trim();
+            if (text.length === 0) {
+                return;
+            }
+            input.value = '';
+            fetch('/api/v1/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text })
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    cmdResultEl.textContent = '回执: cmdId=' + d.cmdId + ' ok=' + d.ok + ' frame=' + d.frame + (d.error ? ' error=' + d.error : '');
+                })
+                .catch(function (err) {
+                    cmdResultEl.textContent = '请求失败: ' + err;
+                });
+        }
+    </script>
+</body>
+</html>

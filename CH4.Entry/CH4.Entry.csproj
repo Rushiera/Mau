@@ -15,4 +15,14 @@
     <ProjectReference Include="..\Mau.Providers\Mau.Providers.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- P6 外观层 HTTP——Kestrel + Minimal API（FrameworkReference = 运行时自带，非第三方 NuGet 依赖） -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- P6 外观层静态页——复制到输出目录（HttpHost.ServeIndex 从 AppContext.BaseDirectory/html/ 读取） -->
+    <None Include="html\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

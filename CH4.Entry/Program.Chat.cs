@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading;
@@ -102,19 +102,43 @@ namespace CH4
                         if (ev.Kind == LlmStreamKind.Text)
                         {
                             text.Append(ev.Text);
+                            // P6 外观层转发——LLM 增量实时推送 SSE（协议 §4.2 llm 事件）
+                            if (_httpHost != null)
+                            {
+                                _httpHost.PushLlm("text", ev.Text);
+                            }
                         }
                         else if (ev.Kind == LlmStreamKind.Reasoning)
                         {
                             reasoning.Append(ev.Text);
+                            if (_httpHost != null)
+                            {
+                                _httpHost.PushLlm("reasoning", ev.Text);
+                            }
                         }
                         else if (ev.Kind == LlmStreamKind.ToolCalls)
                         {
                             toolCalls = ev.Text;
+                            if (_httpHost != null)
+                            {
+                                _httpHost.PushLlm("toolCalls", ev.Text);
+                            }
+                        }
+                        else if (ev.Kind == LlmStreamKind.Done)
+                        {
+                            if (_httpHost != null)
+                            {
+                                _httpHost.PushLlm("done", "");
+                            }
                         }
                         else if (ev.Kind == LlmStreamKind.Error)
                         {
                             _llmError = true;
                             _llmErrorText = ev.Text;
+                            if (_httpHost != null)
+                            {
+                                _httpHost.PushLlm("error", ev.Text);
+                            }
                         }
                     }
                     _llmResultText = text.ToString();

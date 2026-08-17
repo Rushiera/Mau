@@ -11,12 +11,24 @@ namespace Mau.Translator
     public static class MauGeneratorV3
     {
         /// <summary>
-        /// 生成 C# 产物——IR → 源码文本
+        /// 生成 C# 产物——IR → 源码文本（兼容入口——默认内嵌积木，debug/test 单文件路径）
         /// </summary>
         /// <param name="doc">FSM 网络 IR</param>
         /// <param name="flowName">流程名（PascalCase——类名 FL_ 前缀）</param>
         /// <returns>生成结果</returns>
         public static GenerateResultV3 Generate(MauDocV3 doc, string flowName)
+        {
+            return Generate(doc, flowName, true);
+        }
+
+        /// <summary>
+        /// 生成 C# 产物——IR → 源码文本（组模式入口——embedBricks=false 时积木提取到 BRIKGROUP.cs，FL 只引用）
+        /// </summary>
+        /// <param name="doc">FSM 网络 IR</param>
+        /// <param name="flowName">流程名（PascalCase——类名 FL_ 前缀）</param>
+        /// <param name="embedBricks">true=内嵌积木源（单文件路径）；false=不内嵌（组模式——BRIKGROUP.cs 提供）</param>
+        /// <returns>生成结果</returns>
+        public static GenerateResultV3 Generate(MauDocV3 doc, string flowName, bool embedBricks)
         {
             GenerateResultV3 result = new GenerateResultV3();
             if (doc == null)
@@ -48,7 +60,10 @@ namespace Mau.Translator
             AppendGetStatus(sb, doc);
             sb.AppendLine("    }");
             sb.AppendLine("}");
-            AppendBrickSources(sb, doc);
+            if (embedBricks)
+            {
+                AppendBrickSources(sb, doc);
+            }
             result.Code = sb.ToString();
             result.Success = true;
             return result;
@@ -1292,6 +1307,98 @@ private static void AppendCommandPump(StringBuilder sb, MauDocV3 doc)
                 }
             }
             return result;
+        }
+        /// <summary>
+        /// 收集 IR 引用积木名——导线 + 主动传感器（去重有序）
+        /// </summary>
+        /// <param name="doc">FSM 网络 IR</param>
+        /// <returns>积木名列表</returns>
+        private static List<string> CollectBrickNames(MauDocV3 doc)
+        {
+            List<string> names = new List<string>();
+            for (int w = 0; w < doc.Wires.Count; w++)
+            {
+                if (doc.Wires[w].BrickName.Length > 0 && !names.Contains(doc.Wires[w].BrickName))
+                {
+                    names.Add(doc.Wires[w].BrickName);
+                }
+            }
+            for (int s = 0; s < doc.Sensors.Count; s++)
+            {
+                if (!doc.Sensors[s].Passive && doc.Sensors[s].BrickName.Length > 0 && !names.Contains(doc.Sensors[s].BrickName))
+                {
+                    names.Add(doc.Sensors[s].BrickName);
+                }
+            }
+            return names;
+        }
+
+        /// <summary>
+        /// 生成 BRIKGROUP.cs——组内全部引用积木源码合并去重（组模式共享闭包，namespace Mau.Bricks）。
+        /// 对应 design-ch4-deploy.md §3.2：一组一份 BRIKGROUP.cs，FL_*.cs 只调用不内嵌。
+        /// </summary>
+        /// <param name="docs">组内全部 IR</param>
+        /// <returns>BRIKGROUP.cs 全文（空 = 组无积木引用）</returns>
+        public static string GenerateBrickGroup(List<MauDocV3> docs)
+        {
+            List<string> names = new List<string>();
+            for (int d = 0; d < docs.Count; d++)
+            {
+                List<string> docNames = CollectBrickNames(docs[d]);
+                for (int i = 0; i < docNames.Count; i++)
+                {
+                    if (!names.Contains(docNames[i]))
+                    {
+                        names.Add(docNames[i]);
+                    }
+                }
+            }
+            if (names.Count == 0)
+            {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder();
+            List<string> usings = new List<string>();
+            string root = BrickIndex.FindRepoRoot();
+            for (int i = 0; i < names.Count; i++)
+            {
+                BrickIndexEntry entry;
+                if (!BrickIndex.TryFind(names[i], out entry) || entry.Path.Length == 0)
+                {
+                    continue;
+                }
+                string path = Path.Combine(root, "Bricks", entry.Path);
+                if (!File.Exists(path))
+                {
+                    continue;
+                }
+                sb.AppendLine("// ═══ 积木: " + names[i] + "（来源 Bricks/" + entry.Path + "——复制即单包）═══");
+                string source = File.ReadAllText(path);
+                string[] lines = source.Split('\n');
+                for (int l = 0; l < lines.Length; l++)
+                {
+                    string trimmed = lines[l].Trim();
+                    if (trimmed.StartsWith("using ", StringComparison.Ordinal))
+                    {
+                        if (!usings.Contains(trimmed))
+                        {
+                            usings.Add(trimmed);
+                        }
+                        continue;
+                    }
+                    sb.AppendLine(lines[l].TrimEnd('\r'));
+                }
+                sb.AppendLine("");
+            }
+            StringBuilder head = new StringBuilder();
+            head.AppendLine("// 生成: Mau v3.0 | BRIKGROUP | 组共享积木闭包（design-ch4-deploy.md §3.2）");
+            for (int u = 0; u < usings.Count; u++)
+            {
+                head.AppendLine(usings[u]);
+            }
+            head.AppendLine("");
+            head.Append(sb.ToString());
+            return head.ToString();
         }
     }
 
