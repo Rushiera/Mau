@@ -1,135 +1,396 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>CH4 外观层 v1</title>
+    <title>CH4 外观层 v2</title>
     <style>
-        body { font-family: "Consolas", "Microsoft YaHei", monospace; margin: 0; padding: 16px; background: #1e1e1e; color: #d4d4d4; }
-        h1 { font-size: 18px; color: #569cd6; margin: 0 0 12px 0; }
-        h2 { font-size: 14px; color: #4ec9b0; margin: 16px 0 8px 0; }
-        .meta { color: #808080; font-size: 12px; margin-bottom: 8px; }
-        .cat-card { border: 1px solid #333; border-radius: 4px; padding: 8px; margin-bottom: 8px; background: #252526; }
-        .cat-name { color: #c586c0; font-weight: bold; }
-        .cat-state { color: #d4d4d4; }
-        .cat-faulted { color: #f48771; }
-        .cat-wire { color: #808080; font-size: 12px; }
-        .oa { color: #ce9178; font-size: 13px; }
-        #events { height: 200px; overflow-y: auto; border: 1px solid #333; padding: 8px; background: #1a1a1a; font-size: 12px; }
-        .ev-llm { color: #6a9955; }
-        .ev-log { color: #808080; }
-        .ev-cmd { color: #569cd6; }
-        .ev-error { color: #f48771; }
-        #cmdInput { width: calc(100% - 100px); padding: 6px; background: #1a1a1a; border: 1px solid #333; color: #d4d4d4; }
-        #cmdBtn { width: 90px; padding: 6px; background: #0e639c; border: none; color: #fff; cursor: pointer; }
-        #cmdResult { font-size: 12px; color: #4ec9b0; margin-top: 4px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #141414; color: #c8c8c8; height: 100vh; overflow: hidden; }
+        #layout { display: flex; height: 100vh; }
+
+        /* ── 窄侧栏 ── */
+        #sidebar { width: 56px; background: #1a1a1a; border-right: 1px solid #2a2a2a; display: flex; flex-direction: column; align-items: center; padding: 8px 0; gap: 4px; }
+        #sidebar button { width: 44px; height: 44px; background: transparent; border: none; color: #6a6a6a; font-size: 12px; cursor: pointer; border-radius: 6px; font-family: inherit; }
+        #sidebar button:hover { background: #242424; color: #c8c8c8; }
+        #sidebar button.active { background: #0e639c; color: #fff; }
+
+        /* ── 主区 ── */
+        main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        .tab { display: none; flex: 1; flex-direction: column; min-height: 0; }
+        .tab.active { display: flex; }
+        h2 { font-size: 12px; color: #4ec9b0; margin: 10px 12px 6px 12px; font-weight: normal; letter-spacing: 1px; }
+
+        /* ── 状态区 ── */
+        #meta { padding: 10px 12px 6px 12px; color: #808080; font-size: 12px; border-bottom: 1px solid #222; }
+        #meta .hl { color: #569cd6; }
+        #stateScroll { flex: 1; overflow-y: auto; padding: 8px 12px 20px 12px; }
+        .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+        .cat-card { border: 1px solid #2a2a2a; border-radius: 6px; padding: 10px; background: #1a1a1a; }
+        .cat-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .cat-name { color: #c586c0; font-size: 13px; font-weight: bold; }
+        .cat-id { color: #6a6a6a; font-size: 11px; }
+        .cat-faulted { color: #f48771; font-size: 12px; }
+        .cat-states { color: #d4d4d4; font-size: 12px; margin-bottom: 6px; }
+        .cat-row { font-size: 11px; color: #8a8a8a; margin-top: 2px; word-break: break-all; }
+        .cat-row .k { color: #6a9955; }
+        .sen-on { color: #4ec9b0; }
+        .sen-off { color: #4a4a4a; }
+        .wire-busy { color: #dcdcaa; }
+        .wire-timeout { color: #f48771; }
+        .oa-line { font-size: 12px; color: #ce9178; padding: 4px 12px 0 12px; }
+        .box-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .box-table th { text-align: left; color: #6a6a6a; font-weight: normal; padding: 3px 6px; border-bottom: 1px solid #242424; }
+        .box-table td { padding: 3px 6px; border-bottom: 1px solid #1f1f1f; word-break: break-all; vertical-align: top; }
+        .box-key { color: #569cd6; }
+        .box-val { color: #d4d4d4; }
+        .box-tag { color: #6a6a6a; font-size: 10px; }
+
+        /* ── Log 区 ── */
+        #logbar { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #222; }
+        #logFilter { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 5px 8px; font-family: inherit; font-size: 12px; }
+        #logFilter:focus { outline: none; border-color: #0e639c; }
+        #logRefresh { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 12px; }
+        #logRefresh:hover { background: #2a2a2a; }
+        #logevents { flex: 1; overflow-y: auto; padding: 6px 12px; font-size: 11px; line-height: 1.7; }
+        .lg { color: #808080; }
+        .lg-error { color: #f48771; }
+        .lg-warn { color: #dcdcaa; }
+        .lg-cmd { color: #569cd6; }
+        .lg-llm { color: #6a9955; }
+        .lg-filtered { display: none; }
+        #logcmd { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #222; }
+        #cmdInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 6px 8px; font-family: inherit; font-size: 12px; }
+        #cmdInput:focus { outline: none; border-color: #0e639c; }
+        #cmdBtn { background: #0e639c; border: none; color: #fff; padding: 6px 14px; cursor: pointer; font-family: inherit; font-size: 12px; }
+        #cmdResult { font-size: 11px; color: #4ec9b0; padding: 0 12px 6px 12px; }
+
+        /* ── 原始区 ── */
+        #rawbar { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #222; align-items: center; }
+        #rawPause { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 12px; }
+        #rawPause:hover { background: #2a2a2a; }
+        #rawPause.paused { color: #dcdcaa; border-color: #6a6a6a; }
+        #rawJson { flex: 1; overflow: auto; padding: 10px 12px; font-size: 11px; color: #9a9a9a; white-space: pre; }
     </style>
 </head>
 <body>
-    <h1>CH4 外观层 v1</h1>
-    <div class="meta" id="meta">连接中...</div>
-
-    <h2>Cat 状态快照</h2>
-    <div id="cats"></div>
-
-    <h2>OA 工单</h2>
-    <div class="oa" id="oa">-</div>
-
-    <h2>实时事件流</h2>
-    <div id="events"></div>
-
-    <h2>指令入口</h2>
-    <div>
-        <input id="cmdInput" type="text" placeholder="如: ReadText C:/a.txt 或 Chat 你好" onkeydown="if(event.key==='Enter')sendCmd()">
-        <button id="cmdBtn" onclick="sendCmd()">发送</button>
+    <div id="layout">
+        <nav id="sidebar">
+            <button data-tab="state" class="active">状态</button>
+            <button data-tab="log">日志</button>
+            <button data-tab="raw">原始</button>
+        </nav>
+        <main>
+            <!-- 状态区 -->
+            <section id="tab-state" class="tab active">
+                <div id="meta">连接中...</div>
+                <h2>Cat 状态</h2>
+                <div id="stateScroll">
+                    <div class="cat-grid" id="cats"></div>
+                    <h2>OA 工单</h2>
+                    <div class="oa-line" id="oa">-</div>
+                    <h2>盒子截面</h2>
+                    <table class="box-table" id="boxes"><thead><tr><th style="width:30%">key</th><th style="width:8%">type</th><th>value</th></tr></thead><tbody></tbody></table>
+                </div>
+            </section>
+            <!-- Log 区 -->
+            <section id="tab-log" class="tab">
+                <div id="logbar">
+                    <input id="logFilter" placeholder="筛选: level=ERROR / cat=OA / 关键词">
+                    <button id="logRefresh" title="拉取最后 200 条">拉取N条</button>
+                </div>
+                <div id="logevents"></div>
+                <div id="logcmd">
+                    <input id="cmdInput" placeholder="指令 — 如: ReadText corpus/ch4/io_test_cat.mau | QuickCat system|content | Chat 你好 | session count" onkeydown="if(event.key==='Enter')sendCmd()">
+                    <button id="cmdBtn" onclick="sendCmd()">发送</button>
+                </div>
+                <div id="cmdResult"></div>
+            </section>
+            <!-- 原始区 -->
+            <section id="tab-raw" class="tab">
+                <div id="rawbar">
+                    <button id="rawPause">暂停</button>
+                    <span id="rawInfo" style="color:#6a6a6a;font-size:11px"></span>
+                </div>
+                <pre id="rawJson"></pre>
+            </section>
+        </main>
     </div>
-    <div id="cmdResult"></div>
 
     <script>
-        // [段1] 初始化——元素引用 + 事件源 + 快照轮询兜底
+        // [段1] 元素引用 + 状态
         var catsEl = document.getElementById('cats');
         var oaEl = document.getElementById('oa');
-        var eventsEl = document.getElementById('events');
+        var boxesBody = document.querySelector('#boxes tbody');
         var metaEl = document.getElementById('meta');
+        var logEvents = document.getElementById('logevents');
+        var logFilterEl = document.getElementById('logFilter');
         var cmdResultEl = document.getElementById('cmdResult');
-        var seqLast = 0;
+        var rawJsonEl = document.getElementById('rawJson');
+        var rawPauseBtn = document.getElementById('rawPause');
+        var rawInfoEl = document.getElementById('rawInfo');
+        var rawPaused = false;
+        var lastFrame = -1;          // 快照帧号守卫——旧快照不覆盖新快照
+        var logs = [];               // 内存日志数组（Log 区真相源）
+        var logDedupeKey = '';       // 已渲染最后一条日志的 key——拉取合并去重
 
-        // SSE 事件流——实时（llm/log/cmd/snapshot 四类事件）
+        // [段2] 侧栏页签切换
+        var tabs = document.querySelectorAll('#sidebar button');
+        for (var i = 0; i < tabs.length; i++) {
+            tabs[i].addEventListener('click', function () {
+                for (var j = 0; j < tabs.length; j++) { tabs[j].classList.remove('active'); }
+                this.classList.add('active');
+                var target = this.getAttribute('data-tab');
+                var sections = document.querySelectorAll('.tab');
+                for (var k = 0; k < sections.length; k++) { sections[k].classList.remove('active'); }
+                document.getElementById('tab-' + target).classList.add('active');
+            });
+        }
+
+        // [段3] SSE 事件流——四类事件分派
         var es = new EventSource('/api/v1/stream');
-        es.addEventListener('snapshot', function (ev) {
-            applySnapshot(JSON.parse(ev.data));
-        });
+        es.addEventListener('snapshot', function (ev) { applySnapshot(JSON.parse(ev.data)); });
+        es.addEventListener('log', function (ev) { pushLog(JSON.parse(ev.data)); });
         es.addEventListener('llm', function (ev) {
             var d = JSON.parse(ev.data);
-            appendEvent('llm', 'llm#' + d.seq + ' [' + d.kind + '] ' + d.text, d.kind === 'error' ? 'ev-error' : 'ev-llm');
-        });
-        es.addEventListener('log', function (ev) {
-            var d = JSON.parse(ev.data);
-            appendEvent('log', d.time + ' | F' + d.frame + ' | ' + d.level + ' | ' + d.module + ' | ' + d.message, 'ev-log');
+            var kindText = d.kind === 'text' ? 'T' : (d.kind === 'reasoning' ? 'R' : d.kind);
+            pushLog({ time: '', frame: 0, level: 'INFO', category: 'LLM', module: 'llm#' + d.seq, message: '[' + kindText + '] ' + d.text });
         });
         es.addEventListener('cmd', function (ev) {
             var d = JSON.parse(ev.data);
-            appendEvent('cmd', d.cmdId + ' ok=' + d.ok + ' frame=' + d.frame + (d.error ? ' err=' + d.error : ''), d.ok ? 'ev-cmd' : 'ev-error');
+            pushLog({ time: '', frame: d.frame, level: d.ok ? 'INFO' : 'ERROR', category: 'CMD', module: d.cmdId, message: d.ok ? 'ok' : ('err=' + (d.error || '')) });
+            cmdResultEl.textContent = '回执: ' + d.cmdId + ' ok=' + d.ok + ' frame=' + d.frame + (d.error ? ' error=' + d.error : '');
         });
-        es.onerror = function () {
-            metaEl.textContent = 'SSE 断线——浏览器自动重连...';
-        };
-        es.onopen = function () {
-            metaEl.textContent = 'SSE 已连接';
-        };
+        es.onerror = function () { if (!esClosed) { metaEl.textContent = 'SSE 断线——自动重连...'; } };
+        var esClosed = false;
 
-        // 初始全量快照兜底——EventSource 可能错过连接前事件
-        fetch('/api/v1/snapshot')
+        // 初始兜底——帧号守卫（旧快照不覆盖新）
+        fetch('/api/v1/snapshot?logs=200')
             .then(function (r) { return r.json(); })
-            .then(applySnapshot)
+            .then(function (s) {
+                for (var i = 0; i < s.logs.length; i++) { unshiftLog(s.logs[i]); }
+                if (s.frame >= lastFrame) { applySnapshot(s); lastFrame = s.frame; }
+                refreshLogView();
+            })
             .catch(function () {});
 
-        // [段2] 快照渲染——不可变数据只读展示（协议 §三）
+        // [段4] 快照应用——状态区 + 原始区（同源渲染）
         function applySnapshot(s) {
+            if (s.frame < lastFrame) { return; }   // 帧号守卫
+            lastFrame = s.frame;
             metaEl.textContent = 'pid=' + s.pid + ' frame=' + s.frame + ' version=' + s.version;
-            var html = '';
-            for (var i = 0; i < s.cats.length; i++) {
-                var c = s.cats[i];
-                html = html + '<div class="cat-card"><span class="cat-name">' + c.name + ' #' + c.id + '</span>';
+            renderCats(s.cats);
+            oaEl.textContent = 'Open=' + s.oa.open + ' Work=' + s.oa.work + ' Closed=' + s.oa.closed + ' Timeout=' + s.oa.timeout;
+            renderBoxes(s.boxes || []);
+            if (!rawPaused) {
+                rawJsonEl.textContent = JSON.stringify(s, null, 2);
+                rawInfoEl.textContent = 'frame=' + s.frame + ' · ' + s.cats.length + ' cats · ' + (s.boxes ? s.boxes.length : 0) + ' boxes';
+            }
+        }
+
+        // [段5] Cat 卡片渲染——DOM API + textContent（安全铁律）；全字段消费：stateLines/sensors/slots/wires
+        function renderCats(cats) {
+            catsEl.textContent = '';
+            for (var i = 0; i < cats.length; i++) {
+                var c = cats[i];
+                var card = document.createElement('div');
+                card.className = 'cat-card';
+                var head = document.createElement('div');
+                head.className = 'cat-head';
+                var name = document.createElement('span');
+                name.className = 'cat-name';
+                name.textContent = c.name;
+                var id = document.createElement('span');
+                id.className = 'cat-id';
+                id.textContent = '#' + c.id;
+                head.appendChild(name);
+                head.appendChild(id);
+                card.appendChild(head);
                 if (c.faulted) {
-                    html = html + ' <span class="cat-faulted">FAULTED: ' + c.faultReason + '</span>';
+                    var fault = document.createElement('div');
+                    fault.className = 'cat-faulted';
+                    fault.textContent = 'FAULTED: ' + c.faultReason;
+                    card.appendChild(fault);
                 } else {
-                    var st = c.status;
-                    html = html + ' <span class="cat-state">' + st.stateLines.join(' ') + '</span>';
-                    var wires = [];
-                    for (var w = 0; w < st.wires.length; w++) {
-                        if (st.wires[w].busy) {
-                            wires.push(st.wires[w].name + '(在途)');
-                        }
-                    }
-                    if (wires.length > 0) {
-                        html = html + ' <span class="cat-wire">| ' + wires.join(' ') + '</span>';
+                    var st = c.status || {};
+                    // 状态机行
+                    var states = document.createElement('div');
+                    states.className = 'cat-states';
+                    states.textContent = (st.stateLines || []).join('  ');
+                    card.appendChild(states);
+                    // 传感器行——信号真相（bool 着色）
+                    var sens = (st.sensors || []).map(function (x) {
+                        var span = document.createElement('span');
+                        span.className = (x.value === true || x.value === 'true') ? 'sen-on' : 'sen-off';
+                        span.textContent = (x.value === true || x.value === 'true') ? '● ' : '○ ';
+                        span.appendChild(document.createTextNode(x.name + '=' + String(x.value)));
+                        return span;
+                    });
+                    appendRow(card, 'sensors', sens);
+                    // 槽位行
+                    appendRow(card, 'slots', (st.slots || []).map(function (x) { return x.name + ' ' + x.available + '/' + x.capacity; }));
+                    // 导线行——busy/timedOut/lastTriggerFrame 全展示
+                    var wires = (st.wires || []).map(function (w) {
+                        var span = document.createElement('span');
+                        span.className = w.timedOut ? 'wire-timeout' : (w.busy ? 'wire-busy' : '');
+                        span.textContent = w.name + (w.busy ? '(busy)' : '') + (w.timedOut ? '(timeout)' : '') + '@' + w.lastTriggerFrame;
+                        return span;
+                    });
+                    appendRow(card, 'wires', wires);
+                }
+                catsEl.appendChild(card);
+            }
+        }
+        function appendRow(card, label, spans) {
+            if (spans.length === 0) { return; }
+            var row = document.createElement('div');
+            row.className = 'cat-row';
+            var k = document.createElement('span');
+            k.className = 'k';
+            k.textContent = label + ': ';
+            row.appendChild(k);
+            for (var i = 0; i < spans.length; i++) {
+                if (i > 0) { row.appendChild(document.createTextNode(' · ')); }
+                row.appendChild(spans[i]);
+            }
+            card.appendChild(row);
+        }
+
+        // [段6] 盒子渲染——textContent（值可能来自文件内容——XSS 禁地）
+        function renderBoxes(boxes) {
+            boxesBody.textContent = '';
+            for (var i = 0; i < boxes.length; i++) {
+                var b = boxes[i];
+                var tr = document.createElement('tr');
+                var td1 = document.createElement('td');
+                td1.className = 'box-key';
+                td1.textContent = b.scope + '.' + b.key;
+                var td2 = document.createElement('td');
+                td2.className = 'box-tag';
+                td2.textContent = b.t;
+                var td3 = document.createElement('td');
+                td3.className = 'box-val';
+                td3.textContent = String(b.value);
+                tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+                boxesBody.appendChild(tr);
+            }
+        }
+
+        // [段7] Log 流——内存数组 + 筛选 + 去重
+        function pushLog(e) {
+            logs.push({ time: e.time, frame: e.frame, level: e.level, category: e.category, module: e.module, message: e.message });
+            if (logs.length > 3000) { logs.shift(); }
+            appendLogDom(logs[logs.length - 1]);
+        }
+        function unshiftLog(e) {
+            // 拉取合并——跳过已渲染过的尾部（时间+帧+消息 去重键）
+            var key = e.time + '|' + e.frame + '|' + e.message;
+            if (logDedupeKey !== '' && key <= logDedupeKey) { return; }
+            logDedupeKey = key;
+            logs.push(e);
+        }
+        function appendLogDom(e) {
+            var div = document.createElement('div');
+            div.className = logClass(e);
+            div.textContent = logText(e);
+            logEvents.appendChild(div);
+            while (logEvents.children.length > 2000) { logEvents.removeChild(logEvents.firstChild); }
+            logEvents.scrollTop = logEvents.scrollHeight;
+            applyFilterToEl(div);
+        }
+        function logText(e) {
+            var t = e.time ? e.time + ' ' : '';
+            return t + (e.frame ? 'F' + e.frame + ' ' : '') + e.level + ' | ' + (e.category || '-') + ' | ' + (e.module || '') + (e.message ? ' ' + e.message : '');
+        }
+        function logClass(e) {
+            if (e.level === 'ERROR') { return 'lg lg-error'; }
+            if (e.level === 'WARN') { return 'lg lg-warn'; }
+            if (e.category === 'CMD') { return 'lg lg-cmd'; }
+            if (e.category === 'LLM') { return 'lg lg-llm'; }
+            return 'lg';
+        }
+
+        // [段8] 筛选——level=X / cat=X / 裸词=关键词（重新渲染）
+        logFilterEl.addEventListener('input', refreshLogView);
+        function refreshLogView() {
+            logEvents.textContent = '';
+            for (var i = 0; i < logs.length; i++) {
+                var div = document.createElement('div');
+                div.className = logClass(logs[i]);
+                div.textContent = logText(logs[i]);
+                logEvents.appendChild(div);
+            }
+            var filter = logFilterEl.value.trim();
+            if (filter.length > 0) { applyFilterAll(filter); }
+            logEvents.scrollTop = logEvents.scrollHeight;
+        }
+        function applyFilterAll(filter) {
+            var tokens = filter.split(/\s+/);
+            var children = logEvents.children;
+            for (var i = 0; i < children.length; i++) {
+                var el = children[i];
+                var text = el.textContent;
+                var pass = true;
+                for (var j = 0; j < tokens.length; j++) {
+                    var t = tokens[j];
+                    if (t.indexOf('level=') === 0) {
+                        if (text.indexOf('| ' + t.substring(6).toUpperCase() + ' |') < 0) { pass = false; break; }
+                    } else if (t.indexOf('cat=') === 0) {
+                        if (text.indexOf('| ' + t.substring(4).toUpperCase() + ' |') < 0) { pass = false; break; }
+                    } else {
+                        if (text.indexOf(t) < 0) { pass = false; break; }
                     }
                 }
-                html = html + '</div>';
+                el.style.display = pass ? '' : 'none';
             }
-            catsEl.innerHTML = html;
-            oaEl.textContent = 'Open=' + s.oa.open + ' Work=' + s.oa.work + ' Closed=' + s.oa.closed + ' Timeout=' + s.oa.timeout;
+        }
+        function applyFilterToEl(el) {
+            var filter = logFilterEl.value.trim();
+            if (filter.length === 0) { return; }
+            var tokens = filter.split(/\s+/);
+            var text = el.textContent;
+            for (var j = 0; j < tokens.length; j++) {
+                var t = tokens[j];
+                if (t.indexOf('level=') === 0) {
+                    if (text.indexOf('| ' + t.substring(6).toUpperCase() + ' |') < 0) { el.style.display = 'none'; return; }
+                } else if (t.indexOf('cat=') === 0) {
+                    if (text.indexOf('| ' + t.substring(4).toUpperCase() + ' |') < 0) { el.style.display = 'none'; return; }
+                } else {
+                    if (text.indexOf(t) < 0) { el.style.display = 'none'; return; }
+                }
+            }
         }
 
-        // [段3] 事件渲染——textContent 安全（HtmlUI 铁律）
-        function appendEvent(type, text, cls) {
-            var div = document.createElement('div');
-            div.className = cls;
-            div.textContent = text;
-            eventsEl.appendChild(div);
-            while (eventsEl.children.length > 200) {
-                eventsEl.removeChild(eventsEl.firstChild);
-            }
-            eventsEl.scrollTop = eventsEl.scrollHeight;
-        }
+        // [段9] 拉取 N 条——?logs=N 服务端合成 + 尾部去重合并
+        document.getElementById('logRefresh').addEventListener('click', function () {
+            fetch('/api/v1/snapshot?logs=200')
+                .then(function (r) { return r.json(); })
+                .then(function (s) {
+                    logs = [];
+                    logDedupeKey = '';
+                    for (var i = 0; i < s.logs.length; i++) { unshiftLog(s.logs[i]); }
+                    refreshLogView();
+                })
+                .catch(function () {});
+        });
 
-        // [段4] 指令入口——POST /api/v1/command（协议 §五）
+        // [段10] 原始区暂停/继续
+        rawPauseBtn.addEventListener('click', function () {
+            rawPaused = !rawPaused;
+            rawPauseBtn.textContent = rawPaused ? '继续' : '暂停';
+            rawPauseBtn.classList.toggle('paused', rawPaused);
+            if (!rawPaused) {
+                fetch('/api/v1/snapshot')
+                    .then(function (r) { return r.json(); })
+                    .then(function (s) { if (s.frame >= lastFrame) { applySnapshot(s); } })
+                    .catch(function () {});
+            }
+        });
+
+        // [段11] 指令入口——POST /api/v1/command
         function sendCmd() {
             var input = document.getElementById('cmdInput');
             var text = input.value.trim();
-            if (text.length === 0) {
-                return;
-            }
+            if (text.length === 0) { return; }
             input.value = '';
             fetch('/api/v1/command', {
                 method: 'POST',

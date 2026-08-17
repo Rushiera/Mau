@@ -94,10 +94,18 @@ namespace CH4
                 options.ListenLocalhost(_port);
             });
             _app = builder.Build();
-            _app.MapGet("/api/v1/snapshot", () =>
+            _app.MapGet("/api/v1/snapshot", (HttpContext ctx) =>
             {
                 // 缓存快照——主线程 PumpMainThread 构建（ThreadGuard：OA.GetSnapshot 仅宿主主线程）
-                return Results.Text(_snapshotCache, "application/json");
+                // ?logs=N——动态附加日志段（LogStore 锁内快照，HTTP 线程安全；v2 界面刷新拉最后 N 条）
+                string json = _snapshotCache;
+                int logCount = ParseLogsQuery(ctx);
+                string logsJson = BuildLogsJson(logCount);
+                if (logsJson.Length > 0)
+                {
+                    json = ReplaceLogsSection(json, logsJson);
+                }
+                return Results.Text(json, "application/json");
             });
             _app.MapGet("/api/v1/stream", (RequestDelegate)StreamEvents);
             _app.MapPost("/api/v1/command", (Delegate)HandleCommand);
@@ -143,6 +151,72 @@ namespace CH4
             string json = _snapshotBuilder(false);
             _snapshotCache = json;
             PushEvent("snapshot", json);
+        }
+
+        /// <summary>
+        /// 解析 ?logs=N 查询参数——缺省/非法回退 200（v2 刷新拉取最后 N 条）
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>日志条数（1-2000 夹取）</returns>
+        private static int ParseLogsQuery(HttpContext ctx)
+        {
+            int count = 200;
+            if (ctx.Request.Query.TryGetValue("logs", out Microsoft.Extensions.Primitives.StringValues values))
+            {
+                string raw = values.ToString();
+                int parsed;
+                if (int.TryParse(raw, out parsed) && parsed > 0)
+                {
+                    count = parsed;
+                }
+            }
+            if (count > 2000)
+            {
+                count = 2000;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// 构建日志段 JSON——LogStore 尾部 N 条（与 PushLogIncrements 同格式；锁内快照）
+        /// </summary>
+        /// <param name="count">条数</param>
+        /// <returns>日志数组 JSON；无日志返回空串（不拼接）</returns>
+        private static string BuildLogsJson(int count)
+        {
+            List<LogStore.LogEntry> logs = LogStore.AllLog;
+            lock (LogStore.Sync)
+            {
+                int start = logs.Count - count;
+                if (start < 0)
+                {
+                    start = 0;
+                }
+                List<object> list = new List<object>();
+                for (int i = start; i < logs.Count; i++)
+                {
+                    LogStore.LogEntry entry = logs[i];
+                    list.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, message = entry.Message });
+                }
+                return JsonSerializer.Serialize(list);
+            }
+        }
+
+        /// <summary>
+        /// 替换快照 JSON 的日志段——缓存快照 logs=[] 的精确字符串替换（System.Text.Json 固定输出无空格；不可靠则原样返回）
+        /// </summary>
+        /// <param name="json">快照 JSON（含 "logs":[]）</param>
+        /// <param name="logsJson">日志数组 JSON</param>
+        /// <returns>拼接后 JSON；未命中返回原 JSON</returns>
+        private static string ReplaceLogsSection(string json, string logsJson)
+        {
+            string marker = "\"logs\":[]";
+            int idx = json.IndexOf(marker, StringComparison.Ordinal);
+            if (idx < 0)
+            {
+                return json;
+            }
+            return json.Substring(0, idx) + "\"logs\":" + logsJson + json.Substring(idx + marker.Length);
         }
 
         /// <summary>

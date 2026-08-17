@@ -84,7 +84,8 @@ namespace Mau.Providers
 
         /// <summary>
         /// 从配置存储建立适配器——base_url/api_key/model/thinking/reasoning_effort 从文件拉起（P4 配置项机制）。
-        /// key 优先级：配置 llm.api_key → 环境变量 DEEPSEEK_API_KEY → 空串（ERR 路径）。
+        /// 拉取优先级（Mau 全局环境变量兜底——2026-08-17 拍板）：配置文件 llm.* → Mau 全局环境变量 MAU_LLM_* → 兼容/默认。
+        /// key 优先级：配置 llm.api_key → MAU_LLM_API_KEY → DEEPSEEK_API_KEY（兼容） → 空串（ERR 路径）。
         /// </summary>
         /// <param name="config">配置存储（llm.* 键段）</param>
         public DeepSeekLlmRuntime(ConfigStore config)
@@ -98,6 +99,14 @@ namespace Mau.Providers
             else
             {
                 baseUrl = config.Get("llm.base_url", "");
+                if (string.IsNullOrEmpty(baseUrl))
+                {
+                    string? envBase = Environment.GetEnvironmentVariable("MAU_LLM_BASE_URL");
+                    if (!string.IsNullOrEmpty(envBase))
+                    {
+                        baseUrl = envBase;
+                    }
+                }
             }
             _baseUrl = baseUrl;
             if (_baseUrl == null)
@@ -109,6 +118,14 @@ namespace Mau.Providers
             if (config != null)
             {
                 apiKey = config.Get("llm.api_key", "");
+            }
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                string? envKey = Environment.GetEnvironmentVariable("MAU_LLM_API_KEY");
+                if (!string.IsNullOrEmpty(envKey))
+                {
+                    apiKey = envKey;
+                }
             }
             if (string.IsNullOrEmpty(apiKey))
             {
@@ -128,6 +145,14 @@ namespace Mau.Providers
             else
             {
                 model = config.Get("llm.model", "");
+                if (string.IsNullOrEmpty(model))
+                {
+                    string? envModel = Environment.GetEnvironmentVariable("MAU_LLM_MODEL");
+                    if (!string.IsNullOrEmpty(envModel))
+                    {
+                        model = envModel;
+                    }
+                }
             }
             _model = model;
             if (string.IsNullOrEmpty(_model))
@@ -142,7 +167,19 @@ namespace Mau.Providers
             }
             else
             {
-                thinking = config.Get("llm.thinking", "enabled");
+                thinking = config.Get("llm.thinking", "");
+                if (string.IsNullOrEmpty(thinking))
+                {
+                    string? envThinking = Environment.GetEnvironmentVariable("MAU_LLM_THINKING");
+                    if (!string.IsNullOrEmpty(envThinking))
+                    {
+                        thinking = envThinking;
+                    }
+                }
+                if (string.IsNullOrEmpty(thinking))
+                {
+                    thinking = "enabled";
+                }
             }
             _thinkingEnabled = thinking == "enabled";
             if (config == null)
@@ -151,7 +188,19 @@ namespace Mau.Providers
             }
             else
             {
-                _reasoningEffort = config.Get("llm.reasoning_effort", "high");
+                _reasoningEffort = config.Get("llm.reasoning_effort", "");
+                if (string.IsNullOrEmpty(_reasoningEffort))
+                {
+                    string? envEffort = Environment.GetEnvironmentVariable("MAU_LLM_REASONING_EFFORT");
+                    if (!string.IsNullOrEmpty(envEffort))
+                    {
+                        _reasoningEffort = envEffort;
+                    }
+                }
+                if (string.IsNullOrEmpty(_reasoningEffort))
+                {
+                    _reasoningEffort = "high";
+                }
             }
             _client = new HttpClient();
             _client.Timeout = TimeSpan.FromSeconds(60);

@@ -179,6 +179,14 @@ private static HttpHost _httpHost;
             string llmKeyProbe = llmConfig.Get("llm.api_key", "");
             if (llmKeyProbe.Length == 0)
             {
+                string envKeyProbe = Environment.GetEnvironmentVariable("MAU_LLM_API_KEY");
+                if (envKeyProbe != null)
+                {
+                    llmKeyProbe = envKeyProbe;
+                }
+            }
+            if (llmKeyProbe.Length == 0)
+            {
                 string envKeyProbe = Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY");
                 if (envKeyProbe != null)
                 {
@@ -860,6 +868,36 @@ private static string BuildSnapshotJson(bool includeLogs)
     AppendCatJson(cats, "QuickCat", _quickId, _quickHandle);
     AppendCatJson(cats, "MajorDomoCat", _majorId, _majorHandle);
     OAView oa = _oa.GetSnapshot();
+            // v2 boxes 字段——DataBox 全量截面（协议兼容演进：新增字段，旧端忽略；值摘要化——复杂对象 ToString 不展开）
+            DataBoxSnapshot boxSnap = DataBox.Capture();
+            List<object> boxes = new List<object>();
+            for (int i = 0; i < boxSnap.Data.Length; i++)
+            {
+                DataBoxDataEntry d = boxSnap.Data[i];
+                string t = "o";
+                object val;
+                if (d.Value is bool)
+                {
+                    t = "b";
+                    val = d.Value;
+                }
+                else if (d.Value is long || d.Value is int || d.Value is double)
+                {
+                    t = "n";
+                    val = d.Value;
+                }
+                else if (d.Value is string)
+                {
+                    t = "s";
+                    val = d.Value;
+                }
+                else
+                {
+                    t = "o";
+                    val = SummarizeBoxValue(d.Value);
+                }
+                boxes.Add(new { scope = d.Scope, key = d.Key, t = t, value = val });
+            }
     object logs;
     if (includeLogs)
     {
@@ -900,11 +938,31 @@ private static string BuildSnapshotJson(bool includeLogs)
             closed = oa.ClosedCount,
             timeout = oa.TimeoutCount
         },
+        boxes = boxes,
         logs = logs
     };
     return JsonSerializer.Serialize(snapshot);
 }
+/// <summary>
+/// 盒子复杂值摘要——ToString 截断（快照 JSON 不展开复杂对象——防 log.entries 这类内部实现盒子刷爆快照）
+/// </summary>
+/// <param name = "value">原始值</param>
+/// <returns>摘要文本（≤160 字符）</returns>
+private static string SummarizeBoxValue(object value)
+{
+    if (value == null)
+    {
+        return "null";
+    }
 
+    string text = value.ToString() ?? "";
+    if (text.Length > 160)
+    {
+        text = text.Substring(0, 160) + "...";
+    }
+
+    return text;
+}
         /// <summary>
         /// 仓库根探测——从当前目录向上找含 Mau.sln 的目录（部署区定位用；CH4.Entry 可从任意工作目录启动）
         /// </summary>
