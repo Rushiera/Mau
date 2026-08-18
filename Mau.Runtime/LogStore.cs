@@ -78,6 +78,26 @@ namespace Mau.Runtime
         }
 
         /// <summary>
+        /// 磁盘写入器——常驻 StreamWriter（D5：告别逐条 AppendAllText 反复开文件；1s 定时 flush）
+        /// </summary>
+        private static System.IO.StreamWriter? _writer = null;
+
+        /// <summary>
+        /// 写入器当前路径——路径变化时重开
+        /// </summary>
+        private static string _writerPath = "";
+
+        /// <summary>
+        /// 写盘锁——并发 Add 串行化
+        /// </summary>
+        private static readonly object _writeGate = new object();
+
+        /// <summary>
+        /// 上次 flush 时间——1s 定时刷
+        /// </summary>
+        private static DateTime _lastFlush = DateTime.MinValue;
+
+        /// <summary>
         /// 配置磁盘日志文件——宿主启动时调用
         /// </summary>
         /// <param name="path">日志文件路径，空=仅内存</param>
@@ -126,8 +146,39 @@ namespace Mau.Runtime
                         line = entry.Time + " | F" + entry.Frame + " | " + entry.Module + " | "
                             + LevelText(level) + " | [" + entry.Category + "] | " + entry.Message;
                     }
-                    System.IO.File.AppendAllText(LogFilePath, line + "\n",
-                        new System.Text.UTF8Encoding(false));
+                    // 常驻写入器——1s 定时 flush（D5：缓冲化，避免逐条开文件同步 IO）
+                    lock (_writeGate)
+                    {
+                        if (_writer == null || _writerPath != LogFilePath)
+                        {
+                            if (_writer != null)
+                            {
+                                try
+                                {
+                                    _writer.Flush();
+                                }
+                                catch
+                                {
+                                }
+                                _writer.Dispose();
+                                _writer = null;
+                            }
+                            string? dir = System.IO.Path.GetDirectoryName(LogFilePath);
+                            if (dir != null && dir.Length > 0)
+                            {
+                                System.IO.Directory.CreateDirectory(dir);
+                            }
+                            _writerPath = LogFilePath;
+                            _writer = new System.IO.StreamWriter(new System.IO.FileStream(LogFilePath, System.IO.FileMode.Append, System.IO.FileAccess.Write, System.IO.FileShare.ReadWrite), new System.Text.UTF8Encoding(false));
+                        }
+                        _writer.WriteLine(line);
+                        DateTime now = DateTime.Now;
+                        if ((now - _lastFlush).TotalSeconds >= 1.0)
+                        {
+                            _writer.Flush();
+                            _lastFlush = now;
+                        }
+                    }
                 }
                 catch
                 {

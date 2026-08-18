@@ -54,6 +54,11 @@ namespace Mau.Providers
         private readonly string _reasoningEffort;
 
         /// <summary>
+        /// 配置存储——运行期实时读取（P7 热载：配置以本地持久化为准，构造期快照退役）
+        /// </summary>
+        private readonly ConfigStore? _config;
+
+        /// <summary>
         /// 建立非流式适配器
         /// </summary>
         /// <param name="baseUrl">API 基址</param>
@@ -61,6 +66,7 @@ namespace Mau.Providers
         /// <param name="model">模型名</param>
         public DeepSeekLlmRuntime(string baseUrl, string apiKey, string model)
         {
+            _config = null;
             _baseUrl = baseUrl;
             if (_baseUrl == null)
             {
@@ -90,118 +96,13 @@ namespace Mau.Providers
         /// <param name="config">配置存储（llm.* 键段）</param>
         public DeepSeekLlmRuntime(ConfigStore config)
         {
-            // [段1] base_url——缺省空串（调用方显式传全端点）
-            string baseUrl;
-            if (config == null)
-            {
-                baseUrl = "";
-            }
-            else
-            {
-                baseUrl = config.Get("llm.base_url", "");
-                if (string.IsNullOrEmpty(baseUrl))
-                {
-                    string? envBase = Environment.GetEnvironmentVariable("MAU_LLM_BASE_URL");
-                    if (!string.IsNullOrEmpty(envBase))
-                    {
-                        baseUrl = envBase;
-                    }
-                }
-            }
-            _baseUrl = baseUrl;
-            if (_baseUrl == null)
-            {
-                _baseUrl = "";
-            }
-            // [段2] api_key——配置优先，环境变量兜底
-            string apiKey = "";
-            if (config != null)
-            {
-                apiKey = config.Get("llm.api_key", "");
-            }
-            if (string.IsNullOrEmpty(apiKey))
-            {
-                string? envKey = Environment.GetEnvironmentVariable("MAU_LLM_API_KEY");
-                if (!string.IsNullOrEmpty(envKey))
-                {
-                    apiKey = envKey;
-                }
-            }
-            if (string.IsNullOrEmpty(apiKey))
-            {
-                string? envKey = Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY");
-                if (!string.IsNullOrEmpty(envKey))
-                {
-                    apiKey = envKey;
-                }
-            }
-            _apiKey = apiKey;
-            // [段3] model——缺省兜底模型
-            string model;
-            if (config == null)
-            {
-                model = "";
-            }
-            else
-            {
-                model = config.Get("llm.model", "");
-                if (string.IsNullOrEmpty(model))
-                {
-                    string? envModel = Environment.GetEnvironmentVariable("MAU_LLM_MODEL");
-                    if (!string.IsNullOrEmpty(envModel))
-                    {
-                        model = envModel;
-                    }
-                }
-            }
-            _model = model;
-            if (string.IsNullOrEmpty(_model))
-            {
-                _model = FallbackModel;
-            }
-            // [段4] 思考模式与推理强度——官方默认 enabled + high
-            string thinking;
-            if (config == null)
-            {
-                thinking = "enabled";
-            }
-            else
-            {
-                thinking = config.Get("llm.thinking", "");
-                if (string.IsNullOrEmpty(thinking))
-                {
-                    string? envThinking = Environment.GetEnvironmentVariable("MAU_LLM_THINKING");
-                    if (!string.IsNullOrEmpty(envThinking))
-                    {
-                        thinking = envThinking;
-                    }
-                }
-                if (string.IsNullOrEmpty(thinking))
-                {
-                    thinking = "enabled";
-                }
-            }
-            _thinkingEnabled = thinking == "enabled";
-            if (config == null)
-            {
-                _reasoningEffort = "high";
-            }
-            else
-            {
-                _reasoningEffort = config.Get("llm.reasoning_effort", "");
-                if (string.IsNullOrEmpty(_reasoningEffort))
-                {
-                    string? envEffort = Environment.GetEnvironmentVariable("MAU_LLM_REASONING_EFFORT");
-                    if (!string.IsNullOrEmpty(envEffort))
-                    {
-                        _reasoningEffort = envEffort;
-                    }
-                }
-                if (string.IsNullOrEmpty(_reasoningEffort))
-                {
-                    _reasoningEffort = "high";
-                }
-            }
+            // [段1] 配置存储持有——运行期实时读取（P7 热载拍板：配置以本地持久化为准，构造期快照退役）
+            _config = config;
+            _baseUrl = "";
+            _apiKey = "";
+            _model = "";
+            _thinkingEnabled = true;
+            _reasoningEffort = "high";
             _client = new HttpClient();
             _client.Timeout = TimeSpan.FromSeconds(60);
         }
@@ -418,9 +319,9 @@ public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, 
 {
     // [段1] 构造流式请求体并发送（ResponseHeadersRead——流式读取）
     string body = BuildChatRequestBody(messages, tools);
-    using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, _baseUrl.TrimEnd('/') + "/chat/completions"))
+    using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, GetBaseUrl().TrimEnd('/') + "/chat/completions"))
     {
-        request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + _apiKey);
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + GetApiKey());
         request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
         request.Content = new StringContent(body, Encoding.UTF8, "application/json");
         HttpResponseMessage? response = null;
@@ -637,13 +538,13 @@ private string BuildChatRequestBody(LlmMessage[] messages, ToolSpec[] tools)
             object[] wireTools = BuildWireTools(tools);
             // [段3] 请求体——思考模式 enabled 带 effort；disabled 关闭思考；tools 非空才带
             Dictionary<string, object> payload = new Dictionary<string, object>();
-            payload["model"] = _model;
+            payload["model"] = GetModel();
             payload["messages"] = wireMessages;
             payload["stream"] = true;
-            if (_thinkingEnabled)
+            if (GetThinkingEnabled())
             {
                 payload["thinking"] = new { type = "enabled" };
-                payload["reasoning_effort"] = _reasoningEffort;
+                payload["reasoning_effort"] = GetReasoningEffort();
             }
             else
             {
@@ -654,6 +555,133 @@ private string BuildChatRequestBody(LlmMessage[] messages, ToolSpec[] tools)
                 payload["tools"] = wireTools;
             }
             return JsonSerializer.Serialize(payload);
+        }
+
+        /// <summary>
+        /// 实时读取 API 基址——配置 llm.base_url → MAU_LLM_BASE_URL → 注入值/空串（P7 热载：每次调用取当前值）
+        /// </summary>
+        /// <returns>API 基址</returns>
+        private string GetBaseUrl()
+        {
+            if (_config != null)
+            {
+                string value = _config.Get("llm.base_url", "");
+                if (value.Length > 0)
+                {
+                    return value;
+                }
+                string? env = Environment.GetEnvironmentVariable("MAU_LLM_BASE_URL");
+                if (!string.IsNullOrEmpty(env))
+                {
+                    return env;
+                }
+            }
+            return _baseUrl;
+        }
+
+        /// <summary>
+        /// 实时读取 API 密钥——配置 llm.api_key → MAU_LLM_API_KEY → DEEPSEEK_API_KEY（兼容） → 注入值/空串
+        /// </summary>
+        /// <returns>API 密钥</returns>
+        private string GetApiKey()
+        {
+            if (_config != null)
+            {
+                string value = _config.Get("llm.api_key", "");
+                if (value.Length > 0)
+                {
+                    return value;
+                }
+                string? env = Environment.GetEnvironmentVariable("MAU_LLM_API_KEY");
+                if (!string.IsNullOrEmpty(env))
+                {
+                    return env;
+                }
+                env = Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY");
+                if (!string.IsNullOrEmpty(env))
+                {
+                    return env;
+                }
+            }
+            return _apiKey;
+        }
+
+        /// <summary>
+        /// 实时读取模型名——配置 llm.model → MAU_LLM_MODEL → 注入值 → 兜底模型
+        /// </summary>
+        /// <returns>模型名</returns>
+        private string GetModel()
+        {
+            if (_config != null)
+            {
+                string value = _config.Get("llm.model", "");
+                if (value.Length > 0)
+                {
+                    return value;
+                }
+                string? env = Environment.GetEnvironmentVariable("MAU_LLM_MODEL");
+                if (!string.IsNullOrEmpty(env))
+                {
+                    return env;
+                }
+            }
+            if (string.IsNullOrEmpty(_model))
+            {
+                return FallbackModel;
+            }
+            return _model;
+        }
+
+        /// <summary>
+        /// 实时读取思考模式开关——配置 llm.thinking → MAU_LLM_THINKING → 默认 enabled
+        /// </summary>
+        /// <returns>true=思考模式</returns>
+        private bool GetThinkingEnabled()
+        {
+            if (_config != null)
+            {
+                string value = _config.Get("llm.thinking", "");
+                if (value.Length == 0)
+                {
+                    string? env = Environment.GetEnvironmentVariable("MAU_LLM_THINKING");
+                    if (!string.IsNullOrEmpty(env))
+                    {
+                        value = env;
+                    }
+                }
+                if (value.Length == 0)
+                {
+                    value = "enabled";
+                }
+                return value == "enabled";
+            }
+            return _thinkingEnabled;
+        }
+
+        /// <summary>
+        /// 实时读取推理强度——配置 llm.reasoning_effort → MAU_LLM_REASONING_EFFORT → 默认 high
+        /// </summary>
+        /// <returns>推理强度 low/high/max</returns>
+        private string GetReasoningEffort()
+        {
+            if (_config != null)
+            {
+                string value = _config.Get("llm.reasoning_effort", "");
+                if (value.Length == 0)
+                {
+                    string? env = Environment.GetEnvironmentVariable("MAU_LLM_REASONING_EFFORT");
+                    if (!string.IsNullOrEmpty(env))
+                    {
+                        value = env;
+                    }
+                }
+                if (value.Length == 0)
+                {
+                    value = "high";
+                }
+                return value;
+            }
+            return _reasoningEffort;
         }/// <summary>
 /// 累积 SSE 帧的 tool_calls 增量——按 index 聚合（design A.5：id/name 仅首帧；arguments 累积增量拼接）。
 /// </summary>

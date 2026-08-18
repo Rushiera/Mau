@@ -79,6 +79,20 @@ private static HttpHost _httpHost;
             catch (Exception ex)
             {
                 Console.WriteLine("[CH4.Entry] 启动失败: " + ex.Message);
+                // 脚本模式无人值守不暂停；交互模式暂停——错误可见（双击 exe 不闪退）
+                bool pauseOnFail = true;
+                for (int i = 0; i < args.Length; i = i + 1)
+                {
+                    if (args[i] == "--run" || args[i] == "--script" || args[i] == "--selfcheck")
+                    {
+                        pauseOnFail = false;
+                    }
+                }
+                if (pauseOnFail)
+                {
+                    Console.WriteLine("按任意键退出……");
+                    Console.ReadKey();
+                }
                 return 1;
             }
             // [段2b] 预热帧——CmdPump 懒注册 CommandBus 发生在生成物首 Tick（投递前必须注册完成）
@@ -119,9 +133,7 @@ private static HttpHost _httpHost;
                 return RunScript(mode.Substring(7));
             }
             return RunInteractive();
-        }
-
-        /// <summary>
+        }/// <summary>
         /// 服务组装——OA/CommandBus/FlowRunner + DataBox 绑定 + 审计配置
         /// </summary>
         /// <param name="dllDir">语料生成物 dll 目录</param>
@@ -136,20 +148,20 @@ private static HttpHost _httpHost;
             // [段2] DataBox 服务绑定——积木 TryResolve 面（OA/CommandBus/ILlmRuntime）
             DataBox.Bind<IOA>(_oa);
             DataBox.Bind<ICommandBus>(_bus);
-            // 文件系统服务——file.* 积木依赖（受控根 = 当前工作目录；回收站 CatTemp/fs_recycle）
-            string workDir = Directory.GetCurrentDirectory();
-            DataBox.Bind<FileSystemService>(new FileSystemService(new string[] { workDir }, Path.Combine(workDir, "CatTemp", "fs_recycle")));
-            string configDir = Path.Combine(Directory.GetCurrentDirectory(), "Data", "config");
+            // 文件系统服务——file.* 积木依赖（受控根 = 数据根；回收站 CatTemp/fs_recycle）
+            string dataRoot = ResolveDataRoot();
+            DataBox.Bind<FileSystemService>(new FileSystemService(new string[] { dataRoot }, Path.Combine(dataRoot, "CatTemp", "fs_recycle")));
+            string configDir = Path.Combine(dataRoot, "Data", "config");
             ConfigStore llmConfig = ConfigStore.Load(Path.Combine(configDir, "llm.cfg"));
             DataBox.Bind<ConfigStore>(llmConfig);
             _llmRuntime = new DeepSeekLlmRuntime(llmConfig);
             DataBox.Bind<ILlmRuntime>(_llmRuntime);
             AuditStore audit = new AuditStore(10000);
-            audit.ConfigureAudit(Path.Combine(Directory.GetCurrentDirectory(), "Data", "audit"), "run", 3);
+            audit.ConfigureAudit(Path.Combine(dataRoot, "Data", "audit"), "run", 3);
             AuditStore.Default = audit;
             _runner.Audit = audit;
             // [段3b] LogStore 落盘——C/O 类专属 Log 持久化（P3c 观测全链——帧号可回溯；按会话命名）
-            string logDir = Path.Combine(Directory.GetCurrentDirectory(), "Data", "logs");
+            string logDir = Path.Combine(dataRoot, "Data", "logs");
             if (!Directory.Exists(logDir))
             {
                 Directory.CreateDirectory(logDir);
@@ -167,7 +179,7 @@ private static HttpHost _httpHost;
             // [段5] 会话面——上下文 + 前文恢复 + 工具定义（P5：MajorDomoCat 会话中枢）
             _chatContext = new ChatContext();
             _chatContext.SetSystemPrompt(BuildSystemPrompt());
-            _sessionStore = new SessionStore(Path.Combine(Directory.GetCurrentDirectory(), "Data", "sessions", "majordomo.json"));
+            _sessionStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo.json"));
             LlmMessage[] restored;
             if (_sessionStore.TryLoad(out restored))
             {
@@ -204,10 +216,9 @@ private static HttpHost _httpHost;
             }
             Console.WriteLine("[CH4.Entry] 就绪 | 四 Cat: ToolTestCat#" + _toolId + " IOTestCat#" + _ioId + " QuickCat#" + _quickId + " MajorDomoCat#" + _majorId + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
-            _httpHost = HttpHost.Start(8080, BuildSnapshotJson, DispatchCommand);
-            Console.WriteLine("[CH4.Entry] HTTP 外观层就绪: http://127.0.0.1:8080");
+            _httpHost = HttpHost.Start(ResolveHttpPort(llmConfig), BuildSnapshotJson, DispatchCommand);
+            Console.WriteLine("[CH4.Entry] HTTP 外观层就绪: http://127.0.0.1:" + _httpHost.Port);
         }
-
         /// <summary>
         /// 定位语料 dll 目录——参数 -dll 指定，否则默认仓库根 public/app/Flows（统一构筑链部署区）；无仓库根回退 CatTemp/ch4_build
         /// </summary>
@@ -223,7 +234,7 @@ private static HttpHost _httpHost;
                 }
             }
             // 统一构筑链默认——public/app/Flows/（design-ch4-deploy §2.1）；仓库根探测（向上找 Mau.sln）
-            string root = FindRepoRoot(Directory.GetCurrentDirectory());
+string root = FindRepoRoot(AppContext.BaseDirectory);
             if (root.Length > 0)
             {
                 return Path.Combine(root, "public", "app", "Flows");
@@ -269,7 +280,7 @@ private static HttpHost _httpHost;
         /// </summary>
         /// <returns>退出码</returns>
         private static int RunInteractive()
-{
+        {
             Console.WriteLine("指令: ReadText <path> | QuickCat <system>|<content> | Chat <内容> | status | reload <tool|io|quick|major> [dll] | run <n> | pid | quit");
             while (true)
             {
@@ -301,8 +312,7 @@ private static HttpHost _httpHost;
                 Thread.Sleep(FrameSleepMs);
             }
             return 0;
-        }
-        /// <summary>
+        }/// <summary>
         /// Command 解析与投递——宿主做字符串值识别（语料面零值比较）；QuickCat 双参同帧投两个 key
         /// </summary>
         /// <param name="line">输入行</param>
@@ -436,7 +446,12 @@ private static HttpHost _httpHost;
             Console.WriteLine("── 盒子截面 ──");
             for (int i = 0; i < boxSnap.Data.Length; i++)
             {
-                Console.WriteLine("  " + boxSnap.Data[i].Scope + "." + boxSnap.Data[i].Key + " = " + boxSnap.Data[i].Value);
+                DataBoxDataEntry d = boxSnap.Data[i];
+                if (IsInternalBox(d.Scope, d.Key))
+                {
+                    continue;
+                }
+                Console.WriteLine("  " + d.Scope + "." + d.Key + " = " + d.Value);
             }
             AuditQuery query = new AuditQuery(AuditStore.Default);
             AuditEvent[] events = query.Segment(0, 999999, null, null);
@@ -465,7 +480,6 @@ private static HttpHost _httpHost;
                 Console.WriteLine("  " + entry.Time + " | F" + entry.Frame + " | " + LogStore.LevelText(entry.Level) + " | " + cat + entry.Message);
             }
         }
-
         /// <summary>
         /// 单 Flow 状态打印——状态行 + 忙碌导线
         /// </summary>
@@ -817,6 +831,20 @@ private static HttpHost _httpHost;
             }
             return kept.ToArray();
         }
+        /// <summary>
+        /// 内部实现盒判定——观测面屏蔽（D5：log.entries/log.sync 是 List/Object 内部数据结构，不入 CLI/快照）
+        /// </summary>
+        /// <param name="scope">盒子域</param>
+        /// <param name="key">盒子键</param>
+        /// <returns>true=内部实现盒</returns>
+        private static bool IsInternalBox(string scope, string key)
+        {
+            if (scope == "log" && (key == "entries" || key == "sync"))
+            {
+                return true;
+            }
+            return false;
+        }
     /// <summary>
     /// 单 Cat 快照 JSON 追加——协议 §3.2 cats[].status 四柱映射（FlowStatusV3 → 匿名对象）
     /// </summary>
@@ -872,10 +900,14 @@ private static HttpHost _httpHost;
         // [段1] boxes 字段——DataBox 全量截面（协议 v1.1：新增字段旧端忽略；复杂对象摘要化——内部实现盒子不刷爆快照）
         DataBoxSnapshot boxSnap = DataBox.Capture();
         List<object> boxes = new List<object>();
-        for (int i = 0; i < boxSnap.Data.Length; i++)
-        {
-            DataBoxDataEntry d = boxSnap.Data[i];
-            string t = "o";
+for (int i = 0; i < boxSnap.Data.Length; i++)
+            {
+                DataBoxDataEntry d = boxSnap.Data[i];
+                if (IsInternalBox(d.Scope, d.Key))
+                {
+                    continue;
+                }
+                string t = "o";
             object val;
             if (d.Value is bool)
             {
@@ -948,20 +980,30 @@ private static HttpHost _httpHost;
     /// <param name = "value">原始值</param>
     /// <returns>摘要文本（≤160 字符）</returns>
     private static string SummarizeBoxValue(object value)
-{
-        if (value == null)
         {
-            return "null";
-        }
-
-        string text = value.ToString() ?? "";
-        if (text.Length > 160)
-        {
-            text = text.Substring(0, 160) + "...";
-        }
-
-        return text;
-    }        /// <summary>
+            if (value == null)
+            {
+                return "null";
+            }
+            // D5：BCL 内部实现型——短摘要 [类型简单名]（TypeName 不出协议面）
+            Type valueType = value.GetType();
+string ns = valueType.Namespace;
+            if (ns == "System" || ns == "System.Collections.Generic" || ns == "System.Collections")
+            {
+                string simple = valueType.Name;
+                if (simple.Length > 40)
+                {
+                    simple = simple.Substring(0, 40) + "...";
+                }
+                return "[" + simple + "]";
+            }
+            string text = value.ToString() ?? "";
+            if (text.Length > 160)
+            {
+                text = text.Substring(0, 160) + "...";
+            }
+            return text;
+        }/// <summary>
         /// 仓库根探测——从当前目录向上找含 Mau.sln 的目录（部署区定位用；CH4.Entry 可从任意工作目录启动）
         /// </summary>
         /// <param name="startDir">起始目录</param>
@@ -983,5 +1025,38 @@ private static HttpHost _httpHost;
                 dir = parent;
             }
         }
-    }
+        /// <summary>
+        /// 数据根解析——部署跟随运行环境（稳定分支即运行基座）：exe 所在目录向上找 Mau.sln 仓库根，Data 挂仓库根；找不到回退当前工作目录
+        /// </summary>
+        /// <returns>数据根目录</returns>
+        private static string ResolveDataRoot()
+        {
+            string root = FindRepoRoot(AppContext.BaseDirectory);
+            if (root.Length > 0)
+            {
+                return root;
+            }
+            return Directory.GetCurrentDirectory();
+        }
+        /// <summary>
+        /// HTTP 端口解析——http.port 配置项（协议 §5b 预留）；缺省/非法/越界回退 8080
+        /// </summary>
+        /// <param name="config">配置存储</param>
+        /// <returns>监听端口</returns>
+        private static int ResolveHttpPort(ConfigStore config)
+        {
+            string raw = config.Get("http.port", "8080");
+            int port;
+            if (!int.TryParse(raw, out port))
+            {
+                port = 0;
+            }
+            if (port < 1024 || port > 65535)
+            {
+                Console.WriteLine("[CH4.Entry] http.port 配置非法(" + raw + ")——回退 8080");
+                port = 8080;
+            }
+            return port;
+        }
+}
 }

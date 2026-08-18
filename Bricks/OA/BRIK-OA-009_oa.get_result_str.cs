@@ -7,7 +7,9 @@
 // 引用: Mau.Runtime（IOA/DataBox/Office）
 // 原理: DataBox.TryResolve<IOA> → GetOffice(officeId).Result.Strs["result"]
 // 常用: CH4 第一轮 tool_test_cat 语料——结果回流收集
+// 注意: nullable 自声明（本积木使用 IOA?/string? 注解——拼接 BRIKGROUP 时 strip，组头统一 enable）
 // ═══════════════════════════════════════════════════
+#nullable enable
 using Mau.Runtime;
 
 namespace Mau.Bricks

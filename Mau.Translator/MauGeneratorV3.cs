@@ -269,11 +269,11 @@ namespace Mau.Translator
                 sb.AppendLine("                DataBox.Set<bool>(" + BoxScopeExpr(sensor.CaptureTarget) + ", \"" + BoxKey(sensor.CaptureTarget) + "\", ok);");
             }
             sb.AppendLine("            }");
-            sb.AppendLine("            catch (Exception ex)");
+sb.AppendLine("            catch (Exception)");
             sb.AppendLine("            {");
             sb.AppendLine("                ok = false;");
             sb.AppendLine("            }");
-            sb.AppendLine("            AuditStore.Default?.Record(\"Flow\", \"trace.sample\", -1, new AuditProp[] { new AuditProp(\"sensor\", \"" + sensor.Name + "\"), new AuditProp(\"value\", ok ? \"1\" : \"0\"), new AuditProp(\"frame\", frame.ToString()) });");
+            sb.AppendLine("            AuditStore.Default?.Record(\"Flow\", \"trace.sample\", -1, new AuditProp[] { new AuditProp(\"sensor\", \"" + sensor.Name + "\"), new AuditProp(\"value\", ok ? \"1\" : \"0\"), new AuditProp(\"frame\", frame.ToString()) }, false);");
             // 分支动作——成功侧/失败侧
             AppendShellActions(sb, sensor.TrueActions, "if (ok)", doc);
             AppendShellActions(sb, sensor.FalseActions, "if (!ok)", doc);
@@ -399,10 +399,13 @@ namespace Mau.Translator
                 {
                     sb.AppendLine("        private Cube " + NameField(wire.Name) + "_cube = new Cube(" + wire.Timeout + ");");
                 }
-                // 观测字段——GetStatus 快照源（P3）
+                // 观测字段——GetStatus 快照源（P3；busy/timedout 仅 par 导线——同步导线恒 false 不产字段，D6）
                 sb.AppendLine("        private long " + NameField(wire.Name) + "_frame;");
-                sb.AppendLine("        private bool " + NameField(wire.Name) + "_busy;");
-                sb.AppendLine("        private bool " + NameField(wire.Name) + "_timedout;");
+                if (wire.Parallel)
+                {
+                    sb.AppendLine("        private bool " + NameField(wire.Name) + "_busy;");
+                    sb.AppendLine("        private bool " + NameField(wire.Name) + "_timedout;");
+                }
                 if (wire.Parallel)
                 {
                     if (wire.CaptureTarget.Length > 0)
@@ -566,7 +569,7 @@ namespace Mau.Translator
                     sb.AppendLine("                DataBox.Set<" + CaptureCSType(wire.BrickName) + ">(" + BoxScopeExpr(wire.CaptureTarget) + ", \"" + BoxKey(wire.CaptureTarget) + "\", v_capture);");
                 }
                 sb.AppendLine("            }");
-                sb.AppendLine("            catch (Exception ex)");
+                sb.AppendLine("            catch (Exception)");
                 sb.AppendLine("            {");
                 sb.AppendLine("                ok = false;");
                 sb.AppendLine("            }");
@@ -653,7 +656,7 @@ private static void AppendWireExecuteParallel(StringBuilder sb, WireDefV3 wire, 
             sb.AppendLine("                {");
             sb.AppendLine("                    ok = " + expr + ";");
             sb.AppendLine("                }");
-            sb.AppendLine("                catch (Exception ex)");
+            sb.AppendLine("                catch (Exception)");
             sb.AppendLine("                {");
             sb.AppendLine("                    ok = false;");
             sb.AppendLine("                }");
@@ -900,7 +903,14 @@ private static void AppendCommandPump(StringBuilder sb, MauDocV3 doc)
             {
                 WireDefV3 wire = doc.Wires[w];
                 string field = NameField(wire.Name);
-                sb.AppendLine("                new WireStatusV3() { Name = \"" + wire.Name + "\", Busy = " + field + "_busy, LastTriggerFrame = " + field + "_frame, TimedOut = " + field + "_timedout },");
+                if (wire.Parallel)
+                {
+                    sb.AppendLine("                new WireStatusV3() { Name = \"" + wire.Name + "\", Busy = " + field + "_busy, LastTriggerFrame = " + field + "_frame, TimedOut = " + field + "_timedout },");
+                }
+                else
+                {
+                    sb.AppendLine("                new WireStatusV3() { Name = \"" + wire.Name + "\", Busy = false, LastTriggerFrame = " + field + "_frame, TimedOut = false },");
+                }
             }
             sb.AppendLine("            };");
             sb.AppendLine("            return s;");
@@ -1386,6 +1396,11 @@ private static void AppendCommandPump(StringBuilder sb, MauDocV3 doc)
                         }
                         continue;
                     }
+                    if (trimmed.StartsWith("#nullable", StringComparison.Ordinal))
+                    {
+                        // D6：nullable 指令剥离——组合文件头统一唯一标记（避免拼接重复/上下文串扰）
+                        continue;
+                    }
                     sb.AppendLine(lines[l].TrimEnd('\r'));
                 }
                 sb.AppendLine("");
@@ -1396,6 +1411,7 @@ private static void AppendCommandPump(StringBuilder sb, MauDocV3 doc)
             {
                 head.AppendLine(usings[u]);
             }
+            head.AppendLine("#nullable enable");
             head.AppendLine("");
             head.Append(sb.ToString());
             return head.ToString();

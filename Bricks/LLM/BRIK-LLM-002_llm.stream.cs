@@ -2,13 +2,13 @@
 // 积木: llm.stream
 // ID:   BRIK-LLM-002
 // 类别: LLM
-// 作用: 流式启动器——后台消费 ChatStream（单轮 messages），增量写全局盒（llm_chunk/llm_chunk_count/llm_reply/llm_done）+ LogStore 分片帧号落盘
+// 作用: 流式启动器——后台消费 ChatStream（单轮 messages），增量写全局盒（llm_chunk/llm_chunk_count/llm_reply/llm_done）+ LogStore 结算行落盘（D5：分片不进日志——实时数据面在盒）
 // 依赖: 无
 // 引用: Mau.Runtime（ILlmRuntime/DataBox/LogStore/LlmStreamEvent）
 // 原理: TryResolve<ILlmRuntime> → 主线程捕获 FlowId → Task.Run 后台消费 → 增量/完成写全局盒（B1 豁免：全局盒写源在语料外）
 // 盒子: 全局 llm_chunk(最新增量) / llm_chunk_count(分片序号) / llm_reply(完整回复或 ERR|) / llm_done("1"=完成)
 // 常用: CH4 P4 quick_cat 语料——流式执行体（开始信号 = 本积木调用成功）
-// 注意: 后台线程写 DataBox（scope 级并发安全）；LogStore 帧号 = 分片序号（后台 GlobalFrame 不可靠）
+// 注意: 后台线程写 DataBox（scope 级并发安全）；LogStore 结算行 = 后台写（帧号取当时全局帧）
 // 注意: 启动时失效调用方语料的探测盒 @hasDone/@hasChunk（配套约定）——会话边界信号清理（Remove 而非 Set false）
 // 注意: 全局盒单 Key 跨实例——P4 单猫语义；P9 多猫并发时 scope 化改造
 // ═══════════════════════════════════════════════════
@@ -50,16 +50,16 @@ namespace Mau.Bricks
                 DataBox.Remove(flowId.ToString(), "hasDone");
                 DataBox.Remove(flowId.ToString(), "hasChunk");
             }
-            // 主线程启动后台消费（fire-and-forget——内部全 try-catch 兜底）
+            // 主线程启动后台消费（fire-and-forget——内部全 try-catch 兜底；lambda 内返回值显式丢弃——CS4014 消警）
             System.Threading.Tasks.Task.Run(delegate
             {
-                ConsumeStream(runtime, system, content);
+                _ = ConsumeStream(runtime, system, content);
             });
             return true;
         }
 
         /// <summary>
-        /// 后台消费流——增量写全局盒 + LogStore 分片帧号落盘；完成/错误置 llm_done
+        /// 后台消费流——增量写全局盒 + LogStore 结算行落盘（STREAM|chunks|t|r|chars）；完成/错误置 llm_done
         /// </summary>
         /// <param name="runtime">LLM 运行时</param>
         /// <param name="system">系统提示词</param>
@@ -68,6 +68,8 @@ namespace Mau.Bricks
         {
             StringBuilder full = new StringBuilder();
             long count = 0;
+            long textCount = 0;
+            long reasonCount = 0;
             try
             {
                 LlmMessage[] messages = new LlmMessage[2];
@@ -77,28 +79,26 @@ namespace Mau.Bricks
                 {
                     if (ev.Kind == LlmStreamKind.Text || ev.Kind == LlmStreamKind.Reasoning)
                     {
-                        // [段1] 增量——累积 + 全局盒覆盖写 + LogStore 分片帧号（CHUNK|序号|通道|文本）
+                        // [段1] 增量——累积 + 全局盒覆盖写（实时数据面在盒——分片不进日志，D5）
                         full.Append(ev.Text);
                         count = count + 1;
                         DataBox.Set<string>("global", "llm_chunk", ev.Text);
                         DataBox.Set<long>("global", "llm_chunk_count", count);
-                        string channel;
                         if (ev.Kind == LlmStreamKind.Text)
                         {
-                            channel = "T";
+                            textCount = textCount + 1;
                         }
                         else
                         {
-                            channel = "R";
+                            reasonCount = reasonCount + 1;
                         }
-                        LogStore.Add("LLM", 0, "CHUNK|" + count.ToString() + "|" + channel + "|" + TrimText(ev.Text, 120), "LLM");
                     }
                     else if (ev.Kind == LlmStreamKind.Done)
                     {
                         // [段2] 完成——完整回复落盒 + 完成标志
                         DataBox.Set<string>("global", "llm_reply", full.ToString());
                         DataBox.Set<string>("global", "llm_done", "1");
-                        LogStore.Add("LLM", 0, "STREAM_DONE|chars=" + full.Length.ToString(), "LLM");
+                        LogStore.Add("LLM", 0, "STREAM|chunks=" + count.ToString() + "|t=" + textCount.ToString() + "|r=" + reasonCount.ToString() + "|chars=" + full.Length.ToString(), "LLM");
                         return;
                     }
                     else if (ev.Kind == LlmStreamKind.Error)

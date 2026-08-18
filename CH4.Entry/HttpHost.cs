@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Mau.Runtime;
 
 namespace CH4
@@ -89,6 +90,9 @@ namespace CH4
         private void BuildApp()
         {
             WebApplicationBuilder builder = WebApplication.CreateSlimBuilder();
+// D5：Kestrel 请求级日志降噪（Hosting.Diagnostics 每请求 4-6 行 → 仅 Warning；Lifetime 启动一行保留）
+            builder.Logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Warning);
+            builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
             builder.WebHost.ConfigureKestrel((options) =>
             {
                 options.ListenLocalhost(_port);
@@ -115,7 +119,25 @@ namespace CH4
             {
                 return ServeIndex();
             });
-            _app.StartAsync().GetAwaiter().GetResult();
+            try
+            {
+                _app.StartAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                // 端口绑定失败分类——优先提示"实例已在运行"（P7 裂缝1：双击 exe 闪退判例）
+                string detail = ex.Message;
+                string hint;
+                if (detail.IndexOf("in use", StringComparison.OrdinalIgnoreCase) >= 0 || detail.IndexOf("占用", StringComparison.Ordinal) >= 0)
+                {
+                    hint = "端口 " + _port + " 已被占用——可能已有 CH4 实例在运行";
+                }
+                else
+                {
+                    hint = "HTTP 端口 " + _port + " 绑定失败";
+                }
+                throw new InvalidOperationException(hint + "（" + detail + "）", ex);
+            }
         }
 
         /// <summary>
@@ -153,9 +175,7 @@ namespace CH4
             string json = _snapshotBuilder(false);
             _snapshotCache = json;
             PushEvent("snapshot", json);
-        }
-
-        /// <summary>
+        }        /// <summary>
         /// 解析 ?logs=N 查询参数——缺省/非法回退 200（v2 刷新拉取最后 N 条）
         /// </summary>
         /// <param name="ctx">HTTP 上下文</param>
@@ -202,9 +222,7 @@ namespace CH4
                 }
                 return JsonSerializer.Serialize(list);
             }
-        }
-
-        /// <summary>
+        }/// <summary>
         /// 替换快照 JSON 的日志段——缓存快照 logs=[] 的精确字符串替换（System.Text.Json 固定输出无空格；不可靠则原样返回）
         /// </summary>
         /// <param name="json">快照 JSON（含 "logs":[]）</param>
