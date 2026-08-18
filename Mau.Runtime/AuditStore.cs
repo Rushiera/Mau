@@ -8,6 +8,7 @@ namespace Mau.Runtime
     /// 审计存储——第四根支柱（查询/时序留痕）基座：环形缓冲全量 + 固有寻路落盘。
     /// 寻路格式：Data/audit/{sessionId}/{yyyyMMdd}.md——会话=目录，日期=文件，每文件带会话头。
     /// 写入侧 = 框架全部职责：只保证事件产生 + 落盘，不做动态查询（读取三形态归 AuditQuery，未来）。
+    /// 环形缓冲 = 查询窗口（非历史全量）——满覆盖最旧事件，RingOverflowCount 暴露窗口萎缩信号；完整历史在落盘 MD 留痕（P7b 缺口4 定论）。
     /// </summary>
     public sealed class AuditStore
     {
@@ -24,6 +25,9 @@ namespace Mau.Runtime
         private long _seq;
         /// <summary>环形缓冲写指针</summary>
         private long _writeIndex;
+
+        /// <summary>环形缓冲满覆盖次数——窗口萎缩可见性（P7b 缺口4 定论）</summary>
+        private long _overflowCount;
         /// <summary>累计事件总数——统计数据源</summary>
         private long _total;
         /// <summary>已配置标记——ConfigureAudit 幂等</summary>
@@ -129,6 +133,19 @@ namespace Mau.Runtime
             }
         }
         /// <summary>
+        /// 环形缓冲满覆盖次数——满覆盖=最旧事件被覆盖（查询窗口萎缩信号；P7b 缺口4 定论——可见性）
+        /// </summary>
+        public long RingOverflowCount
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _overflowCount;
+                }
+            }
+        }
+        /// <summary>
         /// 注入审计根目录——创建会话目录 + 写会话头 + 启动过期清理。宿主启动时调用一次（幂等）。
         /// </summary>
         /// <param name="root">审计根目录（如 Data/audit）</param>
@@ -212,7 +229,11 @@ namespace Mau.Runtime
                     effectiveProps = props;
                 }
                 AuditEvent ev = new AuditEvent(_seq, actualFrame, _now().ToString("HH:mm:ss"), source, category, effectiveProps, persistable);
-                // [段2] 环形缓冲写入（满则覆盖最旧）
+                // [段2] 环形缓冲写入（满则覆盖最旧——溢出计数供观测）
+                if (_writeIndex >= _capacity)
+                {
+                    _overflowCount = _overflowCount + 1;
+                }
                 _ring[(int)(_writeIndex % _capacity)] = ev;
                 _writeIndex = _writeIndex + 1;
                 _total = _total + 1;

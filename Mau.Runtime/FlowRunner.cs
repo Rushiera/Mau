@@ -354,6 +354,10 @@ namespace Mau.Runtime
                     {
                         flow.Tick((int)_frame);
                     }
+                    catch (Exception ex)
+                    {
+                        RuntimeLog.ErrorOut("[FlowRunner] Flow 驱动异常: #" + flowIds[i] + " " + ex.Message);
+                    }
                     finally
                     {
                         FlowContext.Clear();
@@ -367,6 +371,10 @@ namespace Mau.Runtime
                 try
                 {
                     _sensorLoops[i].Loop.TickSensors((int)_frame);
+                }
+                catch (Exception ex)
+                {
+                    RuntimeLog.ErrorOut("[FlowRunner] 传感器壳异常: #" + _sensorLoops[i].FlowId + " " + ex.Message);
                 }
                 finally
                 {

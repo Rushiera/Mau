@@ -78,8 +78,8 @@ namespace Mau.Translator
                     if (j >= len || source[j] != '\'')
                     {
                         result.Diagnostics.Add(new MauDiagnostic("E002", startLine, "专有名词未闭合（缺 '）——列 " + startCol));
-                        i = j;
                         col = col + (j - i) + 1;
+                        i = j;
                         continue;
                     }
                     string name = source.Substring(contentStart, j - contentStart);
