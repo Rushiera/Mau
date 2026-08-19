@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using Mau.Development;
 
@@ -54,6 +54,8 @@ namespace Mau.Cli
                 Console.WriteLine("文件不存在: " + mauprojPath);
                 return 1;
             }
+            // 相对 → 绝对——CLI 工作目录=仓库根约定；BuildWithDotnet 依赖绝对路径（相对 csproj 路径 MSB1009——2026-08-19 修正）
+            mauprojPath = Path.GetFullPath(mauprojPath);
 
             // [段1] 解析 mauproj + 输出目录（默认 public/src/<组名>/ + public/app/Flows/）
             MauProjParseResult parsed = MauProjFile.Load(mauprojPath);
@@ -76,6 +78,8 @@ namespace Mau.Cli
             {
                 dllDir = Path.Combine(root, "public", "app", "Flows");
             }
+            srcDir = Path.GetFullPath(srcDir);
+            dllDir = Path.GetFullPath(dllDir);
 
             // [段2] 组翻译（共享服务）——Load→Collect→CompileGroup→落盘→可选 build
             MauGroupBuildResult result = MauGroupBuilder.Build(mauprojPath, srcDir, dllDir, doBuild);
@@ -88,6 +92,11 @@ namespace Mau.Cli
                 for (int i = 0; i < result.FailDiagnostics.Count; i++)
                 {
                     Console.WriteLine(result.FailDiagnostics[i]);
+                }
+                if (result.BuildOutput.Length > 0)
+                {
+                    Console.WriteLine("── dotnet build 输出 ──");
+                    Console.WriteLine(result.BuildOutput);
                 }
                 if (result.Error.Length > 0)
                 {

@@ -19,10 +19,9 @@ namespace CH4
         /// </summary>
         private static void PrintStatus()
         {
-            Console.WriteLine("── 三 Cat 状态 ──");
-            PrintFlowStatus("ToolTestCat", _toolHandle);
-            PrintFlowStatus("IOTestCat", _ioHandle);
+            Console.WriteLine("── 两 Cat 状态 ──");
             PrintFlowStatus("QuickCat", _quickHandle);
+            PrintFlowStatus("DevCat", _devHandle);
             // [段1] OA 快照 + 盒子截面 + 审计帧序（杂音过滤——trace.sample 每帧采样隐藏，关键事件帧序可回溯）
             OAView oaView = _oa.GetSnapshot();
             Console.WriteLine("── OA 快照 ── Open=" + oaView.OpenCount + " Work=" + oaView.WorkCount + " Closed=" + oaView.ClosedCount + " Timeout=" + oaView.TimeoutCount);
@@ -71,6 +70,11 @@ namespace CH4
         /// <param name="handle">Flow 句柄</param>
         private static void PrintFlowStatus(string name, FlowHandle handle)
         {
+            if (handle == null)
+            {
+                Console.WriteLine("  " + name + " | 未加载（降级）");
+                return;
+            }
             if (handle.IsFaulted)
             {
                 Console.WriteLine("  " + name + " | FAULTED | " + handle.FaultReason);
@@ -115,12 +119,9 @@ namespace CH4
         /// </summary>
         private static void PrintStatusShort()
         {
-            Console.WriteLine("── 三 Cat 状态 ──");
-            PrintFlowStatus("ToolTestCat", _toolHandle);
-            PrintFlowStatus("IOTestCat", _ioHandle);
+            Console.WriteLine("── 两 Cat 状态 ──");
             PrintFlowStatus("QuickCat", _quickHandle);
-            OAView oaView = _oa.GetSnapshot();
-            Console.WriteLine("── OA 快照 ── Open=" + oaView.OpenCount + " Work=" + oaView.WorkCount + " Closed=" + oaView.ClosedCount + " Timeout=" + oaView.TimeoutCount);
+            PrintFlowStatus("DevCat", _devHandle);
             List<LogStore.LogEntry> logs = LogStore.AllLog;
             int start = logs.Count - 10;
             if (start < 0)

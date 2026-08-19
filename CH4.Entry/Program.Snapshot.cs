@@ -21,10 +21,8 @@ namespace CH4
         private static string BuildCompactFrameJson()
         {
             List<object> cats = new List<object>();
-            AppendCatCompact(cats, "ToolTestCat", _toolHandle);
-            AppendCatCompact(cats, "IOTestCat", _ioHandle);
             AppendCatCompact(cats, "QuickCat", _quickHandle);
-            AppendCatCompact(cats, "MajorDomoCat", _majorHandle);
+            AppendCatCompact(cats, "DevCat", _devHandle);
             OAView oa = _oa.GetSnapshot();
             string chatState = "";
             string cs;
@@ -57,6 +55,11 @@ namespace CH4
         /// <param name="handle">Flow 句柄</param>
         private static void AppendCatCompact(List<object> cats, string name, FlowHandle handle)
         {
+            if (handle == null)
+            {
+                cats.Add(new { n = name, s = "-" });
+                return;
+            }
             if (handle.IsFaulted)
             {
                 cats.Add(new { n = name, fd = true });
@@ -84,6 +87,11 @@ namespace CH4
         /// <param name = "handle">Flow 句柄</param>
         private static void AppendCatJson(List<object> cats, string name, long id, FlowHandle handle)
 {
+        if (handle == null)
+        {
+            cats.Add(new { name = name, id = id, faulted = true, faultReason = "未加载（降级）", status = (object)null });
+            return;
+        }
         if (handle.IsFaulted)
         {
             cats.Add(new { name = name, id = id, faulted = true, faultReason = handle.FaultReason, status = (object)null });
@@ -122,10 +130,8 @@ namespace CH4
     private static string BuildSnapshotJson(bool includeLogs)
 {
         List<object> cats = new List<object>();
-        AppendCatJson(cats, "ToolTestCat", _toolId, _toolHandle);
-        AppendCatJson(cats, "IOTestCat", _ioId, _ioHandle);
         AppendCatJson(cats, "QuickCat", _quickId, _quickHandle);
-        AppendCatJson(cats, "MajorDomoCat", _majorId, _majorHandle);
+        AppendCatJson(cats, "DevCat", _devId, _devHandle);
         OAView oa = _oa.GetSnapshot();
         // [段1] boxes 字段——DataBox 全量截面（协议 v1.1：新增字段旧端忽略；复杂对象摘要化——内部实现盒子不刷爆快照）
         DataBoxSnapshot boxSnap = DataBox.Capture();

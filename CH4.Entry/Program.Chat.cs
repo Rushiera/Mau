@@ -79,6 +79,11 @@ namespace CH4
         private static bool _toolBatchActive;
 
         /// <summary>
+        /// 工具单 Dog owner ID——宿主 Dog 域（OA 未开存活校验——任意 ID 可 Post；多 Dog 未来可扩展独立 ID）
+        /// </summary>
+        private const long ToolOwnerId = 1;
+
+        /// <summary>
         /// 后台消费 LLM 流——消息序列 + 工具定义 → 文本/思考/tool_calls 累积（Task.Run——主线程零阻塞）。
         /// </summary>
         /// <param name="messages">消息序列</param>
@@ -295,6 +300,8 @@ namespace CH4
             _toolBatchActive = true;
             try
             {
+                // [段1] OA 发单——逐工具 ToolOrderDog（CH2 Dog 机制：officeName=工具名 / 载荷 args=整包参数 JSON；宿主=Dog owner）
+                List<ToolOrderDog> dogs = new List<ToolOrderDog>();
                 using (JsonDocument doc = JsonDocument.Parse(toolCallsJson))
                 {
                     JsonElement root = doc.RootElement;
@@ -311,22 +318,82 @@ namespace CH4
                             name = GetStringProp(funcEl, "name");
                             arguments = GetStringProp(funcEl, "arguments");
                         }
-                        // [段1] 直执——工具路由（Program.Tools.cs；失败 ERR| 前缀）
                         LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|start|" + TrimDisplay(arguments, 120), "TOOL");
-                        string result = ExecuteTool(name, arguments);
+                        ToolOrderDog dog = new ToolOrderDog(id, name, arguments);
+                        dog.Post(_oa, ToolOwnerId);
+                        if (dog.OfficeId == 0)
+                        {
+                            // Post 失败——直接 FALLBACK 直执（错误可见性）
+                            string fb = ExecuteTool(name, arguments);
+                            if (fb == null || fb.Length == 0)
+                            {
+                                fb = "ERR|EMPTY_RESULT|工具执行无结果";
+                            }
+                            dog.Result = "[FALLBACK] " + fb;
+                            dog.IsClosed = true;
+                        }
+                        else
+                        {
+                            LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|posted|office=" + dog.OfficeId + "|timeout=" + dog.TimeoutFrames, "TOOL");
+                        }
+                        dogs.Add(dog);
+                    }
+                }
+                // [段2] 等待循环——帧驱动（dev_cat 语料认领执行）+ Dog 逐帧轮询；帧上限 = 最大工具超时 + 余量（mau.proj 4800 + 600）
+                const long MaxDogWaitFrames = 4800 + 600;
+                for (long f = 0; f < MaxDogWaitFrames; f++)
+                {
+                    bool allDone = true;
+                    for (int i = 0; i < dogs.Count; i++)
+                    {
+                        dogs[i].Tick(_oa);
+                        if (!dogs[i].IsClosed && !dogs[i].IsTimedOut)
+                        {
+                            allDone = false;
+                        }
+                    }
+                    if (allDone)
+                    {
+                        break;
+                    }
+                    _runner.Tick();
+                    if (_httpHost != null)
+                    {
+                        _httpHost.PumpMainThread();
+                    }
+                    Thread.Sleep(FrameSleepMs);
+                }
+                // [段3] 收集——Closed 取回执；TimeOut/等待上限 → 宿主直执 FALLBACK（执行器不变；[FALLBACK] 前缀注明）
+                for (int i = 0; i < dogs.Count; i++)
+                {
+                    ToolOrderDog dog = dogs[i];
+                    if (!dog.IsClosed && !dog.IsTimedOut)
+                    {
+                        dog.IsTimedOut = true;
+                    }
+                    if (dog.IsTimedOut)
+                    {
+                        LogStore.Add("CH4.Entry", 2, "TOOL|" + dog.Name + "|timeout|office=" + dog.OfficeId + " → FALLBACK 直执", "TOOL");
+                        string result = ExecuteTool(dog.Name, dog.ArgsJson);
                         if (result == null || result.Length == 0)
                         {
                             result = "ERR|EMPTY_RESULT|工具执行无结果";
                         }
-                        // O 系列：工具结果入 Log 截断 100 字符（design-ch4-observe §六拍板）——完整结果在会话消息
-                        LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|" + result, "TOOL", "", "", 100);
-                        // B4 对话区：工具结果实时推送 SSE（tool 事件——前端按执行序填充占位卡；参数/结果视图截断同 history）
-                        if (_httpHost != null)
-                        {
-                            _httpHost.PushToolResult(name, TruncateText(arguments, 200), TruncateText(result, 300));
-                        }
-                        _chatContext.AddToolResult(id, name, result);
+                        dog.Result = "[FALLBACK] " + result;
+                        dog.IsClosed = true;
                     }
+                    if (dog.Result == null || dog.Result.Length == 0)
+                    {
+                        dog.Result = "ERR|EMPTY_RESULT|工具执行无结果";
+                    }
+                    // O 系列：工具结果入 Log 截断 100 字符（design-ch4-observe §六拍板）——完整结果在会话消息
+                    LogStore.Add("CH4.Entry", 1, "TOOL|" + dog.Name + "|" + dog.Result, "TOOL", "", "", 100);
+                    // B4 对话区：工具结果实时推送 SSE（tool 事件——前端按执行序填充占位卡；参数/结果视图截断同 history）
+                    if (_httpHost != null)
+                    {
+                        _httpHost.PushToolResult(dog.Name, TruncateText(dog.ArgsJson, 200), TruncateText(dog.Result, 300));
+                    }
+                    _chatContext.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);
                 }
             }
             catch (Exception ex)

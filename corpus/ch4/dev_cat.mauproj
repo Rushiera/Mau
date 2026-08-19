@@ -1,0 +1,7 @@
+﻿// dev_cat.mauproj —— DevCat 组（P8 二期 OA 工具执行 Cat——TEXT/MAU 工具域认领）
+组: DevCat
+版本: 0.1
+引用: Mau.Development, Mau.Translator
+文件: dev_cat.mau
+
+// #MAUPROJ_CHECKSUM:SHA256:4BD187AE2D03EE608EA0CE1CF413D37359B52DC150FA4D3D7F4B79A12065541D

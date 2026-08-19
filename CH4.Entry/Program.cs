@@ -31,29 +31,17 @@ namespace CH4
         /// <summary>宿主组件——Flow 注册/驱动入口</summary>
         private static FlowRunner _runner;
 
-        /// <summary>三语料 Flow 句柄——加载/热重载面</summary>
-        private static FlowHandle _toolHandle;
-
-        /// <summary>IOTestCat Flow 句柄——热重载面</summary>
-        private static FlowHandle _ioHandle;
-
         /// <summary>QuickCat Flow 句柄——热重载面</summary>
         private static FlowHandle _quickHandle;
 
-        /// <summary>MajorDomoCat Flow 句柄——会话中枢工具执行器（P5 新猫）</summary>
-        private static FlowHandle _majorHandle;
+        /// <summary>DevCat Flow 句柄——OA 工具执行 Cat（P8 二期——TOOL 域 7 工具认领）</summary>
+        private static FlowHandle _devHandle;
 
         /// <summary>注册 ID——观测与回收用</summary>
-        private static long _toolId;
-
-        /// <summary>IOTestCat 注册 ID——观测与回收用</summary>
-        private static long _ioId;
-
-        /// <summary>QuickCat 注册 ID——观测与回收用</summary>
         private static long _quickId;
 
-        /// <summary>MajorDomoCat 注册 ID——观测与回收用</summary>
-        private static long _majorId;
+        /// <summary>DevCat 注册 ID——观测与回收用</summary>
+        private static long _devId;
 
         /// <summary>命令总线——Command 投递器直接引用（SetText 面）</summary>
         private static CommandBus _bus;
@@ -184,15 +172,26 @@ private static HttpHost _httpHost;
             {
                 Console.WriteLine(line);
             };
-            // [段4] 四语料加载——编排者先注册（Command 键位分配稳定）
-            _toolHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_ToolTestCat.dll"));
-            _ioHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_IoTestCat.dll"));
+            // [段4] 语料加载——Quick（正式工具）+ DevCat（P8 二期 OA 工具执行 Cat）——ToolTest/IOTest/MajorDomo 退役删除（2026-08-19 拍板；会话中枢在宿主 ChatBridge——语料无承载）
+            // DevCat 容错降级：加载失败 → 警告 + 空句柄（工具工单无人认领 → 宿主 FALLBACK 直执保底——负例路径合法化）
             _quickHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_QuickCat.dll"));
-            _majorHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_MajorDomoCat.dll"));
-            _toolId = _runner.RegisterFlow(_toolHandle.Flow, "ToolTestCat");
-            _ioId = _runner.RegisterFlow(_ioHandle.Flow, "IOTestCat");
+            try
+            {
+                _devHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_DevCat.dll"));
+            }
+            catch (Exception exDev)
+            {
+                Console.WriteLine("[CH4.Entry] 警告: FL_DevCat.dll 加载失败——工具执行降级 FALLBACK 直执: " + exDev.Message);
+            }
             _quickId = _runner.RegisterFlow(_quickHandle.Flow, "QuickCat");
-            _majorId = _runner.RegisterFlow(_majorHandle.Flow, "MajorDomoCat");
+            if (_devHandle != null)
+            {
+                _devId = _runner.RegisterFlow(_devHandle.Flow, "DevCat");
+            }
+            else
+            {
+                _devId = -1;
+            }
             // [段5] 会话面——上下文 + 前文恢复 + 工具定义（P5：MajorDomoCat 会话中枢）
             _chatContext = new ChatContext();
             _chatContext.SetSystemPrompt(BuildSystemPrompt());
@@ -230,7 +229,7 @@ private static HttpHost _httpHost;
             {
                 llmState = "已注入";
             }
-            Console.WriteLine("[CH4.Entry] 就绪 | 四 Cat: ToolTestCat#" + _toolId + " IOTestCat#" + _ioId + " QuickCat#" + _quickId + " MajorDomoCat#" + _majorId + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
+            Console.WriteLine("[CH4.Entry] 就绪 | 两 Cat: QuickCat#" + _quickId + " DevCat#" + _devId + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
             _httpHost = HttpHost.Start(ResolveHttpPort(llmConfig), BuildSnapshotJson, DispatchCommand, BuildCompactFrameJson, BuildHistoryView);
             Console.WriteLine("[CH4.Entry] HTTP 外观层就绪: http://127.0.0.1:" + _httpHost.Port);

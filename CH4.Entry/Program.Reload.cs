@@ -41,33 +41,21 @@ namespace CH4
             FlowHandle oldHandle;
             long oldId;
             string name;
-            if (cat == "tool")
-            {
-                oldHandle = _toolHandle;
-                oldId = _toolId;
-                name = "ToolTestCat";
-            }
-            else if (cat == "io")
-            {
-                oldHandle = _ioHandle;
-                oldId = _ioId;
-                name = "IOTestCat";
-            }
-            else if (cat == "quick")
+            if (cat == "quick")
             {
                 oldHandle = _quickHandle;
                 oldId = _quickId;
                 name = "QuickCat";
             }
-            else if (cat == "major")
+            else if (cat == "dev")
             {
-                oldHandle = _majorHandle;
-                oldId = _majorId;
-                name = "MajorDomoCat";
+                oldHandle = _devHandle;
+                oldId = _devId;
+                name = "DevCat";
             }
             else
             {
-                Console.WriteLine("[CH4.Entry] reload 目标无效——tool|io|quick|major");
+                Console.WriteLine("[CH4.Entry] reload 目标无效——quick|dev");
                 return;
             }
             if (dllPath.Length == 0)
@@ -141,25 +129,15 @@ namespace CH4
         /// <param name="id">新注册 ID</param>
         private static void SetCatHandle(string cat, FlowHandle handle, long id)
         {
-            if (cat == "tool")
-            {
-                _toolHandle = handle;
-                _toolId = id;
-            }
-            else if (cat == "io")
-            {
-                _ioHandle = handle;
-                _ioId = id;
-            }
-            else if (cat == "quick")
+            if (cat == "quick")
             {
                 _quickHandle = handle;
                 _quickId = id;
             }
             else
             {
-                _majorHandle = handle;
-                _majorId = id;
+                _devHandle = handle;
+                _devId = id;
             }
         }
     }

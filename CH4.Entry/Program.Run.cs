@@ -53,7 +53,7 @@ namespace CH4
         /// <returns>退出码</returns>
         private static int RunInteractive()
         {
-            Console.WriteLine("指令: ReadText <path> | QuickCat <system>|<content> | Chat <内容> | status | reload <tool|io|quick|major> [dll] | run <n> | pid | quit");
+            Console.WriteLine("指令: QuickCat <system>|<content> | Chat <内容> | status | reload <quick|dev> [dll] | run <n> | pid | quit");
             while (true)
             {
                 // [段1] 帧驱动——HTTP 快照推送主线程泵（ThreadGuard：快照构建须宿主主线程；空闲时也持续 Tick）
@@ -92,16 +92,6 @@ namespace CH4
         /// <returns>true=识别成功并已投递</returns>
         private static bool DispatchCommand(string line)
         {
-            if (line.StartsWith("ReadText ", StringComparison.Ordinal))
-            {
-                string path = line.Substring(9).Trim();
-                if (path.Length == 0)
-                {
-                    return false;
-                }
-                _bus.SetText("TOOL_Text_Read", path, "cli");
-                return true;
-            }
             if (line.StartsWith("QuickCat ", StringComparison.Ordinal))
             {
                 string payload = line.Substring(9).Trim();
@@ -198,7 +188,7 @@ namespace CH4
         /// <returns>true=全部空闲</returns>
         private static bool AllIdle()
         {
-            if (!IsFlowIdle(_toolHandle) || !IsFlowIdle(_ioHandle) || !IsFlowIdle(_quickHandle))
+            if (!IsFlowIdle(_quickHandle) || !IsFlowIdle(_devHandle))
             {
                 return false;
             }
@@ -214,6 +204,10 @@ namespace CH4
         /// <returns>true=该 Flow 全部状态机 Idle</returns>
         private static bool IsFlowIdle(FlowHandle handle)
         {
+            if (handle == null)
+            {
+                return true;
+            }
             if (handle.IsFaulted)
             {
                 return true;
@@ -287,14 +281,14 @@ namespace CH4
                 // 只投递不驱动——配合 run <n> 手动帧驱动（超时/挂单场景精确帧数控制）
                 if (!DispatchCommand(line.Substring(5).Trim()))
                 {
-                    Console.WriteLine("格式: send ReadText <path> 或 send QuickCat <system>|<content>");
+                    Console.WriteLine("格式: send QuickCat <system>|<content> 或 send Chat <内容>");
                 }
                 return true;
             }
 
             if (!DispatchCommand(line))
             {
-                Console.WriteLine("格式: ReadText <path> 或 QuickCat <system>|<content>");
+                Console.WriteLine("格式: QuickCat <system>|<content> 或 Chat <内容>");
                 return true;
             }
             DriveUntilIdle();

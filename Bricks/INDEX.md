@@ -1,6 +1,6 @@
 ﻿# Mau 积木索引 — INDEX
 
-> 版本：v3.3 | 更新：2026-08-16（mau bricks index --update 源码驱动重建）
+> 版本：v3.3 | 更新：2026-08-19（mau bricks index --update 源码驱动重建）
 > 全量积木登记——一行一条。ID 永不重用。
 
 ## 全部积木
@@ -14,6 +14,9 @@
 | BRIK-LLM-003 | llm.chunk_ready | LLM | LLM/BRIK-LLM-003_llm.chunk_ready.cs | 无 | active |  |
 | BRIK-LLM-004 | llm.done_ready | LLM | LLM/BRIK-LLM-004_llm.done_ready.cs | 无 | active |  |
 | BRIK-LOG-001 | log.write | LOG | LOG/BRIK-LOG-001_log.write.cs | 无 | active |  |
+| BRIK-MAU-001 | mau.verify | MAU | MAU/BRIK-MAU-001_mau.verify.cs | 无 | active |  |
+| BRIK-MAU-002 | mau.gen | MAU | MAU/BRIK-MAU-002_mau.gen.cs | 无 | active |  |
+| BRIK-MAU-003 | mau.proj | MAU | MAU/BRIK-MAU-003_mau.proj.cs | 无 | active |  |
 | BRIK-OA-001 | oa.post | OA | OA/BRIK-OA-001_oa.post.cs | 无 | active |  |
 | BRIK-OA-002 | oa.set_str | OA | OA/BRIK-OA-002_oa.set_str.cs | 无 | active |  |
 | BRIK-OA-003 | oa.claim_next_simple | OA | OA/BRIK-OA-003_oa.claim_next_simple.cs | 无 | active |  |
@@ -28,7 +31,11 @@
 | BRIK-TEST-001 | probe.source | TEST | TEST/BRIK-TEST-001_probe.source.cs | 无 | active |  |
 | BRIK-TEST-002 | probe.sink | TEST | TEST/BRIK-TEST-002_probe.sink.cs | 无 | active |  |
 | BRIK-TEST-003 | probe.sink_slow | TEST | TEST/BRIK-TEST-003_probe.sink_slow.cs | 无 | active |  |
+| BRIK-TEXT-001 | text.read | TEXT | TEXT/BRIK-TEXT-001_text.read.cs | 无 | active |  |
+| BRIK-TEXT-002 | text.write | TEXT | TEXT/BRIK-TEXT-002_text.write.cs | 无 | active |  |
+| BRIK-TEXT-003 | text.append | TEXT | TEXT/BRIK-TEXT-003_text.append.cs | 无 | active |  |
+| BRIK-TEXT-004 | text.replace | TEXT | TEXT/BRIK-TEXT-004_text.replace.cs | 无 | active |  |
 
 ---
 
-_版本：v3.3 | 2026-08-16 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_
+_版本：v3.3 | 2026-08-19 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_
