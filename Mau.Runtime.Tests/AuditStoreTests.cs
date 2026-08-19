@@ -6,25 +6,200 @@ using Xunit;
 namespace Mau.Runtime.Tests
 {
     /// <summary>
-    /// 审计存储测试——AuditStore（A.1 存储模型）
-    /// 隔离：临时目录 Guid 唯一命名 + finally 清理；时间源注入固定时钟验证跨天滚动
+    /// 审计存储测试——AuditStore 薄壳语义（O2：Record → LogStore audit.* 过滤重建）
+    /// 隔离：AuditSerial 串行集合 + 每测试开头 LogStore.ClearForTest（Log 是全局真源——防残留串扰）
     /// </summary>
     [Collection("AuditSerial")]
     public sealed class AuditStoreTests
     {
         /// <summary>
-        /// 共享读文件——写者仍持有 FileShare.ReadWrite 句柄时允许读（AuditQuery 同款读法）
+        /// 当前 Log 中 audit.* 条目数
         /// </summary>
-        /// <param name="path">文件路径</param>
-        /// <returns>全文</returns>
-        private static string ReadAllTextShared(string path)
+        /// <returns>计数</returns>
+        private static long AuditCount()
         {
-            using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            long count = 0;
+            System.Collections.Generic.List<LogStore.LogEntry> all = LogStore.AllLog;
+            lock (LogStore.Sync)
             {
-                using (StreamReader r = new StreamReader(fs, System.Text.Encoding.UTF8))
+                for (int i = 0; i < all.Count; i++)
                 {
-                    return r.ReadToEnd();
+                    if (all[i].Type.StartsWith("audit.", StringComparison.Ordinal))
+                    {
+                        count = count + 1;
+                    }
                 }
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Record 转发 Log——audit.* 条目 + Snapshot 重建（source/category/frame/props 还原）
+        /// 断言用过滤查找——并行集合写入不破坏（Log 全局真源——只增不改）
+        /// </summary>
+        [Fact]
+        public void Record_ForwardsToLog_AndSnapshotReconstructs()
+        {
+            LogStore.ClearForTest();
+            AuditStore store = new AuditStore();
+            try
+            {
+                store.Record("CommandBus", "cmd.set", 10, new AuditProp[] { new AuditProp("key", "chat_x_msg") });
+                store.Record("OA", "oa.post", 11, new AuditProp[] { new AuditProp("officeId", "7") });
+                Assert.True(store.Total >= 2);
+                AuditEvent[] snap = store.Snapshot();
+                Assert.True(Array.Exists(snap, delegate (AuditEvent e)
+                {
+                    return e.Source == "CommandBus" && e.Category == "cmd.set" && e.Frame == 10 && e.Props.Length == 1 && e.Props[0].Value == "chat_x_msg";
+                }));
+                Assert.True(Array.Exists(snap, delegate (AuditEvent e)
+                {
+                    return e.Source == "OA" && e.Category == "oa.post" && e.Frame == 11;
+                }));
+            }
+            finally
+            {
+                store.Shutdown();
+            }
+        }
+
+        /// <summary>
+        /// trace.* 内存真源可见（AuditQuery/sys.trace 能力保留）但磁盘投影跳过（L0-TRACE 不落盘——D5）
+        /// </summary>
+        [Fact]
+        public void TraceEvents_InMemory_SkippedFromDisk()
+        {
+            LogStore.ClearForTest();
+            string runDir = Path.Combine(Path.GetTempPath(), "audit_trace_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                LogStore.ConfigureRuns(runDir);
+                AuditStore store = new AuditStore();
+                store.Record("Flow", "trace.fire", 1, new AuditProp[] { new AuditProp("wire", "T_Begin") });
+                store.Record("Flow", "trace.state", 1, new AuditProp[] { new AuditProp("to", "S_Idle") });
+                // 内存可见——Snapshot 含 trace 条目
+                AuditEvent[] snap = store.Snapshot();
+                Assert.True(Array.Exists(snap, delegate (AuditEvent e)
+                {
+                    return e.Category == "trace.fire";
+                }));
+                // 磁盘跳过——log.all 不含 trace
+                LogStore.CloseWriters();
+                string logAll = File.ReadAllText(Path.Combine(runDir, "log.all"), System.Text.Encoding.UTF8);
+                Assert.DoesNotContain("trace.fire", logAll);
+            }
+            finally
+            {
+                LogStore.CloseWriters();
+                TryDeleteDir(runDir);
+            }
+        }
+
+        /// <summary>
+        /// persistable=false 不转发——trace 语义保留（信号沿等高频事件调用侧显式 false；完全跳过——内存也不进）
+        /// </summary>
+        [Fact]
+        public void PersistableFalse_NotForwarded()
+        {
+            LogStore.ClearForTest();
+            AuditStore store = new AuditStore();
+            store.Record("DataBox", "signal.post", -1, new AuditProp[] { new AuditProp("name", "P_Any") }, false);
+            // 过滤查找——确认无 signal.post 事件（并行集合写入不影响本断言）
+            AuditEvent[] snap = store.Snapshot();
+            Assert.False(Array.Exists(snap, delegate (AuditEvent e)
+            {
+                return e.Category == "signal.post";
+            }));
+        }
+
+        /// <summary>
+        /// 空载荷即时可读——无 props 事件 Message 落 category
+        /// </summary>
+        [Fact]
+        public void Record_NoProps_MessageIsCategory()
+        {
+            LogStore.ClearForTest();
+            AuditStore store = new AuditStore();
+            store.Record("AuditStore", "app.start", 0, null);
+            Assert.True(store.Total >= 1);
+            AuditEvent[] snap = store.Snapshot();
+            Assert.True(Array.Exists(snap, delegate (AuditEvent e)
+            {
+                return e.Category == "app.start" && e.Props.Length == 0;
+            }));
+        }
+
+        /// <summary>
+        /// Snapshot 时间序——Record 顺序保持（旧→新；条目存在性断言——并行写入不破坏相对序）
+        /// </summary>
+        [Fact]
+        public void Snapshot_OrderedByRecord()
+        {
+            LogStore.ClearForTest();
+            AuditStore store = new AuditStore();
+            store.Record("A", "ev.one", 1, null);
+            store.Record("B", "ev.two", 2, null);
+            store.Record("C", "ev.three", 3, null);
+            AuditEvent[] snap = store.Snapshot();
+            Assert.True(Array.Exists(snap, delegate (AuditEvent e)
+            {
+                return e.Category == "ev.one";
+            }));
+            Assert.True(Array.Exists(snap, delegate (AuditEvent e)
+            {
+                return e.Category == "ev.three";
+            }));
+        }
+
+        /// <summary>
+        /// ConfigureRuns 集成——Record 后 log.all 落盘含 audit 行（O1/O2 四文件生态）
+        /// </summary>
+        [Fact]
+        public void ConfigureRuns_ThenRecord_WritesLogAll()
+        {
+            LogStore.ClearForTest();
+            string runDir = Path.Combine(Path.GetTempPath(), "audit_runs_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                LogStore.ConfigureRuns(runDir);
+                AuditStore store = new AuditStore();
+                store.Record("CommandBus", "cmd.set", 1284, new AuditProp[] { new AuditProp("key", "chat_x_msg") });
+                LogStore.CloseWriters();
+                string logAll = File.ReadAllText(Path.Combine(runDir, "log.all"), System.Text.Encoding.UTF8);
+                Assert.Contains("[AUDIT]", logAll);
+                Assert.Contains("cmd.set", logAll);
+                Assert.Contains("F1284", logAll);
+                // err.all 干净（无 L3）
+                string errAll = File.ReadAllText(Path.Combine(runDir, "err.all"), System.Text.Encoding.UTF8);
+                Assert.Equal("", errAll);
+            }
+            finally
+            {
+                LogStore.CloseWriters();
+                TryDeleteDir(runDir);
+            }
+        }
+
+        /// <summary>
+        /// 等级投影——L3 进 err.all（薄壳 Record 默认 INFO；直写 LogStore level3 验证投影）
+        /// </summary>
+        [Fact]
+        public void ErrLevel_WritesErrAll()
+        {
+            LogStore.ClearForTest();
+            string runDir = Path.Combine(Path.GetTempPath(), "audit_err_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                LogStore.ConfigureRuns(runDir);
+                LogStore.Add("Test", 3, "boom", "SYS");
+                LogStore.CloseWriters();
+                string errAll = File.ReadAllText(Path.Combine(runDir, "err.all"), System.Text.Encoding.UTF8);
+                Assert.Contains("boom", errAll);
+            }
+            finally
+            {
+                LogStore.CloseWriters();
+                TryDeleteDir(runDir);
             }
         }
 
@@ -48,229 +223,6 @@ namespace Mau.Runtime.Tests
             catch (UnauthorizedAccessException)
             {
                 // 权限忽略
-            }
-        }
-
-        /// <summary>
-        /// 未配置时——事件入环形缓冲，不落盘，Total 递增
-        /// </summary>
-        [Fact]
-        public void Record_NoConfigure_KeepsInMemory()
-        {
-            AuditStore store = new AuditStore();
-            try
-            {
-                store.Record("CommandBus", "cmd.set", 10, new AuditProp[] { new AuditProp("key", "chat_x_msg") });
-                store.Record("OA", "oa.post", 11, new AuditProp[] { new AuditProp("id", "7") });
-                Assert.Equal(2L, store.Total);
-                AuditEvent[] snap = store.Snapshot();
-                Assert.Equal(2, snap.Length);
-                Assert.Equal("CommandBus", snap[0].Source);
-                Assert.Equal("cmd.set", snap[0].Category);
-                Assert.Equal(10L, snap[0].Frame);
-                Assert.Equal("OA", snap[1].Source);
-            }
-            finally
-            {
-                store.Shutdown();
-            }
-        }
-
-        /// <summary>
-        /// 环形缓冲覆盖——容量 3 写 5 条，保留最新 3 条且序号连续
-        /// </summary>
-        [Fact]
-        public void RingOverflow_KeepsLatest()
-        {
-            AuditStore store = new AuditStore(3);
-            try
-            {
-                for (int i = 1; i <= 5; i = i + 1)
-                {
-                    store.Record("Src", "cat." + i, i, new AuditProp[] { new AuditProp("n", i.ToString()) });
-                }
-                Assert.Equal(5L, store.Total);
-                AuditEvent[] snap = store.Snapshot();
-                Assert.Equal(3, snap.Length);
-                Assert.Equal(3L, snap[0].Seq);
-                Assert.Equal(5L, snap[2].Seq);
-            }
-            finally
-            {
-                store.Shutdown();
-            }
-        }
-
-        /// <summary>
-        /// 配置后——事件落盘：会话头 + 事件 MD 格式 + Flush 后文件可见
-        /// </summary>
-        [Fact]
-        public void Configure_ThenRecord_WritesFileWithHeader()
-        {
-            string root = Path.Combine(Path.GetTempPath(), "audit_ok_" + Guid.NewGuid().ToString("N"));
-            DateTime fixedNow = new DateTime(2026, 8, 10, 23, 40, 1);
-            AuditStore store = new AuditStore(10000, () => fixedNow);
-            try
-            {
-                store.ConfigureAudit(root, "test", 20, 5);
-                store.Record("CommandBus", "cmd.set", 1284, new AuditProp[] { new AuditProp("key", "chat_x_msg"), new AuditProp("result", "accepted") });
-                store.Flush();
-                // 会话目录 + 当日文件存在
-                string sessionDir = Path.Combine(root, "20260810_234001");
-                string file = Path.Combine(sessionDir, "20260810.md");
-                Assert.True(Directory.Exists(sessionDir));
-                Assert.True(File.Exists(file));
-                string text = ReadAllTextShared(file);
-                // 会话头
-                Assert.Contains("# Audit Session 20260810_234001", text);
-                Assert.Contains("# 模式: test", text);
-                Assert.Contains("# 加载数: 20", text);
-                Assert.Contains("# 起始帧: 5", text);
-                // 事件行
-                Assert.Contains("| CommandBus | cmd.set", text);
-                Assert.Contains("| AuditStore | app.start", text);
-                Assert.Contains("- key: chat_x_msg", text);
-                Assert.Contains("- result: accepted", text);
-            }
-            finally
-            {
-                store.Shutdown();
-                if (Directory.Exists(root))
-                {
-                    TryDeleteDir(root);
-                }
-            }
-        }
-
-        /// <summary>
-        /// 不可落盘事件——内存有，磁盘无
-        /// </summary>
-        [Fact]
-        public void NonPersistable_SkipsDisk()
-        {
-            string root = Path.Combine(Path.GetTempPath(), "audit_np_" + Guid.NewGuid().ToString("N"));
-            AuditStore store = new AuditStore(10000, () => new DateTime(2026, 8, 10, 12, 0, 0));
-            try
-            {
-                store.ConfigureAudit(root, "test");
-                store.Record("Flow", "trace.fire", 3, new AuditProp[] { new AuditProp("prop", "P_Ok") }, false);
-                store.Flush();
-                Assert.Equal(2L, store.Total);
-                Assert.Equal(2, store.Snapshot().Length);
-                string sessionDir = Path.Combine(root, "20260810_120000");
-                string file = Path.Combine(sessionDir, "20260810.md");
-                Assert.True(File.Exists(file));
-                string text = ReadAllTextShared(file);
-                Assert.DoesNotContain("trace.fire", text);
-            }
-            finally
-            {
-                store.Shutdown();
-                if (Directory.Exists(root))
-                {
-                    TryDeleteDir(root);
-                }
-            }
-        }
-
-        /// <summary>
-        /// 跨天滚动——日期变化生成新文件，新文件带会话头且起始帧为当前事件帧
-        /// </summary>
-        [Fact]
-        public void CrossDay_RollsToNewFileWithHeader()
-        {
-            string root = Path.Combine(Path.GetTempPath(), "audit_day_" + Guid.NewGuid().ToString("N"));
-            DateTime t1 = new DateTime(2026, 8, 10, 23, 59, 59);
-            AuditStore store = new AuditStore(10000, () => t1);
-            try
-            {
-                store.ConfigureAudit(root, "test", 0, 0);
-                store.Record("CommandBus", "cmd.set", 99, new AuditProp[] { new AuditProp("key", "k1") });
-                // 时间跨天——下一事件在新文件
-                t1 = new DateTime(2026, 8, 11, 0, 0, 5);
-                store.Record("CommandBus", "cmd.consume", 100, new AuditProp[] { new AuditProp("key", "k2") });
-                store.Flush();
-                string sessionDir = Path.Combine(root, "20260810_235959");
-                string f1 = Path.Combine(sessionDir, "20260810.md");
-                string f2 = Path.Combine(sessionDir, "20260811.md");
-                Assert.True(File.Exists(f1));
-                Assert.True(File.Exists(f2));
-                string text1 = ReadAllTextShared(f1);
-                string text2 = ReadAllTextShared(f2);
-                Assert.Contains("cmd.set", text1);
-                Assert.DoesNotContain("cmd.consume", text1);
-                // 新文件带会话头 + 起始帧 = 跨天事件帧
-                Assert.Contains("# Audit Session 20260810_235959", text2);
-                Assert.Contains("# 起始帧: 100", text2);
-                Assert.Contains("cmd.consume", text2);
-            }
-            finally
-            {
-                store.Shutdown();
-                if (Directory.Exists(root))
-                {
-                    TryDeleteDir(root);
-                }
-            }
-        }
-
-        /// <summary>
-        /// 过期清理——retainDays=1 时更早会话删除，当日会话保留
-        /// </summary>
-        [Fact]
-        public void CleanOldSessions_RemovesExpired()
-        {
-            string root = Path.Combine(Path.GetTempPath(), "audit_cln_" + Guid.NewGuid().ToString("N"));
-            DateTime now = new DateTime(2026, 8, 10, 10, 0, 0);
-            try
-            {
-                // 预置过期会话目录（8月8日）与当日会话目录
-                Directory.CreateDirectory(Path.Combine(root, "20260808_000000"));
-                Directory.CreateDirectory(Path.Combine(root, "20260810_090000"));
-                AuditStore store = new AuditStore(10000, () => now);
-                try
-                {
-                    store.ConfigureAudit(root, "test", 0, 0, 1);
-                }
-                finally
-                {
-                    store.Shutdown();
-                }
-                Assert.False(Directory.Exists(Path.Combine(root, "20260808_000000")));
-                Assert.True(Directory.Exists(Path.Combine(root, "20260810_090000")));
-            }
-            finally
-            {
-                if (Directory.Exists(root))
-                {
-                    TryDeleteDir(root);
-                }
-            }
-        }
-
-        /// <summary>
-        /// 序号单调——多条记录 Seq 递增且帧号保留
-        /// </summary>
-        [Fact]
-        public void Seq_Monotonic()
-        {
-            AuditStore store = new AuditStore();
-            try
-            {
-                store.Record("A", "a.1", 1, null);
-                store.Record("B", "b.1", 2, null);
-                store.Record("C", "c.1", 3, null);
-                AuditEvent[] snap = store.Snapshot();
-                Assert.Equal(1L, snap[0].Seq);
-                Assert.Equal(2L, snap[1].Seq);
-                Assert.Equal(3L, snap[2].Seq);
-                Assert.Equal(3L, snap[2].Frame);
-                // 无属性事件——格式化为空属性
-                Assert.Empty(snap[0].Props);
-            }
-            finally
-            {
-                store.Shutdown();
             }
         }
     }

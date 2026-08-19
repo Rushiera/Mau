@@ -17,6 +17,7 @@ namespace Mau.Runtime.Tests
         /// <returns>指令解析器</returns>
         private static SysCommand CreateSysWithEvents()
         {
+            LogStore.ClearForTest();
             AuditStore store = new AuditStore();
             // CommandBus
             store.Record("CommandBus", "cmd.register", 1, new AuditProp[] { new AuditProp("owner", "1"), new AuditProp("keys", "chat_x_msg"), new AuditProp("result", "accepted") });

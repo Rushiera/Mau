@@ -56,6 +56,7 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void CommandBus_RecordsRegisterSetConsumeClean()
         {
+            LogStore.ClearForTest();
             ThreadGuard guard = new ThreadGuard();
             CommandBus bus = new CommandBus(guard);
             AuditStore audit = new AuditStore();
@@ -103,6 +104,7 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void CommandBus_DuplicateRegister_RecordsReject()
         {
+            LogStore.ClearForTest();
             ThreadGuard guard = new ThreadGuard();
             CommandBus bus = new CommandBus(guard);
             AuditStore audit = new AuditStore();
@@ -130,6 +132,7 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void OA_RecordsPostClaimCompleteSettle()
         {
+            LogStore.ClearForTest();
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
             AuditStore audit = new AuditStore();
@@ -176,6 +179,7 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void FlowRunner_RecordsFrameRegisterUnregister()
         {
+            LogStore.ClearForTest();
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
             CommandBus cmd = new CommandBus(guard);
@@ -225,6 +229,7 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void ConfigStore_Set_RecordsChangeWithSummary()
         {
+            LogStore.ClearForTest();
             ConfigStore cfg = new ConfigStore();
             AuditStore audit = new AuditStore();
             cfg.Audit = audit;
@@ -249,6 +254,7 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void RuntimeLog_ErrorOut_RecordsLogError()
         {
+            LogStore.ClearForTest();
             AuditStore audit = new AuditStore();
             AuditStore.Default = audit;
             try

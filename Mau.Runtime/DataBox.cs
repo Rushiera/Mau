@@ -418,7 +418,7 @@ public static void Reset()
                 audit.Record("DataBox", "signal.post", -1, new AuditProp[] {
                     new AuditProp("name", name),
                     new AuditProp("frame", FlowRunner.GlobalFrame.ToString())
-                });
+                }, false);
             }
         }
 
@@ -461,7 +461,7 @@ public static void Reset()
                     audit.Record("DataBox", "signal.consume", -1, new AuditProp[] {
                         new AuditProp("name", name),
                         new AuditProp("frame", FlowRunner.GlobalFrame.ToString())
-                    });
+                    }, false);
                 }
                 return true;
             }

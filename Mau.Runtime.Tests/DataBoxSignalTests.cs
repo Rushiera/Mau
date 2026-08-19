@@ -104,11 +104,12 @@ namespace Mau.Runtime.Tests
         }
 
         /// <summary>
-        /// 审计埋点——signal.post / signal.consume（帧号对齐，Default 可空）
+        /// 审计埋点——signal.post / signal.consume 为 trace 级噪声（persistable=false——O2 定案：不产生审计）
         /// </summary>
         [Fact]
         public void Signal_AuditEvents()
         {
+            LogStore.ClearForTest();
             AuditStore audit = new AuditStore();
             AuditStore.Default = audit;
             try
@@ -117,10 +118,8 @@ namespace Mau.Runtime.Tests
                 DataBox.Signal("P_Audit");
                 DataBox.TryPoll("P_Audit");
                 AuditEvent[] snap = audit.Snapshot();
-                Assert.Equal(2, snap.Length);
-                Assert.Equal("signal.post", snap[0].Category);
-                Assert.Equal("signal.consume", snap[1].Category);
-                Assert.Equal("P_Audit", snap[0].Props[0].Value);
+                // O2：signal.* 高频噪声从审计面出局（DataBox 调用侧 persistable=false）——0 条
+                Assert.Empty(snap);
             }
             finally
             {
@@ -135,6 +134,7 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void Signal_Unregistered_NoAuditEvent()
         {
+            LogStore.ClearForTest();
             AuditStore audit = new AuditStore();
             AuditStore.Default = audit;
             try

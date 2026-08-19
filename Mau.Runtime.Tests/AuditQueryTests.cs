@@ -7,6 +7,7 @@ namespace Mau.Runtime.Tests
     /// 审计查询测试——A.4 读取三形态（AuditQuery：全量统计/段读取/精确搜索）
     /// 隔离：AuditStore 内存模式（不 ConfigureAudit——不触碰 Default 静态）
     /// </summary>
+    [Collection("AuditSerial")]
     public sealed class AuditQueryTests
     {
         /// <summary>
@@ -29,6 +30,7 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void Stats_AggregatesByCategoryAndSource()
         {
+            LogStore.ClearForTest();
             AuditQuery query = CreateQueryWithEvents();
             AuditStat[] stats = query.Stats(null, null, 0, long.MaxValue);
             Assert.Equal(3, stats.Length);
@@ -48,6 +50,7 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void Stats_FiltersByCategory()
         {
+            LogStore.ClearForTest();
             AuditQuery query = CreateQueryWithEvents();
             AuditStat[] stats = query.Stats("cmd.set", null, 0, long.MaxValue);
             Assert.Single(stats);
@@ -61,6 +64,7 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void Segment_FiltersByFrameRange()
         {
+            LogStore.ClearForTest();
             AuditQuery query = CreateQueryWithEvents();
             AuditEvent[] events = query.Segment(11, 12, null, null);
             Assert.Equal(2, events.Length);
@@ -84,6 +88,7 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void Find_BySeqAndByProp()
         {
+            LogStore.ClearForTest();
             AuditQuery query = CreateQueryWithEvents();
             AuditEvent? bySeq = query.FindBySeq(2);
             Assert.NotNull(bySeq);
@@ -102,6 +107,7 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void Format_EmptyAndEvents()
         {
+            LogStore.ClearForTest();
             AuditQuery query = CreateQueryWithEvents();
             // GAP.4 段来源标注——空事件输出含数据源行 + （无匹配）
             string emptyText = query.FormatEvents(new AuditEvent[0]);

@@ -61,6 +61,9 @@ namespace CH4
         /// <summary>快照待构建标志——PumpLoop 置位，主线程 PumpMainThread 消费</summary>
         private volatile bool _snapshotPending;
 
+        /// <summary>紧凑帧构建回调——frame.jsonl 帧流（可空=不落帧）</summary>
+        private Func<string> _frameBuilder;
+
         /// <summary>快照推送间隔毫秒——250ms（协议 §4.2 snapshot 事件）</summary>
         private const int SnapshotIntervalMs = 250;
 
@@ -70,13 +73,15 @@ namespace CH4
         /// <param name="port">监听端口（127.0.0.1 回环）</param>
         /// <param name="snapshotBuilder">快照 JSON 构建回调（includeLogs——快照轮询含日志/SSE 事件裁剪）</param>
         /// <param name="dispatcher">指令投递回调（返回 true=识别并投递）</param>
+        /// <param name="frameBuilder">紧凑帧构建回调（frame.jsonl 帧流；可空=不落帧）</param>
         /// <returns>HttpHost 实例</returns>
-        public static HttpHost Start(int port, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher)
+        public static HttpHost Start(int port, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher, Func<string> frameBuilder)
         {
             HttpHost host = new HttpHost();
             host._port = port;
             host._snapshotBuilder = snapshotBuilder;
             host._dispatcher = dispatcher;
+            host._frameBuilder = frameBuilder;
             host.BuildApp();
             host._pumpCts = new CancellationTokenSource();
             host._pumpTask = Task.Run(delegate
@@ -115,6 +120,7 @@ namespace CH4
             });
             _app.MapGet("/api/v1/stream", (RequestDelegate)StreamEvents);
             _app.MapPost("/api/v1/command", (Delegate)HandleCommand);
+            _app.MapGet("/api/v1/logs", (Delegate)HandleLogs);
             _app.MapGet("/api/v1/config", (Delegate)HandleConfigGet);
             _app.MapPost("/api/v1/config", (Delegate)HandleConfigPost);
             _app.MapGet("/", () =>

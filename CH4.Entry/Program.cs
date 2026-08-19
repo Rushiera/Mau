@@ -67,6 +67,7 @@ private static HttpHost _httpHost;
         /// </summary>
         public static int Main(string[] args)
         {
+            _mainThreadId = Environment.CurrentManagedThreadId;
             try
             {
                 Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -75,6 +76,8 @@ private static HttpHost _httpHost;
             {
                 // 输出编码设置失败不影响功能
             }
+            try
+            {
             // [段2] 服务组装 + 语料加载
             string dllDir = FindDllDir(args);
             try
@@ -138,6 +141,13 @@ private static HttpHost _httpHost;
                 return RunScript(mode.Substring(7));
             }
             return RunInteractive();
+            }
+            finally
+            {
+                // O4 优雅收尾——统一观测四文件 flush 落盘（0 字节判例根因修复：--run 模式直接 return 丢缓冲）
+                LogStore.CloseWriters();
+                FrameStore.Close();
+            }
         }/// <summary>
         /// 服务组装——OA/CommandBus/FlowRunner + DataBox 绑定 + 审计配置
         /// </summary>
@@ -161,17 +171,19 @@ private static HttpHost _httpHost;
             DataBox.Bind<ConfigStore>(llmConfig);
             _llmRuntime = new DeepSeekLlmRuntime(llmConfig);
             DataBox.Bind<ILlmRuntime>(_llmRuntime);
-            AuditStore audit = new AuditStore(10000);
-            audit.ConfigureAudit(Path.Combine(dataRoot, "Data", "audit"), "run", 3);
+            AuditStore audit = new AuditStore();
             AuditStore.Default = audit;
             _runner.Audit = audit;
-            // [段3b] LogStore 落盘——C/O 类专属 Log 持久化（P3c 观测全链——帧号可回溯；按会话命名）
-            string logDir = Path.Combine(dataRoot, "Data", "logs");
-            if (!Directory.Exists(logDir))
+            // [段3] 统一观测运行目录——O 系列：Data/runs/<ts>/ 四文件（log.all/oa.all/frame.jsonl/err.all——design-ch4-observe §三）
+            string sessionRunId = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string runDir = Path.Combine(dataRoot, "Data", "runs", sessionRunId);
+            LogStore.ConfigureRuns(runDir);
+            FrameStore.Configure(Path.Combine(runDir, "frame.jsonl"));
+            // [段3a] Console 订阅——Log 同构行输出窗口（O4：过程行不再直打——统一观测）
+            LogStore.ConsoleSink = delegate (string line)
             {
-                Directory.CreateDirectory(logDir);
-            }
-            LogStore.ConfigureLogFile(Path.Combine(logDir, "run_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".log"));
+                Console.WriteLine(line);
+            };
             // [段4] 四语料加载——编排者先注册（Command 键位分配稳定）
             _toolHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_ToolTestCat.dll"));
             _ioHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_IoTestCat.dll"));
@@ -192,7 +204,6 @@ private static HttpHost _httpHost;
                 Console.WriteLine("[CH4.Entry] 会话前文恢复: " + restored.Length + " 条消息");
             }
             _tools = BuildTools();
-            _pendingToolCalls = new List<ToolCallInfo>();
             string llmKeyProbe = llmConfig.Get("llm.api_key", "");
             if (llmKeyProbe.Length == 0)
             {
@@ -221,7 +232,7 @@ private static HttpHost _httpHost;
             }
             Console.WriteLine("[CH4.Entry] 就绪 | 四 Cat: ToolTestCat#" + _toolId + " IOTestCat#" + _ioId + " QuickCat#" + _quickId + " MajorDomoCat#" + _majorId + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
-            _httpHost = HttpHost.Start(ResolveHttpPort(llmConfig), BuildSnapshotJson, DispatchCommand);
+            _httpHost = HttpHost.Start(ResolveHttpPort(llmConfig), BuildSnapshotJson, DispatchCommand, BuildCompactFrameJson);
             Console.WriteLine("[CH4.Entry] HTTP 外观层就绪: http://127.0.0.1:" + _httpHost.Port);
         }
         /// <summary>

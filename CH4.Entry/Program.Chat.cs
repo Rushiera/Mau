@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading;
 using Mau.Runtime;
@@ -7,11 +6,17 @@ using Mau.Runtime;
 namespace CH4
 {
     /// <summary>
-    /// Program 的 ChatBridge 分部——会话中枢工具协调（P5：MajorDomoCat 工具循环）。
+    /// Program 的 ChatBridge 分部——会话中枢工具协调（P5：MajorDomoCat 工具循环 / P8 B1：工具表驱动直执）。
     /// 归属：agent 循环基建（CH4 宿主侧）——LLM 调用 + tool_calls 分发 + 结果回传 + 前文落盘。
+    /// 工具声明表与执行器在 Program.Tools.cs（P8 一期：宿主直执；二期 OA 工单化）。
     /// </summary>
     public static partial class Program
     {
+        /// <summary>
+        /// 宿主主线程 ID——Main 开头记录（HTTP 线程分流判断：Chat 指令跨线程 Tick 违规——Inbox 泵）
+        /// </summary>
+        private static int _mainThreadId;
+
         /// <summary>
         /// LLM 运行时——ChatStream 调度（Bootstrap 注入）
         /// </summary>
@@ -28,7 +33,7 @@ namespace CH4
         private static SessionStore _sessionStore;
 
         /// <summary>
-        /// 工具定义——P5 测试期写死两件（read_file 读 + ask 问）
+        /// 工具定义——P8 B1 表驱动 7 件（BuildToolSpecs——Program.Tools.cs）
         /// </summary>
         private static ToolSpec[] _tools;
 
@@ -63,17 +68,12 @@ namespace CH4
         private static string _llmErrorText;
 
         /// <summary>
-        /// 待回传工具调用清单——与工具执行结果配对（按顺序回传）
-        /// </summary>
-        private static List<ToolCallInfo> _pendingToolCalls;
-
-        /// <summary>
-        /// 工具循环收敛上限——3 轮（莎拍板：单读/单问/并发读问覆盖测试场景）
+        /// 工具循环收敛上限——3 轮（P5 拍板：并发读问覆盖测试场景；P8 多工具批沿用）
         /// </summary>
         private const int MaxToolRounds = 3;
 
         /// <summary>
-        /// 工具批次执行中标志——DispatchToolCalls 置位 / CollectToolResults 复位；reload 忙时拒绝（防旧批次完成信号永不置位 → 空转 25 分钟）
+        /// 工具批次执行中标志——ExecuteToolBatch 置位/复位；reload 忙时拒绝（防旧批次完成信号永不置位 → 空转 25 分钟）
         /// </summary>
         private static bool _toolBatchActive;
 
@@ -144,6 +144,17 @@ namespace CH4
                     _llmResultText = text.ToString();
                     _llmReasoning = reasoning.ToString();
                     _llmToolCallsJson = toolCalls;
+                    // L1-META 结算行（D5 分级——观测全链：LLM 流完成一行为准，SSE log 事件实时可见）
+                    string llmSummary = "llm STREAM 完成 | text=" + text.Length.ToString() + " | tools=";
+                    if (toolCalls.Length > 0)
+                    {
+                        llmSummary = llmSummary + "Y";
+                    }
+                    else
+                    {
+                        llmSummary = llmSummary + "N";
+                    }
+                    LogStore.Add("LLM", 0, llmSummary, "LLM");
                 }
                 catch (Exception ex)
                 {
@@ -169,6 +180,11 @@ namespace CH4
                     return;
                 }
                 _runner.Tick();
+                // O 系列：LLM 等待期间快照/帧流持续泵（旧缺口——LLM 处理期间 SSE 无快照、帧流空白）
+                if (_httpHost != null)
+                {
+                    _httpHost.PumpMainThread();
+                }
                 Thread.Sleep(FrameSleepMs);
             }
             _llmBusy = false;
@@ -177,46 +193,35 @@ namespace CH4
         }
 
         /// <summary>
-        /// 等待语料工具执行完成——轮询 llm_tool_done 标志（语料合流置位）+ 帧上限兜底
-        /// </summary>
-        private static void WaitForTools()
-        {
-            for (int i = 0; i < MaxFramesPerRun; i++)
-            {
-                _runner.Tick();
-                string done;
-                if (DataBox.TryGet<string>("global", "llm_tool_done", out done) && done != null && done == "1")
-                {
-                    return;
-                }
-                Thread.Sleep(FrameSleepMs);
-            }
-            Console.WriteLine("[MajorDomoCat] 工具执行超时（帧上限 " + MaxFramesPerRun + "）——按空结果回传");
-            DataBox.Set<string>("global", "llm_tool_done", "");
-        }
-
-        /// <summary>
-        /// 构建系统提示词——MajorDomoCat 会话中枢身份 + 工具语义声明
+        /// 构建系统提示词——MajorDomoCat 会话中枢身份 + 工具语义声明（从工具表动态生成）
         /// </summary>
         /// <returns>系统提示词</returns>
         private static string BuildSystemPrompt()
         {
-            return "你是 MajorDomoCat——CH4 自举宿主的管理员对话中枢（P5 工具协调测试）。" + System.Environment.NewLine + "你有两个工具：" + System.Environment.NewLine + "- read_file(path)：读取指定路径的文本文件内容" + System.Environment.NewLine + "- ask(question)：向 QuickCat 问答子工具提问，获取简洁回答" + System.Environment.NewLine + "需要文件内容时调用 read_file；需要独立问答时调用 ask；可以同时调用多个工具（并发执行）。" + System.Environment.NewLine + "工具结果返回后，基于结果继续回答用户。";
+            ToolSpec[] specs = BuildToolSpecs();
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.Append("你是 MajorDomoCat——CH4 自举宿主的管理员对话中枢（P8 工具循环）。");
+            sb.Append("你有 " + specs.Length.ToString() + " 个工具：");
+            for (int i = 0; i < specs.Length; i++)
+            {
+                sb.Append(System.Environment.NewLine);
+                sb.Append("- ");
+                sb.Append(specs[i].Name);
+                sb.Append(": ");
+                sb.Append(specs[i].Description);
+            }
+            sb.Append(System.Environment.NewLine);
+            sb.Append("工具结果返回后，基于结果继续回答用户；修改语料前先读，改完用 mau.verify 验证。");
+            return sb.ToString();
         }
 
         /// <summary>
-        /// 构建工具定义——P5 测试期写死两件（read_file + ask——OpenAI function schema）
+        /// 构建工具定义——P8 B1 表驱动（7 件集中声明——Program.Tools.cs BuildToolSpecs）
         /// </summary>
         /// <returns>工具数组</returns>
         private static ToolSpec[] BuildTools()
         {
-            ToolSpec read = new ToolSpec("read_file", "读取指定路径的文本文件内容", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"要读取的文件路径\"}},\"required\":[\"path\"]}");
-            ToolSpec ask = new ToolSpec("ask", "向 QuickCat 问答子工具提问，获取简洁回答", "{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"要提问的问题\"}},\"required\":[\"question\"]}");
-            return new ToolSpec[]
-            {
-                read,
-                ask
-            };
+            return BuildToolSpecs();
         }
 
         /// <summary>
@@ -261,23 +266,6 @@ namespace CH4
         }
 
         /// <summary>
-        /// 待回传工具清单中是否含指定工具名
-        /// </summary>
-        /// <param name="name">工具名</param>
-        /// <returns>true=含</returns>
-        private static bool HasTool(string name)
-        {
-            for (int i = 0; i < _pendingToolCalls.Count; i++)
-            {
-                if (_pendingToolCalls[i].Name == name)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /// <summary>
         /// 截断显示文本——控制台防刷屏
         /// </summary>
         /// <param name="text">原文</param>
@@ -297,14 +285,13 @@ namespace CH4
         }
 
         /// <summary>
-        /// 投递工具调用——解析 tool_calls JSON → 参数落全局盒 + 分支 key 投递（信号名即解析结果）。
-        /// 已知工具（read_file/ask）投递语料；未知工具记录待回传 ERR。
+        /// 执行工具批——解析 tool_calls JSON → 逐工具宿主直执（P8 一期：无 OA 无语料握手）→ 按序回传上下文。
+        /// 未知工具 ERR 回传；空结果 ERR|EMPTY_RESULT（错误可见性铁律）；批量执行期 reload 拒绝（_toolBatchActive）。
         /// </summary>
         /// <param name="toolCallsJson">tool_calls JSON 数组</param>
-        /// <returns>true=有已知工具已投递（语料将执行）</returns>
-        private static bool DispatchToolCalls(string toolCallsJson)
+        private static void ExecuteToolBatch(string toolCallsJson)
         {
-            _pendingToolCalls.Clear();
+            _toolBatchActive = true;
             try
             {
                 using (JsonDocument doc = JsonDocument.Parse(toolCallsJson))
@@ -323,113 +310,40 @@ namespace CH4
                             name = GetStringProp(funcEl, "name");
                             arguments = GetStringProp(funcEl, "arguments");
                         }
-                        ToolCallInfo info = new ToolCallInfo(id, name, arguments);
-                        _pendingToolCalls.Add(info);
-                        if (name == "read_file")
+                        // [段1] 直执——工具路由（Program.Tools.cs；失败 ERR| 前缀）
+                        LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|start|" + TrimDisplay(arguments, 120), "TOOL");
+                        string result = ExecuteTool(name, arguments);
+                        if (result == null || result.Length == 0)
                         {
-                            _bus.SetText("TOOL_Read_Path", ExtractArg(arguments, "path"), "llm");
+                            result = "ERR|EMPTY_RESULT|工具执行无结果";
                         }
-                        else if (name == "ask")
-                        {
-                            _bus.SetText("TOOL_Ask_Content", ExtractArg(arguments, "question"), "llm");
-                        }
+                        // O 系列：工具结果入 Log 截断 100 字符（design-ch4-observe §六拍板）——完整结果在会话消息
+                        LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|" + result, "TOOL", "", "", 100);
+                        _chatContext.AddToolResult(id, name, result);
                     }
                 }
-                // [段2] 分支投递——批次开始沿 + 每线必投其一（要执行 / 跳过）
-                bool wantRead = HasTool("read_file");
-                bool wantAsk = HasTool("ask");
-                if (wantRead || wantAsk)
-                {
-                    // 批次开始——独立沿（与 Exec/Skip 分离，避免同帧沿竞争被先声明导线消费）
-                    _bus.SetText("TOOL_Batch_Start", "", "llm");
-                    if (wantRead)
-                    {
-                        _bus.SetText("TOOL_Exec_Read", "", "llm");
-                    }
-                    else
-                    {
-                        _bus.SetText("TOOL_Skip_Read", "", "llm");
-                    }
-                    if (wantAsk)
-                    {
-                        _bus.SetText("TOOL_Exec_Ask", "", "llm");
-                    }
-                    else
-                    {
-                        _bus.SetText("TOOL_Skip_Ask", "", "llm");
-                    }
-                    _toolBatchActive = true;
-                    return true;
-                }
-                return false;
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[MajorDomoCat] tool_calls 解析失败: " + ex.Message);
-                return false;
+                LogStore.Add("CH4.Entry", 3, "tool_calls 解析失败: " + ex.Message, "TOOL");
+            }
+            finally
+            {
+                _toolBatchActive = false;
             }
         }
 
         /// <summary>
-        /// 收集工具结果——读全局结果盒 → 按 tool_calls 顺序回传上下文 → 清盒。
-        /// </summary>
-        private static void CollectToolResults()
-        {
-            string readResult = "";
-            string askResult = "";
-            DataBox.TryGet<string>("global", "llm_result_read", out readResult);
-            DataBox.TryGet<string>("global", "llm_result_ask", out askResult);
-            // TryGet 失败时 out 为 default(null)——防御归一（DataBox 契约：失败赋 default）
-            if (readResult == null)
-            {
-                readResult = "";
-            }
-            if (askResult == null)
-            {
-                askResult = "";
-            }
-            // [段1] 清盒——语料下批写入前干净（残留防护）
-            DataBox.Set<string>("global", "llm_tool_done", "");
-            DataBox.Set<string>("global", "llm_result_read", "");
-            DataBox.Set<string>("global", "llm_result_ask", "");
-            // [段2] 按 tool_calls 顺序回传——每调用一条 tool result；未知工具 ERR 文本
-            for (int i = 0; i < _pendingToolCalls.Count; i++)
-            {
-                ToolCallInfo info = _pendingToolCalls[i];
-                string result;
-                if (info.Name == "read_file")
-                {
-                    result = readResult;
-                }
-                else if (info.Name == "ask")
-                {
-                    result = askResult;
-                }
-                else
-                {
-                    result = "ERR|UNKNOWN_TOOL|未知工具: " + info.Name;
-                }
-                if (result.Length == 0)
-                {
-                    result = "ERR|EMPTY_RESULT|工具执行无结果（超时或失败）";
-                }
-                _chatContext.AddToolResult(info.Id, info.Name, result);
-                Console.WriteLine("  [工具结果] " + info.Name + " → " + TrimDisplay(result, 120));
-            }
-            _pendingToolCalls.Clear();
-            _toolBatchActive = false;
-        }
-
-        /// <summary>
-        /// 会话中枢处理——Chat 指令入口（P5 工具协调核心）。
-        /// 流程：追加用户消息 → 工具循环（≤3 轮）：LLM 后台流式 → 纯文本则完成 / tool_calls 则投递语料执行 → 结果回传续轮。
-        /// 消息维护与前文落盘在宿主（CH4 侧实现前文管理器）；工具执行在语料（MajorDomoCat）。
+        /// 会话中枢处理——Chat 指令入口（P5 工具协调核心 / P8 B1 直执版）。
+        /// 流程：追加用户消息 → 工具循环（≤3 轮）：LLM 后台流式 → 纯文本则完成 / tool_calls 则宿主直执 → 结果回传续轮。
+        /// 消息维护与前文落盘在宿主；工具执行在宿主（一期直执——Program.Tools.cs；二期换 OA）。
         /// </summary>
         /// <param name="content">用户消息内容</param>
         private static void HandleChat(string content)
         {
             _chatContext.AddUserMessage(content);
-            Console.WriteLine("── MajorDomoCat 处理中 ──");
+            DataBox.Set<string>("global", "chat_state", "working");
+            LogStore.Add("CH4.Entry", 1, "── MajorDomoCat 处理中 ──", "CHAT");
             for (int round = 0; round < MaxToolRounds; round++)
             {
                 // [段1] LLM 调用——后台流式（消息序列 + 工具定义）
@@ -439,7 +353,7 @@ namespace CH4
                 if (_llmError)
                 {
                     _chatContext.AddAssistantMessage(_llmErrorText);
-                    Console.WriteLine("[MajorDomoCat] LLM 错误: " + _llmErrorText);
+                    LogStore.Add("LLM", 3, "LLM 错误: " + TrimDisplay(_llmErrorText, 300), "LLM");
                     break;
                 }
 
@@ -451,27 +365,18 @@ namespace CH4
                     break;
                 }
 
-                // [段3] 工具调用——追加 assistant tool_calls + 投递语料执行
+                // [段3] 工具调用——追加 assistant tool_calls + 宿主直执（P8 一期）
                 _chatContext.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning);
-                Console.WriteLine("[MajorDomoCat] 工具调用(" + (round + 1) + "/" + MaxToolRounds + "): " + TrimDisplay(_llmToolCallsJson, 200));
-                bool dispatched = DispatchToolCalls(_llmToolCallsJson);
-                if (dispatched)
-                {
-                    WaitForTools();
-                    CollectToolResults();
-                    Console.WriteLine("[MajorDomoCat] 工具结果已回传，续轮");
-                }
-                else
-                {
-                    // 无已知工具——直接按 ERR 回传（不经过语料）
-                    CollectToolResults();
-                    Console.WriteLine("[MajorDomoCat] 无已知工具可执行——按错误回传");
-                }
+                DataBox.Set<string>("global", "chat_state", "tools");
+                LogStore.Add("CH4.Entry", 1, "工具调用(" + (round + 1).ToString() + "/" + MaxToolRounds.ToString() + "): " + TrimDisplay(_llmToolCallsJson, 200), "CHAT");
+                ExecuteToolBatch(_llmToolCallsJson);
+                LogStore.Add("CH4.Entry", 1, "工具结果已回传，续轮", "CHAT");
             }
 
             // [段4] 前文落盘——会话结束保存（重启恢复面）
             _sessionStore.Save(_chatContext.GetMessages());
-            Console.WriteLine("[CH4.Entry] 会话前文已落盘: " + _chatContext.GetMessageCount() + " 条消息");
+            DataBox.Set<string>("global", "chat_state", "idle");
+            LogStore.Add("CH4.Entry", 1, "会话前文已落盘: " + _chatContext.GetMessageCount().ToString() + " 条消息", "SYS");
         }
     }
 }

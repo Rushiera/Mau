@@ -15,6 +15,67 @@ namespace CH4
     public static partial class Program
     {
         /// <summary>
+        /// 构建紧凑帧 JSON——frame.jsonl 一行（回放够用：帧/pid/chat_state/各 Cat 状态行/OA 计数；主线程泵调用）
+        /// </summary>
+        /// <returns>紧凑 JSON 文本</returns>
+        private static string BuildCompactFrameJson()
+        {
+            List<object> cats = new List<object>();
+            AppendCatCompact(cats, "ToolTestCat", _toolHandle);
+            AppendCatCompact(cats, "IOTestCat", _ioHandle);
+            AppendCatCompact(cats, "QuickCat", _quickHandle);
+            AppendCatCompact(cats, "MajorDomoCat", _majorHandle);
+            OAView oa = _oa.GetSnapshot();
+            string chatState = "";
+            string cs;
+            if (DataBox.TryGet<string>("global", "chat_state", out cs) && cs != null)
+            {
+                chatState = cs;
+            }
+            var frame = new
+            {
+                f = FlowRunner.GlobalFrame,
+                pid = Environment.ProcessId,
+                chat = chatState,
+                oa = new
+                {
+                    o = oa.OpenCount,
+                    w = oa.WorkCount,
+                    c = oa.ClosedCount,
+                    t = oa.TimeoutCount
+                },
+                cats = cats
+            };
+            return JsonSerializer.Serialize(frame);
+        }
+
+        /// <summary>
+        /// 单 Cat 紧凑状态——状态行拼接（帧流一行体积控制）
+        /// </summary>
+        /// <param name="cats">目标列表</param>
+        /// <param name="name">Cat 名</param>
+        /// <param name="handle">Flow 句柄</param>
+        private static void AppendCatCompact(List<object> cats, string name, FlowHandle handle)
+        {
+            if (handle.IsFaulted)
+            {
+                cats.Add(new { n = name, fd = true });
+                return;
+            }
+            FlowStatusV3 status = handle.Flow.GetStatus();
+            string states = "";
+            for (int i = 0; i < status.StateLines.Length; i++)
+            {
+                if (i > 0)
+                {
+                    states = states + " ";
+                }
+                states = states + status.StateLines[i];
+            }
+            cats.Add(new { n = name, s = states });
+        }
+
+        /// <summary>
         /// 单 Cat 快照 JSON 追加——协议 §3.2 cats[].status 四柱映射（FlowStatusV3 → 匿名对象）
         /// </summary>
         /// <param name = "cats">目标列表</param>

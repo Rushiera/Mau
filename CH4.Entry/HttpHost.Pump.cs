@@ -53,6 +53,22 @@ namespace CH4
             string json = _snapshotBuilder(false);
             _snapshotCache = json;
             PushEvent("snapshot", json);
+            // O3 帧流——每帧紧凑 JSON 落盘（回放/复盘；FrameStore 未配置时静默 no-op）
+            if (_frameBuilder != null)
+            {
+                try
+                {
+                    string frameJson = _frameBuilder();
+                    if (frameJson != null && frameJson.Length > 0)
+                    {
+                        FrameStore.Append(frameJson);
+                    }
+                }
+                catch
+                {
+                    // 帧流异常不阻塞主线程泵
+                }
+            }
         }
 
         /// <summary>

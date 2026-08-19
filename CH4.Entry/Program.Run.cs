@@ -62,6 +62,7 @@ namespace CH4
                 {
                     _httpHost.PumpMainThread();
                 }
+                PumpChatQueue();
                 // [段2] 按键轮询——有输入才 ReadLine（阻塞读会卡住帧驱动）
                 if (Console.KeyAvailable)
                 {
@@ -126,7 +127,16 @@ namespace CH4
                 {
                     return false;
                 }
-                HandleChat(chatContent);
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    // 主线程（控制台）——直接执行（ThreadGuard 合规）
+                    HandleChat(chatContent);
+                }
+                else
+                {
+                    // HTTP 线程——入队主线程泵（FlowRunner.Tick 仅宿主主线程——跨线程违规判例 2026-08-18）
+                    _chatQueue.Enqueue(chatContent);
+                }
                 return true;
             }
             if (line == "session clear")
@@ -145,6 +155,23 @@ namespace CH4
         }
 
         /// <summary>
+        /// HTTP Chat 入队队列——Kestrel 线程投递 / 主线程泵消费（ThreadGuard：FlowRunner.Tick 仅主线程）
+        /// </summary>
+        private static System.Collections.Concurrent.ConcurrentQueue<string> _chatQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
+
+        /// <summary>
+        /// 泵 HTTP Chat 队列——主线程消费入队任务（RunInteractive 主循环 + DriveUntilIdle 每轮调用）
+        /// </summary>
+        private static void PumpChatQueue()
+        {
+            string job;
+            while (_chatQueue.TryDequeue(out job))
+            {
+                HandleChat(job);
+            }
+        }
+
+        /// <summary>
         /// 驱动直到三 Cat 全部 Idle——指令投递后连续 Tick；帧上限兜底（LLM 60s 现实耗时 + OA 超时结算窗口）
         /// </summary>
         private static void DriveUntilIdle()
@@ -156,6 +183,7 @@ namespace CH4
                 {
                     _httpHost.PumpMainThread();
                 }
+                PumpChatQueue();
                 if (AllIdle())
                 {
                     return;

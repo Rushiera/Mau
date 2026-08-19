@@ -95,6 +95,56 @@ namespace CH4
         }
 
         /// <summary>
+        /// 日志查询端点——GET /api/v1/logs?n=N&cat=CAT&type=audit.*（O5：统一从 Log 真源读取——替代快照锚点替换面）
+        /// 参数：n=条数（1-2000 夹取，缺省 200）· cat=类别过滤（空=全部）· type=Type 前缀过滤（空=全部）
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>日志 JSON</returns>
+        public static IResult HandleLogs(HttpContext ctx)
+        {
+            int count = 200;
+            string raw = ctx.Request.Query["n"].ToString();
+            int parsed;
+            if (int.TryParse(raw, out parsed) && parsed > 0)
+            {
+                count = parsed;
+            }
+            if (count > 2000)
+            {
+                count = 2000;
+            }
+            string cat = ctx.Request.Query["cat"].ToString();
+            string typePrefix = ctx.Request.Query["type"].ToString();
+            List<object> list = new List<object>();
+            List<LogStore.LogEntry> all = LogStore.AllLog;
+            lock (LogStore.Sync)
+            {
+                // 尾部倒序扫描——匹配 cat/type 收集 count 条（防全量遍历）
+                for (int i = all.Count - 1; i >= 0 && list.Count < count; i--)
+                {
+                    LogStore.LogEntry entry = all[i];
+                    if (cat.Length > 0 && entry.Category != cat)
+                    {
+                        continue;
+                    }
+                    if (typePrefix.Length > 0 && !entry.Type.StartsWith(typePrefix, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+                    list.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, type = entry.Type, message = entry.Message });
+                }
+            }
+            // 倒序收集——还原时间序（旧→新）
+            list.Reverse();
+            var resp = new
+            {
+                version = 1,
+                logs = list
+            };
+            return Results.Json(resp);
+        }
+
+        /// <summary>
         /// 解析 ?logs=N 查询参数——缺省/非法回退 200（v2 刷新拉取最后 N 条）
         /// </summary>
         /// <param name="ctx">HTTP 上下文</param>
