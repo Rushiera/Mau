@@ -4,12 +4,13 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Mau.Cli
+namespace Mau.Development
 {
     /// <summary>
     /// mauproj 组工程文件（v1.0 收紧版）——行指令式：组/版本/引用/文件 + 校验尾 SHA256。
     /// 对应 design-ch4-deploy.md §四：一组一个 mauproj，翻译+编译统一链的输入声明。
     /// 移除 v2 的 依赖:/bricks: 字段——v3 积木是文本资产，依赖面由翻译器自动扫描。
+    /// B3 下沉：自 Mau.Cli 移入 Mau.Development 共享库（Mau.Cli 与 CH4.Entry 共用——消灭双轨）。
     /// </summary>
     public sealed class MauProjFile
     {
@@ -104,7 +105,7 @@ namespace Mau.Cli
                     }
                     sb.Append(lines[i]);
                 }
-                string expected = CliSupport.ComputeSha256(sb.ToString());
+                string expected = ComputeSha256(sb.ToString());
                 if (actualChecksum != expected)
                 {
                     result.Error = "校验尾不匹配——mauproj 已被篡改或损坏";
@@ -276,7 +277,24 @@ namespace Mau.Cli
         public static string ComputeFileSha256(string path)
         {
             string text = File.ReadAllText(path).Replace("\r\n", "\n");
-            return CliSupport.ComputeSha256(text);
+            return ComputeSha256(text);
+        }
+
+        /// <summary>
+        /// 计算字符串 SHA256——UTF-8 字节转 64 位十六进制大写（原 CliSupport 依赖内联——下沉零外部依赖）
+        /// </summary>
+        /// <param name="text">输入文本</param>
+        /// <returns>64 位十六进制哈希（大写）</returns>
+        private static string ComputeSha256(string text)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(text);
+            byte[] hash = SHA256.HashData(bytes);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < hash.Length; i++)
+            {
+                sb.Append(hash[i].ToString("X2"));
+            }
+            return sb.ToString();
         }
 
         /// <summary>

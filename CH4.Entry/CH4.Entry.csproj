@@ -13,6 +13,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Mau.Runtime\Mau.Runtime.csproj" />
     <ProjectReference Include="..\Mau.Providers\Mau.Providers.csproj" />
+    <!-- B3 mau.* 工具实装——组翻译共享服务（MauProjFile/MauGroupBuilder）自 Mau.Development 引用 -->
+    <ProjectReference Include="..\Mau.Development\Mau.Development.csproj" />
   </ItemGroup>
 
   <ItemGroup>

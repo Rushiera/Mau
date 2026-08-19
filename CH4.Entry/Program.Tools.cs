@@ -1,5 +1,9 @@
-using System;
+﻿using System;
+using System.IO;
+using System.Text;
 using Mau.Runtime;
+using Mau.Development;
+using Mau.Translator;
 
 namespace CH4
 {
@@ -197,33 +201,164 @@ namespace CH4
         // [段2] Mau 自查执行器——B3 落地（mau.verify 直调 MauCompilerV3；mau.gen/proj 需 MauProjFile 下沉共享库）
 
         /// <summary>
-        /// mau.verify——Mau 语料全链检查（B3 实现；一期占位）
+        /// mau.verify——Mau 语料全链检查（B3 实装——MauCompilerV3 进程内直调，零产出）
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
-        /// <returns>诊断文本</returns>
+        /// <returns>诊断文本（文件:行:错误码:消息）</returns>
         private static string ExecMauVerify(string argsJson)
         {
-            return "ERR|NOT_IMPLEMENTED|mau.verify 一期占位——B3 落地（MauCompilerV3 进程内直调）";
+            string file = ExtractArg(argsJson, "file");
+            if (file.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 file";
+            }
+            string abs = ResolveRepoPath(file);
+            if (abs.Length == 0)
+            {
+                return "ERR|PATH_ESCAPE|路径越界（仅允许仓库根内）: " + file;
+            }
+            if (!File.Exists(abs))
+            {
+                return "ERR|NOT_FOUND|文件不存在: " + abs;
+            }
+            try
+            {
+                string source = File.ReadAllText(abs);
+                string flowName = MauGroupBuilder.FlowNameFromPath(abs);
+                CompileResultV3 result = MauCompilerV3.Compile(source, flowName);
+                if (result.Success)
+                {
+                    StringBuilder sb = new StringBuilder();
+                    sb.Append("OK 验证通过: " + file + " → FL_" + flowName);
+                    for (int i = 0; i < result.Reports.Count; i++)
+                    {
+                        sb.Append(Environment.NewLine);
+                        sb.Append("报告: " + result.Reports[i]);
+                    }
+                    return sb.ToString();
+                }
+                StringBuilder err = new StringBuilder();
+                err.Append("FAIL|VALIDATE|" + file);
+                for (int i = 0; i < result.Diagnostics.Count; i++)
+                {
+                    MauDiagnostic d = result.Diagnostics[i];
+                    err.Append(Environment.NewLine);
+                    err.Append(file + ":" + d.Line + ": " + d.Code + ": " + d.Message);
+                }
+                return err.ToString();
+            }
+            catch (Exception ex)
+            {
+                return "ERR|" + ex.GetType().Name + "|" + ex.Message;
+            }
         }
 
         /// <summary>
-        /// mau.gen——组翻译中间产物（B3 实现；一期占位）
+        /// mau.gen——组翻译中间产物（B3 实装——MauGroupBuilder 共享服务，不编译）
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
-        /// <returns>产物清单</returns>
+        /// <returns>落盘确认文本</returns>
         private static string ExecMauGen(string argsJson)
         {
-            return "ERR|NOT_IMPLEMENTED|mau.gen 一期占位——B3 落地（MauProjFile 下沉共享库）";
+            string proj = ExtractArg(argsJson, "proj");
+            if (proj.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 proj";
+            }
+            return RunGroupBuild(proj, false);
         }
 
         /// <summary>
-        /// mau.proj——组翻译 + 编译（B3 实现；一期占位）
+        /// mau.proj——组翻译 + 编译（B3 实装——MauGroupBuilder 共享服务 + dotnet build）
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
-        /// <returns>编译结果</returns>
+        /// <returns>产物确认文本</returns>
         private static string ExecMauProj(string argsJson)
         {
-            return "ERR|NOT_IMPLEMENTED|mau.proj 一期占位——B3 落地（MauProjFile 下沉共享库）";
+            string proj = ExtractArg(argsJson, "proj");
+            if (proj.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 proj";
+            }
+            string buildRaw = ExtractArg(argsJson, "build");
+            bool doBuild = buildRaw == "true" || buildRaw == "True" || buildRaw == "1";
+            return RunGroupBuild(proj, doBuild);
+        }
+
+        /// <summary>
+        /// 组翻译共享执行——路径解析 → MauGroupBuilder.Build → 结果文本
+        /// </summary>
+        /// <param name="projParam">.mauproj 相对仓库根路径</param>
+        /// <param name="doBuild">true=翻译后 dotnet build</param>
+        /// <returns>结果文本（步骤日志 + 失败诊断）</returns>
+        private static string RunGroupBuild(string projParam, bool doBuild)
+        {
+            string abs = ResolveRepoPath(projParam);
+            if (abs.Length == 0)
+            {
+                return "ERR|PATH_ESCAPE|路径越界（仅允许仓库根内）: " + projParam;
+            }
+            if (!File.Exists(abs))
+            {
+                return "ERR|NOT_FOUND|文件不存在: " + abs;
+            }
+            try
+            {
+                string root = ResolveDataRoot();
+                MauProjParseResult parsed = MauProjFile.Load(abs);
+                if (parsed.Error.Length > 0)
+                {
+                    return "FAIL|MAUPROJ|" + parsed.Error;
+                }
+                MauProjFile proj = parsed.File!;
+                string srcDir = Path.Combine(root, "public", "src", proj.Name);
+                string dllDir = Path.Combine(root, "public", "app", "Flows");
+                MauGroupBuildResult result = MauGroupBuilder.Build(abs, srcDir, dllDir, doBuild);
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < result.Steps.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        sb.Append(Environment.NewLine);
+                    }
+                    sb.Append(result.Steps[i]);
+                }
+                if (!result.Success)
+                {
+                    for (int i = 0; i < result.FailDiagnostics.Count; i++)
+                    {
+                        sb.Append(Environment.NewLine);
+                        sb.Append(result.FailDiagnostics[i]);
+                    }
+                    if (result.Error.Length > 0)
+                    {
+                        sb.Append(Environment.NewLine);
+                        sb.Append("FAIL|GEN|" + result.Error);
+                    }
+                    return sb.ToString();
+                }
+                return sb.ToString();
+            }
+            catch (Exception ex)
+            {
+                return "ERR|" + ex.GetType().Name + "|" + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// 相对仓库根路径解析——拼接数据根并防越界（GetFullPath 后必须仍在仓库根内）
+        /// </summary>
+        /// <param name="relPath">相对仓库根路径</param>
+        /// <returns>绝对路径（越界返回空串）</returns>
+        private static string ResolveRepoPath(string relPath)
+        {
+            string root = ResolveDataRoot();
+            string full = Path.GetFullPath(Path.Combine(root, relPath));
+            if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                return "";
+            }
+            return full;
         }
 
         /// <summary>

@@ -64,24 +64,29 @@ namespace CH4
         /// <summary>紧凑帧构建回调——frame.jsonl 帧流（可空=不落帧）</summary>
         private Func<string> _frameBuilder;
 
+        /// <summary>会话历史构建回调——Program.BuildHistoryView（B4 对话区；GET /api/v1/history）</summary>
+        private Func<int, string> _historyBuilder;
+
         /// <summary>快照推送间隔毫秒——250ms（协议 §4.2 snapshot 事件）</summary>
         private const int SnapshotIntervalMs = 250;
 
         /// <summary>
-        /// 启动 HTTP 外观层——Kestrel 绑定端口 + 注册四路由 + 后台推送任务启动。
+        /// 启动 HTTP 外观层——Kestrel 绑定端口 + 注册路由 + 后台推送任务启动。
         /// </summary>
         /// <param name="port">监听端口（127.0.0.1 回环）</param>
         /// <param name="snapshotBuilder">快照 JSON 构建回调（includeLogs——快照轮询含日志/SSE 事件裁剪）</param>
         /// <param name="dispatcher">指令投递回调（返回 true=识别并投递）</param>
         /// <param name="frameBuilder">紧凑帧构建回调（frame.jsonl 帧流；可空=不落帧）</param>
+        /// <param name="historyBuilder">会话历史视图构建回调（B4 对话区——GET /api/v1/history）</param>
         /// <returns>HttpHost 实例</returns>
-        public static HttpHost Start(int port, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher, Func<string> frameBuilder)
+        public static HttpHost Start(int port, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher, Func<string> frameBuilder, Func<int, string> historyBuilder)
         {
             HttpHost host = new HttpHost();
             host._port = port;
             host._snapshotBuilder = snapshotBuilder;
             host._dispatcher = dispatcher;
             host._frameBuilder = frameBuilder;
+            host._historyBuilder = historyBuilder;
             host.BuildApp();
             host._pumpCts = new CancellationTokenSource();
             host._pumpTask = Task.Run(delegate
@@ -123,8 +128,26 @@ namespace CH4
             _app.MapGet("/api/v1/logs", (Delegate)HandleLogs);
             _app.MapGet("/api/v1/config", (Delegate)HandleConfigGet);
             _app.MapPost("/api/v1/config", (Delegate)HandleConfigPost);
-            _app.MapGet("/", () =>
+            _app.MapGet("/api/v1/history", (HttpContext ctx) =>
             {
+                // B4 对话区——会话历史视图（内存 ChatContext 实时真源；max 夹取 1-2000 缺省 200）
+                int max = 200;
+                string raw = ctx.Request.Query["max"].ToString();
+                int parsed;
+                if (int.TryParse(raw, out parsed) && parsed > 0)
+                {
+                    max = parsed;
+                }
+                if (max > 2000)
+                {
+                    max = 2000;
+                }
+                return Results.Text(_historyBuilder(max), "application/json");
+            });
+            _app.MapGet("/", (HttpContext ctx) =>
+            {
+                // B4 修复：静态页禁缓存——前端频繁迭代，浏览器启发式缓存导致拿旧版 html（工具回填等新 JS 不生效）
+                ctx.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
                 return ServeIndex();
             });
             try

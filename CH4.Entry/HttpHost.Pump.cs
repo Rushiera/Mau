@@ -125,7 +125,40 @@ namespace CH4
         }
 
         /// <summary>
-        /// LLM 流式事件转发——宿主 ChatBridge 调用（协议 §4.2 llm 事件：seq 单调 + kind 五态）。
+        /// 工具结果实时推送——宿主 ChatBridge ExecuteToolBatch 调用（B4 对话区：tool 事件）。
+        /// 载荷与 history 视图同截断（参数 ≤200/结果 ≤300）；事件顺序 = 执行顺序 = toolCalls 数组顺序（前端 FIFO 配对）。
+        /// </summary>
+        /// <param name="name">工具名</param>
+        /// <param name="arguments">参数摘要（≤200）</param>
+        /// <param name="result">结果摘要（≤300；ERR 前缀失败）</param>
+        public void PushToolResult(string name, string arguments, string result)
+        {
+            var obj = new
+            {
+                name = name,
+                arguments = arguments,
+                result = result
+            };
+            PushEvent("tool", JsonSerializer.Serialize(obj));
+        }
+
+        /// <summary>
+        /// 会话完成事件——宿主 ChatBridge HandleChat 端末调用（B4 对话区：chatdone 事件）。
+        /// 语义：llm done 仅代表"一轮 LLM 流结束"（工具轮还有 tool 事件 + 续轮）；chatdone = 整次会话终态。
+        /// 前端以 chatdone 为准定型（去光标/未回填兜底/恢复 idle）——修复"工具轮 done 被当终态"的时序 bug。
+        /// </summary>
+        public void PushChatDone()
+        {
+            var obj = new
+            {
+                sessionId = "majordomo"
+            };
+            PushEvent("chatdone", JsonSerializer.Serialize(obj));
+        }
+
+        /// <summary>
+        /// LLM 流式事件转发——宿主 ChatBridge 调用（协议 §4.2 llm 事件：seq 单调 + kind 五态 + sessionId 归属）。
+        /// sessionId：当前唯一 LLM 会话 = MajorDomoCat（B4 归属性；P9 多会话投递方带各自标识）。
         /// </summary>
         /// <param name="kind">事件态——text/reasoning/toolCalls/done/error（直映 LlmStreamKind）</param>
         /// <param name="text">增量文本或错误文本</param>
@@ -135,7 +168,8 @@ namespace CH4
             {
                 seq = _seq,
                 kind = kind,
-                text = text
+                text = text,
+                sessionId = "majordomo"
             };
             PushEvent("llm", JsonSerializer.Serialize(obj));
         }

@@ -179,13 +179,11 @@ namespace Mau.Translator.Tests
                     DataBox.Signal("P_Go");
                     type.GetMethod("Tick").Invoke(flow, new object[] { 8 });
                     AuditEvent[] snap = audit.Snapshot();
-                    // 4 事件：signal.post → signal.consume（消费先行）→ trace.fire → trace.state
-                    Assert.Equal(4, snap.Length);
-                    Assert.Equal("signal.post", snap[0].Category);
-                    Assert.Equal("signal.consume", snap[1].Category);
-                    Assert.Equal("trace.fire", snap[2].Category);
-                    Assert.Equal("trace.state", snap[3].Category);
-                    Assert.Equal("8", snap[2].Props[1].Value);
+                    // 2 事件：trace.fire → trace.state（P8 观测语义——signal.* 高频完全出局；trace.* 仅内存可见不落盘）
+                    Assert.Equal(2, snap.Length);
+                    Assert.Equal("trace.fire", snap[0].Category);
+                    Assert.Equal("trace.state", snap[1].Category);
+                    Assert.Equal("8", snap[0].Props[1].Value);
                 }
                 finally
                 {
