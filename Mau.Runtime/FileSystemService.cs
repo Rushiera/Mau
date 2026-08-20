@@ -26,20 +26,24 @@ namespace Mau.Runtime
         /// 串行保护变更文件的复合操作
         /// </summary>
         private readonly object _writeGate;
-/// <summary>
-/// 只读根标志——与 _roots 对齐；true 的根拒绝写操作（writable=false 语义）
-/// </summary>
-private readonly bool[] _readOnly;
-/// <summary>
-/// 根标识数组——与 _roots 对齐（命名空间寻址 id:relative——P8.5b）
-/// </summary>
-private readonly string[] _rootIds;        /// <summary>
+
+        /// <summary>
+        /// 只读根标志——与 _roots 对齐；true 的根拒绝写操作（writable=false 语义）
+        /// </summary>
+        private readonly bool[] _readOnly;
+
+        /// <summary>
+        /// 根标识数组——与 _roots 对齐（命名空间寻址 id:relative——P8.5b）
+        /// </summary>
+        private readonly string[] _rootIds;
+
+        /// <summary>
         /// 建立明确根目录和位于其中的回收站
         /// </summary>
         /// <param name="roots">允许根目录</param>
         /// <param name="recycleRoot">回收目录</param>
         public FileSystemService(string[] roots, string recycleRoot)
-{
+        {
             if (roots == null || roots.Length == 0)
             {
                 throw new ArgumentException("At least one filesystem root is required.", "roots");
@@ -59,7 +63,9 @@ private readonly string[] _rootIds;        /// <summary>
             _recycleRoot = Resolve(recycleRoot, true);
             Directory.CreateDirectory(_recycleRoot);
             _writeGate = new object();
-        }        /// <summary>
+        }
+
+        /// <summary>
         /// 读取 UTF-8 文本
         /// </summary>
         /// <param name="path">受控路径</param>
@@ -466,7 +472,8 @@ private readonly string[] _rootIds;        /// <summary>
             }
             return value;
         }
-/// <summary>
+
+        /// <summary>
         /// 建立受控根条目版构造——含只读标志（writable=false 根拒绝写操作；design-ch4-workspace §三）
         /// </summary>
         /// <param name="rootEntries">受控根条目（id + 路径 + 可写标志）</param>
@@ -507,17 +514,17 @@ private readonly string[] _rootIds;        /// <summary>
         /// <param name="rootPath">归属根路径</param>
         /// <returns>true=只读（拒绝写操作）</returns>
         private bool IsReadOnlyRoot(string rootPath)
-{
-    for (int i = 0; i < _roots.Length; i = i + 1)
-    {
-        if (string.Equals(_roots[i], rootPath, StringComparison.OrdinalIgnoreCase))
         {
-            return _readOnly[i];
+            for (int i = 0; i < _roots.Length; i = i + 1)
+            {
+                if (string.Equals(_roots[i], rootPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return _readOnly[i];
+                }
+            }
+            return false;
         }
     }
-
-    return false;
-}}
 
     /// <summary>
     /// 路径边界证明——根归属 + 重解析点防护

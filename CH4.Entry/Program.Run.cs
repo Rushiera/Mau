@@ -150,16 +150,17 @@ namespace CH4
                 }
                 return true;
             }
-            if (line == "session clear")
+            if (line == "session clear" || line == "session count")
             {
-                _chatContext.Clear();
-                _sessionStore.Save(_chatContext.GetMessages());
-                Console.WriteLine("[CH4.Entry] 会话已清空（保留系统提示词）");
-                return true;
-            }
-            if (line == "session count")
-            {
-                Console.WriteLine("[CH4.Entry] 会话消息数: " + _chatContext.GetMessageCount());
+                // 会话调试指令——主线程直执 / HTTP 线程入队泵（ThreadGuard：_chatContext 仅主线程触碰——2026-08-20 遗留改造）
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    HandleSessionCmd(line);
+                }
+                else
+                {
+                    _sessionCmdQueue.Enqueue(line);
+                }
                 return true;
             }
             return false;
@@ -174,6 +175,11 @@ namespace CH4
         /// QuickCat 指令队列——HTTP 线程投递 / 主线程泵消费（D8 修复：OA 发单等待回执需主线程驱动——ThreadGuard 契约）
         /// </summary>
         private static System.Collections.Concurrent.ConcurrentQueue<string> _quickQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
+
+        /// <summary>
+        /// 会话调试指令队列——session clear/count（HTTP 线程投递 / 主线程泵消费——_chatContext 仅主线程触碰）
+        /// </summary>
+        private static System.Collections.Concurrent.ConcurrentQueue<string> _sessionCmdQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
 
         /// <summary>
         /// 泵 HTTP Chat 队列——主线程消费入队任务（RunInteractive 主循环 + DriveUntilIdle 每轮调用）
@@ -196,10 +202,36 @@ namespace CH4
                     HandleQuickCat(quickJob.Substring(0, quickSep), quickJob.Substring(quickSep + 1));
                 }
             }
+            // 会话调试指令泵消费（session clear/count——HTTP 线程投递 / 主线程执行）
+            string sessionCmd;
+            while (_sessionCmdQueue.TryDequeue(out sessionCmd))
+            {
+                HandleSessionCmd(sessionCmd);
+            }
             string job;
             while (_chatQueue.TryDequeue(out job))
             {
                 HandleChat(job);
+            }
+        }
+
+        /// <summary>
+        /// 会话调试指令执行——session clear（清空保留 system）/ session count（消息数）；仅主线程调用（泵消费/CLI 直执）
+        /// </summary>
+        /// <param name="cmd">指令文本</param>
+        private static void HandleSessionCmd(string cmd)
+        {
+            if (cmd == "session clear")
+            {
+                _chatContext.Clear();
+                _sessionStore.Save(_chatContext.GetMessages());
+                Console.WriteLine("[CH4.Entry] 会话已清空（保留系统提示词）");
+                return;
+            }
+            if (cmd == "session count")
+            {
+                Console.WriteLine("[CH4.Entry] 会话消息数: " + _chatContext.GetMessageCount());
+                return;
             }
         }
 
@@ -255,7 +287,7 @@ namespace CH4
         /// 驱动直到三 Cat 全部 Idle——指令投递后连续 Tick；帧上限兜底（LLM 60s 现实耗时 + OA 超时结算窗口）
         /// </summary>
         private static void DriveUntilIdle()
-{
+        {
             for (int i = 0; i < MaxFramesPerRun; i++)
             {
                 _runner.Tick();
@@ -272,6 +304,7 @@ namespace CH4
             }
             Console.WriteLine("[CH4.Entry] 驱动帧上限 " + MaxFramesPerRun + " 到达——仍有未闭环活动");
         }
+
         /// <summary>
         /// 三 Cat 全部 Idle 判定——状态行全部 =Idle（编排者双状态机都 Idle 才算空闲）
         /// </summary>

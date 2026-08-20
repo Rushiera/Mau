@@ -1,4 +1,4 @@
-// quick_cat.mau —— QuickCat 语料（CH4 P4 流式升级版）
+﻿// quick_cat.mau —— QuickCat 语料（CH4 P4 流式升级版）
 // 角色：QuickCat 双参消费者——探测接单 → 读双参载荷 → llm.stream 流式（后台）→ 分块/完成探测 → 回执 → 复位
 // 双参验证：system + content 经 OA 载荷传输（ToolTestCat set_str ×2 → 本语料 get_str ×2）
 // 数据面：盒子 Key——@office/@system/@content/@reply/@chunk/@anyOpen/@hasChunk/@hasDone 私有（FlowId 隔离）；

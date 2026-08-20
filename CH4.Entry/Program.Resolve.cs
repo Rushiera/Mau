@@ -36,6 +36,7 @@ namespace CH4
                 dir = parent;
             }
         }
+
         /// <summary>
         /// 数据根解析——部署跟随运行环境（稳定分支即运行基座）：exe 所在目录向上找 Mau.sln 仓库根，Data 挂仓库根；找不到回退当前工作目录
         /// </summary>
@@ -49,6 +50,7 @@ namespace CH4
             }
             return Directory.GetCurrentDirectory();
         }
+
         /// <summary>
         /// HTTP 端口解析——http.port 配置项（协议 §5b 预留）；缺省/非法/越界回退 8080
         /// </summary>

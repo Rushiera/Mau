@@ -385,6 +385,7 @@ namespace CH4
             try
             {
                 // [段1] OA 发单——逐工具 ToolOrderDog（CH2 Dog 机制：officeName=工具名 / 载荷 args=整包参数 JSON；宿主=Dog owner）
+                List<ToolOrderDog> hostDogs = new List<ToolOrderDog>();
                 List<ToolOrderDog> dogs = new List<ToolOrderDog>();
                 using (JsonDocument doc = JsonDocument.Parse(toolCallsJson))
                 {
@@ -406,18 +407,9 @@ namespace CH4
                         ToolOrderDog dog = new ToolOrderDog(id, name, arguments);
                         if (name.StartsWith("host.", StringComparison.Ordinal))
                         {
-                            // P8.5b 宿主级工具直执——不走 OA（DevCat 无认领线；避免超时 FALLBACK 拖延迟）；reload 忙时豁免（主线程串行直执——本批次前序工具已完成）
-                            bool savedBusy = _toolBatchActive;
-                            _toolBatchActive = false;
-                            string hr = ExecuteTool(name, arguments);
-                            _toolBatchActive = savedBusy;
-                            if (hr == null || hr.Length == 0)
-                            {
-                                hr = "ERR|EMPTY_RESULT|工具执行无结果";
-                            }
-                            dog.Result = hr;
+                            // P8.5b 宿主级工具——延迟直执登记（批次末尾执行；确保同批 mau.proj 等先完成产物落地——顺序保证）\n                            hostDogs.Add(dog);
                             dog.IsClosed = true;
-                            LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|host-direct|result=" + TrimDisplay(hr, 100), "TOOL");
+                            LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|host-deferred", "TOOL");
                         }
                         else
                         {
@@ -464,6 +456,21 @@ namespace CH4
                         _httpHost.PumpMainThread();
                     }
                     Thread.Sleep(FrameSleepMs);
+                }
+                // [段2b] host.* 延迟直执——批次其他工具完成后宿主直执（顺序保证：mau.proj 产物先落盘；忙时豁免——主线程串行，ExecuteReload 事务三段式兜底）
+                for (int h = 0; h < hostDogs.Count; h++)
+                {
+                    ToolOrderDog dog = hostDogs[h];
+                    bool savedBusy = _toolBatchActive;
+                    _toolBatchActive = false;
+                    string hr = ExecuteTool(dog.Name, dog.ArgsJson);
+                    _toolBatchActive = savedBusy;
+                    if (hr == null || hr.Length == 0)
+                    {
+                        hr = "ERR|EMPTY_RESULT|工具执行无结果";
+                    }
+                    dog.Result = hr;
+                    LogStore.Add("CH4.Entry", 1, "TOOL|" + dog.Name + "|host-direct|result=" + TrimDisplay(hr, 100), "TOOL");
                 }
                 // [段3] 收集——Closed 取回执；TimeOut/等待上限 → 宿主直执 FALLBACK（执行器不变；[FALLBACK] 前缀注明）
                 for (int i = 0; i < dogs.Count; i++)
