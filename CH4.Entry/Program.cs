@@ -152,16 +152,20 @@ private static HttpHost _httpHost;
             // [段2] DataBox 服务绑定——积木 TryResolve 面（OA/CommandBus/ILlmRuntime）
             DataBox.Bind<IOA>(_oa);
             DataBox.Bind<ICommandBus>(_bus);
-            // 文件系统服务——file.* 积木依赖（受控根 = 数据根；回收站 CatTemp/fs_recycle）
+            // 文件系统服务——file.* 积木依赖（受控根 = workspace.json 配置 roots；回收站=可写根 CatTemp/fs_recycle——P8.5 配置群）
             string dataRoot = ResolveDataRoot();
-            DataBox.Bind<FileSystemService>(new FileSystemService(new string[] { dataRoot }, Path.Combine(dataRoot, "CatTemp", "fs_recycle")));
+            WorkspaceConfig workspace = WorkspaceConfig.Load(Path.Combine(dataRoot, "Data", "config", "workspace.json"), dataRoot);
+            DataBox.Bind<WorkspaceConfig>(workspace);
+            DataBox.Bind<FileSystemService>(new FileSystemService(workspace.Roots, Path.Combine(WorkspaceRecycleRoot(workspace, dataRoot), "CatTemp", "fs_recycle")));
             string configDir = Path.Combine(dataRoot, "Data", "config");
             ConfigStore llmConfig = ConfigStore.Load(Path.Combine(configDir, "llm.cfg"));
             DataBox.Bind<ConfigStore>(llmConfig);
             _llmRuntime = new DeepSeekLlmRuntime(llmConfig);
             DataBox.Bind<ILlmRuntime>(_llmRuntime);
-            // P8 三期——Roslyn cs.* 编码工具域（MauRoslynBridge——受控根=数据根；磁盘权威快照 + 三态缓存）
-            DataBox.Bind<ICSharpBridge>(new MauRoslynBridge(new string[] { dataRoot }));
+            // P8 三期——Roslyn cs.* 编码工具域（MauRoslynBridge——受控根=可写根子集，只读知识根不参与项目扫描；磁盘权威快照 + 三态缓存）
+            DataBox.Bind<ICSharpBridge>(new MauRoslynBridge(WritableRootPaths(workspace)));
+            // P8.5 配置群 schema——schema.json 元声明（默认值/敏感/可写——/api/v1/config 输出面）
+            DataBox.Bind<ConfigSchema>(ConfigSchema.Load(Path.Combine(configDir, "schema.json")));
             AuditStore audit = new AuditStore();
             AuditStore.Default = audit;
             _runner.Audit = audit;
@@ -195,15 +199,21 @@ private static HttpHost _httpHost;
             {
                 _devId = -1;
             }
-            // [段5] 会话面——上下文 + 前文恢复 + 工具定义（P5：MajorDomoCat 会话中枢）
+            // [段5] 会话面——上下文 + 前文恢复 + 工具定义（P5：MajorDomoCat 会话中枢；P8.5：前文分流注入——无前文自动注入/有前文原样恢复）
             _chatContext = new ChatContext();
-            _chatContext.SetSystemPrompt(BuildSystemPrompt());
             _sessionStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo.json"));
             LlmMessage[] restored;
             if (_sessionStore.TryLoad(out restored))
             {
                 _chatContext.ReplaceMessages(restored);
-                Console.WriteLine("[CH4.Entry] 会话前文恢复: " + restored.Length + " 条消息");
+                Console.WriteLine("[CH4.Entry] 会话前文恢复: " + restored.Length + " 条消息（有前文——不注入）");
+            }
+            else
+            {
+                // 无前文 = 隐式新会话——按 workspace.json inject 清单注入（来源标注在注入文本内）
+                string injectPrompt = BuildInjectPrompt(workspace, BuildToolSpecs());
+                _chatContext.SetSystemPrompt(injectPrompt);
+                Console.WriteLine("[CH4.Entry] 新会话注入: " + workspace.Inject.Length.ToString() + " 个文件");
             }
             _tools = BuildTools();
             string llmKeyProbe = llmConfig.Get("llm.api_key", "");
@@ -232,6 +242,26 @@ private static HttpHost _httpHost;
             {
                 llmState = "已注入";
             }
+            // P8.5 观测落点——workspace.load 审计 + 全局盒 roots 摘要（design §七：当前受控根永远可从观测层看到）
+            System.Text.StringBuilder rootSummary = new System.Text.StringBuilder();
+            for (int i = 0; i < workspace.Roots.Length; i++)
+            {
+                if (i > 0)
+                {
+                    rootSummary.Append("|");
+                }
+                rootSummary.Append(workspace.Roots[i].Id);
+                if (workspace.Roots[i].Writable)
+                {
+                    rootSummary.Append("(rw)");
+                }
+                else
+                {
+                    rootSummary.Append("(ro)");
+                }
+            }
+            DataBox.Set<string>("global", "workspace.roots", rootSummary.ToString());
+            LogStore.Add("CH4.Entry", 1, "workspace.load | roots=" + workspace.Roots.Length.ToString() + " | inject=" + workspace.Inject.Length.ToString() + " | " + rootSummary.ToString(), "CONFIG");
             Console.WriteLine("[CH4.Entry] 就绪 | 两 Cat: QuickCat#" + _quickId + " DevCat#" + _devId + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
             _httpHost = HttpHost.Start(ResolveHttpPort(llmConfig), BuildSnapshotJson, DispatchCommand, BuildCompactFrameJson, BuildHistoryView);

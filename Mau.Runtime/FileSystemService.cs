@@ -26,19 +26,27 @@ namespace Mau.Runtime
         /// 串行保护变更文件的复合操作
         /// </summary>
         private readonly object _writeGate;
-
-        /// <summary>
+/// <summary>
+/// 只读根标志——与 _roots 对齐；true 的根拒绝写操作（writable=false 语义）
+/// </summary>
+private readonly bool[] _readOnly;
+/// <summary>
+/// 根标识数组——与 _roots 对齐（命名空间寻址 id:relative——P8.5b）
+/// </summary>
+private readonly string[] _rootIds;        /// <summary>
         /// 建立明确根目录和位于其中的回收站
         /// </summary>
         /// <param name="roots">允许根目录</param>
         /// <param name="recycleRoot">回收目录</param>
         public FileSystemService(string[] roots, string recycleRoot)
-        {
+{
             if (roots == null || roots.Length == 0)
             {
                 throw new ArgumentException("At least one filesystem root is required.", "roots");
             }
             _roots = new string[roots.Length];
+            _readOnly = new bool[roots.Length];
+            _rootIds = new string[roots.Length];
             for (int i = 0; i < roots.Length; i = i + 1)
             {
                 if (string.IsNullOrWhiteSpace(roots[i]))
@@ -46,13 +54,12 @@ namespace Mau.Runtime
                     throw new ArgumentException("Filesystem root is empty.", "roots");
                 }
                 _roots[i] = PathBoundary.NormalizeRoot(roots[i]);
+                _rootIds[i] = "root" + i.ToString();
             }
             _recycleRoot = Resolve(recycleRoot, true);
             Directory.CreateDirectory(_recycleRoot);
             _writeGate = new object();
-        }
-
-        /// <summary>
+        }        /// <summary>
         /// 读取 UTF-8 文本
         /// </summary>
         /// <param name="path">受控路径</param>
@@ -263,11 +270,26 @@ namespace Mau.Runtime
         /// <param name="forWrite">是否为写入</param>
         /// <returns>规范绝对路径</returns>
         public string Resolve(string path, bool forWrite)
-        {
+{
             if (string.IsNullOrWhiteSpace(path))
             {
                 // v3 机制纯净——空路径是调用方错误（参数校验，不做产品级回落；LLM 适配归自举层语料）
                 throw new ArgumentException("Path is empty.", "path");
+            }
+            // P8.5b 命名空间寻址——id:relative（受控根 id 前缀；LLM 工具路径语义——同 WorkspaceConfig.ResolveInjectFile；Windows 盘符如 C:\ 前缀不匹配则跳过）
+            int nsSep = path.IndexOf(':');
+            if (nsSep > 0)
+            {
+                string nsId = path.Substring(0, nsSep);
+                string nsRel = path.Substring(nsSep + 1);
+                for (int i = 0; i < _roots.Length; i = i + 1)
+                {
+                    if (string.Equals(_rootIds[i], nsId, StringComparison.Ordinal))
+                    {
+                        path = Path.Combine(_roots[i], nsRel);
+                        break;
+                    }
+                }
             }
             string resolved;
             if (Path.IsPathFullyQualified(path))
@@ -283,10 +305,13 @@ namespace Mau.Runtime
             {
                 throw new UnauthorizedAccessException("Path is outside allowed roots.");
             }
+            // P8.5 只读根校验——forWrite 且归属根只读 → 拒绝（ccbp 等知识根默认只读）
+            if (forWrite && IsReadOnlyRoot(owningRoot))
+            {
+                throw new UnauthorizedAccessException("Path is in a read-only root: " + owningRoot);
+            }
             return PathBoundary.ResolveOwnedPath(owningRoot, resolved);
-        }
-
-        /// <summary>
+        }        /// <summary>
         /// 显式遍历搜索目录，并拒绝进入或返回重解析点。
         /// </summary>
         /// <param name="root">搜索相对根</param>
@@ -441,7 +466,58 @@ namespace Mau.Runtime
             }
             return value;
         }
+/// <summary>
+        /// 建立受控根条目版构造——含只读标志（writable=false 根拒绝写操作；design-ch4-workspace §三）
+        /// </summary>
+        /// <param name="rootEntries">受控根条目（id + 路径 + 可写标志）</param>
+        /// <param name="recycleRoot">回收目录</param>
+        public FileSystemService(WorkspaceConfig.RootEntry[] rootEntries, string recycleRoot)
+        {
+            if (rootEntries == null || rootEntries.Length == 0)
+            {
+                throw new ArgumentException("At least one filesystem root is required.", "rootEntries");
+            }
+            _roots = new string[rootEntries.Length];
+            _readOnly = new bool[rootEntries.Length];
+            _rootIds = new string[rootEntries.Length];
+            for (int i = 0; i < rootEntries.Length; i = i + 1)
+            {
+                WorkspaceConfig.RootEntry entry = rootEntries[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.Path))
+                {
+                    throw new ArgumentException("Filesystem root is empty.", "rootEntries");
+                }
+                _roots[i] = PathBoundary.NormalizeRoot(entry.Path);
+                _readOnly[i] = !entry.Writable;
+                string entryId = entry.Id;
+                if (entryId == null || entryId.Length == 0)
+                {
+                    entryId = "root" + i.ToString();
+                }
+                _rootIds[i] = entryId;
+            }
+            _recycleRoot = Resolve(recycleRoot, true);
+            Directory.CreateDirectory(_recycleRoot);
+            _writeGate = new object();
+        }
+
+        /// <summary>
+        /// 查询根是否只读——按归属根路径匹配（Resolve forWrite 校验用）
+        /// </summary>
+        /// <param name="rootPath">归属根路径</param>
+        /// <returns>true=只读（拒绝写操作）</returns>
+        private bool IsReadOnlyRoot(string rootPath)
+{
+    for (int i = 0; i < _roots.Length; i = i + 1)
+    {
+        if (string.Equals(_roots[i], rootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return _readOnly[i];
+        }
     }
+
+    return false;
+}}
 
     /// <summary>
     /// 路径边界证明——根归属 + 重解析点防护

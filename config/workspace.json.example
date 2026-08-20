@@ -1,0 +1,12 @@
+{
+  "_说明": "工作区配置示例——复制为 Data/config/workspace.json 并按本机路径修改；roots 受控根（writable=false 只读）/ inject 新会话注入清单（按序拼接）",
+  "roots": [
+    { "id": "runtime", "path": "<运行副本>/Data", "writable": true },
+    { "id": "mau", "path": "C:/path/to/mau", "writable": true },
+    { "id": "ccbp", "path": "C:/path/to/CatCatBigParty", "writable": false }
+  ],
+  "inject": [
+    { "file": "ccbp:Project/CH4/project.md", "optional": true, "label": "CH4 档案" },
+    { "file": "ccbp:L1/Tree.md", "optional": true, "label": "L1/Tree 知识地图" }
+  ]
+}

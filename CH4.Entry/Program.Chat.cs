@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
 using System.Threading;
 using Mau.Runtime;
@@ -69,9 +70,14 @@ namespace CH4
         private static string _llmErrorText;
 
         /// <summary>
-        /// 工具循环收敛上限——3 轮（P5 拍板：并发读问覆盖测试场景；P8 多工具批沿用）
+        /// 工具循环收敛上限——P8.5b 自举全链上调 3→10（读→改→verify→proj→reload 多批工具调用；收敛语义由 LLM 判断完成）
         /// </summary>
-        private const int MaxToolRounds = 3;
+        private const int MaxToolRounds = 10;
+
+        /// <summary>
+        /// 会话新开请求标志——HTTP 线程置位/主线程泵消费（P8.5 session.new——ThreadGuard 契约同 Chat）
+        /// </summary>
+        private static volatile bool _sessionNewRequested;
 
         /// <summary>
         /// 工具批次执行中标志——ExecuteToolBatch 置位/复位；reload 忙时拒绝（防旧批次完成信号永不置位 → 空转 25 分钟）
@@ -199,14 +205,92 @@ namespace CH4
         }
 
         /// <summary>
-        /// 构建系统提示词——MajorDomoCat 会话中枢身份 + 工具语义声明（从工具表动态生成）
+        /// 显式新会话处理——session.new 指令执行体：按清单重新注入 system + 清前文 + 落盘 + 审计（P8.5 design-ch4-workspace §六）
         /// </summary>
-        /// <returns>系统提示词</returns>
-        private static string BuildSystemPrompt()
+        private static void HandleSessionNew()
         {
+            WorkspaceConfig ws = null;
+            bool wsBound = DataBox.TryResolve<WorkspaceConfig>(out ws);
             ToolSpec[] specs = BuildToolSpecs();
+            string injectPrompt = BuildInjectPrompt(ws, specs);
+            _chatContext.SetSystemPrompt(injectPrompt);
+            _chatContext.Clear();
+            _sessionStore.Save(_chatContext.GetMessages());
+            DataBox.Set<string>("global", "chat_state", "idle");
+            int injectCount = 0;
+            if (ws != null)
+            {
+                injectCount = ws.Inject.Length;
+            }
+            string summary = "session.new | 注入 " + injectCount.ToString() + " 文件 | 前文已清";
+            LogStore.Add("CH4.Entry", 1, summary, "CHAT");
+            if (_httpHost != null)
+            {
+                _httpHost.PushChatDone();
+            }
+            Console.WriteLine("[CH4.Entry] " + summary);
+        }
+
+        /// <summary>
+        /// 构建注入系统提示词——P8.5 会话配置化：角色 + 注入知识（workspace.json inject 清单按序读取，来源标注显式）+ 工具语义声明。
+        /// 注入是宿主侧静态动作——新会话/显式 session.new 时调用一次，不随每轮携带。
+        /// </summary>
+        /// <param name="workspace">工作区配置（roots + inject 清单）</param>
+        /// <param name="specs">工具声明表</param>
+        /// <returns>系统提示词</returns>
+        private static string BuildInjectPrompt(WorkspaceConfig workspace, ToolSpec[] specs)
+        {
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            sb.Append("你是 MajorDomoCat——CH4 自举宿主的管理员对话中枢（P8 工具循环）。");
+            sb.Append("你是 MajorDomoCat——CH4 自举宿主的管理员对话中枢（P8.5 会话配置化）。");
+            // [段1] 注入知识——按清单顺序读取（optional 容错跳过 + 审计；必选缺失警告 + 跳过——会话仍可用）
+            if (workspace != null && workspace.Inject.Length > 0)
+            {
+                sb.Append(System.Environment.NewLine);
+                sb.Append(System.Environment.NewLine);
+                sb.Append("【系统前文来源】以下知识文件由本会话注入（清单 workspace.json inject）：");
+                for (int i = 0; i < workspace.Inject.Length; i++)
+                {
+                    WorkspaceConfig.InjectEntry entry = workspace.Inject[i];
+                    string label = entry.Label;
+                    if (label.Length == 0)
+                    {
+                        label = entry.File;
+                    }
+                    try
+                    {
+                        string path = workspace.ResolveInjectFile(entry);
+                        if (!File.Exists(path))
+                        {
+                            if (entry.Optional)
+                            {
+                                LogStore.Add("CH4.Entry", 2, "inject.missing | optional | " + label, "INJECT");
+                            }
+                            else
+                            {
+                                LogStore.Add("CH4.Entry", 2, "inject.missing | 必选 | " + label, "INJECT");
+                            }
+                            continue;
+                        }
+                        string content = File.ReadAllText(path);
+                        sb.Append(System.Environment.NewLine);
+                        sb.Append(System.Environment.NewLine);
+                        sb.Append("===== 注入文件: ");
+                        sb.Append(label);
+                        sb.Append("（");
+                        sb.Append(entry.File);
+                        sb.Append("）=====");
+                        sb.Append(System.Environment.NewLine);
+                        sb.Append(content);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogStore.Add("CH4.Entry", 2, "inject.fail | " + label + " | " + ex.Message, "INJECT");
+                    }
+                }
+            }
+            // [段2] 工具声明——从工具表动态生成
+            sb.Append(System.Environment.NewLine);
+            sb.Append(System.Environment.NewLine);
             sb.Append("你有 " + specs.Length.ToString() + " 个工具：");
             for (int i = 0; i < specs.Length; i++)
             {
@@ -320,21 +404,39 @@ namespace CH4
                         }
                         LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|start|" + TrimDisplay(arguments, 120), "TOOL");
                         ToolOrderDog dog = new ToolOrderDog(id, name, arguments);
-                        dog.Post(_oa, ToolOwnerId);
-                        if (dog.OfficeId == 0)
+                        if (name.StartsWith("host.", StringComparison.Ordinal))
                         {
-                            // Post 失败——直接 FALLBACK 直执（错误可见性）
-                            string fb = ExecuteTool(name, arguments);
-                            if (fb == null || fb.Length == 0)
+                            // P8.5b 宿主级工具直执——不走 OA（DevCat 无认领线；避免超时 FALLBACK 拖延迟）；reload 忙时豁免（主线程串行直执——本批次前序工具已完成）
+                            bool savedBusy = _toolBatchActive;
+                            _toolBatchActive = false;
+                            string hr = ExecuteTool(name, arguments);
+                            _toolBatchActive = savedBusy;
+                            if (hr == null || hr.Length == 0)
                             {
-                                fb = "ERR|EMPTY_RESULT|工具执行无结果";
+                                hr = "ERR|EMPTY_RESULT|工具执行无结果";
                             }
-                            dog.Result = "[FALLBACK] " + fb;
+                            dog.Result = hr;
                             dog.IsClosed = true;
+                            LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|host-direct|result=" + TrimDisplay(hr, 100), "TOOL");
                         }
                         else
                         {
-                            LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|posted|office=" + dog.OfficeId + "|timeout=" + dog.TimeoutFrames, "TOOL");
+                            dog.Post(_oa, ToolOwnerId);
+                            if (dog.OfficeId == 0)
+                            {
+                                // Post 失败——直接 FALLBACK 直执（错误可见性）
+                                string fb = ExecuteTool(name, arguments);
+                                if (fb == null || fb.Length == 0)
+                                {
+                                    fb = "ERR|EMPTY_RESULT|工具执行无结果";
+                                }
+                                dog.Result = "[FALLBACK] " + fb;
+                                dog.IsClosed = true;
+                            }
+                            else
+                            {
+                                LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|posted|office=" + dog.OfficeId + "|timeout=" + dog.TimeoutFrames, "TOOL");
+                            }
                         }
                         dogs.Add(dog);
                     }

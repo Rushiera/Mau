@@ -106,8 +106,16 @@ namespace CH4
                 {
                     return false;
                 }
-                _bus.SetText("TOOL_Quick_System", system, "cli");
-                _bus.SetText("TOOL_Quick_Content", content, "cli");
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    // 主线程（CLI）——直接执行（ThreadGuard 合规）
+                    HandleQuickCat(system, content);
+                }
+                else
+                {
+                    // HTTP 线程——入队主线程泵（OA 等待循环必须主线程驱动）
+                    _quickQueue.Enqueue(system + "\u0001" + content);
+                }
                 return true;
             }
             if (line.StartsWith("Chat ", StringComparison.Ordinal))
@@ -126,6 +134,19 @@ namespace CH4
                 {
                     // HTTP 线程——入队主线程泵（FlowRunner.Tick 仅宿主主线程——跨线程违规判例 2026-08-18）
                     _chatQueue.Enqueue(chatContent);
+                }
+                return true;
+            }
+            // P8.5 显式新会话——清前文 + 按清单重新注入（唯一重注入通道；主线程直执 / HTTP 线程置位泵——ThreadGuard 契约）
+            if (line == "session.new")
+            {
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    HandleSessionNew();
+                }
+                else
+                {
+                    _sessionNewRequested = true;
                 }
                 return true;
             }
@@ -150,15 +171,84 @@ namespace CH4
         private static System.Collections.Concurrent.ConcurrentQueue<string> _chatQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
 
         /// <summary>
+        /// QuickCat 指令队列——HTTP 线程投递 / 主线程泵消费（D8 修复：OA 发单等待回执需主线程驱动——ThreadGuard 契约）
+        /// </summary>
+        private static System.Collections.Concurrent.ConcurrentQueue<string> _quickQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
+
+        /// <summary>
         /// 泵 HTTP Chat 队列——主线程消费入队任务（RunInteractive 主循环 + DriveUntilIdle 每轮调用）
         /// </summary>
         private static void PumpChatQueue()
         {
+            // P8.5：会话新开请求优先处理（HTTP 线程置位——主线程泵执行，ThreadGuard 契约；无飞线——均走 CommandBus 分发）
+            if (_sessionNewRequested)
+            {
+                _sessionNewRequested = false;
+                HandleSessionNew();
+            }
+            // D8：QuickCat 指令泵消费（HTTP 线程投递——主线程 OA 驱动）
+            string quickJob;
+            while (_quickQueue.TryDequeue(out quickJob))
+            {
+                int quickSep = quickJob.IndexOf('\u0001');
+                if (quickSep >= 0)
+                {
+                    HandleQuickCat(quickJob.Substring(0, quickSep), quickJob.Substring(quickSep + 1));
+                }
+            }
             string job;
             while (_chatQueue.TryDequeue(out job))
             {
                 HandleChat(job);
             }
+        }
+
+        /// <summary>
+        /// QuickCat 指令执行——D8 修复（2026-08-20）：OA 发单（officeName=QuickCat）→ 双参载荷 → 驱动帧等待回执 → 输出。
+        /// 旧路径 CommandBus SetText 已死（ToolTestCat 退役后未适配——REJECT 未注册）；语料 oa.is_open["TOOL","QuickCat"] 接单。
+        /// </summary>
+        /// <param name="system">系统提示词</param>
+        /// <param name="content">用户内容</param>
+        private static void HandleQuickCat(string system, string content)
+        {
+            const long QuickOwnerId = 100;
+            const long QuickTimeoutFrames = 4800;
+            const long QuickWaitFrames = 4800 + 600;
+            long officeId = _oa.Post(QuickOwnerId, "TOOL", "QuickCat", QuickTimeoutFrames);
+            if (officeId <= 0)
+            {
+                Console.WriteLine("[CH4.Entry] QuickCat 发单失败");
+                return;
+            }
+            _oa.SetStr(officeId, QuickOwnerId, "system", system);
+            _oa.SetStr(officeId, QuickOwnerId, "content", content);
+            // 等待回执——同步问答语义：驱动帧直至 Closed/TimeOut（LLM 流式 60s+ 宽裕）
+            for (long f = 0; f < QuickWaitFrames; f++)
+            {
+                OfficeState st = _oa.GetStatus(officeId);
+                if (st == OfficeState.Closed || st == OfficeState.TimeOut)
+                {
+                    break;
+                }
+                _runner.Tick();
+                if (_httpHost != null)
+                {
+                    _httpHost.PumpMainThread();
+                }
+                System.Threading.Thread.Sleep(FrameSleepMs);
+            }
+            Office quickOffice = _oa.GetOffice(officeId);
+            string quickResult = "";
+            if (quickOffice.Result.Strs != null && quickOffice.Result.Strs.ContainsKey("result"))
+            {
+                quickResult = quickOffice.Result.Strs["result"];
+            }
+            if (quickResult.Length == 0)
+            {
+                quickResult = "ERR|EMPTY_RESULT|QuickCat 无回执（状态 " + quickOffice.Status.ToString() + "）";
+            }
+            Console.WriteLine("[QuickCat] " + quickResult);
+            _oa.RemoveByOwner(QuickOwnerId);
         }
 
         /// <summary>

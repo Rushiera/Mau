@@ -69,5 +69,50 @@ namespace CH4
             }
             return port;
         }
+
+        /// <summary>
+        /// 回收站根——数据根在受控根内且可写则用数据根；否则第一个可写根（回收站必须可写——P8.5 配置群）
+        /// </summary>
+        /// <param name="workspace">工作区配置</param>
+        /// <param name="dataRoot">数据根</param>
+        /// <returns>回收站基底目录</returns>
+        private static string WorkspaceRecycleRoot(WorkspaceConfig workspace, string dataRoot)
+        {
+            for (int i = 0; i < workspace.Roots.Length; i++)
+            {
+                WorkspaceConfig.RootEntry entry = workspace.Roots[i];
+                if (entry.Writable && string.Equals(entry.Path, dataRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    return entry.Path;
+                }
+            }
+            for (int i = 0; i < workspace.Roots.Length; i++)
+            {
+                WorkspaceConfig.RootEntry entry = workspace.Roots[i];
+                if (entry.Writable)
+                {
+                    return entry.Path;
+                }
+            }
+            return dataRoot;
+        }
+
+        /// <summary>
+        /// 可写根路径数组——cs.* 编码工具只碰可写根（只读知识根不参与项目扫描——P8.5 配置群）
+        /// </summary>
+        /// <param name="workspace">工作区配置</param>
+        /// <returns>可写根路径数组</returns>
+        private static string[] WritableRootPaths(WorkspaceConfig workspace)
+        {
+            List<string> paths = new List<string>();
+            for (int i = 0; i < workspace.Roots.Length; i++)
+            {
+                if (workspace.Roots[i].Writable)
+                {
+                    paths.Add(workspace.Roots[i].Path);
+                }
+            }
+            return paths.ToArray();
+        }
     }
 }

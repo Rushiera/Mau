@@ -27,13 +27,14 @@ namespace CH4
         {
             ToolSpec[] specs = new ToolSpec[]
             {
-                new ToolSpec("text.read", "读取 UTF-8 文本文件（受控根内路径），返回完整内容", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"要读取的文件路径\"}},\"required\":[\"path\"]}"),
-                new ToolSpec("text.write", "覆写文件（含新建）——整文件替换为 content", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"content\":{\"type\":\"string\",\"description\":\"完整新内容\"}},\"required\":[\"path\",\"content\"]}"),
-                new ToolSpec("text.append", "追加文本到文件末尾（文件不存在则新建）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"content\":{\"type\":\"string\",\"description\":\"要追加的文本\"}},\"required\":[\"path\",\"content\"]}"),
-                new ToolSpec("text.replace", "替换文本——old 全部出现处替换为 new，返回替换数量；未找到报错", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"old\":{\"type\":\"string\",\"description\":\"要查找的旧文本\"},\"new\":{\"type\":\"string\",\"description\":\"替换后的新文本\"}},\"required\":[\"path\",\"old\",\"new\"]}"),
+                new ToolSpec("text.read", "读取 UTF-8 文本文件（受控根内；路径支持 id:相对路径——mau:corpus/...=仓库根 / ccbp:...=知识库 / runtime:...=数据根，或绝对路径），返回完整内容", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"要读取的文件路径（支持 mau:/ccbp: 前缀）\"}},\"required\":[\"path\"]}"),
+                new ToolSpec("text.write", "覆写文件（含新建）——整文件替换为 content（路径支持 id: 前缀同 text.read）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"content\":{\"type\":\"string\",\"description\":\"完整新内容\"}},\"required\":[\"path\",\"content\"]}"),
+                new ToolSpec("text.append", "追加文本到文件末尾（文件不存在则新建；路径支持 id: 前缀同 text.read）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"content\":{\"type\":\"string\",\"description\":\"要追加的文本\"}},\"required\":[\"path\",\"content\"]}"),
+                new ToolSpec("text.replace", "替换文本——old 全部出现处替换为 new，返回替换数量；未找到报错（路径支持 id: 前缀同 text.read）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"old\":{\"type\":\"string\",\"description\":\"要查找的旧文本\"},\"new\":{\"type\":\"string\",\"description\":\"替换后的新文本\"}},\"required\":[\"path\",\"old\",\"new\"]}"),
                 new ToolSpec("mau.verify", "Mau 语料全链检查（词法→解析→验证→分析），返回诊断（文件:行:错误码:消息）；零产出", "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\",\"description\":\".mau 文件路径\"}},\"required\":[\"file\"]}"),
                 new ToolSpec("mau.gen", "组翻译——.mauproj 组声明 → 中间产物（验证全组 + BRIKGROUP.cs + FL_*.cs）；不编译", "{\"type\":\"object\",\"properties\":{\"proj\":{\"type\":\"string\",\"description\":\".mauproj 文件路径\"}},\"required\":[\"proj\"]}"),
                 new ToolSpec("mau.proj", "组翻译 + 编译——.mauproj → Flows/FL_<组>.dll（长耗时；产物可在宿主热重载）", "{\"type\":\"object\",\"properties\":{\"proj\":{\"type\":\"string\",\"description\":\".mauproj 文件路径\"},\"build\":{\"type\":\"boolean\",\"description\":\"true=翻译后执行 dotnet build\"}},\"required\":[\"proj\"]}"),
+                new ToolSpec("host.reload", "热重载语料 dll（宿主级）——在 mau.proj 编译成功后单独调用（建议下一轮）；事务三段式：加载失败保留旧版本；cat=quick|dev", "{\"type\":\"object\",\"properties\":{\"cat\":{\"type\":\"string\",\"description\":\"quick|dev\"}},\"required\":[\"cat\"]}"),
                 // P8 三期——Roslyn cs.* 编码工具域（9 件——经 ICSharpBridge / MauRoslynBridge 调度；path=受控根内 csproj 或项目目录）
                 new ToolSpec("cs.check", "C# 语义快查——项目语法树诊断（增量/毫秒级）；full=true 含警告；实机裁决走 cs.build", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录（受控根内）\"},\"full\":{\"type\":\"boolean\",\"description\":\"true=输出全部警告\"}},\"required\":[\"path\"]}"),
                 new ToolSpec("cs.build", "C# 实机编译——dotnet build 子进程（唯一权威裁决；成功后引用集自动刷新）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"}},\"required\":[\"path\"]}"),
@@ -83,6 +84,10 @@ namespace CH4
             if (name == "mau.proj")
             {
                 return ExecMauProj(argsJson);
+            }
+            if (name == "host.reload")
+            {
+                return ExecHostReload(argsJson);
             }
             if (name.StartsWith("cs.", StringComparison.Ordinal))
             {
@@ -391,6 +396,11 @@ namespace CH4
         /// <returns>绝对路径（越界返回空串）</returns>
         private static string ResolveRepoPath(string relPath)
         {
+            // P8.5b 命名空间前缀兼容——mau: 映射到仓库根（与 text.* id: 语义一致；mau.* 工具默认基准=仓库根）
+            if (relPath.StartsWith("mau:", StringComparison.Ordinal))
+            {
+                relPath = relPath.Substring(4);
+            }
             string root = ResolveDataRoot();
             string full = Path.GetFullPath(Path.Combine(root, relPath));
             if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))

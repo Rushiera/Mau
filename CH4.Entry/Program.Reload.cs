@@ -15,12 +15,15 @@ namespace CH4
     public static partial class Program
     {
         /// <summary>
-        /// reload 热重载——tool|io|quick|major + 可选 dll 路径（缺省 = 当前 handle 同路径重读）
+        /// reload 热重载——quick|dev + 可选 dll 路径（缺省 = 当前 handle 同路径重读）
         /// 流程：新 Load + Tick 试跑验证（失败保留旧）→ UnregisterFlow 旧（D1：CommandBus key 同步清理）→ RegisterFlow 新 → 旧 TryUnload → 预热 → 报告
+        /// P8.5b：返回结果文本（host.reload 工具 LLM 可见；Console 同步输出行为不变）
         /// </summary>
         /// <param name="args">cat + 空格 + dll 路径（dll 可选）</param>
-        private static void ExecuteReload(string args)
+        /// <returns>reload 结果文本</returns>
+        private static string ExecuteReload(string args)
         {
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
             string[] parts = args.Split(' ');
             string cat = parts[0].Trim();
             string dllPath;
@@ -32,11 +35,13 @@ namespace CH4
             {
                 dllPath = "";
             }
-            // [段0] 忙时拒绝——工具批次执行中（Chat 处理中）reload 会导致旧批次完成信号永不置位（WaitForTools 空转帧上限）
+            // [段0] 忙时拒绝——工具批次执行中（Chat 处理中）reload 会导致旧批次完成信号永不置位（WaitForTools 空转帧上限）——host.* 直执路径豁免（ExecuteToolBatch 临时解除）
             if (_toolBatchActive)
             {
-                Console.WriteLine("[CH4.Entry] reload 拒绝: 工具批次执行中（Chat 处理中）——等待完成后再试");
-                return;
+                string busyMsg = "[CH4.Entry] reload 拒绝: 工具批次执行中（Chat 处理中）——等待完成后再试";
+                Console.WriteLine(busyMsg);
+                sb.AppendLine(busyMsg);
+                return sb.ToString();
             }
             FlowHandle oldHandle;
             long oldId;
@@ -55,8 +60,10 @@ namespace CH4
             }
             else
             {
-                Console.WriteLine("[CH4.Entry] reload 目标无效——quick|dev");
-                return;
+                string badMsg = "[CH4.Entry] reload 目标无效——quick|dev";
+                Console.WriteLine(badMsg);
+                sb.AppendLine(badMsg);
+                return sb.ToString();
             }
             if (dllPath.Length == 0)
             {
@@ -70,8 +77,10 @@ namespace CH4
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[CH4.Entry] reload " + name + " 失败: 新版本加载未通过——" + ex.Message);
-                return;
+                string failMsg = "[CH4.Entry] reload " + name + " 失败: 新版本加载未通过——" + ex.Message;
+                Console.WriteLine(failMsg);
+                sb.AppendLine(failMsg);
+                return sb.ToString();
             }
             // [段2] 换注册——卸旧（D1 修复：CommandBus key 同步清理 + DataBox FlowId scope 清理）→ 注册新 → 试跑帧（runner 帧序注入 FlowContext=newId——CmdPump 真实注册，无幽灵 owner）
             _runner.UnregisterFlow(oldId);
@@ -98,13 +107,17 @@ namespace CH4
                 }
                 catch (Exception ex2)
                 {
-                    Console.WriteLine("[CH4.Entry] reload " + name + " 失败: 试跑异常且回滚失败——" + ex.Message + " / " + ex2.Message);
-                    return;
+                    string rollbackFailMsg = "[CH4.Entry] reload " + name + " 失败: 试跑异常且回滚失败——" + ex.Message + " / " + ex2.Message;
+                    Console.WriteLine(rollbackFailMsg);
+                    sb.AppendLine(rollbackFailMsg);
+                    return sb.ToString();
                 }
                 oldHandle.TryUnload(3);
                 SetCatHandle(cat, rollback, rollbackId);
-                Console.WriteLine("[CH4.Entry] reload " + name + " 失败: 试跑帧异常已回滚（旧版本全新实例 #" + rollbackId + "）——" + ex.Message);
-                return;
+                string rollbackMsg = "[CH4.Entry] reload " + name + " 失败: 试跑帧异常已回滚（旧版本全新实例 #" + rollbackId + "）——" + ex.Message;
+                Console.WriteLine(rollbackMsg);
+                sb.AppendLine(rollbackMsg);
+                return sb.ToString();
             }
             // [段3] 成功路径——换句柄 + 卸载旧 ALC + 预热帧
             oldHandle.TryUnload(3);
@@ -114,11 +127,50 @@ namespace CH4
                 _runner.Tick();
             }
             string[] keyDic = _bus.GetKeyDic();
-            Console.WriteLine("[CH4.Entry] reload " + name + ": #" + oldId + " → #" + newId + " | pid=" + Environment.ProcessId + " | " + keyDic[0]);
+            string okMsg = "[CH4.Entry] reload " + name + ": #" + oldId + " → #" + newId + " | pid=" + Environment.ProcessId + " | " + keyDic[0];
+            Console.WriteLine(okMsg);
+            sb.AppendLine(okMsg);
             for (int k = 0; k < keyDic.Length; k++)
             {
                 Console.WriteLine("    " + keyDic[k]);
+                sb.AppendLine("    " + keyDic[k]);
             }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// host.reload 工具执行——解析 cat 参数 → ExecuteReload（复用事务三段式）；宿主级工具——ExecuteToolBatch 白名单直执不走 OA
+        /// </summary>
+        /// <param name="argsJson">参数 JSON</param>
+        /// <returns>reload 结果文本</returns>
+        private static string ExecHostReload(string argsJson)
+        {
+            string cat = "";
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                {
+                    JsonElement root = doc.RootElement;
+                    JsonElement c;
+                    if (root.TryGetProperty("cat", out c) && c.ValueKind == JsonValueKind.String)
+                    {
+                        string got = c.GetString();
+                        if (got != null)
+                        {
+                            cat = got;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                cat = "";
+            }
+            if (cat != "quick" && cat != "dev")
+            {
+                return "ERR|BAD_ARG|host.reload cat 参数须为 quick|dev";
+            }
+            return ExecuteReload(cat);
         }
 
         /// <summary>

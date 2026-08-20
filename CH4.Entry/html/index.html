@@ -170,6 +170,7 @@
                     <span class="sid">MajorDomoCat</span>
                     <span id="chatInfo">—</span>
                     <span style="flex:1"></span>
+                    <button id="chatNew" title="新会话（session.new——清前文并重新注入）">新会话</button>
                     <button id="chatClear" title="清空会话（session clear）">清空</button>
                 </div>
                 <div id="chatMsgs"></div>
@@ -878,6 +879,19 @@
             }
             chatScrollBottom();
         }
+
+        // 新会话——session.new 指令（P8.5 design-ch4-workspace §六：清前文 + 按清单重新注入；走 CommandBus 无飞线）
+        document.getElementById('chatNew').addEventListener('click', function () {
+            if (chatState === 'sending') { return; }
+            fetch('/api/v1/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: 'session.new' })
+            }).catch(function () {});
+            chatMsgs.textContent = '';
+            chatInfo.textContent = '新会话——注入中…';
+            chatLoadHistory();
+        });
 
         // 清空会话——session clear 指令
         document.getElementById('chatClear').addEventListener('click', function () {
