@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using Mau.Runtime;
 using Mau.Providers;
+using Mau.Development;
 
 namespace CH4
 {
@@ -159,6 +160,8 @@ private static HttpHost _httpHost;
             DataBox.Bind<ConfigStore>(llmConfig);
             _llmRuntime = new DeepSeekLlmRuntime(llmConfig);
             DataBox.Bind<ILlmRuntime>(_llmRuntime);
+            // P8 三期——Roslyn cs.* 编码工具域（MauRoslynBridge——受控根=数据根；磁盘权威快照 + 三态缓存）
+            DataBox.Bind<ICSharpBridge>(new MauRoslynBridge(new string[] { dataRoot }));
             AuditStore audit = new AuditStore();
             AuditStore.Default = audit;
             _runner.Audit = audit;

@@ -33,7 +33,17 @@ namespace CH4
                 new ToolSpec("text.replace", "替换文本——old 全部出现处替换为 new，返回替换数量；未找到报错", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"old\":{\"type\":\"string\",\"description\":\"要查找的旧文本\"},\"new\":{\"type\":\"string\",\"description\":\"替换后的新文本\"}},\"required\":[\"path\",\"old\",\"new\"]}"),
                 new ToolSpec("mau.verify", "Mau 语料全链检查（词法→解析→验证→分析），返回诊断（文件:行:错误码:消息）；零产出", "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\",\"description\":\".mau 文件路径\"}},\"required\":[\"file\"]}"),
                 new ToolSpec("mau.gen", "组翻译——.mauproj 组声明 → 中间产物（验证全组 + BRIKGROUP.cs + FL_*.cs）；不编译", "{\"type\":\"object\",\"properties\":{\"proj\":{\"type\":\"string\",\"description\":\".mauproj 文件路径\"}},\"required\":[\"proj\"]}"),
-                new ToolSpec("mau.proj", "组翻译 + 编译——.mauproj → Flows/FL_<组>.dll（长耗时；产物可在宿主热重载）", "{\"type\":\"object\",\"properties\":{\"proj\":{\"type\":\"string\",\"description\":\".mauproj 文件路径\"},\"build\":{\"type\":\"boolean\",\"description\":\"true=翻译后执行 dotnet build\"}},\"required\":[\"proj\"]}")
+                new ToolSpec("mau.proj", "组翻译 + 编译——.mauproj → Flows/FL_<组>.dll（长耗时；产物可在宿主热重载）", "{\"type\":\"object\",\"properties\":{\"proj\":{\"type\":\"string\",\"description\":\".mauproj 文件路径\"},\"build\":{\"type\":\"boolean\",\"description\":\"true=翻译后执行 dotnet build\"}},\"required\":[\"proj\"]}"),
+                // P8 三期——Roslyn cs.* 编码工具域（9 件——经 ICSharpBridge / MauRoslynBridge 调度；path=受控根内 csproj 或项目目录）
+                new ToolSpec("cs.check", "C# 语义快查——项目语法树诊断（增量/毫秒级）；full=true 含警告；实机裁决走 cs.build", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录（受控根内）\"},\"full\":{\"type\":\"boolean\",\"description\":\"true=输出全部警告\"}},\"required\":[\"path\"]}"),
+                new ToolSpec("cs.build", "C# 实机编译——dotnet build 子进程（唯一权威裁决；成功后引用集自动刷新）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"}},\"required\":[\"path\"]}"),
+                new ToolSpec("cs.list", "类/成员签名清单（语法层；class 空=全项目类清单）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名（空=全项目）\"}},\"required\":[\"path\"]}"),
+                new ToolSpec("cs.read", "成员源码 + 方法内行号标注（补丁锚点依据；member 空=类概览）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名（空=类概览）\"}},\"required\":[\"path\",\"class\"]}"),
+                new ToolSpec("cs.find_ref", "成员全引用（含重载全匹配；语义级）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名\"}},\"required\":[\"path\",\"class\",\"member\"]}"),
+                new ToolSpec("cs.patch", "方法体级替换（锚点=类+方法名；body 完整含大括号）——三态：OK 落盘 / ROLLED_BACK 未落盘+诊断 / ERR", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"method\":{\"type\":\"string\",\"description\":\"方法名\"},\"body\":{\"type\":\"string\",\"description\":\"新方法体（含大括号）\"}},\"required\":[\"path\",\"class\",\"method\",\"body\"]}"),
+                new ToolSpec("cs.member", "成员增删改——op=insert(增)/delete(删)/rename(改名 全项目引用同步)", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"op\":{\"type\":\"string\",\"description\":\"insert|delete|rename\"},\"position\":{\"type\":\"string\",\"description\":\"insert 用：end|before|after|after_fields\"},\"anchor\":{\"type\":\"string\",\"description\":\"before/after 用：锚点成员名\"},\"code\":{\"type\":\"string\",\"description\":\"insert 用：完整成员声明源码\"},\"oldName\":{\"type\":\"string\",\"description\":\"rename 用：旧成员名\"},\"newName\":{\"type\":\"string\",\"description\":\"rename 用：新成员名\"}},\"required\":[\"path\",\"class\",\"op\"]}"),
+                new ToolSpec("cs.comment", "XML 注释增改——type=summary/param/returns（param 需 param=参数名）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名（空=类）\"},\"type\":{\"type\":\"string\",\"description\":\"summary|param|returns\"},\"text\":{\"type\":\"string\",\"description\":\"注释文本\"},\"param\":{\"type\":\"string\",\"description\":\"type=param 时的参数名\"}},\"required\":[\"path\",\"class\",\"type\",\"text\"]}"),
+                new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/override 跳过）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"}},\"required\":[\"path\"]}")
             };
             return specs;
         }
@@ -74,7 +84,36 @@ namespace CH4
             {
                 return ExecMauProj(argsJson);
             }
+            if (name.StartsWith("cs.", StringComparison.Ordinal))
+            {
+                return ExecCSharpTool(name, argsJson);
+            }
             return "ERR|UNKNOWN_TOOL|未知工具: " + name;
+        }
+
+        // [段3] C# 工具桥执行器——P8 三期（cs.* 9 件经 ICSharpBridge/MauRoslynBridge 调度：磁盘权威 + 三态缓存 + 回滚保护）
+
+        /// <summary>
+        /// cs.* 统一执行——桥内分派（method = 工具名去 cs. 前缀）；结果截断防爆
+        /// </summary>
+        /// <param name="name">工具名（cs.check 等）</param>
+        /// <param name="argsJson">参数整包 JSON</param>
+        /// <returns>桥结果文本（OK/ROLLED_BACK/ERR| 语义）</returns>
+        private static string ExecCSharpTool(string name, string argsJson)
+        {
+            Mau.Runtime.ICSharpBridge bridge;
+            if (!DataBox.TryResolve<Mau.Runtime.ICSharpBridge>(out bridge))
+            {
+                return "ERR|CSHARP_NO_BRIDGE|宿主未注入 ICSharpBridge（Bootstrap 需 Bind MauRoslynBridge）";
+            }
+            string method = name.Substring(3);
+            string result;
+            bool ok = bridge.Invoke(method, argsJson, out result);
+            if (!ok || result == null || result.Length == 0)
+            {
+                return "ERR|BRIDGE_FAIL|cs." + method + " 调用失败（" + (result ?? "空结果") + "）";
+            }
+            return TrimResult(result, MaxToolResultChars);
         }
 
         // [段1] 文本工具执行器——FileSystemService 直执（Bootstrap 已 Bind；受控根 = 数据根）

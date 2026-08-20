@@ -8,22 +8,16 @@
 // 引用: Mau.Runtime（ICSharpBridge）· System
 // 原理: DataBox.TryResolve<ICSharpBridge> → Invoke(method, argsJson, out result)
 //       实现 = Mau.Development.MauRoslynBridge（Mau 编译链必要内部支持——唯一常驻 PACK）
-// 方法: init → csproj
-//        info →
-//        list → class
-//        read → class,member
-//        compile → full
-//        body_replace → class,method,body
-//        line_patch → class,method,startLine,endLine,newText
-//        line_insert → class,method,afterLine,newText
-//        member_insert → class,position,anchor,code
-//        member_delete → class,member
-//        comment_set → class,member,type,text,param
-//        comment_check →
-//        member_rename → class,oldName,newName
-//        dead →
-//        find_ref → class,member
-// 常用: csharp.* 十五积木的调度底座（PACK 协议）
+// 方法: check → path,full
+//        build → path
+//        list → path,class
+//        read → path,class,member
+//        find_ref → path,class,member
+//        patch → path,class,method,body
+//        member → path,class,op,position,anchor,code,oldName,newName
+//        comment → path,class,member,type,text,param
+//        dead → path
+// 常用: cs.* 九工具的调度底座（P8 三期——15→9 域裁剪：砍 init/info；patch 合并三改法；member 合并三操作；comment 合并两操作）
 // ═══════════════════════════════════════════════════
 using System;
 
@@ -55,4 +49,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:DE2978C2D554B338A0DECF793504B4956BE27D7F6F35463ADE123F273F35DB40
+// #MAU_CHECKSUM:SHA256:DEE2E7A0107FFEA6A2FF8C1F6DF444CAD79974B75A320C40FED7F44A87815293
