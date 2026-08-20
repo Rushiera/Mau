@@ -139,11 +139,13 @@
 // T_ProjExec：执行积木（组翻译 + dotnet build——长耗时）
 § 'T_ProjExec' : 'S_Proj' = 'Ready' → 'mau.proj'[@pjArgs] > @pjRes | 'S_Proj' = 'Done' | 'S_Proj' = 'Failed'
 
-// T_ProjReply：成功回执
-§ 'T_ProjReply' : 'S_Proj' = 'Done' → 'oa.complete_str'[@pjOffice, @pjRes] | 'S_Proj' = 'Idle' | 'S_Proj' = 'Idle'
+// T_ProjReply：成功回执（[!] 日志标记——热重载行为验证点）
+§ 'T_ProjReply' [!] : 'S_Proj' = 'Done' → 'oa.complete_str'[@pjOffice, @pjRes] | 'S_Proj' = 'Idle' | 'S_Proj' = 'Idle'
 
 // T_ProjAbort：失败回执
-§ 'T_ProjAbort' : 'S_Proj' = 'Failed' → 'oa.complete_str'[@pjOffice, @pjRes] | 'S_Proj' = 'Idle' | 'S_Proj' = 'Idle'// ══════════════ P8 三期 cs.* 编码工具认领线（9 线——csharp.bridge 单积木 PACK 协议分派；method=工具名去 cs. 前缀）══════════════
+§ 'T_ProjAbort' : 'S_Proj' = 'Failed' → 'oa.complete_str'[@pjOffice, @pjRes] | 'S_Proj' = 'Idle' | 'S_Proj' = 'Idle'
+
+// ══════════════ P8 三期 cs.* 编码工具认领线（9 线——csharp.bridge 单积木 PACK 协议分派；method=工具名去 cs. 前缀）══════════════
 // 与一期 7 线同构：oa.is_open 探测 → claim_next_simple 原子接单 → get_str 读载荷 → csharp.bridge[method] 直执 → complete_str 回执
 // 失败侧 ERR| 文本也在结果盒——Dog 可见失败原因；bridge 未注入时积木返回 false + ERR|CSHARP_NO_BRIDGE（失败侧回执同样可见）
 

@@ -407,7 +407,8 @@ namespace CH4
                         ToolOrderDog dog = new ToolOrderDog(id, name, arguments);
                         if (name.StartsWith("host.", StringComparison.Ordinal))
                         {
-                            // P8.5b 宿主级工具——延迟直执登记（批次末尾执行；确保同批 mau.proj 等先完成产物落地——顺序保证）\n                            hostDogs.Add(dog);
+                            // P8.5b 宿主级工具——延迟直执登记（批次末尾执行；确保同批 mau.proj 等先完成产物落地——顺序保证）
+                            hostDogs.Add(dog);
                             dog.IsClosed = true;
                             LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|host-deferred", "TOOL");
                         }
