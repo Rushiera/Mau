@@ -28,6 +28,7 @@
 | BRIK-OA-009 | oa.get_result_str | OA | OA/BRIK-OA-009_oa.get_result_str.cs | 无 | active |  |
 | BRIK-OA-010 | oa.done_ready | OA | OA/BRIK-OA-010_oa.done_ready.cs | 无 | active |  |
 | BRIK-PACK-003 | csharp.bridge | PACK | PACK/BRIK-PACK-003_csharp.bridge.cs | 无 | active |  |
+| BRIK-PACK-004 | config.bridge | PACK | PACK/BRIK-PACK-004_config.bridge.cs | 无 | active |  |
 | BRIK-TEST-001 | probe.source | TEST | TEST/BRIK-TEST-001_probe.source.cs | 无 | active |  |
 | BRIK-TEST-002 | probe.sink | TEST | TEST/BRIK-TEST-002_probe.sink.cs | 无 | active |  |
 | BRIK-TEST-003 | probe.sink_slow | TEST | TEST/BRIK-TEST-003_probe.sink_slow.cs | 无 | active |  |

@@ -46,6 +46,18 @@ namespace Mau.Runtime
             /// 描述——一行 ≤40 字
             /// </summary>
             public string Desc = "";
+/// <summary>
+/// 值类型——"string"（缺省）/ "int" / "bool"；P8.5d 值域校验
+/// </summary>
+public string Type = ""; 
+/// <summary>
+/// 数值下限（type=int 时生效）
+/// </summary>
+ public  string  Min  =  "" ;  
+/// <summary>
+/// 数值上限（type=int 时生效）
+/// </summary>
+ public  string  Max  =  "" ;
         }
 
         /// <summary>
@@ -95,8 +107,11 @@ namespace Mau.Runtime
                     item.File = GetProp(el, "file");
                     item.Default = GetProp(el, "default");
                     item.Desc = GetProp(el, "desc");
-                    item.Sensitive = GetBoolProp(el, "sensitive", false);
+item.Sensitive = GetBoolProp(el, "sensitive", false);
                     item.Writable = GetBoolProp(el, "writable", true);
+                    item.Type = GetProp(el, "type");
+                    item.Min = GetProp(el, "min");
+                    item.Max = GetProp(el, "max");
                     schema._items[key] = item;
                 }
             }
@@ -189,5 +204,80 @@ namespace Mau.Runtime
             }
             return defaultValue;
         }
+/// <summary>
+/// 值域校验——P8.5d 写入通道（SetChecked）前置校验。
+/// 规则：值长度上限 1024；type=int → 整数解析 + min/max 范围；type=bool → true/false/1/0；type=string/空 → 放行。
+/// </summary>
+/// <param name = "key">配置键</param>
+/// <param name = "value">候选值</param>
+/// <param name = "error">失败原因（成功为空串）</param>
+/// <returns>是否通过</returns>
+public bool Validate(string key, string value, out string error)
+{
+    error = "";
+    Item? item = Find(key);
+    if (item == null)
+    {
+        error = "配置键未在 schema 声明: " + key;
+        return false;
     }
+
+    if (value.Length > 1024)
+    {
+        error = "配置值过长（>1024）";
+        return false;
+    }
+
+    string type = item.Type;
+    if (type.Length == 0 || type == "string")
+    {
+        return true;
+    }
+
+    if (type == "int")
+    {
+        long parsed;
+        if (!long.TryParse(value, out parsed))
+        {
+            error = "配置项 " + key + " 需要整数: " + value;
+            return false;
+        }
+
+        if (item.Min.Length > 0)
+        {
+            long min;
+            if (long.TryParse(item.Min, out min) && parsed < min)
+            {
+                error = "配置项 " + key + " 低于下限 " + item.Min;
+                return false;
+            }
+        }
+
+        if (item.Max.Length > 0)
+        {
+            long max;
+            if (long.TryParse(item.Max, out max) && parsed > max)
+            {
+                error = "配置项 " + key + " 超出上限 " + item.Max;
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    if (type == "bool")
+    {
+        if (value != "true" && value != "false" && value != "1" && value != "0")
+        {
+            error = "配置项 " + key + " 需要布尔值: " + value;
+            return false;
+        }
+
+        return true;
+    }
+
+    error = "未知值类型: " + type;
+    return false;
+}    }
 }

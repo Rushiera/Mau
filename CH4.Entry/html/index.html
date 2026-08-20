@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>CH4 外观层 v2</title>
     <style>
+        :root { --chat-font-size: 12px; } /* P8.5d——ui.chat_font_size 前端消费（宿主持久化配置） */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #141414; color: #c8c8c8; height: 100vh; overflow: hidden; }
         #layout { display: flex; height: 100vh; }
@@ -81,7 +82,7 @@
         @keyframes chat-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
         .chat-row.user { justify-content: flex-end; }
         .chat-row.assistant { justify-content: flex-start; }
-        .chat-bubble { max-width: 78%; padding: 8px 12px; border-radius: 8px; font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-all; }
+        .chat-bubble { max-width: 78%; padding: 8px 12px; border-radius: 8px; font-size: var(--chat-font-size); line-height: 1.7; white-space: pre-wrap; word-break: break-all; }
         .chat-row.user .chat-bubble { background: #0e639c; color: #fff; }
         .chat-row.assistant .chat-bubble { background: #1a1a1a; color: #d4d4d4; border: 1px solid #2a2a2a; }
         .chat-bubble.reason { background: #1c1c1c; color: #9a9a9a; border: 1px solid #242424; font-size: 11px; }
@@ -529,7 +530,7 @@
                 .then(function (r) { return r.json(); })
                 .then(function (d) {
                     if (d.ok) {
-                        configMsg.textContent = '已保存 ' + key + ' @F' + d.frame + '（运行时生效待重启宿主）';
+                        configMsg.textContent = '已保存 ' + key + ' @F' + d.frame + '（即时生效：llm.* 实时读取 / ui.* 前端刷新可见）';
                         loadConfig();
                     } else {
                         configMsg.textContent = '失败: ' + (d.error || '未知错误');
@@ -546,7 +547,24 @@
             document.getElementById('cfgNewKey').value = '';
             document.getElementById('cfgNewVal').value = '';
         });
+        // P8.5d——ui.* 用户偏好前端消费：ui.chat_font_size → CSS 变量（宿主持久化；config.set 后刷新页面生效）
+        function applyUiConfig() {
+            fetch('/api/v1/config')
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    var items = d.items || [];
+                    for (var i = 0; i < items.length; i++) {
+                        if (items[i].key === 'ui.chat_font_size') {
+                            var v = parseInt(items[i].value, 10);
+                            if (v > 0) { document.documentElement.style.setProperty('--chat-font-size', v + 'px'); }
+                            break;
+                        }
+                    }
+                })
+                .catch(function () {});
+        }
         loadConfig();
+        applyUiConfig();
 
         // [段13] 对话区——B4.2：阶段模型（思考/工具/回复独立气泡）；sessionId 归属过滤；120s 无响应兜底
         var chatMsgs = document.getElementById('chatMsgs');

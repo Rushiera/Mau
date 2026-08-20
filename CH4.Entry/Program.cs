@@ -160,6 +160,8 @@ private static HttpHost _httpHost;
             string configDir = Path.Combine(dataRoot, "Data", "config");
             ConfigStore llmConfig = ConfigStore.Load(Path.Combine(configDir, "llm.cfg"));
             DataBox.Bind<ConfigStore>(llmConfig);
+            // P8.5d 配置群多文件化——ui.* 用户偏好追加到同一 store（键前缀段路由；ui.json 缺失时首次写入自动创建）
+            llmConfig.AddFile("ui", Path.Combine(configDir, "ui.json"));
             _llmRuntime = new DeepSeekLlmRuntime(llmConfig);
             DataBox.Bind<ILlmRuntime>(_llmRuntime);
             // P8 三期——Roslyn cs.* 编码工具域（MauRoslynBridge——受控根=可写根子集，只读知识根不参与项目扫描；磁盘权威快照 + 三态缓存）

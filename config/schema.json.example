@@ -1,11 +1,12 @@
-{
-  "_说明": "配置群 schema 示例——复制为 Data/config/schema.json；当前只读面（默认值/敏感/可写声明——/api/v1/config 输出），写通道 P8.5d",
+﻿{
+  "_说明": "配置群 schema 模板——复制为 Data/config/schema.json；声明项 = 配置面唯一契约（默认值/敏感/可写/值域——config.* 工具与 serve 写通道共用）",
   "items": [
     { "key": "llm.base_url", "file": "llm.cfg", "default": "https://opencode.ai/zen/go/v1", "sensitive": false, "writable": false, "desc": "LLM 端点" },
     { "key": "llm.api_key", "file": "llm.cfg", "default": "", "sensitive": true, "writable": false, "desc": "LLM 密钥" },
     { "key": "llm.model", "file": "llm.cfg", "default": "deepseek-v4-flash", "sensitive": false, "writable": false, "desc": "模型名" },
     { "key": "llm.thinking", "file": "llm.cfg", "default": "enabled", "sensitive": false, "writable": false, "desc": "思考模式" },
     { "key": "llm.reasoning_effort", "file": "llm.cfg", "default": "medium", "sensitive": false, "writable": false, "desc": "思考强度" },
-    { "key": "http.port", "file": "llm.cfg", "default": "8080", "sensitive": false, "writable": false, "desc": "HTTP 端口" }
+    { "key": "http.port", "file": "llm.cfg", "default": "8080", "sensitive": false, "writable": false, "desc": "HTTP 端口" },
+    { "key": "ui.chat_font_size", "file": "ui.json", "default": "12", "sensitive": false, "writable": true, "type": "int", "min": "8", "max": "32", "desc": "对话区字体大小 px" }
   ]
 }

@@ -138,15 +138,20 @@ namespace CH4
             {
                 return Results.Json(new { ok = false, error = "value 含掩码标记——请输入真实值" });
             }
-            // [段3] 写入落盘——Set + Save 原子写；回执值掩码
+            // [段3] 写入落盘——P8.5d 统一受控写（ConfigStore.SetChecked：schema 白名单 + 值域校验 + 掩码拒绝 + 原子写回滚）
             ConfigStore cfg = null!;
             bool bound = DataBox.TryResolve<ConfigStore>(out cfg);
             if (!bound || cfg == null)
             {
                 return Results.Json(new { ok = false, error = "配置存储未绑定" });
             }
-            cfg.Set(key, value);
-            cfg.Save();
+            ConfigSchema schema = null!;
+            bool schemaBound = DataBox.TryResolve<ConfigSchema>(out schema);
+            string checkError;
+            if (!cfg.SetChecked(key, value, schemaBound ? schema : null, out checkError))
+            {
+                return Results.Json(new { ok = false, error = checkError });
+            }
             long frame = FlowRunner.GlobalFrame;
             // 回执值掩码——敏感键不回显新值明文（与 GET 掩码同规）
             string maskedValue;

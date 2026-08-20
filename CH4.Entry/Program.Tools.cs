@@ -44,7 +44,12 @@ namespace CH4
                 new ToolSpec("cs.patch", "方法体级替换（锚点=类+方法名；body 完整含大括号）——三态：OK 落盘 / ROLLED_BACK 未落盘+诊断 / ERR", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"method\":{\"type\":\"string\",\"description\":\"方法名\"},\"body\":{\"type\":\"string\",\"description\":\"新方法体（含大括号）\"}},\"required\":[\"path\",\"class\",\"method\",\"body\"]}"),
                 new ToolSpec("cs.member", "成员增删改——op=insert(增)/delete(删)/rename(改名 全项目引用同步)", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"op\":{\"type\":\"string\",\"description\":\"insert|delete|rename\"},\"position\":{\"type\":\"string\",\"description\":\"insert 用：end|before|after|after_fields\"},\"anchor\":{\"type\":\"string\",\"description\":\"before/after 用：锚点成员名\"},\"code\":{\"type\":\"string\",\"description\":\"insert 用：完整成员声明源码\"},\"oldName\":{\"type\":\"string\",\"description\":\"rename 用：旧成员名\"},\"newName\":{\"type\":\"string\",\"description\":\"rename 用：新成员名\"}},\"required\":[\"path\",\"class\",\"op\"]}"),
                 new ToolSpec("cs.comment", "XML 注释增改——type=summary/param/returns（param 需 param=参数名）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名（空=类）\"},\"type\":{\"type\":\"string\",\"description\":\"summary|param|returns\"},\"text\":{\"type\":\"string\",\"description\":\"注释文本\"},\"param\":{\"type\":\"string\",\"description\":\"type=param 时的参数名\"}},\"required\":[\"path\",\"class\",\"type\",\"text\"]}"),
-                new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/override 跳过）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"}},\"required\":[\"path\"]}")
+new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/override 跳过）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"}},\"required\":[\"path\"]}"),
+                // P8.5d——config.* 配置自改工具组（4 件——schema 白名单写：config.set/reset 仅 writable 项；唯一校验实现 ConfigStore.SetChecked）
+                new ToolSpec("config.list", "配置全览——schema 全部条目（键/当前值/来源/schema 默认/敏感/可写/值域/描述）；敏感键掩码", "{\"type\":\"object\",\"properties\":{}}"),
+                new ToolSpec("config.get", "配置单项查询——按 schema 键返回（含默认/敏感/可写/值域/描述）；敏感键掩码", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键（如 ui.chat_font_size）\"}},\"required\":[\"key\"]}"),
+                new ToolSpec("config.set", "配置写入——仅 schema 声明且 writable=true 的项（白名单+值域校验+原子写+失败回滚）；llm.* 私密环境变量只读", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键\"},\"value\":{\"type\":\"string\",\"description\":\"新值（掩码值拒绝）\"}},\"required\":[\"key\",\"value\"]}"),
+                new ToolSpec("config.reset", "配置还原默认——key 空=全群 writable 项还原 schema default；key 非空=单项", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键（空=全群）\"}},\"required\":[]}")
             };
             return specs;
         }
@@ -442,5 +447,187 @@ namespace CH4
             }
             return text.Substring(0, max) + System.Environment.NewLine + "…[截断: 共 " + text.Length.ToString() + " 字符，仅保留前 " + max.ToString() + "]";
         }
+/// <summary>
+/// config.list——配置全览（schema 全部条目 + 当前值 + 元信息；敏感键掩码）
+/// </summary>
+/// <param name = "cfg">配置存储</param>
+/// <param name = "schema">配置 schema</param>
+/// <param name = "schemaBound">schema 是否绑定</param>
+/// <returns>清单文本</returns>
+private static string ExecConfigList(ConfigStore cfg, ConfigSchema schema, bool schemaBound)
+{
+    System.Text.StringBuilder sb = new System.Text.StringBuilder();
+    if (!schemaBound || schema == null)
+    {
+        System.Collections.Generic.KeyValuePair<string, string>[] all = cfg.All();
+        for (int i = 0; i < all.Length; i = i + 1)
+        {
+            sb.Append(all[i].Key);
+            sb.Append('=');
+            sb.AppendLine(all[i].Value);
+        }
+
+        return TrimResult(sb.ToString(), MaxToolResultChars);
+    }
+
+    ConfigSchema.Item[] items = schema.All();
+    for (int i = 0; i < items.Length; i = i + 1)
+    {
+        ConfigSchema.Item item = items[i];
+        string value = cfg.Get(item.Key, item.Default);
+        if (schema.IsSensitive(item.Key) && value.Length > 0)
+        {
+            value = "****";
+        }
+
+        sb.Append(item.Key);
+        sb.Append('=');
+        sb.Append(value);
+        sb.Append(" | 默认=");
+        sb.Append(item.Default);
+        sb.Append(" | ");
+        if (item.Writable)
+        {
+            sb.Append("可写");
+        }
+        else
+        {
+            sb.Append("只读");
+        }
+
+        if (item.Type.Length > 0)
+        {
+            sb.Append(" | 类型=");
+            sb.Append(item.Type);
+            if (item.Min.Length > 0)
+            {
+                sb.Append("[" + item.Min + "," + item.Max + "]");
+            }
+        }
+
+        sb.Append(" | ");
+        sb.AppendLine(item.Desc);
+    }
+
+    return TrimResult(sb.ToString(), MaxToolResultChars);
+} 
+/// <summary>
+/// config.get——单项查询
+/// </summary>
+/// <param name = "cfg">配置存储</param>
+/// <param name = "schema">配置 schema</param>
+/// <param name = "schemaBound">schema 是否绑定</param>
+/// <param name = "key">配置键</param>
+/// <returns>单项文本</returns>
+ private static string ExecConfigGet(ConfigStore cfg, ConfigSchema schema, bool schemaBound, string key)
+        {
+            if (key == null || key.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 key";
+            }
+            if (schemaBound && schema != null)
+            {
+                ConfigSchema.Item item = schema.Find(key);
+                if (item != null)
+                {
+                    string value = cfg.Get(item.Key, item.Default);
+                    if (schema.IsSensitive(item.Key) && value.Length > 0)
+                    {
+                        value = "****";
+                    }
+                    return key + "=" + value + " | 默认=" + item.Default + " | " + (item.Writable ? "可写" : "只读") + " | " + item.Desc;
+                }
+            }
+            string direct;
+            if (cfg.TryGet(key, out direct))
+            {
+                return key + "=" + direct;
+            }
+            return "ERR|NOT_FOUND|配置键不存在: " + key + "（schema 未声明或未设置）";
+        } 
+/// <summary>
+/// config.set——白名单写（唯一实现 ConfigStore.SetChecked；运行时即时生效）
+/// </summary>
+/// <param name = "cfg">配置存储</param>
+/// <param name = "schema">配置 schema</param>
+/// <param name = "schemaBound">schema 是否绑定</param>
+/// <param name = "key">配置键</param>
+/// <param name = "value">新值</param>
+/// <returns>确认文本</returns>
+ private static string ExecConfigSet(ConfigStore cfg, ConfigSchema schema, bool schemaBound, string key, string value)
+        {
+            if (key == null || key.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 key";
+            }
+            string error;
+            if (!cfg.SetChecked(key, value, schemaBound ? schema : null, out error))
+            {
+                return "ERR|CONFIG_REJECT|" + error;
+            }
+            bool sensitive = schemaBound && schema != null && schema.IsSensitive(key);
+            return "OK 配置已更新: " + key + "=" + (sensitive ? "****" : value) + "（即时生效：llm.* 实时读取 / ui.* 前端刷新可见）";
+        } 
+/// <summary>
+/// config.reset——还原默认（key 空=全群 writable；写 schema default 落盘）
+/// </summary>
+/// <param name = "cfg">配置存储</param>
+/// <param name = "schema">配置 schema</param>
+/// <param name = "schemaBound">schema 是否绑定</param>
+/// <param name = "key">配置键（空=全群）</param>
+/// <returns>确认文本</returns>
+ private static string ExecConfigReset(ConfigStore cfg, ConfigSchema schema, bool schemaBound, string key)
+        {
+            string error;
+            if (!cfg.ResetToDefault(key, schemaBound ? schema : null, out error))
+            {
+                return "ERR|CONFIG_REJECT|" + error;
+            }
+            if (key == null || key.Length == 0)
+            {
+                return "OK 已还原默认: 全部可写配置项";
+            }
+            return "OK 已还原默认: " + key;
+        }
+/// <summary>
+/// config.* 统一执行——P8.5d 配置自改工具组（list/get/set/reset）。
+/// 写入唯一实现 = ConfigStore.SetChecked/ResetToDefault（schema 白名单 + 值域校验 + 原子写 + 失败回滚）。
+/// </summary>
+/// <param name = "name">工具名（config.list 等）</param>
+/// <param name = "argsJson">参数整包 JSON</param>
+/// <returns>结果文本（OK / ERR| 语义）</returns>
+private static string ExecConfigTool(string name, string argsJson)
+{
+    ConfigStore cfg;
+    if (!DataBox.TryResolve<ConfigStore>(out cfg))
+    {
+        return "ERR|CONFIG_NO_STORE|ConfigStore 未注入";
+    }
+
+    ConfigSchema schema;
+    bool schemaBound = DataBox.TryResolve<ConfigSchema>(out schema);
+    string method = name.Substring(7);
+    if (method == "list")
+    {
+        return ExecConfigList(cfg, schema, schemaBound);
+    }
+
+    if (method == "get")
+    {
+        return ExecConfigGet(cfg, schema, schemaBound, ExtractArg(argsJson, "key"));
+    }
+
+    if (method == "set")
+    {
+        return ExecConfigSet(cfg, schema, schemaBound, ExtractArg(argsJson, "key"), ExtractArg(argsJson, "value"));
+    }
+
+    if (method == "reset")
+    {
+        return ExecConfigReset(cfg, schema, schemaBound, ExtractArg(argsJson, "key"));
+    }
+
+    return "ERR|UNKNOWN_TOOL|未知 config 工具: " + name;
+}
     }
 }
