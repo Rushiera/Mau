@@ -1,7 +1,7 @@
 ﻿# Mau 积木库 — Bricks
 
 > 定位：积木文本资产库——翻译器构筑期经 BrickIndex（index.json）唯一寻路。
-> 现状：29 件 active（探针 3 + DATA 2 + OA 10 + TEXT 4 + MAU 3 + LLM 3 + LOG 1 + FILE 1 + PACK 2）——完备性随 CH4 需求按四问判据立项（原子性·可构造性·消费面·归属）。
+> 现状：31 件 active（探针 3 + DATA 2 + OA 10 + TEXT 4 + MAU 3 + LLM 5 + LOG 1 + FILE 1 + PACK 2）——完备性随 CH4 需求按四问判据立项（原子性·可构造性·消费面·归属）。
 
 ## 现状清单
 
@@ -14,7 +14,7 @@
 | BRIK-OA-001~010 | oa.post / set_str / claim / complete / get / is_* / done_ready | OA | 工单平台——Post/Claim/Complete/状态/载荷 |
 | BRIK-TEXT-001~004 | text.read / write / append / replace | TEXT | 文件文本操作（受控根边界） |
 | BRIK-MAU-001~003 | mau.verify / gen / proj | MAU | 语料自查——门禁与构筑（统一链） |
-| BRIK-LLM-002~004 | llm.stream / chunk_ready / done_ready | LLM | 流式接口薄壳（Runtime ILlmRuntime） |
+| BRIK-LLM-002~006 | llm.stream / chunk_ready / done_ready / reply_read / chunk_read | LLM | 流式接口薄壳（Runtime ILlmRuntime）——P9.2 flowId 段键 |
 | BRIK-LOG-001 | log.write | LOG | 日志写入 |
 | BRIK-FILE-001 | file.read | FILE | 文件读取 |
 | BRIK-PACK-003 | csharp.bridge | PACK | C# 工具桥——Roslyn 编码工具域 9 工具 |

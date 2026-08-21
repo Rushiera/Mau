@@ -201,23 +201,26 @@ private static HttpHost _httpHost;
             {
                 _devId = -1;
             }
-            // [段5] 会话面——上下文 + 前文恢复 + 工具定义（P5：MajorDomoCat 会话中枢；P8.5：前文分流注入——无前文自动注入/有前文原样恢复）
-            _chatContext = new ChatContext();
-            _sessionStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo.json"));
+            // [段5] 会话面——上下文 + 前文恢复 + 工具定义 + 默认会话注册（P9.1 会话对象化：ChatSession 承载状态机——design-llm-streaming §六）
+            ChatContext chatCtx = new ChatContext();
+            SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo.json"));
             LlmMessage[] restored;
-            if (_sessionStore.TryLoad(out restored))
+            if (chatStore.TryLoad(out restored))
             {
-                _chatContext.ReplaceMessages(restored);
+                chatCtx.ReplaceMessages(restored);
                 Console.WriteLine("[CH4.Entry] 会话前文恢复: " + restored.Length + " 条消息（有前文——不注入）");
             }
             else
             {
                 // 无前文 = 隐式新会话——按 workspace.json inject 清单注入（来源标注在注入文本内）
                 string injectPrompt = BuildInjectPrompt(workspace, BuildToolSpecs());
-                _chatContext.SetSystemPrompt(injectPrompt);
+                chatCtx.SetSystemPrompt(injectPrompt);
                 Console.WriteLine("[CH4.Entry] 新会话注入: " + workspace.Inject.Length.ToString() + " 个文件");
             }
             _tools = BuildTools();
+            // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面）
+            _defaultSession = new ChatSession(DateTime.Now.Ticks.ToString(), "majordomo", chatCtx, chatStore, _llmRuntime, _oa, _tools, ExecuteTool);
+            RegisterSession(_defaultSession);
             string llmKeyProbe = llmConfig.Get("llm.api_key", "");
             if (llmKeyProbe.Length == 0)
             {
@@ -267,6 +270,7 @@ private static HttpHost _httpHost;
             Console.WriteLine("[CH4.Entry] 就绪 | 两 Cat: QuickCat#" + _quickId + " DevCat#" + _devId + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
             _httpHost = HttpHost.Start(ResolveHttpPort(llmConfig), BuildSnapshotJson, DispatchCommand, BuildCompactFrameJson, BuildHistoryView);
+            _defaultSession.AttachHost(_httpHost);
             Console.WriteLine("[CH4.Entry] HTTP 外观层就绪: http://127.0.0.1:" + _httpHost.Port);
         }
         /// <summary>

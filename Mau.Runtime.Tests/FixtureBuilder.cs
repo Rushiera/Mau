@@ -87,6 +87,20 @@ private static readonly object _ensureLock = new object ();        /// <summary>
                 "}\n";
             Build(source, "FL_TickThrows", tickThrowsDll);
         }
+        // [段4] LLM 盒桥 Key 段隔离生成物——P9.2 双实例集成测试（镜像 quick_cat 流式线——无 OA）
+        string llmSegDll = Path.Combine(FixtureDir, "FL_LlmSeg.dll");
+        if (!File.Exists(llmSegDll))
+        {
+            string repoRoot = FindRepoRoot();
+            string mauPath = Path.Combine(repoRoot, "Mau.Runtime.Tests", "fixtures", "llmseg", "llmseg.mau");
+            string mau = File.ReadAllText(mauPath);
+            Mau.Translator.CompileResultV3 cr = Mau.Translator.MauCompilerV3.Compile(mau, "LlmSeg");
+            if (!cr.Success)
+            {
+                throw new InvalidOperationException("fixture 语料编译失败: " + mauPath + " — " + cr.Diagnostics[0].Code + ":" + cr.Diagnostics[0].Message);
+            }
+            Build(cr.GeneratedCode, "FL_LlmSeg", llmSegDll);
+        }
     }
 }        /// <summary>
         /// fixture 构建——PocketCompiler Emit + 拷贝到目标路径

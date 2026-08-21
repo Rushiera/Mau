@@ -35,8 +35,8 @@ namespace CH4
             {
                 dllPath = "";
             }
-            // [段0] 忙时拒绝——工具批次执行中（Chat 处理中）reload 会导致旧批次完成信号永不置位（WaitForTools 空转帧上限）——host.* 直执路径豁免（ExecuteToolBatch 临时解除）
-            if (_toolBatchActive)
+            // [段0] 忙时拒绝——任一会话工具批次执行中 reload 会导致旧批次完成信号永不置位（WaitForTools 空转帧上限）——host.* 直执路径豁免（ChatSession 工具批临时解除）
+            if (IsAnyToolBatchActive())
             {
                 string busyMsg = "[CH4.Entry] reload 拒绝: 工具批次执行中（Chat 处理中）——等待完成后再试";
                 Console.WriteLine(busyMsg);

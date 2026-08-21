@@ -402,6 +402,10 @@ namespace Mau.Translator
                 {
                     i = i + 1;
                 }
+                else if (i < section.Count && section[i].Id == TokenIds.Capture)
+                {
+                    // P9.2 无参积木调用 + 捕获（llm.chunk_read/reply_read）——保持 i 在 Capture 处由 [段4b] 解析
+                }
                 else
                 {
                     i = section.Count;

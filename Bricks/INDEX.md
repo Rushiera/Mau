@@ -1,6 +1,6 @@
 ﻿# Mau 积木索引 — INDEX
 
-> 版本：v3.3 | 更新：2026-08-20（mau bricks index --update 源码驱动重建）
+> 版本：v3.3 | 更新：2026-08-21（mau bricks index --update 源码驱动重建）
 > 全量积木登记——一行一条。ID 永不重用。
 
 ## 全部积木
@@ -13,6 +13,8 @@
 | BRIK-LLM-002 | llm.stream | LLM | LLM/BRIK-LLM-002_llm.stream.cs | 无 | active |  |
 | BRIK-LLM-003 | llm.chunk_ready | LLM | LLM/BRIK-LLM-003_llm.chunk_ready.cs | 无 | active |  |
 | BRIK-LLM-004 | llm.done_ready | LLM | LLM/BRIK-LLM-004_llm.done_ready.cs | 无 | active |  |
+| BRIK-LLM-005 | llm.reply_read | LLM | LLM/BRIK-LLM-005_llm.reply_read.cs | 无 | active |  |
+| BRIK-LLM-006 | llm.chunk_read | LLM | LLM/BRIK-LLM-006_llm.chunk_read.cs | 无 | active |  |
 | BRIK-LOG-001 | log.write | LOG | LOG/BRIK-LOG-001_log.write.cs | 无 | active |  |
 | BRIK-MAU-001 | mau.verify | MAU | MAU/BRIK-MAU-001_mau.verify.cs | 无 | active |  |
 | BRIK-MAU-002 | mau.gen | MAU | MAU/BRIK-MAU-002_mau.gen.cs | 无 | active |  |
@@ -39,4 +41,4 @@
 
 ---
 
-_版本：v3.3 | 2026-08-20 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_
+_版本：v3.3 | 2026-08-21 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_

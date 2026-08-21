@@ -25,54 +25,19 @@ namespace CH4
         private static ILlmRuntime _llmRuntime;
 
         /// <summary>
-        /// 会话上下文——MajorDomoCat 消息历史（前文持久化面）
-        /// </summary>
-        private static ChatContext _chatContext;
-
-        /// <summary>
-        /// 会话前文管理器——Data/sessions/majordomo.json 落盘（重启恢复）
-        /// </summary>
-        private static SessionStore _sessionStore;
-
-        /// <summary>
         /// 工具定义——P8 B1 表驱动 7 件（BuildToolSpecs——Program.Tools.cs）
         /// </summary>
         private static ToolSpec[] _tools;
 
         /// <summary>
-        /// LLM 后台运行中标志（Task.Run 消费 ChatStream）
+        /// 默认会话——P9.1 全部会话指令（Chat/session.new/session clear/count）路由目标；会话寻址扩展在 P9.3
         /// </summary>
-        private static volatile bool _llmBusy;
+        private static ChatSession _defaultSession;
 
         /// <summary>
-        /// LLM 后台结果——完整回复文本
+        /// 会话注册表——PumpSessions 轮转推进（P9.1 含默认会话一席）
         /// </summary>
-        private static string _llmResultText;
-
-        /// <summary>
-        /// LLM 后台结果——完整思考文本（工具轮次回传铁律）
-        /// </summary>
-        private static string _llmReasoning;
-
-        /// <summary>
-        /// LLM 后台结果——tool_calls JSON 数组（聚合后整体）
-        /// </summary>
-        private static string _llmToolCallsJson;
-
-        /// <summary>
-        /// LLM 后台错误标志
-        /// </summary>
-        private static bool _llmError;
-
-        /// <summary>
-        /// LLM 后台错误文本（ERR| 前缀——失败可见性）
-        /// </summary>
-        private static string _llmErrorText;
-
-        /// <summary>
-        /// 工具循环收敛上限——P8.5b 自举全链上调 3→10（读→改→verify→proj→reload 多批工具调用；收敛语义由 LLM 判断完成）
-        /// </summary>
-        private const int MaxToolRounds = 10;
+        private static readonly List<ChatSession> _sessions = new List<ChatSession>();
 
         /// <summary>
         /// 会话新开请求标志——HTTP 线程置位/主线程泵消费（P8.5 session.new——ThreadGuard 契约同 Chat）
@@ -80,129 +45,9 @@ namespace CH4
         private static volatile bool _sessionNewRequested;
 
         /// <summary>
-        /// 工具批次执行中标志——ExecuteToolBatch 置位/复位；reload 忙时拒绝（防旧批次完成信号永不置位 → 空转 25 分钟）
-        /// </summary>
-        private static bool _toolBatchActive;
-
-        /// <summary>
         /// 工具单 Dog owner ID——宿主 Dog 域（OA 未开存活校验——任意 ID 可 Post；多 Dog 未来可扩展独立 ID）
         /// </summary>
         private const long ToolOwnerId = 1;
-
-        /// <summary>
-        /// 后台消费 LLM 流——消息序列 + 工具定义 → 文本/思考/tool_calls 累积（Task.Run——主线程零阻塞）。
-        /// </summary>
-        /// <param name="messages">消息序列</param>
-        /// <param name="tools">工具定义</param>
-        private static void RunLlmInBackground(LlmMessage[] messages, ToolSpec[] tools)
-        {
-            _llmBusy = true;
-            _llmResultText = "";
-            _llmReasoning = "";
-            _llmToolCallsJson = "";
-            _llmError = false;
-            _llmErrorText = "";
-            System.Threading.Tasks.Task.Run(async delegate
-            {
-                try
-                {
-                    System.Text.StringBuilder text = new System.Text.StringBuilder();
-                    System.Text.StringBuilder reasoning = new System.Text.StringBuilder();
-                    string toolCalls = "";
-                    await foreach (LlmStreamEvent ev in _llmRuntime.ChatStream(messages, tools))
-                    {
-                        if (ev.Kind == LlmStreamKind.Text)
-                        {
-                            text.Append(ev.Text);
-                            // P6 外观层转发——LLM 增量实时推送 SSE（协议 §4.2 llm 事件）
-                            if (_httpHost != null)
-                            {
-                                _httpHost.PushLlm("text", ev.Text);
-                            }
-                        }
-                        else if (ev.Kind == LlmStreamKind.Reasoning)
-                        {
-                            reasoning.Append(ev.Text);
-                            if (_httpHost != null)
-                            {
-                                _httpHost.PushLlm("reasoning", ev.Text);
-                            }
-                        }
-                        else if (ev.Kind == LlmStreamKind.ToolCalls)
-                        {
-                            toolCalls = ev.Text;
-                            if (_httpHost != null)
-                            {
-                                _httpHost.PushLlm("toolCalls", ev.Text);
-                            }
-                        }
-                        else if (ev.Kind == LlmStreamKind.Done)
-                        {
-                            if (_httpHost != null)
-                            {
-                                _httpHost.PushLlm("done", "");
-                            }
-                        }
-                        else if (ev.Kind == LlmStreamKind.Error)
-                        {
-                            _llmError = true;
-                            _llmErrorText = ev.Text;
-                            if (_httpHost != null)
-                            {
-                                _httpHost.PushLlm("error", ev.Text);
-                            }
-                        }
-                    }
-                    _llmResultText = text.ToString();
-                    _llmReasoning = reasoning.ToString();
-                    _llmToolCallsJson = toolCalls;
-                    // L1-META 结算行（D5 分级——观测全链：LLM 流完成一行为准，SSE log 事件实时可见）
-                    string llmSummary = "llm STREAM 完成 | text=" + text.Length.ToString() + " | tools=";
-                    if (toolCalls.Length > 0)
-                    {
-                        llmSummary = llmSummary + "Y";
-                    }
-                    else
-                    {
-                        llmSummary = llmSummary + "N";
-                    }
-                    LogStore.Add("LLM", 0, llmSummary, "LLM");
-                }
-                catch (Exception ex)
-                {
-                    _llmError = true;
-                    _llmErrorText = "ERR|" + ex.GetType().Name + "|" + ex.Message;
-                }
-                finally
-                {
-                    _llmBusy = false;
-                }
-            });
-        }
-
-        /// <summary>
-        /// 等待 LLM 后台完成——帧驱动 + 帧上限兜底（超时按错误回传）
-        /// </summary>
-        private static void WaitForLlm()
-        {
-            for (int i = 0; i < MaxFramesPerRun; i++)
-            {
-                if (!_llmBusy)
-                {
-                    return;
-                }
-                _runner.Tick();
-                // O 系列：LLM 等待期间快照/帧流持续泵（旧缺口——LLM 处理期间 SSE 无快照、帧流空白）
-                if (_httpHost != null)
-                {
-                    _httpHost.PumpMainThread();
-                }
-                Thread.Sleep(FrameSleepMs);
-            }
-            _llmBusy = false;
-            _llmError = true;
-            _llmErrorText = "ERR|LLM_TIMEOUT|LLM 调用超时（帧上限 " + MaxFramesPerRun + "）";
-        }
 
         /// <summary>
         /// 显式新会话处理——session.new 指令执行体：按清单重新注入 system + 清前文 + 落盘 + 审计（P8.5 design-ch4-workspace §六）
@@ -213,9 +58,9 @@ namespace CH4
             bool wsBound = DataBox.TryResolve<WorkspaceConfig>(out ws);
             ToolSpec[] specs = BuildToolSpecs();
             string injectPrompt = BuildInjectPrompt(ws, specs);
-            _chatContext.SetSystemPrompt(injectPrompt);
-            _chatContext.Clear();
-            _sessionStore.Save(_chatContext.GetMessages());
+            _defaultSession.Context.SetSystemPrompt(injectPrompt);
+            _defaultSession.Context.Clear();
+            _defaultSession.Store.Save(_defaultSession.Context.GetMessages());
             DataBox.Set<string>("global", "chat_state", "idle");
             int injectCount = 0;
             if (ws != null)
@@ -357,226 +202,6 @@ namespace CH4
         }
 
         /// <summary>
-        /// 截断显示文本——控制台防刷屏
-        /// </summary>
-        /// <param name="text">原文</param>
-        /// <param name="max">上限</param>
-        /// <returns>截断文本</returns>
-        private static string TrimDisplay(string text, int max)
-        {
-            if (text == null)
-            {
-                return "";
-            }
-            if (text.Length <= max)
-            {
-                return text;
-            }
-            return text.Substring(0, max) + "...";
-        }
-
-        /// <summary>
-        /// 执行工具批——解析 tool_calls JSON → 逐工具宿主直执（P8 一期：无 OA 无语料握手）→ 按序回传上下文。
-        /// 未知工具 ERR 回传；空结果 ERR|EMPTY_RESULT（错误可见性铁律）；批量执行期 reload 拒绝（_toolBatchActive）。
-        /// </summary>
-        /// <param name="toolCallsJson">tool_calls JSON 数组</param>
-        private static void ExecuteToolBatch(string toolCallsJson)
-        {
-            _toolBatchActive = true;
-            try
-            {
-                // [段1] OA 发单——逐工具 ToolOrderDog（CH2 Dog 机制：officeName=工具名 / 载荷 args=整包参数 JSON；宿主=Dog owner）
-                List<ToolOrderDog> hostDogs = new List<ToolOrderDog>();
-                List<ToolOrderDog> dogs = new List<ToolOrderDog>();
-                using (JsonDocument doc = JsonDocument.Parse(toolCallsJson))
-                {
-                    JsonElement root = doc.RootElement;
-                    for (int i = 0; i < root.GetArrayLength(); i++)
-                    {
-                        JsonElement call = root[i];
-                        string id = GetStringProp(call, "id");
-                        // OpenAI wire：name/arguments 在 function 嵌套对象内
-                        string name = "";
-                        string arguments = "";
-                        JsonElement funcEl;
-                        if (call.TryGetProperty("function", out funcEl))
-                        {
-                            name = GetStringProp(funcEl, "name");
-                            arguments = GetStringProp(funcEl, "arguments");
-                        }
-                        LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|start|" + TrimDisplay(arguments, 120), "TOOL");
-                        ToolOrderDog dog = new ToolOrderDog(id, name, arguments);
-                        if (name.StartsWith("host.", StringComparison.Ordinal))
-                        {
-                            // P8.5b 宿主级工具——延迟直执登记（批次末尾执行；确保同批 mau.proj 等先完成产物落地——顺序保证）
-                            hostDogs.Add(dog);
-                            dog.IsClosed = true;
-                            LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|host-deferred", "TOOL");
-                        }
-                        else
-                        {
-                            dog.Post(_oa, ToolOwnerId);
-                            if (dog.OfficeId == 0)
-                            {
-                                // Post 失败——直接 FALLBACK 直执（错误可见性）
-                                string fb = ExecuteTool(name, arguments);
-                                if (fb == null || fb.Length == 0)
-                                {
-                                    fb = "ERR|EMPTY_RESULT|工具执行无结果";
-                                }
-                                dog.Result = "[FALLBACK] " + fb;
-                                dog.IsClosed = true;
-                            }
-                            else
-                            {
-                                LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|posted|office=" + dog.OfficeId + "|timeout=" + dog.TimeoutFrames, "TOOL");
-                            }
-                        }
-                        dogs.Add(dog);
-                    }
-                }
-                // [段2] 等待循环——帧驱动（dev_cat 语料认领执行）+ Dog 逐帧轮询；帧上限 = 最大工具超时 + 余量（mau.proj 4800 + 600）
-                const long MaxDogWaitFrames = 4800 + 600;
-                for (long f = 0; f < MaxDogWaitFrames; f++)
-                {
-                    bool allDone = true;
-                    for (int i = 0; i < dogs.Count; i++)
-                    {
-                        dogs[i].Tick(_oa);
-                        if (!dogs[i].IsClosed && !dogs[i].IsTimedOut)
-                        {
-                            allDone = false;
-                        }
-                    }
-                    if (allDone)
-                    {
-                        break;
-                    }
-                    _runner.Tick();
-                    if (_httpHost != null)
-                    {
-                        _httpHost.PumpMainThread();
-                    }
-                    Thread.Sleep(FrameSleepMs);
-                }
-                // [段2b] host.* 延迟直执——批次其他工具完成后宿主直执（顺序保证：mau.proj 产物先落盘；忙时豁免——主线程串行，ExecuteReload 事务三段式兜底）
-                for (int h = 0; h < hostDogs.Count; h++)
-                {
-                    ToolOrderDog dog = hostDogs[h];
-                    bool savedBusy = _toolBatchActive;
-                    _toolBatchActive = false;
-                    string hr = ExecuteTool(dog.Name, dog.ArgsJson);
-                    _toolBatchActive = savedBusy;
-                    if (hr == null || hr.Length == 0)
-                    {
-                        hr = "ERR|EMPTY_RESULT|工具执行无结果";
-                    }
-                    dog.Result = hr;
-                    LogStore.Add("CH4.Entry", 1, "TOOL|" + dog.Name + "|host-direct|result=" + TrimDisplay(hr, 100), "TOOL");
-                }
-                // [段3] 收集——Closed 取回执；TimeOut/等待上限 → 宿主直执 FALLBACK（执行器不变；[FALLBACK] 前缀注明）
-                for (int i = 0; i < dogs.Count; i++)
-                {
-                    ToolOrderDog dog = dogs[i];
-                    if (!dog.IsClosed && !dog.IsTimedOut)
-                    {
-                        dog.IsTimedOut = true;
-                    }
-                    if (dog.IsTimedOut)
-                    {
-                        LogStore.Add("CH4.Entry", 2, "TOOL|" + dog.Name + "|timeout|office=" + dog.OfficeId + " → FALLBACK 直执", "TOOL");
-                        string result = ExecuteTool(dog.Name, dog.ArgsJson);
-                        if (result == null || result.Length == 0)
-                        {
-                            result = "ERR|EMPTY_RESULT|工具执行无结果";
-                        }
-                        dog.Result = "[FALLBACK] " + result;
-                        dog.IsClosed = true;
-                    }
-                    if (dog.Result == null || dog.Result.Length == 0)
-                    {
-                        dog.Result = "ERR|EMPTY_RESULT|工具执行无结果";
-                    }
-                    // O 系列：工具结果入 Log 截断 100 字符（design-ch4-observe §六拍板）——完整结果在会话消息
-                    LogStore.Add("CH4.Entry", 1, "TOOL|" + dog.Name + "|" + dog.Result, "TOOL", "", "", 100);
-                    // B4 对话区：工具结果实时推送 SSE（tool 事件——前端按执行序填充占位卡；参数/结果视图截断同 history）
-                    if (_httpHost != null)
-                    {
-                        _httpHost.PushToolResult(dog.Name, TruncateText(dog.ArgsJson, 200), TruncateText(dog.Result, 300));
-                    }
-                    _chatContext.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);
-                }
-            }
-            catch (Exception ex)
-            {
-                LogStore.Add("CH4.Entry", 3, "tool_calls 解析失败: " + ex.Message, "TOOL");
-            }
-            finally
-            {
-                _toolBatchActive = false;
-            }
-        }
-
-        /// <summary>
-        /// 会话中枢处理——Chat 指令入口（P5 工具协调核心 / P8 B1 直执版）。
-        /// 流程：追加用户消息 → 工具循环（≤3 轮）：LLM 后台流式 → 纯文本则完成 / tool_calls 则宿主直执 → 结果回传续轮。
-        /// 消息维护与前文落盘在宿主；工具执行在宿主（一期直执——Program.Tools.cs；二期换 OA）。
-        /// </summary>
-        /// <param name="content">用户消息内容</param>
-        private static void HandleChat(string content)
-        {
-            _chatContext.AddUserMessage(content);
-            DataBox.Set<string>("global", "chat_state", "working");
-            LogStore.Add("CH4.Entry", 1, "── MajorDomoCat 处理中 ──", "CHAT");
-            for (int round = 0; round < MaxToolRounds; round++)
-            {
-                // [段1] LLM 调用——后台流式（消息序列 + 工具定义）
-                LlmMessage[] messages = _chatContext.GetMessages();
-                RunLlmInBackground(messages, _tools);
-                WaitForLlm();
-                if (_llmError)
-                {
-                    _chatContext.AddAssistantMessage(_llmErrorText);
-                    LogStore.Add("LLM", 3, "LLM 错误: " + TrimDisplay(_llmErrorText, 300), "LLM");
-                    break;
-                }
-
-                if (_llmToolCallsJson.Length == 0)
-                {
-                    // [段2] 纯文本回复——本轮完成
-                    _chatContext.AddAssistantMessage(_llmResultText);
-                    Console.WriteLine("[MajorDomoCat] " + _llmResultText);
-                    break;
-                }
-
-                // [段3] 工具调用——追加 assistant tool_calls + 宿主直执（P8 一期）
-                _chatContext.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning);
-                DataBox.Set<string>("global", "chat_state", "tools");
-                LogStore.Add("CH4.Entry", 1, "工具调用(" + (round + 1).ToString() + "/" + MaxToolRounds.ToString() + "): " + TrimDisplay(_llmToolCallsJson, 200), "CHAT");
-                ExecuteToolBatch(_llmToolCallsJson);
-                LogStore.Add("CH4.Entry", 1, "工具结果已回传，续轮", "CHAT");
-            }
-
-            // [段4] 前文落盘——会话结束保存（重启恢复面）；D7：tool 结果截断 ≤800 字符（落盘副本，内存保持全文——majordomo.json 防膨胀）
-            LlmMessage[] toSave = _chatContext.GetMessages();
-            for (int i = 0; i < toSave.Length; i++)
-            {
-                if (toSave[i].Role == LlmRole.Tool && toSave[i].Content != null && toSave[i].Content.Length > 800)
-                {
-                    toSave[i].Content = TruncateText(toSave[i].Content, 800);
-                }
-            }
-            _sessionStore.Save(toSave);
-            DataBox.Set<string>("global", "chat_state", "idle");
-            // B4 对话区：会话终态事件——前端定型（llm done 仅一轮结束；chatdone 才是整次会话结束）
-            if (_httpHost != null)
-            {
-                _httpHost.PushChatDone();
-            }
-            LogStore.Add("CH4.Entry", 1, "会话前文已落盘: " + _chatContext.GetMessageCount().ToString() + " 条消息", "SYS");
-        }
-
-        /// <summary>
         /// 构建会话历史视图 JSON——B4 对话区（GET /api/v1/history 回调）。
         /// 会话视图转换：system 跳过；user/assistant 文本直出；assistant tool_calls 与后续 tool 结果配对合入工具卡片（参数 ≤200/结果 ≤300）；
         /// 孤立 tool 丢弃；保留尾部 max 条视图消息；seq 1-based 渲染锚点。
@@ -588,7 +213,7 @@ namespace CH4
             List<object> view = new List<object>();
             List<Dictionary<string, object>> pendingTools = new List<Dictionary<string, object>>();
             long seq = 0;
-            LlmMessage[] all = _chatContext.GetMessages();
+            LlmMessage[] all = _defaultSession.Context.GetMessages();
             for (int i = 0; i < all.Length; i++)
             {
                 LlmMessage m = all[i];
@@ -664,7 +289,7 @@ namespace CH4
             }
             Dictionary<string, object> resp = new Dictionary<string, object>();
             resp["version"] = 1;
-            resp["sessionId"] = "majordomo";
+            resp["sessionId"] = _defaultSession.Id;
             resp["count"] = view.Count;
             resp["messages"] = view;
             return JsonSerializer.Serialize(resp);
@@ -731,6 +356,42 @@ namespace CH4
                 return text;
             }
             return text.Substring(0, max) + "…[截断:原" + text.Length.ToString() + "字符]";
+        }
+
+        /// <summary>
+        /// 注册会话进编排轮转表（P9.1 Bootstrap 建立默认会话时调用；注册序 = 推进序）。
+        /// </summary>
+        /// <param name="session">会话实体</param>
+        private static void RegisterSession(ChatSession session)
+        {
+            _sessions.Add(session);
+        }
+
+        /// <summary>
+        /// 会话轮转泵——主循环每帧调用：活跃会话各推进一步。LLM 后台流式与工具批等待期间主线程自由泵其他会话——状态机化核心。
+        /// </summary>
+        private static void PumpSessions()
+        {
+            for (int i = 0; i < _sessions.Count; i++)
+            {
+                _sessions[i].Pump();
+            }
+        }
+
+        /// <summary>
+        /// 任意会话工具批执行中——reload 忙时拒绝面（原 _toolBatchActive 全局标志语义保全）。
+        /// </summary>
+        /// <returns>true=有会话在工具批执行期</returns>
+        private static bool IsAnyToolBatchActive()
+        {
+            for (int i = 0; i < _sessions.Count; i++)
+            {
+                if (_sessions[i].ToolBatchActive)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

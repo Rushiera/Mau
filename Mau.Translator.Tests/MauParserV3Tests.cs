@@ -111,6 +111,21 @@ namespace Mau.Translator.Tests
         }
 
         /// <summary>
+        /// 无参积木调用 + 捕获——P9.2 取数积木形态（'llm.chunk_read' > @chunk；翻译器 [段4] Capture 直连支持——无参后面不吞捕获）
+        /// </summary>
+        [Fact]
+        public void Parse_Wire_NoArgBrickWithCapture()
+        {
+            MauDocV3 doc = Parse("§ 'S_A' = { 'X', 'Y' }\n§ 'P_Go' ⇐\n§ 'T_X' : 'P_Go' → 'llm.chunk_read' > @chunk | 'S_A' = 'Y'");
+            Assert.True(doc.Success, FormatDiags(doc));
+            WireDefV3 wire = doc.Wires[0];
+            Assert.Equal("llm.chunk_read", wire.BrickName);
+            Assert.Empty(wire.BrickArgs);
+            Assert.Equal("@chunk", wire.CaptureTarget);
+            Assert.Single(wire.Results);
+        }
+
+        /// <summary>
         /// 纯转移导线——无动作积木，条件触发即转移
         /// </summary>
         [Fact]

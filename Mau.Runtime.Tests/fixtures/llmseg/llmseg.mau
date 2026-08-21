@@ -1,0 +1,18 @@
+// llmseg.mau —— P9.2 盒桥 Key 段隔离 fixture（Mau.Runtime.Tests 双实例集成测试语料）
+// 角色：镜像 quick_cat 流式消费线（无 OA）——两实例同 dll、同信号、同参数，隔离靠 flowId 段键
+// 配套：Stub LLM 按调用序分流——实例 A 慢流多分块 / 实例 B 快流单分块（后台交错验证互不覆盖）
+§ 'S_Flow' = { 'Idle', 'Streaming', 'Done' }
+
+§ 'P_Go' ⇐
+
+§ 'P_ChunkArrived' ↻ [1]: 'llm.chunk_ready' > @hasChunk
+§ 'P_StreamDone' ↻ [1]: 'llm.done_ready' > @hasDone
+
+// T_Exec：流式启动（开始信号）——积木后台消费，主线程立即返回
+§ 'T_Exec' : 'P_Go' & 'S_Flow' = 'Idle' → 'llm.stream'["fixture.sys", "fixture.content"] | 'S_Flow' = 'Streaming' | 'S_Flow' = 'Idle'
+
+// T_Chunk：分块信号——取数积木读本实例最新增量落 @chunk（保持 Streaming——自环=等待语义）
+§ 'T_Chunk' : @hasChunk & 'S_Flow' = 'Streaming' → 'llm.chunk_read' > @chunk | 'S_Flow' = 'Streaming' | 'S_Flow' = 'Streaming'
+
+// T_Done：完成信号——取数积木读本实例完整回复落 @reply → Done
+§ 'T_Done' : @hasDone & 'S_Flow' = 'Streaming' → 'llm.reply_read' > @reply | 'S_Flow' = 'Done' | 'S_Flow' = 'Streaming'

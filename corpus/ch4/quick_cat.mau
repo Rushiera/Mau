@@ -2,7 +2,7 @@
 // 角色：QuickCat 双参消费者——探测接单 → 读双参载荷 → llm.stream 流式（后台）→ 分块/完成探测 → 回执 → 复位
 // 双参验证：system + content 经 OA 载荷传输（ToolTestCat set_str ×2 → 本语料 get_str ×2）
 // 数据面：盒子 Key——@office/@system/@content/@reply/@chunk/@anyOpen/@hasChunk/@hasDone 私有（FlowId 隔离）；
-//         全局盒（B1 豁免——写源在积木 llm.stream 内）：llm_chunk/llm_chunk_count/llm_reply/llm_done
+//         实例段盒（B1 豁免——写源在积木 llm.stream 内）：llm_chunk:<f>/llm_chunk_count:<f>/llm_reply:<f>/llm_done:<f>（P9.2 Key 段化——多实例互不覆盖）
 // 回复留存：完成后经 T_Save 把完整回复写全局盒 quick_last_reply（快照 boxes 可见）
 // 线程模型：接单/读参/探测/回执主线程同步；LLM 流式消费在积木后台（Task.Run → 全局盒桥，主线程零阻塞）
 // 观测：流式分片帧号落盘（积木 LogStore CHUNK|序号|通道|文本）+ trace 埋点 + OA 机制专属 Log
@@ -30,11 +30,11 @@
 // T_Exec：流式启动（开始信号）——积木后台消费，主线程立即返回
 § 'T_Exec' : 'S_Quick' = 'Calling' → 'llm.stream'[@system, @content] | 'S_Quick' = 'Streaming' | 'S_Quick' = 'Failed'
 
-// T_Chunk：分块信号——新分块到达 → 读最新增量落 @chunk（观测可见）→ 保持 Streaming（自环=等待语义）
-§ 'T_Chunk' : @hasChunk & 'S_Quick' = 'Streaming' → 'data.box_get_str'["global", "llm_chunk"] > @chunk | 'S_Quick' = 'Streaming' | 'S_Quick' = 'Streaming'
+// T_Chunk：分块信号——新分块到达 → 取数积木读本实例最新增量落 @chunk（观测可见）→ 保持 Streaming（自环=等待语义）
+§ 'T_Chunk' : @hasChunk & 'S_Quick' = 'Streaming' → 'llm.chunk_read' > @chunk | 'S_Quick' = 'Streaming' | 'S_Quick' = 'Streaming'
 
-// T_Done：完成信号——llm_done 置位 → 读完整回复落 @reply → Done
-§ 'T_Done' : @hasDone & 'S_Quick' = 'Streaming' → 'data.box_get_str'["global", "llm_reply"] > @reply | 'S_Quick' = 'Done' | 'S_Quick' = 'Streaming'
+// T_Done：完成信号——llm_done 置位 → 取数积木读本实例完整回复落 @reply → Done
+§ 'T_Done' : @hasDone & 'S_Quick' = 'Streaming' → 'llm.reply_read' > @reply | 'S_Quick' = 'Done' | 'S_Quick' = 'Streaming'
 
 // T_Save：回复留存——完整回复写全局盒 quick_last_reply（快照 boxes 可见；成功进 Saving，写失败进 Failed 复回执可见性）
 § 'T_Save' : 'S_Quick' = 'Done' → 'data.box_set_str'["global", "quick_last_reply", @reply] | 'S_Quick' = 'Saving' | 'S_Quick' = 'Failed'

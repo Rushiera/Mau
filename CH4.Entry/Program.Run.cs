@@ -62,6 +62,7 @@ namespace CH4
                 {
                     _httpHost.PumpMainThread();
                 }
+                PumpSessions();
                 PumpChatQueue();
                 // [段2] 按键轮询——有输入才 ReadLine（阻塞读会卡住帧驱动）
                 if (Console.KeyAvailable)
@@ -127,8 +128,8 @@ namespace CH4
                 }
                 if (Environment.CurrentManagedThreadId == _mainThreadId)
                 {
-                    // 主线程（控制台）——直接执行（ThreadGuard 合规）
-                    HandleChat(chatContent);
+                    // 主线程（控制台）——直接投递会话（相位推进在 Pump——ThreadGuard 合规）
+                    _defaultSession.PostUserMessage(chatContent);
                 }
                 else
                 {
@@ -137,12 +138,20 @@ namespace CH4
                 }
                 return true;
             }
-            // P8.5 显式新会话——清前文 + 按清单重新注入（唯一重注入通道；主线程直执 / HTTP 线程置位泵——ThreadGuard 契约）
+            // P8.5 显式新会话——清前文 + 按清单重新注入（唯一重注入通道；主线程直执 / HTTP 线程置位泵——ThreadGuard 契约；会话忙时标志保留泵重判）
             if (line == "session.new")
             {
                 if (Environment.CurrentManagedThreadId == _mainThreadId)
                 {
-                    HandleSessionNew();
+                    if (_defaultSession.IsIdle)
+                    {
+                        HandleSessionNew();
+                    }
+                    else
+                    {
+                        _sessionNewRequested = true;
+                        Console.WriteLine("[CH4.Entry] 会话忙——session.new 排队执行");
+                    }
                 }
                 else
                 {
@@ -152,10 +161,18 @@ namespace CH4
             }
             if (line == "session clear" || line == "session count")
             {
-                // 会话调试指令——主线程直执 / HTTP 线程入队泵（ThreadGuard：_chatContext 仅主线程触碰——2026-08-20 遗留改造）
+                // 会话调试指令——主线程直执 / HTTP 线程入队泵（ThreadGuard：_chatContext 仅主线程触碰——2026-08-20 遗留改造；会话忙时入队重判）
                 if (Environment.CurrentManagedThreadId == _mainThreadId)
                 {
-                    HandleSessionCmd(line);
+                    if (_defaultSession.IsIdle)
+                    {
+                        HandleSessionCmd(line);
+                    }
+                    else
+                    {
+                        _sessionCmdQueue.Enqueue(line);
+                        Console.WriteLine("[CH4.Entry] 会话忙——" + line + " 排队执行");
+                    }
                 }
                 else
                 {
@@ -186,11 +203,14 @@ namespace CH4
         /// </summary>
         private static void PumpChatQueue()
         {
-            // P8.5：会话新开请求优先处理（HTTP 线程置位——主线程泵执行，ThreadGuard 契约；无飞线——均走 CommandBus 分发）
+            // P8.5：会话新开请求优先处理（HTTP 线程置位——主线程泵执行，ThreadGuard 契约）；会话忙时标志保留——下帧重判（排队语义保持）
             if (_sessionNewRequested)
             {
-                _sessionNewRequested = false;
-                HandleSessionNew();
+                if (_defaultSession.IsIdle)
+                {
+                    _sessionNewRequested = false;
+                    HandleSessionNew();
+                }
             }
             // D8：QuickCat 指令泵消费（HTTP 线程投递——主线程 OA 驱动）
             string quickJob;
@@ -202,16 +222,21 @@ namespace CH4
                     HandleQuickCat(quickJob.Substring(0, quickSep), quickJob.Substring(quickSep + 1));
                 }
             }
-            // 会话调试指令泵消费（session clear/count——HTTP 线程投递 / 主线程执行）
+            // 会话调试指令泵消费（session clear/count——HTTP 线程投递 / 主线程执行；会话忙时保留队列——下帧重判）
             string sessionCmd;
             while (_sessionCmdQueue.TryDequeue(out sessionCmd))
             {
+                if (!_defaultSession.IsIdle)
+                {
+                    _sessionCmdQueue.Enqueue(sessionCmd);
+                    break;
+                }
                 HandleSessionCmd(sessionCmd);
             }
             string job;
             while (_chatQueue.TryDequeue(out job))
             {
-                HandleChat(job);
+                _defaultSession.PostUserMessage(job);
             }
         }
 
@@ -223,14 +248,14 @@ namespace CH4
         {
             if (cmd == "session clear")
             {
-                _chatContext.Clear();
-                _sessionStore.Save(_chatContext.GetMessages());
+                _defaultSession.Context.Clear();
+                _defaultSession.Store.Save(_defaultSession.Context.GetMessages());
                 Console.WriteLine("[CH4.Entry] 会话已清空（保留系统提示词）");
                 return;
             }
             if (cmd == "session count")
             {
-                Console.WriteLine("[CH4.Entry] 会话消息数: " + _chatContext.GetMessageCount());
+                Console.WriteLine("[CH4.Entry] 会话消息数: " + _defaultSession.Context.GetMessageCount());
                 return;
             }
         }
@@ -295,6 +320,7 @@ namespace CH4
                 {
                     _httpHost.PumpMainThread();
                 }
+                PumpSessions();
                 PumpChatQueue();
                 if (AllIdle())
                 {
@@ -311,6 +337,14 @@ namespace CH4
         /// <returns>true=全部空闲</returns>
         private static bool AllIdle()
         {
+            // P9.1 会话判定——全部会话 Idle（原三 Cat 语料判定保留）
+            for (int i = 0; i < _sessions.Count; i++)
+            {
+                if (!_sessions[i].IsIdle)
+                {
+                    return false;
+                }
+            }
             if (!IsFlowIdle(_quickHandle) || !IsFlowIdle(_devHandle))
             {
                 return false;
