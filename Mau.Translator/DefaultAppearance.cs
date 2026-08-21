@@ -6,8 +6,8 @@ namespace Mau.Translator
 {
     /// <summary>
     /// 默认符号外观 v3-default——生成可靠性优先，ASCII 最大化（design-mau-v3 §四）。
-    /// 主字形 14 个 + 多字符字形 3 个（:= 与 &lt;- 与 @）。' 与 " 是词法定界（内置于词法器），不进外观表。
-    /// 退役符号（v2）：τ / ω / ∈ / ∧ / ≔ / ⊔ / ⟳ / ⌕——新语料不再出现。
+    /// 主字形 15 个 + 多字符字形 2 个（:= 与 &lt;-）。' 与 " 是词法定界（内置于词法器），不进外观表。
+    /// 退役符号（v2）：τ / ω / ∈ / ∧ / ≔ / ⊔ / ⟳ / ⌕ / @——新语料不再出现。
     /// </summary>
     public sealed class DefaultAppearance : ISymbolAppearance
     {
