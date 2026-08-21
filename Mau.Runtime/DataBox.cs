@@ -11,14 +11,14 @@ namespace Mau.Runtime
     public sealed class DataBoxServiceEntry
     {
         /// <summary>
-        /// 服务类型全名
+        /// 服务类型全名（init 只读——快照条目不可变）
         /// </summary>
-        public string TypeName = "";
+        public string TypeName { get; init; } = "";
 
         /// <summary>
-        /// 实例引用（快照只读——断言用）
+        /// 实例引用（快照只读——断言用；init 只读）
         /// </summary>
-        public object? Instance;
+        public object? Instance { get; init; }
     }
 
     /// <summary>
@@ -27,19 +27,19 @@ namespace Mau.Runtime
     public sealed class DataBoxDataEntry
     {
         /// <summary>
-        /// 作用域
+        /// 作用域（init 只读——快照条目不可变）
         /// </summary>
-        public string Scope = "";
+        public string Scope { get; init; } = "";
 
         /// <summary>
-        /// 键
+        /// 键（init 只读——快照条目不可变）
         /// </summary>
-        public string Key = "";
+        public string Key { get; init; } = "";
 
         /// <summary>
-        /// 值（浅拷贝——断言用）
+        /// 值（浅拷贝——断言用；init 只读）
         /// </summary>
-        public object? Value;
+        public object? Value { get; init; }
     }
 
     /// <summary>
@@ -48,23 +48,14 @@ namespace Mau.Runtime
     public sealed class DataBoxSnapshot
     {
         /// <summary>
-        /// 服务条目
+        /// 服务条目（init 只读——快照构建后仅消费；空数组初值）
         /// </summary>
-        public DataBoxServiceEntry[] Services;
+        public DataBoxServiceEntry[] Services { get; init; } = Array.Empty<DataBoxServiceEntry>();
 
         /// <summary>
-        /// 数据条目
+        /// 数据条目（init 只读——快照构建后仅消费；空数组初值）
         /// </summary>
-        public DataBoxDataEntry[] Data;
-
-        /// <summary>
-        /// 构造快照
-        /// </summary>
-        public DataBoxSnapshot()
-        {
-            Services = Array.Empty<DataBoxServiceEntry>();
-            Data = Array.Empty<DataBoxDataEntry>();
-        }
+        public DataBoxDataEntry[] Data { get; init; } = Array.Empty<DataBoxDataEntry>();
 
         /// <summary>
         /// 快照文本——观测面板/审计日志用
@@ -319,31 +310,29 @@ namespace Mau.Runtime
 public static void Reset()
 {
     ClearAll();
-}
-        /// <summary>
+    // 信号沿并入重置契约（D26 补全——ClearAll 原本只清服务+数据，信号沿残留是契约缺口）
+    ResetSignals();
+}/// <summary>
         /// 全量快照——只读深拷贝（测试断言/观测/审计统一出口）
         /// </summary>
         /// <returns>快照</returns>
         public static DataBoxSnapshot Capture()
         {
-            DataBoxSnapshot snapshot = new DataBoxSnapshot();
+            DataBoxServiceEntry[] services;
             lock (_serviceGate)
             {
-                DataBoxServiceEntry[] services = new DataBoxServiceEntry[_services.Count];
+                services = new DataBoxServiceEntry[_services.Count];
                 int si = 0;
                 foreach (KeyValuePair<Type, object> pair in _services)
                 {
-                    DataBoxServiceEntry entry = new DataBoxServiceEntry();
-                    entry.TypeName = pair.Key.Name;
+                    string typeName = pair.Key.Name;
                     if (pair.Key.FullName != null)
                     {
-                        entry.TypeName = pair.Key.FullName;
+                        typeName = pair.Key.FullName;
                     }
-                    entry.Instance = pair.Value;
-                    services[si] = entry;
+                    services[si] = new DataBoxServiceEntry() { TypeName = typeName, Instance = pair.Value };
                     si = si + 1;
                 }
-                snapshot.Services = services;
             }
             List<DataBoxDataEntry> entries = new List<DataBoxDataEntry>();
             foreach (KeyValuePair<string, Dictionary<string, object>> pair in _data)
@@ -353,15 +342,15 @@ public static void Reset()
                 {
                     foreach (KeyValuePair<string, object> kv in box)
                     {
-                        DataBoxDataEntry entry = new DataBoxDataEntry();
-                        entry.Scope = pair.Key;
-                        entry.Key = kv.Key;
-                        entry.Value = kv.Value;
-                        entries.Add(entry);
+                        entries.Add(new DataBoxDataEntry() { Scope = pair.Key, Key = kv.Key, Value = kv.Value });
                     }
                 }
             }
-            snapshot.Data = entries.ToArray();
+            DataBoxSnapshot snapshot = new DataBoxSnapshot()
+            {
+                Services = services,
+                Data = entries.ToArray()
+            };
             return snapshot;
         }
 
@@ -483,8 +472,13 @@ public static void Reset()
         /// 事件区重置——测试隔离（清空全部信号注册）
         /// </summary>
         public static void ResetSignals()
-        {
-            _signals.Clear();
-        }
+{
+    // 只清待消费沿，保留注册——注册是声明性（TryAdd 幂等），状态清零即隔离；
+    // 清注册会伤到并行测试类已加载 Flow 的传感器（判例：Reset 清注册 → 并行类 Tick "未注册" 连环炸）
+    List<string> names = new List<string>(_signals.Keys);
+    for (int i = 0; i < names.Count; i = i + 1)
+    {
+        _signals[names[i]] = 0;
     }
+}    }
 }

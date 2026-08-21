@@ -279,26 +279,26 @@ namespace Mau.Runtime
         /// <param name="props">属性数组</param>
         /// <returns>JSON 文本</returns>
         private static string BuildPayload(AuditProp[]? props)
-        {
-            if (props == null || props.Length == 0)
-            {
-                return "";
-            }
-            var list = new System.Collections.Generic.List<object>();
-            for (int i = 0; i < props.Length; i++)
-            {
-                list.Add(new { k = props[i].Key, v = props[i].Value });
-            }
-            try
-            {
-                return JsonSerializer.Serialize(list);
-            }
-            catch (Exception)
-            {
-                return "";
-            }
-        }
-
+{
+    if (props == null || props.Length == 0)
+    {
+        return "";
+    }
+    var list = new System.Collections.Generic.List<object>();
+    for (int i = 0; i < props.Length; i++)
+    {
+        list.Add(new { k = props[i].Key, v = props[i].Value });
+    }
+    try
+    {
+        return JsonSerializer.Serialize(list);
+    }
+    catch (Exception)
+    {
+        // 序列化失败——按无载荷处理（审计非关键路径降级，不阻断主记录）
+        return "";
+    }
+}
         /// <summary>
         /// 构建消息——category + 首三个属性摘要（log.all 可读性）
         /// </summary>
@@ -329,53 +329,53 @@ namespace Mau.Runtime
         /// <param name="payload">JSON 文本</param>
         /// <returns>属性数组</returns>
         private static AuditProp[] ParsePayload(string payload)
+{
+    if (payload == null || payload.Length == 0)
+    {
+        return Array.Empty<AuditProp>();
+    }
+    try
+    {
+        using (JsonDocument doc = JsonDocument.Parse(payload))
         {
-            if (payload == null || payload.Length == 0)
+            JsonElement root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Array)
             {
                 return Array.Empty<AuditProp>();
             }
-            try
+            System.Collections.Generic.List<AuditProp> list = new System.Collections.Generic.List<AuditProp>();
+            for (int i = 0; i < root.GetArrayLength(); i++)
             {
-                using (JsonDocument doc = JsonDocument.Parse(payload))
+                JsonElement item = root[i];
+                string key = "";
+                string value = "";
+                JsonElement k;
+                if (item.TryGetProperty("k", out k) && k.ValueKind == JsonValueKind.String)
                 {
-                    JsonElement root = doc.RootElement;
-                    if (root.ValueKind != JsonValueKind.Array)
+                    string? got = k.GetString();
+                    if (got != null)
                     {
-                        return Array.Empty<AuditProp>();
+                        key = got;
                     }
-                    System.Collections.Generic.List<AuditProp> list = new System.Collections.Generic.List<AuditProp>();
-                    for (int i = 0; i < root.GetArrayLength(); i++)
-                    {
-                        JsonElement item = root[i];
-                        string key = "";
-                        string value = "";
-                        JsonElement k;
-                        if (item.TryGetProperty("k", out k) && k.ValueKind == JsonValueKind.String)
-                        {
-                            string? got = k.GetString();
-                            if (got != null)
-                            {
-                                key = got;
-                            }
-                        }
-                        JsonElement v;
-                        if (item.TryGetProperty("v", out v) && v.ValueKind == JsonValueKind.String)
-                        {
-                            string? got = v.GetString();
-                            if (got != null)
-                            {
-                                value = got;
-                            }
-                        }
-                        list.Add(new AuditProp(key, value));
-                    }
-                    return list.ToArray();
                 }
+                JsonElement v;
+                if (item.TryGetProperty("v", out v) && v.ValueKind == JsonValueKind.String)
+                {
+                    string? got = v.GetString();
+                    if (got != null)
+                    {
+                        value = got;
+                    }
+                }
+                list.Add(new AuditProp(key, value));
             }
-            catch (Exception)
-            {
-                return Array.Empty<AuditProp>();
-            }
+            return list.ToArray();
         }
     }
+    catch (Exception)
+    {
+        // 损坏载荷——返回空数组（快照重建容错：审计降级不阻断）
+        return Array.Empty<AuditProp>();
+    }
+}    }
 }

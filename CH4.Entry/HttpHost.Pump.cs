@@ -108,7 +108,7 @@ namespace CH4
             {
                 return;
             }
-            _seq = _seq + 1;
+            Interlocked.Increment(ref _seq);
             string frame = "event: " + eventName + "\ndata: " + data + "\n\n";
             lock (_clientLock)
             {
@@ -164,9 +164,11 @@ namespace CH4
         /// <param name="text">增量文本或错误文本</param>
         public void PushLlm(string kind, string text)
         {
+            // 先取自身序号（线性可用与广播推进并存——PushEvent 内部再递增；seq 单调即满足排序锚点语义）
+            int seq = Interlocked.Increment(ref _seq);
             var obj = new
             {
-                seq = _seq,
+                seq = seq,
                 kind = kind,
                 text = text,
                 sessionId = "majordomo"

@@ -34,7 +34,7 @@ namespace CH4
         /// <summary>指令投递回调——宿主侧注入（Program.DispatchCommand）</summary>
         private Func<string, bool> _dispatcher;
 
-        /// <summary>SSE 事件序号——单调递增（协议 §4.3 seq 锚点）</summary>
+        /// <summary>SSE 事件序号——单调递增（协议 §4.3 seq 锚点；多线程并发写走 Interlocked——HTTP/LLM/泵三线程）</summary>
         private int _seq;
 
         /// <summary>SSE 客户端集合——锁保护（多连接独立广播）</summary>
@@ -216,7 +216,11 @@ namespace CH4
             public SseClient(HttpResponse response)
             {
                 Response = response;
-                Queue = Channel.CreateUnbounded<string>();
+                // 有界队列 + 满时丢最旧——保留最新事件；慢客户端内存有界（协议 §四"写失败静默丢弃"；无界队列慢客户端堆积判例）
+                BoundedChannelOptions options = new BoundedChannelOptions(512);
+                options.FullMode = BoundedChannelFullMode.DropOldest;
+                options.SingleReader = true;
+                Queue = Channel.CreateBounded<string>(options);
             }
         }
     }

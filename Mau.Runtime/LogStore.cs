@@ -396,45 +396,47 @@ namespace Mau.Runtime
         /// 关闭全部写者——宿主退出前调用（幂等）
         /// </summary>
         public static void CloseWriters()
+{
+    if (_logWriter != null)
+    {
+        try
         {
-            if (_logWriter != null)
-            {
-                try
-                {
-                    _logWriter.Flush();
-                }
-                catch
-                {
-                }
-                _logWriter.Dispose();
-                _logWriter = null;
-            }
-            if (_oaWriter != null)
-            {
-                try
-                {
-                    _oaWriter.Flush();
-                }
-                catch
-                {
-                }
-                _oaWriter.Dispose();
-                _oaWriter = null;
-            }
-            if (_errWriter != null)
-            {
-                try
-                {
-                    _errWriter.Flush();
-                }
-                catch
-                {
-                }
-                _errWriter.Dispose();
-                _errWriter = null;
-            }
+            _logWriter.Flush();
         }
-
+        catch
+        {
+            // Flush 失败不影响释放（日志内存总账已保留）
+        }
+        _logWriter.Dispose();
+        _logWriter = null;
+    }
+    if (_oaWriter != null)
+    {
+        try
+        {
+            _oaWriter.Flush();
+        }
+        catch
+        {
+            // Flush 失败不影响释放（日志内存总账已保留）
+        }
+        _oaWriter.Dispose();
+        _oaWriter = null;
+    }
+    if (_errWriter != null)
+    {
+        try
+        {
+            _errWriter.Flush();
+        }
+        catch
+        {
+            // Flush 失败不影响释放（日志内存总账已保留）
+        }
+        _errWriter.Dispose();
+        _errWriter = null;
+    }
+}
         /// <summary>
         /// 把可空文本规范为空字符串
         /// </summary>

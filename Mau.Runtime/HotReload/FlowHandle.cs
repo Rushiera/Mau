@@ -175,67 +175,93 @@ namespace Mau.Runtime
         /// <exception cref="FileNotFoundException">DLL 不存在</exception>
         /// <exception cref="InvalidOperationException">DLL 内未找到 IObservableFlow 实现</exception>
         public static FlowHandle[] LoadAll(string dllPath)
-        {
-            if (!File.Exists(dllPath))
-            {
-                throw new FileNotFoundException("口袋 DLL 不存在: " + dllPath);
-            }
+{
+    if (!File.Exists(dllPath))
+    {
+        throw new FileNotFoundException("口袋 DLL 不存在: " + dllPath);
+    }
 
-            // [段1] 探测类型清单——独立探针 ALC，卸载后正式加载
-            string baseName = Path.GetFileNameWithoutExtension(dllPath);
-            FlowALC probe = new FlowALC("FlowProbe_" + baseName + "_" + Guid.NewGuid().ToString("N"));
-            List<Type> flowTypes = new List<Type>();
+    // [段1] 探测类型清单——独立探针 ALC，卸载后正式加载
+    string baseName = Path.GetFileNameWithoutExtension(dllPath);
+    FlowALC probe = new FlowALC("FlowProbe_" + baseName + "_" + Guid.NewGuid().ToString("N"));
+    List<Type> flowTypes = new List<Type>();
+    try
+    {
+        Assembly asm = probe.LoadShared(dllPath);
+        Type[] types = asm.GetExportedTypes();
+        for (int i = 0; i < types.Length; i = i + 1)
+        {
+            if (typeof(IObservableFlow).IsAssignableFrom(types[i]) && !types[i].IsAbstract)
+            {
+                flowTypes.Add(types[i]);
+            }
+        }
+    }
+    finally
+    {
+        probe.Unload();
+    }
+    if (flowTypes.Count == 0)
+    {
+        throw new InvalidOperationException("DLL 内未找到 IObservableFlow 实现: " + dllPath);
+    }
+
+    // [段2] 每类型独立 ALC 实例化——中途失败统一清理（内层卸当前 alc；外层卸已入数组句柄）
+    FlowHandle[] handles = new FlowHandle[flowTypes.Count];
+    try
+    {
+        for (int i = 0; i < flowTypes.Count; i = i + 1)
+        {
+            FlowALC alc = new FlowALC("Flow_" + baseName + "_" + i.ToString());
             try
             {
-                Assembly asm = probe.LoadShared(dllPath);
-                Type[] types = asm.GetExportedTypes();
-                for (int i = 0; i < types.Length; i = i + 1)
-                {
-                    if (typeof(IObservableFlow).IsAssignableFrom(types[i]) && !types[i].IsAbstract)
-                    {
-                        flowTypes.Add(types[i]);
-                    }
-                }
-            }
-            finally
-            {
-                probe.Unload();
-            }
-            if (flowTypes.Count == 0)
-            {
-                throw new InvalidOperationException("DLL 内未找到 IObservableFlow 实现: " + dllPath);
-            }
-
-            // [段2] 每类型独立 ALC 实例化
-            FlowHandle[] handles = new FlowHandle[flowTypes.Count];
-            for (int i = 0; i < flowTypes.Count; i = i + 1)
-            {
-                FlowALC alc = new FlowALC("Flow_" + baseName + "_" + i.ToString());
                 Assembly asm = alc.LoadShared(dllPath);
                 string? fullName = flowTypes[i].FullName;
                 if (fullName == null)
                 {
-                    alc.Unload();
-                    continue;
+                    throw new InvalidOperationException("类型全名缺失: " + dllPath);
                 }
                 Type? type = asm.GetType(fullName);
                 if (type == null)
                 {
-                    alc.Unload();
                     throw new InvalidOperationException("类型加载失败: " + fullName);
                 }
                 object? instance = Activator.CreateInstance(type);
                 if (instance == null)
                 {
-                    alc.Unload();
                     throw new InvalidOperationException("无法实例化生成流程: " + type.FullName);
                 }
                 handles[i] = new FlowHandle(alc, (IObservableFlow)instance, Path.GetFullPath(dllPath));
             }
-            return handles;
+            catch
+            {
+                // 当前 alc 未入数组——及时卸载再抛（外层统一清理已入数组句柄）
+                alc.Unload();
+                throw;
+            }
         }
-
-        /// <summary>
+    }
+    catch
+    {
+        // 失败路径——已入数组句柄统一卸载（ALC 泄漏根治）
+        for (int i = 0; i < handles.Length; i = i + 1)
+        {
+            if (handles[i] != null)
+            {
+                try
+                {
+                    handles[i].TryUnload(1);
+                }
+                catch (Exception)
+                {
+                    // 卸载尽力而为——不掩盖原始异常
+                }
+            }
+        }
+        throw;
+    }
+    return handles;
+}        /// <summary>
         /// 尝试卸载 ALC 并尽力确认 GC 回收
         /// </summary>
         /// <param name="gcAttempts">GC 尝试次数，默认 3</param>

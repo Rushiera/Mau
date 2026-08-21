@@ -1,0 +1,11 @@
+<Project>
+
+  <!-- 仓库级最小构建约定（Quality 轮 2026-08-21）：
+       Deterministic——全配置确定性构建（默认仅 Release）；
+       LangVersion——全项目统一语言版本（消除 SDK 默认值随 TFM 漂移）。 -->
+  <PropertyGroup>
+    <Deterministic>true</Deterministic>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+</Project>

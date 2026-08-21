@@ -11,7 +11,10 @@ namespace Mau.Runtime.Tests
     /// </summary>
     internal static class FixtureBuilder
     {
-        /// <summary>
+/// <summary>
+/// Ensure 构建串行化锁——并行测试类 check-then-build 非原子（判例：FL_TickThrows 引入后 FlowWatch×HotReload 并行撞击）
+/// </summary>
+private static readonly object _ensureLock = new object ();        /// <summary>
         /// fixture 输出目录——fixtures/bin/
         /// </summary>
         internal static string FixtureDir
@@ -27,41 +30,65 @@ namespace Mau.Runtime.Tests
         /// 确保 fixture DLL 已生成——缺失时动态构建
         /// </summary>
         internal static void Ensure()
+{
+    // 构建串行化——并行测试类同时 Ensure 时，check-then-build 非原子导致 File.Copy 覆盖双击
+    lock (_ensureLock)
+    {
+        Directory.CreateDirectory(FixtureDir);
+        string validDll = Path.Combine(FixtureDir, "FL_ValidFlow.dll");
+        string noInterfaceDll = Path.Combine(FixtureDir, "FL_NoInterface.dll");
+        string tickThrowsDll = Path.Combine(FixtureDir, "FL_TickThrows.dll");
+        // [段1] 正常生成物——语料动态生成
+        if (!File.Exists(validDll))
         {
-            Directory.CreateDirectory(FixtureDir);
-            string validDll = Path.Combine(FixtureDir, "FL_ValidFlow.dll");
-            string noInterfaceDll = Path.Combine(FixtureDir, "FL_NoInterface.dll");
-            // [段1] 正常生成物——语料动态生成
-            if (!File.Exists(validDll))
+            string repoRoot = FindRepoRoot();
+            string mauPath = Path.Combine(repoRoot, "Mau.Runtime.Tests", "fixtures", "valid", "valid.mau");
+            string mau = File.ReadAllText(mauPath);
+            Mau.Translator.CompileResultV3 cr = Mau.Translator.MauCompilerV3.Compile(mau, "ValidFlow");
+            if (!cr.Success)
             {
-                string repoRoot = FindRepoRoot();
-                string mauPath = Path.Combine(repoRoot, "Mau.Runtime.Tests", "fixtures", "valid", "valid.mau");
-                string mau = File.ReadAllText(mauPath);
-                Mau.Translator.CompileResultV3 cr = Mau.Translator.MauCompilerV3.Compile(mau, "ValidFlow");
-                if (!cr.Success)
-                {
-                    throw new InvalidOperationException("fixture 语料编译失败: " + mauPath + " — " + cr.Diagnostics[0].Code + ":" + cr.Diagnostics[0].Message);
-                }
-                Build(cr.GeneratedCode, "FL_ValidFlow", validDll);
+                throw new InvalidOperationException("fixture 语料编译失败: " + mauPath + " — " + cr.Diagnostics[0].Code + ":" + cr.Diagnostics[0].Message);
             }
-            // [段2] 无接口生成物——内嵌源码（不实现 IObservableFlow）
-            if (!File.Exists(noInterfaceDll))
-            {
-                string source =
-                    "namespace Mau.TestFixtures\n" +
-                    "{\n" +
-                    "    public sealed class FL_NoInterface\n" +
-                    "    {\n" +
-                    "        public void Tick(int frame)\n" +
-                    "        {\n" +
-                    "        }\n" +
-                    "    }\n" +
-                    "}\n";
-                Build(source, "FL_NoInterface", noInterfaceDll);
-            }
+            Build(cr.GeneratedCode, "FL_ValidFlow", validDll);
         }
-
-        /// <summary>
+        // [段2] 无接口生成物——内嵌源码（不实现 IObservableFlow）
+        if (!File.Exists(noInterfaceDll))
+        {
+            string source =
+                "namespace Mau.TestFixtures\n" +
+                "{\n" +
+                "    public sealed class FL_NoInterface\n" +
+                "    {\n" +
+                "        public void Tick(int frame)\n" +
+                "        {\n" +
+                "        }\n" +
+                "    }\n" +
+                "}\n";
+            Build(source, "FL_NoInterface", noInterfaceDll);
+        }
+        // [段3] Tick 抛异常生成物——内嵌源码（实现 IObservableFlow，Tick 必抛——热重载验证失败路径 ALC 泄漏断言）
+        if (!File.Exists(tickThrowsDll))
+        {
+            string source =
+                "using Mau.Runtime;\n" +
+                "namespace Mau.TestFixtures\n" +
+                "{\n" +
+                "    public sealed class FL_TickThrows : IObservableFlow\n" +
+                "    {\n" +
+                "        public void Tick(int frame)\n" +
+                "        {\n" +
+                "            throw new System.InvalidOperationException(\"fixture tick throws by design\");\n" +
+                "        }\n" +
+                "        public FlowStatusV3 GetStatus()\n" +
+                "        {\n" +
+                "            return new FlowStatusV3();\n" +
+                "        }\n" +
+                "    }\n" +
+                "}\n";
+            Build(source, "FL_TickThrows", tickThrowsDll);
+        }
+    }
+}        /// <summary>
         /// fixture 构建——PocketCompiler Emit + 拷贝到目标路径
         /// </summary>
         /// <param name="source">C# 源码</param>

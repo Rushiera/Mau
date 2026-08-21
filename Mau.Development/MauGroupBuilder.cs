@@ -121,50 +121,36 @@ namespace Mau.Development
         /// <param name="result">结果（BuildOutput 写入尾部输出）</param>
         /// <returns>构建是否成功</returns>
         private static bool BuildWithDotnet(string csprojPath, string dllDir, string groupName, MauGroupBuildResult result)
-        {
-            ProcessStartInfo psi = new ProcessStartInfo();
-            psi.FileName = "dotnet";
-            psi.Arguments = "build \"" + csprojPath + "\"";
-            psi.WorkingDirectory = Path.GetDirectoryName(csprojPath) ?? ".";
-            psi.UseShellExecute = false;
-            psi.RedirectStandardOutput = true;
-            psi.RedirectStandardError = true;
-            try
-            {
-                using (Process proc = Process.Start(psi)!)
-                {
-                    if (proc == null)
-                    {
-                        result.Error = "FAIL: dotnet 进程启动失败";
-                        return false;
-                    }
-                    string stdout = proc.StandardOutput.ReadToEnd();
-                    string stderr = proc.StandardError.ReadToEnd();
-                    proc.WaitForExit();
-                    string tail = TailLines(stdout + stderr, 15);
-                    result.BuildOutput = tail;
-                    if (proc.ExitCode != 0)
-                    {
-                        result.Error = "构建失败: dotnet build exit " + proc.ExitCode;
-                        return false;
-                    }
-                    result.Steps.Add(tail);
-                    string dllPath = Path.Combine(dllDir, "FL_" + groupName + ".dll");
-                    if (!File.Exists(dllPath))
-                    {
-                        result.Error = "构建完成但未找到输出: " + dllPath + "（检查 csproj OutputPath）";
-                        return false;
-                    }
-                    return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                result.Error = "FAIL: dotnet build 异常——" + ex.Message;
-                return false;
-            }
-        }
-
+{
+    // 180s watchdog——dotnet build 大组可能长；管道死锁根治走共享 ProcessRunner（双流并行读）
+    ProcessRunResult pr = ProcessRunner.RunAndCapture("dotnet", "build \"" + csprojPath + "\"", Path.GetDirectoryName(csprojPath) ?? ".", 180000);
+    if (!pr.Started)
+    {
+        result.Error = "FAIL: dotnet 进程启动失败";
+        return false;
+    }
+    string tail = TailLines(pr.Stdout + "\n" + pr.Stderr, 15);
+    if (!pr.Exited)
+    {
+        result.BuildOutput = tail;
+        result.Error = "失败: dotnet build 超时（180s）已强杀";
+        return false;
+    }
+    result.BuildOutput = tail;
+    if (pr.ExitCode != 0)
+    {
+        result.Error = "构建失败: dotnet build exit " + pr.ExitCode;
+        return false;
+    }
+    result.Steps.Add(tail);
+    string dllPath = Path.Combine(dllDir, "FL_" + groupName + ".dll");
+    if (!File.Exists(dllPath))
+    {
+        result.Error = "构建完成但未找到输出: " + dllPath + "（检查 csproj OutputPath）";
+        return false;
+    }
+    return true;
+}
         /// <summary>
         /// 从文件路径推导流程名——talk.mau → Talk（自 Mau.Cli Program.FlowNameFromPath 移入共享库）
         /// </summary>

@@ -33,8 +33,9 @@ namespace CH4
             {
                 _clients.Add(client);
             }
-            // 连接建立即推全量快照——重连兜底（协议 §4.3；缓存——主线程构建）
-            PushEvent("snapshot", _snapshotCache);
+            // 连接建立即推全量快照——单写本连接队列（重连兜底语义：仅补给新客户端，不广播已有连接——Codex P1）
+            string helloFrame = "event: snapshot\ndata: " + _snapshotCache + "\n\n";
+            client.Queue.Writer.TryWrite(helloFrame);
             try
             {
                 await foreach (string frame in client.Queue.Reader.ReadAllAsync(ctx.RequestAborted))
@@ -70,7 +71,7 @@ namespace CH4
             }
             string text = ExtractText(body);
             bool ok = _dispatcher(text);
-            string cmdId = "cmd-" + _seq;
+            string cmdId = "cmd-" + Interlocked.Increment(ref _seq).ToString();
             long frame = FlowRunner.GlobalFrame;
             if (ok)
             {

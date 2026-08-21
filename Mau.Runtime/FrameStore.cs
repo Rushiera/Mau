@@ -99,24 +99,24 @@ namespace Mau.Runtime
         /// 关闭——flush + 释放（宿主退出统一调用）
         /// </summary>
         public static void Close()
+{
+    lock (_gate)
+    {
+        if (_writer != null)
         {
-            lock (_gate)
+            try
             {
-                if (_writer != null)
-                {
-                    try
-                    {
-                        _writer.Flush();
-                    }
-                    catch
-                    {
-                    }
-                    _writer.Dispose();
-                    _writer = null;
-                }
+                _writer.Flush();
             }
+            catch
+            {
+                // Flush 失败不影响释放（帧流是观测缓存）
+            }
+            _writer.Dispose();
+            _writer = null;
         }
-
+    }
+}
         /// <summary>
         /// 已写帧数——观测统计
         /// </summary>

@@ -47,7 +47,16 @@ namespace Mau.Runtime.Tests
         {
             get { return Path.Combine(FixtureDir, "not-a-dll.txt"); }
         }
-
+/// <summary>
+/// Tick 抛异常夹具 dll 路径（热重载验证失败路径——Tick 必抛，断言失败回滚行为）
+/// </summary>
+private static string TickThrowsDllPath
+{
+    get
+    {
+        return Path.Combine(FixtureDir, "FL_TickThrows.dll");
+    }
+}
         /// <summary>
         /// 确保 fixture DLL 已生成——缺失时动态构建（FixtureBuilder 共享入口）
         /// </summary>
@@ -210,34 +219,33 @@ namespace Mau.Runtime.Tests
         /// </summary>
         [Fact]
         public void ReloadFlows_BadDll_KeepsOldHandle()
-        {
-            AssertFixturesExist();
-            using (FlowHost host = new FlowHost())
-            {
-                FlowHandle[] olds = host.LoadAll(ValidDllPath);
-                Assert.Equal(olds.Length, host.Count);
+{
+    AssertFixturesExist();
+    using (FlowHost host = new FlowHost())
+    {
+        FlowHandle[] olds = host.LoadAll(ValidDllPath);
+        Assert.Equal(olds.Length, host.Count);
 
-                // 损坏 dll——不是有效 .NET 程序集
-                string badDll = Path.Combine(FixtureDir, "bad-reload.dll");
-                File.WriteAllText(badDll, "this is not a real dll at all");
-                try
-                {
-                    string[] report = host.ReloadFlows(new string[] { badDll });
-                    Assert.Single(report);
-                    Assert.Contains("加载失败", report[0]);
-                    // 旧 handle 保留——数量不变
-                    Assert.Equal(olds.Length, host.Count);
-                }
-                finally
-                {
-                    if (File.Exists(badDll))
-                    {
-                        File.Delete(badDll);
-                    }
-                }
+        // 损坏 dll——不是有效 .NET 程序集（%TEMP% 临时文件——测试运行期动态文件不写仓库 fixture 目录）
+        string badDll = Path.Combine(Path.GetTempPath(), "mau_bad_reload_" + Guid.NewGuid().ToString("N") + ".dll");
+        File.WriteAllText(badDll, "this is not a real dll at all");
+        try
+        {
+            string[] report = host.ReloadFlows(new string[] { badDll });
+            Assert.Single(report);
+            Assert.Contains("加载失败", report[0]);
+            // 旧 handle 保留——数量不变
+            Assert.Equal(olds.Length, host.Count);
+        }
+        finally
+        {
+            if (File.Exists(badDll))
+            {
+                File.Delete(badDll);
             }
         }
-
+    }
+}
         /// <summary>
         /// 热重载无 IObservableFlow 的 dll——失败保留旧（验证 LoadAll 校验）
         /// </summary>
@@ -307,5 +315,31 @@ namespace Mau.Runtime.Tests
             assemblyRef = new WeakReference(handle.Flow.GetType().Assembly);
             handle.TryUnload(10);
         }
+/// <summary>
+/// Replace 验证失败（Tick 抛异常）——返回 null + 旧句柄原地保留 + 失败 ALC 事务回滚
+/// </summary>
+[Fact]
+public void Replace_TickThrows_ReturnsNullKeepsOld()
+{
+    AssertFixturesExist();
+    using (FlowHost host = new FlowHost())
+    {
+        FlowHandle old = host.Load(ValidDllPath);
+        Assert.Equal(1, host.Count);
+        FlowHandle? replaced = host.Replace(TickThrowsDllPath);
+        Assert.Null(replaced);
+        // 旧句柄保留且未被隔离
+        Assert.Equal(1, host.Count);
+        Assert.False(old.IsFaulted);
+        Assert.Same(old, host.Handles[0]);
+    }
+} 
+/// <summary>
+/// ReloadFlows 验证失败（Tick 抛异常）——报告失败 + 旧句柄全保留 + host 无污染（失败后仍可成功热重载）
+/// </summary>
+ [ Fact ]  public  void  ReloadFlows_TickThrows_KeepsOldThenRecovers ( ) { AssertFixturesExist ( ) ;  using  ( FlowHost  host  =  new  FlowHost ( ) ) { FlowHandle [ ]  olds  =  host . LoadAll ( ValidDllPath ) ;  int  oldCount  =  host . Count ;  Assert . NotEmpty ( olds ) ;  // [段1] 失败路径——验证 Tick 抛异常：保留旧句柄
+string [ ]  report  =  host . ReloadFlows ( new  string [ ] { TickThrowsDllPath } ) ;  Assert . Single ( report ) ;  Assert . Contains ( "加载失败" ,  report [ 0 ] ) ;  Assert . Equal ( oldCount ,  host . Count ) ;  for  ( int  o  =  0 ;  o < olds . Length ;  o  =  o + 1 ) { Assert . False ( olds [ o ] . IsFaulted ) ;  } // [段2] 恢复路径——失败清理不破坏后续成功热重载
+string [ ]  okReport  =  host . ReloadFlows ( new  string [ ] { ValidDllPath } ) ;  Assert . Single ( okReport ) ;  Assert . Contains ( "热重载成功" ,  okReport [ 0 ] ) ;  Assert . Equal ( olds . Length ,  host . Count ) ;  } }
+
     }
 }

@@ -117,63 +117,33 @@ namespace Mau.Cli
         /// <param name="arguments">参数</param>
         /// <returns>退出码为 0</returns>
         private static bool RunProcess(string fileName, string arguments)
+{
+    int timeoutMs = 120000;
+    // 管道死锁根治——共享 ProcessRunner 双流并行读（原顺序 ReadToEnd 在输出 >64KB 时假超时）
+    Mau.Development.ProcessRunResult pr = Mau.Development.ProcessRunner.RunAndCapture(fileName, arguments, null, timeoutMs);
+    if (!pr.Started)
+    {
+        Console.WriteLine("FAIL: 无法启动进程——" + fileName);
+        return false;
+    }
+    if (!pr.Exited)
+    {
+        Console.WriteLine("FAIL: 测试进程超时（120s）已强杀: " + fileName);
+        Console.WriteLine(CliSupport.TailLines(pr.Stdout + "\n" + pr.Stderr, 20));
+        return false;
+    }
+    if (pr.ExitCode == 0)
+    {
+        CliSupport.Detail(pr.Stdout);
+        if (pr.Stderr.Trim().Length > 0)
         {
-            int timeoutMs = 120000;
-            ProcessStartInfo psi = new ProcessStartInfo();
-            psi.FileName = fileName;
-            psi.Arguments = arguments;
-            psi.UseShellExecute = false;
-            psi.CreateNoWindow = true;
-            psi.RedirectStandardOutput = true;
-            psi.RedirectStandardError = true;
-            Process? process;
-            try
-            {
-                process = Process.Start(psi);
-            }
-            catch (Exception)
-            {
-                Console.WriteLine("FAIL: 无法启动进程——" + fileName);
-                return false;
-            }
-            if (process == null)
-            {
-                Console.WriteLine("FAIL: 进程启动失败——" + fileName);
-                return false;
-            }
-            bool exited = process.WaitForExit(timeoutMs);
-            if (!exited)
-            {
-                try
-                {
-                    process.Kill(true);
-                }
-                catch (InvalidOperationException)
-                {
-                    // 进程已在强杀前自行退出
-                }
-            }
-            string stdout = process.StandardOutput.ReadToEnd();
-            string stderr = process.StandardError.ReadToEnd();
-            if (!exited)
-            {
-                Console.WriteLine("FAIL: 测试进程超时（120s）已强杀: " + fileName);
-                Console.WriteLine(CliSupport.TailLines(stdout + "\n" + stderr, 20));
-                return false;
-            }
-            if (process.ExitCode == 0)
-            {
-                CliSupport.Detail(stdout);
-                if (stderr.Trim().Length > 0)
-                {
-                    CliSupport.Detail(stderr);
-                }
-                return true;
-            }
-            Console.WriteLine(CliSupport.TailLines(stdout + "\n" + stderr, 20));
-            return false;
+            CliSupport.Detail(pr.Stderr);
         }
-
+        return true;
+    }
+    Console.WriteLine(CliSupport.TailLines(pr.Stdout + "\n" + pr.Stderr, 20));
+    return false;
+}
         /// <summary>
         /// 加载黄金哈希清单——golden-sha-v3.txt（每行：文件名 空格 哈希）
         /// </summary>

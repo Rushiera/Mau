@@ -81,33 +81,44 @@ namespace Mau.Runtime
         /// <param name="dllPath">新 DLL 路径</param>
         /// <returns>新 Handle，替换失败返回 null</returns>
         public FlowHandle? Replace(string dllPath)
+{
+    FlowHandle? newHandle = null;
+    try
+    {
+        newHandle = FlowHandle.Load(dllPath);
+        // 最小验证：Tick 不抛异常
+        newHandle.Flow.Tick(0);
+    }
+    catch
+    {
+        // 验证失败——卸载新 ALC 再返回（事务三段式：失败回滚全新实例）
+        if (newHandle != null)
         {
-            FlowHandle newHandle;
             try
             {
-                newHandle = FlowHandle.Load(dllPath);
-                // 最小验证：Tick 不抛异常
-                newHandle.Flow.Tick(0);
+                newHandle.TryUnload(1);
             }
-            catch
+            catch (Exception)
             {
-                return null;
+                // 卸载尽力而为——不掩盖原始失败
             }
-
-            lock (_lock)
-            {
-                // 卸载第一个旧 Handle
-                if (_handles.Count > 0)
-                {
-                    FlowHandle old = _handles[0];
-                    _handles.RemoveAt(0);
-                    old.TryUnload(3);
-                }
-                _handles.Insert(0, newHandle);
-            }
-            return newHandle;
         }
-/// <summary>
+        return null;
+    }
+
+    lock (_lock)
+    {
+        // 卸载第一个旧 Handle
+        if (_handles.Count > 0)
+        {
+            FlowHandle old = _handles[0];
+            _handles.RemoveAt(0);
+            old.TryUnload(3);
+        }
+        _handles.Insert(0, newHandle);
+    }
+    return newHandle;
+}/// <summary>
 /// 热重载——按 dll 粒度原子替换（D8：新 ALC 加载成功 → 卸旧；失败 → 保留旧 + 报告）。
 /// pending 来自 FlowWatchService（② 热感知）——宿主主动调用（D10 纯手动 API）。
 /// </summary>
@@ -120,7 +131,8 @@ public string[] ReloadFlows(string[] pendingDlls)
     {
         string dllPath = Path.GetFullPath(pendingDlls[i]);
         string fileName = Path.GetFileName(dllPath);
-        FlowHandle[] newHandles;
+        // 空数组初始化——LoadAll 失败时 newHandles 保持空（LoadAll 内部已清理自身句柄），Tick 失败时指向已加载句柄
+        FlowHandle[] newHandles = new FlowHandle[0];
         try
         {
             // 先加载新版本——验证通过才进入替换（失败保留旧）
@@ -132,6 +144,18 @@ public string[] ReloadFlows(string[] pendingDlls)
         }
         catch (Exception ex)
         {
+            // 失败路径——卸载已加载的新句柄（事务三段式：失败回滚全新实例；LoadAll 自身失败时为空数组无副作用）
+            for (int h = 0; h < newHandles.Length; h = h + 1)
+            {
+                try
+                {
+                    newHandles[h].TryUnload(1);
+                }
+                catch (Exception)
+                {
+                    // 卸载尽力而为——不掩盖原始失败
+                }
+            }
             report.Add("❌ " + fileName + ": 新版本加载失败——" + ex.Message);
             continue;
         }
@@ -165,8 +189,7 @@ public string[] ReloadFlows(string[] pendingDlls)
     }
 
     return report.ToArray();
-}
-        /// <summary>
+}        /// <summary>
         /// 卸载所有活跃 Handle
         /// </summary>
         public void UnloadAll()

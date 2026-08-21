@@ -351,6 +351,7 @@ namespace CH4
             }
             catch (Exception)
             {
+                // 参数 JSON 损坏——返回空串（下游 BAD_ARGS 校验可见拒绝）
                 return "";
             }
         }
