@@ -18,7 +18,7 @@ namespace Mau.Cli
         /// <summary>gen——全链编译 + C# 生成物输出</summary>
         public const int Gen = 2;
 
-        /// <summary>build——全链编译 + Roslyn Emit</summary>
+        /// <summary>build——统一链路由（转发 mau proj --build）</summary>
         public const int Build = 3;
 
         /// <summary>test——分层门禁（翻译器 + Runtime + 黄金）</summary>

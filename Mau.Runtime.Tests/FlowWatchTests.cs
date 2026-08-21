@@ -38,14 +38,6 @@ namespace Mau.Runtime.Tests
         }
 
         /// <summary>
-        /// 清理——删除临时目录
-        /// </summary>
-        ~FlowWatchTests()
-        {
-            // 不在此处清理——每测试显式清理（fixture 模式）
-        }
-
-        /// <summary>
         /// 复制夹具 dll 到监听目录
         /// </summary>
         /// <param name="name">目标文件名</param>

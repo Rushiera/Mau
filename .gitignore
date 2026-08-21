@@ -49,6 +49,5 @@ TestResult.xml
 # === Misc ===
 *.cache
 *.log
-!Mau.Bricks.Log/
 .DS_Store
 Thumbs.db

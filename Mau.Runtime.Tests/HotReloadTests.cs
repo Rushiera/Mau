@@ -10,6 +10,9 @@ namespace Mau.Runtime.Tests
     /// </summary>
     public sealed class HotReloadTests
     {
+/// <summary>
+/// 夹具 dll 目录
+/// </summary>
         private static string FixtureDir
         {
             get
@@ -20,16 +23,25 @@ namespace Mau.Runtime.Tests
                 return dir;
             }
         }
+/// <summary>
+/// 有效夹具 dll 完整路径（含 IFlow 实现）
+/// </summary>
 
         private static string ValidDllPath
         {
             get { return Path.Combine(FixtureDir, "FL_ValidFlow.dll"); }
         }
+/// <summary>
+/// 无 IObservableFlow 接口的 dll 路径（负例夹具）
+/// </summary>
 
         private static string NoInterfaceDllPath
         {
             get { return Path.Combine(FixtureDir, "FL_NoInterface.dll"); }
         }
+/// <summary>
+/// 非 dll 普通文件路径（坏镜像负例）
+/// </summary>
 
         private static string NotADllPath
         {
@@ -43,6 +55,9 @@ namespace Mau.Runtime.Tests
         {
             FixtureBuilder.Ensure();
         }
+/// <summary>
+/// 加载有效 dll——返回 IFlow 实例
+/// </summary>
 
         // ──────────────────────────────────────
         // V1: 加载有效 DLL
@@ -55,6 +70,9 @@ namespace Mau.Runtime.Tests
             using FlowHandle handle = FlowHandle.Load(ValidDllPath);
             Assert.NotNull(handle.Flow);
         }
+/// <summary>
+/// 加载产物实现 IObservableFlow 可观测接口
+/// </summary>
 
         [Fact]
         public void Load_ValidDll_FlowIsObservableFlow()
@@ -64,6 +82,9 @@ namespace Mau.Runtime.Tests
             IObservableFlow flow = handle.Flow;
             Assert.True(flow is IObservableFlow);
         }
+/// <summary>
+/// 无接口 dll 加载——抛 InvalidOperationException
+/// </summary>
 
         // ──────────────────────────────────────
         // V2: 加载无 IObservableFlow 的 DLL
@@ -82,6 +103,9 @@ namespace Mau.Runtime.Tests
             );
             Assert.Contains("IObservableFlow", ex.Message);
         }
+/// <summary>
+/// 不存在的文件加载——抛 FileNotFoundException
+/// </summary>
 
         // ──────────────────────────────────────
         // V3: DLL 不存在
@@ -95,6 +119,9 @@ namespace Mau.Runtime.Tests
                 () => FlowHandle.Load(fakePath)
             );
         }
+/// <summary>
+/// 坏镜像加载——抛 BadImageFormatException
+/// </summary>
 
         // ──────────────────────────────────────
         // V4: 损坏的 DLL
@@ -113,6 +140,9 @@ namespace Mau.Runtime.Tests
                 () => FlowHandle.Load(NotADllPath)
             );
         }
+/// <summary>
+/// 卸载正常完成无异常
+/// </summary>
 
         // ──────────────────────────────────────
         // V5: TryUnload 回收成功
@@ -134,6 +164,9 @@ namespace Mau.Runtime.Tests
             // false 不必然泄漏。真实回收断言见 V10 TryUnload_AssemblyWeakRef_ReclaimedAfterScopeExit（作用域外弱引用死亡）。
             Assert.Throws<ObjectDisposedException>(() => handle.Flow);
         }
+/// <summary>
+/// Dispose 后访问——抛 ObjectDisposedException
+/// </summary>
 
         // ──────────────────────────────────────
         // V7: 已 Dispose 后访问 Flow 抛异常

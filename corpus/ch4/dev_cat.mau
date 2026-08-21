@@ -1,6 +1,6 @@
 ﻿// dev_cat.mau —— DevCat 语料（CH4 P8 二期——OA 工具执行 Cat）
-// 角色：Dog 工单执行方——认领 TOOL 域 7 工具（text.read/write/append/replace + mau.verify/gen/proj）
-// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本语料 7 线认领执行 → complete_str 回执
+// 角色：Dog 工单执行方——认领 TOOL 域 20 工具（text.read/write/append/replace + mau.verify/gen/proj + cs.* 9 件 + config.* 4 件）
+// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本语料 20 线认领执行 → complete_str 回执
 // 多级预留：Relist 后单回 Open，本语料（或其他执行 Cat）可再次认领——线对链路无感
 // 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON（宿主发单落盒——CH2 Dog 机制验证格式）
 // 无值分支：每工具一条认领线，工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
@@ -8,7 +8,7 @@
 // 线程模型：全部主线程同步（受控短 IO）；mau.proj dotnet build 长耗时阻塞主线程（与一期直执等价——P9 后台域清偿）
 // 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）+ log.write TOOL 类别
 
-// ── 状态机（7 线——每线独立生命周期）──
+// ── 状态机（20 线——每线独立生命周期；TEXT/MAU 7 + cs.* 9 + config.* 4）──
 § 'S_Read' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Write' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Append' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }

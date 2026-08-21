@@ -1,4 +1,4 @@
-# Mau —— 双区块仓库
+﻿# Mau —— 双区块仓库
 
 > 埃及语"猫"（mau/mjw）。古埃及太阳神 Ra 亦被称为"伟大的猫 Mau"。
 > 仓库历史一直在——Mau 这个名字是象征。
@@ -20,7 +20,7 @@ LLM 写 .mau 语料 → 门禁验真（词法/解析/验证/图论分析——�
 
 **哲学**：LLM 负责表达，确定性代码负责验真。用符号化语言（语法为 LLM 输出稳定性设计）+ 分析门禁（图论验证）填补 LLM 的逻辑盲区——表达自由，验证严格。
 
-**现状（基座 v3.8.0 / 宿主 v0.29）**：自举循环已经真实运转——LLM 已能调用宿主工具（text.\* 文件操作 / mau.\* 语料自查 / cs.\* Roslyn 编码工具域 9 工具）完成"发现问题 → 修语料 → 门禁通过"的闭环。下一站：多猫并发。
+**现状（基座 v3.9.0 / 宿主 v0.33）**：自举循环已经真实运转——LLM 已能调用宿主工具（text.\* 文件操作 / mau.\* 语料自查 / cs.\* Roslyn 编码工具域 9 工具）完成"发现问题 → 修语料 → 门禁通过"的闭环。下一站：多猫并发。
 
 ## 二、仓库地图（双区块）
 
@@ -85,9 +85,9 @@ LLM 写 .mau 语料 → 门禁验真（词法/解析/验证/图论分析——�
 | 项目 | 职责 |
 |:--|:--|
 | Mau.Providers | LLM 供应商——DeepSeekLlmRuntime（OpenAI 兼容流式接口） |
-| CH4.Entry | 自举宿主——服务组装 + 语料加载 + LLM 桥 + 工具协调（OA 工单 + DevCat 16 线）+ 观测出口 + HTTP 外观层 |
+| CH4.Entry | 自举宿主——服务组装 + 语料加载 + LLM 桥 + 工具协调（OA 工单 + DevCat 20 线）+ 观测出口 + HTTP 外观层 |
 
-## 六、积木现状（28 件 · 分组摘要）
+## 六、积木现状（29 件 · 分组摘要）
 
 积木 = 语料可调用的原子能力（文本资产 + 契约注册——不由程序集承载）。
 
@@ -101,7 +101,7 @@ LLM 写 .mau 语料 → 门禁验真（词法/解析/验证/图论分析——�
 | LLM | 3 | 流式接口（stream/chunk_ready/done_ready） |
 | LOG | 1 | 日志写入 |
 | FILE | 1 | 文件读取 |
-| PACK | 1 | **csharp.bridge**——C# 工具桥（Roslyn 编码工具域 9 工具：check/build/list/read/find_ref/patch/member/comment/dead） |
+| PACK | 2 | **csharp.bridge**（Roslyn 编码工具域 9 工具：check/build/list/read/find_ref/patch/member/comment/dead）+ **config.bridge**（配置自改 4 工具：list/get/set/reset——schema 白名单写 + 值域校验 + 原子写回滚） |
 
 完备性随 CH4 需求按四问判据（原子性·可构造性·消费面·归属）立项。
 
@@ -180,4 +180,4 @@ MIT License · 详见 [LICENSE](./LICENSE)
 
 ---
 
-_版本：基座 v3.8.0 / 宿主 v0.29 | 2026-08-20 | 双区块重构——理想目标 + 仓库地图 + CH4 宿主呈现；积木 28 件分组摘要；sln 10 项目_
+_版本：基座 v3.9.0 / 宿主 v0.33 | 2026-08-21 | 全量审查轮——版本对齐 + 积木 29 件同步 + CLI 统一链描述修正；CH4 五工具组全链（text.*/mau.*/host.reload/cs.* 9 件/config.* 4 件经 DevCat 20 认领线）_

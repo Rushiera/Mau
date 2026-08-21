@@ -12,26 +12,6 @@ namespace Mau.Runtime.Tests
     [Collection("AuditSerial")]
     public sealed class AuditStoreTests
     {
-        /// <summary>
-        /// 当前 Log 中 audit.* 条目数
-        /// </summary>
-        /// <returns>计数</returns>
-        private static long AuditCount()
-        {
-            long count = 0;
-            System.Collections.Generic.List<LogStore.LogEntry> all = LogStore.AllLog;
-            lock (LogStore.Sync)
-            {
-                for (int i = 0; i < all.Count; i++)
-                {
-                    if (all[i].Type.StartsWith("audit.", StringComparison.Ordinal))
-                    {
-                        count = count + 1;
-                    }
-                }
-            }
-            return count;
-        }
 
         /// <summary>
         /// Record 转发 Log——audit.* 条目 + Snapshot 重建（source/category/frame/props 还原）

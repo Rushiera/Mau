@@ -1,7 +1,7 @@
 ﻿# Mau 积木库 — Bricks
 
 > 定位：积木文本资产库——翻译器构筑期经 BrickIndex（index.json）唯一寻路。
-> 现状（v3.0.2 最小化）：4 件积木——跑测工具定位（验证框架稳定与翻译器性能），完备性随 CH4 介入按需立项。
+> 现状：29 件 active（探针 3 + DATA 2 + OA 10 + TEXT 4 + MAU 3 + LLM 3 + LOG 1 + FILE 1 + PACK 2）——完备性随 CH4 需求按四问判据立项（原子性·可构造性·消费面·归属）。
 
 ## 现状清单
 
@@ -9,8 +9,16 @@
 |:--|:--|:--|:--|
 | BRIK-TEST-001 | probe.source | TEST | 固定输出源——数据流绑定验证 |
 | BRIK-TEST-002 | probe.sink | TEST | 消费输入输出结果——强类型直调验证 |
-| BRIK-TEST-003 | probe.sink_slow | TEST | 延迟探针——∥ Busy 门/超时语义压测 |
-| BRIK-PACK-003 | csharp.bridge | PACK | C# 工具桥——Roslyn 能力声明（PACK 类，实现 = Mau.Development.MauRoslynBridge） |
+| BRIK-TEST-003 | probe.sink_slow | TEST | 延迟探针——par Busy 门/超时语义压测 |
+| BRIK-DATA-001/002 | data.box_set_str / box_get_str | DATA | 盒子数据面——全局/私有盒读写 |
+| BRIK-OA-001~010 | oa.post / set_str / claim / complete / get / is_* / done_ready | OA | 工单平台——Post/Claim/Complete/状态/载荷 |
+| BRIK-TEXT-001~004 | text.read / write / append / replace | TEXT | 文件文本操作（受控根边界） |
+| BRIK-MAU-001~003 | mau.verify / gen / proj | MAU | 语料自查——门禁与构筑（统一链） |
+| BRIK-LLM-002~004 | llm.stream / chunk_ready / done_ready | LLM | 流式接口薄壳（Runtime ILlmRuntime） |
+| BRIK-LOG-001 | log.write | LOG | 日志写入 |
+| BRIK-FILE-001 | file.read | FILE | 文件读取 |
+| BRIK-PACK-003 | csharp.bridge | PACK | C# 工具桥——Roslyn 编码工具域 9 工具 |
+| BRIK-PACK-004 | config.bridge | PACK | 配置自改桥——list/get/set/reset（schema 白名单写 + 值域校验 + 原子写回滚） |
 
 ## 积木文件规范
 
@@ -61,4 +69,4 @@ Bricks/{类别}/BRIK-*.cs（文件头十字段 + 静态方法签名）
 
 ---
 
-_版本：v3.0.2 | 2026-08-14 | 重写为 v3 最小版（4 件现状 + 文件规范 + 索引机制）；v2 积木百科（125 积木/PACK 协议/T3 纯化史）见 git 历史_
+_更新：2026-08-21 全量审查轮——现状清单 4→29 件同步（CH4 P8/P8.5d 立项全记录）；v2 积木百科（125 积木/PACK 协议/T3 纯化史）见 git 历史_
