@@ -63,6 +63,21 @@ namespace CH4
 
             /// <summary>API 配置解析副本——M1c 每猫 Runtime 构造消费</summary>
             public CH_LlmApiConfig ApiConfig;
+
+            /// <summary>角色段——cat.cfg 持久化（M2b；空=无角色段）</summary>
+            public string Persona;
+
+            /// <summary>工具名单原始串——cat.cfg 持久化（M2c；空=全量保底）</summary>
+            public string ToolNames;
+
+            /// <summary>前文注入清单——cat.cfg 持久化（M2d；空=不注入）</summary>
+            public string[] InjectList;
+
+            /// <summary>工具声明面——M2c 裁剪后（session.new 重注入复用）</summary>
+            public ToolSpec[] ToolSpecs;
+
+            /// <summary>session.new 请求标志——HTTP 线程置位/主线程泵消费（M2d 按猫重注入）</summary>
+            public bool SessionNewRequested;
         }
 
         /// <summary>
@@ -84,6 +99,15 @@ namespace CH4
 
             /// <summary>LLM API 配置身份——缺省空串（回退内置 DeepSeek）</summary>
             public string ApiConfigId { get; set; }
+
+            /// <summary>角色段——system prompt 注入后追加（M2b；空=无角色段）</summary>
+            public string Persona { get; set; }
+
+            /// <summary>工具名单——逗号清单（*=全部/空=全量保底；读时比对内置清单过滤非法名）</summary>
+            public string ToolNames { get; set; }
+
+            /// <summary>前文注入清单——文件寻址数组（id:相对路径；空=不注入）</summary>
+            public string[] InjectList { get; set; }
         }
 
         /// <summary>
@@ -141,6 +165,11 @@ namespace CH4
                 cat.Session.PostUserMessage(content);
                 return "cat.chat | 已投递: " + cat.DisplayName;
             }
+            if (line.StartsWith("catcfg.apply ", StringComparison.Ordinal))
+            {
+                // M3 每猫配置运行时生效——主线程泵消费（HTTP 端点落盘后入队）
+                return HandleCatCfgApply(line.Substring(13).Trim());
+            }
             return "cat.* 指令未识别: " + line;
         }
 
@@ -160,6 +189,15 @@ namespace CH4
             for (int i = 0; i < _cats.Count; i++)
             {
                 CatEntry cat = _cats[i];
+                // M2d session.new 按猫重注入——忙时保留标志下帧重判（同默认猫排队语义）
+                if (cat.SessionNewRequested)
+                {
+                    if (cat.Session.IsIdle)
+                    {
+                        cat.SessionNewRequested = false;
+                        HandleSessionNew(cat.Session, cat.Persona, cat.InjectList, cat.ToolSpecs, cat.Host);
+                    }
+                }
                 string job;
                 while (cat.PendingChat.TryDequeue(out job))
                 {
@@ -365,7 +403,28 @@ namespace CH4
                 }
                 ConfigStore globalConfig = null;
                 DataBox.TryResolve<ConfigStore>(out globalConfig);
-                // [段2] 上下文 + 前文恢复/注入
+                // [段2] 每猫配置三字段——persona/toolNames/injectList（M2；cfg 缺失回退空=全量/不注入）
+                string persona = "";
+                string toolNames = "";
+                string[] injectList = new string[0];
+                if (cfgData != null)
+                {
+                    if (cfgData.Persona != null)
+                    {
+                        persona = cfgData.Persona;
+                    }
+                    if (cfgData.ToolNames != null)
+                    {
+                        toolNames = cfgData.ToolNames;
+                    }
+                    if (cfgData.InjectList != null)
+                    {
+                        injectList = cfgData.InjectList;
+                    }
+                }
+                // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）
+                ToolSpec[] catSpecs = FilterToolSpecs(ResolveToolNames(toolNames));
+                // [段3] 上下文 + 前文恢复/注入
                 ChatContext context = new ChatContext();
                 SessionStore store = new SessionStore(Path.Combine(_dataRoot, "Data", "sessions", id + ".json"));
                 LlmMessage[] restored;
@@ -375,15 +434,15 @@ namespace CH4
                 }
                 else
                 {
-                    // 无前文 = 新猫——按 workspace.json inject 清单注入（与默认会话同源）
+                    // 无前文 = 新猫——按 cat.cfg injectList 清单注入（M2d：仅读 List 内文件，List 外一律不加载）
                     WorkspaceConfig workspace = null;
                     DataBox.TryResolve<WorkspaceConfig>(out workspace);
-                    string injectPrompt = BuildInjectPrompt(workspace, BuildToolSpecs());
+                    string injectPrompt = BuildInjectPrompt(workspace, catSpecs, persona, injectList);
                     context.SetSystemPrompt(injectPrompt);
                 }
-                // [段3] 会话构造——M1c 每猫独立 Runtime（API 配置池按该猫 apiConfigId 构造）
+                // [段4] 会话构造——M1c 每猫独立 Runtime（API 配置池按该猫 apiConfigId 构造）；M2c 声明面按猫裁剪
                 ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig);
-                ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, _tools, ExecuteTool);
+                ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, catSpecs, ExecuteTool);
                 RegisterSession(session);
                 CatEntry cat = new CatEntry();
                 cat.Id = id;
@@ -398,6 +457,10 @@ namespace CH4
                 ConfigStoreRegistry.Register(id, cat.Config);
                 cat.ApiConfigId = apiConfigId;
                 cat.ApiConfig = apiConfig;
+                cat.Persona = persona;
+                cat.ToolNames = toolNames;
+                cat.InjectList = injectList;
+                cat.ToolSpecs = catSpecs;
                 LogStore.Add("CH4.Entry", 1, "cat.api | id=" + id + " | api=" + apiConfigId.ToString("D") + " | model=" + apiConfig.DefaultModel, "CHAT");
                 return cat;
             }
@@ -534,6 +597,12 @@ namespace CH4
                 }
                 return true;
             }
+            if (line == "session.new")
+            {
+                // M2d 按猫重注入——HTTP 线程置位/主线程泵消费（会话忙时排队语义同默认猫）
+                cat.SessionNewRequested = true;
+                return true;
+            }
             return false;
         }
 
@@ -658,6 +727,9 @@ namespace CH4
                     data.Running = GetBoolProp(root, "running");
                     data.Port = GetIntProp(root, "port");
                     data.ApiConfigId = GetStringProp(root, "apiConfigId");
+                    data.Persona = GetStringProp(root, "persona");
+                    data.ToolNames = GetStringProp(root, "toolNames");
+                    data.InjectList = GetStringArrayProp(root, "injectList");
                     return data;
                 }
             }
@@ -673,24 +745,16 @@ namespace CH4
         /// <param name="cat">猫实体</param>
         private static void SaveCatCfg(CatEntry cat)
         {
-            string dir = Path.Combine(_dataRoot, "Data", "sessions", cat.Id);
-            string path = Path.Combine(dir, "cat.cfg");
-            var data = new
-            {
-                id = cat.Id,
-                displayName = cat.DisplayName,
-                running = cat.Running,
-                port = cat.Port,
-                apiConfigId = cat.ApiConfigId.ToString("D")
-            };
-            try
-            {
-                ConfigStore.AtomicWrite(path, JsonSerializer.Serialize(data));
-            }
-            catch (Exception ex)
-            {
-                LogStore.Add("CH4.Entry", 2, "cat.cfg | 写入失败 | " + ex.Message, "CHAT");
-            }
+            CatCfgData data = new CatCfgData();
+            data.Id = cat.Id;
+            data.DisplayName = cat.DisplayName;
+            data.Running = cat.Running;
+            data.Port = cat.Port;
+            data.ApiConfigId = cat.ApiConfigId.ToString("D");
+            data.Persona = cat.Persona;
+            data.ToolNames = cat.ToolNames;
+            data.InjectList = cat.InjectList;
+            SaveCatCfgData(cat.Id, data);
         }
 
         /// <summary>
@@ -752,6 +816,35 @@ namespace CH4
                 }
             }
             return 0;
+        }
+
+        /// <summary>
+        /// 读取 JSON 对象字符串数组属性——防御式（缺字段/非数组返回空数组）。
+        /// </summary>
+        /// <param name="obj">JSON 对象</param>
+        /// <param name="prop">属性名</param>
+        /// <returns>字符串数组；缺字段空数组</returns>
+        private static string[] GetStringArrayProp(JsonElement obj, string prop)
+        {
+            JsonElement value;
+            if (obj.TryGetProperty(prop, out value) && value.ValueKind == JsonValueKind.Array)
+            {
+                List<string> list = new List<string>();
+                for (int i = 0; i < value.GetArrayLength(); i++)
+                {
+                    JsonElement item = value[i];
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        string got = item.GetString();
+                        if (got != null && got.Length > 0)
+                        {
+                            list.Add(got);
+                        }
+                    }
+                }
+                return list.ToArray();
+            }
+            return new string[0];
         }
     }
 }

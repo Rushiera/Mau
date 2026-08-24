@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
@@ -65,24 +65,18 @@ namespace Mau.Runtime
                 JsonNamingPolicy.CamelCase;
         }
 
-        /// <summary>建立 DeepSeek 默认连接且不覆盖已有值。</summary>
-        /// <param name="environmentKey">可选环境 Key</param>
+        /// <summary>首次初始化——配置文件不存在才建 DeepSeek 默认（M3：删除默认配置后重启不复活——多配置组场景）。</summary>
+        /// <param name="environmentKey">可选环境 Key（仅首次初始化导入）</param>
         public void EnsureDefaults(string environmentKey)
         {
-            // [段1] 先读取现有普通配置并按稳定 ID 补齐默认项
-            List<CH_LlmApiConfig> configs = new List<CH_LlmApiConfig>(GetAll());
-            bool changed = false;
-            if (!Contains(configs, DeepSeekApiConfigId))
+            // M3 语义：仅首次初始化建默认——llm-api.json 存在即不补（删除默认配置不复活）
+            if (File.Exists(CH_LlmApiConfigStore_ConfigPath))
             {
-                configs.Add(CreateDeepSeek());
-                changed = true;
+                return;
             }
-            if (changed)
-            {
-                SaveConfigs(configs.ToArray());
-            }
+            SaveConfigs(new CH_LlmApiConfig[] { CreateDeepSeek() });
 
-            // [段2] 环境 Key 只在本地 cfg 尚无 DeepSeek 值时作为首次来源
+            // 环境 Key 只在首次初始化时作为 DeepSeek 值来源
             Dictionary<Guid, string> secrets = ReadSecrets();
             if (!secrets.ContainsKey(DeepSeekApiConfigId)
                 && !string.IsNullOrWhiteSpace(environmentKey))
@@ -195,6 +189,30 @@ namespace Mau.Runtime
             {
                 SaveSecrets(secrets);
             }
+        }
+
+        /// <summary>删除一份 API 配置与对应 Key（M3：默认配置可删——多配置组场景；引用该 ID 的猫回退空配置）。</summary>
+        /// <param name="apiConfigId">API 配置身份</param>
+        /// <returns>true=存在并删除</returns>
+        public bool Delete(Guid apiConfigId)
+        {
+            List<CH_LlmApiConfig> configs = new List<CH_LlmApiConfig>(GetAll());
+            bool removed = false;
+            for (int i = configs.Count - 1; i >= 0; i = i - 1)
+            {
+                if (configs[i].ApiConfigId == apiConfigId)
+                {
+                    configs.RemoveAt(i);
+                    removed = true;
+                }
+            }
+            if (!removed)
+            {
+                return false;
+            }
+            SaveConfigs(configs.ToArray());
+            ClearSecret(apiConfigId);
+            return true;
         }
 
         /// <summary>建立内置 DeepSeek 配置。</summary>

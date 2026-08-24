@@ -178,6 +178,9 @@ private static HttpHost _httpHost;
             }
             apiConfigStore.EnsureDefaults(environmentKey);
             DataBox.Bind<CH_LlmApiConfigStore>(apiConfigStore);
+            // M3 管理面静态引用——catcfg.apply 重建 Runtime 消费
+            _apiStore = apiConfigStore;
+            _globalConfig = llmConfig;
             // M1c 迁移——llm.cfg 遗留明文 key 导入 secrets（secrets 无 DeepSeek key 时一次性导入 + 清空旧键）
             if (apiConfigStore.GetSecret(CH_LlmApiConfigStore.DeepSeekApiConfigId).Length == 0)
             {
@@ -239,6 +242,39 @@ private static HttpHost _httpHost;
             ChatContext chatCtx = new ChatContext();
             SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo.json"));
             LlmMessage[] restored;
+            // M1c 默认猫同迁——API 配置身份从 sessions/majordomo/cat.cfg 读取（缺省回退内置 DeepSeek）
+            // M2 默认猫同构——persona/toolNames/injectList 三字段同迁（每猫配置完全独立；注入源从 workspace.inject 切到 cat.cfg）
+            Guid defaultApiConfigId = CH_LlmApiConfigStore.DeepSeekApiConfigId;
+            CatCfgData defaultCfg = LoadCatCfg(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "cat.cfg"));
+            _defaultPersona = "";
+            _defaultInjectList = new string[0];
+            string defaultToolNames = "";
+            if (defaultCfg != null)
+            {
+                if (defaultCfg.ApiConfigId != null && defaultCfg.ApiConfigId.Length > 0)
+                {
+                    Guid parsed;
+                    if (Guid.TryParse(defaultCfg.ApiConfigId, out parsed) && parsed != Guid.Empty)
+                    {
+                        defaultApiConfigId = parsed;
+                    }
+                }
+                if (defaultCfg.Persona != null)
+                {
+                    _defaultPersona = defaultCfg.Persona;
+                }
+                if (defaultCfg.InjectList != null)
+                {
+                    _defaultInjectList = defaultCfg.InjectList;
+                }
+                if (defaultCfg.ToolNames != null)
+                {
+                    defaultToolNames = defaultCfg.ToolNames;
+                }
+            }
+            // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）；session.new 重注入复用
+            _defaultToolSpecs = FilterToolSpecs(ResolveToolNames(defaultToolNames));
+            _defaultApiConfigId = defaultApiConfigId;
             if (chatStore.TryLoad(out restored))
             {
                 chatCtx.ReplaceMessages(restored);
@@ -246,26 +282,15 @@ private static HttpHost _httpHost;
             }
             else
             {
-                // 无前文 = 隐式新会话——按 workspace.json inject 清单注入（来源标注在注入文本内）
-                string injectPrompt = BuildInjectPrompt(workspace, BuildToolSpecs());
+                // 无前文 = 隐式新会话——按 cat.cfg injectList 清单注入（M2d：不再走全局 workspace.inject）
+                string injectPrompt = BuildInjectPrompt(workspace, _defaultToolSpecs, _defaultPersona, _defaultInjectList);
                 chatCtx.SetSystemPrompt(injectPrompt);
-                Console.WriteLine("[CH4.Entry] 新会话注入: " + workspace.Inject.Length.ToString() + " 个文件");
+                Console.WriteLine("[CH4.Entry] 新会话注入: " + _defaultInjectList.Length.ToString() + " 个文件");
             }
-            _tools = BuildTools();
-            // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面）
-            // M1c 默认猫同迁——独立 Runtime 实例；API 配置身份从 sessions/majordomo/cat.cfg 读取（缺省回退内置 DeepSeek）
-            Guid defaultApiConfigId = CH_LlmApiConfigStore.DeepSeekApiConfigId;
-            CatCfgData defaultCfg = LoadCatCfg(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "cat.cfg"));
-            if (defaultCfg != null && defaultCfg.ApiConfigId != null && defaultCfg.ApiConfigId.Length > 0)
-            {
-                Guid parsed;
-                if (Guid.TryParse(defaultCfg.ApiConfigId, out parsed) && parsed != Guid.Empty)
-                {
-                    defaultApiConfigId = parsed;
-                }
-            }
+            _tools = BuildToolSpecs();
+            // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面；M2c 声明面按猫裁剪）
             _defaultSession = new ChatSession(DateTime.Now.Ticks.ToString(), "majordomo", chatCtx, chatStore,
-                new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _tools, ExecuteTool);
+                new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _defaultToolSpecs, ExecuteTool);
             RegisterSession(_defaultSession);
             string llmKeyProbe = apiConfigStore.GetSecret(CH_LlmApiConfigStore.DeepSeekApiConfigId);
             string llmState;

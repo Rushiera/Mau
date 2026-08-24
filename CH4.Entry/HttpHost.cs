@@ -166,6 +166,13 @@ namespace CH4
                     // P9.3 多猫列表——catsBuilder 非空才注册（主端口管理页签数据源；每猫实例不注册）
                     return Results.Text(_catsBuilder(), "application/json");
                 });
+                // M3 管理端点族——仅主端口注册（LLM API 池 CRUD + 每猫配置读写；管理面收敛主端口）
+                _app.MapGet("/api/v1/llm-apis", (Delegate)Program.HandleLlmApisGet);
+                _app.MapPost("/api/v1/llm-apis", (Delegate)Program.HandleLlmApisPost);
+                _app.MapPost("/api/v1/llm-apis/edit", (Delegate)Program.HandleLlmApisEdit);
+                _app.MapPost("/api/v1/llm-apis/delete", (Delegate)Program.HandleLlmApisDelete);
+                _app.MapGet("/api/v1/cat-config", (Delegate)Program.HandleCatConfigGet);
+                _app.MapPost("/api/v1/cat-config", (Delegate)Program.HandleCatConfigPost);
             }
             _app.MapGet("/", (HttpContext ctx) =>
             {

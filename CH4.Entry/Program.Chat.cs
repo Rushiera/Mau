@@ -34,6 +34,15 @@ namespace CH4
         /// </summary>
         private static ChatSession _defaultSession;
 
+        /// <summary>默认猫角色段——Bootstrap 从 majordomo cat.cfg 读（M2b；空=无角色段）</summary>
+        private static string _defaultPersona = "";
+
+        /// <summary>默认猫注入清单——Bootstrap 从 majordomo cat.cfg 读（M2d；空=不注入）</summary>
+        private static string[] _defaultInjectList = new string[0];
+
+        /// <summary>默认猫工具声明面——Bootstrap 按 toolNames 裁剪（M2c；session.new 重注入复用）</summary>
+        private static ToolSpec[] _defaultToolSpecs;
+
         /// <summary>
         /// 会话注册表——PumpSessions 轮转推进（P9.1 含默认会话一席）
         /// </summary>
@@ -50,28 +59,34 @@ namespace CH4
         private const long ToolOwnerId = 1;
 
         /// <summary>
-        /// 显式新会话处理——session.new 指令执行体：按清单重新注入 system + 清前文 + 落盘 + 审计（P8.5 design-ch4-workspace §六）
+        /// 显式新会话处理——session.new 指令执行体（M2 参数化：按会话 persona/injectList/声明面重注入 + 清前文 + 落盘 + 审计）。
         /// </summary>
-        private static void HandleSessionNew()
+        /// <param name="session">目标会话</param>
+        /// <param name="persona">角色段（空=仅基础角色）</param>
+        /// <param name="injectList">注入清单（空=不注入）</param>
+        /// <param name="specs">该会话工具声明面（裁剪后）</param>
+        /// <param name="host">该会话外观层（PushChatDone；默认猫主端口）</param>
+        private static void HandleSessionNew(ChatSession session, string persona, string[] injectList, ToolSpec[] specs, HttpHost host)
         {
             WorkspaceConfig ws = null;
-            bool wsBound = DataBox.TryResolve<WorkspaceConfig>(out ws);
-            ToolSpec[] specs = BuildToolSpecs();
-            string injectPrompt = BuildInjectPrompt(ws, specs);
-            _defaultSession.Context.SetSystemPrompt(injectPrompt);
-            _defaultSession.Context.Clear();
-            _defaultSession.Store.Save(_defaultSession.Context.GetMessages());
+            DataBox.TryResolve<WorkspaceConfig>(out ws);
+            // M3 新会话生效——拦截面同步最新声明面（改 toolNames 后 session.new 才拉取生效）
+            session.SetToolSpecs(specs);
+            string injectPrompt = BuildInjectPrompt(ws, specs, persona, injectList);
+            session.Context.SetSystemPrompt(injectPrompt);
+            session.Context.Clear();
+            session.Store.Save(session.Context.GetMessages());
             DataBox.Set<string>("global", "chat_state", "idle");
             int injectCount = 0;
-            if (ws != null)
+            if (injectList != null)
             {
-                injectCount = ws.Inject.Length;
+                injectCount = injectList.Length;
             }
             string summary = "session.new | 注入 " + injectCount.ToString() + " 文件 | 前文已清";
             LogStore.Add("CH4.Entry", 1, summary, "CHAT");
-            if (_httpHost != null)
+            if (host != null)
             {
-                _httpHost.PushChatDone();
+                host.PushChatDone();
             }
             Console.WriteLine("[CH4.Entry] " + summary);
         }
@@ -83,53 +98,51 @@ namespace CH4
         /// <param name="workspace">工作区配置（roots + inject 清单）</param>
         /// <param name="specs">工具声明表</param>
         /// <returns>系统提示词</returns>
-        private static string BuildInjectPrompt(WorkspaceConfig workspace, ToolSpec[] specs)
+        private static string BuildInjectPrompt(WorkspaceConfig workspace, ToolSpec[] specs, string persona, string[] injectList)
         {
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
             sb.Append("你是 MajorDomoCat——CH4 自举宿主的管理员对话中枢（P8.5 会话配置化）。");
-            // [段1] 注入知识——按清单顺序读取（optional 容错跳过 + 审计；必选缺失警告 + 跳过——会话仍可用）
-            if (workspace != null && workspace.Inject.Length > 0)
+            // [段0] 角色段——cat.cfg persona 非空追加（M2b：注入后追加角色段；空=仅基础角色）
+            if (persona != null && persona.Trim().Length > 0)
             {
                 sb.Append(System.Environment.NewLine);
                 sb.Append(System.Environment.NewLine);
-                sb.Append("【系统前文来源】以下知识文件由本会话注入（清单 workspace.json inject）：");
-                for (int i = 0; i < workspace.Inject.Length; i++)
+                sb.Append("【角色设定】");
+                sb.Append(persona.Trim());
+            }
+            // [段1] 注入知识——按每猫 injectList 顺序读取（M2d：不再走全局 workspace.inject；寻址复用受控根 id: 命名空间；缺失跳过不阻断会话）
+            if (workspace != null && injectList != null && injectList.Length > 0)
+            {
+                sb.Append(System.Environment.NewLine);
+                sb.Append(System.Environment.NewLine);
+                sb.Append("【系统前文来源】以下知识文件由本会话注入（清单 cat.cfg injectList）：");
+                for (int i = 0; i < injectList.Length; i++)
                 {
-                    WorkspaceConfig.InjectEntry entry = workspace.Inject[i];
-                    string label = entry.Label;
-                    if (label.Length == 0)
-                    {
-                        label = entry.File;
-                    }
+                    string file = injectList[i];
                     try
                     {
+                        WorkspaceConfig.InjectEntry entry = new WorkspaceConfig.InjectEntry();
+                        entry.File = file;
+                        entry.Optional = true;
+                        entry.Label = file;
                         string path = workspace.ResolveInjectFile(entry);
                         if (!File.Exists(path))
                         {
-                            if (entry.Optional)
-                            {
-                                LogStore.Add("CH4.Entry", 2, "inject.missing | optional | " + label, "INJECT");
-                            }
-                            else
-                            {
-                                LogStore.Add("CH4.Entry", 2, "inject.missing | 必选 | " + label, "INJECT");
-                            }
+                            LogStore.Add("CH4.Entry", 2, "inject.missing | optional | " + file, "INJECT");
                             continue;
                         }
                         string content = File.ReadAllText(path);
                         sb.Append(System.Environment.NewLine);
                         sb.Append(System.Environment.NewLine);
                         sb.Append("===== 注入文件: ");
-                        sb.Append(label);
-                        sb.Append("（");
-                        sb.Append(entry.File);
-                        sb.Append("）=====");
+                        sb.Append(file);
+                        sb.Append(" =====");
                         sb.Append(System.Environment.NewLine);
                         sb.Append(content);
                     }
                     catch (Exception ex)
                     {
-                        LogStore.Add("CH4.Entry", 2, "inject.fail | " + label + " | " + ex.Message, "INJECT");
+                        LogStore.Add("CH4.Entry", 2, "inject.fail | " + file + " | " + ex.Message, "INJECT");
                     }
                 }
             }
@@ -148,15 +161,6 @@ namespace CH4
             sb.Append(System.Environment.NewLine);
             sb.Append("工具结果返回后，基于结果继续回答用户；修改语料前先读，改完用 mau.verify 验证。");
             return sb.ToString();
-        }
-
-        /// <summary>
-        /// 构建工具定义——P8 B1 表驱动（7 件集中声明——Program.Tools.cs BuildToolSpecs）
-        /// </summary>
-        /// <returns>工具数组</returns>
-        private static ToolSpec[] BuildTools()
-        {
-            return BuildToolSpecs();
         }
 
         /// <summary>

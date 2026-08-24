@@ -146,7 +146,7 @@ namespace CH4
                 {
                     if (_defaultSession.IsIdle)
                     {
-                        HandleSessionNew();
+                        HandleSessionNew(_defaultSession, _defaultPersona, _defaultInjectList, _defaultToolSpecs, _httpHost);
                     }
                     else
                     {
@@ -182,7 +182,8 @@ namespace CH4
                 return true;
             }
             // P9.3 多猫管理指令族——主线程直执 / HTTP 线程入队泵（ThreadGuard：注册表仅主线程触碰）
-            if (line.StartsWith("cat.", StringComparison.Ordinal))
+            // M3 catcfg.apply 同族路由（每猫配置运行时生效——HTTP 端点落盘后入队）
+            if (line.StartsWith("cat.", StringComparison.Ordinal) || line.StartsWith("catcfg.", StringComparison.Ordinal))
             {
                 if (Environment.CurrentManagedThreadId == _mainThreadId)
                 {
@@ -223,7 +224,7 @@ namespace CH4
                 if (_defaultSession.IsIdle)
                 {
                     _sessionNewRequested = false;
-                    HandleSessionNew();
+                    HandleSessionNew(_defaultSession, _defaultPersona, _defaultInjectList, _defaultToolSpecs, _httpHost);
                 }
             }
             // D8：QuickCat 指令泵消费（HTTP 线程投递——主线程 OA 驱动）

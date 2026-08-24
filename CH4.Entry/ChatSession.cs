@@ -96,14 +96,14 @@ namespace CH4
         private readonly Queue<string> _pending;
 
         // [段5] 宿主服务引用（构造注入——宿主级共享面）
-        /// <summary>LLM 运行时——ChatStream 调度（宿主 Bootstrap 注入）</summary>
-        private readonly ILlmRuntime _llmRuntime;
+        /// <summary>LLM 运行时——ChatStream 调度（宿主 Bootstrap 注入；M3 apiConfigId 切换 SwapLlmRuntime 替换）</summary>
+        private ILlmRuntime _llmRuntime;
 
         /// <summary>OA 工单平台——Dog Post/轮询</summary>
         private readonly OA _oa;
 
-        /// <summary>工具定义表——后台流式携带（宿主 BuildTools 产物共享）</summary>
-        private readonly ToolSpec[] _tools;
+        /// <summary>工具定义表——后台流式携带（宿主 BuildToolSpecs 产物；M3 改 toolNames 新会话 SetToolSpecs 更新）</summary>
+        private ToolSpec[] _tools;
 
         /// <summary>工具直执回调——宿主 ExecuteTool（FALLBACK/延迟直执）</summary>
         private readonly Func<string, string, string> _executeTool;
@@ -196,6 +196,24 @@ namespace CH4
             {
                 return _toolBatchActive;
             }
+        }
+
+        /// <summary>
+        /// 更新工具声明面——session.new 时从最新 cat.cfg 重裁剪后调用（M3：改 toolNames 新会话生效；主线程 Idle 时调用）。
+        /// </summary>
+        /// <param name="specs">新声明面数组（FilterToolSpecs 产物）</param>
+        public void SetToolSpecs(ToolSpec[] specs)
+        {
+            _tools = specs;
+        }
+
+        /// <summary>
+        /// 换 LLM 运行时——apiConfigId 切换立即生效（M3：API 配置切换即时；主线程 Idle 时调用）。
+        /// </summary>
+        /// <param name="runtime">新运行时实例（按新 API 配置构造）</param>
+        public void SwapLlmRuntime(ILlmRuntime runtime)
+        {
+            _llmRuntime = runtime;
         }
 
         /// <summary>会话空闲——AllIdle 判定面</summary>
@@ -460,6 +478,16 @@ _ = ConsumeLlmStream(messages);
                             name = GetStringProp(funcEl, "name");
                             arguments = GetStringProp(funcEl, "arguments");
                         }
+                        // M2c 拦截——声明面外工具直接拒绝（ERR 回执不进 OA 不 FALLBACK；host.* 同拦；拦截即时生效）
+                        if (!IsToolAllowed(name))
+                        {
+                            ToolOrderDog forbiddenDog = new ToolOrderDog(id, name, arguments);
+                            forbiddenDog.Result = "ERR|TOOL_FORBIDDEN|工具不在本会话声明面: " + name;
+                            forbiddenDog.IsClosed = true;
+                            _dogs.Add(forbiddenDog);
+                            LogStore.Add("CH4.Entry", 2, "TOOL|" + name + "|forbidden", "TOOL");
+                            continue;
+                        }
                         // P9.4 per-cat 路由——载荷注入会话 ID（config.bridge 按 catId 路由每猫 ConfigStore；其他工具忽略多余字段）
                         arguments = InjectCatId(arguments);
                         LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|start|" + TrimDisplay(arguments, 120), "TOOL");
@@ -496,6 +524,23 @@ _ = ConsumeLlmStream(messages);
             }
             _phase = ChatPhase.ToolBatchRunning;
             _phaseFrames = 0;
+        }
+
+        /// <summary>
+        /// 工具声明面比对——线性扫描本会话 _tools（M2c 拦截：名单外直接拒绝；21 件量级线性够用）。
+        /// </summary>
+        /// <param name="name">工具名</param>
+        /// <returns>true=在声明面内</returns>
+        private bool IsToolAllowed(string name)
+        {
+            for (int i = 0; i < _tools.Length; i++)
+            {
+                if (string.Equals(_tools[i].Name, name, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>
