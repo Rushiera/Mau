@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -36,6 +36,25 @@
         #chatSendInput:disabled { opacity: 0.5; }
         #chatSendBtn { background: #0e639c; border: none; color: #fff; padding: 7px 16px; cursor: pointer; font-family: inherit; font-size: 12px; }
         #chatSendBtn:disabled { opacity: 0.5; cursor: default; }
+        /* M4c Note 面板——输入框上方悬浮气泡（缩略一行/展开自适应高度） */
+        #notePanel { border-top: 1px solid #222; background: #101010; font-size: 11px; }
+        #notePanel.collapsed #noteBody { display: none; }
+        #noteHead { display: flex; align-items: center; gap: 8px; padding: 5px 12px; cursor: pointer; color: #9a9a9a; user-select: none; }
+        #noteHead:hover { color: #c8c8c8; }
+        #noteTitle { color: #c586c0; font-weight: bold; }
+        #noteToggleBtn { font-size: 10px; }
+        #noteBody { padding: 0 12px 8px 12px; max-height: 40vh; overflow-y: auto; }
+        #noteList { display: flex; flex-direction: column; gap: 3px; padding: 4px 0; }
+        .note-row { display: flex; gap: 6px; align-items: baseline; color: #8a8a8a; word-break: break-all; }
+        .note-row.done { color: #4a6a4a; text-decoration: line-through; }
+        .note-row.current { color: #dcdcaa; }
+        .note-row .mark { flex-shrink: 0; font-family: Consolas, monospace; }
+        #noteAddRow { display: flex; gap: 6px; padding-top: 4px; border-top: 1px dashed #242424; }
+        #noteAddInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 4px 8px; font-family: inherit; font-size: 11px; }
+        #noteAddInput:focus { outline: none; border-color: #0e639c; }
+        #noteAddRow button { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
+        #noteStartBtn { background: #0e639c; border: none; color: #fff; }
+        #noteStartBtn:disabled { opacity: 0.5; cursor: default; }
     </style>
 </head>
 <body>
@@ -44,6 +63,21 @@
         <span id="chatInfo">—</span>
     </div>
     <div id="chatMsgs"></div>
+    <!-- M4c Note 面板——Agent 与人交互的工作进度面板 -->
+    <div id="notePanel" class="collapsed">
+        <div id="noteHead" onclick="noteToggle()">
+            <span id="noteTitle">Note</span>
+            <span id="noteToggleBtn">▸</span>
+        </div>
+        <div id="noteBody">
+            <div id="noteList"></div>
+            <div id="noteAddRow">
+                <input id="noteAddInput" placeholder="新增任务…（Enter 提交）" onkeydown="if(event.key==='Enter')noteAdd()">
+                <button onclick="noteAdd()">＋</button>
+                <button id="noteStartBtn" onclick="noteStart()" title="把 Note 计划拼接进度推给 LLM 开始执行">开始 Note</button>
+            </div>
+        </div>
+    </div>
     <div id="chatinput">
         <input id="chatSendInput" placeholder="说话…（Enter 发送，发送期禁用）" onkeydown="if(event.key==='Enter')chatSend()">
         <button id="chatSendBtn" onclick="chatSend()">发送</button>
@@ -66,6 +100,8 @@
             chatState = s;
             chatInput.disabled = (s !== 'idle');
             chatBtn.disabled = (s !== 'idle');
+            var nsb = document.getElementById('noteStartBtn');
+            if (nsb) { nsb.disabled = (s !== 'idle'); }
         }
 
         function chatScrollBottom() {
@@ -390,16 +426,90 @@
         es.addEventListener('llm', function (ev) { chatOnLlm(JSON.parse(ev.data)); });
         es.addEventListener('tool', function (ev) { chatOnTool(JSON.parse(ev.data)); });
         es.addEventListener('chatdone', function (ev) { chatOnChatDone(JSON.parse(ev.data)); });
+        es.addEventListener('note', function (ev) { noteOnEvent(JSON.parse(ev.data)); });   // M4c——Note 状态实时重绘
         es.onerror = function () { chatInfo.textContent = 'SSE 断线——自动重连...'; };
         es.onopen = function () {
-            // 重连成功兜底——sending 态（chatdone 可能已丢）→ 拉历史全量重绘 + 恢复 idle
+            // 重连成功兜底——无条件重拉历史（CHAT_SESSION 动态更新 + 历史重绘；sending 态额外清阶段）
+            // 判例：页面加载时 history fetch 失败（宿主未就绪）→ CHAT_SESSION 卡 'majordomo' → llm 事件全被 sessionId 过滤 → 对话气泡不渲染
             if (chatState === 'sending') {
                 chatStage = null;
                 chatToolQueue = [];
                 if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
-                chatLoadHistory();
             }
+            chatLoadHistory();
         };
+
+        // [段4] Note 面板（M4c——缩略一行/展开自适应；新增任务走 command 总线）
+        var noteState = { tasks: [], current: 0, done: 0 };
+        var noteExpanded = false;
+
+        function escapeHtml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function noteRender() {
+            var tasks = noteState.tasks || [];
+            var current = noteState.current || 0;
+            var title = document.getElementById('noteTitle');
+            var list = document.getElementById('noteList');
+            if (tasks.length === 0) {
+                title.textContent = 'Note · 空';
+                list.innerHTML = '<div class="note-row" style="color:#5a5a5a">暂无计划</div>';
+                return;
+            }
+            title.textContent = 'Note (' + (current + 1) + '/' + tasks.length + ')';
+            var html = '';
+            for (var i = 0; i < tasks.length; i++) {
+                var cls = 'note-row';
+                var mark = '[ ]';
+                if (i < current) { cls = cls + ' done'; mark = '[x]'; }
+                else if (i === current) { cls = cls + ' current'; mark = '[>]'; }
+                html += '<div class="' + cls + '"><span class="mark">' + mark + '</span><span>' + escapeHtml(tasks[i]) + '</span></div>';
+            }
+            list.innerHTML = html;
+        }
+
+        function noteToggle() {
+            noteExpanded = !noteExpanded;
+            var panel = document.getElementById('notePanel');
+            if (noteExpanded) { panel.classList.remove('collapsed'); document.getElementById('noteToggleBtn').textContent = '▾'; }
+            else { panel.classList.add('collapsed'); document.getElementById('noteToggleBtn').textContent = '▸'; }
+        }
+
+        function noteAdd() {
+            var input = document.getElementById('noteAddInput');
+            var text = input.value.trim();
+            if (text.length === 0) { return; }
+            fetch('/api/v1/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: 'note.add ' + text })
+            }).then(function () { input.value = ''; });
+        }
+
+        function noteStart() {
+            if (chatState !== 'idle') { return; }
+            if (!noteState.tasks || noteState.tasks.length === 0) { return; }
+            fetch('/api/v1/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: 'note.start' })
+            });
+        }
+
+        function noteOnEvent(d) {
+            if (d.state) {
+                noteState = d.state;
+                // 手写/计划存在时自动展开面板（工作进度面板语义——人写入即弹出）
+                if (noteState.tasks && noteState.tasks.length > 0 && !noteExpanded) {
+                    noteToggle();
+                }
+            }
+            noteRender();
+        }
+
+        // 页面加载兜底拉取
+        fetch('/api/v1/note').then(function (r) { return r.json(); }).then(function (j) { noteState = j; noteRender(); }).catch(function () {});
 
         // [段3] 对话区初始化——历史加载
         chatLoadHistory();

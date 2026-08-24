@@ -123,8 +123,17 @@ namespace CH4
                 }
             }
         }
-
-        /// <summary>
+/// <summary>
+/// Note 状态事件——会话 Note 变化推送（M4c：前端悬浮气泡实时重绘；载荷含 sessionId 归属）。
+/// </summary>
+/// <param name = "json">Note 状态 JSON（ChatSession.BuildNoteJson 产物）</param>
+public void PushNoteState(string json)
+{
+    string frame = "{\"sessionId\":\"" + _sessionId + "\",\"state\":" + json + "}";
+    PushEvent("note", frame);
+    // M4c 观测透明性——SSE note 推送结算行（前端未更新时 cmd 可对照）
+    LogStore.Add("CH4.Entry", 1, "SSE|note|" + json, "CHAT");
+}        /// <summary>
         /// 工具结果实时推送——宿主 ChatBridge ExecuteToolBatch 调用（B4 对话区：tool 事件）。
         /// 载荷与 history 视图同截断（参数 ≤200/结果 ≤300）；事件顺序 = 执行顺序 = toolCalls 数组顺序（前端 FIFO 配对）。
         /// </summary>

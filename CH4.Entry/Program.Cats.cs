@@ -55,6 +55,9 @@ namespace CH4
             /// <summary>HTTP 线程 Chat 指令入队面——主线程泵消费（P9.3c PumpCatQueues）</summary>
             public ConcurrentQueue<string> PendingChat;
 
+            /// <summary>HTTP 线程 Note 指令入队面——主线程泵消费（M4c note.add）</summary>
+            public ConcurrentQueue<string> PendingNote;
+
             /// <summary>每猫配置存储——sessions/&lt;id&gt;/config.cfg（P9.4 per-cat 路由；ConfigStoreRegistry 注册）</summary>
             public ConfigStore Config;
 
@@ -202,6 +205,19 @@ namespace CH4
                 while (cat.PendingChat.TryDequeue(out job))
                 {
                     cat.Session.PostUserMessage(job);
+                }
+                // M4c Note 指令泵消费（HTTP 线程投递 / 主线程执行）
+                string noteText;
+                while (cat.PendingNote.TryDequeue(out noteText))
+                {
+                    if (noteText == "\u0001start")
+                    {
+                        cat.Session.NoteStart();
+                    }
+                    else
+                    {
+                        cat.Session.NoteAdd(noteText);
+                    }
                 }
             }
         }
@@ -452,6 +468,7 @@ namespace CH4
                 cat.Session = session;
                 cat.Host = null;
                 cat.PendingChat = new ConcurrentQueue<string>();
+                cat.PendingNote = new ConcurrentQueue<string>();
                 // P9.4 per-cat 配置——独立 config.cfg（不存在空实例；首次写落盘）+ 注册表登记
                 cat.Config = ConfigStore.Load(Path.Combine(_dataRoot, "Data", "sessions", id, "config.cfg"));
                 ConfigStoreRegistry.Register(id, cat.Config);
@@ -569,6 +586,7 @@ namespace CH4
                 null,
                 (int max) => BuildHistoryView(cat.Session, max),
                 null,
+                () => cat.Session.BuildNoteJson(),
                 true);
         }
 
@@ -601,6 +619,32 @@ namespace CH4
             {
                 // M2d 按猫重注入——HTTP 线程置位/主线程泵消费（会话忙时排队语义同默认猫）
                 cat.SessionNewRequested = true;
+                return true;
+            }
+            if (line == "note.start")
+            {
+                // M4c Note 启动——拼接计划+进度推给 LLM（主线程直执 / HTTP 线程入队泵）
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    cat.Session.NoteStart();
+                }
+                else
+                {
+                    cat.PendingNote.Enqueue("\u0001start");
+                }
+                return true;
+            }
+            if (line.StartsWith("note.add ", StringComparison.Ordinal))
+            {
+                // M4c Note 手动新增——主线程直执 / HTTP 线程入队泵（Note 状态仅主线程触碰）
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    cat.Session.NoteAdd(line.Substring(9).Trim());
+                }
+                else
+                {
+                    cat.PendingNote.Enqueue(line.Substring(9).Trim());
+                }
                 return true;
             }
             return false;

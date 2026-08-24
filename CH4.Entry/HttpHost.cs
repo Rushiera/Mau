@@ -76,6 +76,9 @@ namespace CH4
         /// <summary>静态页模式——true=chat.html 独立对话页 / false=index.html 主面板（P9.3 双页模式）</summary>
         private bool _serveChatPage;
 
+        /// <summary>Note 状态构建回调——GET /api/v1/note（M4c 前端面板数据源）</summary>
+        private Func<string> _noteBuilder;
+
         /// <summary>快照推送间隔毫秒——250ms（协议 §4.2 snapshot 事件）</summary>
         private const int SnapshotIntervalMs = 250;
 
@@ -89,9 +92,10 @@ namespace CH4
         /// <param name="frameBuilder">紧凑帧构建回调（frame.jsonl 帧流；可空=不落帧）</param>
         /// <param name="historyBuilder">会话历史视图构建回调（B4 对话区——GET /api/v1/history）</param>
         /// <param name="catsBuilder">多猫列表构建回调（GET /api/v1/cats；可空=不注册端点）</param>
+        /// <param name="noteBuilder">Note 状态构建回调（GET /api/v1/note——M4c 前端面板数据源）</param>
         /// <param name="serveChatPage">静态页模式（true=chat.html / false=index.html）</param>
         /// <returns>HttpHost 实例</returns>
-        public static HttpHost Start(int port, string sessionId, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher, Func<string> frameBuilder, Func<int, string> historyBuilder, Func<string> catsBuilder, bool serveChatPage)
+        public static HttpHost Start(int port, string sessionId, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher, Func<string> frameBuilder, Func<int, string> historyBuilder, Func<string> catsBuilder, Func<string> noteBuilder, bool serveChatPage)
         {
             HttpHost host = new HttpHost();
             host._port = port;
@@ -101,6 +105,7 @@ namespace CH4
             host._frameBuilder = frameBuilder;
             host._historyBuilder = historyBuilder;
             host._catsBuilder = catsBuilder;
+            host._noteBuilder = noteBuilder;
             host._serveChatPage = serveChatPage;
             host.BuildApp();
             host._pumpCts = new CancellationTokenSource();
@@ -158,6 +163,11 @@ namespace CH4
                     max = 2000;
                 }
                 return Results.Text(_historyBuilder(max), "application/json");
+            });
+            _app.MapGet("/api/v1/note", (HttpContext ctx) =>
+            {
+                // M4c Note 状态——前端悬浮气泡数据源（页面加载兜底；实时更新走 SSE note 事件）
+                return Results.Text(_noteBuilder(), "application/json");
             });
             if (_catsBuilder != null)
             {

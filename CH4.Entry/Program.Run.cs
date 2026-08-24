@@ -160,6 +160,32 @@ namespace CH4
                 }
                 return true;
             }
+            if (line == "note.start")
+            {
+                // M4c Note 启动——拼接计划+进度推给 LLM（主线程直执 / HTTP 线程入队泵）
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    _defaultSession.NoteStart();
+                }
+                else
+                {
+                    _sessionCmdQueue.Enqueue(line);
+                }
+                return true;
+            }
+            if (line.StartsWith("note.add ", StringComparison.Ordinal))
+            {
+                // M4c Note 手动新增——主线程直执 / HTTP 线程入队泵（Note 状态仅主线程触碰）
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    _defaultSession.NoteAdd(line.Substring(9).Trim());
+                }
+                else
+                {
+                    _sessionCmdQueue.Enqueue(line);
+                }
+                return true;
+            }
             if (line == "session clear" || line == "session count")
             {
                 // 会话调试指令——主线程直执 / HTTP 线程入队泵（ThreadGuard：_chatContext 仅主线程触碰——2026-08-20 遗留改造；会话忙时入队重判）
@@ -261,6 +287,18 @@ namespace CH4
         /// <param name="cmd">指令文本</param>
         private static void HandleSessionCmd(string cmd)
         {
+            if (cmd == "note.start")
+            {
+                // M4c Note 启动——主线程执行（泵消费/CLI 直执）
+                _defaultSession.NoteStart();
+                return;
+            }
+            if (cmd.StartsWith("note.add ", StringComparison.Ordinal))
+            {
+                // M4c Note 手动新增——主线程执行（泵消费/CLI 直执）
+                _defaultSession.NoteAdd(cmd.Substring(9).Trim());
+                return;
+            }
             if (cmd == "session clear")
             {
                 _defaultSession.Context.Clear();

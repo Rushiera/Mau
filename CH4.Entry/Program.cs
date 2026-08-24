@@ -325,7 +325,7 @@ private static HttpHost _httpHost;
             Console.WriteLine("[CH4.Entry] 就绪 | 两 Cat: QuickCat#" + _quickId + " DevCat#" + _devId + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
             // P9.3 多实例化签名——sessionId 归属默认会话；catsBuilder 多猫列表（管理页签数据源）；主端口服务 index.html
-            _httpHost = HttpHost.Start(ResolveHttpPort(llmConfig), _defaultSession.Id, BuildSnapshotJson, DispatchCommand, BuildCompactFrameJson, (int max) => BuildHistoryView(_defaultSession, max), BuildCatsJson, false);
+            _httpHost = HttpHost.Start(ResolveHttpPort(llmConfig), _defaultSession.Id, BuildSnapshotJson, DispatchCommand, BuildCompactFrameJson, (int max) => BuildHistoryView(_defaultSession, max), BuildCatsJson, () => _defaultSession.BuildNoteJson(), false);
             _defaultSession.AttachHost(_httpHost);
             // [段6b] 启动扫描——sessions/*/cat.cfg 中 running 猫拉起（主 HTTP 就位后——每猫 HttpHost 独立实例）
             LoadCatsOnBoot();

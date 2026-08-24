@@ -176,7 +176,9 @@ new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/overr
                 new ToolSpec("config.list", "配置全览——schema 全部条目（键/当前值/来源/schema 默认/敏感/可写/值域/描述）；敏感键掩码", "{\"type\":\"object\",\"properties\":{}}"),
                 new ToolSpec("config.get", "配置单项查询——按 schema 键返回（含默认/敏感/可写/值域/描述）；敏感键掩码", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键（如 ui.chat_font_size）\"}},\"required\":[\"key\"]}"),
                 new ToolSpec("config.set", "配置写入——仅 schema 声明且 writable=true 的项（白名单+值域校验+原子写+失败回滚）；llm.* 私密环境变量只读", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键\"},\"value\":{\"type\":\"string\",\"description\":\"新值（掩码值拒绝）\"}},\"required\":[\"key\",\"value\"]}"),
-                new ToolSpec("config.reset", "配置还原默认——key 空=全群 writable 项还原 schema default；key 非空=单项", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键（空=全群）\"}},\"required\":[]}")
+                new ToolSpec("config.reset", "配置还原默认——key 空=全群 writable 项还原 schema default；key 非空=单项", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键（空=全群）\"}},\"required\":[]}"),
+                // M4a——Note 轻量任务追踪（Cat 内置工具——会话内直执；CH2 同款定义）
+                new ToolSpec("Note", "轻量任务追踪器（内存存储，会话关闭即消失）。无参数=推进到下一条；action='set'+content='任务1\\n任务2'=写入新计划（已有未完成需force=true强制覆盖）。返回当前第X/Y条 已完成Z 待完成W 任务目标：... 最后一条时追加提示（已是最后一条需求，完成后可结束本轮）。全部完成后自动清空。剩余1条时引擎不自动拉起。", "{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\",\"description\":\"set=写入新计划，不传=推进\"},\"content\":{\"type\":\"string\",\"description\":\"action=set时必填，\\n分割\"},\"force\":{\"type\":\"boolean\",\"description\":\"覆盖已有未完成计划时传true\"}},\"required\":[]}")
             };
             return specs;
         }
