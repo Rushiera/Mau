@@ -276,7 +276,7 @@ namespace CH4
         {
             _context.AddUserMessage(content);
             DataBox.Set<string>("global", "chat_state", "working");
-            LogStore.Add("CH4.Entry", 1, "── MajorDomoCat 处理中 ──", "CHAT");
+            LogStore.Add("CH4.Entry", 1, "── " + _displayName + " 处理中 ──", "CHAT");
             LaunchLlm();
         }
 
@@ -412,7 +412,7 @@ _ = ConsumeLlmStream(messages);
             {
                 // 纯文本回复——本轮完成
                 _context.AddAssistantMessage(_llmResultText);
-                Console.WriteLine("[MajorDomoCat] " + _llmResultText);
+                Console.WriteLine("[" + _displayName + "] " + _llmResultText);
                 _phase = ChatPhase.Done;
                 return;
             }

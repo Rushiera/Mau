@@ -26,19 +26,19 @@ namespace Mau.Providers
         private readonly HttpClient _client;
 
         /// <summary>
-        /// API 基址——如 https://api.deepseek.com
+        /// LLM API 配置池——endpoint/model/key 实时来源（M1c 每猫独立；M2e 立即生效语义）
         /// </summary>
-        private readonly string _baseUrl;
+        private readonly CH_LlmApiConfigStore? _apiStore;
 
         /// <summary>
-        /// API 密钥
+        /// API 配置身份——按猫路由（缺省回退内置 DeepSeek）
         /// </summary>
-        private readonly string _apiKey;
+        private readonly Guid _apiConfigId;
 
         /// <summary>
-        /// 模型名
+        /// 全局配置——thinking/reasoning_effort 键段实时读取（可 null）
         /// </summary>
-        private readonly string _model;
+        private readonly ConfigStore? _globalConfig;
 
         /// <summary>
         /// 默认兜底模型名——官方现役 v4-pro / v4-flash（deepseek-chat 已废弃）
@@ -46,65 +46,21 @@ namespace Mau.Providers
         private const string FallbackModel = "deepseek-v4-flash";
 
         /// <summary>
-        /// 思考模式开关——true=思考模式（默认）；配置 llm.thinking 控制
+        /// 从 LLM API 配置池建立适配器——endpoint/model/key 实时从 Store 取（M1c 每猫独立 Runtime）。
+        /// 拉取优先级：API 配置池（llm-api.json + secrets）→ Mau 全局环境变量 MAU_LLM_* → 兼容/默认。
+        /// key 优先级：secrets → MAU_LLM_API_KEY → DEEPSEEK_API_KEY（兼容）→ 空串（ERR 路径）。
+        /// thinking/reasoning_effort 为全局参数——globalConfig 实时读取（llm.thinking/llm.reasoning_effort）。
         /// </summary>
-        private readonly bool _thinkingEnabled;
-
-        /// <summary>
-        /// 推理强度——low/high/max（默认 high；配置 llm.reasoning_effort 控制）
-        /// </summary>
-        private readonly string _reasoningEffort;
-
-        /// <summary>
-        /// 配置存储——运行期实时读取（P7 热载：配置以本地持久化为准，构造期快照退役）
-        /// </summary>
-        private readonly ConfigStore? _config;
-
-        /// <summary>
-        /// 建立非流式适配器
-        /// </summary>
-        /// <param name="baseUrl">API 基址</param>
-        /// <param name="apiKey">API 密钥</param>
-        /// <param name="model">模型名</param>
-        public DeepSeekLlmRuntime(string baseUrl, string apiKey, string model)
+        /// <param name="apiStore">LLM API 配置池</param>
+        /// <param name="apiConfigId">API 配置身份</param>
+        /// <param name="globalConfig">全局配置存储（可 null——默认值）</param>
+        public DeepSeekLlmRuntime(CH_LlmApiConfigStore apiStore,
+            Guid apiConfigId, ConfigStore? globalConfig)
         {
-            _config = null;
-            _baseUrl = baseUrl;
-            if (_baseUrl == null)
-            {
-                _baseUrl = "";
-            }
-            _apiKey = apiKey;
-            if (_apiKey == null)
-            {
-                _apiKey = "";
-            }
-            _model = model;
-            if (string.IsNullOrEmpty(_model))
-            {
-                _model = FallbackModel;
-            }
-            _thinkingEnabled = true;
-            _reasoningEffort = "high";
-            _client = new HttpClient();
-            _client.Timeout = TimeSpan.FromSeconds(60);
-        }
-
-        /// <summary>
-        /// 从配置存储建立适配器——base_url/api_key/model/thinking/reasoning_effort 从文件拉起（P4 配置项机制）。
-        /// 拉取优先级（Mau 全局环境变量兜底——2026-08-17 拍板）：配置文件 llm.* → Mau 全局环境变量 MAU_LLM_* → 兼容/默认。
-        /// key 优先级：配置 llm.api_key → MAU_LLM_API_KEY → DEEPSEEK_API_KEY（兼容） → 空串（ERR 路径）。
-        /// </summary>
-        /// <param name="config">配置存储（llm.* 键段）</param>
-        public DeepSeekLlmRuntime(ConfigStore config)
-        {
-            // [段1] 配置存储持有——运行期实时读取（P7 热载拍板：配置以本地持久化为准，构造期快照退役）
-            _config = config;
-            _baseUrl = "";
-            _apiKey = "";
-            _model = "";
-            _thinkingEnabled = true;
-            _reasoningEffort = "high";
+            // [段1] 配置源持有——运行期实时读取（P7 热载拍板：配置以本地持久化为准，构造期快照退役）
+            _apiStore = apiStore;
+            _apiConfigId = apiConfigId;
+            _globalConfig = globalConfig;
             _client = new HttpClient();
             _client.Timeout = TimeSpan.FromSeconds(60);
         }
@@ -122,7 +78,7 @@ public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, 
 {
     // [段1] 构造流式请求体并发送（ResponseHeadersRead——流式读取）
     string body = BuildChatRequestBody(messages, tools, userId);
-    using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, GetBaseUrl().TrimEnd('/') + "/chat/completions"))
+    using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, GetBaseUrl()))
     {
         request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + GetApiKey());
         request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
@@ -215,130 +171,128 @@ public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, 
 }
 
         /// <summary>
-        /// 实时读取 API 基址——配置 llm.base_url → MAU_LLM_BASE_URL → 注入值/空串（P7 热载：每次调用取当前值）
+        /// 实时读取完整端点——API 配置池 endpoint → MAU_LLM_BASE_URL（base 格式兼容拼接）→ 空串（每次调用取当前值）
         /// </summary>
-        /// <returns>API 基址</returns>
+        /// <returns>完整 API 端点（含 /chat/completions）</returns>
         private string GetBaseUrl()
         {
-            if (_config != null)
+            if (_apiStore != null)
             {
-                string value = _config.Get("llm.base_url", "");
-                if (value.Length > 0)
+                CH_LlmApiConfig config;
+                if (_apiStore.TryGet(_apiConfigId, out config)
+                    && config.Endpoint.Length > 0)
                 {
-                    return value;
+                    return config.Endpoint;
                 }
-                string? env = Environment.GetEnvironmentVariable("MAU_LLM_BASE_URL");
-                if (!string.IsNullOrEmpty(env))
+            }
+            string? env = Environment.GetEnvironmentVariable("MAU_LLM_BASE_URL");
+            if (!string.IsNullOrEmpty(env))
+            {
+                // 兼容两种格式：完整端点原样 / 旧 base 格式拼接
+                if (env.EndsWith("/chat/completions", StringComparison.Ordinal))
                 {
                     return env;
                 }
+                return env.TrimEnd('/') + "/chat/completions";
             }
-            return _baseUrl;
+            return "";
         }
 
         /// <summary>
-        /// 实时读取 API 密钥——配置 llm.api_key → MAU_LLM_API_KEY → DEEPSEEK_API_KEY（兼容） → 注入值/空串
+        /// 实时读取 API 密钥——secrets → MAU_LLM_API_KEY → DEEPSEEK_API_KEY（兼容）→ 空串
         /// </summary>
         /// <returns>API 密钥</returns>
         private string GetApiKey()
         {
-            if (_config != null)
+            if (_apiStore != null)
             {
-                string value = _config.Get("llm.api_key", "");
-                if (value.Length > 0)
+                string secret = _apiStore.GetSecret(_apiConfigId);
+                if (secret.Length > 0)
                 {
-                    return value;
-                }
-                string? env = Environment.GetEnvironmentVariable("MAU_LLM_API_KEY");
-                if (!string.IsNullOrEmpty(env))
-                {
-                    return env;
-                }
-                env = Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY");
-                if (!string.IsNullOrEmpty(env))
-                {
-                    return env;
+                    return secret;
                 }
             }
-            return _apiKey;
+            string? env = Environment.GetEnvironmentVariable("MAU_LLM_API_KEY");
+            if (!string.IsNullOrEmpty(env))
+            {
+                return env;
+            }
+            env = Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY");
+            if (!string.IsNullOrEmpty(env))
+            {
+                return env;
+            }
+            return "";
         }
 
         /// <summary>
-        /// 实时读取模型名——配置 llm.model → MAU_LLM_MODEL → 注入值 → 兜底模型
+        /// 实时读取模型名——API 配置池 defaultModel → 兜底模型
         /// </summary>
         /// <returns>模型名</returns>
         private string GetModel()
         {
-            if (_config != null)
+            if (_apiStore != null)
             {
-                string value = _config.Get("llm.model", "");
-                if (value.Length > 0)
+                CH_LlmApiConfig config;
+                if (_apiStore.TryGet(_apiConfigId, out config)
+                    && config.DefaultModel.Length > 0)
                 {
-                    return value;
-                }
-                string? env = Environment.GetEnvironmentVariable("MAU_LLM_MODEL");
-                if (!string.IsNullOrEmpty(env))
-                {
-                    return env;
+                    return config.DefaultModel;
                 }
             }
-            if (string.IsNullOrEmpty(_model))
-            {
-                return FallbackModel;
-            }
-            return _model;
+            return FallbackModel;
         }
 
         /// <summary>
-        /// 实时读取思考模式开关——配置 llm.thinking → MAU_LLM_THINKING → 默认 enabled
+        /// 实时读取思考模式开关——全局配置 llm.thinking → MAU_LLM_THINKING → 默认 enabled
         /// </summary>
         /// <returns>true=思考模式</returns>
         private bool GetThinkingEnabled()
         {
-            if (_config != null)
+            string value = "";
+            if (_globalConfig != null)
             {
-                string value = _config.Get("llm.thinking", "");
-                if (value.Length == 0)
-                {
-                    string? env = Environment.GetEnvironmentVariable("MAU_LLM_THINKING");
-                    if (!string.IsNullOrEmpty(env))
-                    {
-                        value = env;
-                    }
-                }
-                if (value.Length == 0)
-                {
-                    value = "enabled";
-                }
-                return value == "enabled";
+                value = _globalConfig.Get("llm.thinking", "");
             }
-            return _thinkingEnabled;
+            if (value.Length == 0)
+            {
+                string? env = Environment.GetEnvironmentVariable("MAU_LLM_THINKING");
+                if (!string.IsNullOrEmpty(env))
+                {
+                    value = env;
+                }
+            }
+            if (value.Length == 0)
+            {
+                value = "enabled";
+            }
+            return value == "enabled";
         }
 
         /// <summary>
-        /// 实时读取推理强度——配置 llm.reasoning_effort → MAU_LLM_REASONING_EFFORT → 默认 high
+        /// 实时读取推理强度——全局配置 llm.reasoning_effort → MAU_LLM_REASONING_EFFORT → 默认 high
         /// </summary>
         /// <returns>推理强度 low/high/max</returns>
         private string GetReasoningEffort()
         {
-            if (_config != null)
+            string value = "";
+            if (_globalConfig != null)
             {
-                string value = _config.Get("llm.reasoning_effort", "");
-                if (value.Length == 0)
-                {
-                    string? env = Environment.GetEnvironmentVariable("MAU_LLM_REASONING_EFFORT");
-                    if (!string.IsNullOrEmpty(env))
-                    {
-                        value = env;
-                    }
-                }
-                if (value.Length == 0)
-                {
-                    value = "high";
-                }
-                return value;
+                value = _globalConfig.Get("llm.reasoning_effort", "");
             }
-            return _reasoningEffort;
+            if (value.Length == 0)
+            {
+                string? env = Environment.GetEnvironmentVariable("MAU_LLM_REASONING_EFFORT");
+                if (!string.IsNullOrEmpty(env))
+                {
+                    value = env;
+                }
+            }
+            if (value.Length == 0)
+            {
+                value = "high";
+            }
+            return value;
         }
     }
 }

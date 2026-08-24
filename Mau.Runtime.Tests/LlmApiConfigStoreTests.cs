@@ -1,0 +1,490 @@
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using Mau.Runtime;
+using Xunit;
+
+namespace Mau.Runtime.Tests
+{
+    /// <summary>
+    /// M1a LLM API 配置池测试——Store 生命周期 + 明文零 key + 原子写恢复 + 故障测序。
+    /// 隔离：临时目录 Guid 唯一命名 + finally 清理。
+    /// </summary>
+    public sealed class LlmApiConfigStoreTests
+    {
+        /// <summary>建立独立临时 Store。</summary>
+        /// <param name="settingsRoot">普通设置目录</param>
+        /// <param name="secretsRoot">秘密目录</param>
+        /// <returns>Store</returns>
+        private static CH_LlmApiConfigStore NewStore(out string settingsRoot,
+            out string secretsRoot)
+        {
+            string stamp = Guid.NewGuid().ToString("N");
+            settingsRoot = Path.Combine(Path.GetTempPath(), "llmapi_s_" + stamp);
+            secretsRoot = Path.Combine(Path.GetTempPath(), "llmapi_k_" + stamp);
+            return new CH_LlmApiConfigStore(settingsRoot, secretsRoot);
+        }
+
+        /// <summary>递归清理临时目录。</summary>
+        /// <param name="root">目录</param>
+        private static void CleanDir(string root)
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+            catch (Exception)
+            {
+                // 清理失败不阻断测试
+            }
+        }
+
+        /// <summary>EnsureDefaults 空目录——补 DeepSeek 默认配置（稳定 ID/端点/模型）。</summary>
+        [Fact]
+        public void Store_EnsureDefaults_CreatesDeepSeek()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                store.EnsureDefaults("");
+                CH_LlmApiConfig[] all = store.GetAll();
+                Assert.Single(all);
+                Assert.Equal(CH_LlmApiConfigStore.DeepSeekApiConfigId,
+                    all[0].ApiConfigId);
+                Assert.Equal("DeepSeek Default", all[0].DisplayName);
+                Assert.Equal("deepseek", all[0].ApiType);
+                Assert.Equal("https://api.deepseek.com/v1/chat/completions",
+                    all[0].Endpoint);
+                Assert.Equal("deepseek-v4-flash", all[0].DefaultModel);
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
+        /// <summary>EnsureDefaults 重复调用——不产生重复条目。</summary>
+        [Fact]
+        public void Store_EnsureDefaults_DoesNotDuplicate()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                store.EnsureDefaults("");
+                store.EnsureDefaults("");
+                Assert.Single(store.GetAll());
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
+        /// <summary>EnsureDefaults 不覆盖已有用户修改。</summary>
+        [Fact]
+        public void Store_EnsureDefaults_DoesNotOverwriteExisting()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                store.EnsureDefaults("");
+                CH_LlmApiConfig edited = new CH_LlmApiConfig();
+                edited.ApiConfigId = CH_LlmApiConfigStore.DeepSeekApiConfigId;
+                edited.DisplayName = "My DeepSeek";
+                edited.ApiType = "deepseek";
+                edited.Endpoint = "https://custom.example/v1/chat/completions";
+                edited.DefaultModel = "custom-model";
+                store.Save(edited, "");
+                store.EnsureDefaults("");
+                CH_LlmApiConfig config;
+                Assert.True(store.TryGet(
+                    CH_LlmApiConfigStore.DeepSeekApiConfigId, out config));
+                Assert.Equal("My DeepSeek", config.DisplayName);
+                Assert.Equal("custom-model", config.DefaultModel);
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
+        /// <summary>Save + GetAll——按稳定 ID 排序 + TryGet 命中/未命中。</summary>
+        [Fact]
+        public void Store_SaveGetAll_SortedRoundtrip()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                Guid idA = new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+                Guid idB = new Guid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+                CH_LlmApiConfig configB = MakeConfig(idB, "B", "https://b.example/v1");
+                CH_LlmApiConfig configA = MakeConfig(idA, "A", "https://a.example/v1");
+                store.Save(configB, "");
+                store.Save(configA, "");
+                CH_LlmApiConfig[] all = store.GetAll();
+                Assert.Equal(2, all.Length);
+                Assert.Equal(idA, all[0].ApiConfigId);
+                Assert.Equal(idB, all[1].ApiConfigId);
+                CH_LlmApiConfig found;
+                Assert.True(store.TryGet(idA, out found));
+                Assert.Equal("A", found.DisplayName);
+                Assert.False(store.TryGet(Guid.NewGuid(), out found));
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
+        /// <summary>明文零 key——llm-api.json 不含 Key，Key 只在秘密 cfg。</summary>
+        [Fact]
+        public void Store_Save_KeepsKeyOutOfPlainConfig()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                Guid id = Guid.NewGuid();
+                store.Save(MakeConfig(id, "X", "https://x.example/v1"), "sk-secret-123");
+                string plain = File.ReadAllText(
+                    Path.Combine(settingsRoot, "llm-api.json"));
+                Assert.DoesNotContain("sk-secret-123", plain);
+                string secretFile = File.ReadAllText(
+                    Path.Combine(secretsRoot, "llm-api.cfg"));
+                Assert.Contains("sk-secret-123", secretFile);
+                Assert.Equal("sk-secret-123", store.GetSecret(id));
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
+        /// <summary>Secret 生命周期——ClearSecret 清 Key 但保留普通配置。</summary>
+        [Fact]
+        public void Store_SecretLifecycle_ClearKeepsConfig()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                Guid id = Guid.NewGuid();
+                store.Save(MakeConfig(id, "X", "https://x.example/v1"), "sk-life");
+                Assert.Equal("sk-life", store.GetSecret(id));
+                store.ClearSecret(id);
+                Assert.Equal("", store.GetSecret(id));
+                CH_LlmApiConfig found;
+                Assert.True(store.TryGet(id, out found));
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
+        /// <summary>环境变量 Key 仅首次导入——已有秘密不覆盖。</summary>
+        [Fact]
+        public void Store_EnvironmentKey_FirstImportOnly()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                store.EnsureDefaults("sk-env-first");
+                Assert.Equal("sk-env-first",
+                    store.GetSecret(CH_LlmApiConfigStore.DeepSeekApiConfigId));
+                store.EnsureDefaults("sk-env-second");
+                Assert.Equal("sk-env-first",
+                    store.GetSecret(CH_LlmApiConfigStore.DeepSeekApiConfigId));
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
+        /// <summary>校验拒绝——空字段与坏端点抛 InvalidDataException。</summary>
+        [Fact]
+        public void Store_Save_RejectsInvalid()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                CH_LlmApiConfig emptyName = MakeConfig(Guid.NewGuid(), "",
+                    "https://x.example/v1");
+                Assert.Throws<InvalidDataException>(delegate
+                {
+                    store.Save(emptyName, "");
+                });
+                CH_LlmApiConfig badUri = MakeConfig(Guid.NewGuid(), "X",
+                    "not-a-uri");
+                Assert.Throws<InvalidDataException>(delegate
+                {
+                    store.Save(badUri, "");
+                });
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
+        /// <summary>坏正文恢复——从 .last 副本恢复并隔离坏原文。</summary>
+        [Fact]
+        public void Store_GetAll_RecoversFromLastCopy()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                Guid idA = new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+                Guid idB = new Guid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+                store.Save(MakeConfig(idA, "A", "https://a.example/v1"), "");
+                store.Save(MakeConfig(idB, "B", "https://b.example/v1"), "");
+                string configPath = Path.Combine(settingsRoot, "llm-api.json");
+                Assert.True(File.Exists(configPath + CH_AtomicTextFile.LastSuffix));
+                File.WriteAllText(configPath, "{ broken json");
+                CH_LlmApiConfig[] all = store.GetAll();
+                // .last 是上一版副本（第二次 Save 时 .last = 仅 A 的版本）——恢复后 1 条
+                Assert.Single(all);
+                Assert.Equal(idA, all[0].ApiConfigId);
+                string[] broken = Directory.GetFiles(settingsRoot,
+                    "llm-api.json.broken-*");
+                Assert.Single(broken);
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
+        /// <summary>Secrets 无历史泄露——读取时清理 .last 等历史明文。</summary>
+        [Fact]
+        public void Store_SecretFile_NoHistoryLeak()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                Guid id = Guid.NewGuid();
+                store.Save(MakeConfig(id, "X", "https://x.example/v1"), "sk-leak");
+                string secretPath = Path.Combine(secretsRoot, "llm-api.cfg");
+                string lastPath = secretPath + CH_AtomicTextFile.LastSuffix;
+                File.WriteAllText(lastPath, "{\"old\":\"sk-old\"}");
+                Assert.Equal("sk-leak", store.GetSecret(id));
+                Assert.False(File.Exists(lastPath));
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
+        /// <summary>磁盘不足发生在临时正文落盘前，正式文件保持不变。</summary>
+        [Fact]
+        public void Fault_DiskFullDoesNotReplaceConsistentFile()
+        {
+            CH_FaultAtomicFilePort port = new CH_FaultAtomicFilePort();
+            string path = Path.GetFullPath("atomic-disk-full.json");
+            port.Seed(path, "stable");
+            port.FailOperation = "write";
+
+            Assert.Throws<IOException>(delegate
+            {
+                CH_AtomicTextFile.Write(path, "changed", port);
+            });
+
+            Assert.Equal("stable", port.Read(path));
+            Assert.Equal(1, port.FailureCount);
+            Assert.Equal(1, port.FileCount);
+        }
+
+        /// <summary>权限变化发生在备份阶段，不重试且不替换正式文件。</summary>
+        [Fact]
+        public void Fault_PermissionChangeDoesNotRetryOrReplace()
+        {
+            CH_FaultAtomicFilePort port = new CH_FaultAtomicFilePort();
+            string path = Path.GetFullPath("atomic-permission.json");
+            port.Seed(path, "stable");
+            port.FailOperation = "copy";
+
+            Assert.Throws<UnauthorizedAccessException>(delegate
+            {
+                CH_AtomicTextFile.Write(path, "changed", port);
+            });
+
+            Assert.Equal("stable", port.Read(path));
+            Assert.Equal(1, port.FailureCount);
+            Assert.Equal(1, port.FileCount);
+        }
+
+        /// <summary>替换瞬间失败会清理临时文件并保留正文与最后副本。</summary>
+        [Fact]
+        public void Fault_PartialReplaceKeepsPrimaryAndLastCopy()
+        {
+            CH_FaultAtomicFilePort port = new CH_FaultAtomicFilePort();
+            string path = Path.GetFullPath("atomic-partial.json");
+            port.Seed(path, "stable");
+            port.FailOperation = "move";
+
+            Assert.Throws<IOException>(delegate
+            {
+                CH_AtomicTextFile.Write(path, "changed", port);
+            });
+
+            Assert.Equal("stable", port.Read(path));
+            Assert.Equal("stable", port.Read(path
+                + CH_AtomicTextFile.LastSuffix));
+            Assert.Equal(1, port.FailureCount);
+            Assert.Equal(2, port.FileCount);
+        }
+
+        /// <summary>建立字段完整的测试配置。</summary>
+        /// <param name="id">稳定身份</param>
+        /// <param name="name">显示名</param>
+        /// <param name="endpoint">端点</param>
+        /// <returns>配置</returns>
+        private static CH_LlmApiConfig MakeConfig(Guid id, string name,
+            string endpoint)
+        {
+            CH_LlmApiConfig config = new CH_LlmApiConfig();
+            config.ApiConfigId = id;
+            config.DisplayName = name;
+            config.ApiType = "deepseek";
+            config.Endpoint = endpoint;
+            config.DefaultModel = "deepseek-v4-flash";
+            return config;
+        }
+    }
+
+    /// <summary>完全内存化且可在单一步骤失败的文件端口。</summary>
+    internal sealed class CH_FaultAtomicFilePort : CH_I_AtomicFilePort
+    {
+        /// <summary>文件正文。</summary>
+        private readonly Dictionary<string, byte[]> CH_FaultAtomicFilePort_Files;
+
+        /// <summary>要失败的操作名。</summary>
+        internal string FailOperation;
+
+        /// <summary>实际注入失败次数。</summary>
+        internal int FailureCount;
+
+        /// <summary>当前文件数量。</summary>
+        internal int FileCount
+        {
+            get { return CH_FaultAtomicFilePort_Files.Count; }
+        }
+
+        /// <summary>建立空端口。</summary>
+        internal CH_FaultAtomicFilePort()
+        {
+            CH_FaultAtomicFilePort_Files =
+                new Dictionary<string, byte[]>(StringComparer.Ordinal);
+            FailOperation = "";
+            FailureCount = 0;
+        }
+
+        /// <summary>预置稳定正文。</summary>
+        internal void Seed(string path, string content)
+        {
+            CH_FaultAtomicFilePort_Files[path] =
+                Encoding.UTF8.GetBytes(content);
+        }
+
+        /// <summary>读取正文。</summary>
+        internal string Read(string path)
+        {
+            return Encoding.UTF8.GetString(
+                CH_FaultAtomicFilePort_Files[path]);
+        }
+
+        /// <summary>内存端口无需建立目录。</summary>
+        public void CreateDirectory(string path)
+        {
+        }
+
+        /// <summary>判断文件存在。</summary>
+        public bool Exists(string path)
+        {
+            return CH_FaultAtomicFilePort_Files.ContainsKey(path);
+        }
+
+        /// <summary>写临时正文。</summary>
+        public void WriteDurable(string path, byte[] bytes)
+        {
+            Fail("write", false);
+            byte[] copy = new byte[bytes.Length];
+            Array.Copy(bytes, copy, bytes.Length);
+            CH_FaultAtomicFilePort_Files.Add(path, copy);
+        }
+
+        /// <summary>复制稳定正文。</summary>
+        public void Copy(string source, string destination)
+        {
+            Fail("copy", true);
+            byte[] sourceBytes = CH_FaultAtomicFilePort_Files[source];
+            byte[] copy = new byte[sourceBytes.Length];
+            Array.Copy(sourceBytes, copy, sourceBytes.Length);
+            CH_FaultAtomicFilePort_Files[destination] = copy;
+        }
+
+        /// <summary>覆盖移动临时正文。</summary>
+        public void MoveReplace(string source, string destination)
+        {
+            Fail("move", false);
+            CH_FaultAtomicFilePort_Files[destination] =
+                CH_FaultAtomicFilePort_Files[source];
+            CH_FaultAtomicFilePort_Files.Remove(source);
+        }
+
+        /// <summary>清理临时正文。</summary>
+        public void Delete(string path)
+        {
+            CH_FaultAtomicFilePort_Files.Remove(path);
+        }
+
+        /// <summary>在指定步骤注入单次失败。</summary>
+        private void Fail(string operation, bool permission)
+        {
+            if (FailOperation != operation)
+            {
+                return;
+            }
+            FailureCount = FailureCount + 1;
+            if (permission)
+            {
+                throw new UnauthorizedAccessException("Injected permission.");
+            }
+            throw new IOException("Injected IO failure.");
+        }
+    }
+}

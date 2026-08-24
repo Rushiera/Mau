@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
 using Mau.Runtime;
+using Mau.Providers;
 
 namespace CH4
 {
@@ -56,6 +57,12 @@ namespace CH4
 
             /// <summary>每猫配置存储——sessions/&lt;id&gt;/config.cfg（P9.4 per-cat 路由；ConfigStoreRegistry 注册）</summary>
             public ConfigStore Config;
+
+            /// <summary>LLM API 配置身份——cat.cfg 持久化；缺省回退内置 DeepSeek（M1b）</summary>
+            public Guid ApiConfigId;
+
+            /// <summary>API 配置解析副本——M1c 每猫 Runtime 构造消费</summary>
+            public CH_LlmApiConfig ApiConfig;
         }
 
         /// <summary>
@@ -74,6 +81,9 @@ namespace CH4
 
             /// <summary>监听端口——静默态 0</summary>
             public int Port { get; set; }
+
+            /// <summary>LLM API 配置身份——缺省空串（回退内置 DeepSeek）</summary>
+            public string ApiConfigId { get; set; }
         }
 
         /// <summary>
@@ -107,6 +117,29 @@ namespace CH4
             if (line.StartsWith("cat.delete ", StringComparison.Ordinal))
             {
                 return HandleCatDelete(line.Substring(11).Trim());
+            }
+            if (line.StartsWith("cat.chat ", StringComparison.Ordinal))
+            {
+                // 格式：cat.chat <key> <内容>——内核每猫对话通道（M1d 验收 + 回归复用；DriveUntilIdle 等回复完成）
+                string rest = line.Substring(9).Trim();
+                int space = rest.IndexOf(' ');
+                if (space <= 0)
+                {
+                    return "cat.chat | 用法: cat.chat <key> <内容>";
+                }
+                string key = rest.Substring(0, space).Trim();
+                string content = rest.Substring(space + 1).Trim();
+                if (content.Length == 0)
+                {
+                    return "cat.chat | 内容不能为空";
+                }
+                CatEntry cat = FindCat(key);
+                if (cat == null)
+                {
+                    return "cat.chat | 未找到猫: " + key;
+                }
+                cat.Session.PostUserMessage(content);
+                return "cat.chat | 已投递: " + cat.DisplayName;
             }
             return "cat.* 指令未识别: " + line;
         }
@@ -303,6 +336,36 @@ namespace CH4
         {
             try
             {
+                // [段1] 每猫 API 引用解析——cat.cfg apiConfigId → API 配置池（缺省回退内置 DeepSeek；M1b/M1c）
+                CatCfgData cfgData = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", id, "cat.cfg"));
+                Guid apiConfigId = CH_LlmApiConfigStore.DeepSeekApiConfigId;
+                if (cfgData != null && cfgData.ApiConfigId != null && cfgData.ApiConfigId.Length > 0)
+                {
+                    Guid parsed;
+                    if (Guid.TryParse(cfgData.ApiConfigId, out parsed) && parsed != Guid.Empty)
+                    {
+                        apiConfigId = parsed;
+                    }
+                }
+                CH_LlmApiConfigStore apiStore = null;
+                DataBox.TryResolve<CH_LlmApiConfigStore>(out apiStore);
+                if (apiStore == null)
+                {
+                    // 防御——Bootstrap 已绑定，实际不触发；空 Store 保证非空
+                    apiStore = new CH_LlmApiConfigStore(Path.Combine(_dataRoot, "Data", "config"), Path.Combine(_dataRoot, "Data", "secrets"));
+                }
+                CH_LlmApiConfig apiConfig = new CH_LlmApiConfig();
+                if (!apiStore.TryGet(apiConfigId, out apiConfig))
+                {
+                    apiConfigId = CH_LlmApiConfigStore.DeepSeekApiConfigId;
+                    if (!apiStore.TryGet(apiConfigId, out apiConfig))
+                    {
+                        apiConfig = new CH_LlmApiConfig();
+                    }
+                }
+                ConfigStore globalConfig = null;
+                DataBox.TryResolve<ConfigStore>(out globalConfig);
+                // [段2] 上下文 + 前文恢复/注入
                 ChatContext context = new ChatContext();
                 SessionStore store = new SessionStore(Path.Combine(_dataRoot, "Data", "sessions", id + ".json"));
                 LlmMessage[] restored;
@@ -318,7 +381,9 @@ namespace CH4
                     string injectPrompt = BuildInjectPrompt(workspace, BuildToolSpecs());
                     context.SetSystemPrompt(injectPrompt);
                 }
-                ChatSession session = new ChatSession(id, displayName, context, store, _llmRuntime, _oa, _tools, ExecuteTool);
+                // [段3] 会话构造——M1c 每猫独立 Runtime（API 配置池按该猫 apiConfigId 构造）
+                ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig);
+                ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, _tools, ExecuteTool);
                 RegisterSession(session);
                 CatEntry cat = new CatEntry();
                 cat.Id = id;
@@ -331,6 +396,9 @@ namespace CH4
                 // P9.4 per-cat 配置——独立 config.cfg（不存在空实例；首次写落盘）+ 注册表登记
                 cat.Config = ConfigStore.Load(Path.Combine(_dataRoot, "Data", "sessions", id, "config.cfg"));
                 ConfigStoreRegistry.Register(id, cat.Config);
+                cat.ApiConfigId = apiConfigId;
+                cat.ApiConfig = apiConfig;
+                LogStore.Add("CH4.Entry", 1, "cat.api | id=" + id + " | api=" + apiConfigId.ToString("D") + " | model=" + apiConfig.DefaultModel, "CHAT");
                 return cat;
             }
             catch (Exception ex)
@@ -516,6 +584,11 @@ namespace CH4
             }
             for (int i = 0; i < dirs.Length; i++)
             {
+                // 默认猫 majordomo 目录跳过——Bootstrap 专属处理（M1c 默认猫 cat.cfg 读取面），不进多猫注册表
+                if (string.Equals(Path.GetFileName(dirs[i]), "majordomo", StringComparison.Ordinal))
+                {
+                    continue;
+                }
                 string cfgPath = Path.Combine(dirs[i], "cat.cfg");
                 if (!File.Exists(cfgPath))
                 {
@@ -584,6 +657,7 @@ namespace CH4
                     data.DisplayName = GetStringProp(root, "displayName");
                     data.Running = GetBoolProp(root, "running");
                     data.Port = GetIntProp(root, "port");
+                    data.ApiConfigId = GetStringProp(root, "apiConfigId");
                     return data;
                 }
             }
@@ -606,7 +680,8 @@ namespace CH4
                 id = cat.Id,
                 displayName = cat.DisplayName,
                 running = cat.Running,
-                port = cat.Port
+                port = cat.Port,
+                apiConfigId = cat.ApiConfigId.ToString("D")
             };
             try
             {

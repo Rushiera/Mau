@@ -163,9 +163,40 @@ private static HttpHost _httpHost;
             DataBox.Bind<ConfigStore>(llmConfig);
             // P9.4 配置注册表——默认全局实例（每猫实例在 cat.new/启动扫描时注册）
             ConfigStoreRegistry.SetDefault(llmConfig);
+            // M1a LLM API 配置池——llm-api.json 明文（零 key）+ Data/secrets 独立秘密文件（CH3 同构迁移；环境变量首次导入兜底）
+            CH_LlmApiConfigStore apiConfigStore = new CH_LlmApiConfigStore(
+                Path.Combine(dataRoot, "Data", "config"),
+                Path.Combine(dataRoot, "Data", "secrets"));
+            string environmentKey = Environment.GetEnvironmentVariable("MAU_LLM_API_KEY");
+            if (string.IsNullOrEmpty(environmentKey))
+            {
+                environmentKey = Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY");
+            }
+            if (environmentKey == null)
+            {
+                environmentKey = "";
+            }
+            apiConfigStore.EnsureDefaults(environmentKey);
+            DataBox.Bind<CH_LlmApiConfigStore>(apiConfigStore);
+            // M1c 迁移——llm.cfg 遗留明文 key 导入 secrets（secrets 无 DeepSeek key 时一次性导入 + 清空旧键）
+            if (apiConfigStore.GetSecret(CH_LlmApiConfigStore.DeepSeekApiConfigId).Length == 0)
+            {
+                string legacyKey = llmConfig.Get("llm.api_key", "");
+                if (legacyKey.Length > 0)
+                {
+                    CH_LlmApiConfig deepSeek;
+                    if (apiConfigStore.TryGet(CH_LlmApiConfigStore.DeepSeekApiConfigId, out deepSeek))
+                    {
+                        apiConfigStore.Save(deepSeek, legacyKey);
+                    }
+                    llmConfig.Set("llm.api_key", "");
+                    llmConfig.Save();
+                }
+            }
             // P8.5d 配置群多文件化——ui.* 用户偏好追加到同一 store（键前缀段路由；ui.json 缺失时首次写入自动创建）
             llmConfig.AddFile("ui", Path.Combine(configDir, "ui.json"));
-            _llmRuntime = new DeepSeekLlmRuntime(llmConfig);
+            // M1c 语料面 Runtime——API 配置池按 DeepSeek 稳定 ID 构造（QuickCat 工单 llm.stream 消费面）
+            _llmRuntime = new DeepSeekLlmRuntime(apiConfigStore, CH_LlmApiConfigStore.DeepSeekApiConfigId, llmConfig);
             DataBox.Bind<ILlmRuntime>(_llmRuntime);
             // P8 三期——Roslyn cs.* 编码工具域（MauRoslynBridge——受控根=可写根子集，只读知识根不参与项目扫描；磁盘权威快照 + 三态缓存）
             DataBox.Bind<ICSharpBridge>(new MauRoslynBridge(WritableRootPaths(workspace)));
@@ -222,25 +253,21 @@ private static HttpHost _httpHost;
             }
             _tools = BuildTools();
             // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面）
-            _defaultSession = new ChatSession(DateTime.Now.Ticks.ToString(), "majordomo", chatCtx, chatStore, _llmRuntime, _oa, _tools, ExecuteTool);
+            // M1c 默认猫同迁——独立 Runtime 实例；API 配置身份从 sessions/majordomo/cat.cfg 读取（缺省回退内置 DeepSeek）
+            Guid defaultApiConfigId = CH_LlmApiConfigStore.DeepSeekApiConfigId;
+            CatCfgData defaultCfg = LoadCatCfg(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "cat.cfg"));
+            if (defaultCfg != null && defaultCfg.ApiConfigId != null && defaultCfg.ApiConfigId.Length > 0)
+            {
+                Guid parsed;
+                if (Guid.TryParse(defaultCfg.ApiConfigId, out parsed) && parsed != Guid.Empty)
+                {
+                    defaultApiConfigId = parsed;
+                }
+            }
+            _defaultSession = new ChatSession(DateTime.Now.Ticks.ToString(), "majordomo", chatCtx, chatStore,
+                new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _tools, ExecuteTool);
             RegisterSession(_defaultSession);
-            string llmKeyProbe = llmConfig.Get("llm.api_key", "");
-            if (llmKeyProbe.Length == 0)
-            {
-                string envKeyProbe = Environment.GetEnvironmentVariable("MAU_LLM_API_KEY");
-                if (envKeyProbe != null)
-                {
-                    llmKeyProbe = envKeyProbe;
-                }
-            }
-            if (llmKeyProbe.Length == 0)
-            {
-                string envKeyProbe = Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY");
-                if (envKeyProbe != null)
-                {
-                    llmKeyProbe = envKeyProbe;
-                }
-            }
+            string llmKeyProbe = apiConfigStore.GetSecret(CH_LlmApiConfigStore.DeepSeekApiConfigId);
             string llmState;
             if (llmKeyProbe.Length == 0)
             {
