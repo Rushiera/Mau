@@ -6,7 +6,7 @@
 // 依赖: 无
 // 包: 无
 // 引用: Mau.Runtime（ConfigStore/ConfigSchema/DataBox）
-// 原理: DataBox.TryResolve<ConfigStore> + <ConfigSchema> → method 分派
+// 原理: ConfigStoreRegistry.Resolve(catId) + DataBox.TryResolve<ConfigSchema> → method 分派（P9.4 per-cat 路由）
 //       写入唯一实现 = ConfigStore.SetChecked/ResetToDefault（schema 白名单 + 值域校验 + 原子写回滚）
 // 方法: list → （无参）
 //        get → key
@@ -36,8 +36,8 @@ namespace Mau.Bricks
         public static bool Invoke(string method, string argsJson, out string result)
         {
             result = "";
-            ConfigStore? cfg;
-            DataBox.TryResolve<ConfigStore>(out cfg);
+            // P9.4 per-cat 路由——argsJson 带 catId（宿主发单注入）→ 注册表路由每猫实例；空/未注册回退默认
+            ConfigStore? cfg = ConfigStoreRegistry.Resolve(ExtractArg(argsJson, "catId"));
             if (cfg == null)
             {
                 result = "ERR|CONFIG_NO_STORE|宿主未注入 ConfigStore";
@@ -266,4 +266,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:1A0E531059D55FD86134D2CFBB030CFA50EFFD7066BE23B893DBBC1FB2399764
+// #MAU_CHECKSUM:SHA256:8332FF8B82308B22E5EA648A83C138BD08F13E4B13AD6D34B89E02D9A7B3994E

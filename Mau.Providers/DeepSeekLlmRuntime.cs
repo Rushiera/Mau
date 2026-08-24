@@ -115,12 +115,13 @@ namespace Mau.Providers
 /// </summary>
 /// <param name = "messages">完整消息序列（system/user/assistant/tool 多 role）</param>
 /// <param name = "tools">工具定义数组（可为空——纯对话）</param>
+/// <param name = "userId">会话用户标识——请求体 user_id（P9.4 CH2 对齐：KVCache 隔离；空=不携带）</param>
 /// <param name = "ct">取消令牌</param>
 /// <returns>流式事件序列</returns>
-public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, [EnumeratorCancellation] CancellationToken ct = default)
+public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, string userId = "", [EnumeratorCancellation] CancellationToken ct = default)
 {
     // [段1] 构造流式请求体并发送（ResponseHeadersRead——流式读取）
-    string body = BuildChatRequestBody(messages, tools);
+    string body = BuildChatRequestBody(messages, tools, userId);
     using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, GetBaseUrl().TrimEnd('/') + "/chat/completions"))
     {
         request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + GetApiKey());

@@ -242,19 +242,24 @@ namespace CH4
         }
 
         /// <summary>
-        /// 静态页服务——返回 index.html（协议 §六：GET / 本地面板）。
+        /// 静态页服务——双页模式（协议 §六：GET / 本地面板）：_serveChatPage=true 返回 chat.html 独立对话页 / false 返回 index.html 主面板（P9.3 每猫实例按端口路由）。
         /// </summary>
         /// <returns>HTML 响应</returns>
-        private static IResult ServeIndex()
+        private IResult ServeIndex()
         {
             string baseDir = AppContext.BaseDirectory;
-            string htmlPath = System.IO.Path.Combine(baseDir, "html", "index.html");
+            string fileName = "index.html";
+            if (_serveChatPage)
+            {
+                fileName = "chat.html";
+            }
+            string htmlPath = System.IO.Path.Combine(baseDir, "html", fileName);
             if (System.IO.File.Exists(htmlPath))
             {
                 string html = System.IO.File.ReadAllText(htmlPath);
                 return Results.Text(html, "text/html");
             }
-            return Results.Text("CH4 外观层——index.html 未找到: " + htmlPath + "（宿主需在 CH4.Entry/bin/.../html/ 放置静态页）", "text/plain");
+            return Results.Text("CH4 外观层——" + fileName + " 未找到: " + htmlPath + "（宿主需在 CH4.Entry/bin/.../html/ 放置静态页）", "text/plain");
         }
     }
 }

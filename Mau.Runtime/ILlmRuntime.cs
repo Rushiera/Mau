@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading;
 
 namespace Mau.Runtime
@@ -14,8 +14,9 @@ namespace Mau.Runtime
         /// </summary>
         /// <param name="messages">完整消息序列（OpenAI 兼容 role：system/user/assistant/tool）</param>
         /// <param name="tools">工具定义数组（可为空——纯对话）</param>
+        /// <param name="userId">会话用户标识——请求体 user_id（CH2 对齐：每猫会话 ID → KVCache 隔离；空=不携带）</param>
         /// <param name="ct">取消令牌</param>
         /// <returns>流式事件序列</returns>
-        System.Collections.Generic.IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, CancellationToken ct = default);
+        System.Collections.Generic.IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, string userId = "", CancellationToken ct = default);
     }
 }

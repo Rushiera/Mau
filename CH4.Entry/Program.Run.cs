@@ -64,6 +64,7 @@ namespace CH4
                 }
                 PumpSessions();
                 PumpChatQueue();
+                PumpCatQueues();
                 // [段2] 按键轮询——有输入才 ReadLine（阻塞读会卡住帧驱动）
                 if (Console.KeyAvailable)
                 {
@@ -177,6 +178,19 @@ namespace CH4
                 else
                 {
                     _sessionCmdQueue.Enqueue(line);
+                }
+                return true;
+            }
+            // P9.3 多猫管理指令族——主线程直执 / HTTP 线程入队泵（ThreadGuard：注册表仅主线程触碰）
+            if (line.StartsWith("cat.", StringComparison.Ordinal))
+            {
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    Console.WriteLine("[CH4.Entry] " + HandleCatCommand(line));
+                }
+                else
+                {
+                    _catQueue.Enqueue(line);
                 }
                 return true;
             }
@@ -322,6 +336,7 @@ namespace CH4
                 }
                 PumpSessions();
                 PumpChatQueue();
+                PumpCatQueues();
                 if (AllIdle())
                 {
                     return;

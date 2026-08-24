@@ -34,9 +34,10 @@ namespace Mau.Runtime.Tests
             /// </summary>
             /// <param name="messages">消息序列</param>
             /// <param name="tools">工具定义</param>
+            /// <param name="userId">会话用户标识（P9.4 接口扩展——测试桩忽略）</param>
             /// <param name="ct">取消令牌</param>
             /// <returns>流式事件序列（async iterator 为接口形态必需）</returns>
-            public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, [EnumeratorCancellation] CancellationToken ct = default)
+            public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, string userId = "", [EnumeratorCancellation] CancellationToken ct = default)
             {
                 int seq = System.Threading.Interlocked.Increment(ref _seq);
                 if (seq == 1)

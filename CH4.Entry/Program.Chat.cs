@@ -206,14 +206,14 @@ namespace CH4
         /// 会话视图转换：system 跳过；user/assistant 文本直出；assistant tool_calls 与后续 tool 结果配对合入工具卡片（参数 ≤200/结果 ≤300）；
         /// 孤立 tool 丢弃；保留尾部 max 条视图消息；seq 1-based 渲染锚点。
         /// </summary>
+        /// <param name="session">目标会话（P9.3 按猫参数化——每猫 HttpHost 闭包传各自会话）</param>
         /// <param name="max">视图消息条数上限（1-2000）</param>
         /// <returns>会话视图 JSON</returns>
-        public static string BuildHistoryView(int max)
-        {
+        internal static string BuildHistoryView(ChatSession session, int max)        {
             List<object> view = new List<object>();
             List<Dictionary<string, object>> pendingTools = new List<Dictionary<string, object>>();
             long seq = 0;
-            LlmMessage[] all = _defaultSession.Context.GetMessages();
+            LlmMessage[] all = session.Context.GetMessages();
             for (int i = 0; i < all.Length; i++)
             {
                 LlmMessage m = all[i];
@@ -289,7 +289,7 @@ namespace CH4
             }
             Dictionary<string, object> resp = new Dictionary<string, object>();
             resp["version"] = 1;
-            resp["sessionId"] = _defaultSession.Id;
+            resp["sessionId"] = session.Id;
             resp["count"] = view.Count;
             resp["messages"] = view;
             return JsonSerializer.Serialize(resp);
@@ -365,6 +365,15 @@ namespace CH4
         private static void RegisterSession(ChatSession session)
         {
             _sessions.Add(session);
+        }
+
+        /// <summary>
+        /// 从编排轮转表移除会话（P9.3b cat.delete——会话销毁面）。
+        /// </summary>
+        /// <param name="session">会话实体</param>
+        private static void RemoveSession(ChatSession session)
+        {
+            _sessions.Remove(session);
         }
 
         /// <summary>

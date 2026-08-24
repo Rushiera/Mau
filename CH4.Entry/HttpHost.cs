@@ -67,6 +67,15 @@ namespace CH4
         /// <summary>会话历史构建回调——Program.BuildHistoryView（B4 对话区；GET /api/v1/history）</summary>
         private Func<int, string> _historyBuilder;
 
+        /// <summary>会话归属 ID——SSE llm/chatdone 事件 sessionId 字段（P9.3 多实例化：每猫实例绑定自身会话）</summary>
+        private string _sessionId;
+
+        /// <summary>多猫列表构建回调——GET /api/v1/cats（可空=不注册该端点——P9.3b 注册表就位后传入）</summary>
+        private Func<string> _catsBuilder;
+
+        /// <summary>静态页模式——true=chat.html 独立对话页 / false=index.html 主面板（P9.3 双页模式）</summary>
+        private bool _serveChatPage;
+
         /// <summary>快照推送间隔毫秒——250ms（协议 §4.2 snapshot 事件）</summary>
         private const int SnapshotIntervalMs = 250;
 
@@ -74,19 +83,25 @@ namespace CH4
         /// 启动 HTTP 外观层——Kestrel 绑定端口 + 注册路由 + 后台推送任务启动。
         /// </summary>
         /// <param name="port">监听端口（127.0.0.1 回环）</param>
+        /// <param name="sessionId">会话归属 ID——SSE llm/chatdone 事件归属（P9.3 每猫实例绑定自身会话）</param>
         /// <param name="snapshotBuilder">快照 JSON 构建回调（includeLogs——快照轮询含日志/SSE 事件裁剪）</param>
         /// <param name="dispatcher">指令投递回调（返回 true=识别并投递）</param>
         /// <param name="frameBuilder">紧凑帧构建回调（frame.jsonl 帧流；可空=不落帧）</param>
         /// <param name="historyBuilder">会话历史视图构建回调（B4 对话区——GET /api/v1/history）</param>
+        /// <param name="catsBuilder">多猫列表构建回调（GET /api/v1/cats；可空=不注册端点）</param>
+        /// <param name="serveChatPage">静态页模式（true=chat.html / false=index.html）</param>
         /// <returns>HttpHost 实例</returns>
-        public static HttpHost Start(int port, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher, Func<string> frameBuilder, Func<int, string> historyBuilder)
+        public static HttpHost Start(int port, string sessionId, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher, Func<string> frameBuilder, Func<int, string> historyBuilder, Func<string> catsBuilder, bool serveChatPage)
         {
             HttpHost host = new HttpHost();
             host._port = port;
+            host._sessionId = sessionId;
             host._snapshotBuilder = snapshotBuilder;
             host._dispatcher = dispatcher;
             host._frameBuilder = frameBuilder;
             host._historyBuilder = historyBuilder;
+            host._catsBuilder = catsBuilder;
+            host._serveChatPage = serveChatPage;
             host.BuildApp();
             host._pumpCts = new CancellationTokenSource();
             host._pumpTask = Task.Run(delegate
@@ -144,6 +159,14 @@ namespace CH4
                 }
                 return Results.Text(_historyBuilder(max), "application/json");
             });
+            if (_catsBuilder != null)
+            {
+                _app.MapGet("/api/v1/cats", (HttpContext ctx) =>
+                {
+                    // P9.3 多猫列表——catsBuilder 非空才注册（主端口管理页签数据源；每猫实例不注册）
+                    return Results.Text(_catsBuilder(), "application/json");
+                });
+            }
             _app.MapGet("/", (HttpContext ctx) =>
             {
                 // B4 修复：静态页禁缓存——前端频繁迭代，浏览器启发式缓存导致拿旧版 html（工具回填等新 JS 不生效）

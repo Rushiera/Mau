@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>CH4 Cat 对话</title>
+    <style>
+        :root { --chat-font-size: 12px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #141414; color: #c8c8c8; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+        #chatbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #222; font-size: 11px; color: #6a6a6a; }
+        #chatbar .sid { color: #c586c0; font-weight: bold; }
+        #chatMsgs { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+        .chat-row { display: flex; animation: chat-in 0.18s ease-out; }
+        @keyframes chat-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+        .chat-row.user { justify-content: flex-end; }
+        .chat-row.assistant { justify-content: flex-start; }
+        .chat-bubble { max-width: 78%; padding: 8px 12px; border-radius: 8px; font-size: var(--chat-font-size); line-height: 1.7; white-space: pre-wrap; word-break: break-all; }
+        .chat-row.user .chat-bubble { background: #0e639c; color: #fff; }
+        .chat-row.assistant .chat-bubble { background: #1a1a1a; color: #d4d4d4; border: 1px solid #2a2a2a; }
+        .chat-bubble.reason { background: #1c1c1c; color: #9a9a9a; border: 1px solid #242424; font-size: 11px; }
+        .chat-bubble.tool { background: #101010; border: 1px solid #242424; font-size: 11px; padding: 6px 10px; }
+        .chat-bubble.error { border-color: #f48771; color: #f48771; }
+        .chat-bubble.streaming::after { content: '▌'; color: #4ec9b0; animation: chatblink 1s infinite; }
+        .chat-bubble.streaming-wait::after { content: '…'; color: #6a6a6a; }
+        @keyframes chatblink { 50% { opacity: 0; } }
+        .chat-reason { margin-top: 6px; font-size: 11px; color: #6a6a6a; }
+        .chat-reason summary { cursor: pointer; color: #6a9955; }
+        .chat-tool { margin-top: 6px; background: #101010; border: 1px solid #242424; border-radius: 4px; padding: 5px 8px; font-size: 11px; color: #8a8a8a; font-family: Consolas, monospace; }
+        .chat-tool .tn { color: #dcdcaa; }
+        .chat-tool .ta { color: #6a6a6a; word-break: break-all; white-space: pre-wrap; margin-top: 2px; }
+        .chat-tool .tr { color: #6a9955; word-break: break-all; white-space: pre-wrap; margin-top: 3px; }
+        .chat-tool .tr.err { color: #f48771; }
+        #chatinput { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #222; }
+        #chatSendInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 7px 10px; font-family: inherit; font-size: 12px; }
+        #chatSendInput:focus { outline: none; border-color: #0e639c; }
+        #chatSendInput:disabled { opacity: 0.5; }
+        #chatSendBtn { background: #0e639c; border: none; color: #fff; padding: 7px 16px; cursor: pointer; font-family: inherit; font-size: 12px; }
+        #chatSendBtn:disabled { opacity: 0.5; cursor: default; }
+    </style>
+</head>
+<body>
+    <div id="chatbar">
+        <span class="sid">CH4 Cat</span>
+        <span id="chatInfo">—</span>
+    </div>
+    <div id="chatMsgs"></div>
+    <div id="chatinput">
+        <input id="chatSendInput" placeholder="说话…（Enter 发送，发送期禁用）" onkeydown="if(event.key==='Enter')chatSend()">
+        <button id="chatSendBtn" onclick="chatSend()">发送</button>
+    </div>
+
+    <script>
+        // [段1] 对话区状态（B4 同构——自 index.html 提取；P9.3d 独立对话页）
+        var chatMsgs = document.getElementById('chatMsgs');
+        var chatInfo = document.getElementById('chatInfo');
+        var chatInput = document.getElementById('chatSendInput');
+        var chatBtn = document.getElementById('chatSendBtn');
+        var chatState = 'loading';        // loading/idle/sending
+        var chatStage = null;             // 当前阶段 {type:'reason'|'tool'|'text', bubble, reasonPre}（tool 时 bubble=null）
+        var chatToolQueue = [];           // 工具回填队列——独立于 stage（tool 事件在 done 后到达）
+        var chatTimer = null;             // 120s 无响应兜底定时器
+        var CHAT_SESSION = '';
+        var CHAT_TIMEOUT_MS = 120000;
+
+        function chatSetState(s) {
+            chatState = s;
+            chatInput.disabled = (s !== 'idle');
+            chatBtn.disabled = (s !== 'idle');
+        }
+
+        function chatScrollBottom() {
+            chatMsgs.scrollTop = chatMsgs.scrollHeight;
+        }
+
+        function chatBubble(role, cls) {
+            var row = document.createElement('div');
+            row.className = 'chat-row ' + role;
+            var b = document.createElement('div');
+            b.className = 'chat-bubble' + (cls ? ' ' + cls : '');
+            row.appendChild(b);
+            chatMsgs.appendChild(row);
+            chatScrollBottom();
+            return b;
+        }
+
+        function chatAppend(bubble, text) {
+            // 专用文本节点追加——textContent 拼接会销毁子元素（details/工具卡被后续 text 事件清空——B4.2 根因）
+            if (!bubble.textNode) {
+                bubble.textNode = document.createTextNode('');
+                bubble.insertBefore(bubble.textNode, bubble.firstChild);
+            }
+            bubble.textNode.data = bubble.textNode.data + text;
+            chatScrollBottom();
+        }
+
+        function chatKeepAlive() {
+            if (chatTimer) { clearTimeout(chatTimer); }
+            chatTimer = setTimeout(function () {
+                if (chatState === 'sending') {
+                    // 120s 无任何 llm/tool 事件——seal 当前阶段 + 错误提示 + 恢复 idle
+                    if (chatStage && chatStage.bubble) {
+                        chatStage.bubble.classList.remove('streaming');
+                        chatStage.bubble.classList.remove('streaming-wait');
+                        chatAppend(chatStage.bubble, '\n（LLM 无响应超过 120s——检查宿主控制台）');
+                        chatStage.bubble.classList.add('error');
+                    }
+                    chatStage = null;
+                    chatToolQueue = [];
+                    chatSetState('idle');
+                }
+            }, CHAT_TIMEOUT_MS);
+        }
+
+        function chatToolCard(tool) {
+            var card = document.createElement('div');
+            card.className = 'chat-tool';
+            var name = document.createElement('div');
+            name.className = 'tn';
+            name.textContent = '🔧 ' + (tool.name || '?');
+            card.appendChild(name);
+            if (tool.arguments) {
+                var a = document.createElement('div');
+                a.className = 'ta';
+                a.textContent = tool.arguments;
+                card.appendChild(a);
+            }
+            if (tool.result) {
+                var r = document.createElement('div');
+                r.className = 'tr' + (tool.result.indexOf('ERR') === 0 ? ' err' : '');
+                r.textContent = tool.result;
+                card.appendChild(r);
+            } else if (tool.result === undefined) {
+                var w = document.createElement('div');
+                w.className = 'ta';
+                w.textContent = '⏳ 处理中…';
+                card.appendChild(w);
+            }
+            return card;
+        }
+
+        function chatReasonBlock(text) {
+            // 思考块——details 默认展开（流式实时可见）；用户可收起
+            var det = document.createElement('details');
+            det.className = 'chat-reason';
+            det.open = true;
+            var sum = document.createElement('summary');
+            sum.textContent = '思考过程';
+            det.appendChild(sum);
+            var pre = document.createElement('div');
+            pre.textContent = text || '';
+            det.appendChild(pre);
+            return det;
+        }
+
+        function chatRenderHistory(data) {
+            // 阶段化历史渲染——与流式阶段模型同构：思考独立气泡 / 每工具独立气泡 / 回复独立气泡
+            chatMsgs.textContent = '';
+            var msgs = data.messages || [];
+            for (var i = 0; i < msgs.length; i++) {
+                var m = msgs[i];
+                if (m.role === 'user') {
+                    var ub = chatBubble('user');
+                    ub.textContent = m.content || '';
+                    continue;
+                }
+                if (m.reasoning) {
+                    var rb = chatBubble('assistant', 'reason');
+                    rb.appendChild(chatReasonBlock(m.reasoning));
+                }
+                if (m.tools && m.tools.length) {
+                    for (var t = 0; t < m.tools.length; t++) {
+                        var tb = chatBubble('assistant', 'tool');
+                        tb.appendChild(chatToolCard(m.tools[t]));
+                    }
+                }
+                if (m.content) {
+                    var cb = chatBubble('assistant');
+                    cb.textContent = m.content;
+                } else if (!m.reasoning && (!m.tools || !m.tools.length)) {
+                    var nb = chatBubble('assistant');
+                    nb.textContent = '（无文本回复）';
+                }
+            }
+            // P9.3 会话归属动态化——SSE sessionId 随会话 ID；history 先于任何 llm 事件到达（loading→idle 时序保证）
+            if (data.sessionId) {
+                CHAT_SESSION = data.sessionId;
+            }
+            chatInfo.textContent = '会话 ' + data.count + ' 条 | sessionId=' + CHAT_SESSION;
+            chatScrollBottom();
+        }
+
+        function chatLoadHistory() {
+            fetch('/api/v1/history')
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    chatRenderHistory(d);
+                    chatSetState('idle');
+                })
+                .catch(function () {
+                    chatInfo.textContent = '历史加载失败——宿主未运行？';
+                    chatSetState('idle');
+                });
+        }
+
+        function chatFail(msg) {
+            // 发送失败——seal 当前阶段 + 独立错误气泡 + 恢复 idle
+            chatSealCurrent();
+            var eb = chatBubble('assistant');
+            eb.textContent = msg;
+            eb.classList.add('error');
+            chatToolQueue = [];
+            chatStage = null;
+            if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
+            chatSetState('idle');
+        }
+
+        function chatSend() {
+            var text = chatInput.value.trim();
+            if (text.length === 0 || chatState !== 'idle') { return; }
+            chatInput.value = '';
+            chatBubble('user').textContent = text;
+            chatStage = null;
+            chatToolQueue = [];
+            chatSetState('sending');
+            chatKeepAlive();
+            fetch('/api/v1/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: 'Chat ' + text })
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (!d.ok && d.error) {
+                        chatFail('发送失败: ' + d.error);
+                    }
+                })
+                .catch(function (err) { chatFail('请求失败: ' + err); });
+        }
+
+        // 阶段模型（B4.2）——思考/工具/回复独立气泡；阶段切换时 seal 前一阶段
+        function chatSealCurrent() {
+            if (!chatStage) { return; }
+            if (chatStage.bubble) {
+                chatStage.bubble.classList.remove('streaming');
+                chatStage.bubble.classList.remove('streaming-wait');
+                // 空阶段气泡（无文本无子元素）——移除（空气泡防御：LLM 在 tool_calls 前发空 content 块）
+                if (chatStage.type !== 'tool' && !chatStage.bubble.textContent.trim() && !chatStage.bubble.querySelector('details, .chat-tool')) {
+                    var row = chatStage.bubble.parentNode;
+                    if (row && row.parentNode) {
+                        row.parentNode.removeChild(row);
+                    }
+                }
+            }
+            chatStage = null;
+        }
+
+        function chatNewStage(type) {
+            chatSealCurrent();
+            var stage = { type: type, bubble: null, reasonPre: null };
+            if (type === 'reason') {
+                stage.bubble = chatBubble('assistant', 'reason');
+                stage.bubble.classList.add('streaming');
+                var det = chatReasonBlock('');
+                stage.bubble.appendChild(det);
+                stage.reasonPre = det.querySelector('div');
+            } else if (type === 'text') {
+                stage.bubble = chatBubble('assistant');
+                stage.bubble.classList.add('streaming');
+            }
+            chatStage = stage;
+            return stage;
+        }
+
+        // chatdone——会话终态：seal 所有阶段 / 未回填工具卡兜底标注 / 恢复 idle（llm done 仅一轮结束——终态唯一信号）
+        function chatOnChatDone(d) {
+            if (chatState !== 'sending') {
+                return;  // 非 sending（如重连后）——历史重绘已定型
+            }
+            chatSealCurrent();
+            for (var ui = 0; ui < chatToolQueue.length; ui++) {
+                if (!chatToolQueue[ui].filled) {
+                    var wu = document.createElement('div');
+                    wu.className = 'ta';
+                    wu.textContent = '（结果未回传——历史端点可查）';
+                    chatToolQueue[ui].card.appendChild(wu);
+                }
+            }
+            chatToolQueue = [];
+            chatStage = null;
+            if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
+            chatSetState('idle');
+        }
+
+        // tool 事件回填——宿主按执行序推送；前端按 FIFO 配对（事件序 = toolCalls 数组序）
+        function chatOnTool(d) {
+            if (chatState !== 'sending') { return; }
+            for (var i = 0; i < chatToolQueue.length; i++) {
+                if (!chatToolQueue[i].filled) {
+                    chatFillToolCard(chatToolQueue[i], d);
+                    return;
+                }
+            }
+        }
+
+        function chatFillToolCard(slot, d) {
+            slot.filled = true;
+            slot.card.textContent = '';
+            var name = document.createElement('div');
+            name.className = 'tn';
+            name.textContent = '🔧 ' + (d.name || slot.name || '?');
+            slot.card.appendChild(name);
+            if (d.arguments) {
+                var a = document.createElement('div');
+                a.className = 'ta';
+                a.textContent = d.arguments;
+                slot.card.appendChild(a);
+            }
+            if (d.result !== undefined && d.result !== null && d.result !== '') {
+                var r = document.createElement('div');
+                r.className = 'tr' + (String(d.result).indexOf('ERR') === 0 ? ' err' : '');
+                r.textContent = String(d.result);
+                slot.card.appendChild(r);
+            } else {
+                var w = document.createElement('div');
+                w.className = 'ta';
+                w.textContent = '（无结果文本）';
+                slot.card.appendChild(w);
+            }
+            chatScrollBottom();
+        }
+
+        // llm 事件分发——sessionId 过滤 + 阶段模型五态渲染
+        function chatOnLlm(d) {
+            if (chatState !== 'sending') { return; }
+            if (d.sessionId && d.sessionId !== CHAT_SESSION) { return; }
+            chatKeepAlive();
+            if (d.kind === 'reasoning') {
+                // 思考阶段——独立气泡默认展开实时流式（B4.2）
+                if (!chatStage || chatStage.type !== 'reason') {
+                    chatNewStage('reason');
+                }
+                chatStage.reasonPre.textContent = chatStage.reasonPre.textContent + (d.text || '');
+            } else if (d.kind === 'text') {
+                // 回复阶段——独立气泡流式；空增量（tool_calls 前的空 content 块）跳过——不建空气泡
+                var t = d.text || '';
+                if (t.length === 0) { return; }
+                if (!chatStage || chatStage.type !== 'text') {
+                    chatNewStage('text');
+                }
+                chatStage.bubble.classList.remove('error');
+                chatAppend(chatStage.bubble, t);
+            } else if (d.kind === 'toolCalls') {
+                // 工具阶段——seal 前一阶段；每个调用一个独立工具气泡（🔧 name + 参数 + 处理中…）
+                chatSealCurrent();
+                chatStage = { type: 'tool', bubble: null, reasonPre: null };
+                var calls = [];
+                try { calls = JSON.parse(d.text || '[]'); } catch (e) { calls = []; }
+                for (var tc = 0; tc < calls.length; tc++) {
+                    var call = calls[tc] || {};
+                    var fn = call.function || {};
+                    var tb = chatBubble('assistant', 'tool');
+                    var card = chatToolCard({ name: fn.name, arguments: String(fn.arguments || '').substring(0, 200), result: undefined });
+                    tb.appendChild(card);
+                    chatToolQueue.push({ card: card, name: fn.name || '?', filled: false });
+                }
+                chatScrollBottom();
+            } else if (d.kind === 'done') {
+                // 一轮 LLM 流结束——停光标；stage 保留（续轮事件到来时 seal 切换；终态以 chatdone 为准）
+                if (chatStage && chatStage.bubble) {
+                    chatStage.bubble.classList.remove('streaming');
+                    chatStage.bubble.classList.add('streaming-wait');
+                }
+            } else if (d.kind === 'error') {
+                if (chatStage && chatStage.bubble) {
+                    chatStage.bubble.classList.remove('streaming');
+                    chatStage.bubble.classList.remove('streaming-wait');
+                    chatAppend(chatStage.bubble, '\n' + (d.text || 'LLM 错误'));
+                    chatStage.bubble.classList.add('error');
+                }
+                chatStage = null;
+                chatToolQueue = [];
+                if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
+                chatSetState('idle');
+            }
+            chatScrollBottom();
+        }
+
+        // [段2] SSE 事件流——llm/tool/chatdone 三事件（相对路径——天然按端口路由）
+        var es = new EventSource('/api/v1/stream');
+        es.addEventListener('llm', function (ev) { chatOnLlm(JSON.parse(ev.data)); });
+        es.addEventListener('tool', function (ev) { chatOnTool(JSON.parse(ev.data)); });
+        es.addEventListener('chatdone', function (ev) { chatOnChatDone(JSON.parse(ev.data)); });
+        es.onerror = function () { chatInfo.textContent = 'SSE 断线——自动重连...'; };
+        es.onopen = function () {
+            // 重连成功兜底——sending 态（chatdone 可能已丢）→ 拉历史全量重绘 + 恢复 idle
+            if (chatState === 'sending') {
+                chatStage = null;
+                chatToolQueue = [];
+                if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
+                chatLoadHistory();
+            }
+        };
+
+        // [段3] 对话区初始化——历史加载
+        chatLoadHistory();
+    </script>
+</body>
+</html>

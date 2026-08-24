@@ -114,6 +114,7 @@
             <button data-tab="raw">原始</button>
             <button data-tab="config">配置</button>
             <button data-tab="chat">对话</button>
+            <button data-tab="cats">多猫</button>
         </nav>
         <main>
             <!-- 状态区 -->
@@ -178,6 +179,18 @@
                 <div id="chatinput">
                     <input id="chatSendInput" placeholder="对 MajorDomoCat 说话…（Enter 发送，发送期禁用）" onkeydown="if(event.key==='Enter')chatSend()">
                     <button id="chatSendBtn" onclick="chatSend()">发送</button>
+                </div>
+            </section>
+            <!-- 多猫管理区（P9.3d） -->
+            <section id="tab-cats" class="tab">
+                <div id="catsbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid #222;align-items:center">
+                    <input id="catNewName" placeholder="新猫显示名（如 super）" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px" onkeydown="if(event.key==='Enter')catNew()">
+                    <button id="catNewBtn" style="background:#0e639c;border:none;color:#fff;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px" onclick="catNew()">新建</button>
+                    <button id="catsRefresh" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:5px 10px;cursor:pointer;font-family:inherit;font-size:12px" onclick="loadCats()">刷新</button>
+                </div>
+                <div style="flex:1;overflow-y:auto;padding:8px 12px">
+                    <table class="box-table" id="catsTable"><thead><tr><th style="width:22%">名称</th><th style="width:30%">ID</th><th style="width:14%">状态</th><th style="width:10%">端口</th><th style="width:24%">操作</th></tr></thead><tbody></tbody></table>
+                    <div id="catsMsg" style="color:#4ec9b0;font-size:11px;margin-top:6px"></div>
                 </div>
             </section>
         </main>
@@ -699,6 +712,10 @@
                 }
             }
             chatInfo.textContent = '会话 ' + data.count + ' 条 | sessionId=' + (data.sessionId || CHAT_SESSION);
+            // P9.3 会话归属动态化——SSE sessionId 随会话 ID（时间戳）变化；history 先于任何 llm 事件到达（loading→idle 时序保证）
+            if (data.sessionId) {
+                CHAT_SESSION = data.sessionId;
+            }
             chatScrollBottom();
         }
 
@@ -922,6 +939,115 @@
             chatMsgs.textContent = '';
             chatInfo.textContent = '会话已清空';
         });
+
+        // [段13] 多猫管理区（P9.3d）——GET /api/v1/cats 列表 + POST command cat.* 指令族
+        var catsTableBody = document.querySelector('#catsTable tbody');
+        var catsMsgEl = document.getElementById('catsMsg');
+        var catNewInput = document.getElementById('catNewName');
+
+        // 猫列表加载——渲染表格（名称/ID/状态/端口/操作按钮）
+        function loadCats() {
+            fetch('/api/v1/cats')
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    catsTableBody.textContent = '';
+                    var cats = d.cats || [];
+                    if (cats.length === 0) {
+                        catsMsgEl.textContent = '暂无猫——输入显示名新建';
+                        return;
+                    }
+                    catsMsgEl.textContent = cats.length + ' 只猫';
+                    for (var i = 0; i < cats.length; i++) {
+                        renderCatRow(cats[i]);
+                    }
+                })
+                .catch(function () {
+                    catsMsgEl.textContent = '列表加载失败——宿主未运行？';
+                });
+        }
+
+        // 单猫行渲染——操作按钮按状态启用（启动/停止互斥）
+        function renderCatRow(cat) {
+            var tr = document.createElement('tr');
+            var tdName = document.createElement('td');
+            tdName.textContent = cat.name || '';
+            tdName.style.color = '#c586c0';
+            tr.appendChild(tdName);
+            var tdId = document.createElement('td');
+            tdId.textContent = cat.id || '';
+            tdId.style.color = '#6a6a6a';
+            tr.appendChild(tdId);
+            var tdState = document.createElement('td');
+            if (cat.running) {
+                tdState.textContent = '运行中';
+                tdState.style.color = '#4ec9b0';
+            } else {
+                tdState.textContent = '静默';
+                tdState.style.color = '#6a6a6a';
+            }
+            tr.appendChild(tdState);
+            var tdPort = document.createElement('td');
+            tdPort.textContent = cat.running ? (':' + cat.port) : '-';
+            tr.appendChild(tdPort);
+            var tdOp = document.createElement('td');
+            tdOp.style.whiteSpace = 'nowrap';
+            if (cat.running) {
+                var openBtn = document.createElement('button');
+                openBtn.textContent = '打开';
+                openBtn.style.cssText = 'background:#0e639c;border:none;color:#fff;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+                openBtn.onclick = function () { window.open('http://127.0.0.1:' + cat.port + '/', '_blank'); };
+                tdOp.appendChild(openBtn);
+                var stopBtn = document.createElement('button');
+                stopBtn.textContent = '停止';
+                stopBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+                stopBtn.onclick = function () { catAction('cat.stop ' + cat.id); };
+                tdOp.appendChild(stopBtn);
+            } else {
+                var startBtn = document.createElement('button');
+                startBtn.textContent = '启动';
+                startBtn.style.cssText = 'background:#0e639c;border:none;color:#fff;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+                startBtn.onclick = function () { catAction('cat.start ' + cat.id); };
+                tdOp.appendChild(startBtn);
+            }
+            var delBtn = document.createElement('button');
+            delBtn.textContent = '删除';
+            delBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#f48771;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px';
+            delBtn.onclick = function () { catAction('cat.delete ' + cat.id); };
+            tdOp.appendChild(delBtn);
+            tr.appendChild(tdOp);
+            catsTableBody.appendChild(tr);
+        }
+
+        // cat.* 指令投递——POST command 后延迟刷新（指令经 HTTP 线程入队主线程泵，异步生效）
+        function catAction(cmd) {
+            fetch('/api/v1/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: cmd })
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    catsMsgEl.textContent = '回执: ' + cmd + ' → ok=' + d.ok + (d.error ? ' error=' + d.error : '');
+                    setTimeout(loadCats, 400);
+                })
+                .catch(function (err) {
+                    catsMsgEl.textContent = '请求失败: ' + err;
+                });
+        }
+
+        // 新建猫——cat.new <显示名>（空名拒绝）
+        function catNew() {
+            var name = catNewInput.value.trim();
+            if (name.length === 0) {
+                catsMsgEl.textContent = '显示名不能为空';
+                return;
+            }
+            catNewInput.value = '';
+            catAction('cat.new ' + name);
+        }
+
+        // 多猫列表初始化
+        loadCats();
 
         // 对话区初始化——历史加载
         chatLoadHistory();

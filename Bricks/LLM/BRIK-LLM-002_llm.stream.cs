@@ -79,7 +79,7 @@ namespace Mau.Bricks
                 LlmMessage[] messages = new LlmMessage[2];
                 messages[0] = new LlmMessage { Role = LlmRole.System, Content = system };
                 messages[1] = new LlmMessage { Role = LlmRole.User, Content = content };
-                await foreach (LlmStreamEvent ev in runtime.ChatStream(messages, new ToolSpec[0]))
+                await foreach (LlmStreamEvent ev in runtime.ChatStream(messages, new ToolSpec[0], flowId.ToString()))
                 {
                     if (ev.Kind == LlmStreamKind.Text || ev.Kind == LlmStreamKind.Reasoning)
                     {
@@ -147,4 +147,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:2793F56960B01839280885EDE18C15636A49F08A2A63168E4DFB131CF6164043
+// #MAU_CHECKSUM:SHA256:FE89C9A66518C43DAF65FD7465C9D7EE97CE097E39AD7FB0414A84B81973104E

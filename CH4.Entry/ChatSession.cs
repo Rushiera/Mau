@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
@@ -312,7 +312,7 @@ _ = ConsumeLlmStream(messages);
                 StringBuilder text = new StringBuilder();
                 StringBuilder reasoning = new StringBuilder();
                 string toolCalls = "";
-                await foreach (LlmStreamEvent ev in _llmRuntime.ChatStream(messages, _tools))
+                await foreach (LlmStreamEvent ev in _llmRuntime.ChatStream(messages, _tools, _id))
                 {
                     if (ev.Kind == LlmStreamKind.Text)
                     {
@@ -460,6 +460,8 @@ _ = ConsumeLlmStream(messages);
                             name = GetStringProp(funcEl, "name");
                             arguments = GetStringProp(funcEl, "arguments");
                         }
+                        // P9.4 per-cat 路由——载荷注入会话 ID（config.bridge 按 catId 路由每猫 ConfigStore；其他工具忽略多余字段）
+                        arguments = InjectCatId(arguments);
                         LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|start|" + TrimDisplay(arguments, 120), "TOOL");
                         ToolOrderDog dog = new ToolOrderDog(id, name, arguments);
                         if (name.StartsWith("host.", StringComparison.Ordinal))
@@ -494,6 +496,41 @@ _ = ConsumeLlmStream(messages);
             }
             _phase = ChatPhase.ToolBatchRunning;
             _phaseFrames = 0;
+        }
+
+        /// <summary>
+        /// 载荷注入会话 ID——arguments JSON 合并 catId 字段（P9.4 per-cat 配置路由；非对象/解析失败原样透传）。
+        /// </summary>
+        /// <param name="arguments">LLM 原始参数 JSON</param>
+        /// <returns>注入后 JSON</returns>
+        private string InjectCatId(string arguments)
+        {
+            if (arguments == null || arguments.Length == 0)
+            {
+                return arguments;
+            }
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(arguments))
+                {
+                    if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                    {
+                        return arguments;
+                    }
+                    Dictionary<string, object> map = new Dictionary<string, object>();
+                    foreach (JsonProperty p in doc.RootElement.EnumerateObject())
+                    {
+                        map[p.Name] = p.Value.Clone();
+                    }
+                    map["catId"] = _id;
+                    return JsonSerializer.Serialize(map);
+                }
+            }
+            catch (Exception)
+            {
+                // 参数 JSON 损坏——原样透传（下游 BAD_ARGS 校验可见拒绝）
+                return arguments;
+            }
         }
 
         /// <summary>

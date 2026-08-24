@@ -154,12 +154,15 @@ private static HttpHost _httpHost;
             DataBox.Bind<ICommandBus>(_bus);
             // 文件系统服务——file.* 积木依赖（受控根 = workspace.json 配置 roots；回收站=可写根 CatTemp/fs_recycle——P8.5 配置群）
             string dataRoot = ResolveDataRoot();
+            _dataRoot = dataRoot;
             WorkspaceConfig workspace = WorkspaceConfig.Load(Path.Combine(dataRoot, "Data", "config", "workspace.json"), dataRoot);
             DataBox.Bind<WorkspaceConfig>(workspace);
             DataBox.Bind<FileSystemService>(new FileSystemService(workspace.Roots, Path.Combine(WorkspaceRecycleRoot(workspace, dataRoot), "CatTemp", "fs_recycle")));
             string configDir = Path.Combine(dataRoot, "Data", "config");
             ConfigStore llmConfig = ConfigStore.Load(Path.Combine(configDir, "llm.cfg"));
             DataBox.Bind<ConfigStore>(llmConfig);
+            // P9.4 配置注册表——默认全局实例（每猫实例在 cat.new/启动扫描时注册）
+            ConfigStoreRegistry.SetDefault(llmConfig);
             // P8.5d 配置群多文件化——ui.* 用户偏好追加到同一 store（键前缀段路由；ui.json 缺失时首次写入自动创建）
             llmConfig.AddFile("ui", Path.Combine(configDir, "ui.json"));
             _llmRuntime = new DeepSeekLlmRuntime(llmConfig);
@@ -269,8 +272,11 @@ private static HttpHost _httpHost;
             LogStore.Add("CH4.Entry", 1, "workspace.load | roots=" + workspace.Roots.Length.ToString() + " | inject=" + workspace.Inject.Length.ToString() + " | " + rootSummary.ToString(), "CONFIG");
             Console.WriteLine("[CH4.Entry] 就绪 | 两 Cat: QuickCat#" + _quickId + " DevCat#" + _devId + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
-            _httpHost = HttpHost.Start(ResolveHttpPort(llmConfig), BuildSnapshotJson, DispatchCommand, BuildCompactFrameJson, BuildHistoryView);
+            // P9.3 多实例化签名——sessionId 归属默认会话；catsBuilder 多猫列表（管理页签数据源）；主端口服务 index.html
+            _httpHost = HttpHost.Start(ResolveHttpPort(llmConfig), _defaultSession.Id, BuildSnapshotJson, DispatchCommand, BuildCompactFrameJson, (int max) => BuildHistoryView(_defaultSession, max), BuildCatsJson, false);
             _defaultSession.AttachHost(_httpHost);
+            // [段6b] 启动扫描——sessions/*/cat.cfg 中 running 猫拉起（主 HTTP 就位后——每猫 HttpHost 独立实例）
+            LoadCatsOnBoot();
             Console.WriteLine("[CH4.Entry] HTTP 外观层就绪: http://127.0.0.1:" + _httpHost.Port);
         }
         /// <summary>

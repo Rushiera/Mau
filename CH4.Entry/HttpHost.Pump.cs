@@ -151,14 +151,14 @@ namespace CH4
         {
             var obj = new
             {
-                sessionId = "majordomo"
+                sessionId = _sessionId
             };
             PushEvent("chatdone", JsonSerializer.Serialize(obj));
         }
 
         /// <summary>
         /// LLM 流式事件转发——宿主 ChatBridge 调用（协议 §4.2 llm 事件：seq 单调 + kind 五态 + sessionId 归属）。
-        /// sessionId：当前唯一 LLM 会话 = MajorDomoCat（B4 归属性；P9 多会话投递方带各自标识）。
+        /// sessionId：本实例归属会话（P9.3 多实例化——每猫 HttpHost 绑定自身会话；B4 归属性保持）。
         /// </summary>
         /// <param name="kind">事件态——text/reasoning/toolCalls/done/error（直映 LlmStreamKind）</param>
         /// <param name="text">增量文本或错误文本</param>
@@ -171,7 +171,7 @@ namespace CH4
                 seq = seq,
                 kind = kind,
                 text = text,
-                sessionId = "majordomo"
+                sessionId = _sessionId
             };
             PushEvent("llm", JsonSerializer.Serialize(obj));
         }
