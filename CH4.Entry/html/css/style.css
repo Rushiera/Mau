@@ -1,0 +1,123 @@
+/* CH4 外观层 v2——index.html 主面板样式（2026-08-25 拆分自 index.html 内嵌 <style>） */
+:root { --chat-font-size: 12px; } /* P8.5d——ui.chat_font_size 前端消费（宿主持久化配置） */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #141414; color: #c8c8c8; height: 100vh; overflow: hidden; }
+#layout { display: flex; height: 100vh; }
+
+/* ── 窄侧栏 ── */
+#sidebar { width: 56px; background: #1a1a1a; border-right: 1px solid #2a2a2a; display: flex; flex-direction: column; align-items: center; padding: 8px 0; gap: 4px; }
+#sidebar button { width: 44px; height: 44px; background: transparent; border: none; color: #6a6a6a; font-size: 12px; cursor: pointer; border-radius: 6px; font-family: inherit; }
+#sidebar button:hover { background: #242424; color: #c8c8c8; }
+#sidebar button.active { background: #0e639c; color: #fff; }
+
+/* ── 主区 ── */
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.tab { display: none; flex: 1; flex-direction: column; min-height: 0; }
+.tab.active { display: flex; }
+h2 { font-size: 12px; color: #4ec9b0; margin: 10px 12px 6px 12px; font-weight: normal; letter-spacing: 1px; }
+
+/* ── 状态区 ── */
+#meta { padding: 10px 12px 6px 12px; color: #808080; font-size: 12px; border-bottom: 1px solid #222; }
+#meta .hl { color: #569cd6; }
+#stateScroll { flex: 1; overflow-y: auto; padding: 8px 12px 20px 12px; }
+.cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+.cat-card { border: 1px solid #2a2a2a; border-radius: 6px; padding: 10px; background: #1a1a1a; }
+.cat-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.cat-name { color: #c586c0; font-size: 13px; font-weight: bold; }
+.cat-id { color: #6a6a6a; font-size: 11px; }
+.cat-faulted { color: #f48771; font-size: 12px; }
+.cat-states { color: #d4d4d4; font-size: 12px; margin-bottom: 6px; }
+.cat-row { font-size: 11px; color: #8a8a8a; margin-top: 2px; word-break: break-all; }
+.cat-row .k { color: #6a9955; }
+.sen-on { color: #4ec9b0; }
+.sen-off { color: #4a4a4a; }
+.wire-busy { color: #dcdcaa; }
+.wire-timeout { color: #f48771; }
+.oa-line { font-size: 12px; color: #ce9178; padding: 4px 12px 0 12px; }
+.box-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.box-table th { text-align: left; color: #6a6a6a; font-weight: normal; padding: 3px 6px; border-bottom: 1px solid #242424; }
+.box-table td { padding: 3px 6px; border-bottom: 1px solid #1f1f1f; word-break: break-all; vertical-align: top; }
+.box-key { color: #569cd6; }
+.box-val { color: #d4d4d4; }
+.box-tag { color: #6a6a6a; font-size: 10px; }
+
+/* ── Log 区 ── */
+#logbar { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #222; }
+#logFilter { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 5px 8px; font-family: inherit; font-size: 12px; }
+#logFilter:focus { outline: none; border-color: #0e639c; }
+#logRefresh { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 12px; }
+#logRefresh:hover { background: #2a2a2a; }
+#logevents { flex: 1; overflow-y: auto; padding: 6px 12px; font-size: 11px; line-height: 1.7; }
+.lg { color: #808080; }
+.lg-error { color: #f48771; }
+.lg-warn { color: #dcdcaa; }
+.lg-cmd { color: #569cd6; }
+.lg-llm { color: #6a9955; }
+.lg-filtered { display: none; }
+#logcmd { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #222; }
+#cmdInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 6px 8px; font-family: inherit; font-size: 12px; }
+#cmdInput:focus { outline: none; border-color: #0e639c; }
+#cmdBtn { background: #0e639c; border: none; color: #fff; padding: 6px 14px; cursor: pointer; font-family: inherit; font-size: 12px; }
+#cmdResult { font-size: 11px; color: #4ec9b0; padding: 0 12px 6px 12px; }
+
+/* ── 原始区 ── */
+#rawbar { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #222; align-items: center; }
+#rawPause { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 12px; }
+#rawPause:hover { background: #2a2a2a; }
+#rawPause.paused { color: #dcdcaa; border-color: #6a6a6a; }
+#rawJson { flex: 1; overflow: auto; padding: 10px 12px; font-size: 11px; color: #9a9a9a; white-space: pre; }
+
+/* ── 对话区（B4）── */
+#chatbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #222; font-size: 11px; color: #6a6a6a; }
+#chatbar .sid { color: #c586c0; font-weight: bold; }
+#chatClear { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 3px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
+#chatClear:hover { background: #2a2a2a; }
+#chatMsgs { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.chat-row { display: flex; animation: chat-in 0.18s ease-out; }
+@keyframes chat-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+.chat-row.user { justify-content: flex-end; }
+.chat-row.assistant { justify-content: flex-start; }
+.chat-bubble { max-width: 78%; padding: 8px 12px; border-radius: 8px; font-size: var(--chat-font-size); line-height: 1.7; white-space: pre-wrap; word-break: break-all; }
+.chat-row.user .chat-bubble { background: #0e639c; color: #fff; }
+.chat-row.assistant .chat-bubble { background: #1a1a1a; color: #d4d4d4; border: 1px solid #2a2a2a; }
+.chat-bubble.reason { background: #1c1c1c; color: #9a9a9a; border: 1px solid #242424; font-size: 11px; }
+.chat-bubble.tool { background: #101010; border: 1px solid #242424; font-size: 11px; padding: 6px 10px; }
+.chat-bubble.error { border-color: #f48771; color: #f48771; }
+.chat-bubble.streaming::after { content: '▌'; color: #4ec9b0; animation: chatblink 1s infinite; }
+.chat-bubble.streaming-wait::after { content: '…'; color: #6a6a6a; }
+@keyframes chatblink { 50% { opacity: 0; } }
+.chat-reason { margin-top: 6px; font-size: 11px; color: #6a6a6a; }
+.chat-reason summary { cursor: pointer; color: #6a9955; }
+.chat-tool { margin-top: 6px; background: #101010; border: 1px solid #242424; border-radius: 4px; padding: 5px 8px; font-size: 11px; color: #8a8a8a; font-family: Consolas, monospace; }
+.chat-tool .tn { color: #dcdcaa; }
+.chat-tool .ta { color: #6a6a6a; word-break: break-all; white-space: pre-wrap; margin-top: 2px; }
+.chat-tool .tr { color: #6a9955; word-break: break-all; white-space: pre-wrap; margin-top: 3px; }
+.chat-tool .tr.err { color: #f48771; }
+#chatinput { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #222; }
+#chatSendInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 7px 10px; font-family: inherit; font-size: 12px; }
+#chatSendInput:focus { outline: none; border-color: #0e639c; }
+#chatSendInput:disabled { opacity: 0.5; }
+#chatSendBtn { background: #0e639c; border: none; color: #fff; padding: 7px 16px; cursor: pointer; font-family: inherit; font-size: 12px; }
+#chatSendBtn:disabled { opacity: 0.5; cursor: default; }
+/* M4c Note 面板——输入框上方悬浮气泡（缩略一行/展开自适应高度） */
+#notePanel { border-top: 1px solid #222; background: #101010; font-size: 11px; }
+#notePanel.collapsed #noteBody { display: none; }
+#noteHead { display: flex; align-items: center; gap: 8px; padding: 5px 12px; cursor: pointer; color: #9a9a9a; user-select: none; }
+#noteHead:hover { color: #c8c8c8; }
+#noteTitle { color: #c586c0; font-weight: bold; }
+#noteToggleBtn { font-size: 10px; }
+#noteBody { padding: 0 12px 8px 12px; max-height: 40vh; overflow-y: auto; }
+#noteList { display: flex; flex-direction: column; gap: 3px; padding: 4px 0; }
+.note-row { display: flex; gap: 6px; align-items: baseline; color: #8a8a8a; word-break: break-all; }
+.note-row.done { color: #4a6a4a; text-decoration: line-through; }
+.note-row.current { color: #dcdcaa; }
+.note-row .mark { flex-shrink: 0; font-family: Consolas, monospace; }
+#noteAddRow { display: flex; gap: 6px; padding-top: 4px; border-top: 1px dashed #242424; }
+#noteAddInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 4px 8px; font-family: inherit; font-size: 11px; }
+#noteAddInput:focus { outline: none; border-color: #0e639c; }
+#noteAddRow button { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
+#noteStartBtn { background: #0e639c; border: none; color: #fff; }
+#noteStartBtn:disabled { opacity: 0.5; cursor: default; }
+/* 单向数据流改造——插话队列显示区（正常流堆叠——有排队消息显示/无则隐藏） */
+#chatPendingPanel { border-top: 1px solid #222; background: #101010; font-size: 11px; padding: 5px 12px; color: #9a9a9a; }
+#chatPendingPanel:empty { display: none; }

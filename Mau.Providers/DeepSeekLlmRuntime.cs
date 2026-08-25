@@ -31,7 +31,7 @@ namespace Mau.Providers
         private readonly CH_LlmApiConfigStore? _apiStore;
 
         /// <summary>
-        /// API 配置身份——按猫路由（缺省回退内置 DeepSeek）
+        /// API 配置身份——按猫路由；Guid.Empty=默认端点语义（每次调用实时解析默认配置）
         /// </summary>
         private readonly Guid _apiConfigId;
 
@@ -178,9 +178,8 @@ public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, 
         {
             if (_apiStore != null)
             {
-                CH_LlmApiConfig config;
-                if (_apiStore.TryGet(_apiConfigId, out config)
-                    && config.Endpoint.Length > 0)
+                CH_LlmApiConfig? config = ResolveTarget();
+                if (config != null && config.Endpoint.Length > 0)
                 {
                     return config.Endpoint;
                 }
@@ -206,10 +205,14 @@ public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, 
         {
             if (_apiStore != null)
             {
-                string secret = _apiStore.GetSecret(_apiConfigId);
-                if (secret.Length > 0)
+                CH_LlmApiConfig? config = ResolveTarget();
+                if (config != null)
                 {
-                    return secret;
+                    string secret = _apiStore.GetSecret(config.ApiConfigId);
+                    if (secret.Length > 0)
+                    {
+                        return secret;
+                    }
                 }
             }
             string? env = Environment.GetEnvironmentVariable("MAU_LLM_API_KEY");
@@ -233,14 +236,31 @@ public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, 
         {
             if (_apiStore != null)
             {
-                CH_LlmApiConfig config;
-                if (_apiStore.TryGet(_apiConfigId, out config)
-                    && config.DefaultModel.Length > 0)
+                CH_LlmApiConfig? config = ResolveTarget();
+                if (config != null && config.DefaultModel.Length > 0)
                 {
                     return config.DefaultModel;
                 }
             }
             return FallbackModel;
+        }
+
+        /// <summary>
+        /// 解析目标配置——Guid.Empty=默认端点语义（每次调用实时 ResolveDefault——默认切换立即生效）；非空=显式身份 TryGet。
+        /// </summary>
+        /// <returns>目标配置；未命中 null</returns>
+        private CH_LlmApiConfig? ResolveTarget()
+        {
+            if (_apiConfigId == Guid.Empty)
+            {
+                return _apiStore!.ResolveDefault();
+            }
+            CH_LlmApiConfig config;
+            if (_apiStore!.TryGet(_apiConfigId, out config))
+            {
+                return config;
+            }
+            return null;
         }
 
         /// <summary>

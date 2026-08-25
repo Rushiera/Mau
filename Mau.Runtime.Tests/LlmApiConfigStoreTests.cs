@@ -43,25 +43,24 @@ namespace Mau.Runtime.Tests
             }
         }
 
-        /// <summary>EnsureDefaults 空目录——补 DeepSeek 默认配置（稳定 ID/端点/模型）。</summary>
+        /// <summary>池空首个配置标默认——Save 新建首个配置自动 IsDefault（唯一端点必然被默认消费面使用）。</summary>
         [Fact]
-        public void Store_EnsureDefaults_CreatesDeepSeek()
+        public void Store_Save_FirstConfigBecomesDefault()
         {
             string settingsRoot;
             string secretsRoot;
             CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
             try
             {
-                store.EnsureDefaults("");
+                Guid id = Guid.NewGuid();
+                CH_LlmApiConfig config = MakeConfig(id, "First", "https://first.example/v1");
+                store.Save(config, "");
                 CH_LlmApiConfig[] all = store.GetAll();
                 Assert.Single(all);
-                Assert.Equal(CH_LlmApiConfigStore.DeepSeekApiConfigId,
-                    all[0].ApiConfigId);
-                Assert.Equal("DeepSeek Default", all[0].DisplayName);
-                Assert.Equal("deepseek", all[0].ApiType);
-                Assert.Equal("https://api.deepseek.com/v1/chat/completions",
-                    all[0].Endpoint);
-                Assert.Equal("deepseek-v4-flash", all[0].DefaultModel);
+                Assert.True(all[0].IsDefault);
+                CH_LlmApiConfig? resolved = store.ResolveDefault();
+                Assert.NotNull(resolved);
+                Assert.Equal(id, resolved.ApiConfigId);
             }
             finally
             {
@@ -70,18 +69,16 @@ namespace Mau.Runtime.Tests
             }
         }
 
-        /// <summary>EnsureDefaults 重复调用——不产生重复条目。</summary>
+        /// <summary>空配置 ResolveDefault——返回 null（不做静默回退）。</summary>
         [Fact]
-        public void Store_EnsureDefaults_DoesNotDuplicate()
+        public void Store_ResolveDefault_EmptyReturnsNull()
         {
             string settingsRoot;
             string secretsRoot;
             CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
             try
             {
-                store.EnsureDefaults("");
-                store.EnsureDefaults("");
-                Assert.Single(store.GetAll());
+                Assert.Null(store.ResolveDefault());
             }
             finally
             {
@@ -90,29 +87,39 @@ namespace Mau.Runtime.Tests
             }
         }
 
-        /// <summary>EnsureDefaults 不覆盖已有用户修改。</summary>
+        /// <summary>SetDefault——唯一默认语义（旧默认清除 + 目标置默认；目标不存在 false）。</summary>
         [Fact]
-        public void Store_EnsureDefaults_DoesNotOverwriteExisting()
+        public void Store_SetDefault_UniqueDefault()
         {
             string settingsRoot;
             string secretsRoot;
             CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
             try
             {
-                store.EnsureDefaults("");
-                CH_LlmApiConfig edited = new CH_LlmApiConfig();
-                edited.ApiConfigId = CH_LlmApiConfigStore.DeepSeekApiConfigId;
-                edited.DisplayName = "My DeepSeek";
-                edited.ApiType = "deepseek";
-                edited.Endpoint = "https://custom.example/v1/chat/completions";
-                edited.DefaultModel = "custom-model";
-                store.Save(edited, "");
-                store.EnsureDefaults("");
-                CH_LlmApiConfig config;
-                Assert.True(store.TryGet(
-                    CH_LlmApiConfigStore.DeepSeekApiConfigId, out config));
-                Assert.Equal("My DeepSeek", config.DisplayName);
-                Assert.Equal("custom-model", config.DefaultModel);
+                Guid idA = new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+                Guid idB = new Guid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+                store.Save(MakeConfig(idA, "A", "https://a.example/v1"), "");
+                store.Save(MakeConfig(idB, "B", "https://b.example/v1"), "");
+                // 首个自动默认——切换默认到 B
+                Assert.True(store.SetDefault(idB));
+                CH_LlmApiConfig? resolved = store.ResolveDefault();
+                Assert.NotNull(resolved);
+                Assert.Equal(idB, resolved.ApiConfigId);
+                CH_LlmApiConfig[] all = store.GetAll();
+                int defaultCount = 0;
+                for (int i = 0; i < all.Length; i = i + 1)
+                {
+                    if (all[i].IsDefault)
+                    {
+                        defaultCount = defaultCount + 1;
+                    }
+                }
+                Assert.Equal(1, defaultCount);
+                // 目标不存在——false 且原默认不变
+                Assert.False(store.SetDefault(Guid.NewGuid()));
+                CH_LlmApiConfig? after = store.ResolveDefault();
+                Assert.NotNull(after);
+                Assert.Equal(idB, after.ApiConfigId);
             }
             finally
             {
@@ -194,29 +201,6 @@ namespace Mau.Runtime.Tests
                 Assert.Equal("", store.GetSecret(id));
                 CH_LlmApiConfig found;
                 Assert.True(store.TryGet(id, out found));
-            }
-            finally
-            {
-                CleanDir(settingsRoot);
-                CleanDir(secretsRoot);
-            }
-        }
-
-        /// <summary>环境变量 Key 仅首次导入——已有秘密不覆盖。</summary>
-        [Fact]
-        public void Store_EnvironmentKey_FirstImportOnly()
-        {
-            string settingsRoot;
-            string secretsRoot;
-            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
-            try
-            {
-                store.EnsureDefaults("sk-env-first");
-                Assert.Equal("sk-env-first",
-                    store.GetSecret(CH_LlmApiConfigStore.DeepSeekApiConfigId));
-                store.EnsureDefaults("sk-env-second");
-                Assert.Equal("sk-env-first",
-                    store.GetSecret(CH_LlmApiConfigStore.DeepSeekApiConfigId));
             }
             finally
             {

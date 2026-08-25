@@ -167,39 +167,15 @@ private static HttpHost _httpHost;
             CH_LlmApiConfigStore apiConfigStore = new CH_LlmApiConfigStore(
                 Path.Combine(dataRoot, "Data", "config"),
                 Path.Combine(dataRoot, "Data", "secrets"));
-            string environmentKey = Environment.GetEnvironmentVariable("MAU_LLM_API_KEY");
-            if (string.IsNullOrEmpty(environmentKey))
-            {
-                environmentKey = Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY");
-            }
-            if (environmentKey == null)
-            {
-                environmentKey = "";
-            }
-            apiConfigStore.EnsureDefaults(environmentKey);
             DataBox.Bind<CH_LlmApiConfigStore>(apiConfigStore);
             // M3 管理面静态引用——catcfg.apply 重建 Runtime 消费
             _apiStore = apiConfigStore;
             _globalConfig = llmConfig;
-            // M1c 迁移——llm.cfg 遗留明文 key 导入 secrets（secrets 无 DeepSeek key 时一次性导入 + 清空旧键）
-            if (apiConfigStore.GetSecret(CH_LlmApiConfigStore.DeepSeekApiConfigId).Length == 0)
-            {
-                string legacyKey = llmConfig.Get("llm.api_key", "");
-                if (legacyKey.Length > 0)
-                {
-                    CH_LlmApiConfig deepSeek;
-                    if (apiConfigStore.TryGet(CH_LlmApiConfigStore.DeepSeekApiConfigId, out deepSeek))
-                    {
-                        apiConfigStore.Save(deepSeek, legacyKey);
-                    }
-                    llmConfig.Set("llm.api_key", "");
-                    llmConfig.Save();
-                }
-            }
             // P8.5d 配置群多文件化——ui.* 用户偏好追加到同一 store（键前缀段路由；ui.json 缺失时首次写入自动创建）
             llmConfig.AddFile("ui", Path.Combine(configDir, "ui.json"));
-            // M1c 语料面 Runtime——API 配置池按 DeepSeek 稳定 ID 构造（QuickCat 工单 llm.stream 消费面）
-            _llmRuntime = new DeepSeekLlmRuntime(apiConfigStore, CH_LlmApiConfigStore.DeepSeekApiConfigId, llmConfig);
+            // M1 语料面 Runtime——默认端点语义（QuickCat 工单 llm.stream 消费面；Guid.Empty=每次调用实时解析默认配置）
+            // 空配置池无默认端点 → 启动失败（不做静默回退——必须先配置端点后才能运行）
+            _llmRuntime = new DeepSeekLlmRuntime(apiConfigStore, Guid.Empty, llmConfig);
             DataBox.Bind<ILlmRuntime>(_llmRuntime);
             // P8 三期——Roslyn cs.* 编码工具域（MauRoslynBridge——受控根=可写根子集，只读知识根不参与项目扫描；磁盘权威快照 + 三态缓存）
             DataBox.Bind<ICSharpBridge>(new MauRoslynBridge(WritableRootPaths(workspace)));
@@ -242,9 +218,9 @@ private static HttpHost _httpHost;
             ChatContext chatCtx = new ChatContext();
             SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo.json"));
             LlmMessage[] restored;
-            // M1c 默认猫同迁——API 配置身份从 sessions/majordomo/cat.cfg 读取（缺省回退内置 DeepSeek）
+            // M1 默认猫——API 配置身份从 sessions/majordomo/cat.cfg 读取；缺省 Guid.Empty=默认端点语义（每次调用实时解析）
             // M2 默认猫同构——persona/toolNames/injectList 三字段同迁（每猫配置完全独立；注入源从 workspace.inject 切到 cat.cfg）
-            Guid defaultApiConfigId = CH_LlmApiConfigStore.DeepSeekApiConfigId;
+            Guid defaultApiConfigId = Guid.Empty;
             CatCfgData defaultCfg = LoadCatCfg(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "cat.cfg"));
             _defaultPersona = "";
             _defaultInjectList = new string[0];
@@ -292,7 +268,13 @@ private static HttpHost _httpHost;
             _defaultSession = new ChatSession(DateTime.Now.Ticks.ToString(), "majordomo", chatCtx, chatStore,
                 new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _defaultToolSpecs, ExecuteTool);
             RegisterSession(_defaultSession);
-            string llmKeyProbe = apiConfigStore.GetSecret(CH_LlmApiConfigStore.DeepSeekApiConfigId);
+            // LLM 注入探测——默认端点解析（无默认端点 = 未注入；启动失败语义由语料面消费时暴露）
+            CH_LlmApiConfig llmProbeConfig = apiConfigStore.ResolveDefault();
+            string llmKeyProbe = "";
+            if (llmProbeConfig != null)
+            {
+                llmKeyProbe = apiConfigStore.GetSecret(llmProbeConfig.ApiConfigId);
+            }
             string llmState;
             if (llmKeyProbe.Length == 0)
             {

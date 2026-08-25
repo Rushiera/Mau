@@ -72,7 +72,7 @@ namespace Mau.Development
     /// ALC 只提供卸载边界，不隔离恶意代码；调用权必须由更外层 Approval 控制。
     /// 编译引用 = 平台 TPA + 宿主目录全部 Mau.*.dll（基座 + 积木）。
     /// </summary>
-    public sealed class MauPocketCompiler
+    public sealed partial class MauPocketCompiler
     {
         /// <summary>
         /// 口袋输出根
@@ -81,17 +81,16 @@ namespace Mau.Development
 /// <summary>
 /// 是否保留源码中间产物——true 时编译把 .cs 写入编译根（构建现场留档）
 /// </summary>
-private bool _keepSources; 
+private bool _keepSources;
 
-/// <summary>
-/// 行号映射文本——当前编译的诊断反查表（D1：生成物行 → 语料行/积木源码行）
-/// </summary>
-private string? _mapText;
 /// <summary>
 /// 设置是否保留源码中间产物——构建命令在构造后设置
 /// </summary>
-/// <param name = "keep">true=编译时把源码写入编译根</param>
- public  void  SetKeepSources ( bool  keep ) { _keepSources  =  keep ;  }
+/// <param name="keep">true=编译时把源码写入编译根</param>
+public void SetKeepSources(bool keep)
+{
+    _keepSources = keep;
+}
 
         /// <summary>
         /// 绑定口袋输出根
@@ -401,111 +400,6 @@ public MauPocketCompileResult CompileManyWithRefs(string[] sources, string[] cla
         }
 
         /// <summary>
-        /// 建立 Trusted Platform Assemblies 和 Mau 程序集引用
-        /// </summary>
-        /// <returns>元数据引用</returns>
-        private MetadataReference[] BuildReferences()
-{
-            List<MetadataReference> references = new List<MetadataReference>();
-            string? trusted = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string;
-            if (trusted == null)
-            {
-                throw new InvalidOperationException(
-                    "Trusted platform assemblies are unavailable.");
-            }
-            string[] paths = trusted.Split(Path.PathSeparator,
-                StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < paths.Length; i = i + 1)
-            {
-                references.Add(MetadataReference.CreateFromFile(paths[i]));
-            }
-            AddMauReferences(references);
-            return references.ToArray();
-        }
-/// <summary>
-/// 附加基座必需程序集——Mau.Runtime/Mau.Contracts（宿主目录，大小写不敏感匹配文件名）
-/// </summary>
-/// <param name = "baseDir">宿主目录</param>
-/// <param name = "references">引用集合</param>
-private static void AddBaseRequired(string baseDir, List<MetadataReference> references)
-{
-    string[] required = new string[]
-    {
-        "Mau.Runtime.dll",
-        "Mau.Contracts.dll"
-    };
-    string[] dlls = Directory.GetFiles(baseDir, "*.dll", SearchOption.TopDirectoryOnly);
-    for (int i = 0; i < dlls.Length; i = i + 1)
-    {
-        string name = Path.GetFileName(dlls[i]);
-        for (int r = 0; r < required.Length; r = r + 1)
-        {
-            if (string.Equals(name, required[r], StringComparison.OrdinalIgnoreCase))
-            {
-                references.Add(MetadataReference.CreateFromFile(dlls[i]));
-            }
-        }
-    }
-}        /// <summary>
-/// 建立引用集（显式模式 D25）——TPA + 基座必需（Mau.Runtime/Mau.Contracts）+ 显式引用清单。
-/// 显式引用缺失时静默跳过（解析阶段已校验存在性，此处容错兜底）。
-/// </summary>
-/// <param name = "extraReferences">显式引用 dll 绝对路径清单（mauproj 引用: 解析结果）</param>
-/// <returns>元数据引用</returns>
-private MetadataReference[] BuildReferences(string[] extraReferences)
-{
-    List<MetadataReference> references = new List<MetadataReference>();
-    string? trusted = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string;
-    if (trusted == null)
-    {
-        throw new InvalidOperationException("Trusted platform assemblies are unavailable.");
-    }
-
-    string[] paths = trusted.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
-    for (int i = 0; i < paths.Length; i = i + 1)
-    {
-        references.Add(MetadataReference.CreateFromFile(paths[i]));
-    }
-
-    // 基座必需——宿主目录中 Mau.Runtime / Mau.Contracts（生成物契约依赖）
-    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-    if (Directory.Exists(baseDir))
-    {
-        AddBaseRequired(baseDir, references);
-    }
-
-    // 显式引用清单——mauproj 引用: 解析结果（去重）
-    for (int i = 0; i < extraReferences.Length; i = i + 1)
-    {
-        if (File.Exists(extraReferences[i]))
-        {
-            references.Add(MetadataReference.CreateFromFile(extraReferences[i]));
-        }
-    }
-
-    return references.ToArray();
-}/// <summary>
-        /// 附加宿主输出目录的全部 dll——基座 + 契约 + 积木 + 宿主自定义（如 CH4.Contracts）
-        /// 全量引用语义：生成物编译引用集 = 宿主目录全量（Learn H15 判例——发布完整性=探测路径完整性）
-        /// </summary>
-        /// <param name="references">引用集合</param>
-        private void AddMauReferences(List<MetadataReference> references)
-        {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            if (!Directory.Exists(baseDir))
-            {
-                return;
-            }
-            string[] dlls = Directory.GetFiles(baseDir, "*.dll",
-                SearchOption.TopDirectoryOnly);
-            Array.Sort(dlls, StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < dlls.Length; i = i + 1)
-            {
-                references.Add(MetadataReference.CreateFromFile(dlls[i]));
-            }
-        }
-
-        /// <summary>
         /// 将 Roslyn 诊断转换为不含源码正文的摘要
         /// </summary>
         /// <param name="diagnostics">诊断集合</param>
@@ -702,120 +596,6 @@ private void KeepArtifacts(string source, string logicalName, string buildRoot)
                 Assembly? shared = AssemblyLoadContext.Default.Assemblies
                     .FirstOrDefault(a => a.GetName().Name == name);
                 return shared;
-            }
-        }
-
-        /// <summary>
-        /// 行号映射段——生成物行区间 → 语料/积木源码定位（D1）
-        /// </summary>
-        private sealed class MapSegment
-        {
-            /// <summary>
-            /// 段名——变迁名或积木 ID
-            /// </summary>
-            internal string Name = "";
-
-            /// <summary>
-            /// 段起始生成物行（1-based）
-            /// </summary>
-            internal int Start;
-
-            /// <summary>
-            /// 段结束生成物行（1-based 含）——仅 brick 段有效
-            /// </summary>
-            internal int End;
-
-            /// <summary>
-            /// 映射源——transition: 语料行号; brick: 剥离行数
-            /// </summary>
-            internal int Source;
-
-            /// <summary>
-            /// 是否 brick 段——false = transition 段
-            /// </summary>
-            internal bool IsBrick;
-        }
-
-        /// <summary>
-        /// 行号映射反查——生成物行号 → 语料行号/积木源码行号（D1 调试基建）
-        /// </summary>
-        /// <param name="generatedLine">生成物行号（1-based）</param>
-        /// <param name="mapped">映射后行号——未命中返回原行号</param>
-        /// <param name="note">映射说明——追加到诊断消息尾部（未命中为空）</param>
-        private void ResolveMapLine(int generatedLine, out string mapped, out string note)
-        {
-            mapped = generatedLine.ToString();
-            note = "";
-            if (string.IsNullOrEmpty(_mapText))
-            {
-                return;
-            }
-            // [段1] 解析全部段——transition（语料行号）与 brick（剥离行数）
-            List<MapSegment> segments = new List<MapSegment>();
-            string[] lines = _mapText.Split('\n');
-            for (int i = 0; i < lines.Length; i++)
-            {
-                string line = lines[i].Trim();
-                if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-                if (line.StartsWith("transition ", StringComparison.Ordinal))
-                {
-                    string[] parts = line.Split(' ');
-                    if (parts.Length >= 6 && parts[2] == "generated" && parts[4] == "source")
-                    {
-                        MapSegment seg = new MapSegment();
-                        seg.Name = parts[1].TrimEnd(':');
-                        seg.Start = int.Parse(parts[3]);
-                        seg.Source = int.Parse(parts[5]);
-                        seg.IsBrick = false;
-                        segments.Add(seg);
-                    }
-                }
-                else if (line.StartsWith("brick ", StringComparison.Ordinal))
-                {
-                    int colon = line.IndexOf(' ');
-                    string rest = line.Substring(colon + 1);
-                    int genPos = rest.IndexOf(" generated ", StringComparison.Ordinal);
-                    int stripPos = rest.IndexOf(" stripped ", StringComparison.Ordinal);
-                    if (genPos > 0 && stripPos > genPos)
-                    {
-                        MapSegment seg = new MapSegment();
-                        seg.Name = rest.Substring(0, genPos).TrimEnd(':');
-                        string range = rest.Substring(genPos + 10, stripPos - genPos - 10).Trim();
-                        int dash = range.IndexOf('-');
-                        seg.Start = int.Parse(range.Substring(0, dash));
-                        seg.End = int.Parse(range.Substring(dash + 1)) + 1;
-                        seg.Source = int.Parse(rest.Substring(stripPos + 9).Trim());
-                        seg.IsBrick = true;
-                        segments.Add(seg);
-                    }
-                }
-            }
-            // [段2] 定位——段 i 的结束 = 段 i+1 的起始（transition 段不吞后续 brick 段）
-            for (int i = 0; i < segments.Count; i++)
-            {
-                int segEnd = i + 1 < segments.Count ? segments[i + 1].Start : int.MaxValue;
-                if (segments[i].IsBrick && segments[i].End < segEnd)
-                {
-                    segEnd = segments[i].End;
-                }
-                if (generatedLine >= segments[i].Start && generatedLine < segEnd)
-                {
-                    if (segments[i].IsBrick)
-                    {
-                        int srcLine = generatedLine - segments[i].Start + segments[i].Source;
-                        mapped = srcLine.ToString();
-                        note = " [生成物行" + generatedLine.ToString() + " → 积木 " + segments[i].Name + " 源码行" + srcLine.ToString() + "]";
-                    }
-                    else
-                    {
-                        mapped = segments[i].Source.ToString();
-                        note = " [生成物行" + generatedLine.ToString() + " → 语料 " + segments[i].Name + " 行" + segments[i].Source.ToString() + "]";
-                    }
-                    return;
-                }
             }
         }
     }

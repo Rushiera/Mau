@@ -1,0 +1,46 @@
+// dev_config.mau —— DevCat 语料（CH4 P8.5d——OA 工具执行 Cat，CONFIG 配置自改域分部）
+// 角色：Dog 工单执行方——认领 TOOL 域 config-* 4 工具（list/get/set/reset）
+// 单级 OA 单：Dog Post → 本语料 4 线认领执行 → complete_str 回执
+// 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON
+// 与 cs-* 线同构：oa.is_open 探测 → claim_next_simple 原子接单 → get_str 读载荷 → config.bridge[method] 直执 → complete_str 回执
+// 写入唯一实现 = ConfigStore.SetChecked/ResetToDefault（schema 白名单 + 值域校验 + 原子写 + 失败回滚）；llm.* 私密环境变量只读
+
+// ── 状态机（4 线——每线独立生命周期）──
+§ 'S_CfgList' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_CfgGet' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_CfgSet' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_CfgReset' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+
+// ── 主动传感器壳——4 线各自探测（officeName = 完整工具名）──
+§ 'P_CfgListOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-list"] > @cfLstOpen
+§ 'P_CfgGetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-get"] > @cfGetOpen
+§ 'P_CfgSetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-set"] > @cfSetOpen
+§ 'P_CfgResetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-reset"] > @cfRstOpen
+
+// ══════════════ config-list 线 ══════════════
+§ 'T_CfgListClaim' : @cfLstOpen & 'S_CfgList' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config-list"] > @cfLstOffice | 'S_CfgList' = 'Claimed' | 'S_CfgList' = 'Idle'
+§ 'T_CfgListArgs' : 'S_CfgList' = 'Claimed' → 'oa.get_str'[@cfLstOffice, "args"] > @cfLstArgs | 'S_CfgList' = 'Ready' | 'S_CfgList' = 'Failed'
+§ 'T_CfgListExec' : 'S_CfgList' = 'Ready' → 'config.bridge'["list", @cfLstArgs] > @cfLstRes | 'S_CfgList' = 'Done' | 'S_CfgList' = 'Failed'
+§ 'T_CfgListReply' : 'S_CfgList' = 'Done' → 'oa.complete_str'[@cfLstOffice, @cfLstRes] | 'S_CfgList' = 'Idle' | 'S_CfgList' = 'Idle'
+§ 'T_CfgListAbort' : 'S_CfgList' = 'Failed' → 'oa.complete_str'[@cfLstOffice, @cfLstRes] | 'S_CfgList' = 'Idle' | 'S_CfgList' = 'Idle'
+
+// ══════════════ config-get 线 ══════════════
+§ 'T_CfgGetClaim' : @cfGetOpen & 'S_CfgGet' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config-get"] > @cfGetOffice | 'S_CfgGet' = 'Claimed' | 'S_CfgGet' = 'Idle'
+§ 'T_CfgGetArgs' : 'S_CfgGet' = 'Claimed' → 'oa.get_str'[@cfGetOffice, "args"] > @cfGetArgs | 'S_CfgGet' = 'Ready' | 'S_CfgGet' = 'Failed'
+§ 'T_CfgGetExec' : 'S_CfgGet' = 'Ready' → 'config.bridge'["get", @cfGetArgs] > @cfGetRes | 'S_CfgGet' = 'Done' | 'S_CfgGet' = 'Failed'
+§ 'T_CfgGetReply' : 'S_CfgGet' = 'Done' → 'oa.complete_str'[@cfGetOffice, @cfGetRes] | 'S_CfgGet' = 'Idle' | 'S_CfgGet' = 'Idle'
+§ 'T_CfgGetAbort' : 'S_CfgGet' = 'Failed' → 'oa.complete_str'[@cfGetOffice, @cfGetRes] | 'S_CfgGet' = 'Idle' | 'S_CfgGet' = 'Idle'
+
+// ══════════════ config-set 线 ══════════════
+§ 'T_CfgSetClaim' : @cfSetOpen & 'S_CfgSet' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config-set"] > @cfSetOffice | 'S_CfgSet' = 'Claimed' | 'S_CfgSet' = 'Idle'
+§ 'T_CfgSetArgs' : 'S_CfgSet' = 'Claimed' → 'oa.get_str'[@cfSetOffice, "args"] > @cfSetArgs | 'S_CfgSet' = 'Ready' | 'S_CfgSet' = 'Failed'
+§ 'T_CfgSetExec' : 'S_CfgSet' = 'Ready' → 'config.bridge'["set", @cfSetArgs] > @cfSetRes | 'S_CfgSet' = 'Done' | 'S_CfgSet' = 'Failed'
+§ 'T_CfgSetReply' : 'S_CfgSet' = 'Done' → 'oa.complete_str'[@cfSetOffice, @cfSetRes] | 'S_CfgSet' = 'Idle' | 'S_CfgSet' = 'Idle'
+§ 'T_CfgSetAbort' : 'S_CfgSet' = 'Failed' → 'oa.complete_str'[@cfSetOffice, @cfSetRes] | 'S_CfgSet' = 'Idle' | 'S_CfgSet' = 'Idle'
+
+// ══════════════ config-reset 线 ══════════════
+§ 'T_CfgResetClaim' : @cfRstOpen & 'S_CfgReset' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config-reset"] > @cfRstOffice | 'S_CfgReset' = 'Claimed' | 'S_CfgReset' = 'Idle'
+§ 'T_CfgResetArgs' : 'S_CfgReset' = 'Claimed' → 'oa.get_str'[@cfRstOffice, "args"] > @cfRstArgs | 'S_CfgReset' = 'Ready' | 'S_CfgReset' = 'Failed'
+§ 'T_CfgResetExec' : 'S_CfgReset' = 'Ready' → 'config.bridge'["reset", @cfRstArgs] > @cfRstRes | 'S_CfgReset' = 'Done' | 'S_CfgReset' = 'Failed'
+§ 'T_CfgResetReply' : 'S_CfgReset' = 'Done' → 'oa.complete_str'[@cfRstOffice, @cfRstRes] | 'S_CfgReset' = 'Idle' | 'S_CfgReset' = 'Idle'
+§ 'T_CfgResetAbort' : 'S_CfgReset' = 'Failed' → 'oa.complete_str'[@cfRstOffice, @cfRstRes] | 'S_CfgReset' = 'Idle' | 'S_CfgReset' = 'Idle'

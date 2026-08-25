@@ -22,7 +22,10 @@ namespace Mau.Runtime
 
         /// <summary>默认模型。</summary>
         public string DefaultModel;
-
+/// <summary>
+/// 默认端点标记——true=未显式指定 API 的消费面（QuickCat 语料面）固定走此配置。
+/// </summary>
+public bool IsDefault;
         /// <summary>创建字段完整的空配置。</summary>
         public CH_LlmApiConfig()
         {

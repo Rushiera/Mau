@@ -261,5 +261,33 @@ namespace CH4
             }
             return Results.Text("CH4 外观层——" + fileName + " 未找到: " + htmlPath + "（宿主需在 CH4.Entry/bin/.../html/ 放置静态页）", "text/plain");
         }
+
+        /// <summary>
+        /// 静态资源服务——html/css|js/{file}（2026-08-25 模块化拆分新增；路径穿越校验 GetFullPath+StartsWith；禁缓存同 index 策略）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <param name="subDir">子目录名（css/js）</param>
+        /// <param name="mime">响应 MIME</param>
+        /// <returns>文件响应；未找到/越界 404</returns>
+        private IResult ServeStatic(HttpContext ctx, string subDir, string mime)
+        {
+            string baseDir = AppContext.BaseDirectory;
+            string htmlRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(baseDir, "html"));
+            string fileName = ctx.Request.RouteValues["file"]?.ToString() ?? "";
+            string filePath = System.IO.Path.GetFullPath(System.IO.Path.Combine(htmlRoot, subDir, fileName));
+            // 路径穿越校验——解析后必须仍在 html 根内（C# 包 exp §六 TCP/HTTP 规则 9）
+            if (!filePath.StartsWith(htmlRoot + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.NotFound();
+            }
+            if (!System.IO.File.Exists(filePath))
+            {
+                return Results.NotFound();
+            }
+            // 禁缓存——前端频繁迭代（同 index 策略）
+            ctx.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+            string content = System.IO.File.ReadAllText(filePath);
+            return Results.Text(content, mime);
+        }
     }
 }

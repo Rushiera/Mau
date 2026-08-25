@@ -57,6 +57,7 @@ namespace CH4
                         apiType = c.ApiType,
                         endpoint = c.Endpoint,
                         defaultModel = c.DefaultModel,
+                        isDefault = c.IsDefault,
                         apiKey = keyShown,
                         hasKey = key.Length > 0
                     });
@@ -126,6 +127,47 @@ namespace CH4
             store.Save(config, apiKey);
             LogStore.Add("CH4.Entry", 1, "llm-apis | 新建 | " + config.ApiConfigId.ToString("D") + " | " + displayName, "CONFIG");
             return Results.Json(new { ok = true, apiConfigId = config.ApiConfigId.ToString("D") });
+        }
+
+        /// <summary>
+        /// LLM API 池设为默认——POST /api/v1/llm-apis/default（body: apiConfigId）。
+        /// 默认端点语义：QuickCat 语料面与未显式配置的猫固定走默认（每次调用实时解析——切换立即生效）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>回执 JSON</returns>
+        internal static async Task<IResult> HandleLlmApisDefault(HttpContext ctx)
+        {
+            string body = await ReadBodyText(ctx);
+            string apiConfigId = "";
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(body))
+                {
+                    JsonElement root = doc.RootElement;
+                    apiConfigId = GetJsonString(root, "apiConfigId");
+                }
+            }
+            catch (Exception)
+            {
+                return Results.Json(new { ok = false, error = "body 非 JSON" });
+            }
+            Guid parsed;
+            if (!Guid.TryParse(apiConfigId, out parsed) || parsed == Guid.Empty)
+            {
+                return Results.Json(new { ok = false, error = "apiConfigId 无效" });
+            }
+            CH_LlmApiConfigStore store = null;
+            DataBox.TryResolve<CH_LlmApiConfigStore>(out store);
+            if (store == null)
+            {
+                return Results.Json(new { ok = false, error = "配置池未绑定" });
+            }
+            if (!store.SetDefault(parsed))
+            {
+                return Results.Json(new { ok = false, error = "配置不存在" });
+            }
+            LogStore.Add("CH4.Entry", 1, "llm-apis | 设为默认 | " + apiConfigId, "CONFIG");
+            return Results.Json(new { ok = true });
         }
 
         /// <summary>
@@ -428,13 +470,13 @@ namespace CH4
         }
 
         /// <summary>
-        /// 解析 cat.cfg 的 API 配置身份——缺省回退内置 DeepSeek 稳定 ID（M1b 同规）。
+        /// 解析 cat.cfg 的 API 配置身份——缺省 Guid.Empty=默认端点语义（Cat 可选配置；未配置走默认端点）。
         /// </summary>
         /// <param name="cfg">配置数据</param>
         /// <returns>API 配置身份</returns>
         private static Guid ResolveApiConfigId(CatCfgData cfg)
         {
-            Guid id = CH_LlmApiConfigStore.DeepSeekApiConfigId;
+            Guid id = Guid.Empty;
             if (cfg != null && cfg.ApiConfigId != null && cfg.ApiConfigId.Length > 0)
             {
                 Guid parsed;

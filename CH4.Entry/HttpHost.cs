@@ -186,6 +186,7 @@ namespace CH4
                 _app.MapPost("/api/v1/llm-apis", (Delegate)Program.HandleLlmApisPost);
                 _app.MapPost("/api/v1/llm-apis/edit", (Delegate)Program.HandleLlmApisEdit);
                 _app.MapPost("/api/v1/llm-apis/delete", (Delegate)Program.HandleLlmApisDelete);
+                _app.MapPost("/api/v1/llm-apis/default", (Delegate)Program.HandleLlmApisDefault);
                 _app.MapGet("/api/v1/cat-config", (Delegate)Program.HandleCatConfigGet);
                 _app.MapPost("/api/v1/cat-config", (Delegate)Program.HandleCatConfigPost);
             }
@@ -195,6 +196,9 @@ namespace CH4
                 ctx.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
                 return ServeIndex();
             });
+            // 2026-08-25 模块化拆分——静态资源多文件路由（css/js 子目录；禁缓存同 index 策略；路径穿越校验）
+            _app.MapGet("/css/{file}", (HttpContext ctx) => ServeStatic(ctx, "css", "text/css"));
+            _app.MapGet("/js/{file}", (HttpContext ctx) => ServeStatic(ctx, "js", "application/javascript"));
             try
             {
                 _app.StartAsync().GetAwaiter().GetResult();

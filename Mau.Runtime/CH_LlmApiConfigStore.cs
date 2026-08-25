@@ -11,9 +11,6 @@ namespace Mau.Runtime
     /// </summary>
     public sealed class CH_LlmApiConfigStore
     {
-        /// <summary>内置 DeepSeek 配置稳定身份（CH3 同值——跨代稳定 ID 对齐）。</summary>
-        public static readonly Guid DeepSeekApiConfigId = new Guid(
-            "ef17cf2a-9dd2-4ab2-a48c-c2bb7ae7d501");
 
         /// <summary>普通配置文件路径。</summary>
         private readonly string CH_LlmApiConfigStore_ConfigPath;
@@ -65,27 +62,6 @@ namespace Mau.Runtime
                 JsonNamingPolicy.CamelCase;
         }
 
-        /// <summary>首次初始化——配置文件不存在才建 DeepSeek 默认（M3：删除默认配置后重启不复活——多配置组场景）。</summary>
-        /// <param name="environmentKey">可选环境 Key（仅首次初始化导入）</param>
-        public void EnsureDefaults(string environmentKey)
-        {
-            // M3 语义：仅首次初始化建默认——llm-api.json 存在即不补（删除默认配置不复活）
-            if (File.Exists(CH_LlmApiConfigStore_ConfigPath))
-            {
-                return;
-            }
-            SaveConfigs(new CH_LlmApiConfig[] { CreateDeepSeek() });
-
-            // 环境 Key 只在首次初始化时作为 DeepSeek 值来源
-            Dictionary<Guid, string> secrets = ReadSecrets();
-            if (!secrets.ContainsKey(DeepSeekApiConfigId)
-                && !string.IsNullOrWhiteSpace(environmentKey))
-            {
-                secrets.Add(DeepSeekApiConfigId, environmentKey.Trim());
-                SaveSecrets(secrets);
-            }
-        }
-
         /// <summary>读取全部过滤后的普通配置。</summary>
         /// <returns>按 ApiConfigId 排序的独立数组</returns>
         public CH_LlmApiConfig[] GetAll()
@@ -134,12 +110,36 @@ namespace Mau.Runtime
             config = new CH_LlmApiConfig();
             return false;
         }
+/// <summary>
+/// 解析默认端点——IsDefault=true 的配置；无默认返回 null（不做静默回退——空配置必须显式配置端点后才能运行）。
+/// </summary>
+/// <returns>默认配置；无默认 null</returns>
+public CH_LlmApiConfig? ResolveDefault()
+{
+    CH_LlmApiConfig[] configs = GetAll();
+    for (int i = 0; i < configs.Length; i = i + 1)
+    {
+        if (configs[i].IsDefault)
+        {
+            return configs[i];
+        }
+    }
+
+    return null;
+} 
+/// <summary>
+/// 设置默认端点——清除其他默认标记 + 置目标默认（唯一默认语义；目标不存在返回 false）。
+/// </summary>
+/// <param name = "apiConfigId">目标配置身份</param>
+/// <returns>true=设置成功</returns>
+ public  bool  SetDefault ( Guid  apiConfigId ) { CH_LlmApiConfig [ ]  configs  =  GetAll ( ) ;  bool  found  =  false ;  for  ( int  i  =  0 ;  i < configs . Length ;  i  =  i + 1 ) { if  ( configs [ i ] . ApiConfigId == apiConfigId ) { configs [ i ] . IsDefault  =  true ;  found  =  true ;  } else  { configs [ i ] . IsDefault  =  false ;  } } if  ( ! found ) { return  false ;  } SaveConfigs ( configs ) ;  return  true ;  }
+
 
         /// <summary>新增或替换一份普通配置与可选 Key。</summary>
         /// <param name="config">普通配置</param>
         /// <param name="apiKey">Key；空值表示保留原 Key</param>
         public void Save(CH_LlmApiConfig config, string apiKey)
-        {
+{
             NormalizeAndValidate(config);
             List<CH_LlmApiConfig> configs = new List<CH_LlmApiConfig>(GetAll());
             bool replaced = false;
@@ -154,6 +154,11 @@ namespace Mau.Runtime
             }
             if (!replaced)
             {
+                // 池空时首个配置标默认——唯一端点必然被默认消费面使用（之后切换默认走 SetDefault 显式操作）
+                if (configs.Count == 0)
+                {
+                    config.IsDefault = true;
+                }
                 configs.Add(CopyConfig(config));
             }
             SaveConfigs(configs.ToArray());
@@ -164,7 +169,6 @@ namespace Mau.Runtime
                 SaveSecrets(secrets);
             }
         }
-
         /// <summary>读取一份 Key，不把它包装进普通配置。</summary>
         /// <param name="apiConfigId">API 配置身份</param>
         /// <returns>Key 或空字符串</returns>
@@ -213,32 +217,6 @@ namespace Mau.Runtime
             SaveConfigs(configs.ToArray());
             ClearSecret(apiConfigId);
             return true;
-        }
-
-        /// <summary>建立内置 DeepSeek 配置。</summary>
-        /// <returns>配置</returns>
-        private CH_LlmApiConfig CreateDeepSeek()
-        {
-            CH_LlmApiConfig config = new CH_LlmApiConfig();
-            config.ApiConfigId = DeepSeekApiConfigId;
-            config.DisplayName = "DeepSeek Default";
-            config.ApiType = "deepseek";
-            config.Endpoint = "https://api.deepseek.com/v1/chat/completions";
-            config.DefaultModel = "deepseek-v4-flash";
-            return config;
-        }
-
-        /// <summary>判断列表是否已有稳定身份。</summary>
-        private bool Contains(List<CH_LlmApiConfig> configs, Guid apiConfigId)
-        {
-            for (int i = 0; i < configs.Count; i = i + 1)
-            {
-                if (configs[i].ApiConfigId == apiConfigId)
-                {
-                    return true;
-                }
-            }
-            return false;
         }
 
         /// <summary>过滤普通配置并拒绝身份或端点错误。</summary>
@@ -384,7 +362,7 @@ namespace Mau.Runtime
 
         /// <summary>复制一份普通配置。</summary>
         private CH_LlmApiConfig CopyConfig(CH_LlmApiConfig source)
-        {
+{
             CH_LlmApiConfig result = new CH_LlmApiConfig();
             result.SchemaVersion = source.SchemaVersion;
             result.ApiConfigId = source.ApiConfigId;
@@ -392,9 +370,9 @@ namespace Mau.Runtime
             result.ApiType = source.ApiType;
             result.Endpoint = source.Endpoint;
             result.DefaultModel = source.DefaultModel;
+            result.IsDefault = source.IsDefault;
             return result;
         }
-
         /// <summary>把可空文本规范为空字符串。</summary>
         private string SafeText(string? value)
         {
