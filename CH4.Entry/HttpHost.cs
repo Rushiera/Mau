@@ -31,6 +31,9 @@ namespace CH4
         /// <summary>快照 JSON 构建回调——宿主侧注入（Program.BuildSnapshotJson，includeLogs 参数）</summary>
         private Func<bool, string> _snapshotBuilder;
 
+        /// <summary>增量 patch 构建回调——宿主侧注入（Program.BuildPatchJson；可空=不推 patch 保持全量推送）</summary>
+        private Func<string> _patchBuilder;
+
         /// <summary>指令投递回调——宿主侧注入（Program.DispatchCommand）</summary>
         private Func<string, bool> _dispatcher;
 
@@ -93,9 +96,10 @@ namespace CH4
         /// <param name="historyBuilder">会话历史视图构建回调（B4 对话区——GET /api/v1/history）</param>
         /// <param name="catsBuilder">多猫列表构建回调（GET /api/v1/cats；可空=不注册端点）</param>
         /// <param name="noteBuilder">Note 状态构建回调（GET /api/v1/note——M4c 前端面板数据源）</param>
+        /// <param name="patchBuilder">增量 patch 构建回调（可空=不推 patch 保持全量推送——每猫端口）</param>
         /// <param name="serveChatPage">静态页模式（true=chat.html / false=index.html）</param>
         /// <returns>HttpHost 实例</returns>
-        public static HttpHost Start(int port, string sessionId, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher, Func<string> frameBuilder, Func<int, string> historyBuilder, Func<string> catsBuilder, Func<string> noteBuilder, bool serveChatPage)
+        public static HttpHost Start(int port, string sessionId, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher, Func<string> frameBuilder, Func<int, string> historyBuilder, Func<string> catsBuilder, Func<string> noteBuilder, Func<string> patchBuilder, bool serveChatPage)
         {
             HttpHost host = new HttpHost();
             host._port = port;
@@ -106,6 +110,7 @@ namespace CH4
             host._historyBuilder = historyBuilder;
             host._catsBuilder = catsBuilder;
             host._noteBuilder = noteBuilder;
+            host._patchBuilder = patchBuilder;
             host._serveChatPage = serveChatPage;
             host.BuildApp();
             host._pumpCts = new CancellationTokenSource();

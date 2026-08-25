@@ -100,7 +100,19 @@ private string[] _noteTasks;
         private long _phaseFrames;
 
         /// <summary>待处理用户消息队列——忙时排队（原同步阻塞天然排队语义保持）</summary>
-        private readonly Queue<string> _pending;
+        /// <summary>
+        /// 待处理消息实体——内容 + 来源（user=人发送/system=系统自动）。
+        /// </summary>
+        private sealed class PendingMessage
+        {
+            /// <summary>消息内容</summary>
+            public string Content;
+
+            /// <summary>来源——user/system</summary>
+            public string Source;
+        }
+
+        private readonly Queue<PendingMessage> _pending;
 
         // [段5] 宿主服务引用（构造注入——宿主级共享面）
         /// <summary>LLM 运行时——ChatStream 调度（宿主 Bootstrap 注入；M3 apiConfigId 切换 SwapLlmRuntime 替换）</summary>
@@ -149,7 +161,7 @@ private string[] _noteTasks;
             _executeTool = executeTool;
             _dogs = new List<ToolOrderDog>();
             _hostDogs = new List<ToolOrderDog>();
-            _pending = new Queue<string>();
+            _pending = new Queue<PendingMessage>();
             _phase = ChatPhase.Idle;
             _round = 0;
             _phaseFrames = 0;
@@ -255,13 +267,21 @@ private string[] _noteTasks;
         /// 主线程泵消费调用（ThreadGuard：不推进相位——启动在 Pump）。
         /// </summary>
         /// <param name="content">用户消息内容</param>
-        public void PostUserMessage(string content)
+        /// <param name="source">来源——user（人发送，默认）/system（系统自动）</param>
+        public void PostUserMessage(string content, string source = "user")
         {
             if (content == null || content.Length == 0)
             {
                 return;
             }
-            _pending.Enqueue(content);
+            if (source == null || source.Length == 0)
+            {
+                source = "user";
+            }
+            PendingMessage msg = new PendingMessage();
+            msg.Content = content;
+            msg.Source = source;
+            _pending.Enqueue(msg);
         }
 
         /// <summary>
@@ -273,7 +293,8 @@ private string[] _noteTasks;
             {
                 if (_pending.Count > 0)
                 {
-                    StartRound(_pending.Dequeue());
+                    PendingMessage next = _pending.Dequeue();
+                    StartRound(next.Content, next.Source);
                 }
                 return;
             }
@@ -297,9 +318,15 @@ private string[] _noteTasks;
         /// 启动新轮次——追加用户消息 + chat_state=working + StartLlm 动作段（构造消息序列 → 后台流式消费）。
         /// </summary>
         /// <param name="content">用户消息</param>
-        private void StartRound(string content)
+        /// <param name="source">来源——user/system</param>
+        private void StartRound(string content, string source)
         {
             _context.AddUserMessage(content);
+            // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
+            if (_httpHost != null)
+            {
+                _httpHost.PushUserMessage(content, source);
+            }
             DataBox.Set<string>("global", "chat_state", "working");
             LogStore.Add("CH4.Entry", 1, "── " + _displayName + " 处理中 ──", "CHAT");
             LaunchLlm();
@@ -438,6 +465,20 @@ _ = ConsumeLlmStream(messages);
                 // 纯文本回复——本轮完成
                 _context.AddAssistantMessage(_llmResultText);
                 Console.WriteLine("[" + _displayName + "] " + _llmResultText);
+                // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + user 事件 + 直接开新轮（跳过 Done/CloseRound）
+                if (_pending.Count > 0)
+                {
+                    PendingMessage next = _pending.Dequeue();
+                    _context.AddUserMessage(next.Content);
+                    if (_httpHost != null)
+                    {
+                        _httpHost.PushUserMessage(next.Content, next.Source);
+                    }
+                    _round = 0;
+                    LogStore.Add("CH4.Entry", 1, "插话插入 | " + next.Source + " | 纯文本轮后直接续轮", "CHAT");
+                    LaunchLlm();
+                    return;
+                }
                 _phase = ChatPhase.Done;
                 return;
             }
@@ -659,6 +700,20 @@ _ = ConsumeLlmStream(messages);
                 _context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);
             }
             _toolBatchActive = false;
+            // 单向数据流改造——忙时插话：工具批完成有排队消息 → 插入 Ctx + user 事件 + 直接续轮（工具结果 + 插话同轮可见）
+            if (_pending.Count > 0)
+            {
+                PendingMessage next = _pending.Dequeue();
+                _context.AddUserMessage(next.Content);
+                if (_httpHost != null)
+                {
+                    _httpHost.PushUserMessage(next.Content, next.Source);
+                }
+                _round = 0;
+                LogStore.Add("CH4.Entry", 1, "插话插入 | " + next.Source + " | 工具批后直接续轮", "CHAT");
+                LaunchLlm();
+                return;
+            }
             LogStore.Add("CH4.Entry", 1, "工具结果已回传，续轮", "CHAT");
             // 收敛判定——MaxToolRounds 轮满 → Done（收敛语义由 LLM 判断完成）
             if (_round + 1 >= MaxToolRounds)
@@ -785,13 +840,36 @@ private string BuildNoteProgress()
 /// <summary>
 /// Note 状态推送——SSE note 事件（M4c 前端悬浮气泡实时重绘；宿主未 Attach 时静默）。
 /// </summary>
- private  void  PushNoteState ( ) { if  ( _httpHost != null ) { _httpHost . PushNoteState ( BuildNoteJson ( ) ) ;  } } 
-/// <summary>
+ private  void  PushNoteState ( ) {
+    if (_httpHost != null)
+    {
+        _httpHost.PushNoteState(BuildNoteJson());
+    }
+}/// <summary>
 /// Note 手动新增——前端 note.add 指令执行体（追加到末尾；空计划时创建；仅主线程调用）。
 /// </summary>
 /// <param name = "text">任务文本</param>
- public  void  NoteAdd ( string  text ) { if  ( text == null  || text . Length == 0 ) { return ;  } string  t  =  text . Trim ( ) ;  if  ( t . Length == 0 ) { return ;  } List < string > list  =  new  List < string > ( ) ;  if  ( _noteTasks != null ) { list . AddRange ( _noteTasks ) ;  } list . Add ( t ) ;  _noteTasks  =  list . ToArray ( ) ;  PushNoteState ( ) ;  } 
-/// <summary>
+ public  void  NoteAdd ( string  text ) {
+    if (text == null || text.Length == 0)
+    {
+        return;
+    }
+    string t = text.Trim();
+    if (t.Length == 0)
+    {
+        return;
+    }
+    List<string> list = new List<string>();
+    if (_noteTasks != null)
+    {
+        list.AddRange(_noteTasks);
+    }
+    list.Add(t);
+    _noteTasks = list.ToArray();
+    PushNoteState();
+    // 单向数据流改造——手写 Note 双通道：原文作为 user 消息进 Ctx（对话窗口有气泡；忙时排队）
+    PostUserMessage(t);
+}/// <summary>
 /// Note 启动——前端 note.start 指令执行体（拼接计划全文 + 当前进度，以 user 名义推给 LLM 开始执行；仅主线程调用）。
 /// </summary>
 public void NoteStart()
@@ -822,8 +900,20 @@ public void NoteStart()
 /// Note 状态 JSON——GET /api/v1/note 数据源（tasks/current/done；空计划 tasks=[]；数组引用替换原子——HTTP 线程读安全）。
 /// </summary>
 /// <returns>Note 状态 JSON 文本</returns>
- public  string  BuildNoteJson ( ) { List < string > tasks  =  new  List < string > ( ) ;  if  ( _noteTasks != null ) { tasks . AddRange ( _noteTasks ) ;  } var  obj  =  new  { tasks  =  tasks . ToArray ( ) ,  current  =  _noteCurrent ,  done  =  _noteDone } ;  return  JsonSerializer . Serialize ( obj ) ;  }
-
+ public  string  BuildNoteJson ( ) {
+    List<string> tasks = new List<string>();
+    if (_noteTasks != null)
+    {
+        tasks.AddRange(_noteTasks);
+    }
+    var obj = new
+    {
+        tasks = tasks.ToArray(),
+        current = _noteCurrent,
+        done = _noteDone
+    };
+    return JsonSerializer.Serialize(obj);
+}
         /// <summary>
         /// Done 相位——前文落盘（tool 截断 ≤800——D7 落盘副本防膨胀）+ chat_state=idle + PushChatDone + 复位（原 HandleChat 段4）。
         /// </summary>
@@ -849,7 +939,7 @@ public void NoteStart()
             if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent < _noteTasks.Length - 1)
             {
                 int remain = _noteTasks.Length - _noteCurrent;
-                _pending.Enqueue("[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent]);
+                PostUserMessage("[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent], "system");
                 LogStore.Add("CH4.Entry", 1, "Note 自动拉起 | 剩余 " + remain + " 条", "CHAT");
             }
             else

@@ -44,34 +44,46 @@ namespace CH4
         /// 主线程泵——宿主帧循环调用：快照待构建标志置位时在主线程构建 + 缓存 + 推送（ThreadGuard 契约）。
         /// </summary>
         public void PumpMainThread()
+{
+    if (!_snapshotPending)
+    {
+        return;
+    }
+    _snapshotPending = false;
+    string json = _snapshotBuilder(false);
+    _snapshotCache = json;
+    // 增量流式——只推变化段；无变化零推送（Idle 稳态静默）；patchBuilder 未注入时保持全量推送（每猫端口——chat.html 不消费快照）
+    if (_patchBuilder != null)
+    {
+        string patch = _patchBuilder();
+        if (patch != null && patch.Length > 0)
         {
-            if (!_snapshotPending)
+            PushEvent("patch", patch);
+            // 观测透明性——patch 推送结算行（截断 120——cats 整段可能长）
+            LogStore.Add("CH4.Entry", 1, "SSE|patch|" + patch, "CHAT", "", "", 120);
+        }
+    }
+    else
+    {
+        PushEvent("snapshot", json);
+    }
+    // O3 帧流——每帧紧凑 JSON 落盘（回放/复盘；FrameStore 未配置时静默 no-op）
+    if (_frameBuilder != null)
+    {
+        try
+        {
+            string frameJson = _frameBuilder();
+            if (frameJson != null && frameJson.Length > 0)
             {
-                return;
-            }
-            _snapshotPending = false;
-            string json = _snapshotBuilder(false);
-            _snapshotCache = json;
-            PushEvent("snapshot", json);
-            // O3 帧流——每帧紧凑 JSON 落盘（回放/复盘；FrameStore 未配置时静默 no-op）
-            if (_frameBuilder != null)
-            {
-                try
-                {
-                    string frameJson = _frameBuilder();
-                    if (frameJson != null && frameJson.Length > 0)
-                    {
-                        FrameStore.Append(frameJson);
-                    }
-                }
-                catch
-                {
-                    // 帧流异常不阻塞主线程泵
-                }
+                FrameStore.Append(frameJson);
             }
         }
-
-        /// <summary>
+        catch
+        {
+            // 帧流异常不阻塞主线程泵
+        }
+    }
+}        /// <summary>
         /// LogStore 增量推送——游标后新条目逐条推 log 事件（协议 §4.2）。
         /// </summary>
         private void PushLogIncrements()
@@ -183,6 +195,24 @@ public void PushNoteState(string json)
                 sessionId = _sessionId
             };
             PushEvent("llm", JsonSerializer.Serialize(obj));
+        }
+
+        /// <summary>
+        /// 用户消息事件——所有进内核的消息统一出口（单向数据流改造：前端气泡唯一来源）。
+        /// </summary>
+        /// <param name="text">消息文本</param>
+        /// <param name="source">来源——user/system</param>
+        public void PushUserMessage(string text, string source)
+        {
+            int seq = Interlocked.Increment(ref _seq);
+            var obj = new
+            {
+                seq = seq,
+                source = source,
+                text = text,
+                sessionId = _sessionId
+            };
+            PushEvent("user", JsonSerializer.Serialize(obj));
         }
     }
 }

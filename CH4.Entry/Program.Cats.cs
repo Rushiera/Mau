@@ -587,6 +587,7 @@ namespace CH4
                 (int max) => BuildHistoryView(cat.Session, max),
                 null,
                 () => cat.Session.BuildNoteJson(),
+                null,
                 true);
         }
 

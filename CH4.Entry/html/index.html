@@ -123,6 +123,9 @@
         #noteAddRow button { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
         #noteStartBtn { background: #0e639c; border: none; color: #fff; }
         #noteStartBtn:disabled { opacity: 0.5; cursor: default; }
+        /* 单向数据流改造——插话队列显示区（正常流堆叠——有排队消息显示/无则隐藏） */
+        #chatPendingPanel { border-top: 1px solid #222; background: #101010; font-size: 11px; padding: 5px 12px; color: #9a9a9a; }
+        #chatPendingPanel:empty { display: none; }
     </style>
 </head>
 <body>
@@ -230,6 +233,8 @@
                         </div>
                     </div>
                 </div>
+                <!-- 单向数据流改造——插话队列显示区（纯展示；正常流堆叠，对话区自动上移） -->
+                <div id="chatPendingPanel"></div>
                 <div id="chatinput">
                     <input id="chatSendInput" placeholder="对 MajorDomoCat 说话…（Enter 发送，发送期禁用）" onkeydown="if(event.key==='Enter')chatSend()">
                     <button id="chatSendBtn" onclick="chatSend()">发送</button>
@@ -294,6 +299,7 @@
         var rawInfoEl = document.getElementById('rawInfo');
         var rawPaused = false;
         var lastFrame = -1;          // 快照帧号守卫——旧快照不覆盖新快照
+        var fullSnapshot = null;     // 本地全快照——增量流式接收层维护（各页面渲染唯一数据源）
         var logs = [];               // 内存日志数组（Log 区真相源）
         var logDedupeKey = '';       // 已渲染最后一条日志的 key——拉取合并去重
 
@@ -312,7 +318,13 @@
 
         // [段3] SSE 事件流——四类事件分派
         var es = new EventSource('/api/v1/stream');
-        es.addEventListener('snapshot', function (ev) { applySnapshot(JSON.parse(ev.data)); });
+        es.addEventListener('snapshot', function (ev) {
+            // 增量流式——全量快照到达（helloFrame 重连兜底）整体替换本地全快照
+            var s = JSON.parse(ev.data);
+            fullSnapshot = s;
+            applySnapshot(s);
+        });
+        es.addEventListener('patch', function (ev) { applyPatch(JSON.parse(ev.data)); });   // 增量流式——变化段合并进本地全快照
         es.addEventListener('log', function (ev) { pushLog(JSON.parse(ev.data)); });
         es.addEventListener('llm', function (ev) {
             var d = JSON.parse(ev.data);
@@ -328,6 +340,7 @@
         es.addEventListener('tool', function (ev) { chatOnTool(JSON.parse(ev.data)); });   // B4 对话区——工具结果实时回填
         es.addEventListener('chatdone', function (ev) { chatOnChatDone(JSON.parse(ev.data)); });   // B4——会话终态（llm done 仅一轮；chatdone 才定型）
         es.addEventListener('note', function (ev) { noteOnEvent(JSON.parse(ev.data)); });   // M4c——Note 状态实时重绘
+        es.addEventListener('user', function (ev) { chatOnUser(JSON.parse(ev.data)); });   // 单向数据流——内核确认消息出口
         es.onerror = function () { metaEl.textContent = 'SSE 断线——自动重连...'; };
         es.onopen = function () {
             // 重连成功兜底——无条件重拉历史（CHAT_SESSION 动态更新 + 历史重绘；sending 态额外清阶段）
@@ -345,10 +358,40 @@
             .then(function (r) { return r.json(); })
             .then(function (s) {
                 for (var i = 0; i < s.logs.length; i++) { unshiftLog(s.logs[i]); }
-                if (s.frame >= lastFrame) { applySnapshot(s); lastFrame = s.frame; }
+                if (s.frame >= lastFrame) { fullSnapshot = s; applySnapshot(s); lastFrame = s.frame; }
                 refreshLogView();
             })
             .catch(function () {});
+
+        // [段3b] patch 合并——变化段合并进本地全快照（增量流式：接收层处理，页面渲染逻辑不变）
+        function applyPatch(p) {
+            if (!fullSnapshot) { return; }                    // 全量未到——忽略（helloFrame 会来）
+            if (p.frame <= fullSnapshot.frame) { return; }    // 过期帧忽略
+            if (p.cats) { fullSnapshot.cats = p.cats; }
+            if (p.oa) { fullSnapshot.oa = p.oa; }
+            if (p.boxes) {
+                var map = {};
+                var cur = fullSnapshot.boxes || [];
+                for (var i = 0; i < cur.length; i++) {
+                    map[cur[i].scope + '\u0001' + cur[i].key] = cur[i];
+                }
+                var set = p.boxes.set || [];
+                for (var j = 0; j < set.length; j++) {
+                    map[set[j].scope + '\u0001' + set[j].key] = set[j];
+                }
+                var del = p.boxes.del || [];
+                for (var k = 0; k < del.length; k++) {
+                    delete map[del[k].scope + '\u0001' + del[k].key];
+                }
+                var arr = [];
+                for (var mk in map) {
+                    if (Object.prototype.hasOwnProperty.call(map, mk)) { arr.push(map[mk]); }
+                }
+                fullSnapshot.boxes = arr;
+            }
+            fullSnapshot.frame = p.frame;
+            applySnapshot(fullSnapshot);
+        }
 
         // [段4] 快照应用——状态区 + 原始区（同源渲染）
         function applySnapshot(s) {
@@ -558,7 +601,7 @@
             if (!rawPaused) {
                 fetch('/api/v1/snapshot')
                     .then(function (r) { return r.json(); })
-                    .then(function (s) { if (s.frame >= lastFrame) { applySnapshot(s); } })
+                    .then(function (s) { if (s.frame >= lastFrame) { fullSnapshot = s; applySnapshot(s); } })
                     .catch(function () {});
             }
         });
@@ -676,11 +719,14 @@
         var chatTimer = null;             // 120s 无响应兜底定时器
         var CHAT_SESSION = 'majordomo';
         var CHAT_TIMEOUT_MS = 120000;
+        var chatPending = [];              // 插话队列——本地发送记录（user 事件到达 FIFO 移除；纯展示）
+        var SYSTEM_AUTO_PREFIX = '[SystemAuto] ';   // 系统自动消息前缀（前端常量一处定义，微调只动此行）
 
         function chatSetState(s) {
             chatState = s;
-            chatInput.disabled = (s !== 'idle');
-            chatBtn.disabled = (s !== 'idle');
+            // 单向数据流改造——忙时可插话（排队等本轮结束插入）；仅 loading 禁用
+            chatInput.disabled = (s === 'loading');
+            chatBtn.disabled = (s === 'loading');
             var nsb = document.getElementById('noteStartBtn');
             if (nsb) { nsb.disabled = (s !== 'idle'); }
         }
@@ -829,16 +875,25 @@
             chatToolQueue = [];
             chatStage = null;
             if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
+            // 发送失败——插话队列显示失去意义（内核未收到）
+            chatPending = [];
+            chatRenderPending();
             chatSetState('idle');
         }
 
+        // 单向数据流改造——发送零自产气泡：只投递 command 总线，气泡由 SSE user 事件渲染
         function chatSend() {
             var text = chatInput.value.trim();
-            if (text.length === 0 || chatState !== 'idle') { return; }
+            if (text.length === 0 || chatState === 'loading') { return; }
             chatInput.value = '';
-            chatBubble('user').textContent = text;
-            chatStage = null;
-            chatToolQueue = [];
+            // 插话队列——本地记录（内核 user 事件到达后 FIFO 移除）
+            chatPending.push(text);
+            chatRenderPending();
+            if (chatState === 'idle') {
+                // idle 发送——清阶段残留（sending 态插话不清——不破坏当前流式渲染）
+                chatStage = null;
+                chatToolQueue = [];
+            }
             chatSetState('sending');
             chatKeepAlive();
             fetch('/api/v1/command', {
@@ -853,6 +908,30 @@
                     }
                 })
                 .catch(function (err) { chatFail('请求失败: ' + err); });
+        }
+
+        // user 事件——内核确认消息进 Ctx 的唯一出口（单向数据流：前端气泡唯一来源）
+        function chatOnUser(d) {
+            if (d.sessionId && d.sessionId !== CHAT_SESSION) { return; }
+            if (chatPending.length > 0) { chatPending.shift(); }
+            chatRenderPending();
+            var b = chatBubble('user');
+            b.textContent = (d.source === 'system' ? SYSTEM_AUTO_PREFIX : '') + (d.text || '');
+        }
+
+        // 插话队列渲染——纯展示（数据源 = 本地发送记录 + 内核 user 事件确认）
+        function chatRenderPending() {
+            var panel = document.getElementById('chatPendingPanel');
+            if (!panel) { return; }
+            if (chatPending.length === 0) {
+                panel.textContent = '';
+                return;
+            }
+            var html = '';
+            for (var i = 0; i < chatPending.length; i++) {
+                html += '<div>⏳ ' + escapeHtml(chatPending[i]) + '</div>';
+            }
+            panel.innerHTML = html;
         }
 
         // 阶段模型（B4.2）——思考/工具/回复独立气泡；阶段切换时 seal 前一阶段

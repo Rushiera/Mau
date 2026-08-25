@@ -120,7 +120,7 @@ namespace CH4
             wires.Add(new { name = w.Name, busy = w.Busy, lastTriggerFrame = w.LastTriggerFrame, timedOut = w.TimedOut });
         }
 
-        cats.Add(new { name = name, id = id, faulted = false, faultReason = "", status = new { frame = status.Frame, stateLines = status.StateLines, sensors = sensors, slots = slots, wires = wires } });
+        cats.Add(new { name = name, id = id, faulted = false, faultReason = "", status = new { stateLines = status.StateLines, sensors = sensors, slots = slots, wires = wires } });
     }
     /// <summary>
     /// 构建全量快照 JSON——协议 design-ch4-protocol.md §三（version/pid/frame/cats/oa/logs；logs 按 includeLogs 裁剪）
@@ -143,29 +143,7 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
                 {
                     continue;
                 }
-                string t = "o";
-            object val;
-            if (d.Value is bool)
-            {
-                t = "b";
-                val = d.Value;
-            }
-            else if (d.Value is long || d.Value is int || d.Value is double)
-            {
-                t = "n";
-                val = d.Value;
-            }
-            else if (d.Value is string)
-            {
-                t = "s";
-                val = d.Value;
-            }
-            else
-            {
-                t = "o";
-                val = SummarizeBoxValue(d.Value);
-            }
-            boxes.Add(new { scope = d.Scope, key = d.Key, t = t, value = val });
+            boxes.Add(BuildBoxEntry(d));
         }
         // [段2] logs 段——includeLogs 裁剪（SSE 事件空数组；GET ?logs=N 由 HttpHost 动态合成替换）
         object logs;
@@ -210,6 +188,134 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
             logs = logs
         };
         return JsonSerializer.Serialize(snapshot);
+    }
+
+    /// <summary>
+    /// 构建单盒子条目对象——类型归一（bool/number/string/object 摘要）。
+    /// </summary>
+    /// <param name="d">DataBox 条目</param>
+    /// <returns>条目匿名对象</returns>
+    private static object BuildBoxEntry(DataBoxDataEntry d)
+    {
+        string t = "o";
+        object val;
+        if (d.Value is bool)
+        {
+            t = "b";
+            val = d.Value;
+        }
+        else if (d.Value is long || d.Value is int || d.Value is double)
+        {
+            t = "n";
+            val = d.Value;
+        }
+        else if (d.Value is string)
+        {
+            t = "s";
+            val = d.Value;
+        }
+        else
+        {
+            t = "o";
+            val = SummarizeBoxValue(d.Value);
+        }
+        return new { scope = d.Scope, key = d.Key, t = t, value = val };
+    }
+
+    // 增量 diff 缓存——主线程独占（PumpMainThread 调用；ThreadGuard 契约）
+    /// <summary>上次 cats 段 JSON——变化检测</summary>
+    private static string _lastCatsJson = "";
+
+    /// <summary>上次 oa 段 JSON——变化检测</summary>
+    private static string _lastOaJson = "";
+
+    /// <summary>上次 boxes 字典——scope+key → 条目 JSON（变化检测）</summary>
+    private static Dictionary<string, string> _lastBoxes = new Dictionary<string, string>();
+
+    /// <summary>
+    /// 构建增量 patch——与上次快照对比只含变化段（cats 整段/oa 计数/boxes 字典 diff）；无变化返回 null（零推送）。
+    /// 主线程泵调用（PumpMainThread——ThreadGuard 契约）；缓存字段主线程独占。
+    /// </summary>
+    /// <returns>patch JSON 文本；无变化 null</returns>
+    public static string BuildPatchJson()
+    {
+        // [段1] cats 段——整段序列化对比（状态转移才变，频率低）
+        List<object> cats = new List<object>();
+        AppendCatJson(cats, "QuickCat", _quickId, _quickHandle);
+        AppendCatJson(cats, "DevCat", _devId, _devHandle);
+        string catsJson = JsonSerializer.Serialize(cats);
+        bool catsChanged = !string.Equals(catsJson, _lastCatsJson, StringComparison.Ordinal);
+        // [段2] oa 段——四计数对比
+        OAView oa = _oa.GetSnapshot();
+        object oaObj = new
+        {
+            open = oa.OpenCount,
+            work = oa.WorkCount,
+            closed = oa.ClosedCount,
+            timeout = oa.TimeoutCount
+        };
+        string oaJson = JsonSerializer.Serialize(oaObj);
+        bool oaChanged = !string.Equals(oaJson, _lastOaJson, StringComparison.Ordinal);
+        // [段3] boxes 段——字典 diff（scope+key → 条目 JSON；新增/变化进 set，消失进 del）
+        DataBoxSnapshot boxSnap = DataBox.Capture();
+        Dictionary<string, string> boxesNow = new Dictionary<string, string>();
+        for (int i = 0; i < boxSnap.Data.Length; i++)
+        {
+            DataBoxDataEntry d = boxSnap.Data[i];
+            if (IsInternalBox(d.Scope, d.Key))
+            {
+                continue;
+            }
+            string entryKey = d.Scope + "\u0001" + d.Key;
+            boxesNow[entryKey] = JsonSerializer.Serialize(BuildBoxEntry(d));
+        }
+        List<object> boxSet = new List<object>();
+        List<object> boxDel = new List<object>();
+        foreach (KeyValuePair<string, string> kv in boxesNow)
+        {
+            string old;
+            if (!_lastBoxes.TryGetValue(kv.Key, out old) || !string.Equals(old, kv.Value, StringComparison.Ordinal))
+            {
+                boxSet.Add(JsonSerializer.Deserialize<object>(kv.Value));
+            }
+        }
+        foreach (KeyValuePair<string, string> kv in _lastBoxes)
+        {
+            if (!boxesNow.ContainsKey(kv.Key))
+            {
+                int sep = kv.Key.IndexOf('\u0001');
+                boxDel.Add(new { scope = kv.Key.Substring(0, sep), key = kv.Key.Substring(sep + 1) });
+            }
+        }
+        bool boxesChanged = boxSet.Count > 0 || boxDel.Count > 0;
+        // [段4] 无变化零推送——Idle 稳态静默
+        if (!catsChanged && !oaChanged && !boxesChanged)
+        {
+            return null;
+        }
+        // [段5] patch 组装 + 缓存更新
+        Dictionary<string, object> patch = new Dictionary<string, object>();
+        patch["frame"] = FlowRunner.GlobalFrame;
+        if (catsChanged)
+        {
+            patch["cats"] = cats;
+            _lastCatsJson = catsJson;
+        }
+        if (oaChanged)
+        {
+            patch["oa"] = oaObj;
+            _lastOaJson = oaJson;
+        }
+        if (boxesChanged)
+        {
+            patch["boxes"] = new
+            {
+                set = boxSet,
+                del = boxDel
+            };
+            _lastBoxes = boxesNow;
+        }
+        return JsonSerializer.Serialize(patch);
     }
 }
 }
