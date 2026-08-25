@@ -17,7 +17,7 @@ namespace CH4
         /// <summary>
         /// reload 热重载——quick|dev + 可选 dll 路径（缺省 = 当前 handle 同路径重读）
         /// 流程：新 Load + Tick 试跑验证（失败保留旧）→ UnregisterFlow 旧（D1：CommandBus key 同步清理）→ RegisterFlow 新 → 旧 TryUnload → 预热 → 报告
-        /// P8.5b：返回结果文本（host.reload 工具 LLM 可见；Console 同步输出行为不变）
+        /// P8.5b：返回结果文本（host-reload 工具 LLM 可见；Console 同步输出行为不变）
         /// </summary>
         /// <param name="args">cat + 空格 + dll 路径（dll 可选）</param>
         /// <returns>reload 结果文本</returns>
@@ -35,7 +35,7 @@ namespace CH4
             {
                 dllPath = "";
             }
-            // [段0] 忙时拒绝——任一会话工具批次执行中 reload 会导致旧批次完成信号永不置位（WaitForTools 空转帧上限）——host.* 直执路径豁免（ChatSession 工具批临时解除）
+            // [段0] 忙时拒绝——任一会话工具批次执行中 reload 会导致旧批次完成信号永不置位（WaitForTools 空转帧上限）——host-* 直执路径豁免（ChatSession 工具批临时解除）
             if (IsAnyToolBatchActive())
             {
                 string busyMsg = "[CH4.Entry] reload 拒绝: 工具批次执行中（Chat 处理中）——等待完成后再试";
@@ -139,7 +139,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// host.reload 工具执行——解析 cat 参数 → ExecuteReload（复用事务三段式）；宿主级工具——ExecuteToolBatch 白名单直执不走 OA
+        /// host-reload 工具执行——解析 cat 参数 → ExecuteReload（复用事务三段式）；宿主级工具——ExecuteToolBatch 白名单直执不走 OA
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
         /// <returns>reload 结果文本</returns>
@@ -168,7 +168,7 @@ namespace CH4
             }
             if (cat != "quick" && cat != "dev")
             {
-                return "ERR|BAD_ARG|host.reload cat 参数须为 quick|dev";
+                return "ERR|BAD_ARG|host-reload cat 参数须为 quick|dev";
             }
             return ExecuteReload(cat);
         }

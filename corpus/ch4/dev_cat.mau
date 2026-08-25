@@ -1,5 +1,5 @@
 ﻿// dev_cat.mau —— DevCat 语料（CH4 P8 二期——OA 工具执行 Cat）
-// 角色：Dog 工单执行方——认领 TOOL 域 20 工具（text.read/write/append/replace + mau.verify/gen/proj + cs.* 9 件 + config.* 4 件）
+// 角色：Dog 工单执行方——认领 TOOL 域 20 工具（text-read/write/append/replace + mau-verify/gen/proj + cs-* 9 件 + config-* 4 件）
 // 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本语料 20 线认领执行 → complete_str 回执
 // 多级预留：Relist 后单回 Open，本语料（或其他执行 Cat）可再次认领——线对链路无感
 // 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON（宿主发单落盒——CH2 Dog 机制验证格式）
@@ -8,7 +8,7 @@
 // 线程模型：全部主线程同步（受控短 IO）；mau.proj dotnet build 长耗时阻塞主线程（与一期直执等价——P9 后台域清偿）
 // 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）+ log.write TOOL 类别
 
-// ── 状态机（20 线——每线独立生命周期；TEXT/MAU 7 + cs.* 9 + config.* 4）──
+// ── 状态机（20 线——每线独立生命周期；TEXT/MAU 7 + cs-* 9 + config-* 4）──
 § 'S_Read' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Write' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Append' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
@@ -18,18 +18,18 @@
 § 'S_Proj' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // ── 主动传感器壳——7 线各自探测（纯只读判断积木 → bool 落盒）──
-§ 'P_ReadOpen' ↻ [1]: 'oa.is_open'["TOOL", "text.read"] > @rdOpen
-§ 'P_WriteOpen' ↻ [1]: 'oa.is_open'["TOOL", "text.write"] > @wrOpen
-§ 'P_AppendOpen' ↻ [1]: 'oa.is_open'["TOOL", "text.append"] > @apOpen
-§ 'P_ReplaceOpen' ↻ [1]: 'oa.is_open'["TOOL", "text.replace"] > @rpOpen
-§ 'P_VerifyOpen' ↻ [1]: 'oa.is_open'["TOOL", "mau.verify"] > @vfOpen
-§ 'P_GenOpen' ↻ [1]: 'oa.is_open'["TOOL", "mau.gen"] > @gnOpen
-§ 'P_ProjOpen' ↻ [1]: 'oa.is_open'["TOOL", "mau.proj"] > @pjOpen
+§ 'P_ReadOpen' ↻ [1]: 'oa.is_open'["TOOL", "text-read"] > @rdOpen
+§ 'P_WriteOpen' ↻ [1]: 'oa.is_open'["TOOL", "text-write"] > @wrOpen
+§ 'P_AppendOpen' ↻ [1]: 'oa.is_open'["TOOL", "text-append"] > @apOpen
+§ 'P_ReplaceOpen' ↻ [1]: 'oa.is_open'["TOOL", "text-replace"] > @rpOpen
+§ 'P_VerifyOpen' ↻ [1]: 'oa.is_open'["TOOL", "mau-verify"] > @vfOpen
+§ 'P_GenOpen' ↻ [1]: 'oa.is_open'["TOOL", "mau-gen"] > @gnOpen
+§ 'P_ProjOpen' ↻ [1]: 'oa.is_open'["TOOL", "mau-proj"] > @pjOpen
 
-// ══════════════ text.read 线 ══════════════
+// ══════════════ text-read 线 ══════════════
 
 // T_ReadClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
-§ 'T_ReadClaim' : @rdOpen & 'S_Read' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text.read"] > @rdOffice | 'S_Read' = 'Claimed' | 'S_Read' = 'Idle'
+§ 'T_ReadClaim' : @rdOpen & 'S_Read' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text-read"] > @rdOffice | 'S_Read' = 'Claimed' | 'S_Read' = 'Idle'
 
 // T_ReadArgs：读载荷 args（整包工具参数 JSON）
 § 'T_ReadArgs' : 'S_Read' = 'Claimed' → 'oa.get_str'[@rdOffice, "args"] > @rdArgs | 'S_Read' = 'Ready' | 'S_Read' = 'Failed'
@@ -43,10 +43,10 @@
 // T_ReadAbort：失败回执（@rdRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
 § 'T_ReadAbort' : 'S_Read' = 'Failed' → 'oa.complete_str'[@rdOffice, @rdRes] | 'S_Read' = 'Idle' | 'S_Read' = 'Idle'
 
-// ══════════════ text.write 线 ══════════════
+// ══════════════ text-write 线 ══════════════
 
 // T_WriteClaim：探测真 + Idle → 原子接单
-§ 'T_WriteClaim' : @wrOpen & 'S_Write' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text.write"] > @wrOffice | 'S_Write' = 'Claimed' | 'S_Write' = 'Idle'
+§ 'T_WriteClaim' : @wrOpen & 'S_Write' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text-write"] > @wrOffice | 'S_Write' = 'Claimed' | 'S_Write' = 'Idle'
 
 // T_WriteArgs：读载荷 args
 § 'T_WriteArgs' : 'S_Write' = 'Claimed' → 'oa.get_str'[@wrOffice, "args"] > @wrArgs | 'S_Write' = 'Ready' | 'S_Write' = 'Failed'
@@ -60,10 +60,10 @@
 // T_WriteAbort：失败回执
 § 'T_WriteAbort' : 'S_Write' = 'Failed' → 'oa.complete_str'[@wrOffice, @wrRes] | 'S_Write' = 'Idle' | 'S_Write' = 'Idle'
 
-// ══════════════ text.append 线 ══════════════
+// ══════════════ text-append 线 ══════════════
 
 // T_AppendClaim：探测真 + Idle → 原子接单
-§ 'T_AppendClaim' : @apOpen & 'S_Append' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text.append"] > @apOffice | 'S_Append' = 'Claimed' | 'S_Append' = 'Idle'
+§ 'T_AppendClaim' : @apOpen & 'S_Append' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text-append"] > @apOffice | 'S_Append' = 'Claimed' | 'S_Append' = 'Idle'
 
 // T_AppendArgs：读载荷 args
 § 'T_AppendArgs' : 'S_Append' = 'Claimed' → 'oa.get_str'[@apOffice, "args"] > @apArgs | 'S_Append' = 'Ready' | 'S_Append' = 'Failed'
@@ -77,10 +77,10 @@
 // T_AppendAbort：失败回执
 § 'T_AppendAbort' : 'S_Append' = 'Failed' → 'oa.complete_str'[@apOffice, @apRes] | 'S_Append' = 'Idle' | 'S_Append' = 'Idle'
 
-// ══════════════ text.replace 线 ══════════════
+// ══════════════ text-replace 线 ══════════════
 
 // T_ReplaceClaim：探测真 + Idle → 原子接单
-§ 'T_ReplaceClaim' : @rpOpen & 'S_Replace' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text.replace"] > @rpOffice | 'S_Replace' = 'Claimed' | 'S_Replace' = 'Idle'
+§ 'T_ReplaceClaim' : @rpOpen & 'S_Replace' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text-replace"] > @rpOffice | 'S_Replace' = 'Claimed' | 'S_Replace' = 'Idle'
 
 // T_ReplaceArgs：读载荷 args
 § 'T_ReplaceArgs' : 'S_Replace' = 'Claimed' → 'oa.get_str'[@rpOffice, "args"] > @rpArgs | 'S_Replace' = 'Ready' | 'S_Replace' = 'Failed'
@@ -94,10 +94,10 @@
 // T_ReplaceAbort：失败回执
 § 'T_ReplaceAbort' : 'S_Replace' = 'Failed' → 'oa.complete_str'[@rpOffice, @rpRes] | 'S_Replace' = 'Idle' | 'S_Replace' = 'Idle'
 
-// ══════════════ mau.verify 线 ══════════════
+// ══════════════ mau-verify 线 ══════════════
 
 // T_VerifyClaim：探测真 + Idle → 原子接单
-§ 'T_VerifyClaim' : @vfOpen & 'S_Verify' = 'Idle' → 'oa.claim_next_simple'["TOOL", "mau.verify"] > @vfOffice | 'S_Verify' = 'Claimed' | 'S_Verify' = 'Idle'
+§ 'T_VerifyClaim' : @vfOpen & 'S_Verify' = 'Idle' → 'oa.claim_next_simple'["TOOL", "mau-verify"] > @vfOffice | 'S_Verify' = 'Claimed' | 'S_Verify' = 'Idle'
 
 // T_VerifyArgs：读载荷 args
 § 'T_VerifyArgs' : 'S_Verify' = 'Claimed' → 'oa.get_str'[@vfOffice, "args"] > @vfArgs | 'S_Verify' = 'Ready' | 'S_Verify' = 'Failed'
@@ -111,10 +111,10 @@
 // T_VerifyAbort：失败回执（FAIL|VALIDATE 诊断或 ERR| 错误）
 § 'T_VerifyAbort' : 'S_Verify' = 'Failed' → 'oa.complete_str'[@vfOffice, @vfRes] | 'S_Verify' = 'Idle' | 'S_Verify' = 'Idle'
 
-// ══════════════ mau.gen 线 ══════════════
+// ══════════════ mau-gen 线 ══════════════
 
 // T_GenClaim：探测真 + Idle → 原子接单
-§ 'T_GenClaim' : @gnOpen & 'S_Gen' = 'Idle' → 'oa.claim_next_simple'["TOOL", "mau.gen"] > @gnOffice | 'S_Gen' = 'Claimed' | 'S_Gen' = 'Idle'
+§ 'T_GenClaim' : @gnOpen & 'S_Gen' = 'Idle' → 'oa.claim_next_simple'["TOOL", "mau-gen"] > @gnOffice | 'S_Gen' = 'Claimed' | 'S_Gen' = 'Idle'
 
 // T_GenArgs：读载荷 args
 § 'T_GenArgs' : 'S_Gen' = 'Claimed' → 'oa.get_str'[@gnOffice, "args"] > @gnArgs | 'S_Gen' = 'Ready' | 'S_Gen' = 'Failed'
@@ -128,10 +128,10 @@
 // T_GenAbort：失败回执
 § 'T_GenAbort' : 'S_Gen' = 'Failed' → 'oa.complete_str'[@gnOffice, @gnRes] | 'S_Gen' = 'Idle' | 'S_Gen' = 'Idle'
 
-// ══════════════ mau.proj 线 ══════════════
+// ══════════════ mau-proj 线 ══════════════
 
 // T_ProjClaim：探测真 + Idle → 原子接单
-§ 'T_ProjClaim' : @pjOpen & 'S_Proj' = 'Idle' → 'oa.claim_next_simple'["TOOL", "mau.proj"] > @pjOffice | 'S_Proj' = 'Claimed' | 'S_Proj' = 'Idle'
+§ 'T_ProjClaim' : @pjOpen & 'S_Proj' = 'Idle' → 'oa.claim_next_simple'["TOOL", "mau-proj"] > @pjOffice | 'S_Proj' = 'Claimed' | 'S_Proj' = 'Idle'
 
 // T_ProjArgs：读载荷 args
 § 'T_ProjArgs' : 'S_Proj' = 'Claimed' → 'oa.get_str'[@pjOffice, "args"] > @pjArgs | 'S_Proj' = 'Ready' | 'S_Proj' = 'Failed'
@@ -145,7 +145,7 @@
 // T_ProjAbort：失败回执
 § 'T_ProjAbort' : 'S_Proj' = 'Failed' → 'oa.complete_str'[@pjOffice, @pjRes] | 'S_Proj' = 'Idle' | 'S_Proj' = 'Idle'
 
-// ══════════════ P8 三期 cs.* 编码工具认领线（9 线——csharp.bridge 单积木 PACK 协议分派；method=工具名去 cs. 前缀）══════════════
+// ══════════════ P8 三期 cs-* 编码工具认领线（9 线——csharp.bridge 单积木 PACK 协议分派；method=工具名去 cs- 前缀）══════════════
 // 与一期 7 线同构：oa.is_open 探测 → claim_next_simple 原子接单 → get_str 读载荷 → csharp.bridge[method] 直执 → complete_str 回执
 // 失败侧 ERR| 文本也在结果盒——Dog 可见失败原因；bridge 未注入时积木返回 false + ERR|CSHARP_NO_BRIDGE（失败侧回执同样可见）
 
@@ -161,78 +161,78 @@
 § 'S_Dead' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // —— 主动传感器壳——9 线各自探测（officeName = 完整工具名）
-§ 'P_CheckOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs.check"] > @ckOpen
-§ 'P_BuildOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs.build"] > @buOpen
-§ 'P_ListOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs.list"] > @liOpen
-§ 'P_CsReadOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs.read"] > @csOpen
-§ 'P_FindRefOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs.find_ref"] > @frOpen
-§ 'P_PatchOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs.patch"] > @ptOpen
-§ 'P_MemberOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs.member"] > @mbOpen
-§ 'P_CommentOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs.comment"] > @cmOpen
-§ 'P_DeadOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs.dead"] > @ddOpen
+§ 'P_CheckOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-check"] > @ckOpen
+§ 'P_BuildOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-build"] > @buOpen
+§ 'P_ListOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-list"] > @liOpen
+§ 'P_CsReadOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-read"] > @csOpen
+§ 'P_FindRefOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-find_ref"] > @frOpen
+§ 'P_PatchOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-patch"] > @ptOpen
+§ 'P_MemberOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-member"] > @mbOpen
+§ 'P_CommentOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-comment"] > @cmOpen
+§ 'P_DeadOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-dead"] > @ddOpen
 
-// ══════════════ cs.check 线 ══════════════
-§ 'T_CheckClaim' : @ckOpen & 'S_Check' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs.check"] > @ckOffice | 'S_Check' = 'Claimed' | 'S_Check' = 'Idle'
+// ══════════════ cs-check 线 ══════════════
+§ 'T_CheckClaim' : @ckOpen & 'S_Check' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-check"] > @ckOffice | 'S_Check' = 'Claimed' | 'S_Check' = 'Idle'
 § 'T_CheckArgs' : 'S_Check' = 'Claimed' → 'oa.get_str'[@ckOffice, "args"] > @ckArgs | 'S_Check' = 'Ready' | 'S_Check' = 'Failed'
 § 'T_CheckExec' : 'S_Check' = 'Ready' → 'csharp.bridge'["check", @ckArgs] > @ckRes | 'S_Check' = 'Done' | 'S_Check' = 'Failed'
 § 'T_CheckReply' : 'S_Check' = 'Done' → 'oa.complete_str'[@ckOffice, @ckRes] | 'S_Check' = 'Idle' | 'S_Check' = 'Idle'
 § 'T_CheckAbort' : 'S_Check' = 'Failed' → 'oa.complete_str'[@ckOffice, @ckRes] | 'S_Check' = 'Idle' | 'S_Check' = 'Idle'
 
-// ══════════════ cs.build 线 ══════════════
-§ 'T_BuildClaim' : @buOpen & 'S_Build' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs.build"] > @buOffice | 'S_Build' = 'Claimed' | 'S_Build' = 'Idle'
+// ══════════════ cs-build 线 ══════════════
+§ 'T_BuildClaim' : @buOpen & 'S_Build' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-build"] > @buOffice | 'S_Build' = 'Claimed' | 'S_Build' = 'Idle'
 § 'T_BuildArgs' : 'S_Build' = 'Claimed' → 'oa.get_str'[@buOffice, "args"] > @buArgs | 'S_Build' = 'Ready' | 'S_Build' = 'Failed'
 § 'T_BuildExec' : 'S_Build' = 'Ready' → 'csharp.bridge'["build", @buArgs] > @buRes | 'S_Build' = 'Done' | 'S_Build' = 'Failed'
 § 'T_BuildReply' : 'S_Build' = 'Done' → 'oa.complete_str'[@buOffice, @buRes] | 'S_Build' = 'Idle' | 'S_Build' = 'Idle'
 § 'T_BuildAbort' : 'S_Build' = 'Failed' → 'oa.complete_str'[@buOffice, @buRes] | 'S_Build' = 'Idle' | 'S_Build' = 'Idle'
 
-// ══════════════ cs.list 线 ══════════════
-§ 'T_ListClaim' : @liOpen & 'S_List' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs.list"] > @liOffice | 'S_List' = 'Claimed' | 'S_List' = 'Idle'
+// ══════════════ cs-list 线 ══════════════
+§ 'T_ListClaim' : @liOpen & 'S_List' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-list"] > @liOffice | 'S_List' = 'Claimed' | 'S_List' = 'Idle'
 § 'T_ListArgs' : 'S_List' = 'Claimed' → 'oa.get_str'[@liOffice, "args"] > @liArgs | 'S_List' = 'Ready' | 'S_List' = 'Failed'
 § 'T_ListExec' : 'S_List' = 'Ready' → 'csharp.bridge'["list", @liArgs] > @liRes | 'S_List' = 'Done' | 'S_List' = 'Failed'
 § 'T_ListReply' : 'S_List' = 'Done' → 'oa.complete_str'[@liOffice, @liRes] | 'S_List' = 'Idle' | 'S_List' = 'Idle'
 § 'T_ListAbort' : 'S_List' = 'Failed' → 'oa.complete_str'[@liOffice, @liRes] | 'S_List' = 'Idle' | 'S_List' = 'Idle'
 
-// ══════════════ cs.read 线 ══════════════
-§ 'T_CsReadClaim' : @csOpen & 'S_CsRead' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs.read"] > @csOffice | 'S_CsRead' = 'Claimed' | 'S_CsRead' = 'Idle'
+// ══════════════ cs-read 线 ══════════════
+§ 'T_CsReadClaim' : @csOpen & 'S_CsRead' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-read"] > @csOffice | 'S_CsRead' = 'Claimed' | 'S_CsRead' = 'Idle'
 § 'T_CsReadArgs' : 'S_CsRead' = 'Claimed' → 'oa.get_str'[@csOffice, "args"] > @csArgs | 'S_CsRead' = 'Ready' | 'S_CsRead' = 'Failed'
 § 'T_CsReadExec' : 'S_CsRead' = 'Ready' → 'csharp.bridge'["read", @csArgs] > @csRes | 'S_CsRead' = 'Done' | 'S_CsRead' = 'Failed'
 § 'T_CsReadReply' : 'S_CsRead' = 'Done' → 'oa.complete_str'[@csOffice, @csRes] | 'S_CsRead' = 'Idle' | 'S_CsRead' = 'Idle'
 § 'T_CsReadAbort' : 'S_CsRead' = 'Failed' → 'oa.complete_str'[@csOffice, @csRes] | 'S_CsRead' = 'Idle' | 'S_CsRead' = 'Idle'
 
-// ══════════════ cs.find_ref 线 ══════════════
-§ 'T_FindRefClaim' : @frOpen & 'S_FindRef' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs.find_ref"] > @frOffice | 'S_FindRef' = 'Claimed' | 'S_FindRef' = 'Idle'
+// ══════════════ cs-find_ref 线 ══════════════
+§ 'T_FindRefClaim' : @frOpen & 'S_FindRef' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-find_ref"] > @frOffice | 'S_FindRef' = 'Claimed' | 'S_FindRef' = 'Idle'
 § 'T_FindRefArgs' : 'S_FindRef' = 'Claimed' → 'oa.get_str'[@frOffice, "args"] > @frArgs | 'S_FindRef' = 'Ready' | 'S_FindRef' = 'Failed'
 § 'T_FindRefExec' : 'S_FindRef' = 'Ready' → 'csharp.bridge'["find_ref", @frArgs] > @frRes | 'S_FindRef' = 'Done' | 'S_FindRef' = 'Failed'
 § 'T_FindRefReply' : 'S_FindRef' = 'Done' → 'oa.complete_str'[@frOffice, @frRes] | 'S_FindRef' = 'Idle' | 'S_FindRef' = 'Idle'
 § 'T_FindRefAbort' : 'S_FindRef' = 'Failed' → 'oa.complete_str'[@frOffice, @frRes] | 'S_FindRef' = 'Idle' | 'S_FindRef' = 'Idle'
 
-// ══════════════ cs.patch 线 ══════════════
-§ 'T_PatchClaim' : @ptOpen & 'S_Patch' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs.patch"] > @ptOffice | 'S_Patch' = 'Claimed' | 'S_Patch' = 'Idle'
+// ══════════════ cs-patch 线 ══════════════
+§ 'T_PatchClaim' : @ptOpen & 'S_Patch' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-patch"] > @ptOffice | 'S_Patch' = 'Claimed' | 'S_Patch' = 'Idle'
 § 'T_PatchArgs' : 'S_Patch' = 'Claimed' → 'oa.get_str'[@ptOffice, "args"] > @ptArgs | 'S_Patch' = 'Ready' | 'S_Patch' = 'Failed'
 § 'T_PatchExec' : 'S_Patch' = 'Ready' → 'csharp.bridge'["patch", @ptArgs] > @ptRes | 'S_Patch' = 'Done' | 'S_Patch' = 'Failed'
 § 'T_PatchReply' : 'S_Patch' = 'Done' → 'oa.complete_str'[@ptOffice, @ptRes] | 'S_Patch' = 'Idle' | 'S_Patch' = 'Idle'
 § 'T_PatchAbort' : 'S_Patch' = 'Failed' → 'oa.complete_str'[@ptOffice, @ptRes] | 'S_Patch' = 'Idle' | 'S_Patch' = 'Idle'
 
-// ══════════════ cs.member 线 ══════════════
-§ 'T_MemberClaim' : @mbOpen & 'S_Member' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs.member"] > @mbOffice | 'S_Member' = 'Claimed' | 'S_Member' = 'Idle'
+// ══════════════ cs-member 线 ══════════════
+§ 'T_MemberClaim' : @mbOpen & 'S_Member' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-member"] > @mbOffice | 'S_Member' = 'Claimed' | 'S_Member' = 'Idle'
 § 'T_MemberArgs' : 'S_Member' = 'Claimed' → 'oa.get_str'[@mbOffice, "args"] > @mbArgs | 'S_Member' = 'Ready' | 'S_Member' = 'Failed'
 § 'T_MemberExec' : 'S_Member' = 'Ready' → 'csharp.bridge'["member", @mbArgs] > @mbRes | 'S_Member' = 'Done' | 'S_Member' = 'Failed'
 § 'T_MemberReply' : 'S_Member' = 'Done' → 'oa.complete_str'[@mbOffice, @mbRes] | 'S_Member' = 'Idle' | 'S_Member' = 'Idle'
 § 'T_MemberAbort' : 'S_Member' = 'Failed' → 'oa.complete_str'[@mbOffice, @mbRes] | 'S_Member' = 'Idle' | 'S_Member' = 'Idle'
 
-// ══════════════ cs.comment 线 ══════════════
-§ 'T_CommentClaim' : @cmOpen & 'S_Comment' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs.comment"] > @cmOffice | 'S_Comment' = 'Claimed' | 'S_Comment' = 'Idle'
+// ══════════════ cs-comment 线 ══════════════
+§ 'T_CommentClaim' : @cmOpen & 'S_Comment' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-comment"] > @cmOffice | 'S_Comment' = 'Claimed' | 'S_Comment' = 'Idle'
 § 'T_CommentArgs' : 'S_Comment' = 'Claimed' → 'oa.get_str'[@cmOffice, "args"] > @cmArgs | 'S_Comment' = 'Ready' | 'S_Comment' = 'Failed'
 § 'T_CommentExec' : 'S_Comment' = 'Ready' → 'csharp.bridge'["comment", @cmArgs] > @cmRes | 'S_Comment' = 'Done' | 'S_Comment' = 'Failed'
 § 'T_CommentReply' : 'S_Comment' = 'Done' → 'oa.complete_str'[@cmOffice, @cmRes] | 'S_Comment' = 'Idle' | 'S_Comment' = 'Idle'
 § 'T_CommentAbort' : 'S_Comment' = 'Failed' → 'oa.complete_str'[@cmOffice, @cmRes] | 'S_Comment' = 'Idle' | 'S_Comment' = 'Idle'
 
-// ══════════════ cs.dead 线 ══════════════
-§ 'T_DeadClaim' : @ddOpen & 'S_Dead' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs.dead"] > @ddOffice | 'S_Dead' = 'Claimed' | 'S_Dead' = 'Idle'
+// ══════════════ cs-dead 线 ══════════════
+§ 'T_DeadClaim' : @ddOpen & 'S_Dead' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-dead"] > @ddOffice | 'S_Dead' = 'Claimed' | 'S_Dead' = 'Idle'
 § 'T_DeadArgs' : 'S_Dead' = 'Claimed' → 'oa.get_str'[@ddOffice, "args"] > @ddArgs | 'S_Dead' = 'Ready' | 'S_Dead' = 'Failed'
 § 'T_DeadExec' : 'S_Dead' = 'Ready' → 'csharp.bridge'["dead", @ddArgs] > @ddRes | 'S_Dead' = 'Done' | 'S_Dead' = 'Failed'
 § 'T_DeadReply' : 'S_Dead' = 'Done' → 'oa.complete_str'[@ddOffice, @ddRes] | 'S_Dead' = 'Idle' | 'S_Dead' = 'Idle'
-§ 'T_DeadAbort' : 'S_Dead' = 'Failed' → 'oa.complete_str'[@ddOffice, @ddRes] | 'S_Dead' = 'Idle' | 'S_Dead' = 'Idle'// ══════════════ P8.5d config.* 配置自改认领线（4 线——config.bridge 单积木 PACK 协议分派；method=工具名去 config. 前缀）══════════════
+§ 'T_DeadAbort' : 'S_Dead' = 'Failed' → 'oa.complete_str'[@ddOffice, @ddRes] | 'S_Dead' = 'Idle' | 'S_Dead' = 'Idle'// ══════════════ P8.5d config-* 配置自改认领线（4 线——config.bridge 单积木 PACK 协议分派；method=工具名去 config- 前缀）══════════════
 // 与 cs.* 线同构：oa.is_open 探测 → claim_next_simple 原子接单 → get_str 读载荷 → config.bridge[method] 直执 → complete_str 回执
 // 写入唯一实现 = ConfigStore.SetChecked/ResetToDefault（schema 白名单 + 值域校验 + 原子写 + 失败回滚）；llm.* 私密环境变量只读
 
@@ -243,34 +243,34 @@
 § 'S_CfgReset' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // —— 主动传感器壳——4 线各自探测（officeName = 完整工具名）
-§ 'P_CfgListOpen' ↻ [1]: 'oa.is_open'["TOOL", "config.list"] > @cfLstOpen
-§ 'P_CfgGetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config.get"] > @cfGetOpen
-§ 'P_CfgSetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config.set"] > @cfSetOpen
-§ 'P_CfgResetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config.reset"] > @cfRstOpen
+§ 'P_CfgListOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-list"] > @cfLstOpen
+§ 'P_CfgGetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-get"] > @cfGetOpen
+§ 'P_CfgSetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-set"] > @cfSetOpen
+§ 'P_CfgResetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-reset"] > @cfRstOpen
 
-// ══════════════ config.list 线 ══════════════
-§ 'T_CfgListClaim' : @cfLstOpen & 'S_CfgList' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config.list"] > @cfLstOffice | 'S_CfgList' = 'Claimed' | 'S_CfgList' = 'Idle'
+// ══════════════ config-list 线 ══════════════
+§ 'T_CfgListClaim' : @cfLstOpen & 'S_CfgList' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config-list"] > @cfLstOffice | 'S_CfgList' = 'Claimed' | 'S_CfgList' = 'Idle'
 § 'T_CfgListArgs' : 'S_CfgList' = 'Claimed' → 'oa.get_str'[@cfLstOffice, "args"] > @cfLstArgs | 'S_CfgList' = 'Ready' | 'S_CfgList' = 'Failed'
 § 'T_CfgListExec' : 'S_CfgList' = 'Ready' → 'config.bridge'["list", @cfLstArgs] > @cfLstRes | 'S_CfgList' = 'Done' | 'S_CfgList' = 'Failed'
 § 'T_CfgListReply' : 'S_CfgList' = 'Done' → 'oa.complete_str'[@cfLstOffice, @cfLstRes] | 'S_CfgList' = 'Idle' | 'S_CfgList' = 'Idle'
 § 'T_CfgListAbort' : 'S_CfgList' = 'Failed' → 'oa.complete_str'[@cfLstOffice, @cfLstRes] | 'S_CfgList' = 'Idle' | 'S_CfgList' = 'Idle'
 
-// ══════════════ config.get 线 ══════════════
-§ 'T_CfgGetClaim' : @cfGetOpen & 'S_CfgGet' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config.get"] > @cfGetOffice | 'S_CfgGet' = 'Claimed' | 'S_CfgGet' = 'Idle'
+// ══════════════ config-get 线 ══════════════
+§ 'T_CfgGetClaim' : @cfGetOpen & 'S_CfgGet' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config-get"] > @cfGetOffice | 'S_CfgGet' = 'Claimed' | 'S_CfgGet' = 'Idle'
 § 'T_CfgGetArgs' : 'S_CfgGet' = 'Claimed' → 'oa.get_str'[@cfGetOffice, "args"] > @cfGetArgs | 'S_CfgGet' = 'Ready' | 'S_CfgGet' = 'Failed'
 § 'T_CfgGetExec' : 'S_CfgGet' = 'Ready' → 'config.bridge'["get", @cfGetArgs] > @cfGetRes | 'S_CfgGet' = 'Done' | 'S_CfgGet' = 'Failed'
 § 'T_CfgGetReply' : 'S_CfgGet' = 'Done' → 'oa.complete_str'[@cfGetOffice, @cfGetRes] | 'S_CfgGet' = 'Idle' | 'S_CfgGet' = 'Idle'
 § 'T_CfgGetAbort' : 'S_CfgGet' = 'Failed' → 'oa.complete_str'[@cfGetOffice, @cfGetRes] | 'S_CfgGet' = 'Idle' | 'S_CfgGet' = 'Idle'
 
-// ══════════════ config.set 线 ══════════════
-§ 'T_CfgSetClaim' : @cfSetOpen & 'S_CfgSet' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config.set"] > @cfSetOffice | 'S_CfgSet' = 'Claimed' | 'S_CfgSet' = 'Idle'
+// ══════════════ config-set 线 ══════════════
+§ 'T_CfgSetClaim' : @cfSetOpen & 'S_CfgSet' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config-set"] > @cfSetOffice | 'S_CfgSet' = 'Claimed' | 'S_CfgSet' = 'Idle'
 § 'T_CfgSetArgs' : 'S_CfgSet' = 'Claimed' → 'oa.get_str'[@cfSetOffice, "args"] > @cfSetArgs | 'S_CfgSet' = 'Ready' | 'S_CfgSet' = 'Failed'
 § 'T_CfgSetExec' : 'S_CfgSet' = 'Ready' → 'config.bridge'["set", @cfSetArgs] > @cfSetRes | 'S_CfgSet' = 'Done' | 'S_CfgSet' = 'Failed'
 § 'T_CfgSetReply' : 'S_CfgSet' = 'Done' → 'oa.complete_str'[@cfSetOffice, @cfSetRes] | 'S_CfgSet' = 'Idle' | 'S_CfgSet' = 'Idle'
 § 'T_CfgSetAbort' : 'S_CfgSet' = 'Failed' → 'oa.complete_str'[@cfSetOffice, @cfSetRes] | 'S_CfgSet' = 'Idle' | 'S_CfgSet' = 'Idle'
 
-// ══════════════ config.reset 线 ══════════════
-§ 'T_CfgResetClaim' : @cfRstOpen & 'S_CfgReset' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config.reset"] > @cfRstOffice | 'S_CfgReset' = 'Claimed' | 'S_CfgReset' = 'Idle'
+// ══════════════ config-reset 线 ══════════════
+§ 'T_CfgResetClaim' : @cfRstOpen & 'S_CfgReset' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config-reset"] > @cfRstOffice | 'S_CfgReset' = 'Claimed' | 'S_CfgReset' = 'Idle'
 § 'T_CfgResetArgs' : 'S_CfgReset' = 'Claimed' → 'oa.get_str'[@cfRstOffice, "args"] > @cfRstArgs | 'S_CfgReset' = 'Ready' | 'S_CfgReset' = 'Failed'
 § 'T_CfgResetExec' : 'S_CfgReset' = 'Ready' → 'config.bridge'["reset", @cfRstArgs] > @cfRstRes | 'S_CfgReset' = 'Done' | 'S_CfgReset' = 'Failed'
 § 'T_CfgResetReply' : 'S_CfgReset' = 'Done' → 'oa.complete_str'[@cfRstOffice, @cfRstRes] | 'S_CfgReset' = 'Idle' | 'S_CfgReset' = 'Idle'

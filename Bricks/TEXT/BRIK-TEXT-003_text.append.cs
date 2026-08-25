@@ -2,7 +2,7 @@
 // 积木: text.append
 // ID:   BRIK-TEXT-003
 // 类别: TEXT
-// 作用: 追加文本到文件末尾（文件不存在则新建；自动创建父目录）——LLM 工具 text.append 语料执行面
+// 作用: 追加文本到文件末尾（文件不存在则新建；自动创建父目录）——LLM 工具 text-append 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
 // 原理: DataBox.TryResolve<FileSystemService> → AppendText(path, content)；argsJson 内解析 path/content
@@ -15,7 +15,7 @@ using Mau.Runtime;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// 文本积木——text.append 追加文本（LLM 工具执行面：参数整包 argsJson）
+    /// 文本积木——text-append 追加文本（LLM 工具执行面：参数整包 argsJson）
     /// </summary>
     public static class TextAppendBrick
     {
@@ -89,4 +89,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:64AF6CA13AF877DC471961A3CD42E45F44D7AE510B786A8DC58E311F33146906
+// #MAU_CHECKSUM:SHA256:C0FD91800959F973B04C1AC7BAE67433ECE537E02A1654F9C2D2BF91ED92E286

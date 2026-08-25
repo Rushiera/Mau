@@ -2,7 +2,7 @@
 // 积木: text.replace
 // ID:   BRIK-TEXT-004
 // 类别: TEXT
-// 作用: 替换文本——old 全部出现处替换为 new 并原子写回（old 未找到报错）——LLM 工具 text.replace 语料执行面
+// 作用: 替换文本——old 全部出现处替换为 new 并原子写回（old 未找到报错）——LLM 工具 text-replace 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
 // 原理: DataBox.TryResolve<FileSystemService> → ReplaceText(path, old, new)；argsJson 内解析 path/old/new
@@ -15,7 +15,7 @@ using Mau.Runtime;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// 文本积木——text.replace 替换文本（LLM 工具执行面：参数整包 argsJson）
+    /// 文本积木——text-replace 替换文本（LLM 工具执行面：参数整包 argsJson）
     /// </summary>
     public static class TextReplaceBrick
     {
@@ -95,4 +95,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:FFD61BE6CAC4F0D7521FF312D8C9457E5815B3D0B1CDCAD513C5164CCB012C7B
+// #MAU_CHECKSUM:SHA256:A8CDE67727DDA217A53FF6E83AC747B45BAE017F729B4A7A88CF6FF44A09D40D

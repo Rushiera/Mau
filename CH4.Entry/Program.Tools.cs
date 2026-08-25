@@ -16,7 +16,7 @@ namespace CH4
     public static partial class Program
     {
         /// <summary>
-        /// 工具结果截断上限——回传 LLM 上下文防爆（text.read 大文件场景）
+        /// 工具结果截断上限——回传 LLM 上下文防爆（text-read 大文件场景）
         /// </summary>
         private const int MaxToolResultChars = 20000;
 
@@ -151,38 +151,37 @@ namespace CH4
         /// </summary>
         /// <returns>工具数组</returns>
         private static ToolSpec[] BuildToolSpecs()
-        {
+{
             ToolSpec[] specs = new ToolSpec[]
             {
-                new ToolSpec("text.read", "读取 UTF-8 文本文件（受控根内；路径支持 id:相对路径——mau:corpus/...=仓库根 / ccbp:...=知识库 / runtime:...=数据根，或绝对路径），返回完整内容", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"要读取的文件路径（支持 mau:/ccbp: 前缀）\"}},\"required\":[\"path\"]}"),
-                new ToolSpec("text.write", "覆写文件（含新建）——整文件替换为 content（路径支持 id: 前缀同 text.read）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"content\":{\"type\":\"string\",\"description\":\"完整新内容\"}},\"required\":[\"path\",\"content\"]}"),
-                new ToolSpec("text.append", "追加文本到文件末尾（文件不存在则新建；路径支持 id: 前缀同 text.read）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"content\":{\"type\":\"string\",\"description\":\"要追加的文本\"}},\"required\":[\"path\",\"content\"]}"),
-                new ToolSpec("text.replace", "替换文本——old 全部出现处替换为 new，返回替换数量；未找到报错（路径支持 id: 前缀同 text.read）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"old\":{\"type\":\"string\",\"description\":\"要查找的旧文本\"},\"new\":{\"type\":\"string\",\"description\":\"替换后的新文本\"}},\"required\":[\"path\",\"old\",\"new\"]}"),
-                new ToolSpec("mau.verify", "Mau 语料全链检查（词法→解析→验证→分析），返回诊断（文件:行:错误码:消息）；零产出", "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\",\"description\":\".mau 文件路径\"}},\"required\":[\"file\"]}"),
-                new ToolSpec("mau.gen", "组翻译——.mauproj 组声明 → 中间产物（验证全组 + BRIKGROUP.cs + FL_*.cs）；不编译", "{\"type\":\"object\",\"properties\":{\"proj\":{\"type\":\"string\",\"description\":\".mauproj 文件路径\"}},\"required\":[\"proj\"]}"),
-                new ToolSpec("mau.proj", "组翻译 + 编译——.mauproj → Flows/FL_<组>.dll（长耗时；产物可在宿主热重载）", "{\"type\":\"object\",\"properties\":{\"proj\":{\"type\":\"string\",\"description\":\".mauproj 文件路径\"},\"build\":{\"type\":\"boolean\",\"description\":\"true=翻译后执行 dotnet build\"}},\"required\":[\"proj\"]}"),
-                new ToolSpec("host.reload", "热重载语料 dll（宿主级）——在 mau.proj 编译成功后单独调用（建议下一轮）；事务三段式：加载失败保留旧版本；cat=quick|dev", "{\"type\":\"object\",\"properties\":{\"cat\":{\"type\":\"string\",\"description\":\"quick|dev\"}},\"required\":[\"cat\"]}"),
-                // P8 三期——Roslyn cs.* 编码工具域（9 件——经 ICSharpBridge / MauRoslynBridge 调度；path=受控根内 csproj 或项目目录）
-                new ToolSpec("cs.check", "C# 语义快查——项目语法树诊断（增量/毫秒级）；full=true 含警告；实机裁决走 cs.build", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录（受控根内）\"},\"full\":{\"type\":\"boolean\",\"description\":\"true=输出全部警告\"}},\"required\":[\"path\"]}"),
-                new ToolSpec("cs.build", "C# 实机编译——dotnet build 子进程（唯一权威裁决；成功后引用集自动刷新）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"}},\"required\":[\"path\"]}"),
-                new ToolSpec("cs.list", "类/成员签名清单（语法层；class 空=全项目类清单）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名（空=全项目）\"}},\"required\":[\"path\"]}"),
-                new ToolSpec("cs.read", "成员源码 + 方法内行号标注（补丁锚点依据；member 空=类概览）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名（空=类概览）\"}},\"required\":[\"path\",\"class\"]}"),
-                new ToolSpec("cs.find_ref", "成员全引用（含重载全匹配；语义级）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名\"}},\"required\":[\"path\",\"class\",\"member\"]}"),
-                new ToolSpec("cs.patch", "方法体级替换（锚点=类+方法名；body 完整含大括号）——三态：OK 落盘 / ROLLED_BACK 未落盘+诊断 / ERR", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"method\":{\"type\":\"string\",\"description\":\"方法名\"},\"body\":{\"type\":\"string\",\"description\":\"新方法体（含大括号）\"}},\"required\":[\"path\",\"class\",\"method\",\"body\"]}"),
-                new ToolSpec("cs.member", "成员增删改——op=insert(增)/delete(删)/rename(改名 全项目引用同步)", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"op\":{\"type\":\"string\",\"description\":\"insert|delete|rename\"},\"position\":{\"type\":\"string\",\"description\":\"insert 用：end|before|after|after_fields\"},\"anchor\":{\"type\":\"string\",\"description\":\"before/after 用：锚点成员名\"},\"code\":{\"type\":\"string\",\"description\":\"insert 用：完整成员声明源码\"},\"oldName\":{\"type\":\"string\",\"description\":\"rename 用：旧成员名\"},\"newName\":{\"type\":\"string\",\"description\":\"rename 用：新成员名\"}},\"required\":[\"path\",\"class\",\"op\"]}"),
-                new ToolSpec("cs.comment", "XML 注释增改——type=summary/param/returns（param 需 param=参数名）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名（空=类）\"},\"type\":{\"type\":\"string\",\"description\":\"summary|param|returns\"},\"text\":{\"type\":\"string\",\"description\":\"注释文本\"},\"param\":{\"type\":\"string\",\"description\":\"type=param 时的参数名\"}},\"required\":[\"path\",\"class\",\"type\",\"text\"]}"),
-new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/override 跳过）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"}},\"required\":[\"path\"]}"),
-                // P8.5d——config.* 配置自改工具组（4 件——schema 白名单写：config.set/reset 仅 writable 项；唯一校验实现 ConfigStore.SetChecked）
-                new ToolSpec("config.list", "配置全览——schema 全部条目（键/当前值/来源/schema 默认/敏感/可写/值域/描述）；敏感键掩码", "{\"type\":\"object\",\"properties\":{}}"),
-                new ToolSpec("config.get", "配置单项查询——按 schema 键返回（含默认/敏感/可写/值域/描述）；敏感键掩码", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键（如 ui.chat_font_size）\"}},\"required\":[\"key\"]}"),
-                new ToolSpec("config.set", "配置写入——仅 schema 声明且 writable=true 的项（白名单+值域校验+原子写+失败回滚）；llm.* 私密环境变量只读", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键\"},\"value\":{\"type\":\"string\",\"description\":\"新值（掩码值拒绝）\"}},\"required\":[\"key\",\"value\"]}"),
-                new ToolSpec("config.reset", "配置还原默认——key 空=全群 writable 项还原 schema default；key 非空=单项", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键（空=全群）\"}},\"required\":[]}"),
+                new ToolSpec("text-read", "读取 UTF-8 文本文件（受控根内；路径支持 id:相对路径——mau:corpus/...=仓库根 / ccbp:...=知识库 / runtime:...=数据根，或绝对路径），返回完整内容", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"要读取的文件路径（支持 mau:/ccbp: 前缀）\"}},\"required\":[\"path\"]}"),
+                new ToolSpec("text-write", "覆写文件（含新建）——整文件替换为 content（路径支持 id: 前缀同 text-read）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"content\":{\"type\":\"string\",\"description\":\"完整新内容\"}},\"required\":[\"path\",\"content\"]}"),
+                new ToolSpec("text-append", "追加文本到文件末尾（文件不存在则新建；路径支持 id: 前缀同 text-read）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"content\":{\"type\":\"string\",\"description\":\"要追加的文本\"}},\"required\":[\"path\",\"content\"]}"),
+                new ToolSpec("text-replace", "替换文本——old 全部出现处替换为 new，返回替换数量；未找到报错（路径支持 id: 前缀同 text-read）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"old\":{\"type\":\"string\",\"description\":\"要查找的旧文本\"},\"new\":{\"type\":\"string\",\"description\":\"替换后的新文本\"}},\"required\":[\"path\",\"old\",\"new\"]}"),
+                new ToolSpec("mau-verify", "Mau 语料全链检查（词法→解析→验证→分析），返回诊断（文件:行:错误码:消息）；零产出", "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\",\"description\":\".mau 文件路径\"}},\"required\":[\"file\"]}"),
+                new ToolSpec("mau-gen", "组翻译——.mauproj 组声明 → 中间产物（验证全组 + BRIKGROUP.cs + FL_*.cs）；不编译", "{\"type\":\"object\",\"properties\":{\"proj\":{\"type\":\"string\",\"description\":\".mauproj 文件路径\"}},\"required\":[\"proj\"]}"),
+                new ToolSpec("mau-proj", "组翻译 + 编译——.mauproj → Flows/FL_<组>.dll（长耗时；产物可在宿主热重载）", "{\"type\":\"object\",\"properties\":{\"proj\":{\"type\":\"string\",\"description\":\".mauproj 文件路径\"},\"build\":{\"type\":\"boolean\",\"description\":\"true=翻译后执行 dotnet build\"}},\"required\":[\"proj\"]}"),
+                new ToolSpec("host-reload", "热重载语料 dll（宿主级）——在 mau-proj 编译成功后单独调用（建议下一轮）；事务三段式：加载失败保留旧版本；cat=quick|dev", "{\"type\":\"object\",\"properties\":{\"cat\":{\"type\":\"string\",\"description\":\"quick|dev\"}},\"required\":[\"cat\"]}"),
+                // P8 三期——Roslyn cs-* 编码工具域（9 件——经 ICSharpBridge / MauRoslynBridge 调度；path=受控根内 csproj 或项目目录）
+                new ToolSpec("cs-check", "C# 语义快查——项目语法树诊断（增量/毫秒级）；full=true 含警告；实机裁决走 cs-build", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录（受控根内）\"},\"full\":{\"type\":\"boolean\",\"description\":\"true=输出全部警告\"}},\"required\":[\"path\"]}"),
+                new ToolSpec("cs-build", "C# 实机编译——dotnet build 子进程（唯一权威裁决；成功后引用集自动刷新）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"}},\"required\":[\"path\"]}"),
+                new ToolSpec("cs-list", "类/成员签名清单（语法层；class 空=全项目类清单）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名（空=全项目）\"}},\"required\":[\"path\"]}"),
+                new ToolSpec("cs-read", "成员源码 + 方法内行号标注（补丁锚点依据；member 空=类概览）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名（空=类概览）\"}},\"required\":[\"path\",\"class\"]}"),
+                new ToolSpec("cs-find_ref", "成员全引用（含重载全匹配；语义级）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名\"}},\"required\":[\"path\",\"class\",\"member\"]}"),
+                new ToolSpec("cs-patch", "方法体级替换（锚点=类+方法名；body 完整含大括号）——三态：OK 落盘 / ROLLED_BACK 未落盘+诊断 / ERR", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"method\":{\"type\":\"string\",\"description\":\"方法名\"},\"body\":{\"type\":\"string\",\"description\":\"新方法体（含大括号）\"}},\"required\":[\"path\",\"class\",\"method\",\"body\"]}"),
+                new ToolSpec("cs-member", "成员增删改——op=insert(增)/delete(删)/rename(改名 全项目引用同步)", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"op\":{\"type\":\"string\",\"description\":\"insert|delete|rename\"},\"position\":{\"type\":\"string\",\"description\":\"insert 用：end|before|after|after_fields\"},\"anchor\":{\"type\":\"string\",\"description\":\"before/after 用：锚点成员名\"},\"code\":{\"type\":\"string\",\"description\":\"insert 用：完整成员声明源码\"},\"oldName\":{\"type\":\"string\",\"description\":\"rename 用：旧成员名\"},\"newName\":{\"type\":\"string\",\"description\":\"rename 用：新成员名\"}},\"required\":[\"path\",\"class\",\"op\"]}"),
+                new ToolSpec("cs-comment", "XML 注释增改——type=summary/param/returns（param 需 param=参数名）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名（空=类）\"},\"type\":{\"type\":\"string\",\"description\":\"summary|param|returns\"},\"text\":{\"type\":\"string\",\"description\":\"注释文本\"},\"param\":{\"type\":\"string\",\"description\":\"type=param 时的参数名\"}},\"required\":[\"path\",\"class\",\"type\",\"text\"]}"),
+                new ToolSpec("cs-dead", "零引用成员扫描（private/internal；public/override 跳过）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"}},\"required\":[\"path\"]}"),
+                // P8.5d——config-* 配置自改工具组（4 件——schema 白名单写：config-set/reset 仅 writable 项；唯一校验实现 ConfigStore.SetChecked）
+                new ToolSpec("config-list", "配置全览——schema 全部条目（键/当前值/来源/schema 默认/敏感/可写/值域/描述）；敏感键掩码", "{\"type\":\"object\",\"properties\":{}}"),
+                new ToolSpec("config-get", "配置单项查询——按 schema 键返回（含默认/敏感/可写/值域/描述）；敏感键掩码", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键（如 ui.chat_font_size）\"}},\"required\":[\"key\"]}"),
+                new ToolSpec("config-set", "配置写入——仅 schema 声明且 writable=true 的项（白名单+值域校验+原子写+失败回滚）；llm.* 私密环境变量只读", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键\"},\"value\":{\"type\":\"string\",\"description\":\"新值（掩码值拒绝）\"}},\"required\":[\"key\",\"value\"]}"),
+                new ToolSpec("config-reset", "配置还原默认——key 空=全群 writable 项还原 schema default；key 非空=单项", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键（空=全群）\"}},\"required\":[]}"),
                 // M4a——Note 轻量任务追踪（Cat 内置工具——会话内直执；CH2 同款定义）
                 new ToolSpec("Note", "轻量任务追踪器（内存存储，会话关闭即消失）。无参数=推进到下一条；action='set'+content='任务1\\n任务2'=写入新计划（已有未完成需force=true强制覆盖）。返回当前第X/Y条 已完成Z 待完成W 任务目标：... 最后一条时追加提示（已是最后一条需求，完成后可结束本轮）。全部完成后自动清空。剩余1条时引擎不自动拉起。", "{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\",\"description\":\"set=写入新计划，不传=推进\"},\"content\":{\"type\":\"string\",\"description\":\"action=set时必填，\\n分割\"},\"force\":{\"type\":\"boolean\",\"description\":\"覆盖已有未完成计划时传true\"}},\"required\":[]}")
             };
             return specs;
         }
-
         /// <summary>
         /// 工具执行器路由——按工具名调度（一期直执；未知工具 ERR）
         /// </summary>
@@ -190,52 +189,51 @@ new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/overr
         /// <param name="argsJson">参数 JSON（展平）</param>
         /// <returns>执行结果（失败 ERR| 前缀——错误可见性）</returns>
         private static string ExecuteTool(string name, string argsJson)
-        {
-            if (name == "text.read")
+{
+            if (name == "text-read")
             {
                 return ExecTextRead(argsJson);
             }
-            if (name == "text.write")
+            if (name == "text-write")
             {
                 return ExecTextWrite(argsJson);
             }
-            if (name == "text.append")
+            if (name == "text-append")
             {
                 return ExecTextAppend(argsJson);
             }
-            if (name == "text.replace")
+            if (name == "text-replace")
             {
                 return ExecTextReplace(argsJson);
             }
-            if (name == "mau.verify")
+            if (name == "mau-verify")
             {
                 return ExecMauVerify(argsJson);
             }
-            if (name == "mau.gen")
+            if (name == "mau-gen")
             {
                 return ExecMauGen(argsJson);
             }
-            if (name == "mau.proj")
+            if (name == "mau-proj")
             {
                 return ExecMauProj(argsJson);
             }
-            if (name == "host.reload")
+            if (name == "host-reload")
             {
                 return ExecHostReload(argsJson);
             }
-            if (name.StartsWith("cs.", StringComparison.Ordinal))
+            if (name.StartsWith("cs-", StringComparison.Ordinal))
             {
                 return ExecCSharpTool(name, argsJson);
             }
             return "ERR|UNKNOWN_TOOL|未知工具: " + name;
         }
-
-        // [段3] C# 工具桥执行器——P8 三期（cs.* 9 件经 ICSharpBridge/MauRoslynBridge 调度：磁盘权威 + 三态缓存 + 回滚保护）
+        // [段3] C# 工具桥执行器——P8 三期（cs-* 9 件经 ICSharpBridge/MauRoslynBridge 调度：磁盘权威 + 三态缓存 + 回滚保护）
 
         /// <summary>
-        /// cs.* 统一执行——桥内分派（method = 工具名去 cs. 前缀）；结果截断防爆
+        /// cs-* 统一执行——桥内分派（method = 工具名去 cs- 前缀）；结果截断防爆
         /// </summary>
-        /// <param name="name">工具名（cs.check 等）</param>
+        /// <param name="name">工具名（cs-check 等）</param>
         /// <param name="argsJson">参数整包 JSON</param>
         /// <returns>桥结果文本（OK/ROLLED_BACK/ERR| 语义）</returns>
         private static string ExecCSharpTool(string name, string argsJson)
@@ -250,15 +248,14 @@ new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/overr
             bool ok = bridge.Invoke(method, argsJson, out result);
             if (!ok || result == null || result.Length == 0)
             {
-                return "ERR|BRIDGE_FAIL|cs." + method + " 调用失败（" + (result ?? "空结果") + "）";
+                return "ERR|BRIDGE_FAIL|cs-" + method + " 调用失败（" + (result ?? "空结果") + "）";
             }
             return TrimResult(result, MaxToolResultChars);
         }
-
         // [段1] 文本工具执行器——FileSystemService 直执（Bootstrap 已 Bind；受控根 = 数据根）
 
         /// <summary>
-        /// text.read——读取 UTF-8 文本文件
+        /// text-read——读取 UTF-8 文本文件
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
         /// <returns>文件内容（超长截断）</returns>
@@ -283,9 +280,8 @@ new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/overr
                 return "ERR|" + ex.GetType().Name + "|" + ex.Message;
             }
         }
-
         /// <summary>
-        /// text.write——覆写文件（含新建；原子写，UTF-8 无 BOM）
+        /// text-write——覆写文件（含新建；原子写，UTF-8 无 BOM）
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
         /// <returns>确认文本</returns>
@@ -312,9 +308,8 @@ new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/overr
                 return "ERR|" + ex.GetType().Name + "|" + ex.Message;
             }
         }
-
         /// <summary>
-        /// text.append——追加文本到文件末尾（自动创建父目录）
+        /// text-append——追加文本到文件末尾（自动创建父目录）
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
         /// <returns>确认文本</returns>
@@ -341,9 +336,8 @@ new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/overr
                 return "ERR|" + ex.GetType().Name + "|" + ex.Message;
             }
         }
-
         /// <summary>
-        /// text.replace——替换全部出现处并原子写回（old 未找到报错）
+        /// text-replace——替换全部出现处并原子写回（old 未找到报错）
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
         /// <returns>替换数量确认</returns>
@@ -375,11 +369,10 @@ new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/overr
                 return "ERR|" + ex.GetType().Name + "|" + ex.Message;
             }
         }
-
-        // [段2] Mau 自查执行器——B3 落地（mau.verify 直调 MauCompilerV3；mau.gen/proj 需 MauProjFile 下沉共享库）
+        // [段2] Mau 自查执行器——B3 落地（mau-verify 直调 MauCompilerV3；mau-gen/proj 需 MauProjFile 下沉共享库）
 
         /// <summary>
-        /// mau.verify——Mau 语料全链检查（B3 实装——MauCompilerV3 进程内直调，零产出）
+        /// mau-verify——Mau 语料全链检查（B3 实装——MauCompilerV3 进程内直调，零产出）
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
         /// <returns>诊断文本（文件:行:错误码:消息）</returns>
@@ -430,12 +423,11 @@ new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/overr
                 return "ERR|" + ex.GetType().Name + "|" + ex.Message;
             }
         }
-
         /// <summary>
-        /// mau.gen——组翻译中间产物（B3 实装——MauGroupBuilder 共享服务，不编译）
+        /// mau-gen——组翻译中间产物（B3 实装——MauGroupBuilder 共享服务，不编译）
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
-        /// <returns>落盘确认文本</returns>
+        /// <returns>结果文本（步骤日志 + 失败诊断）</returns>
         private static string ExecMauGen(string argsJson)
         {
             string proj = ExtractArg(argsJson, "proj");
@@ -445,12 +437,11 @@ new ToolSpec("cs.dead", "零引用成员扫描（private/internal；public/overr
             }
             return RunGroupBuild(proj, false);
         }
-
         /// <summary>
-        /// mau.proj——组翻译 + 编译（B3 实装——MauGroupBuilder 共享服务 + dotnet build）
+        /// mau-proj——组翻译 + 编译（B3 实装——MauGroupBuilder 共享服务 + dotnet build）
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
-        /// <returns>产物确认文本</returns>
+        /// <returns>结果文本（步骤日志 + 失败诊断）</returns>
         private static string ExecMauProj(string argsJson)
         {
             string proj = ExtractArg(argsJson, "proj");

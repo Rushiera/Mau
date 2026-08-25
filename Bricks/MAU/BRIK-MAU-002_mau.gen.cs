@@ -2,7 +2,7 @@
 // 积木: mau.gen
 // ID:   BRIK-MAU-002
 // 类别: MAU
-// 作用: 组翻译中间产物——.mauproj 组声明 → 验证全组 + BRIKGROUP.cs + FL_*.cs（不编译）——LLM 工具 mau.gen 语料执行面
+// 作用: 组翻译中间产物——.mauproj 组声明 → 验证全组 + BRIKGROUP.cs + FL_*.cs（不编译）——LLM 工具 mau-gen 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime · Mau.Development（MauProjFile/MauGroupBuilder）
 // 原理: 仓库根内路径 → MauProjFile.Load → MauGroupBuilder.Build(doBuild=false) → 步骤/诊断文本
@@ -16,7 +16,7 @@ using Mau.Development;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// Mau 自查积木——mau.gen 组翻译中间产物（LLM 工具执行面：参数整包 argsJson）
+    /// Mau 自查积木——mau-gen 组翻译中间产物（LLM 工具执行面：参数整包 argsJson）
     /// </summary>
     public static class MauGenBrick
     {
@@ -174,4 +174,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:82B0A173EFE49624B91E55F5082F46AAE85D3E48043FA2625A4B600E181581D4
+// #MAU_CHECKSUM:SHA256:A897B518CE774570577D27CE8982FF827C0E4BC1CB8D7D20D317669571FE6CC9

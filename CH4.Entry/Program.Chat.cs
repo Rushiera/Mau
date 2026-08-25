@@ -159,7 +159,7 @@ namespace CH4
                 sb.Append(specs[i].Description);
             }
             sb.Append(System.Environment.NewLine);
-            sb.Append("工具结果返回后，基于结果继续回答用户；修改语料前先读，改完用 mau.verify 验证。");
+            sb.Append("工具结果返回后，基于结果继续回答用户；修改语料前先读，改完用 mau-verify 验证。");
             return sb.ToString();
         }
 

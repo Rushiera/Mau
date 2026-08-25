@@ -2,7 +2,7 @@
 // 积木: text.write
 // ID:   BRIK-TEXT-002
 // 类别: TEXT
-// 作用: 覆写文件（含新建）——整文件替换为 content（受控根内路径）——LLM 工具 text.write 语料执行面
+// 作用: 覆写文件（含新建）——整文件替换为 content（受控根内路径）——LLM 工具 text-write 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
 // 原理: DataBox.TryResolve<FileSystemService> → WriteText(path, content)；argsJson 内解析 path/content
@@ -15,7 +15,7 @@ using Mau.Runtime;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// 文本积木——text.write 覆写文件（LLM 工具执行面：参数整包 argsJson）
+    /// 文本积木——text-write 覆写文件（LLM 工具执行面：参数整包 argsJson）
     /// </summary>
     public static class TextWriteBrick
     {
@@ -89,4 +89,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:3FF12F2F9CC7A90ECA9BCBF2692BD1D01E5300AA906BD467BC770409DB272A5F
+// #MAU_CHECKSUM:SHA256:05182D7EAAC01763A4F3532E7D7F3CEBDD37191CC272021AE6AA0849D1ACF1C9

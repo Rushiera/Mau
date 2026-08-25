@@ -82,11 +82,9 @@ private string[] _noteTasks;
         // [段3] 工具批
         /// <summary>工具批执行中——reload 拒绝检查面（任一会话 TRUE 即拒绝）</summary>
         private bool _toolBatchActive;
-
-        /// <summary>工具单列表——普通工单（OA 认领 / FALLBACK 直执，含 host.* 延迟直执登记）</summary>
+        /// <summary>工具单列表——普通工单（OA 认领 / FALLBACK 直执，含 host-* 延迟直执登记）</summary>
         private readonly List<ToolOrderDog> _dogs;
-
-        /// <summary>host.* 延迟直执清单——批次末尾宿主直执（顺序保证：同批 mau.proj 等先完成产物落地）</summary>
+        /// <summary>host-* 延迟直执清单——批次末尾宿主直执（顺序保证：同批 mau-proj 等先完成产物落地）</summary>
         private readonly List<ToolOrderDog> _hostDogs;
 
         // [段4] 相位环
@@ -488,10 +486,8 @@ _ = ConsumeLlmStream(messages);
             LogStore.Add("CH4.Entry", 1, "工具调用(" + (_round + 1).ToString() + "/" + MaxToolRounds.ToString() + "): " + TrimDisplay(_llmToolCallsJson, 200), "CHAT");
             EnterToolBatch(_llmToolCallsJson);
         }
-
         /// <summary>
-        /// StartToolBatch 动作段——解析 tool_calls → OA 发单（host.* 延迟直执登记 / 普通工单 Post / Post 失败 FALLBACK）→ ToolBatchRunning。
-        /// 解析失败 = 空批（allDone 立即成立——等价原 try-catch 跳过语义：续轮保持）。
+        /// StartToolBatch 动作段——解析 tool_calls → OA 发单（host-* 延迟直执登记 / 普通工单 Post / Post 失败 FALLBACK）→ ToolBatchRunning。解析失败 = 空批（allDone 立即成立——等价原 try-catch 跳过语义：续轮保持）。
         /// </summary>
         /// <param name="toolCallsJson">tool_calls JSON 数组</param>
         private void EnterToolBatch(string toolCallsJson)
@@ -526,7 +522,7 @@ _ = ConsumeLlmStream(messages);
                             name = GetStringProp(funcEl, "name");
                             arguments = GetStringProp(funcEl, "arguments");
                         }
-                        // M2c 拦截——声明面外工具直接拒绝（ERR 回执不进 OA 不 FALLBACK；host.* 同拦；拦截即时生效）
+                        // M2c 拦截——声明面外工具直接拒绝（ERR 回执不进 OA 不 FALLBACK；host-* 同拦；拦截即时生效）
                         if (!IsToolAllowed(name))
                         {
                             ToolOrderDog forbiddenDog = new ToolOrderDog(id, name, arguments);
@@ -540,9 +536,9 @@ _ = ConsumeLlmStream(messages);
                         arguments = InjectCatId(arguments);
                         LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|start|" + TrimDisplay(arguments, 120), "TOOL");
                         ToolOrderDog dog = new ToolOrderDog(id, name, arguments);
-                        if (name.StartsWith("host.", StringComparison.Ordinal))
+                        if (name.StartsWith("host-", StringComparison.Ordinal))
                         {
-                            // host.* 延迟直执登记——批次末尾执行（顺序保证：同批 mau.proj 等先完成产物落地）
+                            // host-* 延迟直执登记——批次末尾执行（顺序保证：同批 mau-proj 等先完成产物落地）
                             _hostDogs.Add(dog);
                             dog.IsClosed = true;
                             LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|host-deferred", "TOOL");
@@ -632,9 +628,8 @@ _ = ConsumeLlmStream(messages);
                 return arguments;
             }
         }
-
         /// <summary>
-        /// ToolBatchRunning 相位推进——逐 Dog 帧轮询；allDone 或帧超限 → ToolBatchDone 动作段（host.* 延迟直执 → 收集回执 → 续轮/收敛）。
+        /// ToolBatchRunning 相位推进——逐 Dog 帧轮询；allDone 或帧超限 → ToolBatchDone 动作段（host-* 延迟直执 → 收集回执 → 续轮/收敛）。
         /// </summary>
         private void PumpToolBatch()
         {
@@ -652,7 +647,7 @@ _ = ConsumeLlmStream(messages);
             {
                 return;
             }
-            // [段2b] host.* 延迟直执——批次其他工具完成后宿主直执（忙时豁免：主线程串行——宿主 ExecuteReload 事务三段式兜底）
+            // [段2b] host-* 延迟直执——批次其他工具完成后宿主直执（忙时豁免：主线程串行——宿主 ExecuteReload 事务三段式兜底）
             for (int h = 0; h < _hostDogs.Count; h = h + 1)
             {
                 ToolOrderDog dog = _hostDogs[h];

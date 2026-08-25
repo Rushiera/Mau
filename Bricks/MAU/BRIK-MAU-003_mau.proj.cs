@@ -2,7 +2,7 @@
 // 积木: mau.proj
 // ID:   BRIK-MAU-003
 // 类别: MAU
-// 作用: 组翻译 + 编译——.mauproj → Flows/FL_&lt;组&gt;.dll（长耗时；产物可热重载）——LLM 工具 mau.proj 语料执行面
+// 作用: 组翻译 + 编译——.mauproj → Flows/FL_&lt;组&gt;.dll（长耗时；产物可热重载）——LLM 工具 mau-proj 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime · Mau.Development（MauProjFile/MauGroupBuilder）
 // 原理: 仓库根内路径 → MauProjFile.Load → MauGroupBuilder.Build(doBuild=build) → 步骤/诊断文本
@@ -16,7 +16,7 @@ using Mau.Development;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// Mau 自查积木——mau.proj 组翻译 + 编译（LLM 工具执行面：参数整包 argsJson）
+    /// Mau 自查积木——mau-proj 组翻译 + 编译（LLM 工具执行面：参数整包 argsJson）
     /// </summary>
     public static class MauProjBrick
     {
@@ -176,4 +176,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:F5E6544AD5817D9A16843B37F3C80BE2106E0E738B75EED7FDF302E9A1D4176B
+// #MAU_CHECKSUM:SHA256:88142E7FC305D894ACC03C28E113D3CFBB86CCCF33BF75FEBC9A928FD93F017B

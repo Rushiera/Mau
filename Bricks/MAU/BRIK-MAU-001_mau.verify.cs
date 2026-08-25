@@ -2,7 +2,7 @@
 // 积木: mau.verify
 // ID:   BRIK-MAU-001
 // 类别: MAU
-// 作用: Mau 语料全链检查（词法→解析→验证→分析）——LLM 工具 mau.verify 语料执行面（P8 二期 dev_cat）
+// 作用: Mau 语料全链检查（词法→解析→验证→分析）——LLM 工具 mau-verify 语料执行面（P8 二期 dev_cat）
 // 依赖: 无
 // 引用: Mau.Runtime · Mau.Development（MauProjFile/MauGroupBuilder）· Mau.Translator（MauCompilerV3）
 // 原理: 仓库根内路径 → MauCompilerV3.Compile 进程内直调 → 诊断格式化（文件:行:错误码:消息）；零产出
@@ -17,7 +17,7 @@ using Mau.Translator;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// Mau 自查积木——mau.verify 全链检查（LLM 工具执行面：参数整包 argsJson）
+    /// Mau 自查积木——mau-verify 全链检查（LLM 工具执行面：参数整包 argsJson）
     /// </summary>
     public static class MauVerifyBrick
     {
@@ -152,4 +152,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:53247F836DCF94F38C4AAEA5F1E632FE7A30A852FB8BCF79816EE85D77CBD1CC
+// #MAU_CHECKSUM:SHA256:99321BDEACBB73DBC19C9F7DB354D5D1443723A1BBB44488AC9B62D47EC73F48

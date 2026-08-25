@@ -112,23 +112,21 @@ namespace CH4
                 IsTimedOut = true;
             }
         }
-
         /// <summary>
-        /// 按工具名映射超时帧数——text.* 600（30s）· mau.verify 600 · mau.gen 2400（120s）· mau.proj 4800（240s，dotnet build 长耗时通道）
+        /// 按工具名映射超时帧数——text-* 600（30s）· mau-verify 600 · mau-gen 2400（120s）· mau-proj 4800（240s，dotnet build 长耗时通道）
         /// </summary>
         /// <param name="name">工具名</param>
         /// <returns>超时帧数</returns>
         public static long MapTimeoutFrames(string name)
         {
-            if (name == "mau.gen")
+            if (name == "mau-gen")
             {
                 return 2400;
             }
-            if (name == "mau.proj")
+            if (name == "mau-proj")
             {
                 return 4800;
             }
             return 600;
-        }
-    }
+        }    }
 }

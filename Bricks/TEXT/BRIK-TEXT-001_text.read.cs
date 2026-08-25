@@ -2,7 +2,7 @@
 // 积木: text.read
 // ID:   BRIK-TEXT-001
 // 类别: TEXT
-// 作用: 读取 UTF-8 文本文件（受控根内路径）——LLM 工具 text.read 的语料执行面（P8 二期 dev_cat）
+// 作用: 读取 UTF-8 文本文件（受控根内路径）——LLM 工具 text-read 的语料执行面（P8 二期 dev_cat）
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
 // 原理: DataBox.TryResolve<FileSystemService> → ReadText(path)；argsJson 内解析 path（语料零 JSON 解析）
@@ -15,7 +15,7 @@ using Mau.Runtime;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// 文本积木——text.read 读取文本（LLM 工具执行面：参数整包 argsJson）
+    /// 文本积木——text-read 读取文本（LLM 工具执行面：参数整包 argsJson）
     /// </summary>
     public static class TextReadBrick
     {
@@ -102,4 +102,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:9BAFDEB06352336ED64FE4DF8B231E10F087A9B2EB9A38D5ADFE9D01D14BF777
+// #MAU_CHECKSUM:SHA256:88F443934942F8F4C15115238E31464752BD2B7822DA2922A15BC911956BB430
