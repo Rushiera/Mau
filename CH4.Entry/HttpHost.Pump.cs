@@ -209,10 +209,12 @@ public void PushNoteState(string json)
             {
                 seq = seq,
                 source = source,
-                text = text,
+                content = text,
                 sessionId = _sessionId
             };
             PushEvent("user", JsonSerializer.Serialize(obj));
+            // 观测透明性——SSE user 推送结算行（Note 气泡排查——前端未渲染时日志可对照）
+            LogStore.Add("CH4.Entry", 1, "SSE|user|len=" + text.Length.ToString() + "|source=" + source + "|clients=" + _clients.Count.ToString(), "CHAT");
         }
     }
 }

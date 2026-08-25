@@ -1,4 +1,4 @@
-// CH4 外观层 v2——chat.js：对话区 + Note 面板（2026-08-25 拆分自 index.html）
+﻿// CH4 外观层 v2——chat.js：对话区 + Note 面板（2026-08-25 拆分自 index.html）
 // 依赖：app.js 先加载（chatState/chatMsgs/chatInput/chatBtn/chatInfo 全局变量 + SSE 事件分派）
 
 // [段13] 对话区（B4）——阶段模型流式渲染
@@ -456,6 +456,11 @@ function noteAdd() {
 function noteStart() {
     if (chatState !== 'idle') { return; }
     if (!noteState.tasks || noteState.tasks.length === 0) { return; }
+    // 进入 sending 态——note.start 后 LLM 流事件正常渲染（chatOnLlm 检查 chatState；idle 态会丢弃全部流事件）
+    chatStage = null;
+    chatToolQueue = [];
+    chatSetState('sending');
+    chatKeepAlive();
     fetch('/api/v1/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -474,11 +479,6 @@ function noteOnEvent(d) {
     noteRender();
 }
 
-// Note 面板按钮绑定 + 页面加载兜底拉取
+// Note 面板按钮绑定 + 页面加载兜底拉取（＋/开始 Note/输入框走 HTML 内联绑定——此处只绑 noteHead）
 document.getElementById('noteHead').addEventListener('click', noteToggle);
-document.getElementById('noteAddBtn').addEventListener('click', noteAdd);
-document.getElementById('noteStartBtn').addEventListener('click', noteStart);
-document.getElementById('noteAddInput').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { noteAdd(); }
-});
 fetch('/api/v1/note').then(function (r) { return r.json(); }).then(function (j) { noteState = j; noteRender(); }).catch(function () {});

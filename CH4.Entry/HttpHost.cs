@@ -189,6 +189,12 @@ namespace CH4
                 _app.MapPost("/api/v1/llm-apis/default", (Delegate)Program.HandleLlmApisDefault);
                 _app.MapGet("/api/v1/cat-config", (Delegate)Program.HandleCatConfigGet);
                 _app.MapPost("/api/v1/cat-config", (Delegate)Program.HandleCatConfigPost);
+                // 新猫默认模板——全局配置管理面（M3d 体验轮新增；仅主端口注册）
+                _app.MapGet("/api/v1/cat-default", (Delegate)Program.HandleCatDefaultGet);
+                _app.MapPost("/api/v1/cat-default", (Delegate)Program.HandleCatDefaultPost);
+                // 受控根编辑面——管理员面（roots 安全边界；LLM 工具面保持只读；重启生效）
+                _app.MapGet("/api/v1/workspace", (Delegate)Program.HandleWorkspaceGet);
+                _app.MapPost("/api/v1/workspace", (Delegate)Program.HandleWorkspacePost);
             }
             _app.MapGet("/", (HttpContext ctx) =>
             {

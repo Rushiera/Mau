@@ -339,7 +339,7 @@ namespace CH4
                 }
                 ConfigStore globalConfig = null;
                 DataBox.TryResolve<ConfigStore>(out globalConfig);
-                // [段2] 每猫配置三字段——persona/toolNames/injectList（M2；cfg 缺失回退空=全量/不注入）
+                // [段2] 每猫配置三字段——persona/toolNames/injectList（M2；cfg 缺失=新猫走全局默认模板继承）
                 string persona = "";
                 string toolNames = "";
                 string[] injectList = new string[0];
@@ -356,6 +356,17 @@ namespace CH4
                     if (cfgData.InjectList != null)
                     {
                         injectList = cfgData.InjectList;
+                    }
+                }
+                else
+                {
+                    // 新猫——cat-default.cfg 模板继承（模板缺失=现状空三字段）
+                    CatDefaultCfgData tpl = LoadCatDefaultCfg();
+                    if (tpl != null)
+                    {
+                        persona = tpl.DefaultPersona != null ? tpl.DefaultPersona : "";
+                        toolNames = tpl.DefaultToolNames != null ? tpl.DefaultToolNames : "";
+                        injectList = tpl.DefaultInjectList != null ? tpl.DefaultInjectList : new string[0];
                     }
                 }
                 // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）

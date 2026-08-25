@@ -355,7 +355,16 @@ namespace CH4
                                 string got = item.GetString();
                                 if (got != null && got.Length > 0)
                                 {
-                                    injectList.Add(got);
+                                    // 路径校验——只接受完整路径（绝对路径/id: 命名空间）；相对路径/非法格式不录入（莎拍板 2026-08-25）
+                                    string trimmed = got.Trim();
+                                    if (IsValidInjectPath(trimmed))
+                                    {
+                                        injectList.Add(trimmed);
+                                    }
+                                    else
+                                    {
+                                        LogStore.Add("CH4.Entry", 2, "cat-config | 注入路径拒绝 | " + got, "CONFIG");
+                                    }
                                 }
                             }
                         }
@@ -399,6 +408,296 @@ namespace CH4
             _catQueue.Enqueue("catcfg.apply " + catKey);
             LogStore.Add("CH4.Entry", 1, "cat-config | 已受理 | " + catKey + " | tools=" + validToolNames, "CONFIG");
             return Results.Json(new { ok = true, cat = catKey, toolNames = validToolNames });
+        }
+
+        /// <summary>
+        /// 全局默认模板读取——GET /api/v1/cat-default（新猫默认配置管理面）。
+        /// 返回：baseRole/defaultPersona/defaultToolNames/defaultInjectList + allToolNames（工具勾选清单）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>模板 JSON</returns>
+        internal static IResult HandleCatDefaultGet(HttpContext ctx)
+        {
+            CatDefaultCfgData tpl = LoadCatDefaultCfg();
+            string baseRole = FallbackBaseRole;
+            string defaultPersona = "";
+            string defaultToolNames = "";
+            string[] defaultInjectList = new string[0];
+            if (tpl != null)
+            {
+                if (tpl.BaseRole != null)
+                {
+                    baseRole = tpl.BaseRole;
+                }
+                if (tpl.DefaultPersona != null)
+                {
+                    defaultPersona = tpl.DefaultPersona;
+                }
+                if (tpl.DefaultToolNames != null)
+                {
+                    defaultToolNames = tpl.DefaultToolNames;
+                }
+                if (tpl.DefaultInjectList != null)
+                {
+                    defaultInjectList = tpl.DefaultInjectList;
+                }
+            }
+            var resp = new
+            {
+                ok = true,
+                baseRole = baseRole,
+                defaultPersona = defaultPersona,
+                defaultToolNames = defaultToolNames,
+                defaultInjectList = defaultInjectList,
+                allToolNames = GetAllToolNames()
+            };
+            return Results.Json(resp);
+        }
+
+        /// <summary>
+        /// 全局默认模板写入——POST /api/v1/cat-default（body: baseRole/defaultPersona/defaultToolNames/defaultInjectList）。
+        /// injectList 路径校验（只接受完整路径——非法不录入）；toolNames 写时校验；原子写落盘。
+        /// 生效语义：新猫创建时继承（已创建猫不受影响）；baseRole 新会话生效（session.new 重注入）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>回执 JSON</returns>
+        internal static async Task<IResult> HandleCatDefaultPost(HttpContext ctx)
+        {
+            string body = await ReadBodyText(ctx);
+            string baseRole = "";
+            string defaultPersona = "";
+            string defaultToolNames = "";
+            List<string> defaultInjectList = new List<string>();
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(body))
+                {
+                    JsonElement root = doc.RootElement;
+                    baseRole = GetJsonString(root, "baseRole");
+                    defaultPersona = GetJsonString(root, "defaultPersona");
+                    defaultToolNames = GetJsonString(root, "defaultToolNames");
+                    JsonElement injectEl;
+                    if (root.TryGetProperty("defaultInjectList", out injectEl) && injectEl.ValueKind == JsonValueKind.Array)
+                    {
+                        for (int i = 0; i < injectEl.GetArrayLength(); i++)
+                        {
+                            JsonElement item = injectEl[i];
+                            if (item.ValueKind == JsonValueKind.String)
+                            {
+                                string got = item.GetString();
+                                if (got != null && got.Length > 0)
+                                {
+                                    // 路径校验——与 cat-config 同规（只接受完整路径；非法不录入）
+                                    string trimmed = got.Trim();
+                                    if (IsValidInjectPath(trimmed))
+                                    {
+                                        defaultInjectList.Add(trimmed);
+                                    }
+                                    else
+                                    {
+                                        LogStore.Add("CH4.Entry", 2, "cat-default | 注入路径拒绝 | " + got, "CONFIG");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return Results.Json(new { ok = false, error = "body 非 JSON" });
+            }
+            CatDefaultCfgData data = new CatDefaultCfgData();
+            data.BaseRole = baseRole;
+            data.DefaultPersona = defaultPersona;
+            data.DefaultToolNames = defaultToolNames;
+            data.DefaultInjectList = defaultInjectList.ToArray();
+            SaveCatDefaultCfg(data);
+            LogStore.Add("CH4.Entry", 1, "cat-default | 已保存 | inject=" + defaultInjectList.Count.ToString(), "CONFIG");
+            return Results.Json(new { ok = true });
+        }
+
+        /// <summary>受控根写入输入条目——POST /api/v1/workspace body 解析形态</summary>
+        private sealed class WorkspaceRootInput
+        {
+            /// <summary>根标识</summary>
+            public string Id;
+
+            /// <summary>根路径</summary>
+            public string Path;
+
+            /// <summary>是否可写</summary>
+            public bool Writable;
+        }
+
+        /// <summary>
+        /// 受控根读取——GET /api/v1/workspace（管理面：roots 编辑面数据源）。
+        /// roots 是安全边界——LLM 工具面（config.*）保持只读；本端点仅管理员面（主端口）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>roots JSON</returns>
+        internal static IResult HandleWorkspaceGet(HttpContext ctx)
+        {
+            WorkspaceConfig ws = null;
+            DataBox.TryResolve<WorkspaceConfig>(out ws);
+            if (ws == null)
+            {
+                return Results.Json(new { ok = false, error = "工作区配置未绑定" });
+            }
+            List<object> roots = new List<object>();
+            for (int i = 0; i < ws.Roots.Length; i++)
+            {
+                roots.Add(new
+                {
+                    id = ws.Roots[i].Id,
+                    path = ws.Roots[i].Path,
+                    writable = ws.Roots[i].Writable
+                });
+            }
+            return Results.Json(new { ok = true, roots = roots });
+        }
+
+        /// <summary>
+        /// 受控根写入——POST /api/v1/workspace（body: {roots:[{id,path,writable}]}）。
+        /// 校验：非空 + 必须含 runtime 根 + id 安全标识符不重复 + path 非空绝对路径 + 目录存在。
+        /// 生效语义：落盘 + 重启生效（roots 是 Bootstrap 一次性读取——低频事件，莎拍板 2026-08-25）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>回执 JSON</returns>
+        internal static async Task<IResult> HandleWorkspacePost(HttpContext ctx)
+        {
+            string body = await ReadBodyText(ctx);
+            List<WorkspaceRootInput> rootsIn = new List<WorkspaceRootInput>();
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(body))
+                {
+                    JsonElement root = doc.RootElement;
+                    JsonElement rootsEl;
+                    if (root.TryGetProperty("roots", out rootsEl) && rootsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        for (int i = 0; i < rootsEl.GetArrayLength(); i++)
+                        {
+                            JsonElement item = rootsEl[i];
+                            WorkspaceRootInput input = new WorkspaceRootInput();
+                            input.Id = GetJsonString(item, "id").Trim();
+                            input.Path = GetJsonString(item, "path").Trim();
+                            input.Writable = true;
+                            JsonElement wEl;
+                            if (item.TryGetProperty("writable", out wEl) && wEl.ValueKind == JsonValueKind.False)
+                            {
+                                input.Writable = false;
+                            }
+                            rootsIn.Add(input);
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return Results.Json(new { ok = false, error = "body 非 JSON" });
+            }
+            // [段1] 校验——非空 / runtime 根必在 / id 安全标识符不重复 / path 绝对路径 + 目录存在
+            if (rootsIn.Count == 0)
+            {
+                return Results.Json(new { ok = false, error = "roots 为空——不允许裸根运行" });
+            }
+            bool hasRuntime = false;
+            List<string> ids = new List<string>();
+            for (int i = 0; i < rootsIn.Count; i++)
+            {
+                WorkspaceRootInput input = rootsIn[i];
+                if (input.Id.Length == 0)
+                {
+                    return Results.Json(new { ok = false, error = "roots[" + i.ToString() + "] id 为空" });
+                }
+                for (int c = 0; c < input.Id.Length; c++)
+                {
+                    char ch = input.Id[c];
+                    bool ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_';
+                    if (!ok)
+                    {
+                        return Results.Json(new { ok = false, error = "roots[" + i.ToString() + "] id 非法（仅字母/数字/下划线）: " + input.Id });
+                    }
+                }
+                if (ids.Contains(input.Id))
+                {
+                    return Results.Json(new { ok = false, error = "roots id 重复: " + input.Id });
+                }
+                ids.Add(input.Id);
+                if (input.Id == "runtime")
+                {
+                    hasRuntime = true;
+                }
+                if (input.Path.Length == 0)
+                {
+                    return Results.Json(new { ok = false, error = "roots[" + i.ToString() + "] path 为空" });
+                }
+                if (!Path.IsPathRooted(input.Path))
+                {
+                    return Results.Json(new { ok = false, error = "roots[" + i.ToString() + "] path 非绝对路径: " + input.Path });
+                }
+                if (!Directory.Exists(input.Path))
+                {
+                    return Results.Json(new { ok = false, error = "roots[" + i.ToString() + "] 目录不存在: " + input.Path });
+                }
+            }
+            if (!hasRuntime)
+            {
+                return Results.Json(new { ok = false, error = "必须保留 runtime 根（数据根——FileSystemService 依赖）" });
+            }
+            // [段2] 落盘——保留 inject 字段（读旧文件；M2 后宿主不消费但结构保留）
+            string wsPath = Path.Combine(_dataRoot, "Data", "config", "workspace.json");
+            string injectJson = "[]";
+            if (File.Exists(wsPath))
+            {
+                try
+                {
+                    using (JsonDocument old = JsonDocument.Parse(File.ReadAllText(wsPath)))
+                    {
+                        JsonElement injectEl;
+                        if (old.RootElement.TryGetProperty("inject", out injectEl))
+                        {
+                            injectJson = injectEl.GetRawText();
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                    injectJson = "[]";
+                }
+            }
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.Append("{\"roots\":[");
+            for (int i = 0; i < rootsIn.Count; i++)
+            {
+                WorkspaceRootInput input = rootsIn[i];
+                if (i > 0)
+                {
+                    sb.Append(",");
+                }
+                string norm = WorkspaceConfig.NormalizeRoot(input.Path);
+                sb.Append("{\"id\":");
+                sb.Append(JsonSerializer.Serialize(input.Id));
+                sb.Append(",\"path\":");
+                sb.Append(JsonSerializer.Serialize(norm.Replace('\\', '/')));
+                sb.Append(",\"writable\":");
+                sb.Append(input.Writable ? "true" : "false");
+                sb.Append("}");
+            }
+            sb.Append("],\"inject\":");
+            sb.Append(injectJson);
+            sb.Append("}");
+            try
+            {
+                ConfigStore.AtomicWrite(wsPath, sb.ToString());
+            }
+            catch (Exception ex)
+            {
+                return Results.Json(new { ok = false, error = "落盘失败: " + ex.Message });
+            }
+            LogStore.Add("CH4.Entry", 1, "workspace | 已保存 | roots=" + rootsIn.Count.ToString() + " | 重启生效", "CONFIG");
+            return Results.Json(new { ok = true, roots = rootsIn.Count });
         }
 
         /// <summary>

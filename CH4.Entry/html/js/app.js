@@ -1,4 +1,4 @@
-// CH4 外观层 v2——app.js：全局状态 + SSE 连接 + 快照/patch + 状态区 + 日志区 + 指令 + 配置区（2026-08-25 拆分自 index.html）
+﻿// CH4 外观层 v2——app.js：全局状态 + SSE 连接 + 快照/patch + 状态区 + 日志区 + 指令 + 配置区（2026-08-25 拆分自 index.html）
 // 加载顺序：app.js 最先（全局变量与公共函数在此定义；chat.js/panel.js 依赖本文件）
 
 // [段1] 全局状态与 DOM 引用
@@ -50,10 +50,8 @@ es.addEventListener('snapshot', function (ev) {
 es.addEventListener('patch', function (ev) { applyPatch(JSON.parse(ev.data)); });   // 增量流式——变化段合并进本地全快照
 es.addEventListener('log', function (ev) { pushLog(JSON.parse(ev.data)); });
 es.addEventListener('llm', function (ev) {
-    var d = JSON.parse(ev.data);
-    var kindText = d.kind === 'text' ? 'T' : (d.kind === 'reasoning' ? 'R' : d.kind);
-    pushLog({ time: '', frame: 0, level: 'INFO', category: 'LLM', module: 'llm#' + d.seq, message: '[' + kindText + '] ' + d.text });
-    chatOnLlm(d);   // B4 对话区——sessionId 过滤 + 五态渲染
+    // 日志区不渲染 llm 增量（每 chunk 一条刷屏）——结算行 "llm STREAM 完成" 走 log 事件，与 CMD 同源
+    chatOnLlm(JSON.parse(ev.data));   // B4 对话区——sessionId 过滤 + 五态渲染
 });
 es.addEventListener('cmd', function (ev) {
     var d = JSON.parse(ev.data);
@@ -404,10 +402,4 @@ function saveConfig(key, value) {
         .catch(function (err) { configMsg.textContent = '请求失败: ' + err; });
 }
 document.getElementById('configRefresh').addEventListener('click', loadConfig);
-document.getElementById('cfgAddBtn').addEventListener('click', function () {
-    var k = document.getElementById('cfgNewKey').value.trim();
-    var v = document.getElementById('cfgNewVal').value;
-    if (k.length === 0) { return; }
-    saveConfig(k, v);
-});
 loadConfig();

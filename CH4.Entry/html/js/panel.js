@@ -307,9 +307,7 @@ function renderApiOptions(options, current) {
     }
 }
 
-function renderToolChecks(toolNames) {
-    var box = document.getElementById('catCfgTools');
-    box.textContent = '';
+function parseToolChecked(toolNames) {
     var checked = {};
     if (toolNames && toolNames.length > 0 && toolNames !== '*') {
         var parts = toolNames.split(',');
@@ -318,18 +316,80 @@ function renderToolChecks(toolNames) {
             if (n.length > 0) { checked[n] = true; }
         }
     }
-    for (var k = 0; k < catCfgAllTools.length; k++) {
-        (function (toolName) {
-            var label = document.createElement('label');
-            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:#242424;border:1px solid #2a2a2a;border-radius:4px;padding:3px 8px;font-size:11px;color:#c8c8c8;cursor:pointer';
-            var cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.checked = checked[toolName] === true;
-            label.appendChild(cb);
-            label.appendChild(document.createTextNode(toolName));
-            box.appendChild(label);
-        })(catCfgAllTools[k]);
+    return checked;
+}
+
+// 通用分组勾选渲染——按 - 前缀分组（text-*/mau-*/cs-*/config-* 视为一组；无前缀归 other）；组头开关一键全组
+function renderGroupedChecks(boxId, allTools, checked) {
+    var box = document.getElementById(boxId);
+    box.textContent = '';
+    var groups = {};
+    var order = [];
+    for (var k = 0; k < allTools.length; k++) {
+        var toolName = allTools[k];
+        var dash = toolName.indexOf('-');
+        var group = dash > 0 ? toolName.substring(0, dash) : 'other';
+        if (!groups[group]) { groups[group] = []; order.push(group); }
+        groups[group].push(toolName);
     }
+    for (var g = 0; g < order.length; g++) {
+        (function (groupName, tools) {
+            var head = document.createElement('label');
+            head.style.cssText = 'display:flex;align-items:center;gap:4px;width:100%;background:#2d2d2d;border:1px solid #3a3a3a;border-radius:4px;padding:3px 8px;font-size:11px;color:#dcdcaa;cursor:pointer;font-weight:bold';
+            var hcb = document.createElement('input');
+            hcb.type = 'checkbox';
+            head.appendChild(hcb);
+            head.appendChild(document.createTextNode(groupName + '-*（' + tools.length + '）'));
+            box.appendChild(head);
+            var groupBox = document.createElement('div');
+            groupBox.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px 12px;width:100%';
+            var cbs = [];
+            for (var t = 0; t < tools.length; t++) {
+                (function (toolName) {
+                    var label = document.createElement('label');
+                    label.style.cssText = 'display:flex;align-items:center;gap:4px;background:#242424;border:1px solid #2a2a2a;border-radius:4px;padding:3px 8px;font-size:11px;color:#c8c8c8;cursor:pointer';
+                    var cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.className = 'tool-cb';
+                    cb.setAttribute('data-tool', toolName);
+                    cb.checked = checked[toolName] === true;
+                    cbs.push(cb);
+                    label.appendChild(cb);
+                    label.appendChild(document.createTextNode(toolName));
+                    groupBox.appendChild(label);
+                })(tools[t]);
+            }
+            box.appendChild(groupBox);
+            // 组开关——全选/全不选；组内变化回写半选态
+            function syncHead() {
+                var on = 0;
+                for (var i = 0; i < cbs.length; i++) { if (cbs[i].checked) { on = on + 1; } }
+                hcb.checked = (on === cbs.length);
+                hcb.indeterminate = (on > 0 && on < cbs.length);
+            }
+            hcb.addEventListener('change', function () {
+                for (var i = 0; i < cbs.length; i++) { cbs[i].checked = hcb.checked; }
+            });
+            for (var i2 = 0; i2 < cbs.length; i2++) {
+                cbs[i2].addEventListener('change', syncHead);
+            }
+            syncHead();
+        })(order[g], groups[order[g]]);
+    }
+}
+
+// 通用勾选收集——data-tool 属性直读（不依赖渲染顺序）
+function collectChecked(boxId) {
+    var names = [];
+    var boxes = document.querySelectorAll('#' + boxId + ' input[type=checkbox].tool-cb');
+    for (var i = 0; i < boxes.length; i++) {
+        if (boxes[i].checked) { names.push(boxes[i].getAttribute('data-tool')); }
+    }
+    return names;
+}
+
+function renderToolChecks(toolNames) {
+    renderGroupedChecks('catCfgTools', catCfgAllTools, parseToolChecked(toolNames));
 }
 
 function renderInjectList(list) {
@@ -358,11 +418,7 @@ function renderInjectList(list) {
 }
 
 function saveCatCfg() {
-    var toolNames = [];
-    var boxes = document.querySelectorAll('#catCfgTools input[type=checkbox]');
-    for (var i = 0; i < boxes.length; i++) {
-        if (boxes[i].checked) { toolNames.push(catCfgAllTools[i]); }
-    }
+    var toolNames = collectChecked('catCfgTools');
     var payload = {
         cat: catCfgTarget,
         apiConfigId: document.getElementById('catCfgApi').value,
@@ -388,9 +444,192 @@ document.getElementById('catCfgInjectAddBtn').onclick = function () {
     var input = document.getElementById('catCfgInjectAdd');
     var val = input.value.trim();
     if (val.length === 0) { return; }
+    if (!isValidInjectPath(val)) {
+        document.getElementById('catCfgMsg').textContent = '路径拒绝——只接受完整路径（绝对路径或 id: 命名空间）: ' + val;
+        return;
+    }
     catCfgInjectList.push(val);
     input.value = '';
     renderInjectList(catCfgInjectList);
 };
 // 默认猫配置入口——对话区按钮（cat=majordomo）
 document.getElementById('chatCfg').onclick = function () { openCatCfg('majordomo', 'majordomo'); };
+
+// [段] 新猫默认模板编辑面（M3d 体验轮——cat-default.cfg 全局配置：baseRole + 新猫三字段默认值）
+var tplInjectList = [];
+
+// 注入路径前端校验——只接受完整路径：盘符/UNC//斜杠开头 或 id: 命名空间（与后端 IsValidInjectPath 同规）
+function isValidInjectPath(p) {
+    if (!p || p.length === 0) { return false; }
+    if (/^[a-zA-Z]:[\\/]/.test(p) || /^[\\/]{2}/.test(p) || /^\//.test(p)) { return true; }
+    var m = /^([A-Za-z0-9_]+):(.+)$/.exec(p);
+    return m !== null && m[2].length > 0;
+}
+
+function renderTplInject() {
+    var box = document.getElementById('tplInject');
+    box.textContent = '';
+    for (var i = 0; i < tplInjectList.length; i++) {
+        (function (idx) {
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:3px';
+            var txt = document.createElement('span');
+            txt.textContent = tplInjectList[idx];
+            txt.style.cssText = 'flex:1;color:#6a9955;font-size:11px;word-break:break-all';
+            row.appendChild(txt);
+            var rm = document.createElement('button');
+            rm.textContent = '移除';
+            rm.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#f48771;padding:2px 8px;cursor:pointer;font-family:inherit;font-size:11px';
+            rm.onclick = function () {
+                tplInjectList.splice(idx, 1);
+                renderTplInject();
+            };
+            row.appendChild(rm);
+            box.appendChild(row);
+        })(i);
+    }
+}
+
+function loadTpl() {
+    fetch('/api/v1/cat-default')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok) {
+                document.getElementById('tplMsg').textContent = '读取失败: ' + (d.error || '');
+                return;
+            }
+            document.getElementById('tplBaseRole').value = d.baseRole || '';
+            document.getElementById('tplPersona').value = d.defaultPersona || '';
+            renderGroupedChecks('tplTools', d.allToolNames || [], parseToolChecked(d.defaultToolNames || ''));
+            tplInjectList = (d.defaultInjectList || []).slice();
+            renderTplInject();
+        })
+        .catch(function () {
+            document.getElementById('tplMsg').textContent = '读取失败——宿主未运行？';
+        });
+}
+
+function saveTpl() {
+    var payload = {
+        baseRole: document.getElementById('tplBaseRole').value,
+        defaultPersona: document.getElementById('tplPersona').value,
+        defaultToolNames: collectChecked('tplTools').join(','),
+        defaultInjectList: tplInjectList
+    };
+    fetch('/api/v1/cat-default', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            document.getElementById('tplMsg').textContent = d.ok ? '已保存——新猫创建时继承；baseRole 新会话生效' : '保存失败: ' + d.error;
+        });
+}
+
+document.getElementById('tplRefresh').onclick = loadTpl;
+document.getElementById('tplSave').onclick = saveTpl;
+document.getElementById('tplInjectAddBtn').onclick = function () {
+    var input = document.getElementById('tplInjectAdd');
+    var val = input.value.trim();
+    if (val.length === 0) { return; }
+    if (!isValidInjectPath(val)) {
+        document.getElementById('tplMsg').textContent = '路径拒绝——只接受完整路径（绝对路径或 id: 命名空间）: ' + val;
+        return;
+    }
+    tplInjectList.push(val);
+    input.value = '';
+    renderTplInject();
+};
+loadTpl();
+
+// [段] 受控根编辑面（M3d 体验轮——workspace roots 管理员面；重启生效；LLM 工具面只读）
+var rootsList = [];
+
+function renderRoots() {
+    var body = document.querySelector('#rootsTable tbody');
+    body.textContent = '';
+    for (var i = 0; i < rootsList.length; i++) {
+        (function (idx) {
+            var tr = document.createElement('tr');
+            var tdId = document.createElement('td');
+            tdId.textContent = rootsList[idx].id;
+            tdId.style.color = '#c586c0';
+            tr.appendChild(tdId);
+            var tdPath = document.createElement('td');
+            tdPath.textContent = rootsList[idx].path;
+            tdPath.style.wordBreak = 'break-all';
+            tr.appendChild(tdPath);
+            var tdW = document.createElement('td');
+            tdW.textContent = rootsList[idx].writable ? '读写' : '只读';
+            tdW.style.color = rootsList[idx].writable ? '#4ec9b0' : '#f48771';
+            tr.appendChild(tdW);
+            var tdOp = document.createElement('td');
+            var rm = document.createElement('button');
+            rm.textContent = '移除';
+            rm.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#f48771;padding:2px 8px;cursor:pointer;font-family:inherit;font-size:11px';
+            rm.onclick = function () {
+                rootsList.splice(idx, 1);
+                renderRoots();
+            };
+            tdOp.appendChild(rm);
+            tr.appendChild(tdOp);
+            body.appendChild(tr);
+        })(i);
+    }
+}
+
+function loadRoots() {
+    fetch('/api/v1/workspace')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok) {
+                document.getElementById('rootsMsg').textContent = '读取失败: ' + (d.error || '');
+                return;
+            }
+            rootsList = (d.roots || []).slice();
+            renderRoots();
+        })
+        .catch(function () {
+            document.getElementById('rootsMsg').textContent = '读取失败——宿主未运行？';
+        });
+}
+
+function saveRoots() {
+    var payload = { roots: rootsList };
+    fetch('/api/v1/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            document.getElementById('rootsMsg').textContent = d.ok ? '已保存——重启宿主生效' : '保存失败: ' + (d.error || '');
+        });
+}
+
+document.getElementById('rootAddBtn').onclick = function () {
+    var id = document.getElementById('rootNewId').value.trim();
+    var path = document.getElementById('rootNewPath').value.trim();
+    var writable = document.getElementById('rootNewWritable').value === 'true';
+    if (id.length === 0 || path.length === 0) {
+        document.getElementById('rootsMsg').textContent = 'id 和路径不能为空';
+        return;
+    }
+    if (!/^[A-Za-z0-9_]+$/.test(id)) {
+        document.getElementById('rootsMsg').textContent = 'id 非法——仅字母/数字/下划线';
+        return;
+    }
+    for (var i = 0; i < rootsList.length; i++) {
+        if (rootsList[i].id === id) {
+            document.getElementById('rootsMsg').textContent = 'id 重复: ' + id;
+            return;
+        }
+    }
+    rootsList.push({ id: id, path: path, writable: writable });
+    document.getElementById('rootNewId').value = '';
+    document.getElementById('rootNewPath').value = '';
+    renderRoots();
+};
+document.getElementById('rootsSave').onclick = saveRoots;
+loadRoots();

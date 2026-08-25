@@ -101,7 +101,17 @@ namespace CH4
         private static string BuildInjectPrompt(WorkspaceConfig workspace, ToolSpec[] specs, string persona, string[] injectList)
         {
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            sb.Append("你是 MajorDomoCat——CH4 自举宿主的管理员对话中枢（P8.5 会话配置化）。");
+            // [段0] 基础角色段——全局模板 baseRole（空=无基础角色行；模板缺失回退内置文案——行为不倒退）
+            CatDefaultCfgData tpl = LoadCatDefaultCfg();
+            string baseRole = FallbackBaseRole;
+            if (tpl != null && tpl.BaseRole != null)
+            {
+                baseRole = tpl.BaseRole.Trim();
+            }
+            if (baseRole.Length > 0)
+            {
+                sb.Append(baseRole);
+            }
             // [段0] 角色段——cat.cfg persona 非空追加（M2b：注入后追加角色段；空=仅基础角色）
             if (persona != null && persona.Trim().Length > 0)
             {

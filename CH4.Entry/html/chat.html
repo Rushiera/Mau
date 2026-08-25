@@ -241,7 +241,7 @@
             if (chatPending.length > 0) { chatPending.shift(); }
             chatRenderPending();
             var b = chatBubble('user');
-            b.textContent = (d.source === 'system' ? SYSTEM_AUTO_PREFIX : '') + (d.text || '');
+            b.textContent = (d.source === 'system' ? SYSTEM_AUTO_PREFIX : '') + (d.content || '');
         }
 
         // 插话队列渲染——纯展示（数据源 = 本地发送记录 + 内核 user 事件确认）
@@ -477,6 +477,11 @@
         function noteStart() {
             if (chatState !== 'idle') { return; }
             if (!noteState.tasks || noteState.tasks.length === 0) { return; }
+            // 进入 sending 态——note.start 后 LLM 流事件正常渲染（chatOnLlm 检查 chatState；idle 态会丢弃全部流事件）
+            chatStage = null;
+            chatToolQueue = [];
+            chatSetState('sending');
+            chatKeepAlive();
             fetch('/api/v1/command', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

@@ -58,9 +58,9 @@ namespace CH4
                 }
                 items.Add(BuildItem(key, value, "file", schema, schemaBound));
             }
-            // [段3] env 兜底——file 未显式提供的 llm.* 键从 MAU_LLM_* 全局环境变量补齐
-            string[] envKeys = new string[] { "llm.base_url", "llm.api_key", "llm.model", "llm.thinking", "llm.reasoning_effort" };
-            string[] envNames = new string[] { "MAU_LLM_BASE_URL", "MAU_LLM_API_KEY", "MAU_LLM_MODEL", "MAU_LLM_THINKING", "MAU_LLM_REASONING_EFFORT" };
+            // [段3] env 兜底——file 未显式提供的 llm.* 键从 MAU_LLM_* 全局环境变量补齐（M1c 退役三键 base_url/api_key/model 不枚举——API 连接三参归配置池）
+            string[] envKeys = new string[] { "llm.thinking", "llm.reasoning_effort" };
+            string[] envNames = new string[] { "MAU_LLM_THINKING", "MAU_LLM_REASONING_EFFORT" };
             for (int i = 0; i < envKeys.Length; i++)
             {
                 if (effective.ContainsKey(envKeys[i]))

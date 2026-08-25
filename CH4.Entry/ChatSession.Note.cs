@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
@@ -148,6 +148,7 @@ namespace CH4
 
         /// <summary>
         /// Note 手动新增——前端 note.add 指令执行体（追加到末尾；空计划时创建；仅主线程调用）。
+        /// 只进队列不推 LLM——计划一次性输出由 note.start（NoteStart）承担（莎拍板 2026-08-25：输入=新增队列，开始 Note=一次性输出）。
         /// </summary>
         /// <param name="text">任务文本</param>
         public void NoteAdd(string text)
@@ -169,8 +170,6 @@ namespace CH4
             list.Add(t);
             _noteTasks = list.ToArray();
             PushNoteState();
-            // 单向数据流改造——手写 Note 双通道：原文作为 user 消息进 Ctx（对话窗口有气泡；忙时排队）
-            PostUserMessage(t);
         }
 
         /// <summary>

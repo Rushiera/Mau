@@ -99,6 +99,125 @@ namespace CH4
         }
 
         /// <summary>
+        /// 新猫默认模板数据形态——Data/config/cat-default.cfg（全局配置：基础角色段 + 新猫三字段默认值）。
+        /// 独立于基座配置群——LLM/猫域配置不混入基座（莎拍板 2026-08-25）。
+        /// </summary>
+        private sealed class CatDefaultCfgData
+        {
+            /// <summary>基础角色段——所有猫系统提示词首行（空=无基础角色行；模板缺失回退内置文案）</summary>
+            public string BaseRole { get; set; }
+
+            /// <summary>新猫默认 persona（空=无角色段）</summary>
+            public string DefaultPersona { get; set; }
+
+            /// <summary>新猫默认工具名单（空=全量保底）</summary>
+            public string DefaultToolNames { get; set; }
+
+            /// <summary>新猫默认前文注入清单（完整路径数组；空=不注入）</summary>
+            public string[] DefaultInjectList { get; set; }
+        }
+
+        /// <summary>内置基础角色段——模板缺失时回退（行为不倒退）</summary>
+        private const string FallbackBaseRole = "你是 MajorDomoCat——CH4 自举宿主的管理员对话中枢（P8.5 会话配置化）。";
+
+        /// <summary>
+        /// 全局默认模板路径——Data/config/cat-default.cfg。
+        /// </summary>
+        /// <returns>模板文件绝对路径</returns>
+        private static string GetCatDefaultPath()
+        {
+            return Path.Combine(_dataRoot, "Data", "config", "cat-default.cfg");
+        }
+
+        /// <summary>
+        /// 全局默认模板读取——防御式解析（损坏/不存在返回 null）。
+        /// </summary>
+        /// <returns>模板数据；不存在/损坏 null</returns>
+        private static CatDefaultCfgData LoadCatDefaultCfg()
+        {
+            try
+            {
+                string path = GetCatDefaultPath();
+                if (!File.Exists(path))
+                {
+                    return null;
+                }
+                string json = File.ReadAllText(path);
+                using (JsonDocument doc = JsonDocument.Parse(json))
+                {
+                    JsonElement root = doc.RootElement;
+                    CatDefaultCfgData data = new CatDefaultCfgData();
+                    data.BaseRole = GetStringProp(root, "baseRole");
+                    data.DefaultPersona = GetStringProp(root, "defaultPersona");
+                    data.DefaultToolNames = GetStringProp(root, "defaultToolNames");
+                    data.DefaultInjectList = GetStringArrayProp(root, "defaultInjectList");
+                    return data;
+                }
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 全局默认模板原子写——ConfigStore.AtomicWrite（与 cat.cfg 同源）。
+        /// </summary>
+        /// <param name="data">模板数据</param>
+        private static void SaveCatDefaultCfg(CatDefaultCfgData data)
+        {
+            var payload = new
+            {
+                baseRole = data.BaseRole,
+                defaultPersona = data.DefaultPersona,
+                defaultToolNames = ValidateToolNames(data.DefaultToolNames),
+                defaultInjectList = data.DefaultInjectList
+            };
+            try
+            {
+                ConfigStore.AtomicWrite(GetCatDefaultPath(), JsonSerializer.Serialize(payload));
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CH4.Entry", 2, "cat-default | 写入失败 | " + ex.Message, "CONFIG");
+            }
+        }
+
+        /// <summary>
+        /// 注入路径合法性校验——只接受完整路径：绝对路径（盘符/UNC）或 id: 命名空间（id 为安全标识符）。
+        /// 相对路径/空 id/非法字符 → false（不录入——莎拍板 2026-08-25）。
+        /// </summary>
+        /// <param name="path">候选路径</param>
+        /// <returns>合法 true</returns>
+        private static bool IsValidInjectPath(string path)
+        {
+            if (path == null || path.Length == 0)
+            {
+                return false;
+            }
+            if (Path.IsPathRooted(path))
+            {
+                return true;
+            }
+            int colon = path.IndexOf(':');
+            if (colon <= 0 || colon >= path.Length - 1)
+            {
+                return false;
+            }
+            string id = path.Substring(0, colon);
+            for (int i = 0; i < id.Length; i++)
+            {
+                char c = id[i];
+                bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+                if (!ok)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
         /// cat.cfg 读取——防御式解析（损坏/缺字段回退默认；不存在返回 null）。
         /// </summary>
         /// <param name="path">cfg 路径</param>
