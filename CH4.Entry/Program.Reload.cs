@@ -52,18 +52,21 @@ namespace CH4
                 oldId = _quickId;
                 name = "QuickCat";
             }
-            else if (cat == "dev")
-            {
-                oldHandle = _devHandle;
-                oldId = _devId;
-                name = "DevCat";
-            }
             else
             {
-                string badMsg = "[CH4.Entry] reload 目标无效——quick|dev";
-                Console.WriteLine(badMsg);
-                sb.AppendLine(badMsg);
-                return sb.ToString();
+                // R0.2 工具组按 Flow 名寻址——text|mau|cs|config → TextCat/MauCat/CsCat/ConfigCat
+                name = ToolFlowName(cat);
+                if (name.Length == 0 || !_toolFlowHandles.TryGetValue(name, out oldHandle))
+                {
+                    string badMsg = "[CH4.Entry] reload 目标无效——quick|text|mau|cs|config";
+                    Console.WriteLine(badMsg);
+                    sb.AppendLine(badMsg);
+                    return sb.ToString();
+                }
+                if (!_toolFlowIds.TryGetValue(name, out oldId))
+                {
+                    oldId = -1;
+                }
             }
             if (dllPath.Length == 0)
             {
@@ -174,9 +177,9 @@ namespace CH4
         }
 
         /// <summary>
-        /// 更新指定 Cat 的句柄 + 注册 ID 字段
+        /// 更新指定 Cat 的句柄 + 注册 ID 字段——quick 独立字段；工具组按 Flow 名写字典（R0.2）
         /// </summary>
-        /// <param name="cat">tool|io|quick|major</param>
+        /// <param name="cat">quick|text|mau|cs|config</param>
         /// <param name="handle">新句柄</param>
         /// <param name="id">新注册 ID</param>
         private static void SetCatHandle(string cat, FlowHandle handle, long id)
@@ -185,12 +188,37 @@ namespace CH4
             {
                 _quickHandle = handle;
                 _quickId = id;
+                return;
             }
-            else
+            string flowName = ToolFlowName(cat);
+            _toolFlowHandles[flowName] = handle;
+            _toolFlowIds[flowName] = id;
+        }
+
+        /// <summary>
+        /// reload 参数 → 工具组 Flow 名映射（text→TextCat / mau→MauCat / cs→CsCat / config→ConfigCat；未知返回空）
+        /// </summary>
+        /// <param name="cat">reload 参数</param>
+        /// <returns>Flow 名（未知 = 空串）</returns>
+        private static string ToolFlowName(string cat)
+        {
+            if (cat == "text")
             {
-                _devHandle = handle;
-                _devId = id;
+                return "TextCat";
             }
+            if (cat == "mau")
+            {
+                return "MauCat";
+            }
+            if (cat == "cs")
+            {
+                return "CsCat";
+            }
+            if (cat == "config")
+            {
+                return "ConfigCat";
+            }
+            return "";
         }
     }
 }

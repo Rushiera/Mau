@@ -143,7 +143,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 追加全部 Runtime 实体快照——从 FlowRegistry 拉取真实实例（替代硬编码 QuickCat/DevCat）。
+        /// 追加全部 Runtime 实体快照——从 FlowRegistry 拉取真实实例（替代硬编码 QuickCat/DevCat；R0.2 工具组 Flow 化后自动覆盖 TextCat/MauCat/CsCat/ConfigCat）。
         /// 任何 RegisterFlow 注册的实例自动出现——状态面板 = Runtime 真实截面。按注册 ID 排序确定性输出。
         /// </summary>
         /// <param name="cats">目标列表</param>
@@ -207,13 +207,14 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
         {
             logs = new object[0];
         }
-        // [段3] 快照组装——version/pid/frame/cats/oa/boxes/logs（协议 v1.1）
+        // [段3] 快照组装——version/pid/frame/cats/sessions/oa/tools/boxes/logs（协议 v1.2：前端状态区会话卡 + 工具注册表）
         var snapshot = new
         {
-            version = 1,
+            version = 2,
             pid = Environment.ProcessId,
             frame = FlowRunner.GlobalFrame,
             cats = cats,
+            sessions = BuildSessionsJson(),
             oa = new
             {
                 open = oa.OpenCount,
@@ -221,10 +222,83 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
                 closed = oa.ClosedCount,
                 timeout = oa.TimeoutCount
             },
+            tools = BuildToolsJson(),
             boxes = boxes,
             logs = logs
         };
         return JsonSerializer.Serialize(snapshot);
+    }
+
+    /// <summary>
+    /// 会话状态段——会话注册表（Majordomo + 多猫）四相环预览（外观层状态区）。
+    /// 数据源：Program._sessions（P9.1 会话对象化注册表）；ChatSession 公开观测属性。
+    /// </summary>
+    /// <returns>会话条目数组（id/name/phase/round/msgCount/pending/noteActive）</returns>
+    private static List<object> BuildSessionsJson()
+    {
+        List<object> sessions = new List<object>();
+        List<ChatSession> all = _sessions;
+        for (int i = 0; i < all.Count; i++)
+        {
+            ChatSession s = all[i];
+            sessions.Add(new
+            {
+                id = s.Id,
+                name = s.DisplayName,
+                phase = PhaseText(s.Phase),
+                round = s.Round,
+                msgCount = s.MsgCount,
+                pending = s.PendingCount,
+                noteActive = s.NoteActive
+            });
+        }
+        return sessions;
+    }
+
+    /// <summary>
+    /// 相位文本化——ChatPhase 枚举 → 状态徽标串（快照对外文本；未知回退 Idle）
+    /// </summary>
+    /// <param name="phase">会话相位</param>
+    /// <returns>文本（Idle/LlmRunning/ToolBatchRunning/Done）</returns>
+    private static string PhaseText(ChatPhase phase)
+    {
+        if (phase == ChatPhase.LlmRunning)
+        {
+            return "LlmRunning";
+        }
+        if (phase == ChatPhase.ToolBatchRunning)
+        {
+            return "ToolBatchRunning";
+        }
+        if (phase == ChatPhase.Done)
+        {
+            return "Done";
+        }
+        return "Idle";
+    }
+
+    /// <summary>
+    /// 工具注册表段——按组分类摘要（外观层状态区；R0.2 ToolRegistry 单一真相源）。
+    /// 条目：name + group（归属 Flow）/builtin（内置标记）。
+    /// </summary>
+    /// <returns>工具条目数组</returns>
+    private static List<object> BuildToolsJson()
+    {
+        List<object> tools = new List<object>();
+        ToolSpec[] specs = ToolRegistry.BuildSpecs();
+        for (int i = 0; i < specs.Length; i++)
+        {
+            ToolRegistryEntry entry = ToolRegistry.Find(specs[i].Name);
+            string group = "";
+            bool builtin = false;
+            if (entry != null)
+            {
+                group = entry.OwnerFlow;
+                builtin = entry.IsBuiltin;
+            }
+            tools.Add(new { name = specs[i].Name, group = group, builtin = builtin });
+        }
+        return tools;
     }
 
     /// <summary>
@@ -266,6 +340,9 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
     /// <summary>上次 oa 段 JSON——变化检测</summary>
     private static string _lastOaJson = "";
 
+    /// <summary>上次 sessions 段 JSON——变化检测（会话四相环预览）</summary>
+    private static string _lastSessionsJson = "";
+
     /// <summary>上次 boxes 字典——scope+key → 条目 JSON（变化检测）</summary>
     private static Dictionary<string, string> _lastBoxes = new Dictionary<string, string>();
 
@@ -281,6 +358,10 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
         AppendRegistryCats(cats);
         string catsJson = JsonSerializer.Serialize(cats);
         bool catsChanged = !string.Equals(catsJson, _lastCatsJson, StringComparison.Ordinal);
+        // [段1b] sessions 段——整段序列化对比（会话四相环/轮次/消息数变化推送）
+        List<object> sessions = BuildSessionsJson();
+        string sessionsJson = JsonSerializer.Serialize(sessions);
+        bool sessionsChanged = !string.Equals(sessionsJson, _lastSessionsJson, StringComparison.Ordinal);
         // [段2] oa 段——四计数对比
         OAView oa = _oa.GetSnapshot();
         object oaObj = new
@@ -325,7 +406,7 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
         }
         bool boxesChanged = boxSet.Count > 0 || boxDel.Count > 0;
         // [段4] 无变化零推送——Idle 稳态静默
-        if (!catsChanged && !oaChanged && !boxesChanged)
+        if (!catsChanged && !sessionsChanged && !oaChanged && !boxesChanged)
         {
             return null;
         }
@@ -336,6 +417,11 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
         {
             patch["cats"] = cats;
             _lastCatsJson = catsJson;
+        }
+        if (sessionsChanged)
+        {
+            patch["sessions"] = sessions;
+            _lastSessionsJson = sessionsJson;
         }
         if (oaChanged)
         {

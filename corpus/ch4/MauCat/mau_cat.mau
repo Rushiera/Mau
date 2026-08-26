@@ -1,14 +1,17 @@
-﻿// dev_mau.mau —— DevCat 语料（CH4 P8 二期——OA 工具执行 Cat，MAU 工具域分部）
-// 角色：Dog 工单执行方——认领 TOOL 域 mau-* 3 工具（verify/gen/proj）
-// 单级 OA 单：Dog Post → 本语料 3 线认领执行 → complete_str 回执
+﻿// mau_cat.mau —— MauCat 语料（CH4 R0.2 工具组 Flow 化——MAU 工具域独立 Flow，原 DevCat 分部拆分）
+// 角色：工具组 Flow——认领 TOOL 域 mau-* 3 工具（verify/gen/proj）
+// 单级 OA 单：Dog Post → 本 Flow 3 线认领执行 → complete_str 回执
 // 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON
 // 线程模型：全部主线程同步；mau-proj dotnet build 长耗时阻塞主线程（与一期直执等价——P9 后台域清偿）
 // 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）
 
 // ── 状态机（3 线——每线独立生命周期）──
-§ 'S_Verify' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Verify' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Gen' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Proj' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+
+// T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
+§ 'T_Init' : 'S_Verify' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Verify' = 'Idle' | 'S_Verify' = 'Idle'
 
 // ── 主动传感器壳——3 线各自探测 ──
 § 'P_VerifyOpen' ↻ [1]: 'oa.is_open'["TOOL", "mau-verify"] > @vfOpen
@@ -27,7 +30,7 @@
 § 'T_VerifyExec' : 'S_Verify' = 'Ready' → 'mau.verify'[@vfArgs] > @vfRes | 'self.desc'["mau-verify 执行中", "", ""] | 'S_Verify' = 'Done' | 'S_Verify' = 'Failed'
 
 // T_VerifyReply：成功回执（诊断文本/OK 确认）
-§ 'T_VerifyReply' : 'S_Verify' = 'Done' → 'oa.complete_str'[@vfOffice, @vfRes] | 'S_Verify' = 'Idle' | 'S_Verify' = 'Idle'
+§ 'T_VerifyReply' : 'S_Verify' = 'Done' → 'oa.complete_str'[@vfOffice, @vfRes] | 'self.desc'["空闲待命", "", ""] | 'S_Verify' = 'Idle' | 'S_Verify' = 'Idle'
 
 // T_VerifyAbort：失败回执（FAIL|VALIDATE 诊断或 ERR| 错误）
 § 'T_VerifyAbort' : 'S_Verify' = 'Failed' → 'oa.complete_str'[@vfOffice, @vfRes] | 'S_Verify' = 'Idle' | 'S_Verify' = 'Idle'
@@ -44,7 +47,7 @@
 § 'T_GenExec' : 'S_Gen' = 'Ready' → 'mau.gen'[@gnArgs] > @gnRes | 'self.desc'["mau-gen 执行中", "", ""] | 'S_Gen' = 'Done' | 'S_Gen' = 'Failed'
 
 // T_GenReply：成功回执
-§ 'T_GenReply' : 'S_Gen' = 'Done' → 'oa.complete_str'[@gnOffice, @gnRes] | 'S_Gen' = 'Idle' | 'S_Gen' = 'Idle'
+§ 'T_GenReply' : 'S_Gen' = 'Done' → 'oa.complete_str'[@gnOffice, @gnRes] | 'self.desc'["空闲待命", "", ""] | 'S_Gen' = 'Idle' | 'S_Gen' = 'Idle'
 
 // T_GenAbort：失败回执
 § 'T_GenAbort' : 'S_Gen' = 'Failed' → 'oa.complete_str'[@gnOffice, @gnRes] | 'S_Gen' = 'Idle' | 'S_Gen' = 'Idle'
@@ -61,7 +64,7 @@
 § 'T_ProjExec' : 'S_Proj' = 'Ready' → 'mau.proj'[@pjArgs] > @pjRes | 'self.desc'["mau-proj 执行中", "", ""] | 'S_Proj' = 'Done' | 'S_Proj' = 'Failed'
 
 // T_ProjReply：成功回执（[!] 日志标记——热重载行为验证点）
-§ 'T_ProjReply' [!] : 'S_Proj' = 'Done' → 'oa.complete_str'[@pjOffice, @pjRes] | 'S_Proj' = 'Idle' | 'S_Proj' = 'Idle'
+§ 'T_ProjReply' [!] : 'S_Proj' = 'Done' → 'oa.complete_str'[@pjOffice, @pjRes] | 'self.desc'["空闲待命", "", ""] | 'S_Proj' = 'Idle' | 'S_Proj' = 'Idle'
 
 // T_ProjAbort：失败回执
 § 'T_ProjAbort' : 'S_Proj' = 'Failed' → 'oa.complete_str'[@pjOffice, @pjRes] | 'S_Proj' = 'Idle' | 'S_Proj' = 'Idle'

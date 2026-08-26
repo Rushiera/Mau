@@ -244,6 +244,42 @@ namespace CH4
             }
         }
 
+        /// <summary>当前工具轮次（快照观测面——状态卡预览用）</summary>
+        public long Round
+        {
+            get
+            {
+                return _round;
+            }
+        }
+
+        /// <summary>消息历史条数（快照观测面——状态卡预览用）</summary>
+        public int MsgCount
+        {
+            get
+            {
+                return _context.GetMessages().Length;
+            }
+        }
+
+        /// <summary>待处理消息数（快照观测面——忙时排队可见）</summary>
+        public int PendingCount
+        {
+            get
+            {
+                return _pending.Count;
+            }
+        }
+
+        /// <summary>Note 计划激活中——任务未全完成（快照观测面——状态卡 Note 徽标）</summary>
+        public bool NoteActive
+        {
+            get
+            {
+                return _noteTasks != null && _noteCurrent < _noteTasks.Length;
+            }
+        }
+
         /// <summary>
         /// 附加 HTTP 外观层——Bootstrap 段6 宿主 HTTP 启动后调用（SSE 转发面就位）。
         /// </summary>
@@ -536,12 +572,12 @@ _ = ConsumeLlmStream(messages);
                             dog.IsClosed = true;
                             LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|host-deferred", "TOOL");
                         }
-                        else if (name == "Note")
+                        else if (name == "Note" || name == "time" || name == "random" || name == "info")
                         {
-                            // M4a Note 会话内直执——Cat 内置工具不进 OA（状态在会话实例；CH2 语义）
-                            dog.Result = ExecuteNote(arguments);
+                            // 内置工具会话内直执——不需 OA（R0.2 分层：Note 状态在会话实例；time/random/info 宿主直执）
+                            dog.Result = ExecuteBuiltin(name, arguments);
                             dog.IsClosed = true;
-                            LogStore.Add("CH4.Entry", 1, "TOOL|Note|session-direct", "TOOL");
+                            LogStore.Add("CH4.Entry", 1, "TOOL|" + name + "|session-direct", "TOOL");
                         }
                         else
                         {
@@ -728,10 +764,10 @@ _ = ConsumeLlmStream(messages);
             }
             _store.Save(toSave);
             DataBox.Set<string>("global", "chat_state", "idle");
-            // B4 对话区：会话终态事件——前端定型（llm done 仅一轮结束；chatdone 才是整次会话结束）
+            // B4 对话区：会话终态事件——前端定型（llm done 仅一轮结束；chatdone 才是整次会话结束；count = 原始消息数——实时同步状态区）
             if (_httpHost != null)
             {
-                _httpHost.PushChatDone();
+                _httpHost.PushChatDone(_context.GetMessages().Length);
             }
             LogStore.Add("CH4.Entry", 1, "会话前文已落盘: " + _context.GetMessageCount().ToString() + " 条消息", "SYS");
             // M4a Note 自动拉起——剩余 ≥2 条以 user 名义推下一轮；仅剩 1 条清空（防无限循环闸门——CH2 语义）

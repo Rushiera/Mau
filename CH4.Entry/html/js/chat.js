@@ -265,6 +265,10 @@ function chatOnChatDone(d) {
     if (chatState !== 'sending') {
         return;  // 非 sending（如重连后）——历史重绘已定型
     }
+    // 会话终态——实时同步消息计数（chatdone 事件带 count = 原始消息数；与状态区一致）
+    if (d.count !== undefined) {
+        chatInfo.textContent = '会话 ' + d.count + ' 条 | sessionId=' + (d.sessionId || CHAT_SESSION);
+    }
     chatSealCurrent();
     for (var ui = 0; ui < chatToolQueue.length; ui++) {
         if (!chatToolQueue[ui].filled) {

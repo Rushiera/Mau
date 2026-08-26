@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>CH4 Cat 对话</title>
-    <link rel="stylesheet" href="css/chat.css">
+    <link rel="stylesheet" href="css/chat.css?v=__V__">
 </head>
 <body>
     <div id="chatbar">
@@ -32,6 +32,9 @@
         <input id="chatSendInput" placeholder="说话…（Enter 发送，发送期禁用）" onkeydown="if(event.key==='Enter')chatSend()">
         <button id="chatSendBtn" onclick="chatSend()">发送</button>
     </div>
+
+    <!-- 前端版本标记——每次改动前端递增；刷新后数字变化 = 拿到新版（人眼 cache-busting） -->
+    <div style="position:fixed;left:4px;bottom:2px;color:#4a4a4a;font-size:10px;z-index:99">UI v2</div>
 
     <script>
         // [段1] 对话区状态（B4 同构——自 index.html 提取；P9.3d 独立对话页）

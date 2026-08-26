@@ -168,11 +168,12 @@ public void PushNoteState(string json)
         /// 语义：llm done 仅代表"一轮 LLM 流结束"（工具轮还有 tool 事件 + 续轮）；chatdone = 整次会话终态。
         /// 前端以 chatdone 为准定型（去光标/未回填兜底/恢复 idle）——修复"工具轮 done 被当终态"的时序 bug。
         /// </summary>
-        public void PushChatDone()
+        public void PushChatDone(int count)
         {
             var obj = new
             {
-                sessionId = _sessionId
+                sessionId = _sessionId,
+                count = count
             };
             PushEvent("chatdone", JsonSerializer.Serialize(obj));
         }

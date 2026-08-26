@@ -19,9 +19,9 @@ namespace CH4
         /// </summary>
         private static void PrintStatus()
         {
-            Console.WriteLine("── 两 Cat 状态 ──");
+            Console.WriteLine("── Flow 状态 ──");
             PrintFlowStatus("QuickCat", _quickHandle);
-            PrintFlowStatus("DevCat", _devHandle);
+            PrintToolGroupStatuses();
             // [段1] OA 快照 + 盒子截面 + 审计帧序（杂音过滤——trace.sample 每帧采样隐藏，关键事件帧序可回溯）
             OAView oaView = _oa.GetSnapshot();
             Console.WriteLine("── OA 快照 ── Open=" + oaView.OpenCount + " Work=" + oaView.WorkCount + " Closed=" + oaView.ClosedCount + " Timeout=" + oaView.TimeoutCount);
@@ -124,13 +124,23 @@ namespace CH4
         }
 
         /// <summary>
+        /// 工具组 Flow 状态打印——遍历句柄表（R0.2：TextCat/MauCat/CsCat/ConfigCat 独立 Flow）
+        /// </summary>
+        private static void PrintToolGroupStatuses()
+        {
+            foreach (KeyValuePair<string, FlowHandle> kv in _toolFlowHandles)
+            {
+                PrintFlowStatus(kv.Key, kv.Value);
+            }
+        }
+        /// <summary>
         /// 精简观测出口——三 Cat 状态 + OA 快照 + 最近日志（跳过审计帧序/盒子截面——热重载实测断言面）
         /// </summary>
         private static void PrintStatusShort()
         {
-            Console.WriteLine("── 两 Cat 状态 ──");
+            Console.WriteLine("── Flow 状态 ──");
             PrintFlowStatus("QuickCat", _quickHandle);
-            PrintFlowStatus("DevCat", _devHandle);
+            PrintToolGroupStatuses();
             List<LogStore.LogEntry> logs = LogStore.AllLog;
             int start = logs.Count - 10;
             if (start < 0)

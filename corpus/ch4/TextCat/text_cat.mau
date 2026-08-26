@@ -1,6 +1,6 @@
-﻿// dev_text.mau —— DevCat 语料（CH4 P8 二期——OA 工具执行 Cat，TEXT 工具域分部）
-// 角色：Dog 工单执行方——认领 TOOL 域 text-* 4 工具（read/write/append/replace）
-// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本语料 4 线认领执行 → complete_str 回执
+﻿// text_cat.mau —— TextCat 语料（CH4 R0.2 工具组 Flow 化——TEXT 工具域独立 Flow，原 DevCat 分部拆分）
+// 角色：工具组 Flow——认领 TOOL 域 text-* 4 工具（read/write/append/replace）
+// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 4 线认领执行 → complete_str 回执
 // 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON（宿主发单落盒——CH2 Dog 机制验证格式）
 // 无值分支：每工具一条认领线，工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
 // 数据面：@rdOffice 等私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
@@ -8,10 +8,13 @@
 // 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）+ log.write TOOL 类别
 
 // ── 状态机（4 线——每线独立生命周期）──
-§ 'S_Read' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Read' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Write' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Append' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Replace' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+
+// T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
+§ 'T_Init' : 'S_Read' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Read' = 'Idle' | 'S_Read' = 'Idle'
 
 // ── 主动传感器壳——4 线各自探测（纯只读判断积木 → bool 落盒）──
 § 'P_ReadOpen' ↻ [1]: 'oa.is_open'["TOOL", "text-read"] > @rdOpen
@@ -31,7 +34,7 @@
 § 'T_ReadExec' : 'S_Read' = 'Ready' → 'text.read'[@rdArgs] > @rdRes | 'self.desc'["text-read 执行中", "", ""] | 'S_Read' = 'Done' | 'S_Read' = 'Failed'
 
 // T_ReadReply：成功回执（result=文件内容）
-§ 'T_ReadReply' : 'S_Read' = 'Done' → 'oa.complete_str'[@rdOffice, @rdRes] | 'S_Read' = 'Idle' | 'S_Read' = 'Idle'
+§ 'T_ReadReply' : 'S_Read' = 'Done' → 'oa.complete_str'[@rdOffice, @rdRes] | 'self.desc'["空闲待命", "", ""] | 'S_Read' = 'Idle' | 'S_Read' = 'Idle'
 
 // T_ReadAbort：失败回执（@rdRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
 § 'T_ReadAbort' : 'S_Read' = 'Failed' → 'oa.complete_str'[@rdOffice, @rdRes] | 'S_Read' = 'Idle' | 'S_Read' = 'Idle'
@@ -48,7 +51,7 @@
 § 'T_WriteExec' : 'S_Write' = 'Ready' → 'text.write'[@wrArgs] > @wrRes | 'self.desc'["text-write 执行中", "", ""] | 'S_Write' = 'Done' | 'S_Write' = 'Failed'
 
 // T_WriteReply：成功回执
-§ 'T_WriteReply' : 'S_Write' = 'Done' → 'oa.complete_str'[@wrOffice, @wrRes] | 'S_Write' = 'Idle' | 'S_Write' = 'Idle'
+§ 'T_WriteReply' : 'S_Write' = 'Done' → 'oa.complete_str'[@wrOffice, @wrRes] | 'self.desc'["空闲待命", "", ""] | 'S_Write' = 'Idle' | 'S_Write' = 'Idle'
 
 // T_WriteAbort：失败回执
 § 'T_WriteAbort' : 'S_Write' = 'Failed' → 'oa.complete_str'[@wrOffice, @wrRes] | 'S_Write' = 'Idle' | 'S_Write' = 'Idle'
@@ -65,7 +68,7 @@
 § 'T_AppendExec' : 'S_Append' = 'Ready' → 'text.append'[@apArgs] > @apRes | 'self.desc'["text-append 执行中", "", ""] | 'S_Append' = 'Done' | 'S_Append' = 'Failed'
 
 // T_AppendReply：成功回执
-§ 'T_AppendReply' : 'S_Append' = 'Done' → 'oa.complete_str'[@apOffice, @apRes] | 'S_Append' = 'Idle' | 'S_Append' = 'Idle'
+§ 'T_AppendReply' : 'S_Append' = 'Done' → 'oa.complete_str'[@apOffice, @apRes] | 'self.desc'["空闲待命", "", ""] | 'S_Append' = 'Idle' | 'S_Append' = 'Idle'
 
 // T_AppendAbort：失败回执
 § 'T_AppendAbort' : 'S_Append' = 'Failed' → 'oa.complete_str'[@apOffice, @apRes] | 'S_Append' = 'Idle' | 'S_Append' = 'Idle'
@@ -82,7 +85,7 @@
 § 'T_ReplaceExec' : 'S_Replace' = 'Ready' → 'text.replace'[@rpArgs] > @rpRes | 'self.desc'["text-replace 执行中", "", ""] | 'S_Replace' = 'Done' | 'S_Replace' = 'Failed'
 
 // T_ReplaceReply：成功回执
-§ 'T_ReplaceReply' : 'S_Replace' = 'Done' → 'oa.complete_str'[@rpOffice, @rpRes] | 'S_Replace' = 'Idle' | 'S_Replace' = 'Idle'
+§ 'T_ReplaceReply' : 'S_Replace' = 'Done' → 'oa.complete_str'[@rpOffice, @rpRes] | 'self.desc'["空闲待命", "", ""] | 'S_Replace' = 'Idle' | 'S_Replace' = 'Idle'
 
 // T_ReplaceAbort：失败回执
 § 'T_ReplaceAbort' : 'S_Replace' = 'Failed' → 'oa.complete_str'[@rpOffice, @rpRes] | 'S_Replace' = 'Idle' | 'S_Replace' = 'Idle'

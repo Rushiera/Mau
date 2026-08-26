@@ -1,0 +1,5 @@
+// mau_cat.mauproj —— MauCat 独立工具组（R0.2 工具组 Flow 化——MAU 工具域）
+组: MauCat
+版本: 0.1
+引用: Mau.Development, Mau.Translator
+文件: mau_cat.mau

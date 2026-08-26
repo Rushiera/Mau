@@ -86,7 +86,7 @@ namespace CH4
             LogStore.Add("CH4.Entry", 1, summary, "CHAT");
             if (host != null)
             {
-                host.PushChatDone();
+                host.PushChatDone(session.Context.GetMessages().Length);
             }
             Console.WriteLine("[CH4.Entry] " + summary);
         }
@@ -304,7 +304,8 @@ namespace CH4
             Dictionary<string, object> resp = new Dictionary<string, object>();
             resp["version"] = 1;
             resp["sessionId"] = session.Id;
-            resp["count"] = view.Count;
+            // count = 原始消息数（含 system/tool——与快照 sessions 段 msgCount 同源一致；视图裁剪只影响 messages 不缩计数）
+            resp["count"] = all.Length;
             resp["messages"] = view;
             return JsonSerializer.Serialize(resp);
         }

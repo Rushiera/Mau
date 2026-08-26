@@ -1,4 +1,4 @@
-﻿// quick_cat.mau —— QuickCat 语料（CH4 P4 流式升级版）
+// quick_cat.mau —— QuickCat 语料（CH4 P4 流式升级版）
 // 角色：QuickCat 双参消费者——探测接单 → 读双参载荷 → llm.stream 流式（后台）→ 分块/完成探测 → 回执 → 复位
 // 双参验证：system + content 经 OA 载荷传输（ToolTestCat set_str ×2 → 本语料 get_str ×2）
 // 数据面：盒子 Key——@office/@system/@content/@reply/@chunk/@anyOpen/@hasChunk/@hasDone 私有（FlowId 隔离）；
@@ -9,7 +9,10 @@
 // 三信号：开始 = T_Exec 调用 llm.stream 成功；分块 = llm.chunk_ready 探测（P_Chunk 壳落盒）；完成 = llm.done_ready 探测（P_Done 壳落盒）
 
 // ── 状态机 ──
-§ 'S_Quick' = { 'Idle', 'Claimed', 'Reading', 'Calling', 'Streaming', 'Done', 'Saving', 'Failed' }
+§ 'S_Quick' = { 'Init', 'Idle', 'Claimed', 'Reading', 'Calling', 'Streaming', 'Done', 'Saving', 'Failed' }
+
+// T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
+§ 'T_Init' : 'S_Quick' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Quick' = 'Idle' | 'S_Quick' = 'Idle'
 
 // ── 主动传感器壳——探测（纯只读判断积木）→ bool 落盒，帧门控 1 ──
 § 'P_AnyOpen' ↻ [1]: 'oa.is_open'["TOOL", "QuickCat"] > @anyOpen
@@ -31,7 +34,7 @@
 § 'T_Exec' : 'S_Quick' = 'Calling' → 'llm.stream'[@system, @content] | 'self.desc'["正在调用 LLM", "", ""] | 'S_Quick' = 'Streaming' | 'S_Quick' = 'Failed'
 
 // T_Chunk：分块信号——新分块到达 → 取数积木读本实例最新增量落 @chunk（观测可见）→ 保持 Streaming（自环=等待语义）
-§ 'T_Chunk' : @hasChunk & 'S_Quick' = 'Streaming' → 'llm.chunk_read' > @chunk | 'S_Quick' = 'Streaming' | 'S_Quick' = 'Streaming'
+§ 'T_Chunk' : @hasChunk & 'S_Quick' = 'Streaming' → 'llm.chunk_read' > @chunk | 'self.desc'["流式生成中", "", ""] | 'S_Quick' = 'Streaming' | 'S_Quick' = 'Streaming'
 
 // T_Done：完成信号——llm_done 置位 → 取数积木读本实例完整回复落 @reply → Done
 § 'T_Done' : @hasDone & 'S_Quick' = 'Streaming' → 'llm.reply_read' > @reply | 'self.desc'["回复完成", "", ""] | 'S_Quick' = 'Done' | 'S_Quick' = 'Streaming'

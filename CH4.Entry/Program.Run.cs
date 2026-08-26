@@ -207,6 +207,19 @@ namespace CH4
                 }
                 return true;
             }
+            // R0.2 热重载指令——CLI 通道（--run/--script）支持：reload quick|text|mau|cs|config [dll]（主线程直执——ExecuteReload 事务三段式）
+            if (line.StartsWith("reload ", StringComparison.Ordinal))
+            {
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    Console.WriteLine(ExecuteReload(line.Substring(7).Trim()));
+                }
+                else
+                {
+                    Console.WriteLine("[CH4.Entry] reload 仅主线程执行——CLI 通道使用");
+                }
+                return true;
+            }
             // P9.3 多猫管理指令族——主线程直执 / HTTP 线程入队泵（ThreadGuard：注册表仅主线程触碰）
             // M3 catcfg.apply 同族路由（每猫配置运行时生效——HTTP 端点落盘后入队）
             if (line.StartsWith("cat.", StringComparison.Ordinal) || line.StartsWith("catcfg.", StringComparison.Ordinal))
@@ -399,9 +412,17 @@ namespace CH4
                     return false;
                 }
             }
-            if (!IsFlowIdle(_quickHandle) || !IsFlowIdle(_devHandle))
+            if (!IsFlowIdle(_quickHandle))
             {
                 return false;
+            }
+            // R0.2 工具组 Flow 全部 Idle 判定——遍历句柄表（TextCat/MauCat/CsCat/ConfigCat）
+            foreach (KeyValuePair<string, FlowHandle> kv in _toolFlowHandles)
+            {
+                if (!IsFlowIdle(kv.Value))
+                {
+                    return false;
+                }
             }
             // OA 无未完成工单——三 Cat Idle 但工单 Open = 接单窗口期（QuickCat 探测壳 1 帧延迟），不得判空闲提前退出
             OAView view = _oa.GetSnapshot();

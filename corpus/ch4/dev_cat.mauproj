@@ -1,9 +1,0 @@
-// dev_cat.mauproj —— DevCat 组（P8 二期 OA 工具执行 Cat——TEXT/MAU/CS/CONFIG 四工具域认领）
-// 2026-08-25 拆分：dev_cat.mau 277 行按工具域拆 4 文件（text 4 线 / mau 3 线 / cs 9 线 / config 4 线）
-组: DevCat
-版本: 0.2
-引用: Mau.Development, Mau.Translator
-文件: dev_text.mau
-文件: dev_mau.mau
-文件: dev_cs.mau
-文件: dev_config.mau

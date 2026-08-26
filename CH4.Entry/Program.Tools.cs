@@ -28,7 +28,7 @@ namespace CH4
         {
             if (_allToolNames == null)
             {
-                ToolSpec[] specs = BuildToolSpecs();
+                ToolSpec[] specs = ToolRegistry.BuildSpecs();
                 _allToolNames = new string[specs.Length];
                 for (int i = 0; i < specs.Length; i++)
                 {
@@ -123,7 +123,7 @@ namespace CH4
         /// <returns>裁剪后工具数组；名单空 → 全量</returns>
         private static ToolSpec[] FilterToolSpecs(string[] names)
         {
-            ToolSpec[] all = BuildToolSpecs();
+            ToolSpec[] all = ToolRegistry.BuildSpecs();
             if (names == null || names.Length == 0)
             {
                 return all;
@@ -175,7 +175,11 @@ namespace CH4
                 new ToolSpec("config-set", "配置写入——仅 schema 声明且 writable=true 的项（白名单+值域校验+原子写+失败回滚）；llm.* 私密环境变量只读", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键\"},\"value\":{\"type\":\"string\",\"description\":\"新值（掩码值拒绝）\"}},\"required\":[\"key\",\"value\"]}"),
                 new ToolSpec("config-reset", "配置还原默认——key 空=全群 writable 项还原 schema default；key 非空=单项", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"配置键（空=全群）\"}},\"required\":[]}"),
                 // M4a——Note 轻量任务追踪（Cat 内置工具——会话内直执；CH2 同款定义）
-                new ToolSpec("Note", "轻量任务追踪器（内存存储，会话关闭即消失）。无参数=推进到下一条；action='set'+content='任务1\\n任务2'=写入新计划（已有未完成需force=true强制覆盖）。返回当前第X/Y条 已完成Z 待完成W 任务目标：... 最后一条时追加提示（已是最后一条需求，完成后可结束本轮）。全部完成后自动清空。剩余1条时引擎不自动拉起。", "{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\",\"description\":\"set=写入新计划，不传=推进\"},\"content\":{\"type\":\"string\",\"description\":\"action=set时必填，\\n分割\"},\"force\":{\"type\":\"boolean\",\"description\":\"覆盖已有未完成计划时传true\"}},\"required\":[]}")
+                new ToolSpec("Note", "轻量任务追踪器（内存存储，会话关闭即消失）。无参数=推进到下一条；action='set'+content='任务1\\n任务2'=写入新计划（已有未完成需force=true强制覆盖）。返回当前第X/Y条 已完成Z 待完成W 任务目标：... 最后一条时追加提示（已是最后一条需求，完成后可结束本轮）。全部完成后自动清空。剩余1条时引擎不自动拉起。", "{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\",\"description\":\"set=写入新计划，不传=推进\"},\"content\":{\"type\":\"string\",\"description\":\"action=set时必填，\\n分割\"},\"force\":{\"type\":\"boolean\",\"description\":\"覆盖已有未完成计划时传true\"}},\"required\":[]}"),
+                // R1.1/R1.2——内置工具（会话内直执——无需 OA；R0.2 分层：内置 vs OA 双轨）
+                new ToolSpec("time", "当前系统日期时间（yyyy-MM-dd HH:mm:ss）——会话内直执，无需 OA", "{\"type\":\"object\",\"properties\":{}}"),
+                new ToolSpec("random", "生成 [min, max) 范围内的随机整数（min 含下限，max 不含上限，要求 min < max）——会话内直执，无需 OA", "{\"type\":\"object\",\"properties\":{\"min\":{\"type\":\"integer\",\"description\":\"随机范围下限（含）\"},\"max\":{\"type\":\"integer\",\"description\":\"随机范围上限（不含）\"}},\"required\":[\"min\",\"max\"]}"),
+                new ToolSpec("info", "查看运行时工具注册表——工具清单/参数/归属工具组 Flow/内置状态（agent 的眼睛；R1.2）", "{\"type\":\"object\",\"properties\":{}}")
             };
             return specs;
         }

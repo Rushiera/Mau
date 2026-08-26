@@ -28,7 +28,7 @@ h2 { font-size: 12px; color: #4ec9b0; margin: 10px 12px 6px 12px; font-weight: n
 .cat-type { color: #6a6a6a; font-size: 11px; background: #1f1f1f; border: 1px solid #2a2a2a; border-radius: 3px; padding: 1px 5px; }
 .cat-faulted { color: #f48771; font-size: 12px; }
 .cat-states { color: #d4d4d4; font-size: 12px; margin-bottom: 6px; }
-.cat-desc { color: #4ec9b0; font-size: 12px; margin-bottom: 2px; word-break: break-all; }
+.cat-desc { color: #4ec9b0; font-size: 12px; margin-bottom: 6px; word-break: break-all; background: #0f2a24; border: 1px solid #2a5a4e; border-left: 3px solid #4ec9b0; border-radius: 4px; padding: 4px 8px; }
 .cat-row { font-size: 11px; color: #8a8a8a; margin-top: 2px; word-break: break-all; }
 .cat-row .k { color: #6a9955; }
 .sen-on { color: #4ec9b0; }
@@ -123,3 +123,36 @@ h2 { font-size: 12px; color: #4ec9b0; margin: 10px 12px 6px 12px; font-weight: n
 /* 单向数据流改造——插话队列显示区（正常流堆叠——有排队消息显示/无则隐藏） */
 #chatPendingPanel { border-top: 1px solid #222; background: #101010; font-size: 11px; padding: 5px 12px; color: #9a9a9a; }
 #chatPendingPanel:empty { display: none; }
+
+/* ── 会话状态（外观层 v2——Majordomo + 多猫四相环预览）── */
+.session-list { padding: 0 12px 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+.session-card { border: 1px solid #2a2a2a; border-radius: 6px; padding: 8px 10px; background: #1d1d1d; }
+.session-head { display: flex; align-items: center; gap: 8px; }
+.session-name { color: #569cd6; font-size: 12px; font-weight: bold; }
+.session-badge { font-size: 10px; padding: 2px 8px; border-radius: 8px; }
+.ph-Idle { background: #3a3a3a; color: #9a9a9a; }
+.ph-LlmRunning { background: #569cd6; color: #fff; }
+.ph-ToolBatchRunning { background: #dcdcaa; color: #141414; }
+.ph-Done { background: #4ec9b0; color: #141414; }
+.session-note { color: #dcdcaa; font-size: 10px; }
+.session-info { color: #6a6a6a; font-size: 11px; margin-top: 3px; }
+.session-empty { color: #4a4a4a; font-size: 11px; padding: 4px 12px; }
+
+/* ── 工具注册表（外观层 v2——按组分类 chips）── */
+#toolreg { padding: 0 12px 8px 12px; }
+.tool-group { margin-bottom: 6px; }
+.tool-group-name { color: #6a9955; font-size: 11px; margin-right: 6px; }
+.tool-chip { display: inline-block; font-size: 10px; color: #d4d4d4; background: #1f1f1f; border: 1px solid #2a2a2a; border-radius: 8px; padding: 1px 7px; margin: 2px 3px 0 0; }
+
+/* ── 盒子截面（外观层 v2——分组折叠 + 类型着色）── */
+#boxes { padding: 0 12px 20px 12px; }
+.box-group { margin-bottom: 6px; }
+.box-group-head { font-size: 11px; color: #ce9178; cursor: pointer; padding: 3px 6px; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px; user-select: none; margin-top: 4px; }
+.box-group-head:hover { background: #242424; }
+.box-item { font-size: 11px; padding: 2px 6px 2px 14px; word-break: break-all; }
+.box-bool-on { color: #4ec9b0; }
+.box-bool-off { color: #4a4a4a; }
+.box-val-b { color: #4ec9b0; font-weight: bold; }
+.box-val-n { color: #4fc1ff; }
+.box-val-s { color: #d4d4d4; }
+.box-val-o { color: #c586c0; }

@@ -35,14 +35,14 @@ namespace CH4
         /// <summary>QuickCat Flow 句柄——热重载面</summary>
         private static FlowHandle _quickHandle;
 
-        /// <summary>DevCat Flow 句柄——OA 工具执行 Cat（P8 二期——TOOL 域 7 工具认领）</summary>
-        private static FlowHandle _devHandle;
+        /// <summary>工具组 Flow 句柄表——按 Flow 名索引（R0.2：TextCat/MauCat/CsCat/ConfigCat 独立 Flow——独立热重载/独立退役）</summary>
+        private static readonly Dictionary<string, FlowHandle> _toolFlowHandles = new Dictionary<string, FlowHandle>();
 
         /// <summary>注册 ID——观测与回收用</summary>
         private static long _quickId;
 
-        /// <summary>DevCat 注册 ID——观测与回收用</summary>
-        private static long _devId;
+        /// <summary>工具组 Flow 注册 ID 表——按 Flow 名索引（观测与回收用）</summary>
+        private static readonly Dictionary<string, long> _toolFlowIds = new Dictionary<string, long>();
 
         /// <summary>命令总线——Command 投递器直接引用（SetText 面）</summary>
         private static CommandBus _bus;
@@ -194,26 +194,14 @@ private static HttpHost _httpHost;
             {
                 Console.WriteLine(line);
             };
-            // [段4] 语料加载——Quick（正式工具）+ DevCat（P8 二期 OA 工具执行 Cat）——ToolTest/IOTest/MajorDomo 退役删除（2026-08-19 拍板；会话中枢在宿主 ChatBridge——语料无承载）
-            // DevCat 容错降级：加载失败 → 警告 + 空句柄（工具工单无人认领 → 宿主 FALLBACK 直执保底——负例路径合法化）
+            // [段4] 语料加载——QuickCat（CLI 问答消费者）+ 4 工具组 Flow（R0.2：TextCat/MauCat/CsCat/ConfigCat——独立注册/独立热重载/独立退役）
+            // 工具组容错降级：加载失败 → 警告 + 跳过注册（该组工具工单无人认领 → 宿主 FALLBACK 直执保底——负例路径合法化）
             _quickHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_QuickCat.dll"));
-            try
-            {
-                _devHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_DevCat.dll"));
-            }
-            catch (Exception exDev)
-            {
-                Console.WriteLine("[CH4.Entry] 警告: FL_DevCat.dll 加载失败——工具执行降级 FALLBACK 直执: " + exDev.Message);
-            }
             _quickId = _runner.RegisterFlow(_quickHandle.Flow, "QuickCat");
-            if (_devHandle != null)
-            {
-                _devId = _runner.RegisterFlow(_devHandle.Flow, "DevCat");
-            }
-            else
-            {
-                _devId = -1;
-            }
+            LoadToolGroup("TextCat", dllDir);
+            LoadToolGroup("MauCat", dllDir);
+            LoadToolGroup("CsCat", dllDir);
+            LoadToolGroup("ConfigCat", dllDir);
             // [段5] 会话面——上下文 + 前文恢复 + 工具定义 + 默认会话注册（P9.1 会话对象化：ChatSession 承载状态机——design-llm-streaming §六）
             ChatContext chatCtx = new ChatContext();
             SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo.json"));
@@ -248,6 +236,8 @@ private static HttpHost _httpHost;
                     defaultToolNames = defaultCfg.ToolNames;
                 }
             }
+            // R0.2 工具注册表——静态表灌入（声明单一真相源 = 注册表；须在声明面裁剪前 Init——FilterToolSpecs 消费注册表）
+            ToolRegistry.Init(BuildToolSpecs());
             // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）；session.new 重注入复用
             _defaultToolSpecs = FilterToolSpecs(ResolveToolNames(defaultToolNames));
             _defaultApiConfigId = defaultApiConfigId;
@@ -263,7 +253,7 @@ private static HttpHost _httpHost;
                 chatCtx.SetSystemPrompt(injectPrompt);
                 Console.WriteLine("[CH4.Entry] 新会话注入: " + _defaultInjectList.Length.ToString() + " 个文件");
             }
-            _tools = BuildToolSpecs();
+            _tools = ToolRegistry.BuildSpecs();
             // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面；M2c 声明面按猫裁剪）
             _defaultSession = new ChatSession(DateTime.Now.Ticks.ToString(), "majordomo", chatCtx, chatStore,
                 new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _defaultToolSpecs, ExecuteTool);
@@ -304,7 +294,7 @@ private static HttpHost _httpHost;
             }
             DataBox.Set<string>("global", "workspace.roots", rootSummary.ToString());
             LogStore.Add("CH4.Entry", 1, "workspace.load | roots=" + workspace.Roots.Length.ToString() + " | inject=" + workspace.Inject.Length.ToString() + " | " + rootSummary.ToString(), "CONFIG");
-            Console.WriteLine("[CH4.Entry] 就绪 | 两 Cat: QuickCat#" + _quickId + " DevCat#" + _devId + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
+            Console.WriteLine("[CH4.Entry] 就绪 | Flows: QuickCat#" + _quickId + " " + ToolGroupSummary() + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
             // P9.3 多实例化签名——sessionId 归属默认会话；catsBuilder 多猫列表（管理页签数据源）；主端口服务 index.html
             _httpHost = HttpHost.Start(ResolveHttpPort(llmConfig), _defaultSession.Id, BuildSnapshotJson, DispatchCommand, BuildCompactFrameJson, (int max) => BuildHistoryView(_defaultSession, max), BuildCatsJson, () => _defaultSession.BuildNoteJson(), BuildPatchJson, false);
@@ -312,6 +302,92 @@ private static HttpHost _httpHost;
             // [段6b] 启动扫描——sessions/*/cat.cfg 中 running 猫拉起（主 HTTP 就位后——每猫 HttpHost 独立实例）
             LoadCatsOnBoot();
             Console.WriteLine("[CH4.Entry] HTTP 外观层就绪: http://127.0.0.1:" + _httpHost.Port);
+        }
+        /// <summary>
+        /// 环境信息——运行版本 + LLM 端点类型 + 当前时间（info 内置工具数据源；R0.2 拍板：不显示工具组清单——工具注册是前文初始化一次性）
+        /// </summary>
+        /// <returns>环境信息文本</returns>
+        internal static string BuildEnvInfo()
+        {
+            string version = "?";
+            try
+            {
+                System.Reflection.Assembly asm = System.Reflection.Assembly.GetEntryAssembly();
+                if (asm != null)
+                {
+                    System.Reflection.AssemblyName an = asm.GetName();
+                    if (an.Version != null)
+                    {
+                        version = an.Version.ToString(3);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                version = "?";
+            }
+            string llmInfo = "未配置";
+            try
+            {
+                CH_LlmApiConfig cfg = _apiStore.ResolveDefault();
+                if (cfg != null)
+                {
+                    string endpoint = cfg.Endpoint;
+                    if (endpoint.Length > 0)
+                    {
+                        // 端点摘要——协议 + 主机（去路径尾斜杠；端点非私密——key 在 secrets 面）
+                        endpoint = endpoint.Replace("https://", "").Replace("http://", "");
+                        int slash = endpoint.IndexOf('/');
+                        if (slash > 0)
+                        {
+                            endpoint = endpoint.Substring(0, slash);
+                        }
+                    }
+                    llmInfo = cfg.ApiType + " | " + endpoint + " | model=" + cfg.DefaultModel;
+                }
+            }
+            catch (Exception)
+            {
+                llmInfo = "读取失败";
+            }
+            string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            return "CH4 v" + version + " | LLM: " + llmInfo + " | " + now;
+        }
+        /// <summary>
+        /// 工具组 Flow 摘要——就绪打印用（"TextCat#2 MauCat#3 ..."；未加载组省略）
+        /// </summary>
+        /// <returns>摘要文本</returns>
+        private static string ToolGroupSummary()
+        {
+            string text = "";
+            foreach (KeyValuePair<string, long> kv in _toolFlowIds)
+            {
+                if (text.Length > 0)
+                {
+                    text = text + " ";
+                }
+                text = text + kv.Key + "#" + kv.Value;
+            }
+            return text;
+        }
+        /// <summary>
+        /// 加载工具组 Flow——Load dll + RegisterFlow + 存句柄表（R0.2 工具组独立注册/独立热重载/独立退役；失败警告 + 跳过——FALLBACK 保底）
+        /// </summary>
+        /// <param name="flowName">工具组 Flow 名（TextCat/MauCat/CsCat/ConfigCat——dll = FL_&lt;名&gt;.dll）</param>
+        /// <param name="dllDir">语料 dll 目录</param>
+        private static void LoadToolGroup(string flowName, string dllDir)
+        {
+            try
+            {
+                FlowHandle handle = FlowHandle.Load(Path.Combine(dllDir, "FL_" + flowName + ".dll"));
+                long id = _runner.RegisterFlow(handle.Flow, flowName);
+                _toolFlowHandles[flowName] = handle;
+                _toolFlowIds[flowName] = id;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CH4.Entry] 警告: FL_" + flowName + ".dll 加载失败——该组工具降级 FALLBACK 直执: " + ex.Message);
+            }
         }
         /// <summary>
         /// 定位语料 dll 目录——参数 -dll 指定，否则默认仓库根 public/app/Flows（统一构筑链部署区）；无仓库根回退 CatTemp/ch4_build

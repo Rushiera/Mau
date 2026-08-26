@@ -5,7 +5,12 @@
 var metaEl = document.getElementById('meta');
 var catsEl = document.getElementById('cats');
 var oaEl = document.getElementById('oa');
-var boxesBody = document.querySelector('#boxes tbody');
+var boxesEl = document.getElementById('boxes');
+var sessionsEl = document.getElementById('sessions');
+var toolregEl = document.getElementById('toolreg');
+var boxFilterEl = document.getElementById('boxFilter');
+var boxCountEl = document.getElementById('boxCount');
+boxFilterEl.addEventListener('input', function () { renderBoxFiltered(); });
 var logEvents = document.getElementById('logevents');
 var logFilterEl = document.getElementById('logFilter');
 var rawJsonEl = document.getElementById('rawJson');
@@ -89,6 +94,7 @@ function applyPatch(p) {
     if (!fullSnapshot) { return; }                    // 全量未到——忽略（helloFrame 会来）
     if (p.frame <= fullSnapshot.frame) { return; }    // 过期帧忽略
     if (p.cats) { fullSnapshot.cats = p.cats; }
+    if (p.sessions) { fullSnapshot.sessions = p.sessions; }
     if (p.oa) { fullSnapshot.oa = p.oa; }
     if (p.boxes) {
         var map = {};
@@ -120,6 +126,8 @@ function applySnapshot(s) {
     lastFrame = s.frame;
     metaEl.textContent = 'pid=' + s.pid + ' frame=' + s.frame + ' version=' + s.version;
     renderCats(s.cats);
+    renderSessions(s.sessions || []);
+    renderTools(s.tools || []);
     oaEl.textContent = 'Open=' + s.oa.open + ' Work=' + s.oa.work + ' Closed=' + s.oa.closed + ' Timeout=' + s.oa.timeout;
     renderBoxes(s.boxes || []);
     if (!rawPaused) {
@@ -159,19 +167,19 @@ function renderCats(cats) {
             card.appendChild(fault);
         } else {
             var st = c.status || {};
-            // 状态机行
-            var states = document.createElement('div');
-            states.className = 'cat-states';
-            states.textContent = (st.stateLines || []).join('  ');
-            card.appendChild(states);
-            // 自述行——实体声音（多行自由形态；自述是输出不是输入）
-            var descs = st.desc || [];
+            // 自述行——实体声音（状态前醒目展示——先听它说什么，再看细节；多行自由形态；desc 在 cats[i] 顶层非 status）
+            var descs = c.desc || [];
             for (var j = 0; j < descs.length; j++) {
                 var d = document.createElement('div');
                 d.className = 'cat-desc';
                 d.textContent = descs[j];
                 card.appendChild(d);
             }
+            // 状态机行
+            var states = document.createElement('div');
+            states.className = 'cat-states';
+            states.textContent = (st.stateLines || []).join('  ');
+            card.appendChild(states);
             // 传感器行——信号真相（bool 着色）
             var sens = (st.sensors || []).map(function (x) {
                 var span = document.createElement('span');
@@ -210,23 +218,176 @@ function appendRow(card, label, spans) {
     card.appendChild(row);
 }
 
-// [段6] 盒子渲染——textContent（值可能来自文件内容——XSS 禁地）
+// [段6] 盒子渲染——分组折叠 + 类型着色 + 过滤（外观层重构；textContent 防 XSS）
+var boxGroupsCache = { groups: {}, order: [] };
+
 function renderBoxes(boxes) {
-    boxesBody.textContent = '';
-    for (var i = 0; i < boxes.length; i++) {
-        var b = boxes[i];
-        var tr = document.createElement('tr');
-        var td1 = document.createElement('td');
-        td1.className = 'box-key';
-        td1.textContent = b.scope + '.' + b.key;
-        var td2 = document.createElement('td');
-        td2.className = 'box-tag';
-        td2.textContent = b.t;
-        var td3 = document.createElement('td');
-        td3.className = 'box-val';
-        td3.textContent = String(b.value);
-        tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
-        boxesBody.appendChild(tr);
+    // FlowId → Flow 名映射（cats 段——数字 scope 显示为 Flow 名）
+    var flowMap = {};
+    if (fullSnapshot && fullSnapshot.cats) {
+        for (var i = 0; i < fullSnapshot.cats.length; i++) {
+            flowMap[String(fullSnapshot.cats[i].id)] = fullSnapshot.cats[i].name;
+        }
+    }
+    // 按 scope 分组——global 优先；数字 scope 映射 Flow 名；其余原样
+    var groups = {};
+    var order = [];
+    for (var j = 0; j < boxes.length; j++) {
+        var b = boxes[j];
+        var gName = b.scope;
+        if (gName === 'global') {
+            gName = 'global';
+        } else if (flowMap[gName]) {
+            gName = flowMap[gName];
+        }
+        if (!groups[gName]) {
+            groups[gName] = [];
+            order.push(gName);
+        }
+        groups[gName].push(b);
+    }
+    boxGroupsCache = { groups: groups, order: order };
+    renderBoxFiltered();
+}
+
+// 盒子过滤渲染——按 #boxFilter 输入过滤（key/scope 包含匹配）+ 组折叠
+function renderBoxFiltered() {
+    var filter = boxFilterEl.value;
+    boxesEl.textContent = '';
+    var total = 0;
+    var groups = boxGroupsCache.groups || {};
+    var order = boxGroupsCache.order || [];
+    for (var i = 0; i < order.length; i++) {
+        var gName = order[i];
+        var items = groups[gName];
+        var kept = [];
+        for (var k = 0; k < items.length; k++) {
+            if (filter === '' || (items[k].scope + '.' + items[k].key).indexOf(filter) >= 0) {
+                kept.push(items[k]);
+            }
+        }
+        if (kept.length === 0) {
+            continue;
+        }
+        total = total + kept.length;
+        var head = document.createElement('div');
+        head.className = 'box-group-head';
+        head.textContent = '▾ ' + gName + '（' + kept.length + '）';
+        head._open = true;
+        head._gname = gName;
+        head._kept = kept;
+        var body = document.createElement('div');
+        body.className = 'box-group-body';
+        for (var m = 0; m < kept.length; m++) {
+            body.appendChild(buildBoxItem(kept[m]));
+        }
+        head.addEventListener('click', function () {
+            this._open = !this._open;
+            this.textContent = (this._open ? '▾ ' : '▸ ') + this._gname + '（' + this._kept.length + '）';
+            var b = this.nextSibling;
+            if (b) {
+                b.style.display = this._open ? '' : 'none';
+            }
+        });
+        boxesEl.appendChild(head);
+        boxesEl.appendChild(body);
+    }
+    boxCountEl.textContent = '共 ' + total + ' 条';
+}
+
+// 单盒子条目——类型着色（b bool ●○ / n number / s string / o object）
+function buildBoxItem(b) {
+    var row = document.createElement('div');
+    row.className = 'box-item';
+    if (b.t === 'b') {
+        var dot = document.createElement('span');
+        dot.className = (b.value === true) ? 'box-bool-on' : 'box-bool-off';
+        dot.textContent = (b.value === true) ? '● ' : '○ ';
+        row.appendChild(dot);
+    }
+    var key = document.createElement('span');
+    key.className = 'box-key';
+    key.textContent = b.scope + '.' + b.key + ' = ';
+    var val = document.createElement('span');
+    val.className = 'box-val-' + b.t;
+    val.textContent = String(b.value);
+    row.appendChild(key);
+    row.appendChild(val);
+    return row;
+}
+
+// [段6b] 会话状态渲染——Majordomo + 多猫四相环预览（快照 sessions 段）
+function renderSessions(sessions) {
+    sessionsEl.textContent = '';
+    if (!sessions || sessions.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'session-empty';
+        empty.textContent = '无活跃会话';
+        sessionsEl.appendChild(empty);
+        return;
+    }
+    for (var i = 0; i < sessions.length; i++) {
+        var s = sessions[i];
+        var card = document.createElement('div');
+        card.className = 'session-card';
+        var head = document.createElement('div');
+        head.className = 'session-head';
+        var name = document.createElement('span');
+        name.className = 'session-name';
+        name.textContent = s.name;
+        head.appendChild(name);
+        var badge = document.createElement('span');
+        badge.className = 'session-badge ph-' + (s.phase || 'Idle');
+        badge.textContent = s.phase || 'Idle';
+        head.appendChild(badge);
+        if (s.noteActive) {
+            var noteTag = document.createElement('span');
+            noteTag.className = 'session-note';
+            noteTag.textContent = '📋 Note';
+            head.appendChild(noteTag);
+        }
+        card.appendChild(head);
+        var info = document.createElement('div');
+        info.className = 'session-info';
+        info.textContent = '轮次 ' + s.round + ' · 消息 ' + s.msgCount + ' · 待处理 ' + s.pending;
+        card.appendChild(info);
+        sessionsEl.appendChild(card);
+    }
+}
+
+// [段6c] 工具注册表渲染——按组分类 chips（快照 tools 段）
+function renderTools(tools) {
+    toolregEl.textContent = '';
+    if (!tools || tools.length === 0) {
+        return;
+    }
+    var groups = {};
+    var order = [];
+    for (var i = 0; i < tools.length; i++) {
+        var t = tools[i];
+        var gName = t.builtin ? '内置' : (t.group || '其他');
+        if (!groups[gName]) {
+            groups[gName] = [];
+            order.push(gName);
+        }
+        groups[gName].push(t.name);
+    }
+    for (var g = 0; g < order.length; g++) {
+        var gn = order[g];
+        var names = groups[gn];
+        var block = document.createElement('div');
+        block.className = 'tool-group';
+        var head = document.createElement('span');
+        head.className = 'tool-group-name';
+        head.textContent = gn + '（' + names.length + '）';
+        block.appendChild(head);
+        for (var n = 0; n < names.length; n++) {
+            var chip = document.createElement('span');
+            chip.className = 'tool-chip';
+            chip.textContent = names[n];
+            block.appendChild(chip);
+        }
+        toolregEl.appendChild(block);
     }
 }
 

@@ -259,9 +259,35 @@ namespace CH4
             if (System.IO.File.Exists(htmlPath))
             {
                 string html = System.IO.File.ReadAllText(htmlPath);
+                // 前端版本号注入——__V__ 占位符替换为程序集版本（cache-busting：版本变化 URL 变 → 浏览器强制拉新；治缓存纠结）
+                html = html.Replace("__V__", GetFrontendVersion());
                 return Results.Text(html, "text/html");
             }
             return Results.Text("CH4 外观层——" + fileName + " 未找到: " + htmlPath + "（宿主需在 CH4.Entry/bin/.../html/ 放置静态页）", "text/plain");
+        }
+
+        /// <summary>
+        /// 前端版本号——程序集版本 3 段（index/chat 静态资源 cache-busting；失败回退 "0"）
+        /// </summary>
+        /// <returns>版本串（如 0.51.0）</returns>
+        private static string GetFrontendVersion()
+        {
+            try
+            {
+                System.Reflection.Assembly asm = System.Reflection.Assembly.GetEntryAssembly();
+                if (asm != null)
+                {
+                    System.Reflection.AssemblyName an = asm.GetName();
+                    if (an.Version != null)
+                    {
+                        return an.Version.ToString(3);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+            return "0";
         }
 
         /// <summary>
