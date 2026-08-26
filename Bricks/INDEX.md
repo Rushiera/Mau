@@ -40,6 +40,7 @@
 | BRIK-TEXT-002 | text.write | TEXT | TEXT/BRIK-TEXT-002_text.write.cs | 无 | active |  |
 | BRIK-TEXT-003 | text.append | TEXT | TEXT/BRIK-TEXT-003_text.append.cs | 无 | active |  |
 | BRIK-TEXT-004 | text.replace | TEXT | TEXT/BRIK-TEXT-004_text.replace.cs | 无 | active |  |
+| BRIK-WEB-001 | web.search | WEB | WEB/BRIK-WEB-001_web.search.cs | 无 | active |  |
 
 ---
 

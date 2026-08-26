@@ -58,7 +58,7 @@ namespace CH4
                 name = ToolFlowName(cat);
                 if (name.Length == 0 || !_toolFlowHandles.TryGetValue(name, out oldHandle))
                 {
-                    string badMsg = "[CH4.Entry] reload 目标无效——quick|text|mau|cs|config";
+                    string badMsg = "[CH4.Entry] reload 目标无效——quick|text|mau|cs|config|search";
                     Console.WriteLine(badMsg);
                     sb.AppendLine(badMsg);
                     return sb.ToString();
@@ -217,6 +217,10 @@ namespace CH4
             if (cat == "config")
             {
                 return "ConfigCat";
+            }
+            if (cat == "search")
+            {
+                return "SearchCat";
             }
             return "";
         }

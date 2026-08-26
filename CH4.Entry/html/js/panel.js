@@ -146,6 +146,12 @@ function renderApiRow(api) {
     tdName.style.color = '#c586c0';
     if (api.isDefault) { tdName.textContent = '★ ' + tdName.textContent; }
     tr.appendChild(tdName);
+    var tdId = document.createElement('td');
+    tdId.textContent = api.apiConfigId || '';
+    tdId.style.color = '#6a6a6a';
+    tdId.style.fontSize = '10px';
+    tdId.style.wordBreak = 'break-all';
+    tr.appendChild(tdId);
     var tdType = document.createElement('td');
     tdType.textContent = api.apiType || '';
     tr.appendChild(tdType);

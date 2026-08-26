@@ -1,6 +1,6 @@
 ﻿{
   "version": 3,
-  "generatedAt": "2026-08-26T06:47:47Z",
+  "generatedAt": "2026-08-26T12:27:50Z",
   "packages": ["Microsoft.CodeAnalysis.CSharp@4.11.0"],
   "bricks": [
     {"id":"BRIK-DATA-001","name":"data.box_set_str","category":"DATA","path":"DATA/BRIK-DATA-001_data.box_set_str.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.DataBoxSetStrBrick.SetStr","inputs":[{"name":"scope","type":"string"},{"name":"key","type":"string"},{"name":"value","type":"string"}],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},
@@ -35,6 +35,7 @@
     {"id":"BRIK-TEXT-001","name":"text.read","category":"TEXT","path":"TEXT/BRIK-TEXT-001_text.read.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.TextReadBrick.Read","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}},
     {"id":"BRIK-TEXT-002","name":"text.write","category":"TEXT","path":"TEXT/BRIK-TEXT-002_text.write.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.TextWriteBrick.Write","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}},
     {"id":"BRIK-TEXT-003","name":"text.append","category":"TEXT","path":"TEXT/BRIK-TEXT-003_text.append.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.TextAppendBrick.Append","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}},
-    {"id":"BRIK-TEXT-004","name":"text.replace","category":"TEXT","path":"TEXT/BRIK-TEXT-004_text.replace.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.TextReplaceBrick.Replace","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}}
+    {"id":"BRIK-TEXT-004","name":"text.replace","category":"TEXT","path":"TEXT/BRIK-TEXT-004_text.replace.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.TextReplaceBrick.Replace","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}},
+    {"id":"BRIK-WEB-001","name":"web.search","category":"WEB","path":"WEB/BRIK-WEB-001_web.search.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.WebSearchBrick.Search","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}}
   ]
 }

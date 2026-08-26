@@ -179,7 +179,9 @@ namespace CH4
                 // R1.1/R1.2——内置工具（会话内直执——无需 OA；R0.2 分层：内置 vs OA 双轨）
                 new ToolSpec("time", "当前系统日期时间（yyyy-MM-dd HH:mm:ss）——会话内直执，无需 OA", "{\"type\":\"object\",\"properties\":{}}"),
                 new ToolSpec("random", "生成 [min, max) 范围内的随机整数（min 含下限，max 不含上限，要求 min < max）——会话内直执，无需 OA", "{\"type\":\"object\",\"properties\":{\"min\":{\"type\":\"integer\",\"description\":\"随机范围下限（含）\"},\"max\":{\"type\":\"integer\",\"description\":\"随机范围上限（不含）\"}},\"required\":[\"min\",\"max\"]}"),
-                new ToolSpec("info", "查看运行时工具注册表——工具清单/参数/归属工具组 Flow/内置状态（agent 的眼睛；R1.2）", "{\"type\":\"object\",\"properties\":{}}")
+                new ToolSpec("info", "查看运行时工具注册表——工具清单/参数/归属工具组 Flow/内置状态（agent 的眼睛；R1.2）", "{\"type\":\"object\",\"properties\":{}}"),
+                // R2.1——web-search 联网搜索（OA 工具——SearchCat 工具组 Flow 认领；服务端自动执行全链）
+                new ToolSpec("web-search", "联网搜索——检索并返回基于搜索结果的回答（引用标注 [citation:x] 对应搜索结果序号）；搜索 API 需在配置区先配置", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"搜索查询\"}},\"required\":[\"query\"]}")
             };
             return specs;
         }
@@ -223,6 +225,10 @@ namespace CH4
             {
                 return ExecHostReload(argsJson);
             }
+            if (name == "web-search")
+            {
+                return ExecWebSearch(argsJson);
+            }
             if (name.StartsWith("cs-", StringComparison.Ordinal))
             {
                 return ExecCSharpTool(name, argsJson);
@@ -252,6 +258,26 @@ namespace CH4
                 return "ERR|BRIDGE_FAIL|cs-" + method + " 调用失败（" + (result ?? "空结果") + "）";
             }
             return TrimResult(result, MaxToolResultChars);
+        }
+
+        /// <summary>
+        /// web-search——联网搜索（R2.1；FALLBACK 直执保底面——主路径 SearchCat Flow 认领）
+        /// </summary>
+        /// <param name="argsJson">工具参数 JSON（query）</param>
+        /// <returns>搜索回答（失败 ERR| 前缀）</returns>
+        private static string ExecWebSearch(string argsJson)
+        {
+            string query = ExtractArg(argsJson, "query");
+            if (query.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 query";
+            }
+            Mau.Runtime.IWebSearchService service;
+            if (!DataBox.TryResolve<Mau.Runtime.IWebSearchService>(out service))
+            {
+                return "ERR|WEB_NO_SERVICE|宿主未注入 IWebSearchService";
+            }
+            return TrimResult(service.Search(query), MaxToolResultChars);
         }
     }
 }

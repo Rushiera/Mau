@@ -148,6 +148,10 @@ namespace CH4
             {
                 return "ConfigCat";
             }
+            if (name.StartsWith("web-", StringComparison.Ordinal))
+            {
+                return "SearchCat";
+            }
             return "";
         }
     }
