@@ -21,8 +21,7 @@ namespace CH4
         private static string BuildCompactFrameJson()
         {
             List<object> cats = new List<object>();
-            AppendCatCompact(cats, "QuickCat", _quickHandle);
-            AppendCatCompact(cats, "DevCat", _devHandle);
+            AppendRegistryCatsCompact(cats);
             OAView oa = _oa.GetSnapshot();
             string chatState = "";
             string cs;
@@ -48,24 +47,25 @@ namespace CH4
         }
 
         /// <summary>
-        /// 单 Cat 紧凑状态——状态行拼接（帧流一行体积控制）
+        /// 单 Flow 紧凑状态——状态行拼接（帧流一行体积控制；名字来自注册表）
         /// </summary>
         /// <param name="cats">目标列表</param>
-        /// <param name="name">Cat 名</param>
-        /// <param name="handle">Flow 句柄</param>
-        private static void AppendCatCompact(List<object> cats, string name, FlowHandle handle)
+        /// <param name="entry">注册表条目</param>
+        /// <param name="flow">Flow 实例（可 null 防御）</param>
+        private static void AppendFlowCompact(List<object> cats, FlowEntry entry, IFlow flow)
         {
-            if (handle == null)
+            if (flow == null)
             {
-                cats.Add(new { n = name, s = "-" });
+                cats.Add(new { n = entry.Name, s = "-" });
                 return;
             }
-            if (handle.IsFaulted)
+            IObservableFlow obs = flow as IObservableFlow;
+            if (obs == null)
             {
-                cats.Add(new { n = name, fd = true });
+                cats.Add(new { n = entry.Name, s = "-" });
                 return;
             }
-            FlowStatusV3 status = handle.Flow.GetStatus();
+            FlowStatusV3 status = obs.GetStatus();
             string states = "";
             for (int i = 0; i < status.StateLines.Length; i++)
             {
@@ -75,53 +75,91 @@ namespace CH4
                 }
                 states = states + status.StateLines[i];
             }
-            cats.Add(new { n = name, s = states });
+            cats.Add(new { n = entry.Name, s = states });
         }
 
         /// <summary>
-        /// 单 Cat 快照 JSON 追加——协议 §3.2 cats[].status 四柱映射（FlowStatusV3 → 匿名对象）
+        /// 追加全部 Runtime 实体紧凑状态——从 FlowRegistry 拉取真实实例（替代硬编码）。按注册 ID 排序确定性输出。
         /// </summary>
-        /// <param name = "cats">目标列表</param>
-        /// <param name = "name">Cat 名</param>
-        /// <param name = "id">注册 ID</param>
-        /// <param name = "handle">Flow 句柄</param>
-        private static void AppendCatJson(List<object> cats, string name, long id, FlowHandle handle)
-{
-        if (handle == null)
+        /// <param name="cats">目标列表</param>
+        private static void AppendRegistryCatsCompact(List<object> cats)
         {
-            cats.Add(new { name = name, id = id, faulted = true, faultReason = "未加载（降级）", status = (object)null });
-            return;
-        }
-        if (handle.IsFaulted)
-        {
-            cats.Add(new { name = name, id = id, faulted = true, faultReason = handle.FaultReason, status = (object)null });
-            return;
+            FlowEntry[] entries = _runner.Registry.Entries;
+            Array.Sort(entries, delegate(FlowEntry a, FlowEntry b)
+            {
+                return a.Id.CompareTo(b.Id);
+            });
+            for (int i = 0; i < entries.Length; i++)
+            {
+                IFlow flow = _runner.Registry.Get(entries[i].Id);
+                AppendFlowCompact(cats, entries[i], flow);
+            }
         }
 
-        FlowStatusV3 status = handle.Flow.GetStatus();
-        List<object> sensors = new List<object>();
-        for (int i = 0; i < status.SensorValues.Length; i++)
+        /// <summary>
+        /// 单 Flow 快照 JSON 追加——协议 §3.2 cats[].status 四柱映射（FlowStatusV3 → 匿名对象）。
+        /// 名字/id/type/kind 来自注册表条目——Runtime 真实实例，非业务硬编码。
+        /// </summary>
+        /// <param name="cats">目标列表</param>
+        /// <param name="entry">注册表条目</param>
+        /// <param name="flow">Flow 实例（可 null 防御）</param>
+        private static void AppendFlowJson(List<object> cats, FlowEntry entry, IFlow flow)
         {
-            SignalValueV3 s = status.SensorValues[i];
-            sensors.Add(new { name = s.Name, value = s.Value });
+            if (flow == null)
+            {
+                cats.Add(new { name = entry.Name, id = entry.Id, type = entry.TypeName, kind = entry.Kind, faulted = true, faultReason = "注册表实例缺失", status = (object)null });
+                return;
+            }
+            IObservableFlow obs = flow as IObservableFlow;
+            if (obs == null)
+            {
+                cats.Add(new { name = entry.Name, id = entry.Id, type = entry.TypeName, kind = entry.Kind, faulted = false, faultReason = "无观测面（非 IObservableFlow）", status = (object)null });
+                return;
+            }
+
+            FlowStatusV3 status = obs.GetStatus();
+            List<object> sensors = new List<object>();
+            for (int i = 0; i < status.SensorValues.Length; i++)
+            {
+                SignalValueV3 s = status.SensorValues[i];
+                sensors.Add(new { name = s.Name, value = s.Value });
+            }
+
+            List<object> slots = new List<object>();
+            for (int i = 0; i < status.SlotLevels.Length; i++)
+            {
+                SlotValueV3 s = status.SlotLevels[i];
+                slots.Add(new { name = s.Name, available = s.Available, capacity = s.Capacity });
+            }
+
+            List<object> wires = new List<object>();
+            for (int i = 0; i < status.WireStatuses.Length; i++)
+            {
+                WireStatusV3 w = status.WireStatuses[i];
+                wires.Add(new { name = w.Name, busy = w.Busy, lastTriggerFrame = w.LastTriggerFrame, timedOut = w.TimedOut });
+            }
+
+            cats.Add(new { name = entry.Name, id = entry.Id, type = entry.TypeName, kind = entry.Kind, faulted = false, faultReason = "", status = new { stateLines = status.StateLines, sensors = sensors, slots = slots, wires = wires } });
         }
 
-        List<object> slots = new List<object>();
-        for (int i = 0; i < status.SlotLevels.Length; i++)
+        /// <summary>
+        /// 追加全部 Runtime 实体快照——从 FlowRegistry 拉取真实实例（替代硬编码 QuickCat/DevCat）。
+        /// 任何 RegisterFlow 注册的实例自动出现——状态面板 = Runtime 真实截面。按注册 ID 排序确定性输出。
+        /// </summary>
+        /// <param name="cats">目标列表</param>
+        private static void AppendRegistryCats(List<object> cats)
         {
-            SlotValueV3 s = status.SlotLevels[i];
-            slots.Add(new { name = s.Name, available = s.Available, capacity = s.Capacity });
+            FlowEntry[] entries = _runner.Registry.Entries;
+            Array.Sort(entries, delegate(FlowEntry a, FlowEntry b)
+            {
+                return a.Id.CompareTo(b.Id);
+            });
+            for (int i = 0; i < entries.Length; i++)
+            {
+                IFlow flow = _runner.Registry.Get(entries[i].Id);
+                AppendFlowJson(cats, entries[i], flow);
+            }
         }
-
-        List<object> wires = new List<object>();
-        for (int i = 0; i < status.WireStatuses.Length; i++)
-        {
-            WireStatusV3 w = status.WireStatuses[i];
-            wires.Add(new { name = w.Name, busy = w.Busy, lastTriggerFrame = w.LastTriggerFrame, timedOut = w.TimedOut });
-        }
-
-        cats.Add(new { name = name, id = id, faulted = false, faultReason = "", status = new { stateLines = status.StateLines, sensors = sensors, slots = slots, wires = wires } });
-    }
     /// <summary>
     /// 构建全量快照 JSON——协议 design-ch4-protocol.md §三（version/pid/frame/cats/oa/logs；logs 按 includeLogs 裁剪）
     /// </summary>
@@ -130,8 +168,7 @@ namespace CH4
     private static string BuildSnapshotJson(bool includeLogs)
 {
         List<object> cats = new List<object>();
-        AppendCatJson(cats, "QuickCat", _quickId, _quickHandle);
-        AppendCatJson(cats, "DevCat", _devId, _devHandle);
+        AppendRegistryCats(cats);
         OAView oa = _oa.GetSnapshot();
         // [段1] boxes 字段——DataBox 全量截面（协议 v1.1：新增字段旧端忽略；复杂对象摘要化——内部实现盒子不刷爆快照）
         DataBoxSnapshot boxSnap = DataBox.Capture();
@@ -241,8 +278,7 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
     {
         // [段1] cats 段——整段序列化对比（状态转移才变，频率低）
         List<object> cats = new List<object>();
-        AppendCatJson(cats, "QuickCat", _quickId, _quickHandle);
-        AppendCatJson(cats, "DevCat", _devId, _devHandle);
+        AppendRegistryCats(cats);
         string catsJson = JsonSerializer.Serialize(cats);
         bool catsChanged = !string.Equals(catsJson, _lastCatsJson, StringComparison.Ordinal);
         // [段2] oa 段——四计数对比

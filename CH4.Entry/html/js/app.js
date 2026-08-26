@@ -145,6 +145,12 @@ function renderCats(cats) {
         id.textContent = '#' + c.id;
         head.appendChild(name);
         head.appendChild(id);
+        if (c.type) {
+            var type = document.createElement('span');
+            type.className = 'cat-type';
+            type.textContent = c.type + (c.kind ? ' · ' + c.kind : '');
+            head.appendChild(type);
+        }
         card.appendChild(head);
         if (c.faulted) {
             var fault = document.createElement('div');
