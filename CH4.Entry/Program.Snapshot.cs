@@ -139,7 +139,7 @@ namespace CH4
                 wires.Add(new { name = w.Name, busy = w.Busy, lastTriggerFrame = w.LastTriggerFrame, timedOut = w.TimedOut });
             }
 
-            cats.Add(new { name = entry.Name, id = entry.Id, type = entry.TypeName, kind = entry.Kind, faulted = false, faultReason = "", status = new { stateLines = status.StateLines, sensors = sensors, slots = slots, wires = wires } });
+            cats.Add(new { name = entry.Name, id = entry.Id, type = entry.TypeName, kind = entry.Kind, faulted = false, faultReason = "", status = new { stateLines = status.StateLines, sensors = sensors, slots = slots, wires = wires }, desc = obs.GetSelfDesc() });
         }
 
         /// <summary>

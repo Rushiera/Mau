@@ -83,6 +83,10 @@ private static readonly object _ensureLock = new object ();        /// <summary>
                 "        {\n" +
                 "            return new FlowStatusV3();\n" +
                 "        }\n" +
+                "        public string[] GetSelfDesc()\n" +
+                "        {\n" +
+                "            return new string[0];\n" +
+                "        }\n" +
                 "    }\n" +
                 "}\n";
             Build(source, "FL_TickThrows", tickThrowsDll);

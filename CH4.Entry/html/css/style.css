@@ -28,6 +28,7 @@ h2 { font-size: 12px; color: #4ec9b0; margin: 10px 12px 6px 12px; font-weight: n
 .cat-type { color: #6a6a6a; font-size: 11px; background: #1f1f1f; border: 1px solid #2a2a2a; border-radius: 3px; padding: 1px 5px; }
 .cat-faulted { color: #f48771; font-size: 12px; }
 .cat-states { color: #d4d4d4; font-size: 12px; margin-bottom: 6px; }
+.cat-desc { color: #4ec9b0; font-size: 12px; margin-bottom: 2px; word-break: break-all; }
 .cat-row { font-size: 11px; color: #8a8a8a; margin-top: 2px; word-break: break-all; }
 .cat-row .k { color: #6a9955; }
 .sen-on { color: #4ec9b0; }

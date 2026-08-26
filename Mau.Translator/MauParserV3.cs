@@ -384,51 +384,66 @@ namespace Mau.Translator
                 return;
             }
             i = arrow + 1;
-            // [段4] 动作区——积木名 + 参数（直到 | 或段尾）
-            if (i < section.Count && section[i].Id == TokenIds.Name)
+            // [段4] 动作区——积木调用序列（R0.1 多动作：'a'[args] | 'b' > @key | 结果；结果 = 'S_X' = 'W' 起）
+            while (i < section.Count)
             {
-                def.BrickName = section[i].Value;
-                i = i + 1;
-                if (i < section.Count && section[i].Id == TokenIds.ParamOpen)
+                if (section[i].Id == TokenIds.Branch)
                 {
-                    def.BrickArgs = CollectArgs(section, i);
-                    i = FindParamClose(section, i) + 1;
-                    if (i == 0)
+                    i = i + 1;
+                    continue;
+                }
+                if (section[i].Id == TokenIds.Name)
+                {
+                    // 结果判定——Name 后跟 Eq = 状态转移（结果区开始）
+                    if (i + 1 < section.Count && section[i + 1].Id == TokenIds.Eq)
                     {
-                        i = section.Count;
+                        break;
                     }
-                }
-                else if (i < section.Count && section[i].Id == TokenIds.Branch)
-                {
+                    WireActionV3 action = new WireActionV3();
+                    action.BrickName = section[i].Value;
+                    action.Line = section[i].Line;
                     i = i + 1;
+                    if (i < section.Count && section[i].Id == TokenIds.ParamOpen)
+                    {
+                        action.BrickArgs = CollectArgs(section, i);
+                        i = FindParamClose(section, i) + 1;
+                        if (i == 0)
+                        {
+                            i = section.Count;
+                        }
+                    }
+                    if (i < section.Count && section[i].Id == TokenIds.Capture)
+                    {
+                        i = i + 1;
+                        if (i < section.Count && section[i].Id == TokenIds.Name)
+                        {
+                            action.CaptureTarget = section[i].Value;
+                            i = i + 1;
+                        }
+                        else
+                        {
+                            doc.Diagnostics.Add(new MauDiagnostic("E103", action.Line, "捕获格式: 动作 > @key——缺盒子 Key"));
+                            return;
+                        }
+                    }
+                    def.Actions.Add(action);
+                    continue;
                 }
-                else if (i < section.Count && section[i].Id == TokenIds.Capture)
-                {
-                    // P9.2 无参积木调用 + 捕获（llm.chunk_read/reply_read）——保持 i 在 Capture 处由 [段4b] 解析
-                }
-                else
-                {
-                    i = section.Count;
-                }
+                doc.Diagnostics.Add(new MauDiagnostic("E103", section[i].Line, "动作区非法 token——期望积木名或状态转移"));
+                return;
             }
-            else if (i < section.Count && section[i].Id == TokenIds.Branch)
+            // 单动作兼容——Actions[0] 同步单值字段（生成器/验证器旧引用面）
+            if (def.Actions.Count > 0)
             {
-                i = i + 1;
+                def.BrickName = def.Actions[0].BrickName;
+                def.BrickArgs = def.Actions[0].BrickArgs;
+                def.CaptureTarget = def.Actions[0].CaptureTarget;
             }
-            // [段4b] 捕获子句——> 'P_X'（动作积木首个 out 端口捕获到值传感器）
-            if (def.BrickName.Length > 0 && i < section.Count && section[i].Id == TokenIds.Capture)
+            // par 导线多动作拒绝——Inbox 回投按单捕获设计（多动作随需求扩展）
+            if (def.Parallel && def.Actions.Count > 1)
             {
-                i = i + 1;
-                if (i < section.Count && section[i].Id == TokenIds.Name)
-                {
-                    def.CaptureTarget = section[i].Value;
-                    i = i + 1;
-                }
-                else
-                {
-                    doc.Diagnostics.Add(new MauDiagnostic("E103", first.Line, "捕获格式: 动作 > 'P_X'——缺值传感器名"));
-                    return;
-                }
+                doc.Diagnostics.Add(new MauDiagnostic("E103", first.Line, "par 导线暂不支持多动作——[par] 导线动作保持单个"));
+                return;
             }
             // [段5] 结果区——'S_X' = 'W' 每个 | 分支一条
             while (i < section.Count)

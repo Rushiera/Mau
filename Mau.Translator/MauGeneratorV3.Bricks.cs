@@ -22,9 +22,12 @@ namespace Mau.Translator
             List<string> names = new List<string>();
             for (int w = 0; w < doc.Wires.Count; w++)
             {
-                if (doc.Wires[w].BrickName.Length > 0 && !names.Contains(doc.Wires[w].BrickName))
+                for (int a = 0; a < doc.Wires[w].Actions.Count; a++)
                 {
-                    names.Add(doc.Wires[w].BrickName);
+                    if (doc.Wires[w].Actions[a].BrickName.Length > 0 && !names.Contains(doc.Wires[w].Actions[a].BrickName))
+                    {
+                        names.Add(doc.Wires[w].Actions[a].BrickName);
+                    }
                 }
             }
             for (int s = 0; s < doc.Sensors.Count; s++)
@@ -244,9 +247,12 @@ namespace Mau.Translator
             List<string> names = new List<string>();
             for (int w = 0; w < doc.Wires.Count; w++)
             {
-                if (doc.Wires[w].BrickName.Length > 0 && !names.Contains(doc.Wires[w].BrickName))
+                for (int a = 0; a < doc.Wires[w].Actions.Count; a++)
                 {
-                    names.Add(doc.Wires[w].BrickName);
+                    if (doc.Wires[w].Actions[a].BrickName.Length > 0 && !names.Contains(doc.Wires[w].Actions[a].BrickName))
+                    {
+                        names.Add(doc.Wires[w].Actions[a].BrickName);
+                    }
                 }
             }
             for (int s = 0; s < doc.Sensors.Count; s++)

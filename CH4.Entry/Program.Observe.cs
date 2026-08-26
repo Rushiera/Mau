@@ -112,6 +112,15 @@ namespace CH4
                 busySuffix = " | " + busyText;
             }
             Console.WriteLine("  " + name + " | " + stateText + busySuffix);
+            // [段3] 实体自述——模块自己的声音（R0.1：IObservableFlow.GetSelfDesc 多行自由形态）
+            string[] descLines = handle.Flow.GetSelfDesc();
+            if (descLines != null && descLines.Length > 0)
+            {
+                for (int d = 0; d < descLines.Length; d++)
+                {
+                    Console.WriteLine("    └ 自述: " + descLines[d]);
+                }
+            }
         }
 
         /// <summary>

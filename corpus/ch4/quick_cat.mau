@@ -19,7 +19,7 @@
 // ── 导线链 ──
 
 // T_Claim：盒子判真 + Idle → 原子接单（竞态失败回 Idle 重试）
-§ 'T_Claim' : @anyOpen & 'S_Quick' = 'Idle' → 'oa.claim_next_simple'["TOOL", "QuickCat"] > @office | 'S_Quick' = 'Claimed' | 'S_Quick' = 'Idle'
+§ 'T_Claim' : @anyOpen & 'S_Quick' = 'Idle' → 'oa.claim_next_simple'["TOOL", "QuickCat"] > @office | 'self.desc'["接单处理中", "", ""] | 'S_Quick' = 'Claimed' | 'S_Quick' = 'Idle'
 
 // T_ReadSystem：读工单载荷 system（双参之一）
 § 'T_ReadSystem' : 'S_Quick' = 'Claimed' → 'oa.get_str'[@office, "system"] > @system | 'S_Quick' = 'Reading' | 'S_Quick' = 'Failed'
@@ -28,19 +28,20 @@
 § 'T_ReadContent' : 'S_Quick' = 'Reading' → 'oa.get_str'[@office, "content"] > @content | 'S_Quick' = 'Calling' | 'S_Quick' = 'Failed'
 
 // T_Exec：流式启动（开始信号）——积木后台消费，主线程立即返回
-§ 'T_Exec' : 'S_Quick' = 'Calling' → 'llm.stream'[@system, @content] | 'S_Quick' = 'Streaming' | 'S_Quick' = 'Failed'
+§ 'T_Exec' : 'S_Quick' = 'Calling' → 'llm.stream'[@system, @content] | 'self.desc'["正在调用 LLM", "", ""] | 'S_Quick' = 'Streaming' | 'S_Quick' = 'Failed'
 
 // T_Chunk：分块信号——新分块到达 → 取数积木读本实例最新增量落 @chunk（观测可见）→ 保持 Streaming（自环=等待语义）
 § 'T_Chunk' : @hasChunk & 'S_Quick' = 'Streaming' → 'llm.chunk_read' > @chunk | 'S_Quick' = 'Streaming' | 'S_Quick' = 'Streaming'
 
 // T_Done：完成信号——llm_done 置位 → 取数积木读本实例完整回复落 @reply → Done
-§ 'T_Done' : @hasDone & 'S_Quick' = 'Streaming' → 'llm.reply_read' > @reply | 'S_Quick' = 'Done' | 'S_Quick' = 'Streaming'
+§ 'T_Done' : @hasDone & 'S_Quick' = 'Streaming' → 'llm.reply_read' > @reply | 'self.desc'["回复完成", "", ""] | 'S_Quick' = 'Done' | 'S_Quick' = 'Streaming'
 
 // T_Save：回复留存——完整回复写全局盒 quick_last_reply（快照 boxes 可见；成功进 Saving，写失败进 Failed 复回执可见性）
 § 'T_Save' : 'S_Quick' = 'Done' → 'data.box_set_str'["global", "quick_last_reply", @reply] | 'S_Quick' = 'Saving' | 'S_Quick' = 'Failed'
 
 // T_Reply：成功回执（result=LLM 完整回复；失败时 @reply 为 ERR| 文本——失败可见性）
-§ 'T_Reply' : 'S_Quick' = 'Saving' → 'oa.complete_str'[@office, @reply] | 'S_Quick' = 'Idle' | 'S_Quick' = 'Idle'
+§ 'T_Reply' : 'S_Quick' = 'Saving' → 'oa.complete_str'[@office, @reply] | 'self.desc'["空闲待命", "", ""] | 'S_Quick' = 'Idle' | 'S_Quick' = 'Idle'
 
 // T_Abort：失败回执（@reply 空或 ERR| 文本——失败侧也回执，ToolTestCat 可见失败原因）
-§ 'T_Abort' : 'S_Quick' = 'Failed' → 'oa.complete_str'[@office, @reply] | 'S_Quick' = 'Idle' | 'S_Quick' = 'Idle'
+§ 'T_Abort' : 'S_Quick' = 'Failed' → 'oa.complete_str'[@office, @reply] | 'self.desc'["执行失败", "", ""] | 'S_Quick' = 'Idle' | 'S_Quick' = 'Idle'
+

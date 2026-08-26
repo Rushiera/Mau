@@ -1,4 +1,4 @@
-// dev_text.mau —— DevCat 语料（CH4 P8 二期——OA 工具执行 Cat，TEXT 工具域分部）
+﻿// dev_text.mau —— DevCat 语料（CH4 P8 二期——OA 工具执行 Cat，TEXT 工具域分部）
 // 角色：Dog 工单执行方——认领 TOOL 域 text-* 4 工具（read/write/append/replace）
 // 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本语料 4 线认领执行 → complete_str 回执
 // 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON（宿主发单落盒——CH2 Dog 机制验证格式）
@@ -28,7 +28,7 @@
 § 'T_ReadArgs' : 'S_Read' = 'Claimed' → 'oa.get_str'[@rdOffice, "args"] > @rdArgs | 'S_Read' = 'Ready' | 'S_Read' = 'Failed'
 
 // T_ReadExec：执行积木（argsJson 整包——积木内部解析；失败侧 ERR 文本也在 @rdRes）
-§ 'T_ReadExec' : 'S_Read' = 'Ready' → 'text.read'[@rdArgs] > @rdRes | 'S_Read' = 'Done' | 'S_Read' = 'Failed'
+§ 'T_ReadExec' : 'S_Read' = 'Ready' → 'text.read'[@rdArgs] > @rdRes | 'self.desc'["text-read 执行中", "", ""] | 'S_Read' = 'Done' | 'S_Read' = 'Failed'
 
 // T_ReadReply：成功回执（result=文件内容）
 § 'T_ReadReply' : 'S_Read' = 'Done' → 'oa.complete_str'[@rdOffice, @rdRes] | 'S_Read' = 'Idle' | 'S_Read' = 'Idle'
@@ -45,7 +45,7 @@
 § 'T_WriteArgs' : 'S_Write' = 'Claimed' → 'oa.get_str'[@wrOffice, "args"] > @wrArgs | 'S_Write' = 'Ready' | 'S_Write' = 'Failed'
 
 // T_WriteExec：执行积木
-§ 'T_WriteExec' : 'S_Write' = 'Ready' → 'text.write'[@wrArgs] > @wrRes | 'S_Write' = 'Done' | 'S_Write' = 'Failed'
+§ 'T_WriteExec' : 'S_Write' = 'Ready' → 'text.write'[@wrArgs] > @wrRes | 'self.desc'["text-write 执行中", "", ""] | 'S_Write' = 'Done' | 'S_Write' = 'Failed'
 
 // T_WriteReply：成功回执
 § 'T_WriteReply' : 'S_Write' = 'Done' → 'oa.complete_str'[@wrOffice, @wrRes] | 'S_Write' = 'Idle' | 'S_Write' = 'Idle'
@@ -62,7 +62,7 @@
 § 'T_AppendArgs' : 'S_Append' = 'Claimed' → 'oa.get_str'[@apOffice, "args"] > @apArgs | 'S_Append' = 'Ready' | 'S_Append' = 'Failed'
 
 // T_AppendExec：执行积木
-§ 'T_AppendExec' : 'S_Append' = 'Ready' → 'text.append'[@apArgs] > @apRes | 'S_Append' = 'Done' | 'S_Append' = 'Failed'
+§ 'T_AppendExec' : 'S_Append' = 'Ready' → 'text.append'[@apArgs] > @apRes | 'self.desc'["text-append 执行中", "", ""] | 'S_Append' = 'Done' | 'S_Append' = 'Failed'
 
 // T_AppendReply：成功回执
 § 'T_AppendReply' : 'S_Append' = 'Done' → 'oa.complete_str'[@apOffice, @apRes] | 'S_Append' = 'Idle' | 'S_Append' = 'Idle'
@@ -79,7 +79,7 @@
 § 'T_ReplaceArgs' : 'S_Replace' = 'Claimed' → 'oa.get_str'[@rpOffice, "args"] > @rpArgs | 'S_Replace' = 'Ready' | 'S_Replace' = 'Failed'
 
 // T_ReplaceExec：执行积木
-§ 'T_ReplaceExec' : 'S_Replace' = 'Ready' → 'text.replace'[@rpArgs] > @rpRes | 'S_Replace' = 'Done' | 'S_Replace' = 'Failed'
+§ 'T_ReplaceExec' : 'S_Replace' = 'Ready' → 'text.replace'[@rpArgs] > @rpRes | 'self.desc'["text-replace 执行中", "", ""] | 'S_Replace' = 'Done' | 'S_Replace' = 'Failed'
 
 // T_ReplaceReply：成功回执
 § 'T_ReplaceReply' : 'S_Replace' = 'Done' → 'oa.complete_str'[@rpOffice, @rpRes] | 'S_Replace' = 'Idle' | 'S_Replace' = 'Idle'

@@ -164,6 +164,14 @@ function renderCats(cats) {
             states.className = 'cat-states';
             states.textContent = (st.stateLines || []).join('  ');
             card.appendChild(states);
+            // 自述行——实体声音（多行自由形态；自述是输出不是输入）
+            var descs = st.desc || [];
+            for (var j = 0; j < descs.length; j++) {
+                var d = document.createElement('div');
+                d.className = 'cat-desc';
+                d.textContent = descs[j];
+                card.appendChild(d);
+            }
             // 传感器行——信号真相（bool 着色）
             var sens = (st.sensors || []).map(function (x) {
                 var span = document.createElement('span');

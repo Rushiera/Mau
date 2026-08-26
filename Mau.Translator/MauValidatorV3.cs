@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Mau.Translator
@@ -230,9 +230,9 @@ private static void CheckCmdKeys(MauDocV3 doc)
             for (int w = 0; w < doc.Wires.Count; w++)
             {
                 WireDefV3 wire = doc.Wires[w];
-                if (wire.BrickName.Length > 0)
+                for (int a = 0; a < wire.Actions.Count; a++)
                 {
-                    CheckBrickCall(wire.BrickName, wire.BrickArgs, wire.Line, doc, boxTypes);
+                    CheckBrickCall(wire.Actions[a].BrickName, wire.Actions[a].BrickArgs, wire.Actions[a].Line, doc, boxTypes);
                 }
             }
             for (int s = 0; s < doc.Sensors.Count; s++)
@@ -280,9 +280,12 @@ private static void CheckCmdKeys(MauDocV3 doc)
             for (int w = 0; w < doc.Wires.Count; w++)
             {
                 WireDefV3 wire = doc.Wires[w];
-                if (wire.CaptureTarget.Length > 0)
+                for (int a = 0; a < wire.Actions.Count; a++)
                 {
-                    CollectBoxWriter(boxTypes, wire.CaptureTarget, wire.BrickName, wire.Line, doc);
+                    if (wire.Actions[a].CaptureTarget.Length > 0)
+                    {
+                        CollectBoxWriter(boxTypes, wire.Actions[a].CaptureTarget, wire.Actions[a].BrickName, wire.Actions[a].Line, doc);
+                    }
                 }
             }
             // [段2] 主动传感器壳探测捕获——bool 判断语义固定落盒
@@ -354,9 +357,9 @@ private static void CheckCmdKeys(MauDocV3 doc)
             for (int w = 0; w < doc.Wires.Count; w++)
             {
                 WireDefV3 wire = doc.Wires[w];
-                if (wire.BrickName.Length > 0)
+                for (int a = 0; a < wire.Actions.Count; a++)
                 {
-                    CheckBoxArgs(wire.BrickArgs, wire.BrickName, wire.Line, doc, boxTypes);
+                    CheckBoxArgs(wire.Actions[a].BrickArgs, wire.Actions[a].BrickName, wire.Actions[a].Line, doc, boxTypes);
                 }
                 for (int c = 0; c < wire.Conditions.Count; c++)
                 {

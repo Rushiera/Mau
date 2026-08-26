@@ -168,20 +168,22 @@ namespace Mau.Translator
             sb.AppendLine("            " + field + "_frame = frame;");
             sb.AppendLine("            AuditStore.Default?.Record(\"Flow\", \"trace.fire\", -1, new AuditProp[] { new AuditProp(\"wire\", \"" + wire.Name + "\"), new AuditProp(\"frame\", frame.ToString()) });");
             sb.AppendLine("            bool ok = true;");
-            if (wire.BrickName.Length > 0)
+            // 动作序列（R0.1 多动作）——顺序执行，任一失败 ok=false（失败侧转移）；捕获各自落盒
+            for (int a = 0; a < wire.Actions.Count; a++)
             {
+                WireActionV3 action = wire.Actions[a];
                 string captureField = "";
-                if (wire.CaptureTarget.Length > 0)
+                if (action.CaptureTarget.Length > 0)
                 {
                     captureField = "v_capture";
                 }
                 StringBuilder prelude = new StringBuilder();
-                string expr = BrickCallExpr(wire.BrickName, wire.BrickArgs, captureField, doc, prelude);
+                string expr = BrickCallExpr(action.BrickName, action.BrickArgs, captureField, doc, prelude);
                 sb.AppendLine("            try");
                 sb.AppendLine("            {");
                 if (captureField.Length > 0)
                 {
-                    string captureType = CaptureCSType(wire.BrickName);
+                    string captureType = CaptureCSType(action.BrickName);
                     if (captureType == "long")
                     {
                         sb.AppendLine("                long v_capture = 0;");
@@ -200,12 +202,16 @@ namespace Mau.Translator
                     }
                 }
                 sb.Append(prelude);
-                sb.AppendLine("                ok = " + expr + ";");
-                if (wire.CaptureTarget.Length > 0)
+                sb.AppendLine("                bool a_ok = " + expr + ";");
+                if (action.CaptureTarget.Length > 0)
                 {
                     // 捕获落盒——DataBox 类型化位置（scope=私有/全局；无条件取值——失败侧 ERR 文本也在值里）
-                    sb.AppendLine("                DataBox.Set<" + CaptureCSType(wire.BrickName) + ">(" + BoxScopeExpr(wire.CaptureTarget) + ", \"" + BoxKey(wire.CaptureTarget) + "\", v_capture);");
+                    sb.AppendLine("                DataBox.Set<" + CaptureCSType(action.BrickName) + ">(" + BoxScopeExpr(action.CaptureTarget) + ", \"" + BoxKey(action.CaptureTarget) + "\", v_capture);");
                 }
+                sb.AppendLine("                if (!a_ok)");
+                sb.AppendLine("                {");
+                sb.AppendLine("                    ok = false;");
+                sb.AppendLine("                }");
                 sb.AppendLine("            }");
                 sb.AppendLine("            catch (Exception)");
                 sb.AppendLine("            {");

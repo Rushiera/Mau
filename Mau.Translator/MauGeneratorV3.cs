@@ -60,6 +60,7 @@ namespace Mau.Translator
             AppendWires(sb, doc);
             AppendTick(sb, doc);
             AppendGetStatus(sb, doc);
+            AppendGetSelfDesc(sb, doc);
             sb.AppendLine("    }");
             sb.AppendLine("}");
             if (embedBricks)
@@ -94,6 +95,8 @@ namespace Mau.Translator
             sb.AppendLine("    {");
             sb.AppendLine("        // ── 观测字段（P3——GetStatus 快照源）──");
             sb.AppendLine("        private long _frame;");
+            // 实体自述（R0.1）——Tick 开头捕获当前 Flow ID（FlowContext 驱动上下文），GetSelfDesc 读盒
+            sb.AppendLine("        private long _flowId;");
             // [段1b] 构造——被动传感器注册进 DataBox 事件层（内部交互总线）
             bool hasPassive = false;
             for (int s = 0; s < doc.Sensors.Count; s++)

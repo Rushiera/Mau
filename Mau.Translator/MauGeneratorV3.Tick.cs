@@ -21,6 +21,8 @@ namespace Mau.Translator
             sb.AppendLine("        public void Tick(int frame)");
             sb.AppendLine("        {");
             sb.AppendLine("            _frame = frame;");
+            // R0.1 实体自述——Tick 开头捕获当前 Flow ID（FlowContext 驱动上下文注入）
+            sb.AppendLine("            _flowId = FlowContext.CurrentFlowId;");
             bool hasCmd = false;
             for (int i = 0; i < doc.Sensors.Count; i++)
             {
@@ -216,6 +218,24 @@ private static void AppendCommandPump(StringBuilder sb, MauDocV3 doc)
             }
             sb.AppendLine("            };");
             sb.AppendLine("            return s;");
+            sb.AppendLine("        }");
+        }
+
+        /// <summary>
+        /// GetSelfDesc 生成——实体自述读取（R0.1：DataBox scope=flowId key=self_desc，积木 self.desc/self.desc.add 写入）
+        /// </summary>
+        /// <param name="sb">输出缓冲</param>
+        /// <param name="doc">IR</param>
+        private static void AppendGetSelfDesc(StringBuilder sb, MauDocV3 doc)
+        {
+            sb.AppendLine("        public string[] GetSelfDesc()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            string[] desc = null;");
+            sb.AppendLine("            if (DataBox.TryGet<string[]>(_flowId.ToString(), \"self_desc\", out desc) && desc != null)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return desc;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            return new string[0];");
             sb.AppendLine("        }");
         }
 

@@ -24,6 +24,13 @@
         /// </summary>
         /// <returns>四柱快照</returns>
         FlowStatusV3 GetStatus();
+
+        /// <summary>
+        /// 获取实体自述——模块自己的声音（多行自由形态，自然语言优先）。
+        /// 数据源 DataBox scope=flowId key=self_desc（积木 self.desc/self.desc.add 写入）。
+        /// </summary>
+        /// <returns>自述行数组（空数组=无自述）</returns>
+        string[] GetSelfDesc();
     }
 
     /// <summary>

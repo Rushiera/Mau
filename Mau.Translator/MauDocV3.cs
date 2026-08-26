@@ -167,9 +167,40 @@ public bool IsCmd;
         public string CaptureTarget = "";
 
         /// <summary>
+        /// 动作列表（R0.1 多动作扩展——'a' | 'b' | 结果；单动作兼容时 Actions[0] 同步单值字段）
+        /// </summary>
+        public List<WireActionV3> Actions = new List<WireActionV3>();
+
+        /// <summary>
         /// 结果列表——'S_X' = 'W' 状态转移，| 分叉顺序（首项=成功侧，次项=失败侧，多路=名称返回分发）
         /// </summary>
         public List<ResultV3> Results = new List<ResultV3>();
+
+        /// <summary>
+        /// 声明行号
+        /// </summary>
+        public int Line;
+    }
+
+    /// <summary>
+    /// 导线动作——单个积木调用（多动作序列成员；R0.1 多动作扩展）
+    /// </summary>
+    public sealed class WireActionV3
+    {
+        /// <summary>
+        /// 动作积木名
+        /// </summary>
+        public string BrickName = "";
+
+        /// <summary>
+        /// 动作参数原文
+        /// </summary>
+        public List<string> BrickArgs = new List<string>();
+
+        /// <summary>
+        /// 捕获目标——动作积木首个 out 端口落盒 Key（@key=私有 / key=全局；空=无捕获）
+        /// </summary>
+        public string CaptureTarget = "";
 
         /// <summary>
         /// 声明行号
