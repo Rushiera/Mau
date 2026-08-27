@@ -339,6 +339,21 @@ namespace CH4
                 }
                 ConfigStore globalConfig = null;
                 DataBox.TryResolve<ConfigStore>(out globalConfig);
+                // R2.3 每猫 qqbot 配置——qqbotId/qqbotEnable（cfg 缺失=未绑定/禁用）
+                Guid qqBotId = Guid.Empty;
+                bool qqBotEnable = false;
+                if (cfgData != null)
+                {
+                    if (cfgData.QqBotId != null && cfgData.QqBotId.Length > 0)
+                    {
+                        Guid parsed;
+                        if (Guid.TryParse(cfgData.QqBotId, out parsed) && parsed != Guid.Empty)
+                        {
+                            qqBotId = parsed;
+                        }
+                    }
+                    qqBotEnable = cfgData.QqBotEnable;
+                }
                 // [段2] 每猫配置三字段——persona/toolNames/injectList（M2；cfg 缺失=新猫走全局默认模板继承）
                 string persona = "";
                 string toolNames = "";
@@ -409,6 +424,8 @@ namespace CH4
                 cat.ToolNames = toolNames;
                 cat.InjectList = injectList;
                 cat.ToolSpecs = catSpecs;
+                cat.QqBotId = qqBotId;
+                cat.QqBotEnable = qqBotEnable;
                 LogStore.Add("CH4.Entry", 1, "cat.api | id=" + id + " | api=" + (apiConfigId == Guid.Empty ? "default" : apiConfigId.ToString("D")) + " | model=" + apiConfig.DefaultModel, "CHAT");
                 return cat;
             }
@@ -417,6 +434,67 @@ namespace CH4
                 LogStore.Add("CH4.Entry", 3, "cat.create | 失败 | " + ex.Message, "CHAT");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 收集所有绑定 qqbot 的猫——默认猫（majordomo）+ 多猫（R2.3.5 输出转发轮询面）。
+        /// </summary>
+        /// <returns>全部绑定目标（QqBotId 非空）</returns>
+        internal static List<QqTarget> CollectAllQqTargets()
+        {
+            List<QqTarget> result = new List<QqTarget>();
+            if (_defaultQqBotId != Guid.Empty)
+            {
+                ChatSession captured = _defaultSession;
+                result.Add(new QqTarget
+                {
+                    Key = "majordomo",
+                    DisplayName = "majordomo",
+                    QqBotId = _defaultQqBotId,
+                    Enable = _defaultQqBotEnable,
+                    Inject = delegate(string s) { captured.PostUserMessage(s); },
+                    GetMessageCount = delegate() { return captured.Context.GetMessageCount(); },
+                    GetMessages = delegate() { return captured.Context.GetMessages(); }
+                });
+            }
+            for (int i = 0; i < _cats.Count; i++)
+            {
+                CatEntry cat = _cats[i];
+                if (cat.QqBotId != Guid.Empty)
+                {
+                    CatEntry captured = cat;
+                    result.Add(new QqTarget
+                    {
+                        Key = cat.Id,
+                        DisplayName = cat.DisplayName,
+                        QqBotId = cat.QqBotId,
+                        Enable = cat.QqBotEnable,
+                        Inject = delegate(string s) { captured.Session.PostUserMessage(s); },
+                        GetMessageCount = delegate() { return captured.Session.Context.GetMessageCount(); },
+                        GetMessages = delegate() { return captured.Session.Context.GetMessages(); }
+                    });
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// 收集绑定指定 qqbot 的猫——默认猫（majordomo）+ 多猫（R2.3.4 输入路由广播注入面）。
+        /// </summary>
+        /// <param name="qqBotId">qqbot 配置身份</param>
+        /// <returns>绑定目标列表（空=未绑定任何猫）</returns>
+        internal static List<QqTarget> CollectQqTargets(Guid qqBotId)
+        {
+            List<QqTarget> result = new List<QqTarget>();
+            List<QqTarget> all = CollectAllQqTargets();
+            for (int i = 0; i < all.Count; i++)
+            {
+                if (all[i].QqBotId == qqBotId)
+                {
+                    result.Add(all[i]);
+                }
+            }
+            return result;
         }
 
         /// <summary>

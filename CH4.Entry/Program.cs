@@ -171,6 +171,12 @@ private static HttpHost _httpHost;
             // M3 管理面静态引用——catcfg.apply 重建 Runtime 消费
             _apiStore = apiConfigStore;
             _globalConfig = llmConfig;
+            // R2.3 QQ Bot 配置池——qqbot.json 明文（零 secret）+ Data/secrets 独立秘密文件（对齐 LLM API 池 M1 模式）
+            CH_QqBotConfigStore qqBotStore = new CH_QqBotConfigStore(
+                Path.Combine(dataRoot, "Data", "config"),
+                Path.Combine(dataRoot, "Data", "secrets"));
+            DataBox.Bind<CH_QqBotConfigStore>(qqBotStore);
+            _qqBotStore = qqBotStore;
             // P8.5d 配置群多文件化——ui.* 用户偏好追加到同一 store（键前缀段路由；ui.json 缺失时首次写入自动创建）
             llmConfig.AddFile("ui", Path.Combine(configDir, "ui.json"));
             // R2.1 搜索配置群——search.* 独立 search.cfg（未配置=搜索工具不可用——先配置后才可用）
@@ -251,6 +257,23 @@ private static HttpHost _httpHost;
             // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）；session.new 重注入复用
             _defaultToolSpecs = FilterToolSpecs(ResolveToolNames(defaultToolNames));
             _defaultApiConfigId = defaultApiConfigId;
+            // R2.3 默认猫 qqbot 配置——majordomo cat.cfg 读取（缺省未绑定/禁用）
+            Guid defaultQqBotId = Guid.Empty;
+            bool defaultQqBotEnable = false;
+            if (defaultCfg != null)
+            {
+                if (defaultCfg.QqBotId != null && defaultCfg.QqBotId.Length > 0)
+                {
+                    Guid parsed;
+                    if (Guid.TryParse(defaultCfg.QqBotId, out parsed) && parsed != Guid.Empty)
+                    {
+                        defaultQqBotId = parsed;
+                    }
+                }
+                defaultQqBotEnable = defaultCfg.QqBotEnable;
+            }
+            _defaultQqBotId = defaultQqBotId;
+            _defaultQqBotEnable = defaultQqBotEnable;
             if (chatStore.TryLoad(out restored))
             {
                 chatCtx.ReplaceMessages(restored);
@@ -314,6 +337,8 @@ private static HttpHost _httpHost;
             Console.WriteLine("[CH4.Entry] HTTP 外观层就绪: http://127.0.0.1:" + _httpHost.Port);
             // [段6c] 前端测试服务拉起——开发流程（改前端 → 跑测试 → 刷新生效）；未监听则启动 node server.js
             EnsureFrontendTestService();
+            // R2.3 QQ 管理器启动——扫描 Bot 池建立全部连接（附属功能组件；Bot 池空 = 零连接静默）
+            QQBotService.Start();
         }
         /// <summary>
         /// 环境信息——运行版本 + LLM 端点类型 + 当前时间（info 内置工具数据源；R0.2 拍板：不显示工具组清单——工具注册是前文初始化一次性）

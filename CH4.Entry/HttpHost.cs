@@ -187,6 +187,11 @@ namespace CH4
                 _app.MapPost("/api/v1/llm-apis/edit", (Delegate)Program.HandleLlmApisEdit);
                 _app.MapPost("/api/v1/llm-apis/delete", (Delegate)Program.HandleLlmApisDelete);
                 _app.MapPost("/api/v1/llm-apis/default", (Delegate)Program.HandleLlmApisDefault);
+                // R2.3 QQ Bot 池 CRUD——仅主端口注册（管理面收敛主端口）
+                _app.MapGet("/api/v1/qqbot-apis", (Delegate)Program.HandleQqBotApisGet);
+                _app.MapPost("/api/v1/qqbot-apis", (Delegate)Program.HandleQqBotApisPost);
+                _app.MapPost("/api/v1/qqbot-apis/edit", (Delegate)Program.HandleQqBotApisEdit);
+                _app.MapPost("/api/v1/qqbot-apis/delete", (Delegate)Program.HandleQqBotApisDelete);
                 _app.MapGet("/api/v1/cat-config", (Delegate)Program.HandleCatConfigGet);
                 _app.MapPost("/api/v1/cat-config", (Delegate)Program.HandleCatConfigPost);
                 // 新猫默认模板——全局配置管理面（M3d 体验轮新增；仅主端口注册）

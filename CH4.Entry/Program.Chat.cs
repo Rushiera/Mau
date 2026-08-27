@@ -43,6 +43,12 @@ namespace CH4
         /// <summary>默认猫工具声明面——Bootstrap 按 toolNames 裁剪（M2c；session.new 重注入复用）</summary>
         private static ToolSpec[] _defaultToolSpecs;
 
+        /// <summary>默认猫 qqbot 配置身份——Bootstrap 从 majordomo cat.cfg 读（R2.3；Guid.Empty=未绑定）</summary>
+        private static Guid _defaultQqBotId = Guid.Empty;
+
+        /// <summary>默认猫 qqbot 启用标志——Bootstrap 从 majordomo cat.cfg 读（R2.3；false=不注入不转发）</summary>
+        private static bool _defaultQqBotEnable = false;
+
         /// <summary>
         /// 会话注册表——PumpSessions 轮转推进（P9.1 含默认会话一席）
         /// </summary>

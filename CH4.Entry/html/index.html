@@ -88,6 +88,27 @@
                             <button id="apiCancelEdit" style="display:none;background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">取消编辑</button>
                         </div>
                     </div>
+                    <!-- R2.3 QQ Bot 池管理——列表/新建/编辑/删除（secret 掩码；注册即建 WS 连接） -->
+                    <div style="margin-top:16px;border-top:1px solid #2a2a2a;padding-top:10px">
+                        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+                            <h2 style="margin:0">QQ Bot 池</h2>
+                            <span id="qqbotsMsg" style="color:#4ec9b0;font-size:11px"></span>
+                            <span style="flex:1"></span>
+                            <button id="qqbotsRefresh" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:4px 10px;cursor:pointer;font-family:inherit;font-size:12px">刷新</button>
+                        </div>
+                        <table class="box-table" id="qqbotsTable"><thead><tr><th style="width:14%">名称</th><th style="width:18%">配置 ID</th><th style="width:14%">AppId</th><th style="width:10%">环境</th><th style="width:16%">Secret</th><th style="width:28%">操作</th></tr></thead><tbody></tbody></table>
+                        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+                            <input id="qqNewName" placeholder="名称" style="width:120px;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
+                            <input id="qqNewAppId" placeholder="AppId" style="width:160px;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
+                            <select id="qqNewSandbox" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
+                                <option value="true">沙箱</option>
+                                <option value="false">正式</option>
+                            </select>
+                            <input id="qqNewSecret" placeholder="Secret（编辑留空=保留）" style="width:200px;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
+                            <button id="qqAddBtn" style="background:#0e639c;border:none;color:#fff;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">新建</button>
+                            <button id="qqCancelEdit" style="display:none;background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">取消编辑</button>
+                        </div>
+                    </div>
                     <!-- 新猫默认模板——baseRole + 三字段默认值（M3d 体验轮新增） -->
                     <div style="margin-top:16px;border-top:1px solid #2a2a2a;padding-top:10px">
                         <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
@@ -193,6 +214,11 @@
             <div style="font-size:11px;color:#6a6a6a;margin-bottom:10px">API 切换立即生效；人设/工具/前文 List 保存后「新会话」生效</div>
             <label style="font-size:11px;color:#6a6a6a">LLM API 配置</label>
             <select id="catCfgApi" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:6px 8px;font-family:inherit;font-size:12px;margin-top:3px"></select>
+            <label style="font-size:11px;color:#6a6a6a;margin-top:10px;display:block">QQ Bot 绑定（qqbotId——多猫可绑同一 Bot；空=未绑定）</label>
+            <select id="catCfgQqBot" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:6px 8px;font-family:inherit;font-size:12px;margin-top:3px"></select>
+            <label style="font-size:11px;color:#6a6a6a;margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="catCfgQqEnable"> 启用 qqbot 转发（qqbotEnable——false=不注入不转发）
+            </label>
             <label style="font-size:11px;color:#6a6a6a;margin-top:10px;display:block">人设（persona——注入后追加角色段；空=仅基础角色）</label>
             <textarea id="catCfgPersona" rows="3" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:6px 8px;font-family:inherit;font-size:12px;margin-top:3px;resize:vertical"></textarea>
             <label style="font-size:11px;color:#6a6a6a;margin-top:10px;display:block">工具清单（toolNames——全勾=全量；空=全量保底；非法名自动过滤）</label>

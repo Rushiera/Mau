@@ -65,6 +65,7 @@ namespace CH4
                 PumpSessions();
                 PumpChatQueue();
                 PumpCatQueues();
+                QQBotService.Tick();
                 // [段2] 按键轮询——有输入才 ReadLine（阻塞读会卡住帧驱动）
                 if (Console.KeyAvailable)
                 {
@@ -389,6 +390,7 @@ namespace CH4
                 PumpSessions();
                 PumpChatQueue();
                 PumpCatQueues();
+                QQBotService.Tick();
                 if (AllIdle())
                 {
                     return;

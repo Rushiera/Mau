@@ -262,9 +262,7 @@ function chatNewStage(type) {
 
 // chatdone——会话终态：seal 所有阶段 / 未回填工具卡兜底标注 / 恢复 idle（llm done 仅一轮结束——终态唯一信号）
 function chatOnChatDone(d) {
-    if (chatState !== 'sending') {
-        return;  // 非 sending（如重连后）——历史重绘已定型
-    }
+    // 真实块驱动——chatdone 终态总是处理（seal 阶段 + 恢复 idle；qqbot 注入对话 idle 也 seal）
     // 会话终态——实时同步消息计数（chatdone 事件带 count = 原始消息数；与状态区一致）
     if (d.count !== undefined) {
         chatInfo.textContent = '会话 ' + d.count + ' 条 | sessionId=' + (d.sessionId || CHAT_SESSION);
@@ -286,7 +284,7 @@ function chatOnChatDone(d) {
 
 // tool 事件回填——宿主按执行序推送；前端按 FIFO 配对（事件序 = toolCalls 数组序）
 function chatOnTool(d) {
-    if (chatState !== 'sending') { return; }
+    if (chatState === 'loading') { return; }
     for (var i = 0; i < chatToolQueue.length; i++) {
         if (!chatToolQueue[i].filled) {
             chatFillToolCard(chatToolQueue[i], d);
@@ -324,8 +322,9 @@ function chatFillToolCard(slot, d) {
 
 // llm 事件分发——对话区（sessionId 过滤 + 阶段模型五态渲染）
 function chatOnLlm(d) {
-    if (chatState !== 'sending') { return; }
     if (d.sessionId && d.sessionId !== CHAT_SESSION) { return; }
+    // 真实块驱动——llm 事件 = 真实前文块；前端状态仅控制输入禁用，不控制渲染（qqbot 注入对话 idle 也渲染）
+    if (chatState === 'loading') { return; }
     chatKeepAlive();
     if (d.kind === 'reasoning') {
         // 思考阶段——独立气泡默认展开实时流式（B4.2）

@@ -29,7 +29,35 @@ LLM 写 .mau 语料 → 门禁验真（词法/解析/验证/E2xx 引用/E3xx 图
 | **Mau 基座** | 私人方言语言内核 + 数字电路运行时（Tick/Inbox/OA/CommandBus/DataBox/ALC）+ 门禁工具链 + 积木原子能力 | `Mau.Cli` / `Mau.Runtime` / `Mau.Translator` … |
 | **CH4 宿主** | 自举循环宿主——agent 循环基建走 C#，业务 100% 语料化热重载 | `CH4.Entry` / `corpus/ch4/` |
 
-**现状：** 自举循环真实运转——LLM 经宿主工具（text.* 文件操作 / mau.* 语料自查 / cs.* Roslyn 编码 / config.* 配置自改）完成"发现问题 → 修语料 → 门禁通过"闭环。版本与里程碑唯一真相源：CCBP `Project/CH4/CHANGELOG.md` 与 `Project/Mau/CHANGELOG.md`。
+**现状：** 自举循环真实运转——LLM 经宿主工具（text.* 文件操作 / mau.* 语料自查 / cs.* Roslyn 编码 / config.* 配置自改 / web-search 联网 / image-analyze 识图）完成"发现问题 → 修语料 → 门禁通过"闭环。多猫并发（每猫独立会话/端口/配置）+ 工具组 Flow 化（ToolRegistry 动态注册/热重载/退役）+ qqbot 接入（QQ Bot 池 + 双向桥接 + 强匹配指令）已落地。版本与里程碑唯一真相源：CCBP `Project/CH4/CHANGELOG.md` 与 `Project/Mau/CHANGELOG.md`。
+
+### 当前能力（第一期工具与原型已落地）
+
+**工具面（27 件——LLM 可调用，ToolRegistry 单一真相源）：**
+
+| 域 | 工具 | 执行器 |
+|:--|:--|:--|
+| 文本 | text-read / text-write / text-append / text-replace | FileSystemService（受控根 + 回收站语义） |
+| Mau 自查 | mau-verify / mau-gen / mau-proj | MauCompilerV3 进程内直调 |
+| 编码 | cs-check / cs-build / cs-list / cs-read / cs-find_ref / cs-patch / cs-member / cs-comment / cs-dead | ICSharpBridge + MauRoslynBridge |
+| 配置 | config-list / config-get / config-set / config-reset | ConfigStore SetChecked/ResetToDefault |
+| 联网 | web-search | SearchCat Flow → IWebSearchService |
+| 识图 | image-analyze | VisionCat Flow → IVisionService |
+| 内置 | host-reload / time / random / info / Note | 会话内/宿主直执 |
+
+**多猫并发（P9）：** 单进程多会话——每猫独立 ChatSession + 端口级路由 + cat.cfg 独立配置（persona / toolNames / injectList / apiConfigId / qqbotId）；默认猫 majordomo + cat.* 指令族管理（cat.new / start / stop / delete / chat）。
+
+**工具组 Flow 化（R0.2）：** 每工具组独立 .mau Flow（TextCat / MauCat / CsCat / ConfigCat / SearchCat / VisionCat）——独立注册 / 热重载 / 退役；ToolRegistry 动态注册面（内置 / OA 双轨）。
+
+**qqbot 接入（R2.3——附属功能组件 / 全局插件，非 toolcall）：**
+
+- **QQ Bot 配置池**——对齐 LLM API 池（qqbot.json 明文零 secret + qqbot.cfg secrets + CRUD 端点 + 前端管理页）
+- **每猫配置**——cat.cfg qqbotId / qqbotEnable（多 Cat 可绑同一 Bot，多对一）
+- **QQ 管理器**——注册即建 WS 连接（CH1 协议资产：鉴权 / 心跳 ACK / Resume / 重连）；跟随宿主启动
+- **输入路由**——消息广播注入所有绑定且启用的 Cat（`[来自QQ]` 前缀）；未绑定返回「无猫」/ 未启用返回「目标 Cat 未启用 qqbot 转发功能」
+- **输出转发**——游标增量轮询，回复块带 `Cat名：` 前缀转发（无条件转发——前端对话回复也同步）；失败 L2 留痕
+- **强匹配指令**——`/ping` `/info` 等 / 开头指令代码直执（不走 LLM），返回 QQ 管理器服务状态
+- **LLM 与 Talk 无感**——输入前缀 LLM 可见；输出由管理器主动拉取，ChatSession 零改动
 
 ---
 

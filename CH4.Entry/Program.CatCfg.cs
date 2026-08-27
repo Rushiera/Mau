@@ -61,6 +61,12 @@ namespace CH4
             /// <summary>前文注入清单——cat.cfg 持久化（M2d；空=不注入）</summary>
             public string[] InjectList;
 
+            /// <summary>qqbot 配置身份——cat.cfg 持久化（R2.3；Guid.Empty=未绑定）</summary>
+            public Guid QqBotId;
+
+            /// <summary>qqbot 启用标志——cat.cfg 持久化（R2.3；false=不注入不转发）</summary>
+            public bool QqBotEnable;
+
             /// <summary>工具声明面——M2c 裁剪后（session.new 重注入复用）</summary>
             public ToolSpec[] ToolSpecs;
 
@@ -96,6 +102,12 @@ namespace CH4
 
             /// <summary>前文注入清单——文件寻址数组（id:相对路径；空=不注入）</summary>
             public string[] InjectList { get; set; }
+
+            /// <summary>qqbot 配置身份——缺省空串（未绑定）</summary>
+            public string QqBotId { get; set; }
+
+            /// <summary>qqbot 启用标志——缺省 false</summary>
+            public bool QqBotEnable { get; set; }
         }
 
         /// <summary>
@@ -239,6 +251,8 @@ namespace CH4
                     data.Persona = GetStringProp(root, "persona");
                     data.ToolNames = GetStringProp(root, "toolNames");
                     data.InjectList = GetStringArrayProp(root, "injectList");
+                    data.QqBotId = GetStringProp(root, "qqbotId");
+                    data.QqBotEnable = GetBoolProp(root, "qqbotEnable");
                     return data;
                 }
             }
@@ -263,6 +277,8 @@ namespace CH4
             data.Persona = cat.Persona;
             data.ToolNames = cat.ToolNames;
             data.InjectList = cat.InjectList;
+            data.QqBotId = cat.QqBotId.ToString("D");
+            data.QqBotEnable = cat.QqBotEnable;
             SaveCatCfgData(cat.Id, data);
         }
 

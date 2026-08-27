@@ -19,6 +19,9 @@ namespace CH4
         /// <summary>LLM API 配置池——Bootstrap 绑定（catcfg.apply 重建 Runtime 消费）</summary>
         private static CH_LlmApiConfigStore _apiStore;
 
+        /// <summary>QQ Bot 配置池——Bootstrap 绑定（qqbot 管理器消费）</summary>
+        private static CH_QqBotConfigStore _qqBotStore;
+
         /// <summary>全局配置存储——Bootstrap 绑定（catcfg.apply 重建 Runtime 消费）</summary>
         private static ConfigStore _globalConfig;
 
@@ -273,6 +276,201 @@ namespace CH4
         }
 
         /// <summary>
+        /// QQ Bot 池列表——GET /api/v1/qqbot-apis（secret 掩码展示；hasSecret 供前端判断是否已配置）。
+        /// </summary>
+        /// <returns>列表 JSON——version + items</returns>
+        internal static IResult HandleQqBotApisGet()
+        {
+            CH_QqBotConfigStore store = null;
+            DataBox.TryResolve<CH_QqBotConfigStore>(out store);
+            List<object> items = new List<object>();
+            if (store != null)
+            {
+                CH_QqBotConfig[] configs = store.GetAll();
+                for (int i = 0; i < configs.Length; i++)
+                {
+                    CH_QqBotConfig c = configs[i];
+                    string secret = store.GetSecret(c.QqBotId);
+                    string secretShown;
+                    if (secret.Length > 0)
+                    {
+                        secretShown = MaskApiKey(secret);
+                    }
+                    else
+                    {
+                        secretShown = "";
+                    }
+                    items.Add(new
+                    {
+                        qqBotId = c.QqBotId.ToString("D"),
+                        displayName = c.DisplayName,
+                        appId = c.AppId,
+                        sandbox = c.Sandbox,
+                        secret = secretShown,
+                        hasSecret = secret.Length > 0
+                    });
+                }
+            }
+            var resp = new
+            {
+                version = 1,
+                items = items
+            };
+            return Results.Json(resp);
+        }
+
+        /// <summary>
+        /// QQ Bot 池新建——POST /api/v1/qqbot-apis（body: displayName/appId/secret）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>回执 JSON</returns>
+        internal static async Task<IResult> HandleQqBotApisPost(HttpContext ctx)
+        {
+            string body = await ReadBodyText(ctx);
+            string displayName = "";
+            string appId = "";
+            string secret = "";
+            bool sandbox = true;
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(body))
+                {
+                    JsonElement root = doc.RootElement;
+                    displayName = GetJsonString(root, "displayName");
+                    appId = GetJsonString(root, "appId");
+                    secret = GetJsonString(root, "secret");
+                    sandbox = GetBoolProp(root, "sandbox");
+                }
+            }
+            catch (Exception)
+            {
+                return Results.Json(new { ok = false, error = "body 非 JSON" });
+            }
+            if (displayName.Length == 0)
+            {
+                return Results.Json(new { ok = false, error = "displayName 为空" });
+            }
+            if (appId.Length == 0)
+            {
+                return Results.Json(new { ok = false, error = "appId 为空" });
+            }
+            CH_QqBotConfigStore store = null;
+            DataBox.TryResolve<CH_QqBotConfigStore>(out store);
+            if (store == null)
+            {
+                return Results.Json(new { ok = false, error = "配置池未绑定" });
+            }
+            CH_QqBotConfig config = new CH_QqBotConfig();
+            config.QqBotId = Guid.NewGuid();
+            config.DisplayName = displayName;
+            config.AppId = appId;
+            config.Sandbox = sandbox;
+            store.Save(config, secret);
+            LogStore.Add("CH4.Entry", 1, "qqbot-apis | 新建 | " + config.QqBotId.ToString("D") + " | " + displayName, "CONFIG");
+            QQBotService.Refresh();
+            return Results.Json(new { ok = true, qqBotId = config.QqBotId.ToString("D") });
+        }
+
+        /// <summary>
+        /// QQ Bot 池编辑——POST /api/v1/qqbot-apis/edit（body: qqBotId + 字段；secret 空=保留原 secret）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>回执 JSON</returns>
+        internal static async Task<IResult> HandleQqBotApisEdit(HttpContext ctx)
+        {
+            string body = await ReadBodyText(ctx);
+            string qqBotId = "";
+            string displayName = "";
+            string appId = "";
+            string secret = "";
+            bool sandbox = true;
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(body))
+                {
+                    JsonElement root = doc.RootElement;
+                    qqBotId = GetJsonString(root, "qqBotId");
+                    displayName = GetJsonString(root, "displayName");
+                    appId = GetJsonString(root, "appId");
+                    secret = GetJsonString(root, "secret");
+                    sandbox = GetBoolProp(root, "sandbox");
+                }
+            }
+            catch (Exception)
+            {
+                return Results.Json(new { ok = false, error = "body 非 JSON" });
+            }
+            Guid id;
+            if (!Guid.TryParse(qqBotId, out id) || id == Guid.Empty)
+            {
+                return Results.Json(new { ok = false, error = "qqBotId 非法" });
+            }
+            if (displayName.Length == 0)
+            {
+                return Results.Json(new { ok = false, error = "displayName 为空" });
+            }
+            if (appId.Length == 0)
+            {
+                return Results.Json(new { ok = false, error = "appId 为空" });
+            }
+            CH_QqBotConfigStore store = null;
+            DataBox.TryResolve<CH_QqBotConfigStore>(out store);
+            if (store == null)
+            {
+                return Results.Json(new { ok = false, error = "配置池未绑定" });
+            }
+            CH_QqBotConfig config = new CH_QqBotConfig();
+            config.QqBotId = id;
+            config.DisplayName = displayName;
+            config.AppId = appId;
+            config.Sandbox = sandbox;
+            store.Save(config, secret);
+            LogStore.Add("CH4.Entry", 1, "qqbot-apis | 编辑 | " + id.ToString("D") + " | " + displayName + " | secret=" + (secret.Length > 0 ? "Y" : "保留"), "CONFIG");
+            QQBotService.Refresh();
+            return Results.Json(new { ok = true, qqBotId = id.ToString("D") });
+        }
+
+        /// <summary>
+        /// QQ Bot 池删除——POST /api/v1/qqbot-apis/delete（body: qqBotId；普通配置 + secret 同删）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>回执 JSON</returns>
+        internal static async Task<IResult> HandleQqBotApisDelete(HttpContext ctx)
+        {
+            string body = await ReadBodyText(ctx);
+            string qqBotId = "";
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(body))
+                {
+                    qqBotId = GetJsonString(doc.RootElement, "qqBotId");
+                }
+            }
+            catch (Exception)
+            {
+                return Results.Json(new { ok = false, error = "body 非 JSON" });
+            }
+            Guid id;
+            if (!Guid.TryParse(qqBotId, out id) || id == Guid.Empty)
+            {
+                return Results.Json(new { ok = false, error = "qqBotId 非法" });
+            }
+            CH_QqBotConfigStore store = null;
+            DataBox.TryResolve<CH_QqBotConfigStore>(out store);
+            if (store == null)
+            {
+                return Results.Json(new { ok = false, error = "配置池未绑定" });
+            }
+            if (!store.Delete(id))
+            {
+                return Results.Json(new { ok = false, error = "配置不存在" });
+            }
+            LogStore.Add("CH4.Entry", 1, "qqbot-apis | 删除 | " + id.ToString("D"), "CONFIG");
+            QQBotService.Refresh();
+            return Results.Json(new { ok = true, qqBotId = id.ToString("D") });
+        }
+
+        /// <summary>
         /// 每猫配置读取——GET /api/v1/cat-config?cat=&lt;id|majordomo&gt;。
         /// 返回：apiConfigId/persona/toolNames/injectList + allToolNames（工具勾选清单）+ apiOptions（API 下拉清单）。
         /// </summary>
@@ -306,6 +504,22 @@ namespace CH4
                     });
                 }
             }
+            // R2.3 QQ Bot 下拉清单——Bot 池全量（id + 显示名）
+            CH_QqBotConfigStore qqStore = null;
+            DataBox.TryResolve<CH_QqBotConfigStore>(out qqStore);
+            List<object> qqbotOptions = new List<object>();
+            if (qqStore != null)
+            {
+                CH_QqBotConfig[] qqConfigs = qqStore.GetAll();
+                for (int i = 0; i < qqConfigs.Length; i++)
+                {
+                    qqbotOptions.Add(new
+                    {
+                        qqBotId = qqConfigs[i].QqBotId.ToString("D"),
+                        displayName = qqConfigs[i].DisplayName
+                    });
+                }
+            }
             var resp = new
             {
                 ok = true,
@@ -314,8 +528,11 @@ namespace CH4
                 persona = cfg.Persona,
                 toolNames = cfg.ToolNames,
                 injectList = cfg.InjectList,
+                qqbotId = cfg.QqBotId,
+                qqbotEnable = cfg.QqBotEnable,
                 allToolNames = GetAllToolNames(),
-                apiOptions = apiOptions
+                apiOptions = apiOptions,
+                qqbotOptions = qqbotOptions
             };
             return Results.Json(resp);
         }
@@ -334,6 +551,8 @@ namespace CH4
             string apiConfigId = "";
             string persona = "";
             string toolNames = "";
+            string qqbotId = "";
+            bool qqbotEnable = false;
             List<string> injectList = new List<string>();
             try
             {
@@ -344,6 +563,8 @@ namespace CH4
                     apiConfigId = GetJsonString(root, "apiConfigId");
                     persona = GetJsonString(root, "persona");
                     toolNames = GetJsonString(root, "toolNames");
+                    qqbotId = GetJsonString(root, "qqbotId");
+                    qqbotEnable = GetBoolProp(root, "qqbotEnable");
                     JsonElement injectEl;
                     if (root.TryGetProperty("injectList", out injectEl) && injectEl.ValueKind == JsonValueKind.Array)
                     {
@@ -400,6 +621,16 @@ namespace CH4
                 }
                 cfg.ApiConfigId = apiConfigId;
             }
+            if (qqbotId.Length > 0)
+            {
+                Guid parsed;
+                if (!Guid.TryParse(qqbotId, out parsed) || parsed == Guid.Empty)
+                {
+                    return Results.Json(new { ok = false, error = "qqbotId 非法" });
+                }
+                cfg.QqBotId = qqbotId;
+            }
+            cfg.QqBotEnable = qqbotEnable;
             cfg.Persona = persona;
             cfg.ToolNames = validToolNames;
             cfg.InjectList = injectList.ToArray();
@@ -734,6 +965,8 @@ namespace CH4
                 _defaultPersona = persona;
                 _defaultInjectList = injectList;
                 _defaultToolSpecs = specs;
+                _defaultQqBotId = ResolveQqBotId(cfg);
+                _defaultQqBotEnable = cfg.QqBotEnable;
                 Guid newApi = ResolveApiConfigId(cfg);
                 if (_defaultApiConfigId != newApi)
                 {
@@ -752,6 +985,8 @@ namespace CH4
             cat.InjectList = injectList;
             cat.ToolNames = toolNames;
             cat.ToolSpecs = specs;
+            cat.QqBotId = ResolveQqBotId(cfg);
+            cat.QqBotEnable = cfg.QqBotEnable;
             Guid newApiId = ResolveApiConfigId(cfg);
             if (cat.ApiConfigId != newApiId)
             {
@@ -766,6 +1001,25 @@ namespace CH4
                 LogStore.Add("CH4.Entry", 1, "catcfg.apply | " + cat.DisplayName + " | api 切换 → " + newApiId.ToString("D"), "CONFIG");
             }
             return "catcfg.apply | " + cat.DisplayName + " | 已生效（前文项新会话生效）";
+        }
+
+        /// <summary>
+        /// 解析 cat.cfg 的 qqbot 配置身份——缺省 Guid.Empty=未绑定。
+        /// </summary>
+        /// <param name="cfg">配置数据</param>
+        /// <returns>qqbot 配置身份</returns>
+        private static Guid ResolveQqBotId(CatCfgData cfg)
+        {
+            Guid id = Guid.Empty;
+            if (cfg != null && cfg.QqBotId != null && cfg.QqBotId.Length > 0)
+            {
+                Guid parsed;
+                if (Guid.TryParse(cfg.QqBotId, out parsed) && parsed != Guid.Empty)
+                {
+                    id = parsed;
+                }
+            }
+            return id;
         }
 
         /// <summary>
@@ -806,7 +1060,9 @@ namespace CH4
                 persona = data.Persona,
                 // M2c 写时校验——序列化前比对内置清单过滤非法名（外部损坏防御：持久化面只落合法名）
                 toolNames = ValidateToolNames(data.ToolNames),
-                injectList = data.InjectList
+                injectList = data.InjectList,
+                qqbotId = data.QqBotId,
+                qqbotEnable = data.QqBotEnable
             };
             try
             {
