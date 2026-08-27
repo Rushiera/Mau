@@ -391,16 +391,10 @@ document.getElementById('chatNew').addEventListener('click', function () {
     chatLoadHistory();
 });
 
-// 清空会话——session clear 指令
-document.getElementById('chatClear').addEventListener('click', function () {
+// 刷新——纯前端重建界面气泡（重新拉历史渲染，不发指令）
+document.getElementById('chatRefresh').addEventListener('click', function () {
     if (chatState === 'sending') { return; }
-    fetch('/api/v1/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: 'session clear' })
-    }).catch(function () {});
-    chatMsgs.textContent = '';
-    chatInfo.textContent = '会话已清空';
+    chatLoadHistory();
 });
 
 // 发送按钮与回车绑定

@@ -181,7 +181,9 @@ namespace CH4
                 new ToolSpec("random", "生成 [min, max) 范围内的随机整数（min 含下限，max 不含上限，要求 min < max）——会话内直执，无需 OA", "{\"type\":\"object\",\"properties\":{\"min\":{\"type\":\"integer\",\"description\":\"随机范围下限（含）\"},\"max\":{\"type\":\"integer\",\"description\":\"随机范围上限（不含）\"}},\"required\":[\"min\",\"max\"]}"),
                 new ToolSpec("info", "查看运行时工具注册表——工具清单/参数/归属工具组 Flow/内置状态（agent 的眼睛；R1.2）", "{\"type\":\"object\",\"properties\":{}}"),
                 // R2.1——web-search 联网搜索（OA 工具——SearchCat 工具组 Flow 认领；服务端自动执行全链）
-                new ToolSpec("web-search", "联网搜索——检索并返回基于搜索结果的回答（引用标注 [citation:x] 对应搜索结果序号）；搜索 API 需在配置区先配置", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"搜索查询\"}},\"required\":[\"query\"]}")
+                new ToolSpec("web-search", "联网搜索——检索并返回基于搜索结果的回答（引用标注 [citation:x] 对应搜索结果序号）；搜索 API 需在配置区先配置", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"搜索查询\"}},\"required\":[\"query\"]}"),
+                // R2.2——image-analyze 图像识别（OA 工具——VisionCat 工具组 Flow 认领；图片读取与格式化上传在工具内部）
+                new ToolSpec("image-analyze", "图像识别——读取图片（本地路径或 http(s) URL）并用视觉模型分析，返回基于提示词的描述/OCR/图表解读；视觉 API 需在配置区先配置", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"图片路径（本地绝对路径或 http(s) URL）\"},\"question\":{\"type\":\"string\",\"description\":\"提示词（对图片的提问，可空=默认描述）\"}},\"required\":[\"path\"]}")
             };
             return specs;
         }
@@ -228,6 +230,10 @@ namespace CH4
             if (name == "web-search")
             {
                 return ExecWebSearch(argsJson);
+            }
+            if (name == "image-analyze")
+            {
+                return ExecImageAnalyze(argsJson);
             }
             if (name.StartsWith("cs-", StringComparison.Ordinal))
             {
@@ -278,6 +284,27 @@ namespace CH4
                 return "ERR|WEB_NO_SERVICE|宿主未注入 IWebSearchService";
             }
             return TrimResult(service.Search(query), MaxToolResultChars);
+        }
+
+        /// <summary>
+        /// image-analyze——图像识别（R2.2；FALLBACK 直执保底面——主路径 VisionCat Flow 认领）
+        /// </summary>
+        /// <param name="argsJson">工具参数 JSON（path/question）</param>
+        /// <returns>分析结果（失败 ERR| 前缀）</returns>
+        private static string ExecImageAnalyze(string argsJson)
+        {
+            string path = ExtractArg(argsJson, "path");
+            if (path.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 path";
+            }
+            string question = ExtractArg(argsJson, "question");
+            Mau.Runtime.IVisionService service;
+            if (!DataBox.TryResolve<Mau.Runtime.IVisionService>(out service))
+            {
+                return "ERR|VISION_NO_SERVICE|宿主未注入 IVisionService";
+            }
+            return TrimResult(service.Analyze(path, question), MaxToolResultChars);
         }
     }
 }

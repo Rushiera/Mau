@@ -7,7 +7,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>CH4.Entry</AssemblyName>
     <RootNamespace>CH4</RootNamespace>
-    <Version>0.52.0</Version>
+    <Version>0.54.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

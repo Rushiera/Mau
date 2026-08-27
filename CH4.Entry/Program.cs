@@ -175,6 +175,8 @@ private static HttpHost _httpHost;
             llmConfig.AddFile("ui", Path.Combine(configDir, "ui.json"));
             // R2.1 搜索配置群——search.* 独立 search.cfg（未配置=搜索工具不可用——先配置后才可用）
             llmConfig.AddFile("search", Path.Combine(configDir, "search.cfg"));
+            // R2.2 视觉配置群——vision.* 独立 vision.cfg（未配置=识图工具不可用——先配置后才可用）
+            llmConfig.AddFile("vision", Path.Combine(configDir, "vision.cfg"));
             // M1 语料面 Runtime——默认端点语义（QuickCat 工单 llm.stream 消费面；Guid.Empty=每次调用实时解析默认配置）
             // 空配置池无默认端点 → 启动失败（不做静默回退——必须先配置端点后才能运行）
             _llmRuntime = new DeepSeekLlmRuntime(apiConfigStore, Guid.Empty, llmConfig);
@@ -183,6 +185,8 @@ private static HttpHost _httpHost;
             DataBox.Bind<ICSharpBridge>(new MauRoslynBridge(WritableRootPaths(workspace)));
             // R2.1 联网搜索服务——DeepSeek /responses + web_search（search.api_config_id 引用 LLM 池配置；未配置=不可用）
             DataBox.Bind<IWebSearchService>(new Mau.Providers.DeepSeekWebSearchService(apiConfigStore, llmConfig));
+            // R2.2 图像识别服务——DeepSeek vision 模型（vision.api_config_id 引用 LLM 池配置；未配置=不可用）
+            DataBox.Bind<IVisionService>(new Mau.Providers.DeepSeekVisionService(apiConfigStore, llmConfig));
             // P8.5 配置群 schema——schema.json 元声明（默认值/敏感/可写——/api/v1/config 输出面）
             DataBox.Bind<ConfigSchema>(ConfigSchema.Load(Path.Combine(configDir, "schema.json")));
             AuditStore audit = new AuditStore();
@@ -207,6 +211,7 @@ private static HttpHost _httpHost;
             LoadToolGroup("CsCat", dllDir);
             LoadToolGroup("ConfigCat", dllDir);
             LoadToolGroup("SearchCat", dllDir);
+            LoadToolGroup("VisionCat", dllDir);
             // [段5] 会话面——上下文 + 前文恢复 + 工具定义 + 默认会话注册（P9.1 会话对象化：ChatSession 承载状态机——design-llm-streaming §六）
             ChatContext chatCtx = new ChatContext();
             SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo.json"));

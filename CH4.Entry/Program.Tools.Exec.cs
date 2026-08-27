@@ -334,5 +334,22 @@ namespace CH4
             }
             return text.Substring(0, max) + System.Environment.NewLine + "…[截断: 共 " + text.Length.ToString() + " 字符，仅保留前 " + max.ToString() + "]";
         }
+/// <summary>
+/// 前端 html 根解析——源码区优先（仓库根/CH4.Entry/html——唯一事实源，改即生效）；回退部署区（AppContext.BaseDirectory/html——发布包）。
+/// </summary>
+/// <returns>html 根目录</returns>
+internal static string ResolveHtmlRoot()
+{
+    string root = FindRepoRoot(AppContext.BaseDirectory);
+    if (root.Length > 0)
+    {
+        string src = System.IO.Path.Combine(root, "CH4.Entry", "html");
+        if (System.IO.Directory.Exists(src))
+        {
+            return src;
+        }
     }
+
+    return System.IO.Path.Combine(AppContext.BaseDirectory, "html");
+}    }
 }

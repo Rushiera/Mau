@@ -249,13 +249,13 @@ namespace CH4
         /// <returns>HTML 响应</returns>
         private IResult ServeIndex()
         {
-            string baseDir = AppContext.BaseDirectory;
+            string htmlRoot = Program.ResolveHtmlRoot();
             string fileName = "index.html";
             if (_serveChatPage)
             {
                 fileName = "chat.html";
             }
-            string htmlPath = System.IO.Path.Combine(baseDir, "html", fileName);
+            string htmlPath = System.IO.Path.Combine(htmlRoot, fileName);
             if (System.IO.File.Exists(htmlPath))
             {
                 string html = System.IO.File.ReadAllText(htmlPath);
@@ -263,7 +263,7 @@ namespace CH4
                 html = html.Replace("__V__", GetFrontendVersion());
                 return Results.Text(html, "text/html");
             }
-            return Results.Text("CH4 外观层——" + fileName + " 未找到: " + htmlPath + "（宿主需在 CH4.Entry/bin/.../html/ 放置静态页）", "text/plain");
+            return Results.Text("CH4 外观层——" + fileName + " 未找到: " + htmlPath + "（源码区 CH4.Entry/html/ 或部署区 html/ 需放置静态页）", "text/plain");
         }
 
         /// <summary>
@@ -299,8 +299,7 @@ namespace CH4
         /// <returns>文件响应；未找到/越界 404</returns>
         private IResult ServeStatic(HttpContext ctx, string subDir, string mime)
         {
-            string baseDir = AppContext.BaseDirectory;
-            string htmlRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(baseDir, "html"));
+            string htmlRoot = System.IO.Path.GetFullPath(Program.ResolveHtmlRoot());
             string fileName = ctx.Request.RouteValues["file"]?.ToString() ?? "";
             string filePath = System.IO.Path.GetFullPath(System.IO.Path.Combine(htmlRoot, subDir, fileName));
             // 路径穿越校验——解析后必须仍在 html 根内（C# 包 exp §六 TCP/HTTP 规则 9）

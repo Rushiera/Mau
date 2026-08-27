@@ -1,0 +1,34 @@
+// vision_cat.mau —— VisionCat 语料（CH4 R2.2 工具组——VISION 视觉识别域独立 Flow）
+// 角色：工具组 Flow——认领 TOOL 域 image-analyze 1 工具（图像识别）
+// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 1 线认领执行 → complete_str 回执
+// 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON
+// 无值分支：工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
+// 数据面：@vrOffice 等私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
+// 线程模型：全部主线程同步（R2.2 拍板：识图必须走等待——后台化未来走子会话代理/多猫交火设计）
+// 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）
+
+// ── 状态机（1 线——独立生命周期）──
+§ 'S_Vision' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+
+// T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
+§ 'T_Init' : 'S_Vision' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Vision' = 'Idle' | 'S_Vision' = 'Idle'
+
+// ── 主动传感器壳——1 线探测（纯只读判断积木 → bool 落盒）──
+§ 'P_VisionOpen' ↻ [1]: 'oa.is_open'["TOOL", "image-analyze"] > @vrOpen
+
+// ══════════════ image-analyze 线 ══════════════
+
+// T_VisionClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_VisionClaim' : @vrOpen & 'S_Vision' = 'Idle' → 'oa.claim_next_simple'["TOOL", "image-analyze"] > @vrOffice | 'S_Vision' = 'Claimed' | 'S_Vision' = 'Idle'
+
+// T_VisionArgs：读载荷 args（整包工具参数 JSON）
+§ 'T_VisionArgs' : 'S_Vision' = 'Claimed' → 'oa.get_str'[@vrOffice, "args"] > @vrArgs | 'S_Vision' = 'Ready' | 'S_Vision' = 'Failed'
+
+// T_VisionExec：执行积木（同步识图——图片读取与格式化在工具内部；失败侧 ERR 文本也在 @vrRes）
+§ 'T_VisionExec' : 'S_Vision' = 'Ready' → 'vision.analyze'[@vrArgs] > @vrRes | 'self.desc'["image-analyze 执行中", "", ""] | 'S_Vision' = 'Done' | 'S_Vision' = 'Failed'
+
+// T_VisionReply：成功回执（result=分析结果文本）
+§ 'T_VisionReply' : 'S_Vision' = 'Done' → 'oa.complete_str'[@vrOffice, @vrRes] | 'self.desc'["空闲待命", "", ""] | 'S_Vision' = 'Idle' | 'S_Vision' = 'Idle'
+
+// T_VisionAbort：失败回执（@vrRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
+§ 'T_VisionAbort' : 'S_Vision' = 'Failed' → 'oa.complete_str'[@vrOffice, @vrRes] | 'S_Vision' = 'Idle' | 'S_Vision' = 'Idle'
