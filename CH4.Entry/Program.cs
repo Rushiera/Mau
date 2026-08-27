@@ -307,6 +307,8 @@ private static HttpHost _httpHost;
             // [段6b] 启动扫描——sessions/*/cat.cfg 中 running 猫拉起（主 HTTP 就位后——每猫 HttpHost 独立实例）
             LoadCatsOnBoot();
             Console.WriteLine("[CH4.Entry] HTTP 外观层就绪: http://127.0.0.1:" + _httpHost.Port);
+            // [段6c] 前端测试服务拉起——开发流程（改前端 → 跑测试 → 刷新生效）；未监听则启动 node server.js
+            EnsureFrontendTestService();
         }
         /// <summary>
         /// 环境信息——运行版本 + LLM 端点类型 + 当前时间（info 内置工具数据源；R0.2 拍板：不显示工具组清单——工具注册是前文初始化一次性）
@@ -357,6 +359,83 @@ private static HttpHost _httpHost;
             }
             string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             return "CH4 v" + version + " | LLM: " + llmInfo + " | " + now;
+        }
+        /// <summary>
+        /// 前端测试服务拉起——宿主启动时自动启动 html/tests/server.js（未监听 8099 时）；失败不影响主功能
+        /// </summary>
+        private static void EnsureFrontendTestService()
+        {
+            try
+            {
+                // 已监听则跳过（多实例/重复启动保护）
+                using (System.Net.Sockets.TcpClient probe = new System.Net.Sockets.TcpClient())
+                {
+                    IAsyncResult ar = probe.BeginConnect("127.0.0.1", 8099, null, null);
+                    if (ar.AsyncWaitHandle.WaitOne(300))
+                    {
+                        probe.EndConnect(ar);
+                        return;
+                    }
+                }
+                // 定位测试目录——优先源码区（仓库根/CH4.Entry/html/tests——开发流程；纯净仓库 node_modules 缺失时自动部署）
+                string testDir = "";
+                string repoRoot = FindRepoRoot(AppContext.BaseDirectory);
+                if (repoRoot.Length > 0)
+                {
+                    string src = System.IO.Path.Combine(repoRoot, "CH4.Entry", "html", "tests");
+                    if (System.IO.File.Exists(System.IO.Path.Combine(src, "server.js")))
+                    {
+                        testDir = src;
+                    }
+                }
+                // 回退部署区（html/tests——server.js 随 publish 复制）
+                if (testDir.Length == 0)
+                {
+                    string deploy = System.IO.Path.Combine(AppContext.BaseDirectory, "html", "tests");
+                    if (System.IO.File.Exists(System.IO.Path.Combine(deploy, "server.js")))
+                    {
+                        testDir = deploy;
+                    }
+                }
+                if (testDir.Length == 0)
+                {
+                    return;
+                }
+                // node_modules 缺失 → 自动部署（npm install + playwright chromium + 启动 server.js——后台链；纯净仓库跟随 Mau 自动部署）
+                if (!System.IO.Directory.Exists(System.IO.Path.Combine(testDir, "node_modules")))
+                {
+                    // 部署中保护——.fe-deploying 标记存在 = 上次自动部署进行中（跳过，避免重复部署冲突）
+                    string deployMark = System.IO.Path.Combine(testDir, ".fe-deploying");
+                    if (System.IO.File.Exists(deployMark))
+                    {
+                        return;
+                    }
+                    System.IO.File.WriteAllText(deployMark, "auto-deploy");
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "cmd.exe",
+                        Arguments = "/c npm install && npx playwright install chromium && node server.js",
+                        WorkingDirectory = testDir,
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    });
+                    LogStore.Add("CH4.Entry", 1, "fe-test | 依赖缺失——自动部署中（npm install + playwright chromium）| dir=" + testDir, "CONFIG");
+                    return;
+                }
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "node",
+                    Arguments = "server.js",
+                    WorkingDirectory = testDir,
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                });
+                LogStore.Add("CH4.Entry", 1, "fe-test | 前端测试服务已拉起 | dir=" + testDir, "CONFIG");
+            }
+            catch (Exception)
+            {
+                // 测试服务启动失败不影响宿主主功能
+            }
         }
         /// <summary>
         /// 工具组 Flow 摘要——就绪打印用（"TextCat#2 MauCat#3 ..."；未加载组省略）

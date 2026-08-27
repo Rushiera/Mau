@@ -23,8 +23,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- P6 外观层静态页——复制到输出目录（HttpHost.ServeIndex 从 AppContext.BaseDirectory/html/ 读取） -->
-    <None Include="html\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- P6 外观层静态页——复制到输出目录（HttpHost.ServeIndex 从 AppContext.BaseDirectory/html/ 读取）
+         排除 tests/node_modules 与测试产物（巨大；测试服务从源码区启动——node_modules 在源码区） -->
+    <None Include="html\**" Exclude="html\tests\node_modules\**;html\tests\test-results\**;html\tests\playwright-report\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

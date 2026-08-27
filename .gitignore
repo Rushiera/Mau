@@ -51,3 +51,8 @@ TestResult.xml
 *.log
 .DS_Store
 Thumbs.db
+
+# === Node.js 前端测试（CH4.Entry/html/tests）===
+node_modules/
+playwright-report/
+.fe-deploying

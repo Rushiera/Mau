@@ -205,6 +205,26 @@ namespace CH4
             // 2026-08-25 模块化拆分——静态资源多文件路由（css/js 子目录；禁缓存同 index 策略；路径穿越校验）
             _app.MapGet("/css/{file}", (HttpContext ctx) => ServeStatic(ctx, "css", "text/css"));
             _app.MapGet("/js/{file}", (HttpContext ctx) => ServeStatic(ctx, "js", "application/javascript"));
+            // 前端测试服务代理——CH4 通过宿主端点触发前端测试（开发流程：改前端 → 跑测试 → 刷新生效；转发 8099）
+            _app.MapGet("/api/v1/frontend-test", async (HttpContext ctx) =>
+            {
+                string type = ctx.Request.Query["type"].ToString();
+                string path = type == "e2e" ? "e2e" : "unit";
+                try
+                {
+                    using (System.Net.Http.HttpClient client = new System.Net.Http.HttpClient())
+                    {
+                        client.Timeout = TimeSpan.FromSeconds(120);
+                        System.Net.Http.HttpResponseMessage resp = await client.GetAsync("http://127.0.0.1:8099/api/test/" + path);
+                        string body = await resp.Content.ReadAsStringAsync();
+                        return Results.Text(body, "application/json");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return Results.Text("{\"ok\":false,\"error\":\"" + ex.Message + "\"}", "application/json");
+                }
+            });
             try
             {
                 _app.StartAsync().GetAwaiter().GetResult();
