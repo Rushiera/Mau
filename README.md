@@ -26,8 +26,8 @@ LLM 写 .mau 语料 → 门禁验真（词法/解析/验证/E2xx 引用/E3xx 图
 
 | 区块 | 是什么 | 位置 |
 |:--|:--|:--|
-| **Mau 基座** | 私人方言语言内核 + 数字电路运行时（Tick/Inbox/OA/CommandBus/DataBox/ALC）+ 门禁工具链 + 积木原子能力 | `Mau.Cli` / `Mau.Runtime` / `Mau.Translator` … |
-| **CH4 宿主** | 自举循环宿主——agent 循环基建走 C#，业务 100% 语料化热重载 | `CH4.Entry` / `corpus/ch4/` |
+| **Mau 基座** | 私人方言语言内核 + 数字电路运行时（Tick/Inbox/OA/CommandBus/DataBox/ALC）+ 门禁工具链 + 积木原子能力 | `Mau/Mau.Cli` / `Mau/Mau.Runtime` / `Mau/Mau.Translator` … |
+| **CH4 宿主** | 自举循环宿主——agent 循环基建走 C#，业务 100% 语料化热重载 | `CatHome4` / `corpus/ch4/` |
 
 **现状：** 自举循环真实运转——LLM 经宿主工具（text.* 文件操作 / mau.* 语料自查 / cs.* Roslyn 编码 / config.* 配置自改 / web-search 联网 / image-analyze 识图）完成"发现问题 → 修语料 → 门禁通过"闭环。多猫并发（每猫独立会话/端口/配置）+ 工具组 Flow 化（ToolRegistry 动态注册/热重载/退役）+ qqbot 接入（QQ Bot 池 + 双向桥接 + 强匹配指令）已落地。版本与里程碑唯一真相源：CCBP `Project/CH4/CHANGELOG.md` 与 `Project/Mau/CHANGELOG.md`。
 
@@ -78,11 +78,11 @@ cd mau
 ```
 1. dotnet build Mau.sln
 2. dotnet test Mau.sln
-3. dotnet publish Mau.Cli -c Debug -o Mau-public
-4. Mau.Cli\bin\Debug\net8.0\mau.exe proj corpus\ch4\quick_cat.mauproj -o public\src\quick_cat --build
-   Mau.Cli\bin\Debug\net8.0\mau.exe proj corpus\ch4\dev_cat.mauproj -o public\src\dev_cat --build
-5. dotnet publish CH4.Entry -c Debug -o public\app
-6. public\app\CH4.Entry.exe --run "session count"
+3. dotnet publish Mau\Mau.Cli -c Debug -o Mau-public
+4. Mau\Mau.Cli\bin\Debug\net8.0\mau.exe proj corpus\ch4\quick_cat.mauproj -o public\src\quick_cat --build
+   Mau\Mau.Cli\bin\Debug\net8.0\mau.exe proj corpus\ch4\dev_cat.mauproj -o public\src\dev_cat --build
+5. dotnet publish CatHome4 -c Debug -o public\app
+6. public\app\CatHome4.exe --run "session count"
 ```
 
 | 步 | 做什么 | 验收 |
@@ -91,7 +91,7 @@ cd mau
 | 2 | 全量测试（fixture 自给自足生成） | 188/188 |
 | 3 | **基座部署区**——组构建的引用源（无此步 mau proj 报 M3245 找不到 Mau.Runtime） | `Mau-public/Mau.Runtime.dll` 存在 |
 | 4 | 语料 → 组翻译 → 编译 dll | `public/app/Flows/FL_QuickCat.dll` + `FL_DevCat.dll` |
-| 5 | 宿主部署 | `public/app/CH4.Entry.exe` 存在 |
+| 5 | 宿主部署 | `public/app/CatHome4.exe` 存在 |
 | 6 | 宿主自检——CLI 全链（主线程直执 + 进程自退） | 两 Cat 注册 + `会话消息数: 1` |
 
 > 步骤 3-6 的顺序是硬约束：改基座源码后必须重跑 3-4（`Mau-public/` 是编译/运行时同源点）。语料层随时可重建（`public/app/Flows/*.dll` 运行中热重载不锁文件）；宿主自身 publish 前先停进程。规格权威：CCBP `Project/CH4/design-ch4-deploy.md`。
@@ -118,12 +118,12 @@ cd mau
 | `dotnet build Mau.sln` | 全量构建——0/0 是提交底线 |
 | `dotnet test Mau.sln` | 标准测试入口（三测试项目全量） |
 
-**宿主（CH4.Entry）：**
+**宿主（CatHome4）：**
 
 | 指令 | 用途 |
 |:--|:--|
-| `CH4.Entry.exe`（无参） | 程序入口——扫描 Flows/ 加载语料 + HTTP 外观层 http://127.0.0.1:8080 |
-| `CH4.Entry.exe --run "<指令>"` | CLI 全链——主线程直执指令 + 进程自退（脚本化跑测通道） |
+| `CatHome4.exe`（无参） | 程序入口——扫描 Flows/ 加载语料 + HTTP 外观层 http://127.0.0.1:8080 |
+| `CatHome4.exe --run "<指令>"` | CLI 全链——主线程直执指令 + 进程自退（脚本化跑测通道） |
 
 **git：**
 

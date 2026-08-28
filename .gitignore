@@ -24,7 +24,7 @@ build/
 publish/
 CatTemp/
 Data/
-Mau.Snapshots/generated-run/
+Mau/Mau.Snapshots/generated-run/
 
 # === 部署区（design-ch4-deploy.md——中间产物与发布产物可重建，git 排除） ===
 public/

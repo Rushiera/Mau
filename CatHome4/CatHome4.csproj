@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>CatHome4</AssemblyName>
+    <RootNamespace>CH4</RootNamespace>
+    <Version>0.58.0</Version>
+    <!-- 域子项目目录排除——SDK 默认递归编译会包含子项目源码（CS0579 特性重复），必须显式排除 -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);CatHome4.Contracts\**;CatHome4.Core\**;CatHome4.Http\**;CatHome4.QQ\**;CatHome4.Admin\**;CatHome4.Observe\**;CatHome4.Core.Tests\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mau\Mau.Runtime\Mau.Runtime.csproj" />
+    <ProjectReference Include="..\Mau\Mau.Providers\Mau.Providers.csproj" />
+    <!-- B3 mau.* 工具实装——组翻译共享服务（MauProjFile/MauGroupBuilder）自 Mau.Development 引用 -->
+    <ProjectReference Include="..\Mau\Mau.Development\Mau.Development.csproj" />
+    <!-- CH4 域程序集——拆分后按域独立（CatHome4.sln 程序入口） -->
+    <ProjectReference Include="CatHome4.Contracts\CatHome4.Contracts.csproj" />
+    <ProjectReference Include="CatHome4.Core\CatHome4.Core.csproj" />
+    <ProjectReference Include="CatHome4.Http\CatHome4.Http.csproj" />
+    <ProjectReference Include="CatHome4.QQ\CatHome4.QQ.csproj" />
+    <ProjectReference Include="CatHome4.Admin\CatHome4.Admin.csproj" />
+    <ProjectReference Include="CatHome4.Observe\CatHome4.Observe.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- P6 外观层 HTTP——Kestrel + Minimal API（FrameworkReference = 运行时自带，非第三方 NuGet 依赖） -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- P6 外观层静态页——复制到输出目录（HttpHost.ServeIndex 从 AppContext.BaseDirectory/html/ 读取）
+         排除 tests/node_modules 与测试产物（巨大；测试服务从源码区启动——node_modules 在源码区） -->
+    <None Include="html\**" Exclude="html\tests\node_modules\**;html\tests\test-results\**;html\tests\playwright-report\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

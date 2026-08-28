@@ -3,25 +3,23 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Contracts", "Mau.Contracts\Mau.Contracts.csproj", "{A0000001-0000-0000-0000-000000000001}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Contracts", "Mau\Mau.Contracts\Mau.Contracts.csproj", "{A0000001-0000-0000-0000-000000000001}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Runtime", "Mau.Runtime\Mau.Runtime.csproj", "{A0000002-0000-0000-0000-000000000002}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Runtime", "Mau\Mau.Runtime\Mau.Runtime.csproj", "{A0000002-0000-0000-0000-000000000002}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Translator", "Mau.Translator\Mau.Translator.csproj", "{A0000003-0000-0000-0000-000000000003}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Translator", "Mau\Mau.Translator\Mau.Translator.csproj", "{A0000003-0000-0000-0000-000000000003}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Cli", "Mau.Cli\Mau.Cli.csproj", "{A0000005-0000-0000-0000-000000000005}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Cli", "Mau\Mau.Cli\Mau.Cli.csproj", "{A0000005-0000-0000-0000-000000000005}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Runtime.Tests", "Mau.Runtime.Tests\Mau.Runtime.Tests.csproj", "{A0000007-0000-0000-0000-000000000007}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Runtime.Tests", "Mau\Mau.Runtime.Tests\Mau.Runtime.Tests.csproj", "{A0000007-0000-0000-0000-000000000007}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Translator.Tests", "Mau.Translator.Tests\Mau.Translator.Tests.csproj", "{A0000008-0000-0000-0000-000000000008}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Translator.Tests", "Mau\Mau.Translator.Tests\Mau.Translator.Tests.csproj", "{A0000008-0000-0000-0000-000000000008}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Development", "Mau.Development\Mau.Development.csproj", "{A000000C-0000-0000-0000-00000000000C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Development", "Mau\Mau.Development\Mau.Development.csproj", "{A000000C-0000-0000-0000-00000000000C}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Development.Tests", "Mau.Development.Tests\Mau.Development.Tests.csproj", "{A000000E-0000-0000-0000-00000000000E}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Mau.Development.Tests", "Mau\Mau.Development.Tests\Mau.Development.Tests.csproj", "{A000000E-0000-0000-0000-00000000000E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CH4.Entry", "CH4.Entry\CH4.Entry.csproj", "{74BE1822-318C-4500-8D5B-7215E320C187}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mau.Providers", "Mau.Providers\Mau.Providers.csproj", "{A1160143-3EC3-4C38-A101-2DA7DC198925}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mau.Providers", "Mau\Mau.Providers\Mau.Providers.csproj", "{A1160143-3EC3-4C38-A101-2DA7DC198925}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -129,18 +127,6 @@ Global
 		{A000000E-0000-0000-0000-00000000000E}.Release|x64.Build.0 = Release|Any CPU
 		{A000000E-0000-0000-0000-00000000000E}.Release|x86.ActiveCfg = Release|Any CPU
 		{A000000E-0000-0000-0000-00000000000E}.Release|x86.Build.0 = Release|Any CPU
-		{74BE1822-318C-4500-8D5B-7215E320C187}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{74BE1822-318C-4500-8D5B-7215E320C187}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{74BE1822-318C-4500-8D5B-7215E320C187}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{74BE1822-318C-4500-8D5B-7215E320C187}.Debug|x64.Build.0 = Debug|Any CPU
-		{74BE1822-318C-4500-8D5B-7215E320C187}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{74BE1822-318C-4500-8D5B-7215E320C187}.Debug|x86.Build.0 = Debug|Any CPU
-		{74BE1822-318C-4500-8D5B-7215E320C187}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{74BE1822-318C-4500-8D5B-7215E320C187}.Release|Any CPU.Build.0 = Release|Any CPU
-		{74BE1822-318C-4500-8D5B-7215E320C187}.Release|x64.ActiveCfg = Release|Any CPU
-		{74BE1822-318C-4500-8D5B-7215E320C187}.Release|x64.Build.0 = Release|Any CPU
-		{74BE1822-318C-4500-8D5B-7215E320C187}.Release|x86.ActiveCfg = Release|Any CPU
-		{74BE1822-318C-4500-8D5B-7215E320C187}.Release|x86.Build.0 = Release|Any CPU
 		{A1160143-3EC3-4C38-A101-2DA7DC198925}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{A1160143-3EC3-4C38-A101-2DA7DC198925}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A1160143-3EC3-4C38-A101-2DA7DC198925}.Debug|x64.ActiveCfg = Debug|Any CPU
