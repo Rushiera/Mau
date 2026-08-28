@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using Mau.Runtime;
 using Xunit;
 
@@ -36,17 +37,19 @@ namespace CatHome4.Core.Tests
             /// <param name="userId">用户标识</param>
             /// <param name="ct">取消令牌</param>
             /// <returns>事件流</returns>
-            public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, string userId = "", CancellationToken ct = default)
+            public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, string userId = "", [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
             {
                 CallCount = CallCount + 1;
                 if (ToolCallsQueue.Count > 0)
                 {
                     string tc = ToolCallsQueue.Dequeue();
                     yield return new LlmStreamEvent(LlmStreamKind.ToolCalls, tc);
+                    await Task.Yield();
                     yield return new LlmStreamEvent(LlmStreamKind.Done, "");
                     yield break;
                 }
                 yield return new LlmStreamEvent(LlmStreamKind.Text, ReplyText);
+                await Task.Yield();
                 yield return new LlmStreamEvent(LlmStreamKind.Done, "");
             }
         }
