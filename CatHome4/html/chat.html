@@ -35,18 +35,15 @@
     </div>
 
     <!-- 前端版本标记——每次改动前端递增；刷新后数字变化 = 拿到新版（人眼 cache-busting） -->
-    <div style="position:fixed;left:4px;bottom:2px;color:#4a4a4a;font-size:10px;z-index:99">UI v3</div>
+    <div style="position:fixed;left:4px;bottom:2px;color:#4a4a4a;font-size:10px;z-index:99">UI v5</div>
 
     <script>
-        // ui.* 字号配置→CSS 变量（P8.5d 接线——读配置覆盖 CSS 默认；读不到默认 14px；气泡/全局双配置）
+        // ui.* 字号配置→CSS 变量（P8.5d 接线——读配置覆盖 CSS 默认；读不到默认 14px；全局字号配置已移除——静态提档替代 2026-08-28）
         function applyUiConfig(items) {
-            var base = 14;
             var chat = 14;
             for (var i = 0; i < (items || []).length; i++) {
-                if (items[i].key === 'ui.font_size') { var b = parseInt(items[i].value, 10); if (b > 0) { base = b; } }
                 if (items[i].key === 'ui.chat_font_size') { var c = parseInt(items[i].value, 10); if (c > 0) { chat = c; } }
             }
-            document.documentElement.style.setProperty('--base-font-size', base + 'px');
             document.documentElement.style.setProperty('--chat-font-size', chat + 'px');
         }
         fetch('/api/v1/config')
