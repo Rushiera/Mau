@@ -1,7 +1,7 @@
 ﻿/* CH4 外观层 v2——index.html 主面板样式（2026-08-25 拆分自 index.html 内嵌 <style>） */
-:root { --chat-font-size: 12px; } /* P8.5d——ui.chat_font_size 前端消费（宿主持久化配置） */
+:root { --chat-font-size: 14px; --base-font-size: 14px; } /* P8.5d——ui.* 字号前端消费（宿主持久化配置） */
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #141414; color: #c8c8c8; height: 100vh; overflow: hidden; }
+body { font-family: "Consolas", "Microsoft YaHei", monospace; font-size: var(--base-font-size); background: #141414; color: #c8c8c8; height: 100vh; overflow: hidden; }
 #layout { display: flex; height: 100vh; }
 
 /* ── 窄侧栏 ── */

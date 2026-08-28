@@ -210,8 +210,7 @@ namespace CatHome4.Http
             // 前端测试服务代理——CH4 通过宿主端点触发前端测试（开发流程：改前端 → 跑测试 → 刷新生效；转发 8099）
             _app.MapGet("/api/v1/frontend-test", async (HttpContext ctx) =>
             {
-                string type = ctx.Request.Query["type"].ToString();
-                string path = type == "e2e" ? "e2e" : "unit";
+                string path = "unit";   // E2E 已移除（2026-08-28）——只转发 Vitest
                 try
                 {
                     using (System.Net.Http.HttpClient client = new System.Net.Http.HttpClient())

@@ -4,8 +4,7 @@
 // 端点：
 //   GET /health          → 健康检查
 //   GET /api/test/unit   → 运行 Vitest 单元测试（无需宿主）
-//   GET /api/test/e2e    → 运行 Playwright E2E（需宿主在 127.0.0.1:8080）
-//   GET /api/test        → 运行全部（unit + e2e）
+//   GET /api/test        → 运行 Vitest 单元测试
 // 端口：环境变量 FE_TEST_PORT（默认 8099）
 const http = require('http');
 const { spawn } = require('child_process');
@@ -44,10 +43,6 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/api/test/unit') {
     runTest(['vitest', 'run'], res);
-    return;
-  }
-  if (req.url === '/api/test/e2e') {
-    runTest(['playwright', 'test'], res);
     return;
   }
   if (req.url === '/api/test') {

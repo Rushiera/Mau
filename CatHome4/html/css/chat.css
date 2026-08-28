@@ -1,7 +1,7 @@
 ﻿/* CH4 外观层 v2——chat.html 独立对话页样式（2026-08-25 拆分自 chat.html 内嵌 <style>） */
-:root { --chat-font-size: 12px; }
+:root { --chat-font-size: 14px; --base-font-size: 14px; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #141414; color: #c8c8c8; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+body { font-family: "Consolas", "Microsoft YaHei", monospace; font-size: var(--base-font-size); background: #141414; color: #c8c8c8; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
 #chatbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #222; font-size: 11px; color: #6a6a6a; }
 #chatbar .sid { color: #c586c0; font-weight: bold; }
 /* E 系列——四态状态条 + Token 统计（link/think/tool/reply + 每态计时） */

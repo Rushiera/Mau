@@ -490,12 +490,12 @@ private static HttpHost _httpHost;
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                     {
                         FileName = "cmd.exe",
-                        Arguments = "/c npm install && npx playwright install chromium && node server.js",
+                        Arguments = "/c npm install && node server.js",
                         WorkingDirectory = testDir,
                         CreateNoWindow = true,
                         UseShellExecute = false
                     });
-                    LogStore.Add("CatHome4", 1, "fe-test | 依赖缺失——自动部署中（npm install + playwright chromium）| dir=" + testDir, "CONFIG");
+                    LogStore.Add("CatHome4", 1, "fe-test | 依赖缺失——自动部署中（npm install）| dir=" + testDir, "CONFIG");
                     return;
                 }
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo

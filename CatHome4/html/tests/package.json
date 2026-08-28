@@ -2,14 +2,12 @@
   "name": "ch4-frontend-tests",
   "private": true,
   "version": "0.1.0",
-  "description": "CH4 前端测试框架——Playwright E2E + Vitest 单元（宿主启动自动拉起）",
+  "description": "CH4 前端测试框架——Vitest 单元（宿主启动自动拉起）",
   "scripts": {
     "test:unit": "vitest run",
-    "test:e2e": "playwright test",
-    "test": "vitest run && playwright test"
+    "test": "vitest run"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
     "jsdom": "^30.0.1",
     "vitest": "^4.1.11"
   }

@@ -528,8 +528,23 @@ var configMsg = document.getElementById('configMsg');
 function loadConfig() {
     fetch('/api/v1/config')
         .then(function (r) { return r.json(); })
-        .then(function (d) { renderConfig(d.items || []); })
+        .then(function (d) {
+            var items = d.items || [];
+            renderConfig(items);
+            applyUiConfig(items);
+        })
         .catch(function () {});
+}
+// ui.* 字号配置→CSS 变量（P8.5d 接线——读配置覆盖 CSS 默认；读不到默认 14px；气泡/全局双配置）
+function applyUiConfig(items) {
+    var base = 14;
+    var chat = 14;
+    for (var i = 0; i < (items || []).length; i++) {
+        if (items[i].key === 'ui.font_size') { var b = parseInt(items[i].value, 10); if (b > 0) { base = b; } }
+        if (items[i].key === 'ui.chat_font_size') { var c = parseInt(items[i].value, 10); if (c > 0) { chat = c; } }
+    }
+    document.documentElement.style.setProperty('--base-font-size', base + 'px');
+    document.documentElement.style.setProperty('--chat-font-size', chat + 'px');
 }
 function renderConfig(items) {
     configTableBody.textContent = '';
