@@ -1,0 +1,56 @@
+// temp_tool.mau —— TempToolCat 语料（CH4 R3.1 万能接口——临时工具自举试验场）
+// 角色：工具组 Flow——认领 TOOL 域 temp-info/temp-exec 2 工具（万能接口双入口）
+// 双入口：temp-info（信息暴露——当前临时工具 Key 组）/ temp-exec（真实执行——Key+content → str）
+// 临时工具本体 = BRIK-TEMP-001_temp.exec.cs 内 TempRegistry【LLM 可改区】——改积木 = 换/增/删临时工具
+// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 2 线认领执行 → complete_str 回执
+// 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON
+// 无值分支：每工具一条认领线，工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
+// 数据面：@tiOffice/@teOffice 等私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
+// 线程模型：全部主线程同步（临时工具 str→str 短逻辑）
+// 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）
+// 【迁移转正】临时工具验证可用 → 复制本语料单线模板换工具名 + 独立积木 + BuildToolSpecs 声明 + ToolRegistry 登记
+
+// ── 状态机（2 线——每线独立生命周期）──
+§ 'S_Info' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Exec' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+
+// T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
+§ 'T_Init' : 'S_Info' = 'Init' → 'self.desc'["TempTool 空闲待命", "", ""] | 'S_Info' = 'Idle' | 'S_Info' = 'Idle'
+
+// ── 主动传感器壳——2 线各自探测（纯只读判断积木 → bool 落盒）──
+§ 'P_InfoOpen' ↻ [1]: 'oa.is_open'["TOOL", "temp-info"] > @tiOpen
+§ 'P_ExecOpen' ↻ [1]: 'oa.is_open'["TOOL", "temp-exec"] > @teOpen
+
+// ══════════════ temp-info 线 ══════════════
+
+// T_InfoClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_InfoClaim' : @tiOpen & 'S_Info' = 'Idle' → 'oa.claim_next_simple'["TOOL", "temp-info"] > @tiOffice | 'S_Info' = 'Claimed' | 'S_Info' = 'Idle'
+
+// T_InfoArgs：读载荷 args（信息暴露无参消费——保留读参兼容通用载荷）
+§ 'T_InfoArgs' : 'S_Info' = 'Claimed' → 'oa.get_str'[@tiOffice, "args"] > @tiArgs | 'S_Info' = 'Ready' | 'S_Info' = 'Failed'
+
+// T_InfoExec：执行积木——枚举当前临时工具 Key 组（逗号分隔）
+§ 'T_InfoExec' : 'S_Info' = 'Ready' → 'temp.keys' > @tiRes | 'S_Info' = 'Done' | 'S_Info' = 'Failed'
+
+// T_InfoReply：成功回执（result=Key 组列表）
+§ 'T_InfoReply' : 'S_Info' = 'Done' → 'oa.complete_str'[@tiOffice, @tiRes] | 'self.desc'["TempTool 空闲待命", "", ""] | 'S_Info' = 'Idle' | 'S_Info' = 'Idle'
+
+// T_InfoAbort：失败回执（@tiRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
+§ 'T_InfoAbort' : 'S_Info' = 'Failed' → 'oa.complete_str'[@tiOffice, @tiRes] | 'S_Info' = 'Idle' | 'S_Info' = 'Idle'
+
+// ══════════════ temp-exec 线 ══════════════
+
+// T_ExecClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_ExecClaim' : @teOpen & 'S_Exec' = 'Idle' → 'oa.claim_next_simple'["TOOL", "temp-exec"] > @teOffice | 'S_Exec' = 'Claimed' | 'S_Exec' = 'Idle'
+
+// T_ExecArgs：读载荷 args（整包工具参数 JSON——含 key+content）
+§ 'T_ExecArgs' : 'S_Exec' = 'Claimed' → 'oa.get_str'[@teOffice, "args"] > @teArgs | 'S_Exec' = 'Ready' | 'S_Exec' = 'Failed'
+
+// T_ExecExec：执行积木（str→str 分发；失败侧 ERR 文本也在 @teRes）
+§ 'T_ExecExec' : 'S_Exec' = 'Ready' → 'temp.exec'[@teArgs] > @teRes | 'self.desc'["temp-exec 执行中", "", ""] | 'S_Exec' = 'Done' | 'S_Exec' = 'Failed'
+
+// T_ExecReply：成功回执（result=str 结果）
+§ 'T_ExecReply' : 'S_Exec' = 'Done' → 'oa.complete_str'[@teOffice, @teRes] | 'self.desc'["TempTool 空闲待命", "", ""] | 'S_Exec' = 'Idle' | 'S_Exec' = 'Idle'
+
+// T_ExecAbort：失败回执（@teRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
+§ 'T_ExecAbort' : 'S_Exec' = 'Failed' → 'oa.complete_str'[@teOffice, @teRes] | 'S_Exec' = 'Idle' | 'S_Exec' = 'Idle'

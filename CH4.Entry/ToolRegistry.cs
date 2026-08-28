@@ -152,6 +152,14 @@ namespace CH4
             {
                 return "SearchCat";
             }
+            if (name.StartsWith("image-", StringComparison.Ordinal))
+            {
+                return "VisionCat";
+            }
+            if (name.StartsWith("temp-", StringComparison.Ordinal))
+            {
+                return "TempToolCat";
+            }
             return "";
         }
     }

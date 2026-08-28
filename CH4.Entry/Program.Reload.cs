@@ -222,6 +222,10 @@ namespace CH4
             {
                 return "SearchCat";
             }
+            if (cat == "temp")
+            {
+                return "TempToolCat";
+            }
             return "";
         }
     }

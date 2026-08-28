@@ -1,6 +1,6 @@
 ﻿# Mau 积木索引 — INDEX
 
-> 版本：v3.3 | 更新：2026-08-27（mau bricks index --update 源码驱动重建）
+> 版本：v3.3 | 更新：2026-08-28（mau bricks index --update 源码驱动重建）
 > 全量积木登记——一行一条。ID 永不重用。
 
 ## 全部积木
@@ -33,6 +33,8 @@
 | BRIK-PACK-004 | config.bridge | PACK | PACK/BRIK-PACK-004_config.bridge.cs | 无 | active |  |
 | BRIK-SELF-001 | self.desc | SELF | SELF/BRIK-SELF-001_self.desc.cs | 无 | active |  |
 | BRIK-SELF-002 | self.desc.add | SELF | SELF/BRIK-SELF-002_self.desc.add.cs | 无 | active |  |
+| BRIK-TEMP-001 | temp.exec | TEMP | TEMP/BRIK-TEMP-001_temp.exec.cs | 无 | active |  |
+| BRIK-TEMP-002 | temp.keys | TEMP | TEMP/BRIK-TEMP-002_temp.keys.cs | 无 | active |  |
 | BRIK-TEST-001 | probe.source | TEST | TEST/BRIK-TEST-001_probe.source.cs | 无 | active |  |
 | BRIK-TEST-002 | probe.sink | TEST | TEST/BRIK-TEST-002_probe.sink.cs | 无 | active |  |
 | BRIK-TEST-003 | probe.sink_slow | TEST | TEST/BRIK-TEST-003_probe.sink_slow.cs | 无 | active |  |
@@ -45,4 +47,4 @@
 
 ---
 
-_版本：v3.3 | 2026-08-27 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_
+_版本：v3.3 | 2026-08-28 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_

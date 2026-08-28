@@ -218,6 +218,7 @@ private static HttpHost _httpHost;
             LoadToolGroup("ConfigCat", dllDir);
             LoadToolGroup("SearchCat", dllDir);
             LoadToolGroup("VisionCat", dllDir);
+            LoadToolGroup("TempToolCat", dllDir);
             // [段5] 会话面——上下文 + 前文恢复 + 工具定义 + 默认会话注册（P9.1 会话对象化：ChatSession 承载状态机——design-llm-streaming §六）
             ChatContext chatCtx = new ChatContext();
             SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo.json"));

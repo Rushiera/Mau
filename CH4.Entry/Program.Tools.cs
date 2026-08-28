@@ -182,6 +182,8 @@ namespace CH4
                 new ToolSpec("info", "查看运行时工具注册表——工具清单/参数/归属工具组 Flow/内置状态（agent 的眼睛；R1.2）", "{\"type\":\"object\",\"properties\":{}}"),
                 // R2.1——web-search 联网搜索（OA 工具——SearchCat 工具组 Flow 认领；服务端自动执行全链）
                 new ToolSpec("web-search", "联网搜索——检索并返回基于搜索结果的回答（引用标注 [citation:x] 对应搜索结果序号）；搜索 API 需在配置区先配置", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"搜索查询\"}},\"required\":[\"query\"]}"),
+                new ToolSpec("temp-info", "临时工具信息——返回当前 TempToolCat 全部可用临时工具 Key 组（逗号分隔；R3.1 万能接口试验场——temp.exec 的 Key 注册表枚举）", "{\"type\":\"object\",\"properties\":{}}"),
+                new ToolSpec("temp-exec", "临时工具万能执行——输入 Key + content，按 Key 调度到临时工具并返回 str 结果；Key 不存在报 ERR|TEMP_KEY_NOT_FOUND（R3.1 万能接口——临时工具本体在 BRIK-TEMP-001 LLM 可改区）", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"临时工具 Key（temp-info 可查当前可用 Key 组）\"},\"content\":{\"type\":\"string\",\"description\":\"输入内容\"}},\"required\":[\"key\",\"content\"]}" ),
                 // R2.2——image-analyze 图像识别（OA 工具——VisionCat 工具组 Flow 认领；图片读取与格式化上传在工具内部）
                 new ToolSpec("image-analyze", "图像识别——读取图片（本地路径或 http(s) URL）并用视觉模型分析，返回基于提示词的描述/OCR/图表解读；视觉 API 需在配置区先配置", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"图片路径（本地绝对路径或 http(s) URL）\"},\"question\":{\"type\":\"string\",\"description\":\"提示词（对图片的提问，可空=默认描述）\"}},\"required\":[\"path\"]}")
             };
