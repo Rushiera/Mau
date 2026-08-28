@@ -58,6 +58,15 @@ namespace Mau.Providers
                     // [段2b] tool_calls 增量——按 index 聚合（与文本/思考同帧可并存）
                     AccumulateToolCalls(item.Data, toolIds, toolNames, toolArgs, toolOrder);
                 }
+                else
+                {
+                    // [段2c] usage-only 尾帧——choices 空数组 + usage 对象（CH2 移植：include_usage 请求后服务端在 [DONE] 前发完整统计块）
+                    string usageJson = "";
+                    if (TryParseUsage(item.Data, out usageJson) && usageJson.Length > 0)
+                    {
+                        yield return new LlmStreamEvent(LlmStreamKind.Usage, usageJson);
+                    }
+                }
             }
             // [段3] 完整性检查——无 [DONE] 提前结束 = STREAM_CLOSED（模型调用不可信，按失败处理）
             if (!done)
@@ -343,6 +352,68 @@ private static string BuildToolCallsJson(Dictionary<int, string> ids, Dictionary
             }
             builder.Append("]");
             return builder.ToString();
+        }
+        /// <summary>
+        /// 解析 usage-only 尾帧——提取 prompt/completion/cacheHit（双格式：DeepSeek prompt_cache_hit_tokens / OpenAI 兼容 prompt_tokens_details.cached_tokens）。
+        /// 全零返回 false（无有效统计不产事件）；格式：{"prompt":N,"completion":N,"cacheHit":N}。
+        /// </summary>
+        /// <param name="data">帧 data 载荷</param>
+        /// <param name="usageJson">usage JSON 字符串（无 usage 或全零返回空串）</param>
+        /// <returns>true=解析到有效 usage</returns>
+        private static bool TryParseUsage(string data, out string usageJson)
+        {
+            usageJson = "";
+            if (data == null || data.Length == 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(data))
+                {
+                    JsonElement root = doc.RootElement;
+                    JsonElement usage;
+                    if (!root.TryGetProperty("usage", out usage) || usage.ValueKind != JsonValueKind.Object)
+                    {
+                        return false;
+                    }
+
+                    long prompt = 0;
+                    long completion = 0;
+                    long cacheHit = 0;
+                    if (usage.TryGetProperty("prompt_tokens", out JsonElement pt) && pt.ValueKind == JsonValueKind.Number)
+                    {
+                        prompt = pt.GetInt64();
+                    }
+
+                    if (usage.TryGetProperty("completion_tokens", out JsonElement ct) && ct.ValueKind == JsonValueKind.Number)
+                    {
+                        completion = ct.GetInt64();
+                    }
+
+                    if (usage.TryGetProperty("prompt_cache_hit_tokens", out JsonElement cht) && cht.ValueKind == JsonValueKind.Number)
+                    {
+                        cacheHit = cht.GetInt64();
+                    }
+                    else if (usage.TryGetProperty("prompt_tokens_details", out JsonElement details) && details.ValueKind == JsonValueKind.Object && details.TryGetProperty("cached_tokens", out JsonElement cached) && cached.ValueKind == JsonValueKind.Number)
+                    {
+                        cacheHit = cached.GetInt64();
+                    }
+
+                    if (prompt == 0 && completion == 0 && cacheHit == 0)
+                    {
+                        return false;
+                    }
+
+                    usageJson = "{\"prompt\":" + prompt.ToString() + ",\"completion\":" + completion.ToString() + ",\"cacheHit\":" + cacheHit.ToString() + "}";
+                    return true;
+                }
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

@@ -10,6 +10,7 @@
         <span class="sid">CH4 Cat</span>
         <span id="chatInfo">—</span>
     </div>
+    <div id="chatStatus"></div>
     <div id="chatMsgs"></div>
     <!-- M4c Note 面板——Agent 与人交互的工作进度面板 -->
     <div id="notePanel" class="collapsed">
@@ -50,6 +51,73 @@
         var CHAT_TIMEOUT_MS = 120000;
         var chatPending = [];              // 插话队列——本地发送记录（user 事件到达 FIFO 移除；纯展示）
         var SYSTEM_AUTO_PREFIX = '[SystemAuto] ';   // 系统自动消息前缀（前端常量一处定义，微调只动此行）
+
+        // E 系列——四态状态条（link 链路/think 思考/tool 工具/reply 回复）+ 每态计时 + Token 统计（CH2 对话流形态移植）
+        var chatPhases = [
+            { key: 'link', label: '链路', icon: '🔗' },
+            { key: 'think', label: '思考', icon: '🧠' },
+            { key: 'tool', label: '工具', icon: '🔧' },
+            { key: 'reply', label: '回复', icon: '💬' }
+        ];
+        var chatActivePhase = null;        // 当前态 key（null=无活跃轮）
+        var chatPhaseStart = 0;            // 当前态开始时间戳（ms）
+        var chatPhaseTimes = { link: 0, think: 0, tool: 0, reply: 0 };   // 各态已完成秒数（累计）
+        var chatUsage = { prompt: 0, completion: 0, cacheHit: 0 };       // Token 整轮累计（usage 事件覆盖式累计）
+        var chatStatusTimer = null;        // 状态条 500ms 刷新定时器
+
+        function chatPhaseEnter(key) {
+            // 相位切换——前一态结算 + 新态起表（事件驱动；每态计时独立）
+            var now = Date.now();
+            if (chatActivePhase && chatActivePhase !== key && chatPhaseStart > 0) {
+                chatPhaseTimes[chatActivePhase] = chatPhaseTimes[chatActivePhase] + (now - chatPhaseStart) / 1000;
+            }
+            if (chatActivePhase !== key) {
+                chatActivePhase = key;
+                chatPhaseStart = now;
+            }
+            chatRenderStatus();
+        }
+
+        function chatPhaseReset() {
+            // 终态/失败——状态条全部清零隐藏
+            chatActivePhase = null;
+            chatPhaseStart = 0;
+            chatPhaseTimes = { link: 0, think: 0, tool: 0, reply: 0 };
+            chatUsage = { prompt: 0, completion: 0, cacheHit: 0 };
+            if (chatStatusTimer) { clearInterval(chatStatusTimer); chatStatusTimer = null; }
+            chatRenderStatus();
+        }
+
+        function chatRenderStatus() {
+            // 状态条渲染——已完成态暗色 + 当前态高亮 + 实时秒数 + 右侧 Token 统计
+            var bar = document.getElementById('chatStatus');
+            if (!bar) { return; }
+            var html = '';
+            for (var i = 0; i < chatPhases.length; i++) {
+                var p = chatPhases[i];
+                var sec = chatPhaseTimes[p.key];
+                if (chatActivePhase === p.key && chatPhaseStart > 0) {
+                    sec = sec + (Date.now() - chatPhaseStart) / 1000;
+                }
+                if (sec <= 0 && chatActivePhase !== p.key) { continue; }
+                var cls = (chatActivePhase === p.key) ? 'active' : '';
+                html += '<span class="st ' + p.key + ' ' + cls + '">' + p.icon + ' ' + p.label + ' ' + sec.toFixed(1) + 's</span>';
+            }
+            if (chatUsage.prompt > 0 || chatUsage.completion > 0) {
+                var miss = chatUsage.prompt - chatUsage.cacheHit;
+                if (miss < 0) { miss = 0; }
+                html += '<span class="tok">↑' + chatUsage.prompt + ' ↓' + chatUsage.completion
+                    + (chatUsage.cacheHit > 0 ? ' (cache ' + chatUsage.cacheHit + ')' : '')
+                    + (miss > 0 ? ' miss ' + miss : '') + '</span>';
+            }
+            bar.innerHTML = html;
+            if (chatActivePhase && !chatStatusTimer) {
+                chatStatusTimer = setInterval(chatRenderStatus, 500);
+            } else if (!chatActivePhase && chatStatusTimer) {
+                clearInterval(chatStatusTimer);
+                chatStatusTimer = null;
+            }
+        }
 
         function chatSetState(s) {
             chatState = s;
@@ -195,6 +263,8 @@
         }
 
         function chatFail(msg) {
+            // E 系列——失败：四态状态条清零隐藏
+            chatPhaseReset();
             // 发送失败——seal 当前阶段 + 独立错误气泡 + 恢复 idle
             chatSealCurrent();
             var eb = chatBubble('assistant');
@@ -221,6 +291,8 @@
                 // idle 发送——清阶段残留（sending 态插话不清——不破坏当前流式渲染）
                 chatStage = null;
                 chatToolQueue = [];
+                // E 系列——发送即进入链路态（插话不干扰活跃轮计时）
+                chatPhaseEnter('link');
             }
             chatSetState('sending');
             chatKeepAlive();
@@ -298,6 +370,8 @@
 
         // chatdone——会话终态：seal 所有阶段 / 未回填工具卡兜底标注 / 恢复 idle（llm done 仅一轮结束——终态唯一信号）
         function chatOnChatDone(d) {
+            // E 系列——终态：四态状态条清零隐藏
+            chatPhaseReset();
             if (chatState !== 'sending') {
                 return;  // 非 sending（如重连后）——历史重绘已定型
             }
@@ -363,6 +437,8 @@
                 // 思考阶段——独立气泡默认展开实时流式（B4.2）
                 if (!chatStage || chatStage.type !== 'reason') {
                     chatNewStage('reason');
+                    // E 系列——首 reasoning 进入思考态
+                    chatPhaseEnter('think');
                 }
                 chatStage.reasonPre.textContent = chatStage.reasonPre.textContent + (d.text || '');
             } else if (d.kind === 'text') {
@@ -371,12 +447,16 @@
                 if (t.length === 0) { return; }
                 if (!chatStage || chatStage.type !== 'text') {
                     chatNewStage('text');
+                    // E 系列——首 text 进入回复态
+                    chatPhaseEnter('reply');
                 }
                 chatStage.bubble.classList.remove('error');
                 chatAppend(chatStage.bubble, t);
             } else if (d.kind === 'toolCalls') {
                 // 工具阶段——seal 前一阶段；每个调用一个独立工具气泡（🔧 name + 参数 + 处理中…）
                 chatSealCurrent();
+                // E 系列——首 toolCalls 进入工具态（每轮工具批起表）
+                chatPhaseEnter('tool');
                 chatStage = { type: 'tool', bubble: null, reasonPre: null };
                 var calls = [];
                 try { calls = JSON.parse(d.text || '[]'); } catch (e) { calls = []; }
@@ -389,6 +469,15 @@
                     chatToolQueue.push({ card: card, name: fn.name || '?', filled: false });
                 }
                 chatScrollBottom();
+            } else if (d.kind === 'usage') {
+                // E 系列——Token 统计：usage 事件覆盖式显示整轮累计（宿主整轮累加后推送）
+                try {
+                    var u = JSON.parse(d.text || '{}');
+                    chatUsage.prompt = u.prompt || 0;
+                    chatUsage.completion = u.completion || 0;
+                    chatUsage.cacheHit = u.cacheHit || 0;
+                } catch (e) { }
+                chatRenderStatus();
             } else if (d.kind === 'done') {
                 // 一轮 LLM 流结束——停光标；stage 保留（续轮事件到来时 seal 切换；终态以 chatdone 为准）
                 if (chatStage && chatStage.bubble) {

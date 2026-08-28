@@ -72,6 +72,15 @@ namespace CH4
         /// <summary>LLM 后台错误文本（ERR| 前缀——失败可见性）</summary>
         private string _llmErrorText;
 
+        /// <summary>Token 用量整轮累计——prompt（含 cache hit）</summary>
+        private long _usagePrompt;
+
+        /// <summary>Token 用量整轮累计——completion</summary>
+        private long _usageCompletion;
+
+        /// <summary>Token 用量整轮累计——cache hit（CH2 双格式：prompt_cache_hit_tokens / cached_tokens）</summary>
+        private long _usageCacheHit;
+
         // [段3] 工具批
         /// <summary>工具批执行中——reload 拒绝检查面（任一会话 TRUE 即拒绝）</summary>
         private bool _toolBatchActive;
@@ -361,6 +370,10 @@ namespace CH4
         /// <param name="source">来源——user/system</param>
         private void StartRound(string content, string source)
         {
+            // E3 Token 统计——整轮清零（工具续轮 LaunchLlm 不清——跨轮累加语义）
+            _usagePrompt = 0;
+            _usageCompletion = 0;
+            _usageCacheHit = 0;
             _context.AddUserMessage(content);
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
             if (_httpHost != null)
@@ -431,6 +444,18 @@ _ = ConsumeLlmStream(messages);
                             _httpHost.PushLlm("toolCalls", ev.Text);
                         }
                     }
+                    else if (ev.Kind == LlmStreamKind.Usage)
+                    {
+                        // E3 Token 统计——解析 usage JSON 累计整轮（工具多轮累加）+ 转发 SSE（前端覆盖式显示累计值）
+                        ParseUsage(ev.Text, ref _usagePrompt, ref _usageCompletion, ref _usageCacheHit);
+                        if (_httpHost != null)
+                        {
+                            string usageJson = "{\"prompt\":" + _usagePrompt.ToString()
+                                + ",\"completion\":" + _usageCompletion.ToString()
+                                + ",\"cacheHit\":" + _usageCacheHit.ToString() + "}";
+                            _httpHost.PushLlm("usage", usageJson);
+                        }
+                    }
                     else if (ev.Kind == LlmStreamKind.Done)
                     {
                         if (_httpHost != null)
@@ -462,6 +487,8 @@ _ = ConsumeLlmStream(messages);
                 {
                     llmSummary = llmSummary + "N";
                 }
+                // E3 Token 统计——结算行带 usage（CLI/日志可观测；SSE 推送仍走 usage 事件——前端覆盖式显示累计值）
+                llmSummary = llmSummary + " | prompt=" + _usagePrompt.ToString() + " | completion=" + _usageCompletion.ToString() + " | cacheHit=" + _usageCacheHit.ToString();
                 LogStore.Add("LLM", 0, llmSummary, "LLM");
             }
             catch (Exception ex)
@@ -472,6 +499,44 @@ _ = ConsumeLlmStream(messages);
             finally
             {
                 _llmBusy = false;
+            }
+        }
+
+        /// <summary>
+        /// 解析 usage JSON——prompt/completion/cacheHit 累加到整轮计数（CH2 语义：多工具轮累加）。
+        /// </summary>
+        /// <param name="usageJson">usage JSON 字符串（{"prompt":N,"completion":N,"cacheHit":N}）</param>
+        /// <param name="prompt">prompt 累计引用</param>
+        /// <param name="completion">completion 累计引用</param>
+        /// <param name="cacheHit">cacheHit 累计引用</param>
+        private static void ParseUsage(string usageJson, ref long prompt, ref long completion, ref long cacheHit)
+        {
+            if (usageJson == null || usageJson.Length == 0)
+            {
+                return;
+            }
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(usageJson))
+                {
+                    JsonElement root = doc.RootElement;
+                    if (root.TryGetProperty("prompt", out JsonElement p) && p.ValueKind == JsonValueKind.Number)
+                    {
+                        prompt = prompt + p.GetInt64();
+                    }
+                    if (root.TryGetProperty("completion", out JsonElement c) && c.ValueKind == JsonValueKind.Number)
+                    {
+                        completion = completion + c.GetInt64();
+                    }
+                    if (root.TryGetProperty("cacheHit", out JsonElement h) && h.ValueKind == JsonValueKind.Number)
+                    {
+                        cacheHit = cacheHit + h.GetInt64();
+                    }
+                }
+            }
+            catch
+            {
+                // 解析失败静默——观测面不受单帧畸形影响
             }
         }
 

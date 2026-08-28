@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Mau.Runtime;
+using CatHome4.Contracts;
 using Xunit;
 
 namespace CatHome4.Core.Tests
@@ -25,6 +26,9 @@ namespace CatHome4.Core.Tests
 
             /// <summary>纯文本回复内容</summary>
             public string ReplyText = "ok";
+
+            /// <summary>E3——usage JSON（非空则在文本前产 Usage 事件；null=不产）</summary>
+            public string UsageJson = "";
 
             /// <summary>ChatStream 调用次数——工具批收敛验证</summary>
             public int CallCount = 0;
@@ -48,10 +52,50 @@ namespace CatHome4.Core.Tests
                     yield return new LlmStreamEvent(LlmStreamKind.Done, "");
                     yield break;
                 }
+                // E3——usage 事件（文本前产——模拟 usage-only 尾帧到达）
+                if (UsageJson != null && UsageJson.Length > 0)
+                {
+                    yield return new LlmStreamEvent(LlmStreamKind.Usage, UsageJson);
+                }
                 yield return new LlmStreamEvent(LlmStreamKind.Text, ReplyText);
                 await Task.Yield();
                 yield return new LlmStreamEvent(LlmStreamKind.Done, "");
             }
+        }
+
+        /// <summary>
+        /// Mock 宿主推送面——捕获 SSE 事件调用（E3 usage 转发断言）。
+        /// </summary>
+        private sealed class MockHost : IHostPush
+        {
+            /// <summary>捕获的 PushLlm 调用——kind → text 列表</summary>
+            public Dictionary<string, List<string>> LlmEvents = new Dictionary<string, List<string>>();
+
+            /// <summary>用户消息事件（不捕获）</summary>
+            public void PushUserMessage(string text, string source) { }
+
+            /// <summary>LLM 事件捕获——按 kind 累积</summary>
+            /// <param name="kind">事件类型</param>
+            /// <param name="text">载荷</param>
+            public void PushLlm(string kind, string text)
+            {
+                List<string> list;
+                if (!LlmEvents.TryGetValue(kind, out list))
+                {
+                    list = new List<string>();
+                    LlmEvents[kind] = list;
+                }
+                list.Add(text);
+            }
+
+            /// <summary>工具结果事件（不捕获）</summary>
+            public void PushToolResult(string name, string arguments, string result) { }
+
+            /// <summary>会话完成事件（不捕获）</summary>
+            public void PushChatDone(int count) { }
+
+            /// <summary>Note 状态事件（不捕获）</summary>
+            public void PushNoteState(string json) { }
         }
 
         /// <summary>
@@ -196,6 +240,33 @@ namespace CatHome4.Core.Tests
             Assert.True(session.IsIdle);
             // 4 次 LLM 调用（3 轮工具 + 1 轮收尾文本）——收敛
             Assert.Equal(4, llm.CallCount);
+        }
+
+        /// <summary>
+        /// E3 usage 转发——LLM 流带 Usage 事件 → 宿主收到 PushLlm("usage") 且累计整轮（覆盖式）。
+        /// </summary>
+        [Fact]
+        public void Usage_ForwardedToHost()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "token 统计";
+            llm.UsageJson = "{\"prompt\":100,\"completion\":20,\"cacheHit\":30}";
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            session.AttachHost(host);
+            session.PostUserMessage("统计一下");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            List<string> usageEvents;
+            Assert.True(host.LlmEvents.TryGetValue("usage", out usageEvents));
+            Assert.True(usageEvents.Count > 0);
+            // 累计 JSON 含三字段（整轮累计值）
+            using (JsonDocument ud = JsonDocument.Parse(usageEvents[usageEvents.Count - 1]))
+            {
+                Assert.Equal(100, ud.RootElement.GetProperty("prompt").GetInt64());
+                Assert.Equal(20, ud.RootElement.GetProperty("completion").GetInt64());
+                Assert.Equal(30, ud.RootElement.GetProperty("cacheHit").GetInt64());
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-namespace Mau.Runtime
+﻿namespace Mau.Runtime
 {
     /// <summary>
     /// 流式事件种类——P5 工具协调扩展：思考/回复双通道 + 工具调用 + 结束。
@@ -29,7 +29,12 @@ namespace Mau.Runtime
         /// <summary>
         /// 失败终止——Text 携带 ERR|码|详情（错误可见性：禁止吞错）
         /// </summary>
-        Error
+        Error,
+
+        /// <summary>
+        /// usage 统计块到达——Text 携带 usage JSON（prompt/completion/cacheHit——E3 Token 统计）
+        /// </summary>
+        Usage
     }
 
     /// <summary>

@@ -160,3 +160,63 @@ test('chatSealCurrent 保留有内容的 reason 气泡（details 子元素存在
   expect(msgs().length).toBe(1);
   expect(window.chatStage).toBeNull();
 });
+
+
+// ── E 系列：四态状态条 + 每态计时 + Token 统计（2026-08-28 E1/E2/E3）──
+// 前置：beforeEach 未覆盖 chatPhase/chatUsage——用例内 eReset 全量清理
+function eReset() {
+  window.chatPhaseReset();
+  window.chatState = 'sending';
+  window.chatStage = null;
+  window.chatToolQueue = [];
+  document.getElementById('chatMsgs').textContent = '';
+  document.getElementById('chatStatus').textContent = '';
+}
+
+test('E 四态相位切换——link/think/tool/reply 事件驱动', () => {
+  eReset();
+  // link：idle 发送进入链路态
+  window.chatState = 'idle';
+  window.chatInput.value = '你好';
+  window.chatSend();
+  expect(window.chatActivePhase).toBe('link');
+  // think：首 reasoning
+  window.chatOnLlm({ kind: 'reasoning', text: '思考中' });
+  expect(window.chatActivePhase).toBe('think');
+  // tool：首 toolCalls
+  window.chatOnLlm({ kind: 'toolCalls', text: '[]' });
+  expect(window.chatActivePhase).toBe('tool');
+  // reply：首 text
+  window.chatOnLlm({ kind: 'text', text: '回复' });
+  expect(window.chatActivePhase).toBe('reply');
+});
+
+test('E usage 事件渲染 Token 统计', () => {
+  eReset();
+  window.chatOnLlm({ kind: 'usage', text: '{"prompt":100,"completion":20,"cacheHit":30}' });
+  const bar = document.getElementById('chatStatus');
+  expect(bar.textContent).toContain('↑100');
+  expect(bar.textContent).toContain('↓20');
+  expect(bar.textContent).toContain('cache 30');
+  expect(bar.textContent).toContain('miss 70');
+});
+
+test('E chatdone 终态清空状态条与 Token', () => {
+  eReset();
+  window.chatOnLlm({ kind: 'usage', text: '{"prompt":10,"completion":2,"cacheHit":0}' });
+  window.chatPhaseEnter('link');
+  expect(document.getElementById('chatStatus').textContent.length).toBeGreaterThan(0);
+  window.chatOnChatDone({});
+  expect(document.getElementById('chatStatus').textContent).toBe('');
+  expect(window.chatActivePhase).toBeNull();
+  expect(window.chatUsage.prompt).toBe(0);
+});
+
+test('E chatFail 失败清空状态条', () => {
+  eReset();
+  window.chatPhaseEnter('link');
+  window.chatOnLlm({ kind: 'usage', text: '{"prompt":5,"completion":1,"cacheHit":0}' });
+  window.chatFail('发送失败');
+  expect(document.getElementById('chatStatus').textContent).toBe('');
+  expect(window.chatActivePhase).toBeNull();
+});
