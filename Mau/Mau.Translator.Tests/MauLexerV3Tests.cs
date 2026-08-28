@@ -22,22 +22,6 @@ namespace Mau.Translator.Tests
         }
 
         /// <summary>
-        /// Token 流文本化——断言失败时输出诊断详情
-        /// </summary>
-        /// <param name="result">词法结果</param>
-        /// <returns>token 摘要</returns>
-        private static string FormatTokens(LexResultV3 result)
-        {
-            string s = "";
-            for (int i = 0; i < result.Tokens.Count; i++)
-            {
-                TokenV3 t = result.Tokens[i];
-                s = s + t.Id + "(" + t.Value + ") ";
-            }
-            return s;
-        }
-
-        /// <summary>
         /// 诊断文本化——断言失败时输出错误详情
         /// </summary>
         /// <param name="result">词法结果</param>

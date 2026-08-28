@@ -38,9 +38,18 @@ namespace CatHome4.QQ
     /// </summary>
     internal sealed class QQBotConnection
     {
+/// <summary>
+/// op=9 错误码——session_id 无效，须全新鉴权
+/// </summary>
         // op=9 错误码
         private const int ERR_INVALID_SESSION = 4006;  // session_id 无效，须全新鉴权
+/// <summary>
+/// op=9 错误码——连接过期，可重试 resume
+/// </summary>
         private const int ERR_EXPIRED = 4009;          // 连接过期，可重试 resume
+/// <summary>
+/// 心跳 ACK 超时阈值——连续无 ACK 次数超限触发重连
+/// </summary>
 
         // 心跳 ACK 超时：连续多少次无 ACK 后触发重连
         private const int MaxMissedAcks = 2;

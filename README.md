@@ -26,28 +26,73 @@ LLM 写 .mau 语料 → 门禁验真（词法/解析/验证/E2xx 引用/E3xx 图
 
 | 区块 | 是什么 | 位置 |
 |:--|:--|:--|
-| **Mau 基座** | 私人方言语言内核 + 数字电路运行时（Tick/Inbox/OA/CommandBus/DataBox/ALC）+ 门禁工具链 + 积木原子能力 | `Mau/Mau.Cli` / `Mau/Mau.Runtime` / `Mau/Mau.Translator` … |
-| **CH4 宿主** | 自举循环宿主——agent 循环基建走 C#，业务 100% 语料化热重载 | `CatHome4` / `corpus/ch4/` |
+| **Mau 基座** | 私人方言语言内核 + 数字电路运行时（Tick/Inbox/OA/CommandBus/DataBox/ALC）+ 门禁工具链 + 积木原子能力 | `Mau/`（Mau.sln 9 项目） |
+| **CH4 宿主** | 自举循环宿主——agent 循环基建走 C#，业务 100% 语料化热重载；S1-S8 拆分后按域多程序集 | `CatHome4/`（CatHome4.sln 8 项目）· `corpus/ch4/` |
 
-**现状：** 自举循环真实运转——LLM 经宿主工具（text.* 文件操作 / mau.* 语料自查 / cs.* Roslyn 编码 / config.* 配置自改 / web-search 联网 / image-analyze 识图）完成"发现问题 → 修语料 → 门禁通过"闭环。多猫并发（每猫独立会话/端口/配置）+ 工具组 Flow 化（ToolRegistry 动态注册/热重载/退役）+ qqbot 接入（QQ Bot 池 + 双向桥接 + 强匹配指令）已落地。版本与里程碑唯一真相源：CCBP `Project/CH4/CHANGELOG.md` 与 `Project/Mau/CHANGELOG.md`。
+**现状：** 自举循环真实运转——LLM 经宿主工具（text.* 文件操作 / mau.* 语料自查 / cs.* Roslyn 编码 / config.* 配置自改 / web-search 联网 / image-analyze 识图 / temp-* 万能接口）完成"发现问题 → 修语料 → 门禁通过"闭环。多猫并发（每猫独立会话/端口/配置）+ 工具组 Flow 化（ToolRegistry 动态注册/热重载/退役）+ qqbot 接入（QQ Bot 池 + 双向桥接 + 强匹配指令）已落地。版本与里程碑唯一真相源：CCBP `Project/CH4/CHANGELOG.md` 与 `Project/Mau/CHANGELOG.md`。
 
-### 当前能力（第一期工具与原型已落地）
+---
 
-**工具面（27 件——LLM 可调用，ToolRegistry 单一真相源）：**
+## 二、仓库结构（v0.58.0 —— S1-S8 程序集拆分收官后）
+
+```
+mau/
+├── Mau.sln / CatHome4.sln     双解决方案——基座与宿主各自独立构建
+├── Mau/                       基座 9 项目（Mau.sln）
+│   ├── Mau.Contracts          内核契约（TokenIds/ISymbolAppearance/BrickContract）
+│   ├── Mau.Runtime            数字电路机制（Tick/Cube/Inbox/OA/CommandBus/DataBox/FlowALC/FlowHandle/ThreadGuard/LogStore）
+│   ├── Mau.Translator         语料翻译器（词法→解析→验证→分析→生成）
+│   ├── Mau.Cli                mau 命令行（verify/gen/proj/test/check/debug/bricks）
+│   ├── Mau.Development        Roslyn 开发工具（口袋编译/契约提取/组翻译共享服务）
+│   ├── Mau.Providers          LLM 供应商实现（DeepSeek 系列——LLM/WebSearch/Vision）
+│   └── Mau.*.Tests            三测试项目（Runtime/Translator/Development）
+├── CatHome4/                  宿主 8 项目（CatHome4.sln）
+│   ├── CatHome4              入口壳（Program.*.cs——纯 composition root 组装）
+│   ├── CatHome4.Contracts    域接口（IHostPush/IHttpRouteSink/IHtmlRootProvider/IQqTargetCollector）
+│   ├── CatHome4.Core         会话协调（ChatSession×3/ToolRegistry/工具批收敛/Note）
+│   ├── CatHome4.Http         Kestrel 外观层（快照/SSE/指令/配置/历史通道）
+│   ├── CatHome4.QQ           QQ 管理器（WS 协议资产：鉴权/心跳 ACK/Resume/重连/输入路由/输出转发）
+│   ├── CatHome4.Admin        管理 API 处理器 + cat.* 指令族
+│   ├── CatHome4.Observe      观测面（快照/帧流/审计）
+│   └── CatHome4.Core.Tests   Core 测试（相位环/工具批收敛/Note 全链）
+├── corpus/ch4/                业务语料——每工具组一个 Flow 目录（.mau + .mauproj）
+│   ├── QuickCat/              问答消费者（主 Cat）
+│   ├── TextCat/ MauCat/ CsCat/ ConfigCat/   工具组 Flow（text-*/mau-*/cs-*/config-*）
+│   ├── SearchCat/ VisionCat/ 工具组 Flow（web-search/image-analyze）
+│   └── TempToolCat/           万能接口 Flow（temp-info/temp-exec——改积木即换临时工具）
+├── Bricks/                    积木文本资产库（index.json 机器索引唯一真相源）
+├── Mau-public/                基座部署区（publish 平铺——FL csproj 引用源铁律）
+├── public/                    宿主部署区（src=翻译中间产物 / app=CH4.exe 平铺 + Flows/）
+├── config/                    配置模板（llm.cfg / cat-default.cfg / schema.json / ui.json / workspace.json）
+└── docs/                      设计审计（P7_AUDIT.md 等）
+```
+
+**架构分层：**
+
+| 层 | 形态 | 变更方式 |
+|:--|:--|:--|
+| Runtime 层 | Mau.Runtime 固定 C#——数字电路机制 | 编译期变更 |
+| 业务层 | .mau 语料 → 翻译 C# → 编译 dll——全部功能 | **热重载**（FlowHandle/FlowALC——改语料重编译即生效，宿主不重启） |
+| 工具组层 | 每工具组独立 .mau Flow——独立注册/热重载/退役；ToolRegistry 动态注册面（内置/OA 双轨） | **热重载**（改单组不动全局） |
+
+**当前能力（第一期工具与原型已落地）**
+
+**工具面（29 件——LLM 可调用，ToolRegistry 单一真相源）：**
 
 | 域 | 工具 | 执行器 |
 |:--|:--|:--|
-| 文本 | text-read / text-write / text-append / text-replace | FileSystemService（受控根 + 回收站语义） |
-| Mau 自查 | mau-verify / mau-gen / mau-proj | MauCompilerV3 进程内直调 |
-| 编码 | cs-check / cs-build / cs-list / cs-read / cs-find_ref / cs-patch / cs-member / cs-comment / cs-dead | ICSharpBridge + MauRoslynBridge |
-| 配置 | config-list / config-get / config-set / config-reset | ConfigStore SetChecked/ResetToDefault |
+| 文本 | text-read / text-write / text-append / text-replace | TextCat Flow → FileSystemService（受控根 + 回收站语义） |
+| Mau 自查 | mau-verify / mau-gen / mau-proj | MauCat Flow → MauCompilerV3 进程内直调 + MauProjFile 组翻译 |
+| 编码 | cs-check / cs-build / cs-list / cs-read / cs-find_ref / cs-patch / cs-member / cs-comment / cs-dead | CsCat Flow → ICSharpBridge + MauRoslynBridge |
+| 配置 | config-list / config-get / config-set / config-reset | ConfigCat Flow → ConfigStore SetChecked/ResetToDefault |
 | 联网 | web-search | SearchCat Flow → IWebSearchService |
 | 识图 | image-analyze | VisionCat Flow → IVisionService |
+| 万能接口 | temp-info / temp-exec | TempToolCat Flow → TempRegistry（LLM 可改区——改积木即换临时工具） |
 | 内置 | host-reload / time / random / info / Note | 会话内/宿主直执 |
 
 **多猫并发（P9）：** 单进程多会话——每猫独立 ChatSession + 端口级路由 + cat.cfg 独立配置（persona / toolNames / injectList / apiConfigId / qqbotId）；默认猫 majordomo + cat.* 指令族管理（cat.new / start / stop / delete / chat）。
 
-**工具组 Flow 化（R0.2）：** 每工具组独立 .mau Flow（TextCat / MauCat / CsCat / ConfigCat / SearchCat / VisionCat）——独立注册 / 热重载 / 退役；ToolRegistry 动态注册面（内置 / OA 双轨）。
+**工具组 Flow 化（R0.2）：** 每工具组独立 .mau Flow（TextCat / MauCat / CsCat / ConfigCat / SearchCat / VisionCat / TempToolCat）——独立注册 / 热重载 / 退役；ToolRegistry 动态注册面（内置 / OA 双轨）。
 
 **qqbot 接入（R2.3——附属功能组件 / 全局插件，非 toolcall）：**
 
@@ -61,9 +106,9 @@ LLM 写 .mau 语料 → 门禁验真（词法/解析/验证/E2xx 引用/E3xx 图
 
 ---
 
-## 二、第一次部署（从空仓库）+ 常用指令
+## 三、第一次部署（从空仓库）+ 常用指令
 
-### 2.1 前置
+### 3.1 前置
 
 - Windows + .NET 8 SDK（`dotnet --version` ≥ 8.0）
 - 取仓库：
@@ -73,14 +118,13 @@ git clone git@gitee.com:wu_lisha/mau.git
 cd mau
 ```
 
-### 2.2 部署序（唯一次序——顺序不可跳）
+### 3.2 部署序（唯一次序——顺序不可跳）
 
 ```
 1. dotnet build Mau.sln
 2. dotnet test Mau.sln
 3. dotnet publish Mau\Mau.Cli -c Debug -o Mau-public
-4. Mau\Mau.Cli\bin\Debug\net8.0\mau.exe proj corpus\ch4\quick_cat.mauproj -o public\src\quick_cat --build
-   Mau\Mau.Cli\bin\Debug\net8.0\mau.exe proj corpus\ch4\dev_cat.mauproj -o public\src\dev_cat --build
+4. mau proj corpus\ch4\<Flow>\<组>.mauproj -o public\src\<Flow> --build   （×8——见下方清单）
 5. dotnet publish CatHome4 -c Debug -o public\app
 6. public\app\CatHome4.exe --run "session count"
 ```
@@ -88,15 +132,28 @@ cd mau
 | 步 | 做什么 | 验收 |
 |:--|:--|:--|
 | 1 | 构建 + NuGet 还原（唯一真相源 = git） | 0 错误 0 警告 |
-| 2 | 全量测试（fixture 自给自足生成） | 188/188 |
+| 2 | 全量测试 | Mau.sln 202/202（Runtime 141 + Development 9 + Translator 52） |
 | 3 | **基座部署区**——组构建的引用源（无此步 mau proj 报 M3245 找不到 Mau.Runtime） | `Mau-public/Mau.Runtime.dll` 存在 |
-| 4 | 语料 → 组翻译 → 编译 dll | `public/app/Flows/FL_QuickCat.dll` + `FL_DevCat.dll` |
+| 4 | 语料 → 组翻译 → 编译 dll（8 个工具组 Flow） | `public/app/Flows/FL_<组>.dll` 存在 |
 | 5 | 宿主部署 | `public/app/CatHome4.exe` 存在 |
-| 6 | 宿主自检——CLI 全链（主线程直执 + 进程自退） | 两 Cat 注册 + `会话消息数: 1` |
+| 6 | 宿主自检——CLI 全链（主线程直执 + 进程自退） | 各 Cat 注册 + 会话消息数正常 |
 
-> 步骤 3-6 的顺序是硬约束：改基座源码后必须重跑 3-4（`Mau-public/` 是编译/运行时同源点）。语料层随时可重建（`public/app/Flows/*.dll` 运行中热重载不锁文件）；宿主自身 publish 前先停进程。规格权威：CCBP `Project/CH4/design-ch4-deploy.md`。
+**步骤 4 的 8 个 mauproj（corpus/ch4 每个 Flow 一个）：**
 
-### 2.3 常用指令（工作目录 = 仓库根）
+```
+mau proj corpus\ch4\QuickCat\quick_cat.mauproj      -o public\src\QuickCat --build
+mau proj corpus\ch4\TextCat\text_cat.mauproj        -o public\src\TextCat --build
+mau proj corpus\ch4\MauCat\mau_cat.mauproj          -o public\src\MauCat --build
+mau proj corpus\ch4\CsCat\cs_cat.mauproj            -o public\src\CsCat --build
+mau proj corpus\ch4\ConfigCat\config_cat.mauproj    -o public\src\ConfigCat --build
+mau proj corpus\ch4\SearchCat\search_cat.mauproj    -o public\src\SearchCat --build
+mau proj corpus\ch4\VisionCat\vision_cat.mauproj    -o public\src\VisionCat --build
+mau proj corpus\ch4\TempToolCat\temp_tool_cat.mauproj -o public\src\TempToolCat --build
+```
+
+> 步骤 3-4 的顺序是硬约束：改基座源码后必须重跑 3-4（`Mau-public/` 是编译/运行时同源点）。语料层随时可重建（`public/app/Flows/*.dll` 运行中热重载不锁文件）；宿主自身 publish 前先停进程。规格权威：CCBP `Project/CH4/design-ch4-deploy.md`。
+
+### 3.3 常用指令（工作目录 = 仓库根）
 
 **mau CLI（构筑与门禁）：**
 
@@ -115,8 +172,10 @@ cd mau
 
 | 指令 | 用途 |
 |:--|:--|
-| `dotnet build Mau.sln` | 全量构建——0/0 是提交底线 |
-| `dotnet test Mau.sln` | 标准测试入口（三测试项目全量） |
+| `dotnet build Mau.sln` | 基座全量构建——0/0 是提交底线 |
+| `dotnet test Mau.sln` | 基座测试入口（三测试项目全量——202/202） |
+| `dotnet build CatHome4.sln` | 宿主全量构建——0/0 是提交底线 |
+| `dotnet test CatHome4.sln` | 宿主测试入口（CatHome4.Core.Tests——4/4） |
 
 **宿主（CatHome4）：**
 
