@@ -96,6 +96,31 @@ namespace CatHome4.Core.Tests
 
             /// <summary>Note 状态事件（不捕获）</summary>
             public void PushNoteState(string json) { }
+
+            /// <summary>捕获的 PushView 调用——renderType → payload 列表（F4 视图事件）</summary>
+            public Dictionary<string, List<string>> ViewEvents = new Dictionary<string, List<string>>();
+
+            /// <summary>视图事件序号——递增分配（F4）</summary>
+            private int _viewSeq;
+
+            /// <summary>视图事件捕获——按 renderType 累积（F4）</summary>
+            /// <param name="renderType">渲染类型</param>
+            /// <param name="payload">载荷 JSON</param>
+            /// <param name="replaceSeq">被替换序号（忽略）</param>
+            /// <param name="seqHint">序号提示（忽略——测试独立分配）</param>
+            /// <returns>分配序号</returns>
+            public int PushView(string renderType, string payload, long replaceSeq, long seqHint)
+            {
+                List<string> list;
+                if (!ViewEvents.TryGetValue(renderType, out list))
+                {
+                    list = new List<string>();
+                    ViewEvents[renderType] = list;
+                }
+                list.Add(payload);
+                _viewSeq = _viewSeq + 1;
+                return _viewSeq;
+            }
         }
 
         /// <summary>
@@ -114,7 +139,8 @@ namespace CatHome4.Core.Tests
             {
                 new ToolSpec("Note", "Note 任务追踪", "{}")
             };
-            CH4.ChatSession session = new CH4.ChatSession("test-session", "test", ctx, store, llm, oa, tools, delegate(string name, string args) { return "ERR|NO_TOOL|" + name; });
+            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.json"));
+            CH4.ChatSession session = new CH4.ChatSession("test-session", "test", ctx, store, llm, oa, tools, delegate(string name, string args) { return "ERR|NO_TOOL|" + name; }, viewStore);
             return session;
         }
 
@@ -258,14 +284,29 @@ namespace CatHome4.Core.Tests
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
             List<string> usageEvents;
-            Assert.True(host.LlmEvents.TryGetValue("usage", out usageEvents));
+            Assert.True(host.ViewEvents.TryGetValue("control", out usageEvents));
             Assert.True(usageEvents.Count > 0);
-            // 累计 JSON 含三字段（整轮累计值）
-            using (JsonDocument ud = JsonDocument.Parse(usageEvents[usageEvents.Count - 1]))
+            // 找 usage 控制块（可能混有 chatdone）
+            string usageCtrl = null;
+            for (int i = usageEvents.Count - 1; i >= 0; i--)
             {
-                Assert.Equal(100, ud.RootElement.GetProperty("prompt").GetInt64());
-                Assert.Equal(20, ud.RootElement.GetProperty("completion").GetInt64());
-                Assert.Equal(30, ud.RootElement.GetProperty("cacheHit").GetInt64());
+                using (JsonDocument cd = JsonDocument.Parse(usageEvents[i]))
+                {
+                    if (cd.RootElement.TryGetProperty("type", out JsonElement t) && t.GetString() == "usage")
+                    {
+                        usageCtrl = usageEvents[i];
+                        break;
+                    }
+                }
+            }
+            Assert.NotNull(usageCtrl);
+            // 累计 JSON 含三字段（整轮累计值）
+            using (JsonDocument ud = JsonDocument.Parse(usageCtrl))
+            {
+                JsonElement data = ud.RootElement.GetProperty("data");
+                Assert.Equal(100, data.GetProperty("prompt").GetInt64());
+                Assert.Equal(20, data.GetProperty("completion").GetInt64());
+                Assert.Equal(30, data.GetProperty("cacheHit").GetInt64());
             }
         }
     }

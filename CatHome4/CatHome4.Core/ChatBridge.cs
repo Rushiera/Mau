@@ -169,6 +169,8 @@ namespace CH4
             session.Context.SetSystemPrompt(injectPrompt);
             session.Context.Clear();
             session.Store.Save(session.Context.GetMessages());
+            // F4 视图——session.new 清前文 → 视图随生命周期清空
+            session.ClearView();
             DataBox.Set<string>("global", "chat_state", "idle");
             int injectCount = 0;
             if (injectList != null)
@@ -239,174 +241,51 @@ namespace CH4
         /// <param name="max">视图消息条数上限（1-2000）</param>
         /// <returns>会话视图 JSON</returns>
         public string BuildHistoryView(ChatSession session, int max)
-        {
-            List<object> view = new List<object>();
-            List<Dictionary<string, object>> pendingTools = new List<Dictionary<string, object>>();
-            long seq = 0;
-            LlmMessage[] all = session.Context.GetMessages();
-            for (int i = 0; i < all.Length; i++)
+{
+            ViewBlock[] blocks = session.GetViewBlocks();
+            // 尾部 max 块——视图块裁剪（旧块丢弃；前端固定拉尾部 100）
+            int start = 0;
+            if (max > 0 && blocks.Length > max)
             {
-                LlmMessage m = all[i];
-                if (m.Role == LlmRole.System)
-                {
-                    continue;
-                }
-                if (m.Role == LlmRole.User)
-                {
-                    pendingTools.Clear();
-                    seq = seq + 1;
-                    Dictionary<string, object> entry = new Dictionary<string, object>();
-                    entry["role"] = "user";
-                    entry["content"] = m.Content ?? "";
-                    entry["seq"] = seq;
-                    view.Add(entry);
-                    continue;
-                }
-                if (m.Role == LlmRole.Assistant)
-                {
-                    seq = seq + 1;
-                    List<object> tools = new List<object>();
-                    if (m.ToolCallsJson != null && m.ToolCallsJson.Length > 0)
-                    {
-                        tools = ParseToolCalls(m.ToolCallsJson);
-                    }
-                    pendingTools.Clear();
-                    for (int t = 0; t < tools.Count; t++)
-                    {
-                        pendingTools.Add((Dictionary<string, object>)tools[t]);
-                    }
-                    Dictionary<string, object> aentry = new Dictionary<string, object>();
-                    aentry["role"] = "assistant";
-                    aentry["content"] = m.Content ?? "";
-                    aentry["reasoning"] = m.ReasoningContent ?? "";
-                    aentry["tools"] = tools;
-                    aentry["seq"] = seq;
-                    view.Add(aentry);
-                    continue;
-                }
-                if (m.Role == LlmRole.Tool)
-                {
-                    // 配对——按 ToolCallId 找待定工具卡（最后一条含该 id 的）
-                    Dictionary<string, object> target = null;
-                    for (int t = pendingTools.Count - 1; t >= 0; t = t - 1)
-                    {
-                        Dictionary<string, object> entry = pendingTools[t];
-                        string id = "";
-                        if (entry.ContainsKey("id") && entry["id"] != null)
-                        {
-                            id = (string)entry["id"];
-                        }
-                        if (id.Length > 0 && id == m.ToolCallId)
-                        {
-                            target = entry;
-                            break;
-                        }
-                    }
-                    if (target == null)
-                    {
-                        continue; // 孤立 tool 丢弃（视图容错）
-                    }
-                    if (!target.ContainsKey("result"))
-                    {
-                        target["result"] = TruncateText(m.Content ?? "", 300);
-                    }
-                }
+                start = blocks.Length - max;
             }
-            // 尾部 max 条——视图消息裁剪（旧消息丢弃）
-            if (max > 0 && view.Count > max)
+            List<object> view = new List<object>();
+            long seq = 0;
+            for (int i = start; i < blocks.Length; i++)
             {
-                view.RemoveRange(0, view.Count - max);
+                seq = seq + 1;
+                ViewBlock b = blocks[i];
+                Dictionary<string, object> entry = new Dictionary<string, object>();
+                entry["seq"] = seq;
+                entry["id"] = b.Id;
+                entry["renderType"] = b.RenderType;
+                entry["payload"] = ParseViewPayload(b.Payload);
+                view.Add(entry);
             }
             Dictionary<string, object> resp = new Dictionary<string, object>();
             resp["version"] = 1;
             resp["sessionId"] = session.Id;
-            // count = 原始消息数（含 system/tool——与快照 sessions 段 msgCount 同源一致；视图裁剪只影响 messages 不缩计数）
-            resp["count"] = all.Length;
-            resp["messages"] = view;
+            resp["count"] = blocks.Length;
+            resp["blocks"] = view;
             return JsonSerializer.Serialize(resp);
         }
-
-        /// <summary>
-        /// 解析 OpenAI tool_calls JSON 数组——视图工具卡 {id,name,arguments 截断}
-        /// </summary>
-        /// <param name="json">tool_calls JSON</param>
-        /// <returns>工具卡列表（解析失败空列表——容错）</returns>
-        private List<object> ParseToolCalls(string json)
+/// <summary>
+/// 视图块载荷 JSON 字符串 → JSON 元素（history 响应内嵌对象；解析失败回退字符串）
+/// </summary>
+/// <param name = "json">载荷 JSON 字符串</param>
+/// <returns>JSON 元素或原字符串</returns>
+private object ParseViewPayload(string json)
+{
+    try
+    {
+        using (JsonDocument doc = JsonDocument.Parse(json))
         {
-            List<object> list = new List<object>();
-            try
-            {
-                using (JsonDocument doc = JsonDocument.Parse(json))
-                {
-                    JsonElement root = doc.RootElement;
-                    if (root.ValueKind != JsonValueKind.Array)
-                    {
-                        return list;
-                    }
-                    for (int i = 0; i < root.GetArrayLength(); i++)
-                    {
-                        JsonElement call = root[i];
-                        string id = GetStringProp(call, "id");
-                        string name = "";
-                        string arguments = "";
-                        JsonElement funcEl;
-                        if (call.TryGetProperty("function", out funcEl))
-                        {
-                            name = GetStringProp(funcEl, "name");
-                            arguments = GetStringProp(funcEl, "arguments");
-                        }
-                        Dictionary<string, object> entry = new Dictionary<string, object>();
-                        entry["id"] = id;
-                        entry["name"] = name;
-                        entry["arguments"] = TruncateText(arguments, 200);
-                        list.Add(entry);
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                // 解析失败——空卡片列表（容错）
-            }
-            return list;
-        }
-
-        /// <summary>
-        /// 读取 JSON 对象字符串属性——防御式（缺字段返回空串）
-        /// </summary>
-        /// <param name="obj">JSON 对象</param>
-        /// <param name="prop">属性名</param>
-        /// <returns>属性值</returns>
-        private string GetStringProp(JsonElement obj, string prop)
-        {
-            JsonElement value;
-            if (obj.TryGetProperty(prop, out value) && value.ValueKind == JsonValueKind.String)
-            {
-                string got = value.GetString();
-                if (got != null)
-                {
-                    return got;
-                }
-            }
-            return "";
-        }
-
-        /// <summary>
-        /// 文本截断——超长保留头部 + 截断提示（视图/落盘共用）
-        /// </summary>
-        /// <param name="text">原文</param>
-        /// <param name="max">上限字符数</param>
-        /// <returns>截断文本</returns>
-        private string TruncateText(string text, int max)
-        {
-            if (text == null)
-            {
-                return "";
-            }
-            if (text.Length <= max)
-            {
-                return text;
-            }
-            return text.Substring(0, max) + "…[截断:原" + text.Length.ToString() + "字符]";
+            return doc.RootElement.Clone();
         }
     }
+    catch (Exception)
+    {
+        return json;
+    }
+}    }
 }

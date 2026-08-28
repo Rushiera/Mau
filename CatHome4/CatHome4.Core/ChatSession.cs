@@ -145,7 +145,8 @@ namespace CH4
         /// <param name="oa">OA 工单平台</param>
         /// <param name="tools">工具定义表</param>
         /// <param name="executeTool">工具直执回调</param>
-        public ChatSession(string id, string displayName, ChatContext context, SessionStore store, ILlmRuntime llmRuntime, OA oa, ToolSpec[] tools, Func<string, string, string> executeTool)
+        /// <param name="viewStore">视图存储——F4 视图持久化</param>
+        public ChatSession(string id, string displayName, ChatContext context, SessionStore store, ILlmRuntime llmRuntime, OA oa, ToolSpec[] tools, Func<string, string, string> executeTool, SessionViewStore viewStore)
         {
             if (id == null)
             {
@@ -159,6 +160,7 @@ namespace CH4
             _displayName = displayName;
             _context = context;
             _store = store;
+            _viewStore = viewStore;
             _llmRuntime = llmRuntime;
             _oa = oa;
             _tools = tools;
@@ -174,6 +176,42 @@ namespace CH4
             _llmToolCallsJson = "";
             _llmErrorText = "";
             _httpHost = null;
+        }
+
+        /// <summary>真实前文末条消息——append 后取最近一条生成视图块（F4 视图钩子）</summary>
+        private LlmMessage LastMessage()
+        {
+            LlmMessage[] all = _context.GetMessages();
+            return all[all.Length - 1];
+        }
+
+        /// <summary>当前宿主帧号——F4 帧号全局盒（DataBox global.frame——数据面内聚；未写入回退 0）</summary>
+        private long CurrentFrame()
+        {
+            long frame;
+            if (DataBox.TryGet<long>("global", "frame", out frame))
+            {
+                return frame;
+            }
+            return 0;
+        }
+
+        /// <summary>重建视图层——从真实前文完全重置（启动恢复后调用；真实前文绝对可用）</summary>
+        public void RebuildView()
+        {
+            _viewStore.Rebuild(_context.GetMessages(), CurrentFrame());
+        }
+
+        /// <summary>清空视图层——session.new 清前文时同步（视图随生命周期清理）</summary>
+        public void ClearView()
+        {
+            _viewStore.Clear();
+        }
+
+        /// <summary>内存视图块——按生成序（history 数据源；F4 视图持久化）</summary>
+        public ViewBlock[] GetViewBlocks()
+        {
+            return _viewStore.GetBlocks();
         }
 
         /// <summary>会话唯一 ID</summary>
@@ -375,10 +413,12 @@ namespace CH4
             _usageCompletion = 0;
             _usageCacheHit = 0;
             _context.AddUserMessage(content);
+            _viewStore.OnUserMessage(LastMessage(), CurrentFrame());
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
             if (_httpHost != null)
             {
-                _httpHost.PushUserMessage(content, source);
+                string userJson = "{\"content\":" + JsonSerializer.Serialize(content) + ",\"source\":\"" + source + "\"}";
+                _httpHost.PushView("user", userJson, -1, 0);
             }
             DataBox.Set<string>("global", "chat_state", "working");
             LogStore.Add("CatHome4", 1, "── " + _displayName + " 处理中 ──", "CHAT");
@@ -425,7 +465,8 @@ _ = ConsumeLlmStream(messages);
                         // P6 外观层转发——LLM 增量实时推送 SSE（协议 §4.2 llm 事件）
                         if (_httpHost != null)
                         {
-                            _httpHost.PushLlm("text", ev.Text);
+                            string streamTextJson = "{\"kind\":\"text\",\"text\":" + JsonSerializer.Serialize(ev.Text) + "}";
+                            _textStreamSeq = _httpHost.PushView("stream", streamTextJson, -1, _textStreamSeq);
                         }
                     }
                     else if (ev.Kind == LlmStreamKind.Reasoning)
@@ -433,7 +474,8 @@ _ = ConsumeLlmStream(messages);
                         reasoning.Append(ev.Text);
                         if (_httpHost != null)
                         {
-                            _httpHost.PushLlm("reasoning", ev.Text);
+                            string streamReasonJson = "{\"kind\":\"reasoning\",\"text\":" + JsonSerializer.Serialize(ev.Text) + "}";
+                            _reasonStreamSeq = _httpHost.PushView("stream", streamReasonJson, -1, _reasonStreamSeq);
                         }
                     }
                     else if (ev.Kind == LlmStreamKind.ToolCalls)
@@ -441,7 +483,7 @@ _ = ConsumeLlmStream(messages);
                         toolCalls = ev.Text;
                         if (_httpHost != null)
                         {
-                            _httpHost.PushLlm("toolCalls", ev.Text);
+                            // F4 视图——toolCalls 占位卡后置 F1/F2（工具卡以结果整块出现，不推占位）
                         }
                     }
                     else if (ev.Kind == LlmStreamKind.Usage)
@@ -453,14 +495,15 @@ _ = ConsumeLlmStream(messages);
                             string usageJson = "{\"prompt\":" + _usagePrompt.ToString()
                                 + ",\"completion\":" + _usageCompletion.ToString()
                                 + ",\"cacheHit\":" + _usageCacheHit.ToString() + "}";
-                            _httpHost.PushLlm("usage", usageJson);
+                            string usageCtrl = "{\"type\":\"usage\",\"data\":" + usageJson + "}";
+                            _httpHost.PushView("control", usageCtrl, -1, 0);
                         }
                     }
                     else if (ev.Kind == LlmStreamKind.Done)
                     {
                         if (_httpHost != null)
                         {
-                            _httpHost.PushLlm("done", "");
+                            // F4 视图——done 由整块 replace 表达（流式结束不单独推事件）
                         }
                     }
                     else if (ev.Kind == LlmStreamKind.Error)
@@ -469,7 +512,8 @@ _ = ConsumeLlmStream(messages);
                         _llmErrorText = ev.Text;
                         if (_httpHost != null)
                         {
-                            _httpHost.PushLlm("error", ev.Text);
+                            string errCtrl = "{\"type\":\"error\",\"text\":" + JsonSerializer.Serialize(ev.Text) + "}";
+                            _httpHost.PushView("control", errCtrl, -1, 0);
                         }
                     }
                 }
@@ -561,6 +605,14 @@ _ = ConsumeLlmStream(messages);
             if (_llmError)
             {
                 _context.AddAssistantMessage(_llmErrorText);
+                _viewStore.OnAssistantText(LastMessage(), CurrentFrame());
+                if (_httpHost != null)
+                {
+                    string errJson = "{\"content\":" + JsonSerializer.Serialize(_llmErrorText) + "}";
+                    _httpHost.PushView("text", errJson, _textStreamSeq, 0);
+                }
+                _textStreamSeq = 0;
+                _reasonStreamSeq = 0;
                 LogStore.Add("LLM", 3, "LLM 错误: " + TrimDisplay(_llmErrorText, 300), "LLM");
                 _phase = ChatPhase.Done;
                 return;
@@ -569,15 +621,25 @@ _ = ConsumeLlmStream(messages);
             {
                 // 纯文本回复——本轮完成
                 _context.AddAssistantMessage(_llmResultText);
+                _viewStore.OnAssistantText(LastMessage(), CurrentFrame());
+                if (_httpHost != null)
+                {
+                    string textJson = "{\"content\":" + JsonSerializer.Serialize(_llmResultText) + "}";
+                    _httpHost.PushView("text", textJson, _textStreamSeq, 0);
+                }
+                _textStreamSeq = 0;
+                _reasonStreamSeq = 0;
                 Console.WriteLine("[" + _displayName + "] " + _llmResultText);
                 // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + user 事件 + 直接开新轮（跳过 Done/CloseRound）
                 if (_pending.Count > 0)
                 {
                     PendingMessage next = _pending.Dequeue();
                     _context.AddUserMessage(next.Content);
+                    _viewStore.OnUserMessage(LastMessage(), CurrentFrame());
                     if (_httpHost != null)
                     {
-                        _httpHost.PushUserMessage(next.Content, next.Source);
+                        string userJson = "{\"content\":" + JsonSerializer.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
+                        _httpHost.PushView("user", userJson, -1, 0);
                     }
                     _round = 0;
                     LogStore.Add("CatHome4", 1, "插话插入 | " + next.Source + " | 纯文本轮后直接续轮", "CHAT");
@@ -589,6 +651,14 @@ _ = ConsumeLlmStream(messages);
             }
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
             _context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning);
+            _viewStore.OnAssistantToolCalls(LastMessage(), CurrentFrame());
+            if (_httpHost != null && _llmReasoning.Length > 0)
+            {
+                string reasonJson = "{\"content\":" + JsonSerializer.Serialize(_llmReasoning) + "}";
+                _httpHost.PushView("reason", reasonJson, _reasonStreamSeq, 0);
+            }
+            _reasonStreamSeq = 0;
+            _textStreamSeq = 0;
             DataBox.Set<string>("global", "chat_state", "tools");
             LogStore.Add("CatHome4", 1, "工具调用(" + (_round + 1).ToString() + "/" + MaxToolRounds.ToString() + "): " + TrimDisplay(_llmToolCallsJson, 200), "CHAT");
             EnterToolBatch(_llmToolCallsJson);
@@ -797,9 +867,11 @@ _ = ConsumeLlmStream(messages);
                 // B4 对话区：工具结果实时推送 SSE（tool 事件——前端按执行序填充占位卡；参数/结果视图截断同 history）
                 if (_httpHost != null)
                 {
-                    _httpHost.PushToolResult(dog.Name, TruncateText(dog.ArgsJson, 200), TruncateText(dog.Result, 300));
+                    string toolJson = "{\"name\":" + JsonSerializer.Serialize(dog.Name) + ",\"arguments\":" + JsonSerializer.Serialize(TruncateText(dog.ArgsJson, 200)) + ",\"result\":" + JsonSerializer.Serialize(TruncateText(dog.Result, 300)) + "}";
+                _httpHost.PushView("toolcard", toolJson, -1, 0);
                 }
                 _context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);
+                _viewStore.OnToolResult(LastMessage(), CurrentFrame());
             }
             _toolBatchActive = false;
             // 单向数据流改造——忙时插话：工具批完成有排队消息 → 插入 Ctx + user 事件 + 直接续轮（工具结果 + 插话同轮可见）
@@ -807,9 +879,11 @@ _ = ConsumeLlmStream(messages);
             {
                 PendingMessage next = _pending.Dequeue();
                 _context.AddUserMessage(next.Content);
+                _viewStore.OnUserMessage(LastMessage(), CurrentFrame());
                 if (_httpHost != null)
                 {
-                    _httpHost.PushUserMessage(next.Content, next.Source);
+                    string userJson = "{\"content\":" + JsonSerializer.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
+                _httpHost.PushView("user", userJson, -1, 0);
                 }
                 _round = 0;
                 LogStore.Add("CatHome4", 1, "插话插入 | " + next.Source + " | 工具批后直接续轮", "CHAT");
@@ -841,11 +915,13 @@ _ = ConsumeLlmStream(messages);
                 }
             }
             _store.Save(toSave);
+            _viewStore.Save();
             DataBox.Set<string>("global", "chat_state", "idle");
             // B4 对话区：会话终态事件——前端定型（llm done 仅一轮结束；chatdone 才是整次会话结束；count = 原始消息数——实时同步状态区）
             if (_httpHost != null)
             {
-                _httpHost.PushChatDone(_context.GetMessages().Length);
+                string doneJson = "{\"type\":\"chatdone\",\"count\":" + _context.GetMessages().Length.ToString() + "}";
+                _httpHost.PushView("control", doneJson, -1, 0);
             }
             LogStore.Add("CatHome4", 1, "会话前文已落盘: " + _context.GetMessageCount().ToString() + " 条消息", "SYS");
             // M4a Note 自动拉起——剩余 ≥2 条以 user 名义推下一轮；仅剩 1 条清空（防无限循环闸门——CH2 语义）

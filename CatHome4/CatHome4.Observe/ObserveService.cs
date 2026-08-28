@@ -196,6 +196,12 @@ namespace CatHome4.Observe
             {
                 return true;
             }
+            // 帧号观测元数据——每帧变化，混入 diff 导致 patch 每帧误推（判例：观测元数据不进 diff 面）；
+            // 快照帧号走顶层 frame 字段（同源），盒子面屏蔽
+            if (scope == "global" && key == "frame")
+            {
+                return true;
+            }
             return false;
         }
         /// <summary>

@@ -265,7 +265,7 @@ private static HttpHost _httpHost;
             AdminService.Configure(_chatBridge, _oa, dataRoot, _mainThreadId, ExecuteTool, ObserveService.BuildSnapshotJson, new HtmlRootProvider(), apiConfigStore, qqBotStore, llmConfig);
             // S5 Observe 域接线——依赖注入（观测面迁入 CatHome4.Observe）
             ObserveService.Configure(_oa, _chatBridge, _quickHandle, _toolFlowHandles, _quickId, _toolFlowIds, _runner, null);
-            SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo.json"));
+            SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.json"));
             LlmMessage[] restored;
             // M1 默认猫——API 配置身份从 sessions/majordomo/cat.cfg 读取；缺省 Guid.Empty=默认端点语义（每次调用实时解析）
             // M2 默认猫同构——persona/toolNames/injectList 三字段同迁（每猫配置完全独立；注入源从 workspace.inject 切到 cat.cfg）
@@ -332,9 +332,12 @@ private static HttpHost _httpHost;
                 Console.WriteLine("[CatHome4] 新会话注入: " + _chatBridge.DefaultInjectList.Length.ToString() + " 个文件");
             }
             // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面；M2c 声明面按猫裁剪）
+            SessionViewStore chatViewStore = new SessionViewStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.view.json"));
             _chatBridge.DefaultSession = new ChatSession(DateTime.Now.Ticks.ToString(), "majordomo", chatCtx, chatStore,
-                new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _chatBridge.DefaultToolSpecs, ExecuteTool);
+                new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _chatBridge.DefaultToolSpecs, ExecuteTool, chatViewStore);
             _chatBridge.RegisterSession(_chatBridge.DefaultSession);
+            // F4 视图——从真实前文重建视图层（恢复/注入后——真实前文绝对可用）
+            _chatBridge.DefaultSession.RebuildView();
             // LLM 注入探测——默认端点解析（无默认端点 = 未注入；启动失败语义由语料面消费时暴露）
             CH_LlmApiConfig llmProbeConfig = apiConfigStore.ResolveDefault();
             string llmKeyProbe = "";

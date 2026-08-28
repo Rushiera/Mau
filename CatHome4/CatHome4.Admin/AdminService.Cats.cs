@@ -397,7 +397,7 @@ namespace CatHome4.Admin
                 ToolSpec[] catSpecs = FilterToolSpecs(ResolveToolNames(toolNames));
                 // [段3] 上下文 + 前文恢复/注入
                 ChatContext context = new ChatContext();
-                SessionStore store = new SessionStore(Path.Combine(_dataRoot, "Data", "sessions", id + ".json"));
+                SessionStore store = new SessionStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".json"));
                 LlmMessage[] restored;
                 if (store.TryLoad(out restored))
                 {
@@ -413,7 +413,9 @@ namespace CatHome4.Admin
                 }
                 // [段4] 会话构造——M1c 每猫独立 Runtime（API 配置池按该猫 apiConfigId 构造）；M2c 声明面按猫裁剪
                 ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig);
-                ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, catSpecs, ExecuteTool);
+                SessionViewStore viewStore = new SessionViewStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".view.json"));
+                ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, catSpecs, ExecuteTool, viewStore);
+                session.RebuildView();
                 _chatBridge.RegisterSession(session);
                 CatEntry cat = new CatEntry();
                 cat.Id = id;

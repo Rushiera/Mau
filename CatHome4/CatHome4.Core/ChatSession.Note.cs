@@ -21,7 +21,12 @@ namespace CH4
 
         /// <summary>Note 已完成任务数</summary>
         private int _noteDone;
-
+/// <summary>会话视图存储——F4 视图持久化（内存整块 + 文件落盘；真实前文派生态）</summary>
+private readonly SessionViewStore _viewStore;
+/// <summary>流式文本块序号——流式增量容器标识（整块到达时 replace 定位）</summary>
+private long _textStreamSeq; 
+/// <summary>流式思考块序号——流式增量容器标识（reason 整块 replace；纯文本轮无整块）</summary>
+ private  long  _reasonStreamSeq ;
         /// <summary>
         /// Note 工具执行体——M4a（CH2 语义移植：set 写入/无参推进/全完成清空；返回文本 = LLM 唯一状态面）。
         /// </summary>
@@ -142,7 +147,9 @@ namespace CH4
         {
             if (_httpHost != null)
             {
-                _httpHost.PushNoteState(BuildNoteJson());
+                // F4 视图——note 控制块（SSE view 事件；前端悬浮气泡实时重绘）
+                string noteJson = "{\"type\":\"note\",\"state\":" + BuildNoteJson() + "}";
+                _httpHost.PushView("control", noteJson, -1, 0);
             }
         }
 

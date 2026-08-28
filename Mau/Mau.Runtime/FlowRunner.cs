@@ -303,6 +303,8 @@ namespace Mau.Runtime
             EnsureInited();
             _frame = _frame + 1;
             GlobalFrame = _frame;
+            // F4 帧号全局盒——宿主/会话经数据面读当前帧（解耦：不依赖 FlowRunner 静态面；未来同类全局参数同模式）
+            DataBox.Set<long>("global", "frame", _frame);
             if (Audit != null)
             {
                 Audit.TickFrame(_frame);

@@ -217,5 +217,50 @@ public void PushNoteState(string json)
             // 观测透明性——SSE user 推送结算行（Note 气泡排查——前端未渲染时日志可对照）
             LogStore.Add("CatHome4", 1, "SSE|user|len=" + text.Length.ToString() + "|source=" + source + "|clients=" + _clients.Count.ToString(), "CHAT");
         }
+
+        /// <summary>
+        /// 视图事件推送——F4 视图块统一出口（流式增量/整块/控制块；seq 全局单调）。
+        /// 载荷语义：seq = 全局单调序号（流式容器标识）；renderType = 前端渲染类型；
+        /// replaceSeq = 被替换块序号（流式→整块替换）；seqHint &gt; 0 时复用该序号（流式增量不递增）。
+        /// </summary>
+        /// <param name="renderType">渲染类型——stream/user/text/reason/toolcard/control</param>
+        /// <param name="payload">载荷 JSON 字符串（内嵌对象）</param>
+        /// <param name="replaceSeq">被替换块序号（-1=无替换）</param>
+        /// <param name="seqHint">流式增量带已分配序号（&gt;0 不递增；≤0 分配新序号）</param>
+        /// <returns>事件序号</returns>
+        public int PushView(string renderType, string payload, long replaceSeq, long seqHint)
+        {
+            int seq;
+            if (seqHint > 0)
+            {
+                seq = (int)seqHint;
+            }
+            else
+            {
+                seq = Interlocked.Increment(ref _seq);
+            }
+            object payloadObj;
+            try
+            {
+                payloadObj = JsonSerializer.Deserialize<object>(payload);
+                if (payloadObj == null)
+                {
+                    payloadObj = "";
+                }
+            }
+            catch (Exception)
+            {
+                payloadObj = payload;
+            }
+            var obj = new
+            {
+                seq = seq,
+                renderType = renderType,
+                payload = payloadObj,
+                replaceSeq = replaceSeq
+            };
+            PushEvent("view", JsonSerializer.Serialize(obj));
+            return seq;
+        }
     }
 }
