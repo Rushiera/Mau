@@ -12,10 +12,9 @@
             <button data-tab="log">日志</button>
             <button data-tab="raw">原始</button>
             <button data-tab="config">配置</button>
-            <button data-tab="chat">对话</button>
             <button data-tab="cats">多猫</button>
             <!-- 前端版本标记——每次改动前端递增；刷新后数字变化 = 拿到新版（人眼 cache-busting） -->
-            <div style="margin-top:auto;color:#4a4a4a;font-size:10px;writing-mode:vertical-rl">UI v6</div>
+            <div style="margin-top:auto;color:#4a4a4a;font-size:10px;writing-mode:vertical-rl">UI v7</div>
         </nav>
         <main>
             <!-- 状态区 -->
@@ -154,40 +153,6 @@
                     </div>
                 </div>
             </section>
-            <!-- 对话区（B4） -->
-            <section id="tab-chat" class="tab">
-                <div id="chatbar">
-                    <span class="sid">MajorDomoCat</span>
-                    <span id="chatInfo">—</span>
-                    <span style="flex:1"></span>
-                    <button id="chatCfg" title="默认猫配置（API/人设/工具/前文 List——M3c）" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 10px;cursor:pointer;font-family:inherit;font-size:11px">默认猫配置</button>
-                    <button id="chatNew" title="新会话（session.new——清前文并重新注入）">新会话</button>
-                    <button id="chatRefresh" title="刷新——重建界面气泡（纯前端）">刷新</button>
-                </div>
-                <div id="chatStatus"></div>
-                <div id="chatMsgs"></div>
-                <!-- M4c Note 面板——输入框上方悬浮气泡（缩略一行/展开自适应） -->
-                <div id="notePanel" class="collapsed">
-                    <div id="noteHead">
-                        <span id="noteTitle">Note</span>
-                        <span id="noteToggleBtn">▸</span>
-                    </div>
-                    <div id="noteBody">
-                        <div id="noteList"></div>
-                        <div id="noteAddRow">
-                            <input id="noteAddInput" placeholder="新增任务…（Enter 提交）" onkeydown="if(event.key==='Enter')noteAdd()">
-                            <button onclick="noteAdd()">＋</button>
-                            <button id="noteStartBtn" onclick="noteStart()" title="把 Note 计划拼接进度推给 LLM 开始执行">开始 Note</button>
-                        </div>
-                    </div>
-                </div>
-                <!-- 单向数据流改造——插话队列显示区（纯展示；正常流堆叠，对话区自动上移） -->
-                <div id="chatPendingPanel"></div>
-                <div id="chatinput">
-                    <input id="chatSendInput" placeholder="对 MajorDomoCat 说话…（Enter 发送，发送期禁用）" onkeydown="if(event.key==='Enter')chatSend()">
-                    <button id="chatSendBtn" onclick="chatSend()">发送</button>
-                </div>
-            </section>
             <!-- 多猫管理区（P9.3d） -->
             <section id="tab-cats" class="tab">
                 <div id="catsbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid #222;align-items:center">
@@ -238,9 +203,8 @@
         </div>
     </div>
 
-    <!-- 2026-08-25 模块化拆分——JS 三域外置（加载顺序：app 公共 → chat 对话 → panel 管理）；__V__ 宿主注入版本号（cache-busting） -->
+    <!-- 2026-08-25 模块化拆分——JS 二域外置（加载顺序：app 公共 → panel 管理；对话已迁 chat.html 独立页——F2.1 index 纯管理面）；__V__ 宿主注入版本号（cache-busting） -->
     <script src="js/app.js?v=__V__"></script>
-    <script src="js/chat.js?v=__V__"></script>
     <script src="js/panel.js?v=__V__"></script>
 </body>
 </html>

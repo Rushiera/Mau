@@ -18,20 +18,29 @@ function loadCats() {
                 return;
             }
             catsMsgEl.textContent = cats.length + ' 只猫';
+            // F2.1 前端唯一化——special 猫（Majordomo）置顶显示（固化入口；前端不视为多猫——零差异渲染靠 special 标记）
+            var specials = [];
+            var normals = [];
             for (var i = 0; i < cats.length; i++) {
-                renderCatRow(cats[i]);
+                if (cats[i].special) { specials.push(cats[i]); } else { normals.push(cats[i]); }
             }
+            for (var s = 0; s < specials.length; s++) { renderCatRow(specials[s]); }
+            for (var n = 0; n < normals.length; n++) { renderCatRow(normals[n]); }
         })
         .catch(function () {
             catsMsgEl.textContent = '列表加载失败——宿主未运行？';
         });
 }
 
-// 单猫行渲染——操作按钮按状态启用（启动/停止互斥）
+// 单猫行渲染——操作按钮按状态启用（启动/停止互斥）；special（Majordomo）强制自启 + 无停止/删除
 function renderCatRow(cat) {
     var tr = document.createElement('tr');
     var tdName = document.createElement('td');
-    tdName.textContent = cat.name || '';
+    if (cat.special) {
+        tdName.textContent = '★ ' + (cat.name || '');
+    } else {
+        tdName.textContent = cat.name || '';
+    }
     tdName.style.color = '#c586c0';
     tr.appendChild(tdName);
     var tdId = document.createElement('td');
@@ -54,15 +63,17 @@ function renderCatRow(cat) {
     tdOp.style.whiteSpace = 'nowrap';
     if (cat.running) {
         var openBtn = document.createElement('button');
-        openBtn.textContent = '打开';
+        openBtn.textContent = '打开对话';
         openBtn.style.cssText = 'background:#0e639c;border:none;color:#fff;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
         openBtn.onclick = function () { window.open('http://127.0.0.1:' + cat.port + '/', '_blank'); };
         tdOp.appendChild(openBtn);
-        var stopBtn = document.createElement('button');
-        stopBtn.textContent = '停止';
-        stopBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
-        stopBtn.onclick = function () { catAction('cat.stop ' + cat.id); };
-        tdOp.appendChild(stopBtn);
+        if (!cat.special) {
+            var stopBtn = document.createElement('button');
+            stopBtn.textContent = '停止';
+            stopBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+            stopBtn.onclick = function () { catAction('cat.stop ' + cat.id); };
+            tdOp.appendChild(stopBtn);
+        }
     } else {
         var startBtn = document.createElement('button');
         startBtn.textContent = '启动';
@@ -70,16 +81,25 @@ function renderCatRow(cat) {
         startBtn.onclick = function () { catAction('cat.start ' + cat.id); };
         tdOp.appendChild(startBtn);
     }
-    var cfgBtn = document.createElement('button');
-    cfgBtn.textContent = '配置';
-    cfgBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
-    cfgBtn.onclick = function () { openCatCfg(cat.id, cat.name); };
-    tdOp.appendChild(cfgBtn);
-    var delBtn = document.createElement('button');
-    delBtn.textContent = '删除';
-    delBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#f48771;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px';
-    delBtn.onclick = function () { catAction('cat.delete ' + cat.id); };
-    tdOp.appendChild(delBtn);
+    if (cat.special) {
+        // Majordomo 特殊会话——无停止/删除，保留配置入口（openCatCfg 同多猫）
+        var cfgBtn2 = document.createElement('button');
+        cfgBtn2.textContent = '配置';
+        cfgBtn2.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+        cfgBtn2.onclick = function () { openCatCfg(cat.id, cat.name); };
+        tdOp.appendChild(cfgBtn2);
+    } else {
+        var cfgBtn = document.createElement('button');
+        cfgBtn.textContent = '配置';
+        cfgBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+        cfgBtn.onclick = function () { openCatCfg(cat.id, cat.name); };
+        tdOp.appendChild(cfgBtn);
+        var delBtn = document.createElement('button');
+        delBtn.textContent = '删除';
+        delBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#f48771;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px';
+        delBtn.onclick = function () { catAction('cat.delete ' + cat.id); };
+        tdOp.appendChild(delBtn);
+    }
     tr.appendChild(tdOp);
     catsTableBody.appendChild(tr);
 }
@@ -606,8 +626,9 @@ document.getElementById('catCfgInjectAddBtn').onclick = function () {
     input.value = '';
     renderInjectList(catCfgInjectList);
 };
-// 默认猫配置入口——对话区按钮（cat=majordomo）
-document.getElementById('chatCfg').onclick = function () { openCatCfg('majordomo', 'majordomo'); };
+// 默认猫配置入口——由多猫页 Majordomo 行「配置」按钮承担（F2.1 index 对话页签移除；openCatCfg('majordomo') 见 renderCatRow special 分支）
+var elChatCfg = document.getElementById('chatCfg');
+if (elChatCfg) { elChatCfg.onclick = function () { openCatCfg('majordomo', 'majordomo'); }; }
 
 // [段] 新猫默认模板编辑面（M3d 体验轮——cat-default.cfg 全局配置：baseRole + 新猫三字段默认值）
 var tplInjectList = [];

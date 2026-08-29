@@ -1,11 +1,12 @@
-﻿// tests/unit/setup.js —— 测试环境初始化（node 环境 + 手动 JSDOM）
-// 定位：加载 index.html 真实页面骨架到全局 DOM + mock 浏览器 API（EventSource/fetch）
+// tests/unit/setup.js —— 测试环境初始化（node 环境 + 手动 JSDOM）
+// 定位：加载 chat.html 独立对话页骨架到全局 DOM（F2.4 门禁迁移——对话逻辑唯一真相源 = js/chat-core.js + js/chat-note.js）+ mock 浏览器 API（EventSource/fetch）
 // 前端是原生 JS 全局函数——测试用 new Function(code).call(window) 加载脚本，函数挂 window 上断言
+// 主面板（index.html / app.js / panel.js）用例：smoke.test.mjs 自建 index.html JSDOM（主面板纯管理面——F2.1）
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 
-// 1. 解析 index.html（前端真实页面骨架——测试环境与生产同构）
-const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf-8');
+// 1. 解析 chat.html（前端独立对话页骨架——测试环境与生产同构）
+const html = readFileSync(new URL('../../chat.html', import.meta.url), 'utf-8');
 const dom = new JSDOM(html, { url: 'http://127.0.0.1:8080', runScripts: 'outside-only' });
 
 // 2. 全局 window 指向 globalThis（前端 var/function 声明经 vm.runInThisContext 挂 globalThis——window 别名可访问）

@@ -29,6 +29,27 @@ namespace CatHome4.Admin
         /// <summary>cat.* 指令队列——HTTP 线程投递 / 主线程泵消费（ThreadGuard：注册表仅主线程触碰）</summary>
         internal static readonly ConcurrentQueue<string> _catQueue = new ConcurrentQueue<string>();
 
+        /// <summary>majordomo 独立对话端口 HttpHost——serveChatPage=true（F2.2 方案 A：与多猫同构；主端口 8080 保留管理面板）</summary>
+        private static HttpHost _majorHost;
+
+        /// <summary>majordomo 独立对话端口——AllocatePort 分配（F2.2）</summary>
+        private static int _majorPort = -1;
+
+        /// <summary>majordomo 独立对话端口（F2.2 对外只读——Program 启动日志用）</summary>
+        internal static int MajorPort
+        {
+            get { return _majorPort; }
+        }
+
+        /// <summary>majordomo Chat 指令入队面——HTTP 线程投递 / 主线程泵消费（F2.2 DispatchCommandForMajor）</summary>
+        private static readonly ConcurrentQueue<string> _majorPendingChat = new ConcurrentQueue<string>();
+
+        /// <summary>majordomo Note 指令入队面——HTTP 线程投递 / 主线程泵消费（F2.2）</summary>
+        private static readonly ConcurrentQueue<string> _majorPendingNote = new ConcurrentQueue<string>();
+
+        /// <summary>majordomo session.new 请求标志——HTTP 线程置位/主线程泵消费（F2.2 同多猫 M2d）</summary>
+        private static bool _majorSessionNewRequested;
+
         /// <summary>动态端口起始——8081 起（主端口 8080 保留）</summary>
         private const int CatPortStart = 8081;
 
@@ -145,6 +166,38 @@ namespace CatHome4.Admin
                     }
                 }
             }
+            // [段3] majordomo 独立对话端口指令泵（F2.2——独立端口 serve chat.html；HTTP 线程投递 / 主线程直投 DefaultSession）
+            if (_majorSessionNewRequested)
+            {
+                if (_chatBridge.DefaultSession.IsIdle)
+                {
+                    _majorSessionNewRequested = false;
+                    _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs, delegate(int n)
+                    {
+                        if (_majorHost != null)
+                        {
+                            _majorHost.PushChatDone(n);
+                        }
+                    });
+                }
+            }
+            string majorJob;
+            while (_majorPendingChat.TryDequeue(out majorJob))
+            {
+                _chatBridge.DefaultSession.PostUserMessage(majorJob);
+            }
+            string majorNote;
+            while (_majorPendingNote.TryDequeue(out majorNote))
+            {
+                if (majorNote == "\u0001start")
+                {
+                    _chatBridge.DefaultSession.NoteStart();
+                }
+                else
+                {
+                    _chatBridge.DefaultSession.NoteAdd(majorNote);
+                }
+            }
         }
 
         /// <summary>
@@ -249,6 +302,11 @@ namespace CatHome4.Admin
         /// <returns>结果文本</returns>
         private static string HandleCatStop(string key)
         {
+            // F2.2 majordomo 特殊会话——强制自启无关闭（拒绝）
+            if (string.Equals(key, "majordomo", StringComparison.Ordinal))
+            {
+                return "cat.stop | majordomo 为特殊会话——强制自启，不可停止";
+            }
             CatEntry cat = FindCat(key);
             if (cat == null)
             {
@@ -281,6 +339,11 @@ namespace CatHome4.Admin
         /// <returns>结果文本</returns>
         private static string HandleCatDelete(string key)
         {
+            // F2.2 majordomo 特殊会话——不可删除（拒绝）
+            if (string.Equals(key, "majordomo", StringComparison.Ordinal))
+            {
+                return "cat.delete | majordomo 为特殊会话——不可删除";
+            }
             CatEntry cat = FindCat(key);
             if (cat == null)
             {
@@ -614,6 +677,105 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
+        /// majordomo 独立对话端口启动——F2.2 方案 A（与多猫同构）：独立端口 serve chat.html，绑定 DefaultSession。
+        /// 主端口 8080 保留管理面板（index.html）；DefaultSession.AttachHost 改绑本端口（chat 事件推送走 chat.html）。
+        /// 强制自启：Bootstrap 调用（段6b 前）；无关闭/删除（cat.stop/cat.delete 拒绝——HandleCatStop/HandleCatDelete）。
+        /// </summary>
+        /// <returns>是否成功启动（端口分配失败 false）</returns>
+        internal static bool StartMajorHost()
+        {
+            if (_majorHost != null)
+            {
+                return true;
+            }
+            int port = AllocatePort(CatPortStart);
+            if (port < 0)
+            {
+                LogStore.Add("CatHome4", 2, "major.start | 端口分配失败（8081-8180 全占用）", "CHAT");
+                return false;
+            }
+            HttpHost host = HttpHost.Start(
+                port,
+                _chatBridge.DefaultSession.Id,
+                BuildSnapshotJson,
+                (string line) => DispatchCommandForMajor(line),
+                null,
+                (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max),
+                null,
+                () => _chatBridge.DefaultSession.BuildNoteJson(),
+                null,
+                true,
+                null,
+                HtmlRoot);
+            _majorHost = host;
+            _majorPort = port;
+            // 会话事件推送改绑 majordomo 独立对话端口（主端口 index.html 管理面板不再消费 chat 事件——F2.1）
+            _chatBridge.DefaultSession.AttachHost(host);
+            LogStore.Add("CatHome4", 1, "major.start | majordomo 独立对话端口 | " + port.ToString(), "CHAT");
+            return true;
+        }
+
+        /// <summary>
+        /// majordomo 独立端口指令投递——Chat/session.new/note.* 路由 DefaultSession（主线程直投 / HTTP 线程入队泵）。
+        /// F2.2 与 DispatchCommandForCat 同构——目标固定 DefaultSession；队列走 _majorPendingChat/_majorPendingNote。
+        /// </summary>
+        /// <param name="line">指令行</param>
+        /// <returns>true=识别并投递</returns>
+        private static bool DispatchCommandForMajor(string line)
+        {
+            if (line.StartsWith("Chat ", StringComparison.Ordinal))
+            {
+                string content = line.Substring(5).Trim();
+                if (content.Length == 0)
+                {
+                    return false;
+                }
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    _chatBridge.DefaultSession.PostUserMessage(content);
+                }
+                else
+                {
+                    _majorPendingChat.Enqueue(content);
+                }
+                return true;
+            }
+            if (line == "session.new")
+            {
+                // F2.2 按 DefaultSession 重注入——HTTP 线程置位/主线程泵消费（PumpCatQueues 段3）
+                _majorSessionNewRequested = true;
+                return true;
+            }
+            if (line == "note.start")
+            {
+                // M4c Note 启动——主线程直执 / HTTP 线程入队泵
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    _chatBridge.DefaultSession.NoteStart();
+                }
+                else
+                {
+                    _majorPendingNote.Enqueue("\u0001start");
+                }
+                return true;
+            }
+            if (line.StartsWith("note.add ", StringComparison.Ordinal))
+            {
+                // M4c Note 手动新增——主线程直执 / HTTP 线程入队泵
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    _chatBridge.DefaultSession.NoteAdd(line.Substring(9).Trim());
+                }
+                else
+                {
+                    _majorPendingNote.Enqueue(line.Substring(9).Trim());
+                }
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// 每猫指令投递——Chat 指令路由本猫会话（主线程直投 / HTTP 线程入队泵）。
         /// </summary>
         /// <param name="cat">猫实体</param>
@@ -675,11 +837,21 @@ namespace CatHome4.Admin
 
         /// <summary>
         /// 多猫列表 JSON——GET /api/v1/cats 回调（主端口管理页签数据源；P9.3c 接线）。
+        /// F2.2——前置 majordomo 特殊会话条目（special:true + 强制自启 running + 独立对话端口；前端零差异渲染靠 special 标记）。
         /// </summary>
         /// <returns>列表 JSON</returns>
         internal static string BuildCatsJson()
         {
             List<object> list = new List<object>();
+            // F2.2 majordomo 特殊会话——置顶 + special 标记（前端不视为多猫；无停止/删除）
+            list.Add(new
+            {
+                id = "majordomo",
+                name = "majordomo",
+                running = _majorHost != null,
+                port = _majorPort,
+                special = true
+            });
             for (int i = 0; i < _cats.Count; i++)
             {
                 CatEntry cat = _cats[i];

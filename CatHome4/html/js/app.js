@@ -17,14 +17,6 @@ var rawJsonEl = document.getElementById('rawJson');
 var rawInfoEl = document.getElementById('rawInfo');
 var rawPauseBtn = document.getElementById('rawPause');
 var cmdResultEl = document.getElementById('cmdResult');
-var chatMsgs = document.getElementById('chatMsgs');
-var chatInput = document.getElementById('chatSendInput');
-var chatBtn = document.getElementById('chatSendBtn');
-var chatInfo = document.getElementById('chatInfo');
-var chatState = 'loading';
-var chatStage = null;
-var chatToolQueue = [];
-var chatTimer = null;
 var rawPaused = false;
 var lastFrame = -1;          // 快照帧号守卫——旧快照不覆盖新快照
 var fullSnapshot = null;     // 本地全快照——增量流式接收层维护（各页面渲染唯一数据源）
@@ -54,29 +46,14 @@ es.addEventListener('snapshot', function (ev) {
 });
 es.addEventListener('patch', function (ev) { applyPatch(JSON.parse(ev.data)); });   // 增量流式——变化段合并进本地全快照
 es.addEventListener('log', function (ev) { pushLog(JSON.parse(ev.data)); });
-es.addEventListener('llm', function (ev) {
-    // 日志区不渲染 llm 增量（每 chunk 一条刷屏）——结算行 "llm STREAM 完成" 走 log 事件，与 CMD 同源
-    chatOnLlm(JSON.parse(ev.data));   // B4 对话区——sessionId 过滤 + 五态渲染
-});
 es.addEventListener('cmd', function (ev) {
     var d = JSON.parse(ev.data);
     pushLog({ time: '', frame: d.frame, level: d.ok ? 'INFO' : 'ERROR', category: 'CMD', module: d.cmdId, message: d.ok ? 'ok' : ('err=' + (d.error || '')) });
     cmdResultEl.textContent = '回执: ' + d.cmdId + ' ok=' + d.ok + ' frame=' + d.frame + (d.error ? ' error=' + d.error : '');
 });
-es.addEventListener('tool', function (ev) { chatOnTool(JSON.parse(ev.data)); });   // B4 对话区——工具结果实时回填
-es.addEventListener('chatdone', function (ev) { chatOnChatDone(JSON.parse(ev.data)); });   // B4——会话终态（llm done 仅一轮；chatdone 才定型）
-es.addEventListener('note', function (ev) { noteOnEvent(JSON.parse(ev.data)); });   // M4c——Note 状态实时重绘
-es.addEventListener('user', function (ev) { chatOnUser(JSON.parse(ev.data)); });   // 单向数据流——内核确认消息出口
 es.onerror = function () { metaEl.textContent = 'SSE 断线——自动重连...'; };
 es.onopen = function () {
-    // 重连成功兜底——无条件重拉历史（CHAT_SESSION 动态更新 + 历史重绘；sending 态额外清阶段）
-    // 判例：页面加载时 history fetch 失败（宿主未就绪）→ CHAT_SESSION 卡 'majordomo' → llm 事件全被 sessionId 过滤 → 对话气泡不渲染
-    if (chatState === 'sending') {
-        chatStage = null;
-        chatToolQueue = [];
-        if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
-    }
-    chatLoadHistory();
+    // 对话已迁 chat.html 独立页（F2.1 主面板纯管理面）——重连无需对话历史兜底
 };
 
 // 初始兜底——帧号守卫（旧快照不覆盖新）
