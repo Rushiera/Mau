@@ -14,7 +14,7 @@
             <button data-tab="config">配置</button>
             <button data-tab="cats">多猫</button>
             <!-- 前端版本标记——每次改动前端递增；刷新后数字变化 = 拿到新版（人眼 cache-busting） -->
-            <div style="margin-top:auto;color:#4a4a4a;font-size:10px;writing-mode:vertical-rl">UI v7</div>
+            <div style="margin-top:auto;color:#4a4a4a;font-size:10px;writing-mode:vertical-rl" data-version>UI v?</div>
         </nav>
         <main>
             <!-- 状态区 -->
@@ -203,6 +203,20 @@
         </div>
     </div>
 
+    <!-- 前端版本自动化——data-version 组件统一填充（js/frontend-version.json——Vitest 每次运行自动递增；两外观层同函数同文件） -->
+    <script>
+        function loadUiVersion() {
+            fetch('js/frontend-version.json')
+                .then(function (r) { return r.json(); })
+                .then(function (v) {
+                    var txt = 'UI v' + v.version + ' | ' + (v.time || '');
+                    var els = document.querySelectorAll('[data-version]');
+                    for (var i = 0; i < els.length; i = i + 1) { els[i].textContent = txt; }
+                })
+                .catch(function () { /* 兜底——宿主未运行/文件缺失：保持占位 UI v? 静默降级 */ });
+        }
+        loadUiVersion();
+    </script>
     <!-- 2026-08-25 模块化拆分——JS 二域外置（加载顺序：app 公共 → panel 管理；对话已迁 chat.html 独立页——F2.1 index 纯管理面）；__V__ 宿主注入版本号（cache-busting） -->
     <script src="js/app.js?v=__V__"></script>
     <script src="js/panel.js?v=__V__"></script>

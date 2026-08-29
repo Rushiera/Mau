@@ -1,4 +1,4 @@
-// tests/unit/chat-view.test.mjs —— chat.html 独立对话页 view 协议渲染单元测试（F1 原 11 用例 + F2.4 门禁迁移并入旧 chat.test.mjs 用例）
+﻿// tests/unit/chat-view.test.mjs —— chat.html 独立对话页 view 协议渲染单元测试（F1 原 11 用例 + F2.4 门禁迁移并入旧 chat.test.mjs 用例）
 // 覆盖：view 事件六种 renderType 分发（user/stream/text/reason/toolcard/control）+ 流式容器复用 + 整块替换 + history blocks 渲染
 //       + 发送流程（chatSend→link 相位）+ E 系列四态相位 + Token 统计 + Note 面板（F2.4 补 chat.html 单测盲区）
 // 加载方式（F2.4 重构）：不再正则提取内联 <script>——chat.html 引导层已外置核心至 js/chat-core.js + js/chat-note.js（对话逻辑唯一真相源）
@@ -19,9 +19,11 @@ beforeAll(async () => {
   globalThis.document = chatDom.window.document;
   globalThis.Node = chatDom.window.Node;
   globalThis.HTMLElement = chatDom.window.HTMLElement;
-  // F2.4 门禁迁移——加载外部模块（对话核心 + Note 面板；不执行引导层 SSE/按钮绑定/初始化）
+  // F2.4 门禁迁移——加载外部模块（对话核心 + Note 面板 + F3 MD 解析器；不执行引导层 SSE/按钮绑定/初始化）
+  const md = await readFile(new URL('../../js/chat-md.js', import.meta.url), 'utf-8');
   const core = await readFile(new URL('../../js/chat-core.js', import.meta.url), 'utf-8');
   const note = await readFile(new URL('../../js/chat-note.js', import.meta.url), 'utf-8');
+  vm.runInThisContext(md, { filename: 'chat-md.js' });
   vm.runInThisContext(core, { filename: 'chat-core.js' });
   vm.runInThisContext(note, { filename: 'chat-note.js' });
   chatMsgs = document.getElementById('chatMsgs');
@@ -102,6 +104,34 @@ test('view text 无命中容器时新建气泡', () => {
   expect(rows().length).toBe(1);
   expect(bubbles()[0].textContent).toBe('直接整块');
 });
+
+// ── F3 MD 渲染集成——text 整块经 chat-md.js 渲染为 HTML（md-block 包裹）──
+test('F3 text 整块 MD 渲染——表格/代码块/标题真实 DOM', () => {
+  const md = '## 标题\n\n| 列A | 列B |\n| --- | --- |\n| 1 | 2 |\n\n```\ncode\n```';
+  window.chatOnView({ seq: 20, renderType: 'text', payload: { content: md }, replaceSeq: -1 });
+  const bubble = bubbles()[0];
+  // md-block 作用域锚点存在
+  const block = bubble.querySelector('.md-block');
+  expect(block).not.toBeNull();
+  // 标题 → h2
+  expect(block.querySelector('h2').textContent).toBe('标题');
+  // 表格 → 真 table（thead + tbody）
+  const table = block.querySelector('table');
+  expect(table).not.toBeNull();
+  expect(table.querySelector('thead')).not.toBeNull();
+  expect(table.querySelector('tbody tr').textContent).toBe('12');
+  // 代码块 → pre > code
+  expect(block.querySelector('pre code').textContent).toBe('code');
+  // 纯文本内容 textContent 仍完整（无障碍可读）
+  expect(bubble.textContent).toContain('标题');
+});
+
+test('F3 user 气泡保持纯文本（不 MD 渲染）', () => {
+  window.chatOnView({ seq: 1, renderType: 'user', payload: { content: '## 不是标题', source: 'user' }, replaceSeq: -1 });
+  expect(bubbles()[0].querySelector('.md-block')).toBeNull();
+  expect(bubbles()[0].textContent).toBe('## 不是标题');
+});
+
 
 // ── reason 整块 ──
 test('view reason 整块替换思考流式容器', () => {

@@ -215,8 +215,9 @@ function chatRenderHistory(data) {
             var tb = chatBubble('assistant', 'tool');
             tb.appendChild(chatToolCard(p));
         } else if (blk.renderType === 'text') {
+            // F3 MD 渲染——历史 text 块同样走解析器（与实时渲染一致）；md-block 包裹=CSS 作用域锚点
             var cb = chatBubble('assistant');
-            cb.textContent = p.content || '';
+            cb.innerHTML = '<div class="md-block">' + mdToHtml(p.content || '') + '</div>';
         }
     }
     // P9.3 会话归属动态化——SSE sessionId 随会话 ID（时间戳）变化；history 先于任何 view 事件到达（loading→idle 时序保证）
@@ -381,16 +382,18 @@ function chatOnStream(seq, payload) {
 
 function chatOnText(seq, replaceSeq, payload) {
     // 回复整块——replaceSeq≥0 且容器存在 → 替换流式容器；否则新建气泡
+    // F3 MD 渲染——整块 content 一次渲染（流式阶段 textContent 追加，不渲染不完整字符流）；md-block 包裹=CSS 作用域锚点
     var content = payload.content || '';
+    var html = '<div class="md-block">' + mdToHtml(content) + '</div>';
     var c = viewContainers[replaceSeq];
     if (c && c.type === 'text') {
         c.bubble.classList.remove('streaming');
         c.bubble.classList.remove('streaming-wait');
-        c.bubble.textContent = content;
+        c.bubble.innerHTML = html;
         delete viewContainers[replaceSeq];
     } else {
         var b = chatBubble('assistant');
-        b.textContent = content;
+        b.innerHTML = html;
     }
     chatPhaseEnter('reply');
 }

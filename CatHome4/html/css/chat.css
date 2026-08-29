@@ -26,7 +26,7 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 #chatMsgs { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .chat-row { display: flex; animation: chat-in 0.18s ease-out; }
 @keyframes chat-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
-.chat-row.user { justify-content: flex-end; }
+.chat-row.user { justify-content: flex-start; }
 .chat-row.assistant { justify-content: flex-start; }
 .chat-bubble { max-width: 78%; padding: 8px 12px; border-radius: 8px; font-size: var(--chat-font-size); line-height: 1.7; white-space: pre-wrap; word-break: break-all; }
 .chat-row.user .chat-bubble { background: #0e639c; color: #fff; }
@@ -44,8 +44,8 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 .chat-tool .ta { color: #6a6a6a; word-break: break-all; white-space: pre-wrap; margin-top: 2px; }
 .chat-tool .tr { color: #6a9955; word-break: break-all; white-space: pre-wrap; margin-top: 3px; }
 .chat-tool .tr.err { color: #f48771; }
-#chatinput { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #222; }
-#chatSendInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 7px 10px; font-family: inherit; font-size: 12px; }
+#chatinput { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #222; align-items: flex-end; }
+#chatSendInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 7px 10px; font-family: inherit; font-size: 12px; resize: none; line-height: 1.5; }
 #chatSendInput:focus { outline: none; border-color: #0e639c; }
 #chatSendInput:disabled { opacity: 0.5; }
 #chatSendBtn { background: #0e639c; border: none; color: #fff; padding: 7px 16px; cursor: pointer; font-family: inherit; font-size: 12px; }
@@ -72,3 +72,53 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 /* 单向数据流改造——插话队列显示区（正常流堆叠——有排队消息显示/无则隐藏） */
 #chatPendingPanel { border-top: 1px solid #222; background: #101010; font-size: 11px; padding: 5px 12px; color: #9a9a9a; }
 #chatPendingPanel:empty { display: none; }
+
+/* F3 MD 渲染——手写解析器输出（chat-md.js）——表格/代码块/标题/列表样式 */
+/* 注意：.chat-bubble 有 white-space:pre-wrap + word-break:break-all，会干扰表格/代码块——在 MD 渲染容器内重置 */
+.chat-bubble .md-block { white-space: normal; word-break: normal; }
+.chat-bubble .md-block > *:first-child { margin-top: 0; }
+.chat-bubble .md-block > *:last-child { margin-bottom: 0; }
+/* 标题 */
+.chat-bubble .md-block h1, .chat-bubble .md-block h2, .chat-bubble .md-block h3, .chat-bubble .md-block h4, .chat-bubble .md-block h5, .chat-bubble .md-block h6 {
+    margin: 8px 0 4px; line-height: 1.4; font-weight: bold; color: #d4d4d4; white-space: normal; word-break: break-all;
+}
+.chat-bubble .md-block h1 { font-size: 1.4em; border-bottom: 1px solid #2a2a2a; padding-bottom: 2px; }
+.chat-bubble .md-block h2 { font-size: 1.25em; border-bottom: 1px solid #242424; padding-bottom: 2px; }
+.chat-bubble .md-block h3 { font-size: 1.1em; }
+.chat-bubble .md-block h4 { font-size: 1em; }
+.chat-bubble .md-block h5 { font-size: 0.95em; color: #b8b8b8; }
+.chat-bubble .md-block h6 { font-size: 0.9em; color: #a8a8a8; }
+/* 段落 */
+.chat-bubble .md-block p { margin: 4px 0; white-space: pre-wrap; word-break: break-all; }
+/* 行内代码 */
+.chat-bubble .md-block code { background: #2a2a2a; border-radius: 3px; padding: 1px 4px; font-family: Consolas, monospace; font-size: 0.9em; color: #dcdcaa; }
+/* 代码块——pre 内部必须 white-space:pre 保留缩进换行；横向溢出滚动 */
+.chat-bubble .md-block pre {
+    background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 4px; padding: 8px 10px; margin: 6px 0;
+    font-family: Consolas, monospace; font-size: 0.9em; line-height: 1.5;
+    white-space: pre; word-break: normal; overflow-x: auto; max-width: 100%;
+}
+.chat-bubble .md-block pre code { background: none; padding: 0; font-size: 1em; color: #d4d4d4; }
+/* 引用 */
+.chat-bubble .md-block blockquote {
+    margin: 6px 0; padding: 2px 10px; border-left: 3px solid #569cd6;
+    color: #9a9a9a; white-space: pre-wrap; word-break: break-all;
+}
+/* 列表 */
+.chat-bubble .md-block ul, .chat-bubble .md-block ol { margin: 4px 0; padding-left: 22px; white-space: normal; word-break: break-all; }
+.chat-bubble .md-block li { margin: 2px 0; line-height: 1.6; }
+.chat-bubble .md-block li.md-task { list-style: none; margin-left: -22px; padding-left: 2px; }
+.chat-bubble .md-block li.md-task.done { color: #6a8a6a; text-decoration: line-through; }
+/* 水平线 */
+.chat-bubble .md-block hr { border: none; border-top: 1px solid #2a2a2a; margin: 8px 0; }
+/* 表格——真 HTML 表格：边框/表头/单元格内换行正常化 */
+.chat-bubble .md-block table {
+    border-collapse: collapse; margin: 6px 0; max-width: 100%; display: block; overflow-x: auto;
+    white-space: normal; word-break: normal; font-size: 0.92em;
+}
+.chat-bubble .md-block th, .chat-bubble .md-block td {
+    border: 1px solid #2a2a2a; padding: 4px 8px; text-align: left; vertical-align: top;
+    white-space: normal; word-break: break-all; overflow-wrap: break-word;
+}
+.chat-bubble .md-block thead th { background: #1f1f1f; color: #569cd6; font-weight: bold; }
+.chat-bubble .md-block tbody tr:nth-child(even) { background: #171717; }
