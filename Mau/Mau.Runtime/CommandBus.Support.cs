@@ -136,20 +136,17 @@ public string[] GetKeyDic()
                 string? key = keys[i];
                 if (key == null || !IsValidKey(key))
                 {
-                    WriteLog("COMMAND | REGISTER | REJECT | #" + ownerLongId
-                        + " 非法三段式key", 2);
+                    WriteLog("指令注册被拒 #" + ownerLongId + " 非法三段式 key", 2);
                     return false;
                 }
                 if (!unique.Add(key))
                 {
-                    WriteLog("COMMAND | REGISTER | REJECT | #" + ownerLongId
-                        + " 批内重复key=" + key, 2);
+                    WriteLog("指令注册被拒 #" + ownerLongId + " 批内重复 key=" + key, 2);
                     return false;
                 }
                 if (_keyOwners.ContainsKey(key))
                 {
-                    WriteLog("COMMAND | REGISTER | REJECT | #" + ownerLongId
-                        + " key已占用=" + key, 2);
+                    WriteLog("指令注册被拒 #" + ownerLongId + " key 已占用=" + key, 2);
                     return false;
                 }
             }

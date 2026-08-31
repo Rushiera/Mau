@@ -373,7 +373,7 @@ private static HttpHost _httpHost;
                 }
             }
             DataBox.Set<string>("global", "workspace.roots", rootSummary.ToString());
-            LogStore.Add("CatHome4", 1, "workspace.load | roots=" + workspace.Roots.Length.ToString() + " | inject=" + workspace.Inject.Length.ToString() + " | " + rootSummary.ToString(), "CONFIG");
+            LogStore.Add("CatHome4", 1, "工作区已加载：" + workspace.Roots.Length.ToString() + " 个根、" + workspace.Inject.Length.ToString() + " 条注入（" + rootSummary.ToString() + "）", "CONFIG");
             Console.WriteLine("[CatHome4] 就绪 | Flows: QuickCat#" + _quickId + " " + ToolGroupSummary() + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
             // P9.3 多实例化签名——sessionId 归属默认会话；catsBuilder 多猫列表（管理页签数据源）；主端口服务 index.html
@@ -500,7 +500,7 @@ private static HttpHost _httpHost;
                         CreateNoWindow = true,
                         UseShellExecute = false
                     });
-                    LogStore.Add("CatHome4", 1, "fe-test | 依赖缺失——自动部署中（npm install）| dir=" + testDir, "CONFIG");
+                    LogStore.Add("CatHome4", 1, "前端测试服务依赖缺失，自动部署中（npm install）：" + testDir, "CONFIG");
                     return;
                 }
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -511,7 +511,7 @@ private static HttpHost _httpHost;
                     CreateNoWindow = true,
                     UseShellExecute = false
                 });
-                LogStore.Add("CatHome4", 1, "fe-test | 前端测试服务已拉起 | dir=" + testDir, "CONFIG");
+                LogStore.Add("CatHome4", 1, "前端测试服务已启动：" + testDir, "CONFIG");
             }
             catch (Exception)
             {

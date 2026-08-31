@@ -316,7 +316,12 @@ namespace Mau.Runtime
             }
             if (entry.Payload.Length > 0)
             {
-                line = line + " | " + entry.Payload;
+                // 审计载荷去裸 JSON——渲染为 k=v 逗号拼接（人读自然化；完整 JSON 仍在内存 LogEntry.Payload 供 AuditQuery 机器查询）
+                string summary = SummarizePayload(entry.Payload);
+                if (summary.Length > 0)
+                {
+                    line = line + " | " + summary;
+                }
             }
             return line;
         }
@@ -337,6 +342,72 @@ namespace Mau.Runtime
                 return "WARN";
             }
             return "INFO";
+        }
+
+        /// <summary>
+        /// 载荷摘要——审计 props JSON（[{"k":..,"v":..}]）渲染为 k=v 逗号拼接（人读自然化；解析失败回落原文截断 120）。
+        /// </summary>
+        /// <param name="payload">载荷 JSON</param>
+        /// <returns>摘要文本</returns>
+        private static string SummarizePayload(string payload)
+        {
+            try
+            {
+                using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(payload))
+                {
+                    System.Text.Json.JsonElement root = doc.RootElement;
+                    if (root.ValueKind != System.Text.Json.JsonValueKind.Array)
+                    {
+                        return payload;
+                    }
+                    System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                    for (int i = 0; i < root.GetArrayLength(); i++)
+                    {
+                        System.Text.Json.JsonElement item = root[i];
+                        string k = "";
+                        string v = "";
+                        System.Text.Json.JsonElement kk;
+                        if (item.TryGetProperty("k", out kk) && kk.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            string? g = kk.GetString();
+                            if (g != null)
+                            {
+                                k = g;
+                            }
+                        }
+                        System.Text.Json.JsonElement vv;
+                        if (item.TryGetProperty("v", out vv) && vv.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            string? g = vv.GetString();
+                            if (g != null)
+                            {
+                                v = g;
+                            }
+                        }
+                        if (sb.Length > 0)
+                        {
+                            sb.Append(", ");
+                        }
+                        sb.Append(k);
+                        sb.Append("=");
+                        sb.Append(v);
+                    }
+                    string result = sb.ToString();
+                    if (result.Length > 0)
+                    {
+                        return result;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // 解析失败——回落原文
+            }
+            if (payload.Length > 120)
+            {
+                return payload.Substring(0, 120) + "...";
+            }
+            return payload;
         }
 
         /// <summary>

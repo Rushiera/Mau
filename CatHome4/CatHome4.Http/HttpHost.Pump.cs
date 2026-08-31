@@ -60,7 +60,7 @@ namespace CatHome4.Http
         {
             PushEvent("patch", patch);
             // 观测透明性——patch 推送结算行（截断 120——cats 整段可能长）
-            LogStore.Add("CatHome4", 1, "SSE|patch|" + patch, "CHAT", "", "", 120);
+            LogStore.Add("CatHome4", 1, "快照增量推送（" + patch + "）", "CHAT", "", "", 120);
         }
     }
     else
@@ -144,7 +144,7 @@ public void PushNoteState(string json)
     string frame = "{\"sessionId\":\"" + _sessionId + "\",\"state\":" + json + "}";
     PushEvent("note", frame);
     // M4c 观测透明性——SSE note 推送结算行（前端未更新时 cmd 可对照）
-    LogStore.Add("CatHome4", 1, "SSE|note|" + json, "CHAT");
+    LogStore.Add("CatHome4", 1, "Note 状态推送：" + json, "CHAT");
 }        /// <summary>
         /// 工具结果实时推送——宿主 ChatBridge ExecuteToolBatch 调用（B4 对话区：tool 事件）。
         /// 载荷与 history 视图同截断（参数 ≤200/结果 ≤300）；事件顺序 = 执行顺序 = toolCalls 数组顺序（前端 FIFO 配对）。
@@ -215,7 +215,7 @@ public void PushNoteState(string json)
             };
             PushEvent("user", JsonSerializer.Serialize(obj));
             // 观测透明性——SSE user 推送结算行（Note 气泡排查——前端未渲染时日志可对照）
-            LogStore.Add("CatHome4", 1, "SSE|user|len=" + text.Length.ToString() + "|source=" + source + "|clients=" + _clients.Count.ToString(), "CHAT");
+            LogStore.Add("CatHome4", 1, "用户消息推送（" + text.Length.ToString() + " 字符，来源 " + source + "，当前 " + _clients.Count.ToString() + " 个连接）", "CHAT");
         }
 
         /// <summary>

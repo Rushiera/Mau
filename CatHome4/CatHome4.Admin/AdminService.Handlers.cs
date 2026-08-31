@@ -160,7 +160,7 @@ namespace CatHome4.Admin
             config.Endpoint = endpoint;
             config.DefaultModel = defaultModel;
             store.Save(config, apiKey);
-            LogStore.Add("CatHome4", 1, "llm-apis | 新建 | " + config.ApiConfigId.ToString("D") + " | " + displayName, "CONFIG");
+            LogStore.Add("CatHome4", 1, "LLM API 池新增配置「" + displayName + "」（" + config.ApiConfigId.ToString("D") + "）", "CONFIG");
             return Results.Json(new { ok = true, apiConfigId = config.ApiConfigId.ToString("D") });
         }
 
@@ -201,7 +201,7 @@ namespace CatHome4.Admin
             {
                 return Results.Json(new { ok = false, error = "配置不存在" });
             }
-            LogStore.Add("CatHome4", 1, "llm-apis | 设为默认 | " + apiConfigId, "CONFIG");
+            LogStore.Add("CatHome4", 1, "LLM API 池已设为默认：" + apiConfigId, "CONFIG");
             return Results.Json(new { ok = true });
         }
 
@@ -263,7 +263,7 @@ namespace CatHome4.Admin
             config.Endpoint = endpoint;
             config.DefaultModel = defaultModel;
             store.Save(config, apiKey);
-            LogStore.Add("CatHome4", 1, "llm-apis | 编辑 | " + id.ToString("D") + " | " + displayName + " | key=" + (apiKey.Length > 0 ? "Y" : "保留"), "CONFIG");
+            LogStore.Add("CatHome4", 1, "LLM API 池「" + displayName + "」已更新（" + id.ToString("D") + "），密钥" + (apiKey.Length > 0 ? "已更换" : "保持原值"), "CONFIG");
             return Results.Json(new { ok = true, apiConfigId = id.ToString("D") });
         }
 
@@ -303,7 +303,7 @@ namespace CatHome4.Admin
             {
                 return Results.Json(new { ok = false, error = "配置不存在" });
             }
-            LogStore.Add("CatHome4", 1, "llm-apis | 删除 | " + id.ToString("D"), "CONFIG");
+            LogStore.Add("CatHome4", 1, "LLM API 池配置已删除：" + id.ToString("D"), "CONFIG");
             return Results.Json(new { ok = true, apiConfigId = id.ToString("D") });
         }
 
@@ -398,7 +398,7 @@ namespace CatHome4.Admin
             config.AppId = appId;
             config.Sandbox = sandbox;
             store.Save(config, secret);
-            LogStore.Add("CatHome4", 1, "qqbot-apis | 新建 | " + config.QqBotId.ToString("D") + " | " + displayName, "CONFIG");
+            LogStore.Add("CatHome4", 1, "QQ Bot 池新增配置「" + displayName + "」（" + config.QqBotId.ToString("D") + "）", "CONFIG");
             QQBotService.Refresh();
             return Results.Json(new { ok = true, qqBotId = config.QqBotId.ToString("D") });
         }
@@ -457,7 +457,7 @@ namespace CatHome4.Admin
             config.AppId = appId;
             config.Sandbox = sandbox;
             store.Save(config, secret);
-            LogStore.Add("CatHome4", 1, "qqbot-apis | 编辑 | " + id.ToString("D") + " | " + displayName + " | secret=" + (secret.Length > 0 ? "Y" : "保留"), "CONFIG");
+            LogStore.Add("CatHome4", 1, "QQ Bot 池「" + displayName + "」已更新（" + id.ToString("D") + "），secret" + (secret.Length > 0 ? "已更换" : "保持原值"), "CONFIG");
             QQBotService.Refresh();
             return Results.Json(new { ok = true, qqBotId = id.ToString("D") });
         }
@@ -497,7 +497,7 @@ namespace CatHome4.Admin
             {
                 return Results.Json(new { ok = false, error = "配置不存在" });
             }
-            LogStore.Add("CatHome4", 1, "qqbot-apis | 删除 | " + id.ToString("D"), "CONFIG");
+            LogStore.Add("CatHome4", 1, "QQ Bot 池配置已删除：" + id.ToString("D"), "CONFIG");
             QQBotService.Refresh();
             return Results.Json(new { ok = true, qqBotId = id.ToString("D") });
         }
@@ -616,7 +616,7 @@ namespace CatHome4.Admin
                                     }
                                     else
                                     {
-                                        LogStore.Add("CatHome4", 2, "cat-config | 注入路径拒绝 | " + got, "CONFIG");
+                                        LogStore.Add("CatHome4", 2, "猫配置：注入路径被拒绝（非法格式）" + got, "CONFIG");
                                     }
                                 }
                             }
@@ -669,7 +669,7 @@ namespace CatHome4.Admin
             SaveCatCfgData(catKey, cfg);
             // 运行时生效——入队主线程泵（注册表/会话面仅主线程触碰）
             _catQueue.Enqueue("catcfg.apply " + catKey);
-            LogStore.Add("CatHome4", 1, "cat-config | 已受理 | " + catKey + " | tools=" + validToolNames, "CONFIG");
+            LogStore.Add("CatHome4", 1, "猫配置已受理：" + catKey + "（工具面 " + validToolNames + "）", "CONFIG");
             return Results.Json(new { ok = true, cat = catKey, toolNames = validToolNames });
         }
 
@@ -758,7 +758,7 @@ namespace CatHome4.Admin
                                     }
                                     else
                                     {
-                                        LogStore.Add("CatHome4", 2, "cat-default | 注入路径拒绝 | " + got, "CONFIG");
+                                        LogStore.Add("CatHome4", 2, "全局默认模板：注入路径被拒绝（非法格式）" + got, "CONFIG");
                                     }
                                 }
                             }
@@ -776,7 +776,7 @@ namespace CatHome4.Admin
             data.DefaultToolNames = defaultToolNames;
             data.DefaultInjectList = defaultInjectList.ToArray();
             SaveCatDefaultCfg(data);
-            LogStore.Add("CatHome4", 1, "cat-default | 已保存 | inject=" + defaultInjectList.Count.ToString(), "CONFIG");
+            LogStore.Add("CatHome4", 1, "全局默认模板已保存（注入 " + defaultInjectList.Count.ToString() + " 条）", "CONFIG");
             return Results.Json(new { ok = true });
         }
 
@@ -959,7 +959,7 @@ namespace CatHome4.Admin
             {
                 return Results.Json(new { ok = false, error = "落盘失败: " + ex.Message });
             }
-            LogStore.Add("CatHome4", 1, "workspace | 已保存 | roots=" + rootsIn.Count.ToString() + " | 重启生效", "CONFIG");
+            LogStore.Add("CatHome4", 1, "工作区已保存：" + rootsIn.Count.ToString() + " 个根（重启生效）", "CONFIG");
             return Results.Json(new { ok = true, roots = rootsIn.Count });
         }
 
@@ -1004,7 +1004,7 @@ namespace CatHome4.Admin
                 {
                     _defaultApiConfigId = newApi;
                     _chatBridge.DefaultSession.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApi, _globalConfig));
-                    LogStore.Add("CatHome4", 1, "catcfg.apply | majordomo | api 切换 → " + newApi.ToString("D"), "CONFIG");
+                    LogStore.Add("CatHome4", 1, "majordomo 配置生效：LLM 端点切换为 " + newApi.ToString("D"), "CONFIG");
                 }
                 return "catcfg.apply | majordomo | 已生效（前文项新会话生效）";
             }
@@ -1030,7 +1030,7 @@ namespace CatHome4.Admin
                 }
                 cat.ApiConfig = apiConfig;
                 cat.Session.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApiId, _globalConfig));
-                LogStore.Add("CatHome4", 1, "catcfg.apply | " + cat.DisplayName + " | api 切换 → " + newApiId.ToString("D"), "CONFIG");
+                LogStore.Add("CatHome4", 1, "猫「" + cat.DisplayName + "」配置生效：LLM 端点切换为 " + newApiId.ToString("D"), "CONFIG");
             }
             return "catcfg.apply | " + cat.DisplayName + " | 已生效（前文项新会话生效）";
         }
@@ -1102,7 +1102,7 @@ namespace CatHome4.Admin
             }
             catch (Exception ex)
             {
-                LogStore.Add("CatHome4", 2, "cat.cfg | 写入失败 | " + ex.Message, "CHAT");
+                LogStore.Add("CatHome4", 2, "cat.cfg 写入失败：" + ex.Message, "CHAT");
             }
         }
 

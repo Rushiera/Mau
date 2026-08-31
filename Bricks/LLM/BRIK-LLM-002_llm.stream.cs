@@ -102,7 +102,7 @@ namespace Mau.Bricks
                         // [段2] 完成——完整回复落段盒 + 完成标志
                         DataBox.Set<string>("global", "llm_reply:" + seg, full.ToString());
                         DataBox.Set<string>("global", "llm_done:" + seg, "1");
-                        LogStore.Add("LLM", 0, "STREAM|chunks=" + count.ToString() + "|t=" + textCount.ToString() + "|r=" + reasonCount.ToString() + "|chars=" + full.Length.ToString(), "LLM");
+                        LogStore.Add("LLM", 0, "模型流式回复完成：" + count.ToString() + " 分片（文本 " + textCount.ToString() + " / 思考 " + reasonCount.ToString() + "），共 " + full.Length.ToString() + " 字符", "LLM");
                         return;
                     }
                     else if (ev.Kind == LlmStreamKind.Error)
@@ -110,7 +110,7 @@ namespace Mau.Bricks
                         // [段3] 失败——错误文本落段盒 + 完成标志（失败可见性：ERR| 前缀）
                         DataBox.Set<string>("global", "llm_reply:" + seg, ev.Text);
                         DataBox.Set<string>("global", "llm_done:" + seg, "1");
-                        LogStore.Add("LLM", 3, "STREAM_ERROR|" + TrimText(ev.Text, 200), "LLM");
+                        LogStore.Add("LLM", 3, "模型流式回复失败：" + TrimText(ev.Text, 200), "LLM");
                         return;
                     }
                 }
@@ -123,7 +123,7 @@ namespace Mau.Bricks
                 // [段5] 异常兜底——错误可见性
                 DataBox.Set<string>("global", "llm_reply:" + seg, "ERR|" + ex.GetType().Name + "|" + ex.Message);
                 DataBox.Set<string>("global", "llm_done:" + seg, "1");
-                LogStore.Add("LLM", 3, "STREAM_EXCEPTION|" + ex.GetType().Name + "|" + TrimText(ex.Message, 200), "LLM");
+                LogStore.Add("LLM", 3, "模型流式回复异常（" + ex.GetType().Name + "）：" + TrimText(ex.Message, 200), "LLM");
             }
         }
 
@@ -147,4 +147,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:FE89C9A66518C43DAF65FD7465C9D7EE97CE097E39AD7FB0414A84B81973104E
+// #MAU_CHECKSUM:SHA256:5AB796D5976686DD5BCF9A5EE1BD9CC5600E44CFF8A0ECFF96CE3D4A37A4A020

@@ -154,9 +154,7 @@ namespace Mau.Runtime
             {
                 if (_keyDic.ContainsKey(ownerLongId))
                 {
-                    WriteLog("COMMAND | REGISTER | REJECT | #" + ownerLongId
-                        + " 重复注册", 2);
-                    if (Audit != null)
+                    WriteLog("指令注册被拒 #" + ownerLongId + " 重复注册", 2);                    if (Audit != null)
                     {
                         Audit.Record("CommandBus", "cmd.register", -1, new AuditProp[] {
                             new AuditProp("owner", ownerLongId.ToString()),
@@ -251,7 +249,7 @@ namespace Mau.Runtime
                     _rejectedInputCount = _rejectedInputCount + 1;
                     _version = _version + 1;
                     // C 类 Log——所有投递留痕（含未接受输入；level=WARN 但 Category=CMD 区分）
-                    LogStore.Add("CommandBus", 2, "CMD | SET | " + key + " | " + source + " | REJECT 未接受输入", "CMD");
+                    LogStore.Add("CommandBus", 2, "指令投递被拒 " + key + "（来源 " + source + "）：总线未接受输入", "CMD");
                     if (Audit != null)
                     {
                         Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
@@ -265,9 +263,9 @@ namespace Mau.Runtime
                 }
                 if (!_keyOwners.ContainsKey(key))
                 {
-                    WriteLog("COMMAND | SET | REJECT | " + key + " 未注册", 2);
+                    WriteLog("指令投递被拒 " + key + " 未注册", 2);
                     // C 类 Log——投递失败（未注册）
-                    LogStore.Add("CommandBus", 2, "CMD | SET | " + key + " | " + source + " | REJECT 未注册", "CMD");
+                    LogStore.Add("CommandBus", 2, "指令投递被拒 " + key + "（来源 " + source + "）：key 未注册", "CMD");
                     if (Audit != null)
                     {
                         Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
@@ -282,7 +280,7 @@ namespace Mau.Runtime
                 _pendingCommandPool[key] = value;
                 _version = _version + 1;
                 // C 类 Log——投递成功（已注册）
-                LogStore.Add("CommandBus", 0, "CMD | SET | " + key + " | " + source + " | ACCEPT", "CMD");
+                LogStore.Add("CommandBus", 0, "指令投递 " + key + "（来源 " + source + "）：已接受", "CMD");
                 if (Audit != null)
                 {
                     Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
@@ -308,7 +306,7 @@ namespace Mau.Runtime
                     _rejectedInputCount = _rejectedInputCount + 1;
                     _version = _version + 1;
                     // C 类 Log——所有投递留痕（含未接受输入）
-                    LogStore.Add("CommandBus", 2, "CMD | SET_TEXT | " + key + " | " + source + " | REJECT 未接受输入", "CMD");
+                    LogStore.Add("CommandBus", 2, "文本指令投递被拒 " + key + "（来源 " + source + "）：总线未接受输入", "CMD");
                     if (Audit != null)
                     {
                         Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
@@ -322,9 +320,9 @@ namespace Mau.Runtime
                 }
                 if (!_keyOwners.ContainsKey(key))
                 {
-                    WriteLog("COMMAND | SET_TEXT | REJECT | " + key + " 未注册", 2);
+                    WriteLog("文本指令投递被拒 " + key + " 未注册", 2);
                     // C 类 Log——投递失败（未注册）
-                    LogStore.Add("CommandBus", 2, "CMD | SET_TEXT | " + key + " | " + source + " | REJECT 未注册", "CMD");
+                    LogStore.Add("CommandBus", 2, "文本指令投递被拒 " + key + "（来源 " + source + "）：key 未注册", "CMD");
                     if (Audit != null)
                     {
                         Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
@@ -338,7 +336,7 @@ namespace Mau.Runtime
                 }
                 _pendingTextPool[key] = text;
                 // C 类 Log——投递成功（已注册）
-                LogStore.Add("CommandBus", 0, "CMD | SET_TEXT | " + key + " | " + source + " | ACCEPT", "CMD");
+                LogStore.Add("CommandBus", 0, "文本指令投递 " + key + "（来源 " + source + "）：已接受", "CMD");
                 if (Audit != null)
                 {
                     Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {

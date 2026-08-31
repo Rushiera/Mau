@@ -193,7 +193,7 @@ namespace CatHome4.Admin
             }
             catch (Exception ex)
             {
-                LogStore.Add("CatHome4", 2, "cat-default | 写入失败 | " + ex.Message, "CONFIG");
+                LogStore.Add("CatHome4", 2, "全局默认模板写入失败：" + ex.Message, "CONFIG");
             }
         }
 
@@ -305,7 +305,7 @@ namespace CatHome4.Admin
             }
             catch (Exception ex)
             {
-                LogStore.Add("CatHome4", 2, "cat.delete | 文件清理异常 | " + ex.Message, "CHAT");
+                LogStore.Add("CatHome4", 2, "销毁猫文件清理异常：" + ex.Message, "CHAT");
             }
         }
 

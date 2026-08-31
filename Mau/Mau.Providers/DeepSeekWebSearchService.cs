@@ -142,7 +142,7 @@ namespace Mau.Providers
             // [段6] usage 结算行——观测（CH4 不做内部计费——决策 6；用户可感知单次搜索消耗）
             if (usageText.Length > 0)
             {
-                LogStore.Add("WEB", 1, "TOOL|web-search|usage|" + usageText, "TOOL");
+                LogStore.Add("WEB", 1, "联网搜索消耗：" + usageText, "TOOL");
             }
 
             if (result.Length == 0)

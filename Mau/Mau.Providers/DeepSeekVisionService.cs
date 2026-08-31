@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Net.Http;
 using System.Text;
@@ -153,7 +153,7 @@ namespace Mau.Providers
             // [段7] usage 结算行——观测（用户可感知单次识别消耗）
             if (usageText.Length > 0)
             {
-                LogStore.Add("VISION", 1, "TOOL|image-analyze|usage|" + usageText, "TOOL");
+                LogStore.Add("VISION", 1, "图像识别消耗：" + usageText, "TOOL");
             }
 
             if (result.Length == 0)

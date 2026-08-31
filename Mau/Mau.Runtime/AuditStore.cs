@@ -307,6 +307,77 @@ namespace Mau.Runtime
         /// <returns>消息文本</returns>
         private static string BuildMessage(string category, AuditProp[]? props)
         {
+            if (category == "flow.register")
+            {
+                return "注册流程 #" + FindProp(props, "flowId") + "「" + FindProp(props, "name") + "」（" + FindProp(props, "kind") + "）";
+            }
+            if (category == "flow.unregister")
+            {
+                return "注销流程 #" + FindProp(props, "flowId");
+            }
+            if (category == "cmd.register")
+            {
+                string result = FindProp(props, "result");
+                if (result == "rejected")
+                {
+                    return "注册指令总线被拒 #" + FindProp(props, "owner") + "（" + FindProp(props, "keys") + "）：" + FindProp(props, "reason");
+                }
+                return "注册指令总线 #" + FindProp(props, "owner") + "：" + FindProp(props, "keys");
+            }
+            if (category == "cmd.set")
+            {
+                string result = FindProp(props, "result");
+                string payload = FindProp(props, "payload");
+                if (result == "rejected")
+                {
+                    return "指令投递被拒 " + FindProp(props, "key") + "（来源 " + FindProp(props, "source") + "）：" + FindProp(props, "reason");
+                }
+                if (payload.Length > 0)
+                {
+                    return "指令投递 " + FindProp(props, "key") + "（来源 " + FindProp(props, "source") + "）：" + payload;
+                }
+                return "指令投递 " + FindProp(props, "key") + "（来源 " + FindProp(props, "source") + "）";
+            }
+            if (category == "cmd.consume")
+            {
+                return "消费指令 #" + FindProp(props, "owner") + "：" + FindProp(props, "keys");
+            }
+            if (category == "cmd.clean")
+            {
+                return "清理指令 #" + FindProp(props, "owner") + "（" + FindProp(props, "reason") + "）：" + FindProp(props, "keys");
+            }
+            if (category == "oa.post")
+            {
+                return "提交工单 #" + FindProp(props, "officeId") + "：" + FindProp(props, "type") + "/" + FindProp(props, "name") + "（owner #" + FindProp(props, "ownerId") + "，超时 " + FindProp(props, "timeout") + " 帧）";
+            }
+            if (category == "oa.claim")
+            {
+                return "认领工单 #" + FindProp(props, "officeId") + "（worker #" + FindProp(props, "workerId") + "）";
+            }
+            if (category == "oa.complete")
+            {
+                return "完成工单 #" + FindProp(props, "officeId") + "（worker #" + FindProp(props, "workerId") + "，回执 " + FindProp(props, "result") + "）";
+            }
+            if (category == "oa.settle")
+            {
+                return "结算工单 #" + FindProp(props, "officeId") + "：" + FindProp(props, "reason");
+            }
+            if (category == "cfg.change")
+            {
+                return "配置变更 " + FindProp(props, "key") + " = " + FindProp(props, "value");
+            }
+            if (category == "signal.post")
+            {
+                return "信号置位：" + FindProp(props, "name") + "（帧 " + FindProp(props, "frame") + "）";
+            }
+            if (category == "signal.consume")
+            {
+                return "信号消费：" + FindProp(props, "name") + "（帧 " + FindProp(props, "frame") + "）";
+            }
+            if (category == "log.error")
+            {
+                return "运行时错误：" + FindProp(props, "message");
+            }
             string message = category;
             if (props != null)
             {
@@ -321,6 +392,28 @@ namespace Mau.Runtime
                 }
             }
             return message;
+        }
+
+        /// <summary>
+        /// 查找属性值——按 key 精确匹配（缺失返回空串）
+        /// </summary>
+        /// <param name="props">属性数组</param>
+        /// <param name="key">属性键</param>
+        /// <returns>属性值；未找到空串</returns>
+        private static string FindProp(AuditProp[]? props, string key)
+        {
+            if (props == null)
+            {
+                return "";
+            }
+            for (int i = 0; i < props.Length; i = i + 1)
+            {
+                if (props[i].Key == key)
+                {
+                    return props[i].Value;
+                }
+            }
+            return "";
         }
 
         /// <summary>

@@ -110,8 +110,7 @@ public OAView GetSnapshot()
                 Office office = _offices[ownedOfficeIds[i]];
                 _offices.Remove(ownedOfficeIds[i]);
                 _version = _version + 1;
-                WriteLog("OA | OWNER_RECYCLED | Owner#" + ownerId + " | Office#"
-                    + office.OfficeId + " | Status=" + office.Status.ToString(), 0);
+                WriteLog("挂单方 #" + ownerId + " 回收：释放工单 #" + office.OfficeId + "（状态 " + office.Status.ToString() + "）", 0);
             }
         }
 
@@ -140,8 +139,7 @@ public OAView GetSnapshot()
                 _offices[office.OfficeId] = office;
                 _totalRelist = _totalRelist + 1;
                 _version = _version + 1;
-                WriteLog("OA | WORKER_RECYCLED | Worker#" + workerId.ToString()
-                    + " | Office#" + office.OfficeId.ToString(), 0);
+                WriteLog("执行方 #" + workerId.ToString() + " 回收：释放工单 #" + office.OfficeId.ToString(), 0);
             }
         }
 

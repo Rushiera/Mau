@@ -215,7 +215,7 @@ namespace CatHome4.Admin
             }
             _cats.Add(cat);
             SaveCatCfg(cat);
-            LogStore.Add("CatHome4", 1, "cat.new | id=" + id + " | name=" + name + " | 静默态", "CHAT");
+            LogStore.Add("CatHome4", 1, "已创建猫「" + name + "」（id " + id + "），静默待启动", "CHAT");
             return "cat.new | id=" + id + " | name=" + name + " | 静默态（cat.start 启动）";
         }
 
@@ -291,7 +291,7 @@ namespace CatHome4.Admin
             cat.Host = host;
             cat.Session.AttachHost(host);
             SaveCatCfg(cat);
-            LogStore.Add("CatHome4", 1, "cat.start | id=" + cat.Id + " | port=" + port.ToString(), "CHAT");
+            LogStore.Add("CatHome4", 1, "已启动猫「" + cat.DisplayName + "」，端口 " + port.ToString(), "CHAT");
             return "cat.start | " + cat.DisplayName + " | http://127.0.0.1:" + port.ToString();
         }
 
@@ -322,13 +322,13 @@ namespace CatHome4.Admin
             }
             catch (Exception ex)
             {
-                LogStore.Add("CatHome4", 2, "cat.stop | 停止异常 | " + ex.Message, "CHAT");
+                LogStore.Add("CatHome4", 2, "停止猫「" + cat.DisplayName + "」异常：" + ex.Message, "CHAT");
             }
             cat.Host = null;
             cat.Running = false;
             cat.Port = 0;
             SaveCatCfg(cat);
-            LogStore.Add("CatHome4", 1, "cat.stop | id=" + cat.Id, "CHAT");
+            LogStore.Add("CatHome4", 1, "已停止猫「" + cat.DisplayName + "」", "CHAT");
             return "cat.stop | " + cat.DisplayName + " | 已停止";
         }
 
@@ -364,7 +364,7 @@ namespace CatHome4.Admin
             _chatBridge.RemoveSession(cat.Session);
             ConfigStoreRegistry.Unregister(cat.Id);
             DeleteCatFiles(cat.Id);
-            LogStore.Add("CatHome4", 1, "cat.delete | id=" + cat.Id + " | name=" + cat.DisplayName, "CHAT");
+            LogStore.Add("CatHome4", 1, "已销毁猫「" + cat.DisplayName + "」（id " + cat.Id + "）", "CHAT");
             return "cat.delete | " + cat.DisplayName + " | 已销毁";
         }
 
@@ -500,12 +500,12 @@ namespace CatHome4.Admin
                 cat.ToolSpecs = catSpecs;
                 cat.QqBotId = qqBotId;
                 cat.QqBotEnable = qqBotEnable;
-                LogStore.Add("CatHome4", 1, "cat.api | id=" + id + " | api=" + (apiConfigId == Guid.Empty ? "default" : apiConfigId.ToString("D")) + " | model=" + apiConfig.DefaultModel, "CHAT");
+                LogStore.Add("CatHome4", 1, "猫「" + displayName + "」绑定 LLM 配置：" + (apiConfigId == Guid.Empty ? "默认端点" : apiConfigId.ToString("D")) + "，模型 " + apiConfig.DefaultModel, "CHAT");
                 return cat;
             }
             catch (Exception ex)
             {
-                LogStore.Add("CatHome4", 3, "cat.create | 失败 | " + ex.Message, "CHAT");
+                LogStore.Add("CatHome4", 3, "创建猫实体失败：" + ex.Message, "CHAT");
                 return null;
             }
         }
@@ -691,7 +691,7 @@ namespace CatHome4.Admin
             int port = AllocatePort(CatPortStart);
             if (port < 0)
             {
-                LogStore.Add("CatHome4", 2, "major.start | 端口分配失败（8081-8180 全占用）", "CHAT");
+                LogStore.Add("CatHome4", 2, "majordomo 独立端口启动失败：8081-8180 全占用", "CHAT");
                 return false;
             }
             HttpHost host = HttpHost.Start(
@@ -711,7 +711,7 @@ namespace CatHome4.Admin
             _majorPort = port;
             // 会话事件推送改绑 majordomo 独立对话端口（主端口 index.html 管理面板不再消费 chat 事件——F2.1）
             _chatBridge.DefaultSession.AttachHost(host);
-            LogStore.Add("CatHome4", 1, "major.start | majordomo 独立对话端口 | " + port.ToString(), "CHAT");
+            LogStore.Add("CatHome4", 1, "majordomo 独立对话端口已启动：" + port.ToString(), "CHAT");
             return true;
         }
 
@@ -910,14 +910,14 @@ namespace CatHome4.Admin
                 CatEntry cat = CreateCatEntry(cfg.Id, cfg.DisplayName);
                 if (cat == null)
                 {
-                    LogStore.Add("CatHome4", 2, "cat.boot | 会话构造失败 | " + cfg.Id, "CHAT");
+                    LogStore.Add("CatHome4", 2, "启动扫描：猫 " + cfg.Id + " 会话构造失败", "CHAT");
                     continue;
                 }
                 _cats.Add(cat);
                 if (!cfg.Running)
                 {
                     // 静默态——注册表可见（cat.list/start 可寻址），不拉起
-                    LogStore.Add("CatHome4", 1, "cat.boot | 静默 | id=" + cat.Id + " | name=" + cat.DisplayName, "CHAT");
+                    LogStore.Add("CatHome4", 1, "启动扫描：猫「" + cat.DisplayName + "」为静默态（id " + cat.Id + "）", "CHAT");
                     continue;
                 }
                 int port = cfg.Port;
@@ -927,7 +927,7 @@ namespace CatHome4.Admin
                 }
                 if (port < 0)
                 {
-                    LogStore.Add("CatHome4", 2, "cat.boot | 端口分配失败 | " + cfg.Id, "CHAT");
+                    LogStore.Add("CatHome4", 2, "启动扫描：猫 " + cfg.Id + " 端口分配失败", "CHAT");
                     continue;
                 }
                 try
@@ -936,14 +936,14 @@ namespace CatHome4.Admin
                 }
                 catch (Exception ex)
                 {
-                    LogStore.Add("CatHome4", 2, "cat.boot | 拉起失败 | " + cfg.Id + " | " + ex.Message, "CHAT");
+                    LogStore.Add("CatHome4", 2, "启动扫描：猫 " + cfg.Id + " 拉起失败：" + ex.Message, "CHAT");
                     continue;
                 }
                 cat.Running = true;
                 cat.Port = port;
                 cat.Session.AttachHost(cat.Host);
                 SaveCatCfg(cat);
-                LogStore.Add("CatHome4", 1, "cat.boot | 拉起 | id=" + cat.Id + " | port=" + port.ToString(), "CHAT");
+                LogStore.Add("CatHome4", 1, "启动扫描：已拉起猫「" + cat.DisplayName + "」，端口 " + port.ToString(), "CHAT");
             }
         }
 

@@ -163,7 +163,7 @@ namespace Mau.Runtime
                 });
             }
             // O 类 Log——提单（INFO 分支 Category=OA）
-            LogStore.Add("OA", 0, "OA | POST | #" + officeId + " | " + officeType + "/" + officeName, "OA");
+            LogStore.Add("OA", 0, "工单 #" + officeId + " 已提交：" + officeType + "/" + officeName + "（超时 " + timeoutTicks.ToString() + " 帧）", "OA");
             return officeId;
         }
 
@@ -288,7 +288,7 @@ namespace Mau.Runtime
             }
             _offices.Remove(officeId);
             _version = _version + 1;
-            WriteLog("OA | CANCEL | #" + officeId + " | Owner#" + ownerId, 0);
+            WriteLog("工单 #" + officeId + " 已取消（挂单方 #" + ownerId + "）", 0);
             return true;
         }
 
@@ -355,7 +355,7 @@ namespace Mau.Runtime
                     });
                 }
                 // O 类 Log——接单（P3c 观测全链：Post/Claim/Complete/超时四态专属 Log 补齐）
-                LogStore.Add("OA", 0, "OA | CLAIM | #" + office.OfficeId + " | worker=" + workerId, "OA");
+                LogStore.Add("OA", 0, "工单 #" + office.OfficeId + " 已被 #" + workerId + " 认领", "OA");
                 claimed.Add(CopyOffice(office));
             }
             return claimed;
@@ -374,17 +374,17 @@ namespace Mau.Runtime
             _threadGuard.AssertMainThread("OA.Complete");
             if (_isLivingWorker != null && !_isLivingWorker(workerId))
             {
-                WriteLog("OA | COMPLETE | REJECT | WORKER_OWNER_INVALID", 2);
+                WriteLog("完成工单被拒：执行方无效（WORKER_OWNER_INVALID）", 2);
                 return;
             }
             if (!_offices.TryGetValue(officeId, out office))
             {
-                WriteLog("OA | COMPLETE | REJECT | #" + officeId + " 不存在", 2);
+                WriteLog("完成工单被拒：工单 #" + officeId + " 不存在", 2);
                 return;
             }
             if (office.Status != OfficeState.Work || office.ClaimByWorkerId != workerId)
             {
-                WriteLog("OA | COMPLETE | REJECT | #" + officeId + " 状态或权限不符", 2);
+                WriteLog("完成工单被拒：工单 #" + officeId + " 状态或权限不符", 2);
                 return;
             }
             office.Result = result.Copy();
@@ -393,7 +393,7 @@ namespace Mau.Runtime
             _totalDone = _totalDone + 1;
             _version = _version + 1;
             // O 类 Log——单结束（成功完成；INFO 分支 Category=OA）
-            LogStore.Add("OA", 0, "OA | DONE | #" + officeId + " | worker=" + workerId, "OA");
+            LogStore.Add("OA", 0, "工单 #" + officeId + " 已完成（执行方 #" + workerId + "）", "OA");
             if (Audit != null)
             {
                 Audit.Record("OA", "oa.complete", -1, new AuditProp[] {
@@ -484,7 +484,7 @@ namespace Mau.Runtime
                 _totalTimeout = _totalTimeout + 1;
                 _version = _version + 1;
                 // O 类 Log——单结束（超时结算；INFO 分支 Category=OA）
-                LogStore.Add("OA", 0, "OA | TIMEOUT | #" + office.OfficeId, "OA");
+                LogStore.Add("OA", 0, "工单 #" + office.OfficeId + " 超时结算", "OA");
                 if (Audit != null)
                 {
                     Audit.Record("OA", "oa.settle", -1, new AuditProp[] {

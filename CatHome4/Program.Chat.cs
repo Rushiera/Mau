@@ -75,7 +75,7 @@ namespace CH4
                         string path = workspace.ResolveInjectFile(entry);
                         if (!File.Exists(path))
                         {
-                            LogStore.Add("CatHome4", 2, "inject.missing | optional | " + file, "INJECT");
+                            LogStore.Add("CatHome4", 2, "注入缺失：" + file + "（可选，已跳过）", "INJECT");
                             continue;
                         }
                         string content = File.ReadAllText(path);
@@ -89,7 +89,7 @@ namespace CH4
                     }
                     catch (Exception ex)
                     {
-                        LogStore.Add("CatHome4", 2, "inject.fail | " + file + " | " + ex.Message, "INJECT");
+                        LogStore.Add("CatHome4", 2, "注入失败：" + file + "（" + ex.Message + "）", "INJECT");
                     }
                 }
             }

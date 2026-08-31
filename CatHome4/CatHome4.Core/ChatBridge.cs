@@ -177,7 +177,7 @@ namespace CH4
             {
                 injectCount = injectList.Length;
             }
-            string summary = "session.new | 注入 " + injectCount.ToString() + " 文件 | 前文已清";
+            string summary = "会话已重建：注入 " + injectCount.ToString() + " 个知识文件，前文已清空";
             LogStore.Add("CatHome4", 1, summary, "CHAT");
             if (pushChatDone != null)
             {
