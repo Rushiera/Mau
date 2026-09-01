@@ -555,7 +555,7 @@ private static HttpHost _httpHost;
             }
         }
         /// <summary>
-        /// 定位语料 dll 目录——参数 -dll 指定，否则默认仓库根 public/app/Flows（统一构筑链部署区）；无仓库根回退 CatTemp/ch4_build
+        /// 定位语料 dll 目录——参数 -dll 指定，否则默认仓库根 public/app/Flows（统一构筑链部署区）；无仓库根回退部署区 AppContext.BaseDirectory/Flows（design-ch4-deploy §二——deploy 复制面）
         /// </summary>
         /// <param name="args">命令行参数</param>
         /// <returns>dll 目录</returns>
@@ -574,7 +574,7 @@ string root = FindRepoRoot(AppContext.BaseDirectory);
             {
                 return Path.Combine(root, "public", "app", "Flows");
             }
-            return Path.Combine(Directory.GetCurrentDirectory(), "CatTemp", "ch4_build");
+            return Path.Combine(AppContext.BaseDirectory, "Flows");
         }
     }
 }
