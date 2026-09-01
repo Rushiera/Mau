@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Windows.Forms;
 
 namespace SetUp
 {
@@ -9,20 +10,33 @@ namespace SetUp
     /// SetUp 启动器——CH4/Mau 一键部署工具。
     /// 定位：单文件 exe 跟随 Git 放仓库根，clone 即用；双击即部署即运行。
     /// 规范：Project/CH4/design-ch4-release.md（D2 定稿）
-    /// 双模式：prepare（重建全发布链） / deploy &lt;目标目录&gt;（产出正式运行实例）
-    /// 前置检测：.NET 8 Runtime + SDK + 同目录存在 Mau.sln 才运行。
+    /// 双模式：无参=WinForms UI 外观层（主线程） / prepare（重建全发布链） / deploy &lt;目标目录&gt;（产出正式运行实例）
+    /// 前置检测：.NET 8 Runtime + SDK + WindowsDesktop + 同目录存在 Mau.sln 才运行。
     /// </summary>
     public static partial class Program
     {
         /// <summary>
         /// 主入口——模式分发。
         /// </summary>
-        /// <param name="args">命令行参数：无参=帮助 / prepare / deploy &lt;目标目录&gt;</param>
+        /// <param name="args">命令行参数：无参=UI 界面 / prepare / deploy &lt;目标目录&gt;</param>
         /// <returns>退出码（0=成功，非0=失败）</returns>
+        [STAThread]
         public static int Main(string[] args)
         {
-            // [段1] 帮助提示——无参或 -h/--help
-            if (args.Length == 0 || args[0] == "-h" || args[0] == "--help")
+            // [段1] UI 模式——无参双击进入 WinForms 外观层（主线程 = Application.Run）
+            if (args.Length == 0)
+            {
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new SetUpForm());
+                return 0;
+            }
+
+            // [段1b] CLI 模式——尽力附加父控制台（WinExe 无自有控制台；交互终端可见输出）
+            AttachConsole(ATTACH_PARENT_PROCESS);
+
+            // [段1c] 帮助提示
+            if (args[0] == "-h" || args[0] == "--help")
             {
                 PrintHelp();
                 return 0;
@@ -74,10 +88,10 @@ namespace SetUp
         {
             Console.WriteLine("SetUp —— CH4/Mau 一键部署工具");
             Console.WriteLine("用法:");
-            Console.WriteLine("  SetUp.exe            显示本帮助");
+            Console.WriteLine("  SetUp.exe            打开图形界面（无参双击）");
             Console.WriteLine("  SetUp.exe prepare    重建全发布链（public/ + Mau-public/）");
             Console.WriteLine("  SetUp.exe deploy <目录>  部署正式运行实例到目标目录");
-            Console.WriteLine("前置：.NET 8 Runtime + SDK；本 exe 须位于 Mau 仓库根（含 Mau.sln）。");
+            Console.WriteLine("前置：.NET 8 Runtime + SDK + WindowsDesktop；本 exe 须位于 Mau 仓库根（含 Mau.sln）。");
         }
 
         /// <summary>
@@ -140,6 +154,26 @@ namespace SetUp
                 return false;
             }
 
+            // [段2b] WindowsDesktop 检测——WinForms 外观层前置（UI 模式必需；SDK 安装默认带）
+            bool desktop8 = false;
+            for (int i = 0; i < runtimeLines.Length; i = i + 1)
+            {
+                string line = runtimeLines[i].Trim();
+                if (line.StartsWith("Microsoft.WindowsDesktop.App", StringComparison.Ordinal))
+                {
+                    if (VersionAtLeast8(line))
+                    {
+                        desktop8 = true;
+                    }
+                }
+            }
+            if (!desktop8)
+            {
+                Console.WriteLine("[SetUp] 错误：需要 .NET 8 及以上 WindowsDesktop Runtime（WinForms 外观层）。");
+                Console.WriteLine("  安装指引: https://dotnet.microsoft.com/download/dotnet/8.0");
+                return false;
+            }
+
             // [段3] SDK 检测——dotnet --list-sdks 找主版本 ≥ 8
             string sdkOut = RunProcessCapture("dotnet", "--list-sdks", Environment.CurrentDirectory);
             bool sdk8 = false;
@@ -161,12 +195,12 @@ namespace SetUp
                 return false;
             }
 
-            Console.WriteLine("[SetUp] 环境就绪：.NET 8 Runtime + SDK 已检测到。");
+            Console.WriteLine("[SetUp] 环境就绪：.NET 8 Runtime + SDK + WindowsDesktop 已检测到。");
             return true;
         }
 
         /// <summary>
-        /// 子进程执行——统一 Process.Start 封装（工作目录 + 退出码检查；输出继承控制台）。
+        /// 子进程执行——统一 Process.Start 封装（工作目录 + 退出码检查；stdout/stderr 捕获转发 Console——UI 模式显示到日志框）。
         /// </summary>
         /// <param name="fileName">可执行文件</param>
         /// <param name="arguments">参数串</param>
@@ -178,6 +212,11 @@ namespace SetUp
             ProcessStartInfo psi = new ProcessStartInfo(fileName, arguments);
             psi.WorkingDirectory = workingDir;
             psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            psi.StandardOutputEncoding = Encoding.UTF8;
+            psi.StandardErrorEncoding = Encoding.UTF8;
             Process proc;
             try
             {
@@ -193,6 +232,11 @@ namespace SetUp
                 Console.WriteLine("[SetUp] 错误：进程启动失败——" + fileName);
                 return false;
             }
+            proc.OutputDataReceived += OnProcessOutput;
+            proc.ErrorDataReceived += OnProcessOutput;
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+            proc.WaitForExit();
             proc.WaitForExit();
             if (proc.ExitCode != 0)
             {
@@ -200,6 +244,19 @@ namespace SetUp
                 return false;
             }
             return true;
+        }
+
+        /// <summary>
+        /// 子进程输出行转发——stdout/stderr 逐行写回 Console（UI 模式经 Console.SetOut 重定向进日志框）。
+        /// </summary>
+        /// <param name="sender">事件源</param>
+        /// <param name="e">输出行</param>
+        private static void OnProcessOutput(object sender, DataReceivedEventArgs e)
+        {
+            if (e.Data != null)
+            {
+                Console.WriteLine(e.Data);
+            }
         }
 
         /// <summary>
@@ -214,6 +271,7 @@ namespace SetUp
             ProcessStartInfo psi = new ProcessStartInfo(fileName, arguments);
             psi.WorkingDirectory = workingDir;
             psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
             psi.RedirectStandardOutput = true;
             psi.StandardOutputEncoding = Encoding.UTF8;
             Process proc;
