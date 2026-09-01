@@ -89,3 +89,73 @@
 
 // T_ReplaceAbort：失败回执
 § 'T_ReplaceAbort' : 'S_Replace' = 'Failed' → 'oa.complete_str'[@rpOffice, @rpRes] | 'S_Replace' = 'Idle' | 'S_Replace' = 'Idle'
+// ════════════════════════════════════════════════════════════════
+// text-* v2 扩展 7 线（design-ch4-text-tools C4——检索面/区间读/文件管理）
+// 模式同前 4 线：状态机 + 主动传感器 + 认领/参数/执行/回执/失败五导线
+
+// ── 状态机（7 线）──
+§ 'S_Lines' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Between' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Tree' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Find' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Grep' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Move' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Delete' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+
+// ── 主动传感器壳——7 线各自探测 ──
+§ 'P_LinesOpen' ↻ [1]: 'oa.is_open'["TOOL", "text-read_lines"] > @lnOpen
+§ 'P_BetweenOpen' ↻ [1]: 'oa.is_open'["TOOL", "text-read_between"] > @btOpen
+§ 'P_TreeOpen' ↻ [1]: 'oa.is_open'["TOOL", "text-tree"] > @trOpen
+§ 'P_FindOpen' ↻ [1]: 'oa.is_open'["TOOL", "text-find"] > @fdOpen
+§ 'P_GrepOpen' ↻ [1]: 'oa.is_open'["TOOL", "text-grep"] > @grOpen
+§ 'P_MoveOpen' ↻ [1]: 'oa.is_open'["TOOL", "text-move"] > @mvOpen
+§ 'P_DeleteOpen' ↻ [1]: 'oa.is_open'["TOOL", "text-delete"] > @dlOpen
+
+// ══════════════ text-read_lines 线 ══════════════
+§ 'T_LinesClaim' : @lnOpen & 'S_Lines' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text-read_lines"] > @lnOffice | 'S_Lines' = 'Claimed' | 'S_Lines' = 'Idle'
+§ 'T_LinesArgs' : 'S_Lines' = 'Claimed' → 'oa.get_str'[@lnOffice, "args"] > @lnArgs | 'S_Lines' = 'Ready' | 'S_Lines' = 'Failed'
+§ 'T_LinesExec' : 'S_Lines' = 'Ready' → 'text.read_lines'[@lnArgs] > @lnRes | 'self.desc'["text-read_lines 执行中", "", ""] | 'S_Lines' = 'Done' | 'S_Lines' = 'Failed'
+§ 'T_LinesReply' : 'S_Lines' = 'Done' → 'oa.complete_str'[@lnOffice, @lnRes] | 'self.desc'["空闲待命", "", ""] | 'S_Lines' = 'Idle' | 'S_Lines' = 'Idle'
+§ 'T_LinesAbort' : 'S_Lines' = 'Failed' → 'oa.complete_str'[@lnOffice, @lnRes] | 'S_Lines' = 'Idle' | 'S_Lines' = 'Idle'
+
+// ══════════════ text-read_between 线 ══════════════
+§ 'T_BetweenClaim' : @btOpen & 'S_Between' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text-read_between"] > @btOffice | 'S_Between' = 'Claimed' | 'S_Between' = 'Idle'
+§ 'T_BetweenArgs' : 'S_Between' = 'Claimed' → 'oa.get_str'[@btOffice, "args"] > @btArgs | 'S_Between' = 'Ready' | 'S_Between' = 'Failed'
+§ 'T_BetweenExec' : 'S_Between' = 'Ready' → 'text.read_between'[@btArgs] > @btRes | 'self.desc'["text-read_between 执行中", "", ""] | 'S_Between' = 'Done' | 'S_Between' = 'Failed'
+§ 'T_BetweenReply' : 'S_Between' = 'Done' → 'oa.complete_str'[@btOffice, @btRes] | 'self.desc'["空闲待命", "", ""] | 'S_Between' = 'Idle' | 'S_Between' = 'Idle'
+§ 'T_BetweenAbort' : 'S_Between' = 'Failed' → 'oa.complete_str'[@btOffice, @btRes] | 'S_Between' = 'Idle' | 'S_Between' = 'Idle'
+
+// ══════════════ text-tree 线 ══════════════
+§ 'T_TreeClaim' : @trOpen & 'S_Tree' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text-tree"] > @trOffice | 'S_Tree' = 'Claimed' | 'S_Tree' = 'Idle'
+§ 'T_TreeArgs' : 'S_Tree' = 'Claimed' → 'oa.get_str'[@trOffice, "args"] > @trArgs | 'S_Tree' = 'Ready' | 'S_Tree' = 'Failed'
+§ 'T_TreeExec' : 'S_Tree' = 'Ready' → 'text.tree'[@trArgs] > @trRes | 'self.desc'["text-tree 执行中", "", ""] | 'S_Tree' = 'Done' | 'S_Tree' = 'Failed'
+§ 'T_TreeReply' : 'S_Tree' = 'Done' → 'oa.complete_str'[@trOffice, @trRes] | 'self.desc'["空闲待命", "", ""] | 'S_Tree' = 'Idle' | 'S_Tree' = 'Idle'
+§ 'T_TreeAbort' : 'S_Tree' = 'Failed' → 'oa.complete_str'[@trOffice, @trRes] | 'S_Tree' = 'Idle' | 'S_Tree' = 'Idle'
+
+// ══════════════ text-find 线 ══════════════
+§ 'T_FindClaim' : @fdOpen & 'S_Find' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text-find"] > @fdOffice | 'S_Find' = 'Claimed' | 'S_Find' = 'Idle'
+§ 'T_FindArgs' : 'S_Find' = 'Claimed' → 'oa.get_str'[@fdOffice, "args"] > @fdArgs | 'S_Find' = 'Ready' | 'S_Find' = 'Failed'
+§ 'T_FindExec' : 'S_Find' = 'Ready' → 'text.find'[@fdArgs] > @fdRes | 'self.desc'["text-find 执行中", "", ""] | 'S_Find' = 'Done' | 'S_Find' = 'Failed'
+§ 'T_FindReply' : 'S_Find' = 'Done' → 'oa.complete_str'[@fdOffice, @fdRes] | 'self.desc'["空闲待命", "", ""] | 'S_Find' = 'Idle' | 'S_Find' = 'Idle'
+§ 'T_FindAbort' : 'S_Find' = 'Failed' → 'oa.complete_str'[@fdOffice, @fdRes] | 'S_Find' = 'Idle' | 'S_Find' = 'Idle'
+
+// ══════════════ text-grep 线 ══════════════
+§ 'T_GrepClaim' : @grOpen & 'S_Grep' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text-grep"] > @grOffice | 'S_Grep' = 'Claimed' | 'S_Grep' = 'Idle'
+§ 'T_GrepArgs' : 'S_Grep' = 'Claimed' → 'oa.get_str'[@grOffice, "args"] > @grArgs | 'S_Grep' = 'Ready' | 'S_Grep' = 'Failed'
+§ 'T_GrepExec' : 'S_Grep' = 'Ready' → 'text.grep'[@grArgs] > @grRes | 'self.desc'["text-grep 执行中", "", ""] | 'S_Grep' = 'Done' | 'S_Grep' = 'Failed'
+§ 'T_GrepReply' : 'S_Grep' = 'Done' → 'oa.complete_str'[@grOffice, @grRes] | 'self.desc'["空闲待命", "", ""] | 'S_Grep' = 'Idle' | 'S_Grep' = 'Idle'
+§ 'T_GrepAbort' : 'S_Grep' = 'Failed' → 'oa.complete_str'[@grOffice, @grRes] | 'S_Grep' = 'Idle' | 'S_Grep' = 'Idle'
+
+// ══════════════ text-move 线 ══════════════
+§ 'T_MoveClaim' : @mvOpen & 'S_Move' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text-move"] > @mvOffice | 'S_Move' = 'Claimed' | 'S_Move' = 'Idle'
+§ 'T_MoveArgs' : 'S_Move' = 'Claimed' → 'oa.get_str'[@mvOffice, "args"] > @mvArgs | 'S_Move' = 'Ready' | 'S_Move' = 'Failed'
+§ 'T_MoveExec' : 'S_Move' = 'Ready' → 'text.move'[@mvArgs] > @mvRes | 'self.desc'["text-move 执行中", "", ""] | 'S_Move' = 'Done' | 'S_Move' = 'Failed'
+§ 'T_MoveReply' : 'S_Move' = 'Done' → 'oa.complete_str'[@mvOffice, @mvRes] | 'self.desc'["空闲待命", "", ""] | 'S_Move' = 'Idle' | 'S_Move' = 'Idle'
+§ 'T_MoveAbort' : 'S_Move' = 'Failed' → 'oa.complete_str'[@mvOffice, @mvRes] | 'S_Move' = 'Idle' | 'S_Move' = 'Idle'
+
+// ══════════════ text-delete 线 ══════════════
+§ 'T_DeleteClaim' : @dlOpen & 'S_Delete' = 'Idle' → 'oa.claim_next_simple'["TOOL", "text-delete"] > @dlOffice | 'S_Delete' = 'Claimed' | 'S_Delete' = 'Idle'
+§ 'T_DeleteArgs' : 'S_Delete' = 'Claimed' → 'oa.get_str'[@dlOffice, "args"] > @dlArgs | 'S_Delete' = 'Ready' | 'S_Delete' = 'Failed'
+§ 'T_DeleteExec' : 'S_Delete' = 'Ready' → 'text.delete'[@dlArgs] > @dlRes | 'self.desc'["text-delete 执行中", "", ""] | 'S_Delete' = 'Done' | 'S_Delete' = 'Failed'
+§ 'T_DeleteReply' : 'S_Delete' = 'Done' → 'oa.complete_str'[@dlOffice, @dlRes] | 'self.desc'["空闲待命", "", ""] | 'S_Delete' = 'Idle' | 'S_Delete' = 'Idle'
+§ 'T_DeleteAbort' : 'S_Delete' = 'Failed' → 'oa.complete_str'[@dlOffice, @dlRes] | 'S_Delete' = 'Idle' | 'S_Delete' = 'Idle'

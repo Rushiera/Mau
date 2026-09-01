@@ -155,6 +155,14 @@ namespace CH4
                 new ToolSpec("text-write", "覆写文件（含新建）——整文件替换为 content（路径支持 id: 前缀同 text-read）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"content\":{\"type\":\"string\",\"description\":\"完整新内容\"}},\"required\":[\"path\",\"content\"]}"),
                 new ToolSpec("text-append", "追加文本到文件末尾（文件不存在则新建；路径支持 id: 前缀同 text-read）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"content\":{\"type\":\"string\",\"description\":\"要追加的文本\"}},\"required\":[\"path\",\"content\"]}"),
                 new ToolSpec("text-replace", "替换文本——old 全部出现处替换为 new，返回替换数量；未找到报错（路径支持 id: 前缀同 text-read）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"old\":{\"type\":\"string\",\"description\":\"要查找的旧文本\"},\"new\":{\"type\":\"string\",\"description\":\"替换后的新文本\"}},\"required\":[\"path\",\"old\",\"new\"]}"),
+                // text-* v2 扩展（design-ch4-text-tools.md C4——检索面/区间读/文件管理；编码内建+换行保真+锚点三态）
+                new ToolSpec("text-read_lines", "按行号区间读取文本（start 起 / end 止，1 起；end 省略读至文件尾；编码自动探测）——大文件省 token", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"文件路径\"},\"start\":{\"type\":\"integer\",\"description\":\"起始行（1 起，默认 1）\"},\"end\":{\"type\":\"integer\",\"description\":\"结束行（默认文件尾）\"}},\"required\":[\"path\"]}"),
+                new ToolSpec("text-read_between", "锚点区间读取——str1 与 str2 之间内容（str1 空=文件头 / str2 空=文件尾；锚点须全文唯一；编码自动探测）——大文件精确取段", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"文件路径\"},\"str1\":{\"type\":\"string\",\"description\":\"起始锚点（空=文件头）\"},\"str2\":{\"type\":\"string\",\"description\":\"结束锚点（空=文件尾）\"}},\"required\":[\"path\"]}"),
+                new ToolSpec("text-tree", "目录树——列目录结构（depth 层级 / limit 条数上限；稳定排序）", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目录路径\"},\"depth\":{\"type\":\"integer\",\"description\":\"递归深度（默认 2，≤10）\"},\"limit\":{\"type\":\"integer\",\"description\":\"最大条数（默认 500）\"}},\"required\":[\"path\"]}"),
+                new ToolSpec("text-find", "文件名 glob 搜索——按文件名模式找文件（pattern 如 *.md / **/*.cs；recursive 默认 true）", "{\"type\":\"object\",\"properties\":{\"dir\":{\"type\":\"string\",\"description\":\"搜索根目录\"},\"pattern\":{\"type\":\"string\",\"description\":\"文件名模式（默认 *）\"},\"recursive\":{\"type\":\"boolean\",\"description\":\"是否递归（默认 true）\"},\"limit\":{\"type\":\"integer\",\"description\":\"最大结果（默认 500）\"}},\"required\":[\"dir\"]}"),
+                new ToolSpec("text-grep", "内容关键词搜索——目录内递归扫文本文件，返回 相对路径:行号:上下文（前后 ≤10 字符）——定位代码/文档关键词", "{\"type\":\"object\",\"properties\":{\"dir\":{\"type\":\"string\",\"description\":\"搜索根目录\"},\"keyword\":{\"type\":\"string\",\"description\":\"搜索关键词（大小写敏感）\"},\"pattern\":{\"type\":\"string\",\"description\":\"文件名过滤（默认 *）\"},\"limit\":{\"type\":\"integer\",\"description\":\"最大结果（默认 200）\"}},\"required\":[\"dir\",\"keyword\"]}"),
+                new ToolSpec("text-move", "移动/重命名——文件与目录均支持（目录=整棵子树移动）；自动创建目标父目录；目标已存在拒绝", "{\"type\":\"object\",\"properties\":{\"src\":{\"type\":\"string\",\"description\":\"源路径\"},\"dest\":{\"type\":\"string\",\"description\":\"目标路径\"}},\"required\":[\"src\",\"dest\"]}"),
+                new ToolSpec("text-delete", "软删除——移入受控回收站（可恢复）；支持文件与空目录", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"要删除的文件/空目录路径\"}},\"required\":[\"path\"]}"),
                 new ToolSpec("mau-verify", "Mau 语料全链检查（词法→解析→验证→分析），返回诊断（文件:行:错误码:消息）；零产出", "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\",\"description\":\".mau 文件路径\"}},\"required\":[\"file\"]}"),
                 new ToolSpec("mau-gen", "组翻译——.mauproj 组声明 → 中间产物（验证全组 + BRIKGROUP.cs + FL_*.cs）；不编译", "{\"type\":\"object\",\"properties\":{\"proj\":{\"type\":\"string\",\"description\":\".mauproj 文件路径\"}},\"required\":[\"proj\"]}"),
                 new ToolSpec("mau-proj", "组翻译 + 编译——.mauproj → Flows/FL_<组>.dll（长耗时；产物可在宿主热重载）", "{\"type\":\"object\",\"properties\":{\"proj\":{\"type\":\"string\",\"description\":\".mauproj 文件路径\"},\"build\":{\"type\":\"boolean\",\"description\":\"true=翻译后执行 dotnet build\"}},\"required\":[\"proj\"]}"),
@@ -212,6 +220,34 @@ namespace CH4
             if (name == "text-replace")
             {
                 return ExecTextReplace(argsJson);
+            }
+            if (name == "text-read_lines")
+            {
+                return ExecTextReadLines(argsJson);
+            }
+            if (name == "text-read_between")
+            {
+                return ExecTextReadBetween(argsJson);
+            }
+            if (name == "text-tree")
+            {
+                return ExecTextTree(argsJson);
+            }
+            if (name == "text-find")
+            {
+                return ExecTextFind(argsJson);
+            }
+            if (name == "text-grep")
+            {
+                return ExecTextGrep(argsJson);
+            }
+            if (name == "text-move")
+            {
+                return ExecTextMove(argsJson);
+            }
+            if (name == "text-delete")
+            {
+                return ExecTextDelete(argsJson);
             }
             if (name == "mau-verify")
             {

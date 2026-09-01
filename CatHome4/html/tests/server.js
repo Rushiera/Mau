@@ -16,6 +16,28 @@ try { fs.unlinkSync(path.join(__dirname, '.fe-deploying')); } catch (e) { /* 标
 
 const PORT = parseInt(process.env.FE_TEST_PORT || '8099', 10);
 const TEST_DIR = __dirname;
+
+// 宿主守望——FE_HOST_PID = 拉起本服务的宿主进程 PID（C# 侧注入）
+// 宿主退出后 node 自杀（D9 修复：孤儿 node 锁目录——宿主死 → 8099 释放 → 仓库可删）
+const HOST_PID = parseInt(process.env.FE_HOST_PID || '', 10);
+if (!Number.isNaN(HOST_PID) && HOST_PID > 0) {
+  const watchdog = setInterval(() => {
+    try {
+      // 信号 0 仅探测存在性，不产生实际信号
+      process.kill(HOST_PID, 0);
+    } catch (e) {
+      // ESRCH = 进程不存在 → 宿主已退出，自杀；EPERM = 存在但无权限 → 存活，忽略
+      if (e && e.code === 'ESRCH') {
+        console.log('[fe-test] 宿主进程已退出，前端测试服务自动关闭');
+        process.exit(0);
+      }
+    }
+  }, 5000);
+  // 不阻止进程自然退出（listen 句柄仍保持——退出路径唯一是宿主死）
+  if (typeof watchdog.unref === 'function') {
+    watchdog.unref();
+  }
+}
 const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 
 function runTest(args, res) {

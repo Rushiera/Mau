@@ -21,7 +21,7 @@ namespace CH4
         /// <param name="argsJson">参数 JSON</param>
         /// <returns>文件内容（超长截断）</returns>
         private static string ExecTextRead(string argsJson)
-        {
+{
             string path = ExtractArg(argsJson, "path");
             if (path.Length == 0)
             {
@@ -34,21 +34,20 @@ namespace CH4
                 {
                     return "ERR|FS_UNAVAILABLE|FileSystemService 未注入";
                 }
-                return TrimResult(fs.ReadText(path), MaxToolResultChars);
+                return TrimResult(fs.ReadTextAuto(path), MaxToolResultChars);
             }
             catch (Exception ex)
             {
                 return "ERR|" + ex.GetType().Name + "|" + ex.Message;
             }
         }
-
         /// <summary>
         /// text-write——覆写文件（含新建；原子写，UTF-8 无 BOM）
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
         /// <returns>确认文本</returns>
         private static string ExecTextWrite(string argsJson)
-        {
+{
             string path = ExtractArg(argsJson, "path");
             string content = ExtractArg(argsJson, "content");
             if (path.Length == 0)
@@ -62,7 +61,7 @@ namespace CH4
                 {
                     return "ERR|FS_UNAVAILABLE|FileSystemService 未注入";
                 }
-                fs.WriteText(path, content);
+                fs.WriteTextAuto(path, content);
                 return "OK 已覆写: " + path + "（" + content.Length.ToString() + " 字符）";
             }
             catch (Exception ex)
@@ -70,14 +69,13 @@ namespace CH4
                 return "ERR|" + ex.GetType().Name + "|" + ex.Message;
             }
         }
-
         /// <summary>
         /// text-append——追加文本到文件末尾（自动创建父目录）
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
         /// <returns>确认文本</returns>
         private static string ExecTextAppend(string argsJson)
-        {
+{
             string path = ExtractArg(argsJson, "path");
             string content = ExtractArg(argsJson, "content");
             if (path.Length == 0)
@@ -91,7 +89,7 @@ namespace CH4
                 {
                     return "ERR|FS_UNAVAILABLE|FileSystemService 未注入";
                 }
-                fs.AppendText(path, content);
+                fs.AppendTextAuto(path, content);
                 return "OK 已追加: " + path + "（+" + content.Length.ToString() + " 字符）";
             }
             catch (Exception ex)
@@ -99,17 +97,21 @@ namespace CH4
                 return "ERR|" + ex.GetType().Name + "|" + ex.Message;
             }
         }
-
         /// <summary>
         /// text-replace——替换全部出现处并原子写回（old 未找到报错）
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
         /// <returns>替换数量确认</returns>
         private static string ExecTextReplace(string argsJson)
-        {
+{
             string path = ExtractArg(argsJson, "path");
             string oldText = ExtractArg(argsJson, "old");
             string newText = ExtractArg(argsJson, "new");
+            string mode = ExtractArg(argsJson, "mode");
+            if (mode.Length == 0)
+            {
+                mode = "exact";
+            }
             if (path.Length == 0 || oldText.Length == 0)
             {
                 return "ERR|BAD_ARGS|缺少参数 path 或 old";
@@ -121,12 +123,279 @@ namespace CH4
                 {
                     return "ERR|FS_UNAVAILABLE|FileSystemService 未注入";
                 }
-                int count = fs.ReplaceText(path, oldText, newText);
-                if (count == 0)
+                TextReplaceOutcome outcome = fs.ReplaceTextAuto(path, oldText, newText, mode);
+                if (outcome.Status == TextReplaceStatus.NotFound)
                 {
-                    return "ERR|NOT_FOUND|文件 " + path + " 中未找到目标文本";
+                    return "ERR|ANCHOR_NOT_FOUND|第 " + outcome.DiffByteIndex.ToString() + " 字节 期望「" + outcome.Expected + "」实际「" + outcome.Actual + "」";
                 }
-                return "OK 替换完成: " + count.ToString() + " 处（" + path + "）";
+                if (outcome.Status == TextReplaceStatus.Ambiguous)
+                {
+                    return "ERR|ANCHOR_AMBIGUOUS|锚点出现 " + outcome.CandidateLines.Length.ToString() + " 次以上，候选行: " + string.Join(",", outcome.CandidateLines);
+                }
+                return "OK 替换完成: " + outcome.Count.ToString() + " 处（" + path + "）\n--目标段--\n" + outcome.Snippet;
+            }
+            catch (Exception ex)
+            {
+                return "ERR|" + ex.GetType().Name + "|" + ex.Message;
+            }
+        }
+        // [段1b] text-* v2 扩展执行器（design-ch4-text-tools.md C4——检索面/区间读/文件管理）
+
+        /// <summary>
+        /// text-read_lines——按行号区间读取（1 起；end=0 读至文件尾；编码自动探测）
+        /// </summary>
+        /// <param name="argsJson">参数 JSON（path/start/end）</param>
+        /// <returns>带行号文本</returns>
+        private static string ExecTextReadLines(string argsJson)
+        {
+            string path = ExtractArg(argsJson, "path");
+            string startRaw = ExtractArg(argsJson, "start");
+            string endRaw = ExtractArg(argsJson, "end");
+            if (path.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 path";
+            }
+            int start = 1;
+            int end = 0;
+            if (startRaw.Length > 0 && !int.TryParse(startRaw, out start))
+            {
+                return "ERR|BAD_ARGS|参数 start 非整数: " + startRaw;
+            }
+            if (endRaw.Length > 0 && !int.TryParse(endRaw, out end))
+            {
+                return "ERR|BAD_ARGS|参数 end 非整数: " + endRaw;
+            }
+            if (start < 1)
+            {
+                return "ERR|BAD_ARGS|参数 start 必须 ≥1";
+            }
+            try
+            {
+                FileSystemService fs = ResolveFileSystem();
+                if (fs == null)
+                {
+                    return "ERR|FS_UNAVAILABLE|FileSystemService 未注入";
+                }
+                return fs.ReadLines(path, start, end);
+            }
+            catch (Exception ex)
+            {
+                return "ERR|" + ex.GetType().Name + "|" + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// text-read_between——锚点区间读取（str1 空=文件头 / str2 空=文件尾；锚点唯一契约）
+        /// </summary>
+        /// <param name="argsJson">参数 JSON（path/str1/str2）</param>
+        /// <returns>区间内容（锚点歧义/缺失返回 ERR| 前缀）</returns>
+        private static string ExecTextReadBetween(string argsJson)
+        {
+            string path = ExtractArg(argsJson, "path");
+            string str1 = ExtractArg(argsJson, "str1");
+            string str2 = ExtractArg(argsJson, "str2");
+            if (path.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 path";
+            }
+            try
+            {
+                FileSystemService fs = ResolveFileSystem();
+                if (fs == null)
+                {
+                    return "ERR|FS_UNAVAILABLE|FileSystemService 未注入";
+                }
+                return TrimResult(fs.ReadBetweenAuto(path, str1, str2), MaxToolResultChars);
+            }
+            catch (Exception ex)
+            {
+                return "ERR|" + ex.GetType().Name + "|" + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// text-tree——目录树（depth ≤10；limit ≤10000；稳定排序）
+        /// </summary>
+        /// <param name="argsJson">参数 JSON（path/depth/limit）</param>
+        /// <returns>相对路径列表</returns>
+        private static string ExecTextTree(string argsJson)
+        {
+            string path = ExtractArg(argsJson, "path");
+            if (path.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 path";
+            }
+            int depth = 2;
+            int limit = 500;
+            string depthRaw = ExtractArg(argsJson, "depth");
+            if (depthRaw.Length > 0 && !int.TryParse(depthRaw, out depth))
+            {
+                return "ERR|BAD_ARGS|参数 depth 非整数: " + depthRaw;
+            }
+            string limitRaw = ExtractArg(argsJson, "limit");
+            if (limitRaw.Length > 0 && !int.TryParse(limitRaw, out limit))
+            {
+                return "ERR|BAD_ARGS|参数 limit 非整数: " + limitRaw;
+            }
+            try
+            {
+                FileSystemService fs = ResolveFileSystem();
+                if (fs == null)
+                {
+                    return "ERR|FS_UNAVAILABLE|FileSystemService 未注入";
+                }
+                string[] rows = fs.Tree(path, depth, limit);
+                if (rows == null || rows.Length == 0)
+                {
+                    return "（空目录）";
+                }
+                return string.Join(System.Environment.NewLine, rows);
+            }
+            catch (Exception ex)
+            {
+                return "ERR|" + ex.GetType().Name + "|" + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// text-find——文件名 glob 搜索（pattern 默认 *；recursive 默认 true）
+        /// </summary>
+        /// <param name="argsJson">参数 JSON（dir/pattern/recursive/limit）</param>
+        /// <returns>相对路径列表</returns>
+        private static string ExecTextFind(string argsJson)
+        {
+            string dir = ExtractArg(argsJson, "dir");
+            if (dir.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 dir";
+            }
+            string pattern = ExtractArg(argsJson, "pattern");
+            if (pattern.Length == 0)
+            {
+                pattern = "*";
+            }
+            string recRaw = ExtractArg(argsJson, "recursive");
+            bool recursive = recRaw.Length == 0 || recRaw == "true" || recRaw == "1";
+            int limit = 500;
+            string limitRaw = ExtractArg(argsJson, "limit");
+            if (limitRaw.Length > 0 && !int.TryParse(limitRaw, out limit))
+            {
+                return "ERR|BAD_ARGS|参数 limit 非整数: " + limitRaw;
+            }
+            try
+            {
+                FileSystemService fs = ResolveFileSystem();
+                if (fs == null)
+                {
+                    return "ERR|FS_UNAVAILABLE|FileSystemService 未注入";
+                }
+                string[] rows = fs.Find(dir, pattern, recursive, limit);
+                if (rows == null || rows.Length == 0)
+                {
+                    return "（未找到匹配文件）";
+                }
+                return string.Join(System.Environment.NewLine, rows);
+            }
+            catch (Exception ex)
+            {
+                return "ERR|" + ex.GetType().Name + "|" + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// text-grep——内容关键词搜索（受控根内；返回 相对路径:行号:上下文）
+        /// </summary>
+        /// <param name="argsJson">参数 JSON（dir/keyword/pattern/limit）</param>
+        /// <returns>匹配行列表</returns>
+        private static string ExecTextGrep(string argsJson)
+        {
+            string dir = ExtractArg(argsJson, "dir");
+            string keyword = ExtractArg(argsJson, "keyword");
+            if (dir.Length == 0 || keyword.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 dir 或 keyword";
+            }
+            string pattern = ExtractArg(argsJson, "pattern");
+            if (pattern.Length == 0)
+            {
+                pattern = "*";
+            }
+            int limit = 200;
+            string limitRaw = ExtractArg(argsJson, "limit");
+            if (limitRaw.Length > 0 && !int.TryParse(limitRaw, out limit))
+            {
+                return "ERR|BAD_ARGS|参数 limit 非整数: " + limitRaw;
+            }
+            try
+            {
+                FileSystemService fs = ResolveFileSystem();
+                if (fs == null)
+                {
+                    return "ERR|FS_UNAVAILABLE|FileSystemService 未注入";
+                }
+                string[] rows = fs.Grep(dir, keyword, pattern, limit);
+                if (rows == null || rows.Length == 0)
+                {
+                    return "（无匹配）";
+                }
+                return string.Join(System.Environment.NewLine, rows);
+            }
+            catch (Exception ex)
+            {
+                return "ERR|" + ex.GetType().Name + "|" + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// text-move——移动/重命名（文件与目录均支持；自动建父目录；目标存在拒绝）
+        /// </summary>
+        /// <param name="argsJson">参数 JSON（src/dest）</param>
+        /// <returns>确认文本</returns>
+        private static string ExecTextMove(string argsJson)
+        {
+            string src = ExtractArg(argsJson, "src");
+            string dest = ExtractArg(argsJson, "dest");
+            if (src.Length == 0 || dest.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 src 或 dest";
+            }
+            try
+            {
+                FileSystemService fs = ResolveFileSystem();
+                if (fs == null)
+                {
+                    return "ERR|FS_UNAVAILABLE|FileSystemService 未注入";
+                }
+                fs.Move(src, dest);
+                return "OK 已移动: " + src + " → " + dest;
+            }
+            catch (Exception ex)
+            {
+                return "ERR|" + ex.GetType().Name + "|" + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// text-delete——软删除（移入受控回收站；文件与空目录；可恢复）
+        /// </summary>
+        /// <param name="argsJson">参数 JSON（path）</param>
+        /// <returns>回收站路径确认</returns>
+        private static string ExecTextDelete(string argsJson)
+        {
+            string path = ExtractArg(argsJson, "path");
+            if (path.Length == 0)
+            {
+                return "ERR|BAD_ARGS|缺少参数 path";
+            }
+            try
+            {
+                FileSystemService fs = ResolveFileSystem();
+                if (fs == null)
+                {
+                    return "ERR|FS_UNAVAILABLE|FileSystemService 未注入";
+                }
+                string target = fs.Recycle(path);
+                return "OK 已软删除 → " + target;
             }
             catch (Exception ex)
             {

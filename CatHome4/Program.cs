@@ -492,25 +492,31 @@ private static HttpHost _httpHost;
                         return;
                     }
                     System.IO.File.WriteAllText(deployMark, "auto-deploy");
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    System.Diagnostics.ProcessStartInfo deployPsi = new System.Diagnostics.ProcessStartInfo
                     {
                         FileName = "cmd.exe",
                         Arguments = "/c npm install && node server.js",
                         WorkingDirectory = testDir,
                         CreateNoWindow = true,
                         UseShellExecute = false
-                    });
+                    };
+                    // D9 修复——注入宿主 PID，server.js 守望宿主（宿主退出 → node 自退 → 目录解锁）
+                    deployPsi.EnvironmentVariables["FE_HOST_PID"] = System.Diagnostics.Process.GetCurrentProcess().Id.ToString();
+                    System.Diagnostics.Process.Start(deployPsi);
                     LogStore.Add("CatHome4", 1, "前端测试服务依赖缺失，自动部署中（npm install）：" + testDir, "CONFIG");
                     return;
                 }
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                System.Diagnostics.ProcessStartInfo nodePsi = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "node",
                     Arguments = "server.js",
                     WorkingDirectory = testDir,
                     CreateNoWindow = true,
                     UseShellExecute = false
-                });
+                };
+                // D9 修复——注入宿主 PID，server.js 守望宿主（宿主退出 → node 自退 → 目录解锁）
+                nodePsi.EnvironmentVariables["FE_HOST_PID"] = System.Diagnostics.Process.GetCurrentProcess().Id.ToString();
+                System.Diagnostics.Process.Start(nodePsi);
                 LogStore.Add("CatHome4", 1, "前端测试服务已启动：" + testDir, "CONFIG");
             }
             catch (Exception)
