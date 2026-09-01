@@ -240,7 +240,7 @@ namespace CH4
             }
             try
             {
-                string root = ResolveDataRoot();
+                string root = ResolveMauRoot();
                 MauProjParseResult parsed = MauProjFile.Load(abs);
                 if (parsed.Error.Length > 0)
                 {
@@ -282,7 +282,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 相对仓库根路径解析——拼接数据根并防越界（GetFullPath 后必须仍在仓库根内）
+        /// 相对仓库根路径解析——受控根索引优先（workspace.json id=mau 根），防越界（GetFullPath 后必须仍在根内）。
         /// </summary>
         /// <param name="relPath">相对仓库根路径</param>
         /// <returns>绝对路径（越界返回空串）</returns>
@@ -293,13 +293,42 @@ namespace CH4
             {
                 relPath = relPath.Substring(4);
             }
-            string root = ResolveDataRoot();
+            string root = ResolveMauRoot();
             string full = Path.GetFullPath(Path.Combine(root, relPath));
             if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             {
                 return "";
             }
             return full;
+        }
+
+        /// <summary>
+        /// Mau 仓库根解析——受控根索引优先（workspace.json 中 id=mau 的根，部署实例也配置 → 工具始终可用）；
+        /// 回退仓库根探测（就地开发）；再回退数据根。
+        /// </summary>
+        /// <returns>Mau 仓库根目录</returns>
+        private static string ResolveMauRoot()
+        {
+            // [段1] 受控根索引——workspace.json roots 中 id=mau（部署实例配置 mau 根 → mau-* 工具可用）
+            WorkspaceConfig ws = null;
+            if (DataBox.TryResolve<WorkspaceConfig>(out ws) && ws != null)
+            {
+                for (int i = 0; i < ws.Roots.Length; i++)
+                {
+                    if (string.Equals(ws.Roots[i].Id, "mau", StringComparison.Ordinal))
+                    {
+                        return ws.Roots[i].Path;
+                    }
+                }
+            }
+            // [段2] 仓库根探测——就地开发环境兜底（FindRepoRoot 从 exe 所在目录向上找 Mau.sln）
+            string root = FindRepoRoot(AppContext.BaseDirectory);
+            if (root.Length > 0)
+            {
+                return root;
+            }
+            // [段3] 数据根兜底——未配置 mau 根且无仓库（退化行为）
+            return ResolveDataRoot();
         }
 
         /// <summary>

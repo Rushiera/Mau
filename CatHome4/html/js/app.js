@@ -566,4 +566,20 @@ function saveConfig(key, value) {
         .catch(function (err) { configMsg.textContent = '请求失败: ' + err; });
 }
 document.getElementById('configRefresh').addEventListener('click', loadConfig);
+// 打开数据目录——调后端端点（浏览器 JS 沙箱无法直接开资源管理器，必须后端 explorer.exe）
+var openDataBtn = document.getElementById('openDataDir');
+if (openDataBtn) {
+    openDataBtn.addEventListener('click', function () {
+        fetch('/api/v1/open-data-dir', { method: 'POST' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.ok) {
+                    configMsg.textContent = '已打开数据目录: ' + d.path;
+                } else {
+                    configMsg.textContent = '打开失败: ' + (d.error || '未知错误');
+                }
+            })
+            .catch(function (err) { configMsg.textContent = '请求失败: ' + err; });
+    });
+}
 loadConfig();

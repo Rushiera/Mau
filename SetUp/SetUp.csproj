@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>SetUp</AssemblyName>
+    <RootNamespace>SetUp</RootNamespace>
+    <Version>0.1.0</Version>
+    <!-- 单文件发布——框架依赖（需 .NET 8 runtime；runtime 缺失时 apphost 自带友好提示
+         跟随 Git 发布：dotnet publish 后复制 SetUp.exe 到仓库根 -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+</Project>

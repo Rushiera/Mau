@@ -58,6 +58,34 @@ namespace CatHome4.Admin
             // 受控根编辑面——管理员面（M4d）
             sink.MapGet("/api/v1/workspace", (Delegate)HandleWorkspaceGet);
             sink.MapPost("/api/v1/workspace", (Delegate)HandleWorkspacePost);
+            // 打开数据目录——前端按钮（explorer.exe 打开持久化 Data 目录——三级锚定解析）
+            sink.MapPost("/api/v1/open-data-dir", (Delegate)HandleOpenDataDir);
+        }
+
+        /// <summary>
+        /// 打开数据目录——POST /api/v1/open-data-dir（explorer.exe 打开持久化 Data 目录）。
+        /// Data 根由 ResolveDataRoot 三级锚定（env→仓库根→AppData）——前端零路径知识。
+        /// 纯前端 JS 无法直接打开本地资源管理器（浏览器沙箱）——必须后端端点调 explorer.exe。
+        /// </summary>
+        /// <returns>回执 JSON（含打开的目录路径）</returns>
+        internal static IResult HandleOpenDataDir()
+        {
+            string dataDir = Path.Combine(_dataRoot, "Data");
+            if (!Directory.Exists(dataDir))
+            {
+                Directory.CreateDirectory(dataDir);
+            }
+            try
+            {
+                System.Diagnostics.Process.Start("explorer.exe", dataDir);
+                LogStore.Add("CatHome4", 1, "打开数据目录: " + dataDir, "CONFIG");
+                return Results.Json(new { ok = true, path = dataDir });
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 2, "打开数据目录失败：" + ex.Message, "CONFIG");
+                return Results.Json(new { ok = false, error = ex.Message });
+            }
         }
 
         /// <summary>

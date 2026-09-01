@@ -38,17 +38,29 @@ namespace CH4
         }
 
         /// <summary>
-        /// 数据根解析——部署跟随运行环境（稳定分支即运行基座）：exe 所在目录向上找 Mau.sln 仓库根，Data 挂仓库根；找不到回退当前工作目录
+        /// 数据根解析——三级锚定（design-ch4-release.md §三）：
+        /// 1. CH4_DATA_ROOT 环境变量（显式覆盖——多实例/CI/自定义落位逃逸口）
+        /// 2. 仓库根（找到 Mau.sln → 测试区 Data 隔离，可自由清）
+        /// 3. %LOCALAPPDATA%/CatHome4（部署实例持久数据——secrets 不进漫游域）
+        /// 返回值为 Data 的父级目录——调用方以 Path.Combine(dataRoot, "Data", ...) 拼实际路径。
         /// </summary>
         /// <returns>数据根目录</returns>
         private static string ResolveDataRoot()
         {
+            // [段1] 显式覆盖——CH4_DATA_ROOT 环境变量（行业标准逃逸口）
+            string envRoot = Environment.GetEnvironmentVariable("CH4_DATA_ROOT");
+            if (envRoot != null && envRoot.Length > 0)
+            {
+                return envRoot;
+            }
+            // [段2] 测试区隔离——仓库根（Data 挂仓库根，可自由清）
             string root = FindRepoRoot(AppContext.BaseDirectory);
             if (root.Length > 0)
             {
                 return root;
             }
-            return Directory.GetCurrentDirectory();
+            // [段3] 机器级默认——部署实例持久数据
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CatHome4");
         }
 
         /// <summary>
