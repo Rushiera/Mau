@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Mau.Runtime
@@ -152,6 +152,9 @@ namespace Mau.Runtime
             {
                 return;
             }
+            // [段1] 全量声明 + 全量结果收集——两遍扫描（声明集 = 配对锚；结果集 = 消费面）
+            Dictionary<string, string> declaredNames = new Dictionary<string, string>();
+            HashSet<string> resultIds = new HashSet<string>();
             for (int i = 0; i < messages.Length; i++)
             {
                 LlmMessage m = messages[i];
@@ -175,6 +178,26 @@ namespace Mau.Runtime
                 {
                     m.ReasoningContent = "";
                 }
+                if (m.Role == LlmRole.Assistant && m.ToolCallsJson.Length > 0)
+                {
+                    Dictionary<string, string> decls = ParseToolCallDecls(m.ToolCallsJson);
+                    foreach (KeyValuePair<string, string> kv in decls)
+                    {
+                        declaredNames[kv.Key] = kv.Value;
+                    }
+                }
+                if (m.Role == LlmRole.Tool && m.ToolCallId.Length > 0)
+                {
+                    resultIds.Add(m.ToolCallId);
+                }
+                // struct 值语义——归一化写回原始数组（段2 重新拷贝时读到归一化值）
+                messages[i] = m;
+            }
+            // [段2] 顺序构建——格式补全：tool_calls 声明无结果 → 占位补全（向 OpenAI 格式匹配，不做信息损失）；tool 结果无声明 → 丢弃（无主可配）
+            HashSet<string> placed = new HashSet<string>();
+            for (int i = 0; i < messages.Length; i++)
+            {
+                LlmMessage m = messages[i];
                 if (m.Role == LlmRole.System)
                 {
                     string content = m.Content;
@@ -191,9 +214,50 @@ namespace Mau.Runtime
                     // 多余 system 丢弃
                     continue;
                 }
-                if (m.Role == LlmRole.Tool && m.ToolCallId.Length == 0)
+                if (m.Role == LlmRole.Assistant)
                 {
-                    // 无配对 ID 的 tool 消息丢弃（无法回传）
+                    // tool_calls 解析失败 → 降级纯文本（保留 content/reasoning——格式匹配优先，不做信息损失）
+                    if (m.ToolCallsJson.Length > 0 && ParseToolCallDecls(m.ToolCallsJson).Count == 0)
+                    {
+                        m.ToolCallsJson = "";
+                    }
+                    _history.Add(m);
+                    if (m.ToolCallsJson.Length > 0)
+                    {
+                        // 该条声明中无真实结果的调用 → 紧跟其后补占位 tool 消息（协议完整性）
+                        Dictionary<string, string> decls = ParseToolCallDecls(m.ToolCallsJson);
+                        foreach (KeyValuePair<string, string> kv in decls)
+                        {
+                            if (!resultIds.Contains(kv.Key))
+                            {
+                                LlmMessage ph = CreateMessage(LlmRole.Tool, "(前文修复) 工具结果缺失——会话中断");
+                                ph.ToolCallId = kv.Key;
+                                ph.ToolName = kv.Value;
+                                _history.Add(ph);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if (m.Role == LlmRole.Tool)
+                {
+                    if (m.ToolCallId.Length == 0)
+                    {
+                        // 无配对 ID 的 tool 消息丢弃（无法回传）
+                        continue;
+                    }
+                    if (!declaredNames.ContainsKey(m.ToolCallId))
+                    {
+                        // 孤立 tool——无声明可配，丢弃（协议不允许游离 tool 消息）
+                        continue;
+                    }
+                    if (placed.Contains(m.ToolCallId))
+                    {
+                        // 同 ID 重复结果——保留第一条
+                        continue;
+                    }
+                    placed.Add(m.ToolCallId);
+                    _history.Add(m);
                     continue;
                 }
                 _history.Add(m);
@@ -216,6 +280,68 @@ namespace Mau.Runtime
             msg.ToolCallsJson = "";
             msg.ReasoningContent = "";
             return msg;
+        }
+        /// <summary>
+        /// 解析 assistant tool_calls JSON——提取调用 ID → 工具名映射（防御式：解析失败/非数组返回空字典）。
+        /// </summary>
+        /// <param name="toolCallsJson">tool_calls JSON 数组</param>
+        /// <returns>ID → 工具名映射（空=解析失败或无声明）</returns>
+        private static Dictionary<string, string> ParseToolCallDecls(string toolCallsJson)
+        {
+            Dictionary<string, string> result = new Dictionary<string, string>();
+            if (toolCallsJson == null || toolCallsJson.Length == 0)
+            {
+                return result;
+            }
+            try
+            {
+                using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(toolCallsJson))
+                {
+                    System.Text.Json.JsonElement root = doc.RootElement;
+                    if (root.ValueKind != System.Text.Json.JsonValueKind.Array)
+                    {
+                        return result;
+                    }
+                    for (int i = 0; i < root.GetArrayLength(); i++)
+                    {
+                        System.Text.Json.JsonElement call = root[i];
+                        string id = "";
+                        System.Text.Json.JsonElement idEl;
+                        if (call.TryGetProperty("id", out idEl) && idEl.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            string got = idEl.GetString() ?? "";
+                            if (got.Length > 0)
+                            {
+                                id = got;
+                            }
+                        }
+                        if (id.Length == 0)
+                        {
+                            continue;
+                        }
+                        string name = "";
+                        System.Text.Json.JsonElement funcEl;
+                        if (call.TryGetProperty("function", out funcEl))
+                        {
+                            System.Text.Json.JsonElement nameEl;
+                            if (funcEl.TryGetProperty("name", out nameEl) && nameEl.ValueKind == System.Text.Json.JsonValueKind.String)
+                            {
+                                string gotName = nameEl.GetString() ?? "";
+                                if (gotName.Length > 0)
+                                {
+                                    name = gotName;
+                                }
+                            }
+                        }
+                        result[id] = name;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // 解析失败——返回空字典（调用方按无声明/降级处理）
+            }
+            return result;
         }
     }
 }

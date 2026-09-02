@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
@@ -47,6 +47,7 @@ namespace Mau.Runtime
                 SessionFileData? data = JsonSerializer.Deserialize<SessionFileData>(json, options);
                 if (data == null || data.Messages == null)
                 {
+                    BackupCorruptFile();
                     return false;
                 }
                 messages = data.Messages;
@@ -54,7 +55,8 @@ namespace Mau.Runtime
             }
             catch (Exception)
             {
-                // 损坏 JSON——保留原文件（下次可手工修复），返回加载失败
+                // 损坏 JSON——备份原文件（可手工修复/追溯），返回加载失败
+                BackupCorruptFile();
                 return false;
             }
         }
@@ -95,6 +97,27 @@ namespace Mau.Runtime
             /// 消息数组
             /// </summary>
             public LlmMessage[]? Messages { get; set; }
+        }
+
+        /// <summary>
+        /// 备份损坏前文文件——改名 .bad（保留原样可手工修复/追溯；下次启动不再重复解析坏文件）。
+        /// </summary>
+        private void BackupCorruptFile()
+        {
+            try
+            {
+                string badPath = _path + ".bad";
+                if (File.Exists(badPath))
+                {
+                    File.Delete(badPath);
+                }
+                File.Move(_path, badPath);
+                LogStore.Add("CatHome4", 3, "会话前文损坏，已备份为 " + badPath + "（本次按新会话启动）", "CHAT");
+            }
+            catch (Exception)
+            {
+                // 备份失败不阻断加载失败语义——原文件保留
+            }
         }
     }
 }
