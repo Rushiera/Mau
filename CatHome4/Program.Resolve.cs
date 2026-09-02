@@ -38,35 +38,10 @@ namespace CH4
         }
 
         /// <summary>
-        /// 部署实例根探测——从当前目录向上找含 version.txt 的目录（SetUp deploy 落盘标记）。
-        /// 语义：部署实例自锚定——Data 挂实例目录（自包含），不读机器 AppData 旧配置（Codex 审查 P1 补）。
-        /// </summary>
-        /// <param name="startDir">起始目录</param>
-        /// <returns>部署实例目录或空字符串</returns>
-        private static string FindDeployRoot(string startDir)
-        {
-            string dir = new DirectoryInfo(startDir).FullName;
-            while (true)
-            {
-                if (File.Exists(Path.Combine(dir, "version.txt")))
-                {
-                    return dir;
-                }
-                string parent = Directory.GetParent(dir)?.FullName;
-                if (parent == null)
-                {
-                    return "";
-                }
-                dir = parent;
-            }
-        }
-
-        /// <summary>
         /// 数据根解析——三级锚定（design-ch4-release.md §三）：
         /// 1. CH4_DATA_ROOT 环境变量（显式覆盖——多实例/CI/自定义落位逃逸口）
         /// 2. 仓库根（找到 Mau.sln → 测试区 Data 隔离，可自由清）
-        /// 2b. 部署实例自锚定（version.txt 标记 → 实例目录 Data 自包含——不读机器旧配置）
-        /// 3. %LOCALAPPDATA%/CatHome4（无标记兜底——历史行为）
+        /// 3. %LOCALAPPDATA%/CatHome4（部署实例持久数据——secrets 不进漫游域）
         /// 返回值为 Data 的父级目录——调用方以 Path.Combine(dataRoot, "Data", ...) 拼实际路径。
         /// </summary>
         /// <returns>数据根目录</returns>
@@ -83,12 +58,6 @@ namespace CH4
             if (root.Length > 0)
             {
                 return root;
-            }
-            // [段2b] 部署实例自锚定——version.txt 标记（SetUp deploy 落盘）→ 实例目录（自包含，不读机器 AppData 旧配置）
-            string deployRoot = FindDeployRoot(AppContext.BaseDirectory);
-            if (deployRoot.Length > 0)
-            {
-                return deployRoot;
             }
             // [段3] 机器级默认——部署实例持久数据
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CatHome4");

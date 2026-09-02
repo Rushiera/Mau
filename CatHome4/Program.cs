@@ -118,12 +118,6 @@ private static HttpHost _httpHost;
             catch (Exception ex)
             {
                 Console.WriteLine("[CatHome4] 启动失败: " + ex.Message);
-                if (ex is InvalidDataException || ex is System.Text.Json.JsonException)
-                {
-                    // workspace/config 失效——明确提示修复路径（Codex 审查 P1 补）
-                    Console.WriteLine("[CatHome4] 工作区/配置无效——检查 Data/config/workspace.json 的 roots 是否为本机有效绝对路径；");
-                    Console.WriteLine("[CatHome4] 或设置 CH4_DATA_ROOT 指向实例目录，或重跑 SetUp.exe deploy 重新初始化实例 Data。");
-                }
                 // 脚本模式无人值守不暂停；交互模式暂停——错误可见（双击 exe 不闪退）
                 bool pauseOnFail = true;
                 for (int i = 0; i < args.Length; i = i + 1)

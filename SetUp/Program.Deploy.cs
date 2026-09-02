@@ -69,48 +69,11 @@ namespace SetUp
             }
             Console.WriteLine("[SetUp] 版本: " + version);
 
-            // [段4b] 实例 Data 初始化——自包含（design-ch4-release §三 语义扩展：部署实例 = version.txt 标记自锚定）
-            // 生成 Data 骨架 + 实例级 workspace.json（roots 仅 runtime=实例 Data——不读机器旧 AppData 配置）
-            string dataDir = Path.Combine(targetFull, "Data");
-            Directory.CreateDirectory(Path.Combine(dataDir, "config"));
-            Directory.CreateDirectory(Path.Combine(dataDir, "secrets"));
-            Directory.CreateDirectory(Path.Combine(dataDir, "sessions"));
-            Directory.CreateDirectory(Path.Combine(dataDir, "runs"));
-            string wsPath = Path.Combine(dataDir, "config", "workspace.json");
-            if (!File.Exists(wsPath))
-            {
-                string runtimeRoot = targetFull.Replace('\\', '/') + "/Data";
-                string wsJson = "{\n" +
-                    "  \"_说明\": \"实例工作区配置——SetUp deploy 自动生成；roots 仅实例 Data（自包含）。可自行追加 ccbp 等只读知识根\",\n" +
-                    "  \"roots\": [\n" +
-                    "    { \"id\": \"runtime\", \"path\": \"" + runtimeRoot + "\", \"writable\": true }\n" +
-                    "  ],\n" +
-                    "  \"inject\": []\n" +
-                    "}";
-                File.WriteAllText(wsPath, wsJson);
-                Console.WriteLine("[SetUp] 实例 Data 已初始化: " + dataDir);
-            }
-            else
-            {
-                Console.WriteLine("[SetUp] 实例 workspace.json 已存在——保留现有配置: " + wsPath);
-            }
-            // 启动脚本——显式 CH4_DATA_ROOT 逃生口（GBK 编码；%~dp0 = 实例目录 = Data 的父级；存在即保留）
-            string scriptPath = Path.Combine(targetFull, "启动CatHome4.cmd");
-            if (!File.Exists(scriptPath))
-            {
-                string script = "@echo off\r\n" +
-                    "rem CatHome4 启动脚本——CH4_DATA_ROOT 指向实例目录（Data 的父级），自包含运行\r\n" +
-                    "set CH4_DATA_ROOT=%~dp0\r\n" +
-                    "\"%~dp0CatHome4.exe\"\r\n" +
-                    "pause\r\n";
-                File.WriteAllText(scriptPath, script, System.Text.Encoding.GetEncoding(936));
-                Console.WriteLine("[SetUp] 启动脚本已生成: " + scriptPath);
-            }
-
-            // [段5] 完成提示——实例 Data 自包含（version.txt 标记自锚定，不落机器 AppData）；AppData 仅无标记兜底
+            // [段5] 完成提示——Data 走 AppData（本机 %LOCALAPPDATA%/CatHome4/Data 三级锚定回退）
             Console.WriteLine("[SetUp] deploy 完成。");
-            Console.WriteLine("  实例 Data 落位: " + Path.Combine(targetFull, "Data"));
-            Console.WriteLine("  启动: " + Path.Combine(targetFull, "CatHome4.exe") + "（或启动CatHome4.cmd——显式 CH4_DATA_ROOT）");
+            Console.WriteLine("  正式实例 Data 落位: " + Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CatHome4", "Data"));
+            Console.WriteLine("  启动: " + Path.Combine(targetFull, "CatHome4.exe"));
             return 0;
         }
 
