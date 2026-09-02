@@ -214,6 +214,18 @@ function chatRenderHistory(data) {
         } else if (blk.renderType === 'toolcard') {
             var tb = chatBubble('assistant', 'tool');
             tb.appendChild(chatToolCard(p));
+        } else if (blk.renderType === 'retry') {
+            // S2 §8.4——历史重建：重试过程记录气泡（retry 块随 view.json 落盘）
+            var st = p.state || 'retrying';
+            var txt;
+            if (st === 'resolved') {
+                txt = '✓ 已恢复' + (p.attempt ? '（重试 ' + p.attempt + ' 次）' : '');
+            } else {
+                txt = '⟳ 重试中 ' + (p.attempt || '') + '/' + (p.max || '') + (p.text ? ' · ' + p.text : '');
+            }
+            var rtb = chatBubble('assistant', 'retry');
+            rtb.textContent = txt;
+            if (st === 'resolved') { rtb.classList.add('resolved'); }
         } else if (blk.renderType === 'text') {
             // F3 MD 渲染——历史 text 块同样走解析器（与实时渲染一致）；md-block 包裹=CSS 作用域锚点
             var cb = chatBubble('assistant');
@@ -325,9 +337,10 @@ function chatRenderPending() {
 }
 
 // ============ F4 view 协议渲染 ============
-// 六种 renderType：user/stream/text/reason/toolcard/control
+// 七种 renderType：user/stream/text/reason/toolcard/control/retry（S2 §8.4——retry 重试过程记录独立气泡）
 // stream 流式增量——seq 复用=同容器追加；新 seq=新建容器（text 与 reason 各自独立容器）
 // text/reason 整块——replaceSeq 指向被替换的流式容器序号（流式→整块替换；无容器则新建）
+// retry 独立气泡——replaceSeq≥0 更新已有重试气泡（多次重试替换不堆叠）；-1 新建
 
 function chatOnView(d) {
     if (chatState === 'loading') { return; }
@@ -343,6 +356,9 @@ function chatOnView(d) {
         chatOnReason(d.seq, d.replaceSeq, payload);
     } else if (type === 'toolcard') {
         chatOnToolCard(payload);
+    } else if (type === 'retry') {
+        // S2 §8.4——重试过程记录（独立气泡，弱化样式；replaceSeq≥0 更新已有气泡，否则新建）
+        chatOnRetry(d.seq, d.replaceSeq, payload);
     } else if (type === 'control') {
         chatOnControl(payload);
     }
@@ -420,6 +436,34 @@ function chatOnToolCard(payload) {
     var tb = chatBubble('assistant', 'tool');
     tb.appendChild(chatToolCard(payload));
     chatPhaseEnter('tool');
+}
+
+// S2 §8.4——重试过程记录气泡（独立视图条目：⟳ 重试中 / ✓ 已恢复；弱化样式不抢占对话主视觉）
+function chatOnRetry(seq, replaceSeq, payload) {
+    chatKeepAlive();
+    var state = payload.state || 'retrying';
+    var attempt = payload.attempt || '';
+    var max = payload.max || '';
+    var reason = payload.text || '';
+    var text;
+    if (state === 'resolved') {
+        text = '✓ 已恢复' + (attempt ? '（重试 ' + attempt + ' 次）' : '');
+    } else {
+        text = '⟳ 重试中 ' + attempt + '/' + max + (reason ? ' · ' + reason : '');
+    }
+    // 更新已有气泡（replaceSeq≥0）——attempt 递增/状态变化替换文本，不堆叠
+    var key = (replaceSeq >= 0) ? replaceSeq : seq;
+    var c = viewContainers[key];
+    if (c && c.type === 'retry') {
+        c.bubble.textContent = text;
+        c.bubble.classList.toggle('resolved', state === 'resolved');
+        return;
+    }
+    // 新建独立气泡——弱化样式（chat-bubble.retry：灰底小号，过程记录）
+    var rb = chatBubble('assistant', 'retry');
+    rb.textContent = text;
+    if (state === 'resolved') { rb.classList.add('resolved'); }
+    viewContainers[key] = { type: 'retry', bubble: rb, reasonPre: null };
 }
 
 function chatOnControl(payload) {

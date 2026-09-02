@@ -72,6 +72,12 @@ namespace CH4
         /// <summary>LLM 后台错误文本（ERR| 前缀——失败可见性）</summary>
         private string _llmErrorText;
 
+        /// <summary>本轮是否发生过重试——首个 Text/Reasoning 到达时回填 retry 视图 resolved（S2 §8.4）</summary>
+        private bool _sawRetry;
+
+        /// <summary>retry 气泡视图序号——多次重试复用同一气泡（replaceSeq 替换不堆叠）</summary>
+        private long _retrySeq;
+
         /// <summary>Token 用量整轮累计——prompt（含 cache hit）</summary>
         private long _usagePrompt;
 
@@ -461,6 +467,16 @@ _ = ConsumeLlmStream(messages);
                 {
                     if (ev.Kind == LlmStreamKind.Text)
                     {
+                        // S2 §8.4——重试成功回填：本轮发生过重试且首个 Text 到达 → retry 气泡更新为 resolved（只回填一次）
+                        if (_sawRetry)
+                        {
+                            _sawRetry = false;
+                            if (_httpHost != null)
+                            {
+                                string resolvedJson = "{\"state\":\"resolved\",\"text\":\"已恢复\"}";
+                                _httpHost.PushView("retry", resolvedJson, _retrySeq, 0);
+                            }
+                        }
                         text.Append(ev.Text);
                         // P6 外观层转发——LLM 增量实时推送 SSE（协议 §4.2 llm 事件）
                         if (_httpHost != null)
@@ -471,6 +487,16 @@ _ = ConsumeLlmStream(messages);
                     }
                     else if (ev.Kind == LlmStreamKind.Reasoning)
                     {
+                        // S2 §8.4——重试成功回填（Reasoning 也是恢复信号）
+                        if (_sawRetry)
+                        {
+                            _sawRetry = false;
+                            if (_httpHost != null)
+                            {
+                                string resolvedJson = "{\"state\":\"resolved\",\"text\":\"已恢复\"}";
+                                _httpHost.PushView("retry", resolvedJson, _retrySeq, 0);
+                            }
+                        }
                         reasoning.Append(ev.Text);
                         if (_httpHost != null)
                         {
@@ -480,10 +506,47 @@ _ = ConsumeLlmStream(messages);
                     }
                     else if (ev.Kind == LlmStreamKind.ToolCalls)
                     {
+                        // S2 §8.4——重试成功回填（ToolCalls 也是恢复信号——工具轮场景无文本）
+                        if (_sawRetry)
+                        {
+                            _sawRetry = false;
+                            if (_httpHost != null)
+                            {
+                                string resolvedJson = "{\"state\":\"resolved\",\"text\":\"已恢复\"}";
+                                _httpHost.PushView("retry", resolvedJson, _retrySeq, 0);
+                            }
+                        }
                         toolCalls = ev.Text;
                         if (_httpHost != null)
                         {
                             // F4 视图——toolCalls 占位卡后置 F1/F2（工具卡以结果整块出现，不推占位）
+                        }
+                    }
+                    else if (ev.Kind == LlmStreamKind.Retrying)
+                    {
+                        // S2 §8.4——重试可见性：独立视图条目（retry renderType）——不入会话槽/上下文/日志（Runtime 已记 L2）
+                        _sawRetry = true;
+                        if (_httpHost != null)
+                        {
+                            // RETRY|N/3|原因摘要 —— 提取尝试序号与原因
+                            string retryText = ev.Text;
+                            string[] parts = retryText.Split('|');
+                            string attempt = "";
+                            string max = "";
+                            string reason = retryText;
+                            if (parts.Length >= 3)
+                            {
+                                attempt = parts[1];
+                                string[] am = parts[1].Split('/');
+                                if (am.Length >= 2)
+                                {
+                                    attempt = am[0];
+                                    max = am[1];
+                                }
+                                reason = parts[2];
+                            }
+                            string retryView = "{\"state\":\"retrying\",\"attempt\":\"" + attempt + "\",\"max\":\"" + max + "\",\"text\":" + JsonSerializer.Serialize(reason) + "}";
+                            _retrySeq = _httpHost.PushView("retry", retryView, -1, _retrySeq);
                         }
                     }
                     else if (ev.Kind == LlmStreamKind.Usage)
@@ -601,19 +664,13 @@ _ = ConsumeLlmStream(messages);
                 _llmError = true;
                 _llmErrorText = "ERR|LLM_TIMEOUT|LLM 调用超时（帧上限 " + LlmTimeoutFrames.ToString() + "）";
             }
-            // LlmDone 动作段
+            // LlmDone 动作段——S2 修复：错误文本不入上下文（就地修复——断点干净，不污染 ChatContext）
+            // 错误可见性：前端 error 控制事件（ConsumeLlmStream 已推）+ LogStore L3；上下文保持断点（用户消息 + 已完成 turn 保留）
             if (_llmError)
             {
-                _context.AddAssistantMessage(_llmErrorText);
-                _viewStore.OnAssistantText(LastMessage(), CurrentFrame());
-                if (_httpHost != null)
-                {
-                    string errJson = "{\"content\":" + JsonSerializer.Serialize(_llmErrorText) + "}";
-                    _httpHost.PushView("text", errJson, _textStreamSeq, 0);
-                }
                 _textStreamSeq = 0;
                 _reasonStreamSeq = 0;
-                LogStore.Add("LLM", 3, "LLM 错误: " + TrimDisplay(_llmErrorText, 300), "LLM");
+                LogStore.Add("LLM", 3, "LLM 错误（本轮中止——上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
                 _phase = ChatPhase.Done;
                 return;
             }

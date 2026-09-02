@@ -33,6 +33,15 @@ namespace CatHome4.Core.Tests
             /// <summary>ChatStream 调用次数——工具批收敛验证</summary>
             public int CallCount = 0;
 
+            /// <summary>前 N 次调用返回错误——S2 重试/错误隔离验证（0=不注入错误）</summary>
+            public int FailTimes = 0;
+
+            /// <summary>注入的错误文本——FailTimes > 0 时使用</summary>
+            public string FailText = "ERR|TEST|模拟失败";
+
+            /// <summary>是否模拟重试——产 Retrying 事件后正常回复（S2 §8.4 前端可见性验证）</summary>
+            public bool EmitRetry = false;
+
             /// <summary>
             /// 流式对话——按队列返回工具调用或纯文本。
             /// </summary>
@@ -44,6 +53,17 @@ namespace CatHome4.Core.Tests
             public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, string userId = "", [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
             {
                 CallCount = CallCount + 1;
+                // S2 错误注入——前 N 次调用产出 Error 事件（对应 Runtime 重试耗尽前/后两态）
+                if (CallCount <= FailTimes)
+                {
+                    yield return new LlmStreamEvent(LlmStreamKind.Error, FailText);
+                    yield break;
+                }
+                // S2 §8.4——模拟 Runtime 重试：重试通知后正常产出（前端可见性验证）
+                if (EmitRetry)
+                {
+                    yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|1/3|ERR|TRANSPORT|模拟网络抖动");
+                }
                 if (ToolCallsQueue.Count > 0)
                 {
                     string tc = ToolCallsQueue.Dequeue();
@@ -308,6 +328,100 @@ namespace CatHome4.Core.Tests
                 Assert.Equal(20, data.GetProperty("completion").GetInt64());
                 Assert.Equal(30, data.GetProperty("cacheHit").GetInt64());
             }
+        }
+
+        /// <summary>
+        /// S2 错误隔离——单次瞬态错误后会话就地修复：错误文本不入上下文，上下文保持断点（用户消息保留），相位回 Idle。
+        /// 语义：错误可见（Error 事件已推前端），但不污染 ChatContext——断点续传的干净前提。
+        /// 说明：Runtime 重试（TRANSPORT/5xx/429 最多 3 次）在 DeepSeekLlmRuntime 内部完成，对会话层透明；
+        /// 本测试验证的是 Runtime 重试耗尽后最终 Error 的会话层处理——错误文本绝不入上下文。
+        /// </summary>
+        [Fact]
+        public void S2_Error_NotPollutingContext_KeepsBreakpoint()
+        {
+            MockLlm llm = new MockLlm();
+            llm.FailTimes = 1;
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("断点测试");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            // 错误文本绝不入上下文（GetLastAssistantText 不含 ERR|）
+            Assert.Equal("", GetLastAssistantText(session));
+            // 上下文保持断点——用户消息保留（不回退到上一节点——CH2 语义淘汰）
+            LlmMessage[] all = session.Context.GetMessages();
+            bool hasUser = false;
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (all[i].Role == LlmRole.User && all[i].Content == "断点测试")
+                {
+                    hasUser = true;
+                }
+            }
+            Assert.True(hasUser);
+        }
+
+        /// <summary>
+        /// S2 断点续传——错误隔离后用户重发：上下文无错误残留，新一轮正常回复（断点续传的用户触发面）。
+        /// </summary>
+        [Fact]
+        public void S2_Error_ThenResend_RecoversClean()
+        {
+            MockLlm llm = new MockLlm();
+            llm.FailTimes = 1;
+            llm.ReplyText = "重试成功回复";
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("重试测试");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            // 第一次失败——错误隔离中止（无回复文本）
+            Assert.Equal("", GetLastAssistantText(session));
+            // 用户重发（断点续传）——第二次调用成功
+            session.PostUserMessage("再试一次");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            Assert.Contains("重试成功回复", GetLastAssistantText(session));
+            // 全程上下文无错误文本
+            LlmMessage[] all = session.Context.GetMessages();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                Assert.DoesNotContain("ERR|", all[i].Content == null ? "" : all[i].Content);
+            }
+        }
+
+        /// <summary>
+        /// S2 §8.4 重试前端可见性——MockLlm 产 Retrying 事件 → 会话层推 retry view 事件（retrying 态）
+        /// → 首个 Text 到达 → 推 resolved 回填。断言 host 收到 retry 视图事件（retrying + resolved）。
+        /// </summary>
+        [Fact]
+        public void S2_Retry_VisibleToFrontend()
+        {
+            MockLlm llm = new MockLlm();
+            llm.EmitRetry = true;
+            llm.ReplyText = "重试后正常回复";
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            session.AttachHost(host);
+            session.PostUserMessage("重试可见性");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            // 收到 retry view 事件（≥2：retrying + resolved）
+            List<string> retryEvents;
+            Assert.True(host.ViewEvents.TryGetValue("retry", out retryEvents));
+            Assert.True(retryEvents.Count >= 2);
+            // 首个 retrying 态——attempt/max 解析正确
+            using (JsonDocument d1 = JsonDocument.Parse(retryEvents[0]))
+            {
+                Assert.Equal("retrying", d1.RootElement.GetProperty("state").GetString());
+                Assert.Equal("1", d1.RootElement.GetProperty("attempt").GetString());
+                Assert.Equal("3", d1.RootElement.GetProperty("max").GetString());
+            }
+            // 末个 resolved 态——重试成功回填
+            using (JsonDocument dLast = JsonDocument.Parse(retryEvents[retryEvents.Count - 1]))
+            {
+                Assert.Equal("resolved", dLast.RootElement.GetProperty("state").GetString());
+            }
+            // 重试后正常回复
+            Assert.Contains("重试后正常回复", GetLastAssistantText(session));
         }
     }
 }

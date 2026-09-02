@@ -289,3 +289,48 @@ test('chatFail 失败：seal 流式容器 + 独立错误气泡 + 恢复 idle', (
   expect(errBubbles.length).toBeGreaterThan(0);
   expect(errBubbles[errBubbles.length - 1].textContent).toBe('发送失败');
 });
+
+// ── S2 §8.4 retry 独立视图条目 ──
+test('view retry 新建重试气泡（⟳ 重试中 N/3）', () => {
+  window.chatOnView({ seq: 50, renderType: 'retry', payload: { state: 'retrying', attempt: '1', max: '3', text: 'ERR|TRANSPORT|模拟抖动' }, replaceSeq: -1 });
+  expect(rows().length).toBe(1);
+  const rb = bubbles()[0];
+  expect(rb.classList.contains('retry')).toBe(true);
+  expect(rb.textContent).toContain('⟳ 重试中 1/3');
+  expect(rb.textContent).toContain('模拟抖动');
+});
+
+test('view retry replaceSeq 更新同一气泡（多次重试不堆叠）', () => {
+  window.chatOnView({ seq: 50, renderType: 'retry', payload: { state: 'retrying', attempt: '1', max: '3', text: '首次失败' }, replaceSeq: -1 });
+  const first = bubbles()[0];
+  // 第二次重试——replaceSeq 命中已有气泡 → 文本更新不新建
+  window.chatOnView({ seq: 51, renderType: 'retry', payload: { state: 'retrying', attempt: '2', max: '3', text: '再次失败' }, replaceSeq: 50 });
+  expect(rows().length).toBe(1);
+  expect(bubbles()[0]).toBe(first);
+  expect(bubbles()[0].textContent).toContain('⟳ 重试中 2/3');
+});
+
+test('view retry resolved 状态切换（✓ 已恢复）', () => {
+  window.chatOnView({ seq: 50, renderType: 'retry', payload: { state: 'retrying', attempt: '1', max: '3', text: '失败' }, replaceSeq: -1 });
+  const first = bubbles()[0];
+  window.chatOnView({ seq: 52, renderType: 'retry', payload: { state: 'resolved', text: '已恢复' }, replaceSeq: 50 });
+  expect(rows().length).toBe(1);
+  expect(bubbles()[0]).toBe(first);
+  expect(bubbles()[0].textContent).toContain('✓ 已恢复');
+  expect(bubbles()[0].classList.contains('resolved')).toBe(true);
+});
+
+test('view retry 历史重建——retry 块渲染（chatRenderHistory）', () => {
+  window.chatRenderHistory({
+    blocks: [
+      { renderType: 'retry', payload: { state: 'retrying', attempt: '2', max: '3', text: '历史失败' } },
+      { renderType: 'retry', payload: { state: 'resolved', attempt: '2' } }
+    ],
+    sessionId: 's1',
+    count: 2
+  });
+  expect(rows().length).toBe(2);
+  expect(bubbles()[0].textContent).toContain('⟳ 重试中 2/3');
+  expect(bubbles()[1].textContent).toContain('✓ 已恢复');
+  expect(bubbles()[1].classList.contains('resolved')).toBe(true);
+});

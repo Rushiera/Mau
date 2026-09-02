@@ -34,7 +34,12 @@
         /// <summary>
         /// usage 统计块到达——Text 携带 usage JSON（prompt/completion/cacheHit——E3 Token 统计）
         /// </summary>
-        Usage
+        Usage,
+
+        /// <summary>
+        /// 重试通知——重试前发出（业务事件未产出，可安全重发）；Text 携带 RETRY|N/3|原因摘要（S2 §8.4——前端独立视图条目）
+        /// </summary>
+        Retrying
     }
 
     /// <summary>
