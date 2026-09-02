@@ -1,6 +1,6 @@
 ﻿# Mau 积木索引 — INDEX
 
-> 版本：v3.3 | 更新：2026-09-01（mau bricks index --update 源码驱动重建）
+> 版本：v3.3 | 更新：2026-09-02（mau bricks index --update 源码驱动重建）
 > 全量积木登记——一行一条。ID 永不重用。
 
 ## 全部积木
@@ -31,6 +31,7 @@
 | BRIK-OA-010 | oa.done_ready | OA | OA/BRIK-OA-010_oa.done_ready.cs | 无 | active |  |
 | BRIK-PACK-003 | csharp.bridge | PACK | PACK/BRIK-PACK-003_csharp.bridge.cs | 无 | active |  |
 | BRIK-PACK-004 | config.bridge | PACK | PACK/BRIK-PACK-004_config.bridge.cs | 无 | active |  |
+| BRIK-PS-001 | ps.exec | PS | PS/BRIK-PS-001_ps.exec.cs | 无 | active |  |
 | BRIK-SELF-001 | self.desc | SELF | SELF/BRIK-SELF-001_self.desc.cs | 无 | active |  |
 | BRIK-SELF-002 | self.desc.add | SELF | SELF/BRIK-SELF-002_self.desc.add.cs | 无 | active |  |
 | BRIK-TEMP-001 | temp.exec | TEMP | TEMP/BRIK-TEMP-001_temp.exec.cs | 无 | active |  |
@@ -54,4 +55,4 @@
 
 ---
 
-_版本：v3.3 | 2026-09-01 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_
+_版本：v3.3 | 2026-09-02 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_

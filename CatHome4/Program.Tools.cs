@@ -193,6 +193,8 @@ namespace CH4
                 new ToolSpec("web-search", "联网搜索——检索并返回基于搜索结果的回答（引用标注 [citation:x] 对应搜索结果序号）；搜索 API 需在配置区先配置", "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"搜索查询\"}},\"required\":[\"query\"]}"),
                 new ToolSpec("temp-info", "临时工具信息——返回当前 TempToolCat 全部可用临时工具 Key 组（逗号分隔；R3.1 万能接口试验场——temp.exec 的 Key 注册表枚举）", "{\"type\":\"object\",\"properties\":{}}"),
                 new ToolSpec("temp-exec", "临时工具万能执行——输入 Key + content，按 Key 调度到临时工具并返回 str 结果；Key 不存在报 ERR|TEMP_KEY_NOT_FOUND（R3.1 万能接口——临时工具本体在 BRIK-TEMP-001 LLM 可改区）", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"临时工具 Key（temp-info 可查当前可用 Key 组）\"},\"content\":{\"type\":\"string\",\"description\":\"输入内容\"}},\"required\":[\"key\",\"content\"]}" ),
+                // PsCat——powershell 执行（OA 工具——PsCat 工具组 Flow 认领；整段 EncodedCommand 免转义 + UTF-8 内建 + 写文件拦截）
+                new ToolSpec("powershell", "执行 PowerShell 命令——整段命令原样执行（内部 EncodedCommand 免转义）；返回 JSON（exit/stdout/stderr/truncated/timeout）；写文件语义被拦截（走 text-* 读写工具）；git 命令豁免；禁 Start-Process/ReadKey", "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"PowerShell 命令文本（完整一段脚本）\"},\"cwd\":{\"type\":\"string\",\"description\":\"工作目录（默认宿主数据根）\"},\"timeout_ms\":{\"type\":\"integer\",\"description\":\"超时毫秒（默认 30000，上限 300000）\"}},\"required\":[\"command\"]}"),
                 // R2.2——image-analyze 图像识别（OA 工具——VisionCat 工具组 Flow 认领；图片读取与格式化上传在工具内部）
                 new ToolSpec("image-analyze", "图像识别——读取图片（本地路径或 http(s) URL）并用视觉模型分析，返回基于提示词的描述/OCR/图表解读；视觉 API 需在配置区先配置", "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"图片路径（本地绝对路径或 http(s) URL）\"},\"question\":{\"type\":\"string\",\"description\":\"提示词（对图片的提问，可空=默认描述）\"}},\"required\":[\"path\"]}")
             };
@@ -274,6 +276,10 @@ namespace CH4
             {
                 return ExecImageAnalyze(argsJson);
             }
+            if (name == "powershell")
+            {
+                return ExecPowerShell(argsJson);
+            }
             if (name.StartsWith("cs-", StringComparison.Ordinal))
             {
                 return ExecCSharpTool(name, argsJson);
@@ -344,6 +350,21 @@ namespace CH4
                 return "ERR|VISION_NO_SERVICE|宿主未注入 IVisionService";
             }
             return TrimResult(service.Analyze(path, question), MaxToolResultChars);
+        }
+
+        /// <summary>
+        /// powershell——执行 PowerShell 命令（PsCat；FALLBACK 直执保底面——主路径 PsCat Flow 认领）
+        /// </summary>
+        /// <param name="argsJson">工具参数 JSON（command/cwd/timeout_ms）</param>
+        /// <returns>结果 JSON（失败 ERR| 前缀）</returns>
+        private static string ExecPowerShell(string argsJson)
+        {
+            Mau.Runtime.IPsService service;
+            if (!DataBox.TryResolve<Mau.Runtime.IPsService>(out service))
+            {
+                return "ERR|PS_NO_SERVICE|宿主未注入 IPsService";
+            }
+            return TrimResult(service.Exec(argsJson), MaxToolResultChars);
         }
     }
 }

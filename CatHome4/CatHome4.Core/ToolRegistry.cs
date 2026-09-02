@@ -160,6 +160,10 @@ namespace CH4
             {
                 return "TempToolCat";
             }
+            if (name == "powershell")
+            {
+                return "PsCat";
+            }
             return "";
         }
     }

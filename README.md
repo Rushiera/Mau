@@ -76,7 +76,7 @@ mau/
 | 业务层 | .mau 语料 → 翻译 C# → 编译 dll——全部功能 | **热重载**（FlowHandle/FlowALC——改语料重编译即生效，宿主不重启） |
 | 工具组层 | 每工具组独立 .mau Flow——独立注册/热重载/退役；ToolRegistry 动态注册面（内置/OA 双轨） | **热重载**（改单组不动全局） |
 
-**当前能力（工具面 37 件——32 OA + 5 内置，ToolRegistry 单一真相源）：**
+**当前能力（工具面 38 件——33 OA + 5 内置，ToolRegistry 单一真相源）：**
 
 | 域 | 工具 | 执行器 |
 |:--|:--|:--|
@@ -87,11 +87,12 @@ mau/
 | 联网（1） | web-search | SearchCat Flow → IWebSearchService |
 | 识图（1） | image-analyze | VisionCat Flow → IVisionService |
 | 万能接口（2） | temp-info / temp-exec | TempToolCat Flow → TempRegistry（LLM 可改区——改积木即换临时工具） |
+| PowerShell（1） | powershell | PsCat Flow → ps.exec 积木 → IPsService（EncodedCommand 免转义/UTF-8 内建/写文件拦截/超时杀树） |
 | 内置（5） | host-reload / time / random / info / Note | 会话内/宿主直执 |
 
 **多猫并发（P9）：** 单进程多会话——每猫独立 ChatSession + 端口级路由 + cat.cfg 独立配置（persona / toolNames / injectList / apiConfigId / qqbotId）；默认猫 majordomo + cat.* 指令族管理（cat.new / start / stop / delete / chat）。
 
-**工具组 Flow 化（R0.2）：** 每工具组独立 .mau Flow（TextCat / MauCat / CsCat / ConfigCat / SearchCat / VisionCat / TempToolCat）——独立注册 / 热重载 / 退役；ToolRegistry 动态注册面（内置 / OA 双轨）。
+**工具组 Flow 化（R0.2）：** 每工具组独立 .mau Flow（TextCat / MauCat / CsCat / ConfigCat / SearchCat / VisionCat / TempToolCat / PsCat）——独立注册 / 热重载 / 退役；ToolRegistry 动态注册面（内置 / OA 双轨）。
 
 **qqbot 接入（R2.3——附属功能组件 / 全局插件，非 toolcall）：**
 
@@ -150,7 +151,7 @@ SetUp.exe                    ← 无参 = WinForms UI（环境检测 + 全流程
 | 1 | 构建 + NuGet 还原（唯一真相源 = git） | 0 错误 0 警告 |
 | 2 | 全量测试 | 全绿（`mau test` → `MAU_CHECKS_OK` 为门禁底线） |
 | 3 | **基座部署区**——组构建的引用源（无此步 mau proj 报 M3245 找不到 Mau.Runtime） | `Mau-public/Mau.Runtime.dll` 存在 |
-| 4 | 语料 → 组翻译 → 编译 dll（8 个工具组 Flow） | `public/app/Flows/FL_<组>.dll` 存在 |
+| 4 | 语料 → 组翻译 → 编译 dll（9 个工具组 Flow） | `public/app/Flows/FL_<组>.dll` 存在 |
 | 5 | 宿主部署 | `public/app/CatHome4.exe` 存在 |
 | 6 | 宿主自检——CLI 全链（主线程直执 + 进程自退） | 各 Cat 注册 + 会话消息数正常 |
 
@@ -165,6 +166,7 @@ mau proj corpus\ch4\ConfigCat\config_cat.mauproj    -o public\src\ConfigCat --bu
 mau proj corpus\ch4\SearchCat\search_cat.mauproj    -o public\src\SearchCat --build
 mau proj corpus\ch4\VisionCat\vision_cat.mauproj    -o public\src\VisionCat --build
 mau proj corpus\ch4\TempToolCat\temp_tool_cat.mauproj -o public\src\TempToolCat --build
+mau proj corpus\ch4\PsCat\ps_cat.mauproj            -o public\src\PsCat --build
 ```
 
 > 步骤 3-4 的顺序是硬约束：改基座源码后必须重跑 3-4（`Mau-public/` 是编译/运行时同源点）。语料层随时可重建（`public/app/Flows/*.dll` 运行中热重载不锁文件）；宿主自身 publish 前先停进程。规格权威：CCBP `Project/CH4/design-ch4-deploy.md`（部署架构）+ `design-ch4-release.md`（发布规范）。

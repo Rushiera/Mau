@@ -1,0 +1,35 @@
+// ps_cat.mau —— PsCat 语料（CH4 PowerShell 工具组——BRIK-PS-001 ps.exec 积木执行面）
+// 角色：工具组 Flow——认领 TOOL 域 powershell 1 工具（整段命令执行）
+// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 1 线认领执行 → complete_str 回执
+// 载荷协议：officeName = 工具名（powershell）；载荷 key "args" = 整包工具参数 JSON（command/cwd/timeout_ms）
+// 无值分支：每工具一条认领线，工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
+// 数据面：@psOffice/@psArgs/@psRes 私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
+// 线程模型：全部主线程同步（PsService 同步执行——工具循环等待语义，与 web-search 一致）
+// 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）
+// 拦截语义：写文件/Start-Process/ReadKey 在 PsService 侧词法拦截（ERR| 回执——错误可见性）
+
+// ── 状态机（1 线——powershell）──
+§ 'S_Exec' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+
+// T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
+§ 'T_Init' : 'S_Exec' = 'Init' → 'self.desc'["PowerShell 空闲待命", "", ""] | 'S_Exec' = 'Idle' | 'S_Exec' = 'Idle'
+
+// ── 主动传感器壳——1 线探测（纯只读判断积木 → bool 落盒）──
+§ 'P_ExecOpen' ↻ [1]: 'oa.is_open'["TOOL", "powershell"] > @psOpen
+
+// ══════════════ powershell 线 ══════════════
+
+// T_ExecClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_ExecClaim' : @psOpen & 'S_Exec' = 'Idle' → 'oa.claim_next_simple'["TOOL", "powershell"] > @psOffice | 'S_Exec' = 'Claimed' | 'S_Exec' = 'Idle'
+
+// T_ExecArgs：读载荷 args（整包工具参数 JSON——command/cwd/timeout_ms）
+§ 'T_ExecArgs' : 'S_Exec' = 'Claimed' → 'oa.get_str'[@psOffice, "args"] > @psArgs | 'S_Exec' = 'Ready' | 'S_Exec' = 'Failed'
+
+// T_ExecExec：执行积木（argsJson 整包——积木内部解析；失败侧 ERR 文本也在 @psRes）
+§ 'T_ExecExec' : 'S_Exec' = 'Ready' → 'ps.exec'[@psArgs] > @psRes | 'self.desc'["PowerShell 执行中", "", ""] | 'S_Exec' = 'Done' | 'S_Exec' = 'Failed'
+
+// T_ExecReply：成功回执（result=结果 JSON）
+§ 'T_ExecReply' : 'S_Exec' = 'Done' → 'oa.complete_str'[@psOffice, @psRes] | 'self.desc'["PowerShell 空闲待命", "", ""] | 'S_Exec' = 'Idle' | 'S_Exec' = 'Idle'
+
+// T_ExecAbort：失败回执（@psRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
+§ 'T_ExecAbort' : 'S_Exec' = 'Failed' → 'oa.complete_str'[@psOffice, @psRes] | 'S_Exec' = 'Idle' | 'S_Exec' = 'Idle'
