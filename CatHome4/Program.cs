@@ -19,7 +19,7 @@ namespace CH4
     /// 职责：Runtime 服务组装 + 语料加载 + Command 投递器 + LLM 桥 + 观测出口 + 指令路由。
     /// 业务代码 0 行——全部功能在 .mau 语料（热重载面）；无 UI（无头优先）。
     /// 入口/组装面（Main/Bootstrap/FindDllDir）在本文件；
-    /// 运行模式分部在 Program.Run.cs；观测面在 Program.Observe.cs；快照面在 Program.Snapshot.cs；
+    /// 运行模式分部在 Program.Run.cs；工具执行面在 Program.Tools.cs/Program.Tools.Exec.cs；
     /// 热重载面在 Program.Reload.cs；路径解析面在 Program.Resolve.cs；工具协调在 Program.Chat.cs（P7b partial 拆分续）。
     /// </summary>
     public static partial class Program
