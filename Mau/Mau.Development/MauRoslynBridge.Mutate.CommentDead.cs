@@ -371,5 +371,106 @@ namespace Mau.Development
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;
         }
+
+        /// <summary>
+        /// cs-comment_check——缺 summary 注释扫描（类 + 成员；语法层——复用 FirstSummary）
+        /// </summary>
+        /// <param name="args">参数</param>
+        /// <param name="result">结果</param>
+        /// <returns>调用完成</returns>
+        private bool ToolCommentCheck(JsonElement args, out string result)
+        {
+            string path = Arg(args, "path");
+            string csproj = ResolveProject(path);
+            if (csproj.Length == 0)
+            {
+                result = "ERR|BAD_PATH|项目路径无效或越界: " + path;
+                return false;
+            }
+            ProjectCache cache = EnsureProject(csproj);
+            FullScan(cache);
+            List<string> missingLines = new List<string>();
+            int checkedCount = 0;
+            foreach (KeyValuePair<string, SyntaxTree> pair in cache.Trees)
+            {
+                SyntaxNode root = pair.Value.GetRoot();
+                foreach (SyntaxNode node in root.DescendantNodes())
+                {
+                    TypeDeclarationSyntax? typeDecl = node as TypeDeclarationSyntax;
+                    if (typeDecl == null)
+                    {
+                        continue;
+                    }
+                    string typeName = typeDecl.Identifier.Text;
+                    int typeLine = typeDecl.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+                    checkedCount = checkedCount + 1;
+                    if (FirstSummary(typeDecl).Length == 0)
+                    {
+                        missingLines.Add(typeName + " // 缺 summary（L" + typeLine.ToString() + "）");
+                    }
+                    for (int i = 0; i < typeDecl.Members.Count; i = i + 1)
+                    {
+                        MemberDeclarationSyntax member = typeDecl.Members[i];
+                        string memberName = DescribeMember(member);
+                        if (memberName.Length == 0)
+                        {
+                            continue;
+                        }
+                        int memberLine = member.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+                        checkedCount = checkedCount + 1;
+                        if (FirstSummary(member).Length == 0)
+                        {
+                            missingLines.Add("  " + typeName + "." + memberName + " // 缺 summary（L" + memberLine.ToString() + "）");
+                        }
+                    }
+                }
+            }
+            missingLines.Sort(StringComparer.Ordinal);
+            StringBuilder sb = new StringBuilder();
+            if (missingLines.Count == 0)
+            {
+                sb.Append("OK 全项目 " + checkedCount.ToString() + " 个类型/成员均有 summary 注释");
+            }
+            else
+            {
+                sb.Append("缺 summary 注释 " + missingLines.Count.ToString() + " 项（已扫描 " + checkedCount.ToString() + " 个类型/成员）");
+                for (int i = 0; i < missingLines.Count; i = i + 1)
+                {
+                    sb.Append(Environment.NewLine + "  " + missingLines[i]);
+                }
+            }
+            result = TrimResult(sb.ToString(), MaxResultChars);
+            return true;
+        }
+
+        /// <summary>
+        /// 成员描述名——comment_check 缺注释清单行（方法/属性/字段/构造函数；其余空串跳过）
+        /// </summary>
+        /// <param name="member">成员声明</param>
+        /// <returns>描述名</returns>
+        private static string DescribeMember(MemberDeclarationSyntax member)
+        {
+            MethodDeclarationSyntax? method = member as MethodDeclarationSyntax;
+            if (method != null)
+            {
+                return method.Identifier.Text + method.ParameterList.ToString();
+            }
+            PropertyDeclarationSyntax? property = member as PropertyDeclarationSyntax;
+            if (property != null)
+            {
+                return property.Identifier.Text;
+            }
+            FieldDeclarationSyntax? field = member as FieldDeclarationSyntax;
+            if (field != null)
+            {
+                return field.Declaration.ToString().Replace("\r\n", " ").Replace("\n", " ");
+            }
+            ConstructorDeclarationSyntax? ctor = member as ConstructorDeclarationSyntax;
+            if (ctor != null)
+            {
+                return ctor.Identifier.Text + ctor.ParameterList.ToString();
+            }
+            return "";
+        }
     }
 }

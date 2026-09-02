@@ -34,6 +34,11 @@ namespace Mau.Development
         private readonly string[] _roots;
 
         /// <summary>
+        /// 受控根 id 列表——与 _roots 对齐（id: 命名空间寻址——runtime:/mau:/ccbp:；对齐 FileSystemService）
+        /// </summary>
+        private readonly string[] _rootIds;
+
+        /// <summary>
         /// 项目缓存池——Key = csproj 绝对路径（GetFullPath 归一化；OrdinalIgnoreCase）
         /// </summary>
         private readonly ConcurrentDictionary<string, ProjectCache> _pool;
@@ -49,21 +54,34 @@ namespace Mau.Development
         private readonly object _lruGate;
 
         /// <summary>
-        /// 创建工具桥——受控根用于项目路径越界校验
+        /// 创建工具桥——受控根用于项目路径越界校验（id: 命名空间寻址对齐 FileSystemService）
         /// </summary>
-        /// <param name="roots">受控根绝对路径列表（csproj 必须在其内）</param>
-        public MauRoslynBridge(string[] roots)
+        /// <param name="rootEntries">受控根条目（id + 绝对路径；csproj 必须在其内）</param>
+        public MauRoslynBridge(WorkspaceConfig.RootEntry[] rootEntries)
         {
-            if (roots == null || roots.Length == 0)
+            if (rootEntries == null || rootEntries.Length == 0)
             {
-                throw new ArgumentException("MauRoslynBridge 需要至少一个受控根。", "roots");
+                throw new ArgumentException("MauRoslynBridge 需要至少一个受控根。", "rootEntries");
             }
             List<string> normalized = new List<string>();
-            for (int i = 0; i < roots.Length; i = i + 1)
+            List<string> ids = new List<string>();
+            for (int i = 0; i < rootEntries.Length; i = i + 1)
             {
-                normalized.Add(Path.GetFullPath(roots[i]));
+                WorkspaceConfig.RootEntry entry = rootEntries[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.Path))
+                {
+                    throw new ArgumentException("受控根路径为空。", "rootEntries");
+                }
+                normalized.Add(Path.GetFullPath(entry.Path));
+                string entryId = entry.Id;
+                if (entryId == null || entryId.Length == 0)
+                {
+                    entryId = "root" + i.ToString();
+                }
+                ids.Add(entryId);
             }
             _roots = normalized.ToArray();
+            _rootIds = ids.ToArray();
             _pool = new ConcurrentDictionary<string, ProjectCache>(StringComparer.OrdinalIgnoreCase);
             _poolGate = new object();
             _lruGate = new object();
@@ -129,6 +147,10 @@ namespace Mau.Development
                     {
                         return ToolDead(root, out result);
                     }
+                    if (method == "comment_check")
+                    {
+                        return ToolCommentCheck(root, out result);
+                    }
                     result = "ERR|UNKNOWN_METHOD|未知方法: " + method;
                     return false;
                 }
@@ -151,7 +173,32 @@ namespace Mau.Development
             {
                 return "";
             }
-            string full = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, pathParam));
+            // P1 修复：id: 命名空间寻址（runtime:/mau:/ccbp:）——对齐 FileSystemService.Resolve（P8.5b）
+            // LLM 习惯传 runtime:s1press/csproj_press，此前被当作字面路径导致 BAD_PATH 试错循环
+            string path = pathParam;
+            int nsSep = path.IndexOf(':');
+            if (nsSep > 0)
+            {
+                string nsId = path.Substring(0, nsSep);
+                string nsRel = path.Substring(nsSep + 1);
+                for (int i = 0; i < _roots.Length; i = i + 1)
+                {
+                    if (string.Equals(_rootIds[i], nsId, StringComparison.Ordinal))
+                    {
+                        path = Path.Combine(_roots[i], nsRel);
+                        break;
+                    }
+                }
+            }
+            string full;
+            if (Path.IsPathFullyQualified(path))
+            {
+                full = Path.GetFullPath(path);
+            }
+            else
+            {
+                full = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path));
+            }
             bool inside = false;
             for (int i = 0; i < _roots.Length; i = i + 1)
             {

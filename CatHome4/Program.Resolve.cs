@@ -112,21 +112,21 @@ namespace CH4
         }
 
         /// <summary>
-        /// 可写根路径数组——cs.* 编码工具只碰可写根（只读知识根不参与项目扫描——P8.5 配置群）
+        /// 可写根条目数组——cs.* 编码工具只碰可写根（只读知识根不参与项目扫描——P8.5 配置群；保留 id 供命名空间寻址）
         /// </summary>
         /// <param name="workspace">工作区配置</param>
-        /// <returns>可写根路径数组</returns>
-        private static string[] WritableRootPaths(WorkspaceConfig workspace)
+        /// <returns>可写根条目数组</returns>
+        private static WorkspaceConfig.RootEntry[] WritableRootPaths(WorkspaceConfig workspace)
         {
-            List<string> paths = new List<string>();
+            List<WorkspaceConfig.RootEntry> entries = new List<WorkspaceConfig.RootEntry>();
             for (int i = 0; i < workspace.Roots.Length; i++)
             {
                 if (workspace.Roots[i].Writable)
                 {
-                    paths.Add(workspace.Roots[i].Path);
+                    entries.Add(workspace.Roots[i]);
                 }
             }
-            return paths.ToArray();
+            return entries.ToArray();
         }
     }
 }

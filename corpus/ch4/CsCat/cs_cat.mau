@@ -1,13 +1,13 @@
 ﻿// cs_cat.mau —— CsCat 语料（CH4 R0.2 工具组 Flow 化——CS 编码工具域独立 Flow，原 DevCat 分部拆分）
-// 角色：工具组 Flow——认领 TOOL 域 cs-* 9 工具（check/build/list/read/find_ref/patch/member/comment/dead）
-// 单级 OA 单：Dog Post → 本 Flow 9 线认领执行 → complete_str 回执
+// 角色：工具组 Flow——认领 TOOL 域 cs-* 10 工具（check/build/list/read/find_ref/patch/member/comment/dead/comment_check）
+// 单级 OA 单：Dog Post → 本 Flow 10 线认领执行 → complete_str 回执
 // 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON
 // 无值分支：每工具一条认领线，工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
 // 数据面：@ckOffice 等私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
 // 线程模型：全部主线程同步（Roslyn 语法树操作受控短 IO）
 // 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）
 
-// ── 状态机（9 线——每线独立生命周期）──
+// ── 状态机（10 线——每线独立生命周期）──
 § 'S_Check' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Build' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_List' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
@@ -17,11 +17,12 @@
 § 'S_Member' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Comment' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Dead' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_CommentCheck' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
 § 'T_Init' : 'S_Check' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Check' = 'Idle' | 'S_Check' = 'Idle'
 
-// ── 主动传感器壳——9 线各自探测（officeName = 完整工具名）──
+// ── 主动传感器壳——10 线各自探测（officeName = 完整工具名）──
 § 'P_CheckOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-check"] > @ckOpen
 § 'P_BuildOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-build"] > @buOpen
 § 'P_ListOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-list"] > @liOpen
@@ -31,6 +32,7 @@
 § 'P_MemberOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-member"] > @mbOpen
 § 'P_CommentOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-comment"] > @cmOpen
 § 'P_DeadOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-dead"] > @ddOpen
+§ 'P_CommentCheckOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-comment_check"] > @ccOpen
 
 // ══════════════ cs-check 线 ══════════════
 § 'T_CheckClaim' : @ckOpen & 'S_Check' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-check"] > @ckOffice | 'S_Check' = 'Claimed' | 'S_Check' = 'Idle'
@@ -94,3 +96,10 @@
 § 'T_DeadExec' : 'S_Dead' = 'Ready' → 'csharp.bridge'["dead", @ddArgs] > @ddRes | 'self.desc'["cs-dead 执行中", "", ""] | 'S_Dead' = 'Done' | 'S_Dead' = 'Failed'
 § 'T_DeadReply' : 'S_Dead' = 'Done' → 'oa.complete_str'[@ddOffice, @ddRes] | 'self.desc'["空闲待命", "", ""] | 'S_Dead' = 'Idle' | 'S_Dead' = 'Idle'
 § 'T_DeadAbort' : 'S_Dead' = 'Failed' → 'oa.complete_str'[@ddOffice, @ddRes] | 'S_Dead' = 'Idle' | 'S_Dead' = 'Idle'
+
+// ══════════════ cs-comment_check 线 ══════════════
+§ 'T_CommentCheckClaim' : @ccOpen & 'S_CommentCheck' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-comment_check"] > @ccOffice | 'S_CommentCheck' = 'Claimed' | 'S_CommentCheck' = 'Idle'
+§ 'T_CommentCheckArgs' : 'S_CommentCheck' = 'Claimed' → 'oa.get_str'[@ccOffice, "args"] > @ccArgs | 'S_CommentCheck' = 'Ready' | 'S_CommentCheck' = 'Failed'
+§ 'T_CommentCheckExec' : 'S_CommentCheck' = 'Ready' → 'csharp.bridge'["comment_check", @ccArgs] > @ccRes | 'self.desc'["cs-comment_check 执行中", "", ""] | 'S_CommentCheck' = 'Done' | 'S_CommentCheck' = 'Failed'
+§ 'T_CommentCheckReply' : 'S_CommentCheck' = 'Done' → 'oa.complete_str'[@ccOffice, @ccRes] | 'self.desc'["空闲待命", "", ""] | 'S_CommentCheck' = 'Idle' | 'S_CommentCheck' = 'Idle'
+§ 'T_CommentCheckAbort' : 'S_CommentCheck' = 'Failed' → 'oa.complete_str'[@ccOffice, @ccRes] | 'S_CommentCheck' = 'Idle' | 'S_CommentCheck' = 'Idle'
