@@ -590,6 +590,8 @@ namespace CatHome4.Admin
                 injectList = cfg.InjectList,
                 qqbotId = cfg.QqBotId,
                 qqbotEnable = cfg.QqBotEnable,
+                enabledRoots = cfg.EnabledRoots,
+                allRoots = BuildAllRootsJson(),
                 allToolNames = GetAllToolNames(),
                 apiOptions = apiOptions,
                 qqbotOptions = qqbotOptions
@@ -614,6 +616,7 @@ namespace CatHome4.Admin
             string qqbotId = "";
             bool qqbotEnable = false;
             List<string> injectList = new List<string>();
+            List<string> enabledRoots = new List<string>();
             try
             {
                 using (JsonDocument doc = JsonDocument.Parse(body))
@@ -625,6 +628,22 @@ namespace CatHome4.Admin
                     toolNames = GetJsonString(root, "toolNames");
                     qqbotId = GetJsonString(root, "qqbotId");
                     qqbotEnable = GetBoolProp(root, "qqbotEnable");
+                    JsonElement rootsEl;
+                    if (root.TryGetProperty("enabledRoots", out rootsEl) && rootsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        for (int i = 0; i < rootsEl.GetArrayLength(); i++)
+                        {
+                            JsonElement item = rootsEl[i];
+                            if (item.ValueKind == JsonValueKind.String)
+                            {
+                                string got = item.GetString();
+                                if (got != null && got.Length > 0)
+                                {
+                                    enabledRoots.Add(got);
+                                }
+                            }
+                        }
+                    }
                     JsonElement injectEl;
                     if (root.TryGetProperty("injectList", out injectEl) && injectEl.ValueKind == JsonValueKind.Array)
                     {
@@ -694,6 +713,8 @@ namespace CatHome4.Admin
             cfg.Persona = persona;
             cfg.ToolNames = validToolNames;
             cfg.InjectList = injectList.ToArray();
+            // 启用根校验——workspace 强制 + 全局池子集；非法 id 剔除
+            cfg.EnabledRoots = ValidateEnabledRoots(enabledRoots.ToArray());
             SaveCatCfgData(catKey, cfg);
             // 运行时生效——入队主线程泵（注册表/会话面仅主线程触碰）
             _catQueue.Enqueue("catcfg.apply " + catKey);
@@ -849,8 +870,97 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
+        /// 全局根池 JSON——供猫配置界面勾选（cat-config GET allRoots 字段；workspace 强制必选）。
+        /// </summary>
+        /// <returns>根池数组 [{id,path,writable}]</returns>
+        internal static object[] BuildAllRootsJson()
+        {
+            WorkspaceConfig ws = null;
+            DataBox.TryResolve<WorkspaceConfig>(out ws);
+            List<object> roots = new List<object>();
+            if (ws != null)
+            {
+                for (int i = 0; i < ws.Roots.Length; i++)
+                {
+                    roots.Add(new
+                    {
+                        id = ws.Roots[i].Id,
+                        path = ws.Roots[i].Path,
+                        writable = ws.Roots[i].Writable
+                    });
+                }
+            }
+            return roots.ToArray();
+        }
+
+        /// <summary>
+        /// 猫启用根校验——workspace 强制必选 + 全局池子集；非法 id 剔除、去重、保序。
+        /// 语义：空数组 = 全量（不限制——向后兼容旧 cat.cfg 无 enabledRoots 字段）；非空 = workspace 强制 + 用户子集。
+        /// </summary>
+        /// <param name="ids">前端提交的启用根 id 数组（空=全量）</param>
+        /// <returns>合法启用根 id 数组（空=全量）</returns>
+        internal static string[] ValidateEnabledRoots(string[] ids)
+        {
+            // 空/缺省 = 全量（旧配置无字段——不限制，行为不倒退）
+            if (ids == null || ids.Length == 0)
+            {
+                return new string[0];
+            }
+            WorkspaceConfig ws = null;
+            DataBox.TryResolve<WorkspaceConfig>(out ws);
+            if (ws == null || ws.Roots == null || ws.Roots.Length == 0)
+            {
+                return new string[0];
+            }
+            List<string> result = new List<string>();
+            // 全局池合法 id 集合
+            List<string> pool = new List<string>();
+            for (int i = 0; i < ws.Roots.Length; i++)
+            {
+                string rootId = ws.Roots[i].Id;
+                if (rootId == null || rootId.Length == 0)
+                {
+                    continue;
+                }
+                pool.Add(rootId);
+            }
+            // workspace 强制——用户说必选不可取消；兼容旧配置 id=runtime
+            string wsId = "";
+            if (pool.Contains("workspace"))
+            {
+                wsId = "workspace";
+            }
+            else if (pool.Contains("runtime"))
+            {
+                wsId = "runtime";
+            }
+            if (wsId.Length > 0)
+            {
+                result.Add(wsId);
+            }
+            // 用户选择子集——只保留全局池内 id，去重
+            for (int i = 0; i < ids.Length; i++)
+            {
+                string id = ids[i];
+                if (id == null || id.Length == 0)
+                {
+                    continue;
+                }
+                if (id == wsId)
+                {
+                    continue;
+                }
+                if (pool.Contains(id) && !result.Contains(id))
+                {
+                    result.Add(id);
+                }
+            }
+            return result.ToArray();
+        }
+
+        /// <summary>
         /// 受控根写入——POST /api/v1/workspace（body: {roots:[{id,path,writable}]}）。
-        /// 校验：非空 + 必须含 runtime 根 + id 安全标识符不重复 + path 非空绝对路径 + 目录存在。
+        /// 校验：id 安全标识符不重复 + path 非空绝对路径 + 目录存在；空列表=重置默认（Load 兜底单根 runtime）。
         /// 生效语义：落盘 + 重启生效（roots 是 Bootstrap 一次性读取——低频事件，莎拍板 2026-08-25）。
         /// </summary>
         /// <param name="ctx">HTTP 上下文</param>
@@ -888,12 +998,7 @@ namespace CatHome4.Admin
             {
                 return Results.Json(new { ok = false, error = "body 非 JSON" });
             }
-            // [段1] 校验——非空 / runtime 根必在 / id 安全标识符不重复 / path 绝对路径 + 目录存在
-            if (rootsIn.Count == 0)
-            {
-                return Results.Json(new { ok = false, error = "roots 为空——不允许裸根运行" });
-            }
-            bool hasRuntime = false;
+            // [段1] 校验——id 安全标识符不重复 / path 绝对路径 + 目录存在；空列表=重置默认（Load 兜底单根 runtime）
             List<string> ids = new List<string>();
             for (int i = 0; i < rootsIn.Count; i++)
             {
@@ -916,10 +1021,6 @@ namespace CatHome4.Admin
                     return Results.Json(new { ok = false, error = "roots id 重复: " + input.Id });
                 }
                 ids.Add(input.Id);
-                if (input.Id == "runtime")
-                {
-                    hasRuntime = true;
-                }
                 if (input.Path.Length == 0)
                 {
                     return Results.Json(new { ok = false, error = "roots[" + i.ToString() + "] path 为空" });
@@ -932,10 +1033,6 @@ namespace CatHome4.Admin
                 {
                     return Results.Json(new { ok = false, error = "roots[" + i.ToString() + "] 目录不存在: " + input.Path });
                 }
-            }
-            if (!hasRuntime)
-            {
-                return Results.Json(new { ok = false, error = "必须保留 runtime 根（数据根——FileSystemService 依赖）" });
             }
             // [段2] 落盘——保留 inject 字段（读旧文件；M2 后宿主不消费但结构保留）
             string wsPath = Path.Combine(_dataRoot, "Data", "config", "workspace.json");
@@ -1019,6 +1116,8 @@ namespace CatHome4.Admin
                 toolNames = cfg.ToolNames;
             }
             ToolSpec[] specs = FilterToolSpecs(ResolveToolNames(toolNames));
+            // M4e 猫级白名单——配置变更后重建猫文件系统（启用根子集）
+            ApplyCatRoots(key);
             if (key == "majordomo")
             {
                 // 默认猫——静态面更新（session.new 重注入消费）
@@ -1047,6 +1146,7 @@ namespace CatHome4.Admin
             cat.ToolSpecs = specs;
             cat.QqBotId = ResolveQqBotId(cfg);
             cat.QqBotEnable = cfg.QqBotEnable;
+            // M4e 猫级白名单——运行时猫文件系统已在上方 ApplyCatRoots 重建（含本分支）
             Guid newApiId = ResolveApiConfigId(cfg);
             if (cat.ApiConfigId != newApiId)
             {
@@ -1122,7 +1222,8 @@ namespace CatHome4.Admin
                 toolNames = ValidateToolNames(data.ToolNames),
                 injectList = data.InjectList,
                 qqbotId = data.QqBotId,
-                qqbotEnable = data.QqBotEnable
+                qqbotEnable = data.QqBotEnable,
+                enabledRoots = data.EnabledRoots
             };
             try
             {

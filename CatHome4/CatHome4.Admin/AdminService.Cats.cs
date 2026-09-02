@@ -54,6 +54,92 @@ namespace CatHome4.Admin
         private const int CatPortStart = 8081;
 
         /// <summary>
+        /// 解析猫启用根条目——cat.cfg enabledRoots → 全局池子集（空=全量；workspace 强制常驻）。
+        /// M4e 猫级白名单：猫文件工具面只触及启用根。
+        /// </summary>
+        /// <param name="catKey">猫 key（majordomo=默认猫）</param>
+        /// <returns>启用根条目数组</returns>
+        internal static WorkspaceConfig.RootEntry[] ResolveCatRootEntries(string catKey)
+        {
+            WorkspaceConfig ws = null;
+            DataBox.TryResolve<WorkspaceConfig>(out ws);
+            if (ws == null || ws.Roots == null || ws.Roots.Length == 0)
+            {
+                return new WorkspaceConfig.RootEntry[0];
+            }
+            CatCfgData cfg = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", catKey, "cat.cfg"));
+            string[] enabled = null;
+            if (cfg != null && cfg.EnabledRoots != null && cfg.EnabledRoots.Length > 0)
+            {
+                enabled = cfg.EnabledRoots;
+            }
+            List<WorkspaceConfig.RootEntry> entries = new List<WorkspaceConfig.RootEntry>();
+            for (int i = 0; i < ws.Roots.Length; i++)
+            {
+                WorkspaceConfig.RootEntry entry = ws.Roots[i];
+                // workspace/runtime 强制常驻——不因启用列表为空或未勾选而移除
+                if (entry.Id == "workspace" || entry.Id == "runtime")
+                {
+                    entries.Add(entry);
+                    continue;
+                }
+                if (enabled == null)
+                {
+                    // 未配置 = 全量（行为不倒退）
+                    entries.Add(entry);
+                    continue;
+                }
+                bool found = false;
+                for (int j = 0; j < enabled.Length; j++)
+                {
+                    if (string.Equals(enabled[j], entry.Id, StringComparison.Ordinal))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (found)
+                {
+                    entries.Add(entry);
+                }
+            }
+            return entries.ToArray();
+        }
+
+        /// <summary>
+        /// 猫级文件系统应用——按猫启用根重建 ToolCatContext 缓存（catcfg.apply / 会话构造时调用；主线程）。
+        /// </summary>
+        /// <param name="catKey">猫 key（majordomo=默认猫）</param>
+        internal static void ApplyCatRoots(string catKey)
+        {
+            WorkspaceConfig.RootEntry[] entries = ResolveCatRootEntries(catKey);
+            if (entries.Length == 0)
+            {
+                ToolCatContext.UpdateCatFileSystem(catKey, null, "");
+                return;
+            }
+            string recycleRoot = Path.Combine(WorkspaceRecycleRootFor(entries, _dataRoot), "CatTemp", "fs_recycle");
+            ToolCatContext.UpdateCatFileSystem(catKey, entries, recycleRoot);
+        }
+
+        /// <summary>
+        /// 猫级回收站根——启用根内第一个可写根（对齐全局 WorkspaceRecycleRoot 语义；无可写根回退数据根）。
+        /// </summary>
+        /// <param name="entries">启用根条目</param>
+        /// <param name="dataRoot">数据根</param>
+        /// <returns>回收站基底目录</returns>
+        private static string WorkspaceRecycleRootFor(WorkspaceConfig.RootEntry[] entries, string dataRoot)
+        {
+            for (int i = 0; i < entries.Length; i++)
+            {
+                if (entries[i].Writable)
+                {
+                    return entries[i].Path;
+                }
+            }
+            return dataRoot;
+        }
+        /// <summary>
         /// cat.* 指令族处理——主线程调用（DispatchCommand 分支 P9.3c 接线）。
         /// </summary>
         /// <param name="line">指令行</param>
@@ -363,6 +449,8 @@ namespace CatHome4.Admin
             _cats.Remove(cat);
             _chatBridge.RemoveSession(cat.Session);
             ConfigStoreRegistry.Unregister(cat.Id);
+            // M4e 猫级白名单——缓存随猫销毁
+            ToolCatContext.RemoveCatFileSystem(cat.Id);
             DeleteCatFiles(cat.Id);
             LogStore.Add("CatHome4", 1, "已销毁猫「" + cat.DisplayName + "」（id " + cat.Id + "）", "CHAT");
             return "cat.delete | " + cat.DisplayName + " | 已销毁";
@@ -478,6 +566,10 @@ namespace CatHome4.Admin
                 ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig);
                 SessionViewStore viewStore = new SessionViewStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".view.json"));
                 ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, catSpecs, ExecuteTool, viewStore);
+                // M4e 猫级白名单——多猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
+                session.SetCatKey(id);
+                AdminService.ApplyCatRoots(id);
+                session.AttachEnvInfo(() => BuildEnvInfoProvider());
                 session.RebuildView();
                 _chatBridge.RegisterSession(session);
                 CatEntry cat = new CatEntry();

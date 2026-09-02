@@ -85,14 +85,24 @@ namespace CH4
         }
 
         /// <summary>
-        /// info 执行体——环境信息（运行版本 + LLM 端点类型 + 当前时间；R0.2 拍板：工具注册是前文初始化一次性——info 不重复工具清单）。
+        /// info 执行体——环境信息（运行版本 + LLM 端点类型 + 当前时间 + 猫可见根；M4e：info 是猫自省目录范围的通道）。
         /// </summary>
         /// <returns>环境信息文本</returns>
         private string ExecuteInfo()
         {
             if (_envInfoProvider != null)
             {
-                return _envInfoProvider();
+                // M4e 猫级白名单——info 按当前会话猫输出（provider 读 ToolCatContext；内置工具直执不经 RunTool）
+                string prev = ToolCatContext.CurrentCatKey;
+                ToolCatContext.SetCat(_catKey);
+                try
+                {
+                    return _envInfoProvider();
+                }
+                finally
+                {
+                    ToolCatContext.SetCat(prev);
+                }
             }
             return "CH4 | 环境信息不可用（未注入 provider）";
         }

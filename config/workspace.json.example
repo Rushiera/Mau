@@ -1,5 +1,5 @@
-{
-  "_说明": "工作区配置示例——复制为 Data/config/workspace.json 并按本机路径修改；roots 受控根（writable=false 只读）/ inject 新会话注入清单（按序拼接）",
+﻿{
+  "_说明": "工作区配置——roots 为全局白名单（默认可为空=单根 runtime 兜底；任意 id 自由添加，id 仅字母/数字/下划线；writable=false 只读）/ inject 新会话注入清单（按序拼接）",
   "roots": [
     { "id": "runtime", "path": "<运行副本>/Data", "writable": true },
     { "id": "mau", "path": "C:/path/to/mau", "writable": true },

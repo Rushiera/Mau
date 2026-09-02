@@ -606,6 +606,12 @@ namespace CH4
         /// <returns>文件系统服务或 null</returns>
         private static FileSystemService ResolveFileSystem()
         {
+            // M4e 猫级白名单——当前猫上下文优先（工具执行链设置；无猫上下文回退全局）
+            FileSystemService catFs = ToolCatContext.ResolveCatFileSystem();
+            if (catFs != null)
+            {
+                return catFs;
+            }
             FileSystemService fs;
             if (DataBox.TryResolve<FileSystemService>(out fs))
             {

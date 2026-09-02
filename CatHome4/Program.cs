@@ -266,6 +266,7 @@ private static HttpHost _httpHost;
             _chatBridge = new ChatBridge(BuildInjectPrompt);
             // S4 Admin 域接线——依赖注入（管理 API 处理器 + cat.* 指令族迁入 CatHome4.Admin）
             AdminService.Configure(_chatBridge, _oa, dataRoot, _mainThreadId, ExecuteTool, ObserveService.BuildSnapshotJson, new HtmlRootProvider(), apiConfigStore, qqBotStore, llmConfig);
+            AdminService.BuildEnvInfoProvider = BuildEnvInfo;
             // S5 Observe 域接线——依赖注入（观测面迁入 CatHome4.Observe）
             ObserveService.Configure(_oa, _chatBridge, _quickHandle, _toolFlowHandles, _quickId, _toolFlowIds, _runner, null);
             SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.json"));
@@ -338,6 +339,10 @@ private static HttpHost _httpHost;
             SessionViewStore chatViewStore = new SessionViewStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.view.json"));
             _chatBridge.DefaultSession = new ChatSession(DateTime.Now.Ticks.ToString(), "majordomo", chatCtx, chatStore,
                 new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _chatBridge.DefaultToolSpecs, ExecuteTool, chatViewStore);
+            // M4e 猫级白名单——默认猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
+            _chatBridge.DefaultSession.SetCatKey("majordomo");
+            AdminService.ApplyCatRoots("majordomo");
+            _chatBridge.DefaultSession.AttachEnvInfo(() => BuildEnvInfo());
             _chatBridge.RegisterSession(_chatBridge.DefaultSession);
             // F4 视图——从真实前文重建视图层（恢复/注入后——真实前文绝对可用）
             _chatBridge.DefaultSession.RebuildView();
@@ -442,7 +447,27 @@ private static HttpHost _httpHost;
                 llmInfo = "读取失败";
             }
             string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            return "CH4 v" + version + " | LLM: " + llmInfo + " | " + now;
+            // M4e 猫级白名单——info 可见范围 = 当前猫启用根（ToolCatContext 工具执行上下文）
+            string rootsInfo = "";
+            string catKey = ToolCatContext.CurrentCatKey;
+            if (catKey != null && catKey.Length > 0)
+            {
+                WorkspaceConfig.RootEntry[] entries = AdminService.ResolveCatRootEntries(catKey);
+                System.Text.StringBuilder rb = new System.Text.StringBuilder();
+                for (int i = 0; i < entries.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        rb.Append(", ");
+                    }
+                    rb.Append(entries[i].Id);
+                    rb.Append("(");
+                    rb.Append(entries[i].Writable ? "rw" : "ro");
+                    rb.Append(")");
+                }
+                rootsInfo = " | roots[" + catKey + "]: " + rb.ToString();
+            }
+            return "CH4 v" + version + " | LLM: " + llmInfo + " | " + now + rootsInfo;
         }
         /// <summary>
         /// 前端测试服务拉起——宿主启动时自动启动 html/tests/server.js（未监听 8099 时）；失败不影响主功能

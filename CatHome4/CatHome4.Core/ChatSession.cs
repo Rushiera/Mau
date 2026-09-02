@@ -134,6 +134,38 @@ namespace CH4
         /// <summary>工具直执回调——宿主 ExecuteTool（FALLBACK/延迟直执）</summary>
         private readonly Func<string, string, string> _executeTool;
 
+        /// <summary>猫 key——工具执行按猫裁剪（M4e 白名单；默认猫=majordomo；多猫=会话 ID）</summary>
+        private string _catKey = "";
+
+        /// <summary>
+        /// 设置猫 key——构造后由创建方赋值（默认猫 majordomo / 多猫会话 ID）。
+        /// </summary>
+        /// <param name="catKey">猫 key</param>
+        public void SetCatKey(string catKey)
+        {
+            _catKey = catKey;
+        }
+
+        /// <summary>
+        /// 工具执行包装——设置猫上下文后调宿主直执（M4e：ResolveFileSystem 按猫解析；执行后恢复）。
+        /// </summary>
+        /// <param name="name">工具名</param>
+        /// <param name="args">参数 JSON</param>
+        /// <returns>执行结果</returns>
+        private string RunTool(string name, string args)
+        {
+            string prev = ToolCatContext.CurrentCatKey;
+            ToolCatContext.SetCat(_catKey);
+            try
+            {
+                return _executeTool(name, args);
+            }
+            finally
+            {
+                ToolCatContext.SetCat(prev);
+            }
+        }
+
         /// <summary>HTTP 外观层——SSE 转发面（Bootstrap 段6 宿主 HTTP 启动后 Attach 赋值——构造时宿主 HTTP 未启动）</summary>
         private IHostPush _httpHost;
 
@@ -790,7 +822,7 @@ _ = ConsumeLlmStream(messages);
                             if (dog.OfficeId == 0)
                             {
                                 // Post 失败——直接 FALLBACK 直执（错误可见性）
-                                string fb = _executeTool(name, arguments);
+                                string fb = RunTool(name, arguments);
                                 if (fb == null || fb.Length == 0)
                                 {
                                     fb = "ERR|EMPTY_RESULT|工具执行无结果";
@@ -887,7 +919,7 @@ _ = ConsumeLlmStream(messages);
                 ToolOrderDog dog = _hostDogs[h];
                 bool savedBusy = _toolBatchActive;
                 _toolBatchActive = false;
-                string hr = _executeTool(dog.Name, dog.ArgsJson);
+                string hr = RunTool(dog.Name, dog.ArgsJson);
                 _toolBatchActive = savedBusy;
                 if (hr == null || hr.Length == 0)
                 {
@@ -907,7 +939,7 @@ _ = ConsumeLlmStream(messages);
                 if (dog.IsTimedOut)
                 {
                     LogStore.Add("CatHome4", 2, "工具 " + dog.Name + " 工单 #" + dog.OfficeId + " 超时，已转 FALLBACK 直执", "TOOL");
-                    string result = _executeTool(dog.Name, dog.ArgsJson);
+                    string result = RunTool(dog.Name, dog.ArgsJson);
                     if (result == null || result.Length == 0)
                     {
                         result = "ERR|EMPTY_RESULT|工具执行无结果";

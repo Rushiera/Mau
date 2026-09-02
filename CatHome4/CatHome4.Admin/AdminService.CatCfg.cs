@@ -110,6 +110,9 @@ namespace CatHome4.Admin
 
             /// <summary>qqbot 启用标志——缺省 false</summary>
             public bool QqBotEnable { get; set; }
+
+            /// <summary>启用根 id 清单——全局根池子集（null/空=全量；workspace 强制必选不可取消）</summary>
+            public string[] EnabledRoots { get; set; }
         }
 
         /// <summary>
@@ -255,6 +258,7 @@ namespace CatHome4.Admin
                     data.InjectList = GetStringArrayProp(root, "injectList");
                     data.QqBotId = GetStringProp(root, "qqbotId");
                     data.QqBotEnable = GetBoolProp(root, "qqbotEnable");
+                    data.EnabledRoots = GetStringArrayProp(root, "enabledRoots");
                     return data;
                 }
             }

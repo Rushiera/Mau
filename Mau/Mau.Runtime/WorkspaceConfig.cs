@@ -7,7 +7,7 @@ namespace Mau.Runtime
 {
     /// <summary>
     /// 工作区配置——workspace.json 解析（受控根 + 注入清单）。design-ch4-workspace §三/§五——Mau 基座标准能力。
-    /// 语义：工作区文件缺失 = 未配置 → 默认单根兜底（兼容旧启动）；文件存在但 JSON 损坏 / roots 为空 / 根不存在 → 显式失败（不静默降级到裸根）。
+    /// 语义：工作区文件缺失 / roots 为空 = 默认单根 runtime 兜底（全局白名单语义——空=未配置白名单）；文件存在但 JSON 损坏 / 根不存在 → 显式失败（不静默降级到裸根）。
     /// </summary>
     public sealed class WorkspaceConfig
     {
@@ -65,7 +65,7 @@ namespace Mau.Runtime
 
         // [段1] 加载
         /// <summary>
-        /// 从 workspace.json 加载——文件缺失返回默认配置（单根 defaultRoot 可写 + 空注入）；存在则解析，损坏/空根/根不存在抛异常
+        /// 从 workspace.json 加载——文件缺失或 roots 为空返回默认配置（单根 defaultRoot 可写 + 空注入）；存在则解析，损坏/根不存在抛异常
         /// </summary>
         /// <param name="path">workspace.json 路径</param>
         /// <param name="defaultRoot">缺文件时的兜底根（数据根，可写）</param>
@@ -112,7 +112,10 @@ namespace Mau.Runtime
                 }
                 if (roots.Count == 0)
                 {
-                    throw new InvalidDataException("workspace.roots 为空——不允许裸根运行");
+                    // 空 roots = 未配置白名单——默认单根 runtime 兜底（同文件缺失语义；FileSystemService 需至少一个根）
+                    cfg.Roots = new RootEntry[] { new RootEntry() { Id = "runtime", Path = NormalizeRoot(defaultRoot), Writable = true } };
+                    cfg.Inject = new InjectEntry[0];
+                    return cfg;
                 }
                 cfg.Roots = roots.ToArray();
                 // [段1b] inject 解析
