@@ -87,7 +87,7 @@ namespace Mau.Development
         /// <param name="result">结果</param>
         /// <returns>调用完成</returns>
         private bool ToolBuild(JsonElement args, out string result)
-        {
+{
             string path = Arg(args, "path");
             string csproj = ResolveProject(path);
             if (csproj.Length == 0)
@@ -107,55 +107,28 @@ namespace Mau.Development
                 _pool[csproj] = cache;
             }
             cache.LastAccess = Environment.TickCount64;
-            ProcessStartInfo psi = new ProcessStartInfo();
-            psi.FileName = "dotnet";
-            psi.Arguments = "build \"" + csproj + "\" --nologo";
-            psi.WorkingDirectory = cache.ProjectDir;
-            psi.UseShellExecute = false;
-            psi.RedirectStandardOutput = true;
-            psi.RedirectStandardError = true;
-            try
+            // ProcessRunner 统一执行器——双流并行读 + watchdog 强杀（防顺序 ReadToEnd 管道死锁——Codex 审查 P1）
+            ProcessRunResult run = ProcessRunner.RunAndCapture("dotnet", "build \"" + csproj + "\" --nologo", cache.ProjectDir, 120000);
+            if (!run.Started)
             {
-                using (Process proc = Process.Start(psi)!)
-                {
-                    if (proc == null)
-                    {
-                        result = "ERR|BUILD_START|dotnet 进程启动失败（PATH 中无 dotnet？）";
-                        return false;
-                    }
-                    string stdout = proc.StandardOutput.ReadToEnd();
-                    string stderr = proc.StandardError.ReadToEnd();
-                    if (!proc.WaitForExit(120000))
-                    {
-                        try
-                        {
-                            proc.Kill();
-                        }
-                        catch (Exception)
-                        {
-                            // 已退出则忽略
-                        }
-                        result = "ERR|BUILD_TIMEOUT|dotnet build 超时（120s）——长首次还原可重试";
-                        return false;
-                    }
-                    string tail = TailLines(stdout + stderr, 20);
-                    if (proc.ExitCode != 0)
-                    {
-                        result = TrimResult("FAIL|BUILD|dotnet build exit " + proc.ExitCode + Environment.NewLine + tail, MaxResultChars);
-                        return true;
-                    }
-                    cache.ReferencesDirty = true;
-                    result = TrimResult("OK 构建成功: " + cache.AssemblyName + Environment.NewLine + tail, MaxResultChars);
-                    return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                result = "ERR|BUILD_EX|" + ex.GetType().Name + ": " + ex.Message;
+                result = "ERR|BUILD_START|dotnet 进程启动失败（PATH 中无 dotnet？）";
                 return false;
             }
+            if (!run.Exited)
+            {
+                result = "ERR|BUILD_TIMEOUT|dotnet build 超时（120s）——长首次还原可重试";
+                return false;
+            }
+            string tail = TailLines(run.Stdout + run.Stderr, 20);
+            if (run.ExitCode != 0)
+            {
+                result = TrimResult("FAIL|BUILD|dotnet build exit " + run.ExitCode + Environment.NewLine + tail, MaxResultChars);
+                return true;
+            }
+            cache.ReferencesDirty = true;
+            result = TrimResult("OK 构建成功: " + cache.AssemblyName + Environment.NewLine + tail, MaxResultChars);
+            return true;
         }
-
         /// <summary>
         /// cs.list——类/成员签名（语法层提取，无需语义）
         /// </summary>
