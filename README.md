@@ -171,6 +171,15 @@ mau proj corpus\ch4\PsCat\ps_cat.mauproj            -o public\src\PsCat --build
 
 > 步骤 3-4 的顺序是硬约束：改基座源码后必须重跑 3-4（`Mau-public/` 是编译/运行时同源点）。语料层随时可重建（`public/app/Flows/*.dll` 运行中热重载不锁文件）；宿主自身 publish 前先停进程。规格权威：CCBP `Project/CH4/design-ch4-deploy.md`（部署架构）+ `design-ch4-release.md`（发布规范）。
 
+**SetUp 自身更新（🔴 SetUp/ 源码变更后必做）：** SetUp.exe 是发布产物，不是源码——git 里提交的是构建出的单文件 exe。改 SetUp/ 源码后必须重新发布并同次提交，否则删库重拉会拿到旧二进制（判例：2026-09-03 PsCat 漏网——v0.77.0 源码扫描化但 exe 未重发，prepare 只识别 8 组）：
+
+```
+dotnet publish SetUp\SetUp.csproj -c Release -o <临时目录>   ← 1. 重新发布
+复制 SetUp.exe 覆盖仓库根（旧版先移 CatTemp 备份）           ← 2. 替换
+SetUp.exe prepare                                            ← 3. 全链验证（步4 组扫描全收录）
+git add SetUp/ SetUp.exe && commit && push                   ← 4. 源码+exe 同次提交
+```
+
 ### 3.3 常用指令（工作目录 = 仓库根）
 
 **mau CLI（构筑与门禁）：**
