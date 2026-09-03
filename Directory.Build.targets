@@ -1,0 +1,13 @@
+<Project>
+
+  <!-- 编译时间戳注入（2026-09-03 SetUp 版本盲区补丁）：
+       InformationalVersion = 语义版本 + 编译时刻（yyyyMMddHHmmss）。
+       求值时机：Directory.Build.targets 在项目文件之后导入——$(Version) 此时已有项目值。
+       SDK 的 AddSourceRevisionToInformationalVersion 检测到 InformationalVersion 已含 '+' 时
+       以 '.' 追加 $(SourceRevisionId) → 最终格式 0.2.0+20260903161640.98c22eed...
+       → exe/dll 属性页「产品版本」一眼可见编译时间 + git commit hash。 -->
+  <PropertyGroup>
+    <InformationalVersion>$(Version)+$([System.DateTime]::Now.ToString("yyyyMMddHHmmss"))</InformationalVersion>
+  </PropertyGroup>
+
+</Project>
