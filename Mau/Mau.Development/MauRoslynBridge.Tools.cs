@@ -210,7 +210,7 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// cs.read——成员源码 + 方法内行号标注（补丁锚点依据）
+        /// cs.read——成员源码 + 文件行号标注（统一文件坐标系；补丁锚点依据）
         /// </summary>
         /// <param name="args">参数</param>
         /// <param name="result">结果</param>
@@ -273,7 +273,8 @@ namespace Mau.Development
                 sb.Append("[文件: " + memberNode.SyntaxTree.FilePath + " L" + (memberSpan.StartLinePosition.Line + 1) + "-" + (memberSpan.EndLinePosition.Line + 1) + "]");
                 sb.Append(Environment.NewLine);
                 string memberSource = memberNode.ToFullString();
-                sb.Append(NumberedSource(memberSource));
+                int memberStartLine = memberNode.SyntaxTree.GetText().Lines.GetLineFromPosition(memberNode.FullSpan.Start).LineNumber + 1;
+                sb.Append(NumberedSource(memberSource, memberStartLine));
             }
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;
@@ -416,6 +417,8 @@ namespace Mau.Development
                     trivia.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia))
                 {
                     string content = trivia.ToString();
+                    // XML 转义归一——&lt;summary&gt; 转义注释也能识别（先符号实体后 &amp;，防二次转义）
+                    content = content.Replace("&lt;", "<").Replace("&gt;", ">").Replace("&quot;", "\"").Replace("&apos;", "'").Replace("&amp;", "&");
                     int index = content.IndexOf("<summary>", StringComparison.OrdinalIgnoreCase);
                     if (index < 0)
                     {
@@ -439,11 +442,12 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 方法内行号标注——每行源码尾部附加 // L{n}
+        /// 文件行号标注——每行源码尾部附加 // L{文件行号}（统一文件坐标系；起始行由调用方提供）
         /// </summary>
         /// <param name="source">成员 ToFullString</param>
+        /// <param name="startLine">源码段起始文件行号（1-based）</param>
         /// <returns>标注文本</returns>
-        private static string NumberedSource(string source)
+        private static string NumberedSource(string source, int startLine)
         {
             string[] lines = source.Replace("\r\n", "\n").Split('\n');
             StringBuilder sb = new StringBuilder();
@@ -454,7 +458,7 @@ namespace Mau.Development
                 {
                     break;
                 }
-                sb.Append(line + " // L" + (i + 1) + Environment.NewLine);
+                sb.Append(line + " // L" + (startLine + i) + Environment.NewLine);
             }
             return sb.ToString();
         }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -135,7 +135,7 @@ namespace Mau.Development
                     result = "ERR|BAD_ARGS|position 必须是 end/before/after/after_fields";
                     return true;
                 }
-                SyntaxNode newClassNode = classNode.WithMembers(classNode.Members.Insert(insertIndex, newMember));
+                ClassDeclarationSyntax newClassNode = classNode.WithMembers(classNode.Members.Insert(insertIndex, newMember));
                 SyntaxNode root = foundTree.GetRoot();
                 SyntaxNode newRoot = root.ReplaceNode(classNode, newClassNode);
                 SyntaxTree newTree = CreateTreeFromRoot(foundTree, newRoot);
@@ -160,7 +160,10 @@ namespace Mau.Development
                 cache.Stamps[filePath] = SnapshotOf(filePath);
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
-                result = "OK 已插入成员到 " + className + "（" + RelativeToProject(cache, filePath) + "）: " + newMember.GetType().Name;
+                // P3-4：返回落盘行号区间——newClassNode 已在 newRoot 树中，GetLineSpan 解析新文件行号
+                FileLinePositionSpan insertedSpan = newClassNode.Members[insertIndex].GetLocation().GetLineSpan();
+                string range = "L" + (insertedSpan.StartLinePosition.Line + 1) + "-" + (insertedSpan.EndLinePosition.Line + 1);
+                result = "OK 已插入成员到 " + className + "（" + RelativeToProject(cache, filePath) + " " + range + "）: " + newMember.GetType().Name;
                 return true;
             }
         }

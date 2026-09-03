@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -276,11 +276,12 @@ namespace Mau.Development
                 cache.Stamps[filePath] = SnapshotOf(filePath);
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
-                // OK 返回 + 目标方法段源码（H28 强制校验链——patch 后立即可见落盘状态）
+                // OK 返回 + 目标方法段源码（H28 强制校验链——patch 后立即可见落盘状态；文件行号坐标系）
                 StringBuilder ok = new StringBuilder();
                 ok.Append("OK 已落盘 " + RelativeToProject(cache, filePath) + ":" + className + "." + methodName);
                 ok.Append(Environment.NewLine + "——目标方法段（校验链）:");
-                ok.Append(Environment.NewLine + NumberedSource(newMethod.ToFullString()));
+                int methodStartLine = newRoot.GetText().Lines.GetLineFromPosition(newMethod.FullSpan.Start).LineNumber + 1;
+                ok.Append(Environment.NewLine + NumberedSource(newMethod.ToFullString(), methodStartLine));
                 result = TrimResult(ok.ToString(), MaxResultChars);
                 return true;
             }

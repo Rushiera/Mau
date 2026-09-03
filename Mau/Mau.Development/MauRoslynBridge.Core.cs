@@ -282,7 +282,7 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 构建引用集——bin 产物（莎拍板 A）+ TPA + AspNetCore 共享框架探测；按名去重（bin 优先）
+        /// 构建引用集——bin 产物（莎拍板 A）+ TPA + 共享框架探测（AspNetCore/WindowsDesktop）；按名去重（bin 优先）
         /// </summary>
         /// <param name="cache">缓存</param>
         /// <returns>引用列表（bin 缺失时返回空列表——check 引导 build）</returns>
@@ -308,7 +308,7 @@ namespace Mau.Development
                     }
                 }
             }
-            // AspNetCore 共享框架——探测 dotnet/shared/Microsoft.AspNetCore.App/ 最新版本
+            // 共享框架探测——AspNetCore + WindowsDesktop（WinForms/WPF 程序集所在；统一按名去重）
             string? runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location);
             if (runtimeDir != null)
             {
@@ -316,25 +316,8 @@ namespace Mau.Development
                 if (netCoreAppDir != null)
                 {
                     string sharedDir = Path.Combine(Path.GetDirectoryName(netCoreAppDir) ?? "", "shared");
-                    string aspNetDir = Path.Combine(sharedDir, "Microsoft.AspNetCore.App");
-                    if (Directory.Exists(aspNetDir))
-                    {
-                        string[] versions = Directory.GetDirectories(aspNetDir);
-                        Array.Sort(versions, StringComparer.OrdinalIgnoreCase);
-                        if (versions.Length > 0)
-                        {
-                            string latest = versions[versions.Length - 1];
-                            string[] aspnetDlls = Directory.GetFiles(latest, "*.dll", SearchOption.TopDirectoryOnly);
-                            for (int i = 0; i < aspnetDlls.Length; i = i + 1)
-                            {
-                                string name = Path.GetFileNameWithoutExtension(aspnetDlls[i]);
-                                if (!pathsByName.ContainsKey(name))
-                                {
-                                    pathsByName[name] = aspnetDlls[i];
-                                }
-                            }
-                        }
-                    }
+                    ProbeSharedFramework(pathsByName, sharedDir, "Microsoft.AspNetCore.App");
+                    ProbeSharedFramework(pathsByName, sharedDir, "Microsoft.WindowsDesktop.App");
                 }
             }
             // bin 产物——目标项目已 build 输出（优先于 TPA/框架）
@@ -365,6 +348,37 @@ namespace Mau.Development
                 }
             }
             return references;
+        }
+
+        /// <summary>
+        /// 共享框架探测——dotnet/shared/&lt;框架名&gt;/ 最新版本 dll 并入引用集（按名去重；AspNetCore + WindowsDesktop 共用）
+        /// </summary>
+        /// <param name="pathsByName">按名路径表（写）</param>
+        /// <param name="sharedDir">shared 根目录</param>
+        /// <param name="frameworkName">框架目录名（Microsoft.AspNetCore.App / Microsoft.WindowsDesktop.App）</param>
+        private static void ProbeSharedFramework(Dictionary<string, string> pathsByName, string sharedDir, string frameworkName)
+        {
+            string frameworkDir = Path.Combine(sharedDir, frameworkName);
+            if (!Directory.Exists(frameworkDir))
+            {
+                return;
+            }
+            string[] versions = Directory.GetDirectories(frameworkDir);
+            Array.Sort(versions, StringComparer.OrdinalIgnoreCase);
+            if (versions.Length == 0)
+            {
+                return;
+            }
+            string latest = versions[versions.Length - 1];
+            string[] dlls = Directory.GetFiles(latest, "*.dll", SearchOption.TopDirectoryOnly);
+            for (int i = 0; i < dlls.Length; i = i + 1)
+            {
+                string name = Path.GetFileNameWithoutExtension(dlls[i]);
+                if (!pathsByName.ContainsKey(name))
+                {
+                    pathsByName[name] = dlls[i];
+                }
+            }
         }
 
         /// <summary>
