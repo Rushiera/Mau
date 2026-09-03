@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace SetUp
@@ -42,30 +43,44 @@ namespace SetUp
                     return Fail("步3 publish Mau.Cli 失败——基座部署区未生成，中止。");
                 }
 
-                // [段4] 步4：mau proj ×8（工作目录=仓库根——黄金对比/积木索引依赖相对路径；经 Mau-public\Mau.exe 调用）
+                // [段4] 步4：mau proj 全组扫描（工作目录=仓库根——黄金对比/积木索引依赖相对路径；经 Mau-public\Mau.exe 调用）
+                // 扫描化：遍历 corpus/ch4/ 目录，有 .mauproj 即构建（design-ch4-flow-scan §3.1——新增 Flow 零 SetUp 改动）
                 string mauExe = Path.Combine(repoRoot, "Mau-public", "Mau.exe");
                 if (!File.Exists(mauExe))
                 {
                     return Fail("步4 前置缺失：" + mauExe + " 不存在——基座 CLI 未生成。");
                 }
-                string[] groups = new string[]
+                string corpusDir = Path.Combine(repoRoot, "corpus", "ch4");
+                if (!Directory.Exists(corpusDir))
                 {
-                    "QuickCat\\quick_cat.mauproj QuickCat",
-                    "TextCat\\text_cat.mauproj TextCat",
-                    "MauCat\\mau_cat.mauproj MauCat",
-                    "CsCat\\cs_cat.mauproj CsCat",
-                    "ConfigCat\\config_cat.mauproj ConfigCat",
-                    "SearchCat\\search_cat.mauproj SearchCat",
-                    "VisionCat\\vision_cat.mauproj VisionCat",
-                    "TempToolCat\\temp_tool_cat.mauproj TempToolCat",
-                };
-                for (int i = 0; i < groups.Length; i = i + 1)
+                    return Fail("步4 前置缺失：corpus\\ch4 目录不存在——语料堆未就位。");
+                }
+                string[] groupDirs = Directory.GetDirectories(corpusDir);
+                Array.Sort(groupDirs, StringComparer.OrdinalIgnoreCase);
+                List<string> groupBuilds = new List<string>();
+                for (int d = 0; d < groupDirs.Length; d = d + 1)
                 {
-                    string[] parts = groups[i].Split(' ');
-                    string proj = "corpus\\ch4\\" + parts[0];
+                    string[] mauprojs = Directory.GetFiles(groupDirs[d], "*.mauproj");
+                    if (mauprojs.Length == 0)
+                    {
+                        Console.WriteLine("[SetUp] 步4 跳过（目录无 .mauproj）：" + Path.GetFileName(groupDirs[d]));
+                        continue;
+                    }
+                    string groupName = Path.GetFileName(groupDirs[d]);
+                    string projRel = "corpus\\ch4\\" + groupName + "\\" + Path.GetFileName(mauprojs[0]);
+                    groupBuilds.Add(projRel + " " + groupName);
+                }
+                if (groupBuilds.Count == 0)
+                {
+                    return Fail("步4 无任何可构建组——corpus\\ch4 下未发现 .mauproj。");
+                }
+                for (int i = 0; i < groupBuilds.Count; i = i + 1)
+                {
+                    string[] parts = groupBuilds[i].Split(' ');
+                    string proj = parts[0];
                     string outDir = "public\\src\\" + parts[1];
                     string args = "proj " + proj + " -o " + outDir + " --build";
-                    Console.WriteLine("[SetUp] 步4/" + (i + 1) + "/" + groups.Length + "：" + parts[1]);
+                    Console.WriteLine("[SetUp] 步4/" + (i + 1) + "/" + groupBuilds.Count + "：" + parts[1]);
                     if (!RunProcess(mauExe, args, repoRoot))
                     {
                         return Fail("步4 组翻译失败：" + parts[1] + "——中止。");

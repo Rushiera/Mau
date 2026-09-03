@@ -93,20 +93,7 @@ namespace CH4
                     }
                 }
             }
-            // [段2] 工具声明——从工具表动态生成
-            sb.Append(System.Environment.NewLine);
-            sb.Append(System.Environment.NewLine);
-            sb.Append("你有 " + specs.Length.ToString() + " 个工具：");
-            for (int i = 0; i < specs.Length; i++)
-            {
-                sb.Append(System.Environment.NewLine);
-                sb.Append("- ");
-                sb.Append(specs[i].Name);
-                sb.Append(": ");
-                sb.Append(specs[i].Description);
-            }
-            sb.Append(System.Environment.NewLine);
-            sb.Append("工具结果返回后，基于结果继续回答用户；修改语料前先读，改完用 mau-verify 验证。");
+            // [段2] 工具声明已移除——payload["tools"] 是 LLM 唯一工具信息源（design-ch4-tools-pool；系统提示词不重复双写）
             return sb.ToString();
         }
 

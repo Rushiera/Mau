@@ -125,6 +125,21 @@ namespace CH4
             // [段3] 成功路径——换句柄 + 卸载旧 ALC + 预热帧
             oldHandle.TryUnload(3);
             SetCatHandle(cat, newHandle, newId);
+            // 工具定义热同步——新版本 GetToolsJson 可能已变（改 tools.<组> 积木描述 → reload 生效；design-ch4-tools-pool §七）
+            if (name != "QuickCat")
+            {
+                ToolPool.Clear();
+                foreach (KeyValuePair<string, FlowHandle> kv in _toolFlowHandles)
+                {
+                    ToolPool.AddFromFlow(kv.Value.Flow);
+                }
+                if (_quickHandle != null)
+                {
+                    ToolPool.AddFromFlow(_quickHandle.Flow);
+                }
+                ToolPool.AddFromBuiltin(BuildBuiltinToolsJson());
+                ToolRegistry.Init(ToolPool.BuildSpecs(), ToolPool.BuildOwnerFlowMap());
+            }
             for (int i = 0; i < WarmupFrames; i++)
             {
                 _runner.Tick();

@@ -61,11 +61,13 @@ namespace Mau.Translator
             AppendTick(sb, doc);
             AppendGetStatus(sb, doc);
             AppendGetSelfDesc(sb, doc);
+            AppendGetMetaJson(sb, doc, flowName);
+            AppendGetToolsJson(sb, doc, flowName);
             sb.AppendLine("    }");
             sb.AppendLine("}");
             if (embedBricks)
             {
-                AppendBrickSources(sb, doc);
+                AppendBrickSources(sb, doc, flowName);
             }
             result.Code = sb.ToString();
             result.Success = true;

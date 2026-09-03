@@ -382,5 +382,98 @@ private static void AppendWireExecuteParallel(StringBuilder sb, WireDefV3 wire, 
                 sb.AppendLine("                    }");
             }
         }
+/// <summary>
+/// Flow 元数据生成——自曝加载必需信息（组名 + 认领工具清单）的规范化 JSON。
+/// 数据源：IR 主动传感器中 oa.is_open["TOOL", "工具名"] 的参数（语料声明唯一真相）。
+/// 宿主装配（扫描 dll 建路由表）/ 外观层（工具归属展示）统一经 IFlow.GetMetaJson 读取。
+/// </summary>
+/// <param name = "sb">输出缓冲</param>
+/// <param name = "doc">IR</param>
+/// <param name = "flowName">流程名（组名——dll 名 FL_<组名>.dll）</param>
+private static void AppendGetMetaJson(StringBuilder sb, MauDocV3 doc, string flowName)
+{
+        // 认领工具清单——主动传感器 BrickName=oa.is_open 且参数 [0]=="TOOL" → 参数 [1]=工具名（去重保序）
+        // CollectArgs 字符串参数带引号序列化（"TOOL"）——剥引号后比对
+        List<string> claims = new List<string>();
+        for (int s = 0; s < doc.Sensors.Count; s = s + 1)
+        {
+            SensorDefV3 sensor = doc.Sensors[s];
+            if (sensor.Passive)
+            {
+                continue;
+            }
+
+            if (sensor.BrickName != "oa.is_open")
+            {
+                continue;
+            }
+
+            if (sensor.BrickArgs.Count < 2)
+            {
+                continue;
+            }
+
+            string arg0 = sensor.BrickArgs[0].Trim('"');
+            if (arg0 != "TOOL")
+            {
+                continue;
+            }
+
+            string tool = sensor.BrickArgs[1].Trim('"');
+            if (tool.Length > 0 && !claims.Contains(tool))
+            {
+                claims.Add(tool);
+            }
+        }
+
+    // JSON 序列化——工具名白名单安全字符（字母/数字/连字符/下划线），直接拼串
+    string json = "{\"group\":\"" + flowName + "\",\"claims\":[";
+    for (int i = 0; i < claims.Count; i = i + 1)
+    {
+        if (i > 0)
+        {
+            json = json + ",";
+        }
+
+        json = json + "\"" + claims[i] + "\"";
     }
+
+    json = json + "]}";
+    sb.AppendLine("        // ── Flow 元数据（R——自曝：组名 + 认领工具清单；宿主装配/外观层读取共用）──");
+    // C# 字符串字面量转义——json 内引号需转义为 \"（生成物才可编译）
+    string escaped = json.Replace("\"", "\\\"");
+    sb.AppendLine("        private static readonly string _flowMetaJson = \"" + escaped + "\";");
+    sb.AppendLine("        public string GetMetaJson()");
+    sb.AppendLine("        {");
+    sb.AppendLine("            return _flowMetaJson;");
+    sb.AppendLine("        }");
+    sb.AppendLine("");
+}    /// <summary>
+/// 工具定义生成——实现 IFlow.GetToolsJson：调用约定积木 tools.<flowName> 返回本组工具定义 JSON。
+/// 约定积木缺失（非工具组 Flow——如 QuickCat）→ 回退空工具组 JSON（{"group":"<名>","tools":[]}）。
+/// </summary>
+/// <param name = "sb">输出缓冲</param>
+/// <param name = "doc">IR（未用——工具定义在积木侧）</param>
+/// <param name = "flowName">流程名（组名）</param>
+private static void AppendGetToolsJson(StringBuilder sb, MauDocV3 doc, string flowName)
+{
+    string brickName = "tools." + flowName.ToLowerInvariant();
+    BrickIndexEntry entry;
+    string body;
+    if (BrickIndex.TryFind(brickName, out entry) && entry.Implementation.Length > 0)
+    {
+        body = "return " + entry.Implementation + "();";
+    }
+    else
+    {
+        body = "return \"{\\\"group\\\":\\\"" + flowName + "\\\",\\\"tools\\\":[]}\";";
+    }
+
+    sb.AppendLine("        // ── 工具定义（R——本组全部工具的 OpenAI 兼容定义；宿主工具池原料）──");
+    sb.AppendLine("        public string GetToolsJson()");
+    sb.AppendLine("        {");
+    sb.AppendLine("            " + body);
+    sb.AppendLine("        }");
+    sb.AppendLine("");
+}}
 }

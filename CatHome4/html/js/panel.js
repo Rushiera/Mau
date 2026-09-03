@@ -434,7 +434,7 @@ function openCatCfg(catId, name) {
                 catCfgModal.style.display = 'flex';
                 return;
             }
-            catCfgAllTools = d.allToolNames || [];
+            catCfgAllTools = d.allTools || d.allToolNames || [];
             renderApiOptions(d.apiOptions || [], d.apiConfigId || '');
             renderQqBotOptions(d.qqbotOptions || [], d.qqbotId || '');
             document.getElementById('catCfgQqEnable').checked = !!d.qqbotEnable;
@@ -493,16 +493,24 @@ function parseToolChecked(toolNames) {
     return checked;
 }
 
-// 通用分组勾选渲染——按 - 前缀分组（text-*/mau-*/cs-*/config-* 视为一组；无前缀归 other）；组头开关一键全组
+// 通用分组勾选渲染——优先按工具池 group 字段分组（allTools: [{name,group}]——design-ch4-tools-pool §六）；
+// 兼容纯名数组（allToolNames: string[]）回退 - 前缀分组（text-*/mau-* 视为一组；无前缀归 other）；组头开关一键全组
 function renderGroupedChecks(boxId, allTools, checked) {
     var box = document.getElementById(boxId);
     box.textContent = '';
     var groups = {};
     var order = [];
     for (var k = 0; k < allTools.length; k++) {
-        var toolName = allTools[k];
-        var dash = toolName.indexOf('-');
-        var group = dash > 0 ? toolName.substring(0, dash) : 'other';
+        var item = allTools[k];
+        var toolName = typeof item === 'string' ? item : (item && item.name) || '';
+        if (toolName.length === 0) { continue; }
+        var group;
+        if (typeof item === 'object' && item.group) {
+            group = item.group;               // 工具池组别（TextCat/PsCat/...）——统一接口
+        } else {
+            var dash = toolName.indexOf('-');
+            group = dash > 0 ? toolName.substring(0, dash) : 'other';  // 回退前缀
+        }
         if (!groups[group]) { groups[group] = []; order.push(group); }
         groups[group].push(toolName);
     }
@@ -728,7 +736,7 @@ function loadTpl() {
             }
             document.getElementById('tplBaseRole').value = d.baseRole || '';
             document.getElementById('tplPersona').value = d.defaultPersona || '';
-            renderGroupedChecks('tplTools', d.allToolNames || [], parseToolChecked(d.defaultToolNames || ''));
+            renderGroupedChecks('tplTools', d.allTools || d.allToolNames || [], parseToolChecked(d.defaultToolNames || ''));
             tplInjectList = (d.defaultInjectList || []).slice();
             renderTplInject();
         })

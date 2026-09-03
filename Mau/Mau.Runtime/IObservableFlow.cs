@@ -11,6 +11,20 @@
         /// </summary>
         /// <param name="frame">宿主帧号（FlowRunner 统一注入）</param>
         void Tick(int frame);
+
+        /// <summary>
+        /// Flow 自曝元数据——加载必需信息（组名 + 认领工具清单）的规范化 JSON。
+        /// 宿主装配（扫描 dll 建路由表）/ 外观层（工具归属展示）统一经此接口读取——Flow 自己说话。
+        /// </summary>
+        /// <returns>规范化 JSON：{"group":"TextCat","claims":["text-read","text-write"]}</returns>
+        string GetMetaJson();
+
+        /// <summary>
+        /// Flow 自曝工具定义——本组全部工具的 OpenAI 兼容定义（name/description/parameters）JSON。
+        /// 宿主聚合工具池（请求体拼装原料）唯一来源；BRIK tools.&lt;flowName&gt; 提供（改描述只动积木）。
+        /// </summary>
+        /// <returns>规范化 JSON：{"group":"TextCat","tools":[{"name":"text-read","description":"...","parameters":{...}}]}</returns>
+        string GetToolsJson();
     }
 
     /// <summary>

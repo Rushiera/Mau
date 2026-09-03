@@ -30,6 +30,22 @@ namespace Mau.Runtime.Tests
             {
                 TickCount = TickCount + 1;
             }
+
+            /// <summary>
+            /// Flow 自曝元数据——测试桩固定空组
+            /// </summary>
+            public string GetMetaJson()
+            {
+                return "{\"group\":\"\",\"claims\":[]}";
+            }
+
+            /// <summary>
+            /// Flow 自曝工具定义——测试桩固定空工具组
+            /// </summary>
+            public string GetToolsJson()
+            {
+                return "{\"group\":\"\",\"tools\":[]}";
+            }
         }
 
         /// <summary>

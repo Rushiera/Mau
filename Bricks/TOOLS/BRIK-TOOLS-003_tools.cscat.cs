@@ -1,0 +1,39 @@
+﻿// ═══════════════════════════════════════════════════
+// 积木: tools.cscat
+// ID:   BRIK-TOOLS-003
+// 类别: TOOLS
+// 作用: 返回 CsCat 工具组全部工具的 OpenAI 兼容定义 JSON（宿主工具池拼装原料——design-ch4-tools-pool）
+// 依赖: 无
+// 引用: 无（纯文本常量）
+// 原理: GetToolsJson() 返回本组工具定义整包 JSON——改描述只动本文件，mau proj 重建即生效
+// 常用: FL_CsCat.GetToolsJson() 自曝调用面（IFlow 接口）
+// ═══════════════════════════════════════════════════
+namespace Mau.Bricks
+{
+    /// <summary>
+    /// 工具定义积木——CsCat 组工具定义 JSON（OpenAI 兼容拼装原料）
+    /// </summary>
+    public static class ToolsCscatBrick
+    {
+        /// <summary>
+        /// 获取本组工具定义 JSON——{"group":"CsCat","tools":[{name,description,parameters}]}
+        /// </summary>
+        /// <returns>工具定义 JSON 字符串</returns>
+        public static string GetToolsJson()
+        {
+            return "{\"group\":\"CsCat\",\"tools\":[" +
+                "{\"name\":\"cs-check\",\"description\":\"C# 语义快查——项目语法树诊断（增量/毫秒级）；full=true 含警告；实机裁决走 cs-build\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录（受控根内）\"},\"full\":{\"type\":\"boolean\",\"description\":\"true=输出全部警告\"}},\"required\":[\"path\"]}}," +
+                "{\"name\":\"cs-build\",\"description\":\"C# 实机编译——dotnet build 子进程（唯一权威裁决；成功后引用集自动刷新）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"}},\"required\":[\"path\"]}}," +
+                "{\"name\":\"cs-list\",\"description\":\"类/成员签名清单（语法层；class 空=全项目类清单）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名（空=全项目）\"}},\"required\":[\"path\"]}}," +
+                "{\"name\":\"cs-read\",\"description\":\"成员源码 + 方法内行号标注（补丁锚点依据；member 空=类概览）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名（空=类概览）\"}},\"required\":[\"path\",\"class\"]}}," +
+                "{\"name\":\"cs-find_ref\",\"description\":\"成员全引用（含重载全匹配；语义级）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名\"}},\"required\":[\"path\",\"class\",\"member\"]}}," +
+                "{\"name\":\"cs-patch\",\"description\":\"方法体级替换（锚点=类+方法名；body 完整含大括号）——三态：OK 落盘 / ROLLED_BACK 未落盘+诊断 / ERR\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"method\":{\"type\":\"string\",\"description\":\"方法名\"},\"body\":{\"type\":\"string\",\"description\":\"新方法体（含大括号）\"}},\"required\":[\"path\",\"class\",\"method\",\"body\"]}}," +
+                "{\"name\":\"cs-member\",\"description\":\"成员增删改——op=insert(增)/delete(删)/rename(改名 全项目引用同步)\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"op\":{\"type\":\"string\",\"description\":\"insert|delete|rename\"},\"position\":{\"type\":\"string\",\"description\":\"insert 用：end|before|after|after_fields\"},\"anchor\":{\"type\":\"string\",\"description\":\"before/after 用：锚点成员名\"},\"code\":{\"type\":\"string\",\"description\":\"insert 用：完整成员声明源码\"},\"oldName\":{\"type\":\"string\",\"description\":\"rename 用：旧成员名\"},\"newName\":{\"type\":\"string\",\"description\":\"rename 用：新成员名\"}},\"required\":[\"path\",\"class\",\"op\"]}}," +
+                "{\"name\":\"cs-comment\",\"description\":\"XML 注释增改——type=summary/param/returns（param 需 param=参数名）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名（空=类）\"},\"type\":{\"type\":\"string\",\"description\":\"summary|param|returns\"},\"text\":{\"type\":\"string\",\"description\":\"注释文本\"},\"param\":{\"type\":\"string\",\"description\":\"type=param 时的参数名\"}},\"required\":[\"path\",\"class\",\"type\",\"text\"]}}," +
+                "{\"name\":\"cs-dead\",\"description\":\"零引用成员扫描（private/internal；public/override 跳过）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"}},\"required\":[\"path\"]}}," +
+                "{\"name\":\"cs-comment_check\",\"description\":\"缺 summary 注释扫描（类 + 成员；交付自检链三件之一：check 编译 / comment_check 注释 / dead 零引用）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"}},\"required\":[\"path\"]}}" +
+                "]}";
+        }
+    }
+}
+// #MAU_CHECKSUM:SHA256:10529BD6F55AA9B7E288DC652F0B12861C00A64CD943BD0DB80DC4875673E967

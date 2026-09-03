@@ -248,18 +248,42 @@ private static HttpHost _httpHost;
             {
                 Console.WriteLine(line);
             };
-            // [段4] 语料加载——QuickCat（CLI 问答消费者）+ 4 工具组 Flow（R0.2：TextCat/MauCat/CsCat/ConfigCat——独立注册/独立热重载/独立退役）
-            // 工具组容错降级：加载失败 → 警告 + 跳过注册（该组工具工单无人认领 → 宿主 FALLBACK 直执保底——负例路径合法化）
-            _quickHandle = FlowHandle.Load(Path.Combine(dllDir, "FL_QuickCat.dll"));
-            _quickId = _runner.RegisterFlow(_quickHandle.Flow, "QuickCat");
-            LoadToolGroup("TextCat", dllDir);
-            LoadToolGroup("MauCat", dllDir);
-            LoadToolGroup("CsCat", dllDir);
-            LoadToolGroup("ConfigCat", dllDir);
-            LoadToolGroup("SearchCat", dllDir);
-            LoadToolGroup("VisionCat", dllDir);
-            LoadToolGroup("TempToolCat", dllDir);
-            LoadToolGroup("PsCat", dllDir);
+            // [段4] 语料加载——扫描 Flows/FL_*.dll 统一装配（design-ch4-flow-scan §3.2：QuickCat + 全部工具组 Flow）
+            // 扫描化：文件名去 FL_ 前缀得 Flow 名（dll 名 = 组名——QuickCat 与工具组一视同仁）
+            // 容错降级：加载失败 → 警告 + 跳过注册（该组工具工单无人认领 → 宿主 FALLBACK 直执保底——负例路径合法化）
+            // 路由表数据化 + 工具定义数据化：加载后经 IFlow.GetMetaJson/GetToolsJson 读自曝 → 统一工具池（design-ch4-tools-pool §六）
+            ToolPool.Clear();
+            string[] flowDlls = Directory.GetFiles(dllDir, "FL_*.dll");
+            Array.Sort(flowDlls, StringComparer.OrdinalIgnoreCase);
+            for (int f = 0; f < flowDlls.Length; f = f + 1)
+            {
+                string flowName = Path.GetFileNameWithoutExtension(flowDlls[f]);
+                if (flowName.StartsWith("FL_", StringComparison.Ordinal))
+                {
+                    flowName = flowName.Substring(3);
+                }
+                if (flowName.Length == 0)
+                {
+                    continue;
+                }
+                if (flowName == "QuickCat")
+                {
+                    // QuickCat 特殊字段——ObserveService/Reload/Run 引用（独立于工具组句柄表）
+                    _quickHandle = FlowHandle.Load(flowDlls[f]);
+                    _quickId = _runner.RegisterFlow(_quickHandle.Flow, "QuickCat");
+                    ToolPool.AddFromFlow(_quickHandle.Flow);
+                }
+                else
+                {
+                    FlowHandle handle = LoadToolGroup(flowName, dllDir);
+                    if (handle != null)
+                    {
+                        ToolPool.AddFromFlow(handle.Flow);
+                    }
+                }
+            }
+            // 内置工具定义源——宿主内建小表（本质也是 BRIK，只是内置：Note/time/random/info/host-*）
+            ToolPool.AddFromBuiltin(BuildBuiltinToolsJson());
             // [段5] 会话面——上下文 + 前文恢复 + 工具定义 + 默认会话注册（P9.1 会话对象化：ChatSession 承载状态机——design-llm-streaming §六）
             ChatContext chatCtx = new ChatContext();
             // S1 ChatBridge 化——会话协调实例（注入提示词构建委托——CatCfg 域静态面 BuildInjectPrompt）
@@ -274,6 +298,15 @@ private static HttpHost _httpHost;
             // M1 默认猫——API 配置身份从 sessions/majordomo/cat.cfg 读取；缺省 Guid.Empty=默认端点语义（每次调用实时解析）
             // M2 默认猫同构——persona/toolNames/injectList 三字段同迁（每猫配置完全独立；注入源从 workspace.inject 切到 cat.cfg）
             Guid defaultApiConfigId = Guid.Empty;
+            // R0.2 工具注册表——统一工具池灌入（Flow 自曝工具定义 + 内置定义源；替代 BuildToolSpecs 人工表）
+            // 🔴 必须先于 EnsureMajordomoCfg——SaveCatCfgData 内 ValidateToolNames 依赖注册表（空表 → 模板工具全被过滤）
+            ToolRegistry.Init(ToolPool.BuildSpecs(), ToolPool.BuildOwnerFlowMap());
+            // 工具池摘要——启动观测（工具总数 + 组别分布；design-ch4-tools-pool §六）
+            string poolSummary = "工具池已聚合：" + ToolPool.AllNames().Length.ToString() + " 个工具 / " + ToolPool.AllGroups().Length.ToString() + " 个组";
+            LogStore.Add("CatHome4", 1, poolSummary, "CONFIG");
+            Console.WriteLine("[CatHome4] " + poolSummary);
+            // 默认猫 cat.cfg 补建——缺失时按全局默认模板创建（新用户无 cfg 必然态；运行时缺省回退 → 启动落盘）
+            AdminService.EnsureMajordomoCfg();
             AdminService.CatCfgData defaultCfg = AdminService.LoadCatCfg(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "cat.cfg"));
             _chatBridge.DefaultPersona = "";
             _chatBridge.DefaultInjectList = new string[0];
@@ -301,8 +334,6 @@ private static HttpHost _httpHost;
                     defaultToolNames = defaultCfg.ToolNames;
                 }
             }
-            // R0.2 工具注册表——静态表灌入（声明单一真相源 = 注册表；须在声明面裁剪前 Init——FilterToolSpecs 消费注册表）
-            ToolRegistry.Init(BuildToolSpecs());
             // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）；session.new 重注入复用
             _chatBridge.DefaultToolSpecs = FilterToolSpecs(ResolveToolNames(defaultToolNames));
             AdminService._defaultApiConfigId = defaultApiConfigId;
@@ -574,7 +605,7 @@ private static HttpHost _httpHost;
         /// </summary>
         /// <param name="flowName">工具组 Flow 名（TextCat/MauCat/CsCat/ConfigCat——dll = FL_&lt;名&gt;.dll）</param>
         /// <param name="dllDir">语料 dll 目录</param>
-        private static void LoadToolGroup(string flowName, string dllDir)
+        private static FlowHandle LoadToolGroup(string flowName, string dllDir)
         {
             try
             {
@@ -582,10 +613,54 @@ private static HttpHost _httpHost;
                 long id = _runner.RegisterFlow(handle.Flow, flowName);
                 _toolFlowHandles[flowName] = handle;
                 _toolFlowIds[flowName] = id;
+                return handle;
             }
             catch (Exception ex)
             {
                 Console.WriteLine("[CatHome4] 警告: FL_" + flowName + ".dll 加载失败——该组工具降级 FALLBACK 直执: " + ex.Message);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Flow 元数据收集——经 IFlow.GetMetaJson 读自曝元数据（组名 + 认领工具清单）→ 工具名 → 归属 Flow 映射。
+        /// 路由表数据化：OwnerFlow 不再前缀推断，来自语料声明（design-ch4-flow-scan §3.3）。
+        /// </summary>
+        /// <param name="flow">已加载 Flow 实例</param>
+        /// <param name="flowName">Flow 名（dll 名去 FL_ 前缀）</param>
+        /// <param name="map">收集目标映射（工具名 → Flow 名）</param>
+        private static void CollectFlowMeta(IFlow flow, string flowName, Dictionary<string, string> map)
+        {
+            try
+            {
+                string json = flow.GetMetaJson();
+                if (json == null || json.Length == 0)
+                {
+                    return;
+                }
+                using (JsonDocument doc = JsonDocument.Parse(json))
+                {
+                    JsonElement claims;
+                    if (doc.RootElement.TryGetProperty("claims", out claims) && claims.ValueKind == JsonValueKind.Array)
+                    {
+                        for (int i = 0; i < claims.GetArrayLength(); i = i + 1)
+                        {
+                            JsonElement item = claims[i];
+                            if (item.ValueKind == JsonValueKind.String)
+                            {
+                                string tool = item.GetString();
+                                if (tool != null && tool.Length > 0)
+                                {
+                                    map[tool] = flowName;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // 元数据解析失败——路由表缺该 Flow 条目（OwnerFlow 回退前缀映射或空归属）
             }
         }
         /// <summary>

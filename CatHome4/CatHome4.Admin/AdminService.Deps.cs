@@ -86,6 +86,21 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
+        /// 全量工具清单（含组别）——统一工具池派生（design-ch4-tools-pool §六：配置界面组别/名称自动生成统一走池）。
+        /// </summary>
+        /// <returns>工具名+组别数组（name/group）</returns>
+        internal static object[] GetAllToolsWithGroup()
+        {
+            ToolDef[] defs = ToolPool.All();
+            object[] result = new object[defs.Length];
+            for (int i = 0; i < defs.Length; i = i + 1)
+            {
+                result[i] = new { name = defs[i].Name, group = defs[i].Group };
+            }
+            return result;
+        }
+
+        /// <summary>
         /// 工具名比对——线性扫描内置清单。
         /// </summary>
         /// <param name="names">清单数组</param>

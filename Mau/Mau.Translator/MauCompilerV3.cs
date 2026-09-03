@@ -156,7 +156,7 @@ namespace Mau.Translator
                 }
                 docs.Add(doc);
             }
-            group.BrickGroupSource = MauGeneratorV3.GenerateBrickGroup(docs);
+            group.BrickGroupSource = MauGeneratorV3.GenerateBrickGroup(docs, flowNames);
             group.Success = true;
             return group;
         }

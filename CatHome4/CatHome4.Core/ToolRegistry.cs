@@ -38,16 +38,27 @@ namespace CH4
 
         /// <summary>
         /// 注册表初始化——静态表灌入（R0.2：声明单一真相源 = 注册表；静态表仅作初始数据）
-        /// OwnerFlow 按工具名前缀映射工具组 Flow；Note/host-* 标记内置（不走 OA）
+        /// OwnerFlow 优先从 Flow 自曝元数据映射（design-ch4-flow-scan §3.3——宿主扫描 dll 后传入）；
+        /// 映射缺失回退前缀映射 OwnerFlowFor；Note/host-* 标记内置（不走 OA）
         /// </summary>
         /// <param name="specs">初始工具声明表（Program.BuildToolSpecs 产物）</param>
-        public static void Init(ToolSpec[] specs)
+        /// <param name="ownerFlowMap">工具名 → 归属 Flow 名映射（null=回退前缀映射）</param>
+        public static void Init(ToolSpec[] specs, Dictionary<string, string> ownerFlowMap)
         {
             for (int i = 0; i < specs.Length; i++)
             {
                 ToolSpec s = specs[i];
                 bool builtin = s.Name == "Note" || s.Name == "time" || s.Name == "random" || s.Name == "info" || s.Name.StartsWith("host-", StringComparison.Ordinal);
-                Register(s.Name, s, OwnerFlowFor(s.Name), builtin);
+                string ownerFlow = "";
+                if (ownerFlowMap != null && ownerFlowMap.TryGetValue(s.Name, out ownerFlow))
+                {
+                    // 路由表数据化——Flow 自曝元数据（design-ch4-flow-scan §3.3）
+                }
+                else
+                {
+                    ownerFlow = OwnerFlowFor(s.Name);
+                }
+                Register(s.Name, s, ownerFlow, builtin);
             }
         }
 

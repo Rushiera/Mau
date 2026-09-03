@@ -593,6 +593,7 @@ namespace CatHome4.Admin
                 enabledRoots = cfg.EnabledRoots,
                 allRoots = BuildAllRootsJson(),
                 allToolNames = GetAllToolNames(),
+                allTools = GetAllToolsWithGroup(),
                 apiOptions = apiOptions,
                 qqbotOptions = qqbotOptions
             };
@@ -761,7 +762,8 @@ namespace CatHome4.Admin
                 defaultPersona = defaultPersona,
                 defaultToolNames = defaultToolNames,
                 defaultInjectList = defaultInjectList,
-                allToolNames = GetAllToolNames()
+                allToolNames = GetAllToolNames(),
+                allTools = GetAllToolsWithGroup()
             };
             return Results.Json(resp);
         }
@@ -1281,5 +1283,42 @@ namespace CatHome4.Admin
             }
             return key.Substring(0, 4) + "****" + key.Substring(key.Length - 4);
         }
+/// <summary>
+/// majordomo 默认猫 cat.cfg 补建——缺失时按全局默认模板创建（新用户无 cfg 是必然态；模板值 = 初次部署状态权威）。
+/// 已存在不覆盖——尊重用户已保存配置；模板缺失回退空默认（与运行时缺省回退语义一致）。
+/// </summary>
+internal static void EnsureMajordomoCfg()
+{
+    string path = Path.Combine(_dataRoot, "Data", "sessions", "majordomo", "cat.cfg");
+    if (File.Exists(path))
+    {
+        return;
     }
+
+    CatDefaultCfgData tpl = LoadCatDefaultCfg();
+    CatCfgData data = new CatCfgData();
+    data.Id = "majordomo";
+    data.DisplayName = "majordomo";
+    data.Running = false;
+    data.Port = 0;
+    data.ApiConfigId = "";
+    data.QqBotId = "";
+    data.QqBotEnable = false;
+    data.EnabledRoots = null;
+    if (tpl != null)
+    {
+        data.Persona = tpl.DefaultPersona != null ? tpl.DefaultPersona : "";
+        data.ToolNames = tpl.DefaultToolNames != null ? tpl.DefaultToolNames : "";
+        data.InjectList = tpl.DefaultInjectList != null ? tpl.DefaultInjectList : new string[0];
+    }
+    else
+    {
+        data.Persona = "";
+        data.ToolNames = "";
+        data.InjectList = new string[0];
+    }
+
+    SaveCatCfgData("majordomo", data);
+    LogStore.Add("CatHome4", 1, "majordomo cat.cfg 缺失——已按默认模板补建", "CONFIG");
+}    }
 }

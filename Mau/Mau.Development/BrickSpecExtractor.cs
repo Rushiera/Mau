@@ -234,6 +234,7 @@ namespace Mau.Development
             }
             List<MethodDeclarationSyntax> boolMethods = new List<MethodDeclarationSyntax>();
             List<MethodDeclarationSyntax> voidMethods = new List<MethodDeclarationSyntax>();
+            List<MethodDeclarationSyntax> stringMethods = new List<MethodDeclarationSyntax>();
             List<ClassDeclarationSyntax> classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
             for (int c = 0; c < classes.Count; c++)
             {
@@ -267,6 +268,10 @@ namespace Mau.Development
                     {
                         voidMethods.Add(method);
                     }
+                    else if (retType.Keyword.IsKind(SyntaxKind.StringKeyword))
+                    {
+                        stringMethods.Add(method);
+                    }
                 }
             }
             MethodDeclarationSyntax target = null;
@@ -280,6 +285,11 @@ namespace Mau.Development
             {
                 target = voidMethods[0];
                 returnKind = "Void";
+            }
+            else if (stringMethods.Count > 0)
+            {
+                target = stringMethods[0];
+                returnKind = "String";
             }
             if (target == null)
             {

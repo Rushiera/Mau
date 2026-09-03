@@ -87,6 +87,14 @@ private static readonly object _ensureLock = new object ();        /// <summary>
                 "        {\n" +
                 "            return new string[0];\n" +
                 "        }\n" +
+                "        public string GetMetaJson()\n" +
+                "        {\n" +
+                "            return \"{\\\"group\\\":\\\"TickThrows\\\",\\\"claims\\\":[]}\";\n" +
+                "        }\n" +
+                "        public string GetToolsJson()\n" +
+                "        {\n" +
+                "            return \"{\\\"group\\\":\\\"TickThrows\\\",\\\"tools\\\":[]}\";\n" +
+                "        }\n" +
                 "    }\n" +
                 "}\n";
             Build(source, "FL_TickThrows", tickThrowsDll);

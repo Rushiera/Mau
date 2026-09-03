@@ -1,6 +1,6 @@
 ﻿# Mau 积木索引 — INDEX
 
-> 版本：v3.3 | 更新：2026-09-02（mau bricks index --update 源码驱动重建）
+> 版本：v3.3 | 更新：2026-09-03（mau bricks index --update 源码驱动重建）
 > 全量积木登记——一行一条。ID 永不重用。
 
 ## 全部积木
@@ -50,9 +50,17 @@
 | BRIK-TEXT-009 | text.grep | TEXT | TEXT/BRIK-TEXT-009_text.grep.cs | 无 | active |  |
 | BRIK-TEXT-010 | text.move | TEXT | TEXT/BRIK-TEXT-010_text.move.cs | 无 | active |  |
 | BRIK-TEXT-011 | text.delete | TEXT | TEXT/BRIK-TEXT-011_text.delete.cs | 无 | active |  |
+| BRIK-TOOLS-001 | tools.textcat | TOOLS | TOOLS/BRIK-TOOLS-001_tools.textcat.cs | 无 | active |  |
+| BRIK-TOOLS-002 | tools.maucat | TOOLS | TOOLS/BRIK-TOOLS-002_tools.maucat.cs | 无 | active |  |
+| BRIK-TOOLS-003 | tools.cscat | TOOLS | TOOLS/BRIK-TOOLS-003_tools.cscat.cs | 无 | active |  |
+| BRIK-TOOLS-004 | tools.configcat | TOOLS | TOOLS/BRIK-TOOLS-004_tools.configcat.cs | 无 | active |  |
+| BRIK-TOOLS-005 | tools.searchcat | TOOLS | TOOLS/BRIK-TOOLS-005_tools.searchcat.cs | 无 | active |  |
+| BRIK-TOOLS-006 | tools.visioncat | TOOLS | TOOLS/BRIK-TOOLS-006_tools.visioncat.cs | 无 | active |  |
+| BRIK-TOOLS-007 | tools.temptoolcat | TOOLS | TOOLS/BRIK-TOOLS-007_tools.temptoolcat.cs | 无 | active |  |
+| BRIK-TOOLS-008 | tools.pscat | TOOLS | TOOLS/BRIK-TOOLS-008_tools.pscat.cs | 无 | active |  |
 | BRIK-VISION-001 | vision.analyze | VISION | VISION/BRIK-VISION-001_vision.analyze.cs | 无 | active |  |
 | BRIK-WEB-001 | web.search | WEB | WEB/BRIK-WEB-001_web.search.cs | 无 | active |  |
 
 ---
 
-_版本：v3.3 | 2026-09-02 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_
+_版本：v3.3 | 2026-09-03 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_
