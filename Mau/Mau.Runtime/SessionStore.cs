@@ -6,6 +6,24 @@ using System.Text.Json;
 namespace Mau.Runtime
 {
     /// <summary>
+    /// 会话统计——前文真实 usage 持久化（CloseRound 写入；旧文件缺字段兼容——可空）。
+    /// 只存真实值（LLM usage 回传），不做任何估算。
+    /// </summary>
+    public struct SessionStats
+    {
+        /// <summary>消息条数——真实前文消息数（含 system）</summary>
+        public long EntryCount;
+
+        /// <summary>最近一轮真实 prompt token——命中 + 非命中总和（usage.prompt_tokens）</summary>
+        public long LastPromptTokens;
+
+        /// <summary>最近一轮缓存命中 token（usage.prompt_tokens_details.cached_tokens）</summary>
+        public long LastCacheHitTokens;
+
+        /// <summary>最近一轮输出 token（usage.completion_tokens）</summary>
+        public long LastCompletionTokens;
+    }
+    /// <summary>
     /// 会话前文管理器——MajorDomoCat 消息历史落盘（2026-08-16 下沉 Mau.Runtime，借鉴 CH3 ICatContextStore 形态）。
     /// 落盘：Data/sessions/majordomo.json（system + messages JSON）。
     /// 策略：只保存/恢复 + 基础结构修复——上下文策略（截断/预算）P5 不做。
@@ -33,7 +51,20 @@ namespace Mau.Runtime
         /// <returns>true=加载成功</returns>
         public bool TryLoad(out LlmMessage[] messages)
         {
+            SessionStats? stats;
+            return TryLoad(out messages, out stats);
+        }
+
+        /// <summary>
+        /// 尝试加载前文含统计——文件不存在返回 false；损坏 JSON 返回 false（保留原文件，不覆盖破坏）
+        /// </summary>
+        /// <param name="messages">加载的消息数组</param>
+        /// <param name="stats">会话统计（可空=旧文件无统计）</param>
+        /// <returns>true=加载成功</returns>
+        public bool TryLoad(out LlmMessage[] messages, out SessionStats? stats)
+        {
             messages = new LlmMessage[0];
+            stats = null;
             if (!File.Exists(_path))
             {
                 return false;
@@ -51,6 +82,7 @@ namespace Mau.Runtime
                     return false;
                 }
                 messages = data.Messages;
+                stats = data.Stats;
                 return true;
             }
             catch (Exception)
@@ -62,10 +94,20 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 保存前文——全量覆写会话文件
+        /// 保存前文——全量覆写会话文件（无统计——委托带统计重载）
         /// </summary>
         /// <param name="messages">消息数组</param>
         public void Save(LlmMessage[] messages)
+        {
+            Save(messages, null);
+        }
+
+        /// <summary>
+        /// 保存前文含统计——全量覆写会话文件（stats 可空=不写统计；旧文件兼容）
+        /// </summary>
+        /// <param name="messages">消息数组</param>
+        /// <param name="stats">会话统计（真实 usage；可空=缺省）</param>
+        public void Save(LlmMessage[] messages, SessionStats? stats)
         {
             try
             {
@@ -76,6 +118,7 @@ namespace Mau.Runtime
                 }
                 SessionFileData data = new SessionFileData();
                 data.Messages = messages;
+                data.Stats = stats;
                 // LlmMessage 是 struct——字段序列化需 IncludeFields（System.Text.Json 默认只序列化属性）
                 JsonSerializerOptions options = new JsonSerializerOptions();
                 options.IncludeFields = true;
@@ -97,6 +140,11 @@ namespace Mau.Runtime
             /// 消息数组
             /// </summary>
             public LlmMessage[]? Messages { get; set; }
+
+            /// <summary>
+            /// 会话统计——真实 usage（可空=旧文件无统计）
+            /// </summary>
+            public SessionStats? Stats { get; set; }
         }
 
         /// <summary>

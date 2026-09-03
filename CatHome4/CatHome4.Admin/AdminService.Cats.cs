@@ -550,7 +550,8 @@ namespace CatHome4.Admin
                 ChatContext context = new ChatContext();
                 SessionStore store = new SessionStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".json"));
                 LlmMessage[] restored;
-                if (store.TryLoad(out restored))
+                SessionStats? restoredStats;
+                if (store.TryLoad(out restored, out restoredStats))
                 {
                     context.ReplaceMessages(restored);
                 }
@@ -571,6 +572,8 @@ namespace CatHome4.Admin
                 AdminService.ApplyCatRoots(id);
                 session.AttachEnvInfo(() => BuildEnvInfoProvider());
                 session.RebuildView();
+                // E3 前文统计——启动恢复持久化真实 usage（旧文件 null=零值）
+                session.SetLoadedStats(restoredStats);
                 _chatBridge.RegisterSession(session);
                 CatEntry cat = new CatEntry();
                 cat.Id = id;
@@ -698,6 +701,29 @@ namespace CatHome4.Admin
                 return exact;
             }
             return prefix;
+        }
+
+        /// <summary>
+        /// 猫会话统计——info 自查数据源（M4e 猫级白名单同源寻址；majordomo 走默认会话）。
+        /// </summary>
+        /// <param name="key">猫键（id/显示名；null=默认会话）</param>
+        /// <returns>会话统计；未找到 null</returns>
+        internal static SessionStats? GetCatStats(string key)
+        {
+            if (key == null || key.Length == 0 || key == "majordomo")
+            {
+                if (_chatBridge != null && _chatBridge.DefaultSession != null)
+                {
+                    return _chatBridge.DefaultSession.LastStats;
+                }
+                return null;
+            }
+            CatEntry cat = FindCat(key);
+            if (cat != null && cat.Session != null)
+            {
+                return cat.Session.LastStats;
+            }
+            return null;
         }
 
         /// <summary>

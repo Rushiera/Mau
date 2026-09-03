@@ -34,10 +34,11 @@ namespace CH4
         /// <param name="specs">工具声明表</param>
         /// <param name="persona">角色段</param>
         /// <param name="injectList">注入清单</param>
-        /// <returns>系统提示词</returns>
-        private static string BuildInjectPrompt(WorkspaceConfig workspace, ToolSpec[] specs, string persona, string[] injectList)
+        /// <returns>注入提示词构建结果——提示词 + 逐文件结果（问题二：前文加载明细可见性）</returns>
+        private static InjectPromptResult BuildInjectPrompt(WorkspaceConfig workspace, ToolSpec[] specs, string persona, string[] injectList)
         {
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            List<InjectFileResult> fileResults = new List<InjectFileResult>();
             // [段0] 基础角色段——全局模板 baseRole（空=无基础角色行；模板缺失回退内置文案——行为不倒退）
             AdminService.CatDefaultCfgData tpl = AdminService.LoadCatDefaultCfg();
             string baseRole = AdminService.FallbackBaseRole;
@@ -58,6 +59,7 @@ namespace CH4
                 sb.Append(persona.Trim());
             }
             // [段1] 注入知识——按每猫 injectList 顺序读取（M2d：不再走全局 workspace.inject；寻址复用受控根 id: 命名空间；缺失跳过不阻断会话）
+            // 问题二扩展——逐文件结果收集（ok/missing/error + 字符数），HandleSessionNew 生成注入报告
             if (workspace != null && injectList != null && injectList.Length > 0)
             {
                 sb.Append(System.Environment.NewLine);
@@ -66,6 +68,11 @@ namespace CH4
                 for (int i = 0; i < injectList.Length; i++)
                 {
                     string file = injectList[i];
+                    InjectFileResult fr = new InjectFileResult();
+                    fr.File = file;
+                    fr.Status = "error";
+                    fr.Message = "";
+                    fr.Chars = 0;
                     try
                     {
                         WorkspaceConfig.InjectEntry entry = new WorkspaceConfig.InjectEntry();
@@ -76,6 +83,9 @@ namespace CH4
                         if (!File.Exists(path))
                         {
                             LogStore.Add("CatHome4", 2, "注入缺失：" + file + "（可选，已跳过）", "INJECT");
+                            fr.Status = "missing";
+                            fr.Message = "文件不存在（可选，已跳过）";
+                            fileResults.Add(fr);
                             continue;
                         }
                         string content = File.ReadAllText(path);
@@ -86,15 +96,25 @@ namespace CH4
                         sb.Append(" =====");
                         sb.Append(System.Environment.NewLine);
                         sb.Append(content);
+                        fr.Status = "ok";
+                        fr.Chars = content.Length;
+                        fr.Message = "";
+                        fileResults.Add(fr);
                     }
                     catch (Exception ex)
                     {
                         LogStore.Add("CatHome4", 2, "注入失败：" + file + "（" + ex.Message + "）", "INJECT");
+                        fr.Status = "error";
+                        fr.Message = ex.Message;
+                        fileResults.Add(fr);
                     }
                 }
             }
             // [段2] 工具声明已移除——payload["tools"] 是 LLM 唯一工具信息源（design-ch4-tools-pool；系统提示词不重复双写）
-            return sb.ToString();
+            InjectPromptResult result = new InjectPromptResult();
+            result.Prompt = sb.ToString();
+            result.Files = fileResults;
+            return result;
         }
 
         /// <summary>

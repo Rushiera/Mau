@@ -23,6 +23,20 @@ namespace CH4
 
         /// <summary>待配对工具——assistant 工具调用登记，tool 结果到达时生成工具卡块</summary>
         private readonly List<PendingTool> _pendingTools = new List<PendingTool>();
+/// <summary>
+/// 注入报告——session.new 时生成（独立字段：非真实前文派生，Rebuild 不清；Save 落盘）
+/// </summary>
+private string _injectReport = ""; 
+/// <summary>
+/// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）
+/// </summary>
+/// <param name = "json">注入报告 JSON（file/status/…）</param>
+ public  void  SetInjectReport ( string  json ) { _injectReport  =  json ?? "" ;  } 
+/// <summary>
+/// 注入报告 JSON——读（前端渲染/历史重建数据源；空串=无注入报告）
+/// </summary>
+/// <returns>注入报告 JSON</returns>
+ public  string  GetInjectReport ( ) { return  _injectReport ;  }
 
         /// <summary>待配对工具条目</summary>
         private sealed class PendingTool
@@ -48,6 +62,9 @@ namespace CH4
 
             /// <summary>视图块数组（按到达序——重建后重新生成）</summary>
             public ViewBlock[] Blocks { get; set; }
+
+            /// <summary>注入报告 JSON——会话元数据（非真实前文派生；Rebuild 不清，Save 落盘）</summary>
+            public string InjectReport { get; set; }
         }
 
         /// <summary>
@@ -61,10 +78,25 @@ namespace CH4
 
         /// <summary>内存视图块——按生成序（history 数据源）</summary>
         public ViewBlock[] GetBlocks()
-        {
+{
+            // 注入报告合成首块——会话元数据（非真实前文派生；前端首块渲染前文加载明细）
+            if (_injectReport.Length > 0)
+            {
+                ViewBlock[] withReport = new ViewBlock[_blocks.Count + 1];
+                ViewBlock report = new ViewBlock();
+                report.Frame = 0;
+                report.Hash = "inject_report";
+                report.RenderType = "inject_report";
+                report.Payload = _injectReport;
+                withReport[0] = report;
+                for (int i = 0; i < _blocks.Count; i = i + 1)
+                {
+                    withReport[i + 1] = _blocks[i];
+                }
+                return withReport;
+            }
             return _blocks.ToArray();
         }
-
         /// <summary>
         /// 真实前文 append 钩子——用户消息 → user 块
         /// </summary>
@@ -181,7 +213,7 @@ namespace CH4
         /// 视图文件落盘——全量覆写（CloseRound 与真实前文同批；流式中间态不含）
         /// </summary>
         public void Save()
-        {
+{
             try
             {
                 string dir = Path.GetDirectoryName(_path);
@@ -193,6 +225,7 @@ namespace CH4
                 data.Version = 1;
                 data.SessionId = "";
                 data.Blocks = _blocks.ToArray();
+                data.InjectReport = _injectReport;
                 JsonSerializerOptions options = new JsonSerializerOptions();
                 options.IncludeFields = true;
                 string json = JsonSerializer.Serialize(data, options);
@@ -203,16 +236,16 @@ namespace CH4
                 // 保存失败不阻断会话（下次收工再试）——视图是派生态，真实前文可重建
             }
         }
-
         /// <summary>
         /// 清空视图层——session.new 清前文时同步（真实前文 Clear 后视图随生命周期清理）
         /// </summary>
         public void Clear()
-        {
+{
             _blocks.Clear();
             _pendingTools.Clear();
+            // 注入报告随视图层清理——session.new 后 HandleSessionNew 重新 Set + Save
+            _injectReport = "";
         }
-
         /// <summary>
         /// 生成视图块——内容哈希 = 真实前文单块完整字段 SHA256（裁决：前文块哈希作唯一标识）
         /// </summary>
@@ -334,5 +367,30 @@ namespace CH4
                 return sb.ToString();
             }
         }
+/// <summary>
+/// 加载注入报告——启动恢复时调用（Rebuild 后读回；view.json 缺失/损坏静默空报告）
+/// </summary>
+public void LoadInjectReport()
+{
+    try
+    {
+        if (!System.IO.File.Exists(_path))
+        {
+            return;
+        }
+
+        string json = System.IO.File.ReadAllText(_path);
+        JsonSerializerOptions options = new JsonSerializerOptions();
+        options.IncludeFields = true;
+        ViewFileData data = JsonSerializer.Deserialize<ViewFileData>(json, options);
+        if (data != null && data.InjectReport != null)
+        {
+            _injectReport = data.InjectReport;
+        }
     }
+    catch (Exception)
+    {
+    // 加载失败静默——注入报告缺失不阻断（视图可重建）
+    }
+}    }
 }

@@ -19,6 +19,7 @@ var CHAT_SESSION = '';
 var CHAT_TIMEOUT_MS = 120000;
 var chatPending = [];              // 插话队列——本地发送记录（user 事件到达 FIFO 移除；纯展示）
 var SYSTEM_AUTO_PREFIX = '[SystemAuto] ';   // 系统自动消息前缀（前端常量一处定义，微调只动此行）
+var chatPendingReset = false;      // 会话重置待确认——chatNewSession 置位；session_reset/chatdone 消费（miss 兜底）
 
 // E 系列——四态状态条（link 链路/think 思考/tool 工具/reply 回复）+ 每态计时 + Token 统计（CH2 对话流形态移植）
 var chatPhases = [
@@ -198,6 +199,37 @@ function chatReasonBlock(text) {
     return det;
 }
 
+// 注入报告 HTML——新会话前文加载明细（ok/missing/error 三态 + 字符数；history 首块渲染）
+function chatInjectReportHtml(p) {
+    var files = p.files || [];
+    var total = p.total || 0;
+    var ok = p.ok || 0;
+    var missing = p.missing || 0;
+    var failed = p.failed || 0;
+    var html = '<div class="inject-report">'
+        + '<div class="ir-head">📚 前文加载：' + ok + '/' + total + ' 成功'
+        + (missing > 0 ? ' · 缺失 ' + missing : '')
+        + (failed > 0 ? ' · 失败 ' + failed : '')
+        + '</div>';
+    if (files.length > 0) {
+        html += '<div class="ir-list">';
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            var icon = '✅';
+            var cls = 'ok';
+            if (f.status === 'missing') { icon = '⚠️'; cls = 'missing'; }
+            else if (f.status === 'error') { icon = '❌'; cls = 'error'; }
+            html += '<div class="ir-item ' + cls + '">' + icon + ' ' + escapeHtml(f.file || '')
+                + (f.status === 'ok' && f.chars > 0 ? '（' + f.chars + ' 字符）' : '')
+                + (f.message ? ' — ' + escapeHtml(f.message) : '')
+                + '</div>';
+        }
+        html += '</div>';
+    }
+    html += '</div>';
+    return html;
+}
+
 function chatRenderHistory(data) {
     // F4 视图块历史渲染——按 blocks[] renderType 分派（view 协议；无 messages[] 旧结构）
     chatMsgs.textContent = '';
@@ -226,6 +258,10 @@ function chatRenderHistory(data) {
             var rtb = chatBubble('assistant', 'retry');
             rtb.textContent = txt;
             if (st === 'resolved') { rtb.classList.add('resolved'); }
+        } else if (blk.renderType === 'inject_report') {
+            // 注入报告——新会话前文加载明细（ok/missing/error 三态 + 字符数；独立持久化字段 Rebuild 不清）
+            var rb2 = chatBubble('assistant', 'inject');
+            rb2.innerHTML = chatInjectReportHtml(p);
         } else if (blk.renderType === 'text') {
             // F3 MD 渲染——历史 text 块同样走解析器（与实时渲染一致）；md-block 包裹=CSS 作用域锚点
             var cb = chatBubble('assistant');
@@ -236,7 +272,14 @@ function chatRenderHistory(data) {
     if (data.sessionId) {
         CHAT_SESSION = data.sessionId;
     }
-    chatInfo.textContent = '会话 ' + (data.count || 0) + ' 条 | sessionId=' + CHAT_SESSION;
+    var infoText = '会话 ' + (data.count || 0) + ' 条 | sessionId=' + CHAT_SESSION;
+    var hs = data.stats;
+    if (hs) {
+        var hMiss = (hs.prompt || 0) - (hs.cacheHit || 0);
+        if (hMiss < 0) { hMiss = 0; }
+        infoText += ' | 前文 ' + (hs.prompt || 0) + ' tokens（命中 ' + (hs.cacheHit || 0) + ' / 非命中 ' + hMiss + '）· 输出 ' + (hs.completion || 0);
+    }
+    chatInfo.textContent = infoText;
     chatScrollBottom(true);
 }
 
@@ -490,6 +533,14 @@ function chatOnControl(payload) {
         viewContainers = {};
         if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
         chatSetState('idle');
+    } else if (type === 'session_reset') {
+        // 会话重置——session.new 清前文后显式信号（问题一修复：消除本地抢跑竞态；收到即清空再拉 history）
+        chatPendingReset = false;
+        viewContainers = {};
+        chatPhaseResetFull();
+        chatMsgs.textContent = '';
+        chatInfo.textContent = '新会话——注入完成，重建中…';
+        chatLoadHistory();
     } else if (type === 'chatdone') {
         // 会话终态——seal 全部流式容器 + 未回填兜底已由 toolcard 整块覆盖 + 恢复 idle
         chatPhaseReset();
@@ -502,7 +553,19 @@ function chatOnControl(payload) {
         }
         viewContainers = {};
         if (payload.count !== undefined) {
-            chatInfo.textContent = '会话 ' + payload.count + ' 条 | sessionId=' + CHAT_SESSION;
+            var doneText = '会话 ' + payload.count + ' 条 | sessionId=' + CHAT_SESSION;
+            var ds = payload.stats;
+            if (ds) {
+                var dMiss = (ds.prompt || 0) - (ds.cacheHit || 0);
+                if (dMiss < 0) { dMiss = 0; }
+                doneText += ' | 前文 ' + (ds.prompt || 0) + ' tokens（命中 ' + (ds.cacheHit || 0) + ' / 非命中 ' + dMiss + '）· 输出 ' + (ds.completion || 0);
+            }
+            chatInfo.textContent = doneText;
+        }
+        if (chatPendingReset) {
+            // session_reset 事件 miss 兜底——chatdone 到达仍未确认重置 → 重拉 history 保一致性
+            chatPendingReset = false;
+            chatLoadHistory();
         }
         if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
         chatSetState('idle');
@@ -510,6 +573,8 @@ function chatOnControl(payload) {
 }
 
 // 新会话——session.new 指令（P8.5 design-ch4-workspace §六：清前文 + 按清单重新注入；走 CommandBus 无飞线）
+// 问题一修复——本地不再抢调 chatLoadHistory（竞态根因：session.new 未处理完 history 返回旧块）；
+// 置 chatPendingReset 标记，内核处理完推 session_reset 事件 → 前端统一清空+重建；miss 由 chatdone 兜底
 function chatNewSession() {
     if (chatState === 'sending') { return; }
     fetch('/api/v1/command', {
@@ -517,11 +582,11 @@ function chatNewSession() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'session.new' })
     }).catch(function () {});
+    chatPendingReset = true;
     viewContainers = {};
     chatPhaseResetFull();
     chatMsgs.textContent = '';
     chatInfo.textContent = '新会话——注入中…';
-    chatLoadHistory();
 }
 
 // 刷新——纯前端重建界面气泡（重新拉历史渲染，不发指令）

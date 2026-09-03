@@ -295,6 +295,7 @@ private static HttpHost _httpHost;
             ObserveService.Configure(_oa, _chatBridge, _quickHandle, _toolFlowHandles, _quickId, _toolFlowIds, _runner, null);
             SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.json"));
             LlmMessage[] restored;
+            SessionStats? restoredStats;
             // M1 默认猫——API 配置身份从 sessions/majordomo/cat.cfg 读取；缺省 Guid.Empty=默认端点语义（每次调用实时解析）
             // M2 默认猫同构——persona/toolNames/injectList 三字段同迁（每猫配置完全独立；注入源从 workspace.inject 切到 cat.cfg）
             Guid defaultApiConfigId = Guid.Empty;
@@ -354,10 +355,10 @@ private static HttpHost _httpHost;
             }
             _chatBridge.DefaultQqBotId = defaultQqBotId;
             _chatBridge.DefaultQqBotEnable = defaultQqBotEnable;
-            if (chatStore.TryLoad(out restored))
+            if (chatStore.TryLoad(out restored, out restoredStats))
             {
                 chatCtx.ReplaceMessages(restored);
-                Console.WriteLine("[CatHome4] 会话前文恢复: " + restored.Length + " 条消息（有前文——不注入）");
+                Console.WriteLine("[CatHome4] 会话前文恢复: " + restored.Length.ToString() + " 条消息（有前文——不注入）");
             }
             else
             {
@@ -377,6 +378,8 @@ private static HttpHost _httpHost;
             _chatBridge.RegisterSession(_chatBridge.DefaultSession);
             // F4 视图——从真实前文重建视图层（恢复/注入后——真实前文绝对可用）
             _chatBridge.DefaultSession.RebuildView();
+            // E3 前文统计——启动恢复持久化真实 usage（旧文件 null=零值）
+            _chatBridge.DefaultSession.SetLoadedStats(restoredStats);
             // LLM 注入探测——默认端点解析（无默认端点 = 未注入；启动失败语义由语料面消费时暴露）
             CH_LlmApiConfig llmProbeConfig = apiConfigStore.ResolveDefault();
             string llmKeyProbe = "";
@@ -498,7 +501,25 @@ private static HttpHost _httpHost;
                 }
                 rootsInfo = " | roots[" + catKey + "]: " + rb.ToString();
             }
-            return "CH4 v" + version + " | LLM: " + llmInfo + " | " + now + rootsInfo;
+            // E3 前文统计——info 自查真实 usage（零估算：持久化 stats 直读；无统计=新会话零值）
+            string statsInfo = "";
+            SessionStats? stats = AdminService.GetCatStats(catKey);
+            long prompt = 0;
+            long hit = 0;
+            long completion = 0;
+            if (stats != null)
+            {
+                prompt = stats.Value.LastPromptTokens;
+                hit = stats.Value.LastCacheHitTokens;
+                completion = stats.Value.LastCompletionTokens;
+            }
+            long miss = prompt - hit;
+            if (miss < 0)
+            {
+                miss = 0;
+            }
+            statsInfo = " | 前文: " + prompt.ToString() + " tokens（命中 " + hit.ToString() + " / 非命中 " + miss.ToString() + "）· 输出 " + completion.ToString();
+            return "CH4 v" + version + " | LLM: " + llmInfo + " | " + now + rootsInfo + statsInfo;
         }
         /// <summary>
         /// 前端测试服务拉起——宿主启动时自动启动 html/tests/server.js（未监听 8099 时）；失败不影响主功能

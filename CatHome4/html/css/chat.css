@@ -47,6 +47,13 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 /* S2 §8.4——重试过程记录气泡（独立视图条目：弱化灰底小号；⟳ 重试中 / ✓ 已恢复） */
 .chat-bubble.retry { background: #181818; border: 1px dashed #2e2e2e; color: #7a7a7a; font-size: 11px; padding: 4px 10px; max-width: 60%; }
 .chat-bubble.retry.resolved { border-style: solid; color: #6a9955; }
+/* 注入报告气泡——新会话前文加载明细（📚 汇总头 + 逐文件三态；弱化系统样式） */
+.chat-bubble.inject { background: #14181c; border: 1px solid #1e3a2f; color: #9ab8a8; font-size: 11px; max-width: 88%; }
+.inject-report .ir-head { color: #6a9955; font-weight: bold; margin-bottom: 4px; }
+.inject-report .ir-list { display: flex; flex-direction: column; gap: 2px; }
+.inject-report .ir-item { word-break: break-all; white-space: pre-wrap; }
+.inject-report .ir-item.missing { color: #b5a25e; }
+.inject-report .ir-item.error { color: #f48771; }
 #chatinput { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #222; align-items: flex-end; }
 #chatSendInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 7px 10px; font-family: inherit; font-size: 12px; resize: none; line-height: 1.5; }
 #chatSendInput:focus { outline: none; border-color: #0e639c; }

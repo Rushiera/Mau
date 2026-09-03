@@ -40,13 +40,13 @@ namespace CH4
 
         // [段3] 注入依赖
         /// <summary>注入提示词构建委托——入口壳提供（LoadCatDefaultCfg/FallbackBaseRole——CatCfg 域持有）</summary>
-        private readonly Func<WorkspaceConfig, ToolSpec[], string, string[], string> _buildInjectPrompt;
+        private readonly Func<WorkspaceConfig, ToolSpec[], string, string[], InjectPromptResult> _buildInjectPrompt;
 
         /// <summary>
         /// 建立会话协调桥——注入提示词构建委托（入口壳 CatCfg 域提供——角色段/注入知识/工具声明拼装）。
         /// </summary>
-        /// <param name="buildInjectPrompt">注入提示词构建：workspace/specs/persona/injectList → 系统提示词</param>
-        public ChatBridge(Func<WorkspaceConfig, ToolSpec[], string, string[], string> buildInjectPrompt)
+        /// <param name="buildInjectPrompt">注入提示词构建：workspace/specs/persona/injectList → 提示词 + 逐文件结果</param>
+        public ChatBridge(Func<WorkspaceConfig, ToolSpec[], string, string[], InjectPromptResult> buildInjectPrompt)
         {
             _buildInjectPrompt = buildInjectPrompt;
         }
@@ -165,12 +165,18 @@ namespace CH4
             DataBox.TryResolve<WorkspaceConfig>(out ws);
             // M3 新会话生效——拦截面同步最新声明面（改 toolNames 后 session.new 才拉取生效）
             session.SetToolSpecs(specs);
-            string injectPrompt = _buildInjectPrompt(ws, specs, persona, injectList);
-            session.Context.SetSystemPrompt(injectPrompt);
+            InjectPromptResult injectResult = _buildInjectPrompt(ws, specs, persona, injectList);
+            session.Context.SetSystemPrompt(injectResult.Prompt);
             session.Context.Clear();
-            session.Store.Save(session.Context.GetMessages());
+            // E3 真实 usage 统计——新会话零统计起算
+            session.ResetStats();
+            session.Store.Save(session.Context.GetMessages(), session.LastStats);
             // F4 视图——session.new 清前文 → 视图随生命周期清空
             session.ClearView();
+            // 注入报告——逐文件结果持久化进视图（独立字段：Rebuild 不清，Save 落盘；前端 history 首块渲染）
+            session.SetInjectReport(BuildInjectReportJson(injectResult.Files, injectList));
+            // 问题一修复——会话重置显式事件（前端收到后清空气泡再拉 history——消除清空竞态）
+            session.PushSessionReset();
             DataBox.Set<string>("global", "chat_state", "idle");
             int injectCount = 0;
             if (injectList != null)
@@ -187,6 +193,59 @@ namespace CH4
         }
 
         /// <summary>
+        /// 构建注入报告 JSON——逐文件结果（前端 history 首块渲染；ok/missing/error 三态 + 字符数）
+        /// </summary>
+        /// <param name="files">逐文件结果（委托产物）</param>
+        /// <param name="injectList">注入清单（null=空）</param>
+        /// <returns>注入报告 JSON 字符串</returns>
+        private static string BuildInjectReportJson(List<InjectFileResult> files, string[] injectList)
+        {
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.Append("{\"files\":[");
+            int total = 0;
+            int ok = 0;
+            int missing = 0;
+            int failed = 0;
+            if (files != null)
+            {
+                for (int i = 0; i < files.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        sb.Append(",");
+                    }
+                    InjectFileResult f = files[i];
+                    string status = f.Status;
+                    if (status == "ok") { ok = ok + 1; }
+                    else if (status == "missing") { missing = missing + 1; }
+                    else { failed = failed + 1; }
+                    sb.Append("{\"file\":");
+                    sb.Append(JsonSerializer.Serialize(f.File));
+                    sb.Append(",\"status\":");
+                    sb.Append(JsonSerializer.Serialize(status));
+                    sb.Append(",\"message\":");
+                    sb.Append(JsonSerializer.Serialize(f.Message ?? ""));
+                    sb.Append(",\"chars\":");
+                    sb.Append(f.Chars.ToString());
+                    sb.Append("}");
+                    total = total + 1;
+                }
+            }
+            sb.Append("],\"total\":");
+            sb.Append(total.ToString());
+            sb.Append(",\"ok\":");
+            sb.Append(ok.ToString());
+            sb.Append(",\"missing\":");
+            sb.Append(missing.ToString());
+            sb.Append(",\"failed\":");
+            sb.Append(failed.ToString());
+            sb.Append(",\"injectCount\":");
+            sb.Append(injectList != null ? injectList.Length.ToString() : "0");
+            sb.Append("}");
+            return sb.ToString();
+        }
+
+        /// <summary>
         /// 构建注入系统提示词——转发注入委托（入口壳 CatCfg 域实现——角色 + 注入知识 + 工具语义声明）。
         /// </summary>
         /// <param name="workspace">工作区配置（roots + inject 清单）</param>
@@ -196,7 +255,7 @@ namespace CH4
         /// <returns>系统提示词</returns>
         public string BuildPrompt(WorkspaceConfig workspace, ToolSpec[] specs, string persona, string[] injectList)
         {
-            return _buildInjectPrompt(workspace, specs, persona, injectList);
+            return _buildInjectPrompt(workspace, specs, persona, injectList).Prompt;
         }
 
         /// <summary>
@@ -222,6 +281,8 @@ namespace CH4
             {
                 session.Context.Clear();
                 session.Store.Save(session.Context.GetMessages());
+                // 问题一附带——session clear 同步清视图（视图随生命周期清理；注入报告保留——非会话轮次产物）
+                session.ClearView();
                 Console.WriteLine("[CatHome4] 会话已清空（保留系统提示词）");
                 return;
             }
@@ -267,6 +328,14 @@ namespace CH4
             resp["sessionId"] = session.Id;
             resp["count"] = blocks.Length;
             resp["blocks"] = view;
+            // E3 真实 usage 统计——history 载荷携带（前端状态栏显示；零估算）
+            SessionStats st = session.LastStats;
+            Dictionary<string, object> stats = new Dictionary<string, object>();
+            stats["entryCount"] = st.EntryCount;
+            stats["prompt"] = st.LastPromptTokens;
+            stats["cacheHit"] = st.LastCacheHitTokens;
+            stats["completion"] = st.LastCompletionTokens;
+            resp["stats"] = stats;
             return JsonSerializer.Serialize(resp);
         }
 /// <summary>
@@ -289,3 +358,34 @@ private object ParseViewPayload(string json)
     }
 }    }
 }
+
+    /// <summary>
+    /// 注入提示词构建结果——提示词 + 逐文件结果（问题二：前文加载明细可见性）。
+    /// 只承载结果——不再裸拼字符串（入口壳 BuildInjectPrompt 产物）。
+    /// </summary>
+    internal sealed class InjectPromptResult
+    {
+        /// <summary>提示词——角色 + 注入知识 + 工具语义声明（原文拼装产物）</summary>
+        public string Prompt;
+
+        /// <summary>逐文件结果——按注入清单序（ok/missing/error）</summary>
+        public List<InjectFileResult> Files;
+    }
+
+    /// <summary>
+    /// 注入文件结果——单文件加载明细（前端注入报告视图块渲染单元）。
+    /// </summary>
+    internal sealed class InjectFileResult
+    {
+        /// <summary>文件路径——注入清单原文（受控根 id: 或绝对路径）</summary>
+        public string File;
+
+        /// <summary>状态——ok=成功 / missing=缺失跳过 / error=读取异常</summary>
+        public string Status;
+
+        /// <summary>补充信息——error 时错误摘要；ok 时可为空</summary>
+        public string Message;
+
+        /// <summary>成功时字符数——注入内容长度（0=失败）</summary>
+        public int Chars;
+    }

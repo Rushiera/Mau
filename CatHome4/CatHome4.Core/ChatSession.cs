@@ -87,6 +87,9 @@ namespace CH4
         /// <summary>Token 用量整轮累计——cache hit（CH2 双格式：prompt_cache_hit_tokens / cached_tokens）</summary>
         private long _usageCacheHit;
 
+        /// <summary>最近一轮真实 usage 统计——CloseRound 落盘（info 自查/前端显示数据源；零估算）</summary>
+        private SessionStats _lastStats;
+
         // [段3] 工具批
         /// <summary>工具批执行中——reload 拒绝检查面（任一会话 TRUE 即拒绝）</summary>
         private bool _toolBatchActive;
@@ -238,12 +241,67 @@ namespace CH4
         public void RebuildView()
         {
             _viewStore.Rebuild(_context.GetMessages(), CurrentFrame());
+            // 注入报告——启动恢复时从 view.json 读回（非真实前文派生；Rebuild 不重建）
+            _viewStore.LoadInjectReport();
         }
 
         /// <summary>清空视图层——session.new 清前文时同步（视图随生命周期清理）</summary>
         public void ClearView()
         {
             _viewStore.Clear();
+        }
+
+        /// <summary>
+        /// 会话重置显式事件——session.new 清前文后推送（前端收到后清空气泡再拉 history——消除竞态；问题一修复）。
+        /// </summary>
+        public void PushSessionReset()
+        {
+            if (_httpHost != null)
+            {
+                string resetJson = "{\"type\":\"session_reset\"}";
+                _httpHost.PushView("control", resetJson, -1, 0);
+            }
+        }
+
+        /// <summary>
+        /// 设置已加载统计——启动恢复时从会话文件读出（TryLoad 带 stats 重载；旧文件 null=零值）。
+        /// </summary>
+        /// <param name="stats">持久化统计（可空）</param>
+        public void SetLoadedStats(SessionStats? stats)
+        {
+            if (stats != null)
+            {
+                _lastStats = stats.Value;
+            }
+        }
+
+        /// <summary>
+        /// 重置统计——session.new 清前文后调用（新会话零统计起算）。
+        /// </summary>
+        public void ResetStats()
+        {
+            _lastStats = new SessionStats();
+        }
+
+        /// <summary>
+        /// 最近一轮真实 usage 统计——info 自查/前端显示数据源（零估算；CloseRound 更新）。
+        /// </summary>
+        public SessionStats LastStats
+        {
+            get
+            {
+                return _lastStats;
+            }
+        }
+
+        /// <summary>
+        /// 设置注入报告——session.new 后调用（持久化进视图：内存设置 + view.json 落盘；独立字段 Rebuild 不清）。
+        /// </summary>
+        /// <param name="json">注入报告 JSON（BuildInjectReportJson 产物）</param>
+        public void SetInjectReport(string json)
+        {
+            _viewStore.SetInjectReport(json);
+            _viewStore.Save();
         }
 
         /// <summary>内存视图块——按生成序（history 数据源；F4 视图持久化）</summary>
@@ -1003,13 +1061,22 @@ _ = ConsumeLlmStream(messages);
                     toSave[i].Content = TruncateText(toSave[i].Content, 800);
                 }
             }
-            _store.Save(toSave);
+            // E3 真实 usage 统计——CloseRound 落盘（info 自查/前端显示数据源；零估算）
+            _lastStats.EntryCount = _context.GetMessageCount();
+            _lastStats.LastPromptTokens = _usagePrompt;
+            _lastStats.LastCacheHitTokens = _usageCacheHit;
+            _lastStats.LastCompletionTokens = _usageCompletion;
+            _store.Save(toSave, _lastStats);
             _viewStore.Save();
             DataBox.Set<string>("global", "chat_state", "idle");
             // B4 对话区：会话终态事件——前端定型（llm done 仅一轮结束；chatdone 才是整次会话结束；count = 原始消息数——实时同步状态区）
+            // E3 扩展——chatdone 带真实 usage（命中/非命中/输出；前端状态栏同步显示）
             if (_httpHost != null)
             {
-                string doneJson = "{\"type\":\"chatdone\",\"count\":" + _context.GetMessages().Length.ToString() + "}";
+                string doneJson = "{\"type\":\"chatdone\",\"count\":" + _context.GetMessages().Length.ToString()
+                    + ",\"stats\":{\"prompt\":" + _usagePrompt.ToString()
+                    + ",\"cacheHit\":" + _usageCacheHit.ToString()
+                    + ",\"completion\":" + _usageCompletion.ToString() + "}}";
                 _httpHost.PushView("control", doneJson, -1, 0);
             }
             LogStore.Add("CatHome4", 1, "会话前文已落盘（" + _context.GetMessageCount().ToString() + " 条消息）", "SYS");

@@ -334,3 +334,78 @@ test('view retry 历史重建——retry 块渲染（chatRenderHistory）', () =
   expect(bubbles()[1].textContent).toContain('✓ 已恢复');
   expect(bubbles()[1].classList.contains('resolved')).toBe(true);
 });
+
+// ── 注入报告（问题二——前文加载明细持久化进视图）──
+test('inject_report 历史首块渲染前文加载明细（ok/missing/error 三态）', () => {
+  window.chatRenderHistory({
+    blocks: [
+      {
+        renderType: 'inject_report',
+        payload: {
+          files: [
+            { file: 'ccbp:L1/Tree.md', status: 'ok', message: '', chars: 1234 },
+            { file: 'ccbp:L1/Missing.md', status: 'missing', message: '文件不存在（可选，已跳过）', chars: 0 },
+            { file: 'ccbp:L1/Broken.md', status: 'error', message: '读取异常', chars: 0 }
+          ],
+          total: 3, ok: 1, missing: 1, failed: 1, injectCount: 3
+        }
+      }
+    ],
+    sessionId: 's1',
+    count: 1
+  });
+  const ib = chatMsgs.querySelector('.chat-bubble.inject');
+  expect(ib).not.toBeNull();
+  expect(ib.textContent).toContain('前文加载：1/3 成功');
+  expect(ib.textContent).toContain('✅ ccbp:L1/Tree.md');
+  expect(ib.textContent).toContain('⚠️ ccbp:L1/Missing.md');
+  expect(ib.textContent).toContain('❌ ccbp:L1/Broken.md');
+});
+
+// ── 会话重置（问题一——session_reset 显式事件消除清空竞态）──
+test('control session_reset 清空气泡 + 重拉 history（chatPendingReset 消费）', async () => {
+  // 前置——模拟新会话点击置位
+  window.chatPendingReset = true;
+  window.chatOnView({ seq: 1, renderType: 'user', payload: { content: '旧气泡', source: 'user' }, replaceSeq: -1 });
+  expect(bubbles().length).toBe(1);
+  // fetch mock——history 返回空（新会话无前文）
+  const origFetch = window.fetch;
+  window.fetch = function (url) {
+    if (String(url).indexOf('/api/v1/history') >= 0) {
+      return Promise.resolve({ json: function () { return Promise.resolve({ sessionId: 's2', count: 0, blocks: [], stats: { prompt: 0, cacheHit: 0, completion: 0 } }); } });
+    }
+    return Promise.resolve({ json: function () { return Promise.resolve({ ok: true }); } });
+  };
+  window.chatOnView({ seq: 2, renderType: 'control', payload: { type: 'session_reset' }, replaceSeq: -1 });
+  await new Promise(function (r) { setTimeout(r, 20); });
+  window.fetch = origFetch;
+  expect(window.chatPendingReset).toBe(false);
+  expect(bubbles().length).toBe(0);   // 旧气泡已清
+  expect(chatInfo.textContent).toContain('会话 0 条');
+});
+
+// ── 会话终态统计（问题三——chatdone 带真实 usage）──
+test('control chatdone 显示前文真实 usage（命中/非命中/输出）', () => {
+  window.chatOnView({ seq: 1, renderType: 'stream', payload: { kind: 'text', text: '回复' }, replaceSeq: -1 });
+  window.chatOnView({ seq: 2, renderType: 'control', payload: { type: 'chatdone', count: 5, stats: { prompt: 120, cacheHit: 40, completion: 30 } }, replaceSeq: -1 });
+  expect(window.chatState).toBe('idle');
+  expect(chatInfo.textContent).toContain('会话 5 条');
+  expect(chatInfo.textContent).toContain('前文 120 tokens（命中 40 / 非命中 80）· 输出 30');
+});
+
+// ── 会话重置 miss 兜底（问题一——session_reset 丢失时 chatdone 重拉）──
+test('control chatdone 在 chatPendingReset 置位时兜底重拉 history', async () => {
+  window.chatPendingReset = true;
+  const origFetch = window.fetch;
+  window.fetch = function (url) {
+    if (String(url).indexOf('/api/v1/history') >= 0) {
+      return Promise.resolve({ json: function () { return Promise.resolve({ sessionId: 's3', count: 0, blocks: [], stats: { prompt: 0, cacheHit: 0, completion: 0 } }); } });
+    }
+    return Promise.resolve({ json: function () { return Promise.resolve({ ok: true }); } });
+  };
+  window.chatOnView({ seq: 1, renderType: 'control', payload: { type: 'chatdone', count: 1 }, replaceSeq: -1 });
+  await new Promise(function (r) { setTimeout(r, 20); });
+  window.fetch = origFetch;
+  expect(window.chatPendingReset).toBe(false);
+  expect(chatInfo.textContent).toContain('会话 0 条');
+});
