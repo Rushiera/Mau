@@ -1,27 +1,19 @@
-﻿using System;
-using System.Collections.Generic;
-using Mau.Runtime;
+﻿using Mau.Runtime;
 
 namespace CH4
 {
     /// <summary>
-    /// 猫级白名单上下文——工具执行按猫裁剪的运行时面（M4e）。
-    /// 职责：当前猫标识（AsyncLocal——工具执行链读取）+ 猫级 FileSystemService 缓存表。
+    /// 猫级白名单上下文——工具执行按猫裁剪的运行时面（M4e + P2 统一）。
+    /// 职责：猫级 FileSystemService 解析的宿主侧入口——委托 Mau.Runtime.FileSystemRegistry（积木同源）。
     /// 语义：猫启用根 = 全局池子集（cat.cfg enabledRoots）；workspace 强制常驻。
     /// 线程模型：AsyncLocal 跨异步流传递——主线程泵设置，工具执行（含后台 Task 回投）读取一致。
     /// </summary>
     public static class ToolCatContext
     {
         /// <summary>当前猫 key——AsyncLocal（工具执行链 ResolveFileSystem 读取）</summary>
-        private static readonly System.Threading.AsyncLocal<string> _currentCatKey = new System.Threading.AsyncLocal<string>();
-
-        /// <summary>猫级 FileSystemService 表——catKey → 实例（猫启用根子集；catcfg.apply 重建）</summary>
-        private static readonly Dictionary<string, FileSystemService> _catFsMap = new Dictionary<string, FileSystemService>();
-
-        /// <summary>当前猫 key——工具执行链读取（null=无猫上下文，回退全局）</summary>
         public static string CurrentCatKey
         {
-            get { return _currentCatKey.Value; }
+            get { return FileSystemRegistry.CurrentCatKey; }
         }
 
         /// <summary>
@@ -30,7 +22,7 @@ namespace CH4
         /// <param name="catKey">猫 key（majordomo=默认猫；多猫=会话 ID）</param>
         public static void SetCat(string catKey)
         {
-            _currentCatKey.Value = catKey;
+            FileSystemRegistry.SetCurrentCat(catKey);
         }
 
         /// <summary>
@@ -39,20 +31,17 @@ namespace CH4
         /// <returns>猫级 FileSystemService 或 null</returns>
         public static FileSystemService ResolveCatFileSystem()
         {
-            string catKey = _currentCatKey.Value;
-            if (catKey == null || catKey.Length == 0)
-            {
-                return null;
-            }
-            lock (_catFsMap)
-            {
-                FileSystemService fs;
-                if (_catFsMap.TryGetValue(catKey, out fs))
-                {
-                    return fs;
-                }
-            }
-            return null;
+            return FileSystemRegistry.ResolveCurrent();
+        }
+
+        /// <summary>
+        /// 按 catId 显式解析猫级文件系统——OA 积木面按 argsJson.catId 取猫级实例（P2）。
+        /// </summary>
+        /// <param name="catKey">猫 key</param>
+        /// <returns>猫级 FileSystemService 或 null（未注册）</returns>
+        public static FileSystemService ResolveCatFileSystem(string catKey)
+        {
+            return FileSystemRegistry.Resolve(catKey);
         }
 
         /// <summary>
@@ -63,15 +52,12 @@ namespace CH4
         /// <param name="recycleRoot">回收站目录</param>
         public static void UpdateCatFileSystem(string catKey, WorkspaceConfig.RootEntry[] roots, string recycleRoot)
         {
-            lock (_catFsMap)
+            if (roots == null || roots.Length == 0)
             {
-                if (roots == null || roots.Length == 0)
-                {
-                    _catFsMap.Remove(catKey);
-                    return;
-                }
-                _catFsMap[catKey] = new FileSystemService(roots, recycleRoot);
+                FileSystemRegistry.Register(catKey, null);
+                return;
             }
+            FileSystemRegistry.Register(catKey, new FileSystemService(roots, recycleRoot));
         }
 
         /// <summary>
@@ -80,10 +66,7 @@ namespace CH4
         /// <param name="catKey">猫 key</param>
         public static void RemoveCatFileSystem(string catKey)
         {
-            lock (_catFsMap)
-            {
-                _catFsMap.Remove(catKey);
-            }
+            FileSystemRegistry.Unregister(catKey);
         }
     }
 }

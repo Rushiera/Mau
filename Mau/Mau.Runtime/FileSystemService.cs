@@ -601,7 +601,7 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
                 string nsRel = path.Substring(nsSep + 1);
                 for (int i = 0; i < _roots.Length; i = i + 1)
                 {
-                    if (string.Equals(_rootIds[i], nsId, StringComparison.Ordinal))
+                    if (string.Equals(_rootIds[i], nsId, StringComparison.OrdinalIgnoreCase))
                     {
                         path = Path.Combine(_roots[i], nsRel);
                         break;

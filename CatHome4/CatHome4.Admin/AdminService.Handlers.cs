@@ -928,13 +928,24 @@ namespace CatHome4.Admin
             }
             // workspace 强制——用户说必选不可取消；兼容旧配置 id=runtime
             string wsId = "";
-            if (pool.Contains("workspace"))
+            for (int p = 0; p < pool.Count; p++)
             {
-                wsId = "workspace";
+                if (string.Equals(pool[p], "workspace", StringComparison.OrdinalIgnoreCase))
+                {
+                    wsId = pool[p];
+                    break;
+                }
             }
-            else if (pool.Contains("runtime"))
+            if (wsId.Length == 0)
             {
-                wsId = "runtime";
+                for (int p = 0; p < pool.Count; p++)
+                {
+                    if (string.Equals(pool[p], "runtime", StringComparison.OrdinalIgnoreCase))
+                    {
+                        wsId = pool[p];
+                        break;
+                    }
+                }
             }
             if (wsId.Length > 0)
             {
@@ -948,11 +959,29 @@ namespace CatHome4.Admin
                 {
                     continue;
                 }
-                if (id == wsId)
+                if (string.Equals(id, wsId, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
-                if (pool.Contains(id) && !result.Contains(id))
+                bool inPool = false;
+                for (int p = 0; p < pool.Count; p++)
+                {
+                    if (string.Equals(pool[p], id, StringComparison.OrdinalIgnoreCase))
+                    {
+                        inPool = true;
+                        break;
+                    }
+                }
+                bool already = false;
+                for (int r = 0; r < result.Count; r++)
+                {
+                    if (string.Equals(result[r], id, StringComparison.OrdinalIgnoreCase))
+                    {
+                        already = true;
+                        break;
+                    }
+                }
+                if (inPool && !already)
                 {
                     result.Add(id);
                 }

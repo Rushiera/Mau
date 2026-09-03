@@ -37,8 +37,11 @@ namespace Mau.Bricks
             }
             try
             {
-                FileSystemService? fs;
-                DataBox.TryResolve<FileSystemService>(out fs);
+                FileSystemService? fs = FileSystemRegistry.ResolveScoped(ExtractArg(argsJson, "catId"));
+                if (fs == null)
+                {
+                    DataBox.TryResolve<FileSystemService>(out fs);
+                }
                 if (fs == null)
                 {
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
@@ -89,4 +92,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:05182D7EAAC01763A4F3532E7D7F3CEBDD37191CC272021AE6AA0849D1ACF1C9
+// #MAU_CHECKSUM:SHA256:C4EE5BBD818F3C449CF7A90EEEBD511DB7A99BBA383A8C49BC01CA6AA40EC51A

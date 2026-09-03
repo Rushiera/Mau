@@ -75,7 +75,7 @@ namespace Mau.Runtime
             WorkspaceConfig cfg = new WorkspaceConfig();
             if (path == null || path.Length == 0 || !File.Exists(path))
             {
-                cfg.Roots = new RootEntry[] { new RootEntry() { Id = "runtime", Path = NormalizeRoot(defaultRoot), Writable = true } };
+                cfg.Roots = new RootEntry[] { new RootEntry() { Id = "workspace", Path = NormalizeRoot(defaultRoot), Writable = true } };
                 cfg.Inject = new InjectEntry[0];
                 return cfg;
             }
@@ -112,8 +112,8 @@ namespace Mau.Runtime
                 }
                 if (roots.Count == 0)
                 {
-                    // 空 roots = 未配置白名单——默认单根 runtime 兜底（同文件缺失语义；FileSystemService 需至少一个根）
-                    cfg.Roots = new RootEntry[] { new RootEntry() { Id = "runtime", Path = NormalizeRoot(defaultRoot), Writable = true } };
+                    // 空 roots = 未配置白名单——默认单根 workspace 兜底（同文件缺失语义；FileSystemService 需至少一个根）
+                    cfg.Roots = new RootEntry[] { new RootEntry() { Id = "workspace", Path = NormalizeRoot(defaultRoot), Writable = true } };
                     cfg.Inject = new InjectEntry[0];
                     return cfg;
                 }
@@ -182,7 +182,7 @@ namespace Mau.Runtime
                 string rel = file.Substring(sep + 1);
                 for (int i = 0; i < Roots.Length; i++)
                 {
-                    if (string.Equals(Roots[i].Id, id, StringComparison.Ordinal))
+                    if (string.Equals(Roots[i].Id, id, StringComparison.OrdinalIgnoreCase))
                     {
                         return Path.GetFullPath(Path.Combine(Roots[i].Path, rel));
                     }

@@ -92,7 +92,7 @@ namespace CatHome4.Admin
                 bool found = false;
                 for (int j = 0; j < enabled.Length; j++)
                 {
-                    if (string.Equals(enabled[j], entry.Id, StringComparison.Ordinal))
+                    if (string.Equals(enabled[j], entry.Id, StringComparison.OrdinalIgnoreCase))
                     {
                         found = true;
                         break;

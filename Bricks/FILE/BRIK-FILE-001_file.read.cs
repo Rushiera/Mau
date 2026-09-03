@@ -29,8 +29,12 @@ namespace Mau.Bricks
         {
             try
             {
-                FileSystemService? fs;
-                DataBox.TryResolve<FileSystemService>(out fs);
+                // P2 猫级解析——当前猫上下文优先（直执面 AsyncLocal），回退全局
+                FileSystemService? fs = FileSystemRegistry.ResolveCurrent();
+                if (fs == null)
+                {
+                    DataBox.TryResolve<FileSystemService>(out fs);
+                }
                 if (fs == null)
                 {
                     content = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
@@ -47,4 +51,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:B662C9476B6BE4DE34FA127CBD4DF3167852208B873C45FAB1F379FC52778261
+// #MAU_CHECKSUM:SHA256:EDCEDBD52E284324889964E20DA88E8880C348CFBBD68F8A5839D74503CB70E2

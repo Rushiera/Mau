@@ -584,7 +584,7 @@ namespace CH4
             {
                 for (int i = 0; i < ws.Roots.Length; i++)
                 {
-                    if (string.Equals(ws.Roots[i].Id, "mau", StringComparison.Ordinal))
+                    if (string.Equals(ws.Roots[i].Id, "mau", StringComparison.OrdinalIgnoreCase))
                     {
                         return ws.Roots[i].Path;
                     }
