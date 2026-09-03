@@ -639,7 +639,18 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
         /// <param name="output">绝对文件路径</param>
         private void AppendFind(string root, string current, string pattern,
             bool recursive, int limit, List<string> output)
-        {
+{
+            // [段0] **/ 目录通配前缀——剥前缀 + 强制递归（text-find 的 **/*.txt 语义；连续段剥净；剥空回退 *）
+            string dirWild = "**/";
+            while (pattern.StartsWith(dirWild, StringComparison.Ordinal))
+            {
+                pattern = pattern.Substring(dirWild.Length);
+                recursive = true;
+            }
+            if (pattern.Length == 0)
+            {
+                pattern = "*";
+            }
             if (output.Count >= limit)
             {
                 return;
@@ -671,7 +682,6 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
                 AppendFind(root, directories[i], pattern, true, limit, output);
             }
         }
-
         /// <summary>
         /// 递归追加目录树
         /// </summary>

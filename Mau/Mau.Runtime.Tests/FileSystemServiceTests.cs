@@ -274,6 +274,52 @@ public void Grep_ContentSearchWithinRoot()
         TryDelete(baseDir);
     }
 }/// <summary>
+/// **/ 目录通配前缀——剥前缀 + 强制递归（text-find 的 **/*.txt 语义）；纯文件名模式非递归对照
+/// </summary>
+[Fact]
+public void Find_DirWildcardPrefixForcesRecursive()
+{
+    string baseDir = Path.Combine(Path.GetTempPath(), "mau_find_wild_" + Guid.NewGuid().ToString("N"));
+    string rw = Path.Combine(baseDir, "rw");
+    Directory.CreateDirectory(Path.Combine(rw, "sub", "deep"));
+    try
+    {
+        WorkspaceConfig.RootEntry[] entries = new WorkspaceConfig.RootEntry[]
+        {
+            new WorkspaceConfig.RootEntry()
+            {
+                Id = "rw",
+                Path = rw,
+                Writable = true
+            }
+        };
+        FileSystemService fs = new FileSystemService(entries, Path.Combine(rw, "recycle"));
+        fs.WriteText(Path.Combine(rw, "a.txt"), "x");
+        fs.WriteText(Path.Combine(rw, "sub", "b.txt"), "x");
+        fs.WriteText(Path.Combine(rw, "sub", "deep", "c.cs"), "x");
+        fs.WriteText(Path.Combine(rw, "sub", "d.md"), "x");
+        // [段1] **/*.txt 前缀——recursive=false 也被强制递归，返回全部 txt
+        string[] allTxt = fs.Find(rw, "**/*.txt", false, 100);
+        Assert.Equal(2, allTxt.Length);
+        Assert.Contains("a.txt", allTxt);
+        Assert.Contains("sub" + Path.DirectorySeparatorChar + "b.txt", allTxt);
+        // [段2] 纯文件名模式非递归——只扫当前目录
+        string[] topTxt = fs.Find(rw, "*.txt", false, 100);
+        Assert.Single(topTxt);
+        Assert.Contains("a.txt", topTxt);
+        // [段3] **/*.cs 递归——深层文件命中
+        string[] cs = fs.Find(rw, "**/*.cs", true, 100);
+        Assert.Single(cs);
+        Assert.Contains("sub" + Path.DirectorySeparatorChar + "deep" + Path.DirectorySeparatorChar + "c.cs", cs);
+        // [段4] **/ 剥空回退 *——全部文件
+        string[] all = fs.Find(rw, "**/", true, 100);
+        Assert.Equal(4, all.Length);
+    }
+    finally
+    {
+        TryDelete(baseDir);
+    }
+}/// <summary>
         /// 尽力删除临时目录——不掩盖断言结果
         /// </summary>
         /// <param name="dir">临时目录</param>
