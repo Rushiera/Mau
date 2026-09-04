@@ -384,13 +384,15 @@ test('control session_reset 清空气泡 + 重拉 history（chatPendingReset 消
   expect(chatInfo.textContent).toContain('会话 0 条');
 });
 
-// ── 会话终态统计（问题三——chatdone 带真实 usage）──
-test('control chatdone 显示前文真实 usage（命中/非命中/输出）', () => {
+// ── 会话终态统计（问题三——chatdone 带真实 usage；顶部栏只显示前文长度=context 单次值）──
+test('control chatdone 显示前文真实 usage（前文长度 context）', () => {
   window.chatOnView({ seq: 1, renderType: 'stream', payload: { kind: 'text', text: '回复' }, replaceSeq: -1 });
-  window.chatOnView({ seq: 2, renderType: 'control', payload: { type: 'chatdone', count: 5, stats: { prompt: 120, cacheHit: 40, completion: 30 } }, replaceSeq: -1 });
+  window.chatOnView({ seq: 2, renderType: 'control', payload: { type: 'chatdone', count: 5, stats: { prompt: 120, cacheHit: 40, completion: 30, context: 150 } }, replaceSeq: -1 });
   expect(window.chatState).toBe('idle');
   expect(chatInfo.textContent).toContain('会话 5 条');
-  expect(chatInfo.textContent).toContain('前文 120 tokens（命中 40 / 非命中 80）· 输出 30');
+  expect(chatInfo.textContent).toContain('前文 150 tokens');
+  // 命中/非命中/输出归 roundsum 气泡——顶部栏不再显示
+  expect(chatInfo.textContent).not.toContain('命中');
 });
 
 // ── 会话重置 miss 兜底（问题一——session_reset 丢失时 chatdone 重拉）──
@@ -408,4 +410,84 @@ test('control chatdone 在 chatPendingReset 置位时兜底重拉 history', asyn
   window.fetch = origFetch;
   expect(window.chatPendingReset).toBe(false);
   expect(chatInfo.textContent).toContain('会话 0 条');
+});
+
+// ── 问题一修复：view/control note 分支（宿主经 PushView 推送 Note 状态——前端转交 noteOnEvent 重绘）──
+test('control note 分支——view 载荷更新 Note 面板', () => {
+  window.noteExpanded = false;
+  document.getElementById('notePanel').classList.add('collapsed');
+  window.chatOnView({ seq: 1, renderType: 'control', payload: { type: 'note', state: { tasks: ['前端任务'], current: 0, done: 0 } }, replaceSeq: -1 });
+  expect(window.noteState.tasks.length).toBe(1);
+  expect(window.noteState.tasks[0]).toBe('前端任务');
+  // 计划存在自动展开
+  expect(document.getElementById('notePanel').classList.contains('collapsed')).toBe(false);
+  // 面板标题已重绘
+  expect(document.getElementById('noteTitle').textContent).toBe('Note (1/1)');
+});
+
+// ── 改动三：大数 k/M 格式化 ──
+test('chatFmtCount 大数格式化——k/M 边界', () => {
+  expect(window.chatFmtCount(48)).toBe('48');
+  expect(window.chatFmtCount(999)).toBe('999');
+  expect(window.chatFmtCount(1000)).toBe('1.00k');
+  expect(window.chatFmtCount(435652)).toBe('435.65k');
+  expect(window.chatFmtCount(363008)).toBe('363.01k');
+  expect(window.chatFmtCount(72644)).toBe('72.64k');
+  expect(window.chatFmtCount(12158)).toBe('12.16k');
+  expect(window.chatFmtCount(1000000)).toBe('1.00M');
+  expect(window.chatFmtCount(1234567)).toBe('1.23M');
+});
+
+test('chatdone 大数 usage 文本——k/M 格式化生效（context 前文长度）', () => {
+  window.chatOnView({ seq: 1, renderType: 'control', payload: { type: 'chatdone', count: 48, stats: { prompt: 435652, cacheHit: 363008, completion: 12158, context: 151234 } }, replaceSeq: -1 });
+  expect(chatInfo.textContent).toContain('会话 48 条');
+  expect(chatInfo.textContent).toContain('前文 151.23k tokens');
+});
+
+test('chatRenderHistory 大数 usage 文本——k/M 格式化生效（context 前文长度）', () => {
+  window.chatRenderHistory({
+    version: 1,
+    sessionId: 's-big',
+    count: 48,
+    blocks: [],
+    stats: { prompt: 1000000, cacheHit: 200000, completion: 1500000, context: 998877 }
+  });
+  expect(chatInfo.textContent).toContain('会话 48 条');
+  expect(chatInfo.textContent).toContain('前文 998.88k tokens');
+});
+
+// ── 改动四：roundsum 轮末统计气泡 ──
+test('view roundsum 渲染独立气泡（token + 工具次数 + 四态用时 + 总耗时）', () => {
+  window.chatOnView({ seq: 1, renderType: 'roundsum', payload: { type: 'roundsum', data: { prompt: 769770, completion: 3550, cacheHit: 765700, miss: 4070, toolCount: 6, elapsedMs: 76200, phases: { link: 200, think: 28500, tool: 45100, reply: 2400 } } }, replaceSeq: -1 });
+  const rs = chatMsgs.querySelector('.chat-bubble.roundsum');
+  expect(rs).not.toBeNull();
+  expect(rs.textContent).toContain('本轮统计');
+  expect(rs.textContent).toContain('↑769.77k');
+  expect(rs.textContent).toContain('↓3.55k');
+  expect(rs.textContent).toContain('cache 765.70k');
+  expect(rs.textContent).toContain('miss 4.07k');
+  expect(rs.textContent).toContain('🔧 工具 6 次');
+  expect(rs.textContent).toContain('思考 28.5s');
+  expect(rs.textContent).toContain('工具 45.1s');
+  expect(rs.textContent).toContain('回复 2.4s');
+  expect(rs.textContent).toContain('总计 1分16.2秒');
+});
+
+test('chatRenderHistory roundsum 块渲染（历史重建保留轮末统计）', () => {
+  window.chatRenderHistory({
+    version: 1,
+    sessionId: 's-rs',
+    count: 3,
+    blocks: [
+      { seq: 1, id: '1:u', renderType: 'user', payload: { content: '问题' } },
+      { seq: 2, id: '2:t', renderType: 'text', payload: { content: '回答' } },
+      { seq: 3, id: '3:rs', renderType: 'roundsum', payload: { type: 'roundsum', data: { prompt: 1200, completion: 300, cacheHit: 1000, miss: 200, toolCount: 2, elapsedMs: 15000, phases: { link: 100, think: 5000, tool: 8000, reply: 1900 } } } }
+    ],
+    stats: { prompt: 1200, cacheHit: 1000, completion: 300, context: 1200 }
+  });
+  expect(chatMsgs.querySelectorAll('.chat-bubble.roundsum').length).toBe(1);
+  const rs2 = chatMsgs.querySelector('.chat-bubble.roundsum');
+  expect(rs2.textContent).toContain('↑1.20k');
+  expect(rs2.textContent).toContain('🔧 工具 2 次');
+  expect(rs2.textContent).toContain('总计 15.0s');
 });

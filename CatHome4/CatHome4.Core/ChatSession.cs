@@ -90,6 +90,36 @@ namespace CH4
         /// <summary>最近一轮真实 usage 统计——CloseRound 落盘（info 自查/前端显示数据源；零估算）</summary>
         private SessionStats _lastStats;
 
+        /// <summary>单次前文长度——最近一次请求的 prompt（覆盖式；非累计——前文长度数据源）</summary>
+        private long _contextTokens;
+
+        /// <summary>本轮开始时间戳——Stopwatch.GetTimestamp（roundsum 总耗时）</summary>
+        private long _roundStartTick;
+
+        /// <summary>本轮工具调用次数——工具 Dog 登记处累加（roundsum toolCount）</summary>
+        private int _toolCallCount;
+
+        /// <summary>当前计时相位——PhaseLink/PhaseThink/PhaseTool/PhaseReply（-1=无活跃）</summary>
+        private int _phaseKind = -1;
+
+        /// <summary>当前相位开始时间戳——Stopwatch.GetTimestamp</summary>
+        private long _phaseStartTick;
+
+        /// <summary>四态累计毫秒——link/think/tool/reply（相位切换结算）</summary>
+        private long[] _phaseAccumMs = new long[4];
+
+        /// <summary>计时相位常量——链路（等待首流）</summary>
+        private const int PhaseLink = 0;
+
+        /// <summary>计时相位常量——思考（reasoning 流）</summary>
+        private const int PhaseThink = 1;
+
+        /// <summary>计时相位常量——工具（工具批执行）</summary>
+        private const int PhaseTool = 2;
+
+        /// <summary>计时相位常量——回复（text 流）</summary>
+        private const int PhaseReply = 3;
+
         // [段3] 工具批
         /// <summary>工具批执行中——reload 拒绝检查面（任一会话 TRUE 即拒绝）</summary>
         private bool _toolBatchActive;
@@ -508,6 +538,14 @@ namespace CH4
             _usagePrompt = 0;
             _usageCompletion = 0;
             _usageCacheHit = 0;
+            // roundsum 统计——单次前文/工具计数/四态计时清零 + 轮次起表 + 进入 link 相位
+            _contextTokens = 0;
+            _toolCallCount = 0;
+            _roundStartTick = System.Diagnostics.Stopwatch.GetTimestamp();
+            _phaseAccumMs = new long[4];
+            _phaseKind = -1;
+            _phaseStartTick = 0;
+            PhaseEnter(PhaseLink);
             _context.AddUserMessage(content);
             _viewStore.OnUserMessage(LastMessage(), CurrentFrame());
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
@@ -568,6 +606,8 @@ _ = ConsumeLlmStream(messages);
                             }
                         }
                         text.Append(ev.Text);
+                        // roundsum 四态计时——首个 Text 进入回复相位（link/think 结算）
+                        PhaseEnter(PhaseReply);
                         // P6 外观层转发——LLM 增量实时推送 SSE（协议 §4.2 llm 事件）
                         if (_httpHost != null)
                         {
@@ -588,6 +628,8 @@ _ = ConsumeLlmStream(messages);
                             }
                         }
                         reasoning.Append(ev.Text);
+                        // roundsum 四态计时——首个 Reasoning 进入思考相位（link 结算）
+                        PhaseEnter(PhaseThink);
                         if (_httpHost != null)
                         {
                             string streamReasonJson = "{\"kind\":\"reasoning\",\"text\":" + JsonSerializer.Serialize(ev.Text) + "}";
@@ -607,6 +649,8 @@ _ = ConsumeLlmStream(messages);
                             }
                         }
                         toolCalls = ev.Text;
+                        // roundsum 四态计时——ToolCalls 到达进入工具相位（link/think 结算；工具批执行）
+                        PhaseEnter(PhaseTool);
                         if (_httpHost != null)
                         {
                             // F4 视图——toolCalls 占位卡后置 F1/F2（工具卡以结果整块出现，不推占位）
@@ -641,8 +685,8 @@ _ = ConsumeLlmStream(messages);
                     }
                     else if (ev.Kind == LlmStreamKind.Usage)
                     {
-                        // E3 Token 统计——解析 usage JSON 累计整轮（工具多轮累加）+ 转发 SSE（前端覆盖式显示累计值）
-                        ParseUsage(ev.Text, ref _usagePrompt, ref _usageCompletion, ref _usageCacheHit);
+                        // E3 Token 统计——解析 usage JSON 累计整轮（工具多轮累加）+ 单次前文覆盖 + 转发 SSE（前端覆盖式显示累计值）
+                        ParseUsage(ev.Text, ref _usagePrompt, ref _usageCompletion, ref _usageCacheHit, ref _contextTokens);
                         if (_httpHost != null)
                         {
                             string usageJson = "{\"prompt\":" + _usagePrompt.ToString()
@@ -700,13 +744,73 @@ _ = ConsumeLlmStream(messages);
         }
 
         /// <summary>
-        /// 解析 usage JSON——prompt/completion/cacheHit 累加到整轮计数（CH2 语义：多工具轮累加）。
+        /// 计时相位切换——结算旧相位累计毫秒 + 进入新相位（roundsum 四态计时；同相位跳过）。
+        /// </summary>
+        /// <param name="kind">目标相位（PhaseLink/PhaseThink/PhaseTool/PhaseReply）</param>
+        private void PhaseEnter(int kind)
+        {
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (_phaseKind >= 0 && _phaseStartTick > 0 && _phaseKind != kind)
+            {
+                long ms = (now - _phaseStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
+                if (ms < 0) { ms = 0; }
+                _phaseAccumMs[_phaseKind] = _phaseAccumMs[_phaseKind] + ms;
+            }
+            _phaseKind = kind;
+            _phaseStartTick = now;
+        }
+
+        /// <summary>
+        /// 结算当前相位——roundsum 生成前调用（CloseRound 末尾相位累计归零相位标记）。
+        /// </summary>
+        private void PhaseSettle()
+        {
+            if (_phaseKind >= 0 && _phaseStartTick > 0)
+            {
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                long ms = (now - _phaseStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
+                if (ms < 0) { ms = 0; }
+                _phaseAccumMs[_phaseKind] = _phaseAccumMs[_phaseKind] + ms;
+                _phaseKind = -1;
+                _phaseStartTick = 0;
+            }
+        }
+
+        /// <summary>
+        /// 构建 roundsum 载荷——本轮 Token 消耗 + 工具次数 + 总耗时 + 四态用时（CloseRound 推送/落盘数据源）。
+        /// </summary>
+        /// <returns>roundsum 视图载荷 JSON（{"type":"roundsum","data":{...}}）</returns>
+        private string BuildRoundSumJson()
+        {
+            long miss = _usagePrompt - _usageCacheHit;
+            if (miss < 0) { miss = 0; }
+            long elapsedMs = 0;
+            if (_roundStartTick > 0)
+            {
+                elapsedMs = (System.Diagnostics.Stopwatch.GetTimestamp() - _roundStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
+                if (elapsedMs < 0) { elapsedMs = 0; }
+            }
+            return "{\"type\":\"roundsum\",\"data\":{\"prompt\":" + _usagePrompt.ToString()
+                + ",\"completion\":" + _usageCompletion.ToString()
+                + ",\"cacheHit\":" + _usageCacheHit.ToString()
+                + ",\"miss\":" + miss.ToString()
+                + ",\"toolCount\":" + _toolCallCount.ToString()
+                + ",\"elapsedMs\":" + elapsedMs.ToString()
+                + ",\"phases\":{\"link\":" + _phaseAccumMs[PhaseLink].ToString()
+                + ",\"think\":" + _phaseAccumMs[PhaseThink].ToString()
+                + ",\"tool\":" + _phaseAccumMs[PhaseTool].ToString()
+                + ",\"reply\":" + _phaseAccumMs[PhaseReply].ToString() + "}}}";
+        }
+
+        /// <summary>
+        /// 解析 usage JSON——prompt/completion/cacheHit 累加到整轮计数（CH2 语义：多工具轮累加）；singlePrompt 覆盖式为单次请求 prompt（前文长度）。
         /// </summary>
         /// <param name="usageJson">usage JSON 字符串（{"prompt":N,"completion":N,"cacheHit":N}）</param>
         /// <param name="prompt">prompt 累计引用</param>
         /// <param name="completion">completion 累计引用</param>
         /// <param name="cacheHit">cacheHit 累计引用</param>
-        private static void ParseUsage(string usageJson, ref long prompt, ref long completion, ref long cacheHit)
+        /// <param name="singlePrompt">单次 prompt 覆盖引用——最近一次请求的前文长度（非累计）</param>
+        private static void ParseUsage(string usageJson, ref long prompt, ref long completion, ref long cacheHit, ref long singlePrompt)
         {
             if (usageJson == null || usageJson.Length == 0)
             {
@@ -720,6 +824,7 @@ _ = ConsumeLlmStream(messages);
                     if (root.TryGetProperty("prompt", out JsonElement p) && p.ValueKind == JsonValueKind.Number)
                     {
                         prompt = prompt + p.GetInt64();
+                        singlePrompt = p.GetInt64();
                     }
                     if (root.TryGetProperty("completion", out JsonElement c) && c.ValueKind == JsonValueKind.Number)
                     {
@@ -858,6 +963,8 @@ _ = ConsumeLlmStream(messages);
                         }
                         // P9.4 per-cat 路由——载荷注入会话 ID（config.bridge 按 catId 路由每猫 ConfigStore；其他工具忽略多余字段）
                         arguments = InjectCatId(arguments);
+                        // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
+                        _toolCallCount = _toolCallCount + 1;
                         LogStore.Add("CatHome4", 1, "工具 " + name + " 开始执行：" + SummarizeToolArgs(arguments), "TOOL");
                         ToolOrderDog dog = new ToolOrderDog(id, name, arguments);
                         if (name.StartsWith("host-", StringComparison.Ordinal))
@@ -1066,17 +1173,27 @@ _ = ConsumeLlmStream(messages);
             _lastStats.LastPromptTokens = _usagePrompt;
             _lastStats.LastCacheHitTokens = _usageCacheHit;
             _lastStats.LastCompletionTokens = _usageCompletion;
+            _lastStats.LastContextTokens = _contextTokens;
             _store.Save(toSave, _lastStats);
+            // roundsum 轮末统计——相位结算 + 载荷构建 + 视图落盘 + SSE 推送（本轮 Token 消耗 + 工具次数 + 总耗时 + 四态用时）
+            PhaseSettle();
+            string roundsumJson = BuildRoundSumJson();
+            _viewStore.AppendRoundSummary(roundsumJson, CurrentFrame());
             _viewStore.Save();
+            if (_httpHost != null)
+            {
+                _httpHost.PushView("roundsum", roundsumJson, -1, 0);
+            }
             DataBox.Set<string>("global", "chat_state", "idle");
             // B4 对话区：会话终态事件——前端定型（llm done 仅一轮结束；chatdone 才是整次会话结束；count = 原始消息数——实时同步状态区）
-            // E3 扩展——chatdone 带真实 usage（命中/非命中/输出；前端状态栏同步显示）
+            // E3 扩展——chatdone 带真实 usage（命中/非命中/输出/前文长度；前端状态栏同步显示）
             if (_httpHost != null)
             {
                 string doneJson = "{\"type\":\"chatdone\",\"count\":" + _context.GetMessages().Length.ToString()
                     + ",\"stats\":{\"prompt\":" + _usagePrompt.ToString()
                     + ",\"cacheHit\":" + _usageCacheHit.ToString()
-                    + ",\"completion\":" + _usageCompletion.ToString() + "}}";
+                    + ",\"completion\":" + _usageCompletion.ToString()
+                    + ",\"context\":" + _contextTokens.ToString() + "}}";
                 _httpHost.PushView("control", doneJson, -1, 0);
             }
             LogStore.Add("CatHome4", 1, "会话前文已落盘（" + _context.GetMessageCount().ToString() + " 条消息）", "SYS");

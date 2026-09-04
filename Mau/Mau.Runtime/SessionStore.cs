@@ -22,6 +22,9 @@ namespace Mau.Runtime
 
         /// <summary>最近一轮输出 token（usage.completion_tokens）</summary>
         public long LastCompletionTokens;
+
+        /// <summary>最近一次请求的单次前文长度（非累计——前文长度数据源；旧文件缺省 0）</summary>
+        public long LastContextTokens;
     }
     /// <summary>
     /// 会话前文管理器——MajorDomoCat 消息历史落盘（2026-08-16 下沉 Mau.Runtime，借鉴 CH3 ICatContextStore 形态）。

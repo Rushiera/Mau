@@ -507,18 +507,17 @@ private static HttpHost _httpHost;
             long prompt = 0;
             long hit = 0;
             long completion = 0;
+            long context = 0;
             if (stats != null)
             {
                 prompt = stats.Value.LastPromptTokens;
                 hit = stats.Value.LastCacheHitTokens;
                 completion = stats.Value.LastCompletionTokens;
+                context = stats.Value.LastContextTokens;
             }
-            long miss = prompt - hit;
-            if (miss < 0)
-            {
-                miss = 0;
-            }
-            statsInfo = " | 前文: " + prompt.ToString() + " tokens（命中 " + hit.ToString() + " / 非命中 " + miss.ToString() + "）· 输出 " + completion.ToString();
+            // 前文长度 = 最近一次请求单次 prompt（context）；旧数据无 context 回退累计值
+            long ctxLen = context > 0 ? context : prompt;
+            statsInfo = " | 前文: " + ctxLen.ToString() + " tokens";
             return "CH4 v" + version + " | LLM: " + llmInfo + " | " + now + rootsInfo + statsInfo;
         }
         /// <summary>

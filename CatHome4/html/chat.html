@@ -14,7 +14,6 @@
         <button id="chatNew" title="新会话（session.new——清前文并重新注入）">新会话</button>
         <button id="chatRefresh" title="刷新——重建界面气泡（纯前端）">刷新</button>
     </div>
-    <div id="chatStatus"></div>
     <div id="chatMsgs"></div>
     <!-- M4c Note 面板——Agent 与人交互的工作进度面板 -->
     <div id="notePanel" class="collapsed">
@@ -37,6 +36,8 @@
         <textarea id="chatSendInput" rows="3" placeholder="说话…（Enter 发送，Shift+Enter 换行；发送期禁用）"></textarea>
         <button id="chatSendBtn">发送</button>
     </div>
+    <!-- E 系列——状态区（四态计时 + Token 统计）：最底部持久存在 -->
+    <div id="chatStatus"></div>
 
     <!-- F2.3 引导层——对话核心逻辑在外部模块（js/chat-core.js + js/chat-note.js——对话逻辑唯一真相源）；本页只承接引导：applyUiConfig/SSE/按钮绑定（防御式）/初始化 -->
     <!-- F3 MD 渲染——chat-md.js 手写解析器（纯函数，无依赖），必须先于 chat-core.js 加载（chatOnText 调用 mdToHtml） -->

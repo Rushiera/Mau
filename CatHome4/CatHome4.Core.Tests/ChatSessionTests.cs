@@ -331,6 +331,65 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
+        /// roundsum 轮末统计——CloseRound 推送（Token 消耗 + 工具次数 + 总耗时 + 四态用时；chatdone stats 带 context 前文长度）。
+        /// </summary>
+        [Fact]
+        public void RoundSum_PushedOnCloseRound()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "统计完成";
+            llm.UsageJson = "{\"prompt\":1000,\"completion\":200,\"cacheHit\":800}";
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            session.AttachHost(host);
+            session.PostUserMessage("算一下");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            // roundsum 视图事件存在
+            List<string> rsEvents;
+            Assert.True(host.ViewEvents.TryGetValue("roundsum", out rsEvents));
+            Assert.True(rsEvents.Count >= 1);
+            // 载荷结构——type=roundsum + data 五字段 + phases 四态
+            using (JsonDocument rd = JsonDocument.Parse(rsEvents[0]))
+            {
+                JsonElement root = rd.RootElement;
+                Assert.Equal("roundsum", root.GetProperty("type").GetString());
+                JsonElement data = root.GetProperty("data");
+                Assert.Equal(1000, data.GetProperty("prompt").GetInt64());
+                Assert.Equal(200, data.GetProperty("completion").GetInt64());
+                Assert.Equal(800, data.GetProperty("cacheHit").GetInt64());
+                Assert.Equal(200, data.GetProperty("miss").GetInt64());
+                Assert.True(data.GetProperty("elapsedMs").GetInt64() >= 0);
+                JsonElement phases = data.GetProperty("phases");
+                Assert.True(phases.GetProperty("link").GetInt64() >= 0);
+                Assert.True(phases.GetProperty("think").GetInt64() >= 0);
+                Assert.True(phases.GetProperty("tool").GetInt64() >= 0);
+                Assert.True(phases.GetProperty("reply").GetInt64() >= 0);
+            }
+            // chatdone stats 带 context（单次前文长度——非累计）
+            List<string> ctrlEvents;
+            Assert.True(host.ViewEvents.TryGetValue("control", out ctrlEvents));
+            string doneCtrl = null;
+            for (int i = ctrlEvents.Count - 1; i >= 0; i--)
+            {
+                using (JsonDocument cd = JsonDocument.Parse(ctrlEvents[i]))
+                {
+                    if (cd.RootElement.TryGetProperty("type", out JsonElement t) && t.GetString() == "chatdone")
+                    {
+                        doneCtrl = ctrlEvents[i];
+                        break;
+                    }
+                }
+            }
+            Assert.NotNull(doneCtrl);
+            using (JsonDocument dd = JsonDocument.Parse(doneCtrl))
+            {
+                JsonElement stats = dd.RootElement.GetProperty("stats");
+                Assert.Equal(1000, stats.GetProperty("context").GetInt64());
+            }
+        }
+
+        /// <summary>
         /// S2 错误隔离——单次瞬态错误后会话就地修复：错误文本不入上下文，上下文保持断点（用户消息保留），相位回 Idle。
         /// 语义：错误可见（Error 事件已推前端），但不污染 ChatContext——断点续传的干净前提。
         /// 说明：Runtime 重试（TRANSPORT/5xx/429 最多 3 次）在 DeepSeekLlmRuntime 内部完成，对会话层透明；

@@ -34,6 +34,14 @@ var chatPhaseTimes = { link: 0, think: 0, tool: 0, reply: 0 };   // 各态已完
 var chatUsage = { prompt: 0, completion: 0, cacheHit: 0 };       // Token 整轮累计（usage 事件覆盖式累计）
 var chatStatusTimer = null;        // 状态条 500ms 刷新定时器
 
+// 计数格式化——大数转 k/M（≥1000 → x.xx k；≥1000000 → x.xx M；M 为最大单位；保留两位小数；sessionId 等标识不适用）
+function chatFmtCount(n) {
+    n = Number(n) || 0;
+    if (n >= 1000000) { return (n / 1000000).toFixed(2) + 'M'; }
+    if (n >= 1000) { return (n / 1000).toFixed(2) + 'k'; }
+    return String(n);
+}
+
 function chatPhaseEnter(key) {
     // 相位切换——前一态结算 + 新态起表（事件驱动；每态计时独立）
     var now = Date.now();
@@ -82,10 +90,10 @@ function chatRenderStatus() {
         var miss = chatUsage.prompt - chatUsage.cacheHit;
         if (miss < 0) { miss = 0; }
         html += '<span class="tok">'
-            + '<span class="tk">↑' + chatUsage.prompt + '</span>'
-            + '<span class="tk c">↓' + chatUsage.completion + '</span>'
-            + (chatUsage.cacheHit > 0 ? '<span class="tk ch">cache ' + chatUsage.cacheHit + '</span>' : '')
-            + (miss > 0 ? '<span class="tk ms">miss ' + miss + '</span>' : '')
+            + '<span class="tk">↑' + chatFmtCount(chatUsage.prompt) + '</span>'
+            + '<span class="tk c">↓' + chatFmtCount(chatUsage.completion) + '</span>'
+            + (chatUsage.cacheHit > 0 ? '<span class="tk ch">cache ' + chatFmtCount(chatUsage.cacheHit) + '</span>' : '')
+            + (miss > 0 ? '<span class="tk ms">miss ' + chatFmtCount(miss) + '</span>' : '')
             + '</span>';
     }
     bar.innerHTML = html;
@@ -262,6 +270,9 @@ function chatRenderHistory(data) {
             // 注入报告——新会话前文加载明细（ok/missing/error 三态 + 字符数；独立持久化字段 Rebuild 不清）
             var rb2 = chatBubble('assistant', 'inject');
             rb2.innerHTML = chatInjectReportHtml(p);
+        } else if (blk.renderType === 'roundsum') {
+            // roundsum 轮末统计——历史重建：独立气泡（本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时）
+            chatOnRoundSum(p);
         } else if (blk.renderType === 'text') {
             // F3 MD 渲染——历史 text 块同样走解析器（与实时渲染一致）；md-block 包裹=CSS 作用域锚点
             var cb = chatBubble('assistant');
@@ -272,12 +283,12 @@ function chatRenderHistory(data) {
     if (data.sessionId) {
         CHAT_SESSION = data.sessionId;
     }
-    var infoText = '会话 ' + (data.count || 0) + ' 条 | sessionId=' + CHAT_SESSION;
+    var infoText = '会话 ' + chatFmtCount(data.count || 0) + ' 条 | sessionId=' + CHAT_SESSION;
     var hs = data.stats;
     if (hs) {
-        var hMiss = (hs.prompt || 0) - (hs.cacheHit || 0);
-        if (hMiss < 0) { hMiss = 0; }
-        infoText += ' | 前文 ' + (hs.prompt || 0) + ' tokens（命中 ' + (hs.cacheHit || 0) + ' / 非命中 ' + hMiss + '）· 输出 ' + (hs.completion || 0);
+        // 前文长度 = 最近一次请求的单次 prompt（context 字段）；旧数据无 context 时回退累计值
+        var ctx = (hs.context !== undefined && hs.context > 0) ? hs.context : (hs.prompt || 0);
+        infoText += ' | 前文 ' + chatFmtCount(ctx) + ' tokens';
     }
     chatInfo.textContent = infoText;
     chatScrollBottom(true);
@@ -404,6 +415,9 @@ function chatOnView(d) {
         chatOnRetry(d.seq, d.replaceSeq, payload);
     } else if (type === 'control') {
         chatOnControl(payload);
+    } else if (type === 'roundsum') {
+        // roundsum 轮末统计——独立气泡（本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时）
+        chatOnRoundSum(payload);
     }
     chatScrollBottom();
 }
@@ -553,12 +567,12 @@ function chatOnControl(payload) {
         }
         viewContainers = {};
         if (payload.count !== undefined) {
-            var doneText = '会话 ' + payload.count + ' 条 | sessionId=' + CHAT_SESSION;
+            var doneText = '会话 ' + chatFmtCount(payload.count) + ' 条 | sessionId=' + CHAT_SESSION;
             var ds = payload.stats;
             if (ds) {
-                var dMiss = (ds.prompt || 0) - (ds.cacheHit || 0);
-                if (dMiss < 0) { dMiss = 0; }
-                doneText += ' | 前文 ' + (ds.prompt || 0) + ' tokens（命中 ' + (ds.cacheHit || 0) + ' / 非命中 ' + dMiss + '）· 输出 ' + (ds.completion || 0);
+                // 前文长度 = 最近一次请求的单次 prompt（context 字段）；旧数据无 context 时回退累计值
+                var ctx2 = (ds.context !== undefined && ds.context > 0) ? ds.context : (ds.prompt || 0);
+                doneText += ' | 前文 ' + chatFmtCount(ctx2) + ' tokens';
             }
             chatInfo.textContent = doneText;
         }
@@ -569,7 +583,44 @@ function chatOnControl(payload) {
         }
         if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
         chatSetState('idle');
+    } else if (type === 'note') {
+        // 问题一修复——宿主经 view/control 通道推送 Note 状态（ChatSession.PushNoteState→PushView）；转交 noteOnEvent 重绘（chat-note.js）
+        noteOnEvent(payload);
     }
+}
+
+// 时长格式化——毫秒 → 可读（<60s → x.xs；≥60s → x分x.x秒；roundsum 用时展示）
+function chatFmtMs(ms) {
+    var s = (ms || 0) / 1000;
+    if (s >= 60) {
+        var mins = Math.floor(s / 60);
+        var secs = s - mins * 60;
+        return mins + '分' + secs.toFixed(1) + '秒';
+    }
+    return s.toFixed(1) + 's';
+}
+
+// roundsum 轮末统计气泡——本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时（宿主 CloseRound 推送/历史重建渲染；弱化系统样式）
+function chatOnRoundSum(payload) {
+    var d = payload.data || {};
+    var phases = d.phases || {};
+    var miss = (d.miss !== undefined) ? d.miss : ((d.prompt || 0) - (d.cacheHit || 0));
+    if (miss < 0) { miss = 0; }
+    var b = chatBubble('assistant', 'roundsum');
+    var html = '<div class="rs-head">📊 本轮统计</div>';
+    html += '<div class="rs-tok">↑' + chatFmtCount(d.prompt || 0)
+        + ' ↓' + chatFmtCount(d.completion || 0)
+        + ' cache ' + chatFmtCount(d.cacheHit || 0)
+        + ' miss ' + chatFmtCount(miss) + '</div>';
+    if (d.toolCount > 0) {
+        html += '<div class="rs-tools">🔧 工具 ' + d.toolCount + ' 次</div>';
+    }
+    html += '<div class="rs-times">⏱ 链路 ' + chatFmtMs(phases.link)
+        + ' · 思考 ' + chatFmtMs(phases.think)
+        + ' · 工具 ' + chatFmtMs(phases.tool)
+        + ' · 回复 ' + chatFmtMs(phases.reply)
+        + ' · 总计 ' + chatFmtMs(d.elapsedMs) + '</div>';
+    b.innerHTML = html;
 }
 
 // 新会话——session.new 指令（P8.5 design-ch4-workspace §六：清前文 + 按清单重新注入；走 CommandBus 无飞线）

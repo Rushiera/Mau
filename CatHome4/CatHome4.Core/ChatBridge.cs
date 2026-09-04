@@ -335,6 +335,7 @@ namespace CH4
             stats["prompt"] = st.LastPromptTokens;
             stats["cacheHit"] = st.LastCacheHitTokens;
             stats["completion"] = st.LastCompletionTokens;
+            stats["context"] = st.LastContextTokens;
             resp["stats"] = stats;
             return JsonSerializer.Serialize(resp);
         }

@@ -7,9 +7,9 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 #uiVer { background: rgba(0,0,0,0.6); border: 1px solid #2a2a2a; border-radius: 4px; padding: 1px 8px; color: #6a9955; font-size: 11px; }
 #chatNew, #chatRefresh { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
 #chatNew:hover, #chatRefresh:hover { background: #2a2a2a; }
-/* E 系列——四态状态条 + Token 统计（link/think/tool/reply + 每态计时） */
-#chatStatus { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid #1f1f1f; font-size: 11px; color: #6a6a6a; background: #131313; min-height: 22px; flex-wrap: wrap; }
-#chatStatus:empty { display: none; }
+/* E 系列——四态状态条 + Token 统计（link/think/tool/reply + 每态计时）；位于页面最底部（输入框下方）持久存在 */
+#chatStatus { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-top: 1px solid #1f1f1f; font-size: 11px; color: #6a6a6a; background: #131313; min-height: 22px; flex-wrap: wrap; }
+/* 持久存在——空态不隐藏（用户要求状态区常驻最底部） */
 #chatStatus .st { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 3px; color: #4a4a4a; }
 #chatStatus .st.active { color: #c8c8c8; animation: chat-phase-pulse 1.2s ease-in-out infinite; }
 #chatStatus .st.link.active { color: #569cd6; }
@@ -54,6 +54,12 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 .inject-report .ir-item { word-break: break-all; white-space: pre-wrap; }
 .inject-report .ir-item.missing { color: #b5a25e; }
 .inject-report .ir-item.error { color: #f48771; }
+/* roundsum 轮末统计气泡——本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时（弱化系统样式） */
+.chat-bubble.roundsum { background: #12161a; border: 1px solid #223040; color: #9aa8b8; font-size: 11px; max-width: 88%; line-height: 1.6; }
+.chat-bubble.roundsum .rs-head { color: #6a9955; font-weight: bold; margin-bottom: 3px; }
+.chat-bubble.roundsum .rs-tok { color: #4ec9b0; word-break: break-all; white-space: pre-wrap; }
+.chat-bubble.roundsum .rs-tools { color: #dcdcaa; margin-top: 2px; }
+.chat-bubble.roundsum .rs-times { color: #9a9a9a; margin-top: 2px; }
 #chatinput { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #222; align-items: flex-end; }
 #chatSendInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 7px 10px; font-family: inherit; font-size: 12px; resize: none; line-height: 1.5; }
 #chatSendInput:focus { outline: none; border-color: #0e639c; }

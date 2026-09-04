@@ -28,6 +28,10 @@ namespace CH4
 /// </summary>
 private string _injectReport = ""; 
 /// <summary>
+/// 轮末统计块——roundsum（每轮 CloseRound 生成：Token 消耗 + 四态用时；非真实前文派生，Rebuild 不清；Save 落盘，GetBlocks 按帧合并）
+/// </summary>
+private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
+/// <summary>
 /// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）
 /// </summary>
 /// <param name = "json">注入报告 JSON（file/status/…）</param>
@@ -65,6 +69,9 @@ private string _injectReport = "";
 
             /// <summary>注入报告 JSON——会话元数据（非真实前文派生；Rebuild 不清，Save 落盘）</summary>
             public string InjectReport { get; set; }
+
+            /// <summary>轮末统计块数组——roundsum（非真实前文派生；Rebuild 不清，Save 落盘，Load 恢复）</summary>
+            public ViewBlock[] RoundSums { get; set; }
         }
 
         /// <summary>
@@ -79,23 +86,42 @@ private string _injectReport = "";
         /// <summary>内存视图块——按生成序（history 数据源）</summary>
         public ViewBlock[] GetBlocks()
 {
+            // 合并面——真实前文块 + roundsum 轮末统计块（按帧号升序）
+            ViewBlock[] merged = new ViewBlock[_blocks.Count + _roundSums.Count];
+            int bi = 0;
+            int ri = 0;
+            int mi = 0;
+            while (bi < _blocks.Count || ri < _roundSums.Count)
+            {
+                if (ri >= _roundSums.Count || (bi < _blocks.Count && _blocks[bi].Frame <= _roundSums[ri].Frame))
+                {
+                    merged[mi] = _blocks[bi];
+                    bi = bi + 1;
+                }
+                else
+                {
+                    merged[mi] = _roundSums[ri];
+                    ri = ri + 1;
+                }
+                mi = mi + 1;
+            }
             // 注入报告合成首块——会话元数据（非真实前文派生；前端首块渲染前文加载明细）
             if (_injectReport.Length > 0)
             {
-                ViewBlock[] withReport = new ViewBlock[_blocks.Count + 1];
+                ViewBlock[] withReport = new ViewBlock[merged.Length + 1];
                 ViewBlock report = new ViewBlock();
                 report.Frame = 0;
                 report.Hash = "inject_report";
                 report.RenderType = "inject_report";
                 report.Payload = _injectReport;
                 withReport[0] = report;
-                for (int i = 0; i < _blocks.Count; i = i + 1)
+                for (int i = 0; i < merged.Length; i = i + 1)
                 {
-                    withReport[i + 1] = _blocks[i];
+                    withReport[i + 1] = merged[i];
                 }
                 return withReport;
             }
-            return _blocks.ToArray();
+            return merged;
         }
         /// <summary>
         /// 真实前文 append 钩子——用户消息 → user 块
@@ -226,6 +252,7 @@ private string _injectReport = "";
                 data.SessionId = "";
                 data.Blocks = _blocks.ToArray();
                 data.InjectReport = _injectReport;
+                data.RoundSums = _roundSums.ToArray();
                 JsonSerializerOptions options = new JsonSerializerOptions();
                 options.IncludeFields = true;
                 string json = JsonSerializer.Serialize(data, options);
@@ -237,6 +264,21 @@ private string _injectReport = "";
             }
         }
         /// <summary>
+        /// 追加轮末统计块——roundsum（CloseRound 生成：Token 消耗 + 工具次数 + 总耗时 + 四态用时；非真实前文派生，Rebuild 不清）。
+        /// </summary>
+        /// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...}}）</param>
+        /// <param name="frame">创建帧号（与真实前文块同帧序合并）</param>
+        public void AppendRoundSummary(string payloadJson, long frame)
+        {
+            ViewBlock block = new ViewBlock();
+            block.Frame = frame;
+            block.Hash = "roundsum_" + _roundSums.Count.ToString();
+            block.RenderType = "roundsum";
+            block.Payload = payloadJson;
+            _roundSums.Add(block);
+        }
+
+        /// <summary>
         /// 清空视图层——session.new 清前文时同步（真实前文 Clear 后视图随生命周期清理）
         /// </summary>
         public void Clear()
@@ -245,6 +287,8 @@ private string _injectReport = "";
             _pendingTools.Clear();
             // 注入报告随视图层清理——session.new 后 HandleSessionNew 重新 Set + Save
             _injectReport = "";
+            // 轮末统计随视图层清理——新会话不保留旧轮统计
+            _roundSums.Clear();
         }
         /// <summary>
         /// 生成视图块——内容哈希 = 真实前文单块完整字段 SHA256（裁决：前文块哈希作唯一标识）
@@ -368,7 +412,7 @@ private string _injectReport = "";
             }
         }
 /// <summary>
-/// 加载注入报告——启动恢复时调用（Rebuild 后读回；view.json 缺失/损坏静默空报告）
+/// 加载注入报告 + 轮末统计——启动恢复时调用（Rebuild 后读回；view.json 缺失/损坏静默空报告）
 /// </summary>
 public void LoadInjectReport()
 {
@@ -386,6 +430,11 @@ public void LoadInjectReport()
         if (data != null && data.InjectReport != null)
         {
             _injectReport = data.InjectReport;
+        }
+        if (data != null && data.RoundSums != null)
+        {
+            _roundSums.Clear();
+            _roundSums.AddRange(data.RoundSums);
         }
     }
     catch (Exception)
