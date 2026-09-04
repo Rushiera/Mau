@@ -2,10 +2,10 @@
 // 积木: text.replace
 // ID:   BRIK-TEXT-004
 // 类别: TEXT
-// 作用: 替换文本——old 全部出现处替换为 new 并原子写回（old 未找到报错）——LLM 工具 text-replace 语料执行面
+// 作用: 锚点三态替换——old 全部出现处替换为 new 并原子写回（exact/ignore_case/regex；NotFound 带差异字节定位，Ambiguous 带候选行）——LLM 工具 text-replace 语料执行面
 // 依赖: 无
-// 引用: Mau.Runtime（FileSystemService/DataBox）
-// 原理: DataBox.TryResolve<FileSystemService> → ReplaceText(path, old, new)；argsJson 内解析 path/old/new
+// 引用: Mau.Runtime（FileSystemService/DataBox/TextReplaceOutcome）
+// 原理: DataBox.TryResolve<FileSystemService> → ReplaceTextAuto(path, old, new, mode)；argsJson 内解析 path/old/new/mode
 // 常用: dev_cat.mau 认领线——'text.replace'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
@@ -20,10 +20,10 @@ namespace Mau.Bricks
     public static class TextReplaceBrick
     {
         /// <summary>
-        /// 替换全部出现处并原子写回
+        /// 锚点三态替换——exact/ignore_case 唯一命中替换，regex 全部匹配；编码内建 + 换行保真
         /// </summary>
-        /// <param name="argsJson">工具参数 JSON（path/old/new）</param>
-        /// <param name="result">替换数量确认或 ERR| 错误文本</param>
+        /// <param name="argsJson">工具参数 JSON（path/old/new/mode）</param>
+        /// <param name="result">三态确认文本或 ERR| 错误文本</param>
         /// <returns>true=执行成功</returns>
         public static bool Replace(string argsJson, out string result)
         {
@@ -48,13 +48,23 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                int count = fs.ReplaceText(path, oldText, newText);
-                if (count == 0)
+                string mode = ExtractArg(argsJson, "mode");
+                if (mode.Length == 0)
                 {
-                    result = "ERR|NOT_FOUND|文件 " + path + " 中未找到目标文本";
+                    mode = "exact";
+                }
+                TextReplaceOutcome outcome = fs.ReplaceTextAuto(path, oldText, newText, mode);
+                if (outcome.Status == TextReplaceStatus.NotFound)
+                {
+                    result = "ERR|ANCHOR_NOT_FOUND|第 " + outcome.DiffByteIndex.ToString() + " 字节 期望「" + outcome.Expected + "」实际「" + outcome.Actual + "」";
                     return false;
                 }
-                result = "OK 替换完成: " + count.ToString() + " 处（" + path + "）";
+                if (outcome.Status == TextReplaceStatus.Ambiguous)
+                {
+                    result = "ERR|ANCHOR_AMBIGUOUS|锚点出现 " + outcome.Count.ToString() + " 次，候选行: " + string.Join(", ", outcome.CandidateLines);
+                    return false;
+                }
+                result = "OK 替换完成: " + outcome.Count.ToString() + " 处（" + path + "）--目标段--" + outcome.Snippet;
                 return true;
             }
             catch (Exception ex)
@@ -98,4 +108,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:8AEADFDC69E67D576B9B96E89FD9EE43B6F5059AB793CA84F1E19079EA4E85C8
+// #MAU_CHECKSUM:SHA256:41C4D14EFF05D9117DDE073552C449C20A9B692B34C859D48AF6AFF4DAF38E16

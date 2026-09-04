@@ -5,7 +5,7 @@
 // 作用: 覆写文件（含新建）——整文件替换为 content（受控根内路径）——LLM 工具 text-write 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
-// 原理: DataBox.TryResolve<FileSystemService> → WriteText(path, content)；argsJson 内解析 path/content
+// 原理: DataBox.TryResolve<FileSystemService> → WriteTextAuto(path, content)；argsJson 内解析 path/content
 // 常用: dev_cat.mau 认领线——'text.write'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
@@ -47,7 +47,7 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                fs.WriteText(path, content);
+                fs.WriteTextAuto(path, content);
                 result = "OK 已覆写: " + path + "（" + content.Length.ToString() + " 字符）";
                 return true;
             }
@@ -92,4 +92,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:C4EE5BBD818F3C449CF7A90EEEBD511DB7A99BBA383A8C49BC01CA6AA40EC51A
+// #MAU_CHECKSUM:SHA256:546878D22E0D4B8170239D1672CAD5530589311C1C3580EA62CC2CADAD751717

@@ -320,6 +320,62 @@ public void Find_DirWildcardPrefixForcesRecursive()
         TryDelete(baseDir);
     }
 }/// <summary>
+/// ReadLinesAuto 编码契约——.md BOM 剥离、.bat GBK 中文行、行号格式与 ReadLines 一致（P5 编码契约补全）
+/// </summary>
+[Fact]
+public void ReadLinesAuto_EncodingContractAndLineFormat()
+{
+    string baseDir = Path.Combine(Path.GetTempPath(), "mau_rlauto_" + Guid.NewGuid().ToString("N"));
+    string rw = Path.Combine(baseDir, "rw");
+    Directory.CreateDirectory(rw);
+    try
+    {
+        WorkspaceConfig.RootEntry[] entries = new WorkspaceConfig.RootEntry[]
+        {
+            new WorkspaceConfig.RootEntry()
+            {
+                Id = "rw",
+                Path = rw,
+                Writable = true
+            }
+        };
+        FileSystemService fs = new FileSystemService(entries, Path.Combine(rw, "recycle"));
+        // [段1] .md 带 BOM 读取——首行无 \uFEFF 残留（Ordinal 比较——U+FEFF 是格式字符，文化比较会当可忽略字符误匹配）
+        string mdPath = Path.Combine(rw, "doc.md");
+        fs.WriteTextAuto(mdPath, "标题\n正文一\n正文二");
+        string mdLines = fs.ReadLinesAuto(mdPath, 1, 0);
+        Assert.Contains("1: 标题", mdLines);
+        Assert.DoesNotContain("\uFEFF", mdLines, StringComparison.Ordinal);
+        // [段2] .bat GBK 中文行号读取
+        string batPath = Path.Combine(rw, "run.bat");
+        fs.WriteTextAuto(batPath, "echo 你好\necho 再见");
+        string batLines = fs.ReadLinesAuto(batPath, 1, 0);
+        Assert.Contains("1: echo 你好", batLines);
+        Assert.Contains("2: echo 再见", batLines);
+        // [段3] 区间裁剪——end 指定行数
+        string txtPath = Path.Combine(rw, "a.txt");
+        fs.WriteTextAuto(txtPath, "l1\nl2\nl3");
+        string range = fs.ReadLinesAuto(txtPath, 2, 3);
+        Assert.Equal("2: l2\n3: l3", range);
+        // [段4] CRLF 文件行尾不残留 \r
+        string crlfPath = Path.Combine(rw, "b.txt");
+        File.WriteAllText(crlfPath, "x\r\ny\r\n");
+        string crlfLines = fs.ReadLinesAuto(crlfPath, 1, 0);
+        Assert.DoesNotContain("\r", crlfLines);
+    }
+    finally
+    {
+        TryDelete(baseDir);
+    }
+}/// <summary>
+/// Grep 编码内建——GBK .bat 中文关键词命中、.md BOM 剥离后可搜（P5 编码契约补全）
+/// </summary>
+ [ Fact ]  public  void  Grep_EncodingAwareContentSearch ( ) { string  baseDir  =  Path . Combine ( Path . GetTempPath ( ) ,  "mau_grepenc_" + Guid . NewGuid ( ) . ToString ( "N" ) ) ;  string  rw  =  Path . Combine ( baseDir ,  "rw" ) ;  Directory . CreateDirectory ( rw ) ;  try  { WorkspaceConfig . RootEntry [ ]  entries  =  new  WorkspaceConfig . RootEntry [ ] { new  WorkspaceConfig . RootEntry ( ) { Id  =  "rw" ,  Path  =  rw ,  Writable  =  true } } ;  FileSystemService  fs  =  new  FileSystemService ( entries ,  Path . Combine ( rw ,  "recycle" ) ) ;  // [段1] GBK 文件中文命中——.bat 写中文 → grep 中文关键词
+string  batPath  =  Path . Combine ( rw ,  "run.bat" ) ;  fs . WriteTextAuto ( batPath ,  "echo 你好世界\necho 再见" ) ;  string [ ]  batHits  =  fs . Grep ( rw ,  "你好" ,  "*" ,  100 ) ;  Assert . Single ( batHits ) ;  Assert . Contains ( "run.bat:1:" ,  batHits [ 0 ] ) ;  Assert . Contains ( "你好" ,  batHits [ 0 ] ) ;  // [段2] .md BOM 文件命中——BOM 剥离后首行可搜
+string  mdPath  =  Path . Combine ( rw ,  "doc.md" ) ;  fs . WriteTextAuto ( mdPath ,  "# 标题\n正文含目标" ) ;  string [ ]  mdHits  =  fs . Grep ( rw ,  "目标" ,  "*" ,  100 ) ;  Assert . Single ( mdHits ) ;  Assert . Contains ( "doc.md:2:" ,  mdHits [ 0 ] ) ;  // [段3] 大小写敏感仍成立——无 HELLO 命中
+string [ ]  noHit  =  fs . Grep ( rw ,  "HELLO" ,  "*" ,  100 ) ;  Assert . Empty ( noHit ) ;  } finally  { TryDelete ( baseDir ) ;  } }
+
+/// <summary>
         /// 尽力删除临时目录——不掩盖断言结果
         /// </summary>
         /// <param name="dir">临时目录</param>

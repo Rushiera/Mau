@@ -5,7 +5,7 @@
 // 作用: 追加文本到文件末尾（文件不存在则新建；自动创建父目录）——LLM 工具 text-append 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
-// 原理: DataBox.TryResolve<FileSystemService> → AppendText(path, content)；argsJson 内解析 path/content
+// 原理: DataBox.TryResolve<FileSystemService> → AppendTextAuto(path, content)；argsJson 内解析 path/content
 // 常用: dev_cat.mau 认领线——'text.append'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
@@ -47,7 +47,7 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                fs.AppendText(path, content);
+                fs.AppendTextAuto(path, content);
                 result = "OK 已追加: " + path + "（+" + content.Length.ToString() + " 字符）";
                 return true;
             }
@@ -92,4 +92,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:343A7FA17D32EF28F3E48C5DBF713F7DC4E66CE9D6B041678DF8BCB5C85E8298
+// #MAU_CHECKSUM:SHA256:9875952D3C2A66BE0BA9256825A78250938B21FBFD2BE21E6678D65E08C722D2

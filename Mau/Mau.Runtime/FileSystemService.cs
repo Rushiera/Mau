@@ -416,7 +416,66 @@ string ? dir  =  Path . GetDirectoryName ( resolved ) ;  if  ( dir != null  && d
             }
             return builder.ToString();
         }
+/// <summary>
+/// 自动编码行号区间读取——BOM 优先探测，无 BOM 按类型契约（P5 编码契约补全；规格 design-ch4-text-tools §四）
+/// </summary>
+/// <param name = "path">受控路径</param>
+/// <param name = "startLine">起始行（1 起）</param>
+/// <param name = "endLine">结束行；零表示文件尾</param>
+/// <returns>带行号文本</returns>
+public string ReadLinesAuto(string path, int startLine, int endLine)
+{
+    if (startLine < 1 || endLine < 0)
+    {
+        throw new ArgumentOutOfRangeException("startLine");
+    }
 
+    string resolved = Resolve(path, false);
+    byte[] raw = File.ReadAllBytes(resolved);
+    System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
+    int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
+    string content = enc.GetString(raw, bom, raw.Length - bom);
+    string[] lines = content.Replace("\r\n", "\n").Split('\n');
+    // [段1] 尾空行修剪——以 \n 结尾时 Split 产生尾空串，与 File.ReadAllLines 语义对齐
+    if (lines.Length > 0 && lines[lines.Length - 1].Length == 0)
+    {
+        string[] trimmed = new string[lines.Length - 1];
+        for (int i = 0; i < trimmed.Length; i = i + 1)
+        {
+            trimmed[i] = lines[i];
+        }
+
+        lines = trimmed;
+    }
+
+    // [段2] 区间裁剪——end 零=文件尾，超尾截断
+    int end = endLine;
+    if (end == 0 || end > lines.Length)
+    {
+        end = lines.Length;
+    }
+
+    if (startLine > end && lines.Length > 0)
+    {
+        throw new ArgumentOutOfRangeException("startLine");
+    }
+
+    // [段3] 行号格式化输出——与 ReadLines 同格式（行号: 内容）
+    StringBuilder builder = new StringBuilder();
+    for (int line = startLine; line <= end; line = line + 1)
+    {
+        if (builder.Length > 0)
+        {
+            builder.Append('\n');
+        }
+
+        builder.Append(line.ToString());
+        builder.Append(": ");
+        builder.Append(lines[line - 1]);
+    }
+
+    return builder.ToString();
+}
         /// <summary>
         /// 按深度和数量上限列出稳定排序目录树
         /// </summary>
@@ -496,7 +555,10 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
         string relative = Path.GetRelativePath(root, file);
         try
         {
-            string[] lines = File.ReadAllLines(file, Encoding.UTF8);
+            byte[] raw = File.ReadAllBytes(file);
+            System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(file, raw);
+            int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
+            string[] lines = enc.GetString(raw, bom, raw.Length - bom).Replace("\r\n", "\n").Split('\n');
             for (int n = 0; n < lines.Length && hits.Count < limit; n = n + 1)
             {
                 string line = lines[n];

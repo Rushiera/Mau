@@ -2,10 +2,10 @@
 // 积木: text.read
 // ID:   BRIK-TEXT-001
 // 类别: TEXT
-// 作用: 读取 UTF-8 文本文件（受控根内路径）——LLM 工具 text-read 的语料执行面（P8 二期 dev_cat）
+// 作用: 自动编码读取文本文件（受控根内路径）——LLM 工具 text-read 的语料执行面（P8 二期 dev_cat）
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
-// 原理: DataBox.TryResolve<FileSystemService> → ReadText(path)；argsJson 内解析 path（语料零 JSON 解析）
+// 原理: DataBox.TryResolve<FileSystemService> → ReadTextAuto(path)；argsJson 内解析 path（语料零 JSON 解析）
 // 常用: dev_cat.mau 认领线——'text.read'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
@@ -20,7 +20,7 @@ namespace Mau.Bricks
     public static class TextReadBrick
     {
         /// <summary>
-        /// 读取 UTF-8 文本文件
+        /// 自动编码读取文本文件
         /// </summary>
         /// <param name="argsJson">工具参数 JSON（path）</param>
         /// <param name="result">文件内容（截断 20K）或 ERR| 错误文本</param>
@@ -46,7 +46,7 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                result = TrimResult(fs.ReadText(path), 20000);
+                result = TrimResult(fs.ReadTextAuto(path), 20000);
                 return true;
             }
             catch (Exception ex)
@@ -105,4 +105,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:C5ED9CFE055C0733C735C9E4039052F9B8E0D55D804F8A6F3A436C1CC7220611
+// #MAU_CHECKSUM:SHA256:4333316A6BA79C6C533EA70B6E8EA8213765FE47F89CEB856483BCBEACA773F9

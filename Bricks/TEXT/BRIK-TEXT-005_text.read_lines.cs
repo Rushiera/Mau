@@ -5,7 +5,7 @@
 // 作用: 按行号区间读取文本（start 起 / end 止，1 起；end 省略读至文件尾；编码自动探测）——LLM 工具 text-read_lines 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
-// 原理: DataBox.TryResolve<FileSystemService> → ReadLines(path, start, end)；argsJson 内解析 path/start/end
+// 原理: DataBox.TryResolve<FileSystemService> → ReadLinesAuto(path, start, end)；argsJson 内解析 path/start/end
 // 常用: TextCat 认领线——'text.read_lines'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
@@ -65,7 +65,7 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                result = fs.ReadLines(path, start, end);
+                result = fs.ReadLinesAuto(path, start, end);
                 return true;
             }
             catch (Exception ex)
@@ -109,4 +109,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:447C1AD203A11D3785068002F72AA473E7B785CFB3D218D797AB8D94319F7D29
+// #MAU_CHECKSUM:SHA256:962C521D603768098BF7B5BFAD44549FFF4F0A85BED87C08E851C3C20A7A8241
