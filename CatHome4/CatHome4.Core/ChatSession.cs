@@ -38,6 +38,9 @@ namespace CH4
         /// <summary>工具轮次收敛上限——同 MaxToolRounds（P8.5b 上调 3→10 保持）</summary>
         private const int MaxToolRounds = 10;
 
+        /// <summary>空回复续传上限——同 CH2 [段2.3] 语义（有思考无回复 → 同上下文重发 ≤2 次）</summary>
+        private const int EmptyReplyMaxRetry = 2;
+
         /// <summary>工具单 Dog owner ID——宿主 Dog 域（同 ToolOwnerId——OA 未开存活校验，多 Dog 未来可扩展独立 ID）</summary>
         private const long ToolOwnerId = 1;
 
@@ -77,6 +80,12 @@ namespace CH4
 
         /// <summary>retry 气泡视图序号——多次重试复用同一气泡（replaceSeq 替换不堆叠）</summary>
         private long _retrySeq;
+
+        /// <summary>空回复续传计数——流成功结束但无回复文本时同上下文重发（CH2 [段2.3] 移植；整轮清零）</summary>
+        private int _emptyReplyRetry;
+
+        /// <summary>STREAM_CLOSED 续传标志——SSE 流未以 [DONE] 结束时置位（PumpLlm 检查；续传后复位）</summary>
+        private bool _streamClosedRetry;
 
         /// <summary>Token 用量整轮累计——prompt（含 cache hit）</summary>
         private long _usagePrompt;
@@ -541,6 +550,9 @@ namespace CH4
             // roundsum 统计——单次前文/工具计数/四态计时清零 + 轮次起表 + 进入 link 相位
             _contextTokens = 0;
             _toolCallCount = 0;
+            // 空回复续传计数——整轮清零（同 CH2 [段2.3] 每轮独立语义）
+            _emptyReplyRetry = 0;
+            _streamClosedRetry = false;
             _roundStartTick = System.Diagnostics.Stopwatch.GetTimestamp();
             _phaseAccumMs = new long[4];
             _phaseKind = -1;
@@ -577,6 +589,26 @@ _ = ConsumeLlmStream(messages);
             });
             _phase = ChatPhase.LlmRunning;
             _phaseFrames = 0;
+        }
+
+        /// <summary>
+        /// 空回复续传——流成功结束但无回复文本（STREAM_CLOSED 或 content 空）时同上下文重发（CH2 [段2.3] 移植；上限 EmptyReplyMaxRetry 次）。
+        /// 复用 S2 retry 视图机制：置位 _sawRetry → 续传流首个 Text/Reasoning 到达时前端自动回填 resolved。
+        /// </summary>
+        /// <param name="reason">续传原因——日志 + retry 视图展示</param>
+        private void RetryEmptyReply(string reason)
+        {
+            _emptyReplyRetry = _emptyReplyRetry + 1;
+            _streamClosedRetry = false;
+            LogStore.Add("LLM", 2, "空回复续传 第" + _emptyReplyRetry.ToString() + "/" + EmptyReplyMaxRetry.ToString() + " 次（" + reason + "）——同上下文重发", "LLM");
+            if (_httpHost != null)
+            {
+                string retryView = "{\"state\":\"retrying\",\"attempt\":\"" + _emptyReplyRetry.ToString() + "\",\"max\":\"" + EmptyReplyMaxRetry.ToString() + "\",\"text\":" + JsonSerializer.Serialize(reason) + "}";
+                _retrySeq = _httpHost.PushView("retry", retryView, -1, _retrySeq);
+                _sawRetry = true;
+            }
+            // 同上下文重发——LaunchLlm 内部清槽 + 帧计数归零（上下文未污染：空文本未入 Ctx/无错误文本入 Ctx）
+            LaunchLlm();
         }
 
         /// <summary>
@@ -707,7 +739,13 @@ _ = ConsumeLlmStream(messages);
                     {
                         _llmError = true;
                         _llmErrorText = ev.Text;
-                        if (_httpHost != null)
+                        // 空回复续传——STREAM_CLOSED（SSE 流未以 [DONE] 结束）且续传未耗尽：置位续传标志（PumpLlm 走续传），不推前端 error
+                        if (ev.Text.StartsWith("ERR|STREAM_CLOSED", StringComparison.Ordinal)
+                            && _emptyReplyRetry < EmptyReplyMaxRetry)
+                        {
+                            _streamClosedRetry = true;
+                        }
+                        else if (_httpHost != null)
                         {
                             string errCtrl = "{\"type\":\"error\",\"text\":" + JsonSerializer.Serialize(ev.Text) + "}";
                             _httpHost.PushView("control", errCtrl, -1, 0);
@@ -863,6 +901,12 @@ _ = ConsumeLlmStream(messages);
             // 错误可见性：前端 error 控制事件（ConsumeLlmStream 已推）+ LogStore L3；上下文保持断点（用户消息 + 已完成 turn 保留）
             if (_llmError)
             {
+                // 空回复续传——STREAM_CLOSED 且未耗尽 → 同上下文重发（CH2 [段2.3] 移植；StreamClosedRetry 标志由 ConsumeLlmStream 置位）
+                if (_streamClosedRetry)
+                {
+                    RetryEmptyReply("SSE 流中断（未以 [DONE] 结束）");
+                    return;
+                }
                 _textStreamSeq = 0;
                 _reasonStreamSeq = 0;
                 LogStore.Add("LLM", 3, "LLM 错误（本轮中止——上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
@@ -871,6 +915,26 @@ _ = ConsumeLlmStream(messages);
             }
             if (_llmToolCallsJson.Length == 0)
             {
+                // 空回复续传——流正常结束但无回复文本（有思考无回复或完全空）→ 同上下文重发（CH2 [段2.3] 移植；上限 EmptyReplyMaxRetry 次）
+                if (_llmResultText.Length == 0 && _emptyReplyRetry < EmptyReplyMaxRetry)
+                {
+                    RetryEmptyReply("模型未生成回复文本");
+                    return;
+                }
+                // 续传耗尽——模型未生成回复：写提示条目 + 正常完成（不加空 AI 消息——CH2 [段2.3] 耗尽语义）
+                if (_llmResultText.Length == 0)
+                {
+                    _textStreamSeq = 0;
+                    _reasonStreamSeq = 0;
+                    if (_httpHost != null)
+                    {
+                        string errCtrl = "{\"type\":\"error\",\"text\":\"模型多次未生成回复（续传耗尽）\"}";
+                        _httpHost.PushView("control", errCtrl, -1, 0);
+                    }
+                    LogStore.Add("LLM", 2, "空回复续传耗尽——模型未生成回复（本轮完成）", "LLM");
+                    _phase = ChatPhase.Done;
+                    return;
+                }
                 // 纯文本回复——本轮完成
                 _context.AddAssistantMessage(_llmResultText);
                 _viewStore.OnAssistantText(LastMessage(), CurrentFrame());

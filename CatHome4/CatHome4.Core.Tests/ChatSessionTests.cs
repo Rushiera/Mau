@@ -42,6 +42,18 @@ namespace CatHome4.Core.Tests
             /// <summary>是否模拟重试——产 Retrying 事件后正常回复（S2 §8.4 前端可见性验证）</summary>
             public bool EmitRetry = false;
 
+            /// <summary>是否模拟空回复——只产 Done 不产 Text（空回复续传验证）</summary>
+            public bool EmptyReply = false;
+
+            /// <summary>空回复次数——前 N 次调用产空回复（0=每次）</summary>
+            public int EmptyReplyTimes = 0;
+
+            /// <summary>是否模拟 STREAM_CLOSED——产 Error 不产 Done（续传验证）</summary>
+            public bool EmitStreamClosed = false;
+
+            /// <summary>STREAM_CLOSED 次数——前 N 次调用产 Error（0=每次）</summary>
+            public int StreamClosedTimes = 0;
+
             /// <summary>
             /// 流式对话——按队列返回工具调用或纯文本。
             /// </summary>
@@ -57,6 +69,19 @@ namespace CatHome4.Core.Tests
                 if (CallCount <= FailTimes)
                 {
                     yield return new LlmStreamEvent(LlmStreamKind.Error, FailText);
+                    yield break;
+                }
+                // 空回复续传——STREAM_CLOSED 模拟：前 N 次产 Error（未以 [DONE] 结束）
+                if (EmitStreamClosed && (StreamClosedTimes == 0 || CallCount <= StreamClosedTimes))
+                {
+                    yield return new LlmStreamEvent(LlmStreamKind.Error, "ERR|STREAM_CLOSED|SSE 流未以 [DONE] 结束");
+                    yield break;
+                }
+                // 空回复续传——空回复模拟：只产 Done 不产 Text（有思考无回复语义；EmptyReplyTimes 控制前 N 次）
+                if (EmptyReply && (EmptyReplyTimes == 0 || CallCount <= EmptyReplyTimes))
+                {
+                    yield return new LlmStreamEvent(LlmStreamKind.Reasoning, "思考中");
+                    yield return new LlmStreamEvent(LlmStreamKind.Done, "");
                     yield break;
                 }
                 // S2 §8.4——模拟 Runtime 重试：重试通知后正常产出（前端可见性验证）
@@ -481,6 +506,86 @@ namespace CatHome4.Core.Tests
             }
             // 重试后正常回复
             Assert.Contains("重试后正常回复", GetLastAssistantText(session));
+        }
+
+        /// <summary>
+        /// 空回复续传——MockLlm 模拟流正常结束但只产思考不产文本（CH2 [段2.3] 语义）：
+        /// 第一次调用 EmptyReply=true（空回复）→ 续传（同上下文重发）→ 第二次调用正常回复。
+        /// 断言：续传后正常完成 + 无空 assistant 消息入上下文 + 无前端 error（续传可恢复不推 error）。
+        /// </summary>
+        [Fact]
+        public void EmptyReply_AutoContinueAndResolve()
+        {
+            MockLlm llm = new MockLlm();
+            // 第 1 次调用空回复（只思考无文本）——后续正常
+            llm.EmptyReply = true;
+            llm.EmptyReplyTimes = 1;
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("空回复续传测试");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            // 续传后正常完成——assistant 文本存在（第二次调用产出 "ok"）
+            Assert.Contains("ok", GetLastAssistantText(session));
+            // 无空 assistant 消息——上下文中不出现 content=="" 的 assistant 消息
+            LlmMessage[] all = session.Context.GetMessages();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (all[i].Role == LlmRole.Assistant)
+                {
+                    Assert.True(all[i].Content == null || all[i].Content.Length > 0);
+                }
+            }
+            // LLM 调用次数 = 2（1 次空回复 + 1 次续传）
+            Assert.Equal(2, llm.CallCount);
+        }
+
+        /// <summary>
+        /// STREAM_CLOSED 续传——MockLlm 模拟 SSE 流未以 [DONE] 结束（ERR|STREAM_CLOSED）：
+        /// 第一次调用产 STREAM_CLOSED 错误 → 续传（同上下文重发）→ 第二次调用正常回复。
+        /// 断言：续传后正常完成 + 空回复续传计数工作（前 N 次 STREAM_CLOSED 由 StreamClosedTimes 控制）。
+        /// </summary>
+        [Fact]
+        public void StreamClosed_AutoContinueAndResolve()
+        {
+            MockLlm llm = new MockLlm();
+            llm.EmitStreamClosed = true;
+            llm.StreamClosedTimes = 1; // 只有第 1 次产 STREAM_CLOSED——后续正常
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("流中断续传测试");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            // 续传后正常完成
+            Assert.Contains("ok", GetLastAssistantText(session));
+            // LLM 调用次数 = 2（1 次 STREAM_CLOSED + 1 次续传）
+            Assert.Equal(2, llm.CallCount);
+        }
+
+        /// <summary>
+        /// 空回复续传耗尽——MockLlm 持续空回复（EmptyReply 始终 true）：
+        /// 续传 2 次耗尽 → 本轮完成（不加空 assistant 消息 + 前端 error 提示）。
+        /// 断言：LLM 调用次数 = 3（1 原始 + 2 续传）；无空 assistant 消息；上下文保持断点。
+        /// </summary>
+        [Fact]
+        public void EmptyReply_ExhaustRetryLimit()
+        {
+            MockLlm llm = new MockLlm();
+            // 持续空回复——所有调用都只产思考不产文本（续传耗尽验证）
+            llm.EmptyReply = true;
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("续传耗尽测试");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            // 续传耗尽——3 次调用（1 原始 + 2 续传上限）
+            Assert.Equal(3, llm.CallCount);
+            // 无空 assistant 消息入上下文（耗尽不产生空 AI 消息）
+            LlmMessage[] all = session.Context.GetMessages();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (all[i].Role == LlmRole.Assistant)
+                {
+                    Assert.True(all[i].Content == null || all[i].Content.Length > 0);
+                }
+            }
         }
     }
 }
