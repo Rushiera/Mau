@@ -166,44 +166,57 @@ function chatKeepAlive() {
     }, CHAT_TIMEOUT_MS);
 }
 
+function chatSealTextStreams() {
+    // 工具轮/新思考——seal 未终结的文本流式容器（防闪烁标记残留；宿主 text 整块为正常 seal 路径，此处兜底协议缺口）
+    for (var k in viewContainers) {
+        var c = viewContainers[k];
+        if (c && c.type === 'text') {
+            c.bubble.classList.remove('streaming');
+            c.bubble.classList.remove('streaming-wait');
+        }
+    }
+}
+
 function chatToolCard(tool) {
-    var card = document.createElement('div');
-    card.className = 'chat-tool';
-    var name = document.createElement('div');
-    name.className = 'tn';
-    name.textContent = '🔧 ' + (tool.name || '?');
-    card.appendChild(name);
+    // 工具卡——details 结构默认折叠（点击 summary 展开/收起；.tn/.ta/.tr 类保留——测试与样式复用）
+    var det = document.createElement('details');
+    det.className = 'chat-tool';
+    det.open = false;
+    var sum = document.createElement('summary');
+    sum.className = 'tn';
+    sum.textContent = '🔧 ' + (tool.name || '?');
+    det.appendChild(sum);
     if (tool.arguments) {
         var a = document.createElement('div');
         a.className = 'ta';
         a.textContent = tool.arguments;
-        card.appendChild(a);
+        det.appendChild(a);
     }
     if (tool.result) {
         var r = document.createElement('div');
         r.className = 'tr' + (tool.result.indexOf('ERR') === 0 ? ' err' : '');
         r.textContent = tool.result;
-        card.appendChild(r);
+        det.appendChild(r);
     } else if (tool.result === undefined) {
         var w = document.createElement('div');
         w.className = 'ta';
         w.textContent = '⏳ 处理中…';
-        card.appendChild(w);
+        det.appendChild(w);
     }
-    return card;
+    return det;
 }
 
 function chatReasonBlock(text) {
-    // 思考块——流式实时展开可见；长思考默认收起（保留手动展开；F1 观感优化）
+    // 思考块——默认折叠（点击 summary 展开/收起；折叠时 summary 显示字数感知内容量）
     var det = document.createElement('details');
     det.className = 'chat-reason';
+    det.open = false;
     var sum = document.createElement('summary');
-    sum.textContent = '思考过程';
+    sum.textContent = (text && text.length > 0) ? ('思考过程 · ' + text.length + ' 字') : '思考过程';
     det.appendChild(sum);
     var pre = document.createElement('div');
     pre.textContent = text || '';
     det.appendChild(pre);
-    det.open = !(text && text.length > 300);
     return det;
 }
 
@@ -425,8 +438,10 @@ function chatOnView(d) {
 function chatOnStream(seq, payload) {
     chatKeepAlive();
     if (payload.kind === 'reasoning') {
-        // 思考流式——独立气泡默认展开实时流式（B4.2）；首 reasoning 进入思考态
+        // 思考流式——独立气泡默认折叠（summary 字数实时感知）；首 reasoning 进入思考态
         if (!viewContainers[seq]) {
+            // 新思考容器——上一轮文本流式已终结（多轮工具循环残留兜底）
+            chatSealTextStreams();
             var b = chatBubble('assistant', 'reason');
             b.classList.add('streaming');
             var det = chatReasonBlock('');
@@ -436,6 +451,9 @@ function chatOnStream(seq, payload) {
         }
         var rc = viewContainers[seq];
         rc.reasonPre.textContent = rc.reasonPre.textContent + (payload.text || '');
+        // 默认折叠——summary 实时字数感知（流式增量同步）
+        var sumEl = rc.bubble.querySelector('summary');
+        if (sumEl) { sumEl.textContent = '思考过程 · ' + rc.reasonPre.textContent.length + ' 字'; }
     } else if (payload.kind === 'text') {
         // 回复流式——独立气泡流式；空增量（tool_calls 前的空 content 块）跳过——不建空气泡
         var t = payload.text || '';
@@ -479,6 +497,9 @@ function chatOnReason(seq, replaceSeq, payload) {
         c.bubble.classList.remove('streaming');
         c.bubble.classList.remove('streaming-wait');
         c.reasonPre.textContent = content;
+        // 整块替换——summary 字数同步（流式容器默认折叠）
+        var sumEl = c.bubble.querySelector('summary');
+        if (sumEl) { sumEl.textContent = '思考过程 · ' + content.length + ' 字'; }
         delete viewContainers[replaceSeq];
     } else if (content.length > 0) {
         var b = chatBubble('assistant', 'reason');
@@ -490,6 +511,8 @@ function chatOnReason(seq, replaceSeq, payload) {
 function chatOnToolCard(payload) {
     // 工具卡整块（F4 无占位卡——工具卡以结果整块出现）
     chatKeepAlive();
+    // 工具执行开始——上一轮文本流式已终结（宿主 seal 缺失兜底）
+    chatSealTextStreams();
     var tb = chatBubble('assistant', 'tool');
     tb.appendChild(chatToolCard(payload));
     chatPhaseEnter('tool');

@@ -142,8 +142,32 @@ test('view reason 整块替换思考流式容器', () => {
   expect(reasonDetail.textContent).toBe('最终思考');
 });
 
+// ── reason 默认折叠 + summary 字数 ──
+test('reason 默认折叠——summary 显示字数（流式/整块/历史一致）', () => {
+  // 流式创建——默认折叠 + 流式同步字数
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考' }, replaceSeq: -1 });
+  let det = chatMsgs.querySelector('.chat-reason');
+  expect(det.open).toBe(false);
+  expect(det.querySelector('summary').textContent).toContain('2 字');
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '中' }, replaceSeq: -1 });
+  expect(det.querySelector('summary').textContent).toContain('3 字');
+  // 整块替换——字数同步
+  window.chatOnView({ seq: 21, renderType: 'reason', payload: { content: '最终思考内容' }, replaceSeq: 11 });
+  det = chatMsgs.querySelector('.chat-reason');
+  expect(det.open).toBe(false);
+  expect(det.querySelector('summary').textContent).toContain('6 字');
+  // 历史重建——默认折叠 + 字数
+  window.chatRenderHistory({
+    version: 1, sessionId: 's1', count: 1,
+    blocks: [{ seq: 1, id: '1:h1', renderType: 'reason', payload: { content: '历史思考' } }]
+  });
+  det = chatMsgs.querySelector('.chat-reason');
+  expect(det.open).toBe(false);
+  expect(det.querySelector('summary').textContent).toContain('4 字');
+});
+
 // ── toolcard 整块 ──
-test('view toolcard 渲染工具卡（含名称/参数/结果）', () => {
+test('view toolcard 渲染工具卡（含名称/参数/结果；默认折叠）', () => {
   window.chatOnView({
     seq: 30, renderType: 'toolcard',
     payload: { name: 'time', arguments: '{}', result: '2026-08-30 00:00:00' },
@@ -151,10 +175,36 @@ test('view toolcard 渲染工具卡（含名称/参数/结果）', () => {
   });
   const card = chatMsgs.querySelector('.chat-tool');
   expect(card).not.toBeNull();
+  // details 结构——默认折叠（点击 summary 展开）
+  expect(card.tagName).toBe('DETAILS');
+  expect(card.open).toBe(false);
   expect(card.querySelector('.tn').textContent).toContain('time');
+  expect(card.querySelector('.tr').textContent).toBe('2026-08-30 00:00:00');
+  // 展开后内容可见
+  card.open = true;
   expect(card.querySelector('.tr').textContent).toBe('2026-08-30 00:00:00');
   // 工具态
   expect(window.chatActivePhase).toBe('tool');
+});
+
+// ── 工具轮 seal——残留文本流式容器闪烁标记移除（toolcard 到达兜底；宿主 seal 缺失防线）──
+test('toolcard 到达——残留 text 流式容器 streaming 移除', () => {
+  window.chatOnView({ seq: 10, renderType: 'stream', payload: { kind: 'text', text: '中间文本' }, replaceSeq: -1 });
+  const tb = bubbles()[0];
+  expect(tb.classList.contains('streaming')).toBe(true);
+  window.chatOnView({ seq: 30, renderType: 'toolcard', payload: { name: 'time', arguments: '{}', result: 'R' }, replaceSeq: -1 });
+  expect(tb.classList.contains('streaming')).toBe(false);
+  expect(window.viewContainers[10]).not.toBeUndefined();
+});
+
+// ── 新思考容器创建——残留文本流式容器闪烁标记移除（多轮工具循环残留兜底）──
+test('新 reasoning 容器创建——残留 text 流式容器 streaming 移除', () => {
+  window.chatOnView({ seq: 10, renderType: 'stream', payload: { kind: 'text', text: '前轮文本' }, replaceSeq: -1 });
+  const tb = bubbles()[0];
+  window.chatOnView({ seq: 21, renderType: 'stream', payload: { kind: 'reasoning', text: '新一轮思考' }, replaceSeq: -1 });
+  expect(tb.classList.contains('streaming')).toBe(false);
+  // 同 seq 续流不清理（reasoning 容器本身不受影响）
+  expect(window.viewContainers[21].type).toBe('reason');
 });
 
 // ── control usage ──

@@ -40,6 +40,8 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 .chat-reason { margin-top: 6px; font-size: 11px; color: #6a6a6a; }
 .chat-reason summary { cursor: pointer; color: #6a9955; }
 .chat-tool { margin-top: 6px; background: #101010; border: 1px solid #242424; border-radius: 4px; padding: 5px 8px; font-size: 11px; color: #8a8a8a; font-family: Consolas, monospace; }
+.chat-tool summary { cursor: pointer; color: #dcdcaa; }
+.chat-tool summary:hover { color: #e8e8aa; }
 .chat-tool .tn { color: #dcdcaa; }
 .chat-tool .ta { color: #6a6a6a; word-break: break-all; white-space: pre-wrap; margin-top: 2px; }
 .chat-tool .tr { color: #6a9955; word-break: break-all; white-space: pre-wrap; margin-top: 3px; }

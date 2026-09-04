@@ -909,6 +909,12 @@ _ = ConsumeLlmStream(messages);
                 string reasonJson = "{\"content\":" + JsonSerializer.Serialize(_llmReasoning) + "}";
                 _httpHost.PushView("reason", reasonJson, _reasonStreamSeq, 0);
             }
+            // 工具轮 seal——流式文本容器整块替换（对齐纯文本轮 seal 语义；空文本不推——前端不建空气泡）
+            if (_httpHost != null && _llmResultText.Length > 0)
+            {
+                string sealTextJson = "{\"content\":" + JsonSerializer.Serialize(_llmResultText) + "}";
+                _httpHost.PushView("text", sealTextJson, _textStreamSeq, 0);
+            }
             _reasonStreamSeq = 0;
             _textStreamSeq = 0;
             DataBox.Set<string>("global", "chat_state", "tools");
