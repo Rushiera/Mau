@@ -17,7 +17,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 设置当前猫上下文——工具执行入口（ChatSession 调 _executeTool 前）。
+        /// 设置当前猫上下文——工具执行入口（ChatSession 调宿主直执前，仅 host-* 延迟直执使用）。
         /// </summary>
         /// <param name="catKey">猫 key（majordomo=默认猫；多猫=会话 ID）</param>
         public static void SetCat(string catKey)

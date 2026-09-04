@@ -128,5 +128,23 @@ namespace CH4
             }
             return entries.ToArray();
         }
+
+        /// <summary>
+        /// 前端 html 根解析——源码区优先（仓库根/CatHome4/html——唯一事实源，改即生效）；回退部署区（AppContext.BaseDirectory/html——发布包）。
+        /// </summary>
+        /// <returns>html 根目录</returns>
+        internal static string ResolveHtmlRoot()
+        {
+            string root = FindRepoRoot(AppContext.BaseDirectory);
+            if (root.Length > 0)
+            {
+                string src = System.IO.Path.Combine(root, "CatHome4", "html");
+                if (System.IO.Directory.Exists(src))
+                {
+                    return src;
+                }
+            }
+            return System.IO.Path.Combine(AppContext.BaseDirectory, "html");
+        }
     }
 }

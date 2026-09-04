@@ -250,7 +250,7 @@ private static HttpHost _httpHost;
             };
             // [段4] 语料加载——扫描 Flows/FL_*.dll 统一装配（design-ch4-flow-scan §3.2：QuickCat + 全部工具组 Flow）
             // 扫描化：文件名去 FL_ 前缀得 Flow 名（dll 名 = 组名——QuickCat 与工具组一视同仁）
-            // 容错降级：加载失败 → 警告 + 跳过注册（该组工具工单无人认领 → 宿主 FALLBACK 直执保底——负例路径合法化）
+            // 容错：加载失败 → 警告 + 跳过注册（该组工具工单无人认领 → 超时诚实 ERR——不再宿主直执）
             // 路由表数据化 + 工具定义数据化：加载后经 IFlow.GetMetaJson/GetToolsJson 读自曝 → 统一工具池（design-ch4-tools-pool §六）
             ToolPool.Clear();
             string[] flowDlls = Directory.GetFiles(dllDir, "FL_*.dll");
@@ -621,7 +621,7 @@ private static HttpHost _httpHost;
             return text;
         }
         /// <summary>
-        /// 加载工具组 Flow——Load dll + RegisterFlow + 存句柄表（R0.2 工具组独立注册/独立热重载/独立退役；失败警告 + 跳过——FALLBACK 保底）
+        /// 加载工具组 Flow——Load dll + RegisterFlow + 存句柄表（R0.2 工具组独立注册/独立热重载/独立退役；失败警告 + 跳过——该组工具不可用）
         /// </summary>
         /// <param name="flowName">工具组 Flow 名（TextCat/MauCat/CsCat/ConfigCat——dll = FL_&lt;名&gt;.dll）</param>
         /// <param name="dllDir">语料 dll 目录</param>
@@ -637,7 +637,7 @@ private static HttpHost _httpHost;
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[CatHome4] 警告: FL_" + flowName + ".dll 加载失败——该组工具降级 FALLBACK 直执: " + ex.Message);
+                Console.WriteLine("[CatHome4] 警告: FL_" + flowName + ".dll 加载失败——该组工具不可用（工单将超时 ERR）: " + ex.Message);
                 return null;
             }
         }

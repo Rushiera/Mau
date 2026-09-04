@@ -24,7 +24,7 @@ namespace CatHome4.Admin
         /// <summary>宿主主线程 ID——HTTP 线程分流判断（入口壳注入）</summary>
         public static int _mainThreadId;
 
-        /// <summary>工具直执回调——ChatSession 构造（入口壳工具域注入）</summary>
+        /// <summary>宿主工具直执回调——ChatSession 构造（入口壳注入；仅 host-* 延迟直执使用）</summary>
         public static Func<string, string, string> ExecuteTool;
 
         /// <summary>环境信息构建回调——ChatSession info 工具注入（入口壳注入；M4e 猫级白名单 roots 视图）</summary>
@@ -43,7 +43,7 @@ namespace CatHome4.Admin
         /// <param name="oa">OA 工单平台（宿主）</param>
         /// <param name="dataRoot">数据根（CatEntry 域 _dataRoot）</param>
         /// <param name="mainThreadId">宿主主线程 ID</param>
-        /// <param name="executeTool">工具直执回调（入口壳工具域）</param>
+        /// <param name="executeTool">宿主工具直执回调（入口壳工具域；仅 host-* 延迟直执使用）</param>
         /// <param name="snapshotBuilder">快照 JSON 构建</param>
         /// <param name="htmlRoot">html 根解析（入口壳适配）</param>
         /// <param name="apiStore">LLM API 配置池（catcfg.apply 重建 Runtime 消费）</param>

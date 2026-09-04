@@ -117,46 +117,5 @@ namespace CH4
             return result;
         }
 
-        /// <summary>
-        /// 读取 JSON 对象字符串属性——防御式（缺字段返回空串）
-        /// </summary>
-        /// <param name="obj">JSON 对象</param>
-        /// <param name="prop">属性名</param>
-        /// <returns>属性值</returns>
-        private static string GetStringProp(JsonElement obj, string prop)
-        {
-            JsonElement value;
-            if (obj.TryGetProperty(prop, out value) && value.ValueKind == JsonValueKind.String)
-            {
-                string got = value.GetString();
-                if (got != null)
-                {
-                    return got;
-                }
-            }
-            return "";
-        }
-
-        /// <summary>
-        /// 从 arguments JSON 提取参数——防御式（解析失败返回空串）
-        /// </summary>
-        /// <param name="argumentsJson">参数 JSON</param>
-        /// <param name="key">参数名</param>
-        /// <returns>参数值</returns>
-        private static string ExtractArg(string argumentsJson, string key)
-        {
-            try
-            {
-                using (JsonDocument doc = JsonDocument.Parse(argumentsJson))
-                {
-                    return GetStringProp(doc.RootElement, key);
-                }
-            }
-            catch (Exception)
-            {
-                // 参数 JSON 损坏——返回空串（下游 BAD_ARGS 校验可见拒绝）
-                return "";
-            }
-        }
     }
 }

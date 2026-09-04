@@ -35,12 +35,12 @@ namespace CH4
         public bool IsClosed;
 
         /// <summary>
-        /// 是否已 TimeOut——宿主 FALLBACK 保底触发条件
+        /// 是否已 TimeOut——工单超时判定（超时→诚实 ERR 报错，不再直执）
         /// </summary>
         public bool IsTimedOut;
 
         /// <summary>
-        /// 回执结果文本（Closed 后有效；FALLBACK 后为直执结果）
+        /// 回执结果文本（Closed 后有效）
         /// </summary>
         public string Result;
 

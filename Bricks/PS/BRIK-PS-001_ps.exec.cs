@@ -16,7 +16,7 @@ using Mau.Runtime;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// PowerShell 执行积木——powershell 工具（PsCat 工具组 Flow 认领线消费；FALLBACK 直执同源）
+    /// PowerShell 执行积木——powershell 工具（PsCat 工具组 Flow 认领线消费）
     /// </summary>
     public static class PsExecBrick
     {
@@ -54,4 +54,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:5AFBF61A97EB01D27F2A852F6CE47E228E8C5EEC4AA350149CA1AC5467CAA203
+// #MAU_CHECKSUM:SHA256:11BCEDE5F49070ECA77E1D60C6BE1E50E422C148039FA31FF12793DFFFF94E91

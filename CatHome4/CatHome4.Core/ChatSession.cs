@@ -123,7 +123,7 @@ namespace CH4
         // [段3] 工具批
         /// <summary>工具批执行中——reload 拒绝检查面（任一会话 TRUE 即拒绝）</summary>
         private bool _toolBatchActive;
-        /// <summary>工具单列表——普通工单（OA 认领 / FALLBACK 直执，含 host-* 延迟直执登记）</summary>
+        /// <summary>工具单列表——普通工单（OA 认领；host-* 延迟直执登记）</summary>
         private readonly List<ToolOrderDog> _dogs;
         /// <summary>host-* 延迟直执清单——批次末尾宿主直执（顺序保证：同批 mau-proj 等先完成产物落地）</summary>
         private readonly List<ToolOrderDog> _hostDogs;
@@ -164,7 +164,7 @@ namespace CH4
         /// <summary>工具定义表——后台流式携带（宿主 BuildToolSpecs 产物；M3 改 toolNames 新会话 SetToolSpecs 更新）</summary>
         private ToolSpec[] _tools;
 
-        /// <summary>工具直执回调——宿主 ExecuteTool（FALLBACK/延迟直执）</summary>
+        /// <summary>宿主工具直执回调——host-* 延迟直执（批次末尾执行；OA 工具一律走 OA 认领，无直执）</summary>
         private readonly Func<string, string, string> _executeTool;
 
         /// <summary>猫 key——工具执行按猫裁剪（M4e 白名单；默认猫=majordomo；多猫=会话 ID）</summary>
@@ -180,7 +180,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 工具执行包装——设置猫上下文后调宿主直执（M4e：ResolveFileSystem 按猫解析；执行后恢复）。
+        /// 工具执行包装——设置猫上下文后调宿主直执（M4e：按猫解析；执行后恢复）。仅 host-* 延迟直执使用。
         /// </summary>
         /// <param name="name">工具名</param>
         /// <param name="args">参数 JSON</param>
@@ -916,7 +916,7 @@ _ = ConsumeLlmStream(messages);
             EnterToolBatch(_llmToolCallsJson);
         }
         /// <summary>
-        /// StartToolBatch 动作段——解析 tool_calls → OA 发单（host-* 延迟直执登记 / 普通工单 Post / Post 失败 FALLBACK）→ ToolBatchRunning。解析失败 = 空批（allDone 立即成立——等价原 try-catch 跳过语义：续轮保持）。
+        /// StartToolBatch 动作段——解析 tool_calls → OA 发单（host-* 延迟直执登记 / 普通工单 Post / Post 失败诚实 ERR）→ ToolBatchRunning。解析失败 = 空批（allDone 立即成立——等价原 try-catch 跳过语义：续轮保持）。
         /// </summary>
         /// <param name="toolCallsJson">tool_calls JSON 数组</param>
         private void EnterToolBatch(string toolCallsJson)
@@ -951,7 +951,7 @@ _ = ConsumeLlmStream(messages);
                             name = GetStringProp(funcEl, "name");
                             arguments = GetStringProp(funcEl, "arguments");
                         }
-                        // M2c 拦截——声明面外工具直接拒绝（ERR 回执不进 OA 不 FALLBACK；host-* 同拦；拦截即时生效）
+                        // M2c 拦截——声明面外工具直接拒绝（ERR 回执不进 OA；host-* 同拦；拦截即时生效）
                         if (!IsToolAllowed(name))
                         {
                             ToolOrderDog forbiddenDog = new ToolOrderDog(id, name, arguments);
@@ -986,14 +986,10 @@ _ = ConsumeLlmStream(messages);
                             dog.Post(_oa, ToolOwnerId);
                             if (dog.OfficeId == 0)
                             {
-                                // Post 失败——直接 FALLBACK 直执（错误可见性）
-                                string fb = RunTool(name, arguments);
-                                if (fb == null || fb.Length == 0)
-                                {
-                                    fb = "ERR|EMPTY_RESULT|工具执行无结果";
-                                }
-                                dog.Result = "[FALLBACK] " + fb;
+                                // Post 失败——诚实失败（直执面已移除 2026-09-04——OA 不可用即 ERR，不静默降级）
+                                dog.Result = "ERR|OA_POST_FAIL|工单提交失败（OA 不可用）: " + name;
                                 dog.IsClosed = true;
+                                LogStore.Add("CatHome4", 2, "工具 " + name + " 工单提交失败（OA 不可用）——诚实 ERR", "TOOL");
                             }
                             else
                             {
@@ -1093,7 +1089,7 @@ _ = ConsumeLlmStream(messages);
                 dog.Result = hr;
                 LogStore.Add("CatHome4", 1, "工具 " + dog.Name + " 延迟直执完成：" + TrimDisplay(hr, 100), "TOOL");
             }
-            // [段3] 收集——Closed 取回执；TimeOut/帧超限 → FALLBACK 直执（执行器不变；[FALLBACK] 前缀注明）
+            // [段3] 收集——Closed 取回执；TimeOut/帧超限 → 诚实 ERR（OA 链路失败即报错，不直执）
             for (int i = 0; i < _dogs.Count; i = i + 1)
             {
                 ToolOrderDog dog = _dogs[i];
@@ -1103,13 +1099,8 @@ _ = ConsumeLlmStream(messages);
                 }
                 if (dog.IsTimedOut)
                 {
-                    LogStore.Add("CatHome4", 2, "工具 " + dog.Name + " 工单 #" + dog.OfficeId + " 超时，已转 FALLBACK 直执", "TOOL");
-                    string result = RunTool(dog.Name, dog.ArgsJson);
-                    if (result == null || result.Length == 0)
-                    {
-                        result = "ERR|EMPTY_RESULT|工具执行无结果";
-                    }
-                    dog.Result = "[FALLBACK] " + result;
+                    LogStore.Add("CatHome4", 2, "工具 " + dog.Name + " 工单 #" + dog.OfficeId + " 超时（无人认领）——诚实 ERR", "TOOL");
+                    dog.Result = "ERR|OA_TIMEOUT|工单超时无人认领: " + dog.Name;
                     dog.IsClosed = true;
                 }
                 if (dog.Result == null || dog.Result.Length == 0)

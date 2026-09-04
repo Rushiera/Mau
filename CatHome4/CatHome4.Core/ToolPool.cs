@@ -146,7 +146,7 @@ namespace CH4
             }
             catch (Exception)
             {
-                // Flow 自曝失败——跳过（FALLBACK 保底）
+                // Flow 自曝失败——跳过（该组工具定义缺失）
             }
         }
 
