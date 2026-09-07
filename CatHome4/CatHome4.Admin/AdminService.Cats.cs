@@ -379,8 +379,9 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// session.fork——从源猫节点分支新建独立 Cat（P6b：克隆 cfg + 播种节点前前文；静默态待启动）。
-        /// 继承：persona/toolNames/injectList/apiConfigId/enabledRoots + 节点前前文；不继承：qqbot 绑定（防双猫抢同一 Bot）/ 运行态。
+        /// session.fork——从源猫节点分支新建独立 Cat（P6b：继承配置 + 播种节点前前文；静默态待启动）。
+        /// 继承：persona/toolNames/injectList/apiConfigId/enabledRoots/qqbotId + 节点前前文；qqbot 转发默认关闭（enable=false——防双猫抢 Bot）；不继承：运行态。
+        /// 配置源：多猫 = CatEntry 运行时实体（catcfg.apply 后真相）；majordomo = sessions/majordomo/cat.cfg（source.Id 是 Ticks——判例 fork 配置全空）。
         /// </summary>
         /// <param name="source">源会话（发起 fork 的猫）</param>
         /// <param name="name">新猫显示名</param>
@@ -412,9 +413,32 @@ namespace CatHome4.Admin
             {
                 seed[i] = all[i];
             }
-            // [段2] 克隆源 cat.cfg → 新 cat.cfg（id 更换/运行态归零/qqbot 不继承）
+            // [段2] 继承源配置——运行时实体优先（多猫 CatEntry = catcfg.apply 后运行时真相）；majordomo 特判路径（source.Id 是 Ticks 非 "majordomo"——判例：fork 配置全空）
             string id = DateTime.Now.Ticks.ToString();
-            CatCfgData cfgData = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", source.Id, "cat.cfg"));
+            CatCfgData cfgData = null;
+            CatEntry srcCat = FindCat(source.Id);
+            if (srcCat != null)
+            {
+                // 多猫——运行时实体字段（ApiConfigId/Persona/ToolNames/InjectList/QqBotId 继承）
+                cfgData = new CatCfgData();
+                cfgData.ApiConfigId = srcCat.ApiConfigId == Guid.Empty ? "" : srcCat.ApiConfigId.ToString("D");
+                cfgData.Persona = srcCat.Persona;
+                cfgData.ToolNames = srcCat.ToolNames;
+                cfgData.InjectList = srcCat.InjectList;
+                cfgData.QqBotId = srcCat.QqBotId == Guid.Empty ? "" : srcCat.QqBotId.ToString("D");
+                cfgData.QqBotEnable = srcCat.QqBotEnable;
+                // EnabledRoots CatEntry 不持有——从源磁盘 cfg 补读
+                CatCfgData srcDisk = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", srcCat.Id, "cat.cfg"));
+                if (srcDisk != null)
+                {
+                    cfgData.EnabledRoots = srcDisk.EnabledRoots;
+                }
+            }
+            else
+            {
+                // majordomo 默认猫——cfg 路径固定 sessions/majordomo/cat.cfg（source.Id = Ticks 不可用于寻址）
+                cfgData = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", "majordomo", "cat.cfg"));
+            }
             if (cfgData == null)
             {
                 cfgData = new CatCfgData();
@@ -423,7 +447,7 @@ namespace CatHome4.Admin
             cfgData.DisplayName = name;
             cfgData.Running = false;
             cfgData.Port = 0;
-            cfgData.QqBotId = "";
+            // qqbotId 继承保留（防双猫抢 Bot 靠 enable=false——莎拍板：复制配置、默认不开启转发）
             cfgData.QqBotEnable = false;
             SaveCatCfgData(id, cfgData);
             // [段3] 创建 + 播种 + 注册（CreateCatEntry 读新 cfg——克隆配置生效）
