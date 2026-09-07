@@ -97,7 +97,11 @@ function renderCatRow(cat) {
         var delBtn = document.createElement('button');
         delBtn.textContent = '删除';
         delBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#f48771;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px';
-        delBtn.onclick = function () { catAction('cat.delete ' + cat.id); };
+        delBtn.onclick = function () {
+            // 删除确认——猫销毁不可逆：配置（persona/工具面/API/注入/白名单）+ 前文全部丢失
+            if (!window.confirm('删除猫「' + cat.name + '」？删除后该猫的所有配置与前文都将丢失（不可恢复）。')) { return; }
+            catAction('cat.delete ' + cat.id);
+        };
         tdOp.appendChild(delBtn);
     }
     tr.appendChild(tdOp);
