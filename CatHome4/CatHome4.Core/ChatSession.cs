@@ -1288,7 +1288,8 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 // B4 对话区：工具结果实时推送 SSE（tool 事件——前端按执行序填充占位卡；参数/结果视图截断同 history）
                 if (_httpHost != null)
                 {
-                    string toolJson = "{\"name\":" + JsonSerializer.Serialize(dog.Name) + ",\"arguments\":" + JsonSerializer.Serialize(TruncateText(dog.ArgsJson, 200)) + ",\"result\":" + JsonSerializer.Serialize(TruncateText(dog.Result, 300)) + "}";
+                    string toolSummary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, dog.Result);
+                    string toolJson = "{\"name\":" + JsonSerializer.Serialize(dog.Name) + ",\"arguments\":" + JsonSerializer.Serialize(TruncateText(dog.ArgsJson, 200)) + ",\"result\":" + JsonSerializer.Serialize(TruncateText(dog.Result, 300)) + ",\"summary\":" + JsonSerializer.Serialize(toolSummary) + "}";
                 _httpHost.PushView("toolcard", toolJson, -1, 0);
                 }
                 _context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);

@@ -106,6 +106,8 @@ public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, 
         {
             request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + GetApiKey());
             request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
+            // opencode.ai zen/go 网关会话路由头——缺失拒绝请求（实测 2026-09-07；userId 即会话标识——KVCache 隔离语义对齐）
+            request.Headers.TryAddWithoutValidation("x-opencode-session", "cat-home4-" + (userId.Length > 0 ? userId : "default"));
             request.Content = new StringContent(body, Encoding.UTF8, "application/json");
             HttpResponseMessage? response = null;
             string netError = "";

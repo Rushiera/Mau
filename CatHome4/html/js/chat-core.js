@@ -187,7 +187,7 @@ function chatToolCard(tool) {
     det.open = false;
     var sum = document.createElement('summary');
     sum.className = 'tn';
-    sum.textContent = '🔧 ' + (tool.name || '?');
+    sum.textContent = '🔧 ' + (tool.summary || tool.name || '?');
     det.appendChild(sum);
     if (tool.arguments) {
         var a = document.createElement('div');

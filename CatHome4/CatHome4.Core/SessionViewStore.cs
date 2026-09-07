@@ -195,6 +195,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
             payload["name"] = target.Name.Length > 0 ? target.Name : (m.ToolName ?? "");
             payload["arguments"] = target.Arguments;
             payload["result"] = TruncateText(m.Content ?? "", 300);
+            payload["summary"] = ToolSummaryFormatter.Build(payload["name"] as string ?? "", target.Arguments, payload["result"] as string ?? "");
             Append(m, "toolcard", payload, timestamp, msgIndex);
         }
 

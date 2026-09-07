@@ -7,7 +7,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>CatHome4</AssemblyName>
     <RootNamespace>CH4</RootNamespace>
-    <Version>0.88.2</Version>
+    <Version>0.88.3</Version>
     <!-- 域子项目目录排除——SDK 默认递归编译会包含子项目源码（CS0579 特性重复），必须显式排除 -->
     <DefaultItemExcludes>$(DefaultItemExcludes);CatHome4.Contracts\**;CatHome4.Core\**;CatHome4.Http\**;CatHome4.QQ\**;CatHome4.Admin\**;CatHome4.Observe\**;CatHome4.Core.Tests\**</DefaultItemExcludes>
   </PropertyGroup>
