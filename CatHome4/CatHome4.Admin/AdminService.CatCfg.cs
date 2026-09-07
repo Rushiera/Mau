@@ -45,6 +45,9 @@ namespace CatHome4.Admin
             /// <summary>HTTP 线程 Note 指令入队面——主线程泵消费（M4c note.add）</summary>
             public ConcurrentQueue<string> PendingNote;
 
+            /// <summary>HTTP 线程会话指令入队面——主线程泵消费（P6b session.rollback/fork）</summary>
+            public ConcurrentQueue<string> PendingSessionCmd;
+
             /// <summary>每猫配置存储——sessions/&lt;id&gt;/config.cfg（P9.4 per-cat 路由；ConfigStoreRegistry 注册）</summary>
             public ConfigStore Config;
 

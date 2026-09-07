@@ -112,6 +112,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
                 ViewBlock report = new ViewBlock();
                 report.Timestamp = 0;
                 report.Hash = "inject_report";
+                report.MsgIndex = -1;
                 report.RenderType = "inject_report";
                 report.Payload = _injectReport;
                 withReport[0] = report;
@@ -128,11 +129,12 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
-        public void OnUserMessage(LlmMessage m, long timestamp)
+        /// <param name="msgIndex">真实前文消息索引（节点定位锚）</param>
+        public void OnUserMessage(LlmMessage m, long timestamp, int msgIndex)
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["content"] = m.Content ?? "";
-            Append(m, "user", payload, timestamp);
+            Append(m, "user", payload, timestamp, msgIndex);
         }
 
         /// <summary>
@@ -140,11 +142,12 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
-        public void OnAssistantText(LlmMessage m, long timestamp)
+        /// <param name="msgIndex">真实前文消息索引（节点定位锚）</param>
+        public void OnAssistantText(LlmMessage m, long timestamp, int msgIndex)
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["content"] = m.Content ?? "";
-            Append(m, "text", payload, timestamp);
+            Append(m, "text", payload, timestamp, msgIndex);
         }
 
         /// <summary>
@@ -152,14 +155,15 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
-        public void OnAssistantToolCalls(LlmMessage m, long timestamp)
+        /// <param name="msgIndex">真实前文消息索引（节点定位锚）</param>
+        public void OnAssistantToolCalls(LlmMessage m, long timestamp, int msgIndex)
         {
             string reasoning = m.ReasoningContent ?? "";
             if (reasoning.Length > 0)
             {
                 Dictionary<string, object> payload = new Dictionary<string, object>();
                 payload["content"] = reasoning;
-                Append(m, "reason", payload, timestamp);
+                Append(m, "reason", payload, timestamp, msgIndex);
             }
             RegisterPendingTools(m.ToolCallsJson ?? "");
         }
@@ -169,7 +173,8 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
-        public void OnToolResult(LlmMessage m, long timestamp)
+        /// <param name="msgIndex">真实前文消息索引（节点定位锚）</param>
+        public void OnToolResult(LlmMessage m, long timestamp, int msgIndex)
         {
             string toolCallId = m.ToolCallId ?? "";
             PendingTool target = null;
@@ -190,7 +195,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
             payload["name"] = target.Name.Length > 0 ? target.Name : (m.ToolName ?? "");
             payload["arguments"] = target.Arguments;
             payload["result"] = TruncateText(m.Content ?? "", 300);
-            Append(m, "toolcard", payload, timestamp);
+            Append(m, "toolcard", payload, timestamp, msgIndex);
         }
 
         /// <summary>
@@ -211,7 +216,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
                 }
                 if (m.Role == LlmRole.User)
                 {
-                    OnUserMessage(m, m.CreatedAt);
+                    OnUserMessage(m, m.CreatedAt, i);
                     continue;
                 }
                 if (m.Role == LlmRole.Assistant)
@@ -219,17 +224,17 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
                     string toolCalls = m.ToolCallsJson ?? "";
                     if (toolCalls.Length > 0)
                     {
-                        OnAssistantToolCalls(m, m.CreatedAt);
+                        OnAssistantToolCalls(m, m.CreatedAt, i);
                     }
                     else
                     {
-                        OnAssistantText(m, m.CreatedAt);
+                        OnAssistantText(m, m.CreatedAt, i);
                     }
                     continue;
                 }
                 if (m.Role == LlmRole.Tool)
                 {
-                    OnToolResult(m, m.CreatedAt);
+                    OnToolResult(m, m.CreatedAt, i);
                 }
             }
         }
@@ -272,6 +277,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
             ViewBlock block = new ViewBlock();
             block.Timestamp = timestamp;
             block.Hash = "roundsum_" + _roundSums.Count.ToString();
+            block.MsgIndex = -1;
             block.RenderType = "roundsum";
             block.Payload = payloadJson;
             _roundSums.Add(block);
@@ -289,6 +295,14 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
             // 轮末统计随视图层清理——新会话不保留旧轮统计
             _roundSums.Clear();
         }
+
+        /// <summary>
+        /// 清空轮末统计块——回滚裁剪后调用（roundsum 非真实前文派生，Rebuild 不清——裁剪后残留旧统计）
+        /// </summary>
+        public void ClearRoundSums()
+        {
+            _roundSums.Clear();
+        }
         /// <summary>
         /// 生成视图块——内容哈希 = 真实前文单块完整字段 SHA256（裁决：前文块哈希作唯一标识）
         /// </summary>
@@ -296,11 +310,13 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// <param name="renderType">渲染类型</param>
         /// <param name="payload">渲染载荷（字典）</param>
         /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
-        private void Append(LlmMessage m, string renderType, Dictionary<string, object> payload, long timestamp)
+        /// <param name="msgIndex">真实前文消息索引（节点定位锚）</param>
+        private void Append(LlmMessage m, string renderType, Dictionary<string, object> payload, long timestamp, int msgIndex)
         {
             ViewBlock block = new ViewBlock();
             block.Timestamp = timestamp;
             block.Hash = ComputeHash(m);
+            block.MsgIndex = msgIndex;
             block.RenderType = renderType;
             block.Payload = JsonSerializer.Serialize(payload);
             _blocks.Add(block);

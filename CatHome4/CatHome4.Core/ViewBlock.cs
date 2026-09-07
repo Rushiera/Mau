@@ -14,6 +14,9 @@ namespace CH4
         /// <summary>内容哈希——真实前文单块完整字段 SHA256 十六进制</summary>
         public string Hash { get; set; }
 
+        /// <summary>真实前文消息索引——推入视图层时由宿主携带（-1=非消息派生块：roundsum/inject_report）；回滚/分支节点定位锚</summary>
+        public int MsgIndex { get; set; }
+
         /// <summary>渲染类型——user/text/reason/toolcard/control（前端按此分敛渲染）</summary>
         public string RenderType { get; set; }
 

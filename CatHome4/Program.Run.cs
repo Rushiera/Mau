@@ -217,6 +217,19 @@ namespace CH4
                 }
                 return true;
             }
+            if (line.StartsWith("session.rollback ", StringComparison.Ordinal) || line.StartsWith("session.fork ", StringComparison.Ordinal))
+            {
+                // P6b 回滚/分支——主线程直执 / HTTP 线程入队 Admin cat 泵（ThreadGuard：上下文仅主线程触碰）
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    Console.WriteLine("[CMD] " + AdminService.ExecuteSessionCmd(_chatBridge.DefaultSession, line));
+                }
+                else
+                {
+                    AdminService._catQueue.Enqueue(line);
+                }
+                return true;
+            }
             // R0.2 热重载指令——CLI 通道（--run/--script）支持：reload quick|text|mau|cs|config [dll]（主线程直执——ExecuteReload 事务三段式）
             if (line.StartsWith("reload ", StringComparison.Ordinal))
             {

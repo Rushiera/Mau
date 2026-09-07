@@ -143,3 +143,26 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 }
 .chat-bubble .md-block thead th { background: #1f1f1f; color: #569cd6; font-weight: bold; }
 .chat-bubble .md-block tbody tr:nth-child(even) { background: #171717; }
+
+/* ============ P6b 节点操作条——text 块底部回滚/分支按钮（图标 + 悬浮提示） ============ */
+.node-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed rgba(128, 128, 128, 0.35);
+}
+.node-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: #888;
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+}
+.node-btn:hover {
+    background: rgba(128, 128, 128, 0.18);
+    color: #333;
+}

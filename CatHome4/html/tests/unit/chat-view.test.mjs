@@ -132,6 +132,24 @@ test('F3 user 气泡保持纯文本（不 MD 渲染）', () => {
   expect(bubbles()[0].textContent).toBe('## 不是标题');
 });
 
+// ── P6b 节点操作条——text 块带 msgIndex 渲染两按钮（回滚/分支）；无 msgIndex 不渲染 ──
+test('P6b text 块带 msgIndex 渲染节点操作条', () => {
+  window.chatOnView({ seq: 20, renderType: 'text', payload: { content: '回复内容', msgIndex: 3 }, replaceSeq: -1 });
+  const bubble = bubbles()[0];
+  const bar = bubble.querySelector('.node-actions');
+  expect(bar).not.toBeNull();
+  expect(bar.querySelectorAll('.node-btn').length).toBe(2);
+  expect(bubble.querySelector('.node-btn-rollback').title).toContain('从此处继续对话');
+  expect(bubble.querySelector('.node-btn-fork').title).toContain('新建独立 Cat');
+});
+
+test('P6b text 块无 msgIndex（工具轮 seal/旧数据）不渲染操作条', () => {
+  window.chatOnView({ seq: 20, renderType: 'text', payload: { content: '工具轮文本' }, replaceSeq: -1 });
+  expect(bubbles()[0].querySelector('.node-actions')).toBeNull();
+  window.chatOnView({ seq: 21, renderType: 'text', payload: { content: '负索引', msgIndex: -1 }, replaceSeq: -1 });
+  expect(bubbles()[1].querySelector('.node-actions')).toBeNull();
+});
+
 
 // ── reason 整块 ──
 test('view reason 整块替换思考流式容器', () => {

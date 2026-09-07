@@ -47,6 +47,9 @@ namespace CatHome4.Admin
         /// <summary>majordomo Note 指令入队面——HTTP 线程投递 / 主线程泵消费（F2.2）</summary>
         private static readonly ConcurrentQueue<string> _majorPendingNote = new ConcurrentQueue<string>();
 
+        /// <summary>majordomo 会话指令入队面——HTTP 线程投递 / 主线程泵消费（P6b session.rollback/fork）</summary>
+        private static readonly ConcurrentQueue<string> _majorPendingSessionCmd = new ConcurrentQueue<string>();
+
         /// <summary>majordomo session.new 请求标志——HTTP 线程置位/主线程泵消费（F2.2 同多猫 M2d）</summary>
         private static bool _majorSessionNewRequested;
 
@@ -210,6 +213,11 @@ namespace CatHome4.Admin
                 cat.Session.PostUserMessage(content);
                 return "cat.chat | 已投递: " + cat.DisplayName;
             }
+            if (line.StartsWith("session.rollback ", StringComparison.Ordinal) || line.StartsWith("session.fork ", StringComparison.Ordinal))
+            {
+                // P6b 回滚/分支——管理端口通道（CLI/HTTP 主线程直执；HTTP 线程经 _catQueue 泵）
+                return ExecuteSessionCmd(_chatBridge.DefaultSession, line);
+            }
             if (line.StartsWith("catcfg.apply ", StringComparison.Ordinal))
             {
                 // M3 每猫配置运行时生效——主线程泵消费（HTTP 端点落盘后入队）
@@ -267,6 +275,12 @@ namespace CatHome4.Admin
                         cat.Session.NoteAdd(noteText);
                     }
                 }
+                // P6b 会话指令泵消费（session.rollback/fork——HTTP 线程投递 / 主线程执行）
+                string scmd;
+                while (cat.PendingSessionCmd.TryDequeue(out scmd))
+                {
+                    LogStore.Add("CatHome4", 1, "会话指令: " + ExecuteSessionCmd(cat.Session, scmd), "CMD", "", "", 200);
+                }
             }
             // [段3] majordomo 独立对话端口指令泵（F2.2——独立端口 serve chat.html；HTTP 线程投递 / 主线程直投 DefaultSession）
             if (_majorSessionNewRequested)
@@ -300,6 +314,12 @@ namespace CatHome4.Admin
                     _chatBridge.DefaultSession.NoteAdd(majorNote);
                 }
             }
+            // P6b majordomo 会话指令泵消费（session.rollback/fork——HTTP 线程投递 / 主线程执行）
+            string mcmd;
+            while (_majorPendingSessionCmd.TryDequeue(out mcmd))
+            {
+                LogStore.Add("CatHome4", 1, "会话指令: " + ExecuteSessionCmd(_chatBridge.DefaultSession, mcmd), "CMD", "", "", 200);
+            }
         }
 
         /// <summary>
@@ -310,7 +330,7 @@ namespace CatHome4.Admin
         private static string HandleCatNew(string name)
         {
             string id = DateTime.Now.Ticks.ToString();
-            CatEntry cat = CreateCatEntry(id, name);
+            CatEntry cat = CreateCatEntry(id, name, null);
             if (cat == null)
             {
                 return "cat.new | 会话构造失败";
@@ -319,6 +339,104 @@ namespace CatHome4.Admin
             SaveCatCfg(cat);
             LogStore.Add("CatHome4", 1, "已创建猫「" + name + "」（id " + id + "），静默待启动", "CHAT");
             return "cat.new | id=" + id + " | name=" + name + " | 静默态（cat.start 启动）";
+        }
+
+        /// <summary>
+        /// 会话指令执行——session.rollback/session.fork 统一入口（P6b；仅主线程调用）。
+        /// </summary>
+        /// <param name="session">目标会话（fork 时 = 源会话）</param>
+        /// <param name="line">指令行（session.rollback &lt;msgIndex&gt; / session.fork &lt;name&gt; &lt;msgIndex&gt;）</param>
+        /// <returns>结果文本</returns>
+        internal static string ExecuteSessionCmd(ChatSession session, string line)
+        {
+            if (line.StartsWith("session.rollback ", StringComparison.Ordinal))
+            {
+                string arg = line.Substring(17).Trim();
+                int idx;
+                if (!int.TryParse(arg, out idx))
+                {
+                    return "session.rollback | 参数非法: " + arg + "（需要消息索引）";
+                }
+                return session.Rollback(idx);
+            }
+            if (line.StartsWith("session.fork ", StringComparison.Ordinal))
+            {
+                string arg = line.Substring(13).Trim();
+                int space = arg.IndexOf(' ');
+                if (space <= 0)
+                {
+                    return "session.fork | 用法: session.fork <显示名> <消息索引>";
+                }
+                string name = arg.Substring(0, space).Trim();
+                int idx;
+                if (!int.TryParse(arg.Substring(space + 1).Trim(), out idx))
+                {
+                    return "session.fork | 消息索引非法: " + arg.Substring(space + 1).Trim();
+                }
+                return HandleCatFork(session, name, idx);
+            }
+            return "session.* 指令未识别: " + line;
+        }
+
+        /// <summary>
+        /// session.fork——从源猫节点分支新建独立 Cat（P6b：克隆 cfg + 播种节点前前文；静默态待启动）。
+        /// 继承：persona/toolNames/injectList/apiConfigId/enabledRoots + 节点前前文；不继承：qqbot 绑定（防双猫抢同一 Bot）/ 运行态。
+        /// </summary>
+        /// <param name="source">源会话（发起 fork 的猫）</param>
+        /// <param name="name">新猫显示名</param>
+        /// <param name="msgIndex">切点消息索引（assistant 正式回复）</param>
+        /// <returns>结果文本</returns>
+        private static string HandleCatFork(ChatSession source, string name, int msgIndex)
+        {
+            if (source == null)
+            {
+                return "session.fork | 源会话不存在";
+            }
+            if (!source.IsIdle)
+            {
+                return "session.fork | 源会话忙——分支仅空闲时执行";
+            }
+            LlmMessage[] all = source.Context.GetMessages();
+            if (msgIndex < 0 || msgIndex >= all.Length)
+            {
+                return "session.fork | 节点索引越界: " + msgIndex.ToString();
+            }
+            LlmMessage target = all[msgIndex];
+            if (target.Role != LlmRole.Assistant || target.Content == null || target.Content.Length == 0)
+            {
+                return "session.fork | 节点不是正式回复（仅 assistant 回复可作切点）";
+            }
+            // [段1] 播种前文——保留 [0..msgIndex]（含源 system——注入内容已在其中）
+            LlmMessage[] seed = new LlmMessage[msgIndex + 1];
+            for (int i = 0; i <= msgIndex; i = i + 1)
+            {
+                seed[i] = all[i];
+            }
+            // [段2] 克隆源 cat.cfg → 新 cat.cfg（id 更换/运行态归零/qqbot 不继承）
+            string id = DateTime.Now.Ticks.ToString();
+            CatCfgData cfgData = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", source.Id, "cat.cfg"));
+            if (cfgData == null)
+            {
+                cfgData = new CatCfgData();
+            }
+            cfgData.Id = id;
+            cfgData.DisplayName = name;
+            cfgData.Running = false;
+            cfgData.Port = 0;
+            cfgData.QqBotId = "";
+            cfgData.QqBotEnable = false;
+            SaveCatCfgData(id, cfgData);
+            // [段3] 创建 + 播种 + 注册（CreateCatEntry 读新 cfg——克隆配置生效）
+            CatEntry cat = CreateCatEntry(id, name, seed);
+            if (cat == null)
+            {
+                return "session.fork | 会话构造失败";
+            }
+            // [段3b] 播种前文立即落盘——会话文件不存在时重启扫描会走注入分支（播种丢失）；Save 保证重启恢复播种
+            cat.Session.Store.Save(cat.Session.Context.GetMessages(), cat.Session.LastStats);
+            _cats.Add(cat);
+            LogStore.Add("CatHome4", 1, "已从「" + source.DisplayName + "」节点 " + msgIndex.ToString() + " 分支新猫「" + name + "」（id " + id + "），静默待启动", "CHAT");
+            return "session.fork | id=" + id + " | name=" + name + " | 已从节点 " + msgIndex.ToString() + " 分支（静默态，cat.start 启动）";
         }
 
         /// <summary>
@@ -477,8 +595,9 @@ namespace CatHome4.Admin
         /// </summary>
         /// <param name="id">会话 ID</param>
         /// <param name="displayName">显示名</param>
+        /// <param name="seedMessages">fork 播种前文（null/空=不播种——正常注入/恢复语义）</param>
         /// <returns>猫实体；构造失败 null</returns>
-        private static CatEntry CreateCatEntry(string id, string displayName)
+        private static CatEntry CreateCatEntry(string id, string displayName, LlmMessage[] seedMessages)
         {
             try
             {
@@ -571,6 +690,11 @@ namespace CatHome4.Admin
                 {
                     context.ReplaceMessages(restored);
                 }
+                else if (seedMessages != null && seedMessages.Length > 0)
+                {
+                    // fork 播种——以源猫节点前前文为起点（含源 system——注入内容已在其中；覆盖注入分支）
+                    context.ReplaceMessages(seedMessages);
+                }
                 else
                 {
                     // 无前文 = 新猫——按 cat.cfg injectList 清单注入（M2d：仅读 List 内文件，List 外一律不加载）
@@ -600,6 +724,7 @@ namespace CatHome4.Admin
                 cat.Host = null;
                 cat.PendingChat = new ConcurrentQueue<string>();
                 cat.PendingNote = new ConcurrentQueue<string>();
+                cat.PendingSessionCmd = new ConcurrentQueue<string>();
                 // P9.4 per-cat 配置——独立 config.cfg（不存在空实例；首次写落盘）+ 注册表登记
                 cat.Config = ConfigStore.Load(Path.Combine(_dataRoot, "Data", "sessions", id, "config.cfg"));
                 ConfigStoreRegistry.Register(id, cat.Config);
@@ -886,6 +1011,19 @@ namespace CatHome4.Admin
                 _majorSessionNewRequested = true;
                 return true;
             }
+            if (line.StartsWith("session.rollback ", StringComparison.Ordinal) || line.StartsWith("session.fork ", StringComparison.Ordinal))
+            {
+                // P6b 回滚/分支——主线程直执 / HTTP 线程入队泵消费（ThreadGuard：上下文仅主线程触碰）
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    LogStore.Add("CatHome4", 1, "会话指令: " + ExecuteSessionCmd(_chatBridge.DefaultSession, line), "CMD", "", "", 200);
+                }
+                else
+                {
+                    _majorPendingSessionCmd.Enqueue(line);
+                }
+                return true;
+            }
             if (line == "note.start")
             {
                 // M4c Note 启动——主线程直执 / HTTP 线程入队泵
@@ -950,6 +1088,19 @@ namespace CatHome4.Admin
             {
                 // M2d 按猫重注入——HTTP 线程置位/主线程泵消费（会话忙时排队语义同默认猫）
                 cat.SessionNewRequested = true;
+                return true;
+            }
+            if (line.StartsWith("session.rollback ", StringComparison.Ordinal) || line.StartsWith("session.fork ", StringComparison.Ordinal))
+            {
+                // P6b 回滚/分支——主线程直执 / HTTP 线程入队泵消费（ThreadGuard：上下文仅主线程触碰）
+                if (Environment.CurrentManagedThreadId == _mainThreadId)
+                {
+                    LogStore.Add("CatHome4", 1, "会话指令: " + ExecuteSessionCmd(cat.Session, line), "CMD", "", "", 200);
+                }
+                else
+                {
+                    cat.PendingSessionCmd.Enqueue(line);
+                }
                 return true;
             }
             if (line == "note.start")
@@ -1053,7 +1204,7 @@ namespace CatHome4.Admin
                 {
                     continue;
                 }
-                CatEntry cat = CreateCatEntry(cfg.Id, cfg.DisplayName);
+                CatEntry cat = CreateCatEntry(cfg.Id, cfg.DisplayName, null);
                 if (cat == null)
                 {
                     LogStore.Add("CatHome4", 2, "启动扫描：猫 " + cfg.Id + " 会话构造失败", "CHAT");

@@ -738,11 +738,11 @@ namespace CatHome4.Core.Tests
                 }
                 if (m.Role == LlmRole.User)
                 {
-                    viewStore.OnUserMessage(m, m.CreatedAt);
+                    viewStore.OnUserMessage(m, m.CreatedAt, i);
                 }
                 else if (m.Role == LlmRole.Assistant)
                 {
-                    viewStore.OnAssistantText(m, m.CreatedAt);
+                    viewStore.OnAssistantText(m, m.CreatedAt, i);
                 }
             }
             // 每轮 CloseRound——rs 时间戳略大于该轮末块（真实语义：CloseRound 在该轮结束后）
@@ -761,6 +761,118 @@ namespace CatHome4.Core.Tests
             {
                 Assert.Equal(expected[i], merged[i].RenderType);
             }
+        }
+
+        /// <summary>
+        /// P6b 回滚——从正式回复节点截断：上下文/落盘/视图/统计全部复位（保留 [0..msgIndex]）。
+        /// 测试环境无 system 消息——两轮后结构：user1+reply1+user2+reply2 = 4 条。
+        /// </summary>
+        [Fact]
+        public void Rollback_ToReply_TruncatesAndPersists()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "第一轮回复";
+            CH4.ChatSession session = CreateSession(llm);
+            // 两轮对话——user1+reply1+user2+reply2 = 4 条（测试环境无 system）
+            session.PostUserMessage("第一轮问题");
+            PumpUntilIdle(session);
+            llm.ReplyText = "第二轮回复";
+            session.PostUserMessage("第二轮问题");
+            PumpUntilIdle(session);
+            LlmMessage[] before = session.Context.GetMessages();
+            Assert.Equal(4, before.Length);
+            // 回滚到第一个正式回复（索引 1）
+            string result = session.Rollback(1);
+            Assert.StartsWith("rollback", result);
+            LlmMessage[] after = session.Context.GetMessages();
+            Assert.Equal(2, after.Length);
+            Assert.Equal("第一轮问题", after[0].Content);
+            Assert.Equal("第一轮回复", after[1].Content);
+            // 落盘验证——从文件重载仍是截断后前文
+            LlmMessage[] restored;
+            SessionStats? stats;
+            Assert.True(session.Store.TryLoad(out restored, out stats));
+            Assert.Equal(2, restored.Length);
+            // 视图验证——user + text 两块，MsgIndex 指向真实前文索引
+            CH4.ViewBlock[] blocks = session.GetViewBlocks();
+            Assert.Equal(2, blocks.Length);
+            Assert.Equal("user", blocks[0].RenderType);
+            Assert.Equal(0, blocks[0].MsgIndex);
+            Assert.Equal("text", blocks[1].RenderType);
+            Assert.Equal(1, blocks[1].MsgIndex);
+            // 统计复位——新起点零统计
+            Assert.Equal(0, session.LastStats.EntryCount);
+        }
+
+        /// <summary>
+        /// P6b 回滚——非正式回复节点拒绝（user 消息/工具声明不可作切点——协议完整性）。
+        /// </summary>
+        [Fact]
+        public void Rollback_NonReplyNode_Rejected()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "回复";
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("问题");
+            PumpUntilIdle(session);
+            string result = session.Rollback(0); // user 消息
+            Assert.StartsWith("ERR|ROLLBACK_NODE", result);
+            Assert.Equal(2, session.Context.GetMessages().Length);
+        }
+
+        /// <summary>
+        /// P6b 回滚——越界索引拒绝。
+        /// </summary>
+        [Fact]
+        public void Rollback_OutOfRange_Rejected()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "回复";
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("问题");
+            PumpUntilIdle(session);
+            string result = session.Rollback(99);
+            Assert.StartsWith("ERR|ROLLBACK_INDEX", result);
+            result = session.Rollback(-1);
+            Assert.StartsWith("ERR|ROLLBACK_INDEX", result);
+            Assert.Equal(2, session.Context.GetMessages().Length);
+        }
+
+        /// <summary>
+        /// P6b 视图 MsgIndex——增量写入时携带真实前文索引（text 块指向正式回复；roundsum=-1）。
+        /// </summary>
+        [Fact]
+        public void View_MsgIndex_CarriedOnAppend()
+        {
+            ChatContext ctx = new ChatContext();
+            ctx.SetSystemPrompt("系统");
+            ctx.AddUserMessage("问题");
+            ctx.AddAssistantMessage("回复");
+            LlmMessage[] msgs = ctx.GetMessages();
+            string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.json");
+            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(tmp);
+            for (int i = 0; i < msgs.Length; i = i + 1)
+            {
+                LlmMessage m = msgs[i];
+                if (m.Role == LlmRole.System)
+                {
+                    continue;
+                }
+                if (m.Role == LlmRole.User)
+                {
+                    viewStore.OnUserMessage(m, m.CreatedAt, i);
+                }
+                else if (m.Role == LlmRole.Assistant)
+                {
+                    viewStore.OnAssistantText(m, m.CreatedAt, i);
+                }
+            }
+            viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[2].CreatedAt + 1);
+            CH4.ViewBlock[] blocks = viewStore.GetBlocks();
+            Assert.Equal(3, blocks.Length);
+            Assert.Equal(1, blocks[0].MsgIndex);
+            Assert.Equal(2, blocks[1].MsgIndex);
+            Assert.Equal(-1, blocks[2].MsgIndex);
         }
     }
 }

@@ -291,8 +291,10 @@ function chatRenderHistory(data) {
             chatOnRoundSum(p);
         } else if (blk.renderType === 'text') {
             // F3 MD 渲染——历史 text 块同样走解析器（与实时渲染一致）；md-block 包裹=CSS 作用域锚点
+            // P6b 节点操作条——msgIndex 顶层字段（视图块携带真实前文顺序；roundsum/inject_report=-1 不挂）
             var cb = chatBubble('assistant');
             cb.innerHTML = '<div class="md-block">' + mdToHtml(p.content || '') + '</div>';
+            chatAppendNodeActions(cb, blk.msgIndex);
         }
     }
     // P9.3 会话归属动态化——SSE sessionId 随会话 ID（时间戳）变化；history 先于任何 view 事件到达（loading→idle 时序保证）
@@ -479,17 +481,60 @@ function chatOnText(seq, replaceSeq, payload) {
     // F3 MD 渲染——整块 content 一次渲染（流式阶段 textContent 追加，不渲染不完整字符流）；md-block 包裹=CSS 作用域锚点
     var content = payload.content || '';
     var html = '<div class="md-block">' + mdToHtml(content) + '</div>';
+    // P6b 节点操作条——正式回复块底部两按钮（回滚/分支）；msgIndex<0（工具轮 seal 文本）不挂
+    var msgIndex = (payload.msgIndex !== undefined) ? payload.msgIndex : -1;
     var c = viewContainers[replaceSeq];
     if (c && c.type === 'text') {
         c.bubble.classList.remove('streaming');
         c.bubble.classList.remove('streaming-wait');
         c.bubble.innerHTML = html;
+        chatAppendNodeActions(c.bubble, msgIndex);
         delete viewContainers[replaceSeq];
     } else {
         var b = chatBubble('assistant');
         b.innerHTML = html;
+        chatAppendNodeActions(b, msgIndex);
     }
     chatPhaseEnter('reply');
+}
+
+// P6b 节点操作条——text 块底部两按钮（⟲ 回滚 / ⧉ 分支）；指令走 command 总线（单向数据流：前端零寻路，只回传 MsgIndex）
+function chatAppendNodeActions(bubble, msgIndex) {
+    if (msgIndex === undefined || msgIndex === null || msgIndex < 0) { return; }
+    var bar = document.createElement('div');
+    bar.className = 'node-actions';
+    var rb = document.createElement('button');
+    rb.type = 'button';
+    rb.className = 'node-btn node-btn-rollback';
+    rb.title = '从此处继续对话（回滚——该回复后的内容将截断，不可恢复）';
+    rb.textContent = '⟲';
+    rb.addEventListener('click', function () {
+        if (!window.confirm('从此处继续对话？该回复之后的所有消息将被截断（不可恢复）。')) { return; }
+        fetch('/api/v1/command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: 'session.rollback ' + msgIndex })
+        }).catch(function () {});
+        chatInfo.textContent = '回滚已投递——建议刷新浏览器页面';
+    });
+    var fb = document.createElement('button');
+    fb.type = 'button';
+    fb.className = 'node-btn node-btn-fork';
+    fb.title = '从此处新建独立 Cat（以该回复为起点分支新实例，继承配置与前文）';
+    fb.textContent = '⧉';
+    fb.addEventListener('click', function () {
+        var name = window.prompt('新 Cat 显示名：', 'fork-' + msgIndex);
+        if (!name || name.length === 0) { return; }
+        fetch('/api/v1/command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: 'session.fork ' + name + ' ' + msgIndex })
+        }).catch(function () {});
+        chatInfo.textContent = '分支指令已投递——请回到主控界面选择新会话';
+    });
+    bar.appendChild(rb);
+    bar.appendChild(fb);
+    bubble.appendChild(bar);
 }
 
 function chatOnReason(seq, replaceSeq, payload) {

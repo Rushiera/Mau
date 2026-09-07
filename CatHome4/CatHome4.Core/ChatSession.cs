@@ -645,7 +645,7 @@ namespace CH4
             _phaseStartTick = 0;
             PhaseEnter(PhaseLink);
             _context.AddUserMessage(content);
-            _viewStore.OnUserMessage(LastMessage(), ViewTimestamp());
+            _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
             if (_httpHost != null)
             {
@@ -1043,10 +1043,10 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 }
                 // 纯文本回复——本轮完成
                 _context.AddAssistantMessage(_llmResultText);
-                _viewStore.OnAssistantText(LastMessage(), ViewTimestamp());
+                _viewStore.OnAssistantText(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                 if (_httpHost != null)
                 {
-                    string textJson = "{\"content\":" + JsonSerializer.Serialize(_llmResultText) + "}";
+                    string textJson = "{\"content\":" + JsonSerializer.Serialize(_llmResultText) + ",\"msgIndex\":" + (_context.GetMessageCount() - 1).ToString() + "}";
                     _httpHost.PushView("text", textJson, _textStreamSeq, 0);
                 }
                 _textStreamSeq = 0;
@@ -1057,7 +1057,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 {
                     PendingMessage next = _pending.Dequeue();
                     _context.AddUserMessage(next.Content);
-                    _viewStore.OnUserMessage(LastMessage(), ViewTimestamp());
+                    _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                     if (_httpHost != null)
                     {
                         string userJson = "{\"content\":" + JsonSerializer.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
@@ -1073,7 +1073,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
             }
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
             _context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning);
-            _viewStore.OnAssistantToolCalls(LastMessage(), ViewTimestamp());
+            _viewStore.OnAssistantToolCalls(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             if (_httpHost != null && _llmReasoning.Length > 0)
             {
                 string reasonJson = "{\"content\":" + JsonSerializer.Serialize(_llmReasoning) + "}";
@@ -1082,7 +1082,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
             // 工具轮 seal——流式文本容器整块替换（对齐纯文本轮 seal 语义；空文本不推——前端不建空气泡）
             if (_httpHost != null && _llmResultText.Length > 0)
             {
-                string sealTextJson = "{\"content\":" + JsonSerializer.Serialize(_llmResultText) + "}";
+                string sealTextJson = "{\"content\":" + JsonSerializer.Serialize(_llmResultText) + ",\"msgIndex\":-1}";
                 _httpHost.PushView("text", sealTextJson, _textStreamSeq, 0);
             }
             _reasonStreamSeq = 0;
@@ -1292,7 +1292,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 _httpHost.PushView("toolcard", toolJson, -1, 0);
                 }
                 _context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);
-                _viewStore.OnToolResult(LastMessage(), ViewTimestamp());
+                _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             }
             _toolBatchActive = false;
             // 单向数据流改造——忙时插话：工具批完成有排队消息 → 插入 Ctx + user 事件 + 直接续轮（工具结果 + 插话同轮可见）
@@ -1300,7 +1300,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
             {
                 PendingMessage next = _pending.Dequeue();
                 _context.AddUserMessage(next.Content);
-                _viewStore.OnUserMessage(LastMessage(), ViewTimestamp());
+                _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                 if (_httpHost != null)
                 {
                     string userJson = "{\"content\":" + JsonSerializer.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
@@ -1381,6 +1381,69 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
             }
             _round = 0;
             _phase = ChatPhase.Idle;
+        }
+
+        /// <summary>
+        /// 回滚——从指定正式回复节点重新开始（P6b：裁剪唯一通道；该节点后消息全部丢弃）。
+        /// 校验：仅 Idle；msgIndex 指向 assistant 正式回复（Content>0——工具声明轮天然排除）。执行：截断上下文 → 落盘 → 统计/视图/Note 复位 → 视图重建 → session_reset 推送。
+        /// </summary>
+        /// <param name="msgIndex">真实前文消息索引（指向 assistant 正式回复——前端 text 块 MsgIndex）</param>
+        /// <returns>ERR| 前缀失败 / 成功摘要</returns>
+        public string Rollback(int msgIndex)
+        {
+            if (_phase != ChatPhase.Idle)
+            {
+                return "ERR|ROLLBACK_BUSY|会话忙——回滚仅空闲时执行";
+            }
+            LlmMessage[] all = _context.GetMessages();
+            if (msgIndex < 0 || msgIndex >= all.Length)
+            {
+                return "ERR|ROLLBACK_INDEX|节点索引越界: " + msgIndex.ToString();
+            }
+            LlmMessage target = all[msgIndex];
+            if (target.Role != LlmRole.Assistant || target.Content == null || target.Content.Length == 0)
+            {
+                return "ERR|ROLLBACK_NODE|节点不是正式回复（仅 assistant 回复可作切点）";
+            }
+            // [段1] 截断上下文——保留 [0..msgIndex]（ReplaceMessages 安全面——格式修复幂等）
+            LlmMessage[] keep = new LlmMessage[msgIndex + 1];
+            for (int i = 0; i <= msgIndex; i = i + 1)
+            {
+                keep[i] = all[i];
+            }
+            _context.ReplaceMessages(keep);
+            // [段2] 前文落盘——tool 结果截断 ≤800（复用 CloseRound 副本逻辑）
+            LlmMessage[] toSave = _context.GetMessages();
+            for (int i = 0; i < toSave.Length; i = i + 1)
+            {
+                if (toSave[i].Role == LlmRole.Tool && toSave[i].Content != null && toSave[i].Content.Length > 800)
+                {
+                    toSave[i].Content = TruncateText(toSave[i].Content, 800);
+                }
+            }
+            _lastStats.EntryCount = toSave.Length;
+            _store.Save(toSave, _lastStats);
+            // [段3] 统计与运行期参数复位——新起点零统计起算
+            ResetStats();
+            _usagePrompt = 0;
+            _usageCompletion = 0;
+            _usageCacheHit = 0;
+            _contextTokens = 0;
+            _toolCallCount = 0;
+            // [段4] 视图——从新前文完全重建 + roundsum 清空（roundsum 非真实前文派生；RebuildView 的 LoadInjectReport 会读回旧 view.json 统计——重建后清空并落盘，防下次启动读回）
+            RebuildView();
+            _viewStore.ClearRoundSums();
+            _viewStore.Save();
+            // [段5] Note 任务清空——防旧任务自动拉起新轮
+            _noteTasks = null;
+            _noteCurrent = 0;
+            _noteDone = 0;
+            PushNoteState();
+            // [段6] 前端通知——session_reset（前端清空气泡重拉 history；渲染层零改动）
+            PushSessionReset();
+            DataBox.Set<string>("global", "chat_state", "idle");
+            LogStore.Add("CatHome4", 1, "已回滚到节点 " + msgIndex.ToString() + "（保留 " + (msgIndex + 1).ToString() + " 条消息）", "CHAT");
+            return "rollback | 已截断到节点 " + msgIndex.ToString() + "（保留 " + (msgIndex + 1).ToString() + " 条消息）";
         }
 
         /// <summary>
