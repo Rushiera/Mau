@@ -1,4 +1,4 @@
-namespace Mau.Runtime
+﻿namespace Mau.Runtime
 {
     /// <summary>
     /// 消息角色——OpenAI 兼容四 role（system/user/assistant/tool）
@@ -61,5 +61,10 @@ namespace Mau.Runtime
         /// assistant 思考内容（reasoning_content——有工具调用轮次必须回传；无工具调用时可为空串）
         /// </summary>
         public string ReasoningContent;
+
+        /// <summary>
+        /// 创建时间戳——Unix 毫秒（DateTimeOffset.UtcNow；视图排序键——真实时序权威，跨重启稳定）
+        /// </summary>
+        public long CreatedAt;
     }
 }

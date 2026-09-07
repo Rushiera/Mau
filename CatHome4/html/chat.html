@@ -12,6 +12,7 @@
         <span style="flex:1"></span>
         <span id="uiVer" data-version title="前端版本——每次 Vitest 自动递增 + 最后更新时间">UI v?</span>
         <button id="chatNew" title="新会话（session.new——清前文并重新注入）">新会话</button>
+        <button id="chatPause" title="停止本轮（cat.pause——已生成内容保留，前文格式修复）" disabled>停止</button>
         <button id="chatRefresh" title="刷新——重建界面气泡（纯前端）">刷新</button>
     </div>
     <div id="chatMsgs"></div>
@@ -88,6 +89,8 @@
         if (elChatNew) { elChatNew.addEventListener('click', chatNewSession); }
         var elChatRefresh = document.getElementById('chatRefresh');
         if (elChatRefresh) { elChatRefresh.addEventListener('click', chatRefresh); }
+        var elChatPause = document.getElementById('chatPause');
+        if (elChatPause) { elChatPause.addEventListener('click', chatPause); }
         var elChatSendBtn = document.getElementById('chatSendBtn');
         if (elChatSendBtn) { elChatSendBtn.addEventListener('click', chatSend); }
         var elChatSendInput = document.getElementById('chatSendInput');

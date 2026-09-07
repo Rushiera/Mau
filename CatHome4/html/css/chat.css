@@ -5,8 +5,9 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 #chatbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #222; font-size: 11px; color: #6a6a6a; }
 #chatbar .sid { color: #c586c0; font-weight: bold; }
 #uiVer { background: rgba(0,0,0,0.6); border: 1px solid #2a2a2a; border-radius: 4px; padding: 1px 8px; color: #6a9955; font-size: 11px; }
-#chatNew, #chatRefresh { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
-#chatNew:hover, #chatRefresh:hover { background: #2a2a2a; }
+#chatNew, #chatRefresh, #chatPause { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
+#chatNew:hover, #chatRefresh:hover, #chatPause:hover:not(:disabled) { background: #2a2a2a; }
+#chatPause:disabled { opacity: 0.35; cursor: default; }
 /* E 系列——四态状态条 + Token 统计（link/think/tool/reply + 每态计时）；位于页面最底部（输入框下方）持久存在 */
 #chatStatus { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-top: 1px solid #1f1f1f; font-size: 11px; color: #6a6a6a; background: #131313; min-height: 22px; flex-wrap: wrap; }
 /* 持久存在——空态不隐藏（用户要求状态区常驻最底部） */
@@ -49,6 +50,8 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 /* S2 §8.4——重试过程记录气泡（独立视图条目：弱化灰底小号；⟳ 重试中 / ✓ 已恢复） */
 .chat-bubble.retry { background: #181818; border: 1px dashed #2e2e2e; color: #7a7a7a; font-size: 11px; padding: 4px 10px; max-width: 60%; }
 .chat-bubble.retry.resolved { border-style: solid; color: #6a9955; }
+/* P6 中止气泡——停止本轮提示（独立视图条目：弱化样式；宿主文本渲染） */
+.chat-bubble.paused { background: #181818; border: 1px dashed #3a3a3a; color: #6a9955; font-size: 11px; padding: 4px 10px; max-width: 60%; }
 /* 注入报告气泡——新会话前文加载明细（📚 汇总头 + 逐文件三态；弱化系统样式） */
 .chat-bubble.inject { background: #14181c; border: 1px solid #1e3a2f; color: #9ab8a8; font-size: 11px; max-width: 88%; }
 .inject-report .ir-head { color: #6a9955; font-weight: bold; margin-bottom: 4px; }

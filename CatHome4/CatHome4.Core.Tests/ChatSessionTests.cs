@@ -54,6 +54,12 @@ namespace CatHome4.Core.Tests
             /// <summary>STREAM_CLOSED 次数——前 N 次调用产 Error（0=每次）</summary>
             public int StreamClosedTimes = 0;
 
+            /// <summary>P6 中止模拟——产 Text 后挂起等待此事件（Pause 时 cts.Cancel → WaitOne 抛 OCE；null=不挂起）</summary>
+            public AutoResetEvent HoldStream;
+
+            /// <summary>P6 中止模拟——产 Retrying 前挂起等待取消（Runtime 取消识别后路径：取消 → OCE 冒泡，不产 Retrying）</summary>
+            public bool EmitRetryThenCancel;
+
             /// <summary>
             /// 流式对话——按队列返回工具调用或纯文本。
             /// </summary>
@@ -89,6 +95,14 @@ namespace CatHome4.Core.Tests
                 {
                     yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|1/3|ERR|TRANSPORT|模拟网络抖动");
                 }
+                // P6 中止——取消识别路径：产 Retrying 前挂起（Pause → cts.Cancel → OCE 冒泡——不产 retry 气泡；Runtime catch OCE throw 语义模拟）
+                if (EmitRetryThenCancel)
+                {
+                    while (!HoldStream.WaitOne(50))
+                    {
+                        ct.ThrowIfCancellationRequested();
+                    }
+                }
                 if (ToolCallsQueue.Count > 0)
                 {
                     string tc = ToolCallsQueue.Dequeue();
@@ -104,6 +118,14 @@ namespace CatHome4.Core.Tests
                 }
                 yield return new LlmStreamEvent(LlmStreamKind.Text, ReplyText);
                 await Task.Yield();
+                // P6 中止模拟——挂起流等待用户暂停（Pause → cts.Cancel → ThrowIfCancellationRequested 抛 OCE——Runtime 取消路径；AutoResetEvent 无 CancellationToken 重载——轮询）
+                if (HoldStream != null)
+                {
+                    while (!HoldStream.WaitOne(50))
+                    {
+                        ct.ThrowIfCancellationRequested();
+                    }
+                }
                 yield return new LlmStreamEvent(LlmStreamKind.Done, "");
             }
         }
@@ -585,6 +607,159 @@ namespace CatHome4.Core.Tests
                 {
                     Assert.True(all[i].Content == null || all[i].Content.Length > 0);
                 }
+            }
+        }
+        /// <summary>
+        /// P6 中止——LLM 流中暂停：后台流挂起 → Pause() 取消 → 上下文保留用户消息（半截文本不入上下文——不裁剪、不写半截）→ 复位 Idle + paused 事件（无 chatdone）。
+        /// </summary>
+        [Fact]
+        public void Pause_WhileLlmStreaming_KeepsContextAndPushesPaused()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "半截回复";
+            llm.HoldStream = new AutoResetEvent(false);
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            session.AttachHost(host);
+            session.PostUserMessage("测试暂停");
+            // 泵帧直到进入活跃相位（后台流挂起在 HoldStream——保证 Pause 时 LlmRunning）
+            for (int i = 0; i < 100 && session.IsIdle; i++)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+            }
+            Assert.False(session.IsIdle);
+            // 中止——取消令牌 → 后台 WaitOne 抛 OCE → 主线程 Pump 消费收尾
+            session.Pause();
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            // 上下文保留用户消息——半截文本不入上下文（不裁剪、不写半截；测试会话无 system 提示词——仅 user）
+            LlmMessage[] msgs = session.Context.GetMessages();
+            Assert.Single(msgs); // user（半截丢弃）
+            Assert.Equal(LlmRole.User, msgs[0].Role);
+            // paused 控制事件推送 + 无 chatdone（中止非正常完成语义）
+            List<string> ctrlEvents;
+            Assert.True(host.ViewEvents.TryGetValue("control", out ctrlEvents));
+            bool foundPaused = false;
+            bool foundChatDone = false;
+            for (int i = ctrlEvents.Count - 1; i >= 0; i--)
+            {
+                using (JsonDocument cd = JsonDocument.Parse(ctrlEvents[i]))
+                {
+                    if (cd.RootElement.TryGetProperty("type", out JsonElement t))
+                    {
+                        string tv = t.GetString();
+                        if (tv == "paused")
+                        {
+                            foundPaused = true;
+                        }
+                        if (tv == "chatdone")
+                        {
+                            foundChatDone = true;
+                        }
+                    }
+                }
+            }
+            Assert.True(foundPaused);
+            Assert.False(foundChatDone);
+        }
+        /// <summary>
+        /// P6 中止——取消识别：Runtime 取消路径不产 Retrying（挂起在 Retrying 前）→ Pause 后无 retry 气泡 + paused 气泡 + user 保留。
+        /// </summary>
+        [Fact]
+        public void Pause_CancelBeforeRetry_NoRetryBubble()
+        {
+            MockLlm llm = new MockLlm();
+            llm.EmitRetryThenCancel = true;
+            llm.HoldStream = new AutoResetEvent(false);
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            session.AttachHost(host);
+            session.PostUserMessage("暂停重试测试");
+            // 泵帧直到活跃（后台流挂起在 Retrying 前——等待取消）
+            for (int i = 0; i < 100 && session.IsIdle; i++)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+            }
+            Assert.False(session.IsIdle);
+            session.Pause();
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            // 无 retry 视图气泡（取消不产重试）
+            Assert.False(host.ViewEvents.ContainsKey("retry"));
+            // paused 气泡存在
+            List<string> ctrlEvents;
+            Assert.True(host.ViewEvents.TryGetValue("control", out ctrlEvents));
+            bool foundPaused = false;
+            for (int i = ctrlEvents.Count - 1; i >= 0; i--)
+            {
+                using (JsonDocument cd = JsonDocument.Parse(ctrlEvents[i]))
+                {
+                    if (cd.RootElement.TryGetProperty("type", out JsonElement t) && t.GetString() == "paused")
+                    {
+                        foundPaused = true;
+                        break;
+                    }
+                }
+            }
+            Assert.True(foundPaused);
+            // 用户消息保留（不裁剪）
+            Assert.Single(session.Context.GetMessages());
+        }
+        /// <summary>
+        /// P10 roundsum 重建归并——多轮会话重建后 GetBlocks 顺序：roundsum 位于所属轮末块之后、下一轮块之前
+        /// （时间戳排序——真实时序权威，跨重启稳定；修复"刷新后所有统计排末尾"）。
+        /// </summary>
+        [Fact]
+        public void View_Rebuild_RoundSumMergedByTimestamp()
+        {
+            // 构造多轮真实前文——Sleep 保证 CreatedAt 毫秒递增（视图排序键）
+            ChatContext ctx = new ChatContext();
+            ctx.SetSystemPrompt("系统");
+            ctx.AddUserMessage("第一轮问题");
+            ctx.AddAssistantMessage("第一轮回复");
+            Thread.Sleep(5);
+            ctx.AddUserMessage("第二轮问题");
+            ctx.AddAssistantMessage("第二轮回复");
+            Thread.Sleep(5);
+            ctx.AddUserMessage("第三轮问题");
+            ctx.AddAssistantMessage("第三轮回复");
+            LlmMessage[] msgs = ctx.GetMessages();
+            // 增量写入视图（与真实运行一致：每轮 CloseRound 追加 roundsum——时间戳 = 轮末块之后）
+            string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.json");
+            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(tmp);
+            for (int i = 0; i < msgs.Length; i++)
+            {
+                LlmMessage m = msgs[i];
+                if (m.Role == LlmRole.System)
+                {
+                    continue;
+                }
+                if (m.Role == LlmRole.User)
+                {
+                    viewStore.OnUserMessage(m, m.CreatedAt);
+                }
+                else if (m.Role == LlmRole.Assistant)
+                {
+                    viewStore.OnAssistantText(m, m.CreatedAt);
+                }
+            }
+            // 每轮 CloseRound——rs 时间戳略大于该轮末块（真实语义：CloseRound 在该轮结束后）
+            viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[2].CreatedAt + 1);
+            viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[4].CreatedAt + 1);
+            viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[6].CreatedAt + 1);
+            viewStore.Save();
+            // 重建——从真实前文（重启场景；rs 从 view.json 读回——LoadInjectReport）
+            viewStore.Rebuild(msgs);
+            viewStore.LoadInjectReport();
+            // 归并顺序断言——每轮：user, text, roundsum（rs 紧跟轮末块，不在末尾堆叠）
+            CH4.ViewBlock[] merged = viewStore.GetBlocks();
+            Assert.Equal(9, merged.Length); // 6 blocks + 3 rs（无注入报告）
+            string[] expected = { "user", "text", "roundsum", "user", "text", "roundsum", "user", "text", "roundsum" };
+            for (int i = 0; i < expected.Length; i++)
+            {
+                Assert.Equal(expected[i], merged[i].RenderType);
             }
         }
     }

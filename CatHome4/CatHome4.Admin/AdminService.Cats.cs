@@ -171,6 +171,22 @@ namespace CatHome4.Admin
             {
                 return HandleCatDelete(line.Substring(11).Trim());
             }
+            if (line.StartsWith("cat.pause", StringComparison.Ordinal))
+            {
+                // P6 中止——管理面指定猫（每猫端口无 key 版本走 DispatchCommandForCat/Major）
+                string rest = line.Substring(9).Trim();
+                if (rest.Length == 0)
+                {
+                    return "cat.pause | 用法: cat.pause <key>";
+                }
+                CatEntry cat = FindCat(rest);
+                if (cat == null)
+                {
+                    return "cat.pause | 未找到猫: " + rest;
+                }
+                cat.Session.Pause();
+                return "cat.pause | 已投递中止: " + cat.DisplayName;
+            }
             if (line.StartsWith("cat.chat ", StringComparison.Ordinal))
             {
                 // 格式：cat.chat <key> <内容>——内核每猫对话通道（M1d 验收 + 回归复用；DriveUntilIdle 等回复完成）
@@ -858,6 +874,12 @@ namespace CatHome4.Admin
                 }
                 return true;
             }
+            if (line == "cat.pause")
+            {
+                // P6 中止——HTTP 线程直接调用（内部仅置位 + 取消令牌——线程安全；相位推进主线程 Pump 消费）
+                _chatBridge.DefaultSession.Pause();
+                return true;
+            }
             if (line == "session.new")
             {
                 // F2.2 按 DefaultSession 重注入——HTTP 线程置位/主线程泵消费（PumpCatQueues 段3）
@@ -916,6 +938,12 @@ namespace CatHome4.Admin
                 {
                     cat.PendingChat.Enqueue(content);
                 }
+                return true;
+            }
+            if (line == "cat.pause")
+            {
+                // P6 中止——HTTP 线程直接调用（内部仅置位 + 取消令牌——线程安全；相位推进主线程 Pump 消费）
+                cat.Session.Pause();
                 return true;
             }
             if (line == "session.new")

@@ -112,6 +112,9 @@ function chatSetState(s) {
     chatBtn.disabled = (s === 'loading');
     var nsb = document.getElementById('noteStartBtn');
     if (nsb) { nsb.disabled = (s !== 'idle'); }
+    // P6 中止——停止按钮仅 sending 可用（不常用按钮：流式/工具执行中才可点）
+    var psb = document.getElementById('chatPause');
+    if (psb) { psb.disabled = (s !== 'sending'); }
 }
 
 function chatScrollBottom(force) {
@@ -606,6 +609,22 @@ function chatOnControl(payload) {
         }
         if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
         chatSetState('idle');
+    } else if (type === 'paused') {
+        // P6 中止——独立气泡提示（宿主文本；单向数据流：前端只渲染）+ seal 全部流式容器 + 复位 idle（已生成内容保留显示）
+        chatPhaseReset();
+        for (var kp in viewContainers) {
+            var cp = viewContainers[kp];
+            if (cp && cp.bubble) {
+                cp.bubble.classList.remove('streaming');
+                cp.bubble.classList.remove('streaming-wait');
+            }
+        }
+        viewContainers = {};
+        if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
+        var pb = chatBubble('assistant', 'paused');
+        chatAppend(pb, payload.text || '已停止本轮（前文保留）');
+        chatInfo.textContent = '已停止本轮（前文保留）';
+        chatSetState('idle');
     } else if (type === 'note') {
         // 问题一修复——宿主经 view/control 通道推送 Note 状态（ChatSession.PushNoteState→PushView）；转交 noteOnEvent 重绘（chat-note.js）
         noteOnEvent(payload);
@@ -661,6 +680,16 @@ function chatNewSession() {
     chatPhaseResetFull();
     chatMsgs.textContent = '';
     chatInfo.textContent = '新会话——注入中…';
+}
+
+// 停止本轮——cat.pause 指令（P6：已生成内容保留 + 前文格式修复，不裁剪；仅 sending 可用）
+function chatPause() {
+    if (chatState !== 'sending') { return; }
+    fetch('/api/v1/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'cat.pause' })
+    }).catch(function () {});
 }
 
 // 刷新——纯前端重建界面气泡（重新拉历史渲染，不发指令）

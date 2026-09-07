@@ -86,14 +86,14 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// <summary>内存视图块——按生成序（history 数据源）</summary>
         public ViewBlock[] GetBlocks()
 {
-            // 合并面——真实前文块 + roundsum 轮末统计块（按帧号升序）
+            // 合并面——真实前文块 + roundsum 轮末统计块（按时间戳升序——同一坐标系：消息 CreatedAt / CloseRound 时刻）
             ViewBlock[] merged = new ViewBlock[_blocks.Count + _roundSums.Count];
             int bi = 0;
             int ri = 0;
             int mi = 0;
             while (bi < _blocks.Count || ri < _roundSums.Count)
             {
-                if (ri >= _roundSums.Count || (bi < _blocks.Count && _blocks[bi].Frame <= _roundSums[ri].Frame))
+                if (ri >= _roundSums.Count || (bi < _blocks.Count && _blocks[bi].Timestamp <= _roundSums[ri].Timestamp))
                 {
                     merged[mi] = _blocks[bi];
                     bi = bi + 1;
@@ -110,7 +110,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
             {
                 ViewBlock[] withReport = new ViewBlock[merged.Length + 1];
                 ViewBlock report = new ViewBlock();
-                report.Frame = 0;
+                report.Timestamp = 0;
                 report.Hash = "inject_report";
                 report.RenderType = "inject_report";
                 report.Payload = _injectReport;
@@ -127,39 +127,39 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// 真实前文 append 钩子——用户消息 → user 块
         /// </summary>
         /// <param name="m">真实前文消息</param>
-        /// <param name="frame">创建帧号</param>
-        public void OnUserMessage(LlmMessage m, long frame)
+        /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
+        public void OnUserMessage(LlmMessage m, long timestamp)
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["content"] = m.Content ?? "";
-            Append(m, "user", payload, frame);
+            Append(m, "user", payload, timestamp);
         }
 
         /// <summary>
         /// 真实前文 append 钩子——assistant 纯文本回复 → text 块
         /// </summary>
         /// <param name="m">真实前文消息</param>
-        /// <param name="frame">创建帧号</param>
-        public void OnAssistantText(LlmMessage m, long frame)
+        /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
+        public void OnAssistantText(LlmMessage m, long timestamp)
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["content"] = m.Content ?? "";
-            Append(m, "text", payload, frame);
+            Append(m, "text", payload, timestamp);
         }
 
         /// <summary>
         /// 真实前文 append 钩子——assistant 工具调用声明 → reason 块（有思考时）+ 登记待配对工具
         /// </summary>
         /// <param name="m">真实前文消息</param>
-        /// <param name="frame">创建帧号</param>
-        public void OnAssistantToolCalls(LlmMessage m, long frame)
+        /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
+        public void OnAssistantToolCalls(LlmMessage m, long timestamp)
         {
             string reasoning = m.ReasoningContent ?? "";
             if (reasoning.Length > 0)
             {
                 Dictionary<string, object> payload = new Dictionary<string, object>();
                 payload["content"] = reasoning;
-                Append(m, "reason", payload, frame);
+                Append(m, "reason", payload, timestamp);
             }
             RegisterPendingTools(m.ToolCallsJson ?? "");
         }
@@ -168,8 +168,8 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// 真实前文 append 钩子——tool 结果 → 配对生成工具卡块（孤立 tool 丢弃——视图容错）
         /// </summary>
         /// <param name="m">真实前文消息</param>
-        /// <param name="frame">创建帧号</param>
-        public void OnToolResult(LlmMessage m, long frame)
+        /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
+        public void OnToolResult(LlmMessage m, long timestamp)
         {
             string toolCallId = m.ToolCallId ?? "";
             PendingTool target = null;
@@ -190,16 +190,15 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
             payload["name"] = target.Name.Length > 0 ? target.Name : (m.ToolName ?? "");
             payload["arguments"] = target.Arguments;
             payload["result"] = TruncateText(m.Content ?? "", 300);
-            Append(m, "toolcard", payload, frame);
+            Append(m, "toolcard", payload, timestamp);
         }
 
         /// <summary>
         /// 从真实前文重建视图层——完全重置（真实前文绝对可用；启动恢复/视图文件缺失时调用）。
-        /// 重建不追求复现历史 ID——帧号由调用方注入（当前宿主帧），逻辑准确即可（裁决：重建但逻辑准确）。
+        /// 块时间戳取消息 CreatedAt——真实时序权威（跨重启稳定；旧消息 CreatedAt=0 按 List 顺序稳定排前——重建是兜底场景，不做兼容维护）。
         /// </summary>
         /// <param name="messages">真实前文消息数组</param>
-        /// <param name="frame">当前宿主帧号（重建块统一帧）</param>
-        public void Rebuild(LlmMessage[] messages, long frame)
+        public void Rebuild(LlmMessage[] messages)
         {
             _blocks.Clear();
             _pendingTools.Clear();
@@ -212,7 +211,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
                 }
                 if (m.Role == LlmRole.User)
                 {
-                    OnUserMessage(m, frame);
+                    OnUserMessage(m, m.CreatedAt);
                     continue;
                 }
                 if (m.Role == LlmRole.Assistant)
@@ -220,17 +219,17 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
                     string toolCalls = m.ToolCallsJson ?? "";
                     if (toolCalls.Length > 0)
                     {
-                        OnAssistantToolCalls(m, frame);
+                        OnAssistantToolCalls(m, m.CreatedAt);
                     }
                     else
                     {
-                        OnAssistantText(m, frame);
+                        OnAssistantText(m, m.CreatedAt);
                     }
                     continue;
                 }
                 if (m.Role == LlmRole.Tool)
                 {
-                    OnToolResult(m, frame);
+                    OnToolResult(m, m.CreatedAt);
                 }
             }
         }
@@ -267,11 +266,11 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// 追加轮末统计块——roundsum（CloseRound 生成：Token 消耗 + 工具次数 + 总耗时 + 四态用时；非真实前文派生，Rebuild 不清）。
         /// </summary>
         /// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...}}）</param>
-        /// <param name="frame">创建帧号（与真实前文块同帧序合并）</param>
-        public void AppendRoundSummary(string payloadJson, long frame)
+        /// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系，归并排序键）</param>
+        public void AppendRoundSummary(string payloadJson, long timestamp)
         {
             ViewBlock block = new ViewBlock();
-            block.Frame = frame;
+            block.Timestamp = timestamp;
             block.Hash = "roundsum_" + _roundSums.Count.ToString();
             block.RenderType = "roundsum";
             block.Payload = payloadJson;
@@ -296,11 +295,11 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// <param name="m">真实前文消息</param>
         /// <param name="renderType">渲染类型</param>
         /// <param name="payload">渲染载荷（字典）</param>
-        /// <param name="frame">创建帧号</param>
-        private void Append(LlmMessage m, string renderType, Dictionary<string, object> payload, long frame)
+        /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
+        private void Append(LlmMessage m, string renderType, Dictionary<string, object> payload, long timestamp)
         {
             ViewBlock block = new ViewBlock();
-            block.Frame = frame;
+            block.Timestamp = timestamp;
             block.Hash = ComputeHash(m);
             block.RenderType = renderType;
             block.Payload = JsonSerializer.Serialize(payload);

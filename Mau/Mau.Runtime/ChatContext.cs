@@ -279,6 +279,8 @@ namespace Mau.Runtime
             msg.ToolName = "";
             msg.ToolCallsJson = "";
             msg.ReasoningContent = "";
+            // 视图排序键——真实时序权威（Unix 毫秒；跨重启稳定——帧号为运行时态，重建即失真）
+            msg.CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             return msg;
         }
         /// <summary>

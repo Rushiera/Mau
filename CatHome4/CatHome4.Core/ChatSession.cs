@@ -87,6 +87,13 @@ namespace CH4
         /// <summary>STREAM_CLOSED 续传标志——SSE 流未以 [DONE] 结束时置位（PumpLlm 检查；续传后复位）</summary>
         private bool _streamClosedRetry;
 
+        // [段2b] P6 中止——暂停标志与取消令牌（LLM 流物理取消面）
+        /// <summary>中止请求标志——HTTP 线程置位（volatile 跨线程可见），主线程 Pump 消费执行收尾</summary>
+        private volatile bool _pauseRequested;
+
+        /// <summary>本轮 LLM 流取消令牌——LaunchLlm 创建；Pause 时 Cancel（下一轮重建——取消不跨轮）</summary>
+        private System.Threading.CancellationTokenSource _pauseCts;
+
         /// <summary>Token 用量整轮累计——prompt（含 cache hit）</summary>
         private long _usagePrompt;
 
@@ -265,21 +272,16 @@ namespace CH4
             return all[all.Length - 1];
         }
 
-        /// <summary>当前宿主帧号——F4 帧号全局盒（DataBox global.frame——数据面内聚；未写入回退 0）</summary>
-        private long CurrentFrame()
+        /// <summary>当前视图时间戳——Unix 毫秒（视图排序键——真实时序权威，跨重启稳定；替代宿主帧号）</summary>
+        private static long ViewTimestamp()
         {
-            long frame;
-            if (DataBox.TryGet<long>("global", "frame", out frame))
-            {
-                return frame;
-            }
-            return 0;
+            return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         }
 
         /// <summary>重建视图层——从真实前文完全重置（启动恢复后调用；真实前文绝对可用）</summary>
         public void RebuildView()
         {
-            _viewStore.Rebuild(_context.GetMessages(), CurrentFrame());
+            _viewStore.Rebuild(_context.GetMessages());
             // 注入报告——启动恢复时从 view.json 读回（非真实前文派生；Rebuild 不重建）
             _viewStore.LoadInjectReport();
         }
@@ -485,6 +487,84 @@ namespace CH4
         }
 
         /// <summary>
+        /// 中止当前轮次——取消 LLM 流（后台 Task 取消）/ 放弃未完成工具批；已完成内容保留 + 前文格式修复（不裁剪——裁剪唯一通道是回滚）。
+        /// 线程安全：仅置位 + Cancel（volatile 标志跨线程可见）；相位推进在主线程 Pump 消费。
+        /// </summary>
+        public void Pause()
+        {
+            if (_phase == ChatPhase.Idle)
+            {
+                // 无进行中对话——前端按钮 idle 态禁用；防御性返回
+                return;
+            }
+            _pauseRequested = true;
+            if (_pauseCts != null)
+            {
+                _pauseCts.Cancel();
+            }
+            LogStore.Add("CatHome4", 1, "收到中止指令——正在停止本轮（已完成内容保留）", "CHAT");
+        }
+
+        /// <summary>
+        /// 中止收尾——主线程 Pump 消费（相位串行）。已完成工具结果保留入 Ctx（不丢信息）；未完成放弃（格式修复补占位）；
+        /// 上下文 ReplaceMessages 格式修复（S3 方案——孤儿 tool_calls 补占位/孤立结果丢弃）；前文落盘（不裁剪）；
+        /// 复位 Idle + chat_state=idle + 推 paused 事件（前端 seal 流式容器 + 按钮复位）。
+        /// </summary>
+        private void PauseFinalize()
+        {
+            _pauseRequested = false;
+            // [段0] 已完成工具结果保留——未完成放弃（ReplaceMessages 对未配对声明补占位）
+            for (int i = 0; i < _dogs.Count; i++)
+            {
+                ToolOrderDog dog = _dogs[i];
+                if (dog.IsClosed && dog.Result != null && dog.Result.Length > 0)
+                {
+                    _context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);
+                }
+            }
+            _dogs.Clear();
+            _hostDogs.Clear();
+            _toolBatchActive = false;
+            // [段1] 上下文格式修复——S3 ReplaceMessages 原地（幂等；孤儿 tool_calls 补占位/孤立结果丢弃）
+            _context.ReplaceMessages(_context.GetMessages());
+            // [段2] 前文落盘——tool 结果截断 ≤800（对齐 CloseRound——落盘副本防膨胀）
+            LlmMessage[] toSave = _context.GetMessages();
+            for (int i = 0; i < toSave.Length; i++)
+            {
+                if (toSave[i].Role == LlmRole.Tool && toSave[i].Content != null && toSave[i].Content.Length > 800)
+                {
+                    toSave[i].Content = TruncateText(toSave[i].Content, 800);
+                }
+            }
+            _lastStats.EntryCount = toSave.Length;
+            _store.Save(toSave, _lastStats);
+            // [段3] 视图序号复位——流式容器由前端 seal（已显示内容保留）
+            _textStreamSeq = 0;
+            _reasonStreamSeq = 0;
+            // [段4] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——中止非正常完成语义）
+            _round = 0;
+            _phase = ChatPhase.Idle;
+            _phaseFrames = 0;
+            _llmBusy = false;
+            _llmError = false;
+            _llmErrorText = "";
+            _llmResultText = "";
+            _llmReasoning = "";
+            _llmToolCallsJson = "";
+            _emptyReplyRetry = 0;
+            _streamClosedRetry = false;
+            _sawRetry = false;
+            DataBox.Set<string>("global", "chat_state", "idle");
+            // [段5] 前端通知——control paused 事件（seal + 按钮复位）
+            if (_httpHost != null)
+            {
+                string pauseJson = "{\"type\":\"paused\",\"text\":\"已停止本轮（前文保留 + 格式修复）\"}";
+                _httpHost.PushView("control", pauseJson, -1, 0);
+            }
+            LogStore.Add("CatHome4", 1, "本轮已中止——前文保留 + 格式修复（" + toSave.Length.ToString() + " 条消息）", "CHAT");
+        }
+
+        /// <summary>
         /// 用户消息入队——Idle 时 Pump 立即启动轮次；忙时排队等待（原同步阻塞天然排队语义保持）。
         /// 主线程泵消费调用（ThreadGuard：不推进相位——启动在 Pump）。
         /// </summary>
@@ -511,6 +591,12 @@ namespace CH4
         /// </summary>
         public void Pump()
         {
+            // P6 中止——暂停请求消费（任何相位统一收尾：LLM 流取消/工具批放弃/已完成保留）
+            if (_pauseRequested)
+            {
+                PauseFinalize();
+                return;
+            }
             if (_phase == ChatPhase.Idle)
             {
                 if (_pending.Count > 0)
@@ -559,7 +645,7 @@ namespace CH4
             _phaseStartTick = 0;
             PhaseEnter(PhaseLink);
             _context.AddUserMessage(content);
-            _viewStore.OnUserMessage(LastMessage(), CurrentFrame());
+            _viewStore.OnUserMessage(LastMessage(), ViewTimestamp());
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
             if (_httpHost != null)
             {
@@ -576,6 +662,8 @@ namespace CH4
         /// </summary>
         private void LaunchLlm()
         {
+            // P6 中止——每轮新取消令牌（上一轮取消不跨轮；Pause 时 Cancel 后台流）
+            _pauseCts = new System.Threading.CancellationTokenSource();
             LlmMessage[] messages = _context.GetMessages();
             _llmBusy = true;
             _llmResultText = "";
@@ -585,7 +673,7 @@ namespace CH4
             _llmErrorText = "";
             System.Threading.Tasks.Task.Run(delegate
             {
-_ = ConsumeLlmStream(messages);
+_ = ConsumeLlmStream(messages, _pauseCts.Token);
             });
             _phase = ChatPhase.LlmRunning;
             _phaseFrames = 0;
@@ -615,7 +703,7 @@ _ = ConsumeLlmStream(messages);
         /// 后台消费 LLM 流——写会话槽 + SSE 转发 + 结算行。Task.Run 执行——异常全兜底（错误可见性）。
         /// </summary>
         /// <param name="messages">消息序列</param>
-        private async System.Threading.Tasks.Task ConsumeLlmStream(LlmMessage[] messages)
+        private async System.Threading.Tasks.Task ConsumeLlmStream(LlmMessage[] messages, System.Threading.CancellationToken ct)
         {
             try
             {
@@ -623,7 +711,7 @@ _ = ConsumeLlmStream(messages);
                 StringBuilder text = new StringBuilder();
                 StringBuilder reasoning = new StringBuilder();
                 string toolCalls = "";
-                await foreach (LlmStreamEvent ev in _llmRuntime.ChatStream(messages, _tools, _id))
+                await foreach (LlmStreamEvent ev in _llmRuntime.ChatStream(messages, _tools, _id, ct))
                 {
                     if (ev.Kind == LlmStreamKind.Text)
                     {
@@ -690,6 +778,11 @@ _ = ConsumeLlmStream(messages);
                     }
                     else if (ev.Kind == LlmStreamKind.Retrying)
                     {
+                        // P6 中止——暂停中忽略重试事件（取消被误判为传输错误的防御：不推 retry 气泡——根治在 Runtime catch OCE 冒泡）
+                        if (_pauseRequested)
+                        {
+                            continue;
+                        }
                         // S2 §8.4——重试可见性：独立视图条目（retry renderType）——不入会话槽/上下文/日志（Runtime 已记 L2）
                         _sawRetry = true;
                         if (_httpHost != null)
@@ -737,6 +830,11 @@ _ = ConsumeLlmStream(messages);
                     }
                     else if (ev.Kind == LlmStreamKind.Error)
                     {
+                        // P6 中止——暂停中忽略错误事件（取消引发的 TaskCanceled 转 Error 不推前端/不置错误）
+                        if (_pauseRequested)
+                        {
+                            continue;
+                        }
                         _llmError = true;
                         _llmErrorText = ev.Text;
                         // 空回复续传——STREAM_CLOSED（SSE 流未以 [DONE] 结束）且续传未耗尽：置位续传标志（PumpLlm 走续传），不推前端 error
@@ -770,10 +868,18 @@ _ = ConsumeLlmStream(messages);
                 llmSummary = llmSummary + "。Token 统计：输入 " + _usagePrompt.ToString() + "（含缓存 " + _usageCacheHit.ToString() + "）· 输出 " + _usageCompletion.ToString();
                 LogStore.Add("LLM", 0, llmSummary, "LLM");
             }
+            catch (System.OperationCanceledException)
+            {
+                // P6 中止——用户暂停取消流：不置错误（PumpLlm 检查 _pauseRequested 走收尾）
+            }
             catch (Exception ex)
             {
-                _llmError = true;
-                _llmErrorText = "ERR|" + ex.GetType().Name + "|" + ex.Message;
+                // P6 中止——暂停中异常忽略（取消竞态窗口——取消标志未及读取时异常已抛）
+                if (!_pauseRequested)
+                {
+                    _llmError = true;
+                    _llmErrorText = "ERR|" + ex.GetType().Name + "|" + ex.Message;
+                }
             }
             finally
             {
@@ -937,7 +1043,7 @@ _ = ConsumeLlmStream(messages);
                 }
                 // 纯文本回复——本轮完成
                 _context.AddAssistantMessage(_llmResultText);
-                _viewStore.OnAssistantText(LastMessage(), CurrentFrame());
+                _viewStore.OnAssistantText(LastMessage(), ViewTimestamp());
                 if (_httpHost != null)
                 {
                     string textJson = "{\"content\":" + JsonSerializer.Serialize(_llmResultText) + "}";
@@ -951,7 +1057,7 @@ _ = ConsumeLlmStream(messages);
                 {
                     PendingMessage next = _pending.Dequeue();
                     _context.AddUserMessage(next.Content);
-                    _viewStore.OnUserMessage(LastMessage(), CurrentFrame());
+                    _viewStore.OnUserMessage(LastMessage(), ViewTimestamp());
                     if (_httpHost != null)
                     {
                         string userJson = "{\"content\":" + JsonSerializer.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
@@ -967,7 +1073,7 @@ _ = ConsumeLlmStream(messages);
             }
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
             _context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning);
-            _viewStore.OnAssistantToolCalls(LastMessage(), CurrentFrame());
+            _viewStore.OnAssistantToolCalls(LastMessage(), ViewTimestamp());
             if (_httpHost != null && _llmReasoning.Length > 0)
             {
                 string reasonJson = "{\"content\":" + JsonSerializer.Serialize(_llmReasoning) + "}";
@@ -1186,7 +1292,7 @@ _ = ConsumeLlmStream(messages);
                 _httpHost.PushView("toolcard", toolJson, -1, 0);
                 }
                 _context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);
-                _viewStore.OnToolResult(LastMessage(), CurrentFrame());
+                _viewStore.OnToolResult(LastMessage(), ViewTimestamp());
             }
             _toolBatchActive = false;
             // 单向数据流改造——忙时插话：工具批完成有排队消息 → 插入 Ctx + user 事件 + 直接续轮（工具结果 + 插话同轮可见）
@@ -1194,7 +1300,7 @@ _ = ConsumeLlmStream(messages);
             {
                 PendingMessage next = _pending.Dequeue();
                 _context.AddUserMessage(next.Content);
-                _viewStore.OnUserMessage(LastMessage(), CurrentFrame());
+                _viewStore.OnUserMessage(LastMessage(), ViewTimestamp());
                 if (_httpHost != null)
                 {
                     string userJson = "{\"content\":" + JsonSerializer.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
@@ -1239,7 +1345,7 @@ _ = ConsumeLlmStream(messages);
             // roundsum 轮末统计——相位结算 + 载荷构建 + 视图落盘 + SSE 推送（本轮 Token 消耗 + 工具次数 + 总耗时 + 四态用时）
             PhaseSettle();
             string roundsumJson = BuildRoundSumJson();
-            _viewStore.AppendRoundSummary(roundsumJson, CurrentFrame());
+            _viewStore.AppendRoundSummary(roundsumJson, ViewTimestamp());
             _viewStore.Save();
             if (_httpHost != null)
             {

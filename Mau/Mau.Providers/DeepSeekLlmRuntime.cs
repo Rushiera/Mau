@@ -115,6 +115,11 @@ public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, 
             }
             catch (Exception ex)
             {
+                // P6 中止——取消不是传输错误：冒泡（取消不重试——重试分支 Task.Delay(ct) 也会立即取消）
+                if (ex is System.OperationCanceledException)
+                {
+                    throw;
+                }
                 netError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
             }
 
@@ -162,6 +167,11 @@ public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, 
                 }
                 catch (Exception ex)
                 {
+                    // P6 中止——取消不是传输错误：冒泡（取消不重试）
+                    if (ex is System.OperationCanceledException)
+                    {
+                        throw;
+                    }
                     readError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
                 }
 
@@ -194,7 +204,12 @@ public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, 
             }
             catch (Exception ex)
             {
-                streamError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
+                // P6 中止——取消不是传输错误：冒泡（取消不重试——读流失败重试分支同样会被 Task.Delay(ct) 立即取消）
+            if (ex is System.OperationCanceledException)
+            {
+                throw;
+            }
+            streamError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
             }
 
             if (streamError.Length > 0)
