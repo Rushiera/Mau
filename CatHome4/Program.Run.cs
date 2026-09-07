@@ -57,6 +57,9 @@ namespace CH4
         private static int RunInteractive()
         {
             Console.WriteLine("[CMD] 指令: QuickCat <system>|<content> | Chat <内容> | status | reload <quick|dev> [dll] | run <n> | pid | quit");
+            // P1 托盘——独立 STA UI 线程（开机自启勾选/打开数据目录/退出）；仅交互模式启用（无头通道保持纯文本）
+            StartTray();
+            int autoStartPoll = 0;
             while (true)
             {
                 // [段1] 帧驱动——HTTP 快照推送主线程泵（ThreadGuard：快照构建须宿主主线程；空闲时也持续 Tick）
@@ -69,6 +72,17 @@ namespace CH4
                 PumpChatQueue();
                 AdminService.PumpCatQueues();
                 QQBotService.Tick();
+                // [段1a] P1 托盘退出 + 自启轮询——退出走 break（Main finally 优雅收尾）；5s 粒度覆盖前端/config-* 写路径
+                if (_trayExitRequested)
+                {
+                    break;
+                }
+                autoStartPoll = autoStartPoll + 1;
+                if (autoStartPoll >= AutoStartPollFrames)
+                {
+                    autoStartPoll = 0;
+                    CheckAutoStartPoll();
+                }
                 // [段2] 按键轮询——有输入才 ReadLine（阻塞读会卡住帧驱动）
                 if (Console.KeyAvailable)
                 {

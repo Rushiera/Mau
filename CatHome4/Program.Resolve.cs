@@ -146,5 +146,45 @@ namespace CH4
             }
             return System.IO.Path.Combine(AppContext.BaseDirectory, "html");
         }
+
+        /// <summary>
+        /// schema 种子——Data/config/schema.json 缺失时从模板复制（仅缺失时，不覆盖已有——Data 三级锚定运行时数据独立）。
+        /// 模板源候选序：部署包区（AppContext.BaseDirectory/config/schema.json.example——deploy 段3b 复制）→ 仓库根（FindRepoRoot/config/schema.json.example——开发/测试区）。
+        /// 两源皆缺 → 静默保持空 schema（ConfigSchema.Load 空 schema 兼容——无配置启动设计）。
+        /// 调用点：Bootstrap 段2 末尾（ConfigSchema.Load 前；此时 LogStore 未 Configure——日志直打 Console 与早期 Bootstrap 风格一致）。
+        /// </summary>
+        /// <param name="configDir">Data/config 目录（绝对路径）</param>
+        private static void EnsureSchemaSeed(string configDir)
+        {
+            string target = Path.Combine(configDir, "schema.json");
+            if (File.Exists(target))
+            {
+                return;
+            }
+            string[] candidates = new string[]
+            {
+                Path.Combine(AppContext.BaseDirectory, "config", "schema.json.example"),
+                Path.Combine(FindRepoRoot(AppContext.BaseDirectory), "config", "schema.json.example")
+            };
+            for (int i = 0; i < candidates.Length; i = i + 1)
+            {
+                if (File.Exists(candidates[i]))
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(configDir);
+                        File.Copy(candidates[i], target, false);
+                        Console.WriteLine("[CMD] schema 种子: " + candidates[i] + " → " + target);
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("[CMD] schema 种子失败: " + ex.Message);
+                        return;
+                    }
+                }
+            }
+            Console.WriteLine("[CMD] schema 种子: 模板未找到——保持空 schema（无配置启动兼容）");
+        }
     }
 }

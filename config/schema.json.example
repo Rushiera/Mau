@@ -5,6 +5,7 @@
     { "key": "llm.reasoning_effort", "file": "llm.cfg", "default": "medium", "sensitive": false, "writable": false, "desc": "思考强度" },
     { "key": "http.port", "file": "llm.cfg", "default": "8080", "sensitive": false, "writable": false, "desc": "HTTP 端口" },
     { "key": "ui.chat_font_size", "file": "ui.json", "default": "14", "sensitive": false, "writable": true, "type": "int", "min": "8", "max": "32", "desc": "对话区字体大小 px" },
+    { "key": "app.autostart", "file": "app.json", "default": "false", "sensitive": false, "writable": true, "type": "bool", "desc": "开机自启（注册 HKCU Run）" },
     { "key": "search.api_config_id", "file": "search.cfg", "default": "", "sensitive": false, "writable": true, "desc": "搜索 API 池配置 ID（未配置=搜索不可用）" },
     { "key": "search.endpoint", "file": "search.cfg", "default": "", "sensitive": false, "writable": true, "desc": "搜索端点（空=池配置推导 /responses）" },
     { "key": "search.model", "file": "search.cfg", "default": "", "sensitive": false, "writable": true, "desc": "搜索模型（空=池配置默认模型）" },

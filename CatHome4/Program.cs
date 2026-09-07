@@ -142,6 +142,8 @@ private static HttpHost _httpHost;
             // 注册确认——预热后应见 1 模块 3 key（启动观测一行）
             string[] keyDic = _bus.GetKeyDic();
             Console.WriteLine("[CMD] CommandBus " + keyDic[0]);
+            // [段2c] P1 自启同步——启动时注册表与配置对齐（防手动删注册表漂移）
+            InitAutoStart();
             // [段3] 模式路由
             string mode = "";
             for (int i = 0; i < args.Length; i++)
@@ -217,6 +219,8 @@ private static HttpHost _httpHost;
             DataBox.Bind<CH_QqBotConfigStore>(qqBotStore);
             // P8.5d 配置群多文件化——ui.* 用户偏好追加到同一 store（键前缀段路由；ui.json 缺失时首次写入自动创建）
             llmConfig.AddFile("ui", Path.Combine(configDir, "ui.json"));
+            // P1 自启配置群——app.* 宿主行为配置（app.autostart 开机自启——配置为真相，注册表为物化）
+            llmConfig.AddFile("app", Path.Combine(configDir, "app.json"));
             // R2.1 搜索配置群——search.* 独立 search.cfg（未配置=搜索工具不可用——先配置后才可用）
             llmConfig.AddFile("search", Path.Combine(configDir, "search.cfg"));
             // R2.2 视觉配置群——vision.* 独立 vision.cfg（未配置=识图工具不可用——先配置后才可用）
@@ -234,6 +238,8 @@ private static HttpHost _httpHost;
             // PsCat PowerShell 执行服务——EncodedCommand 免转义 + UTF-8 内建 + 写文件拦截 + 超时进程树杀（PsService）
             DataBox.Bind<IPsService>(new PsService());
             // P8.5 配置群 schema——schema.json 元声明（默认值/敏感/可写——/api/v1/config 输出面）
+            // P1b 首次运行种子——Data/config/schema.json 缺失时从部署包/仓库根模板复制（仅缺失时，不覆盖已有——Data 三级锚定运行时数据独立）
+            EnsureSchemaSeed(configDir);
             DataBox.Bind<ConfigSchema>(ConfigSchema.Load(Path.Combine(configDir, "schema.json")));
             AuditStore audit = new AuditStore();
             AuditStore.Default = audit;
