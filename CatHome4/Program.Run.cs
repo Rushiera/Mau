@@ -29,7 +29,7 @@ namespace CH4
                 Thread.Sleep(FrameSleepMs);
             }
             ObserveService.PrintStatus();
-            Console.WriteLine("[CatHome4] 自检通过");
+            Console.WriteLine("[CMD] 自检通过");
             return 0;
         }
 
@@ -56,7 +56,7 @@ namespace CH4
         /// <returns>退出码</returns>
         private static int RunInteractive()
         {
-            Console.WriteLine("指令: QuickCat <system>|<content> | Chat <内容> | status | reload <quick|dev> [dll] | run <n> | pid | quit");
+            Console.WriteLine("[CMD] 指令: QuickCat <system>|<content> | Chat <内容> | status | reload <quick|dev> [dll] | run <n> | pid | quit");
             while (true)
             {
                 // [段1] 帧驱动——HTTP 快照推送主线程泵（ThreadGuard：快照构建须宿主主线程；空闲时也持续 Tick）
@@ -161,7 +161,7 @@ namespace CH4
                     else
                     {
                         _chatBridge.SessionNewRequested = true;
-                        Console.WriteLine("[CatHome4] 会话忙——session.new 排队执行");
+                        Console.WriteLine("[CMD] 会话忙——session.new 排队执行");
                     }
                 }
                 else
@@ -208,7 +208,7 @@ namespace CH4
                     else
                     {
                         _sessionCmdQueue.Enqueue(line);
-                        Console.WriteLine("[CatHome4] 会话忙——" + line + " 排队执行");
+                        Console.WriteLine("[CMD] 会话忙——" + line + " 排队执行");
                     }
                 }
                 else
@@ -222,11 +222,11 @@ namespace CH4
             {
                 if (Environment.CurrentManagedThreadId == _mainThreadId)
                 {
-                    Console.WriteLine(ExecuteReload(line.Substring(7).Trim()));
+                    Console.WriteLine("[CMD] " + ExecuteReload(line.Substring(7).Trim()));
                 }
                 else
                 {
-                    Console.WriteLine("[CatHome4] reload 仅主线程执行——CLI 通道使用");
+                    Console.WriteLine("[CMD] reload 仅主线程执行——CLI 通道使用");
                 }
                 return true;
             }
@@ -236,7 +236,7 @@ namespace CH4
             {
                 if (Environment.CurrentManagedThreadId == _mainThreadId)
                 {
-                    Console.WriteLine("[CatHome4] " + AdminService.HandleCatCommand(line));
+                    Console.WriteLine("[CMD] " + AdminService.HandleCatCommand(line));
                 }
                 else
                 {
@@ -326,7 +326,7 @@ namespace CH4
             long officeId = _oa.Post(QuickOwnerId, "TOOL", "QuickCat", QuickTimeoutFrames);
             if (officeId <= 0)
             {
-                Console.WriteLine("[CatHome4] QuickCat 发单失败");
+                Console.WriteLine("[CMD] QuickCat 发单失败");
                 return;
             }
             _oa.SetStr(officeId, QuickOwnerId, "system", system);
@@ -356,7 +356,7 @@ namespace CH4
             {
                 quickResult = "ERR|EMPTY_RESULT|QuickCat 无回执（状态 " + quickOffice.Status.ToString() + "）";
             }
-            Console.WriteLine("[QuickCat] " + quickResult);
+            Console.WriteLine("[CMD] QuickCat: " + quickResult);
             _oa.RemoveByOwner(QuickOwnerId);
         }
 
@@ -382,7 +382,7 @@ namespace CH4
                 }
                 Thread.Sleep(FrameSleepMs);
             }
-            Console.WriteLine("[CatHome4] 驱动帧上限 " + MaxFramesPerRun + " 到达——仍有未闭环活动");
+            Console.WriteLine("[CMD] 驱动帧上限 " + MaxFramesPerRun + " 到达——仍有未闭环活动");
         }
 
         /// <summary>
@@ -468,7 +468,7 @@ namespace CH4
 
             if (line == "pid")
             {
-                Console.WriteLine("[CatHome4] pid=" + Environment.ProcessId);
+                Console.WriteLine("[CMD] pid=" + Environment.ProcessId);
                 return true;
             }
 
@@ -477,7 +477,7 @@ namespace CH4
                 long frames;
                 if (!long.TryParse(line.Substring(4).Trim(), out frames) || frames < 0)
                 {
-                    Console.WriteLine("[CatHome4] run 参数无效——需非负整数帧数");
+                    Console.WriteLine("[CMD] run 参数无效——需非负整数帧数");
                     return true;
                 }
 
@@ -500,14 +500,14 @@ namespace CH4
                 // 只投递不驱动——配合 run <n> 手动帧驱动（超时/挂单场景精确帧数控制）
                 if (!DispatchCommand(line.Substring(5).Trim()))
                 {
-                    Console.WriteLine("格式: send QuickCat <system>|<content> 或 send Chat <内容>");
+                    Console.WriteLine("[CMD] 格式: send QuickCat <system>|<content> 或 send Chat <内容>");
                 }
                 return true;
             }
 
             if (!DispatchCommand(line))
             {
-                Console.WriteLine("格式: QuickCat <system>|<content> 或 Chat <内容>");
+                Console.WriteLine("[CMD] 格式: QuickCat <system>|<content> 或 Chat <内容>");
                 return true;
             }
             DriveUntilIdle();
@@ -524,11 +524,11 @@ namespace CH4
         {
             if (!File.Exists(path))
             {
-                Console.WriteLine("[CatHome4] 脚本文件不存在: " + path);
+                Console.WriteLine("[CMD] 脚本文件不存在: " + path);
                 return 2;
             }
             string[] lines = File.ReadAllLines(path);
-            Console.WriteLine("[CatHome4] 脚本模式 | " + lines.Length + " 行 | pid=" + Environment.ProcessId);
+            Console.WriteLine("[CMD] 脚本模式 | " + lines.Length + " 行 | pid=" + Environment.ProcessId);
             for (int i = 0; i < lines.Length; i++)
             {
                 string line = lines[i].Trim();
@@ -536,13 +536,13 @@ namespace CH4
                 {
                     continue;
                 }
-                Console.WriteLine("── 脚本指令 " + (i + 1) + ": " + line + " ──");
+                Console.WriteLine("[CMD] ── 脚本指令 " + (i + 1) + ": " + line + " ──");
                 if (!ExecuteLine(line))
                 {
                     break;
                 }
             }
-            Console.WriteLine("[CatHome4] 脚本结束 | pid=" + Environment.ProcessId);
+            Console.WriteLine("[CMD] 脚本结束 | pid=" + Environment.ProcessId);
             return 0;
         }
     }

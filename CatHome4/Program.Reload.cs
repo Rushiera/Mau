@@ -38,8 +38,8 @@ namespace CH4
             // [段0] 忙时拒绝——任一会话工具批次执行中 reload 会导致旧批次完成信号永不置位（WaitForTools 空转帧上限）——host-* 直执路径豁免（ChatSession 工具批临时解除）
             if (_chatBridge.IsAnyToolBatchActive())
             {
-                string busyMsg = "[CatHome4] reload 拒绝: 工具批次执行中（Chat 处理中）——等待完成后再试";
-                Console.WriteLine(busyMsg);
+                string busyMsg = "reload 拒绝: 工具批次执行中（Chat 处理中）——等待完成后再试";
+                Console.WriteLine("[CMD] " + busyMsg);
                 sb.AppendLine(busyMsg);
                 return sb.ToString();
             }
@@ -58,8 +58,8 @@ namespace CH4
                 name = ToolFlowName(cat);
                 if (name.Length == 0 || !_toolFlowHandles.TryGetValue(name, out oldHandle))
                 {
-                    string badMsg = "[CatHome4] reload 目标无效——quick|text|mau|cs|config|search";
-                    Console.WriteLine(badMsg);
+                    string badMsg = "reload 目标无效——quick|text|mau|cs|config|search";
+                    Console.WriteLine("[CMD] " + badMsg);
                     sb.AppendLine(badMsg);
                     return sb.ToString();
                 }
@@ -80,8 +80,8 @@ namespace CH4
             }
             catch (Exception ex)
             {
-                string failMsg = "[CatHome4] reload " + name + " 失败: 新版本加载未通过——" + ex.Message;
-                Console.WriteLine(failMsg);
+                string failMsg = "reload " + name + " 失败: 新版本加载未通过——" + ex.Message;
+                Console.WriteLine("[CMD] " + failMsg);
                 sb.AppendLine(failMsg);
                 return sb.ToString();
             }
@@ -110,15 +110,15 @@ namespace CH4
                 }
                 catch (Exception ex2)
                 {
-                    string rollbackFailMsg = "[CatHome4] reload " + name + " 失败: 试跑异常且回滚失败——" + ex.Message + " / " + ex2.Message;
-                    Console.WriteLine(rollbackFailMsg);
+                    string rollbackFailMsg = "reload " + name + " 失败: 试跑异常且回滚失败——" + ex.Message + " / " + ex2.Message;
+                    Console.WriteLine("[CMD] " + rollbackFailMsg);
                     sb.AppendLine(rollbackFailMsg);
                     return sb.ToString();
                 }
                 oldHandle.TryUnload(3);
                 SetCatHandle(cat, rollback, rollbackId);
-                string rollbackMsg = "[CatHome4] reload " + name + " 失败: 试跑帧异常已回滚（旧版本全新实例 #" + rollbackId + "）——" + ex.Message;
-                Console.WriteLine(rollbackMsg);
+                string rollbackMsg = "reload " + name + " 失败: 试跑帧异常已回滚（旧版本全新实例 #" + rollbackId + "）——" + ex.Message;
+                Console.WriteLine("[CMD] " + rollbackMsg);
                 sb.AppendLine(rollbackMsg);
                 return sb.ToString();
             }
@@ -145,12 +145,12 @@ namespace CH4
                 _runner.Tick();
             }
             string[] keyDic = _bus.GetKeyDic();
-            string okMsg = "[CatHome4] reload " + name + ": #" + oldId + " → #" + newId + " | pid=" + Environment.ProcessId + " | " + keyDic[0];
-            Console.WriteLine(okMsg);
+            string okMsg = "reload " + name + ": #" + oldId + " → #" + newId + " | pid=" + Environment.ProcessId + " | " + keyDic[0];
+            Console.WriteLine("[CMD] " + okMsg);
             sb.AppendLine(okMsg);
             for (int k = 0; k < keyDic.Length; k++)
             {
-                Console.WriteLine("    " + keyDic[k]);
+                Console.WriteLine("[CMD]     " + keyDic[k]);
                 sb.AppendLine("    " + keyDic[k]);
             }
             return sb.ToString();

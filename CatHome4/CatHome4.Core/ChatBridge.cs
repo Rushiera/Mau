@@ -189,7 +189,7 @@ namespace CH4
             {
                 pushChatDone(session.Context.GetMessages().Length);
             }
-            Console.WriteLine("[CatHome4] " + summary);
+            
         }
 
         /// <summary>
@@ -283,12 +283,12 @@ namespace CH4
                 session.Store.Save(session.Context.GetMessages());
                 // 问题一附带——session clear 同步清视图（视图随生命周期清理；注入报告保留——非会话轮次产物）
                 session.ClearView();
-                Console.WriteLine("[CatHome4] 会话已清空（保留系统提示词）");
+                LogStore.Add("CatHome4", 1, "会话已清空（保留系统提示词）", "CMD");
                 return;
             }
             if (cmd == "session count")
             {
-                Console.WriteLine("[CatHome4] 会话消息数: " + session.Context.GetMessageCount());
+                LogStore.Add("CatHome4", 1, "会话消息数: " + session.Context.GetMessageCount().ToString(), "CMD");
                 return;
             }
         }

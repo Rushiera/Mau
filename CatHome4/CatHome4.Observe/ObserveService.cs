@@ -20,14 +20,14 @@ namespace CatHome4.Observe
         /// </summary>
         internal static void PrintStatus()
         {
-            Console.WriteLine("── Flow 状态 ──");
+            Console.WriteLine("[CMD] ── Flow 状态 ──");
             PrintFlowStatus("QuickCat", _quickHandle);
             PrintToolGroupStatuses();
             // [段1] OA 快照 + 盒子截面 + 审计帧序（杂音过滤——trace.sample 每帧采样隐藏，关键事件帧序可回溯）
             OAView oaView = _oa.GetSnapshot();
-            Console.WriteLine("── OA 快照 ── Open=" + oaView.OpenCount + " Work=" + oaView.WorkCount + " Closed=" + oaView.ClosedCount + " Timeout=" + oaView.TimeoutCount);
+            Console.WriteLine("[CMD] ── OA 快照 ── Open=" + oaView.OpenCount + " Work=" + oaView.WorkCount + " Closed=" + oaView.ClosedCount + " Timeout=" + oaView.TimeoutCount);
             DataBoxSnapshot boxSnap = DataBox.Capture();
-            Console.WriteLine("── 盒子截面 ──");
+            Console.WriteLine("[CMD] ── 盒子截面 ──");
             for (int i = 0; i < boxSnap.Data.Length; i++)
             {
                 DataBoxDataEntry d = boxSnap.Data[i];
@@ -35,12 +35,12 @@ namespace CatHome4.Observe
                 {
                     continue;
                 }
-                Console.WriteLine("  " + d.Scope + "." + d.Key + " = " + d.Value);
+                Console.WriteLine("[CMD]   " + d.Scope + "." + d.Key + " = " + d.Value);
             }
             AuditQuery query = new AuditQuery(AuditStore.Default);
             AuditEvent[] events = query.Segment(0, 999999, null, null);
-            Console.WriteLine("── 审计帧序（trace.sample 已过滤）──");
-            Console.WriteLine(query.FormatEvents(FilterNoise(events)));
+            Console.WriteLine("[CMD] ── 审计帧序（trace.sample 已过滤）──");
+            Console.WriteLine("[CMD] " + query.FormatEvents(FilterNoise(events)));
             // [段2] 最近日志——LogStore 内存总账尾部（CMD/OA 专属类别 + 帧号可见）
             List<LogStore.LogEntry> logs = LogStore.AllLog;
             int start = logs.Count - 20;
@@ -48,7 +48,7 @@ namespace CatHome4.Observe
             {
                 start = 0;
             }
-            Console.WriteLine("── 最近日志 ──");
+            Console.WriteLine("[CMD] ── 最近日志 ──");
             for (int i = start; i < logs.Count; i++)
             {
                 LogStore.LogEntry entry = logs[i];
@@ -61,7 +61,7 @@ namespace CatHome4.Observe
                 {
                     cat = "";
                 }
-                Console.WriteLine("  " + entry.Time + " | F" + entry.Frame + " | " + LogStore.LevelText(entry.Level) + " | " + cat + entry.Message);
+                Console.WriteLine("[CMD]   " + entry.Time + " | F" + entry.Frame + " | " + LogStore.LevelText(entry.Level) + " | " + cat + entry.Message);
             }
         }
         /// <summary>
@@ -73,12 +73,12 @@ namespace CatHome4.Observe
         {
             if (handle == null)
             {
-                Console.WriteLine("  " + name + " | 未加载（降级）");
+                Console.WriteLine("[CMD]   " + name + " | 未加载（降级）");
                 return;
             }
             if (handle.IsFaulted)
             {
-                Console.WriteLine("  " + name + " | FAULTED | " + handle.FaultReason);
+                Console.WriteLine("[CMD]   " + name + " | FAULTED | " + handle.FaultReason);
                 return;
             }
             FlowStatusV3 status = handle.Flow.GetStatus();
@@ -112,14 +112,14 @@ namespace CatHome4.Observe
             {
                 busySuffix = " | " + busyText;
             }
-            Console.WriteLine("  " + name + " | " + stateText + busySuffix);
+            Console.WriteLine("[CMD]   " + name + " | " + stateText + busySuffix);
             // [段3] 实体自述——模块自己的声音（R0.1：IObservableFlow.GetSelfDesc 多行自由形态）
             string[] descLines = handle.Flow.GetSelfDesc();
             if (descLines != null && descLines.Length > 0)
             {
                 for (int d = 0; d < descLines.Length; d++)
                 {
-                    Console.WriteLine("    └ 自述: " + descLines[d]);
+                    Console.WriteLine("[CMD]     └ 自述: " + descLines[d]);
                 }
             }
         }
@@ -139,7 +139,7 @@ namespace CatHome4.Observe
         /// </summary>
         internal static void PrintStatusShort()
         {
-            Console.WriteLine("── Flow 状态 ──");
+            Console.WriteLine("[CMD] ── Flow 状态 ──");
             PrintFlowStatus("QuickCat", _quickHandle);
             PrintToolGroupStatuses();
             List<LogStore.LogEntry> logs = LogStore.AllLog;
@@ -149,7 +149,7 @@ namespace CatHome4.Observe
                 start = 0;
             }
 
-            Console.WriteLine("── 最近日志 ──");
+            Console.WriteLine("[CMD] ── 最近日志 ──");
             for (int i = start; i < logs.Count; i++)
             {
                 LogStore.LogEntry entry = logs[i];
@@ -162,7 +162,7 @@ namespace CatHome4.Observe
                 {
                     cat = "";
                 }
-                Console.WriteLine("  " + entry.Time + " | F" + entry.Frame + " | " + LogStore.LevelText(entry.Level) + " | " + cat + entry.Message);
+                Console.WriteLine("[CMD]   " + entry.Time + " | F" + entry.Frame + " | " + LogStore.LevelText(entry.Level) + " | " + cat + entry.Message);
             }
         }
 

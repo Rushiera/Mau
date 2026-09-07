@@ -78,7 +78,7 @@ namespace CH4
             }
             if (port < 1024 || port > 65535)
             {
-                Console.WriteLine("[CatHome4] http.port 配置非法(" + raw + ")——回退 8080");
+                Console.WriteLine("[CMD] http.port 配置非法(" + raw + ")——回退 8080");
                 port = 8080;
             }
             return port;

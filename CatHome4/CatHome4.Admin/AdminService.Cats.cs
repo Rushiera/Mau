@@ -212,7 +212,7 @@ namespace CatHome4.Admin
             string catCmd;
             while (_catQueue.TryDequeue(out catCmd))
             {
-                Console.WriteLine("[CatHome4] " + HandleCatCommand(catCmd));
+                LogStore.Add("CatHome4", 1, "cat 指令: " + HandleCatCommand(catCmd), "CMD", "", "", 200);
             }
             // [段2] 每猫 Chat 指令泵消费（每猫 HttpHost HTTP 线程投递 / 主线程投递会话）
             for (int i = 0; i < _cats.Count; i++)

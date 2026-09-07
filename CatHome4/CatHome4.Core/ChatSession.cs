@@ -945,7 +945,7 @@ _ = ConsumeLlmStream(messages);
                 }
                 _textStreamSeq = 0;
                 _reasonStreamSeq = 0;
-                Console.WriteLine("[" + _displayName + "] " + _llmResultText);
+                LogStore.Add("CatHome4", 1, "回复(" + _displayName + "): " + _llmResultText, "CHAT", "", "", 200);
                 // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + user 事件 + 直接开新轮（跳过 Done/CloseRound）
                 if (_pending.Count > 0)
                 {

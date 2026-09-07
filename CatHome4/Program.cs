@@ -117,7 +117,7 @@ private static HttpHost _httpHost;
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[CatHome4] 启动失败: " + ex.Message);
+                Console.WriteLine("[CMD] 启动失败: " + ex.Message);
                 // 脚本模式无人值守不暂停；交互模式暂停——错误可见（双击 exe 不闪退）
                 bool pauseOnFail = true;
                 for (int i = 0; i < args.Length; i = i + 1)
@@ -129,7 +129,7 @@ private static HttpHost _httpHost;
                 }
                 if (pauseOnFail)
                 {
-                    Console.WriteLine("按任意键退出……");
+                    Console.WriteLine("[CMD] 按任意键退出……");
                     Console.ReadKey();
                 }
                 return 1;
@@ -141,7 +141,7 @@ private static HttpHost _httpHost;
             }
             // 注册确认——预热后应见 1 模块 3 key（启动观测一行）
             string[] keyDic = _bus.GetKeyDic();
-            Console.WriteLine("[CatHome4] CommandBus " + keyDic[0]);
+            Console.WriteLine("[CMD] CommandBus " + keyDic[0]);
             // [段3] 模式路由
             string mode = "";
             for (int i = 0; i < args.Length; i++)
@@ -305,7 +305,7 @@ private static HttpHost _httpHost;
             // 工具池摘要——启动观测（工具总数 + 组别分布；design-ch4-tools-pool §六）
             string poolSummary = "工具池已聚合：" + ToolPool.AllNames().Length.ToString() + " 个工具 / " + ToolPool.AllGroups().Length.ToString() + " 个组";
             LogStore.Add("CatHome4", 1, poolSummary, "CONFIG");
-            Console.WriteLine("[CatHome4] " + poolSummary);
+            
             // 默认猫 cat.cfg 补建——缺失时按全局默认模板创建（新用户无 cfg 必然态；运行时缺省回退 → 启动落盘）
             AdminService.EnsureMajordomoCfg();
             AdminService.CatCfgData defaultCfg = AdminService.LoadCatCfg(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "cat.cfg"));
@@ -358,14 +358,14 @@ private static HttpHost _httpHost;
             if (chatStore.TryLoad(out restored, out restoredStats))
             {
                 chatCtx.ReplaceMessages(restored);
-                Console.WriteLine("[CatHome4] 会话前文恢复: " + restored.Length.ToString() + " 条消息（有前文——不注入）");
+                Console.WriteLine("[CMD] 会话前文恢复: " + restored.Length.ToString() + " 条消息（有前文——不注入）");
             }
             else
             {
                 // 无前文 = 隐式新会话——按 cat.cfg injectList 清单注入（M2d：不再走全局 workspace.inject）
                 string injectPrompt = _chatBridge.BuildPrompt(workspace, _chatBridge.DefaultToolSpecs, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList);
                 chatCtx.SetSystemPrompt(injectPrompt);
-                Console.WriteLine("[CatHome4] 新会话注入: " + _chatBridge.DefaultInjectList.Length.ToString() + " 个文件");
+                Console.WriteLine("[CMD] 新会话注入: " + _chatBridge.DefaultInjectList.Length.ToString() + " 个文件");
             }
             // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面；M2c 声明面按猫裁剪）
             SessionViewStore chatViewStore = new SessionViewStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.view.json"));
@@ -416,7 +416,7 @@ private static HttpHost _httpHost;
             }
             DataBox.Set<string>("global", "workspace.roots", rootSummary.ToString());
             LogStore.Add("CatHome4", 1, "工作区已加载：" + workspace.Roots.Length.ToString() + " 个根、" + workspace.Inject.Length.ToString() + " 条注入（" + rootSummary.ToString() + "）", "CONFIG");
-            Console.WriteLine("[CatHome4] 就绪 | Flows: QuickCat#" + _quickId + " " + ToolGroupSummary() + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
+            Console.WriteLine("[CMD] 就绪 | Flows: QuickCat#" + _quickId + " " + ToolGroupSummary() + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
             // P9.3 多实例化签名——sessionId 归属默认会话；catsBuilder 多猫列表（管理页签数据源）；主端口服务 index.html
             // F2.1/F2.2——主端口纯管理面板（index.html）；majordomo 对话走独立端口（chat.html，与多猫同构）
@@ -425,7 +425,7 @@ private static HttpHost _httpHost;
             AdminService.StartMajorHost();
             // [段6b] 启动扫描——sessions/*/cat.cfg 中 running 猫拉起（主 HTTP 就位后——每猫 HttpHost 独立实例）
             AdminService.LoadCatsOnBoot();
-            Console.WriteLine("[CatHome4] HTTP 外观层就绪: http://127.0.0.1:" + _httpHost.Port + " | Majordomo 对话: http://127.0.0.1:" + AdminService.MajorPort);
+            Console.WriteLine("[CMD] HTTP 外观层就绪: http://127.0.0.1:" + _httpHost.Port + " | Majordomo 对话: http://127.0.0.1:" + AdminService.MajorPort);
             // [段6c] 前端测试服务拉起——开发流程（改前端 → 跑测试 → 刷新生效）；未监听则启动 node server.js
             EnsureFrontendTestService();
             // R2.3 QQ 管理器启动——扫描 Bot 池建立全部连接（附属功能组件；Bot 池空 = 零连接静默）
@@ -637,7 +637,7 @@ private static HttpHost _httpHost;
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[CatHome4] 警告: FL_" + flowName + ".dll 加载失败——该组工具不可用（工单将超时 ERR）: " + ex.Message);
+                Console.WriteLine("[CMD] 警告: FL_" + flowName + ".dll 加载失败——该组工具不可用（工单将超时 ERR）: " + ex.Message);
                 return null;
             }
         }
