@@ -19,7 +19,7 @@ namespace Mau.Runtime
         private static readonly object _gate = new object();
 
         /// <summary>
-        /// 设置默认全局实例——宿主 Bootstrap 调用（llm.cfg + ui.json 配置群）。
+        /// 设置默认全局实例——宿主 Bootstrap 调用（llm.cfg + ui.cfg 配置群）。
         /// </summary>
         /// <param name="store">全局配置存储</param>
         public static void SetDefault(ConfigStore store)

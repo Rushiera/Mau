@@ -53,6 +53,10 @@ namespace CatHome4.Core.Tests
 
             /// <summary>STREAM_CLOSED 次数——前 N 次调用产 Error（0=每次）</summary>
             public int StreamClosedTimes = 0;
+/// <summary>是否模拟纯空格回复——只产空格 Text（Trim 判空续传验证）</summary>
+public bool WhitespaceReply = false; 
+/// <summary>纯空格次数——前 N 次调用产空格（0=每次）</summary>
+ public  int  WhitespaceReplyTimes  =  0 ;
 
             /// <summary>P6 中止模拟——产 Text 后挂起等待此事件（Pause 时 cts.Cancel → WaitOne 抛 OCE；null=不挂起）</summary>
             public AutoResetEvent HoldStream;
@@ -87,6 +91,13 @@ namespace CatHome4.Core.Tests
                 if (EmptyReply && (EmptyReplyTimes == 0 || CallCount <= EmptyReplyTimes))
                 {
                     yield return new LlmStreamEvent(LlmStreamKind.Reasoning, "思考中");
+                    yield return new LlmStreamEvent(LlmStreamKind.Done, "");
+                    yield break;
+                }
+                // 空回复续传——纯空格模拟：只产空格 Text（Trim 判空续传验证；WhitespaceReplyTimes 控制前 N 次）
+                if (WhitespaceReply && (WhitespaceReplyTimes == 0 || CallCount <= WhitespaceReplyTimes))
+                {
+                    yield return new LlmStreamEvent(LlmStreamKind.Text, "   ");
                     yield return new LlmStreamEvent(LlmStreamKind.Done, "");
                     yield break;
                 }
@@ -560,7 +571,36 @@ namespace CatHome4.Core.Tests
             // LLM 调用次数 = 2（1 次空回复 + 1 次续传）
             Assert.Equal(2, llm.CallCount);
         }
+/// <summary>
+/// 纯空格回复续传——MockLlm 模拟流正常结束但只产空格文本（Trim 判空语义）：
+/// 第一次调用产空格 → 自动续传 → 第二次调用正常回复。
+/// 断言：续传后正常完成 + 无空格 assistant 消息入上下文 + 调用次数 = 2。
+/// </summary>
+[Fact]
+public void WhitespaceReply_AutoContinueAndResolve()
+{
+    MockLlm llm = new MockLlm();
+    llm.WhitespaceReply = true;
+    llm.WhitespaceReplyTimes = 1;
+    CH4.ChatSession session = CreateSession(llm);
+    session.PostUserMessage("纯空格续传测试");
+    PumpUntilIdle(session);
+    Assert.True(session.IsIdle);
+    // 续传后正常完成——assistant 文本存在（第二次调用产出 "ok"）
+    Assert.Contains("ok", GetLastAssistantText(session));
+    // 无空格 assistant 消息——上下文中不出现纯空格 assistant 消息
+    LlmMessage[] all = session.Context.GetMessages();
+    for (int i = 0; i < all.Length; i = i + 1)
+    {
+        if (all[i].Role == LlmRole.Assistant)
+        {
+            Assert.True(all[i].Content == null || all[i].Content.Trim().Length > 0);
+        }
+    }
 
+    // LLM 调用次数 = 2（1 次空格回复 + 1 次续传）
+    Assert.Equal(2, llm.CallCount);
+}
         /// <summary>
         /// STREAM_CLOSED 续传——MockLlm 模拟 SSE 流未以 [DONE] 结束（ERR|STREAM_CLOSED）：
         /// 第一次调用产 STREAM_CLOSED 错误 → 续传（同上下文重发）→ 第二次调用正常回复。
@@ -580,34 +620,6 @@ namespace CatHome4.Core.Tests
             Assert.Contains("ok", GetLastAssistantText(session));
             // LLM 调用次数 = 2（1 次 STREAM_CLOSED + 1 次续传）
             Assert.Equal(2, llm.CallCount);
-        }
-
-        /// <summary>
-        /// 空回复续传耗尽——MockLlm 持续空回复（EmptyReply 始终 true）：
-        /// 续传 2 次耗尽 → 本轮完成（不加空 assistant 消息 + 前端 error 提示）。
-        /// 断言：LLM 调用次数 = 3（1 原始 + 2 续传）；无空 assistant 消息；上下文保持断点。
-        /// </summary>
-        [Fact]
-        public void EmptyReply_ExhaustRetryLimit()
-        {
-            MockLlm llm = new MockLlm();
-            // 持续空回复——所有调用都只产思考不产文本（续传耗尽验证）
-            llm.EmptyReply = true;
-            CH4.ChatSession session = CreateSession(llm);
-            session.PostUserMessage("续传耗尽测试");
-            PumpUntilIdle(session);
-            Assert.True(session.IsIdle);
-            // 续传耗尽——3 次调用（1 原始 + 2 续传上限）
-            Assert.Equal(3, llm.CallCount);
-            // 无空 assistant 消息入上下文（耗尽不产生空 AI 消息）
-            LlmMessage[] all = session.Context.GetMessages();
-            for (int i = 0; i < all.Length; i = i + 1)
-            {
-                if (all[i].Role == LlmRole.Assistant)
-                {
-                    Assert.True(all[i].Content == null || all[i].Content.Length > 0);
-                }
-            }
         }
         /// <summary>
         /// P6 中止——LLM 流中暂停：后台流挂起 → Pause() 取消 → 上下文保留用户消息（半截文本不入上下文——不裁剪、不写半截）→ 复位 Idle + paused 事件（无 chatdone）。

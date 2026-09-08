@@ -29,7 +29,7 @@ namespace Mau.Runtime
         /// </summary>
         private string _path = "";
 /// <summary>
-/// 多文件槽——键前缀段 → 文件路径（ui. → ui.json；无前缀段命中 → 主文件 _path）。P8.5d 配置群多文件化
+/// 多文件槽——键前缀段 → 文件路径（ui. → ui.cfg；无前缀段命中 → 主文件 _path）。P8.5d 配置群多文件化
 /// </summary>
 private readonly Dictionary<string, string> _fileByPrefix = new Dictionary<string, string>(StringComparer.Ordinal);
         // [段2] 构造与加载
@@ -84,7 +84,7 @@ private readonly Dictionary<string, string> _fileByPrefix = new Dictionary<strin
             return store;
         }
 /// <summary>
-/// 追加配置文件槽——键前缀段路由（如 "ui" → ui.json）；装载该文件全部键值并注册前缀映射。
+/// 追加配置文件槽——键前缀段路由（如 "ui" → ui.cfg）；装载该文件全部键值并注册前缀映射。
 /// P8.5d 配置群多文件化：单一 ConfigStore 承载多配置文件，Set/Save 按键前缀段分组落盘。
 /// </summary>
 /// <param name = "prefix">键前缀段（键 "ui.chat_font_size" 的前缀 "ui"）</param>

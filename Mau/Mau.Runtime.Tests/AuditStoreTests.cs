@@ -63,9 +63,9 @@ namespace Mau.Runtime.Tests
                 {
                     return e.Category == "trace.fire";
                 }));
-                // 磁盘跳过——log.all 不含 trace
+                // 磁盘跳过——log_all.txt 不含 trace
                 LogStore.CloseWriters();
-                string logAll = File.ReadAllText(Path.Combine(runDir, "log.all"), System.Text.Encoding.UTF8);
+                string logAll = File.ReadAllText(Path.Combine(runDir, "log_all.txt"), System.Text.Encoding.UTF8);
                 Assert.DoesNotContain("trace.fire", logAll);
             }
             finally
@@ -132,7 +132,7 @@ namespace Mau.Runtime.Tests
         }
 
         /// <summary>
-        /// ConfigureRuns 集成——Record 后 log.all 落盘含 audit 行（O1/O2 四文件生态）
+        /// ConfigureRuns 集成——Record 后 log_all.txt 落盘含 audit 行（O1/O2 四文件生态）
         /// </summary>
         [Fact]
         public void ConfigureRuns_ThenRecord_WritesLogAll()
@@ -145,12 +145,12 @@ namespace Mau.Runtime.Tests
                 AuditStore store = new AuditStore();
                 store.Record("CommandBus", "cmd.set", 1284, new AuditProp[] { new AuditProp("key", "chat_x_msg") });
                 LogStore.CloseWriters();
-                string logAll = File.ReadAllText(Path.Combine(runDir, "log.all"), System.Text.Encoding.UTF8);
+                string logAll = File.ReadAllText(Path.Combine(runDir, "log_all.txt"), System.Text.Encoding.UTF8);
                 Assert.Contains("[AUDIT]", logAll);
                 Assert.Contains("cmd.set", logAll);
                 Assert.Contains("F1284", logAll);
-                // err.all 干净（无 L3）
-                string errAll = File.ReadAllText(Path.Combine(runDir, "err.all"), System.Text.Encoding.UTF8);
+                // err_all.txt 干净（无 L3）
+                string errAll = File.ReadAllText(Path.Combine(runDir, "err_all.txt"), System.Text.Encoding.UTF8);
                 Assert.Equal("", errAll);
             }
             finally
@@ -173,7 +173,7 @@ namespace Mau.Runtime.Tests
                 LogStore.ConfigureRuns(runDir);
                 LogStore.Add("Test", 3, "boom", "SYS");
                 LogStore.CloseWriters();
-                string errAll = File.ReadAllText(Path.Combine(runDir, "err.all"), System.Text.Encoding.UTF8);
+                string errAll = File.ReadAllText(Path.Combine(runDir, "err_all.txt"), System.Text.Encoding.UTF8);
                 Assert.Contains("boom", errAll);
             }
             finally

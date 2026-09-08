@@ -85,7 +85,7 @@ namespace Mau.Runtime
                 LogStore.Add(source, 1, message, "AUDIT", "audit." + source + "." + category, payload, 0, actualFrame, true);
                 return;
             }
-            // 全参数 V2——Type=audit.{source}.{category}；模块=source；类别=AUDIT（log.all 投影可见）
+            // 全参数 V2——Type=audit.{source}.{category}；模块=source；类别=AUDIT（log_all.txt 投影可见）
             LogStore.Add(source, 1, message, "AUDIT", "audit." + source + "." + category, payload, 0, actualFrame, false);
         }
 

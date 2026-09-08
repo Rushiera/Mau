@@ -217,10 +217,10 @@ private static HttpHost _httpHost;
                 Path.Combine(dataRoot, "Data", "config"),
                 Path.Combine(dataRoot, "Data", "secrets"));
             DataBox.Bind<CH_QqBotConfigStore>(qqBotStore);
-            // P8.5d 配置群多文件化——ui.* 用户偏好追加到同一 store（键前缀段路由；ui.json 缺失时首次写入自动创建）
-            llmConfig.AddFile("ui", Path.Combine(configDir, "ui.json"));
+            // P8.5d 配置群多文件化——ui.* 用户偏好追加到同一 store（键前缀段路由；ui.cfg 缺失时首次写入自动创建）
+            llmConfig.AddFile("ui", Path.Combine(configDir, "ui.cfg"));
             // P1 自启配置群——app.* 宿主行为配置（app.autostart 开机自启——配置为真相，注册表为物化）
-            llmConfig.AddFile("app", Path.Combine(configDir, "app.json"));
+            llmConfig.AddFile("app", Path.Combine(configDir, "app.cfg"));
             // R2.1 搜索配置群——search.* 独立 search.cfg（未配置=搜索工具不可用——先配置后才可用）
             llmConfig.AddFile("search", Path.Combine(configDir, "search.cfg"));
             // R2.2 视觉配置群——vision.* 独立 vision.cfg（未配置=识图工具不可用——先配置后才可用）
@@ -244,11 +244,11 @@ private static HttpHost _httpHost;
             AuditStore audit = new AuditStore();
             AuditStore.Default = audit;
             _runner.Audit = audit;
-            // [段3] 统一观测运行目录——O 系列：Data/runs/<ts>/ 四文件（log.all/oa.all/frame.jsonl/err.all——design-ch4-observe §三）
+            // [段3] 统一观测运行目录——O 系列：Data/runs/<ts>/ 四文件（log_all.txt/oa_all.txt/frame.txt/err_all.txt——design-ch4-observe §三）
             string sessionRunId = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             string runDir = Path.Combine(dataRoot, "Data", "runs", sessionRunId);
             LogStore.ConfigureRuns(runDir);
-            FrameStore.Configure(Path.Combine(runDir, "frame.jsonl"));
+            FrameStore.Configure(Path.Combine(runDir, "frame.txt"));
             // [段3a] Console 订阅——Log 同构行输出窗口（O4：过程行不再直打——统一观测）
             LogStore.ConsoleSink = delegate (string line)
             {

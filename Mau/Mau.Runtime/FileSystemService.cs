@@ -753,7 +753,7 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
         /// <param name="limit">条数上限</param>
         /// <param name="output">输出列表</param>
         private void AppendTree(string root, string current, int depth, int limit, List<string> output)
-        {
+{
             if (output.Count >= limit)
             {
                 return;
@@ -762,7 +762,13 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
             Array.Sort(entries, StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < entries.Length && output.Count < limit; i = i + 1)
             {
-                output.Add(Path.GetRelativePath(root, entries[i]));
+                string rel = Path.GetRelativePath(root, entries[i]);
+                // 目录行尾加 "/" 标记——消费面（ToolSummaryFormatter.SummarizeFileTree）按尾斜杠区分目录/文件
+                if (Directory.Exists(entries[i]))
+                {
+                    rel = rel + "/";
+                }
+                output.Add(rel);
                 if (depth > 0 && Directory.Exists(entries[i])
                     && !PathBoundary.IsReparsePoint(entries[i]))
                 {
@@ -770,7 +776,6 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
                 }
             }
         }
-
         /// <summary>
         /// 寻找包含目标的最长允许根
         /// </summary>

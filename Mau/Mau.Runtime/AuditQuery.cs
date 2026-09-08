@@ -199,7 +199,7 @@ namespace Mau.Runtime
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("## AUDIT STAT");
             // GAP.4 段来源标注——数据源 = Log 真源（O2 并入）
-            sb.AppendLine("- 数据源: Log 真源（audit.* 过滤；Data/runs/<会话>/log.all 落盘）");
+            sb.AppendLine("- 数据源: Log 真源（audit.* 过滤；Data/runs/<会话>/log_all.txt 落盘）");
             sb.AppendLine("- frame: " + frameFrom + "-" + frameTo);
             long total = 0;
             for (int i = 0; i < stats.Length; i = i + 1)
@@ -222,7 +222,7 @@ namespace Mau.Runtime
 {
             // GAP.4 段来源标注——查询数据源 = 环形缓冲（内存）；落盘文件为 MD 留痕不参与查询
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine("- 数据源: Log 真源（audit.* 过滤；Data/runs/<会话>/log.all 落盘）");
+            sb.AppendLine("- 数据源: Log 真源（audit.* 过滤；Data/runs/<会话>/log_all.txt 落盘）");
             if (events.Length == 0)
             {
                 sb.AppendLine("（无匹配）");

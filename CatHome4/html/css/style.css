@@ -1,4 +1,4 @@
-/* CH4 外观层 v2——index.html 主面板样式（2026-08-25 拆分自 index.html 内嵌 <style>） */
+﻿/* CH4 外观层 v2——index.html 主面板样式（2026-08-25 拆分自 index.html 内嵌 <style>） */
 :root { --chat-font-size: 14px; } /* P8.5d——ui.chat_font_size 前端消费（宿主持久化配置）；全局字号配置已移除——静态提档替代（2026-08-28） */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #141414; color: #c8c8c8; height: 100vh; overflow: hidden; }
@@ -105,6 +105,8 @@ h2 { font-size: 15px; color: #4ec9b0; margin: 10px 12px 6px 12px; font-weight: n
 .chat-tool .ta { color: #6a6a6a; word-break: break-all; white-space: pre-wrap; margin-top: 2px; }
 .chat-tool .tr { color: #6a9955; word-break: break-all; white-space: pre-wrap; margin-top: 3px; }
 .chat-tool .tr.err { color: #f48771; }
+.chat-tool.err { border-color: #5a2a24; }
+.chat-tool.err summary { color: #f48771; }
 #chatinput { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #222; }
 #chatSendInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 7px 10px; font-family: inherit; font-size: 15px; }
 #chatSendInput:focus { outline: none; border-color: #0e639c; }

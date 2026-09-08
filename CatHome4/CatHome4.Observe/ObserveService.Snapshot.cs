@@ -15,7 +15,7 @@ namespace CatHome4.Observe
     internal static partial class ObserveService
     {
         /// <summary>
-        /// 构建紧凑帧 JSON——frame.jsonl 一行（回放够用：帧/pid/chat_state/各 Cat 状态行/OA 计数；主线程泵调用）
+        /// 构建紧凑帧 JSON——frame.txt 一行（回放够用：帧/pid/chat_state/各 Cat 状态行/OA 计数；主线程泵调用）
         /// </summary>
         /// <returns>紧凑 JSON 文本</returns>
         internal static string BuildCompactFrameJson()

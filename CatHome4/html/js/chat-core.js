@@ -182,12 +182,13 @@ function chatSealTextStreams() {
 
 function chatToolCard(tool) {
     // 工具卡——details 结构默认折叠（点击 summary 展开/收起；.tn/.ta/.tr 类保留——测试与样式复用）
+    var isErr = tool.result && tool.result.indexOf('ERR') === 0;
     var det = document.createElement('details');
-    det.className = 'chat-tool';
+    det.className = 'chat-tool' + (isErr ? ' err' : '');
     det.open = false;
     var sum = document.createElement('summary');
     sum.className = 'tn';
-    sum.textContent = '🔧 ' + (tool.summary || tool.name || '?');
+    sum.textContent = (isErr ? '⚠️ ' : '🔧 ') + (tool.summary || tool.name || '?');
     det.appendChild(sum);
     if (tool.arguments) {
         var a = document.createElement('div');
@@ -197,7 +198,7 @@ function chatToolCard(tool) {
     }
     if (tool.result) {
         var r = document.createElement('div');
-        r.className = 'tr' + (tool.result.indexOf('ERR') === 0 ? ' err' : '');
+        r.className = 'tr' + (isErr ? ' err' : '');
         r.textContent = tool.result;
         det.appendChild(r);
     } else if (tool.result === undefined) {
@@ -356,9 +357,9 @@ function chatSend() {
     chatPending.push(text);
     chatRenderPending();
     if (chatState === 'idle') {
-        // idle 发送——清阶段残留 + 上一轮 usage（新轮零统计起算；sending 态插话不清——不破坏当前流式渲染）
+        // idle 发送——清阶段残留（usage 会话累计保留——跨轮不清零；sending 态插话不清——不破坏当前流式渲染）
         viewContainers = {};
-        chatPhaseResetFull();
+        chatPhaseReset();
         // E 系列——发送即进入链路态（插话不干扰活跃轮计时）
         chatPhaseEnter('link');
     }
@@ -715,6 +716,7 @@ function chatOnRoundSum(payload) {
 // 置 chatPendingReset 标记，内核处理完推 session_reset 事件 → 前端统一清空+重建；miss 由 chatdone 兜底
 function chatNewSession() {
     if (chatState === 'sending') { return; }
+    if (!window.confirm('开启新会话？当前对话前文将被清空并重新注入。')) { return; }
     fetch('/api/v1/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

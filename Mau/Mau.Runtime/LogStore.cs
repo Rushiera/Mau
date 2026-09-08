@@ -5,7 +5,7 @@ namespace Mau.Runtime
 {
     /// <summary>
     /// 日志总账（程序级）——统一观测与时序真源（design-ch4-observe §二）。
-    /// 状态经 DataBox scope 存储（BRIK 唯一数据协议）；磁盘投影到 Data/runs/&lt;ts&gt;/ 三文件（log.all/oa.all/err.all）。
+    /// 状态经 DataBox scope 存储（BRIK 唯一数据协议）；磁盘投影到 Data/runs/&lt;ts&gt;/ 三文件（log_all.txt/oa_all.txt/err_all.txt）。
     /// 审计事件经 Type 字段并入（audit.* 前缀——O2）；危险等级 Level 1=INFO/2=WARN/3=ERR。
     /// </summary>
     public static class LogStore
@@ -73,7 +73,7 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 磁盘持久化路径——空=仅内存（V2：log.all 主文件路径）
+        /// 磁盘持久化路径——空=仅内存（V2：log_all.txt 主文件路径）
         /// </summary>
         public static string LogFilePath
         {
@@ -95,17 +95,17 @@ namespace Mau.Runtime
         private static string _runDir = "";
 
         /// <summary>
-        /// 主写者——log.all（全量时序）
+        /// 主写者——log_all.txt（全量时序）
         /// </summary>
         private static System.IO.StreamWriter? _logWriter;
 
         /// <summary>
-        /// OA 投影写者——oa.all（category=OA 专属：Dog 生命周期帧序链）
+        /// OA 投影写者——oa_all.txt（category=OA 专属：Dog 生命周期帧序链）
         /// </summary>
         private static System.IO.StreamWriter? _oaWriter;
 
         /// <summary>
-        /// ERR 投影写者——err.all（Level=3 错误专属——排查第一入口）
+        /// ERR 投影写者——err_all.txt（Level=3 错误专属——排查第一入口）
         /// </summary>
         private static System.IO.StreamWriter? _errWriter;
 
@@ -120,7 +120,7 @@ namespace Mau.Runtime
         private static DateTime _lastFlush = DateTime.MinValue;
 
         /// <summary>
-        /// Console 订阅——非空时每条 Add 打印一行（窗口与 log.all 同构——O4 全量接入）
+        /// Console 订阅——非空时每条 Add 打印一行（窗口与 log_all.txt 同构——O4 全量接入）
         /// </summary>
         public static Action<string>? ConsoleSink;
 
@@ -138,7 +138,7 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 配置运行目录——三文件写者（design-ch4-observe §三）：log.all（全量）+ oa.all（OA 投影）+ err.all（L3 投影）。
+        /// 配置运行目录——三文件写者（design-ch4-observe §三）：log_all.txt（全量）+ oa_all.txt（OA 投影）+ err_all.txt（L3 投影）。
         /// 后续调用幂等——重复配置重开写者（路径变化）。
         /// </summary>
         /// <param name="runDir">Data/runs/&lt;yyyyMMdd_HHmmss&gt;</param>
@@ -157,10 +157,10 @@ namespace Mau.Runtime
                 CloseWriters();
                 System.IO.Directory.CreateDirectory(runDir);
                 _runDir = runDir;
-                LogFilePath = System.IO.Path.Combine(runDir, "log.all");
-                _logWriter = OpenWriter(System.IO.Path.Combine(runDir, "log.all"));
-                _oaWriter = OpenWriter(System.IO.Path.Combine(runDir, "oa.all"));
-                _errWriter = OpenWriter(System.IO.Path.Combine(runDir, "err.all"));
+                LogFilePath = System.IO.Path.Combine(runDir, "log_all.txt");
+                _logWriter = OpenWriter(System.IO.Path.Combine(runDir, "log_all.txt"));
+                _oaWriter = OpenWriter(System.IO.Path.Combine(runDir, "oa_all.txt"));
+                _errWriter = OpenWriter(System.IO.Path.Combine(runDir, "err_all.txt"));
             }
         }
 
@@ -197,7 +197,7 @@ namespace Mau.Runtime
 
         /// <summary>
         /// 写入一条结构化日志（V2 全参数——统一观测唯一入口）。
-        /// 内存总账 + 磁盘三投影（log.all 全量 / oa.all 投影 / err.all 投影）+ Console 订阅打印。
+        /// 内存总账 + 磁盘三投影（log_all.txt 全量 / oa_all.txt 投影 / err_all.txt 投影）+ Console 订阅打印。
         /// </summary>
         /// <param name="module">模块名</param>
         /// <param name="level">危险等级——0/1=INFO 2=WARN 3=ERR（0 归一 1）</param>
@@ -254,7 +254,7 @@ namespace Mau.Runtime
             {
                 AllLog.Add(entry);
             }
-            // [段1] 磁盘三投影——同锁同批（log.all 全量 + oa.all/err.all 投影）；skipDisk 类不落盘（L0-TRACE）
+            // [段1] 磁盘三投影——同锁同批（log_all.txt 全量 + oa_all.txt/err_all.txt 投影）；skipDisk 类不落盘（L0-TRACE）
             if (!skipDisk && (LogFilePath.Length > 0 || _runDir.Length > 0))
             {
                 try
@@ -298,7 +298,7 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 行格式——F{frame} | L{level} | INFO/WARN/ERR | [{category}] | {message} [payload]（log.all 与窗口同构）
+        /// 行格式——F{frame} | L{level} | INFO/WARN/ERR | [{category}] | {message} [payload]（log_all.txt 与窗口同构）
         /// </summary>
         /// <param name="entry">条目</param>
         /// <returns>格式行</returns>

@@ -236,10 +236,11 @@ namespace CH4
 
         /// <summary>text-replace——路径+新旧片段（UTF-8 字节数）</summary>
         private static string Fmt_Replace(Dictionary<string, string> p, string result)
-        {
+{
             string path = Arg(p, "path");
-            string oldStr = Arg(p, "str");
-            string newStr = Arg(p, "new_str");
+            // 参数键名对齐 text.replace 积木契约（BRIK-TEXT-004：path/old/new/mode）——str/new_str 取空致 0B 回归
+            string oldStr = Arg(p, "old");
+            string newStr = Arg(p, "new");
             string fileName = System.IO.Path.GetFileName(path);
             if (fileName.Length == 0)
             {
@@ -251,7 +252,6 @@ namespace CH4
             int newB = Encoding.UTF8.GetByteCount(newStr);
             return "替换文本 " + Q(fileName) + " → " + Q(newBrief) + "(" + newB + "B) 覆盖 " + Q(oldBrief) + "(" + oldB + "B)";
         }
-
         /// <summary>text-find / text-grep——命中统计+文件预览（verb 区分搜索文件/检索内容；CH4 输出适配：find=相对路径行，grep=相对路径:行号:上下文）</summary>
         private static string Fmt_Find(Dictionary<string, string> p, string result, string verb)
         {
@@ -942,7 +942,7 @@ namespace CH4
 
         /// <summary>FileTree 结果摘要——N 文件 M 目录</summary>
         private static string SummarizeFileTree(string text)
-        {
+{
             if (string.IsNullOrEmpty(text))
             {
                 return "空";
@@ -953,7 +953,7 @@ namespace CH4
             for (int i = 0; i < lines.Length; i = i + 1)
             {
                 string line = lines[i].Trim();
-                if (line.Length == 0)
+                if (line.Length == 0 || line.StartsWith("ERR|"))
                 {
                     continue;
                 }
@@ -961,7 +961,7 @@ namespace CH4
                 {
                     dirs = dirs + 1;
                 }
-                else if (line.Contains("(") && (line.Contains("KB)") || line.Contains("B)")))
+                else
                 {
                     files = files + 1;
                 }
@@ -975,7 +975,6 @@ namespace CH4
             }
             return sb.ToString();
         }
-
         /// <summary>批量类结果摘要——成功/失败首行或大小</summary>
         private static string SummarizeBatch(string result)
         {

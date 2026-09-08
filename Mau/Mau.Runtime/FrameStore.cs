@@ -4,7 +4,7 @@ using System.IO;
 namespace Mau.Runtime
 {
     /// <summary>
-    /// 快照帧流——连续快照落盘（design-ch4-observe §三 frame.jsonl / §七 O3）。
+    /// 快照帧流——连续快照落盘（design-ch4-observe §三 frame.txt / §七 O3）。
     /// 主线程快照泵每 250ms Append 一行紧凑 JSON——运行回放/复盘数据源；默认开启（拍板）。
     /// </summary>
     public static class FrameStore
@@ -35,7 +35,7 @@ namespace Mau.Runtime
         private static long _frameCount;
 
         /// <summary>
-        /// 配置帧流文件——Data/runs/&lt;ts&gt;/frame.jsonl；幂等（路径变化重开）
+        /// 配置帧流文件——Data/runs/&lt;ts&gt;/frame.txt；幂等（路径变化重开）
         /// </summary>
         /// <param name="path">帧流文件路径，空=禁用</param>
         public static void Configure(string path)

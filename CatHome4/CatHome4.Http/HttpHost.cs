@@ -65,7 +65,7 @@ namespace CatHome4.Http
         /// <summary>快照待构建标志——PumpLoop 置位，主线程 PumpMainThread 消费</summary>
         private volatile bool _snapshotPending;
 
-        /// <summary>紧凑帧构建回调——frame.jsonl 帧流（可空=不落帧）</summary>
+        /// <summary>紧凑帧构建回调——frame.txt 帧流（可空=不落帧）</summary>
         private Func<string> _frameBuilder;
 
         /// <summary>会话历史构建回调——Program.BuildHistoryView（B4 对话区；GET /api/v1/history）</summary>
@@ -99,7 +99,7 @@ namespace CatHome4.Http
         /// <param name="sessionId">会话归属 ID——SSE llm/chatdone 事件归属（P9.3 每猫实例绑定自身会话）</param>
         /// <param name="snapshotBuilder">快照 JSON 构建回调（includeLogs——快照轮询含日志/SSE 事件裁剪）</param>
         /// <param name="dispatcher">指令投递回调（返回 true=识别并投递）</param>
-        /// <param name="frameBuilder">紧凑帧构建回调（frame.jsonl 帧流；可空=不落帧）</param>
+        /// <param name="frameBuilder">紧凑帧构建回调（frame.txt 帧流；可空=不落帧）</param>
         /// <param name="historyBuilder">会话历史视图构建回调（B4 对话区——GET /api/v1/history）</param>
         /// <param name="catsBuilder">多猫列表构建回调（GET /api/v1/cats；可空=不注册端点）</param>
         /// <param name="noteBuilder">Note 状态构建回调（GET /api/v1/note——M4c 前端面板数据源）</param>

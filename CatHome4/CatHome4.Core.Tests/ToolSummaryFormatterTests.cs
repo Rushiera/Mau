@@ -59,12 +59,18 @@ namespace CatHome4.Core.Tests
 
         [Fact]
         public void TextReplace_ShowsByteCounts()
-        {
-            string s = ToolSummaryFormatter.Build("text-replace", "{\"path\":\"a.txt\",\"str\":\"old\",\"new_str\":\"new\"}", "替换成功");
+{
+            // 参数键名对齐真实工具契约（BRIK-TEXT-004：path/old/new/mode）——旧 str/new_str 是错误参数名
+            string s = ToolSummaryFormatter.Build("text-replace", "{\"path\":\"a.txt\",\"old\":\"old\",\"new\":\"new\"}", "替换成功");
             Assert.Equal("替换文本 \"a.txt\" → \"new\"(3B) 覆盖 \"old\"(3B)", s);
         }
-
-        [Fact]
+[Fact]
+public void TextReplace_RealArgs_NoZeroBytes()
+{
+    // 回归——真实参数 old/new 必须显示真实字节数（旧 str/new_str 取空 → 0B 0B）
+    string s = ToolSummaryFormatter.Build("text-replace", "{\"path\":\"x.md\",\"old\":\"anchor_unique\",\"new\":\"replaced_ok\"}", "OK 替换完成: 1 处（x.md）");
+    Assert.Equal("替换文本 \"x.md\" → \"replaced_ok\"(11B) 覆盖 \"anchor_unique\"(13B)", s);
+}        [Fact]
         public void TextFind_ShowsHitStats()
         {
             string s = ToolSummaryFormatter.Build("text-find", "{\"dir\":\"D:\\\\x\",\"pattern\":\"**/*.cs\"}", "a.cs\nb.cs\nsub/c.cs");
@@ -84,7 +90,13 @@ namespace CatHome4.Core.Tests
             string s = ToolSummaryFormatter.Build("text-tree", "{\"path\":\"C:\\\\x\",\"depth\":\"2\"}", "  a.cs (1 KB)\n  dir/\n");
             Assert.StartsWith("展开目录 \"C:\\x\" depth=\"2\" → \"1文件 1目录", s);
         }
-
+[Fact]
+public void TextTree_RealOutput_CountsFilesAndDirs()
+{
+    // 回归——AppendTree 真实输出（纯相对路径 + 目录行 / 尾）必须正确统计（旧解析按 KB)/ 尾匹配 → 0文件 0目录）
+    string s = ToolSummaryFormatter.Build("text-tree", "{\"path\":\"C:\\\\x\",\"depth\":\"2\"}", "a.txt\nb/\nc/d.cs");
+    Assert.StartsWith("展开目录 \"C:\\x\" depth=\"2\" → \"2文件 1目录", s);
+}
         [Fact]
         public void TextMove_ShowsSrcDest()
         {
