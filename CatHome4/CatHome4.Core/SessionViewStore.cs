@@ -53,6 +53,12 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
 
             /// <summary>参数摘要（≤200）</summary>
             public string Arguments;
+
+            /// <summary>并发序号（1-based——tool_calls 数组顺序）</summary>
+            public int Index;
+
+            /// <summary>并发总数（同批 tool_calls 数组长度）</summary>
+            public int Total;
         }
 
         /// <summary>视图文件数据——JSON 形态（blocks 按到达序）</summary>
@@ -196,6 +202,8 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
             payload["arguments"] = target.Arguments;
             payload["result"] = TruncateText(m.Content ?? "", 300);
             payload["summary"] = ToolSummaryFormatter.Build(payload["name"] as string ?? "", target.Arguments, payload["result"] as string ?? "");
+            payload["toolIndex"] = target.Index;
+            payload["toolTotal"] = target.Total;
             Append(m, "toolcard", payload, timestamp, msgIndex);
         }
 
@@ -354,6 +362,8 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
                         pt.ToolCallId = id;
                         pt.Name = name;
                         pt.Arguments = TruncateText(arguments, 200);
+                        pt.Index = i + 1;
+                        pt.Total = root.GetArrayLength();
                         _pendingTools.Add(pt);
                     }
                 }

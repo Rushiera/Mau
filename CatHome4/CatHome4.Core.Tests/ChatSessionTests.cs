@@ -347,6 +347,36 @@ public bool WhitespaceReply = false;
         }
 
         /// <summary>
+        /// 工具批并发编号——同批多工具 toolcard payload 携带 toolIndex/toolTotal（前端 [n/m] 前缀数据源）。
+        /// </summary>
+        [Fact]
+        public void ToolBatch_ConcurrentIndexAndTotal()
+        {
+            MockLlm llm = new MockLlm();
+            // 同批两个内置 time 调用（并发——不依赖 OA 消费者）
+            string tc = "[{\"id\":\"t1\",\"function\":{\"name\":\"time\",\"arguments\":\"{}\"}},{\"id\":\"t2\",\"function\":{\"name\":\"time\",\"arguments\":\"{}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            session.AttachHost(host);
+            session.PostUserMessage("并发调用工具");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            List<string> cards = host.ViewEvents["toolcard"];
+            Assert.Equal(2, cards.Count);
+            using (JsonDocument d1 = JsonDocument.Parse(cards[0]))
+            {
+                Assert.Equal(1, d1.RootElement.GetProperty("toolIndex").GetInt32());
+                Assert.Equal(2, d1.RootElement.GetProperty("toolTotal").GetInt32());
+            }
+            using (JsonDocument d2 = JsonDocument.Parse(cards[1]))
+            {
+                Assert.Equal(2, d2.RootElement.GetProperty("toolIndex").GetInt32());
+                Assert.Equal(2, d2.RootElement.GetProperty("toolTotal").GetInt32());
+            }
+        }
+
+        /// <summary>
         /// E3 usage 转发——LLM 流带 Usage 事件 → 宿主收到 PushLlm("usage") 且累计整轮（覆盖式）。
         /// </summary>
         [Fact]

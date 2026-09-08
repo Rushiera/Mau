@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using CatHome4.Http;
 using Mau.Runtime;
@@ -36,6 +36,17 @@ namespace CatHome4.Observe
 
         /// <summary>HTTP 外观层——端口观测（入口壳注入；可空=未启动）</summary>
         public static HttpHost _httpHost;
+
+        /// <summary>
+        /// 热重载后同步 QuickCat 句柄——reload 替换句柄时调用（观测面持有启动快照——不更新则 PrintStatus 访问已 dispose 旧句柄崩溃）
+        /// </summary>
+        /// <param name="handle">新句柄</param>
+        /// <param name="id">新注册 ID</param>
+        public static void UpdateQuickHandle(FlowHandle handle, long id)
+        {
+            _quickHandle = handle;
+            _quickId = id;
+        }
 
         /// <summary>
         /// 注入 Observe 域依赖——入口壳 Bootstrap 调用（S5：程序集拆分接线）。

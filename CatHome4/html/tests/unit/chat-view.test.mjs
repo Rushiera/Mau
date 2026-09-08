@@ -160,21 +160,21 @@ test('view reason 整块替换思考流式容器', () => {
   expect(reasonDetail.textContent).toBe('最终思考');
 });
 
-// ── reason 默认折叠 + summary 字数 ──
-test('reason 默认折叠——summary 显示字数（流式/整块/历史一致）', () => {
-  // 流式创建——默认折叠 + 流式同步字数
+// ── reason 流式展开 + 整块折叠 + summary 字数 ──
+test('reason 流式展开增量可见——整块替换后折叠（summary 字数同步）', () => {
+  // 流式创建——展开（增量可见）+ 流式同步字数
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考' }, replaceSeq: -1 });
   let det = chatMsgs.querySelector('.chat-reason');
-  expect(det.open).toBe(false);
+  expect(det.open).toBe(true);
   expect(det.querySelector('summary').textContent).toContain('2 字');
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '中' }, replaceSeq: -1 });
   expect(det.querySelector('summary').textContent).toContain('3 字');
-  // 整块替换——字数同步
+  // 整块替换——完成后折叠（字数同步）
   window.chatOnView({ seq: 21, renderType: 'reason', payload: { content: '最终思考内容' }, replaceSeq: 11 });
   det = chatMsgs.querySelector('.chat-reason');
   expect(det.open).toBe(false);
   expect(det.querySelector('summary').textContent).toContain('6 字');
-  // 历史重建——默认折叠 + 字数
+  // 历史重建——完成态折叠 + 字数
   window.chatRenderHistory({
     version: 1, sessionId: 's1', count: 1,
     blocks: [{ seq: 1, id: '1:h1', renderType: 'reason', payload: { content: '历史思考' } }]
@@ -203,6 +203,31 @@ test('view toolcard 渲染工具卡（含名称/参数/结果；默认折叠）'
   expect(card.querySelector('.tr').textContent).toBe('2026-08-30 00:00:00');
   // 工具态
   expect(window.chatActivePhase).toBe('tool');
+});
+
+// ── toolcard 并发编号——对齐 CH2：并发批次 [icon n/m]；单次保持现状 ──
+test('toolcard 并发批次渲染 [icon n/m] 前缀——单次保持 🔧/⚠️', () => {
+  // 并发批（1/4）——icon 按工具类型映射（text-read → 📖）
+  window.chatOnView({
+    seq: 30, renderType: 'toolcard',
+    payload: { name: 'text-read', arguments: '{}', result: 'OK', toolIndex: 1, toolTotal: 4 },
+    replaceSeq: -1
+  });
+  expect(chatMsgs.querySelectorAll('.chat-tool .tn')[0].textContent).toBe('[📖 1/4] text-read');
+  // 单次（无 toolTotal 字段——旧数据兼容）——保持现状 🔧
+  window.chatOnView({
+    seq: 31, renderType: 'toolcard',
+    payload: { name: 'text-read', arguments: '{}', result: 'OK' },
+    replaceSeq: -1
+  });
+  expect(chatMsgs.querySelectorAll('.chat-tool .tn')[1].textContent).toBe('🔧 text-read');
+  // 错误并发——[⚠️ n/m] 前缀
+  window.chatOnView({
+    seq: 32, renderType: 'toolcard',
+    payload: { name: 'text-read', arguments: '{}', result: 'ERR|X', toolIndex: 2, toolTotal: 4 },
+    replaceSeq: -1
+  });
+  expect(chatMsgs.querySelectorAll('.chat-tool .tn')[2].textContent).toBe('[⚠️ 2/4] text-read');
 });
 
 // ── 工具轮 seal——残留文本流式容器闪烁标记移除（toolcard 到达兜底；宿主 seal 缺失防线）──
@@ -534,6 +559,7 @@ test('view roundsum 渲染独立气泡（token + 工具次数 + 四态用时 + �
   expect(rs.textContent).toContain('↓3.55k');
   expect(rs.textContent).toContain('cache 765.70k');
   expect(rs.textContent).toContain('miss 4.07k');
+  expect(rs.textContent).toContain('🎯99.5%');
   expect(rs.textContent).toContain('🔧 工具 6 次');
   expect(rs.textContent).toContain('思考 28.5s');
   expect(rs.textContent).toContain('工具 45.1s');
@@ -556,6 +582,7 @@ test('chatRenderHistory roundsum 块渲染（历史重建保留轮末统计）',
   expect(chatMsgs.querySelectorAll('.chat-bubble.roundsum').length).toBe(1);
   const rs2 = chatMsgs.querySelector('.chat-bubble.roundsum');
   expect(rs2.textContent).toContain('↑1.20k');
+  expect(rs2.textContent).toContain('🎯83.3%');
   expect(rs2.textContent).toContain('🔧 工具 2 次');
   expect(rs2.textContent).toContain('总计 15.0s');
 });

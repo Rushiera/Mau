@@ -180,6 +180,32 @@ function chatSealTextStreams() {
     }
 }
 
+// 工具图标映射——CH2 CH_Tool_LLMToolDisplay.GetIcon 移植（CH4 连字符工具名适配）
+function chatToolIcon(name) {
+    var n = name || '';
+    if (n === 'text-read' || n === 'text-read_between' || n === 'text-read_lines') { return '📖'; }
+    if (n === 'text-write') { return '✏️'; }
+    if (n === 'text-append') { return '📎'; }
+    if (n === 'text-replace') { return '🔄'; }
+    if (n === 'text-find' || n === 'text-grep') { return '🔍'; }
+    if (n === 'text-tree') { return '🌲'; }
+    if (n === 'text-move') { return '📦'; }
+    if (n === 'text-delete') { return '🗑️'; }
+    if (n.indexOf('cs-') === 0) { return '🐎'; }
+    if (n.indexOf('config-') === 0) { return '⚙️'; }
+    if (n.indexOf('mau-') === 0) { return '🧱'; }
+    if (n === 'powershell') { return '💻'; }
+    if (n === 'web-search') { return '🌐'; }
+    if (n === 'image-analyze') { return '🖼️'; }
+    if (n === 'temp-info' || n === 'temp-exec') { return '🧪'; }
+    if (n === 'Note') { return '📋'; }
+    if (n === 'time') { return '🕐'; }
+    if (n === 'random') { return '🎲'; }
+    if (n === 'info') { return 'ℹ️'; }
+    if (n.indexOf('host-') === 0) { return '⚡'; }
+    return '🔹';
+}
+
 function chatToolCard(tool) {
     // 工具卡——details 结构默认折叠（点击 summary 展开/收起；.tn/.ta/.tr 类保留——测试与样式复用）
     var isErr = tool.result && tool.result.indexOf('ERR') === 0;
@@ -188,7 +214,16 @@ function chatToolCard(tool) {
     det.open = false;
     var sum = document.createElement('summary');
     sum.className = 'tn';
-    sum.textContent = (isErr ? '⚠️ ' : '🔧 ') + (tool.summary || tool.name || '?');
+    // 工具前缀——对齐 CH2：并发批次显示 [icon n/m]；单次保持现状（🔧/⚠️）
+    var prefix;
+    if (isErr) {
+        prefix = (tool.toolTotal > 1) ? ('[⚠️ ' + (tool.toolIndex || '?') + '/' + tool.toolTotal + '] ') : '⚠️ ';
+    } else if (tool.toolTotal > 1) {
+        prefix = '[' + chatToolIcon(tool.name) + ' ' + (tool.toolIndex || '?') + '/' + tool.toolTotal + '] ';
+    } else {
+        prefix = '🔧 ';
+    }
+    sum.textContent = prefix + (tool.summary || tool.name || '?');
     det.appendChild(sum);
     if (tool.arguments) {
         var a = document.createElement('div');
@@ -210,11 +245,11 @@ function chatToolCard(tool) {
     return det;
 }
 
-function chatReasonBlock(text) {
-    // 思考块——默认折叠（点击 summary 展开/收起；折叠时 summary 显示字数感知内容量）
+function chatReasonBlock(text, open) {
+    // 思考块——默认折叠（点击 summary 展开/收起；折叠时 summary 显示字数感知内容量）；open=true 流式展开（增量可见）
     var det = document.createElement('details');
     det.className = 'chat-reason';
-    det.open = false;
+    det.open = (open === true);
     var sum = document.createElement('summary');
     sum.textContent = (text && text.length > 0) ? ('思考过程 · ' + text.length + ' 字') : '思考过程';
     det.appendChild(sum);
@@ -444,20 +479,20 @@ function chatOnView(d) {
 function chatOnStream(seq, payload) {
     chatKeepAlive();
     if (payload.kind === 'reasoning') {
-        // 思考流式——独立气泡默认折叠（summary 字数实时感知）；首 reasoning 进入思考态
+        // 思考流式——独立气泡流式展开（增量可见）；首 reasoning 进入思考态
         if (!viewContainers[seq]) {
             // 新思考容器——上一轮文本流式已终结（多轮工具循环残留兜底）
             chatSealTextStreams();
             var b = chatBubble('assistant', 'reason');
             b.classList.add('streaming');
-            var det = chatReasonBlock('');
+            var det = chatReasonBlock('', true);
             b.appendChild(det);
             viewContainers[seq] = { type: 'reason', bubble: b, reasonPre: det.querySelector('div') };
             chatPhaseEnter('think');
         }
         var rc = viewContainers[seq];
         rc.reasonPre.textContent = rc.reasonPre.textContent + (payload.text || '');
-        // 默认折叠——summary 实时字数感知（流式增量同步）
+        // 流式展开——summary 实时字数感知（流式增量同步）
         var sumEl = rc.bubble.querySelector('summary');
         if (sumEl) { sumEl.textContent = '思考过程 · ' + rc.reasonPre.textContent.length + ' 字'; }
     } else if (payload.kind === 'text') {
@@ -546,7 +581,9 @@ function chatOnReason(seq, replaceSeq, payload) {
         c.bubble.classList.remove('streaming');
         c.bubble.classList.remove('streaming-wait');
         c.reasonPre.textContent = content;
-        // 整块替换——summary 字数同步（流式容器默认折叠）
+        // 整块替换——流式展开 → 完成后折叠（summary 字数同步）
+        var detEl = c.bubble.querySelector('details.chat-reason');
+        if (detEl) { detEl.open = false; }
         var sumEl = c.bubble.querySelector('summary');
         if (sumEl) { sumEl.textContent = '思考过程 · ' + content.length + ' 字'; }
         delete viewContainers[replaceSeq];
@@ -696,10 +733,14 @@ function chatOnRoundSum(payload) {
     if (miss < 0) { miss = 0; }
     var b = chatBubble('assistant', 'roundsum');
     var html = '<div class="rs-head">📊 本轮统计</div>';
-    html += '<div class="rs-tok">↑' + chatFmtCount(d.prompt || 0)
+    // cache 命中率——cacheHit / prompt（prompt=0 时 0%）
+    var promptTotal = d.prompt || 0;
+    var hitRate = (promptTotal > 0) ? ((d.cacheHit || 0) / promptTotal * 100) : 0;
+    html += '<div class="rs-tok">↑' + chatFmtCount(promptTotal)
         + ' ↓' + chatFmtCount(d.completion || 0)
         + ' cache ' + chatFmtCount(d.cacheHit || 0)
-        + ' miss ' + chatFmtCount(miss) + '</div>';
+        + ' miss ' + chatFmtCount(miss)
+        + ' 🎯' + hitRate.toFixed(1) + '%</div>';
     if (d.toolCount > 0) {
         html += '<div class="rs-tools">🔧 工具 ' + d.toolCount + ' 次</div>';
     }

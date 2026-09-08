@@ -203,6 +203,8 @@ namespace CH4
             {
                 _quickHandle = handle;
                 _quickId = id;
+                // 观测面句柄同步——reload 后旧快照访问已 dispose 句柄崩溃（ObjectDisposedException 判例 2026-09-08）
+                CatHome4.Observe.ObserveService.UpdateQuickHandle(handle, id);
                 return;
             }
             string flowName = ToolFlowName(cat);
