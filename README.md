@@ -29,11 +29,11 @@ LLM 写 .mau 语料 → 门禁验真（词法/解析/验证/E2xx 引用/E3xx 图
 | **Mau 基座** | 私人方言语言内核 + 数字电路运行时（Tick/Inbox/OA/CommandBus/DataBox/ALC）+ 门禁工具链 + 积木原子能力 | `Mau/`（Mau.sln 9 项目） |
 | **CH4 宿主** | 自举循环宿主——agent 循环基建走 C#，业务 100% 语料化热重载；S1-S8 拆分后按域多程序集 | `CatHome4/`（CatHome4.sln 8 项目）· `corpus/ch4/` |
 
-**现状：** 自举循环真实运转——LLM 经宿主工具（text-* 文件操作 / mau-* 语料自查 / cs-* Roslyn 编码 / config-* 配置自改 / web-search 联网 / image-analyze 识图 / temp-* 万能接口）完成"发现问题 → 修语料 → 门禁通过"闭环。多猫并发（每猫独立会话/端口/配置）+ 工具组 Flow 化（ToolRegistry 动态注册/热重载/退役）+ qqbot 接入（QQ Bot 池 + 双向桥接 + 强匹配指令）已落地；可用性三件（工具组事实压测 / LLM 重试与断点续传 / 坏前文最小化修复）+ D 部署（SetUp 启动器 / Data 三级锚定 / 纯净部署验收）已完成。版本与里程碑唯一真相源：CCBP `Project/CH4/CHANGELOG.md` 与 `Project/Mau/CHANGELOG.md`；规格-实现总账与设计路由：CCBP `Project/CH4/design-status.md`。
+**现状：** 自举循环真实运转——LLM 经宿主工具（text-* 文件操作 / mau-* 语料自查 / cs-* Roslyn 编码 / config-* 配置自改 / web-search 联网 / image-analyze 识图 / temp-* 万能接口 / powershell 执行）完成"发现问题 → 修语料 → 门禁通过"闭环。多猫并发（每猫独立会话/端口/配置）+ 工具组 Flow 化（ToolRegistry 动态注册/热重载/退役）+ qqbot 接入（QQ Bot 池 + 双向桥接 + 强匹配指令）已落地；可用性三件（工具组事实压测 / LLM 重试与断点续传 / 坏前文最小化修复）+ D 部署（SetUp 启动器 / Data 三级锚定 / 纯净部署验收）已完成。v0.75 起工具面全链：PsCat PowerShell（免转义/UTF-8 内建/写拦截）+ Flow 装配扫描化（新增 Flow 零代码）+ 工具定义禀赋化（统一工具池）+ 配置作用域（猫级 FS/根 id 不敏感）+ 会话视图与前文真实 usage + P6a 中止（cat.pause）+ P6b 会话回滚/分支（session.rollback/fork）+ P1 托盘自启 + P8/P9 QQBot 消息/文件通道（MD 切分 + msg_id 被动回复 + [文件:path] 内嵌标记）+ SetUp --report 确定性部署 + 前端三改（reason 流式展开/roundsum 命中率/工具并发编号）。版本与里程碑唯一真相源：CCBP `Project/CH4/CHANGELOG.md` 与 `Project/Mau/CHANGELOG.md`；规格-实现总账与设计路由：CCBP `Project/CH4/design-status.md`。
 
 ---
 
-## 二、仓库结构（现行——v0.74.0）
+## 二、仓库结构（现行——v0.88.8，文档治理轮 2026-09-08）
 
 ```
 mau/
@@ -123,7 +123,7 @@ cd mau
 仓库根 `SetUp.exe` 单文件跟随 git——clone 即用。运行前置检测：.NET 8 Runtime/SDK + 同目录找到 `Mau.sln`（合法位置 = 仓库根）。
 
 ```
-SetUp.exe prepare            ← 一键重建全发布链（build Mau.sln → test → publish Mau-public → mau proj ×8 → publish public\app）
+SetUp.exe prepare            ← 一键重建全发布链（build Mau.sln → test → publish Mau-public → mau proj ×9 → publish public\app）
 SetUp.exe deploy <目标目录>   ← 产出正式运行实例（外部目录；Data 走 %LOCALAPPDATA%/CatHome4/Data）
 SetUp.exe                    ← 无参 = WinForms UI（环境检测 + 全流程日志 + 两种模式按钮）
 ```
@@ -141,7 +141,7 @@ SetUp.exe                    ← 无参 = WinForms UI（环境检测 + 全流程
 1. dotnet build Mau.sln
 2. dotnet test Mau.sln
 3. dotnet publish Mau\Mau.Cli -c Debug -o Mau-public
-4. mau proj corpus\ch4\<Flow>\<组>.mauproj -o public\src\<Flow> --build   （×8——见下方清单）
+4. mau proj corpus\ch4\<Flow>\<组>.mauproj -o public\src\<Flow> --build   （×9——见下方清单）
 5. dotnet publish CatHome4 -c Debug -o public\app
 6. public\app\CatHome4.exe --run "session count"
 ```
@@ -155,7 +155,7 @@ SetUp.exe                    ← 无参 = WinForms UI（环境检测 + 全流程
 | 5 | 宿主部署 | `public/app/CatHome4.exe` 存在 |
 | 6 | 宿主自检——CLI 全链（主线程直执 + 进程自退） | 各 Cat 注册 + 会话消息数正常 |
 
-**步骤 4 的 8 个 mauproj（corpus/ch4 每个 Flow 一个）：**
+**步骤 4 的 9 个 mauproj（corpus/ch4 每个 Flow 一个）：**
 
 ```
 mau proj corpus\ch4\QuickCat\quick_cat.mauproj      -o public\src\QuickCat --build
