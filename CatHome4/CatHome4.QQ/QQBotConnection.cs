@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -53,6 +54,9 @@ namespace CatHome4.QQ
 
         // 心跳 ACK 超时：连续多少次无 ACK 后触发重连
         private const int MaxMissedAcks = 2;
+
+        /// <summary>file_data 整传上限——10MB（P9 莎拍板：分片暂不做，超限拒绝）</summary>
+        private const long MaxFileDataBytes = 10L * 1024 * 1024;
 
         /// <summary>Bot 配置身份——Bot 池条目引用</summary>
         private readonly Guid _qqBotId;
@@ -173,11 +177,15 @@ namespace CatHome4.QQ
 
         /// <summary>
         /// 发送回复——私聊 / 群聊（管理器调用；401 自动刷新重试一次）。
+        /// P8：msgId=被动回复引用（事件 d.id，空=主动消息）；isMarkdown=true=MD 通道（msg_type=2）。
         /// </summary>
         /// <param name="msgType">消息类型——private / group</param>
         /// <param name="targetId">目标 ID（群聊含 gid:mid 段）</param>
         /// <param name="text">回复文本</param>
-        public void SendReply(string msgType, string targetId, string text)
+        /// <param name="msgId">被动回复 msg_id——事件 d.id；空=不携带</param>
+        /// <param name="isMarkdown">true=Markdown 通道 / false=文本通道</param>
+        /// <returns>发送成功 true（≥300 或异常 false）</returns>
+        public bool SendReply(string msgType, string targetId, string text, string msgId, bool isMarkdown)
         {
             try
             {
@@ -189,14 +197,14 @@ namespace CatHome4.QQ
                     if (msgType == "private")
                     {
                         url = _apiHost + "/v2/users/" + targetId + "/messages";
-                        json = "{\"content\":\"" + EscapeJson(text) + "\",\"msg_type\":0}";
+                        json = BuildBody(text, isMarkdown, msgId);
                     }
                     else
                     {
                         int ci = targetId.IndexOf(':');
                         string gid = ci > 0 ? targetId.Substring(0, ci) : targetId;
                         url = _apiHost + "/v2/groups/" + gid + "/messages";
-                        json = "{\"content\":\"" + EscapeJson(text) + "\",\"msg_type\":0}";
+                        json = BuildBody(text, isMarkdown, msgId);
                     }
                     System.Net.Http.StringContent c = new System.Net.Http.StringContent(json, Encoding.UTF8, "application/json");
                     System.Net.Http.HttpResponseMessage r = h.PostAsync(url, c).GetAwaiter().GetResult();
@@ -213,17 +221,187 @@ namespace CatHome4.QQ
                     {
                         // 转发失败 L2 留痕——内部 err 可见（R2.3.5 失败语义）
                         Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(text, 30) + " (" + status + ")", 2);
+                        return false;
                     }
-                    else
-                    {
-                        Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(text, 30) + " (" + status + ")", 1);
-                    }
+                    Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(text, 30) + " (" + status + ")", 1);
+                    return true;
                 }
             }
             catch (Exception e)
             {
                 Log("QQBot | " + _displayName + " | 发送失败: " + e.Message, 2);
+                return false;
             }
+        }
+
+        /// <summary>
+        /// 构造发送请求体——文本 / Markdown 双通道 + 可选被动 msg_id（P8）。
+        /// 官方互斥铁律：填写 markdown 后 content 必须为空。
+        /// </summary>
+        /// <param name="text">消息文本</param>
+        /// <param name="isMarkdown">true=MD 通道</param>
+        /// <param name="msgId">被动回复 msg_id——空=不携带</param>
+        /// <returns>请求体 JSON</returns>
+        private static string BuildBody(string text, bool isMarkdown, string msgId)
+        {
+            string idPart = msgId.Length > 0 ? ",\"msg_id\":\"" + EscapeJson(msgId) + "\"" : "";
+            if (isMarkdown)
+            {
+                return "{\"msg_type\":2,\"markdown\":{\"content\":\"" + EscapeJson(text) + "\"}" + idPart + "}";
+            }
+            return "{\"content\":\"" + EscapeJson(text) + "\",\"msg_type\":0" + idPart + "}";
+        }
+
+        /// <summary>
+        /// 下载附件到本地——URL 带时效签名尽快下载；403 自动带 Authorization 重试一次（P9 接收）。
+        /// </summary>
+        /// <param name="url">附件下载 URL</param>
+        /// <param name="destPath">落盘路径</param>
+        /// <returns>下载成功 true</returns>
+        public bool DownloadAttachment(string url, string destPath)
+        {
+            try
+            {
+                using (System.Net.Http.HttpClient h = new System.Net.Http.HttpClient())
+                {
+                    System.Net.Http.HttpResponseMessage r = h.GetAsync(url).GetAwaiter().GetResult();
+                    if ((int)r.StatusCode == 403)
+                    {
+                        h.DefaultRequestHeaders.Add("Authorization", "QQBot " + _accessToken);
+                        r = h.GetAsync(url).GetAwaiter().GetResult();
+                    }
+                    if (!r.IsSuccessStatusCode)
+                    {
+                        Log("QQBot | " + _displayName + " | 附件下载失败: " + (int)r.StatusCode + " | " + destPath, 2);
+                        return false;
+                    }
+                    byte[] data = r.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+                    File.WriteAllBytes(destPath, data);
+                    return true;
+                }
+            }
+            catch (Exception e)
+            {
+                Log("QQBot | " + _displayName + " | 附件下载异常: " + e.Message, 2);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 发送本地文件——≤10MB file_data 上传 → msg_type=7 发送（带被动 msg_id；P9 发送）。
+        /// </summary>
+        /// <param name="targetId">私聊 user_openid</param>
+        /// <param name="path">本地文件路径</param>
+        /// <param name="msgId">被动回复 msg_id——空=不携带</param>
+        /// <returns>成功返回空串；失败返回错误文本（由调用方嵌入消息渠道）</returns>
+        public string SendFile(string targetId, string path, string msgId)
+        {
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    return "文件发送失败: 路径不存在";
+                }
+                FileInfo fi = new FileInfo(path);
+                if (fi.Length <= 0)
+                {
+                    return "文件发送失败: 空文件";
+                }
+                if (fi.Length > MaxFileDataBytes)
+                {
+                    return "文件发送失败: 超过 10MB 上传上限";
+                }
+                string fileName = Path.GetFileName(path);
+                int fileType = ResolveFileType(fileName);
+                byte[] data = File.ReadAllBytes(path);
+                string json = "{\"file_type\":" + fileType + ",\"srv_send_msg\":false,\"file_data\":\"" + Convert.ToBase64String(data) + "\",\"file_name\":\"" + EscapeJson(fileName) + "\"}";
+                string uploadUrl = _apiHost + "/v2/users/" + targetId + "/files";
+                using (System.Net.Http.HttpClient h = new System.Net.Http.HttpClient())
+                {
+                    h.DefaultRequestHeaders.Add("Authorization", "QQBot " + _accessToken);
+                    System.Net.Http.StringContent c = new System.Net.Http.StringContent(json, Encoding.UTF8, "application/json");
+                    System.Net.Http.HttpResponseMessage r = h.PostAsync(uploadUrl, c).GetAwaiter().GetResult();
+                    if ((int)r.StatusCode == 401)
+                    {
+                        RefreshToken();
+                        h.DefaultRequestHeaders.Remove("Authorization");
+                        h.DefaultRequestHeaders.Add("Authorization", "QQBot " + _accessToken);
+                        c = new System.Net.Http.StringContent(json, Encoding.UTF8, "application/json");
+                        r = h.PostAsync(uploadUrl, c).GetAwaiter().GetResult();
+                    }
+                    if (!r.IsSuccessStatusCode)
+                    {
+                        Log("QQBot | " + _displayName + " | 文件上传失败: " + (int)r.StatusCode + " | " + fileName, 2);
+                        return "文件发送失败: 上传 " + (int)r.StatusCode;
+                    }
+                    string raw = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    string fileInfo = "";
+                    using (JsonDocument d = JsonDocument.Parse(raw))
+                    {
+                        if (d.RootElement.TryGetProperty("file_info", out JsonElement fiE))
+                        {
+                            fileInfo = fiE.GetString() ?? "";
+                        }
+                    }
+                    if (fileInfo.Length == 0)
+                    {
+                        return "文件发送失败: 上传未返回 file_info";
+                    }
+                    // 发送媒体消息——msg_type=7 + 可选被动 msg_id
+                    string msg = "{\"msg_type\":7,\"media\":{\"file_info\":\"" + EscapeJson(fileInfo) + "\"}"
+                        + (msgId.Length > 0 ? ",\"msg_id\":\"" + EscapeJson(msgId) + "\"" : "") + "}";
+                    System.Net.Http.StringContent c2 = new System.Net.Http.StringContent(msg, Encoding.UTF8, "application/json");
+                    System.Net.Http.HttpResponseMessage r2 = h.PostAsync(_apiHost + "/v2/users/" + targetId + "/messages", c2).GetAwaiter().GetResult();
+                    if ((int)r2.StatusCode == 401)
+                    {
+                        RefreshToken();
+                        h.DefaultRequestHeaders.Remove("Authorization");
+                        h.DefaultRequestHeaders.Add("Authorization", "QQBot " + _accessToken);
+                        c2 = new System.Net.Http.StringContent(msg, Encoding.UTF8, "application/json");
+                        r2 = h.PostAsync(_apiHost + "/v2/users/" + targetId + "/messages", c2).GetAwaiter().GetResult();
+                    }
+                    if (!r2.IsSuccessStatusCode)
+                    {
+                        Log("QQBot | " + _displayName + " | 文件消息发送失败: " + (int)r2.StatusCode + " | " + fileName, 2);
+                        return "文件发送失败: 发送 " + (int)r2.StatusCode;
+                    }
+                    Log("QQBot | " + _displayName + " | 发文件: " + fileName + " (" + fi.Length + "B)", 1);
+                    return "";
+                }
+            }
+            catch (Exception e)
+            {
+                Log("QQBot | " + _displayName + " | 文件发送异常: " + e.Message, 2);
+                return "文件发送失败: " + e.Message;
+            }
+        }
+
+        /// <summary>
+        /// 文件类型判定——按扩展名映射 file_type（1 图片 / 2 视频 / 3 语音 / 4 文件）。
+        /// </summary>
+        /// <param name="fileName">文件名</param>
+        /// <returns>file_type</returns>
+        private static int ResolveFileType(string fileName)
+        {
+            string ext = "";
+            int dot = fileName.LastIndexOf('.');
+            if (dot >= 0)
+            {
+                ext = fileName.Substring(dot + 1).ToLowerInvariant();
+            }
+            if (ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "gif" || ext == "webp" || ext == "bmp")
+            {
+                return 1;
+            }
+            if (ext == "mp4")
+            {
+                return 2;
+            }
+            if (ext == "silk" || ext == "mp3" || ext == "wav" || ext == "ogg")
+            {
+                return 3;
+            }
+            return 4;
         }
 
         /// <summary>

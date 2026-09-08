@@ -437,6 +437,7 @@ private static HttpHost _httpHost;
             // R2.3 QQ 管理器启动——扫描 Bot 池建立全部连接（附属功能组件；Bot 池空 = 零连接静默）
             // S3 解耦——注入绑定目标收集面（默认猫 + 多猫注册表实现）
             QQBotService.SetCollector(new QqTargetCollector());
+            QQBotService.SetFileCacheRoot(Path.Combine(dataRoot, "Data", "qqbot-files"));
             QQBotService.Start();
         }
         /// <summary>

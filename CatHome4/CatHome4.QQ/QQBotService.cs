@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using System.Text.Json;
 using Mau.Runtime;
 
@@ -17,11 +19,11 @@ namespace CatHome4.QQ
         /// <summary>Bot 连接集合——QqBotId → 连接实例</summary>
         private static readonly Dictionary<Guid, QQBotConnection> _connections = new Dictionary<Guid, QQBotConnection>();
 
-        /// <summary>注入来源队列——猫 Key → 来源 FIFO（注入时入队，转发时出队）</summary>
-        private static readonly Dictionary<string, Queue<string>> _sourceQueues = new Dictionary<string, Queue<string>>();
+        /// <summary>注入来源队列——猫 Key → QqSource FIFO（注入时入队，转发时出队）</summary>
+        private static readonly Dictionary<string, Queue<QqSource>> _sourceQueues = new Dictionary<string, Queue<QqSource>>();
 
         /// <summary>最后来源——猫 Key → 最近一次 QQ 交互来源（无条件转发回退目标：前端对话回复也转发）</summary>
-        private static readonly Dictionary<string, string> _lastSources = new Dictionary<string, string>();
+        private static readonly Dictionary<string, QqSource> _lastSources = new Dictionary<string, QqSource>();
 
         /// <summary>启动标志——防重复 Start</summary>
         private static bool _started = false;
@@ -32,6 +34,9 @@ namespace CatHome4.QQ
         /// <summary>绑定目标收集面——入口壳注入（S3 解耦：不直接引用 Program 静态面）</summary>
         private static IQqTargetCollector _collector;
 
+        /// <summary>文件缓存根——入口壳注入（P9 接收落盘；空=附件功能禁用）</summary>
+        private static string _fileCacheRoot = "";
+
         /// <summary>
         /// 注入绑定目标收集面——入口壳 Bootstrap 调用（S3：默认猫 + 多猫注册表实现；null=禁用 QQ 转发——未注入静默）。
         /// </summary>
@@ -39,6 +44,15 @@ namespace CatHome4.QQ
         public static void SetCollector(IQqTargetCollector collector)
         {
             _collector = collector;
+        }
+
+        /// <summary>
+        /// 注入文件缓存根——入口壳 Bootstrap 调用（P9：Data/qqbot-files；未注入=附件缓存禁用）。
+        /// </summary>
+        /// <param name="root">缓存根目录</param>
+        public static void SetFileCacheRoot(string root)
+        {
+            _fileCacheRoot = root == null ? "" : root;
         }
 
         /// <summary>
@@ -130,17 +144,24 @@ namespace CatHome4.QQ
         private static void OnMessage(Guid qqBotId, string raw)
         {
             string t = "";
-            string source = "";
+            QqSource source = null;
             string text = "";
-            if (!TryParseMessage(raw, out t, out source, out text))
+            List<QqAttachment> attachments = null;
+            if (!TryParseMessage(raw, out t, out source, out text, out attachments))
             {
                 return;
             }
-            if (text.Length == 0)
+            // P9 附件——私聊先下载缓存（URL 时效短——立即下载；注入文本带缓存路径）
+            string attachText = "";
+            if (source.Type == "private" && attachments != null && attachments.Count > 0)
+            {
+                attachText = DownloadAttachments(qqBotId, attachments);
+            }
+            if (text.Length == 0 && attachText.Length == 0)
             {
                 return;
             }
-            LogStore.Add("QQBot", 1, "收: " + t + " | " + source + " → " + Truncate(text, 30), "QQBOT");
+            LogStore.Add("QQBot", 1, "收: " + t + " | " + source + " → " + Truncate(text, 30) + attachText, "QQBOT");
             // 强匹配指令——不走 LLM 路由，代码直执（R2.3.8）
             string cmdReply = HandleSlashCommand(text);
             if (cmdReply != null)
@@ -168,7 +189,7 @@ namespace CatHome4.QQ
                 {
                     continue;
                 }
-                tg.Inject("[来自QQ] " + text);
+                tg.Inject("[来自QQ] " + text + attachText);
                 EnqueueSource(tg.Key, source);
                 anyInjected = true;
             }
@@ -185,12 +206,14 @@ namespace CatHome4.QQ
         /// <param name="t">事件类型</param>
         /// <param name="source">来源——private:uid / group:gid:mid</param>
         /// <param name="text">消息文本（剥离 @Bot 前缀）</param>
+        /// <param name="attachments">附件列表（P9——attachments 非空即含附件）；无附件 null</param>
         /// <returns>解析成功 true</returns>
-        private static bool TryParseMessage(string raw, out string t, out string source, out string text)
+        private static bool TryParseMessage(string raw, out string t, out QqSource source, out string text, out List<QqAttachment> attachments)
         {
             t = "";
-            source = "";
+            source = null;
             text = "";
+            attachments = null;
             try
             {
                 using (JsonDocument d = JsonDocument.Parse(raw))
@@ -209,7 +232,13 @@ namespace CatHome4.QQ
                         {
                             content = c.GetString() ?? "";
                         }
-                        source = "private:" + uid;
+                        string msgId = "";
+                        if (dd.TryGetProperty("id", out JsonElement idE))
+                        {
+                            msgId = idE.GetString() ?? "";
+                        }
+                        attachments = ParseAttachments(dd);
+                        source = new QqSource("private", uid, msgId);
                         text = StripAtMention(content);
                         return true;
                     }
@@ -223,7 +252,13 @@ namespace CatHome4.QQ
                         {
                             content = c.GetString() ?? "";
                         }
-                        source = "group:" + gid + ":" + mid;
+                        string msgId = "";
+                        if (dd.TryGetProperty("id", out JsonElement idE))
+                        {
+                            msgId = idE.GetString() ?? "";
+                        }
+                        attachments = ParseAttachments(dd);
+                        source = new QqSource("group", gid + ":" + mid, msgId);
                         text = StripAtMention(content);
                         return true;
                     }
@@ -233,6 +268,133 @@ namespace CatHome4.QQ
             {
             }
             return false;
+        }
+
+        /// <summary>附件大小硬限制——200MB（官方硬限制）</summary>
+        private const long MaxAttachmentBytes = 200L * 1024 * 1024;
+
+        /// <summary>
+        /// 附件下载落盘——逐项：超限拒绝 / 下载 / 失败标记；返回注入文本段（P9 接收）。
+        /// </summary>
+        /// <param name="qqBotId">Bot 配置身份</param>
+        /// <param name="atts">附件列表</param>
+        /// <returns>注入文本段（[附件: ...] 拼接；无附件空串）</returns>
+        private static string DownloadAttachments(Guid qqBotId, List<QqAttachment> atts)
+        {
+            QQBotConnection conn;
+            if (!_connections.TryGetValue(qqBotId, out conn))
+            {
+                return "";
+            }
+            string dir = GetFileCacheDir();
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < atts.Count; i = i + 1)
+            {
+                QqAttachment a = atts[i];
+                if (a.Size > MaxAttachmentBytes)
+                {
+                    sb.Append(" [附件: " + a.FileName + "|" + a.Size + "|超限拒绝]");
+                    LogStore.Add("QQBot", 2, "附件超限拒绝 | " + a.FileName + " | " + a.Size, "QQBOT");
+                    continue;
+                }
+                if (dir.Length == 0)
+                {
+                    sb.Append(" [附件: " + a.FileName + "|" + a.Size + "|缓存未配置]");
+                    continue;
+                }
+                string dest = Path.Combine(dir, DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_" + SanitizeFileName(a.FileName));
+                if (conn.DownloadAttachment(a.Url, dest))
+                {
+                    sb.Append(" [附件: " + a.FileName + "|" + a.Size + "|" + dest + "]");
+                    LogStore.Add("QQBot", 1, "附件缓存 | " + dest + " | " + a.Size, "QQBOT");
+                }
+                else
+                {
+                    sb.Append(" [附件: " + a.FileName + "|" + a.Size + "|下载失败]");
+                }
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 解析附件数组——attachments 非空即含附件（消息事件与文本同构）。
+        /// </summary>
+        /// <param name="dd">事件 d 对象</param>
+        /// <returns>附件列表；无附件 null</returns>
+        private static List<QqAttachment> ParseAttachments(JsonElement dd)
+        {
+            if (!dd.TryGetProperty("attachments", out JsonElement attE) || attE.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+            List<QqAttachment> result = new List<QqAttachment>();
+            for (int i = 0; i < attE.GetArrayLength(); i = i + 1)
+            {
+                JsonElement a = attE[i];
+                QqAttachment att = new QqAttachment();
+                if (a.TryGetProperty("url", out JsonElement u))
+                {
+                    att.Url = u.GetString() ?? "";
+                }
+                if (a.TryGetProperty("filename", out JsonElement f))
+                {
+                    att.FileName = f.GetString() ?? "";
+                }
+                if (a.TryGetProperty("size", out JsonElement s) && s.ValueKind == JsonValueKind.Number)
+                {
+                    att.Size = s.GetInt64();
+                }
+                if (a.TryGetProperty("content_type", out JsonElement ct))
+                {
+                    att.ContentType = ct.GetString() ?? "";
+                }
+                if (att.Url.Length > 0)
+                {
+                    result.Add(att);
+                }
+            }
+            return result.Count > 0 ? result : null;
+        }
+
+        /// <summary>文件名净化——去非法字符（落盘安全）</summary>
+        private static string SanitizeFileName(string name)
+        {
+            string s = name == null ? "file" : name;
+            char[] invalid = Path.GetInvalidFileNameChars();
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < s.Length; i = i + 1)
+            {
+                bool bad = false;
+                for (int j = 0; j < invalid.Length; j = j + 1)
+                {
+                    if (s[i] == invalid[j])
+                    {
+                        bad = true;
+                        break;
+                    }
+                }
+                sb.Append(bad ? '_' : s[i]);
+            }
+            string result = sb.ToString().Trim();
+            return result.Length == 0 ? "file" : result;
+        }
+
+        /// <summary>缓存目录——Ensure 创建（未配置返回空串）</summary>
+        private static string GetFileCacheDir()
+        {
+            if (_fileCacheRoot.Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                Directory.CreateDirectory(_fileCacheRoot);
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+            return _fileCacheRoot;
         }
 
         /// <summary>
@@ -296,35 +458,33 @@ namespace CatHome4.QQ
         }
 
         /// <summary>
-        /// 发送回复到来源——通过 Bot 连接（source 格式 private:uid / group:gid:mid）。
+        /// 发送回复到来源——通过 Bot 连接（QqSource 载荷；指令回复/错误提示走纯文本通道）。
         /// </summary>
         /// <param name="qqBotId">Bot 配置身份</param>
         /// <param name="source">来源</param>
         /// <param name="text">回复文本</param>
-        private static void SendToSource(Guid qqBotId, string source, string text)
+        private static void SendToSource(Guid qqBotId, QqSource source, string text)
         {
             QQBotConnection conn;
             if (!_connections.TryGetValue(qqBotId, out conn))
             {
                 return;
             }
-            int ci = source.IndexOf(':');
-            string type = ci > 0 ? source.Substring(0, ci) : source;
-            string target = ci > 0 ? source.Substring(ci + 1) : source;
-            conn.SendReply(type, target, text);
+            // 指令回复/错误提示——纯文本通道（无 MD 检测），携带被动 msg_id
+            conn.SendReply(source.Type, source.TargetId, text, source.MsgId, false);
         }
 
         /// <summary>
-        /// 注入来源入队——猫 Key → 来源 FIFO（R2.3.5 输出转发消费）。
+        /// 注入来源入队——猫 Key → QqSource FIFO（R2.3.5 输出转发消费）。
         /// </summary>
         /// <param name="catKey">猫标识（majordomo / cat id）</param>
         /// <param name="source">来源</param>
-        private static void EnqueueSource(string catKey, string source)
+        private static void EnqueueSource(string catKey, QqSource source)
         {
-            Queue<string> q;
+            Queue<QqSource> q;
             if (!_sourceQueues.TryGetValue(catKey, out q))
             {
-                q = new Queue<string>();
+                q = new Queue<QqSource>();
                 _sourceQueues[catKey] = q;
             }
             q.Enqueue(source);
@@ -337,15 +497,15 @@ namespace CatHome4.QQ
         /// <param name="catKey">猫标识（majordomo / cat id）</param>
         /// <param name="source">出队来源</param>
         /// <returns>有来源 true</returns>
-        internal static bool TryDequeueSource(string catKey, out string source)
+        internal static bool TryDequeueSource(string catKey, out QqSource source)
         {
-            Queue<string> q;
+            Queue<QqSource> q;
             if (_sourceQueues.TryGetValue(catKey, out q) && q.Count > 0)
             {
                 source = q.Dequeue();
                 return true;
             }
-            source = "";
+            source = null;
             return false;
         }
 
@@ -386,7 +546,7 @@ namespace CatHome4.QQ
                         if (m.Role == LlmRole.Assistant && m.Content != null && m.Content.Length > 0)
                         {
                             // 无条件转发——出队来源优先（qqbot 注入对话），否则回退最后来源（前端对话也转发）
-                            string source;
+                            QqSource source;
                             if (TryDequeueSource(tg.Key, out source))
                             {
                                 _lastSources[tg.Key] = source;
@@ -415,23 +575,352 @@ namespace CatHome4.QQ
         }
 
         /// <summary>
-        /// 转发回复到来源——【Cat名：】前缀格式。
+        /// 转发回复到来源——私聊走 P8 链路（MD 检测 + 切分）；群聊保持 msg_type=0 直发。
         /// </summary>
         /// <param name="tg">绑定目标</param>
-        /// <param name="source">来源（private:uid / group:gid:mid）</param>
+        /// <param name="source">来源（QqSource）</param>
         /// <param name="text">回复文本</param>
-        private static void SendReplyToTarget(QqTarget tg, string source, string text)
+        private static void SendReplyToTarget(QqTarget tg, QqSource source, string text)
         {
             QQBotConnection conn;
             if (!_connections.TryGetValue(tg.QqBotId, out conn))
             {
                 return;
             }
-            int ci = source.IndexOf(':');
-            string type = ci > 0 ? source.Substring(0, ci) : source;
-            string target = ci > 0 ? source.Substring(ci + 1) : source;
+            if (source.Type == "private")
+            {
+                // 私聊 P8 链路——MD 自动检测 + 标题分块切分（被动上限 4 条）
+                SendPrivateReply(conn, tg, source, text);
+                return;
+            }
+            // 群聊保持现状——msg_type=0 直发（携带被动 msg_id）
             string formatted = tg.DisplayName + "：\n" + text;
-            conn.SendReply(type, target, formatted);
+            conn.SendReply(source.Type, source.TargetId, formatted, source.MsgId, false);
+        }
+
+        /// <summary>
+        /// 私聊回复——MD 自动检测 + 标题分块切分 + 逐条发送（失败停止后续）。
+        /// </summary>
+        /// <param name="conn">Bot 连接</param>
+        /// <param name="tg">绑定目标</param>
+        /// <param name="source">来源</param>
+        /// <param name="text">回复正文</param>
+        private static void SendPrivateReply(QQBotConnection conn, QqTarget tg, QqSource source, string text)
+        {
+            // P9 文件标记——拆出 [文件:path] 列表，正文去除标记后走既有链路
+            List<string> files = ExtractFileMarks(text, out text);
+            if (text.Length > 0)
+            {
+                bool isMarkdown = IsMarkdownText(text);
+                List<string> chunks = ChunkForSending(text);
+                for (int i = 0; i < chunks.Count; i = i + 1)
+                {
+                    // 【Cat名：】前缀只加第一条（计入长度预算）
+                    string piece = i == 0 ? tg.DisplayName + "：\n" + chunks[i] : chunks[i];
+                    if (!conn.SendReply("private", source.TargetId, piece, source.MsgId, isMarkdown))
+                    {
+                        return;
+                    }
+                }
+            }
+            // P9 文件发送——成功静默；失败错误文本嵌入消息渠道
+            for (int i = 0; i < files.Count; i = i + 1)
+            {
+                string err = conn.SendFile(source.TargetId, files[i], source.MsgId);
+                if (err.Length > 0)
+                {
+                    conn.SendReply("private", source.TargetId, err, source.MsgId, false);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 提取文件标记——[文件:path] 列表；正文移除标记段（P9 零新工具触发面）。
+        /// </summary>
+        /// <param name="text">猫回复正文</param>
+        /// <param name="cleanText">移除标记后的正文</param>
+        /// <returns>文件路径列表</returns>
+        private static List<string> ExtractFileMarks(string text, out string cleanText)
+        {
+            List<string> files = new List<string>();
+            StringBuilder sb = new StringBuilder();
+            int idx = 0;
+            while (idx < text.Length)
+            {
+                int start = text.IndexOf("[文件:", idx);
+                if (start < 0)
+                {
+                    sb.Append(text.Substring(idx));
+                    break;
+                }
+                sb.Append(text.Substring(idx, start - idx));
+                int end = text.IndexOf(']', start + 4);
+                if (end < 0)
+                {
+                    sb.Append(text.Substring(start));
+                    break;
+                }
+                string path = text.Substring(start + 4, end - start - 4).Trim();
+                if (path.Length > 0)
+                {
+                    files.Add(path);
+                }
+                idx = end + 1;
+            }
+            cleanText = sb.ToString().Trim();
+            return files;
+        }
+
+        /// <summary>切分上限——单条字符数（社区经验 ~2000，留余量）</summary>
+        private const int MaxChunkChars = 1800;
+
+        /// <summary>私聊被动回复条数上限——官方每条消息最多回复 4 次</summary>
+        private const int MaxPassiveReplies = 4;
+
+        /// <summary>
+        /// MD 检测——行级扫描（P8 §二 规则）：标题/列表/引用/代码块/加粗/删除线/链接任一命中即 MD。
+        /// </summary>
+        /// <param name="text">消息文本</param>
+        /// <returns>true=走 Markdown 通道</returns>
+        private static bool IsMarkdownText(string text)
+        {
+            if (text == null || text.Length == 0)
+            {
+                return false;
+            }
+            string[] lines = text.Split('\n');
+            for (int i = 0; i < lines.Length; i = i + 1)
+            {
+                string line = lines[i].TrimStart();
+                if (line.Length == 0)
+                {
+                    continue;
+                }
+                // 标题——# 后跟空格
+                if (line[0] == '#' && line.Length > 1 && line[1] == ' ')
+                {
+                    return true;
+                }
+                // 列表——- / * 开头或有序数字. 开头
+                if (line.Length > 1 && (line[0] == '-' || line[0] == '*') && line[1] == ' ')
+                {
+                    return true;
+                }
+                if (IsOrderedList(line))
+                {
+                    return true;
+                }
+                // 引用 / 代码块
+                if (line[0] == '>' || line.StartsWith("```"))
+                {
+                    return true;
+                }
+                // 加粗 / 删除线 / 链接
+                if (line.Contains("**") || line.Contains("~~") || ContainsLink(line))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>有序列表检测——数字 + 点 + 空格开头</summary>
+        private static bool IsOrderedList(string line)
+        {
+            int i = 0;
+            while (i < line.Length && line[i] >= '0' && line[i] <= '9')
+            {
+                i = i + 1;
+            }
+            if (i == 0 || i + 1 >= line.Length)
+            {
+                return false;
+            }
+            return line[i] == '.' && line[i + 1] == ' ';
+        }
+
+        /// <summary>链接检测——[text](url) 形态</summary>
+        private static bool ContainsLink(string line)
+        {
+            int lb = line.IndexOf('[');
+            if (lb < 0)
+            {
+                return false;
+            }
+            int rp = line.IndexOf("](", lb);
+            return rp > lb;
+        }
+
+        /// <summary>
+        /// 按标题分块——标题行归属其后内容块；首个标题前文本（前言）独立成块；无标题整篇一块。
+        /// </summary>
+        /// <param name="text">消息文本</param>
+        /// <returns>块列表（非空）</returns>
+        private static List<string> SplitByHeading(string text)
+        {
+            List<string> blocks = new List<string>();
+            string[] lines = text.Split('\n');
+            StringBuilder cur = new StringBuilder();
+            for (int i = 0; i < lines.Length; i = i + 1)
+            {
+                string line = lines[i];
+                if (line.EndsWith("\r"))
+                {
+                    line = line.Substring(0, line.Length - 1);
+                }
+                string trimmed = line.TrimStart();
+                bool isHeading = trimmed.Length > 1 && trimmed[0] == '#' && trimmed[1] == ' ';
+                if (isHeading && cur.Length > 0)
+                {
+                    blocks.Add(cur.ToString().TrimEnd());
+                    cur.Length = 0;
+                }
+                if (cur.Length > 0)
+                {
+                    cur.Append('\n');
+                }
+                cur.Append(line);
+            }
+            if (cur.Length > 0)
+            {
+                blocks.Add(cur.ToString().TrimEnd());
+            }
+            return blocks;
+        }
+
+        /// <summary>
+        /// 切分发送块——标题分块贪心打包（N 块超 M → N-1 块发送）+ 单块退化 + 被动条数上限。
+        /// </summary>
+        /// <param name="text">消息文本（非空）</param>
+        /// <returns>发送块列表（≤4 条）</returns>
+        private static List<string> ChunkForSending(string text)
+        {
+            List<string> blocks = SplitByHeading(text);
+            List<string> chunks = new List<string>();
+            StringBuilder buf = new StringBuilder();
+            for (int i = 0; i < blocks.Count; i = i + 1)
+            {
+                string block = blocks[i];
+                // 单块超限——块内退化切分（段落→行→硬切）
+                if (block.Length > MaxChunkChars)
+                {
+                    if (buf.Length > 0)
+                    {
+                        chunks.Add(buf.ToString().TrimEnd());
+                        buf.Length = 0;
+                    }
+                    List<string> parts = SplitOversized(block);
+                    for (int j = 0; j < parts.Count; j = j + 1)
+                    {
+                        chunks.Add(parts[j]);
+                    }
+                    continue;
+                }
+                if (buf.Length + block.Length > MaxChunkChars)
+                {
+                    if (buf.Length > 0)
+                    {
+                        chunks.Add(buf.ToString().TrimEnd());
+                        buf.Length = 0;
+                    }
+                }
+                if (buf.Length > 0)
+                {
+                    buf.Append('\n');
+                }
+                buf.Append(block);
+            }
+            if (buf.Length > 0)
+            {
+                chunks.Add(buf.ToString().TrimEnd());
+            }
+            // 被动上限——私聊最多 4 条；超出截断留痕
+            if (chunks.Count > MaxPassiveReplies)
+            {
+                LogStore.Add("QQBot", 2, "回复超" + MaxPassiveReplies + "条截断 | 总块数" + chunks.Count, "QQBOT");
+                chunks.RemoveRange(MaxPassiveReplies, chunks.Count - MaxPassiveReplies);
+            }
+            return chunks;
+        }
+
+        /// <summary>
+        /// 单块超限退化——按空行分段 → 行硬切 → 字符硬切。
+        /// </summary>
+        /// <param name="block">超限块</param>
+        /// <returns>切分段列表</returns>
+        private static List<string> SplitOversized(string block)
+        {
+            List<string> result = new List<string>();
+            string[] paras = block.Split(new string[] { "\n\n" }, StringSplitOptions.None);
+            StringBuilder buf = new StringBuilder();
+            for (int i = 0; i < paras.Length; i = i + 1)
+            {
+                if (buf.Length + paras[i].Length > MaxChunkChars)
+                {
+                    if (buf.Length > 0)
+                    {
+                        result.Add(buf.ToString().TrimEnd());
+                        buf.Length = 0;
+                    }
+                    if (paras[i].Length > MaxChunkChars)
+                    {
+                        // 行级硬切
+                        string[] lines = paras[i].Split('\n');
+                        StringBuilder lb = new StringBuilder();
+                        for (int j = 0; j < lines.Length; j = j + 1)
+                        {
+                            string line = lines[j];
+                            if (line.EndsWith("\r"))
+                            {
+                                line = line.Substring(0, line.Length - 1);
+                            }
+                            if (lb.Length + line.Length > MaxChunkChars)
+                            {
+                                if (lb.Length > 0)
+                                {
+                                    result.Add(lb.ToString().TrimEnd());
+                                    lb.Length = 0;
+                                }
+                                if (line.Length > MaxChunkChars)
+                                {
+                                    // 字符硬切
+                                    string rest = line;
+                                    while (rest.Length > MaxChunkChars)
+                                    {
+                                        result.Add(rest.Substring(0, MaxChunkChars));
+                                        rest = rest.Substring(MaxChunkChars);
+                                    }
+                                    if (rest.Length > 0)
+                                    {
+                                        lb.Append(rest);
+                                    }
+                                    continue;
+                                }
+                            }
+                            if (lb.Length > 0)
+                            {
+                                lb.Append('\n');
+                            }
+                            lb.Append(line);
+                        }
+                        if (lb.Length > 0)
+                        {
+                            result.Add(lb.ToString().TrimEnd());
+                        }
+                        continue;
+                    }
+                }
+                if (buf.Length > 0)
+                {
+                    buf.Append("\n\n");
+                }
+                buf.Append(paras[i]);
+            }
+            if (buf.Length > 0)
+            {
+                result.Add(buf.ToString().TrimEnd());
+            }
+            return result;
         }
 
         /// <summary>截断文本——日志展示</summary>
@@ -439,6 +928,57 @@ namespace CatHome4.QQ
         {
             return s.Length <= max ? s : s.Substring(0, max);
         }
+    }
+
+    /// <summary>
+    /// QQ 消息来源——结构化载荷（P8：msg_id 被动回复扩展）。
+    /// </summary>
+    internal sealed class QqSource
+    {
+        /// <summary>消息类型——private / group</summary>
+        public string Type;
+
+        /// <summary>目标 ID——私聊 user_openid / 群聊 gid:mid</summary>
+        public string TargetId;
+
+        /// <summary>被动回复引用——事件 d.id；空=非被动</summary>
+        public string MsgId;
+
+        /// <summary>构造来源。</summary>
+        /// <param name="type">消息类型</param>
+        /// <param name="targetId">目标 ID</param>
+        /// <param name="msgId">被动回复 msg_id</param>
+        public QqSource(string type, string targetId, string msgId)
+        {
+            Type = type;
+            TargetId = targetId;
+            MsgId = msgId;
+        }
+
+        /// <summary>显示——private:uid / group:gid:mid（日志兼容）</summary>
+        /// <returns>来源文本</returns>
+        public override string ToString()
+        {
+            return Type + ":" + TargetId;
+        }
+    }
+
+    /// <summary>
+    /// QQ 附件——事件 attachments[] 载荷（P9 接收面）。
+    /// </summary>
+    internal sealed class QqAttachment
+    {
+        /// <summary>下载 URL——带时效签名（rkey），收到后尽快下载</summary>
+        public string Url;
+
+        /// <summary>文件名</summary>
+        public string FileName;
+
+        /// <summary>大小（字节）</summary>
+        public long Size;
+
+        /// <summary>内容类型（image/jpeg / video/mp4 / voice / file 等）</summary>
+        public string ContentType;
     }
 
     /// <summary>
