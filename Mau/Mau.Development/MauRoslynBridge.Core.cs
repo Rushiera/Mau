@@ -556,26 +556,50 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 定位成员节点——字段/属性/方法（按名）；歧义返回全部
+        /// 定位成员节点——字段/属性/方法/构造函数（按名）；memberName 支持签名后缀（如 SubmitChoice(int)）区分重载；
+        /// 构造函数 = ".ctor" 或类名；歧义返回候选签名列表
         /// </summary>
         /// <param name="classNode">类声明</param>
-        /// <param name="memberName">成员名</param>
+        /// <param name="memberName">成员名（签名后缀可选；.ctor/类名=构造函数）</param>
         /// <param name="found">命中节点</param>
-        /// <param name="foundKind">命中类别（方法/字段/属性）</param>
+        /// <param name="foundKind">命中类别（方法/字段/属性/构造函数）</param>
         /// <param name="count">同名数量</param>
+        /// <param name="candidates">候选签名列表（歧义时填充——AMBIGUOUS 提示用）</param>
         /// <returns>是否唯一命中</returns>
-        private static bool FindMemberInClass(ClassDeclarationSyntax classNode, string memberName, out SyntaxNode found, out string foundKind, out int count)
+        private static bool FindMemberInClass(ClassDeclarationSyntax classNode, string memberName, out SyntaxNode found, out string foundKind, out int count, out List<string> candidates)
         {
             found = null!;
             foundKind = "";
             count = 0;
+            candidates = new List<string>();
+            string pureName = memberName;
+            string signature = "";
+            int paren = memberName.IndexOf('(');
+            if (paren >= 0)
+            {
+                pureName = memberName.Substring(0, paren).Trim();
+                signature = memberName.Substring(paren);
+            }
+            bool ctorRequest = pureName == ".ctor" || pureName == classNode.Identifier.Text;
             List<SyntaxNode> matches = new List<SyntaxNode>();
             foreach (SyntaxNode node in classNode.DescendantNodes())
             {
                 MethodDeclarationSyntax? method = node as MethodDeclarationSyntax;
-                if (method != null && method.Identifier.Text == memberName)
+                if (method != null && method.Identifier.Text == pureName)
                 {
-                    matches.Add(method);
+                    if (signature.Length == 0 || SignatureMatches(method.ParameterList.ToString(), signature))
+                    {
+                        matches.Add(method);
+                    }
+                    continue;
+                }
+                ConstructorDeclarationSyntax? ctor = node as ConstructorDeclarationSyntax;
+                if (ctor != null && ctorRequest)
+                {
+                    if (signature.Length == 0 || SignatureMatches(ctor.ParameterList.ToString(), signature))
+                    {
+                        matches.Add(ctor);
+                    }
                     continue;
                 }
                 FieldDeclarationSyntax? field = node as FieldDeclarationSyntax;
@@ -603,12 +627,32 @@ namespace Mau.Development
             }
             if (matches.Count > 1)
             {
+                for (int i = 0; i < matches.Count; i = i + 1)
+                {
+                    MethodDeclarationSyntax? overloadMethod = matches[i] as MethodDeclarationSyntax;
+                    if (overloadMethod != null)
+                    {
+                        candidates.Add(overloadMethod.Identifier.Text + overloadMethod.ParameterList.ToString());
+                        continue;
+                    }
+                    ConstructorDeclarationSyntax? overloadCtor = matches[i] as ConstructorDeclarationSyntax;
+                    if (overloadCtor != null)
+                    {
+                        candidates.Add(".ctor" + overloadCtor.ParameterList.ToString());
+                        continue;
+                    }
+                    candidates.Add(FindMemberLabel(matches[i]));
+                }
                 return false;
             }
             found = matches[0];
             if (found is MethodDeclarationSyntax)
             {
                 foundKind = "method";
+            }
+            else if (found is ConstructorDeclarationSyntax)
+            {
+                foundKind = "constructor";
             }
             else if (found is FieldDeclarationSyntax)
             {
@@ -619,6 +663,81 @@ namespace Mau.Development
                 foundKind = "property";
             }
             return true;
+        }
+
+        /// <summary>
+        /// 签名匹配——按参数类型序列比较（"(int, string)" 与 "(int choice, string name)" 等价；泛型/修饰符/数组保形）
+        /// </summary>
+        /// <param name="parameterListText">实际参数列表文本（ParameterList.ToString()）</param>
+        /// <param name="requestedSignature">请求签名（member 后缀，如 "(int, string)"）</param>
+        /// <returns>类型序列是否一致</returns>
+        private static bool SignatureMatches(string parameterListText, string requestedSignature)
+        {
+            return ExtractParameterTypes(parameterListText) == ExtractParameterTypes(requestedSignature);
+        }
+
+        /// <summary>
+        /// 提取参数类型序列——剥参数名/默认值/空白，保留类型与修饰符（ref/out/params）
+        /// </summary>
+        /// <param name="paramListText">参数列表文本（含括号）</param>
+        /// <returns>逗号连接的类型序列（空参返回空串）</returns>
+        private static string ExtractParameterTypes(string paramListText)
+        {
+            string inner = paramListText.Trim();
+            if (inner.StartsWith("(", StringComparison.Ordinal))
+            {
+                inner = inner.Substring(1);
+            }
+            if (inner.EndsWith(")", StringComparison.Ordinal))
+            {
+                inner = inner.Substring(0, inner.Length - 1);
+            }
+            if (inner.Trim().Length == 0)
+            {
+                return "";
+            }
+            string[] parts = inner.Split(',');
+            List<string> types = new List<string>();
+            for (int i = 0; i < parts.Length; i = i + 1)
+            {
+                string p = parts[i].Trim();
+                int eq = p.IndexOf('=');
+                if (eq >= 0)
+                {
+                    p = p.Substring(0, eq).Trim();
+                }
+                int lastSpace = p.LastIndexOf(' ');
+                if (lastSpace > 0)
+                {
+                    string candidate = p.Substring(lastSpace + 1).Trim();
+                    if (candidate.Length > 0 && (char.IsLetter(candidate[0]) || candidate[0] == '_'))
+                    {
+                        p = p.Substring(0, lastSpace).Trim();
+                    }
+                }
+                types.Add(p.Replace(" ", "").Replace("\t", ""));
+            }
+            return string.Join(",", types);
+        }
+
+        /// <summary>
+        /// 成员标签——字段/属性歧义时的候选描述（方法/构造函数走签名路径）
+        /// </summary>
+        /// <param name="node">成员节点</param>
+        /// <returns>标签文本</returns>
+        private static string FindMemberLabel(SyntaxNode node)
+        {
+            PropertyDeclarationSyntax? property = node as PropertyDeclarationSyntax;
+            if (property != null)
+            {
+                return "属性 " + property.Identifier.Text;
+            }
+            FieldDeclarationSyntax? field = node as FieldDeclarationSyntax;
+            if (field != null && field.Declaration.Variables.Count > 0)
+            {
+                return "字段 " + field.Declaration.Variables[0].Identifier.Text;
+            }
+            return node.GetType().Name;
         }
 
         /// <summary>

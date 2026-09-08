@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Windows.Forms;
 
 namespace SetUp
@@ -33,9 +35,53 @@ namespace SetUp
             }
 
             // [段1b] CLI 模式——尽力附加父控制台（WinExe 无自有控制台；交互终端可见输出）
-            AttachConsole(ATTACH_PARENT_PROCESS);
+            // 附加成功后 .NET Console 流不会自动绑定控制台句柄——手动 GetStdHandle 绑定（否则 WriteLine 仍丢失）
+            bool attached = AttachConsole(ATTACH_PARENT_PROCESS);
+            if (attached)
+            {
+                IntPtr outHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+                if (outHandle != IntPtr.Zero && outHandle != new IntPtr(-1))
+                {
+                    Console.SetOut(new StreamWriter(new FileStream(new Microsoft.Win32.SafeHandles.SafeFileHandle(outHandle, false), FileAccess.Write), Console.OutputEncoding) { AutoFlush = true });
+                }
+                IntPtr errHandle = GetStdHandle(STD_ERROR_HANDLE);
+                if (errHandle != IntPtr.Zero && errHandle != new IntPtr(-1))
+                {
+                    Console.SetError(new StreamWriter(new FileStream(new Microsoft.Win32.SafeHandles.SafeFileHandle(errHandle, false), FileAccess.Write), Console.OutputEncoding) { AutoFlush = true });
+                }
+            }
 
-            // [段1c] 帮助提示
+            // [段1c] 报告参数解析——--report <path>（Agent 确定性部署验证面：同路径 .log 全量日志 + 结束写 JSON 报告）
+            string reportPath = "";
+            for (int i = 1; i < args.Length; i = i + 1)
+            {
+                if (args[i] == "--report" && i + 1 < args.Length)
+                {
+                    reportPath = args[i + 1];
+                }
+            }
+            if (reportPath.Length > 0)
+            {
+                _reportRequested = true;
+                try
+                {
+                    string logPath = reportPath + ".log";
+                    string logDir = Path.GetDirectoryName(logPath);
+                    if (logDir != null && logDir.Length > 0)
+                    {
+                        Directory.CreateDirectory(logDir);
+                    }
+                    _logFile = new StreamWriter(logPath, false, new UTF8Encoding(false)) { AutoFlush = true };
+                    Console.SetOut(new TeeWriter(Console.Out, _logFile));
+                    Console.SetError(new TeeWriter(Console.Error, _logFile));
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("[SetUp] 警告：日志文件打开失败——" + ex.Message);
+                }
+            }
+
+            // [段1d] 帮助提示
             if (args[0] == "-h" || args[0] == "--help")
             {
                 PrintHelp();
@@ -60,25 +106,48 @@ namespace SetUp
                 return 1;
             }
 
-            // [段4] 模式分发
+            // [段4] 模式分发——统一收尾：flush 日志 + 写报告（确定性部署验证面）
             string mode = args[0];
+            int exitCode = 1;
             if (mode == "prepare")
             {
-                return Prepare(repoRoot);
+                exitCode = Prepare(repoRoot);
             }
-            if (mode == "deploy")
+            else if (mode == "deploy")
             {
                 if (args.Length < 2)
                 {
                     Console.WriteLine("[SetUp] deploy 需要目标目录参数：SetUp.exe deploy <目标目录>");
-                    return 1;
+                    exitCode = 1;
                 }
-                return Deploy(repoRoot, args[1]);
+                else
+                {
+                    exitCode = Deploy(repoRoot, args[1]);
+                }
             }
-
-            Console.WriteLine("[SetUp] 未知模式: " + mode);
-            PrintHelp();
-            return 1;
+            else
+            {
+                Console.WriteLine("[SetUp] 未知模式: " + mode);
+                PrintHelp();
+                exitCode = 1;
+            }
+            if (_logFile != null)
+            {
+                try
+                {
+                    _logFile.Flush();
+                    _logFile.Close();
+                    _logFile = null;
+                }
+                catch (Exception)
+                {
+                }
+            }
+            if (reportPath.Length > 0)
+            {
+                WriteReport(reportPath, mode, exitCode, repoRoot);
+            }
+            return exitCode;
         }
 
         /// <summary>
@@ -197,6 +266,185 @@ namespace SetUp
 
             Console.WriteLine("[SetUp] 环境就绪：.NET 8 Runtime + SDK + WindowsDesktop 已检测到。");
             return true;
+        }
+
+        /// <summary>
+        /// 部署步骤记录——报告数据源（Prepare/Deploy 填充）
+        /// </summary>
+        private static readonly List<StepReport> _steps = new List<StepReport>();
+
+        /// <summary>
+        /// 日志文件流——--report 时 CLI 输出双写（无控制台环境确定性留痕）
+        /// </summary>
+        private static StreamWriter _logFile;
+
+        /// <summary>
+        /// --report 请求标志——自动化场景（Agent 调用）：Pause 不等待按键、报告必写
+        /// </summary>
+        private static bool _reportRequested;
+
+        /// <summary>
+        /// 部署步骤报告——单步名称 + 成败 + 耗时
+        /// </summary>
+        public sealed class StepReport
+        {
+            /// <summary>步骤号</summary>
+            public int Step;
+            /// <summary>步骤名</summary>
+            public string Name = "";
+            /// <summary>是否成功</summary>
+            public bool Ok;
+            /// <summary>耗时毫秒</summary>
+            public long Ms;
+        }
+
+        /// <summary>
+        /// 产物快照——报告 artifacts 条目（时间戳确定性验证）
+        /// </summary>
+        public sealed class ArtifactReport
+        {
+            /// <summary>绝对路径</summary>
+            public string Path = "";
+            /// <summary>字节数</summary>
+            public long Size;
+            /// <summary>修改时间</summary>
+            public string Modified = "";
+        }
+
+        /// <summary>
+        /// 部署报告文档——ts/mode/ok/steps/artifacts
+        /// </summary>
+        public sealed class ReportDoc
+        {
+            /// <summary>时间戳</summary>
+            public string Ts = "";
+            /// <summary>模式</summary>
+            public string Mode = "";
+            /// <summary>是否成功</summary>
+            public bool Ok;
+            /// <summary>退出码</summary>
+            public int ExitCode;
+            /// <summary>步骤明细</summary>
+            public StepReport[] Steps = new StepReport[0];
+            /// <summary>关键产物时间戳</summary>
+            public ArtifactReport[] Artifacts = new ArtifactReport[0];
+        }
+
+        /// <summary>
+        /// 双写输出流——原 stdout（可能 Null）+ 日志文件（--report 场景）
+        /// </summary>
+        private sealed class TeeWriter : TextWriter
+        {
+            private readonly TextWriter _primary;
+            private readonly TextWriter _file;
+
+            /// <summary>构造</summary>
+            public TeeWriter(TextWriter primary, TextWriter file)
+            {
+                _primary = primary;
+                _file = file;
+            }
+
+            /// <summary>编码</summary>
+            public override Encoding Encoding
+            {
+                get { return Encoding.UTF8; }
+            }
+
+            /// <summary>写字符——双写</summary>
+            public override void Write(char value)
+            {
+                _primary.Write(value);
+                _file.Write(value);
+            }
+
+            /// <summary>写字符串——双写</summary>
+            public override void Write(string value)
+            {
+                _primary.Write(value);
+                _file.Write(value);
+            }
+
+            /// <summary>写行——双写</summary>
+            public override void WriteLine(string value)
+            {
+                _primary.WriteLine(value);
+                _file.WriteLine(value);
+            }
+
+            /// <summary>冲刷</summary>
+            public override void Flush()
+            {
+                _primary.Flush();
+                _file.Flush();
+            }
+        }
+
+        /// <summary>
+        /// 写部署报告——JSON 落盘（steps + artifacts + 成败）；--report 参数启用
+        /// </summary>
+        /// <param name="reportPath">报告文件路径</param>
+        /// <param name="mode">模式（prepare/deploy）</param>
+        /// <param name="exitCode">退出码</param>
+        /// <param name="repoRoot">仓库根（产物收集基准）</param>
+        private static void WriteReport(string reportPath, string mode, int exitCode, string repoRoot)
+        {
+            try
+            {
+                ReportDoc doc = new ReportDoc();
+                doc.Ts = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                doc.Mode = mode;
+                doc.Ok = exitCode == 0;
+                doc.ExitCode = exitCode;
+                doc.Steps = _steps.ToArray();
+                doc.Artifacts = CollectArtifacts(repoRoot).ToArray();
+                JsonSerializerOptions options = new JsonSerializerOptions();
+                options.WriteIndented = true;
+                options.IncludeFields = true;   // 报告 DTO 为 public 字段——System.Text.Json 默认只序列化属性，必须显式 IncludeFields
+                options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;   // 中文直出（默认 \uXXXX 转义人读不便）
+                File.WriteAllText(reportPath, JsonSerializer.Serialize(doc, options), new UTF8Encoding(false));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[SetUp] 警告：报告写入失败——" + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// 关键产物快照——宿主 exe + 基座 CLI + Flows dll（时间戳/大小确定性验证）
+        /// </summary>
+        /// <param name="repoRoot">仓库根</param>
+        /// <returns>产物列表</returns>
+        private static List<ArtifactReport> CollectArtifacts(string repoRoot)
+        {
+            List<ArtifactReport> list = new List<ArtifactReport>();
+            AddArtifact(list, Path.Combine(repoRoot, "public", "app", "CatHome4.exe"));
+            AddArtifact(list, Path.Combine(repoRoot, "Mau-public", "Mau.exe"));
+            string flowsDir = Path.Combine(repoRoot, "public", "app", "Flows");
+            if (Directory.Exists(flowsDir))
+            {
+                string[] flows = Directory.GetFiles(flowsDir, "*.dll");
+                Array.Sort(flows, StringComparer.Ordinal);
+                for (int i = 0; i < flows.Length; i = i + 1)
+                {
+                    AddArtifact(list, flows[i]);
+                }
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// 单产物快照条目——存在才加入
+        /// </summary>
+        /// <param name="list">目标列表</param>
+        /// <param name="path">产物路径</param>
+        private static void AddArtifact(List<ArtifactReport> list, string path)
+        {
+            if (File.Exists(path))
+            {
+                FileInfo info = new FileInfo(path);
+                list.Add(new ArtifactReport() { Path = path, Size = info.Length, Modified = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss") });
+            }
         }
 
         /// <summary>
@@ -322,11 +570,12 @@ namespace SetUp
 
         /// <summary>
         /// 失败暂停——保留窗口（双击运行场景看得到错误）。
-        /// 自动化场景（stdout 被重定向）不等待——防 shell 无按键输入无限阻塞。
+        /// 自动化/无控制台场景不等待——防 shell 无按键输入无限阻塞：
+        ///   1) stdout 被重定向（管道捕获） 2) --report 显式自动化模式（Agent 调用） 3) 无控制台窗口（GetConsoleWindow 为空——WinExe 未附加成功）
         /// </summary>
         private static void Pause()
         {
-            if (Console.IsOutputRedirected)
+            if (Console.IsOutputRedirected || _reportRequested || GetConsoleWindow() == IntPtr.Zero)
             {
                 return;
             }

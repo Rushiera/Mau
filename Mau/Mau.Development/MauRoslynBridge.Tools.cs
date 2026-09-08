@@ -259,11 +259,12 @@ namespace Mau.Development
                 SyntaxNode memberNode;
                 string memberKind;
                 int memberCount;
-                if (!FindMemberInClass(classNode, member, out memberNode, out memberKind, out memberCount))
+                List<string> memberCandidates;
+                if (!FindMemberInClass(classNode, member, out memberNode, out memberKind, out memberCount, out memberCandidates))
                 {
                     if (memberCount > 1)
                     {
-                        result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处（重载？）：" + member + "，请用 find_ref 区分或处理重载";
+                        result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
                         return false;
                     }
                     result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member;
@@ -431,6 +432,19 @@ namespace Mau.Development
                     }
                     string text = content.Substring(index + 9, end - index - 9);
                     text = text.Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ").Trim();
+                    // 多行 doc 注释（/// <summary>↵/// 文本↵/// </summary>）提取后行内 /// 前缀剥离——防 "/// /// 文本" 双前缀污染
+                    string[] summaryTokens = text.Split(' ');
+                    StringBuilder cleanText = new StringBuilder();
+                    for (int i = 0; i < summaryTokens.Length; i = i + 1)
+                    {
+                        string token = summaryTokens[i];
+                        if (token.Length == 0 || token == "///")
+                        {
+                            continue;
+                        }
+                        cleanText.Append(token + " ");
+                    }
+                    text = cleanText.ToString().Trim();
                     if (text.Length > 60)
                     {
                         text = text.Substring(0, 60) + "…";

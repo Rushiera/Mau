@@ -19,6 +19,31 @@ namespace SetUp
         private static extern bool AttachConsole(int dwProcessId);
 
         /// <summary>
+        /// 取标准句柄——AttachConsole 成功后 .NET Console 流需手动绑定控制台句柄（否则 WriteLine 仍丢失）
+        /// </summary>
+        /// <param name="nStdHandle">标准句柄类型（STD_OUTPUT_HANDLE/STD_ERROR_HANDLE）</param>
+        /// <returns>句柄（失败返回 INVALID_HANDLE_VALUE）</returns>
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GetStdHandle(int nStdHandle);
+
+        /// <summary>
+        /// 取控制台窗口句柄——无控制台（WinExe 未附加成功）返回 IntPtr.Zero——自动化检测的本质判据
+        /// </summary>
+        /// <returns>控制台窗口句柄</returns>
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetConsoleWindow();
+
+        /// <summary>
+        /// 标准输出句柄常量。
+        /// </summary>
+        private const int STD_OUTPUT_HANDLE = -11;
+
+        /// <summary>
+        /// 标准错误句柄常量。
+        /// </summary>
+        private const int STD_ERROR_HANDLE = -12;
+
+        /// <summary>
         /// 附加父进程控制台常量。
         /// </summary>
         private const int ATTACH_PARENT_PROCESS = -1;

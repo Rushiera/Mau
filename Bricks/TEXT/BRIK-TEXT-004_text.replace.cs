@@ -2,7 +2,7 @@
 // 积木: text.replace
 // ID:   BRIK-TEXT-004
 // 类别: TEXT
-// 作用: 锚点三态替换——old 全部出现处替换为 new 并原子写回（exact/ignore_case/regex；NotFound 带差异字节定位，Ambiguous 带候选行）——LLM 工具 text-replace 语料执行面
+// 作用: 锚点替换——exact/ignore_case 唯一锚点替换，all/regex 全部匹配替换并原子写回（exact/ignore_case/all/regex；NotFound 带差异字节定位，Ambiguous 带候选行）——LLM 工具 text-replace 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox/TextReplaceOutcome）
 // 原理: DataBox.TryResolve<FileSystemService> → ReplaceTextAuto(path, old, new, mode)；argsJson 内解析 path/old/new/mode
@@ -20,7 +20,7 @@ namespace Mau.Bricks
     public static class TextReplaceBrick
     {
         /// <summary>
-        /// 锚点三态替换——exact/ignore_case 唯一命中替换，regex 全部匹配；编码内建 + 换行保真
+        /// 锚点替换——exact/ignore_case 唯一命中替换，all/regex 全部匹配；编码内建 + 换行保真
         /// </summary>
         /// <param name="argsJson">工具参数 JSON（path/old/new/mode）</param>
         /// <param name="result">三态确认文本或 ERR| 错误文本</param>
@@ -108,4 +108,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:41C4D14EFF05D9117DDE073552C449C20A9B692B34C859D48AF6AFF4DAF38E16
+// #MAU_CHECKSUM:SHA256:F25DB65ECC89B12BB8F291FBA81DA4B1CBA84095395C7E819AD56251107F6581

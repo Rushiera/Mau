@@ -69,11 +69,12 @@ namespace Mau.Development
                     SyntaxNode memberNode;
                     string memberKind;
                     int memberCount;
-                    if (!FindMemberInClass(classNode, member, out memberNode, out memberKind, out memberCount))
+                    List<string> memberCandidates;
+                    if (!FindMemberInClass(classNode, member, out memberNode, out memberKind, out memberCount, out memberCandidates))
                     {
                         if (memberCount > 1)
                         {
-                            result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处（重载？）";
+                            result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
                             return true;
                         }
                         result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member;
@@ -141,10 +142,10 @@ namespace Mau.Development
                 }
                 foreach (XElement element in rootXml.Elements())
                 {
-                    docText.Append("/// " + element.ToString(SaveOptions.DisableFormatting) + newline);
+                    docText.Append("/// " + SerializeDocElement(element) + newline);
                 }
                 SyntaxTriviaList newDocTrivia = SyntaxFactory.ParseLeadingTrivia(docText.ToString());
-                // 重建 leading——原 doc trivia 替换为新 doc（其余 trivia 原样保留）
+                // 重建 leading——原 doc 块（doc trivia + 紧邻 EOL）整段替换为新 doc（其余 trivia 原样保留）
                 SyntaxTriviaList oldTrivia = target.GetLeadingTrivia();
                 List<SyntaxTrivia> rebuilt = new List<SyntaxTrivia>();
                 bool replaced = false;
@@ -153,15 +154,20 @@ namespace Mau.Development
                     SyntaxTrivia trivia = oldTrivia[i];
                     bool isDoc = trivia.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia) ||
                                  trivia.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia);
-                    if (isDoc)
+                    if (isDoc && !replaced)
                     {
-                        if (!replaced)
+                        replaced = true;
+                        for (int j = 0; j < newDocTrivia.Count; j = j + 1)
                         {
-                            replaced = true;
-                            for (int j = 0; j < newDocTrivia.Count; j = j + 1)
-                            {
-                                rebuilt.Add(newDocTrivia[j]);
-                            }
+                            rebuilt.Add(newDocTrivia[j]);
+                        }
+                        // 吞掉旧 doc 后紧邻的 EOL/doc trivia——新 doc 自带行尾换行（防双换行空行）
+                        while (i + 1 < oldTrivia.Count &&
+                               (oldTrivia[i + 1].IsKind(SyntaxKind.EndOfLineTrivia) ||
+                                oldTrivia[i + 1].IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia) ||
+                                oldTrivia[i + 1].IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia)))
+                        {
+                            i = i + 1;
                         }
                     }
                     else
@@ -171,10 +177,25 @@ namespace Mau.Development
                 }
                 if (!replaced)
                 {
-                    // 原无 doc 注释——追加首行
+                    // 原无 doc 注释——doc 追加到尾部 whitespace 之前，成员缩进保留在 doc 后（声明不顶格）
+                    SyntaxTrivia indentTrivia = default(SyntaxTrivia);
+                    bool hasIndent = false;
+                    for (int j = rebuilt.Count - 1; j >= 0; j = j - 1)
+                    {
+                        if (rebuilt[j].IsKind(SyntaxKind.WhitespaceTrivia))
+                        {
+                            indentTrivia = rebuilt[j];
+                            hasIndent = true;
+                            break;
+                        }
+                    }
                     for (int j = 0; j < newDocTrivia.Count; j = j + 1)
                     {
                         rebuilt.Add(newDocTrivia[j]);
+                    }
+                    if (hasIndent)
+                    {
+                        rebuilt.Add(indentTrivia);
                     }
                 }
                 SyntaxNode newNode = target.WithLeadingTrivia(rebuilt);
@@ -191,6 +212,23 @@ namespace Mau.Development
                 result = "OK 注释已更新 " + className + (member.Length > 0 ? "." + member : "") + " <" + type + ">";
                 return true;
             }
+        }
+
+        /// <summary>
+        /// doc 元素序列化——& 原样（防 &amp; 污染文件）、&lt;/&gt; 转义保 XML 结构、param name 属性转义
+        /// </summary>
+        /// <param name="element">doc 元素</param>
+        /// <returns>doc 行文本（不含 /// 前缀）</returns>
+        private static string SerializeDocElement(XElement element)
+        {
+            string name = element.Name.LocalName;
+            string body = element.Value.Replace("<", "&lt;").Replace(">", "&gt;");
+            if (name == "param")
+            {
+                string attr = (element.Attribute("name")?.Value ?? "").Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;").Replace(">", "&gt;");
+                return "<param name=\"" + attr + "\">" + body + "</param>";
+            }
+            return "<" + name + ">" + body + "</" + name + ">";
         }
 
         /// <summary>

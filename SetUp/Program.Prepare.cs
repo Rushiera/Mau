@@ -26,19 +26,28 @@ namespace SetUp
             try
             {
                 // [段1] 步1：dotnet build Mau.sln（构建 + NuGet 还原——0 错误 0 警告底线）
-                if (!RunProcess("dotnet", "build Mau.sln", repoRoot))
+                long stepMs = Environment.TickCount64;
+                bool stepOk = RunProcess("dotnet", "build Mau.sln", repoRoot);
+                _steps.Add(new StepReport() { Step = 1, Name = "dotnet build Mau.sln", Ok = stepOk, Ms = Environment.TickCount64 - stepMs });
+                if (!stepOk)
                 {
                     return Fail("步1 dotnet build Mau.sln 失败——构建未通过，中止。");
                 }
 
                 // [段2] 步2：dotnet test Mau.sln（全量测试——三测试项目）
-                if (!RunProcess("dotnet", "test Mau.sln", repoRoot))
+                stepMs = Environment.TickCount64;
+                stepOk = RunProcess("dotnet", "test Mau.sln", repoRoot);
+                _steps.Add(new StepReport() { Step = 2, Name = "dotnet test Mau.sln", Ok = stepOk, Ms = Environment.TickCount64 - stepMs });
+                if (!stepOk)
                 {
                     return Fail("步2 dotnet test Mau.sln 失败——测试未通过，中止。");
                 }
 
                 // [段3] 步3：dotnet publish Mau\Mau.Cli -c Debug -o Mau-public（基座部署区——FL 组引用源，缺失则步4报 M3245）
-                if (!RunProcess("dotnet", "publish Mau\\Mau.Cli\\Mau.Cli.csproj -c Debug -o Mau-public", repoRoot))
+                stepMs = Environment.TickCount64;
+                stepOk = RunProcess("dotnet", "publish Mau\\Mau.Cli\\Mau.Cli.csproj -c Debug -o Mau-public", repoRoot);
+                _steps.Add(new StepReport() { Step = 3, Name = "publish Mau.Cli -> Mau-public", Ok = stepOk, Ms = Environment.TickCount64 - stepMs });
+                if (!stepOk)
                 {
                     return Fail("步3 publish Mau.Cli 失败——基座部署区未生成，中止。");
                 }
@@ -81,14 +90,20 @@ namespace SetUp
                     string outDir = "public\\src\\" + parts[1];
                     string args = "proj " + proj + " -o " + outDir + " --build";
                     Console.WriteLine("[SetUp] 步4/" + (i + 1) + "/" + groupBuilds.Count + "：" + parts[1]);
-                    if (!RunProcess(mauExe, args, repoRoot))
+                    long groupMs = Environment.TickCount64;
+                    bool groupOk = RunProcess(mauExe, args, repoRoot);
+                    _steps.Add(new StepReport() { Step = 4, Name = "mau proj " + parts[1] + " --build", Ok = groupOk, Ms = Environment.TickCount64 - groupMs });
+                    if (!groupOk)
                     {
                         return Fail("步4 组翻译失败：" + parts[1] + "——中止。");
                     }
                 }
 
                 // [段5] 步5：dotnet publish CatHome4 -c Debug -o public\app（宿主部署区）
-                if (!RunProcess("dotnet", "publish CatHome4\\CatHome4.csproj -c Debug -o public\\app", repoRoot))
+                long hostMs = Environment.TickCount64;
+                bool hostOk = RunProcess("dotnet", "publish CatHome4\\CatHome4.csproj -c Debug -o public\\app", repoRoot);
+                _steps.Add(new StepReport() { Step = 5, Name = "publish CatHome4 -> public/app", Ok = hostOk, Ms = Environment.TickCount64 - hostMs });
+                if (!hostOk)
                 {
                     return Fail("步5 publish CatHome4 失败——宿主部署区未生成，中止。");
                 }
@@ -99,7 +114,10 @@ namespace SetUp
                 {
                     return Fail("步6 前置缺失：" + hostExe + " 不存在——宿主未生成。");
                 }
-                if (!RunProcess(hostExe, "--run \"session count\"", repoRoot))
+                long selfMs = Environment.TickCount64;
+                bool selfOk = RunProcess(hostExe, "--run \"session count\"", repoRoot);
+                _steps.Add(new StepReport() { Step = 6, Name = "宿主自检 --run session count", Ok = selfOk, Ms = Environment.TickCount64 - selfMs });
+                if (!selfOk)
                 {
                     return Fail("步6 宿主自检失败——CLI 全链未通过，中止。");
                 }

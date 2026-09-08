@@ -45,7 +45,10 @@ namespace SetUp
             // [段3] 复制 public\app 平铺内容到目标（含 Flows/ html/）
             // 运行中 publish 纪律：目标实例运行中 → 复制会撞模块锁——先提示停进程
             Console.WriteLine("[SetUp] 复制中——若目标实例正在运行，请先停止（模块锁会拒绝覆盖）。");
-            if (!CopyDirectory(sourceDir, targetFull))
+            long copyMs = Environment.TickCount64;
+            bool copyOk = CopyDirectory(sourceDir, targetFull);
+            _steps.Add(new StepReport() { Step = 1, Name = "复制 public/app -> 目标", Ok = copyOk, Ms = Environment.TickCount64 - copyMs });
+            if (!copyOk)
             {
                 return Fail("目录复制失败——目标目录可能被占用或不可写。");
             }
@@ -59,14 +62,18 @@ namespace SetUp
 
             // [段4] 版本落盘——version.txt（读取 CatHome4.csproj <Version>）
             string version = ReadVersion(repoRoot);
+            long verMs = Environment.TickCount64;
+            bool verOk = true;
             try
             {
                 File.WriteAllText(Path.Combine(targetFull, "version.txt"), version);
             }
             catch (Exception ex)
             {
+                verOk = false;
                 Console.WriteLine("[SetUp] 警告：version.txt 写入失败——" + ex.Message);
             }
+            _steps.Add(new StepReport() { Step = 2, Name = "版本落盘 version.txt", Ok = verOk, Ms = Environment.TickCount64 - verMs });
             Console.WriteLine("[SetUp] 版本: " + version);
 
             // [段5] 完成提示——Data 走 AppData（本机 %LOCALAPPDATA%/CatHome4/Data 三级锚定回退）

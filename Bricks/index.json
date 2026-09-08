@@ -1,6 +1,6 @@
 ﻿{
   "version": 3,
-  "generatedAt": "2026-09-04T08:13:09Z",
+  "generatedAt": "2026-09-08T05:10:14Z",
   "packages": ["Microsoft.CodeAnalysis.CSharp@4.11.0"],
   "bricks": [
     {"id":"BRIK-DATA-001","name":"data.box_set_str","category":"DATA","path":"DATA/BRIK-DATA-001_data.box_set_str.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.DataBoxSetStrBrick.SetStr","inputs":[{"name":"scope","type":"string"},{"name":"key","type":"string"},{"name":"value","type":"string"}],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},

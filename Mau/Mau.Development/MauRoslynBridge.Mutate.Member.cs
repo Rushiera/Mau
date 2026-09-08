@@ -205,11 +205,12 @@ namespace Mau.Development
                 SyntaxNode memberNode;
                 string memberKind;
                 int memberCount;
-                if (!FindMemberInClass(classNode, member, out memberNode, out memberKind, out memberCount))
+                List<string> memberCandidates;
+                if (!FindMemberInClass(classNode, member, out memberNode, out memberKind, out memberCount, out memberCandidates))
                 {
                     if (memberCount > 1)
                     {
-                        result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处（重载？），delete 不支持歧义，请先处理";
+                        result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
                         return true;
                     }
                     result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member;

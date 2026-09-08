@@ -175,12 +175,12 @@ public string ReadBetweenAuto(string path, string str1, string str2)
  public  void  AppendTextAuto ( string  path ,  string  content ) { string  resolved  =  Resolve ( path ,  true ) ;  lock  ( _writeGate ) { EnsureParentDirectory ( resolved ) ;  System . Text . Encoding  enc  =  TextFileCodec . ProfileFor ( path ) ;  string  newline  =  ResolveTargetNewline ( resolved ,  path ) ;  string  body  =  TextFileCodec . NormalizeNewlines ( SafeText ( content ) ,  newline ) ;  File . AppendAllText ( resolved ,  body ,  enc ) ;  } } 
 /// <summary>
 /// 锚点三态替换——P3 核心（design-ch4-text-tools §六）：exact/ignore_case 要求唯一（0→NotFound+差异定位 / 1→替换 / >1→Ambiguous+候选）；
-/// regex 模式替换全部匹配（0→NotFound）。编码 + 换行保真（P1/P2），绝不静默写入。
+/// regex/all 模式替换全部匹配（0→NotFound）；exact/ignore_case 要求唯一（>1→Ambiguous+候选行）。编码 + 换行保真（P1/P2），绝不静默写入。
 /// </summary>
 /// <param name = "path">受控路径</param>
 /// <param name = "oldText">锚点文本</param>
 /// <param name = "newText">替换文本（regex 模式支持 $1 捕获组）</param>
-/// <param name = "mode">exact（默认）/ ignore_case / regex</param>
+/// <param name = "mode">exact（默认）/ ignore_case / all（字面量全部替换）/ regex</param>
 /// <returns>三态诊断结果</returns>
 public TextReplaceOutcome ReplaceTextAuto(string path, string oldText, string newText, string mode)
 {
@@ -207,7 +207,7 @@ public TextReplaceOutcome ReplaceTextAuto(string path, string oldText, string ne
                     LocateBestDiff(unified, target, outcome);
                     return outcome;
                 }
-                if (mode != "regex" && indexes.Length > 1)
+                if (mode != "regex" && mode != "all" && indexes.Length > 1)
                 {
                     outcome.Status = TextReplaceStatus.Ambiguous;
                     outcome.CandidateLines = LineNumbersOf(unified, indexes);
