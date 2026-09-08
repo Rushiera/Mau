@@ -21,6 +21,9 @@ namespace CH4
 
         /// <summary>Note 已完成任务数</summary>
         private int _noteDone;
+
+        /// <summary>Note 刚全部完成标志——完成态展示（前端"🎉 全部完成"；新计划/新增/回滚清除——Q7 2026-09-08）</summary>
+        private bool _noteJustCompleted;
 /// <summary>会话视图存储——F4 视图持久化（内存整块 + 文件落盘；真实前文派生态）</summary>
 private readonly SessionViewStore _viewStore;
 /// <summary>流式文本块序号——流式增量容器标识（整块到达时 replace 定位）</summary>
@@ -91,6 +94,7 @@ private long _textStreamSeq;
                     _noteTasks = valid.ToArray();
                     _noteCurrent = 0;
                     _noteDone = 0;
+                    _noteJustCompleted = false;
                     result = BuildNoteProgress();
                 }
             }
@@ -109,6 +113,7 @@ private long _textStreamSeq;
                     _noteTasks = null;
                     _noteCurrent = 0;
                     _noteDone = 0;
+                    _noteJustCompleted = true;
                     result = "[Note] 🎉 全部 " + total + " 条任务已完成！";
                 }
                 else
@@ -176,6 +181,7 @@ private long _textStreamSeq;
             }
             list.Add(t);
             _noteTasks = list.ToArray();
+            _noteJustCompleted = false;
             PushNoteState();
         }
 
@@ -221,9 +227,10 @@ private long _textStreamSeq;
             {
                 tasks = tasks.ToArray(),
                 current = _noteCurrent,
-                done = _noteDone
+                done = _noteDone,
+                justCompleted = _noteJustCompleted
             };
-            return JsonSerializer.Serialize(obj);
+            return JsonUtil.Serialize(obj);
         }
     }
 }

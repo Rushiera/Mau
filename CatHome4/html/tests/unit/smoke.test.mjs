@@ -1,4 +1,4 @@
-// tests/unit/smoke.test.mjs —— 工具链冒烟测试（验证 Vitest + jsdom + 脚本加载链路可用）
+﻿// tests/unit/smoke.test.mjs —— 工具链冒烟测试（验证 Vitest + jsdom + 脚本加载链路可用）
 // F2.4 门禁迁移——主面板（index.html / app.js / panel.js）用例保留；对话用例迁至 chat-view.test.mjs（chat.html 独立页）
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
@@ -28,9 +28,11 @@ beforeAll(async () => {
   }
   globalThis.EventSource = MockEventSource;
   globalThis.fetch = async () => ({ json: async () => ({}), ok: true });
-  // 主面板二域（app 公共 → panel 管理）
+  // 主面板四域（app 公共 → panel 多猫 → panel-apis API/QQBot 池 → panel-catcfg 每猫配置/受控根——2026-09-08 拆分）
   await runGlobalScript(new URL('../../js/app.js', import.meta.url));
   await runGlobalScript(new URL('../../js/panel.js', import.meta.url));
+  await runGlobalScript(new URL('../../js/panel-apis.js', import.meta.url));
+  await runGlobalScript(new URL('../../js/panel-catcfg.js', import.meta.url));
 });
 
 test('index.html 主面板骨架已加载（meta 元素存在 + 无对话区 DOM）', () => {
@@ -51,6 +53,16 @@ test('panel.js 多猫管理函数已挂载（special 渲染支持——F2.2）',
   expect(typeof window.loadCats).toBe('function');
   expect(typeof window.renderCatRow).toBe('function');
   expect(typeof window.catAction).toBe('function');
+});
+
+test('panel 拆分——API/QQBot 池 + 每猫配置函数已挂载（2026-09-08 体量治理）', () => {
+  expect(typeof window.loadApis).toBe('function');
+  expect(typeof window.apiSubmit).toBe('function');
+  expect(typeof window.loadQqBots).toBe('function');
+  expect(typeof window.qqBotSubmit).toBe('function');
+  expect(typeof window.openCatCfg).toBe('function');
+  expect(typeof window.loadRoots).toBe('function');
+  expect(typeof window.renderGroupedChecks).toBe('function');
 });
 
 test('对话逻辑迁至 chat.html——app.js 无旧阶段模型分派', () => {

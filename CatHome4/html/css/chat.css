@@ -61,6 +61,11 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 .inject-report .ir-item { word-break: break-all; white-space: pre-wrap; }
 .inject-report .ir-item.missing { color: #b5a25e; }
 .inject-report .ir-item.error { color: #f48771; }
+/* Q5 注入工具组——独立段（🛠️ 头 + 每行组名 —— 工具名列表） */
+.inject-report .ir-tools { margin-top: 6px; border-top: 1px dashed #1e3a2f; padding-top: 5px; }
+.inject-report .ir-tools-head { color: #4ec9b0; font-weight: bold; margin-bottom: 3px; }
+.inject-report .ir-tool-row { word-break: break-all; white-space: pre-wrap; color: #9ab8a8; }
+.inject-report .ir-tool-group { color: #dcdcaa; font-weight: bold; }
 /* roundsum 轮末统计气泡——本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时（弱化系统样式） */
 .chat-bubble.roundsum { background: #12161a; border: 1px solid #223040; color: #9aa8b8; font-size: 11px; max-width: 88%; line-height: 1.6; }
 .chat-bubble.roundsum .rs-head { color: #6a9955; font-weight: bold; margin-bottom: 3px; }
@@ -73,20 +78,18 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 #chatSendInput:disabled { opacity: 0.5; }
 #chatSendBtn { background: #0e639c; border: none; color: #fff; padding: 7px 16px; cursor: pointer; font-family: inherit; font-size: 12px; }
 #chatSendBtn:disabled { opacity: 0.5; cursor: default; }
-/* M4c Note 面板——输入框上方悬浮气泡（缩略一行/展开自适应高度） */
-#notePanel { border-top: 1px solid #222; background: #101010; font-size: 11px; }
-#notePanel.collapsed #noteBody { display: none; }
-#noteHead { display: flex; align-items: center; gap: 8px; padding: 5px 12px; cursor: pointer; color: #9a9a9a; user-select: none; }
-#noteHead:hover { color: #c8c8c8; }
-#noteTitle { color: #c586c0; font-weight: bold; }
-#noteToggleBtn { font-size: 10px; }
-#noteBody { padding: 0 12px 8px 12px; max-height: 40vh; overflow-y: auto; }
-#noteList { display: flex; flex-direction: column; gap: 3px; padding: 4px 0; }
+/* M4c Note——Q3 v2（2026-09-08）：输入区上方按钮（固定不占布局）+ 点击展开气泡区域（popover 贴按钮上方；高度变化零影响聊天区） */
+#noteWrap { position: fixed; bottom: 96px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; align-items: center; }
+#noteBubble { background: #101820; border: 1px solid #1e3a2f; border-radius: 14px; color: #9ab8a8; font-size: 11px; padding: 4px 14px; cursor: pointer; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.4); user-select: none; }
+#noteBubble:hover { border-color: #2e5a44; color: #c8e6d0; }
+#notePopover { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #141414; border: 1px solid #2a2a2a; border-radius: 8px; width: min(520px, 80vw); max-height: 60vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+.note-popover-head { padding: 8px 14px; border-bottom: 1px solid #222; color: #c586c0; font-weight: bold; font-size: 12px; }
+#noteList { display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; overflow-y: auto; flex: 1; }
 .note-row { display: flex; gap: 6px; align-items: baseline; color: #8a8a8a; word-break: break-all; }
 .note-row.done { color: #4a6a4a; text-decoration: line-through; }
 .note-row.current { color: #dcdcaa; }
 .note-row .mark { flex-shrink: 0; font-family: Consolas, monospace; }
-#noteAddRow { display: flex; gap: 6px; padding-top: 4px; border-top: 1px dashed #242424; }
+#noteAddRow { display: flex; gap: 6px; padding: 8px 14px; border-top: 1px dashed #242424; }
 #noteAddInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 4px 8px; font-family: inherit; font-size: 11px; }
 #noteAddInput:focus { outline: none; border-color: #0e639c; }
 #noteAddRow button { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }

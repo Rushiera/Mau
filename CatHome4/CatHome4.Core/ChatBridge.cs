@@ -174,7 +174,7 @@ namespace CH4
             // F4 视图——session.new 清前文 → 视图随生命周期清空
             session.ClearView();
             // 注入报告——逐文件结果持久化进视图（独立字段：Rebuild 不清，Save 落盘；前端 history 首块渲染）
-            session.SetInjectReport(BuildInjectReportJson(injectResult.Files, injectList));
+            session.SetInjectReport(BuildInjectReportJson(injectResult.Files, injectList, specs));
             // 问题一修复——会话重置显式事件（前端收到后清空气泡再拉 history——消除清空竞态）
             session.PushSessionReset();
             DataBox.Set<string>("global", "chat_state", "idle");
@@ -193,12 +193,13 @@ namespace CH4
         }
 
         /// <summary>
-        /// 构建注入报告 JSON——逐文件结果（前端 history 首块渲染；ok/missing/error 三态 + 字符数）
+        /// 构建注入报告 JSON——逐文件结果 + 注入工具组（前端 history 首块渲染；ok/missing/error 三态 + 字符数 + toolGroups 工具清单）。
         /// </summary>
         /// <param name="files">逐文件结果（委托产物）</param>
         /// <param name="injectList">注入清单（null=空）</param>
+        /// <param name="specs">该会话工具声明面（裁剪后——Q5 工具组气泡数据源）</param>
         /// <returns>注入报告 JSON 字符串</returns>
-        private static string BuildInjectReportJson(List<InjectFileResult> files, string[] injectList)
+        private static string BuildInjectReportJson(List<InjectFileResult> files, string[] injectList, ToolSpec[] specs)
         {
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
             sb.Append("{\"files\":[");
@@ -220,11 +221,11 @@ namespace CH4
                     else if (status == "missing") { missing = missing + 1; }
                     else { failed = failed + 1; }
                     sb.Append("{\"file\":");
-                    sb.Append(JsonSerializer.Serialize(f.File));
+                    sb.Append(JsonUtil.Serialize(f.File));
                     sb.Append(",\"status\":");
-                    sb.Append(JsonSerializer.Serialize(status));
+                    sb.Append(JsonUtil.Serialize(status));
                     sb.Append(",\"message\":");
-                    sb.Append(JsonSerializer.Serialize(f.Message ?? ""));
+                    sb.Append(JsonUtil.Serialize(f.Message ?? ""));
                     sb.Append(",\"chars\":");
                     sb.Append(f.Chars.ToString());
                     sb.Append("}");
@@ -241,7 +242,55 @@ namespace CH4
             sb.Append(failed.ToString());
             sb.Append(",\"injectCount\":");
             sb.Append(injectList != null ? injectList.Length.ToString() : "0");
-            sb.Append("}");
+            // Q5 注入工具组——按组聚合（工具名→组名映射来自 ToolPool；每工具 name+desc；前端独立气泡全文展示）
+            sb.Append(",\"toolGroups\":[");
+            Dictionary<string, List<ToolSpec>> groups = new Dictionary<string, List<ToolSpec>>(StringComparer.Ordinal);
+            if (specs != null)
+            {
+                Dictionary<string, string> ownerMap = ToolPool.BuildOwnerFlowMap();
+                for (int i = 0; i < specs.Length; i = i + 1)
+                {
+                    ToolSpec spec = specs[i];
+                    string group = "";
+                    if (ownerMap.TryGetValue(spec.Name, out string ownerGroup))
+                    {
+                        group = ownerGroup;
+                    }
+                    List<ToolSpec> groupTools;
+                    if (!groups.TryGetValue(group, out groupTools))
+                    {
+                        groupTools = new List<ToolSpec>();
+                        groups[group] = groupTools;
+                    }
+                    groupTools.Add(spec);
+                }
+            }
+            bool firstGroup = true;
+            foreach (KeyValuePair<string, List<ToolSpec>> kv in groups)
+            {
+                if (!firstGroup)
+                {
+                    sb.Append(",");
+                }
+                firstGroup = false;
+                sb.Append("{\"group\":");
+                sb.Append(JsonUtil.Serialize(kv.Key));
+                sb.Append(",\"tools\":[");
+                for (int i = 0; i < kv.Value.Count; i = i + 1)
+                {
+                    if (i > 0)
+                    {
+                        sb.Append(",");
+                    }
+                    sb.Append("{\"name\":");
+                    sb.Append(JsonUtil.Serialize(kv.Value[i].Name));
+                    sb.Append(",\"desc\":");
+                    sb.Append(JsonUtil.Serialize(kv.Value[i].Description ?? ""));
+                    sb.Append("}");
+                }
+                sb.Append("]}");
+            }
+            sb.Append("]}");
             return sb.ToString();
         }
 
@@ -339,7 +388,7 @@ namespace CH4
             stats["completion"] = st.LastCompletionTokens;
             stats["context"] = st.LastContextTokens;
             resp["stats"] = stats;
-            return JsonSerializer.Serialize(resp);
+            return JsonUtil.Serialize(resp);
         }
 /// <summary>
 /// 视图块载荷 JSON 字符串 → JSON 元素（history 响应内嵌对象；解析失败回退字符串）

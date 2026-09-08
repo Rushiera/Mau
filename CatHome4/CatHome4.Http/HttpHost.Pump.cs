@@ -41,6 +41,43 @@ namespace CatHome4.Http
         }
 
         /// <summary>
+        /// 快照注入页面标题——根对象加 title 字段（不可变快照复制 + 字段前置；解析失败原样返回）。
+        /// </summary>
+        /// <param name="json">原快照 JSON</param>
+        /// <param name="title">标题文本（displayName · Chat）</param>
+        /// <returns>注入后的快照 JSON</returns>
+        private static string InjectSnapshotTitle(string json, string title)
+        {
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(json))
+                {
+                    JsonElement root = doc.RootElement;
+                    using (System.IO.MemoryStream ms = new System.IO.MemoryStream())
+                    {
+                        using (Utf8JsonWriter writer = new Utf8JsonWriter(ms))
+                        {
+                            writer.WriteStartObject();
+                            writer.WriteString("title", title);
+                            foreach (JsonProperty prop in root.EnumerateObject())
+                            {
+                                writer.WritePropertyName(prop.Name);
+                                prop.Value.WriteTo(writer);
+                            }
+                            writer.WriteEndObject();
+                        }
+                        return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // 快照畸形——原样返回（观测面不受单帧异常影响）
+                return json;
+            }
+        }
+
+        /// <summary>
         /// 主线程泵——宿主帧循环调用：快照待构建标志置位时在主线程构建 + 缓存 + 推送（ThreadGuard 契约）。
         /// </summary>
         public void PumpMainThread()
@@ -51,6 +88,11 @@ namespace CatHome4.Http
     }
     _snapshotPending = false;
     string json = _snapshotBuilder(false);
+    // Q6 页面标题——每猫快照注入 title 字段（displayName · Chat；前端初始化 fetch 快照直接用——前端零业务逻辑）
+    if (_pageTitle != null && _pageTitle.Length > 0)
+    {
+        json = InjectSnapshotTitle(json, _pageTitle);
+    }
     _snapshotCache = json;
     // 增量流式——只推变化段；无变化零推送（Idle 稳态静默）；patchBuilder 未注入时保持全量推送（每猫端口——chat.html 不消费快照）
     if (_patchBuilder != null)
@@ -104,7 +146,7 @@ namespace CatHome4.Http
                         module = entry.Module,
                         message = entry.Message
                     };
-                    PushEvent("log", JsonSerializer.Serialize(obj));
+                    PushEvent("log", JsonUtil.Serialize(obj));
                 }
             }
         }
@@ -160,7 +202,7 @@ public void PushNoteState(string json)
                 arguments = arguments,
                 result = result
             };
-            PushEvent("tool", JsonSerializer.Serialize(obj));
+            PushEvent("tool", JsonUtil.Serialize(obj));
         }
 
         /// <summary>
@@ -175,7 +217,7 @@ public void PushNoteState(string json)
                 sessionId = _sessionId,
                 count = count
             };
-            PushEvent("chatdone", JsonSerializer.Serialize(obj));
+            PushEvent("chatdone", JsonUtil.Serialize(obj));
         }
 
         /// <summary>
@@ -195,7 +237,7 @@ public void PushNoteState(string json)
                 text = text,
                 sessionId = _sessionId
             };
-            PushEvent("llm", JsonSerializer.Serialize(obj));
+            PushEvent("llm", JsonUtil.Serialize(obj));
         }
 
         /// <summary>
@@ -213,7 +255,7 @@ public void PushNoteState(string json)
                 content = text,
                 sessionId = _sessionId
             };
-            PushEvent("user", JsonSerializer.Serialize(obj));
+            PushEvent("user", JsonUtil.Serialize(obj));
             // 观测透明性——SSE user 推送结算行（Note 气泡排查——前端未渲染时日志可对照）
             LogStore.Add("CatHome4", 1, "用户消息推送（" + text.Length.ToString() + " 字符，来源 " + source + "，当前 " + _clients.Count.ToString() + " 个连接）", "CHAT");
         }
@@ -259,7 +301,7 @@ public void PushNoteState(string json)
                 payload = payloadObj,
                 replaceSeq = replaceSeq
             };
-            PushEvent("view", JsonSerializer.Serialize(obj));
+            PushEvent("view", JsonUtil.Serialize(obj));
             return seq;
         }
     }

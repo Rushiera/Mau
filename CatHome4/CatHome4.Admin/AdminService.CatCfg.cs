@@ -195,7 +195,7 @@ namespace CatHome4.Admin
             };
             try
             {
-                ConfigStore.AtomicWrite(GetCatDefaultPath(), JsonSerializer.Serialize(payload));
+                ConfigStore.AtomicWrite(GetCatDefaultPath(), JsonUtil.Serialize(payload));
             }
             catch (Exception ex)
             {

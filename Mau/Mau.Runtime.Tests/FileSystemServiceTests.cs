@@ -376,6 +376,59 @@ string  mdPath  =  Path . Combine ( rw ,  "doc.md" ) ;  fs . WriteTextAuto ( mdP
 string [ ]  noHit  =  fs . Grep ( rw ,  "HELLO" ,  "*" ,  100 ) ;  Assert . Empty ( noHit ) ;  } finally  { TryDelete ( baseDir ) ;  } }
 
 /// <summary>
+/// Q4 忽略目录（2026-09-08）——Tree 跳过 .git/bin/obj 并附 [git] 特征行；Find/Grep 跳过忽略目录并附 [skip] 提示；显式以忽略名为根不受影响
+/// </summary>
+[Fact]
+public void IgnoredDirs_TreeSkipped_GitInfo_AndSkipHint()
+{
+    string baseDir = Path.Combine(Path.GetTempPath(), "mau_ignored_" + Guid.NewGuid().ToString("N"));
+    string rw = Path.Combine(baseDir, "rw");
+    Directory.CreateDirectory(rw);
+    try
+    {
+        WorkspaceConfig.RootEntry[] entries = new WorkspaceConfig.RootEntry[]
+        {
+            new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true }
+        };
+        FileSystemService fs = new FileSystemService(entries, Path.Combine(rw, "recycle"));
+        // 布置——.git（含 HEAD + refs/heads/main）、bin 忽略目录、正常文件
+        Directory.CreateDirectory(Path.Combine(rw, ".git", "refs", "heads"));
+        File.WriteAllText(Path.Combine(rw, ".git", "HEAD"), "ref: refs/heads/main\n");
+        File.WriteAllText(Path.Combine(rw, ".git", "refs", "heads", "main"), "abcdef0123456789\n");
+        Directory.CreateDirectory(Path.Combine(rw, "bin"));
+        File.WriteAllText(Path.Combine(rw, "bin", "x.dll"), "x");
+        File.WriteAllText(Path.Combine(rw, "keep.txt"), "keep");
+        Directory.CreateDirectory(Path.Combine(rw, "sub", ".git"));
+        File.WriteAllText(Path.Combine(rw, "sub", "sub.txt"), "sub");
+        // [段1] Tree——.git/bin 不列出；末尾 [git] 特征行（多 .git 多行）；正常条目保留
+        string[] tree = fs.Tree(rw, 5, 500);
+        Assert.DoesNotContain(tree, line => line.Contains(".git") && !line.StartsWith("[git]"));
+        Assert.DoesNotContain(tree, line => line == "bin/");
+        Assert.Contains(tree, line => line == "keep.txt");
+        Assert.Contains(tree, line => line.StartsWith("[git] 存在 .git（.git——HEAD: refs/heads/main", StringComparison.Ordinal));
+        Assert.Contains(tree, line => line.StartsWith("[git] 存在 .git（sub", StringComparison.Ordinal));
+        // [段2] Find——忽略目录内条目不列出 + [skip] 提示（提示行本身含 .git/bin 字样——按前缀排除）
+        string[] found = fs.Find(rw, "*", true, 500);
+        Assert.DoesNotContain(found, line => line.StartsWith("bin"));
+        Assert.DoesNotContain(found, line => line.StartsWith(".git"));
+        Assert.Contains(found, line => line.StartsWith("[skip] "));
+        Assert.Contains(found, line => line == "keep.txt");
+        // [段3] Grep——忽略目录不扫描 + [skip] 提示（bin 内文本不会被搜到；提示行本身是结果的一部分）
+        string[] hits = fs.Grep(rw, "x.dll", "*", 100);
+        Assert.DoesNotContain(hits, line => !line.StartsWith("[skip]"));
+        string[] hits2 = fs.Grep(rw, "keep", "*", 100);
+        Assert.Contains(hits2, line => line.StartsWith("keep.txt:"));
+        // [段4] 显式以忽略名为根——bin 本身可列（忽略只在子项遍历生效）
+        string[] binTree = fs.Tree(Path.Combine(rw, "bin"), 2, 100);
+        Assert.Contains(binTree, line => line == "x.dll");
+    }
+    finally
+    {
+        TryDelete(baseDir);
+    }
+}
+
+/// <summary>
         /// 尽力删除临时目录——不掩盖断言结果
         /// </summary>
         /// <param name="dir">临时目录</param>

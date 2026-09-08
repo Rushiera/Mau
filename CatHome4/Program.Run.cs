@@ -68,6 +68,7 @@ namespace CH4
                 {
                     _httpHost.PumpMainThread();
                 }
+                AdminService.PumpAllHosts();
                 _chatBridge.PumpSessions();
                 PumpChatQueue();
                 AdminService.PumpCatQueues();
@@ -371,6 +372,7 @@ namespace CH4
                 {
                     _httpHost.PumpMainThread();
                 }
+                AdminService.PumpAllHosts();
                 System.Threading.Thread.Sleep(FrameSleepMs);
             }
             Office quickOffice = _oa.GetOffice(officeId);
@@ -399,6 +401,7 @@ namespace CH4
                 {
                     _httpHost.PumpMainThread();
                 }
+                AdminService.PumpAllHosts();
                 _chatBridge.PumpSessions();
                 PumpChatQueue();
                 AdminService.PumpCatQueues();

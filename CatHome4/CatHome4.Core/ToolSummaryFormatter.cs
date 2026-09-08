@@ -953,7 +953,8 @@ namespace CH4
             for (int i = 0; i < lines.Length; i = i + 1)
             {
                 string line = lines[i].Trim();
-                if (line.Length == 0 || line.StartsWith("ERR|"))
+                // Q4 忽略/git 提示行不计入统计（text-tree 结果 [git]/[skip] 前缀——2026-09-08）
+                if (line.Length == 0 || line.StartsWith("ERR|") || line.StartsWith("[git]") || line.StartsWith("[skip]"))
                 {
                     continue;
                 }

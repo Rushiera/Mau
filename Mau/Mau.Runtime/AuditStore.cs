@@ -291,7 +291,7 @@ namespace Mau.Runtime
     }
     try
     {
-        return JsonSerializer.Serialize(list);
+        return JsonUtil.Serialize(list);
     }
     catch (Exception)
     {

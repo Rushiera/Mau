@@ -343,11 +343,11 @@ private static string BuildToolCallsJson(Dictionary<int, string> ids, Dictionary
                 }
                 // OpenAI wire 标准：{"id","type":"function","function":{"name","arguments"}}——function 为嵌套对象（判例：missing field function）
                 builder.Append("{\"id\":");
-                builder.Append(JsonSerializer.Serialize(ids[index]));
+                builder.Append(JsonUtil.Serialize(ids[index]));
                 builder.Append(",\"type\":\"function\",\"function\":{\"name\":");
-                builder.Append(JsonSerializer.Serialize(names[index]));
+                builder.Append(JsonUtil.Serialize(names[index]));
                 builder.Append(",\"arguments\":");
-                builder.Append(JsonSerializer.Serialize(args[index].ToString()));
+                builder.Append(JsonUtil.Serialize(args[index].ToString()));
                 builder.Append("}}");
             }
             builder.Append("]");

@@ -649,7 +649,7 @@ namespace CH4
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
             if (_httpHost != null)
             {
-                string userJson = "{\"content\":" + JsonSerializer.Serialize(content) + ",\"source\":\"" + source + "\"}";
+                string userJson = "{\"content\":" + JsonUtil.Serialize(content) + ",\"source\":\"" + source + "\"}";
                 _httpHost.PushView("user", userJson, -1, 0);
             }
             DataBox.Set<string>("global", "chat_state", "working");
@@ -691,7 +691,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
             LogStore.Add("LLM", 2, "空回复续传 第" + _emptyReplyRetry.ToString() + "/∞ 次（" + reason + "）——同上下文重发", "LLM");
             if (_httpHost != null)
             {
-                string retryView = "{\"state\":\"retrying\",\"attempt\":\"" + _emptyReplyRetry.ToString() + "\",\"max\":\"" + "∞" + "\",\"text\":" + JsonSerializer.Serialize(reason) + "}";
+                string retryView = "{\"state\":\"retrying\",\"attempt\":\"" + _emptyReplyRetry.ToString() + "\",\"max\":\"" + "∞" + "\",\"text\":" + JsonUtil.Serialize(reason) + "}";
                 _retrySeq = _httpHost.PushView("retry", retryView, -1, _retrySeq);
                 _sawRetry = true;
             }
@@ -731,7 +731,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                         // P6 外观层转发——LLM 增量实时推送 SSE（协议 §4.2 llm 事件）
                         if (_httpHost != null)
                         {
-                            string streamTextJson = "{\"kind\":\"text\",\"text\":" + JsonSerializer.Serialize(ev.Text) + "}";
+                            string streamTextJson = "{\"kind\":\"text\",\"text\":" + JsonUtil.Serialize(ev.Text) + "}";
                             _textStreamSeq = _httpHost.PushView("stream", streamTextJson, -1, _textStreamSeq);
                         }
                     }
@@ -752,7 +752,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                         PhaseEnter(PhaseThink);
                         if (_httpHost != null)
                         {
-                            string streamReasonJson = "{\"kind\":\"reasoning\",\"text\":" + JsonSerializer.Serialize(ev.Text) + "}";
+                            string streamReasonJson = "{\"kind\":\"reasoning\",\"text\":" + JsonUtil.Serialize(ev.Text) + "}";
                             _reasonStreamSeq = _httpHost.PushView("stream", streamReasonJson, -1, _reasonStreamSeq);
                         }
                     }
@@ -804,7 +804,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                                 }
                                 reason = parts[2];
                             }
-                            string retryView = "{\"state\":\"retrying\",\"attempt\":\"" + attempt + "\",\"max\":\"" + max + "\",\"text\":" + JsonSerializer.Serialize(reason) + "}";
+                            string retryView = "{\"state\":\"retrying\",\"attempt\":\"" + attempt + "\",\"max\":\"" + max + "\",\"text\":" + JsonUtil.Serialize(reason) + "}";
                             _retrySeq = _httpHost.PushView("retry", retryView, -1, _retrySeq);
                         }
                     }
@@ -845,7 +845,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                         }
                         else if (_httpHost != null)
                         {
-                            string errCtrl = "{\"type\":\"error\",\"text\":" + JsonSerializer.Serialize(ev.Text) + "}";
+                            string errCtrl = "{\"type\":\"error\",\"text\":" + JsonUtil.Serialize(ev.Text) + "}";
                             _httpHost.PushView("control", errCtrl, -1, 0);
                         }
                     }
@@ -868,9 +868,16 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 llmSummary = llmSummary + "。Token 统计：输入 " + _usagePrompt.ToString() + "（含缓存 " + _usageCacheHit.ToString() + "）· 输出 " + _usageCompletion.ToString();
                 LogStore.Add("LLM", 0, llmSummary, "LLM");
             }
-            catch (System.OperationCanceledException)
+            catch (System.OperationCanceledException ex)
             {
                 // P6 中止——用户暂停取消流：不置错误（PumpLlm 检查 _pauseRequested 走收尾）
+                // 超时兜底——HttpClient.Timeout（60s）抛 TaskCanceledException（OCE 子类）也走此分支：非暂停请求的取消 = 超时/物理中断 → 置位续传（不静默吞并）
+                if (!_pauseRequested)
+                {
+                    _llmError = true;
+                    _streamClosedRetry = true;
+                    _llmErrorText = "ERR|STREAM_CLOSED|SSE 流请求取消（超时/物理中断）: " + ex.GetType().Name;
+                }
             }
             catch (Exception ex)
             {
@@ -878,7 +885,16 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 if (!_pauseRequested)
                 {
                     _llmError = true;
-                    _llmErrorText = "ERR|" + ex.GetType().Name + "|" + ex.Message;
+                    // 空回复续传——网络物理中断（连接重置/代理断连/IO 抖动）与优雅断流（EOF 无 [DONE]）同语义：置位续传（TranslateSse 迭代器内异常无法事件化——消费层兜底）
+                    if (ex is System.Net.Http.HttpRequestException || ex is System.IO.IOException || ex is System.Net.Sockets.SocketException)
+                    {
+                        _streamClosedRetry = true;
+                        _llmErrorText = "ERR|STREAM_CLOSED|SSE 流物理中断: " + ex.GetType().Name + "|" + ex.Message;
+                    }
+                    else
+                    {
+                        _llmErrorText = "ERR|" + ex.GetType().Name + "|" + ex.Message;
+                    }
                 }
             }
             finally
@@ -1032,7 +1048,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 _viewStore.OnAssistantText(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                 if (_httpHost != null)
                 {
-                    string textJson = "{\"content\":" + JsonSerializer.Serialize(_llmResultText) + ",\"msgIndex\":" + (_context.GetMessageCount() - 1).ToString() + "}";
+                    string textJson = "{\"content\":" + JsonUtil.Serialize(_llmResultText) + ",\"msgIndex\":" + (_context.GetMessageCount() - 1).ToString() + "}";
                     _httpHost.PushView("text", textJson, _textStreamSeq, 0);
                 }
                 _textStreamSeq = 0;
@@ -1046,7 +1062,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                     _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                     if (_httpHost != null)
                     {
-                        string userJson = "{\"content\":" + JsonSerializer.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
+                        string userJson = "{\"content\":" + JsonUtil.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
                         _httpHost.PushView("user", userJson, -1, 0);
                     }
                     _round = 0;
@@ -1062,13 +1078,13 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
             _viewStore.OnAssistantToolCalls(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             if (_httpHost != null && _llmReasoning.Length > 0)
             {
-                string reasonJson = "{\"content\":" + JsonSerializer.Serialize(_llmReasoning) + "}";
+                string reasonJson = "{\"content\":" + JsonUtil.Serialize(_llmReasoning) + "}";
                 _httpHost.PushView("reason", reasonJson, _reasonStreamSeq, 0);
             }
             // 工具轮 seal——流式文本容器整块替换（对齐纯文本轮 seal 语义；空文本不推——前端不建空气泡）
             if (_httpHost != null && _llmResultText.Length > 0)
             {
-                string sealTextJson = "{\"content\":" + JsonSerializer.Serialize(_llmResultText) + ",\"msgIndex\":-1}";
+                string sealTextJson = "{\"content\":" + JsonUtil.Serialize(_llmResultText) + ",\"msgIndex\":-1}";
                 _httpHost.PushView("text", sealTextJson, _textStreamSeq, 0);
             }
             _reasonStreamSeq = 0;
@@ -1208,7 +1224,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                         map[p.Name] = p.Value.Clone();
                     }
                     map["catId"] = _id;
-                    return JsonSerializer.Serialize(map);
+                    return JsonUtil.Serialize(map);
                 }
             }
             catch (Exception)
@@ -1275,7 +1291,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 if (_httpHost != null)
                 {
                     string toolSummary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, dog.Result);
-                    string toolJson = "{\"name\":" + JsonSerializer.Serialize(dog.Name) + ",\"arguments\":" + JsonSerializer.Serialize(TruncateText(dog.ArgsJson, 200)) + ",\"result\":" + JsonSerializer.Serialize(TruncateText(dog.Result, 300)) + ",\"summary\":" + JsonSerializer.Serialize(toolSummary) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
+                    string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(TruncateText(dog.ArgsJson, 200)) + ",\"result\":" + JsonUtil.Serialize(TruncateText(dog.Result, 300)) + ",\"summary\":" + JsonUtil.Serialize(toolSummary) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
                 _httpHost.PushView("toolcard", toolJson, -1, 0);
                 }
                 _context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);
@@ -1290,7 +1306,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                 if (_httpHost != null)
                 {
-                    string userJson = "{\"content\":" + JsonSerializer.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
+                    string userJson = "{\"content\":" + JsonUtil.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
                 _httpHost.PushView("user", userJson, -1, 0);
                 }
                 _round = 0;
@@ -1351,8 +1367,8 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 _httpHost.PushView("control", doneJson, -1, 0);
             }
             LogStore.Add("CatHome4", 1, "会话前文已落盘（" + _context.GetMessageCount().ToString() + " 条消息）", "SYS");
-            // M4a Note 自动拉起——剩余 ≥2 条以 user 名义推下一轮；仅剩 1 条清空（防无限循环闸门——CH2 语义）
-            if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent < _noteTasks.Length - 1)
+            // M4a Note 自动拉起——还有未完成任务（含最后一条）以 user 名义推下一轮；全部完成（ExecuteNote 已置 null）天然跳过（防无限循环闸门——CH2 语义）
+            if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent < _noteTasks.Length)
             {
                 int remain = _noteTasks.Length - _noteCurrent;
                 PostUserMessage("[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent], "system");
@@ -1425,6 +1441,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
             _noteTasks = null;
             _noteCurrent = 0;
             _noteDone = 0;
+            _noteJustCompleted = false;
             PushNoteState();
             // [段6] 前端通知——session_reset（前端清空气泡重拉 history；渲染层零改动）
             PushSessionReset();

@@ -477,6 +477,73 @@ public string ReadLinesAuto(string path, int startLine, int endLine)
     return builder.ToString();
 }
         /// <summary>
+        /// <summary>忽略目录名单——递归遍历时跳过（.git/bin/obj 等版本控制/编译产物；精确匹配目录名忽略大小写；显式以忽略名为根的查询不受影响——Q4 2026-09-08）</summary>
+        private static readonly string[] IgnoredDirNames = new string[]
+        {
+            ".git", "bin", "obj", "node_modules", ".vs", "dist", "build", "out", ".idea"
+        };
+
+        /// <summary>
+        /// 目录名是否在忽略名单——递归遍历跳过判断（根目录本身不校验）。
+        /// </summary>
+        /// <param name="name">目录名</param>
+        /// <returns>true=应跳过</returns>
+        private static bool IsIgnoredDir(string name)
+        {
+            for (int i = 0; i < IgnoredDirNames.Length; i = i + 1)
+            {
+                if (string.Equals(name, IgnoredDirNames[i], StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 收集 .git 特征行——HEAD 指向 + 本地分支 commit（零外部依赖：直读 HEAD + refs/ 文件；detached HEAD 回退 HEAD 原文）。
+        /// </summary>
+        /// <param name="rel">相对根路径（含 .git）</param>
+        /// <param name="gitDir">.git 绝对路径</param>
+        /// <returns>[git] 特征行——SummarizeFileTree 识别前缀不计入文件统计</returns>
+        private static string CollectGitInfo(string rel, string gitDir)
+        {
+            string head = "";
+            try
+            {
+                head = File.ReadAllText(Path.Combine(gitDir, "HEAD")).Trim();
+            }
+            catch (Exception)
+            {
+                // HEAD 不可读——按空处理（无特征可报）
+            }
+            if (head.StartsWith("ref:", StringComparison.Ordinal))
+            {
+                string branch = head.Substring(4).Trim();
+                string commit = "";
+                string refPath = Path.Combine(gitDir, branch.Replace('/', Path.DirectorySeparatorChar));
+                try
+                {
+                    commit = File.ReadAllText(refPath).Trim();
+                }
+                catch (Exception)
+                {
+                    // ref 文件缺失（packed-refs 场景）——仅报 HEAD 指向
+                }
+                if (commit.Length > 7)
+                {
+                    commit = commit.Substring(0, 7);
+                }
+                return "[git] 存在 .git（" + rel + "——HEAD: " + branch + (commit.Length > 0 ? " → " + commit : "") + "）";
+            }
+            // detached HEAD——HEAD 即 commit
+            if (head.Length > 7)
+            {
+                head = head.Substring(0, 7);
+            }
+            return "[git] 存在 .git（" + rel + "——HEAD: " + head + "）";
+        }
+
         /// 按深度和数量上限列出稳定排序目录树
         /// </summary>
         /// <param name="path">受控目录</param>
@@ -495,7 +562,13 @@ public string ReadLinesAuto(string path, int startLine, int endLine)
                 throw new DirectoryNotFoundException("Tree root was not found.");
             }
             List<string> output = new List<string>();
-            AppendTree(root, root, depth, limit, output);
+            List<string> gitLines = new List<string>();
+            AppendTree(root, root, depth, limit, output, gitLines);
+            // Q4 git 特征提示——[git] 前缀行追加末尾（SummarizeFileTree 识别前缀不计入文件统计；多 .git 多行）
+            for (int i = 0; i < gitLines.Count && output.Count < limit; i = i + 1)
+            {
+                output.Add(gitLines[i]);
+            }
             return output.ToArray();
         }
 
@@ -515,12 +588,19 @@ public string ReadLinesAuto(string path, int startLine, int endLine)
             }
             string root = Resolve(directory, false);
             List<string> files = new List<string>();
-            AppendFind(root, root, pattern, recursive, limit, files);
+            int ignoredDirs = 0;
+            AppendFind(root, root, pattern, recursive, limit, files, ref ignoredDirs);
             files.Sort(StringComparer.OrdinalIgnoreCase);
-            string[] result = new string[files.Count];
+            int extra = ignoredDirs > 0 ? 1 : 0;
+            string[] result = new string[files.Count + extra];
             for (int i = 0; i < files.Count; i = i + 1)
             {
                 result[i] = Path.GetRelativePath(root, files[i]);
+            }
+            if (ignoredDirs > 0)
+            {
+                // Q4 忽略目录提示——不静默（find 与 tree 一致：忽略目录内条目不列出但计数可见）
+                result[files.Count] = "[skip] " + ignoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——条目在其内已跳过";
             }
             return result;
         }
@@ -542,7 +622,8 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
     string root = Resolve(directory, false);
     string filter = (string.IsNullOrWhiteSpace(pattern) || pattern == "*") ? "*" : pattern;
     List<string> files = new List<string>();
-    AppendFind(root, root, filter, true, 10000, files);
+    int ignoredDirs = 0;
+    AppendFind(root, root, filter, true, 10000, files, ref ignoredDirs);
     List<string> hits = new List<string>();
     for (int i = 0; i < files.Count && hits.Count < limit; i = i + 1)
     {
@@ -576,6 +657,12 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
         {
         // 不可读文件（二进制/权限）跳过——grep 只扫可读文本
         }
+    }
+
+    if (ignoredDirs > 0)
+    {
+        // Q4 忽略目录提示——不静默（grep 与 tree/find 一致：忽略目录内不扫描但计数可见）
+        hits.Add("[skip] " + ignoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——匹配条目在其内已跳过");
     }
 
     return hits.ToArray();
@@ -700,7 +787,7 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
         /// <param name="limit">结果上限</param>
         /// <param name="output">绝对文件路径</param>
         private void AppendFind(string root, string current, string pattern,
-            bool recursive, int limit, List<string> output)
+            bool recursive, int limit, List<string> output, ref int ignoredDirs)
 {
             // [段0] **/ 目录通配前缀——剥前缀 + 强制递归（text-find 的 **/*.txt 语义；连续段剥净；剥空回退 *）
             string dirWild = "**/";
@@ -740,8 +827,14 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
                 {
                     continue;
                 }
+                // Q4 忽略目录——跳过（.git/bin/obj 等；计数提示——不静默）
+                if (IsIgnoredDir(Path.GetFileName(directories[i])))
+                {
+                    ignoredDirs = ignoredDirs + 1;
+                    continue;
+                }
                 PathBoundary.ResolveOwnedPath(root, directories[i]);
-                AppendFind(root, directories[i], pattern, true, limit, output);
+                AppendFind(root, directories[i], pattern, true, limit, output, ref ignoredDirs);
             }
         }
         /// <summary>
@@ -752,7 +845,7 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
         /// <param name="depth">剩余深度</param>
         /// <param name="limit">条数上限</param>
         /// <param name="output">输出列表</param>
-        private void AppendTree(string root, string current, int depth, int limit, List<string> output)
+        private void AppendTree(string root, string current, int depth, int limit, List<string> output, List<string> gitLines)
 {
             if (output.Count >= limit)
             {
@@ -763,16 +856,26 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
             for (int i = 0; i < entries.Length && output.Count < limit; i = i + 1)
             {
                 string rel = Path.GetRelativePath(root, entries[i]);
+                bool isDir = Directory.Exists(entries[i]);
+                // Q4 忽略目录——.git 记录特征行（不列出），其余忽略名单目录静默跳过（子项不展开；显式以忽略名为根不受影响）
+                if (isDir && IsIgnoredDir(Path.GetFileName(entries[i])))
+                {
+                    if (string.Equals(Path.GetFileName(entries[i]), ".git", StringComparison.OrdinalIgnoreCase))
+                    {
+                        gitLines.Add(CollectGitInfo(rel, entries[i]));
+                    }
+                    continue;
+                }
                 // 目录行尾加 "/" 标记——消费面（ToolSummaryFormatter.SummarizeFileTree）按尾斜杠区分目录/文件
-                if (Directory.Exists(entries[i]))
+                if (isDir)
                 {
                     rel = rel + "/";
                 }
                 output.Add(rel);
-                if (depth > 0 && Directory.Exists(entries[i])
+                if (depth > 0 && isDir
                     && !PathBoundary.IsReparsePoint(entries[i]))
                 {
-                    AppendTree(root, entries[i], depth - 1, limit, output);
+                    AppendTree(root, entries[i], depth - 1, limit, output, gitLines);
                 }
             }
         }

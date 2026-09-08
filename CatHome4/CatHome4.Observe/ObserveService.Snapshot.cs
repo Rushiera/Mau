@@ -43,7 +43,7 @@ namespace CatHome4.Observe
                 },
                 cats = cats
             };
-            return JsonSerializer.Serialize(frame);
+            return JsonUtil.Serialize(frame);
         }
 
         /// <summary>
@@ -226,7 +226,7 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
             boxes = boxes,
             logs = logs
         };
-        return JsonSerializer.Serialize(snapshot);
+        return JsonUtil.Serialize(snapshot);
     }
 
     /// <summary>
@@ -356,11 +356,11 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
         // [段1] cats 段——整段序列化对比（状态转移才变，频率低）
         List<object> cats = new List<object>();
         AppendRegistryCats(cats);
-        string catsJson = JsonSerializer.Serialize(cats);
+        string catsJson = JsonUtil.Serialize(cats);
         bool catsChanged = !string.Equals(catsJson, _lastCatsJson, StringComparison.Ordinal);
         // [段1b] sessions 段——整段序列化对比（会话四相环/轮次/消息数变化推送）
         List<object> sessions = BuildSessionsJson();
-        string sessionsJson = JsonSerializer.Serialize(sessions);
+        string sessionsJson = JsonUtil.Serialize(sessions);
         bool sessionsChanged = !string.Equals(sessionsJson, _lastSessionsJson, StringComparison.Ordinal);
         // [段2] oa 段——四计数对比
         OAView oa = _oa.GetSnapshot();
@@ -371,7 +371,7 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
             closed = oa.ClosedCount,
             timeout = oa.TimeoutCount
         };
-        string oaJson = JsonSerializer.Serialize(oaObj);
+        string oaJson = JsonUtil.Serialize(oaObj);
         bool oaChanged = !string.Equals(oaJson, _lastOaJson, StringComparison.Ordinal);
         // [段3] boxes 段——字典 diff（scope+key → 条目 JSON；新增/变化进 set，消失进 del）
         DataBoxSnapshot boxSnap = DataBox.Capture();
@@ -384,7 +384,7 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
                 continue;
             }
             string entryKey = d.Scope + "\u0001" + d.Key;
-            boxesNow[entryKey] = JsonSerializer.Serialize(BuildBoxEntry(d));
+            boxesNow[entryKey] = JsonUtil.Serialize(BuildBoxEntry(d));
         }
         List<object> boxSet = new List<object>();
         List<object> boxDel = new List<object>();
@@ -437,7 +437,7 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
             };
             _lastBoxes = boxesNow;
         }
-        return JsonSerializer.Serialize(patch);
+        return JsonUtil.Serialize(patch);
     }
 }
 }

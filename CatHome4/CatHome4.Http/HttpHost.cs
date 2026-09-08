@@ -89,6 +89,9 @@ namespace CatHome4.Http
         /// <summary>html 根解析——入口壳注入（源码区优先 + 部署区回退——Program.ResolveHtmlRoot 适配）</summary>
         private IHtmlRootProvider _htmlRootProvider;
 
+        /// <summary>页面标题——快照注入 title 字段（Q6 2026-09-08：displayName · Chat；前端初始化 fetch 快照直接用；null=不注入）</summary>
+        private string _pageTitle;
+
         /// <summary>快照推送间隔毫秒——250ms（协议 §4.2 snapshot 事件）</summary>
         private const int SnapshotIntervalMs = 250;
 
@@ -107,8 +110,9 @@ namespace CatHome4.Http
         /// <param name="serveChatPage">静态页模式（true=chat.html / false=index.html）</param>
         /// <param name="routeRegistrar">管理路由注册回调（IHttpRouteSink——Admin 域注册 llm-apis/qqbot-apis/workspace 等；仅主端口传入）</param>
         /// <param name="htmlRootProvider">html 根解析（源码区优先 + 部署区回退——Program.ResolveHtmlRoot 适配）</param>
+        /// <param name="displayName">页面标题展示名（Q6：快照注入 title = displayName · Chat；null=不注入——主端口管理面）</param>
         /// <returns>HttpHost 实例</returns>
-        public static HttpHost Start(int port, string sessionId, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher, Func<string> frameBuilder, Func<int, string> historyBuilder, Func<string> catsBuilder, Func<string> noteBuilder, Func<string> patchBuilder, bool serveChatPage, Action<IHttpRouteSink> routeRegistrar, IHtmlRootProvider htmlRootProvider)
+        public static HttpHost Start(int port, string sessionId, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher, Func<string> frameBuilder, Func<int, string> historyBuilder, Func<string> catsBuilder, Func<string> noteBuilder, Func<string> patchBuilder, bool serveChatPage, Action<IHttpRouteSink> routeRegistrar, IHtmlRootProvider htmlRootProvider, string displayName = null)
         {
             HttpHost host = new HttpHost();
             host._port = port;
@@ -123,6 +127,10 @@ namespace CatHome4.Http
             host._serveChatPage = serveChatPage;
             host._routeRegistrar = routeRegistrar;
             host._htmlRootProvider = htmlRootProvider;
+            if (displayName != null && displayName.Length > 0)
+            {
+                host._pageTitle = displayName + " · Chat";
+            }
             host.BuildApp();
             host._pumpCts = new CancellationTokenSource();
             host._pumpTask = Task.Run(delegate

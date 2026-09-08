@@ -220,8 +220,10 @@
         }
         loadUiVersion();
     </script>
-    <!-- 2026-08-25 模块化拆分——JS 二域外置（加载顺序：app 公共 → panel 管理；对话已迁 chat.html 独立页——F2.1 index 纯管理面）；__V__ 宿主注入版本号（cache-busting） -->
+    <!-- 2026-09-08 体量治理——JS 四域外置（加载顺序：app 公共 → panel 多猫 → panel-apis API/QQBot 池 → panel-catcfg 每猫配置/受控根；对话已迁 chat.html 独立页——F2.1 index 纯管理面）；__V__ 宿主注入版本号（cache-busting） -->
     <script src="js/app.js?v=__V__"></script>
     <script src="js/panel.js?v=__V__"></script>
+    <script src="js/panel-apis.js?v=__V__"></script>
+    <script src="js/panel-catcfg.js?v=__V__"></script>
 </body>
 </html>

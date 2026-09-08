@@ -1097,9 +1097,9 @@ namespace CatHome4.Admin
                 }
                 string norm = WorkspaceConfig.NormalizeRoot(input.Path);
                 sb.Append("{\"id\":");
-                sb.Append(JsonSerializer.Serialize(input.Id));
+                sb.Append(JsonUtil.Serialize(input.Id));
                 sb.Append(",\"path\":");
-                sb.Append(JsonSerializer.Serialize(norm.Replace('\\', '/')));
+                sb.Append(JsonUtil.Serialize(norm.Replace('\\', '/')));
                 sb.Append(",\"writable\":");
                 sb.Append(input.Writable ? "true" : "false");
                 sb.Append("}");
@@ -1258,7 +1258,7 @@ namespace CatHome4.Admin
             };
             try
             {
-                ConfigStore.AtomicWrite(path, JsonSerializer.Serialize(payload));
+                ConfigStore.AtomicWrite(path, JsonUtil.Serialize(payload));
             }
             catch (Exception ex)
             {

@@ -170,7 +170,7 @@ private string BuildChatRequestBody(LlmMessage[] messages, ToolSpec[] tools, str
             {
                 payload["user_id"] = userId;
             }
-            return JsonSerializer.Serialize(payload);
+            return JsonUtil.Serialize(payload);
         }
     }
 }

@@ -32,6 +32,26 @@ namespace CatHome4.Admin
         /// <summary>majordomo 独立对话端口 HttpHost——serveChatPage=true（F2.2 方案 A：与多猫同构；主端口 8080 保留管理面板）</summary>
         private static HttpHost _majorHost;
 
+        /// <summary>
+        /// 全部 HttpHost 主线程泵——主循环帧驱动（majordomo + 每猫；快照构建 ThreadGuard 须宿主主线程）。
+        /// Q6 修复（2026-09-08）：每猫/独立端口 HttpHost 的快照缓存从未被泵构建（恒 {}）→ 快照 title 注入不生效 → 前端标题/页头占位符。
+        /// </summary>
+        internal static void PumpAllHosts()
+        {
+            if (_majorHost != null)
+            {
+                _majorHost.PumpMainThread();
+            }
+            for (int i = 0; i < _cats.Count; i++)
+            {
+                HttpHost host = _cats[i].Host;
+                if (host != null)
+                {
+                    host.PumpMainThread();
+                }
+            }
+        }
+
         /// <summary>majordomo 独立对话端口——AllocatePort 分配（F2.2）</summary>
         private static int _majorPort = -1;
 
@@ -956,7 +976,8 @@ namespace CatHome4.Admin
                 null,
                 true,
                 null,
-                HtmlRoot);
+                HtmlRoot,
+                cat.DisplayName);
         }
 
         /// <summary>
@@ -989,7 +1010,8 @@ namespace CatHome4.Admin
                 null,
                 true,
                 null,
-                HtmlRoot);
+                HtmlRoot,
+                _chatBridge.DefaultSession.DisplayName);
             _majorHost = host;
             _majorPort = port;
             // 会话事件推送改绑 majordomo 独立对话端口（主端口 index.html 管理面板不再消费 chat 事件——F2.1）
@@ -1189,7 +1211,7 @@ namespace CatHome4.Admin
                 version = 1,
                 cats = list
             };
-            return JsonSerializer.Serialize(resp);
+            return JsonUtil.Serialize(resp);
         }
 
         /// <summary>

@@ -130,7 +130,7 @@ namespace CH4
             resp["stderr"] = errText;
             resp["truncated"] = outTrunc || errTrunc;
             resp["timeout"] = timeout;
-            return JsonSerializer.Serialize(resp);
+            return Mau.Runtime.JsonUtil.Serialize(resp);
         }
 
         /// <summary>

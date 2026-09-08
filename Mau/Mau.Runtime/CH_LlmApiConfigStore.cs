@@ -58,6 +58,7 @@ namespace Mau.Runtime
             CH_LlmApiConfigStore_JsonOptions = new JsonSerializerOptions();
             CH_LlmApiConfigStore_JsonOptions.IncludeFields = true;
             CH_LlmApiConfigStore_JsonOptions.WriteIndented = true;
+            CH_LlmApiConfigStore_JsonOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;   // 中文直出（2026-09-08 全局统一）
             CH_LlmApiConfigStore_JsonOptions.PropertyNamingPolicy =
                 JsonNamingPolicy.CamelCase;
         }

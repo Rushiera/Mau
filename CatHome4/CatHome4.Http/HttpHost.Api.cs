@@ -83,7 +83,7 @@ namespace CatHome4.Http
                     cmdId = cmdId,
                     frame = frame
                 };
-                PushEvent("cmd", JsonSerializer.Serialize(resp));
+                PushEvent("cmd", JsonUtil.Serialize(resp));
                 return Results.Json(resp);
             }
             var fail = new
@@ -93,7 +93,7 @@ namespace CatHome4.Http
                 frame = frame,
                 error = "指令未识别: " + text
             };
-            PushEvent("cmd", JsonSerializer.Serialize(fail));
+            PushEvent("cmd", JsonUtil.Serialize(fail));
             return Results.Json(fail);
         }
 
@@ -192,7 +192,7 @@ namespace CatHome4.Http
                     LogStore.LogEntry entry = logs[i];
                     list.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, message = entry.Message });
                 }
-                return JsonSerializer.Serialize(list);
+                return JsonUtil.Serialize(list);
             }
         }
 

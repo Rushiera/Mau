@@ -2,12 +2,12 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>CH4 Cat 对话</title>
+    <title>Cat Chat</title>
     <link rel="stylesheet" href="css/chat.css?v=__V__">
 </head>
 <body>
     <div id="chatbar">
-        <span class="sid">CH4 Cat</span>
+        <span class="sid" id="chatTitle">—</span>
         <span id="chatInfo">—</span>
         <span style="flex:1"></span>
         <span id="uiVer" data-version title="前端版本——每次 Vitest 自动递增 + 最后更新时间">UI v?</span>
@@ -16,19 +16,19 @@
         <button id="chatRefresh" title="刷新——重建界面气泡（纯前端）">刷新</button>
     </div>
     <div id="chatMsgs"></div>
-    <!-- M4c Note 面板——Agent 与人交互的工作进度面板 -->
-    <div id="notePanel" class="collapsed">
-        <div id="noteHead">
-            <span id="noteTitle">Note</span>
-            <span id="noteToggleBtn">▸</span>
-        </div>
-        <div id="noteBody">
+    <!-- M4c Note——Q3 v2（2026-09-08）：输入区上方按钮 + 点击展开气泡区域（popover 贴按钮上方；再点按钮/点外部收起——高度变化零影响聊天区） -->
+    <div id="noteWrap" class="note-wrap">
+        <div id="notePopover" class="note-popover" style="display:none">
+            <div class="note-popover-head"><span id="noteTitle">Note</span></div>
             <div id="noteList"></div>
             <div id="noteAddRow">
                 <input id="noteAddInput" placeholder="新增任务…（Enter 提交）">
                 <button id="noteAddBtn">＋</button>
                 <button id="noteStartBtn" title="把 Note 计划拼接进度推给 LLM 开始执行">开始 Note</button>
             </div>
+        </div>
+        <div id="noteBubble" class="note-bubble" title="Note 工作进度——点击展开/收起">
+            <span id="noteBubbleText">Note · 空</span>
         </div>
     </div>
     <!-- 单向数据流改造——插话队列显示区（纯展示；正常流堆叠，对话区自动上移） -->
@@ -40,9 +40,10 @@
     <!-- E 系列——状态区（四态计时 + Token 统计）：最底部持久存在 -->
     <div id="chatStatus"></div>
 
-    <!-- F2.3 引导层——对话核心逻辑在外部模块（js/chat-core.js + js/chat-note.js——对话逻辑唯一真相源）；本页只承接引导：applyUiConfig/SSE/按钮绑定（防御式）/初始化 -->
-    <!-- F3 MD 渲染——chat-md.js 手写解析器（纯函数，无依赖），必须先于 chat-core.js 加载（chatOnText 调用 mdToHtml） -->
+    <!-- F2.3 引导层——对话核心逻辑在外部模块（js/chat-md.js 渲染器 + js/chat-view.js 渲染面 + js/chat-core.js 状态分发 + js/chat-note.js——对话逻辑唯一真相源）；本页只承接引导：applyUiConfig/SSE/按钮绑定（防御式）/初始化 -->
+    <!-- F3 MD 渲染——chat-md.js 手写解析器（纯函数，无依赖），必须先于 chat-view/chat-core 加载（chatOnText 调用 mdToHtml） -->
     <script src="js/chat-md.js?v=__V__"></script>
+    <script src="js/chat-view.js?v=__V__"></script>
     <script src="js/chat-core.js?v=__V__"></script>
     <script src="js/chat-note.js?v=__V__"></script>
     <script>
@@ -100,8 +101,8 @@
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chatSend(); }
             });
         }
-        var elNoteHead = document.getElementById('noteHead');
-        if (elNoteHead) { elNoteHead.addEventListener('click', noteToggle); }
+        var elNoteBubble = document.getElementById('noteBubble');
+        if (elNoteBubble) { elNoteBubble.addEventListener('click', function (e) { e.stopPropagation(); noteToggle(); }); }
         var elNoteAddBtn = document.getElementById('noteAddBtn');
         if (elNoteAddBtn) { elNoteAddBtn.addEventListener('click', noteAdd); }
         var elNoteAddInput = document.getElementById('noteAddInput');
@@ -112,6 +113,19 @@
         }
         var elNoteStartBtn = document.getElementById('noteStartBtn');
         if (elNoteStartBtn) { elNoteStartBtn.addEventListener('click', noteStart); }
+        // Q6 页面标题——快照 title 字段（displayName · Chat；SSE snapshot 事件实时应用 + 初始化兜底 fetch；前端零业务逻辑）
+        function chatApplyTitle(t) {
+            if (!t) { return; }
+            document.title = t;
+            var st = document.getElementById('chatTitle');
+            if (st) { st.textContent = t; }
+        }
+        es.addEventListener('snapshot', function (ev) {
+            try { chatApplyTitle(JSON.parse(ev.data).title); } catch (e) { }
+        });
+        fetch('/api/v1/snapshot').then(function (r) { return r.json(); }).then(function (snap) {
+            chatApplyTitle(snap.title);
+        }).catch(function () { });
 
         // [段4] 初始化——历史加载 + Note 兜底拉取 + 前端版本填充
         chatLoadHistory();

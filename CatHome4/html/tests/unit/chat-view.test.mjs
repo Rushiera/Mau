@@ -19,11 +19,13 @@ beforeAll(async () => {
   globalThis.document = chatDom.window.document;
   globalThis.Node = chatDom.window.Node;
   globalThis.HTMLElement = chatDom.window.HTMLElement;
-  // F2.4 门禁迁移——加载外部模块（对话核心 + Note 面板 + F3 MD 解析器；不执行引导层 SSE/按钮绑定/初始化）
+  // F2.4 门禁迁移——加载外部模块（MD 解析器 + 渲染面 + 对话核心 + Note 面板；不执行引导层 SSE/按钮绑定/初始化）
   const md = await readFile(new URL('../../js/chat-md.js', import.meta.url), 'utf-8');
+  const view = await readFile(new URL('../../js/chat-view.js', import.meta.url), 'utf-8');
   const core = await readFile(new URL('../../js/chat-core.js', import.meta.url), 'utf-8');
   const note = await readFile(new URL('../../js/chat-note.js', import.meta.url), 'utf-8');
   vm.runInThisContext(md, { filename: 'chat-md.js' });
+  vm.runInThisContext(view, { filename: 'chat-view.js' });
   vm.runInThisContext(core, { filename: 'chat-core.js' });
   vm.runInThisContext(note, { filename: 'chat-note.js' });
   chatMsgs = document.getElementById('chatMsgs');
@@ -342,34 +344,42 @@ test('user 事件渲染用户气泡（含插话队列 FIFO 移除）', () => {
   expect(window.chatPending.length).toBe(0);
 });
 
-// ── Note 面板（F2.4 补盲区——chat-note.js）──
+// ── Note 面板（F2.4 补盲区——chat-note.js；Q3 重构：悬浮气泡 + 居中 modal）──
 test('Note 面板：空态/渲染三态 + 展开收起', () => {
   // 空态
-  window.noteState = { tasks: [], current: 0, done: 0 };
+  window.noteState = { tasks: [], current: 0, done: 0, justCompleted: false };
   window.noteRender();
   expect(document.getElementById('noteTitle').textContent).toBe('Note · 空');
+  expect(document.getElementById('noteBubbleText').textContent).toBe('Note · 空');
   // 三态渲染
   window.noteState = { tasks: ['任务A', '任务B', '任务C'], current: 1, done: 1 };
   window.noteRender();
   expect(document.getElementById('noteTitle').textContent).toBe('Note (2/3)');
+  expect(document.getElementById('noteBubbleText').textContent).toContain('Note 2/3');
   const rows2 = document.querySelectorAll('#noteList .note-row');
   expect(rows2.length).toBe(3);
   expect(rows2[0].classList.contains('done')).toBe(true);
   expect(rows2[1].classList.contains('current')).toBe(true);
-  // 展开收起
-  window.noteExpanded = false;
+  // 展开收起（popover 显示/隐藏）
+  window.noteModalOpen = false;
   window.noteToggle();
-  expect(document.getElementById('notePanel').classList.contains('collapsed')).toBe(false);
+  expect(document.getElementById('notePopover').style.display).toBe('block');
   window.noteToggle();
-  expect(document.getElementById('notePanel').classList.contains('collapsed')).toBe(true);
+  expect(document.getElementById('notePopover').style.display).toBe('none');
 });
 
-test('Note 事件——计划存在自动展开面板', () => {
-  window.noteExpanded = false;
-  document.getElementById('notePanel').classList.add('collapsed');
+test('Note 完成态——justCompleted 显示 🎉 全部完成（Q7 外观层匹配）', () => {
+  window.noteState = { tasks: [], current: 0, done: 0, justCompleted: true };
+  window.noteRender();
+  expect(document.getElementById('noteBubbleText').textContent).toBe('🎉 全部完成');
+  expect(document.getElementById('noteTitle').textContent).toBe('Note · 全部完成');
+});
+
+test('Note 事件——计划存在自动展开 popover', () => {
+  window.noteModalOpen = false;
   window.noteOnEvent({ state: { tasks: ['计划'], current: 0, done: 0 } });
   expect(window.noteState.tasks.length).toBe(1);
-  expect(document.getElementById('notePanel').classList.contains('collapsed')).toBe(false);
+  expect(document.getElementById('notePopover').style.display).toBe('block');
 });
 
 // ── 失败流程（F2.4 迁移）──
@@ -507,13 +517,12 @@ test('control chatdone 在 chatPendingReset 置位时兜底重拉 history', asyn
 
 // ── 问题一修复：view/control note 分支（宿主经 PushView 推送 Note 状态——前端转交 noteOnEvent 重绘）──
 test('control note 分支——view 载荷更新 Note 面板', () => {
-  window.noteExpanded = false;
-  document.getElementById('notePanel').classList.add('collapsed');
+  window.noteModalOpen = false;
   window.chatOnView({ seq: 1, renderType: 'control', payload: { type: 'note', state: { tasks: ['前端任务'], current: 0, done: 0 } }, replaceSeq: -1 });
   expect(window.noteState.tasks.length).toBe(1);
   expect(window.noteState.tasks[0]).toBe('前端任务');
-  // 计划存在自动展开
-  expect(document.getElementById('notePanel').classList.contains('collapsed')).toBe(false);
+  // 计划存在自动展开 popover
+  expect(document.getElementById('notePopover').style.display).toBe('block');
   // 面板标题已重绘
   expect(document.getElementById('noteTitle').textContent).toBe('Note (1/1)');
 });

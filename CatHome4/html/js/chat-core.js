@@ -1,7 +1,8 @@
-﻿// CH4 外观层——chat-core.js：对话核心（view 协议渲染 + 四态状态条 + 发送 + 历史）——F2.3 自 chat.html 内联拆出（模块化；对话逻辑唯一真相源）
-// 加载顺序：chat-core.js → chat-note.js（chat.html 引导层引用）；不依赖 app.js（自包含 DOM 引用——独立对话页无 app.js）
+﻿// CH4 外观层——chat-core.js：对话核心（状态机 + view 事件分发 + 发送/新会话/暂停/刷新）——F2.3 自 chat.html 内联拆出（模块化；对话逻辑唯一真相源）
+// 加载顺序：chat-md.js → chat-view.js → chat-core.js → chat-note.js（chat.html 引导层引用）；不依赖 app.js（自包含 DOM 引用——独立对话页无 app.js）
 // 单向数据流铁律：SSE view/note 事件唯一渲染入口；发送走 command 总线；user 事件唯一气泡来源；前端零业务逻辑
 // SSE/按钮绑定/初始化由 chat.html 引导层承接（applyUiConfig + EventSource view/note + 防御式 addEventListener + chatLoadHistory）
+// 拆分（2026-09-08 体量治理）：渲染面（气泡/工具卡/注入报告/历史/roundsum）→ chat-view.js；本文件只保留状态与分发
 
 // [段1] 对话区状态（B4 同构——自 index.html 提取；P9.3d 独立对话页；F4 迁 view 协议）
 function escapeHtml(s) {
@@ -33,14 +34,6 @@ var chatPhaseStart = 0;            // 当前态开始时间戳（ms）
 var chatPhaseTimes = { link: 0, think: 0, tool: 0, reply: 0 };   // 各态已完成秒数（累计）
 var chatUsage = { prompt: 0, completion: 0, cacheHit: 0 };       // Token 整轮累计（usage 事件覆盖式累计）
 var chatStatusTimer = null;        // 状态条 500ms 刷新定时器
-
-// 计数格式化——大数转 k/M（≥1000 → x.xx k；≥1000000 → x.xx M；M 为最大单位；保留两位小数；sessionId 等标识不适用）
-function chatFmtCount(n) {
-    n = Number(n) || 0;
-    if (n >= 1000000) { return (n / 1000000).toFixed(2) + 'M'; }
-    if (n >= 1000) { return (n / 1000).toFixed(2) + 'k'; }
-    return String(n);
-}
 
 function chatPhaseEnter(key) {
     // 相位切换——前一态结算 + 新态起表（事件驱动；每态计时独立）
@@ -128,27 +121,6 @@ function chatScrollBottom(force) {
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
 }
 
-function chatBubble(role, cls) {
-    var row = document.createElement('div');
-    row.className = 'chat-row ' + role;
-    var b = document.createElement('div');
-    b.className = 'chat-bubble' + (cls ? ' ' + cls : '');
-    row.appendChild(b);
-    chatMsgs.appendChild(row);
-    chatScrollBottom();
-    return b;
-}
-
-function chatAppend(bubble, text) {
-    // 专用文本节点追加——textContent 拼接会销毁子元素（details/工具卡被后续 text 事件清空——B4.2 根因）
-    if (!bubble.textNode) {
-        bubble.textNode = document.createTextNode('');
-        bubble.insertBefore(bubble.textNode, bubble.firstChild);
-    }
-    bubble.textNode.data = bubble.textNode.data + text;
-    chatScrollBottom();
-}
-
 function chatKeepAlive() {
     if (chatTimer) { clearTimeout(chatTimer); }
     chatTimer = setTimeout(function () {
@@ -178,240 +150,6 @@ function chatSealTextStreams() {
             c.bubble.classList.remove('streaming-wait');
         }
     }
-}
-
-// 工具图标映射——CH2 CH_Tool_LLMToolDisplay.GetIcon 移植（CH4 连字符工具名适配）
-function chatToolIcon(name) {
-    var n = name || '';
-    if (n === 'text-read' || n === 'text-read_between' || n === 'text-read_lines') { return '📖'; }
-    if (n === 'text-write') { return '✏️'; }
-    if (n === 'text-append') { return '📎'; }
-    if (n === 'text-replace') { return '🔄'; }
-    if (n === 'text-find' || n === 'text-grep') { return '🔍'; }
-    if (n === 'text-tree') { return '🌲'; }
-    if (n === 'text-move') { return '📦'; }
-    if (n === 'text-delete') { return '🗑️'; }
-    if (n.indexOf('cs-') === 0) { return '🐎'; }
-    if (n.indexOf('config-') === 0) { return '⚙️'; }
-    if (n.indexOf('mau-') === 0) { return '🧱'; }
-    if (n === 'powershell') { return '💻'; }
-    if (n === 'web-search') { return '🌐'; }
-    if (n === 'image-analyze') { return '🖼️'; }
-    if (n === 'temp-info' || n === 'temp-exec') { return '🧪'; }
-    if (n === 'Note') { return '📋'; }
-    if (n === 'time') { return '🕐'; }
-    if (n === 'random') { return '🎲'; }
-    if (n === 'info') { return 'ℹ️'; }
-    if (n.indexOf('host-') === 0) { return '⚡'; }
-    return '🔹';
-}
-
-function chatToolCard(tool) {
-    // 工具卡——details 结构默认折叠（点击 summary 展开/收起；.tn/.ta/.tr 类保留——测试与样式复用）
-    var isErr = tool.result && tool.result.indexOf('ERR') === 0;
-    var det = document.createElement('details');
-    det.className = 'chat-tool' + (isErr ? ' err' : '');
-    det.open = false;
-    var sum = document.createElement('summary');
-    sum.className = 'tn';
-    // 工具前缀——对齐 CH2：并发批次显示 [icon n/m]；单次保持现状（🔧/⚠️）
-    var prefix;
-    if (isErr) {
-        prefix = (tool.toolTotal > 1) ? ('[⚠️ ' + (tool.toolIndex || '?') + '/' + tool.toolTotal + '] ') : '⚠️ ';
-    } else if (tool.toolTotal > 1) {
-        prefix = '[' + chatToolIcon(tool.name) + ' ' + (tool.toolIndex || '?') + '/' + tool.toolTotal + '] ';
-    } else {
-        prefix = '🔧 ';
-    }
-    sum.textContent = prefix + (tool.summary || tool.name || '?');
-    det.appendChild(sum);
-    if (tool.arguments) {
-        var a = document.createElement('div');
-        a.className = 'ta';
-        a.textContent = tool.arguments;
-        det.appendChild(a);
-    }
-    if (tool.result) {
-        var r = document.createElement('div');
-        r.className = 'tr' + (isErr ? ' err' : '');
-        r.textContent = tool.result;
-        det.appendChild(r);
-    } else if (tool.result === undefined) {
-        var w = document.createElement('div');
-        w.className = 'ta';
-        w.textContent = '⏳ 处理中…';
-        det.appendChild(w);
-    }
-    return det;
-}
-
-function chatReasonBlock(text, open) {
-    // 思考块——默认折叠（点击 summary 展开/收起；折叠时 summary 显示字数感知内容量）；open=true 流式展开（增量可见）
-    var det = document.createElement('details');
-    det.className = 'chat-reason';
-    det.open = (open === true);
-    var sum = document.createElement('summary');
-    sum.textContent = (text && text.length > 0) ? ('思考过程 · ' + text.length + ' 字') : '思考过程';
-    det.appendChild(sum);
-    var pre = document.createElement('div');
-    pre.textContent = text || '';
-    det.appendChild(pre);
-    return det;
-}
-
-// 注入报告 HTML——新会话前文加载明细（ok/missing/error 三态 + 字符数；history 首块渲染）
-function chatInjectReportHtml(p) {
-    var files = p.files || [];
-    var total = p.total || 0;
-    var ok = p.ok || 0;
-    var missing = p.missing || 0;
-    var failed = p.failed || 0;
-    var html = '<div class="inject-report">'
-        + '<div class="ir-head">📚 前文加载：' + ok + '/' + total + ' 成功'
-        + (missing > 0 ? ' · 缺失 ' + missing : '')
-        + (failed > 0 ? ' · 失败 ' + failed : '')
-        + '</div>';
-    if (files.length > 0) {
-        html += '<div class="ir-list">';
-        for (var i = 0; i < files.length; i++) {
-            var f = files[i];
-            var icon = '✅';
-            var cls = 'ok';
-            if (f.status === 'missing') { icon = '⚠️'; cls = 'missing'; }
-            else if (f.status === 'error') { icon = '❌'; cls = 'error'; }
-            html += '<div class="ir-item ' + cls + '">' + icon + ' ' + escapeHtml(f.file || '')
-                + (f.status === 'ok' && f.chars > 0 ? '（' + f.chars + ' 字符）' : '')
-                + (f.message ? ' — ' + escapeHtml(f.message) : '')
-                + '</div>';
-        }
-        html += '</div>';
-    }
-    html += '</div>';
-    return html;
-}
-
-function chatRenderHistory(data) {
-    // F4 视图块历史渲染——按 blocks[] renderType 分派（view 协议；无 messages[] 旧结构）
-    chatMsgs.textContent = '';
-    var blocks = data.blocks || [];
-    for (var i = 0; i < blocks.length; i++) {
-        var blk = blocks[i];
-        var p = blk.payload || {};
-        if (blk.renderType === 'user') {
-            var ub = chatBubble('user');
-            ub.textContent = p.content || '';
-        } else if (blk.renderType === 'reason') {
-            var rb = chatBubble('assistant', 'reason');
-            rb.appendChild(chatReasonBlock(p.content || ''));
-        } else if (blk.renderType === 'toolcard') {
-            var tb = chatBubble('assistant', 'tool');
-            tb.appendChild(chatToolCard(p));
-        } else if (blk.renderType === 'retry') {
-            // S2 §8.4——历史重建：重试过程记录气泡（retry 块随 view.json 落盘）
-            var st = p.state || 'retrying';
-            var txt;
-            if (st === 'resolved') {
-                txt = '✓ 已恢复' + (p.attempt ? '（重试 ' + p.attempt + ' 次）' : '');
-            } else {
-                txt = '⟳ 重试中 ' + (p.attempt || '') + '/' + (p.max || '') + (p.text ? ' · ' + p.text : '');
-            }
-            var rtb = chatBubble('assistant', 'retry');
-            rtb.textContent = txt;
-            if (st === 'resolved') { rtb.classList.add('resolved'); }
-        } else if (blk.renderType === 'inject_report') {
-            // 注入报告——新会话前文加载明细（ok/missing/error 三态 + 字符数；独立持久化字段 Rebuild 不清）
-            var rb2 = chatBubble('assistant', 'inject');
-            rb2.innerHTML = chatInjectReportHtml(p);
-        } else if (blk.renderType === 'roundsum') {
-            // roundsum 轮末统计——历史重建：独立气泡（本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时）
-            chatOnRoundSum(p);
-        } else if (blk.renderType === 'text') {
-            // F3 MD 渲染——历史 text 块同样走解析器（与实时渲染一致）；md-block 包裹=CSS 作用域锚点
-            // P6b 节点操作条——msgIndex 顶层字段（视图块携带真实前文顺序；roundsum/inject_report=-1 不挂）
-            var cb = chatBubble('assistant');
-            cb.innerHTML = '<div class="md-block">' + mdToHtml(p.content || '') + '</div>';
-            chatAppendNodeActions(cb, blk.msgIndex);
-        }
-    }
-    // P9.3 会话归属动态化——SSE sessionId 随会话 ID（时间戳）变化；history 先于任何 view 事件到达（loading→idle 时序保证）
-    if (data.sessionId) {
-        CHAT_SESSION = data.sessionId;
-    }
-    var infoText = '会话 ' + chatFmtCount(data.count || 0) + ' 条 | sessionId=' + CHAT_SESSION;
-    var hs = data.stats;
-    if (hs) {
-        // 前文长度 = 最近一次请求的单次 prompt（context 字段）；旧数据无 context 时回退累计值
-        var ctx = (hs.context !== undefined && hs.context > 0) ? hs.context : (hs.prompt || 0);
-        infoText += ' | 前文 ' + chatFmtCount(ctx) + ' tokens';
-    }
-    chatInfo.textContent = infoText;
-    chatScrollBottom(true);
-}
-
-function chatLoadHistory() {
-    fetch('/api/v1/history')
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-            chatRenderHistory(d);
-            chatSetState('idle');
-        })
-        .catch(function () {
-            chatInfo.textContent = '历史加载失败——宿主未运行？';
-            chatSetState('idle');
-        });
-}
-
-function chatFail(msg) {
-    // E 系列——失败：四态状态条清零隐藏
-    chatPhaseReset();
-    // 发送失败——seal 全部流式容器 + 独立错误气泡 + 恢复 idle
-    for (var k in viewContainers) {
-        var c = viewContainers[k];
-        if (c && c.bubble) {
-            c.bubble.classList.remove('streaming');
-            c.bubble.classList.remove('streaming-wait');
-        }
-    }
-    viewContainers = {};
-    var eb = chatBubble('assistant');
-    eb.textContent = msg;
-    eb.classList.add('error');
-    if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
-    // 发送失败——插话队列显示失去意义（内核未收到）
-    chatPending = [];
-    chatRenderPending();
-    chatSetState('idle');
-}
-
-// 单向数据流改造——发送零自产气泡：只投递 command 总线，气泡由 view user 事件渲染
-function chatSend() {
-    var text = chatInput.value.trim();
-    if (text.length === 0 || chatState === 'loading') { return; }
-    chatInput.value = '';
-    // 插话队列——本地记录（内核 user 事件到达后 FIFO 移除）
-    chatPending.push(text);
-    chatRenderPending();
-    if (chatState === 'idle') {
-        // idle 发送——清阶段残留（usage 会话累计保留——跨轮不清零；sending 态插话不清——不破坏当前流式渲染）
-        viewContainers = {};
-        chatPhaseReset();
-        // E 系列——发送即进入链路态（插话不干扰活跃轮计时）
-        chatPhaseEnter('link');
-    }
-    chatSetState('sending');
-    chatKeepAlive();
-    fetch('/api/v1/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: 'Chat ' + text })
-    })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-            if (!d.ok && d.error) {
-                chatFail('发送失败: ' + d.error);
-            }
-        })
-        .catch(function (err) { chatFail('请求失败: ' + err); });
 }
 
 // user 视图块——内核确认消息进 Ctx 的唯一出口（单向数据流：前端气泡唯一来源）
@@ -444,7 +182,7 @@ function chatRenderPending() {
     panel.innerHTML = html;
 }
 
-// ============ F4 view 协议渲染 ============
+// ============ F4 view 协议分发 ============
 // 七种 renderType：user/stream/text/reason/toolcard/control/retry（S2 §8.4——retry 重试过程记录独立气泡）
 // stream 流式增量——seq 复用=同容器追加；新 seq=新建容器（text 与 reason 各自独立容器）
 // text/reason 整块——replaceSeq 指向被替换的流式容器序号（流式→整块替换；无容器则新建）
@@ -534,45 +272,6 @@ function chatOnText(seq, replaceSeq, payload) {
     chatPhaseEnter('reply');
 }
 
-// P6b 节点操作条——text 块底部两按钮（⟲ 回滚 / ⧉ 分支）；指令走 command 总线（单向数据流：前端零寻路，只回传 MsgIndex）
-function chatAppendNodeActions(bubble, msgIndex) {
-    if (msgIndex === undefined || msgIndex === null || msgIndex < 0) { return; }
-    var bar = document.createElement('div');
-    bar.className = 'node-actions';
-    var rb = document.createElement('button');
-    rb.type = 'button';
-    rb.className = 'node-btn node-btn-rollback';
-    rb.title = '从此处继续对话（回滚——该回复后的内容将截断，不可恢复）';
-    rb.textContent = '⟲';
-    rb.addEventListener('click', function () {
-        if (!window.confirm('从此处继续对话？该回复之后的所有消息将被截断（不可恢复）。')) { return; }
-        fetch('/api/v1/command', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: 'session.rollback ' + msgIndex })
-        }).catch(function () {});
-        chatInfo.textContent = '回滚已投递——建议刷新浏览器页面';
-    });
-    var fb = document.createElement('button');
-    fb.type = 'button';
-    fb.className = 'node-btn node-btn-fork';
-    fb.title = '从此处新建独立 Cat（以该回复为起点分支新实例，继承配置与前文）';
-    fb.textContent = '⧉';
-    fb.addEventListener('click', function () {
-        var name = window.prompt('新 Cat 显示名：', 'fork-' + msgIndex);
-        if (!name || name.length === 0) { return; }
-        fetch('/api/v1/command', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: 'session.fork ' + name + ' ' + msgIndex })
-        }).catch(function () {});
-        chatInfo.textContent = '分支指令已投递——请回到主控界面选择新会话';
-    });
-    bar.appendChild(rb);
-    bar.appendChild(fb);
-    bubble.appendChild(bar);
-}
-
 function chatOnReason(seq, replaceSeq, payload) {
     // 思考整块——replaceSeq≥0 且容器存在 → 替换思考流式容器；否则新建
     var content = payload.content || '';
@@ -617,19 +316,22 @@ function chatOnRetry(seq, replaceSeq, payload) {
     } else {
         text = '⟳ 重试中 ' + attempt + '/' + max + (reason ? ' · ' + reason : '');
     }
-    // 更新已有气泡（replaceSeq≥0）——attempt 递增/状态变化替换文本，不堆叠
-    var key = (replaceSeq >= 0) ? replaceSeq : seq;
-    var c = viewContainers[key];
-    if (c && c.type === 'retry') {
-        c.bubble.textContent = text;
-        c.bubble.classList.toggle('resolved', state === 'resolved');
-        return;
+    // replaceSeq 指向首次 retry 事件的 seq——命中已有气泡更新（多次重试不堆叠）；-1/无 → 新建
+    var existing = null;
+    if (replaceSeq !== undefined && replaceSeq >= 0) {
+        var rc = viewContainers['retry_' + replaceSeq];
+        if (rc) { existing = rc; }
     }
-    // 新建独立气泡——弱化样式（chat-bubble.retry：灰底小号，过程记录）
-    var rb = chatBubble('assistant', 'retry');
-    rb.textContent = text;
-    if (state === 'resolved') { rb.classList.add('resolved'); }
-    viewContainers[key] = { type: 'retry', bubble: rb, reasonPre: null };
+    if (existing) {
+        existing.bubble.textContent = text;
+        if (state === 'resolved') { existing.bubble.classList.add('resolved'); }
+    } else {
+        var b = chatBubble('assistant', 'retry');
+        b.textContent = text;
+        if (state === 'resolved') { b.classList.add('resolved'); }
+        // 记录用 seq——后续 replaceSeq 指向本次 seq 实现原位更新
+        viewContainers['retry_' + seq] = { type: 'retry', bubble: b, reasonPre: null };
+    }
 }
 
 function chatOnControl(payload) {
@@ -714,42 +416,70 @@ function chatOnControl(payload) {
     }
 }
 
-// 时长格式化——毫秒 → 可读（<60s → x.xs；≥60s → x分x.x秒；roundsum 用时展示）
-function chatFmtMs(ms) {
-    var s = (ms || 0) / 1000;
-    if (s >= 60) {
-        var mins = Math.floor(s / 60);
-        var secs = s - mins * 60;
-        return mins + '分' + secs.toFixed(1) + '秒';
-    }
-    return s.toFixed(1) + 's';
+function chatLoadHistory() {
+    fetch('/api/v1/history')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            chatRenderHistory(d);
+            chatSetState('idle');
+        })
+        .catch(function () {
+            chatInfo.textContent = '历史加载失败——宿主未运行？';
+            chatSetState('idle');
+        });
 }
 
-// roundsum 轮末统计气泡——本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时（宿主 CloseRound 推送/历史重建渲染；弱化系统样式）
-function chatOnRoundSum(payload) {
-    var d = payload.data || {};
-    var phases = d.phases || {};
-    var miss = (d.miss !== undefined) ? d.miss : ((d.prompt || 0) - (d.cacheHit || 0));
-    if (miss < 0) { miss = 0; }
-    var b = chatBubble('assistant', 'roundsum');
-    var html = '<div class="rs-head">📊 本轮统计</div>';
-    // cache 命中率——cacheHit / prompt（prompt=0 时 0%）
-    var promptTotal = d.prompt || 0;
-    var hitRate = (promptTotal > 0) ? ((d.cacheHit || 0) / promptTotal * 100) : 0;
-    html += '<div class="rs-tok">↑' + chatFmtCount(promptTotal)
-        + ' ↓' + chatFmtCount(d.completion || 0)
-        + ' cache ' + chatFmtCount(d.cacheHit || 0)
-        + ' miss ' + chatFmtCount(miss)
-        + ' 🎯' + hitRate.toFixed(1) + '%</div>';
-    if (d.toolCount > 0) {
-        html += '<div class="rs-tools">🔧 工具 ' + d.toolCount + ' 次</div>';
+function chatFail(msg) {
+    // E 系列——失败：四态状态条清零隐藏
+    chatPhaseReset();
+    // 发送失败——seal 全部流式容器 + 独立错误气泡 + 恢复 idle
+    for (var k in viewContainers) {
+        var c = viewContainers[k];
+        if (c && c.bubble) {
+            c.bubble.classList.remove('streaming');
+            c.bubble.classList.remove('streaming-wait');
+        }
     }
-    html += '<div class="rs-times">⏱ 链路 ' + chatFmtMs(phases.link)
-        + ' · 思考 ' + chatFmtMs(phases.think)
-        + ' · 工具 ' + chatFmtMs(phases.tool)
-        + ' · 回复 ' + chatFmtMs(phases.reply)
-        + ' · 总计 ' + chatFmtMs(d.elapsedMs) + '</div>';
-    b.innerHTML = html;
+    viewContainers = {};
+    var eb = chatBubble('assistant');
+    eb.textContent = msg;
+    eb.classList.add('error');
+    if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
+    // 发送失败——插话队列显示失去意义（内核未收到）
+    chatPending = [];
+    chatRenderPending();
+    chatSetState('idle');
+}
+
+// 单向数据流改造——发送零自产气泡：只投递 command 总线，气泡由 view user 事件渲染
+function chatSend() {
+    var text = chatInput.value.trim();
+    if (text.length === 0 || chatState === 'loading') { return; }
+    chatInput.value = '';
+    // 插话队列——本地记录（内核 user 事件到达后 FIFO 移除）
+    chatPending.push(text);
+    chatRenderPending();
+    if (chatState === 'idle') {
+        // idle 发送——清阶段残留（usage 会话累计保留——跨轮不清零；sending 态插话不清——不破坏当前流式渲染）
+        viewContainers = {};
+        chatPhaseReset();
+        // E 系列——发送即进入链路态（插话不干扰活跃轮计时）
+        chatPhaseEnter('link');
+    }
+    chatSetState('sending');
+    chatKeepAlive();
+    fetch('/api/v1/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'Chat ' + text })
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok && d.error) {
+                chatFail('发送失败: ' + d.error);
+            }
+        })
+        .catch(function (err) { chatFail('请求失败: ' + err); });
 }
 
 // 新会话——session.new 指令（P8.5 design-ch4-workspace §六：清前文 + 按清单重新注入；走 CommandBus 无飞线）

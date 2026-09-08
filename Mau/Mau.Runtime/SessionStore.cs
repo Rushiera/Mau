@@ -125,6 +125,7 @@ namespace Mau.Runtime
                 // LlmMessage 是 struct——字段序列化需 IncludeFields（System.Text.Json 默认只序列化属性）
                 JsonSerializerOptions options = new JsonSerializerOptions();
                 options.IncludeFields = true;
+                options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;   // 中文直出（默认 \uXXXX 转义人读不便——2026-09-08 全局统一）
                 string json = JsonSerializer.Serialize(data, options);
                 File.WriteAllText(_path, json);
             }

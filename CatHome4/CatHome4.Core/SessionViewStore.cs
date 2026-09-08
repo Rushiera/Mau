@@ -268,6 +268,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
                 data.RoundSums = _roundSums.ToArray();
                 JsonSerializerOptions options = new JsonSerializerOptions();
                 options.IncludeFields = true;
+                options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;   // 中文直出（默认 \uXXXX 转义人读不便——2026-09-08 全局统一）
                 string json = JsonSerializer.Serialize(data, options);
                 File.WriteAllText(_path, json);
             }
@@ -327,7 +328,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
             block.Hash = ComputeHash(m);
             block.MsgIndex = msgIndex;
             block.RenderType = renderType;
-            block.Payload = JsonSerializer.Serialize(payload);
+            block.Payload = JsonUtil.Serialize(payload);
             _blocks.Add(block);
         }
 
