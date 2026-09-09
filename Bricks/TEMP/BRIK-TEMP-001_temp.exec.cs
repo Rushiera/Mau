@@ -32,6 +32,7 @@ namespace Mau.Bricks
             { "echo", Echo },
             { "upper", Upper },
             { "reverse", Reverse },
+            { "lower", Lower },
         };
 
         /// <summary>
@@ -64,6 +65,16 @@ namespace Mau.Bricks
             char[] chars = content.ToCharArray();
             Array.Reverse(chars);
             return new string(chars);
+        }
+
+        /// <summary>
+        /// 【临时工具】lower——content 转小写（演示 handler 增改——热重载即时生效）
+        /// </summary>
+        /// <param name="content">输入内容</param>
+        /// <returns>小写内容</returns>
+        private static string Lower(string content)
+        {
+            return content.ToLowerInvariant();
         }
 
         /// <summary>
@@ -178,4 +189,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:188FF527EEB621A2F53C2C294C2A3C5D2CB5839DB8518F424DE091BC7946066B
+// #MAU_CHECKSUM:SHA256:64FA26A3C2AFBD0D73DADB0E909B301CE6C8A24E047BEFA091F10C4A443A68CD
