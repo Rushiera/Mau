@@ -59,7 +59,12 @@ namespace Mau.Development
         public bool IsExe;
 
         /// <summary>
-        /// 全量源文件（绝对路径；排除 obj/bin）
+        /// 源排除清单——csproj DefaultItemExcludes 解析（子项目目录如 CatHome4.Core.Tests\**）
+        /// </summary>
+        public List<string> DefaultExcludes;
+
+        /// <summary>
+        /// 全量源文件（绝对路径；排除 obj/bin + DefaultExcludes）
         /// </summary>
         public string[] SourceFiles;
 
@@ -129,6 +134,7 @@ namespace Mau.Development
             Tfm = "net8.0";
             NullableEnable = false;
             IsExe = false;
+            DefaultExcludes = new List<string>();
             SourceFiles = Array.Empty<string>();
             Trees = new ConcurrentDictionary<string, SyntaxTree>(StringComparer.OrdinalIgnoreCase);
             Stamps = new ConcurrentDictionary<string, ProjectSnapshot>(StringComparer.OrdinalIgnoreCase);

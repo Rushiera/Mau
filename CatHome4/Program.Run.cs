@@ -245,7 +245,7 @@ namespace CH4
                 }
                 return true;
             }
-            // R0.2 热重载指令——CLI 通道（--run/--script）支持：reload quick|text|mau|cs|config [dll]（主线程直执——ExecuteReload 事务三段式）
+            // R0.2 热重载指令——CLI 通道（--run/--script）支持：reload &lt;Flow注册名&gt; [dll]（QuickCat/TextCat/MauCat/CsCat/ConfigCat/...——主线程直执——ExecuteReload 事务三段式）
             if (line.StartsWith("reload ", StringComparison.Ordinal))
             {
                 if (Environment.CurrentManagedThreadId == _mainThreadId)

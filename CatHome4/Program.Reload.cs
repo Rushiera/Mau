@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using Mau.Runtime;
@@ -15,7 +16,7 @@ namespace CH4
     public static partial class Program
     {
         /// <summary>
-        /// reload 热重载——quick|dev + 可选 dll 路径（缺省 = 当前 handle 同路径重读）
+        /// reload 热重载——Flow 注册名（QuickCat/TextCat/...；host-flows 查当前清单）+ 可选 dll 路径（缺省 = 当前 handle 同路径重读）
         /// 流程：新 Load + Tick 试跑验证（失败保留旧）→ UnregisterFlow 旧（D1：CommandBus key 同步清理）→ RegisterFlow 新 → 旧 TryUnload → 预热 → 报告
         /// P8.5b：返回结果文本（host-reload 工具 LLM 可见；Console 同步输出行为不变）
         /// </summary>
@@ -46,7 +47,7 @@ namespace CH4
             FlowHandle oldHandle;
             long oldId;
             string name;
-            if (cat == "quick")
+            if (cat == "QuickCat")
             {
                 oldHandle = _quickHandle;
                 oldId = _quickId;
@@ -54,11 +55,11 @@ namespace CH4
             }
             else
             {
-                // R0.2 工具组按 Flow 名寻址——text|mau|cs|config → TextCat/MauCat/CsCat/ConfigCat
-                name = ToolFlowName(cat);
-                if (name.Length == 0 || !_toolFlowHandles.TryGetValue(name, out oldHandle))
+                // R0.2 工具组按 Flow 名寻址——Registry 动态许可已由 ExecHostReload 校验；此处查宿主句柄表
+                name = cat;
+                if (!_toolFlowHandles.TryGetValue(name, out oldHandle))
                 {
-                    string badMsg = "reload 目标无效——quick|text|mau|cs|config|search";
+                    string badMsg = "reload 目标无效——宿主句柄表中无该 Flow: " + name + "（host-flows 可查现状）";
                     Console.WriteLine("[CMD] " + badMsg);
                     sb.AppendLine(badMsg);
                     return sb.ToString();
@@ -157,7 +158,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// host-reload 工具执行——解析 cat 参数 → ExecuteReload（复用事务三段式）；宿主级工具——ExecuteToolBatch 白名单直执不走 OA
+        /// host-reload 工具执行——解析 cat 参数（Flow 注册名）→ 动态校验（Registry.Entries）→ ExecuteReload（复用事务三段式）；宿主级工具——ExecuteToolBatch 白名单直执不走 OA
         /// </summary>
         /// <param name="argsJson">参数 JSON</param>
         /// <returns>reload 结果文本</returns>
@@ -184,22 +185,88 @@ namespace CH4
             {
                 cat = "";
             }
-            if (cat != "quick" && cat != "dev")
+            if (cat.Length == 0)
             {
-                return "ERR|BAD_ARG|host-reload cat 参数须为 quick|dev";
+                return "ERR|BAD_ARG|host-reload cat 参数缺失——须为已加载 Flow 注册名（host-flows 可查当前清单）";
+            }
+            // 动态许可——Registry.Entries 为真相源（新增工具组 Flow 零宿主改动；dev 等死目标天然拒绝）
+            bool found = false;
+            FlowEntry[] entries = _runner.Registry.Entries;
+            for (int i = 0; i < entries.Length; i = i + 1)
+            {
+                if (string.Equals(entries[i].Name, cat, StringComparison.Ordinal))
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                StringBuilder avail = new StringBuilder();
+                for (int i = 0; i < entries.Length; i = i + 1)
+                {
+                    if (i > 0)
+                    {
+                        avail.Append(" / ");
+                    }
+                    avail.Append(entries[i].Name);
+                }
+                return "ERR|BAD_ARG|host-reload cat 须为已加载 Flow 注册名（当前: " + avail.ToString() + "）——host-flows 可查";
             }
             return ExecuteReload(cat);
         }
 
         /// <summary>
-        /// 更新指定 Cat 的句柄 + 注册 ID 字段——quick 独立字段；工具组按 Flow 名写字典（R0.2）
+        /// host-flows 工具执行——查看当前运行 Flow 现状（Registry 动态面：Id/Name/Kind + 宿主句柄状态 + dll）；宿主级直执
         /// </summary>
-        /// <param name="cat">quick|text|mau|cs|config</param>
+        /// <param name="argsJson">参数 JSON（无参）</param>
+        /// <returns>Flow 现状文本</returns>
+        private static string ExecHostFlows(string argsJson)
+        {
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            FlowEntry[] entries = _runner.Registry.Entries;
+            sb.Append("Flow 运行现状（" + entries.Length.ToString() + " 个）:");
+            for (int i = 0; i < entries.Length; i = i + 1)
+            {
+                FlowEntry entry = entries[i];
+                string state;
+                string dll = "";
+                if (string.Equals(entry.Name, "QuickCat", StringComparison.Ordinal))
+                {
+                    state = _quickHandle != null ? "alive" : "missing";
+                    if (_quickHandle != null)
+                    {
+                        dll = _quickHandle.SourceDll;
+                    }
+                }
+                else
+                {
+                    FlowHandle handle;
+                    if (_toolFlowHandles.TryGetValue(entry.Name, out handle))
+                    {
+                        state = "alive";
+                        dll = handle.SourceDll;
+                    }
+                    else
+                    {
+                        state = "no-handle";
+                    }
+                }
+                sb.Append(System.Environment.NewLine);
+                sb.Append("  #" + entry.Id.ToString() + " " + entry.Name + " kind=" + (entry.Kind != null ? entry.Kind : "") + " " + state + (dll.Length > 0 ? " | " + dll : ""));
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 更新指定 Flow 的句柄 + 注册 ID 字段——QuickCat 独立字段；工具组按 Flow 名写字典（R0.2）
+        /// </summary>
+        /// <param name="cat">Flow 注册名（QuickCat/TextCat/MauCat/CsCat/ConfigCat/...）</param>
         /// <param name="handle">新句柄</param>
         /// <param name="id">新注册 ID</param>
         private static void SetCatHandle(string cat, FlowHandle handle, long id)
         {
-            if (cat == "quick")
+            if (cat == "QuickCat")
             {
                 _quickHandle = handle;
                 _quickId = id;
@@ -207,43 +274,8 @@ namespace CH4
                 CatHome4.Observe.ObserveService.UpdateQuickHandle(handle, id);
                 return;
             }
-            string flowName = ToolFlowName(cat);
-            _toolFlowHandles[flowName] = handle;
-            _toolFlowIds[flowName] = id;
-        }
-
-        /// <summary>
-        /// reload 参数 → 工具组 Flow 名映射（text→TextCat / mau→MauCat / cs→CsCat / config→ConfigCat；未知返回空）
-        /// </summary>
-        /// <param name="cat">reload 参数</param>
-        /// <returns>Flow 名（未知 = 空串）</returns>
-        private static string ToolFlowName(string cat)
-        {
-            if (cat == "text")
-            {
-                return "TextCat";
-            }
-            if (cat == "mau")
-            {
-                return "MauCat";
-            }
-            if (cat == "cs")
-            {
-                return "CsCat";
-            }
-            if (cat == "config")
-            {
-                return "ConfigCat";
-            }
-            if (cat == "search")
-            {
-                return "SearchCat";
-            }
-            if (cat == "temp")
-            {
-                return "TempToolCat";
-            }
-            return "";
+            _toolFlowHandles[cat] = handle;
+            _toolFlowIds[cat] = id;
         }
     }
 }

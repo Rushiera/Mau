@@ -54,7 +54,7 @@ namespace Mau.Development
             cache.CsprojPath = csproj;
             cache.ProjectDir = Path.GetDirectoryName(csproj) ?? "";
             ParseCsproj(cache);
-            cache.SourceFiles = CollectSources(cache.ProjectDir);
+            cache.SourceFiles = CollectSources(cache);
             for (int i = 0; i < cache.SourceFiles.Length; i = i + 1)
             {
                 string filePath = cache.SourceFiles[i];
@@ -77,6 +77,7 @@ namespace Mau.Development
             cache.Tfm = "net8.0";
             cache.NullableEnable = false;
             cache.IsExe = false;
+            cache.DefaultExcludes = new List<string>();
             try
             {
                 XDocument doc = XDocument.Load(cache.CsprojPath);
@@ -110,6 +111,20 @@ namespace Mau.Development
                             cache.IsExe = true;
                         }
                     }
+                    // DefaultItemExcludes——SDK 默认编译排除（子项目目录）；分号分割条目
+                    XElement? excludes = property.Element("DefaultItemExcludes");
+                    if (excludes != null && !string.IsNullOrWhiteSpace(excludes.Value))
+                    {
+                        string[] parts = excludes.Value.Split(';');
+                        for (int e = 0; e < parts.Length; e = e + 1)
+                        {
+                            string item = parts[e].Trim();
+                            if (item.Length > 0 && !cache.DefaultExcludes.Contains(item))
+                            {
+                                cache.DefaultExcludes.Add(item);
+                            }
+                        }
+                    }
                 }
             }
             catch (Exception)
@@ -119,14 +134,29 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 收集源文件——全部 .cs（排除 obj/bin 目录）
+        /// 收集源文件——全部 .cs（排除 obj/bin 目录 + csproj DefaultItemExcludes 子项目目录）
         /// </summary>
-        /// <param name="projectDir">项目目录</param>
+        /// <param name="cache">缓存条目（ProjectDir + DefaultExcludes）</param>
         /// <returns>绝对路径数组</returns>
-        private string[] CollectSources(string projectDir)
+        private string[] CollectSources(ProjectCache cache)
         {
             List<string> result = new List<string>();
-            string[] all = Directory.GetFiles(projectDir, "*.cs", SearchOption.AllDirectories);
+            string[] all = Directory.GetFiles(cache.ProjectDir, "*.cs", SearchOption.AllDirectories);
+            // DefaultExcludes 预编译——目录前缀排除（X\** → X\ 前缀；$( 展开引用跳过）
+            List<string> dirPrefixes = new List<string>();
+            for (int i = 0; i < cache.DefaultExcludes.Count; i = i + 1)
+            {
+                string item = cache.DefaultExcludes[i];
+                if (item.StartsWith("$(", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                string norm = item.Replace('/', '\\');
+                if (norm.EndsWith("\\**", StringComparison.Ordinal))
+                {
+                    dirPrefixes.Add(norm.Substring(0, norm.Length - 2));
+                }
+            }
             for (int i = 0; i < all.Length; i = i + 1)
             {
                 string path = all[i];
@@ -137,6 +167,20 @@ namespace Mau.Development
                 }
                 if (path.IndexOf("\\bin\\", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     path.IndexOf("/bin/", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    continue;
+                }
+                string rel = path.Substring(cache.ProjectDir.Length).TrimStart('\\', '/');
+                bool excluded = false;
+                for (int d = 0; d < dirPrefixes.Count; d = d + 1)
+                {
+                    if (rel.StartsWith(dirPrefixes[d], StringComparison.OrdinalIgnoreCase))
+                    {
+                        excluded = true;
+                        break;
+                    }
+                }
+                if (excluded)
                 {
                     continue;
                 }
@@ -210,7 +254,7 @@ namespace Mau.Development
                     cache.References = BuildReferences(cache);
                     cache.Compilation = BuildCompilation(cache);
                 }
-                string[] currentSources = CollectSources(cache.ProjectDir);
+                string[] currentSources = CollectSources(cache);
                 HashSet<string> currentSet = new HashSet<string>(currentSources, StringComparer.OrdinalIgnoreCase);
                 List<string> removedFiles = new List<string>();
                 for (int i = 0; i < cache.SourceFiles.Length; i = i + 1)
@@ -308,16 +352,16 @@ namespace Mau.Development
                     }
                 }
             }
-            // 共享框架探测——AspNetCore + WindowsDesktop（WinForms/WPF 程序集所在；统一按名去重）
+            // 共享框架探测——AspNetCore + WindowsDesktop（WinForms/WPF 程序集所在；按项目 TFM 主版本匹配 + 跳过 native dll）
             string? runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location);
             if (runtimeDir != null)
             {
                 string? netCoreAppDir = Path.GetDirectoryName(runtimeDir);
                 if (netCoreAppDir != null)
                 {
-                    string sharedDir = Path.Combine(Path.GetDirectoryName(netCoreAppDir) ?? "", "shared");
-                    ProbeSharedFramework(pathsByName, sharedDir, "Microsoft.AspNetCore.App");
-                    ProbeSharedFramework(pathsByName, sharedDir, "Microsoft.WindowsDesktop.App");
+                    string sharedDir = Path.GetDirectoryName(netCoreAppDir) ?? "";
+                    ProbeSharedFramework(pathsByName, sharedDir, "Microsoft.AspNetCore.App", cache.Tfm);
+                    ProbeSharedFramework(pathsByName, sharedDir, "Microsoft.WindowsDesktop.App", cache.Tfm);
                 }
             }
             // bin 产物——目标项目已 build 输出（优先于 TPA/框架）
@@ -351,33 +395,79 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 共享框架探测——dotnet/shared/&lt;框架名&gt;/ 最新版本 dll 并入引用集（按名去重；AspNetCore + WindowsDesktop 共用）
+        /// 共享框架探测——dotnet/shared/&lt;框架名&gt;/ 按项目 TFM 主版本匹配（net8.0-windows → 8.0.x）的托管 dll 并入引用集（按名去重）
         /// </summary>
         /// <param name="pathsByName">按名路径表（写）</param>
         /// <param name="sharedDir">shared 根目录</param>
         /// <param name="frameworkName">框架目录名（Microsoft.AspNetCore.App / Microsoft.WindowsDesktop.App）</param>
-        private static void ProbeSharedFramework(Dictionary<string, string> pathsByName, string sharedDir, string frameworkName)
+        /// <param name="tfm">项目 TFM（如 net8.0-windows）——主版本不匹配则跳过该框架</param>
+        private static void ProbeSharedFramework(Dictionary<string, string> pathsByName, string sharedDir, string frameworkName, string tfm)
         {
             string frameworkDir = Path.Combine(sharedDir, frameworkName);
             if (!Directory.Exists(frameworkDir))
             {
                 return;
             }
-            string[] versions = Directory.GetDirectories(frameworkDir);
-            Array.Sort(versions, StringComparer.OrdinalIgnoreCase);
-            if (versions.Length == 0)
+            // TFM 主版本提取——net8.0-windows → "8.0"；解析失败跳过（宁缺勿错——引入错误版本 = CS1705 洪水）
+            int dash = tfm.IndexOf('-');
+            string baseTfm = dash >= 0 ? tfm.Substring(0, dash) : tfm;
+            string netPart = baseTfm.StartsWith("net", StringComparison.OrdinalIgnoreCase) ? baseTfm.Substring(3) : "";
+            if (netPart.Length == 0)
             {
                 return;
             }
-            string latest = versions[versions.Length - 1];
-            string[] dlls = Directory.GetFiles(latest, "*.dll", SearchOption.TopDirectoryOnly);
+            // 匹配框架目录前缀（8.0. 匹配 8.0.x；9.0. 匹配 9.0.x）——取匹配中最高补丁
+            string[] versions = Directory.GetDirectories(frameworkDir);
+            string? best = null;
+            for (int i = 0; i < versions.Length; i = i + 1)
+            {
+                string v = Path.GetFileName(versions[i]);
+                if (v.StartsWith(netPart + ".", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (best == null || string.CompareOrdinal(v, Path.GetFileName(best)) > 0)
+                    {
+                        best = versions[i];
+                    }
+                }
+            }
+            if (best == null)
+            {
+                return;
+            }
+            string[] dlls = Directory.GetFiles(best, "*.dll", SearchOption.TopDirectoryOnly);
             for (int i = 0; i < dlls.Length; i = i + 1)
             {
                 string name = Path.GetFileNameWithoutExtension(dlls[i]);
                 if (!pathsByName.ContainsKey(name))
                 {
+                    // 跳过 native dll（wpfgfx_cor3 等无托管元数据——CS0009）
+                    if (!IsManagedAssembly(dlls[i]))
+                    {
+                        continue;
+                    }
                     pathsByName[name] = dlls[i];
                 }
+            }
+        }
+
+        /// <summary>
+        /// 托管程序集判定——PE 文件含 CLI 元数据（跳过 native dll）
+        /// </summary>
+        /// <param name="path">dll 路径</param>
+        /// <returns>true=托管程序集</returns>
+        private static bool IsManagedAssembly(string path)
+        {
+            try
+            {
+                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (System.Reflection.PortableExecutable.PEReader pe = new System.Reflection.PortableExecutable.PEReader(fs))
+                {
+                    return pe.HasMetadata;
+                }
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 

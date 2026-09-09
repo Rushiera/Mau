@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -225,11 +225,38 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 查找 workspace 根——含 Mau.sln 的目录（当前目录向上优先，程序集位置兜底）
+        /// 静态仓库根注入——宿主 Bootstrap 从受控根 id=mau 设置；优先于 cwd 探测（BRIK-MAU 工具链）
+        /// </summary>
+        private static string? _injectedRoot;
+
+        /// <summary>
+        /// 注入仓库根——宿主启动时调用（受控根 id=mau）；空/不含 Mau.sln 忽略
+        /// </summary>
+        /// <param name="root">仓库根绝对路径</param>
+        public static void SetWorkspaceRoot(string root)
+        {
+            if (root == null || root.Length == 0)
+            {
+                return;
+            }
+            _injectedRoot = root;
+        }
+
+        /// <summary>
+        /// 查找 workspace 根——注入根 → env MAU_ROOT → 当前目录向上 → 程序集位置兜底
         /// </summary>
         /// <returns>workspace 根或空</returns>
         public static string? FindWorkspaceRoot()
         {
+            if (_injectedRoot != null && _injectedRoot.Length > 0 && File.Exists(Path.Combine(_injectedRoot, "Mau.sln")))
+            {
+                return _injectedRoot;
+            }
+            string? envRoot = Environment.GetEnvironmentVariable("MAU_ROOT");
+            if (envRoot != null && envRoot.Length > 0 && File.Exists(Path.Combine(envRoot, "Mau.sln")))
+            {
+                return envRoot;
+            }
             string? from = Directory.GetCurrentDirectory();
             string? found = Probe(from, new string[] { "Mau.sln" });
             if (found != null)

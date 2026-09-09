@@ -149,7 +149,8 @@ namespace CH4
                 "{\"name\":\"time\",\"description\":\"当前系统日期时间（yyyy-MM-dd HH:mm:ss）——会话内直执，无需 OA\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}," +
                 "{\"name\":\"random\",\"description\":\"生成 [min, max) 范围内的随机整数（min 含下限，max 不含上限，要求 min &lt; max）——会话内直执，无需 OA\",\"parameters\":{\"type\":\"object\",\"properties\":{\"min\":{\"type\":\"integer\",\"description\":\"随机范围下限（含）\"},\"max\":{\"type\":\"integer\",\"description\":\"随机范围上限（不含）\"}},\"required\":[\"min\",\"max\"]}}," +
                 "{\"name\":\"info\",\"description\":\"查看运行时工具注册表——工具清单/参数/归属工具组 Flow/内置状态（agent 的眼睛；R1.2）\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}," +
-                "{\"name\":\"host-reload\",\"description\":\"热重载语料 dll（宿主级）——在 mau-proj 编译成功后单独调用（建议下一轮）；事务三段式：加载失败保留旧版本；cat=quick|dev\",\"parameters\":{\"type\":\"object\",\"properties\":{\"cat\":{\"type\":\"string\",\"description\":\"quick|dev\"}},\"required\":[\"cat\"]}}" +
+                "{\"name\":\"host-reload\",\"description\":\"热重载语料 dll（宿主级）——在 mau-proj 编译成功后单独调用（建议下一轮）；事务三段式：加载失败保留旧版本；cat=已加载 Flow 注册名（host-flows 查当前清单）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"cat\":{\"type\":\"string\",\"description\":\"Flow 注册名（QuickCat/TextCat/MauCat/CsCat/ConfigCat/SearchCat/VisionCat/TempToolCat/PsCat——host-flows 查当前全部）\"}},\"required\":[\"cat\"]}}," +
+                "{\"name\":\"host-flows\",\"description\":\"查看当前运行 Flow 现状（宿主级）——Registry 动态面：每个已加载 Flow 的 Id/Name/Kind/句柄状态/dll 路径；新增/重载后查询目标清单用\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}" +
                 "]}";
         }
 
@@ -164,6 +165,10 @@ namespace CH4
             if (name == "host-reload")
             {
                 return ExecHostReload(argsJson);
+            }
+            if (name == "host-flows")
+            {
+                return ExecHostFlows(argsJson);
             }
             return "ERR|UNKNOWN_TOOL|未知工具: " + name;
         }

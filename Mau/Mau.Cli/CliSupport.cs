@@ -12,11 +12,16 @@ namespace Mau.Cli
     public static class CliSupport
     {
         /// <summary>
-        /// 查找 workspace 根——含 Mau.sln 的目录；当前目录向上优先，程序集位置兜底
+        /// 查找 workspace 根——env MAU_ROOT → 含 Mau.sln 的目录（当前目录向上优先，程序集位置兜底）
         /// </summary>
         /// <returns>workspace 根或空</returns>
         public static string? FindWorkspaceRoot()
         {
+            string? envRoot = Environment.GetEnvironmentVariable("MAU_ROOT");
+            if (envRoot != null && envRoot.Length > 0 && File.Exists(Path.Combine(envRoot, "Mau.sln")))
+            {
+                return envRoot;
+            }
             return FindRepoRoot(Directory.GetCurrentDirectory(), new string[] { "Mau.sln" }, AppContext.BaseDirectory);
         }
 

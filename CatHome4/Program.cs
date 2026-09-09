@@ -200,6 +200,16 @@ private static HttpHost _httpHost;
             string dataRoot = ResolveDataRoot();
             WorkspaceConfig workspace = WorkspaceConfig.Load(Path.Combine(dataRoot, "Data", "config", "workspace.json"), dataRoot);
             DataBox.Bind<WorkspaceConfig>(workspace);
+            // mau 仓库根注入——受控根 id=mau → MauGroupBuilder/BrickIndex 静态入口（BRIK-MAU 工具 + 翻译器积木索引解析优先注入值）
+            for (int i = 0; i < workspace.Roots.Length; i = i + 1)
+            {
+                if (string.Equals(workspace.Roots[i].Id, "mau", StringComparison.OrdinalIgnoreCase))
+                {
+                    Mau.Development.MauGroupBuilder.SetWorkspaceRoot(workspace.Roots[i].Path);
+                    Mau.Translator.BrickIndex.SetWorkspaceRoot(workspace.Roots[i].Path);
+                    break;
+                }
+            }
             DataBox.Bind<FileSystemService>(new FileSystemService(workspace.Roots, Path.Combine(WorkspaceRecycleRoot(workspace, dataRoot), "CatTemp", "fs_recycle")));
             string configDir = Path.Combine(dataRoot, "Data", "config");
             ConfigStore llmConfig = ConfigStore.Load(Path.Combine(configDir, "llm.cfg"));

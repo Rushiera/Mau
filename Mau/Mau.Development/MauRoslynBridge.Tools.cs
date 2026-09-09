@@ -290,7 +290,7 @@ namespace Mau.Development
         private static string FormatDiagnostic(ProjectCache cache, Diagnostic diagnostic)
         {
             FileLinePositionSpan span = diagnostic.Location.GetLineSpan();
-            string rel = span.Path;
+            string rel = span.Path ?? "";
             if (rel.Length > 0 && cache != null)
             {
                 rel = RelativeToProject(cache, rel);

@@ -12,6 +12,7 @@ using System;
 using System.Text;
 using System.Text.Json;
 using Mau.Development;
+using Mau.Runtime;
 
 namespace Mau.Bricks
 {
@@ -127,15 +128,38 @@ namespace Mau.Bricks
         }
 
         /// <summary>
-        /// 相对仓库根路径解析——拼接后防越界（GetFullPath 后必须仍在仓库根内）
+        /// 路径解析——受控根前缀（id:relative）走通用接口解码（对齐 text-*/cs-* 寻址约定），无前缀按仓库根拼接；统一验证在仓库根内
         /// </summary>
         /// <param name="root">仓库根</param>
-        /// <param name="relPath">相对仓库根路径</param>
+        /// <param name="relPath">路径参数（支持 mau: 前缀）</param>
         /// <returns>绝对路径（越界返回空串）</returns>
         private static string ResolveRepoPath(string root, string relPath)
         {
-            string full = System.IO.Path.GetFullPath(System.IO.Path.Combine(root, relPath));
-            if (!full.StartsWith(root + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            string full;
+            int nsSep = relPath.IndexOf(':');
+            if (nsSep > 0)
+            {
+                // 受控根前缀——通用解码接口（FileSystemService.Resolve：id 映射 + 越界 + 只读根；盘符 C:\ 无匹配 id 原样回落）
+                FileSystemService fs;
+                if (!DataBox.TryResolve<FileSystemService>(out fs))
+                {
+                    return "";
+                }
+                try
+                {
+                    full = fs.Resolve(relPath, false);
+                }
+                catch (Exception)
+                {
+                    return "";
+                }
+            }
+            else
+            {
+                full = System.IO.Path.GetFullPath(System.IO.Path.Combine(root, relPath));
+            }
+            if (!full.StartsWith(root + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(full, root, StringComparison.OrdinalIgnoreCase))
             {
                 return "";
             }
@@ -176,4 +200,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:88142E7FC305D894ACC03C28E113D3CFBB86CCCF33BF75FEBC9A928FD93F017B
+// #MAU_CHECKSUM:SHA256:F0820E6E440F8885FE5476D6B9E0D10564947268DF2807AD1648F9CA71544EA2

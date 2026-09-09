@@ -220,23 +220,50 @@ public static Dictionary<string, BrickIndexEntry> All()
                 return "";
             }
             return Path.Combine(root, "Bricks", "index.json");
-        }/// <summary>
-/// 仓库根定位——进程目录向上找 Mau.sln（生成器内嵌积木源读取共用）
-/// </summary>
-/// <returns>仓库根（未找到返回空串）</returns>
-public static string FindRepoRoot()
-{
-    DirectoryInfo dir = new DirectoryInfo(AppContext.BaseDirectory);
-    while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Mau.sln")))
-    {
-        dir = dir.Parent;
-    }
+        }        /// <summary>
+        /// 静态仓库根注入——宿主 Bootstrap 设置（受控根 id=mau）；优先于 env/程序集探测
+        /// </summary>
+        private static string? _injectedRoot;
 
-    if (dir == null)
-    {
-        return "";
-    }
+        /// <summary>
+        /// 注入仓库根——宿主启动时调用（受控根 id=mau）；空/不含 Mau.sln 忽略
+        /// </summary>
+        /// <param name="root">仓库根绝对路径</param>
+        public static void SetWorkspaceRoot(string root)
+        {
+            if (root == null || root.Length == 0)
+            {
+                return;
+            }
+            _injectedRoot = root;
+        }
 
-    return dir.FullName;
-}    }
+        /// <summary>
+        /// 仓库根定位——注入根 → env MAU_ROOT → 程序集目录向上找 Mau.sln（生成器内嵌积木源读取共用）
+        /// </summary>
+        /// <returns>仓库根（未找到返回空串）</returns>
+        public static string FindRepoRoot()
+        {
+            if (_injectedRoot != null && _injectedRoot.Length > 0 && File.Exists(Path.Combine(_injectedRoot, "Mau.sln")))
+            {
+                return _injectedRoot;
+            }
+            string? envRoot = Environment.GetEnvironmentVariable("MAU_ROOT");
+            if (envRoot != null && envRoot.Length > 0 && File.Exists(Path.Combine(envRoot, "Mau.sln")))
+            {
+                return envRoot;
+            }
+            DirectoryInfo dir = new DirectoryInfo(AppContext.BaseDirectory);
+            while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Mau.sln")))
+            {
+                dir = dir.Parent;
+            }
+
+            if (dir == null)
+            {
+                return "";
+            }
+
+            return dir.FullName;
+        }    }
 }
