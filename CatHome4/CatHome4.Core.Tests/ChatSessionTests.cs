@@ -929,9 +929,10 @@ public void WhitespaceReply_AutoContinueAndResolve()
             // 第 2 轮：空回复（只思考无文本）→ 无限续传
             llm.EmptyReply = true;
             llm.EmptyReplyTimes = 1;
-            // 第 3 轮：正常回复（MockLlm 默认 ReplyText="ok"）→ Note 未完成 → 自动拉起
+            // 第 3 轮：正常回复（MockLlm 默认 ReplyText="ok"）→ Note 剩余 2 条 → 自动拉起
             CH4.ChatSession session = CreateSession(llm);
             session.NoteAdd("任务A");
+            session.NoteAdd("任务B");
             session.PostUserMessage("开始");
             // 泵至 [Note 未完成] 入上下文（上限 300 帧——拉起后 MockLlm 持续回复会重复拉起，非本测试范围）
             bool pulled = false;
@@ -950,6 +951,37 @@ public void WhitespaceReply_AutoContinueAndResolve()
             }
             // 有正常 reply + Note 未完成 → Note 拉起（user 消息入上下文）
             Assert.True(pulled);
+        }
+
+        /// <summary>
+        /// Q 对照——剩余 1 条（最后一条）不自动拉起：LLM 完成后自然结束（工具提示"最后一条完成后可结束本轮"——不再强制拉起）。
+        /// </summary>
+        [Fact]
+        public void ToolRound_LastTaskRemain_NoPull()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"t1\",\"function\":{\"name\":\"time\",\"arguments\":\"{}\"}}]");
+            llm.EmptyReply = true;
+            llm.EmptyReplyTimes = 1;
+            CH4.ChatSession session = CreateSession(llm);
+            session.NoteAdd("任务A");
+            session.PostUserMessage("开始");
+            bool pulled = false;
+            for (int i = 0; i < 120 && !pulled; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+                LlmMessage[] check = session.Context.GetMessages();
+                for (int j = 0; j < check.Length; j = j + 1)
+                {
+                    if (check[j].Role == LlmRole.User && check[j].Content != null && check[j].Content.IndexOf("[Note 未完成]", StringComparison.Ordinal) >= 0)
+                    {
+                        pulled = true;
+                    }
+                }
+            }
+            // 剩余 1 条不拉起——上下文无 [Note 未完成]（最后一条由 LLM 完成后自然结束）
+            Assert.False(pulled);
         }
     }
 }

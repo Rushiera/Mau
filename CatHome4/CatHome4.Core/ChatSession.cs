@@ -1386,8 +1386,8 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
             _lastStats.LastCompletionTokens = _usageCompletion;
             _lastStats.LastContextTokens = _contextTokens;
             _store.Save(toSave, _lastStats);
-            // M4a Note 自动拉起提前——未完成任务以 user 名义推下一轮（Q2 顺序：Note 未完成 = 本轮未结束——不 roundsum/chatdone；全部完成天然跳过——防无限循环闸门）
-            if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent < _noteTasks.Length)
+            // M4a Note 自动拉起提前——剩余≥2 条时以 user 名义推下一轮（最后 1 条不拉起——LLM 完成后自然结束；Q2 顺序：Note 未完成 = 本轮未结束——不 roundsum/chatdone；全部完成天然跳过——防无限循环闸门）
+            if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent + 1 < _noteTasks.Length)
             {
                 int remain = _noteTasks.Length - _noteCurrent;
                 PostUserMessage("[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent], "system");
