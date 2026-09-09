@@ -755,6 +755,7 @@ namespace CatHome4.Admin
                 session.SetCatKey(id);
                 AdminService.ApplyCatRoots(id);
                 session.AttachEnvInfo(() => BuildEnvInfoProvider());
+                session.AttachRoundNotify(NotifyBalloon);
                 session.RebuildView();
                 // E3 前文统计——启动恢复持久化真实 usage（旧文件 null=零值）
                 session.SetLoadedStats(restoredStats);
@@ -808,7 +809,13 @@ namespace CatHome4.Admin
                     Enable = _chatBridge.DefaultQqBotEnable,
                     Inject = delegate(string s) { captured.PostUserMessage(s); },
                     GetMessageCount = delegate() { return captured.Context.GetMessageCount(); },
-                    GetMessages = delegate() { return captured.Context.GetMessages(); }
+                    GetMessages = delegate() { return captured.Context.GetMessages(); },
+                    NewSession = delegate()
+                    {
+                        _majorSessionNewRequested = true;
+                        return "新会话已请求（注入执行中）\n" + _chatBridge.BuildInjectSummary(_chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs);
+                    },
+                    GetInfo = delegate() { return captured.GetInfoText(); }
                 });
             }
             for (int i = 0; i < _cats.Count; i++)
@@ -825,7 +832,13 @@ namespace CatHome4.Admin
                         Enable = cat.QqBotEnable,
                         Inject = delegate(string s) { captured.Session.PostUserMessage(s); },
                         GetMessageCount = delegate() { return captured.Session.Context.GetMessageCount(); },
-                        GetMessages = delegate() { return captured.Session.Context.GetMessages(); }
+                        GetMessages = delegate() { return captured.Session.Context.GetMessages(); },
+                        NewSession = delegate()
+                        {
+                            captured.SessionNewRequested = true;
+                            return "新会话已请求（注入执行中）\n" + _chatBridge.BuildInjectSummary(captured.Persona, captured.InjectList, captured.ToolSpecs);
+                        },
+                        GetInfo = delegate() { return captured.Session.GetInfoText(); }
                     });
                 }
             }

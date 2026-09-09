@@ -297,6 +297,7 @@ private static HttpHost _httpHost;
             // S4 Admin 域接线——依赖注入（管理 API 处理器 + cat.* 指令族迁入 CatHome4.Admin）
             AdminService.Configure(_chatBridge, _oa, dataRoot, _mainThreadId, ExecuteTool, ObserveService.BuildSnapshotJson, new HtmlRootProvider(), apiConfigStore, qqBotStore, llmConfig);
             AdminService.BuildEnvInfoProvider = BuildEnvInfo;
+            AdminService.NotifyBalloon = Program.NotifyBalloon;
             // S5 Observe 域接线——依赖注入（观测面迁入 CatHome4.Observe）
             ObserveService.Configure(_oa, _chatBridge, _quickHandle, _toolFlowHandles, _quickId, _toolFlowIds, _runner, null);
             SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.json"));
@@ -381,6 +382,7 @@ private static HttpHost _httpHost;
             _chatBridge.DefaultSession.SetCatKey("majordomo");
             AdminService.ApplyCatRoots("majordomo");
             _chatBridge.DefaultSession.AttachEnvInfo(() => BuildEnvInfo());
+            _chatBridge.DefaultSession.AttachRoundNotify(Program.NotifyBalloon);
             _chatBridge.RegisterSession(_chatBridge.DefaultSession);
             // F4 视图——从真实前文重建视图层（恢复/注入后——真实前文绝对可用）
             _chatBridge.DefaultSession.RebuildView();

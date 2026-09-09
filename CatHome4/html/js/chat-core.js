@@ -343,6 +343,16 @@ function chatOnControl(payload) {
         chatUsage.completion = u.completion || 0;
         chatUsage.cacheHit = u.cacheHit || 0;
         chatRenderStatus();
+        // Q1 顶端计数实时化——每次 API 请求返回后按真实 context（单次前文 token）更新前文长度，不等轮结束
+        if (u.context !== undefined && u.context > 0) {
+            var newCtx = '前文 ' + chatFmtCount(u.context) + ' tokens';
+            var oldCtx = chatInfo.textContent;
+            if (oldCtx.indexOf('前文 ') >= 0) {
+                chatInfo.textContent = oldCtx.replace(/前文 [\d.]+[kK]? tokens/, newCtx);
+            } else {
+                chatInfo.textContent = oldCtx + ' | ' + newCtx;
+            }
+        }
     } else if (type === 'error') {
         // LLM 错误——seal 全部流式容器 + 错误提示 + 恢复 idle
         chatPhaseReset();

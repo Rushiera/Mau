@@ -30,6 +30,9 @@ namespace CatHome4.Admin
         /// <summary>环境信息构建回调——ChatSession info 工具注入（入口壳注入；M4e 猫级白名单 roots 视图）</summary>
         public static Func<string> BuildEnvInfoProvider;
 
+        /// <summary>本轮结束通知回调——ChatSession AttachRoundNotify 注入（入口壳接托盘 BalloonTip；Q 系统通知）</summary>
+        public static Action<string, string> NotifyBalloon;
+
         /// <summary>快照 JSON 构建——StartCatHost 注入（入口壳注入）</summary>
         public static Func<bool, string> BuildSnapshotJson;
 

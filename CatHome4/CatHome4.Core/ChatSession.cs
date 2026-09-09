@@ -35,12 +35,6 @@ namespace CH4
         /// <summary>工具批等待帧上限——同原 MaxDogWaitFrames（4800 最长工具 + 600 余量）</summary>
         private const long ToolBatchWaitFrames = 4800 + 600;
 
-        /// <summary>工具轮次收敛上限——同 MaxToolRounds（P8.5b 上调 3→10 保持）</summary>
-        private const int MaxToolRounds = 10;
-
-
-
-
         /// <summary>工具单 Dog owner ID——宿主 Dog 域（同 ToolOwnerId——OA 未开存活校验，多 Dog 未来可扩展独立 ID）</summary>
         private const long ToolOwnerId = 1;
 
@@ -148,7 +142,7 @@ namespace CH4
         /// <summary>当前相位</summary>
         private ChatPhase _phase;
 
-        /// <summary>当前工具轮次（0 起——MaxToolRounds 收敛）</summary>
+        /// <summary>当前工具轮次（0 起——无限续轮，直到 LLM 给出最终回复；日志轮数显示）</summary>
         private long _round;
 
         /// <summary>当前相位已运行帧数——超时计时面</summary>
@@ -220,6 +214,9 @@ namespace CH4
 
         /// <summary>环境信息提供器——info 内置工具数据源（入口壳注入；空=工具返回不可用）</summary>
         private Func<string> _envInfoProvider;
+
+        /// <summary>本轮结束通知回调——入口壳注入（Q：托盘 BalloonTip——displayName + reply 摘要/Token 统计）</summary>
+        private Action<string, string> _roundNotify;
 
         /// <summary>
         /// 建立会话实体——宿主级服务经构造注入；会话生命周期数据自持。
@@ -484,6 +481,15 @@ namespace CH4
         public void AttachEnvInfo(Func<string> provider)
         {
             _envInfoProvider = provider;
+        }
+
+        /// <summary>
+        /// 注入本轮结束通知回调——CloseRound 正常收尾时调用（Q：系统通知 Tip——displayName + 末轮回复摘要；入口壳接托盘 BalloonTip）。
+        /// </summary>
+        /// <param name="notify">通知回调（标题 + 正文）</param>
+        public void AttachRoundNotify(Action<string, string> notify)
+        {
+            _roundNotify = notify;
         }
 
         /// <summary>
@@ -816,7 +822,8 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                         {
                             string usageJson = "{\"prompt\":" + _usagePrompt.ToString()
                                 + ",\"completion\":" + _usageCompletion.ToString()
-                                + ",\"cacheHit\":" + _usageCacheHit.ToString() + "}";
+                                + ",\"cacheHit\":" + _usageCacheHit.ToString()
+                                + ",\"context\":" + _contextTokens.ToString() + "}";
                             string usageCtrl = "{\"type\":\"usage\",\"data\":" + usageJson + "}";
                             _httpHost.PushView("control", usageCtrl, -1, 0);
                         }
@@ -1029,10 +1036,8 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                     RetryEmptyReply("SSE 流中断（未以 [DONE] 结束）");
                     return;
                 }
-                _textStreamSeq = 0;
-                _reasonStreamSeq = 0;
-                LogStore.Add("LLM", 3, "LLM 错误（本轮中止——上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
-                _phase = ChatPhase.Done;
+                // API 错误重试耗尽（Runtime 有限重试 3 次已过）——中止本轮：落盘断点 + 错误气泡（不走 CloseRound——不 roundsum/chatdone/Note 拉起）
+                AbortRoundError();
                 return;
             }
             if (_llmToolCallsJson.Length == 0)
@@ -1090,7 +1095,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
             _reasonStreamSeq = 0;
             _textStreamSeq = 0;
             DataBox.Set<string>("global", "chat_state", "tools");
-            LogStore.Add("CatHome4", 1, "模型请求调用工具（第 " + (_round + 1).ToString() + "/" + MaxToolRounds.ToString() + " 轮）：" + SummarizeToolNames(_llmToolCallsJson), "CHAT");
+            LogStore.Add("CatHome4", 1, "模型请求调用工具（第 " + (_round + 1).ToString() + " 轮）：" + SummarizeToolNames(_llmToolCallsJson), "CHAT");
             EnterToolBatch(_llmToolCallsJson);
         }
         /// <summary>
@@ -1315,19 +1320,55 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 return;
             }
             LogStore.Add("CatHome4", 1, "工具结果已回传，续轮", "CHAT");
-            // 收敛判定——MaxToolRounds 轮满 → Done（收敛语义由 LLM 判断完成）
-            if (_round + 1 >= MaxToolRounds)
-            {
-                _phase = ChatPhase.Done;
-                return;
-            }
             _round = _round + 1;
-            // 续轮——StartLlm 动作段
+            // 续轮——StartLlm 动作段（无收敛上限——LLM 未给出最终回复前持续工具循环；终止条件 = 正常回复 / 空回复续传 / API 错误中止）
             LaunchLlm();
         }
         /// <summary>
         /// Done 相位——前文落盘（tool 截断 ≤800——D7 落盘副本防膨胀）+ chat_state=idle + PushChatDone + 复位（原 HandleChat 段4）。
         /// </summary>
+        /// <summary>
+        /// 错误中止收尾——LLM API 错误重试耗尽后调用（保留断点上下文 + 错误气泡；不走 CloseRound——中止非正常完成语义）。
+        /// 对齐 PauseFinalize：落盘断点（tool 截断 ≤800）+ 视图序号复位 + 状态复位 Idle + chat_state=idle + 推 error 事件（前端 seal + 错误气泡）。
+        /// </summary>
+        private void AbortRoundError()
+        {
+            _textStreamSeq = 0;
+            _reasonStreamSeq = 0;
+            LogStore.Add("LLM", 3, "LLM 错误（重试耗尽——本轮中止，上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
+            // [段1] 前文落盘——tool 结果截断 ≤800（对齐 CloseRound——断点保留）
+            LlmMessage[] toSave = _context.GetMessages();
+            for (int i = 0; i < toSave.Length; i++)
+            {
+                if (toSave[i].Role == LlmRole.Tool && toSave[i].Content != null && toSave[i].Content.Length > 800)
+                {
+                    toSave[i].Content = TruncateText(toSave[i].Content, 800);
+                }
+            }
+            _lastStats.EntryCount = toSave.Length;
+            _store.Save(toSave, _lastStats);
+            // [段2] 前端通知——error 控制事件（前端 seal 流式容器 + 错误气泡 + 恢复 idle；文本取清空前原值）
+            if (_httpHost != null)
+            {
+                string errCtrl = "{\"type\":\"error\",\"text\":" + JsonUtil.Serialize(_llmErrorText) + "}";
+                _httpHost.PushView("control", errCtrl, -1, 0);
+            }
+            // [段3] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——错误中止非正常完成语义）
+            _round = 0;
+            _phase = ChatPhase.Idle;
+            _phaseFrames = 0;
+            _llmBusy = false;
+            _llmError = false;
+            _llmErrorText = "";
+            _llmResultText = "";
+            _llmReasoning = "";
+            _llmToolCallsJson = "";
+            _emptyReplyRetry = 0;
+            _streamClosedRetry = false;
+            _sawRetry = false;
+            DataBox.Set<string>("global", "chat_state", "idle");
+        }
+
         private void CloseRound()
         {
             LlmMessage[] toSave = _context.GetMessages();
@@ -1345,6 +1386,17 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
             _lastStats.LastCompletionTokens = _usageCompletion;
             _lastStats.LastContextTokens = _contextTokens;
             _store.Save(toSave, _lastStats);
+            // M4a Note 自动拉起提前——未完成任务以 user 名义推下一轮（Q2 顺序：Note 未完成 = 本轮未结束——不 roundsum/chatdone；全部完成天然跳过——防无限循环闸门）
+            if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent < _noteTasks.Length)
+            {
+                int remain = _noteTasks.Length - _noteCurrent;
+                PostUserMessage("[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent], "system");
+                LogStore.Add("CatHome4", 1, "Note 自动拉起：剩余 " + remain + " 条任务（本轮未结束——不结算统计）", "CHAT");
+                _viewStore.Save();
+                _round = 0;
+                _phase = ChatPhase.Idle;
+                return;
+            }
             // roundsum 轮末统计——相位结算 + 载荷构建 + 视图落盘 + SSE 推送（本轮 Token 消耗 + 工具次数 + 总耗时 + 四态用时）
             PhaseSettle();
             string roundsumJson = BuildRoundSumJson();
@@ -1367,21 +1419,30 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 _httpHost.PushView("control", doneJson, -1, 0);
             }
             LogStore.Add("CatHome4", 1, "会话前文已落盘（" + _context.GetMessageCount().ToString() + " 条消息）", "SYS");
-            // M4a Note 自动拉起——还有未完成任务（含最后一条）以 user 名义推下一轮；全部完成（ExecuteNote 已置 null）天然跳过（防无限循环闸门——CH2 语义）
-            if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent < _noteTasks.Length)
+            // Q 本轮结束系统通知——配置 app.round_notify 可开关（默认开启）；正文优先末轮回复前 40 字符，空则回退 Token 统计
+            if (_roundNotify != null)
             {
-                int remain = _noteTasks.Length - _noteCurrent;
-                PostUserMessage("[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent], "system");
-                LogStore.Add("CatHome4", 1, "Note 自动拉起：剩余 " + remain + " 条任务", "CHAT");
+                string notifyOn = "true";
+                ConfigStore cfg = null;
+                if (DataBox.TryResolve<ConfigStore>(out cfg) && cfg != null)
+                {
+                    notifyOn = cfg.Get("app.round_notify", "true");
+                }
+                if (notifyOn == "true" || notifyOn == "1")
+                {
+                    string body = TrimDisplay(_llmResultText, 40);
+                    if (body.Length == 0)
+                    {
+                        body = "Token：输入 " + _usagePrompt.ToString() + " · 输出 " + _usageCompletion.ToString() + " · 工具 " + _toolCallCount.ToString() + " 次";
+                    }
+                    _roundNotify(_displayName, body);
+                }
             }
-            else
-            {
-                _noteTasks = null;
-                _noteCurrent = 0;
-                _noteDone = 0;
-                // M4c 前端面板——清空状态推送
-                PushNoteState();
-            }
+            // M4c Note 清空——无剩余任务（正常结束路径；拉起已提前到 roundsum 之前——Q2 顺序调整）
+            _noteTasks = null;
+            _noteCurrent = 0;
+            _noteDone = 0;
+            PushNoteState();
             _round = 0;
             _phase = ChatPhase.Idle;
         }

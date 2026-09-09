@@ -106,5 +106,14 @@ namespace CH4
             }
             return "CH4 | 环境信息不可用（未注入 provider）";
         }
+
+        /// <summary>
+        /// 环境信息文本公开面——QQ /info 指令直调工具函数（ExecuteInfo 同源；不触会话状态——跨线程安全）。
+        /// </summary>
+        /// <returns>环境信息文本</returns>
+        public string GetInfoText()
+        {
+            return ExecuteInfo();
+        }
     }
 }

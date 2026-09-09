@@ -162,8 +162,8 @@ namespace CatHome4.QQ
                 return;
             }
             LogStore.Add("QQBot", 1, "收: " + t + " | " + source + " → " + Truncate(text, 30) + attachText, "QQBOT");
-            // 强匹配指令——不走 LLM 路由，代码直执（R2.3.8）
-            string cmdReply = HandleSlashCommand(text);
+            // 强匹配指令——不走 LLM 路由，代码直执（R2.3.8；Q5 扩充 /new /info）
+            string cmdReply = HandleSlashCommand(text, qqBotId);
             if (cmdReply != null)
             {
                 SendToSource(qqBotId, source, cmdReply);
@@ -418,10 +418,12 @@ namespace CatHome4.QQ
 
         /// <summary>
         /// 强匹配指令处理——/ 开头指令完全一致才命中；命中返回回复文本，未命中返回 null（走 LLM 路由）。
+        /// Q5：/new 重开新会话（前端 session.new 同款）+ /info 查看状态（qqbot 管理器 + 合并猫 info）。
         /// </summary>
         /// <param name="text">消息文本</param>
+        /// <param name="qqBotId">Bot 配置身份——按 bot 收集绑定猫</param>
         /// <returns>指令回复；非指令 null</returns>
-        private static string HandleSlashCommand(string text)
+        private static string HandleSlashCommand(string text, Guid qqBotId)
         {
             if (text == "/ping")
             {
@@ -429,20 +431,62 @@ namespace CatHome4.QQ
             }
             if (text == "/info")
             {
-                return BuildInfoText();
+                return BuildInfoText(qqBotId);
+            }
+            if (text == "/new")
+            {
+                return HandleNewSession(qqBotId);
             }
             if (text.StartsWith("/"))
             {
-                return "未知指令: " + text + "（可用: /ping /info）";
+                return "未知指令: " + text + "（可用: /ping /info /new）";
             }
             return null;
         }
 
         /// <summary>
-        /// 构建 /info 状态文本——运行总时长 + 当前 qqbot 数 + 可用指令。
+        /// /new 指令执行——等同前端 session.new（置位标志投递总线，主线程泵异步执行）+ 注入摘要同步返回（Q5：注入前文与工具气泡同步到 qqbot）。
         /// </summary>
+        /// <param name="qqBotId">Bot 配置身份</param>
+        /// <returns>回复文本</returns>
+        private static string HandleNewSession(Guid qqBotId)
+        {
+            if (_collector == null)
+            {
+                return "无法执行：qqbot 收集器未就绪";
+            }
+            List<QqTarget> targets = _collector.CollectByBot(qqBotId);
+            if (targets.Count == 0)
+            {
+                return "无绑定猫";
+            }
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < targets.Count; i = i + 1)
+            {
+                QqTarget tg = targets[i];
+                if (i > 0)
+                {
+                    sb.Append("\n\n");
+                }
+                sb.Append("【" + tg.DisplayName + "】");
+                if (tg.NewSession != null)
+                {
+                    sb.Append("\n" + tg.NewSession());
+                }
+                else
+                {
+                    sb.Append("\n不支持新会话");
+                }
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 构建 /info 状态文本——运行总时长 + 当前 qqbot 数 + 可用指令 + 合并绑定猫 info（Q5）。
+        /// </summary>
+        /// <param name="qqBotId">Bot 配置身份</param>
         /// <returns>状态文本</returns>
-        private static string BuildInfoText()
+        private static string BuildInfoText(Guid qqBotId)
         {
             TimeSpan up = DateTime.Now - _startTime;
             string upText = "";
@@ -454,7 +498,22 @@ namespace CatHome4.QQ
             {
                 upText = up.Minutes + "m" + up.Seconds + "s";
             }
-            return "【QQ 管理器状态】\n运行时长: " + upText + "\n当前 qqbot 数: " + _connections.Count + "\n可用指令: /ping /info";
+            StringBuilder sb = new StringBuilder();
+            sb.Append("【QQ 管理器状态】\n运行时长: " + upText + "\n当前 qqbot 数: " + _connections.Count + "\n可用指令: /ping /info /new");
+            // Q5——合并绑定猫的 info（直接调用工具函数，不经 LLM/OA）
+            if (_collector != null)
+            {
+                List<QqTarget> targets = _collector.CollectByBot(qqBotId);
+                for (int i = 0; i < targets.Count; i = i + 1)
+                {
+                    QqTarget tg = targets[i];
+                    if (tg.GetInfo != null)
+                    {
+                        sb.Append("\n\n【猫: " + tg.DisplayName + "】\n" + tg.GetInfo());
+                    }
+                }
+            }
+            return sb.ToString();
         }
 
         /// <summary>
@@ -470,8 +529,8 @@ namespace CatHome4.QQ
             {
                 return;
             }
-            // 指令回复/错误提示——纯文本通道（无 MD 检测），携带被动 msg_id
-            conn.SendReply(source.Type, source.TargetId, text, source.MsgId, false);
+            // 指令回复/错误提示——MD 通道（Q4 全 MD），携带被动 msg_id
+            conn.SendReply(source.Type, source.TargetId, text, source.MsgId, true);
         }
 
         /// <summary>
@@ -593,9 +652,9 @@ namespace CatHome4.QQ
                 SendPrivateReply(conn, tg, source, text);
                 return;
             }
-            // 群聊保持现状——msg_type=0 直发（携带被动 msg_id）
+            // 群聊——MD 通道直发（Q4 全 MD——msg_type=2；携带被动 msg_id；官方群 MD 失败 L2 留痕）
             string formatted = tg.DisplayName + "：\n" + text;
-            conn.SendReply(source.Type, source.TargetId, formatted, source.MsgId, false);
+            conn.SendReply(source.Type, source.TargetId, formatted, source.MsgId, true);
         }
 
         /// <summary>
@@ -611,7 +670,8 @@ namespace CatHome4.QQ
             List<string> files = ExtractFileMarks(text, out text);
             if (text.Length > 0)
             {
-                bool isMarkdown = IsMarkdownText(text);
+            // Q4 全 MD——不再自动检测（所有回复一律 MD 通道 msg_type=2）；标题分块切分 + 被动 msg_id 保留
+            bool isMarkdown = true;
                 List<string> chunks = ChunkForSending(text);
                 for (int i = 0; i < chunks.Count; i = i + 1)
                 {
@@ -676,80 +736,6 @@ namespace CatHome4.QQ
 
         /// <summary>私聊被动回复条数上限——官方每条消息最多回复 4 次</summary>
         private const int MaxPassiveReplies = 4;
-
-        /// <summary>
-        /// MD 检测——行级扫描（P8 §二 规则）：标题/列表/引用/代码块/加粗/删除线/链接任一命中即 MD。
-        /// </summary>
-        /// <param name="text">消息文本</param>
-        /// <returns>true=走 Markdown 通道</returns>
-        private static bool IsMarkdownText(string text)
-        {
-            if (text == null || text.Length == 0)
-            {
-                return false;
-            }
-            string[] lines = text.Split('\n');
-            for (int i = 0; i < lines.Length; i = i + 1)
-            {
-                string line = lines[i].TrimStart();
-                if (line.Length == 0)
-                {
-                    continue;
-                }
-                // 标题——# 后跟空格
-                if (line[0] == '#' && line.Length > 1 && line[1] == ' ')
-                {
-                    return true;
-                }
-                // 列表——- / * 开头或有序数字. 开头
-                if (line.Length > 1 && (line[0] == '-' || line[0] == '*') && line[1] == ' ')
-                {
-                    return true;
-                }
-                if (IsOrderedList(line))
-                {
-                    return true;
-                }
-                // 引用 / 代码块
-                if (line[0] == '>' || line.StartsWith("```"))
-                {
-                    return true;
-                }
-                // 加粗 / 删除线 / 链接
-                if (line.Contains("**") || line.Contains("~~") || ContainsLink(line))
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /// <summary>有序列表检测——数字 + 点 + 空格开头</summary>
-        private static bool IsOrderedList(string line)
-        {
-            int i = 0;
-            while (i < line.Length && line[i] >= '0' && line[i] <= '9')
-            {
-                i = i + 1;
-            }
-            if (i == 0 || i + 1 >= line.Length)
-            {
-                return false;
-            }
-            return line[i] == '.' && line[i + 1] == ' ';
-        }
-
-        /// <summary>链接检测——[text](url) 形态</summary>
-        private static bool ContainsLink(string line)
-        {
-            int lb = line.IndexOf('[');
-            if (lb < 0)
-            {
-                return false;
-            }
-            int rp = line.IndexOf("](", lb);
-            return rp > lb;
-        }
 
         /// <summary>
         /// 按标题分块——标题行归属其后内容块；首个标题前文本（前言）独立成块；无标题整篇一块。
@@ -1006,5 +992,11 @@ namespace CatHome4.QQ
 
         /// <summary>消息历史读取——回复块扫描</summary>
         public Func<LlmMessage[]> GetMessages;
+
+        /// <summary>新会话桥——触发 session.new（异步置位）+ 返回注入摘要文本（Q5 /new 指令；null=不支持）</summary>
+        public Func<string> NewSession;
+
+        /// <summary>会话信息桥——猫 info 工具文本（Q5 /info 指令合并；null=不支持）</summary>
+        public Func<string> GetInfo;
     }
 }

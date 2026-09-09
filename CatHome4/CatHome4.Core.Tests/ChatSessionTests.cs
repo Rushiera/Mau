@@ -11,8 +11,8 @@ using Xunit;
 namespace CatHome4.Core.Tests
 {
     /// <summary>
-    /// ChatSession 核心测试——相位环/工具批收敛/Note 全链（S7 程序集拆分验收）。
-    /// 覆盖：纯 LLM 回复相位环闭环 / 内置工具（Note）工具批路径 / Note 手动添加与启动 / 工具批收敛上限。
+    /// ChatSession 核心测试——相位环/工具批/Note 全链（S7 程序集拆分验收）。
+    /// 覆盖：纯 LLM 回复相位环闭环 / 内置工具（Note）工具批路径 / Note 手动添加与启动 / 工具批无限续轮（2026-09-09 删收敛上限）。
     /// </summary>
     public class ChatSessionTests
     {
@@ -915,6 +915,41 @@ public void WhitespaceReply_AutoContinueAndResolve()
             Assert.Equal(1, blocks[0].MsgIndex);
             Assert.Equal(2, blocks[1].MsgIndex);
             Assert.Equal(-1, blocks[2].MsgIndex);
+        }
+
+        /// <summary>
+        /// Q2 对照——工具轮后空回复无限续传恢复为正常 reply：有 reply 且 Note 未完成 → Note 拉起（正常语义保持）。
+        /// </summary>
+        [Fact]
+        public void ToolRound_ThenEmptyReply_ThenReply_PullsNote()
+        {
+            MockLlm llm = new MockLlm();
+            // 第 1 轮：工具调用（time 内置——不进 OA）
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"t1\",\"function\":{\"name\":\"time\",\"arguments\":\"{}\"}}]");
+            // 第 2 轮：空回复（只思考无文本）→ 无限续传
+            llm.EmptyReply = true;
+            llm.EmptyReplyTimes = 1;
+            // 第 3 轮：正常回复（MockLlm 默认 ReplyText="ok"）→ Note 未完成 → 自动拉起
+            CH4.ChatSession session = CreateSession(llm);
+            session.NoteAdd("任务A");
+            session.PostUserMessage("开始");
+            // 泵至 [Note 未完成] 入上下文（上限 300 帧——拉起后 MockLlm 持续回复会重复拉起，非本测试范围）
+            bool pulled = false;
+            for (int i = 0; i < 300 && !pulled; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+                LlmMessage[] check = session.Context.GetMessages();
+                for (int j = 0; j < check.Length; j = j + 1)
+                {
+                    if (check[j].Role == LlmRole.User && check[j].Content != null && check[j].Content.IndexOf("[Note 未完成]", StringComparison.Ordinal) >= 0)
+                    {
+                        pulled = true;
+                    }
+                }
+            }
+            // 有正常 reply + Note 未完成 → Note 拉起（user 消息入上下文）
+            Assert.True(pulled);
         }
     }
 }

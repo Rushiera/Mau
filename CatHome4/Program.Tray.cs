@@ -31,6 +31,9 @@ namespace CH4
         /// <summary>退出请求标志——托盘"退出"置位，主循环轮询 break（走 Main finally 优雅收尾）</summary>
         private static volatile bool _trayExitRequested;
 
+        /// <summary>通知弹窗队列——任意线程入队/托盘线程 Timer 消费（BalloonTip 仅 STA 线程安全）</summary>
+        private static readonly System.Collections.Concurrent.ConcurrentQueue<string[]> _balloonQueue = new System.Collections.Concurrent.ConcurrentQueue<string[]>();
+
         /// <summary>自启配置快照——主循环轮询对比（变化才同步注册表）</summary>
         private static string _lastAutoStartValue = "";
 
@@ -132,6 +135,93 @@ namespace CH4
 
         // [段3] 托盘——独立 STA 线程 + Application.Run 消息泵（主循环零改动）
         /// <summary>
+        /// 创建托盘图标——手绘猫脸（橙色圆脸 + 三角耳 + 眼鼻）→ PNG → ICO 容器（Q3：托盘自定义图标）。
+        /// 零外部资源零部署改动：System.Drawing 运行时绘制；ICO 头手写（ICONDIR + ICONDIRENTRY + PNG——C# exp §五 ICO 手写经验）。
+        /// 失败回退系统默认图标（托盘不因图标崩溃）。
+        /// </summary>
+        /// <returns>托盘 Icon</returns>
+        private static Icon CreateTrayIcon()
+        {
+            try
+            {
+                int size = 32;
+                using (Bitmap bmp = new Bitmap(size, size))
+                {
+                    using (Graphics g = Graphics.FromImage(bmp))
+                    {
+                        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                        g.Clear(Color.Transparent);
+                        // 耳朵——左右三角
+                        Point[] leftEar = new Point[] { new Point(4, 11), new Point(13, 3), new Point(15, 12) };
+                        Point[] rightEar = new Point[] { new Point(28, 11), new Point(19, 3), new Point(17, 12) };
+                        using (SolidBrush earBrush = new SolidBrush(Color.FromArgb(255, 200, 120, 40)))
+                        {
+                            g.FillPolygon(earBrush, leftEar);
+                            g.FillPolygon(earBrush, rightEar);
+                        }
+                        // 脸——橙色圆
+                        using (SolidBrush faceBrush = new SolidBrush(Color.FromArgb(255, 230, 140, 50)))
+                        {
+                            g.FillEllipse(faceBrush, 3, 6, 26, 24);
+                        }
+                        // 眼睛——深色椭圆
+                        using (SolidBrush eyeBrush = new SolidBrush(Color.FromArgb(255, 40, 30, 20)))
+                        {
+                            g.FillEllipse(eyeBrush, 9, 13, 4, 5);
+                            g.FillEllipse(eyeBrush, 19, 13, 4, 5);
+                        }
+                        // 鼻子——小三角
+                        Point[] nose = new Point[] { new Point(14, 20), new Point(18, 20), new Point(16, 23) };
+                        using (SolidBrush noseBrush = new SolidBrush(Color.FromArgb(255, 120, 60, 30)))
+                        {
+                            g.FillPolygon(noseBrush, nose);
+                        }
+                    }
+                    using (System.IO.MemoryStream png = new System.IO.MemoryStream())
+                    {
+                        bmp.Save(png, System.Drawing.Imaging.ImageFormat.Png);
+                        byte[] pngData = png.ToArray();
+                        // ICO 容器——ICONDIR(6) + ICONDIRENTRY(16) + PNG 数据（Vista+ 支持 PNG 压缩图标）
+                        using (System.IO.MemoryStream ico = new System.IO.MemoryStream())
+                        {
+                            System.IO.BinaryWriter w = new System.IO.BinaryWriter(ico);
+                            w.Write((short)0);          // reserved
+                            w.Write((short)1);          // type=icon
+                            w.Write((short)1);          // count=1
+                            w.Write((byte)size);        // width
+                            w.Write((byte)size);        // height
+                            w.Write((byte)0);           // colors
+                            w.Write((byte)0);           // reserved
+                            w.Write((short)1);          // planes
+                            w.Write((short)32);         // bitcount
+                            w.Write(pngData.Length);    // bytesInRes
+                            w.Write(22);                // imageOffset
+                            w.Write(pngData);
+                            w.Flush();
+                            ico.Position = 0;
+                            return new Icon(ico);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 2, "托盘图标生成失败（回退系统图标）: " + ex.Message, "TRAY");
+                return SystemIcons.Application;
+            }
+        }
+
+        /// <summary>
+        /// 通知弹窗入队——本轮结束系统通知（Q：开关 app.round_notify 由 ChatSession 判定；跨线程安全——托盘 Timer 消费）。
+        /// </summary>
+        /// <param name="title">标题（猫 displayName）</param>
+        /// <param name="text">正文（末轮回复摘要/Token 统计）</param>
+        public static void NotifyBalloon(string title, string text)
+        {
+            _balloonQueue.Enqueue(new string[] { title, text });
+        }
+
+        /// <summary>
         /// 启动托盘线程——仅交互模式调用；后台线程（主线程退出进程即止）。
         /// </summary>
         private static void StartTray()
@@ -154,9 +244,24 @@ namespace CH4
             NotifyIcon icon = new NotifyIcon();
             try
             {
-                icon.Icon = SystemIcons.Application;
+                icon.Icon = CreateTrayIcon();
                 icon.Text = "CatHome4";
                 icon.Visible = true;
+                // Q 通知消费——托盘线程 Timer 轮询队列（BalloonTip 仅 STA 线程安全；任意线程入队不越界）
+                System.Windows.Forms.Timer balloonTimer = new System.Windows.Forms.Timer();
+                balloonTimer.Interval = 1000;
+                balloonTimer.Tick += delegate(object s2, EventArgs e2)
+                {
+                    string[] item;
+                    while (_balloonQueue.TryDequeue(out item))
+                    {
+                        if (item != null && item.Length >= 2 && item[0] != null && item[1] != null)
+                        {
+                            icon.ShowBalloonTip(3000, item[0], item[1], ToolTipIcon.Info);
+                        }
+                    }
+                };
+                balloonTimer.Start();
 
                 ContextMenuStrip menu = new ContextMenuStrip();
 

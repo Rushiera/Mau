@@ -295,6 +295,85 @@ namespace CH4
         }
 
         /// <summary>
+        /// 构建注入摘要文本——QQ /new 指令同步回复面（Q5：注入前文与工具气泡同步到 qqbot）。
+        /// 纯构建：读 workspace + 调注入提示词构建委托（不触碰会话状态——WS 线程安全）；真正 session.new 由主线程泵异步执行。
+        /// </summary>
+        /// <param name="persona">角色段</param>
+        /// <param name="injectList">注入清单（null=不注入）</param>
+        /// <param name="specs">工具声明面</param>
+        /// <returns>摘要文本（注入文件三态 + 工具组清单）</returns>
+        public string BuildInjectSummary(string persona, string[] injectList, ToolSpec[] specs)
+        {
+            WorkspaceConfig ws = null;
+            DataBox.TryResolve<WorkspaceConfig>(out ws);
+            InjectPromptResult injectResult = _buildInjectPrompt(ws, specs, persona, injectList);
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            if (injectList != null && injectList.Length > 0)
+            {
+                sb.Append("注入文件 " + injectResult.Files.Count + " 个：");
+                for (int i = 0; i < injectResult.Files.Count; i++)
+                {
+                    InjectFileResult f = injectResult.Files[i];
+                    if (i > 0)
+                    {
+                        sb.Append("；");
+                    }
+                    sb.Append(f.File);
+                    if (f.Status == "ok")
+                    {
+                        sb.Append(" ✓" + f.Chars + "字");
+                    }
+                    else if (f.Status == "missing")
+                    {
+                        sb.Append(" ✗缺失");
+                    }
+                    else
+                    {
+                        sb.Append(" ✗" + (f.Message ?? "错误"));
+                    }
+                }
+            }
+            else
+            {
+                sb.Append("无注入文件");
+            }
+            // 工具组——按组聚合（ToolPool 归属映射同注入报告）
+            sb.Append("\n工具组：");
+            Dictionary<string, string> ownerMap = ToolPool.BuildOwnerFlowMap();
+            Dictionary<string, List<string>> groups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            if (specs != null)
+            {
+                for (int i = 0; i < specs.Length; i = i + 1)
+                {
+                    ToolSpec spec = specs[i];
+                    string group = "";
+                    if (ownerMap.TryGetValue(spec.Name, out string ownerGroup))
+                    {
+                        group = ownerGroup;
+                    }
+                    List<string> names;
+                    if (!groups.TryGetValue(group, out names))
+                    {
+                        names = new List<string>();
+                        groups[group] = names;
+                    }
+                    names.Add(spec.Name);
+                }
+            }
+            bool firstGroup = true;
+            foreach (KeyValuePair<string, List<string>> kv in groups)
+            {
+                if (!firstGroup)
+                {
+                    sb.Append(" / ");
+                }
+                firstGroup = false;
+                sb.Append(kv.Key + "(" + string.Join(",", kv.Value.ToArray()) + ")");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
         /// 构建注入系统提示词——转发注入委托（入口壳 CatCfg 域实现——角色 + 注入知识 + 工具语义声明）。
         /// </summary>
         /// <param name="workspace">工作区配置（roots + inject 清单）</param>
