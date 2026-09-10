@@ -29,6 +29,11 @@ namespace Mau.Bricks
         {
             result = "";
             string path = ExtractArg(argsJson, "path");
+            if (path == "§PARSE_FAIL§")
+            {
+                result = "ERR|BAD_ARGS|工具参数 JSON 解析失败（LLM 生成参数可能被截断——超长内容请分段写入）";
+                return false;
+            }
             if (path.Length == 0)
             {
                 result = "ERR|BAD_ARGS|缺少参数 path";
@@ -65,6 +70,10 @@ namespace Mau.Bricks
         /// <returns>参数值</returns>
         private static string ExtractArg(string argumentsJson, string key)
         {
+            if (argumentsJson == null || argumentsJson.Length == 0)
+            {
+                return "§PARSE_FAIL§";
+            }
             try
             {
                 JsonDocument doc = JsonDocument.Parse(argumentsJson);
@@ -86,6 +95,7 @@ namespace Mau.Bricks
             }
             catch (Exception)
             {
+                return "§PARSE_FAIL§";
             }
             return "";
         }

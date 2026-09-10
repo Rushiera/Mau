@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Mau.Runtime
@@ -203,7 +203,7 @@ namespace Mau.Runtime
         /// <param name="value">str 值</param>
         /// <returns>true=写入成功</returns>
         public bool SetStr(long officeId, long ownerId, string key, string value)
-        {
+{
             Office office;
 
             _threadGuard.AssertMainThread("OA.SetStr");
@@ -215,13 +215,13 @@ namespace Mau.Runtime
             {
                 return false;
             }
+            // OA 全文持久化——先落盘再推 OA（落盘 = 兜底真相源；Log 侧 SummarizeToolArgs 摘要属运行可见度另一路径——两机制独立）
+            LogStore.Add("OA", 0, "工单 #" + officeId + " 载荷 " + key + "：" + value, "OA");
             office.Data.Strs[key] = value;
             _offices[officeId] = office;
             _version = _version + 1;
             return true;
-        }
-
-        /// <summary>
+        }        /// <summary>
         /// 读取请求载荷 int 值——执行方消费
         /// </summary>
         /// <param name="officeId">Office ID</param>

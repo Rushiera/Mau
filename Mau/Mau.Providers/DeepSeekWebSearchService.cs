@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -9,16 +9,12 @@ using Mau.Runtime;
 namespace Mau.Providers
 {
     /// <summary>
-    /// DeepSeek 联网搜索服务——Responses API + web_search 内置工具（R2.1 工具组首发）。
-    /// 服务端自动执行：一次请求完成"搜索→注入→生成回答"全链（官方文档：web_search 由服务端托管，
-    /// 模型在同一请求内自主决定是否搜索/执行搜索/注入上下文——非显式子会话模式）。
-    /// 非流式：POST /responses + tools:[{"type":"web_search"}] → 解析 response.completed → output_text 直接返回。
-    /// 配置：search.api_config_id 引用 LLM 池配置（未配置=不可用——请求直接返回 ERR|API_NOT_CONFIGURED）；
-    /// search.endpoint / search.model 可选覆盖（空=池配置推导：去 /v1|/chat/completions 尾 + /responses）；
-    /// search.timeout_ms 可选（空=120000 毫秒兜底）。
-    /// 同步执行：Search 同步阻塞（R2.1 拍板——后台化未来走子会话代理/多猫交火设计）。
-    /// P0 评审修正（DSH 评审 2026-08-26）：假搜索检测（无 web_search_call → ERR|NO_SEARCH）；
-    /// incomplete ≠ failed（截断降级返回已有文本+标记，仅 failed 硬错误）；endpoint 去尾规则明确化。
+    /// DeepSeek 联网搜索服务——双协议实现（Responses + Anthropic Messages）。
+    /// Responses 模式（默认/回归安全）：POST /responses + tools:[{"type":"web_search"}] → 解析 response.completed → output_text。
+    /// Anthropic 模式（端点含 /anthropic/ 自动切换）：POST /anthropic/v1/messages + tools:[{"type":"web_search_20250305"}] + x-api-key 鉴权 → 解析 content[] 块（server_tool_use 假搜索检测 / text 回答提取 / stop_reason=max_tokens 截断降级）。
+    /// 服务端自动执行：一次请求完成"搜索→注入→生成回答"全链（官方文档：web_search 由服务端托管）。
+    /// 配置：search.api_config_id 引用 LLM 池配置（未配置=不可用）；search.endpoint / search.model 可选覆盖；search.timeout_ms 可选（默认 120000ms）。
+    /// 同步执行：Search 同步阻塞（R2.1 拍板）。
     /// </summary>
     public sealed class DeepSeekWebSearchService : IWebSearchService
     {
@@ -62,14 +58,16 @@ namespace Mau.Providers
 
         /// <summary>
         /// 执行一次联网搜索——同步阻塞；返回模型最终回答文本（引用标注 [citation:x] 原样保留）。
-        /// 未配置搜索 API → ERR|API_NOT_CONFIGURED（拍板：配置后才可用，不做回退）。
-        /// 模型未触发 web_search → ERR|NO_SEARCH（假搜索检测——P0 评审修正）。
-        /// 截断（incomplete）→ 降级返回已有文本 + 尾部标记（仅 failed 硬错误——P0 评审修正）。
+        /// 双协议模式：端点含 /anthropic/ → Anthropic Messages（x-api-key + web_search_20250305）；
+        /// 否则 → OpenAI Responses（Bearer + web_search）。
+        /// 未配置搜索 API → ERR|API_NOT_CONFIGURED。
+        /// 模型未触发搜索 → ERR|NO_SEARCH（假搜索检测）。
+        /// 截断（incomplete/max_tokens）→ 降级返回已有文本 + 尾部标记。
         /// </summary>
         /// <param name="query">搜索查询</param>
         /// <returns>最终回答文本；失败 ERR| 前缀（错误可见性——失败侧也落盒）</returns>
         public string Search(string query)
-        {
+{
             // [段1] 配置解析——api_config_id 未配置/无效/缺 key → API_NOT_CONFIGURED（先配置后才可用）
             string endpoint = "";
             string model = "";
@@ -80,10 +78,14 @@ namespace Mau.Providers
                 return configError;
             }
 
-            // [段2] 构造请求体——非流式 Responses（input 字符串 + web_search 工具声明 + 搜索助手指令）
-            string body = BuildRequestBody(model, query);
+            // [段2] 协议模式判定——端点含 /anthropic/ → Anthropic Messages 协议（web_search_20250305 服务端工具）；
+            //       否则 → OpenAI Responses 协议（web_search 工具——原链路保持回归安全）
+            bool isAnthropic = endpoint.IndexOf("/anthropic/", StringComparison.OrdinalIgnoreCase) >= 0;
 
-            // [段3] 发送请求——同步等待（R2.1 拍板：必须走等待）；超时按配置 CTS（search.timeout_ms）
+            // [段3] 构造请求体——按协议模式分派（Responses input+instructions / Anthropic messages+system）
+            string body = isAnthropic ? BuildAnthropicRequestBody(model, query) : BuildRequestBody(model, query);
+
+            // [段4] 发送请求——同步等待（R2.1 拍板：必须走等待）；超时按配置 CTS（search.timeout_ms）
             string result = "";
             string usageText = "";
             string rawSummary = "";
@@ -94,12 +96,20 @@ namespace Mau.Providers
                 {
                     using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, endpoint))
                     {
-                        request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+                        // [段4a] 鉴权分派——Anthropic 用 x-api-key（DeepSeek 明确拒收 Bearer）；Responses 用 Bearer
+                        if (isAnthropic)
+                        {
+                            request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+                        }
+                        else
+                        {
+                            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+                        }
                         request.Content = new StringContent(body, Encoding.UTF8, "application/json");
                         HttpResponseMessage response = _client.SendAsync(request, cts.Token).GetAwaiter().GetResult();
                         using (response)
                         {
-                            // [段4] HTTP 层失败——错误 JSON 双形态解析（error.message 兜底，HTTP 码不可作唯一判据）
+                            // [段5] HTTP 层失败——错误 JSON 双形态解析（error.message 兜底，HTTP 码不可作唯一判据）
                             if (!response.IsSuccessStatusCode)
                             {
                                 string raw = "";
@@ -114,7 +124,7 @@ namespace Mau.Providers
                                 return ParseErrorText((int)response.StatusCode, raw);
                             }
 
-                            // [段5] 成功响应解析——status/假搜索/截断判定 + usage 提取
+                            // [段6] 成功响应解析——按协议模式分派（假搜索/截断判定 + usage 提取）
                             string json = "";
                             try
                             {
@@ -125,7 +135,7 @@ namespace Mau.Providers
                                 return "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
                             }
 
-                            result = ParseResponse(json, out usageText, out rawSummary);
+                            result = isAnthropic ? ParseAnthropicResponse(json, out usageText, out rawSummary) : ParseResponse(json, out usageText, out rawSummary);
                         }
                     }
                 }
@@ -139,7 +149,7 @@ namespace Mau.Providers
                 return "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
             }
 
-            // [段6] usage 结算行——观测（CH4 不做内部计费——决策 6；用户可感知单次搜索消耗）
+            // [段7] usage 结算行——观测（CH4 不做内部计费——决策 6；用户可感知单次搜索消耗）
             if (usageText.Length > 0)
             {
                 LogStore.Add("WEB", 1, "联网搜索消耗：" + usageText, "TOOL");
@@ -147,11 +157,10 @@ namespace Mau.Providers
 
             if (result.Length == 0)
             {
-                return "ERR|EMPTY_RESULT|搜索响应无输出文本（响应头 300 字符: " + rawSummary + "——请检查端点是否兼容 Responses 结构）";
+                return "ERR|EMPTY_RESULT|搜索响应无输出文本（响应头 300 字符: " + rawSummary + "——请检查端点与协议模式是否匹配）";
             }
             return result;
         }
-
         /// <summary>
         /// 配置解析——search.api_config_id → 池配置 → endpoint/model/key（可选覆盖）
         /// </summary>
@@ -299,8 +308,24 @@ namespace Mau.Providers
             sb.Append("\",\"tools\":[{\"type\":\"web_search\"}],\"tool_choice\":{\"type\":\"web_search\"}}");
             return sb.ToString();
         }
-
         /// <summary>
+        /// 构造 Anthropic Messages 请求体——messages + system + 服务端工具 web_search_20250305（服务端托管全链）
+        /// </summary>
+        /// <param name="model">模型名</param>
+        /// <param name="query">搜索查询</param>
+        /// <returns>请求体 JSON</returns>
+        private static string BuildAnthropicRequestBody(string model, string query)
+{
+            StringBuilder sb = new StringBuilder();
+            sb.Append("{\"model\":\"");
+            sb.Append(EscapeJson(model));
+            sb.Append("\",\"max_tokens\":2048,\"system\":\"");
+            sb.Append(EscapeJson("You are a web search assistant. Search the web for the user's query and answer based on the search results. Keep citations [citation:x] when referencing sources."));
+            sb.Append("\",\"messages\":[{\"role\":\"user\",\"content\":\"");
+            sb.Append(EscapeJson(query));
+            sb.Append("\"}],\"tools\":[{\"type\":\"web_search_20250305\",\"name\":\"web_search\"}]}");
+            return sb.ToString();
+        }/// <summary>
         /// 响应解析——OpenAI Responses 结构防御式：status → 假搜索检测 → output_text 提取 → 截断降级。
         /// P0 评审修正：①无 web_search_call 项 → NO_SEARCH（假搜索不降级为文本抓取）②incomplete=截断降级返回
         /// 已有文本+尾部标记（仅 failed 硬错误）③usage 提取随 out 传出（观测）。
@@ -424,7 +449,119 @@ namespace Mau.Providers
                 return "ERR|PARSE|响应解析异常（响应头 300 字符: " + rawSummary + "）";
             }
         }
+        /// <summary>
+        /// Anthropic Messages 响应解析——content[] 块遍历：server_tool_use=假搜索检测 / text=回答提取；
+        /// stop_reason=max_tokens=截断降级（仅 failed 硬错误语义同 Responses）
+        /// </summary>
+        /// <param name="json">响应体</param>
+        /// <param name="usageText">usage 摘要（input/output/reasoning——空=无）</param>
+        /// <param name="rawSummary">响应体前 300 字符诊断摘要</param>
+        /// <returns>输出文本（截断时带标记）或 ERR| 错误</returns>
+        private static string ParseAnthropicResponse(string json, out string usageText, out string rawSummary)
+        {
+            usageText = "";
+            rawSummary = "";
+            if (json == null)
+            {
+                json = "";
+            }
+            if (json.Length > 300)
+            {
+                rawSummary = json.Substring(0, 300);
+            }
+            else
+            {
+                rawSummary = json;
+            }
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(json))
+                {
+                    JsonElement root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                    {
+                        return "";
+                    }
 
+                    // [段1] usage 提取（input_tokens / output_tokens / reasoning_tokens 防御式）
+                    StringBuilder usageSb = new StringBuilder();
+                    ExtractAnthropicUsage(root, usageSb);
+                    usageText = usageSb.ToString();
+
+                    // [段2] 遍历 content[]——server_tool_use=真搜索（假搜索检测）+ text=回答提取
+                    StringBuilder text = new StringBuilder();
+                    bool hasSearch = false;
+                    if (root.TryGetProperty("content", out JsonElement contentEl) && contentEl.ValueKind == JsonValueKind.Array)
+                    {
+                        for (int i = 0; i < contentEl.GetArrayLength(); i++)
+                        {
+                            JsonElement block = contentEl[i];
+                            if (block.ValueKind != JsonValueKind.Object)
+                            {
+                                continue;
+                            }
+                            string blockType = "";
+                            if (block.TryGetProperty("type", out JsonElement btEl) && btEl.ValueKind == JsonValueKind.String)
+                            {
+                                string? got = btEl.GetString();
+                                if (got != null)
+                                {
+                                    blockType = got;
+                                }
+                            }
+                            if (blockType == "server_tool_use")
+                            {
+                                hasSearch = true;
+                            }
+                            else if (blockType == "text")
+                            {
+                                if (block.TryGetProperty("text", out JsonElement textEl) && textEl.ValueKind == JsonValueKind.String)
+                                {
+                                    string? got = textEl.GetString();
+                                    if (got != null)
+                                    {
+                                        text.Append(got);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // [段3] 假搜索检测——无 server_tool_use 块 → NO_SEARCH（不把普通回答当搜索结果）
+                    if (!hasSearch)
+                    {
+                        return "ERR|NO_SEARCH|模型未触发 web_search（Anthropic 响应无 server_tool_use 块——请确认端点支持服务端搜索）";
+                    }
+
+                    // [段4] 截断降级——stop_reason=max_tokens 返回已有文本 + 尾部标记（仅 failed 硬错误）
+                    string stopReason = "";
+                    if (root.TryGetProperty("stop_reason", out JsonElement srEl) && srEl.ValueKind == JsonValueKind.String)
+                    {
+                        string? got = srEl.GetString();
+                        if (got != null)
+                        {
+                            stopReason = got;
+                        }
+                    }
+                    if (stopReason == "max_tokens")
+                    {
+                        if (text.Length > 0)
+                        {
+                            text.Append("\n\n[搜索响应截断——服务端达到输出上限；以上内容为部分结果]");
+                        }
+                        else
+                        {
+                            return "ERR|TRUNCATED|搜索响应被截断且无可用输出文本";
+                        }
+                    }
+                    return text.ToString();
+                }
+            }
+            catch (Exception)
+            {
+                return "ERR|PARSE|响应解析异常（响应头 300 字符: " + rawSummary + "）";
+            }
+        }
         /// <summary>
         /// 提取输出文本——单个 output item：type=message → content[] 逐块 type=output_text 拼接
         /// </summary>
@@ -505,7 +642,40 @@ namespace Mau.Providers
             usage.Append("|reasoning=");
             usage.Append(reasoningTokens.ToString());
         }
-
+        /// <summary>
+        /// Anthropic usage 提取——input_tokens / output_tokens / reasoning_tokens（防御式，DeepSeek 兼容实现可能含 reasoning）
+        /// </summary>
+        /// <param name="root">响应根对象</param>
+        /// <param name="usage">摘要缓冲</param>
+        private static void ExtractAnthropicUsage(JsonElement root, StringBuilder usage)
+        {
+            JsonElement usageEl;
+            if (!root.TryGetProperty("usage", out usageEl) || usageEl.ValueKind != JsonValueKind.Object)
+            {
+                return;
+            }
+            long inputTokens = 0;
+            long outputTokens = 0;
+            long reasoningTokens = 0;
+            if (usageEl.TryGetProperty("input_tokens", out JsonElement inEl) && inEl.ValueKind == JsonValueKind.Number)
+            {
+                inputTokens = inEl.GetInt64();
+            }
+            if (usageEl.TryGetProperty("output_tokens", out JsonElement outEl) && outEl.ValueKind == JsonValueKind.Number)
+            {
+                outputTokens = outEl.GetInt64();
+            }
+            if (usageEl.TryGetProperty("reasoning_tokens", out JsonElement rEl) && rEl.ValueKind == JsonValueKind.Number)
+            {
+                reasoningTokens = rEl.GetInt64();
+            }
+            usage.Append("in=");
+            usage.Append(inputTokens.ToString());
+            usage.Append("|out=");
+            usage.Append(outputTokens.ToString());
+            usage.Append("|reasoning=");
+            usage.Append(reasoningTokens.ToString());
+        }
         /// <summary>
         /// 提取错误详情——root.error.message（防御式）
         /// </summary>
