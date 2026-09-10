@@ -296,7 +296,7 @@ namespace Mau.Providers
             sb.Append(EscapeJson("You are a web search assistant. Search the web for the user's query and answer based on the search results. Keep citations [citation:x] when referencing sources."));
             sb.Append("\",\"input\":\"");
             sb.Append(EscapeJson(query));
-            sb.Append("\",\"tools\":[{\"type\":\"web_search\"}]}");
+            sb.Append("\",\"tools\":[{\"type\":\"web_search\"}],\"tool_choice\":{\"type\":\"web_search\"}}");
             return sb.ToString();
         }
 
