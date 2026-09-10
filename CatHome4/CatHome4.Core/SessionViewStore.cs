@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
@@ -31,7 +31,9 @@ private string _injectReport = "";
 /// 轮末统计块——roundsum（每轮 CloseRound 生成：Token 消耗 + 四态用时；非真实前文派生，Rebuild 不清；Save 落盘，GetBlocks 按帧合并）
 /// </summary>
 private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
-/// <summary>
+        /// <summary>间隙文本块——工具轮 seal 文本（非真实前文派生，Rebuild 不清；Save 落盘；QQBot 转发/前端历史数据源）</summary>
+        private readonly List<ViewBlock> _gapTexts = new List<ViewBlock>();
+        /// <summary>
 /// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）
 /// </summary>
 /// <param name = "json">注入报告 JSON（file/status/…）</param>
@@ -76,6 +78,9 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
             /// <summary>注入报告 JSON——会话元数据（非真实前文派生；Rebuild 不清，Save 落盘）</summary>
             public string InjectReport { get; set; }
 
+            /// <summary>间隙文本块数组——gap text（非真实前文派生；Rebuild 不清，Save 落盘，Load 恢复）</summary>
+            public ViewBlock[] GapTexts { get; set; }
+
             /// <summary>轮末统计块数组——roundsum（非真实前文派生；Rebuild 不清，Save 落盘，Load 恢复）</summary>
             public ViewBlock[] RoundSums { get; set; }
         }
@@ -91,18 +96,28 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
 
         /// <summary>内存视图块——按生成序（history 数据源）</summary>
         public ViewBlock[] GetBlocks()
-{
-            // 合并面——真实前文块 + roundsum 轮末统计块（按时间戳升序——同一坐标系：消息 CreatedAt / CloseRound 时刻）
-            ViewBlock[] merged = new ViewBlock[_blocks.Count + _roundSums.Count];
+        {
+            // 合并面——真实前文块 + 间隙文本块 + roundsum 轮末统计块（按时间戳升序——同一坐标系：消息 CreatedAt / CloseRound 时刻）
+            int total = _blocks.Count + _gapTexts.Count + _roundSums.Count;
+            ViewBlock[] merged = new ViewBlock[total];
             int bi = 0;
+            int gi = 0;
             int ri = 0;
             int mi = 0;
-            while (bi < _blocks.Count || ri < _roundSums.Count)
+            while (mi < total)
             {
-                if (ri >= _roundSums.Count || (bi < _blocks.Count && _blocks[bi].Timestamp <= _roundSums[ri].Timestamp))
+                long bt = bi < _blocks.Count ? _blocks[bi].Timestamp : long.MaxValue;
+                long gt = gi < _gapTexts.Count ? _gapTexts[gi].Timestamp : long.MaxValue;
+                long rt = ri < _roundSums.Count ? _roundSums[ri].Timestamp : long.MaxValue;
+                if (bt <= gt && bt <= rt)
                 {
                     merged[mi] = _blocks[bi];
                     bi = bi + 1;
+                }
+                else if (gt <= rt)
+                {
+                    merged[mi] = _gapTexts[gi];
+                    gi = gi + 1;
                 }
                 else
                 {
@@ -129,8 +144,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
                 return withReport;
             }
             return merged;
-        }
-        /// <summary>
+        }        /// <summary>
         /// 真实前文 append 钩子——用户消息 → user 块
         /// </summary>
         /// <param name="m">真实前文消息</param>
@@ -252,7 +266,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// 视图文件落盘——全量覆写（CloseRound 与真实前文同批；流式中间态不含）
         /// </summary>
         public void Save()
-{
+        {
             try
             {
                 string dir = Path.GetDirectoryName(_path);
@@ -265,6 +279,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
                 data.SessionId = "";
                 data.Blocks = _blocks.ToArray();
                 data.InjectReport = _injectReport;
+                data.GapTexts = _gapTexts.ToArray();
                 data.RoundSums = _roundSums.ToArray();
                 JsonSerializerOptions options = new JsonSerializerOptions();
                 options.IncludeFields = true;
@@ -276,8 +291,7 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
             {
                 // 保存失败不阻断会话（下次收工再试）——视图是派生态，真实前文可重建
             }
-        }
-        /// <summary>
+        }        /// <summary>
         /// 追加轮末统计块——roundsum（CloseRound 生成：Token 消耗 + 工具次数 + 总耗时 + 四态用时；非真实前文派生，Rebuild 不清）。
         /// </summary>
         /// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...}}）</param>
@@ -292,20 +306,42 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
             block.Payload = payloadJson;
             _roundSums.Add(block);
         }
-
+        /// <summary>
+        /// 追加间隙文本块——工具轮 seal 文本（模型调用工具前说的话；非真实前文派生，Rebuild 不清，Save 落盘）。
+        /// 视图层 = 全部外观真源——前端历史/QQBot 转发统一消费此块。
+        /// </summary>
+        /// <param name="content">间隙文本</param>
+        /// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系）</param>
+        public void AppendGapText(string content, long timestamp)
+        {
+            if (content == null || content.Length == 0)
+            {
+                return;
+            }
+            ViewBlock block = new ViewBlock();
+            block.Timestamp = timestamp;
+            block.Hash = "gap_" + _gapTexts.Count.ToString();
+            block.MsgIndex = -1;
+            block.RenderType = "text";
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["content"] = content;
+            block.Payload = JsonUtil.Serialize(payload);
+            _gapTexts.Add(block);
+        }
         /// <summary>
         /// 清空视图层——session.new 清前文时同步（真实前文 Clear 后视图随生命周期清理）
         /// </summary>
         public void Clear()
-{
+        {
             _blocks.Clear();
             _pendingTools.Clear();
             // 注入报告随视图层清理——session.new 后 HandleSessionNew 重新 Set + Save
             _injectReport = "";
+            // 间隙文本随视图层清理——新会话不保留旧 gap 块
+            _gapTexts.Clear();
             // 轮末统计随视图层清理——新会话不保留旧轮统计
             _roundSums.Clear();
         }
-
         /// <summary>
         /// 清空轮末统计块——回滚裁剪后调用（roundsum 非真实前文派生，Rebuild 不清——裁剪后残留旧统计）
         /// </summary>
@@ -442,31 +478,36 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
 /// 加载注入报告 + 轮末统计——启动恢复时调用（Rebuild 后读回；view.json 缺失/损坏静默空报告）
 /// </summary>
 public void LoadInjectReport()
-{
-    try
-    {
-        if (!System.IO.File.Exists(_path))
         {
-            return;
-        }
+            try
+            {
+                if (!System.IO.File.Exists(_path))
+                {
+                    return;
+                }
 
-        string json = System.IO.File.ReadAllText(_path);
-        JsonSerializerOptions options = new JsonSerializerOptions();
-        options.IncludeFields = true;
-        ViewFileData data = JsonSerializer.Deserialize<ViewFileData>(json, options);
-        if (data != null && data.InjectReport != null)
-        {
-            _injectReport = data.InjectReport;
-        }
-        if (data != null && data.RoundSums != null)
-        {
-            _roundSums.Clear();
-            _roundSums.AddRange(data.RoundSums);
-        }
-    }
-    catch (Exception)
-    {
-    // 加载失败静默——注入报告缺失不阻断（视图可重建）
-    }
-}    }
+                string json = System.IO.File.ReadAllText(_path);
+                JsonSerializerOptions options = new JsonSerializerOptions();
+                options.IncludeFields = true;
+                ViewFileData data = JsonSerializer.Deserialize<ViewFileData>(json, options);
+                if (data != null && data.InjectReport != null)
+                {
+                    _injectReport = data.InjectReport;
+                }
+                if (data != null && data.GapTexts != null)
+                {
+                    _gapTexts.Clear();
+                    _gapTexts.AddRange(data.GapTexts);
+                }
+                if (data != null && data.RoundSums != null)
+                {
+                    _roundSums.Clear();
+                    _roundSums.AddRange(data.RoundSums);
+                }
+            }
+            catch (Exception)
+            {
+                // 加载失败静默——注入报告缺失不阻断（视图可重建）
+            }
+        }}
 }

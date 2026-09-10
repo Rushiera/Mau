@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -19,11 +19,14 @@ namespace CatHome4.QQ
         /// <summary>Bot 连接集合——QqBotId → 连接实例</summary>
         private static readonly Dictionary<Guid, QQBotConnection> _connections = new Dictionary<Guid, QQBotConnection>();
 
-        /// <summary>注入来源队列——猫 Key → QqSource FIFO（注入时入队，转发时出队）</summary>
+        /// <summary>注入来源队列——猫 Key → QqSource FIFO（注入时入队，轮结束 roundsum 出队消费）</summary>
         private static readonly Dictionary<string, Queue<QqSource>> _sourceQueues = new Dictionary<string, Queue<QqSource>>();
 
-        /// <summary>最后来源——猫 Key → 最近一次 QQ 交互来源（无条件转发回退目标：前端对话回复也转发）</summary>
-        private static readonly Dictionary<string, QqSource> _lastSources = new Dictionary<string, QqSource>();
+        /// <summary>本轮即时转发计数——猫 Key → 已即时转发数（3+1 预算：≤3 即时，第 4 次轮末汇总）</summary>
+        private static readonly Dictionary<string, int> _immediateCounts = new Dictionary<string, int>();
+
+        /// <summary>累计内容——猫 Key → 超 3 条后累计的 text 块（轮末汇总第 4 次转发）</summary>
+        private static readonly Dictionary<string, System.Text.StringBuilder> _accumulated = new Dictionary<string, System.Text.StringBuilder>();
 
         /// <summary>启动标志——防重复 Start</summary>
         private static bool _started = false;
@@ -105,15 +108,30 @@ namespace CatHome4.QQ
             {
                 CH_QqBotConfig c = configs[i];
                 active.Add(c.QqBotId);
-                if (!_connections.ContainsKey(c.QqBotId))
+                QQBotConnection existing;
+                if (_connections.TryGetValue(c.QqBotId, out existing))
                 {
-                    string secret = store.GetSecret(c.QqBotId);
-                    QQBotConnection conn = new QQBotConnection(
-                        c.QqBotId, c.DisplayName, c.AppId, secret, c.Sandbox,
-                        delegate(string raw) { OnMessage(c.QqBotId, raw); });
-                    _connections[c.QqBotId] = conn;
-                    conn.Start();
+                    // 配置变更检测——sandbox/appId/displayName 任一变化 → 重建连接（edit 后立即生效；沙箱↔正式切换关键）
+                    if (existing.Sandbox != c.Sandbox || existing.AppId != c.AppId || existing.DisplayName != c.DisplayName)
+                    {
+                        existing.Stop();
+                        _connections.Remove(c.QqBotId);
+                        string secret = store.GetSecret(c.QqBotId);
+                        QQBotConnection conn = new QQBotConnection(
+                            c.QqBotId, c.DisplayName, c.AppId, secret, c.Sandbox,
+                            delegate(string raw) { OnMessage(c.QqBotId, raw); });
+                        _connections[c.QqBotId] = conn;
+                        conn.Start();
+                        LogStore.Add("QQBot", 1, "配置变更重建连接 | " + c.DisplayName + "（sandbox=" + (c.Sandbox ? "true" : "false") + "）", "QQBOT");
+                    }
+                    continue;
                 }
+                string newSecret = store.GetSecret(c.QqBotId);
+                QQBotConnection newConn = new QQBotConnection(
+                    c.QqBotId, c.DisplayName, c.AppId, newSecret, c.Sandbox,
+                    delegate(string raw) { OnMessage(c.QqBotId, raw); });
+                _connections[c.QqBotId] = newConn;
+                newConn.Start();
             }
             // 停止已删除的 Bot 连接
             List<Guid> toRemove = new List<Guid>();
@@ -134,7 +152,6 @@ namespace CatHome4.QQ
                 }
             }
         }
-
         /// <summary>
         /// 消息到达回调——WS 层投递（raw JSON）。
         /// 路由链：解析消息 → 强匹配指令直执（不走 LLM）→ 查绑定 Cat → 广播注入所有绑定且启用的 Cat。
@@ -191,6 +208,7 @@ namespace CatHome4.QQ
                 }
                 tg.Inject("[来自QQ] " + text + attachText);
                 EnqueueSource(tg.Key, source);
+                ResetRound(tg.Key);
                 anyInjected = true;
             }
             if (!anyInjected)
@@ -547,9 +565,7 @@ namespace CatHome4.QQ
                 _sourceQueues[catKey] = q;
             }
             q.Enqueue(source);
-            _lastSources[catKey] = source;
         }
-
         /// <summary>
         /// 出队来源——R2.3.5 输出转发：回复目标 = 触发来源（FIFO 对齐注入顺序）。
         /// </summary>
@@ -567,15 +583,113 @@ namespace CatHome4.QQ
             source = null;
             return false;
         }
-
-        /// <summary>游标——猫 Key → 已处理消息数（R2.3.5 只转发启用后新块）</summary>
+        /// <summary>
+        /// 队首来源读取——不消费（整轮转发同一来源；roundsum 轮结束才出队）。
+        /// </summary>
+        /// <param name="catKey">猫标识</param>
+        /// <param name="source">队首来源</param>
+        /// <returns>有来源 true</returns>
+        private static bool PeekSource(string catKey, out QqSource source)
+        {
+            Queue<QqSource> q;
+            if (_sourceQueues.TryGetValue(catKey, out q) && q.Count > 0)
+            {
+                source = q.Peek();
+                return true;
+            }
+            source = null;
+            return false;
+        }
+        /// <summary>
+        /// 来源队列非空判定——异常中止轮残留清理触发条件之一。
+        /// </summary>
+        /// <param name="catKey">猫标识</param>
+        /// <returns>队列非空 true</returns>
+        private static bool HasPendingSource(string catKey)
+        {
+            Queue<QqSource> q;
+            return _sourceQueues.TryGetValue(catKey, out q) && q.Count > 0;
+        }                /// <summary>
+        /// 重置交互轮状态——新用户消息注入时调用（3+1 计数归零 + 累计清空）。
+        /// </summary>
+        /// <param name="catKey">猫标识</param>
+        private static void ResetRound(string catKey)
+        {
+            _immediateCounts[catKey] = 0;
+            _accumulated.Remove(catKey);
+        }        /// <summary>
+        /// 清空交互轮状态——异常中止轮残留来源兜底（会话 Idle 且队列残留 = 上轮无 roundsum 结束）：来源丢弃 + 计数/累计清零。
+        /// </summary>
+        /// <param name="catKey">猫标识</param>
+        private static void ClearRoundState(string catKey)
+        {
+            Queue<QqSource> q;
+            if (_sourceQueues.TryGetValue(catKey, out q))
+            {
+                while (q.Count > 0)
+                {
+                    q.Dequeue();
+                }
+            }
+            ResetRound(catKey);
+            LogStore.Add("QQBot", 2, "残留来源清理 | " + catKey + "（异常中止轮兜底）", "QQBOT");
+        }        /// <summary>
+        /// 即时转发——3+1 预算：计数 &lt; 3 立即转发；否则累计到轮末汇总（第 4 次）。
+        /// 无 qqbot 来源（前端对话）→ 不转发（被动机制——只有用户主动输入后才启用回复）。
+        /// </summary>
+        /// <param name="tg">绑定目标</param>
+        /// <param name="content">text 块内容</param>
+        private static void ForwardText(QqTarget tg, string content)
+        {
+            QqSource source;
+            if (!PeekSource(tg.Key, out source))
+            {
+                return;
+            }
+            int n;
+            if (!_immediateCounts.TryGetValue(tg.Key, out n))
+            {
+                n = 0;
+            }
+            if (n < MaxImmediateReplies)
+            {
+                _immediateCounts[tg.Key] = n + 1;
+                SendReplyToTarget(tg, source, content);
+            }
+            else
+            {
+                System.Text.StringBuilder sb;
+                if (!_accumulated.TryGetValue(tg.Key, out sb))
+                {
+                    sb = new System.Text.StringBuilder();
+                    _accumulated[tg.Key] = sb;
+                }
+                if (sb.Length > 0)
+                {
+                    sb.Append("\n\n");
+                }
+                sb.Append(content);
+            }
+        }        /// <summary>
+        /// 轮结束——roundsum 块哨兵：累计非空 → 第 4 次汇总转发（单条发送）；出队消费本轮来源；重置 3+1 状态。
+        /// </summary>
+        /// <param name="tg">绑定目标</param>
+        private static void FinishRound(QqTarget tg)
+        {
+            QqSource source;
+            if (TryDequeueSource(tg.Key, out source))
+            {
+                System.Text.StringBuilder sb;
+                if (_accumulated.TryGetValue(tg.Key, out sb) && sb.Length > 0)
+                {
+                    SendReplyToTarget(tg, source, sb.ToString());
+                }
+            }
+            ResetRound(tg.Key);
+        }/// <summary>游标——猫 Key → 已处理消息数（R2.3.5 只转发启用后新块）</summary>
         private static readonly Dictionary<string, int> _cursors = new Dictionary<string, int>();
 
-        /// <summary>
-        /// 输出转发轮询——主线程每帧调用（宿主主循环接入）。
-        /// 游标增量：只扫描游标后新增消息；回复块（Assistant Content 非空）→ 出队来源 → 【Cat名：】转发。
-        /// 未启用猫只推进游标不转发（启用时只转发启用后的新块）。
-        /// </summary>
+        /// <summary>输出转发轮询——主线程每帧调用（宿主主循环接入）。视图块游标增量：text 块 → 即时转发 ≤3 / 超限累计；roundsum 块 → 轮结束哨兵（第 4 次汇总转发 + 出队来源 + 重置）。无 qqbot 来源（前端对话）不转发——被动机制。</summary>
         public static void Tick()
         {
             if (!_started)
@@ -590,39 +704,41 @@ namespace CatHome4.QQ
             for (int i = 0; i < targets.Count; i++)
             {
                 QqTarget tg = targets[i];
-                int count = tg.GetMessageCount();
+                QqViewItem[] items = tg.GetViewItems();
+                int count = items.Length;
                 int cursor = GetCursor(tg.Key);
+                if (count < cursor)
+                {
+                    // 会话重建（/new 清空后视图块数回退）——游标归零重新扫描
+                    cursor = 0;
+                    _cursors[tg.Key] = 0;
+                }
                 if (count <= cursor)
                 {
+                    // 无新块——异常中止轮残留来源兜底清理（会话 Idle 且队列残留 = 上轮无 roundsum 结束）
+                    if (HasPendingSource(tg.Key) && tg.IsIdle())
+                    {
+                        ClearRoundState(tg.Key);
+                    }
                     continue;
                 }
-                if (tg.Enable)
+                for (int j = cursor; j < count; j++)
                 {
-                    LlmMessage[] msgs = tg.GetMessages();
-                    for (int j = cursor; j < count && j < msgs.Length; j++)
+                    QqViewItem it = items[j];
+                    if (it.RenderType == "roundsum")
                     {
-                        LlmMessage m = msgs[j];
-                        if (m.Role == LlmRole.Assistant && m.Content != null && m.Content.Length > 0)
-                        {
-                            // 无条件转发——出队来源优先（qqbot 注入对话），否则回退最后来源（前端对话也转发）
-                            QqSource source;
-                            if (TryDequeueSource(tg.Key, out source))
-                            {
-                                _lastSources[tg.Key] = source;
-                            }
-                            else if (!_lastSources.TryGetValue(tg.Key, out source))
-                            {
-                                continue;
-                            }
-                            SendReplyToTarget(tg, source, m.Content);
-                        }
+                        // 轮结束哨兵——第 4 次汇总转发 + 出队来源 + 重置 3+1 状态
+                        FinishRound(tg);
+                    }
+                    else if (it.RenderType == "text" && it.Content.Length > 0)
+                    {
+                        // 即时转发 ≤3；超限累计到轮末汇总
+                        ForwardText(tg, it.Content);
                     }
                 }
                 _cursors[tg.Key] = count;
             }
-        }
-
-        /// <summary>读取游标——缺省 0</summary>
+        }        /// <summary>读取游标——缺省 0</summary>
         private static int GetCursor(string catKey)
         {
             int c;
@@ -670,18 +786,9 @@ namespace CatHome4.QQ
             List<string> files = ExtractFileMarks(text, out text);
             if (text.Length > 0)
             {
-            // Q4 全 MD——不再自动检测（所有回复一律 MD 通道 msg_type=2）；标题分块切分 + 被动 msg_id 保留
-            bool isMarkdown = true;
-                List<string> chunks = ChunkForSending(text);
-                for (int i = 0; i < chunks.Count; i = i + 1)
-                {
-                    // 【Cat名：】前缀只加第一条（计入长度预算）
-                    string piece = i == 0 ? tg.DisplayName + "：\n" + chunks[i] : chunks[i];
-                    if (!conn.SendReply("private", source.TargetId, piece, source.MsgId, isMarkdown))
-                    {
-                        return;
-                    }
-                }
+                // 3+1 预算——每条转发单次 API 调用（整轮 ≤4 不超被动回复上限）；长文截断
+                string piece = tg.DisplayName + "：\n" + Truncate(text, MaxChunkChars);
+                conn.SendReply("private", source.TargetId, piece, source.MsgId, true);
             }
             // P9 文件发送——成功静默；失败错误文本嵌入消息渠道
             for (int i = 0; i < files.Count; i = i + 1)
@@ -693,7 +800,6 @@ namespace CatHome4.QQ
                 }
             }
         }
-
         /// <summary>
         /// 提取文件标记——[文件:path] 列表；正文移除标记段（P9 零新工具触发面）。
         /// </summary>
@@ -734,180 +840,8 @@ namespace CatHome4.QQ
         /// <summary>切分上限——单条字符数（社区经验 ~2000，留余量）</summary>
         private const int MaxChunkChars = 1800;
 
-        /// <summary>私聊被动回复条数上限——官方每条消息最多回复 4 次</summary>
-        private const int MaxPassiveReplies = 4;
-
-        /// <summary>
-        /// 按标题分块——标题行归属其后内容块；首个标题前文本（前言）独立成块；无标题整篇一块。
-        /// </summary>
-        /// <param name="text">消息文本</param>
-        /// <returns>块列表（非空）</returns>
-        private static List<string> SplitByHeading(string text)
-        {
-            List<string> blocks = new List<string>();
-            string[] lines = text.Split('\n');
-            StringBuilder cur = new StringBuilder();
-            for (int i = 0; i < lines.Length; i = i + 1)
-            {
-                string line = lines[i];
-                if (line.EndsWith("\r"))
-                {
-                    line = line.Substring(0, line.Length - 1);
-                }
-                string trimmed = line.TrimStart();
-                bool isHeading = trimmed.Length > 1 && trimmed[0] == '#' && trimmed[1] == ' ';
-                if (isHeading && cur.Length > 0)
-                {
-                    blocks.Add(cur.ToString().TrimEnd());
-                    cur.Length = 0;
-                }
-                if (cur.Length > 0)
-                {
-                    cur.Append('\n');
-                }
-                cur.Append(line);
-            }
-            if (cur.Length > 0)
-            {
-                blocks.Add(cur.ToString().TrimEnd());
-            }
-            return blocks;
-        }
-
-        /// <summary>
-        /// 切分发送块——标题分块贪心打包（N 块超 M → N-1 块发送）+ 单块退化 + 被动条数上限。
-        /// </summary>
-        /// <param name="text">消息文本（非空）</param>
-        /// <returns>发送块列表（≤4 条）</returns>
-        private static List<string> ChunkForSending(string text)
-        {
-            List<string> blocks = SplitByHeading(text);
-            List<string> chunks = new List<string>();
-            StringBuilder buf = new StringBuilder();
-            for (int i = 0; i < blocks.Count; i = i + 1)
-            {
-                string block = blocks[i];
-                // 单块超限——块内退化切分（段落→行→硬切）
-                if (block.Length > MaxChunkChars)
-                {
-                    if (buf.Length > 0)
-                    {
-                        chunks.Add(buf.ToString().TrimEnd());
-                        buf.Length = 0;
-                    }
-                    List<string> parts = SplitOversized(block);
-                    for (int j = 0; j < parts.Count; j = j + 1)
-                    {
-                        chunks.Add(parts[j]);
-                    }
-                    continue;
-                }
-                if (buf.Length + block.Length > MaxChunkChars)
-                {
-                    if (buf.Length > 0)
-                    {
-                        chunks.Add(buf.ToString().TrimEnd());
-                        buf.Length = 0;
-                    }
-                }
-                if (buf.Length > 0)
-                {
-                    buf.Append('\n');
-                }
-                buf.Append(block);
-            }
-            if (buf.Length > 0)
-            {
-                chunks.Add(buf.ToString().TrimEnd());
-            }
-            // 被动上限——私聊最多 4 条；超出截断留痕
-            if (chunks.Count > MaxPassiveReplies)
-            {
-                LogStore.Add("QQBot", 2, "回复超" + MaxPassiveReplies + "条截断 | 总块数" + chunks.Count, "QQBOT");
-                chunks.RemoveRange(MaxPassiveReplies, chunks.Count - MaxPassiveReplies);
-            }
-            return chunks;
-        }
-
-        /// <summary>
-        /// 单块超限退化——按空行分段 → 行硬切 → 字符硬切。
-        /// </summary>
-        /// <param name="block">超限块</param>
-        /// <returns>切分段列表</returns>
-        private static List<string> SplitOversized(string block)
-        {
-            List<string> result = new List<string>();
-            string[] paras = block.Split(new string[] { "\n\n" }, StringSplitOptions.None);
-            StringBuilder buf = new StringBuilder();
-            for (int i = 0; i < paras.Length; i = i + 1)
-            {
-                if (buf.Length + paras[i].Length > MaxChunkChars)
-                {
-                    if (buf.Length > 0)
-                    {
-                        result.Add(buf.ToString().TrimEnd());
-                        buf.Length = 0;
-                    }
-                    if (paras[i].Length > MaxChunkChars)
-                    {
-                        // 行级硬切
-                        string[] lines = paras[i].Split('\n');
-                        StringBuilder lb = new StringBuilder();
-                        for (int j = 0; j < lines.Length; j = j + 1)
-                        {
-                            string line = lines[j];
-                            if (line.EndsWith("\r"))
-                            {
-                                line = line.Substring(0, line.Length - 1);
-                            }
-                            if (lb.Length + line.Length > MaxChunkChars)
-                            {
-                                if (lb.Length > 0)
-                                {
-                                    result.Add(lb.ToString().TrimEnd());
-                                    lb.Length = 0;
-                                }
-                                if (line.Length > MaxChunkChars)
-                                {
-                                    // 字符硬切
-                                    string rest = line;
-                                    while (rest.Length > MaxChunkChars)
-                                    {
-                                        result.Add(rest.Substring(0, MaxChunkChars));
-                                        rest = rest.Substring(MaxChunkChars);
-                                    }
-                                    if (rest.Length > 0)
-                                    {
-                                        lb.Append(rest);
-                                    }
-                                    continue;
-                                }
-                            }
-                            if (lb.Length > 0)
-                            {
-                                lb.Append('\n');
-                            }
-                            lb.Append(line);
-                        }
-                        if (lb.Length > 0)
-                        {
-                            result.Add(lb.ToString().TrimEnd());
-                        }
-                        continue;
-                    }
-                }
-                if (buf.Length > 0)
-                {
-                    buf.Append("\n\n");
-                }
-                buf.Append(paras[i]);
-            }
-            if (buf.Length > 0)
-            {
-                result.Add(buf.ToString().TrimEnd());
-            }
-            return result;
-        }
+        /// <summary>即时转发上限——3+1 预算：≤3 条即时转发，第 4 次轮末汇总（对齐官方被动回复 4 次上限）</summary>
+        private const int MaxImmediateReplies = 3;
 
         /// <summary>截断文本——日志展示</summary>
         private static string Truncate(string s, int max)
@@ -987,16 +921,28 @@ namespace CatHome4.QQ
         /// <summary>注入回调——PostUserMessage</summary>
         public Action<string> Inject;
 
-        /// <summary>消息数读取——游标增量轮询</summary>
-        public Func<int> GetMessageCount;
+        /// <summary>视图块流读取——游标增量轮询（QQBot 转发数据源：text=转发候选 / roundsum=轮结束哨兵）</summary>
+        public Func<QqViewItem[]> GetViewItems;
 
-        /// <summary>消息历史读取——回复块扫描</summary>
-        public Func<LlmMessage[]> GetMessages;
+        /// <summary>会话空闲判定——异常中止轮残留来源兜底清理（null=永不空闲）</summary>
+        public Func<bool> IsIdle;
 
         /// <summary>新会话桥——触发 session.new（异步置位）+ 返回注入摘要文本（Q5 /new 指令；null=不支持）</summary>
         public Func<string> NewSession;
 
         /// <summary>会话信息桥——猫 info 工具文本（Q5 /info 指令合并；null=不支持）</summary>
         public Func<string> GetInfo;
+    }
+
+    /// <summary>
+    /// QQ 转发视图项——视图块窄 DTO（转发面只消费 RenderType + Content；装配侧从 SessionViewStore 转换——解耦 QQ 域与视图层内部结构）。
+    /// </summary>
+    public sealed class QqViewItem
+    {
+        /// <summary>渲染类型——text=转发候选 / roundsum=轮结束哨兵 / 其他跳过</summary>
+        public string RenderType;
+
+        /// <summary>文本内容——text 块内容（已解析 payload.content）；其他类型空串</summary>
+        public string Content;
     }
 }

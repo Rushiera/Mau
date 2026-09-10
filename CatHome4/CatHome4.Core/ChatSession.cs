@@ -375,6 +375,15 @@ namespace CH4
             }
         }
 
+        /// <summary>视图存储——视图块读取面（Admin 装配 QQBot 转发/历史数据源；internal——IVT 域消费）</summary>
+        internal SessionViewStore ViewStore
+        {
+            get
+            {
+                return _viewStore;
+            }
+        }
+
         /// <summary>前文落盘——会话操纵面复用（session.new 重注入落盘）</summary>
         public SessionStore Store
         {
@@ -1086,11 +1095,15 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                 string reasonJson = "{\"content\":" + JsonUtil.Serialize(_llmReasoning) + "}";
                 _httpHost.PushView("reason", reasonJson, _reasonStreamSeq, 0);
             }
-            // 工具轮 seal——流式文本容器整块替换（对齐纯文本轮 seal 语义；空文本不推——前端不建空气泡）
-            if (_httpHost != null && _llmResultText.Length > 0)
+            // 工具轮 seal——视图层补 gap text 块（全量外观真源：前端历史/QQBot 转发消费）+ SSE 推送（实时）；空文本不推
+            if (_llmResultText.Length > 0)
             {
-                string sealTextJson = "{\"content\":" + JsonUtil.Serialize(_llmResultText) + ",\"msgIndex\":-1}";
-                _httpHost.PushView("text", sealTextJson, _textStreamSeq, 0);
+                _viewStore.AppendGapText(_llmResultText, ViewTimestamp());
+                if (_httpHost != null)
+                {
+                    string sealTextJson = "{\"content\":" + JsonUtil.Serialize(_llmResultText) + ",\"msgIndex\":-1}";
+                    _httpHost.PushView("text", sealTextJson, _textStreamSeq, 0);
+                }
             }
             _reasonStreamSeq = 0;
             _textStreamSeq = 0;

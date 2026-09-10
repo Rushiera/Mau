@@ -808,8 +808,8 @@ namespace CatHome4.Admin
                     QqBotId = _chatBridge.DefaultQqBotId,
                     Enable = _chatBridge.DefaultQqBotEnable,
                     Inject = delegate(string s) { captured.PostUserMessage(s); },
-                    GetMessageCount = delegate() { return captured.Context.GetMessageCount(); },
-                    GetMessages = delegate() { return captured.Context.GetMessages(); },
+                    GetViewItems = delegate() { return ConvertQqViewItems(captured.ViewStore.GetBlocks()); },
+                    IsIdle = delegate() { return captured.IsIdle; },
                     NewSession = delegate()
                     {
                         _majorSessionNewRequested = true;
@@ -831,8 +831,8 @@ namespace CatHome4.Admin
                         QqBotId = cat.QqBotId,
                         Enable = cat.QqBotEnable,
                         Inject = delegate(string s) { captured.Session.PostUserMessage(s); },
-                        GetMessageCount = delegate() { return captured.Session.Context.GetMessageCount(); },
-                        GetMessages = delegate() { return captured.Session.Context.GetMessages(); },
+                        GetViewItems = delegate() { return ConvertQqViewItems(captured.Session.ViewStore.GetBlocks()); },
+                        IsIdle = delegate() { return captured.Session.IsIdle; },
                         NewSession = delegate()
                         {
                             captured.SessionNewRequested = true;
@@ -862,6 +862,60 @@ namespace CatHome4.Admin
                 }
             }
             return result;
+        }
+
+        /// <summary>
+        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType + Content；text 块提取 payload.content）。
+        /// </summary>
+        /// <param name="blocks">视图块数组</param>
+        /// <returns>QQ 转发项数组</returns>
+        private static QqViewItem[] ConvertQqViewItems(ViewBlock[] blocks)
+        {
+            if (blocks == null)
+            {
+                return new QqViewItem[0];
+            }
+            QqViewItem[] items = new QqViewItem[blocks.Length];
+            for (int i = 0; i < blocks.Length; i = i + 1)
+            {
+                ViewBlock b = blocks[i];
+                QqViewItem item = new QqViewItem();
+                item.RenderType = b.RenderType ?? "";
+                item.Content = "";
+                if (item.RenderType == "text")
+                {
+                    item.Content = ExtractTextContent(b.Payload);
+                }
+                items[i] = item;
+            }
+            return items;
+        }
+
+        /// <summary>
+        /// 提取 text 块内容——payload JSON 的 content 字段（防御式解析失败返回空串）。
+        /// </summary>
+        /// <param name="payloadJson">块载荷 JSON</param>
+        /// <returns>内容文本</returns>
+        private static string ExtractTextContent(string payloadJson)
+        {
+            if (payloadJson == null || payloadJson.Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                using (JsonDocument d = JsonDocument.Parse(payloadJson))
+                {
+                    if (d.RootElement.TryGetProperty("content", out JsonElement c) && c.ValueKind == JsonValueKind.String)
+                    {
+                        return c.GetString() ?? "";
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+            return "";
         }
 
         /// <summary>

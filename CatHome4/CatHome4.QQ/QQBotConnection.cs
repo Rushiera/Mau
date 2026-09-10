@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.WebSockets;
@@ -76,6 +76,9 @@ namespace CatHome4.QQ
         /// <summary>消息到达回调——管理器路由层（raw JSON）</summary>
         private readonly Action<string> _onMessage;
 
+        /// <summary>被动回复消息序号——每次发送递增（msg_seq 字段：同 msg_id 多次回复须递增，否则 40054005 去重）</summary>
+        private long _msgSeq;
+
         /// <summary>API 主机——沙箱/正式双端点</summary>
         private readonly string _apiHost;
 
@@ -126,6 +129,33 @@ namespace CatHome4.QQ
             _apiHost = _sandbox
                 ? "https://sandbox.api.sgroup.qq.com"
                 : "https://api.sgroup.qq.com";
+        }
+
+        /// <summary>显示名——连接配置面（Refresh 配置变更检测）</summary>
+        public string DisplayName
+        {
+            get
+            {
+                return _displayName;
+            }
+        }
+
+        /// <summary>应用 ID——连接配置面（Refresh 配置变更检测）</summary>
+        public string AppId
+        {
+            get
+            {
+                return _appId;
+            }
+        }
+
+        /// <summary>沙箱标志——连接配置面（Refresh 配置变更检测）</summary>
+        public bool Sandbox
+        {
+            get
+            {
+                return _sandbox;
+            }
         }
 
         /// <summary>
@@ -197,14 +227,16 @@ namespace CatHome4.QQ
                     if (msgType == "private")
                     {
                         url = _apiHost + "/v2/users/" + targetId + "/messages";
-                        json = BuildBody(text, isMarkdown, msgId);
+                        _msgSeq = _msgSeq + 1;
+                        json = BuildBody(text, isMarkdown, msgId, _msgSeq);
                     }
                     else
                     {
                         int ci = targetId.IndexOf(':');
                         string gid = ci > 0 ? targetId.Substring(0, ci) : targetId;
                         url = _apiHost + "/v2/groups/" + gid + "/messages";
-                        json = BuildBody(text, isMarkdown, msgId);
+                        _msgSeq = _msgSeq + 1;
+                        json = BuildBody(text, isMarkdown, msgId, _msgSeq);
                     }
                     System.Net.Http.StringContent c = new System.Net.Http.StringContent(json, Encoding.UTF8, "application/json");
                     System.Net.Http.HttpResponseMessage r = h.PostAsync(url, c).GetAwaiter().GetResult();
@@ -219,11 +251,19 @@ namespace CatHome4.QQ
                     int status = (int)r.StatusCode;
                     if (status >= 300)
                     {
-                        // 转发失败 L2 留痕——内部 err 可见（R2.3.5 失败语义）
-                        Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(text, 30) + " (" + status + ")", 2);
+                        // 转发失败 L2 留痕——响应体随附（定位 400 精确错误码：被动回复次数/时效/格式；\n 替换空格——LogStore 单行不截断）
+                        string errBody = "";
+                        try
+                        {
+                            errBody = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                        }
+                        catch (Exception)
+                        {
+                        }
+                        Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(OneLine(text), 30) + " (" + status + ") " + Truncate(OneLine(errBody), 200), 2);
                         return false;
                     }
-                    Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(text, 30) + " (" + status + ")", 1);
+                    Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(OneLine(text), 30) + " (" + status + ")", 1);
                     return true;
                 }
             }
@@ -232,19 +272,18 @@ namespace CatHome4.QQ
                 Log("QQBot | " + _displayName + " | 发送失败: " + e.Message, 2);
                 return false;
             }
-        }
-
-        /// <summary>
+        }        /// <summary>
         /// 构造发送请求体——文本 / Markdown 双通道 + 可选被动 msg_id（P8）。
         /// 官方互斥铁律：填写 markdown 后 content 必须为空。
         /// </summary>
         /// <param name="text">消息文本</param>
         /// <param name="isMarkdown">true=MD 通道</param>
         /// <param name="msgId">被动回复 msg_id——空=不携带</param>
+        /// <param name="msgSeq">客户端消息序号——被动回复须递增（同 msg_id 多次回复去重校验；空 msg_id 忽略）</param>
         /// <returns>请求体 JSON</returns>
-        private static string BuildBody(string text, bool isMarkdown, string msgId)
+        private static string BuildBody(string text, bool isMarkdown, string msgId, long msgSeq)
         {
-            string idPart = msgId.Length > 0 ? ",\"msg_id\":\"" + EscapeJson(msgId) + "\"" : "";
+            string idPart = msgId.Length > 0 ? ",\"msg_id\":\"" + EscapeJson(msgId) + "\",\"msg_seq\":" + msgSeq.ToString() : "";
             if (isMarkdown)
             {
                 return "{\"msg_type\":2,\"markdown\":{\"content\":\"" + EscapeJson(text) + "\"}" + idPart + "}";
@@ -685,6 +724,16 @@ namespace CatHome4.QQ
         private static string Truncate(string s, int max)
         {
             return s.Length <= max ? s : s.Substring(0, max);
+        }
+
+        /// <summary>单行化——\r\n 替换空格（日志展示：LogStore 单行存储，跨行内容被截断）</summary>
+        private static string OneLine(string s)
+        {
+            if (s == null)
+            {
+                return "";
+            }
+            return s.Replace("\r", " ").Replace("\n", " ");
         }
 
         /// <summary>JSON 转义——发送载荷</summary>
