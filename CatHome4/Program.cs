@@ -458,22 +458,16 @@ private static HttpHost _httpHost;
         /// <returns>环境信息文本</returns>
         internal static string BuildEnvInfo()
         {
-            string version = "?";
-            try
-            {
-                System.Reflection.Assembly asm = System.Reflection.Assembly.GetEntryAssembly();
-                if (asm != null)
-                {
-                    System.Reflection.AssemblyName an = asm.GetName();
-                    if (an.Version != null)
-                    {
-                        version = an.Version.ToString(3);
-                    }
-                }
-            }
-            catch (Exception)
+            string version = VersionInfo.GetEntryVersion();
+            if (version.Length == 0)
             {
                 version = "?";
+            }
+            string buildTime = VersionInfo.GetEntryBuildTime();
+            string buildInfo = "";
+            if (buildTime.Length > 0)
+            {
+                buildInfo = " | 编译: " + buildTime;
             }
             string llmInfo = "未配置";
             try
@@ -537,7 +531,7 @@ private static HttpHost _httpHost;
             // 前文长度 = 最近一次请求单次 prompt（context）；旧数据无 context 回退累计值
             long ctxLen = context > 0 ? context : prompt;
             statsInfo = " | 前文: " + ctxLen.ToString() + " tokens";
-            return "CH4 v" + version + " | LLM: " + llmInfo + " | " + now + rootsInfo + statsInfo;
+            return "CH4 v" + version + buildInfo + " | LLM: " + llmInfo + " | " + now + rootsInfo + statsInfo;
         }
         /// <summary>
         /// 前端测试服务拉起——宿主启动时自动启动 html/tests/server.js（未监听 8099 时）；失败不影响主功能

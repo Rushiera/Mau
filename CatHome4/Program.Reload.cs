@@ -231,12 +231,14 @@ namespace CH4
                 FlowEntry entry = entries[i];
                 string state;
                 string dll = "";
+                FlowHandle curHandle = null;
                 if (string.Equals(entry.Name, "QuickCat", StringComparison.Ordinal))
                 {
                     state = _quickHandle != null ? "alive" : "missing";
                     if (_quickHandle != null)
                     {
                         dll = _quickHandle.SourceDll;
+                        curHandle = _quickHandle;
                     }
                 }
                 else
@@ -246,14 +248,37 @@ namespace CH4
                     {
                         state = "alive";
                         dll = handle.SourceDll;
+                        curHandle = handle;
                     }
                     else
                     {
                         state = "no-handle";
                     }
                 }
+                string buildTime = "";
+                if (curHandle != null)
+                {
+                    try
+                    {
+                        buildTime = VersionInfo.GetAssemblyBuildTime(curHandle.Flow.GetType().Assembly);
+                    }
+                    catch (Exception)
+                    {
+                        buildTime = "";
+                    }
+                }
+                string dllInfo = "";
+                if (dll.Length > 0)
+                {
+                    dllInfo = " | " + dll;
+                }
+                string timeInfo = "";
+                if (buildTime.Length > 0)
+                {
+                    timeInfo = " | 编译: " + buildTime;
+                }
                 sb.Append(System.Environment.NewLine);
-                sb.Append("  #" + entry.Id.ToString() + " " + entry.Name + " kind=" + (entry.Kind != null ? entry.Kind : "") + " " + state + (dll.Length > 0 ? " | " + dll : ""));
+                sb.Append("  #" + entry.Id.ToString() + " " + entry.Name + " kind=" + (entry.Kind != null ? entry.Kind : "") + " " + state + dllInfo + timeInfo);
             }
             return sb.ToString();
         }
