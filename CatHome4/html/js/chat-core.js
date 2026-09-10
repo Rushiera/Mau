@@ -65,19 +65,24 @@ function chatPhaseResetFull() {
 }
 
 function chatRenderStatus() {
-    // 状态条渲染——已完成态暗色 + 当前态高亮 + 实时秒数 + 右侧 Token 统计
+    // 状态条渲染——已完成态暗色 + 当前态高亮 + 实时时间（秒→分→小时进位）+ 总时长 + 右侧 Token 统计
     var bar = document.getElementById('chatStatus');
     if (!bar) { return; }
     var html = '';
+    var totalMs = 0;
     for (var i = 0; i < chatPhases.length; i++) {
         var p = chatPhases[i];
         var sec = chatPhaseTimes[p.key];
         if (chatActivePhase === p.key && chatPhaseStart > 0) {
             sec = sec + (Date.now() - chatPhaseStart) / 1000;
         }
+        if (sec > 0) { totalMs = totalMs + sec * 1000; }
         if (sec <= 0 && chatActivePhase !== p.key) { continue; }
         var cls = (chatActivePhase === p.key) ? 'active' : '';
-        html += '<span class="st ' + p.key + ' ' + cls + '">' + p.icon + ' ' + p.label + ' ' + sec.toFixed(1) + 's</span>';
+        html += '<span class="st ' + p.key + ' ' + cls + '">' + p.icon + ' ' + p.label + ' ' + chatFmtMs(sec * 1000) + '</span>';
+    }
+    if (totalMs > 0) {
+        html += '<span class="st total">⏱ 总 ' + chatFmtMs(totalMs) + '</span>';
     }
     if (chatUsage.prompt > 0 || chatUsage.completion > 0) {
         var miss = chatUsage.prompt - chatUsage.cacheHit;
@@ -230,9 +235,9 @@ function chatOnStream(seq, payload) {
         }
         var rc = viewContainers[seq];
         rc.reasonPre.textContent = rc.reasonPre.textContent + (payload.text || '');
-        // 流式展开——summary 实时字数感知（流式增量同步）
-        var sumEl = rc.bubble.querySelector('summary');
-        if (sumEl) { sumEl.textContent = '思考过程 · ' + rc.reasonPre.textContent.length + ' 字'; }
+        // 流式展开——summary 实时字数感知（_reasonText 同步 + _updateSummary 统一渲染——中途折叠也走折叠摘要）
+        var detEl = rc.bubble.querySelector('details.chat-reason');
+        if (detEl) { detEl._reasonText = rc.reasonPre.textContent; detEl._updateSummary(); }
     } else if (payload.kind === 'text') {
         // 回复流式——独立气泡流式；空增量（tool_calls 前的空 content 块）跳过——不建空气泡
         var t = payload.text || '';
@@ -280,11 +285,9 @@ function chatOnReason(seq, replaceSeq, payload) {
         c.bubble.classList.remove('streaming');
         c.bubble.classList.remove('streaming-wait');
         c.reasonPre.textContent = content;
-        // 整块替换——流式展开 → 完成后折叠（summary 字数同步）
+        // 整块替换——流式展开 → 完成后折叠（_reasonText 同步 + _updateSummary 显式渲染——jsdom 不触发 toggle；真实浏览器 toggle 幂等同结果）
         var detEl = c.bubble.querySelector('details.chat-reason');
-        if (detEl) { detEl.open = false; }
-        var sumEl = c.bubble.querySelector('summary');
-        if (sumEl) { sumEl.textContent = '思考过程 · ' + content.length + ' 字'; }
+        if (detEl) { detEl._reasonText = content; detEl.open = false; if (detEl._updateSummary) { detEl._updateSummary(); } }
         delete viewContainers[replaceSeq];
     } else if (content.length > 0) {
         var b = chatBubble('assistant', 'reason');

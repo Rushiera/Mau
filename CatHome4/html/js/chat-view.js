@@ -98,17 +98,43 @@ function chatToolCard(tool) {
 }
 
 function chatReasonBlock(text, open) {
-    // 思考块——默认折叠（点击 summary 展开/收起；折叠时 summary 显示字数感知内容量）；open=true 流式展开（增量可见）
+    // 思考块——默认折叠（点击 summary 展开/收起）；open=true 流式展开（增量可见）
+    // 折叠摘要：首行 +（N行M字符已省略显示）+ 末行——最小化显示过程；展开态回退字数标题
+    // 渲染入口 det._updateSummary——toggle 事件（真实浏览器）+ 显式调用（流式/整块替换/jsdom 测试）双驱动，幂等同结果
     var det = document.createElement('details');
     det.className = 'chat-reason';
     det.open = (open === true);
+    det._reasonText = text || '';
     var sum = document.createElement('summary');
-    sum.textContent = (text && text.length > 0) ? ('思考过程 · ' + text.length + ' 字') : '思考过程';
     det.appendChild(sum);
     var pre = document.createElement('div');
     pre.textContent = text || '';
     det.appendChild(pre);
+    det._updateSummary = function () {
+        var t = det._reasonText || '';
+        if (det.open) {
+            sum.textContent = (t.length > 0) ? ('思考过程 · ' + t.length + ' 字') : '思考过程';
+        } else {
+            sum.textContent = chatReasonFoldedSummary(t);
+        }
+    };
+    det.addEventListener('toggle', det._updateSummary);
+    det._updateSummary();
     return det;
+}
+
+// 折叠摘要——首行 +（N行M字符已省略显示）+ 末行；单行/两行无中间省略——回退字数标题
+function chatReasonFoldedSummary(text) {
+    if (!text || text.length === 0) { return '思考过程'; }
+    var lines = text.split('\n');
+    if (lines.length <= 2) {
+        return '思考过程 · ' + text.length + ' 字';
+    }
+    var first = lines[0];
+    var last = lines[lines.length - 1];
+    var midLines = lines.length - 2;
+    var midText = lines.slice(1, lines.length - 1).join('\n');
+    return first + '（' + midLines + '行' + midText.length + '字符已省略显示）' + last;
 }
 
 // 注入报告 HTML——新会话前文加载明细（ok/missing/error 三态 + 字符数 + 注入工具组；history 首块渲染）
@@ -253,13 +279,20 @@ function chatAppendNodeActions(bubble, msgIndex) {
     bubble.appendChild(bar);
 }
 
-// 时长格式化——毫秒 → 可读（<60s → x.xs；≥60s → x分x.x秒；roundsum 用时展示）
+// 时长格式化——毫秒 → 可读（<60s → x.xs；≥60s → x分x.x秒；≥3600s → x小时x分x.x秒——hour 最高单位不再进位；状态条/roundsum 共用）
 function chatFmtMs(ms) {
     var s = (ms || 0) / 1000;
+    if (s >= 3600) {
+        var hours = Math.floor(s / 3600);
+        var rest = s - hours * 3600;
+        var mins = Math.floor(rest / 60);
+        var secs = rest - mins * 60;
+        return hours + '小时' + mins + '分' + secs.toFixed(1) + '秒';
+    }
     if (s >= 60) {
-        var mins = Math.floor(s / 60);
-        var secs = s - mins * 60;
-        return mins + '分' + secs.toFixed(1) + '秒';
+        var mins2 = Math.floor(s / 60);
+        var secs2 = s - mins2 * 60;
+        return mins2 + '分' + secs2.toFixed(1) + '秒';
     }
     return s.toFixed(1) + 's';
 }

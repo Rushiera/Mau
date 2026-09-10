@@ -595,3 +595,40 @@ test('chatRenderHistory roundsum 块渲染（历史重建保留轮末统计）',
   expect(rs2.textContent).toContain('🔧 工具 2 次');
   expect(rs2.textContent).toContain('总计 15.0s');
 });
+
+// ── 外观层优化：思考折叠摘要——首行 +（N行M字符已省略显示）+ 末行 ──
+test('reason 折叠摘要——多行保留首尾行 + 省略行/字符计数（展开回退字数标题）', () => {
+  const text = '第一行开始\n第二行\n第三行\n第四行\n最后一行结束';
+  const det = window.chatReasonBlock(text, false);
+  // 折叠——首行 +（3行11字符已省略显示）+ 末行
+  expect(det.querySelector('summary').textContent).toBe('第一行开始（3行11字符已省略显示）最后一行结束');
+  // 展开——回退字数标题（jsdom 不触发 toggle——显式 _updateSummary；真实浏览器点击 toggle 自动同结果）
+  det.open = true;
+  det._updateSummary();
+  expect(det.querySelector('summary').textContent).toBe('思考过程 · 24 字');
+  // 再折叠——回到折叠摘要
+  det.open = false;
+  det._updateSummary();
+  expect(det.querySelector('summary').textContent).toBe('第一行开始（3行11字符已省略显示）最后一行结束');
+});
+
+// ── 外观层优化：时长三级进位——秒/分/小时（hour 最高单位）──
+test('chatFmtMs 三级进位——<60s 秒 / ≥60s 分 / ≥3600s 小时', () => {
+  expect(window.chatFmtMs(5000)).toBe('5.0s');
+  expect(window.chatFmtMs(61000)).toBe('1分1.0秒');
+  expect(window.chatFmtMs(3661000)).toBe('1小时1分1.0秒');
+  expect(window.chatFmtMs(7200000)).toBe('2小时0分0.0秒');
+});
+
+// ── 外观层优化：状态条总时长——四态累计 + ⏱ 总（时间走 chatFmtMs 进位）──
+test('chatRenderStatus 总时长——四态累计（秒进位分）', () => {
+  window.chatActivePhase = null;
+  window.chatPhaseStart = 0;
+  window.chatPhaseTimes = { link: 10, think: 65, tool: 0, reply: 3 };
+  window.chatRenderStatus();
+  expect(chatStatus.textContent).toContain('⏱ 总');
+  expect(chatStatus.textContent).toContain('1分18.0秒');  // 10+65+3=78s
+  // 单态时间走 chatFmtMs——分进位
+  expect(chatStatus.textContent).toContain('思考 1分5.0秒');
+  expect(chatStatus.textContent).toContain('链路 10.0s');
+});
