@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Mau.Runtime;
 
 namespace CatHome4.QQ
@@ -168,11 +169,21 @@ namespace CatHome4.QQ
             {
                 return;
             }
-            // P9 附件——私聊先下载缓存（URL 时效短——立即下载；注入文本带缓存路径）
+            // P9 附件——私聊+群@都下载缓存（URL 时效短——立即下载；注入文本带缓存路径；v0.96.1 放开群聊）
             string attachText = "";
-            if (source.Type == "private" && attachments != null && attachments.Count > 0)
+            if (attachments != null && attachments.Count > 0)
             {
+                bool hasFace = _faceTagRegex.IsMatch(text);
                 attachText = DownloadAttachments(qqBotId, attachments);
+                if (hasFace)
+                {
+                    // v0.96.1 简化——faceType 原位嵌入真实本地路径，agent 心智负担更低；成功时尾部不重复
+                    text = NormalizeFaceTags(text, attachments);
+                    if (attachText.Length > 0 && !attachText.Contains("|超限拒绝") && !attachText.Contains("|下载失败") && !attachText.Contains("|缓存未配置"))
+                    {
+                        attachText = "";
+                    }
+                }
             }
             if (text.Length == 0 && attachText.Length == 0)
             {
@@ -197,7 +208,7 @@ namespace CatHome4.QQ
                 SendToSource(qqBotId, source, "无猫");
                 return;
             }
-            // 广播注入所有绑定且启用的 Cat
+            // 广播注入所有绑定且启用的 Cat——消息头区分渠道+来源（v0.96.1：私聊硬编码雾理莎/群@昵称+角色）
             bool anyInjected = false;
             for (int i = 0; i < targets.Count; i++)
             {
@@ -206,7 +217,7 @@ namespace CatHome4.QQ
                 {
                     continue;
                 }
-                tg.Inject("[来自QQ] " + text + attachText);
+                tg.Inject("[来自QQ]" + BuildHeader(source) + " " + text + attachText);
                 EnqueueSource(tg.Key, source);
                 ResetRound(tg.Key);
                 anyInjected = true;
@@ -215,9 +226,7 @@ namespace CatHome4.QQ
             {
                 SendToSource(qqBotId, source, "目标 Cat 未启用 qqbot 转发功能");
             }
-        }
-
-        /// <summary>
+        }/// <summary>
         /// 解析消息——C2C 私聊 / GROUP_AT 群@。
         /// </summary>
         /// <param name="raw">原始消息 JSON</param>
@@ -244,7 +253,13 @@ namespace CatHome4.QQ
                     if (t == "C2C_MESSAGE_CREATE")
                     {
                         JsonElement dd = d.RootElement.GetProperty("d");
-                        string uid = dd.GetProperty("author").GetProperty("user_openid").GetString() ?? "";
+                        JsonElement authorE = dd.GetProperty("author");
+                        string uid = authorE.GetProperty("user_openid").GetString() ?? "";
+                        string authorName = "";
+                        if (authorE.TryGetProperty("username", out JsonElement un))
+                        {
+                            authorName = un.GetString() ?? "";
+                        }
                         string content = "";
                         if (dd.TryGetProperty("content", out JsonElement c))
                         {
@@ -256,15 +271,26 @@ namespace CatHome4.QQ
                             msgId = idE.GetString() ?? "";
                         }
                         attachments = ParseAttachments(dd);
-                        source = new QqSource("private", uid, msgId);
+                        source = new QqSource("private", uid, msgId, authorName, "");
                         text = StripAtMention(content);
                         return true;
                     }
                     if (t == "GROUP_AT_MESSAGE_CREATE")
                     {
                         JsonElement dd = d.RootElement.GetProperty("d");
+                        JsonElement authorE = dd.GetProperty("author");
                         string gid = dd.GetProperty("group_openid").GetString() ?? "";
-                        string mid = dd.GetProperty("author").GetProperty("member_openid").GetString() ?? "";
+                        string mid = authorE.GetProperty("member_openid").GetString() ?? "";
+                        string authorName = "";
+                        if (authorE.TryGetProperty("username", out JsonElement un))
+                        {
+                            authorName = un.GetString() ?? "";
+                        }
+                        string memberRole = "";
+                        if (authorE.TryGetProperty("member_role", out JsonElement mr))
+                        {
+                            memberRole = mr.GetString() ?? "";
+                        }
                         string content = "";
                         if (dd.TryGetProperty("content", out JsonElement c))
                         {
@@ -276,7 +302,7 @@ namespace CatHome4.QQ
                             msgId = idE.GetString() ?? "";
                         }
                         attachments = ParseAttachments(dd);
-                        source = new QqSource("group", gid + ":" + mid, msgId);
+                        source = new QqSource("group", gid + ":" + mid, msgId, authorName, memberRole);
                         text = StripAtMention(content);
                         return true;
                     }
@@ -286,9 +312,7 @@ namespace CatHome4.QQ
             {
             }
             return false;
-        }
-
-        /// <summary>附件大小硬限制——200MB（官方硬限制）</summary>
+        }        /// <summary>附件大小硬限制——200MB（官方硬限制）</summary>
         private const long MaxAttachmentBytes = 200L * 1024 * 1024;
 
         /// <summary>
@@ -323,7 +347,9 @@ namespace CatHome4.QQ
                 string dest = Path.Combine(dir, DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_" + SanitizeFileName(a.FileName));
                 if (conn.DownloadAttachment(a.Url, dest))
                 {
-                    sb.Append(" [附件: " + a.FileName + "|" + a.Size + "|" + dest + "]");
+                    a.LocalPath = dest;
+                    // v0.96.1 简化——成功路径含文件名，不重复 size；faceType 原位嵌入路径时尾部 attachText 清空
+                    sb.Append(" [附件: " + dest + "]");
                     LogStore.Add("QQBot", 1, "附件缓存 | " + dest + " | " + a.Size, "QQBOT");
                 }
                 else
@@ -333,7 +359,6 @@ namespace CatHome4.QQ
             }
             return sb.ToString();
         }
-
         /// <summary>
         /// 解析附件数组——attachments 非空即含附件（消息事件与文本同构）。
         /// </summary>
@@ -433,7 +458,78 @@ namespace CatHome4.QQ
             }
             return s;
         }
+        /// <summary>
+        /// 归一化 QQ 富文本 faceType 标记——&lt;faceType=X,...&gt; → [本地缓存路径] 原位嵌入。
+        /// 多图嵌长文本可区分图片与文字的对应关系；agent 直接可调 image-analyze（v0.96.1）。
+        /// </summary>
+        /// <param name="content">原始内容（已剥离 @ 前缀）</param>
+        /// <param name="attachments">附件列表——按序对应 faceType 标记；降级链：本地路径→文件名→[图片]</param>
+        /// <returns>归一化后的文本</returns>
+        private static string NormalizeFaceTags(string content, List<QqAttachment> attachments)
+        {
+            if (string.IsNullOrEmpty(content))
+            {
+                return content ?? "";
+            }
+            int idx = 0;
+            return _faceTagRegex.Replace(content, m =>
+            {
+                // 原位嵌入真实本地路径——agent 直接可调 image-analyze，多图嵌长文本可区分对应关系（v0.96.1）
+                string mark = "";
+                if (attachments != null && idx < attachments.Count)
+                {
+                    QqAttachment a = attachments[idx];
+                    if (!string.IsNullOrEmpty(a.LocalPath))
+                    {
+                        mark = a.LocalPath;
+                    }
+                    else if (!string.IsNullOrEmpty(a.FileName))
+                    {
+                        mark = a.FileName;
+                    }
+                }
+                idx++;
+                return string.IsNullOrEmpty(mark) ? "[图片]" : "[" + mark + "]";
+            });
+        }
+        /// <summary>
+        /// 构建消息头——区分渠道+来源（v0.96.1）。
+        /// 私聊：硬编码雾理莎（莎本人私聊 ID，User.md 补身份）；群@：昵称+角色（事件白拿字段）。
+        /// </summary>
+        /// <param name="source">消息来源</param>
+        /// <returns>消息头——[私聊|雾理莎] / [群@|昵称(角色)]</returns>
+        private static string BuildHeader(QqSource source)
+        {
+            if (source.Type == "private")
+            {
+                return "[私聊|雾理莎]";
+            }
+            string name = source.DisplayName ?? "";
+            string role = source.Role ?? "";
+            if (name.Length == 0)
+            {
+                return "[群@]";
+            }
+            if (role.Length == 0)
+            {
+                return "[群@|" + name + "]";
+            }
+            return "[群@|" + name + "(" + RoleText(role) + ")]";
+        }
 
+        /// <summary>群角色中文映射——owner=群主 / admin=管理员 / member=成员；未知原值</summary>
+        /// <param name="role">事件 member_role 原值</param>
+        /// <returns>中文角色文本</returns>
+        private static string RoleText(string role)
+        {
+            switch (role)
+            {
+                case "owner": return "群主";
+                case "admin": return "管理员";
+                case "member": return "成员";
+                default: return role;
+            }
+        }
         /// <summary>
         /// 强匹配指令处理——/ 开头指令完全一致才命中；命中返回回复文本，未命中返回 null（走 LLM 路由）。
         /// Q5：/new 重开新会话（前端 session.new 同款）+ /info 查看状态（qqbot 管理器 + 合并猫 info）。
@@ -842,7 +938,8 @@ namespace CatHome4.QQ
 
         /// <summary>即时转发上限——3+1 预算：≤3 条即时转发，第 4 次轮末汇总（对齐官方被动回复 4 次上限）</summary>
         private const int MaxImmediateReplies = 3;
-
+        /// <summary>QQ 富文本 faceType 标记正则——表情/大表情图片标记（v0.96.1 简化）</summary>
+        private static readonly Regex _faceTagRegex = new Regex("<faceType=[^>]*>", RegexOptions.Compiled);
         /// <summary>截断文本——日志展示</summary>
         private static string Truncate(string s, int max)
         {
@@ -864,15 +961,23 @@ namespace CatHome4.QQ
         /// <summary>被动回复引用——事件 d.id；空=非被动</summary>
         public string MsgId;
 
+        /// <summary>发送者昵称——群@ author.username；私聊事件为空串（私聊 header 硬编码雾理莎）</summary>
+        public string DisplayName;
+
+        /// <summary>群内角色——owner/admin/member（事件白拿字段）；私聊空</summary>
+        public string Role;
+
         /// <summary>构造来源。</summary>
         /// <param name="type">消息类型</param>
         /// <param name="targetId">目标 ID</param>
         /// <param name="msgId">被动回复 msg_id</param>
-        public QqSource(string type, string targetId, string msgId)
+        public QqSource(string type, string targetId, string msgId, string displayName = "", string role = "")
         {
             Type = type;
             TargetId = targetId;
             MsgId = msgId;
+            DisplayName = displayName;
+            Role = role;
         }
 
         /// <summary>显示——private:uid / group:gid:mid（日志兼容）</summary>
@@ -893,6 +998,9 @@ namespace CatHome4.QQ
 
         /// <summary>文件名</summary>
         public string FileName;
+
+        /// <summary>本地缓存路径——下载成功后写回；原位嵌入用（v0.96.1）</summary>
+        public string LocalPath;
 
         /// <summary>大小（字节）</summary>
         public long Size;
