@@ -97,6 +97,15 @@ namespace CH4
         /// <summary>Token 用量整轮累计——cache hit（CH2 双格式：prompt_cache_hit_tokens / cached_tokens）</summary>
         private long _usageCacheHit;
 
+        /// <summary>Token 用量会话累计——prompt（本次请求增量随轮同期堆入；仅新会话复位，跨轮保留）</summary>
+        private long _sessionPrompt;
+
+        /// <summary>Token 用量会话累计——completion（跨轮持续累加；仅新会话复位）</summary>
+        private long _sessionCompletion;
+
+        /// <summary>Token 用量会话累计——cache hit（跨轮持续累加；仅新会话复位）</summary>
+        private long _sessionCacheHit;
+
         /// <summary>最近一轮真实 usage 统计——CloseRound 落盘（info 自查/前端显示数据源；零估算）</summary>
         private SessionStats _lastStats;
 
@@ -314,11 +323,15 @@ namespace CH4
         }
 
         /// <summary>
-        /// 重置统计——session.new 清前文后调用（新会话零统计起算）。
+        /// 重置统计——session.new 清前文后调用（新会话零统计起算；会话级 token 累计同归零）。
         /// </summary>
         public void ResetStats()
         {
             _lastStats = new SessionStats();
+            // 会话级 token 累计——新会话唯一归零点（轮级由 StartRound 逐轮清零；回滚不清——同会话延续）
+            _sessionPrompt = 0;
+            _sessionCompletion = 0;
+            _sessionCacheHit = 0;
         }
 
         /// <summary>
@@ -825,14 +838,24 @@ namespace CH4
                     }
                     else if (ev.Kind == LlmStreamKind.Usage)
                     {
-                        // E3 Token 统计——解析 usage JSON 累计整轮（工具多轮累加）+ 单次前文覆盖 + 转发 SSE（前端覆盖式显示累计值）
+                        // E3 Token 统计——解析 usage JSON 累计整轮（工具多轮累加）+ 单次前文覆盖 + 转发 SSE（前端覆盖式显示整轮累计值）
+                        // 会话级累计——本次请求增量随轮同期堆入（跨轮保留；仅新会话复位）
+                        long reqPrompt = _usagePrompt;
+                        long reqCompletion = _usageCompletion;
+                        long reqCacheHit = _usageCacheHit;
                         ParseUsage(ev.Text, ref _usagePrompt, ref _usageCompletion, ref _usageCacheHit, ref _contextTokens);
+                        _sessionPrompt = _sessionPrompt + (_usagePrompt - reqPrompt);
+                        _sessionCompletion = _sessionCompletion + (_usageCompletion - reqCompletion);
+                        _sessionCacheHit = _sessionCacheHit + (_usageCacheHit - reqCacheHit);
                         if (_httpHost != null)
                         {
                             string usageJson = "{\"prompt\":" + _usagePrompt.ToString()
                                 + ",\"completion\":" + _usageCompletion.ToString()
                                 + ",\"cacheHit\":" + _usageCacheHit.ToString()
-                                + ",\"context\":" + _contextTokens.ToString() + "}";
+                                + ",\"context\":" + _contextTokens.ToString()
+                                + ",\"sessionPrompt\":" + _sessionPrompt.ToString()
+                                + ",\"sessionCompletion\":" + _sessionCompletion.ToString()
+                                + ",\"sessionCacheHit\":" + _sessionCacheHit.ToString() + "}";
                             string usageCtrl = "{\"type\":\"usage\",\"data\":" + usageJson + "}";
                             _httpHost.PushView("control", usageCtrl, -1, 0);
                         }
@@ -880,8 +903,8 @@ namespace CH4
                 {
                     llmSummary = llmSummary + "，未调用工具";
                 }
-                // E3 Token 统计——结算行带 usage（CLI/日志可观测；SSE 推送仍走 usage 事件——前端覆盖式显示累计值）
-                llmSummary = llmSummary + "。Token 统计：输入 " + _usagePrompt.ToString() + "（含缓存 " + _usageCacheHit.ToString() + "）· 输出 " + _usageCompletion.ToString();
+                // E3 Token 统计——结算行带本轮 usage（轮级：本轮全部请求累加；SSE 推送仍走 usage 事件——前端覆盖式显示整轮累计值）
+                llmSummary = llmSummary + "。本轮 Token：输入 " + _usagePrompt.ToString() + "（含缓存 " + _usageCacheHit.ToString() + "）· 输出 " + _usageCompletion.ToString();
                 LogStore.Add("LLM", 0, llmSummary, "LLM");
             }
             catch (System.OperationCanceledException ex)
@@ -1428,7 +1451,10 @@ namespace CH4
                     + ",\"stats\":{\"prompt\":" + _usagePrompt.ToString()
                     + ",\"cacheHit\":" + _usageCacheHit.ToString()
                     + ",\"completion\":" + _usageCompletion.ToString()
-                    + ",\"context\":" + _contextTokens.ToString() + "}}";
+                    + ",\"context\":" + _contextTokens.ToString()
+                    + ",\"sessionPrompt\":" + _sessionPrompt.ToString()
+                    + ",\"sessionCompletion\":" + _sessionCompletion.ToString()
+                    + ",\"sessionCacheHit\":" + _sessionCacheHit.ToString() + "}}";
                 _httpHost.PushView("control", doneJson, -1, 0);
             }
             LogStore.Add("CatHome4", 1, "会话前文已落盘（" + _context.GetMessageCount().ToString() + " 条消息）", "SYS");

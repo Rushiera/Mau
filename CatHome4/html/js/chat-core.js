@@ -32,7 +32,7 @@ var chatPhases = [
 var chatActivePhase = null;        // 当前态 key（null=无活跃轮）
 var chatPhaseStart = 0;            // 当前态开始时间戳（ms）
 var chatPhaseTimes = { link: 0, think: 0, tool: 0, reply: 0 };   // 各态已完成秒数（累计）
-var chatUsage = { prompt: 0, completion: 0, cacheHit: 0 };       // Token 整轮累计（usage 事件覆盖式累计）
+var chatUsage = { prompt: 0, completion: 0, cacheHit: 0, sessionPrompt: 0, sessionCompletion: 0, sessionCacheHit: 0 };       // Token 双级——轮级（usage 事件覆盖式累计）+ 会话级（后端跨轮累加，仅新会话归零）
 var chatStatusTimer = null;        // 状态条 500ms 刷新定时器
 
 function chatPhaseEnter(key) {
@@ -58,14 +58,14 @@ function chatPhaseReset() {
 }
 
 function chatPhaseResetFull() {
-    // 发送新轮/新会话——usage 也清零（跨轮不复用）
+    // 新会话——轮级 + 会话级 usage 全清零（会话级唯一前端归零点；跨轮保留见 chatSend）
     chatPhaseReset();
-    chatUsage = { prompt: 0, completion: 0, cacheHit: 0 };
+    chatUsage = { prompt: 0, completion: 0, cacheHit: 0, sessionPrompt: 0, sessionCompletion: 0, sessionCacheHit: 0 };
     chatRenderStatus();
 }
 
 function chatRenderStatus() {
-    // 状态条渲染——已完成态暗色 + 当前态高亮 + 实时时间（秒→分→小时进位）+ 总时长 + 右侧 Token 统计
+    // 状态条渲染——已完成态暗色 + 当前态高亮 + 实时时间（秒→分→小时进位）+ 总时长 + 右侧 Token 统计（轮级 + 会话级）
     var bar = document.getElementById('chatStatus');
     if (!bar) { return; }
     var html = '';
@@ -92,6 +92,12 @@ function chatRenderStatus() {
             + '<span class="tk c">↓' + chatFmtCount(chatUsage.completion) + '</span>'
             + (chatUsage.cacheHit > 0 ? '<span class="tk ch">cache ' + chatFmtCount(chatUsage.cacheHit) + '</span>' : '')
             + (miss > 0 ? '<span class="tk ms">miss ' + chatFmtCount(miss) + '</span>' : '')
+            + '</span>';
+    }
+    if (chatUsage.sessionPrompt > 0 || chatUsage.sessionCompletion > 0) {
+        html += '<span class="tok sess">'
+            + '<span class="tk">会话 ↑' + chatFmtCount(chatUsage.sessionPrompt) + '</span>'
+            + '<span class="tk c">↓' + chatFmtCount(chatUsage.sessionCompletion) + '</span>'
             + '</span>';
     }
     bar.innerHTML = html;
@@ -340,11 +346,14 @@ function chatOnRetry(seq, replaceSeq, payload) {
 function chatOnControl(payload) {
     var type = payload.type;
     if (type === 'usage') {
-        // E 系列——Token 统计：usage 覆盖式显示整轮累计
+        // E 系列——Token 统计：轮级覆盖式显示整轮累计 + 会话级同步（后端跨轮累计值；仅新会话归零）
         var u = payload.data || {};
         chatUsage.prompt = u.prompt || 0;
         chatUsage.completion = u.completion || 0;
         chatUsage.cacheHit = u.cacheHit || 0;
+        chatUsage.sessionPrompt = u.sessionPrompt || 0;
+        chatUsage.sessionCompletion = u.sessionCompletion || 0;
+        chatUsage.sessionCacheHit = u.sessionCacheHit || 0;
         chatRenderStatus();
         // Q1 顶端计数实时化——每次 API 请求返回后按真实 context（单次前文 token）更新前文长度，不等轮结束
         if (u.context !== undefined && u.context > 0) {
@@ -397,6 +406,13 @@ function chatOnControl(payload) {
                 // 前文长度 = 最近一次请求的单次 prompt（context 字段）；旧数据无 context 时回退累计值
                 var ctx2 = (ds.context !== undefined && ds.context > 0) ? ds.context : (ds.prompt || 0);
                 doneText += ' | 前文 ' + chatFmtCount(ctx2) + ' tokens';
+                // 会话级 Token——随终态同步（后端唯一真源；前端只覆盖不累加）
+                if (ds.sessionPrompt !== undefined) {
+                    chatUsage.sessionPrompt = ds.sessionPrompt;
+                    chatUsage.sessionCompletion = ds.sessionCompletion;
+                    chatUsage.sessionCacheHit = ds.sessionCacheHit;
+                    chatRenderStatus();
+                }
             }
             chatInfo.textContent = doneText;
         }
