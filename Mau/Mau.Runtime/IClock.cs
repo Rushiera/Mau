@@ -16,9 +16,6 @@ namespace Mau.Runtime
     /// <summary>
     /// 帧时钟——宿主每帧调用 Advance 推进
     /// </summary>
-    /// <summary>
-    /// 帧时钟——宿主每帧调用 Advance 推进
-    /// </summary>
     public sealed class FrameClock : IClock
     {
         /// <summary>
@@ -43,9 +40,6 @@ namespace Mau.Runtime
         }
     }
 
-    /// <summary>
-    /// 固定时钟——测试注入，帧号可任意设置
-    /// </summary>
     /// <summary>
     /// 固定时钟——测试注入，帧号可任意设置
     /// </summary>

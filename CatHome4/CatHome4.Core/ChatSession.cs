@@ -1338,9 +1338,6 @@ namespace CH4
             LaunchLlm();
         }
         /// <summary>
-        /// Done 相位——前文落盘（tool 截断 ≤800——D7 落盘副本防膨胀）+ chat_state=idle + PushChatDone + 复位（原 HandleChat 段4）。
-        /// </summary>
-        /// <summary>
         /// 错误中止收尾——LLM API 错误重试耗尽后调用（保留断点上下文 + 错误气泡；不走 CloseRound——中止非正常完成语义）。
         /// 对齐 PauseFinalize：落盘断点（tool 截断 ≤800）+ 视图序号复位 + 状态复位 Idle + chat_state=idle + 推 error 事件（前端 seal + 错误气泡）。
         /// </summary>
@@ -1382,6 +1379,9 @@ namespace CH4
             DataBox.Set<string>("global", "chat_state", "idle");
         }
 
+        /// <summary>
+        /// Done 相位——前文落盘（tool 截断 ≤800——D7 落盘副本防膨胀）+ chat_state=idle + PushChatDone + 复位（原 HandleChat 段4）。
+        /// </summary>
         private void CloseRound()
         {
             LlmMessage[] toSave = _context.GetMessages();

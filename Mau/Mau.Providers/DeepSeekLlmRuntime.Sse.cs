@@ -98,7 +98,7 @@ namespace Mau.Providers
         /// <param name="text">回复增量（无则空串）</param>
         /// <param name="reasoning">思考增量（无则空串）</param>
         /// <returns>true=解析成功（增量可能为空——调用方判空再产事件）</returns>
-        private static bool TryParseDelta(string data, out string text, out string reasoning)
+        internal static bool TryParseDelta(string data, out string text, out string reasoning)
         {
             text = "";
             reasoning = "";
@@ -371,7 +371,7 @@ private static string BuildToolCallsJson(Dictionary<int, string> ids, Dictionary
         /// <param name="data">帧 data 载荷</param>
         /// <param name="usageJson">usage JSON 字符串（无 usage 或全零返回空串）</param>
         /// <returns>true=解析到有效 usage</returns>
-        private static bool TryParseUsage(string data, out string usageJson)
+        internal static bool TryParseUsage(string data, out string usageJson)
         {
             usageJson = "";
             if (data == null || data.Length == 0)

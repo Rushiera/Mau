@@ -559,6 +559,7 @@ public string ReadLinesAuto(string path, int startLine, int endLine)
             return "[git] 存在 .git（" + rel + "——HEAD: " + head + "）";
         }
 
+        /// <summary>
         /// 按深度和数量上限列出稳定排序目录树
         /// </summary>
         /// <param name="path">受控目录</param>

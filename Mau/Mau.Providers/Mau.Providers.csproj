@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Mau.Runtime\Mau.Runtime.csproj" />
+    <InternalsVisibleTo Include="Mau.Providers.Tests" />
   </ItemGroup>
 
   <ItemGroup>

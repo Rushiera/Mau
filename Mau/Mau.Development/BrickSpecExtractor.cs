@@ -94,8 +94,8 @@ namespace Mau.Development
     }
 
     /// <summary>
-    /// 积木契约提取器——v2 设计模式构筑（Bricks/README §三/§五）：
-    /// 文件头十字段（文本解析）+ Roslyn 静态方法签名（首个 public static bool，无则回退首个 public static void，排除 Configure）。
+    /// 积木契约提取器——文件头十字段（文本解析）+ Roslyn 静态方法签名
+    /// （首个 public static bool，无则回退首个 public static void，排除 Configure）。
     /// 源码是唯一真相源——index.json + INDEX.md 全部由本器重建。
     /// </summary>
     public static class BrickSpecExtractor

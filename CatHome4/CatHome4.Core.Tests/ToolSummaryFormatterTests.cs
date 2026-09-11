@@ -11,6 +11,9 @@ namespace CatHome4.Core.Tests
     {
         // ── TextCat——读取 ──
 
+        /// <summary>
+        /// 读取工具摘要——单行短文本原样展示。
+        /// </summary>
         [Fact]
         public void TextRead_SingleLineShort()
         {
@@ -18,6 +21,9 @@ namespace CatHome4.Core.Tests
             Assert.Equal("读取文件 \"a.txt\" → \"hello\"", s);
         }
 
+        /// <summary>
+        /// 读取工具摘要——多行结果展示行数与字节数。
+        /// </summary>
         [Fact]
         public void TextRead_MultiLine_ShowsLinesAndSize()
         {
@@ -25,6 +31,9 @@ namespace CatHome4.Core.Tests
             Assert.Equal("读取文件 \"a.txt\" → \"hello（2行 · 11 B）\"", s);
         }
 
+        /// <summary>
+        /// 区间读取摘要——展示起止锚点。
+        /// </summary>
         [Fact]
         public void TextReadBetween_ShowsAnchors()
         {
@@ -32,6 +41,9 @@ namespace CatHome4.Core.Tests
             Assert.Equal("区间读取 \"a.txt\" 「## 一」 ~ 「## 二」 → \"body\"", s);
         }
 
+        /// <summary>
+        /// 按行读取摘要——展示行号区间。
+        /// </summary>
         [Fact]
         public void TextReadLines_ShowsRange()
         {
@@ -41,6 +53,9 @@ namespace CatHome4.Core.Tests
 
         // ── TextCat——写入 ──
 
+        /// <summary>
+        /// 写入工具摘要——展示内容预览。
+        /// </summary>
         [Fact]
         public void TextWrite_ShowsContentPreview()
         {
@@ -48,6 +63,9 @@ namespace CatHome4.Core.Tests
             Assert.Equal("写入文件 \"a.txt\" ← \"hi\" → OK", s);
         }
 
+        /// <summary>
+        /// 追加工具摘要——展示内容预览。
+        /// </summary>
         [Fact]
         public void TextAppend_ShowsContentPreview()
         {
@@ -57,6 +75,9 @@ namespace CatHome4.Core.Tests
 
         // ── TextCat——修改/操作 ──
 
+        /// <summary>
+        /// 替换工具摘要——展示新旧文本字节数。
+        /// </summary>
         [Fact]
         public void TextReplace_ShowsByteCounts()
         {
@@ -64,19 +85,31 @@ namespace CatHome4.Core.Tests
             string s = ToolSummaryFormatter.Build("text-replace", "{\"path\":\"a.txt\",\"old\":\"old\",\"new\":\"new\"}", "替换成功");
             Assert.Equal("替换文本 \"a.txt\" → \"new\"(3B) 覆盖 \"old\"(3B)", s);
         }
-[Fact]
-public void TextReplace_RealArgs_NoZeroBytes()
+
+        /// <summary>
+        /// 替换工具摘要——真实参数 old/new 显示真实字节数（旧参数名取空回归）。
+        /// </summary>
+        [Fact]
+        public void TextReplace_RealArgs_NoZeroBytes()
         {
-    // 回归——真实参数 old/new 必须显示真实字节数（旧 str/new_str 取空 → 0B 0B）
-    string s = ToolSummaryFormatter.Build("text-replace", "{\"path\":\"x.md\",\"old\":\"anchor_unique\",\"new\":\"replaced_ok\"}", "OK 替换完成: 1 处（x.md）");
-    Assert.Equal("替换文本 \"x.md\" → \"replaced_ok\"(11B) 覆盖 \"anchor_unique\"(13B)", s);
-}        [Fact]
+            // 回归——真实参数 old/new 必须显示真实字节数（旧 str/new_str 取空 → 0B 0B）
+            string s = ToolSummaryFormatter.Build("text-replace", "{\"path\":\"x.md\",\"old\":\"anchor_unique\",\"new\":\"replaced_ok\"}", "OK 替换完成: 1 处（x.md）");
+            Assert.Equal("替换文本 \"x.md\" → \"replaced_ok\"(11B) 覆盖 \"anchor_unique\"(13B)", s);
+        }
+
+        /// <summary>
+        /// 文件搜索摘要——展示命中文件数与文件名列表。
+        /// </summary>
+        [Fact]
         public void TextFind_ShowsHitStats()
         {
             string s = ToolSummaryFormatter.Build("text-find", "{\"dir\":\"D:\\\\x\",\"pattern\":\"**/*.cs\"}", "a.cs\nb.cs\nsub/c.cs");
             Assert.Equal("搜索文件 \"D:\\x\" glob=\"**/*.cs\" → 3文件（\"a.cs\", \"b.cs\", \"sub/c.cs\"）", s);
         }
 
+        /// <summary>
+        /// 内容检索摘要——展示命中文件数与命中次数。
+        /// </summary>
         [Fact]
         public void TextGrep_ShowsHitStats()
         {
@@ -84,19 +117,30 @@ public void TextReplace_RealArgs_NoZeroBytes()
             Assert.Equal("检索内容 \"D:\\x\" 含 \"Cat\" → 2文件·3命中（\"a.cs\", \"b.cs\"）", s);
         }
 
+        /// <summary>
+        /// 目录树摘要——旧输出形态（含大小/尾斜杠）统计文件与目录数。
+        /// </summary>
         [Fact]
         public void TextTree_ShowsFileDirCount()
         {
             string s = ToolSummaryFormatter.Build("text-tree", "{\"path\":\"C:\\\\x\",\"depth\":\"2\"}", "  a.cs (1 KB)\n  dir/\n");
             Assert.StartsWith("展开目录 \"C:\\x\" depth=\"2\" → \"1文件 1目录", s);
         }
-[Fact]
-public void TextTree_RealOutput_CountsFilesAndDirs()
+
+        /// <summary>
+        /// 目录树摘要——AppendTree 真实输出（纯相对路径 + 目录行尾斜杠）统计文件与目录数。
+        /// </summary>
+        [Fact]
+        public void TextTree_RealOutput_CountsFilesAndDirs()
         {
-    // 回归——AppendTree 真实输出（纯相对路径 + 目录行 / 尾）必须正确统计（旧解析按 KB)/ 尾匹配 → 0文件 0目录）
-    string s = ToolSummaryFormatter.Build("text-tree", "{\"path\":\"C:\\\\x\",\"depth\":\"2\"}", "a.txt\nb/\nc/d.cs");
-    Assert.StartsWith("展开目录 \"C:\\x\" depth=\"2\" → \"2文件 1目录", s);
-}
+            // 回归——AppendTree 真实输出（纯相对路径 + 目录行 / 尾）必须正确统计（旧解析按 KB)/ 尾匹配 → 0文件 0目录）
+            string s = ToolSummaryFormatter.Build("text-tree", "{\"path\":\"C:\\\\x\",\"depth\":\"2\"}", "a.txt\nb/\nc/d.cs");
+            Assert.StartsWith("展开目录 \"C:\\x\" depth=\"2\" → \"2文件 1目录", s);
+        }
+
+        /// <summary>
+        /// 移动工具摘要——展示源与目标路径。
+        /// </summary>
         [Fact]
         public void TextMove_ShowsSrcDest()
         {
@@ -104,6 +148,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.StartsWith("移动文件 \"C:\\a.txt\" → \"C:\\b.txt\" → \"移动成功", s);
         }
 
+        /// <summary>
+        /// 删除工具摘要——展示软删除结果（回收站改名）。
+        /// </summary>
         [Fact]
         public void TextDelete_ShowsResult()
         {
@@ -114,6 +161,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
 
         // ── CsCat ──
 
+        /// <summary>
+        /// cs-check 摘要——JSON 结果解析出错误与警告数（通过）。
+        /// </summary>
         [Fact]
         public void CsCheck_JsonResult_ShowsErrWarn()
         {
@@ -121,6 +171,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("C#检查 \"X.csproj\" → OK（共0错 2警）", s);
         }
 
+        /// <summary>
+        /// cs-check 摘要——JSON 结果为失败态时展示 FAIL。
+        /// </summary>
         [Fact]
         public void CsCheck_JsonFail_ShowsFail()
         {
@@ -128,6 +181,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("C#检查 → FAIL（共3错 1警）", s);
         }
 
+        /// <summary>
+        /// cs-dead 摘要——文本统计解析出零引用成员数。
+        /// </summary>
         [Fact]
         public void CsDead_TextStats()
         {
@@ -135,6 +191,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("C#死代码扫描 → OK（\"共3个死代码\"）", s);
         }
 
+        /// <summary>
+        /// cs-comment_check 摘要——文本统计解析出缺注释处数。
+        /// </summary>
         [Fact]
         public void CsCommentCheck_TextStats()
         {
@@ -142,6 +201,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("C#注释检查 → OK（\"共2处缺注释\"）", s);
         }
 
+        /// <summary>
+        /// cs-list 摘要——文本统计解析出成员数。
+        /// </summary>
         [Fact]
         public void CsList_TextStats()
         {
@@ -149,6 +211,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("C#列表 \"A\" → OK（\"共10成员\"）", s);
         }
 
+        /// <summary>
+        /// cs-patch 摘要——展示类.成员与行号区间。
+        /// </summary>
         [Fact]
         public void CsPatch_ShowsClassMemberRange()
         {
@@ -158,6 +223,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
 
         // ── ConfigCat / MauCat / PsCat ──
 
+        /// <summary>
+        /// config-set 摘要——展示配置键与值。
+        /// </summary>
         [Fact]
         public void ConfigSet_ShowsKeyValue()
         {
@@ -165,6 +233,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("设置配置 \"ui.chat_font_size\"=\"16\" → \"OK\"", s);
         }
 
+        /// <summary>
+        /// mau-verify 摘要——展示目标文件与结果。
+        /// </summary>
         [Fact]
         public void MauVerify_ShowsFile()
         {
@@ -172,6 +243,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("Mau验证 \"a.mau\" → \"MAU_VERIFY_OK\"", s);
         }
 
+        /// <summary>
+        /// powershell 摘要——展示命令文本。
+        /// </summary>
         [Fact]
         public void Powershell_ShowsCommand()
         {
@@ -179,6 +253,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("执行命令 \"dir CatTemp\" → \"hello\"", s);
         }
 
+        /// <summary>
+        /// web-search 摘要——展示查询词与多行结果统计。
+        /// </summary>
         [Fact]
         public void WebSearch_ShowsQuery()
         {
@@ -186,6 +263,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("搜索网页 \"Mau 语法\" → \"结果1（2行 · 7 B）\"", s);
         }
 
+        /// <summary>
+        /// temp-exec 摘要——展示临时工具 Key。
+        /// </summary>
         [Fact]
         public void TempExec_ShowsKey()
         {
@@ -195,6 +275,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
 
         // ── 内置工具 ──
 
+        /// <summary>
+        /// Note 摘要——展示进度与任务目标。
+        /// </summary>
         [Fact]
         public void Note_ShowsProgress()
         {
@@ -202,6 +285,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("任务追踪 → 第\"2/5\"条 完成\"1\" 待做\"4\" \"测试任务\"", s);
         }
 
+        /// <summary>
+        /// random 摘要——展示取值区间与结果。
+        /// </summary>
         [Fact]
         public void Random_ShowsRange()
         {
@@ -209,6 +295,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("随机数 \"[1,10)\" → \"7\"", s);
         }
 
+        /// <summary>
+        /// time 摘要——展示时间结果。
+        /// </summary>
         [Fact]
         public void Time_ShowsResult()
         {
@@ -216,8 +305,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("获取时间 → \"2026-09-07 17:00:00\"", s);
         }
 
-        // ── 兜底与边界 ──
-
+        /// <summary>
+        /// 未知工具兜底——展示参数个数与结果。
+        /// </summary>
         [Fact]
         public void UnknownTool_ShowsParamsAndResult()
         {
@@ -225,6 +315,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("调用工具 \"weird-tool\" 参数=1个 → \"zzz\"", s);
         }
 
+        /// <summary>
+        /// 空参数兜底——null 参数不崩溃，输出空占位。
+        /// </summary>
         [Fact]
         public void NullArgs_NoCrash()
         {
@@ -232,6 +325,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.Equal("读取文件 \"\" → \"空\"", s);
         }
 
+        /// <summary>
+        /// 单行化铁律——结果与参数中的换行不进入摘要。
+        /// </summary>
         [Fact]
         public void MultiLine_SingleLined()
         {
@@ -240,6 +336,9 @@ public void TextTree_RealOutput_CountsFilesAndDirs()
             Assert.DoesNotContain("\r", s);
         }
 
+        /// <summary>
+        /// 长路径截断——保留文件名尾部且格式完整。
+        /// </summary>
         [Fact]
         public void LongPath_Truncated()
         {

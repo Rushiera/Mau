@@ -14,7 +14,7 @@ namespace Mau.Development
     /// 磁盘权威 + 快照监管（mtime+size 前缀对账）+ 项目键隔离常驻池（LRU 4）+ 树/编译/语义三态无感。
     /// 引用集 = 目标项目已 build 的 bin 产物 + TPA + 共享框架探测（AspNetCore/WindowsDesktop——莎拍板 A 方案）——
     /// bin 缺失 → 引导先 cs.build（check 快、build 权威的闭环）。
-    /// 工具面 9 件：check / build / list / read / find_ref / patch / member / comment / dead。
+    /// 工具面 10 件：check / build / list / read / find_ref / patch / member / comment / dead / comment_check。
     /// </summary>
     public sealed partial class MauRoslynBridge : ICSharpBridge
     {

@@ -464,6 +464,8 @@ namespace Mau.Runtime
                 {
                     continue;
                 }
+                // 超时判据差异（有意为之——MechanismTests OAOpenWorkKeepsOneClaimOpportunityBeforeTimeout 背书）：
+                // Open 用 >——PostFrame 当帧不算，至少保留一帧认领机会；Work 用 >=——认领即开始计时，达时限即超时。
                 bool reachedTimeout = elapsed >= office.TimeoutFrames;
                 if (office.Status == OfficeState.Open)
                 {
