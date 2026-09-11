@@ -353,7 +353,7 @@ private static HttpHost _httpHost;
                 }
             }
             // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）；session.new 重注入复用
-            _chatBridge.DefaultToolSpecs = FilterToolSpecs(ResolveToolNames(defaultToolNames));
+            _chatBridge.DefaultToolSpecs = AdminService.FilterToolSpecs(AdminService.ResolveToolNames(defaultToolNames));
             AdminService._defaultApiConfigId = defaultApiConfigId;
             // R2.3 默认猫 qqbot 配置——majordomo cat.cfg 读取（缺省未绑定/禁用）
             Guid defaultQqBotId = Guid.Empty;
@@ -655,47 +655,6 @@ private static HttpHost _httpHost;
             }
         }
 
-        /// <summary>
-        /// Flow 元数据收集——经 IFlow.GetMetaJson 读自曝元数据（组名 + 认领工具清单）→ 工具名 → 归属 Flow 映射。
-        /// 路由表数据化：OwnerFlow 不再前缀推断，来自语料声明（design-ch4-flow-scan §3.3）。
-        /// </summary>
-        /// <param name="flow">已加载 Flow 实例</param>
-        /// <param name="flowName">Flow 名（dll 名去 FL_ 前缀）</param>
-        /// <param name="map">收集目标映射（工具名 → Flow 名）</param>
-        private static void CollectFlowMeta(IFlow flow, string flowName, Dictionary<string, string> map)
-        {
-            try
-            {
-                string json = flow.GetMetaJson();
-                if (json == null || json.Length == 0)
-                {
-                    return;
-                }
-                using (JsonDocument doc = JsonDocument.Parse(json))
-                {
-                    JsonElement claims;
-                    if (doc.RootElement.TryGetProperty("claims", out claims) && claims.ValueKind == JsonValueKind.Array)
-                    {
-                        for (int i = 0; i < claims.GetArrayLength(); i = i + 1)
-                        {
-                            JsonElement item = claims[i];
-                            if (item.ValueKind == JsonValueKind.String)
-                            {
-                                string tool = item.GetString();
-                                if (tool != null && tool.Length > 0)
-                                {
-                                    map[tool] = flowName;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                // 元数据解析失败——路由表缺该 Flow 条目（OwnerFlow 回退前缀映射或空归属）
-            }
-        }
         /// <summary>
         /// 定位语料 dll 目录——参数 -dll 指定，否则默认仓库根 public/app/Flows（统一构筑链部署区）；无仓库根回退部署区 AppContext.BaseDirectory/Flows（design-ch4-deploy §二——deploy 复制面）
         /// </summary>

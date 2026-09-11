@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Text.Json;
 
 namespace Mau.Runtime
@@ -186,14 +186,6 @@ namespace Mau.Runtime
         public void ConfigureAudit(string root, string mode, int loadCount = 0, long startFrame = 0, int retainDays = 7, bool persistEnabled = true)
         {
             // 落盘职责已并入 LogStore.ConfigureRuns——本方法仅兼容保留
-        }
-
-        /// <summary>
-        /// 强制落盘——转发 LogStore（写者按 1s 定时 flush；退出时由宿主调 CloseWriters）
-        /// </summary>
-        public void Flush()
-        {
-            LogStore.CloseWriters();
         }
 
         /// <summary>

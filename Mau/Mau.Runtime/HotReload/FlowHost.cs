@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -74,51 +74,7 @@ namespace Mau.Runtime
             }
             return handles;
         }
-
-        /// <summary>
-        /// 热替换——新 DLL 验证通过后原子替换第一个匹配的旧 Handle
-        /// </summary>
-        /// <param name="dllPath">新 DLL 路径</param>
-        /// <returns>新 Handle，替换失败返回 null</returns>
-        public FlowHandle? Replace(string dllPath)
-{
-    FlowHandle? newHandle = null;
-    try
-    {
-        newHandle = FlowHandle.Load(dllPath);
-        // 最小验证：Tick 不抛异常
-        newHandle.Flow.Tick(0);
-    }
-    catch
-    {
-        // 验证失败——卸载新 ALC 再返回（事务三段式：失败回滚全新实例）
-        if (newHandle != null)
-        {
-            try
-            {
-                newHandle.TryUnload(1);
-            }
-            catch (Exception)
-            {
-                // 卸载尽力而为——不掩盖原始失败
-            }
-        }
-        return null;
-    }
-
-    lock (_lock)
-    {
-        // 卸载第一个旧 Handle
-        if (_handles.Count > 0)
-        {
-            FlowHandle old = _handles[0];
-            _handles.RemoveAt(0);
-            old.TryUnload(3);
-        }
-        _handles.Insert(0, newHandle);
-    }
-    return newHandle;
-}/// <summary>
+/// <summary>
 /// 热重载——按 dll 粒度原子替换（D8：新 ALC 加载成功 → 卸旧；失败 → 保留旧 + 报告）。
 /// pending 来自 FlowWatchService（② 热感知）——宿主主动调用（D10 纯手动 API）。
 /// </summary>
@@ -201,34 +157,6 @@ public string[] ReloadFlows(string[] pendingDlls)
                     _handles[i].TryUnload(3);
                 }
                 _handles.Clear();
-            }
-        }
-
-        /// <summary>
-        /// 对所有活跃 Flow 执行一次 Tick
-        /// </summary>
-        public void TickAll()
-{
-            FlowHandle[] snapshot;
-            lock (_lock)
-            {
-                snapshot = _handles.ToArray();
-            }
-            for (int i = 0; i < snapshot.Length; i = i + 1)
-            {
-                FlowHandle h = snapshot[i];
-                if (h.IsFaulted)
-                {
-                    continue;
-                }
-                try
-                {
-                    h.Flow.Tick(0);
-                }
-                catch (Exception ex)
-                {
-                    h.MarkFaulted(ex.ToString());
-                }
             }
         }
         /// <summary>

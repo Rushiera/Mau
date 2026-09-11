@@ -54,7 +54,6 @@ namespace Mau.Translator.Tests
         [Fact]
         public void Validate_Reject_DuplicateName()
         {
-            MauDocV3 doc = Compile("§ 'S_A' = { 'X' }\n§ 'P_S_A' ⇐\n§ 'T_S_A' : 'P_S_A' → | 'S_A' = 'X'");
             // 'S_A' 状态机与 'T_S_A' 导线不同名——构造真重名：两个传感器同名
             MauDocV3 doc2 = Compile("§ 'S_A' = { 'X' }\n§ 'P_X' ⇐\n§ 'P_X' ⇐");
             Assert.False(doc2.Success);

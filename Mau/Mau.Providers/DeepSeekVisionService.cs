@@ -236,8 +236,7 @@ namespace Mau.Providers
         }
 
         /// <summary>
-        /// 池配置 endpoint → chat completions 端点推导——已含 /chat/completions 原样；结尾 /v1 拼尾；
-        /// 其余（基础 URL 如 https://api.deepseek.com）直接拼 /chat/completions。失败返回空串（不猜——调用侧显式提示）。
+        /// 池配置 endpoint → chat completions 端点推导——已含 /chat/completions 原样；其余直接拼 /chat/completions。失败返回空串（不猜——调用侧显式提示）。
         /// </summary>
         /// <param name="poolEndpoint">池配置 endpoint</param>
         /// <returns>推导后端点（失败空串）</returns>
@@ -251,10 +250,6 @@ namespace Mau.Providers
             if (trimmed.EndsWith("/chat/completions", StringComparison.Ordinal))
             {
                 return trimmed;
-            }
-            if (trimmed.EndsWith("/v1", StringComparison.Ordinal))
-            {
-                return trimmed + "/chat/completions";
             }
             return trimmed + "/chat/completions";
         }

@@ -78,20 +78,6 @@ namespace Mau.Development
         /// 口袋输出根
         /// </summary>
         private readonly string MauPocketCompiler_Root;
-/// <summary>
-/// 是否保留源码中间产物——true 时编译把 .cs 写入编译根（构建现场留档）
-/// </summary>
-private bool _keepSources;
-
-/// <summary>
-/// 设置是否保留源码中间产物——构建命令在构造后设置
-/// </summary>
-/// <param name="keep">true=编译时把源码写入编译根</param>
-public void SetKeepSources(bool keep)
-{
-    _keepSources = keep;
-}
-
         /// <summary>
         /// 绑定口袋输出根
         /// </summary>
@@ -142,123 +128,11 @@ public void SetKeepSources(bool keep)
                 if (emit.Success)
                 {
                     WriteAtomic(assemblyPath, assembly.ToArray());
-                    KeepArtifacts(source, logicalName, buildRoot);
-                    WriteProjectFile(buildRoot, logicalName, new string[] { logicalName + ".cs" });
                 }
             }
             return result;
         }
         /// <summary>
-        /// 多源码一次编译——组模式（多个生成物 → 一个 DLL）
-        /// </summary>
-        /// <param name="sources">完整 C# 源码数组（与 classNames 一一对应）</param>
-        /// <param name="classNames">逻辑类名数组（仅用于校验，实际类名在源码内）</param>
-        /// <param name="assemblyName">输出程序集名（安全逻辑名）</param>
-        /// <returns>编译结果</returns>
-        public MauPocketCompileResult CompileMany(string[] sources,
-            string[] classNames, string assemblyName)
-{
-            ValidateLogicalName(assemblyName);
-            string buildId = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ")
-                + "-" + Guid.NewGuid().ToString("N");
-            string buildRoot = Path.Combine(MauPocketCompiler_Root, buildId);
-            Directory.CreateDirectory(buildRoot);
-            string assemblyPath = Path.Combine(buildRoot, assemblyName + ".dll");
-            List<SyntaxTree> trees = new List<SyntaxTree>();
-            for (int i = 0; i < sources.Length; i = i + 1)
-            {
-                if (i < classNames.Length)
-                {
-                    ValidateLogicalName(classNames[i]);
-                }
-                string sourcePath = i < classNames.Length ? (classNames[i] + ".cs") : ("Part" + (i + 1).ToString() + ".cs");
-                trees.Add(CSharpSyntaxTree.ParseText(SafeText(sources[i]),
-                    new CSharpParseOptions(LanguageVersion.Latest), path: sourcePath));
-            }
-            MetadataReference[] references = BuildReferences();
-            CSharpCompilation compilation = CSharpCompilation.Create(
-                assemblyName + "_" + Guid.NewGuid().ToString("N"),
-                trees, references,
-                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
-                    optimizationLevel: OptimizationLevel.Release,
-                    allowUnsafe: false,
-                    nullableContextOptions: NullableContextOptions.Enable));
-            MauPocketCompileResult result = new MauPocketCompileResult();
-            result.AssemblyPath = assemblyPath;
-            using (MemoryStream assembly = new MemoryStream())
-            {
-                EmitResult emit = compilation.Emit(assembly);
-                result.Diagnostics = FormatDiagnostics(emit.Diagnostics);
-                result.Success = emit.Success;
-                if (emit.Success)
-                {
-                    WriteAtomic(assemblyPath, assembly.ToArray());
-                    List<string> sourceNames = new List<string>();
-                    for (int s = 0; s < sources.Length; s = s + 1)
-                    {
-                        string logical = s < classNames.Length ? classNames[s] : ("Part" + (s + 1).ToString());
-                        KeepArtifacts(sources[s], logical, buildRoot);
-                        sourceNames.Add(logical + ".cs");
-                    }
-                    WriteProjectFile(buildRoot, assemblyName, sourceNames.ToArray());
-                }
-            }
-            return result;
-        }
-/// <summary>
-/// 多源码一次编译（显式引用集 D25）——组模式 mauproj 引用: 确定性：TPA + 基座必需（Mau.Runtime/Mau.Contracts）+ 显式引用清单。
-/// 禁止隐式宿主目录全量引用——生成物只引用声明过的程序集，缺引用即编译失败（确定性）。
-/// </summary>
-/// <param name = "sources">完整 C# 源码数组（与 classNames 一一对应）</param>
-/// <param name = "classNames">逻辑类名数组（仅用于校验，实际类名在源码内）</param>
-/// <param name = "assemblyName">输出程序集名（安全逻辑名）</param>
-/// <param name = "extraReferences">显式引用 dll 绝对路径清单（mauproj 引用: 解析结果）</param>
-/// <returns>编译结果</returns>
-public MauPocketCompileResult CompileManyWithRefs(string[] sources, string[] classNames, string assemblyName, string[] extraReferences)
-{
-    ValidateLogicalName(assemblyName);
-    string buildId = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ") + "-" + Guid.NewGuid().ToString("N");
-    string buildRoot = Path.Combine(MauPocketCompiler_Root, buildId);
-    Directory.CreateDirectory(buildRoot);
-    string assemblyPath = Path.Combine(buildRoot, assemblyName + ".dll");
-    List<SyntaxTree> trees = new List<SyntaxTree>();
-    for (int i = 0; i < sources.Length; i = i + 1)
-    {
-        if (i < classNames.Length)
-        {
-            ValidateLogicalName(classNames[i]);
-        }
-
-        string sourcePath = i < classNames.Length ? (classNames[i] + ".cs") : ("Part" + (i + 1).ToString() + ".cs");
-        trees.Add(CSharpSyntaxTree.ParseText(SafeText(sources[i]), new CSharpParseOptions(LanguageVersion.Latest), path: sourcePath));
-    }
-
-    MetadataReference[] references = BuildReferences(extraReferences);
-    CSharpCompilation compilation = CSharpCompilation.Create(assemblyName + "_" + Guid.NewGuid().ToString("N"), trees, references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release, allowUnsafe: false, nullableContextOptions: NullableContextOptions.Enable));
-    MauPocketCompileResult result = new MauPocketCompileResult();
-    result.AssemblyPath = assemblyPath;
-    using (MemoryStream assembly = new MemoryStream())
-    {
-        EmitResult emit = compilation.Emit(assembly);
-        result.Diagnostics = FormatDiagnostics(emit.Diagnostics);
-        result.Success = emit.Success;
-        if (emit.Success)
-        {
-            WriteAtomic(assemblyPath, assembly.ToArray());
-            List<string> sourceNames = new List<string>();
-            for (int s = 0; s < sources.Length; s = s + 1)
-            {
-                string logical = s < classNames.Length ? classNames[s] : ("Part" + (s + 1).ToString());
-                KeepArtifacts(sources[s], logical, buildRoot);
-                sourceNames.Add(logical + ".cs");
-            }
-
-            WriteProjectFile(buildRoot, assemblyName, sourceNames.ToArray());
-        }
-    }
-
-    return result;
-}        /// <summary>
         /// 列出 DLL 中所有带 MauExport 的 public static 方法
         /// </summary>
         /// <param name="assemblyPath">口袋 DLL</param>
@@ -484,74 +358,6 @@ public MauPocketCompileResult CompileManyWithRefs(string[] sources, string[] cla
                 }
             }
         }
-/// <summary>
-/// 生成中间产物项目文件——构建目录下写 .csproj（引用宿主输出目录全部 dll）
-/// 中间项目可独立打开/构建（IDE 友好）；生成物路径由构建命令决定（不在此写死）
-/// </summary>
-/// <param name = "buildRoot">构建目录</param>
-/// <param name = "assemblyName">程序集名</param>
-/// <param name = "sourceNames">源码文件数组</param>
-private void WriteProjectFile(string buildRoot, string assemblyName, string[] sourceNames)
-{
-    if (!_keepSources || sourceNames.Length == 0)
-    {
-        return;
-    }
-
-    System.Text.StringBuilder sb = new System.Text.StringBuilder();
-    sb.AppendLine("<Project Sdk=\"Microsoft.NET.Sdk\">");
-    sb.AppendLine("  <PropertyGroup>");
-    sb.AppendLine("    <TargetFramework>net8.0</TargetFramework>");
-    sb.AppendLine("    <OutputType>Library</OutputType>");
-    sb.AppendLine("    <Nullable>enable</Nullable>");
-    sb.AppendLine("    <ImplicitUsings>disable</ImplicitUsings>");
-    sb.AppendLine("    <AssemblyName>" + assemblyName + "</AssemblyName>");
-    sb.AppendLine("    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>");
-    sb.AppendLine("  </PropertyGroup>");
-    sb.AppendLine("  <ItemGroup>");
-    for (int i = 0; i < sourceNames.Length; i = i + 1)
-    {
-        sb.AppendLine("    <Compile Include=\"" + sourceNames[i] + "\" />");
-    }
-
-    sb.AppendLine("  </ItemGroup>");
-    sb.AppendLine("  <ItemGroup>");
-    // 引用宿主输出目录全部 dll——编译引用集 = 宿主目录全量（与 AddMauReferences 同语义）
-    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-    if (Directory.Exists(baseDir))
-    {
-        string[] dlls = Directory.GetFiles(baseDir, "*.dll", SearchOption.TopDirectoryOnly);
-        Array.Sort(dlls, StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < dlls.Length; i = i + 1)
-        {
-            string fileName = Path.GetFileName(dlls[i]);
-            string name = Path.GetFileNameWithoutExtension(dlls[i]);
-            sb.AppendLine("    <Reference Include=\"" + name + "\">");
-            sb.AppendLine("      <HintPath>" + Path.GetFullPath(dlls[i]) + "</HintPath>");
-            sb.AppendLine("    </Reference>");
-        }
-    }
-
-    sb.AppendLine("  </ItemGroup>");
-    sb.AppendLine("</Project>");
-    string projectPath = Path.Combine(buildRoot, assemblyName + ".csproj");
-    WriteAtomic(projectPath, Encoding.UTF8.GetBytes(sb.ToString()));
-}/// <summary>
-/// 保留构建中间产物——编译成功后把源码 .cs 写入构建目录（构建现场留档）
-/// </summary>
-/// <param name = "source">完整 C# 源码</param>
-/// <param name = "logicalName">逻辑名</param>
-/// <param name = "buildRoot">构建目录</param>
-private void KeepArtifacts(string source, string logicalName, string buildRoot)
-{
-    if (!_keepSources || string.IsNullOrWhiteSpace(source))
-    {
-        return;
-    }
-
-    string sourcePath = Path.Combine(buildRoot, logicalName + ".cs");
-    WriteAtomic(sourcePath, Encoding.UTF8.GetBytes(source));
-}
         /// <summary>
         /// 把可空源码规范为空字符串
         /// </summary>

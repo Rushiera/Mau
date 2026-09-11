@@ -65,7 +65,6 @@ namespace Mau.Translator.Tests
         MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
         MauPocketCompileResult pr = compiler.Compile(result.GeneratedCode, "FL_Talk");
         Assert.True(pr.Success, "Emit 失败: " + string.Join("\n", pr.Diagnostics));
-        Assembly asm = Assembly.LoadFrom(pr.AssemblyPath);
         DataBox.ResetSignals();
         // 强类型直调——真积木 probe.sink 恒 true → 成功侧 Thinking（失败侧覆盖归 par 时限测试）
         using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
@@ -114,7 +113,6 @@ namespace Mau.Translator.Tests
         MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
         MauPocketCompileResult pr = compiler.Compile(result.GeneratedCode, "FL_Poll");
         Assert.True(pr.Success, "Emit 失败: " + string.Join("\n", pr.Diagnostics));
-        Assembly asm = Assembly.LoadFrom(pr.AssemblyPath);
         using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
         {
             IObservableFlow flow = handle.Flow;

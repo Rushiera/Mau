@@ -316,25 +316,6 @@ private static string TickThrowsDllPath
             handle.TryUnload(10);
         }
 /// <summary>
-/// Replace 验证失败（Tick 抛异常）——返回 null + 旧句柄原地保留 + 失败 ALC 事务回滚
-/// </summary>
-[Fact]
-public void Replace_TickThrows_ReturnsNullKeepsOld()
-{
-    AssertFixturesExist();
-    using (FlowHost host = new FlowHost())
-    {
-        FlowHandle old = host.Load(ValidDllPath);
-        Assert.Equal(1, host.Count);
-        FlowHandle? replaced = host.Replace(TickThrowsDllPath);
-        Assert.Null(replaced);
-        // 旧句柄保留且未被隔离
-        Assert.Equal(1, host.Count);
-        Assert.False(old.IsFaulted);
-        Assert.Same(old, host.Handles[0]);
-    }
-} 
-/// <summary>
 /// ReloadFlows 验证失败（Tick 抛异常）——报告失败 + 旧句柄全保留 + host 无污染（失败后仍可成功热重载）
 /// </summary>
  [ Fact ]  public  void  ReloadFlows_TickThrows_KeepsOldThenRecovers ( ) { AssertFixturesExist ( ) ;  using  ( FlowHost  host  =  new  FlowHost ( ) ) { FlowHandle [ ]  olds  =  host . LoadAll ( ValidDllPath ) ;  int  oldCount  =  host . Count ;  Assert . NotEmpty ( olds ) ;  // [段1] 失败路径——验证 Tick 抛异常：保留旧句柄

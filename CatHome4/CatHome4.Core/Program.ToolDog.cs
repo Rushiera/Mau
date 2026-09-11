@@ -7,7 +7,7 @@ namespace CH4
     /// 不 Post、不处理业务——发起者（宿主 ExecuteToolBatch）负责 Post 并注入 OfficeId；本实体只轮询 OA 等待结果。
     /// 多级 OA 单预留：Relist 后单回 Open 继续流转，Dog 只认 Closed/TimeOut 终态——对链路无感（多级中间结果传递 CH2 亦未做）。
     /// </summary>
-    public sealed class ToolOrderDog
+    internal sealed class ToolOrderDog
     {
         /// <summary>
         /// tool_call_id——结果配对键（回传 LLM）

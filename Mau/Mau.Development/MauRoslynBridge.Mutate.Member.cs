@@ -81,8 +81,6 @@ namespace Mau.Development
                     result = "ERR|CLASS_NOT_FOUND|类不存在: " + className;
                     return true;
                 }
-                SyntaxTree codeTree = CSharpSyntaxTree.ParseText(code, ParseOptions());
-                SyntaxNode codeRoot = codeTree.GetRoot();
                 MemberDeclarationSyntax? newMember = SyntaxFactory.ParseMemberDeclaration(code);
                 if (newMember == null)
                 {

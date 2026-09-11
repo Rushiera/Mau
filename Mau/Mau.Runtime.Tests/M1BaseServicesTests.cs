@@ -123,59 +123,5 @@ namespace Mau.Runtime.Tests
         {
             Assert.False(string.IsNullOrEmpty(VersionInfo.GetEntryVersion()));
         }
-
-        // ── CommandPump ──
-
-        /// <summary>
-        /// PushText——冻结后邮件携带文本 payload
-        /// </summary>
-        [Fact]
-        public void CommandPump_PushText_DeliversToRegisteredOwner()
-        {
-            ThreadGuard guard = new ThreadGuard();
-            CommandBus bus = new CommandBus(guard);
-            CommandPump pump = new CommandPump(bus);
-            long owner = 9001;
-            bus.Register(owner, new string[] { "chat_talk_msg" });
-            try
-            {
-                pump.PushText("chat_talk_msg", "你好", "test");
-                bus.BeginTickInput();
-                CommandPack mail = bus.GetCommandEmail(owner);
-                Assert.True(mail.HasCommands);
-                Assert.Equal("chat_talk_msg", mail.CmdKeys[0]);
-                Assert.Equal("你好", mail.CmdTexts[0]);
-            }
-            finally
-            {
-                bus.Unregister(owner);
-            }
-        }
-
-        /// <summary>
-        /// Push——冻结后邮件携带 int payload
-        /// </summary>
-        [Fact]
-        public void CommandPump_Push_DeliversIntValue()
-        {
-            ThreadGuard guard = new ThreadGuard();
-            CommandBus bus = new CommandBus(guard);
-            CommandPump pump = new CommandPump(bus);
-            long owner = 9002;
-            bus.Register(owner, new string[] { "chat_talk_msg" });
-            try
-            {
-                pump.Push("chat_talk_msg", 42, "test");
-                bus.BeginTickInput();
-                CommandPack mail = bus.GetCommandEmail(owner);
-                Assert.True(mail.HasCommands);
-                Assert.Equal("chat_talk_msg", mail.CmdKeys[0]);
-                Assert.Equal(42, mail.CmdValues[0]);
-            }
-            finally
-            {
-                bus.Unregister(owner);
-            }
-        }
     }
 }
