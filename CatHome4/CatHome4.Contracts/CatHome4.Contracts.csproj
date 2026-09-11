@@ -6,7 +6,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <RootNamespace>CatHome4.Contracts</RootNamespace>
     <AssemblyName>CatHome4.Contracts</AssemblyName>
-    <Version>0.60.0</Version>
+    <Version>0.98.6</Version>
   </PropertyGroup>
 
 </Project>

@@ -38,22 +38,53 @@ if (!Number.isNaN(HOST_PID) && HOST_PID > 0) {
     watchdog.unref();
   }
 }
-const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+// Vitest 入口——直调 node_modules 内 vitest.mjs（跑测纪律 #8⑧：禁 npx——首调解析卡 120s，判例 2026-09-08）
+const VITEST_ENTRY = path.join(TEST_DIR, 'node_modules', 'vitest', 'vitest.mjs');
 
-function runTest(args, res) {
-  // Windows 下 npx.cmd 需 shell:true（spawn .cmd 直接执行失败——ENOENT）
-  const child = spawn(NPX, args, {
+// 单次测试运行上限——到点强杀子进程并按超时结算（防挂起无限期占住请求）
+const TEST_TIMEOUT_MS = parseInt(process.env.FE_TEST_TIMEOUT_MS || '120000', 10);
+
+// 统一结算——约定 ok 决定状态码
+function settle(res, payload) {
+  res.writeHead(payload.ok ? 200 : 500, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(payload));
+}
+
+function runTest(res) {
+  const child = spawn(process.execPath, [VITEST_ENTRY, 'run', '--root', TEST_DIR], {
     cwd: TEST_DIR,
     env: { ...process.env, CI: '1' },
-    shell: process.platform === 'win32',
   });
   let stdout = '';
   let stderr = '';
+  let settled = false;
+
+  // [段1] 超时守卫——到点强杀子进程
+  const timer = setTimeout(() => {
+    if (settled) { return; }
+    settled = true;
+    child.kill();
+    settle(res, { ok: false, code: -1, timeout: true, stdout: stdout.slice(-6000), stderr: stderr.slice(-2000) });
+  }, TEST_TIMEOUT_MS);
+
+  // [段2] 输出收集
   child.stdout.on('data', (d) => { stdout += d.toString(); });
   child.stderr.on('data', (d) => { stderr += d.toString(); });
+
+  // [段3] 正常退出——退出码决定成败
   child.on('close', (code) => {
-    res.writeHead(code === 0 ? 200 : 500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: code === 0, code, stdout: stdout.slice(-6000), stderr: stderr.slice(-2000) }));
+    if (settled) { return; }
+    settled = true;
+    clearTimeout(timer);
+    settle(res, { ok: code === 0, code, stdout: stdout.slice(-6000), stderr: stderr.slice(-2000) });
+  });
+
+  // [段4] 启动失败——入口缺失等（不再挂起等待）
+  child.on('error', (err) => {
+    if (settled) { return; }
+    settled = true;
+    clearTimeout(timer);
+    settle(res, { ok: false, code: -1, error: String((err && err.message) || err) });
   });
 }
 
@@ -64,11 +95,11 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (req.url === '/api/test/unit') {
-    runTest(['vitest', 'run'], res);
+    runTest(res);
     return;
   }
   if (req.url === '/api/test') {
-    runTest(['vitest', 'run'], res);
+    runTest(res);
     return;
   }
   res.writeHead(404, { 'Content-Type': 'text/plain' });
