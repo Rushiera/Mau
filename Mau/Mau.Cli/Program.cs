@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using Mau.Translator;
 
@@ -44,47 +44,73 @@ namespace Mau.Cli
         /// <returns>退出码</returns>
         public static int Dispatch(string[] args)
         {
-    CliSupport.ParseVerbose(args);
-    if (args.Length == 0)
-    {
-        PrintHelp();
-        return 0;
-    }
-    string command = args[0];
-    int commandId;
-    if (!CommandIds.TryResolve(command, out commandId))
-    {
-        Console.WriteLine("未知命令: " + command);
-        PrintHelp();
-        return 1;
-    }
-    switch (commandId)
-    {
-        case CommandIds.Verify:
-            return CommandVerify(args);
-        case CommandIds.Gen:
-            return CommandGen(args);
-        case CommandIds.Build:
-            return CommandBuild(args);
-        case CommandIds.Test:
-        {
-            bool update = args.Length > 1 && args[1] == "--update";
-            return MauTestRunner.Run(update);
+            CliSupport.ParseVerbose(args);
+            if (args.Length == 0)
+            {
+                PrintHelp();
+                return 0;
+            }
+
+            string command = args[0];
+            int commandId;
+            if (!CommandIds.TryResolve(command, out commandId))
+            {
+                Console.WriteLine("未知命令: " + command);
+                PrintHelp();
+                return 1;
+            }
+
+            switch (commandId)
+            {
+                case CommandIds.Verify:
+                    return CommandVerify(args);
+                case CommandIds.Gen:
+                    return CommandGen(args);
+                case CommandIds.Build:
+                    return CommandBuild(args);
+                case CommandIds.Test:
+                {
+                    string usage = "mau test [--update]";
+                    if (args.Length > 2)
+                    {
+                        return CliSupport.ArgError("未知参数: " + args[2], usage);
+                    }
+
+                    if (args.Length == 2 && args[1] != "--update")
+                    {
+                        return CliSupport.ArgError("未知参数: " + args[1], usage);
+                    }
+
+                    bool update = args.Length > 1;
+                    return MauTestRunner.Run(update);
+                }
+
+                case CommandIds.Check:
+                {
+                    string usage = "mau check [--verbose]";
+                    for (int i = 1; i < args.Length; i = i + 1)
+                    {
+                        if (args[i] != "--verbose")
+                        {
+                            return CliSupport.ArgError("未知参数: " + args[i], usage);
+                        }
+                    }
+
+                    return CommandCheckV3.Run();
+                }
+
+                case CommandIds.Debug:
+                    return CommandDebugV3.Run(CliSupport.Tail(args));
+                case CommandIds.Bricks:
+                    return CommandBricksV3.Run(CliSupport.Tail(args));
+                case CommandIds.Proj:
+                    return CommandProjV3.Run(CliSupport.Tail(args));
+                default:
+                    Console.WriteLine("未知指令编号: " + commandId);
+                    PrintHelp();
+                    return 1;
+            }
         }
-        case CommandIds.Check:
-            return CommandCheckV3.Run();
-        case CommandIds.Debug:
-            return CommandDebugV3.Run(CliSupport.Tail(args));
-        case CommandIds.Bricks:
-            return CommandBricksV3.Run(CliSupport.Tail(args));
-        case CommandIds.Proj:
-            return CommandProjV3.Run(CliSupport.Tail(args));
-        default:
-            Console.WriteLine("未知指令编号: " + commandId);
-            PrintHelp();
-            return 1;
-    }
-}
         /// <summary>
         /// 帮助——最小命令面
         /// </summary>
@@ -103,17 +129,25 @@ namespace Mau.Cli
         /// <returns>退出码</returns>
         private static int CommandVerify(string[] args)
         {
+            string usage = "mau verify <file.mau>";
             if (args.Length < 2)
             {
-                Console.WriteLine("用法: mau verify <file.mau>");
+                Console.WriteLine("用法: " + usage);
                 return 1;
             }
+
+            if (args.Length > 2)
+            {
+                return CliSupport.ArgError("未知参数: " + args[2], usage);
+            }
+
             string path = args[1];
             if (!File.Exists(path))
             {
                 Console.WriteLine("文件不存在: " + path);
                 return 1;
             }
+
             string source = File.ReadAllText(path);
             string flowName = FlowNameFromPath(path);
             CompileResultV3 result = MauCompilerV3.Compile(source, flowName);
@@ -123,6 +157,7 @@ namespace Mau.Cli
                 Console.WriteLine("验证通过: " + flowName);
                 return 0;
             }
+
             return 1;
         }
 
@@ -133,29 +168,44 @@ namespace Mau.Cli
         /// <returns>退出码</returns>
         private static int CommandGen(string[] args)
         {
+            string usage = "mau gen <file.mau> -o <dir>";
             if (args.Length < 2)
             {
-                Console.WriteLine("用法: mau gen <file.mau> -o <dir>");
+                Console.WriteLine("用法: " + usage);
                 return 1;
             }
+
             string path = args[1];
             if (!File.Exists(path))
             {
                 Console.WriteLine("文件不存在: " + path);
                 return 1;
             }
+
             string outDir = ".";
-            for (int i = 2; i < args.Length - 1; i++)
+            for (int i = 2; i < args.Length; i++)
             {
                 if (args[i] == "-o")
                 {
+                    if (i + 1 >= args.Length)
+                    {
+                        return CliSupport.ArgError("参数缺值: -o", usage);
+                    }
+
                     outDir = args[i + 1];
+                    i = i + 1;
+                }
+                else
+                {
+                    return CliSupport.ArgError("未知参数: " + args[i], usage);
                 }
             }
+
             if (!Directory.Exists(outDir))
             {
                 Directory.CreateDirectory(outDir);
             }
+
             string source = File.ReadAllText(path);
             string flowName = FlowNameFromPath(path);
             CompileResultV3 result = MauCompilerV3.Compile(source, flowName);
@@ -164,6 +214,7 @@ namespace Mau.Cli
             {
                 return 1;
             }
+
             string outFile = Path.Combine(outDir, "FL_" + flowName + ".cs");
             File.WriteAllText(outFile, result.GeneratedCode, System.Text.Encoding.UTF8);
             Console.WriteLine("生成: " + outFile);
@@ -177,44 +228,69 @@ namespace Mau.Cli
         /// <returns>退出码</returns>
         private static int CommandBuild(string[] args)
         {
+            string usage = "mau build <组.mauproj> [-o <srcDir>]";
             string? mauFile = null;
             string outDir = "";
             for (int i = 1; i < args.Length; i = i + 1)
             {
-                if (args[i] == "-o" && i + 1 < args.Length)
+                if (args[i] == "-o")
                 {
+                    if (i + 1 >= args.Length)
+                    {
+                        return CliSupport.ArgError("参数缺值: -o", usage);
+                    }
+
                     outDir = args[i + 1];
                     i = i + 1;
                 }
-                else if (mauFile == null)
+                else if (mauFile == null && args[i].Length > 0 && args[i].Substring(0, 1) != "-")
                 {
                     mauFile = args[i];
                 }
+                else
+                {
+                    return CliSupport.ArgError("未知参数: " + args[i], usage);
+                }
             }
+
             if (mauFile == null)
             {
-                Console.WriteLine("用法: mau build <组.mauproj> [--build] | mau proj <组.mauproj> [-o <srcDir>] [--build]");
+                Console.WriteLine("用法: " + usage + " | mau proj <组.mauproj> [-o <srcDir>] [--build]");
                 return 1;
             }
+
             if (!File.Exists(mauFile))
             {
                 Console.WriteLine("文件不存在: " + mauFile);
                 return 1;
             }
+
             // [段0] 统一构筑链路由——.mauproj 走组路径（Roslyn Emit 退役——design-ch4-deploy §六）；.mau 单文件提示建组
             if (mauFile.EndsWith(".mauproj", StringComparison.OrdinalIgnoreCase))
             {
                 string[] projArgs;
                 if (outDir.Length > 0)
                 {
-                    projArgs = new string[] { mauFile, "--build", "-o", outDir };
+                    projArgs = new string[]
+                    {
+                        mauFile,
+                        "--build",
+                        "-o",
+                        outDir
+                    };
                 }
                 else
                 {
-                    projArgs = new string[] { mauFile, "--build" };
+                    projArgs = new string[]
+                    {
+                        mauFile,
+                        "--build"
+                    };
                 }
+
                 return CommandProjV3.Run(projArgs);
             }
+
             Console.WriteLine("提示: 单 .mau 直接编译路径已退役（统一构筑链——design-ch4-deploy.md）。");
             Console.WriteLine("      请为该语料创建 mauproj 组声明，然后: mau proj <组.mauproj> --build");
             Console.WriteLine("      中间产物将落盘 public/src/<组名>/，dll 输出 public/app/Flows/FL_<组名>.dll");

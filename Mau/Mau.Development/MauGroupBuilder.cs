@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -20,7 +20,7 @@ namespace Mau.Development
         /// </summary>
         /// <param name="mauprojPath">.mauproj 文件绝对路径</param>
         /// <param name="srcDir">中间产物输出目录（public/src/&lt;组&gt;/）</param>
-        /// <param name="dllDir">dll 输出目录（public/app/Flows/）</param>
+        /// <param name="dllDir">dll 输出目录（唯一来源 public/app/Flows/——与生成 csproj 的 OutputPath 一致；非产物定向，仅作落点校验）</param>
         /// <param name="doBuild">true=翻译后执行 dotnet build</param>
         /// <returns>结构化结果（Success=false 时 Error/FailDiagnostics 有内容）</returns>
         public static MauGroupBuildResult Build(string mauprojPath, string srcDir, string dllDir, bool doBuild)

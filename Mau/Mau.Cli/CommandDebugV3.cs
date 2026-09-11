@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using Mau.Runtime;
 using Mau.Translator;
@@ -18,40 +18,64 @@ namespace Mau.Cli
         /// <returns>退出码</returns>
         public static int Run(string[] args)
         {
+            string usage = "mau debug <file.mau> [--ticks N] [--step] [--pause-on S_X=Y]";
             if (args.Length < 1)
             {
-                Console.WriteLine("用法: mau debug <file.mau> [--ticks N] [--step] [--pause-on S_X=Y]");
+                Console.WriteLine("用法: " + usage);
                 Console.WriteLine("  四柱状态表渲染——状态机枚举值/传感器实测/槽余量/导线状态");
                 Console.WriteLine("  --step:     每帧暂停，回车推进（帧驱动天然单步）");
                 Console.WriteLine("  --pause-on: 状态行命中时暂停（断点语义——如 S_Talk=Thinking）");
                 return 1;
             }
+
             string mauFile = args[0];
             if (!File.Exists(mauFile))
             {
                 Console.WriteLine("文件不存在: " + mauFile);
                 return 1;
             }
+
             long ticks = 600;
             bool step = false;
             string pauseOn = "";
             for (int i = 1; i < args.Length; i++)
             {
-                if (args[i] == "--ticks" && i + 1 < args.Length)
+                if (args[i] == "--ticks")
                 {
-                    long.TryParse(args[i + 1], out ticks);
+                    if (i + 1 >= args.Length)
+                    {
+                        return CliSupport.ArgError("参数缺值: --ticks", usage);
+                    }
+
+                    long parsedTicks;
+                    if (!long.TryParse(args[i + 1], out parsedTicks))
+                    {
+                        return CliSupport.ArgError("参数非法: --ticks " + args[i + 1], usage);
+                    }
+
+                    ticks = parsedTicks;
                     i = i + 1;
                 }
                 else if (args[i] == "--step")
                 {
                     step = true;
                 }
-                else if (args[i] == "--pause-on" && i + 1 < args.Length)
+                else if (args[i] == "--pause-on")
                 {
+                    if (i + 1 >= args.Length)
+                    {
+                        return CliSupport.ArgError("参数缺值: --pause-on", usage);
+                    }
+
                     pauseOn = args[i + 1];
                     i = i + 1;
                 }
+                else
+                {
+                    return CliSupport.ArgError("未知参数: " + args[i], usage);
+                }
             }
+
             // [段1] 编译——词法/解析/验证/分析全链
             string source = File.ReadAllText(mauFile);
             string flowName = Program.FlowNameFromPath(mauFile);
@@ -64,8 +88,10 @@ namespace Mau.Cli
                     MauDiagnostic d = result.Diagnostics[i];
                     Console.WriteLine("  " + mauFile + ":" + d.Line + ": " + d.Code + ": " + d.Message);
                 }
+
                 return 1;
             }
+
             // [段2] Roslyn Emit——PocketCompiler（无 SDK）
             string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_debug_v3_" + Guid.NewGuid().ToString("N").Substring(0, 8));
             try
@@ -79,8 +105,10 @@ namespace Mau.Cli
                     {
                         Console.WriteLine("  " + pr.Diagnostics[i]);
                     }
+
                     return 2;
                 }
+
                 // [段3] 接口加载——FlowHandle（IObservableFlow 契约）
                 using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
                 {
@@ -112,10 +140,12 @@ namespace Mau.Cli
                             }
                         }
                     }
+
                     // [段5] 最终状态
                     Console.WriteLine("── 结果 ──");
                     Render(flow, (int)ticks);
                 }
+
                 return 0;
             }
             finally
@@ -128,7 +158,7 @@ namespace Mau.Cli
                     }
                     catch (Exception)
                     {
-                        // 清理失败不影响
+                    // 清理失败不影响
                     }
                 }
             }

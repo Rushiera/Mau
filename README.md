@@ -195,6 +195,8 @@ git add SetUp/ SetUp.exe && commit && push                   ← 4. 源码+exe �
 | `mau debug <file.mau> [--ticks N] [--step] [--pause-on S_X=Y]` | 四柱状态表 + 单步 + 状态断点 |
 | `mau bricks list / index --update / index --verify` | 积木枚举 / 契约提取重算索引（唯一写入通道）/ 索引校验 |
 
+**CLI 参数纪律：** 未知参数 / 缺值 / 非法值一律报错退出（不静默忽略、不回落默认值）——入口接收面与用法声明必须一致。
+
 **dotnet（标准入口）：**
 
 | 指令 | 用途 |

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using Mau.Development;
@@ -24,6 +24,7 @@ namespace Mau.Cli
                 PrintUsage();
                 return 1;
             }
+
             int subId;
             if (!CommandIds.BricksSub.TryResolve(args[0], out subId))
             {
@@ -31,9 +32,15 @@ namespace Mau.Cli
                 PrintUsage();
                 return 1;
             }
+
             switch (subId)
             {
                 case CommandIds.BricksSub.List:
+                    if (args.Length > 1)
+                    {
+                        return CliSupport.ArgError("未知参数: " + args[1], "mau bricks list");
+                    }
+
                     return RunList();
                 case CommandIds.BricksSub.Index:
                     return RunIndex(args);
@@ -73,17 +80,21 @@ namespace Mau.Cli
             {
                 root = "";
             }
+
             if (root.Length == 0)
             {
                 Console.WriteLine("FAIL: 未找到 Mau.sln——请在 Mau workspace 下运行 mau bricks index");
                 return 1;
             }
+
             string bricksRoot = Path.Combine(root, "Bricks");
             if (!Directory.Exists(bricksRoot))
             {
                 Console.WriteLine("FAIL: Bricks 目录不存在——" + bricksRoot);
                 return 1;
             }
+
+            string usage = "mau bricks index --update | mau bricks index --verify";
             bool update = false;
             bool verify = false;
             for (int i = 1; i < args.Length; i++)
@@ -96,16 +107,23 @@ namespace Mau.Cli
                 {
                     verify = true;
                 }
+                else
+                {
+                    return CliSupport.ArgError("未知参数: " + args[i], usage);
+                }
             }
+
             if (!update && !verify)
             {
-                Console.WriteLine("用法: mau bricks index --update | mau bricks index --verify");
+                Console.WriteLine("用法: " + usage);
                 return 1;
             }
+
             if (update)
             {
                 return RunUpdate(bricksRoot);
             }
+
             return RunVerify(bricksRoot);
         }
 
