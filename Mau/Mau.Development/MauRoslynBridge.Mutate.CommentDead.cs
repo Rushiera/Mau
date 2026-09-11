@@ -368,11 +368,12 @@ namespace Mau.Development
                     SymbolInfo info = model.GetSymbolInfo(namedNode);
                     if (info.Symbol != null)
                     {
-                        referenced.Add(info.Symbol);
+                        // OriginalDefinition 归一——泛型方法调用 GetSymbolInfo 返回构造符号，与声明原定义比较须归一到原定义（R2-P2-01 泛型漏匹配）
+                        referenced.Add(info.Symbol.OriginalDefinition);
                     }
                     for (int i = 0; i < info.CandidateSymbols.Length; i = i + 1)
                     {
-                        referenced.Add(info.CandidateSymbols[i]);
+                        referenced.Add(info.CandidateSymbols[i].OriginalDefinition);
                     }
                 }
             }

@@ -291,9 +291,17 @@ namespace Mau.Development
                     else
                     {
                         ProjectSnapshot currentSnapshot = SnapshotOf(filePath);
-                        ProjectSnapshot known;
                         bool changed = true;
+                        ProjectSnapshot known;
                         if (cache.Stamps.TryGetValue(filePath, out known))
+                        {
+                            // 快照对账——mtime+size 全等 = 未变（增量刷新 D3）；错位风险（mtime 异常/为 0）→ 宁可全量重解析
+                            bool stampsValid = known.Utc > DateTime.MinValue && currentSnapshot.Utc > DateTime.MinValue;
+                            if (stampsValid && known.Utc == currentSnapshot.Utc && known.Length == currentSnapshot.Length)
+                            {
+                                changed = false;
+                            }
+                        }
                         if (changed)
                         {
                             SyntaxTree fresh = ParseFile(filePath);
@@ -786,9 +794,9 @@ namespace Mau.Development
             {
                 return "";
             }
-            string[] parts = inner.Split(',');
+            List<string> parts = SplitTopLevelArgs(inner);
             List<string> types = new List<string>();
-            for (int i = 0; i < parts.Length; i = i + 1)
+            for (int i = 0; i < parts.Count; i = i + 1)
             {
                 string p = parts[i].Trim();
                 int eq = p.IndexOf('=');
@@ -808,6 +816,46 @@ namespace Mau.Development
                 types.Add(p.Replace(" ", "").Replace("\t", ""));
             }
             return string.Join(",", types);
+        }
+
+        /// <summary>
+        /// 顶层逗号分割——感知泛型尖括号/元组圆括号嵌套（Func&lt;int, string&gt; 与 (int, string) 内逗号不分隔）
+        /// </summary>
+        /// <param name="text">参数列表内文本（已剥括号）</param>
+        /// <returns>顶层片段列表</returns>
+        private static List<string> SplitTopLevelArgs(string text)
+        {
+            List<string> parts = new List<string>();
+            int angle = 0;
+            int paren = 0;
+            int start = 0;
+            for (int i = 0; i < text.Length; i = i + 1)
+            {
+                char c = text[i];
+                if (c == '<')
+                {
+                    angle = angle + 1;
+                }
+                else if (c == '>')
+                {
+                    angle = angle - 1;
+                }
+                else if (c == '(')
+                {
+                    paren = paren + 1;
+                }
+                else if (c == ')')
+                {
+                    paren = paren - 1;
+                }
+                else if (c == ',' && angle == 0 && paren == 0)
+                {
+                    parts.Add(text.Substring(start, i - start));
+                    start = i + 1;
+                }
+            }
+            parts.Add(text.Substring(start));
+            return parts;
         }
 
         /// <summary>

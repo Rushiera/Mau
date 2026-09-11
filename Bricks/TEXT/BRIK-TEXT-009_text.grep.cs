@@ -30,6 +30,11 @@ namespace Mau.Bricks
             result = "";
             string dir = ExtractArg(argsJson, "dir");
             string keyword = ExtractArg(argsJson, "keyword");
+            if (dir == "§PARSE_FAIL§" || keyword == "§PARSE_FAIL§")
+            {
+                result = "ERR|BAD_ARGS|工具参数 JSON 解析失败（LLM 生成参数可能被截断——超长内容请分段写入）";
+                return false;
+            }
             if (dir.Length == 0 || keyword.Length == 0)
             {
                 result = "ERR|BAD_ARGS|缺少参数 dir 或 keyword";
@@ -83,6 +88,10 @@ namespace Mau.Bricks
         /// <returns>参数值</returns>
         private static string ExtractArg(string argumentsJson, string key)
         {
+            if (argumentsJson == null || argumentsJson.Length == 0)
+            {
+                return "§PARSE_FAIL§";
+            }
             try
             {
                 JsonDocument doc = JsonDocument.Parse(argumentsJson);
@@ -104,9 +113,10 @@ namespace Mau.Bricks
             }
             catch (Exception)
             {
+                return "§PARSE_FAIL§";
             }
             return "";
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:3C6CFCB0008F1D3B2CC8212DC814C4C1F29513E04A639189D2F615BC61008922
+// #MAU_CHECKSUM:SHA256:3A49D60B9D0DDD99DF0C82E0179AB8DBF0B014614B12C3E97BF5692C34EEBB48

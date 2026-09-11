@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Mau.Translator
@@ -131,15 +131,14 @@ namespace Mau.Translator
         {
             for (int i = 0; i < wire.Conditions.Count; i++)
             {
-                if (!wire.Conditions[i].IsStateAssert)
+                // 事件刹车 = 传感器沿条件（被动/Command/主动壳采样）；盒子判真与状态断言是事实条件（电平/非沿），不构成刹车
+                if (!wire.Conditions[i].IsStateAssert && !wire.Conditions[i].IsBoxAssert)
                 {
                     return true;
                 }
             }
             return false;
-        }
-
-        /// <summary>
+        }/// <summary>
         /// 稳定性——无事件子图找环：环上所有边都无传感器条件 = 无界环（每帧可触发，无事件刹车）
         /// </summary>
         /// <param name="doc">IR（诊断行号用）</param>
@@ -185,6 +184,11 @@ namespace Mau.Translator
                 else if (color[next] == 1)
                 {
                     // 回边——环
+                    if (CycleHasBrickAction(graph, stack, next, node))
+                    {
+                        // 环上含积木动作——积木执行有副作用（推进工作流/可能翻转盒子电平），非纯空转——A2 放行
+                        continue;
+                    }
                     string cycle = BuildCycleText(graph, stack, next);
                     result.Errors.Add(new MauDiagnostic("E300", graph.NodeLine[node], "无界环——环上无传感器事件刹车: " + cycle));
                 }
@@ -192,7 +196,6 @@ namespace Mau.Translator
             stack.RemoveAt(stack.Count - 1);
             color[node] = 2;
         }
-
         /// <summary>
         /// 环路径文本化
         /// </summary>
@@ -220,6 +223,63 @@ namespace Mau.Translator
                 }
             }
             return s + " → " + graph.NodeNames[backTo];
+        }
+
+        /// <summary>
+        /// 环是否含积木动作——环上任意边导线有积木调用（Actions.Count>0）
+        /// 积木执行有副作用（推进工作流/可能翻转盒子电平），非纯空转——A2 放行
+        /// </summary>
+        /// <param name="graph">转移图</param>
+        /// <param name="stack">当前路径</param>
+        /// <param name="backTo">回边目标</param>
+        /// <param name="node">当前节点</param>
+        /// <returns>环上含积木动作为真</returns>
+        private static bool CycleHasBrickAction(GraphV3 graph, List<int> stack, int backTo, int node)
+        {
+            // 回边 node → backTo
+            if (EdgeHasAction(graph, graph.NodeNames[node], graph.NodeNames[backTo]))
+            {
+                return true;
+            }
+            // 栈路径 backTo → ... → node 的相邻对
+            for (int i = 0; i < stack.Count; i++)
+            {
+                if (stack[i] == backTo)
+                {
+                    for (int j = i; j < stack.Count - 1; j++)
+                    {
+                        if (EdgeHasAction(graph, graph.NodeNames[stack[j]], graph.NodeNames[stack[j + 1]]))
+                        {
+                            return true;
+                        }
+                    }
+                    break;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 单边是否含积木动作——查转移图边表（From → To 的导线带动作）
+        /// </summary>
+        /// <param name="graph">转移图</param>
+        /// <param name="from">源状态 key</param>
+        /// <param name="to">目标状态 key</param>
+        /// <returns>该方向任一边含动作为真</returns>
+        private static bool EdgeHasAction(GraphV3 graph, string from, string to)
+        {
+            for (int e = 0; e < graph.Edges.Count; e++)
+            {
+                EdgeV3 edge = graph.Edges[e];
+                if (edge.From == from && edge.To == to)
+                {
+                    if (edge.Wire.Actions.Count > 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         /// <summary>

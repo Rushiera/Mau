@@ -482,8 +482,12 @@ private static void CheckCmdKeys(MauDocV3 doc)
                 }
                 if (actualKind == "name" && trimmed.Length > 0 && trimmed[0] != '@')
                 {
-                    // B1 豁免——全局盒裸词（无 @ 前缀）——外部写源（宿主 Command 落盒），类型信任 string
-                    continue;
+                    // 裸词 B1 豁免——全局盒（无 @ 前缀）写源在语料外（宿主/Command 落盒），类型信任 string
+                    // R2-P2-02 收紧：仅 string 期望豁免（全局盒当 string 参数合法）；int/long/bool 期望传裸词 → E402（原静默兜底诊断不友好）
+                    if (ContractKind(entry.InputTypes[i]) == "str")
+                    {
+                        continue;
+                    }
                 }
                 string expectedKind = ContractKind(entry.InputTypes[i]);
                 if (actualKind.Length == 0 || actualKind != expectedKind)
