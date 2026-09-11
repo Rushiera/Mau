@@ -26,7 +26,7 @@ namespace Mau.Providers
         /// <param name="ct">取消令牌</param>
         /// <returns>流式事件序列</returns>
         private static async IAsyncEnumerable<LlmStreamEvent> TranslateSse(SseParser<string> parser, [EnumeratorCancellation] CancellationToken ct)
-{
+        {
             bool done = false;
             // [段0] 工具调用聚合——按 index 累积（design A.5：id/name 仅首帧；arguments 是累积增量需拼接后整体解析）
             Dictionary<int, string> toolIds = new Dictionary<int, string>();
@@ -235,7 +235,7 @@ namespace Mau.Providers
 /// <param name = "args">index → 参数拼接缓冲</param>
 /// <param name = "order">index 出现顺序</param>
 private static void AccumulateToolCalls(string data, Dictionary<int, string> ids, Dictionary<int, string> names, Dictionary<int, System.Text.StringBuilder> args, List<int> order)
-{
+        {
     try
     {
         using (JsonDocument doc = JsonDocument.Parse(data))
@@ -322,7 +322,8 @@ private static void AccumulateToolCalls(string data, Dictionary<int, string> ids
     {
     // 畸形帧跳过——容忍上游抖动
     }
-}/// <summary>
+}
+        /// <summary>
 /// 聚合结果 → 完整 tool_calls JSON 数组（[{"id","name","arguments"}]——arguments 为完整 JSON 文本，消费方整体解析）。
 /// </summary>
 /// <param name = "ids">index → 调用 ID</param>
@@ -331,7 +332,7 @@ private static void AccumulateToolCalls(string data, Dictionary<int, string> ids
 /// <param name = "order">index 出现顺序</param>
 /// <returns>JSON 数组字符串</returns>
 private static string BuildToolCallsJson(Dictionary<int, string> ids, Dictionary<int, string> names, Dictionary<int, System.Text.StringBuilder> args, List<int> order)
-{
+        {
             System.Text.StringBuilder builder = new System.Text.StringBuilder();
             builder.Append("[");
             for (int i = 0; i < order.Count; i++)

@@ -23,7 +23,7 @@ namespace CH4
         /// <returns>退出码</returns>
         private static int RunSelfCheck()
         {
-            for (int i = 0; i < WarmupFrames; i++)
+            for (int i = 0; i < WarmupFrames; i = i + 1)
             {
                 _runner.Tick();
                 Thread.Sleep(FrameSleepMs);
@@ -106,7 +106,8 @@ namespace CH4
                 Thread.Sleep(FrameSleepMs);
             }
             return 0;
-        }/// <summary>
+        }
+        /// <summary>
         /// Command 解析与投递——宿主做字符串值识别（语料面零值比较）；QuickCat 双参同帧投两个 key
         /// </summary>
         /// <param name="line">输入行</param>
@@ -360,7 +361,7 @@ namespace CH4
             _oa.SetStr(officeId, QuickOwnerId, "system", system);
             _oa.SetStr(officeId, QuickOwnerId, "content", content);
             // 等待回执——同步问答语义：驱动帧直至 Closed/TimeOut（LLM 流式 60s+ 宽裕）
-            for (long f = 0; f < QuickWaitFrames; f++)
+            for (long f = 0; f < QuickWaitFrames; f = f + 1)
             {
                 OfficeState st = _oa.GetStatus(officeId);
                 if (st == OfficeState.Closed || st == OfficeState.TimeOut)
@@ -394,7 +395,7 @@ namespace CH4
         /// </summary>
         private static void DriveUntilIdle()
         {
-            for (int i = 0; i < MaxFramesPerRun; i++)
+            for (int i = 0; i < MaxFramesPerRun; i = i + 1)
             {
                 _runner.Tick();
                 if (_httpHost != null)
@@ -422,7 +423,7 @@ namespace CH4
         private static bool AllIdle()
         {
             // P9.1 会话判定——全部会话 Idle（原三 Cat 语料判定保留）
-            for (int i = 0; i < _chatBridge.Sessions.Count; i++)
+            for (int i = 0; i < _chatBridge.Sessions.Count; i = i + 1)
             {
                 if (!_chatBridge.Sessions[i].IsIdle)
                 {
@@ -462,7 +463,7 @@ namespace CH4
                 return true;
             }
             FlowStatusV3 status = handle.Flow.GetStatus();
-            for (int i = 0; i < status.StateLines.Length; i++)
+            for (int i = 0; i < status.StateLines.Length; i = i + 1)
             {
                 string line = status.StateLines[i];
                 if (!line.EndsWith("=Idle", StringComparison.Ordinal))
@@ -511,7 +512,7 @@ namespace CH4
                     return true;
                 }
 
-                for (long i = 0; i < frames; i++)
+                for (long i = 0; i < frames; i = i + 1)
                 {
                     _runner.Tick();
                     Thread.Sleep(FrameSleepMs);
@@ -559,7 +560,7 @@ namespace CH4
             }
             string[] lines = File.ReadAllLines(path);
             Console.WriteLine("[CMD] 脚本模式 | " + lines.Length + " 行 | pid=" + Environment.ProcessId);
-            for (int i = 0; i < lines.Length; i++)
+            for (int i = 0; i < lines.Length; i = i + 1)
             {
                 string line = lines[i].Trim();
                 if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))

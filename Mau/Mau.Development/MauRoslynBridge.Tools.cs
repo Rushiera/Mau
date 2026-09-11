@@ -87,7 +87,7 @@ namespace Mau.Development
         /// <param name="result">结果</param>
         /// <returns>调用完成</returns>
         private bool ToolBuild(JsonElement args, out string result)
-{
+        {
             string path = Arg(args, "path");
             string csproj = ResolveProject(path);
             if (csproj.Length == 0)

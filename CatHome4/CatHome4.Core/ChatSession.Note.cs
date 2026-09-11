@@ -24,12 +24,12 @@ namespace CH4
 
         /// <summary>Note 刚全部完成标志——完成态展示（前端"🎉 全部完成"；新计划/新增/回滚清除——Q7 2026-09-08）</summary>
         private bool _noteJustCompleted;
-/// <summary>会话视图存储——F4 视图持久化（内存整块 + 文件落盘；真实前文派生态）</summary>
-private readonly SessionViewStore _viewStore;
-/// <summary>流式文本块序号——流式增量容器标识（整块到达时 replace 定位）</summary>
-private long _textStreamSeq; 
-/// <summary>流式思考块序号——流式增量容器标识（reason 整块 replace；纯文本轮无整块）</summary>
- private  long  _reasonStreamSeq ;
+        /// <summary>会话视图存储——F4 视图持久化（内存整块 + 文件落盘；真实前文派生态）</summary>
+        private readonly SessionViewStore _viewStore;
+        /// <summary>流式文本块序号——流式增量容器标识（整块到达时 replace 定位）</summary>
+        private long _textStreamSeq;
+        /// <summary>流式思考块序号——流式增量容器标识（reason 整块 replace；纯文本轮无整块）</summary>
+        private long _reasonStreamSeq;
         /// <summary>
         /// Note 工具执行体——M4a（CH2 语义移植：set 写入/无参推进/全完成清空；返回文本 = LLM 唯一状态面）。
         /// </summary>

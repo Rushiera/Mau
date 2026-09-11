@@ -95,7 +95,7 @@ namespace Mau.Providers
 /// <param name = "ct">取消令牌</param>
 /// <returns>流式事件序列</returns>
 public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, string userId = "", [EnumeratorCancellation] CancellationToken ct = default)
-{
+        {
     // [段1] 构造流式请求体并发送（ResponseHeadersRead——流式读取）
     // S2 重试——TRANSPORT/429/5xx 重试最多 MaxRetries 次（共 MaxRetries+1 次尝试）；4xx 不重试；流中断不重试
     string body = BuildChatRequestBody(messages, tools, userId);

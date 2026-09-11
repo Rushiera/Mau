@@ -45,7 +45,7 @@ namespace CH4
         /// <param name="ownerFlowMap">工具名 → 归属 Flow 名映射（null=回退前缀映射）</param>
         public static void Init(ToolSpec[] specs, Dictionary<string, string> ownerFlowMap)
         {
-            for (int i = 0; i < specs.Length; i++)
+            for (int i = 0; i < specs.Length; i = i + 1)
             {
                 ToolSpec s = specs[i];
                 bool builtin = s.Name == "Note" || s.Name == "time" || s.Name == "random" || s.Name == "info" || s.Name.StartsWith("host-", StringComparison.Ordinal);
@@ -129,7 +129,7 @@ namespace CH4
         {
             ToolSpec[] specs = BuildSpecs();
             string[] names = new string[specs.Length];
-            for (int i = 0; i < specs.Length; i++)
+            for (int i = 0; i < specs.Length; i = i + 1)
             {
                 names[i] = specs[i].Name;
             }

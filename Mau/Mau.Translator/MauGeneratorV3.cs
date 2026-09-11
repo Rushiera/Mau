@@ -131,7 +131,7 @@ namespace Mau.Translator
         /// <param name="sb">输出缓冲</param>
         /// <param name="doc">IR</param>
         private static void AppendStateMachines(StringBuilder sb, MauDocV3 doc)
-{
+        {
             for (int s = 0; s < doc.StateMachines.Count; s++)
             {
                 StateMachineDefV3 sm = doc.StateMachines[s];
@@ -214,7 +214,7 @@ namespace Mau.Translator
         /// <param name="sensor">传感器声明</param>
         /// <param name="doc">IR</param>
         private static void AppendSensorShell(StringBuilder sb, SensorDefV3 sensor, MauDocV3 doc)
-{
+        {
             string field = NameField(sensor.Name);
             string pascal = NameBodyPascal(sensor.Name);
             sb.AppendLine("        // ── 传感器 " + sensor.Name + "（主动壳——每 " + sensor.EveryFrames + " 帧探测）──");

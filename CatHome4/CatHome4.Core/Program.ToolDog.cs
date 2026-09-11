@@ -128,5 +128,6 @@ namespace CH4
                 return 4800;
             }
             return 600;
-        }    }
+        }
+    }
 }

@@ -49,12 +49,8 @@ public CommandSnapshot GetSnapshot()
         /// <summary>
         /// 获取注册表调试快照——线程安全：锁内快照，任意线程可调（GetSnapshot 同规）
         /// </summary>
-        ///
-        
-                ///
-        
-public string[] GetKeyDic()
-{
+        public string[] GetKeyDic()
+        {
             List<string> lines = new List<string>();
             // 线程安全快照——_lock 内遍历（与 GetSnapshot 同规；任意线程可调——管道/外部线程查询）
             lock (_lock)
@@ -186,7 +182,7 @@ public string[] GetKeyDic()
                 ///
         
 private bool IsValidSegment(string segment)
-{
+        {
             if (segment.Length == 0 || !char.IsLetter(segment[0]))
             {
                 return false;

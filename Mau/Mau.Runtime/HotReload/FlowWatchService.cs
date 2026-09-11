@@ -222,23 +222,23 @@ namespace Mau.Runtime
         /// <param name="dllPath">dll 路径</param>
         /// <returns>指纹或空串（读取失败）</returns>
         private static string ComputeFingerprint(string dllPath)
-{
-    try
-    {
-        FileInfo info = new FileInfo(dllPath);
-        byte[] bytes = File.ReadAllBytes(dllPath);
-        byte[] hash = SHA256.HashData(bytes);
-        StringBuilder hex = new StringBuilder();
-        for (int i = 0; i < hash.Length; i++)
         {
-            hex.Append(hash[i].ToString("X2"));
-        }
-        return info.Length.ToString() + "|" + info.LastWriteTimeUtc.Ticks.ToString() + "|" + hex.ToString();
-    }
-    catch
-    {
-        // 指纹读取失败（io 竞争/文件已消失）——返回空串，本轮轮询跳过本 dll
-        return "";
-    }
-}    }
+            try
+            {
+                FileInfo info = new FileInfo(dllPath);
+                byte[] bytes = File.ReadAllBytes(dllPath);
+                byte[] hash = SHA256.HashData(bytes);
+                StringBuilder hex = new StringBuilder();
+                for (int i = 0; i < hash.Length; i = i + 1)
+                {
+                    hex.Append(hash[i].ToString("X2"));
+                }
+                return info.Length.ToString() + "|" + info.LastWriteTimeUtc.Ticks.ToString() + "|" + hex.ToString();
+            }
+            catch
+            {
+                // 指纹读取失败（io 竞争/文件已消失）——返回空串，本轮轮询跳过本 dll
+                return "";
+            }
+        }}
 }

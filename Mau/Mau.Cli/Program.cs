@@ -43,7 +43,7 @@ namespace Mau.Cli
         /// <param name="args">命令行参数</param>
         /// <returns>退出码</returns>
         public static int Dispatch(string[] args)
-{
+        {
     CliSupport.ParseVerbose(args);
     if (args.Length == 0)
     {

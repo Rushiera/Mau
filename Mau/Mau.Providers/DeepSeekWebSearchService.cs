@@ -67,7 +67,7 @@ namespace Mau.Providers
         /// <param name="query">搜索查询</param>
         /// <returns>最终回答文本；失败 ERR| 前缀（错误可见性——失败侧也落盒）</returns>
         public string Search(string query)
-{
+        {
             // [段1] 配置解析——api_config_id 未配置/无效/缺 key → API_NOT_CONFIGURED（先配置后才可用）
             string endpoint = "";
             string model = "";
@@ -315,7 +315,7 @@ namespace Mau.Providers
         /// <param name="query">搜索查询</param>
         /// <returns>请求体 JSON</returns>
         private static string BuildAnthropicRequestBody(string model, string query)
-{
+        {
             StringBuilder sb = new StringBuilder();
             sb.Append("{\"model\":\"");
             sb.Append(EscapeJson(model));
@@ -325,7 +325,8 @@ namespace Mau.Providers
             sb.Append(EscapeJson(query));
             sb.Append("\"}],\"tools\":[{\"type\":\"web_search_20250305\",\"name\":\"web_search\"}]}");
             return sb.ToString();
-        }/// <summary>
+        }
+        /// <summary>
         /// 响应解析——OpenAI Responses 结构防御式：status → 假搜索检测 → output_text 提取 → 截断降级。
         /// P0 评审修正：①无 web_search_call 项 → NO_SEARCH（假搜索不降级为文本抓取）②incomplete=截断降级返回
         /// 已有文本+尾部标记（仅 failed 硬错误）③usage 提取随 out 传出（观测）。

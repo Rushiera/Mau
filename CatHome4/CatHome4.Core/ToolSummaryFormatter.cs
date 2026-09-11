@@ -236,7 +236,7 @@ namespace CH4
 
         /// <summary>text-replace——路径+新旧片段（UTF-8 字节数）</summary>
         private static string Fmt_Replace(Dictionary<string, string> p, string result)
-{
+        {
             string path = Arg(p, "path");
             // 参数键名对齐 text.replace 积木契约（BRIK-TEXT-004：path/old/new/mode）——str/new_str 取空致 0B 回归
             string oldStr = Arg(p, "old");
@@ -942,7 +942,7 @@ namespace CH4
 
         /// <summary>FileTree 结果摘要——N 文件 M 目录</summary>
         private static string SummarizeFileTree(string text)
-{
+        {
             if (string.IsNullOrEmpty(text))
             {
                 return "空";

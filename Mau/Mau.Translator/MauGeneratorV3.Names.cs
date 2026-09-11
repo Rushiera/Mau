@@ -102,7 +102,7 @@ namespace Mau.Translator
         /// <param name="name">参数引用名</param>
         /// <returns>true=盒子引用</returns>
         private static bool IsValueSensor(MauDocV3 doc, string name)
-{
+        {
             string t = name.Trim();
             // 盒子 Key 引用判定——@ 前缀 = 私有盒 / 已注册写源全局盒 / 裸词 = 全局盒（外部写源——宿主 Command 落盒）
             if (t.Length > 0 && t[0] == '@')
@@ -143,7 +143,7 @@ namespace Mau.Translator
         /// <param name="name">声明名</param>
         /// <returns>去前缀 PascalCase</returns>
         private static string NameBodyPascal(string name)
-{
+        {
             int sep = name.IndexOf('_');
             string body = name;
             if (sep >= 0)
@@ -158,7 +158,7 @@ namespace Mau.Translator
         /// <param name="name">声明名</param>
         /// <returns>C# 字段名</returns>
         private static string NameField(string name)
-{
+        {
             int sep = name.IndexOf('_');
             string rest = name;
             if (sep >= 0)

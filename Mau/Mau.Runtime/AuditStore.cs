@@ -271,27 +271,26 @@ namespace Mau.Runtime
         /// <param name="props">属性数组</param>
         /// <returns>JSON 文本</returns>
         private static string BuildPayload(AuditProp[]? props)
-{
-    if (props == null || props.Length == 0)
-    {
-        return "";
-    }
-    var list = new System.Collections.Generic.List<object>();
-    for (int i = 0; i < props.Length; i++)
-    {
-        list.Add(new { k = props[i].Key, v = props[i].Value });
-    }
-    try
-    {
-        return JsonUtil.Serialize(list);
-    }
-    catch (Exception)
-    {
-        // 序列化失败——按无载荷处理（审计非关键路径降级，不阻断主记录）
-        return "";
-    }
-}
-        /// <summary>
+        {
+            if (props == null || props.Length == 0)
+            {
+                return "";
+            }
+            System.Collections.Generic.List<object> list = new System.Collections.Generic.List<object>();
+            for (int i = 0; i < props.Length; i = i + 1)
+            {
+                list.Add(new { k = props[i].Key, v = props[i].Value });
+            }
+            try
+            {
+                return JsonUtil.Serialize(list);
+            }
+            catch (Exception)
+            {
+                // 序列化失败——按无载荷处理（审计非关键路径降级，不阻断主记录）
+                return "";
+            }
+        }        /// <summary>
         /// 构建消息——category + 首三个属性摘要（log.all 可读性）
         /// </summary>
         /// <param name="category">事件类别</param>
@@ -414,7 +413,7 @@ namespace Mau.Runtime
         /// <param name="payload">JSON 文本</param>
         /// <returns>属性数组</returns>
         private static AuditProp[] ParsePayload(string payload)
-{
+        {
     if (payload == null || payload.Length == 0)
     {
         return Array.Empty<AuditProp>();
@@ -462,5 +461,6 @@ namespace Mau.Runtime
         // 损坏载荷——返回空数组（快照重建容错：审计降级不阻断）
         return Array.Empty<AuditProp>();
     }
-}    }
+}
+    }
 }

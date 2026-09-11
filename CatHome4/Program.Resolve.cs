@@ -28,11 +28,12 @@ namespace CH4
                 {
                     return dir;
                 }
-                string parent = Directory.GetParent(dir)?.FullName;
-                if (parent == null)
+                DirectoryInfo parentInfo = Directory.GetParent(dir);
+                if (parentInfo == null)
                 {
                     return "";
                 }
+                string parent = parentInfo.FullName;
                 dir = parent;
             }
         }

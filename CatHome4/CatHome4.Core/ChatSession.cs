@@ -50,7 +50,7 @@ namespace CH4
 
         /// <summary>前文落盘——P9.1 保持 Data/sessions/majordomo.json（sessions/&lt;id&gt;.json 化是 P9.4）</summary>
         private readonly SessionStore _store;
-// [段2] LLM 槽 6 字段——后台 Task.Run 写、主线程轮询读
+        // [段2] LLM 槽 6 字段——后台 Task.Run 写、主线程轮询读
         /// <summary>LLM 后台运行中——volatile 置位（后台 finally 复位）</summary>
         private volatile bool _llmBusy;
 
@@ -529,7 +529,7 @@ namespace CH4
         {
             _pauseRequested = false;
             // [段0] 已完成工具结果保留——未完成放弃（ReplaceMessages 对未配对声明补占位）
-            for (int i = 0; i < _dogs.Count; i++)
+            for (int i = 0; i < _dogs.Count; i = i + 1)
             {
                 ToolOrderDog dog = _dogs[i];
                 if (dog.IsClosed && dog.Result != null && dog.Result.Length > 0)
@@ -544,7 +544,7 @@ namespace CH4
             _context.ReplaceMessages(_context.GetMessages());
             // [段2] 前文落盘——tool 结果截断 ≤800（对齐 CloseRound——落盘副本防膨胀）
             LlmMessage[] toSave = _context.GetMessages();
-            for (int i = 0; i < toSave.Length; i++)
+            for (int i = 0; i < toSave.Length; i = i + 1)
             {
                 if (toSave[i].Role == LlmRole.Tool && toSave[i].Content != null && toSave[i].Content.Length > 800)
                 {
@@ -688,7 +688,7 @@ namespace CH4
             _llmErrorText = "";
             System.Threading.Tasks.Task.Run(delegate
             {
-_ = ConsumeLlmStream(messages, _pauseCts.Token);
+                _ = ConsumeLlmStream(messages, _pauseCts.Token);
             });
             _phase = ChatPhase.LlmRunning;
             _phaseFrames = 0;
@@ -1207,7 +1207,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
         /// <returns>true=在声明面内</returns>
         private bool IsToolAllowed(string name)
         {
-            for (int i = 0; i < _tools.Length; i++)
+            for (int i = 0; i < _tools.Length; i = i + 1)
             {
                 if (string.Equals(_tools[i].Name, name, StringComparison.Ordinal))
                 {
@@ -1351,7 +1351,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
             LogStore.Add("LLM", 3, "LLM 错误（重试耗尽——本轮中止，上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
             // [段1] 前文落盘——tool 结果截断 ≤800（对齐 CloseRound——断点保留）
             LlmMessage[] toSave = _context.GetMessages();
-            for (int i = 0; i < toSave.Length; i++)
+            for (int i = 0; i < toSave.Length; i = i + 1)
             {
                 if (toSave[i].Role == LlmRole.Tool && toSave[i].Content != null && toSave[i].Content.Length > 800)
                 {
@@ -1584,7 +1584,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                         return TrimDisplay(toolCallsJson, 120);
                     }
                     System.Text.StringBuilder sb = new System.Text.StringBuilder();
-                    for (int i = 0; i < root.GetArrayLength(); i++)
+                    for (int i = 0; i < root.GetArrayLength(); i = i + 1)
                     {
                         JsonElement call = root[i];
                         string name = "";
@@ -1646,7 +1646,7 @@ _ = ConsumeLlmStream(messages, _pauseCts.Token);
                     }
                     string[] keys = new string[] { "path", "file", "proj", "key", "name", "dir", "id" };
                     System.Text.StringBuilder sb = new System.Text.StringBuilder();
-                    for (int i = 0; i < keys.Length; i++)
+                    for (int i = 0; i < keys.Length; i = i + 1)
                     {
                         JsonElement value;
                         if (root.TryGetProperty(keys[i], out value) && value.ValueKind == JsonValueKind.String)

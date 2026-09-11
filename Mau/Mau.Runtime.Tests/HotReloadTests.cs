@@ -219,7 +219,7 @@ private static string TickThrowsDllPath
         /// </summary>
         [Fact]
         public void ReloadFlows_BadDll_KeepsOldHandle()
-{
+        {
     AssertFixturesExist();
     using (FlowHost host = new FlowHost())
     {

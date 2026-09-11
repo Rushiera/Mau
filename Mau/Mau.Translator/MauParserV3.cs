@@ -179,7 +179,7 @@ namespace Mau.Translator
         /// <param name="doc">诊断收集</param>
         /// <param name="isTrue">true=成功侧（| 之前）</param>
         private static void ParseSensorBranchActions(List<TokenV3> section, int start, SensorDefV3 def, MauDocV3 doc, bool isTrue)
-{
+        {
             List<SensorActionV3> actions;
             if (isTrue)
             {

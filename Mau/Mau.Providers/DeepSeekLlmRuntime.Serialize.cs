@@ -48,13 +48,14 @@ namespace Mau.Providers
             }
 
             return wire;
-        }/// <summary>
+        }
+        /// <summary>
 /// tools 数组序列化——OpenAI function 定义；parameters JSON Schema 原样透传（空参数 = 空对象 schema）。
 /// </summary>
 /// <param name = "tools">工具规格数组</param>
 /// <returns>wire tools 数组</returns>
 private static object[] BuildWireTools(ToolSpec[] tools)
-{
+        {
     if (tools == null || tools.Length == 0)
     {
         return new object[0];
@@ -90,7 +91,8 @@ private static object[] BuildWireTools(ToolSpec[] tools)
     }
 
     return result;
-}/// <summary>
+}
+        /// <summary>
 /// 构造流式对话请求体——OpenAI 兼容消息序列 + tools（P5：接口端零创新，wire 标准）。
 /// system/user 文本直写；assistant 带 tool_calls（JSON 透传）+ reasoning_content（A.6 ①⑦ 回传铁律）；
 /// tool 独立消息（tool_call_id 配对）；思考模式 + effort 按配置；空 tools 省略字段；user_id 非空携带（P9.4 KVCache 隔离）。
@@ -100,7 +102,7 @@ private static object[] BuildWireTools(ToolSpec[] tools)
 /// <param name = "userId">会话用户标识（空=不携带）</param>
 /// <returns>请求体 JSON</returns>
 private string BuildChatRequestBody(LlmMessage[] messages, ToolSpec[] tools, string userId)
-{
+        {
             // [段1] 消息数组——多 role 序列化（null 字段防御归一——外部消息来源可能带 null）
             List<object> wireMessages = new List<object>();
             for (int i = 0; i < messages.Length; i++)

@@ -96,7 +96,7 @@ namespace Mau.Runtime
 /// <param name = "path">受控路径</param>
 /// <returns>完整文本（编码已按契约解析）</returns>
 public string ReadTextAuto(string path)
-{
+        {
     string resolved = Resolve(path, false);
     byte[] raw = File.ReadAllBytes(resolved);
     System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
@@ -112,7 +112,7 @@ public string ReadTextAuto(string path)
 /// <param name = "str2">结束锚点（空=文件尾）</param>
 /// <returns>两锚点之间内容（不含锚点自身；锚点歧义/缺失返回 ERR 前缀文本）</returns>
 public string ReadBetweenAuto(string path, string str1, string str2)
-{
+        {
     string resolved = Resolve(path, false);
     byte[] raw = File.ReadAllBytes(resolved);
     System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
@@ -161,7 +161,8 @@ public string ReadBetweenAuto(string path, string str1, string str2)
     }
 
     return unified.Substring(start, end - start);
-}/// <summary>
+}
+        /// <summary>
 /// 自动编码覆写——按类型契约编码 + BOM + 换行保真（P1/P2）；新文件按类型默认换行
 /// </summary>
 /// <param name = "path">受控路径</param>
@@ -183,7 +184,7 @@ public string ReadBetweenAuto(string path, string str1, string str2)
 /// <param name = "mode">exact（默认）/ ignore_case / all（字面量全部替换）/ regex</param>
 /// <returns>三态诊断结果</returns>
 public TextReplaceOutcome ReplaceTextAuto(string path, string oldText, string newText, string mode)
-{
+        {
             if (string.IsNullOrEmpty(oldText))
             {
                 throw new ArgumentException("Replacement target is empty.", "oldText");
@@ -235,7 +236,8 @@ public TextReplaceOutcome ReplaceTextAuto(string path, string oldText, string ne
                 outcome.Snippet = SnippetAround(replaced, indexes[0]);
                 return outcome;
             }
-        }/// <summary>
+        }
+        /// <summary>
 /// 查找全部锚点命中位置（exact/ignore_case 用 IndexOf 循环；regex 用 Matches）
 /// </summary>
 /// <param name = "content">归一化正文</param>
@@ -243,7 +245,7 @@ public TextReplaceOutcome ReplaceTextAuto(string path, string oldText, string ne
 /// <param name = "mode">匹配模式</param>
 /// <returns>命中起始索引数组</returns>
 private static int[] FindAll(string content, string target, string mode)
-{
+        {
     if (mode == "regex")
     {
         MatchCollection matches = Regex.Matches(content, target, RegexOptions.None, TimeSpan.FromSeconds(5));
@@ -303,14 +305,27 @@ private static int[] FindAll(string content, string target, string mode)
 /// <returns>行摘要文本</returns>
  private  static  string  SnippetAround ( string  content ,  int  index ) { int  lineStart  =  index ;  int  lineEnd  =  index ;  while  ( lineStart > 0 && content [ lineStart - 1 ] != '\n' ) { lineStart  =  lineStart - 1 ;  } while  ( lineEnd < content . Length && content [ lineEnd ] != '\n' ) { lineEnd  =  lineEnd + 1 ;  } int  start  =  lineStart ;  for  ( int  i  =  0 ;  i < 3 && start > 0 ;  i  =  i + 1 ) { int  prev  =  content . LastIndexOf ( '\n' ,  start - 1 ) ;  if  ( prev < 0 ) { start  =  0 ;  break ;  } start  =  prev + 1 ;  } int  end  =  lineEnd ;  for  ( int  i  =  0 ;  i < 3 && end < content . Length ;  i  =  i + 1 ) { int  next  =  content . IndexOf ( '\n' ,  end ) ;  if  ( next < 0 ) { end  =  content . Length ;  break ;  } end  =  next + 1 ;  } return  content . Substring ( start ,  end - start ) ;  }
 
-/// <summary>
-/// 编码内建写核心——探测目标换行 + 契约编码原子写
-/// </summary>
-/// <param name = "resolved">规范绝对路径</param>
-/// <param name = "path">用户路径（契约判定用）</param>
-/// <param name = "content">正文</param>
- private  void  WriteAutoCore ( string  resolved ,  string  path ,  string  content ) { System . Text . Encoding  enc  =  TextFileCodec . ProfileFor ( path ) ;  string  newline  =  ResolveTargetNewline ( resolved ,  path ) ;  string  body  =  TextFileCodec . NormalizeNewlines ( content ,  newline ) ;  // 原子写——带编码 + BOM（UTF8Encoding(true) 的 GetPreamble 由 WriteAllText 自动前置）
-string ? dir  =  Path . GetDirectoryName ( resolved ) ;  if  ( dir != null  && dir . Length > 0 ) { Directory . CreateDirectory ( dir ) ;  } string  tmp  =  resolved + ".tmp" ;  File . WriteAllText ( tmp ,  body ,  enc ) ;  File . Move ( tmp ,  resolved ,  true ) ;  } 
+        /// <summary>
+        /// 编码内建写核心——探测目标换行 + 契约编码原子写
+        /// </summary>
+        /// <param name="resolved">规范绝对路径</param>
+        /// <param name="path">用户路径（契约判定用）</param>
+        /// <param name="content">正文</param>
+private void WriteAutoCore(string resolved, string path, string content)
+        {
+            System.Text.Encoding enc = TextFileCodec.ProfileFor(path);
+            string newline = ResolveTargetNewline(resolved, path);
+            string body = TextFileCodec.NormalizeNewlines(content, newline);
+            // 原子写——带编码 + BOM（UTF8Encoding(true) 的 GetPreamble 由 WriteAllText 自动前置）
+            string? dir = Path.GetDirectoryName(resolved);
+            if (dir != null && dir.Length > 0)
+            {
+                Directory.CreateDirectory(dir);
+            }
+            string tmp = resolved + ".tmp";
+            File.WriteAllText(tmp, body, enc);
+            File.Move(tmp, resolved, true);
+        } 
 /// <summary>
 /// 目标换行解析——文件存在探测实际风格，否则按类型默认
 /// </summary>
@@ -424,7 +439,7 @@ string ? dir  =  Path . GetDirectoryName ( resolved ) ;  if  ( dir != null  && d
 /// <param name = "endLine">结束行；零表示文件尾</param>
 /// <returns>带行号文本</returns>
 public string ReadLinesAuto(string path, int startLine, int endLine)
-{
+        {
     if (startLine < 1 || endLine < 0)
     {
         throw new ArgumentOutOfRangeException("startLine");
@@ -613,7 +628,7 @@ public string ReadLinesAuto(string path, int startLine, int endLine)
 /// <param name = "limit">最大结果</param>
 /// <returns>匹配行（相对搜索根的路径:行号:上下文）</returns>
 public string[] Grep(string directory, string keyword, string pattern, int limit)
-{
+        {
     if (string.IsNullOrWhiteSpace(keyword) || limit < 1 || limit > 10000)
     {
         throw new ArgumentException("Grep parameters are invalid.", "keyword");
@@ -673,7 +688,7 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
         /// <param name="source">源路径</param>
         /// <param name="destination">目标路径</param>
         public void Move(string source, string destination)
-{
+        {
             string resolvedSource = Resolve(source, true);
             string resolvedDestination = Resolve(destination, true);
             lock (_writeGate)
@@ -736,7 +751,7 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
         /// <param name="forWrite">是否为写入</param>
         /// <returns>规范绝对路径</returns>
         public string Resolve(string path, bool forWrite)
-{
+        {
             if (string.IsNullOrWhiteSpace(path))
             {
                 // v3 机制纯净——空路径是调用方错误（参数校验，不做产品级回落；LLM 适配归自举层语料）
@@ -788,7 +803,7 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
         /// <param name="output">绝对文件路径</param>
         private void AppendFind(string root, string current, string pattern,
             bool recursive, int limit, List<string> output, ref int ignoredDirs)
-{
+        {
             // [段0] **/ 目录通配前缀——剥前缀 + 强制递归（text-find 的 **/*.txt 语义；连续段剥净；剥空回退 *）
             string dirWild = "**/";
             while (pattern.StartsWith(dirWild, StringComparison.Ordinal))
@@ -846,7 +861,7 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
         /// <param name="limit">条数上限</param>
         /// <param name="output">输出列表</param>
         private void AppendTree(string root, string current, int depth, int limit, List<string> output, List<string> gitLines)
-{
+        {
             if (output.Count >= limit)
             {
                 return;
@@ -931,7 +946,7 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
         /// <param name="path">目标路径</param>
         /// <param name="content">正文</param>
         private void WriteAtomic(string path, string content)
-{
+        {
             EnsureParentDirectory(path);
             // 原子写——统一实现 ConfigStore.AtomicWrite（审查修复轮 2026-08-11 决策3）
             ConfigStore.AtomicWrite(path, content);

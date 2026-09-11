@@ -94,7 +94,7 @@ namespace Mau.Runtime.Tests
         /// </summary>
         [Fact]
         public void SignalNames_Sorted()
-{
+        {
     DataBox.RegisterSignal("P_B");
     DataBox.RegisterSignal("P_A");
     string[] names = DataBox.SignalNames();

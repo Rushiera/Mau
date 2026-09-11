@@ -1101,7 +1101,14 @@ namespace CatHome4.Admin
                 sb.Append(",\"path\":");
                 sb.Append(JsonUtil.Serialize(norm.Replace('\\', '/')));
                 sb.Append(",\"writable\":");
-                sb.Append(input.Writable ? "true" : "false");
+                if (input.Writable)
+                {
+                    sb.Append("true");
+                }
+                else
+                {
+                    sb.Append("false");
+                }
                 sb.Append("}");
             }
             sb.Append("],\"inject\":");
@@ -1312,12 +1319,12 @@ namespace CatHome4.Admin
             }
             return key.Substring(0, 4) + "****" + key.Substring(key.Length - 4);
         }
-/// <summary>
-/// majordomo 默认猫 cat.cfg 补建——缺失时按全局默认模板创建（新用户无 cfg 是必然态；模板值 = 初次部署状态权威）。
-/// 已存在不覆盖——尊重用户已保存配置；模板缺失回退空默认（与运行时缺省回退语义一致）。
-/// </summary>
-internal static void EnsureMajordomoCfg()
-{
+        /// <summary>
+        /// majordomo 默认猫 cat.cfg 补建——缺失时按全局默认模板创建（新用户无 cfg 是必然态；模板值 = 初次部署状态权威）。
+        /// 已存在不覆盖——尊重用户已保存配置；模板缺失回退空默认（与运行时缺省回退语义一致）。
+        /// </summary>
+        internal static void EnsureMajordomoCfg()
+        {
     string path = Path.Combine(_dataRoot, "Data", "sessions", "majordomo", "cat.cfg");
     if (File.Exists(path))
     {
@@ -1349,5 +1356,6 @@ internal static void EnsureMajordomoCfg()
 
     SaveCatCfgData("majordomo", data);
     LogStore.Add("CatHome4", 1, "majordomo cat.cfg 缺失——已按默认模板补建", "CONFIG");
-}    }
+}
+    }
 }

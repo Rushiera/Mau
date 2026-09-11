@@ -195,7 +195,7 @@ namespace Mau.Runtime
         /// <param name="frameTo">结束帧（含）</param>
         /// <returns>MD 文本</returns>
         public string FormatStats(AuditStat[] stats, long frameFrom, long frameTo)
-{
+        {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("## AUDIT STAT");
             // GAP.4 段来源标注——数据源 = Log 真源（O2 并入）
@@ -219,7 +219,7 @@ namespace Mau.Runtime
         /// <param name="events">事件数组</param>
         /// <returns>MD 文本</returns>
         public string FormatEvents(AuditEvent[] events)
-{
+        {
             // GAP.4 段来源标注——查询数据源 = 环形缓冲（内存）；落盘文件为 MD 留痕不参与查询
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("- 数据源: Log 真源（audit.* 过滤；Data/runs/<会话>/log_all.txt 落盘）");
@@ -233,5 +233,6 @@ namespace Mau.Runtime
                 sb.Append(AuditStore.FormatEvent(events[i]));
             }
             return sb.ToString();
-        }    }
+        }
+    }
 }

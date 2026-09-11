@@ -99,7 +99,7 @@ namespace Mau.Development
         /// <param name="logicalName">安全逻辑名</param>
         /// <returns>编译结果</returns>
         public MauPocketCompileResult Compile(string source, string logicalName, string? mapText = null)
-{
+        {
             ValidateLogicalName(logicalName);
             // 行号映射——诊断反查表（D1：生成物行 → 语料行/积木源码行）
             _mapText = mapText;
@@ -280,7 +280,7 @@ namespace Mau.Development
         /// <returns>摘要</returns>
         private string[] FormatDiagnostics(
             System.Collections.Immutable.ImmutableArray<Diagnostic> diagnostics)
-{
+        {
             string[] result = new string[diagnostics.Length];
             for (int i = 0; i < diagnostics.Length; i = i + 1)
             {

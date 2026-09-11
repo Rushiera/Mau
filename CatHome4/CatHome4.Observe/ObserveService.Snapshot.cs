@@ -160,27 +160,27 @@ namespace CatHome4.Observe
                 AppendFlowJson(cats, entries[i], flow);
             }
         }
-    /// <summary>
-    /// 构建全量快照 JSON——协议 design-ch4-protocol.md §三（version/pid/frame/cats/oa/logs；logs 按 includeLogs 裁剪）
-    /// </summary>
-    /// <param name = "includeLogs">是否携带日志（GET 轮询 true / SSE 事件 false——协议 §4.2 snapshot 事件裁剪）</param>
-    /// <returns>快照 JSON 文本</returns>
-    internal static string BuildSnapshotJson(bool includeLogs)
-{
+        /// <summary>
+        /// 构建全量快照 JSON——协议 design-ch4-protocol.md §三（version/pid/frame/cats/oa/logs；logs 按 includeLogs 裁剪）
+        /// </summary>
+        /// <param name="includeLogs">是否携带日志（GET 轮询 true / SSE 事件 false——协议 §4.2 snapshot 事件裁剪）</param>
+        /// <returns>快照 JSON 文本</returns>
+        internal static string BuildSnapshotJson(bool includeLogs)
+        {
         List<object> cats = new List<object>();
         AppendRegistryCats(cats);
         OAView oa = _oa.GetSnapshot();
         // [段1] boxes 字段——DataBox 全量截面（协议 v1.1：新增字段旧端忽略；复杂对象摘要化——内部实现盒子不刷爆快照）
         DataBoxSnapshot boxSnap = DataBox.Capture();
         List<object> boxes = new List<object>();
-for (int i = 0; i < boxSnap.Data.Length; i++)
+            for (int i = 0; i < boxSnap.Data.Length; i = i + 1)
             {
                 DataBoxDataEntry d = boxSnap.Data[i];
                 if (IsInternalBox(d.Scope, d.Key))
                 {
                     continue;
                 }
-            boxes.Add(BuildBoxEntry(d));
+                boxes.Add(BuildBoxEntry(d));
         }
         // [段2] logs 段——includeLogs 裁剪（SSE 事件空数组；GET ?logs=N 由 HttpHost 动态合成替换）
         object logs;
@@ -376,7 +376,7 @@ for (int i = 0; i < boxSnap.Data.Length; i++)
         // [段3] boxes 段——字典 diff（scope+key → 条目 JSON；新增/变化进 set，消失进 del）
         DataBoxSnapshot boxSnap = DataBox.Capture();
         Dictionary<string, string> boxesNow = new Dictionary<string, string>();
-        for (int i = 0; i < boxSnap.Data.Length; i++)
+        for (int i = 0; i < boxSnap.Data.Length; i = i + 1)
         {
             DataBoxDataEntry d = boxSnap.Data[i];
             if (IsInternalBox(d.Scope, d.Key))

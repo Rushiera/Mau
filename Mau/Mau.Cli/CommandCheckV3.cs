@@ -20,7 +20,7 @@ namespace Mau.Cli
 
         ///
 public static int Run()
-{
+        {
     string? root = CliSupport.FindWorkspaceRoot();
     if (root == null)
     {

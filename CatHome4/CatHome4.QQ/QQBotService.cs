@@ -57,7 +57,14 @@ namespace CatHome4.QQ
         /// <param name="root">缓存根目录</param>
         public static void SetFileCacheRoot(string root)
         {
-            _fileCacheRoot = root == null ? "" : root;
+            if (root == null)
+            {
+                _fileCacheRoot = "";
+            }
+            else
+            {
+                _fileCacheRoot = root;
+            }
         }
 
         /// <summary>
@@ -81,7 +88,7 @@ namespace CatHome4.QQ
         {
             _started = false;
             List<Guid> keys = new List<Guid>(_connections.Keys);
-            for (int i = 0; i < keys.Count; i++)
+            for (int i = 0; i < keys.Count; i = i + 1)
             {
                 QQBotConnection conn;
                 if (_connections.TryGetValue(keys[i], out conn))
@@ -106,7 +113,7 @@ namespace CatHome4.QQ
             }
             CH_QqBotConfig[] configs = store.GetAll();
             HashSet<Guid> active = new HashSet<Guid>();
-            for (int i = 0; i < configs.Length; i++)
+            for (int i = 0; i < configs.Length; i = i + 1)
             {
                 CH_QqBotConfig c = configs[i];
                 active.Add(c.QqBotId);
@@ -124,7 +131,12 @@ namespace CatHome4.QQ
                             delegate(string raw) { OnMessage(c.QqBotId, raw); });
                         _connections[c.QqBotId] = conn;
                         conn.Start();
-                        LogStore.Add("QQBot", 1, "配置变更重建连接 | " + c.DisplayName + "（sandbox=" + (c.Sandbox ? "true" : "false") + "）", "QQBOT");
+                        string sandboxText = "false";
+                        if (c.Sandbox)
+                        {
+                            sandboxText = "true";
+                        }
+                        LogStore.Add("QQBot", 1, "配置变更重建连接 | " + c.DisplayName + "（sandbox=" + sandboxText + "）", "QQBOT");
                     }
                     continue;
                 }
@@ -144,7 +156,7 @@ namespace CatHome4.QQ
                     toRemove.Add(kv.Key);
                 }
             }
-            for (int i = 0; i < toRemove.Count; i++)
+            for (int i = 0; i < toRemove.Count; i = i + 1)
             {
                 QQBotConnection conn;
                 if (_connections.TryGetValue(toRemove[i], out conn))
@@ -212,7 +224,7 @@ namespace CatHome4.QQ
             // 广播注入所有绑定且启用的 Cat——消息头区分渠道+来源（v0.96.1：私聊硬编码雾理莎/群@昵称+角色）
             // 🔴 三字典单线程化（R6-P1-01）——WS 线程只入队事件，EnqueueSource/ResetRound 由主线程 Tick 事件泵统一消费
             bool anyInjected = false;
-            for (int i = 0; i < targets.Count; i++)
+            for (int i = 0; i < targets.Count; i = i + 1)
             {
                 QqTarget tg = targets[i];
                 if (!tg.Enable)
@@ -228,7 +240,8 @@ namespace CatHome4.QQ
             {
                 SendToSource(qqBotId, source, "目标 Cat 未启用 qqbot 转发功能");
             }
-        }/// <summary>
+        }
+        /// <summary>
         /// 解析消息——C2C 私聊 / GROUP_AT 群@。
         /// </summary>
         /// <param name="raw">原始消息 JSON</param>
@@ -398,13 +411,21 @@ namespace CatHome4.QQ
                     result.Add(att);
                 }
             }
-            return result.Count > 0 ? result : null;
+            if (result.Count > 0)
+            {
+                return result;
+            }
+            return null;
         }
 
         /// <summary>文件名净化——去非法字符（落盘安全）</summary>
         private static string SanitizeFileName(string name)
         {
-            string s = name == null ? "file" : name;
+            string s = "file";
+            if (name != null)
+            {
+                s = name;
+            }
             char[] invalid = Path.GetInvalidFileNameChars();
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < s.Length; i = i + 1)
@@ -418,10 +439,21 @@ namespace CatHome4.QQ
                         break;
                     }
                 }
-                sb.Append(bad ? '_' : s[i]);
+                if (bad)
+                {
+                    sb.Append('_');
+                }
+                else
+                {
+                    sb.Append(s[i]);
+                }
             }
             string result = sb.ToString().Trim();
-            return result.Length == 0 ? "file" : result;
+            if (result.Length == 0)
+            {
+                return "file";
+            }
+            return result;
         }
 
         /// <summary>缓存目录——Ensure 创建（未配置返回空串）</summary>
@@ -449,7 +481,11 @@ namespace CatHome4.QQ
         /// <returns>剥离后的文本</returns>
         private static string StripAtMention(string content)
         {
-            string s = content == null ? "" : content.Trim();
+            string s = "";
+            if (content != null)
+            {
+                s = content.Trim();
+            }
             if (s.StartsWith("<@"))
             {
                 int end = s.IndexOf('>');
@@ -469,14 +505,29 @@ namespace CatHome4.QQ
         /// <returns>归一化后的文本</returns>
         private static string NormalizeFaceTags(string content, List<QqAttachment> attachments)
         {
+            // [段1] 空内容——原样回退（?? 语法糖展开）
             if (string.IsNullOrEmpty(content))
             {
-                return content ?? "";
+                if (content == null)
+                {
+                    return "";
+                }
+                return content;
             }
-            int idx = 0;
-            return _faceTagRegex.Replace(content, m =>
+            // [段2] 匹配收集——正则整体匹配（替代 MatchEvaluator 委托闭包；无匹配直接返回原文本）
+            MatchCollection matches = _faceTagRegex.Matches(content);
+            if (matches.Count == 0)
             {
-                // 原位嵌入真实本地路径——agent 直接可调 image-analyze，多图嵌长文本可区分对应关系（v0.96.1）
+                return content;
+            }
+            // [段3] 逐匹配原位替换——附件按序对应（降级链：本地路径→文件名→[图片]）
+            StringBuilder sb = new StringBuilder();
+            int cursor = 0;
+            int idx = 0;
+            for (int i = 0; i < matches.Count; i = i + 1)
+            {
+                Match m = matches[i];
+                sb.Append(content.Substring(cursor, m.Index - cursor));
                 string mark = "";
                 if (attachments != null && idx < attachments.Count)
                 {
@@ -490,11 +541,20 @@ namespace CatHome4.QQ
                         mark = a.FileName;
                     }
                 }
-                idx++;
-                return string.IsNullOrEmpty(mark) ? "[图片]" : "[" + mark + "]";
-            });
-        }
-        /// <summary>
+                idx = idx + 1;
+                if (string.IsNullOrEmpty(mark))
+                {
+                    sb.Append("[图片]");
+                }
+                else
+                {
+                    sb.Append("[" + mark + "]");
+                }
+                cursor = m.Index + m.Length;
+            }
+            sb.Append(content.Substring(cursor));
+            return sb.ToString();
+        }        /// <summary>
         /// 构建消息头——区分渠道+来源（v0.96.1）。
         /// 私聊：硬编码雾理莎（莎本人私聊 ID，User.md 补身份）；群@：昵称+角色（事件白拿字段）。
         /// </summary>
@@ -784,7 +844,8 @@ namespace CatHome4.QQ
                 }
             }
             ResetRound(tg.Key);
-        }/// <summary>游标——猫 Key → 已处理消息数（R2.3.5 只转发启用后新块）</summary>
+        }
+        /// <summary>游标——猫 Key → 已处理消息数（R2.3.5 只转发启用后新块）</summary>
         private static readonly Dictionary<string, int> _cursors = new Dictionary<string, int>();
         /// <summary>
         /// 事件泵——WS 线程入队事件统一在主线程消费（R6-P1-01 单线程化）。
@@ -819,7 +880,7 @@ namespace CatHome4.QQ
             {
                 targets = _collector.CollectAll();
             }
-            for (int i = 0; i < targets.Count; i++)
+            for (int i = 0; i < targets.Count; i = i + 1)
             {
                 QqTarget tg = targets[i];
                 QqViewItem[] items = tg.GetViewItems();
@@ -840,7 +901,7 @@ namespace CatHome4.QQ
                     }
                     continue;
                 }
-                for (int j = cursor; j < count; j++)
+                for (int j = cursor; j < count; j = j + 1)
                 {
                     QqViewItem it = items[j];
                     if (it.RenderType == "roundsum")
@@ -856,7 +917,8 @@ namespace CatHome4.QQ
                 }
                 _cursors[tg.Key] = count;
             }
-        }/// <summary>读取游标——缺省 0</summary>
+        }
+        /// <summary>读取游标——缺省 0</summary>
         private static int GetCursor(string catKey)
         {
             int c;
@@ -965,7 +1027,11 @@ namespace CatHome4.QQ
         /// <summary>截断文本——日志展示</summary>
         private static string Truncate(string s, int max)
         {
-            return s.Length <= max ? s : s.Substring(0, max);
+            if (s.Length <= max)
+            {
+                return s;
+            }
+            return s.Substring(0, max);
         }
     /// <summary>
     /// QQ 服务事件——WS 线程入队 / 主线程 Tick 事件泵消费（R6-P1-01 单线程化）。
@@ -981,7 +1047,8 @@ namespace CatHome4.QQ
 
         /// <summary>来源——Kind=source 时有效</summary>
         public QqSource Source;
-    }    }
+    }
+    }
 
     /// <summary>
     /// QQ 消息来源——结构化载荷（P8：msg_id 被动回复扩展）。

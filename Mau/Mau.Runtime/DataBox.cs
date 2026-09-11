@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
@@ -304,15 +304,15 @@ namespace Mau.Runtime
             }
             _data.Clear();
         }
-/// <summary>
-/// 重置全部——服务 + 数据（D26 统一 Reset 契约；宿主切换/测试隔离调用）
-/// </summary>
-public static void Reset()
-{
-    ClearAll();
-    // 信号沿并入重置契约（D26 补全——ClearAll 原本只清服务+数据，信号沿残留是契约缺口）
-    ResetSignals();
-}/// <summary>
+        /// <summary>
+        /// 重置全部——服务 + 数据（D26 统一 Reset 契约；宿主切换/测试隔离调用）
+        /// </summary>
+        public static void Reset()
+        {
+            ClearAll();
+            // 信号沿并入重置契约（D26 补全——ClearAll 原本只清服务+数据，信号沿残留是契约缺口）
+            ResetSignals();
+        }/// <summary>
         /// 全量快照——只读深拷贝（测试断言/观测/审计统一出口）
         /// </summary>
         /// <returns>快照</returns>
@@ -472,13 +472,13 @@ public static void Reset()
         /// 事件区重置——测试隔离（清空全部信号注册）
         /// </summary>
         public static void ResetSignals()
-{
-    // 只清待消费沿，保留注册——注册是声明性（TryAdd 幂等），状态清零即隔离；
-    // 清注册会伤到并行测试类已加载 Flow 的传感器（判例：Reset 清注册 → 并行类 Tick "未注册" 连环炸）
-    List<string> names = new List<string>(_signals.Keys);
-    for (int i = 0; i < names.Count; i = i + 1)
-    {
-        _signals[names[i]] = 0;
-    }
-}    }
+        {
+            // 只清待消费沿，保留注册——注册是声明性（TryAdd 幂等），状态清零即隔离；
+            // 清注册会伤到并行测试类已加载 Flow 的传感器（判例：Reset 清注册 → 并行类 Tick "未注册" 连环炸）
+            List<string> names = new List<string>(_signals.Keys);
+            for (int i = 0; i < names.Count; i = i + 1)
+            {
+                _signals[names[i]] = 0;
+            }
+        }}
 }

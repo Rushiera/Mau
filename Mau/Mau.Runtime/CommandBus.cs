@@ -241,7 +241,7 @@ namespace Mau.Runtime
         /// <param name="key">已注册 key</param>
         /// <param name="value">整数值</param>
         public void Set(string key, int value, string source)
-{
+        {
             lock (_lock)
             {
                 if (!_isAcceptingInput)
@@ -298,7 +298,7 @@ namespace Mau.Runtime
         /// <param name="key">已注册 key</param>
         /// <param name="text">文本值</param>
         public void SetText(string key, string text, string source)
-{
+        {
             lock (_lock)
             {
                 if (!_isAcceptingInput)

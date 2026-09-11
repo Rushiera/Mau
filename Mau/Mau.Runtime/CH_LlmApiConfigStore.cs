@@ -111,23 +111,23 @@ namespace Mau.Runtime
             config = new CH_LlmApiConfig();
             return false;
         }
-/// <summary>
-/// 解析默认端点——IsDefault=true 的配置；无默认返回 null（不做静默回退——空配置必须显式配置端点后才能运行）。
-/// </summary>
-/// <returns>默认配置；无默认 null</returns>
-public CH_LlmApiConfig? ResolveDefault()
-{
-    CH_LlmApiConfig[] configs = GetAll();
-    for (int i = 0; i < configs.Length; i = i + 1)
-    {
-        if (configs[i].IsDefault)
+        /// <summary>
+        /// 解析默认端点——IsDefault=true 的配置；无默认返回 null（不做静默回退——空配置必须显式配置端点后才能运行）。
+        /// </summary>
+        /// <returns>默认配置；无默认 null</returns>
+        public CH_LlmApiConfig? ResolveDefault()
         {
-            return configs[i];
-        }
-    }
+            CH_LlmApiConfig[] configs = GetAll();
+            for (int i = 0; i < configs.Length; i = i + 1)
+            {
+                if (configs[i].IsDefault)
+                {
+                    return configs[i];
+                }
+            }
 
-    return null;
-} 
+            return null;
+        } 
 /// <summary>
 /// 设置默认端点——清除其他默认标记 + 置目标默认（唯一默认语义；目标不存在返回 false）。
 /// </summary>
@@ -140,7 +140,7 @@ public CH_LlmApiConfig? ResolveDefault()
         /// <param name="config">普通配置</param>
         /// <param name="apiKey">Key；空值表示保留原 Key</param>
         public void Save(CH_LlmApiConfig config, string apiKey)
-{
+        {
             NormalizeAndValidate(config);
             List<CH_LlmApiConfig> configs = new List<CH_LlmApiConfig>(GetAll());
             bool replaced = false;
@@ -363,7 +363,7 @@ public CH_LlmApiConfig? ResolveDefault()
 
         /// <summary>复制一份普通配置。</summary>
         private CH_LlmApiConfig CopyConfig(CH_LlmApiConfig source)
-{
+        {
             CH_LlmApiConfig result = new CH_LlmApiConfig();
             result.SchemaVersion = source.SchemaVersion;
             result.ApiConfigId = source.ApiConfigId;

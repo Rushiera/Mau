@@ -83,57 +83,57 @@ private readonly Dictionary<string, string> _fileByPrefix = new Dictionary<strin
             }
             return store;
         }
-/// <summary>
-/// 追加配置文件槽——键前缀段路由（如 "ui" → ui.cfg）；装载该文件全部键值并注册前缀映射。
-/// P8.5d 配置群多文件化：单一 ConfigStore 承载多配置文件，Set/Save 按键前缀段分组落盘。
-/// </summary>
-/// <param name = "prefix">键前缀段（键 "ui.chat_font_size" 的前缀 "ui"）</param>
-/// <param name = "path">配置文件路径</param>
-public void AddFile(string prefix, string path)
-{
-    if (prefix == null || prefix.Length == 0)
-    {
-        throw new ArgumentException("ConfigStore file prefix is empty.", "prefix");
-    }
-
-    if (path == null || path.Length == 0)
-    {
-        throw new ArgumentException("ConfigStore file path is empty.", "path");
-    }
-
-    lock (_gate)
-    {
-        if (File.Exists(path))
+        /// <summary>
+        /// 追加配置文件槽——键前缀段路由（如 "ui" → ui.cfg）；装载该文件全部键值并注册前缀映射。
+        /// P8.5d 配置群多文件化：单一 ConfigStore 承载多配置文件，Set/Save 按键前缀段分组落盘。
+        /// </summary>
+        /// <param name="prefix">键前缀段（键 "ui.chat_font_size" 的前缀 "ui"）</param>
+        /// <param name="path">配置文件路径</param>
+        public void AddFile(string prefix, string path)
         {
-            string[] lines = File.ReadAllLines(path);
-            for (int i = 0; i < lines.Length; i = i + 1)
+            if (prefix == null || prefix.Length == 0)
             {
-                string line = lines[i].Trim();
-                if (line.Length == 0 || line.StartsWith("#"))
+                throw new ArgumentException("ConfigStore file prefix is empty.", "prefix");
+            }
+
+            if (path == null || path.Length == 0)
+            {
+                throw new ArgumentException("ConfigStore file path is empty.", "path");
+            }
+
+            lock (_gate)
+            {
+                if (File.Exists(path))
                 {
-                    continue;
+                    string[] lines = File.ReadAllLines(path);
+                    for (int i = 0; i < lines.Length; i = i + 1)
+                    {
+                        string line = lines[i].Trim();
+                        if (line.Length == 0 || line.StartsWith("#"))
+                        {
+                            continue;
+                        }
+
+                        int eq = line.IndexOf('=');
+                        if (eq <= 0)
+                        {
+                            continue;
+                        }
+
+                        string key = line.Substring(0, eq).Trim();
+                        string value = line.Substring(eq + 1).Trim();
+                        if (key.Length == 0)
+                        {
+                            continue;
+                        }
+
+                        _values[key] = value;
+                    }
                 }
 
-                int eq = line.IndexOf('=');
-                if (eq <= 0)
-                {
-                    continue;
-                }
-
-                string key = line.Substring(0, eq).Trim();
-                string value = line.Substring(eq + 1).Trim();
-                if (key.Length == 0)
-                {
-                    continue;
-                }
-
-                _values[key] = value;
+                _fileByPrefix[prefix] = path;
             }
         }
-
-        _fileByPrefix[prefix] = path;
-    }
-}
         // [段3] 读取
         /// <summary>
         /// 读取配置值——不存在返回默认值
@@ -209,7 +209,7 @@ public void AddFile(string prefix, string path)
 /// <param name = "key">配置键</param>
 /// <returns>前缀段</returns>
 private static string KeyPrefix(string key)
-{
+        {
     int dot = key.IndexOf('.');
     if (dot <= 0)
     {
@@ -223,7 +223,7 @@ private static string KeyPrefix(string key)
         /// 保存到当前文件路径——未关联路径时不动作
         /// </summary>
         public void Save()
-{
+        {
             lock (_gate)
             {
                 // [段1] 按键前缀段分组——_fileByPrefix 命中 → 对应文件；否则主文件 _path
@@ -233,7 +233,7 @@ private static string KeyPrefix(string key)
                 {
                     string key = pairs[i].Key;
                     string prefix = KeyPrefix(key);
-string target = "";
+                    string target = "";
                     string? mapped = "";
                     if (prefix.Length > 0 && _fileByPrefix.TryGetValue(prefix, out mapped) && mapped != null)
                     {
@@ -243,11 +243,11 @@ string target = "";
                     {
                         target = _path;
                     }
-if (target.Length == 0)
+                    if (target.Length == 0)
                     {
                         continue;
                     }
-System.Text.StringBuilder? sb;
+                    System.Text.StringBuilder? sb;
                     if (!builders.TryGetValue(target, out sb))
                     {
                         sb = new System.Text.StringBuilder();
@@ -364,7 +364,7 @@ System.Text.StringBuilder? sb;
 /// <param name = "error">失败原因（成功为空串）</param>
 /// <returns>是否成功</returns>
 public bool SetChecked(string key, string value, ConfigSchema? schema, out string error)
-{
+        {
     error = "";
     if (key == null || key.Length == 0)
     {
@@ -407,7 +407,7 @@ public bool SetChecked(string key, string value, ConfigSchema? schema, out strin
     }
 
     // [段3] 旧值快照 + 写入 + 失败回滚（写入异常时内存与磁盘一致恢复）
-bool hadOld;
+    bool hadOld;
     string? oldValue = "";
     lock (_gate)
     {
@@ -538,5 +538,6 @@ bool hadOld;
                 error = "还原失败: " + ex.Message;
                 return false;
             }
-        }    }
+        }
+    }
 }

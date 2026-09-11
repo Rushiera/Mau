@@ -207,7 +207,7 @@ namespace CatHome4.Observe
         /// <summary>
         /// 盒子复杂值摘要——ToString 截断（快照 JSON 不展开复杂对象——防 log.entries 这类内部实现盒子刷爆快照）
         /// </summary>
-        /// <param name = "value">原始值</param>
+        /// <param name="value">原始值</param>
         /// <returns>摘要文本（≤160 字符）</returns>
         private static string SummarizeBoxValue(object value)
         {
@@ -217,7 +217,7 @@ namespace CatHome4.Observe
             }
             // D5：BCL 内部实现型——短摘要 [类型简单名]（TypeName 不出协议面）
             Type valueType = value.GetType();
-string ns = valueType.Namespace;
+            string ns = valueType.Namespace;
             if (ns == "System" || ns == "System.Collections.Generic" || ns == "System.Collections")
             {
                 string simple = valueType.Name;

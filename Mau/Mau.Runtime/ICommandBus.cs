@@ -69,8 +69,9 @@ namespace Mau.Runtime
         /// </summary>
         /// <returns>注册/待消费/拒绝统计快照</returns>
         CommandSnapshot GetSnapshot();
-/// <summary>
-/// 冻结输入——宿主每帧 Tick 开始处调用，此前到达的 Set 进入可消费池
-/// </summary>
-void BeginTickInput();    }
+        /// <summary>
+        /// 冻结输入——宿主每帧 Tick 开始处调用，此前到达的 Set 进入可消费池
+        /// </summary>
+        void BeginTickInput();
+    }
 }

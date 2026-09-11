@@ -215,7 +215,7 @@ namespace Mau.Runtime.Tests
 /// </summary>
 [Fact]
 public void Runner_UnregisterFlow_ClearsCommandBusKeys()
-{
+        {
     ThreadGuard guard = new ThreadGuard();
     OA oa = new OA(guard);
     CommandBus cmd = new CommandBus(guard);
@@ -251,7 +251,7 @@ public void Runner_UnregisterFlow_ClearsCommandBusKeys()
 /// </summary>
 [Fact]
 public void Runner_UnregisterFlow_ClearsDataBoxScope()
-{
+        {
     DataBox.Reset();
     try
     {

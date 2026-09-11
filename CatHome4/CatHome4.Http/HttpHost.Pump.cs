@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading;
@@ -81,51 +81,52 @@ namespace CatHome4.Http
         /// 主线程泵——宿主帧循环调用：快照待构建标志置位时在主线程构建 + 缓存 + 推送（ThreadGuard 契约）。
         /// </summary>
         public void PumpMainThread()
-{
-    if (!_snapshotPending)
-    {
-        return;
-    }
-    _snapshotPending = false;
-    string json = _snapshotBuilder(false);
-    // Q6 页面标题——每猫快照注入 title 字段（displayName · Chat；前端初始化 fetch 快照直接用——前端零业务逻辑）
-    if (_pageTitle != null && _pageTitle.Length > 0)
-    {
-        json = InjectSnapshotTitle(json, _pageTitle);
-    }
-    _snapshotCache = json;
-    // 增量流式——只推变化段；无变化零推送（Idle 稳态静默）；patchBuilder 未注入时保持全量推送（每猫端口——chat.html 不消费快照）
-    if (_patchBuilder != null)
-    {
-        string patch = _patchBuilder();
-        if (patch != null && patch.Length > 0)
         {
-            PushEvent("patch", patch);
-            // 观测透明性——patch 推送结算行（截断 120——cats 整段可能长）
-            LogStore.Add("CatHome4", 1, "快照增量推送（" + patch + "）", "CHAT", "", "", 120);
-        }
-    }
-    else
-    {
-        PushEvent("snapshot", json);
-    }
-    // O3 帧流——每帧紧凑 JSON 落盘（回放/复盘；FrameStore 未配置时静默 no-op）
-    if (_frameBuilder != null)
-    {
-        try
-        {
-            string frameJson = _frameBuilder();
-            if (frameJson != null && frameJson.Length > 0)
+            if (!_snapshotPending)
             {
-                FrameStore.Append(frameJson);
+                return;
+            }
+            _snapshotPending = false;
+            string json = _snapshotBuilder(false);
+            // Q6 页面标题——每猫快照注入 title 字段（displayName · Chat；前端初始化 fetch 快照直接用——前端零业务逻辑）
+            if (_pageTitle != null && _pageTitle.Length > 0)
+            {
+                json = InjectSnapshotTitle(json, _pageTitle);
+            }
+            _snapshotCache = json;
+            // 增量流式——只推变化段；无变化零推送（Idle 稳态静默）；patchBuilder 未注入时保持全量推送（每猫端口——chat.html 不消费快照）
+            if (_patchBuilder != null)
+            {
+                string patch = _patchBuilder();
+                if (patch != null && patch.Length > 0)
+                {
+                    PushEvent("patch", patch);
+                    // 观测透明性——patch 推送结算行（截断 120——cats 整段可能长）
+                    LogStore.Add("CatHome4", 1, "快照增量推送（" + patch + "）", "CHAT", "", "", 120);
+                }
+            }
+            else
+            {
+                PushEvent("snapshot", json);
+            }
+            // O3 帧流——每帧紧凑 JSON 落盘（回放/复盘；FrameStore 未配置时静默 no-op）
+            if (_frameBuilder != null)
+            {
+                try
+                {
+                    string frameJson = _frameBuilder();
+                    if (frameJson != null && frameJson.Length > 0)
+                    {
+                        FrameStore.Append(frameJson);
+                    }
+                }
+                catch
+                {
+                    // 帧流异常不阻塞主线程泵
+                }
             }
         }
-        catch
-        {
-            // 帧流异常不阻塞主线程泵
-        }
-    }
-}        /// <summary>
+        /// <summary>
         /// LogStore 增量推送——游标后新条目逐条推 log 事件（协议 §4.2）。
         /// </summary>
         private void PushLogIncrements()
@@ -177,17 +178,17 @@ namespace CatHome4.Http
                 }
             }
         }
-/// <summary>
-/// Note 状态事件——会话 Note 变化推送（M4c：前端悬浮气泡实时重绘；载荷含 sessionId 归属）。
-/// </summary>
-/// <param name = "json">Note 状态 JSON（ChatSession.BuildNoteJson 产物）</param>
-public void PushNoteState(string json)
-{
-    string frame = "{\"sessionId\":\"" + _sessionId + "\",\"state\":" + json + "}";
-    PushEvent("note", frame);
-    // M4c 观测透明性——SSE note 推送结算行（前端未更新时 cmd 可对照）
-    LogStore.Add("CatHome4", 1, "Note 状态推送：" + json, "CHAT");
-}        /// <summary>
+        /// <summary>
+        /// Note 状态事件——会话 Note 变化推送（M4c：前端悬浮气泡实时重绘；载荷含 sessionId 归属）。
+        /// </summary>
+        /// <param name="json">Note 状态 JSON（ChatSession.BuildNoteJson 产物）</param>
+        public void PushNoteState(string json)
+        {
+            string frame = "{\"sessionId\":\"" + _sessionId + "\",\"state\":" + json + "}";
+            PushEvent("note", frame);
+            // M4c 观测透明性——SSE note 推送结算行（前端未更新时 cmd 可对照）
+            LogStore.Add("CatHome4", 1, "Note 状态推送：" + json, "CHAT");
+        }        /// <summary>
         /// 工具结果实时推送——宿主 ChatBridge ExecuteToolBatch 调用（B4 对话区：tool 事件）。
         /// 载荷与 history 视图同截断（参数 ≤200/结果 ≤300）；事件顺序 = 执行顺序 = toolCalls 数组顺序（前端 FIFO 配对）。
         /// </summary>

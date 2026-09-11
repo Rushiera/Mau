@@ -85,7 +85,7 @@ namespace Mau.Translator
 /// <param name = "sb">输出缓冲</param>
 /// <param name = "doc">IR</param>
 private static void AppendCommandPump(StringBuilder sb, MauDocV3 doc)
-{
+        {
     // [段1] 字段——懒注册标记（构造期 FlowId 未设置——首次 Tick 注册）
     sb.AppendLine("        private bool _cmdRegistered;");
     sb.AppendLine("");
@@ -245,7 +245,7 @@ private static void AppendCommandPump(StringBuilder sb, MauDocV3 doc)
         /// <param name="sb">输出缓冲</param>
         /// <param name="doc">IR</param>
         private static void AppendTickInboxes(StringBuilder sb, MauDocV3 doc)
-{
+        {
             bool anyParallel = false;
             for (int w = 0; w < doc.Wires.Count; w++)
             {

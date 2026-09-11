@@ -300,7 +300,13 @@ namespace CatHome4.Http
         private IResult ServeStatic(HttpContext ctx, string subDir, string mime)
         {
             string htmlRoot = System.IO.Path.GetFullPath(_htmlRootProvider.ResolveHtmlRoot());
-            string fileName = ctx.Request.RouteValues["file"]?.ToString() ?? "";
+            // [段2] 文件名取值——RouteValues 键可能缺失/null（替代 ?. + ?? 语法糖）
+            string fileName = "";
+            object fileValue = ctx.Request.RouteValues["file"];
+            if (fileValue != null)
+            {
+                fileName = fileValue.ToString()!;
+            }
             string filePath = System.IO.Path.GetFullPath(System.IO.Path.Combine(htmlRoot, subDir, fileName));
             // 路径穿越校验——解析后必须仍在 html 根内（C# 包 exp §六 TCP/HTTP 规则 9）
             if (!filePath.StartsWith(htmlRoot + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))

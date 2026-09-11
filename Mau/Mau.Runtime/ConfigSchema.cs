@@ -107,7 +107,7 @@ public string Type = "";
                     item.File = GetProp(el, "file");
                     item.Default = GetProp(el, "default");
                     item.Desc = GetProp(el, "desc");
-item.Sensitive = GetBoolProp(el, "sensitive", false);
+                    item.Sensitive = GetBoolProp(el, "sensitive", false);
                     item.Writable = GetBoolProp(el, "writable", true);
                     item.Type = GetProp(el, "type");
                     item.Min = GetProp(el, "min");
@@ -213,7 +213,7 @@ item.Sensitive = GetBoolProp(el, "sensitive", false);
 /// <param name = "error">失败原因（成功为空串）</param>
 /// <returns>是否通过</returns>
 public bool Validate(string key, string value, out string error)
-{
+        {
     error = "";
     Item? item = Find(key);
     if (item == null)
@@ -279,5 +279,6 @@ public bool Validate(string key, string value, out string error)
 
     error = "未知值类型: " + type;
     return false;
-}    }
+}
+    }
 }

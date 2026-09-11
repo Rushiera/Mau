@@ -17,7 +17,7 @@ namespace Mau.Translator
         /// <param name="sb">输出缓冲</param>
         /// <param name="doc">IR</param>
         private static void AppendWires(StringBuilder sb, MauDocV3 doc)
-{
+        {
             // [段0] 捕获结构体——任意 par+捕获导线存在时生成（后台回投载荷）
             bool anyCapturePar = false;
             for (int w = 0; w < doc.Wires.Count; w++)
@@ -227,7 +227,7 @@ namespace Mau.Translator
 
         ///
 private static void AppendWireExecuteParallel(StringBuilder sb, WireDefV3 wire, string pascal, string field, MauDocV3 doc)
-{
+        {
             sb.AppendLine("        private void " + pascal + "_Execute(int frame)");
             sb.AppendLine("        {");
             // [段1] Busy 门——后台动作在途防重入
@@ -391,7 +391,7 @@ private static void AppendWireExecuteParallel(StringBuilder sb, WireDefV3 wire, 
 /// <param name = "doc">IR</param>
 /// <param name = "flowName">流程名（组名——dll 名 FL_<组名>.dll）</param>
 private static void AppendGetMetaJson(StringBuilder sb, MauDocV3 doc, string flowName)
-{
+        {
         // 认领工具清单——主动传感器 BrickName=oa.is_open 且参数 [0]=="TOOL" → 参数 [1]=工具名（去重保序）
         // CollectArgs 字符串参数带引号序列化（"TOOL"）——剥引号后比对
         List<string> claims = new List<string>();
@@ -456,7 +456,7 @@ private static void AppendGetMetaJson(StringBuilder sb, MauDocV3 doc, string flo
 /// <param name = "doc">IR（未用——工具定义在积木侧）</param>
 /// <param name = "flowName">流程名（组名）</param>
 private static void AppendGetToolsJson(StringBuilder sb, MauDocV3 doc, string flowName)
-{
+        {
     string brickName = "tools." + flowName.ToLowerInvariant();
     BrickIndexEntry entry;
     string body;

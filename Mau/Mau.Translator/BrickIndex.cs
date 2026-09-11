@@ -74,7 +74,7 @@ namespace Mau.Translator
 /// </summary>
 /// <returns>名字 → 条目</returns>
 public static Dictionary<string, BrickIndexEntry> All()
-{
+        {
     return Load();
 }
         /// <summary>
@@ -82,7 +82,7 @@ public static Dictionary<string, BrickIndexEntry> All()
         /// </summary>
         /// <returns>名字 → 条目</returns>
         private static Dictionary<string, BrickIndexEntry> Load()
-{
+        {
             if (BrickIndex_Cache != null)
             {
                 return BrickIndex_Cache;
@@ -213,7 +213,7 @@ public static Dictionary<string, BrickIndexEntry> All()
         /// </summary>
         /// <returns>路径（未找到返回空串）</returns>
         private static string FindIndexPath()
-{
+        {
             string root = FindRepoRoot();
             if (root.Length == 0)
             {
@@ -265,5 +265,6 @@ public static Dictionary<string, BrickIndexEntry> All()
             }
 
             return dir.FullName;
-        }    }
+        }
+    }
 }

@@ -430,7 +430,7 @@ namespace CH4
         /// <param name="max">视图消息条数上限（1-2000）</param>
         /// <returns>会话视图 JSON</returns>
         public string BuildHistoryView(ChatSession session, int max)
-{
+        {
             ViewBlock[] blocks = session.GetViewBlocks();
             // 尾部 max 块——视图块裁剪（旧块丢弃；前端固定拉尾部 100）
             int start = 0;
@@ -469,25 +469,26 @@ namespace CH4
             resp["stats"] = stats;
             return JsonUtil.Serialize(resp);
         }
-/// <summary>
-/// 视图块载荷 JSON 字符串 → JSON 元素（history 响应内嵌对象；解析失败回退字符串）
-/// </summary>
-/// <param name = "json">载荷 JSON 字符串</param>
-/// <returns>JSON 元素或原字符串</returns>
-private object ParseViewPayload(string json)
-{
-    try
-    {
-        using (JsonDocument doc = JsonDocument.Parse(json))
+        /// <summary>
+        /// 视图块载荷 JSON 字符串 → JSON 元素（history 响应内嵌对象；解析失败回退字符串）
+        /// </summary>
+        /// <param name="json">载荷 JSON 字符串</param>
+        /// <returns>JSON 元素或原字符串</returns>
+        private object ParseViewPayload(string json)
         {
-            return doc.RootElement.Clone();
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(json))
+                {
+                    return doc.RootElement.Clone();
+                }
+            }
+            catch (Exception)
+            {
+                return json;
+            }
         }
     }
-    catch (Exception)
-    {
-        return json;
-    }
-}    }
 }
 
     /// <summary>

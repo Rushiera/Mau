@@ -181,7 +181,8 @@ private static HttpHost _httpHost;
                 LogStore.CloseWriters();
                 FrameStore.Close();
             }
-        }/// <summary>
+        }
+        /// <summary>
         /// 服务组装——OA/CommandBus/FlowRunner + DataBox 绑定 + 审计配置
         /// </summary>
         /// <param name="dllDir">语料生成物 dll 目录</param>
@@ -670,7 +671,7 @@ private static HttpHost _httpHost;
                 }
             }
             // 统一构筑链默认——public/app/Flows/（design-ch4-deploy §2.1）；仓库根探测（向上找 Mau.sln）
-string root = FindRepoRoot(AppContext.BaseDirectory);
+            string root = FindRepoRoot(AppContext.BaseDirectory);
             if (root.Length > 0)
             {
                 return Path.Combine(root, "public", "app", "Flows");

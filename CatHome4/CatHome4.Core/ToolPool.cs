@@ -121,7 +121,11 @@ namespace CH4
             {
                 _order.Add(def);
             }
-            string group = def.Group.Length > 0 ? def.Group : "";
+            string group = "";
+            if (def.Group.Length > 0)
+            {
+                group = def.Group;
+            }
             List<ToolDef> list;
             if (!_byGroup.TryGetValue(group, out list))
             {

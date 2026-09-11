@@ -121,7 +121,7 @@ namespace Mau.Development
         /// <param name="result">结果（BuildOutput 写入尾部输出）</param>
         /// <returns>构建是否成功</returns>
         private static bool BuildWithDotnet(string csprojPath, string dllDir, string groupName, MauGroupBuildResult result)
-{
+        {
     // 180s watchdog——dotnet build 大组可能长；管道死锁根治走共享 ProcessRunner（双流并行读）
     ProcessRunResult pr = ProcessRunner.RunAndCapture("dotnet", "build \"" + csprojPath + "\"", Path.GetDirectoryName(csprojPath) ?? ".", 180000);
     if (!pr.Started)

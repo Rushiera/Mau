@@ -82,7 +82,7 @@ namespace Mau.Runtime.Tests
 /// </summary>
 [Fact]
 public void AutoEncoding_TypeContractAndNewlinePreserve()
-{
+        {
             string baseDir = Path.Combine(Path.GetTempPath(), "mau_autoenc_" + Guid.NewGuid().ToString("N"));
             string rw = Path.Combine(baseDir, "rw");
             Directory.CreateDirectory(rw);
@@ -141,7 +141,7 @@ public void AutoEncoding_TypeContractAndNewlinePreserve()
 /// </summary>
 [Fact]
 public void Move_DirectoryAndAutoParent()
-{
+        {
     string baseDir = Path.Combine(Path.GetTempPath(), "mau_fs_move_" + Guid.NewGuid().ToString("N"));
     string rw = Path.Combine(baseDir, "rw");
     Directory.CreateDirectory(rw);
@@ -185,7 +185,7 @@ public void Move_DirectoryAndAutoParent()
 /// </summary>
 [Fact]
 public void ReplaceAuto_ThreeStateDiagnostics()
-{
+        {
     string baseDir = Path.Combine(Path.GetTempPath(), "mau_replauto_" + Guid.NewGuid().ToString("N"));
     string rw = Path.Combine(baseDir, "rw");
     Directory.CreateDirectory(rw);
@@ -241,7 +241,7 @@ public void ReplaceAuto_ThreeStateDiagnostics()
 /// </summary>
 [Fact]
 public void Grep_ContentSearchWithinRoot()
-{
+        {
     string baseDir = Path.Combine(Path.GetTempPath(), "mau_grep_" + Guid.NewGuid().ToString("N"));
     string rw = Path.Combine(baseDir, "rw");
     Directory.CreateDirectory(rw);
@@ -278,7 +278,7 @@ public void Grep_ContentSearchWithinRoot()
 /// </summary>
 [Fact]
 public void Find_DirWildcardPrefixForcesRecursive()
-{
+        {
     string baseDir = Path.Combine(Path.GetTempPath(), "mau_find_wild_" + Guid.NewGuid().ToString("N"));
     string rw = Path.Combine(baseDir, "rw");
     Directory.CreateDirectory(Path.Combine(rw, "sub", "deep"));
@@ -324,7 +324,7 @@ public void Find_DirWildcardPrefixForcesRecursive()
 /// </summary>
 [Fact]
 public void ReadLinesAuto_EncodingContractAndLineFormat()
-{
+        {
     string baseDir = Path.Combine(Path.GetTempPath(), "mau_rlauto_" + Guid.NewGuid().ToString("N"));
     string rw = Path.Combine(baseDir, "rw");
     Directory.CreateDirectory(rw);
@@ -380,7 +380,7 @@ string [ ]  noHit  =  fs . Grep ( rw ,  "HELLO" ,  "*" ,  100 ) ;  Assert . Empt
 /// </summary>
 [Fact]
 public void IgnoredDirs_TreeSkipped_GitInfo_AndSkipHint()
-{
+        {
     string baseDir = Path.Combine(Path.GetTempPath(), "mau_ignored_" + Guid.NewGuid().ToString("N"));
     string rw = Path.Combine(baseDir, "rw");
     Directory.CreateDirectory(rw);

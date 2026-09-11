@@ -117,7 +117,7 @@ namespace Mau.Cli
         /// <param name="arguments">参数</param>
         /// <returns>退出码为 0</returns>
         private static bool RunProcess(string fileName, string arguments)
-{
+        {
     int timeoutMs = 120000;
     // 管道死锁根治——共享 ProcessRunner 双流并行读（原顺序 ReadToEnd 在输出 >64KB 时假超时）
     Mau.Development.ProcessRunResult pr = Mau.Development.ProcessRunner.RunAndCapture(fileName, arguments, null, timeoutMs);

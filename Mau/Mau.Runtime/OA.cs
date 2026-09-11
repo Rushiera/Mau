@@ -203,7 +203,7 @@ namespace Mau.Runtime
         /// <param name="value">str 值</param>
         /// <returns>true=写入成功</returns>
         public bool SetStr(long officeId, long ownerId, string key, string value)
-{
+        {
             Office office;
 
             _threadGuard.AssertMainThread("OA.SetStr");

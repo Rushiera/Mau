@@ -608,7 +608,7 @@ public bool WhitespaceReply = false;
 /// </summary>
 [Fact]
 public void WhitespaceReply_AutoContinueAndResolve()
-{
+        {
     MockLlm llm = new MockLlm();
     llm.WhitespaceReply = true;
     llm.WhitespaceReplyTimes = 1;

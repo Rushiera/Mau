@@ -101,7 +101,7 @@ namespace Mau.Runtime.Tests
         /// </summary>
         [Fact]
         public void OAOpenWorkKeepsOneClaimOpportunityBeforeTimeout()
-{
+        {
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
             long ownerId = 1;
@@ -135,7 +135,7 @@ namespace Mau.Runtime.Tests
         /// </summary>
         [Fact]
         public void OAClaimAndCompleteKeepIndependentCopies()
-{
+        {
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
             long ownerId = 1;
@@ -162,7 +162,7 @@ namespace Mau.Runtime.Tests
         /// </summary>
         [Fact]
         public void OARelistReopensForOthers()
-{
+        {
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
             long ownerId = 1;
@@ -183,7 +183,7 @@ namespace Mau.Runtime.Tests
         /// </summary>
         [Fact]
         public void OAReleaseByWorkerRelistsWork()
-{
+        {
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
             long ownerId = 1;
@@ -202,7 +202,7 @@ namespace Mau.Runtime.Tests
         /// </summary>
         [Fact]
         public void OAGetSnapshotCountsStates()
-{
+        {
             ThreadGuard guard = new ThreadGuard();
             OA oa = new OA(guard);
             long ownerId = 1;

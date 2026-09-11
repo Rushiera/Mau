@@ -30,7 +30,7 @@ private static readonly object _ensureLock = new object ();        /// <summary>
         /// 确保 fixture DLL 已生成——缺失时动态构建
         /// </summary>
         internal static void Ensure()
-{
+        {
     // 构建串行化——并行测试类同时 Ensure 时，check-then-build 非原子导致 File.Copy 覆盖双击
     lock (_ensureLock)
     {

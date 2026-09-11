@@ -79,7 +79,7 @@ namespace Mau.Translator
 /// </summary>
 /// <param name = "doc">FSM 网络 IR</param>
 private static void CheckCmdKeys(MauDocV3 doc)
-{
+        {
     Dictionary<string, string> keys = new Dictionary<string, string>(StringComparer.Ordinal);
     for (int i = 0; i < doc.Sensors.Count; i++)
     {
@@ -398,7 +398,7 @@ private static void CheckCmdKeys(MauDocV3 doc)
         /// <param name="doc">诊断收集</param>
         /// <param name="boxTypes">盒子表</param>
         private static void CheckBoxArgs(List<string> args, string brickName, int line, MauDocV3 doc, Dictionary<string, string> boxTypes)
-{
+        {
             BrickIndexEntry entry;
             if (!BrickIndex.TryFind(brickName, out entry))
             {
@@ -440,7 +440,7 @@ private static void CheckCmdKeys(MauDocV3 doc)
         /// <param name="doc">诊断收集</param>
         /// <param name="boxTypes">盒子表</param>
         private static void CheckBoxRead(string key, int line, MauDocV3 doc, Dictionary<string, string> boxTypes)
-{
+        {
             if (!boxTypes.ContainsKey(key))
             {
                 // B1 豁免——全局盒（无 @ 前缀）写源在语料外——数据全局性哲学
@@ -459,7 +459,7 @@ private static void CheckCmdKeys(MauDocV3 doc)
         /// <param name="doc">诊断收集</param>
         /// <param name="boxTypes">盒子表（Key → 类型）</param>
         private static void CheckBrickCall(string name, List<string> args, int line, MauDocV3 doc, Dictionary<string, string> boxTypes)
-{
+        {
             BrickIndexEntry entry;
             if (!BrickIndex.TryFind(name, out entry))
             {
