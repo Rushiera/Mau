@@ -45,8 +45,8 @@
                 </div>
                 <div id="logevents"></div>
                 <div id="logcmd">
-                    <input id="cmdInput" placeholder="指令 — 如: ReadText corpus/ch4/io_test_cat.mau | QuickCat system|content | Chat 你好 | session count" onkeydown="if(event.key==='Enter')sendCmd()">
-                    <button id="cmdBtn" onclick="sendCmd()">发送</button>
+                    <input id="cmdInput" placeholder="指令 — 如: ReadText corpus/ch4/io_test_cat.mau | QuickCat system|content | Chat 你好 | session count">
+                    <button id="cmdBtn">发送</button>
                 </div>
                 <div id="cmdResult"></div>
             </section>
@@ -157,9 +157,9 @@
             <!-- 多猫管理区（P9.3d） -->
             <section id="tab-cats" class="tab">
                 <div id="catsbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid #222;align-items:center">
-                    <input id="catNewName" placeholder="新猫显示名（如 super）" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px" onkeydown="if(event.key==='Enter')catNew()">
-                    <button id="catNewBtn" style="background:#0e639c;border:none;color:#fff;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px" onclick="catNew()">新建</button>
-                    <button id="catsRefresh" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:5px 10px;cursor:pointer;font-family:inherit;font-size:12px" onclick="loadCats()">刷新</button>
+                    <input id="catNewName" placeholder="新猫显示名（如 super）" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
+                    <button id="catNewBtn" style="background:#0e639c;border:none;color:#fff;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">新建</button>
+                    <button id="catsRefresh" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:5px 10px;cursor:pointer;font-family:inherit;font-size:12px">刷新</button>
                 </div>
                 <div style="flex:1;overflow-y:auto;padding:8px 12px">
                     <table class="box-table" id="catsTable"><thead><tr><th style="width:22%">名称</th><th style="width:30%">ID</th><th style="width:14%">状态</th><th style="width:10%">端口</th><th style="width:24%">操作</th></tr></thead><tbody></tbody></table>
@@ -206,20 +206,9 @@
         </div>
     </div>
 
-    <!-- 前端版本自动化——data-version 组件统一填充（js/frontend-version.json——Vitest 每次运行自动递增；两外观层同函数同文件） -->
-    <script>
-        function loadUiVersion() {
-            fetch('js/frontend-version.json')
-                .then(function (r) { return r.json(); })
-                .then(function (v) {
-                    var txt = 'UI v' + v.version + ' | ' + (v.time || '');
-                    var els = document.querySelectorAll('[data-version]');
-                    for (var i = 0; i < els.length; i = i + 1) { els[i].textContent = txt; }
-                })
-                .catch(function () { /* 兜底——宿主未运行/文件缺失：保持占位 UI v? 静默降级 */ });
-        }
-        loadUiVersion();
-    </script>
+    <!-- 两页共用前端工具（loadUiVersion/applyUiConfig——js/ui-common.js 单一定义；配置接线复用 app.js loadConfig 的同一响应） -->
+    <script src="js/ui-common.js?v=__V__"></script>
+    <script>loadUiVersion();</script>
     <!-- 2026-09-08 体量治理——JS 四域外置（加载顺序：app 公共 → panel 多猫 → panel-apis API/QQBot 池 → panel-catcfg 每猫配置/受控根；对话已迁 chat.html 独立页——F2.1 index 纯管理面）；__V__ 宿主注入版本号（cache-busting） -->
     <script src="js/app.js?v=__V__"></script>
     <script src="js/panel.js?v=__V__"></script>

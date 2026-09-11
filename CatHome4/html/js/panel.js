@@ -65,39 +65,34 @@ function renderCatRow(cat) {
     if (cat.running) {
         var openBtn = document.createElement('button');
         openBtn.textContent = '打开对话';
-        openBtn.style.cssText = 'background:#0e639c;border:none;color:#fff;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+        openBtn.className = 'btn-mini primary';
         openBtn.onclick = function () { window.open('http://127.0.0.1:' + cat.port + '/', '_blank'); };
         tdOp.appendChild(openBtn);
         if (!cat.special) {
             var stopBtn = document.createElement('button');
             stopBtn.textContent = '停止';
-            stopBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+            stopBtn.className = 'btn-mini';
             stopBtn.onclick = function () { catAction('cat.stop ' + cat.id); };
             tdOp.appendChild(stopBtn);
         }
     } else {
         var startBtn = document.createElement('button');
         startBtn.textContent = '启动';
-        startBtn.style.cssText = 'background:#0e639c;border:none;color:#fff;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+        startBtn.className = 'btn-mini primary';
         startBtn.onclick = function () { catAction('cat.start ' + cat.id); };
         tdOp.appendChild(startBtn);
     }
-    if (cat.special) {
-        // Majordomo 特殊会话——无停止/删除，保留配置入口（openCatCfg 同多猫——panel-catcfg.js 提供）
-        var cfgBtn2 = document.createElement('button');
-        cfgBtn2.textContent = '配置';
-        cfgBtn2.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
-        cfgBtn2.onclick = function () { openCatCfg(cat.id, cat.name); };
-        tdOp.appendChild(cfgBtn2);
-    } else {
-        var cfgBtn = document.createElement('button');
-        cfgBtn.textContent = '配置';
-        cfgBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
-        cfgBtn.onclick = function () { openCatCfg(cat.id, cat.name); };
-        tdOp.appendChild(cfgBtn);
+    // 配置入口——special（Majordomo）与多猫共用（openCatCfg 由 panel-catcfg.js 提供）
+    var cfgBtn = document.createElement('button');
+    cfgBtn.textContent = '配置';
+    cfgBtn.className = 'btn-mini';
+    cfgBtn.onclick = function () { openCatCfg(cat.id, cat.name); };
+    tdOp.appendChild(cfgBtn);
+    if (!cat.special) {
+        // 多猫专属——删除（Majordomo 特殊会话无删除入口）
         var delBtn = document.createElement('button');
         delBtn.textContent = '删除';
-        delBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#f48771;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px';
+        delBtn.className = 'btn-mini danger';
         delBtn.onclick = function () {
             // 删除确认——猫销毁不可逆：配置（persona/工具面/API/注入/白名单）+ 前文全部丢失
             if (!window.confirm('删除猫「' + cat.name + '」？删除后该猫的所有配置与前文都将丢失（不可恢复）。')) { return; }
@@ -139,6 +134,7 @@ function catNew() {
 
 // 多猫区按钮绑定 + 列表初始化
 document.getElementById('catNewBtn').addEventListener('click', catNew);
+document.getElementById('catsRefresh').addEventListener('click', loadCats);
 catNewInput.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { catNew(); }
 });

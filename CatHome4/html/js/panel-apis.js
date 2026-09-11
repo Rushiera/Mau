@@ -54,18 +54,18 @@ function renderApiRow(api) {
     if (!api.isDefault) {
         var defBtn = document.createElement('button');
         defBtn.textContent = '设为默认';
-        defBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#dcdcaa;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+        defBtn.className = 'btn-mini accent';
         defBtn.onclick = function () { setDefaultApi(api); };
         tdOp.appendChild(defBtn);
     }
     var editBtn = document.createElement('button');
     editBtn.textContent = '编辑';
-    editBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+    editBtn.className = 'btn-mini';
     editBtn.onclick = function () { startApiEdit(api); };
     tdOp.appendChild(editBtn);
     var delBtn = document.createElement('button');
     delBtn.textContent = '删除';
-    delBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#f48771;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px';
+    delBtn.className = 'btn-mini danger';
     delBtn.onclick = function () {
         if (!confirm('删除 API 配置「' + api.displayName + '」？引用它的猫将回退空配置。')) { return; }
         fetch('/api/v1/llm-apis/delete', {
@@ -77,6 +77,9 @@ function renderApiRow(api) {
             .then(function (d) {
                 apisMsgEl.textContent = d.ok ? '已删除' : '删除失败: ' + d.error;
                 loadApis();
+            })
+            .catch(function (e) {
+                apisMsgEl.textContent = '请求失败: ' + e.message + '（宿主未运行或端点不存在？）';
             });
     };
     tdOp.appendChild(delBtn);
@@ -131,6 +134,9 @@ function apiSubmit() {
             apisMsgEl.textContent = d.ok ? (editingApiId.length > 0 ? '已保存' : '已新建') : '失败: ' + d.error;
             cancelApiEdit();
             loadApis();
+        })
+        .catch(function (e) {
+            apisMsgEl.textContent = '请求失败: ' + e.message + '（宿主未运行或端点不存在？）';
         });
 }
 
@@ -145,6 +151,9 @@ function setDefaultApi(api) {
         .then(function (d) {
             apisMsgEl.textContent = d.ok ? '默认端点已切换: ' + api.displayName : '失败: ' + d.error;
             loadApis();
+        })
+        .catch(function (e) {
+            apisMsgEl.textContent = '请求失败: ' + e.message + '（宿主未运行或端点不存在？）';
         });
 }
 
@@ -200,12 +209,12 @@ function renderQqBotRow(bot) {
     tdOp.style.whiteSpace = 'nowrap';
     var editBtn = document.createElement('button');
     editBtn.textContent = '编辑';
-    editBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+    editBtn.className = 'btn-mini';
     editBtn.onclick = function () { startQqBotEdit(bot); };
     tdOp.appendChild(editBtn);
     var delBtn = document.createElement('button');
     delBtn.textContent = '删除';
-    delBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#f48771;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:11px';
+    delBtn.className = 'btn-mini danger';
     delBtn.onclick = function () {
         if (!confirm('删除 QQ Bot「' + bot.displayName + '」？绑定它的猫将回退未绑定。')) { return; }
         fetch('/api/v1/qqbot-apis/delete', {
@@ -217,6 +226,9 @@ function renderQqBotRow(bot) {
             .then(function (d) {
                 qqbotsMsgEl.textContent = d.ok ? '已删除' : '删除失败: ' + d.error;
                 loadQqBots();
+            })
+            .catch(function (e) {
+                qqbotsMsgEl.textContent = '请求失败: ' + e.message + '（宿主未运行或端点不存在？）';
             });
     };
     tdOp.appendChild(delBtn);

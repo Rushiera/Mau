@@ -1,9 +1,9 @@
 ﻿// tests/unit/smoke.test.mjs —— 工具链冒烟测试（验证 Vitest + jsdom + 脚本加载链路可用）
 // F2.4 门禁迁移——主面板（index.html / app.js / panel.js）用例保留；对话用例迁至 chat-view.test.mjs（chat.html 独立页）
 import { readFile } from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
 import vm from 'node:vm';
 import { expect, test, beforeAll } from 'vitest';
+import { installDom, installMockEventSource, installMockFetch } from './mock-env.js';
 
 // 加载无导出脚本到全局（vm.runInThisContext——var/function 声明挂 globalThis，经 window 别名访问）
 async function runGlobalScript(url) {
@@ -13,22 +13,13 @@ async function runGlobalScript(url) {
 
 beforeAll(async () => {
   // F2.1 主面板纯管理面——index.html 不再加载 chat.js（对话迁 chat.html 独立页）
+  // DOM 装配与 mock → tests/unit/mock-env.js（P20-P3-17 公共件）
   const html = await readFile(new URL('../../index.html', import.meta.url), 'utf-8');
-  const dom = new JSDOM(html, { url: 'http://127.0.0.1:8080', runScripts: 'outside-only' });
-  globalThis.window = globalThis;
-  globalThis.document = dom.window.document;
-  Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
-  globalThis.Node = dom.window.Node;
-  globalThis.Event = dom.window.Event;
-  globalThis.HTMLElement = dom.window.HTMLElement;
-  class MockEventSource {
-    constructor(url) { this.url = url; this._listeners = {}; }
-    addEventListener(type, fn) { this._listeners[type] = fn; }
-    close() {}
-  }
-  globalThis.EventSource = MockEventSource;
-  globalThis.fetch = async () => ({ json: async () => ({}), ok: true });
-  // 主面板四域（app 公共 → panel 多猫 → panel-apis API/QQBot 池 → panel-catcfg 每猫配置/受控根——2026-09-08 拆分）
+  installDom(html);
+  installMockEventSource();
+  installMockFetch();
+  // 主面板五域（ui-common 公共 → app 公共 → panel 多猫 → panel-apis API/QQBot 池 → panel-catcfg 每猫配置/受控根）
+  await runGlobalScript(new URL('../../js/ui-common.js', import.meta.url));
   await runGlobalScript(new URL('../../js/app.js', import.meta.url));
   await runGlobalScript(new URL('../../js/panel.js', import.meta.url));
   await runGlobalScript(new URL('../../js/panel-apis.js', import.meta.url));
@@ -68,4 +59,23 @@ test('panel 拆分——API/QQBot 池 + 每猫配置函数已挂载（2026-09-08
 test('对话逻辑迁至 chat.html——app.js 无旧阶段模型分派', () => {
   expect(typeof window.chatOnLlm).toBe('undefined');
   expect(typeof window.chatSend).toBe('undefined');
+});
+
+test('renderCats 槽位行渲染——slots 非空不抛错（字符串条目兼容，P20-P1-1 回归）', () => {
+  // 修复前：slots 传字符串数组 → appendRow appendChild(string) 抛 TypeError
+  expect(() => {
+    window.renderCats([{
+      name: 'x', id: 1, faulted: false, faultReason: '',
+      status: {
+        stateLines: ['S_X=A'],
+        sensors: [{ name: 'P_A', value: true }],
+        slots: [{ name: 'R_1', available: 1, capacity: 2 }],
+        wires: [{ name: 'T_1', busy: false, lastTriggerFrame: 5, timedOut: false }]
+      }
+    }]);
+  }).not.toThrow();
+  const card = document.querySelector('#cats .cat-card');
+  expect(card).not.toBeNull();
+  expect(card.textContent).toContain('R_1 1/2');
+  expect(card.textContent).toContain('P_A=true');
 });

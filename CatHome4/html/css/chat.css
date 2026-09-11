@@ -169,5 +169,5 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 }
 .node-btn:hover {
     background: rgba(128, 128, 128, 0.18);
-    color: #333;
+    color: #e0e0e0;
 }

@@ -4,6 +4,9 @@
 // 加载顺序：chat-core.js 之前（chat.html 引导层引用 chat-md.js → chat-core.js → chat-note.js）
 // 输出约定：块级元素输出 HTML 字符串；文本全部经 mdEscapeHtml 转义——标签名/属性全部由本文件硬编码，无任何用户可控注入面
 
+// 行内标记扫描正则——** 优先于 *（交替顺序即优先级）；g 标志 + lastIndex 手动控制（递归重入安全：每轮重设）
+var MD_INLINE_MARK = /(\*\*|\*|`)/g;
+
 function mdEscapeHtml(s) {
     // 文本安全转义——MD 渲染唯一转义入口（XSS 防御：所有用户文本必须先过此函数）
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -15,14 +18,11 @@ function mdParseInline(text) {
     var pos = 0;
     var n = text.length;
     while (pos < n) {
-        var bold = text.indexOf('**', pos);
-        var italic = text.indexOf('*', pos);
-        var code = text.indexOf('`', pos);
-        var next = -1;
-        var kind = '';
-        if (bold >= 0 && (next < 0 || bold < next)) { next = bold; kind = '**'; }
-        if (italic >= 0 && italic !== bold && (next < 0 || italic < next)) { next = italic; kind = '*'; }
-        if (code >= 0 && (next < 0 || code < next)) { next = code; kind = '`'; }
+        // 标记扫描——单正则线性推进（原三连 indexOf 在超长回复 + 深嵌套下退化 O(n²)）
+        MD_INLINE_MARK.lastIndex = pos;
+        var m = MD_INLINE_MARK.exec(text);
+        var next = (m === null) ? -1 : m.index;
+        var kind = (m === null) ? '' : m[1];
         if (next < 0) {
             out += mdEscapeHtml(text.substring(pos));
             break;

@@ -5,10 +5,7 @@
 // 拆分（2026-09-08 体量治理）：渲染面（气泡/工具卡/注入报告/历史/roundsum）→ chat-view.js；本文件只保留状态与分发
 
 // [段1] 对话区状态（B4 同构——自 index.html 提取；P9.3d 独立对话页；F4 迁 view 协议）
-function escapeHtml(s) {
-    // 文本安全转义——聊天内容/Note 任务渲染共用（XSS 与格式双防）
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+// 公共工具在 js/ui-common.js：escapeHtml（文本转义）+ uiWarn（失败可见化）——本文件不再重复定义
 var chatMsgs = document.getElementById('chatMsgs');
 var chatInfo = document.getElementById('chatInfo');
 var chatInput = document.getElementById('chatSendInput');
@@ -152,11 +149,12 @@ function chatKeepAlive() {
     }, CHAT_TIMEOUT_MS);
 }
 
-function chatSealTextStreams() {
-    // 工具轮/新思考——seal 未终结的文本流式容器（防闪烁标记残留；宿主 text 整块为正常 seal 路径，此处兜底协议缺口）
+function chatSealStreams() {
+    // 工具轮/整块到达——seal 全部未终结的流式容器（text + reason；防闪烁标记残留——宿主整块为正常 seal 路径，此处兜底协议缺口）
+    // 只撤标记不删容器——容器仍须承接后续同 seq 流式或 replaceSeq 整块替换
     for (var k in viewContainers) {
         var c = viewContainers[k];
-        if (c && c.type === 'text') {
+        if (c && c.bubble) {
             c.bubble.classList.remove('streaming');
             c.bubble.classList.remove('streaming-wait');
         }
@@ -231,7 +229,7 @@ function chatOnStream(seq, payload) {
         // 思考流式——独立气泡流式展开（增量可见）；首 reasoning 进入思考态
         if (!viewContainers[seq]) {
             // 新思考容器——上一轮文本流式已终结（多轮工具循环残留兜底）
-            chatSealTextStreams();
+            chatSealStreams();
             var b = chatBubble('assistant', 'reason');
             b.classList.add('streaming');
             var det = chatReasonBlock('', true);
@@ -264,6 +262,7 @@ function chatOnStream(seq, payload) {
 function chatOnText(seq, replaceSeq, payload) {
     // 回复整块——replaceSeq≥0 且容器存在 → 替换流式容器；否则新建气泡
     // F3 MD 渲染——整块 content 一次渲染（流式阶段 textContent 追加，不渲染不完整字符流）；md-block 包裹=CSS 作用域锚点
+    chatSealStreams();   // 整块到达——seal 其余流式容器（残留 thinking 闪烁标记兜底）
     var content = payload.content || '';
     var html = '<div class="md-block">' + mdToHtml(content) + '</div>';
     // P6b 节点操作条——正式回复块底部两按钮（回滚/分支）；msgIndex<0（工具轮 seal 文本）不挂
@@ -306,7 +305,7 @@ function chatOnToolCard(payload) {
     // 工具卡整块（F4 无占位卡——工具卡以结果整块出现）
     chatKeepAlive();
     // 工具执行开始——上一轮文本流式已终结（宿主 seal 缺失兜底）
-    chatSealTextStreams();
+    chatSealStreams();
     var tb = chatBubble('assistant', 'tool');
     tb.appendChild(chatToolCard(payload));
     chatPhaseEnter('tool');
@@ -360,7 +359,7 @@ function chatOnControl(payload) {
             var newCtx = '前文 ' + chatFmtCount(u.context) + ' tokens';
             var oldCtx = chatInfo.textContent;
             if (oldCtx.indexOf('前文 ') >= 0) {
-                chatInfo.textContent = oldCtx.replace(/前文 [\d.]+[kK]? tokens/, newCtx);
+                chatInfo.textContent = oldCtx.replace(/前文 [\d.]+[kKmM]? tokens/, newCtx);
             } else {
                 chatInfo.textContent = oldCtx + ' | ' + newCtx;
             }
@@ -449,7 +448,9 @@ function chatLoadHistory() {
     fetch('/api/v1/history')
         .then(function (r) { return r.json(); })
         .then(function (d) {
-            chatRenderHistory(d);
+            // 会话归属落库——渲染层只渲染并返回 sessionId（P20-P3-7：渲染层不写全局状态）
+            var sid = chatRenderHistory(d);
+            if (sid) { CHAT_SESSION = sid; }
             chatSetState('idle');
         })
         .catch(function () {
@@ -521,7 +522,7 @@ function chatNewSession() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'session.new' })
-    }).catch(function () {});
+    }).catch(function (e) { uiWarn('新会话指令投递', e); });
     chatPendingReset = true;
     viewContainers = {};
     chatPhaseResetFull();
@@ -536,7 +537,7 @@ function chatPause() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'cat.pause' })
-    }).catch(function () {});
+    }).catch(function (e) { uiWarn('停止指令投递', e); });
 }
 
 // 刷新——纯前端重建界面气泡（重新拉历史渲染，不发指令）

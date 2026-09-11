@@ -21,7 +21,8 @@ var rawPaused = false;
 var lastFrame = -1;          // 快照帧号守卫——旧快照不覆盖新快照
 var fullSnapshot = null;     // 本地全快照——增量流式接收层维护（各页面渲染唯一数据源）
 var logs = [];               // 内存日志数组（Log 区真相源）
-var logDedupeKey = '';       // 已渲染最后一条日志的 key——拉取合并去重
+var logDedupeKey = '';       // 已渲染最后一条日志的 key——拉取合并去重（同帧精确比对）
+var logDedupeFrame = -1;     // 已渲染最后一条日志的帧号——拉取合并去重（数值单调比较，不受字典序影响）
 
 // [段2] 侧栏页签切换
 var tabs = document.querySelectorAll('#sidebar button');
@@ -64,7 +65,7 @@ fetch('/api/v1/snapshot?logs=200')
         if (s.frame >= lastFrame) { fullSnapshot = s; applySnapshot(s); lastFrame = s.frame; }
         refreshLogView();
     })
-    .catch(function () {});
+    .catch(function (e) { uiWarn('初始快照', e); });
 
 // [段3b] patch 合并——变化段合并进本地全快照（增量流式：接收层处理，页面渲染逻辑不变）
 function applyPatch(p) {
@@ -190,7 +191,10 @@ function appendRow(card, label, spans) {
     row.appendChild(k);
     for (var i = 0; i < spans.length; i++) {
         if (i > 0) { row.appendChild(document.createTextNode(' · ')); }
-        row.appendChild(spans[i]);
+        // 条目兼容——DOM 元素（sensors/wires 着色 span）与纯文本（slots 字符串数组）
+        var item = spans[i];
+        if (typeof item === 'string') { row.appendChild(document.createTextNode(item)); }
+        else { row.appendChild(item); }
     }
     card.appendChild(row);
 }
@@ -212,9 +216,8 @@ function renderBoxes(boxes) {
     for (var j = 0; j < boxes.length; j++) {
         var b = boxes[j];
         var gName = b.scope;
-        if (gName === 'global') {
-            gName = 'global';
-        } else if (flowMap[gName]) {
+        // 数字 scope → Flow 名（global / 未命中 scope 原样显示）
+        if (flowMap[gName]) {
             gName = flowMap[gName];
         }
         if (!groups[gName]) {
@@ -375,9 +378,12 @@ function pushLog(e) {
     appendLogDom(logs[logs.length - 1]);
 }
 function unshiftLog(e) {
-    // 拉取合并——跳过已渲染过的尾部（时间+帧+消息 去重键）
+    // 拉取合并去重——帧号数值单调比较（旧实现用字符串字典序，帧号位数变化时判定失真）
+    var f = (typeof e.frame === 'number') ? e.frame : (parseInt(e.frame, 10) || 0);
+    if (logDedupeFrame >= 0 && f < logDedupeFrame) { return; }
     var key = e.time + '|' + e.frame + '|' + e.message;
-    if (logDedupeKey !== '' && key <= logDedupeKey) { return; }
+    if (f === logDedupeFrame && key === logDedupeKey) { return; }
+    logDedupeFrame = f;
     logDedupeKey = key;
     logs.push(e);
 }
@@ -406,7 +412,9 @@ function logClass(e) {
 logFilterEl.addEventListener('input', refreshLogView);
 function refreshLogView() {
     logEvents.textContent = '';
-    for (var i = 0; i < logs.length; i++) {
+    // 与 appendLogDom 的 DOM 上限一致——只渲染最近 2000 条（防重建后 DOM 膨胀到内存上限 3000）
+    var start = logs.length > 2000 ? logs.length - 2000 : 0;
+    for (var i = start; i < logs.length; i++) {
         var div = document.createElement('div');
         div.className = logClass(logs[i]);
         div.textContent = logText(logs[i]);
@@ -460,10 +468,11 @@ document.getElementById('logRefresh').addEventListener('click', function () {
         .then(function (s) {
             logs = [];
             logDedupeKey = '';
+            logDedupeFrame = -1;
             for (var i = 0; i < s.logs.length; i++) { unshiftLog(s.logs[i]); }
             refreshLogView();
         })
-        .catch(function () {});
+        .catch(function (e) { uiWarn('日志拉取', e); });
 });
 
 // [段10] 原始区暂停/继续
@@ -475,7 +484,7 @@ rawPauseBtn.addEventListener('click', function () {
         fetch('/api/v1/snapshot')
             .then(function (r) { return r.json(); })
             .then(function (s) { if (s.frame >= lastFrame) { fullSnapshot = s; applySnapshot(s); } })
-            .catch(function () {});
+            .catch(function (e) { uiWarn('原始区快照恢复', e); });
     }
 });
 
@@ -498,6 +507,11 @@ function sendCmd() {
             cmdResultEl.textContent = '请求失败: ' + err;
         });
 }
+// 指令入口按钮绑定（F2.3 内联 onclick 迁出——与 chat.html 规范统一）
+document.getElementById('cmdBtn').addEventListener('click', sendCmd);
+document.getElementById('cmdInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { sendCmd(); }
+});
 
 // [段12] 配置区——GET/POST /api/v1/config（v3 配置区；敏感键服务端掩码，POST 拒绝掩码回写）
 var configTableBody = document.querySelector('#configTable tbody');
@@ -510,15 +524,7 @@ function loadConfig() {
             renderConfig(items);
             applyUiConfig(items);
         })
-        .catch(function () {});
-}
-// ui.* 字号配置→CSS 变量（P8.5d 接线——读配置覆盖 CSS 默认；读不到默认 14px；全局字号配置已移除——静态提档替代 2026-08-28）
-function applyUiConfig(items) {
-    var chat = 14;
-    for (var i = 0; i < (items || []).length; i++) {
-        if (items[i].key === 'ui.chat_font_size') { var c = parseInt(items[i].value, 10); if (c > 0) { chat = c; } }
-    }
-    document.documentElement.style.setProperty('--chat-font-size', chat + 'px');
+        .catch(function (e) { uiWarn('配置加载', e); });
 }
 function renderConfig(items) {
     configTableBody.textContent = '';
@@ -531,7 +537,8 @@ function renderConfig(items) {
         var td2 = document.createElement('td');
         var inp = document.createElement('input');
         inp.value = it.value;
-        inp.style.cssText = 'width:100%;background:#1a1a1a;border:1px solid #2a2a2a;color:#d4d4d4;padding:3px 6px;font-family:inherit;font-size:11px;';
+        inp.className = 'input-mini text';
+        inp.style.width = '100%';
         td2.appendChild(inp);
         var td3 = document.createElement('td');
         td3.className = 'box-tag';
@@ -539,7 +546,7 @@ function renderConfig(items) {
         var td4 = document.createElement('td');
         var btn = document.createElement('button');
         btn.textContent = '保存';
-        btn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:2px 8px;cursor:pointer;font-family:inherit;font-size:11px;';
+        btn.className = 'btn-mini tight';
         btn.addEventListener('click', (function (k, input) {
             return function () { saveConfig(k, input.value); };
         })(it.key, inp));

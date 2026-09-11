@@ -174,7 +174,7 @@ function renderInjectList(list) {
             row.appendChild(txt);
             var rm = document.createElement('button');
             rm.textContent = '移除';
-            rm.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#f48771;padding:2px 8px;cursor:pointer;font-family:inherit;font-size:11px';
+            rm.className = 'btn-mini tight danger';
             rm.onclick = function () {
                 catCfgInjectList.splice(idx, 1);
                 renderInjectList(catCfgInjectList);
@@ -223,9 +223,7 @@ document.getElementById('catCfgInjectAddBtn').onclick = function () {
     input.value = '';
     renderInjectList(catCfgInjectList);
 };
-// 默认猫配置入口——由多猫页 Majordomo 行「配置」按钮承担（F2.1 index 对话页签移除；openCatCfg('majordomo') 见 renderCatRow special 分支）
-var elChatCfg = document.getElementById('chatCfg');
-if (elChatCfg) { elChatCfg.onclick = function () { openCatCfg('majordomo', 'majordomo'); }; }
+// 默认猫配置入口——统一由多猫页 Majordomo 行「配置」按钮承担（openCatCfg 见 panel.js renderCatRow；F2.1 对话页签已移除，页面无独立 chatCfg 元素）
 
 // M4e 猫级白名单——启用根勾选（allRoots 全局池；enabledRoots 当前猫已启用；workspace 强制常驻不可取消）
 function renderRootChecks(allRoots, enabledRoots) {
@@ -301,7 +299,7 @@ function renderTplInject() {
             row.appendChild(txt);
             var rm = document.createElement('button');
             rm.textContent = '移除';
-            rm.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#f48771;padding:2px 8px;cursor:pointer;font-family:inherit;font-size:11px';
+            rm.className = 'btn-mini tight danger';
             rm.onclick = function () {
                 tplInjectList.splice(idx, 1);
                 renderTplInject();
@@ -389,15 +387,17 @@ function renderRoots() {
             var tdOp = document.createElement('td');
             var editBtn = document.createElement('button');
             editBtn.textContent = '编辑';
-            editBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#4ec9b0;padding:2px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+            editBtn.className = 'btn-mini tight info';
             editBtn.onclick = function () {
                 enterEditRoot(idx);
             };
             tdOp.appendChild(editBtn);
             var rm = document.createElement('button');
             rm.textContent = '移除';
-            rm.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#f48771;padding:2px 8px;cursor:pointer;font-family:inherit;font-size:11px';
+            rm.className = 'btn-mini tight danger';
             rm.onclick = function () {
+                // 移除确认——保存并重启后生效；未保存前可刷新页面恢复
+                if (!window.confirm('移除受控根「' + rootsList[idx].id + '」？（保存并重启宿主后生效）')) { return; }
                 rootsList.splice(idx, 1);
                 renderRoots();
             };
@@ -419,13 +419,15 @@ function enterEditRoot(idx) {
                 var tdId = document.createElement('td');
                 var idIn = document.createElement('input');
                 idIn.value = rootsList[rowIdx].id;
-                idIn.style.cssText = 'width:90%;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:3px 6px;font-family:inherit;font-size:11px';
+                idIn.className = 'input-mini';
+                idIn.style.width = '90%';
                 tdId.appendChild(idIn);
                 tr.appendChild(tdId);
                 var tdPath = document.createElement('td');
                 var pathIn = document.createElement('input');
                 pathIn.value = rootsList[rowIdx].path;
-                pathIn.style.cssText = 'width:96%;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:3px 6px;font-family:inherit;font-size:11px';
+                pathIn.className = 'input-mini';
+                pathIn.style.width = '96%';
                 tdPath.appendChild(pathIn);
                 tr.appendChild(tdPath);
                 var tdW = document.createElement('td');
@@ -439,13 +441,13 @@ function enterEditRoot(idx) {
                 wSel.appendChild(optW);
                 wSel.appendChild(optR);
                 wSel.value = rootsList[rowIdx].writable ? 'true' : 'false';
-                wSel.style.cssText = 'background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:3px 6px;font-family:inherit;font-size:11px';
+                wSel.className = 'input-mini';
                 tdW.appendChild(wSel);
                 tr.appendChild(tdW);
                 var tdOp = document.createElement('td');
                 var okBtn = document.createElement('button');
                 okBtn.textContent = '确定';
-                okBtn.style.cssText = 'background:#0e639c;border:none;color:#fff;padding:2px 8px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:4px';
+                okBtn.className = 'btn-mini primary tight';
                 okBtn.onclick = function () {
                     var nid = idIn.value.trim();
                     var npath = pathIn.value.trim();
@@ -470,7 +472,7 @@ function enterEditRoot(idx) {
                 tdOp.appendChild(okBtn);
                 var cancelBtn = document.createElement('button');
                 cancelBtn.textContent = '取消';
-                cancelBtn.style.cssText = 'background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:2px 8px;cursor:pointer;font-family:inherit;font-size:11px';
+                cancelBtn.className = 'btn-mini tight';
                 cancelBtn.onclick = function () {
                     renderRoots();
                 };

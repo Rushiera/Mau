@@ -226,10 +226,9 @@ function chatRenderHistory(data) {
         }
     }
     // P9.3 会话归属动态化——SSE sessionId 随会话 ID（时间戳）变化；history 先于任何 view 事件到达（loading→idle 时序保证）
-    if (data.sessionId) {
-        CHAT_SESSION = data.sessionId;
-    }
-    var infoText = '会话 ' + chatFmtCount(data.count || 0) + ' 条 | sessionId=' + CHAT_SESSION;
+    // P20-P3-7 归属修正——渲染层不写全局状态：sessionId 随返回值交调用方（chat-core.chatLoadHistory）落库
+    var sid = data.sessionId || CHAT_SESSION;
+    var infoText = '会话 ' + chatFmtCount(data.count || 0) + ' 条 | sessionId=' + sid;
     var hs = data.stats;
     if (hs) {
         // 前文长度 = 最近一次请求的单次 prompt（context 字段）；旧数据无 context 时回退累计值
@@ -238,6 +237,7 @@ function chatRenderHistory(data) {
     }
     chatInfo.textContent = infoText;
     chatScrollBottom(true);
+    return data.sessionId || '';
 }
 
 // P6b 节点操作条——text 块底部两按钮（⟲ 回滚 / ⧉ 分支）；指令走 command 总线（单向数据流：前端零寻路，只回传 MsgIndex）
@@ -256,7 +256,7 @@ function chatAppendNodeActions(bubble, msgIndex) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: 'session.rollback ' + msgIndex })
-        }).catch(function () {});
+        }).catch(function (e) { uiWarn('回滚指令投递', e); });
         chatInfo.textContent = '回滚已投递——建议刷新浏览器页面';
     });
     var fb = document.createElement('button');
@@ -271,7 +271,7 @@ function chatAppendNodeActions(bubble, msgIndex) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: 'session.fork ' + name + ' ' + msgIndex })
-        }).catch(function () {});
+        }).catch(function (e) { uiWarn('分支指令投递', e); });
         chatInfo.textContent = '分支指令已投递——请回到主控界面选择新会话';
     });
     bar.appendChild(rb);

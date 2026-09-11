@@ -103,3 +103,14 @@ h2 { font-size: 15px; color: #4ec9b0; margin: 10px 12px 6px 12px; font-weight: n
 .box-val-n { color: #4fc1ff; }
 .box-val-s { color: #d4d4d4; }
 .box-val-o { color: #c586c0; }
+
+/* ── 表格内动态控件（P20-P3-10——原 inline style 类化；等价替换：同值同名，按钮间距用相邻兄弟选择器） ── */
+.btn-mini { background: #1f1f1f; border: 1px solid #2a2a2a; color: #9a9a9a; padding: 3px 8px; cursor: pointer; font-family: inherit; font-size: 11px; }
+.btn-mini + .btn-mini { margin-left: 4px; }
+.btn-mini.danger { color: #f48771; }
+.btn-mini.accent { color: #dcdcaa; }
+.btn-mini.info { color: #4ec9b0; }
+.btn-mini.primary { background: #0e639c; border: none; color: #fff; }
+.btn-mini.tight { padding: 2px 8px; }
+.input-mini { background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 3px 6px; font-family: inherit; font-size: 11px; }
+.input-mini.text { color: #d4d4d4; }

@@ -94,11 +94,8 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ ok: true, service: 'ch4-frontend-test', port: PORT }));
     return;
   }
-  if (req.url === '/api/test/unit') {
-    runTest(res);
-    return;
-  }
-  if (req.url === '/api/test') {
+  // 测试路由（两别名同入口——直调 vitest run）
+  if (req.url === '/api/test' || req.url === '/api/test/unit') {
     runTest(res);
     return;
   }

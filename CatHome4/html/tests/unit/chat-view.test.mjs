@@ -19,11 +19,13 @@ beforeAll(async () => {
   globalThis.document = chatDom.window.document;
   globalThis.Node = chatDom.window.Node;
   globalThis.HTMLElement = chatDom.window.HTMLElement;
-  // F2.4 门禁迁移——加载外部模块（MD 解析器 + 渲染面 + 对话核心 + Note 面板；不执行引导层 SSE/按钮绑定/初始化）
+  // F2.4 门禁迁移——加载外部模块（公共工具 + MD 解析器 + 渲染面 + 对话核心 + Note 面板；不执行引导层 SSE/按钮绑定/初始化）
+  const common = await readFile(new URL('../../js/ui-common.js', import.meta.url), 'utf-8');
   const md = await readFile(new URL('../../js/chat-md.js', import.meta.url), 'utf-8');
   const view = await readFile(new URL('../../js/chat-view.js', import.meta.url), 'utf-8');
   const core = await readFile(new URL('../../js/chat-core.js', import.meta.url), 'utf-8');
   const note = await readFile(new URL('../../js/chat-note.js', import.meta.url), 'utf-8');
+  vm.runInThisContext(common, { filename: 'ui-common.js' });
   vm.runInThisContext(md, { filename: 'chat-md.js' });
   vm.runInThisContext(view, { filename: 'chat-view.js' });
   vm.runInThisContext(core, { filename: 'chat-core.js' });
@@ -631,4 +633,24 @@ test('chatRenderStatus 总时长——四态累计（秒进位分）', () => {
   // 单态时间走 chatFmtMs——分进位
   expect(chatStatus.textContent).toContain('思考 1分5.0秒');
   expect(chatStatus.textContent).toContain('链路 10.0s');
+});
+
+// ── F6 竞态补齐（P20-P2-1 回归）——整块/工具卡到达 seal 残留 reason 流式容器 ──
+test('F6 seal 补齐——工具卡与 text 整块到达后残留 reason 容器闪烁标记撤除', () => {
+  // 场景一：思考流式 → 工具卡（多轮工具循环常见路径）
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考中' }, replaceSeq: -1 });
+  const rb = chatMsgs.querySelector('.chat-reason').closest('.chat-bubble');
+  expect(rb.classList.contains('streaming')).toBe(true);
+  window.chatOnView({ seq: 30, renderType: 'toolcard', payload: { name: 'time', arguments: '{}', result: 'R' }, replaceSeq: -1 });
+  expect(rb.classList.contains('streaming')).toBe(false);
+  // 容器保留——仍须承接后续同 seq 流式或 replaceSeq 整块替换
+  expect(window.viewContainers[11]).not.toBeUndefined();
+
+  // 场景二：思考流式 → 回复 text 整块（无 reason 整块替换路径）
+  window.chatOnView({ seq: 12, renderType: 'stream', payload: { kind: 'reasoning', text: '二轮思考' }, replaceSeq: -1 });
+  const rb2 = chatMsgs.querySelectorAll('.chat-reason')[1].closest('.chat-bubble');
+  expect(rb2.classList.contains('streaming')).toBe(true);
+  window.chatOnView({ seq: 20, renderType: 'text', payload: { content: '最终回复' }, replaceSeq: -1 });
+  expect(rb2.classList.contains('streaming')).toBe(false);
+  expect(chatMsgs.querySelector('.md-block')).not.toBeNull();
 });

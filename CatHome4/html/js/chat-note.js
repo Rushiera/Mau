@@ -64,7 +64,9 @@ function noteAdd() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'note.add ' + text })
-    }).then(function () { input.value = ''; });
+    }).then(function () {
+        input.value = '';
+    }).catch(function (e) { uiWarn('Note 任务新增', e); });
 }
 
 function noteStart() {
@@ -78,7 +80,7 @@ function noteStart() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'note.start' })
-    });
+    }).catch(function (e) { uiWarn('Note 启动指令投递', e); });
 }
 
 function noteOnEvent(d) {
