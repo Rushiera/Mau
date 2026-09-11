@@ -94,7 +94,7 @@ private static HttpHost _httpHost;
         }
 
         /// <summary>
-        /// 主程序入口——参数路由：无参=交互模式 / --selfcheck=启动自检 / --run "指令"=单指令脚本模式 / --script &lt;file&gt;=指令文件批量模式（P3a 热重载实测通道）
+        /// 主程序入口——参数路由：无参=交互模式 / --selfcheck=启动自检 / --run "指令"=单指令脚本模式 / --script &lt;file&gt;=指令文件批量模式（P3a 热重载实测通道）/ --probe-llm &lt;目标&gt;=LLM 返回体探针（方案 B 诊断通道——不启动宿主）
         /// </summary>
         public static int Main(string[] args)
         {
@@ -109,6 +109,11 @@ private static HttpHost _httpHost;
             }
             try
             {
+            // [段1b] 探针通道——LLM 返回体结构诊断（方案 B：宿主能力；不启动宿主/不占端口/不载语料，先于 Bootstrap 返回）
+            if (HasProbeLlmArg(args))
+            {
+                return RunProbeLlm(args);
+            }
             // [段2] 服务组装 + 语料加载
             string dllDir = FindDllDir(args);
             try

@@ -21,6 +21,7 @@ namespace Mau.Providers
         /// <summary>
         /// SSE 帧翻译——增量事件流（零 catch：畸形帧/缺 [DONE] 全部事件化；取消异常冒泡给调用方）。
         /// [DONE] 到达即终止（忽略余帧——实测 [DONE] 后可能有余帧）。
+        /// usage 事件每请求一次——双形态兼容（独立统计尾帧 / 与 finish 帧同构），双发供应商以最后一份为准；流末统一产出，缺 [DONE] 不产。
         /// </summary>
         /// <param name="parser">SseParser 实例</param>
         /// <param name="ct">取消令牌</param>
@@ -28,6 +29,8 @@ namespace Mau.Providers
         private static async IAsyncEnumerable<LlmStreamEvent> TranslateSse(SseParser<string> parser, [EnumeratorCancellation] CancellationToken ct)
         {
             bool done = false;
+            // [段0-暂存] usage——双发形态去重：本处只缓存，流末统一产一次事件（同一请求不得累加两次）
+            string lastUsage = "";
             // [段0] 工具调用聚合——按 index 累积（design A.5：id/name 仅首帧；arguments 是累积增量需拼接后整体解析）
             Dictionary<int, string> toolIds = new Dictionary<int, string>();
             Dictionary<int, string> toolNames = new Dictionary<int, string>();
@@ -41,7 +44,17 @@ namespace Mau.Providers
                     done = true;
                     break;
                 }
-                // [段2] 帧解析——delta.content/reasoning_content 判空再产事件（空首帧不开块；空 delta 帧跳过）
+                // [段2] usage 无条件解析——双形态兼容（2026-09-11 修复：同帧形态曾被互斥分支丢弃）
+                // 形态①独立 usage-only 尾帧（DeepSeek 官方——choices 空数组 + usage 对象）
+                // 形态②与 finish 帧同构（opencode zen v4.1 后端——delta 非空同帧携带 usage）
+                // 形态③双发（Foldin——finish 帧与独立尾帧各带一份）→ 本处只缓存，流末统一产一次事件
+                // 原实现置于 TryParseDelta 的 else 分支 → 形态②永远走不到（token 统计全零根因）；CH2 原实现为帧入口无条件提取，移植时结构漂移
+                string usageJson = "";
+                if (TryParseUsage(item.Data, out usageJson) && usageJson.Length > 0)
+                {
+                    lastUsage = usageJson;
+                }
+                // [段2b] 帧解析——delta.content/reasoning_content 判空再产事件（空首帧不开块；空 delta 帧跳过）
                 string text;
                 string reasoning;
                 bool parsed = TryParseDelta(item.Data, out text, out reasoning);
@@ -55,17 +68,8 @@ namespace Mau.Providers
                     {
                         yield return new LlmStreamEvent(LlmStreamKind.Reasoning, reasoning);
                     }
-                    // [段2b] tool_calls 增量——按 index 聚合（与文本/思考同帧可并存）
+                    // [段2c] tool_calls 增量——按 index 聚合（与文本/思考同帧可并存）
                     AccumulateToolCalls(item.Data, toolIds, toolNames, toolArgs, toolOrder);
-                }
-                else
-                {
-                    // [段2c] usage-only 尾帧——choices 空数组 + usage 对象（CH2 移植：include_usage 请求后服务端在 [DONE] 前发完整统计块）
-                    string usageJson = "";
-                    if (TryParseUsage(item.Data, out usageJson) && usageJson.Length > 0)
-                    {
-                        yield return new LlmStreamEvent(LlmStreamKind.Usage, usageJson);
-                    }
                 }
             }
             // [段3] 完整性检查——无 [DONE] 提前结束 = STREAM_CLOSED（模型调用不可信，按失败处理）
@@ -74,7 +78,12 @@ namespace Mau.Providers
                 yield return new LlmStreamEvent(LlmStreamKind.Error, "ERR|STREAM_CLOSED|SSE 流未以 [DONE] 结束");
                 yield break;
             }
-            // [段4] 工具调用完整列表——finish 后一次性发出（聚合后的 arguments 为完整 JSON——消费方整体解析）
+            // [段4] usage 事件——每请求一次（双发形态以最后一个为准；消费方按请求累加，同一请求不重复计数）
+            if (lastUsage.Length > 0)
+            {
+                yield return new LlmStreamEvent(LlmStreamKind.Usage, lastUsage);
+            }
+            // [段5] 工具调用完整列表——finish 后一次性发出（聚合后的 arguments 为完整 JSON——消费方整体解析）
             if (toolOrder.Count > 0)
             {
                 yield return new LlmStreamEvent(LlmStreamKind.ToolCalls, BuildToolCallsJson(toolIds, toolNames, toolArgs, toolOrder));
@@ -355,7 +364,8 @@ private static string BuildToolCallsJson(Dictionary<int, string> ids, Dictionary
             return builder.ToString();
         }
         /// <summary>
-        /// 解析 usage-only 尾帧——提取 prompt/completion/cacheHit（双格式：DeepSeek prompt_cache_hit_tokens / OpenAI 兼容 prompt_tokens_details.cached_tokens）。
+        /// 解析 usage 帧——提取 prompt/completion/cacheHit（双格式：DeepSeek prompt_cache_hit_tokens / OpenAI 兼容 prompt_tokens_details.cached_tokens）。
+        /// 双形态：独立 usage-only 尾帧 / 与 finish 帧同构（opencode zen v4.1 后端——delta 非空同帧携带 usage）——调用方无条件调用，不做 choices 判空前置。
         /// 全零返回 false（无有效统计不产事件）；格式：{"prompt":N,"completion":N,"cacheHit":N}。
         /// </summary>
         /// <param name="data">帧 data 载荷</param>
@@ -365,6 +375,11 @@ private static string BuildToolCallsJson(Dictionary<int, string> ids, Dictionary
         {
             usageJson = "";
             if (data == null || data.Length == 0)
+            {
+                return false;
+            }
+            // 早退——帧内无 usage 字段直接跳过（usage 帧占比 <1%，避免每帧 JSON 解析开销）
+            if (data.IndexOf("\"usage\"", StringComparison.Ordinal) < 0)
             {
                 return false;
             }
@@ -415,6 +430,83 @@ private static string BuildToolCallsJson(Dictionary<int, string> ids, Dictionary
             {
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 诊断回放——用运行时同源解析函数逐帧重放 usage（宿主 CLI --probe-llm 消费；2026-09-11）。
+        /// 口径与 TranslateSse 一致：逐帧 TryParseUsage，取最后一个有效 usage（同一请求只统计一次）。
+        /// 用途：探针抓帧后直接验证"运行时能否解析到 token"——无需启动宿主即可回归。
+        /// </summary>
+        /// <param name="frames">SSE data 载荷序列</param>
+        /// <returns>回放结果 JSON（usageFrames/prompt/completion/cacheHit）</returns>
+        public static string ReplayUsageFrames(string[] frames)
+        {
+            int usageFrames = 0;
+            string lastUsage = "";
+            if (frames != null)
+            {
+                for (int i = 0; i < frames.Length; i = i + 1)
+                {
+                    string usageJson = "";
+                    if (TryParseUsage(frames[i], out usageJson) && usageJson.Length > 0)
+                    {
+                        usageFrames = usageFrames + 1;
+                        lastUsage = usageJson;
+                    }
+                }
+            }
+            long prompt = 0;
+            long completion = 0;
+            long cacheHit = 0;
+            if (lastUsage.Length > 0)
+            {
+                try
+                {
+                    using (JsonDocument doc = JsonDocument.Parse(lastUsage))
+                    {
+                        JsonElement root = doc.RootElement;
+                        prompt = ReadReplayNumber(root, "prompt");
+                        completion = ReadReplayNumber(root, "completion");
+                        cacheHit = ReadReplayNumber(root, "cacheHit");
+                    }
+                }
+                catch
+                {
+                    // 回放解析失败保持零值——诊断面不抛异常
+                }
+            }
+            StringBuilder builder = new StringBuilder();
+            builder.Append("{\"replayed\":true,\"usageFrames\":");
+            builder.Append(usageFrames.ToString());
+            builder.Append(",\"prompt\":");
+            builder.Append(prompt.ToString());
+            builder.Append(",\"completion\":");
+            builder.Append(completion.ToString());
+            builder.Append(",\"cacheHit\":");
+            builder.Append(cacheHit.ToString());
+            builder.Append("}");
+            return builder.ToString();
+        }
+
+        /// <summary>
+        /// 回放数值读取——缺失/非数值返回 0。
+        /// </summary>
+        /// <param name="obj">父对象</param>
+        /// <param name="name">字段名</param>
+        /// <returns>数值或 0</returns>
+        private static long ReadReplayNumber(JsonElement obj, string name)
+        {
+            JsonElement value;
+            if (!obj.TryGetProperty(name, out value) || value.ValueKind != JsonValueKind.Number)
+            {
+                return 0;
+            }
+            long number;
+            if (!value.TryGetInt64(out number))
+            {
+                return 0;
+            }
+            return number;
         }
     }
 }
