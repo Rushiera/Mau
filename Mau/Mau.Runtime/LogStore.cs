@@ -276,6 +276,7 @@ namespace Mau.Runtime
                             _errWriter.WriteLine(line);
                         }
                         FlushIfDue();
+                        RotateIfDue();
                     }
                 }
                 catch
@@ -436,6 +437,61 @@ namespace Mau.Runtime
                     System.IO.Directory.CreateDirectory(dir);
                 }
                 _logWriter = OpenWriter(LogFilePath);
+            }
+        }
+
+        /// <summary>单日志文件轮转上限——5MB（R1-P1-02：磁盘三文件防无限膨胀）</summary>
+        private const long MaxLogFileBytes = 5L * 1024 * 1024;
+
+        /// <summary>
+        /// 轮转检查——任一文件超上限 → 改名归档 + 新建同名继续写（R1-P1-02）。
+        /// 内存总账无上限保留（预期设计）；磁盘面收敛。
+        /// </summary>
+        private static void RotateIfDue()
+        {
+            try
+            {
+                if (_logWriter != null && _logWriter.BaseStream.Length >= MaxLogFileBytes)
+                {
+                    RotateWriter(ref _logWriter, LogFilePath);
+                }
+                if (_oaWriter != null && _oaWriter.BaseStream.Length >= MaxLogFileBytes)
+                {
+                    RotateWriter(ref _oaWriter, System.IO.Path.Combine(_runDir, "oa_all.txt"));
+                }
+                if (_errWriter != null && _errWriter.BaseStream.Length >= MaxLogFileBytes)
+                {
+                    RotateWriter(ref _errWriter, System.IO.Path.Combine(_runDir, "err_all.txt"));
+                }
+            }
+            catch
+            {
+                // 轮转异常——保留现状继续写（磁盘异常不阻断日志主链）
+            }
+        }
+
+        /// <summary>
+        /// 轮转单个写者——关闭 → 改名归档（时间戳后缀）→ 新建同名写者继续写。
+        /// </summary>
+        /// <param name="writer">写者引用</param>
+        /// <param name="path">当前文件路径</param>
+        private static void RotateWriter(ref System.IO.StreamWriter writer, string path)
+        {
+            try
+            {
+                writer.Flush();
+                writer.Dispose();
+                string archive = path + "." + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+                if (System.IO.File.Exists(archive))
+                {
+                    archive = archive + "." + Guid.NewGuid().ToString("N").Substring(0, 4);
+                }
+                System.IO.File.Move(path, archive);
+                writer = OpenWriter(path);
+            }
+            catch
+            {
+                // 轮转失败——保留当前写者（下次写入再试；日志主链不受影响）
             }
         }
 

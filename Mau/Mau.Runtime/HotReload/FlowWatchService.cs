@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
@@ -177,30 +177,35 @@ namespace Mau.Runtime
                 }
             }
 
-            // [段2] 对比——新增/修改 → pending（完整路径）
+            // [段2] 对比——新增/修改 → pending（完整路径；去重键 = 完整路径——R1-P1-01 同 dll 只入队一次）
             foreach (KeyValuePair<string, string> pair in current)
             {
+                string full = Path.Combine(_watchDir, pair.Key);
                 string? oldFp;
                 if (_fingerprints.TryGetValue(pair.Key, out oldFp))
                 {
-                    if (oldFp != pair.Value && !_pending.Contains(pair.Key))
+                    if (oldFp != pair.Value && !_pending.Contains(full))
                     {
-                        _pending.Add(Path.Combine(_watchDir, pair.Key));
+                        _pending.Add(full);
                     }
                 }
-                else if (!_pending.Contains(pair.Key))
+                else if (!_pending.Contains(full))
                 {
-                    _pending.Add(Path.Combine(_watchDir, pair.Key));
+                    _pending.Add(full);
                 }
             }
 
-            // [段3] 删除 → pending（宿主按文件名找不到旧 handle 时忽略）
+            // [段3] 删除 → pending（宿主按文件名找不到旧 handle 时忽略；去重键同上）
             List<string> removed = new List<string>();
             foreach (KeyValuePair<string, string> pair in _fingerprints)
             {
-                if (!current.ContainsKey(pair.Key) && !_pending.Contains(pair.Key))
+                if (!current.ContainsKey(pair.Key))
                 {
-                    _pending.Add(Path.Combine(_watchDir, pair.Key));
+                    string full = Path.Combine(_watchDir, pair.Key);
+                    if (!_pending.Contains(full))
+                    {
+                        _pending.Add(full);
+                    }
                 }
             }
 
@@ -211,7 +216,6 @@ namespace Mau.Runtime
                 _fingerprints[pair.Key] = pair.Value;
             }
         }
-
         /// <summary>
         /// 计算 dll 指纹——大小|修改时间|SHA256（D6 内容哈希成本可忽略）
         /// </summary>

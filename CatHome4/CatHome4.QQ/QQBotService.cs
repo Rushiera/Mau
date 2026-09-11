@@ -28,7 +28,8 @@ namespace CatHome4.QQ
 
         /// <summary>累计内容——猫 Key → 超 3 条后累计的 text 块（轮末汇总第 4 次转发）</summary>
         private static readonly Dictionary<string, System.Text.StringBuilder> _accumulated = new Dictionary<string, System.Text.StringBuilder>();
-
+        /// <summary>服务事件队列——WS 线程入队 / 主线程 Tick 事件泵消费（R6-P1-01 单线程化：三字典访问面收敛主线程）</summary>
+        private static readonly System.Collections.Concurrent.ConcurrentQueue<QqServiceEvent> _eventQueue = new System.Collections.Concurrent.ConcurrentQueue<QqServiceEvent>();
         /// <summary>启动标志——防重复 Start</summary>
         private static bool _started = false;
 
@@ -209,6 +210,7 @@ namespace CatHome4.QQ
                 return;
             }
             // 广播注入所有绑定且启用的 Cat——消息头区分渠道+来源（v0.96.1：私聊硬编码雾理莎/群@昵称+角色）
+            // 🔴 三字典单线程化（R6-P1-01）——WS 线程只入队事件，EnqueueSource/ResetRound 由主线程 Tick 事件泵统一消费
             bool anyInjected = false;
             for (int i = 0; i < targets.Count; i++)
             {
@@ -218,8 +220,8 @@ namespace CatHome4.QQ
                     continue;
                 }
                 tg.Inject("[来自QQ]" + BuildHeader(source) + " " + text + attachText);
-                EnqueueSource(tg.Key, source);
-                ResetRound(tg.Key);
+                _eventQueue.Enqueue(new QqServiceEvent { Kind = "source", CatKey = tg.Key, Source = source });
+                _eventQueue.Enqueue(new QqServiceEvent { Kind = "reset", CatKey = tg.Key });
                 anyInjected = true;
             }
             if (!anyInjected)
@@ -784,7 +786,25 @@ namespace CatHome4.QQ
             ResetRound(tg.Key);
         }/// <summary>游标——猫 Key → 已处理消息数（R2.3.5 只转发启用后新块）</summary>
         private static readonly Dictionary<string, int> _cursors = new Dictionary<string, int>();
-
+        /// <summary>
+        /// 事件泵——WS 线程入队事件统一在主线程消费（R6-P1-01 单线程化）。
+        /// source 事件 → 注入来源入队；reset 事件 → 轮状态重置（3+1 计数归零 + 累计清空）。
+        /// </summary>
+        private static void DrainEvents()
+        {
+            QqServiceEvent ev;
+            while (_eventQueue.TryDequeue(out ev))
+            {
+                if (ev.Kind == "source")
+                {
+                    EnqueueSource(ev.CatKey, ev.Source);
+                }
+                else if (ev.Kind == "reset")
+                {
+                    ResetRound(ev.CatKey);
+                }
+            }
+        }
         /// <summary>输出转发轮询——主线程每帧调用（宿主主循环接入）。视图块游标增量：text 块 → 即时转发 ≤3 / 超限累计；roundsum 块 → 轮结束哨兵（第 4 次汇总转发 + 出队来源 + 重置）。无 qqbot 来源（前端对话）不转发——被动机制。</summary>
         public static void Tick()
         {
@@ -792,6 +812,8 @@ namespace CatHome4.QQ
             {
                 return;
             }
+            // 事件泵——WS 线程入队事件统一在主线程消费（R6-P1-01：三字典访问面收敛单线程）
+            DrainEvents();
             List<QqTarget> targets = new List<QqTarget>();
             if (_collector != null)
             {
@@ -834,7 +856,7 @@ namespace CatHome4.QQ
                 }
                 _cursors[tg.Key] = count;
             }
-        }        /// <summary>读取游标——缺省 0</summary>
+        }/// <summary>读取游标——缺省 0</summary>
         private static int GetCursor(string catKey)
         {
             int c;
@@ -945,7 +967,21 @@ namespace CatHome4.QQ
         {
             return s.Length <= max ? s : s.Substring(0, max);
         }
-    }
+    /// <summary>
+    /// QQ 服务事件——WS 线程入队 / 主线程 Tick 事件泵消费（R6-P1-01 单线程化）。
+    /// Kind：source=注入来源入队（Source 有效） / reset=轮状态重置。
+    /// </summary>
+    private sealed class QqServiceEvent
+    {
+        /// <summary>事件类型——source / reset</summary>
+        public string Kind;
+
+        /// <summary>猫标识——majordomo / cat id（来源队列键）</summary>
+        public string CatKey;
+
+        /// <summary>来源——Kind=source 时有效</summary>
+        public QqSource Source;
+    }    }
 
     /// <summary>
     /// QQ 消息来源——结构化载荷（P8：msg_id 被动回复扩展）。

@@ -106,8 +106,8 @@ namespace CatHome4.QQ
         /// <summary>重连计数——日志标识</summary>
         private int _reconnectCount = 0;
 
-        /// <summary>心跳 ACK 追踪——HbLoop 发送后递增，WsLoop 收到 op=11 时清零</summary>
-        private int _missedAcks = 0;
+        /// <summary>心跳 ACK 追踪——HbLoop 发送后递增，WsLoop 收到 op=11 时清零（volatile——跨线程共享，R6-P3-05）</summary>
+        private volatile int _missedAcks = 0;
 
         /// <summary>
         /// 构造单 Bot 连接。
