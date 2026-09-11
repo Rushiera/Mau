@@ -17,7 +17,8 @@ namespace CH4
     {
         /// <summary>
         /// reload 热重载——Flow 注册名（QuickCat/TextCat/...；host-flows 查当前清单）+ 可选 dll 路径（缺省 = 当前 handle 同路径重读）
-        /// 流程：新 Load + Tick 试跑验证（失败保留旧）→ UnregisterFlow 旧（D1：CommandBus key 同步清理）→ RegisterFlow 新 → 旧 TryUnload → 预热 → 报告
+        /// 部署面：产物区（仓库根 public/app/Flows/FL_&lt;名&gt;.dll）有更新版时执行「备份运行区 → 卸载旧（释放 ALC 文件锁）→ 覆盖运行区」；
+        /// 随后统一走加载事务：Load 新 + Tick 试跑验证（失败 → 还原备份 + 重载旧版）→ UnregisterFlow 旧 → RegisterFlow 新 → 旧 TryUnload → 预热 → 报告
         /// P8.5b：返回结果文本（host-reload 工具 LLM 可见；Console 同步输出行为不变）
         /// </summary>
         /// <param name="args">cat + 空格 + dll 路径（dll 可选）</param>
@@ -73,7 +74,40 @@ namespace CH4
             {
                 dllPath = oldHandle.SourceDll;
             }
-            // [段1] 加载新版本（Load 异常 = dll 损坏——失败保留旧；试跑验证移到注册后 runner.Tick——FlowContext 正确注入）
+            // [段0b] 部署全流程——产物区（仓库根 public/app/Flows）有更新版时：备份运行区 → 卸载旧（释放 ALC 文件锁）→ 覆盖运行区 → 段1 重载
+            string srcDll = ResolveFlowSourceDll(name);
+            string backupPath = "";
+            bool oldReleased = false;
+            if (srcDll.Length > 0 && !string.Equals(srcDll, dllPath, StringComparison.OrdinalIgnoreCase))
+            {
+                backupPath = dllPath + ".bak";
+                try
+                {
+                    File.Copy(dllPath, backupPath, true);
+                }
+                catch (Exception ex)
+                {
+                    string backupFail = "reload " + name + " 失败: 运行区备份失败——" + ex.Message;
+                    Console.WriteLine("[CMD] " + backupFail);
+                    sb.AppendLine(backupFail);
+                    return sb.ToString();
+                }
+                _runner.UnregisterFlow(oldId);
+                oldReleased = true;
+                oldHandle.TryUnload(3);
+                try
+                {
+                    File.Copy(srcDll, dllPath, true);
+                    sb.AppendLine("部署: " + srcDll + " → " + dllPath);
+                }
+                catch (Exception ex)
+                {
+                    RestoreBackup(dllPath, backupPath);
+                    sb.AppendLine(ReloadRecover(name, cat, dllPath, "产物覆盖失败——" + ex.Message, sb));
+                    return sb.ToString();
+                }
+            }
+            // [段1] 加载新版本（Load 异常 = dll 损坏——失败保留旧；有备份则先还原文件再重载旧版）
             FlowHandle newHandle;
             try
             {
@@ -81,13 +115,22 @@ namespace CH4
             }
             catch (Exception ex)
             {
+                if (backupPath.Length > 0)
+                {
+                    RestoreBackup(dllPath, backupPath);
+                    sb.AppendLine(ReloadRecover(name, cat, dllPath, "新版本加载未通过——" + ex.Message, sb));
+                    return sb.ToString();
+                }
                 string failMsg = "reload " + name + " 失败: 新版本加载未通过——" + ex.Message;
                 Console.WriteLine("[CMD] " + failMsg);
                 sb.AppendLine(failMsg);
                 return sb.ToString();
             }
             // [段2] 换注册——卸旧（D1 修复：CommandBus key 同步清理 + DataBox FlowId scope 清理）→ 注册新 → 试跑帧（runner 帧序注入 FlowContext=newId——CmdPump 真实注册，无幽灵 owner）
-            _runner.UnregisterFlow(oldId);
+            if (!oldReleased)
+            {
+                _runner.UnregisterFlow(oldId);
+            }
             long newId = _runner.RegisterFlow(newHandle.Flow, name);
             try
             {
@@ -95,9 +138,15 @@ namespace CH4
             }
             catch (Exception ex)
             {
-                // [段2b] 试跑异常回滚——重载旧 dll 全新实例（CmdPump 全新注册；旧 handle 弃用）
+                // [段2b] 试跑异常回滚——有备份先还原文件再重载旧版；无备份重载旧 dll 全新实例（CmdPump 全新注册；旧 handle 弃用）
                 _runner.UnregisterFlow(newId);
                 newHandle.TryUnload(3);
+                if (backupPath.Length > 0)
+                {
+                    RestoreBackup(dllPath, backupPath);
+                    sb.AppendLine(ReloadRecover(name, cat, dllPath, "试跑帧异常——" + ex.Message, sb));
+                    return sb.ToString();
+                }
                 FlowHandle rollback;
                 long rollbackId;
                 try
@@ -154,7 +203,112 @@ namespace CH4
                 Console.WriteLine("[CMD]     " + keyDic[k]);
                 sb.AppendLine("    " + keyDic[k]);
             }
+            if (backupPath.Length > 0)
+            {
+                sb.AppendLine("旧版备份: " + backupPath);
+            }
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// 部署源解析——产物区 FL 更新版路径（仓库根 public/app/Flows/FL_&lt;名&gt;.dll；不存在返回空串 = 不做部署，按原路径重载）
+        /// </summary>
+        /// <param name="name">Flow 注册名（= 组名 = dll 名去 FL_ 前缀）</param>
+        /// <returns>源 dll 绝对路径或空串</returns>
+        private static string ResolveFlowSourceDll(string name)
+        {
+            string root = ResolveRepoRootForDeploy();
+            if (root.Length == 0)
+            {
+                return "";
+            }
+            string path = System.IO.Path.Combine(root, "public", "app", "Flows", "FL_" + name + ".dll");
+            if (!System.IO.File.Exists(path))
+            {
+                return "";
+            }
+            return System.IO.Path.GetFullPath(path);
+        }
+
+        /// <summary>
+        /// 仓库根解析（部署面）——MAU_ROOT 环境变量 → workspace 根（含 Mau.sln 者）→ 程序集位置向上探测
+        /// </summary>
+        /// <returns>仓库根或空串</returns>
+        private static string ResolveRepoRootForDeploy()
+        {
+            string env = Environment.GetEnvironmentVariable("MAU_ROOT");
+            if (env != null && env.Length > 0 && System.IO.File.Exists(System.IO.Path.Combine(env, "Mau.sln")))
+            {
+                return env;
+            }
+            WorkspaceConfig ws;
+            if (DataBox.TryResolve<WorkspaceConfig>(out ws) && ws != null)
+            {
+                for (int i = 0; i < ws.Roots.Length; i = i + 1)
+                {
+                    string path = ws.Roots[i].Path;
+                    if (path != null && path.Length > 0 && System.IO.File.Exists(System.IO.Path.Combine(path, "Mau.sln")))
+                    {
+                        return path;
+                    }
+                }
+            }
+            return FindRepoRoot(AppContext.BaseDirectory);
+        }
+
+        /// <summary>
+        /// 还原运行区备份——覆盖失败/加载失败的兜底（best-effort，不抛）
+        /// </summary>
+        /// <param name="dllPath">运行区 dll 路径</param>
+        /// <param name="backupPath">备份路径</param>
+        private static void RestoreBackup(string dllPath, string backupPath)
+        {
+            try
+            {
+                if (System.IO.File.Exists(backupPath))
+                {
+                    System.IO.File.Copy(backupPath, dllPath, true);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
+        /// reload 失败恢复——从磁盘（已还原的备份）重载旧版并重新注册；恢复失败则报告严重错误
+        /// </summary>
+        /// <param name="name">Flow 注册名</param>
+        /// <param name="cat">句柄表键（QuickCat 独立字段）</param>
+        /// <param name="dllPath">运行区 dll 路径</param>
+        /// <param name="why">失败原因</param>
+        /// <param name="sb">输出累积</param>
+        /// <returns>结果文本</returns>
+        private static string ReloadRecover(string name, string cat, string dllPath, string why, System.Text.StringBuilder sb)
+        {
+            FlowHandle rollback;
+            long rollbackId;
+            try
+            {
+                rollback = FlowHandle.Load(dllPath);
+                rollbackId = _runner.RegisterFlow(rollback.Flow, name);
+                for (int i = 0; i < WarmupFrames; i++)
+                {
+                    _runner.Tick();
+                }
+            }
+            catch (Exception ex)
+            {
+                string fatal = "reload " + name + " 失败: " + why + "；旧版本重载亦失败——" + ex.Message;
+                Console.WriteLine("[CMD] " + fatal);
+                sb.AppendLine(fatal);
+                return fatal;
+            }
+            SetCatHandle(cat, rollback, rollbackId);
+            string msg = "reload " + name + " 失败: " + why + "——已回滚旧版本（全新实例 #" + rollbackId + "）";
+            Console.WriteLine("[CMD] " + msg);
+            sb.AppendLine(msg);
+            return msg;
         }
 
         /// <summary>

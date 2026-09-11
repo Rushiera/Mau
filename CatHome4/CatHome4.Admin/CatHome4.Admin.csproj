@@ -6,7 +6,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <RootNamespace>CatHome4.Admin</RootNamespace>
     <AssemblyName>CatHome4.Admin</AssemblyName>
-    <Version>0.98.6</Version>
+    <Version>0.99.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

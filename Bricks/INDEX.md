@@ -18,6 +18,7 @@
 | BRIK-MAU-001 | mau.verify | MAU | MAU/BRIK-MAU-001_mau.verify.cs | 无 | active |  |
 | BRIK-MAU-002 | mau.gen | MAU | MAU/BRIK-MAU-002_mau.gen.cs | 无 | active |  |
 | BRIK-MAU-003 | mau.proj | MAU | MAU/BRIK-MAU-003_mau.proj.cs | 无 | active |  |
+| BRIK-MAU-004 | mau.setup | MAU | MAU/BRIK-MAU-004_mau.setup.cs | 无 | active |  |
 | BRIK-OA-001 | oa.post | OA | OA/BRIK-OA-001_oa.post.cs | 无 | active |  |
 | BRIK-OA-002 | oa.set_str | OA | OA/BRIK-OA-002_oa.set_str.cs | 无 | active |  |
 | BRIK-OA-003 | oa.claim_next_simple | OA | OA/BRIK-OA-003_oa.claim_next_simple.cs | 无 | active |  |

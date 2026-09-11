@@ -1,5 +1,5 @@
 ﻿// mau_cat.mau —— MauCat 语料（CH4 R0.2 工具组 Flow 化——MAU 工具域独立 Flow，原 DevCat 分部拆分）
-// 角色：工具组 Flow——认领 TOOL 域 mau-* 3 工具（verify/gen/proj）
+// 角色：工具组 Flow——认领 TOOL 域 mau-* 4 工具（verify/gen/proj/setup）
 // 单级 OA 单：Dog Post → 本 Flow 3 线认领执行 → complete_str 回执
 // 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON
 // 线程模型：全部主线程同步；mau-proj dotnet build 长耗时阻塞主线程（与一期直执等价——P9 后台域清偿）
@@ -9,6 +9,7 @@
 § 'S_Verify' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Gen' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Proj' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Setup' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
 § 'T_Init' : 'S_Verify' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Verify' = 'Idle' | 'S_Verify' = 'Idle'
@@ -17,6 +18,7 @@
 § 'P_VerifyOpen' ↻ [1]: 'oa.is_open'["TOOL", "mau-verify"] > @vfOpen
 § 'P_GenOpen' ↻ [1]: 'oa.is_open'["TOOL", "mau-gen"] > @gnOpen
 § 'P_ProjOpen' ↻ [1]: 'oa.is_open'["TOOL", "mau-proj"] > @pjOpen
+§ 'P_SetupOpen' ↻ [1]: 'oa.is_open'["TOOL", "mau-setup"] > @spOpen
 
 // ══════════════ mau-verify 线 ══════════════
 
@@ -68,3 +70,20 @@
 
 // T_ProjAbort：失败回执
 § 'T_ProjAbort' : 'S_Proj' = 'Failed' → 'oa.complete_str'[@pjOffice, @pjRes] | 'S_Proj' = 'Idle' | 'S_Proj' = 'Idle'
+
+// ══════════════ mau-setup 线 ══════════════
+
+// T_SetupClaim：探测真 + Idle → 原子接单
+§ 'T_SetupClaim' : @spOpen & 'S_Setup' = 'Idle' → 'oa.claim_next_simple'["TOOL", "mau-setup"] > @spOffice | 'S_Setup' = 'Claimed' | 'S_Setup' = 'Idle'
+
+// T_SetupArgs：读载荷 args
+§ 'T_SetupArgs' : 'S_Setup' = 'Claimed' → 'oa.get_str'[@spOffice, "args"] > @spArgs | 'S_Setup' = 'Ready' | 'S_Setup' = 'Failed'
+
+// T_SetupExec：执行积木（起 SetUp.exe 并阻塞等待至结束——长耗时通道）
+§ 'T_SetupExec' : 'S_Setup' = 'Ready' → 'mau.setup'[@spArgs] > @spRes | 'self.desc'["mau-setup 执行中", "", ""] | 'S_Setup' = 'Done' | 'S_Setup' = 'Failed'
+
+// T_SetupReply：成功回执（[!] 日志标记——部署链行为验证点）
+§ 'T_SetupReply' [!] : 'S_Setup' = 'Done' → 'oa.complete_str'[@spOffice, @spRes] | 'self.desc'["空闲待命", "", ""] | 'S_Setup' = 'Idle' | 'S_Setup' = 'Idle'
+
+// T_SetupAbort：失败回执
+§ 'T_SetupAbort' : 'S_Setup' = 'Failed' → 'oa.complete_str'[@spOffice, @spRes] | 'S_Setup' = 'Idle' | 'S_Setup' = 'Idle'

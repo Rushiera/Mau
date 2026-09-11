@@ -25,57 +25,10 @@ namespace Mau.Bricks
     public static class TempRegistry
     {
         /// <summary>
-        /// 临时工具注册表——Key → handler（str→str；Key 建议用未来独立工具名的连字符形式，迁移时同名转正）
+        /// 临时工具注册表——Key → handler（str→str；Key 建议用未来独立工具名的连字符形式，迁移时同名转正）。
+        /// 当前为空（纯净就绪态）——新增临时工具即在本字典加一行 + 写一个纯逻辑 handler（str→str）。
         /// </summary>
-        private static readonly Dictionary<string, Func<string, string>> _tools = new Dictionary<string, Func<string, string>>
-        {
-            { "echo", Echo },
-            { "upper", Upper },
-            { "reverse", Reverse },
-            { "lower", Lower },
-        };
-
-        /// <summary>
-        /// 【临时工具】echo——原样返回 content（自举闭环最小验证样例）
-        /// </summary>
-        /// <param name="content">输入内容</param>
-        /// <returns>原样内容</returns>
-        private static string Echo(string content)
-        {
-            return content;
-        }
-
-        /// <summary>
-        /// 【临时工具】upper——content 转大写（演示 str→str 转换；handler 只写纯逻辑，不碰 argsJson——迁移零阻力）
-        /// </summary>
-        /// <param name="content">输入内容</param>
-        /// <returns>大写内容</returns>
-        private static string Upper(string content)
-        {
-            return content.ToUpperInvariant();
-        }
-
-        /// <summary>
-        /// 【临时工具】reverse——content 反转（演示 handler 增改；迁移转正时主体直接搬）
-        /// </summary>
-        /// <param name="content">输入内容</param>
-        /// <returns>反转内容</returns>
-        private static string Reverse(string content)
-        {
-            char[] chars = content.ToCharArray();
-            Array.Reverse(chars);
-            return new string(chars);
-        }
-
-        /// <summary>
-        /// 【临时工具】lower——content 转小写（演示 handler 增改——热重载即时生效）
-        /// </summary>
-        /// <param name="content">输入内容</param>
-        /// <returns>小写内容</returns>
-        private static string Lower(string content)
-        {
-            return content.ToLowerInvariant();
-        }
+        private static readonly Dictionary<string, Func<string, string>> _tools = new Dictionary<string, Func<string, string>>();
 
         /// <summary>
         /// 按 Key 查 handler——不存在返回 null（internal：供同程序集 TempExecBrick 调度；非 public bool 不入积木契约）
@@ -189,4 +142,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:64FA26A3C2AFBD0D73DADB0E909B301CE6C8A24E047BEFA091F10C4A443A68CD
+// #MAU_CHECKSUM:SHA256:37A4D18C0B11DFCEEDC369084BCBFAFA5E65EC62F7D5696E8C45CDCB434C85F1
