@@ -55,32 +55,35 @@ namespace Mau.Development
             FullScan(cache);
             lock (cache.Gate)
             {
-                SyntaxTree foundTree;
-                ClassDeclarationSyntax classNode;
-                int classTotal;
-                if (!FindClassNode(cache, className, out foundTree, out classNode, out classTotal))
+                List<ClassPart> parts = FindClassParts(cache, className);
+                if (parts.Count == 0)
                 {
                     result = "ERR|CLASS_NOT_FOUND|类不存在: " + className;
                     return true;
                 }
+                SyntaxTree foundTree = parts[0].Tree;
+                ClassDeclarationSyntax classNode = parts[0].Node;
                 SyntaxNode target = classNode;
                 if (member.Length > 0)
                 {
+                    ClassPart memberPart;
                     SyntaxNode memberNode;
                     string memberKind;
                     int memberCount;
                     List<string> memberCandidates;
-                    if (!FindMemberInClass(classNode, member, out memberNode, out memberKind, out memberCount, out memberCandidates))
+                    if (!FindMemberInParts(parts, member, out memberPart, out memberNode, out memberKind, out memberCount, out memberCandidates))
                     {
                         if (memberCount > 1)
                         {
                             result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
                             return true;
                         }
-                        result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member;
+                        result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member + PartialHint(parts.Count);
                         return true;
                     }
+                    // 写落点 = 成员所在分部（跨分部聚合：树必须与命中节点同树）
                     target = memberNode;
+                    foundTree = memberNode.SyntaxTree;
                 }
                 XElement rootXml;
                 try
@@ -133,20 +136,34 @@ namespace Mau.Development
                 }
                 StringBuilder docText = new StringBuilder();
                 // 换行风格——跟随目标文件（\r\n 或 \n——防止注释与声明同行语法崩坏 CS1022）
-                string newline = "\r\n";
-                string treeText = foundTree.GetText().ToString();
-                int newlineIndex = treeText.IndexOf('\n');
-                if (newlineIndex > 0 && treeText[newlineIndex - 1] != '\r')
+                string newline = DetectNewLine(foundTree);
+                SyntaxTriviaList oldTrivia = target.GetLeadingTrivia();
+                // 缩进——doc 首行缩进由前置空白 trivia 承担（重建时原样保留）；续行须自带同宽缩进，否则续行顶格
+                string indent = "";
+                for (int i = 0; i < oldTrivia.Count; i = i + 1)
                 {
-                    newline = "\n";
+                    if (oldTrivia[i].IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia) ||
+                        oldTrivia[i].IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia))
+                    {
+                        break;
+                    }
+                    if (oldTrivia[i].IsKind(SyntaxKind.WhitespaceTrivia))
+                    {
+                        indent = oldTrivia[i].ToString();
+                    }
                 }
+                int docLineIndex = 0;
                 foreach (XElement element in rootXml.Elements())
                 {
-                    docText.Append("/// " + SerializeDocElement(element) + newline);
+                    if (docLineIndex > 0)
+                    {
+                        docText.Append(indent);
+                    }
+                    AppendDocLine(docText, SerializeDocElement(element), indent, newline);
+                    docLineIndex = docLineIndex + 1;
                 }
                 SyntaxTriviaList newDocTrivia = SyntaxFactory.ParseLeadingTrivia(docText.ToString());
                 // 重建 leading——原 doc 块（doc trivia + 紧邻 EOL）整段替换为新 doc（其余 trivia 原样保留）
-                SyntaxTriviaList oldTrivia = target.GetLeadingTrivia();
                 List<SyntaxTrivia> rebuilt = new List<SyntaxTrivia>();
                 bool replaced = false;
                 for (int i = 0; i < oldTrivia.Count; i = i + 1)
@@ -202,10 +219,24 @@ namespace Mau.Development
                 SyntaxNode root = foundTree.GetRoot();
                 SyntaxNode newRoot = root.ReplaceNode(target, newNode);
                 SyntaxTree newTree = CreateTreeFromRoot(foundTree, newRoot);
+                // 编译验证——有新增错误回滚（与 member / patch 同规：写盘前一律过门禁，注释写坏同样不落盘）
+                List<string> newErrors;
+                CSharpCompilation trial = (CSharpCompilation)cache.Compilation.ReplaceSyntaxTree(foundTree, newTree);
+                if (!ValidateNoNewErrors(cache.Compilation, trial, out newErrors))
+                {
+                    StringBuilder fail = new StringBuilder();
+                    fail.Append("ROLLED_BACK|新增编译错误 " + newErrors.Count + " 条——未落盘:");
+                    for (int i = 0; i < newErrors.Count; i = i + 1)
+                    {
+                        fail.Append(Environment.NewLine + "  " + newErrors[i]);
+                    }
+                    result = TrimResult(fail.ToString(), MaxResultChars);
+                    return true;
+                }
                 string filePath = foundTree.FilePath;
                 WriteAtomicText(filePath, newRoot.ToFullString());
                 cache.Trees[filePath] = newTree;
-                cache.Compilation = (CSharpCompilation)cache.Compilation.ReplaceSyntaxTree(foundTree, newTree);
+                cache.Compilation = trial;
                 cache.Stamps[filePath] = SnapshotOf(filePath);
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
@@ -229,6 +260,54 @@ namespace Mau.Development
                 return "<param name=\"" + attr + "\">" + body + "</param>";
             }
             return "<" + name + ">" + body + "</" + name + ">";
+        }
+
+        /// <summary>
+        /// doc 行追加——元素文本含多行时逐行补 /// 前缀（续行不补则沦为代码行 CS1022）
+        /// </summary>
+        /// <param name="target">doc 文本缓冲</param>
+        /// <param name="body">元素文本（不含 /// 前缀，可含换行）</param>
+        /// <param name="indent">续行缩进</param>
+        /// <param name="newline">目标换行</param>
+        private static void AppendDocLine(StringBuilder target, string body, string indent, string newline)
+        {
+            string[] lines = NormalizeNewLineText(body, newline).Split('\n');
+            for (int i = 0; i < lines.Length; i = i + 1)
+            {
+                string line = lines[i];
+                if (line.Length > 0 && line[line.Length - 1] == '\r')
+                {
+                    line = line.Substring(0, line.Length - 1);
+                }
+                if (i > 0)
+                {
+                    target.Append(newline);
+                    target.Append(indent);
+                }
+                target.Append("/// ");
+                target.Append(line);
+            }
+            target.Append(newline);
+        }
+
+        /// <summary>
+        /// 逐行剥离行首空白——doc 续行缩进是版面（非内容）：留着会让 value 带上缩进并在重复覆写时逐轮累积
+        /// </summary>
+        /// <param name="text">多行文本</param>
+        /// <returns>剥净行首空白的文本</returns>
+        private static string StripLineIndent(string text)
+        {
+            string[] lines = NormalizeNewLineText(text, "\n").Split('\n');
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < lines.Length; i = i + 1)
+            {
+                if (i > 0)
+                {
+                    sb.Append('\n');
+                }
+                sb.Append(lines[i].TrimStart(' ', '\t'));
+            }
+            return sb.ToString();
         }
 
         /// <summary>
@@ -262,6 +341,8 @@ namespace Mau.Development
             }
             xmlText = xmlText.Substring(firstLt);
             xmlText = xmlText.Replace("///", "").Replace("/*", "").Replace("*/", "");
+            // 续行缩进剥离——doc 版面缩进不是内容（防 value 带缩进 + 重复覆写逐轮累积）
+            xmlText = StripLineIndent(xmlText);
             XDocument doc = XDocument.Parse("<root>" + xmlText + "</root>", LoadOptions.None);
             rootElement = doc.Root!;
             return rootElement;

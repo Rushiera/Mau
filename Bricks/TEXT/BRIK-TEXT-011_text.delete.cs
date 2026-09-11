@@ -2,7 +2,7 @@
 // 积木: text.delete
 // ID:   BRIK-TEXT-011
 // 类别: TEXT
-// 作用: 软删除——移入受控回收站（可恢复）；支持文件与空目录——LLM 工具 text-delete 语料执行面
+// 作用: 软删除——移入受控回收站（可恢复）；支持文件与目录（含非空目录=整棵子树整体迁移，附内容统计）——LLM 工具 text-delete 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
 // 原理: DataBox.TryResolve<FileSystemService> → Recycle(path)；argsJson 内解析 path
@@ -51,8 +51,8 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                string target = fs.Recycle(path);
-                result = "OK 已软删除 → " + target;
+                RecycleOutcome outcome = fs.Recycle(path);
+                result = "OK 已软删除 → " + outcome.Target + FormatStats(outcome);
                 return true;
             }
             catch (Exception ex)
@@ -60,6 +60,42 @@ namespace Mau.Bricks
                 result = "ERR|" + ex.GetType().Name + "|" + ex.Message;
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 内容统计文本——文件 = 体积；目录 = 文件数 + 子目录数 + 合计体积
+        /// </summary>
+        /// <param name="outcome">回收结果</param>
+        /// <returns>统计文本</returns>
+        private static string FormatStats(RecycleOutcome outcome)
+        {
+            if (!outcome.IsDirectory)
+            {
+                return "（文件 · " + SizeText(outcome.TotalBytes) + "）";
+            }
+            return "（目录 · 文件 " + outcome.FileCount + " / 子目录 " + outcome.DirectoryCount + " / 合计 " + SizeText(outcome.TotalBytes) + "）";
+        }
+
+        /// <summary>
+        /// 体积自适应文本（B / KB / MB / GB——整数运算，无小数文化差异）
+        /// </summary>
+        /// <param name="bytes">字节数</param>
+        /// <returns>可读体积</returns>
+        private static string SizeText(long bytes)
+        {
+            if (bytes < 1024)
+            {
+                return bytes + " B";
+            }
+            if (bytes < 1024 * 1024)
+            {
+                return ((bytes + 512) / 1024) + " KB";
+            }
+            if (bytes < 1024L * 1024 * 1024)
+            {
+                return ((bytes + (512 * 1024)) / (1024 * 1024)) + " MB";
+            }
+            return ((bytes + (512L * 1024 * 1024)) / (1024L * 1024 * 1024)) + " GB";
         }
 
         /// <summary>
@@ -101,4 +137,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:3C5AC539AA7D116F6F4462E260B0DDFDCEF1B003917110B8F6DBCDA41DFF0FBE
+// #MAU_CHECKSUM:SHA256:06858CC0A08FD0EE062151481FD52E2CA1C8B2CCA66172B1D26EAD96E8D67F7D

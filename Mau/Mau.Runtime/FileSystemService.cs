@@ -211,6 +211,7 @@ public TextReplaceOutcome ReplaceTextAuto(string path, string oldText, string ne
                 if (mode != "regex" && mode != "all" && indexes.Length > 1)
                 {
                     outcome.Status = TextReplaceStatus.Ambiguous;
+                    outcome.Count = indexes.Length;
                     outcome.CandidateLines = LineNumbersOf(unified, indexes);
                     return outcome;
                 }
@@ -714,34 +715,68 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
             }
         }
         /// <summary>
-        /// 将文件或空目录移动到受控回收站
+        /// 将文件或目录（含非空目录——整棵子树）移动到受控回收站，并统计被移动内容
         /// </summary>
         /// <param name="path">目标路径</param>
-        /// <returns>回收站内新路径</returns>
-        public string Recycle(string path)
+        /// <returns>回收结果（落点 + 文件数 / 子目录数 / 字节数）</returns>
+        public RecycleOutcome Recycle(string path)
         {
             string resolved = Resolve(path, true);
+            string trimmed = resolved.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            for (int i = 0; i < _roots.Length; i = i + 1)
+            {
+                string root = _roots[i].TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (string.Equals(trimmed, root, StringComparison.OrdinalIgnoreCase))
+                {
+                    // 受控根本身不可回收——软删可恢复，但根被移走等于运行面整体失踪
+                    throw new InvalidOperationException("Refusing to recycle a controlled root: " + resolved);
+                }
+            }
             lock (_writeGate)
             {
-                string leaf = Path.GetFileName(resolved);
-                string target = Path.Combine(_recycleRoot,
+                string leaf = Path.GetFileName(trimmed);
+                if (leaf.Length == 0)
+                {
+                    leaf = "root";
+                }
+                RecycleOutcome outcome = new RecycleOutcome();
+                outcome.Target = Path.Combine(_recycleRoot,
                     DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ") + "-"
                     + Guid.NewGuid().ToString("N") + "-" + leaf);
                 if (File.Exists(resolved))
                 {
-                    File.Move(resolved, target, false);
-                    return target;
+                    outcome.FileCount = 1;
+                    outcome.TotalBytes = new FileInfo(resolved).Length;
+                    File.Move(resolved, outcome.Target, false);
+                    return outcome;
                 }
                 if (Directory.Exists(resolved))
                 {
-                    if (Directory.GetFileSystemEntries(resolved).Length > 0)
-                    {
-                        throw new IOException("Only empty directories can be recycled.");
-                    }
-                    Directory.Move(resolved, target);
-                    return target;
+                    outcome.IsDirectory = true;
+                    CollectRecycleStats(resolved, outcome);
+                    Directory.Move(resolved, outcome.Target);
+                    return outcome;
                 }
                 throw new FileNotFoundException("Recycle target was not found.", resolved);
+            }
+        }
+
+        /// <summary>
+        /// 回收统计采集——迁移前递归统计文件数 / 子目录数 / 字节数
+        /// </summary>
+        /// <param name="directory">目录</param>
+        /// <param name="outcome">统计载体</param>
+        private static void CollectRecycleStats(string directory, RecycleOutcome outcome)
+        {
+            foreach (string file in Directory.EnumerateFiles(directory))
+            {
+                outcome.FileCount = outcome.FileCount + 1;
+                outcome.TotalBytes = outcome.TotalBytes + new FileInfo(file).Length;
+            }
+            foreach (string sub in Directory.EnumerateDirectories(directory))
+            {
+                outcome.DirectoryCount = outcome.DirectoryCount + 1;
+                CollectRecycleStats(sub, outcome);
             }
         }
 

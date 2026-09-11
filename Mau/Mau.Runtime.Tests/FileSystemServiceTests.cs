@@ -47,6 +47,35 @@ namespace Mau.Runtime.Tests
         }
 
         /// <summary>
+        /// 锚点歧义三态——Ambiguous 必须带真实出现次数（曾漏赋值 ⇒ 报「锚点出现 0 次」自相矛盾），且绝不静默写入
+        /// </summary>
+        [Fact]
+        public void ReplaceTextAuto_Ambiguous_ReportsRealCount()
+        {
+            string baseDir = Path.Combine(Path.GetTempPath(), "mau_replace_test_" + Guid.NewGuid().ToString("N"));
+            string rw = Path.Combine(baseDir, "rw");
+            Directory.CreateDirectory(rw);
+            try
+            {
+                WorkspaceConfig.RootEntry[] entries = new WorkspaceConfig.RootEntry[]
+                {
+                    new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true }
+                };
+                FileSystemService fs = new FileSystemService(entries, Path.Combine(rw, "recycle"));
+                string file = Path.Combine(rw, "probe.txt");
+                fs.WriteText(file, "A行B行C行");
+                TextReplaceOutcome outcome = fs.ReplaceTextAuto(file, "行", "X", "exact");
+                Assert.Equal(TextReplaceStatus.Ambiguous, outcome.Status);
+                Assert.Equal(3, outcome.Count);
+                Assert.Equal("A行B行C行", fs.ReadText(file));
+            }
+            finally
+            {
+                TryDelete(baseDir);
+            }
+        }
+
+        /// <summary>
         /// 命名空间寻址——id:relative 前缀映射受控根（ccbp:/mau:/runtime:；P8.5b 自举路径语义）
         /// </summary>
         [Fact]

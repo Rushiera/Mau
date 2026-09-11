@@ -73,31 +73,25 @@ namespace Mau.Development
             FullScan(cache);
             lock (cache.Gate)
             {
-                SyntaxTree foundTree;
-                ClassDeclarationSyntax classNode;
-                int classTotal;
-                if (!FindClassNode(cache, className, out foundTree, out classNode, out classTotal))
+                List<ClassPart> parts = FindClassParts(cache, className);
+                if (parts.Count == 0)
                 {
                     result = "ERR|CLASS_NOT_FOUND|类不存在: " + className;
                     return true;
                 }
-                MemberDeclarationSyntax? newMember = SyntaxFactory.ParseMemberDeclaration(code);
-                if (newMember == null)
-                {
-                    result = "ERR|BAD_CODE|code 不是有效的成员声明";
-                    return true;
-                }
+                // 落点分部——end/after_fields 落首个分部；before/after 落锚点所在分部（跨分部聚合）
+                ClassPart targetPart = parts[0];
                 int insertIndex = -1;
                 if (position == "end")
                 {
-                    insertIndex = classNode.Members.Count;
+                    insertIndex = targetPart.Node.Members.Count;
                 }
                 else if (position == "after_fields")
                 {
                     insertIndex = 0;
-                    for (int i = 0; i < classNode.Members.Count; i = i + 1)
+                    for (int i = 0; i < targetPart.Node.Members.Count; i = i + 1)
                     {
-                        if (classNode.Members[i] is FieldDeclarationSyntax)
+                        if (targetPart.Node.Members[i] is FieldDeclarationSyntax)
                         {
                             insertIndex = i + 1;
                         }
@@ -110,22 +104,30 @@ namespace Mau.Development
                         result = "ERR|BAD_ARGS|position=after/before 需要 anchor";
                         return true;
                     }
+                    ClassPart anchorPart = null!;
                     int foundIndex = -1;
-                    for (int i = 0; i < classNode.Members.Count; i = i + 1)
+                    for (int p = 0; p < parts.Count; p = p + 1)
                     {
-                        MemberDeclarationSyntax member = classNode.Members[i];
-                        string memberName = MemberNameOf(member);
-                        if (memberName == anchor)
+                        for (int i = 0; i < parts[p].Node.Members.Count; i = i + 1)
                         {
-                            foundIndex = i;
+                            if (MemberNameOf(parts[p].Node.Members[i]) == anchor)
+                            {
+                                anchorPart = parts[p];
+                                foundIndex = i;
+                                break;
+                            }
+                        }
+                        if (foundIndex >= 0)
+                        {
                             break;
                         }
                     }
                     if (foundIndex < 0)
                     {
-                        result = "ERR|ANCHOR_NOT_FOUND|锚点成员不存在: " + anchor;
+                        result = "ERR|ANCHOR_NOT_FOUND|锚点成员不存在: " + anchor + PartialHint(parts.Count);
                         return true;
                     }
+                    targetPart = anchorPart;
                     insertIndex = position == "after" ? foundIndex + 1 : foundIndex;
                 }
                 else
@@ -133,6 +135,25 @@ namespace Mau.Development
                     result = "ERR|BAD_ARGS|position 必须是 end/before/after/after_fields";
                     return true;
                 }
+                SyntaxTree foundTree = targetPart.Tree;
+                ClassDeclarationSyntax classNode = targetPart.Node;
+                // 写侧规整——行尾归一 + 规范化布局 + 基准缩进平移（规范格式是写侧责任，不依赖事后格式重整器）
+                string memberNewline = DetectNewLine(foundTree);
+                string memberIndent = classNode.Members.Count > 0 ? IndentAt(foundTree, classNode.Members[0]) : IndentAt(foundTree, classNode) + "    ";
+                MemberDeclarationSyntax? parsedMember = SyntaxFactory.ParseMemberDeclaration(NormalizeNewLineText(code, memberNewline));
+                if (parsedMember == null)
+                {
+                    result = "ERR|BAD_CODE|code 不是有效的成员声明";
+                    return true;
+                }
+                MemberDeclarationSyntax? newMember = SyntaxFactory.ParseMemberDeclaration(FormatNodeText(parsedMember, memberIndent, memberNewline));
+                if (newMember == null)
+                {
+                    result = "ERR|BAD_CODE|code 不是有效的成员声明";
+                    return true;
+                }
+                // 落盘格式规整——尾部补换行（后续 token 的缩进前导 trivia 依赖前一 token 以换行结尾）
+                newMember = EnsureMemberTrailingNewLine(newMember, memberNewline);
                 ClassDeclarationSyntax newClassNode = classNode.WithMembers(classNode.Members.Insert(insertIndex, newMember));
                 SyntaxNode root = foundTree.GetRoot();
                 SyntaxNode newRoot = root.ReplaceNode(classNode, newClassNode);
@@ -167,6 +188,36 @@ namespace Mau.Development
         }
 
         /// <summary>
+        /// 成员落盘格式规整——尾部空白 trivia 剥净后补一个换行。
+        /// 动机：插入点后续 token（类闭合括号 / 下一成员声明）的缩进前导 trivia 依赖前一 token 以换行结尾；
+        ///       缺失时落盘为 `}    }` 或 `}        /// &lt;summary&gt;` 同行——编译通过故门禁不报，只能写侧规整。
+        /// </summary>
+        /// <param name="member">解析出的成员节点</param>
+        /// <param name="newline">换行文本（跟随目标文件）</param>
+        /// <returns>规整后的成员节点</returns>
+        private static MemberDeclarationSyntax EnsureMemberTrailingNewLine(MemberDeclarationSyntax member, string newline)
+        {
+            SyntaxTriviaList trailing = member.GetTrailingTrivia();
+            int cut = trailing.Count;
+            while (cut > 0)
+            {
+                SyntaxTrivia last = trailing[cut - 1];
+                if (!last.IsKind(SyntaxKind.WhitespaceTrivia) && !last.IsKind(SyntaxKind.EndOfLineTrivia))
+                {
+                    break;
+                }
+                cut = cut - 1;
+            }
+            List<SyntaxTrivia> kept = new List<SyntaxTrivia>();
+            for (int i = 0; i < cut; i = i + 1)
+            {
+                kept.Add(trailing[i]);
+            }
+            kept.Add(SyntaxFactory.EndOfLine(newline));
+            return member.WithTrailingTrivia(SyntaxFactory.TriviaList(kept));
+        }
+
+        /// <summary>
         /// member delete——删除成员（含注释）；编译验证回滚保护
         /// </summary>
         /// <param name="args">参数</param>
@@ -192,28 +243,29 @@ namespace Mau.Development
             FullScan(cache);
             lock (cache.Gate)
             {
-                SyntaxTree foundTree;
-                ClassDeclarationSyntax classNode;
-                int classTotal;
-                if (!FindClassNode(cache, className, out foundTree, out classNode, out classTotal))
+                List<ClassPart> parts = FindClassParts(cache, className);
+                if (parts.Count == 0)
                 {
                     result = "ERR|CLASS_NOT_FOUND|类不存在: " + className;
                     return true;
                 }
+                ClassPart memberPart;
                 SyntaxNode memberNode;
                 string memberKind;
                 int memberCount;
                 List<string> memberCandidates;
-                if (!FindMemberInClass(classNode, member, out memberNode, out memberKind, out memberCount, out memberCandidates))
+                if (!FindMemberInParts(parts, member, out memberPart, out memberNode, out memberKind, out memberCount, out memberCandidates))
                 {
                     if (memberCount > 1)
                     {
                         result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
                         return true;
                     }
-                    result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member;
+                    result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member + PartialHint(parts.Count);
                     return true;
                 }
+                // 写落点 = 成员所在分部（跨分部聚合：树必须与命中节点同树）
+                SyntaxTree foundTree = memberNode.SyntaxTree;
                 SyntaxNode root = foundTree.GetRoot();
                 SyntaxNode newRoot = root.RemoveNode(memberNode, SyntaxRemoveOptions.KeepNoTrivia);
                 if (newRoot == null)

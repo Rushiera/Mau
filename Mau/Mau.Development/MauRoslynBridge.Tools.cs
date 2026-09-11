@@ -183,27 +183,33 @@ namespace Mau.Development
             }
             else
             {
-                SyntaxTree foundTree;
-                ClassDeclarationSyntax foundNode;
-                int total;
-                if (!FindClassNode(cache, className, out foundTree, out foundNode, out total))
+                List<ClassPart> parts = FindClassParts(cache, className);
+                if (parts.Count == 0)
                 {
                     result = "ERR|CLASS_NOT_FOUND|类不存在: " + className;
                     return false;
                 }
-                string lineText = (foundNode.GetLocation().GetLineSpan().StartLinePosition.Line + 1).ToString();
-                sb.Append("类 " + className + "（" + RelativeToProject(cache, foundTree.FilePath) + " L" + lineText + "）");
-                if (total > 1)
+                for (int i = 0; i < parts.Count; i = i + 1)
                 {
-                    sb.Append("——partial 合并 " + total + " 处声明");
+                    ClassDeclarationSyntax foundNode = parts[i].Node;
+                    if (i > 0)
+                    {
+                        sb.Append(Environment.NewLine);
+                    }
+                    string lineText = (foundNode.GetLocation().GetLineSpan().StartLinePosition.Line + 1).ToString();
+                    sb.Append("类 " + className + "（" + RelativeToProject(cache, parts[i].Tree.FilePath) + " L" + lineText + "）");
+                    if (parts.Count > 1)
+                    {
+                        sb.Append("——partial 合并 " + parts.Count + " 处声明·第 " + (i + 1) + " 分部");
+                    }
+                    sb.Append(Environment.NewLine);
+                    string summary = FirstSummary(foundNode);
+                    if (summary.Length > 0)
+                    {
+                        sb.Append("/// " + summary + Environment.NewLine);
+                    }
+                    AppendMemberLines(foundNode, sb);
                 }
-                sb.Append(Environment.NewLine);
-                string summary = FirstSummary(foundNode);
-                if (summary.Length > 0)
-                {
-                    sb.Append("/// " + summary + Environment.NewLine);
-                }
-                AppendMemberLines(foundNode, sb);
             }
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;
@@ -228,10 +234,8 @@ namespace Mau.Development
             }
             ProjectCache cache = EnsureProject(csproj);
             FullScan(cache);
-            SyntaxTree foundTree;
-            ClassDeclarationSyntax classNode;
-            int total;
-            if (!FindClassNode(cache, className, out foundTree, out classNode, out total))
+            List<ClassPart> parts = FindClassParts(cache, className);
+            if (parts.Count == 0)
             {
                 result = "ERR|CLASS_NOT_FOUND|类不存在: " + className;
                 return false;
@@ -239,35 +243,44 @@ namespace Mau.Development
             StringBuilder sb = new StringBuilder();
             if (member.Length == 0)
             {
-                // 类概览
-                FileLinePositionSpan span = classNode.GetLocation().GetLineSpan();
-                sb.Append("类 " + className + "（" + foundTree.FilePath + " L" + (span.StartLinePosition.Line + 1) + "-" + (span.EndLinePosition.Line + 1) + "）");
-                if (total > 1)
+                // 类概览——逐分部输出（单分部时输出与既往一致）
+                for (int i = 0; i < parts.Count; i = i + 1)
                 {
-                    sb.Append("——partial 合并 " + total + " 处");
+                    if (i > 0)
+                    {
+                        sb.Append(Environment.NewLine);
+                    }
+                    ClassDeclarationSyntax partNode = parts[i].Node;
+                    FileLinePositionSpan span = partNode.GetLocation().GetLineSpan();
+                    sb.Append("类 " + className + "（" + parts[i].Tree.FilePath + " L" + (span.StartLinePosition.Line + 1) + "-" + (span.EndLinePosition.Line + 1) + "）");
+                    if (parts.Count > 1)
+                    {
+                        sb.Append("——partial 合并 " + parts.Count + " 处·第 " + (i + 1) + " 分部");
+                    }
+                    sb.Append(Environment.NewLine);
+                    string summary = FirstSummary(partNode);
+                    if (summary.Length > 0)
+                    {
+                        sb.Append("/// " + summary + Environment.NewLine);
+                    }
+                    AppendMemberLines(partNode, sb);
                 }
-                sb.Append(Environment.NewLine);
-                string summary = FirstSummary(classNode);
-                if (summary.Length > 0)
-                {
-                    sb.Append("/// " + summary + Environment.NewLine);
-                }
-                AppendMemberLines(classNode, sb);
             }
             else
             {
+                ClassPart memberPart;
                 SyntaxNode memberNode;
                 string memberKind;
                 int memberCount;
                 List<string> memberCandidates;
-                if (!FindMemberInClass(classNode, member, out memberNode, out memberKind, out memberCount, out memberCandidates))
+                if (!FindMemberInParts(parts, member, out memberPart, out memberNode, out memberKind, out memberCount, out memberCandidates))
                 {
                     if (memberCount > 1)
                     {
                         result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
                         return false;
                     }
-                    result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member;
+                    result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member + PartialHint(parts.Count);
                     return false;
                 }
                 FileLinePositionSpan memberSpan = memberNode.GetLocation().GetLineSpan();

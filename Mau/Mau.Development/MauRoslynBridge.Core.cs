@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -204,6 +205,157 @@ namespace Mau.Development
                 throw new InvalidOperationException("newRoot 不是 CompilationUnitSyntax——结构异常");
             }
             return CSharpSyntaxTree.Create(unit, ParseOptions(), source.FilePath, null);
+        }
+
+        /// <summary>
+        /// 换行风格探测——跟随目标文件（\r\n 或 \n）。写侧统一使用：混行会污染后续 diff，注释与声明同行还会语法崩坏（CS1022）
+        /// </summary>
+        /// <param name="tree">目标语法树</param>
+        /// <returns>换行文本</returns>
+        private static string DetectNewLine(SyntaxTree tree)
+        {
+            string text = tree.GetText().ToString();
+            int index = text.IndexOf('\n');
+            if (index > 0 && text[index - 1] != '\r')
+            {
+                return "\n";
+            }
+            return "\r\n";
+        }
+
+        /// <summary>
+        /// 行尾归一——CRLF / CR / LF 统一为目标换行（写侧规整第一步）
+        /// </summary>
+        /// <param name="text">原文</param>
+        /// <param name="newline">目标换行</param>
+        /// <returns>归一后文本</returns>
+        private static string NormalizeNewLineText(string text, string newline)
+        {
+            string working = text.Replace("\r\n", "\n").Replace('\r', '\n');
+            if (newline != "\n")
+            {
+                working = working.Replace("\n", newline);
+            }
+            return working;
+        }
+
+        /// <summary>
+        /// 行首缩进提取——节点起始位置所在行的前导空白（空串=顶格）
+        /// </summary>
+        /// <param name="tree">所在树</param>
+        /// <param name="node">节点</param>
+        /// <returns>行首空白文本</returns>
+        private static string IndentAt(SyntaxTree tree, SyntaxNode node)
+        {
+            string text = tree.GetText().ToString();
+            int position = node.SpanStart;
+            int lineStart = text.LastIndexOf('\n', position > 0 ? position - 1 : 0) + 1;
+            if (position == 0)
+            {
+                lineStart = 0;
+            }
+            int index = lineStart;
+            while (index < text.Length && (text[index] == ' ' || text[index] == '\t'))
+            {
+                index = index + 1;
+            }
+            if (index <= lineStart || index > text.Length)
+            {
+                return "";
+            }
+            return text.Substring(lineStart, index - lineStart);
+        }
+
+        /// <summary>
+        /// 注入代码文本规整——行尾归一（跟随目标文件）+ 行首缩进对齐（相对缩进不变，空行不带缩进）。
+        /// 动机：工具参数的行尾与首行缩进由调用方决定 ⇒ 不规整即落盘混行 / 顶格；规范格式是写侧责任，不能依赖事后格式重整器。
+        /// </summary>
+        /// <param name="code">调用方代码文本</param>
+        /// <param name="baseIndent">目标落点基准缩进（空=只做行尾归一）</param>
+        /// <param name="newline">目标文件换行</param>
+        /// <returns>规整后代码文本</returns>
+        private static string NormalizeCodeText(string code, string baseIndent, string newline)
+        {
+            string normalized = NormalizeNewLineText(code, newline);
+            if (baseIndent.Length == 0)
+            {
+                return normalized;
+            }
+            string[] rawLines = normalized.Split('\n');
+            string[] lines = new string[rawLines.Length];
+            int minIndent = -1;
+            for (int i = 0; i < rawLines.Length; i = i + 1)
+            {
+                string line = rawLines[i];
+                if (line.Length > 0 && line[line.Length - 1] == '\r')
+                {
+                    line = line.Substring(0, line.Length - 1);
+                }
+                lines[i] = line;
+                if (line.Trim().Length == 0)
+                {
+                    continue;
+                }
+                int indent = CountLeadingSpace(line);
+                if (minIndent < 0 || indent < minIndent)
+                {
+                    minIndent = indent;
+                }
+            }
+            if (minIndent < 0)
+            {
+                return normalized;
+            }
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < lines.Length; i = i + 1)
+            {
+                if (i > 0)
+                {
+                    sb.Append(newline);
+                }
+                string line = lines[i];
+                if (line.Trim().Length == 0)
+                {
+                    continue;
+                }
+                int indent = CountLeadingSpace(line);
+                sb.Append(baseIndent);
+                for (int k = minIndent; k < indent; k = k + 1)
+                {
+                    sb.Append(' ');
+                }
+                sb.Append(line.Substring(indent));
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 节点文本规整——Roslyn 规范化布局（相对缩进 canonical：成员体 +4、嵌套逐级递增）+ 基准缩进平移。
+        /// 动机：调用方给的缩进不可信（顶格 / 错位即格式违规）；相对布局归规范化，基准缩进归落点上下文。
+        /// </summary>
+        /// <param name="node">已解析节点（成员 / 语句块）</param>
+        /// <param name="baseIndent">落点基准缩进</param>
+        /// <param name="newline">目标换行</param>
+        /// <returns>规整后文本</returns>
+        private static string FormatNodeText(SyntaxNode node, string baseIndent, string newline)
+        {
+            SyntaxNode canonical = node.NormalizeWhitespace("    ", newline);
+            return NormalizeCodeText(canonical.ToFullString(), baseIndent, newline);
+        }
+
+        /// <summary>
+        /// 行首空白计数（空格 / 制表符同计一位——相对缩进只作差）
+        /// </summary>
+        /// <param name="line">单行文本</param>
+        /// <returns>前导空白字符数</returns>
+        private static int CountLeadingSpace(string line)
+        {
+            int index = 0;
+            while (index < line.Length && (line[index] == ' ' || line[index] == '\t'))
+            {
+                index = index + 1;
+            }
+            return index;
         }
 
         /// <summary>
@@ -583,6 +735,48 @@ namespace Mau.Development
         }
 
         /// <summary>
+        /// 类分部条目——一次类声明（partial 跨分部聚合的基本单位：所在树 + 声明节点）
+        /// </summary>
+        private sealed class ClassPart
+        {
+            /// <summary>
+            /// 声明所在树
+            /// </summary>
+            public SyntaxTree Tree = null!;
+
+            /// <summary>
+            /// 类声明节点
+            /// </summary>
+            public ClassDeclarationSyntax Node = null!;
+        }
+
+        /// <summary>
+        /// 同名类声明的全部分部——跨全部树聚合（按 cache.Trees 顺序；供 partial 类读写落点选择）
+        /// </summary>
+        /// <param name="cache">缓存</param>
+        /// <param name="className">类名</param>
+        /// <returns>分部列表（空 = 类不存在）</returns>
+        private static List<ClassPart> FindClassParts(ProjectCache cache, string className)
+        {
+            List<ClassPart> parts = new List<ClassPart>();
+            foreach (KeyValuePair<string, SyntaxTree> pair in cache.Trees)
+            {
+                foreach (SyntaxNode node in pair.Value.GetRoot().DescendantNodes())
+                {
+                    ClassDeclarationSyntax? decl = node as ClassDeclarationSyntax;
+                    if (decl != null && decl.Identifier.Text == className)
+                    {
+                        ClassPart part = new ClassPart();
+                        part.Tree = pair.Value;
+                        part.Node = decl;
+                        parts.Add(part);
+                    }
+                }
+            }
+            return parts;
+        }
+
+        /// <summary>
         /// 按类名定位类声明——全部树搜索（partial 合并：返回第一个匹配 + 同名类列表）
         /// </summary>
         /// <param name="cache">缓存</param>
@@ -595,25 +789,143 @@ namespace Mau.Development
         {
             foundTree = null!;
             foundNode = null!;
-            total = 0;
-            foreach (KeyValuePair<string, SyntaxTree> pair in cache.Trees)
+            List<ClassPart> parts = FindClassParts(cache, className);
+            total = parts.Count;
+            if (parts.Count > 0)
             {
-                SyntaxNode root = pair.Value.GetRoot();
-                foreach (SyntaxNode node in root.DescendantNodes())
-                {
-                    ClassDeclarationSyntax? decl = node as ClassDeclarationSyntax;
-                    if (decl != null && decl.Identifier.Text == className)
-                    {
-                        total = total + 1;
-                        if (foundNode == null)
-                        {
-                            foundTree = pair.Value;
-                            foundNode = decl;
-                        }
-                    }
-                }
+                foundTree = parts[0].Tree;
+                foundNode = parts[0].Node;
             }
             return foundNode != null;
+        }
+
+        /// <summary>
+        /// 跨分部成员定位——在全部同名类声明中聚合查找；唯一命中返回其分部与节点，多处命中返回候选（分部&gt;1 时附所在文件）
+        /// </summary>
+        /// <param name="parts">类分部列表</param>
+        /// <param name="memberName">成员名（支持签名后缀；.ctor/类名=构造函数）</param>
+        /// <param name="part">命中分部（唯一命中时）</param>
+        /// <param name="found">命中节点（唯一命中时）</param>
+        /// <param name="foundKind">命中类别</param>
+        /// <param name="count">全部分部同名数量合计</param>
+        /// <param name="candidates">候选签名列表（歧义时填充）</param>
+        /// <returns>是否唯一命中</returns>
+        private static bool FindMemberInParts(List<ClassPart> parts, string memberName, out ClassPart part, out SyntaxNode found, out string foundKind, out int count, out List<string> candidates)
+        {
+            part = null!;
+            found = null!;
+            foundKind = "";
+            count = 0;
+            candidates = new List<string>();
+            bool multiPart = parts.Count > 1;
+            for (int i = 0; i < parts.Count; i = i + 1)
+            {
+                SyntaxNode node;
+                string kind;
+                int localCount;
+                List<string> localCandidates;
+                bool unique = FindMemberInClass(parts[i].Node, memberName, out node, out kind, out localCount, out localCandidates);
+                if (localCount == 0)
+                {
+                    continue;
+                }
+                count = count + localCount;
+                string suffix = multiPart ? " @" + Path.GetFileName(parts[i].Tree.FilePath) : "";
+                if (unique)
+                {
+                    part = parts[i];
+                    found = node;
+                    foundKind = kind;
+                    candidates.Add(MemberSignatureLabel(node) + suffix);
+                    continue;
+                }
+                for (int k = 0; k < localCandidates.Count; k = k + 1)
+                {
+                    candidates.Add(localCandidates[k] + suffix);
+                }
+            }
+            if (count != 1 || found == null)
+            {
+                part = null!;
+                found = null!;
+                foundKind = "";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 跨分部方法定位——在全部同名类声明中聚合查找（候选签名列表附带分部文件）
+        /// </summary>
+        /// <param name="parts">类分部列表</param>
+        /// <param name="methodName">方法名</param>
+        /// <param name="part">命中分部（唯一命中时）</param>
+        /// <param name="found">命中方法</param>
+        /// <param name="signatures">全部同名签名（歧义时输出）</param>
+        /// <returns>0=唯一命中 1=无 2=歧义</returns>
+        private static int FindMethodInParts(List<ClassPart> parts, string methodName, out ClassPart part, out MethodDeclarationSyntax found, out List<string> signatures)
+        {
+            part = null!;
+            found = null!;
+            signatures = new List<string>();
+            bool multiPart = parts.Count > 1;
+            int hits = 0;
+            for (int i = 0; i < parts.Count; i = i + 1)
+            {
+                MethodDeclarationSyntax localFound;
+                List<string> localSignatures;
+                int local = FindMethodInClass(parts[i].Node, methodName, out localFound, out localSignatures);
+                if (local == 1)
+                {
+                    continue;
+                }
+                if (local == 0)
+                {
+                    hits = hits + 1;
+                    part = parts[i];
+                    found = localFound;
+                    signatures.Add(localFound.ParameterList.ToString() + (multiPart ? " @" + Path.GetFileName(parts[i].Tree.FilePath) : ""));
+                    continue;
+                }
+                for (int k = 0; k < localSignatures.Count; k = k + 1)
+                {
+                    hits = hits + 1;
+                    signatures.Add(localSignatures[k] + (multiPart ? " @" + Path.GetFileName(parts[i].Tree.FilePath) : ""));
+                }
+            }
+            if (hits == 0)
+            {
+                part = null!;
+                found = null!;
+                return 1;
+            }
+            if (hits > 1)
+            {
+                part = null!;
+                found = null!;
+                return 2;
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// 成员签名标签——歧义候选列表用（与 FindMemberInClass 候选口径一致）
+        /// </summary>
+        /// <param name="node">成员节点</param>
+        /// <returns>标签文本</returns>
+        private static string MemberSignatureLabel(SyntaxNode node)
+        {
+            MethodDeclarationSyntax? method = node as MethodDeclarationSyntax;
+            if (method != null)
+            {
+                return method.Identifier.Text + method.ParameterList.ToString();
+            }
+            ConstructorDeclarationSyntax? ctor = node as ConstructorDeclarationSyntax;
+            if (ctor != null)
+            {
+                return ".ctor" + ctor.ParameterList.ToString();
+            }
+            return FindMemberLabel(node);
         }
 
         /// <summary>
@@ -876,6 +1188,20 @@ namespace Mau.Development
                 return "字段 " + field.Declaration.Variables[0].Identifier.Text;
             }
             return node.GetType().Name;
+        }
+
+        /// <summary>
+        /// 分部类提示——类有 N 处声明时说明检索已跨全部分部（成员确实不存在，不是漏查）；非分部类返回空串
+        /// </summary>
+        /// <param name="total">类声明处数（FindClassParts 数量）</param>
+        /// <returns>提示文本</returns>
+        private static string PartialHint(int total)
+        {
+            if (total <= 1)
+            {
+                return "";
+            }
+            return "——注意：该类是分部类（" + total + " 处声明），成员已在全部分部跨文件检索";
         }
 
         /// <summary>

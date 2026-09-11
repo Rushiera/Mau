@@ -205,20 +205,19 @@ namespace Mau.Development
             FullScan(cache);
             lock (cache.Gate)
             {
-                SyntaxTree foundTree;
-                ClassDeclarationSyntax classNode;
-                int classTotal;
-                if (!FindClassNode(cache, className, out foundTree, out classNode, out classTotal))
+                List<ClassPart> parts = FindClassParts(cache, className);
+                if (parts.Count == 0)
                 {
                     result = "ERR|CLASS_NOT_FOUND|类不存在: " + className;
                     return true;
                 }
+                ClassPart methodPart;
                 MethodDeclarationSyntax methodNode;
                 List<string> signatures;
-                int methodFind = FindMethodInClass(classNode, methodName, out methodNode, out signatures);
+                int methodFind = FindMethodInParts(parts, methodName, out methodPart, out methodNode, out signatures);
                 if (methodFind == 1)
                 {
-                    result = "ERR|METHOD_NOT_FOUND|方法不存在: " + className + "." + methodName;
+                    result = "ERR|METHOD_NOT_FOUND|方法不存在: " + className + "." + methodName + PartialHint(parts.Count);
                     return true;
                 }
                 if (methodFind == 2)
@@ -232,15 +231,20 @@ namespace Mau.Development
                     result = sb.ToString();
                     return true;
                 }
+                // 写落点 = 方法所在分部（跨分部聚合：foundTree 必须与命中节点同树）
+                SyntaxTree foundTree = methodNode.SyntaxTree;
                 if (methodNode.Body == null)
                 {
                     result = "ERR|ARROW_BODY|表达式体方法请先展开为块体（语法糖展开铁律）: " + className + "." + methodName;
                     return true;
                 }
+                // 写侧规整——行尾归一 + 规范化布局 + 基准缩进平移（规范格式是写侧责任，不依赖事后格式重整器）
+                string patchNewline = DetectNewLine(foundTree);
+                string patchIndent = IndentAt(foundTree, methodNode);
                 StatementSyntax parsed;
                 try
                 {
-                    parsed = SyntaxFactory.ParseStatement(body);
+                    parsed = SyntaxFactory.ParseStatement(NormalizeNewLineText(body, patchNewline));
                 }
                 catch (Exception)
                 {
@@ -249,10 +253,27 @@ namespace Mau.Development
                 BlockSyntax? block = parsed as BlockSyntax;
                 if (block == null)
                 {
-                    result = "ERR|BAD_BODY|body 必须是以 { 开头 } 结尾的完整块（SyntaxFactory 解析失败或非块语句）";
+                    // 容错——允许直接给完整方法声明（自动取方法体），省一轮「BAD_BODY 后重发」的往返
+                    MemberDeclarationSyntax? fallback = SyntaxFactory.ParseMemberDeclaration(NormalizeNewLineText(body, patchNewline));
+                    BaseMethodDeclarationSyntax? fallbackMethod = fallback as BaseMethodDeclarationSyntax;
+                    if (fallbackMethod != null)
+                    {
+                        block = fallbackMethod.Body;
+                    }
+                }
+                if (block == null)
+                {
+                    result = "ERR|BAD_BODY|body 必须是块（{ ... }）或完整方法声明（含方法体）";
                     return true;
                 }
-                MethodDeclarationSyntax newMethod = methodNode.WithBody(block);
+                BlockSyntax? finalBlock = SyntaxFactory.ParseStatement(FormatNodeText(block, patchIndent, patchNewline)) as BlockSyntax;
+                if (finalBlock == null)
+                {
+                    result = "ERR|BAD_BODY|body 规整后无法重解析（结构异常）";
+                    return true;
+                }
+                // 尾部补换行——后续 token 的缩进前导 trivia 依赖前一 token 以换行结尾（与 member insert 同规）
+                MethodDeclarationSyntax newMethod = (MethodDeclarationSyntax)EnsureMemberTrailingNewLine(methodNode.WithBody(finalBlock), patchNewline);
                 SyntaxNode root = foundTree.GetRoot();
                 SyntaxNode newRoot = root.ReplaceNode(methodNode, newMethod);
                 SyntaxTree newTree = CreateTreeFromRoot(foundTree, newRoot);
