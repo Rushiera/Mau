@@ -41,9 +41,7 @@ namespace Mau.Development
             return false;
         }
 
-        /// <summary>
-        /// member insert——类中插入成员（position: end/before/after/after_fields）
-        /// </summary>
+        /// <summary>member insert——类中插入成员（position: end/before/after/after_fields；🔴 一次一成员——code 含多个成员声明即 BAD_ARGS 拒绝，不静默截断）</summary>
         /// <param name="args">参数</param>
         /// <param name="result">结果</param>
         /// <returns>调用完成</returns>
@@ -58,6 +56,12 @@ namespace Mau.Development
             {
                 result = "ERR|BAD_ARGS|缺少参数 class/code";
                 return false;
+            }
+            int declaredMembers = CountMemberDeclarations(code);
+            if (declaredMembers > 1)
+            {
+                result = "ERR|BAD_ARGS|code 含 " + declaredMembers + " 个成员声明——member insert 一次一成员，请分多次调用";
+                return true;
             }
             if (position.Length == 0)
             {
@@ -185,6 +189,16 @@ namespace Mau.Development
                 result = "OK 已插入成员到 " + className + "（" + RelativeToProject(cache, filePath) + " " + range + "）: " + newMember.GetType().Name;
                 return true;
             }
+        }
+        /// <summary>
+        /// 顶层成员声明计数——member insert 多成员检测（ParseMemberDeclaration 只解析首个成员，静默截断防护）。
+        /// </summary>
+        /// <param name="code">成员源码文本</param>
+        /// <returns>顶层成员声明数</returns>
+        private static int CountMemberDeclarations(string code)
+        {
+            CompilationUnitSyntax unit = SyntaxFactory.ParseCompilationUnit(code);
+            return unit.Members.Count;
         }
 
         /// <summary>

@@ -67,6 +67,20 @@ namespace Mau.Development.Tests
         }
 
         /// <summary>
+        /// member insert——code 含多个成员声明 ⇒ BAD_ARGS 拒绝且不落盘（静默截断防护）
+        /// </summary>
+        [Fact]
+        public void MemberInsertRejectsMultipleDeclarations()
+        {
+            string before = File.ReadAllText(_sourcePath);
+            string code = "        public string Added()\r\n        {\r\n            return \"added\";\r\n        }\r\n\r\n        public string Added2()\r\n        {\r\n            return \"added2\";\r\n        }\r\n";
+            string result = InvokeMember("end", "", code);
+            Assert.StartsWith("ERR|BAD_ARGS", result);
+            Assert.Contains("一次一成员", result);
+            Assert.Equal(before, File.ReadAllText(_sourcePath));
+        }
+
+        /// <summary>
         /// member insert（position=after）——插入点后续成员须独占一行（尾部换行铁律）
         /// </summary>
         [Fact]
