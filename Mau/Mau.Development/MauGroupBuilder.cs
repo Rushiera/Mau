@@ -190,6 +190,11 @@ namespace Mau.Development
             List<string> refs = proj.ResolveReferences(mauPublic, out refErrors);
             refs.Add(Path.Combine(mauPublic, "Mau.Runtime.dll"));
             refs.Add(Path.Combine(mauPublic, "Mau.Contracts.dll"));
+            // 引用缺失留痕（R2-P3：原静默——编译失败时才暴露，缺失面不可观测）
+            for (int i = 0; i < refErrors.Count; i = i + 1)
+            {
+                Console.WriteLine("[mau proj] WARN 引用缺失: " + refErrors[i]);
+            }
 
             // [段2] csproj 文本——相对 src/<组>/ 的 Mau-public/ 引用（../../.. 到仓库根）
             StringBuilder sb = new StringBuilder();

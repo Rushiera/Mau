@@ -160,12 +160,17 @@ namespace Mau.Development
         {
             try
             {
-                string[] lines = File.ReadAllLines(filePath);
-                if (lineZero < 0 || lineZero >= lines.Length)
+                // 行缓存——同文件多次取行复用（R2-P3：原每次 ReadAllLines 全文件）
+                if (_lineCachePath != filePath)
+                {
+                    _lineCache = File.ReadAllLines(filePath);
+                    _lineCachePath = filePath;
+                }
+                if (lineZero < 0 || lineZero >= _lineCache.Length)
                 {
                     return "";
                 }
-                string text = lines[lineZero].Trim();
+                string text = _lineCache[lineZero].Trim();
                 if (text.Length > 80)
                 {
                     text = text.Substring(0, 80) + "…";

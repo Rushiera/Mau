@@ -232,6 +232,15 @@ namespace Mau.Development
             {
                 namespaceText = ns.Name.ToString();
             }
+            else
+            {
+                // file-scoped namespace（`namespace X;`）——R2-P3：原仅识别块式，file-scoped 会回落默认名
+                FileScopedNamespaceDeclarationSyntax fs = root.Members.OfType<FileScopedNamespaceDeclarationSyntax>().FirstOrDefault();
+                if (fs != null)
+                {
+                    namespaceText = fs.Name.ToString();
+                }
+            }
             List<MethodDeclarationSyntax> boolMethods = new List<MethodDeclarationSyntax>();
             List<MethodDeclarationSyntax> voidMethods = new List<MethodDeclarationSyntax>();
             List<MethodDeclarationSyntax> stringMethods = new List<MethodDeclarationSyntax>();

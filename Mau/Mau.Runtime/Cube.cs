@@ -93,10 +93,14 @@
         public Cube(CubeMode mode, long limitFrames)
         {
             _mode = mode;
-            _limitFrames = limitFrames;
+            // 先判后赋（R1-P3-02：Infinite 模式帧限归零——避免 readonly 字段二次赋值）
             if (mode == CubeMode.Infinite)
             {
                 _limitFrames = 0;
+            }
+            else
+            {
+                _limitFrames = limitFrames;
             }
             _state = CubeState.Idle;
             _elapsed = 0;

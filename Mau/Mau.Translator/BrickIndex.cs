@@ -75,7 +75,8 @@ namespace Mau.Translator
         /// <returns>名字 → 条目</returns>
         public static Dictionary<string, BrickIndexEntry> All()
         {
-            return Load();
+            // 防御性拷贝——避免调用方变异内部缓存（R2-P3）
+            return new Dictionary<string, BrickIndexEntry>(Load(), StringComparer.Ordinal);
         }
         /// <summary>
         /// 加载索引——向上找 Mau.sln → Bricks/index.json（防御式解析，失败返回空）

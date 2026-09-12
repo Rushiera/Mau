@@ -427,12 +427,10 @@ namespace Mau.Runtime
             return old == 1;
         }
 
-        /// <summary>
-        /// 消费事件沿——主线程调用（生成物 Tick 内）。置位返回 true 并清除；未置位返回 false。
-        /// </summary>
+        /// <summary>消费事件沿——主线程调用（生成物 Tick 内）。置位返回 true 并清除；未置位返回 false。并发契约：非线程安全（双线程同消费时 CAS 失败路径仍可能返 true）——语料执行面由 FlowRunner 单主线程 + OA/FlowRegistry 守卫覆盖（R1-P3-03 判定：不引入 ThreadGuard 以避免静态类注入改造）。</summary>
         /// <param name="name">信号名</param>
         /// <returns>true=沿已消费</returns>
-        /// <exception cref="InvalidOperationException">未注册的信号</exception>
+        /// <exception>未注册的信号</exception>
         public static bool TryPoll(string name)
         {
             int old;
