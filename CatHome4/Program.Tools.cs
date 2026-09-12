@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text.Json;
+using System.Threading;
 using Mau.Runtime;
 using Mau.Development;
 
@@ -26,6 +28,90 @@ namespace CH4
                 "{\"name\":\"host-reload\",\"description\":\"热重载语料 dll（宿主级）——在 mau-proj 编译成功后单独调用（建议下一轮）；事务三段式：加载失败保留旧版本；cat=已加载 Flow 注册名（host-flows 查当前清单）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"cat\":{\"type\":\"string\",\"description\":\"Flow 注册名（QuickCat/TextCat/MauCat/CsCat/ConfigCat/SearchCat/VisionCat/TempToolCat/PsCat——host-flows 查当前全部）\"}},\"required\":[\"cat\"]}}," +
                 "{\"name\":\"host-flows\",\"description\":\"查看当前运行 Flow 现状（宿主级）——Registry 动态面：每个已加载 Flow 的 Id/Name/Kind/句柄状态/dll 路径；新增/重载后查询目标清单用\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}" +
                 "]}";
+        }
+
+        /// <summary>
+        /// 宿主内置工具参数面校验——白名单键 / 未知参数拒绝（ERR|BAD_ARGS；宿主注入保留键 catId 放行）。
+        /// </summary>
+        /// <param name="argsJson">参数 JSON（空=无参工具）</param>
+        /// <param name="allowed">允许键（空格分隔；空=无参数）</param>
+        /// <returns>错误文本（空=通过）</returns>
+        private static string CheckHostArgs(string argsJson, string allowed)
+        {
+            if (argsJson == null || argsJson.Trim().Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                {
+                    JsonElement root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                    {
+                        return "ERR|BAD_ARGS|参数必须是 JSON 对象";
+                    }
+                    foreach (JsonProperty property in root.EnumerateObject())
+                    {
+                        if (property.Name == "catId")
+                        {
+                            continue;
+                        }
+                        if (allowed.Length == 0)
+                        {
+                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（本工具无参数）";
+                        }
+                        if ((" " + allowed + " ").IndexOf(" " + property.Name + " ", StringComparison.Ordinal) < 0)
+                        {
+                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 " + allowed + "）";
+                        }
+                    }
+                    return "";
+                }
+            }
+            catch (Exception ex)
+            {
+                return "ERR|BAD_ARGS|参数 JSON 解析失败: " + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// 工具自检工单 ownerId——独立于会话 ToolOwnerId（避免与会话工单归属混淆）
+        /// </summary>
+        private const long ToolCheckOwnerId = 9001;
+
+        /// <summary>
+        /// 工具全链自检——投递一条真实工具单（OA 走单 → 工具组 Flow 认领 → 桥）→ 驱动帧至闭环 → 输出回执。
+        /// A23：工具交付自检须含一条全链实跑（单元测试直调桥会绕过宿主注入面）。
+        /// </summary>
+        /// <param name="name">工具名（如 text-read / cs-check）</param>
+        /// <param name="argsJson">参数整包 JSON</param>
+        /// <returns>退出码（0=闭环 / 3=挂单失败 / 4=未闭环）</returns>
+        private static int RunToolCheck(string name, string argsJson)
+        {
+            ToolOrderDog dog = new ToolOrderDog("tool-check", name, argsJson);
+            dog.Post(_oa, ToolCheckOwnerId);
+            if (dog.OfficeId == 0)
+            {
+                Console.WriteLine("[TOOLCHECK] name=" + name + " ERR|OA_POST_FAIL|工单提交失败（OA 不可用）");
+                return 3;
+            }
+            Console.WriteLine("[TOOLCHECK] name=" + name + " office=#" + dog.OfficeId + " timeoutFrames=" + dog.TimeoutFrames);
+            long frames = 0;
+            while (!dog.IsClosed && !dog.IsTimedOut && frames < dog.TimeoutFrames)
+            {
+                _runner.Tick();
+                dog.Tick(_oa);
+                frames = frames + 1;
+                Thread.Sleep(FrameSleepMs);
+            }
+            Console.WriteLine("[TOOLCHECK] frames=" + frames + " closed=" + dog.IsClosed + " timedOut=" + dog.IsTimedOut);
+            Console.WriteLine("[TOOLCHECK] result=" + (dog.Result == null ? "" : dog.Result));
+            if (dog.IsClosed && dog.Result != null && dog.Result.Length > 0 && !dog.Result.StartsWith("ERR|", StringComparison.Ordinal))
+            {
+                return 0;
+            }
+            return 4;
         }
 
         /// <summary>

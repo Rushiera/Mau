@@ -28,6 +28,13 @@ namespace Mau.Bricks
         public static bool Find(string argsJson, out string result)
         {
             result = "";
+            // [参数面] 声明面口径零容忍——未知 / 缺值一律 ERR|BAD_ARGS（catId 保留键放行）
+            string badArgs = ValidateArgs(argsJson, "dir pattern recursive limit", "dir", "", "");
+            if (badArgs.Length > 0)
+            {
+                result = badArgs;
+                return false;
+            }
             string dir = ExtractArg(argsJson, "dir");
             if (dir == "§PARSE_FAIL§")
             {
@@ -91,6 +98,77 @@ namespace Mau.Bricks
         }
 
         /// <summary>
+        /// 参数面校验——声明面口径零容忍：未知参数 / 必填缺值 / 非法枚举值一律 ERR|BAD_ARGS（宿主注入保留键 catId 放行）。
+        /// </summary>
+        /// <param name="argsJson">工具参数 JSON</param>
+        /// <param name="allowed">允许键（空格分隔）</param>
+        /// <param name="required">必填键（空格分隔）</param>
+        /// <param name="enumName">枚举参数名（空=无）</param>
+        /// <param name="enumValues">枚举合法值（| 分隔）</param>
+        /// <returns>错误文本（空=通过）</returns>
+        private static string ValidateArgs(string argsJson, string allowed, string required, string enumName, string enumValues)
+        {
+            if (argsJson == null || argsJson.Length == 0)
+            {
+                return "ERR|BAD_ARGS|工具参数 JSON 解析失败（LLM 生成参数可能被截断——超长内容请分段写入）";
+            }
+            try
+            {
+                JsonDocument doc = JsonDocument.Parse(argsJson);
+                try
+                {
+                    JsonElement root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                    {
+                        return "ERR|BAD_ARGS|参数必须是 JSON 对象";
+                    }
+                    foreach (JsonProperty property in root.EnumerateObject())
+                    {
+                        if (property.Name == "catId")
+                        {
+                            continue;
+                        }
+                        if ((" " + allowed + " ").IndexOf(" " + property.Name + " ", StringComparison.Ordinal) < 0)
+                        {
+                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 " + allowed + "）";
+                        }
+                    }
+                    string[] must = required.Split(' ');
+                    for (int i = 0; i < must.Length; i = i + 1)
+                    {
+                        JsonElement mustValue;
+                        if (!root.TryGetProperty(must[i], out mustValue) ||
+                            (mustValue.ValueKind == JsonValueKind.String && (mustValue.GetString() ?? "").Length == 0))
+                        {
+                            return "ERR|BAD_ARGS|缺参数 " + must[i] + "（必填：" + required + "）";
+                        }
+                    }
+                    if (enumName.Length > 0)
+                    {
+                        JsonElement enumValue;
+                        if (root.TryGetProperty(enumName, out enumValue) && enumValue.ValueKind == JsonValueKind.String)
+                        {
+                            string value = enumValue.GetString() ?? "";
+                            if (value.Length > 0 && ("|" + enumValues + "|").IndexOf("|" + value + "|", StringComparison.Ordinal) < 0)
+                            {
+                                return "ERR|BAD_ARGS|" + enumName + " 非法值: " + value + "（" + enumValues + "）";
+                            }
+                        }
+                    }
+                    return "";
+                }
+                finally
+                {
+                    doc.Dispose();
+                }
+            }
+            catch (Exception ex)
+            {
+                return "ERR|BAD_ARGS|参数 JSON 解析失败: " + ex.Message;
+            }
+        }
+
+        /// <summary>
         /// 展平参数提取——argsJson 中取字符串值（不存在返回空串）
         /// </summary>
         /// <param name="argumentsJson">参数 JSON</param>
@@ -129,4 +207,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:F072B20E72F3CD47C63E18C4B911D56B666B90B41DD767CC542FBE1B366680AA
+// #MAU_CHECKSUM:SHA256:3C3A986E0672CAA0759D2F278FD8C2041E633F65F846240A2B7B399E057106D2

@@ -318,6 +318,12 @@ namespace CH4
         /// <returns>reload 结果文本</returns>
         private static string ExecHostReload(string argsJson)
         {
+            // [参数面] 声明面口径零容忍——未知参数一律 ERR|BAD_ARGS（catId 保留键放行）
+            string badArgs = CheckHostArgs(argsJson, "cat");
+            if (badArgs.Length > 0)
+            {
+                return badArgs;
+            }
             string cat = "";
             try
             {
@@ -341,7 +347,7 @@ namespace CH4
             }
             if (cat.Length == 0)
             {
-                return "ERR|BAD_ARG|host-reload cat 参数缺失——须为已加载 Flow 注册名（host-flows 可查当前清单）";
+                return "ERR|BAD_ARGS|host-reload cat 参数缺失——须为已加载 Flow 注册名（host-flows 可查当前清单）";
             }
             // 动态许可——Registry.Entries 为真相源（新增工具组 Flow 零宿主改动；dev 等死目标天然拒绝）
             bool found = false;
@@ -365,7 +371,7 @@ namespace CH4
                     }
                     avail.Append(entries[i].Name);
                 }
-                return "ERR|BAD_ARG|host-reload cat 须为已加载 Flow 注册名（当前: " + avail.ToString() + "）——host-flows 可查";
+                return "ERR|BAD_ARGS|host-reload cat 须为已加载 Flow 注册名（当前: " + avail.ToString() + "）——host-flows 可查";
             }
             return ExecuteReload(cat);
         }
@@ -377,6 +383,12 @@ namespace CH4
         /// <returns>Flow 现状文本</returns>
         private static string ExecHostFlows(string argsJson)
         {
+            // [参数面] 声明面口径零容忍——本工具无参数（catId 保留键放行）
+            string badArgs = CheckHostArgs(argsJson, "");
+            if (badArgs.Length > 0)
+            {
+                return badArgs;
+            }
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
             FlowEntry[] entries = _runner.Registry.Entries;
             sb.Append("Flow 运行现状（" + entries.Length.ToString() + " 个）:");

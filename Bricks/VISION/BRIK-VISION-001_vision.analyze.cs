@@ -29,6 +29,13 @@ namespace Mau.Bricks
         public static bool Analyze(string argsJson, out string result)
         {
             result = "";
+            // [参数面] 声明面口径零容忍——未知 / 缺值一律 ERR|BAD_ARGS（catId 保留键放行）
+            string badArgs = ValidateArgs(argsJson, "path question", "path", "", "");
+            if (badArgs.Length > 0)
+            {
+                result = badArgs;
+                return false;
+            }
             string path = ExtractArg(argsJson, "path");
             if (path.Length == 0)
             {
@@ -61,6 +68,84 @@ namespace Mau.Bricks
         /// <param name="argumentsJson">参数 JSON</param>
         /// <param name="key">参数名</param>
         /// <returns>参数值</returns>
+        /// <summary>
+        /// 参数面校验——声明面口径零容忍：未知参数 / 必填缺值 / 非法枚举值一律 ERR|BAD_ARGS（宿主注入保留键 catId 放行）。
+        /// </summary>
+        /// <param name="argsJson">工具参数 JSON</param>
+        /// <param name="allowed">允许键（空格分隔；空=无参数）</param>
+        /// <param name="required">必填键（空格分隔；空=无必填）</param>
+        /// <param name="enumName">枚举参数名（空=无）</param>
+        /// <param name="enumValues">枚举合法值（| 分隔）</param>
+        /// <returns>错误文本（空=通过）</returns>
+        private static string ValidateArgs(string argsJson, string allowed, string required, string enumName, string enumValues)
+        {
+            if (argsJson == null || argsJson.Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                JsonDocument doc = JsonDocument.Parse(argsJson);
+                try
+                {
+                    JsonElement root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                    {
+                        return "ERR|BAD_ARGS|参数必须是 JSON 对象";
+                    }
+                    foreach (JsonProperty property in root.EnumerateObject())
+                    {
+                        if (property.Name == "catId")
+                        {
+                            continue;
+                        }
+                        if (allowed.Length == 0)
+                        {
+                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（本工具无参数）";
+                        }
+                        if ((" " + allowed + " ").IndexOf(" " + property.Name + " ", StringComparison.Ordinal) < 0)
+                        {
+                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 " + allowed + "）";
+                        }
+                    }
+                    if (required.Length > 0)
+                    {
+                        string[] must = required.Split(' ');
+                        for (int i = 0; i < must.Length; i = i + 1)
+                        {
+                            JsonElement mustValue;
+                            if (!root.TryGetProperty(must[i], out mustValue) ||
+                                (mustValue.ValueKind == JsonValueKind.String && (mustValue.GetString() ?? "").Length == 0))
+                            {
+                                return "ERR|BAD_ARGS|缺参数 " + must[i] + "（必填：" + required + "）";
+                            }
+                        }
+                    }
+                    if (enumName.Length > 0)
+                    {
+                        JsonElement enumValue;
+                        if (root.TryGetProperty(enumName, out enumValue) && enumValue.ValueKind == JsonValueKind.String)
+                        {
+                            string value = enumValue.GetString() ?? "";
+                            if (value.Length > 0 && ("|" + enumValues + "|").IndexOf("|" + value + "|", StringComparison.Ordinal) < 0)
+                            {
+                                return "ERR|BAD_ARGS|" + enumName + " 非法值: " + value + "（" + enumValues + "）";
+                            }
+                        }
+                    }
+                    return "";
+                }
+                finally
+                {
+                    doc.Dispose();
+                }
+            }
+            catch (Exception ex)
+            {
+                return "ERR|BAD_ARGS|参数 JSON 解析失败: " + ex.Message;
+            }
+        }
+
         private static string ExtractArg(string argumentsJson, string key)
         {
             try
@@ -89,4 +174,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:E007DD8B2BBF2DAEF8FB1D590AB8CDBFE1BC6513FEFFEB36C36E60601B88E3BB
+// #MAU_CHECKSUM:SHA256:3550EF97FEDACB80072BCC7C81A2B817644A63C7BAC4E66C687B1E2927EDE832

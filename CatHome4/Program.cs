@@ -94,7 +94,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 主程序入口——参数路由：无参=交互模式 / --selfcheck=启动自检 / --run "指令"=单指令脚本模式 / --script &lt;file&gt;=指令文件批量模式（P3a 热重载实测通道）/ --probe-llm &lt;目标&gt;=LLM 返回体探针（方案 B 诊断通道——不启动宿主）
+        /// 主程序入口——参数路由：无参=交互模式 / --selfcheck=启动自检 / --run "指令"=单指令脚本模式 / --script &lt;file&gt;=指令文件批量模式（P3a 热重载实测通道）/ --probe-llm &lt;目标&gt;=LLM 返回体探针（方案 B 诊断通道——不启动宿主）/ --tool-check &lt;工具名&gt; &lt;参数JSON&gt;=工具全链自检（A23：OA 走单 → 认领线 → 桥）
         /// </summary>
         public static int Main(string[] args)
         {
@@ -127,7 +127,7 @@ namespace CH4
                     bool pauseOnFail = true;
                     for (int i = 0; i < args.Length; i = i + 1)
                     {
-                        if (args[i] == "--run" || args[i] == "--script" || args[i] == "--selfcheck")
+                        if (args[i] == "--run" || args[i] == "--script" || args[i] == "--selfcheck" || args[i] == "--tool-check")
                         {
                             pauseOnFail = false;
                         }
@@ -169,6 +169,14 @@ namespace CH4
                 if (mode == "selfcheck")
                 {
                     return RunSelfCheck();
+                }
+                // [段3a] 工具全链自检通道——真实 OA 走单 → 认领线 → 桥（A23 集成面实跑通道）
+                for (int i = 0; i < args.Length; i++)
+                {
+                    if (args[i] == "--tool-check" && i + 2 < args.Length)
+                    {
+                        return RunToolCheck(args[i + 1], args[i + 2]);
+                    }
                 }
                 if (mode.StartsWith("run:", StringComparison.Ordinal))
                 {

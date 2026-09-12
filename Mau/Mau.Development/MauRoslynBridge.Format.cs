@@ -27,14 +27,12 @@ namespace Mau.Development
         /// <returns>调用完成</returns>
         private bool ToolFormat(JsonElement args, out string result)
         {
-            // [段1] 参数面校验——零容忍（未知参数 / 缺值 / 非法值一律拒绝）
-            string pathParam;
-            string mode;
-            string badArgs = ValidateFormatArgs(args, out pathParam, out mode);
-            if (badArgs.Length > 0)
+            // [段1] 参数取出——校验归 Invoke 统一入口（ValidateToolArgs：未知 / 缺值 / 非法值一律 ERR|BAD_ARGS）
+            string pathParam = Arg(args, "path");
+            string mode = Arg(args, "mode");
+            if (mode.Length == 0)
             {
-                result = badArgs;
-                return false;
+                mode = "check";
             }
 
             // [段2] 入口路径解析——文件 / 目录 / csproj（受控根内）
@@ -112,48 +110,6 @@ namespace Mau.Development
             }
             result = TrimResult(output.ToString(), MaxResultChars);
             return true;
-        }
-
-        /// <summary>format 参数面校验——白名单字段（path / mode）+ 缺值 / 非法值拒绝；宿主注入保留键（catId，见 IsHostInjectedArg）放行——该键不进工具声明面，非 LLM 可见参数。</summary>
-        /// <param name="args">参数对象</param>
-        /// <param name="pathParam">出参：路径</param>
-        /// <param name="mode">出参：模式</param>
-        /// <returns>错误文本（空=通过）</returns>
-        private static string ValidateFormatArgs(JsonElement args, out string pathParam, out string mode)
-        {
-            pathParam = "";
-            mode = "check";
-            if (args.ValueKind != JsonValueKind.Object)
-            {
-                return "ERR|BAD_ARGS|参数必须是 JSON 对象";
-            }
-
-            foreach (JsonProperty property in args.EnumerateObject())
-            {
-                if (property.Name != "path" && property.Name != "mode" && !IsHostInjectedArg(property.Name))
-                {
-                    return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 path / mode）";
-                }
-            }
-
-            pathParam = Arg(args, "path");
-            if (pathParam.Length == 0)
-            {
-                return "ERR|BAD_ARGS|缺参数 path（.cs 文件 / 目录 / csproj，受控根内）";
-            }
-
-            string modeArg = Arg(args, "mode");
-            if (modeArg.Length > 0)
-            {
-                if (modeArg != "check" && modeArg != "apply")
-                {
-                    return "ERR|BAD_ARGS|mode 非法值: " + modeArg + "（check|apply）";
-                }
-
-                mode = modeArg;
-            }
-
-            return "";
         }
 
         /// <summary>

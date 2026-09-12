@@ -357,12 +357,37 @@ namespace Mau.Development
         private bool ToolDead(JsonElement args, out string result)
         {
             string path = Arg(args, "path");
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string resolveError;
+            List<string> projects = ResolveProjects(path, out resolveError);
+            if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path;
+                result = "ERR|BAD_PATH|" + resolveError + ": " + path;
                 return false;
             }
+            if (projects.Count == 1)
+            {
+                return DeadSingle(projects[0], out result);
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.Append("聚合 " + projects.Count + " 个项目：" + Environment.NewLine);
+            for (int i = 0; i < projects.Count; i = i + 1)
+            {
+                sb.Append("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine);
+                string one;
+                DeadSingle(projects[i], out one);
+                sb.Append(one + Environment.NewLine);
+            }
+            result = TrimResult(sb.ToString(), MaxResultChars);
+            return true;
+        }
+        /// <summary>
+        /// 单项目 dead——零引用成员扫描（private/internal；public/override/构造跳过）。
+        /// </summary>
+        /// <param name="csproj">csproj 绝对路径</param>
+        /// <param name="result">结果文本</param>
+        /// <returns>调用完成</returns>
+        private bool DeadSingle(string csproj, out string result)
+        {
             ProjectCache cache = EnsureProject(csproj);
             FullScan(cache);
             HashSet<ISymbol> targets = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
@@ -501,12 +526,37 @@ namespace Mau.Development
         private bool ToolCommentCheck(JsonElement args, out string result)
         {
             string path = Arg(args, "path");
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string resolveError;
+            List<string> projects = ResolveProjects(path, out resolveError);
+            if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path;
+                result = "ERR|BAD_PATH|" + resolveError + ": " + path;
                 return false;
             }
+            if (projects.Count == 1)
+            {
+                return CommentCheckSingle(projects[0], out result);
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.Append("聚合 " + projects.Count + " 个项目：" + Environment.NewLine);
+            for (int i = 0; i < projects.Count; i = i + 1)
+            {
+                sb.Append("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine);
+                string one;
+                CommentCheckSingle(projects[i], out one);
+                sb.Append(one + Environment.NewLine);
+            }
+            result = TrimResult(sb.ToString(), MaxResultChars);
+            return true;
+        }
+        /// <summary>
+        /// 单项目 comment_check——缺 summary 注释扫描（类 + 成员；语法层——复用 FirstSummary）。
+        /// </summary>
+        /// <param name="csproj">csproj 绝对路径</param>
+        /// <param name="result">结果文本</param>
+        /// <returns>调用完成</returns>
+        private bool CommentCheckSingle(string csproj, out string result)
+        {
             ProjectCache cache = EnsureProject(csproj);
             FullScan(cache);
             List<string> missingLines = new List<string>();

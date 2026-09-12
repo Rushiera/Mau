@@ -111,6 +111,13 @@ namespace Mau.Development
                 using (args)
                 {
                     JsonElement root = args.RootElement;
+                    // 参数面零容忍——未知 / 缺值 / 非法值一律 ERR|BAD_ARGS（校验归工具内部；宿主注入保留键放行）
+                    string badArgs = ValidateToolArgs(method, root);
+                    if (badArgs.Length > 0)
+                    {
+                        result = badArgs;
+                        return false;
+                    }
                     if (method == "check")
                     {
                         return ToolCheck(root, out result);
@@ -236,6 +243,151 @@ namespace Mau.Development
             }
             return "";
         }
+        /// <summary>
+        /// 受控根内路径归一——id: 命名空间寻址（与 ResolveProject / ResolveEntryPath 同源口径）；不要求路径存在。
+        /// </summary>
+        /// <param name="pathParam">路径参数</param>
+        /// <returns>绝对路径（越界 / 空返回空串）</returns>
+        private string ResolveInRoots(string pathParam)
+        {
+            if (string.IsNullOrWhiteSpace(pathParam))
+            {
+                return "";
+            }
+            string path = pathParam;
+            int nsSep = path.IndexOf(':');
+            if (nsSep > 0)
+            {
+                string nsId = path.Substring(0, nsSep);
+                string nsRel = path.Substring(nsSep + 1);
+                for (int i = 0; i < _roots.Length; i = i + 1)
+                {
+                    if (string.Equals(_rootIds[i], nsId, StringComparison.Ordinal))
+                    {
+                        path = Path.Combine(_roots[i], nsRel);
+                        break;
+                    }
+                }
+            }
+            string full;
+            if (Path.IsPathFullyQualified(path))
+            {
+                full = Path.GetFullPath(path);
+            }
+            else
+            {
+                full = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path));
+            }
+            for (int i = 0; i < _roots.Length; i = i + 1)
+            {
+                if (full.StartsWith(_roots[i] + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(full, _roots[i], StringComparison.OrdinalIgnoreCase))
+                {
+                    return full;
+                }
+            }
+            return "";
+        }
+        /// <summary>
+        /// 解析 .sln 内的 csproj 列表——Project(...) 行取工程相对路径（相对 sln 目录；非 .csproj / 不存在者跳过）。
+        /// </summary>
+        /// <param name="slnPath">解决方案绝对路径</param>
+        /// <param name="projects">出参：csproj 绝对路径列表（按 sln 声明序去重）</param>
+        private static void ReadSolutionProjects(string slnPath, List<string> projects)
+        {
+            string slnDir = Path.GetDirectoryName(slnPath) ?? "";
+            string[] lines = File.ReadAllLines(slnPath);
+            for (int i = 0; i < lines.Length; i = i + 1)
+            {
+                string line = lines[i].Trim();
+                if (!line.StartsWith("Project(", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                List<int> quotes = new List<int>();
+                int cursor = line.IndexOf('"');
+                while (cursor >= 0)
+                {
+                    quotes.Add(cursor);
+                    cursor = line.IndexOf('"', cursor + 1);
+                }
+                if (quotes.Count < 6)
+                {
+                    continue;
+                }
+                // 引号对序：① 类型 GUID ② 项目名 ③ 相对路径 ④ 项目 GUID——取第 3 对（索引 4/5）
+                string relative = line.Substring(quotes[4] + 1, quotes[5] - quotes[4] - 1);
+                if (!relative.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                string full = Path.GetFullPath(Path.Combine(slnDir, relative.Replace('\\', Path.DirectorySeparatorChar)));
+                if (!File.Exists(full))
+                {
+                    continue;
+                }
+                bool exists = false;
+                for (int j = 0; j < projects.Count; j = j + 1)
+                {
+                    if (string.Equals(projects[j], full, StringComparison.OrdinalIgnoreCase))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists)
+                {
+                    projects.Add(full);
+                }
+            }
+        }
+        /// <summary>
+        /// 多项目入口解析——csproj / .sln / 目录 → csproj 绝对路径列表（受控根校验 + id: 命名空间寻址与 ResolveProject 同源）。
+        /// </summary>
+        /// <param name="pathParam">路径参数（csproj / .sln / 目录）</param>
+        /// <param name="error">出参：失败原因（成功为空串）</param>
+        /// <returns>csproj 绝对路径列表（目录按名称序；失败返回空列表）</returns>
+        private List<string> ResolveProjects(string pathParam, out string error)
+        {
+            List<string> projects = new List<string>();
+            error = "";
+            string full = ResolveInRoots(pathParam);
+            if (full.Length == 0)
+            {
+                error = "项目路径无效或越界（受控根内，支持 csproj / .sln / 目录）";
+                return projects;
+            }
+            if (Directory.Exists(full))
+            {
+                string[] found = Directory.GetFiles(full, "*.csproj", SearchOption.TopDirectoryOnly);
+                Array.Sort(found, StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < found.Length; i = i + 1)
+                {
+                    projects.Add(Path.GetFullPath(found[i]));
+                }
+                if (projects.Count == 0)
+                {
+                    error = "目录内无 csproj: " + full;
+                }
+                return projects;
+            }
+            if (File.Exists(full) && full.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+            {
+                ReadSolutionProjects(full, projects);
+                if (projects.Count == 0)
+                {
+                    error = "解决方案内无 csproj: " + full;
+                }
+                return projects;
+            }
+            if (File.Exists(full) && full.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+            {
+                projects.Add(Path.GetFullPath(full));
+                return projects;
+            }
+            error = "路径不是 csproj / .sln / 目录: " + full;
+            return projects;
+        }
 
         /// <summary>
         /// LRU 淘汰——池超限时淘汰 LastAccess 最旧条目（跳过当前正在用的 key）
@@ -340,6 +492,147 @@ namespace Mau.Development
         private static bool IsHostInjectedArg(string name)
         {
             return string.Equals(name, "catId", StringComparison.Ordinal);
+        }
+        /// <summary>
+        /// cs-* 参数面校验——声明面口径零容忍：未知参数 / 必填缺值 / 枚举非法值一律 ERR|BAD_ARGS（校验归工具内部；宿主注入保留键 IsHostInjectedArg 放行）。
+        /// </summary>
+        /// <param name="method">方法名（已过白名单分派）</param>
+        /// <param name="args">参数对象</param>
+        /// <returns>错误文本（空=通过）</returns>
+        private string ValidateToolArgs(string method, JsonElement args)
+        {
+            string allowed;
+            string required;
+            if (method == "check")
+            {
+                allowed = "path full";
+                required = "path";
+            }
+            else if (method == "build")
+            {
+                allowed = "path";
+                required = "path";
+            }
+            else if (method == "list")
+            {
+                allowed = "path class";
+                required = "path";
+            }
+            else if (method == "read")
+            {
+                allowed = "path class member";
+                required = "path class";
+            }
+            else if (method == "find_ref")
+            {
+                allowed = "path class member";
+                required = "path class member";
+            }
+            else if (method == "patch")
+            {
+                allowed = "path class method body";
+                required = "path class method body";
+            }
+            else if (method == "member")
+            {
+                allowed = "path class op member position anchor code oldName newName";
+                required = "path class op";
+            }
+            else if (method == "comment")
+            {
+                allowed = "path class member type text param";
+                required = "path class type text";
+            }
+            else if (method == "dead" || method == "comment_check")
+            {
+                allowed = "path";
+                required = "path";
+            }
+            else if (method == "format")
+            {
+                allowed = "path mode";
+                required = "path";
+            }
+            else
+            {
+                return "ERR|UNKNOWN_METHOD|未知方法: " + method;
+            }
+
+            if (args.ValueKind != JsonValueKind.Object)
+            {
+                return "ERR|BAD_ARGS|参数必须是 JSON 对象";
+            }
+            foreach (JsonProperty property in args.EnumerateObject())
+            {
+                if (!IsHostInjectedArg(property.Name) && !ContainsKey(allowed, property.Name))
+                {
+                    return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 " + allowed + "）";
+                }
+            }
+            string[] requiredKeys = required.Split(' ');
+            for (int i = 0; i < requiredKeys.Length; i = i + 1)
+            {
+                if (Arg(args, requiredKeys[i]).Length == 0)
+                {
+                    return "ERR|BAD_ARGS|缺参数 " + requiredKeys[i] + "（必填：" + required + "）";
+                }
+            }
+            if (method == "check")
+            {
+                string fullValue = Arg(args, "full");
+                if (fullValue.Length > 0 && fullValue != "true" && fullValue != "false")
+                {
+                    return "ERR|BAD_ARGS|full 非法值: " + fullValue + "（true|false）";
+                }
+            }
+            if (method == "member")
+            {
+                string op = Arg(args, "op");
+                if (op != "insert" && op != "delete" && op != "rename")
+                {
+                    return "ERR|BAD_ARGS|op 非法值: " + op + "（insert|delete|rename）";
+                }
+                string position = Arg(args, "position");
+                if (position.Length > 0 && position != "end" && position != "before" && position != "after" && position != "after_fields")
+                {
+                    return "ERR|BAD_ARGS|position 非法值: " + position + "（end|before|after|after_fields）";
+                }
+            }
+            if (method == "comment")
+            {
+                string typeValue = Arg(args, "type");
+                if (typeValue != "summary" && typeValue != "param" && typeValue != "returns")
+                {
+                    return "ERR|BAD_ARGS|type 非法值: " + typeValue + "（summary|param|returns）";
+                }
+            }
+            if (method == "format")
+            {
+                string modeValue = Arg(args, "mode");
+                if (modeValue.Length > 0 && modeValue != "check" && modeValue != "apply")
+                {
+                    return "ERR|BAD_ARGS|mode 非法值: " + modeValue + "（check|apply）";
+                }
+            }
+            return "";
+        }
+        /// <summary>
+        /// 键集包含判断——空格分隔键表（声明面口径）。
+        /// </summary>
+        /// <param name="keyList">空格分隔键表</param>
+        /// <param name="name">待查键名</param>
+        /// <returns>true=包含</returns>
+        private static bool ContainsKey(string keyList, string name)
+        {
+            string[] keys = keyList.Split(' ');
+            for (int i = 0; i < keys.Length; i = i + 1)
+            {
+                if (keys[i] == name)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

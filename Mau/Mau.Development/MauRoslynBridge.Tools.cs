@@ -26,23 +26,62 @@ namespace Mau.Development
         {
             string path = Arg(args, "path");
             bool full = Arg(args, "full") == "true";
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string resolveError;
+            List<string> projects = ResolveProjects(path, out resolveError);
+            if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界（受控根内，支持 csproj 路径或项目目录）: " + path;
+                result = "ERR|BAD_PATH|" + resolveError + ": " + path;
                 return false;
             }
+            if (projects.Count == 1)
+            {
+                return CheckSingle(projects[0], full, out result);
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.Append("聚合 " + projects.Count + " 个项目：" + Environment.NewLine);
+            int failed = 0;
+            for (int i = 0; i < projects.Count; i = i + 1)
+            {
+                sb.Append("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine);
+                string one;
+                CheckSingle(projects[i], full, out one);
+                sb.Append(one + Environment.NewLine);
+                if (one.StartsWith("FAIL|CHECK|", StringComparison.Ordinal))
+                {
+                    failed = failed + 1;
+                }
+            }
+            sb.Append("—— 聚合结果：" + projects.Count + " 项目 / " + failed + " 项目有错误");
+            result = TrimResult(sb.ToString(), MaxResultChars);
+            return true;
+        }
+        /// <summary>
+        /// 单项目 check——语法树诊断（Compilation.GetDiagnostics 增量语义；full=含警告）+ CS5001 假阳性单列标注。
+        /// </summary>
+        /// <param name="csproj">csproj 绝对路径</param>
+        /// <param name="full">是否输出全部警告</param>
+        /// <param name="result">结果文本</param>
+        /// <returns>调用完成</returns>
+        private bool CheckSingle(string csproj, bool full, out string result)
+        {
             ProjectCache cache = EnsureProject(csproj);
             FullScan(cache);
             CSharpCompilation compilation = cache.Compilation;
             System.Collections.Immutable.ImmutableArray<Diagnostic> diagnostics = compilation.GetDiagnostics();
             List<Diagnostic> errors = new List<Diagnostic>();
             List<Diagnostic> warnings = new List<Diagnostic>();
+            int missedEntryPoint = 0;
             for (int i = 0; i < diagnostics.Length; i = i + 1)
             {
                 Diagnostic diagnostic = diagnostics[i];
                 if (diagnostic.Severity == DiagnosticSeverity.Error)
                 {
+                    // CS5001（无入口点）——构建期 targets 生成的入口点在 Roslyn 快照不可见：单列标注，不占错误计数（裁决走 cs.build）
+                    if (diagnostic.Id == "CS5001")
+                    {
+                        missedEntryPoint = missedEntryPoint + 1;
+                        continue;
+                    }
                     errors.Add(diagnostic);
                 }
                 else if (diagnostic.Severity == DiagnosticSeverity.Warning)
@@ -76,6 +115,11 @@ namespace Mau.Development
                     sb.Append(FormatDiagnostic(cache, warnings[i]));
                 }
             }
+            if (missedEntryPoint > 0)
+            {
+                sb.Append(Environment.NewLine);
+                sb.Append("ⓘ CS5001 疑似假阳性 ×" + missedEntryPoint + "（入口点由构建期 targets 生成——Roslyn 快照不可见；裁决走 cs.build）——不占错误计数");
+            }
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;
         }
@@ -89,26 +133,62 @@ namespace Mau.Development
         private bool ToolBuild(JsonElement args, out string result)
         {
             string path = Arg(args, "path");
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string resolveError;
+            List<string> projects = ResolveProjects(path, out resolveError);
+            if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path;
+                result = "ERR|BAD_PATH|" + resolveError + ": " + path;
                 return false;
             }
+            string slnPath = ResolveSolutionPath(path);
+            if (slnPath.Length > 0)
+            {
+                return BuildOne(slnPath, out result);
+            }
+            if (projects.Count == 1)
+            {
+                return BuildOne(projects[0], out result);
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.Append("聚合 " + projects.Count + " 个项目：" + Environment.NewLine);
+            int failed = 0;
+            for (int i = 0; i < projects.Count; i = i + 1)
+            {
+                sb.Append("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine);
+                string one;
+                BuildOne(projects[i], out one);
+                sb.Append(one + Environment.NewLine);
+                if (one.StartsWith("FAIL|BUILD|", StringComparison.Ordinal))
+                {
+                    failed = failed + 1;
+                }
+            }
+            sb.Append("—— 聚合结果：" + projects.Count + " 项目 / " + failed + " 失败");
+            result = TrimResult(sb.ToString(), MaxResultChars);
+            return true;
+        }
+        /// <summary>
+        /// 单目标 build——dotnet build 子进程（csproj 或 .sln）；成功后引用集置脏（下次语义用新产物）。
+        /// </summary>
+        /// <param name="target">csproj / .sln 绝对路径</param>
+        /// <param name="result">结果文本</param>
+        /// <returns>调用完成</returns>
+        private bool BuildOne(string target, out string result)
+        {
             // 轻量缓存条目——不 Parse 全树（build 只裁决，不建编译态）
             ProjectCache cache = null!;
-            if (!_pool.TryGetValue(csproj, out cache))
+            if (!_pool.TryGetValue(target, out cache))
             {
                 cache = new ProjectCache();
-                cache.CsprojPath = csproj;
-                cache.ProjectDir = Path.GetDirectoryName(csproj) ?? "";
-                cache.AssemblyName = Path.GetFileNameWithoutExtension(csproj);
+                cache.CsprojPath = target;
+                cache.ProjectDir = Path.GetDirectoryName(target) ?? "";
+                cache.AssemblyName = Path.GetFileNameWithoutExtension(target);
                 cache.ReferencesDirty = true;
-                _pool[csproj] = cache;
+                _pool[target] = cache;
             }
             cache.LastAccess = Environment.TickCount64;
             // ProcessRunner 统一执行器——双流并行读 + watchdog 强杀（防顺序 ReadToEnd 管道死锁——Codex 审查 P1）
-            ProcessRunResult run = ProcessRunner.RunAndCapture("dotnet", "build \"" + csproj + "\" --nologo", cache.ProjectDir, 120000);
+            ProcessRunResult run = ProcessRunner.RunAndCapture("dotnet", "build \"" + target + "\" --nologo", cache.ProjectDir, 120000);
             if (!run.Started)
             {
                 result = "ERR|BUILD_START|dotnet 进程启动失败（PATH 中无 dotnet？）";
@@ -129,6 +209,21 @@ namespace Mau.Development
             result = TrimResult("OK 构建成功: " + cache.AssemblyName + Environment.NewLine + tail, MaxResultChars);
             return true;
         }
+
+        /// <summary>
+        /// 解决方案入口探测——传 .sln 时返回绝对路径（否则空串）；用于 build 直达 sln（不经逐项目展开）。
+        /// </summary>
+        /// <param name="pathParam">路径参数</param>
+        /// <returns>.sln 绝对路径（非 sln / 越界返回空串）</returns>
+        private string ResolveSolutionPath(string pathParam)
+        {
+            string full = ResolveInRoots(pathParam);
+            if (full.Length > 0 && File.Exists(full) && full.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+            {
+                return full;
+            }
+            return "";
+        }
         /// <summary>
         /// cs.list——类/成员签名（语法层提取，无需语义）
         /// </summary>
@@ -139,12 +234,38 @@ namespace Mau.Development
         {
             string path = Arg(args, "path");
             string className = Arg(args, "class");
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string resolveError;
+            List<string> projects = ResolveProjects(path, out resolveError);
+            if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path;
+                result = "ERR|BAD_PATH|" + resolveError + ": " + path;
                 return false;
             }
+            if (projects.Count == 1)
+            {
+                return ListSingle(projects[0], className, out result);
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.Append("聚合 " + projects.Count + " 个项目：" + Environment.NewLine);
+            for (int i = 0; i < projects.Count; i = i + 1)
+            {
+                sb.Append("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine);
+                string one;
+                ListSingle(projects[i], className, out one);
+                sb.Append(one + Environment.NewLine);
+            }
+            result = TrimResult(sb.ToString(), MaxResultChars);
+            return true;
+        }
+        /// <summary>
+        /// 单项目 list——类/成员签名清单（语法层提取，无需语义）。
+        /// </summary>
+        /// <param name="csproj">csproj 绝对路径</param>
+        /// <param name="className">类名（空=全项目类清单）</param>
+        /// <param name="result">结果文本</param>
+        /// <returns>true=命中；false=类不存在（result 为 ERR 文本）</returns>
+        private bool ListSingle(string csproj, string className, out string result)
+        {
             ProjectCache cache = EnsureProject(csproj);
             FullScan(cache);
             StringBuilder sb = new StringBuilder();
