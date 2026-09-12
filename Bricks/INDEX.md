@@ -59,6 +59,7 @@
 | BRIK-TOOLS-007 | tools.temptoolcat | TOOLS | TOOLS/BRIK-TOOLS-007_tools.temptoolcat.cs | 无 | active |  |
 | BRIK-TOOLS-008 | tools.pscat | TOOLS | TOOLS/BRIK-TOOLS-008_tools.pscat.cs | 无 | active |  |
 | BRIK-TOOLS-009 | tools.majordomocat | TOOLS | TOOLS/BRIK-TOOLS-009_tools.majordomocat.cs | 无 | active |  |
+| BRIK-TOOLS-010 | tools.quickcat | TOOLS | TOOLS/BRIK-TOOLS-010_tools.quickcat.cs | 无 | active |  |
 | BRIK-VISION-001 | vision.analyze | VISION | VISION/BRIK-VISION-001_vision.analyze.cs | 无 | active |  |
 | BRIK-WEB-001 | web.search | WEB | WEB/BRIK-WEB-001_web.search.cs | 无 | active |  |
 

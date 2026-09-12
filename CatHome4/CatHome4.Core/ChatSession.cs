@@ -424,15 +424,27 @@ namespace CH4
             _tools = FilterPrivilegedSpecs(specs);
         }
         /// <summary>
-        /// 特权面可见性过滤——非默认会话（catId != majordomo）剔除全部 majordomo-* 工具。
-        /// 设计依据：声明面（cat.cfg toolNames）的全量保底语义是"防外部损坏"，不构成授权通道
-        /// （design-ch4-host-restart §二）——故特权工具在会话内单点剔除，与 IsToolAllowed 拦截构成双面。
+        /// 默认会话判定——特权面（majordomo-*）可见与可调的授权基准。
+        /// 判据：猫 key = majordomo（创建方 SetCatKey 后成立）；构造期 catKey 未赋值，以显示名兜底（默认猫 displayName = majordomo）。
+        /// 设计依据：design-ch4-host-restart §二——特权面是单点授权，判据不得取运行时会话 ID（时间戳）。
         /// </summary>
+        private bool IsDefaultSession
+        {
+            get
+            {
+                if (_catKey == "majordomo")
+                {
+                    return true;
+                }
+                return _catKey.Length == 0 && _displayName == "majordomo";
+            }
+        }
+        /// <summary>特权面可见性过滤——非默认会话剔除全部 majordomo-* 工具（默认会话判定见 IsDefaultSession）。设计依据：声明面（cat.cfg toolNames）的全量保底语义是「防外部损坏」，不构成授权通道（design-ch4-host-restart §二）——故特权工具在会话内单点剔除，与 IsToolAllowed 拦截构成双面。</summary>
         /// <param name="specs">原始工具面</param>
         /// <returns>过滤后的工具面（默认会话原样返回）</returns>
         private ToolSpec[] FilterPrivilegedSpecs(ToolSpec[] specs)
         {
-            if (specs == null || _id == "majordomo")
+            if (specs == null || IsDefaultSession)
             {
                 return specs;
             }
@@ -1278,8 +1290,8 @@ namespace CH4
         /// <returns>true=在声明面内</returns>
         private bool IsToolAllowed(string name)
         {
-            // 特权面硬编码——majordomo-* 仅默认会话（catId=majordomo）可调（design-ch4-host-restart §二：单点授权）
-            if (name.StartsWith("majordomo-", StringComparison.Ordinal) && _id != "majordomo")
+            // 特权面硬编码——majordomo-* 仅默认会话可调（design-ch4-host-restart §二：单点授权；判据同 FilterPrivilegedSpecs）
+            if (name.StartsWith("majordomo-", StringComparison.Ordinal) && !IsDefaultSession)
             {
                 return false;
             }

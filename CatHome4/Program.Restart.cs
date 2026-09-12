@@ -175,10 +175,10 @@ namespace CH4
                 AbortRestart("重启请求缺少目标运行区（target 未提供且受控根 mauout 未配置）——已撤销重启态。");
                 return;
             }
-            string repoRoot = FindRepoRoot(AppContext.BaseDirectory);
+            string repoRoot = ResolveRepoRootForRestart();
             if (repoRoot.Length == 0)
             {
-                AbortRestart("未找到仓库根（Mau.sln 探测失败）——无法定位 SetUp.exe，已撤销重启态。");
+                AbortRestart("未找到仓库根（运行区向上探测失败且受控根 mau 未配置）——无法定位 SetUp.exe，已撤销重启态。");
                 return;
             }
             string setupExe = Path.Combine(repoRoot, "SetUp.exe");
@@ -256,6 +256,43 @@ namespace CH4
             DataBox.Remove("global", RestartRequestKey);
             LogStore.Add("CatHome4", 3, "重启已撤销：" + reason, "RESTART");
             Console.WriteLine("[CMD] " + reason);
+        }
+        /// <summary>
+        /// 重启链仓库根解析——三级锚定（与 ResolveDataRoot 同构）：
+        /// 1. CH4_REPO_ROOT 环境变量（显式逃逸口——多实例/自定义落位）
+        /// 2. 运行区向上探测（Mau.sln——开发/测试区形态：运行区位于仓库内）
+        /// 3. 受控根 mau（workspace 配置——外部部署区形态：运行区不在仓库内，双校验 Mau.sln + SetUp.exe）
+        /// </summary>
+        /// <returns>仓库根绝对路径（空=三级皆未命中）</returns>
+        private static string ResolveRepoRootForRestart()
+        {
+            string envRoot = Environment.GetEnvironmentVariable("CH4_REPO_ROOT");
+            if (envRoot != null && envRoot.Length > 0 && File.Exists(Path.Combine(envRoot, "SetUp.exe")))
+            {
+                return envRoot;
+            }
+            string probed = FindRepoRoot(AppContext.BaseDirectory);
+            if (probed.Length > 0 && File.Exists(Path.Combine(probed, "SetUp.exe")))
+            {
+                return probed;
+            }
+            WorkspaceConfig cfg;
+            if (DataBox.TryResolve<WorkspaceConfig>(out cfg) && cfg != null && cfg.Roots != null)
+            {
+                for (int i = 0; i < cfg.Roots.Length; i = i + 1)
+                {
+                    if (!string.Equals(cfg.Roots[i].Id, "mau", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                    string path = cfg.Roots[i].Path;
+                    if (File.Exists(Path.Combine(path, "Mau.sln")) && File.Exists(Path.Combine(path, "SetUp.exe")))
+                    {
+                        return path;
+                    }
+                }
+            }
+            return "";
         }
 
         /// <summary>
