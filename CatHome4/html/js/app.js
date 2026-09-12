@@ -539,6 +539,9 @@ function renderConfig(items) {
         inp.value = it.value;
         inp.className = 'input-mini text';
         inp.style.width = '100%';
+        if (it['default'] !== undefined && it['default'] !== '' && (it.value === undefined || it.value === '')) {
+            inp.placeholder = '默认值 ' + it['default'] + '（落盘后生效）';
+        }
         td2.appendChild(inp);
         var td3 = document.createElement('td');
         td3.className = 'box-tag';
@@ -547,6 +550,10 @@ function renderConfig(items) {
         var btn = document.createElement('button');
         btn.textContent = '保存';
         btn.className = 'btn-mini tight';
+        if (it.writable === false) {
+            btn.disabled = true;
+            btn.title = '只读项（schema writable=false）';
+        }
         btn.addEventListener('click', (function (k, input) {
             return function () { saveConfig(k, input.value); };
         })(it.key, inp));

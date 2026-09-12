@@ -3,3 +3,5 @@
 # 本文件仅承载全局思考参数；敏感信息不进 git
 llm.thinking=enabled
 llm.reasoning_effort=medium
+# HTTP 监听端口（缺省/非法回退 8080；启动时读取——改后重启生效）
+http.port=8080

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading;
@@ -18,12 +18,11 @@ namespace CatHome4.Http
     /// </summary>
     public sealed partial class HttpHost
     {
-        /// <summary>
-        /// 配置读取——GET /api/v1/config（配置区 v3）。
-        /// 返回合并后的有效配置项：file（llm.cfg 显式值）优先，env（MAU_LLM_* 兜底）补齐；
-        /// 敏感键（api_key/secret/token）掩码展示——snapshot 边界铁律同源。
-        /// </summary>
-        /// <returns>配置 JSON——版本 + items[key/value/source]</returns>
+        /// <summary>配置读取——GET /api/v1/config（配置区 v3）。
+        /// 返回合并后的有效配置项：file（落盘显式值）优先 → env（MAU_LLM_* 兜底）→ schema default（声明补全）；
+        /// schema 声明项在落盘与 env 皆无值者一并输出（source=default，值为声明的默认值）——裸部署下配置面完整可见可改。
+        /// 敏感键（api_key/secret/token）掩码展示——snapshot 边界铁律同源。</summary>
+        /// <returns>配置 JSON——版本 + items[key/value/source/default/writable/desc]</returns>
         private IResult HandleConfigGet()
         {
             // [段1] 解析配置存储——未绑定返回空列表（壳形态可渲染）
@@ -41,10 +40,11 @@ namespace CatHome4.Http
                 };
                 return Results.Json(emptyResp);
             }
-            // [段2] file 显式项——llm.cfg 值优先；敏感键掩码（effective 记录已显式键）
+
+            // [段2] file 显式项——落盘值优先；敏感键掩码（effective 记录已有效键）
             KeyValuePair<string, string>[] all = cfg.All();
             Dictionary<string, string> effective = new Dictionary<string, string>(StringComparer.Ordinal);
-            for (int i = 0; i < all.Length; i++)
+            for (int i = 0; i < all.Length; i = i + 1)
             {
                 string key = all[i].Key;
                 string value = all[i].Value;
@@ -52,33 +52,71 @@ namespace CatHome4.Http
                 {
                     effective[key] = value;
                 }
+
                 if (IsSecretKey(key, schema))
                 {
                     value = MaskSecret(value);
                 }
+
                 items.Add(BuildItem(key, value, "file", schema, schemaBound));
             }
+
             // [段3] env 兜底——file 未显式提供的 llm.* 键从 MAU_LLM_* 全局环境变量补齐（M1c 退役三键 base_url/api_key/model 不枚举——API 连接三参归配置池）
-            string[] envKeys = new string[] { "llm.thinking", "llm.reasoning_effort" };
-            string[] envNames = new string[] { "MAU_LLM_THINKING", "MAU_LLM_REASONING_EFFORT" };
-            for (int i = 0; i < envKeys.Length; i++)
+            string[] envKeys = new string[]
+            {
+                "llm.thinking",
+                "llm.reasoning_effort"
+            };
+            string[] envNames = new string[]
+            {
+                "MAU_LLM_THINKING",
+                "MAU_LLM_REASONING_EFFORT"
+            };
+            for (int i = 0; i < envKeys.Length; i = i + 1)
             {
                 if (effective.ContainsKey(envKeys[i]))
                 {
                     continue;
                 }
+
                 string envValue = Environment.GetEnvironmentVariable(envNames[i]);
                 if (string.IsNullOrEmpty(envValue))
                 {
                     continue;
                 }
+
                 string shown = envValue;
                 if (IsSecretKey(envKeys[i], schema))
                 {
                     shown = MaskSecret(shown);
                 }
+
                 items.Add(BuildItem(envKeys[i], shown, "env", schema, schemaBound));
+                effective[envKeys[i]] = envValue;
             }
+
+            // [段4] schema 补全——声明项在落盘与 env 皆无值者以 default 输出（source=default）——裸部署（无配置文件）下配置面仍完整可见可改
+            if (schemaBound && schema != null)
+            {
+                ConfigSchema.Item[] declared = schema.All();
+                for (int i = 0; i < declared.Length; i = i + 1)
+                {
+                    string key = declared[i].Key;
+                    if (effective.ContainsKey(key))
+                    {
+                        continue;
+                    }
+
+                    string value = declared[i].Default;
+                    if (IsSecretKey(key, schema))
+                    {
+                        value = MaskSecret(value);
+                    }
+
+                    items.Add(BuildItem(key, value, "default", schema, schemaBound));
+                }
+            }
+
             var resp = new
             {
                 version = 1,
