@@ -356,5 +356,54 @@ namespace Mau.Runtime.Tests
                 System.IO.Directory.Delete(dir, true);
             }
         }
+        /// <summary>
+        /// 会话标识往返——SetSessionId → Save → TryLoad 恢复同一标识（重启后会话身份不变）。
+        /// </summary>
+        [Fact]
+        public void SessionId_RoundTrip()
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ch4_sid_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "session.json");
+            try
+            {
+                SessionStore store = new SessionStore(path);
+                store.SessionId = "639248494051468777";
+                LlmMessage[] messages = new LlmMessage[1];
+                messages[0].Role = LlmRole.User;
+                messages[0].Content = "hi";
+                store.Save(messages);
+                SessionStore reloaded = new SessionStore(path);
+                LlmMessage[] got;
+                Assert.True(reloaded.TryLoad(out got));
+                Assert.Equal("639248494051468777", reloaded.SessionId);
+            }
+            finally
+            {
+                System.IO.Directory.Delete(dir, true);
+            }
+        }
+        /// <summary>
+        /// 旧格式文件（无 SessionId 字段）→ 读面按空串处理（首次启动补建语义——不误判为已有标识）。
+        /// </summary>
+        [Fact]
+        public void SessionId_LegacyFileMissing_ReturnsEmpty()
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ch4_sid_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "session.json");
+            System.IO.File.WriteAllText(path, "{\"Messages\":[{\"Role\":0,\"Content\":\"sys\"}]}");
+            try
+            {
+                SessionStore store = new SessionStore(path);
+                LlmMessage[] messages;
+                Assert.True(store.TryLoad(out messages));
+                Assert.Equal("", store.SessionId);
+            }
+            finally
+            {
+                System.IO.Directory.Delete(dir, true);
+            }
+        }
     }
 }

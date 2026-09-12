@@ -165,6 +165,8 @@ namespace CH4
             DataBox.TryResolve<WorkspaceConfig>(out ws);
             // M3 新会话生效——拦截面同步最新声明面（改 toolNames 后 session.new 才拉取生效）
             session.SetToolSpecs(specs);
+            // 新会话 = 新会话标识（落盘由下方 Save 完成——重启不变；LLM 侧会话身份随之重建）
+            session.SetSessionId(SessionStore.NewSessionId());
             InjectPromptResult injectResult = _buildInjectPrompt(ws, specs, persona, injectList);
             session.Context.SetSystemPrompt(injectResult.Prompt);
             session.Context.Clear();

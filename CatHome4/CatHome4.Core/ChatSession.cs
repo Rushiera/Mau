@@ -40,7 +40,10 @@ namespace CH4
 
         // [段1] 标识与持久化
         /// <summary>会话唯一 ID——创建时间戳注入（P9.3 协议面对外）</summary>
-        private readonly string _id;
+        /// <summary>
+        /// 会话标识——会话身份（请求 user_id / x-opencode-session / OA catId）；新会话（session.new）重建，重启由落盘恢复
+        /// </summary>
+        private string _id;
 
         /// <summary>显示名——P9.1 为 "majordomo"；P9.3 用户输入</summary>
         private readonly string _displayName;
@@ -361,6 +364,23 @@ namespace CH4
             return _viewStore.GetBlocks();
         }
 
+        /// <summary>
+        /// 更新会话标识——新会话（session.new）重建：运行态身份（LLM 请求 user_id / x-opencode-session / OA catId）+ 落盘同步（store 同步写入）。
+        /// </summary>
+        /// <param name="id">新会话标识（空=忽略）</param>
+        public void SetSessionId(string id)
+        {
+            if (id == null || id.Length == 0)
+            {
+                return;
+            }
+            _id = id;
+            if (_store != null)
+            {
+                _store.SessionId = id;
+            }
+        }
+
         /// <summary>会话唯一 ID</summary>
         public string Id
         {
@@ -596,15 +616,8 @@ namespace CH4
             _toolBatchActive = false;
             // [段1] 上下文格式修复——S3 ReplaceMessages 原地（幂等；孤儿 tool_calls 补占位/孤立结果丢弃）
             _context.ReplaceMessages(_context.GetMessages());
-            // [段2] 前文落盘——tool 结果截断 ≤800（对齐 CloseRound——落盘副本防膨胀）
+            // [段2] 前文落盘——落盘保真
             LlmMessage[] toSave = _context.GetMessages();
-            for (int i = 0; i < toSave.Length; i = i + 1)
-            {
-                if (toSave[i].Role == LlmRole.Tool && toSave[i].Content != null && toSave[i].Content.Length > 800)
-                {
-                    toSave[i].Content = TruncateText(toSave[i].Content, 800);
-                }
-            }
             _lastStats.EntryCount = toSave.Length;
             _store.Save(toSave, _lastStats);
             // [段3] 视图序号复位——流式容器由前端 seal（已显示内容保留）
@@ -1442,22 +1455,15 @@ namespace CH4
         }
         /// <summary>
         /// 错误中止收尾——LLM API 错误重试耗尽后调用（保留断点上下文 + 错误气泡；不走 CloseRound——中止非正常完成语义）。
-        /// 对齐 PauseFinalize：落盘断点（tool 截断 ≤800）+ 视图序号复位 + 状态复位 Idle + chat_state=idle + 推 error 事件（前端 seal + 错误气泡）。
+        /// 对齐 PauseFinalize：落盘断点（落盘保真）+ 视图序号复位 + 状态复位 Idle + chat_state=idle + 推 error 事件（前端 seal + 错误气泡）。
         /// </summary>
         private void AbortRoundError()
         {
             _textStreamSeq = 0;
             _reasonStreamSeq = 0;
             LogStore.Add("LLM", 3, "LLM 错误（重试耗尽——本轮中止，上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
-            // [段1] 前文落盘——tool 结果截断 ≤800（对齐 CloseRound——断点保留）
+            // [段1] 前文落盘——落盘保真
             LlmMessage[] toSave = _context.GetMessages();
-            for (int i = 0; i < toSave.Length; i = i + 1)
-            {
-                if (toSave[i].Role == LlmRole.Tool && toSave[i].Content != null && toSave[i].Content.Length > 800)
-                {
-                    toSave[i].Content = TruncateText(toSave[i].Content, 800);
-                }
-            }
             _lastStats.EntryCount = toSave.Length;
             _store.Save(toSave, _lastStats);
             // [段2] 前端通知——error 控制事件（前端 seal 流式容器 + 错误气泡 + 恢复 idle；文本取清空前原值）
@@ -1483,18 +1489,11 @@ namespace CH4
         }
 
         /// <summary>
-        /// Done 相位——前文落盘（tool 截断 ≤800——D7 落盘副本防膨胀）+ chat_state=idle + PushChatDone + 复位（原 HandleChat 段4）。
+        /// Done 相位——前文落盘（落盘保真）+ chat_state=idle + PushChatDone + 复位（原 HandleChat 段4）。
         /// </summary>
         private void CloseRound()
         {
             LlmMessage[] toSave = _context.GetMessages();
-            for (int i = 0; i < toSave.Length; i = i + 1)
-            {
-                if (toSave[i].Role == LlmRole.Tool && toSave[i].Content != null && toSave[i].Content.Length > 800)
-                {
-                    toSave[i].Content = TruncateText(toSave[i].Content, 800);
-                }
-            }
             // E3 真实 usage 统计——CloseRound 落盘（info 自查/前端显示数据源；零估算）
             _lastStats.EntryCount = _context.GetMessageCount();
             _lastStats.LastPromptTokens = _usagePrompt;
@@ -1595,15 +1594,8 @@ namespace CH4
                 keep[i] = all[i];
             }
             _context.ReplaceMessages(keep);
-            // [段2] 前文落盘——tool 结果截断 ≤800（复用 CloseRound 副本逻辑）
+            // [段2] 前文落盘——落盘保真
             LlmMessage[] toSave = _context.GetMessages();
-            for (int i = 0; i < toSave.Length; i = i + 1)
-            {
-                if (toSave[i].Role == LlmRole.Tool && toSave[i].Content != null && toSave[i].Content.Length > 800)
-                {
-                    toSave[i].Content = TruncateText(toSave[i].Content, 800);
-                }
-            }
             _lastStats.EntryCount = toSave.Length;
             _store.Save(toSave, _lastStats);
             // [段3] 统计与运行期参数复位——新起点零统计起算

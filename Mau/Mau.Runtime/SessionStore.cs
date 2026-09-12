@@ -37,6 +37,10 @@ namespace Mau.Runtime
         /// 会话文件路径
         /// </summary>
         private readonly string _path;
+        /// <summary>
+        /// 会话标识——落盘持久化字段（新会话时重建；重启恢复同一标识）
+        /// </summary>
+        private string _sessionId;
 
         /// <summary>
         /// 建立前文管理器
@@ -45,6 +49,7 @@ namespace Mau.Runtime
         public SessionStore(string path)
         {
             _path = path;
+            _sessionId = "";
         }
 
         /// <summary>
@@ -85,6 +90,7 @@ namespace Mau.Runtime
                     return false;
                 }
                 messages = data.Messages;
+                SessionId = data.SessionId == null ? "" : data.SessionId;
                 stats = data.Stats;
                 return true;
             }
@@ -122,6 +128,7 @@ namespace Mau.Runtime
                 SessionFileData data = new SessionFileData();
                 data.Messages = messages;
                 data.Stats = stats;
+                data.SessionId = SessionId == null ? "" : SessionId;
                 // LlmMessage 是 struct——字段序列化需 IncludeFields（System.Text.Json 默认只序列化属性）
                 JsonSerializerOptions options = new JsonSerializerOptions();
                 options.IncludeFields = true;
@@ -149,6 +156,11 @@ namespace Mau.Runtime
             /// 会话统计——真实 usage（可空=旧文件无统计）
             /// </summary>
             public SessionStats? Stats { get; set; }
+
+            /// <summary>
+            /// 会话标识——缺省/缺失=旧格式文件（读面按空串处理；写面在会话起点补建）
+            /// </summary>
+            public string? SessionId { get; set; }
         }
 
         /// <summary>
@@ -170,6 +182,36 @@ namespace Mau.Runtime
             {
                 // 备份失败不阻断加载失败语义——原文件保留
             }
+        }
+        /// <summary>
+        /// 会话标识——读面（TryLoad 从落盘文件恢复；缺省空串=旧文件未带标识）。
+        /// 语义：新会话（session.new / 新建猫）重建并落盘；重启恢复同一标识——LLM 侧会话身份（请求 user_id / x-opencode-session）与网关 KV 缓存命名空间。
+        /// </summary>
+        public string SessionId
+        {
+            get
+            {
+                return _sessionId;
+            }
+            set
+            {
+                if (value == null)
+                {
+                    _sessionId = "";
+                }
+                else
+                {
+                    _sessionId = value;
+                }
+            }
+        }
+        /// <summary>
+        /// 新会话标识——ticks 字符串（会话生命周期起点唯一生成点：新建猫 / session.new / 首次补建）
+        /// </summary>
+        /// <returns>新会话标识</returns>
+        public static string NewSessionId()
+        {
+            return DateTime.Now.Ticks.ToString();
         }
     }
 }

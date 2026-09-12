@@ -349,7 +349,7 @@ namespace CatHome4.Admin
         /// <returns>结果文本</returns>
         private static string HandleCatNew(string name)
         {
-            string id = DateTime.Now.Ticks.ToString();
+            string id = SessionStore.NewSessionId();
             CatEntry cat = CreateCatEntry(id, name, null);
             if (cat == null)
             {
@@ -434,7 +434,7 @@ namespace CatHome4.Admin
                 seed[i] = all[i];
             }
             // [段2] 继承源配置——运行时实体优先（多猫 CatEntry = catcfg.apply 后运行时真相）；majordomo 特判路径（source.Id 是 Ticks 非 "majordomo"——判例：fork 配置全空）
-            string id = DateTime.Now.Ticks.ToString();
+            string id = SessionStore.NewSessionId();
             CatCfgData cfgData = null;
             CatEntry srcCat = FindCat(source.Id);
             if (srcCat != null)
@@ -728,6 +728,7 @@ namespace CatHome4.Admin
                 // [段3] 上下文 + 前文恢复/注入
                 ChatContext context = new ChatContext();
                 SessionStore store = new SessionStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".json"));
+                store.SessionId = id;
                 LlmMessage[] restored;
                 SessionStats? restoredStats;
                 if (store.TryLoad(out restored, out restoredStats))

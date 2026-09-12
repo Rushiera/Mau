@@ -406,9 +406,18 @@ namespace CH4
                 chatCtx.SetSystemPrompt(injectPrompt);
                 Console.WriteLine("[CMD] 新会话注入: " + _chatBridge.DefaultInjectList.Length.ToString() + " 个文件");
             }
+            // 会话标识——落盘恢复（重启不变）；旧文件未带标识 → 首次补建（缺省取猫 key，稳定）+ 落盘（新会话时由 session.new 重建）
+            string defaultSessionId = chatStore.SessionId;
+            if (defaultSessionId.Length == 0)
+            {
+                defaultSessionId = "majordomo";
+                chatStore.SessionId = defaultSessionId;
+                chatStore.Save(chatCtx.GetMessages(), restoredStats);
+                Console.WriteLine("[CMD] 会话标识补建: " + defaultSessionId);
+            }
             // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面；M2c 声明面按猫裁剪）
             SessionViewStore chatViewStore = new SessionViewStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.view.json"));
-            _chatBridge.DefaultSession = new ChatSession(DateTime.Now.Ticks.ToString(), "majordomo", chatCtx, chatStore,
+            _chatBridge.DefaultSession = new ChatSession(defaultSessionId, "majordomo", chatCtx, chatStore,
                 new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _chatBridge.DefaultToolSpecs, ExecuteTool, chatViewStore);
             // M4e 猫级白名单——默认猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
             _chatBridge.DefaultSession.SetCatKey("majordomo");
