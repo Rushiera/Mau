@@ -240,6 +240,8 @@ namespace CH4
             }
             LogStore.Add("CatHome4", 1, "重启接力已拉起：SetUp relaunch pid " + relay.Id.ToString() + " → 目标 " + target, "RESTART");
             Console.WriteLine("[CMD] 重启接力已拉起（SetUp pid " + relay.Id.ToString() + "）——宿主退出。");
+            // A33——转发态全量快照兜底（T4）：稳态虽已「变更即落盘」，此处再覆写一次（覆盖收尾窗口内尚未落盘的状态变更）
+            CatHome4.QQ.QQBotService.SaveForwardState();
             // 观测收尾——四文件 flush（与 Main finally 同一路径）
             LogStore.CloseWriters();
             FrameStore.Close();

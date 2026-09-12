@@ -157,6 +157,12 @@ namespace CatHome4.QQ
                 return _sandbox;
             }
         }
+        /// <summary>msg_seq 水位——转发态续接面（A33：重启后续号，避免同 msg_id+seq 被官方去重拒 40054005）</summary>
+        public long MsgSeq
+        {
+            get { return _msgSeq; }
+            set { _msgSeq = value; }
+        }
 
         /// <summary>
         /// 启动连接——刷新 Token + 启动 WS 线程。
