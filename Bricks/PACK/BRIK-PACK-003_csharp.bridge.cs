@@ -18,7 +18,8 @@
 //        comment → path,class,member,type,text,param
 //        dead → path
 //        comment_check → path
-// 常用: cs.* 十工具的调度底座（P8 三期——15→9 域裁剪：砍 init/info；patch 合并三改法；member 合并三操作；comment 合并两操作；comment_check 后补）
+//        format → path,mode
+// 常用: cs.* 十一工具的调度底座（P8 三期——15→9 域裁剪：砍 init/info；patch 合并三改法；member 合并三操作；comment 合并两操作；comment_check 后补；format 空白规整后补）
 // ═══════════════════════════════════════════════════
 using System;
 
@@ -32,7 +33,7 @@ namespace Mau.Bricks
         /// <summary>
         /// C# 工具桥单方法调度——method 白名单 + argsJson 展平参数
         /// </summary>
-        /// <param name="method">操作名（check/build/list/read/find_ref/patch/member/comment/dead/comment_check）</param>
+        /// <param name="method">操作名（check/build/list/read/find_ref/patch/member/comment/dead/comment_check/format）</param>
         /// <param name="argsJson">展平参数 JSON</param>
         /// <param name="result">结果文本</param>
         /// <returns>true=调用成功</returns>
@@ -50,4 +51,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:084DDD13F1E46CAA18A000A70E409ADC6477545AC393F15F1FFB72131F281CEA
+// #MAU_CHECKSUM:SHA256:4CF10CC5788317CC74705A0BF6FFB1DA3A9208D2DCB049A1D2D10DB8F6856F27

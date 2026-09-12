@@ -14,7 +14,7 @@ namespace Mau.Development
     /// 磁盘权威 + 快照监管（mtime+size 前缀对账）+ 项目键隔离常驻池（LRU 4）+ 树/编译/语义三态无感。
     /// 引用集 = 目标项目已 build 的 bin 产物 + TPA + 共享框架探测（AspNetCore/WindowsDesktop——莎拍板 A 方案）——
     /// bin 缺失 → 引导先 cs.build（check 快、build 权威的闭环）。
-    /// 工具面 10 件：check / build / list / read / find_ref / patch / member / comment / dead / comment_check。
+    /// 工具面 11 件：check / build / list / read / find_ref / patch / member / comment / dead / comment_check / format。
     /// </summary>
     public sealed partial class MauRoslynBridge : ICSharpBridge
     {
@@ -88,7 +88,7 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 单方法调度入口——method 白名单 9 件分派；异常不外泄（ERR|EX）
+        /// 单方法调度入口——method 白名单 11 件分派；异常不外泄（ERR|EX）
         /// </summary>
         /// <param name="method">操作名</param>
         /// <param name="argsJson">展平参数 JSON</param>
@@ -150,6 +150,10 @@ namespace Mau.Development
                     if (method == "comment_check")
                     {
                         return ToolCommentCheck(root, out result);
+                    }
+                    if (method == "format")
+                    {
+                        return ToolFormat(root, out result);
                     }
                     result = "ERR|UNKNOWN_METHOD|未知方法: " + method;
                     return false;

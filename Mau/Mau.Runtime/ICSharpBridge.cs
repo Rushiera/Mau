@@ -3,7 +3,7 @@ namespace Mau.Runtime
     /// <summary>
     /// C# 工具桥——Roslyn 编码工具域接口（P8 三期）。
     /// 宿主注入实现（Mau.Development.MauRoslynBridge）；语料经 csharp.bridge 积木（PACK 协议）触达。
-    /// 方法白名单 9 件：check / build / list / read / find_ref / patch / member / comment / dead。
+    /// 方法白名单 11 件：check / build / list / read / find_ref / patch / member / comment / dead / comment_check / format。
     /// 磁盘权威 + 快照监管 + 项目键隔离常驻池（design-ch4-cs.md D1-D3）——实现细节在实现侧。
     /// </summary>
     public interface ICSharpBridge

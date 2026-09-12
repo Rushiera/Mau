@@ -1,6 +1,6 @@
 ﻿// cs_cat.mau —— CsCat 语料（CH4 R0.2 工具组 Flow 化——CS 编码工具域独立 Flow，原 DevCat 分部拆分）
-// 角色：工具组 Flow——认领 TOOL 域 cs-* 10 工具（check/build/list/read/find_ref/patch/member/comment/dead/comment_check）
-// 单级 OA 单：Dog Post → 本 Flow 10 线认领执行 → complete_str 回执
+// 角色：工具组 Flow——认领 TOOL 域 cs-* 11 工具（check/build/list/read/find_ref/patch/member/comment/dead/comment_check/format）
+// 单级 OA 单：Dog Post → 本 Flow 11 线认领执行 → complete_str 回执
 // 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON
 // 无值分支：每工具一条认领线，工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
 // 数据面：@ckOffice 等私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
@@ -18,11 +18,12 @@
 § 'S_Comment' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Dead' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_CommentCheck' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Format' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
 § 'T_Init' : 'S_Check' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Check' = 'Idle' | 'S_Check' = 'Idle'
 
-// ── 主动传感器壳——10 线各自探测（officeName = 完整工具名）──
+// ── 主动传感器壳——11 线各自探测（officeName = 完整工具名）──
 § 'P_CheckOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-check"] > @ckOpen
 § 'P_BuildOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-build"] > @buOpen
 § 'P_ListOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-list"] > @liOpen
@@ -33,6 +34,7 @@
 § 'P_CommentOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-comment"] > @cmOpen
 § 'P_DeadOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-dead"] > @ddOpen
 § 'P_CommentCheckOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-comment_check"] > @ccOpen
+§ 'P_FormatOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-format"] > @fmOpen
 
 // ══════════════ cs-check 线 ══════════════
 § 'T_CheckClaim' : @ckOpen & 'S_Check' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-check"] > @ckOffice | 'S_Check' = 'Claimed' | 'S_Check' = 'Idle'
@@ -103,3 +105,10 @@
 § 'T_CommentCheckExec' : 'S_CommentCheck' = 'Ready' → 'csharp.bridge'["comment_check", @ccArgs] > @ccRes | 'self.desc'["cs-comment_check 执行中", "", ""] | 'S_CommentCheck' = 'Done' | 'S_CommentCheck' = 'Failed'
 § 'T_CommentCheckReply' : 'S_CommentCheck' = 'Done' → 'oa.complete_str'[@ccOffice, @ccRes] | 'self.desc'["空闲待命", "", ""] | 'S_CommentCheck' = 'Idle' | 'S_CommentCheck' = 'Idle'
 § 'T_CommentCheckAbort' : 'S_CommentCheck' = 'Failed' → 'oa.complete_str'[@ccOffice, @ccRes] | 'S_CommentCheck' = 'Idle' | 'S_CommentCheck' = 'Idle'
+
+// ══════════════ cs-format 线 ══════════════
+§ 'T_FormatClaim' : @fmOpen & 'S_Format' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-format"] > @fmOffice | 'S_Format' = 'Claimed' | 'S_Format' = 'Idle'
+§ 'T_FormatArgs' : 'S_Format' = 'Claimed' → 'oa.get_str'[@fmOffice, "args"] > @fmArgs | 'S_Format' = 'Ready' | 'S_Format' = 'Failed'
+§ 'T_FormatExec' : 'S_Format' = 'Ready' → 'csharp.bridge'["format", @fmArgs] > @fmRes | 'self.desc'["cs-format 执行中", "", ""] | 'S_Format' = 'Done' | 'S_Format' = 'Failed'
+§ 'T_FormatReply' : 'S_Format' = 'Done' → 'oa.complete_str'[@fmOffice, @fmRes] | 'self.desc'["空闲待命", "", ""] | 'S_Format' = 'Idle' | 'S_Format' = 'Idle'
+§ 'T_FormatAbort' : 'S_Format' = 'Failed' → 'oa.complete_str'[@fmOffice, @fmRes] | 'S_Format' = 'Idle' | 'S_Format' = 'Idle'
