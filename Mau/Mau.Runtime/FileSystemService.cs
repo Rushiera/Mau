@@ -162,18 +162,25 @@ namespace Mau.Runtime
 
             return unified.Substring(start, end - start);
         }
-        /// <summary>
-        /// 自动编码覆写——按类型契约编码 + BOM + 换行保真（P1/P2）；新文件按类型默认换行
-        /// </summary>
+        /// <summary>自动编码覆写——既有文件的 BOM/换行保真，新建文件按类型契约（P1/P2；A25）。</summary>
         /// <param name="path">受控路径</param>
         /// <param name="content">完整正文（换行自动归一为目标风格）</param>
         public void WriteTextAuto(string path, string content) { string resolved = Resolve(path, true); lock (_writeGate) { WriteAutoCore(resolved, path, SafeText(content)); } }
-        /// <summary>
-        /// 自动编码追加——按类型契约编码 + 换行保真（P1/P2）
-        /// </summary>
+        /// <summary>自动编码追加——既有文件的 BOM/换行保真，新建文件按类型契约（P1/P2；A25）。</summary>
         /// <param name="path">受控路径</param>
         /// <param name="content">追加正文（换行自动归一为目标风格）</param>
-        public void AppendTextAuto(string path, string content) { string resolved = Resolve(path, true); lock (_writeGate) { EnsureParentDirectory(resolved); System.Text.Encoding enc = TextFileCodec.ProfileFor(path); string newline = ResolveTargetNewline(resolved, path); string body = TextFileCodec.NormalizeNewlines(SafeText(content), newline); File.AppendAllText(resolved, body, enc); } }
+        public void AppendTextAuto(string path, string content)
+        {
+            string resolved = Resolve(path, true);
+            lock (_writeGate)
+            {
+                EnsureParentDirectory(resolved);
+                bool bom = false;
+                string newline = ResolveWriteStyle(resolved, path, out bom);
+                string body = TextFileCodec.NormalizeNewlines(SafeText(content), newline);
+                File.AppendAllText(resolved, body, TextFileCodec.WriteEncoding(path, bom));
+            }
+        }
         /// <summary>
         /// 锚点三态替换——P3 核心（design-ch4-text-tools §六）：exact/ignore_case 要求唯一（0→NotFound+差异定位 / 1→替换 / >1→Ambiguous+候选）；
         /// regex/all 模式替换全部匹配（0→NotFound）；exact/ignore_case 要求唯一（>1→Ambiguous+候选行）。编码 + 换行保真（P1/P2），绝不静默写入。
@@ -305,19 +312,45 @@ namespace Mau.Runtime
         /// <param name="index">命中起始索引</param>
         /// <returns>行摘要文本</returns>
         private static string SnippetAround(string content, int index) { int lineStart = index; int lineEnd = index; while (lineStart > 0 && content[lineStart - 1] != '\n') { lineStart = lineStart - 1; } while (lineEnd < content.Length && content[lineEnd] != '\n') { lineEnd = lineEnd + 1; } int start = lineStart; for (int i = 0; i < 3 && start > 0; i = i + 1) { int prev = content.LastIndexOf('\n', start - 1); if (prev < 0) { start = 0; break; } start = prev + 1; } int end = lineEnd; for (int i = 0; i < 3 && end < content.Length; i = i + 1) { int next = content.IndexOf('\n', end); if (next < 0) { end = content.Length; break; } end = next + 1; } return content.Substring(start, end - start); }
-
         /// <summary>
-        /// 编码内建写核心——探测目标换行 + 契约编码原子写
+        /// 写侧风格解析——既有文件探测实际 BOM + 换行并保真；新建文件按类型契约（P1/P2；A25）。
+        /// 单次读取同时产出两者（BOM 保真 + 换行保真共用一份字节）。
         /// </summary>
+        /// <param name="resolved">规范绝对路径</param>
+        /// <param name="path">用户路径（契约判定用）</param>
+        /// <param name="bom">输出——写入是否带 BOM（既有文件=实际值 / 新建=DefaultBom）</param>
+        /// <returns>换行串（既有文件=实际风格 / 新建=DefaultNewline）</returns>
+        private string ResolveWriteStyle(string resolved, string path, out bool bom)
+        {
+            if (File.Exists(resolved))
+            {
+                byte[] raw = File.ReadAllBytes(resolved);
+                bom = TextFileCodec.DetectBom(raw);
+                // 文件无任何换行 → 按类型默认（契约在无换行时仍生效）
+                for (int i = 0; i < raw.Length; i = i + 1)
+                {
+                    if (raw[i] == (byte)'\n')
+                    {
+                        return TextFileCodec.DetectNewline(raw);
+                    }
+                }
+                return TextFileCodec.DefaultNewline(path);
+            }
+            bom = TextFileCodec.DefaultBom(path);
+            return TextFileCodec.DefaultNewline(path);
+        }
+
+        /// <summary>编码内建写核心——两态风格（既有文件 BOM/换行保真；新建文件按类型契约）+ 原子写。</summary>
         /// <param name="resolved">规范绝对路径</param>
         /// <param name="path">用户路径（契约判定用）</param>
         /// <param name="content">正文</param>
         private void WriteAutoCore(string resolved, string path, string content)
         {
-            System.Text.Encoding enc = TextFileCodec.ProfileFor(path);
-            string newline = ResolveTargetNewline(resolved, path);
+            bool bom = false;
+            string newline = ResolveWriteStyle(resolved, path, out bom);
+            System.Text.Encoding enc = TextFileCodec.WriteEncoding(path, bom);
             string body = TextFileCodec.NormalizeNewlines(content, newline);
-            // 原子写——带编码 + BOM（UTF8Encoding(true) 的 GetPreamble 由 WriteAllText 自动前置）
+            // 原子写——编码 + BOM（含 BOM 的 UTF8Encoding 由 WriteAllText 自动前置）
             string? dir = Path.GetDirectoryName(resolved);
             if (dir != null && dir.Length > 0)
             {
@@ -326,34 +359,6 @@ namespace Mau.Runtime
             string tmp = resolved + ".tmp";
             File.WriteAllText(tmp, body, enc);
             File.Move(tmp, resolved, true);
-        }
-        /// <summary>
-        /// 目标换行解析——文件存在探测实际风格，否则按类型默认
-        /// </summary>
-        /// <param name="resolved">规范绝对路径</param>
-        /// <param name="path">用户路径（契约判定用）</param>
-        /// <returns>换行串</returns>
-        private string ResolveTargetNewline(string resolved, string path)
-        {
-            if (File.Exists(resolved))
-            {
-                byte[] raw = File.ReadAllBytes(resolved);
-                // 文件无任何换行 → 按类型默认（.bat=CRLF 契约在无换行时仍生效）
-                bool hasAnyNewline = false;
-                for (int i = 0; i < raw.Length; i = i + 1)
-                {
-                    if (raw[i] == (byte)'\n')
-                    {
-                        hasAnyNewline = true;
-                        break;
-                    }
-                }
-                if (hasAnyNewline)
-                {
-                    return TextFileCodec.DetectNewline(raw);
-                }
-            }
-            return TextFileCodec.DefaultNewline(path);
         }
 
         /// <summary>
@@ -1167,4 +1172,4 @@ namespace Mau.Runtime
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:B4F53316ED88B6C245CC66C358B19B2AE3094E131A267FE42B678830DB35C2C3
+

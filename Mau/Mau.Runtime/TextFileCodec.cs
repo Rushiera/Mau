@@ -4,12 +4,7 @@ using System.Text;
 
 namespace Mau.Runtime
 {
-    /// <summary>
-    /// 文本文件编码内建层——text-* v2 的 P1/P2 核心（design-ch4-text-tools.md §五）。
-    /// 按文件类型自动处理编码/BOM/换行，模型零感知。文件类型契约：
-    ///   .md/.ps1 → UTF-8 带 BOM；.bat → GBK(936) + CRLF；.cs/.mau/.json/.txt/未知 → UTF-8 无 BOM。
-    /// 换行保真：写侧探测目标文件已有换行风格（\r\n / \n），新内容跟随；新文件按类型契约。
-    /// </summary>
+    /// <summary>文本文件编码内建层——text-* v2 的 P1/P2 核心（design-ch4-text-tools.md §四）。按类型自动处理编码/BOM/换行，模型零感知。两态语义：既有文件 → 探测实际 BOM/换行并保真；新建文件 → 类型契约。契约表（新建/工具产物）：.md/.ps1 → UTF-8 带 BOM + LF；.bat → GBK(936) + CRLF；.cs/.csproj/.mau/.mauproj（工程与语料族）→ UTF-8 带 BOM + CRLF；.html/.js/.css（Web 资产族）→ 无 BOM UTF-8 + CRLF；.txt/未知 → 无 BOM UTF-8 + LF。工程与语料族的写侧同源约束：mau bricks index --update（校验尾重算）与 text-* 走同一契约。</summary>
     public static class TextFileCodec
     {
         /// <summary>
@@ -20,54 +15,103 @@ namespace Mau.Runtime
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         }
 
-        /// <summary>
-        /// 编码契约表——按扩展名路由（未知类型按 .txt 兜底——莎拍板 2026-09-01）
-        /// </summary>
+        /// <summary>基础编码表——只定"用什么编码族"（.bat=GBK(936)，其余 UTF-8）；BOM 与换行由 DefaultBom/DefaultNewline（新建）或保真探测（既有文件）决定。</summary>
         public static Encoding ProfileFor(string path)
         {
-            if (path == null)
-            {
-                return new UTF8Encoding(false);
-            }
-            string ext = Path.GetExtension(path).ToLowerInvariant();
-            if (ext == ".md" || ext == ".ps1")
-            {
-                return new UTF8Encoding(true);
-            }
-            if (ext == ".bat")
+            if (path != null && Path.GetExtension(path).ToLowerInvariant() == ".bat")
             {
                 return Encoding.GetEncoding(936);
             }
             return new UTF8Encoding(false);
         }
-
         /// <summary>
-        /// 写入 BOM 判定——当前仅 .md/.ps1 带 BOM（GBK 无 BOM 语义）
+        /// 工程与语料族判定——.cs/.csproj/.mau/.mauproj 统一契约：UTF-8 带 BOM + CRLF。
+        /// 依据：工程区换行 CRLF 全量、BOM 多数；工具产物（积木校验尾重算/生成物）同族。
         /// </summary>
         /// <param name="path">文件路径</param>
-        /// <returns>true=写入 BOM</returns>
-        public static bool ShouldWriteBom(string path)
+        /// <returns>true=工程与语料族</returns>
+        private static bool IsCodeFamily(string path)
         {
             if (path == null)
             {
                 return false;
             }
             string ext = Path.GetExtension(path).ToLowerInvariant();
-            return ext == ".md" || ext == ".ps1";
+            return ext == ".cs" || ext == ".csproj" || ext == ".mau" || ext == ".mauproj";
+        }
+        /// <summary>
+        /// Web 资产族判定——.html/.js/.css 新建换行走 CRLF（仓库实测全量 CRLF）；BOM 不写（无约定，存量多数无 BOM）。
+        /// </summary>
+        /// <param name="path">文件路径</param>
+        /// <returns>true=Web 资产族</returns>
+        private static bool IsWebAssetFamily(string path)
+        {
+            if (path == null)
+            {
+                return false;
+            }
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            return ext == ".html" || ext == ".js" || ext == ".css";
         }
 
-        /// <summary>
-        /// 默认换行风格——.bat 强制 CRLF；其余探测（新文件默认 \n）
-        /// </summary>
+        /// <summary>新建文件默认换行——工程与语料族（.cs/.csproj/.mau/.mauproj）、Web 资产族（.html/.js/.css）与 .bat 走 CRLF；文档族（.md/.txt/未知）走 LF。</summary>
         /// <param name="path">文件路径</param>
         /// <returns>换行串</returns>
         public static string DefaultNewline(string path)
         {
-            if (path != null && Path.GetExtension(path).ToLowerInvariant() == ".bat")
+            if (path == null)
+            {
+                return "\n";
+            }
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            if (IsCodeFamily(path) || IsWebAssetFamily(path) || ext == ".bat")
             {
                 return "\r\n";
             }
             return "\n";
+        }
+        /// <summary>
+        /// 新建文件默认 BOM——文档族（.md/.ps1）与工程语料族（.cs/.csproj/.mau/.mauproj）写 BOM；.bat（GBK）/其余不写。
+        /// 既有文件的 BOM 走保真探测（FileSystemService.ResolveWriteStyle），不套用本节。
+        /// </summary>
+        /// <param name="path">文件路径</param>
+        /// <returns>true=写入 BOM</returns>
+        public static bool DefaultBom(string path)
+        {
+            if (path == null)
+            {
+                return false;
+            }
+            if (IsCodeFamily(path))
+            {
+                return true;
+            }
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            return ext == ".md" || ext == ".ps1";
+        }
+        /// <summary>
+        /// 写侧编码构造——UTF-8 家族按 BOM 开关构造；非 UTF-8 家族（.bat=GBK）原样返回（BOM 语义不适用）。
+        /// </summary>
+        /// <param name="path">文件路径</param>
+        /// <param name="bom">是否写 BOM（既有文件=保真探测值 / 新建=DefaultBom）</param>
+        /// <returns>写盘用编码</returns>
+        public static Encoding WriteEncoding(string path, bool bom)
+        {
+            Encoding baseEncoding = ProfileFor(path);
+            if (baseEncoding is UTF8Encoding)
+            {
+                return new UTF8Encoding(bom);
+            }
+            return baseEncoding;
+        }
+        /// <summary>
+        /// BOM 探测——首三字节 EF BB BF（保真判据，写侧共用）。
+        /// </summary>
+        /// <param name="raw">原始字节</param>
+        /// <returns>true=带 UTF-8 BOM</returns>
+        public static bool DetectBom(byte[] raw)
+        {
+            return raw != null && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF;
         }
 
         /// <summary>
@@ -138,7 +182,7 @@ namespace Mau.Runtime
         /// <returns>解码用编码</returns>
         public static Encoding DetectReadEncoding(string path, byte[] raw)
         {
-            if (raw != null && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF)
+            if (DetectBom(raw))
             {
                 return new UTF8Encoding(true);
             }

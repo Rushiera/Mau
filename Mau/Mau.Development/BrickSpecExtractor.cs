@@ -455,15 +455,13 @@ namespace Mau.Development
             return sb.ToString();
         }
 
-        /// <summary>
-        /// 校验尾重算——文件内容（去旧校验尾行）SHA256，追加 // #MAU_CHECKSUM:SHA256:{hex}
-        /// </summary>
+        /// <summary>校验尾重算——文件内容（去旧校验尾行、换行 \n 归一）SHA256，追加 // #MAU_CHECKSUM:SHA256:{hex}；写回遵循工程与语料契约（UTF-8 BOM + CRLF，A25）。</summary>
         /// <param name="filePath">积木源文件</param>
         public static void RewriteChecksum(string filePath)
         {
             string[] lines = File.ReadAllLines(filePath);
             StringBuilder content = new StringBuilder();
-            for (int i = 0; i < lines.Length; i++)
+            for (int i = 0; i < lines.Length; i = i + 1)
             {
                 if (lines[i].TrimStart().StartsWith("// #MAU_CHECKSUM:SHA256:", StringComparison.Ordinal))
                 {
@@ -478,13 +476,15 @@ namespace Mau.Development
             {
                 byte[] bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(body));
                 StringBuilder hex = new StringBuilder();
-                for (int b = 0; b < bytes.Length; b++)
+                for (int b = 0; b < bytes.Length; b = b + 1)
                 {
                     hex.Append(bytes[b].ToString("X2"));
                 }
                 hash = hex.ToString();
             }
-            File.WriteAllText(filePath, body + "// #MAU_CHECKSUM:SHA256:" + hash + "\n", new UTF8Encoding(true));
+            // 写回按工程与语料契约（A25：UTF-8 BOM + CRLF）——哈希输入保持 \n 归一（跨换行风格稳定）
+            string crlfBody = body.Replace("\n", "\r\n");
+            File.WriteAllText(filePath, crlfBody + "// #MAU_CHECKSUM:SHA256:" + hash + "\r\n", new UTF8Encoding(true));
         }
     }
 }

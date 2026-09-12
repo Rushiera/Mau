@@ -106,9 +106,7 @@ namespace Mau.Runtime.Tests
                 TryDelete(baseDir);
             }
         }
-        /// <summary>
-        /// 编码内建 + 换行保真（P1/P2——design-ch4-text-tools §五）：.md 带 BOM、.cs 无 BOM、.bat GBK+CRLF、读侧 BOM 剥离
-        /// </summary>
+        /// <summary>编码内建 + 两态风格（P1/P2——design-ch4-text-tools §四）：新建按类型契约（.md/.cs/.mau 带 BOM、.cs/.mau CRLF、.bat GBK+CRLF），既有文件 BOM/换行保真，读侧 BOM 剥离。</summary>
         [Fact]
         public void AutoEncoding_TypeContractAndNewlinePreserve()
         {
@@ -119,7 +117,7 @@ namespace Mau.Runtime.Tests
             {
                 WorkspaceConfig.RootEntry[] entries = new WorkspaceConfig.RootEntry[]
                 {
-                    new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true }
+                            new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true }
                 };
                 FileSystemService fs = new FileSystemService(entries, Path.Combine(rw, "recycle"));
                 // [段1] .md 写带 BOM——首三字节 EF BB BF
@@ -129,11 +127,12 @@ namespace Mau.Runtime.Tests
                 Assert.True(mdBytes.Length >= 3 && mdBytes[0] == 0xEF && mdBytes[1] == 0xBB && mdBytes[2] == 0xBF, ".md 应带 UTF-8 BOM");
                 // 读侧 BOM 剥离——无 \uFEFF 残留
                 Assert.Equal("标题\n正文", fs.ReadTextAuto(mdPath));
-                // [段2] .cs 写无 BOM——首字节即内容
+                // [段2] 新建 .cs 按工程与语料契约——BOM + CRLF（A25）
                 string csPath = Path.Combine(rw, "a.cs");
-                fs.WriteTextAuto(csPath, "using System;");
+                fs.WriteTextAuto(csPath, "using System;\nclass A\n{\n}\n");
                 byte[] csBytes = File.ReadAllBytes(csPath);
-                Assert.False(csBytes.Length >= 3 && csBytes[0] == 0xEF && csBytes[1] == 0xBB && csBytes[2] == 0xBF, ".cs 不应带 BOM");
+                Assert.True(csBytes.Length >= 3 && csBytes[0] == 0xEF && csBytes[1] == 0xBB && csBytes[2] == 0xBF, ".cs 应带 UTF-8 BOM");
+                Assert.True(IsAllCrLf(csBytes), ".cs 换行应为 CRLF");
                 // [段3] .bat GBK(936) 编码——中文以高位字节存
                 string batPath = Path.Combine(rw, "run.bat");
                 fs.WriteTextAuto(batPath, "echo 你好");
@@ -160,14 +159,82 @@ namespace Mau.Runtime.Tests
                 string lfText = fs.ReadTextAuto(lfPath);
                 Assert.DoesNotContain("\r\n", lfText);
                 Assert.Equal("line1\nline2\nline3", lfText);
+                // [段6] 既有文件保真——无 BOM + LF 的 .cs 覆写后两态不变（不补契约）
+                string legacyPath = Path.Combine(rw, "legacy.cs");
+                File.WriteAllText(legacyPath, "class L\n{\n}\n", new System.Text.UTF8Encoding(false));
+                fs.WriteTextAuto(legacyPath, "class L\n{\n    int x;\n}\n");
+                byte[] legacyBytes = File.ReadAllBytes(legacyPath);
+                Assert.False(legacyBytes.Length >= 3 && legacyBytes[0] == 0xEF && legacyBytes[1] == 0xBB && legacyBytes[2] == 0xBF, "既有无 BOM .cs 不应被补 BOM");
+                Assert.DoesNotContain("\r\n", File.ReadAllText(legacyPath, new System.Text.UTF8Encoding(false)));
+                // [段7] 既有 BOM + CRLF 的 .cs 覆写后保真（不剥 BOM / 不改换行）
+                string bomPath = Path.Combine(rw, "keep.cs");
+                File.WriteAllText(bomPath, "class K\r\n{\r\n}\r\n", new System.Text.UTF8Encoding(true));
+                fs.WriteTextAuto(bomPath, "class K\n{\n    int y;\n}\n");
+                byte[] bomBytes = File.ReadAllBytes(bomPath);
+                Assert.True(bomBytes.Length >= 3 && bomBytes[0] == 0xEF && bomBytes[1] == 0xBB && bomBytes[2] == 0xBF, "既有 BOM .cs 应保真带 BOM");
+                Assert.True(IsAllCrLf(bomBytes), "既有 CRLF .cs 应保持 CRLF");
+                // [段8] 新建 .mau 契约——BOM + CRLF（语料族同族）
+                string mauPath = Path.Combine(rw, "flow.mau");
+                fs.WriteTextAuto(mauPath, "§ 'S_A' = { 'A' }\n");
+                byte[] mauBytes = File.ReadAllBytes(mauPath);
+                Assert.True(mauBytes.Length >= 3 && mauBytes[0] == 0xEF && mauBytes[1] == 0xBB && mauBytes[2] == 0xBF, ".mau 应带 UTF-8 BOM");
+                Assert.True(IsAllCrLf(mauBytes), ".mau 换行应为 CRLF");
             }
             finally
             {
                 TryDelete(baseDir);
             }
-        }/// <summary>
-         /// Move 目录整棵移动 + 自动建父目录 + 目标存在拒绝（D1/D2 修复：目录移动/自动建目录）
-         /// </summary>
+        }
+        /// <summary>
+        /// 全 CRLF 判定——每个 0x0A 都紧跟 0x0D 之后（文件级换行风格断言）
+        /// </summary>
+        /// <param name="raw">原始字节</param>
+        /// <returns>true=换行全为 CRLF</returns>
+        private static bool IsAllCrLf(byte[] raw)
+        {
+            for (int i = 0; i < raw.Length; i = i + 1)
+            {
+                if (raw[i] == 0x0A && (i == 0 || raw[i - 1] != 0x0D))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        /// <summary>
+        /// Web 资产族契约——新建 .html/.js/.css 落 CRLF + 无 BOM（仓库实测全量 CRLF；A25 延伸面）
+        /// </summary>
+        [Fact]
+        public void WebAsset_NewFile_IsCrLfNoBom()
+        {
+            string baseDir = Path.Combine(Path.GetTempPath(), "mau_webenc_" + Guid.NewGuid().ToString("N"));
+            string rw = Path.Combine(baseDir, "rw");
+            Directory.CreateDirectory(rw);
+            try
+            {
+                WorkspaceConfig.RootEntry[] entries = new WorkspaceConfig.RootEntry[]
+                {
+                            new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true }
+                };
+                FileSystemService fs = new FileSystemService(entries, Path.Combine(rw, "recycle"));
+                string[] names = new string[] { "index.html", "app.js", "site.css" };
+                for (int i = 0; i < names.Length; i = i + 1)
+                {
+                    string target = Path.Combine(rw, names[i]);
+                    fs.WriteTextAuto(target, "line1\nline2\n");
+                    byte[] raw = File.ReadAllBytes(target);
+                    Assert.False(raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF, names[i] + " 不应带 BOM");
+                    Assert.True(IsAllCrLf(raw), names[i] + " 换行应为 CRLF");
+                }
+            }
+            finally
+            {
+                TryDelete(baseDir);
+            }
+        }
+        /// <summary>
+        /// Move 目录整棵移动 + 自动建父目录 + 目标存在拒绝（D1/D2 修复：目录移动/自动建目录）
+        /// </summary>
         [Fact]
         public void Move_DirectoryAndAutoParent()
         {
