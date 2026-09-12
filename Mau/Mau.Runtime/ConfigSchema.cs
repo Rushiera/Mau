@@ -208,9 +208,9 @@ namespace Mau.Runtime
         /// 值域校验——P8.5d 写入通道（SetChecked）前置校验。
         /// 规则：值长度上限 1024；type=int → 整数解析 + min/max 范围；type=bool → true/false/1/0；type=string/空 → 放行。
         /// </summary>
-        /// <param name = "key">配置键</param>
-        /// <param name = "value">候选值</param>
-        /// <param name = "error">失败原因（成功为空串）</param>
+        /// <param name="key">配置键</param>
+        /// <param name="value">候选值</param>
+        /// <param name="error">失败原因（成功为空串）</param>
         /// <returns>是否通过</returns>
         public bool Validate(string key, string value, out string error)
         {

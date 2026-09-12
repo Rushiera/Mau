@@ -78,7 +78,7 @@ namespace Mau.Runtime
         /// 热重载——按 dll 粒度原子替换（D8：新 ALC 加载成功 → 卸旧；失败 → 保留旧 + 报告）。
         /// pending 来自 FlowWatchService（② 热感知）——宿主主动调用（D10 纯手动 API）。
         /// </summary>
-        /// <param name = "pendingDlls">待重载 dll 路径清单（完整路径）</param>
+        /// <param name="pendingDlls">待重载 dll 路径清单（完整路径）</param>
         /// <returns>重载报告——每 dll：成功/失败（失败原因）</returns>
         public string[] ReloadFlows(string[] pendingDlls)
         {

@@ -22,7 +22,7 @@ namespace Mau.Providers
         /// assistant 消息序列化——tool_calls JSON 原样透传 + reasoning_content 回传铁律。
         /// 规则（A.6 ①⑦）：有 tool_calls 必带 reasoning_content（含空串）；无 tool_calls 但保留思考也带（多轮保留）。
         /// </summary>
-        /// <param name = "m">assistant 消息</param>
+        /// <param name="m">assistant 消息</param>
         /// <returns>wire 消息对象</returns>
         private static object BuildAssistantMessage(LlmMessage m)
         {
@@ -52,7 +52,7 @@ namespace Mau.Providers
         /// <summary>
         /// tools 数组序列化——OpenAI function 定义；parameters JSON Schema 原样透传（空参数 = 空对象 schema）。
         /// </summary>
-        /// <param name = "tools">工具规格数组</param>
+        /// <param name="tools">工具规格数组</param>
         /// <returns>wire tools 数组</returns>
         private static object[] BuildWireTools(ToolSpec[] tools)
         {
@@ -97,9 +97,9 @@ namespace Mau.Providers
         /// system/user 文本直写；assistant 带 tool_calls（JSON 透传）+ reasoning_content（A.6 ①⑦ 回传铁律）；
         /// tool 独立消息（tool_call_id 配对）；思考模式 + effort 按配置；空 tools 省略字段；user_id 非空携带（P9.4 KVCache 隔离）。
         /// </summary>
-        /// <param name = "messages">消息序列</param>
-        /// <param name = "tools">工具定义数组</param>
-        /// <param name = "userId">会话用户标识（空=不携带）</param>
+        /// <param name="messages">消息序列</param>
+        /// <param name="tools">工具定义数组</param>
+        /// <param name="userId">会话用户标识（空=不携带）</param>
         /// <returns>请求体 JSON</returns>
         private string BuildChatRequestBody(LlmMessage[] messages, ToolSpec[] tools, string userId)
         {

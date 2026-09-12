@@ -238,11 +238,11 @@ namespace Mau.Providers
         /// <summary>
         /// 累积 SSE 帧的 tool_calls 增量——按 index 聚合（design A.5：id/name 仅首帧；arguments 累积增量拼接）。
         /// </summary>
-        /// <param name = "data">帧 data 载荷</param>
-        /// <param name = "ids">index → 调用 ID</param>
-        /// <param name = "names">index → 工具名</param>
-        /// <param name = "args">index → 参数拼接缓冲</param>
-        /// <param name = "order">index 出现顺序</param>
+        /// <param name="data">帧 data 载荷</param>
+        /// <param name="ids">index → 调用 ID</param>
+        /// <param name="names">index → 工具名</param>
+        /// <param name="args">index → 参数拼接缓冲</param>
+        /// <param name="order">index 出现顺序</param>
         private static void AccumulateToolCalls(string data, Dictionary<int, string> ids, Dictionary<int, string> names, Dictionary<int, System.Text.StringBuilder> args, List<int> order)
         {
             try
@@ -335,10 +335,10 @@ namespace Mau.Providers
         /// <summary>
         /// 聚合结果 → 完整 tool_calls JSON 数组（[{"id","name","arguments"}]——arguments 为完整 JSON 文本，消费方整体解析）。
         /// </summary>
-        /// <param name = "ids">index → 调用 ID</param>
-        /// <param name = "names">index → 工具名</param>
-        /// <param name = "args">index → 参数拼接缓冲</param>
-        /// <param name = "order">index 出现顺序</param>
+        /// <param name="ids">index → 调用 ID</param>
+        /// <param name="names">index → 工具名</param>
+        /// <param name="args">index → 参数拼接缓冲</param>
+        /// <param name="order">index 出现顺序</param>
         /// <returns>JSON 数组字符串</returns>
         private static string BuildToolCallsJson(Dictionary<int, string> ids, Dictionary<int, string> names, Dictionary<int, System.Text.StringBuilder> args, List<int> order)
         {

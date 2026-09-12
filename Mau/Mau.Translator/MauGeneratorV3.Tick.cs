@@ -82,8 +82,8 @@ namespace Mau.Translator
         /// Command = 唯一外部输入总线：宿主演化投递（SetText），生成物 Tick 内拉取（主线程契约）。
         /// payload 落盒 key 名 = Command key（全局盒 "global"）——语料经 key 裸词引用。
         /// </summary>
-        /// <param name = "sb">输出缓冲</param>
-        /// <param name = "doc">IR</param>
+        /// <param name="sb">输出缓冲</param>
+        /// <param name="doc">IR</param>
         private static void AppendCommandPump(StringBuilder sb, MauDocV3 doc)
         {
             // [段1] 字段——懒注册标记（构造期 FlowId 未设置——首次 Tick 注册）

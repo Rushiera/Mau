@@ -36,7 +36,7 @@ namespace CH4
         /// <summary>
         /// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）
         /// </summary>
-        /// <param name = "json">注入报告 JSON（file/status/…）</param>
+        /// <param name="json">注入报告 JSON（file/status/…）</param>
         public void SetInjectReport(string json) { _injectReport = json ?? ""; }
         /// <summary>
         /// 注入报告 JSON——读（前端渲染/历史重建数据源；空串=无注入报告）

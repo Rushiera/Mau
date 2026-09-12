@@ -131,7 +131,7 @@ namespace Mau.Runtime
         /// <summary>
         /// 设置默认端点——清除其他默认标记 + 置目标默认（唯一默认语义；目标不存在返回 false）。
         /// </summary>
-        /// <param name = "apiConfigId">目标配置身份</param>
+        /// <param name="apiConfigId">目标配置身份</param>
         /// <returns>true=设置成功</returns>
         public bool SetDefault(Guid apiConfigId) { CH_LlmApiConfig[] configs = GetAll(); bool found = false; for (int i = 0; i < configs.Length; i = i + 1) { if (configs[i].ApiConfigId == apiConfigId) { configs[i].IsDefault = true; found = true; } else { configs[i].IsDefault = false; } } if (!found) { return false; } SaveConfigs(configs); return true; }
 

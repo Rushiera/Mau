@@ -8,6 +8,8 @@ using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Formatting;
+using Microsoft.CodeAnalysis.Options;
 
 namespace Mau.Development
 {
@@ -330,8 +332,9 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 节点文本规整——Roslyn 规范化布局（相对缩进 canonical：成员体 +4、嵌套逐级递增）+ 基准缩进平移。
-        /// 动机：调用方给的缩进不可信（顶格 / 错位即格式违规）；相对布局归规范化，基准缩进归落点上下文。
+        /// 节点文本规整——Roslyn Formatter（只调空白与缩进，token 形态原样）+ 基准缩进平移。
+        /// 动机：调用方给的缩进不可信（顶格 / 错位即格式违规）；相对布局归 Formatter（与 cs.format 同源），基准缩进归落点上下文。
+        /// 边界：不使用 NormalizeWhitespace——它重建全部 trivia，会把 token 形态一并重写（后置 ! 抑制符被拆开、XML doc 属性被写成带空格形态）。
         /// </summary>
         /// <param name="node">已解析节点（成员 / 语句块）</param>
         /// <param name="baseIndent">落点基准缩进</param>
@@ -339,8 +342,38 @@ namespace Mau.Development
         /// <returns>规整后文本</returns>
         private static string FormatNodeText(SyntaxNode node, string baseIndent, string newline)
         {
-            SyntaxNode canonical = node.NormalizeWhitespace("    ", newline);
+            SyntaxNode canonical = FormatNodeCanonical(node, newline);
             return NormalizeCodeText(canonical.ToFullString(), baseIndent, newline);
+        }
+
+        /// <summary>
+        /// 节点级 Formatter——只调空白与缩进，token 形态原样（与 cs.format 同源配置）。
+        /// </summary>
+        /// <param name="node">目标节点</param>
+        /// <param name="newline">目标换行</param>
+        /// <returns>规整后节点</returns>
+        private static SyntaxNode FormatNodeCanonical(SyntaxNode node, string newline)
+        {
+            using (AdhocWorkspace workspace = new AdhocWorkspace())
+            {
+                OptionSet options = FormatOptions(workspace, newline);
+                return Formatter.Format(node, workspace, options);
+            }
+        }
+
+        /// <summary>
+        /// 格式选项——4 空格缩进 / 显式换行（写侧节点规整与 cs.format 文档规整共用同一份配置）。
+        /// </summary>
+        /// <param name="workspace">工作区</param>
+        /// <param name="newline">目标换行</param>
+        /// <returns>选项集</returns>
+        private static OptionSet FormatOptions(Workspace workspace, string newline)
+        {
+            return workspace.Options
+                .WithChangedOption(FormattingOptions.UseTabs, LanguageNames.CSharp, false)
+                .WithChangedOption(FormattingOptions.TabSize, LanguageNames.CSharp, 4)
+                .WithChangedOption(FormattingOptions.IndentationSize, LanguageNames.CSharp, 4)
+                .WithChangedOption(FormattingOptions.NewLine, LanguageNames.CSharp, newline);
         }
 
         /// <summary>
@@ -1205,25 +1238,14 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 原子落盘——临时文件 + Move 覆盖（防半截写入）
+        /// 原子落盘——临时文件 + Move 覆盖（防半截写入）；编码保真（原文件 BOM 有则保留、无则不添加）。
         /// </summary>
         /// <param name="path">目标文件</param>
         /// <param name="text">完整新内容</param>
         private static void WriteAtomicText(string path, string text)
         {
-            string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            try
-            {
-                File.WriteAllText(temporary, text, new System.Text.UTF8Encoding(false));
-                File.Move(temporary, path, true);
-            }
-            finally
-            {
-                if (File.Exists(temporary))
-                {
-                    File.Delete(temporary);
-                }
-            }
+            bool bom = File.Exists(path) && HasUtf8Bom(path);
+            WriteFilePreserving(path, text, bom);
         }
 
         /// <summary>

@@ -204,8 +204,8 @@ namespace Mau.Cli
         /// <summary>
         /// 参数错误出口——统一文案 + 用法提示（透明度原则：任何入口不静默忽略参数/不静默回落默认值）
         /// </summary>
-        /// <param name = "message">错误行（如「未知参数: --out」「参数缺值: -o」）</param>
-        /// <param name = "usage">用法提示行</param>
+        /// <param name="message">错误行（如「未知参数: --out」「参数缺值: -o」）</param>
+        /// <param name="usage">用法提示行</param>
         /// <returns>退出码 1（调用方直接 return）</returns>
         public static int ArgError(string message, string usage)
         {

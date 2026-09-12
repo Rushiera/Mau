@@ -206,7 +206,7 @@ namespace Mau.Runtime
         /// <summary>
         /// 提取键前缀段——"ui.chat_font_size" → "ui"；无句点或空前缀返回空串（归主文件）
         /// </summary>
-        /// <param name = "key">配置键</param>
+        /// <param name="key">配置键</param>
         /// <returns>前缀段</returns>
         private static string KeyPrefix(string key)
         {
@@ -358,10 +358,10 @@ namespace Mau.Runtime
         /// 受控配置写入——P8.5d 自改通道唯一实现（serve POST / config 积木 / 宿主直执共用）。
         /// 校验链：schema 声明 → writable 白名单 → 值域校验 → 掩码回写拒绝 → 旧值快照 → 写入落盘 → 失败回滚。
         /// </summary>
-        /// <param name = "key">配置键（带文件前缀：ui.chat_font_size）</param>
-        /// <param name = "value">新值</param>
-        /// <param name = "schema">配置 schema（可 null——null 时仅基本校验）</param>
-        /// <param name = "error">失败原因（成功为空串）</param>
+        /// <param name="key">配置键（带文件前缀：ui.chat_font_size）</param>
+        /// <param name="value">新值</param>
+        /// <param name="schema">配置 schema（可 null——null 时仅基本校验）</param>
+        /// <param name="error">失败原因（成功为空串）</param>
         /// <returns>是否成功</returns>
         public bool SetChecked(string key, string value, ConfigSchema? schema, out string error)
         {
@@ -451,9 +451,9 @@ namespace Mau.Runtime
         /// 配置还原默认——P8.5d：key 空 = 全群（仅 writable 项）；key 非空 = 单项。
         /// 语义：将值写为 schema default（落盘）；未声明/只读项拒绝。
         /// </summary>
-        /// <param name = "key">配置键（空 = 全群）</param>
-        /// <param name = "schema">配置 schema</param>
-        /// <param name = "error">失败原因（成功为空串）</param>
+        /// <param name="key">配置键（空 = 全群）</param>
+        /// <param name="schema">配置 schema</param>
+        /// <param name="error">失败原因（成功为空串）</param>
         /// <returns>是否成功</returns>
         public bool ResetToDefault(string key, ConfigSchema? schema, out string error)
         {

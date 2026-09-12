@@ -295,11 +295,7 @@ namespace Mau.Development
         {
             using (AdhocWorkspace workspace = new AdhocWorkspace())
             {
-                OptionSet options = workspace.Options
-                    .WithChangedOption(FormattingOptions.UseTabs, LanguageNames.CSharp, false)
-                    .WithChangedOption(FormattingOptions.TabSize, LanguageNames.CSharp, 4)
-                    .WithChangedOption(FormattingOptions.IndentationSize, LanguageNames.CSharp, 4)
-                    .WithChangedOption(FormattingOptions.NewLine, LanguageNames.CSharp, newline);
+                OptionSet options = FormatOptions(workspace, newline);
                 SourceText sourceText = SourceText.From(text, Encoding.UTF8);
                 Project project = workspace.AddProject("cs-format", LanguageNames.CSharp);
                 Document document = project.AddDocument(path, sourceText);

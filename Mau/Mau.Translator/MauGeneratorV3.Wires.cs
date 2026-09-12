@@ -387,9 +387,9 @@ namespace Mau.Translator
         /// 数据源：IR 主动传感器中 oa.is_open["TOOL", "工具名"] 的参数（语料声明唯一真相）。
         /// 宿主装配（扫描 dll 建路由表）/ 外观层（工具归属展示）统一经 IFlow.GetMetaJson 读取。
         /// </summary>
-        /// <param name = "sb">输出缓冲</param>
-        /// <param name = "doc">IR</param>
-        /// <param name = "flowName">流程名（组名——dll 名 FL_<组名>.dll）</param>
+        /// <param name="sb">输出缓冲</param>
+        /// <param name="doc">IR</param>
+        /// <param name="flowName">流程名（组名——dll 名 FL_<组名>.dll）</param>
         private static void AppendGetMetaJson(StringBuilder sb, MauDocV3 doc, string flowName)
         {
             // 认领工具清单——主动传感器 BrickName=oa.is_open 且参数 [0]=="TOOL" → 参数 [1]=工具名（去重保序）
@@ -452,9 +452,9 @@ namespace Mau.Translator
              /// 工具定义生成——实现 IFlow.GetToolsJson：调用约定积木 tools.<flowName> 返回本组工具定义 JSON。
              /// 约定积木缺失（非工具组 Flow——如 QuickCat）→ 回退空工具组 JSON（{"group":"<名>","tools":[]}）。
              /// </summary>
-             /// <param name = "sb">输出缓冲</param>
-             /// <param name = "doc">IR（未用——工具定义在积木侧）</param>
-             /// <param name = "flowName">流程名（组名）</param>
+             /// <param name="sb">输出缓冲</param>
+             /// <param name="doc">IR（未用——工具定义在积木侧）</param>
+             /// <param name="flowName">流程名（组名）</param>
         private static void AppendGetToolsJson(StringBuilder sb, MauDocV3 doc, string flowName)
         {
             string brickName = "tools." + flowName.ToLowerInvariant();

@@ -77,7 +77,7 @@ namespace Mau.Translator
         /// <summary>
         /// Command key 唯一校验——一 key 一传感器（CommandBus 注册语义：key → 唯一注册者）
         /// </summary>
-        /// <param name = "doc">FSM 网络 IR</param>
+        /// <param name="doc">FSM 网络 IR</param>
         private static void CheckCmdKeys(MauDocV3 doc)
         {
             Dictionary<string, string> keys = new Dictionary<string, string>(StringComparer.Ordinal);

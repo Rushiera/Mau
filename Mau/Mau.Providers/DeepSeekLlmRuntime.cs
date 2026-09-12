@@ -89,10 +89,10 @@ namespace Mau.Providers
         /// Text/Reasoning 增量；ToolCalls 完整工具调用 JSON（聚合后一次性发出）；[DONE] → Done；错误 → Error。
         /// 注意：C# 迭代器禁止 try-catch 内 yield——网络层错误用 catch 赋值 + catch 后 yield 模式。
         /// </summary>
-        /// <param name = "messages">完整消息序列（system/user/assistant/tool 多 role）</param>
-        /// <param name = "tools">工具定义数组（可为空——纯对话）</param>
-        /// <param name = "userId">会话用户标识——请求体 user_id（P9.4 CH2 对齐：KVCache 隔离；空=不携带）</param>
-        /// <param name = "ct">取消令牌</param>
+        /// <param name="messages">完整消息序列（system/user/assistant/tool 多 role）</param>
+        /// <param name="tools">工具定义数组（可为空——纯对话）</param>
+        /// <param name="userId">会话用户标识——请求体 user_id（P9.4 CH2 对齐：KVCache 隔离；空=不携带）</param>
+        /// <param name="ct">取消令牌</param>
         /// <returns>流式事件序列</returns>
         public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, string userId = "", [EnumeratorCancellation] CancellationToken ct = default)
         {
