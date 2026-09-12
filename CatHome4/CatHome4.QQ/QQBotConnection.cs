@@ -108,6 +108,8 @@ namespace CatHome4.QQ
 
         /// <summary>心跳 ACK 追踪——HbLoop 发送后递增，WsLoop 收到 op=11 时清零（volatile——跨线程共享，R6-P3-05）</summary>
         private volatile int _missedAcks = 0;
+        /// <summary>共享 HTTP 客户端——连接池复用（R6-P3-02）；Authorization 走每请求头（DefaultRequestHeaders 并发不安全）</summary>
+        private static readonly System.Net.Http.HttpClient _http = new System.Net.Http.HttpClient();
 
         /// <summary>
         /// 构造单 Bot 连接。
@@ -225,68 +227,56 @@ namespace CatHome4.QQ
         {
             try
             {
-                using (System.Net.Http.HttpClient h = new System.Net.Http.HttpClient())
+                string url;
+                string json;
+                if (msgType == "private")
                 {
-                    h.DefaultRequestHeaders.Add("Authorization", "QQBot " + _accessToken);
-                    string url;
-                    string json;
-                    if (msgType == "private")
-                    {
-                        url = _apiHost + "/v2/users/" + targetId + "/messages";
-                        _msgSeq = _msgSeq + 1;
-                        json = BuildBody(text, isMarkdown, msgId, _msgSeq);
-                    }
-                    else
-                    {
-                        int ci = targetId.IndexOf(':');
-                        string gid = ci > 0 ? targetId.Substring(0, ci) : targetId;
-                        url = _apiHost + "/v2/groups/" + gid + "/messages";
-                        _msgSeq = _msgSeq + 1;
-                        json = BuildBody(text, isMarkdown, msgId, _msgSeq);
-                    }
-                    System.Net.Http.StringContent c = new System.Net.Http.StringContent(json, Encoding.UTF8, "application/json");
-                    System.Net.Http.HttpResponseMessage r = h.PostAsync(url, c).GetAwaiter().GetResult();
-                    if ((int)r.StatusCode == 401)
-                    {
-                        RefreshToken();
-                        h.DefaultRequestHeaders.Remove("Authorization");
-                        h.DefaultRequestHeaders.Add("Authorization", "QQBot " + _accessToken);
-                        c = new System.Net.Http.StringContent(json, Encoding.UTF8, "application/json");
-                        r = h.PostAsync(url, c).GetAwaiter().GetResult();
-                    }
-                    int status = (int)r.StatusCode;
-                    if (status >= 300)
-                    {
-                        // 转发失败 L2 留痕——响应体随附（定位 400 精确错误码：被动回复次数/时效/格式；\n 替换空格——LogStore 单行不截断）
-                        string errBody = "";
-                        try
-                        {
-                            errBody = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                        }
-                        catch (Exception)
-                        {
-                        }
-                        Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(OneLine(text), 30) + " (" + status + ") " + Truncate(OneLine(errBody), 200), 2);
-                        return false;
-                    }
-                    Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(OneLine(text), 30) + " (" + status + ")", 1);
-                    return true;
+                    url = _apiHost + "/v2/users/" + targetId + "/messages";
+                    _msgSeq = _msgSeq + 1;
+                    json = BuildBody(text, isMarkdown, msgId, _msgSeq);
                 }
+                else
+                {
+                    int ci = targetId.IndexOf(':');
+                    string gid = ci > 0 ? targetId.Substring(0, ci) : targetId;
+                    url = _apiHost + "/v2/groups/" + gid + "/messages";
+                    _msgSeq = _msgSeq + 1;
+                    json = BuildBody(text, isMarkdown, msgId, _msgSeq);
+                }
+                System.Net.Http.HttpResponseMessage r = PostJson(url, json, true);
+                int status = (int)r.StatusCode;
+                if (status >= 300)
+                {
+                    // 转发失败 L2 留痕——响应体随附（定位 400 精确错误码：被动回复次数/时效/格式；\n 替换空格——LogStore 单行不截断）
+                    string errBody = "";
+                    try
+                    {
+                        errBody = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    }
+                    catch (Exception)
+                    {
+                    }
+                    Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(OneLine(text), 30) + " (" + status + ") " + Truncate(OneLine(errBody), 200), 2);
+                    return false;
+                }
+                Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(OneLine(text), 30) + " (" + status + ")", 1);
+                return true;
             }
             catch (Exception e)
             {
                 Log("QQBot | " + _displayName + " | 发送失败: " + e.Message, 2);
                 return false;
             }
-        }        /// <summary>
-                 /// 构造发送请求体——文本 / Markdown 双通道 + 可选被动 msg_id（P8）。
-                 /// 官方互斥铁律：填写 markdown 后 content 必须为空。
-                 /// </summary>
-                 /// <param name="text">消息文本</param>
-                 /// <param name="isMarkdown">true=MD 通道</param>
-                 /// <param name="msgId">被动回复 msg_id——空=不携带</param>
-                 /// <param name="msgSeq">客户端消息序号——被动回复须递增（同 msg_id 多次回复去重校验；空 msg_id 忽略）</param>
-                 /// <returns>请求体 JSON</returns>
+        }
+        /// <summary>
+        /// 构造发送请求体——文本 / Markdown 双通道 + 可选被动 msg_id（P8）。
+        /// 官方互斥铁律：填写 markdown 后 content 必须为空。
+        /// </summary>
+        /// <param name="text">消息文本</param>
+        /// <param name="isMarkdown">true=MD 通道</param>
+        /// <param name="msgId">被动回复 msg_id——空=不携带</param>
+        /// <param name="msgSeq">客户端消息序号——被动回复须递增（同 msg_id 多次回复去重校验；空 msg_id 忽略）</param>
+        /// <returns>请求体 JSON</returns>
         private static string BuildBody(string text, bool isMarkdown, string msgId, long msgSeq)
         {
             string idPart = msgId.Length > 0 ? ",\"msg_id\":\"" + EscapeJson(msgId) + "\",\"msg_seq\":" + msgSeq.ToString() : "";
@@ -307,23 +297,19 @@ namespace CatHome4.QQ
         {
             try
             {
-                using (System.Net.Http.HttpClient h = new System.Net.Http.HttpClient())
+                System.Net.Http.HttpResponseMessage r = SendGet(url, false);
+                if ((int)r.StatusCode == 403)
                 {
-                    System.Net.Http.HttpResponseMessage r = h.GetAsync(url).GetAwaiter().GetResult();
-                    if ((int)r.StatusCode == 403)
-                    {
-                        h.DefaultRequestHeaders.Add("Authorization", "QQBot " + _accessToken);
-                        r = h.GetAsync(url).GetAwaiter().GetResult();
-                    }
-                    if (!r.IsSuccessStatusCode)
-                    {
-                        Log("QQBot | " + _displayName + " | 附件下载失败: " + (int)r.StatusCode + " | " + destPath, 2);
-                        return false;
-                    }
-                    byte[] data = r.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
-                    File.WriteAllBytes(destPath, data);
-                    return true;
+                    r = SendGet(url, true);
                 }
+                if (!r.IsSuccessStatusCode)
+                {
+                    Log("QQBot | " + _displayName + " | 附件下载失败: " + (int)r.StatusCode + " | " + destPath, 2);
+                    return false;
+                }
+                byte[] data = r.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+                File.WriteAllBytes(destPath, data);
+                return true;
             }
             catch (Exception e)
             {
@@ -361,58 +347,36 @@ namespace CatHome4.QQ
                 byte[] data = File.ReadAllBytes(path);
                 string json = "{\"file_type\":" + fileType + ",\"srv_send_msg\":false,\"file_data\":\"" + Convert.ToBase64String(data) + "\",\"file_name\":\"" + EscapeJson(fileName) + "\"}";
                 string uploadUrl = _apiHost + "/v2/users/" + targetId + "/files";
-                using (System.Net.Http.HttpClient h = new System.Net.Http.HttpClient())
+                System.Net.Http.HttpResponseMessage r = PostJson(uploadUrl, json, true);
+                if (!r.IsSuccessStatusCode)
                 {
-                    h.DefaultRequestHeaders.Add("Authorization", "QQBot " + _accessToken);
-                    System.Net.Http.StringContent c = new System.Net.Http.StringContent(json, Encoding.UTF8, "application/json");
-                    System.Net.Http.HttpResponseMessage r = h.PostAsync(uploadUrl, c).GetAwaiter().GetResult();
-                    if ((int)r.StatusCode == 401)
-                    {
-                        RefreshToken();
-                        h.DefaultRequestHeaders.Remove("Authorization");
-                        h.DefaultRequestHeaders.Add("Authorization", "QQBot " + _accessToken);
-                        c = new System.Net.Http.StringContent(json, Encoding.UTF8, "application/json");
-                        r = h.PostAsync(uploadUrl, c).GetAwaiter().GetResult();
-                    }
-                    if (!r.IsSuccessStatusCode)
-                    {
-                        Log("QQBot | " + _displayName + " | 文件上传失败: " + (int)r.StatusCode + " | " + fileName, 2);
-                        return "文件发送失败: 上传 " + (int)r.StatusCode;
-                    }
-                    string raw = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                    string fileInfo = "";
-                    using (JsonDocument d = JsonDocument.Parse(raw))
-                    {
-                        if (d.RootElement.TryGetProperty("file_info", out JsonElement fiE))
-                        {
-                            fileInfo = fiE.GetString() ?? "";
-                        }
-                    }
-                    if (fileInfo.Length == 0)
-                    {
-                        return "文件发送失败: 上传未返回 file_info";
-                    }
-                    // 发送媒体消息——msg_type=7 + 可选被动 msg_id
-                    string msg = "{\"msg_type\":7,\"media\":{\"file_info\":\"" + EscapeJson(fileInfo) + "\"}"
-                        + (msgId.Length > 0 ? ",\"msg_id\":\"" + EscapeJson(msgId) + "\"" : "") + "}";
-                    System.Net.Http.StringContent c2 = new System.Net.Http.StringContent(msg, Encoding.UTF8, "application/json");
-                    System.Net.Http.HttpResponseMessage r2 = h.PostAsync(_apiHost + "/v2/users/" + targetId + "/messages", c2).GetAwaiter().GetResult();
-                    if ((int)r2.StatusCode == 401)
-                    {
-                        RefreshToken();
-                        h.DefaultRequestHeaders.Remove("Authorization");
-                        h.DefaultRequestHeaders.Add("Authorization", "QQBot " + _accessToken);
-                        c2 = new System.Net.Http.StringContent(msg, Encoding.UTF8, "application/json");
-                        r2 = h.PostAsync(_apiHost + "/v2/users/" + targetId + "/messages", c2).GetAwaiter().GetResult();
-                    }
-                    if (!r2.IsSuccessStatusCode)
-                    {
-                        Log("QQBot | " + _displayName + " | 文件消息发送失败: " + (int)r2.StatusCode + " | " + fileName, 2);
-                        return "文件发送失败: 发送 " + (int)r2.StatusCode;
-                    }
-                    Log("QQBot | " + _displayName + " | 发文件: " + fileName + " (" + fi.Length + "B)", 1);
-                    return "";
+                    Log("QQBot | " + _displayName + " | 文件上传失败: " + (int)r.StatusCode + " | " + fileName, 2);
+                    return "文件发送失败: 上传 " + (int)r.StatusCode;
                 }
+                string raw = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                string fileInfo = "";
+                using (JsonDocument d = JsonDocument.Parse(raw))
+                {
+                    if (d.RootElement.TryGetProperty("file_info", out JsonElement fiE))
+                    {
+                        fileInfo = fiE.GetString() ?? "";
+                    }
+                }
+                if (fileInfo.Length == 0)
+                {
+                    return "文件发送失败: 上传未返回 file_info";
+                }
+                // 发送媒体消息——msg_type=7 + 可选被动 msg_id
+                string msg = "{\"msg_type\":7,\"media\":{\"file_info\":\"" + EscapeJson(fileInfo) + "\"}"
+                    + (msgId.Length > 0 ? ",\"msg_id\":\"" + EscapeJson(msgId) + "\"" : "") + "}";
+                System.Net.Http.HttpResponseMessage r2 = PostJson(_apiHost + "/v2/users/" + targetId + "/messages", msg, true);
+                if (!r2.IsSuccessStatusCode)
+                {
+                    Log("QQBot | " + _displayName + " | 文件消息发送失败: " + (int)r2.StatusCode + " | " + fileName, 2);
+                    return "文件发送失败: 发送 " + (int)r2.StatusCode;
+                }
+                Log("QQBot | " + _displayName + " | 发文件: " + fileName + " (" + fi.Length + "B)", 1);
+                return "";
             }
             catch (Exception e)
             {
@@ -456,39 +420,42 @@ namespace CatHome4.QQ
         {
             try
             {
-                using (System.Net.Http.HttpClient h = new System.Net.Http.HttpClient())
+                string body = "{\"appId\":\"" + EscapeJson(_appId)
+                    + "\",\"clientSecret\":\"" + EscapeJson(_secret) + "\"}";
+                System.Net.Http.HttpResponseMessage r = SendJson("https://bots.qq.com/app/getAppAccessToken", body, false);
+                string raw = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                int expires = 7200;
+                // 单次解析——access_token + expires_in 同文档取（原两次 JsonDocument.Parse 合并，R6-P3-07）
+                using (JsonDocument d = JsonDocument.Parse(raw))
                 {
-                    string body = "{\"appId\":\"" + EscapeJson(_appId)
-                        + "\",\"clientSecret\":\"" + EscapeJson(_secret) + "\"}";
-                    System.Net.Http.StringContent c = new System.Net.Http.StringContent(body, Encoding.UTF8, "application/json");
-                    System.Net.Http.HttpResponseMessage r = h.PostAsync("https://bots.qq.com/app/getAppAccessToken", c).GetAwaiter().GetResult();
-                    string raw = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                    using (JsonDocument d = JsonDocument.Parse(raw))
+                    JsonElement tokenE;
+                    if (d.RootElement.TryGetProperty("access_token", out tokenE))
                     {
-                        _accessToken = d.RootElement.GetProperty("access_token").GetString() ?? "";
+                        _accessToken = tokenE.GetString() ?? "";
                     }
-                    int expires = 7200;
-                    using (JsonDocument d = JsonDocument.Parse(raw))
+                    JsonElement expE;
+                    if (d.RootElement.TryGetProperty("expires_in", out expE))
                     {
-                        if (d.RootElement.TryGetProperty("expires_in", out JsonElement e))
+                        if (expE.ValueKind == JsonValueKind.Number)
                         {
-                            if (e.ValueKind == JsonValueKind.Number)
-                            {
-                                expires = e.GetInt32();
-                            }
-                            else if (e.ValueKind == JsonValueKind.String)
-                            {
-                                int.TryParse(e.GetString(), out expires);
-                            }
+                            expires = expE.GetInt32();
+                        }
+                        else if (expE.ValueKind == JsonValueKind.String)
+                        {
+                            int.TryParse(expE.GetString(), out expires);
                         }
                     }
-                    if (expires <= 0)
-                    {
-                        expires = 7200;
-                    }
-                    _tokenExpireTick = Stopwatch.GetTimestamp() + (long)((expires - 300) * Stopwatch.Frequency);
-                    Log("QQBot | " + _displayName + " | Token 刷新成功 " + expires + "s", 1);
                 }
+                if (_accessToken.Length == 0)
+                {
+                    Log("QQBot | " + _displayName + " | Token 刷新响应无 access_token", 3);
+                }
+                if (expires <= 0)
+                {
+                    expires = 7200;
+                }
+                _tokenExpireTick = Stopwatch.GetTimestamp() + (long)((expires - 300) * Stopwatch.Frequency);
+                Log("QQBot | " + _displayName + " | Token 刷新成功 " + expires + "s", 1);
             }
             catch (Exception e)
             {
@@ -769,12 +736,68 @@ namespace CatHome4.QQ
                 {
                     sb.Append("\\t");
                 }
+                else if (c < ' ')
+                {
+                    // 其余控制字符——\u00XX（JSON 规范：U+0000-U+001F 必须转义，R6-P3-03）
+                    sb.Append("\\u");
+                    sb.Append(((int)c).ToString("x4"));
+                }
                 else
                 {
                     sb.Append(c);
                 }
             }
             return sb.ToString();
+        }
+        /// <summary>
+        /// 单次 JSON POST——独立请求消息（HttpRequestMessage 不可重用；头走请求级，静态客户端无并发污染）。
+        /// </summary>
+        /// <param name="url">目标 URL</param>
+        /// <param name="json">请求体 JSON</param>
+        /// <param name="withAuth">true=携带 QQBot Authorization 头</param>
+        /// <returns>响应消息</returns>
+        private System.Net.Http.HttpResponseMessage SendJson(string url, string json, bool withAuth)
+        {
+            System.Net.Http.HttpRequestMessage req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
+            if (withAuth)
+            {
+                req.Headers.Add("Authorization", "QQBot " + _accessToken);
+            }
+            req.Content = new System.Net.Http.StringContent(json, Encoding.UTF8, "application/json");
+            return _http.SendAsync(req).GetAwaiter().GetResult();
+        }
+        /// <summary>
+        /// JSON POST + 401 自动刷新令牌重试一次——QQ 开放平台令牌过期统一处理（原 SendReply/SendFile 重复实现收拢）。
+        /// </summary>
+        /// <param name="url">目标 URL</param>
+        /// <param name="json">请求体 JSON</param>
+        /// <param name="withAuth">true=携带 Authorization 头</param>
+        /// <returns>响应消息（重试后仍失败返回最后一次响应）</returns>
+        private System.Net.Http.HttpResponseMessage PostJson(string url, string json, bool withAuth)
+        {
+            System.Net.Http.HttpResponseMessage r = SendJson(url, json, withAuth);
+            if (withAuth && (int)r.StatusCode == 401)
+            {
+                RefreshToken();
+                r = SendJson(url, json, withAuth);
+            }
+            return r;
+        }
+
+        /// <summary>
+        /// 单次 GET——独立请求消息（附件下载面；withAuth=true 携带 Authorization 头）。
+        /// </summary>
+        /// <param name="url">目标 URL</param>
+        /// <param name="withAuth">true=携带 Authorization 头</param>
+        /// <returns>响应消息</returns>
+        private System.Net.Http.HttpResponseMessage SendGet(string url, bool withAuth)
+        {
+            System.Net.Http.HttpRequestMessage req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, url);
+            if (withAuth)
+            {
+                req.Headers.Add("Authorization", "QQBot " + _accessToken);
+            }
+            return _http.SendAsync(req).GetAwaiter().GetResult();
         }
     }
 }

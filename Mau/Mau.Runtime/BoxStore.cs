@@ -65,25 +65,9 @@ namespace Mau.Runtime
         /// <returns>true=成功</returns>
         public static bool SetDic(string boxId, string packetKey, string dataJson)
         {
-            try
-            {
-                using System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(dataJson);
-                if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
-                    || doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
-                {
-                    DataBox.Set<string>("boxdic:" + boxId, packetKey, dataJson);
-                    return true;
-                }
-                // 合法 JSON 但非对象/数组——纯文本暂存（G.9：用户输入原文）
-                DataBox.Set<string>("boxdic:" + boxId, packetKey, dataJson);
-                return true;
-            }
-            catch
-            {
-                // 非 JSON——纯文本暂存（G.9：用户输入原文——"读一下 test.txt" 不是 JSON）
-                DataBox.Set<string>("boxdic:" + boxId, packetKey, dataJson);
-                return true;
-            }
+            // 三分支同义收拢（R1-P3-04）：JSON 对象/数组 与 纯文本 均按原文暂存（G.9 用户输入原文）；原 JsonDocument.Parse 仅为判别、判别不改变行为故省略
+            DataBox.Set<string>("boxdic:" + boxId, packetKey, dataJson);
+            return true;
         }
         /// <summary>
         /// 读取数据包（JSON 文本）

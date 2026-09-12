@@ -358,7 +358,8 @@ namespace Mau.Providers
             {
                 value = "enabled";
             }
-            return value == "enabled";
+            // 大小写/空白归一——"ENABLED" 亦视为开启（R4-P3-05）
+            return value.Trim().ToLowerInvariant() == "enabled";
         }
 
         /// <summary>
@@ -380,11 +381,13 @@ namespace Mau.Providers
                     value = env;
                 }
             }
-            if (value.Length == 0)
+            // 白名单校验——low/high/max 之外一律回退 high（R4-P3-06：防上游协议拒绝）
+            string norm = value.Trim().ToLowerInvariant();
+            if (norm == "low" || norm == "high" || norm == "max")
             {
-                value = "high";
+                return norm;
             }
-            return value;
+            return "high";
         }
     }
 }

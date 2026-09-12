@@ -78,7 +78,7 @@ namespace Mau.Cli
 
             // [段1] 编译——词法/解析/验证/分析全链
             string source = File.ReadAllText(mauFile);
-            string flowName = Program.FlowNameFromPath(mauFile);
+            string flowName = Mau.Development.MauGroupBuilder.FlowNameFromPath(mauFile);
             CompileResultV3 result = MauCompilerV3.Compile(source, flowName);
             if (!result.Success)
             {

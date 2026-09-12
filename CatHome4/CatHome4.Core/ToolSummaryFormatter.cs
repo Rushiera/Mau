@@ -10,7 +10,7 @@ namespace CH4
     /// 对齐 CH2 CH_Tool_LLMToolDisplay（P7 折叠气泡 summary）；每个工具一个独立 Fmt 方法，便于单独调校。
     /// 消费方：ChatSession 实时推送 toolcard payload + SessionViewStore 历史落盘（summary 字段——前端兜底 name）。
     /// </summary>
-    public static class ToolSummaryFormatter
+    internal static class ToolSummaryFormatter
     {
         // ═══════════════════════════════════════════
         // 主入口

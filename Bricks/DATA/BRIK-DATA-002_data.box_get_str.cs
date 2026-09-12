@@ -22,7 +22,7 @@ namespace Mau.Bricks
         /// </summary>
         /// <param name="scope">作用域</param>
         /// <param name="key">键</param>
-        /// <param name="value">str 值——不存在为空串</param>
+        /// <param name="value">str 值——Key 不存在时为 default（null）；返回 false 表示键缺失（R3-P3-07 精确化）</param>
         /// <returns>true=Key 存在</returns>
         public static bool GetStr(string scope, string key, out string value)
         {

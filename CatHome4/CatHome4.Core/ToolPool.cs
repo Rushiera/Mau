@@ -114,12 +114,23 @@ namespace CH4
             {
                 return;
             }
-            // 重名覆盖——保持原插入序（确定性：注册序不因覆盖漂移）
+            // 重名覆盖——保持原插入序（确定性：注册序不因覆盖漂移）；内容跟随最新注册
             bool isNew = !_byName.ContainsKey(def.Name);
             _byName[def.Name] = def;
             if (isNew)
             {
                 _order.Add(def);
+            }
+            else
+            {
+                for (int i = 0; i < _order.Count; i = i + 1)
+                {
+                    if (_order[i].Name == def.Name)
+                    {
+                        _order[i] = def;
+                        break;
+                    }
+                }
             }
             string group = "";
             if (def.Group.Length > 0)
@@ -132,7 +143,20 @@ namespace CH4
                 list = new List<ToolDef>();
                 _byGroup[group] = list;
             }
-            if (!list.Contains(def))
+            int exists = -1;
+            for (int i = 0; i < list.Count; i = i + 1)
+            {
+                if (list[i].Name == def.Name)
+                {
+                    exists = i;
+                    break;
+                }
+            }
+            if (exists >= 0)
+            {
+                list[exists] = def;
+            }
+            else
             {
                 list.Add(def);
             }
@@ -169,12 +193,11 @@ namespace CH4
         /// <returns>工具定义数组</returns>
         public static ToolDef[] All()
         {
-            ToolDef[] result = new ToolDef[_byName.Count];
-            int i = 0;
-            foreach (KeyValuePair<string, ToolDef> kv in _byName)
+            // 注册序兑现——按插入序返回（_order 唯一序真源，不依赖 Dictionary 枚举序）
+            ToolDef[] result = new ToolDef[_order.Count];
+            for (int i = 0; i < _order.Count; i = i + 1)
             {
-                result[i] = kv.Value;
-                i = i + 1;
+                result[i] = _order[i];
             }
             return result;
         }
@@ -216,14 +239,21 @@ namespace CH4
         /// <returns>组名数组</returns>
         public static string[] AllGroups()
         {
-            string[] result = new string[_byGroup.Count];
-            int i = 0;
-            foreach (KeyValuePair<string, List<ToolDef>> kv in _byGroup)
+            // 首次出现序兑现——按注册序摄取组名（_order 派生，不依赖 Dictionary 枚举序）
+            List<string> groups = new List<string>();
+            for (int i = 0; i < _order.Count; i = i + 1)
             {
-                result[i] = kv.Key;
-                i = i + 1;
+                string key = "";
+                if (_order[i].Group.Length > 0)
+                {
+                    key = _order[i].Group;
+                }
+                if (!groups.Contains(key))
+                {
+                    groups.Add(key);
+                }
             }
-            return result;
+            return groups.ToArray();
         }
 
         /// <summary>

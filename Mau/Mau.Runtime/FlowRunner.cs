@@ -219,33 +219,13 @@ namespace Mau.Runtime
             {
                 throw new ArgumentNullException("action");
             }
-            System.Threading.ManualResetEventSlim done = new System.Threading.ManualResetEventSlim(false);
-            Exception? error = null;
-            _mainInbox.Enqueue(delegate ()
+            // 收拢——Action 版委托泛型版（R1-P3-01：两版原为重复实现）
+            bool completed;
+            return InvokeOnMain<bool>(delegate ()
             {
-                try
-                {
-                    action();
-                }
-                catch (Exception ex)
-                {
-                    error = ex;
-                }
-                finally
-                {
-                    done.Set();
-                }
-            });
-            bool completed = done.Wait(timeoutMs);
-            if (!completed)
-            {
-                return false;
-            }
-            if (error != null)
-            {
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
-            }
-            return true;
+                action();
+                return true;
+            }, timeoutMs, out completed);
         }
 
         /// <summary>

@@ -460,7 +460,21 @@ namespace CH4
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
             // P9.3 多实例化签名——sessionId 归属默认会话；catsBuilder 多猫列表（管理页签数据源）；主端口服务 index.html
             // F2.1/F2.2——主端口纯管理面板（index.html）；majordomo 对话走独立端口（chat.html，与多猫同构）
-            _httpHost = HttpHost.Start(ResolveHttpPort(llmConfig), _chatBridge.DefaultSession.Id, ObserveService.BuildSnapshotJson, DispatchCommand, ObserveService.BuildCompactFrameJson, (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max), AdminService.BuildCatsJson, () => _chatBridge.DefaultSession.BuildNoteJson(), ObserveService.BuildPatchJson, false, AdminService.RegisterAdminRoutes, new HtmlRootProvider());
+            _httpHost = HttpHost.Start(new HttpHostOptions
+            {
+                Port = ResolveHttpPort(llmConfig),
+                SessionId = _chatBridge.DefaultSession.Id,
+                SnapshotBuilder = ObserveService.BuildSnapshotJson,
+                Dispatcher = DispatchCommand,
+                FrameBuilder = ObserveService.BuildCompactFrameJson,
+                HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max),
+                CatsBuilder = AdminService.BuildCatsJson,
+                NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
+                PatchBuilder = ObserveService.BuildPatchJson,
+                ServeChatPage = false,
+                RouteRegistrar = AdminService.RegisterAdminRoutes,
+                HtmlRootProvider = new HtmlRootProvider()
+            });
             // F2.2 majordomo 特殊会话——独立端口 serve chat.html + 强制自启（DefaultSession 事件推送绑独立端口 host）
             AdminService.StartMajorHost();
             // [段6b] 启动扫描——sessions/*/cat.cfg 中 running 猫拉起（主 HTTP 就位后——每猫 HttpHost 独立实例）

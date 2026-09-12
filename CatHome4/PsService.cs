@@ -171,53 +171,144 @@ namespace CH4
         /// <returns>拦截错误文本（空=放行）</returns>
         private static string DetectForbidden(string command)
         {
-            // git 前缀豁免——仓库级操作（git commit/checkout 等）非文件内容写；git 命令本身不含写文件 cmdlet
+            // [段1] git 前缀豁免——仓库级操作（git commit/checkout 等）非文件内容写；git 命令本身不含写文件 cmdlet
             string trimmed = command.TrimStart();
             if (trimmed.StartsWith("git ", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith("git.exe ", StringComparison.OrdinalIgnoreCase))
             {
                 return "";
             }
-            // 写文件 cmdlet 族——词法检测（大小写不敏感；单词边界防误伤）
+            // [段2] 写文件 cmdlet 族——词法检测（大小写不敏感；单词边界防误伤）
             string[] writeCmdlets = new string[]
             {
-                "Set-Content", "Add-Content", "Out-File", "New-Item", "Copy-Item",
-                "Move-Item", "Remove-Item", "Rename-Item", "Clear-Content",
-                "Set-ItemProperty", "Set-Content-Encoding", "Export-Csv", "Export-Clixml",
-                "File.WriteAllText", "File.WriteAllLines", "File.WriteAllBytes",
-                "File.AppendAllText", "File.Copy", "File.Move", "File.Delete", "File.Create",
-                "IO.File.WriteAllText", "IO.File.WriteAllLines", "IO.File.WriteAllBytes"
+                        "Set-Content", "Add-Content", "Out-File", "New-Item", "Copy-Item",
+                        "Move-Item", "Remove-Item", "Rename-Item", "Clear-Content",
+                        "Set-ItemProperty", "Set-Content-Encoding", "Export-Csv", "Export-Clixml",
+                        "File.WriteAllText", "File.WriteAllLines", "File.WriteAllBytes",
+                        "File.AppendAllText", "File.Copy", "File.Move", "File.Delete", "File.Create",
+                        "IO.File.WriteAllText", "IO.File.WriteAllLines", "IO.File.WriteAllBytes"
             };
-            for (int i = 0; i < writeCmdlets.Length; i++)
+            for (int i = 0; i < writeCmdlets.Length; i = i + 1)
             {
                 if (ContainsWord(command, writeCmdlets[i]))
                 {
                     return "ERR|PS_WRITE_FORBIDDEN|命令含文件写语义（" + writeCmdlets[i] + "）——文件操作请走 text-* 读写工具（text-write/append/replace/move/delete）";
                 }
             }
-            // 重定向操作符——`>` / `>>` / `2>`（前后非字母数字——防误伤字符串内容与比较）
-            for (int i = 0; i < command.Length - 1; i++)
+            // [段3] 重定向操作符——语义判定（引号内文本 / 箭头 / 比较符 一律放行）
+            if (HasRedirectOperator(command))
             {
-                if (command[i] == '>')
-                {
-                    bool prevOk = i == 0 || !IsWordChar(command[i - 1]);
-                    bool nextOk = i + 1 >= command.Length || command[i + 1] == '>' || !IsWordChar(command[i + 1]);
-                    if (prevOk && nextOk)
-                    {
-                        return "ERR|PS_WRITE_FORBIDDEN|命令含重定向操作符 > ——文件操作请走 text-* 读写工具";
-                    }
-                }
+                return "ERR|PS_WRITE_FORBIDDEN|命令含重定向操作符 > ——文件操作请走 text-* 读写工具";
             }
-            // Start-Process——无交互控制台主循环不 pump（判例 2026-08-18）；改起进程走宿主既有机制
+            // [段4] Start-Process——无交互控制台主循环不 pump（判例 2026-08-18）；改起进程走宿主既有机制
             if (ContainsWord(command, "Start-Process") || ContainsWord(command, "Start-Job"))
             {
                 return "ERR|PS_START_FORBIDDEN|命令含 Start-Process/Start-Job——禁止在工具内启动新进程（宿主进程管理面）";
             }
-            // ReadKey/ReadLine——自动化环境 stdout 重定向 → 控制台等待死锁（判例 2026-09-01）
+            // [段5] ReadKey/ReadLine——自动化环境 stdout 重定向 → 控制台等待死锁（判例 2026-09-01）
             if (ContainsWord(command, "ReadKey") || ContainsWord(command, "ReadLine") || ContainsWord(command, "Read-Host"))
             {
                 return "ERR|PS_READ_FORBIDDEN|命令含 ReadKey/ReadLine/Read-Host——自动化环境控制台等待会死锁";
             }
             return "";
+        }
+        /// <summary>
+        /// 重定向操作符检测——只认"作为重定向操作符出现的 &gt;"（引号感知 + 语义豁免）。
+        /// 豁免面：引号内文本（'...' / "..."——PowerShell 双引号 ` 转义、单引号 '' 字面）/ 箭头 `-&gt;` / 比较 `&gt;=`。
+        /// </summary>
+        /// <param name="command">命令全文</param>
+        /// <returns>true=含真正的重定向操作符</returns>
+        private static bool HasRedirectOperator(string command)
+        {
+            bool inSingle = false;
+            bool inDouble = false;
+            for (int i = 0; i < command.Length; i = i + 1)
+            {
+                char c = command[i];
+                // [段1] 引号态跟踪——引号内字符一律按文本内容处理
+                if (inSingle)
+                {
+                    if (c == '\'')
+                    {
+                        if (i + 1 < command.Length && command[i + 1] == '\'')
+                        {
+                            i = i + 1;
+                            continue;
+                        }
+                        inSingle = false;
+                    }
+                    continue;
+                }
+                if (inDouble)
+                {
+                    if (c == '`')
+                    {
+                        i = i + 1;
+                        continue;
+                    }
+                    if (c == '"')
+                    {
+                        inDouble = false;
+                    }
+                    continue;
+                }
+                if (c == '\'')
+                {
+                    inSingle = true;
+                    continue;
+                }
+                if (c == '"')
+                {
+                    inDouble = true;
+                    continue;
+                }
+                // [段2] 引号外——按语义判定（箭头/比较符/流合并 非文件写）
+                if (c != '>')
+                {
+                    continue;
+                }
+                char prev = PrevNonSpace(command, i);
+                char next = '\0';
+                if (i + 1 < command.Length)
+                {
+                    next = command[i + 1];
+                }
+                if (prev == '-' || prev == '=' || prev == '<')
+                {
+                    continue;
+                }
+                if (next == '=')
+                {
+                    continue;
+                }
+                // `n>&m` 流合并（2>&1 等）——控制台流操作，非文件写语义
+                if (next == '&' && i + 2 < command.Length)
+                {
+                    char stream = command[i + 2];
+                    if (stream == '*' || (stream >= '0' && stream <= '9'))
+                    {
+                        continue;
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+        /// <summary>
+        /// 前一非空白字符——重定向语义判定用（行首/全空白返回 '\0'）。
+        /// </summary>
+        /// <param name="text">全文</param>
+        /// <param name="index">当前下标（不含）</param>
+        /// <returns>前一非空白字符；无则 '\0'</returns>
+        private static char PrevNonSpace(string text, int index)
+        {
+            for (int i = index - 1; i >= 0; i = i - 1)
+            {
+                if (!char.IsWhiteSpace(text[i]))
+                {
+                    return text[i];
+                }
+            }
+            return '\0';
         }
 
         /// <summary>

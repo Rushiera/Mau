@@ -40,7 +40,7 @@ namespace Mau.Cli
                 for (int i = 0; i < files.Length; i++)
                 {
                     string name = Path.GetFileName(files[i]);
-                    string flowName = Program.FlowNameFromPath(files[i]);
+                    string flowName = Mau.Development.MauGroupBuilder.FlowNameFromPath(files[i]);
                     string source = File.ReadAllText(files[i]);
                     CompileResultV3 result = MauCompilerV3.Compile(source, flowName);
                     if (result.Success)
@@ -77,7 +77,7 @@ namespace Mau.Cli
                 for (int i = 0; i < files.Length; i++)
                 {
                     string name = Path.GetFileName(files[i]);
-                    string flowName = Program.FlowNameFromPath(files[i]);
+                    string flowName = Mau.Development.MauGroupBuilder.FlowNameFromPath(files[i]);
                     string source = File.ReadAllText(files[i]);
                     string expected = ExpectedErrorCode(source);
                     CompileResultV3 result = MauCompilerV3.Compile(source, flowName);

@@ -20,14 +20,87 @@ namespace CH4
         /// <returns>内置工具定义 JSON</returns>
         private static string BuildBuiltinToolsJson()
         {
-            return "{\"group\":\"\",\"tools\":[" +
-                "{\"name\":\"Note\",\"description\":\"轻量任务追踪器（内存存储，会话关闭即消失）。无参数=推进到下一条；action='set'+content='任务1\\\\n任务2'=写入新计划（已有未完成需force=true强制覆盖）。返回当前第X/Y条 已完成Z 待完成W 任务目标：... 最后一条时追加提示（已是最后一条需求，完成后可结束本轮）。全部完成后自动清空。剩余1条时引擎不自动拉起。\",\"parameters\":{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\",\"description\":\"set=写入新计划，不传=推进\"},\"content\":{\"type\":\"string\",\"description\":\"action=set时必填，\\\\n分割\"},\"force\":{\"type\":\"boolean\",\"description\":\"覆盖已有未完成计划时传true\"}},\"required\":[]}}," +
-                "{\"name\":\"time\",\"description\":\"当前系统日期时间（yyyy-MM-dd HH:mm:ss）——会话内直执，无需 OA\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}," +
-                "{\"name\":\"random\",\"description\":\"生成 [min, max) 范围内的随机整数（min 含下限，max 不含上限，要求 min &lt; max）——会话内直执，无需 OA\",\"parameters\":{\"type\":\"object\",\"properties\":{\"min\":{\"type\":\"integer\",\"description\":\"随机范围下限（含）\"},\"max\":{\"type\":\"integer\",\"description\":\"随机范围上限（不含）\"}},\"required\":[\"min\",\"max\"]}}," +
-                "{\"name\":\"info\",\"description\":\"查看运行时工具注册表——工具清单/参数/归属工具组 Flow/内置状态（agent 的眼睛；R1.2）\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}," +
-                "{\"name\":\"host-reload\",\"description\":\"热重载语料 dll（宿主级）——在 mau-proj 编译成功后单独调用（建议下一轮）；事务三段式：加载失败保留旧版本；cat=已加载 Flow 注册名（host-flows 查当前清单）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"cat\":{\"type\":\"string\",\"description\":\"Flow 注册名（QuickCat/TextCat/MauCat/CsCat/ConfigCat/SearchCat/VisionCat/TempToolCat/PsCat——host-flows 查当前全部）\"}},\"required\":[\"cat\"]}}," +
-                "{\"name\":\"host-flows\",\"description\":\"查看当前运行 Flow 现状（宿主级）——Registry 动态面：每个已加载 Flow 的 Id/Name/Kind/句柄状态/dll 路径；新增/重载后查询目标清单用\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}" +
-                "]}";
+            // 结构化构建——匿名对象树 → JsonSerializer（R6-P3-08：原手写字符串拼接易漏转义、难维护）
+            object[] tools = new object[6];
+            tools[0] = new
+            {
+                name = "Note",
+                description = "轻量任务追踪器（内存存储，会话关闭即消失）。无参数=推进到下一条；action='set'+content='任务1\\n任务2'=写入新计划（已有未完成需force=true强制覆盖）。返回当前第X/Y条 已完成Z 待完成W 任务目标：... 最后一条时追加提示（已是最后一条需求，完成后可结束本轮）。全部完成后自动清空。剩余1条时引擎不自动拉起。",
+                parameters = new
+                {
+                    type = "object",
+                    properties = new Dictionary<string, object>
+                            {
+                                { "action", new { type = "string", description = "set=写入新计划，不传=推进" } },
+                                { "content", new { type = "string", description = "action=set时必填，\\n分割" } },
+                                { "force", new { type = "boolean", description = "覆盖已有未完成计划时传true" } }
+                            },
+                    required = new string[0]
+                }
+            };
+            tools[1] = new
+            {
+                name = "time",
+                description = "当前系统日期时间（yyyy-MM-dd HH:mm:ss）——会话内直执，无需 OA",
+                parameters = new
+                {
+                    type = "object",
+                    properties = new Dictionary<string, object>()
+                }
+            };
+            tools[2] = new
+            {
+                name = "random",
+                description = "生成 [min, max) 范围内的随机整数（min 含下限，max 不含上限，要求 min < max）——会话内直执，无需 OA",
+                parameters = new
+                {
+                    type = "object",
+                    properties = new Dictionary<string, object>
+                            {
+                                { "min", new { type = "integer", description = "随机范围下限（含）" } },
+                                { "max", new { type = "integer", description = "随机范围上限（不含）" } }
+                            },
+                    required = new string[] { "min", "max" }
+                }
+            };
+            tools[3] = new
+            {
+                name = "info",
+                description = "查看运行时工具注册表——工具清单/参数/归属工具组 Flow/内置状态（agent 的眼睛；R1.2）",
+                parameters = new
+                {
+                    type = "object",
+                    properties = new Dictionary<string, object>()
+                }
+            };
+            tools[4] = new
+            {
+                name = "host-reload",
+                description = "热重载语料 dll（宿主级）——在 mau-proj 编译成功后单独调用（建议下一轮）；事务三段式：加载失败保留旧版本；cat=已加载 Flow 注册名（host-flows 查当前清单）",
+                parameters = new
+                {
+                    type = "object",
+                    properties = new Dictionary<string, object>
+                            {
+                                { "cat", new { type = "string", description = "Flow 注册名（QuickCat/TextCat/MauCat/CsCat/ConfigCat/SearchCat/VisionCat/TempToolCat/PsCat——host-flows 查当前全部）" } }
+                            },
+                    required = new string[] { "cat" }
+                }
+            };
+            tools[5] = new
+            {
+                name = "host-flows",
+                description = "查看当前运行 Flow 现状（宿主级）——Registry 动态面：每个已加载 Flow 的 Id/Name/Kind/句柄状态/dll 路径；新增/重载后查询目标清单用",
+                parameters = new
+                {
+                    type = "object",
+                    properties = new Dictionary<string, object>()
+                }
+            };
+            // 宽松转义——避免 < > 被编码为 \u003C（与旧手写字符串语义一致）
+            JsonSerializerOptions options = new JsonSerializerOptions();
+            options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+            return JsonSerializer.Serialize(new { group = "", tools = tools }, options);
         }
 
         /// <summary>

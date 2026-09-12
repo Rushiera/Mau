@@ -1127,12 +1127,12 @@ namespace CatHome4.QQ
             // A33——残留清理即落盘（防重启后恢复已清理来源）
             SaveForwardState();
         }
-/// <summary>
-                 /// 即时转发——3+1 预算：计数 &lt; 3 立即转发；否则累计到轮末汇总（第 4 次）。
-                 /// 无 qqbot 来源（前端对话）→ 不转发（被动机制——只有用户主动输入后才启用回复）。
-                 /// </summary>
-                 /// <param name="tg">绑定目标</param>
-                 /// <param name="content">text 块内容</param>
+        /// <summary>
+        /// 即时转发——3+1 预算：计数 &lt; 3 立即转发；否则累计到轮末汇总（第 4 次）。
+        /// 无 qqbot 来源（前端对话）→ 不转发（被动机制——只有用户主动输入后才启用回复）。
+        /// </summary>
+        /// <param name="tg">绑定目标</param>
+        /// <param name="content">text 块内容</param>
         private static void ForwardText(QqTarget tg, string content)
         {
             QqSource source;
@@ -1167,10 +1167,10 @@ namespace CatHome4.QQ
                 sb.Append(content);
             }
         }
-/// <summary>
-                 /// 轮结束——roundsum 块哨兵：累计非空 → 第 4 次汇总转发（单条发送）；出队消费本轮来源；重置 3+1 状态。
-                 /// </summary>
-                 /// <param name="tg">绑定目标</param>
+        /// <summary>
+        /// 轮结束——roundsum 块哨兵：累计非空 → 第 4 次汇总转发（单条发送）；出队消费本轮来源；重置 3+1 状态。
+        /// </summary>
+        /// <param name="tg">绑定目标</param>
         private static void FinishRound(QqTarget tg)
         {
             QqSource source;

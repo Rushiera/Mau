@@ -21,7 +21,7 @@ namespace Mau.Bricks
         /// 写一条结构化日志——内存总账 + 可选磁盘持久化
         /// </summary>
         /// <param name="text">消息</param>
-        /// <param name="level">级别——0=INFO 2=WARN 3=ERROR</param>
+        /// <param name="level">级别——0/1=INFO（LogStore.Add 归一：level ≤ 0 → 1）2=WARN 3=ERROR</param>
         /// <param name="category">类别——""=普通 / "CMD"=Command 总线 / "OA"=工单系统</param>
         /// <returns>true=已入总账</returns>
         public static bool Write(string text, int level, string category)

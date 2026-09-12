@@ -9,6 +9,9 @@ namespace SetUp
     /// 目标：配置好 public/ + Mau-public/（就地自举）+ 零隐式后台进程残留。
     /// 规范：design-ch4-release.md §二 / design-ch4-deploy.md §三 / README §3.2
     /// </summary>
+    /// <summary>
+    /// Program 分部——prepare 模式：就地自举链（build/test/publish/组翻译/publish/宿主自检）。
+    /// </summary>
     public static partial class Program
     {
         /// <summary>
@@ -66,7 +69,7 @@ namespace SetUp
                 }
                 string[] groupDirs = Directory.GetDirectories(corpusDir);
                 Array.Sort(groupDirs, StringComparer.OrdinalIgnoreCase);
-                List<string> groupBuilds = new List<string>();
+                List<string[]> groupBuilds = new List<string[]>();
                 for (int d = 0; d < groupDirs.Length; d = d + 1)
                 {
                     string[] mauprojs = Directory.GetFiles(groupDirs[d], "*.mauproj");
@@ -77,7 +80,7 @@ namespace SetUp
                     }
                     string groupName = Path.GetFileName(groupDirs[d]);
                     string projRel = "corpus\\ch4\\" + groupName + "\\" + Path.GetFileName(mauprojs[0]);
-                    groupBuilds.Add(projRel + " " + groupName);
+                    groupBuilds.Add(new string[] { projRel, groupName });
                 }
                 if (groupBuilds.Count == 0)
                 {
@@ -85,17 +88,17 @@ namespace SetUp
                 }
                 for (int i = 0; i < groupBuilds.Count; i = i + 1)
                 {
-                    string[] parts = groupBuilds[i].Split(' ');
-                    string proj = parts[0];
-                    string outDir = "public\\src\\" + parts[1];
+                    string proj = groupBuilds[i][0];
+                    string groupName = groupBuilds[i][1];
+                    string outDir = "public\\src\\" + groupName;
                     string args = "proj " + proj + " -o " + outDir + " --build";
-                    Console.WriteLine("[SetUp] 步4/" + (i + 1) + "/" + groupBuilds.Count + "：" + parts[1]);
+                    Console.WriteLine("[SetUp] 步4/" + (i + 1) + "/" + groupBuilds.Count + "：" + groupName);
                     long groupMs = Environment.TickCount64;
                     bool groupOk = RunProcess(mauExe, args, repoRoot);
-                    _steps.Add(new StepReport() { Step = 4, Name = "mau proj " + parts[1] + " --build", Ok = groupOk, Ms = Environment.TickCount64 - groupMs });
+                    _steps.Add(new StepReport() { Step = 4, Name = "mau proj " + groupName + " --build", Ok = groupOk, Ms = Environment.TickCount64 - groupMs });
                     if (!groupOk)
                     {
-                        return Fail("步4 组翻译失败：" + parts[1] + "——中止。");
+                        return Fail("步4 组翻译失败：" + groupName + "——中止。");
                     }
                 }
 

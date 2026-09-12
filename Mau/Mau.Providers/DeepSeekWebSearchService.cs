@@ -300,11 +300,11 @@ namespace Mau.Providers
         {
             StringBuilder sb = new StringBuilder();
             sb.Append("{\"model\":\"");
-            sb.Append(EscapeJson(model));
+            sb.Append(LlmJson.Escape(model));
             sb.Append("\",\"instructions\":\"");
-            sb.Append(EscapeJson("You are a web search assistant. Search the web for the user's query and answer based on the search results. Keep citations [citation:x] when referencing sources."));
+            sb.Append(LlmJson.Escape("You are a web search assistant. Search the web for the user's query and answer based on the search results. Keep citations [citation:x] when referencing sources."));
             sb.Append("\",\"input\":\"");
-            sb.Append(EscapeJson(query));
+            sb.Append(LlmJson.Escape(query));
             sb.Append("\",\"tools\":[{\"type\":\"web_search\"}],\"tool_choice\":{\"type\":\"web_search\"}}");
             return sb.ToString();
         }
@@ -318,11 +318,11 @@ namespace Mau.Providers
         {
             StringBuilder sb = new StringBuilder();
             sb.Append("{\"model\":\"");
-            sb.Append(EscapeJson(model));
+            sb.Append(LlmJson.Escape(model));
             sb.Append("\",\"max_tokens\":2048,\"system\":\"");
-            sb.Append(EscapeJson("You are a web search assistant. Search the web for the user's query and answer based on the search results. Keep citations [citation:x] when referencing sources."));
+            sb.Append(LlmJson.Escape("You are a web search assistant. Search the web for the user's query and answer based on the search results. Keep citations [citation:x] when referencing sources."));
             sb.Append("\",\"messages\":[{\"role\":\"user\",\"content\":\"");
-            sb.Append(EscapeJson(query));
+            sb.Append(LlmJson.Escape(query));
             sb.Append("\"}],\"tools\":[{\"type\":\"web_search_20250305\",\"name\":\"web_search\"}]}");
             return sb.ToString();
         }
@@ -745,51 +745,6 @@ namespace Mau.Providers
                 }
             }
             return "ERR|HTTP_" + statusCode.ToString() + "|" + (message.Length > 0 ? message : "空响应");
-        }
-
-        /// <summary>
-        /// JSON 字符串转义——双引号/反斜杠/控制字符（请求体组装安全）
-        /// </summary>
-        /// <param name="value">原始字符串</param>
-        /// <returns>转义后字符串（不含外层引号）</returns>
-        private static string EscapeJson(string value)
-        {
-            if (value == null)
-            {
-                return "";
-            }
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < value.Length; i++)
-            {
-                char c = value[i];
-                if (c == '"' || c == '\\')
-                {
-                    sb.Append('\\');
-                    sb.Append(c);
-                }
-                else if (c == '\n')
-                {
-                    sb.Append("\\n");
-                }
-                else if (c == '\r')
-                {
-                    sb.Append("\\r");
-                }
-                else if (c == '\t')
-                {
-                    sb.Append("\\t");
-                }
-                else if (c < 0x20)
-                {
-                    sb.Append("\\u");
-                    sb.Append(((int)c).ToString("x4"));
-                }
-                else
-                {
-                    sb.Append(c);
-                }
-            }
-            return sb.ToString();
         }
     }
 }

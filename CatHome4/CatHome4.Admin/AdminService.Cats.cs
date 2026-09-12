@@ -1031,20 +1031,22 @@ namespace CatHome4.Admin
         /// <returns>HttpHost 实例</returns>
         private static HttpHost StartCatHost(CatEntry cat, int port)
         {
-            return HttpHost.Start(
-                port,
-                cat.Session.Id,
-                BuildSnapshotJson,
-                (string line) => DispatchCommandForCat(cat, line),
-                null,
-                (int max) => _chatBridge.BuildHistoryView(cat.Session, max),
-                null,
-                () => cat.Session.BuildNoteJson(),
-                null,
-                true,
-                null,
-                HtmlRoot,
-                cat.DisplayName);
+            return HttpHost.Start(new HttpHostOptions
+            {
+                Port = port,
+                SessionId = cat.Session.Id,
+                SnapshotBuilder = BuildSnapshotJson,
+                Dispatcher = (string line) => DispatchCommandForCat(cat, line),
+                FrameBuilder = null,
+                HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(cat.Session, max),
+                CatsBuilder = null,
+                NoteBuilder = () => cat.Session.BuildNoteJson(),
+                PatchBuilder = null,
+                ServeChatPage = true,
+                RouteRegistrar = null,
+                HtmlRootProvider = HtmlRoot,
+                DisplayName = cat.DisplayName
+            });
         }
 
         /// <summary>
@@ -1065,20 +1067,22 @@ namespace CatHome4.Admin
                 LogStore.Add("CatHome4", 2, "majordomo 独立端口启动失败：8081-8180 全占用", "CHAT");
                 return false;
             }
-            HttpHost host = HttpHost.Start(
-                port,
-                _chatBridge.DefaultSession.Id,
-                BuildSnapshotJson,
-                (string line) => DispatchCommandForMajor(line),
-                null,
-                (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max),
-                null,
-                () => _chatBridge.DefaultSession.BuildNoteJson(),
-                null,
-                true,
-                null,
-                HtmlRoot,
-                _chatBridge.DefaultSession.DisplayName);
+            HttpHost host = HttpHost.Start(new HttpHostOptions
+            {
+                Port = port,
+                SessionId = _chatBridge.DefaultSession.Id,
+                SnapshotBuilder = BuildSnapshotJson,
+                Dispatcher = (string line) => DispatchCommandForMajor(line),
+                FrameBuilder = null,
+                HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max),
+                CatsBuilder = null,
+                NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
+                PatchBuilder = null,
+                ServeChatPage = true,
+                RouteRegistrar = null,
+                HtmlRootProvider = HtmlRoot,
+                DisplayName = _chatBridge.DefaultSession.DisplayName
+            });
             _majorHost = host;
             _majorPort = port;
             // 会话事件推送改绑 majordomo 独立对话端口（主端口 index.html 管理面板不再消费 chat 事件——F2.1）

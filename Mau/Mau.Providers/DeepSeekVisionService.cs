@@ -377,13 +377,13 @@ namespace Mau.Providers
         {
             StringBuilder sb = new StringBuilder();
             sb.Append("{\"model\":\"");
-            sb.Append(EscapeJson(model));
+            sb.Append(LlmJson.Escape(model));
             sb.Append("\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"");
-            sb.Append(EscapeJson(question.Length > 0 ? question : "描述这张图片的内容。"));
+            sb.Append(LlmJson.Escape(question.Length > 0 ? question : "描述这张图片的内容。"));
             sb.Append("\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"");
-            sb.Append(EscapeJson(imageUrl));
+            sb.Append(LlmJson.Escape(imageUrl));
             sb.Append("\",\"detail\":\"");
-            sb.Append(EscapeJson(detail));
+            sb.Append(LlmJson.Escape(detail));
             sb.Append("\"}}]}],\"stream\":false}");
             return sb.ToString();
         }
@@ -528,51 +528,6 @@ namespace Mau.Providers
                 }
             }
             return "ERR|HTTP_" + statusCode.ToString() + "|" + (message.Length > 0 ? message : "空响应");
-        }
-
-        /// <summary>
-        /// JSON 字符串转义——双引号/反斜杠/控制字符（请求体组装安全）
-        /// </summary>
-        /// <param name="value">原始字符串</param>
-        /// <returns>转义后字符串（不含外层引号）</returns>
-        private static string EscapeJson(string value)
-        {
-            if (value == null)
-            {
-                return "";
-            }
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < value.Length; i++)
-            {
-                char c = value[i];
-                if (c == '"' || c == '\\')
-                {
-                    sb.Append('\\');
-                    sb.Append(c);
-                }
-                else if (c == '\n')
-                {
-                    sb.Append("\\n");
-                }
-                else if (c == '\r')
-                {
-                    sb.Append("\\r");
-                }
-                else if (c == '\t')
-                {
-                    sb.Append("\\t");
-                }
-                else if (c < 0x20)
-                {
-                    sb.Append("\\u");
-                    sb.Append(((int)c).ToString("x4"));
-                }
-                else
-                {
-                    sb.Append(c);
-                }
-            }
-            return sb.ToString();
         }
     }
 }

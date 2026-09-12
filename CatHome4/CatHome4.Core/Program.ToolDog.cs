@@ -131,6 +131,11 @@ namespace CH4
             {
                 return 9000;
             }
+            // cs-build 全量编译（dotnet build 子进程）——慢机 30s 窗口不够（R5-P3-04）
+            if (name == "cs-build")
+            {
+                return 2400;
+            }
             return 600;
         }
     }

@@ -1,13 +1,13 @@
 ﻿// text_cat.mau —— TextCat 语料（CH4 R0.2 工具组 Flow 化——TEXT 工具域独立 Flow，原 DevCat 分部拆分）
-// 角色：工具组 Flow——认领 TOOL 域 text-* 4 工具（read/write/append/replace）
-// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 4 线认领执行 → complete_str 回执
+// 角色：工具组 Flow——认领 TOOL 域 text-* 11 工具（v1 基础 4：read/write/append/replace；v2 扩展 7：read_lines/read_between/tree/find/grep/move/delete）
+// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 11 线认领执行 → complete_str 回执
 // 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON（宿主发单落盒——CH2 Dog 机制验证格式）
 // 无值分支：每工具一条认领线，工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
 // 数据面：@rdOffice 等私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
 // 线程模型：全部主线程同步（受控短 IO）
 // 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）+ log.write TOOL 类别
 
-// ── 状态机（4 线——每线独立生命周期）──
+// ── 状态机（4 线——v1 基础工具，每线独立生命周期）──
 § 'S_Read' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Write' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Append' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }

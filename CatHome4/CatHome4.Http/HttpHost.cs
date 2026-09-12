@@ -20,6 +20,52 @@ namespace CatHome4.Http
     /// 服务面（Start/BuildApp/Stop/Port/SseClient）在本文件；推送面分部在 HttpHost.Pump.cs；
     /// HTTP 端点面分部在 HttpHost.Api.cs；配置区面分部在 HttpHost.Config.cs（P7b partial 拆分）。
     /// </summary>
+    /// <summary>
+    /// HTTP 外观层启动参数——Start 具名选项（R6-P3-06：13 位置参数 → 属性赋值，调用点自文档、顺序无关）。
+    /// 回调属性为空 = 该面对应端点/推送不注册（与旧签名 null 参数同义）。
+    /// </summary>
+    public sealed class HttpHostOptions
+    {
+        /// <summary>绑定端口</summary>
+        public int Port { get; set; }
+
+        /// <summary>会话归属 ID——SSE llm/chatdone 事件的 sessionId</summary>
+        public string SessionId { get; set; }
+
+        /// <summary>快照 JSON 构建回调</summary>
+        public Func<bool, string> SnapshotBuilder { get; set; }
+
+        /// <summary>指令投递回调</summary>
+        public Func<string, bool> Dispatcher { get; set; }
+
+        /// <summary>紧凑帧构建回调（可空=不落帧）</summary>
+        public Func<string> FrameBuilder { get; set; }
+
+        /// <summary>会话历史构建回调（可空=不注册该端点）</summary>
+        public Func<int, string> HistoryBuilder { get; set; }
+
+        /// <summary>多猫列表构建回调（可空=不注册该端点）</summary>
+        public Func<string> CatsBuilder { get; set; }
+
+        /// <summary>Note 状态构建回调（可空）</summary>
+        public Func<string> NoteBuilder { get; set; }
+
+        /// <summary>增量 patch 构建回调（可空=全量推送）</summary>
+        public Func<string> PatchBuilder { get; set; }
+
+        /// <summary>静态页模式（true=chat.html / false=index.html）</summary>
+        public bool ServeChatPage { get; set; }
+
+        /// <summary>管理路由注册回调（可空）</summary>
+        public Action<IHttpRouteSink> RouteRegistrar { get; set; }
+
+        /// <summary>html 根解析（源码区优先 + 部署区回退）</summary>
+        public IHtmlRootProvider HtmlRootProvider { get; set; }
+
+        /// <summary>页面标题展示名（null=不注入）</summary>
+        public string DisplayName { get; set; }
+    }
+
     public sealed partial class HttpHost : IHostPush, IHttpRouteSink
     {
         // [段1] 服务字段——应用实例/端口/回调/事件状态
@@ -94,42 +140,32 @@ namespace CatHome4.Http
 
         /// <summary>快照推送间隔毫秒——250ms（协议 §4.2 snapshot 事件）</summary>
         private const int SnapshotIntervalMs = 250;
+        /// <summary>前端测试代理客户端——静态复用（R6-P3-01；Timeout 仅初始化可设，故用工厂构造）</summary>
+        private static readonly System.Net.Http.HttpClient FrontendTestHttp = CreateFrontendTestHttp();
 
         /// <summary>
         /// 启动 HTTP 外观层——Kestrel 绑定端口 + 注册路由 + 后台推送任务启动。
         /// </summary>
-        /// <param name="port">监听端口（127.0.0.1 回环）</param>
-        /// <param name="sessionId">会话归属 ID——SSE llm/chatdone 事件归属（P9.3 每猫实例绑定自身会话）</param>
-        /// <param name="snapshotBuilder">快照 JSON 构建回调（includeLogs——快照轮询含日志/SSE 事件裁剪）</param>
-        /// <param name="dispatcher">指令投递回调（返回 true=识别并投递）</param>
-        /// <param name="frameBuilder">紧凑帧构建回调（frame.txt 帧流；可空=不落帧）</param>
-        /// <param name="historyBuilder">会话历史视图构建回调（B4 对话区——GET /api/v1/history）</param>
-        /// <param name="catsBuilder">多猫列表构建回调（GET /api/v1/cats；可空=不注册端点）</param>
-        /// <param name="noteBuilder">Note 状态构建回调（GET /api/v1/note——M4c 前端面板数据源）</param>
-        /// <param name="patchBuilder">增量 patch 构建回调（可空=不推 patch 保持全量推送——每猫端口）</param>
-        /// <param name="serveChatPage">静态页模式（true=chat.html / false=index.html）</param>
-        /// <param name="routeRegistrar">管理路由注册回调（IHttpRouteSink——Admin 域注册 llm-apis/qqbot-apis/workspace 等；仅主端口传入）</param>
-        /// <param name="htmlRootProvider">html 根解析（源码区优先 + 部署区回退——Program.ResolveHtmlRoot 适配）</param>
-        /// <param name="displayName">页面标题展示名（Q6：快照注入 title = displayName · Chat；null=不注入——主端口管理面）</param>
+        /// <param name="options">启动参数（端口/会话/回调集/页面模式——见 HttpHostOptions 各属性注释）</param>
         /// <returns>HttpHost 实例</returns>
-        public static HttpHost Start(int port, string sessionId, Func<bool, string> snapshotBuilder, Func<string, bool> dispatcher, Func<string> frameBuilder, Func<int, string> historyBuilder, Func<string> catsBuilder, Func<string> noteBuilder, Func<string> patchBuilder, bool serveChatPage, Action<IHttpRouteSink> routeRegistrar, IHtmlRootProvider htmlRootProvider, string displayName = null)
+        public static HttpHost Start(HttpHostOptions options)
         {
             HttpHost host = new HttpHost();
-            host._port = port;
-            host._sessionId = sessionId;
-            host._snapshotBuilder = snapshotBuilder;
-            host._dispatcher = dispatcher;
-            host._frameBuilder = frameBuilder;
-            host._historyBuilder = historyBuilder;
-            host._catsBuilder = catsBuilder;
-            host._noteBuilder = noteBuilder;
-            host._patchBuilder = patchBuilder;
-            host._serveChatPage = serveChatPage;
-            host._routeRegistrar = routeRegistrar;
-            host._htmlRootProvider = htmlRootProvider;
-            if (displayName != null && displayName.Length > 0)
+            host._port = options.Port;
+            host._sessionId = options.SessionId;
+            host._snapshotBuilder = options.SnapshotBuilder;
+            host._dispatcher = options.Dispatcher;
+            host._frameBuilder = options.FrameBuilder;
+            host._historyBuilder = options.HistoryBuilder;
+            host._catsBuilder = options.CatsBuilder;
+            host._noteBuilder = options.NoteBuilder;
+            host._patchBuilder = options.PatchBuilder;
+            host._serveChatPage = options.ServeChatPage;
+            host._routeRegistrar = options.RouteRegistrar;
+            host._htmlRootProvider = options.HtmlRootProvider;
+            if (options.DisplayName != null && options.DisplayName.Length > 0)
             {
-                host._pageTitle = displayName + " · Chat";
+                host._pageTitle = options.DisplayName + " · Chat";
             }
             host.BuildApp();
             host._pumpCts = new CancellationTokenSource();
@@ -221,13 +257,9 @@ namespace CatHome4.Http
                 string path = "unit";   // E2E 已移除（2026-08-28）——只转发 Vitest
                 try
                 {
-                    using (System.Net.Http.HttpClient client = new System.Net.Http.HttpClient())
-                    {
-                        client.Timeout = TimeSpan.FromSeconds(120);
-                        System.Net.Http.HttpResponseMessage resp = await client.GetAsync("http://127.0.0.1:8099/api/test/" + path);
-                        string body = await resp.Content.ReadAsStringAsync();
-                        return Results.Text(body, "application/json");
-                    }
+                    System.Net.Http.HttpResponseMessage resp = await FrontendTestHttp.GetAsync("http://127.0.0.1:8099/api/test/" + path);
+                    string body = await resp.Content.ReadAsStringAsync();
+                    return Results.Text(body, "application/json");
                 }
                 catch (Exception ex)
                 {
@@ -326,6 +358,16 @@ namespace CatHome4.Http
                 options.SingleReader = true;
                 Queue = Channel.CreateBounded<string>(options);
             }
+        }
+        /// <summary>
+        /// 创建前端测试代理客户端——静态初始化设超时（HttpClient.Timeout 首次请求后不可改）。
+        /// </summary>
+        /// <returns>配置好超时的客户端实例</returns>
+        private static System.Net.Http.HttpClient CreateFrontendTestHttp()
+        {
+            System.Net.Http.HttpClient h = new System.Net.Http.HttpClient();
+            h.Timeout = TimeSpan.FromSeconds(120);
+            return h;
         }
     }
 }

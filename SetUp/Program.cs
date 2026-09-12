@@ -342,7 +342,9 @@ namespace SetUp
         /// </summary>
         private sealed class TeeWriter : TextWriter
         {
+            /// <summary>原 stdout 写入目标（可能为 Null 流）</summary>
             private readonly TextWriter _primary;
+            /// <summary>日志文件写入目标（--report 场景同写）</summary>
             private readonly TextWriter _file;
 
             /// <summary>构造</summary>
@@ -494,6 +496,7 @@ namespace SetUp
             proc.BeginOutputReadLine();
             proc.BeginErrorReadLine();
             proc.WaitForExit();
+            // 第二次无参 WaitForExit()——等待异步输出流（OutputDataReceived/ErrorDataReceived）结清，非冗余（R7-P3-7 判定）
             proc.WaitForExit();
             if (proc.ExitCode != 0)
             {

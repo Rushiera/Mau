@@ -160,9 +160,21 @@ namespace Mau.Development
                     dirPrefixes.Add(norm.Substring(0, norm.Length - 2));
                 }
             }
+            // 本 cache 自己的 obj 产出目录——仅此处放行程序集属性文件（子项目 obj 一律排除：目录聚合模式重复特性 = CS0579）
+            string ownObjPrefix = Path.Combine(cache.ProjectDir, "obj") + Path.DirectorySeparatorChar;
             for (int i = 0; i < all.Length; i = i + 1)
             {
                 string path = all[i];
+                if (path.StartsWith(ownObjPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    // obj 生成产物——仅放行程序集属性文件（InternalsVisibleTo/AssemblyAttributes：真实编译含；
+                    // 缺失则 internal 类型的 public 字段被判定"从未赋值" → CS0649 误报）
+                    if (Path.GetFileName(path).EndsWith(".AssemblyInfo.cs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.Add(path);
+                    }
+                    continue;
+                }
                 if (path.IndexOf("\\obj\\", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     path.IndexOf("/obj/", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
@@ -187,7 +199,7 @@ namespace Mau.Development
                 {
                     continue;
                 }
-                result.Add(Path.GetFullPath(path));
+                result.Add(path);
             }
             result.Sort(StringComparer.OrdinalIgnoreCase);
             return result.ToArray();
@@ -568,10 +580,42 @@ namespace Mau.Development
                     string name = Path.GetFileNameWithoutExtension(dlls[i]);
                     if (string.Equals(name, cache.AssemblyName, StringComparison.OrdinalIgnoreCase))
                     {
-                        continue; // 排除目标程序集自身——避免 CS0436 源/引用冲突
+                        continue; // 自身 bin 产物不引用（统一剔除见下）
                     }
                     pathsByName[name] = dlls[i]; // bin 优先覆盖
                 }
+            }
+            // 编译集内项目程序集剔除——TPA/共享框架段可能已注入宿主进程加载的同名程序集（部署区副本）；
+            // 与源码树并存即报 CS0436（源类型 vs 导入类型冲突）。目录聚合模式下编译集含多个子项目，一律剔除。
+            HashSet<string> localAssemblies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (cache.AssemblyName.Length > 0)
+            {
+                localAssemblies.Add(cache.AssemblyName);
+            }
+            string ownPrefix = cache.ProjectDir.TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
+            for (int i = 0; i < cache.SourceFiles.Length; i = i + 1)
+            {
+                string source = cache.SourceFiles[i];
+                if (!source.StartsWith(ownPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                string rel = source.Substring(ownPrefix.Length);
+                int sep = rel.IndexOf(Path.DirectorySeparatorChar);
+                if (sep <= 0)
+                {
+                    continue;
+                }
+                string sub = rel.Substring(0, sep);
+                string csproj = Path.Combine(cache.ProjectDir, sub, sub + ".csproj");
+                if (File.Exists(csproj))
+                {
+                    localAssemblies.Add(sub);
+                }
+            }
+            foreach (string localName in localAssemblies)
+            {
+                pathsByName.Remove(localName);
             }
             foreach (KeyValuePair<string, string> pair in pathsByName)
             {

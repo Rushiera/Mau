@@ -8,6 +8,9 @@ namespace SetUp
     /// 目标：把 public/app 可运行版本复制到目标目录（无 Mau.sln → 运行走 AppData Data 三级锚定）。
     /// 规范：design-ch4-release.md §二/§三/§五——目标目录禁止在仓库内；运行中先停进程（模块锁）。
     /// </summary>
+    /// <summary>
+    /// Program 分部——deploy 模式：产物发布到目标运行目录（原子切换 + 报告）。
+    /// </summary>
     public static partial class Program
     {
         /// <summary>deploy 模式入口——public/app 落新目录后原子切换上架（现行更名 _old 留作回退源）+ 版本落盘。</summary>

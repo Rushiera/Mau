@@ -75,8 +75,14 @@ namespace Mau.Development
                     {
                         MapSegment seg = new MapSegment();
                         seg.Name = parts[1].TrimEnd(':');
-                        seg.Start = int.Parse(parts[3]);
-                        seg.Source = int.Parse(parts[5]);
+                        int genLine;
+                        int srcLine;
+                        if (!int.TryParse(parts[3], out genLine) || !int.TryParse(parts[5], out srcLine))
+                        {
+                            continue; // 行号非数——跳过该段（R2-P3：原 int.Parse 在格式异常时抛错，映射面不应崩）
+                        }
+                        seg.Start = genLine;
+                        seg.Source = srcLine;
                         seg.IsBrick = false;
                         segments.Add(seg);
                     }

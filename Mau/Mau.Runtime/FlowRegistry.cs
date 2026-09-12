@@ -80,12 +80,11 @@ namespace Mau.Runtime
             {
                 throw new ArgumentNullException("name");
             }
-            int typeId;
-            long id = _ids.Alloc("Flow", out typeId);
+            long id = _ids.Alloc("Flow", out int _);
             _flows[id] = flow;
             _names[id] = name;
             _typeNames[id] = flow.GetType().Name;
-            _kinds[id] = ClassifyKind(flow);
+            _kinds[id] = "flow"; // v3 机制层零产品语义（R1-P3-08：原 ClassifyKind 恒返回 "flow" 已收拢）
             return id;
         }
 
@@ -181,16 +180,6 @@ namespace Mau.Runtime
                 return -1;
             }
             return Register(flow, name);
-        }
-
-        /// <summary>
-        /// 种类分类——v3 机制层零产品语义：kind 恒 flow（v2 的 dog/pet 分类随产品组件退役）
-        /// </summary>
-        /// <param name="flow">Flow 实例</param>
-        /// <returns>种类名</returns>
-        private static string ClassifyKind(IFlow flow)
-        {
-            return "flow";
         }
 
         /// <summary>

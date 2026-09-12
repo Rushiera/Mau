@@ -437,11 +437,6 @@ namespace Mau.Development
                         {
                             continue;
                         }
-                        IFieldSymbol? field = member as IFieldSymbol;
-                        if (field != null && field.IsImplicitlyDeclared)
-                        {
-                            continue;
-                        }
                         targets.Add(member);
                     }
                 }

@@ -31,12 +31,17 @@ namespace Mau.Bricks
             {
                 return false;
             }
-            string[] names = officeNames.Split(',', ';');
-            for (int i = 0; i < names.Length; i = i + 1)
+            string[] rawNames = officeNames.Split(',', ';');
+            System.Collections.Generic.List<string> names = new System.Collections.Generic.List<string>();
+            for (int i = 0; i < rawNames.Length; i = i + 1)
             {
-                names[i] = names[i].Trim();
+                string item = rawNames[i].Trim();
+                if (item.Length > 0)
+                {
+                    names.Add(item);
+                }
             }
-            System.Collections.Generic.List<Office> open = oa.ListOpen(officeType, names);
+            System.Collections.Generic.List<Office> open = oa.ListOpen(officeType, names.ToArray());
             return open.Count > 0;
         }
     }

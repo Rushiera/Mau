@@ -7,10 +7,9 @@ using System.Threading;
 
 namespace SetUp
 {
+    /// <summary>SetUp 部署链入口——prepare（就地自举：build/test/publish/组翻译/publish/宿主自检）与 deploy（发布到目标目录）双模式 + relaunch（宿主自更新接力）。</summary>
     /// <summary>
-    /// SetUp relaunch 模式——宿主自更新接力链：等旧宿主退出 → prepare → 原子切换部署 → 自启新宿主（带回执注入）。
-    /// 定位：由旧宿主在退出前拉起（detached）；旧宿主保证"先起接力者再自杀"，本模式保证"接力者必拉起一个宿主"。
-    /// 规范：Project/CH4/design-ch4-host-restart.md（§三 T5 / §四 4.4 / §六 失败矩阵）
+    /// Program 分部——relaunch 模式：宿主自更新接力（等旧 pid 退出 → 部署 → 自启 → 回执）。
     /// </summary>
     public static partial class Program
     {

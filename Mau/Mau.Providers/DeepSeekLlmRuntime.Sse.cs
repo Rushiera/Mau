@@ -351,13 +351,19 @@ namespace Mau.Providers
                 {
                     builder.Append(",");
                 }
+                // 空参数边界——arguments 为完整 JSON 文本（消费方整体解析；空串补 "{}"，R4-P3-04）
+                string argsText = args[index].ToString();
+                if (argsText.Length == 0)
+                {
+                    argsText = "{}";
+                }
                 // OpenAI wire 标准：{"id","type":"function","function":{"name","arguments"}}——function 为嵌套对象（判例：missing field function）
                 builder.Append("{\"id\":");
                 builder.Append(JsonUtil.Serialize(ids[index]));
                 builder.Append(",\"type\":\"function\",\"function\":{\"name\":");
                 builder.Append(JsonUtil.Serialize(names[index]));
                 builder.Append(",\"arguments\":");
-                builder.Append(JsonUtil.Serialize(args[index].ToString()));
+                builder.Append(JsonUtil.Serialize(argsText));
                 builder.Append("}}");
             }
             builder.Append("]");

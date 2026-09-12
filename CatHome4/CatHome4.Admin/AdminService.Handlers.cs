@@ -543,6 +543,11 @@ namespace CatHome4.Admin
             {
                 return Results.Json(new { ok = false, error = "cat 参数为空" });
             }
+            // 边界校验——catKey 不承载路径语义（拒绝分隔符/穿越/通配——GET 与 POST 对称收口）
+            if (!IsSafeCatKey(catKey))
+            {
+                return Results.Json(new { ok = false, error = "cat 参数非法: " + catKey });
+            }
             CatCfgData cfg = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", catKey, "cat.cfg"));
             if (cfg == null)
             {
@@ -598,6 +603,36 @@ namespace CatHome4.Admin
                 qqbotOptions = qqbotOptions
             };
             return Results.Json(resp);
+        }
+        /// <summary>
+        /// catKey 边界校验——cat.cfg 路径直拼前收口（拒绝路径分隔符/穿越/通配/空）。
+        /// 语义：catKey 只能是单层目录名（id / 显示名 / majordomo）——不承载任何路径语义。
+        /// </summary>
+        /// <param name="key">寻址键</param>
+        /// <returns>true=可安全拼入 sessions 目录</returns>
+        private static bool IsSafeCatKey(string key)
+        {
+            if (key == null || key.Length == 0 || key.Length > 128)
+            {
+                return false;
+            }
+            if (key == "." || key == "..")
+            {
+                return false;
+            }
+            for (int i = 0; i < key.Length; i = i + 1)
+            {
+                char c = key[i];
+                if (c < ' ')
+                {
+                    return false;
+                }
+                if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|')
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         /// <summary>
@@ -679,6 +714,11 @@ namespace CatHome4.Admin
             if (catKey.Length == 0)
             {
                 return Results.Json(new { ok = false, error = "cat 为空" });
+            }
+            // 边界校验——catKey 不承载路径语义（GET 与 POST 对称收口）
+            if (!IsSafeCatKey(catKey))
+            {
+                return Results.Json(new { ok = false, error = "cat 参数非法: " + catKey });
             }
             if (catKey != "majordomo" && FindCat(catKey) == null)
             {

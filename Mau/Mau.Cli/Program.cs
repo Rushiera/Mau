@@ -149,7 +149,7 @@ namespace Mau.Cli
             }
 
             string source = File.ReadAllText(path);
-            string flowName = FlowNameFromPath(path);
+            string flowName = Mau.Development.MauGroupBuilder.FlowNameFromPath(path);
             CompileResultV3 result = MauCompilerV3.Compile(source, flowName);
             PrintDiagnostics(path, result);
             if (result.Success)
@@ -207,7 +207,7 @@ namespace Mau.Cli
             }
 
             string source = File.ReadAllText(path);
-            string flowName = FlowNameFromPath(path);
+            string flowName = Mau.Development.MauGroupBuilder.FlowNameFromPath(path);
             CompileResultV3 result = MauCompilerV3.Compile(source, flowName);
             PrintDiagnostics(path, result);
             if (!result.Success)
@@ -315,28 +315,5 @@ namespace Mau.Cli
             }
         }
 
-        /// <summary>
-        /// 从文件路径推导流程名——talk.mau → Talk
-        /// </summary>
-        /// <param name="path">文件路径</param>
-        /// <returns>PascalCase 流程名</returns>
-        public static string FlowNameFromPath(string path)
-        {
-            string baseName = Path.GetFileNameWithoutExtension(path);
-            string[] parts = baseName.Split('_');
-            System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            for (int i = 0; i < parts.Length; i++)
-            {
-                if (parts[i].Length == 0)
-                {
-                    continue;
-                }
-                string head = parts[i].Substring(0, 1).ToUpperInvariant();
-                string tail = parts[i].Length > 1 ? parts[i].Substring(1) : "";
-                sb.Append(head);
-                sb.Append(tail);
-            }
-            return sb.ToString();
-        }
     }
 }
