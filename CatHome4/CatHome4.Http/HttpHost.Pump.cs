@@ -189,12 +189,12 @@ namespace CatHome4.Http
             // M4c 观测透明性——SSE note 推送结算行（前端未更新时 cmd 可对照）
             LogStore.Add("CatHome4", 1, "Note 状态推送：" + json, "CHAT");
         }        /// <summary>
-        /// 工具结果实时推送——宿主 ChatBridge ExecuteToolBatch 调用（B4 对话区：tool 事件）。
-        /// 载荷与 history 视图同截断（参数 ≤200/结果 ≤300）；事件顺序 = 执行顺序 = toolCalls 数组顺序（前端 FIFO 配对）。
-        /// </summary>
-        /// <param name="name">工具名</param>
-        /// <param name="arguments">参数摘要（≤200）</param>
-        /// <param name="result">结果摘要（≤300；ERR 前缀失败）</param>
+                 /// 工具结果实时推送——宿主 ChatBridge ExecuteToolBatch 调用（B4 对话区：tool 事件）。
+                 /// 载荷与 history 视图同截断（参数 ≤200/结果 ≤300）；事件顺序 = 执行顺序 = toolCalls 数组顺序（前端 FIFO 配对）。
+                 /// </summary>
+                 /// <param name="name">工具名</param>
+                 /// <param name="arguments">参数摘要（≤200）</param>
+                 /// <param name="result">结果摘要（≤300；ERR 前缀失败）</param>
         public void PushToolResult(string name, string arguments, string result)
         {
             var obj = new

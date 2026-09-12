@@ -564,10 +564,10 @@ namespace Mau.Runtime
                 _errWriter = null;
             }
         }        /// <summary>
-        /// 把可空文本规范为空字符串
-        /// </summary>
-        /// <param name="value">输入</param>
-        /// <returns>非空文本</returns>
+                 /// 把可空文本规范为空字符串
+                 /// </summary>
+                 /// <param name="value">输入</param>
+                 /// <returns>非空文本</returns>
         public static string SafeText(string? value)
         {
             if (value == null)

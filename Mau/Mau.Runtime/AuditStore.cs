@@ -291,11 +291,11 @@ namespace Mau.Runtime
                 return "";
             }
         }        /// <summary>
-        /// 构建消息——category + 首三个属性摘要（log.all 可读性）
-        /// </summary>
-        /// <param name="category">事件类别</param>
-        /// <param name="props">属性数组</param>
-        /// <returns>消息文本</returns>
+                 /// 构建消息——category + 首三个属性摘要（log.all 可读性）
+                 /// </summary>
+                 /// <param name="category">事件类别</param>
+                 /// <param name="props">属性数组</param>
+                 /// <returns>消息文本</returns>
         private static string BuildMessage(string category, AuditProp[]? props)
         {
             if (category == "flow.register")
@@ -414,53 +414,53 @@ namespace Mau.Runtime
         /// <returns>属性数组</returns>
         private static AuditProp[] ParsePayload(string payload)
         {
-    if (payload == null || payload.Length == 0)
-    {
-        return Array.Empty<AuditProp>();
-    }
-    try
-    {
-        using (JsonDocument doc = JsonDocument.Parse(payload))
-        {
-            JsonElement root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Array)
+            if (payload == null || payload.Length == 0)
             {
                 return Array.Empty<AuditProp>();
             }
-            System.Collections.Generic.List<AuditProp> list = new System.Collections.Generic.List<AuditProp>();
-            for (int i = 0; i < root.GetArrayLength(); i++)
+            try
             {
-                JsonElement item = root[i];
-                string key = "";
-                string value = "";
-                JsonElement k;
-                if (item.TryGetProperty("k", out k) && k.ValueKind == JsonValueKind.String)
+                using (JsonDocument doc = JsonDocument.Parse(payload))
                 {
-                    string? got = k.GetString();
-                    if (got != null)
+                    JsonElement root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Array)
                     {
-                        key = got;
+                        return Array.Empty<AuditProp>();
                     }
-                }
-                JsonElement v;
-                if (item.TryGetProperty("v", out v) && v.ValueKind == JsonValueKind.String)
-                {
-                    string? got = v.GetString();
-                    if (got != null)
+                    System.Collections.Generic.List<AuditProp> list = new System.Collections.Generic.List<AuditProp>();
+                    for (int i = 0; i < root.GetArrayLength(); i++)
                     {
-                        value = got;
+                        JsonElement item = root[i];
+                        string key = "";
+                        string value = "";
+                        JsonElement k;
+                        if (item.TryGetProperty("k", out k) && k.ValueKind == JsonValueKind.String)
+                        {
+                            string? got = k.GetString();
+                            if (got != null)
+                            {
+                                key = got;
+                            }
+                        }
+                        JsonElement v;
+                        if (item.TryGetProperty("v", out v) && v.ValueKind == JsonValueKind.String)
+                        {
+                            string? got = v.GetString();
+                            if (got != null)
+                            {
+                                value = got;
+                            }
+                        }
+                        list.Add(new AuditProp(key, value));
                     }
+                    return list.ToArray();
                 }
-                list.Add(new AuditProp(key, value));
             }
-            return list.ToArray();
+            catch (Exception)
+            {
+                // 损坏载荷——返回空数组（快照重建容错：审计降级不阻断）
+                return Array.Empty<AuditProp>();
+            }
         }
-    }
-    catch (Exception)
-    {
-        // 损坏载荷——返回空数组（快照重建容错：审计降级不阻断）
-        return Array.Empty<AuditProp>();
-    }
-}
     }
 }

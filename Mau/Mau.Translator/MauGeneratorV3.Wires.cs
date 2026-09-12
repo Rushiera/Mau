@@ -122,12 +122,12 @@ namespace Mau.Translator
             sb.AppendLine("            return true;");
             sb.AppendLine("        }");
         }        /// <summary>
-        /// 导线消费方法——条件全过后消费被动传感器事件沿（主动传感器实测值不消费）
-        /// </summary>
-        /// <param name="sb">输出缓冲</param>
-        /// <param name="wire">导线</param>
-        /// <param name="pascal">导线 PascalCase 名</param>
-        /// <param name="doc">IR（查传感器形态）</param>
+                 /// 导线消费方法——条件全过后消费被动传感器事件沿（主动传感器实测值不消费）
+                 /// </summary>
+                 /// <param name="sb">输出缓冲</param>
+                 /// <param name="wire">导线</param>
+                 /// <param name="pascal">导线 PascalCase 名</param>
+                 /// <param name="doc">IR（查传感器形态）</param>
         private static void AppendWireConsume(StringBuilder sb, WireDefV3 wire, string pascal, MauDocV3 doc)
         {
             sb.AppendLine("        private void " + pascal + "_Consume()");
@@ -221,12 +221,12 @@ namespace Mau.Translator
             AppendResultStatements(sb, wire, "ok", "frame");
             sb.AppendLine("        }");
         }/// <summary>
-/// par 导线执行——Busy 门防重入 + 主线程冻结启程（@key 参数启程帧取数） + Task.Run 后台动作 + Inbox 回投（主线程 Drain 应用）。线程隔离：后台线程只调积木 handler + Inbox.Enqueue——lambda 捕获启程帧值快照，零共享可变状态（RT.3 形态）。
-/// </summary>
-///
+         /// par 导线执行——Busy 门防重入 + 主线程冻结启程（@key 参数启程帧取数） + Task.Run 后台动作 + Inbox 回投（主线程 Drain 应用）。线程隔离：后台线程只调积木 handler + Inbox.Enqueue——lambda 捕获启程帧值快照，零共享可变状态（RT.3 形态）。
+         /// </summary>
+         ///
 
-        ///
-private static void AppendWireExecuteParallel(StringBuilder sb, WireDefV3 wire, string pascal, string field, MauDocV3 doc)
+         ///
+        private static void AppendWireExecuteParallel(StringBuilder sb, WireDefV3 wire, string pascal, string field, MauDocV3 doc)
         {
             sb.AppendLine("        private void " + pascal + "_Execute(int frame)");
             sb.AppendLine("        {");
@@ -315,13 +315,13 @@ private static void AppendWireExecuteParallel(StringBuilder sb, WireDefV3 wire, 
             sb.AppendLine("            });");
             sb.AppendLine("        }");
             // [段5] 回投应用——主线程 Tick 开头 Drain（见 AppendTickInboxes）
-}/// <summary>
-        /// 结果语句生成——同步路径（ok 变量 + 分支 + trace.state）
-        /// </summary>
-        /// <param name="sb">输出缓冲</param>
-        /// <param name="wire">导线</param>
-        /// <param name="okVar">ok 变量名</param>
-        /// <param name="frameVar">帧变量名</param>
+        }/// <summary>
+         /// 结果语句生成——同步路径（ok 变量 + 分支 + trace.state）
+         /// </summary>
+         /// <param name="sb">输出缓冲</param>
+         /// <param name="wire">导线</param>
+         /// <param name="okVar">ok 变量名</param>
+         /// <param name="frameVar">帧变量名</param>
         private static void AppendResultStatements(StringBuilder sb, WireDefV3 wire, string okVar, string frameVar)
         {
             if (wire.Results.Count == 1)
@@ -382,98 +382,99 @@ private static void AppendWireExecuteParallel(StringBuilder sb, WireDefV3 wire, 
                 sb.AppendLine("                    }");
             }
         }
-/// <summary>
-/// Flow 元数据生成——自曝加载必需信息（组名 + 认领工具清单）的规范化 JSON。
-/// 数据源：IR 主动传感器中 oa.is_open["TOOL", "工具名"] 的参数（语料声明唯一真相）。
-/// 宿主装配（扫描 dll 建路由表）/ 外观层（工具归属展示）统一经 IFlow.GetMetaJson 读取。
-/// </summary>
-/// <param name = "sb">输出缓冲</param>
-/// <param name = "doc">IR</param>
-/// <param name = "flowName">流程名（组名——dll 名 FL_<组名>.dll）</param>
-private static void AppendGetMetaJson(StringBuilder sb, MauDocV3 doc, string flowName)
+        /// <summary>
+        /// Flow 元数据生成——自曝加载必需信息（组名 + 认领工具清单）的规范化 JSON。
+        /// 数据源：IR 主动传感器中 oa.is_open["TOOL", "工具名"] 的参数（语料声明唯一真相）。
+        /// 宿主装配（扫描 dll 建路由表）/ 外观层（工具归属展示）统一经 IFlow.GetMetaJson 读取。
+        /// </summary>
+        /// <param name = "sb">输出缓冲</param>
+        /// <param name = "doc">IR</param>
+        /// <param name = "flowName">流程名（组名——dll 名 FL_<组名>.dll）</param>
+        private static void AppendGetMetaJson(StringBuilder sb, MauDocV3 doc, string flowName)
         {
-        // 认领工具清单——主动传感器 BrickName=oa.is_open 且参数 [0]=="TOOL" → 参数 [1]=工具名（去重保序）
-        // CollectArgs 字符串参数带引号序列化（"TOOL"）——剥引号后比对
-        List<string> claims = new List<string>();
-        for (int s = 0; s < doc.Sensors.Count; s = s + 1)
+            // 认领工具清单——主动传感器 BrickName=oa.is_open 且参数 [0]=="TOOL" → 参数 [1]=工具名（去重保序）
+            // CollectArgs 字符串参数带引号序列化（"TOOL"）——剥引号后比对
+            List<string> claims = new List<string>();
+            for (int s = 0; s < doc.Sensors.Count; s = s + 1)
+            {
+                SensorDefV3 sensor = doc.Sensors[s];
+                if (sensor.Passive)
+                {
+                    continue;
+                }
+
+                if (sensor.BrickName != "oa.is_open")
+                {
+                    continue;
+                }
+
+                if (sensor.BrickArgs.Count < 2)
+                {
+                    continue;
+                }
+
+                string arg0 = sensor.BrickArgs[0].Trim('"');
+                if (arg0 != "TOOL")
+                {
+                    continue;
+                }
+
+                string tool = sensor.BrickArgs[1].Trim('"');
+                if (tool.Length > 0 && !claims.Contains(tool))
+                {
+                    claims.Add(tool);
+                }
+            }
+
+            // JSON 序列化——工具名白名单安全字符（字母/数字/连字符/下划线），直接拼串
+            string json = "{\"group\":\"" + flowName + "\",\"claims\":[";
+            for (int i = 0; i < claims.Count; i = i + 1)
+            {
+                if (i > 0)
+                {
+                    json = json + ",";
+                }
+
+                json = json + "\"" + claims[i] + "\"";
+            }
+
+            json = json + "]}";
+            sb.AppendLine("        // ── Flow 元数据（R——自曝：组名 + 认领工具清单；宿主装配/外观层读取共用）──");
+            // C# 字符串字面量转义——json 内引号需转义为 \"（生成物才可编译）
+            string escaped = json.Replace("\"", "\\\"");
+            sb.AppendLine("        private static readonly string _flowMetaJson = \"" + escaped + "\";");
+            sb.AppendLine("        public string GetMetaJson()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            return _flowMetaJson;");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+        }    /// <summary>
+             /// 工具定义生成——实现 IFlow.GetToolsJson：调用约定积木 tools.<flowName> 返回本组工具定义 JSON。
+             /// 约定积木缺失（非工具组 Flow——如 QuickCat）→ 回退空工具组 JSON（{"group":"<名>","tools":[]}）。
+             /// </summary>
+             /// <param name = "sb">输出缓冲</param>
+             /// <param name = "doc">IR（未用——工具定义在积木侧）</param>
+             /// <param name = "flowName">流程名（组名）</param>
+        private static void AppendGetToolsJson(StringBuilder sb, MauDocV3 doc, string flowName)
         {
-            SensorDefV3 sensor = doc.Sensors[s];
-            if (sensor.Passive)
+            string brickName = "tools." + flowName.ToLowerInvariant();
+            BrickIndexEntry entry;
+            string body;
+            if (BrickIndex.TryFind(brickName, out entry) && entry.Implementation.Length > 0)
             {
-                continue;
+                body = "return " + entry.Implementation + "();";
+            }
+            else
+            {
+                body = "return \"{\\\"group\\\":\\\"" + flowName + "\\\",\\\"tools\\\":[]}\";";
             }
 
-            if (sensor.BrickName != "oa.is_open")
-            {
-                continue;
-            }
-
-            if (sensor.BrickArgs.Count < 2)
-            {
-                continue;
-            }
-
-            string arg0 = sensor.BrickArgs[0].Trim('"');
-            if (arg0 != "TOOL")
-            {
-                continue;
-            }
-
-            string tool = sensor.BrickArgs[1].Trim('"');
-            if (tool.Length > 0 && !claims.Contains(tool))
-            {
-                claims.Add(tool);
-            }
+            sb.AppendLine("        // ── 工具定义（R——本组全部工具的 OpenAI 兼容定义；宿主工具池原料）──");
+            sb.AppendLine("        public string GetToolsJson()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            " + body);
+            sb.AppendLine("        }");
+            sb.AppendLine("");
         }
-
-    // JSON 序列化——工具名白名单安全字符（字母/数字/连字符/下划线），直接拼串
-    string json = "{\"group\":\"" + flowName + "\",\"claims\":[";
-    for (int i = 0; i < claims.Count; i = i + 1)
-    {
-        if (i > 0)
-        {
-            json = json + ",";
-        }
-
-        json = json + "\"" + claims[i] + "\"";
     }
-
-    json = json + "]}";
-    sb.AppendLine("        // ── Flow 元数据（R——自曝：组名 + 认领工具清单；宿主装配/外观层读取共用）──");
-    // C# 字符串字面量转义——json 内引号需转义为 \"（生成物才可编译）
-    string escaped = json.Replace("\"", "\\\"");
-    sb.AppendLine("        private static readonly string _flowMetaJson = \"" + escaped + "\";");
-    sb.AppendLine("        public string GetMetaJson()");
-    sb.AppendLine("        {");
-    sb.AppendLine("            return _flowMetaJson;");
-    sb.AppendLine("        }");
-    sb.AppendLine("");
-}    /// <summary>
-/// 工具定义生成——实现 IFlow.GetToolsJson：调用约定积木 tools.<flowName> 返回本组工具定义 JSON。
-/// 约定积木缺失（非工具组 Flow——如 QuickCat）→ 回退空工具组 JSON（{"group":"<名>","tools":[]}）。
-/// </summary>
-/// <param name = "sb">输出缓冲</param>
-/// <param name = "doc">IR（未用——工具定义在积木侧）</param>
-/// <param name = "flowName">流程名（组名）</param>
-private static void AppendGetToolsJson(StringBuilder sb, MauDocV3 doc, string flowName)
-        {
-    string brickName = "tools." + flowName.ToLowerInvariant();
-    BrickIndexEntry entry;
-    string body;
-    if (BrickIndex.TryFind(brickName, out entry) && entry.Implementation.Length > 0)
-    {
-        body = "return " + entry.Implementation + "();";
-    }
-    else
-    {
-        body = "return \"{\\\"group\\\":\\\"" + flowName + "\\\",\\\"tools\\\":[]}\";";
-    }
-
-    sb.AppendLine("        // ── 工具定义（R——本组全部工具的 OpenAI 兼容定义；宿主工具池原料）──");
-    sb.AppendLine("        public string GetToolsJson()");
-    sb.AppendLine("        {");
-    sb.AppendLine("            " + body);
-    sb.AppendLine("        }");
-    sb.AppendLine("");
-}}
 }

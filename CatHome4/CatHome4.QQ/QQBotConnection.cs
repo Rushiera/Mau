@@ -39,18 +39,18 @@ namespace CatHome4.QQ
     /// </summary>
     internal sealed class QQBotConnection
     {
-/// <summary>
-/// op=9 错误码——session_id 无效，须全新鉴权
-/// </summary>
+        /// <summary>
+        /// op=9 错误码——session_id 无效，须全新鉴权
+        /// </summary>
         // op=9 错误码
         private const int ERR_INVALID_SESSION = 4006;  // session_id 无效，须全新鉴权
-/// <summary>
-/// op=9 错误码——连接过期，可重试 resume
-/// </summary>
+        /// <summary>
+        /// op=9 错误码——连接过期，可重试 resume
+        /// </summary>
         private const int ERR_EXPIRED = 4009;          // 连接过期，可重试 resume
-/// <summary>
-/// 心跳 ACK 超时阈值——连续无 ACK 次数超限触发重连
-/// </summary>
+        /// <summary>
+        /// 心跳 ACK 超时阈值——连续无 ACK 次数超限触发重连
+        /// </summary>
 
         // 心跳 ACK 超时：连续多少次无 ACK 后触发重连
         private const int MaxMissedAcks = 2;
@@ -273,14 +273,14 @@ namespace CatHome4.QQ
                 return false;
             }
         }        /// <summary>
-        /// 构造发送请求体——文本 / Markdown 双通道 + 可选被动 msg_id（P8）。
-        /// 官方互斥铁律：填写 markdown 后 content 必须为空。
-        /// </summary>
-        /// <param name="text">消息文本</param>
-        /// <param name="isMarkdown">true=MD 通道</param>
-        /// <param name="msgId">被动回复 msg_id——空=不携带</param>
-        /// <param name="msgSeq">客户端消息序号——被动回复须递增（同 msg_id 多次回复去重校验；空 msg_id 忽略）</param>
-        /// <returns>请求体 JSON</returns>
+                 /// 构造发送请求体——文本 / Markdown 双通道 + 可选被动 msg_id（P8）。
+                 /// 官方互斥铁律：填写 markdown 后 content 必须为空。
+                 /// </summary>
+                 /// <param name="text">消息文本</param>
+                 /// <param name="isMarkdown">true=MD 通道</param>
+                 /// <param name="msgId">被动回复 msg_id——空=不携带</param>
+                 /// <param name="msgSeq">客户端消息序号——被动回复须递增（同 msg_id 多次回复去重校验；空 msg_id 忽略）</param>
+                 /// <returns>请求体 JSON</returns>
         private static string BuildBody(string text, bool isMarkdown, string msgId, long msgSeq)
         {
             string idPart = msgId.Length > 0 ? ",\"msg_id\":\"" + EscapeJson(msgId) + "\",\"msg_seq\":" + msgSeq.ToString() : "";
@@ -566,7 +566,7 @@ namespace CatHome4.QQ
                                     {
                                         hbStarted = true;
                                         ClientWebSocket capturedWs = _ws;
-                                        new Thread(delegate() { HbLoop(capturedWs, hbMs); }) { IsBackground = true }.Start();
+                                        new Thread(delegate () { HbLoop(capturedWs, hbMs); }) { IsBackground = true }.Start();
                                     }
                                 }
                                 // ── op=0: Dispatch ────────────────────

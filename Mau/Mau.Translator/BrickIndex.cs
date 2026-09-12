@@ -30,9 +30,9 @@ namespace Mau.Translator
         /// 源文件相对路径（Bricks/ 下——生成器内嵌读取）
         /// </summary>
         public string Path = "";
-/// <summary>
-/// 输出端口数量（生成器 out _ 占位用）
-/// </summary>
+        /// <summary>
+        /// 输出端口数量（生成器 out _ 占位用）
+        /// </summary>
         public int OutputCount;
 
         /// <summary>
@@ -69,14 +69,14 @@ namespace Mau.Translator
             entry = new BrickIndexEntry();
             return false;
         }
-/// <summary>
-/// 全量索引——bricks list 枚举用
-/// </summary>
-/// <returns>名字 → 条目</returns>
-public static Dictionary<string, BrickIndexEntry> All()
+        /// <summary>
+        /// 全量索引——bricks list 枚举用
+        /// </summary>
+        /// <returns>名字 → 条目</returns>
+        public static Dictionary<string, BrickIndexEntry> All()
         {
-    return Load();
-}
+            return Load();
+        }
         /// <summary>
         /// 加载索引——向上找 Mau.sln → Bricks/index.json（防御式解析，失败返回空）
         /// </summary>
@@ -221,8 +221,8 @@ public static Dictionary<string, BrickIndexEntry> All()
             }
             return Path.Combine(root, "Bricks", "index.json");
         }        /// <summary>
-        /// 静态仓库根注入——宿主 Bootstrap 设置（受控根 id=mau）；优先于 env/程序集探测
-        /// </summary>
+                 /// 静态仓库根注入——宿主 Bootstrap 设置（受控根 id=mau）；优先于 env/程序集探测
+                 /// </summary>
         private static string? _injectedRoot;
 
         /// <summary>

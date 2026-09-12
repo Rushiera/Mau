@@ -75,14 +75,14 @@ namespace Mau.Translator
         /// true=被动触发器（消费即清）；false=主动采样（每 EveryFrames 帧采样一次）
         /// </summary>
         public bool Passive;
-/// <summary>
-/// Command 传感器标记——true=CommandBus 外部指令源（⇚）；false=DataBox 内部信号（⇐）
-/// </summary>
-public bool IsCmd; 
-/// <summary>
-/// Command key——外部指令名（宿主 SetText 投递用）；非 Command 传感器为空
-/// </summary>
- public  string  CmdKey  =  "" ;
+        /// <summary>
+        /// Command 传感器标记——true=CommandBus 外部指令源（⇚）；false=DataBox 内部信号（⇐）
+        /// </summary>
+        public bool IsCmd;
+        /// <summary>
+        /// Command key——外部指令名（宿主 SetText 投递用）；非 Command 传感器为空
+        /// </summary>
+        public string CmdKey = "";
 
         /// <summary>
         /// 主动采样周期帧数（0=每帧采样）

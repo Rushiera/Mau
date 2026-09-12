@@ -313,9 +313,9 @@ namespace Mau.Runtime
             // 信号沿并入重置契约（D26 补全——ClearAll 原本只清服务+数据，信号沿残留是契约缺口）
             ResetSignals();
         }/// <summary>
-        /// 全量快照——只读深拷贝（测试断言/观测/审计统一出口）
-        /// </summary>
-        /// <returns>快照</returns>
+         /// 全量快照——只读深拷贝（测试断言/观测/审计统一出口）
+         /// </summary>
+         /// <returns>快照</returns>
         public static DataBoxSnapshot Capture()
         {
             DataBoxServiceEntry[] services;
@@ -480,5 +480,6 @@ namespace Mau.Runtime
             {
                 _signals[names[i]] = 0;
             }
-        }}
+        }
+    }
 }

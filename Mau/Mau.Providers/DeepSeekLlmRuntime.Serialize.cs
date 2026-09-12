@@ -50,58 +50,58 @@ namespace Mau.Providers
             return wire;
         }
         /// <summary>
-/// tools 数组序列化——OpenAI function 定义；parameters JSON Schema 原样透传（空参数 = 空对象 schema）。
-/// </summary>
-/// <param name = "tools">工具规格数组</param>
-/// <returns>wire tools 数组</returns>
-private static object[] BuildWireTools(ToolSpec[] tools)
+        /// tools 数组序列化——OpenAI function 定义；parameters JSON Schema 原样透传（空参数 = 空对象 schema）。
+        /// </summary>
+        /// <param name = "tools">工具规格数组</param>
+        /// <returns>wire tools 数组</returns>
+        private static object[] BuildWireTools(ToolSpec[] tools)
         {
-    if (tools == null || tools.Length == 0)
-    {
-        return new object[0];
-    }
-
-    object[] result = new object[tools.Length];
-    for (int i = 0; i < tools.Length; i++)
-    {
-        ToolSpec spec = tools[i];
-        Dictionary<string, object> function = new Dictionary<string, object>();
-        function["name"] = spec.Name;
-        function["description"] = spec.Description;
-        if (spec.ParametersJson.Length > 0)
-        {
-            using (JsonDocument doc = JsonDocument.Parse(spec.ParametersJson))
+            if (tools == null || tools.Length == 0)
             {
-                function["parameters"] = doc.RootElement.Clone();
+                return new object[0];
             }
-        }
-        else
-        {
-            function["parameters"] = new
+
+            object[] result = new object[tools.Length];
+            for (int i = 0; i < tools.Length; i++)
             {
-                type = "object",
-                properties = new object ()
-            };
+                ToolSpec spec = tools[i];
+                Dictionary<string, object> function = new Dictionary<string, object>();
+                function["name"] = spec.Name;
+                function["description"] = spec.Description;
+                if (spec.ParametersJson.Length > 0)
+                {
+                    using (JsonDocument doc = JsonDocument.Parse(spec.ParametersJson))
+                    {
+                        function["parameters"] = doc.RootElement.Clone();
+                    }
+                }
+                else
+                {
+                    function["parameters"] = new
+                    {
+                        type = "object",
+                        properties = new object()
+                    };
+                }
+
+                Dictionary<string, object> tool = new Dictionary<string, object>();
+                tool["type"] = "function";
+                tool["function"] = function;
+                result[i] = tool;
+            }
+
+            return result;
         }
-
-        Dictionary<string, object> tool = new Dictionary<string, object>();
-        tool["type"] = "function";
-        tool["function"] = function;
-        result[i] = tool;
-    }
-
-    return result;
-}
         /// <summary>
-/// 构造流式对话请求体——OpenAI 兼容消息序列 + tools（P5：接口端零创新，wire 标准）。
-/// system/user 文本直写；assistant 带 tool_calls（JSON 透传）+ reasoning_content（A.6 ①⑦ 回传铁律）；
-/// tool 独立消息（tool_call_id 配对）；思考模式 + effort 按配置；空 tools 省略字段；user_id 非空携带（P9.4 KVCache 隔离）。
-/// </summary>
-/// <param name = "messages">消息序列</param>
-/// <param name = "tools">工具定义数组</param>
-/// <param name = "userId">会话用户标识（空=不携带）</param>
-/// <returns>请求体 JSON</returns>
-private string BuildChatRequestBody(LlmMessage[] messages, ToolSpec[] tools, string userId)
+        /// 构造流式对话请求体——OpenAI 兼容消息序列 + tools（P5：接口端零创新，wire 标准）。
+        /// system/user 文本直写；assistant 带 tool_calls（JSON 透传）+ reasoning_content（A.6 ①⑦ 回传铁律）；
+        /// tool 独立消息（tool_call_id 配对）；思考模式 + effort 按配置；空 tools 省略字段；user_id 非空携带（P9.4 KVCache 隔离）。
+        /// </summary>
+        /// <param name = "messages">消息序列</param>
+        /// <param name = "tools">工具定义数组</param>
+        /// <param name = "userId">会话用户标识（空=不携带）</param>
+        /// <returns>请求体 JSON</returns>
+        private string BuildChatRequestBody(LlmMessage[] messages, ToolSpec[] tools, string userId)
         {
             // [段1] 消息数组——多 role 序列化（null 字段防御归一——外部消息来源可能带 null）
             List<object> wireMessages = new List<object>();

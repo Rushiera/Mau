@@ -118,7 +118,7 @@ namespace CH4
         /// <param name="name">工具名</param>
         /// <returns>超时帧数</returns>
         public static long MapTimeoutFrames(string name)
-{
+        {
             if (name == "mau-gen")
             {
                 return 2400;
@@ -132,5 +132,6 @@ namespace CH4
                 return 9000;
             }
             return 600;
-        }    }
+        }
+    }
 }

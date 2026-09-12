@@ -158,7 +158,7 @@ namespace Mau.Cli
                     }
                     catch (Exception)
                     {
-                    // 清理失败不影响
+                        // 清理失败不影响
                     }
                 }
             }

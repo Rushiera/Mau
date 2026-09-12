@@ -95,15 +95,15 @@ namespace Mau.Runtime.Tests
         [Fact]
         public void SignalNames_Sorted()
         {
-    DataBox.RegisterSignal("P_B");
-    DataBox.RegisterSignal("P_A");
-    string[] names = DataBox.SignalNames();
-    // 排序稳定性断言——P_A 在 P_B 之前（SignalNames 全量排序；并行测试类可能注册其他信号名，不做数量断言——判例：128 测试并行撞注册残留）
-    int ia = Array.IndexOf(names, "P_A");
-    int ib = Array.IndexOf(names, "P_B");
-    Assert.True(ia >= 0 && ib >= 0, "P_A/P_B 均应在信号清单中");
-    Assert.True(ia < ib, "P_A 应排在 P_B 之前");
-}
+            DataBox.RegisterSignal("P_B");
+            DataBox.RegisterSignal("P_A");
+            string[] names = DataBox.SignalNames();
+            // 排序稳定性断言——P_A 在 P_B 之前（SignalNames 全量排序；并行测试类可能注册其他信号名，不做数量断言——判例：128 测试并行撞注册残留）
+            int ia = Array.IndexOf(names, "P_A");
+            int ib = Array.IndexOf(names, "P_B");
+            Assert.True(ia >= 0 && ib >= 0, "P_A/P_B 均应在信号清单中");
+            Assert.True(ia < ib, "P_A 应排在 P_B 之前");
+        }
         /// <summary>
         /// 审计埋点——signal.post / signal.consume 为 trace 级噪声（persistable=false——O2 定案：不产生审计）
         /// </summary>

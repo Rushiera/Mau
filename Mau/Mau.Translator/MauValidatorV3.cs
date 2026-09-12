@@ -74,32 +74,32 @@ namespace Mau.Translator
                 }
             }
         }
-/// <summary>
-/// Command key 唯一校验——一 key 一传感器（CommandBus 注册语义：key → 唯一注册者）
-/// </summary>
-/// <param name = "doc">FSM 网络 IR</param>
-private static void CheckCmdKeys(MauDocV3 doc)
+        /// <summary>
+        /// Command key 唯一校验——一 key 一传感器（CommandBus 注册语义：key → 唯一注册者）
+        /// </summary>
+        /// <param name = "doc">FSM 网络 IR</param>
+        private static void CheckCmdKeys(MauDocV3 doc)
         {
-    Dictionary<string, string> keys = new Dictionary<string, string>(StringComparer.Ordinal);
-    for (int i = 0; i < doc.Sensors.Count; i++)
-    {
-        SensorDefV3 sensor = doc.Sensors[i];
-        if (!sensor.IsCmd || sensor.CmdKey.Length == 0)
-        {
-            continue;
-        }
+            Dictionary<string, string> keys = new Dictionary<string, string>(StringComparer.Ordinal);
+            for (int i = 0; i < doc.Sensors.Count; i++)
+            {
+                SensorDefV3 sensor = doc.Sensors[i];
+                if (!sensor.IsCmd || sensor.CmdKey.Length == 0)
+                {
+                    continue;
+                }
 
-        string? existing;
-        if (keys.TryGetValue(sensor.CmdKey, out existing) && existing != null)
-        {
-            doc.Diagnostics.Add(new MauDiagnostic("E206", sensor.Line, "Command key 重名: '" + sensor.CmdKey + "'——已属于传感器 '" + existing + "'（当前声明为 '" + sensor.Name + "'）"));
+                string? existing;
+                if (keys.TryGetValue(sensor.CmdKey, out existing) && existing != null)
+                {
+                    doc.Diagnostics.Add(new MauDiagnostic("E206", sensor.Line, "Command key 重名: '" + sensor.CmdKey + "'——已属于传感器 '" + existing + "'（当前声明为 '" + sensor.Name + "'）"));
+                }
+                else
+                {
+                    keys[sensor.CmdKey] = sensor.Name;
+                }
+            }
         }
-        else
-        {
-            keys[sensor.CmdKey] = sensor.Name;
-        }
-    }
-}
         /// <summary>
         /// 引用完整性校验——导线条件/结果引用的传感器与状态必须存在
         /// </summary>

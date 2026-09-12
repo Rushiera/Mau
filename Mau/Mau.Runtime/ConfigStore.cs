@@ -28,10 +28,10 @@ namespace Mau.Runtime
         /// 当前文件路径（空 = 未关联文件）
         /// </summary>
         private string _path = "";
-/// <summary>
-/// 多文件槽——键前缀段 → 文件路径（ui. → ui.cfg；无前缀段命中 → 主文件 _path）。P8.5d 配置群多文件化
-/// </summary>
-private readonly Dictionary<string, string> _fileByPrefix = new Dictionary<string, string>(StringComparer.Ordinal);
+        /// <summary>
+        /// 多文件槽——键前缀段 → 文件路径（ui. → ui.cfg；无前缀段命中 → 主文件 _path）。P8.5d 配置群多文件化
+        /// </summary>
+        private readonly Dictionary<string, string> _fileByPrefix = new Dictionary<string, string>(StringComparer.Ordinal);
         // [段2] 构造与加载
         /// <summary>
         /// 构造空配置存储
@@ -203,21 +203,21 @@ private readonly Dictionary<string, string> _fileByPrefix = new Dictionary<strin
                 }
             }
         }
-/// <summary>
-/// 提取键前缀段——"ui.chat_font_size" → "ui"；无句点或空前缀返回空串（归主文件）
-/// </summary>
-/// <param name = "key">配置键</param>
-/// <returns>前缀段</returns>
-private static string KeyPrefix(string key)
+        /// <summary>
+        /// 提取键前缀段——"ui.chat_font_size" → "ui"；无句点或空前缀返回空串（归主文件）
+        /// </summary>
+        /// <param name = "key">配置键</param>
+        /// <returns>前缀段</returns>
+        private static string KeyPrefix(string key)
         {
-    int dot = key.IndexOf('.');
-    if (dot <= 0)
-    {
-        return "";
-    }
+            int dot = key.IndexOf('.');
+            if (dot <= 0)
+            {
+                return "";
+            }
 
-    return key.Substring(0, dot);
-}
+            return key.Substring(0, dot);
+        }
         // [段5] 持久化
         /// <summary>
         /// 保存到当前文件路径——未关联路径时不动作
@@ -316,9 +316,9 @@ private static string KeyPrefix(string key)
                 return copy;
             }
         }
-/// <summary>
-/// 审计存储——宿主注入后配置变更事件写入（null = 不审计）。零业务侵入：仅记录，不改流程。
-/// </summary>
+        /// <summary>
+        /// 审计存储——宿主注入后配置变更事件写入（null = 不审计）。零业务侵入：仅记录，不改流程。
+        /// </summary>
         /// <summary>
         /// 审计存储——宿主注入后配置变更事件写入（null = 不审计）。零业务侵入：仅记录，不改流程。
         /// </summary>
@@ -354,108 +354,108 @@ private static string KeyPrefix(string key)
             System.IO.File.WriteAllText(tmp, content, effectiveEncoding);
             System.IO.File.Move(tmp, path, true);
         }
-/// <summary>
-/// 受控配置写入——P8.5d 自改通道唯一实现（serve POST / config 积木 / 宿主直执共用）。
-/// 校验链：schema 声明 → writable 白名单 → 值域校验 → 掩码回写拒绝 → 旧值快照 → 写入落盘 → 失败回滚。
-/// </summary>
-/// <param name = "key">配置键（带文件前缀：ui.chat_font_size）</param>
-/// <param name = "value">新值</param>
-/// <param name = "schema">配置 schema（可 null——null 时仅基本校验）</param>
-/// <param name = "error">失败原因（成功为空串）</param>
-/// <returns>是否成功</returns>
-public bool SetChecked(string key, string value, ConfigSchema? schema, out string error)
+        /// <summary>
+        /// 受控配置写入——P8.5d 自改通道唯一实现（serve POST / config 积木 / 宿主直执共用）。
+        /// 校验链：schema 声明 → writable 白名单 → 值域校验 → 掩码回写拒绝 → 旧值快照 → 写入落盘 → 失败回滚。
+        /// </summary>
+        /// <param name = "key">配置键（带文件前缀：ui.chat_font_size）</param>
+        /// <param name = "value">新值</param>
+        /// <param name = "schema">配置 schema（可 null——null 时仅基本校验）</param>
+        /// <param name = "error">失败原因（成功为空串）</param>
+        /// <returns>是否成功</returns>
+        public bool SetChecked(string key, string value, ConfigSchema? schema, out string error)
         {
-    error = "";
-    if (key == null || key.Length == 0)
-    {
-        error = "key 为空";
-        return false;
-    }
-
-    if (value == null)
-    {
-        error = "value 为空";
-        return false;
-    }
-
-    if (schema != null)
-    {
-        ConfigSchema.Item? item = schema.Find(key);
-        if (item == null)
-        {
-            error = "配置键未在 schema 声明: " + key;
-            return false;
-        }
-
-        if (!item.Writable)
-        {
-            error = "只读配置项: " + key;
-            return false;
-        }
-
-        if (!schema.Validate(key, value, out error))
-        {
-            return false;
-        }
-    }
-
-    // [段2] 掩码回写拒绝——防掩码值覆盖真实值
-    if (value.IndexOf("****", StringComparison.Ordinal) >= 0)
-    {
-        error = "value 含掩码标记——请输入真实值";
-        return false;
-    }
-
-    // [段3] 旧值快照 + 写入 + 失败回滚（写入异常时内存与磁盘一致恢复）
-    bool hadOld;
-    string? oldValue = "";
-    lock (_gate)
-    {
-        hadOld = _values.TryGetValue(key, out oldValue);
-    }
-
-    try
-    {
-        Set(key, value);
-        Save();
-        return true;
-    }
-    catch (Exception ex)
-    {
-        try
-        {
-            lock (_gate)
+            error = "";
+            if (key == null || key.Length == 0)
             {
-                if (hadOld && oldValue != null)
+                error = "key 为空";
+                return false;
+            }
+
+            if (value == null)
+            {
+                error = "value 为空";
+                return false;
+            }
+
+            if (schema != null)
+            {
+                ConfigSchema.Item? item = schema.Find(key);
+                if (item == null)
                 {
-                    _values[key] = oldValue;
+                    error = "配置键未在 schema 声明: " + key;
+                    return false;
                 }
-                else
+
+                if (!item.Writable)
                 {
-                    _values.Remove(key);
+                    error = "只读配置项: " + key;
+                    return false;
+                }
+
+                if (!schema.Validate(key, value, out error))
+                {
+                    return false;
                 }
             }
 
-            Save();
-        }
-        catch (Exception)
-        {
-        // 回滚再失败——内存保持一致，磁盘差异交由审计提示
-        }
+            // [段2] 掩码回写拒绝——防掩码值覆盖真实值
+            if (value.IndexOf("****", StringComparison.Ordinal) >= 0)
+            {
+                error = "value 含掩码标记——请输入真实值";
+                return false;
+            }
 
-        error = "写入失败: " + ex.Message;
-        return false;
-    }
-} 
-/// <summary>
-/// 配置还原默认——P8.5d：key 空 = 全群（仅 writable 项）；key 非空 = 单项。
-/// 语义：将值写为 schema default（落盘）；未声明/只读项拒绝。
-/// </summary>
-/// <param name = "key">配置键（空 = 全群）</param>
-/// <param name = "schema">配置 schema</param>
-/// <param name = "error">失败原因（成功为空串）</param>
-/// <returns>是否成功</returns>
- public bool ResetToDefault(string key, ConfigSchema? schema, out string error)
+            // [段3] 旧值快照 + 写入 + 失败回滚（写入异常时内存与磁盘一致恢复）
+            bool hadOld;
+            string? oldValue = "";
+            lock (_gate)
+            {
+                hadOld = _values.TryGetValue(key, out oldValue);
+            }
+
+            try
+            {
+                Set(key, value);
+                Save();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    lock (_gate)
+                    {
+                        if (hadOld && oldValue != null)
+                        {
+                            _values[key] = oldValue;
+                        }
+                        else
+                        {
+                            _values.Remove(key);
+                        }
+                    }
+
+                    Save();
+                }
+                catch (Exception)
+                {
+                    // 回滚再失败——内存保持一致，磁盘差异交由审计提示
+                }
+
+                error = "写入失败: " + ex.Message;
+                return false;
+            }
+        }
+        /// <summary>
+        /// 配置还原默认——P8.5d：key 空 = 全群（仅 writable 项）；key 非空 = 单项。
+        /// 语义：将值写为 schema default（落盘）；未声明/只读项拒绝。
+        /// </summary>
+        /// <param name = "key">配置键（空 = 全群）</param>
+        /// <param name = "schema">配置 schema</param>
+        /// <param name = "error">失败原因（成功为空串）</param>
+        /// <returns>是否成功</returns>
+        public bool ResetToDefault(string key, ConfigSchema? schema, out string error)
         {
             error = "";
             if (schema == null)

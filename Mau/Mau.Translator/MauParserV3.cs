@@ -170,9 +170,9 @@ namespace Mau.Translator
             }
             doc.StateMachines.Add(def);
         }
-/// <summary>
-/// 解析壳分支动作——→ 动作 | 动作（成功侧/失败侧——各侧可多积木调用）
-/// </summary>
+        /// <summary>
+        /// 解析壳分支动作——→ 动作 | 动作（成功侧/失败侧——各侧可多积木调用）
+        /// </summary>
         /// <param name="section">段 token</param>
         /// <param name="start">动作区起点</param>
         /// <param name="def">输出传感器</param>
@@ -224,12 +224,12 @@ namespace Mau.Translator
                 actions.Add(action);
             }
         }        /// <summary>
-        /// 解析传感器段——§ 'P_X' ⇐（被动）/ § 'P_Q' ↻ [N] 'brick'[...]（主动）
-        /// </summary>
-        /// <param name="name">传感器名</param>
-        /// <param name="first">段首 token</param>
-        /// <param name="section">段 token</param>
-        /// <param name="doc">输出 IR</param>
+                 /// 解析传感器段——§ 'P_X' ⇐（被动）/ § 'P_Q' ↻ [N] 'brick'[...]（主动）
+                 /// </summary>
+                 /// <param name="name">传感器名</param>
+                 /// <param name="first">段首 token</param>
+                 /// <param name="section">段 token</param>
+                 /// <param name="doc">输出 IR</param>
         private static void ParseSensor(string name, TokenV3 first, List<TokenV3> section, MauDocV3 doc)
         {
             SensorDefV3 def = new SensorDefV3();
@@ -513,7 +513,7 @@ namespace Mau.Translator
             def.Capacity = capacity;
             doc.Slots.Add(def);
         }
-/// <summary>
+        /// <summary>
         /// <summary>
         /// 解析导线属性——[t=10] [par] [!]（join 已并入 par——P7a 收敛）
         /// </summary>

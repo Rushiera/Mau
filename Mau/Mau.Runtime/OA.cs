@@ -222,12 +222,12 @@ namespace Mau.Runtime
             _version = _version + 1;
             return true;
         }        /// <summary>
-        /// 读取请求载荷 int 值——执行方消费
-        /// </summary>
-        /// <param name="officeId">Office ID</param>
-        /// <param name="key">Key</param>
-        /// <param name="value">int 值</param>
-        /// <returns>true=Key 存在</returns>
+                 /// 读取请求载荷 int 值——执行方消费
+                 /// </summary>
+                 /// <param name="officeId">Office ID</param>
+                 /// <param name="key">Key</param>
+                 /// <param name="value">int 值</param>
+                 /// <returns>true=Key 存在</returns>
         public bool GetInt(long officeId, string key, out int value)
         {
             Office office;

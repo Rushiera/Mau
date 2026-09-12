@@ -128,7 +128,7 @@ namespace CatHome4.QQ
                         string secret = store.GetSecret(c.QqBotId);
                         QQBotConnection conn = new QQBotConnection(
                             c.QqBotId, c.DisplayName, c.AppId, secret, c.Sandbox,
-                            delegate(string raw) { OnMessage(c.QqBotId, raw); });
+                            delegate (string raw) { OnMessage(c.QqBotId, raw); });
                         _connections[c.QqBotId] = conn;
                         conn.Start();
                         string sandboxText = "false";
@@ -143,7 +143,7 @@ namespace CatHome4.QQ
                 string newSecret = store.GetSecret(c.QqBotId);
                 QQBotConnection newConn = new QQBotConnection(
                     c.QqBotId, c.DisplayName, c.AppId, newSecret, c.Sandbox,
-                    delegate(string raw) { OnMessage(c.QqBotId, raw); });
+                    delegate (string raw) { OnMessage(c.QqBotId, raw); });
                 _connections[c.QqBotId] = newConn;
                 newConn.Start();
             }
@@ -555,11 +555,11 @@ namespace CatHome4.QQ
             sb.Append(content.Substring(cursor));
             return sb.ToString();
         }        /// <summary>
-        /// 构建消息头——区分渠道+来源（v0.96.1）。
-        /// 私聊：硬编码雾理莎（莎本人私聊 ID，User.md 补身份）；群@：昵称+角色（事件白拿字段）。
-        /// </summary>
-        /// <param name="source">消息来源</param>
-        /// <returns>消息头——[私聊|雾理莎] / [群@|昵称(角色)]</returns>
+                 /// 构建消息头——区分渠道+来源（v0.96.1）。
+                 /// 私聊：硬编码雾理莎（莎本人私聊 ID，User.md 补身份）；群@：昵称+角色（事件白拿字段）。
+                 /// </summary>
+                 /// <param name="source">消息来源</param>
+                 /// <returns>消息头——[私聊|雾理莎] / [群@|昵称(角色)]</returns>
         private static string BuildHeader(QqSource source)
         {
             if (source.Type == "private")
@@ -768,17 +768,17 @@ namespace CatHome4.QQ
             Queue<QqSource> q;
             return _sourceQueues.TryGetValue(catKey, out q) && q.Count > 0;
         }                /// <summary>
-        /// 重置交互轮状态——新用户消息注入时调用（3+1 计数归零 + 累计清空）。
-        /// </summary>
-        /// <param name="catKey">猫标识</param>
+                         /// 重置交互轮状态——新用户消息注入时调用（3+1 计数归零 + 累计清空）。
+                         /// </summary>
+                         /// <param name="catKey">猫标识</param>
         private static void ResetRound(string catKey)
         {
             _immediateCounts[catKey] = 0;
             _accumulated.Remove(catKey);
         }        /// <summary>
-        /// 清空交互轮状态——异常中止轮残留来源兜底（会话 Idle 且队列残留 = 上轮无 roundsum 结束）：来源丢弃 + 计数/累计清零。
-        /// </summary>
-        /// <param name="catKey">猫标识</param>
+                 /// 清空交互轮状态——异常中止轮残留来源兜底（会话 Idle 且队列残留 = 上轮无 roundsum 结束）：来源丢弃 + 计数/累计清零。
+                 /// </summary>
+                 /// <param name="catKey">猫标识</param>
         private static void ClearRoundState(string catKey)
         {
             Queue<QqSource> q;
@@ -792,11 +792,11 @@ namespace CatHome4.QQ
             ResetRound(catKey);
             LogStore.Add("QQBot", 2, "残留来源清理 | " + catKey + "（异常中止轮兜底）", "QQBOT");
         }        /// <summary>
-        /// 即时转发——3+1 预算：计数 &lt; 3 立即转发；否则累计到轮末汇总（第 4 次）。
-        /// 无 qqbot 来源（前端对话）→ 不转发（被动机制——只有用户主动输入后才启用回复）。
-        /// </summary>
-        /// <param name="tg">绑定目标</param>
-        /// <param name="content">text 块内容</param>
+                 /// 即时转发——3+1 预算：计数 &lt; 3 立即转发；否则累计到轮末汇总（第 4 次）。
+                 /// 无 qqbot 来源（前端对话）→ 不转发（被动机制——只有用户主动输入后才启用回复）。
+                 /// </summary>
+                 /// <param name="tg">绑定目标</param>
+                 /// <param name="content">text 块内容</param>
         private static void ForwardText(QqTarget tg, string content)
         {
             QqSource source;
@@ -829,9 +829,9 @@ namespace CatHome4.QQ
                 sb.Append(content);
             }
         }        /// <summary>
-        /// 轮结束——roundsum 块哨兵：累计非空 → 第 4 次汇总转发（单条发送）；出队消费本轮来源；重置 3+1 状态。
-        /// </summary>
-        /// <param name="tg">绑定目标</param>
+                 /// 轮结束——roundsum 块哨兵：累计非空 → 第 4 次汇总转发（单条发送）；出队消费本轮来源；重置 3+1 状态。
+                 /// </summary>
+                 /// <param name="tg">绑定目标</param>
         private static void FinishRound(QqTarget tg)
         {
             QqSource source;
@@ -1033,21 +1033,21 @@ namespace CatHome4.QQ
             }
             return s.Substring(0, max);
         }
-    /// <summary>
-    /// QQ 服务事件——WS 线程入队 / 主线程 Tick 事件泵消费（R6-P1-01 单线程化）。
-    /// Kind：source=注入来源入队（Source 有效） / reset=轮状态重置。
-    /// </summary>
-    private sealed class QqServiceEvent
-    {
-        /// <summary>事件类型——source / reset</summary>
-        public string Kind;
+        /// <summary>
+        /// QQ 服务事件——WS 线程入队 / 主线程 Tick 事件泵消费（R6-P1-01 单线程化）。
+        /// Kind：source=注入来源入队（Source 有效） / reset=轮状态重置。
+        /// </summary>
+        private sealed class QqServiceEvent
+        {
+            /// <summary>事件类型——source / reset</summary>
+            public string Kind;
 
-        /// <summary>猫标识——majordomo / cat id（来源队列键）</summary>
-        public string CatKey;
+            /// <summary>猫标识——majordomo / cat id（来源队列键）</summary>
+            public string CatKey;
 
-        /// <summary>来源——Kind=source 时有效</summary>
-        public QqSource Source;
-    }
+            /// <summary>来源——Kind=source 时有效</summary>
+            public QqSource Source;
+        }
     }
 
     /// <summary>

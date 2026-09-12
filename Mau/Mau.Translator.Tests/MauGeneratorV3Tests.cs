@@ -50,107 +50,107 @@ namespace Mau.Translator.Tests
             Assert.Contains("trace.state", result.GeneratedCode);
             Assert.Contains("ProbeSinkBrick.Sink(", result.GeneratedCode);
         }
-/// <summary>
-/// 行为断言——强类型直调真积木恒 true → 成功侧 Thinking；GetStatus 四柱快照（失败侧覆盖归 par 时限测试）
-/// </summary>
-///
-[Fact]
+        /// <summary>
+        /// 行为断言——强类型直调真积木恒 true → 成功侧 Thinking；GetStatus 四柱快照（失败侧覆盖归 par 时限测试）
+        /// </summary>
+        ///
+        [Fact]
         public void Generate_Behavior_FailAndSuccess()
-{
-    CompileResultV3 result = MauCompilerV3.Compile(TalkSample, "Talk");
-    Assert.True(result.Success);
-    string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_v3_gen_" + Guid.NewGuid().ToString("N").Substring(0, 8));
-    try
-    {
-        MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
-        MauPocketCompileResult pr = compiler.Compile(result.GeneratedCode, "FL_Talk");
-        Assert.True(pr.Success, "Emit 失败: " + string.Join("\n", pr.Diagnostics));
-        DataBox.ResetSignals();
-        // 强类型直调——真积木 probe.sink 恒 true → 成功侧 Thinking（失败侧覆盖归 par 时限测试）
-        using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
         {
-            IObservableFlow flow = handle.Flow;
-            DataBox.Signal("P_Go");
-            flow.Tick(1);
-            FlowStatusV3 status = flow.GetStatus();
-            Assert.Contains("S_Talk=Thinking", status.StateLines);
-            Assert.Equal(1L, status.Frame);
-            Assert.Single(status.WireStatuses);
-            Assert.Equal(1L, status.WireStatuses[0].LastTriggerFrame);
-        }
-    }
-    finally
-    {
-        DataBox.ResetSignals();
-        if (Directory.Exists(pocketRoot))
-        {
+            CompileResultV3 result = MauCompilerV3.Compile(TalkSample, "Talk");
+            Assert.True(result.Success);
+            string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_v3_gen_" + Guid.NewGuid().ToString("N").Substring(0, 8));
             try
             {
-                Directory.Delete(pocketRoot, true);
+                MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
+                MauPocketCompileResult pr = compiler.Compile(result.GeneratedCode, "FL_Talk");
+                Assert.True(pr.Success, "Emit 失败: " + string.Join("\n", pr.Diagnostics));
+                DataBox.ResetSignals();
+                // 强类型直调——真积木 probe.sink 恒 true → 成功侧 Thinking（失败侧覆盖归 par 时限测试）
+                using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
+                {
+                    IObservableFlow flow = handle.Flow;
+                    DataBox.Signal("P_Go");
+                    flow.Tick(1);
+                    FlowStatusV3 status = flow.GetStatus();
+                    Assert.Contains("S_Talk=Thinking", status.StateLines);
+                    Assert.Equal(1L, status.Frame);
+                    Assert.Single(status.WireStatuses);
+                    Assert.Equal(1L, status.WireStatuses[0].LastTriggerFrame);
+                }
             }
-            catch (Exception)
+            finally
             {
-                // 清理失败不影响
+                DataBox.ResetSignals();
+                if (Directory.Exists(pocketRoot))
+                {
+                    try
+                    {
+                        Directory.Delete(pocketRoot, true);
+                    }
+                    catch (Exception)
+                    {
+                        // 清理失败不影响
+                    }
+                }
             }
         }
-    }
-}
         /// <summary>
         /// 主动传感器行为——协程壳帧门控 + 捕获落盒 + 盒子判真条件 + 快照状态转移
         /// </summary>
         [Fact]
         public void Generate_Behavior_ActiveSensor()
-{
-    string sample =
-        "§ 'S_Poll' = { 'Waiting', 'Got' }\n" +
-        "§ 'P_Q' ↻ [2]: 'probe.sink'[\"x\", 0] > @q\n" +
-        "§ 'T_Hit' : @q & 'S_Poll' = 'Waiting' → | 'S_Poll' = 'Got' | 'S_Poll' = 'Got'";
-    CompileResultV3 result = MauCompilerV3.Compile(sample, "Poll");
-    Assert.True(result.Success);
-    string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_v3_poll_" + Guid.NewGuid().ToString("N").Substring(0, 8));
-    try
-    {
-        MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
-        MauPocketCompileResult pr = compiler.Compile(result.GeneratedCode, "FL_Poll");
-        Assert.True(pr.Success, "Emit 失败: " + string.Join("\n", pr.Diagnostics));
-        using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
         {
-            IObservableFlow flow = handle.Flow;
-            ISensorLoop shell = (ISensorLoop)flow;
-            // 协程壳驱动 + Flow 驱动分离——probe.sink 恒 true → 门控 2 帧采样命中（f=2 起 Got）
-            for (int f = 0; f < 10; f++)
-            {
-                shell.TickSensors(f);
-                flow.Tick(f);
-                FlowStatusV3 status = flow.GetStatus();
-                if (Array.IndexOf(status.StateLines, "S_Poll=Got") >= 0)
-                {
-                    Assert.True(f >= 2, "帧 " + f + " 时采样命中——门控 2 帧，最早第 2 帧");
-                    // 探测落盒验证——bool 返回值落 DataBox（测试直驱 FlowContext 未注入——scope 为 "0"）
-                    bool q;
-                    Assert.True(DataBox.TryGet<bool>("0", "q", out q), "探测捕获未落盒");
-                    Assert.True(q, "盒子 q 应为探测返回值 true（probe.sink 恒 true）");
-                    return;
-                }
-            }
-            Assert.Fail("10 帧内未转移 Got——采样链路断裂");
-        }
-    }
-    finally
-    {
-        if (Directory.Exists(pocketRoot))
-        {
+            string sample =
+                "§ 'S_Poll' = { 'Waiting', 'Got' }\n" +
+                "§ 'P_Q' ↻ [2]: 'probe.sink'[\"x\", 0] > @q\n" +
+                "§ 'T_Hit' : @q & 'S_Poll' = 'Waiting' → | 'S_Poll' = 'Got' | 'S_Poll' = 'Got'";
+            CompileResultV3 result = MauCompilerV3.Compile(sample, "Poll");
+            Assert.True(result.Success);
+            string pocketRoot = Path.Combine(Path.GetTempPath(), "mau_v3_poll_" + Guid.NewGuid().ToString("N").Substring(0, 8));
             try
             {
-                Directory.Delete(pocketRoot, true);
+                MauPocketCompiler compiler = new MauPocketCompiler(pocketRoot);
+                MauPocketCompileResult pr = compiler.Compile(result.GeneratedCode, "FL_Poll");
+                Assert.True(pr.Success, "Emit 失败: " + string.Join("\n", pr.Diagnostics));
+                using (FlowHandle handle = FlowHandle.Load(pr.AssemblyPath))
+                {
+                    IObservableFlow flow = handle.Flow;
+                    ISensorLoop shell = (ISensorLoop)flow;
+                    // 协程壳驱动 + Flow 驱动分离——probe.sink 恒 true → 门控 2 帧采样命中（f=2 起 Got）
+                    for (int f = 0; f < 10; f++)
+                    {
+                        shell.TickSensors(f);
+                        flow.Tick(f);
+                        FlowStatusV3 status = flow.GetStatus();
+                        if (Array.IndexOf(status.StateLines, "S_Poll=Got") >= 0)
+                        {
+                            Assert.True(f >= 2, "帧 " + f + " 时采样命中——门控 2 帧，最早第 2 帧");
+                            // 探测落盒验证——bool 返回值落 DataBox（测试直驱 FlowContext 未注入——scope 为 "0"）
+                            bool q;
+                            Assert.True(DataBox.TryGet<bool>("0", "q", out q), "探测捕获未落盒");
+                            Assert.True(q, "盒子 q 应为探测返回值 true（probe.sink 恒 true）");
+                            return;
+                        }
+                    }
+                    Assert.Fail("10 帧内未转移 Got——采样链路断裂");
+                }
             }
-            catch (Exception)
+            finally
             {
-                // 清理失败不影响
+                if (Directory.Exists(pocketRoot))
+                {
+                    try
+                    {
+                        Directory.Delete(pocketRoot, true);
+                    }
+                    catch (Exception)
+                    {
+                        // 清理失败不影响
+                    }
+                }
             }
         }
-    }
-}
         /// <summary>
         /// trace 埋点——导线触发/状态转移进审计（帧号对齐）
         /// </summary>

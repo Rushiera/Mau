@@ -111,5 +111,5 @@ namespace Mau.Runtime
             }
             return GetAssemblyBuildTime(entry);
         }
-}
+    }
 }

@@ -154,7 +154,7 @@ namespace Mau.Runtime
             {
                 if (_keyDic.ContainsKey(ownerLongId))
                 {
-                    WriteLog("指令注册被拒 #" + ownerLongId + " 重复注册", 2);                    if (Audit != null)
+                    WriteLog("指令注册被拒 #" + ownerLongId + " 重复注册", 2); if (Audit != null)
                     {
                         Audit.Record("CommandBus", "cmd.register", -1, new AuditProp[] {
                             new AuditProp("owner", ownerLongId.ToString()),

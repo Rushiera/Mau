@@ -69,35 +69,35 @@ namespace Mau.Cli
                 case CommandIds.Build:
                     return CommandBuild(args);
                 case CommandIds.Test:
-                {
-                    string usage = "mau test [--update]";
-                    if (args.Length > 2)
                     {
-                        return CliSupport.ArgError("未知参数: " + args[2], usage);
-                    }
+                        string usage = "mau test [--update]";
+                        if (args.Length > 2)
+                        {
+                            return CliSupport.ArgError("未知参数: " + args[2], usage);
+                        }
 
-                    if (args.Length == 2 && args[1] != "--update")
-                    {
-                        return CliSupport.ArgError("未知参数: " + args[1], usage);
-                    }
+                        if (args.Length == 2 && args[1] != "--update")
+                        {
+                            return CliSupport.ArgError("未知参数: " + args[1], usage);
+                        }
 
-                    bool update = args.Length > 1;
-                    return MauTestRunner.Run(update);
-                }
+                        bool update = args.Length > 1;
+                        return MauTestRunner.Run(update);
+                    }
 
                 case CommandIds.Check:
-                {
-                    string usage = "mau check [--verbose]";
-                    for (int i = 1; i < args.Length; i = i + 1)
                     {
-                        if (args[i] != "--verbose")
+                        string usage = "mau check [--verbose]";
+                        for (int i = 1; i < args.Length; i = i + 1)
                         {
-                            return CliSupport.ArgError("未知参数: " + args[i], usage);
+                            if (args[i] != "--verbose")
+                            {
+                                return CliSupport.ArgError("未知参数: " + args[i], usage);
+                            }
                         }
-                    }
 
-                    return CommandCheckV3.Run();
-                }
+                        return CommandCheckV3.Run();
+                    }
 
                 case CommandIds.Debug:
                     return CommandDebugV3.Run(CliSupport.Tail(args));

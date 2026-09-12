@@ -85,7 +85,7 @@ namespace Mau.Runtime
             {
                 NormalizeAndValidate(loaded[i]);
             }
-            Array.Sort(loaded, delegate(CH_QqBotConfig left,
+            Array.Sort(loaded, delegate (CH_QqBotConfig left,
                 CH_QqBotConfig right)
             {
                 return left.QqBotId.CompareTo(right.QqBotId);

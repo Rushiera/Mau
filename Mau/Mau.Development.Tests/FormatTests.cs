@@ -161,6 +161,18 @@ namespace Mau.Development.Tests
         }
 
         /// <summary>
+        /// 宿主注入保留键放行——catId（P9.4 猫级路由，宿主每次调用注入，不进工具声明面）不触发 BAD_ARGS，功能面照常
+        /// </summary>
+        [Fact]
+        public void HostInjectedArgsAccepted()
+        {
+            string args = "{\"path\":\"" + Escape(_root) + "\",\"mode\":\"check\",\"catId\":\"majordomo\"}";
+            string result = Invoke("format", args);
+            Assert.StartsWith("OK|FORMAT_CHECK", result);
+            Assert.Contains("Bad.cs", result);
+        }
+
+        /// <summary>
         /// 越界路径拒绝——受控根外路径 ERR|BAD_PATH
         /// </summary>
         [Fact]

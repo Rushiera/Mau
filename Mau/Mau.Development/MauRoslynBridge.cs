@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -329,6 +329,17 @@ namespace Mau.Development
                 return "false";
             }
             return value.ToString();
+        }
+
+        /// <summary>
+        /// 宿主注入保留参数探测——不进工具声明面（LLM 零感知），参数校验面一律放行。
+        /// 来源：宿主 ChatSession.InjectCatId 每次调用向载荷合并 catId（P9.4 猫级路由：文件系统 / 配置群按猫作用域）。
+        /// </summary>
+        /// <param name="name">参数名</param>
+        /// <returns>true=宿主注入字段</returns>
+        private static bool IsHostInjectedArg(string name)
+        {
+            return string.Equals(name, "catId", StringComparison.Ordinal);
         }
     }
 }

@@ -235,112 +235,112 @@ namespace Mau.Providers
             }
             return text.Substring(0, max);
         }
-/// <summary>
-/// 累积 SSE 帧的 tool_calls 增量——按 index 聚合（design A.5：id/name 仅首帧；arguments 累积增量拼接）。
-/// </summary>
-/// <param name = "data">帧 data 载荷</param>
-/// <param name = "ids">index → 调用 ID</param>
-/// <param name = "names">index → 工具名</param>
-/// <param name = "args">index → 参数拼接缓冲</param>
-/// <param name = "order">index 出现顺序</param>
-private static void AccumulateToolCalls(string data, Dictionary<int, string> ids, Dictionary<int, string> names, Dictionary<int, System.Text.StringBuilder> args, List<int> order)
+        /// <summary>
+        /// 累积 SSE 帧的 tool_calls 增量——按 index 聚合（design A.5：id/name 仅首帧；arguments 累积增量拼接）。
+        /// </summary>
+        /// <param name = "data">帧 data 载荷</param>
+        /// <param name = "ids">index → 调用 ID</param>
+        /// <param name = "names">index → 工具名</param>
+        /// <param name = "args">index → 参数拼接缓冲</param>
+        /// <param name = "order">index 出现顺序</param>
+        private static void AccumulateToolCalls(string data, Dictionary<int, string> ids, Dictionary<int, string> names, Dictionary<int, System.Text.StringBuilder> args, List<int> order)
         {
-    try
-    {
-        using (JsonDocument doc = JsonDocument.Parse(data))
-        {
-            JsonElement root = doc.RootElement;
-            JsonElement choices;
-            if (!root.TryGetProperty("choices", out choices) || choices.GetArrayLength() == 0)
+            try
             {
-                return;
-            }
-
-            JsonElement delta;
-            if (!choices[0].TryGetProperty("delta", out delta))
-            {
-                return;
-            }
-
-            JsonElement calls;
-            if (!delta.TryGetProperty("tool_calls", out calls) || calls.ValueKind != JsonValueKind.Array)
-            {
-                return;
-            }
-
-            for (int i = 0; i < calls.GetArrayLength(); i++)
-            {
-                JsonElement call = calls[i];
-                JsonElement indexEl;
-                int index;
-                if (!call.TryGetProperty("index", out indexEl) || !indexEl.TryGetInt32(out index))
+                using (JsonDocument doc = JsonDocument.Parse(data))
                 {
-                    continue;
-                }
-
-                System.Text.StringBuilder? builder;
-                if (!args.TryGetValue(index, out builder) || builder == null)
-                {
-                    builder = new System.Text.StringBuilder();
-                    args[index] = builder;
-                    ids[index] = "";
-                    names[index] = "";
-                    order.Add(index);
-                }
-
-                JsonElement idEl;
-                if (ids[index].Length == 0 && call.TryGetProperty("id", out idEl) && idEl.ValueKind == JsonValueKind.String)
-                {
-                    string? gotId = idEl.GetString();
-                    if (gotId != null)
+                    JsonElement root = doc.RootElement;
+                    JsonElement choices;
+                    if (!root.TryGetProperty("choices", out choices) || choices.GetArrayLength() == 0)
                     {
-                        ids[index] = gotId!;
+                        return;
                     }
-                }
 
-                JsonElement funcEl;
-                if (call.TryGetProperty("function", out funcEl))
-                {
-                    if (names[index].Length == 0)
+                    JsonElement delta;
+                    if (!choices[0].TryGetProperty("delta", out delta))
                     {
-                        JsonElement nameEl;
-                        if (funcEl.TryGetProperty("name", out nameEl) && nameEl.ValueKind == JsonValueKind.String)
+                        return;
+                    }
+
+                    JsonElement calls;
+                    if (!delta.TryGetProperty("tool_calls", out calls) || calls.ValueKind != JsonValueKind.Array)
+                    {
+                        return;
+                    }
+
+                    for (int i = 0; i < calls.GetArrayLength(); i++)
+                    {
+                        JsonElement call = calls[i];
+                        JsonElement indexEl;
+                        int index;
+                        if (!call.TryGetProperty("index", out indexEl) || !indexEl.TryGetInt32(out index))
                         {
-                            string? gotName = nameEl.GetString();
-                            if (gotName != null)
+                            continue;
+                        }
+
+                        System.Text.StringBuilder? builder;
+                        if (!args.TryGetValue(index, out builder) || builder == null)
+                        {
+                            builder = new System.Text.StringBuilder();
+                            args[index] = builder;
+                            ids[index] = "";
+                            names[index] = "";
+                            order.Add(index);
+                        }
+
+                        JsonElement idEl;
+                        if (ids[index].Length == 0 && call.TryGetProperty("id", out idEl) && idEl.ValueKind == JsonValueKind.String)
+                        {
+                            string? gotId = idEl.GetString();
+                            if (gotId != null)
                             {
-                                names[index] = gotName!;
+                                ids[index] = gotId!;
+                            }
+                        }
+
+                        JsonElement funcEl;
+                        if (call.TryGetProperty("function", out funcEl))
+                        {
+                            if (names[index].Length == 0)
+                            {
+                                JsonElement nameEl;
+                                if (funcEl.TryGetProperty("name", out nameEl) && nameEl.ValueKind == JsonValueKind.String)
+                                {
+                                    string? gotName = nameEl.GetString();
+                                    if (gotName != null)
+                                    {
+                                        names[index] = gotName!;
+                                    }
+                                }
+                            }
+
+                            JsonElement argsEl;
+                            if (funcEl.TryGetProperty("arguments", out argsEl) && argsEl.ValueKind == JsonValueKind.String)
+                            {
+                                string? gotArgs = argsEl.GetString();
+                                if (gotArgs != null)
+                                {
+                                    builder.Append(gotArgs);
+                                }
                             }
                         }
                     }
-
-                    JsonElement argsEl;
-                    if (funcEl.TryGetProperty("arguments", out argsEl) && argsEl.ValueKind == JsonValueKind.String)
-                    {
-                        string? gotArgs = argsEl.GetString();
-                        if (gotArgs != null)
-                        {
-                            builder.Append(gotArgs);
-                        }
-                    }
                 }
             }
+            catch
+            {
+                // 畸形帧跳过——容忍上游抖动
+            }
         }
-    }
-    catch
-    {
-    // 畸形帧跳过——容忍上游抖动
-    }
-}
         /// <summary>
-/// 聚合结果 → 完整 tool_calls JSON 数组（[{"id","name","arguments"}]——arguments 为完整 JSON 文本，消费方整体解析）。
-/// </summary>
-/// <param name = "ids">index → 调用 ID</param>
-/// <param name = "names">index → 工具名</param>
-/// <param name = "args">index → 参数拼接缓冲</param>
-/// <param name = "order">index 出现顺序</param>
-/// <returns>JSON 数组字符串</returns>
-private static string BuildToolCallsJson(Dictionary<int, string> ids, Dictionary<int, string> names, Dictionary<int, System.Text.StringBuilder> args, List<int> order)
+        /// 聚合结果 → 完整 tool_calls JSON 数组（[{"id","name","arguments"}]——arguments 为完整 JSON 文本，消费方整体解析）。
+        /// </summary>
+        /// <param name = "ids">index → 调用 ID</param>
+        /// <param name = "names">index → 工具名</param>
+        /// <param name = "args">index → 参数拼接缓冲</param>
+        /// <param name = "order">index 出现顺序</param>
+        /// <returns>JSON 数组字符串</returns>
+        private static string BuildToolCallsJson(Dictionary<int, string> ids, Dictionary<int, string> names, Dictionary<int, System.Text.StringBuilder> args, List<int> order)
         {
             System.Text.StringBuilder builder = new System.Text.StringBuilder();
             builder.Append("[");

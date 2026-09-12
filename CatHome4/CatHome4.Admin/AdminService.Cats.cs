@@ -268,7 +268,7 @@ namespace CatHome4.Admin
                     if (cat.Session.IsIdle)
                     {
                         cat.SessionNewRequested = false;
-                        _chatBridge.HandleSessionNew(cat.Session, cat.Persona, cat.InjectList, cat.ToolSpecs, delegate(int n)
+                        _chatBridge.HandleSessionNew(cat.Session, cat.Persona, cat.InjectList, cat.ToolSpecs, delegate (int n)
                         {
                             if (cat.Host != null)
                             {
@@ -308,7 +308,7 @@ namespace CatHome4.Admin
                 if (_chatBridge.DefaultSession.IsIdle)
                 {
                     _majorSessionNewRequested = false;
-                    _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs, delegate(int n)
+                    _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs, delegate (int n)
                     {
                         if (_majorHost != null)
                         {
@@ -807,15 +807,15 @@ namespace CatHome4.Admin
                     DisplayName = "majordomo",
                     QqBotId = _chatBridge.DefaultQqBotId,
                     Enable = _chatBridge.DefaultQqBotEnable,
-                    Inject = delegate(string s) { captured.PostUserMessage(s); },
-                    GetViewItems = delegate() { return ConvertQqViewItems(captured.ViewStore.GetBlocks()); },
-                    IsIdle = delegate() { return captured.IsIdle; },
-                    NewSession = delegate()
+                    Inject = delegate (string s) { captured.PostUserMessage(s); },
+                    GetViewItems = delegate () { return ConvertQqViewItems(captured.ViewStore.GetBlocks()); },
+                    IsIdle = delegate () { return captured.IsIdle; },
+                    NewSession = delegate ()
                     {
                         _majorSessionNewRequested = true;
                         return "新会话已请求（注入执行中）\n" + _chatBridge.BuildInjectSummary(_chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs);
                     },
-                    GetInfo = delegate() { return captured.GetInfoText(); }
+                    GetInfo = delegate () { return captured.GetInfoText(); }
                 });
             }
             for (int i = 0; i < _cats.Count; i++)
@@ -830,15 +830,15 @@ namespace CatHome4.Admin
                         DisplayName = cat.DisplayName,
                         QqBotId = cat.QqBotId,
                         Enable = cat.QqBotEnable,
-                        Inject = delegate(string s) { captured.Session.PostUserMessage(s); },
-                        GetViewItems = delegate() { return ConvertQqViewItems(captured.Session.ViewStore.GetBlocks()); },
-                        IsIdle = delegate() { return captured.Session.IsIdle; },
-                        NewSession = delegate()
+                        Inject = delegate (string s) { captured.Session.PostUserMessage(s); },
+                        GetViewItems = delegate () { return ConvertQqViewItems(captured.Session.ViewStore.GetBlocks()); },
+                        IsIdle = delegate () { return captured.Session.IsIdle; },
+                        NewSession = delegate ()
                         {
                             captured.SessionNewRequested = true;
                             return "新会话已请求（注入执行中）\n" + _chatBridge.BuildInjectSummary(captured.Persona, captured.InjectList, captured.ToolSpecs);
                         },
-                        GetInfo = delegate() { return captured.Session.GetInfoText(); }
+                        GetInfo = delegate () { return captured.Session.GetInfoText(); }
                     });
                 }
             }

@@ -74,80 +74,80 @@ namespace Mau.Runtime
             }
             return handles;
         }
-/// <summary>
-/// 热重载——按 dll 粒度原子替换（D8：新 ALC 加载成功 → 卸旧；失败 → 保留旧 + 报告）。
-/// pending 来自 FlowWatchService（② 热感知）——宿主主动调用（D10 纯手动 API）。
-/// </summary>
-/// <param name = "pendingDlls">待重载 dll 路径清单（完整路径）</param>
-/// <returns>重载报告——每 dll：成功/失败（失败原因）</returns>
-public string[] ReloadFlows(string[] pendingDlls)
+        /// <summary>
+        /// 热重载——按 dll 粒度原子替换（D8：新 ALC 加载成功 → 卸旧；失败 → 保留旧 + 报告）。
+        /// pending 来自 FlowWatchService（② 热感知）——宿主主动调用（D10 纯手动 API）。
+        /// </summary>
+        /// <param name = "pendingDlls">待重载 dll 路径清单（完整路径）</param>
+        /// <returns>重载报告——每 dll：成功/失败（失败原因）</returns>
+        public string[] ReloadFlows(string[] pendingDlls)
         {
-    List<string> report = new List<string>();
-    for (int i = 0; i < pendingDlls.Length; i = i + 1)
-    {
-        string dllPath = Path.GetFullPath(pendingDlls[i]);
-        string fileName = Path.GetFileName(dllPath);
-        // 空数组初始化——LoadAll 失败时 newHandles 保持空（LoadAll 内部已清理自身句柄），Tick 失败时指向已加载句柄
-        FlowHandle[] newHandles = new FlowHandle[0];
-        try
-        {
-            // 先加载新版本——验证通过才进入替换（失败保留旧）
-            newHandles = FlowHandle.LoadAll(dllPath);
-            for (int h = 0; h < newHandles.Length; h = h + 1)
+            List<string> report = new List<string>();
+            for (int i = 0; i < pendingDlls.Length; i = i + 1)
             {
-                newHandles[h].Flow.Tick(0);
-            }
-        }
-        catch (Exception ex)
-        {
-            // 失败路径——卸载已加载的新句柄（事务三段式：失败回滚全新实例；LoadAll 自身失败时为空数组无副作用）
-            for (int h = 0; h < newHandles.Length; h = h + 1)
-            {
+                string dllPath = Path.GetFullPath(pendingDlls[i]);
+                string fileName = Path.GetFileName(dllPath);
+                // 空数组初始化——LoadAll 失败时 newHandles 保持空（LoadAll 内部已清理自身句柄），Tick 失败时指向已加载句柄
+                FlowHandle[] newHandles = new FlowHandle[0];
                 try
                 {
-                    newHandles[h].TryUnload(1);
+                    // 先加载新版本——验证通过才进入替换（失败保留旧）
+                    newHandles = FlowHandle.LoadAll(dllPath);
+                    for (int h = 0; h < newHandles.Length; h = h + 1)
+                    {
+                        newHandles[h].Flow.Tick(0);
+                    }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // 卸载尽力而为——不掩盖原始失败
+                    // 失败路径——卸载已加载的新句柄（事务三段式：失败回滚全新实例；LoadAll 自身失败时为空数组无副作用）
+                    for (int h = 0; h < newHandles.Length; h = h + 1)
+                    {
+                        try
+                        {
+                            newHandles[h].TryUnload(1);
+                        }
+                        catch (Exception)
+                        {
+                            // 卸载尽力而为——不掩盖原始失败
+                        }
+                    }
+                    report.Add("❌ " + fileName + ": 新版本加载失败——" + ex.Message);
+                    continue;
                 }
-            }
-            report.Add("❌ " + fileName + ": 新版本加载失败——" + ex.Message);
-            continue;
-        }
 
-        lock (_lock)
-        {
-            // 卸载同 dll 旧 handle（SourceDll 匹配）
-            List<FlowHandle> olds = new List<FlowHandle>();
-            for (int h = _handles.Count - 1; h >= 0; h = h - 1)
-            {
-                if (string.Equals(_handles[h].SourceDll, dllPath, StringComparison.OrdinalIgnoreCase))
+                lock (_lock)
                 {
-                    olds.Add(_handles[h]);
-                    _handles.RemoveAt(h);
+                    // 卸载同 dll 旧 handle（SourceDll 匹配）
+                    List<FlowHandle> olds = new List<FlowHandle>();
+                    for (int h = _handles.Count - 1; h >= 0; h = h - 1)
+                    {
+                        if (string.Equals(_handles[h].SourceDll, dllPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            olds.Add(_handles[h]);
+                            _handles.RemoveAt(h);
+                        }
+                    }
+
+                    for (int o = 0; o < olds.Count; o = o + 1)
+                    {
+                        olds[o].TryUnload(3);
+                    }
+
+                    // 注册新 handle
+                    for (int n = 0; n < newHandles.Length; n = n + 1)
+                    {
+                        _handles.Add(newHandles[n]);
+                    }
                 }
+
+                report.Add("✅ " + fileName + ": 热重载成功（" + newHandles.Length + " 个 Flow）");
             }
 
-            for (int o = 0; o < olds.Count; o = o + 1)
-            {
-                olds[o].TryUnload(3);
-            }
-
-            // 注册新 handle
-            for (int n = 0; n < newHandles.Length; n = n + 1)
-            {
-                _handles.Add(newHandles[n]);
-            }
-        }
-
-        report.Add("✅ " + fileName + ": 热重载成功（" + newHandles.Length + " 个 Flow）");
-    }
-
-    return report.ToArray();
-}        /// <summary>
-        /// 卸载所有活跃 Handle
-        /// </summary>
+            return report.ToArray();
+        }        /// <summary>
+                 /// 卸载所有活跃 Handle
+                 /// </summary>
         public void UnloadAll()
         {
             lock (_lock)

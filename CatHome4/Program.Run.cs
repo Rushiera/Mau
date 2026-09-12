@@ -166,7 +166,7 @@ namespace CH4
                 {
                     if (_chatBridge.DefaultSession.IsIdle)
                     {
-                        _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs, delegate(int n)
+                        _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs, delegate (int n)
                         {
                             if (_httpHost != null)
                             {
@@ -302,7 +302,7 @@ namespace CH4
                 if (_chatBridge.DefaultSession.IsIdle)
                 {
                     _chatBridge.SessionNewRequested = false;
-                    _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs, delegate(int n)
+                    _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs, delegate (int n)
                     {
                         if (_httpHost != null)
                         {

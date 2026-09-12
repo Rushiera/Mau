@@ -10,9 +10,9 @@ namespace Mau.Runtime.Tests
     /// </summary>
     public sealed class HotReloadTests
     {
-/// <summary>
-/// 夹具 dll 目录
-/// </summary>
+        /// <summary>
+        /// 夹具 dll 目录
+        /// </summary>
         private static string FixtureDir
         {
             get
@@ -23,40 +23,40 @@ namespace Mau.Runtime.Tests
                 return dir;
             }
         }
-/// <summary>
-/// 有效夹具 dll 完整路径（含 IFlow 实现）
-/// </summary>
+        /// <summary>
+        /// 有效夹具 dll 完整路径（含 IFlow 实现）
+        /// </summary>
 
         private static string ValidDllPath
         {
             get { return Path.Combine(FixtureDir, "FL_ValidFlow.dll"); }
         }
-/// <summary>
-/// 无 IObservableFlow 接口的 dll 路径（负例夹具）
-/// </summary>
+        /// <summary>
+        /// 无 IObservableFlow 接口的 dll 路径（负例夹具）
+        /// </summary>
 
         private static string NoInterfaceDllPath
         {
             get { return Path.Combine(FixtureDir, "FL_NoInterface.dll"); }
         }
-/// <summary>
-/// 非 dll 普通文件路径（坏镜像负例）
-/// </summary>
+        /// <summary>
+        /// 非 dll 普通文件路径（坏镜像负例）
+        /// </summary>
 
         private static string NotADllPath
         {
             get { return Path.Combine(FixtureDir, "not-a-dll.txt"); }
         }
-/// <summary>
-/// Tick 抛异常夹具 dll 路径（热重载验证失败路径——Tick 必抛，断言失败回滚行为）
-/// </summary>
-private static string TickThrowsDllPath
-{
-    get
-    {
-        return Path.Combine(FixtureDir, "FL_TickThrows.dll");
-    }
-}
+        /// <summary>
+        /// Tick 抛异常夹具 dll 路径（热重载验证失败路径——Tick 必抛，断言失败回滚行为）
+        /// </summary>
+        private static string TickThrowsDllPath
+        {
+            get
+            {
+                return Path.Combine(FixtureDir, "FL_TickThrows.dll");
+            }
+        }
         /// <summary>
         /// 确保 fixture DLL 已生成——缺失时动态构建（FixtureBuilder 共享入口）
         /// </summary>
@@ -64,9 +64,9 @@ private static string TickThrowsDllPath
         {
             FixtureBuilder.Ensure();
         }
-/// <summary>
-/// 加载有效 dll——返回 IFlow 实例
-/// </summary>
+        /// <summary>
+        /// 加载有效 dll——返回 IFlow 实例
+        /// </summary>
 
         // ──────────────────────────────────────
         // V1: 加载有效 DLL
@@ -79,9 +79,9 @@ private static string TickThrowsDllPath
             using FlowHandle handle = FlowHandle.Load(ValidDllPath);
             Assert.NotNull(handle.Flow);
         }
-/// <summary>
-/// 加载产物实现 IObservableFlow 可观测接口
-/// </summary>
+        /// <summary>
+        /// 加载产物实现 IObservableFlow 可观测接口
+        /// </summary>
 
         [Fact]
         public void Load_ValidDll_FlowIsObservableFlow()
@@ -91,9 +91,9 @@ private static string TickThrowsDllPath
             IObservableFlow flow = handle.Flow;
             Assert.True(flow is IObservableFlow);
         }
-/// <summary>
-/// 无接口 dll 加载——抛 InvalidOperationException
-/// </summary>
+        /// <summary>
+        /// 无接口 dll 加载——抛 InvalidOperationException
+        /// </summary>
 
         // ──────────────────────────────────────
         // V2: 加载无 IObservableFlow 的 DLL
@@ -112,9 +112,9 @@ private static string TickThrowsDllPath
             );
             Assert.Contains("IObservableFlow", ex.Message);
         }
-/// <summary>
-/// 不存在的文件加载——抛 FileNotFoundException
-/// </summary>
+        /// <summary>
+        /// 不存在的文件加载——抛 FileNotFoundException
+        /// </summary>
 
         // ──────────────────────────────────────
         // V3: DLL 不存在
@@ -128,9 +128,9 @@ private static string TickThrowsDllPath
                 () => FlowHandle.Load(fakePath)
             );
         }
-/// <summary>
-/// 坏镜像加载——抛 BadImageFormatException
-/// </summary>
+        /// <summary>
+        /// 坏镜像加载——抛 BadImageFormatException
+        /// </summary>
 
         // ──────────────────────────────────────
         // V4: 损坏的 DLL
@@ -149,9 +149,9 @@ private static string TickThrowsDllPath
                 () => FlowHandle.Load(NotADllPath)
             );
         }
-/// <summary>
-/// 卸载正常完成无异常
-/// </summary>
+        /// <summary>
+        /// 卸载正常完成无异常
+        /// </summary>
 
         // ──────────────────────────────────────
         // V5: TryUnload 回收成功
@@ -173,9 +173,9 @@ private static string TickThrowsDllPath
             // false 不必然泄漏。真实回收断言见 V10 TryUnload_AssemblyWeakRef_ReclaimedAfterScopeExit（作用域外弱引用死亡）。
             Assert.Throws<ObjectDisposedException>(() => handle.Flow);
         }
-/// <summary>
-/// Dispose 后访问——抛 ObjectDisposedException
-/// </summary>
+        /// <summary>
+        /// Dispose 后访问——抛 ObjectDisposedException
+        /// </summary>
 
         // ──────────────────────────────────────
         // V7: 已 Dispose 后访问 Flow 抛异常
@@ -220,32 +220,32 @@ private static string TickThrowsDllPath
         [Fact]
         public void ReloadFlows_BadDll_KeepsOldHandle()
         {
-    AssertFixturesExist();
-    using (FlowHost host = new FlowHost())
-    {
-        FlowHandle[] olds = host.LoadAll(ValidDllPath);
-        Assert.Equal(olds.Length, host.Count);
-
-        // 损坏 dll——不是有效 .NET 程序集（%TEMP% 临时文件——测试运行期动态文件不写仓库 fixture 目录）
-        string badDll = Path.Combine(Path.GetTempPath(), "mau_bad_reload_" + Guid.NewGuid().ToString("N") + ".dll");
-        File.WriteAllText(badDll, "this is not a real dll at all");
-        try
-        {
-            string[] report = host.ReloadFlows(new string[] { badDll });
-            Assert.Single(report);
-            Assert.Contains("加载失败", report[0]);
-            // 旧 handle 保留——数量不变
-            Assert.Equal(olds.Length, host.Count);
-        }
-        finally
-        {
-            if (File.Exists(badDll))
+            AssertFixturesExist();
+            using (FlowHost host = new FlowHost())
             {
-                File.Delete(badDll);
+                FlowHandle[] olds = host.LoadAll(ValidDllPath);
+                Assert.Equal(olds.Length, host.Count);
+
+                // 损坏 dll——不是有效 .NET 程序集（%TEMP% 临时文件——测试运行期动态文件不写仓库 fixture 目录）
+                string badDll = Path.Combine(Path.GetTempPath(), "mau_bad_reload_" + Guid.NewGuid().ToString("N") + ".dll");
+                File.WriteAllText(badDll, "this is not a real dll at all");
+                try
+                {
+                    string[] report = host.ReloadFlows(new string[] { badDll });
+                    Assert.Single(report);
+                    Assert.Contains("加载失败", report[0]);
+                    // 旧 handle 保留——数量不变
+                    Assert.Equal(olds.Length, host.Count);
+                }
+                finally
+                {
+                    if (File.Exists(badDll))
+                    {
+                        File.Delete(badDll);
+                    }
+                }
             }
         }
-    }
-}
         /// <summary>
         /// 热重载无 IObservableFlow 的 dll——失败保留旧（验证 LoadAll 校验）
         /// </summary>
@@ -315,12 +315,19 @@ private static string TickThrowsDllPath
             assemblyRef = new WeakReference(handle.Flow.GetType().Assembly);
             handle.TryUnload(10);
         }
-/// <summary>
-/// ReloadFlows 验证失败（Tick 抛异常）——报告失败 + 旧句柄全保留 + host 无污染（失败后仍可成功热重载）
-/// </summary>
- [ Fact ]  public  void  ReloadFlows_TickThrows_KeepsOldThenRecovers ( ) { AssertFixturesExist ( ) ;  using  ( FlowHost  host  =  new  FlowHost ( ) ) { FlowHandle [ ]  olds  =  host . LoadAll ( ValidDllPath ) ;  int  oldCount  =  host . Count ;  Assert . NotEmpty ( olds ) ;  // [段1] 失败路径——验证 Tick 抛异常：保留旧句柄
-string [ ]  report  =  host . ReloadFlows ( new  string [ ] { TickThrowsDllPath } ) ;  Assert . Single ( report ) ;  Assert . Contains ( "加载失败" ,  report [ 0 ] ) ;  Assert . Equal ( oldCount ,  host . Count ) ;  for  ( int  o  =  0 ;  o < olds . Length ;  o  =  o + 1 ) { Assert . False ( olds [ o ] . IsFaulted ) ;  } // [段2] 恢复路径——失败清理不破坏后续成功热重载
-string [ ]  okReport  =  host . ReloadFlows ( new  string [ ] { ValidDllPath } ) ;  Assert . Single ( okReport ) ;  Assert . Contains ( "热重载成功" ,  okReport [ 0 ] ) ;  Assert . Equal ( olds . Length ,  host . Count ) ;  } }
+        /// <summary>
+        /// ReloadFlows 验证失败（Tick 抛异常）——报告失败 + 旧句柄全保留 + host 无污染（失败后仍可成功热重载）
+        /// </summary>
+        [Fact]
+        public void ReloadFlows_TickThrows_KeepsOldThenRecovers()
+        {
+            AssertFixturesExist(); using (FlowHost host = new FlowHost())
+            {
+                FlowHandle[] olds = host.LoadAll(ValidDllPath); int oldCount = host.Count; Assert.NotEmpty(olds);  // [段1] 失败路径——验证 Tick 抛异常：保留旧句柄
+                string[] report = host.ReloadFlows(new string[] { TickThrowsDllPath }); Assert.Single(report); Assert.Contains("加载失败", report[0]); Assert.Equal(oldCount, host.Count); for (int o = 0; o < olds.Length; o = o + 1) { Assert.False(olds[o].IsFaulted); } // [段2] 恢复路径——失败清理不破坏后续成功热重载
+                string[] okReport = host.ReloadFlows(new string[] { ValidDllPath }); Assert.Single(okReport); Assert.Contains("热重载成功", okReport[0]); Assert.Equal(olds.Length, host.Count);
+            }
+        }
 
     }
 }

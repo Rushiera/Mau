@@ -139,11 +139,11 @@ namespace Mau.Translator
             }
             return false;
         }/// <summary>
-        /// 稳定性——无事件子图找环：环上所有边都无传感器条件 = 无界环（每帧可触发，无事件刹车）
-        /// </summary>
-        /// <param name="doc">IR（诊断行号用）</param>
-        /// <param name="graph">转移图</param>
-        /// <param name="result">分析结果</param>
+         /// 稳定性——无事件子图找环：环上所有边都无传感器条件 = 无界环（每帧可触发，无事件刹车）
+         /// </summary>
+         /// <param name="doc">IR（诊断行号用）</param>
+         /// <param name="graph">转移图</param>
+         /// <param name="result">分析结果</param>
         private static void FindUnboundedLoops(MauDocV3 doc, GraphV3 graph, AnalysisResultV3 result)
         {
             // 无事件子图——只保留 EventDriven=false 的边

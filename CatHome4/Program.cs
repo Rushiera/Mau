@@ -54,8 +54,8 @@ namespace CH4
 
         /// <summary>OA 工单平台——观测快照（诊断期）</summary>
         private static OA _oa;
-/// <summary>HTTP 外观层——Kestrel + Minimal API（P6：快照/SSE/指令/静态页）</summary>
-private static HttpHost _httpHost;
+        /// <summary>HTTP 外观层——Kestrel + Minimal API（P6：快照/SSE/指令/静态页）</summary>
+        private static HttpHost _httpHost;
 
         /// <summary>会话协调桥——S1 程序集拆分：会话注册表/默认猫配置/轮转泵/会话指令（Core 实例类）</summary>
         private static ChatBridge _chatBridge;
@@ -109,76 +109,76 @@ private static HttpHost _httpHost;
             }
             try
             {
-            // [段1b] 探针通道——LLM 返回体结构诊断（方案 B：宿主能力；不启动宿主/不占端口/不载语料，先于 Bootstrap 返回）
-            if (HasProbeLlmArg(args))
-            {
-                return RunProbeLlm(args);
-            }
-            // [段2] 服务组装 + 语料加载
-            string dllDir = FindDllDir(args);
-            try
-            {
-                Bootstrap(dllDir);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("[CMD] 启动失败: " + ex.Message);
-                // 脚本模式无人值守不暂停；交互模式暂停——错误可见（双击 exe 不闪退）
-                bool pauseOnFail = true;
-                for (int i = 0; i < args.Length; i = i + 1)
+                // [段1b] 探针通道——LLM 返回体结构诊断（方案 B：宿主能力；不启动宿主/不占端口/不载语料，先于 Bootstrap 返回）
+                if (HasProbeLlmArg(args))
                 {
-                    if (args[i] == "--run" || args[i] == "--script" || args[i] == "--selfcheck")
+                    return RunProbeLlm(args);
+                }
+                // [段2] 服务组装 + 语料加载
+                string dllDir = FindDllDir(args);
+                try
+                {
+                    Bootstrap(dllDir);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("[CMD] 启动失败: " + ex.Message);
+                    // 脚本模式无人值守不暂停；交互模式暂停——错误可见（双击 exe 不闪退）
+                    bool pauseOnFail = true;
+                    for (int i = 0; i < args.Length; i = i + 1)
                     {
-                        pauseOnFail = false;
+                        if (args[i] == "--run" || args[i] == "--script" || args[i] == "--selfcheck")
+                        {
+                            pauseOnFail = false;
+                        }
+                    }
+                    if (pauseOnFail)
+                    {
+                        Console.WriteLine("[CMD] 按任意键退出……");
+                        Console.ReadKey();
+                    }
+                    return 1;
+                }
+                // [段2b] 预热帧——CmdPump 懒注册 CommandBus 发生在生成物首 Tick（投递前必须注册完成）
+                for (int i = 0; i < WarmupFrames; i++)
+                {
+                    _runner.Tick();
+                }
+                // 注册确认——预热后应见 1 模块 3 key（启动观测一行）
+                string[] keyDic = _bus.GetKeyDic();
+                Console.WriteLine("[CMD] CommandBus " + keyDic[0]);
+                // [段2c] P1 自启同步——启动时注册表与配置对齐（防手动删注册表漂移）
+                InitAutoStart();
+                // [段3] 模式路由
+                string mode = "";
+                for (int i = 0; i < args.Length; i++)
+                {
+                    if (args[i] == "--selfcheck")
+                    {
+                        mode = "selfcheck";
+                    }
+                    else if (args[i] == "--run" && i + 1 < args.Length)
+                    {
+                        mode = "run:" + args[i + 1];
+                    }
+                    else if (args[i] == "--script" && i + 1 < args.Length)
+                    {
+                        mode = "script:" + args[i + 1];
                     }
                 }
-                if (pauseOnFail)
+                if (mode == "selfcheck")
                 {
-                    Console.WriteLine("[CMD] 按任意键退出……");
-                    Console.ReadKey();
+                    return RunSelfCheck();
                 }
-                return 1;
-            }
-            // [段2b] 预热帧——CmdPump 懒注册 CommandBus 发生在生成物首 Tick（投递前必须注册完成）
-            for (int i = 0; i < WarmupFrames; i++)
-            {
-                _runner.Tick();
-            }
-            // 注册确认——预热后应见 1 模块 3 key（启动观测一行）
-            string[] keyDic = _bus.GetKeyDic();
-            Console.WriteLine("[CMD] CommandBus " + keyDic[0]);
-            // [段2c] P1 自启同步——启动时注册表与配置对齐（防手动删注册表漂移）
-            InitAutoStart();
-            // [段3] 模式路由
-            string mode = "";
-            for (int i = 0; i < args.Length; i++)
-            {
-                if (args[i] == "--selfcheck")
+                if (mode.StartsWith("run:", StringComparison.Ordinal))
                 {
-                    mode = "selfcheck";
+                    return RunSingle(mode.Substring(4));
                 }
-                else if (args[i] == "--run" && i + 1 < args.Length)
+                if (mode.StartsWith("script:", StringComparison.Ordinal))
                 {
-                    mode = "run:" + args[i + 1];
+                    return RunScript(mode.Substring(7));
                 }
-                else if (args[i] == "--script" && i + 1 < args.Length)
-                {
-                    mode = "script:" + args[i + 1];
-                }
-            }
-            if (mode == "selfcheck")
-            {
-                return RunSelfCheck();
-            }
-            if (mode.StartsWith("run:", StringComparison.Ordinal))
-            {
-                return RunSingle(mode.Substring(4));
-            }
-            if (mode.StartsWith("script:", StringComparison.Ordinal))
-            {
-                return RunScript(mode.Substring(7));
-            }
-            return RunInteractive();
+                return RunInteractive();
             }
             finally
             {
@@ -328,7 +328,7 @@ private static HttpHost _httpHost;
             // 工具池摘要——启动观测（工具总数 + 组别分布；design-ch4-tools-pool §六）
             string poolSummary = "工具池已聚合：" + ToolPool.AllNames().Length.ToString() + " 个工具 / " + ToolPool.AllGroups().Length.ToString() + " 个组";
             LogStore.Add("CatHome4", 1, poolSummary, "CONFIG");
-            
+
             // 默认猫 cat.cfg 补建——缺失时按全局默认模板创建（新用户无 cfg 必然态；运行时缺省回退 → 启动落盘）
             AdminService.EnsureMajordomoCfg();
             AdminService.CatCfgData defaultCfg = AdminService.LoadCatCfg(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "cat.cfg"));

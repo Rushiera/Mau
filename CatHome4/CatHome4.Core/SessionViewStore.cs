@@ -23,26 +23,26 @@ namespace CH4
 
         /// <summary>待配对工具——assistant 工具调用登记，tool 结果到达时生成工具卡块</summary>
         private readonly List<PendingTool> _pendingTools = new List<PendingTool>();
-/// <summary>
-/// 注入报告——session.new 时生成（独立字段：非真实前文派生，Rebuild 不清；Save 落盘）
-/// </summary>
-private string _injectReport = ""; 
-/// <summary>
-/// 轮末统计块——roundsum（每轮 CloseRound 生成：Token 消耗 + 四态用时；非真实前文派生，Rebuild 不清；Save 落盘，GetBlocks 按帧合并）
-/// </summary>
-private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
+        /// <summary>
+        /// 注入报告——session.new 时生成（独立字段：非真实前文派生，Rebuild 不清；Save 落盘）
+        /// </summary>
+        private string _injectReport = "";
+        /// <summary>
+        /// 轮末统计块——roundsum（每轮 CloseRound 生成：Token 消耗 + 四态用时；非真实前文派生，Rebuild 不清；Save 落盘，GetBlocks 按帧合并）
+        /// </summary>
+        private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// <summary>间隙文本块——工具轮 seal 文本（非真实前文派生，Rebuild 不清；Save 落盘；QQBot 转发/前端历史数据源）</summary>
         private readonly List<ViewBlock> _gapTexts = new List<ViewBlock>();
         /// <summary>
-/// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）
-/// </summary>
-/// <param name = "json">注入报告 JSON（file/status/…）</param>
- public  void  SetInjectReport ( string  json ) { _injectReport  =  json ?? "" ;  } 
-/// <summary>
-/// 注入报告 JSON——读（前端渲染/历史重建数据源；空串=无注入报告）
-/// </summary>
-/// <returns>注入报告 JSON</returns>
- public  string  GetInjectReport ( ) { return  _injectReport ;  }
+        /// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）
+        /// </summary>
+        /// <param name = "json">注入报告 JSON（file/status/…）</param>
+        public void SetInjectReport(string json) { _injectReport = json ?? ""; }
+        /// <summary>
+        /// 注入报告 JSON——读（前端渲染/历史重建数据源；空串=无注入报告）
+        /// </summary>
+        /// <returns>注入报告 JSON</returns>
+        public string GetInjectReport() { return _injectReport; }
 
         /// <summary>待配对工具条目</summary>
         private sealed class PendingTool
@@ -145,11 +145,11 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
             }
             return merged;
         }        /// <summary>
-        /// 真实前文 append 钩子——用户消息 → user 块
-        /// </summary>
-        /// <param name="m">真实前文消息</param>
-        /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
-        /// <param name="msgIndex">真实前文消息索引（节点定位锚）</param>
+                 /// 真实前文 append 钩子——用户消息 → user 块
+                 /// </summary>
+                 /// <param name="m">真实前文消息</param>
+                 /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
+                 /// <param name="msgIndex">真实前文消息索引（节点定位锚）</param>
         public void OnUserMessage(LlmMessage m, long timestamp, int msgIndex)
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
@@ -292,10 +292,10 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
                 // 保存失败不阻断会话（下次收工再试）——视图是派生态，真实前文可重建
             }
         }        /// <summary>
-        /// 追加轮末统计块——roundsum（CloseRound 生成：Token 消耗 + 工具次数 + 总耗时 + 四态用时；非真实前文派生，Rebuild 不清）。
-        /// </summary>
-        /// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...}}）</param>
-        /// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系，归并排序键）</param>
+                 /// 追加轮末统计块——roundsum（CloseRound 生成：Token 消耗 + 工具次数 + 总耗时 + 四态用时；非真实前文派生，Rebuild 不清）。
+                 /// </summary>
+                 /// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...}}）</param>
+                 /// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系，归并排序键）</param>
         public void AppendRoundSummary(string payloadJson, long timestamp)
         {
             ViewBlock block = new ViewBlock();
@@ -474,10 +474,10 @@ private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
                 return sb.ToString();
             }
         }
-/// <summary>
-/// 加载注入报告 + 轮末统计——启动恢复时调用（Rebuild 后读回；view.json 缺失/损坏静默空报告）
-/// </summary>
-public void LoadInjectReport()
+        /// <summary>
+        /// 加载注入报告 + 轮末统计——启动恢复时调用（Rebuild 后读回；view.json 缺失/损坏静默空报告）
+        /// </summary>
+        public void LoadInjectReport()
         {
             try
             {
@@ -509,5 +509,6 @@ public void LoadInjectReport()
             {
                 // 加载失败静默——注入报告缺失不阻断（视图可重建）
             }
-        }}
+        }
+    }
 }

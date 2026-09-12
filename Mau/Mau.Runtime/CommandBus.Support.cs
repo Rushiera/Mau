@@ -13,10 +13,10 @@ namespace Mau.Runtime
         /// 返回不含 int/text 正文的 Command 域独立摘要——透明度暴露。线程安全：锁内快照，任意线程可调（管道/外部线程查询首选）
         /// </summary>
         ///
-        
-                ///
-        
-public CommandSnapshot GetSnapshot()
+
+        ///
+
+        public CommandSnapshot GetSnapshot()
         {
             lock (_lock)
             {
@@ -178,10 +178,10 @@ public CommandSnapshot GetSnapshot()
         /// 验证 Command key 中的一个标识段——支持 Unicode 字母；首字符必须字母，其余字母或数字
         /// </summary>
         ///
-        
-                ///
-        
-private bool IsValidSegment(string segment)
+
+        ///
+
+        private bool IsValidSegment(string segment)
         {
             if (segment.Length == 0 || !char.IsLetter(segment[0]))
             {
@@ -196,7 +196,7 @@ private bool IsValidSegment(string segment)
             }
             return true;
         }
-        
+
         /// <summary>
         /// 写入可选日志
         /// </summary>

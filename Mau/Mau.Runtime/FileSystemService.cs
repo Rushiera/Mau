@@ -90,100 +90,100 @@ namespace Mau.Runtime
                 WriteAtomic(resolved, SafeText(content));
             }
         }
-/// <summary>
-/// 自动编码读取——BOM 优先探测，无 BOM 按类型契约（P1 编码内建）
-/// </summary>
-/// <param name = "path">受控路径</param>
-/// <returns>完整文本（编码已按契约解析）</returns>
-public string ReadTextAuto(string path)
-        {
-    string resolved = Resolve(path, false);
-    byte[] raw = File.ReadAllBytes(resolved);
-    System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
-    // 去掉 BOM 头避免首字符 \uFEFF 混入（UTF8Encoding(true) 解码会吞掉 BOM 自身）
-    int offset = (enc is UTF8Encoding utf8 && utf8.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
-    return enc.GetString(raw, offset, raw.Length - offset);
-} 
-/// <summary>
-/// 锚点区间读取——str1 空=文件头 / str2 空=文件尾 / 双空=全文；非空锚点必须全文唯一（P1 区间读 + 锚点契约）
-/// </summary>
-/// <param name = "path">受控路径</param>
-/// <param name = "str1">起始锚点（空=文件头）</param>
-/// <param name = "str2">结束锚点（空=文件尾）</param>
-/// <returns>两锚点之间内容（不含锚点自身；锚点歧义/缺失返回 ERR 前缀文本）</returns>
-public string ReadBetweenAuto(string path, string str1, string str2)
-        {
-    string resolved = Resolve(path, false);
-    byte[] raw = File.ReadAllBytes(resolved);
-    System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
-    int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
-    string content = enc.GetString(raw, bom, raw.Length - bom);
-    string unified = content.Replace("\r\n", "\n");
-    string a1 = (str1 ?? "").Replace("\r\n", "\n");
-    string a2 = (str2 ?? "").Replace("\r\n", "\n");
-    int start = 0;
-    if (a1.Length > 0)
-    {
-        int[] idx1 = FindAll(unified, a1, "exact");
-        if (idx1.Length == 0)
-        {
-            return "ERR|ANCHOR_NOT_FOUND|起始锚点未找到: " + a1;
-        }
-
-        if (idx1.Length > 1)
-        {
-            return "ERR|ANCHOR_AMBIGUOUS|起始锚点多次出现: " + a1;
-        }
-
-        start = idx1[0] + a1.Length;
-    }
-
-    int end = unified.Length;
-    if (a2.Length > 0)
-    {
-        int[] idx2 = FindAll(unified, a2, "exact");
-        if (idx2.Length == 0)
-        {
-            return "ERR|ANCHOR_NOT_FOUND|结束锚点未找到: " + a2;
-        }
-
-        if (idx2.Length > 1)
-        {
-            return "ERR|ANCHOR_AMBIGUOUS|结束锚点多次出现: " + a2;
-        }
-
-        end = idx2[0];
-    }
-
-    if (end < start)
-    {
-        return "ERR|ANCHOR_ORDER|结束锚点位于起始锚点之前";
-    }
-
-    return unified.Substring(start, end - start);
-}
         /// <summary>
-/// 自动编码覆写——按类型契约编码 + BOM + 换行保真（P1/P2）；新文件按类型默认换行
-/// </summary>
-/// <param name = "path">受控路径</param>
-/// <param name = "content">完整正文（换行自动归一为目标风格）</param>
- public  void  WriteTextAuto ( string  path ,  string  content ) { string  resolved  =  Resolve ( path ,  true ) ;  lock  ( _writeGate ) { WriteAutoCore ( resolved ,  path ,  SafeText ( content ) ) ;  } } 
-/// <summary>
-/// 自动编码追加——按类型契约编码 + 换行保真（P1/P2）
-/// </summary>
-/// <param name = "path">受控路径</param>
-/// <param name = "content">追加正文（换行自动归一为目标风格）</param>
- public  void  AppendTextAuto ( string  path ,  string  content ) { string  resolved  =  Resolve ( path ,  true ) ;  lock  ( _writeGate ) { EnsureParentDirectory ( resolved ) ;  System . Text . Encoding  enc  =  TextFileCodec . ProfileFor ( path ) ;  string  newline  =  ResolveTargetNewline ( resolved ,  path ) ;  string  body  =  TextFileCodec . NormalizeNewlines ( SafeText ( content ) ,  newline ) ;  File . AppendAllText ( resolved ,  body ,  enc ) ;  } } 
-/// <summary>
-/// 锚点三态替换——P3 核心（design-ch4-text-tools §六）：exact/ignore_case 要求唯一（0→NotFound+差异定位 / 1→替换 / >1→Ambiguous+候选）；
-/// regex/all 模式替换全部匹配（0→NotFound）；exact/ignore_case 要求唯一（>1→Ambiguous+候选行）。编码 + 换行保真（P1/P2），绝不静默写入。
-/// </summary>
-/// <param name = "path">受控路径</param>
-/// <param name = "oldText">锚点文本</param>
-/// <param name = "newText">替换文本（regex 模式支持 $1 捕获组）</param>
-/// <param name = "mode">exact（默认）/ ignore_case / all（字面量全部替换）/ regex</param>
-/// <returns>三态诊断结果</returns>
-public TextReplaceOutcome ReplaceTextAuto(string path, string oldText, string newText, string mode)
+        /// 自动编码读取——BOM 优先探测，无 BOM 按类型契约（P1 编码内建）
+        /// </summary>
+        /// <param name = "path">受控路径</param>
+        /// <returns>完整文本（编码已按契约解析）</returns>
+        public string ReadTextAuto(string path)
+        {
+            string resolved = Resolve(path, false);
+            byte[] raw = File.ReadAllBytes(resolved);
+            System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
+            // 去掉 BOM 头避免首字符 \uFEFF 混入（UTF8Encoding(true) 解码会吞掉 BOM 自身）
+            int offset = (enc is UTF8Encoding utf8 && utf8.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
+            return enc.GetString(raw, offset, raw.Length - offset);
+        }
+        /// <summary>
+        /// 锚点区间读取——str1 空=文件头 / str2 空=文件尾 / 双空=全文；非空锚点必须全文唯一（P1 区间读 + 锚点契约）
+        /// </summary>
+        /// <param name = "path">受控路径</param>
+        /// <param name = "str1">起始锚点（空=文件头）</param>
+        /// <param name = "str2">结束锚点（空=文件尾）</param>
+        /// <returns>两锚点之间内容（不含锚点自身；锚点歧义/缺失返回 ERR 前缀文本）</returns>
+        public string ReadBetweenAuto(string path, string str1, string str2)
+        {
+            string resolved = Resolve(path, false);
+            byte[] raw = File.ReadAllBytes(resolved);
+            System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
+            int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
+            string content = enc.GetString(raw, bom, raw.Length - bom);
+            string unified = content.Replace("\r\n", "\n");
+            string a1 = (str1 ?? "").Replace("\r\n", "\n");
+            string a2 = (str2 ?? "").Replace("\r\n", "\n");
+            int start = 0;
+            if (a1.Length > 0)
+            {
+                int[] idx1 = FindAll(unified, a1, "exact");
+                if (idx1.Length == 0)
+                {
+                    return "ERR|ANCHOR_NOT_FOUND|起始锚点未找到: " + a1;
+                }
+
+                if (idx1.Length > 1)
+                {
+                    return "ERR|ANCHOR_AMBIGUOUS|起始锚点多次出现: " + a1;
+                }
+
+                start = idx1[0] + a1.Length;
+            }
+
+            int end = unified.Length;
+            if (a2.Length > 0)
+            {
+                int[] idx2 = FindAll(unified, a2, "exact");
+                if (idx2.Length == 0)
+                {
+                    return "ERR|ANCHOR_NOT_FOUND|结束锚点未找到: " + a2;
+                }
+
+                if (idx2.Length > 1)
+                {
+                    return "ERR|ANCHOR_AMBIGUOUS|结束锚点多次出现: " + a2;
+                }
+
+                end = idx2[0];
+            }
+
+            if (end < start)
+            {
+                return "ERR|ANCHOR_ORDER|结束锚点位于起始锚点之前";
+            }
+
+            return unified.Substring(start, end - start);
+        }
+        /// <summary>
+        /// 自动编码覆写——按类型契约编码 + BOM + 换行保真（P1/P2）；新文件按类型默认换行
+        /// </summary>
+        /// <param name = "path">受控路径</param>
+        /// <param name = "content">完整正文（换行自动归一为目标风格）</param>
+        public void WriteTextAuto(string path, string content) { string resolved = Resolve(path, true); lock (_writeGate) { WriteAutoCore(resolved, path, SafeText(content)); } }
+        /// <summary>
+        /// 自动编码追加——按类型契约编码 + 换行保真（P1/P2）
+        /// </summary>
+        /// <param name = "path">受控路径</param>
+        /// <param name = "content">追加正文（换行自动归一为目标风格）</param>
+        public void AppendTextAuto(string path, string content) { string resolved = Resolve(path, true); lock (_writeGate) { EnsureParentDirectory(resolved); System.Text.Encoding enc = TextFileCodec.ProfileFor(path); string newline = ResolveTargetNewline(resolved, path); string body = TextFileCodec.NormalizeNewlines(SafeText(content), newline); File.AppendAllText(resolved, body, enc); } }
+        /// <summary>
+        /// 锚点三态替换——P3 核心（design-ch4-text-tools §六）：exact/ignore_case 要求唯一（0→NotFound+差异定位 / 1→替换 / >1→Ambiguous+候选）；
+        /// regex/all 模式替换全部匹配（0→NotFound）；exact/ignore_case 要求唯一（>1→Ambiguous+候选行）。编码 + 换行保真（P1/P2），绝不静默写入。
+        /// </summary>
+        /// <param name = "path">受控路径</param>
+        /// <param name = "oldText">锚点文本</param>
+        /// <param name = "newText">替换文本（regex 模式支持 $1 捕获组）</param>
+        /// <param name = "mode">exact（默认）/ ignore_case / all（字面量全部替换）/ regex</param>
+        /// <returns>三态诊断结果</returns>
+        public TextReplaceOutcome ReplaceTextAuto(string path, string oldText, string newText, string mode)
         {
             if (string.IsNullOrEmpty(oldText))
             {
@@ -239,72 +239,72 @@ public TextReplaceOutcome ReplaceTextAuto(string path, string oldText, string ne
             }
         }
         /// <summary>
-/// 查找全部锚点命中位置（exact/ignore_case 用 IndexOf 循环；regex 用 Matches）
-/// </summary>
-/// <param name = "content">归一化正文</param>
-/// <param name = "target">归一化锚点</param>
-/// <param name = "mode">匹配模式</param>
-/// <returns>命中起始索引数组</returns>
-private static int[] FindAll(string content, string target, string mode)
+        /// 查找全部锚点命中位置（exact/ignore_case 用 IndexOf 循环；regex 用 Matches）
+        /// </summary>
+        /// <param name = "content">归一化正文</param>
+        /// <param name = "target">归一化锚点</param>
+        /// <param name = "mode">匹配模式</param>
+        /// <returns>命中起始索引数组</returns>
+        private static int[] FindAll(string content, string target, string mode)
         {
-    if (mode == "regex")
-    {
-        MatchCollection matches = Regex.Matches(content, target, RegexOptions.None, TimeSpan.FromSeconds(5));
-        int[] result = new int[matches.Count];
-        for (int i = 0; i < matches.Count; i = i + 1)
-        {
-            result[i] = matches[i].Index;
+            if (mode == "regex")
+            {
+                MatchCollection matches = Regex.Matches(content, target, RegexOptions.None, TimeSpan.FromSeconds(5));
+                int[] result = new int[matches.Count];
+                for (int i = 0; i < matches.Count; i = i + 1)
+                {
+                    result[i] = matches[i].Index;
+                }
+
+                return result;
+            }
+
+            StringComparison cmp = mode == "ignore_case" ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            List<int> list = new List<int>();
+            int start = 0;
+            while (start <= content.Length - target.Length)
+            {
+                int found = content.IndexOf(target, start, cmp);
+                if (found < 0)
+                {
+                    break;
+                }
+
+                list.Add(found);
+                start = found + target.Length;
+            }
+
+            return list.ToArray();
         }
-
-        return result;
-    }
-
-    StringComparison cmp = mode == "ignore_case" ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-    List<int> list = new List<int>();
-    int start = 0;
-    while (start <= content.Length - target.Length)
-    {
-        int found = content.IndexOf(target, start, cmp);
-        if (found < 0)
-        {
-            break;
-        }
-
-        list.Add(found);
-        start = found + target.Length;
-    }
-
-    return list.ToArray();
-} 
-/// <summary>
-/// 未找到时差异字节定位——取内容中与锚点最长公共前缀的位置，输出 第N字节 期望/实际（P3 诊断）
-/// </summary>
-/// <param name = "content">归一化正文</param>
-/// <param name = "target">归一化锚点</param>
-/// <param name = "outcome">结果载荷（写差异字段）</param>
- private  static  void  LocateBestDiff ( string  content ,  string  target ,  TextReplaceOutcome  outcome ) { string  first  =  target . Length > 0 ? target . Substring ( 0 ,  1 ) :  "" ;  int  bestPos  =  0 ;  int  bestCommon  =  - 1 ;  int  scan  =  content . IndexOf ( first ,  StringComparison . Ordinal ) ;  while  ( scan >= 0 ) { int  common  =  0 ;  while  ( common < target . Length && scan + common < content . Length && content [ scan + common ] == target [ common ] ) { common  =  common + 1 ;  } if  ( common > bestCommon ) { bestCommon  =  common ;  bestPos  =  scan ;  } if  ( common >= target . Length ) { break ;  } scan  =  content . IndexOf ( first ,  scan + 1 ,  StringComparison . Ordinal ) ;  } if  ( bestCommon < 0 ) { bestCommon  =  0 ;  } int  diff  =  bestPos + bestCommon ;  outcome . DiffByteIndex  =  diff ;  outcome . Expected  =  Slice ( target ,  bestCommon ,  10 ) ;  outcome . Actual  =  Slice ( content ,  diff ,  10 ) ;  } 
-/// <summary>
-/// 截取片段（越界截断）
-/// </summary>
-/// <param name = "text">原文</param>
-/// <param name = "start">起始索引</param>
-/// <param name = "count">最大长度</param>
-/// <returns>片段</returns>
- private  static  string  Slice ( string  text ,  int  start ,  int  count ) { if  ( start < 0 ) { start  =  0 ;  } if  ( start >= text . Length ) { return  "" ;  } int  take  =  Math . Min ( count ,  text . Length - start ) ;  return  text . Substring ( start ,  take ) ;  } 
-/// <summary>
-/// 命中位置 → 行号（1 起，前 5 个——P3 多次出现候选）
-/// </summary>
-/// <param name = "content">归一化正文</param>
-/// <param name = "indexes">命中起始索引</param>
-/// <returns>行号字符串数组</returns>
- private  static  string [ ]  LineNumbersOf ( string  content ,  int [ ]  indexes ) { List < string > lines  =  new  List < string > ( ) ;  for  ( int  i  =  0 ;  i < indexes . Length && lines . Count < 5 ;  i  =  i + 1 ) { int  line  =  1 ;  int  limit  =  Math . Min ( indexes [ i ] ,  content . Length ) ;  for  ( int  j  =  0 ;  j < limit ;  j  =  j + 1 ) { if  ( content [ j ] == '\n' ) { line  =  line + 1 ;  } } lines . Add ( line . ToString ( ) ) ;  } return  lines . ToArray ( ) ;  } 
-/// <summary>
-/// 替换点附近 ±3 行摘要（P5 写后验证——replace 返回目标段读回）
-/// </summary>
-/// <param name = "content">归一化正文</param>
-/// <param name = "index">命中起始索引</param>
-/// <returns>行摘要文本</returns>
- private  static  string  SnippetAround ( string  content ,  int  index ) { int  lineStart  =  index ;  int  lineEnd  =  index ;  while  ( lineStart > 0 && content [ lineStart - 1 ] != '\n' ) { lineStart  =  lineStart - 1 ;  } while  ( lineEnd < content . Length && content [ lineEnd ] != '\n' ) { lineEnd  =  lineEnd + 1 ;  } int  start  =  lineStart ;  for  ( int  i  =  0 ;  i < 3 && start > 0 ;  i  =  i + 1 ) { int  prev  =  content . LastIndexOf ( '\n' ,  start - 1 ) ;  if  ( prev < 0 ) { start  =  0 ;  break ;  } start  =  prev + 1 ;  } int  end  =  lineEnd ;  for  ( int  i  =  0 ;  i < 3 && end < content . Length ;  i  =  i + 1 ) { int  next  =  content . IndexOf ( '\n' ,  end ) ;  if  ( next < 0 ) { end  =  content . Length ;  break ;  } end  =  next + 1 ;  } return  content . Substring ( start ,  end - start ) ;  }
+        /// <summary>
+        /// 未找到时差异字节定位——取内容中与锚点最长公共前缀的位置，输出 第N字节 期望/实际（P3 诊断）
+        /// </summary>
+        /// <param name = "content">归一化正文</param>
+        /// <param name = "target">归一化锚点</param>
+        /// <param name = "outcome">结果载荷（写差异字段）</param>
+        private static void LocateBestDiff(string content, string target, TextReplaceOutcome outcome) { string first = target.Length > 0 ? target.Substring(0, 1) : ""; int bestPos = 0; int bestCommon = -1; int scan = content.IndexOf(first, StringComparison.Ordinal); while (scan >= 0) { int common = 0; while (common < target.Length && scan + common < content.Length && content[scan + common] == target[common]) { common = common + 1; } if (common > bestCommon) { bestCommon = common; bestPos = scan; } if (common >= target.Length) { break; } scan = content.IndexOf(first, scan + 1, StringComparison.Ordinal); } if (bestCommon < 0) { bestCommon = 0; } int diff = bestPos + bestCommon; outcome.DiffByteIndex = diff; outcome.Expected = Slice(target, bestCommon, 10); outcome.Actual = Slice(content, diff, 10); }
+        /// <summary>
+        /// 截取片段（越界截断）
+        /// </summary>
+        /// <param name = "text">原文</param>
+        /// <param name = "start">起始索引</param>
+        /// <param name = "count">最大长度</param>
+        /// <returns>片段</returns>
+        private static string Slice(string text, int start, int count) { if (start < 0) { start = 0; } if (start >= text.Length) { return ""; } int take = Math.Min(count, text.Length - start); return text.Substring(start, take); }
+        /// <summary>
+        /// 命中位置 → 行号（1 起，前 5 个——P3 多次出现候选）
+        /// </summary>
+        /// <param name = "content">归一化正文</param>
+        /// <param name = "indexes">命中起始索引</param>
+        /// <returns>行号字符串数组</returns>
+        private static string[] LineNumbersOf(string content, int[] indexes) { List<string> lines = new List<string>(); for (int i = 0; i < indexes.Length && lines.Count < 5; i = i + 1) { int line = 1; int limit = Math.Min(indexes[i], content.Length); for (int j = 0; j < limit; j = j + 1) { if (content[j] == '\n') { line = line + 1; } } lines.Add(line.ToString()); } return lines.ToArray(); }
+        /// <summary>
+        /// 替换点附近 ±3 行摘要（P5 写后验证——replace 返回目标段读回）
+        /// </summary>
+        /// <param name = "content">归一化正文</param>
+        /// <param name = "index">命中起始索引</param>
+        /// <returns>行摘要文本</returns>
+        private static string SnippetAround(string content, int index) { int lineStart = index; int lineEnd = index; while (lineStart > 0 && content[lineStart - 1] != '\n') { lineStart = lineStart - 1; } while (lineEnd < content.Length && content[lineEnd] != '\n') { lineEnd = lineEnd + 1; } int start = lineStart; for (int i = 0; i < 3 && start > 0; i = i + 1) { int prev = content.LastIndexOf('\n', start - 1); if (prev < 0) { start = 0; break; } start = prev + 1; } int end = lineEnd; for (int i = 0; i < 3 && end < content.Length; i = i + 1) { int next = content.IndexOf('\n', end); if (next < 0) { end = content.Length; break; } end = next + 1; } return content.Substring(start, end - start); }
 
         /// <summary>
         /// 编码内建写核心——探测目标换行 + 契约编码原子写
@@ -312,7 +312,7 @@ private static int[] FindAll(string content, string target, string mode)
         /// <param name="resolved">规范绝对路径</param>
         /// <param name="path">用户路径（契约判定用）</param>
         /// <param name="content">正文</param>
-private void WriteAutoCore(string resolved, string path, string content)
+        private void WriteAutoCore(string resolved, string path, string content)
         {
             System.Text.Encoding enc = TextFileCodec.ProfileFor(path);
             string newline = ResolveTargetNewline(resolved, path);
@@ -326,14 +326,15 @@ private void WriteAutoCore(string resolved, string path, string content)
             string tmp = resolved + ".tmp";
             File.WriteAllText(tmp, body, enc);
             File.Move(tmp, resolved, true);
-        } 
-/// <summary>
-/// 目标换行解析——文件存在探测实际风格，否则按类型默认
-/// </summary>
-/// <param name = "resolved">规范绝对路径</param>
-/// <param name = "path">用户路径（契约判定用）</param>
-/// <returns>换行串</returns>
- private  string  ResolveTargetNewline ( string  resolved ,  string  path ) {
+        }
+        /// <summary>
+        /// 目标换行解析——文件存在探测实际风格，否则按类型默认
+        /// </summary>
+        /// <param name = "resolved">规范绝对路径</param>
+        /// <param name = "path">用户路径（契约判定用）</param>
+        /// <returns>换行串</returns>
+        private string ResolveTargetNewline(string resolved, string path)
+        {
             if (File.Exists(resolved))
             {
                 byte[] raw = File.ReadAllBytes(resolved);
@@ -432,66 +433,66 @@ private void WriteAutoCore(string resolved, string path, string content)
             }
             return builder.ToString();
         }
-/// <summary>
-/// 自动编码行号区间读取——BOM 优先探测，无 BOM 按类型契约（P5 编码契约补全；规格 design-ch4-text-tools §四）
-/// </summary>
-/// <param name = "path">受控路径</param>
-/// <param name = "startLine">起始行（1 起）</param>
-/// <param name = "endLine">结束行；零表示文件尾</param>
-/// <returns>带行号文本</returns>
-public string ReadLinesAuto(string path, int startLine, int endLine)
+        /// <summary>
+        /// 自动编码行号区间读取——BOM 优先探测，无 BOM 按类型契约（P5 编码契约补全；规格 design-ch4-text-tools §四）
+        /// </summary>
+        /// <param name = "path">受控路径</param>
+        /// <param name = "startLine">起始行（1 起）</param>
+        /// <param name = "endLine">结束行；零表示文件尾</param>
+        /// <returns>带行号文本</returns>
+        public string ReadLinesAuto(string path, int startLine, int endLine)
         {
-    if (startLine < 1 || endLine < 0)
-    {
-        throw new ArgumentOutOfRangeException("startLine");
-    }
+            if (startLine < 1 || endLine < 0)
+            {
+                throw new ArgumentOutOfRangeException("startLine");
+            }
 
-    string resolved = Resolve(path, false);
-    byte[] raw = File.ReadAllBytes(resolved);
-    System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
-    int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
-    string content = enc.GetString(raw, bom, raw.Length - bom);
-    string[] lines = content.Replace("\r\n", "\n").Split('\n');
-    // [段1] 尾空行修剪——以 \n 结尾时 Split 产生尾空串，与 File.ReadAllLines 语义对齐
-    if (lines.Length > 0 && lines[lines.Length - 1].Length == 0)
-    {
-        string[] trimmed = new string[lines.Length - 1];
-        for (int i = 0; i < trimmed.Length; i = i + 1)
-        {
-            trimmed[i] = lines[i];
+            string resolved = Resolve(path, false);
+            byte[] raw = File.ReadAllBytes(resolved);
+            System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
+            int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
+            string content = enc.GetString(raw, bom, raw.Length - bom);
+            string[] lines = content.Replace("\r\n", "\n").Split('\n');
+            // [段1] 尾空行修剪——以 \n 结尾时 Split 产生尾空串，与 File.ReadAllLines 语义对齐
+            if (lines.Length > 0 && lines[lines.Length - 1].Length == 0)
+            {
+                string[] trimmed = new string[lines.Length - 1];
+                for (int i = 0; i < trimmed.Length; i = i + 1)
+                {
+                    trimmed[i] = lines[i];
+                }
+
+                lines = trimmed;
+            }
+
+            // [段2] 区间裁剪——end 零=文件尾，超尾截断
+            int end = endLine;
+            if (end == 0 || end > lines.Length)
+            {
+                end = lines.Length;
+            }
+
+            if (startLine > end && lines.Length > 0)
+            {
+                throw new ArgumentOutOfRangeException("startLine");
+            }
+
+            // [段3] 行号格式化输出——与 ReadLines 同格式（行号: 内容）
+            StringBuilder builder = new StringBuilder();
+            for (int line = startLine; line <= end; line = line + 1)
+            {
+                if (builder.Length > 0)
+                {
+                    builder.Append('\n');
+                }
+
+                builder.Append(line.ToString());
+                builder.Append(": ");
+                builder.Append(lines[line - 1]);
+            }
+
+            return builder.ToString();
         }
-
-        lines = trimmed;
-    }
-
-    // [段2] 区间裁剪——end 零=文件尾，超尾截断
-    int end = endLine;
-    if (end == 0 || end > lines.Length)
-    {
-        end = lines.Length;
-    }
-
-    if (startLine > end && lines.Length > 0)
-    {
-        throw new ArgumentOutOfRangeException("startLine");
-    }
-
-    // [段3] 行号格式化输出——与 ReadLines 同格式（行号: 内容）
-    StringBuilder builder = new StringBuilder();
-    for (int line = startLine; line <= end; line = line + 1)
-    {
-        if (builder.Length > 0)
-        {
-            builder.Append('\n');
-        }
-
-        builder.Append(line.ToString());
-        builder.Append(": ");
-        builder.Append(lines[line - 1]);
-    }
-
-    return builder.ToString();
-}
         /// <summary>
         /// <summary>忽略目录名单——递归遍历时跳过（.git/bin/obj 等版本控制/编译产物；精确匹配目录名忽略大小写；显式以忽略名为根的查询不受影响——Q4 2026-09-08）</summary>
         private static readonly string[] IgnoredDirNames = new string[]
@@ -621,69 +622,69 @@ public string ReadLinesAuto(string path, int startLine, int endLine)
             }
             return result;
         }
-/// <summary>
-/// 内容关键词搜索——受控根内递归扫描文本文件，返回 相对路径:行号:上下文（前后 ≤10 字符）
-/// </summary>
-/// <param name = "directory">受控目录</param>
-/// <param name = "keyword">关键词（大小写敏感）</param>
-/// <param name = "pattern">文件名过滤（默认 *）</param>
-/// <param name = "limit">最大结果</param>
-/// <returns>匹配行（相对搜索根的路径:行号:上下文）</returns>
-public string[] Grep(string directory, string keyword, string pattern, int limit)
+        /// <summary>
+        /// 内容关键词搜索——受控根内递归扫描文本文件，返回 相对路径:行号:上下文（前后 ≤10 字符）
+        /// </summary>
+        /// <param name = "directory">受控目录</param>
+        /// <param name = "keyword">关键词（大小写敏感）</param>
+        /// <param name = "pattern">文件名过滤（默认 *）</param>
+        /// <param name = "limit">最大结果</param>
+        /// <returns>匹配行（相对搜索根的路径:行号:上下文）</returns>
+        public string[] Grep(string directory, string keyword, string pattern, int limit)
         {
-    if (string.IsNullOrWhiteSpace(keyword) || limit < 1 || limit > 10000)
-    {
-        throw new ArgumentException("Grep parameters are invalid.", "keyword");
-    }
-
-    string root = Resolve(directory, false);
-    string filter = (string.IsNullOrWhiteSpace(pattern) || pattern == "*") ? "*" : pattern;
-    List<string> files = new List<string>();
-    int ignoredDirs = 0;
-    AppendFind(root, root, filter, true, 10000, files, ref ignoredDirs);
-    List<string> hits = new List<string>();
-    for (int i = 0; i < files.Count && hits.Count < limit; i = i + 1)
-    {
-        string file = files[i];
-        if (PathBoundary.IsReparsePoint(file))
-        {
-            continue;
-        }
-
-        string relative = Path.GetRelativePath(root, file);
-        try
-        {
-            byte[] raw = File.ReadAllBytes(file);
-            System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(file, raw);
-            int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
-            string[] lines = enc.GetString(raw, bom, raw.Length - bom).Replace("\r\n", "\n").Split('\n');
-            for (int n = 0; n < lines.Length && hits.Count < limit; n = n + 1)
+            if (string.IsNullOrWhiteSpace(keyword) || limit < 1 || limit > 10000)
             {
-                string line = lines[n];
-                int idx = line.IndexOf(keyword, StringComparison.Ordinal);
-                if (idx >= 0)
+                throw new ArgumentException("Grep parameters are invalid.", "keyword");
+            }
+
+            string root = Resolve(directory, false);
+            string filter = (string.IsNullOrWhiteSpace(pattern) || pattern == "*") ? "*" : pattern;
+            List<string> files = new List<string>();
+            int ignoredDirs = 0;
+            AppendFind(root, root, filter, true, 10000, files, ref ignoredDirs);
+            List<string> hits = new List<string>();
+            for (int i = 0; i < files.Count && hits.Count < limit; i = i + 1)
+            {
+                string file = files[i];
+                if (PathBoundary.IsReparsePoint(file))
                 {
-                    int start = Math.Max(0, idx - 10);
-                    int len = Math.Min(10 + keyword.Length + 10, line.Length - start);
-                    string ctx = line.Substring(start, len);
-                    hits.Add(relative + ":" + (n + 1).ToString() + ":" + ctx);
+                    continue;
+                }
+
+                string relative = Path.GetRelativePath(root, file);
+                try
+                {
+                    byte[] raw = File.ReadAllBytes(file);
+                    System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(file, raw);
+                    int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
+                    string[] lines = enc.GetString(raw, bom, raw.Length - bom).Replace("\r\n", "\n").Split('\n');
+                    for (int n = 0; n < lines.Length && hits.Count < limit; n = n + 1)
+                    {
+                        string line = lines[n];
+                        int idx = line.IndexOf(keyword, StringComparison.Ordinal);
+                        if (idx >= 0)
+                        {
+                            int start = Math.Max(0, idx - 10);
+                            int len = Math.Min(10 + keyword.Length + 10, line.Length - start);
+                            string ctx = line.Substring(start, len);
+                            hits.Add(relative + ":" + (n + 1).ToString() + ":" + ctx);
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                    // 不可读文件（二进制/权限）跳过——grep 只扫可读文本
                 }
             }
-        }
-        catch (Exception)
-        {
-        // 不可读文件（二进制/权限）跳过——grep 只扫可读文本
-        }
-    }
 
-    if (ignoredDirs > 0)
-    {
-        // Q4 忽略目录提示——不静默（grep 与 tree/find 一致：忽略目录内不扫描但计数可见）
-        hits.Add("[skip] " + ignoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——匹配条目在其内已跳过");
-    }
+            if (ignoredDirs > 0)
+            {
+                // Q4 忽略目录提示——不静默（grep 与 tree/find 一致：忽略目录内不扫描但计数可见）
+                hits.Add("[skip] " + ignoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——匹配条目在其内已跳过");
+            }
 
-    return hits.ToArray();
-}
+            return hits.ToArray();
+        }
         /// <summary>
         /// 移动文件且拒绝覆盖目标
         /// </summary>
@@ -829,14 +830,14 @@ public string[] Grep(string directory, string keyword, string pattern, int limit
             }
             return PathBoundary.ResolveOwnedPath(owningRoot, resolved);
         }        /// <summary>
-        /// 显式遍历搜索目录，并拒绝进入或返回重解析点。
-        /// </summary>
-        /// <param name="root">搜索相对根</param>
-        /// <param name="current">当前目录</param>
-        /// <param name="pattern">文件名模式</param>
-        /// <param name="recursive">是否递归</param>
-        /// <param name="limit">结果上限</param>
-        /// <param name="output">绝对文件路径</param>
+                 /// 显式遍历搜索目录，并拒绝进入或返回重解析点。
+                 /// </summary>
+                 /// <param name="root">搜索相对根</param>
+                 /// <param name="current">当前目录</param>
+                 /// <param name="pattern">文件名模式</param>
+                 /// <param name="recursive">是否递归</param>
+                 /// <param name="limit">结果上限</param>
+                 /// <param name="output">绝对文件路径</param>
         private void AppendFind(string root, string current, string pattern,
             bool recursive, int limit, List<string> output, ref int ignoredDirs)
         {

@@ -52,10 +52,10 @@ namespace Mau.Runtime
         /// 生成只包含数量和变化版本的 OA 快照——透明度暴露。线程契约：仅主线程（OA 单线程模型无内部锁——外部线程查询经 FlowRunner.InvokeOnMain）
         /// </summary>
         ///
-        
-                ///
-        
-public OAView GetSnapshot()
+
+        ///
+
+        public OAView GetSnapshot()
         {
             OAView snapshot = new OAView();
             long[] officeIds = new long[_offices.Count];

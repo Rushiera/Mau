@@ -250,7 +250,7 @@ namespace CH4
                 // Q 通知消费——托盘线程 Timer 轮询队列（BalloonTip 仅 STA 线程安全；任意线程入队不越界）
                 System.Windows.Forms.Timer balloonTimer = new System.Windows.Forms.Timer();
                 balloonTimer.Interval = 1000;
-                balloonTimer.Tick += delegate(object s2, EventArgs e2)
+                balloonTimer.Tick += delegate (object s2, EventArgs e2)
                 {
                     string[] item;
                     while (_balloonQueue.TryDequeue(out item))

@@ -146,7 +146,7 @@ namespace CatHome4.Http
         private void BuildApp()
         {
             WebApplicationBuilder builder = WebApplication.CreateSlimBuilder();
-// D5：Kestrel 请求级日志降噪（Hosting.Diagnostics 每请求 4-6 行 → 仅 Warning；Lifetime 启动一行保留）
+            // D5：Kestrel 请求级日志降噪（Hosting.Diagnostics 每请求 4-6 行 → 仅 Warning；Lifetime 启动一行保留）
             builder.Logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Warning);
             builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
             builder.WebHost.ConfigureKestrel((options) =>

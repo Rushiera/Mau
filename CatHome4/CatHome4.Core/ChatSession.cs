@@ -1333,7 +1333,7 @@ namespace CH4
                 {
                     string toolSummary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, dog.Result);
                     string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(TruncateText(dog.ArgsJson, 200)) + ",\"result\":" + JsonUtil.Serialize(TruncateText(dog.Result, 300)) + ",\"summary\":" + JsonUtil.Serialize(toolSummary) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
-                _httpHost.PushView("toolcard", toolJson, -1, 0);
+                    _httpHost.PushView("toolcard", toolJson, -1, 0);
                 }
                 _context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);
                 _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
@@ -1348,7 +1348,7 @@ namespace CH4
                 if (_httpHost != null)
                 {
                     string userJson = "{\"content\":" + JsonUtil.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
-                _httpHost.PushView("user", userJson, -1, 0);
+                    _httpHost.PushView("user", userJson, -1, 0);
                 }
                 _round = 0;
                 LogStore.Add("CatHome4", 1, "已插入排队消息（来源 " + next.Source + "），工具批后直接续轮", "CHAT");

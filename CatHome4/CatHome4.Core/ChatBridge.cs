@@ -189,7 +189,7 @@ namespace CH4
             {
                 pushChatDone(session.Context.GetMessages().Length);
             }
-            
+
         }
 
         /// <summary>
@@ -491,33 +491,33 @@ namespace CH4
     }
 }
 
-    /// <summary>
-    /// 注入提示词构建结果——提示词 + 逐文件结果（问题二：前文加载明细可见性）。
-    /// 只承载结果——不再裸拼字符串（入口壳 BuildInjectPrompt 产物）。
-    /// </summary>
-    internal sealed class InjectPromptResult
-    {
-        /// <summary>提示词——角色 + 注入知识 + 工具语义声明（原文拼装产物）</summary>
-        public string Prompt;
+/// <summary>
+/// 注入提示词构建结果——提示词 + 逐文件结果（问题二：前文加载明细可见性）。
+/// 只承载结果——不再裸拼字符串（入口壳 BuildInjectPrompt 产物）。
+/// </summary>
+internal sealed class InjectPromptResult
+{
+    /// <summary>提示词——角色 + 注入知识 + 工具语义声明（原文拼装产物）</summary>
+    public string Prompt;
 
-        /// <summary>逐文件结果——按注入清单序（ok/missing/error）</summary>
-        public List<InjectFileResult> Files;
-    }
+    /// <summary>逐文件结果——按注入清单序（ok/missing/error）</summary>
+    public List<InjectFileResult> Files;
+}
 
-    /// <summary>
-    /// 注入文件结果——单文件加载明细（前端注入报告视图块渲染单元）。
-    /// </summary>
-    internal sealed class InjectFileResult
-    {
-        /// <summary>文件路径——注入清单原文（受控根 id: 或绝对路径）</summary>
-        public string File;
+/// <summary>
+/// 注入文件结果——单文件加载明细（前端注入报告视图块渲染单元）。
+/// </summary>
+internal sealed class InjectFileResult
+{
+    /// <summary>文件路径——注入清单原文（受控根 id: 或绝对路径）</summary>
+    public string File;
 
-        /// <summary>状态——ok=成功 / missing=缺失跳过 / error=读取异常</summary>
-        public string Status;
+    /// <summary>状态——ok=成功 / missing=缺失跳过 / error=读取异常</summary>
+    public string Status;
 
-        /// <summary>补充信息——error 时错误摘要；ok 时可为空</summary>
-        public string Message;
+    /// <summary>补充信息——error 时错误摘要；ok 时可为空</summary>
+    public string Message;
 
-        /// <summary>成功时字符数——注入内容长度（0=失败）</summary>
-        public int Chars;
-    }
+    /// <summary>成功时字符数——注入内容长度（0=失败）</summary>
+    public int Chars;
+}

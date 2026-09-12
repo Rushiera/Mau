@@ -117,8 +117,8 @@ namespace Mau.Runtime
                 }
             }
         }        /// <summary>
-        /// 已写帧数——观测统计
-        /// </summary>
+                 /// 已写帧数——观测统计
+                 /// </summary>
         public static long FrameCount
         {
             get

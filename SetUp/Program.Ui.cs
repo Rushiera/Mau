@@ -271,7 +271,7 @@ namespace SetUp
                 }
                 _busy = true;
                 SetButtonsEnabled(false);
-                Thread t = new Thread(delegate()
+                Thread t = new Thread(delegate ()
                 {
                     RunDeployThread(target);
                 });

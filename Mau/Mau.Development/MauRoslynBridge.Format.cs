@@ -114,9 +114,7 @@ namespace Mau.Development
             return true;
         }
 
-        /// <summary>
-        /// format 参数面校验——白名单字段（path / mode）+ 缺值 / 非法值拒绝。
-        /// </summary>
+        /// <summary>format 参数面校验——白名单字段（path / mode）+ 缺值 / 非法值拒绝；宿主注入保留键（catId，见 IsHostInjectedArg）放行——该键不进工具声明面，非 LLM 可见参数。</summary>
         /// <param name="args">参数对象</param>
         /// <param name="pathParam">出参：路径</param>
         /// <param name="mode">出参：模式</param>
@@ -129,18 +127,21 @@ namespace Mau.Development
             {
                 return "ERR|BAD_ARGS|参数必须是 JSON 对象";
             }
+
             foreach (JsonProperty property in args.EnumerateObject())
             {
-                if (property.Name != "path" && property.Name != "mode")
+                if (property.Name != "path" && property.Name != "mode" && !IsHostInjectedArg(property.Name))
                 {
                     return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 path / mode）";
                 }
             }
+
             pathParam = Arg(args, "path");
             if (pathParam.Length == 0)
             {
                 return "ERR|BAD_ARGS|缺参数 path（.cs 文件 / 目录 / csproj，受控根内）";
             }
+
             string modeArg = Arg(args, "mode");
             if (modeArg.Length > 0)
             {
@@ -148,8 +149,10 @@ namespace Mau.Development
                 {
                     return "ERR|BAD_ARGS|mode 非法值: " + modeArg + "（check|apply）";
                 }
+
                 mode = modeArg;
             }
+
             return "";
         }
 

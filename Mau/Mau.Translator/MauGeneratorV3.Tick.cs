@@ -77,90 +77,90 @@ namespace Mau.Translator
             }
             sb.AppendLine("        }");
         }
-/// <summary>
-/// Command 泵生成——懒注册 CommandBus + 每帧拉邮件 → 传感器置沿 + CmdTexts 落全局盒。
-/// Command = 唯一外部输入总线：宿主演化投递（SetText），生成物 Tick 内拉取（主线程契约）。
-/// payload 落盒 key 名 = Command key（全局盒 "global"）——语料经 key 裸词引用。
-/// </summary>
-/// <param name = "sb">输出缓冲</param>
-/// <param name = "doc">IR</param>
-private static void AppendCommandPump(StringBuilder sb, MauDocV3 doc)
+        /// <summary>
+        /// Command 泵生成——懒注册 CommandBus + 每帧拉邮件 → 传感器置沿 + CmdTexts 落全局盒。
+        /// Command = 唯一外部输入总线：宿主演化投递（SetText），生成物 Tick 内拉取（主线程契约）。
+        /// payload 落盒 key 名 = Command key（全局盒 "global"）——语料经 key 裸词引用。
+        /// </summary>
+        /// <param name = "sb">输出缓冲</param>
+        /// <param name = "doc">IR</param>
+        private static void AppendCommandPump(StringBuilder sb, MauDocV3 doc)
         {
-    // [段1] 字段——懒注册标记（构造期 FlowId 未设置——首次 Tick 注册）
-    sb.AppendLine("        private bool _cmdRegistered;");
-    sb.AppendLine("");
-    sb.AppendLine("        private void CmdPump()");
-    sb.AppendLine("        {");
-    // [段2] 懒注册——TryResolve 失败静默（宿主未绑 CommandBus = 无外部输入）
-    sb.AppendLine("            if (!_cmdRegistered)");
-    sb.AppendLine("            {");
-    sb.AppendLine("                ICommandBus bus;");
-    sb.AppendLine("                DataBox.TryResolve<ICommandBus>(out bus);");
-    sb.AppendLine("                if (bus == null)");
-    sb.AppendLine("                {");
-    sb.AppendLine("                    return;");
-    sb.AppendLine("                }");
-    StringBuilder keys = new StringBuilder();
-    int cmdCount = 0;
-    for (int s = 0; s < doc.Sensors.Count; s++)
-    {
-        if (doc.Sensors[s].IsCmd)
-        {
-            if (cmdCount > 0)
+            // [段1] 字段——懒注册标记（构造期 FlowId 未设置——首次 Tick 注册）
+            sb.AppendLine("        private bool _cmdRegistered;");
+            sb.AppendLine("");
+            sb.AppendLine("        private void CmdPump()");
+            sb.AppendLine("        {");
+            // [段2] 懒注册——TryResolve 失败静默（宿主未绑 CommandBus = 无外部输入）
+            sb.AppendLine("            if (!_cmdRegistered)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                ICommandBus bus;");
+            sb.AppendLine("                DataBox.TryResolve<ICommandBus>(out bus);");
+            sb.AppendLine("                if (bus == null)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    return;");
+            sb.AppendLine("                }");
+            StringBuilder keys = new StringBuilder();
+            int cmdCount = 0;
+            for (int s = 0; s < doc.Sensors.Count; s++)
             {
-                keys.Append(", ");
+                if (doc.Sensors[s].IsCmd)
+                {
+                    if (cmdCount > 0)
+                    {
+                        keys.Append(", ");
+                    }
+                    keys.Append("\"");
+                    keys.Append(doc.Sensors[s].CmdKey);
+                    keys.Append("\"");
+                    cmdCount = cmdCount + 1;
+                }
             }
-            keys.Append("\"");
-            keys.Append(doc.Sensors[s].CmdKey);
-            keys.Append("\"");
-            cmdCount = cmdCount + 1;
+            sb.AppendLine("                bus.Register(FlowContext.CurrentFlowId, new string[] { " + keys.ToString() + " });");
+            sb.AppendLine("                _cmdRegistered = true;");
+            sb.AppendLine("            }");
+            // [段3] 拉邮件——无新指令即空转
+            sb.AppendLine("            ICommandBus cmd;");
+            sb.AppendLine("            DataBox.TryResolve<ICommandBus>(out cmd);");
+            sb.AppendLine("            if (cmd == null)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            CommandPack email = cmd.GetCommandEmail(FlowContext.CurrentFlowId);");
+            sb.AppendLine("            if (!email.HasCommands)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return;");
+            sb.AppendLine("            }");
+            // [段4] 逐 key 匹配传感器——有 payload 才置沿 + 落全局盒（模板邮件含全部注册 key——无 payload 的 key 不触发）
+            sb.AppendLine("            for (int i = 0; i < email.CmdKeys.Length; i = i + 1)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                string key = email.CmdKeys[i];");
+            sb.AppendLine("                if (email.CmdTexts != null && i < email.CmdTexts.Length && email.CmdTexts[i] != null)");
+            sb.AppendLine("                {");
+            for (int s = 0; s < doc.Sensors.Count; s++)
+            {
+                if (!doc.Sensors[s].IsCmd)
+                {
+                    continue;
+                }
+                if (s == 0)
+                {
+                    sb.AppendLine("                    if (key == \"" + doc.Sensors[s].CmdKey + "\")");
+                }
+                else
+                {
+                    sb.AppendLine("                    else if (key == \"" + doc.Sensors[s].CmdKey + "\")");
+                }
+                sb.AppendLine("                    {");
+                sb.AppendLine("                        DataBox.Signal(\"" + doc.Sensors[s].Name + "\");");
+                sb.AppendLine("                    }");
+            }
+            sb.AppendLine("                    DataBox.Set<string>(\"global\", key, email.CmdTexts[i]);");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
         }
-    }
-    sb.AppendLine("                bus.Register(FlowContext.CurrentFlowId, new string[] { " + keys.ToString() + " });");
-    sb.AppendLine("                _cmdRegistered = true;");
-    sb.AppendLine("            }");
-    // [段3] 拉邮件——无新指令即空转
-    sb.AppendLine("            ICommandBus cmd;");
-    sb.AppendLine("            DataBox.TryResolve<ICommandBus>(out cmd);");
-    sb.AppendLine("            if (cmd == null)");
-    sb.AppendLine("            {");
-    sb.AppendLine("                return;");
-    sb.AppendLine("            }");
-    sb.AppendLine("            CommandPack email = cmd.GetCommandEmail(FlowContext.CurrentFlowId);");
-    sb.AppendLine("            if (!email.HasCommands)");
-    sb.AppendLine("            {");
-    sb.AppendLine("                return;");
-    sb.AppendLine("            }");
-    // [段4] 逐 key 匹配传感器——有 payload 才置沿 + 落全局盒（模板邮件含全部注册 key——无 payload 的 key 不触发）
-    sb.AppendLine("            for (int i = 0; i < email.CmdKeys.Length; i = i + 1)");
-    sb.AppendLine("            {");
-    sb.AppendLine("                string key = email.CmdKeys[i];");
-    sb.AppendLine("                if (email.CmdTexts != null && i < email.CmdTexts.Length && email.CmdTexts[i] != null)");
-    sb.AppendLine("                {");
-    for (int s = 0; s < doc.Sensors.Count; s++)
-    {
-        if (!doc.Sensors[s].IsCmd)
-        {
-            continue;
-        }
-        if (s == 0)
-        {
-            sb.AppendLine("                    if (key == \"" + doc.Sensors[s].CmdKey + "\")");
-        }
-        else
-        {
-            sb.AppendLine("                    else if (key == \"" + doc.Sensors[s].CmdKey + "\")");
-        }
-        sb.AppendLine("                    {");
-        sb.AppendLine("                        DataBox.Signal(\"" + doc.Sensors[s].Name + "\");");
-        sb.AppendLine("                    }");
-    }
-    sb.AppendLine("                    DataBox.Set<string>(\"global\", key, email.CmdTexts[i]);");
-    sb.AppendLine("                }");
-    sb.AppendLine("            }");
-    sb.AppendLine("        }");
-    sb.AppendLine("");
-}
         /// <summary>
         /// GetStatus 生成——四柱快照组装（P3 观测支柱：状态机枚举值/主动传感器实测/槽余量/导线状态）
         /// </summary>

@@ -84,163 +84,163 @@ namespace Mau.Providers
             _client = new HttpClient();
             _client.Timeout = TimeSpan.FromSeconds(60);
         }
-/// <summary>
-/// 流式对话完成——消息序列 + 工具定义 → 事件流（P5：OpenAI 兼容 tool_calls）。
-/// Text/Reasoning 增量；ToolCalls 完整工具调用 JSON（聚合后一次性发出）；[DONE] → Done；错误 → Error。
-/// 注意：C# 迭代器禁止 try-catch 内 yield——网络层错误用 catch 赋值 + catch 后 yield 模式。
-/// </summary>
-/// <param name = "messages">完整消息序列（system/user/assistant/tool 多 role）</param>
-/// <param name = "tools">工具定义数组（可为空——纯对话）</param>
-/// <param name = "userId">会话用户标识——请求体 user_id（P9.4 CH2 对齐：KVCache 隔离；空=不携带）</param>
-/// <param name = "ct">取消令牌</param>
-/// <returns>流式事件序列</returns>
-public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, string userId = "", [EnumeratorCancellation] CancellationToken ct = default)
+        /// <summary>
+        /// 流式对话完成——消息序列 + 工具定义 → 事件流（P5：OpenAI 兼容 tool_calls）。
+        /// Text/Reasoning 增量；ToolCalls 完整工具调用 JSON（聚合后一次性发出）；[DONE] → Done；错误 → Error。
+        /// 注意：C# 迭代器禁止 try-catch 内 yield——网络层错误用 catch 赋值 + catch 后 yield 模式。
+        /// </summary>
+        /// <param name = "messages">完整消息序列（system/user/assistant/tool 多 role）</param>
+        /// <param name = "tools">工具定义数组（可为空——纯对话）</param>
+        /// <param name = "userId">会话用户标识——请求体 user_id（P9.4 CH2 对齐：KVCache 隔离；空=不携带）</param>
+        /// <param name = "ct">取消令牌</param>
+        /// <returns>流式事件序列</returns>
+        public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, string userId = "", [EnumeratorCancellation] CancellationToken ct = default)
         {
-    // [段1] 构造流式请求体并发送（ResponseHeadersRead——流式读取）
-    // S2 重试——TRANSPORT/429/5xx 重试最多 MaxRetries 次（共 MaxRetries+1 次尝试）；4xx 不重试；流中断不重试
-    string body = BuildChatRequestBody(messages, tools, userId);
-    int retryCount = 0;
-    while (true)
-    {
-        using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, GetBaseUrl()))
-        {
-            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + GetApiKey());
-            request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
-            // opencode.ai zen/go 网关会话路由头——缺失拒绝请求（实测 2026-09-07；userId 即会话标识——KVCache 隔离语义对齐）
-            request.Headers.TryAddWithoutValidation("x-opencode-session", "cat-home4-" + (userId.Length > 0 ? userId : "default"));
-            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
-            HttpResponseMessage? response = null;
-            string netError = "";
-            try
+            // [段1] 构造流式请求体并发送（ResponseHeadersRead——流式读取）
+            // S2 重试——TRANSPORT/429/5xx 重试最多 MaxRetries 次（共 MaxRetries+1 次尝试）；4xx 不重试；流中断不重试
+            string body = BuildChatRequestBody(messages, tools, userId);
+            int retryCount = 0;
+            while (true)
             {
-                response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-            }
-            catch (Exception ex)
-            {
-                // P6 中止——取消不是传输错误：冒泡（取消不重试——重试分支 Task.Delay(ct) 也会立即取消）
-                if (ex is System.OperationCanceledException)
+                using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, GetBaseUrl()))
                 {
-                    throw;
-                }
-                netError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
-            }
-
-            if (netError.Length > 0)
-            {
-                if (retryCount < MaxRetries)
-                {
-                    retryCount = retryCount + 1;
-                    LogStore.Add("LLM", 2, "LLM 请求传输失败，自动重试（" + retryCount.ToString() + "/" + MaxRetries.ToString() + "）：" + TrimText(netError, 200), "LLM");
-                    yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|" + retryCount.ToString() + "/" + MaxRetries.ToString() + "|" + TrimText(netError, 200));
-                    await Task.Delay(RetryDelayMs(retryCount - 1), ct);
-                    continue;
-                }
-                yield return new LlmStreamEvent(LlmStreamKind.Error, netError);
-                yield break;
-            }
-
-        using (response)
-        {
-            // [段2] HTTP 层失败——错误 JSON 双形态解析（error.type/message 兜底，HTTP 码不可作唯一判据）
-            if (response == null)
-            {
-                yield return new LlmStreamEvent(LlmStreamKind.Error, "ERR|TRANSPORT|空响应");
-                yield break;
-            }
-
-            if (!response.IsSuccessStatusCode)
-            {
-                int statusCode = (int)response.StatusCode;
-                // S2 重试——429/5xx 可重试（未产出业务事件，安全重发）；4xx 参数/鉴权错误不重试
-                bool retryable = statusCode == 429 || statusCode >= 500;
-                if (retryable && retryCount < MaxRetries)
-                {
-                    retryCount = retryCount + 1;
-                    LogStore.Add("LLM", 2, "LLM 请求返回 HTTP " + statusCode.ToString() + "，自动重试（" + retryCount.ToString() + "/" + MaxRetries.ToString() + "）", "LLM");
-                    yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|" + retryCount.ToString() + "/" + MaxRetries.ToString() + "|HTTP " + statusCode.ToString());
-                    await Task.Delay(RetryDelayMs(retryCount - 1), ct);
-                    continue;
-                }
-                string? raw = "";
-                string readError = "";
-                try
-                {
-                    raw = await response.Content.ReadAsStringAsync(ct);
-                }
-                catch (Exception ex)
-                {
-                    // P6 中止——取消不是传输错误：冒泡（取消不重试）
-                    if (ex is System.OperationCanceledException)
+                    request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + GetApiKey());
+                    request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
+                    // opencode.ai zen/go 网关会话路由头——缺失拒绝请求（实测 2026-09-07；userId 即会话标识——KVCache 隔离语义对齐）
+                    request.Headers.TryAddWithoutValidation("x-opencode-session", "cat-home4-" + (userId.Length > 0 ? userId : "default"));
+                    request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                    HttpResponseMessage? response = null;
+                    string netError = "";
+                    try
                     {
-                        throw;
+                        response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
                     }
-                    readError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
+                    catch (Exception ex)
+                    {
+                        // P6 中止——取消不是传输错误：冒泡（取消不重试——重试分支 Task.Delay(ct) 也会立即取消）
+                        if (ex is System.OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        netError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
+                    }
+
+                    if (netError.Length > 0)
+                    {
+                        if (retryCount < MaxRetries)
+                        {
+                            retryCount = retryCount + 1;
+                            LogStore.Add("LLM", 2, "LLM 请求传输失败，自动重试（" + retryCount.ToString() + "/" + MaxRetries.ToString() + "）：" + TrimText(netError, 200), "LLM");
+                            yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|" + retryCount.ToString() + "/" + MaxRetries.ToString() + "|" + TrimText(netError, 200));
+                            await Task.Delay(RetryDelayMs(retryCount - 1), ct);
+                            continue;
+                        }
+                        yield return new LlmStreamEvent(LlmStreamKind.Error, netError);
+                        yield break;
+                    }
+
+                    using (response)
+                    {
+                        // [段2] HTTP 层失败——错误 JSON 双形态解析（error.type/message 兜底，HTTP 码不可作唯一判据）
+                        if (response == null)
+                        {
+                            yield return new LlmStreamEvent(LlmStreamKind.Error, "ERR|TRANSPORT|空响应");
+                            yield break;
+                        }
+
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            int statusCode = (int)response.StatusCode;
+                            // S2 重试——429/5xx 可重试（未产出业务事件，安全重发）；4xx 参数/鉴权错误不重试
+                            bool retryable = statusCode == 429 || statusCode >= 500;
+                            if (retryable && retryCount < MaxRetries)
+                            {
+                                retryCount = retryCount + 1;
+                                LogStore.Add("LLM", 2, "LLM 请求返回 HTTP " + statusCode.ToString() + "，自动重试（" + retryCount.ToString() + "/" + MaxRetries.ToString() + "）", "LLM");
+                                yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|" + retryCount.ToString() + "/" + MaxRetries.ToString() + "|HTTP " + statusCode.ToString());
+                                await Task.Delay(RetryDelayMs(retryCount - 1), ct);
+                                continue;
+                            }
+                            string? raw = "";
+                            string readError = "";
+                            try
+                            {
+                                raw = await response.Content.ReadAsStringAsync(ct);
+                            }
+                            catch (Exception ex)
+                            {
+                                // P6 中止——取消不是传输错误：冒泡（取消不重试）
+                                if (ex is System.OperationCanceledException)
+                                {
+                                    throw;
+                                }
+                                readError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
+                            }
+
+                            if (readError.Length > 0)
+                            {
+                                yield return new LlmStreamEvent(LlmStreamKind.Error, readError);
+                                yield break;
+                            }
+
+                            string rawText;
+                            if (raw == null)
+                            {
+                                rawText = "";
+                            }
+                            else
+                            {
+                                rawText = raw;
+                            }
+
+                            yield return new LlmStreamEvent(LlmStreamKind.Error, ParseErrorText(statusCode, rawText));
+                            yield break;
+                        }
+
+                        // [段3] SSE 解析——官方 SseParser（注释行/多行 data/空行分隔自动处理）
+                        Stream? stream = null;
+                        string streamError = "";
+                        try
+                        {
+                            stream = await response.Content.ReadAsStreamAsync(ct);
+                        }
+                        catch (Exception ex)
+                        {
+                            // P6 中止——取消不是传输错误：冒泡（取消不重试——读流失败重试分支同样会被 Task.Delay(ct) 立即取消）
+                            if (ex is System.OperationCanceledException)
+                            {
+                                throw;
+                            }
+                            streamError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
+                        }
+
+                        if (streamError.Length > 0)
+                        {
+                            // S2 重试——读流失败（业务事件未产出，安全重发）
+                            if (retryCount < MaxRetries)
+                            {
+                                retryCount = retryCount + 1;
+                                LogStore.Add("LLM", 2, "LLM 读取响应流失败，自动重试（" + retryCount.ToString() + "/" + MaxRetries.ToString() + "）：" + TrimText(streamError, 200), "LLM");
+                                yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|" + retryCount.ToString() + "/" + MaxRetries.ToString() + "|" + TrimText(streamError, 200));
+                                await Task.Delay(RetryDelayMs(retryCount - 1), ct);
+                                continue;
+                            }
+                            yield return new LlmStreamEvent(LlmStreamKind.Error, streamError);
+                            yield break;
+                        }
+
+                        SseParser<string> parser = SseParser.Create(stream!);
+                        // [段4] translate——独立迭代器（零 catch：所有错误事件化；tool_calls 聚合在 translate 内）
+                        // 流中断（STREAM_CLOSED）不重试——已产出业务事件无法回收（yield 不可撤销）；事件化给上层续传
+                        await foreach (LlmStreamEvent ev in TranslateSse(parser, ct))
+                        {
+                            yield return ev;
+                        }
+                        yield break;
+                    }
                 }
-
-                if (readError.Length > 0)
-                {
-                    yield return new LlmStreamEvent(LlmStreamKind.Error, readError);
-                    yield break;
-                }
-
-                string rawText;
-                if (raw == null)
-                {
-                    rawText = "";
-                }
-                else
-                {
-                    rawText = raw;
-                }
-
-                yield return new LlmStreamEvent(LlmStreamKind.Error, ParseErrorText(statusCode, rawText));
-                yield break;
             }
-
-            // [段3] SSE 解析——官方 SseParser（注释行/多行 data/空行分隔自动处理）
-            Stream? stream = null;
-            string streamError = "";
-            try
-            {
-                stream = await response.Content.ReadAsStreamAsync(ct);
-            }
-            catch (Exception ex)
-            {
-                // P6 中止——取消不是传输错误：冒泡（取消不重试——读流失败重试分支同样会被 Task.Delay(ct) 立即取消）
-            if (ex is System.OperationCanceledException)
-            {
-                throw;
-            }
-            streamError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
-            }
-
-            if (streamError.Length > 0)
-            {
-                // S2 重试——读流失败（业务事件未产出，安全重发）
-                if (retryCount < MaxRetries)
-                {
-                    retryCount = retryCount + 1;
-                    LogStore.Add("LLM", 2, "LLM 读取响应流失败，自动重试（" + retryCount.ToString() + "/" + MaxRetries.ToString() + "）：" + TrimText(streamError, 200), "LLM");
-                    yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|" + retryCount.ToString() + "/" + MaxRetries.ToString() + "|" + TrimText(streamError, 200));
-                    await Task.Delay(RetryDelayMs(retryCount - 1), ct);
-                    continue;
-                }
-                yield return new LlmStreamEvent(LlmStreamKind.Error, streamError);
-                yield break;
-            }
-
-            SseParser<string> parser = SseParser.Create(stream!);
-            // [段4] translate——独立迭代器（零 catch：所有错误事件化；tool_calls 聚合在 translate 内）
-            // 流中断（STREAM_CLOSED）不重试——已产出业务事件无法回收（yield 不可撤销）；事件化给上层续传
-            await foreach (LlmStreamEvent ev in TranslateSse(parser, ct))
-            {
-                yield return ev;
-            }
-            yield break;
         }
-    }
-    }
-}
 
         /// <summary>
         /// 实时读取完整端点——API 配置池 endpoint → MAU_LLM_BASE_URL（base 格式兼容拼接）→ 空串（每次调用取当前值）

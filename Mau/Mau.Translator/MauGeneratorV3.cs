@@ -184,9 +184,9 @@ namespace Mau.Translator
                 sb.AppendLine("");
             }
         }
-/// <summary>
-/// 壳分支动作生成——条件包裹的积木调用序列（汇总写）
-/// </summary>
+        /// <summary>
+        /// 壳分支动作生成——条件包裹的积木调用序列（汇总写）
+        /// </summary>
         /// <param name="sb">输出缓冲</param>
         /// <param name="actions">动作列表</param>
         /// <param name="guard">条件守卫（"if (ok)" / "if (!ok)"）</param>
@@ -208,11 +208,11 @@ namespace Mau.Translator
             }
             sb.AppendLine("            }");
         }/// <summary>
-/// 主动传感器壳方法生成——帧门控 + 探测（可捕获落盒）+ 分支动作（只读世界零状态转移）
-/// </summary>
-        /// <param name="sb">输出缓冲</param>
-        /// <param name="sensor">传感器声明</param>
-        /// <param name="doc">IR</param>
+         /// 主动传感器壳方法生成——帧门控 + 探测（可捕获落盒）+ 分支动作（只读世界零状态转移）
+         /// </summary>
+         /// <param name="sb">输出缓冲</param>
+         /// <param name="sensor">传感器声明</param>
+         /// <param name="doc">IR</param>
         private static void AppendSensorShell(StringBuilder sb, SensorDefV3 sensor, MauDocV3 doc)
         {
             string field = NameField(sensor.Name);
@@ -239,7 +239,7 @@ namespace Mau.Translator
                 sb.AppendLine("                DataBox.Set<bool>(" + BoxScopeExpr(sensor.CaptureTarget) + ", \"" + BoxKey(sensor.CaptureTarget) + "\", ok);");
             }
             sb.AppendLine("            }");
-sb.AppendLine("            catch (Exception)");
+            sb.AppendLine("            catch (Exception)");
             sb.AppendLine("            {");
             sb.AppendLine("                ok = false;");
             sb.AppendLine("            }");

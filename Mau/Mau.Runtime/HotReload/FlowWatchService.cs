@@ -240,5 +240,6 @@ namespace Mau.Runtime
                 // 指纹读取失败（io 竞争/文件已消失）——返回空串，本轮轮询跳过本 dll
                 return "";
             }
-        }}
+        }
+    }
 }

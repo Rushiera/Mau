@@ -1325,37 +1325,37 @@ namespace CatHome4.Admin
         /// </summary>
         internal static void EnsureMajordomoCfg()
         {
-    string path = Path.Combine(_dataRoot, "Data", "sessions", "majordomo", "cat.cfg");
-    if (File.Exists(path))
-    {
-        return;
-    }
+            string path = Path.Combine(_dataRoot, "Data", "sessions", "majordomo", "cat.cfg");
+            if (File.Exists(path))
+            {
+                return;
+            }
 
-    CatDefaultCfgData tpl = LoadCatDefaultCfg();
-    CatCfgData data = new CatCfgData();
-    data.Id = "majordomo";
-    data.DisplayName = "majordomo";
-    data.Running = false;
-    data.Port = 0;
-    data.ApiConfigId = "";
-    data.QqBotId = "";
-    data.QqBotEnable = false;
-    data.EnabledRoots = null;
-    if (tpl != null)
-    {
-        data.Persona = tpl.DefaultPersona != null ? tpl.DefaultPersona : "";
-        data.ToolNames = tpl.DefaultToolNames != null ? tpl.DefaultToolNames : "";
-        data.InjectList = tpl.DefaultInjectList != null ? tpl.DefaultInjectList : new string[0];
-    }
-    else
-    {
-        data.Persona = "";
-        data.ToolNames = "";
-        data.InjectList = new string[0];
-    }
+            CatDefaultCfgData tpl = LoadCatDefaultCfg();
+            CatCfgData data = new CatCfgData();
+            data.Id = "majordomo";
+            data.DisplayName = "majordomo";
+            data.Running = false;
+            data.Port = 0;
+            data.ApiConfigId = "";
+            data.QqBotId = "";
+            data.QqBotEnable = false;
+            data.EnabledRoots = null;
+            if (tpl != null)
+            {
+                data.Persona = tpl.DefaultPersona != null ? tpl.DefaultPersona : "";
+                data.ToolNames = tpl.DefaultToolNames != null ? tpl.DefaultToolNames : "";
+                data.InjectList = tpl.DefaultInjectList != null ? tpl.DefaultInjectList : new string[0];
+            }
+            else
+            {
+                data.Persona = "";
+                data.ToolNames = "";
+                data.InjectList = new string[0];
+            }
 
-    SaveCatCfgData("majordomo", data);
-    LogStore.Add("CatHome4", 1, "majordomo cat.cfg 缺失——已按默认模板补建", "CONFIG");
-}
+            SaveCatCfgData("majordomo", data);
+            LogStore.Add("CatHome4", 1, "majordomo cat.cfg 缺失——已按默认模板补建", "CONFIG");
+        }
     }
 }

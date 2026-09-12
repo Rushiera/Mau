@@ -53,10 +53,10 @@ namespace CatHome4.Core.Tests
 
             /// <summary>STREAM_CLOSED 次数——前 N 次调用产 Error（0=每次）</summary>
             public int StreamClosedTimes = 0;
-/// <summary>是否模拟纯空格回复——只产空格 Text（Trim 判空续传验证）</summary>
-public bool WhitespaceReply = false; 
-/// <summary>纯空格次数——前 N 次调用产空格（0=每次）</summary>
- public  int  WhitespaceReplyTimes  =  0 ;
+            /// <summary>是否模拟纯空格回复——只产空格 Text（Trim 判空续传验证）</summary>
+            public bool WhitespaceReply = false;
+            /// <summary>纯空格次数——前 N 次调用产空格（0=每次）</summary>
+            public int WhitespaceReplyTimes = 0;
 
             /// <summary>P6 中止模拟——产 Text 后挂起等待此事件（Pause 时 cts.Cancel → WaitOne 抛 OCE；null=不挂起）</summary>
             public AutoResetEvent HoldStream;
@@ -218,7 +218,7 @@ public bool WhitespaceReply = false;
                 new ToolSpec("Note", "Note 任务追踪", "{}")
             };
             CH4.SessionViewStore viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.json"));
-            CH4.ChatSession session = new CH4.ChatSession("test-session", "test", ctx, store, llm, oa, tools, delegate(string name, string args) { return "ERR|NO_TOOL|" + name; }, viewStore);
+            CH4.ChatSession session = new CH4.ChatSession("test-session", "test", ctx, store, llm, oa, tools, delegate (string name, string args) { return "ERR|NO_TOOL|" + name; }, viewStore);
             return session;
         }
 
@@ -601,36 +601,36 @@ public bool WhitespaceReply = false;
             // LLM 调用次数 = 2（1 次空回复 + 1 次续传）
             Assert.Equal(2, llm.CallCount);
         }
-/// <summary>
-/// 纯空格回复续传——MockLlm 模拟流正常结束但只产空格文本（Trim 判空语义）：
-/// 第一次调用产空格 → 自动续传 → 第二次调用正常回复。
-/// 断言：续传后正常完成 + 无空格 assistant 消息入上下文 + 调用次数 = 2。
-/// </summary>
-[Fact]
-public void WhitespaceReply_AutoContinueAndResolve()
+        /// <summary>
+        /// 纯空格回复续传——MockLlm 模拟流正常结束但只产空格文本（Trim 判空语义）：
+        /// 第一次调用产空格 → 自动续传 → 第二次调用正常回复。
+        /// 断言：续传后正常完成 + 无空格 assistant 消息入上下文 + 调用次数 = 2。
+        /// </summary>
+        [Fact]
+        public void WhitespaceReply_AutoContinueAndResolve()
         {
-    MockLlm llm = new MockLlm();
-    llm.WhitespaceReply = true;
-    llm.WhitespaceReplyTimes = 1;
-    CH4.ChatSession session = CreateSession(llm);
-    session.PostUserMessage("纯空格续传测试");
-    PumpUntilIdle(session);
-    Assert.True(session.IsIdle);
-    // 续传后正常完成——assistant 文本存在（第二次调用产出 "ok"）
-    Assert.Contains("ok", GetLastAssistantText(session));
-    // 无空格 assistant 消息——上下文中不出现纯空格 assistant 消息
-    LlmMessage[] all = session.Context.GetMessages();
-    for (int i = 0; i < all.Length; i = i + 1)
-    {
-        if (all[i].Role == LlmRole.Assistant)
-        {
-            Assert.True(all[i].Content == null || all[i].Content.Trim().Length > 0);
-        }
-    }
+            MockLlm llm = new MockLlm();
+            llm.WhitespaceReply = true;
+            llm.WhitespaceReplyTimes = 1;
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("纯空格续传测试");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            // 续传后正常完成——assistant 文本存在（第二次调用产出 "ok"）
+            Assert.Contains("ok", GetLastAssistantText(session));
+            // 无空格 assistant 消息——上下文中不出现纯空格 assistant 消息
+            LlmMessage[] all = session.Context.GetMessages();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (all[i].Role == LlmRole.Assistant)
+                {
+                    Assert.True(all[i].Content == null || all[i].Content.Trim().Length > 0);
+                }
+            }
 
-    // LLM 调用次数 = 2（1 次空格回复 + 1 次续传）
-    Assert.Equal(2, llm.CallCount);
-}
+            // LLM 调用次数 = 2（1 次空格回复 + 1 次续传）
+            Assert.Equal(2, llm.CallCount);
+        }
         /// <summary>
         /// STREAM_CLOSED 续传——MockLlm 模拟 SSE 流未以 [DONE] 结束（ERR|STREAM_CLOSED）：
         /// 第一次调用产 STREAM_CLOSED 错误 → 续传（同上下文重发）→ 第二次调用正常回复。
