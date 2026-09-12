@@ -393,38 +393,8 @@ namespace Mau.Translator
         private static void AppendGetMetaJson(StringBuilder sb, MauDocV3 doc, string flowName)
         {
             // 认领工具清单——主动传感器 BrickName=oa.is_open 且参数 [0]=="TOOL" → 参数 [1]=工具名（去重保序）
-            // CollectArgs 字符串参数带引号序列化（"TOOL"）——剥引号后比对
-            List<string> claims = new List<string>();
-            for (int s = 0; s < doc.Sensors.Count; s = s + 1)
-            {
-                SensorDefV3 sensor = doc.Sensors[s];
-                if (sensor.Passive)
-                {
-                    continue;
-                }
-
-                if (sensor.BrickName != "oa.is_open")
-                {
-                    continue;
-                }
-
-                if (sensor.BrickArgs.Count < 2)
-                {
-                    continue;
-                }
-
-                string arg0 = sensor.BrickArgs[0].Trim('"');
-                if (arg0 != "TOOL")
-                {
-                    continue;
-                }
-
-                string tool = sensor.BrickArgs[1].Trim('"');
-                if (tool.Length > 0 && !claims.Contains(tool))
-                {
-                    claims.Add(tool);
-                }
-            }
+            // 与生成期约定积木校验（E409）同源——共用 CollectToolClaims（认领面唯一真相）
+            List<string> claims = CollectToolClaims(doc);
 
             // JSON 序列化——工具名白名单安全字符（字母/数字/连字符/下划线），直接拼串
             string json = "{\"group\":\"" + flowName + "\",\"claims\":[";

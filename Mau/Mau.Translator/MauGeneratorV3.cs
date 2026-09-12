@@ -47,6 +47,20 @@ namespace Mau.Translator
                     result.Diagnostics.Add(new MauDiagnostic("E205", doc.Wires[w].Line, "导线 '" + doc.Wires[w].Name + "' 结果 " + doc.Wires[w].Results.Count + " 路——多路分叉待名称返回积木体系（P5 积木重生轮）"));
                 }
             }
+            // [段1b] 工具定义积木约定校验——语料认领了工具（主动传感器 oa.is_open TOOL）却没有约定积木 tools.<flowName 小写>
+            //        → 拒绝生成（否则 GetToolsJson 静默回退空组：宿主工具池不注册本组工具、配置面不可见——2026-09-12 判例）
+            List<string> claims = CollectToolClaims(doc);
+            if (claims.Count > 0)
+            {
+                string toolsBrick = "tools." + flowName.ToLowerInvariant();
+                BrickIndexEntry toolsEntry;
+                if (!BrickIndex.TryFind(toolsBrick, out toolsEntry) || toolsEntry.Implementation.Length == 0)
+                {
+                    result.Diagnostics.Add(new MauDiagnostic("E409", 1, "工具定义积木缺失——本组认领工具 [" + string.Join(", ", claims)
+                        + "] 但约定积木 '" + toolsBrick + "' 不在 Bricks 索引内（约定名 = tools.<flowName 小写>）"
+                        + "；缺此积木则 GetToolsJson 回退空组，宿主工具池不注册本组工具、配置面不可见"));
+                }
+            }
             if (result.Diagnostics.Count > 0)
             {
                 result.Success = false;
@@ -248,6 +262,38 @@ namespace Mau.Translator
             AppendShellActions(sb, sensor.TrueActions, "if (ok)", doc);
             AppendShellActions(sb, sensor.FalseActions, "if (!ok)", doc);
             sb.AppendLine("        }");
+        }
+        /// <summary>
+        /// 收集语料认领的工具名——扫主动传感器 <c>oa.is_open</c> 的 TOOL 域声明（去重、保序）。
+        /// 与元数据自曝（AppendMeta）的 claims 同源——组认领面的唯一真相。
+        /// </summary>
+        /// <param name="doc">FSM 网络 IR</param>
+        /// <returns>工具名列表（无认领 = 空列表）</returns>
+        private static List<string> CollectToolClaims(MauDocV3 doc)
+        {
+            List<string> claims = new List<string>();
+            if (doc == null || doc.Sensors == null)
+            {
+                return claims;
+            }
+            for (int s = 0; s < doc.Sensors.Count; s = s + 1)
+            {
+                SensorDefV3 sensor = doc.Sensors[s];
+                if (sensor.Passive || sensor.BrickName != "oa.is_open" || sensor.BrickArgs.Count < 2)
+                {
+                    continue;
+                }
+                if (sensor.BrickArgs[0].Trim('"') != "TOOL")
+                {
+                    continue;
+                }
+                string tool = sensor.BrickArgs[1].Trim('"');
+                if (tool.Length > 0 && !claims.Contains(tool))
+                {
+                    claims.Add(tool);
+                }
+            }
+            return claims;
         }
     }
 

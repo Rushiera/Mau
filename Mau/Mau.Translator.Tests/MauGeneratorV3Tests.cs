@@ -335,6 +335,30 @@ namespace Mau.Translator.Tests
             Assert.False(result.Success);
             Assert.Equal("E205", result.Diagnostics[0].Code);
         }
+        /// <summary>
+        /// 工具定义积木缺失拒绝——组认领工具（oa.is_open TOOL）但约定积木 tools.&lt;flowName 小写&gt; 不在索引 → E409。
+        /// 判例：2026-09-12 majordomo 组 Flow 注册成功、工具定义却静默回退空组（池内无定义 / 配置面不可见）。
+        /// </summary>
+        [Fact]
+        public void Generate_Reject_MissingToolsBrick()
+        {
+            string sample =
+                "§ 'S_T' = { 'Init', 'Idle' }\n" +
+                "§ 'P_Open' ↻ [1]: 'oa.is_open'[\"TOOL\", \"no-such-tool-9999\"] > @open\n" +
+                "§ 'T_Go' : @open & 'S_T' = 'Init' → 'self.desc'[\"x\", \"\", \"\"] | 'S_T' = 'Idle' | 'S_T' = 'Idle'\n" +
+                "§ 'T_Loop' : 'S_T' = 'Idle' → 'self.desc'[\"y\", \"\", \"\"] | 'S_T' = 'Idle' | 'S_T' = 'Idle'";
+            CompileResultV3 result = MauCompilerV3.Compile(sample, "NoSuchGroupXyz");
+            Assert.False(result.Success);
+            bool found = false;
+            for (int i = 0; i < result.Diagnostics.Count; i = i + 1)
+            {
+                if (result.Diagnostics[i].Code == "E409")
+                {
+                    found = true;
+                }
+            }
+            Assert.True(found);
+        }
 
         /// <summary>
         /// Command 传感器生成——CmdPump 拉邮件 + Signal 置沿 + payload 落全局盒 + 全局盒取数
