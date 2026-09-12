@@ -10,16 +10,14 @@ namespace SetUp
     /// </summary>
     public static partial class Program
     {
-        /// <summary>
-        /// deploy 模式入口——复制 public/app 到目标目录 + 版本落盘。
-        /// </summary>
+        /// <summary>deploy 模式入口——public/app 落新目录后原子切换上架（现行更名 _old 留作回退源）+ 版本落盘。</summary>
         /// <param name="repoRoot">仓库根</param>
         /// <param name="targetDir">目标目录（外部运行实例）</param>
         /// <returns>退出码（0=成功，非0=失败）</returns>
         private static int Deploy(string repoRoot, string targetDir)
         {
             string sourceDir = Path.Combine(repoRoot, "public", "app");
-            Console.WriteLine("[SetUp] deploy —— 部署正式运行实例");
+            Console.WriteLine("[SetUp] deploy —— 部署正式运行实例（原子切换）");
             Console.WriteLine("  源: " + sourceDir);
             Console.WriteLine("  目标: " + targetDir);
 
@@ -42,31 +40,32 @@ namespace SetUp
                 return Fail("public\\app\\CatHome4.exe 不存在——请先运行 SetUp.exe prepare 重建发布链。");
             }
 
-            // [段3] 复制 public\app 平铺内容到目标（含 Flows/ html/）
-            // 运行中 publish 纪律：目标实例运行中 → 复制会撞模块锁——先提示停进程
-            Console.WriteLine("[SetUp] 复制中——若目标实例正在运行，请先停止（模块锁会拒绝覆盖）。");
+            // [段3] 复制 public\app 平铺内容到 <target>_new（含 Flows/ html/）——先落新目录，全程不触碰现行实例
+            string targetNew = targetFull + "_new";
+            string targetOld = targetFull + "_old";
+            Console.WriteLine("[SetUp] 复制中——落新目录: " + targetNew);
             long copyMs = Environment.TickCount64;
-            bool copyOk = CopyDirectory(sourceDir, targetFull);
-            _steps.Add(new StepReport() { Step = 1, Name = "复制 public/app -> 目标", Ok = copyOk, Ms = Environment.TickCount64 - copyMs });
+            bool copyOk = CopyDirectory(sourceDir, targetNew);
+            _steps.Add(new StepReport() { Step = 1, Name = "复制 public/app -> <target>_new", Ok = copyOk, Ms = Environment.TickCount64 - copyMs });
             if (!copyOk)
             {
-                return Fail("目录复制失败——目标目录可能被占用或不可写。");
+                return Fail("目录复制失败——新目录可能被占用或不可写。");
             }
 
-            // [段3b] 配置模板复制——仓库 config/ 模板 → 目标 config/（规范 §二：配置模板进部署包；Data 自举在首次运行完成）
+            // [段3b] 配置模板复制——仓库 config/ 模板 → 新目录 config/（规范 §二：配置模板进部署包；Data 自举在首次运行完成）
             string configTpl = Path.Combine(repoRoot, "config");
             if (Directory.Exists(configTpl))
             {
-                CopyDirectory(configTpl, Path.Combine(targetFull, "config"));
+                CopyDirectory(configTpl, Path.Combine(targetNew, "config"));
             }
 
-            // [段4] 版本落盘——version.txt（读取 CatHome4.csproj <Version>）
+            // [段4] 版本落盘——version.txt（读取 CatHome4.csproj <Version>；写新目录）
             string version = ReadVersion(repoRoot);
             long verMs = Environment.TickCount64;
             bool verOk = true;
             try
             {
-                File.WriteAllText(Path.Combine(targetFull, "version.txt"), version);
+                File.WriteAllText(Path.Combine(targetNew, "version.txt"), version);
             }
             catch (Exception ex)
             {
@@ -76,12 +75,79 @@ namespace SetUp
             _steps.Add(new StepReport() { Step = 2, Name = "版本落盘 version.txt", Ok = verOk, Ms = Environment.TickCount64 - verMs });
             Console.WriteLine("[SetUp] 版本: " + version);
 
+            // [段4b] 原子切换——现行更名 _old（留作回退源）→ 新目录更名上架（同卷改名 = 原子）
+            long switchMs = Environment.TickCount64;
+            string switchErr = SwitchDirectory(targetFull, targetNew, targetOld);
+            _steps.Add(new StepReport() { Step = 3, Name = "原子切换运行区", Ok = switchErr.Length == 0, Ms = Environment.TickCount64 - switchMs });
+            if (switchErr.Length > 0)
+            {
+                return Fail("原子切换失败——" + switchErr);
+            }
+
             // [段5] 完成提示——Data 走 AppData（本机 %LOCALAPPDATA%/CatHome4/Data 三级锚定回退）
             Console.WriteLine("[SetUp] deploy 完成。");
             Console.WriteLine("  正式实例 Data 落位: " + Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CatHome4", "Data"));
             Console.WriteLine("  启动: " + Path.Combine(targetFull, "CatHome4.exe"));
+            Console.WriteLine("  回退源: " + targetOld);
             return 0;
+        }
+        /// <summary>
+        /// 原子切换运行区——现行目录更名 _old（先清旧回退源）→ 新目录更名上架；任一步失败即回滚。
+        /// 前提：运行区（MauOut）无持久信息——持久数据在 Data 三级锚定区，整目录替换安全。
+        /// </summary>
+        /// <param name="target">现行运行区绝对路径</param>
+        /// <param name="targetNew">新目录绝对路径（内容已就绪）</param>
+        /// <param name="targetOld">回退源绝对路径</param>
+        /// <returns>空串=切换成功；非空=错误描述（已尽力回滚）</returns>
+        private static string SwitchDirectory(string target, string targetNew, string targetOld)
+        {
+            // [段1] 清旧回退源——上一次切换的残留（旧宿主已退出，模块锁已释放）
+            if (Directory.Exists(targetOld))
+            {
+                try
+                {
+                    Directory.Delete(targetOld, true);
+                }
+                catch (Exception ex)
+                {
+                    return "回退源清理失败（" + targetOld + "）：" + ex.Message;
+                }
+            }
+            // [段2] 现行 → 回退源
+            bool movedOld = false;
+            if (Directory.Exists(target))
+            {
+                try
+                {
+                    Directory.Move(target, targetOld);
+                    movedOld = true;
+                }
+                catch (Exception ex)
+                {
+                    return "现行目录更名失败（模块锁？）：" + ex.Message;
+                }
+            }
+            // [段3] 新目录上架——失败回滚（回退源改回现行）
+            try
+            {
+                Directory.Move(targetNew, target);
+            }
+            catch (Exception ex)
+            {
+                if (movedOld)
+                {
+                    try
+                    {
+                        Directory.Move(targetOld, target);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+                return "新目录上架失败（已回滚）：" + ex.Message;
+            }
+            return "";
         }
 
         /// <summary>

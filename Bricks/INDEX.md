@@ -9,6 +9,7 @@
 |:--|:--|:--|:--|:--|:--|:--|
 | BRIK-DATA-001 | data.box_set_str | DATA | DATA/BRIK-DATA-001_data.box_set_str.cs | 无 | active |  |
 | BRIK-DATA-002 | data.box_get_str | DATA | DATA/BRIK-DATA-002_data.box_get_str.cs | 无 | active |  |
+| BRIK-HOST-001 | host.restart | HOST | HOST/BRIK-HOST-001_host.restart.cs | 无 | active |  |
 | BRIK-LLM-002 | llm.stream | LLM | LLM/BRIK-LLM-002_llm.stream.cs | 无 | active |  |
 | BRIK-LLM-003 | llm.chunk_ready | LLM | LLM/BRIK-LLM-003_llm.chunk_ready.cs | 无 | active |  |
 | BRIK-LLM-004 | llm.done_ready | LLM | LLM/BRIK-LLM-004_llm.done_ready.cs | 无 | active |  |
@@ -57,6 +58,7 @@
 | BRIK-TOOLS-006 | tools.visioncat | TOOLS | TOOLS/BRIK-TOOLS-006_tools.visioncat.cs | 无 | active |  |
 | BRIK-TOOLS-007 | tools.temptoolcat | TOOLS | TOOLS/BRIK-TOOLS-007_tools.temptoolcat.cs | 无 | active |  |
 | BRIK-TOOLS-008 | tools.pscat | TOOLS | TOOLS/BRIK-TOOLS-008_tools.pscat.cs | 无 | active |  |
+| BRIK-TOOLS-009 | tools.majordomo | TOOLS | TOOLS/BRIK-TOOLS-009_tools.majordomo.cs | 无 | active |  |
 | BRIK-VISION-001 | vision.analyze | VISION | VISION/BRIK-VISION-001_vision.analyze.cs | 无 | active |  |
 | BRIK-WEB-001 | web.search | WEB | WEB/BRIK-WEB-001_web.search.cs | 无 | active |  |
 

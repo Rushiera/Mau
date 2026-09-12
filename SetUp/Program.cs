@@ -125,6 +125,11 @@ namespace SetUp
                     exitCode = Deploy(repoRoot, args[1]);
                 }
             }
+            else if (mode == "relaunch")
+            {
+                // relaunch —— 宿主自更新接力（等旧宿主退出 → prepare → 原子切换 → 自启；参数零容忍校验在 Relaunch 内）
+                exitCode = Relaunch(repoRoot, args);
+            }
             else
             {
                 Console.WriteLine("[SetUp] 未知模式: " + mode);
@@ -159,7 +164,9 @@ namespace SetUp
             Console.WriteLine("用法:");
             Console.WriteLine("  SetUp.exe            打开图形界面（无参双击）");
             Console.WriteLine("  SetUp.exe prepare    重建全发布链（public/ + Mau-public/）");
-            Console.WriteLine("  SetUp.exe deploy <目录>  部署正式运行实例到目标目录");
+            Console.WriteLine("  SetUp.exe deploy <目录>  部署正式运行实例到目标目录（原子切换——现行更名 _old 留作回退源）");
+            Console.WriteLine("  SetUp.exe relaunch --wait-pid <pid> --target <目录> [--majordomopush <串>] [--report <路径>]");
+            Console.WriteLine("                           宿主自更新接力：等旧宿主退出 → prepare → 原子切换 → 自启新宿主（回执注入）");
             Console.WriteLine("前置：.NET 8 Runtime + SDK + WindowsDesktop；本 exe 须位于 Mau 仓库根（含 Mau.sln）。");
         }
 
@@ -397,7 +404,9 @@ namespace SetUp
                 doc.Ok = exitCode == 0;
                 doc.ExitCode = exitCode;
                 doc.Steps = _steps.ToArray();
-                doc.Artifacts = CollectArtifacts(repoRoot).ToArray();
+                List<ArtifactReport> artifacts = CollectArtifacts(repoRoot);
+                artifacts.AddRange(_extraArtifacts);
+                doc.Artifacts = artifacts.ToArray();
                 JsonSerializerOptions options = new JsonSerializerOptions();
                 options.WriteIndented = true;
                 options.IncludeFields = true;   // 报告 DTO 为 public 字段——System.Text.Json 默认只序列化属性，必须显式 IncludeFields

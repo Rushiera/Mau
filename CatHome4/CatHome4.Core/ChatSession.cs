@@ -256,7 +256,7 @@ namespace CH4
             _viewStore = viewStore;
             _llmRuntime = llmRuntime;
             _oa = oa;
-            _tools = tools;
+            _tools = FilterPrivilegedSpecs(tools);
             _executeTool = executeTool;
             _dogs = new List<ToolOrderDog>();
             _hostDogs = new List<ToolOrderDog>();
@@ -421,7 +421,30 @@ namespace CH4
         /// <param name="specs">新声明面数组（FilterToolSpecs 产物）</param>
         public void SetToolSpecs(ToolSpec[] specs)
         {
-            _tools = specs;
+            _tools = FilterPrivilegedSpecs(specs);
+        }
+        /// <summary>
+        /// 特权面可见性过滤——非默认会话（catId != majordomo）剔除全部 majordomo-* 工具。
+        /// 设计依据：声明面（cat.cfg toolNames）的全量保底语义是"防外部损坏"，不构成授权通道
+        /// （design-ch4-host-restart §二）——故特权工具在会话内单点剔除，与 IsToolAllowed 拦截构成双面。
+        /// </summary>
+        /// <param name="specs">原始工具面</param>
+        /// <returns>过滤后的工具面（默认会话原样返回）</returns>
+        private ToolSpec[] FilterPrivilegedSpecs(ToolSpec[] specs)
+        {
+            if (specs == null || _id == "majordomo")
+            {
+                return specs;
+            }
+            List<ToolSpec> kept = new List<ToolSpec>();
+            for (int i = 0; i < specs.Length; i = i + 1)
+            {
+                if (!specs[i].Name.StartsWith("majordomo-", StringComparison.Ordinal))
+                {
+                    kept.Add(specs[i]);
+                }
+            }
+            return kept.ToArray();
         }
 
         /// <summary>
@@ -533,14 +556,20 @@ namespace CH4
             LogStore.Add("CatHome4", 1, "收到中止指令——正在停止本轮（已完成内容保留）", "CHAT");
         }
 
-        /// <summary>
-        /// 中止收尾——主线程 Pump 消费（相位串行）。已完成工具结果保留入 Ctx（不丢信息）；未完成放弃（格式修复补占位）；
-        /// 上下文 ReplaceMessages 格式修复（S3 方案——孤儿 tool_calls 补占位/孤立结果丢弃）；前文落盘（不裁剪）；
-        /// 复位 Idle + chat_state=idle + 推 paused 事件（前端 seal 流式容器 + 按钮复位）。
-        /// </summary>
+        /// <summary>中止收尾——主线程 Pump 消费（相位串行）。已完成工具结果保留（不丢信息）/未完成放弃+格式修复/前文落盘/复位 Idle + paused 事件；实现委托 FinalizeInterrupted（中断收尾公共实现）。</summary>
         private void PauseFinalize()
         {
             _pauseRequested = false;
+            FinalizeInterrupted("{\"type\":\"paused\",\"text\":\"已停止本轮（前文保留 + 格式修复）\"}", "本轮已中止——前文保留 + 格式修复");
+        }
+        /// <summary>
+        /// 中断收尾公共实现——已完成工具结果保留 + 上下文格式修复 + 截断落盘 + 序号复位 + 状态复位 Idle + control 事件。
+        /// 调用面：PauseFinalize（用户中止）/ RestartFinalize（宿主重启强制中断）——语义相同，仅事件文案与附加动作不同。
+        /// </summary>
+        /// <param name="ctrlJson">前端 control 事件 JSON（type/text）</param>
+        /// <param name="logPrefix">日志前缀（实现追加落盘条数）</param>
+        private void FinalizeInterrupted(string ctrlJson, string logPrefix)
+        {
             // [段0] 已完成工具结果保留——未完成放弃（ReplaceMessages 对未配对声明补占位）
             for (int i = 0; i < _dogs.Count; i = i + 1)
             {
@@ -569,7 +598,7 @@ namespace CH4
             // [段3] 视图序号复位——流式容器由前端 seal（已显示内容保留）
             _textStreamSeq = 0;
             _reasonStreamSeq = 0;
-            // [段4] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——中止非正常完成语义）
+            // [段4] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——中断非正常完成语义）
             _round = 0;
             _phase = ChatPhase.Idle;
             _phaseFrames = 0;
@@ -583,13 +612,25 @@ namespace CH4
             _streamClosedRetry = false;
             _sawRetry = false;
             DataBox.Set<string>("global", "chat_state", "idle");
-            // [段5] 前端通知——control paused 事件（seal + 按钮复位）
+            // [段5] 前端通知——control 事件（seal + 按钮复位）
             if (_httpHost != null)
             {
-                string pauseJson = "{\"type\":\"paused\",\"text\":\"已停止本轮（前文保留 + 格式修复）\"}";
-                _httpHost.PushView("control", pauseJson, -1, 0);
+                _httpHost.PushView("control", ctrlJson, -1, 0);
             }
-            LogStore.Add("CatHome4", 1, "本轮已中止——前文保留 + 格式修复（" + toSave.Length.ToString() + " 条消息）", "CHAT");
+            LogStore.Add("CatHome4", 1, logPrefix + "（" + toSave.Length.ToString() + " 条消息）", "CHAT");
+        }
+
+        /// <summary>
+        /// 宿主重启收尾——majordomo-restart 回执一到即强制中断本轮（不续 LLM 轮）：复用中断收尾公共实现，
+        /// 并置宿主重启请求态（停机态拒收 + 全局 Idle 闸门等待在宿主侧；design-ch4-host-restart §三 T1/T2）。
+        /// </summary>
+        /// <param name="requestJson">重启请求 JSON（target/push，由 majordomo 工具组积木落盒）</param>
+        private void RestartFinalize(string requestJson)
+        {
+            FinalizeInterrupted("{\"type\":\"restart\",\"text\":\"宿主即将重启（本轮强制中断，前文已落盘）\"}", "宿主重启——本轮强制中断，前文保留 + 格式修复");
+            DataBox.Set<string>("global", "host_restart_request", requestJson);
+            DataBox.Set<string>("global", "host_restart_state", "requested");
+            LogStore.Add("CatHome4", 1, "宿主重启请求已登记——拒绝新需求，等待全局空闲", "RESTART");
         }
 
         /// <summary>
@@ -607,6 +648,13 @@ namespace CH4
             if (source == null || source.Length == 0)
             {
                 source = "user";
+            }
+            // [段1] 宿主重启停机态——拒收一切新需求（design-ch4-host-restart §三 T2：停机后等的是在途轮次，不是等人）
+            string restartState;
+            if (DataBox.TryGet<string>("global", "host_restart_state", out restartState) && restartState == "requested")
+            {
+                LogStore.Add("CatHome4", 2, "宿主重启中——本条输入未受理（来源 " + source + "）", "RESTART");
+                return;
             }
             PendingMessage msg = new PendingMessage();
             msg.Content = content;
@@ -1230,6 +1278,11 @@ namespace CH4
         /// <returns>true=在声明面内</returns>
         private bool IsToolAllowed(string name)
         {
+            // 特权面硬编码——majordomo-* 仅默认会话（catId=majordomo）可调（design-ch4-host-restart §二：单点授权）
+            if (name.StartsWith("majordomo-", StringComparison.Ordinal) && _id != "majordomo")
+            {
+                return false;
+            }
             for (int i = 0; i < _tools.Length; i = i + 1)
             {
                 if (string.Equals(_tools[i].Name, name, StringComparison.Ordinal))
@@ -1339,6 +1392,21 @@ namespace CH4
                 _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             }
             _toolBatchActive = false;
+            // [段2c] 宿主重启检测——majordomo-restart 成功回执 → 强制中断本轮（不续 LLM 轮；design-ch4-host-restart §三 T1）
+            for (int r = 0; r < _dogs.Count; r = r + 1)
+            {
+                ToolOrderDog rd = _dogs[r];
+                if (rd.Name == "majordomo-restart" && rd.Result != null && !rd.Result.StartsWith("ERR|", StringComparison.Ordinal))
+                {
+                    string restartReq;
+                    if (!DataBox.TryGet<string>("global", "host_restart_request", out restartReq) || restartReq == null || restartReq.Length == 0)
+                    {
+                        restartReq = "{}";
+                    }
+                    RestartFinalize(restartReq);
+                    return;
+                }
+            }
             // 单向数据流改造——忙时插话：工具批完成有排队消息 → 插入 Ctx + user 事件 + 直接续轮（工具结果 + 插话同轮可见）
             if (_pending.Count > 0)
             {

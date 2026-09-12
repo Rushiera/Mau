@@ -57,6 +57,8 @@ namespace CH4
         private static int RunInteractive()
         {
             Console.WriteLine("[CMD] 指令: QuickCat <system>|<content> | Chat <内容> | status | reload <quick|dev> [dll] | run <n> | pid | quit");
+            // 运行模式标记——工具侧读取（非常驻模式 = 无闸门可等，重启请求直接拒绝；design-ch4-host-restart §五）
+            DataBox.Set<string>("global", RunModeKey, "interactive");
             // P1 托盘——独立 STA UI 线程（开机自启勾选/打开数据目录/退出）；仅交互模式启用（无头通道保持纯文本）
             StartTray();
             int autoStartPoll = 0;
@@ -73,6 +75,9 @@ namespace CH4
                 PumpChatQueue();
                 AdminService.PumpCatQueues();
                 QQBotService.Tick();
+                // 宿主自更新——启动回执注入（一次性）+ 重启闸门（停机态 + 全局 Idle → 接力拉起）
+                PumpMajordomoPush();
+                PumpHostRestart();
                 // [段1a] P1 托盘退出 + 自启轮询——退出走 break（Main finally 优雅收尾）；5s 粒度覆盖前端/config-* 写路径
                 if (_trayExitRequested)
                 {
@@ -114,6 +119,12 @@ namespace CH4
         /// <returns>true=识别成功并已投递</returns>
         private static bool DispatchCommand(string line)
         {
+            // [段0] 宿主重启停机态——拒绝一切新指令（design-ch4-host-restart §三 T2）
+            if (IsRestarting())
+            {
+                Console.WriteLine("[CMD] 宿主重启中——指令未受理：" + line);
+                return true;
+            }
             if (line.StartsWith("QuickCat ", StringComparison.Ordinal))
             {
                 string payload = line.Substring(9).Trim();

@@ -109,6 +109,14 @@ namespace CH4
             }
             try
             {
+                // [段1a] 参数面校验——零容忍（未知参数/缺值/互斥）；--majordomopush 仅常驻交互模式（design-ch4-host-restart §五）
+                string argErr = ValidateHostArgs(args);
+                if (argErr.Length > 0)
+                {
+                    Console.WriteLine("[CMD] " + argErr);
+                    return 1;
+                }
+                _majordomoPush = ExtractArgValue(args, "--majordomopush");
                 // [段1b] 探针通道——LLM 返回体结构诊断（方案 B：宿主能力；不启动宿主/不占端口/不载语料，先于 Bootstrap 返回）
                 if (HasProbeLlmArg(args))
                 {
