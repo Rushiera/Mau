@@ -113,30 +113,15 @@ namespace CH4
             }
         }
         /// <summary>
-        /// 按工具名映射超时帧数——text-* 600（30s）· mau-verify 600 · mau-gen 2400（120s）· mau-proj 4800（240s，dotnet build 长耗时通道）
+        /// 按工具名映射超时帧数——A48（2026-09-14）统一 120 秒（2400 帧），与 CAT 后台执行层时限 [t=2400, par] 对齐
         /// </summary>
         /// <param name="name">工具名</param>
         /// <returns>超时帧数</returns>
         public static long MapTimeoutFrames(string name)
         {
-            if (name == "mau-gen")
-            {
-                return 2400;
-            }
-            if (name == "mau-proj")
-            {
-                return 4800;
-            }
-            if (name == "mau-setup")
-            {
-                return 9000;
-            }
-            // cs-build 全量编译（dotnet build 子进程）——慢机 30s 窗口不够（R5-P3-04）
-            if (name == "cs-build")
-            {
-                return 2400;
-            }
-            return 600;
+            // A48（2026-09-14）：工单超时统一 120 秒（2400 帧）——与 CAT 后台执行层时限（[t=2400, par]）对齐
+            // 历史分级（mau-gen 120s / mau-proj 240s / mau-setup 450s / cs-build 120s / 默认 30s）为估值——实测无超长任务，统一收口
+            return 2400;
         }
     }
 }

@@ -281,20 +281,49 @@ namespace Mau.Translator
                     sb.AppendLine("            {");
                     sb.AppendLine("                " + field + "_cube.TickFrame();");
                     sb.AppendLine("            }");
+                    // [段1b] 主动超时——时限耗尽且后台未回投：当场按失败结算（不等结果到达——防后台永久卡死导致导线在途锁死）
+                    //         代际自增作废在途任务——其迟到结果按代际丢弃，不污染后续启程
+                    sb.AppendLine("            if (" + field + "_busy && " + field + "_cube.IsExpired())");
+                    sb.AppendLine("            {");
+                    sb.AppendLine("                " + field + "_busy = false;");
+                    sb.AppendLine("                " + field + "_timedout = true;");
+                    sb.AppendLine("                " + field + "_gen = " + field + "_gen + 1;");
+                    sb.AppendLine("                " + field + "_cube.Reset();");
+                    sb.AppendLine("                AuditStore.Default?.Record(\"Flow\", \"trace.timeout\", -1, new AuditProp[] { new AuditProp(\"wire\", \"" + wire.Name + "\"), new AuditProp(\"cause\", \"unreplied\"), new AuditProp(\"frame\", frame.ToString()) });");
+                    // 超时归宿——多结果导线走第二支（失败侧），单结果保持原归宿
+                    ResultV3 activeTimeoutResult = wire.Results[0];
+                    if (wire.Results.Count > 1)
+                    {
+                        activeTimeoutResult = wire.Results[1];
+                    }
+                    AppendAssign(sb, activeTimeoutResult);
+                    sb.AppendLine("            }");
                 }
                 // [段2] 回投应用——主线程 Drain（捕获导线走 BrickCaptureV3 载荷）
+                //        代际守卫：载荷代际与当前代际不符（超时作废后迟到 / 已被下一次启程顶替）→ 丢弃 + 审计，不触碰在途状态
                 if (wire.CaptureTarget.Length > 0)
                 {
                     string captureType = CaptureCSType(wire.BrickName);
                     sb.AppendLine("            " + field + "_inbox.Drain(delegate (BrickCaptureV3<" + captureType + "> cap)");
                     sb.AppendLine("            {");
+                    sb.AppendLine("                if (cap.Gen != " + field + "_gen)");
+                    sb.AppendLine("                {");
+                    sb.AppendLine("                    AuditStore.Default?.Record(\"Flow\", \"trace.late_discard\", -1, new AuditProp[] { new AuditProp(\"wire\", \"" + wire.Name + "\"), new AuditProp(\"gen\", cap.Gen.ToString()), new AuditProp(\"frame\", frame.ToString()) });");
+                    sb.AppendLine("                    return;");
+                    sb.AppendLine("                }");
                     sb.AppendLine("                bool ok = cap.Ok;");
                     sb.AppendLine("                DataBox.Set<" + captureType + ">(" + BoxScopeExpr(wire.CaptureTarget) + ", \"" + BoxKey(wire.CaptureTarget) + "\", cap.Value);");
                 }
                 else
                 {
-                    sb.AppendLine("            " + field + "_inbox.Drain(delegate (bool ok)");
+                    sb.AppendLine("            " + field + "_inbox.Drain(delegate (BrickResultV3 cap)");
                     sb.AppendLine("            {");
+                    sb.AppendLine("                if (cap.Gen != " + field + "_gen)");
+                    sb.AppendLine("                {");
+                    sb.AppendLine("                    AuditStore.Default?.Record(\"Flow\", \"trace.late_discard\", -1, new AuditProp[] { new AuditProp(\"wire\", \"" + wire.Name + "\"), new AuditProp(\"gen\", cap.Gen.ToString()), new AuditProp(\"frame\", frame.ToString()) });");
+                    sb.AppendLine("                    return;");
+                    sb.AppendLine("                }");
+                    sb.AppendLine("                bool ok = cap.Ok;");
                 }
                 sb.AppendLine("                " + field + "_busy = false;");
                 sb.AppendLine("                bool timedOut = false;");

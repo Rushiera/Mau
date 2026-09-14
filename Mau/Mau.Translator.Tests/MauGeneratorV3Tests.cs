@@ -267,7 +267,7 @@ namespace Mau.Translator.Tests
         }
 
         /// <summary>
-        /// par 时限——[t=2] 超时丢弃迟到结果：Cube 过期 → 失败侧 + TimedOut 标志
+        /// par 时限——主动超时即时结算（不等结果到达）+ 迟到结果按代际丢弃（状态保持失败侧）
         /// </summary>
         [Fact]
         public void Generate_Behavior_Parallel_Timeout()
@@ -295,13 +295,18 @@ namespace Mau.Translator.Tests
                     // 帧 2/3——Cube 推进（t=2：触发帧 + 2 帧后 Expired）
                     flow.Tick(2);
                     flow.Tick(3);
-                    // 后台仍在跑（500ms）——结果迟到后 Drain 时应超时丢弃
+                    // [段1] 主动超时——后台仍在跑（500ms），主线程却已按失败侧结算（不等结果到达：A48 防在途锁死）
+                    FlowStatusV3 active = flow.GetStatus();
+                    Assert.Contains("S_Job=Failed", active.StateLines);
+                    Assert.False(active.WireStatuses[0].Busy);
+                    Assert.True(active.WireStatuses[0].TimedOut);
+                    // [段2] 迟到结果丢弃——后台完成后结果入队，Drain 代际不符 → 丢弃，状态保持失败侧（不被改回成功侧）
                     System.Threading.Thread.Sleep(700);
                     flow.Tick(4);
-                    FlowStatusV3 status = flow.GetStatus();
-                    Assert.Contains("S_Job=Failed", status.StateLines);
-                    Assert.True(status.WireStatuses[0].TimedOut);
-                    Assert.False(status.WireStatuses[0].Busy);
+                    FlowStatusV3 late = flow.GetStatus();
+                    Assert.Contains("S_Job=Failed", late.StateLines);
+                    Assert.True(late.WireStatuses[0].TimedOut);
+                    Assert.False(late.WireStatuses[0].Busy);
                 }
             }
             finally
@@ -319,6 +324,31 @@ namespace Mau.Translator.Tests
                     }
                 }
             }
+        }
+        /// <summary>
+        /// par 载荷与代际——捕获导线产 BrickCaptureV3（含 Gen 守卫）；无捕获导线产 BrickResultV3；两类都带迟到结果丢弃
+        /// </summary>
+        [Fact]
+        public void Generate_Parallel_PayloadWithGeneration()
+        {
+            string captureSample =
+                "§ 'S_A' = { 'Idle', 'Busy', 'Done' }\n" +
+                "§ 'P_Go' ⇐\n" +
+                "§ 'T_Fire' [par] : 'P_Go' & 'S_A' = 'Idle' → 'probe.sink'[\"k\", 0] > @res | 'S_A' = 'Busy' | 'S_A' = 'Done'";
+            CompileResultV3 capture = MauCompilerV3.Compile(captureSample, "ParCapture");
+            Assert.True(capture.Success);
+            Assert.Contains("private struct BrickCaptureV3<T>", capture.GeneratedCode);
+            Assert.Contains("public long Gen;", capture.GeneratedCode);
+            Assert.Contains("trace.late_discard", capture.GeneratedCode);
+
+            string bareSample =
+                "§ 'S_B' = { 'Idle', 'Busy', 'Done' }\n" +
+                "§ 'P_Go2' ⇐\n" +
+                "§ 'T_Fire2' [par] : 'P_Go2' & 'S_B' = 'Idle' → 'probe.sink'[\"k\", 0] | 'S_B' = 'Busy' | 'S_B' = 'Done'";
+            CompileResultV3 bare = MauCompilerV3.Compile(bareSample, "ParBare");
+            Assert.True(bare.Success);
+            Assert.Contains("private struct BrickResultV3", bare.GeneratedCode);
+            Assert.DoesNotContain("BrickCaptureV3", bare.GeneratedCode);
         }
 
         /// <summary>

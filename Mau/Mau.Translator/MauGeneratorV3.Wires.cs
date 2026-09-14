@@ -18,20 +18,37 @@ namespace Mau.Translator
         /// <param name="doc">IR</param>
         private static void AppendWires(StringBuilder sb, MauDocV3 doc)
         {
-            // [段0] 捕获结构体——任意 par+捕获导线存在时生成（后台回投载荷）
+            // [段0] par 载荷结构体——任意 par 导线存在时生成（后台回投载荷）
+            // Gen = 启程代际号——超时作废/换代后迟到的结果按代际丢弃（late result 防护）
+            bool anyBarePar = false;
             bool anyCapturePar = false;
             for (int w = 0; w < doc.Wires.Count; w++)
             {
-                if (doc.Wires[w].Parallel && doc.Wires[w].CaptureTarget.Length > 0)
+                if (doc.Wires[w].Parallel)
                 {
-                    anyCapturePar = true;
-                    break;
+                    if (doc.Wires[w].CaptureTarget.Length > 0)
+                    {
+                        anyCapturePar = true;
+                    }
+                    else
+                    {
+                        anyBarePar = true;
+                    }
                 }
+            }
+            if (anyBarePar)
+            {
+                sb.AppendLine("        private struct BrickResultV3");
+                sb.AppendLine("        {");
+                sb.AppendLine("            public long Gen;");
+                sb.AppendLine("            public bool Ok;");
+                sb.AppendLine("        }");
             }
             if (anyCapturePar)
             {
                 sb.AppendLine("        private struct BrickCaptureV3<T>");
                 sb.AppendLine("        {");
+                sb.AppendLine("            public long Gen;");
                 sb.AppendLine("            public bool Ok;");
                 sb.AppendLine("            public T Value;");
                 sb.AppendLine("        }");
@@ -61,6 +78,8 @@ namespace Mau.Translator
                 {
                     sb.AppendLine("        private bool " + NameField(wire.Name) + "_busy;");
                     sb.AppendLine("        private bool " + NameField(wire.Name) + "_timedout;");
+                    // 启程代际号——主线程启程/超时作废时自增；后台载荷带回启程代际，Drain 比对不符即丢弃
+                    sb.AppendLine("        private long " + NameField(wire.Name) + "_gen;");
                 }
                 if (wire.Parallel)
                 {
@@ -71,7 +90,7 @@ namespace Mau.Translator
                     }
                     else
                     {
-                        sb.AppendLine("        private readonly Inbox<bool> " + NameField(wire.Name) + "_inbox = new Inbox<bool>();");
+                        sb.AppendLine("        private readonly Inbox<BrickResultV3> " + NameField(wire.Name) + "_inbox = new Inbox<BrickResultV3>();");
                     }
                 }
                 AppendWireCondition(sb, wire, pascal, doc);
@@ -244,6 +263,9 @@ namespace Mau.Translator
             sb.AppendLine("            " + field + "_busy = true;");
             sb.AppendLine("            " + field + "_frame = frame;");
             sb.AppendLine("            " + field + "_timedout = false;");
+            // 启程代际自增——载荷带回本代际，超时作废/换代后到达的结果按代际丢弃（late result 防护）
+            sb.AppendLine("            " + field + "_gen = " + field + "_gen + 1;");
+            sb.AppendLine("            long v_gen = " + field + "_gen;");
             if (wire.Timeout > 0)
             {
                 sb.AppendLine("            " + field + "_cube.Start();");
@@ -288,7 +310,7 @@ namespace Mau.Translator
                     captureDecl = "                string v_capture = \"\";";
                 }
             }
-            // [段4] Task.Run——后台线程只调积木 + Inbox 回投（lambda 捕获启程帧冻结的值快照——零共享可变状态）
+            // [段4] Task.Run——后台线程只调积木 + Inbox 回投（lambda 捕获启程帧冻结的值快照 + 启程代际——零共享可变状态）
             sb.AppendLine("            System.Threading.Tasks.Task.Run(delegate ()");
             sb.AppendLine("            {");
             sb.AppendLine("                bool ok = false;");
@@ -306,22 +328,22 @@ namespace Mau.Translator
             sb.AppendLine("                }");
             if (wire.CaptureTarget.Length > 0)
             {
-                sb.AppendLine("                " + field + "_inbox.Enqueue(new BrickCaptureV3<" + captureType + "> { Ok = ok, Value = v_capture });");
+                sb.AppendLine("                " + field + "_inbox.Enqueue(new BrickCaptureV3<" + captureType + "> { Gen = v_gen, Ok = ok, Value = v_capture });");
             }
             else
             {
-                sb.AppendLine("                " + field + "_inbox.Enqueue(ok);");
+                sb.AppendLine("                " + field + "_inbox.Enqueue(new BrickResultV3 { Gen = v_gen, Ok = ok });");
             }
             sb.AppendLine("            });");
             sb.AppendLine("        }");
-            // [段5] 回投应用——主线程 Tick 开头 Drain（见 AppendTickInboxes）
-        }/// <summary>
-         /// 结果语句生成——同步路径（ok 变量 + 分支 + trace.state）
-         /// </summary>
-         /// <param name="sb">输出缓冲</param>
-         /// <param name="wire">导线</param>
-         /// <param name="okVar">ok 变量名</param>
-         /// <param name="frameVar">帧变量名</param>
+        }
+        /// <summary>
+        /// 结果语句生成——同步路径（ok 变量 + 分支 + trace.state）
+        /// </summary>
+        /// <param name="sb">输出缓冲</param>
+        /// <param name="wire">导线</param>
+        /// <param name="okVar">ok 变量名</param>
+        /// <param name="frameVar">帧变量名</param>
         private static void AppendResultStatements(StringBuilder sb, WireDefV3 wire, string okVar, string frameVar)
         {
             if (wire.Results.Count == 1)
