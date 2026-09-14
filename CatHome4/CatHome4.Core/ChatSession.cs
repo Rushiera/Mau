@@ -32,8 +32,8 @@ namespace CH4
         /// <summary>LLM 超时帧上限——同原 WaitForLlm MaxFramesPerRun 语义（30000 帧 ≈ 25 分钟空转上限）</summary>
         private const long LlmTimeoutFrames = 30000;
 
-        /// <summary>工具批等待帧上限——同原 MaxDogWaitFrames（4800 最长工具 + 600 余量）</summary>
-        private const long ToolBatchWaitFrames = 4800 + 600;
+        /// <summary>工具批等待帧上限——最长工具 2400 帧（120 秒，A48 统一口径）+ 600 余量</summary>
+        private const long ToolBatchWaitFrames = 2400 + 600;
 
         /// <summary>工具单 Dog owner ID——宿主 Dog 域（同 ToolOwnerId——OA 未开存活校验，多 Dog 未来可扩展独立 ID）</summary>
         private const long ToolOwnerId = 1;

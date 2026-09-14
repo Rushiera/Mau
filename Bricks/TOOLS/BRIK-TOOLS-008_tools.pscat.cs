@@ -22,9 +22,9 @@ namespace Mau.Bricks
         public static string GetToolsJson()
         {
             return "{\"group\":\"PsCat\",\"tools\":[" +
-                "{\"name\":\"powershell\",\"description\":\"【单行指令】仅支持「命令 + 字面量参数」——不接受任何形式的可运行代码注入：禁类型引用 [X]、方法调用、表达式、变量 $x、脚本块 {}、过程语句、动态执行。禁多段（分号/与运算/换行）、管道、重定向——多步拆成多次工具调用（同轮可并发）。禁绕过工具组另起功能：文件读写走 text-*、起进程走宿主通道、判断归你自己。返回 JSON（exit/stdout/stderr/truncated/timeout）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"PowerShell 命令文本（单行指令：命令 + 字面量参数）\"},\"cwd\":{\"type\":\"string\",\"description\":\"工作目录（默认宿主数据根）\"},\"timeout_ms\":{\"type\":\"integer\",\"description\":\"超时毫秒（默认 30000，上限 300000）\"}},\"required\":[\"command\"]}}" +
+                "{\"name\":\"powershell\",\"description\":\"【单行指令】仅支持「命令 + 字面量参数」——不接受任何形式的可运行代码注入：禁类型引用 [X]、方法调用、表达式、变量 $x、脚本块 {}、过程语句、动态执行。禁多段（分号/与运算/换行）、管道、重定向——多步拆成多次工具调用（同轮可并发）。禁绕过工具组另起功能：文件读写走 text-*、起进程走宿主通道、判断归你自己。返回 JSON（exit/stdout/stderr/truncated/timeout）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"PowerShell 命令文本（单行指令：命令 + 字面量参数）\"},\"cwd\":{\"type\":\"string\",\"description\":\"工作目录（默认宿主数据根）\"},\"timeout_ms\":{\"type\":\"integer\",\"description\":\"超时毫秒（默认 30000，上限 120000）\"}},\"required\":[\"command\"]}}" +
                 "]}";
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:EFB80826768D19B57D0ACAEFD92E8060378220A8B0744F9FE463921405621799
+// #MAU_CHECKSUM:SHA256:8AA6B31C9D5900B5D7A30C525127264CA307D0B29741D313FDB246F1BE6D44AD

@@ -4,9 +4,13 @@
 // 载荷协议：officeName = 工具名（powershell）；载荷 key "args" = 整包工具参数 JSON（command/cwd/timeout_ms）
 // 无值分支：每工具一条认领线，工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
 // 数据面：@psOffice/@psArgs/@psRes 私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
-// 线程模型：全部主线程同步（PsService 同步执行——工具循环等待语义，与 web-search 一致）
-// 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）
+// 线程模型（A48 后台化）：收单/读参/回执主线程同步；执行步 [t=2400, par] 后台线程执行（主线程零阻塞）
+//   —— 在途期间状态停在 Ready（不接新单，新单留 OA 队列）+ Busy 门防重入（线级唯一在途槽 = 结构性不可并发的锁）
+//   —— 回投由主线程 Drain 应用（代际守卫：超时作废后迟到的结果按代际丢弃）
+//   —— 超时 2400 帧（120s）：后台未回投则主动按失败结算（T_ExecAbort 回执 ERR 可见）
+// 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）+ trace.timeout / trace.late_discard
 // 拦截语义：写文件/Start-Process/ReadKey 在 PsService 侧词法拦截（ERR| 回执——错误可见性）
+// 变更（2026-09-14 A48）：exec 导线 par 化——self.desc 挪至 args 导线（par 导线单动作约束）
 
 // ── 状态机（1 线——powershell）──
 § 'S_Exec' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
@@ -22,11 +26,11 @@
 // T_ExecClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
 § 'T_ExecClaim' : @psOpen & 'S_Exec' = 'Idle' → 'oa.claim_next_simple'["TOOL", "powershell"] > @psOffice | 'S_Exec' = 'Claimed' | 'S_Exec' = 'Idle'
 
-// T_ExecArgs：读载荷 args（整包工具参数 JSON——command/cwd/timeout_ms）
-§ 'T_ExecArgs' : 'S_Exec' = 'Claimed' → 'oa.get_str'[@psOffice, "args"] > @psArgs | 'S_Exec' = 'Ready' | 'S_Exec' = 'Failed'
+// T_ExecArgs：读载荷 args（整包工具参数 JSON——command/cwd/timeout_ms）+ 执行中自述（par 导线单动作约束——desc 前移）
+§ 'T_ExecArgs' : 'S_Exec' = 'Claimed' → 'oa.get_str'[@psOffice, "args"] > @psArgs | 'self.desc'["PowerShell 执行中", "", ""] | 'S_Exec' = 'Ready' | 'S_Exec' = 'Failed'
 
-// T_ExecExec：执行积木（argsJson 整包——积木内部解析；失败侧 ERR 文本也在 @psRes）
-§ 'T_ExecExec' : 'S_Exec' = 'Ready' → 'ps.exec'[@psArgs] > @psRes | 'self.desc'["PowerShell 执行中", "", ""] | 'S_Exec' = 'Done' | 'S_Exec' = 'Failed'
+// T_ExecExec：执行积木（argsJson 整包——积木内部解析；失败侧 ERR 文本也在 @psRes）——后台执行
+§ 'T_ExecExec' [t=2400, par] : 'S_Exec' = 'Ready' → 'ps.exec'[@psArgs] > @psRes | 'S_Exec' = 'Done' | 'S_Exec' = 'Failed'
 
 // T_ExecReply：成功回执（result=结果 JSON）
 § 'T_ExecReply' : 'S_Exec' = 'Done' → 'oa.complete_str'[@psOffice, @psRes] | 'self.desc'["PowerShell 空闲待命", "", ""] | 'S_Exec' = 'Idle' | 'S_Exec' = 'Idle'

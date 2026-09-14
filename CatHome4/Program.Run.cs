@@ -361,8 +361,8 @@ namespace CH4
         private static void HandleQuickCat(string system, string content)
         {
             const long QuickOwnerId = 100;
-            const long QuickTimeoutFrames = 4800;
-            const long QuickWaitFrames = 4800 + 600;
+            const long QuickTimeoutFrames = 2400;
+            const long QuickWaitFrames = 2400 + 600;
             long officeId = _oa.Post(QuickOwnerId, "TOOL", "QuickCat", QuickTimeoutFrames);
             if (officeId <= 0)
             {

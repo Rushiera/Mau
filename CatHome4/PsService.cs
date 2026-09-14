@@ -28,8 +28,8 @@ namespace CH4
         /// <summary>默认超时毫秒——无 timeout_ms 参数时</summary>
         private const long DefaultTimeoutMs = 30000;
 
-        /// <summary>超时上限毫秒——超长任务须显式放宽</summary>
-        private const long MaxTimeoutMs = 300000;
+        /// <summary>超时上限毫秒——与工单/后台执行层统一 120 秒口径（A48 同步）</summary>
+        private const long MaxTimeoutMs = 120000;
 
         /// <summary>
         /// 执行 PowerShell 命令——拦截检查 → EncodedCommand 启动 → 超时/输出处理 → JSON 回执
