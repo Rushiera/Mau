@@ -6,7 +6,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <RootNamespace>CatHome4.Observe</RootNamespace>
     <AssemblyName>CatHome4.Observe</AssemblyName>
-    <Version>1.02.002</Version>
+    <Version>1.02.003</Version>
   </PropertyGroup>
 
   <ItemGroup>

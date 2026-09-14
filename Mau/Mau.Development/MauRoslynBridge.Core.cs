@@ -531,7 +531,7 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 构建引用集——bin 产物（莎拍板 A）+ TPA + 共享框架探测（AspNetCore/WindowsDesktop）；按名去重（bin 优先）
+        /// 构建引用集——bin 产物（莎拍板 A）+ TPA + 共享框架探测（AspNetCore 全项目 / WindowsDesktop 仅 -windows 目标——A46）；按名去重（bin 优先）
         /// </summary>
         /// <param name="cache">缓存</param>
         /// <returns>引用列表（bin 缺失时返回空列表——check 引导 build）</returns>
@@ -539,14 +539,19 @@ namespace Mau.Development
         {
             List<MetadataReference> references = new List<MetadataReference>();
             Dictionary<string, string> pathsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            // TPA——运行时平台程序集
+            // TPA——运行时平台程序集（宿主进程运行时；目标项目非 -windows 时剔除 WindowsDesktop 框架程序集——宿主是 -windows 应用，其 TPA 内 Accessibility.dll 会与 Roslyn 的 Accessibility 枚举抢名 → CS0118/CS0234 假阳性，A46）
             string? tpaRaw = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string;
+            bool targetWindows = cache.Tfm.IndexOf("-windows", StringComparison.OrdinalIgnoreCase) >= 0;
             if (tpaRaw != null)
             {
                 string[] parts = tpaRaw.Split(';');
                 for (int i = 0; i < parts.Length; i = i + 1)
                 {
                     if (parts[i].Length == 0)
+                    {
+                        continue;
+                    }
+                    if (!targetWindows && parts[i].IndexOf("Microsoft.WindowsDesktop.App", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         continue;
                     }
@@ -557,7 +562,7 @@ namespace Mau.Development
                     }
                 }
             }
-            // 共享框架探测——AspNetCore + WindowsDesktop（WinForms/WPF 程序集所在；按项目 TFM 主版本匹配 + 跳过 native dll）
+            // 共享框架探测——AspNetCore（全项目）+ WindowsDesktop（仅 -windows 目标——WinForms/WPF 程序集所在；按项目 TFM 主版本匹配 + 跳过 native dll）
             string? runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location);
             if (runtimeDir != null)
             {
@@ -566,7 +571,11 @@ namespace Mau.Development
                 {
                     string sharedDir = Path.GetDirectoryName(netCoreAppDir) ?? "";
                     ProbeSharedFramework(pathsByName, sharedDir, "Microsoft.AspNetCore.App", cache.Tfm);
-                    ProbeSharedFramework(pathsByName, sharedDir, "Microsoft.WindowsDesktop.App", cache.Tfm);
+                    // A46 TFM 判定——WindowsDesktop 框架仅对 -windows 目标注入（非 -windows 项目注入会引入 Accessibility.dll，与 Roslyn 的 Accessibility 枚举抢名 → CS0118/CS0234 假阳性）
+                    if (targetWindows)
+                    {
+                        ProbeSharedFramework(pathsByName, sharedDir, "Microsoft.WindowsDesktop.App", cache.Tfm);
+                    }
                 }
             }
             // bin 产物——目标项目已 build 输出（优先于 TPA/框架）
