@@ -8,7 +8,9 @@ using System.Threading;
 namespace CH4
 {
     /// <summary>
-    /// PowerShell 执行服务——powershell 工具实现（PsCat 工具组）。
+    /// PowerShell 执行服务——powershell / powershell7 工具实现（PsCat 工具组）。
+    /// 解释器线（shell 参数）：powershell=默认解释器（Windows PowerShell 5.1）；powershell7=PowerShell 7
+    ///   （pwsh.exe 路径读配置 ps.pwsh_path——未配置/路径不存在即明示 ERR，不静默回落默认线）。
     /// 设计动机（CH2 shell_exec 痛点反推）：
     ///   1) 编码/转义不可控 → 整段命令 UTF-16LE → Base64 走 -EncodedCommand（PS 官方免转义通道）
     ///   2) 输出乱码 → 命令前缀注入 [Console]::OutputEncoding=UTF8 + chcp 65001，宿主按 UTF-8 解码
@@ -35,13 +37,25 @@ namespace CH4
         /// 执行 PowerShell 命令——拦截检查 → EncodedCommand 启动 → 超时/输出处理 → JSON 回执
         /// </summary>
         /// <param name="argsJson">工具参数 JSON（command/cwd/timeout_ms）</param>
+        /// <param name="shell">解释器线标识（powershell=默认解释器 / powershell7=PowerShell 7）</param>
         /// <returns>结果 JSON 或 ERR| 错误文本</returns>
-        public string Exec(string argsJson)
+        public string Exec(string argsJson, string shell)
         {
             string command = ExtractArg(argsJson, "command");
             if (command.Length == 0)
             {
                 return "ERR|PS_BAD_ARGS|缺少参数 command";
+            }
+            // [段0] 解释器解析——默认线 powershell.exe；powershell7 线读配置 ps.pwsh_path（未配置/路径不存在 → 明示 ERR，不静默回落默认线）
+            string exePath = "powershell.exe";
+            if (string.Equals(shell, "powershell7", StringComparison.Ordinal))
+            {
+                string shellError = "";
+                exePath = ResolvePwshPath(out shellError);
+                if (exePath.Length == 0)
+                {
+                    return shellError;
+                }
             }
             string cwd = ExtractArg(argsJson, "cwd");
             long timeoutMs = ParseTimeout(ExtractArg(argsJson, "timeout_ms"));
@@ -52,11 +66,17 @@ namespace CH4
                 return block;
             }
             // [段2] 命令前缀——UTF-8 输出内建（PS 5.1 默认 ANSI/GBK——乱码根因；chcp 65001 + OutputEncoding 双保险）+ 进度流静默（首载模块 CLIXML 噪音）
-            string prefixed = "[Console]::OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference='SilentlyContinue'; chcp 65001 > $null; " + command;
+            //        powershell7 线追加 $PSStyle.OutputRendering='PlainText'（pwsh 7 专有——默认 Host 渲染给格式化输出与错误流加 ANSI 色码，LLM 消费面需纯文本）
+            string prefix = "[Console]::OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference='SilentlyContinue'; chcp 65001 > $null; ";
+            if (string.Equals(shell, "powershell7", StringComparison.Ordinal))
+            {
+                prefix = prefix + "$PSStyle.OutputRendering='PlainText'; ";
+            }
+            string prefixed = prefix + command;
             // [段3] EncodedCommand——UTF-16LE → Base64（免转义：引号/反斜杠/JSON 原样直达 PS 解析器）
             string base64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(prefixed));
             ProcessStartInfo psi = new ProcessStartInfo();
-            psi.FileName = "powershell.exe";
+            psi.FileName = exePath;
             psi.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + base64;
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
@@ -120,7 +140,7 @@ namespace CH4
                 // 等待异常（进程已退出等）——按已退出处理
             }
             string outText = stdout.ToString();
-            string errText = stderr.ToString();
+            string errText = CleanErrorText(stderr.ToString());
             bool outTrunc = outText.Length >= MaxStdoutChars;
             bool errTrunc = errText.Length >= MaxStderrChars;
             // [段6] JSON 回执——exit/stdout/stderr/truncated/timeout（失败侧非零退出也回执，Dog 可见）
@@ -131,6 +151,214 @@ namespace CH4
             resp["truncated"] = outTrunc || errTrunc;
             resp["timeout"] = timeout;
             return Mau.Runtime.JsonUtil.Serialize(resp);
+        }
+        /// <summary>
+        /// 解析 PowerShell 7 可执行路径——读配置 ps.pwsh_path（未配置 / 路径不存在 → error 明示，不静默回落默认解释器）
+        /// </summary>
+        /// <param name="error">错误文本（空=解析成功）</param>
+        /// <returns>pwsh.exe 全路径（解析失败返回空串）</returns>
+        private static string ResolvePwshPath(out string error)
+        {
+            error = "";
+            Mau.Runtime.ConfigStore cfg;
+            Mau.Runtime.DataBox.TryResolve<Mau.Runtime.ConfigStore>(out cfg);
+            string path = "";
+            if (cfg != null)
+            {
+                path = cfg.Get("ps.pwsh_path", "");
+            }
+            if (path.Length == 0)
+            {
+                error = "ERR|PS_PWSH_MISSING|PowerShell 7 未配置——请在配置面填写 ps.pwsh_path（pwsh.exe 全路径；获取方式 powershell -Command where.exe pwsh）";
+                return "";
+            }
+            if (!System.IO.File.Exists(path))
+            {
+                error = "ERR|PS_PWSH_NOT_FOUND|配置的 PowerShell 7 路径不存在：" + path + "——请更新 ps.pwsh_path";
+                return "";
+            }
+            return path;
+        }
+
+        /// <summary>
+        /// 清洗错误文本——CLIXML 序列化解包（PowerShell stderr 重定向时原生格式）+ ANSI 色码剥离（LLM 消费面需纯文本）
+        /// </summary>
+        /// <param name="raw">原始 stderr 文本</param>
+        /// <returns>清洗后的错误文本（无 CLIXML 壳时仅剥色）</returns>
+        private static string CleanErrorText(string raw)
+        {
+            if (raw.Length == 0)
+            {
+                return raw;
+            }
+            string text = raw;
+            // [段1] CLIXML 解包——拼接全部 <S S="Error">…</S> 片段（无 Objs 壳时原样保留）
+            int objStart = text.IndexOf("<Objs", StringComparison.Ordinal);
+            if (objStart >= 0)
+            {
+                StringBuilder sb = new StringBuilder();
+                int cursor = objStart;
+                while (true)
+                {
+                    int openTag = text.IndexOf("<S S=\"", cursor, StringComparison.Ordinal);
+                    if (openTag < 0)
+                    {
+                        break;
+                    }
+                    int contentStart = text.IndexOf('>', openTag);
+                    if (contentStart < 0)
+                    {
+                        break;
+                    }
+                    int contentEnd = text.IndexOf("</S>", contentStart + 1, StringComparison.Ordinal);
+                    if (contentEnd < 0)
+                    {
+                        break;
+                    }
+                    sb.Append(UnescapeCliXml(text.Substring(contentStart + 1, contentEnd - contentStart - 1)));
+                    cursor = contentEnd + 4;
+                }
+                if (sb.Length > 0)
+                {
+                    text = sb.ToString();
+                }
+            }
+            // [段2] ANSI 剥离
+            return StripAnsi(text);
+        }
+
+        /// <summary>
+        /// CLIXML 转义还原——_xNNNN_ 控制字符 + XML 实体（&amp;lt; &amp;gt; &amp;amp; &amp;quot; &amp;apos;）
+        /// </summary>
+        /// <param name="text">转义文本</param>
+        /// <returns>还原文本</returns>
+        private static string UnescapeCliXml(string text)
+        {
+            StringBuilder sb = new StringBuilder();
+            int i = 0;
+            while (i < text.Length)
+            {
+                if (text[i] == '_' && i + 6 < text.Length && text[i + 1] == 'x' && text[i + 6] == '_')
+                {
+                    int code = Hex4(text, i + 2);
+                    if (code >= 0)
+                    {
+                        sb.Append((char)code);
+                        i = i + 7;
+                        continue;
+                    }
+                }
+                if (text[i] == '&')
+                {
+                    if (i + 4 <= text.Length && string.CompareOrdinal(text, i, "&lt;", 0, 4) == 0)
+                    {
+                        sb.Append('<');
+                        i = i + 4;
+                        continue;
+                    }
+                    if (i + 4 <= text.Length && string.CompareOrdinal(text, i, "&gt;", 0, 4) == 0)
+                    {
+                        sb.Append('>');
+                        i = i + 4;
+                        continue;
+                    }
+                    if (i + 5 <= text.Length && string.CompareOrdinal(text, i, "&amp;", 0, 5) == 0)
+                    {
+                        sb.Append('&');
+                        i = i + 5;
+                        continue;
+                    }
+                    if (i + 6 <= text.Length && string.CompareOrdinal(text, i, "&quot;", 0, 6) == 0)
+                    {
+                        sb.Append('"');
+                        i = i + 6;
+                        continue;
+                    }
+                    if (i + 6 <= text.Length && string.CompareOrdinal(text, i, "&apos;", 0, 6) == 0)
+                    {
+                        sb.Append('\'');
+                        i = i + 6;
+                        continue;
+                    }
+                }
+                sb.Append(text[i]);
+                i = i + 1;
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 四位十六进制解析——"000D" → 13（非法返回 -1）
+        /// </summary>
+        /// <param name="text">源文本</param>
+        /// <param name="start">起始下标</param>
+        /// <returns>数值（-1=非法）</returns>
+        private static int Hex4(string text, int start)
+        {
+            if (start + 4 > text.Length)
+            {
+                return -1;
+            }
+            int value = 0;
+            for (int i = 0; i < 4; i = i + 1)
+            {
+                char c = text[start + i];
+                int digit;
+                if (c >= '0' && c <= '9')
+                {
+                    digit = c - '0';
+                }
+                else if (c >= 'a' && c <= 'f')
+                {
+                    digit = c - 'a' + 10;
+                }
+                else if (c >= 'A' && c <= 'F')
+                {
+                    digit = c - 'A' + 10;
+                }
+                else
+                {
+                    return -1;
+                }
+                value = value * 16 + digit;
+            }
+            return value;
+        }
+
+        /// <summary>
+        /// ANSI 转义剥离——ESC[ 参数 终止字母 序列整体删除
+        /// </summary>
+        /// <param name="text">含转义文本</param>
+        /// <returns>纯文本</returns>
+        private static string StripAnsi(string text)
+        {
+            StringBuilder sb = new StringBuilder();
+            int i = 0;
+            while (i < text.Length)
+            {
+                if (text[i] == '\u001B' && i + 1 < text.Length && text[i + 1] == '[')
+                {
+                    int j = i + 2;
+                    while (j < text.Length)
+                    {
+                        char c = text[j];
+                        if ((c >= '0' && c <= '9') || c == ';' || c == '?' || c == ' ')
+                        {
+                            j = j + 1;
+                            continue;
+                        }
+                        break;
+                    }
+                    if (j < text.Length && ((text[j] >= 'A' && text[j] <= 'Z') || (text[j] >= 'a' && text[j] <= 'z')))
+                    {
+                        i = j + 1;
+                        continue;
+                    }
+                }
+                sb.Append(text[i]);
+                i = i + 1;
+            }
+            return sb.ToString();
         }
 
         /// <summary>

@@ -5,9 +5,10 @@
 // 作用: PowerShell 执行——整段命令 EncodedCommand 免转义直达 PS；UTF-8 输出内建；写文件语义拦截；超时进程树杀
 // 依赖: 无
 // 引用: Mau.Runtime（IPsService/DataBox）
-// 原理: DataBox.TryResolve<IPsService> → Exec(argsJson)；argsJson 内解析（语料零 JSON 解析）；
-//       拦截语义（写文件/Start-Process/ReadKey）与编码处理在实现侧（CH4.PsService）
-// 常用: ps_cat.mau 认领线——'ps.exec'[@args] > @result
+// 原理: DataBox.TryResolve<IPsService> → Exec(argsJson, shell)；argsJson 内解析（语料零 JSON 解析）；
+//       拦截语义（写文件/Start-Process/ReadKey）与编码处理在实现侧（CH4.PsService）；
+//       shell 解释器线标识（powershell=默认解释器 / powershell7=PowerShell 7）
+// 常用: ps_cat.mau 认领线——'ps.exec'[@args, "powershell"] > @result
 // ═══════════════════════════════════════════════════
 using System;
 using System.Text.Json;
@@ -24,9 +25,10 @@ namespace Mau.Bricks
         /// 执行 PowerShell 命令——整段命令 EncodedCommand 传递；返回 JSON（exit/stdout/stderr/truncated/timeout）
         /// </summary>
         /// <param name="argsJson">工具参数 JSON（command/cwd/timeout_ms）</param>
+        /// <param name="shell">解释器线标识（powershell=默认解释器 / powershell7=PowerShell 7）</param>
         /// <param name="result">结果 JSON 或 ERR| 错误文本</param>
         /// <returns>true=执行成功</returns>
-        public static bool Exec(string argsJson, out string result)
+        public static bool Exec(string argsJson, string shell, out string result)
         {
             result = "";
             if (argsJson == null || argsJson.Length == 0)
@@ -43,7 +45,7 @@ namespace Mau.Bricks
                     result = "ERR|PS_NO_SERVICE|宿主未注入 IPsService";
                     return false;
                 }
-                result = service.Exec(argsJson);
+                result = service.Exec(argsJson, shell);
                 return true;
             }
             catch (Exception ex)
@@ -54,4 +56,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:11BCEDE5F49070ECA77E1D60C6BE1E50E422C148039FA31FF12793DFFFF94E91
+// #MAU_CHECKSUM:SHA256:B3788F20FD687034F68525D5B6F4703D24865A4E2D2D61C7EEF6DC3E672786CF

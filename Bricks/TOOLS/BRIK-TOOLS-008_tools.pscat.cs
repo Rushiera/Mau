@@ -22,9 +22,10 @@ namespace Mau.Bricks
         public static string GetToolsJson()
         {
             return "{\"group\":\"PsCat\",\"tools\":[" +
-                "{\"name\":\"powershell\",\"description\":\"【单行指令】仅支持「命令 + 字面量参数」——不接受任何形式的可运行代码注入：禁类型引用 [X]、方法调用、表达式、变量 $x、脚本块 {}、过程语句、动态执行。禁多段（分号/与运算/换行）、管道、重定向——多步拆成多次工具调用（同轮可并发）。禁绕过工具组另起功能：文件读写走 text-*、起进程走宿主通道、判断归你自己。返回 JSON（exit/stdout/stderr/truncated/timeout）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"PowerShell 命令文本（单行指令：命令 + 字面量参数）\"},\"cwd\":{\"type\":\"string\",\"description\":\"工作目录（默认宿主数据根）\"},\"timeout_ms\":{\"type\":\"integer\",\"description\":\"超时毫秒（默认 30000，上限 120000）\"}},\"required\":[\"command\"]}}" +
+                "{\"name\":\"powershell\",\"description\":\"【单行指令·Windows PowerShell 5.1（默认解释器）】仅支持「命令 + 字面量参数」——不接受任何形式的可运行代码注入：禁类型引用 [X]、方法调用、表达式、变量 $x、脚本块 {}、过程语句、动态执行。禁多段（分号/与运算/换行）、管道、重定向——多步拆成多次工具调用（同轮可并发）。禁绕过工具组另起功能：文件读写走 text-*、起进程走宿主通道、判断归你自己。返回 JSON（exit/stdout/stderr/truncated/timeout）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"PowerShell 命令文本（单行指令：命令 + 字面量参数）\"},\"cwd\":{\"type\":\"string\",\"description\":\"工作目录（默认宿主数据根）\"},\"timeout_ms\":{\"type\":\"integer\",\"description\":\"超时毫秒（默认 30000，上限 120000）\"}},\"required\":[\"command\"]}}" +
+                ",{\"name\":\"powershell7\",\"description\":\"【单行指令·PowerShell 7（pwsh）】纪律与 powershell 完全一致：仅支持「命令 + 字面量参数」——禁类型引用/方法调用/表达式/变量/脚本块/过程语句/动态执行；禁多段（分号/与运算/换行）、管道、重定向——多步拆成多次工具调用（同轮可并发）；禁绕过工具组另起功能：文件读写走 text-*、起进程走宿主通道、判断归你自己。⚠ pwsh.exe 路径由配置 ps.pwsh_path 指定——未配置或路径不存在时本工具明示不可用（不回落默认解释器）。返回 JSON（exit/stdout/stderr/truncated/timeout）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"PowerShell 7 命令文本（单行指令：命令 + 字面量参数）\"},\"cwd\":{\"type\":\"string\",\"description\":\"工作目录（默认宿主数据根）\"},\"timeout_ms\":{\"type\":\"integer\",\"description\":\"超时毫秒（默认 30000，上限 120000）\"}},\"required\":[\"command\"]}}" +
                 "]}";
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:8AA6B31C9D5900B5D7A30C525127264CA307D0B29741D313FDB246F1BE6D44AD
+// #MAU_CHECKSUM:SHA256:6EBA21861D15A0939FBA0473F54440174B12A9B4BD149626B4C381E33C5B3888

@@ -15,7 +15,8 @@ namespace Mau.Runtime
         /// 同步执行（阻塞调用线程——工具循环等待语义，与 web-search 一致）。
         /// </summary>
         /// <param name="argsJson">工具参数 JSON（command 必填 / cwd 可选 / timeout_ms 可选）</param>
+        /// <param name="shell">解释器线标识（powershell=默认解释器 / powershell7=PowerShell 7；空值按默认线处理）</param>
         /// <returns>结果 JSON 或 ERR| 前缀错误文本（错误可见性）</returns>
-        string Exec(string argsJson);
+        string Exec(string argsJson, string shell);
     }
 }

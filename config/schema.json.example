@@ -16,6 +16,7 @@
     { "key": "vision.endpoint", "file": "vision.cfg", "default": "", "sensitive": false, "writable": true, "desc": "视觉端点（空=池配置推导 /chat/completions；示例 https://api.deepseek.com/chat/completions）" },
     { "key": "vision.model", "file": "vision.cfg", "default": "", "sensitive": false, "writable": true, "desc": "视觉模型（空=池配置默认模型）" },
     { "key": "vision.detail", "file": "vision.cfg", "default": "auto", "sensitive": false, "writable": true, "desc": "图片细节（low/high/original/auto）" },
-    { "key": "vision.timeout_ms", "file": "vision.cfg", "default": "120000", "sensitive": false, "writable": true, "type": "int", "min": "1000", "max": "120000", "desc": "视觉超时毫秒（上限 120 秒——与工具执行层统一口径）" }
+    { "key": "vision.timeout_ms", "file": "vision.cfg", "default": "120000", "sensitive": false, "writable": true, "type": "int", "min": "1000", "max": "120000", "desc": "视觉超时毫秒（上限 120 秒——与工具执行层统一口径）" },
+    { "key": "ps.pwsh_path", "file": "ps.cfg", "default": "", "sensitive": false, "writable": true, "desc": "PowerShell 7 可执行路径（pwsh.exe 全路径；空=未配置——powershell7 工具明示不可用）" }
   ]
 }

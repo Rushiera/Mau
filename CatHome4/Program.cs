@@ -257,6 +257,8 @@ namespace CH4
             llmConfig.AddFile("search", Path.Combine(configDir, "search.cfg"));
             // R2.2 视觉配置群——vision.* 独立 vision.cfg（未配置=识图工具不可用——先配置后才可用）
             llmConfig.AddFile("vision", Path.Combine(configDir, "vision.cfg"));
+            // PsCat 工具组配置群——ps.* 独立 ps.cfg（ps.pwsh_path=PowerShell 7 路径；未配置=powershell7 工具明示不可用）
+            llmConfig.AddFile("ps", Path.Combine(configDir, "ps.cfg"));
             // M1 语料面 Runtime——默认端点语义（QuickCat 工单 llm.stream 消费面；Guid.Empty=每次调用实时解析默认配置）
             // 空配置池无默认端点 → 启动失败（不做静默回退——必须先配置端点后才能运行）
             _llmRuntime = new DeepSeekLlmRuntime(apiConfigStore, Guid.Empty, llmConfig);
