@@ -58,6 +58,47 @@ function chatToolIcon(name) {
     return '🔹';
 }
 
+// 结果规模信息——ps 结果 JSON 解析（stdout/stderr 合计 + 截断/超时标记）；非 JSON 按纯文本长度
+// 动机（2026-09-14）：消耗可见才能优化——16KB 硬截断保留，前端把规模与截断状态显式呈现
+function chatResultInfo(resultText) {
+    var text = resultText || '';
+    var info = { chars: text.length, truncated: false, timeout: false };
+    if (text.length === 0) {
+        return info;
+    }
+    var trimmed = text.replace(/^\s+|\s+$/g, '');
+    if (trimmed.charAt(0) !== '{') {
+        return info;
+    }
+    try {
+        var o = JSON.parse(trimmed);
+        if (o && typeof o.stdout === 'string') {
+            var n = o.stdout.length;
+            if (typeof o.stderr === 'string') { n = n + o.stderr.length; }
+            info.chars = n;
+            info.truncated = (o.truncated === true);
+            info.timeout = (o.timeout === true);
+        }
+    } catch (e) {
+        // 非 JSON——按纯文本长度（info 已就绪）
+    }
+    return info;
+}
+
+// 折叠行消耗标注——大结果（≥1000 字符）或截断/超时才追加（小结果不标，避免噪音）
+function chatResultSuffix(info) {
+    if (!info) {
+        return '';
+    }
+    if (info.truncated) {
+        return ' · ⚠️ 已达上限 ' + chatFmtCount(info.chars) + ' 字符' + (info.timeout ? '（超时终止）' : '');
+    }
+    if (info.chars >= 1000) {
+        return ' · ' + chatFmtCount(info.chars) + ' 字符';
+    }
+    return '';
+}
+
 function chatToolCard(tool) {
     // 工具卡——details 结构默认折叠（点击 summary 展开/收起；.tn/.ta/.tr 类保留——测试与样式复用）
     var isErr = tool.result && tool.result.indexOf('ERR') === 0;
@@ -75,13 +116,35 @@ function chatToolCard(tool) {
     } else {
         prefix = '🔧 ';
     }
-    sum.textContent = prefix + (tool.summary || tool.name || '?');
+    // 可见性适配——powershell 命令硬解码为自然语言意图（chat-cmd.js；宿主 summary 为原始命令截断，此处覆盖）
+    var summaryText = tool.summary || tool.name || '?';
+    var cmdIntent = null;
+    if (tool.name === 'powershell' && typeof cmdDecodeTool === 'function') {
+        cmdIntent = cmdDecodeTool(tool.arguments);
+        if (cmdIntent) { summaryText = cmdIntent.brief; }
+    }
+    var resultInfo = chatResultInfo(tool.result);
+    sum.textContent = prefix + summaryText + chatResultSuffix(resultInfo);
     det.appendChild(sum);
+    if (cmdIntent) {
+        // 展开区首块——逐段意图对照（原文仍在下方 arguments 块；未识别段标 ❓）
+        var ci = document.createElement('div');
+        ci.className = 'cmd-intent';
+        ci.textContent = cmdIntent.detail;
+        det.appendChild(ci);
+    }
     if (tool.arguments) {
         var a = document.createElement('div');
         a.className = 'ta';
         a.textContent = tool.arguments;
         det.appendChild(a);
+    }
+    if (resultInfo.truncated) {
+        // 截断警示——结果未完整回传（16KB 上限），消耗信号显式化
+        var w = document.createElement('div');
+        w.className = 'ta warn';
+        w.textContent = '⚠️ 输出已达上限被截断——后续内容未回传' + (resultInfo.timeout ? '；进程超时已终止' : '');
+        det.appendChild(w);
     }
     if (tool.result) {
         var r = document.createElement('div');

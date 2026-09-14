@@ -1451,7 +1451,7 @@ namespace CH4
                 if (_httpHost != null)
                 {
                     string toolSummary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, dog.Result);
-                    string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(TruncateText(dog.ArgsJson, 200)) + ",\"result\":" + JsonUtil.Serialize(TruncateText(dog.Result, 300)) + ",\"summary\":" + JsonUtil.Serialize(toolSummary) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
+                    string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(dog.Result) + ",\"summary\":" + JsonUtil.Serialize(toolSummary) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
                     _httpHost.PushView("toolcard", toolJson, -1, 0);
                 }
                 _context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);
@@ -1814,25 +1814,6 @@ namespace CH4
                 // 解析失败——回落原文
             }
             return TrimDisplay(arguments, 120);
-        }
-
-        /// <summary>
-        /// 文本截断——超长保留头部 + 截断提示（SSE 视图/落盘共用）。
-        /// </summary>
-        /// <param name="text">原文</param>
-        /// <param name="max">上限字符数</param>
-        /// <returns>截断文本</returns>
-        private static string TruncateText(string text, int max)
-        {
-            if (text == null)
-            {
-                return "";
-            }
-            if (text.Length <= max)
-            {
-                return text;
-            }
-            return text.Substring(0, max) + "…[截断:原" + text.Length.ToString() + "字符]";
         }
     }
 }

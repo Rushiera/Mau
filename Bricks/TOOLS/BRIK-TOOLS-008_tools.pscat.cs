@@ -22,7 +22,7 @@ namespace Mau.Bricks
         public static string GetToolsJson()
         {
             return "{\"group\":\"PsCat\",\"tools\":[" +
-                "{\"name\":\"powershell\",\"description\":\"执行 PowerShell 命令——整段命令原样执行（内部 EncodedCommand 免转义）；返回 JSON（exit/stdout/stderr/truncated/timeout）；写文件语义被拦截（走 text-* 读写工具）；git 命令豁免；禁 Start-Process/ReadKey\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"PowerShell 命令文本（完整一段脚本）\"},\"cwd\":{\"type\":\"string\",\"description\":\"工作目录（默认宿主数据根）\"},\"timeout_ms\":{\"type\":\"integer\",\"description\":\"超时毫秒（默认 30000，上限 300000）\"}},\"required\":[\"command\"]}}" +
+                "{\"name\":\"powershell\",\"description\":\"【单行指令】仅支持「命令 + 字面量参数」——不接受任何形式的可运行代码注入：禁类型引用 [X]、方法调用、表达式、变量 $x、脚本块 {}、过程语句、动态执行。禁多段（分号/与运算/换行）、管道、重定向——多步拆成多次工具调用（同轮可并发）。禁绕过工具组另起功能：文件读写走 text-*、起进程走宿主通道、判断归你自己。返回 JSON（exit/stdout/stderr/truncated/timeout）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"PowerShell 命令文本（单行指令：命令 + 字面量参数）\"},\"cwd\":{\"type\":\"string\",\"description\":\"工作目录（默认宿主数据根）\"},\"timeout_ms\":{\"type\":\"integer\",\"description\":\"超时毫秒（默认 30000，上限 300000）\"}},\"required\":[\"command\"]}}" +
                 "]}";
         }
     }

@@ -214,7 +214,7 @@ namespace CH4
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["name"] = target.Name.Length > 0 ? target.Name : (m.ToolName ?? "");
             payload["arguments"] = target.Arguments;
-            payload["result"] = TruncateText(m.Content ?? "", 300);
+            payload["result"] = m.Content ?? "";
             payload["summary"] = ToolSummaryFormatter.Build(payload["name"] as string ?? "", target.Arguments, payload["result"] as string ?? "");
             payload["toolIndex"] = target.Index;
             payload["toolTotal"] = target.Total;
@@ -398,7 +398,7 @@ namespace CH4
                         PendingTool pt = new PendingTool();
                         pt.ToolCallId = id;
                         pt.Name = name;
-                        pt.Arguments = TruncateText(arguments, 200);
+                        pt.Arguments = arguments;
                         pt.Index = i + 1;
                         pt.Total = root.GetArrayLength();
                         _pendingTools.Add(pt);
@@ -429,25 +429,6 @@ namespace CH4
                 }
             }
             return "";
-        }
-
-        /// <summary>
-        /// 文本截断——超长保留头部 + 截断提示（视图层：参数 ≤200 / 结果 ≤300）
-        /// </summary>
-        /// <param name="text">原文</param>
-        /// <param name="max">上限字符数</param>
-        /// <returns>截断文本</returns>
-        private static string TruncateText(string text, int max)
-        {
-            if (text == null)
-            {
-                return "";
-            }
-            if (text.Length <= max)
-            {
-                return text;
-            }
-            return text.Substring(0, max) + "…[截断:原" + text.Length.ToString() + "字符]";
         }
 
         /// <summary>

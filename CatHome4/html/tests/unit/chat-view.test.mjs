@@ -22,11 +22,13 @@ beforeAll(async () => {
   // F2.4 门禁迁移——加载外部模块（公共工具 + MD 解析器 + 渲染面 + 对话核心 + Note 面板；不执行引导层 SSE/按钮绑定/初始化）
   const common = await readFile(new URL('../../js/ui-common.js', import.meta.url), 'utf-8');
   const md = await readFile(new URL('../../js/chat-md.js', import.meta.url), 'utf-8');
+  const cmd = await readFile(new URL('../../js/chat-cmd.js', import.meta.url), 'utf-8');
   const view = await readFile(new URL('../../js/chat-view.js', import.meta.url), 'utf-8');
   const core = await readFile(new URL('../../js/chat-core.js', import.meta.url), 'utf-8');
   const note = await readFile(new URL('../../js/chat-note.js', import.meta.url), 'utf-8');
   vm.runInThisContext(common, { filename: 'ui-common.js' });
   vm.runInThisContext(md, { filename: 'chat-md.js' });
+  vm.runInThisContext(cmd, { filename: 'chat-cmd.js' });
   vm.runInThisContext(view, { filename: 'chat-view.js' });
   vm.runInThisContext(core, { filename: 'chat-core.js' });
   vm.runInThisContext(note, { filename: 'chat-note.js' });
@@ -232,6 +234,89 @@ test('toolcard 并发批次渲染 [icon n/m] 前缀——单次保持 🔧/⚠�
     replaceSeq: -1
   });
   expect(chatMsgs.querySelectorAll('.chat-tool .tn')[2].textContent).toBe('[⚠️ 2/4] text-read');
+});
+
+// ── powershell 命令解读——折叠行覆盖宿主 summary + 展开区意图块（chat-cmd.js 接入）──
+test('toolcard powershell——命令解读覆盖 summary + 展开区意图块', () => {
+  window.chatOnView({
+    seq: 33, renderType: 'toolcard',
+    payload: {
+      name: 'powershell',
+      arguments: JSON.stringify({ command: 'dotnet build CatHome4.sln; git status' }),
+      result: '{"exit":0}',
+      summary: '执行命令 "dotnet build CatHome4.sln; git status" → ...'
+    },
+    replaceSeq: -1
+  });
+  const card = chatMsgs.querySelector('.chat-tool');
+  // 折叠行——宿主原始命令截断被解读结果覆盖
+  expect(card.querySelector('.tn').textContent).toBe('🔧 编译 C# 项目 「CatHome4.sln」 等 2 段');
+  // 展开区首块——逐段意图
+  const intent = card.querySelector('.cmd-intent');
+  expect(intent).not.toBeNull();
+  expect(intent.textContent).toContain('1. 编译 C# 项目 「CatHome4.sln」');
+  expect(intent.textContent).toContain('2. 查看仓库状态');
+  // 原文块保留（意图块之后）
+  expect(card.querySelector('.ta').textContent).toContain('dotnet build');
+});
+
+// ── 非 powershell 工具——不进解读（宿主 summary 原样展示）──
+test('toolcard 非 powershell——不插命令意图块', () => {
+  window.chatOnView({
+    seq: 34, renderType: 'toolcard',
+    payload: { name: 'text-read', arguments: '{"path":"a.txt"}', result: 'OK', summary: '读取文件 "a.txt" → "OK"' },
+    replaceSeq: -1
+  });
+  const card = chatMsgs.querySelector('.chat-tool');
+  expect(card.querySelector('.tn').textContent).toBe('🔧 读取文件 "a.txt" → "OK"');
+  expect(card.querySelector('.cmd-intent')).toBeNull();
+});
+
+// ── 结果规模标注——消耗可见（大结果标字符数 / 截断标上限 + 警示块 / 小结果不标）──
+test('toolcard 大结果——折叠行标注字符数', () => {
+  window.chatOnView({
+    seq: 40, renderType: 'toolcard',
+    payload: { name: 'text-read', arguments: '{"path":"big.txt"}', result: 'x'.repeat(2000), summary: '读取文件 "big.txt" → ...' },
+    replaceSeq: -1
+  });
+  const card = chatMsgs.querySelector('.chat-tool');
+  expect(card.querySelector('.tn').textContent).toBe('🔧 读取文件 "big.txt" → ... · 2.00k 字符');
+  expect(card.querySelector('.ta.warn')).toBeNull();
+});
+
+test('toolcard 小结果——不标注（避免噪音）', () => {
+  window.chatOnView({
+    seq: 41, renderType: 'toolcard',
+    payload: { name: 'time', arguments: '{}', result: '2026-09-14 17:00:00' },
+    replaceSeq: -1
+  });
+  expect(chatMsgs.querySelector('.chat-tool .tn').textContent).toBe('🔧 time');
+});
+
+test('toolcard ps 结果截断——折叠行上限标注 + 展开区警示块', () => {
+  const psResult = JSON.stringify({ exit: 0, stdout: 'y'.repeat(16384), stderr: '', truncated: true, timeout: false });
+  window.chatOnView({
+    seq: 42, renderType: 'toolcard',
+    payload: { name: 'powershell', arguments: JSON.stringify({ command: 'Get-ChildItem -Recurse' }), result: psResult },
+    replaceSeq: -1
+  });
+  const card = chatMsgs.querySelector('.chat-tool');
+  expect(card.querySelector('.tn').textContent).toContain('⚠️ 已达上限 16.38k 字符');
+  const warn = card.querySelector('.ta.warn');
+  expect(warn).not.toBeNull();
+  expect(warn.textContent).toContain('被截断');
+});
+
+test('toolcard ps 正常结果——解析 stdout 长度标注', () => {
+  const psResult = JSON.stringify({ exit: 0, stdout: 'z'.repeat(1500), stderr: '', truncated: false, timeout: false });
+  window.chatOnView({
+    seq: 43, renderType: 'toolcard',
+    payload: { name: 'powershell', arguments: JSON.stringify({ command: 'Get-Date' }), result: psResult },
+    replaceSeq: -1
+  });
+  const card = chatMsgs.querySelector('.chat-tool');
+  expect(card.querySelector('.tn').textContent).toContain('· 1.50k 字符');
+  expect(card.querySelector('.ta.warn')).toBeNull();
 });
 
 // ── 工具轮 seal——残留文本流式容器闪烁标记移除（toolcard 到达兜底；宿主 seal 缺失防线）──

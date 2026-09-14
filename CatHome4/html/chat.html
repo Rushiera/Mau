@@ -45,6 +45,8 @@
     <script src="js/ui-common.js?v=__V__"></script>
     <!-- F3 MD 渲染——chat-md.js 手写解析器（纯函数，无依赖），必须先于 chat-view/chat-core 加载（chatOnText 调用 mdToHtml） -->
     <script src="js/chat-md.js?v=__V__"></script>
+    <!-- 命令解读——chat-cmd.js 纯函数模块（powershell 工具卡可见性适配），必须先于 chat-view.js 加载（chatToolCard 调用 cmdDecodeTool） -->
+    <script src="js/chat-cmd.js?v=__V__"></script>
     <script src="js/chat-view.js?v=__V__"></script>
     <script src="js/chat-core.js?v=__V__"></script>
     <script src="js/chat-note.js?v=__V__"></script>

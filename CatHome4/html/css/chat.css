@@ -45,10 +45,13 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 .chat-tool summary:hover { color: #e8e8aa; }
 .chat-tool .tn { color: #dcdcaa; }
 .chat-tool .ta { color: #6a6a6a; word-break: break-all; white-space: pre-wrap; margin-top: 2px; }
+.chat-tool .ta.warn { color: #dcdcaa; }
 .chat-tool .tr { color: #6a9955; word-break: break-all; white-space: pre-wrap; margin-top: 3px; }
 .chat-tool .tr.err { color: #f48771; }
 .chat-tool.err { border-color: #5a2a24; }
 .chat-tool.err summary { color: #f48771; }
+/* 命令意图解读——powershell 工具卡展开区首块（chat-cmd.js；逐段自然语言 + 未识别 ❓ 标注） */
+.chat-tool .cmd-intent { color: #9cdcfe; word-break: break-all; white-space: pre-wrap; margin-top: 3px; padding: 3px 6px; background: #0c1218; border-left: 2px solid #26404f; border-radius: 2px; }
 /* S2 §8.4——重试过程记录气泡（独立视图条目：弱化灰底小号；⟳ 重试中 / ✓ 已恢复） */
 .chat-bubble.retry { background: #181818; border: 1px dashed #2e2e2e; color: #7a7a7a; font-size: 11px; padding: 4px 10px; max-width: 60%; }
 .chat-bubble.retry.resolved { border-style: solid; color: #6a9955; }

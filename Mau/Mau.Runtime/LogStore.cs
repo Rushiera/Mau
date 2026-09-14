@@ -158,9 +158,10 @@ namespace Mau.Runtime
                 System.IO.Directory.CreateDirectory(runDir);
                 _runDir = runDir;
                 LogFilePath = System.IO.Path.Combine(runDir, "log_all.txt");
-                _logWriter = OpenWriter(System.IO.Path.Combine(runDir, "log_all.txt"));
-                _oaWriter = OpenWriter(System.IO.Path.Combine(runDir, "oa_all.txt"));
-                _errWriter = OpenWriter(System.IO.Path.Combine(runDir, "err_all.txt"));
+                // 重试打开——瞬时占用（安全软件扫描 / 残留句柄）由退避重试化解；仍失败写诊断文件（失败可见）
+                _logWriter = OpenWriterWithRetry(System.IO.Path.Combine(runDir, "log_all.txt"));
+                _oaWriter = OpenWriterWithRetry(System.IO.Path.Combine(runDir, "oa_all.txt"));
+                _errWriter = OpenWriterWithRetry(System.IO.Path.Combine(runDir, "err_all.txt"));
             }
         }
 
@@ -437,6 +438,68 @@ namespace Mau.Runtime
                     System.IO.Directory.CreateDirectory(dir);
                 }
                 _logWriter = OpenWriter(LogFilePath);
+            }
+        }
+
+        /// <summary>
+        /// 打开写者（带重试与失败上报）——瞬时占用（安全软件扫描 / 残留句柄）由退避重试化解；
+        /// 三次仍失败则把原因写入 runs 同级诊断文件（不依赖 runs 目录，保证失败可见——判例 2026-09-14）。
+        /// </summary>
+        /// <param name="path">目标文件路径</param>
+        /// <returns>写者；失败返回 null（调用方按空写者容忍）</returns>
+        private static System.IO.StreamWriter? OpenWriterWithRetry(string path)
+        {
+            int[] delays = new int[] { 100, 300, 700 };
+            Exception? last = null;
+            for (int i = 0; i <= delays.Length; i = i + 1)
+            {
+                try
+                {
+                    return OpenWriter(path);
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                    if (i < delays.Length)
+                    {
+                        System.Threading.Thread.Sleep(delays[i]);
+                    }
+                }
+            }
+            ReportOpenFailure(path, last);
+            return null;
+        }
+
+        /// <summary>
+        /// 上报写者打开失败——append 到 runs 同级目录的 log_open_error.txt（自身失败静默，避免递归）。
+        /// </summary>
+        /// <param name="path">打开失败的日志文件路径</param>
+        /// <param name="error">最后一次异常（可空）</param>
+        private static void ReportOpenFailure(string path, Exception? error)
+        {
+            try
+            {
+                string? parent = System.IO.Path.GetDirectoryName(_runDir);
+                if (parent == null || parent.Length == 0)
+                {
+                    return;
+                }
+                string diagnostic = System.IO.Path.Combine(parent, "log_open_error.txt");
+                string line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                    + " | pid " + System.Diagnostics.Process.GetCurrentProcess().Id.ToString()
+                    + " | 打开失败: " + path
+                    + " | " + (error == null ? "(无异常)" : error.GetType().Name + ": " + error.Message)
+                    + Environment.NewLine;
+                using (System.IO.FileStream fs = new System.IO.FileStream(diagnostic,
+                    System.IO.FileMode.Append, System.IO.FileAccess.Write, System.IO.FileShare.ReadWrite))
+                using (System.IO.StreamWriter sw = new System.IO.StreamWriter(fs, new System.Text.UTF8Encoding(false)))
+                {
+                    sw.Write(line);
+                }
+            }
+            catch (Exception)
+            {
+                // 诊断通道自身失败——无处可报（不递归）
             }
         }
 
