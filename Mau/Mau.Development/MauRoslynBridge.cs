@@ -359,7 +359,7 @@ namespace Mau.Development
             string full = ResolveInRoots(pathParam);
             if (full.Length == 0)
             {
-                error = "项目路径无效或越界（受控根内，支持 csproj / .sln / 目录）";
+                error = "项目路径无效或越界（受控根内，支持 csproj / .sln / 目录）: " + pathParam;
                 return projects;
             }
             if (Directory.Exists(full))
@@ -390,7 +390,13 @@ namespace Mau.Development
                 projects.Add(Path.GetFullPath(full));
                 return projects;
             }
-            error = "路径不是 csproj / .sln / 目录: " + full;
+            // 诊断面分列——「路径不是 csproj / .sln / 目录」对不存在路径具误导性（判例 2026-09-14）
+            if (File.Exists(full))
+            {
+                error = "路径存在但类型不符（需 csproj / .sln / 目录）: " + full;
+                return projects;
+            }
+            error = "路径不存在: " + full;
             return projects;
         }
 

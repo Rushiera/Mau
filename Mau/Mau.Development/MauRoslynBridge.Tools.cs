@@ -30,7 +30,7 @@ namespace Mau.Development
             List<string> projects = ResolveProjects(path, out resolveError);
             if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|" + resolveError + ": " + path;
+                result = "ERR|BAD_PATH|" + resolveError;
                 return false;
             }
             if (projects.Count == 1)
@@ -137,7 +137,7 @@ namespace Mau.Development
             List<string> projects = ResolveProjects(path, out resolveError);
             if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|" + resolveError + ": " + path;
+                result = "ERR|BAD_PATH|" + resolveError;
                 return false;
             }
             string slnPath = ResolveSolutionPath(path);
@@ -238,7 +238,7 @@ namespace Mau.Development
             List<string> projects = ResolveProjects(path, out resolveError);
             if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|" + resolveError + ": " + path;
+                result = "ERR|BAD_PATH|" + resolveError;
                 return false;
             }
             if (projects.Count == 1)
