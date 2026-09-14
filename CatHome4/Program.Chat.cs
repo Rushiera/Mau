@@ -60,6 +60,7 @@ namespace CH4
             }
             // [段1] 注入知识——按每猫 injectList 顺序读取（M2d：不再走全局 workspace.inject；寻址复用受控根 id: 命名空间；缺失跳过不阻断会话）
             // 问题二扩展——逐文件结果收集（ok/missing/error + 字符数），HandleSessionNew 生成注入报告
+            // 目录条目展开（2026-09-14）——条目为目录时加载其一级 *.md（文件名升序），逐文件报告
             if (workspace != null && injectList != null && injectList.Length > 0)
             {
                 sb.Append(System.Environment.NewLine);
@@ -68,11 +69,6 @@ namespace CH4
                 for (int i = 0; i < injectList.Length; i++)
                 {
                     string file = injectList[i];
-                    InjectFileResult fr = new InjectFileResult();
-                    fr.File = file;
-                    fr.Status = "error";
-                    fr.Message = "";
-                    fr.Chars = 0;
                     try
                     {
                         WorkspaceConfig.InjectEntry entry = new WorkspaceConfig.InjectEntry();
@@ -80,33 +76,74 @@ namespace CH4
                         entry.Optional = true;
                         entry.Label = file;
                         string path = workspace.ResolveInjectFile(entry);
-                        if (!File.Exists(path))
+                        // [段1a] 条目展开——目录：一级 *.md 文件名升序；文件：单条原语义
+                        List<string> targets = new List<string>();
+                        List<string> labels = new List<string>();
+                        if (Directory.Exists(path))
                         {
-                            LogStore.Add("CatHome4", 2, "注入缺失：" + file + "（可选，已跳过）", "INJECT");
-                            fr.Status = "missing";
-                            fr.Message = "文件不存在（可选，已跳过）";
-                            fileResults.Add(fr);
-                            continue;
+                            string[] found = Directory.GetFiles(path, "*.md", SearchOption.TopDirectoryOnly);
+                            Array.Sort(found, StringComparer.OrdinalIgnoreCase);
+                            string prefix = file.TrimEnd('/', '\\');
+                            for (int k = 0; k < found.Length; k++)
+                            {
+                                targets.Add(found[k]);
+                                labels.Add(prefix + "/" + Path.GetFileName(found[k]));
+                            }
+                            if (targets.Count == 0)
+                            {
+                                LogStore.Add("CatHome4", 2, "注入缺失：" + file + "（目录内无 .md，已跳过）", "INJECT");
+                                InjectFileResult empty = new InjectFileResult();
+                                empty.File = file;
+                                empty.Status = "missing";
+                                empty.Message = "目录内无 .md 文件（可选，已跳过）";
+                                empty.Chars = 0;
+                                fileResults.Add(empty);
+                                continue;
+                            }
                         }
-                        string content = File.ReadAllText(path);
-                        sb.Append(System.Environment.NewLine);
-                        sb.Append(System.Environment.NewLine);
-                        sb.Append("===== 注入文件: ");
-                        sb.Append(file);
-                        sb.Append(" =====");
-                        sb.Append(System.Environment.NewLine);
-                        sb.Append(content);
-                        fr.Status = "ok";
-                        fr.Chars = content.Length;
-                        fr.Message = "";
-                        fileResults.Add(fr);
+                        else
+                        {
+                            targets.Add(path);
+                            labels.Add(file);
+                        }
+                        // [段1b] 逐条读取注入——顺序即清单顺序（目录内为文件名升序）
+                        for (int t = 0; t < targets.Count; t++)
+                        {
+                            InjectFileResult fr = new InjectFileResult();
+                            fr.File = labels[t];
+                            fr.Status = "error";
+                            fr.Message = "";
+                            fr.Chars = 0;
+                            if (!File.Exists(targets[t]))
+                            {
+                                LogStore.Add("CatHome4", 2, "注入缺失：" + labels[t] + "（可选，已跳过）", "INJECT");
+                                fr.Status = "missing";
+                                fr.Message = "文件不存在（可选，已跳过）";
+                                fileResults.Add(fr);
+                                continue;
+                            }
+                            string content = File.ReadAllText(targets[t]);
+                            sb.Append(System.Environment.NewLine);
+                            sb.Append(System.Environment.NewLine);
+                            sb.Append("===== 注入文件: ");
+                            sb.Append(labels[t]);
+                            sb.Append(" =====");
+                            sb.Append(System.Environment.NewLine);
+                            sb.Append(content);
+                            fr.Status = "ok";
+                            fr.Chars = content.Length;
+                            fileResults.Add(fr);
+                        }
                     }
                     catch (Exception ex)
                     {
                         LogStore.Add("CatHome4", 2, "注入失败：" + file + "（" + ex.Message + "）", "INJECT");
-                        fr.Status = "error";
-                        fr.Message = ex.Message;
-                        fileResults.Add(fr);
+                        InjectFileResult err = new InjectFileResult();
+                        err.File = file;
+                        err.Status = "error";
+                        err.Message = ex.Message;
+                        err.Chars = 0;
+                        fileResults.Add(err);
                     }
                 }
             }

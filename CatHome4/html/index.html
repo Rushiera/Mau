@@ -123,7 +123,7 @@
                         <textarea id="tplPersona" rows="2" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:6px 8px;font-family:inherit;font-size:12px;margin-top:3px;resize:vertical"></textarea>
                         <label style="font-size:11px;color:#6a6a6a;margin-top:10px;display:block">默认工具（defaultToolNames——空=全量保底）</label>
                         <div id="tplTools" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
-                        <label style="font-size:11px;color:#6a6a6a;margin-top:10px;display:block">默认前文 List（defaultInjectList——完整路径；新猫创建时继承）</label>
+                        <label style="font-size:11px;color:#6a6a6a;margin-top:10px;display:block">默认前文 List（defaultInjectList——完整路径或目录（目录加载其一级 *.md）；拖动 ≡ 调顺序；新猫创建时继承）</label>
                         <div id="tplInject" style="margin-top:5px"></div>
                         <div style="display:flex;gap:6px;margin-top:6px">
                             <input id="tplInjectAdd" placeholder="添加完整路径（如 ccbp:L1/Tree.md 或 C:\...）" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
@@ -192,7 +192,7 @@
             <div id="catCfgTools" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
             <label style="font-size:11px;color:#6a6a6a;margin-top:10px;display:block">目录白名单（enabledRoots——全局根池子集；workspace 系统根必选；空=全量）</label>
             <div id="catCfgRoots" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
-            <label style="font-size:11px;color:#6a6a6a;margin-top:10px;display:block">前文注入 List（injectList——id:相对路径 或绝对路径；新会话时按序注入）</label>
+            <label style="font-size:11px;color:#6a6a6a;margin-top:10px;display:block">前文注入 List（injectList——id:相对路径 / 绝对路径 / 目录（加载其一级 *.md，文件名升序）；拖动 ≡ 调顺序；新会话时按序注入）</label>
             <div id="catCfgInject" style="margin-top:5px"></div>
             <div style="display:flex;gap:6px;margin-top:6px">
                 <input id="catCfgInjectAdd" placeholder="添加路径（如 ccbp:L1/Tree.md）" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">

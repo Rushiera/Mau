@@ -160,6 +160,35 @@ function renderToolChecks(toolNames) {
     renderGroupedChecks('catCfgTools', catCfgAllTools, parseToolChecked(toolNames));
 }
 
+// 拖拽排序（最简原生实现——容器级事件委托；行设 draggable=true 即可拖；onReorder(from, to) 自行搬移数组并重渲染）
+function enableDragSort(boxId, onReorder) {
+    var box = document.getElementById(boxId);
+    var from = -1;
+    function findRow(node) {
+        while (node && node.parentNode !== box) { node = node.parentNode; }
+        return node ? node : null;
+    }
+    box.addEventListener('dragstart', function (e) {
+        var row = findRow(e.target);
+        if (!row) { return; }
+        from = Array.prototype.indexOf.call(box.children, row);
+        if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; }
+    });
+    box.addEventListener('dragover', function (e) {
+        if (from >= 0) { e.preventDefault(); }
+    });
+    box.addEventListener('drop', function (e) {
+        var row = findRow(e.target);
+        if (from < 0 || !row) { return; }
+        e.preventDefault();
+        var to = Array.prototype.indexOf.call(box.children, row);
+        var moveFrom = from;
+        from = -1;
+        if (to >= 0 && to !== moveFrom) { onReorder(moveFrom, to); }
+    });
+    box.addEventListener('dragend', function () { from = -1; });
+}
+
 function renderInjectList(list) {
     catCfgInjectList = list.slice();
     var box = document.getElementById('catCfgInject');
@@ -168,6 +197,12 @@ function renderInjectList(list) {
         (function (idx) {
             var row = document.createElement('div');
             row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:3px';
+            row.draggable = true;
+            row.title = '拖动调整顺序（保存后生效）';
+            var handle = document.createElement('span');
+            handle.textContent = '≡';
+            handle.style.cssText = 'color:#6a6a6a;font-size:12px;cursor:move';
+            row.appendChild(handle);
             var txt = document.createElement('span');
             txt.textContent = catCfgInjectList[idx];
             txt.style.cssText = 'flex:1;color:#6a9955;font-size:11px;word-break:break-all';
@@ -184,6 +219,13 @@ function renderInjectList(list) {
         })(i);
     }
 }
+
+// 前文 List 拖拽接线（每猫配置面）——拖动即改数组顺序，保存按钮落盘
+enableDragSort('catCfgInject', function (from, to) {
+    var moved = catCfgInjectList.splice(from, 1)[0];
+    catCfgInjectList.splice(to, 0, moved);
+    renderInjectList(catCfgInjectList);
+});
 
 function saveCatCfg() {
     var toolNames = collectChecked('catCfgTools');
@@ -293,6 +335,12 @@ function renderTplInject() {
         (function (idx) {
             var row = document.createElement('div');
             row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:3px';
+            row.draggable = true;
+            row.title = '拖动调整顺序（保存后生效）';
+            var handle = document.createElement('span');
+            handle.textContent = '≡';
+            handle.style.cssText = 'color:#6a6a6a;font-size:12px;cursor:move';
+            row.appendChild(handle);
             var txt = document.createElement('span');
             txt.textContent = tplInjectList[idx];
             txt.style.cssText = 'flex:1;color:#6a9955;font-size:11px;word-break:break-all';
@@ -309,6 +357,13 @@ function renderTplInject() {
         })(i);
     }
 }
+
+// 前文 List 拖拽接线（新猫默认模板面）
+enableDragSort('tplInject', function (from, to) {
+    var moved = tplInjectList.splice(from, 1)[0];
+    tplInjectList.splice(to, 0, moved);
+    renderTplInject();
+});
 
 function loadTpl() {
     fetch('/api/v1/cat-default')
