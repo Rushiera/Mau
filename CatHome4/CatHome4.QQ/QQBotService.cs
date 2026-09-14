@@ -1413,8 +1413,6 @@ namespace CatHome4.QQ
         private static string _statePath = "";
         /// <summary>转发态加载标志——首帧懒加载（此时前文/视图已恢复，避免读到半成品块数）</summary>
         private static bool _stateLoaded = false;
-        /// <summary>视图块锚点——猫 Key → 末块内容哈希（重启续接判据；空=末块无内容——走保守前看）</summary>
-        private static readonly Dictionary<string, string> _anchors = new Dictionary<string, string>();
         /// <summary>截断文本——日志展示</summary>
         private static string Truncate(string s, int max)
         {

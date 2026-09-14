@@ -58,6 +58,11 @@ namespace Mau.Runtime
             /// 数值上限（type=int 时生效）
             /// </summary>
             public string Max = "";
+
+            /// <summary>
+            /// 枚举值域——type=string/空 且非空时生效（写通道只接受其中之一；空=不限制）
+            /// </summary>
+            public string[] Values = new string[0];
         }
 
         /// <summary>
@@ -112,6 +117,24 @@ namespace Mau.Runtime
                     item.Type = GetProp(el, "type");
                     item.Min = GetProp(el, "min");
                     item.Max = GetProp(el, "max");
+                    JsonElement valuesEl;
+                    if (el.TryGetProperty("values", out valuesEl) && valuesEl.ValueKind == JsonValueKind.Array)
+                    {
+                        List<string> values = new List<string>();
+                        for (int v = 0; v < valuesEl.GetArrayLength(); v = v + 1)
+                        {
+                            JsonElement valueEl = valuesEl[v];
+                            if (valueEl.ValueKind == JsonValueKind.String)
+                            {
+                                string? got = valueEl.GetString();
+                                if (got != null && got.Length > 0)
+                                {
+                                    values.Add(got);
+                                }
+                            }
+                        }
+                        item.Values = values.ToArray();
+                    }
                     schema._items[key] = item;
                 }
             }
@@ -205,6 +228,24 @@ namespace Mau.Runtime
             return defaultValue;
         }
         /// <summary>
+        /// 枚举值域命中判定——忽略大小写（声明 values 与候选值逐项比较）
+        /// </summary>
+        /// <param name="values">声明值域</param>
+        /// <param name="value">候选值</param>
+        /// <returns>是否命中</returns>
+        private static bool ContainsValue(string[] values, string value)
+        {
+            for (int i = 0; i < values.Length; i = i + 1)
+            {
+                if (string.Equals(values[i], value, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// 值域校验——P8.5d 写入通道（SetChecked）前置校验。
         /// 规则：值长度上限 1024；type=int → 整数解析 + min/max 范围；type=bool → true/false/1/0；type=string/空 → 放行。
         /// </summary>
@@ -231,6 +272,13 @@ namespace Mau.Runtime
             string type = item.Type;
             if (type.Length == 0 || type == "string")
             {
+                // 枚举值域——声明非空时只接受其中之一（忽略大小写；值原样落盘，消费端归一）
+                if (item.Values.Length > 0 && !ContainsValue(item.Values, value))
+                {
+                    error = "配置项 " + key + " 只接受以下值之一: " + string.Join(" / ", item.Values);
+                    return false;
+                }
+
                 return true;
             }
 

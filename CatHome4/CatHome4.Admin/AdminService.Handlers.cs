@@ -565,7 +565,8 @@ namespace CatHome4.Admin
                     apiOptions.Add(new
                     {
                         apiConfigId = configs[i].ApiConfigId.ToString("D"),
-                        displayName = configs[i].DisplayName
+                        displayName = configs[i].DisplayName,
+                        isDefault = configs[i].IsDefault
                     });
                 }
             }
@@ -647,6 +648,8 @@ namespace CatHome4.Admin
             string body = await ReadBodyText(ctx);
             string catKey = "";
             string apiConfigId = "";
+            // A41-3 显式空值语义——字段出现且为空/全零 = 清空回默认端点（字段缺省 = 保留旧值）
+            bool apiConfigIdPresent = false;
             string persona = "";
             string toolNames = "";
             string qqbotId = "";
@@ -659,6 +662,11 @@ namespace CatHome4.Admin
                 {
                     JsonElement root = doc.RootElement;
                     catKey = GetJsonString(root, "cat");
+                    JsonElement apiConfigIdEl;
+                    if (root.TryGetProperty("apiConfigId", out apiConfigIdEl))
+                    {
+                        apiConfigIdPresent = true;
+                    }
                     apiConfigId = GetJsonString(root, "apiConfigId");
                     persona = GetJsonString(root, "persona");
                     toolNames = GetJsonString(root, "toolNames");
@@ -732,14 +740,24 @@ namespace CatHome4.Admin
             {
                 return Results.Json(new { ok = false, error = "cat.cfg 不存在: " + catKey });
             }
-            if (apiConfigId.Length > 0)
+            // A41-3——显式清空（空串/全零）回默认端点；显式非法值拒绝；字段缺省保留旧值
+            if (apiConfigIdPresent)
             {
-                Guid parsed;
-                if (!Guid.TryParse(apiConfigId, out parsed) || parsed == Guid.Empty)
+                string trimmedApiConfigId = apiConfigId.Trim();
+                if (trimmedApiConfigId.Length == 0 || trimmedApiConfigId == Guid.Empty.ToString("D"))
                 {
-                    return Results.Json(new { ok = false, error = "apiConfigId 非法" });
+                    // 存全零串——与 SaveCatCfg 出口一致（读侧以 Guid.Empty 判默认端点，实时解析全局默认）
+                    cfg.ApiConfigId = Guid.Empty.ToString("D");
                 }
-                cfg.ApiConfigId = apiConfigId;
+                else
+                {
+                    Guid parsed;
+                    if (!Guid.TryParse(trimmedApiConfigId, out parsed) || parsed == Guid.Empty)
+                    {
+                        return Results.Json(new { ok = false, error = "apiConfigId 非法" });
+                    }
+                    cfg.ApiConfigId = trimmedApiConfigId;
+                }
             }
             if (qqbotId.Length > 0)
             {

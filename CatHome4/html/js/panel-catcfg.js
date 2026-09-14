@@ -37,13 +37,25 @@ function openCatCfg(catId, name) {
         });
 }
 
+// M3c API 下拉——首项「默认（跟随全局）」= 零值语义（后端 apiConfigId 清空 → 走 ResolveDefault 实时解析）
+function isDefaultApiValue(value) {
+    return !value || value.length === 0 || value === '00000000-0000-0000-0000-000000000000';
+}
+
 function renderApiOptions(options, current) {
     var sel = document.getElementById('catCfgApi');
     sel.textContent = '';
+    var def = document.createElement('option');
+    def.value = '';
+    def.textContent = '（默认 · 跟随全局默认端点）';
+    if (isDefaultApiValue(current)) { def.selected = true; }
+    sel.appendChild(def);
     for (var i = 0; i < options.length; i++) {
         var opt = document.createElement('option');
         opt.value = options[i].apiConfigId;
-        opt.textContent = options[i].displayName + ' (' + options[i].apiConfigId.substring(0, 8) + '…)';
+        var label = options[i].displayName + ' (' + options[i].apiConfigId.substring(0, 8) + '…)';
+        if (options[i].isDefault) { label = label + ' · 全局默认'; }
+        opt.textContent = label;
         if (options[i].apiConfigId === current) { opt.selected = true; }
         sel.appendChild(opt);
     }

@@ -41,7 +41,7 @@ namespace CH4
         // [段1] 标识与持久化
         /// <summary>会话唯一 ID——创建时间戳注入（P9.3 协议面对外）</summary>
         /// <summary>
-        /// 会话标识——会话身份（请求 user_id / x-opencode-session / OA catId）；新会话（session.new）重建，重启由落盘恢复
+        /// 会话标识——会话身份（前文落盘键 + llm.cache_isolation=session 时的请求身份）；新会话（session.new）重建，重启由落盘恢复
         /// </summary>
         private string _id;
 
@@ -192,6 +192,9 @@ namespace CH4
         /// <summary>猫 key——工具执行按猫裁剪（M4e 白名单；默认猫=majordomo；多猫=会话 ID）</summary>
         private string _catKey = "";
 
+        /// <summary>缓存隔离键取值非法告警标志——只报一次（防每请求刷屏）</summary>
+        private bool _cacheIsolationWarned;
+
         /// <summary>
         /// 设置猫 key——构造后由创建方赋值（默认猫 majordomo / 多猫会话 ID）。
         /// </summary>
@@ -199,6 +202,44 @@ namespace CH4
         public void SetCatKey(string catKey)
         {
             _catKey = catKey;
+        }
+
+        /// <summary>
+        /// 缓存隔离键——LLM 请求身份（请求体 user_id + x-opencode-session 头）。
+        /// 取值按全局配置 llm.cache_isolation：cat（默认——按猫隔离，会话重建不换键）/ session（按会话——session.new 换键）/ off（不携带 user_id）。
+        /// 非法值回落 cat 并告警一次（读面兜底 + 失败可见）。
+        /// </summary>
+        /// <returns>隔离键（空=不隔离——Provider 侧回落默认会话头）</returns>
+        private string ResolveCacheIsolationKey()
+        {
+            string mode = "cat";
+            ConfigStore cfg = null;
+            if (DataBox.TryResolve<ConfigStore>(out cfg) && cfg != null)
+            {
+                string value = cfg.Get("llm.cache_isolation", "");
+                if (value.Length > 0)
+                {
+                    mode = value.Trim().ToLowerInvariant();
+                }
+            }
+            if (mode == "off")
+            {
+                return "";
+            }
+            if (mode == "session")
+            {
+                return _id;
+            }
+            if (mode != "cat" && !_cacheIsolationWarned)
+            {
+                _cacheIsolationWarned = true;
+                LogStore.Add("LLM", 2, "llm.cache_isolation 取值非法（" + mode + "）——回落 cat；合法值 cat/session/off", "CONFIG");
+            }
+            if (_catKey.Length > 0)
+            {
+                return _catKey;
+            }
+            return _id;
         }
 
         /// <summary>
@@ -365,7 +406,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 更新会话标识——新会话（session.new）重建：运行态身份（LLM 请求 user_id / x-opencode-session / OA catId）+ 落盘同步（store 同步写入）。
+        /// 更新会话标识——新会话（session.new）重建：会话身份（前文落盘键；llm.cache_isolation=session 时含请求 user_id / x-opencode-session）+ 落盘同步（store 同步写入）。
         /// </summary>
         /// <param name="id">新会话标识（空=忽略）</param>
         public void SetSessionId(string id)
@@ -812,7 +853,7 @@ namespace CH4
                 StringBuilder text = new StringBuilder();
                 StringBuilder reasoning = new StringBuilder();
                 string toolCalls = "";
-                await foreach (LlmStreamEvent ev in _llmRuntime.ChatStream(messages, _tools, _id, ct))
+                await foreach (LlmStreamEvent ev in _llmRuntime.ChatStream(messages, _tools, ResolveCacheIsolationKey(), ct))
                 {
                     if (ev.Kind == LlmStreamKind.Text)
                     {

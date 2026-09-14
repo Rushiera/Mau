@@ -66,6 +66,9 @@ namespace CatHome4.Http
         public string DisplayName { get; set; }
     }
 
+    /// <summary>
+    /// HTTP 宿主——每猫独立实例（Kestrel 最小 API：快照/SSE/指令/配置/静态资源路由）。
+    /// </summary>
     public sealed partial class HttpHost : IHostPush, IHttpRouteSink
     {
         // [段1] 服务字段——应用实例/端口/回调/事件状态

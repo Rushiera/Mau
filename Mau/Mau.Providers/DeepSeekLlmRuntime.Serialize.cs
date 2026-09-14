@@ -99,7 +99,7 @@ namespace Mau.Providers
         /// </summary>
         /// <param name="messages">消息序列</param>
         /// <param name="tools">工具定义数组</param>
-        /// <param name="userId">会话用户标识（空=不携带）</param>
+        /// <param name="userId">缓存隔离键（空=不携带）</param>
         /// <returns>请求体 JSON</returns>
         private string BuildChatRequestBody(LlmMessage[] messages, ToolSpec[] tools, string userId)
         {

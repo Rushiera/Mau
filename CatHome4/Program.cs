@@ -445,6 +445,24 @@ namespace CH4
             {
                 llmState = "已注入";
             }
+            // A41 启动自检——默认端点存在性 + 缓存隔离声明合法性（失败必须可见：缺失/非法一律记 WARN，不静默）
+            if (llmProbeConfig == null)
+            {
+                LogStore.Add("CatHome4", 2, "启动自检：LLM 配置池无默认端点（IsDefault 未设置）——未显式绑定端点的会话无法发起请求", "CONFIG");
+            }
+            else if (llmKeyProbe.Length == 0)
+            {
+                LogStore.Add("CatHome4", 2, "启动自检：默认端点「" + llmProbeConfig.DisplayName + "」缺少 API Key（secrets 未注入）", "CONFIG");
+            }
+            string cacheIsolationProbe = llmConfig.Get("llm.cache_isolation", "");
+            if (cacheIsolationProbe.Length > 0)
+            {
+                string normalizedIsolation = cacheIsolationProbe.Trim().ToLowerInvariant();
+                if (normalizedIsolation != "cat" && normalizedIsolation != "session" && normalizedIsolation != "off")
+                {
+                    LogStore.Add("CatHome4", 2, "启动自检：llm.cache_isolation 取值非法（" + cacheIsolationProbe + "）——运行时回落 cat；合法值 cat/session/off", "CONFIG");
+                }
+            }
             // P8.5 观测落点——workspace.load 审计 + 全局盒 roots 摘要（design §七：当前受控根永远可从观测层看到）
             System.Text.StringBuilder rootSummary = new System.Text.StringBuilder();
             for (int i = 0; i < workspace.Roots.Length; i++)
