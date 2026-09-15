@@ -39,10 +39,7 @@ namespace CH4
         private const long ToolOwnerId = 1;
 
         // [段1] 标识与持久化
-        /// <summary>会话唯一 ID——创建时间戳注入（P9.3 协议面对外）</summary>
-        /// <summary>
-        /// 会话标识——会话身份（前文落盘键 + llm.cache_isolation=session 时的请求身份）；新会话（session.new）重建，重启由落盘恢复
-        /// </summary>
+        /// <summary>会话唯一 ID——构造注入 = 猫 key（唯一标识；会话重建不换键）</summary>
         private string _id;
 
         /// <summary>显示名——P9.1 为 "majordomo"；P9.3 用户输入</summary>
@@ -206,7 +203,7 @@ namespace CH4
 
         /// <summary>
         /// 缓存隔离键——LLM 请求身份（请求体 user_id + x-opencode-session 头）。
-        /// 取值按全局配置 llm.cache_isolation：cat（默认——按猫隔离，会话重建不换键）/ session（按会话——session.new 换键）/ off（不携带 user_id）。
+        /// 取值按全局配置 llm.cache_isolation：cat（默认——键 = 猫 key，会话重建不换键）/ off（不携带 user_id）。
         /// 非法值回落 cat 并告警一次（读面兜底 + 失败可见）。
         /// </summary>
         /// <returns>隔离键（空=不隔离——Provider 侧回落默认会话头）</returns>
@@ -226,20 +223,12 @@ namespace CH4
             {
                 return "";
             }
-            if (mode == "session")
-            {
-                return _id;
-            }
             if (mode != "cat" && !_cacheIsolationWarned)
             {
                 _cacheIsolationWarned = true;
-                LogStore.Add("LLM", 2, "llm.cache_isolation 取值非法（" + mode + "）——回落 cat；合法值 cat/session/off", "CONFIG");
+                LogStore.Add("LLM", 2, "llm.cache_isolation 取值非法（" + mode + "）——回落 cat；合法值 cat/off", "CONFIG");
             }
-            if (_catKey.Length > 0)
-            {
-                return _catKey;
-            }
-            return _id;
+            return _catKey;
         }
 
         /// <summary>
@@ -418,24 +407,7 @@ namespace CH4
             return _viewStore.GetBlocks();
         }
 
-        /// <summary>
-        /// 更新会话标识——新会话（session.new）重建：会话身份（前文落盘键；llm.cache_isolation=session 时含请求 user_id / x-opencode-session）+ 落盘同步（store 同步写入）。
-        /// </summary>
-        /// <param name="id">新会话标识（空=忽略）</param>
-        public void SetSessionId(string id)
-        {
-            if (id == null || id.Length == 0)
-            {
-                return;
-            }
-            _id = id;
-            if (_store != null)
-            {
-                _store.SessionId = id;
-            }
-        }
-
-        /// <summary>会话唯一 ID</summary>
+        /// <summary>会话唯一 ID——构造注入 = 猫 key（唯一标识；无独立"会话身份"层）</summary>
         public string Id
         {
             get
@@ -1307,7 +1279,7 @@ namespace CH4
                             LogStore.Add("CatHome4", 2, "工具 " + name + " 被拒绝：不在本会话声明面", "TOOL");
                             continue;
                         }
-                        // P9.4 per-cat 路由——载荷注入会话 ID（config.bridge 按 catId 路由每猫 ConfigStore；其他工具忽略多余字段）
+                        // per-cat 路由——载荷注入猫 key（会话标识 ≡ 猫 key；积木按 catId 解析猫级文件系统与配置面）
                         arguments = InjectCatId(arguments);
                         // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
                         _toolCallCount = _toolCallCount + 1;
@@ -1373,7 +1345,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 载荷注入会话 ID——arguments JSON 合并 catId 字段（P9.4 per-cat 配置路由；非对象/解析失败原样透传）。
+        /// 载荷注入猫 key——arguments JSON 合并 catId 字段（会话标识 ≡ 猫 key，唯一标识；非对象/解析失败原样透传）。
         /// </summary>
         /// <param name="arguments">LLM 原始参数 JSON</param>
         /// <returns>注入后 JSON</returns>
@@ -1396,7 +1368,7 @@ namespace CH4
                     {
                         map[p.Name] = p.Value.Clone();
                     }
-                    map["catId"] = _id;
+                    map["catId"] = _catKey;
                     return JsonUtil.Serialize(map);
                 }
             }

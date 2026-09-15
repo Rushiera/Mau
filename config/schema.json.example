@@ -4,7 +4,7 @@
     { "key": "llm.thinking", "file": "llm.cfg", "default": "enabled", "sensitive": false, "writable": false, "desc": "思考模式" },
     { "key": "llm.reasoning_effort", "file": "llm.cfg", "default": "medium", "sensitive": false, "writable": false, "desc": "思考强度" },
     { "key": "http.port", "file": "app.cfg", "default": "8080", "sensitive": false, "writable": false, "desc": "HTTP 端口（空/非法回退 8080，启动时读取）" },
-    { "key": "llm.cache_isolation", "file": "llm.cfg", "default": "cat", "sensitive": false, "writable": true, "type": "string", "values": ["cat", "session", "off"], "empty_desc": "空=非声明值 → 运行时回落 cat（启动与运行时各告警一次）", "desc": "LLM 缓存隔离粒度（cat=按猫 / session=按会话 / off=不隔离）" },
+    { "key": "llm.cache_isolation", "file": "llm.cfg", "default": "cat", "sensitive": false, "writable": true, "type": "string", "values": ["cat", "off"], "empty_desc": "空=非声明值 → 运行时回落 cat（启动与运行时各告警一次）", "desc": "LLM 缓存隔离粒度（cat=按猫 key / off=不隔离；会话标识 ≡ 猫 key，无按会话粒度）" },
     { "key": "ui.chat_font_size", "file": "ui.cfg", "default": "14", "sensitive": false, "writable": true, "type": "int", "min": "8", "max": "32", "desc": "对话区字体大小 px" },
     { "key": "app.autostart", "file": "app.cfg", "default": "false", "sensitive": false, "writable": true, "type": "bool", "desc": "开机自启（注册 HKCU Run）" },
     { "key": "app.round_notify", "file": "app.cfg", "default": "true", "sensitive": false, "writable": true, "type": "bool", "desc": "本轮结束系统通知（托盘 BalloonTip）" },

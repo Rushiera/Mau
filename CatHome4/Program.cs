@@ -232,7 +232,17 @@ namespace CH4
                     break;
                 }
             }
-            DataBox.Bind<FileSystemService>(new FileSystemService(workspace.Roots, Path.Combine(WorkspaceRecycleRoot(workspace, dataRoot), "CatTemp", "fs_recycle")));
+            // 兜底实例 = 常驻根子集（workspace/runtime）——猫级实例解析失败时只剩 workspace 可用（失败默认收紧，不回落全量）
+            List<WorkspaceConfig.RootEntry> fallbackRoots = new List<WorkspaceConfig.RootEntry>();
+            for (int i = 0; i < workspace.Roots.Length; i = i + 1)
+            {
+                WorkspaceConfig.RootEntry entry = workspace.Roots[i];
+                if (string.Equals(entry.Id, "workspace", StringComparison.OrdinalIgnoreCase) || string.Equals(entry.Id, "runtime", StringComparison.OrdinalIgnoreCase))
+                {
+                    fallbackRoots.Add(entry);
+                }
+            }
+            DataBox.Bind<FileSystemService>(new FileSystemService(fallbackRoots.ToArray(), Path.Combine(WorkspaceRecycleRoot(workspace, dataRoot), "CatTemp", "fs_recycle")));
             string configDir = Path.Combine(dataRoot, "Data", "config");
             // P8.5 配置群 schema——schema.json 元声明（默认值/敏感/可写/空值语义——/api/v1/config 输出面）
             // §4.1 schema 同步（模板为准：不一致 → .bak 备份 + 整体覆盖）→ §4.2 schema 驱动段注册（宿主零硬编码段清单）
@@ -401,14 +411,14 @@ namespace CH4
                 chatCtx.SetSystemPrompt(injectPrompt);
                 Console.WriteLine("[CMD] 新会话注入: " + _chatBridge.DefaultInjectList.Length.ToString() + " 个文件");
             }
-            // 会话标识——落盘恢复（重启不变）；旧文件未带标识 → 首次补建（缺省取猫 key，稳定）+ 落盘（新会话时由 session.new 重建）
+            // 会话标识 ≡ 猫 key（唯一标识——不再有独立"会话身份"层）；首启 / 外部改写时校正并回写
             string defaultSessionId = chatStore.SessionId;
-            if (defaultSessionId.Length == 0)
+            if (!string.Equals(defaultSessionId, "majordomo", StringComparison.Ordinal))
             {
                 defaultSessionId = "majordomo";
                 chatStore.SessionId = defaultSessionId;
                 chatStore.Rewrite(chatCtx.GetMessages(), restoredStats);
-                Console.WriteLine("[CMD] 会话标识补建: " + defaultSessionId);
+                Console.WriteLine("[CMD] 会话标识对齐猫 key: " + defaultSessionId);
             }
             // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面；M2c 声明面按猫裁剪）
             SessionViewStore chatViewStore = new SessionViewStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.view.json"));

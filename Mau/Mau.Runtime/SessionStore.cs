@@ -62,7 +62,7 @@ namespace Mau.Runtime
         /// <summary>会话文件路径——sessions/&lt;id&gt;/&lt;id&gt;.jsonl</summary>
         private readonly string _path;
 
-        /// <summary>会话标识——落盘持久化字段（新会话时重建；重启恢复同一标识）</summary>
+        /// <summary>会话标识——落盘记录字段（恒 = 猫 key；宿主构造注入，读面不回填）</summary>
         private string _sessionId;
 
         /// <summary>
@@ -76,8 +76,8 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 会话标识——读面（TryLoad 从元数据行恢复；缺省空串=旧格式文件未带标识）。
-        /// 语义：新会话（session.new / 新建猫）重建并落盘；重启恢复同一标识——LLM 侧会话身份（请求 user_id / x-opencode-session）与网关 KV 缓存命名空间。
+        /// 会话标识——唯一标识 = 猫 key（宿主构造注入；session.new 不换标识、读面不回填）。
+        /// 语义：随 meta 行落盘作记录；LLM 侧请求身份（user_id / x-opencode-session）与网关 KV 缓存命名空间。
         /// </summary>
         public string SessionId
         {
@@ -99,9 +99,9 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 新会话标识——ticks 字符串（会话生命周期起点唯一生成点：新建猫 / session.new / 首次补建）
+        /// 新标识——ticks 字符串（唯一生成点：cat.new 建猫 id / session.fork 新猫 id；会话标识不再是生成物）
         /// </summary>
-        /// <returns>新会话标识</returns>
+        /// <returns>新标识（作猫 key 用）</returns>
         public static string NewSessionId()
         {
             return DateTime.Now.Ticks.ToString();
@@ -153,8 +153,6 @@ namespace Mau.Runtime
             }
             // [段2] 逐行解析——消息行 / 元数据行 / 坏行处置
             List<LlmMessage> list = new List<LlmMessage>();
-            string sid = "";
-            bool metaSeen = false;
             bool repairedAny = false;
             int repairedLineIndex = -1;
             string repairedLineText = "";
@@ -199,8 +197,7 @@ namespace Mau.Runtime
                 string tag = ReadString(obj, "t");
                 if (tag == MetaTag)
                 {
-                    sid = ReadString(obj, "SessionId");
-                    metaSeen = true;
+                    // 元数据行——只取统计；会话标识不进读面（身份 = 猫 key，宿主构造注入）
                     JsonNode? statsNode = obj["Stats"];
                     if (statsNode != null)
                     {
@@ -254,10 +251,6 @@ namespace Mau.Runtime
                 return false;
             }
             messages = list.ToArray();
-            if (metaSeen)
-            {
-                SessionId = sid;
-            }
             if (repairedAny && repairedLineText.Length > 0)
             {
                 WriteBackRepairedLine(lines, repairedLineIndex, repairedLineText);

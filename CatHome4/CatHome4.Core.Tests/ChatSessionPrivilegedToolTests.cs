@@ -154,39 +154,4 @@ namespace CatHome4.Core.Tests
         }
     }
 
-    /// <summary>
-    /// 会话标识测试——SetSessionId 同步运行态身份与落盘（新会话重建语义）。
-    /// </summary>
-    public sealed class ChatSessionSessionIdTests
-    {
-        /// <summary>
-        /// SetSessionId → Id 更新 + store 同步（落盘随下次重写/append 写入）；空值忽略（防误清）。
-        /// </summary>
-        [Fact]
-        public void SetSessionId_UpdatesIdentityAndStore()
-        {
-            ChatContext ctx = new ChatContext();
-            string tmp = Path.Combine(Path.GetTempPath(), "cat4sid_" + Guid.NewGuid().ToString("N") + ".jsonl");
-            SessionStore store = new SessionStore(tmp);
-            OA oa = new OA(new ThreadGuard());
-            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4sid_" + Guid.NewGuid().ToString("N") + ".view.json"));
-            CH4.ChatSession session = new CH4.ChatSession("old-id", "testcat", ctx, store, null, oa, new ToolSpec[0], delegate (string name, string args) { return "ERR|NO_TOOL|" + name; }, viewStore);
-            try
-            {
-                session.SetSessionId("new-id");
-                Assert.Equal("new-id", session.Id);
-                Assert.Equal("new-id", store.SessionId);
-                session.SetSessionId("");
-                Assert.Equal("new-id", session.Id);
-                Assert.Equal("new-id", store.SessionId);
-            }
-            finally
-            {
-                if (File.Exists(tmp))
-                {
-                    File.Delete(tmp);
-                }
-            }
-        }
-    }
 }

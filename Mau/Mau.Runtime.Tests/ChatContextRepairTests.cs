@@ -357,7 +357,7 @@ namespace Mau.Runtime.Tests
             }
         }
         /// <summary>
-        /// 会话标识往返——SetSessionId → Save → TryLoad 恢复同一标识（重启后会话身份不变）。
+        /// 会话标识落盘记录——Rewrite/Append 写进 meta 行；读面不回填（身份 = 猫 key，由宿主构造注入）。
         /// </summary>
         [Fact]
         public void SessionId_RoundTrip()
@@ -376,7 +376,8 @@ namespace Mau.Runtime.Tests
                 SessionStore reloaded = new SessionStore(path);
                 LlmMessage[] got;
                 Assert.True(reloaded.TryLoad(out got));
-                Assert.Equal("639248494051468777", reloaded.SessionId);
+                Assert.Equal("", reloaded.SessionId);
+                Assert.Contains("639248494051468777", System.IO.File.ReadAllText(path));
             }
             finally
             {
@@ -447,7 +448,8 @@ namespace Mau.Runtime.Tests
                 Assert.Equal(2, got.Length);
                 Assert.Equal("sys", got[0].Content);
                 Assert.Equal("你好", got[1].Content);
-                Assert.Equal("sid-a47", reloaded.SessionId);
+                Assert.Equal("", reloaded.SessionId);
+                Assert.Contains("sid-a47", System.IO.File.ReadAllText(path));
             }
             finally
             {
@@ -474,7 +476,7 @@ namespace Mau.Runtime.Tests
                 Assert.Equal(2, got.Length);
                 Assert.StartsWith("半截回复", got[1].Content);
                 Assert.Contains("[系统自动修复]", got[1].Content);
-                Assert.Equal("sid-trunc", store.SessionId);
+                Assert.Equal("", store.SessionId);
             }
             finally
             {

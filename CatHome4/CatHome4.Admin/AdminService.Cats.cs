@@ -77,7 +77,7 @@ namespace CatHome4.Admin
         private const int CatPortStart = 8081;
 
         /// <summary>
-        /// 解析猫启用根条目——cat.cfg enabledRoots → 全局池子集（空=全量；workspace 强制常驻）。
+        /// 解析猫启用根条目——cat.cfg enabledRoots → 全局池子集（空/缺失=空白名单——仅常驻 workspace 可用；失败默认收紧，不回落全量）。
         /// M4e 猫级白名单：猫文件工具面只触及启用根。
         /// </summary>
         /// <param name="catKey">猫 key（majordomo=默认猫）</param>
@@ -100,16 +100,15 @@ namespace CatHome4.Admin
             for (int i = 0; i < ws.Roots.Length; i++)
             {
                 WorkspaceConfig.RootEntry entry = ws.Roots[i];
-                // workspace/runtime 强制常驻——不因启用列表为空或未勾选而移除
-                if (entry.Id == "workspace" || entry.Id == "runtime")
+                // workspace 强制常驻——不因启用列表为空或未勾选而移除（id 大小写不敏感：workspace.json 记作 WorkSpace）
+                if (string.Equals(entry.Id, "workspace", StringComparison.OrdinalIgnoreCase) || string.Equals(entry.Id, "runtime", StringComparison.OrdinalIgnoreCase))
                 {
                     entries.Add(entry);
                     continue;
                 }
+                // 未配置 / 解析失败 = 空白名单——失败默认收紧（只剩常驻根），不回落全量
                 if (enabled == null)
                 {
-                    // 未配置 = 全量（行为不倒退）
-                    entries.Add(entry);
                     continue;
                 }
                 bool found = false;
@@ -136,9 +135,9 @@ namespace CatHome4.Admin
         internal static void ApplyCatRoots(string catKey)
         {
             WorkspaceConfig.RootEntry[] entries = ResolveCatRootEntries(catKey);
-            // §4.3 空值语义可观测——enabledRoots 空=全量（反直觉默认）：解析结果落审计行
+            // §4.3 空值语义可观测——enabledRoots 空=空白名单（仅常驻根；失败默认收紧）：解析结果落审计行
             CatCfgData catCfg = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", catKey, "cat.cfg"));
-            string rootSource = "全量";
+            string rootSource = "空白名单";
             int rootDeclared = 0;
             if (catCfg != null && catCfg.EnabledRoots != null && catCfg.EnabledRoots.Length > 0)
             {
@@ -761,6 +760,13 @@ namespace CatHome4.Admin
                     DataBox.TryResolve<WorkspaceConfig>(out workspace);
                     string injectPrompt = _chatBridge.BuildPrompt(workspace, catSpecs, persona, injectList);
                     context.SetSystemPrompt(injectPrompt);
+                }
+                // 会话标识 ≡ 猫 key（唯一标识——不再有独立"会话身份"层）；哨兵：标识被外部改写时校正并回写（常态恒等不触发）
+                if (!string.Equals(store.SessionId, id, StringComparison.Ordinal))
+                {
+                    store.SessionId = id;
+                    store.Rewrite(context.GetMessages(), restoredStats);
+                    LogStore.Add("CatHome4", 1, "会话标识对齐猫 key: " + id, "CHAT");
                 }
                 // [段4] 会话构造——M1c 每猫独立 Runtime（API 配置池按该猫 apiConfigId 构造）；M2c 声明面按猫裁剪
                 ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig);
