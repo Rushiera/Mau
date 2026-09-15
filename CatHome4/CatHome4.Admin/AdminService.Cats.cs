@@ -492,7 +492,7 @@ namespace CatHome4.Admin
                 return "session.fork | 会话构造失败";
             }
             // [段3b] 播种前文立即落盘——会话文件不存在时重启扫描会走注入分支（播种丢失）；Save 保证重启恢复播种
-            cat.Session.Store.Save(cat.Session.Context.GetMessages(), cat.Session.LastStats);
+            cat.Session.Store.Rewrite(cat.Session.Context.GetMessages(), cat.Session.LastStats);
             _cats.Add(cat);
             LogStore.Add("CatHome4", 1, "已从「" + source.DisplayName + "」节点 " + msgIndex.ToString() + " 分支新猫「" + name + "」（id " + id + "），静默待启动", "CHAT");
             return "session.fork | id=" + id + " | name=" + name + " | 已从节点 " + msgIndex.ToString() + " 分支（静默态，cat.start 启动）";
@@ -741,7 +741,7 @@ namespace CatHome4.Admin
                 ToolSpec[] catSpecs = FilterToolSpecs(ResolveToolNames(toolNames));
                 // [段3] 上下文 + 前文恢复/注入
                 ChatContext context = new ChatContext();
-                SessionStore store = new SessionStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".json"));
+                SessionStore store = new SessionStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".jsonl"));
                 store.SessionId = id;
                 LlmMessage[] restored;
                 SessionStats? restoredStats;

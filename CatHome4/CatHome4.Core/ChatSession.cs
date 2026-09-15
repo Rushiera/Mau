@@ -343,6 +343,19 @@ namespace CH4
         }
 
         /// <summary>
+        /// 消息落盘——上下文追加后立即 append（A47 增量落盘：每消息完成即落盘，崩溃只影响最后一行）。
+        /// </summary>
+        /// <param name="msg">追加的消息（可空=未入上下文）</param>
+        private void AppendMessage(LlmMessage? msg)
+        {
+            if (msg == null || _store == null)
+            {
+                return;
+            }
+            _store.Append(msg.Value);
+        }
+
+        /// <summary>
         /// 会话重置显式事件——session.new 清前文后推送（前端收到后清空气泡再拉 history——消除竞态；问题一修复）。
         /// </summary>
         public void PushSessionReset()
@@ -649,7 +662,7 @@ namespace CH4
                 ToolOrderDog dog = _dogs[i];
                 if (dog.IsClosed && dog.Result != null && dog.Result.Length > 0)
                 {
-                    _context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);
+                    AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
                 }
             }
             _dogs.Clear();
@@ -660,7 +673,7 @@ namespace CH4
             // [段2] 前文落盘——落盘保真
             LlmMessage[] toSave = _context.GetMessages();
             _lastStats.EntryCount = toSave.Length;
-            _store.Save(toSave, _lastStats);
+            _store.AppendMeta(_lastStats);
             // [段3] 视图序号复位——流式容器由前端 seal（已显示内容保留）
             _textStreamSeq = 0;
             _reasonStreamSeq = 0;
@@ -786,7 +799,7 @@ namespace CH4
             _phaseKind = -1;
             _phaseStartTick = 0;
             PhaseEnter(PhaseLink);
-            _context.AddUserMessage(content);
+            AppendMessage(_context.AddUserMessage(content));
             _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
             if (_httpHost != null)
@@ -1195,7 +1208,7 @@ namespace CH4
                     return;
                 }
                 // 纯文本回复——本轮完成
-                _context.AddAssistantMessage(_llmResultText);
+                AppendMessage(_context.AddAssistantMessage(_llmResultText));
                 _viewStore.OnAssistantText(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                 if (_httpHost != null)
                 {
@@ -1209,7 +1222,7 @@ namespace CH4
                 if (_pending.Count > 0)
                 {
                     PendingMessage next = _pending.Dequeue();
-                    _context.AddUserMessage(next.Content);
+                    AppendMessage(_context.AddUserMessage(next.Content));
                     _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                     if (_httpHost != null)
                     {
@@ -1225,7 +1238,7 @@ namespace CH4
                 return;
             }
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
-            _context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning);
+            AppendMessage(_context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning));
             _viewStore.OnAssistantToolCalls(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             if (_httpHost != null && _llmReasoning.Length > 0)
             {
@@ -1454,7 +1467,7 @@ namespace CH4
                     string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(dog.Result) + ",\"summary\":" + JsonUtil.Serialize(toolSummary) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
                     _httpHost.PushView("toolcard", toolJson, -1, 0);
                 }
-                _context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result);
+                AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
                 _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             }
             _toolBatchActive = false;
@@ -1477,7 +1490,7 @@ namespace CH4
             if (_pending.Count > 0)
             {
                 PendingMessage next = _pending.Dequeue();
-                _context.AddUserMessage(next.Content);
+                AppendMessage(_context.AddUserMessage(next.Content));
                 _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                 if (_httpHost != null)
                 {
@@ -1506,7 +1519,7 @@ namespace CH4
             // [段1] 前文落盘——落盘保真
             LlmMessage[] toSave = _context.GetMessages();
             _lastStats.EntryCount = toSave.Length;
-            _store.Save(toSave, _lastStats);
+            _store.AppendMeta(_lastStats);
             // [段2] 前端通知——error 控制事件（前端 seal 流式容器 + 错误气泡 + 恢复 idle；文本取清空前原值）
             if (_httpHost != null)
             {
@@ -1534,14 +1547,13 @@ namespace CH4
         /// </summary>
         private void CloseRound()
         {
-            LlmMessage[] toSave = _context.GetMessages();
-            // E3 真实 usage 统计——CloseRound 落盘（info 自查/前端显示数据源；零估算）
+            // E3 真实 usage 统计——轮末落盘（info 自查/前端显示数据源；零估算）
             _lastStats.EntryCount = _context.GetMessageCount();
             _lastStats.LastPromptTokens = _usagePrompt;
             _lastStats.LastCacheHitTokens = _usageCacheHit;
             _lastStats.LastCompletionTokens = _usageCompletion;
             _lastStats.LastContextTokens = _contextTokens;
-            _store.Save(toSave, _lastStats);
+            _store.AppendMeta(_lastStats);
             // M4a Note 自动拉起提前——剩余≥2 条时以 user 名义推下一轮（最后 1 条不拉起——LLM 完成后自然结束；Q2 顺序：Note 未完成 = 本轮未结束——不 roundsum/chatdone；全部完成天然跳过——防无限循环闸门）
             if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent + 1 < _noteTasks.Length)
             {
@@ -1635,10 +1647,10 @@ namespace CH4
                 keep[i] = all[i];
             }
             _context.ReplaceMessages(keep);
-            // [段2] 前文落盘——落盘保真
+            // [段2] 前文落盘——落盘保真（截断重写：append-only 的合法例外）
             LlmMessage[] toSave = _context.GetMessages();
             _lastStats.EntryCount = toSave.Length;
-            _store.Save(toSave, _lastStats);
+            _store.Rewrite(toSave, _lastStats);
             // [段3] 统计与运行期参数复位——新起点零统计起算
             ResetStats();
             _usagePrompt = 0;

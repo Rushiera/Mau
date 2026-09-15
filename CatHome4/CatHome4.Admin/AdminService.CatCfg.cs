@@ -289,7 +289,7 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 删除猫文件——sessions/&lt;id&gt;/ 目录 + 前文 json（异常不阻断删除流程）。
+        /// 删除猫文件——sessions/&lt;id&gt;/ 目录（含前文 jsonl；异常不阻断删除流程）。
         /// </summary>
         /// <param name="id">会话 ID</param>
         private static void DeleteCatFiles(string id)
@@ -301,7 +301,7 @@ namespace CatHome4.Admin
                 {
                     Directory.Delete(dir, true);
                 }
-                string storePath = Path.Combine(_dataRoot, "Data", "sessions", id + ".json");
+                string storePath = Path.Combine(_dataRoot, "Data", "sessions", id, id + ".jsonl");
                 if (File.Exists(storePath))
                 {
                     File.Delete(storePath);

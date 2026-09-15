@@ -327,7 +327,7 @@ namespace CH4
             AdminService.NotifyBalloon = Program.NotifyBalloon;
             // S5 Observe 域接线——依赖注入（观测面迁入 CatHome4.Observe）
             ObserveService.Configure(_oa, _chatBridge, _quickHandle, _toolFlowHandles, _quickId, _toolFlowIds, _runner, null);
-            SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.json"));
+            SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.jsonl"));
             LlmMessage[] restored;
             SessionStats? restoredStats;
             // M1 默认猫——API 配置身份从 sessions/majordomo/cat.cfg 读取；缺省 Guid.Empty=默认端点语义（每次调用实时解析）
@@ -407,7 +407,7 @@ namespace CH4
             {
                 defaultSessionId = "majordomo";
                 chatStore.SessionId = defaultSessionId;
-                chatStore.Save(chatCtx.GetMessages(), restoredStats);
+                chatStore.Rewrite(chatCtx.GetMessages(), restoredStats);
                 Console.WriteLine("[CMD] 会话标识补建: " + defaultSessionId);
             }
             // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面；M2c 声明面按猫裁剪）

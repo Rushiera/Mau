@@ -172,7 +172,7 @@ namespace CH4
             session.Context.Clear();
             // E3 真实 usage 统计——新会话零统计起算
             session.ResetStats();
-            session.Store.Save(session.Context.GetMessages(), session.LastStats);
+            session.Store.Rewrite(session.Context.GetMessages(), session.LastStats);
             // F4 视图——session.new 清前文 → 视图随生命周期清空
             session.ClearView();
             // 注入报告——逐文件结果持久化进视图（独立字段：Rebuild 不清，Save 落盘；前端 history 首块渲染）
@@ -410,7 +410,7 @@ namespace CH4
             if (cmd == "session clear")
             {
                 session.Context.Clear();
-                session.Store.Save(session.Context.GetMessages());
+                session.Store.Rewrite(session.Context.GetMessages());
                 // 问题一附带——session clear 同步清视图（视图随生命周期清理；注入报告保留——非会话轮次产物）
                 session.ClearView();
                 LogStore.Add("CatHome4", 1, "会话已清空（保留系统提示词）", "CMD");

@@ -63,7 +63,7 @@ namespace CatHome4.Core.Tests
         private static CH4.ChatSession CreateSession(string displayName, ToolSpec[] tools, CaptureLlm llm)
         {
             ChatContext ctx = new ChatContext();
-            string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".json");
+            string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".jsonl");
             SessionStore store = new SessionStore(tmp);
             OA oa = new OA(new ThreadGuard());
             CH4.SessionViewStore viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.json"));
@@ -160,13 +160,13 @@ namespace CatHome4.Core.Tests
     public sealed class ChatSessionSessionIdTests
     {
         /// <summary>
-        /// SetSessionId → Id 更新 + store 同步（落盘随下次 Save 写入）；空值忽略（防误清）。
+        /// SetSessionId → Id 更新 + store 同步（落盘随下次重写/append 写入）；空值忽略（防误清）。
         /// </summary>
         [Fact]
         public void SetSessionId_UpdatesIdentityAndStore()
         {
             ChatContext ctx = new ChatContext();
-            string tmp = Path.Combine(Path.GetTempPath(), "cat4sid_" + Guid.NewGuid().ToString("N") + ".json");
+            string tmp = Path.Combine(Path.GetTempPath(), "cat4sid_" + Guid.NewGuid().ToString("N") + ".jsonl");
             SessionStore store = new SessionStore(tmp);
             OA oa = new OA(new ThreadGuard());
             CH4.SessionViewStore viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4sid_" + Guid.NewGuid().ToString("N") + ".view.json"));

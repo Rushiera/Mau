@@ -125,7 +125,7 @@ namespace Mau.Runtime.Tests
             Assert.Equal(LlmRole.Tool, result[3].Role);
             Assert.Equal("call_1", result[3].ToolCallId);
             Assert.Equal("text-read", result[3].ToolName);
-            Assert.StartsWith("(前文修复)", result[3].Content);
+            Assert.StartsWith("[系统自动修复]", result[3].Content);
         }
 
         /// <summary>
@@ -156,7 +156,7 @@ namespace Mau.Runtime.Tests
             int placeholderCount = 0;
             for (int i = 0; i < result.Length; i++)
             {
-                if (result[i].Role == LlmRole.Tool && result[i].Content.StartsWith("(前文修复)"))
+                if (result[i].Role == LlmRole.Tool && result[i].Content.StartsWith("[系统自动修复]"))
                 {
                     placeholderCount = placeholderCount + 1;
                 }
@@ -340,7 +340,7 @@ namespace Mau.Runtime.Tests
             System.IO.Directory.CreateDirectory(dir);
             string path = System.IO.Path.Combine(dir, "session.json");
             string badPath = path + ".bad";
-            string json = "{\"Messages\":[{\"Role\":0,\"Content\":\"sys\"}]}";
+            string json = "{\"t\":\"m\",\"Role\":0,\"Content\":\"sys\"}";
             System.IO.File.WriteAllText(path, json);
             try
             {
@@ -372,7 +372,7 @@ namespace Mau.Runtime.Tests
                 LlmMessage[] messages = new LlmMessage[1];
                 messages[0].Role = LlmRole.User;
                 messages[0].Content = "hi";
-                store.Save(messages);
+                store.Rewrite(messages);
                 SessionStore reloaded = new SessionStore(path);
                 LlmMessage[] got;
                 Assert.True(reloaded.TryLoad(out got));
@@ -384,10 +384,10 @@ namespace Mau.Runtime.Tests
             }
         }
         /// <summary>
-        /// 旧格式文件（无 SessionId 字段）→ 读面按空串处理（首次启动补建语义——不误判为已有标识）。
+        /// 旧格式文件（非 JSONL——A47 不兼容）→ 按无前文处理；不可解析内容备份 .bad（数据不丢）。
         /// </summary>
         [Fact]
-        public void SessionId_LegacyFileMissing_ReturnsEmpty()
+        public void LegacyJsonFile_NotCompatible_ReturnsFalse()
         {
             string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ch4_sid_" + Guid.NewGuid().ToString("N"));
             System.IO.Directory.CreateDirectory(dir);
@@ -397,8 +397,148 @@ namespace Mau.Runtime.Tests
             {
                 SessionStore store = new SessionStore(path);
                 LlmMessage[] messages;
-                Assert.True(store.TryLoad(out messages));
-                Assert.Equal("", store.SessionId);
+                Assert.False(store.TryLoad(out messages));
+                Assert.True(System.IO.File.Exists(path + ".bad"), "不可解析文件应备份 .bad（数据不丢）");
+            }
+            finally
+            {
+                System.IO.Directory.Delete(dir, true);
+            }
+        }
+
+        /// <summary>
+        /// 构造指定角色消息
+        /// </summary>
+        /// <param name="role">角色</param>
+        /// <param name="content">正文</param>
+        /// <returns>消息</returns>
+        private static LlmMessage MakeMessage(LlmRole role, string content)
+        {
+            LlmMessage m = new LlmMessage();
+            m.Role = role;
+            m.Content = content;
+            m.ToolCallId = "";
+            m.ToolName = "";
+            m.ToolCallsJson = "";
+            m.ReasoningContent = "";
+            return m;
+        }
+
+        /// <summary>
+        /// 增量落盘——每消息 append 逐行 JSONL；读面按序恢复（元数据行不占消息索引）。
+        /// </summary>
+        [Fact]
+        public void AppendMessages_RoundTrip()
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ch4_a47_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "session.jsonl");
+            try
+            {
+                SessionStore store = new SessionStore(path);
+                store.SessionId = "sid-a47";
+                store.Append(MakeMessage(LlmRole.System, "sys"));
+                store.Append(MakeMessage(LlmRole.User, "你好"));
+                store.AppendMeta(new SessionStats());
+                SessionStore reloaded = new SessionStore(path);
+                LlmMessage[] got;
+                SessionStats? loaded;
+                Assert.True(reloaded.TryLoad(out got, out loaded));
+                Assert.Equal(2, got.Length);
+                Assert.Equal("sys", got[0].Content);
+                Assert.Equal("你好", got[1].Content);
+                Assert.Equal("sid-a47", reloaded.SessionId);
+            }
+            finally
+            {
+                System.IO.Directory.Delete(dir, true);
+            }
+        }
+
+        /// <summary>
+        /// 末行残缺补全——崩溃在半截 JSON：结构补齐为合法行 + Content 追加修复标注；已落盘内容不丢。
+        /// </summary>
+        [Fact]
+        public void TruncatedLastLine_RepairedWithNote()
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ch4_a47_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "session.jsonl");
+            string text = "{\"t\":\"meta\",\"SessionId\":\"sid-trunc\"}\n{\"t\":\"m\",\"Role\":0,\"Content\":\"sys\"}\n{\"t\":\"m\",\"Role\":1,\"Content\":\"半截回复";
+            System.IO.File.WriteAllText(path, text);
+            try
+            {
+                SessionStore store = new SessionStore(path);
+                LlmMessage[] got;
+                Assert.True(store.TryLoad(out got));
+                Assert.Equal(2, got.Length);
+                Assert.StartsWith("半截回复", got[1].Content);
+                Assert.Contains("[系统自动修复]", got[1].Content);
+                Assert.Equal("sid-trunc", store.SessionId);
+            }
+            finally
+            {
+                System.IO.Directory.Delete(dir, true);
+            }
+        }
+
+        /// <summary>
+        /// 非末行损坏——跳过坏行 + 告警，其余照常加载（不整文件作废）。
+        /// </summary>
+        [Fact]
+        public void BrokenMiddleLine_SkippedOthersLoaded()
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ch4_a47_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "session.jsonl");
+            string text = "{\"t\":\"m\",\"Role\":0,\"Content\":\"sys\"}\n{坏行\n{\"t\":\"m\",\"Role\":2,\"Content\":\"hi\"}";
+            System.IO.File.WriteAllText(path, text);
+            try
+            {
+                SessionStore store = new SessionStore(path);
+                LlmMessage[] got;
+                Assert.True(store.TryLoad(out got));
+                Assert.Equal(2, got.Length);
+                Assert.Equal("sys", got[0].Content);
+                Assert.Equal("hi", got[1].Content);
+            }
+            finally
+            {
+                System.IO.Directory.Delete(dir, true);
+            }
+        }
+
+        /// <summary>
+        /// 工具调用无结果——读面保留声明行；ReplaceMessages 补配对占位（系统自动修复标注）。
+        /// </summary>
+        [Fact]
+        public void ToolCallWithoutResult_PlaceholderRepaired()
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ch4_a47_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "session.jsonl");
+            try
+            {
+                SessionStore store = new SessionStore(path);
+                store.Append(MakeMessage(LlmRole.System, "sys"));
+                LlmMessage decl = new LlmMessage();
+                decl.Role = LlmRole.Assistant;
+                decl.Content = "";
+                decl.ToolCallId = "";
+                decl.ToolName = "";
+                decl.ToolCallsJson = "[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"text-read\",\"arguments\":\"{}\"}}]";
+                decl.ReasoningContent = "";
+                store.Append(decl);
+                SessionStore reloaded = new SessionStore(path);
+                LlmMessage[] got;
+                Assert.True(reloaded.TryLoad(out got));
+                Assert.Equal(2, got.Length);
+                ChatContext ctx = new ChatContext();
+                ctx.ReplaceMessages(got);
+                LlmMessage[] repaired = ctx.GetMessages();
+                Assert.Equal(3, repaired.Length);
+                Assert.Equal(LlmRole.Tool, repaired[2].Role);
+                Assert.Contains("[系统自动修复]", repaired[2].Content);
             }
             finally
             {

@@ -209,7 +209,7 @@ namespace CatHome4.Core.Tests
         private static CH4.ChatSession CreateSession(ILlmRuntime llm)
         {
             ChatContext ctx = new ChatContext();
-            string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".json");
+            string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".jsonl");
             SessionStore store = new SessionStore(tmp);
             OA oa = new OA(new ThreadGuard());
             // 测试工具声明面——含内置 Note（IsToolAllowed 声明面拦截需要；OA 工具测试走内置避免无消费者卡死）

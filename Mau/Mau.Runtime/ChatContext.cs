@@ -54,56 +54,66 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 追加用户消息
+        /// 追加用户消息——返回追加的消息（落盘挂点显式消费；空文本不入上下文）。
         /// </summary>
         /// <param name="text">用户文本</param>
-        public void AddUserMessage(string text)
+        /// <returns>追加的消息（空文本=null）</returns>
+        public LlmMessage? AddUserMessage(string text)
         {
             if (text.Length == 0)
             {
-                return;
+                return null;
             }
-            _history.Add(CreateMessage(LlmRole.User, text));
+            LlmMessage msg = CreateMessage(LlmRole.User, text);
+            _history.Add(msg);
+            return msg;
         }
 
         /// <summary>
-        /// 追加助手文本回复
+        /// 追加助手文本回复——返回追加的消息（落盘挂点显式消费）。
         /// </summary>
         /// <param name="text">回复文本</param>
-        public void AddAssistantMessage(string text)
+        /// <returns>追加的消息</returns>
+        public LlmMessage AddAssistantMessage(string text)
         {
-            _history.Add(CreateMessage(LlmRole.Assistant, text));
+            LlmMessage msg = CreateMessage(LlmRole.Assistant, text);
+            _history.Add(msg);
+            return msg;
         }
 
         /// <summary>
-        /// 追加助手工具调用声明——tool_calls JSON 原样 + 思考内容（回传铁律）
+        /// 追加助手工具调用声明——tool_calls JSON 原样 + 思考内容（回传铁律）；返回追加的消息（落盘挂点显式消费）。
         /// </summary>
         /// <param name="toolCallsJson">tool_calls JSON 数组</param>
         /// <param name="reasoning">思考内容（可为空串）</param>
-        public void AddAssistantToolCalls(string toolCallsJson, string reasoning)
+        /// <returns>追加的消息（空 tool_calls=null）</returns>
+        public LlmMessage? AddAssistantToolCalls(string toolCallsJson, string reasoning)
         {
             if (toolCallsJson.Length == 0)
             {
-                return;
+                return null;
             }
             LlmMessage msg = CreateMessage(LlmRole.Assistant, "");
             msg.ToolCallsJson = toolCallsJson;
             msg.ReasoningContent = reasoning;
             _history.Add(msg);
+            return msg;
         }
 
         /// <summary>
-        /// 追加工具结果——与调用 ID 配对
+        /// 追加工具结果——与调用 ID 配对；返回追加的消息（落盘挂点显式消费）。
         /// </summary>
         /// <param name="toolCallId">调用 ID</param>
         /// <param name="toolName">工具名</param>
         /// <param name="result">结果正文（失败时 ERR| 前缀）</param>
-        public void AddToolResult(string toolCallId, string toolName, string result)
+        /// <returns>追加的消息</returns>
+        public LlmMessage AddToolResult(string toolCallId, string toolName, string result)
         {
             LlmMessage msg = CreateMessage(LlmRole.Tool, result);
             msg.ToolCallId = toolCallId;
             msg.ToolName = toolName;
             _history.Add(msg);
+            return msg;
         }
 
         /// <summary>
@@ -230,7 +240,7 @@ namespace Mau.Runtime
                         {
                             if (!resultIds.Contains(kv.Key))
                             {
-                                LlmMessage ph = CreateMessage(LlmRole.Tool, "(前文修复) 工具结果缺失——会话中断");
+                                LlmMessage ph = CreateMessage(LlmRole.Tool, "[系统自动修复] 该工具调用未返回结果（宿主中断）——结果不可知");
                                 ph.ToolCallId = kv.Key;
                                 ph.ToolName = kv.Value;
                                 _history.Add(ph);
