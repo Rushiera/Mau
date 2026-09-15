@@ -1292,7 +1292,7 @@ namespace CH4
                             dog.IsClosed = true;
                             LogStore.Add("CatHome4", 1, "工具 " + name + " 登记延迟直执（批次末尾执行）", "TOOL");
                         }
-                        else if (name == "Note" || name == "time" || name == "random" || name == "info")
+                        else if (IsBuiltinTool(name))
                         {
                             // 内置工具会话内直执——不需 OA（R0.2 分层：Note 状态在会话实例；time/random/info 宿主直执）
                             dog.Result = ExecuteBuiltin(name, arguments);

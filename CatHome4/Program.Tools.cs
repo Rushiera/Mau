@@ -21,7 +21,7 @@ namespace CH4
         private static string BuildBuiltinToolsJson()
         {
             // 结构化构建——匿名对象树 → JsonSerializer（R6-P3-08：原手写字符串拼接易漏转义、难维护）
-            object[] tools = new object[6];
+            object[] tools = new object[7];
             tools[0] = new
             {
                 name = "Note",
@@ -95,6 +95,20 @@ namespace CH4
                 {
                     type = "object",
                     properties = new Dictionary<string, object>()
+                }
+            };
+            tools[6] = new
+            {
+                name = "pack",
+                description = "加载包注入——按 key 注入预设文件包（池 packs.json 定义 + 本猫挂载授权），一次调用完成加载；返回逐件明细（件数/字符数/失败原因）。收工/蒸馏/审查等跨身份动作的前置加载入口。",
+                parameters = new
+                {
+                    type = "object",
+                    properties = new Dictionary<string, object>
+                            {
+                                { "key", new { type = "string", description = "包 key（info 可见本猫已挂载包）" } }
+                            },
+                    required = new string[] { "key" }
                 }
             };
             // 宽松转义——避免 < > 被编码为 \u003C（与旧手写字符串语义一致）

@@ -334,6 +334,8 @@ namespace CH4
             // S4 Admin 域接线——依赖注入（管理 API 处理器 + cat.* 指令族迁入 CatHome4.Admin）
             AdminService.Configure(_chatBridge, _oa, dataRoot, _mainThreadId, ExecuteTool, ObserveService.BuildSnapshotJson, new HtmlRootProvider(), apiConfigStore, qqBotStore, llmConfig);
             AdminService.BuildEnvInfoProvider = BuildEnvInfo;
+            // 加载包数据面接线——pack 内置工具（池定义与猫挂载解析归 Admin 域；Core 零配置面依赖）
+            ChatSession.PackPayloadProvider = AdminService.BuildPackPayload;
             AdminService.NotifyBalloon = Program.NotifyBalloon;
             // S5 Observe 域接线——依赖注入（观测面迁入 CatHome4.Observe）
             ObserveService.Configure(_oa, _chatBridge, _quickHandle, _toolFlowHandles, _quickId, _toolFlowIds, _runner, null);
@@ -596,6 +598,16 @@ namespace CH4
                 }
                 rootsInfo = " | roots[" + catKey + "]: " + rb.ToString();
             }
+            // 加载包挂载——info 可见本猫已挂载包（key + 描述；空=不显示该行）
+            string packsInfo = "";
+            if (catKey != null && catKey.Length > 0)
+            {
+                string packsShow = AdminService.BuildMountedPacksInfo(catKey);
+                if (packsShow.Length > 0)
+                {
+                    packsInfo = " | packs: " + packsShow;
+                }
+            }
             // E3 前文统计——info 自查真实 usage（零估算：持久化 stats 直读；无统计=新会话零值）
             string statsInfo = "";
             SessionStats? stats = AdminService.GetCatStats(catKey);
@@ -613,7 +625,7 @@ namespace CH4
             // 前文长度 = 最近一次请求单次 prompt（context）；旧数据无 context 回退累计值
             long ctxLen = context > 0 ? context : prompt;
             statsInfo = " | 前文: " + ctxLen.ToString() + " tokens";
-            return "CH4 v" + version + buildInfo + " | LLM: " + llmInfo + " | " + now + rootsInfo + statsInfo;
+            return "CH4 v" + version + buildInfo + " | LLM: " + llmInfo + " | " + now + rootsInfo + statsInfo + packsInfo;
         }
         /// <summary>
         /// 前端测试服务拉起——宿主启动时自动启动 html/tests/server.js（未监听 8099 时）；失败不影响主功能

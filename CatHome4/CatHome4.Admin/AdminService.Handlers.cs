@@ -58,6 +58,10 @@ namespace CatHome4.Admin
             // 受控根编辑面——管理员面（M4d）
             sink.MapGet("/api/v1/workspace", (Delegate)HandleWorkspaceGet);
             sink.MapPost("/api/v1/workspace", (Delegate)HandleWorkspacePost);
+            // 加载包池——全局池管理面（R4 加载包）
+            sink.MapGet("/api/v1/packs", (Delegate)HandlePacksGet);
+            sink.MapPost("/api/v1/packs", (Delegate)HandlePacksPost);
+            sink.MapPost("/api/v1/packs/delete", (Delegate)HandlePacksDelete);
             // 打开数据目录——前端按钮（explorer.exe 打开持久化 Data 目录——三级锚定解析）
             sink.MapPost("/api/v1/open-data-dir", (Delegate)HandleOpenDataDir);
         }
@@ -594,6 +598,8 @@ namespace CatHome4.Admin
                 persona = cfg.Persona,
                 toolNames = cfg.ToolNames,
                 injectList = cfg.InjectList,
+                packs = cfg.Packs,
+                allPacks = BuildAllPacksJson(),
                 qqbotId = cfg.QqBotId,
                 qqbotEnable = cfg.QqBotEnable,
                 enabledRoots = cfg.EnabledRoots,
@@ -656,6 +662,7 @@ namespace CatHome4.Admin
             bool qqbotEnable = false;
             List<string> injectList = new List<string>();
             List<string> enabledRoots = new List<string>();
+            List<string> packs = new List<string>();
             try
             {
                 using (JsonDocument doc = JsonDocument.Parse(body))
@@ -684,6 +691,23 @@ namespace CatHome4.Admin
                                 if (got != null && got.Length > 0)
                                 {
                                     enabledRoots.Add(got);
+                                }
+                            }
+                        }
+                    }
+                    JsonElement packsEl;
+                    if (root.TryGetProperty("packs", out packsEl) && packsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        for (int i = 0; i < packsEl.GetArrayLength(); i = i + 1)
+                        {
+                            JsonElement item = packsEl[i];
+                            if (item.ValueKind == JsonValueKind.String)
+                            {
+                                string got = item.GetString();
+                                if (got != null && got.Length > 0)
+                                {
+                                    // 挂载清单——池内 key；未挂载/池外项在 pack 调用期校验（此处只做去空白归一）
+                                    packs.Add(got.Trim());
                                 }
                             }
                         }
@@ -772,6 +796,7 @@ namespace CatHome4.Admin
             cfg.Persona = persona;
             cfg.ToolNames = validToolNames;
             cfg.InjectList = injectList.ToArray();
+            cfg.Packs = packs.ToArray();
             // 启用根校验——workspace 强制 + 全局池子集；非法 id 剔除
             cfg.EnabledRoots = ValidateEnabledRoots(enabledRoots.ToArray());
             SaveCatCfgData(catKey, cfg);
@@ -1365,7 +1390,8 @@ namespace CatHome4.Admin
                 injectList = data.InjectList,
                 qqbotId = data.QqBotId,
                 qqbotEnable = data.QqBotEnable,
-                enabledRoots = data.EnabledRoots
+                enabledRoots = data.EnabledRoots,
+                packs = data.Packs
             };
             try
             {

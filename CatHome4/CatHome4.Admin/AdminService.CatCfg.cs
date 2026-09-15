@@ -113,6 +113,9 @@ namespace CatHome4.Admin
 
             /// <summary>启用根 id 清单——全局根池子集（null/空=全量；workspace 强制必选不可取消）</summary>
             public string[] EnabledRoots { get; set; }
+
+            /// <summary>加载包挂载清单——packs.json 池内 key 子集（空=未挂载任何包；pack 工具按此授权）</summary>
+            public string[] Packs { get; set; }
         }
 
         /// <summary>
@@ -259,6 +262,7 @@ namespace CatHome4.Admin
                     data.QqBotId = GetStringProp(root, "qqbotId");
                     data.QqBotEnable = GetBoolProp(root, "qqbotEnable");
                     data.EnabledRoots = GetStringArrayProp(root, "enabledRoots");
+                    data.Packs = GetStringArrayProp(root, "packs");
                     return data;
                 }
             }
