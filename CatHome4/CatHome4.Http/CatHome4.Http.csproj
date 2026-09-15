@@ -6,7 +6,6 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <RootNamespace>CatHome4.Http</RootNamespace>
     <AssemblyName>CatHome4.Http</AssemblyName>
-    <Version>1.02.011</Version>
   </PropertyGroup>
 
   <ItemGroup>

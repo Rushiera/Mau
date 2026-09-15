@@ -2,10 +2,14 @@
 
   <!-- 仓库级最小构建约定（Quality 轮 2026-08-21）：
        Deterministic——全配置确定性构建（默认仅 Release）；
-       LangVersion——全项目统一语言版本（消除 SDK 默认值随 TFM 漂移）。 -->
+       LangVersion——全项目统一语言版本（消除 SDK 默认值随 TFM 漂移）。
+       Version——A53 版本号单点（2026-09-15）：CH4 + Mau 全项目唯一事实源。
+       消费方：Directory.Build.targets 注入 InformationalVersion；SetUp ReadVersion 落盘 version.txt。
+       SetUp 独立——其 csproj 显式声明 Version 覆盖本值（csproj 后于本文件求值）。 -->
   <PropertyGroup>
     <Deterministic>true</Deterministic>
     <LangVersion>latest</LangVersion>
+    <Version>1.02.012</Version>
   </PropertyGroup>
 
 </Project>

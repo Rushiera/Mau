@@ -6,7 +6,6 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <RootNamespace>CatHome4.QQ</RootNamespace>
     <AssemblyName>CatHome4.QQ</AssemblyName>
-    <Version>1.02.011</Version>
   </PropertyGroup>
 
   <ItemGroup>

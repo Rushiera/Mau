@@ -189,20 +189,21 @@ namespace SetUp
         }
 
         /// <summary>
-        /// 读取 CatHome4.csproj 版本号——<Version> 标签（唯一事实源）。
+        /// 读取仓库单点版本号——Directory.Build.props 的 Version 标签（A53 唯一事实源：CH4 + Mau 全跟随，
+        /// SetUp 独立）；消费路径 = deploy 落盘 version.txt / relaunch 回执。
         /// </summary>
         /// <param name="repoRoot">仓库根</param>
         /// <returns>版本号（未找到返回 unknown）</returns>
         private static string ReadVersion(string repoRoot)
         {
-            string csproj = Path.Combine(repoRoot, "CatHome4", "CatHome4.csproj");
+            string props = Path.Combine(repoRoot, "Directory.Build.props");
             try
             {
-                if (!File.Exists(csproj))
+                if (!File.Exists(props))
                 {
                     return "unknown";
                 }
-                string text = File.ReadAllText(csproj);
+                string text = File.ReadAllText(props);
                 string marker = "<Version>";
                 int start = text.IndexOf(marker, StringComparison.Ordinal);
                 if (start < 0)
