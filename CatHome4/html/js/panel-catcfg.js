@@ -7,6 +7,7 @@ var catCfgModal = document.getElementById('catCfgModal');
 var catCfgTarget = '';
 var catCfgAllTools = [];
 var catCfgInjectList = [];
+var catCfgAllPacks = [];
 
 function openCatCfg(catId, name) {
     catCfgTarget = catId;
@@ -27,6 +28,8 @@ function openCatCfg(catId, name) {
             document.getElementById('catCfgPersona').value = d.persona || '';
             renderToolChecks(d.toolNames || '');
             renderInjectList(d.injectList || []);
+            catCfgAllPacks = d.allPacks || [];
+            renderPackChecks(catCfgAllPacks, d.packs || []);
             // M4e 猫级白名单——启用根勾选（workspace 强制常驻不可取消）
             renderRootChecks(d.allRoots || [], d.enabledRoots || []);
             catCfgModal.style.display = 'flex';
@@ -252,6 +255,7 @@ function saveCatCfg() {
         persona: document.getElementById('catCfgPersona').value,
         toolNames: toolNames.join(','),
         injectList: catCfgInjectList,
+        packs: collectPackChecks(),
         qqbotId: document.getElementById('catCfgQqBot').value,
         qqbotEnable: document.getElementById('catCfgQqEnable').checked,
         enabledRoots: collectRootChecks()
@@ -660,3 +664,50 @@ document.getElementById('rootAddBtn').onclick = function () {
 };
 document.getElementById('rootsSave').onclick = saveRoots;
 loadRoots();
+
+// [R4 加载包] 猫级挂载勾选——池全量 allPacks；packs 当前已挂载；pack 工具按此授权
+function renderPackChecks(allPacks, packs) {
+    var box = document.getElementById('catCfgPacks');
+    box.textContent = '';
+    if (!allPacks || allPacks.length === 0) {
+        var empty = document.createElement('span');
+        empty.style.cssText = 'font-size:11px;color:#6a6a6a';
+        empty.textContent = '（池为空——点上方「管理包池…」新建）';
+        box.appendChild(empty);
+        return;
+    }
+    var mounted = {};
+    if (packs && packs.length > 0) {
+        for (var i = 0; i < packs.length; i++) { mounted[packs[i]] = true; }
+    }
+    for (var j = 0; j < allPacks.length; j++) {
+        (function (pack) {
+            var label = document.createElement('label');
+            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:#242424;border:1px solid #2a2a2a;border-radius:4px;padding:3px 8px;font-size:11px;color:#c8c8c8;cursor:pointer';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'pack-cb';
+            cb.setAttribute('data-pack', pack.key);
+            cb.checked = mounted[pack.key] === true;
+            label.appendChild(cb);
+            var txt = document.createElement('span');
+            var desc = pack.desc && pack.desc.length > 0 ? '（' + pack.desc + '）' : '';
+            txt.textContent = pack.key + desc;
+            if (pack.pathCount) { txt.title = pack.pathCount + ' 个路径项'; }
+            label.appendChild(txt);
+            box.appendChild(label);
+        })(allPacks[j]);
+    }
+}
+
+function collectPackChecks() {
+    var keys = [];
+    var boxes = document.querySelectorAll('#catCfgPacks input[type=checkbox].pack-cb');
+    for (var i = 0; i < boxes.length; i++) {
+        if (boxes[i].checked) { keys.push(boxes[i].getAttribute('data-pack')); }
+    }
+    return keys;
+}
+
+// 包池管理入口——openPacks 定义在 panel-packs.js（后加载）；包装函数延迟解析
+document.getElementById('catCfgPacksManage').onclick = function () { openPacks(); };
