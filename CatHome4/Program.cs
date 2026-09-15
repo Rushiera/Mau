@@ -234,10 +234,15 @@ namespace CH4
             }
             DataBox.Bind<FileSystemService>(new FileSystemService(workspace.Roots, Path.Combine(WorkspaceRecycleRoot(workspace, dataRoot), "CatTemp", "fs_recycle")));
             string configDir = Path.Combine(dataRoot, "Data", "config");
+            // P8.5 配置群 schema——schema.json 元声明（默认值/敏感/可写/空值语义——/api/v1/config 输出面）
+            // §4.1 schema 同步（模板为准：不一致 → .bak 备份 + 整体覆盖）→ §4.2 schema 驱动段注册（宿主零硬编码段清单）
+            // 两条结论在 LogStore 就绪后补记审计（启动期只有 Console——落盘补记见段3b）
+            string schemaSyncNote = EnsureSchemaSync(configDir);
+            ConfigSchema schema = ConfigSchema.Load(Path.Combine(configDir, "schema.json"));
+            DataBox.Bind<ConfigSchema>(schema);
             ConfigStore llmConfig = ConfigStore.Load(Path.Combine(configDir, "llm.cfg"));
+            string segmentNote = RegisterSchemaSegments(llmConfig, schema, configDir);
             DataBox.Bind<ConfigStore>(llmConfig);
-            // P9.4 配置注册表——默认全局实例（每猫实例在 cat.new/启动扫描时注册）
-            ConfigStoreRegistry.SetDefault(llmConfig);
             // M1a LLM API 配置池——llm-api.json 明文（零 key）+ Data/secrets 独立秘密文件（CH3 同构迁移；环境变量首次导入兜底）
             CH_LlmApiConfigStore apiConfigStore = new CH_LlmApiConfigStore(
                 Path.Combine(dataRoot, "Data", "config"),
@@ -249,16 +254,6 @@ namespace CH4
                 Path.Combine(dataRoot, "Data", "config"),
                 Path.Combine(dataRoot, "Data", "secrets"));
             DataBox.Bind<CH_QqBotConfigStore>(qqBotStore);
-            // P8.5d 配置群多文件化——ui.* 用户偏好追加到同一 store（键前缀段路由；ui.cfg 缺失时首次写入自动创建）
-            llmConfig.AddFile("ui", Path.Combine(configDir, "ui.cfg"));
-            // P1 自启配置群——app.* 宿主行为配置（app.autostart 开机自启——配置为真相，注册表为物化）
-            llmConfig.AddFile("app", Path.Combine(configDir, "app.cfg"));
-            // R2.1 搜索配置群——search.* 独立 search.cfg（未配置=搜索工具不可用——先配置后才可用）
-            llmConfig.AddFile("search", Path.Combine(configDir, "search.cfg"));
-            // R2.2 视觉配置群——vision.* 独立 vision.cfg（未配置=识图工具不可用——先配置后才可用）
-            llmConfig.AddFile("vision", Path.Combine(configDir, "vision.cfg"));
-            // PsCat 工具组配置群——ps.* 独立 ps.cfg（ps.pwsh_path=PowerShell 7 路径；未配置=powershell7 工具明示不可用）
-            llmConfig.AddFile("ps", Path.Combine(configDir, "ps.cfg"));
             // M1 语料面 Runtime——默认端点语义（QuickCat 工单 llm.stream 消费面；Guid.Empty=每次调用实时解析默认配置）
             // 空配置池无默认端点 → 启动失败（不做静默回退——必须先配置端点后才能运行）
             _llmRuntime = new DeepSeekLlmRuntime(apiConfigStore, Guid.Empty, llmConfig);
@@ -271,10 +266,6 @@ namespace CH4
             DataBox.Bind<IVisionService>(new Mau.Providers.DeepSeekVisionService(apiConfigStore, llmConfig));
             // PsCat PowerShell 执行服务——EncodedCommand 免转义 + UTF-8 内建 + 写文件拦截 + 超时进程树杀（PsService）
             DataBox.Bind<IPsService>(new PsService());
-            // P8.5 配置群 schema——schema.json 元声明（默认值/敏感/可写——/api/v1/config 输出面）
-            // P1b 首次运行种子——Data/config/schema.json 缺失时从部署包/仓库根模板复制（仅缺失时，不覆盖已有——Data 三级锚定运行时数据独立）
-            EnsureSchemaSeed(configDir);
-            DataBox.Bind<ConfigSchema>(ConfigSchema.Load(Path.Combine(configDir, "schema.json")));
             AuditStore audit = new AuditStore();
             AuditStore.Default = audit;
             _runner.Audit = audit;
@@ -288,6 +279,8 @@ namespace CH4
             {
                 Console.WriteLine(line);
             };
+            // [段3b] 配置面启动审计补记——schema 同步与段注册结论（启动期仅 Console 输出，此处落盘可回溯）
+            LogStore.Add("CatHome4", 1, "config.boot | " + schemaSyncNote + " | " + segmentNote, "CONFIG");
             // [段4] 语料加载——扫描 Flows/FL_*.dll 统一装配（design-ch4-flow-scan §3.2：QuickCat + 全部工具组 Flow）
             // 扫描化：文件名去 FL_ 前缀得 Flow 名（dll 名 = 组名——QuickCat 与工具组一视同仁）
             // 容错：加载失败 → 警告 + 跳过注册（该组工具工单无人认领 → 超时诚实 ERR——不再宿主直执）

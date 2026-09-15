@@ -48,9 +48,6 @@ namespace CatHome4.Admin
             /// <summary>HTTP 线程会话指令入队面——主线程泵消费（P6b session.rollback/fork）</summary>
             public ConcurrentQueue<string> PendingSessionCmd;
 
-            /// <summary>每猫配置存储——sessions/&lt;id&gt;/config.cfg（P9.4 per-cat 路由；ConfigStoreRegistry 注册）</summary>
-            public ConfigStore Config;
-
             /// <summary>LLM API 配置身份——cat.cfg 持久化；缺省回退内置 DeepSeek（M1b）</summary>
             public Guid ApiConfigId;
 

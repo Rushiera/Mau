@@ -41,80 +41,34 @@ namespace CatHome4.Http
                 return Results.Json(emptyResp);
             }
 
-            // [段2] file 显式项——落盘值优先；敏感键掩码（effective 记录已有效键）
-            KeyValuePair<string, string>[] all = cfg.All();
-            Dictionary<string, string> effective = new Dictionary<string, string>(StringComparer.Ordinal);
-            for (int i = 0; i < all.Length; i = i + 1)
+            // [段2] 读面单一出口——ConfigEffective：schema 声明全项（三层兜底 file→env→default）+ 未声明落盘键（declared=false）
+            ConfigSchema readSchema = null!;
+            if (schemaBound)
             {
-                string key = all[i].Key;
-                string value = all[i].Value;
-                if (!effective.ContainsKey(key))
-                {
-                    effective[key] = value;
-                }
-
-                if (IsSecretKey(key, schema))
+                readSchema = schema;
+            }
+            ConfigEffective.Entry[] entries = ConfigEffective.BuildAll(cfg, readSchema);
+            for (int i = 0; i < entries.Length; i = i + 1)
+            {
+                ConfigEffective.Entry entry = entries[i];
+                string value = entry.Value;
+                if (entry.Sensitive)
                 {
                     value = MaskSecret(value);
                 }
 
-                items.Add(BuildItem(key, value, "file", schema, schemaBound));
-            }
-
-            // [段3] env 兜底——file 未显式提供的 llm.* 键从 MAU_LLM_* 全局环境变量补齐（M1c 退役三键 base_url/api_key/model 不枚举——API 连接三参归配置池）
-            string[] envKeys = new string[]
-            {
-                "llm.thinking",
-                "llm.reasoning_effort"
-            };
-            string[] envNames = new string[]
-            {
-                "MAU_LLM_THINKING",
-                "MAU_LLM_REASONING_EFFORT"
-            };
-            for (int i = 0; i < envKeys.Length; i = i + 1)
-            {
-                if (effective.ContainsKey(envKeys[i]))
+                items.Add(new
                 {
-                    continue;
-                }
-
-                string envValue = Environment.GetEnvironmentVariable(envNames[i]);
-                if (string.IsNullOrEmpty(envValue))
-                {
-                    continue;
-                }
-
-                string shown = envValue;
-                if (IsSecretKey(envKeys[i], schema))
-                {
-                    shown = MaskSecret(shown);
-                }
-
-                items.Add(BuildItem(envKeys[i], shown, "env", schema, schemaBound));
-                effective[envKeys[i]] = envValue;
-            }
-
-            // [段4] schema 补全——声明项在落盘与 env 皆无值者以 default 输出（source=default）——裸部署（无配置文件）下配置面仍完整可见可改
-            if (schemaBound && schema != null)
-            {
-                ConfigSchema.Item[] declared = schema.All();
-                for (int i = 0; i < declared.Length; i = i + 1)
-                {
-                    string key = declared[i].Key;
-                    if (effective.ContainsKey(key))
-                    {
-                        continue;
-                    }
-
-                    string value = declared[i].Default;
-                    if (IsSecretKey(key, schema))
-                    {
-                        value = MaskSecret(value);
-                    }
-
-                    items.Add(BuildItem(key, value, "default", schema, schemaBound));
-                }
+                    key = entry.Key,
+                    value = value,
+                    source = entry.Source,
+                    declared = entry.Declared,
+                    file = entry.File,
+                    @default = entry.Default,
+                    writable = entry.Writable,
+                    desc = entry.Desc,
+                    emptyDesc = entry.EmptyDesc
+                });
             }
 
             var resp = new
@@ -209,53 +163,6 @@ namespace CatHome4.Http
                 frame = frame
             };
             return Results.Json(resp);
-        }
-
-        /// <summary>
-        /// 构建配置项输出对象——schema 绑定时有条目则补 default/writable/desc/file（P8.5 配置群规范）；未绑定/未声明保持旧格式
-        /// </summary>
-        /// <param name="key">配置键</param>
-        /// <param name="value">展示值（已掩码）</param>
-        /// <param name="source">来源（file/env）</param>
-        /// <param name="schema">配置 schema（可 null）</param>
-        /// <param name="schemaBound">schema 是否绑定</param>
-        /// <returns>输出对象</returns>
-        private static object BuildItem(string key, string value, string source, ConfigSchema schema, bool schemaBound)
-        {
-            if (!schemaBound || schema == null)
-            {
-                return new { key = key, value = value, source = source };
-            }
-            ConfigSchema.Item item = schema.Find(key);
-            if (item == null)
-            {
-                return new { key = key, value = value, source = source };
-            }
-            return new
-            {
-                key = key,
-                value = value,
-                source = source,
-                file = item.File,
-                @default = item.Default,
-                writable = item.Writable,
-                desc = item.Desc
-            };
-        }
-
-        /// <summary>
-        /// 敏感键判定——schema 声明优先（ConfigSchema.IsSensitive）；未声明键落旧子串兜底（api_key/secret/token 系内容掩码展示）
-        /// </summary>
-        /// <param name="key">配置键</param>
-        /// <param name="schema">配置 schema（可 null）</param>
-        /// <returns>是否敏感</returns>
-        private static bool IsSecretKey(string key, ConfigSchema schema)
-        {
-            if (schema != null && schema.IsSensitive(key))
-            {
-                return true;
-            }
-            return IsSecretKey(key);
         }
 
         /// <summary>

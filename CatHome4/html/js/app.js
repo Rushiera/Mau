@@ -539,13 +539,16 @@ function renderConfig(items) {
         inp.value = it.value;
         inp.className = 'input-mini text';
         inp.style.width = '100%';
+        // §4.3 描述 + 空值语义进 title（反直觉默认可观测）
+        inp.title = (it.desc || '') + (it.emptyDesc ? '｜' + it.emptyDesc : '');
         if (it['default'] !== undefined && it['default'] !== '' && (it.value === undefined || it.value === '')) {
             inp.placeholder = '默认值 ' + it['default'] + '（落盘后生效）';
         }
         td2.appendChild(inp);
         var td3 = document.createElement('td');
         td3.className = 'box-tag';
-        td3.textContent = it.source;
+        // §4.5 未声明键显式标注——落盘存在但 schema 未声明（只读；声明后可见可改）
+        td3.textContent = (it.source || '') + (it.declared === false ? '·未声明' : '');
         var td4 = document.createElement('td');
         var btn = document.createElement('button');
         btn.textContent = '保存';

@@ -149,19 +149,16 @@ namespace CH4
         }
 
         /// <summary>
-        /// schema 种子——Data/config/schema.json 缺失时从模板复制（仅缺失时，不覆盖已有——Data 三级锚定运行时数据独立）。
+        /// schema 同步——模板为准（design-ch4-workspace §4.1）：运行区 schema.json 是派生副本，不是用户资产。
+        /// 缺失 → 复制；存在但内容与模板不一致 → 备份 .bak 后整体覆盖；一致 → 零写入；模板两源皆缺 → 告警（不静默）。
         /// 模板源候选序：部署包区（AppContext.BaseDirectory/config/schema.json.example——deploy 段3b 复制）→ 仓库根（FindRepoRoot/config/schema.json.example——开发/测试区）。
-        /// 两源皆缺 → 静默保持空 schema（ConfigSchema.Load 空 schema 兼容——无配置启动设计）。
         /// 调用点：Bootstrap 段2 末尾（ConfigSchema.Load 前；此时 LogStore 未 Configure——日志直打 Console 与早期 Bootstrap 风格一致）。
         /// </summary>
         /// <param name="configDir">Data/config 目录（绝对路径）</param>
-        private static void EnsureSchemaSeed(string configDir)
+        private static string EnsureSchemaSync(string configDir)
         {
             string target = Path.Combine(configDir, "schema.json");
-            if (File.Exists(target))
-            {
-                return;
-            }
+            string template = "";
             string[] candidates = new string[]
             {
                 Path.Combine(AppContext.BaseDirectory, "config", "schema.json.example"),
@@ -171,21 +168,115 @@ namespace CH4
             {
                 if (File.Exists(candidates[i]))
                 {
-                    try
-                    {
-                        Directory.CreateDirectory(configDir);
-                        File.Copy(candidates[i], target, false);
-                        Console.WriteLine("[CMD] schema 种子: " + candidates[i] + " → " + target);
-                        return;
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("[CMD] schema 种子失败: " + ex.Message);
-                        return;
-                    }
+                    template = candidates[i];
+                    break;
                 }
             }
-            Console.WriteLine("[CMD] schema 种子: 模板未找到——保持空 schema（无配置启动兼容）");
+            if (template.Length == 0)
+            {
+                Console.WriteLine("[CMD] schema 同步: 模板未找到——保持现有 schema（声明面可能过期，请检查部署包 config/）");
+                return "schema.sync | 模板未找到 | 保持现有 schema（声明面可能过期）";
+            }
+            try
+            {
+                if (!File.Exists(target))
+                {
+                    Directory.CreateDirectory(configDir);
+                    File.Copy(template, target, false);
+                    Console.WriteLine("[CMD] schema 种子: " + template + " → " + target);
+                    return "schema.sync | 首次种子 | " + template;
+                }
+                if (SameBytes(template, target))
+                {
+                    return "schema.sync | 已是最新（零写入）";
+                }
+                string backup = target + ".bak";
+                File.Copy(target, backup, true);
+                File.Copy(template, target, true);
+                Console.WriteLine("[CMD] schema 同步: 模板更新已覆盖 " + target + "（旧文件备份 " + backup + "）");
+                return "schema.sync | 模板更新已覆盖（旧文件备份 .bak）";
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CMD] schema 同步失败: " + ex.Message);
+                return "schema.sync | 失败: " + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// 字节级比对——schema 文件小，逐字节比较优于哈希（零额外依赖与临时文件）
+        /// </summary>
+        /// <param name="pathA">路径 A</param>
+        /// <param name="pathB">路径 B</param>
+        /// <returns>是否逐字节一致</returns>
+        private static bool SameBytes(string pathA, string pathB)
+        {
+            byte[] a = File.ReadAllBytes(pathA);
+            byte[] b = File.ReadAllBytes(pathB);
+            if (a.Length != b.Length)
+            {
+                return false;
+            }
+            for (int i = 0; i < a.Length; i = i + 1)
+            {
+                if (a[i] != b[i])
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// schema 驱动段注册（design-ch4-workspace §4.2）——按 schema 项的「键前缀段 → 文件归属」聚集，
+        /// 逐段 AddFile；宿主不再硬编码段清单（新增段 = 模板加项，零代码改动）。同前缀映射到不同文件 → 取首个 + 告警。
+        /// </summary>
+        /// <param name="store">配置存储</param>
+        /// <param name="schema">配置 schema</param>
+        /// <param name="configDir">Data/config 目录（绝对路径）</param>
+        internal static string RegisterSchemaSegments(ConfigStore store, ConfigSchema schema, string configDir)
+        {
+            Dictionary<string, string> bySegment = new Dictionary<string, string>(StringComparer.Ordinal);
+            int conflicts = 0;
+            ConfigSchema.Item[] items = schema.All();
+            for (int i = 0; i < items.Length; i = i + 1)
+            {
+                string key = items[i].Key;
+                string file = items[i].File;
+                if (file.Length == 0)
+                {
+                    continue;
+                }
+                int dot = key.IndexOf('.');
+                if (dot <= 0)
+                {
+                    continue;
+                }
+                string segment = key.Substring(0, dot);
+                string path = Path.Combine(configDir, file);
+                string prev;
+                if (bySegment.TryGetValue(segment, out prev) && prev != null)
+                {
+                    if (!string.Equals(prev, path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        conflicts = conflicts + 1;
+                        Console.WriteLine("[CMD] config.seg | 前缀冲突: " + segment + " → " + prev + " / " + path + "（取首个）");
+                    }
+                    continue;
+                }
+                bySegment[segment] = path;
+            }
+            foreach (KeyValuePair<string, string> pair in bySegment)
+            {
+                store.AddFile(pair.Key, pair.Value);
+            }
+            string note = "config.seg | schema 驱动段注册: " + bySegment.Count.ToString() + " 段";
+            if (conflicts > 0)
+            {
+                note = note + " | 前缀冲突 " + conflicts.ToString() + " 处（取首个）";
+            }
+            Console.WriteLine("[CMD] " + note);
+            return note;
         }
     }
 }

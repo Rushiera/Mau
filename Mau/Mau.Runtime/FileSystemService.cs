@@ -67,14 +67,73 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 读取 UTF-8 文本
+        /// 共享读打开——FileShare.ReadWrite（容许读取正在被其他进程写入的文件：活跃日志 / 热文件）。
+        /// File.ReadAllBytes 默认 FileShare.Read——与已存在的写句柄不兼容，读活跃日志必然失败（判例 2026-09-15）。
+        /// </summary>
+        /// <param name="path">规范绝对路径</param>
+        /// <returns>文件全部字节</returns>
+        private static byte[] ReadAllBytesShared(string path)
+        {
+            using (System.IO.FileStream fs = new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite))
+            {
+                using (System.IO.MemoryStream ms = new System.IO.MemoryStream())
+                {
+                    fs.CopyTo(ms);
+                    return ms.ToArray();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 共享读文本——StreamReader 保真（BOM 检测 + 编码契约与 File.ReadAllText 一致）
+        /// </summary>
+        /// <param name="path">规范绝对路径</param>
+        /// <param name="encoding">编码</param>
+        /// <returns>完整文本</returns>
+        private static string ReadTextShared(string path, System.Text.Encoding encoding)
+        {
+            using (System.IO.FileStream fs = new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite))
+            {
+                using (System.IO.StreamReader sr = new System.IO.StreamReader(fs, encoding, true))
+                {
+                    return sr.ReadToEnd();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 共享读文本行——StreamReader.ReadLine 语义与 File.ReadAllLines 对齐（无尾空行）
+        /// </summary>
+        /// <param name="path">规范绝对路径</param>
+        /// <param name="encoding">编码</param>
+        /// <returns>行数组</returns>
+        private static string[] ReadAllLinesShared(string path, System.Text.Encoding encoding)
+        {
+            using (System.IO.FileStream fs = new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite))
+            {
+                using (System.IO.StreamReader sr = new System.IO.StreamReader(fs, encoding, true))
+                {
+                    List<string> collected = new List<string>();
+                    string? line = sr.ReadLine();
+                    while (line != null)
+                    {
+                        collected.Add(line);
+                        line = sr.ReadLine();
+                    }
+                    return collected.ToArray();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 读取 UTF-8 文本（共享读——正在写入的活跃文件同样可读）
         /// </summary>
         /// <param name="path">受控路径</param>
         /// <returns>完整文本</returns>
         public string ReadText(string path)
         {
             string resolved = Resolve(path, false);
-            return File.ReadAllText(resolved, Encoding.UTF8);
+            return ReadTextShared(resolved, Encoding.UTF8);
         }
 
         /// <summary>
@@ -98,7 +157,7 @@ namespace Mau.Runtime
         public string ReadTextAuto(string path)
         {
             string resolved = Resolve(path, false);
-            byte[] raw = File.ReadAllBytes(resolved);
+            byte[] raw = ReadAllBytesShared(resolved);
             System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
             // 去掉 BOM 头避免首字符 \uFEFF 混入（UTF8Encoding(true) 解码会吞掉 BOM 自身）
             int offset = (enc is UTF8Encoding utf8 && utf8.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
@@ -114,7 +173,7 @@ namespace Mau.Runtime
         public string ReadBetweenAuto(string path, string str1, string str2)
         {
             string resolved = Resolve(path, false);
-            byte[] raw = File.ReadAllBytes(resolved);
+            byte[] raw = ReadAllBytesShared(resolved);
             System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
             int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
             string content = enc.GetString(raw, bom, raw.Length - bom);
@@ -200,7 +259,7 @@ namespace Mau.Runtime
             TextReplaceOutcome outcome = new TextReplaceOutcome();
             lock (_writeGate)
             {
-                byte[] raw = File.ReadAllBytes(resolved);
+                byte[] raw = ReadAllBytesShared(resolved);
                 System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
                 int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0
                     && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
@@ -324,7 +383,7 @@ namespace Mau.Runtime
         {
             if (File.Exists(resolved))
             {
-                byte[] raw = File.ReadAllBytes(resolved);
+                byte[] raw = ReadAllBytesShared(resolved);
                 bom = TextFileCodec.DetectBom(raw);
                 // 文件无任何换行 → 按类型默认（契约在无换行时仍生效）
                 for (int i = 0; i < raw.Length; i = i + 1)
@@ -392,7 +451,7 @@ namespace Mau.Runtime
             string resolved = Resolve(path, true);
             lock (_writeGate)
             {
-                string content = File.ReadAllText(resolved, Encoding.UTF8);
+                string content = ReadTextShared(resolved, Encoding.UTF8);
                 int count = CountOccurrences(content, oldText);
                 if (count > 0)
                 {
@@ -415,7 +474,7 @@ namespace Mau.Runtime
             {
                 throw new ArgumentOutOfRangeException("startLine");
             }
-            string[] lines = File.ReadAllLines(Resolve(path, false), Encoding.UTF8);
+            string[] lines = ReadAllLinesShared(Resolve(path, false), Encoding.UTF8);
             int end = endLine;
             if (end == 0 || end > lines.Length)
             {
@@ -453,7 +512,7 @@ namespace Mau.Runtime
             }
 
             string resolved = Resolve(path, false);
-            byte[] raw = File.ReadAllBytes(resolved);
+            byte[] raw = ReadAllBytesShared(resolved);
             System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(path, raw);
             int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
             string content = enc.GetString(raw, bom, raw.Length - bom);
@@ -533,7 +592,7 @@ namespace Mau.Runtime
             string head = "";
             try
             {
-                head = File.ReadAllText(Path.Combine(gitDir, "HEAD")).Trim();
+                head = ReadTextShared(Path.Combine(gitDir, "HEAD"), Encoding.UTF8).Trim();
             }
             catch (Exception)
             {
@@ -546,7 +605,7 @@ namespace Mau.Runtime
                 string refPath = Path.Combine(gitDir, branch.Replace('/', Path.DirectorySeparatorChar));
                 try
                 {
-                    commit = File.ReadAllText(refPath).Trim();
+                    commit = ReadTextShared(refPath, Encoding.UTF8).Trim();
                 }
                 catch (Exception)
                 {
@@ -648,6 +707,7 @@ namespace Mau.Runtime
             int ignoredDirs = 0;
             AppendFind(root, root, filter, true, 10000, files, ref ignoredDirs);
             List<string> hits = new List<string>();
+            List<string> skipped = new List<string>();
             for (int i = 0; i < files.Count && hits.Count < limit; i = i + 1)
             {
                 string file = files[i];
@@ -659,7 +719,7 @@ namespace Mau.Runtime
                 string relative = Path.GetRelativePath(root, file);
                 try
                 {
-                    byte[] raw = File.ReadAllBytes(file);
+                    byte[] raw = ReadAllBytesShared(file);
                     System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(file, raw);
                     int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
                     string[] lines = enc.GetString(raw, bom, raw.Length - bom).Replace("\r\n", "\n").Split('\n');
@@ -676,9 +736,10 @@ namespace Mau.Runtime
                         }
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // 不可读文件（二进制/权限）跳过——grep 只扫可读文本
+                    // 不可读文件（二进制/权限/被独占）跳过——不静默：具名告警随结果返回（失败可见——判例 2026-09-15）
+                    skipped.Add("[skip-file] " + relative + " | " + ex.GetType().Name);
                 }
             }
 
@@ -686,6 +747,11 @@ namespace Mau.Runtime
             {
                 // Q4 忽略目录提示——不静默（grep 与 tree/find 一致：忽略目录内不扫描但计数可见）
                 hits.Add("[skip] " + ignoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——匹配条目在其内已跳过");
+            }
+
+            for (int i = 0; i < skipped.Count; i = i + 1)
+            {
+                hits.Add(skipped[i]);
             }
 
             return hits.ToArray();

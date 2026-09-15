@@ -6,7 +6,8 @@
 // 依赖: 无
 // 包: 无
 // 引用: Mau.Runtime（ConfigStore/ConfigSchema/DataBox）
-// 原理: ConfigStoreRegistry.Resolve(catId) + DataBox.TryResolve<ConfigSchema> → method 分派（P9.4 per-cat 路由）
+// 原理: DataBox.TryResolve<ConfigStore>（全局 store——与配置面 HTTP 同源，§4.4）+ DataBox.TryResolve<ConfigSchema> → method 分派
+//       读面走 ConfigEffective 单一出口（source/空值语义/未声明标注——§4.3/§4.5）
 //       写入唯一实现 = ConfigStore.SetChecked/ResetToDefault（schema 白名单 + 值域校验 + 原子写回滚）
 // 方法: list → （无参）
 //        get → key
@@ -70,9 +71,10 @@ namespace Mau.Bricks
                 result = badArgs;
                 return false;
             }
-            // P9.4 per-cat 路由——argsJson 带 catId（宿主发单注入）→ 注册表路由每猫实例；空/未注册回退默认
-            ConfigStore? cfg = ConfigStoreRegistry.Resolve(ExtractArg(argsJson, "catId"));
-            if (cfg == null)
+            // 全局 store 单一真相——config-* 与配置面（HTTP /api/v1/config）同源（§4.4：per-cat 路由已退役）
+            ConfigStore cfg = null!;
+            bool cfgBound = DataBox.TryResolve<ConfigStore>(out cfg);
+            if (!cfgBound || cfg == null)
             {
                 result = "ERR|CONFIG_NO_STORE|宿主未注入 ConfigStore";
                 return false;
@@ -112,7 +114,8 @@ namespace Mau.Bricks
         }
 
         /// <summary>
-        /// list——配置全览（schema 全部条目 + 当前值 + 元信息；敏感键掩码）
+        /// list——配置全览（读面单一出口 ConfigEffective：schema 声明全项 + 未声明落盘键；敏感键掩码）
+        /// 输出：key=值 | 来源=file·env·default | 默认=… | 可写·只读 | 空值语义 | 类型=[min,max] | 描述
         /// </summary>
         /// <param name="cfg">配置存储</param>
         /// <param name="schema">配置 schema</param>
@@ -120,58 +123,63 @@ namespace Mau.Bricks
         /// <returns>清单文本</returns>
         private static string ListAll(ConfigStore cfg, ConfigSchema schema, bool schemaBound)
         {
-            StringBuilder sb = new StringBuilder();
-            if (!schemaBound || schema == null)
+            ConfigSchema? readSchema = null;
+            if (schemaBound)
             {
-                System.Collections.Generic.KeyValuePair<string, string>[] all = cfg.All();
-                for (int i = 0; i < all.Length; i = i + 1)
-                {
-                    sb.Append(all[i].Key);
-                    sb.Append('=');
-                    sb.AppendLine(all[i].Value);
-                }
-                return TrimResult(sb.ToString(), 20000);
+                readSchema = schema;
             }
-            ConfigSchema.Item[] items = schema.All();
+            ConfigEffective.Entry[] items = ConfigEffective.BuildAll(cfg, readSchema);
+            StringBuilder sb = new StringBuilder();
             for (int i = 0; i < items.Length; i = i + 1)
             {
-                ConfigSchema.Item item = items[i];
-                string value = cfg.Get(item.Key, item.Default);
-                if (schema.IsSensitive(item.Key) && value.Length > 0)
+                ConfigEffective.Entry entry = items[i];
+                string value = entry.Value;
+                if (entry.Sensitive && value.Length > 0)
                 {
                     value = "****";
                 }
-                sb.Append(item.Key);
+                sb.Append(entry.Key);
                 sb.Append('=');
                 sb.Append(value);
-                sb.Append(" | 默认=");
-                sb.Append(item.Default);
-                sb.Append(" | ");
-                if (item.Writable)
+                sb.Append(" | 来源=");
+                sb.Append(entry.Source);
+                if (entry.Declared)
                 {
-                    sb.Append("可写");
-                }
-                else
-                {
-                    sb.Append("只读");
-                }
-                if (item.Type.Length > 0)
-                {
-                    sb.Append(" | 类型=");
-                    sb.Append(item.Type);
-                    if (item.Min.Length > 0)
+                    sb.Append(" | 默认=");
+                    sb.Append(entry.Default);
+                    sb.Append(" | ");
+                    if (entry.Writable)
                     {
-                        sb.Append("[" + item.Min + "," + item.Max + "]");
+                        sb.Append("可写");
+                    }
+                    else
+                    {
+                        sb.Append("只读");
+                    }
+                    if (entry.EmptyDesc.Length > 0)
+                    {
+                        sb.Append(" | ");
+                        sb.Append(entry.EmptyDesc);
+                    }
+                    if (entry.Type.Length > 0)
+                    {
+                        sb.Append(" | 类型=");
+                        sb.Append(entry.Type);
+                        if (entry.Min.Length > 0)
+                        {
+                            sb.Append("[" + entry.Min + "," + entry.Max + "]");
+                        }
                     }
                 }
                 sb.Append(" | ");
-                sb.AppendLine(item.Desc);
+                sb.AppendLine(entry.Desc);
             }
             return TrimResult(sb.ToString(), 20000);
         }
 
         /// <summary>
-        /// get——单项查询
+        /// get——单项查询（读面单一出口 ConfigEffective——含 source 与未声明标注）
+        /// 未声明且未落盘 → ERR|NOT_FOUND；未声明但落盘 → 输出 + 「未在 schema 声明（只读…）」
         /// </summary>
         /// <param name="cfg">配置存储</param>
         /// <param name="schema">配置 schema</param>
@@ -184,25 +192,49 @@ namespace Mau.Bricks
             {
                 return "ERR|BAD_ARGS|缺少参数 key";
             }
-            if (schemaBound && schema != null)
+            ConfigSchema? readSchema = null;
+            if (schemaBound)
             {
-                ConfigSchema.Item? item = schema.Find(key);
-                if (item != null)
+                readSchema = schema;
+            }
+            ConfigEffective.Entry entry = ConfigEffective.Resolve(cfg, readSchema, key);
+            if (!entry.Declared && entry.Source.Length == 0)
+            {
+                return "ERR|NOT_FOUND|配置键不存在: " + key;
+            }
+            string value = entry.Value;
+            if (entry.Sensitive && value.Length > 0)
+            {
+                value = "****";
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.Append(key);
+            sb.Append('=');
+            sb.Append(value);
+            sb.Append(" | 来源=");
+            sb.Append(entry.Source);
+            if (entry.Declared)
+            {
+                sb.Append(" | 默认=");
+                sb.Append(entry.Default);
+                sb.Append(" | ");
+                if (entry.Writable)
                 {
-                    string value = cfg.Get(item.Key, item.Default);
-                    if (schema.IsSensitive(item.Key) && value.Length > 0)
-                    {
-                        value = "****";
-                    }
-                    return key + "=" + value + " | 默认=" + item.Default + " | " + (item.Writable ? "可写" : "只读") + " | " + item.Desc;
+                    sb.Append("可写");
+                }
+                else
+                {
+                    sb.Append("只读");
+                }
+                if (entry.EmptyDesc.Length > 0)
+                {
+                    sb.Append(" | ");
+                    sb.Append(entry.EmptyDesc);
                 }
             }
-            string direct;
-            if (cfg.TryGet(key, out direct))
-            {
-                return key + "=" + direct;
-            }
-            return "ERR|NOT_FOUND|配置键不存在: " + key;
+            sb.Append(" | ");
+            sb.Append(entry.Desc);
+            return sb.ToString();
         }
 
         /// <summary>
@@ -378,4 +410,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:6A86FA4798774044CF59DD8961A6C1E5B9EEAC911AFF33FE3906D7B27F324CCF
+// #MAU_CHECKSUM:SHA256:ACF54AC0172B06B272FE395D72F4F7B63C5E45A10E3D83039C0EF504DD2F1ABD

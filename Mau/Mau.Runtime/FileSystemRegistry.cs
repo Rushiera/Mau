@@ -4,7 +4,7 @@ namespace Mau.Runtime
 {
     /// <summary>
     /// 文件系统注册表——多猫文件面路由（P2 配置作用域单向流：猫级 FS 唯一解析出口）。
-    /// 静态注册面（ConfigStoreRegistry 同模式——P9.4 per-cat 先例）：宿主 ApplyCatRoots 注册每猫实例 + 当前猫 AsyncLocal；
+    /// 静态注册面（P9.4 per-cat 先例）：宿主 ApplyCatRoots 注册每猫实例 + 当前猫 AsyncLocal；
     /// 积木 ResolveScoped 按 catId 路由（显式参数优先）→ ResolveCurrent 回退当前猫 → 空回退全局。
     /// 线程模型：注册写 = 宿主主线程（catcfg.apply/会话构造）；读 = 积木执行（主线程 Tick 内）——锁保护保险。
     /// </summary>

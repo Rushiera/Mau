@@ -136,6 +136,21 @@ namespace CatHome4.Admin
         internal static void ApplyCatRoots(string catKey)
         {
             WorkspaceConfig.RootEntry[] entries = ResolveCatRootEntries(catKey);
+            // §4.3 空值语义可观测——enabledRoots 空=全量（反直觉默认）：解析结果落审计行
+            CatCfgData catCfg = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", catKey, "cat.cfg"));
+            string rootSource = "全量";
+            int rootDeclared = 0;
+            if (catCfg != null && catCfg.EnabledRoots != null && catCfg.EnabledRoots.Length > 0)
+            {
+                rootSource = "子集";
+                rootDeclared = catCfg.EnabledRoots.Length;
+            }
+            List<string> rootIds = new List<string>();
+            for (int i = 0; i < entries.Length; i = i + 1)
+            {
+                rootIds.Add(entries[i].Id);
+            }
+            LogStore.Add("CatHome4", 1, "cat.roots | cat=" + catKey + " | 来源=" + rootSource + " | 声明=" + rootDeclared.ToString() + " | 实际=" + entries.Length.ToString() + " | [" + string.Join(",", rootIds) + "]", "CHAT");
             if (entries.Length == 0)
             {
                 ToolCatContext.UpdateCatFileSystem(catKey, null, "");
@@ -626,7 +641,6 @@ namespace CatHome4.Admin
             }
             _cats.Remove(cat);
             _chatBridge.RemoveSession(cat.Session);
-            ConfigStoreRegistry.Unregister(cat.Id);
             // M4e 猫级白名单——缓存随猫销毁
             ToolCatContext.RemoveCatFileSystem(cat.Id);
             DeleteCatFiles(cat.Id);
@@ -771,15 +785,29 @@ namespace CatHome4.Admin
                 cat.PendingChat = new ConcurrentQueue<string>();
                 cat.PendingNote = new ConcurrentQueue<string>();
                 cat.PendingSessionCmd = new ConcurrentQueue<string>();
-                // P9.4 per-cat 配置——独立 config.cfg（不存在空实例；首次写落盘）+ 注册表登记
-                cat.Config = ConfigStore.Load(Path.Combine(_dataRoot, "Data", "sessions", id, "config.cfg"));
-                ConfigStoreRegistry.Register(id, cat.Config);
                 cat.ApiConfigId = apiConfigId;
                 cat.ApiConfig = apiConfig;
                 cat.Persona = persona;
                 cat.ToolNames = toolNames;
                 cat.InjectList = injectList;
                 cat.ToolSpecs = catSpecs;
+                // §4.3 空值语义可观测——toolNames 空=全量保底（反直觉默认）：解析结果落审计行
+                string toolSource = "子集";
+                int toolDeclared = 0;
+                if (toolNames == null || toolNames.Length == 0)
+                {
+                    toolSource = "全量";
+                }
+                else
+                {
+                    toolDeclared = toolNames.Split(',').Length;
+                }
+                int toolActual = 0;
+                if (catSpecs != null)
+                {
+                    toolActual = catSpecs.Length;
+                }
+                LogStore.Add("CatHome4", 1, "cat.tools | cat=" + id + " | 来源=" + toolSource + " | 声明=" + toolDeclared.ToString() + " | 实际=" + toolActual.ToString(), "CHAT");
                 cat.QqBotId = qqBotId;
                 cat.QqBotEnable = qqBotEnable;
                 LogStore.Add("CatHome4", 1, "猫「" + displayName + "」绑定 LLM 配置：" + (apiConfigId == Guid.Empty ? "默认端点" : apiConfigId.ToString("D")) + "，模型 " + apiConfig.DefaultModel, "CHAT");

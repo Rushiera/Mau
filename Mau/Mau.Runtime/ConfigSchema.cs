@@ -47,6 +47,10 @@ namespace Mau.Runtime
             /// </summary>
             public string Desc = "";
             /// <summary>
+            /// 空值语义文案——「空 = …」的含义（如「空=未配置，工具明示不可用」；缺省空串 = 无特殊语义）
+            /// </summary>
+            public string EmptyDesc = "";
+            /// <summary>
             /// 值类型——"string"（缺省）/ "int" / "bool"；P8.5d 值域校验
             /// </summary>
             public string Type = "";
@@ -112,6 +116,7 @@ namespace Mau.Runtime
                     item.File = GetProp(el, "file");
                     item.Default = GetProp(el, "default");
                     item.Desc = GetProp(el, "desc");
+                    item.EmptyDesc = GetProp(el, "empty_desc");
                     item.Sensitive = GetBoolProp(el, "sensitive", false);
                     item.Writable = GetBoolProp(el, "writable", true);
                     item.Type = GetProp(el, "type");
