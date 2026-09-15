@@ -47,7 +47,12 @@ function renderApiOptions(options, current) {
     sel.textContent = '';
     var def = document.createElement('option');
     def.value = '';
-    def.textContent = '（默认 · 跟随全局默认端点）';
+    // A50——默认项带出全局默认端点名（用户可见"跟随的是谁"；未设默认时保留抽象文案）
+    var defLabel = '（默认 · 跟随全局默认端点）';
+    for (var k = 0; k < options.length; k++) {
+        if (options[k].isDefault) { defLabel = '（默认 · 跟随全局 → ' + options[k].displayName + '）'; }
+    }
+    def.textContent = defLabel;
     if (isDefaultApiValue(current)) { def.selected = true; }
     sel.appendChild(def);
     for (var i = 0; i < options.length; i++) {

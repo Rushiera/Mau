@@ -819,6 +819,38 @@ namespace CatHome4.Admin
                 return null;
             }
         }
+        /// <summary>
+        /// 解析猫的有效 LLM API 配置——cat.cfg apiConfigId 零值/缺失=跟随全局默认端点，非零=按身份取（A50 端点解析同源化）。
+        /// 消费面：info 环境信息（本猫实际生效端点）；默认猫与多猫同源。
+        /// </summary>
+        /// <param name="catKey">猫 key（majordomo=默认猫；多猫=会话 ID）</param>
+        /// <param name="followDefault">输出：true=跟随全局默认端点；false=猫显式绑定（引用失效时同样为 false）</param>
+        /// <returns>生效配置；无默认端点/引用失效 null</returns>
+        internal static CH_LlmApiConfig ResolveEffectiveApiConfig(string catKey, out bool followDefault)
+        {
+            followDefault = true;
+            Guid apiConfigId = Guid.Empty;
+            if (catKey != null && catKey.Length > 0)
+            {
+                CatCfgData cfg = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", catKey, "cat.cfg"));
+                apiConfigId = ResolveApiConfigId(cfg);
+            }
+            if (_apiStore == null)
+            {
+                return null;
+            }
+            if (apiConfigId == Guid.Empty)
+            {
+                return _apiStore.ResolveDefault();
+            }
+            followDefault = false;
+            CH_LlmApiConfig config;
+            if (_apiStore.TryGet(apiConfigId, out config))
+            {
+                return config;
+            }
+            return null;
+        }
 
         /// <summary>
         /// 收集所有绑定 qqbot 的猫——默认猫（majordomo）+ 多猫（R2.3.5 输出转发轮询面）。

@@ -527,10 +527,14 @@ namespace CH4
             {
                 buildInfo = " | 编译: " + buildTime;
             }
+            // M4e 猫级白名单——info 可见范围 = 当前猫（ToolCatContext 工具执行上下文）；A50：LLM 端同样按本猫解析
+            string catKey = ToolCatContext.CurrentCatKey;
             string llmInfo = "未配置";
             try
             {
-                CH_LlmApiConfig cfg = AdminService._apiStore.ResolveDefault();
+                // A50 端点解析同源化——本猫 cat.cfg apiConfigId（零值/缺失=跟随全局默认端点）
+                bool followDefault = true;
+                CH_LlmApiConfig cfg = AdminService.ResolveEffectiveApiConfig(catKey, out followDefault);
                 if (cfg != null)
                 {
                     string endpoint = cfg.Endpoint;
@@ -544,7 +548,12 @@ namespace CH4
                             endpoint = endpoint.Substring(0, slash);
                         }
                     }
-                    llmInfo = cfg.ApiType + " | " + endpoint + " | model=" + cfg.DefaultModel;
+                    string apiSource = "猫绑定";
+                    if (followDefault)
+                    {
+                        apiSource = "跟随默认";
+                    }
+                    llmInfo = cfg.ApiType + " | " + endpoint + " | model=" + cfg.DefaultModel + " | " + apiSource;
                 }
             }
             catch (Exception)
@@ -554,7 +563,6 @@ namespace CH4
             string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             // M4e 猫级白名单——info 可见范围 = 当前猫启用根（ToolCatContext 工具执行上下文）
             string rootsInfo = "";
-            string catKey = ToolCatContext.CurrentCatKey;
             if (catKey != null && catKey.Length > 0)
             {
                 WorkspaceConfig.RootEntry[] entries = AdminService.ResolveCatRootEntries(catKey);
