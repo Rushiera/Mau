@@ -95,3 +95,25 @@ test('猫配置保存载荷含 packs 字段', async () => {
   expect(captured).not.toBeNull();
   expect(captured.packs).toEqual(['overwork']);
 });
+
+test('新猫默认模板——默认加载包勾选渲染与收集', () => {
+  window.renderTplPacks([{ key: 'overwork', desc: '收工加载包' }], ['overwork']);
+  const boxes = document.querySelectorAll('#tplPacks input.tpl-pack-cb');
+  expect(boxes.length).toBe(1);
+  expect(boxes[0].checked).toBe(true);
+  expect(window.collectTplPacks()).toEqual(['overwork']);
+});
+
+test('新猫默认模板保存载荷含 defaultPacks', async () => {
+  let captured = null;
+  globalThis.fetch = async (url, opt) => {
+    if (opt && opt.body) { captured = JSON.parse(opt.body); }
+    return { json: async () => ({ ok: true }) };
+  };
+  window.renderTplPacks([{ key: 'overwork', desc: '收工加载包' }], []);
+  document.querySelector('#tplPacks input.tpl-pack-cb').checked = true;
+  window.saveTpl();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(captured).not.toBeNull();
+  expect(captured.defaultPacks).toEqual(['overwork']);
+});

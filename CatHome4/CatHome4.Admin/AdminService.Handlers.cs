@@ -819,6 +819,7 @@ namespace CatHome4.Admin
             string defaultPersona = "";
             string defaultToolNames = "";
             string[] defaultInjectList = new string[0];
+            string[] defaultPacks = new string[0];
             if (tpl != null)
             {
                 if (tpl.BaseRole != null)
@@ -837,6 +838,10 @@ namespace CatHome4.Admin
                 {
                     defaultInjectList = tpl.DefaultInjectList;
                 }
+                if (tpl.DefaultPacks != null)
+                {
+                    defaultPacks = tpl.DefaultPacks;
+                }
             }
             var resp = new
             {
@@ -845,8 +850,10 @@ namespace CatHome4.Admin
                 defaultPersona = defaultPersona,
                 defaultToolNames = defaultToolNames,
                 defaultInjectList = defaultInjectList,
+                defaultPacks = defaultPacks,
                 allToolNames = GetAllToolNames(),
-                allTools = GetAllToolsWithGroup()
+                allTools = GetAllToolsWithGroup(),
+                allPacks = BuildAllPacks()
             };
             return Results.Json(resp);
         }
@@ -865,6 +872,7 @@ namespace CatHome4.Admin
             string defaultPersona = "";
             string defaultToolNames = "";
             List<string> defaultInjectList = new List<string>();
+            List<string> defaultPacks = new List<string>();
             try
             {
                 using (JsonDocument doc = JsonDocument.Parse(body))
@@ -873,6 +881,22 @@ namespace CatHome4.Admin
                     baseRole = GetJsonString(root, "baseRole");
                     defaultPersona = GetJsonString(root, "defaultPersona");
                     defaultToolNames = GetJsonString(root, "defaultToolNames");
+                    JsonElement dPacksEl;
+                    if (root.TryGetProperty("defaultPacks", out dPacksEl) && dPacksEl.ValueKind == JsonValueKind.Array)
+                    {
+                        for (int i = 0; i < dPacksEl.GetArrayLength(); i = i + 1)
+                        {
+                            JsonElement item = dPacksEl[i];
+                            if (item.ValueKind == JsonValueKind.String)
+                            {
+                                string gotPack = item.GetString();
+                                if (gotPack != null && gotPack.Length > 0)
+                                {
+                                    defaultPacks.Add(gotPack.Trim());
+                                }
+                            }
+                        }
+                    }
                     JsonElement injectEl;
                     if (root.TryGetProperty("defaultInjectList", out injectEl) && injectEl.ValueKind == JsonValueKind.Array)
                     {
@@ -909,6 +933,7 @@ namespace CatHome4.Admin
             data.DefaultPersona = defaultPersona;
             data.DefaultToolNames = defaultToolNames;
             data.DefaultInjectList = defaultInjectList.ToArray();
+            data.DefaultPacks = defaultPacks.ToArray();
             SaveCatDefaultCfg(data);
             LogStore.Add("CatHome4", 1, "全局默认模板已保存（注入 " + defaultInjectList.Count.ToString() + " 条）", "CONFIG");
             return Results.Json(new { ok = true });

@@ -708,10 +708,11 @@ namespace CatHome4.Admin
                     }
                     qqBotEnable = cfgData.QqBotEnable;
                 }
-                // [段2] 每猫配置三字段——persona/toolNames/injectList（M2；cfg 缺失=新猫走全局默认模板继承）
+                // [段2] 每猫配置四字段——persona/toolNames/injectList/packs（M2/R4；cfg 缺失=新猫走全局默认模板继承）
                 string persona = "";
                 string toolNames = "";
                 string[] injectList = new string[0];
+                string[] packs = new string[0];
                 if (cfgData != null)
                 {
                     if (cfgData.Persona != null)
@@ -726,16 +727,21 @@ namespace CatHome4.Admin
                     {
                         injectList = cfgData.InjectList;
                     }
+                    if (cfgData.Packs != null)
+                    {
+                        packs = cfgData.Packs;
+                    }
                 }
                 else
                 {
-                    // 新猫——cat-default.cfg 模板继承（模板缺失=现状空三字段）
+                    // 新猫——cat-default.cfg 模板继承（模板缺失=现状空四字段）
                     CatDefaultCfgData tpl = LoadCatDefaultCfg();
                     if (tpl != null)
                     {
                         persona = tpl.DefaultPersona != null ? tpl.DefaultPersona : "";
                         toolNames = tpl.DefaultToolNames != null ? tpl.DefaultToolNames : "";
                         injectList = tpl.DefaultInjectList != null ? tpl.DefaultInjectList : new string[0];
+                        packs = tpl.DefaultPacks != null ? tpl.DefaultPacks : new string[0];
                     }
                 }
                 // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）
@@ -798,6 +804,7 @@ namespace CatHome4.Admin
                 cat.Persona = persona;
                 cat.ToolNames = toolNames;
                 cat.InjectList = injectList;
+                cat.Packs = packs;
                 cat.ToolSpecs = catSpecs;
                 // §4.3 空值语义可观测——toolNames 空=全量保底（反直觉默认）：解析结果落审计行
                 string toolSource = "子集";

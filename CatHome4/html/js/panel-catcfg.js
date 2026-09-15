@@ -405,6 +405,7 @@ function loadTpl() {
             renderGroupedChecks('tplTools', d.allTools || d.allToolNames || [], parseToolChecked(d.defaultToolNames || ''));
             tplInjectList = (d.defaultInjectList || []).slice();
             renderTplInject();
+            renderTplPacks(d.allPacks || [], d.defaultPacks || []);
         })
         .catch(function () {
             document.getElementById('tplMsg').textContent = '读取失败——宿主未运行？';
@@ -416,7 +417,8 @@ function saveTpl() {
         baseRole: document.getElementById('tplBaseRole').value,
         defaultPersona: document.getElementById('tplPersona').value,
         defaultToolNames: collectChecked('tplTools').join(','),
-        defaultInjectList: tplInjectList
+        defaultInjectList: tplInjectList,
+        defaultPacks: collectTplPacks()
     };
     fetch('/api/v1/cat-default', {
         method: 'POST',
@@ -710,3 +712,46 @@ function collectPackChecks() {
 }
 
 // 包池管理入口在配置页「加载包池」区（本弹层只做猫级挂载勾选——池 CRUD 见 panel-packs.js）
+
+// [R4 加载包] 新猫默认模板——默认挂载包勾选（池全量 allPacks；defaultPacks 当前默认值；新猫创建时继承）
+function renderTplPacks(allPacks, defaultPacks) {
+    var box = document.getElementById('tplPacks');
+    box.textContent = '';
+    if (!allPacks || allPacks.length === 0) {
+        var empty = document.createElement('span');
+        empty.style.cssText = 'font-size:11px;color:#6a6a6a';
+        empty.textContent = '（池为空——在「加载包池」区新建）';
+        box.appendChild(empty);
+        return;
+    }
+    var mounted = {};
+    if (defaultPacks && defaultPacks.length > 0) {
+        for (var i = 0; i < defaultPacks.length; i++) { mounted[defaultPacks[i]] = true; }
+    }
+    for (var j = 0; j < allPacks.length; j++) {
+        (function (pack) {
+            var label = document.createElement('label');
+            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:#242424;border:1px solid #2a2a2a;border-radius:4px;padding:3px 8px;font-size:11px;color:#c8c8c8;cursor:pointer';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'tpl-pack-cb';
+            cb.setAttribute('data-pack', pack.key);
+            cb.checked = mounted[pack.key] === true;
+            label.appendChild(cb);
+            var txt = document.createElement('span');
+            var desc = pack.desc && pack.desc.length > 0 ? '（' + pack.desc + '）' : '';
+            txt.textContent = pack.key + desc;
+            label.appendChild(txt);
+            box.appendChild(label);
+        })(allPacks[j]);
+    }
+}
+
+function collectTplPacks() {
+    var keys = [];
+    var boxes = document.querySelectorAll('#tplPacks input[type=checkbox].tpl-pack-cb');
+    for (var i = 0; i < boxes.length; i++) {
+        if (boxes[i].checked) { keys.push(boxes[i].getAttribute('data-pack')); }
+    }
+    return keys;
+}

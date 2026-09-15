@@ -63,6 +63,9 @@ namespace CatHome4.Admin
             /// <summary>前文注入清单——cat.cfg 持久化（M2d；空=不注入）</summary>
             public string[] InjectList;
 
+            /// <summary>加载包挂载清单——cat.cfg 持久化（R4；空=未挂载任何包）</summary>
+            public string[] Packs;
+
             /// <summary>qqbot 配置身份——cat.cfg 持久化（R2.3；Guid.Empty=未绑定）</summary>
             public Guid QqBotId;
 
@@ -133,6 +136,9 @@ namespace CatHome4.Admin
             /// <summary>新猫默认工具名单（空=全量保底）</summary>
             public string DefaultToolNames { get; set; }
 
+            /// <summary>新猫默认加载包挂载清单——packs.json 池内 key 子集（空=不挂载）</summary>
+            public string[] DefaultPacks { get; set; }
+
             /// <summary>新猫默认前文注入清单（完整路径数组；空=不注入）</summary>
             public string[] DefaultInjectList { get; set; }
         }
@@ -171,6 +177,7 @@ namespace CatHome4.Admin
                     data.DefaultPersona = GetStringProp(root, "defaultPersona");
                     data.DefaultToolNames = GetStringProp(root, "defaultToolNames");
                     data.DefaultInjectList = GetStringArrayProp(root, "defaultInjectList");
+                    data.DefaultPacks = GetStringArrayProp(root, "defaultPacks");
                     return data;
                 }
             }
@@ -191,7 +198,8 @@ namespace CatHome4.Admin
                 baseRole = data.BaseRole,
                 defaultPersona = data.DefaultPersona,
                 defaultToolNames = ValidateToolNames(data.DefaultToolNames),
-                defaultInjectList = data.DefaultInjectList
+                defaultInjectList = data.DefaultInjectList,
+                defaultPacks = data.DefaultPacks
             };
             try
             {
@@ -285,6 +293,7 @@ namespace CatHome4.Admin
             data.Persona = cat.Persona;
             data.ToolNames = cat.ToolNames;
             data.InjectList = cat.InjectList;
+            data.Packs = cat.Packs;
             data.QqBotId = cat.QqBotId.ToString("D");
             data.QqBotEnable = cat.QqBotEnable;
             SaveCatCfgData(cat.Id, data);
