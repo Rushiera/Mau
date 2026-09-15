@@ -672,7 +672,7 @@ function renderPackChecks(allPacks, packs) {
     if (!allPacks || allPacks.length === 0) {
         var empty = document.createElement('span');
         empty.style.cssText = 'font-size:11px;color:#6a6a6a';
-        empty.textContent = '（池为空——点上方「管理包池…」新建）';
+        empty.textContent = '（池为空——在配置页「加载包池」新建）';
         box.appendChild(empty);
         return;
     }
@@ -709,5 +709,4 @@ function collectPackChecks() {
     return keys;
 }
 
-// 包池管理入口——openPacks 定义在 panel-packs.js（后加载）；包装函数延迟解析
-document.getElementById('catCfgPacksManage').onclick = function () { openPacks(); };
+// 包池管理入口在配置页「加载包池」区（本弹层只做猫级挂载勾选——池 CRUD 见 panel-packs.js）

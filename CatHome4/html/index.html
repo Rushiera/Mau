@@ -109,6 +109,29 @@
                             <button id="qqCancelEdit" style="display:none;background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">取消编辑</button>
                         </div>
                     </div>
+                    <!-- 加载包池（R4 加载包——池 CRUD；猫级挂载在猫配置弹层） -->
+                    <div style="margin-top:16px;border-top:1px solid #2a2a2a;padding-top:10px">
+                        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+                            <h2 style="margin:0">加载包池</h2>
+                            <span id="packsMsg" style="color:#4ec9b0;font-size:11px"></span>
+                            <span style="flex:1"></span>
+                            <button id="packsRefresh" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:4px 10px;cursor:pointer;font-family:inherit;font-size:12px">刷新</button>
+                        </div>
+                        <div style="font-size:11px;color:#6a6a6a;margin-bottom:6px">包 = 一组知识路径（key → 描述 + 路径清单）；某猫要用某包，需在「多猫 → 该猫配置 → 加载包挂载」勾选</div>
+                        <table class="box-table" id="packsTable"><thead><tr><th style="width:20%">key</th><th style="width:36%">描述</th><th style="width:12%">路径项</th><th style="width:32%">操作</th></tr></thead><tbody id="packsTbody"></tbody></table>
+                        <div style="margin-top:10px">
+                            <div style="font-size:11px;color:#6a6a6a;margin-bottom:4px">新建 / 编辑（同名覆盖）</div>
+                            <div style="display:flex;gap:6px">
+                                <input id="packKey" placeholder="key（唯一索引，如 overwork）" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
+                                <input id="packDesc" placeholder="描述（≤20 字，info 展示用）" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
+                            </div>
+                            <textarea id="packPaths" rows="4" placeholder="路径清单——一行一个（受控根 id: 前缀或绝对路径；目录项加载其一级 *.md）&#10;如：CCBP:L2/Worker/Majordomo" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:6px 8px;font-family:inherit;font-size:12px;margin-top:6px;resize:vertical"></textarea>
+                            <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
+                                <button id="packNew" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:6px 14px;cursor:pointer;font-family:inherit;font-size:12px">清空</button>
+                                <button id="packSave" style="background:#0e639c;border:none;color:#fff;padding:6px 16px;cursor:pointer;font-family:inherit;font-size:12px">保存</button>
+                            </div>
+                        </div>
+                    </div>
                     <!-- 新猫默认模板——baseRole + 三字段默认值（M3d 体验轮新增） -->
                     <div style="margin-top:16px;border-top:1px solid #2a2a2a;padding-top:10px">
                         <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
@@ -199,9 +222,8 @@
                 <input id="catCfgInjectAdd" placeholder="添加路径（如 ccbp:L1/Tree.md）" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
                 <button id="catCfgInjectAddBtn" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">添加</button>
             </div>
-            <label style="font-size:11px;color:#6a6a6a;margin-top:10px;display:flex;align-items:center;gap:6px">
-                加载包挂载（packs——池内 key 子集；挂载后本猫可用 pack 工具按需注入；空=未挂载）
-                <button id="catCfgPacksManage" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:2px 8px;cursor:pointer;font-family:inherit;font-size:11px">管理包池…</button>
+            <label style="font-size:11px;color:#6a6a6a;margin-top:10px;display:block">
+                加载包挂载（packs——池内 key 子集；挂载后本猫可用 pack 工具按需注入；空=未挂载；池在「配置页 → 加载包池」管理）
             </label>
             <div id="catCfgPacks" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
             <div style="display:flex;gap:6px;margin-top:12px;justify-content:flex-end">
@@ -209,33 +231,6 @@
                 <button id="catCfgCancel" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:6px 16px;cursor:pointer;font-family:inherit;font-size:12px">取消</button>
             </div>
             <div id="catCfgMsg" style="color:#4ec9b0;font-size:11px;margin-top:6px"></div>
-        </div>
-    </div>
-
-    <!-- 加载包池管理弹层（R4 加载包——池 CRUD；每猫挂载勾选在猫配置弹层） -->
-    <div id="packsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:60;align-items:center;justify-content:center">
-        <div style="width:660px;max-height:82vh;overflow-y:auto;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:14px">
-            <div style="display:flex;align-items:center;margin-bottom:8px">
-                <span style="color:#c586c0;font-weight:bold;font-size:13px">加载包池</span>
-                <span style="flex:1"></span>
-                <button id="packsRefresh" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:3px 10px;cursor:pointer;font-family:inherit;font-size:11px;margin-right:6px">刷新</button>
-                <button id="packsClose" style="background:transparent;border:none;color:#6a6a6a;font-size:16px;cursor:pointer">✕</button>
-            </div>
-            <div style="font-size:11px;color:#6a6a6a;margin-bottom:10px">池对全部猫可见；某猫要用某包，需在「猫配置 → 加载包挂载」里勾选该包</div>
-            <table class="box-table" id="packsTable"><thead><tr><th style="width:22%">key</th><th style="width:38%">描述</th><th style="width:12%">路径项</th><th style="width:28%">操作</th></tr></thead><tbody id="packsTbody"></tbody></table>
-            <div style="margin-top:14px;border-top:1px solid #2a2a2a;padding-top:10px">
-                <div style="font-size:11px;color:#c586c0;font-weight:bold;margin-bottom:6px">新建 / 编辑包</div>
-                <div style="display:flex;gap:6px">
-                    <input id="packKey" placeholder="key（唯一索引，如 overwork）" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
-                    <input id="packDesc" placeholder="描述（≤20 字，info 展示用）" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
-                </div>
-                <textarea id="packPaths" rows="5" placeholder="路径清单——一行一个（受控根 id: 前缀或绝对路径；目录项加载其一级 *.md）&#10;如：CCBP:L2/Worker/Majordomo" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:6px 8px;font-family:inherit;font-size:12px;margin-top:6px;resize:vertical"></textarea>
-                <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
-                    <button id="packNew" style="background:#1f1f1f;border:1px solid #2a2a2a;color:#9a9a9a;padding:6px 14px;cursor:pointer;font-family:inherit;font-size:12px">清空</button>
-                    <button id="packSave" style="background:#0e639c;border:none;color:#fff;padding:6px 16px;cursor:pointer;font-family:inherit;font-size:12px">保存</button>
-                </div>
-            </div>
-            <div id="packsMsg" style="color:#4ec9b0;font-size:11px;margin-top:6px"></div>
         </div>
     </div>
 

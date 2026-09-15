@@ -1,14 +1,8 @@
 // CH4 外观层——panel-packs.js：加载包池管理面（R4 加载包）——池 CRUD（GET/POST /api/v1/packs）
-// 依赖：无（独立弹层）；每猫挂载勾选在 panel-catcfg.js（本文件只管池本身）
+// 落位：配置页「加载包池」区（内联表格 + 新建/编辑表单；index.html #packsTable / #packKey …）
+// 每猫挂载勾选在 panel-catcfg.js（本文件只管池本身）
 
-var packsModal = document.getElementById('packsModal');
 var packsPool = [];
-
-function openPacks() {
-    document.getElementById('packsMsg').textContent = '';
-    packsModal.style.display = 'flex';
-    loadPacks();
-}
 
 function loadPacks() {
     fetch('/api/v1/packs')
@@ -142,7 +136,8 @@ function deletePack(key) {
         });
 }
 
-document.getElementById('packsClose').onclick = function () { packsModal.style.display = 'none'; };
 document.getElementById('packsRefresh').onclick = loadPacks;
 document.getElementById('packNew').onclick = clearPackForm;
 document.getElementById('packSave').onclick = savePack;
+// 配置页常驻——页面加载即拉取池现状
+loadPacks();

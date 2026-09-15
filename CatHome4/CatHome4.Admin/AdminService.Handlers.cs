@@ -599,7 +599,7 @@ namespace CatHome4.Admin
                 toolNames = cfg.ToolNames,
                 injectList = cfg.InjectList,
                 packs = cfg.Packs,
-                allPacks = BuildAllPacksJson(),
+                allPacks = BuildAllPacks(),
                 qqbotId = cfg.QqBotId,
                 qqbotEnable = cfg.QqBotEnable,
                 enabledRoots = cfg.EnabledRoots,

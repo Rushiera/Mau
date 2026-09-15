@@ -238,10 +238,11 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 池内包清单 JSON——前端挂载勾选面消费（key + 描述 + 路径项数）。
+        /// 池内包清单——前端配置页与猫配置挂载面消费（key + 描述 + 路径项数）。
+        /// 返回对象列表（JSON 化由调用方 Results.Json 承担——不可返回已序列化字符串，否则前端拿到的是字符串）。
         /// </summary>
-        /// <returns>JSON 数组文本</returns>
-        internal static string BuildAllPacksJson()
+        /// <returns>对象列表</returns>
+        internal static List<object> BuildAllPacks()
         {
             List<PackDefinition> pool = LoadPackPool();
             List<object> list = new List<object>();
@@ -259,7 +260,7 @@ namespace CatHome4.Admin
                     pathCount = pathCount
                 });
             }
-            return JsonUtil.Serialize(list);
+            return list;
         }
 
         /// <summary>
