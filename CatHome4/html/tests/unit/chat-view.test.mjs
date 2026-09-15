@@ -347,14 +347,24 @@ test('view control usage 渲染 Token 统计', () => {
   expect(chatStatus.textContent).toContain('cache 30');
 });
 
-// ── control error ──
-test('view control error 错误提示 + 恢复 idle', () => {
+// ── error 视图（A55——独立 renderType：有容器追加 / 无容器新建）──
+test('view error 有流式容器——追加错误文本 + 恢复 idle', () => {
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'text', text: '部分' }, replaceSeq: -1 });
-  window.chatOnView({ seq: 41, renderType: 'control', payload: { type: 'error', text: 'LLM 挂了' }, replaceSeq: -1 });
+  window.chatOnView({ seq: 41, renderType: 'error', payload: { type: 'error', text: 'LLM 挂了' }, replaceSeq: -1 });
+  expect(bubbles()[0].textContent).toContain('部分');
   expect(bubbles()[0].textContent).toContain('LLM 挂了');
   expect(bubbles()[0].classList.contains('error')).toBe(true);
   expect(window.chatState).toBe('idle');
   expect(Object.keys(window.viewContainers).length).toBe(0);
+});
+
+// ── A55 吞错修复：无流式容器时错误必须可见（新建错误气泡）──
+test('view error 无容器——新建错误气泡', () => {
+  window.chatOnView({ seq: 42, renderType: 'error', payload: { type: 'error', text: '连接超时' }, replaceSeq: -1 });
+  expect(bubbles().length).toBe(1);
+  expect(bubbles()[0].textContent).toContain('连接超时');
+  expect(bubbles()[0].classList.contains('error')).toBe(true);
+  expect(window.chatState).toBe('idle');
 });
 
 // ── control chatdone 终态 ──
@@ -388,6 +398,38 @@ test('chatRenderHistory 渲染 view blocks 结构', () => {
   expect(bubbles()[2].textContent).toBe('回复');
   expect(chatMsgs.querySelector('.chat-tool')).not.toBeNull();
   expect(chatInfo.textContent).toContain('s1');
+});
+
+// ── A55：error / retry 块随 view.json 落盘 → history 重建（渲染单例共用同一渲染面）──
+test('chatRenderHistory 渲染 error 块（A55 持久化面）', () => {
+  window.chatRenderHistory({
+    version: 1,
+    sessionId: 's-err',
+    count: 2,
+    blocks: [
+      { seq: 1, id: '1:u', renderType: 'user', payload: { content: '问题' } },
+      { seq: 2, id: '2:e', renderType: 'error', payload: { type: 'error', text: 'LLM 错误：限速' } }
+    ],
+    stats: { prompt: 0, cacheHit: 0, completion: 0 }
+  });
+  const errBubble = bubbles()[1];
+  expect(errBubble.textContent).toContain('LLM 错误：限速');
+  expect(errBubble.classList.contains('error')).toBe(true);
+});
+
+test('chatRenderHistory 渲染 retry 块（A55 持久化面）', () => {
+  window.chatRenderHistory({
+    version: 1,
+    sessionId: 's-retry',
+    count: 1,
+    blocks: [
+      { seq: 1, id: '1:r', renderType: 'retry', payload: { state: 'resolved', attempt: 2, max: 3 } }
+    ],
+    stats: { prompt: 0, cacheHit: 0, completion: 0 }
+  });
+  const rb = bubbles()[0];
+  expect(rb.textContent).toContain('已恢复');
+  expect(rb.classList.contains('resolved')).toBe(true);
 });
 
 // ── E 系列：四态相位切换（F2.4 自旧 chat.test.mjs 迁移至 view 协议）──

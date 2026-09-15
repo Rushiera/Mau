@@ -15,8 +15,10 @@ namespace CatHome4.Observe
     internal static partial class ObserveService
     {
         /// <summary>
-        /// 构建紧凑帧 JSON——frame.txt 一行（回放够用：帧/pid/chat_state/各 Cat 状态行/OA 计数；主线程泵调用）
+        /// 上次帧体 JSON（除帧号外全部字段）——帧流脏检查比较面；主线程泵独占（ThreadGuard 契约）
         /// </summary>
+        private static string _lastFrameBody = "";
+        /// <summary>构建帧流落盘行——frame.txt 一行（帧/pid/chat_state/各 Cat 状态行/OA 计数；主线程泵调用）；脏检查：除帧号外与上次全等 → 只落仅含帧号的精简行（帧号仍连续，行体积大幅缩小）</summary>
         /// <returns>紧凑 JSON 文本</returns>
         internal static string BuildCompactFrameJson()
         {
@@ -29,9 +31,9 @@ namespace CatHome4.Observe
             {
                 chatState = cs;
             }
-            var frame = new
+            // [段1] 帧体构造——除帧号外全部字段
+            var body = new
             {
-                f = FlowRunner.GlobalFrame,
                 pid = Environment.ProcessId,
                 chat = chatState,
                 oa = new
@@ -43,7 +45,16 @@ namespace CatHome4.Observe
                 },
                 cats = cats
             };
-            return JsonUtil.Serialize(frame);
+            string bodyJson = JsonUtil.Serialize(body);
+            long frame = FlowRunner.GlobalFrame;
+            // [段2] 脏检查——帧体全等只落帧号行
+            if (string.Equals(bodyJson, _lastFrameBody, StringComparison.Ordinal))
+            {
+                return "{\"f\":" + frame.ToString() + "}";
+            }
+            _lastFrameBody = bodyJson;
+            // [段3] 完整行——帧号前置 + 帧体拼接
+            return "{\"f\":" + frame.ToString() + "," + bodyJson.Substring(1);
         }
 
         /// <summary>

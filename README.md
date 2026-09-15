@@ -82,7 +82,7 @@ SetUp.exe deploy C:\MauTest\MauOut    ← 发布正式运行实体到仓库外
 | `config/` | 配置群 —— `app.cfg`（全局）、`cat-default.cfg`（每猫默认）、`llm.cfg` / `llm-api.json`（LLM）、`ui.cfg`、`search.cfg`、`vision.cfg`、`qqbot.json`、`workspace.json`（受控根表） |
 | `secrets/` | 密钥 —— `llm-api.cfg`（LLM 端点与密钥）、`qqbot.cfg` |
 | `sessions/` | 每猫一个目录 —— 会话状态 `<会话号>.json`、视图 `<会话号>.view.json`、该猫配置 `cat.cfg` |
-| `runs/` | 每次运行一个目录 —— `log_all.txt` / `oa_all.txt` / `err_all.txt` / `frame.txt`（帧号可溯的观测面） |
+| `runs/` | 每次运行一个目录 —— `log_all.txt` / `oa_all.txt` / `err_all.txt` / `frame.txt`（帧号可溯的观测面；**帧体无变化只落帧号行**——缺席字段沿用上一完整帧） |
 | `qqbot-files/` | QQ 通道收发的文件缓存 |
 
 **Data 三级锚定：** `CH4_DATA_ROOT` 环境变量（显式覆盖）→ 仓库根 `Data/`（就地开发与跑测的隔离区）→ `%LOCALAPPDATA%\CatHome4\Data`（部署实例的持久区）。

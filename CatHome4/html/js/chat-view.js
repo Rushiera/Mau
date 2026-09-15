@@ -262,17 +262,11 @@ function chatRenderHistory(data) {
             var tb = chatBubble('assistant', 'tool');
             tb.appendChild(chatToolCard(p));
         } else if (blk.renderType === 'retry') {
-            // S2 §8.4——历史重建：重试过程记录气泡（retry 块随 view.json 落盘）
-            var st = p.state || 'retrying';
-            var txt;
-            if (st === 'resolved') {
-                txt = '✓ 已恢复' + (p.attempt ? '（重试 ' + p.attempt + ' 次）' : '');
-            } else {
-                txt = '⟳ 重试中 ' + (p.attempt || '') + '/' + (p.max || '') + (p.text ? ' · ' + p.text : '');
-            }
-            var rtb = chatBubble('assistant', 'retry');
-            rtb.textContent = txt;
-            if (st === 'resolved') { rtb.classList.add('resolved'); }
+            // S2 §8.4——历史重建：重试过程记录气泡（retry 块随 view.json 落盘；A55 改走渲染单例）
+            chatRenderRetry(p);
+        } else if (blk.renderType === 'error') {
+            // A55——历史重建：LLM 错误气泡（error 块随 view.json 落盘；与实时事件共用渲染单例）
+            chatRenderError(p.text || 'LLM 错误');
         } else if (blk.renderType === 'inject_report') {
             // 注入报告——新会话前文加载明细（ok/missing/error 三态 + 字符数；独立持久化字段 Rebuild 不清）
             var rb2 = chatBubble('assistant', 'inject');

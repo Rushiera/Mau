@@ -33,6 +33,10 @@ namespace CH4
         private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
         /// <summary>间隙文本块——工具轮 seal 文本（非真实前文派生，Rebuild 不清；Save 落盘；QQBot 转发/前端历史数据源）</summary>
         private readonly List<ViewBlock> _gapTexts = new List<ViewBlock>();
+        /// <summary>错误块——LLM 错误气泡（非真实前文派生，Rebuild 不清；写入即落盘——刷新可回看）</summary>
+        private readonly List<ViewBlock> _errors = new List<ViewBlock>();
+        /// <summary>重试过程块——retry 气泡（非真实前文派生；同一重试序列原位更新不堆叠；写入即落盘）</summary>
+        private readonly List<ViewBlock> _retries = new List<ViewBlock>();
         /// <summary>
         /// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）
         /// </summary>
@@ -83,6 +87,12 @@ namespace CH4
 
             /// <summary>轮末统计块数组——roundsum（非真实前文派生；Rebuild 不清，Save 落盘，Load 恢复）</summary>
             public ViewBlock[] RoundSums { get; set; }
+
+            /// <summary>错误块数组——error（非真实前文派生；Rebuild 不清，Save 落盘，Load 恢复）</summary>
+            public ViewBlock[] Errors { get; set; }
+
+            /// <summary>重试过程块数组——retry（非真实前文派生；Rebuild 不清，Save 落盘，Load 恢复）</summary>
+            public ViewBlock[] Retries { get; set; }
         }
 
         /// <summary>
@@ -97,34 +107,34 @@ namespace CH4
         /// <summary>内存视图块——按生成序（history 数据源）</summary>
         public ViewBlock[] GetBlocks()
         {
-            // 合并面——真实前文块 + 间隙文本块 + roundsum 轮末统计块（按时间戳升序——同一坐标系：消息 CreatedAt / CloseRound 时刻）
-            int total = _blocks.Count + _gapTexts.Count + _roundSums.Count;
-            ViewBlock[] merged = new ViewBlock[total];
-            int bi = 0;
-            int gi = 0;
-            int ri = 0;
-            int mi = 0;
-            while (mi < total)
+            // 合并面——真实前文块 + 间隙文本块 + roundsum 轮末统计块 + error 错误块 + retry 重试块（按时间戳升序——同一坐标系：消息 CreatedAt / CloseRound 时刻）
+            List<ViewBlock>[] sources = new List<ViewBlock>[] { _blocks, _gapTexts, _roundSums, _errors, _retries };
+            int total = 0;
+            for (int si = 0; si < sources.Length; si = si + 1)
             {
-                long bt = bi < _blocks.Count ? _blocks[bi].Timestamp : long.MaxValue;
-                long gt = gi < _gapTexts.Count ? _gapTexts[gi].Timestamp : long.MaxValue;
-                long rt = ri < _roundSums.Count ? _roundSums[ri].Timestamp : long.MaxValue;
-                if (bt <= gt && bt <= rt)
+                total = total + sources[si].Count;
+            }
+            ViewBlock[] merged = new ViewBlock[total];
+            int[] cursors = new int[sources.Length];
+            for (int mi = 0; mi < total; mi = mi + 1)
+            {
+                int best = -1;
+                long bestTs = long.MaxValue;
+                for (int si = 0; si < sources.Length; si = si + 1)
                 {
-                    merged[mi] = _blocks[bi];
-                    bi = bi + 1;
+                    if (cursors[si] >= sources[si].Count)
+                    {
+                        continue;
+                    }
+                    long ts = sources[si][cursors[si]].Timestamp;
+                    if (best < 0 || ts < bestTs)
+                    {
+                        best = si;
+                        bestTs = ts;
+                    }
                 }
-                else if (gt <= rt)
-                {
-                    merged[mi] = _gapTexts[gi];
-                    gi = gi + 1;
-                }
-                else
-                {
-                    merged[mi] = _roundSums[ri];
-                    ri = ri + 1;
-                }
-                mi = mi + 1;
+                merged[mi] = sources[best][cursors[best]];
+                cursors[best] = cursors[best] + 1;
             }
             // 注入报告合成首块——会话元数据（非真实前文派生；前端首块渲染前文加载明细）
             if (_injectReport.Length > 0)
@@ -281,6 +291,8 @@ namespace CH4
                 data.InjectReport = _injectReport;
                 data.GapTexts = _gapTexts.ToArray();
                 data.RoundSums = _roundSums.ToArray();
+                data.Errors = _errors.ToArray();
+                data.Retries = _retries.ToArray();
                 JsonSerializerOptions options = new JsonSerializerOptions();
                 options.IncludeFields = true;
                 options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;   // 中文直出（默认 \uXXXX 转义人读不便——2026-09-08 全局统一）
@@ -325,6 +337,56 @@ namespace CH4
             _gapTexts.Add(block);
             Save();
         }
+
+        /// <summary>
+        /// 追加错误块——LLM 错误气泡（非真实前文派生；写入即落盘——刷新可回看）。
+        /// </summary>
+        /// <param name="text">错误文本</param>
+        /// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系）</param>
+        public void AppendError(string text, long timestamp)
+        {
+            if (text == null || text.Length == 0)
+            {
+                return;
+            }
+            ViewBlock block = new ViewBlock();
+            block.Timestamp = timestamp;
+            block.Hash = "error_" + _errors.Count.ToString();
+            block.MsgIndex = -1;
+            block.RenderType = "error";
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["type"] = "error";
+            payload["text"] = text;
+            block.Payload = JsonUtil.Serialize(payload);
+            _errors.Add(block);
+            Save();
+        }
+
+        /// <summary>
+        /// 写入重试块——retry 气泡（同一重试序列原位更新不堆叠；写入即落盘）。index 越界或为负 → 新建块。
+        /// </summary>
+        /// <param name="payloadJson">retry 载荷 JSON（state/attempt/max/text）</param>
+        /// <param name="timestamp">创建时间戳（Unix 毫秒——新建块时使用）</param>
+        /// <param name="index">既有块索引（-1=新建）</param>
+        /// <returns>块索引（后续更新回传）</returns>
+        public int UpsertRetry(string payloadJson, long timestamp, int index)
+        {
+            if (index >= 0 && index < _retries.Count)
+            {
+                _retries[index].Payload = payloadJson;
+                Save();
+                return index;
+            }
+            ViewBlock block = new ViewBlock();
+            block.Timestamp = timestamp;
+            block.Hash = "retry_" + _retries.Count.ToString();
+            block.MsgIndex = -1;
+            block.RenderType = "retry";
+            block.Payload = payloadJson;
+            _retries.Add(block);
+            Save();
+            return _retries.Count - 1;
+        }
         /// <summary>
         /// 清空视图层——session.new 清前文时同步（真实前文 Clear 后视图随生命周期清理）
         /// </summary>
@@ -338,6 +400,10 @@ namespace CH4
             _gapTexts.Clear();
             // 轮末统计随视图层清理——新会话不保留旧轮统计
             _roundSums.Clear();
+            // 错误块随视图层清理——新会话不保留旧错误气泡
+            _errors.Clear();
+            // 重试过程块随视图层清理——新会话不保留旧重试记录
+            _retries.Clear();
         }
         /// <summary>
         /// 清空轮末统计块——回滚裁剪后调用（roundsum 非真实前文派生，Rebuild 不清——裁剪后残留旧统计）
@@ -481,6 +547,16 @@ namespace CH4
                 {
                     _roundSums.Clear();
                     _roundSums.AddRange(data.RoundSums);
+                }
+                if (data != null && data.Errors != null)
+                {
+                    _errors.Clear();
+                    _errors.AddRange(data.Errors);
+                }
+                if (data != null && data.Retries != null)
+                {
+                    _retries.Clear();
+                    _retries.AddRange(data.Retries);
                 }
             }
             catch (Exception)

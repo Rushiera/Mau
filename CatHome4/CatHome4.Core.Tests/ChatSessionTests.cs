@@ -536,6 +536,60 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
+        /// A55 错误可见性——错误中止：视图层落盘 error 块（单块——统一出口 AbortRoundError；实时面不双推）。
+        /// </summary>
+        [Fact]
+        public void A55_Error_PersistsSingleErrorBlock()
+        {
+            MockLlm llm = new MockLlm();
+            llm.FailTimes = 1;
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("错误落盘测试");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            CH4.ViewBlock[] blocks = session.ViewStore.GetBlocks();
+            int errorCount = 0;
+            string payload = "";
+            for (int i = 0; i < blocks.Length; i = i + 1)
+            {
+                if (blocks[i].RenderType == "error")
+                {
+                    errorCount = errorCount + 1;
+                    payload = blocks[i].Payload;
+                }
+            }
+            Assert.Equal(1, errorCount);
+            Assert.Contains("ERR|", payload);
+        }
+
+        /// <summary>
+        /// A55 重试落盘——同一重试序列原位更新（一块不堆叠）；恢复后终态 resolved。
+        /// </summary>
+        [Fact]
+        public void A55_Retry_PersistsSingleRetryBlock()
+        {
+            MockLlm llm = new MockLlm();
+            llm.EmitRetry = true;
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("重试落盘测试");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            CH4.ViewBlock[] blocks = session.ViewStore.GetBlocks();
+            int retryCount = 0;
+            string payload = "";
+            for (int i = 0; i < blocks.Length; i = i + 1)
+            {
+                if (blocks[i].RenderType == "retry")
+                {
+                    retryCount = retryCount + 1;
+                    payload = blocks[i].Payload;
+                }
+            }
+            Assert.Equal(1, retryCount);
+            Assert.Contains("resolved", payload);
+        }
+
+        /// <summary>
         /// S2 §8.4 重试前端可见性——MockLlm 产 Retrying 事件 → 会话层推 retry view 事件（retrying 态）
         /// → 首个 Text 到达 → 推 resolved 回填。断言 host 收到 retry 视图事件（retrying + resolved）。
         /// </summary>

@@ -192,7 +192,7 @@ function chatRenderPending() {
 }
 
 // ============ F4 view 协议分发 ============
-// 七种 renderType：user/stream/text/reason/toolcard/control/retry（S2 §8.4——retry 重试过程记录独立气泡）
+// 八种 renderType：user/stream/text/reason/toolcard/control/retry/error（S2 §8.4 retry 重试记录；A55 error 错误气泡）
 // stream 流式增量——seq 复用=同容器追加；新 seq=新建容器（text 与 reason 各自独立容器）
 // text/reason 整块——replaceSeq 指向被替换的流式容器序号（流式→整块替换；无容器则新建）
 // retry 独立气泡——replaceSeq≥0 更新已有重试气泡（多次重试替换不堆叠）；-1 新建
@@ -214,6 +214,9 @@ function chatOnView(d) {
     } else if (type === 'retry') {
         // S2 §8.4——重试过程记录（独立气泡，弱化样式；replaceSeq≥0 更新已有气泡，否则新建）
         chatOnRetry(d.seq, d.replaceSeq, payload);
+    } else if (type === 'error') {
+        // A55——LLM 错误（独立渲染面：seal 流式容器 + 无容器新建错误气泡；视图块随 view.json 落盘）
+        chatOnError(payload);
     } else if (type === 'control') {
         chatOnControl(payload);
     } else if (type === 'roundsum') {
@@ -311,19 +314,29 @@ function chatOnToolCard(payload) {
     chatPhaseEnter('tool');
 }
 
-// S2 §8.4——重试过程记录气泡（独立视图条目：⟳ 重试中 / ✓ 已恢复；弱化样式不抢占对话主视觉）
-function chatOnRetry(seq, replaceSeq, payload) {
-    chatKeepAlive();
+// A55——重试气泡文本（渲染单例内文本面）
+function chatRetryText(payload) {
     var state = payload.state || 'retrying';
     var attempt = payload.attempt || '';
     var max = payload.max || '';
     var reason = payload.text || '';
-    var text;
     if (state === 'resolved') {
-        text = '✓ 已恢复' + (attempt ? '（重试 ' + attempt + ' 次）' : '');
-    } else {
-        text = '⟳ 重试中 ' + attempt + '/' + max + (reason ? ' · ' + reason : '');
+        return '✓ 已恢复' + (attempt ? '（重试 ' + attempt + ' 次）' : '');
     }
+    return '⟳ 重试中 ' + attempt + '/' + max + (reason ? ' · ' + reason : '');
+}
+
+// A55——重试渲染单例：新建重试气泡（历史重建与实时事件共用同一渲染面）
+function chatRenderRetry(payload) {
+    var b = chatBubble('assistant', 'retry');
+    b.textContent = chatRetryText(payload);
+    if ((payload.state || 'retrying') === 'resolved') { b.classList.add('resolved'); }
+    return b;
+}
+
+// S2 §8.4——重试过程记录气泡（独立视图条目：⟳ 重试中 / ✓ 已恢复；弱化样式不抢占对话主视觉）
+function chatOnRetry(seq, replaceSeq, payload) {
+    chatKeepAlive();
     // replaceSeq 指向首次 retry 事件的 seq——命中已有气泡更新（多次重试不堆叠）；-1/无 → 新建
     var existing = null;
     if (replaceSeq !== undefined && replaceSeq >= 0) {
@@ -331,15 +344,46 @@ function chatOnRetry(seq, replaceSeq, payload) {
         if (rc) { existing = rc; }
     }
     if (existing) {
-        existing.bubble.textContent = text;
-        if (state === 'resolved') { existing.bubble.classList.add('resolved'); }
+        existing.bubble.textContent = chatRetryText(payload);
+        if ((payload.state || 'retrying') === 'resolved') { existing.bubble.classList.add('resolved'); }
     } else {
-        var b = chatBubble('assistant', 'retry');
-        b.textContent = text;
-        if (state === 'resolved') { b.classList.add('resolved'); }
+        var b = chatRenderRetry(payload);
         // 记录用 seq——后续 replaceSeq 指向本次 seq 实现原位更新
         viewContainers['retry_' + seq] = { type: 'retry', bubble: b, reasonPre: null };
     }
+}
+
+// A55——错误渲染单例：新建错误气泡（历史重建与实时事件共用同一渲染面）
+function chatRenderError(text) {
+    var eb = chatBubble('assistant');
+    eb.textContent = text || 'LLM 错误';
+    eb.classList.add('error');
+    return eb;
+}
+
+// A55——错误事件（renderType=error）：seal 全部流式容器（已生成内容保留 + 错误文本追加）；
+// 无容器（错误发生在首个增量前/工具轮间/续传间隔）→ 新建错误气泡——修复"错误被静默吞掉"
+function chatOnError(payload) {
+    chatKeepAlive();
+    chatPhaseReset();
+    var text = payload.text || 'LLM 错误';
+    var appended = false;
+    for (var k in viewContainers) {
+        var c = viewContainers[k];
+        if (c && c.bubble) {
+            c.bubble.classList.remove('streaming');
+            c.bubble.classList.remove('streaming-wait');
+            chatAppend(c.bubble, '\n' + text);
+            c.bubble.classList.add('error');
+            appended = true;
+        }
+    }
+    viewContainers = {};
+    if (!appended) {
+        chatRenderError(text);
+    }
+    if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
+    chatSetState('idle');
 }
 
 function chatOnControl(payload) {
@@ -364,21 +408,6 @@ function chatOnControl(payload) {
                 chatInfo.textContent = oldCtx + ' | ' + newCtx;
             }
         }
-    } else if (type === 'error') {
-        // LLM 错误——seal 全部流式容器 + 错误提示 + 恢复 idle
-        chatPhaseReset();
-        for (var k in viewContainers) {
-            var c = viewContainers[k];
-            if (c && c.bubble) {
-                c.bubble.classList.remove('streaming');
-                c.bubble.classList.remove('streaming-wait');
-                chatAppend(c.bubble, '\n' + (payload.text || 'LLM 错误'));
-                c.bubble.classList.add('error');
-            }
-        }
-        viewContainers = {};
-        if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
-        chatSetState('idle');
     } else if (type === 'session_reset') {
         // 会话重置——session.new 清前文后显式信号（问题一修复：消除本地抢跑竞态；收到即清空再拉 history）
         chatPendingReset = false;
