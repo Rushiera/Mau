@@ -100,15 +100,23 @@ namespace Mau.Runtime
             return msg;
         }
 
-        /// <summary>
-        /// 追加工具结果——与调用 ID 配对；返回追加的消息（落盘挂点显式消费）。
-        /// </summary>
+        /// <summary>追加工具结果——与调用 ID 配对。幂等：同一 ToolCallId 只入册一次，重复调用返回 null（无新消息，落盘挂点自然短路）。</summary>
         /// <param name="toolCallId">调用 ID</param>
         /// <param name="toolName">工具名</param>
         /// <param name="result">结果正文（失败时 ERR| 前缀）</param>
-        /// <returns>追加的消息</returns>
-        public LlmMessage AddToolResult(string toolCallId, string toolName, string result)
+        /// <returns>追加的消息；已存在同 ToolCallId 的结果时返回 null（幂等——调用方无需判重）</returns>
+        public LlmMessage? AddToolResult(string toolCallId, string toolName, string result)
         {
+            // 幂等——同一 ToolCallId 只入册一次（协议：一次调用只有一个结果）。
+            // 重复调用返回 null（无新消息）——落盘挂点 AppendMessage(null) 自然短路，调用方零判重。
+            for (int i = _history.Count - 1; i >= 0; i = i - 1)
+            {
+                LlmMessage m = _history[i];
+                if (m.Role == LlmRole.Tool && m.ToolCallId == toolCallId)
+                {
+                    return null;
+                }
+            }
             LlmMessage msg = CreateMessage(LlmRole.Tool, result);
             msg.ToolCallId = toolCallId;
             msg.ToolName = toolName;
@@ -150,9 +158,7 @@ namespace Mau.Runtime
             }
         }
 
-        /// <summary>
-        /// 以外部历史替换当前上下文（重启恢复）——结构修复：system 唯一（取第一条），tool 无配对 ID 丢弃
-        /// </summary>
+        /// <summary>以外部历史替换当前上下文（重启恢复）——结构修复：system 唯一（取第一条）、tool 无配对 ID 丢弃、声明无结果按声明序在结果块末尾补占位。</summary>
         /// <param name="messages">持久化或导入的消息</param>
         public void ReplaceMessages(LlmMessage[] messages)
         {
@@ -190,10 +196,10 @@ namespace Mau.Runtime
                 }
                 if (m.Role == LlmRole.Assistant && m.ToolCallsJson.Length > 0)
                 {
-                    Dictionary<string, string> decls = ParseToolCallDecls(m.ToolCallsJson);
-                    foreach (KeyValuePair<string, string> kv in decls)
+                    List<KeyValuePair<string, string>> decls = ParseToolCallDecls(m.ToolCallsJson);
+                    for (int d = 0; d < decls.Count; d = d + 1)
                     {
-                        declaredNames[kv.Key] = kv.Value;
+                        declaredNames[decls[d].Key] = decls[d].Value;
                     }
                 }
                 if (m.Role == LlmRole.Tool && m.ToolCallId.Length > 0)
@@ -204,10 +210,18 @@ namespace Mau.Runtime
                 messages[i] = m;
             }
             // [段2] 顺序构建——格式补全：tool_calls 声明无结果 → 占位补全（向 OpenAI 格式匹配，不做信息损失）；tool 结果无声明 → 丢弃（无主可配）
+            // 占位落位 = 该声明结果块末尾、按声明序——结构即天然数据流（声明序 = 执行序 = 外观序）
             HashSet<string> placed = new HashSet<string>();
+            List<KeyValuePair<string, string>> pendingRepair = new List<KeyValuePair<string, string>>();
             for (int i = 0; i < messages.Length; i++)
             {
                 LlmMessage m = messages[i];
+                if (m.Role != LlmRole.Tool && pendingRepair.Count > 0)
+                {
+                    // 结果块结束——补齐上一条声明的缺失位（真实结果之后，声明序）
+                    AppendMissingToolResults(pendingRepair);
+                    pendingRepair.Clear();
+                }
                 if (m.Role == LlmRole.System)
                 {
                     string content = m.Content;
@@ -234,16 +248,13 @@ namespace Mau.Runtime
                     _history.Add(m);
                     if (m.ToolCallsJson.Length > 0)
                     {
-                        // 该条声明中无真实结果的调用 → 紧跟其后补占位 tool 消息（协议完整性）
-                        Dictionary<string, string> decls = ParseToolCallDecls(m.ToolCallsJson);
-                        foreach (KeyValuePair<string, string> kv in decls)
+                        // 该条声明中无真实结果的调用 → 记入待补（声明序）——延迟到本声明结果块末尾落位
+                        List<KeyValuePair<string, string>> decls = ParseToolCallDecls(m.ToolCallsJson);
+                        for (int d = 0; d < decls.Count; d = d + 1)
                         {
-                            if (!resultIds.Contains(kv.Key))
+                            if (!resultIds.Contains(decls[d].Key))
                             {
-                                LlmMessage ph = CreateMessage(LlmRole.Tool, "[系统自动修复] 该工具调用未返回结果（宿主中断）——结果不可知");
-                                ph.ToolCallId = kv.Key;
-                                ph.ToolName = kv.Value;
-                                _history.Add(ph);
+                                pendingRepair.Add(decls[d]);
                             }
                         }
                     }
@@ -272,6 +283,12 @@ namespace Mau.Runtime
                 }
                 _history.Add(m);
             }
+            if (pendingRepair.Count > 0)
+            {
+                // 末尾结果块（无后续消息）——同样补齐
+                AppendMissingToolResults(pendingRepair);
+                pendingRepair.Clear();
+            }
         }
 
         /// <summary>
@@ -294,13 +311,27 @@ namespace Mau.Runtime
             return msg;
         }
         /// <summary>
-        /// 解析 assistant tool_calls JSON——提取调用 ID → 工具名映射（防御式：解析失败/非数组返回空字典）。
+        /// 补占位工具结果——声明位无真实结果时补配对消息（协议完整性，不做信息损失）。
+        /// 追加序 = 声明序，落位在真实结果之后：结构即天然数据流（声明序 = 执行序 = 外观序）。
         /// </summary>
-        /// <param name="toolCallsJson">tool_calls JSON 数组</param>
-        /// <returns>ID → 工具名映射（空=解析失败或无声明）</returns>
-        private static Dictionary<string, string> ParseToolCallDecls(string toolCallsJson)
+        /// <param name="pending">待补声明（声明序；调用方负责清空）</param>
+        private void AppendMissingToolResults(List<KeyValuePair<string, string>> pending)
         {
-            Dictionary<string, string> result = new Dictionary<string, string>();
+            for (int i = 0; i < pending.Count; i = i + 1)
+            {
+                LlmMessage ph = CreateMessage(LlmRole.Tool, "[系统自动修复] 该工具调用未返回结果（宿主中断）——结果不可知");
+                ph.ToolCallId = pending[i].Key;
+                ph.ToolName = pending[i].Value;
+                _history.Add(ph);
+            }
+        }
+
+        /// <summary>解析 assistant tool_calls JSON——提取调用 ID → 工具名映射（保持数组声明序——结构补全按声明序落位；防御式：解析失败/非数组返回空表）。</summary>
+        /// <param name="toolCallsJson">tool_calls JSON 数组</param>
+        /// <returns>ID → 工具名（声明序；空表=解析失败或无声明）</returns>
+        private static List<KeyValuePair<string, string>> ParseToolCallDecls(string toolCallsJson)
+        {
+            List<KeyValuePair<string, string>> result = new List<KeyValuePair<string, string>>();
             if (toolCallsJson == null || toolCallsJson.Length == 0)
             {
                 return result;
@@ -345,7 +376,20 @@ namespace Mau.Runtime
                                 }
                             }
                         }
-                        result[id] = name;
+                        // 同 ID 重复声明——保留第一条（原字典语义；声明序由数组序保证）
+                        bool exists = false;
+                        for (int k = 0; k < result.Count; k = k + 1)
+                        {
+                            if (result[k].Key == id)
+                            {
+                                exists = true;
+                                break;
+                            }
+                        }
+                        if (!exists)
+                        {
+                            result.Add(new KeyValuePair<string, string>(id, name));
+                        }
                     }
                 }
             }

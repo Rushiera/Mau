@@ -1565,11 +1565,10 @@ namespace CH4
                 _phase = ChatPhase.Idle;
                 return;
             }
-            // roundsum 轮末统计——相位结算 + 载荷构建 + 视图落盘 + SSE 推送（本轮 Token 消耗 + 工具次数 + 总耗时 + 四态用时）
+            // roundsum 轮末统计——相位结算 + 载荷构建（Appender 内落盘）+ SSE 推送（本轮 Token 消耗 + 工具次数 + 总耗时 + 四态用时）
             PhaseSettle();
             string roundsumJson = BuildRoundSumJson();
             _viewStore.AppendRoundSummary(roundsumJson, ViewTimestamp());
-            _viewStore.Save();
             if (_httpHost != null)
             {
                 _httpHost.PushView("roundsum", roundsumJson, -1, 0);

@@ -155,6 +155,9 @@ namespace Mau.Runtime
             List<LlmMessage> list = new List<LlmMessage>();
             string sid = "";
             bool metaSeen = false;
+            bool repairedAny = false;
+            int repairedLineIndex = -1;
+            string repairedLineText = "";
             int badLines = 0;
             int contentLines = 0;
             for (int i = 0; i < lines.Length; i = i + 1)
@@ -176,6 +179,8 @@ namespace Mau.Runtime
                     {
                         obj = ParseObject(fixedLine);
                         repaired = true;
+                        repairedAny = true;
+                        repairedLineIndex = i;
                     }
                 }
                 if (obj == null)
@@ -216,6 +221,25 @@ namespace Mau.Runtime
                 {
                     // 补全消息——Content 尾部追加修复标注（LLM 可见；已落盘半截内容全保留）
                     msg.Content = msg.Content + TruncatedRepairNote;
+                    // 截断点在 CreatedAt 之前——时间戳缺省 0：取前一条 +1（视图归并按时间戳归并，0 会让该块排到历史最前）
+                    if (msg.CreatedAt <= 0)
+                    {
+                        long prevStamp = 0;
+                        if (list.Count > 0)
+                        {
+                            prevStamp = list[list.Count - 1].CreatedAt;
+                        }
+                        if (prevStamp > 0)
+                        {
+                            msg.CreatedAt = prevStamp + 1;
+                        }
+                        else
+                        {
+                            msg.CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        }
+                    }
+                    // 回写行 = 带标注的完整行（标注与结构一并落盘——否则下次启动标注丢失，"内容不完整"信号静默消失）
+                    repairedLineText = BuildMessageLine(Normalize(msg));
                     LogStore.Add("CatHome4", 2, "前文末行残缺——已补全为合法 JSON（内容不完整，已标注）", "CHAT");
                 }
                 list.Add(msg);
@@ -233,6 +257,10 @@ namespace Mau.Runtime
             if (metaSeen)
             {
                 SessionId = sid;
+            }
+            if (repairedAny && repairedLineText.Length > 0)
+            {
+                WriteBackRepairedLine(lines, repairedLineIndex, repairedLineText);
             }
             return true;
         }
@@ -531,6 +559,42 @@ namespace Mau.Runtime
                 current = next;
             }
             return false;
+        }
+        /// <summary>
+        /// 回写末行残缺补全结果——磁盘与内存一致。补全只改内存时，坏行会在下次追加后退居中段，
+        /// 再次启动被当作损坏行跳过（该条消息永久丢失）——故补全同时回写。
+        /// 原子写（临时文件 + 替换）；除补全行外其余行原样保留（UTF-8 无 BOM + LF）。
+        /// </summary>
+        /// <param name="lines">原始行数组（不含行结束符）</param>
+        /// <param name="index">被补全的行下标</param>
+        /// <param name="fixedLine">补全后的完整行文本（含修复标注——与内存前文一致）</param>
+        private void WriteBackRepairedLine(string[] lines, int index, string fixedLine)
+        {
+            try
+            {
+                EnsureDirectory();
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < lines.Length; i = i + 1)
+                {
+                    if (i == index)
+                    {
+                        sb.Append(fixedLine);
+                    }
+                    else
+                    {
+                        sb.Append(lines[i]);
+                    }
+                    sb.Append('\n');
+                }
+                string tmp = _path + ".tmp";
+                File.WriteAllText(tmp, sb.ToString(), Utf8NoBom);
+                File.Move(tmp, _path, true);
+                LogStore.Add("CatHome4", 1, "前文末行残缺——已回写补全结果（磁盘与内存一致）", "CHAT");
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 3, "前文补全回写失败（内存已修复，磁盘未同步）: " + ex.Message, "CHAT");
+            }
         }
 
         /// <summary>

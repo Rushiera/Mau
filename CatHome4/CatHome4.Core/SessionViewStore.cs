@@ -291,11 +291,9 @@ namespace CH4
             {
                 // 保存失败不阻断会话（下次收工再试）——视图是派生态，真实前文可重建
             }
-        }        /// <summary>
-                 /// 追加轮末统计块——roundsum（CloseRound 生成：Token 消耗 + 工具次数 + 总耗时 + 四态用时；非真实前文派生，Rebuild 不清）。
-                 /// </summary>
-                 /// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...}}）</param>
-                 /// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系，归并排序键）</param>
+        }        /// <summary>追加轮末统计块——roundsum（Token 消耗 + 工具次数 + 总耗时 + 四态用时）。非真实前文派生（Rebuild 不清）；写入即落盘——宿主中断不丢。</summary>
+/// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...}}）</param>
+/// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系，归并排序键）</param>
         public void AppendRoundSummary(string payloadJson, long timestamp)
         {
             ViewBlock block = new ViewBlock();
@@ -305,11 +303,9 @@ namespace CH4
             block.RenderType = "roundsum";
             block.Payload = payloadJson;
             _roundSums.Add(block);
+            Save();
         }
-        /// <summary>
-        /// 追加间隙文本块——工具轮 seal 文本（模型调用工具前说的话；非真实前文派生，Rebuild 不清，Save 落盘）。
-        /// 视图层 = 全部外观真源——前端历史/QQBot 转发统一消费此块。
-        /// </summary>
+        /// <summary>追加间隙文本块——工具轮 seal 文本（模型调用工具前说的话）。非真实前文派生（Rebuild 不清）；写入即落盘——工具轮中途中断不丢。视图层 = 全部外观真源——前端历史/QQBot 转发统一消费此块。</summary>
         /// <param name="content">间隙文本</param>
         /// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系）</param>
         public void AppendGapText(string content, long timestamp)
@@ -327,6 +323,7 @@ namespace CH4
             payload["content"] = content;
             block.Payload = JsonUtil.Serialize(payload);
             _gapTexts.Add(block);
+            Save();
         }
         /// <summary>
         /// 清空视图层——session.new 清前文时同步（真实前文 Clear 后视图随生命周期清理）
