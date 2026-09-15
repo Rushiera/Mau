@@ -55,8 +55,8 @@ namespace Mau.Development
         /// <summary>行文本缓存——文件路径（R2-P3：引用报告逐行取文本时避免重复全文件读取）</summary>
         private static string _lineCachePath = "";
 
-                /// <summary>行文本缓存——文件全部行（与 _lineCachePath 配对）</summary>
-                private static string[] _lineCache = new string[0];
+        /// <summary>行文本缓存——文件全部行（与 _lineCachePath 配对）</summary>
+        private static string[] _lineCache = new string[0];
 
         /// <summary>
         /// 创建工具桥——受控根用于项目路径越界校验（id: 命名空间寻址对齐 FileSystemService）
@@ -372,7 +372,8 @@ namespace Mau.Development
                 }
                 if (projects.Count == 0)
                 {
-                    error = "目录内无 csproj: " + full;
+                    // 目录入口只扫顶层——子目录有项目时给出可执行指引（多项目聚合的规范入口是 .sln）
+                    error = "目录内无 csproj（仅扫顶层）: " + full + SubdirCsprojHint(full);
                 }
                 return projects;
             }
@@ -398,6 +399,38 @@ namespace Mau.Development
             }
             error = "路径不存在: " + full;
             return projects;
+        }
+        /// <summary>
+        /// 子目录 csproj 提示——目录入口只扫顶层，此时浅扫一级子目录给出可执行指引
+        /// （多项目聚合的规范入口是 .sln，或逐个传 csproj 路径）。
+        /// </summary>
+        /// <param name="dir">目录绝对路径</param>
+        /// <returns>提示串（子目录无 csproj 时空串）</returns>
+        private static string SubdirCsprojHint(string dir)
+        {
+            List<string> names = new List<string>();
+            try
+            {
+                string[] subs = Directory.GetDirectories(dir);
+                Array.Sort(subs, StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < subs.Length; i = i + 1)
+                {
+                    string[] found = Directory.GetFiles(subs[i], "*.csproj", SearchOption.TopDirectoryOnly);
+                    if (found.Length > 0)
+                    {
+                        names.Add(Path.GetFileName(subs[i]));
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+            if (names.Count == 0)
+            {
+                return "";
+            }
+            return "；子目录发现 " + names.Count + " 个项目（如 " + names[0] + "）——目录入口仅扫顶层，请传 .sln 或具体 csproj";
         }
 
         /// <summary>

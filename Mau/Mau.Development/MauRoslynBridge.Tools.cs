@@ -16,9 +16,7 @@ namespace Mau.Development
     /// </summary>
     public sealed partial class MauRoslynBridge
     {
-        /// <summary>
-        /// cs.check——语法树诊断（Compilation.GetDiagnostics 增量语义；full=含警告）
-        /// </summary>
+        /// <summary>cs.check——语法层诊断（写完代码后的第一轮全量语法验证：逐树 SyntaxTree.GetDiagnostics，不触引用集 / 语义模型）；path 支持 csproj / .sln / 目录（聚合分组输出）；full=含语法警告；程序集引用与编译裁决以 cs-build 为唯一权威</summary>
         /// <param name="args">参数</param>
         /// <param name="result">结果</param>
         /// <returns>调用完成</returns>
@@ -38,7 +36,7 @@ namespace Mau.Development
                 return CheckSingle(projects[0], full, out result);
             }
             StringBuilder sb = new StringBuilder();
-            sb.Append("聚合 " + projects.Count + " 个项目：" + Environment.NewLine);
+            sb.Append("聚合 " + projects.Count + " 个项目（语法层）：" + Environment.NewLine);
             int failed = 0;
             for (int i = 0; i < projects.Count; i = i + 1)
             {
@@ -51,42 +49,36 @@ namespace Mau.Development
                     failed = failed + 1;
                 }
             }
-            sb.Append("—— 聚合结果：" + projects.Count + " 项目 / " + failed + " 项目有错误");
+            sb.Append("—— 聚合结果：" + projects.Count + " 项目 / " + failed + " 项目有语法错误（不含类型 / 引用解析；实机裁决走 cs-build）");
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;
         }
-        /// <summary>
-        /// 单项目 check——语法树诊断（Compilation.GetDiagnostics 增量语义；full=含警告）+ CS5001 假阳性单列标注。
-        /// </summary>
+        /// <summary>单项目 check——语法层诊断（逐树 SyntaxTree.GetDiagnostics；不构造引用集与语义模型，结论只反映编译单元文本自身）；full=含语法警告</summary>
         /// <param name="csproj">csproj 绝对路径</param>
-        /// <param name="full">是否输出全部警告</param>
+        /// <param name="full">是否输出全部语法警告</param>
         /// <param name="result">结果文本</param>
         /// <returns>调用完成</returns>
         private bool CheckSingle(string csproj, bool full, out string result)
         {
             ProjectCache cache = EnsureProject(csproj);
             FullScan(cache);
-            CSharpCompilation compilation = cache.Compilation;
-            System.Collections.Immutable.ImmutableArray<Diagnostic> diagnostics = compilation.GetDiagnostics();
+            // 语法层诊断——逐树 SyntaxTree.GetDiagnostics（编译单元文本自身，不触引用集 / 语义模型）
             List<Diagnostic> errors = new List<Diagnostic>();
             List<Diagnostic> warnings = new List<Diagnostic>();
-            int missedEntryPoint = 0;
-            for (int i = 0; i < diagnostics.Length; i = i + 1)
+            int fileCount = 0;
+            foreach (SyntaxTree tree in cache.Trees.Values)
             {
-                Diagnostic diagnostic = diagnostics[i];
-                if (diagnostic.Severity == DiagnosticSeverity.Error)
+                fileCount = fileCount + 1;
+                foreach (Diagnostic diagnostic in tree.GetDiagnostics())
                 {
-                    // CS5001（无入口点）——构建期 targets 生成的入口点在 Roslyn 快照不可见：单列标注，不占错误计数（裁决走 cs.build）
-                    if (diagnostic.Id == "CS5001")
+                    if (diagnostic.Severity == DiagnosticSeverity.Error)
                     {
-                        missedEntryPoint = missedEntryPoint + 1;
-                        continue;
+                        errors.Add(diagnostic);
                     }
-                    errors.Add(diagnostic);
-                }
-                else if (diagnostic.Severity == DiagnosticSeverity.Warning)
-                {
-                    warnings.Add(diagnostic);
+                    else if (diagnostic.Severity == DiagnosticSeverity.Warning)
+                    {
+                        warnings.Add(diagnostic);
+                    }
                 }
             }
             errors.Sort(DiagnosticComparer.Instance);
@@ -94,11 +86,11 @@ namespace Mau.Development
             StringBuilder sb = new StringBuilder();
             if (errors.Count == 0)
             {
-                sb.Append("OK 项目 " + cache.AssemblyName + " 0 错误 " + warnings.Count + " 警告" + (full ? "" : "（全量诊断见 full=true）") + "——语义快查，实机裁决走 cs.build");
+                sb.Append("OK 项目 " + cache.AssemblyName + " 语法 0 错误 " + warnings.Count + " 警告（" + fileCount + " 文件）——语法层验证（不含类型 / 引用解析）；程序集引用与编译裁决走 cs-build");
             }
             else
             {
-                sb.Append("FAIL|CHECK|项目 " + cache.AssemblyName + " " + errors.Count + " 错误");
+                sb.Append("FAIL|CHECK|项目 " + cache.AssemblyName + " " + errors.Count + " 语法错误（" + fileCount + " 文件）");
                 for (int i = 0; i < errors.Count; i = i + 1)
                 {
                     sb.Append(Environment.NewLine);
@@ -114,11 +106,6 @@ namespace Mau.Development
                     sb.Append(Environment.NewLine);
                     sb.Append(FormatDiagnostic(cache, warnings[i]));
                 }
-            }
-            if (missedEntryPoint > 0)
-            {
-                sb.Append(Environment.NewLine);
-                sb.Append("ⓘ CS5001 疑似假阳性 ×" + missedEntryPoint + "（入口点由构建期 targets 生成——Roslyn 快照不可见；裁决走 cs.build）——不占错误计数");
             }
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;

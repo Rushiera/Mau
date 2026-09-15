@@ -141,7 +141,7 @@ namespace Mau.Development
         /// </summary>
         /// <param name="cache">缓存条目（ProjectDir + DefaultExcludes）</param>
         /// <returns>绝对路径数组</returns>
-        private string[] CollectSources(ProjectCache cache)
+        internal string[] CollectSources(ProjectCache cache)
         {
             List<string> result = new List<string>();
             string[] all = Directory.GetFiles(cache.ProjectDir, "*.cs", SearchOption.AllDirectories);
@@ -162,6 +162,7 @@ namespace Mau.Development
             }
             // 本 cache 自己的 obj 产出目录——仅此处放行程序集属性文件（子项目 obj 一律排除：目录聚合模式重复特性 = CS0579）
             string ownObjPrefix = Path.Combine(cache.ProjectDir, "obj") + Path.DirectorySeparatorChar;
+            List<string> assemblyInfo = new List<string>();
             for (int i = 0; i < all.Length; i = i + 1)
             {
                 string path = all[i];
@@ -171,7 +172,7 @@ namespace Mau.Development
                     // 缺失则 internal 类型的 public 字段被判定"从未赋值" → CS0649 误报）
                     if (Path.GetFileName(path).EndsWith(".AssemblyInfo.cs", StringComparison.OrdinalIgnoreCase))
                     {
-                        result.Add(path);
+                        assemblyInfo.Add(path);
                     }
                     continue;
                 }
@@ -200,6 +201,16 @@ namespace Mau.Development
                     continue;
                 }
                 result.Add(path);
+            }
+            // 程序集属性文件去重——同名只收路径序首套（多 Configuration / publish 产物并存时两套同入编译单元 = CS0579 特性重复）
+            assemblyInfo.Sort(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> seenAssemblyInfo = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < assemblyInfo.Count; i = i + 1)
+            {
+                if (seenAssemblyInfo.Add(Path.GetFileName(assemblyInfo[i])))
+                {
+                    result.Add(assemblyInfo[i]);
+                }
             }
             result.Sort(StringComparer.OrdinalIgnoreCase);
             return result.ToArray();
@@ -535,7 +546,7 @@ namespace Mau.Development
         /// </summary>
         /// <param name="cache">缓存</param>
         /// <returns>引用列表（bin 缺失时返回空列表——check 引导 build）</returns>
-        private List<MetadataReference> BuildReferences(ProjectCache cache)
+        internal List<MetadataReference> BuildReferences(ProjectCache cache)
         {
             List<MetadataReference> references = new List<MetadataReference>();
             Dictionary<string, string> pathsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
