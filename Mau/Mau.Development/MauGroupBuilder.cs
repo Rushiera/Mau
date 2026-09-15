@@ -35,10 +35,6 @@ namespace Mau.Development
                     result.Error = parsed.Error;
                     return result;
                 }
-                if (parsed.Warning.Length > 0)
-                {
-                    result.Steps.Add("WARN: " + parsed.Warning);
-                }
                 MauProjFile proj = parsed.File!;
                 result.Steps.Add("组 " + proj.Name + " | 版本 " + (proj.Version.Length > 0 ? proj.Version : "（无）"));
 

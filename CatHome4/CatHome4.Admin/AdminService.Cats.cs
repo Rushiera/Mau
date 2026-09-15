@@ -568,7 +568,7 @@ namespace CatHome4.Admin
             cat.Port = port;
             cat.Host = host;
             cat.Session.AttachHost(host);
-            SaveCatCfg(cat);
+            SetCatRuntime(cat.Id, true, port);
             LogStore.Add("CatHome4", 1, "已启动猫「" + cat.DisplayName + "」，端口 " + port.ToString(), "CHAT");
             return "cat.start | " + cat.DisplayName + " | http://127.0.0.1:" + port.ToString();
         }
@@ -605,7 +605,7 @@ namespace CatHome4.Admin
             cat.Host = null;
             cat.Running = false;
             cat.Port = 0;
-            SaveCatCfg(cat);
+            SetCatRuntime(cat.Id, false, 0);
             LogStore.Add("CatHome4", 1, "已停止猫「" + cat.DisplayName + "」", "CHAT");
             return "cat.stop | " + cat.DisplayName + " | 已停止";
         }
@@ -642,6 +642,8 @@ namespace CatHome4.Admin
             _chatBridge.RemoveSession(cat.Session);
             // M4e 猫级白名单——缓存随猫销毁
             ToolCatContext.RemoveCatFileSystem(cat.Id);
+            // 运行态条目随猫销毁（Data/runtime/cats.json）
+            RemoveCatRuntime(cat.Id);
             DeleteCatFiles(cat.Id);
             LogStore.Add("CatHome4", 1, "已销毁猫「" + cat.DisplayName + "」（id " + cat.Id + "）", "CHAT");
             return "cat.delete | " + cat.DisplayName + " | 已销毁";
@@ -1371,6 +1373,9 @@ namespace CatHome4.Admin
             {
                 return;
             }
+            // 运行态分离——running/port 取自 Data/runtime/cats.json（cat.cfg 只承载用户配置；启动链零写入 cat.cfg）
+            Dictionary<string, CatRuntimeEntry> runtimeMap = LoadCatRuntime();
+            bool runtimeDirty = false;
             for (int i = 0; i < dirs.Length; i++)
             {
                 // 默认猫 majordomo 目录跳过——Bootstrap 专属处理（M1c 默认猫 cat.cfg 读取面），不进多猫注册表
@@ -1395,13 +1400,24 @@ namespace CatHome4.Admin
                     continue;
                 }
                 _cats.Add(cat);
-                if (!cfg.Running)
+                // 运行态取值——文件优先；无记录则从旧 cat.cfg 迁移一次（旧版本把 running/port 混在 cat.cfg）
+                CatRuntimeEntry rt;
+                if (!runtimeMap.TryGetValue(cat.Id, out rt))
+                {
+                    if (MigrateCatRuntime(cat.Id, cfg.Running, cfg.Port, runtimeMap))
+                    {
+                        runtimeDirty = true;
+                        rt = runtimeMap[cat.Id];
+                        LogStore.Add("CatHome4", 1, "启动扫描：猫「" + cat.DisplayName + "」运行态迁移（running=" + (rt.Running ? "true" : "false") + " port=" + rt.Port.ToString() + "）", "CHAT");
+                    }
+                }
+                if (rt == null || !rt.Running)
                 {
                     // 静默态——注册表可见（cat.list/start 可寻址），不拉起
                     LogStore.Add("CatHome4", 1, "启动扫描：猫「" + cat.DisplayName + "」为静默态（id " + cat.Id + "）", "CHAT");
                     continue;
                 }
-                int port = cfg.Port;
+                int port = rt.Port;
                 if (port < 1024 || IsPortTaken(port))
                 {
                     port = AllocatePort(CatPortStart);
@@ -1423,8 +1439,17 @@ namespace CatHome4.Admin
                 cat.Running = true;
                 cat.Port = port;
                 cat.Session.AttachHost(cat.Host);
-                SaveCatCfg(cat);
+                // 端口与登记值不一致（被占回落）→ 只更新运行态文件（启动链不写 cat.cfg）
+                if (port != rt.Port)
+                {
+                    rt.Port = port;
+                    runtimeDirty = true;
+                }
                 LogStore.Add("CatHome4", 1, "启动扫描：已拉起猫「" + cat.DisplayName + "」，端口 " + port.ToString(), "CHAT");
+            }
+            if (runtimeDirty)
+            {
+                SaveCatRuntime(runtimeMap);
             }
         }
 

@@ -69,11 +69,6 @@ namespace Mau.Cli
                 return 1;
             }
 
-            if (parsed.Warning.Length > 0)
-            {
-                Console.WriteLine("WARN: " + parsed.Warning);
-            }
-
             MauProjFile proj = parsed.File!;
             string root = CliSupport.FindWorkspaceRoot() ?? Directory.GetCurrentDirectory();
             if (srcDir.Length == 0)

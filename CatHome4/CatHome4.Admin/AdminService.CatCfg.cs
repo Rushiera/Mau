@@ -269,7 +269,7 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// cat.cfg 原子写——ConfigStore.AtomicWrite（临时文件 + 改名；CH2 模式移植）。
+        /// cat.cfg 原子写——用户配置落盘（运行态 running/port 不落此文件；见 AdminService.CatRuntime.cs）。
         /// </summary>
         /// <param name="cat">猫实体</param>
         private static void SaveCatCfg(CatEntry cat)
@@ -277,8 +277,6 @@ namespace CatHome4.Admin
             CatCfgData data = new CatCfgData();
             data.Id = cat.Id;
             data.DisplayName = cat.DisplayName;
-            data.Running = cat.Running;
-            data.Port = cat.Port;
             data.ApiConfigId = cat.ApiConfigId.ToString("D");
             data.Persona = cat.Persona;
             data.ToolNames = cat.ToolNames;

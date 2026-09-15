@@ -587,6 +587,12 @@ namespace CH4
                     rb.Append("(");
                     rb.Append(entries[i].Writable ? "rw" : "ro");
                     rb.Append(")");
+                    if (entries[i].Note != null && entries[i].Note.Length > 0)
+                    {
+                        rb.Append("[");
+                        rb.Append(entries[i].Note);
+                        rb.Append("]");
+                    }
                 }
                 rootsInfo = " | roots[" + catKey + "]: " + rb.ToString();
             }

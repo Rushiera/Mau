@@ -12,6 +12,11 @@ namespace Mau.Runtime
     public sealed class WorkspaceConfig
     {
         /// <summary>
+        /// 认路注释最大长度——超长截断（前端限 20 字；宿主侧兜底不信任前端）
+        /// </summary>
+        public const int NoteMaxLength = 20;
+
+        /// <summary>
         /// 受控根条目——id + 路径 + 可写标志（writable=false 拒绝写操作）
         /// </summary>
         public sealed class RootEntry
@@ -30,6 +35,11 @@ namespace Mau.Runtime
             /// 是否允许写入——false 时 file.write/append/replace/delete 拒绝
             /// </summary>
             public bool Writable;
+
+            /// <summary>
+            /// 认路注释——给 LLM 的语义提示（≤20 字，超长截断；info 输出可见）
+            /// </summary>
+            public string Note = "";
         }
 
         /// <summary>
@@ -107,7 +117,8 @@ namespace Mau.Runtime
                         {
                             throw new InvalidDataException("workspace root 不存在: " + norm);
                         }
-                        roots.Add(new RootEntry() { Id = id, Path = norm, Writable = writable });
+                        string note = GetProp(item, "note");
+                        roots.Add(new RootEntry() { Id = id, Path = norm, Writable = writable, Note = TruncateNote(note) });
                     }
                 }
                 if (roots.Count == 0)
@@ -147,6 +158,25 @@ namespace Mau.Runtime
         }
 
         // [段2] 解析辅助
+        /// <summary>
+        /// 截断认路注释——去空白 + 超长截断到 NoteMaxLength（宿主侧兜底；前端另有 maxlength 限制）
+        /// </summary>
+        /// <param name="note">原始注释</param>
+        /// <returns>截断后注释（空=无注释）</returns>
+        public static string TruncateNote(string note)
+        {
+            if (string.IsNullOrEmpty(note))
+            {
+                return "";
+            }
+            string trimmed = note.Trim();
+            if (trimmed.Length <= NoteMaxLength)
+            {
+                return trimmed;
+            }
+            return trimmed.Substring(0, NoteMaxLength);
+        }
+
         /// <summary>
         /// 读取字符串属性——缺字段返回空串（防御式）
         /// </summary>

@@ -292,12 +292,18 @@ function renderRootChecks(allRoots, enabledRoots) {
         box.textContent = '（全局根池为空）';
         return;
     }
-    // 空 enabledRoots = 全量（旧配置无字段）
+    // 未配置（空/null）= 空白名单——仅常驻 workspace 可用（如实渲染，不默认勾选）
     var enabled = {};
     if (enabledRoots && enabledRoots.length > 0) {
         for (var i = 0; i < enabledRoots.length; i++) { enabled[enabledRoots[i]] = true; }
     }
     var hasEnabled = enabledRoots && enabledRoots.length > 0;
+    if (!hasEnabled) {
+        var tip = document.createElement('div');
+        tip.style.cssText = 'width:100%;font-size:11px;color:#f48771;margin-bottom:4px';
+        tip.textContent = '⚠ 未配置根白名单——本猫仅常驻 workspace 可用（保存一次即固化为显式清单）';
+        box.appendChild(tip);
+    }
     for (var j = 0; j < allRoots.length; j++) {
         (function (root) {
             var isWs = root.id === 'workspace' || root.id === 'runtime';
@@ -307,8 +313,8 @@ function renderRootChecks(allRoots, enabledRoots) {
             cb.type = 'checkbox';
             cb.className = 'root-cb';
             cb.setAttribute('data-root', root.id);
-            // workspace 强制必选且不可取消；其余默认勾选 = 全量语义
-            cb.checked = isWs || !hasEnabled || enabled[root.id] === true;
+            // workspace 强制必选且不可取消；其余按显式清单勾选（未配置 = 不勾——如实反映生效范围）
+            cb.checked = isWs || (hasEnabled && enabled[root.id] === true);
             if (isWs) {
                 cb.checked = true;
                 cb.disabled = true;
@@ -452,6 +458,10 @@ function renderRoots() {
             tdPath.textContent = rootsList[idx].path;
             tdPath.style.wordBreak = 'break-all';
             tr.appendChild(tdPath);
+            var tdNote = document.createElement('td');
+            tdNote.textContent = rootsList[idx].note || '';
+            tdNote.style.color = '#6a9955';
+            tr.appendChild(tdNote);
             var tdW = document.createElement('td');
             tdW.textContent = rootsList[idx].writable ? '读写' : '只读';
             tdW.style.color = rootsList[idx].writable ? '#4ec9b0' : '#f48771';
@@ -502,6 +512,15 @@ function enterEditRoot(idx) {
                 pathIn.style.width = '96%';
                 tdPath.appendChild(pathIn);
                 tr.appendChild(tdPath);
+                var tdNote = document.createElement('td');
+                var noteIn = document.createElement('input');
+                noteIn.value = rootsList[rowIdx].note || '';
+                noteIn.maxLength = 20;
+                noteIn.placeholder = '≤20 字';
+                noteIn.className = 'input-mini';
+                noteIn.style.width = '96%';
+                tdNote.appendChild(noteIn);
+                tr.appendChild(tdNote);
                 var tdW = document.createElement('td');
                 var wSel = document.createElement('select');
                 var optW = document.createElement('option');
@@ -538,7 +557,12 @@ function enterEditRoot(idx) {
                             return;
                         }
                     }
-                    rootsList[rowIdx] = { id: nid, path: npath, writable: nw };
+                    var nnote = noteIn.value.trim();
+                    if (nnote.length > 20) {
+                        document.getElementById('rootsMsg').textContent = '注释超长——最多 20 字';
+                        return;
+                    }
+                    rootsList[rowIdx] = { id: nid, path: npath, writable: nw, note: nnote };
                     renderRoots();
                 };
                 tdOp.appendChild(okBtn);
@@ -559,6 +583,10 @@ function enterEditRoot(idx) {
                 tdPath2.textContent = rootsList[rowIdx].path;
                 tdPath2.style.wordBreak = 'break-all';
                 tr.appendChild(tdPath2);
+                var tdNote2 = document.createElement('td');
+                tdNote2.textContent = rootsList[rowIdx].note || '';
+                tdNote2.style.color = '#6a9955';
+                tr.appendChild(tdNote2);
                 var tdW2 = document.createElement('td');
                 tdW2.textContent = rootsList[rowIdx].writable ? '读写' : '只读';
                 tdW2.style.color = rootsList[rowIdx].writable ? '#4ec9b0' : '#f48771';
@@ -619,9 +647,15 @@ document.getElementById('rootAddBtn').onclick = function () {
             return;
         }
     }
-    rootsList.push({ id: id, path: path, writable: writable });
+    var note = document.getElementById('rootNewNote').value.trim();
+    if (note.length > 20) {
+        document.getElementById('rootsMsg').textContent = '注释超长——最多 20 字';
+        return;
+    }
+    rootsList.push({ id: id, path: path, writable: writable, note: note });
     document.getElementById('rootNewId').value = '';
     document.getElementById('rootNewPath').value = '';
+    document.getElementById('rootNewNote').value = '';
     renderRoots();
 };
 document.getElementById('rootsSave').onclick = saveRoots;

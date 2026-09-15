@@ -137,10 +137,11 @@
                     <h2 style="margin:16px 0 8px;color:#f48771">🔁 重启生效</h2>
                     <div style="border:1px solid #3a3a3a;border-radius:6px;padding:10px;background:#1f1f1f">
                         <div style="font-size:11px;color:#6a6a6a;margin-bottom:6px">受控根（workspace roots——安全边界；保存后重启宿主生效；LLM 工具面保持只读）</div>
-                        <table class="box-table" id="rootsTable"><thead><tr><th style="width:15%">id</th><th style="width:55%">路径</th><th style="width:12%">权限</th><th style="width:18%">操作</th></tr></thead><tbody></tbody></table>
+                        <table class="box-table" id="rootsTable"><thead><tr><th style="width:12%">id</th><th style="width:42%">路径</th><th style="width:20%">注释（≤20 字·给 LLM 认路）</th><th style="width:10%">权限</th><th style="width:16%">操作</th></tr></thead><tbody></tbody></table>
                         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
                             <input id="rootNewId" placeholder="id（字母/数字/下划线）" style="width:150px;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
                             <input id="rootNewPath" placeholder="绝对路径（目录必须存在）" style="flex:2;min-width:220px;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
+                            <input id="rootNewNote" placeholder="注释（≤20 字）" maxlength="20" style="width:150px;background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
                             <select id="rootNewWritable" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#c8c8c8;padding:5px 8px;font-family:inherit;font-size:12px">
                                 <option value="true">读写</option>
                                 <option value="false">只读</option>

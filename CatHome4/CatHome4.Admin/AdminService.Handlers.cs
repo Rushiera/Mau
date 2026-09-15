@@ -900,6 +900,9 @@ namespace CatHome4.Admin
 
             /// <summary>是否可写</summary>
             public bool Writable;
+
+            /// <summary>认路注释（≤20 字——给 LLM 的语义提示；超长由宿主截断）</summary>
+            public string Note = "";
         }
 
         /// <summary>
@@ -923,7 +926,8 @@ namespace CatHome4.Admin
                 {
                     id = ws.Roots[i].Id,
                     path = ws.Roots[i].Path,
-                    writable = ws.Roots[i].Writable
+                    writable = ws.Roots[i].Writable,
+                    note = ws.Roots[i].Note
                 });
             }
             return Results.Json(new { ok = true, roots = roots });
@@ -946,7 +950,8 @@ namespace CatHome4.Admin
                     {
                         id = ws.Roots[i].Id,
                         path = ws.Roots[i].Path,
-                        writable = ws.Roots[i].Writable
+                        writable = ws.Roots[i].Writable,
+                        note = ws.Roots[i].Note
                     });
                 }
             }
@@ -955,16 +960,21 @@ namespace CatHome4.Admin
 
         /// <summary>
         /// 猫启用根校验——workspace 强制必选 + 全局池子集；非法 id 剔除、去重、保序。
-        /// 语义：空数组 = 全量（不限制——向后兼容旧 cat.cfg 无 enabledRoots 字段）；非空 = workspace 强制 + 用户子集。
+        /// 语义（收紧·X）：空数组 = 仅常驻系统根（物化为显式清单——与 ResolveCatRootEntries 同源）；非空 = workspace 强制 + 用户子集。
         /// </summary>
-        /// <param name="ids">前端提交的启用根 id 数组（空=全量）</param>
-        /// <returns>合法启用根 id 数组（空=全量）</returns>
+        /// <param name="ids">前端提交的启用根 id 数组（空=仅常驻根）</param>
+        /// <returns>合法启用根 id 数组（至少含常驻根；池不可用时为空）</returns>
         internal static string[] ValidateEnabledRoots(string[] ids)
         {
-            // 空/缺省 = 全量（旧配置无字段——不限制，行为不倒退）
+            // 空白名单（未配置/全不勾）= 仅常驻根——物化落盘，消除"未配置"二义（前端已如实渲染）
             if (ids == null || ids.Length == 0)
             {
-                return new string[0];
+                string residentOnly = ResolveResidentRootId();
+                if (residentOnly.Length == 0)
+                {
+                    return new string[0];
+                }
+                return new string[] { residentOnly };
             }
             WorkspaceConfig ws = null;
             DataBox.TryResolve<WorkspaceConfig>(out ws);
@@ -1048,6 +1058,38 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
+        /// 常驻系统根 id——workspace（旧配置 runtime）；池不可用/无匹配返回空串。
+        /// </summary>
+        /// <returns>常驻根 id（按池内原大小写）</returns>
+        private static string ResolveResidentRootId()
+        {
+            WorkspaceConfig ws = null;
+            DataBox.TryResolve<WorkspaceConfig>(out ws);
+            if (ws == null || ws.Roots == null)
+            {
+                return "";
+            }
+            string legacy = "";
+            for (int i = 0; i < ws.Roots.Length; i++)
+            {
+                string rootId = ws.Roots[i].Id;
+                if (rootId == null || rootId.Length == 0)
+                {
+                    continue;
+                }
+                if (string.Equals(rootId, "workspace", StringComparison.OrdinalIgnoreCase))
+                {
+                    return rootId;
+                }
+                if (legacy.Length == 0 && string.Equals(rootId, "runtime", StringComparison.OrdinalIgnoreCase))
+                {
+                    legacy = rootId;
+                }
+            }
+            return legacy;
+        }
+
+        /// <summary>
         /// 受控根写入——POST /api/v1/workspace（body: {roots:[{id,path,writable}]}）。
         /// 校验：id 安全标识符不重复 + path 非空绝对路径 + 目录存在；空列表=重置默认（Load 兜底单根 runtime）。
         /// 生效语义：落盘 + 重启生效（roots 是 Bootstrap 一次性读取——低频事件，莎拍板 2026-08-25）。
@@ -1078,6 +1120,7 @@ namespace CatHome4.Admin
                             {
                                 input.Writable = false;
                             }
+                            input.Note = WorkspaceConfig.TruncateNote(GetJsonString(item, "note"));
                             rootsIn.Add(input);
                         }
                     }
@@ -1166,6 +1209,11 @@ namespace CatHome4.Admin
                 else
                 {
                     sb.Append("false");
+                }
+                if (input.Note.Length > 0)
+                {
+                    sb.Append(",\"note\":");
+                    sb.Append(JsonUtil.Serialize(input.Note));
                 }
                 sb.Append("}");
             }
@@ -1301,7 +1349,7 @@ namespace CatHome4.Admin
         /// cat.cfg 原子写——按配置数据落盘（M3 端点写面；与 SaveCatCfg(CatEntry) 同源）。
         /// </summary>
         /// <param name="id">会话 ID（majordomo=默认猫）</param>
-        /// <param name="data">配置数据</param>
+        /// <param name="data">配置数据（用户配置面——运行态 running/port 不在此落盘）</param>
         private static void SaveCatCfgData(string id, CatCfgData data)
         {
             string dir = Path.Combine(_dataRoot, "Data", "sessions", id);
@@ -1310,8 +1358,6 @@ namespace CatHome4.Admin
             {
                 id = data.Id,
                 displayName = data.DisplayName,
-                running = data.Running,
-                port = data.Port,
                 apiConfigId = data.ApiConfigId,
                 persona = data.Persona,
                 // M2c 写时校验——序列化前比对内置清单过滤非法名（外部损坏防御：持久化面只落合法名）

@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Security.Cryptography;
 using System.Text;
 
 namespace Mau.Development
 {
     /// <summary>
-    /// mauproj 组工程文件（v1.0 收紧版）——行指令式：组/版本/引用/文件 + 校验尾 SHA256。
+    /// mauproj 组工程文件（v1.0 收紧版）——行指令式：组/版本/引用/文件。
     /// 对应 design-ch4-deploy.md §四：一组一个 mauproj，翻译+编译统一链的输入声明。
     /// 移除 v2 的 依赖:/bricks: 字段——v3 积木是文本资产，依赖面由翻译器自动扫描。
     /// B3 下沉：自 Mau.Cli 移入 Mau.Development 共享库（Mau.Cli 与 CH4.Entry 共用——消灭双轨）。
@@ -40,11 +39,6 @@ namespace Mau.Development
         public string DirectoryPath;
 
         /// <summary>
-        /// 校验尾前缀——文件尾完整性标记
-        /// </summary>
-        public const string ChecksumPrefix = "// #MAUPROJ_CHECKSUM:SHA256:";
-
-        /// <summary>
         /// 构造空 mauproj
         /// </summary>
         public MauProjFile()
@@ -57,7 +51,7 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 从文件加载并解析 mauproj——校验尾存在则必须匹配，缺失仅警告
+        /// 从文件加载并解析 mauproj
         /// </summary>
         /// <param name="path">mauproj 文件路径</param>
         /// <returns>解析结果（File 非空 = 成功）</returns>
@@ -71,57 +65,11 @@ namespace Mau.Development
             }
             string content = File.ReadAllText(path).Replace("\r\n", "\n");
 
-            // [段1] 校验尾检查——存在则必须匹配
-            string body = content;
-            string[] lines = content.Split('\n');
-            int bodyEnd = lines.Length;
-            bool hasChecksum = false;
-            string actualChecksum = "";
-            while (bodyEnd > 0)
-            {
-                string last = lines[bodyEnd - 1].Trim();
-                if (last.Length == 0)
-                {
-                    bodyEnd = bodyEnd - 1;
-                    continue;
-                }
-                if (last.StartsWith(ChecksumPrefix))
-                {
-                    hasChecksum = true;
-                    actualChecksum = last.Substring(ChecksumPrefix.Length).Trim();
-                    bodyEnd = bodyEnd - 1;
-                    continue;
-                }
-                break;
-            }
-            if (hasChecksum)
-            {
-                StringBuilder sb = new StringBuilder();
-                for (int i = 0; i < bodyEnd; i++)
-                {
-                    if (i > 0)
-                    {
-                        sb.Append('\n');
-                    }
-                    sb.Append(lines[i]);
-                }
-                string expected = ComputeSha256(sb.ToString());
-                if (actualChecksum != expected)
-                {
-                    result.Error = "校验尾不匹配——mauproj 已被篡改或损坏";
-                    return result;
-                }
-            }
-            else
-            {
-                result.Warning = "校验尾缺失（首次创建可忽略）";
-            }
-
-            // [段2] 行指令解析
+            // [段1] 行指令解析
             MauProjFile file = new MauProjFile();
             file.DirectoryPath = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
             bool nameSeen = false;
-            string[] bodyLines = body.Split('\n');
+            string[] bodyLines = content.Split('\n');
             for (int i = 0; i < bodyLines.Length; i++)
             {
                 string trimmed = bodyLines[i].Trim();
@@ -270,34 +218,6 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 计算文件 SHA256——全文 UTF-8 字节（校验尾计算用）
-        /// </summary>
-        /// <param name="path">文件路径</param>
-        /// <returns>64 位十六进制哈希（大写）</returns>
-        public static string ComputeFileSha256(string path)
-        {
-            string text = File.ReadAllText(path).Replace("\r\n", "\n");
-            return ComputeSha256(text);
-        }
-
-        /// <summary>
-        /// 计算字符串 SHA256——UTF-8 字节转 64 位十六进制大写（原 CliSupport 依赖内联——下沉零外部依赖）
-        /// </summary>
-        /// <param name="text">输入文本</param>
-        /// <returns>64 位十六进制哈希（大写）</returns>
-        private static string ComputeSha256(string text)
-        {
-            byte[] bytes = Encoding.UTF8.GetBytes(text);
-            byte[] hash = SHA256.HashData(bytes);
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < hash.Length; i++)
-            {
-                sb.Append(hash[i].ToString("X2"));
-            }
-            return sb.ToString();
-        }
-
-        /// <summary>
         /// 值转义解码——\, 转义字面逗号；\\ 转义字面反斜杠
         /// </summary>
         /// <param name="value">原始值</param>
@@ -402,10 +322,5 @@ namespace Mau.Development
         /// 错误信息（非空 = 失败）
         /// </summary>
         public string Error = "";
-
-        /// <summary>
-        /// 警告信息（校验尾缺失等）
-        /// </summary>
-        public string Warning = "";
     }
 }
