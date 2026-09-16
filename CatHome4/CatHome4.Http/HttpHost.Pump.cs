@@ -94,8 +94,18 @@ namespace CatHome4.Http
                 json = InjectSnapshotTitle(json, _pageTitle);
             }
             _snapshotCache = json;
-            // 增量流式——只推变化段；无变化零推送（Idle 稳态静默）；patchBuilder 未注入时保持全量推送（每猫端口——chat.html 不消费快照）
-            if (_patchBuilder != null)
+            // 增量流式——只推变化段；无变化零推送（Idle 稳态静默）：对话端口推本猫运行态（sessionstate）、主端口推全局 patch、两者皆缺时回落全量快照
+            if (_sessionStateBuilder != null)
+            {
+                // 对话端口——本猫运行态变化才推（替代每 250ms 全量快照：空闲零推送、前端零轮询）
+                string state = _sessionStateBuilder();
+                if (state != null && state.Length > 0 && !string.Equals(state, _lastSessionState, StringComparison.Ordinal))
+                {
+                    _lastSessionState = state;
+                    PushEvent("sessionstate", state);
+                }
+            }
+            else if (_patchBuilder != null)
             {
                 string patch = _patchBuilder();
                 if (patch != null && patch.Length > 0)

@@ -53,6 +53,9 @@ namespace CatHome4.Http
         /// <summary>增量 patch 构建回调（可空=全量推送）</summary>
         public Func<string> PatchBuilder { get; set; }
 
+        /// <summary>本猫运行态构建回调（可空=不推运行态）——对话端口用：变化才推（替代每 250ms 全量快照推送）</summary>
+        public Func<string> SessionStateBuilder { get; set; }
+
         /// <summary>静态页模式（true=chat.html / false=index.html）</summary>
         public bool ServeChatPage { get; set; }
 
@@ -83,6 +86,12 @@ namespace CatHome4.Http
 
         /// <summary>增量 patch 构建回调——宿主侧注入（Program.BuildPatchJson；可空=不推 patch 保持全量推送）</summary>
         private Func<string> _patchBuilder;
+
+        /// <summary>本猫运行态构建回调——对话端口注入（Session.BuildRunStateJson；可空=不推运行态）</summary>
+        private Func<string> _sessionStateBuilder;
+
+        /// <summary>上次运行态 JSON——本地 diff（变化才推；空闲期零推送）——主线程独占</summary>
+        private string _lastSessionState;
 
         /// <summary>指令投递回调——宿主侧注入（Program.DispatchCommand）</summary>
         private Func<string, bool> _dispatcher;
@@ -163,6 +172,7 @@ namespace CatHome4.Http
             host._catsBuilder = options.CatsBuilder;
             host._noteBuilder = options.NoteBuilder;
             host._patchBuilder = options.PatchBuilder;
+            host._sessionStateBuilder = options.SessionStateBuilder;
             host._serveChatPage = options.ServeChatPage;
             host._routeRegistrar = options.RouteRegistrar;
             host._htmlRootProvider = options.HtmlRootProvider;

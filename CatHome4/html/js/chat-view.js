@@ -391,7 +391,7 @@ function chatFmtMs(ms) {
     return s.toFixed(1) + 's';
 }
 
-// roundsum 轮末统计气泡——本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时（宿主 CloseRound 推送/历史重建渲染；弱化系统样式）
+// roundsum 轮末统计气泡——本轮 Token 消耗 + 工具次数 + 请求次数 + 六态用时 + 总耗时（宿主 CloseRound 推送/历史重建渲染；弱化系统样式）
 function chatOnRoundSum(payload) {
     var d = payload.data || {};
     var phases = d.phases || {};
@@ -407,13 +407,30 @@ function chatOnRoundSum(payload) {
         + ' cache ' + chatFmtCount(d.cacheHit || 0)
         + ' miss ' + chatFmtCount(miss)
         + ' 🎯' + hitRate.toFixed(1) + '%</div>';
-    if (d.toolCount > 0) {
-        html += '<div class="rs-tools">🔧 工具 ' + d.toolCount + ' 次</div>';
+    // 工具/请求次数行（请求次数为 A59 字段——旧轮次无该字段则不显示）
+    var toolsLine = '';
+    if (d.toolCount > 0) { toolsLine = '🔧 工具 ' + d.toolCount + ' 次'; }
+    if (d.requests !== undefined) {
+        toolsLine += (toolsLine ? ' · ' : '') + '🔄 请求 ' + (d.requests || 0) + ' 次';
     }
-    html += '<div class="rs-times">⏱ 链路 ' + chatFmtMs(phases.link)
-        + ' · 思考 ' + chatFmtMs(phases.think)
-        + ' · 工具 ' + chatFmtMs(phases.tool)
-        + ' · 回复 ' + chatFmtMs(phases.reply)
-        + ' · 总计 ' + chatFmtMs(d.elapsedMs) + '</div>';
+    if (toolsLine) {
+        html += '<div class="rs-tools">' + toolsLine + '</div>';
+    }
+    // 六态用时（idle 不计时故不入载荷；非零态上尾巴 + 总计）
+    var phasesMeta = [
+        { key: 'link', label: '链路' },
+        { key: 'wait', label: '等待' },
+        { key: 'think', label: '思考' },
+        { key: 'tool', label: '工具' },
+        { key: 'run', label: '执行' },
+        { key: 'reply', label: '回复' }
+    ];
+    var tparts = [];
+    for (var pi = 0; pi < phasesMeta.length; pi++) {
+        var pv = phases[phasesMeta[pi].key] || 0;
+        if (pv > 0) { tparts.push(phasesMeta[pi].label + ' ' + chatFmtMs(pv)); }
+    }
+    tparts.push('总计 ' + chatFmtMs(d.elapsedMs));
+    html += '<div class="rs-times">⏱ ' + tparts.join(' · ') + '</div>';
     b.innerHTML = html;
 }

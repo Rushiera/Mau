@@ -237,8 +237,6 @@ test('view toolcard 渲染工具卡（含名称/参数/结果；默认折叠）'
   // 展开后内容可见
   card.open = true;
   expect(card.querySelector('.tr').textContent).toBe('2026-08-30 00:00:00');
-  // 工具态
-  expect(window.chatActivePhase).toBe('tool');
 });
 
 // ── toolcard 并发编号——对齐 CH2：并发批次 [icon n/m]；单次保持现状 ──
@@ -466,24 +464,48 @@ test('chatRenderHistory 渲染 retry 块（A55 持久化面）', () => {
   expect(rb.classList.contains('resolved')).toBe(true);
 });
 
-// ── E 系列：四态相位切换（F2.4 自旧 chat.test.mjs 迁移至 view 协议）──
-test('E 四态相位切换——link/think/tool/reply 事件驱动', () => {
-  // link：idle 发送进入链路态（chatSend 走 command 总线 + 本地插话队列）
+// ── A59：六态状态条——数据源 = SSE sessionstate 推送（计时单源在后端；前端零轮询、零自算）──
+test('A59 六态状态条——sessionstate 驱动渲染（六态时长 + 当前态高亮 + 请求次数）', () => {
+  // 发送——清运行态（数据源 = SSE sessionstate，无前端轮询）
   window.chatState = 'idle';
   window.chatInput.value = '你好';
   window.chatSend();
-  expect(window.chatActivePhase).toBe('link');
   expect(window.chatPending.length).toBe(1);
   expect(window.chatState).toBe('sending');
-  // think：首 reasoning
-  window.chatOnView({ seq: 1, renderType: 'stream', payload: { kind: 'reasoning', text: '思考中' }, replaceSeq: -1 });
-  expect(window.chatActivePhase).toBe('think');
-  // tool：toolcard
-  window.chatOnView({ seq: 2, renderType: 'toolcard', payload: { name: 'time', arguments: '{}', result: 'R' }, replaceSeq: -1 });
-  expect(window.chatActivePhase).toBe('tool');
-  // reply：首 text
-  window.chatOnView({ seq: 3, renderType: 'stream', payload: { kind: 'text', text: '回复' }, replaceSeq: -1 });
-  expect(window.chatActivePhase).toBe('reply');
+  expect(window.chatRunState.state).toBe('');
+  // 服务端推送本猫运行态块——六态时长 + 当前态 run + 请求次数
+  window.chatOnSessionState({ sessionId: 'majordomo', runState: 'run', runMs: { link: 320, wait: 480, think: 28500, tool: 773, run: 11449, reply: 2400 }, requests: 5 });
+  const bar = chatStatus;
+  expect(bar.textContent).toContain('🔗 链路 0.3s');
+  expect(bar.textContent).toContain('⏳ 等待 0.5s');
+  expect(bar.textContent).toContain('🧠 思考 28.5s');
+  expect(bar.textContent).toContain('🔧 工具 0.8s');
+  expect(bar.textContent).toContain('⚙️ 执行 11.4s');
+  expect(bar.textContent).toContain('💬 回复 2.4s');
+  expect(bar.textContent).toContain('⏱ 总 43.9s');
+  expect(bar.textContent).toContain('🔄 请求 5 次');
+  // 当前态高亮（呼吸动效类）
+  expect(bar.querySelector('.st.run').classList.contains('active')).toBe(true);
+  // 畸形载荷（无 sessionId）——忽略（状态条不动）
+  window.chatOnSessionState({ frame: 102 });
+  expect(bar.textContent).toContain('⚙️ 执行 11.4s');
+  // 轮终态——清运行态（六态段清空）
+  window.chatPhaseReset();
+  expect(window.chatRunState.state).toBe('');
+  expect(bar.textContent).not.toContain('⚙️ 执行');
+  expect(bar.textContent).not.toContain('🔄 请求');
+});
+
+// ── A59：状态条零值边界——非活跃零值态跳过、活跃零值态仍显示、requests=0 不显示 ──
+test('A59 状态条零值边界——零值态跳过 + 当前态零值仍显示', () => {
+  window.chatRunState = { state: 'link', ms: { link: 0, wait: 0, think: 0, tool: 0, run: 0, reply: 0 }, requests: 0 };
+  window.chatRenderStatus();
+  const bar = chatStatus;
+  expect(bar.textContent).toContain('🔗 链路 0.0s');
+  expect(bar.textContent).not.toContain('思考');
+  expect(bar.textContent).not.toContain('执行');
+  expect(bar.textContent).not.toContain('⏱ 总');
+  expect(bar.textContent).not.toContain('🔄');
 });
 
 // ── E 系列：Token 统计（F2.4 迁移）──
@@ -721,9 +743,9 @@ test('chatRenderHistory 大数 usage 文本——k/M 格式化生效（context �
   expect(chatInfo.textContent).toContain('前文 998.88k tokens');
 });
 
-// ── 改动四：roundsum 轮末统计气泡 ──
-test('view roundsum 渲染独立气泡（token + 工具次数 + 四态用时 + 总耗时）', () => {
-  window.chatOnView({ seq: 1, renderType: 'roundsum', payload: { type: 'roundsum', data: { prompt: 769770, completion: 3550, cacheHit: 765700, miss: 4070, toolCount: 6, elapsedMs: 76200, phases: { link: 200, think: 28500, tool: 45100, reply: 2400 } } }, replaceSeq: -1 });
+// ── 改动四：roundsum 轮末统计气泡（A59——六态用时 + 请求次数）──
+test('view roundsum 渲染独立气泡（token + 工具/请求次数 + 六态用时 + 总耗时）', () => {
+  window.chatOnView({ seq: 1, renderType: 'roundsum', payload: { type: 'roundsum', data: { prompt: 769770, completion: 3550, cacheHit: 765700, miss: 4070, toolCount: 6, requests: 5, elapsedMs: 76200, phases: { wait: 480, link: 200, think: 28500, tool: 773, run: 45100, reply: 2400 } } }, replaceSeq: -1 });
   const rs = chatMsgs.querySelector('.chat-bubble.roundsum');
   expect(rs).not.toBeNull();
   expect(rs.textContent).toContain('本轮统计');
@@ -732,11 +754,15 @@ test('view roundsum 渲染独立气泡（token + 工具次数 + 四态用时 + �
   expect(rs.textContent).toContain('cache 765.70k');
   expect(rs.textContent).toContain('miss 4.07k');
   expect(rs.textContent).toContain('🎯99.5%');
-  expect(rs.textContent).toContain('🔧 工具 6 次');
+  expect(rs.textContent).toContain('🔧 工具 6 次 · 🔄 请求 5 次');
+  expect(rs.textContent).toContain('链路 0.2s');
+  expect(rs.textContent).toContain('等待 0.5s');
   expect(rs.textContent).toContain('思考 28.5s');
-  expect(rs.textContent).toContain('工具 45.1s');
+  expect(rs.textContent).toContain('执行 45.1s');
   expect(rs.textContent).toContain('回复 2.4s');
   expect(rs.textContent).toContain('总计 1分16.2秒');
+  // idle 不入载荷——不产生对应行
+  expect(rs.textContent).not.toContain('空闲');
 });
 
 test('chatRenderHistory roundsum 块渲染（历史重建保留轮末统计）', () => {
@@ -757,6 +783,8 @@ test('chatRenderHistory roundsum 块渲染（历史重建保留轮末统计）',
   expect(rs2.textContent).toContain('🎯83.3%');
   expect(rs2.textContent).toContain('🔧 工具 2 次');
   expect(rs2.textContent).toContain('总计 15.0s');
+  // 旧数据兼容——无 requests 字段时不显示请求段（历史块零迁移）
+  expect(rs2.textContent).not.toContain('🔄 请求');
 });
 
 // ── 外观层优化：思考折叠摘要——首行 +（N行M字符已省略显示）+ 末行 ──
@@ -792,17 +820,17 @@ test('chatFmtMs 三级进位——<60s 秒 / ≥60s 分 / ≥3600s 小时', () =
   expect(window.chatFmtMs(7200000)).toBe('2小时0分0.0秒');
 });
 
-// ── 外观层优化：状态条总时长——四态累计 + ⏱ 总（时间走 chatFmtMs 进位）──
-test('chatRenderStatus 总时长——四态累计（秒进位分）', () => {
-  window.chatActivePhase = null;
-  window.chatPhaseStart = 0;
-  window.chatPhaseTimes = { link: 10, think: 65, tool: 0, reply: 3 };
+// ── 外观层优化：状态条时长进位——秒/分三级进位（后端毫秒值驱动；时间走 chatFmtMs）──
+test('A59 状态条时长进位——后端毫秒值走秒/分进位', () => {
+  window.chatRunState = { state: '', ms: { link: 10000, think: 65000, run: 3000 }, requests: 0 };
   window.chatRenderStatus();
   expect(chatStatus.textContent).toContain('⏱ 总');
   expect(chatStatus.textContent).toContain('1分18.0秒');  // 10+65+3=78s
-  // 单态时间走 chatFmtMs——分进位
-  expect(chatStatus.textContent).toContain('思考 1分5.0秒');
-  expect(chatStatus.textContent).toContain('链路 10.0s');
+  expect(chatStatus.textContent).toContain('🧠 思考 1分5.0秒');
+  expect(chatStatus.textContent).toContain('🔗 链路 10.0s');
+  expect(chatStatus.textContent).toContain('⚙️ 执行 3.0s');
+  // 清场——不把运行态留给后续用例
+  window.chatPhaseReset();
 });
 
 // ── F6 竞态补齐（P20-P2-1 回归）——整块/工具卡到达 seal 残留 reason 流式容器 ──

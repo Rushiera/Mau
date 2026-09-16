@@ -58,6 +58,8 @@
         var es = new EventSource('/api/v1/stream');
         es.addEventListener('view', function (ev) { chatOnView(JSON.parse(ev.data)); });
         es.addEventListener('note', function (ev) { noteOnEvent(JSON.parse(ev.data)); });   // M4c——Note 状态实时重绘
+        // A59——运行态：本猫运行态（sessionstate）变化时推送 → 状态条；空闲期零推送（前端零轮询、零自算计时）
+        es.addEventListener('sessionstate', function (ev) { chatOnSessionState(JSON.parse(ev.data)); });
         es.onerror = function () { chatInfo.textContent = 'SSE 断线——自动重连...'; };
         es.onopen = function () {
             // 重连成功兜底——无条件重拉历史（CHAT_SESSION 动态更新 + 历史重绘；sending 态额外清容器）

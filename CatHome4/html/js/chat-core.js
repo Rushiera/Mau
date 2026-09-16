@@ -19,38 +19,27 @@ var chatPending = [];              // 插话队列——本地发送记录（use
 var SYSTEM_AUTO_PREFIX = '[SystemAuto] ';   // 系统自动消息前缀（前端常量一处定义，微调只动此行）
 var chatPendingReset = false;      // 会话重置待确认——chatNewSession 置位；session_reset/chatdone 消费（miss 兜底）
 
-// E 系列——四态状态条（link 链路/think 思考/tool 工具/reply 回复）+ 每态计时 + Token 统计（CH2 对话流形态移植）
-var chatPhases = [
+// A59——六态状态条（链路/等待/思考/工具/执行/回复）：数据源 = 后端权威运行态（快照 sessions 段 runState/runMs/requests）——计时单源在后端，前端只渲染不自算
+var chatPhaseMeta = [
     { key: 'link', label: '链路', icon: '🔗' },
+    { key: 'wait', label: '等待', icon: '⏳' },
     { key: 'think', label: '思考', icon: '🧠' },
     { key: 'tool', label: '工具', icon: '🔧' },
+    { key: 'run', label: '执行', icon: '⚙️' },
     { key: 'reply', label: '回复', icon: '💬' }
 ];
-var chatActivePhase = null;        // 当前态 key（null=无活跃轮）
-var chatPhaseStart = 0;            // 当前态开始时间戳（ms）
-var chatPhaseTimes = { link: 0, think: 0, tool: 0, reply: 0 };   // 各态已完成秒数（累计）
+var chatRunState = { state: '', ms: {}, requests: 0 };   // 后端运行态快照（本猫会话条目——id 即猫 key；数据源 = SSE patch 推送，前端零轮询）
 var chatUsage = { prompt: 0, completion: 0, cacheHit: 0, sessionPrompt: 0, sessionCompletion: 0, sessionCacheHit: 0 };       // Token 双级——轮级（usage 事件覆盖式累计）+ 会话级（后端跨轮累加，仅新会话归零）
-var chatStatusTimer = null;        // 状态条 500ms 刷新定时器
 
-function chatPhaseEnter(key) {
-    // 相位切换——前一态结算 + 新态起表（事件驱动；每态计时独立）
-    var now = Date.now();
-    if (chatActivePhase && chatActivePhase !== key && chatPhaseStart > 0) {
-        chatPhaseTimes[chatActivePhase] = chatPhaseTimes[chatActivePhase] + (now - chatPhaseStart) / 1000;
-    }
-    if (chatActivePhase !== key) {
-        chatActivePhase = key;
-        chatPhaseStart = now;
-    }
+function chatRunStart() {
+    // 活跃轮开始——清运行态（数据源 = SSE patch 推送；前端零轮询、零自算计时）
+    chatRunState = { state: '', ms: {}, requests: 0 };
     chatRenderStatus();
 }
 
 function chatPhaseReset() {
-    // 终态/失败——状态条全部清零隐藏（保留 usage 累计——chatdone 后 token 统计需持续可见）
-    chatActivePhase = null;
-    chatPhaseStart = 0;
-    chatPhaseTimes = { link: 0, think: 0, tool: 0, reply: 0 };
-    if (chatStatusTimer) { clearInterval(chatStatusTimer); chatStatusTimer = null; }
+    // 终态/失败——清运行态（保留 usage 累计——chatdone 后 token 统计需持续可见）
+    chatRunState = { state: '', ms: {}, requests: 0 };
     chatRenderStatus();
 }
 
@@ -61,25 +50,38 @@ function chatPhaseResetFull() {
     chatRenderStatus();
 }
 
+function chatOnSessionState(d) {
+    // 运行态推送——本猫运行态块（服务端变化才推；状态条唯一数据源——空闲期零推送、前端零轮询）
+    if (!d || !d.sessionId) { return; }
+    chatRunState = {
+        state: d.runState || '',
+        ms: d.runMs || {},
+        requests: d.requests || 0
+    };
+    chatRenderStatus();
+}
+
 function chatRenderStatus() {
-    // 状态条渲染——已完成态暗色 + 当前态高亮 + 实时时间（秒→分→小时进位）+ 总时长 + 右侧 Token 统计（轮级 + 会话级）
+    // 状态条渲染——六态完成后端时长（当前态高亮 + 呼吸动效）+ ⏱ 总 + 请求次数 + 右侧 Token 统计（轮级 + 会话级）
     var bar = document.getElementById('chatStatus');
     if (!bar) { return; }
     var html = '';
+    var ms = chatRunState.ms || {};
+    var active = chatRunState.state || '';
     var totalMs = 0;
-    for (var i = 0; i < chatPhases.length; i++) {
-        var p = chatPhases[i];
-        var sec = chatPhaseTimes[p.key];
-        if (chatActivePhase === p.key && chatPhaseStart > 0) {
-            sec = sec + (Date.now() - chatPhaseStart) / 1000;
-        }
-        if (sec > 0) { totalMs = totalMs + sec * 1000; }
-        if (sec <= 0 && chatActivePhase !== p.key) { continue; }
-        var cls = (chatActivePhase === p.key) ? 'active' : '';
-        html += '<span class="st ' + p.key + ' ' + cls + '">' + p.icon + ' ' + p.label + ' ' + chatFmtMs(sec * 1000) + '</span>';
+    for (var i = 0; i < chatPhaseMeta.length; i++) {
+        var p = chatPhaseMeta[i];
+        var v = ms[p.key] || 0;
+        totalMs = totalMs + v;
+        if (v <= 0 && active !== p.key) { continue; }
+        var cls = (active === p.key) ? 'active' : '';
+        html += '<span class="st ' + p.key + ' ' + cls + '">' + p.icon + ' ' + p.label + ' ' + chatFmtMs(v) + '</span>';
     }
     if (totalMs > 0) {
         html += '<span class="st total">⏱ 总 ' + chatFmtMs(totalMs) + '</span>';
+    }
+    if (chatRunState.requests > 0) {
+        html += '<span class="st req">🔄 请求 ' + chatRunState.requests + ' 次</span>';
     }
     if (chatUsage.prompt > 0 || chatUsage.completion > 0) {
         var miss = chatUsage.prompt - chatUsage.cacheHit;
@@ -98,12 +100,6 @@ function chatRenderStatus() {
             + '</span>';
     }
     bar.innerHTML = html;
-    if (chatActivePhase && !chatStatusTimer) {
-        chatStatusTimer = setInterval(chatRenderStatus, 500);
-    } else if (!chatActivePhase && chatStatusTimer) {
-        clearInterval(chatStatusTimer);
-        chatStatusTimer = null;
-    }
 }
 
 function chatSetState(s) {
@@ -229,7 +225,7 @@ function chatOnView(d) {
 function chatOnStream(seq, payload) {
     chatKeepAlive();
     if (payload.kind === 'reasoning') {
-        // 思考流式——独立气泡流式展开（增量可见）；首 reasoning 进入思考态
+        // 思考流式——独立气泡流式展开（增量可见）
         if (!viewContainers[seq]) {
             // 新思考容器——上一轮文本流式已终结（多轮工具循环残留兜底）
             chatSealStreams();
@@ -238,7 +234,6 @@ function chatOnStream(seq, payload) {
             var det = chatReasonBlock('', true);
             b.appendChild(det);
             viewContainers[seq] = { type: 'reason', bubble: b, reasonPre: det.querySelector('div') };
-            chatPhaseEnter('think');
         }
         var rc = viewContainers[seq];
         rc.reasonPre.textContent = rc.reasonPre.textContent + (payload.text || '');
@@ -253,8 +248,6 @@ function chatOnStream(seq, payload) {
             var tb = chatBubble('assistant');
             tb.classList.add('streaming');
             viewContainers[seq] = { type: 'text', bubble: tb, reasonPre: null };
-            // E 系列——首 text 进入回复态
-            chatPhaseEnter('reply');
         }
         var tc = viewContainers[seq];
         tc.bubble.classList.remove('error');
@@ -284,7 +277,6 @@ function chatOnText(seq, replaceSeq, payload) {
         b.innerHTML = html;
         chatAppendNodeActions(b, msgIndex);
     }
-    chatPhaseEnter('reply');
 }
 
 function chatOnReason(seq, replaceSeq, payload) {
@@ -303,7 +295,6 @@ function chatOnReason(seq, replaceSeq, payload) {
         var b = chatBubble('assistant', 'reason');
         b.appendChild(chatReasonBlock(content));
     }
-    chatPhaseEnter('think');
 }
 
 function chatOnToolCard(payload) {
@@ -313,7 +304,6 @@ function chatOnToolCard(payload) {
     chatSealStreams();
     var tb = chatBubble('assistant', 'tool');
     tb.appendChild(chatToolCard(payload));
-    chatPhaseEnter('tool');
 }
 
 // A55——重试气泡文本（渲染单例内文本面）
@@ -517,9 +507,8 @@ function chatSend() {
     if (chatState === 'idle') {
         // idle 发送——清阶段残留（usage 会话累计保留——跨轮不清零；sending 态插话不清——不破坏当前流式渲染）
         viewContainers = {};
-        chatPhaseReset();
-        // E 系列——发送即进入链路态（插话不干扰活跃轮计时）
-        chatPhaseEnter('link');
+        // A59——启动后端运行态拉取（发送即活跃轮；插话轮沿用已启动的拉取）
+        chatRunStart();
     }
     chatSetState('sending');
     chatKeepAlive();

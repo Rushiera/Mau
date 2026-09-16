@@ -127,7 +127,7 @@ namespace CH4
         /// <summary>当前态开始时间戳——Stopwatch.GetTimestamp</summary>
         private long _phaseStartTick;
 
-        /// <summary>七态累计毫秒——idle/wait/link/think/tool/run/reply（态切换结算）</summary>
+        /// <summary>七态累计毫秒——idle/wait/link/think/tool/run/reply（态切换结算；idle 恒 0——空闲不计时）</summary>
         private long[] _phaseAccumMs = new long[PhaseCount];
 
         /// <summary>态字段锁——后台消费线程切态、主线程结算与读面（design-ch4-llm §2.1 线程安全）</summary>
@@ -136,7 +136,7 @@ namespace CH4
         /// <summary>本轮 API 请求次数——每次 LaunchLlm 累加（含重试重发与空回复续传；= link 段数）</summary>
         private int _requestCount;
 
-        /// <summary>运行态常量——空闲（本地·空转：轮未开始或收尾中）</summary>
+        /// <summary>运行态常量——空闲（本地·空转：轮未开始或收尾中；不计时——只作态名）</summary>
         private const int PhaseIdle = 0;
 
         /// <summary>运行态常量——等待（本地·退避：重试退避期间；长度由本地决定）</summary>
@@ -1087,23 +1087,34 @@ namespace CH4
             }
         }
 
-        /// <summary>
-        /// 运行态切换——结算旧态累计毫秒 + 进入新态（七态：idle/wait/link/think/tool/run/reply；同态跳过；锁内）。
-        /// </summary>
+        /// <summary>运行态切换——结算旧态累计毫秒 + 进入新态（七态：idle/wait/link/think/tool/run/reply；锁内）；同态连续计时（重复事件不重置起表）；idle 不计时——只作态名。</summary>
         /// <param name="kind">目标态（PhaseIdle/PhaseWait/PhaseLink/PhaseThink/PhaseTool/PhaseRun/PhaseReply）</param>
         private void PhaseEnter(int kind)
         {
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             lock (_phaseLock)
             {
-                if (_phaseKind >= 0 && _phaseStartTick > 0 && _phaseKind != kind)
+                // 同态——连续计时：不结算、不重置起表（重复事件不吞时长；2026-09-16 实测修正）
+                if (_phaseKind == kind)
+                {
+                    return;
+                }
+                if (_phaseKind >= 0 && _phaseStartTick > 0)
                 {
                     long ms = (now - _phaseStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
                     if (ms < 0) { ms = 0; }
                     _phaseAccumMs[_phaseKind] = _phaseAccumMs[_phaseKind] + ms;
                 }
                 _phaseKind = kind;
-                _phaseStartTick = now;
+                // 空闲态不计时——idle 只作态名（轮未开始 / 收尾中）；计时效用为零，且实时增量会让快照 sessions 段每帧脏变化
+                if (kind == PhaseIdle)
+                {
+                    _phaseStartTick = 0;
+                }
+                else
+                {
+                    _phaseStartTick = now;
+                }
             }
         }
 
@@ -1145,9 +1156,7 @@ namespace CH4
             }
             return copy;
         }
-        /// <summary>
-        /// 运行态读取面——当前态名 + 七态累计毫秒表 + 本轮请求次数（锁内快照；观测面与前端拉取口子数据源）。
-        /// </summary>
+        /// <summary>运行态读取面——当前态名 + 七态累计毫秒表（idle 恒 0——空闲不计时）+ 本轮请求次数（锁内快照；观测面与前端拉取口子数据源）。</summary>
         /// <param name="name">输出：当前态名（idle/wait/link/think/tool/run/reply）</param>
         /// <param name="requests">输出：本轮 API 请求次数（= link 段数）</param>
         /// <returns>七态累计毫秒表（态名 → 毫秒）</returns>
@@ -1185,9 +1194,7 @@ namespace CH4
                 DataBox.Set<string>("global", "chat_state:" + _catKey, state);
             }
         }
-        /// <summary>
-        /// 运行态摘要行——当前态 + 七态毫秒 + 本轮请求次数（失败轮统计留档——日志观测面；正常轮由 roundsum 承载）。
-        /// </summary>
+        /// <summary>运行态摘要行——当前态 + 六态毫秒（idle 不计时故不入行）+ 本轮请求次数（失败轮统计留档——日志观测面；正常轮由 roundsum 承载）。</summary>
         /// <returns>摘要文本（state=… link=…ms … requests=N）</returns>
         private string BuildRunStateSummary()
         {
@@ -1195,7 +1202,6 @@ namespace CH4
             int requests;
             Dictionary<string, long> ms = GetRunState(out name, out requests);
             return "state=" + name
-                + " idle=" + ms["idle"].ToString() + "ms"
                 + " wait=" + ms["wait"].ToString() + "ms"
                 + " link=" + ms["link"].ToString() + "ms"
                 + " think=" + ms["think"].ToString() + "ms"
@@ -1204,10 +1210,28 @@ namespace CH4
                 + " reply=" + ms["reply"].ToString() + "ms"
                 + " requests=" + requests.ToString();
         }
-
         /// <summary>
-        /// 构建 roundsum 载荷——本轮 Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 七态用时（CloseRound 推送/落盘数据源）。
+        /// 本猫运行态块 JSON——对话端口增量推送数据源（状态条；变化才推、不变不推——前端零轮询）。
         /// </summary>
+        /// <returns>运行态 JSON（sessionId / runState / runMs 七键 / requests）</returns>
+        public string BuildRunStateJson()
+        {
+            string name;
+            int requests;
+            Dictionary<string, long> ms = GetRunState(out name, out requests);
+            return "{\"sessionId\":" + JsonUtil.Serialize(Id)
+                + ",\"runState\":\"" + name + "\""
+                + ",\"runMs\":{\"idle\":" + ms["idle"].ToString()
+                + ",\"wait\":" + ms["wait"].ToString()
+                + ",\"link\":" + ms["link"].ToString()
+                + ",\"think\":" + ms["think"].ToString()
+                + ",\"tool\":" + ms["tool"].ToString()
+                + ",\"run\":" + ms["run"].ToString()
+                + ",\"reply\":" + ms["reply"].ToString() + "}"
+                + ",\"requests\":" + requests.ToString() + "}";
+        }
+
+        /// <summary>构建 roundsum 载荷——本轮 Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 六态用时（idle 不计时故不入载荷；CloseRound 推送/落盘数据源）。</summary>
         /// <returns>roundsum 视图载荷 JSON（{"type":"roundsum","data":{...}}）</returns>
         private string BuildRoundSumJson()
         {
@@ -1231,8 +1255,7 @@ namespace CH4
                 + ",\"toolCount\":" + _toolCallCount.ToString()
                 + ",\"requests\":" + requests.ToString()
                 + ",\"elapsedMs\":" + elapsedMs.ToString()
-                + ",\"phases\":{\"idle\":" + ms["idle"].ToString()
-                + ",\"wait\":" + ms["wait"].ToString()
+                + ",\"phases\":{\"wait\":" + ms["wait"].ToString()
                 + ",\"link\":" + ms["link"].ToString()
                 + ",\"think\":" + ms["think"].ToString()
                 + ",\"tool\":" + ms["tool"].ToString()
@@ -1344,7 +1367,7 @@ namespace CH4
                     LaunchLlm();
                     return;
                 }
-                // 运行态——进入收尾（轮末落盘/统计计入 idle——design-ch4-llm §2.1）
+                // 运行态——进入收尾（idle 只作态名不计时；轮末落盘与统计已由 PhaseSettle 结算——design-ch4-llm §2.1）
                 PhaseEnter(PhaseIdle);
                 _phase = ChatPhase.Done;
                 return;

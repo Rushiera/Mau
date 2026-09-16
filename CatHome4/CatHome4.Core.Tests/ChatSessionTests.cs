@@ -58,6 +58,12 @@ namespace CatHome4.Core.Tests
             /// <summary>纯空格次数——前 N 次调用产空格（0=每次）</summary>
             public int WhitespaceReplyTimes = 0;
 
+            /// <summary>运行态连续计时验证——思考增量块数（≤1 不生效；>1 产多块 Reasoning 同态事件）</summary>
+            public int ChunkCount = 0;
+
+            /// <summary>运行态连续计时验证——增量块间隔毫秒（ChunkCount &gt; 1 时生效）</summary>
+            public int ChunkSleepMs = 0;
+
             /// <summary>P6 中止模拟——产 Text 后挂起等待此事件（Pause 时 cts.Cancel → WaitOne 抛 OCE；null=不挂起）</summary>
             public AutoResetEvent HoldStream;
 
@@ -130,6 +136,15 @@ namespace CatHome4.Core.Tests
                 if (UsageJson != null && UsageJson.Length > 0)
                 {
                     yield return new LlmStreamEvent(LlmStreamKind.Usage, UsageJson);
+                }
+                // 运行态连续计时验证——多块思考增量（同态重复事件：真实链路每个 reasoning 增量帧切一次态）
+                if (ChunkCount > 1)
+                {
+                    for (int ci = 0; ci < ChunkCount; ci = ci + 1)
+                    {
+                        yield return new LlmStreamEvent(LlmStreamKind.Reasoning, "思");
+                        await Task.Delay(ChunkSleepMs);
+                    }
                 }
                 yield return new LlmStreamEvent(LlmStreamKind.Text, ReplyText);
                 await Task.Yield();
@@ -432,7 +447,7 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// roundsum 轮末统计——CloseRound 推送（Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 七态用时；chatdone stats 带 context 前文长度）。
+        /// roundsum 轮末统计——CloseRound 推送（Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 六态用时；chatdone stats 带 context 前文长度）。
         /// </summary>
         [Fact]
         public void RoundSum_PushedOnCloseRound()
@@ -450,7 +465,7 @@ namespace CatHome4.Core.Tests
             List<string> rsEvents;
             Assert.True(host.ViewEvents.TryGetValue("roundsum", out rsEvents));
             Assert.True(rsEvents.Count >= 1);
-            // 载荷结构——type=roundsum + data 六字段 + phases 七态（2026-09-16 运行态七态）
+            // 载荷结构——type=roundsum + data 字段 + phases 六态（idle 不计时不入载荷——A59）
             using (JsonDocument rd = JsonDocument.Parse(rsEvents[0]))
             {
                 JsonElement root = rd.RootElement;
@@ -464,13 +479,15 @@ namespace CatHome4.Core.Tests
                 // 请求次数——纯文本轮 = 1 次 API 请求（link 段数）
                 Assert.Equal(1, data.GetProperty("requests").GetInt64());
                 JsonElement phases = data.GetProperty("phases");
-                Assert.True(phases.GetProperty("idle").GetInt64() >= 0);
                 Assert.True(phases.GetProperty("wait").GetInt64() >= 0);
                 Assert.True(phases.GetProperty("link").GetInt64() >= 0);
                 Assert.True(phases.GetProperty("think").GetInt64() >= 0);
                 Assert.True(phases.GetProperty("tool").GetInt64() >= 0);
                 Assert.True(phases.GetProperty("run").GetInt64() >= 0);
                 Assert.True(phases.GetProperty("reply").GetInt64() >= 0);
+                // idle 不计时——不入 roundsum 载荷（A59 六态拼接）
+                JsonElement idlePhase;
+                Assert.False(phases.TryGetProperty("idle", out idlePhase));
             }
             // chatdone stats 带 context（单次前文长度——非累计）
             List<string> ctrlEvents;
@@ -1056,7 +1073,7 @@ namespace CatHome4.Core.Tests
             Assert.False(pulled);
         }
         /// <summary>
-        /// 运行态七态——工具轮：requests=2（工具前后各一次 API 请求）；七态表可读；轮末当前态归 idle（2026-09-16 基建事实态）。
+        /// 运行态七态——工具轮：requests=2（工具前后各一次 API 请求）；七态表可读（idle 不计时恒 0）；轮末当前态归 idle（2026-09-16 基建事实态 + A59 去 idle 计时）。
         /// </summary>
         [Fact]
         public void RunState_SevenPhases_ToolRound()
@@ -1089,6 +1106,30 @@ namespace CatHome4.Core.Tests
             Assert.True(ms["link"] >= 0);
             Assert.True(ms["reply"] >= 0);
             Assert.True(ms["run"] >= 0);
+            // idle 不计时——只作态名（恒 0：空闲期 sessions 段不脏变化，A59）
+            Assert.Equal(0, ms["idle"]);
+        }
+
+        /// <summary>
+        /// 运行态连续计时——同态重复事件不重置起表：多块思考增量累计覆盖全程（2026-09-16 实测缺陷修正——旧实现同态重置只留最后一段）。
+        /// </summary>
+        [Fact]
+        public void RunState_SameStateRepeat_KeepsAccumulating()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "完成";
+            llm.ChunkCount = 4;
+            llm.ChunkSleepMs = 30;
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("连续计时");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            string stateName;
+            int requests;
+            Dictionary<string, long> ms = session.GetRunState(out stateName, out requests);
+            // 四块思考增量各间隔 30ms——think 累计覆盖三段间隔（≥60ms 留抖动余量；旧实现同态重置只留最后一段 ≈0ms）
+            Assert.True(ms["think"] >= 60, "think 累计应覆盖全部增量段（实际 " + ms["think"].ToString() + "ms）");
+            Assert.Equal("idle", stateName);
         }
     }
 }
