@@ -111,6 +111,8 @@ function chatRenderStatus() {
             + '</span>';
     }
     bar.innerHTML = html;
+    // 桌宠——状态渲染汇聚点回调（chat-pet.js；未加载时静默跳过）
+    if (typeof chatPetSync === 'function') { chatPetSync(); }
 }
 
 function chatSetState(s) {

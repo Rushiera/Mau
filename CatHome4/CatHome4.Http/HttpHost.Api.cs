@@ -298,11 +298,9 @@ namespace CatHome4.Http
             return "0";
         }
 
-        /// <summary>
-        /// 静态资源服务——html/css|js/{file}（2026-08-25 模块化拆分新增；路径穿越校验 GetFullPath+StartsWith；禁缓存同 index 策略）。
-        /// </summary>
+        /// <summary>静态资源服务——html/css|js|pet/{file}（路径穿越校验 GetFullPath+StartsWith；禁缓存同 index 策略；二进制安全——Bytes 响应）。</summary>
         /// <param name="ctx">HTTP 上下文</param>
-        /// <param name="subDir">子目录名（css/js）</param>
+        /// <param name="subDir">子目录名（css/js/pet）</param>
         /// <param name="mime">响应 MIME</param>
         /// <returns>文件响应；未找到/越界 404</returns>
         private IResult ServeStatic(HttpContext ctx, string subDir, string mime)
@@ -327,8 +325,9 @@ namespace CatHome4.Http
             }
             // 禁缓存——前端频繁迭代（同 index 策略）
             ctx.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
-            string content = System.IO.File.ReadAllText(filePath);
-            return Results.Text(content, mime);
+            // 二进制安全——文本（css/js）与二进制（pet webp）共用；ReadAllText 会破坏二进制资源
+            byte[] bytes = System.IO.File.ReadAllBytes(filePath);
+            return Results.Bytes(bytes, mime);
         }
     }
 }

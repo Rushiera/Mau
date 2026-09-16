@@ -39,6 +39,8 @@
     </div>
     <!-- E 系列——状态区（四态计时 + Token 统计）：最底部持久存在 -->
     <div id="chatStatus"></div>
+    <!-- 桌宠（纯前端渲染）——fixed 浮动层不占布局；纯展示（pointer-events:none，不拦对话区操作） -->
+    <div id="chatPet"><img id="chatPetImgA" alt="桌宠"><img id="chatPetImgB" alt=""></div>
 
     <!-- F2.3 引导层——对话核心逻辑在外部模块（js/chat-md.js 渲染器 + js/chat-view.js 渲染面 + js/chat-core.js 状态分发 + js/chat-note.js——对话逻辑唯一真相源）；本页只承接引导：SSE/按钮绑定（防御式）/初始化 -->
     <!-- 两页共用前端工具（loadUiVersion/applyUiConfig/loadUiConfig）——js/ui-common.js 单一定义（消除内联副本） -->
@@ -50,6 +52,8 @@
     <script src="js/chat-view.js?v=__V__"></script>
     <script src="js/chat-core.js?v=__V__"></script>
     <script src="js/chat-note.js?v=__V__"></script>
+    <!-- 桌宠——纯前端渲染（js/chat-pet.js）：读运行态与停留计时调整形态；须在 chat-core.js 之后加载 -->
+    <script src="js/chat-pet.js?v=__V__"></script>
     <script>
         loadUiVersion();
         loadUiConfig();
@@ -60,9 +64,10 @@
         es.addEventListener('note', function (ev) { noteOnEvent(JSON.parse(ev.data)); });   // M4c——Note 状态实时重绘
         // A59——运行态：本猫运行态（sessionstate）变化时推送 → 状态条；空闲期零推送（前端零轮询、零自算计时）
         es.addEventListener('sessionstate', function (ev) { chatOnSessionState(JSON.parse(ev.data)); });
-        es.onerror = function () { chatInfo.textContent = 'SSE 断线——自动重连...'; };
+        es.onerror = function () { chatInfo.textContent = 'SSE 断线——自动重连...'; chatPetSetOffline(true); };
         es.onopen = function () {
             // 重连成功兜底——无条件重拉历史（CHAT_SESSION 动态更新 + 历史重绘；sending 态额外清容器）
+            chatPetSetOffline(false);
             if (chatState === 'sending') {
                 viewContainers = {};
                 if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
@@ -114,6 +119,7 @@
 
         // [段4] 初始化——历史加载 + Note 兜底拉取（版本填充已在引导头部完成）
         chatLoadHistory();
+        chatPetInit();
         fetch('/api/v1/note').then(function (r) { return r.json(); }).then(function (j) { noteState = j; noteRender(); }).catch(function (e) { uiWarn('Note 兜底拉取', e); });
     </script>
 </body>

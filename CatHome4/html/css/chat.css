@@ -184,3 +184,11 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
     background: rgba(128, 128, 128, 0.18);
     color: #e0e0e0;
 }
+
+
+/* ============ 桌宠（纯前端渲染——js/chat-pet.js） ============ */
+/* 定位：对话页固定浮动层（右下角，输入区上方）——可交互（移入 hook / 点击 check，故开启指针事件） */
+/* 尺寸：素材原尺寸 1:1 显示（286x256——不作缩放，像素对齐最清晰） */
+#chatPet { position: fixed; right: 14px; bottom: 110px; width: 286px; height: 256px; z-index: 9999; pointer-events: auto; cursor: pointer; user-select: none; }
+/* 双层交叉溶解——两层绝对定位叠放，切换时新层淡入 / 旧层淡出（0.25s） */
+#chatPet img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 0.25s ease; -webkit-user-drag: none; user-select: none; }
