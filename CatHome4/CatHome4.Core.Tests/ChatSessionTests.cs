@@ -105,6 +105,8 @@ namespace CatHome4.Core.Tests
                 if (EmitRetry)
                 {
                     yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|1/3|ERR|TRANSPORT|模拟网络抖动");
+                    // 运行态七态——退避结束、重发开始（真实 Runtime：退避后重发前产 RetryResume；2026-09-16）
+                    yield return new LlmStreamEvent(LlmStreamKind.RetryResume, "");
                 }
                 // P6 中止——取消识别路径：产 Retrying 前挂起（Pause → cts.Cancel → OCE 冒泡——不产 retry 气泡；Runtime catch OCE throw 语义模拟）
                 if (EmitRetryThenCancel)
@@ -117,6 +119,8 @@ namespace CatHome4.Core.Tests
                 if (ToolCallsQueue.Count > 0)
                 {
                     string tc = ToolCallsQueue.Dequeue();
+                    // 运行态七态——工具决策流开始（真实 Runtime：首个 tool_calls 增量帧产一次；2026-09-16）
+                    yield return new LlmStreamEvent(LlmStreamKind.ToolCallsStart, "");
                     yield return new LlmStreamEvent(LlmStreamKind.ToolCalls, tc);
                     await Task.Yield();
                     yield return new LlmStreamEvent(LlmStreamKind.Done, "");
@@ -428,7 +432,7 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// roundsum 轮末统计——CloseRound 推送（Token 消耗 + 工具次数 + 总耗时 + 四态用时；chatdone stats 带 context 前文长度）。
+        /// roundsum 轮末统计——CloseRound 推送（Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 七态用时；chatdone stats 带 context 前文长度）。
         /// </summary>
         [Fact]
         public void RoundSum_PushedOnCloseRound()
@@ -446,7 +450,7 @@ namespace CatHome4.Core.Tests
             List<string> rsEvents;
             Assert.True(host.ViewEvents.TryGetValue("roundsum", out rsEvents));
             Assert.True(rsEvents.Count >= 1);
-            // 载荷结构——type=roundsum + data 五字段 + phases 四态
+            // 载荷结构——type=roundsum + data 六字段 + phases 七态（2026-09-16 运行态七态）
             using (JsonDocument rd = JsonDocument.Parse(rsEvents[0]))
             {
                 JsonElement root = rd.RootElement;
@@ -457,10 +461,15 @@ namespace CatHome4.Core.Tests
                 Assert.Equal(800, data.GetProperty("cacheHit").GetInt64());
                 Assert.Equal(200, data.GetProperty("miss").GetInt64());
                 Assert.True(data.GetProperty("elapsedMs").GetInt64() >= 0);
+                // 请求次数——纯文本轮 = 1 次 API 请求（link 段数）
+                Assert.Equal(1, data.GetProperty("requests").GetInt64());
                 JsonElement phases = data.GetProperty("phases");
+                Assert.True(phases.GetProperty("idle").GetInt64() >= 0);
+                Assert.True(phases.GetProperty("wait").GetInt64() >= 0);
                 Assert.True(phases.GetProperty("link").GetInt64() >= 0);
                 Assert.True(phases.GetProperty("think").GetInt64() >= 0);
                 Assert.True(phases.GetProperty("tool").GetInt64() >= 0);
+                Assert.True(phases.GetProperty("run").GetInt64() >= 0);
                 Assert.True(phases.GetProperty("reply").GetInt64() >= 0);
             }
             // chatdone stats 带 context（单次前文长度——非累计）
@@ -1045,6 +1054,41 @@ namespace CatHome4.Core.Tests
             }
             // 剩余 1 条不拉起——上下文无 [Note 未完成]（最后一条由 LLM 完成后自然结束）
             Assert.False(pulled);
+        }
+        /// <summary>
+        /// 运行态七态——工具轮：requests=2（工具前后各一次 API 请求）；七态表可读；轮末当前态归 idle（2026-09-16 基建事实态）。
+        /// </summary>
+        [Fact]
+        public void RunState_SevenPhases_ToolRound()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "完成";
+            // 单任务 Note（不触发 Note 自动拉起——剩余 0 条）
+            string tc = "[{\"id\":\"n1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":\\\"任务A\\\"}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("做任务");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            // 请求次数——工具轮 = 2 次 API 请求（工具前 + 工具后）
+            Assert.Equal(2, llm.CallCount);
+            // 运行态读取面——七态键齐 + 请求次数 + 轮末归 idle
+            string stateName;
+            int requests;
+            Dictionary<string, long> ms = session.GetRunState(out stateName, out requests);
+            Assert.Equal(2, requests);
+            Assert.Equal("idle", stateName);
+            Assert.True(ms.ContainsKey("idle"));
+            Assert.True(ms.ContainsKey("wait"));
+            Assert.True(ms.ContainsKey("link"));
+            Assert.True(ms.ContainsKey("think"));
+            Assert.True(ms.ContainsKey("tool"));
+            Assert.True(ms.ContainsKey("run"));
+            Assert.True(ms.ContainsKey("reply"));
+            // 本地态与远端态均可累计（数值非负——真实时长归后端单源）
+            Assert.True(ms["link"] >= 0);
+            Assert.True(ms["reply"] >= 0);
+            Assert.True(ms["run"] >= 0);
         }
     }
 }

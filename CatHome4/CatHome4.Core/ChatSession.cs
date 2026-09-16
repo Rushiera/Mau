@@ -121,26 +121,47 @@ namespace CH4
         /// <summary>本轮工具调用次数——工具 Dog 登记处累加（roundsum toolCount）</summary>
         private int _toolCallCount;
 
-        /// <summary>当前计时相位——PhaseLink/PhaseThink/PhaseTool/PhaseReply（-1=无活跃）</summary>
+        /// <summary>当前运行态——PhaseIdle/Wait/Link/Think/Tool/Run/Reply（-1=无活跃）</summary>
         private int _phaseKind = -1;
 
-        /// <summary>当前相位开始时间戳——Stopwatch.GetTimestamp</summary>
+        /// <summary>当前态开始时间戳——Stopwatch.GetTimestamp</summary>
         private long _phaseStartTick;
 
-        /// <summary>四态累计毫秒——link/think/tool/reply（相位切换结算）</summary>
-        private long[] _phaseAccumMs = new long[4];
+        /// <summary>七态累计毫秒——idle/wait/link/think/tool/run/reply（态切换结算）</summary>
+        private long[] _phaseAccumMs = new long[PhaseCount];
 
-        /// <summary>计时相位常量——链路（等待首流）</summary>
-        private const int PhaseLink = 0;
+        /// <summary>态字段锁——后台消费线程切态、主线程结算与读面（design-ch4-llm §2.1 线程安全）</summary>
+        private readonly object _phaseLock = new object();
 
-        /// <summary>计时相位常量——思考（reasoning 流）</summary>
-        private const int PhaseThink = 1;
+        /// <summary>本轮 API 请求次数——每次 LaunchLlm 累加（含重试重发与空回复续传；= link 段数）</summary>
+        private int _requestCount;
 
-        /// <summary>计时相位常量——工具（工具批执行）</summary>
-        private const int PhaseTool = 2;
+        /// <summary>运行态常量——空闲（本地·空转：轮未开始或收尾中）</summary>
+        private const int PhaseIdle = 0;
 
-        /// <summary>计时相位常量——回复（text 流）</summary>
-        private const int PhaseReply = 3;
+        /// <summary>运行态常量——等待（本地·退避：重试退避期间；长度由本地决定）</summary>
+        private const int PhaseWait = 1;
+
+        /// <summary>运行态常量——链路（远端·等待：请求发出到首个语义增量帧；长度由远端决定）</summary>
+        private const int PhaseLink = 2;
+
+        /// <summary>运行态常量——思考（远端·流：reasoning_content 增量）</summary>
+        private const int PhaseThink = 3;
+
+        /// <summary>运行态常量——工具（远端·流：LLM 输出 tool_calls 决策的流式过程）</summary>
+        private const int PhaseTool = 4;
+
+        /// <summary>运行态常量——执行（本地·程序过程：工具批发单到下一请求发出）</summary>
+        private const int PhaseRun = 5;
+
+        /// <summary>运行态常量——回复（远端·流：content 增量）</summary>
+        private const int PhaseReply = 6;
+
+        /// <summary>运行态态数——七态（索引与常量一一对应）</summary>
+        private const int PhaseCount = 7;
+
+        /// <summary>运行态名表——索引对应（JSON 产出与观测面文本化）</summary>
+        private static readonly string[] PhaseNames = { "idle", "wait", "link", "think", "tool", "run", "reply" };
 
         // [段3] 工具批
         /// <summary>工具批执行中——reload 拒绝检查面（任一会话 TRUE 即拒绝）</summary>
@@ -649,6 +670,9 @@ namespace CH4
             LlmMessage[] toSave = _context.GetMessages();
             _lastStats.EntryCount = toSave.Length;
             _store.AppendMeta(_lastStats);
+            // [段2b] 运行态——中断结算（失败/中止轮同出统计：L2 摘要留档——design-ch4-llm §2.1 终止语义）
+            PhaseSettle();
+            LogStore.Add("LLM", 2, "本轮运行态统计（中断）: " + BuildRunStateSummary(), "LLM");
             // [段3] 视图序号复位——流式容器由前端 seal（已显示内容保留）
             _textStreamSeq = 0;
             _reasonStreamSeq = 0;
@@ -666,7 +690,7 @@ namespace CH4
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
             _sawRetry = false;
-            DataBox.Set<string>("global", "chat_state", "idle");
+            SetChatState("idle");
             // [段5] 前端通知——control 事件（seal + 按钮复位）
             if (_httpHost != null)
             {
@@ -763,16 +787,20 @@ namespace CH4
             _usagePrompt = 0;
             _usageCompletion = 0;
             _usageCacheHit = 0;
-            // roundsum 统计——单次前文/工具计数/四态计时清零 + 轮次起表 + 进入 link 相位
+            // roundsum 统计——单次前文/工具计数/七态计时清零 + 请求计数清零 + 轮次起表 + 进入 link 相位
             _contextTokens = 0;
             _toolCallCount = 0;
+            _requestCount = 0;
             // 空回复续传计数——整轮清零（同 CH2 [段2.3] 每轮独立语义）
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
             _roundStartTick = System.Diagnostics.Stopwatch.GetTimestamp();
-            _phaseAccumMs = new long[4];
-            _phaseKind = -1;
-            _phaseStartTick = 0;
+            lock (_phaseLock)
+            {
+                _phaseAccumMs = new long[PhaseCount];
+                _phaseKind = -1;
+                _phaseStartTick = 0;
+            }
             PhaseEnter(PhaseLink);
             AppendMessage(_context.AddUserMessage(content));
             _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
@@ -782,7 +810,7 @@ namespace CH4
                 string userJson = "{\"content\":" + JsonUtil.Serialize(content) + ",\"source\":\"" + source + "\"}";
                 _httpHost.PushView("user", userJson, -1, 0);
             }
-            DataBox.Set<string>("global", "chat_state", "working");
+            SetChatState("working");
             LaunchLlm();
         }
 
@@ -806,6 +834,9 @@ namespace CH4
             });
             _phase = ChatPhase.LlmRunning;
             _phaseFrames = 0;
+            // 运行态——请求发出即链路等待（首轮/续轮/重试重发同路径；长度由远端决定——design-ch4-llm §2.1）
+            _requestCount = _requestCount + 1;
+            PhaseEnter(PhaseLink);
         }
 
         /// <summary>
@@ -857,7 +888,7 @@ namespace CH4
                             }
                         }
                         text.Append(ev.Text);
-                        // roundsum 四态计时——首个 Text 进入回复相位（link/think 结算）
+                        // 运行态——Text 增量到达即回复态（远端·流；长度由远端决定）
                         PhaseEnter(PhaseReply);
                         // P6 外观层转发——LLM 增量实时推送 SSE（协议 §4.2 llm 事件）
                         if (_httpHost != null)
@@ -880,7 +911,7 @@ namespace CH4
                             }
                         }
                         reasoning.Append(ev.Text);
-                        // roundsum 四态计时——首个 Reasoning 进入思考相位（link 结算）
+                        // 运行态——Reasoning 增量到达即思考态（远端·流；长度由远端决定）
                         PhaseEnter(PhaseThink);
                         if (_httpHost != null)
                         {
@@ -902,12 +933,22 @@ namespace CH4
                             }
                         }
                         toolCalls = ev.Text;
-                        // roundsum 四态计时——ToolCalls 到达进入工具相位（link/think 结算；工具批执行）
-                        PhaseEnter(PhaseTool);
+                        // 运行态——ToolCalls（流末聚合）不切态：tool 态已由 ToolCallsStart（首个增量帧）进入；
+                        // run 态在发单时进入（PumpLlm 工具分支）——design-ch4-llm §2.1
                         if (_httpHost != null)
                         {
                             // F4 视图——toolCalls 占位卡后置 F1/F2（工具卡以结果整块出现，不推占位）
                         }
+                    }
+                    else if (ev.Kind == LlmStreamKind.ToolCallsStart)
+                    {
+                        // 运行态——工具决策流开始（远端·流：LLM 输出 tool_calls 的流式过程；长度由远端决定）
+                        PhaseEnter(PhaseTool);
+                    }
+                    else if (ev.Kind == LlmStreamKind.RetryResume)
+                    {
+                        // 运行态——退避结束、重发开始：wait → link（长度重回远端决定）
+                        PhaseEnter(PhaseLink);
                     }
                     else if (ev.Kind == LlmStreamKind.Retrying)
                     {
@@ -916,6 +957,8 @@ namespace CH4
                         {
                             continue;
                         }
+                        // 运行态——重试退避开始：link → wait（长度由本地决定——退避时长）
+                        PhaseEnter(PhaseWait);
                         // S2 §8.4——重试可见性：独立视图条目（retry renderType）——不入会话槽/上下文/日志（Runtime 已记 L2）
                         _sawRetry = true;
                         // RETRY|N/3|原因摘要 —— 提取尝试序号与原因
@@ -1045,40 +1088,125 @@ namespace CH4
         }
 
         /// <summary>
-        /// 计时相位切换——结算旧相位累计毫秒 + 进入新相位（roundsum 四态计时；同相位跳过）。
+        /// 运行态切换——结算旧态累计毫秒 + 进入新态（七态：idle/wait/link/think/tool/run/reply；同态跳过；锁内）。
         /// </summary>
-        /// <param name="kind">目标相位（PhaseLink/PhaseThink/PhaseTool/PhaseReply）</param>
+        /// <param name="kind">目标态（PhaseIdle/PhaseWait/PhaseLink/PhaseThink/PhaseTool/PhaseRun/PhaseReply）</param>
         private void PhaseEnter(int kind)
         {
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
-            if (_phaseKind >= 0 && _phaseStartTick > 0 && _phaseKind != kind)
+            lock (_phaseLock)
             {
-                long ms = (now - _phaseStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
-                if (ms < 0) { ms = 0; }
-                _phaseAccumMs[_phaseKind] = _phaseAccumMs[_phaseKind] + ms;
+                if (_phaseKind >= 0 && _phaseStartTick > 0 && _phaseKind != kind)
+                {
+                    long ms = (now - _phaseStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
+                    if (ms < 0) { ms = 0; }
+                    _phaseAccumMs[_phaseKind] = _phaseAccumMs[_phaseKind] + ms;
+                }
+                _phaseKind = kind;
+                _phaseStartTick = now;
             }
-            _phaseKind = kind;
-            _phaseStartTick = now;
         }
 
         /// <summary>
-        /// 结算当前相位——roundsum 生成前调用（CloseRound 末尾相位累计归零相位标记）。
+        /// 结算当前运行态——roundsum 生成前 / 终止收尾（错误中止 / 暂停 / 宿主重启中断 / Note 拉起）调用；累计落七态 + 态标记归零 + 快照留档。
         /// </summary>
         private void PhaseSettle()
         {
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            lock (_phaseLock)
+            {
+                if (_phaseKind >= 0 && _phaseStartTick > 0)
+                {
+                    long ms = (now - _phaseStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
+                    if (ms < 0) { ms = 0; }
+                    _phaseAccumMs[_phaseKind] = _phaseAccumMs[_phaseKind] + ms;
+                    _phaseKind = -1;
+                    _phaseStartTick = 0;
+                }
+            }
+        }
+        /// <summary>
+        /// 七态累计快照——锁内复制（含当前活跃态实时增量）。约定：调用方必须已持有 _phaseLock。
+        /// </summary>
+        /// <returns>七态毫秒数组（索引同 PhaseNames）</returns>
+        private long[] SnapshotPhaseAccumLocked()
+        {
+            long[] copy = new long[PhaseCount];
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            for (int i = 0; i < PhaseCount; i = i + 1)
+            {
+                copy[i] = _phaseAccumMs[i];
+            }
             if (_phaseKind >= 0 && _phaseStartTick > 0)
             {
-                long now = System.Diagnostics.Stopwatch.GetTimestamp();
                 long ms = (now - _phaseStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
                 if (ms < 0) { ms = 0; }
-                _phaseAccumMs[_phaseKind] = _phaseAccumMs[_phaseKind] + ms;
-                _phaseKind = -1;
-                _phaseStartTick = 0;
+                copy[_phaseKind] = copy[_phaseKind] + ms;
             }
+            return copy;
+        }
+        /// <summary>
+        /// 运行态读取面——当前态名 + 七态累计毫秒表 + 本轮请求次数（锁内快照；观测面与前端拉取口子数据源）。
+        /// </summary>
+        /// <param name="name">输出：当前态名（idle/wait/link/think/tool/run/reply）</param>
+        /// <param name="requests">输出：本轮 API 请求次数（= link 段数）</param>
+        /// <returns>七态累计毫秒表（态名 → 毫秒）</returns>
+        internal Dictionary<string, long> GetRunState(out string name, out int requests)
+        {
+            lock (_phaseLock)
+            {
+                long[] ms = SnapshotPhaseAccumLocked();
+                Dictionary<string, long> table = new Dictionary<string, long>();
+                for (int i = 0; i < PhaseCount; i = i + 1)
+                {
+                    table[PhaseNames[i]] = ms[i];
+                }
+                if (_phaseKind >= 0 && _phaseKind < PhaseCount)
+                {
+                    name = PhaseNames[_phaseKind];
+                }
+                else
+                {
+                    name = "idle";
+                }
+                requests = _requestCount;
+                return table;
+            }
+        }
+        /// <summary>
+        /// 设置会话运行态盒——按会话键（chat_state:&lt;catKey&gt;）+ 旧全局键兼容（观测面与前端拉取口子）。
+        /// </summary>
+        /// <param name="state">粗粒度态（idle/working/tools——细粒度七态走 PhaseEnter）</param>
+        private void SetChatState(string state)
+        {
+            DataBox.Set<string>("global", "chat_state", state);
+            if (_catKey != null && _catKey.Length > 0)
+            {
+                DataBox.Set<string>("global", "chat_state:" + _catKey, state);
+            }
+        }
+        /// <summary>
+        /// 运行态摘要行——当前态 + 七态毫秒 + 本轮请求次数（失败轮统计留档——日志观测面；正常轮由 roundsum 承载）。
+        /// </summary>
+        /// <returns>摘要文本（state=… link=…ms … requests=N）</returns>
+        private string BuildRunStateSummary()
+        {
+            string name;
+            int requests;
+            Dictionary<string, long> ms = GetRunState(out name, out requests);
+            return "state=" + name
+                + " idle=" + ms["idle"].ToString() + "ms"
+                + " wait=" + ms["wait"].ToString() + "ms"
+                + " link=" + ms["link"].ToString() + "ms"
+                + " think=" + ms["think"].ToString() + "ms"
+                + " tool=" + ms["tool"].ToString() + "ms"
+                + " run=" + ms["run"].ToString() + "ms"
+                + " reply=" + ms["reply"].ToString() + "ms"
+                + " requests=" + requests.ToString();
         }
 
         /// <summary>
-        /// 构建 roundsum 载荷——本轮 Token 消耗 + 工具次数 + 总耗时 + 四态用时（CloseRound 推送/落盘数据源）。
+        /// 构建 roundsum 载荷——本轮 Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 七态用时（CloseRound 推送/落盘数据源）。
         /// </summary>
         /// <returns>roundsum 视图载荷 JSON（{"type":"roundsum","data":{...}}）</returns>
         private string BuildRoundSumJson()
@@ -1091,16 +1219,25 @@ namespace CH4
                 elapsedMs = (System.Diagnostics.Stopwatch.GetTimestamp() - _roundStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
                 if (elapsedMs < 0) { elapsedMs = 0; }
             }
+            string stateName;
+            int requests;
+            Dictionary<string, long> ms = GetRunState(out stateName, out requests);
+            // roundsum 只承载时长与计数——当前态名由此处不留档（观测面走 GetRunState）
+            _ = stateName;
             return "{\"type\":\"roundsum\",\"data\":{\"prompt\":" + _usagePrompt.ToString()
                 + ",\"completion\":" + _usageCompletion.ToString()
                 + ",\"cacheHit\":" + _usageCacheHit.ToString()
                 + ",\"miss\":" + miss.ToString()
                 + ",\"toolCount\":" + _toolCallCount.ToString()
+                + ",\"requests\":" + requests.ToString()
                 + ",\"elapsedMs\":" + elapsedMs.ToString()
-                + ",\"phases\":{\"link\":" + _phaseAccumMs[PhaseLink].ToString()
-                + ",\"think\":" + _phaseAccumMs[PhaseThink].ToString()
-                + ",\"tool\":" + _phaseAccumMs[PhaseTool].ToString()
-                + ",\"reply\":" + _phaseAccumMs[PhaseReply].ToString() + "}}}";
+                + ",\"phases\":{\"idle\":" + ms["idle"].ToString()
+                + ",\"wait\":" + ms["wait"].ToString()
+                + ",\"link\":" + ms["link"].ToString()
+                + ",\"think\":" + ms["think"].ToString()
+                + ",\"tool\":" + ms["tool"].ToString()
+                + ",\"run\":" + ms["run"].ToString()
+                + ",\"reply\":" + ms["reply"].ToString() + "}}}";
         }
 
         /// <summary>
@@ -1207,6 +1344,8 @@ namespace CH4
                     LaunchLlm();
                     return;
                 }
+                // 运行态——进入收尾（轮末落盘/统计计入 idle——design-ch4-llm §2.1）
+                PhaseEnter(PhaseIdle);
                 _phase = ChatPhase.Done;
                 return;
             }
@@ -1230,7 +1369,9 @@ namespace CH4
             }
             _reasonStreamSeq = 0;
             _textStreamSeq = 0;
-            DataBox.Set<string>("global", "chat_state", "tools");
+            // 运行态——发单即执行态（本地·程序过程：工具批到下一请求发出；长度由本地决定）
+            PhaseEnter(PhaseRun);
+            SetChatState("tools");
             EnterToolBatch(_llmToolCallsJson);
         }
         /// <summary>
@@ -1475,6 +1616,9 @@ namespace CH4
         {
             _textStreamSeq = 0;
             _reasonStreamSeq = 0;
+            // 运行态——中止前结算当前态（失败轮同出统计：L2 摘要留档；不推 roundsum 气泡——中止非正常完成语义）
+            PhaseSettle();
+            LogStore.Add("LLM", 2, "本轮运行态统计（中止）: " + BuildRunStateSummary(), "LLM");
             LogStore.Add("LLM", 3, "LLM 错误（重试耗尽——本轮中止，上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
             // [段1] 前文落盘——落盘保真
             LlmMessage[] toSave = _context.GetMessages();
@@ -1501,7 +1645,7 @@ namespace CH4
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
             _sawRetry = false;
-            DataBox.Set<string>("global", "chat_state", "idle");
+            SetChatState("idle");
         }
 
         /// <summary>
@@ -1520,6 +1664,8 @@ namespace CH4
             if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent + 1 < _noteTasks.Length)
             {
                 int remain = _noteTasks.Length - _noteCurrent;
+                // 运行态——Note 拉起轮同样结算（本轮统计留档——design-ch4-llm §2.1 终止语义）
+                PhaseSettle();
                 PostUserMessage("[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent], "system");
                 _viewStore.Save();
                 _round = 0;
@@ -1534,7 +1680,7 @@ namespace CH4
             {
                 _httpHost.PushView("roundsum", roundsumJson, -1, 0);
             }
-            DataBox.Set<string>("global", "chat_state", "idle");
+            SetChatState("idle");
             // B4 对话区：会话终态事件——前端定型（llm done 仅一轮结束；chatdone 才是整次会话结束；count = 原始消息数——实时同步状态区）
             // E3 扩展——chatdone 带真实 usage（命中/非命中/输出/前文长度；前端状态栏同步显示）
             if (_httpHost != null)
@@ -1630,7 +1776,7 @@ namespace CH4
             PushNoteState();
             // [段6] 前端通知——session_reset（前端清空气泡重拉 history；渲染层零改动）
             PushSessionReset();
-            DataBox.Set<string>("global", "chat_state", "idle");
+            SetChatState("idle");
             LogStore.Add("CatHome4", 1, "已回滚到节点 " + msgIndex.ToString() + "（保留 " + (msgIndex + 1).ToString() + " 条消息）", "CHAT");
             return "rollback | 已截断到节点 " + msgIndex.ToString() + "（保留 " + (msgIndex + 1).ToString() + " 条消息）";
         }

@@ -86,7 +86,7 @@ namespace Mau.Providers
         }
         /// <summary>
         /// 流式对话完成——消息序列 + 工具定义 → 事件流（P5：OpenAI 兼容 tool_calls）。
-        /// Text/Reasoning 增量；ToolCalls 完整工具调用 JSON（聚合后一次性发出）；[DONE] → Done；错误 → Error。
+        /// 帧内序：Reasoning → Text（同帧两事件）；ToolCallsStart（首个 tool_calls 增量帧）→ ToolCalls（流末聚合）→ Usage → Done；Retrying 退避前 / RetryResume 重发前；错误 → Error。
         /// 注意：C# 迭代器禁止 try-catch 内 yield——网络层错误用 catch 赋值 + catch 后 yield 模式。
         /// </summary>
         /// <param name="messages">完整消息序列（system/user/assistant/tool 多 role）</param>
@@ -133,6 +133,7 @@ namespace Mau.Providers
                             LogStore.Add("LLM", 2, "LLM 请求传输失败，自动重试（" + retryCount.ToString() + "/" + MaxRetries.ToString() + "）：" + TrimText(netError, 200), "LLM");
                             yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|" + retryCount.ToString() + "/" + MaxRetries.ToString() + "|" + TrimText(netError, 200));
                             await Task.Delay(RetryDelayMs(retryCount - 1), ct);
+                            yield return new LlmStreamEvent(LlmStreamKind.RetryResume, "");
                             continue;
                         }
                         yield return new LlmStreamEvent(LlmStreamKind.Error, netError);
@@ -159,6 +160,7 @@ namespace Mau.Providers
                                 LogStore.Add("LLM", 2, "LLM 请求返回 HTTP " + statusCode.ToString() + "，自动重试（" + retryCount.ToString() + "/" + MaxRetries.ToString() + "）", "LLM");
                                 yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|" + retryCount.ToString() + "/" + MaxRetries.ToString() + "|HTTP " + statusCode.ToString());
                                 await Task.Delay(RetryDelayMs(retryCount - 1), ct);
+                                yield return new LlmStreamEvent(LlmStreamKind.RetryResume, "");
                                 continue;
                             }
                             string? raw = "";
@@ -223,6 +225,7 @@ namespace Mau.Providers
                                 LogStore.Add("LLM", 2, "LLM 读取响应流失败，自动重试（" + retryCount.ToString() + "/" + MaxRetries.ToString() + "）：" + TrimText(streamError, 200), "LLM");
                                 yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|" + retryCount.ToString() + "/" + MaxRetries.ToString() + "|" + TrimText(streamError, 200));
                                 await Task.Delay(RetryDelayMs(retryCount - 1), ct);
+                                yield return new LlmStreamEvent(LlmStreamKind.RetryResume, "");
                                 continue;
                             }
                             yield return new LlmStreamEvent(LlmStreamKind.Error, streamError);

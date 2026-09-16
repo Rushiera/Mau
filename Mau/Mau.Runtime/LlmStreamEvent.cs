@@ -1,8 +1,9 @@
 ﻿namespace Mau.Runtime
 {
     /// <summary>
-    /// 流式事件种类——P5 工具协调扩展：思考/回复双通道 + 工具调用 + 结束。
-    /// Text/Reasoning = 增量事件；ToolCalls = 完整工具调用列表（finish=tool_calls 时一次性发出）；Done = 流正常结束；Error = 失败终止。
+    /// 流式事件种类——P5 工具协调扩展 + 2026-09-16 运行态七态扩展：思考/回复双通道 + 工具决策流 + 结束 + 重试。
+    /// Text/Reasoning = 增量事件；ToolCallsStart = 首个 tool_calls 增量帧（工具决策流开始）；ToolCalls = 完整工具调用列表（finish=tool_calls 时一次性发出）；
+    /// Done = 流正常结束；Error = 失败终止；Usage = 统计块；Retrying = 退避前；RetryResume = 重发前。
     /// </summary>
     public enum LlmStreamKind
     {
@@ -39,7 +40,17 @@
         /// <summary>
         /// 重试通知——重试前发出（业务事件未产出，可安全重发）；Text 携带 RETRY|N/3|原因摘要（S2 §8.4——前端独立视图条目）
         /// </summary>
-        Retrying
+        Retrying,
+
+        /// <summary>
+        /// 重发通知——退避结束、请求重新发出前产出（2026-09-16：会话层 Wait→Link 转移依据；Text 为空）
+        /// </summary>
+        RetryResume,
+
+        /// <summary>
+        /// 工具决策流开始——首个 tool_calls 增量帧产出一次（后续分片静默；Text 为空）——2026-09-16：会话层 Tool 态判定依据
+        /// </summary>
+        ToolCallsStart
     }
 
     /// <summary>

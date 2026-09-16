@@ -22,6 +22,7 @@ namespace Mau.Providers
         /// SSE 帧翻译——增量事件流（零 catch：畸形帧/缺 [DONE] 全部事件化；取消异常冒泡给调用方）。
         /// [DONE] 到达即终止（忽略余帧——实测 [DONE] 后可能有余帧）。
         /// usage 事件每请求一次——双形态兼容（独立统计尾帧 / 与 finish 帧同构），双发供应商以最后一份为准；流末统一产出，缺 [DONE] 不产。
+        /// 帧内序：Reasoning → Text（同帧）；首个 tool_calls 增量帧产一次 ToolCallsStart（后续分片静默）——会话层运行态判定依据（2026-09-16）。
         /// </summary>
         /// <param name="parser">SseParser 实例</param>
         /// <param name="ct">取消令牌</param>
@@ -60,16 +61,23 @@ namespace Mau.Providers
                 bool parsed = TryParseDelta(item.Data, out text, out reasoning);
                 if (parsed)
                 {
-                    if (text.Length > 0)
-                    {
-                        yield return new LlmStreamEvent(LlmStreamKind.Text, text);
-                    }
+                    // [段2b] 帧内产出序 = Reasoning → Text（2026-09-16 定：思考先于回复，产出序即语义序——会话层按到达序切态）
                     if (reasoning.Length > 0)
                     {
                         yield return new LlmStreamEvent(LlmStreamKind.Reasoning, reasoning);
                     }
+                    if (text.Length > 0)
+                    {
+                        yield return new LlmStreamEvent(LlmStreamKind.Text, text);
+                    }
                     // [段2c] tool_calls 增量——按 index 聚合（与文本/思考同帧可并存）
+                    // 首分片产出 ToolCallsStart（后续分片静默——防事件噪音；会话层 Tool 态判定依据，2026-09-16）
+                    int toolOrderBefore = toolOrder.Count;
                     AccumulateToolCalls(item.Data, toolIds, toolNames, toolArgs, toolOrder);
+                    if (toolOrder.Count > toolOrderBefore)
+                    {
+                        yield return new LlmStreamEvent(LlmStreamKind.ToolCallsStart, "");
+                    }
                 }
             }
             // [段3] 完整性检查——无 [DONE] 提前结束 = STREAM_CLOSED（模型调用不可信，按失败处理）

@@ -178,7 +178,9 @@ namespace CH4
             session.SetInjectReport(BuildInjectReportJson(injectResult.Files, injectList, specs));
             // 问题一修复——会话重置显式事件（前端收到后清空气泡再拉 history——消除清空竞态）
             session.PushSessionReset();
+            // 运行态盒——按会话键 + 旧全局键兼容（design-ch4-llm §2.1 会话态独立持有）
             DataBox.Set<string>("global", "chat_state", "idle");
+            DataBox.Set<string>("global", "chat_state:" + session.Id, "idle");
             int injectCount = 0;
             if (injectList != null)
             {

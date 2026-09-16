@@ -252,11 +252,18 @@ namespace CatHome4.Observe
             for (int i = 0; i < all.Count; i++)
             {
                 ChatSession s = all[i];
+                // 运行态七态（2026-09-16）——当前态 + 各态累计毫秒 + 本轮请求次数（前端拉取口子：快照 sessions 段）
+                string runStateName;
+                int runRequests;
+                Dictionary<string, long> runMs = s.GetRunState(out runStateName, out runRequests);
                 sessions.Add(new
                 {
                     id = s.Id,
                     name = s.DisplayName,
                     phase = PhaseText(s.Phase),
+                    runState = runStateName,
+                    runMs = runMs,
+                    requests = runRequests,
                     round = s.Round,
                     msgCount = s.MsgCount,
                     pending = s.PendingCount,
