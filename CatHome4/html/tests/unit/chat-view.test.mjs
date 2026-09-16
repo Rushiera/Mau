@@ -179,7 +179,7 @@ test('reason 流式展开增量可见——整块替换后折叠（summary 字�
   window.chatOnView({ seq: 21, renderType: 'reason', payload: { content: '最终思考内容' }, replaceSeq: 11 });
   det = chatMsgs.querySelector('.chat-reason');
   expect(det.open).toBe(false);
-  expect(det.querySelector('summary').textContent).toContain('6 字');
+  expect(det.querySelector('summary').textContent).toBe('思考过程：最终思考内容');
   // 历史重建——完成态折叠 + 字数
   window.chatRenderHistory({
     version: 1, sessionId: 's1', count: 1,
@@ -187,7 +187,37 @@ test('reason 流式展开增量可见——整块替换后折叠（summary 字�
   });
   det = chatMsgs.querySelector('.chat-reason');
   expect(det.open).toBe(false);
-  expect(det.querySelector('summary').textContent).toContain('4 字');
+  expect(det.querySelector('summary').textContent).toBe('思考过程：历史思考');
+});
+
+// ── 最终回复前的最后一个思考过程保持展开（2026-09-16 外观调整）──
+test('实时——最终回复（msgIndex≥0）后最后一块 reason 展开，中间轮保持折叠', () => {
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '一轮思考' }, replaceSeq: -1 });
+  window.chatOnView({ seq: 21, renderType: 'reason', payload: { content: '一轮思考' }, replaceSeq: 11 });
+  window.chatOnView({ seq: 30, renderType: 'toolcard', payload: { name: 'time', arguments: '{}', result: 'R' }, replaceSeq: -1 });
+  window.chatOnView({ seq: 12, renderType: 'stream', payload: { kind: 'reasoning', text: '二轮思考' }, replaceSeq: -1 });
+  window.chatOnView({ seq: 22, renderType: 'reason', payload: { content: '二轮思考' }, replaceSeq: 12 });
+  window.chatOnView({ seq: 40, renderType: 'text', payload: { content: '最终回复', msgIndex: 3 }, replaceSeq: -1 });
+  const dets = chatMsgs.querySelectorAll('details.chat-reason');
+  expect(dets.length).toBe(2);
+  expect(dets[0].open).toBe(false);
+  expect(dets[1].open).toBe(true);
+});
+
+test('历史重建——最终回复前的最后一块 reason 保持展开（与实时一致）', () => {
+  window.chatRenderHistory({
+    version: 1, sessionId: 's-open', count: 2,
+    blocks: [
+      { seq: 1, id: '1:r', renderType: 'reason', payload: { content: '中间思考' } },
+      { seq: 2, id: '2:t', renderType: 'text', payload: { content: '工具轮文本', msgIndex: -1 } },
+      { seq: 3, id: '3:r', renderType: 'reason', payload: { content: '最终思考' } },
+      { seq: 4, id: '4:t', renderType: 'text', payload: { content: '最终回复', msgIndex: 3 } }
+    ]
+  });
+  const dets = chatMsgs.querySelectorAll('details.chat-reason');
+  expect(dets.length).toBe(2);
+  expect(dets[0].open).toBe(false);
+  expect(dets[1].open).toBe(true);
 });
 
 // ── toolcard 整块 ──
@@ -347,13 +377,17 @@ test('view control usage 渲染 Token 统计', () => {
   expect(chatStatus.textContent).toContain('cache 30');
 });
 
-// ── error 视图（A55——独立 renderType：有容器追加 / 无容器新建）──
-test('view error 有流式容器——追加错误文本 + 恢复 idle', () => {
+// ── error 视图（A55——独立 renderType：恒定独立错误气泡；已有容器只 seal 不追加）──
+test('view error 有流式容器——seal 已有容器 + 独立错误气泡 + 恢复 idle', () => {
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'text', text: '部分' }, replaceSeq: -1 });
+  const tb = bubbles()[0];
   window.chatOnView({ seq: 41, renderType: 'error', payload: { type: 'error', text: 'LLM 挂了' }, replaceSeq: -1 });
-  expect(bubbles()[0].textContent).toContain('部分');
-  expect(bubbles()[0].textContent).toContain('LLM 挂了');
-  expect(bubbles()[0].classList.contains('error')).toBe(true);
+  expect(tb.textContent).toBe('部分');
+  expect(tb.classList.contains('streaming')).toBe(false);
+  expect(tb.classList.contains('error')).toBe(false);
+  expect(bubbles().length).toBe(2);
+  expect(bubbles()[1].textContent).toContain('LLM 挂了');
+  expect(bubbles()[1].classList.contains('error')).toBe(true);
   expect(window.chatState).toBe('idle');
   expect(Object.keys(window.viewContainers).length).toBe(0);
 });
@@ -729,8 +763,9 @@ test('chatRenderHistory roundsum 块渲染（历史重建保留轮末统计）',
 test('reason 折叠摘要——多行保留首尾行 + 省略行/字符计数（展开回退字数标题）', () => {
   const text = '第一行开始\n第二行\n第三行\n第四行\n最后一行结束';
   const det = window.chatReasonBlock(text, false);
-  // 折叠——首行 +（3行11字符已省略显示）+ 末行
-  expect(det.querySelector('summary').textContent).toBe('第一行开始（3行11字符已省略显示）最后一行结束');
+  // 折叠——绿色标签「思考过程」+ 灰色缩略内容（首行 +（3行11字符已省略显示）+ 末行）
+  expect(det.querySelector('summary').textContent).toBe('思考过程：第一行开始（3行11字符已省略显示）最后一行结束');
+  expect(det.querySelector('summary .rs-peek')).not.toBeNull();
   // 展开——回退字数标题（jsdom 不触发 toggle——显式 _updateSummary；真实浏览器点击 toggle 自动同结果）
   det.open = true;
   det._updateSummary();
@@ -738,7 +773,15 @@ test('reason 折叠摘要——多行保留首尾行 + 省略行/字符计数（
   // 再折叠——回到折叠摘要
   det.open = false;
   det._updateSummary();
-  expect(det.querySelector('summary').textContent).toBe('第一行开始（3行11字符已省略显示）最后一行结束');
+  expect(det.querySelector('summary').textContent).toBe('思考过程：第一行开始（3行11字符已省略显示）最后一行结束');
+});
+
+// ── 折叠摘要——少于 3 行不压缩，直接显示原文（2026-09-16）──
+test('reason 折叠摘要——单行/两行直接显示原文，不回退字数', () => {
+  const one = window.chatReasonBlock('这是一段很短的思考', false);
+  expect(one.querySelector('summary').textContent).toBe('思考过程：这是一段很短的思考');
+  const two = window.chatReasonBlock('第一行\n第二行', false);
+  expect(two.querySelector('summary').textContent).toBe('思考过程：第一行\n第二行');
 });
 
 // ── 外观层优化：时长三级进位——秒/分/小时（hour 最高单位）──

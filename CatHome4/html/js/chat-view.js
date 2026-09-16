@@ -32,6 +32,16 @@ function chatAppend(bubble, text) {
     chatScrollBottom();
 }
 
+// 最终回复前的最后一个思考过程保持展开——定位最后一块 reason 并展开（2026-09-16：
+// 中间轮次的思考照旧自动折叠，只有最终 reply 前的那一块保持可见）
+function chatOpenLastReason() {
+    var all = chatMsgs.querySelectorAll('details.chat-reason');
+    if (all.length === 0) { return; }
+    var det = all[all.length - 1];
+    det.open = true;
+    if (det._updateSummary) { det._updateSummary(); }
+}
+
 // 工具图标映射——CH2 CH_Tool_LLMToolDisplay.GetIcon 移植（CH4 连字符工具名适配）
 function chatToolIcon(name) {
     var n = name || '';
@@ -177,8 +187,20 @@ function chatReasonBlock(text, open) {
         var t = det._reasonText || '';
         if (det.open) {
             sum.textContent = (t.length > 0) ? ('思考过程 · ' + t.length + ' 字') : '思考过程';
-        } else {
-            sum.textContent = chatReasonFoldedSummary(t);
+            return;
+        }
+        // 折叠——绿色标签「思考过程」+ 灰色缩略内容（颜色分工：标签继承 summary 原绿，内容取展开正文原灰）
+        sum.textContent = '';
+        var label = document.createElement('span');
+        label.className = 'rs-label';
+        label.textContent = '思考过程';
+        sum.appendChild(label);
+        var peek = chatReasonFoldedPeek(t);
+        if (peek.length > 0) {
+            var body = document.createElement('span');
+            body.className = 'rs-peek';
+            body.textContent = '：' + peek;
+            sum.appendChild(body);
         }
     };
     det.addEventListener('toggle', det._updateSummary);
@@ -186,12 +208,13 @@ function chatReasonBlock(text, open) {
     return det;
 }
 
-// 折叠摘要——首行 +（N行M字符已省略显示）+ 末行；单行/两行无中间省略——回退字数标题
-function chatReasonFoldedSummary(text) {
-    if (!text || text.length === 0) { return '思考过程'; }
+// 折叠摘要内容——<3 行不压缩直接显示原文；≥3 行取 首行 +（N行M字符已省略显示）+ 末行
+// （标签「思考过程」由 summary 渲染侧拼接——本函数只产缩略内容，2026-09-16）
+function chatReasonFoldedPeek(text) {
+    if (!text || text.length === 0) { return ''; }
     var lines = text.split('\n');
-    if (lines.length <= 2) {
-        return '思考过程 · ' + text.length + ' 字';
+    if (lines.length < 3) {
+        return text;
     }
     var first = lines[0];
     var last = lines[lines.length - 1];
@@ -249,6 +272,20 @@ function chatRenderHistory(data) {
     // F4 视图块历史渲染——按 blocks[] renderType 分派（view 协议；无 messages[] 旧结构）
     chatMsgs.textContent = '';
     var blocks = data.blocks || [];
+    // 最终回复（msgIndex≥0 的 text 块）之前的最后一个 reason 块保持展开——与实时渲染一致（2026-09-16）
+    var lastReasonIndex = -1;
+    var finalTextIndex = -1;
+    for (var fi = 0; fi < blocks.length; fi++) {
+        if (blocks[fi].renderType === 'text') {
+            var fmi = (blocks[fi].payload && blocks[fi].payload.msgIndex !== undefined) ? blocks[fi].payload.msgIndex : -1;
+            if (fmi >= 0) { finalTextIndex = fi; }
+        }
+    }
+    if (finalTextIndex >= 0) {
+        for (var ri = finalTextIndex - 1; ri >= 0; ri--) {
+            if (blocks[ri].renderType === 'reason') { lastReasonIndex = ri; break; }
+        }
+    }
     for (var i = 0; i < blocks.length; i++) {
         var blk = blocks[i];
         var p = blk.payload || {};
@@ -257,7 +294,7 @@ function chatRenderHistory(data) {
             ub.textContent = p.content || '';
         } else if (blk.renderType === 'reason') {
             var rb = chatBubble('assistant', 'reason');
-            rb.appendChild(chatReasonBlock(p.content || ''));
+            rb.appendChild(chatReasonBlock(p.content || '', i === lastReasonIndex));
         } else if (blk.renderType === 'toolcard') {
             var tb = chatBubble('assistant', 'tool');
             tb.appendChild(chatToolCard(p));

@@ -270,6 +270,8 @@ function chatOnText(seq, replaceSeq, payload) {
     var html = '<div class="md-block">' + mdToHtml(content) + '</div>';
     // P6b 节点操作条——正式回复块底部两按钮（回滚/分支）；msgIndex<0（工具轮 seal 文本）不挂
     var msgIndex = (payload.msgIndex !== undefined) ? payload.msgIndex : -1;
+    // 最终回复（msgIndex≥0）——其前的最后一个思考过程保持展开（2026-09-16）
+    if (msgIndex >= 0) { chatOpenLastReason(); }
     var c = viewContainers[replaceSeq];
     if (c && c.type === 'text') {
         c.bubble.classList.remove('streaming');
@@ -361,27 +363,21 @@ function chatRenderError(text) {
     return eb;
 }
 
-// A55——错误事件（renderType=error）：seal 全部流式容器（已生成内容保留 + 错误文本追加）；
-// 无容器（错误发生在首个增量前/工具轮间/续传间隔）→ 新建错误气泡——修复"错误被静默吞掉"
+// A55——错误事件（renderType=error）：seal 全部流式容器（已生成内容保留，不追加错误文本）+
+// 恒定新建独立错误气泡——错误与重试解耦（重试气泡只表达重试过程；莎 2026-09-16 拍板 A）
 function chatOnError(payload) {
     chatKeepAlive();
     chatPhaseReset();
     var text = payload.text || 'LLM 错误';
-    var appended = false;
     for (var k in viewContainers) {
         var c = viewContainers[k];
         if (c && c.bubble) {
             c.bubble.classList.remove('streaming');
             c.bubble.classList.remove('streaming-wait');
-            chatAppend(c.bubble, '\n' + text);
-            c.bubble.classList.add('error');
-            appended = true;
         }
     }
     viewContainers = {};
-    if (!appended) {
-        chatRenderError(text);
-    }
+    chatRenderError(text);
     if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
     chatSetState('idle');
 }

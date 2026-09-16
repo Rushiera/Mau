@@ -40,6 +40,8 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 @keyframes chatblink { 50% { opacity: 0; } }
 .chat-reason { margin-top: 6px; font-size: 11px; color: #6a6a6a; }
 .chat-reason summary { cursor: pointer; color: #6a9955; }
+/* 折叠摘要——标签「思考过程」保持 summary 原绿，缩略内容用展开正文的原灰（颜色分工 2026-09-16） */
+.chat-reason summary .rs-peek { color: #6a6a6a; }
 .chat-tool { margin-top: 6px; background: #101010; border: 1px solid #242424; border-radius: 4px; padding: 5px 8px; font-size: 11px; color: #8a8a8a; font-family: Consolas, monospace; }
 .chat-tool summary { cursor: pointer; color: #dcdcaa; }
 .chat-tool summary:hover { color: #e8e8aa; }
