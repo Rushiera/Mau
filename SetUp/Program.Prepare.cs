@@ -37,13 +37,20 @@ namespace SetUp
                     return Fail("步1 dotnet build Mau.sln 失败——构建未通过，中止。");
                 }
 
-                // [段2] 步2：dotnet test Mau.sln（全量测试——三测试项目）
+                // [段2] 步2：全量测试——Mau 三测试项目 + CatHome4 宿主两测试项目（A58：宿主测试并入链，步号不变）
                 stepMs = Environment.TickCount64;
                 stepOk = RunProcess("dotnet", "test Mau.sln", repoRoot);
                 _steps.Add(new StepReport() { Step = 2, Name = "dotnet test Mau.sln", Ok = stepOk, Ms = Environment.TickCount64 - stepMs });
                 if (!stepOk)
                 {
                     return Fail("步2 dotnet test Mau.sln 失败——测试未通过，中止。");
+                }
+                stepMs = Environment.TickCount64;
+                stepOk = RunProcess("dotnet", "test CatHome4.sln", repoRoot);
+                _steps.Add(new StepReport() { Step = 2, Name = "dotnet test CatHome4.sln", Ok = stepOk, Ms = Environment.TickCount64 - stepMs });
+                if (!stepOk)
+                {
+                    return Fail("步2 dotnet test CatHome4.sln 失败——宿主测试未通过，中止。");
                 }
 
                 // [段3] 步3：dotnet publish Mau\Mau.Cli -c Debug -o Mau-public（基座部署区——FL 组引用源，缺失则步4报 M3245）

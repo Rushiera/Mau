@@ -11,6 +11,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="CatHome4" />
     <InternalsVisibleTo Include="CatHome4.Admin" />
+    <InternalsVisibleTo Include="CatHome4.QQ.Tests" />
   </ItemGroup>
 
   <ItemGroup>

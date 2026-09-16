@@ -868,7 +868,7 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 收集所有绑定 qqbot 的猫——默认猫（majordomo）+ 多猫（R2.3.5 输出转发轮询面）。
+        /// 收集所有绑定 qqbot 的猫——默认猫（majordomo）+ 多猫（R2.3.5 输出转发轮询面；A58 的 1:1 约束在 Bot 侧——每猫各自的 Bot）。
         /// </summary>
         /// <returns>全部绑定目标（QqBotId 非空）</returns>
         internal static List<QqTarget> CollectAllQqTargets()
@@ -922,22 +922,125 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 收集绑定指定 qqbot 的猫——默认猫（majordomo）+ 多猫（R2.3.4 输入路由广播注入面）。
+        /// 取绑定指定 qqbot 的猫（A58 1:1——一个 Bot 唯一对应一只猫：重复配置取首个 + L2 留痕）。
         /// </summary>
         /// <param name="qqBotId">qqbot 配置身份</param>
-        /// <returns>绑定目标列表（空=未绑定任何猫）</returns>
+        /// <returns>绑定目标列表（≤1 项；空=未绑定任何猫）</returns>
         internal static List<QqTarget> CollectQqTargets(Guid qqBotId)
         {
             List<QqTarget> result = new List<QqTarget>();
             List<QqTarget> all = CollectAllQqTargets();
-            for (int i = 0; i < all.Count; i++)
+            for (int i = 0; i < all.Count; i = i + 1)
             {
-                if (all[i].QqBotId == qqBotId)
+                if (all[i].QqBotId != qqBotId)
+                {
+                    continue;
+                }
+                if (result.Count == 0)
                 {
                     result.Add(all[i]);
+                    continue;
                 }
+                // 1:1 约束外（旧数据 / 手工改 cat.cfg）——取首个 + L2 留痕（可诊断）
+                LogStore.Add("QQBot", 2, "同一 Bot 被多猫绑定（取首个） | " + qqBotId.ToString("D") + " | 首个 " + result[0].Key + " · 忽略 " + all[i].Key, "QQBOT");
+                break;
             }
             return result;
+        }
+
+        /// <summary>
+        /// qqbot 绑定占用者查询（A58 1:1）——返回除 catKey 自身外绑定了该 Bot 的猫显示名（空=无人占用）。
+        /// 两处消费：保存配置时查重（冲突显式拒绝）· 配置读面标注（前端禁用已绑他猫的 Bot）。
+        /// </summary>
+        /// <param name="catKey">当前猫寻址键（majordomo=默认猫；自身不计入占用）</param>
+        /// <param name="qqbotId">Bot 身份（Guid 文本）</param>
+        /// <returns>占用者显示名（空串=无占用）</returns>
+        internal static string FindQqBotBindingOwner(string catKey, string qqbotId)
+        {
+            Guid target;
+            if (!Guid.TryParse(qqbotId, out target) || target == Guid.Empty)
+            {
+                return "";
+            }
+            if (catKey != "majordomo" && _chatBridge.DefaultQqBotId == target)
+            {
+                return "majordomo";
+            }
+            for (int i = 0; i < _cats.Count; i = i + 1)
+            {
+                CatEntry cat = _cats[i];
+                if (cat.Id == catKey)
+                {
+                    continue;
+                }
+                if (cat.QqBotId == target)
+                {
+                    return cat.DisplayName;
+                }
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// QQBot 渠道说明串——info 环境信息消费（A58）：该猫已绑定且启用 qqbot 转发时给出文件发送用法；
+        /// 未绑定 / 未启用 → 空串（info 不显示任何 qqbot 相关内容）。
+        /// </summary>
+        /// <param name="catKey">猫 key（majordomo=默认猫）</param>
+        /// <returns>说明串（空=未接入 qqbot）</returns>
+        internal static string BuildCatQqBotInfo(string catKey)
+        {
+            if (catKey == null || catKey.Length == 0)
+            {
+                return "";
+            }
+            Guid botId;
+            bool enabled;
+            if (catKey == "majordomo")
+            {
+                botId = _chatBridge.DefaultQqBotId;
+                enabled = _chatBridge.DefaultQqBotEnable;
+            }
+            else
+            {
+                CatEntry cat = FindCat(catKey);
+                if (cat == null)
+                {
+                    return "";
+                }
+                botId = cat.QqBotId;
+                enabled = cat.QqBotEnable;
+            }
+            if (botId == Guid.Empty || !enabled)
+            {
+                return "";
+            }
+            string botName = ResolveQqBotDisplayName(botId);
+            if (botName.Length == 0)
+            {
+                botName = botId.ToString("D");
+            }
+            return botName + "：发本地文件=单独一行写 [QQBot发送文件:\"<真实绝对路径>\"]（≤10MB · 仅私聊）";
+        }
+
+        /// <summary>
+        /// Bot 显示名解析——Bot 池按身份查显示名（池内缺失 → 空串，调用方回退身份串）。
+        /// </summary>
+        /// <param name="botId">Bot 配置身份</param>
+        /// <returns>显示名（空=池内缺失）</returns>
+        internal static string ResolveQqBotDisplayName(Guid botId)
+        {
+            CH_QqBotConfigStore store = null;
+            DataBox.TryResolve<CH_QqBotConfigStore>(out store);
+            if (store == null)
+            {
+                return "";
+            }
+            CH_QqBotConfig cfg;
+            if (store.TryGet(botId, out cfg) && cfg != null && cfg.DisplayName != null)
+            {
+                return cfg.DisplayName;
+            }
+            return "";
         }
 
         /// <summary>

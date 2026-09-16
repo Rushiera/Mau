@@ -608,6 +608,16 @@ namespace CH4
                     packsInfo = " | packs: " + packsShow;
                 }
             }
+            // A58 QQBot 渠道——info 可见本猫是否接入 qqbot（已接入 → 附文件发送用法；未接入 → 不显示相关内容）
+            string qqbotInfo = "";
+            if (catKey != null && catKey.Length > 0)
+            {
+                string qqbotShow = AdminService.BuildCatQqBotInfo(catKey);
+                if (qqbotShow.Length > 0)
+                {
+                    qqbotInfo = " | QQBot: " + qqbotShow;
+                }
+            }
             // E3 前文统计——info 自查真实 usage（零估算：持久化 stats 直读；无统计=新会话零值）
             string statsInfo = "";
             SessionStats? stats = AdminService.GetCatStats(catKey);
@@ -625,7 +635,7 @@ namespace CH4
             // 前文长度 = 最近一次请求单次 prompt（context）；旧数据无 context 回退累计值
             long ctxLen = context > 0 ? context : prompt;
             statsInfo = " | 前文: " + ctxLen.ToString() + " tokens";
-            return "CH4 v" + version + buildInfo + " | LLM: " + llmInfo + " | " + now + rootsInfo + statsInfo + packsInfo;
+            return "CH4 v" + version + buildInfo + " | LLM: " + llmInfo + " | " + now + rootsInfo + statsInfo + packsInfo + qqbotInfo;
         }
         /// <summary>
         /// 前端测试服务拉起——宿主启动时自动启动 html/tests/server.js（未监听 8099 时）；失败不影响主功能

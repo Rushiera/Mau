@@ -574,7 +574,7 @@ namespace CatHome4.Admin
                     });
                 }
             }
-            // R2.3 QQ Bot 下拉清单——Bot 池全量（id + 显示名）
+            // R2.3 QQ Bot 下拉清单——Bot 池全量（id + 显示名 + 占用者；A58 1:1）
             CH_QqBotConfigStore qqStore = null;
             DataBox.TryResolve<CH_QqBotConfigStore>(out qqStore);
             List<object> qqbotOptions = new List<object>();
@@ -583,10 +583,12 @@ namespace CatHome4.Admin
                 CH_QqBotConfig[] qqConfigs = qqStore.GetAll();
                 for (int i = 0; i < qqConfigs.Length; i++)
                 {
+                    // A58——boundCat = 除本猫外的占用者显示名（前端据此禁用已绑他猫的 Bot；后端保存时仍显式校验）
                     qqbotOptions.Add(new
                     {
                         qqBotId = qqConfigs[i].QqBotId.ToString("D"),
-                        displayName = qqConfigs[i].DisplayName
+                        displayName = qqConfigs[i].DisplayName,
+                        boundCat = FindQqBotBindingOwner(catKey, qqConfigs[i].QqBotId.ToString("D"))
                     });
                 }
             }
@@ -789,6 +791,12 @@ namespace CatHome4.Admin
                 if (!Guid.TryParse(qqbotId, out parsed) || parsed == Guid.Empty)
                 {
                     return Results.Json(new { ok = false, error = "qqbotId 非法" });
+                }
+                // A58 1:1 查重——同一 Bot 不得被两只猫绑定（入口面显式拒绝；运行时不做去重）
+                string boundBy = FindQqBotBindingOwner(catKey, qqbotId);
+                if (boundBy.Length > 0)
+                {
+                    return Results.Json(new { ok = false, error = "该 QQ Bot 已绑定猫「" + boundBy + "」——一只 Bot 只能绑一只猫" });
                 }
                 cfg.QqBotId = qqbotId;
             }

@@ -81,7 +81,13 @@ function renderQqBotOptions(options, current) {
     for (var i = 0; i < options.length; i++) {
         var opt = document.createElement('option');
         opt.value = options[i].qqBotId;
-        opt.textContent = options[i].displayName + ' (' + options[i].qqBotId.substring(0, 8) + '…)';
+        var label = options[i].displayName + ' (' + options[i].qqBotId.substring(0, 8) + '…)';
+        // A58 1:1——一只 Bot 只能绑一只猫：已被他猫占用 → 标注并禁用（后端保存时仍显式校验）
+        if (options[i].boundCat && options[i].qqBotId !== current) {
+            label = label + '（已被 ' + options[i].boundCat + ' 绑定）';
+            opt.disabled = true;
+        }
+        opt.textContent = label;
         if (options[i].qqBotId === current) { opt.selected = true; }
         sel.appendChild(opt);
     }
