@@ -279,8 +279,6 @@ namespace Mau.Runtime
                 }
                 _pendingCommandPool[key] = value;
                 _version = _version + 1;
-                // C 类 Log——投递成功（已注册）
-                LogStore.Add("CommandBus", 0, "指令投递 " + key + "（来源 " + source + "）：已接受", "CMD");
                 if (Audit != null)
                 {
                     Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {
@@ -335,8 +333,6 @@ namespace Mau.Runtime
                     return;
                 }
                 _pendingTextPool[key] = text;
-                // C 类 Log——投递成功（已注册）
-                LogStore.Add("CommandBus", 0, "文本指令投递 " + key + "（来源 " + source + "）：已接受", "CMD");
                 if (Audit != null)
                 {
                     Audit.Record("CommandBus", "cmd.set", -1, new AuditProp[] {

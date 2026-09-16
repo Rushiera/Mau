@@ -417,7 +417,6 @@ namespace CH4
             }
             if (cmd == "session count")
             {
-                LogStore.Add("CatHome4", 1, "会话消息数: " + session.Context.GetMessageCount().ToString(), "CMD");
                 return;
             }
         }

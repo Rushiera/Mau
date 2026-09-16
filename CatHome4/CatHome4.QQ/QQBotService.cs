@@ -430,7 +430,6 @@ namespace CatHome4.QQ
             {
                 return;
             }
-            LogStore.Add("QQBot", 1, "收: " + t + " | " + source + " → " + Truncate(text, 30) + attachText, "QQBOT");
             // 强匹配指令——不走 LLM 路由，代码直执（R2.3.8；Q5 扩充 /new /info）
             string cmdReply = HandleSlashCommand(text, qqBotId);
             if (cmdReply != null)
@@ -593,7 +592,6 @@ namespace CatHome4.QQ
                     a.LocalPath = dest;
                     // v0.96.1 简化——成功路径含文件名，不重复 size；faceType 原位嵌入路径时尾部 attachText 清空
                     sb.Append(" [附件: " + dest + "]");
-                    LogStore.Add("QQBot", 1, "附件缓存 | " + dest + " | " + a.Size, "QQBOT");
                 }
                 else
                 {

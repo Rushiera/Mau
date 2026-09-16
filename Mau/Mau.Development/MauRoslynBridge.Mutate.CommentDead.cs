@@ -368,14 +368,22 @@ namespace Mau.Development
             {
                 return DeadSingle(projects[0], out result);
             }
-            StringBuilder sb = new StringBuilder();
-            sb.Append("聚合 " + projects.Count + " 个项目：" + Environment.NewLine);
+            // 多项目聚合——跨程序集引用复核：单项目语义只见本项目源码符号，兄弟项目对它的引用解析为
+            // 元数据符号（对方 dll），须按引用键跨项目比对（判例 2026-09-16：入口壳调用的域成员被误报零引用）
+            List<ProjectCache> caches = new List<ProjectCache>();
             for (int i = 0; i < projects.Count; i = i + 1)
             {
+                ProjectCache cache = EnsureProject(projects[i]);
+                FullScan(cache);
+                caches.Add(cache);
+            }
+            HashSet<string> crossKeys = CollectReferenceKeys(caches);
+            StringBuilder sb = new StringBuilder();
+            sb.Append("聚合 " + projects.Count + " 个项目（含跨程序集引用复核）：" + Environment.NewLine);
+            for (int i = 0; i < caches.Count; i = i + 1)
+            {
                 sb.Append("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine);
-                string one;
-                DeadSingle(projects[i], out one);
-                sb.Append(one + Environment.NewLine);
+                sb.Append(DeadInCache(caches[i], crossKeys) + Environment.NewLine);
             }
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;
@@ -390,125 +398,7 @@ namespace Mau.Development
         {
             ProjectCache cache = EnsureProject(csproj);
             FullScan(cache);
-            HashSet<ISymbol> targets = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
-            foreach (KeyValuePair<string, SyntaxTree> pair in cache.Trees)
-            {
-                SemanticModel model = EnsureSemantics(cache, pair.Key);
-                SyntaxNode root = pair.Value.GetRoot();
-                foreach (SyntaxNode node in root.DescendantNodes())
-                {
-                    TypeDeclarationSyntax? typeDecl = node as TypeDeclarationSyntax;
-                    if (typeDecl == null)
-                    {
-                        continue;
-                    }
-                    INamedTypeSymbol? typeSymbol = model.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol;
-                    if (typeSymbol == null)
-                    {
-                        continue;
-                    }
-                    System.Collections.Immutable.ImmutableArray<ISymbol> members = typeSymbol.GetMembers();
-                    for (int i = 0; i < members.Length; i = i + 1)
-                    {
-                        ISymbol member = members[i];
-                        if (member.IsImplicitlyDeclared)
-                        {
-                            continue;
-                        }
-                        Accessibility access = member.DeclaredAccessibility;
-                        if (access != Accessibility.Private && access != Accessibility.Internal)
-                        {
-                            continue;
-                        }
-                        IMethodSymbol? method = member as IMethodSymbol;
-                        if (method != null)
-                        {
-                            if (method.MethodKind != MethodKind.Ordinary)
-                            {
-                                continue;
-                            }
-                            if (method.IsOverride)
-                            {
-                                continue;
-                            }
-                        }
-                        IPropertySymbol? property = member as IPropertySymbol;
-                        if (property != null && property.IsOverride)
-                        {
-                            continue;
-                        }
-                        targets.Add(member);
-                    }
-                }
-            }
-            HashSet<ISymbol> referenced = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
-            foreach (KeyValuePair<string, SyntaxTree> pair in cache.Trees)
-            {
-                SemanticModel model = EnsureSemantics(cache, pair.Key);
-                SyntaxNode root = pair.Value.GetRoot();
-                foreach (SyntaxNode node in root.DescendantNodes())
-                {
-                    SyntaxNode? namedNode = null;
-                    IdentifierNameSyntax? identifier = node as IdentifierNameSyntax;
-                    if (identifier != null)
-                    {
-                        namedNode = identifier;
-                    }
-                    else
-                    {
-                        GenericNameSyntax? generic = node as GenericNameSyntax;
-                        if (generic != null)
-                        {
-                            namedNode = generic;
-                        }
-                    }
-                    if (namedNode == null)
-                    {
-                        continue;
-                    }
-                    SymbolInfo info = model.GetSymbolInfo(namedNode);
-                    if (info.Symbol != null)
-                    {
-                        // OriginalDefinition 归一——泛型方法调用 GetSymbolInfo 返回构造符号，与声明原定义比较须归一到原定义（R2-P2-01 泛型漏匹配）
-                        referenced.Add(info.Symbol.OriginalDefinition);
-                    }
-                    for (int i = 0; i < info.CandidateSymbols.Length; i = i + 1)
-                    {
-                        referenced.Add(info.CandidateSymbols[i].OriginalDefinition);
-                    }
-                }
-            }
-            List<string> deadLines = new List<string>();
-            foreach (ISymbol target in targets)
-            {
-                if (referenced.Contains(target))
-                {
-                    continue;
-                }
-                string typeName = target.ContainingType != null ? target.ContainingType.Name : "?";
-                string lineText = "";
-                if (target.DeclaringSyntaxReferences.Length > 0)
-                {
-                    FileLinePositionSpan span = target.DeclaringSyntaxReferences[0].GetSyntax().GetLocation().GetLineSpan();
-                    lineText = span.Path + ":" + (span.StartLinePosition.Line + 1);
-                }
-                deadLines.Add(typeName + "." + target.Name + " // " + lineText);
-            }
-            deadLines.Sort(StringComparer.Ordinal);
-            StringBuilder sb = new StringBuilder();
-            if (deadLines.Count == 0)
-            {
-                sb.Append("OK 无零引用成员（private/internal " + targets.Count + " 个全部被引用）");
-            }
-            else
-            {
-                sb.Append("零引用成员 " + deadLines.Count + " 个（private/internal；public/override 跳过）");
-                for (int i = 0; i < deadLines.Count; i = i + 1)
-                {
-                    sb.Append(Environment.NewLine + "  " + deadLines[i]);
-                }
-            }
-            result = TrimResult(sb.ToString(), MaxResultChars);
+            result = DeadInCache(cache, null);
             return true;
         }
 

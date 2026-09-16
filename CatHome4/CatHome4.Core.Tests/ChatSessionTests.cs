@@ -208,6 +208,15 @@ namespace CatHome4.Core.Tests
         /// <returns>会话实体</returns>
         private static CH4.ChatSession CreateSession(ILlmRuntime llm)
         {
+            // 工具注册表初始化——内置判定（IsBuiltinTool）读 ToolRegistry 单一真相源；测试环境无宿主 Init，
+            // 须显式灌入内置表（否则 Note 被判非内置 → 走 OA 工单 → 测试无消费者卡死；判例 2026-09-16）
+            CH4.ToolRegistry.Init(new ToolSpec[]
+            {
+                new ToolSpec("Note", "Note 任务追踪", "{}"),
+                new ToolSpec("time", "当前时间", "{}"),
+                new ToolSpec("random", "随机整数", "{}"),
+                new ToolSpec("info", "运行状态", "{}")
+            }, null);
             ChatContext ctx = new ChatContext();
             string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".jsonl");
             SessionStore store = new SessionStore(tmp);

@@ -32,24 +32,40 @@ namespace Mau.Development
                 result = "ERR|BAD_ARGS|缺少参数 member";
                 return false;
             }
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string resolveError;
+            List<string> projects = ResolveProjects(path, out resolveError);
+            if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path;
+                result = "ERR|BAD_PATH|" + resolveError;
                 return false;
             }
-            ProjectCache cache = EnsureProject(csproj);
-            FullScan(cache);
-            SyntaxTree foundTree;
-            ClassDeclarationSyntax classNode;
-            int total;
-            if (!FindClassNode(cache, className, out foundTree, out classNode, out total))
+            // 定义所在项目定位——多项目入口（.sln / 目录）下逐项目查找类声明，命中即为 ownerCache
+            List<ProjectCache> caches = new List<ProjectCache>();
+            ProjectCache ownerCache = null;
+            SyntaxTree foundTree = null;
+            ClassDeclarationSyntax classNode = null;
+            for (int i = 0; i < projects.Count; i = i + 1)
+            {
+                ProjectCache cache = EnsureProject(projects[i]);
+                FullScan(cache);
+                caches.Add(cache);
+                SyntaxTree tree;
+                ClassDeclarationSyntax node;
+                int total;
+                if (ownerCache == null && FindClassNode(cache, className, out tree, out node, out total))
+                {
+                    ownerCache = cache;
+                    foundTree = tree;
+                    classNode = node;
+                }
+            }
+            if (ownerCache == null)
             {
                 result = "ERR|CLASS_NOT_FOUND|类不存在: " + className;
                 return false;
             }
-            SemanticModel classModel = EnsureSemantics(cache, foundTree.FilePath);
-            INamedTypeSymbol? classSymbol = classModel.GetDeclaredSymbol(classNode) as INamedTypeSymbol;
+            SemanticModel classModel = EnsureSemantics(ownerCache, foundTree!.FilePath);
+            INamedTypeSymbol? classSymbol = classModel.GetDeclaredSymbol(classNode!) as INamedTypeSymbol;
             if (classSymbol == null)
             {
                 result = "ERR|SYMBOL_BIND|类符号解析失败: " + className;
@@ -61,63 +77,91 @@ namespace Mau.Development
                 result = "ERR|SYMBOL_NOT_FOUND|成员不存在: " + className + "." + member;
                 return false;
             }
-            List<string> hits = new List<string>();
-            foreach (KeyValuePair<string, SyntaxTree> pair in cache.Trees)
+            // 跨程序集匹配面——兄弟项目里该成员解析为元数据符号（对方 dll），与源码符号不可用符号相等比较，
+            // 按引用键比对（判例 2026-09-16：入口壳对域成员的调用被漏报）
+            HashSet<string> targetKeys = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < targets.Length; i = i + 1)
             {
-                SemanticModel model = EnsureSemantics(cache, pair.Key);
-                SyntaxNode root = pair.Value.GetRoot();
-                foreach (SyntaxNode node in root.DescendantNodes())
+                targetKeys.Add(RefKey(targets[i]));
+            }
+            List<string> hits = new List<string>();
+            for (int c = 0; c < caches.Count; c = c + 1)
+            {
+                ProjectCache cache = caches[c];
+                bool sameProject = cache == ownerCache;
+                foreach (KeyValuePair<string, SyntaxTree> pair in cache.Trees)
                 {
-                    string name = "";
-                    SyntaxNode? namedNode = null;
-                    IdentifierNameSyntax? identifier = node as IdentifierNameSyntax;
-                    if (identifier != null)
+                    SemanticModel model = EnsureSemantics(cache, pair.Key);
+                    SyntaxNode root = pair.Value.GetRoot();
+                    foreach (SyntaxNode node in root.DescendantNodes())
                     {
-                        name = identifier.Identifier.Text;
-                        namedNode = identifier;
-                    }
-                    else
-                    {
-                        GenericNameSyntax? generic = node as GenericNameSyntax;
-                        if (generic != null)
+                        string name = "";
+                        SyntaxNode? namedNode = null;
+                        IdentifierNameSyntax? identifier = node as IdentifierNameSyntax;
+                        if (identifier != null)
                         {
-                            name = generic.Identifier.Text;
-                            namedNode = generic;
+                            name = identifier.Identifier.Text;
+                            namedNode = identifier;
                         }
-                    }
-                    if (namedNode == null || name != member)
-                    {
-                        continue;
-                    }
-                    SymbolInfo info = model.GetSymbolInfo(namedNode);
-                    bool matched = MatchesAny(info.Symbol, targets);
-                    if (!matched)
-                    {
-                        for (int i = 0; i < info.CandidateSymbols.Length; i = i + 1)
+                        else
                         {
-                            if (MatchesAny(info.CandidateSymbols[i], targets))
+                            GenericNameSyntax? generic = node as GenericNameSyntax;
+                            if (generic != null)
                             {
-                                matched = true;
-                                break;
+                                name = generic.Identifier.Text;
+                                namedNode = generic;
                             }
                         }
-                    }
-                    if (matched)
-                    {
-                        FileLinePositionSpan span = namedNode.GetLocation().GetLineSpan();
-                        string lineText = ExtractLineText(pair.Key, span.StartLinePosition.Line);
-                        hits.Add(RelativeToProject(cache, pair.Key) + ":" + (span.StartLinePosition.Line + 1) + ":" + (span.StartLinePosition.Character + 1) + ": " + lineText);
+                        if (namedNode == null || name != member)
+                        {
+                            continue;
+                        }
+                        SymbolInfo info = model.GetSymbolInfo(namedNode);
+                        bool matched = MatchesAny(info.Symbol, targets);
+                        if (!matched)
+                        {
+                            for (int i = 0; i < info.CandidateSymbols.Length; i = i + 1)
+                            {
+                                if (MatchesAny(info.CandidateSymbols[i], targets))
+                                {
+                                    matched = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!matched && info.Symbol != null)
+                        {
+                            matched = targetKeys.Contains(RefKey(info.Symbol));
+                        }
+                        if (!matched)
+                        {
+                            for (int i = 0; i < info.CandidateSymbols.Length; i = i + 1)
+                            {
+                                if (targetKeys.Contains(RefKey(info.CandidateSymbols[i])))
+                                {
+                                    matched = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (matched)
+                        {
+                            FileLinePositionSpan span = namedNode.GetLocation().GetLineSpan();
+                            string lineText = ExtractLineText(pair.Key, span.StartLinePosition.Line);
+                            string mark = sameProject ? "" : "[跨程序集] ";
+                            hits.Add(mark + RelativeToProject(cache, pair.Key) + ":" + (span.StartLinePosition.Line + 1) + ":" + (span.StartLinePosition.Character + 1) + ": " + lineText);
+                        }
                     }
                 }
             }
             StringBuilder sb = new StringBuilder();
             if (hits.Count == 0)
             {
-                sb.Append("OK 无引用: " + className + "." + member + "（0 处）");
+                sb.Append("OK 无引用: " + className + "." + member + "（0 处；扫描 " + projects.Count + " 个项目）");
             }
             else
             {
-                sb.Append("共 " + hits.Count + " 处引用: " + className + "." + member);
+                sb.Append("共 " + hits.Count + " 处引用: " + className + "." + member + "（扫描 " + projects.Count + " 个项目）");
                 for (int i = 0; i < hits.Count; i = i + 1)
                 {
                     sb.Append(Environment.NewLine);
@@ -311,6 +355,222 @@ namespace Mau.Development
                 result = TrimResult(ok.ToString(), MaxResultChars);
                 return true;
             }
+        }
+        /// <summary>
+        /// 引用键——类型全名.成员名(参数类型序列)。跨编译匹配用：跨项目引用在本项目语义模型里解析为
+        /// 元数据符号（对方 dll），与源码符号不共享 SymbolEqualityComparer，只能按字符串键比对。
+        /// </summary>
+        /// <param name="symbol">符号（源码或元数据）</param>
+        /// <returns>引用键（跨编译稳定）</returns>
+        private static string RefKey(ISymbol symbol)
+        {
+            ISymbol def = symbol.OriginalDefinition;
+            INamedTypeSymbol? type = def.ContainingType;
+            string typeName = type != null ? type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) : "?";
+            IMethodSymbol? method = def as IMethodSymbol;
+            if (method != null)
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append(typeName);
+                sb.Append(".");
+                sb.Append(def.Name);
+                sb.Append("(");
+                for (int i = 0; i < method.Parameters.Length; i = i + 1)
+                {
+                    if (i > 0)
+                    {
+                        sb.Append(",");
+                    }
+                    sb.Append(method.Parameters[i].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+                }
+                sb.Append(")");
+                return sb.ToString();
+            }
+            return typeName + "." + def.Name;
+        }
+        /// <summary>
+        /// 收集引用键集——遍历给定项目集的全部语法树，取每个标识符解析出的符号键（含候选符号）。
+        /// 用于跨程序集复核：单项目语义只见本项目源码符号，兄弟项目对它的引用解析为元数据符号，
+        /// 只能按引用键匹配（判例 2026-09-16：跨项目被引用成员被误报为死代码）。
+        /// </summary>
+        /// <param name="caches">项目缓存集（跨程序集复核范围）</param>
+        /// <returns>引用键集合（RefKey 口径）</returns>
+        private HashSet<string> CollectReferenceKeys(List<ProjectCache> caches)
+        {
+            HashSet<string> keys = new HashSet<string>(StringComparer.Ordinal);
+            for (int c = 0; c < caches.Count; c = c + 1)
+            {
+                ProjectCache cache = caches[c];
+                foreach (KeyValuePair<string, SyntaxTree> pair in cache.Trees)
+                {
+                    SemanticModel model = EnsureSemantics(cache, pair.Key);
+                    SyntaxNode root = pair.Value.GetRoot();
+                    foreach (SyntaxNode node in root.DescendantNodes())
+                    {
+                        SyntaxNode? namedNode = null;
+                        IdentifierNameSyntax? identifier = node as IdentifierNameSyntax;
+                        if (identifier != null)
+                        {
+                            namedNode = identifier;
+                        }
+                        else
+                        {
+                            GenericNameSyntax? generic = node as GenericNameSyntax;
+                            if (generic != null)
+                            {
+                                namedNode = generic;
+                            }
+                        }
+                        if (namedNode == null)
+                        {
+                            continue;
+                        }
+                        SymbolInfo info = model.GetSymbolInfo(namedNode);
+                        if (info.Symbol != null)
+                        {
+                            keys.Add(RefKey(info.Symbol));
+                        }
+                        for (int i = 0; i < info.CandidateSymbols.Length; i = i + 1)
+                        {
+                            keys.Add(RefKey(info.CandidateSymbols[i]));
+                        }
+                    }
+                }
+            }
+            return keys;
+        }
+        /// <summary>
+        /// 单缓存零引用扫描——DeadSingle 主体（多项目聚合时携跨程序集引用键集，见 CollectReferenceKeys）。
+        /// </summary>
+        /// <param name="cache">项目缓存</param>
+        /// <param name="crossKeys">跨程序集引用键集（null=仅项目内判定）</param>
+        /// <returns>报告文本</returns>
+        private string DeadInCache(ProjectCache cache, HashSet<string>? crossKeys)
+        {
+            HashSet<ISymbol> targets = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+            foreach (KeyValuePair<string, SyntaxTree> pair in cache.Trees)
+            {
+                SemanticModel model = EnsureSemantics(cache, pair.Key);
+                SyntaxNode root = pair.Value.GetRoot();
+                foreach (SyntaxNode node in root.DescendantNodes())
+                {
+                    TypeDeclarationSyntax? typeDecl = node as TypeDeclarationSyntax;
+                    if (typeDecl == null)
+                    {
+                        continue;
+                    }
+                    INamedTypeSymbol? typeSymbol = model.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol;
+                    if (typeSymbol == null)
+                    {
+                        continue;
+                    }
+                    System.Collections.Immutable.ImmutableArray<ISymbol> members = typeSymbol.GetMembers();
+                    for (int i = 0; i < members.Length; i = i + 1)
+                    {
+                        ISymbol member = members[i];
+                        if (member.IsImplicitlyDeclared)
+                        {
+                            continue;
+                        }
+                        Accessibility access = member.DeclaredAccessibility;
+                        if (access != Accessibility.Private && access != Accessibility.Internal)
+                        {
+                            continue;
+                        }
+                        IMethodSymbol? method = member as IMethodSymbol;
+                        if (method != null)
+                        {
+                            if (method.MethodKind != MethodKind.Ordinary)
+                            {
+                                continue;
+                            }
+                            if (method.IsOverride)
+                            {
+                                continue;
+                            }
+                        }
+                        IPropertySymbol? property = member as IPropertySymbol;
+                        if (property != null && property.IsOverride)
+                        {
+                            continue;
+                        }
+                        targets.Add(member);
+                    }
+                }
+            }
+            HashSet<ISymbol> referenced = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+            foreach (KeyValuePair<string, SyntaxTree> pair in cache.Trees)
+            {
+                SemanticModel model = EnsureSemantics(cache, pair.Key);
+                SyntaxNode root = pair.Value.GetRoot();
+                foreach (SyntaxNode node in root.DescendantNodes())
+                {
+                    SyntaxNode? namedNode = null;
+                    IdentifierNameSyntax? identifier = node as IdentifierNameSyntax;
+                    if (identifier != null)
+                    {
+                        namedNode = identifier;
+                    }
+                    else
+                    {
+                        GenericNameSyntax? generic = node as GenericNameSyntax;
+                        if (generic != null)
+                        {
+                            namedNode = generic;
+                        }
+                    }
+                    if (namedNode == null)
+                    {
+                        continue;
+                    }
+                    SymbolInfo info = model.GetSymbolInfo(namedNode);
+                    if (info.Symbol != null)
+                    {
+                        // OriginalDefinition 归一——泛型方法调用 GetSymbolInfo 返回构造符号，与声明原定义比较须归一到原定义（R2-P2-01 泛型漏匹配）
+                        referenced.Add(info.Symbol.OriginalDefinition);
+                    }
+                    for (int i = 0; i < info.CandidateSymbols.Length; i = i + 1)
+                    {
+                        referenced.Add(info.CandidateSymbols[i].OriginalDefinition);
+                    }
+                }
+            }
+            List<string> deadLines = new List<string>();
+            foreach (ISymbol target in targets)
+            {
+                if (referenced.Contains(target))
+                {
+                    continue;
+                }
+                // 跨程序集复核——兄弟项目引用在本项目语义里是元数据符号，靠引用键判定（否则误报死代码）
+                if (crossKeys != null && crossKeys.Contains(RefKey(target)))
+                {
+                    continue;
+                }
+                string typeName = target.ContainingType != null ? target.ContainingType.Name : "?";
+                string lineText = "";
+                if (target.DeclaringSyntaxReferences.Length > 0)
+                {
+                    FileLinePositionSpan span = target.DeclaringSyntaxReferences[0].GetSyntax().GetLocation().GetLineSpan();
+                    lineText = span.Path + ":" + (span.StartLinePosition.Line + 1);
+                }
+                deadLines.Add(typeName + "." + target.Name + " // " + lineText);
+            }
+            deadLines.Sort(StringComparer.Ordinal);
+            StringBuilder sb = new StringBuilder();
+            if (deadLines.Count == 0)
+            {
+                sb.Append("OK 无零引用成员（private/internal " + targets.Count + " 个全部被引用）");
+            }
+            else
+            {
+                sb.Append("零引用成员 " + deadLines.Count + " 个（private/internal；public/override 跳过）");
+                for (int i = 0; i < deadLines.Count; i = i + 1)
+                {
+                    sb.Append(Environment.NewLine + "  " + deadLines[i]);
+                }
+            }
+            return sb.ToString();
         }
     }
 }

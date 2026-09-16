@@ -33,7 +33,6 @@ namespace CatHome4.Http
             {
                 _clients.Add(client);
             }
-            LogStore.Add("CatHome4", 1, "SSE 客户端接入（当前 " + _clients.Count.ToString() + " 个连接）", "CHAT");
             // 连接建立即推全量快照——单写本连接队列（重连兜底语义：仅补给新客户端，不广播已有连接——Codex P1）
             string helloFrame = "event: snapshot\ndata: " + _snapshotCache + "\n\n";
             client.Queue.Writer.TryWrite(helloFrame);
@@ -55,7 +54,6 @@ namespace CatHome4.Http
                 {
                     _clients.Remove(client);
                 }
-                LogStore.Add("CatHome4", 1, "SSE 客户端断开（当前 " + _clients.Count.ToString() + " 个连接）", "CHAT");
             }
         }
 

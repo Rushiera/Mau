@@ -672,7 +672,6 @@ namespace CH4
             {
                 _httpHost.PushView("control", ctrlJson, -1, 0);
             }
-            LogStore.Add("CatHome4", 1, logPrefix + "（" + toSave.Length.ToString() + " 条消息）", "CHAT");
         }
 
         /// <summary>
@@ -784,7 +783,6 @@ namespace CH4
                 _httpHost.PushView("user", userJson, -1, 0);
             }
             DataBox.Set<string>("global", "chat_state", "working");
-            LogStore.Add("CatHome4", 1, "「" + _displayName + "」开始处理消息（来源 " + source + "）", "CHAT");
             LaunchLlm();
         }
 
@@ -1194,7 +1192,6 @@ namespace CH4
                 }
                 _textStreamSeq = 0;
                 _reasonStreamSeq = 0;
-                LogStore.Add("CatHome4", 1, "回复(" + _displayName + "): " + _llmResultText, "CHAT", "", "", 200);
                 // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + user 事件 + 直接开新轮（跳过 Done/CloseRound）
                 if (_pending.Count > 0)
                 {
@@ -1207,7 +1204,6 @@ namespace CH4
                         _httpHost.PushView("user", userJson, -1, 0);
                     }
                     _round = 0;
-                    LogStore.Add("CatHome4", 1, "已插入排队消息（来源 " + next.Source + "），本轮结束后直接续轮", "CHAT");
                     LaunchLlm();
                     return;
                 }
@@ -1235,7 +1231,6 @@ namespace CH4
             _reasonStreamSeq = 0;
             _textStreamSeq = 0;
             DataBox.Set<string>("global", "chat_state", "tools");
-            LogStore.Add("CatHome4", 1, "模型请求调用工具（第 " + (_round + 1).ToString() + " 轮）：" + SummarizeToolNames(_llmToolCallsJson), "CHAT");
             EnterToolBatch(_llmToolCallsJson);
         }
         /// <summary>
@@ -1288,21 +1283,18 @@ namespace CH4
                         arguments = InjectCatId(arguments);
                         // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
                         _toolCallCount = _toolCallCount + 1;
-                        LogStore.Add("CatHome4", 1, "工具 " + name + " 开始执行：" + SummarizeToolArgs(arguments), "TOOL");
                         ToolOrderDog dog = new ToolOrderDog(id, name, arguments);
                         if (name.StartsWith("host-", StringComparison.Ordinal))
                         {
                             // host-* 延迟直执登记——批次末尾执行（顺序保证：同批 mau-proj 等先完成产物落地）
                             _hostDogs.Add(dog);
                             dog.IsClosed = true;
-                            LogStore.Add("CatHome4", 1, "工具 " + name + " 登记延迟直执（批次末尾执行）", "TOOL");
                         }
                         else if (IsBuiltinTool(name))
                         {
                             // 内置工具会话内直执——不需 OA（R0.2 分层：Note 状态在会话实例；time/random/info 宿主直执）
                             dog.Result = ExecuteBuiltin(name, arguments);
                             dog.IsClosed = true;
-                            LogStore.Add("CatHome4", 1, "工具 " + name + " 会话内直接执行（内置）", "TOOL");
                         }
                         else
                         {
@@ -1313,10 +1305,6 @@ namespace CH4
                                 dog.Result = "ERR|OA_POST_FAIL|工单提交失败（OA 不可用）: " + name;
                                 dog.IsClosed = true;
                                 LogStore.Add("CatHome4", 2, "工具 " + name + " 工单提交失败（OA 不可用）——诚实 ERR", "TOOL");
-                            }
-                            else
-                            {
-                                LogStore.Add("CatHome4", 1, "工具 " + name + " 已提交工单 #" + dog.OfficeId + "（超时上限 " + dog.TimeoutFrames + " 帧）", "TOOL");
                             }
                         }
                         _dogs.Add(dog);
@@ -1415,7 +1403,6 @@ namespace CH4
                     hr = "ERR|EMPTY_RESULT|工具执行无结果";
                 }
                 dog.Result = hr;
-                LogStore.Add("CatHome4", 1, "工具 " + dog.Name + " 延迟直执完成：" + TrimDisplay(hr, 100), "TOOL");
             }
             // [段3] 收集——Closed 取回执；TimeOut/帧超限 → 诚实 ERR（OA 链路失败即报错，不直执）
             for (int i = 0; i < _dogs.Count; i = i + 1)
@@ -1435,8 +1422,6 @@ namespace CH4
                 {
                     dog.Result = "ERR|EMPTY_RESULT|工具执行无结果";
                 }
-                // O 系列：工具结果入 Log 截断 100 字符——完整结果在会话消息
-                LogStore.Add("CatHome4", 1, "工具 " + dog.Name + " 执行完成：" + dog.Result, "TOOL", "", "", 100);
                 // B4 对话区：工具结果实时推送 SSE（tool 事件——前端按执行序填充占位卡；参数/结果视图截断同 history）
                 if (_httpHost != null)
                 {
@@ -1475,11 +1460,9 @@ namespace CH4
                     _httpHost.PushView("user", userJson, -1, 0);
                 }
                 _round = 0;
-                LogStore.Add("CatHome4", 1, "已插入排队消息（来源 " + next.Source + "），工具批后直接续轮", "CHAT");
                 LaunchLlm();
                 return;
             }
-            LogStore.Add("CatHome4", 1, "工具结果已回传，续轮", "CHAT");
             _round = _round + 1;
             // 续轮——StartLlm 动作段（无收敛上限——LLM 未给出最终回复前持续工具循环；终止条件 = 正常回复 / 空回复续传 / API 错误中止）
             LaunchLlm();
@@ -1538,7 +1521,6 @@ namespace CH4
             {
                 int remain = _noteTasks.Length - _noteCurrent;
                 PostUserMessage("[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent], "system");
-                LogStore.Add("CatHome4", 1, "Note 自动拉起：剩余 " + remain + " 条任务（本轮未结束——不结算统计）", "CHAT");
                 _viewStore.Save();
                 _round = 0;
                 _phase = ChatPhase.Idle;
@@ -1567,7 +1549,6 @@ namespace CH4
                     + ",\"sessionCacheHit\":" + _sessionCacheHit.ToString() + "}}";
                 _httpHost.PushView("control", doneJson, -1, 0);
             }
-            LogStore.Add("CatHome4", 1, "会话前文已落盘（" + _context.GetMessageCount().ToString() + " 条消息）", "SYS");
             // Q 本轮结束系统通知——配置 app.round_notify 可开关（默认开启）；正文优先末轮回复前 40 字符，空则回退 Token 统计
             if (_roundNotify != null)
             {
@@ -1691,120 +1672,6 @@ namespace CH4
                 return text;
             }
             return text.Substring(0, max) + "...";
-        }
-
-        /// <summary>
-        /// 工具调用摘要——解析 tool_calls JSON 数组，提取各调用工具名（日志自然语言化：不落裸 JSON）。
-        /// </summary>
-        /// <param name="toolCallsJson">tool_calls JSON 数组</param>
-        /// <returns>工具名列表（逗号拼接）；解析失败回落截断原文</returns>
-        private static string SummarizeToolNames(string toolCallsJson)
-        {
-            if (toolCallsJson == null || toolCallsJson.Length == 0)
-            {
-                return "空";
-            }
-            try
-            {
-                using (JsonDocument doc = JsonDocument.Parse(toolCallsJson))
-                {
-                    JsonElement root = doc.RootElement;
-                    if (root.ValueKind != JsonValueKind.Array)
-                    {
-                        return TrimDisplay(toolCallsJson, 120);
-                    }
-                    System.Text.StringBuilder sb = new System.Text.StringBuilder();
-                    for (int i = 0; i < root.GetArrayLength(); i = i + 1)
-                    {
-                        JsonElement call = root[i];
-                        string name = "";
-                        JsonElement funcEl;
-                        if (call.TryGetProperty("function", out funcEl))
-                        {
-                            name = GetStringProp(funcEl, "name");
-                        }
-                        if (name.Length == 0)
-                        {
-                            name = GetStringProp(call, "name");
-                        }
-                        if (sb.Length > 0)
-                        {
-                            sb.Append("、");
-                        }
-                        if (name.Length > 0)
-                        {
-                            sb.Append(name);
-                        }
-                        else
-                        {
-                            sb.Append("未知工具");
-                        }
-                    }
-                    string result = sb.ToString();
-                    if (result.Length > 0)
-                    {
-                        return result;
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                // 解析失败——回落原文
-            }
-            return TrimDisplay(toolCallsJson, 120);
-        }
-
-        /// <summary>
-        /// 工具参数摘要——解析 arguments JSON，提取 path/file/proj/key 等关键参数（日志自然语言化：不落裸 JSON）。
-        /// </summary>
-        /// <param name="arguments">工具参数 JSON</param>
-        /// <returns>关键参数摘要；无关键参数时回落截断</returns>
-        private static string SummarizeToolArgs(string arguments)
-        {
-            if (arguments == null || arguments.Length == 0)
-            {
-                return "";
-            }
-            try
-            {
-                using (JsonDocument doc = JsonDocument.Parse(arguments))
-                {
-                    JsonElement root = doc.RootElement;
-                    if (root.ValueKind != JsonValueKind.Object)
-                    {
-                        return TrimDisplay(arguments, 120);
-                    }
-                    string[] keys = new string[] { "path", "file", "proj", "key", "name", "dir", "id" };
-                    System.Text.StringBuilder sb = new System.Text.StringBuilder();
-                    for (int i = 0; i < keys.Length; i = i + 1)
-                    {
-                        JsonElement value;
-                        if (root.TryGetProperty(keys[i], out value) && value.ValueKind == JsonValueKind.String)
-                        {
-                            string got = value.GetString();
-                            if (got != null && got.Length > 0)
-                            {
-                                if (sb.Length > 0)
-                                {
-                                    sb.Append(", ");
-                                }
-                                sb.Append(keys[i]);
-                                sb.Append("=");
-                                sb.Append(TrimDisplay(got, 60));
-                            }
-                        }
-                    }
-                    if (sb.Length > 0)
-                    {
-                        return sb.ToString();
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                // 解析失败——回落原文
-            }
-            return TrimDisplay(arguments, 120);
         }
     }
 }
