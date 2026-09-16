@@ -36,6 +36,16 @@ namespace CatHome4.Http
             // 连接建立即推全量快照——单写本连接队列（重连兜底语义：仅补给新客户端，不广播已有连接——Codex P1）
             string helloFrame = "event: snapshot\ndata: " + _snapshotCache + "\n\n";
             client.Queue.Writer.TryWrite(helloFrame);
+            // A61——运行态首帧：新连接立即补一条当前运行态（"变化才推"语义下新订阅者拿不到当前值——
+            // 刷新后前端据此恢复"本轮进行中"面：停止按钮可用 + 状态条续显）；仅写本连接，不广播、不动 diff 基线
+            if (_sessionStateBuilder != null)
+            {
+                string stateHello = _sessionStateBuilder();
+                if (stateHello != null && stateHello.Length > 0)
+                {
+                    client.Queue.Writer.TryWrite("event: sessionstate\ndata: " + stateHello + "\n\n");
+                }
+            }
             try
             {
                 await foreach (string frame in client.Queue.Reader.ReadAllAsync(ctx.RequestAborted))

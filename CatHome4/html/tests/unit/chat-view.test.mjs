@@ -357,6 +357,45 @@ test('toolcard 到达——残留 text 流式容器 streaming 移除', () => {
   expect(window.viewContainers[10]).not.toBeUndefined();
 });
 
+// ── 工具卡两段式（2026-09-16）——先行"进行中"卡 + 完成/中断原位替换 ──
+test('toolcard 两段式——先行卡（无 result）显示 ⏳ 处理中 + pending 标记', () => {
+  window.chatOnView({
+    seq: 50, renderType: 'toolcard',
+    payload: { name: 'text-read', arguments: JSON.stringify({ path: 'a.txt' }), toolIndex: 1, toolTotal: 1 },
+    replaceSeq: -1
+  });
+  expect(bubbles().length).toBe(1);
+  const tb = bubbles()[0];
+  expect(tb.classList.contains('pending')).toBe(true);
+  const card = tb.querySelector('.chat-tool');
+  expect(card.open).toBe(true);
+  expect(card.querySelector('.tn').textContent).toContain('text-read');
+  const tas = card.querySelectorAll('.ta');
+  expect(tas[tas.length - 1].textContent).toContain('⏳ 处理中…');
+  expect(card.querySelector('.tr')).toBeNull();
+  expect(window.viewContainers['toolcard_50']).not.toBeUndefined();
+});
+
+test('toolcard 两段式——完成卡以 replaceSeq 原位替换（气泡不新增，pending 标记移除）', () => {
+  window.chatOnView({
+    seq: 50, renderType: 'toolcard',
+    payload: { name: 'text-read', arguments: JSON.stringify({ path: 'a.txt' }), toolIndex: 1, toolTotal: 1 },
+    replaceSeq: -1
+  });
+  window.chatOnView({
+    seq: 51, renderType: 'toolcard',
+    payload: { name: 'text-read', arguments: JSON.stringify({ path: 'a.txt' }), result: '文件内容', summary: '读取文件 a.txt', toolIndex: 1, toolTotal: 1 },
+    replaceSeq: 50
+  });
+  expect(bubbles().length).toBe(1);
+  const tb = bubbles()[0];
+  expect(tb.classList.contains('pending')).toBe(false);
+  const card = tb.querySelector('.chat-tool');
+  expect(card.open).toBe(false);
+  expect(card.querySelector('.tr').textContent).toBe('文件内容');
+  expect(window.viewContainers['toolcard_50']).toBeUndefined();
+});
+
 // ── 新思考容器创建——残留文本流式容器闪烁标记移除（多轮工具循环残留兜底）──
 test('新 reasoning 容器创建——残留 text 流式容器 streaming 移除', () => {
   window.chatOnView({ seq: 10, renderType: 'stream', payload: { kind: 'text', text: '前轮文本' }, replaceSeq: -1 });
@@ -494,6 +533,44 @@ test('A59 六态状态条——sessionstate 驱动渲染（六态时长 + 当前
   expect(window.chatRunState.state).toBe('');
   expect(bar.textContent).not.toContain('⚙️ 执行');
   expect(bar.textContent).not.toContain('🔄 请求');
+});
+
+// ── A61：底部行精简（去会话级统计）+ 轮结束整行清空 + 刷新后运行态恢复 sending ──
+test('A61 底部行——只留本轮 Token（会话级统计不再渲染）', () => {
+  window.chatOnView({
+    seq: 60, renderType: 'control',
+    payload: { type: 'usage', data: { prompt: 100, completion: 20, cacheHit: 30, sessionPrompt: 5000, sessionCompletion: 1200, sessionCacheHit: 800 } },
+    replaceSeq: -1
+  });
+  const bar = chatStatus;
+  expect(bar.textContent).toContain('↑100');
+  expect(bar.textContent).toContain('miss 70');
+  expect(bar.textContent).not.toContain('会话 ↑');
+});
+
+test('A61 轮结束——底部态与统计一并消失（空行）', () => {
+  window.chatOnSessionState({ sessionId: 'majordomo', runState: 'run', runMs: { link: 320, think: 28500, run: 11449 }, requests: 5 });
+  window.chatOnView({ seq: 61, renderType: 'control', payload: { type: 'usage', data: { prompt: 100, completion: 20, cacheHit: 30 } }, replaceSeq: -1 });
+  const bar = chatStatus;
+  expect(bar.textContent.length).toBeGreaterThan(0);
+  // 轮结束（chatdone / paused / 失败统一走 chatPhaseReset）——本轮统计已由 roundsum 气泡承载
+  window.chatPhaseReset();
+  expect(bar.textContent).toBe('');
+  expect(bar.querySelectorAll('.st').length).toBe(0);
+});
+
+test('A61 刷新兜底——运行态首帧到达即恢复 sending（停止按钮可用）', () => {
+  window.chatState = 'idle';
+  window.chatSetState('idle');
+  const pauseBtn = document.getElementById('chatPause');
+  expect(pauseBtn.disabled).toBe(true);
+  // 新连接首帧运行态（后端轮次在跑）——前端恢复 sending 面
+  window.chatOnSessionState({ sessionId: 'majordomo', runState: 'think', runMs: { think: 5000 }, requests: 2 });
+  expect(window.chatState).toBe('sending');
+  expect(pauseBtn.disabled).toBe(false);
+  // 空闲态推送不误置 sending（降级仍由 view 终态事件驱动）
+  window.chatOnSessionState({ sessionId: 'majordomo', runState: 'idle', runMs: {}, requests: 0 });
+  expect(window.chatState).toBe('sending');
 });
 
 // ── A59：状态条零值边界——非活跃零值态跳过、活跃零值态仍显示、requests=0 不显示 ──

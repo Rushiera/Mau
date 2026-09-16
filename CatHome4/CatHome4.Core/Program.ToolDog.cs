@@ -50,6 +50,12 @@ namespace CH4
         public long TimeoutFrames;
 
         /// <summary>
+        /// 工具卡视图序号——LLM 输出工具时先行推送的"进行中"卡（完成/中断时以该序号 replaceSeq 原位替换；
+        /// -1=无先行卡——声明面拦截 / 无推送通道 / 已终结）
+        /// </summary>
+        public long CardSeq;
+
+        /// <summary>
         /// 创建工具单 Dog——超时按工具名映射
         /// </summary>
         /// <param name="toolCallId">tool_call_id</param>
@@ -64,6 +70,7 @@ namespace CH4
             IsClosed = false;
             IsTimedOut = false;
             Result = "";
+            CardSeq = -1;
             TimeoutFrames = MapTimeoutFrames(name);
         }
 

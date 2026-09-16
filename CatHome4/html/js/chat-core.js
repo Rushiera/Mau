@@ -29,29 +29,40 @@ var chatPhaseMeta = [
     { key: 'reply', label: '回复', icon: '💬' }
 ];
 var chatRunState = { state: '', ms: {}, requests: 0 };   // 后端运行态快照（本猫会话条目——id 即猫 key；数据源 = SSE patch 推送，前端零轮询）
-var chatUsage = { prompt: 0, completion: 0, cacheHit: 0, sessionPrompt: 0, sessionCompletion: 0, sessionCacheHit: 0 };       // Token 双级——轮级（usage 事件覆盖式累计）+ 会话级（后端跨轮累加，仅新会话归零）
+var chatUsage = { prompt: 0, completion: 0, cacheHit: 0 };       // 轮级 Token——usage 事件覆盖式累计；轮结束清空（A61：去会话级显示——底部行只留本轮统计）
 
 function chatRunStart() {
-    // 活跃轮开始——清运行态（数据源 = SSE patch 推送；前端零轮询、零自算计时）
+    // 活跃轮开始——清运行态 + 轮级 Token（新轮从零计；数据源 = SSE sessionstate 推送，前端零轮询、零自算计时）
     chatRunState = { state: '', ms: {}, requests: 0 };
+    chatUsage.prompt = 0;
+    chatUsage.completion = 0;
+    chatUsage.cacheHit = 0;
     chatRenderStatus();
 }
 
 function chatPhaseReset() {
-    // 终态/失败——清运行态（保留 usage 累计——chatdone 后 token 统计需持续可见）
+    // 终态/失败——清运行态 + 轮级 Token：本轮统计已由 roundsum 气泡承载 → 底部"态 + 统计"一并消失（A61）
     chatRunState = { state: '', ms: {}, requests: 0 };
+    chatUsage.prompt = 0;
+    chatUsage.completion = 0;
+    chatUsage.cacheHit = 0;
     chatRenderStatus();
 }
 
 function chatPhaseResetFull() {
-    // 新会话——轮级 + 会话级 usage 全清零（会话级唯一前端归零点；跨轮保留见 chatSend）
+    // 新会话——运行态 + 轮级 usage 清零
     chatPhaseReset();
-    chatUsage = { prompt: 0, completion: 0, cacheHit: 0, sessionPrompt: 0, sessionCompletion: 0, sessionCacheHit: 0 };
     chatRenderStatus();
 }
 
+// A61——后端轮次进行中判定（运行态数据源 = SSE sessionstate；供刷新/重连后恢复前端 sending 面）
+function chatRunning() {
+    var s = chatRunState.state || '';
+    return s !== '' && s !== 'idle';
+}
+
 function chatOnSessionState(d) {
-    // 运行态推送——本猫运行态块（服务端变化才推；状态条唯一数据源——空闲期零推送、前端零轮询）
+    // 运行态推送——本猫运行态块（服务端变化或新连接首帧才推；状态条唯一数据源——空闲期零推送、前端零轮询）
     if (!d || !d.sessionId) { return; }
     chatRunState = {
         state: d.runState || '',
@@ -59,10 +70,16 @@ function chatOnSessionState(d) {
         requests: d.requests || 0
     };
     chatRenderStatus();
+    // A61 刷新兜底——后端轮次在跑而本端非发送态（刷新/新连接丢失本地态）→ 恢复 sending（停止按钮/插话面一致）
+    if (chatRunning() && chatState !== 'sending' && chatState !== 'loading') {
+        chatSetState('sending');
+        chatKeepAlive();
+    }
 }
 
 function chatRenderStatus() {
-    // 状态条渲染——六态完成后端时长（当前态高亮 + 呼吸动效）+ ⏱ 总 + 请求次数 + 右侧 Token 统计（轮级 + 会话级）
+    // 状态条渲染——六态完成后端时长（当前态高亮 + 呼吸动效）+ ⏱ 总 + 请求次数 + 最右本轮 Token 统计
+    // （A61：去会话级 token；本轮统计靠右 —— CSS .tok margin-left:auto；轮结束整行清空）
     var bar = document.getElementById('chatStatus');
     if (!bar) { return; }
     var html = '';
@@ -91,12 +108,6 @@ function chatRenderStatus() {
             + '<span class="tk c">↓' + chatFmtCount(chatUsage.completion) + '</span>'
             + (chatUsage.cacheHit > 0 ? '<span class="tk ch">cache ' + chatFmtCount(chatUsage.cacheHit) + '</span>' : '')
             + (miss > 0 ? '<span class="tk ms">miss ' + chatFmtCount(miss) + '</span>' : '')
-            + '</span>';
-    }
-    if (chatUsage.sessionPrompt > 0 || chatUsage.sessionCompletion > 0) {
-        html += '<span class="tok sess">'
-            + '<span class="tk">会话 ↑' + chatFmtCount(chatUsage.sessionPrompt) + '</span>'
-            + '<span class="tk c">↓' + chatFmtCount(chatUsage.sessionCompletion) + '</span>'
             + '</span>';
     }
     bar.innerHTML = html;
@@ -189,6 +200,7 @@ function chatRenderPending() {
 
 // ============ F4 view 协议分发 ============
 // 八种 renderType：user/stream/text/reason/toolcard/control/retry/error（S2 §8.4 retry 重试记录；A55 error 错误气泡）
+// toolcard 两段式——LLM 输出工具即出"进行中"卡（无 result → ⏳ 处理中），完成/中断以 replaceSeq 原位替换为完整卡
 // stream 流式增量——seq 复用=同容器追加；新 seq=新建容器（text 与 reason 各自独立容器）
 // text/reason 整块——replaceSeq 指向被替换的流式容器序号（流式→整块替换；无容器则新建）
 // retry 独立气泡——replaceSeq≥0 更新已有重试气泡（多次重试替换不堆叠）；-1 新建
@@ -206,7 +218,8 @@ function chatOnView(d) {
     } else if (type === 'reason') {
         chatOnReason(d.seq, d.replaceSeq, payload);
     } else if (type === 'toolcard') {
-        chatOnToolCard(payload);
+        // 两段式——先行卡（replaceSeq=-1 新建）→ 完成/中断原位替换（replaceSeq = 先行卡 seq）
+        chatOnToolCard(d.seq, d.replaceSeq, payload);
     } else if (type === 'retry') {
         // S2 §8.4——重试过程记录（独立气泡，弱化样式；replaceSeq≥0 更新已有气泡，否则新建）
         chatOnRetry(d.seq, d.replaceSeq, payload);
@@ -297,13 +310,32 @@ function chatOnReason(seq, replaceSeq, payload) {
     }
 }
 
-function chatOnToolCard(payload) {
-    // 工具卡整块（F4 无占位卡——工具卡以结果整块出现）
+// 工具卡两段式——先行"进行中"卡（无 result → ⏳ 处理中，展开态）+ 完成/中断原位替换为完整卡（同气泡不新增）
+function chatOnToolCard(seq, replaceSeq, payload) {
     chatKeepAlive();
     // 工具执行开始——上一轮文本流式已终结（宿主 seal 缺失兜底）
     chatSealStreams();
+    var pending = (payload.result === undefined);
+    // 原位替换——命中先行卡容器（replaceSeq 指向其 seq）→ 换卡不换气泡
+    if (replaceSeq !== undefined && replaceSeq >= 0) {
+        var ec = viewContainers['toolcard_' + replaceSeq];
+        if (ec) {
+            var replaced = chatToolCard(payload, false);
+            ec.bubble.replaceChild(replaced, ec.card);
+            ec.card = replaced;
+            ec.bubble.classList.remove('pending');
+            delete viewContainers['toolcard_' + replaceSeq];
+            return;
+        }
+    }
     var tb = chatBubble('assistant', 'tool');
-    tb.appendChild(chatToolCard(payload));
+    if (pending) { tb.classList.add('pending'); }
+    var card = chatToolCard(payload, pending);
+    tb.appendChild(card);
+    if (pending) {
+        // 先行卡登记——完成/中断事件以 replaceSeq 命中此处（完成卡不登记：无后续替换）
+        viewContainers['toolcard_' + seq] = { type: 'toolcard', bubble: tb, card: card };
+    }
 }
 
 // A55——重试气泡文本（渲染单例内文本面）
@@ -380,9 +412,6 @@ function chatOnControl(payload) {
         chatUsage.prompt = u.prompt || 0;
         chatUsage.completion = u.completion || 0;
         chatUsage.cacheHit = u.cacheHit || 0;
-        chatUsage.sessionPrompt = u.sessionPrompt || 0;
-        chatUsage.sessionCompletion = u.sessionCompletion || 0;
-        chatUsage.sessionCacheHit = u.sessionCacheHit || 0;
         chatRenderStatus();
         // Q1 顶端计数实时化——每次 API 请求返回后按真实 context（单次前文 token）更新前文长度，不等轮结束
         if (u.context !== undefined && u.context > 0) {
@@ -420,13 +449,6 @@ function chatOnControl(payload) {
                 // 前文长度 = 最近一次请求的单次 prompt（context 字段）；旧数据无 context 时回退累计值
                 var ctx2 = (ds.context !== undefined && ds.context > 0) ? ds.context : (ds.prompt || 0);
                 doneText += ' | 前文 ' + chatFmtCount(ctx2) + ' tokens';
-                // 会话级 Token——随终态同步（后端唯一真源；前端只覆盖不累加）
-                if (ds.sessionPrompt !== undefined) {
-                    chatUsage.sessionPrompt = ds.sessionPrompt;
-                    chatUsage.sessionCompletion = ds.sessionCompletion;
-                    chatUsage.sessionCacheHit = ds.sessionCacheHit;
-                    chatRenderStatus();
-                }
             }
             chatInfo.textContent = doneText;
         }
@@ -466,7 +488,8 @@ function chatLoadHistory() {
             // 会话归属落库——渲染层只渲染并返回 sessionId（P20-P3-7：渲染层不写全局状态）
             var sid = chatRenderHistory(d);
             if (sid) { CHAT_SESSION = sid; }
-            chatSetState('idle');
+            // A61 刷新兜底——后端轮次仍在跑（运行态已由 sessionstate 首帧送达）→ 保持 sending（停止按钮可用）
+            chatSetState(chatRunning() ? 'sending' : 'idle');
         })
         .catch(function () {
             chatInfo.textContent = '历史加载失败——宿主未运行？';

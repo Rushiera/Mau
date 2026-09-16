@@ -109,12 +109,13 @@ function chatResultSuffix(info) {
     return '';
 }
 
-function chatToolCard(tool) {
-    // 工具卡——details 结构默认折叠（点击 summary 展开/收起；.tn/.ta/.tr 类保留——测试与样式复用）
+function chatToolCard(tool, open) {
+    // 工具卡——details 结构（open=true 展开：两段式先行卡直接展示 ⏳；缺省折叠——点击 summary 展开/收起）
+    // .tn/.ta/.tr 类保留——测试与样式复用；result === undefined → 「⏳ 处理中…」占位（完成时整卡替换）
     var isErr = tool.result && tool.result.indexOf('ERR') === 0;
     var det = document.createElement('details');
     det.className = 'chat-tool' + (isErr ? ' err' : '');
-    det.open = false;
+    det.open = (open === true);
     var sum = document.createElement('summary');
     sum.className = 'tn';
     // 工具前缀——对齐 CH2：并发批次显示 [icon n/m]；单次保持现状（🔧/⚠️）

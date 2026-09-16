@@ -197,13 +197,19 @@ namespace CatHome4.Core.Tests
             /// <summary>捕获的 PushView 调用——renderType → payload 列表（F4 视图事件）</summary>
             public Dictionary<string, List<string>> ViewEvents = new Dictionary<string, List<string>>();
 
+            /// <summary>捕获的 PushView 替换序号——renderType → replaceSeq 列表（-1=新建；工具卡先行→替换断言用）</summary>
+            public Dictionary<string, List<long>> ViewReplaceSeqs = new Dictionary<string, List<long>>();
+
+            /// <summary>捕获的 PushView 分配序号——renderType → seq 列表（先行卡 seq 与完成卡 replaceSeq 对照用）</summary>
+            public Dictionary<string, List<long>> ViewSeqs = new Dictionary<string, List<long>>();
+
             /// <summary>视图事件序号——递增分配（F4）</summary>
             private int _viewSeq;
 
             /// <summary>视图事件捕获——按 renderType 累积（F4）</summary>
             /// <param name="renderType">渲染类型</param>
             /// <param name="payload">载荷 JSON</param>
-            /// <param name="replaceSeq">被替换序号（忽略）</param>
+            /// <param name="replaceSeq">被替换序号（记录——先行卡替换断言）</param>
             /// <param name="seqHint">序号提示（忽略——测试独立分配）</param>
             /// <returns>分配序号</returns>
             public int PushView(string renderType, string payload, long replaceSeq, long seqHint)
@@ -215,17 +221,32 @@ namespace CatHome4.Core.Tests
                     ViewEvents[renderType] = list;
                 }
                 list.Add(payload);
+                List<long> repSeqs;
+                if (!ViewReplaceSeqs.TryGetValue(renderType, out repSeqs))
+                {
+                    repSeqs = new List<long>();
+                    ViewReplaceSeqs[renderType] = repSeqs;
+                }
+                repSeqs.Add(replaceSeq);
                 _viewSeq = _viewSeq + 1;
+                List<long> allocatedSeqs;
+                if (!ViewSeqs.TryGetValue(renderType, out allocatedSeqs))
+                {
+                    allocatedSeqs = new List<long>();
+                    ViewSeqs[renderType] = allocatedSeqs;
+                }
+                allocatedSeqs.Add(_viewSeq);
                 return _viewSeq;
             }
         }
 
         /// <summary>
-        /// 构造测试会话——临时前文文件 + Mock LLM + 空工具表。
+        /// 构造测试会话——临时前文文件 + Mock LLM + 声明面工具（缺省仅 Note）。
         /// </summary>
         /// <param name="llm">LLM 运行时</param>
+        /// <param name="declared">会话声明面工具（缺省 = 仅 Note；OA 工具测试须显式声明——无消费者时靠 Pause 收尾）</param>
         /// <returns>会话实体</returns>
-        private static CH4.ChatSession CreateSession(ILlmRuntime llm)
+        private static CH4.ChatSession CreateSession(ILlmRuntime llm, ToolSpec[] declared = null)
         {
             // 工具注册表初始化——内置判定（IsBuiltinTool）读 ToolRegistry 单一真相源；测试环境无宿主 Init，
             // 须显式灌入内置表（否则 Note 被判非内置 → 走 OA 工单 → 测试无消费者卡死；判例 2026-09-16）
@@ -241,10 +262,18 @@ namespace CatHome4.Core.Tests
             SessionStore store = new SessionStore(tmp);
             OA oa = new OA(new ThreadGuard());
             // 测试工具声明面——含内置 Note（IsToolAllowed 声明面拦截需要；OA 工具测试走内置避免无消费者卡死）
-            ToolSpec[] tools = new ToolSpec[]
+            ToolSpec[] tools;
+            if (declared == null)
             {
-                new ToolSpec("Note", "Note 任务追踪", "{}")
-            };
+                tools = new ToolSpec[]
+                {
+                    new ToolSpec("Note", "Note 任务追踪", "{}")
+                };
+            }
+            else
+            {
+                tools = declared;
+            }
             CH4.SessionViewStore viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.json"));
             CH4.ChatSession session = new CH4.ChatSession("test-session", "test", ctx, store, llm, oa, tools, delegate (string name, string args) { return "ERR|NO_TOOL|" + name; }, viewStore);
             return session;
@@ -401,6 +430,92 @@ namespace CatHome4.Core.Tests
             {
                 Assert.Equal(2, d2.RootElement.GetProperty("toolIndex").GetInt32());
                 Assert.Equal(2, d2.RootElement.GetProperty("toolTotal").GetInt32());
+            }
+        }
+
+        /// <summary>
+        /// 工具卡两段式——LLM 输出工具即推"进行中"卡（无 result 字段），完成时以同序号 replaceSeq 原位替换为完整卡。
+        /// </summary>
+        [Fact]
+        public void ToolCard_PendingThenReplacedOnComplete()
+        {
+            MockLlm llm = new MockLlm();
+            string tc = "[{\"id\":\"p1\",\"function\":{\"name\":\"time\",\"arguments\":\"{}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            MockHost host = new MockHost();
+            ToolSpec[] declared = new ToolSpec[]
+            {
+                new ToolSpec("time", "当前时间", "{}")
+            };
+            CH4.ChatSession session = CreateSession(llm, declared);
+            session.AttachHost(host);
+            session.PostUserMessage("调用工具");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            List<string> cards = host.ViewEvents["toolcard"];
+            Assert.Equal(2, cards.Count);
+            // 先行卡——无 result 字段（前端 ⏳ 处理中）+ 工具名 + 并发编号
+            using (JsonDocument p = JsonDocument.Parse(cards[0]))
+            {
+                JsonElement res;
+                Assert.False(p.RootElement.TryGetProperty("result", out res));
+                Assert.Equal("time", p.RootElement.GetProperty("name").GetString());
+                Assert.Equal(1, p.RootElement.GetProperty("toolIndex").GetInt32());
+                Assert.Equal(1, p.RootElement.GetProperty("toolTotal").GetInt32());
+            }
+            // 完成卡——以先行卡序号原位替换（replaceSeq = 先行卡 seq）
+            List<long> repSeqs = host.ViewReplaceSeqs["toolcard"];
+            Assert.Equal(-1, repSeqs[0]);
+            Assert.Equal(host.ViewSeqs["toolcard"][0], repSeqs[1]);
+            using (JsonDocument d = JsonDocument.Parse(cards[1]))
+            {
+                JsonElement res;
+                Assert.True(d.RootElement.TryGetProperty("result", out res));
+            }
+        }
+
+        /// <summary>
+        /// 工具卡中断终态——工具批进行中（OA 工具无消费者）Pause 中止：先行"进行中"卡以同序号替换为已中止卡。
+        /// </summary>
+        [Fact]
+        public void ToolCard_PendingAbortedOnPause()
+        {
+            MockLlm llm = new MockLlm();
+            // OA 工具（声明面内、非内置）——无消费者 → 工具批停留进行中
+            string tc = "[{\"id\":\"o1\",\"function\":{\"name\":\"text-read\",\"arguments\":\"{\\\"path\\\":\\\"a.txt\\\"}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            MockHost host = new MockHost();
+            ToolSpec[] declared = new ToolSpec[]
+            {
+                new ToolSpec("text-read", "读取文本", "{}")
+            };
+            CH4.ChatSession session = CreateSession(llm, declared);
+            session.AttachHost(host);
+            session.PostUserMessage("调用 OA 工具");
+            // 泵帧直到先行卡出现（工具批已进入）
+            for (int i = 0; i < 200; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+                List<string> cardsNow;
+                if (host.ViewEvents.TryGetValue("toolcard", out cardsNow) && cardsNow.Count > 0)
+                {
+                    break;
+                }
+            }
+            Assert.False(session.IsIdle);
+            // 中止——先行卡补终态（已中止）而非停留"处理中"
+            session.Pause();
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            List<string> cards = host.ViewEvents["toolcard"];
+            Assert.Equal(2, cards.Count);
+            List<long> repSeqs = host.ViewReplaceSeqs["toolcard"];
+            Assert.Equal(-1, repSeqs[0]);
+            Assert.Equal(host.ViewSeqs["toolcard"][0], repSeqs[1]);
+            using (JsonDocument d = JsonDocument.Parse(cards[1]))
+            {
+                Assert.Contains("已中止", d.RootElement.GetProperty("result").GetString());
             }
         }
 

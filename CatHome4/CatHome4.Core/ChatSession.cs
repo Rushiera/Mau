@@ -652,14 +652,16 @@ namespace CH4
         /// <param name="logPrefix">日志前缀（实现追加落盘条数）</param>
         private void FinalizeInterrupted(string ctrlJson, string logPrefix)
         {
-            // [段0] 已完成工具结果保留——未完成放弃（ReplaceMessages 对未配对声明补占位）
+            // [段0] 已完成工具结果保留——未完成放弃（ReplaceMessages 对未配对声明补占位）+ 先行卡补终态（完成/已中止）
             for (int i = 0; i < _dogs.Count; i = i + 1)
             {
                 ToolOrderDog dog = _dogs[i];
-                if (dog.IsClosed && dog.Result != null && dog.Result.Length > 0)
+                bool done = dog.IsClosed && dog.Result != null && dog.Result.Length > 0;
+                if (done)
                 {
                     AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
                 }
+                PushToolCardFinal(dog, i + 1, _dogs.Count, done);
             }
             _dogs.Clear();
             _hostDogs.Clear();
@@ -935,10 +937,7 @@ namespace CH4
                         toolCalls = ev.Text;
                         // 运行态——ToolCalls（流末聚合）不切态：tool 态已由 ToolCallsStart（首个增量帧）进入；
                         // run 态在发单时进入（PumpLlm 工具分支）——design-ch4-llm §2.1
-                        if (_httpHost != null)
-                        {
-                            // F4 视图——toolCalls 占位卡后置 F1/F2（工具卡以结果整块出现，不推占位）
-                        }
+                        // 视图——"进行中"工具卡在 StartToolBatch 段统一推送（LLM 输出工具即出卡；完成/中断原位替换）
                     }
                     else if (ev.Kind == LlmStreamKind.ToolCallsStart)
                     {
@@ -1392,16 +1391,162 @@ namespace CH4
             }
             _reasonStreamSeq = 0;
             _textStreamSeq = 0;
+            // 工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即出"进行中"卡；完成 / 中断时以同序号原位替换
+            List<ToolCallInfo> toolCalls = ParseToolCalls(_llmToolCallsJson);
+            Dictionary<string, long> cardSeqs = PushToolCardPending(toolCalls);
             // 运行态——发单即执行态（本地·程序过程：工具批到下一请求发出；长度由本地决定）
             PhaseEnter(PhaseRun);
             SetChatState("tools");
-            EnterToolBatch(_llmToolCallsJson);
+            EnterToolBatch(_llmToolCallsJson, cardSeqs);
         }
+        /// <summary>
+        /// 工具调用条目——tool_calls JSON 解析产物（先行推卡消费；字段与 OpenAI wire 对齐）。
+        /// </summary>
+        private sealed class ToolCallInfo
+        {
+            /// <summary>tool_call_id——结果配对键</summary>
+            public string Id;
+
+            /// <summary>工具名</summary>
+            public string Name;
+
+            /// <summary>参数 JSON（未注入 catId——发单前注入）</summary>
+            public string Arguments;
+
+            /// <summary>并发序号（1-based——tool_calls 数组顺序）</summary>
+            public int Index;
+
+            /// <summary>并发总数（同批 tool_calls 数组长度）</summary>
+            public int Total;
+        }
+
+        /// <summary>
+        /// 解析 tool_calls JSON（OpenAI wire：{id, function:{name, arguments}}）——逐条条目（携带 Index/Total）。
+        /// 解析失败 / 非数组 → 空列表（容错——与发单侧同语义：空批立即收敛）。
+        /// </summary>
+        /// <param name="toolCallsJson">tool_calls JSON 数组</param>
+        /// <returns>条目列表</returns>
+        private List<ToolCallInfo> ParseToolCalls(string toolCallsJson)
+        {
+            List<ToolCallInfo> list = new List<ToolCallInfo>();
+            if (toolCallsJson == null || toolCallsJson.Length == 0)
+            {
+                return list;
+            }
+            JsonDocument doc = null;
+            try
+            {
+                doc = JsonDocument.Parse(toolCallsJson);
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 3, "tool_calls 解析失败: " + ex.Message, "TOOL");
+                return list;
+            }
+            using (doc)
+            {
+                JsonElement root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Array)
+                {
+                    return list;
+                }
+                int total = root.GetArrayLength();
+                for (int i = 0; i < total; i = i + 1)
+                {
+                    JsonElement call = root[i];
+                    ToolCallInfo info = new ToolCallInfo();
+                    info.Id = GetStringProp(call, "id");
+                    // OpenAI wire：name/arguments 在 function 嵌套对象内
+                    JsonElement funcEl;
+                    if (call.TryGetProperty("function", out funcEl))
+                    {
+                        info.Name = GetStringProp(funcEl, "name");
+                        info.Arguments = GetStringProp(funcEl, "arguments");
+                    }
+                    else
+                    {
+                        info.Name = "";
+                        info.Arguments = "";
+                    }
+                    info.Index = i + 1;
+                    info.Total = total;
+                    list.Add(info);
+                }
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// 工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即推"进行中"卡（无 result 字段 → 前端 ⏳ 处理中）；
+        /// 工具完成 / 中断时以同序号 replaceSeq 原位替换（PumpToolBatch 段3 / PushToolCardFinal）。
+        /// 声明面外工具不推卡（拦截是即时的——只在完成时出 ERR 卡）。
+        /// </summary>
+        /// <param name="calls">工具调用条目（ParseToolCalls 产物）</param>
+        /// <returns>tool_call_id → 先行卡视图序号（空=无推送通道 / 无可推工具）</returns>
+        private Dictionary<string, long> PushToolCardPending(List<ToolCallInfo> calls)
+        {
+            Dictionary<string, long> seqs = new Dictionary<string, long>(StringComparer.Ordinal);
+            if (_httpHost == null)
+            {
+                return seqs;
+            }
+            for (int i = 0; i < calls.Count; i = i + 1)
+            {
+                ToolCallInfo call = calls[i];
+                if (!IsToolAllowed(call.Name))
+                {
+                    continue;
+                }
+                string json = "{\"name\":" + JsonUtil.Serialize(call.Name)
+                    + ",\"arguments\":" + JsonUtil.Serialize(InjectCatId(call.Arguments))
+                    + ",\"toolIndex\":" + call.Index.ToString()
+                    + ",\"toolTotal\":" + call.Total.ToString() + "}";
+                long seq = _httpHost.PushView("toolcard", json, -1, 0);
+                seqs[call.Id] = seq;
+            }
+            return seqs;
+        }
+
+        /// <summary>
+        /// 工具卡终态补推——中断收尾（中止 / 宿主重启）时先行卡补终态：已完成 → 完整卡；未完成 → 已中止卡。
+        /// 无先行卡（声明面拦截 / 已由段3 终结）不推——防重复卡。
+        /// </summary>
+        /// <param name="dog">工具单</param>
+        /// <param name="index">并发序号（1-based）</param>
+        /// <param name="total">并发总数</param>
+        /// <param name="done">true=已完成（结果保留）；false=未完成（本轮中止）</param>
+        private void PushToolCardFinal(ToolOrderDog dog, int index, int total, bool done)
+        {
+            if (_httpHost == null || dog.CardSeq < 0)
+            {
+                return;
+            }
+            string result;
+            if (done)
+            {
+                result = dog.Result;
+            }
+            else
+            {
+                result = "（本轮已中止——工具未执行完成）";
+            }
+            string summary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, result);
+            string json = "{\"name\":" + JsonUtil.Serialize(dog.Name)
+                + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson)
+                + ",\"result\":" + JsonUtil.Serialize(result)
+                + ",\"summary\":" + JsonUtil.Serialize(summary)
+                + ",\"toolIndex\":" + index.ToString()
+                + ",\"toolTotal\":" + total.ToString() + "}";
+            _httpHost.PushView("toolcard", json, dog.CardSeq, 0);
+            dog.CardSeq = -1;
+        }
+
         /// <summary>
         /// StartToolBatch 动作段——解析 tool_calls → OA 发单（host-* 延迟直执登记 / 普通工单 Post / Post 失败诚实 ERR）→ ToolBatchRunning。解析失败 = 空批（allDone 立即成立——等价原 try-catch 跳过语义：续轮保持）。
         /// </summary>
         /// <param name="toolCallsJson">tool_calls JSON 数组</param>
-        private void EnterToolBatch(string toolCallsJson)
+        /// <param name="cardSeqs">tool_call_id → 先行"进行中"卡视图序号（PushToolCardPending 产物；缺省 -1=无先行卡）</param>
+        private void EnterToolBatch(string toolCallsJson, Dictionary<string, long> cardSeqs)
         {
             _toolBatchActive = true;
             _dogs.Clear();
@@ -1448,6 +1593,8 @@ namespace CH4
                         // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
                         _toolCallCount = _toolCallCount + 1;
                         ToolOrderDog dog = new ToolOrderDog(id, name, arguments);
+                        long pendingCardSeq;
+                        dog.CardSeq = cardSeqs.TryGetValue(id, out pendingCardSeq) ? pendingCardSeq : -1;
                         if (name.StartsWith("host-", StringComparison.Ordinal))
                         {
                             // host-* 延迟直执登记——批次末尾执行（顺序保证：同批 mau-proj 等先完成产物落地）
@@ -1586,12 +1733,13 @@ namespace CH4
                 {
                     dog.Result = "ERR|EMPTY_RESULT|工具执行无结果";
                 }
-                // B4 对话区：工具结果实时推送 SSE（tool 事件——前端按执行序填充占位卡；参数/结果视图截断同 history）
+                // B4 对话区：工具结果实时推送 SSE（tool 事件——先行"进行中"卡原位替换为完整卡；参数/结果视图截断同 history）
                 if (_httpHost != null)
                 {
                     string toolSummary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, dog.Result);
                     string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(dog.Result) + ",\"summary\":" + JsonUtil.Serialize(toolSummary) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
-                    _httpHost.PushView("toolcard", toolJson, -1, 0);
+                    _httpHost.PushView("toolcard", toolJson, dog.CardSeq, 0);
+                    dog.CardSeq = -1;
                 }
                 AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
                 _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);

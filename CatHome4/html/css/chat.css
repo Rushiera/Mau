@@ -56,6 +56,10 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 .chat-tool .tr.err { color: #f48771; }
 .chat-tool.err { border-color: #5a2a24; }
 .chat-tool.err summary { color: #f48771; }
+/* 两段式工具卡——先行"进行中"卡（LLM 输出工具即出；完成/中断原位替换为完整卡——2026-09-16） */
+.chat-bubble.pending .chat-tool { border-style: dashed; }
+.chat-bubble.pending .chat-tool summary { color: #8a8a8a; animation: chattoolblink 1.4s ease-in-out infinite; }
+@keyframes chattoolblink { 50% { opacity: 0.55; } }
 /* 命令意图解读——powershell 工具卡展开区首块（chat-cmd.js；逐段自然语言 + 未识别 ❓ 标注） */
 .chat-tool .cmd-intent { color: #9cdcfe; word-break: break-all; white-space: pre-wrap; margin-top: 3px; padding: 3px 6px; background: #0c1218; border-left: 2px solid #26404f; border-radius: 2px; }
 /* S2 §8.4——重试过程记录气泡（独立视图条目：弱化灰底小号；⟳ 重试中 / ✓ 已恢复） */
