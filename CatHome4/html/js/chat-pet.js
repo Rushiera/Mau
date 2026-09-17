@@ -5,11 +5,19 @@
 // 资源：html/pet/*.webp（286x256 原尺寸 1:1 显示 · 20ms/帧 · 透明底 · 圆角矩形边缘羽化；源素材 Workspace/pet/*.gif）
 //
 // 形态语义（素材约定）：
-//   loop-*  循环态（link/wait/think/tool/run/reply/sseErr/idle1-4/idle-hook/idle-sleep）
-//   before-* 前置过渡（播一遍）——before-tool 进工具前 / before-idle 一轮收尾回空闲前 / before-idle-hook 移入 / before-idle-sleep 入睡
-//   after-*  后置反应（播一遍）——after-idle-check1-5 点击后的摸头反应，随机五选一
+//   loop-*  循环态（link/wait/think/tool/run/reply/sseErr/idle1-3/idle-hook/idle-sleep）
+//   before-* 过渡动画（播一遍）——before-idle-hook 移入 / before-idle-sleep 入睡
+//            · before-idle 实为 **after-reply 语义**（整轮结束的收尾动作）——只在「活跃态 → 空闲」时播一次
+//            · before-tool 已废弃——素材姿态与 loop-tool 对不齐，进工具态直接切循环图
+//   after-*  后置反应（播一遍）——after-idle-check 点击后的摸头反应
 // 空闲节律（莎 2026-09-16 定）：进空闲随机一张基础待机播 8s → 直接进入睡；hook/check 结束后同样回到这个 8s 周期
 // 渐隐规则（莎 2026-09-16 定）：before → loop、loop → after 两段是连续动作——**瞬切**；其余切换走 0.25s 交叉溶解
+// 素材加载（莎 2026-09-17 定）：初始化即串行加载 → blob 持有 + Cache API 缓存（UI 版本键——版本变即失效）
+//   · 加载门禁——首图 loop-sseErr 就位前桌宠不启动（保持不可见，不挂破图）；就位后常显该图作加载态；全量就绪才开放调度
+//   · blob 持有 = 断线（宿主不可达）时零网络依赖；缓存 = 刷新不重下（限带宽/穿透场景关键）
+//   · 缓存失效键 = 每张素材的内容哈希（js/pet-manifest.js）——改图/改名只重下变动那一张，与代码版本无关
+//   · 硬保底——右上角「清理缓存」按钮主动清桶（脏数据 / 改图不改名时用）
+//   · 播放时长 = manifest 单一真相（免前端常量与素材漂移）；接缝溶解名单盖住姿态不接的 before→loop 对
 
 // [段1] 状态与常量
 var chatPetImgs = [null, null];   // 双层图片元素（交叉溶解——交替作为当前层）
@@ -27,32 +35,41 @@ var chatPetIdleIdx = -1;          // 上次基础待机下标（避免连续重�
 var chatPetCheckIdx = -1;         // 上次摸头反应下标（避免连续重复）
 var chatPetHovered = false;       // 鼠标是否停留在桌宠上（决定反应结束后回哪个子模式）
 var chatPetLastInstant = false;   // 上一次换图是否为瞬切（before→loop / loop→after）——调度与诊断用
+var chatPetRes = {};              // 素材持有表（名称 → blob URL）——串行加载逐张填入；有值则断线时零网络依赖
+var chatPetLoading = true;        // 加载门禁——true 期间不开放调度（不响应态变化，不跑空闲节律）
+var chatPetBooted = false;        // 首图（loop-sseErr）是否已就位——未就位桌宠保持不可见
+var chatPetFail = 0;              // 加载失败计数——全量结束后汇总告警（不静默）
+var CHAT_PET_CACHE_PREFIX = 'ch4-pet';    // Cache API 桶名（固定——失效靠逐张 URL 的内容哈希，不靠换桶名）
+var chatPetManifest = (typeof chatPetManifestData !== 'undefined') ? chatPetManifestData : {};   // 素材清单（名称 → {h:内容哈希, ms:总时长}）——来自 js/pet-manifest.js；缺失降级空表
+// 接缝溶解名单——before 末帧与 loop 首帧姿态不接的对，强制走溶解盖接缝（实测最优截断改善 <10%，裁切无用）
+// · loop-idle1/2/3——before-idle 是「一对三」（目标为此三张待机图），结构上不可能同时对齐，故全走溶解
+// · before-tool 已废弃（素材删除，进 tool 态直切 loop-tool，无接缝）；其余对仍走瞬切
+var CHAT_PET_SEAM_BLEND = {
+    'loop-idle-sleep': true, 'loop-idle-hook': true,
+    'loop-idle1': true, 'loop-idle2': true, 'loop-idle3': true
+};
 
 // 六态 → 循环资源
 var chatPetPhaseMap = { link: 'loop-link', wait: 'loop-wait', think: 'loop-think', tool: 'loop-tool', run: 'loop-run', reply: 'loop-reply' };
 
-var CHAT_PET_IDLE_BASE = ['loop-idle1', 'loop-idle2', 'loop-idle3', 'loop-idle4'];   // 基础待机四选一（随机）
+var CHAT_PET_IDLE_BASE = ['loop-idle1', 'loop-idle2', 'loop-idle3'];   // 基础待机三选一（随机）
 var CHAT_PET_CHECKS = [
-    { name: 'after-idle-check1', ms: 820 },
-    { name: 'after-idle-check2', ms: 820 },
-    { name: 'after-idle-check3', ms: 820 },
-    { name: 'after-idle-check4', ms: 820 },
-    { name: 'after-idle-check5', ms: 580 }
+    { name: 'after-idle-check', ms: 580 }
 ];
-var CHAT_PET_IDLE_BASE_HOLD_MS = 8000;   // 基础待机时长——8s 到点**直接进入睡**（不是换下一张）
-var CHAT_PET_BEFORE_TOOL_MS = 2640;      // before-tool 时长
-var CHAT_PET_BEFORE_IDLE_MS = 1980;      // before-idle 时长
-var CHAT_PET_BEFORE_HOOK_MS = 1140;      // before-idle-hook 时长
-var CHAT_PET_BEFORE_SLEEP_MS = 1980;     // before-idle-sleep 时长
+var CHAT_PET_IDLE_BASE_HOLD_MS = 8000;   // 基础待机时长——8s 到点**直接进入睡**（前端节律，非素材时长）
+// 以下为素材播放时长的**兜底值**——实际以 manifest 为准（chatPetMs）；素材重转后无需改这里
+var CHAT_PET_BEFORE_IDLE_MS = 1980;      // before-idle 兜底时长
+var CHAT_PET_BEFORE_HOOK_MS = 1140;      // before-idle-hook 兜底时长
+var CHAT_PET_BEFORE_SLEEP_MS = 1980;     // before-idle-sleep 兜底时长
 
 // 全量资源名（预加载清单——须与 html/pet/ 目录一致）
 var chatPetFiles = [
     'loop-link', 'loop-wait', 'loop-think', 'loop-tool', 'loop-run', 'loop-reply', 'loop-sseErr',
-    'before-tool', 'before-idle',
-    'loop-idle1', 'loop-idle2', 'loop-idle3', 'loop-idle4',
+    'before-idle',
+    'loop-idle1', 'loop-idle2', 'loop-idle3',
     'loop-idle-hook', 'before-idle-hook',
     'loop-idle-sleep', 'before-idle-sleep',
-    'after-idle-check1', 'after-idle-check2', 'after-idle-check3', 'after-idle-check4', 'after-idle-check5'
+    'after-idle-check'
 ];
 
 // [段2] 基础操作
@@ -82,22 +99,24 @@ function chatPetPick(n, last)
 
 function chatPetShow(name, instant)
 {
-    // 换图——instant=true 时瞬切（before→loop / loop→after 的连续动作），否则双层交叉溶解 0.25s
+    // 换图——useInstant 时瞬切（连续动作），否则双层交叉溶解 0.25s
+    // 接缝溶解名单内的目标强制溶解（姿态不接，瞬切会跳帧）
     if (chatPetImgs[0] === null) { return; }
     if (chatPetCur === name) { return; }
+    var useInstant = (instant === true) && (CHAT_PET_SEAM_BLEND[name] !== true);
     chatPetCur = name;
-    chatPetLastInstant = (instant === true);
+    chatPetLastInstant = useInstant;
     var cur = chatPetImgs[chatPetLayer];
     var next = chatPetImgs[1 - chatPetLayer];
-    if (instant === true)
+    if (useInstant === true)
     {
         next.style.transition = 'none';
         cur.style.transition = 'none';
     }
-    next.src = 'pet/' + name + '.webp';
+    next.src = chatPetSheet(name);
     next.style.opacity = '1';
     cur.style.opacity = '0';
-    if (instant === true)
+    if (useInstant === true)
     {
         void next.offsetWidth;          // 强制应用后再恢复过渡设置（此后切换仍溶解）
         next.style.transition = '';
@@ -109,23 +128,12 @@ function chatPetShow(name, instant)
 // [段3] 运行态与断线
 function chatPetEnterRun(key)
 {
-    // 活跃态——工具态前置：从别的态进 tool 时先播 before-tool，再瞬切进循环
+    // 活跃态——六态直接映射循环资源（before-tool 前置已废弃：素材姿态与循环图对不齐）
     if (chatPetMode === 'run' && chatPetKey === key) { return; }
-    var prev = chatPetKey;
     chatPetMode = 'run';
     chatPetKey = key;
     chatPetKeyAt = Date.now();
     chatPetClearTimer();
-    if (key === 'tool' && prev !== 'tool')
-    {
-        chatPetShow('before-tool');
-        chatPetTimer = setTimeout(function ()
-        {
-            chatPetTimer = null;
-            if (chatPetMode === 'run' && chatPetKey === 'tool') { chatPetShow('loop-tool', true); }
-        }, CHAT_PET_BEFORE_TOOL_MS);
-        return;
-    }
     chatPetShow(chatPetPhaseMap[key]);
 }
 
@@ -143,7 +151,8 @@ function chatPetEnterOffline()
 // [段4] 空闲行为（intro / base / hook / check / sleep）
 function chatPetEnterIdle()
 {
-    // 进入空闲——从活跃态回来先播收尾过渡（before-idle）再进基础待机；初载直接基础待机
+    // 进入空闲——活跃态回空闲（= 整轮结束）先播 before-idle（after-reply 收尾动作）再进基础待机；
+    // 加载完成首次、断线恢复回空闲均不播收尾（fromRun 判据）
     if (chatPetMode === 'idle') { return; }
     var fromRun = (chatPetMode === 'run');
     chatPetMode = 'idle';
@@ -158,7 +167,7 @@ function chatPetEnterIdle()
         {
             chatPetTimer = null;
             if (chatPetMode === 'idle' && chatPetIdleMode === 'intro') { chatPetPlayBase(true); }
-        }, CHAT_PET_BEFORE_IDLE_MS);
+        }, chatPetMs('before-idle', CHAT_PET_BEFORE_IDLE_MS));
         return;
     }
     chatPetPlayBase(false);
@@ -166,7 +175,7 @@ function chatPetEnterIdle()
 
 function chatPetPlayBase(instant)
 {
-    // 基础待机——loop-idle1-4 随机一张播 8s，到点直接进入睡（不再换下一张）
+    // 基础待机——loop-idle1-3 随机一张播 8s，到点直接进入睡（不再换下一张）
     chatPetIdleMode = 'base';
     var idx = chatPetPick(CHAT_PET_IDLE_BASE.length, chatPetIdleIdx);
     chatPetIdleIdx = idx;
@@ -193,7 +202,7 @@ function chatPetIdleHook(on)
         {
             chatPetTimer = null;
             if (chatPetMode === 'idle' && chatPetIdleMode === 'hook') { chatPetShow('loop-idle-hook', true); }
-        }, CHAT_PET_BEFORE_HOOK_MS);
+        }, chatPetMs('before-idle-hook', CHAT_PET_BEFORE_HOOK_MS));
         return;
     }
     if (chatPetIdleMode === 'hook') { chatPetPlayBase(false); }
@@ -201,7 +210,7 @@ function chatPetIdleHook(on)
 
 function chatPetIdleCheck()
 {
-    // 鼠标点击——after-idle-check1-5 随机一个播一遍；结束后按悬停状态回 hook 或基础待机
+    // 鼠标点击——after-idle-check 播一遍；结束后按悬停状态回 hook 或基础待机
     if (chatPetMode !== 'idle') { return; }
     chatPetIdleMode = 'check';
     var idx = chatPetPick(CHAT_PET_CHECKS.length, chatPetCheckIdx);
@@ -214,7 +223,7 @@ function chatPetIdleCheck()
         if (chatPetMode !== 'idle' || chatPetIdleMode !== 'check') { return; }
         if (chatPetHovered) { chatPetIdleMode = ''; chatPetIdleHook(true); }
         else { chatPetPlayBase(false); }
-    }, CHAT_PET_CHECKS[idx].ms);
+    }, chatPetMs(CHAT_PET_CHECKS[idx].name, CHAT_PET_CHECKS[idx].ms));
 }
 
 function chatPetStartSleep()
@@ -227,7 +236,7 @@ function chatPetStartSleep()
     {
         chatPetTimer = null;
         if (chatPetMode === 'idle' && chatPetIdleMode === 'sleep') { chatPetShow('loop-idle-sleep', true); }
-    }, CHAT_PET_BEFORE_SLEEP_MS);
+    }, chatPetMs('before-idle-sleep', CHAT_PET_BEFORE_SLEEP_MS));
 }
 
 // [段5] 对外接口
@@ -235,6 +244,7 @@ function chatPetSync()
 {
     // 状态同步——由 chatRenderStatus 汇聚点回调（对话页每次状态渲染后）
     if (chatPetImgs[0] === null) { return; }
+    if (chatPetLoading === true) { return; }   // 加载门禁——未就绪不调度（保持 sseErr 加载态）
     if (chatPetOffline) { chatPetEnterOffline(); return; }
     var st = '';
     if (window.chatRunState !== undefined && window.chatRunState !== null && window.chatRunState.state)
@@ -252,14 +262,161 @@ function chatPetSetOffline(on)
     chatPetSync();
 }
 
-function chatPetPreload()
+function chatPetUrl(name)
 {
-    // 预加载——首屏不阻塞（延迟启动），保证态切换零闪烁
+    // 素材 URL——带内容哈希版本（改图/改名即换 URL，缓存自动失效且只重下变动那张）
+    var m = chatPetManifest[name];
+    if (m === undefined || m.h === undefined) { return 'pet/' + name + '.webp'; }
+    return 'pet/' + name + '.webp?v=' + m.h;
+}
+
+function chatPetMs(name, fallback)
+{
+    // 素材播放时长——单一真相在 manifest（素材重转即跟随，前端不留漂移常量）
+    var m = chatPetManifest[name];
+    if (m === undefined || m.ms === undefined || m.ms <= 0) { return fallback; }
+    return m.ms;
+}
+
+function chatPetSheet(name)
+{
+    // 换图用 URL——持有表命中用 blob（宿主不可达时仍可切图），未就绪回落网络路径
+    var url = chatPetRes[name];
+    if (url === undefined) { return chatPetUrl(name); }
+    return url;
+}
+
+function chatPetLoadOrder()
+{
+    // 加载序——首图 loop-sseErr（加载态常显），其余按清单顺序
+    var names = ['loop-sseErr'];
     for (var i = 0; i < chatPetFiles.length; i = i + 1)
     {
-        var img = new Image();
-        img.src = 'pet/' + chatPetFiles[i] + '.webp';
+        if (chatPetFiles[i] !== 'loop-sseErr') { names.push(chatPetFiles[i]); }
     }
+    return names;
+}
+
+function chatPetPruneEntries(cache, names)
+{
+    // 桶内清理——删掉不在当前清单里的条目（素材改名/删除后不留死条目）；清理失败不影响本次使用
+    if (cache === null || cache === undefined) { return Promise.resolve(0); }
+    var want = {};
+    for (var i = 0; i < names.length; i = i + 1) { want[chatPetUrl(names[i])] = true; }
+    return cache.keys().then(function (reqs)
+    {
+        var jobs = [];
+        for (var j = 0; j < reqs.length; j = j + 1)
+        {
+            var k = reqs[j].url.indexOf('/pet/');
+            if (k < 0) { continue; }
+            if (want[reqs[j].url.substring(k + 1)] !== true) { jobs.push(cache.delete(reqs[j])); }
+        }
+        return Promise.all(jobs).then(function () { return jobs.length; });
+    }).catch(function () { return 0; });
+}
+
+function chatPetOpenCache()
+{
+    // 缓存桶——固定名；无 Cache API 环境降级 null（每次走网络）
+    if (typeof caches === 'undefined' || caches === null) { return Promise.resolve(null); }
+    return caches.open(CHAT_PET_CACHE_PREFIX).catch(function () { return null; });
+}
+
+function chatPetFetch(url, cache)
+{
+    // 网络取回 + 回写缓存——非 2xx 不写（避免把 404 固化）；写缓存失败不致命
+    return fetch(url).then(function (r)
+    {
+        if (r.ok === true && cache !== null && cache !== undefined)
+        {
+            try { cache.put(url, r.clone()).catch(function () { }); } catch (e) { }
+        }
+        return r;
+    });
+}
+
+function chatPetLoadOne(name, cache)
+{
+    // 单张素材——缓存命中直取（零网络）；未命中走网络。返回 Promise（resolve=名称）
+    var url = chatPetUrl(name);
+    var get = null;
+    if (cache !== null && cache !== undefined)
+    {
+        get = cache.match(url).then(function (hit)
+        {
+            if (hit === undefined || hit === null) { return chatPetFetch(url, cache); }
+            return hit;
+        });
+    }
+    else
+    {
+        get = chatPetFetch(url, cache);
+    }
+    return get.then(function (r)
+    {
+        if (r.ok !== true) { throw new Error('HTTP ' + r.status); }
+        return r.blob();
+    }).then(function (b)
+    {
+        chatPetRes[name] = URL.createObjectURL(b);
+        return name;
+    });
+}
+
+function chatPetBoot()
+{
+    // 首图就位后的启动——桌宠显形并常显 sseErr 作加载态；首图失败则保持不可见（不挂破图）
+    if (chatPetBooted === true) { return; }
+    chatPetBooted = true;
+    chatPetMode = 'loading';
+    chatPetKey = 'loading';
+    chatPetKeyAt = Date.now();
+    if (chatPetRes['loop-sseErr'] !== undefined) { chatPetShow('loop-sseErr'); }
+}
+
+function chatPetLoadDone()
+{
+    // 全量结束——解除门禁并开放调度；有失败则汇总告警（具名不静默）
+    chatPetLoading = false;
+    if (chatPetFail > 0) { uiWarn('桌宠素材', new Error('加载失败 ' + chatPetFail + ' 张——相关态回落网络路径')); }
+    chatPetSync();
+}
+
+function chatPetLoadSeq(names, i, cache)
+{
+    // 串行逐张——前后不并发（限带宽/高延迟场景不拥塞，卡点可定位）；失败继续下一张
+    if (i >= names.length)
+    {
+        chatPetLoadDone();
+        return;
+    }
+    chatPetLoadOne(names[i], cache)
+        .then(function ()
+        {
+            if (i === 0) { chatPetBoot(); }
+            chatPetLoadSeq(names, i + 1, cache);
+        })
+        .catch(function (e)
+        {
+            chatPetFail = chatPetFail + 1;
+            uiWarn('桌宠素材 ' + names[i], e);
+            if (i === 0) { chatPetBoot(); }
+            chatPetLoadSeq(names, i + 1, cache);
+        });
+}
+
+function chatPetLoadAll()
+{
+    // 加载总入口——清单随脚本同步就位（无需异步取）；无加载通道（非浏览器环境）直接解除门禁
+    if (typeof fetch !== 'function') { chatPetLoading = false; return; }
+    if (typeof URL.createObjectURL !== 'function') { chatPetLoading = false; return; }
+    var names = chatPetLoadOrder();
+    chatPetOpenCache().then(function (cache)
+    {
+        chatPetPruneEntries(cache, names);
+        chatPetLoadSeq(names, 0, cache);
+    });
 }
 
 function chatPetInit()
@@ -279,13 +436,15 @@ function chatPetInit()
     box.addEventListener('mousedown', chatPetDragStart);
     document.addEventListener('mousemove', chatPetDragMove);
     document.addEventListener('mouseup', chatPetDragEnd);
-    chatPetSync();
-    setTimeout(chatPetPreload, 1000);
+    var elClear = document.getElementById('chatCacheClear');
+    if (elClear !== null) { elClear.addEventListener('click', chatPetClearCache); }
+    chatPetLoadAll();
 }
 
 function chatPetDragStart(e)
 {
     // 按下——记录抓取偏移；right/bottom 定位换算为 left/top（此后以左上角定位）
+    if (chatPetLoading === true) { return; }   // 加载门禁——未启动前不可拖
     var box = document.getElementById('chatPet');
     if (box === null) { return; }
     var r = box.getBoundingClientRect();
@@ -323,4 +482,34 @@ function chatPetDragEnd()
 {
     // 释放——结束拖动（moved 标志保留至下次按下，供 click 判据）
     chatPetDrag = null;
+}
+
+function chatPetTip(msg)
+{
+    // 轻量提示——复用顶部状态位（缺失则退到 console）
+    var el = document.getElementById('chatInfo');
+    if (el !== null) { el.textContent = msg; return; }
+    if (typeof console !== 'undefined' && console.log) { console.log('[桌宠] ' + msg); }
+}
+
+function chatPetClearCache()
+{
+    // 硬保底——清空素材缓存桶（改图不改名 / 缓存脏数据时的主动恢复手段）
+    if (typeof caches === 'undefined' || caches === null)
+    {
+        chatPetTip('本环境不支持缓存');
+        return;
+    }
+    caches.keys().then(function (keys)
+    {
+        var jobs = [];
+        for (var i = 0; i < keys.length; i = i + 1)
+        {
+            if (keys[i].indexOf(CHAT_PET_CACHE_PREFIX) === 0) { jobs.push(caches.delete(keys[i])); }
+        }
+        return Promise.all(jobs).then(function () { return jobs.length; });
+    }).then(function (n)
+    {
+        chatPetTip('素材缓存已清理（' + n + ' 桶）——刷新后重新加载');
+    }).catch(function (e) { uiWarn('桌宠缓存清理', e); });
 }

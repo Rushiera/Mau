@@ -20,6 +20,7 @@ beforeAll(async () => {
   globalThis.Event = dom.window.Event;
   globalThis.MouseEvent = dom.window.MouseEvent;
   globalThis.Image = dom.window.Image;
+  globalThis.fetch = undefined;   // 预加载短路——jsdom 无 blob 通道，避免相对 URL 请求噪音（blob 分支由专门用例覆盖）
   const mods = ['ui-common.js', 'chat-md.js', 'chat-cmd.js', 'chat-view.js', 'chat-core.js', 'chat-note.js', 'chat-pet.js'];
   for (const m of mods) {
     const code = await readFile(new URL('../../js/' + m, import.meta.url), 'utf-8');
@@ -47,6 +48,11 @@ beforeEach(() => {
   window.chatPetDrag = null;
   window.chatPetDragMoved = false;
   window.chatPetLastInstant = false;
+  window.chatPetRes = {};
+  window.chatPetManifest = {};
+  window.chatPetLoading = false;
+  window.chatPetBooted = true;
+  window.chatPetFail = 0;
   if (window.chatPetTimer) { clearTimeout(window.chatPetTimer); }
   window.chatPetTimer = null;
   window.chatRunState = { state: '', ms: {}, requests: 0 };
@@ -70,7 +76,7 @@ function cur() {
   return window.chatPetCur;
 }
 
-const IDLE_BASE = ['loop-idle1', 'loop-idle2', 'loop-idle3', 'loop-idle4'];
+const IDLE_BASE = ['loop-idle1', 'loop-idle2', 'loop-idle3'];
 
 function pushState(state, requests) {
   window.chatOnSessionState({ sessionId: 'majordomo', runState: state, runMs: {}, requests: requests || 0 });
@@ -93,33 +99,31 @@ test('wait 只有一个循环资源（loop-wait2 已退役）', () => {
 });
 
 // ── before-tool 前置 ──
-test('进入 tool 先播 before-tool，再瞬切进 loop-tool', () => {
+test('进入 tool 直接切 loop-tool（before-tool 前置已废弃）', () => {
   pushState('think', 1);
   expect(cur()).toBe('loop-think');
   pushState('tool', 1);
-  expect(cur()).toBe('before-tool');
-  vi.advanceTimersByTime(2640);
   expect(cur()).toBe('loop-tool');
-  expect(window.chatPetLastInstant).toBe(true);
+  expect(window.chatPetLastInstant).toBe(false);   // 态间切换走溶解
 });
 
-test('tool 内重复推送不重播 before-tool', () => {
+test('tool 内重复推送不重播', () => {
   pushState('think', 1);
   pushState('tool', 1);
-  vi.advanceTimersByTime(2640);
+  expect(cur()).toBe('loop-tool');
   pushState('tool', 1);
   pushState('tool', 1);
   expect(cur()).toBe('loop-tool');
 });
 
 // ── before-idle 收尾 ──
-test('活跃态回空闲先播 before-idle，再进基础待机（瞬切）', () => {
+test('活跃态回空闲先播 before-idle，再进基础待机（接缝走溶解）', () => {
   pushState('reply', 1);
   expect(cur()).toBe('loop-reply');
   pushState('idle', 0);
   expect(cur()).toBe('before-idle');
   vi.advanceTimersByTime(1980);
-  expect(window.chatPetLastInstant).toBe(true);
+  expect(window.chatPetLastInstant).toBe(false);   // loop-idle* 在溶解名单
   expect(IDLE_BASE).toContain(cur());
 });
 
@@ -130,22 +134,22 @@ test('初载（从未进过活跃态）直接进基础待机，不播 before-idl
 });
 
 // ── 基础待机 → 入睡 ──
-test('基础待机随机四选一（可指定下标）', () => {
-  vi.spyOn(Math, 'random').mockReturnValue(0.6);       // floor(0.6*4)=2
+test('基础待机随机三选一（可指定下标）', () => {
+  vi.spyOn(Math, 'random').mockReturnValue(0.6);       // floor(0.6*3)=1
   pushState('idle', 0);
-  expect(cur()).toBe('loop-idle3');
+  expect(cur()).toBe('loop-idle2');
 });
 
 test('基础待机 8s 到点直接进入睡（不再换下一张）', () => {
   const spy = vi.spyOn(Math, 'random');
   spy.mockReturnValueOnce(0.6).mockReturnValue(0.1);
   pushState('idle', 0);
-  expect(cur()).toBe('loop-idle3');
+  expect(cur()).toBe('loop-idle2');
   vi.advanceTimersByTime(8000);
   expect(cur()).toBe('before-idle-sleep');
   vi.advanceTimersByTime(1980);
   expect(cur()).toBe('loop-idle-sleep');
-  expect(window.chatPetLastInstant).toBe(true);
+  expect(window.chatPetLastInstant).toBe(false);   // 接缝走溶解
 });
 
 test('睡眠中鼠标移入 → 唤醒进 hook', () => {
@@ -157,13 +161,13 @@ test('睡眠中鼠标移入 → 唤醒进 hook', () => {
 });
 
 // ── 移入 hook ──
-test('鼠标移入 → before-idle-hook → 瞬切 loop-idle-hook；移出回基础待机', () => {
+test('鼠标移入 → before-idle-hook → loop-idle-hook（接缝走溶解）；移出回基础待机', () => {
   pushState('idle', 0);
   petBox.dispatchEvent(new Event('mouseenter'));
   expect(cur()).toBe('before-idle-hook');
   vi.advanceTimersByTime(1140);
   expect(cur()).toBe('loop-idle-hook');
-  expect(window.chatPetLastInstant).toBe(true);
+  expect(window.chatPetLastInstant).toBe(false);
   petBox.dispatchEvent(new Event('mouseleave'));
   expect(IDLE_BASE).toContain(cur());
 });
@@ -268,6 +272,111 @@ test('SSE 断线显错误资源，恢复后回态图', () => {
   expect(cur()).toBe('loop-sseErr');
   window.chatPetSetOffline(false);
   expect(cur()).toBe('loop-think');
+});
+
+// ── 素材持有（blob 优先） ──
+test('素材持有命中时用 blob URL（断线零网络依赖）', () => {
+  window.chatPetRes = { 'loop-think': 'blob:mock-think', 'loop-run': 'blob:mock-run' };
+  pushState('think', 1);
+  expect([imgA.getAttribute('src'), imgB.getAttribute('src')]).toContain('blob:mock-think');
+  pushState('run', 1);
+  expect([imgA.getAttribute('src'), imgB.getAttribute('src')]).toContain('blob:mock-run');
+});
+
+test('素材未就绪时回落网络路径', () => {
+  window.chatPetRes = {};
+  pushState('think', 1);
+  expect([imgA.getAttribute('src'), imgB.getAttribute('src')]).toContain('pet/loop-think.webp');
+});
+
+// ── 加载门禁（串行加载 + 首图启动） ──
+test('加载中不调度——门禁期内状态同步不改图', () => {
+  window.chatPetLoading = true;
+  pushState('think', 1);
+  expect(cur()).toBe('');
+  expect(imgA.getAttribute('src')).toBe('');
+});
+
+test('加载序——首图 loop-sseErr 且覆盖全量清单', () => {
+  const order = window.chatPetLoadOrder();
+  expect(order[0]).toBe('loop-sseErr');
+  expect(order.length).toBe(window.chatPetFiles.length);
+  expect(order.slice().sort()).toEqual(Array.from(window.chatPetFiles).sort());
+});
+
+test('首图就位 → 桌宠显形并常显 sseErr（加载态）', () => {
+  window.chatPetBooted = false;
+  window.chatPetRes = { 'loop-sseErr': 'blob:mock-sse' };
+  window.chatPetBoot();
+  expect(cur()).toBe('loop-sseErr');
+  expect(window.chatPetMode).toBe('loading');
+});
+
+test('首图缺位 → 保持不可见（不挂破图）', () => {
+  window.chatPetBooted = false;
+  window.chatPetRes = {};
+  window.chatPetBoot();
+  expect(cur()).toBe('');
+  expect(window.chatPetMode).toBe('loading');
+});
+
+test('全量就绪 → 解除门禁并按当前态切图', () => {
+  window.chatPetLoading = true;
+  window.chatPetFail = 0;
+  window.chatRunState = { state: 'think', ms: {}, requests: 1 };
+  window.chatPetLoadDone();
+  expect(window.chatPetLoading).toBe(false);
+  expect(cur()).toBe('loop-think');
+});
+
+// ── 素材 URL 版本键（内容哈希） ──
+test('素材 URL 带内容哈希——改图即换 URL，缓存自动失效', () => {
+  window.chatPetManifest = { 'loop-think': { h: 'a3f9c2e1', ms: 980 } };
+  expect(window.chatPetUrl('loop-think')).toBe('pet/loop-think.webp?v=a3f9c2e1');
+});
+
+test('素材时长取 manifest——免前端常量与素材漂移', () => {
+  window.chatPetManifest = { 'before-tool': { h: 'aaaa1111', ms: 2640 } };
+  expect(window.chatPetMs('before-tool', 999)).toBe(2640);
+  expect(window.chatPetMs('before-idle', 1980)).toBe(1980);   // 缺项回落兜底
+  expect(window.chatPetMs('before-idle', 0)).toBe(0);
+});
+
+test('清单缺项 → 回落无版本 URL', () => {
+  window.chatPetManifest = {};
+  expect(window.chatPetUrl('loop-run')).toBe('pet/loop-run.webp');
+});
+
+test('持有表未命中时切图用带版本网络 URL', () => {
+  window.chatPetManifest = { 'loop-think': { h: 'beef1234', ms: 980 } };
+  window.chatPetRes = {};
+  pushState('think', 1);
+  expect([imgA.getAttribute('src'), imgB.getAttribute('src')]).toContain('pet/loop-think.webp?v=beef1234');
+});
+
+// ── 硬保底：清理缓存按钮 ──
+test('清理缓存——无缓存环境走提示且不抛错', () => {
+  expect(typeof window.chatPetClearCache).toBe('function');
+  window.chatPetClearCache();
+  expect(document.getElementById('chatInfo').textContent).toBe('本环境不支持缓存');
+});
+
+// ── 接缝溶解名单 ──
+test('接缝溶解名单——覆盖全部 before→loop 对（loop-tool 已废弃不在名单）', () => {
+  expect(window.CHAT_PET_SEAM_BLEND['loop-tool']).toBeUndefined();
+  expect(window.CHAT_PET_SEAM_BLEND['loop-idle-sleep']).toBe(true);
+  expect(window.CHAT_PET_SEAM_BLEND['loop-idle-hook']).toBe(true);
+  expect(window.CHAT_PET_SEAM_BLEND['loop-idle1']).toBe(true);
+  expect(window.CHAT_PET_SEAM_BLEND['loop-idle2']).toBe(true);
+  expect(window.CHAT_PET_SEAM_BLEND['loop-idle3']).toBe(true);
+});
+
+test('名单内的 loop-idle-hook 走溶解', () => {
+  pushState('idle', 0);
+  petBox.dispatchEvent(new Event('mouseenter'));
+  vi.advanceTimersByTime(1140);
+  expect(cur()).toBe('loop-idle-hook');
+  expect(window.chatPetLastInstant).toBe(false);
 });
 
 // ── 骨架与资源 ──

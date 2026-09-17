@@ -14,6 +14,7 @@
         <button id="chatNew" title="新会话（session.new——清前文并重新注入）">新会话</button>
         <button id="chatPause" title="停止本轮（cat.pause——已生成内容保留，前文格式修复）" disabled>停止</button>
         <button id="chatRefresh" title="刷新——重建界面气泡（纯前端）">刷新</button>
+        <button id="chatCacheClear" title="清理素材缓存——下次刷新重新下载桌宠素材（改图不改名 / 缓存脏数据时用）">清理缓存</button>
     </div>
     <div id="chatMsgs"></div>
     <!-- M4c Note——Q3 v2（2026-09-08）：输入区上方按钮 + 点击展开气泡区域（popover 贴按钮上方；再点按钮/点外部收起——高度变化零影响聊天区） -->
@@ -52,6 +53,8 @@
     <script src="js/chat-view.js?v=__V__"></script>
     <script src="js/chat-core.js?v=__V__"></script>
     <script src="js/chat-note.js?v=__V__"></script>
+    <!-- 桌宠素材清单（WorkSpace/pet/convert_pet.py 生成——缓存失效键；须先于 chat-pet.js） -->
+    <script src="js/pet-manifest.js?v=__V__"></script>
     <!-- 桌宠——纯前端渲染（js/chat-pet.js）：读运行态与停留计时调整形态；须在 chat-core.js 之后加载 -->
     <script src="js/chat-pet.js?v=__V__"></script>
     <script>
