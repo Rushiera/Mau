@@ -42,19 +42,19 @@ function renderCatRow(cat) {
     } else {
         tdName.textContent = cat.name || '';
     }
-    tdName.style.color = '#c586c0';
+    tdName.style.color = 'var(--ch-identity)';
     tr.appendChild(tdName);
     var tdId = document.createElement('td');
     tdId.textContent = cat.id || '';
-    tdId.style.color = '#6a6a6a';
+    tdId.style.color = 'var(--ch-fg-weak)';
     tr.appendChild(tdId);
     var tdState = document.createElement('td');
     if (cat.running) {
         tdState.textContent = '运行中';
-        tdState.style.color = '#4ec9b0';
+        tdState.style.color = 'var(--ch-ok)';
     } else {
         tdState.textContent = '静默';
-        tdState.style.color = '#6a6a6a';
+        tdState.style.color = 'var(--ch-fg-weak)';
     }
     tr.appendChild(tdState);
     var tdPort = document.createElement('td');

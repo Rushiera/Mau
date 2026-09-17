@@ -1,0 +1,75 @@
+/* CH4 外观层——设计令牌（两页共用值表）
+   定位：色彩字面量的唯一定义处（L1 界面基础 + L3 MD 内容）；页样式只引用不定义
+   规范：Project/CH4/design-ch4-frontend-theme.md §二（分层职责 + 铁律）
+   纪律：改色只改本文件；组件面零裸色值；L3 为独立色系——与 L1 同值不算重复
+   加载：两页 <link> 先于页样式（tokens.css → style.css / chat.css） */
+:root {
+    /* ============ L1 界面基础 ============ */
+    /* 背景 */
+    --ch-bg-page: #141414;          /* 页面底 / Note 弹层底 */
+    --ch-bg-panel: #1a1a1a;         /* 卡片 / 侧栏 / 输入 / 助手气泡 / 折叠头 / 会话卡 */
+    --ch-bg-raised: #1f1f1f;        /* 次按钮底 / 表头 / 类型标签 */
+    --ch-bg-elevated: #2d2d2d;      /* 折叠分组头底（比卡面亮一档） */
+    --ch-bg-chip: #242424;          /* 可勾选标签（chip）底 */
+    --ch-bg-sunken: #101010;        /* 工具卡底 / 插话队列条 */
+    --ch-bg-faint: #181818;         /* 弱化系统气泡（重试 / 中止） */
+    --ch-bg-deep: rgba(0, 0, 0, 0.6);   /* 半透明深底（版本角标等浮于页面的小徽标） */
+    --ch-bg-hover: #242424;         /* 悬浮反馈（侧栏 / 次按钮 / 折叠头 / 图标按钮） */
+    --ch-bg-accent: #0e639c;        /* 主色块——用户气泡 / 主按钮 / 侧栏 active */
+    /* 文字 */
+    --ch-fg: #c8c8c8;               /* 默认字 / 输入框 */
+    --ch-fg-strong: #d4d4d4;        /* 正文 / 强调数值 */
+    --ch-fg-muted: #9a9a9a;         /* 次级信息 */
+    --ch-fg-weak: #6a6a6a;          /* 弱信息（标签 / 时间 / 参数 / 提示） */
+    --ch-fg-faint: #4a4a4a;         /* 极弱 / 关闭与空态 */
+    --ch-fg-inverse: #fff;          /* 主色块上的字 */
+    /* 边框与分隔 */
+    --ch-line: #2a2a2a;             /* 常规边（卡片 / 输入 / 气泡 / 弹层 / 代码块 / 表格） */
+    --ch-line-soft: #242424;        /* 次级边（思考卡 / 工具卡 / Token chip） */
+    --ch-line-faint: #222;          /* 栏分隔 / 极弱分隔 */
+    --ch-line-strong: #3a3a3a;      /* 强调边 / 虚线边 / 强反馈 */
+    /* 语义色 */
+    --ch-title: #4ec9b0;            /* 面板标题 / 描述块 */
+    --ch-ok: #4ec9b0;               /* 成功 / 在线 / 统计数值 */
+    --ch-warn: #dcdcaa;             /* 警告 / 待处理 */
+    --ch-err: #f48771;              /* 错误 / 失败 / 危险 */
+    --ch-info: #569cd6;             /* 信息 / 命令 / 引用强调 */
+    --ch-identity: #c586c0;         /* 身份（猫名 / 会话 ID / 对象值） */
+    --ch-number: #4fc1ff;           /* 数值（盒子数字） */
+    --ch-structure: #ce9178;        /* 结构（OA 行 / 盒子组头） */
+    --ch-ok-weak: #6a9955;          /* 次要成功（键名 / 工具组名 / LLM 日志） */
+    --ch-desc-bg: #0f2a24;          /* 描述 / 说明块底 */
+    --ch-desc-line: #2a5a4e;        /* 描述 / 说明块边 */
+    /* 交互与浮层 */
+    --ch-focus: var(--ch-bg-accent);            /* 焦点边框 */
+    --ch-scroll-thumb: var(--ch-line);          /* 滚动条滑块 */
+    --ch-scroll-thumb-hover: var(--ch-line-strong);
+    --ch-shadow-soft: rgba(0, 0, 0, 0.4);       /* 组件轻微阴影 */
+    --ch-shadow-strong: rgba(0, 0, 0, 0.6);     /* 弹层阴影 */
+    --ch-overlay: rgba(0, 0, 0, 0.55);          /* 模态遮罩 */
+    --ch-hover-overlay: rgba(128, 128, 128, 0.18);
+    --ch-divider-dash: rgba(128, 128, 128, 0.35);
+
+    /* ============ L3 MD 内容（独立色系——不引 L1，可自造值） ============ */
+    --ch-md-text: #d4d4d4;              /* 正文 */
+    --ch-md-heading: #d4d4d4;           /* 标题 h1-h4 */
+    --ch-md-heading-weak: #a8a8a8;      /* 标题 h5 / h6 */
+    --ch-md-line: #2a2a2a;              /* 块边 / 表框 / 水平线 / 标题下框线 */
+    --ch-md-quote-bar: #569cd6;         /* 引用左条 */
+    --ch-md-quote-fg: #9a9a9a;          /* 引用正文 */
+    --ch-md-code-bg: #0d0d0d;           /* 代码块底 */
+    --ch-md-code-fg: #d4d4d4;           /* 代码块正文 */
+    --ch-md-inline-code-bg: #2a2a2a;    /* 行内代码底 */
+    --ch-md-inline-code-fg: #dcdcaa;    /* 行内代码字 */
+    --ch-md-table-head-bg: #1f1f1f;     /* 表头底 */
+    --ch-md-table-head-fg: #569cd6;     /* 表头字 */
+    --ch-md-table-zebra: #171717;       /* 斑马行 */
+    --ch-md-task-done: #6a8a6a;         /* 任务项已完成 */
+    /* 扩展位（未启用——语法高亮需要时启用，源 VSCode Dark+）
+       --ch-md-code-keyword: #569cd6;
+       --ch-md-code-string: #ce9178;
+       --ch-md-code-comment: #6a9955;
+       --ch-md-code-number: #b5cea8;
+       --ch-md-code-function: #dcdcaa;
+       --ch-md-code-type: #4ec9b0; */
+}

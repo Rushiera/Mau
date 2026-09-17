@@ -26,12 +26,12 @@ function renderApiRow(api) {
     var tr = document.createElement('tr');
     var tdName = document.createElement('td');
     tdName.textContent = api.displayName || '';
-    tdName.style.color = '#c586c0';
+    tdName.style.color = 'var(--ch-identity)';
     if (api.isDefault) { tdName.textContent = '★ ' + tdName.textContent; }
     tr.appendChild(tdName);
     var tdId = document.createElement('td');
     tdId.textContent = api.apiConfigId || '';
-    tdId.style.color = '#6a6a6a';
+    tdId.style.color = 'var(--ch-fg-weak)';
     tdId.style.fontSize = '10px';
     tdId.style.wordBreak = 'break-all';
     tr.appendChild(tdId);
@@ -47,7 +47,7 @@ function renderApiRow(api) {
     tr.appendChild(tdModel);
     var tdKey = document.createElement('td');
     tdKey.textContent = api.hasKey ? api.apiKey : '（未配置）';
-    tdKey.style.color = api.hasKey ? '#6a9955' : '#6a6a6a';
+    tdKey.style.color = api.hasKey ? 'var(--ch-ok-weak)' : 'var(--ch-fg-weak)';
     tr.appendChild(tdKey);
     var tdOp = document.createElement('td');
     tdOp.style.whiteSpace = 'nowrap';
@@ -186,11 +186,11 @@ function renderQqBotRow(bot) {
     var tr = document.createElement('tr');
     var tdName = document.createElement('td');
     tdName.textContent = bot.displayName || '';
-    tdName.style.color = '#c586c0';
+    tdName.style.color = 'var(--ch-identity)';
     tr.appendChild(tdName);
     var tdId = document.createElement('td');
     tdId.textContent = bot.qqBotId || '';
-    tdId.style.color = '#6a6a6a';
+    tdId.style.color = 'var(--ch-fg-weak)';
     tdId.style.fontSize = '10px';
     tdId.style.wordBreak = 'break-all';
     tr.appendChild(tdId);
@@ -199,11 +199,11 @@ function renderQqBotRow(bot) {
     tr.appendChild(tdAppId);
     var tdSandbox = document.createElement('td');
     tdSandbox.textContent = bot.sandbox ? '沙箱' : '正式';
-    tdSandbox.style.color = bot.sandbox ? '#dcdcaa' : '#6a9955';
+    tdSandbox.style.color = bot.sandbox ? 'var(--ch-warn)' : 'var(--ch-ok-weak)';
     tr.appendChild(tdSandbox);
     var tdSecret = document.createElement('td');
     tdSecret.textContent = bot.hasSecret ? bot.secret : '（未配置）';
-    tdSecret.style.color = bot.hasSecret ? '#6a9955' : '#6a6a6a';
+    tdSecret.style.color = bot.hasSecret ? 'var(--ch-ok-weak)' : 'var(--ch-fg-weak)';
     tr.appendChild(tdSecret);
     var tdOp = document.createElement('td');
     tdOp.style.whiteSpace = 'nowrap';

@@ -129,7 +129,7 @@ function renderGroupedChecks(boxId, allTools, checked) {
     for (var g = 0; g < order.length; g++) {
         (function (groupName, tools) {
             var head = document.createElement('label');
-            head.style.cssText = 'display:flex;align-items:center;gap:4px;width:100%;background:#2d2d2d;border:1px solid #3a3a3a;border-radius:4px;padding:3px 8px;font-size:11px;color:#dcdcaa;cursor:pointer;font-weight:bold';
+            head.style.cssText = 'display:flex;align-items:center;gap:4px;width:100%;background:var(--ch-bg-elevated);border:1px solid var(--ch-line-strong);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--ch-warn);cursor:pointer;font-weight:bold';
             var hcb = document.createElement('input');
             hcb.type = 'checkbox';
             head.appendChild(hcb);
@@ -141,7 +141,7 @@ function renderGroupedChecks(boxId, allTools, checked) {
             for (var t = 0; t < tools.length; t++) {
                 (function (toolName) {
                     var label = document.createElement('label');
-                    label.style.cssText = 'display:flex;align-items:center;gap:4px;background:#242424;border:1px solid #2a2a2a;border-radius:4px;padding:3px 8px;font-size:11px;color:#c8c8c8;cursor:pointer';
+                    label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--ch-fg);cursor:pointer';
                     var cb = document.createElement('input');
                     cb.type = 'checkbox';
                     cb.className = 'tool-cb';
@@ -227,11 +227,11 @@ function renderInjectList(list) {
             row.title = '拖动调整顺序（保存后生效）';
             var handle = document.createElement('span');
             handle.textContent = '≡';
-            handle.style.cssText = 'color:#6a6a6a;font-size:12px;cursor:move';
+            handle.style.cssText = 'color:var(--ch-fg-weak);font-size:12px;cursor:move';
             row.appendChild(handle);
             var txt = document.createElement('span');
             txt.textContent = catCfgInjectList[idx];
-            txt.style.cssText = 'flex:1;color:#6a9955;font-size:11px;word-break:break-all';
+            txt.style.cssText = 'flex:1;color:var(--ch-ok-weak);font-size:11px;word-break:break-all';
             row.appendChild(txt);
             var rm = document.createElement('button');
             rm.textContent = '移除';
@@ -310,7 +310,7 @@ function renderRootChecks(allRoots, enabledRoots) {
     var hasEnabled = enabledRoots && enabledRoots.length > 0;
     if (!hasEnabled) {
         var tip = document.createElement('div');
-        tip.style.cssText = 'width:100%;font-size:11px;color:#f48771;margin-bottom:4px';
+        tip.style.cssText = 'width:100%;font-size:11px;color:var(--ch-err);margin-bottom:4px';
         tip.textContent = '⚠ 未配置根白名单——本猫仅常驻 workspace 可用（保存一次即固化为显式清单）';
         box.appendChild(tip);
     }
@@ -318,7 +318,7 @@ function renderRootChecks(allRoots, enabledRoots) {
         (function (root) {
             var isWs = root.id === 'workspace' || root.id === 'runtime';
             var label = document.createElement('label');
-            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:#242424;border:1px solid #2a2a2a;border-radius:4px;padding:3px 8px;font-size:11px;color:#c8c8c8;cursor:pointer';
+            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--ch-fg);cursor:pointer';
             var cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.className = 'root-cb';
@@ -328,7 +328,7 @@ function renderRootChecks(allRoots, enabledRoots) {
             if (isWs) {
                 cb.checked = true;
                 cb.disabled = true;
-                label.style.color = '#dcdcaa';
+                label.style.color = 'var(--ch-warn)';
                 label.title = '系统根——必选不可取消';
             }
             label.appendChild(cb);
@@ -372,11 +372,11 @@ function renderTplInject() {
             row.title = '拖动调整顺序（保存后生效）';
             var handle = document.createElement('span');
             handle.textContent = '≡';
-            handle.style.cssText = 'color:#6a6a6a;font-size:12px;cursor:move';
+            handle.style.cssText = 'color:var(--ch-fg-weak);font-size:12px;cursor:move';
             row.appendChild(handle);
             var txt = document.createElement('span');
             txt.textContent = tplInjectList[idx];
-            txt.style.cssText = 'flex:1;color:#6a9955;font-size:11px;word-break:break-all';
+            txt.style.cssText = 'flex:1;color:var(--ch-ok-weak);font-size:11px;word-break:break-all';
             row.appendChild(txt);
             var rm = document.createElement('button');
             rm.textContent = '移除';
@@ -464,7 +464,7 @@ function renderRoots() {
             var tr = document.createElement('tr');
             var tdId = document.createElement('td');
             tdId.textContent = rootsList[idx].id;
-            tdId.style.color = '#c586c0';
+            tdId.style.color = 'var(--ch-identity)';
             tr.appendChild(tdId);
             var tdPath = document.createElement('td');
             tdPath.textContent = rootsList[idx].path;
@@ -472,11 +472,11 @@ function renderRoots() {
             tr.appendChild(tdPath);
             var tdNote = document.createElement('td');
             tdNote.textContent = rootsList[idx].note || '';
-            tdNote.style.color = '#6a9955';
+            tdNote.style.color = 'var(--ch-ok-weak)';
             tr.appendChild(tdNote);
             var tdW = document.createElement('td');
             tdW.textContent = rootsList[idx].writable ? '读写' : '只读';
-            tdW.style.color = rootsList[idx].writable ? '#4ec9b0' : '#f48771';
+            tdW.style.color = rootsList[idx].writable ? 'var(--ch-ok)' : 'var(--ch-err)';
             tr.appendChild(tdW);
             var tdOp = document.createElement('td');
             var editBtn = document.createElement('button');
@@ -589,7 +589,7 @@ function enterEditRoot(idx) {
             } else {
                 var tdId2 = document.createElement('td');
                 tdId2.textContent = rootsList[rowIdx].id;
-                tdId2.style.color = '#c586c0';
+                tdId2.style.color = 'var(--ch-identity)';
                 tr.appendChild(tdId2);
                 var tdPath2 = document.createElement('td');
                 tdPath2.textContent = rootsList[rowIdx].path;
@@ -597,11 +597,11 @@ function enterEditRoot(idx) {
                 tr.appendChild(tdPath2);
                 var tdNote2 = document.createElement('td');
                 tdNote2.textContent = rootsList[rowIdx].note || '';
-                tdNote2.style.color = '#6a9955';
+                tdNote2.style.color = 'var(--ch-ok-weak)';
                 tr.appendChild(tdNote2);
                 var tdW2 = document.createElement('td');
                 tdW2.textContent = rootsList[rowIdx].writable ? '读写' : '只读';
-                tdW2.style.color = rootsList[rowIdx].writable ? '#4ec9b0' : '#f48771';
+                tdW2.style.color = rootsList[rowIdx].writable ? 'var(--ch-ok)' : 'var(--ch-err)';
                 tr.appendChild(tdW2);
                 var tdOp2 = document.createElement('td');
                 tdOp2.textContent = '';
@@ -679,7 +679,7 @@ function renderPackChecks(allPacks, packs) {
     box.textContent = '';
     if (!allPacks || allPacks.length === 0) {
         var empty = document.createElement('span');
-        empty.style.cssText = 'font-size:11px;color:#6a6a6a';
+        empty.style.cssText = 'font-size:11px;color:var(--ch-fg-weak)';
         empty.textContent = '（池为空——在配置页「加载包池」新建）';
         box.appendChild(empty);
         return;
@@ -691,7 +691,7 @@ function renderPackChecks(allPacks, packs) {
     for (var j = 0; j < allPacks.length; j++) {
         (function (pack) {
             var label = document.createElement('label');
-            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:#242424;border:1px solid #2a2a2a;border-radius:4px;padding:3px 8px;font-size:11px;color:#c8c8c8;cursor:pointer';
+            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--ch-fg);cursor:pointer';
             var cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.className = 'pack-cb';
@@ -725,7 +725,7 @@ function renderTplPacks(allPacks, defaultPacks) {
     box.textContent = '';
     if (!allPacks || allPacks.length === 0) {
         var empty = document.createElement('span');
-        empty.style.cssText = 'font-size:11px;color:#6a6a6a';
+        empty.style.cssText = 'font-size:11px;color:var(--ch-fg-weak)';
         empty.textContent = '（池为空——在「加载包池」区新建）';
         box.appendChild(empty);
         return;
@@ -737,7 +737,7 @@ function renderTplPacks(allPacks, defaultPacks) {
     for (var j = 0; j < allPacks.length; j++) {
         (function (pack) {
             var label = document.createElement('label');
-            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:#242424;border:1px solid #2a2a2a;border-radius:4px;padding:3px 8px;font-size:11px;color:#c8c8c8;cursor:pointer';
+            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--ch-fg);cursor:pointer';
             var cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.className = 'tpl-pack-cb';
