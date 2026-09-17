@@ -21,12 +21,12 @@ var chatPendingReset = false;      // 会话重置待确认——chatNewSession 
 
 // A59——六态状态条（链路/等待/思考/工具/执行/回复）：数据源 = 后端权威运行态（快照 sessions 段 runState/runMs/requests）——计时单源在后端，前端只渲染不自算
 var chatPhaseMeta = [
-    { key: 'link', label: '链路', icon: '🔗' },
-    { key: 'wait', label: '等待', icon: '⏳' },
-    { key: 'think', label: '思考', icon: '🧠' },
-    { key: 'tool', label: '工具', icon: '🔧' },
-    { key: 'run', label: '执行', icon: '⚙️' },
-    { key: 'reply', label: '回复', icon: '💬' }
+    { key: 'link', label: 'Link', icon: '🔗' },
+    { key: 'wait', label: 'Wait', icon: '⏳' },
+    { key: 'think', label: 'Think', icon: '🧠' },
+    { key: 'tool', label: 'Tool', icon: '🔧' },
+    { key: 'run', label: 'Run', icon: '⚙️' },
+    { key: 'reply', label: 'Reply', icon: '💬' }
 ];
 var chatRunState = { state: '', ms: {}, requests: 0 };   // 后端运行态快照（本猫会话条目——id 即猫 key；数据源 = SSE patch 推送，前端零轮询）
 var chatUsage = { prompt: 0, completion: 0, cacheHit: 0 };       // 轮级 Token——usage 事件覆盖式累计；轮结束清空（A61：去会话级显示——底部行只留本轮统计）
@@ -95,10 +95,10 @@ function chatRenderStatus() {
         html += '<span class="st ' + p.key + ' ' + cls + '">' + p.icon + ' ' + p.label + ' ' + chatFmtMs(v) + '</span>';
     }
     if (totalMs > 0) {
-        html += '<span class="st total">⏱ 总 ' + chatFmtMs(totalMs) + '</span>';
+        html += '<span class="st total">⏱ All ' + chatFmtMs(totalMs) + '</span>';
     }
     if (chatRunState.requests > 0) {
-        html += '<span class="st req">🔄 请求 ' + chatRunState.requests + ' 次</span>';
+        html += '<span class="st req">🔄 Api ' + chatRunState.requests + '</span>';
     }
     if (chatUsage.prompt > 0 || chatUsage.completion > 0) {
         var miss = chatUsage.prompt - chatUsage.cacheHit;
@@ -135,6 +135,17 @@ function chatScrollBottom(force) {
             return;
         }
     }
+    chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+
+// 是否贴近底部——供「内容插入之前」取样（插入后新块自身高度会顶过阈值：多行 user 气泡 / 整块回复 /
+// 工具卡等大块被误判为"用户已上翻"→ 不跟随，只延伸滚动条）
+function chatNearBottom() {
+    return (chatMsgs.scrollHeight - chatMsgs.scrollTop - chatMsgs.clientHeight) < 80;
+}
+
+// 跳到最下层——快捷按钮（无条件滚到底；与智能跟随判定互不影响——2026-09-17）
+function chatJumpBottom() {
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
 }
 
@@ -209,6 +220,9 @@ function chatRenderPending() {
 
 function chatOnView(d) {
     if (chatState === 'loading') { return; }
+    // 跟随判定取样——「新内容到达前」是否贴近底部（新块自身高度不计入判定：多行 user 气泡 / 整块回复等
+    // 大块会把插入后的距底距离顶过 80px 阈值 → 被误判为用户已上翻 → 不跟随、只延伸滚动条——2026-09-17 修复）
+    var stickBottom = chatNearBottom();
     var type = d.renderType;
     var payload = d.payload || {};
     if (type === 'user') {
@@ -234,7 +248,8 @@ function chatOnView(d) {
         // roundsum 轮末统计——独立气泡（本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时）
         chatOnRoundSum(payload);
     }
-    chatScrollBottom();
+    // 末尾按取样结果滚动——stickBottom（到达前已贴近底部）则维持在最下层；否则尊重用户上翻位置不动
+    if (stickBottom) { chatMsgs.scrollTop = chatMsgs.scrollHeight; }
 }
 
 function chatOnStream(seq, payload) {
@@ -260,6 +275,8 @@ function chatOnStream(seq, payload) {
         var t = payload.text || '';
         if (t.length === 0) { return; }
         if (!viewContainers[seq]) {
+            // 思考段终结——reply 流式开始前折叠思考块（2026-09-17：思考结束即折叠，随后才开始流式 reply）
+            chatCollapseReasons();
             var tb = chatBubble('assistant');
             tb.classList.add('streaming');
             viewContainers[seq] = { type: 'text', bubble: tb, reasonPre: null };
@@ -278,8 +295,8 @@ function chatOnText(seq, replaceSeq, payload) {
     var html = '<div class="md-block">' + mdToHtml(content) + '</div>';
     // P6b 节点操作条——正式回复块底部两按钮（回滚/分支）；msgIndex<0（工具轮 seal 文本）不挂
     var msgIndex = (payload.msgIndex !== undefined) ? payload.msgIndex : -1;
-    // 最终回复（msgIndex≥0）——其前的最后一个思考过程保持展开（2026-09-16）
-    if (msgIndex >= 0) { chatOpenLastReason(); }
+    // 思考段终结——回复整块到达即折叠全部思考块（2026-09-17：思考结束即折叠，不保留展开态）
+    chatCollapseReasons();
     var c = viewContainers[replaceSeq];
     if (c && c.type === 'text') {
         c.bubble.classList.remove('streaming');

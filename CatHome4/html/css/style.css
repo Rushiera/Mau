@@ -2,6 +2,20 @@
 :root { --chat-font-size: 14px; } /* P8.5d——ui.chat_font_size 前端消费（宿主持久化配置）；全局字号配置已移除——静态提档替代（2026-08-28） */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #141414; color: #c8c8c8; height: 100vh; overflow: hidden; }
+
+/* ============ 滚动条——深色配色统一（2026-09-17） ============ */
+/* 动机：默认滚动条走系统浅色样式（白底轨道），与 #141414 深色界面割裂——与 chat.css 同款 */
+/* 作用面：主面板全部滚动容器（状态区 / Log 区 / 原始 JSON 区 / 弹层列表） */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+/* 滑轨渲染——轨道透明（浮在深底上不抢视线）；滑块留 2px 透明边（视觉宽 6px） */
+::-webkit-scrollbar-thumb { background-color: #2a2a2a; background-clip: padding-box; border: 2px solid transparent; border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background-color: #3a3a3a; }
+::-webkit-scrollbar-corner { background: transparent; }
+/* 标准属性兜底——不支持 WebKit 伪元素的引擎（Firefox）；Chrome 121+ 两套并存时标准属性会压过伪元素，故以 @supports 隔离 */
+@supports not (selector(::-webkit-scrollbar)) {
+    * { scrollbar-width: thin; scrollbar-color: #2a2a2a transparent; }
+}
 #layout { display: flex; height: 100vh; }
 
 /* ── 窄侧栏 ── */

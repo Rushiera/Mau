@@ -2,6 +2,29 @@
 :root { --chat-font-size: 14px; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #141414; color: #c8c8c8; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+/* ============ 滚动条——深色配色统一（2026-09-17） ============ */
+/* 动机：默认滚动条走系统浅色样式（白底轨道），与 #141414 深色界面割裂——对话区右缘最明显 */
+/* 作用面：本页全部滚动容器（对话区纵向 / Note 列表纵向 / 代码块与表格横向） */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+/* 滑轨渲染——轨道透明（浮在深底上不抢视线）；滑块留 2px 透明边（视觉宽 6px） */
+::-webkit-scrollbar-thumb { background-color: #2a2a2a; background-clip: padding-box; border: 2px solid transparent; border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background-color: #3a3a3a; }
+::-webkit-scrollbar-corner { background: transparent; }
+/* 标准属性兜底——不支持 WebKit 伪元素的引擎（Firefox）；Chrome 121+ 两套并存时标准属性会压过伪元素，故以 @supports 隔离 */
+@supports not (selector(::-webkit-scrollbar)) {
+    * { scrollbar-width: thin; scrollbar-color: #2a2a2a transparent; }
+}
+
+/* MD 渲染区点名（代码块 / 表格横向条）——同款参数，与上方全局规则一致；
+   显式声明目的：横向条出现于气泡内部（代码块深底 #0d0d0d），点名后不受局部规则影响 */
+.chat-bubble .md-block pre::-webkit-scrollbar,
+.chat-bubble .md-block table::-webkit-scrollbar { width: 10px; height: 10px; }
+.chat-bubble .md-block pre::-webkit-scrollbar-thumb,
+.chat-bubble .md-block table::-webkit-scrollbar-thumb { background-color: #2a2a2a; background-clip: padding-box; border: 2px solid transparent; border-radius: 5px; }
+.chat-bubble .md-block pre::-webkit-scrollbar-thumb:hover,
+.chat-bubble .md-block table::-webkit-scrollbar-thumb:hover { background-color: #3a3a3a; }
 #chatbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #222; font-size: 11px; color: #6a6a6a; }
 #chatbar .sid { color: #c586c0; font-weight: bold; }
 #uiVer { background: rgba(0,0,0,0.6); border: 1px solid #2a2a2a; border-radius: 4px; padding: 1px 8px; color: #6a9955; font-size: 11px; }
@@ -11,16 +34,18 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 /* A59——六态状态条 + Token 统计（链路/等待/思考/工具/执行/回复；时长数据源 = 后端运行态）；位于页面最底部（输入框下方）持久存在 */
 #chatStatus { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-top: 1px solid #1f1f1f; font-size: 11px; color: #6a6a6a; background: #131313; min-height: 22px; flex-wrap: wrap; }
 /* 持久存在——空态不隐藏（用户要求状态区常驻最底部） */
+/* 2026-09-17：六态常驻主题色（原「仅活跃态着色、其余暗灰」退役——每态一眼可辨）；活跃态走呼吸动效 */
 #chatStatus .st { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 3px; color: #4a4a4a; }
-#chatStatus .st.active { color: #c8c8c8; animation: chat-phase-pulse 1.2s ease-in-out infinite; }
-#chatStatus .st.link.active { color: #569cd6; }
-#chatStatus .st.wait.active { color: #ce9178; }
-#chatStatus .st.think.active { color: #c586c0; }
-#chatStatus .st.tool.active { color: #dcdcaa; }
-#chatStatus .st.run.active { color: #b5cea8; }
-#chatStatus .st.reply.active { color: #4ec9b0; }
+#chatStatus .st.active { animation: chat-phase-pulse 1.2s ease-in-out infinite; }
+#chatStatus .st.link { color: #8a8a8a; }
+#chatStatus .st.wait { color: #7a8a7a; }
+#chatStatus .st.think { color: #ffd75f; }
+#chatStatus .st.tool { color: #7a8b3f; }
+#chatStatus .st.run { color: #8ab8d8; }
+#chatStatus .st.reply { color: #f0e6d2; }
+#chatStatus .st.total { color: #c0a8e0; }
 /* 请求次数（状态条右段——后端 link 段数 = API 请求次数） */
-#chatStatus .st.req { color: #9a9a9a; }
+#chatStatus .st.req { color: #8a8a8a; }
 /* E 系列——活跃态呼吸动效（阶段切换过渡观感） */
 @keyframes chat-phase-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 #chatStatus .tok { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: #6a9955; font-size: 10px; }
@@ -85,6 +110,10 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 .chat-bubble.roundsum .rs-tok { color: #4ec9b0; word-break: break-all; white-space: pre-wrap; }
 .chat-bubble.roundsum .rs-tools { color: #dcdcaa; margin-top: 2px; }
 .chat-bubble.roundsum .rs-times { color: #9a9a9a; margin-top: 2px; }
+/* 轮末第二行分色（2026-09-17——Tool/Api/All 三段；第三行六态保持单色弱化） */
+.chat-bubble.roundsum .rs-tool { color: #7a8b3f; }
+.chat-bubble.roundsum .rs-api { color: #8a8a8a; }
+.chat-bubble.roundsum .rs-all { color: #c0a8e0; }
 #chatinput { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #222; align-items: flex-end; }
 #chatSendInput { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; color: #c8c8c8; padding: 7px 10px; font-family: inherit; font-size: 12px; resize: none; line-height: 1.5; }
 #chatSendInput:focus { outline: none; border-color: #0e639c; }
@@ -92,9 +121,13 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: #14141
 #chatSendBtn { background: #0e639c; border: none; color: #fff; padding: 7px 16px; cursor: pointer; font-family: inherit; font-size: 12px; }
 #chatSendBtn:disabled { opacity: 0.5; cursor: default; }
 /* M4c Note——Q3 v2（2026-09-08）：输入区上方按钮（固定不占布局）+ 点击展开气泡区域（popover 贴按钮上方；高度变化零影响聊天区） */
-#noteWrap { position: fixed; bottom: 112px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; align-items: center; }
+/* 2026-09-17：横向排布——Note 气泡 + 跳底按钮并排（popover 仍贴 wrap 上方居中） */
+#noteWrap { position: fixed; bottom: 112px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: row; align-items: center; gap: 6px; }
 #noteBubble { background: #101820; border: 1px solid #1e3a2f; border-radius: 14px; color: #9ab8a8; font-size: 11px; padding: 4px 14px; cursor: pointer; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.4); user-select: none; }
 #noteBubble:hover { border-color: #2e5a44; color: #c8e6d0; }
+/* 跳底按钮——回到最新内容（无条件滚到底；与智能跟随互不影响，2026-09-17） */
+#chatJumpBottom { width: 26px; height: 26px; padding: 0; border-radius: 50%; background: #101820; border: 1px solid #1e3a2f; color: #9ab8a8; font-family: inherit; font-size: 13px; line-height: 1; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.4); user-select: none; }
+#chatJumpBottom:hover { border-color: #2e5a44; color: #c8e6d0; }
 #notePopover { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #141414; border: 1px solid #2a2a2a; border-radius: 8px; width: min(520px, 80vw); max-height: 60vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
 .note-popover-head { padding: 8px 14px; border-bottom: 1px solid #222; color: #c586c0; font-weight: bold; font-size: 12px; }
 #noteList { display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; overflow-y: auto; flex: 1; }

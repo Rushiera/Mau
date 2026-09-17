@@ -86,10 +86,7 @@ function noteStart() {
 function noteOnEvent(d) {
     if (d.state) {
         noteState = d.state;
-        // 任务存在时自动展开 modal（工作进度面板语义——人写入/计划推送即弹出）；无任务（空/刚完成）不弹
-        if (noteState.tasks && noteState.tasks.length > 0 && !noteModalOpen) {
-            noteToggle();
-        }
+        // 展开态只由点击控制——状态变动不再自动展开（2026-09-17 规格变更：原「计划存在即弹出」退役）
     }
     noteRender();
 }

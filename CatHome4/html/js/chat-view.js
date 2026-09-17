@@ -32,14 +32,15 @@ function chatAppend(bubble, text) {
     chatScrollBottom();
 }
 
-// 最终回复前的最后一个思考过程保持展开——定位最后一块 reason 并展开（2026-09-16：
-// 中间轮次的思考照旧自动折叠，只有最终 reply 前的那一块保持可见）
-function chatOpenLastReason() {
+// 思考段终结——折叠全部仍在展开的思考块（2026-09-17：思考结束立即折叠，不再为最终回复保留展开态）
+// 调用面：reply 流式开始（chatOnStream kind=text）+ 回复整块到达（chatOnText）——折叠后 summary 走折叠摘要渲染
+function chatCollapseReasons() {
     var all = chatMsgs.querySelectorAll('details.chat-reason');
-    if (all.length === 0) { return; }
-    var det = all[all.length - 1];
-    det.open = true;
-    if (det._updateSummary) { det._updateSummary(); }
+    for (var i = 0; i < all.length; i++) {
+        if (all[i].open !== true) { continue; }
+        all[i].open = false;
+        if (all[i]._updateSummary) { all[i]._updateSummary(); }
+    }
 }
 
 // 工具图标映射——CH2 CH_Tool_LLMToolDisplay.GetIcon 移植（CH4 连字符工具名适配）
@@ -273,20 +274,7 @@ function chatRenderHistory(data) {
     // F4 视图块历史渲染——按 blocks[] renderType 分派（view 协议；无 messages[] 旧结构）
     chatMsgs.textContent = '';
     var blocks = data.blocks || [];
-    // 最终回复（msgIndex≥0 的 text 块）之前的最后一个 reason 块保持展开——与实时渲染一致（2026-09-16）
-    var lastReasonIndex = -1;
-    var finalTextIndex = -1;
-    for (var fi = 0; fi < blocks.length; fi++) {
-        if (blocks[fi].renderType === 'text') {
-            var fmi = (blocks[fi].payload && blocks[fi].payload.msgIndex !== undefined) ? blocks[fi].payload.msgIndex : -1;
-            if (fmi >= 0) { finalTextIndex = fi; }
-        }
-    }
-    if (finalTextIndex >= 0) {
-        for (var ri = finalTextIndex - 1; ri >= 0; ri--) {
-            if (blocks[ri].renderType === 'reason') { lastReasonIndex = ri; break; }
-        }
-    }
+    // 思考块一律折叠——与实时渲染一致（2026-09-17：思考结束即折叠，无最终回复展开特例）
     for (var i = 0; i < blocks.length; i++) {
         var blk = blocks[i];
         var p = blk.payload || {};
@@ -295,7 +283,7 @@ function chatRenderHistory(data) {
             ub.textContent = p.content || '';
         } else if (blk.renderType === 'reason') {
             var rb = chatBubble('assistant', 'reason');
-            rb.appendChild(chatReasonBlock(p.content || '', i === lastReasonIndex));
+            rb.appendChild(chatReasonBlock(p.content || ''));
         } else if (blk.renderType === 'toolcard') {
             var tb = chatBubble('assistant', 'tool');
             tb.appendChild(chatToolCard(p));
@@ -374,7 +362,8 @@ function chatAppendNodeActions(bubble, msgIndex) {
     bubble.appendChild(bar);
 }
 
-// 时长格式化——毫秒 → 可读（<60s → x.xs；≥60s → x分x.x秒；≥3600s → x小时x分x.x秒——hour 最高单位不再进位；状态条/roundsum 共用）
+// 时长格式化——毫秒 → 可读（<60s → x.xs；≥60s → xm x.xs；≥3600s → xh xm x.xs——hour 最高单位不再进位；状态条/roundsum 共用）
+// 2026-09-17：单位英文化（与状态条英文标签同语言——原「x分x.x秒 / x小时x分x.x秒」退役）
 function chatFmtMs(ms) {
     var s = (ms || 0) / 1000;
     if (s >= 3600) {
@@ -382,12 +371,12 @@ function chatFmtMs(ms) {
         var rest = s - hours * 3600;
         var mins = Math.floor(rest / 60);
         var secs = rest - mins * 60;
-        return hours + '小时' + mins + '分' + secs.toFixed(1) + '秒';
+        return hours + 'h' + mins + 'm' + secs.toFixed(1) + 's';
     }
     if (s >= 60) {
         var mins2 = Math.floor(s / 60);
         var secs2 = s - mins2 * 60;
-        return mins2 + '分' + secs2.toFixed(1) + '秒';
+        return mins2 + 'm' + secs2.toFixed(1) + 's';
     }
     return s.toFixed(1) + 's';
 }
@@ -399,7 +388,7 @@ function chatOnRoundSum(payload) {
     var miss = (d.miss !== undefined) ? d.miss : ((d.prompt || 0) - (d.cacheHit || 0));
     if (miss < 0) { miss = 0; }
     var b = chatBubble('assistant', 'roundsum');
-    var html = '<div class="rs-head">📊 本轮统计</div>';
+    var html = '<div class="rs-head">📊 Round</div>';
     // cache 命中率——cacheHit / prompt（prompt=0 时 0%）
     var promptTotal = d.prompt || 0;
     var hitRate = (promptTotal > 0) ? ((d.cacheHit || 0) / promptTotal * 100) : 0;
@@ -408,30 +397,29 @@ function chatOnRoundSum(payload) {
         + ' cache ' + chatFmtCount(d.cacheHit || 0)
         + ' miss ' + chatFmtCount(miss)
         + ' 🎯' + hitRate.toFixed(1) + '%</div>';
-    // 工具/请求次数行（请求次数为 A59 字段——旧轮次无该字段则不显示）
+    // 第二行——工具次数 · 请求次数 · All 总耗时（2026-09-17 重排：All 自六态行挪入本行并列；三段各自着色）
     var toolsLine = '';
-    if (d.toolCount > 0) { toolsLine = '🔧 工具 ' + d.toolCount + ' 次'; }
+    if (d.toolCount > 0) { toolsLine = '<span class="rs-tool">🔧 Tool ' + d.toolCount + '</span>'; }
     if (d.requests !== undefined) {
-        toolsLine += (toolsLine ? ' · ' : '') + '🔄 请求 ' + (d.requests || 0) + ' 次';
+        toolsLine += (toolsLine ? ' · ' : '') + '<span class="rs-api">🔄 Api ' + (d.requests || 0) + '</span>';
     }
-    if (toolsLine) {
-        html += '<div class="rs-tools">' + toolsLine + '</div>';
-    }
-    // 六态用时（idle 不计时故不入载荷；非零态上尾巴 + 总计）
+    toolsLine += (toolsLine ? ' · ' : '') + '<span class="rs-all">⏱ All ' + chatFmtMs(d.elapsedMs) + '</span>';
+    html += '<div class="rs-tools">' + toolsLine + '</div>';
+    // 六态用时（idle 不计时故不入载荷；非零态上尾巴 + All 总计）
     var phasesMeta = [
-        { key: 'link', label: '链路' },
-        { key: 'wait', label: '等待' },
-        { key: 'think', label: '思考' },
-        { key: 'tool', label: '工具' },
-        { key: 'run', label: '执行' },
-        { key: 'reply', label: '回复' }
+        { key: 'link', label: 'Link' },
+        { key: 'wait', label: 'Wait' },
+        { key: 'think', label: 'Think' },
+        { key: 'tool', label: 'Tool' },
+        { key: 'run', label: 'Run' },
+        { key: 'reply', label: 'Reply' }
     ];
+    // 第三行——六态用时（All 已挪至第二行；单色弱化——2026-09-17 试过分色，观感偏杂，回退全灰）
     var tparts = [];
     for (var pi = 0; pi < phasesMeta.length; pi++) {
         var pv = phases[phasesMeta[pi].key] || 0;
         if (pv > 0) { tparts.push(phasesMeta[pi].label + ' ' + chatFmtMs(pv)); }
     }
-    tparts.push('总计 ' + chatFmtMs(d.elapsedMs));
-    html += '<div class="rs-times">⏱ ' + tparts.join(' · ') + '</div>';
+    html += '<div class="rs-times">' + tparts.join(' · ') + '</div>';
     b.innerHTML = html;
 }

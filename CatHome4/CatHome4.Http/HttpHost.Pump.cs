@@ -134,9 +134,7 @@ namespace CatHome4.Http
                 }
             }
         }
-        /// <summary>
-        /// LogStore 增量推送——游标后新条目逐条推 log 事件（协议 §4.2）。
-        /// </summary>
+        /// <summary>LogStore 增量推送——游标后新条目逐条推 log 事件（协议 §4.2）；trace 类审计不进前端（IsTraceAudit，2026-09-17）。</summary>
         private void PushLogIncrements()
         {
             List<LogStore.LogEntry> logs = LogStore.AllLog;
@@ -146,6 +144,11 @@ namespace CatHome4.Http
                 {
                     LogStore.LogEntry entry = logs[_logCursor];
                     _logCursor = _logCursor + 1;
+                    // trace 类审计不进前端（导线级轨迹——2026-09-17）
+                    if (IsTraceAudit(entry))
+                    {
+                        continue;
+                    }
                     var obj = new
                     {
                         time = entry.Time,

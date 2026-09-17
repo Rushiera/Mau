@@ -104,11 +104,24 @@ namespace CatHome4.Http
             PushEvent("cmd", JsonUtil.Serialize(fail));
             return Results.Json(fail);
         }
-
         /// <summary>
-        /// 日志查询端点——GET /api/v1/logs?n=N&cat=CAT&type=audit.*（O5：统一从 Log 真源读取——替代快照锚点替换面）
-        /// 参数：n=条数（1-2000 夹取，缺省 200）· cat=类别过滤（空=全部）· type=Type 前缀过滤（空=全部）
+        /// 前端 Log 面噪音判定——trace 类审计（audit.*.trace.*）不进前端（2026-09-17）。
+        /// 导线级执行轨迹（trace.fire/trace.state）由翻译器自动注入、量大，只服务审计查询面（内存真源 + CLI status）；
+        /// 磁盘面本就 skipDisk 不落盘——前端 Log 页只留业务日志。
         /// </summary>
+        /// <param name="entry">日志条目</param>
+        /// <returns>true=前端不出（trace 审计）</returns>
+        private static bool IsTraceAudit(LogStore.LogEntry entry)
+        {
+            string type = entry.Type;
+            if (type.Length == 0)
+            {
+                return false;
+            }
+            return type.StartsWith("audit.", StringComparison.Ordinal) && type.Contains(".trace.");
+        }
+
+        /// <summary>日志查询端点——GET /api/v1/logs（O5：统一从 Log 真源读取——替代快照锚点替换面）；trace 类审计不进前端（IsTraceAudit——只服务内存真源与 CLI 审计面，2026-09-17）。</summary>
         /// <param name="ctx">HTTP 上下文</param>
         /// <returns>日志 JSON</returns>
         public static IResult HandleLogs(HttpContext ctx)
@@ -134,6 +147,11 @@ namespace CatHome4.Http
                 for (int i = all.Count - 1; i >= 0 && list.Count < count; i--)
                 {
                     LogStore.LogEntry entry = all[i];
+                    // trace 类审计不进前端（导线级轨迹——2026-09-17）
+                    if (IsTraceAudit(entry))
+                    {
+                        continue;
+                    }
                     if (cat.Length > 0 && entry.Category != cat)
                     {
                         continue;
@@ -179,9 +197,7 @@ namespace CatHome4.Http
             return count;
         }
 
-        /// <summary>
-        /// 构建日志段 JSON——LogStore 尾部 N 条（与 PushLogIncrements 同格式；锁内快照）
-        /// </summary>
+        /// <summary>构建日志段 JSON——LogStore 尾部 N 条（与 PushLogIncrements 同格式；锁内快照）；trace 类审计不进前端（IsTraceAudit，2026-09-17）。</summary>
         /// <param name="count">条数</param>
         /// <returns>日志数组 JSON；无日志返回空串（不拼接）</returns>
         private static string BuildLogsJson(int count)
@@ -198,6 +214,11 @@ namespace CatHome4.Http
                 for (int i = start; i < logs.Count; i++)
                 {
                     LogStore.LogEntry entry = logs[i];
+                    // trace 类审计不进前端（导线级轨迹——2026-09-17）
+                    if (IsTraceAudit(entry))
+                    {
+                        continue;
+                    }
                     list.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, message = entry.Message });
                 }
                 return JsonUtil.Serialize(list);
