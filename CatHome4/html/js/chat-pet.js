@@ -5,7 +5,7 @@
 // 资源：html/pet/*.webp（286x256 原尺寸 1:1 显示 · 20ms/帧 · 透明底 · 圆角矩形边缘羽化；源素材 Workspace/pet/*.gif）
 //
 // 形态语义（素材约定）：
-//   loop-*  循环态（link/wait/think/tool/run/reply/sseErr/idle1-3/idle-hook/idle-sleep）
+//   loop-*  循环态（link/wait/think/tool/run/reply/sseErr/idle/idle-hook/idle-sleep）
 //   before-* 过渡动画（播一遍）——before-idle-hook 移入 / before-idle-sleep 入睡
 //            · before-idle 实为 **after-reply 语义**（整轮结束的收尾动作）——只在「活跃态 → 空闲」时播一次
 //            · before-tool 已废弃——素材姿态与 loop-tool 对不齐，进工具态直接切循环图
@@ -42,21 +42,23 @@ var chatPetFail = 0;              // 加载失败计数——全量结束后汇�
 var CHAT_PET_CACHE_PREFIX = 'ch4-pet';    // Cache API 桶名（固定——失效靠逐张 URL 的内容哈希，不靠换桶名）
 var chatPetManifest = (typeof chatPetManifestData !== 'undefined') ? chatPetManifestData : {};   // 素材清单（名称 → {h:内容哈希, ms:总时长}）——来自 js/pet-manifest.js；缺失降级空表
 // 接缝溶解名单——before 末帧与 loop 首帧姿态不接的对，强制走溶解盖接缝（实测最优截断改善 <10%，裁切无用）
-// · loop-idle1/2/3——before-idle 是「一对三」（目标为此三张待机图），结构上不可能同时对齐，故全走溶解
+// · loop-idle——before-idle 收尾动作的落点（素材 2026-09-17 由三张合并为一张），姿态不保证对齐，故走溶解
 // · before-tool 已废弃（素材删除，进 tool 态直切 loop-tool，无接缝）；其余对仍走瞬切
 var CHAT_PET_SEAM_BLEND = {
-    'loop-idle-sleep': true, 'loop-idle-hook': true,
-    'loop-idle1': true, 'loop-idle2': true, 'loop-idle3': true
+    'loop-idle-sleep': true, 'loop-idle-hook': true, 'loop-idle': true
 };
 
 // 六态 → 循环资源
 var chatPetPhaseMap = { link: 'loop-link', wait: 'loop-wait', think: 'loop-think', tool: 'loop-tool', run: 'loop-run', reply: 'loop-reply' };
 
-var CHAT_PET_IDLE_BASE = ['loop-idle1', 'loop-idle2', 'loop-idle3'];   // 基础待机三选一（随机）
+var CHAT_PET_IDLE_BASE = ['loop-idle'];   // 基础待机（单张——素材 2026-09-17 由三张合并为一张；pick 逻辑兼容任意张数）
 var CHAT_PET_CHECKS = [
     { name: 'after-idle-check', ms: 580 }
 ];
-var CHAT_PET_IDLE_BASE_HOLD_MS = 8000;   // 基础待机时长——8s 到点**直接进入睡**（前端节律，非素材时长）
+var CHAT_PET_IDLE_BASE_HOLD_MS = 5000;   // 基础待机时长——5s 到点进入睡（前端节律，非素材时长；2026-09-17 由 8s 调整）
+// 入睡过渡遍数——before-idle-sleep 单遍 1980ms；取 2 遍 ≈ 3.96s（「5s 待机 → 约 3s 过渡 → 睡」，
+// 且切点落在整遍边界不跳帧；实时长以 manifest 为准）
+var CHAT_PET_BEFORE_SLEEP_LOOPS = 2;
 // 以下为素材播放时长的**兜底值**——实际以 manifest 为准（chatPetMs）；素材重转后无需改这里
 var CHAT_PET_BEFORE_IDLE_MS = 1980;      // before-idle 兜底时长
 var CHAT_PET_BEFORE_HOOK_MS = 1140;      // before-idle-hook 兜底时长
@@ -66,7 +68,7 @@ var CHAT_PET_BEFORE_SLEEP_MS = 1980;     // before-idle-sleep 兜底时长
 var chatPetFiles = [
     'loop-link', 'loop-wait', 'loop-think', 'loop-tool', 'loop-run', 'loop-reply', 'loop-sseErr',
     'before-idle',
-    'loop-idle1', 'loop-idle2', 'loop-idle3',
+    'loop-idle',
     'loop-idle-hook', 'before-idle-hook',
     'loop-idle-sleep', 'before-idle-sleep',
     'after-idle-check'
@@ -175,7 +177,7 @@ function chatPetEnterIdle()
 
 function chatPetPlayBase(instant)
 {
-    // 基础待机——loop-idle1-3 随机一张播 8s，到点直接进入睡（不再换下一张）
+    // 基础待机——loop-idle 播 8s，到点直接进入睡（素材单张；多张时按 pick 轮转）
     chatPetIdleMode = 'base';
     var idx = chatPetPick(CHAT_PET_IDLE_BASE.length, chatPetIdleIdx);
     chatPetIdleIdx = idx;
@@ -228,7 +230,7 @@ function chatPetIdleCheck()
 
 function chatPetStartSleep()
 {
-    // 入睡——before-idle-sleep 播一遍后瞬切进睡眠循环（唤醒：鼠标移入或态变化）
+    // 入睡——before-idle-sleep 播**整遍**（共 CHAT_PET_BEFORE_SLEEP_LOOPS 遍）后瞬切进睡眠循环
     chatPetIdleMode = 'sleep';
     chatPetClearTimer();
     chatPetShow('before-idle-sleep');
@@ -236,7 +238,7 @@ function chatPetStartSleep()
     {
         chatPetTimer = null;
         if (chatPetMode === 'idle' && chatPetIdleMode === 'sleep') { chatPetShow('loop-idle-sleep', true); }
-    }, chatPetMs('before-idle-sleep', CHAT_PET_BEFORE_SLEEP_MS));
+    }, chatPetMs('before-idle-sleep', CHAT_PET_BEFORE_SLEEP_MS) * CHAT_PET_BEFORE_SLEEP_LOOPS);
 }
 
 // [段5] 对外接口

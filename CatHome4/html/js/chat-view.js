@@ -126,7 +126,8 @@ function chatToolCard(tool, open) {
     } else if (tool.toolTotal > 1) {
         prefix = '[' + chatToolIcon(tool.name) + ' ' + (tool.toolIndex || '?') + '/' + tool.toolTotal + '] ';
     } else {
-        prefix = '🔧 ';
+        // 单发同样用类型图标（原固定 🔧 扳手——2026-09-17）
+        prefix = chatToolIcon(tool.name) + ' ';
     }
     // 可见性适配——powershell 命令硬解码为自然语言意图（chat-cmd.js；宿主 summary 为原始命令截断，此处覆盖）
     var summaryText = tool.summary || tool.name || '?';
@@ -188,14 +189,14 @@ function chatReasonBlock(text, open) {
     det._updateSummary = function () {
         var t = det._reasonText || '';
         if (det.open) {
-            sum.textContent = (t.length > 0) ? ('思考过程 · ' + t.length + ' 字') : '思考过程';
+            sum.textContent = (t.length > 0) ? ('Thinking · ' + t.length) : 'Think';
             return;
         }
-        // 折叠——绿色标签「思考过程」+ 灰色缩略内容（颜色分工：标签继承 summary 原绿，内容取展开正文原灰）
+        // 折叠——Think 标签 + 灰色缩略内容（颜色分工：标签走 Think 态色，内容取展开正文原灰）
         sum.textContent = '';
         var label = document.createElement('span');
         label.className = 'rs-label';
-        label.textContent = '思考过程';
+        label.textContent = 'Think';
         sum.appendChild(label);
         var peek = chatReasonFoldedPeek(t);
         if (peek.length > 0) {
@@ -211,7 +212,7 @@ function chatReasonBlock(text, open) {
 }
 
 // 折叠摘要内容——<3 行不压缩直接显示原文；≥3 行取 首行 +（N行M字符已省略显示）+ 末行
-// （标签「思考过程」由 summary 渲染侧拼接——本函数只产缩略内容，2026-09-16）
+// （标签 Think 由 summary 渲染侧拼接——本函数只产缩略内容，2026-09-16）
 function chatReasonFoldedPeek(text) {
     if (!text || text.length === 0) { return ''; }
     var lines = text.split('\n');

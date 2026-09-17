@@ -172,14 +172,14 @@ test('reason 流式展开增量可见——整块替换后折叠（summary 字�
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考' }, replaceSeq: -1 });
   let det = chatMsgs.querySelector('.chat-reason');
   expect(det.open).toBe(true);
-  expect(det.querySelector('summary').textContent).toContain('2 字');
+  expect(det.querySelector('summary').textContent).toContain('Thinking · 2');
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '中' }, replaceSeq: -1 });
-  expect(det.querySelector('summary').textContent).toContain('3 字');
+  expect(det.querySelector('summary').textContent).toContain('Thinking · 3');
   // 整块替换——完成后折叠（字数同步）
   window.chatOnView({ seq: 21, renderType: 'reason', payload: { content: '最终思考内容' }, replaceSeq: 11 });
   det = chatMsgs.querySelector('.chat-reason');
   expect(det.open).toBe(false);
-  expect(det.querySelector('summary').textContent).toBe('思考过程：最终思考内容');
+  expect(det.querySelector('summary').textContent).toBe('Think：最终思考内容');
   // 历史重建——完成态折叠 + 字数
   window.chatRenderHistory({
     version: 1, sessionId: 's1', count: 1,
@@ -187,7 +187,7 @@ test('reason 流式展开增量可见——整块替换后折叠（summary 字�
   });
   det = chatMsgs.querySelector('.chat-reason');
   expect(det.open).toBe(false);
-  expect(det.querySelector('summary').textContent).toBe('思考过程：历史思考');
+  expect(det.querySelector('summary').textContent).toBe('Think：历史思考');
 });
 
 // ── 思考结束即折叠（2026-09-17 规格变更——原「最终回复前最后一块保持展开」退役）──
@@ -199,7 +199,7 @@ test('思考流式 → reply 流式开始即折叠（不等整块、不等最终
   window.chatOnView({ seq: 12, renderType: 'stream', payload: { kind: 'text', text: '回复' }, replaceSeq: -1 });
   det = chatMsgs.querySelector('.chat-reason');
   expect(det.open).toBe(false);
-  expect(det.querySelector('summary').textContent).toBe('思考过程：思考');
+  expect(det.querySelector('summary').textContent).toBe('Think：思考');
 });
 
 test('实时——最终回复（msgIndex≥0）后全部 reason 折叠', () => {
@@ -251,7 +251,7 @@ test('view toolcard 渲染工具卡（含名称/参数/结果；默认折叠）'
 });
 
 // ── toolcard 并发编号——对齐 CH2：并发批次 [icon n/m]；单次保持现状 ──
-test('toolcard 并发批次渲染 [icon n/m] 前缀——单次保持 🔧/⚠️', () => {
+test('toolcard 并发批次渲染 [icon n/m] 前缀——单次用类型图标（⚠️ 失败态不变）', () => {
   // 并发批（1/4）——icon 按工具类型映射（text-read → 📖）
   window.chatOnView({
     seq: 30, renderType: 'toolcard',
@@ -259,13 +259,13 @@ test('toolcard 并发批次渲染 [icon n/m] 前缀——单次保持 🔧/⚠�
     replaceSeq: -1
   });
   expect(chatMsgs.querySelectorAll('.chat-tool .tn')[0].textContent).toBe('[📖 1/4] text-read');
-  // 单次（无 toolTotal 字段——旧数据兼容）——保持现状 🔧
+  // 单次（无 toolTotal 字段——旧数据兼容）——同样用类型图标（text-read → 📖）
   window.chatOnView({
     seq: 31, renderType: 'toolcard',
     payload: { name: 'text-read', arguments: '{}', result: 'OK' },
     replaceSeq: -1
   });
-  expect(chatMsgs.querySelectorAll('.chat-tool .tn')[1].textContent).toBe('🔧 text-read');
+  expect(chatMsgs.querySelectorAll('.chat-tool .tn')[1].textContent).toBe('📖 text-read');
   // 错误并发——[⚠️ n/m] 前缀
   window.chatOnView({
     seq: 32, renderType: 'toolcard',
@@ -289,7 +289,7 @@ test('toolcard powershell——命令解读覆盖 summary + 展开区意图块',
   });
   const card = chatMsgs.querySelector('.chat-tool');
   // 折叠行——宿主原始命令截断被解读结果覆盖
-  expect(card.querySelector('.tn').textContent).toBe('🔧 编译 C# 项目 「CatHome4.sln」 等 2 段');
+  expect(card.querySelector('.tn').textContent).toBe('💻 编译 C# 项目 「CatHome4.sln」 等 2 段');
   // 展开区首块——逐段意图
   const intent = card.querySelector('.cmd-intent');
   expect(intent).not.toBeNull();
@@ -307,7 +307,7 @@ test('toolcard 非 powershell——不插命令意图块', () => {
     replaceSeq: -1
   });
   const card = chatMsgs.querySelector('.chat-tool');
-  expect(card.querySelector('.tn').textContent).toBe('🔧 读取文件 "a.txt" → "OK"');
+  expect(card.querySelector('.tn').textContent).toBe('📖 读取文件 "a.txt" → "OK"');
   expect(card.querySelector('.cmd-intent')).toBeNull();
 });
 
@@ -319,7 +319,7 @@ test('toolcard 大结果——折叠行标注字符数', () => {
     replaceSeq: -1
   });
   const card = chatMsgs.querySelector('.chat-tool');
-  expect(card.querySelector('.tn').textContent).toBe('🔧 读取文件 "big.txt" → ... · 2.00k 字符');
+  expect(card.querySelector('.tn').textContent).toBe('📖 读取文件 "big.txt" → ... · 2.00k 字符');
   expect(card.querySelector('.ta.warn')).toBeNull();
 });
 
@@ -329,7 +329,7 @@ test('toolcard 小结果——不标注（避免噪音）', () => {
     payload: { name: 'time', arguments: '{}', result: '2026-09-14 17:00:00' },
     replaceSeq: -1
   });
-  expect(chatMsgs.querySelector('.chat-tool .tn').textContent).toBe('🔧 time');
+  expect(chatMsgs.querySelector('.chat-tool .tn').textContent).toBe('🕐 time');
 });
 
 test('toolcard ps 结果截断——折叠行上限标注 + 展开区警示块', () => {
@@ -889,25 +889,25 @@ test('chatRenderHistory roundsum 块渲染（历史重建保留轮末统计）',
 test('reason 折叠摘要——多行保留首尾行 + 省略行/字符计数（展开回退字数标题）', () => {
   const text = '第一行开始\n第二行\n第三行\n第四行\n最后一行结束';
   const det = window.chatReasonBlock(text, false);
-  // 折叠——绿色标签「思考过程」+ 灰色缩略内容（首行 +（3行11字符已省略显示）+ 末行）
-  expect(det.querySelector('summary').textContent).toBe('思考过程：第一行开始（3行11字符已省略显示）最后一行结束');
+  // 折叠——Think 标签 + 灰色缩略内容（首行 +（3行11字符已省略显示）+ 末行）
+  expect(det.querySelector('summary').textContent).toBe('Think：第一行开始（3行11字符已省略显示）最后一行结束');
   expect(det.querySelector('summary .rs-peek')).not.toBeNull();
   // 展开——回退字数标题（jsdom 不触发 toggle——显式 _updateSummary；真实浏览器点击 toggle 自动同结果）
   det.open = true;
   det._updateSummary();
-  expect(det.querySelector('summary').textContent).toBe('思考过程 · 24 字');
+  expect(det.querySelector('summary').textContent).toBe('Thinking · 24');
   // 再折叠——回到折叠摘要
   det.open = false;
   det._updateSummary();
-  expect(det.querySelector('summary').textContent).toBe('思考过程：第一行开始（3行11字符已省略显示）最后一行结束');
+  expect(det.querySelector('summary').textContent).toBe('Think：第一行开始（3行11字符已省略显示）最后一行结束');
 });
 
 // ── 折叠摘要——少于 3 行不压缩，直接显示原文（2026-09-16）──
 test('reason 折叠摘要——单行/两行直接显示原文，不回退字数', () => {
   const one = window.chatReasonBlock('这是一段很短的思考', false);
-  expect(one.querySelector('summary').textContent).toBe('思考过程：这是一段很短的思考');
+  expect(one.querySelector('summary').textContent).toBe('Think：这是一段很短的思考');
   const two = window.chatReasonBlock('第一行\n第二行', false);
-  expect(two.querySelector('summary').textContent).toBe('思考过程：第一行\n第二行');
+  expect(two.querySelector('summary').textContent).toBe('Think：第一行\n第二行');
 });
 
 // ── 外观层优化：时长三级进位——秒/分/小时（hour 最高单位）──

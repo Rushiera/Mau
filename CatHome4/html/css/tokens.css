@@ -42,8 +42,8 @@
     --ch-desc-line: #2a5a4e;        /* 描述 / 说明块边 */
     /* 交互与浮层 */
     --ch-focus: var(--ch-bg-accent);            /* 焦点边框 */
-    --ch-scroll-thumb: var(--ch-line);          /* 滚动条滑块 */
-    --ch-scroll-thumb-hover: var(--ch-line-strong);
+    --ch-scroll-thumb: #3a3a3a;          /* 滚动条滑块 */
+    --ch-scroll-thumb-hover: #4d4d4d;
     --ch-shadow-soft: rgba(0, 0, 0, 0.4);       /* 组件轻微阴影 */
     --ch-shadow-strong: rgba(0, 0, 0, 0.6);     /* 弹层阴影 */
     --ch-overlay: rgba(0, 0, 0, 0.55);          /* 模态遮罩 */

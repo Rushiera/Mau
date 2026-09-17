@@ -9,9 +9,9 @@
 <body>
     <div id="layout">
         <nav id="sidebar">
-            <button data-tab="cats">多猫</button>
+            <button data-tab="cats" class="active">多猫</button>
             <button data-tab="config">配置</button>
-            <button data-tab="state" class="active">状态</button>
+            <button data-tab="state">状态</button>
             <button data-tab="log">日志</button>
             <button data-tab="raw">原始</button>
             <!-- 前端版本标记——每次改动前端递增；刷新后数字变化 = 拿到新版（人眼 cache-busting） -->
@@ -19,7 +19,7 @@
         </nav>
         <main>
             <!-- 状态区 -->
-            <section id="tab-state" class="tab active">
+            <section id="tab-state" class="tab">
                 <div id="meta">连接中...</div>
                 <div id="stateScroll">
                     <h2>会话状态</h2>
@@ -82,9 +82,9 @@
                         <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
                             <input id="apiNewName" placeholder="名称" style="width:110px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
                             <input id="apiNewType" placeholder="类型(deepseek)" style="width:110px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <input id="apiNewEndpoint" placeholder="端点 URL" style="flex:2;min-width:200px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
+                            <input id="apiNewEndpoint" placeholder="端点 URL" style="width:180px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
                             <input id="apiNewModel" placeholder="模型" style="width:130px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <input id="apiNewKey" placeholder="API Key（编辑留空=保留）" style="width:180px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
+                            <input id="apiNewKey" placeholder="API Key（编辑留空=保留）" style="flex:2;min-width:200px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
                             <button id="apiAddBtn" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">新建</button>
                             <button id="apiCancelEdit" style="display:none;background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">取消编辑</button>
                         </div>
@@ -182,7 +182,7 @@
                 </div>
             </section>
             <!-- 多猫管理区（P9.3d） -->
-            <section id="tab-cats" class="tab">
+            <section id="tab-cats" class="tab active">
                 <div id="catsbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--ch-line-faint);align-items:center">
                     <input id="catNewName" placeholder="新猫显示名（如 super）" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
                     <button id="catNewBtn" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">新建</button>

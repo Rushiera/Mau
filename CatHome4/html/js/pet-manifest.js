@@ -16,6 +16,10 @@ var chatPetManifestData = {
         "h": "53384fb9",
         "ms": 1980
     },
+    "loop-idle": {
+        "h": "3dfa9303",
+        "ms": 640
+    },
     "loop-idle-hook": {
         "h": "350a60f6",
         "ms": 180
@@ -24,21 +28,9 @@ var chatPetManifestData = {
         "h": "7c77b914",
         "ms": 1980
     },
-    "loop-idle1": {
-        "h": "c3d637c8",
-        "ms": 980
-    },
-    "loop-idle2": {
-        "h": "f6fd84fc",
-        "ms": 380
-    },
-    "loop-idle3": {
-        "h": "0cac5f5f",
-        "ms": 1640
-    },
     "loop-link": {
-        "h": "3fb2b710",
-        "ms": 520
+        "h": "0e6f66ba",
+        "ms": 980
     },
     "loop-reply": {
         "h": "0ab03f32",

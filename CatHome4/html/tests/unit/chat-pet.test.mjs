@@ -76,7 +76,7 @@ function cur() {
   return window.chatPetCur;
 }
 
-const IDLE_BASE = ['loop-idle1', 'loop-idle2', 'loop-idle3'];
+const IDLE_BASE = ['loop-idle'];
 
 function pushState(state, requests) {
   window.chatOnSessionState({ sessionId: 'majordomo', runState: state, runMs: {}, requests: requests || 0 });
@@ -134,27 +134,25 @@ test('初载（从未进过活跃态）直接进基础待机，不播 before-idl
 });
 
 // ── 基础待机 → 入睡 ──
-test('基础待机随机三选一（可指定下标）', () => {
-  vi.spyOn(Math, 'random').mockReturnValue(0.6);       // floor(0.6*3)=1
+test('基础待机单张（素材合并后唯一项）', () => {
   pushState('idle', 0);
-  expect(cur()).toBe('loop-idle2');
+  expect(cur()).toBe('loop-idle');
 });
 
-test('基础待机 8s 到点直接进入睡（不再换下一张）', () => {
-  const spy = vi.spyOn(Math, 'random');
-  spy.mockReturnValueOnce(0.6).mockReturnValue(0.1);
+test('基础待机 5s → before-idle-sleep 播 2 遍 → 入睡', () => {
+  const spy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
   pushState('idle', 0);
-  expect(cur()).toBe('loop-idle2');
-  vi.advanceTimersByTime(8000);
+  expect(cur()).toBe('loop-idle');
+  vi.advanceTimersByTime(5000);
   expect(cur()).toBe('before-idle-sleep');
-  vi.advanceTimersByTime(1980);
+  vi.advanceTimersByTime(3960);
   expect(cur()).toBe('loop-idle-sleep');
   expect(window.chatPetLastInstant).toBe(false);   // 接缝走溶解
 });
 
 test('睡眠中鼠标移入 → 唤醒进 hook', () => {
   pushState('idle', 0);
-  vi.advanceTimersByTime(9980);
+  vi.advanceTimersByTime(8960);
   expect(cur()).toBe('loop-idle-sleep');
   petBox.dispatchEvent(new Event('mouseenter'));
   expect(cur()).toBe('before-idle-hook');
@@ -179,7 +177,7 @@ test('hook 期间不进入睡（移出后重新起 8s 周期）', () => {
   vi.advanceTimersByTime(20000);
   expect(cur()).toBe('loop-idle-hook');
   petBox.dispatchEvent(new Event('mouseleave'));
-  vi.advanceTimersByTime(8000);
+  vi.advanceTimersByTime(5000);
   expect(cur()).toBe('before-idle-sleep');
 });
 
@@ -366,9 +364,7 @@ test('接缝溶解名单——覆盖全部 before→loop 对（loop-tool 已废�
   expect(window.CHAT_PET_SEAM_BLEND['loop-tool']).toBeUndefined();
   expect(window.CHAT_PET_SEAM_BLEND['loop-idle-sleep']).toBe(true);
   expect(window.CHAT_PET_SEAM_BLEND['loop-idle-hook']).toBe(true);
-  expect(window.CHAT_PET_SEAM_BLEND['loop-idle1']).toBe(true);
-  expect(window.CHAT_PET_SEAM_BLEND['loop-idle2']).toBe(true);
-  expect(window.CHAT_PET_SEAM_BLEND['loop-idle3']).toBe(true);
+  expect(window.CHAT_PET_SEAM_BLEND['loop-idle']).toBe(true);
 });
 
 test('名单内的 loop-idle-hook 走溶解', () => {
