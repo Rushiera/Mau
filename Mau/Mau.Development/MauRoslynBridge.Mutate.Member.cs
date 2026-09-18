@@ -157,7 +157,9 @@ namespace Mau.Development
                     return true;
                 }
                 // 落盘格式规整——尾部补换行（后续 token 的缩进前导 trivia 依赖前一 token 以换行结尾）
-                newMember = EnsureMemberTrailingNewLine(newMember, memberNewline);
+                // 行号锚——插入的成员节点经 WithMembers 生成、未挂载语法树（位置从片段起点起算）
+                SyntaxAnnotation insertMark = new SyntaxAnnotation();
+                newMember = EnsureMemberTrailingNewLine(newMember, memberNewline).WithAdditionalAnnotations(insertMark);
                 ClassDeclarationSyntax newClassNode = classNode.WithMembers(classNode.Members.Insert(insertIndex, newMember));
                 SyntaxNode root = foundTree.GetRoot();
                 SyntaxNode newRoot = root.ReplaceNode(classNode, newClassNode);
@@ -183,15 +185,20 @@ namespace Mau.Development
                 cache.Stamps[filePath] = SnapshotOf(filePath);
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
-                // P3-4：返回落盘行号区间——行号基准 = 完整文件树（newClassNode 属类片段，直接取 GetLocation 得片段相对行号，2026-09-18 修正）
+                // P3-4：返回落盘行号区间——行号基准 = 完整文件树上的 attached 节点（类片段 / 未挂载节点给出的都是片段相对行号）
                 // 结构化返回（2026-09-18）：JSON 元数据头（正文由前端按字段生成）
-                SyntaxNode insertedMember = newClassNode.Members[insertIndex];
+                SyntaxNode insertedMember;
+                if (!TryResolveAnnotated(newTree, insertMark, out insertedMember))
+                {
+                    result = "ERR|LINE_BASE|插入后节点定位失败——修改已落盘但返回行号不可信: " + className;
+                    return true;
+                }
                 Dictionary<string, object> miMeta = new Dictionary<string, object>();
                 miMeta["op"] = "insert";
                 miMeta["class"] = className;
                 miMeta["file"] = RelativeToProject(cache, filePath);
-                miMeta["start"] = newTree.GetText().Lines.GetLineFromPosition(insertedMember.Span.Start).LineNumber + 1;
-                miMeta["end"] = newTree.GetText().Lines.GetLineFromPosition(insertedMember.Span.End).LineNumber + 1;
+                miMeta["start"] = newTree.GetText().Lines.GetLineFromPosition(insertedMember.FullSpan.Start).LineNumber + 1;
+                miMeta["end"] = insertedMember.GetLocation().GetLineSpan().EndLinePosition.Line + 1;
                 miMeta["kind"] = newMember.GetType().Name;
                 result = MetaHead("cs-member", true, miMeta);
                 return true;

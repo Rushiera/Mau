@@ -320,7 +320,9 @@ namespace Mau.Development
                     return true;
                 }
                 // 尾部补换行——后续 token 的缩进前导 trivia 依赖前一 token 以换行结尾（与 member insert 同规）
-                MethodDeclarationSyntax newMethod = (MethodDeclarationSyntax)EnsureMemberTrailingNewLine(methodNode.WithBody(finalBlock), patchNewline);
+                // 行号锚——新节点由 WithBody 生成、未挂载语法树，其 Span 从自身起点起算（行号恒为 1）
+                SyntaxAnnotation patchMark = new SyntaxAnnotation();
+                MethodDeclarationSyntax newMethod = (MethodDeclarationSyntax)EnsureMemberTrailingNewLine(methodNode.WithBody(finalBlock), patchNewline).WithAdditionalAnnotations(patchMark);
                 SyntaxNode root = foundTree.GetRoot();
                 SyntaxNode newRoot = root.ReplaceNode(methodNode, newMethod);
                 SyntaxTree newTree = CreateTreeFromRoot(foundTree, newRoot);
@@ -345,19 +347,46 @@ namespace Mau.Development
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
                 // 结构化返回（2026-09-18）：JSON 元数据头 + 正文方法段源码（H28 校验链；行尾行号给 LLM）
-                // 行号基准 = 完整文件树（newRoot 是类片段——用它会得到片段相对行号，2026-09-18 修正）
-                int methodStartLine = newTree.GetText().Lines.GetLineFromPosition(newMethod.FullSpan.Start).LineNumber + 1;
+                // 行号基准 = 完整文件树上的 attached 节点——替换生成的新节点未挂载，位置从自身起点起算
+                SyntaxNode patchedNode;
+                if (!TryResolveAnnotated(newTree, patchMark, out patchedNode))
+                {
+                    result = "ERR|LINE_BASE|替换后节点定位失败——修改已落盘但返回行号不可信: " + className + "." + methodName;
+                    return true;
+                }
+                int methodStartLine = newTree.GetText().Lines.GetLineFromPosition(patchedNode.FullSpan.Start).LineNumber + 1;
+                int methodEndLine = patchedNode.GetLocation().GetLineSpan().EndLinePosition.Line + 1;
                 Dictionary<string, object> ptMeta = new Dictionary<string, object>();
                 ptMeta["state"] = "OK";
                 ptMeta["file"] = RelativeToProject(cache, filePath);
                 ptMeta["class"] = className;
                 ptMeta["method"] = methodName;
                 ptMeta["start"] = methodStartLine;
-                ptMeta["end"] = newTree.GetText().Lines.GetLineFromPosition(newMethod.FullSpan.End).LineNumber + 1;
-                result = TrimResult(MetaHead("cs-patch", true, ptMeta) + Environment.NewLine + NumberedSource(newMethod.ToFullString(), methodStartLine), MaxResultChars);
+                ptMeta["end"] = methodEndLine;
+                result = TrimResult(MetaHead("cs-patch", true, ptMeta) + Environment.NewLine + NumberedSource(patchedNode.ToFullString(), methodStartLine), MaxResultChars);
                 return true;
             }
         }
+        /// <summary>
+        /// 取回替换后节点的 attached 实例——WithXxx / 片段节点派生的新节点未挂载语法树，
+        /// 其 Span 从自身起点起算（行号归零或落到片段相对行）；替换前打 SyntaxAnnotation，
+        /// 替换后在完整树上取回同节点，位置才是文件坐标。
+        /// </summary>
+        /// <param name="tree">替换后的完整语法树</param>
+        /// <param name="mark">替换前打上的注解</param>
+        /// <param name="node">取回的节点（失败为 null!）</param>
+        /// <returns>取回成功</returns>
+        private static bool TryResolveAnnotated(SyntaxTree tree, SyntaxAnnotation mark, out SyntaxNode node)
+        {
+            foreach (SyntaxNode candidate in tree.GetRoot().GetAnnotatedNodes(mark))
+            {
+                node = candidate;
+                return true;
+            }
+            node = null!;
+            return false;
+        }
+
         /// <summary>
         /// 引用键——类型全名.成员名(参数类型序列)。跨编译匹配用：跨项目引用在本项目语义模型里解析为
         /// 元数据符号（对方 dll），与源码符号不共享 SymbolEqualityComparer，只能按字符串键比对。

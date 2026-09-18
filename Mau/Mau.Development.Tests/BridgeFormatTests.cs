@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using Mau.Development;
 using Mau.Runtime;
 using Xunit;
@@ -202,6 +203,69 @@ namespace Mau.Development.Tests
             string missing = InvokeRead("NoSuchMember");
             Assert.StartsWith("ERR|MEMBER_NOT_FOUND", missing);
             Assert.Contains("分部类", missing);
+        }
+
+        /// <summary>
+        /// member insert——返回行号区间落在文件坐标上（基准 = 替换后 attached 节点）
+        /// </summary>
+        [Fact]
+        public void MemberInsertReportsFileLineRange()
+        {
+            string result = InvokeMember("end", "", InsertCode());
+            Assert.StartsWith("{\"ok\":true", result);
+            int start = MetaInt(result, "start");
+            int end = MetaInt(result, "end");
+            string[] lines = SourceLines();
+            Assert.Contains("/// <summary>", lines[start - 1]);
+            Assert.Contains("public string Added()", lines[start + 3]);
+            Assert.Contains("}", lines[end - 1]);
+            Assert.True(end > start, "行区间非法: " + start.ToString() + "-" + end.ToString());
+        }
+
+        /// <summary>
+        /// patch——返回行号区间与正文 L 标注同基准且落在文件坐标上（基准 = 替换后 attached 节点）
+        /// </summary>
+        [Fact]
+        public void PatchReportsFileLineRange()
+        {
+            string result = InvokePatch("First", PatchBody());
+            Assert.StartsWith("{\"ok\":true", result);
+            int start = MetaInt(result, "start");
+            int end = MetaInt(result, "end");
+            string[] lines = SourceLines();
+            Assert.Contains("/// <summary>", lines[start - 1]);
+            Assert.Contains("public string First()", lines[start + 3]);
+            Assert.Contains("}", lines[end - 1]);
+            Assert.Contains("// L" + start.ToString(), result);
+        }
+
+        /// <summary>
+        /// 探针源文件按行切分（CRLF 归一，行号 1 基 → 索引减一）
+        /// </summary>
+        /// <returns>行数组</returns>
+        private string[] SourceLines()
+        {
+            return File.ReadAllText(_sourcePath).Replace("\r\n", "\n").Split('\n');
+        }
+
+        /// <summary>
+        /// 读取结构化头整数字段（首行 JSON 元数据头）
+        /// </summary>
+        /// <param name="result">工具结果文本</param>
+        /// <param name="key">字段名</param>
+        /// <returns>字段值</returns>
+        private static int MetaInt(string result, string key)
+        {
+            string head = result;
+            int lineEnd = head.IndexOf('\n');
+            if (lineEnd >= 0)
+            {
+                head = head.Substring(0, lineEnd);
+            }
+            using (JsonDocument doc = JsonDocument.Parse(head.Trim()))
+            {
+                return doc.RootElement.GetProperty(key).GetInt32();
+            }
         }
 
         /// <summary>
