@@ -154,19 +154,17 @@ namespace Mau.Development
                     }
                 }
             }
+            // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文命中行（`[跨程序集] 文件:行:列: 代码`）
+            Dictionary<string, object> refMeta = new Dictionary<string, object>();
+            refMeta["class"] = className;
+            refMeta["member"] = member;
+            refMeta["hits"] = hits.Count;
+            refMeta["projects"] = projects.Count;
             StringBuilder sb = new StringBuilder();
-            if (hits.Count == 0)
+            sb.Append(MetaHead("cs-find_ref", true, refMeta));
+            for (int i = 0; i < hits.Count; i = i + 1)
             {
-                sb.Append("OK 无引用: " + className + "." + member + "（0 处；扫描 " + projects.Count + " 个项目）");
-            }
-            else
-            {
-                sb.Append("共 " + hits.Count + " 处引用: " + className + "." + member + "（扫描 " + projects.Count + " 个项目）");
-                for (int i = 0; i < hits.Count; i = i + 1)
-                {
-                    sb.Append(Environment.NewLine);
-                    sb.Append("  " + hits[i]);
-                }
+                sb.Append(Environment.NewLine + hits[i]);
             }
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;
@@ -346,13 +344,17 @@ namespace Mau.Development
                 cache.Stamps[filePath] = SnapshotOf(filePath);
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
-                // OK 返回 + 目标方法段源码（H28 强制校验链——patch 后立即可见落盘状态；文件行号坐标系）
-                StringBuilder ok = new StringBuilder();
-                ok.Append("OK 已落盘 " + RelativeToProject(cache, filePath) + ":" + className + "." + methodName);
-                ok.Append(Environment.NewLine + "——目标方法段（校验链）:");
-                int methodStartLine = newRoot.GetText().Lines.GetLineFromPosition(newMethod.FullSpan.Start).LineNumber + 1;
-                ok.Append(Environment.NewLine + NumberedSource(newMethod.ToFullString(), methodStartLine));
-                result = TrimResult(ok.ToString(), MaxResultChars);
+                // 结构化返回（2026-09-18）：JSON 元数据头 + 正文方法段源码（H28 校验链；行尾行号给 LLM）
+                // 行号基准 = 完整文件树（newRoot 是类片段——用它会得到片段相对行号，2026-09-18 修正）
+                int methodStartLine = newTree.GetText().Lines.GetLineFromPosition(newMethod.FullSpan.Start).LineNumber + 1;
+                Dictionary<string, object> ptMeta = new Dictionary<string, object>();
+                ptMeta["state"] = "OK";
+                ptMeta["file"] = RelativeToProject(cache, filePath);
+                ptMeta["class"] = className;
+                ptMeta["method"] = methodName;
+                ptMeta["start"] = methodStartLine;
+                ptMeta["end"] = newTree.GetText().Lines.GetLineFromPosition(newMethod.FullSpan.End).LineNumber + 1;
+                result = TrimResult(MetaHead("cs-patch", true, ptMeta) + Environment.NewLine + NumberedSource(newMethod.ToFullString(), methodStartLine), MaxResultChars);
                 return true;
             }
         }
@@ -557,18 +559,15 @@ namespace Mau.Development
                 deadLines.Add(typeName + "." + target.Name + " // " + lineText);
             }
             deadLines.Sort(StringComparer.Ordinal);
+            // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文零引用清单（`类型.成员 // 文件:行`）
+            Dictionary<string, object> deadMeta = new Dictionary<string, object>();
+            deadMeta["dead"] = deadLines.Count;
+            deadMeta["scanned"] = targets.Count;
             StringBuilder sb = new StringBuilder();
-            if (deadLines.Count == 0)
+            sb.Append(MetaHead("cs-dead", deadLines.Count == 0, deadMeta));
+            for (int i = 0; i < deadLines.Count; i = i + 1)
             {
-                sb.Append("OK 无零引用成员（private/internal " + targets.Count + " 个全部被引用）");
-            }
-            else
-            {
-                sb.Append("零引用成员 " + deadLines.Count + " 个（private/internal；public/override 跳过）");
-                for (int i = 0; i < deadLines.Count; i = i + 1)
-                {
-                    sb.Append(Environment.NewLine + "  " + deadLines[i]);
-                }
+                sb.Append(Environment.NewLine + deadLines[i]);
             }
             return sb.ToString();
         }

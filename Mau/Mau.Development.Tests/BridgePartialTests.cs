@@ -95,7 +95,8 @@ namespace Mau.Development.Tests
         public void ReadFindsMemberInSecondPart()
         {
             string result = Call("read", "\"class\":\"Probe\",\"member\":\"Extra\"");
-            Assert.StartsWith("[文件:", result);
+            // 结构化返回（2026-09-18）：首行 JSON 头（file/class/member/start/end）+ 正文源码
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-read\"", result);
             Assert.Contains("Probe.Extra.cs", result);
             Assert.Contains("public string Extra()", result);
         }
@@ -108,7 +109,7 @@ namespace Mau.Development.Tests
         {
             string before = File.ReadAllText(_partOne);
             string result = Call("patch", "\"class\":\"Probe\",\"method\":\"Extra\",\"body\":\"{\\nreturn \\\"patched\\\";\\n}\"");
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             Assert.Contains("return \"patched\";", File.ReadAllText(_partTwo));
             Assert.Equal(before, File.ReadAllText(_partOne));
         }
@@ -121,7 +122,7 @@ namespace Mau.Development.Tests
         {
             string before = File.ReadAllText(_partOne);
             string result = Call("comment", "\"class\":\"Probe\",\"member\":\"Extra\",\"type\":\"summary\",\"text\":\"跨分部注释\"");
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             Assert.Contains("/// <summary>跨分部注释</summary>", File.ReadAllText(_partTwo));
             Assert.Equal(before, File.ReadAllText(_partOne));
         }
@@ -134,7 +135,7 @@ namespace Mau.Development.Tests
         {
             string before = File.ReadAllText(_partOne);
             string result = Call("member", "\"class\":\"Probe\",\"op\":\"delete\",\"member\":\"Extra\"");
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             string partTwo = File.ReadAllText(_partTwo);
             Assert.DoesNotContain("Extra()", partTwo);
             Assert.Contains("public partial class Probe", partTwo);
@@ -148,7 +149,7 @@ namespace Mau.Development.Tests
         public void InsertAfterAnchorLandsInAnchorPart()
         {
             string result = Call("member", "\"class\":\"Probe\",\"op\":\"insert\",\"position\":\"after\",\"anchor\":\"Extra\",\"code\":\"public string Added()\\n{\\nreturn \\\"added\\\";\\n}\"");
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             Assert.Contains("public string Added()", File.ReadAllText(_partTwo));
             Assert.DoesNotContain("Added", File.ReadAllText(_partOne));
         }

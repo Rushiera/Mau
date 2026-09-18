@@ -240,7 +240,12 @@ namespace Mau.Development
                 cache.Stamps[filePath] = SnapshotOf(filePath);
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
-                result = "OK 注释已更新 " + className + (member.Length > 0 ? "." + member : "") + " <" + type + ">";
+                // 结构化返回（2026-09-18）：JSON 元数据头（正文由前端按字段生成）
+                Dictionary<string, object> cmMeta = new Dictionary<string, object>();
+                cmMeta["class"] = className;
+                cmMeta["member"] = member;
+                cmMeta["type"] = type;
+                result = MetaHead("cs-comment", true, cmMeta);
                 return true;
             }
         }
@@ -481,18 +486,15 @@ namespace Mau.Development
                 }
             }
             missingLines.Sort(StringComparer.Ordinal);
+            // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文缺失清单（`类型.成员 // 缺 summary（Lnn）`）
+            Dictionary<string, object> ccMeta = new Dictionary<string, object>();
+            ccMeta["checked"] = checkedCount;
+            ccMeta["missing"] = missingLines.Count;
             StringBuilder sb = new StringBuilder();
-            if (missingLines.Count == 0)
+            sb.Append(MetaHead("cs-comment_check", missingLines.Count == 0, ccMeta));
+            for (int i = 0; i < missingLines.Count; i = i + 1)
             {
-                sb.Append("OK 全项目 " + checkedCount.ToString() + " 个类型/成员均有 summary 注释");
-            }
-            else
-            {
-                sb.Append("缺 summary 注释 " + missingLines.Count.ToString() + " 项（已扫描 " + checkedCount.ToString() + " 个类型/成员）");
-                for (int i = 0; i < missingLines.Count; i = i + 1)
-                {
-                    sb.Append(Environment.NewLine + "  " + missingLines[i]);
-                }
+                sb.Append(Environment.NewLine + missingLines[i].TrimStart());
             }
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;

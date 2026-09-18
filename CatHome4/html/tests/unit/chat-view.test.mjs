@@ -376,21 +376,21 @@ test('toolcard 并发批次渲染 [icon n/m] 前缀——单次用类型图标�
     payload: { name: 'text-read', arguments: '{}', result: 'OK', toolIndex: 1, toolTotal: 4 },
     replaceSeq: -1
   });
-  expect(chatMsgs.querySelectorAll('.chat-tool .tn')[0].textContent).toBe('[📖 1/4] text-read');
+  expect(chatMsgs.querySelectorAll('.chat-tool .tn')[0].textContent).toBe('[📖 1/4] 读取 (未指定) · 1 行 2 字符');
   // 单次（无 toolTotal 字段——旧数据兼容）——同样用类型图标（text-read → 📖）
   window.chatOnView({
     seq: 31, renderType: 'toolcard',
     payload: { name: 'text-read', arguments: '{}', result: 'OK' },
     replaceSeq: -1
   });
-  expect(chatMsgs.querySelectorAll('.chat-tool .tn')[1].textContent).toBe('📖 text-read');
+  expect(chatMsgs.querySelectorAll('.chat-tool .tn')[1].textContent).toBe('📖 读取 (未指定) · 1 行 2 字符');
   // 错误并发——[⚠️ n/m] 前缀
   window.chatOnView({
     seq: 32, renderType: 'toolcard',
     payload: { name: 'text-read', arguments: '{}', result: 'ERR|X', toolIndex: 2, toolTotal: 4 },
     replaceSeq: -1
   });
-  expect(chatMsgs.querySelectorAll('.chat-tool .tn')[2].textContent).toBe('[⚠️ 2/4] text-read');
+  expect(chatMsgs.querySelectorAll('.chat-tool .tn')[2].textContent).toBe('[⚠️ 2/4] 读取 (未指定) · 1 行 5 字符');
 });
 
 // ── powershell 命令解读——折叠行覆盖宿主 summary + 展开区意图块（chat-cmd.js 接入）──
@@ -425,7 +425,7 @@ test('toolcard 非 powershell——不插命令意图块', () => {
     replaceSeq: -1
   });
   const card = chatMsgs.querySelector('.chat-tool');
-  expect(card.querySelector('.tn').textContent).toBe('📖 读取文件 "a.txt" → "OK"');
+  expect(card.querySelector('.tn').textContent).toBe('📖 读取 a.txt · 1 行 2 字符');
   expect(card.querySelector('.cmd-intent')).toBeNull();
 });
 
@@ -437,7 +437,7 @@ test('toolcard 大结果——折叠行标注字符数', () => {
     replaceSeq: -1
   });
   const card = chatMsgs.querySelector('.chat-tool');
-  expect(card.querySelector('.tn').textContent).toBe('📖 读取文件 "big.txt" → ... · 2.00k 字符');
+  expect(card.querySelector('.tn').textContent).toBe('📖 读取 big.txt · 1 行 2.00k 字符');
   expect(card.querySelector('.ta.warn')).toBeNull();
 });
 
@@ -447,7 +447,7 @@ test('toolcard 小结果——不标注（避免噪音）', () => {
     payload: { name: 'time', arguments: '{}', result: '2026-09-14 17:00:00' },
     replaceSeq: -1
   });
-  expect(chatMsgs.querySelector('.chat-tool .tn').textContent).toBe('🕐 time');
+  expect(chatMsgs.querySelector('.chat-tool .tn').textContent).toBe('📝 time');
 });
 
 test('toolcard ps 结果截断——折叠行上限标注 + 展开区警示块', () => {
@@ -498,7 +498,7 @@ test('toolcard 两段式——先行卡（无 result）显示 ⏳ 处理中 + pe
   expect(tb.classList.contains('pending')).toBe(true);
   const card = tb.querySelector('.chat-tool');
   expect(card.open).toBe(true);
-  expect(card.querySelector('.tn').textContent).toContain('text-read');
+  expect(card.querySelector('.tn').textContent).toContain('读取 a.txt');
   const tas = card.querySelectorAll('.ta');
   expect(tas[tas.length - 1].textContent).toContain('⏳ 处理中…');
   expect(card.querySelector('.tr')).toBeNull();

@@ -57,7 +57,7 @@ namespace Mau.Development.Tests
         public void MemberInsertEndNormalizesFormat()
         {
             string result = InvokeMember("end", "", InsertCode());
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             string text = File.ReadAllText(_sourcePath);
             Assert.True(AllCrlf(text), "落盘出现非 CRLF 行尾（混行）");
             Assert.False(text.Contains("}    }"), "类闭合括号与成员闭合括号同行");
@@ -87,7 +87,7 @@ namespace Mau.Development.Tests
         public void MemberInsertAfterKeepsNextMemberOnOwnLine()
         {
             string result = InvokeMember("after", "First", InsertCode());
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             string text = File.ReadAllText(_sourcePath);
             Assert.True(AllCrlf(text), "落盘出现非 CRLF 行尾（混行）");
             Assert.Contains("            return \"first\";\r\n        }\r\n", text);
@@ -101,7 +101,7 @@ namespace Mau.Development.Tests
         public void PatchBodyNormalizesNewLineAndIndent()
         {
             string result = InvokePatch("First", PatchBody());
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             string text = File.ReadAllText(_sourcePath);
             Assert.True(AllCrlf(text), "落盘出现非 CRLF 行尾（混行）");
             Assert.Contains("        public string First()\r\n        {\r\n            // [段1] 改写体\r\n            return \"patched\";\r\n        }\r\n    }\r\n}", text);
@@ -114,7 +114,7 @@ namespace Mau.Development.Tests
         public void CommentRewriteKeepsContinuationIndent()
         {
             string result = InvokeComment("First", "改写摘要");
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             string text = File.ReadAllText(_sourcePath);
             Assert.Contains("        /// <summary>改写摘要</summary>\r\n        /// <returns>固定文本</returns>\r\n", text);
             Assert.False(text.Contains("\r\n/// "), "注释续行顶格");
@@ -127,7 +127,7 @@ namespace Mau.Development.Tests
         public void CommentMultiLineTextEmitsContinuationPrefixes()
         {
             string result = InvokeComment("First", "第一行\n第二行");
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             string text = File.ReadAllText(_sourcePath);
             Assert.True(AllCrlf(text), "落盘出现非 CRLF 行尾（混行）");
             Assert.Contains("        /// <summary>第一行\r\n        /// 第二行</summary>\r\n", text);
@@ -153,7 +153,7 @@ namespace Mau.Development.Tests
         public void PatchAcceptsFullMethodDeclaration()
         {
             string result = InvokePatch("First", "public string First()\n{\nreturn \"from-full\";\n}");
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             string text = File.ReadAllText(_sourcePath);
             Assert.True(AllCrlf(text), "落盘出现非 CRLF 行尾（混行）");
             Assert.Contains("        public string First()\r\n        {\r\n            return \"from-full\";\r\n        }\r\n    }\r\n}", text);
@@ -166,7 +166,7 @@ namespace Mau.Development.Tests
         public void MemberRenameKeepsFormatAndNewLines()
         {
             string result = InvokeRename("First", "Renamed");
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             string text = File.ReadAllText(_sourcePath);
             Assert.True(AllCrlf(text), "落盘出现非 CRLF 行尾（混行）");
             Assert.Contains("        /// 原有方法\r\n        /// </summary>\r\n", text);
@@ -181,7 +181,7 @@ namespace Mau.Development.Tests
         public void MemberDeleteRemovesMemberAndComment()
         {
             string result = InvokeDelete("First");
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             string text = File.ReadAllText(_sourcePath);
             Assert.True(AllCrlf(text), "落盘出现非 CRLF 行尾（混行）");
             Assert.False(text.Contains("First"), "成员残留");

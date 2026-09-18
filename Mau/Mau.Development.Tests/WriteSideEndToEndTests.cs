@@ -76,7 +76,7 @@ namespace Mau.Development.Tests
         {
             string keepBefore = KeepBlock();
             string result = Call("patch", "\"class\":\"A22Probe\",\"method\":\"Target\",\"body\":\"{\\n    string s = null!;\\n    return s.Length;\\n}\"");
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             string after = File.ReadAllText(_target);
             Assert.True(HasBom(_target), "patch 落盘剥离了文件 BOM");
             Assert.Contains("null!", after);
@@ -92,7 +92,7 @@ namespace Mau.Development.Tests
         {
             string code = "/// <summary>新成员</summary>\\n/// <param name=\\\"x\\\">输入</param>\\n/// <returns>长度</returns>\\npublic int Added(string x)\\n{\\nreturn x.Length;\\n}";
             string result = Call("member", "\"class\":\"A22Probe\",\"op\":\"insert\",\"position\":\"end\",\"code\":\"" + code + "\"");
-            Assert.StartsWith("OK", result);
+            Assert.StartsWith("{\"ok\":true", result);
             string after = File.ReadAllText(_target);
             Assert.True(HasBom(_target), "member insert 落盘剥离了文件 BOM");
             Assert.Contains("name=\"x\"", after);
@@ -106,7 +106,7 @@ namespace Mau.Development.Tests
         public void PatchResultMatchesFormatBaseline()
         {
             string patch = Call("patch", "\"class\":\"A22Probe\",\"method\":\"Target\",\"body\":\"{\\n    string s = null!;\\n    return s.Length;\\n}\"");
-            Assert.StartsWith("OK", patch);
+            Assert.StartsWith("{\"ok\":true", patch);
             string check = "{\"path\":\"" + Escape(_target) + "\",\"mode\":\"check\"}";
             string result = "";
             _bridge.Invoke("format", check, out result);

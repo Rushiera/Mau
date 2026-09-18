@@ -183,10 +183,17 @@ namespace Mau.Development
                 cache.Stamps[filePath] = SnapshotOf(filePath);
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
-                // P3-4：返回落盘行号区间——newClassNode 已在 newRoot 树中，GetLineSpan 解析新文件行号
-                FileLinePositionSpan insertedSpan = newClassNode.Members[insertIndex].GetLocation().GetLineSpan();
-                string range = "L" + (insertedSpan.StartLinePosition.Line + 1) + "-" + (insertedSpan.EndLinePosition.Line + 1);
-                result = "OK 已插入成员到 " + className + "（" + RelativeToProject(cache, filePath) + " " + range + "）: " + newMember.GetType().Name;
+                // P3-4：返回落盘行号区间——行号基准 = 完整文件树（newClassNode 属类片段，直接取 GetLocation 得片段相对行号，2026-09-18 修正）
+                // 结构化返回（2026-09-18）：JSON 元数据头（正文由前端按字段生成）
+                SyntaxNode insertedMember = newClassNode.Members[insertIndex];
+                Dictionary<string, object> miMeta = new Dictionary<string, object>();
+                miMeta["op"] = "insert";
+                miMeta["class"] = className;
+                miMeta["file"] = RelativeToProject(cache, filePath);
+                miMeta["start"] = newTree.GetText().Lines.GetLineFromPosition(insertedMember.Span.Start).LineNumber + 1;
+                miMeta["end"] = newTree.GetText().Lines.GetLineFromPosition(insertedMember.Span.End).LineNumber + 1;
+                miMeta["kind"] = newMember.GetType().Name;
+                result = MetaHead("cs-member", true, miMeta);
                 return true;
             }
         }
@@ -308,7 +315,12 @@ namespace Mau.Development
                 cache.Stamps[filePath] = SnapshotOf(filePath);
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
-                result = "OK 已删除 " + className + "." + member + "（" + RelativeToProject(cache, filePath) + "）";
+                Dictionary<string, object> mdMeta = new Dictionary<string, object>();
+                mdMeta["op"] = "delete";
+                mdMeta["class"] = className;
+                mdMeta["member"] = member;
+                mdMeta["file"] = RelativeToProject(cache, filePath);
+                result = MetaHead("cs-member", true, mdMeta);
                 return true;
             }
         }
@@ -379,7 +391,13 @@ namespace Mau.Development
                 }
                 if (changedTrees.Count == 0)
                 {
-                    result = "OK 无引用可改（仅声明处已同步？）——检查后重试";
+                    Dictionary<string, object> mrNoneMeta = new Dictionary<string, object>();
+                    mrNoneMeta["op"] = "rename";
+                    mrNoneMeta["class"] = className;
+                    mrNoneMeta["oldName"] = oldName;
+                    mrNoneMeta["newName"] = newName;
+                    mrNoneMeta["files"] = 0;
+                    result = MetaHead("cs-member", true, mrNoneMeta);
                     return true;
                 }
                 CSharpCompilation trial = cache.Compilation;
@@ -410,7 +428,13 @@ namespace Mau.Development
                     cache.Semantics.TryRemove(filePath, out removed);
                 }
                 cache.Compilation = trial;
-                result = "OK 已重命名 " + className + "." + oldName + " → " + newName + "（" + changedFiles.Count + " 文件）";
+                Dictionary<string, object> mrMeta = new Dictionary<string, object>();
+                mrMeta["op"] = "rename";
+                mrMeta["class"] = className;
+                mrMeta["oldName"] = oldName;
+                mrMeta["newName"] = newName;
+                mrMeta["files"] = changedFiles.Count;
+                result = MetaHead("cs-member", true, mrMeta);
                 return true;
             }
         }

@@ -35,21 +35,29 @@ namespace Mau.Development
             {
                 return CheckSingle(projects[0], full, out result);
             }
+            // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文按项目分节（节头 `── 相对路径 ──`）
             StringBuilder sb = new StringBuilder();
-            sb.Append("聚合 " + projects.Count + " 个项目（语法层）：" + Environment.NewLine);
+            List<string> sections = new List<string>();
             int failed = 0;
             for (int i = 0; i < projects.Count; i = i + 1)
             {
-                sb.Append("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine);
                 string one;
                 CheckSingle(projects[i], full, out one);
-                sb.Append(one + Environment.NewLine);
-                if (one.StartsWith("FAIL|CHECK|", StringComparison.Ordinal))
+                if (one.StartsWith("{\"ok\":false", StringComparison.Ordinal))
                 {
                     failed = failed + 1;
                 }
+                sections.Add("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine + one);
             }
-            sb.Append("—— 聚合结果：" + projects.Count + " 项目 / " + failed + " 项目有语法错误（不含类型 / 引用解析；实机裁决走 cs-build）");
+            Dictionary<string, object> aggMeta = new Dictionary<string, object>();
+            aggMeta["projects"] = projects.Count;
+            aggMeta["failed"] = failed;
+            sb.Append(MetaHead("cs-check", failed == 0, aggMeta));
+            for (int i = 0; i < sections.Count; i = i + 1)
+            {
+                sb.Append(Environment.NewLine);
+                sb.Append(sections[i]);
+            }
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;
         }
@@ -83,24 +91,23 @@ namespace Mau.Development
             }
             errors.Sort(DiagnosticComparer.Instance);
             warnings.Sort(DiagnosticComparer.Instance);
+            // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文定界诊断行（rel:line:col: id: 消息）
+            Dictionary<string, object> meta = new Dictionary<string, object>();
+            meta["project"] = cache.AssemblyName;
+            meta["files"] = fileCount;
+            meta["errors"] = errors.Count;
+            meta["warnings"] = warnings.Count;
             StringBuilder sb = new StringBuilder();
-            if (errors.Count == 0)
+            sb.Append(MetaHead("cs-check", errors.Count == 0, meta));
+            for (int i = 0; i < errors.Count; i = i + 1)
             {
-                sb.Append("OK 项目 " + cache.AssemblyName + " 语法 0 错误 " + warnings.Count + " 警告（" + fileCount + " 文件）——语法层验证（不含类型 / 引用解析）；程序集引用与编译裁决走 cs-build");
-            }
-            else
-            {
-                sb.Append("FAIL|CHECK|项目 " + cache.AssemblyName + " " + errors.Count + " 语法错误（" + fileCount + " 文件）");
-                for (int i = 0; i < errors.Count; i = i + 1)
-                {
-                    sb.Append(Environment.NewLine);
-                    sb.Append(FormatDiagnostic(cache, errors[i]));
-                }
+                sb.Append(Environment.NewLine);
+                sb.Append(FormatDiagnostic(cache, errors[i]));
             }
             if (full && warnings.Count > 0)
             {
                 sb.Append(Environment.NewLine);
-                sb.Append("—— " + warnings.Count + " 警告:");
+                sb.Append(CheckWarnSeparator);
                 for (int i = 0; i < warnings.Count; i = i + 1)
                 {
                     sb.Append(Environment.NewLine);
@@ -136,21 +143,29 @@ namespace Mau.Development
             {
                 return BuildOne(projects[0], out result);
             }
+            // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文按项目分节
             StringBuilder sb = new StringBuilder();
-            sb.Append("聚合 " + projects.Count + " 个项目：" + Environment.NewLine);
+            List<string> sections = new List<string>();
             int failed = 0;
             for (int i = 0; i < projects.Count; i = i + 1)
             {
-                sb.Append("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine);
                 string one;
                 BuildOne(projects[i], out one);
-                sb.Append(one + Environment.NewLine);
-                if (one.StartsWith("FAIL|BUILD|", StringComparison.Ordinal))
+                if (one.StartsWith("{\"ok\":false", StringComparison.Ordinal))
                 {
                     failed = failed + 1;
                 }
+                sections.Add("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine + one);
             }
-            sb.Append("—— 聚合结果：" + projects.Count + " 项目 / " + failed + " 失败");
+            Dictionary<string, object> aggMeta = new Dictionary<string, object>();
+            aggMeta["projects"] = projects.Count;
+            aggMeta["failed"] = failed;
+            sb.Append(MetaHead("cs-build", failed == 0, aggMeta));
+            for (int i = 0; i < sections.Count; i = i + 1)
+            {
+                sb.Append(Environment.NewLine);
+                sb.Append(sections[i]);
+            }
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;
         }
@@ -175,7 +190,10 @@ namespace Mau.Development
             }
             cache.LastAccess = Environment.TickCount64;
             // ProcessRunner 统一执行器——双流并行读 + watchdog 强杀（防顺序 ReadToEnd 管道死锁——Codex 审查 P1）
+            Stopwatch watch = Stopwatch.StartNew();
             ProcessRunResult run = ProcessRunner.RunAndCapture("dotnet", "build \"" + target + "\" --nologo", cache.ProjectDir, 120000);
+            watch.Stop();
+            long elapsedMs = watch.ElapsedMilliseconds;
             if (!run.Started)
             {
                 result = "ERR|BUILD_START|dotnet 进程启动失败（PATH 中无 dotnet？）";
@@ -186,14 +204,20 @@ namespace Mau.Development
                 result = "ERR|BUILD_TIMEOUT|dotnet build 超时（120s）——长首次还原可重试";
                 return false;
             }
+            // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文 MSBuild 输出摘要（尾部 20 行）
             string tail = TailLines(run.Stdout + run.Stderr, 20);
-            if (run.ExitCode != 0)
+            string buildText = run.Stdout + run.Stderr;
+            Dictionary<string, object> meta = new Dictionary<string, object>();
+            meta["project"] = cache.AssemblyName;
+            meta["exit"] = run.ExitCode;
+            meta["errors"] = CountBuildMark(buildText, "个错误", "Error(s)");
+            meta["warnings"] = CountBuildMark(buildText, "个警告", "Warning(s)");
+            meta["ms"] = elapsedMs;
+            if (run.ExitCode == 0)
             {
-                result = TrimResult("FAIL|BUILD|dotnet build exit " + run.ExitCode + Environment.NewLine + tail, MaxResultChars);
-                return true;
+                cache.ReferencesDirty = true;
             }
-            cache.ReferencesDirty = true;
-            result = TrimResult("OK 构建成功: " + cache.AssemblyName + Environment.NewLine + tail, MaxResultChars);
+            result = TrimResult(MetaHead("cs-build", run.ExitCode == 0, meta) + Environment.NewLine + tail, MaxResultChars);
             return true;
         }
 
@@ -280,13 +304,14 @@ namespace Mau.Development
                         }
                     }
                 }
+                // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文清单行（`类名（文件 Lnn） // summary`）
+                Dictionary<string, object> listMeta = new Dictionary<string, object>();
+                listMeta["project"] = cache.AssemblyName;
+                listMeta["classes"] = classCount;
+                sb.Insert(0, MetaHead("cs-list", true, listMeta) + Environment.NewLine);
                 if (classCount == 0)
                 {
-                    sb.Append("项目 " + cache.AssemblyName + " 无类声明");
-                }
-                else
-                {
-                    sb.Insert(0, "项目 " + cache.AssemblyName + " " + classCount + " 类" + Environment.NewLine);
+                    sb.Append("（无类声明）");
                 }
             }
             else
@@ -352,12 +377,14 @@ namespace Mau.Development
             if (member.Length == 0)
             {
                 // 类概览——逐分部输出（单分部时输出与既往一致）
+                // 结构化返回（2026-09-18）：首行 JSON 元数据头（类 / 分部数）+ 正文逐分部（节头 `类 X（文件 Lnn-nn）`）
+                Dictionary<string, object> classMeta = new Dictionary<string, object>();
+                classMeta["class"] = className;
+                classMeta["parts"] = parts.Count;
+                sb.Append(MetaHead("cs-read", true, classMeta));
                 for (int i = 0; i < parts.Count; i = i + 1)
                 {
-                    if (i > 0)
-                    {
-                        sb.Append(Environment.NewLine);
-                    }
+                    sb.Append(Environment.NewLine);
                     ClassDeclarationSyntax partNode = parts[i].Node;
                     FileLinePositionSpan span = partNode.GetLocation().GetLineSpan();
                     sb.Append("类 " + className + "（" + parts[i].Tree.FilePath + " L" + (span.StartLinePosition.Line + 1) + "-" + (span.EndLinePosition.Line + 1) + "）");
@@ -391,11 +418,19 @@ namespace Mau.Development
                     result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member + PartialHint(parts.Count);
                     return false;
                 }
+                // 结构化返回（2026-09-18）：首行 JSON 元数据头（文件 / 类 / 成员 / 行区间）+ 正文源码
+                // 正文保留行尾 `// L{行号}` 标注（LLM 定位用）；前端行号列按 start + 行序计算，不解析行尾
                 FileLinePositionSpan memberSpan = memberNode.GetLocation().GetLineSpan();
-                sb.Append("[文件: " + memberNode.SyntaxTree.FilePath + " L" + (memberSpan.StartLinePosition.Line + 1) + "-" + (memberSpan.EndLinePosition.Line + 1) + "]");
-                sb.Append(Environment.NewLine);
                 string memberSource = memberNode.ToFullString();
                 int memberStartLine = memberNode.SyntaxTree.GetText().Lines.GetLineFromPosition(memberNode.FullSpan.Start).LineNumber + 1;
+                Dictionary<string, object> readMeta = new Dictionary<string, object>();
+                readMeta["file"] = memberNode.SyntaxTree.FilePath;
+                readMeta["class"] = className;
+                readMeta["member"] = member;
+                readMeta["start"] = memberStartLine;
+                readMeta["end"] = memberSpan.EndLinePosition.Line + 1;
+                sb.Append(MetaHead("cs-read", true, readMeta));
+                sb.Append(Environment.NewLine);
                 sb.Append(NumberedSource(memberSource, memberStartLine));
             }
             result = TrimResult(sb.ToString(), MaxResultChars);
@@ -574,6 +609,78 @@ namespace Mau.Development
                 }
             }
             return "";
+        }
+
+        /// <summary>
+        /// 结构化返回头——首行 JSON 元数据（ok / tool + 调用方字段；键序稳定 = 调用顺序）。
+        /// 约定（2026-09-18）：工具返回体 = 首行 JSON 元数据头 + 正文定界行（正文不塞进 JSON——避免转义膨胀撞截断面）。
+        /// </summary>
+        /// <param name="tool">工具名（cs-check / cs-build / cs-read…）</param>
+        /// <param name="ok">成败（正文是否含错误态）</param>
+        /// <param name="fields">附加字段（按插入序输出）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, Dictionary<string, object> fields)
+        {
+            Dictionary<string, object> head = new Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            foreach (KeyValuePair<string, object> kv in fields)
+            {
+                head[kv.Key] = kv.Value;
+            }
+            return JsonSerializer.Serialize(head);
+        }
+
+        /// <summary>check 警告段分隔行——正文里 errors 行与 warnings 行的定界标记</summary>
+        private const string CheckWarnSeparator = "-- 警告 --";
+
+        /// <summary>MSBuild 摘要计数提取——中文「N 个错误」/ 英文「N Error(s)」两形态（提不到返回 0）</summary>
+        /// <param name="text">构建输出全文</param>
+        /// <param name="cnMark">中文标记（如「个错误」）</param>
+        /// <param name="enMark">英文标记（如「Error(s)」）</param>
+        /// <returns>计数（缺失 0）</returns>
+        private static int CountBuildMark(string text, string cnMark, string enMark)
+        {
+            int v = ExtractCountBefore(text, cnMark);
+            if (v >= 0)
+            {
+                return v;
+            }
+            v = ExtractCountBefore(text, enMark);
+            return (v >= 0) ? v : 0;
+        }
+
+        /// <summary>提取标记前的数字——同一标记取最后一次出现（MSBuild 摘要行在输出尾部）</summary>
+        /// <param name="text">全文</param>
+        /// <param name="mark">标记文本</param>
+        /// <returns>数字（提不到 -1）</returns>
+        private static int ExtractCountBefore(string text, string mark)
+        {
+            int idx = text.LastIndexOf(mark, StringComparison.Ordinal);
+            if (idx < 0)
+            {
+                return -1;
+            }
+            int end = idx;
+            while (end > 0 && text[end - 1] == ' ')
+            {
+                end = end - 1;
+            }
+            int start = end;
+            while (start > 0 && text[start - 1] >= '0' && text[start - 1] <= '9')
+            {
+                start = start - 1;
+            }
+            if (start == end)
+            {
+                return -1;
+            }
+            int v;
+            if (int.TryParse(text.Substring(start, end - start), out v))
+            {
+                return v;
+            }
+            return -1;
         }
 
         /// <summary>

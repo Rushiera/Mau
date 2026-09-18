@@ -43,31 +43,13 @@ function chatCollapseReasons() {
     }
 }
 
-// 工具图标映射——CH2 CH_Tool_LLMToolDisplay.GetIcon 移植（CH4 连字符工具名适配）
+// 工具图标——三级回落（2026-09-18 莎定）：工具专属（填充层）→ 骨架图标（默认）→ ❓（未登记）
+// 未登记骨架的工具本不该出现——用问号显式暴露，不给通用图标掩盖
 function chatToolIcon(name) {
-    var n = name || '';
-    if (n === 'text-read' || n === 'text-read_between' || n === 'text-read_lines') { return '📖'; }
-    if (n === 'text-write') { return '✏️'; }
-    if (n === 'text-append') { return '📎'; }
-    if (n === 'text-replace') { return '🔄'; }
-    if (n === 'text-find' || n === 'text-grep') { return '🔍'; }
-    if (n === 'text-tree') { return '🌲'; }
-    if (n === 'text-move') { return '📦'; }
-    if (n === 'text-delete') { return '🗑️'; }
-    if (n.indexOf('cs-') === 0) { return '🐎'; }
-    if (n.indexOf('config-') === 0) { return '⚙️'; }
-    if (n.indexOf('mau-') === 0) { return '🧱'; }
-    if (n === 'powershell') { return '💻'; }
-    if (n === 'powershell7') { return '💠'; }
-    if (n === 'web-search') { return '🌐'; }
-    if (n === 'image-analyze') { return '🖼️'; }
-    if (n === 'temp-info' || n === 'temp-exec') { return '🧪'; }
-    if (n === 'Note') { return '📋'; }
-    if (n === 'time') { return '🕐'; }
-    if (n === 'random') { return '🎲'; }
-    if (n === 'info') { return 'ℹ️'; }
-    if (n.indexOf('host-') === 0) { return '⚡'; }
-    return '🔹';
+    if (typeof chatToolIconOf === 'function') {
+        return chatToolIconOf(name);
+    }
+    return '❓';
 }
 
 // 结果规模信息——ps 结果 JSON 解析（stdout/stderr 合计 + 截断/超时标记）；非 JSON 按纯文本长度
@@ -138,8 +120,8 @@ function chatBindBodyCollapse(det) {
         if (det.open !== true) { return; }
         var t = e.target;
         if (t && typeof t.closest === 'function') {
-            // 内层段（.seg）让位——段折叠头与段内容都不收起整块（2026-09-18 骨架层）
-            if (t.closest('.seg')) { return; }
+            // 折叠头让位（外层 summary 原生 toggle / 内层段折叠头只切该段）+ 交互元素自处理；
+            // 段内容点击仍收起整块——死区判据保护拖选与长按（2026-09-18 骨架层细化）
             if (t.closest('summary') || t.closest('button, a, input, textarea, select')) { return; }
         }
         var p = det._press;
@@ -158,7 +140,8 @@ function chatBindBodyCollapse(det) {
 function chatToolCard(tool, open) {
     // 工具卡——details 结构（open=true 展开：两段式先行卡直接展示 ⏳；缺省折叠——点击 summary 展开/收起）
     // .tn/.ta/.tr 类保留——测试与样式复用；result === undefined → 「⏳ 处理中…」占位（完成时整卡替换）
-    var isErr = tool.result && tool.result.indexOf('ERR') === 0;
+    // 失败态——ERR 前缀 或 结构化返回头 ok:false（chat-tools.js 单一出口；红色描边 + summary 转红）
+    var isErr = (typeof chatIsErrResult === 'function') ? chatIsErrResult(tool.result) : (tool.result && tool.result.indexOf('ERR') === 0);
     var det = document.createElement('details');
     det.className = 'chat-tool' + (isErr ? ' err' : '');
     det.open = (open === true);
@@ -177,10 +160,16 @@ function chatToolCard(tool, open) {
     // 可见性适配——powershell 命令硬解码为自然语言意图（chat-cmd.js；宿主 summary 为原始命令截断，此处覆盖）
     var isPs = (tool.name === 'powershell' || tool.name === 'powershell7');
     var summaryText = tool.summary || tool.name || '?';
+    // 覆盖表 headline——前端自然语言折叠行（优先于宿主 summary；2026-09-18）
+    var hasHeadline = false;
+    if (typeof chatToolHeadline === 'function') {
+        var hl = chatToolHeadline(tool);
+        if (hl.length > 0) { summaryText = hl; hasHeadline = true; }
+    }
     var cmdIntent = null;
     if (isPs && typeof cmdDecodeTool === 'function') {
         cmdIntent = cmdDecodeTool(tool.arguments);
-        if (cmdIntent) { summaryText = cmdIntent.brief; }
+        if (cmdIntent) { summaryText = cmdIntent.brief; hasHeadline = false; }
     }
     var resultInfo = chatResultInfo(tool.result);
     // 骨架分派（chat-tools.js）——命中 → 段结构（含工具变体标签）；未登记 → null 走回落路径
@@ -195,7 +184,7 @@ function chatToolCard(tool, open) {
         sum.appendChild(tagEl);
         sum.appendChild(document.createTextNode(' '));
     }
-    sum.appendChild(document.createTextNode(summaryText + chatResultSuffix(resultInfo)));
+    sum.appendChild(document.createTextNode(summaryText + (hasHeadline ? '' : chatResultSuffix(resultInfo))));
     det.appendChild(sum);
     if (cmdIntent) {
         // 展开区首块——逐段意图对照（原文仍在下方 arguments 块；未识别段标 ❓）

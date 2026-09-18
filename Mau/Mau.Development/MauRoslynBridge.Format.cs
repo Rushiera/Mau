@@ -87,27 +87,21 @@ namespace Mau.Development
                 sb.AppendLine(RelativeToRoots(file) + " | lines=" + lines.ToString());
             }
 
-            // [段5] 结果拼装
-            string head;
+            // [段5] 结果拼装——结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文逐文件差异行
+            Dictionary<string, object> fmtMeta = new Dictionary<string, object>();
+            fmtMeta["mode"] = mode;
+            fmtMeta["files"] = files.Count;
+            fmtMeta["changedFiles"] = changedFiles;
+            fmtMeta["changedLines"] = changedLines;
+            fmtMeta["failedFiles"] = failedFiles;
             if (mode == "apply")
             {
-                head = "OK|FORMAT_APPLY|扫描 " + files.Count.ToString() + " 文件，规整 " + changedFiles.ToString() + " 文件 / " + changedLines.ToString() + " 行，写入 " + writtenFiles.ToString() + " 文件";
-            }
-            else
-            {
-                head = "OK|FORMAT_CHECK|扫描 " + files.Count.ToString() + " 文件，需规整 " + changedFiles.ToString() + " 文件 / " + changedLines.ToString() + " 行（零写入）";
-            }
-            if (failedFiles > 0)
-            {
-                head = head + "，校验未通过跳过 " + failedFiles.ToString() + " 文件";
+                fmtMeta["writtenFiles"] = writtenFiles;
             }
             StringBuilder output = new StringBuilder();
-            output.AppendLine(head);
+            output.Append(MetaHead("cs-format", failedFiles == 0, fmtMeta));
+            output.AppendLine();
             output.Append(sb.ToString());
-            if (mode == "check")
-            {
-                output.AppendLine("—— 干跑完成：mode=apply 执行写盘（保真 BOM / 换行，原子替换）");
-            }
             result = TrimResult(output.ToString(), MaxResultChars);
             return true;
         }

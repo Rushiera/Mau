@@ -8,8 +8,9 @@
 // 阈值与共用小件
 // ═══════════════════════════════════════════
 
-var CHAT_SEG_FOLD_CHARS = 1000;   // 段内折叠阈值——字符（沿用既有 1000 口径）
-var CHAT_SEG_FOLD_LINES = 15;     // 段内折叠阈值——行
+var CHAT_SEG_FOLD_LINES = 5;      // 段折叠阈值——行数 ≤5 默认展开；>5 折叠为「前 2 + 摘要行 + 后 2」
+var CHAT_SEG_PEEK_HEAD = 2;       // 折叠摘要——保留的首行数
+var CHAT_SEG_PEEK_TAIL = 2;       // 折叠摘要——保留的末行数
 
 // 规模描述——「1.50k 字符 / 42 行」（大数走 chatFmtCount，与折叠行后缀同源）
 function chatSegSize(text) {
@@ -19,18 +20,42 @@ function chatSegSize(text) {
 }
 
 // 段落——details.seg（二级折叠：点折叠头展开全量；限高滚动由 CSS 承担）
-function chatSeg(cls, cap, fill) {
+// 折叠判据（2026-09-18）：内容行数 ≤5 → 默认展开（折叠态与展开态内容一致，无需折叠）
+//                        >5 → 默认折叠，折叠态即「5 行摘要」（首 2 + 提示行 + 末 2）
+// 🔴 摘要必须挂在 summary 内——details 折叠时非 summary 子元素被浏览器隐藏（peek 放 body 会不可见）
+function chatSeg(cls, cap, fill, peek) {
     var det = document.createElement('details');
     det.className = 'seg ' + cls;
     var sum = document.createElement('summary');
     sum.className = 'seg-cap';
-    sum.textContent = cap;
+    sum.appendChild(document.createTextNode(cap));
+    var peekText = chatSegPeekText(peek);
+    if (peekText.length > 0) {
+        var pk = document.createElement('span');
+        pk.className = 'seg-peek';
+        pk.textContent = peekText;
+        sum.appendChild(pk);
+    } else {
+        det.open = true;
+    }
     det.appendChild(sum);
     var body = document.createElement('div');
     body.className = 'seg-body';
     fill(body);
     det.appendChild(body);
     return det;
+}
+
+// 段折叠摘要——行数 ≤5 返回空串（不折叠）；否则「首 2 行 + 折叠提示 + 末 2 行」
+// 提示行口径——被折叠的中间行数 + 其字符数（不含首尾保留行）
+function chatSegPeekText(text) {
+    if (typeof text !== 'string' || text.length === 0) { return ''; }
+    var lines = text.split('\n');
+    if (lines.length <= CHAT_SEG_FOLD_LINES) { return ''; }
+    var head = lines.slice(0, CHAT_SEG_PEEK_HEAD);
+    var tail = lines.slice(lines.length - CHAT_SEG_PEEK_TAIL);
+    var mid = lines.slice(CHAT_SEG_PEEK_HEAD, lines.length - CHAT_SEG_PEEK_TAIL);
+    return head.join('\n') + '\n… 折叠了 ' + mid.length + ' 行 ' + mid.join('\n').length + ' 字符 …\n' + tail.join('\n');
 }
 
 // 段内文本块——cls 沿用既有锚点类（.ta / .tr / .ta.warn），父子关系变化不影响选择器
@@ -60,27 +85,246 @@ function chatField(obj, key) {
 // 返回 {tag, tagCls, segs}：tag = 折叠行工具变体标签（可空）；segs = 段数组
 // ═══════════════════════════════════════════
 
-// powershell / powershell7——exec 骨架：exit 徽标 + stdout / stderr 分段 + 截断警示
-// 两版本显式区分（2026-09-18）：折叠行版本标签（PS 5.1 / PS 7）+ 版本色 + 类型图标（💻 / 💠）
-function chatFillPs(tool) {
-    var is7 = (tool.name === 'powershell7');
-    var args = chatTryJson(tool.arguments) || {};
+// 填充层——逐工具「肉」归 CHAT_TOOL_OVERRIDES 覆盖表（见文件末）；此处不再设填充函数注册表
+
+// ═══════════════════════════════════════════
+// 分派入口——chat-view.js chatToolCard 消费
+// ═══════════════════════════════════════════
+
+// 工具块内部渲染——三级分派（规格 §四）：骨架落位表（壳）→ 骨架通用渲染 → 形态探测回落
+// 逐工具「肉」由 CHAT_TOOL_OVERRIDES 覆盖表在骨架内部逐字段合并（无需前置分支）
+// tool = toolcard 载荷（name / arguments / result / summary / toolIndex / toolTotal）
+// 返回 {tag, tagCls, segs}——永不返回 null（未登记工具走探测骨架，禁止空白、禁止静默）
+function chatToolBody(tool) {
+    if (!tool || typeof tool.name !== 'string' || tool.name.length === 0) { return null; }
+    var skel = CHAT_TOOL_SKELETONS[tool.name];
+    if (typeof skel === 'string') {
+        var fn = CHAT_SKEL_RENDERERS[skel];
+        if (typeof fn === 'function') { return fn(tool); }
+    }
+    return chatSkelProbe(tool);
+}
+
+// ═══════════════════════════════════════════
+// 骨架层——语义大类 → 壳（规格 §二 骨架清单 / §三·一 落位总表）
+// 分派序：填充注册表（肉）→ 骨架落位表（壳）→ 形态探测回落（规格 §四 三级）
+// 纪律：骨架只决定分区结构与头要素，不猜工具语义；解析不出计数就不标计数，不改写原文
+// ═══════════════════════════════════════════
+
+// 骨架落位表——工具名 → 骨架 id（未登记骨架的工具走形态探测：{ 可解析 → json，否则 text）
+var CHAT_TOOL_SKELETONS = {
+    // exec——进程 / 命令执行
+    'powershell': 'exec',
+    'powershell7': 'exec',
+    'mau-setup': 'exec',
+    'host-reload': 'exec',
+    'majordomo-restart': 'exec',
+    'temp-exec': 'exec',
+    // diagnostics——诊断列表
+    'cs-check': 'diagnostics',
+    'cs-build': 'diagnostics',
+    'cs-comment_check': 'diagnostics',
+    'cs-dead': 'diagnostics',
+    'cs-format': 'diagnostics',
+    'mau-verify': 'diagnostics',
+    'mau-gen': 'diagnostics',
+    'mau-proj': 'diagnostics',
+    // listing——列举
+    'text-tree': 'listing',
+    'text-find': 'listing',
+    'cs-list': 'listing',
+    'config-list': 'listing',
+    // matches——检索命中
+    'text-grep': 'matches',
+    'cs-find_ref': 'matches',
+    // lines——带行号文本
+    'text-read_lines': 'lines',
+    'cs-read': 'lines',
+    // file——文件内容
+    'text-read': 'file',
+    'text-read_between': 'file',
+    // json——通用结构
+    'config-get': 'json',
+    'host-flows': 'json',
+    'temp-info': 'json',
+    // text——纯文本兜底
+    'text-write': 'text',
+    'text-append': 'text',
+    'text-replace': 'text',
+    'text-move': 'text',
+    'text-delete': 'text',
+    'cs-patch': 'text',
+    'cs-member': 'text',
+    'cs-comment': 'text',
+    'config-set': 'text',
+    'config-reset': 'text',
+    'web-search': 'text',
+    'image-analyze': 'text',
+    'Note': 'text',
+    'time': 'text',
+    'random': 'text',
+    'info': 'text',
+    'pack': 'text'
+};
+
+// ── 共用小件：参数与结果 ──
+
+// 参数对象——arguments JSON → 对象（解析失败 / 非对象 → 空对象，不抛）
+function chatArgObj(tool) {
+    var o = chatTryJson(tool ? tool.arguments : null);
+    if (!o) { return {}; }
+    return o;
+}
+
+// 参数键值对——[{k, v}]；值单行化（摘要行不折行的同源处理）
+function chatArgPairs(tool) {
+    var o = chatArgObj(tool);
+    var keys = Object.keys(o);
+    var out = [];
+    for (var i = 0; i < keys.length; i++) {
+        var v = o[keys[i]];
+        if (typeof v !== 'string') { v = JSON.stringify(v); }
+        out.push({ k: keys[i], v: String(v).replace(/\r/g, '').replace(/\n/g, ' ') });
+    }
+    return out;
+}
+
+// 键值行块——逐行等宽（键走键色、值走值色；长值由 CSS 折行，不截断）
+function chatSegKv(body, pairs) {
+    for (var i = 0; i < pairs.length; i++) {
+        var row = document.createElement('div');
+        row.className = 'seg-kv';
+        var k = document.createElement('span');
+        k.className = 'seg-kv-k';
+        k.textContent = pairs[i].k + ': ';
+        var v = document.createElement('span');
+        v.className = 'seg-kv-v';
+        v.textContent = pairs[i].v;
+        row.appendChild(k);
+        row.appendChild(v);
+        body.appendChild(row);
+    }
+}
+
+// 输入段——填充层声明 inputLines 时用自然语言意图行；否则通用键值表
+function chatSegInput(tool, cap) {
+    var ov = chatToolOverride(tool.name);
+    var lines = null;
+    if (ov && typeof ov.inputLines === 'function') {
+        lines = ov.inputLines(chatArgObj(tool)) || [];
+    }
+    var pairs = lines ? [] : chatArgPairs(tool);
+    var peekLines = [];
+    var head = cap;
+    if (lines) {
+        for (var i = 0; i < lines.length; i++) { peekLines.push(lines[i]); }
+        if (!head || head.length === 0) { head = '输入 · ' + lines.length + ' 行'; }
+    } else {
+        for (var j = 0; j < pairs.length; j++) { peekLines.push(pairs[j].k + ': ' + pairs[j].v); }
+        if (!head || head.length === 0) { head = '输入' + (pairs.length > 0 ? ' · ' + pairs.length + ' 项' : ''); }
+    }
+    return chatSeg('seg-in', head, function (body) {
+        if (lines) {
+            if (lines.length === 0) { chatSegBlock(body, 'ta', '（无参数）'); return; }
+            chatSegLines(body, lines, 'seg-line');
+            return;
+        }
+        if (pairs.length === 0) { chatSegBlock(body, 'ta', '（无参数）'); return; }
+        chatSegKv(body, pairs);
+    }, peekLines.join('\n'));
+}
+
+// 结果文本行——空串 / undefined → 空数组（保持原行内容，不 trim——缩进即语义）
+function chatLines(text) {
+    if (typeof text !== 'string' || text.length === 0) { return []; }
+    return text.split('\n');
+}
+
+// 非空行数——空白行不计
+function chatCountLines(lines) {
+    var n = 0;
+    for (var i = 0; i < lines.length; i++) {
+        if (lines[i].replace(/\s/g, '').length > 0) { n = n + 1; }
+    }
+    return n;
+}
+
+// 结果失败态——ERR / ROLLED_BACK / FAIL 前缀，或结构化返回头 ok:false（规格 §七；单一出口，各骨架不再自加后缀）
+function chatIsErrResult(text) {
+    if (typeof text !== 'string' || text.length === 0) { return false; }
+    if (text.indexOf('ERR') === 0 || text.indexOf('ROLLED_BACK') === 0 || text.indexOf('FAIL') === 0) { return true; }
+    var head = chatMetaHead(text);
+    return !!(head && head.meta.ok === false);
+}
+
+// 输出段通用外壳——处理中 / 空输出 / 失败三态统一（规格 §七 回落矩阵）
+// 覆盖优先：填充层声明 outputLines（逐工具自然语言化）→ 替代骨架通用渲染；badge → 覆盖折叠头徽标
+// peek——折叠摘要用文本（默认取结果原文；多块结果由骨架传入合并文本）
+function chatSegOutput(tool, cap, render, peek) {
+    var ov = chatToolOverride(tool.name);
+    var text = tool.result;
+    var head = cap || '输出';
+    if (ov && typeof ov.badge === 'function' && typeof text === 'string' && text.length > 0) {
+        var extra = ov.badge(text, chatArgObj(tool));
+        if (typeof extra === 'string' && extra.length > 0) { head = '输出' + extra; }
+    }
+    if (text === undefined) { head = head + ' · 处理中'; }
+    else if (text === '') { head = head + ' · 无输出'; }
+    else if (chatIsErrResult(text)) { head = head + ' · 失败'; }
+    var peekText = (typeof peek === 'string') ? peek : text;
+    var draw = render;
+    if (ov && typeof ov.outputLines === 'function') {
+        draw = function (body, t, isErr) {
+            var ls = ov.outputLines(t, chatArgObj(tool), isErr);
+            if (!ls) { render(body, t, isErr); return; }
+            chatSegLines(body, ls, isErr ? 'seg-line err' : 'seg-line');
+        };
+    }
+    return chatSeg('seg-out', head, function (body) {
+        if (text === undefined) { chatSegBlock(body, 'ta', '⏳ 处理中…'); return; }
+        if (text === '') { chatSegBlock(body, 'tr', '（无输出）'); return; }
+        draw(body, text, chatIsErrResult(text));
+    }, peekText);
+}
+
+// 行列表块——逐行独立 div（等宽 + 缩进保留；便于长列表滚动定位）
+function chatSegLines(body, lines, cls) {
+    for (var i = 0; i < lines.length; i++) {
+        chatSegBlock(body, cls, lines[i]);
+    }
+}
+
+// ═══════════════════════════════════════════
+// 骨架实现——每类一支通用渲染（壳）
+// 返回 {tag, tagCls, segs} 与填充单例同构（调用方零分支）
+// ═══════════════════════════════════════════
+
+// ── exec：进程 / 命令执行（输入：意图 + 原文；输出：exit 徽标 + stdout / stderr 分段 + 截断）──
+// opts.tag / opts.tagCls——工具变体标签（如 PowerShell PS 5.1 / PS 7）；opts 省略即无标签
+function chatSkelExec(tool, opts) {
+    var o = opts || {};
+    var ov = chatToolOverride(tool.name);
+    var args = chatArgObj(tool);
     var cmd = chatField(args, 'command');
     var cwd = chatField(args, 'cwd');
-    var r = chatTryJson(tool.result);
     var segs = [];
 
-    // [段1] 输入——命令原文（完整可见）+ cwd（有则前置一行）
-    var inParts = [];
-    if (cwd.length > 0) { inParts.push('cwd: ' + cwd); }
-    if (cmd.length > 0) { inParts.push(cmd); }
-    var inText = (inParts.length > 0) ? inParts.join('\n') : (tool.arguments || '');
-    var inCap = '输入 · 命令 ' + cmd.length + ' 字符' + (cwd.length > 0 ? ' · 指定 cwd' : '');
-    segs.push(chatSeg('seg-in', inCap, function (body) {
-        chatSegBlock(body, 'ta', inText);
-    }));
+    // [段1] 输入——命令原文（cwd 前置一行）；无 command 键的工具（host-reload / mau-setup / temp-exec）走通用键值表
+    if (cmd.length > 0) {
+        var inParts = [];
+        if (cwd.length > 0) { inParts.push('cwd: ' + cwd); }
+        inParts.push(cmd);
+        var inText = inParts.join('\n');
+        var inCap = '输入 · 命令 ' + cmd.length + ' 字符' + (cwd.length > 0 ? ' · 指定 cwd' : '');
+        segs.push(chatSeg('seg-in', inCap, function (body) {
+            chatSegBlock(body, 'ta', inText);
+        }, inText));
+    } else {
+        segs.push(chatSegInput(tool, ''));
+    }
 
-    // [段2] 输出——exit 徽标 + stdout / stderr 分段（各自规模标注）+ 截断 / 超时 / 空输出显式
+    // [段2] 输出——exit 徽标 + stdout / stderr 分段（各自规模）+ 截断 / 超时 / 空输出显式
+    var r = chatTryJson(tool.result);
     var outCap = '输出';
     var warnText = '';
     var blocks = [];
@@ -98,13 +342,24 @@ function chatFillPs(tool) {
             outCap = outCap + ' · ⚠️ 已截断';
             warnText = '⚠️ 输出已达上限被截断——后续内容未回传' + (r.timeout === true ? '；进程超时已终止' : '');
         }
+    } else if (tool.result === '') {
+        outCap = '输出 · 无输出';
     } else {
-        // 非 JSON 结果（异常面 / 旧格式）——原文可见，不静默
         outCap = '输出 · 原始输出';
-        blocks.push({ cap: '', cls: 'tr', text: tool.result || '' });
+        blocks.push({ cap: '', cls: (chatIsErrResult(tool.result) ? 'tr err' : 'tr'), text: tool.result });
+    }
+    // 折叠摘要文本——stdout / stderr 合并（多块结果取整体）
+    var outPeek = tool.result;
+    if (r && typeof r.exit !== 'undefined') {
+        outPeek = chatField(r, 'stdout') + '\n' + chatField(r, 'stderr');
     }
     segs.push(chatSeg('seg-out', outCap, function (body) {
         if (warnText.length > 0) { chatSegBlock(body, 'ta warn', warnText); }
+        if (ov && typeof ov.outputLines === 'function' && typeof tool.result === 'string' && tool.result.length > 0) {
+            chatSegLines(body, ov.outputLines(tool.result, args, chatIsErrResult(tool.result)) || [], 'seg-line');
+            return;
+        }
+        if (blocks.length === 0) { chatSegBlock(body, 'tr', '（无输出）'); return; }
         for (var i = 0; i < blocks.length; i = i + 1) {
             if (blocks[i].cap.length > 0) {
                 var sec = document.createElement('div');
@@ -119,27 +374,656 @@ function chatFillPs(tool) {
                 chatSegBlock(body, blocks[i].cls, blocks[i].text);
             }
         }
-        if (blocks.length === 0 && warnText.length === 0) { chatSegBlock(body, 'tr', '（无输出）'); }
-    }));
+    }, outPeek));
 
-    return { tag: is7 ? 'PS 7' : 'PS 5.1', tagCls: is7 ? 'ps7' : 'ps5', segs: segs };
+    var tag = o.tag || ((ov && typeof ov.tag === 'string') ? ov.tag : '');
+    var tagCls = o.tagCls || ((ov && typeof ov.tagCls === 'string') ? ov.tagCls : '');
+    return { tag: tag, tagCls: tagCls, segs: segs };
 }
 
-// 填充注册表——新增工具在此加一支；不加则 chatToolBody 返回 null（调用方回落现行渲染）
-var CHAT_TOOL_FILLERS = {
-    'powershell': chatFillPs,
-    'powershell7': chatFillPs
+// ── diagnostics：诊断列表（输入：目标；输出：计数徽标 + 诊断行列表）──
+// 计数来源——JSON 结果取 errors / warnings；纯文本清单退化为行数徽标（解析不出就不标，不猜）
+function chatDiagCounts(text) {
+    var o = chatTryJson(text);
+    if (!o) { return null; }
+    var e = (typeof o.errors === 'number') ? o.errors : -1;
+    var w = (typeof o.warnings === 'number') ? o.warnings : -1;
+    if (e < 0 && w < 0) { return null; }
+    return { errors: (e < 0 ? 0 : e), warnings: (w < 0 ? 0 : w) };
+}
+
+function chatSkelDiagnostics(tool) {
+    var segs = [chatSegInput(tool, '')];
+    // 结构化返回优先（首行 JSON 元数据 + 正文定界行）；旧格式原路解析（chatDiagCounts 认 JSON 结果）
+    var head = chatMetaHead(tool.result);
+    var bodyText = head ? head.body : tool.result;
+    var counts = head ? chatDiagCountsFromMeta(head.meta) : chatDiagCounts(tool.result);
+    var lines = chatLines(bodyText);
+    var cap = '输出';
+    if (counts) {
+        cap = '输出 · ' + counts.errors + ' 错 ' + counts.warnings + ' 警';
+    } else if (lines.length > 0) {
+        cap = '输出 · ' + chatCountLines(lines) + ' 行';
+    }
+    segs.push(chatSegOutput(tool, cap, function (body, text, isErr) {
+        if (lines.length === 0) { chatSegBlock(body, 'tr', '（无诊断输出）'); return; }
+        chatSegLines(body, lines, isErr ? 'tr err' : 'tr');
+    }, bodyText));
+    return { tag: '', tagCls: '', segs: segs };
+}
+
+// ── listing：列举（输入：条件；输出：计数 + 条目列表，缩进保留）──
+// 计数不含提示行（[git] / [skip]）——提示是元信息，不是条目
+function chatSkelListing(tool) {
+    var segs = [chatSegInput(tool, '')];
+    // 结构化返回优先（首行 JSON 元数据 + 正文定界行）；旧格式原路（纯文本清单）
+    var head = chatMetaHead(tool.result);
+    var bodyText = head ? head.body : tool.result;
+    var lines = chatLines(bodyText);
+    var items = [];
+    for (var i = 0; i < lines.length; i++) {
+        if (lines[i].replace(/\s/g, '').length === 0) { continue; }
+        if (lines[i].indexOf('[git]') === 0 || lines[i].indexOf('[skip]') === 0) { continue; }
+        items.push(lines[i]);
+    }
+    var cap = '输出';
+    if (typeof bodyText === 'string' && bodyText.length > 0) { cap = '输出 · ' + items.length + ' 条目'; }
+    segs.push(chatSegOutput(tool, cap, function (body, text, isErr) {
+        if (items.length === 0) { chatSegBlock(body, 'tr', '（无匹配条目）'); return; }
+        chatSegLines(body, items, isErr ? 'tr err' : 'seg-line');
+    }, bodyText));
+    return { tag: '', tagCls: '', segs: segs };
+}
+
+// ── matches：检索命中（输入：检索条件；输出：路径 / 行号 / 上下文 三列）──
+// 行形态 `[跨程序集] 路径:行:列: 上下文`（列号可缺；切不出行号的整行作路径，不丢行）
+function chatParseHits(lines) {
+    var hits = [];
+    for (var i = 0; i < lines.length; i++) {
+        var ln = lines[i];
+        if (ln.replace(/\s/g, '').length === 0) { continue; }
+        var cross = false;
+        if (ln.indexOf('[跨程序集]') === 0) {
+            cross = true;
+            ln = ln.substring(10).replace(/^\s+/, '');
+        }
+        var m = /^(.+?):(\d+):(\d+):(.*)$/.exec(ln);
+        if (m) {
+            hits.push({ path: m[1], line: m[2], col: m[3], ctx: m[4], cross: cross });
+            continue;
+        }
+        var m2 = /^(.+?):(\d+):(.*)$/.exec(ln);
+        if (m2) {
+            hits.push({ path: m2[1], line: m2[2], col: '', ctx: m2[3], cross: cross });
+            continue;
+        }
+        hits.push({ path: ln, line: '', col: '', ctx: '', cross: cross });
+    }
+    return hits;
+}
+
+function chatSkelMatches(tool) {
+    var segs = [chatSegInput(tool, '')];
+    // 结构化返回优先（首行 JSON 元数据 + 正文定界行）
+    var head = chatMetaHead(tool.result);
+    var bodyText = head ? head.body : tool.result;
+    var hits = chatParseHits(chatLines(bodyText));
+    var cap = '输出';
+    if (typeof bodyText === 'string' && bodyText.length > 0) { cap = '输出 · ' + hits.length + ' 命中'; }
+    segs.push(chatSegOutput(tool, cap, function (body, text, isErr) {
+        if (hits.length === 0) { chatSegBlock(body, 'tr', '（无命中）'); return; }
+        for (var i = 0; i < hits.length; i++) {
+            var row = document.createElement('div');
+            row.className = 'seg-hit' + (isErr ? ' err' : '');
+            if (hits[i].cross) {
+                var cr = document.createElement('span');
+                cr.className = 'seg-hit-cross';
+                cr.textContent = '[跨程序集] ';
+                row.appendChild(cr);
+            }
+            var p = document.createElement('span');
+            p.className = 'seg-hit-path';
+            p.textContent = hits[i].path;
+            row.appendChild(p);
+            if (hits[i].line.length > 0) {
+                var l = document.createElement('span');
+                l.className = 'seg-hit-line';
+                l.textContent = (hits[i].col.length > 0) ? (':' + hits[i].line + ':' + hits[i].col) : (':' + hits[i].line);
+                row.appendChild(l);
+            }
+            if (hits[i].ctx.length > 0) {
+                var c = document.createElement('span');
+                c.className = 'seg-hit-ctx';
+                c.textContent = ':' + hits[i].ctx;
+                row.appendChild(c);
+            }
+            body.appendChild(row);
+        }
+    }, bodyText));
+    return { tag: '', tagCls: '', segs: segs };
+}
+
+// ── lines：带行号文本（输入：文件 + 区间 / 成员；输出：行号列 + 内容）──
+// 行形态 `行号: 内容`（text-read_lines / cs-read 统一文件坐标系）；无行号前缀的行整行渲染
+function chatSkelLines(tool) {
+    var segs = [chatSegInput(tool, '')];
+    // 结构化返回优先——meta.start 驱动行号列（cs-read 行尾标注剥离显示）；旧格式按行首 `N: ` 解析
+    var head = chatMetaHead(tool.result);
+    var bodyText = head ? head.body : tool.result;
+    var lines = chatLines(bodyText);
+    var startNo = (head && typeof head.meta.start === 'number') ? head.meta.start : -1;
+    var cap = '输出';
+    if (typeof bodyText === 'string' && bodyText.length > 0) { cap = '输出 · ' + chatCountLines(lines) + ' 行'; }
+    segs.push(chatSegOutput(tool, cap, function (body, text, isErr) {
+        if (lines.length === 0) { chatSegBlock(body, 'tr', '（无输出）'); return; }
+        for (var i = 0; i < lines.length; i++) {
+            var row = document.createElement('div');
+            row.className = 'seg-line' + (isErr ? ' err' : '');
+            if (startNo > 0) {
+                // 结构化行号——start + 行序（后端已给准确区间，无需解析行尾 / 行首标注）
+                var no = document.createElement('span');
+                no.className = 'seg-line-no';
+                no.textContent = String(startNo + i);
+                var tx = document.createElement('span');
+                tx.className = 'seg-line-tx';
+                tx.textContent = chatStripLineMark(lines[i]);
+                row.appendChild(no);
+                row.appendChild(tx);
+            } else {
+                var m = /^(\d+): ?(.*)$/.exec(lines[i]);
+                if (m) {
+                    var no2 = document.createElement('span');
+                    no2.className = 'seg-line-no';
+                    no2.textContent = m[1];
+                    var tx2 = document.createElement('span');
+                    tx2.className = 'seg-line-tx';
+                    tx2.textContent = m[2];
+                    row.appendChild(no2);
+                    row.appendChild(tx2);
+                } else {
+                    row.textContent = lines[i];
+                }
+            }
+            body.appendChild(row);
+        }
+    }, bodyText));
+    return { tag: '', tagCls: '', segs: segs };
+}
+
+// ── file / text：正文渲染（共用一支）──
+// withSize=true（file）标规模「字符 / 行」；false（text）只标行数——纯文本兜底不给体量噪音
+function chatSkelPlain(tool, withSize) {
+    var segs = [chatSegInput(tool, '')];
+    var cap = '输出';
+    if (typeof tool.result === 'string' && tool.result.length > 0) {
+        if (withSize) {
+            cap = '输出 · ' + chatSegSize(tool.result);
+        } else {
+            cap = '输出 · ' + chatCountLines(chatLines(tool.result)) + ' 行';
+        }
+    }
+    segs.push(chatSegOutput(tool, cap, function (body, text, isErr) {
+        chatSegBlock(body, isErr ? 'tr err' : 'tr', text);
+    }));
+    return { tag: '', tagCls: '', segs: segs };
+}
+
+// ── json：通用结构（输入：键值表；输出：顶层键值 / 原文回落）──
+// 解析失败不静默——原样可见（规格 §七）
+function chatSkelJson(tool) {
+    var segs = [chatSegInput(tool, '')];
+    var parsed = chatTryJson(tool.result);
+    var pairs = [];
+    if (parsed) {
+        var keys = Object.keys(parsed);
+        for (var i = 0; i < keys.length; i++) {
+            var v = parsed[keys[i]];
+            if (typeof v !== 'string') { v = JSON.stringify(v); }
+            pairs.push({ k: keys[i], v: String(v) });
+        }
+    }
+    var cap = '输出';
+    if (parsed) { cap = '输出 · ' + pairs.length + ' 键'; }
+    else if (tool.result !== undefined && tool.result !== '') { cap = '输出 · 原始输出'; }
+    segs.push(chatSegOutput(tool, cap, function (body, text, isErr) {
+        if (parsed) { chatSegKv(body, pairs); return; }
+        chatSegBlock(body, isErr ? 'tr err' : 'tr', text);
+    }));
+    return { tag: '', tagCls: '', segs: segs };
+}
+
+// 骨架实现表——骨架 id → 通用渲染
+var CHAT_SKEL_RENDERERS = {
+    'exec': chatSkelExec,
+    'diagnostics': chatSkelDiagnostics,
+    'listing': chatSkelListing,
+    'matches': chatSkelMatches,
+    'lines': chatSkelLines,
+    'file': function (tool) { return chatSkelPlain(tool, true); },
+    'json': chatSkelJson,
+    'text': function (tool) { return chatSkelPlain(tool, false); }
+};
+
+// 形态探测回落——完全未登记的工具：{ 可解析 → json 骨架；否则 text 骨架（禁止空白、禁止静默）
+function chatSkelProbe(tool) {
+    if (chatTryJson(tool.result)) { return chatSkelJson(tool); }
+    return chatSkelPlain(tool, false);
+}
+
+// ═══════════════════════════════════════════
+// 骨架图标——8 类语义大类各一个（折叠行图标按骨架取，不再逐工具自定）
+// ═══════════════════════════════════════════
+
+// 骨架图标表——与骨架清单一一对应（规格 §二）
+var CHAT_SKEL_ICONS = {
+    'exec': '💻',
+    'diagnostics': '🩺',
+    'listing': '📂',
+    'matches': '🔍',
+    'lines': '🔢',
+    'file': '📖',
+    'json': '🧩',
+    'text': '📝'
+};
+
+// 工具 → 骨架 id（未登记返回空串；探测骨架不参与图标——未知工具保持默认图标）
+function chatToolSkeleton(name) {
+    var skel = CHAT_TOOL_SKELETONS[name];
+    return (typeof skel === 'string') ? skel : '';
+}
+
+// 工具图标——按骨架取；未登记骨架（含探测回落）返回空串，调用方回落默认图标
+function chatToolIconBySkeleton(name) {
+    var skel = chatToolSkeleton(name);
+    if (skel.length === 0) { return ''; }
+    var icon = CHAT_SKEL_ICONS[skel];
+    return (typeof icon === 'string') ? icon : '';
+}
+
+// 工具专属图标表已并入覆盖表（CHAT_TOOL_OVERRIDES.icon）——此处不再单列表
+
+// 工具图标解析——三级回落（规格 §二 图标口径）
+// ① 工具专属（覆盖表 icon）→ ② 骨架图标（落位表 → CHAT_SKEL_ICONS）→ ③ ❓（未登记工具——本不该出现，显式暴露）
+function chatToolIconOf(name) {
+    var ov = chatToolOverride(name);
+    if (ov && typeof ov.icon === 'string' && ov.icon.length > 0) { return ov.icon; }
+    var icon = chatToolIconBySkeleton(name);
+    if (icon.length > 0) { return icon; }
+    return '❓';
+}
+
+// ═══════════════════════════════════════════
+// 填充覆盖表——逐工具「肉」（全工具覆盖，按工具组推进）
+// 定位：把工具参数与结果里的信息，按固定语句组合成自然语言（前端侧镜像宿主 ToolSummaryFormatter）
+// 契约：只声明偏离骨架的字段——未声明项一律吃骨架默认（结构 / 折叠 / 三态永远归骨架）
+//   icon        —— 折叠行专属图标（默认：骨架图标 → ❓）
+//   tag/tagCls  —— 折叠行工具变体标签（如 PowerShell PS 5.1 / PS 7）
+//   inputLines  —— 输入段行（自然语言意图；缺省 = 通用键值表）
+//   outputLines —— 输出段行（缺省 = 骨架通用渲染）
+//   badge       —— 输出段折叠头徽标后缀（缺省 = 骨架计数徽标）
+// ═══════════════════════════════════════════
+
+// 覆盖项取值——工具名 → 覆盖对象（无 / 非法 → null）
+function chatToolOverride(name) {
+    var ov = CHAT_TOOL_OVERRIDES[name];
+    return (ov && typeof ov === 'object') ? ov : null;
+}
+
+// 缺值显式化——未传参不静默拼空串
+function chatOvText(v) {
+    if (v === undefined || v === null || v === '') { return '(未指定)'; }
+    return String(v);
+}
+
+// 单行预览——多行内容进意图行（压平 + 60 字符截断）
+function chatOvPeek(v) {
+    if (typeof v !== 'string') { return chatOvText(v); }
+    var t = v.replace(/\r/g, '').replace(/\n/g, ' ');
+    return (t.length > 60) ? (t.substring(0, 60) + '…') : t;
+}
+
+// 规模——字符数
+function chatOvSize(v) {
+    return ((typeof v === 'string') ? v.length : 0) + ' 字符';
+}
+
+var CHAT_TOOL_OVERRIDES = {
+    // ── TextCat（text-* 11 件）——折叠行自然语言 + 输入意图行 + 骨架输出 ──
+    'text-read': {
+        inputLines: function (a) { return ['读取 ' + chatOvText(a.path)]; },
+        headline: function (a, r) { return '读取 ' + chatOvText(a.path) + chatOvStat(r); }
+    },
+    'text-read_between': {
+        inputLines: function (a) {
+            return ['区间读取 ' + chatOvText(a.path),
+                '锚点 ' + chatOvText(a.str1 || '（文件头）') + ' ~ ' + chatOvText(a.str2 || '（文件尾）')];
+        },
+        headline: function (a, r) { return '区间读取 ' + chatOvText(a.path) + chatOvAnchor(a) + chatOvStat(r); }
+    },
+    'text-read_lines': {
+        inputLines: function (a) {
+            return ['按行读取 ' + chatOvText(a.path) + ' · ' + chatOvRange(a)];
+        },
+        headline: function (a, r) { return '按行读取 ' + chatOvText(a.path) + ' · ' + chatOvRange(a) + chatOvStat(r); }
+    },
+    'text-write': {
+        inputLines: function (a) { return ['写入 ' + chatOvText(a.path) + ' · ' + chatOvSize(a.content)]; },
+        headline: function (a, r) { return '写入 ' + chatOvText(a.path) + ' · ' + chatOvSize(a.content); }
+    },
+    'text-append': {
+        inputLines: function (a) { return ['追加 ' + chatOvText(a.path) + ' · ' + chatOvSize(a.content)]; },
+        headline: function (a, r) { return '追加 ' + chatOvText(a.path) + ' · +' + chatOvSize(a.content); }
+    },
+    'text-replace': {
+        icon: '🔄',
+        inputLines: function (a) {
+            var head = '替换 ' + chatOvText(a.path) + (a.mode ? ' · 模式 ' + a.mode : '');
+            return [head, '旧：' + chatOvPeek(a.old), '新：' + chatOvPeek(a.new)];
+        },
+        headline: function (a, r) { return '替换 ' + chatOvText(a.path) + chatOvMode(a) + chatOvReplaceTail(r); }
+    },
+    'text-find': {
+        icon: '🔍',
+        inputLines: function (a) { return ['搜索 ' + chatOvText(a.dir) + ' · glob ' + chatOvText(a.pattern)]; },
+        headline: function (a, r) {
+            return '搜索 ' + chatOvText(a.dir) + ' · glob ' + chatOvText(a.pattern) + ' · ' + chatOvItems(r) + ' 条目';
+        }
+    },
+    'text-grep': {
+        inputLines: function (a) {
+            var pat = a.pattern ? ' · 文件名 ' + a.pattern : '';
+            return ['检索 ' + chatOvText(a.dir) + ' · 含 ' + chatOvText(a.keyword) + pat];
+        },
+        headline: function (a, r) {
+            var pat = a.pattern ? ' · 文件名 ' + a.pattern : '';
+            return '检索 ' + chatOvText(a.dir) + ' · 含 ' + chatOvText(a.keyword) + pat + ' · ' + chatOvItems(r) + ' 命中';
+        }
+    },
+    'text-tree': {
+        inputLines: function (a) {
+            var extra = (a.limit === undefined) ? '' : ' · limit ' + a.limit;
+            return ['展开 ' + chatOvText(a.path) + ' · depth ' + chatOvText(a.depth) + extra];
+        },
+        headline: function (a, r) {
+            return '展开 ' + chatOvText(a.path) + ' · depth ' + chatOvText(a.depth) + ' · ' + chatOvItems(r) + ' 条目';
+        }
+    },
+    'text-move': {
+        icon: '📦',
+        inputLines: function (a) { return ['移动 ' + chatOvText(a.src), '→ ' + chatOvText(a.dest)]; },
+        headline: function (a, r) { return '移动 ' + chatOvText(a.src) + ' → ' + chatOvText(a.dest); }
+    },
+    'text-delete': {
+        icon: '🗑️',
+        inputLines: function (a) { return ['删除 ' + chatOvText(a.path) + ' → 回收站']; },
+        headline: function (a, r) { return '删除 ' + chatOvText(a.path) + ' → 回收站'; }
+    },
+    // ── CsCat（样板三件——结构化返回头驱动；2026-09-18）──
+    'cs-check': {
+        inputLines: function (a) {
+            return ['语法检查 ' + chatOvText(a.path) + (a.full === true ? ' · 含警告' : '')];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '语法检查 ' + chatOvShort(a.path) + chatOvStat(r); }
+            return '语法检查 ' + chatOvShort(a.path) + ' · ' + (h.meta.errors || 0) + ' 错 ' + (h.meta.warnings || 0) + ' 警';
+        }
+    },
+    'cs-build': {
+        inputLines: function (a) { return ['编译 ' + chatOvText(a.path)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '编译 ' + chatOvShort(a.path) + chatOvStat(r); }
+            var ms = (typeof h.meta.ms === 'number') ? (' · ' + (h.meta.ms / 1000).toFixed(1) + 's') : '';
+            return '编译 ' + chatOvShort(a.path) + ' · ' + (h.meta.ok ? '成功' : '失败') + ' ' + (h.meta.errors || 0) + ' 错 ' + (h.meta.warnings || 0) + ' 警' + ms;
+        }
+    },
+    'cs-read': {
+        inputLines: function (a) {
+            var target = chatOvText(a.class) + (a.member ? '.' + a.member : '');
+            return ['读取 ' + target, '项目 ' + chatOvText(a.path)];
+        },
+        headline: function (a, r) {
+            var target = chatOvText(a.class) + (a.member ? '.' + a.member : '');
+            var h = chatMetaHead(r);
+            if (!h) { return '读取 ' + target + chatOvStat(r); }
+            var range = (typeof h.meta.start === 'number') ? (' · L' + h.meta.start + '-' + h.meta.end) : '';
+            return '读取 ' + target + range;
+        }
+    },
+    'cs-list': {
+        inputLines: function (a) {
+            return [a.class ? ('列出 ' + chatOvText(a.path) + ' · 类 ' + a.class) : ('列出 ' + chatOvText(a.path) + ' 的类')];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '列出 ' + chatOvShort(a.path) + chatOvStat(r); }
+            return '列出 ' + (h.meta.project || chatOvShort(a.path)) + ' · ' + (h.meta.classes || 0) + ' 类';
+        }
+    },
+    'cs-find_ref': {
+        inputLines: function (a) { return ['查找引用 ' + chatOvText(a.class) + '.' + chatOvText(a.member)]; },
+        headline: function (a, r) {
+            var target = chatOvText(a.class) + '.' + chatOvText(a.member);
+            var h = chatMetaHead(r);
+            if (!h) { return '引用 ' + target + chatOvStat(r); }
+            return '引用 ' + target + ' · ' + (h.meta.hits || 0) + ' 处 · ' + (h.meta.projects || 0) + ' 项目';
+        }
+    },
+    'cs-dead': {
+        inputLines: function (a) { return ['扫描零引用 ' + chatOvText(a.path)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '零引用扫描 ' + chatOvShort(a.path) + chatOvStat(r); }
+            var dead = h.meta.dead || 0;
+            return '零引用扫描 ' + chatOvShort(a.path) + ' · ' + (dead > 0 ? (dead + ' 处待清') : '干净');
+        }
+    },
+    'cs-comment_check': {
+        inputLines: function (a) { return ['检查注释 ' + chatOvText(a.path)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '注释检查 ' + chatOvShort(a.path) + chatOvStat(r); }
+            var miss = h.meta.missing || 0;
+            return '注释检查 ' + chatOvShort(a.path) + ' · ' + (miss > 0 ? (miss + ' 处缺 summary') : ('齐全 ' + (h.meta.checked || 0) + ' 项'));
+        }
+    },
+    'cs-format': {
+        inputLines: function (a) {
+            var mode = (a.mode === 'apply') ? 'apply' : 'check';
+            return ['格式' + (mode === 'apply' ? '规整' : '检查') + ' ' + chatOvText(a.path) + ' · mode=' + mode];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '格式哨兵 ' + chatOvShort(a.path) + chatOvStat(r); }
+            var m = h.meta;
+            var act = (m.mode === 'apply') ? '规整' : '需规整';
+            var tail = (m.failedFiles > 0) ? (' · ' + m.failedFiles + ' 文件校验未过') : '';
+            return '格式哨兵 ' + chatOvShort(a.path) + ' · ' + act + ' ' + (m.changedFiles || 0) + ' 文件 / ' + (m.changedLines || 0) + ' 行' + tail;
+        }
+    },
+    'cs-patch': {
+        inputLines: function (a) {
+            return ['改写 ' + chatOvText(a.class) + '.' + chatOvText(a.method) + ' 方法体', '项目 ' + chatOvText(a.path)];
+        },
+        headline: function (a, r) {
+            var target = chatOvText(a.class) + '.' + chatOvText(a.method);
+            var h = chatMetaHead(r);
+            if (!h) { return '改写 ' + target + chatOvStat(r); }
+            var m = h.meta;
+            var range = (typeof m.start === 'number') ? (' · L' + m.start + '-' + m.end) : '';
+            return '改写 ' + target + ' · ' + (m.state || 'OK') + range;
+        },
+        outputLines: function (r) {
+            var h = chatMetaHead(r);
+            if (!h) { return null; }
+            var body = h.body;
+            if (typeof body !== 'string' || body.length === 0) { return ['已落盘 ' + (h.meta.file || '')]; }
+            var lines = chatLines(body);
+            var out = [];
+            for (var i = 0; i < lines.length; i++) { out.push(chatStripLineMark(lines[i])); }
+            return out;
+        }
+    },
+    'cs-member': {
+        inputLines: function (a) {
+            var op = a.op || '';
+            if (op === 'insert') { return ['插入成员到 ' + chatOvText(a.class) + ' · 位置 ' + chatOvText(a.position)]; }
+            if (op === 'delete') { return ['删除成员 ' + chatOvText(a.class) + '.' + chatOvText(a.member)]; }
+            if (op === 'rename') { return ['重命名 ' + chatOvText(a.class) + '.' + chatOvText(a.oldName) + ' → ' + chatOvText(a.newName)]; }
+            return ['成员操作 ' + chatOvText(a.class) + ' · op=' + chatOvText(a.op)];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '成员操作 ' + chatOvText(a.class) + chatOvStat(r); }
+            var m = h.meta;
+            if (m.op === 'insert') { return '插入 ' + m.class + ' · 落盘 L' + m.start + '-' + m.end; }
+            if (m.op === 'delete') { return '删除 ' + m.class + '.' + m.member; }
+            if (m.op === 'rename') { return '重命名 ' + m.oldName + ' → ' + m.newName + ' · ' + m.files + ' 文件'; }
+            return '成员操作 ' + chatOvText(a.class);
+        },
+        outputLines: function (r) {
+            var h = chatMetaHead(r);
+            if (!h) { return null; }
+            var m = h.meta;
+            if (m.op === 'insert') { return ['已落盘 ' + (m.file || '') + ' · L' + m.start + '-' + m.end + ' · ' + (m.kind || '')]; }
+            if (m.op === 'delete') { return ['已删除 ' + m.class + '.' + m.member + '（' + (m.file || '') + '）']; }
+            if (m.op === 'rename') { return ['已重命名 ' + m.oldName + ' → ' + m.newName + ' · ' + (m.files || 0) + ' 文件']; }
+            return ['（已应用）'];
+        }
+    },
+    'cs-comment': {
+        inputLines: function (a) {
+            var target = chatOvText(a.class) + (a.member ? '.' + a.member : '');
+            return ['写 ' + chatOvText(a.type) + ' 注释 → ' + target];
+        },
+        headline: function (a, r) {
+            var target = chatOvText(a.class) + (a.member ? '.' + a.member : '');
+            var h = chatMetaHead(r);
+            if (!h) { return '注释 ' + target + chatOvStat(r); }
+            return '注释 ' + target + ' · ' + (h.meta.type || '');
+        },
+        outputLines: function (r) {
+            var h = chatMetaHead(r);
+            if (!h) { return null; }
+            var m = h.meta;
+            return ['已写入 ' + (m.class || '') + (m.member ? '.' + m.member : '') + ' 的 ' + (m.type || '') + ' 注释'];
+        }
+    },
+    // ── PsCat（powershell 双线——exec 骨架 + 版本标签）──
+    'powershell': { tag: 'PS 5.1', tagCls: 'ps5' },
+    'powershell7': { tag: 'PS 7', tagCls: 'ps7' },
+    // ── 其它组（随对应批次补齐；此处先落已定的专属图标）──
+    'web-search': { icon: '🌐' }
 };
 
 // ═══════════════════════════════════════════
-// 分派入口——chat-view.js chatToolCard 消费
+// 折叠行文案（headline）——前端按固定语句组合的自然语言摘要
+// 口径（2026-09-18 莎定）：headline 优先于宿主 summary（宿主 summary 退为兜底）；
+// 有 headline 时不再追加结果规模后缀（同一语义不两处实现）
 // ═══════════════════════════════════════════
 
-// 工具块内部渲染——命中填充注册表则由骨架产出段数组；未登记返回 null（调用方走现行渲染）
-// tool = toolcard 载荷（name / arguments / result / summary / toolIndex / toolTotal）
-function chatToolBody(tool) {
-    if (!tool || typeof tool.name !== 'string') { return null; }
-    var fill = CHAT_TOOL_FILLERS[tool.name];
-    if (typeof fill !== 'function') { return null; }
-    return fill(tool);
+// 折叠行文案取值——覆盖表 headline 优先；无则返回空串（调用方回落宿主 summary）
+function chatToolHeadline(tool) {
+    var ov = chatToolOverride(tool.name);
+    if (ov && typeof ov.headline === 'function') {
+        var t = ov.headline(chatArgObj(tool), tool.result);
+        if (typeof t === 'string' && t.length > 0) { return t; }
+    }
+    return '';
+}
+
+// 结果行数——空结果 0
+function chatOvLines(r) {
+    if (typeof r !== 'string' || r.length === 0) { return 0; }
+    return r.split('\n').length;
+}
+
+// 结果规模后缀——「 · N 行 M 字符」（未完成不标；空结果显式「 · 无输出」）
+function chatOvStat(r) {
+    if (r === undefined) { return ''; }
+    if (typeof r !== 'string' || r.length === 0) { return ' · 无输出'; }
+    return ' · ' + chatOvLines(r) + ' 行 ' + chatFmtCount(r.length) + ' 字符';
+}
+
+// 结果条目数——空行与提示行（[git] / [skip]）不计
+function chatOvItems(r) {
+    if (typeof r !== 'string' || r.length === 0) { return 0; }
+    var lines = r.split('\n');
+    var n = 0;
+    for (var i = 0; i < lines.length; i++) {
+        var t = lines[i];
+        if (t.replace(/\s/g, '').length === 0) { continue; }
+        if (t.indexOf('[git]') === 0 || t.indexOf('[skip]') === 0) { continue; }
+        n = n + 1;
+    }
+    return n;
+}
+
+// 结果中提取首个「N <单位>」计数——替换处数等固定语句用（提不到返回空串）
+function chatOvCount(r, unit) {
+    if (typeof r !== 'string' || r.length === 0) { return ''; }
+    var m = new RegExp('(\\d+)\\s*' + unit).exec(r);
+    return m ? m[1] : '';
+}
+
+// 区间锚点描述——「 · 锚点 A ~ B」（两端皆缺则省略）
+function chatOvAnchor(a) {
+    if (!a.str1 && !a.str2) { return ''; }
+    return ' · 锚点 ' + (a.str1 || '（文件头）') + ' ~ ' + (a.str2 || '（文件尾）');
+}
+
+// 行区间描述——「L1~20」/「L5 起」
+function chatOvRange(a) {
+    return 'L' + chatOvText(a.start) + (a.end === undefined ? ' 起' : '~' + a.end);
+}
+
+// 替换模式描述——「 · 模式 exact」（未传省略）
+function chatOvMode(a) {
+    return a.mode ? ' · 模式 ' + a.mode : '';
+}
+
+// 替换结果尾巴——「 · N 处」/「 · 失败」（无可标则不标）
+function chatOvReplaceTail(r) {
+    var cnt = chatOvCount(r, '处');
+    if (cnt.length > 0) { return ' · ' + cnt + ' 处'; }
+    if (typeof r === 'string' && r.indexOf('ERR') === 0) { return ' · 失败'; }
+    return '';
+}
+
+// ═══════════════════════════════════════════
+// 结构化返回头——工具返回体「首行 JSON 元数据 + 正文定界行」的拆分（design-ch4-tools 附录）
+// 后端约定：cs-* 返回首行 JSON（含 tool 字段）+ 其后正文；未结构化结果返回 null（走旧路径）
+// ═══════════════════════════════════════════
+
+// 拆分——首行 JSON 含 tool 字段 → {meta, body}；否则 null（旧格式 / 非结构化结果，调用方按原文处理）
+function chatMetaHead(text) {
+    if (typeof text !== 'string' || text.charAt(0) !== '{') { return null; }
+    var nl = text.indexOf('\n');
+    var first = (nl < 0) ? text : text.substring(0, nl);
+    var obj = chatTryJson(first);
+    if (!obj || typeof obj.tool !== 'string') { return null; }
+    return { meta: obj, body: (nl < 0) ? '' : text.substring(nl + 1) };
+}
+
+// 路径短名——取末段（折叠行可读性；全路径仍在输入段）
+function chatOvShort(p) {
+    var t = chatOvText(p);
+    var i = Math.max(t.lastIndexOf('/'), t.lastIndexOf('\\'));
+    return (i >= 0 && i + 1 < t.length) ? t.substring(i + 1) : t;
+}
+
+// 行尾行号标注剥离——cs-read 正文行尾 `// L{行号}`（LLM 定位用）；前端已有行号列，显示时剥离
+function chatStripLineMark(line) {
+    if (typeof line !== 'string') { return ''; }
+    return line.replace(/\s*\/\/ L\d+\s*$/, '');
+}
+
+// 结构化头计数——diagnostics 骨架用（errors / warnings 缺失 → null）
+function chatDiagCountsFromMeta(meta) {
+    if (!meta) { return null; }
+    var e = (typeof meta.errors === 'number') ? meta.errors : -1;
+    var w = (typeof meta.warnings === 'number') ? meta.warnings : -1;
+    if (e < 0 && w < 0) { return null; }
+    return { errors: (e < 0 ? 0 : e), warnings: (w < 0 ? 0 : w) };
 }

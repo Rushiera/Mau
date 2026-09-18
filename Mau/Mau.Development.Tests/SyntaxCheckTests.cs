@@ -70,9 +70,10 @@ namespace Mau.Development.Tests
             string csproj = Path.Combine(_root, "Mau", "Mau.Development", "Mau.Development.csproj");
             Assert.True(File.Exists(csproj), "目标工程缺失: " + csproj);
             string result = Check(csproj);
-            Assert.StartsWith("OK", result);
-            Assert.Contains("语法层验证", result);
-            Assert.Contains("cs-build", result);
+            // 结构化返回（2026-09-18）：首行 JSON 元数据头（ok / tool / 计数）——正文只承载诊断行
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-check\"", result);
+            Assert.Contains("\"errors\":0", result);
+            Assert.Contains("\"files\":", result);
         }
 
         /// <summary>
@@ -99,8 +100,10 @@ namespace Mau.Development.Tests
                 File.WriteAllText(csproj, projText);
                 File.WriteAllText(Path.Combine(dir, "Bad.cs"), "public class Bad\n{\n    public void M(\n    {\n    }\n}\n");
                 string result = Check(csproj);
-                Assert.StartsWith("FAIL|CHECK|", result);
-                Assert.Contains("语法错误", result);
+                // 结构化返回（2026-09-18）：首行 JSON 头 ok=false + errors 计数；正文为定界诊断行
+                Assert.StartsWith("{\"ok\":false,\"tool\":\"cs-check\"", result);
+                Assert.Contains("\"errors\":", result);
+                Assert.Contains("Bad.cs:", result);
             }
             finally
             {
