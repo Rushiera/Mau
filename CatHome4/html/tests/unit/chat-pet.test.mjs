@@ -21,7 +21,7 @@ beforeAll(async () => {
   globalThis.MouseEvent = dom.window.MouseEvent;
   globalThis.Image = dom.window.Image;
   globalThis.fetch = undefined;   // 预加载短路——jsdom 无 blob 通道，避免相对 URL 请求噪音（blob 分支由专门用例覆盖）
-  const mods = ['ui-common.js', 'chat-md.js', 'chat-cmd.js', 'chat-view.js', 'chat-core.js', 'chat-note.js', 'chat-pet.js'];
+  const mods = ['ui-common.js', 'chat-md.js', 'chat-cmd.js', 'chat-tools.js', 'chat-view.js', 'chat-core.js', 'chat-note.js', 'chat-pet.js'];
   for (const m of mods) {
     const code = await readFile(new URL('../../js/' + m, import.meta.url), 'utf-8');
     vm.runInThisContext(code, { filename: m });
@@ -55,6 +55,10 @@ beforeEach(() => {
   window.chatPetFail = 0;
   if (window.chatPetTimer) { clearTimeout(window.chatPetTimer); }
   window.chatPetTimer = null;
+  if (window.chatPetDwellTimer) { clearTimeout(window.chatPetDwellTimer); }
+  window.chatPetDwellTimer = null;
+  window.chatPetDwellActive = false;
+  window.chatPetDwellPend = false;
   window.chatRunState = { state: '', ms: {}, requests: 0 };
   window.chatState = 'sending';
   imgA.setAttribute('src', '');
@@ -84,11 +88,14 @@ function pushState(state, requests) {
 
 // ── 运行态映射 ──
 test('五态映射到对应循环资源', () => {
-  const cases = [['link', 'loop-link'], ['wait', 'loop-wait'], ['think', 'loop-think'], ['run', 'loop-run'], ['reply', 'loop-reply']];
+  const cases = [['link', 'loop-link'], ['wait', 'loop-wait'], ['think', 'loop-think'], ['run', 'loop-run']];
   for (const item of cases) {
     pushState(item[0], 1);
     expect(cur()).toBe(item[1]);
   }
+  vi.advanceTimersByTime(2240);      // run 有最短驻留——期满后才响应后续态
+  pushState('reply', 1);
+  expect(cur()).toBe('loop-reply');
 });
 
 test('wait 只有一个循环资源（loop-wait2 已退役）', () => {
@@ -114,6 +121,80 @@ test('tool 内重复推送不重播', () => {
   pushState('tool', 1);
   pushState('tool', 1);
   expect(cur()).toBe('loop-tool');
+});
+
+// ── 最短驻留（tool / run——莎 2026-09-18） ──
+test('驻留时长 = 真实循环时长的整数倍且 ≥ 目标下限', () => {
+  window.chatPetManifest = { 'loop-tool': { h: 'a', ms: 320 }, 'loop-run': { h: 'b', ms: 300 } };
+  expect(window.chatPetMinMs('tool')).toBe(2240);   // 320 × 7
+  expect(window.chatPetMinMs('run')).toBe(2100);    // 300 × 7
+  window.chatPetManifest = { 'loop-tool': { h: 'a', ms: 900 } };
+  expect(window.chatPetMinMs('tool')).toBe(2700);   // 900 × 3
+});
+
+test('非 tool/run 态无驻留——后续态变化立即生效', () => {
+  pushState('think', 1);
+  expect(window.chatPetDwellActive).toBe(false);
+  pushState('reply', 1);
+  expect(cur()).toBe('loop-reply');
+});
+
+test('tool 驻留期内真实态变化挂起——期满按当前真实态跳转', () => {
+  pushState('think', 1);
+  pushState('tool', 1);
+  expect(cur()).toBe('loop-tool');
+  vi.advanceTimersByTime(400);
+  pushState('run', 1);
+  expect(cur()).toBe('loop-tool');          // 挂起——不切
+  vi.advanceTimersByTime(1840);             // 累计 2240ms
+  expect(cur()).toBe('loop-run');
+});
+
+test('tool 极短（真实 300ms）仍播满——跳过中间态直达当前态', () => {
+  pushState('tool', 1);
+  vi.advanceTimersByTime(300);
+  pushState('link', 1);                     // run 从未显示
+  expect(cur()).toBe('loop-tool');
+  vi.advanceTimersByTime(1940);
+  expect(cur()).toBe('loop-link');          // 直接 link，不补 run
+});
+
+test('tool 期满且真实态仍是自身——保持显示，此后变化立即生效', () => {
+  pushState('tool', 1);
+  vi.advanceTimersByTime(2240);
+  expect(cur()).toBe('loop-tool');
+  expect(window.chatPetDwellActive).toBe(false);
+  pushState('reply', 1);
+  expect(cur()).toBe('loop-reply');
+});
+
+test('run 驻留期内走过的中间态不补播——期满直接当前态', () => {
+  pushState('tool', 1);
+  vi.advanceTimersByTime(2240);
+  pushState('run', 1);
+  expect(cur()).toBe('loop-run');
+  vi.advanceTimersByTime(100);
+  pushState('think', 1);
+  pushState('reply', 1);
+  expect(cur()).toBe('loop-run');           // 期间不切
+  vi.advanceTimersByTime(2140);
+  expect(cur()).toBe('loop-reply');
+});
+
+test('驻留期内整轮结束——播满再走 before-idle 收尾', () => {
+  pushState('tool', 1);
+  vi.advanceTimersByTime(500);
+  pushState('idle', 0);
+  expect(cur()).toBe('loop-tool');
+  vi.advanceTimersByTime(1740);
+  expect(cur()).toBe('before-idle');
+});
+
+test('断线优先于驻留——立即显错误资源', () => {
+  pushState('run', 1);
+  window.chatPetSetOffline(true);
+  expect(cur()).toBe('loop-sseErr');
+  expect(window.chatPetDwellActive).toBe(false);
 });
 
 // ── before-idle 收尾 ──

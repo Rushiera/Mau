@@ -12,6 +12,9 @@
 //   after-*  后置反应（播一遍）——after-idle-check 点击后的摸头反应
 // 空闲节律（莎 2026-09-16 定）：进空闲随机一张基础待机播 8s → 直接进入睡；hook/check 结束后同样回到这个 8s 周期
 // 渐隐规则（莎 2026-09-16 定）：before → loop、loop → after 两段是连续动作——**瞬切**；其余切换走 0.25s 交叉溶解
+// 最短驻留（莎 2026-09-18 定）：tool / run 两态至少播满「≥2s 的真实循环整数倍」（实测 320ms × 7 = 2.24s）——
+//   极短态直接连着播会闪断，衔接违和；驻留期内真实态变化只记一笔，期满按**当前真实态**跳转（中间态不补播，
+//   最多滞后一个驻留周期）；断线态优先让位
 // 素材加载（莎 2026-09-17 定）：初始化即串行加载 → blob 持有 + Cache API 缓存（UI 版本键——版本变即失效）
 //   · 加载门禁——首图 loop-sseErr 就位前桌宠不启动（保持不可见，不挂破图）；就位后常显该图作加载态；全量就绪才开放调度
 //   · blob 持有 = 断线（宿主不可达）时零网络依赖；缓存 = 刷新不重下（限带宽/穿透场景关键）
@@ -35,6 +38,9 @@ var chatPetIdleIdx = -1;          // 上次基础待机下标（避免连续重�
 var chatPetCheckIdx = -1;         // 上次摸头反应下标（避免连续重复）
 var chatPetHovered = false;       // 鼠标是否停留在桌宠上（决定反应结束后回哪个子模式）
 var chatPetLastInstant = false;   // 上一次换图是否为瞬切（before→loop / loop→after）——调度与诊断用
+var chatPetDwellActive = false;   // 最短驻留期内（tool / run——极短态不闪现）
+var chatPetDwellPend = false;     // 驻留期内真实态有变化（期满按当前真实态跳转）
+var chatPetDwellTimer = null;     // 驻留定时器（独立于显示调度定时器——语义不同，不共用）
 var chatPetRes = {};              // 素材持有表（名称 → blob URL）——串行加载逐张填入；有值则断线时零网络依赖
 var chatPetLoading = true;        // 加载门禁——true 期间不开放调度（不响应态变化，不跑空闲节律）
 var chatPetBooted = false;        // 首图（loop-sseErr）是否已就位——未就位桌宠保持不可见
@@ -59,6 +65,11 @@ var CHAT_PET_IDLE_BASE_HOLD_MS = 5000;   // 基础待机时长——5s 到点进
 // 入睡过渡遍数——before-idle-sleep 单遍 1980ms；取 2 遍 ≈ 3.96s（「5s 待机 → 约 3s 过渡 → 睡」，
 // 且切点落在整遍边界不跳帧；实时长以 manifest 为准）
 var CHAT_PET_BEFORE_SLEEP_LOOPS = 2;
+// 最短驻留（莎 2026-09-18 定）：tool / run 至少播满「目标下限的真实循环整数倍」——
+//   实测 loop-tool / loop-run 均 320ms → 7 遍 = 2.24s；素材重转后按公式自适应，不在这里留漂移常量
+var CHAT_PET_MIN_LOOP_MS = 2000;   // 驻留目标下限（实际时长 = 循环时长 × ceil(下限 / 循环时长)）
+var CHAT_PET_MIN_KEYS = { tool: true, run: true };   // 有驻留义务的态（其余态变化立即生效）
+var CHAT_PET_LOOP_FALLBACK_MS = 320;   // 循环时长兜底（manifest 缺项时用）
 // 以下为素材播放时长的**兜底值**——实际以 manifest 为准（chatPetMs）；素材重转后无需改这里
 var CHAT_PET_BEFORE_IDLE_MS = 1980;      // before-idle 兜底时长
 var CHAT_PET_BEFORE_HOOK_MS = 1140;      // before-idle-hook 兜底时长
@@ -128,15 +139,71 @@ function chatPetShow(name, instant)
 }
 
 // [段3] 运行态与断线
+function chatPetMinMs(key)
+{
+    // 最短驻留时长——目标下限 CHAT_PET_MIN_LOOP_MS，向上取真实循环时长的整数倍（至少一遍）
+    var ms = chatPetMs(chatPetPhaseMap[key], CHAT_PET_LOOP_FALLBACK_MS);
+    if (ms <= 0) { return 0; }
+    var loops = Math.ceil(CHAT_PET_MIN_LOOP_MS / ms);
+    if (loops < 1) { loops = 1; }
+    return ms * loops;
+}
+
+function chatPetClearDwell()
+{
+    // 解除驻留约束——清定时器与待切标记（离开被约束态 / 断线让位 / 重新起算前调用）
+    if (chatPetDwellTimer !== null)
+    {
+        clearTimeout(chatPetDwellTimer);
+        chatPetDwellTimer = null;
+    }
+    chatPetDwellActive = false;
+    chatPetDwellPend = false;
+}
+
+function chatPetDwellStart(key)
+{
+    // 起算驻留——仅 tool / run（其余态无约束）；同态重入由调用方先行拦下
+    chatPetClearDwell();
+    if (CHAT_PET_MIN_KEYS[key] !== true) { return; }
+    var ms = chatPetMinMs(key);
+    if (ms <= 0) { return; }
+    chatPetDwellActive = true;
+    chatPetDwellTimer = setTimeout(function ()
+    {
+        chatPetDwellTimer = null;
+        chatPetDwellDone();
+    }, ms);
+}
+
+function chatPetDwellDone()
+{
+    // 驻留期满——解除约束；期内真实态变过则按**当前真实态**跳转（无变化则保持显示，此后变化立即生效）
+    chatPetDwellActive = false;
+    var pend = chatPetDwellPend;
+    chatPetDwellPend = false;
+    if (pend === true) { chatPetSync(); }
+}
+
+function chatPetDwellHold()
+{
+    // 驻留期内——真实态变化只记一笔，不换图（返回 true = 已挂起）
+    if (chatPetDwellActive !== true) { return false; }
+    chatPetDwellPend = true;
+    return true;
+}
+
 function chatPetEnterRun(key)
 {
     // 活跃态——六态直接映射循环资源（before-tool 前置已废弃：素材姿态与循环图对不齐）
     if (chatPetMode === 'run' && chatPetKey === key) { return; }
+    if (chatPetDwellHold()) { return; }   // 驻留期内——只记变化，期满按当前真实态跳转（跳过中间态）
     chatPetMode = 'run';
     chatPetKey = key;
     chatPetKeyAt = Date.now();
     chatPetClearTimer();
     chatPetShow(chatPetPhaseMap[key]);
+    chatPetDwellStart(key);
 }
 
 function chatPetEnterOffline()
@@ -144,6 +211,7 @@ function chatPetEnterOffline()
     // 断线态——SSE 不通即显错图；恢复由引导层 onopen 置位后重新同步
     if (chatPetMode === 'offline') { return; }
     chatPetClearTimer();
+    chatPetClearDwell();   // 断线优先——驻留让位（链路状态最需要可见）
     chatPetMode = 'offline';
     chatPetKey = 'offline';
     chatPetKeyAt = Date.now();
@@ -156,11 +224,13 @@ function chatPetEnterIdle()
     // 进入空闲——活跃态回空闲（= 整轮结束）先播 before-idle（after-reply 收尾动作）再进基础待机；
     // 加载完成首次、断线恢复回空闲均不播收尾（fromRun 判据）
     if (chatPetMode === 'idle') { return; }
+    if (chatPetDwellHold()) { return; }   // 驻留期内——整轮结束也等播满（期满按当前真实态收尾 / 起态）
     var fromRun = (chatPetMode === 'run');
     chatPetMode = 'idle';
     chatPetKey = 'idle';
     chatPetKeyAt = Date.now();
     chatPetClearTimer();
+    chatPetClearDwell();
     if (fromRun)
     {
         chatPetIdleMode = 'intro';

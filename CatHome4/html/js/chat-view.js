@@ -58,6 +58,7 @@ function chatToolIcon(name) {
     if (n.indexOf('config-') === 0) { return '⚙️'; }
     if (n.indexOf('mau-') === 0) { return '🧱'; }
     if (n === 'powershell') { return '💻'; }
+    if (n === 'powershell7') { return '💠'; }
     if (n === 'web-search') { return '🌐'; }
     if (n === 'image-analyze') { return '🖼️'; }
     if (n === 'temp-info' || n === 'temp-exec') { return '🧪'; }
@@ -110,6 +111,50 @@ function chatResultSuffix(info) {
     return '';
 }
 
+// 展开态整块点击收起（2026-09-18）——原生 details 只有折叠头（summary）可点，展开后内容区长；
+// 工具卡 / 思考块展开时整块任意位置点击即收起（折叠头仍走原生 toggle）
+// 收起判据（四道关）：折叠头本身 · 交互元素（按钮/链接/输入）· 按下时已有选区 · 按下→抬起位移 <20px 且时长 <0.3s
+function chatHasSelection() {
+    if (typeof window.getSelection !== 'function') { return false; }
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed === true) { return false; }
+    return sel.toString().length > 0;
+}
+
+// 死区阈值——按下→抬起的位移/时长上限；超限视为拖选或长按，不触发收起
+var CHAT_COLLAPSE_MAX_MOVE = 20;
+var CHAT_COLLAPSE_MAX_MS = 300;
+
+function chatBindBodyCollapse(det) {
+    det.addEventListener('mousedown', function (e) {
+        det._press = {
+            x: e.clientX || 0,
+            y: e.clientY || 0,
+            t: Date.now(),
+            sel: chatHasSelection()
+        };
+    });
+    det.addEventListener('click', function (e) {
+        if (det.open !== true) { return; }
+        var t = e.target;
+        if (t && typeof t.closest === 'function') {
+            // 内层段（.seg）让位——段折叠头与段内容都不收起整块（2026-09-18 骨架层）
+            if (t.closest('.seg')) { return; }
+            if (t.closest('summary') || t.closest('button, a, input, textarea, select')) { return; }
+        }
+        var p = det._press;
+        if (p) {
+            det._press = null;
+            if (p.sel === true) { return; }
+            if (Math.abs((e.clientX || 0) - p.x) > CHAT_COLLAPSE_MAX_MOVE) { return; }
+            if (Math.abs((e.clientY || 0) - p.y) > CHAT_COLLAPSE_MAX_MOVE) { return; }
+            if ((Date.now() - p.t) > CHAT_COLLAPSE_MAX_MS) { return; }
+        }
+        det.open = false;
+        if (det._updateSummary) { det._updateSummary(); }
+    });
+}
+
 function chatToolCard(tool, open) {
     // 工具卡——details 结构（open=true 展开：两段式先行卡直接展示 ⏳；缺省折叠——点击 summary 展开/收起）
     // .tn/.ta/.tr 类保留——测试与样式复用；result === undefined → 「⏳ 处理中…」占位（完成时整卡替换）
@@ -130,14 +175,27 @@ function chatToolCard(tool, open) {
         prefix = chatToolIcon(tool.name) + ' ';
     }
     // 可见性适配——powershell 命令硬解码为自然语言意图（chat-cmd.js；宿主 summary 为原始命令截断，此处覆盖）
+    var isPs = (tool.name === 'powershell' || tool.name === 'powershell7');
     var summaryText = tool.summary || tool.name || '?';
     var cmdIntent = null;
-    if (tool.name === 'powershell' && typeof cmdDecodeTool === 'function') {
+    if (isPs && typeof cmdDecodeTool === 'function') {
         cmdIntent = cmdDecodeTool(tool.arguments);
         if (cmdIntent) { summaryText = cmdIntent.brief; }
     }
     var resultInfo = chatResultInfo(tool.result);
-    sum.textContent = prefix + summaryText + chatResultSuffix(resultInfo);
+    // 骨架分派（chat-tools.js）——命中 → 段结构（含工具变体标签）；未登记 → null 走回落路径
+    var body = (typeof chatToolBody === 'function') ? chatToolBody(tool) : null;
+    sum.textContent = '';
+    sum.appendChild(document.createTextNode(prefix));
+    if (body && body.tag) {
+        // 工具变体标签——双线工具的显式区分（如 PowerShell PS 5.1 / PS 7）
+        var tagEl = document.createElement('span');
+        tagEl.className = 'ps-tag ' + (body.tagCls || '');
+        tagEl.textContent = body.tag;
+        sum.appendChild(tagEl);
+        sum.appendChild(document.createTextNode(' '));
+    }
+    sum.appendChild(document.createTextNode(summaryText + chatResultSuffix(resultInfo)));
     det.appendChild(sum);
     if (cmdIntent) {
         // 展开区首块——逐段意图对照（原文仍在下方 arguments 块；未识别段标 ❓）
@@ -146,30 +204,39 @@ function chatToolCard(tool, open) {
         ci.textContent = cmdIntent.detail;
         det.appendChild(ci);
     }
-    if (tool.arguments) {
-        var a = document.createElement('div');
-        a.className = 'ta';
-        a.textContent = tool.arguments;
-        det.appendChild(a);
+    if (body && body.segs) {
+        // 骨架路径——输入 / 输出段（二级折叠；段内沿用 .ta / .tr / .ta.warn 锚点类）
+        for (var si = 0; si < body.segs.length; si++) {
+            det.appendChild(body.segs[si]);
+        }
+    } else {
+        // 回落路径——未登记工具保持现行渲染（零回归）
+        if (tool.arguments) {
+            var a = document.createElement('div');
+            a.className = 'ta';
+            a.textContent = tool.arguments;
+            det.appendChild(a);
+        }
+        if (resultInfo.truncated) {
+            // 截断警示——结果未完整回传（16KB 上限），消耗信号显式化
+            var w = document.createElement('div');
+            w.className = 'ta warn';
+            w.textContent = '⚠️ 输出已达上限被截断——后续内容未回传' + (resultInfo.timeout ? '；进程超时已终止' : '');
+            det.appendChild(w);
+        }
+        if (tool.result) {
+            var r = document.createElement('div');
+            r.className = 'tr' + (isErr ? ' err' : '');
+            r.textContent = tool.result;
+            det.appendChild(r);
+        } else if (tool.result === undefined) {
+            var w = document.createElement('div');
+            w.className = 'ta';
+            w.textContent = '⏳ 处理中…';
+            det.appendChild(w);
+        }
     }
-    if (resultInfo.truncated) {
-        // 截断警示——结果未完整回传（16KB 上限），消耗信号显式化
-        var w = document.createElement('div');
-        w.className = 'ta warn';
-        w.textContent = '⚠️ 输出已达上限被截断——后续内容未回传' + (resultInfo.timeout ? '；进程超时已终止' : '');
-        det.appendChild(w);
-    }
-    if (tool.result) {
-        var r = document.createElement('div');
-        r.className = 'tr' + (isErr ? ' err' : '');
-        r.textContent = tool.result;
-        det.appendChild(r);
-    } else if (tool.result === undefined) {
-        var w = document.createElement('div');
-        w.className = 'ta';
-        w.textContent = '⏳ 处理中…';
-        det.appendChild(w);
-    }
+    chatBindBodyCollapse(det);
     return det;
 }
 
@@ -208,6 +275,7 @@ function chatReasonBlock(text, open) {
     };
     det.addEventListener('toggle', det._updateSummary);
     det._updateSummary();
+    chatBindBodyCollapse(det);
     return det;
 }
 

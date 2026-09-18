@@ -23,12 +23,14 @@ beforeAll(async () => {
   const common = await readFile(new URL('../../js/ui-common.js', import.meta.url), 'utf-8');
   const md = await readFile(new URL('../../js/chat-md.js', import.meta.url), 'utf-8');
   const cmd = await readFile(new URL('../../js/chat-cmd.js', import.meta.url), 'utf-8');
+  const tools = await readFile(new URL('../../js/chat-tools.js', import.meta.url), 'utf-8');
   const view = await readFile(new URL('../../js/chat-view.js', import.meta.url), 'utf-8');
   const core = await readFile(new URL('../../js/chat-core.js', import.meta.url), 'utf-8');
   const note = await readFile(new URL('../../js/chat-note.js', import.meta.url), 'utf-8');
   vm.runInThisContext(common, { filename: 'ui-common.js' });
   vm.runInThisContext(md, { filename: 'chat-md.js' });
   vm.runInThisContext(cmd, { filename: 'chat-cmd.js' });
+  vm.runInThisContext(tools, { filename: 'chat-tools.js' });
   vm.runInThisContext(view, { filename: 'chat-view.js' });
   vm.runInThisContext(core, { filename: 'chat-core.js' });
   vm.runInThisContext(note, { filename: 'chat-note.js' });
@@ -231,6 +233,122 @@ test('历史重建——全部 reason 折叠（与实时一致）', () => {
   expect(dets[1].open).toBe(false);
 });
 
+// ── 展开态整块点击收起（2026-09-18）——原生 details 仅折叠头可点；展开后整块任意位置点击即收起 ──
+test('展开态整块点击收起——工具卡内容区点击即折叠（折叠态不误触）', () => {
+  window.chatOnView({
+    seq: 40, renderType: 'toolcard',
+    payload: { name: 'time', arguments: '{}', result: '2026-09-18 00:00:00' },
+    replaceSeq: -1
+  });
+  const card = chatMsgs.querySelector('.chat-tool');
+  card.open = true;
+  card.querySelector('.tr').dispatchEvent(new Event('click', { bubbles: true }));
+  expect(card.open).toBe(false);
+  // 折叠态再点内容区——保持在折叠（无异常、不反向展开）
+  card.querySelector('.tr').dispatchEvent(new Event('click', { bubbles: true }));
+  expect(card.open).toBe(false);
+});
+
+test('展开态整块点击收起——思考块内容区点击即折叠（summary 回折叠摘要）', () => {
+  window.chatOnView({
+    seq: 41, renderType: 'reason',
+    payload: { content: '第一行\n第二行\n第三行' },
+    replaceSeq: -1
+  });
+  const det = chatMsgs.querySelector('details.chat-reason');
+  det.open = true;
+  det._updateSummary();
+  det.querySelector('div').dispatchEvent(new Event('click', { bubbles: true }));
+  expect(det.open).toBe(false);
+  expect(det.querySelector('summary').textContent).toContain('Think');
+});
+
+test('展开态整块点击收起——拖选文本（按下时已有选区）不收起，选区清空后恢复收起', () => {
+  window.chatOnView({
+    seq: 42, renderType: 'toolcard',
+    payload: { name: 'time', arguments: '{}', result: 'x' },
+    replaceSeq: -1
+  });
+  const card = chatMsgs.querySelector('.chat-tool');
+  card.open = true;
+  const original = window.getSelection;
+  window.getSelection = function () {
+    return { isCollapsed: false, toString: function () { return '选中内容'; } };
+  };
+  try {
+    card.querySelector('.tr').dispatchEvent(new Event('mousedown', { bubbles: true }));
+    card.querySelector('.tr').dispatchEvent(new Event('click', { bubbles: true }));
+    expect(card.open).toBe(true);
+  } finally {
+    if (original === undefined) { delete window.getSelection; } else { window.getSelection = original; }
+  }
+  card.querySelector('.tr').dispatchEvent(new Event('click', { bubbles: true }));
+  expect(card.open).toBe(false);
+});
+
+test('展开态整块点击收起——按下/抬起位移超 20px（拖选）不收起，小位移点击正常收起', () => {
+  window.chatOnView({
+    seq: 43, renderType: 'toolcard',
+    payload: { name: 'time', arguments: '{}', result: 'x' },
+    replaceSeq: -1
+  });
+  const card = chatMsgs.querySelector('.chat-tool');
+  const tr = card.querySelector('.tr');
+  const M = document.defaultView.MouseEvent;
+  card.open = true;
+  // 拖选——位移 45px 超限 → 不收起
+  tr.dispatchEvent(new M('mousedown', { bubbles: true, clientX: 100, clientY: 50 }));
+  tr.dispatchEvent(new M('click', { bubbles: true, clientX: 145, clientY: 50 }));
+  expect(card.open).toBe(true);
+  // 普通点击——位移 3px 在限内 → 收起
+  tr.dispatchEvent(new M('mousedown', { bubbles: true, clientX: 100, clientY: 50 }));
+  tr.dispatchEvent(new M('click', { bubbles: true, clientX: 103, clientY: 52 }));
+  expect(card.open).toBe(false);
+});
+
+test('展开态整块点击收起——按下时长超 300ms（长按）不收起', () => {
+  window.chatOnView({
+    seq: 44, renderType: 'toolcard',
+    payload: { name: 'time', arguments: '{}', result: 'x' },
+    replaceSeq: -1
+  });
+  const card = chatMsgs.querySelector('.chat-tool');
+  const tr = card.querySelector('.tr');
+  const M = document.defaultView.MouseEvent;
+  card.open = true;
+  const realNow = Date.now;
+  let fakeNow = realNow();
+  Date.now = function () { return fakeNow; };
+  try {
+    tr.dispatchEvent(new M('mousedown', { bubbles: true, clientX: 100, clientY: 50 }));
+    fakeNow += 500;
+    tr.dispatchEvent(new M('click', { bubbles: true, clientX: 100, clientY: 50 }));
+    expect(card.open).toBe(true);
+  } finally {
+    Date.now = realNow;
+  }
+  // 时长恢复（快速点击）→ 收起
+  tr.dispatchEvent(new M('mousedown', { bubbles: true, clientX: 100, clientY: 50 }));
+  tr.dispatchEvent(new M('click', { bubbles: true, clientX: 100, clientY: 50 }));
+  expect(card.open).toBe(false);
+});
+
+test('展开态整块点击收起——内部按钮/折叠头点击不收起', () => {
+  const det = document.createElement('details');
+  det.open = true;
+  const sum = document.createElement('summary');
+  det.appendChild(sum);
+  const btn = document.createElement('button');
+  det.appendChild(btn);
+  document.body.appendChild(det);
+  window.chatBindBodyCollapse(det);
+  btn.dispatchEvent(new Event('click', { bubbles: true }));
+  expect(det.open).toBe(true);
+  sum.dispatchEvent(new Event('click', { bubbles: true }));
+  expect(det.open).toBe(true);
+  det.remove();
+});
+
 // ── toolcard 整块 ──
 test('view toolcard 渲染工具卡（含名称/参数/结果；默认折叠）', () => {
   window.chatOnView({
@@ -288,8 +406,8 @@ test('toolcard powershell——命令解读覆盖 summary + 展开区意图块',
     replaceSeq: -1
   });
   const card = chatMsgs.querySelector('.chat-tool');
-  // 折叠行——宿主原始命令截断被解读结果覆盖
-  expect(card.querySelector('.tn').textContent).toBe('💻 编译 C# 项目 「CatHome4.sln」 等 2 段');
+  // 折叠行——宿主原始命令截断被解读结果覆盖 + PS 版本标签（双线区分，2026-09-18）
+  expect(card.querySelector('.tn').textContent).toBe('💻 PS 5.1 编译 C# 项目 「CatHome4.sln」 等 2 段');
   // 展开区首块——逐段意图
   const intent = card.querySelector('.cmd-intent');
   expect(intent).not.toBeNull();

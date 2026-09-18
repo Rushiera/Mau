@@ -30,6 +30,11 @@
     --ch-tool-arg: var(--ch-fg-weak);
     --ch-tool-result: var(--ch-ok-weak);
     --ch-tool-error: var(--ch-err);
+    /* PowerShell 双线标识（2026-09-18）——5.1 / 7 一眼可辨（色 + 文字标签双通道；描边同上） */
+    --ch-tool-ps5-fg: var(--ch-info);
+    --ch-tool-ps5-bg: color-mix(in srgb, var(--ch-info) 14%, transparent);
+    --ch-tool-ps7-fg: var(--ch-identity);
+    --ch-tool-ps7-bg: color-mix(in srgb, var(--ch-identity) 14%, transparent);
     /* 系统气泡与浮层 */
     --ch-chat-sys-bg: var(--ch-bg-faint);
     --ch-chat-sys-fg: #7a7a7a;
@@ -163,6 +168,19 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 @keyframes chattoolblink { 50% { opacity: 0.55; } }
 /* 命令意图解读——powershell 工具卡展开区首块（chat-cmd.js；逐段自然语言 + 未识别 ❓ 标注） */
 .chat-tool .cmd-intent { color: var(--ch-cmd-intent-fg); word-break: break-all; white-space: pre-wrap; margin-top: 3px; padding: 3px 6px; background: var(--ch-cmd-intent-bg); border-left: 2px solid var(--ch-cmd-intent-line); border-radius: 2px; }
+/* 工具段（2026-09-18 骨架层——输入 / 输出二级折叠；规格 design-ch4-frontend-tools §五）
+   段 = details.seg：折叠头一行（可点，hover 轻反馈），展开内容限高滚动 */
+.chat-tool .seg { margin-top: 4px; }
+.chat-tool .seg > summary.seg-cap { cursor: pointer; color: var(--ch-fg-muted); border-radius: 3px; padding: 1px 4px; margin-left: -4px; transition: color 0.15s ease-in-out, background 0.15s ease-in-out; }
+.chat-tool .seg > summary.seg-cap:hover { color: var(--ch-tool-name); background: var(--ch-bg-hover); }
+.chat-tool .seg[open] > summary.seg-cap { color: var(--ch-tool-name); }
+.chat-tool .seg-body { margin-top: 3px; max-height: 340px; overflow: auto; }
+.chat-tool .seg-sec { margin-top: 4px; }
+.chat-tool .seg-sec-cap { color: var(--ch-fg-weak); font-size: 10px; }
+/* PowerShell 版本标签——5.1 / 7 一眼可辨（色 + 文字双通道；令牌见本文件 :root L2） */
+.chat-tool .ps-tag { display: inline-block; margin-right: 2px; padding: 0 4px; border-radius: 3px; font-size: 10px; }
+.chat-tool .ps-tag.ps5 { color: var(--ch-tool-ps5-fg); background: var(--ch-tool-ps5-bg); }
+.chat-tool .ps-tag.ps7 { color: var(--ch-tool-ps7-fg); background: var(--ch-tool-ps7-bg); }
 /* S2 §8.4——重试过程记录气泡（独立视图条目：弱化灰底小号；⟳ 重试中 / ✓ 已恢复） */
 .chat-bubble.retry { --bubble-line: var(--ch-state-wait); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-fg); font-size: 11px; padding: 4px 10px; max-width: 60%; }
 .chat-bubble.retry.resolved { color: var(--ch-chat-sys-ok); }
