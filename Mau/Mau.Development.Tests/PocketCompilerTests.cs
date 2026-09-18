@@ -8,7 +8,7 @@ namespace Mau.Development.Tests
     /// <summary>
     /// 口袋编译器测试——编译/导出/调用/卸载闭环
     /// </summary>
-    public class PocketCompilerTests
+    public sealed class PocketCompilerTests : IDisposable
     {
         /// <summary>
         /// 测试输出根
@@ -25,9 +25,9 @@ namespace Mau.Development.Tests
         }
 
         /// <summary>
-        /// 清理输出根
+        /// 释放夹具——尽力删除测试输出根
         /// </summary>
-        ~PocketCompilerTests()
+        public void Dispose()
         {
             try
             {

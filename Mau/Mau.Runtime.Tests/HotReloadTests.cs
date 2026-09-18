@@ -89,7 +89,11 @@ namespace Mau.Runtime.Tests
             AssertFixturesExist();
             using FlowHandle handle = FlowHandle.Load(ValidDllPath);
             IObservableFlow flow = handle.Flow;
-            Assert.True(flow is IObservableFlow);
+            // 产物来自夹具 dll 自身（独立 ALC，非基座回落）——运行时类型身份，非静态类型恒真
+            // 程序集名由 PocketCompiler 追加唯一化后缀（如 _bb4705…）——按前缀判定
+            Assert.StartsWith("FL_ValidFlow", flow.GetType().Assembly.GetName().Name, StringComparison.Ordinal);
+            // 接口面可用——以 IObservableFlow 调用 Tick 不抛
+            flow.Tick(0);
         }
         /// <summary>
         /// 无接口 dll 加载——抛 InvalidOperationException

@@ -13,7 +13,7 @@ namespace Mau.Development.Tests
     /// <summary>
     /// 行号映射反查测试——编译错误诊断携带语料/积木源码定位（D1 调试基建）
     /// </summary>
-    public class PocketMapTests
+    public sealed class PocketMapTests : IDisposable
     {
         /// <summary>
         /// 测试输出根
@@ -30,9 +30,9 @@ namespace Mau.Development.Tests
         }
 
         /// <summary>
-        /// 清理输出根
+        /// 释放夹具——尽力删除测试输出根
         /// </summary>
-        ~PocketMapTests()
+        public void Dispose()
         {
             try
             {

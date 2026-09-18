@@ -564,6 +564,92 @@ namespace Mau.Runtime.Tests
         }
 
         /// <summary>
+        /// 软删除回收——非空目录整棵子树迁移进回收站、结构保留、统计准确（2026-09-11 放开目录回收）
+        /// </summary>
+        [Fact]
+        public void Recycle_NonEmptyDirectory_MovesWholeTree()
+        {
+            string baseDir = Path.Combine(Path.GetTempPath(), "mau_recycle_test_" + Guid.NewGuid().ToString("N"));
+            string rw = Path.Combine(baseDir, "rw");
+            Directory.CreateDirectory(rw);
+            try
+            {
+                FileSystemService fs = new FileSystemService(
+                    new WorkspaceConfig.RootEntry[] { new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true } },
+                    Path.Combine(rw, "recycle"));
+                string target = Path.Combine(rw, "probe");
+                Directory.CreateDirectory(Path.Combine(target, "b"));
+                Directory.CreateDirectory(Path.Combine(target, "d"));
+                File.WriteAllText(Path.Combine(target, "b", "c.txt"), "hello");
+                File.WriteAllBytes(Path.Combine(target, "b", "c.bin"), new byte[1000]);
+                File.WriteAllText(Path.Combine(target, "d", "e.txt"), "xy");
+                RecycleOutcome outcome = fs.Recycle(target);
+                Assert.True(outcome.IsDirectory);
+                Assert.Equal(3, outcome.FileCount);
+                Assert.Equal(2, outcome.DirectoryCount);
+                Assert.Equal(1007, outcome.TotalBytes);
+                Assert.False(Directory.Exists(target));
+                Assert.True(File.Exists(Path.Combine(outcome.Target, "b", "c.txt")));
+                Assert.True(File.Exists(Path.Combine(outcome.Target, "d", "e.txt")));
+            }
+            finally
+            {
+                TryDelete(baseDir);
+            }
+        }
+
+        /// <summary>
+        /// 软删除回收——单文件：文件数 1、体积为文件长度、原路径消失
+        /// </summary>
+        [Fact]
+        public void Recycle_File_ReportsSingleItemStats()
+        {
+            string baseDir = Path.Combine(Path.GetTempPath(), "mau_recycle_test_" + Guid.NewGuid().ToString("N"));
+            string rw = Path.Combine(baseDir, "rw");
+            Directory.CreateDirectory(rw);
+            try
+            {
+                FileSystemService fs = new FileSystemService(
+                    new WorkspaceConfig.RootEntry[] { new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true } },
+                    Path.Combine(rw, "recycle"));
+                string target = Path.Combine(rw, "single.txt");
+                File.WriteAllText(target, "abcdef");
+                RecycleOutcome outcome = fs.Recycle(target);
+                Assert.False(outcome.IsDirectory);
+                Assert.Equal(1, outcome.FileCount);
+                Assert.Equal(6, outcome.TotalBytes);
+                Assert.False(File.Exists(target));
+                Assert.True(File.Exists(outcome.Target));
+            }
+            finally
+            {
+                TryDelete(baseDir);
+            }
+        }
+
+        /// <summary>
+        /// 软删除回收——受控根本身拒绝回收（软删可恢复，但根被移走等于运行面整体失踪）
+        /// </summary>
+        [Fact]
+        public void Recycle_ControlledRoot_Throws()
+        {
+            string baseDir = Path.Combine(Path.GetTempPath(), "mau_recycle_test_" + Guid.NewGuid().ToString("N"));
+            string rw = Path.Combine(baseDir, "rw");
+            Directory.CreateDirectory(rw);
+            try
+            {
+                FileSystemService fs = new FileSystemService(
+                    new WorkspaceConfig.RootEntry[] { new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true } },
+                    Path.Combine(rw, "recycle"));
+                Assert.Throws<InvalidOperationException>(() => fs.Recycle(rw));
+            }
+            finally
+            {
+                TryDelete(baseDir);
+            }
+        }
+
+        /// <summary>
         /// 尽力删除临时目录——不掩盖断言结果
         /// </summary>
         /// <param name="dir">临时目录</param>
