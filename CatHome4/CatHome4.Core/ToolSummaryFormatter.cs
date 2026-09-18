@@ -179,7 +179,7 @@ namespace CH4
             if (name == "Note") { return Fmt_Note(p, result); }
             if (name == "time") { return "获取时间 → " + Q(Trunc(FirstLine(result), 40)); }
             if (name == "random") { return Fmt_Random(p, result); }
-            if (name == "info") { return "环境信息 → " + Q(Trunc(FirstLine(result), 60)); }
+            if (name == "info") { return Fmt_Info(result); }
 
             // [段9] 未知工具——尽力展示参数
             return Fmt_Unknown(name, p, result);
@@ -1158,6 +1158,69 @@ namespace CH4
         private static string Q(string s)
         {
             return "\"" + s.Replace("\"", "'") + "\"";
+        }
+        /// <summary>info——本会话环境自省（分类 JSON 块：版本 / 猫 / 本地对话端点；解析失败退回原文首行，失败可见）。</summary>
+        /// <param name="result">工具结果原文（分类 JSON 块）</param>
+        /// <returns>摘要行</returns>
+        private static string Fmt_Info(string result)
+        {
+            if (string.IsNullOrEmpty(result) || result[0] != '{')
+            {
+                return "环境信息 → " + Q(Trunc(FirstLine(result), 60));
+            }
+            string version = "";
+            string cat = "";
+            string chat = "";
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(result))
+                {
+                    JsonElement root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                    {
+                        return "环境信息 → " + Q(Trunc(FirstLine(result), 60));
+                    }
+                    JsonElement el;
+                    if (root.TryGetProperty("cat", out el) && el.ValueKind == JsonValueKind.String)
+                    {
+                        cat = el.GetString() ?? "";
+                    }
+                    if (root.TryGetProperty("version", out el) && el.ValueKind == JsonValueKind.Object)
+                    {
+                        JsonElement vv;
+                        if (el.TryGetProperty("version", out vv) && vv.ValueKind == JsonValueKind.String)
+                        {
+                            version = vv.GetString() ?? "";
+                        }
+                    }
+                    if (root.TryGetProperty("endpoint", out el) && el.ValueKind == JsonValueKind.Object)
+                    {
+                        JsonElement cc;
+                        if (el.TryGetProperty("chat", out cc) && cc.ValueKind == JsonValueKind.String)
+                        {
+                            chat = cc.GetString() ?? "";
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return "环境信息 → " + Q(Trunc(FirstLine(result), 60));
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.Append("环境信息 → v");
+            sb.Append(version);
+            if (cat.Length > 0)
+            {
+                sb.Append(" · 猫 ");
+                sb.Append(cat);
+            }
+            if (chat.Length > 0)
+            {
+                sb.Append(" · ");
+                sb.Append(chat);
+            }
+            return sb.ToString();
         }
     }
 }

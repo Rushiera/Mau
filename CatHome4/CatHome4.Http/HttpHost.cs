@@ -249,11 +249,13 @@ namespace CatHome4.Http
                     // P9.3 多猫列表——catsBuilder 非空才注册（主端口管理页签数据源；每猫实例不注册）
                     return Results.Text(_catsBuilder(), "application/json");
                 });
-                // S2 管理端点族——经 IHttpRouteSink 由 Admin 域注册（Http 域零依赖 Admin 域；主端口仅注册一次）
-                if (_routeRegistrar != null)
-                {
-                    _routeRegistrar(this);
-                }
+            }
+            // S2 管理端点族——经 IHttpRouteSink 由 Admin 域注册（Http 域零依赖 Admin 域）
+            // 2026-09-18：移出 _catsBuilder 块——catsBuilder 只决定 /api/v1/cats 注册面，
+            // 每猫 host（CatsBuilder=null）同样要走自己的 registrar（采集面下发）
+            if (_routeRegistrar != null)
+            {
+                _routeRegistrar(this);
             }
             _app.MapGet("/", (HttpContext ctx) =>
             {

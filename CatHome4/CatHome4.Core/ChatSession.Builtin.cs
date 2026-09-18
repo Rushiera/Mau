@@ -10,7 +10,7 @@ namespace CH4
     /// <summary>
     /// 宿主会话实体——内置工具分部（R0.2/R1：会话内直执——无需 OA 的内置工具统一入口）。
     /// 分界铁律：内置（无需 OA——会话内/宿主直执）vs OA 工具（按工具组独立 Flow 认领）——双轨并存不走同一执行面。
-    /// 内置工具：Note（M4a）+ time/random（R1.1）+ info（R1.2——读 ToolRegistry，agent 的眼睛）。
+    /// 内置工具：Note（M4a）+ time/random（R1.1）+ info（R1.2——本会话环境自省，agent 的眼睛）。
     /// </summary>
     internal sealed partial class ChatSession
     {
@@ -358,9 +358,7 @@ namespace CH4
             return ToolMetaHead.With("pack", true, packFields, sb.ToString());
         }
 
-        /// <summary>
-        /// info 执行体——环境信息（运行版本 + LLM 端点类型 + 当前时间 + 猫可见根；M4e：info 是猫自省目录范围的通道）。
-        /// </summary>
+        /// <summary>info 执行体——本会话环境自省，返回分类 JSON 块（version / time / llm / endpoint / roots / tokens / packs / qqbot；M4e：info 是猫自省目录范围的通道）。</summary>
         /// <returns>环境信息文本</returns>
         private string ExecuteInfo()
         {
@@ -371,18 +369,15 @@ namespace CH4
                 ToolCatContext.SetCat(_catKey);
                 try
                 {
-                    string infoText = _envInfoProvider();
-                    // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
-                    Dictionary<string, object> infoFields = new Dictionary<string, object>();
-                    infoFields["cat"] = _catKey;
-                    return ToolMetaHead.With("info", true, infoFields, infoText);
+                    // 返回体 = 分类 JSON 块（design-ch4-tools 附录 §info——provider 直接产出整块 JSON，不再包「头 + 正文」）
+                    return _envInfoProvider();
                 }
                 finally
                 {
                     ToolCatContext.SetCat(prev);
                 }
             }
-            return "CH4 | 环境信息不可用（未注入 provider）";
+            return "ERR|INFO_NO_PROVIDER|环境信息不可用（未注入 provider）";
         }
 
         /// <summary>

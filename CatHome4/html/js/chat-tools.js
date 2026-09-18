@@ -163,7 +163,7 @@ var CHAT_TOOL_SKELETONS = {
     'Note': 'text',
     'time': 'text',
     'random': 'text',
-    'info': 'text',
+    'info': 'info',
     'pack': 'text'
 };
 
@@ -620,6 +620,110 @@ function chatSkelJson(tool) {
     return { tag: '', tagCls: '', segs: segs };
 }
 
+// ── info：本会话环境自省（返回体 = 分类 JSON 块；按大类渲染为键值表）──
+// 口径（莎定 2026-09-18）：info 以 LLM 可读为第一目的（后端分类 JSON 块 / 缩进 / 中文直显）；
+// 前端在此把各大类摊平成键值行——值内多字段用「 · 」连接，长值由 CSS 折行（不截断）
+function chatSkelInfo(tool) {
+    var segs = [chatSegInput(tool, '')];
+    var d = chatTryJson(tool.result);
+    if (!d) {
+        // 非分类 JSON（provider 未注入 / 异常）——原文兜底，失败可见（不静默空白）
+        segs.push(chatSegOutput(tool, '输出', function (body, text, isErr) {
+            chatSegBlock(body, isErr ? 'tr err' : 'tr', text);
+        }, tool.result));
+        return { tag: '', tagCls: '', segs: segs };
+    }
+    var pairs = chatInfoPairs(d);
+    segs.push(chatSegOutput(tool, '输出 · ' + pairs.length + ' 项', function (body, text, isErr) {
+        chatSegKv(body, pairs);
+    }, chatInfoPeek(pairs)));
+    return { tag: '', tagCls: '', segs: segs };
+}
+
+// 分类块 → 键值行（固定顺序：猫 / 版本 / 当前时间 / LLM / 本地端点 / 可见根 / 前文 / 加载包 / QQBot）
+// 缺类不显示该行（后端「无则省略键」约定——前端不补空行、不写 NaN）
+function chatInfoPairs(d) {
+    var pairs = [];
+    var cat = chatField(d, 'cat');
+    if (cat.length > 0) { pairs.push({ k: '猫', v: cat }); }
+    var v = d.version;
+    if (v && typeof v === 'object') {
+        var ver = chatField(v, 'version');
+        var build = chatField(v, 'build');
+        pairs.push({ k: '版本', v: ver + (build.length > 0 ? ' · 编译 ' + build : '') });
+    }
+    var t = d.time;
+    if (t && typeof t === 'object') {
+        pairs.push({ k: '当前时间', v: chatField(t, 'now') });
+    }
+    var l = d.llm;
+    if (l && typeof l === 'object') {
+        var lp = [];
+        var proto = chatField(l, 'protocol');
+        var host = chatField(l, 'host');
+        var model = chatField(l, 'model');
+        var src = chatField(l, 'source');
+        if (proto.length > 0) { lp.push(proto); }
+        if (host.length > 0) { lp.push(host); }
+        if (model.length > 0) { lp.push('model=' + model); }
+        if (src.length > 0) { lp.push(src); }
+        pairs.push({ k: 'LLM', v: lp.join(' · ') });
+    }
+    var ep = d.endpoint;
+    if (ep && typeof ep === 'object') {
+        var eps = [];
+        var chat = chatField(ep, 'chat');
+        var panel = chatField(ep, 'panel');
+        if (chat.length > 0) { eps.push('对话 ' + chat); }
+        if (panel.length > 0) { eps.push('管理面板 ' + panel); }
+        pairs.push({ k: '本地端点', v: (eps.length > 0 ? eps.join(' · ') : '（未监听）') });
+    }
+    if (d.roots && d.roots.length > 0) {
+        var roots = [];
+        for (var i = 0; i < d.roots.length; i = i + 1) {
+            var r = d.roots[i];
+            var one = chatField(r, 'id') + '(' + (r.writable === true ? 'rw' : 'ro') + ')';
+            var note = chatField(r, 'note');
+            if (note.length > 0) { one = one + '[' + note + ']'; }
+            roots.push(one);
+        }
+        pairs.push({ k: '可见根', v: roots.join(' · ') });
+    }
+    if (d.tokens && typeof d.tokens === 'object') {
+        var ctx = chatFieldNum(d.tokens, 'context');
+        if (ctx.length > 0) { pairs.push({ k: '前文', v: ctx + ' tokens' }); }
+    }
+    if (d.packs && d.packs.length > 0) {
+        var packs = [];
+        for (var k = 0; k < d.packs.length; k = k + 1) {
+            var pk = chatField(d.packs[k], 'key');
+            var desc = chatField(d.packs[k], 'desc');
+            packs.push(desc.length > 0 ? pk + '(' + desc + ')' : pk);
+        }
+        pairs.push({ k: '加载包', v: packs.join(' · ') });
+    }
+    if (d.qqbot && typeof d.qqbot === 'object') {
+        var usage = chatField(d.qqbot, 'usage');
+        if (usage.length > 0) { pairs.push({ k: 'QQBot', v: usage }); }
+    }
+    return pairs;
+}
+
+// 取数值字段——非数值返回空串（键值行不写 NaN / 空值行）
+function chatFieldNum(obj, key) {
+    if (!obj || typeof obj[key] !== 'number') { return ''; }
+    return String(obj[key]);
+}
+
+// 折叠摘要文本——键值行拼接（段折叠摘要在行数 >5 时展示「前 2 + … + 后 2」）
+function chatInfoPeek(pairs) {
+    var lines = [];
+    for (var i = 0; i < pairs.length; i = i + 1) {
+        lines.push(pairs[i].k + ': ' + pairs[i].v);
+    }
+    return lines.join('\n');
+}
+
 // 骨架实现表——骨架 id → 通用渲染
 var CHAT_SKEL_RENDERERS = {
     'exec': chatSkelExec,
@@ -629,6 +733,7 @@ var CHAT_SKEL_RENDERERS = {
     'lines': chatSkelLines,
     'file': function (tool) { return chatSkelPlain(tool, true); },
     'json': chatSkelJson,
+    'info': chatSkelInfo,
     'text': function (tool) { return chatSkelPlain(tool, false); }
 };
 
@@ -651,6 +756,7 @@ var CHAT_SKEL_ICONS = {
     'lines': '🔢',
     'file': '📖',
     'json': '🧩',
+    'info': '🧭',
     'text': '📝'
 };
 
@@ -1112,11 +1218,17 @@ var CHAT_TOOL_OVERRIDES = {
         }
     },
     'info': {
-        inputLines: function () { return ['查看运行环境与工具面']; },
+        inputLines: function () { return ['查看本会话运行环境']; },
         headline: function (a, r) {
-            var h = chatMetaHead(r);
-            if (!h) { return '环境信息 ' + chatOvStat(r); }
-            return '环境信息 · ' + (h.meta.cat || '');
+            // 返回体 = 分类 JSON 块（无「头 + 正文」两段）——整块解析，不用 chatMetaHead
+            var d = chatTryJson(r);
+            if (!d) { return '环境信息 ' + chatOvStat(r); }
+            var ver = '';
+            if (d.version && typeof d.version === 'object') { ver = chatField(d.version, 'version'); }
+            var cat = chatField(d, 'cat');
+            var t = '环境信息 · v' + ver;
+            if (cat.length > 0) { t = t + ' · 猫 ' + cat; }
+            return t;
         }
     },
     'host-reload': {

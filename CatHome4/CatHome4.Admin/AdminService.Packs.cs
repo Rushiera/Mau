@@ -195,22 +195,21 @@ namespace CatHome4.Admin
                 paths = target.Paths
             });
         }
-
         /// <summary>
-        /// 挂载包展示串——info 环境信息消费（`key(描述)` 逗号连接）。
-        /// 判据：未挂载=空串（info 不显示该行）；池内已删的挂载 key 原样列出（挂载与池不一致可见，不静默吞）。
+        /// 挂载包结构化清单——info 环境信息消费（分类 JSON 块；BuildMountedPacksInfo 的单一数据源）。
+        /// 判据：未挂载=空列表；池内已删的挂载 key 原样列出（desc 空——挂载与池不一致可见，不静默吞）。
         /// </summary>
         /// <param name="catKey">猫 key</param>
-        /// <returns>展示串（空=无挂载）</returns>
-        internal static string BuildMountedPacksInfo(string catKey)
+        /// <returns>逐项 {key, desc}</returns>
+        internal static List<Dictionary<string, object>> BuildMountedPackItems(string catKey)
         {
+            List<Dictionary<string, object>> items = new List<Dictionary<string, object>>();
             string[] mounted = GetMountedPacks(catKey);
             if (mounted.Length == 0)
             {
-                return "";
+                return items;
             }
             List<PackDefinition> pool = LoadPackPool();
-            StringBuilder sb = new StringBuilder();
             for (int i = 0; i < mounted.Length; i = i + 1)
             {
                 string desc = "";
@@ -222,19 +221,12 @@ namespace CatHome4.Admin
                         break;
                     }
                 }
-                if (sb.Length > 0)
-                {
-                    sb.Append(", ");
-                }
-                sb.Append(mounted[i]);
-                if (desc.Length > 0)
-                {
-                    sb.Append("(");
-                    sb.Append(desc);
-                    sb.Append(")");
-                }
+                Dictionary<string, object> item = new Dictionary<string, object>();
+                item["key"] = mounted[i];
+                item["desc"] = desc;
+                items.Add(item);
             }
-            return sb.ToString();
+            return items;
         }
 
         /// <summary>

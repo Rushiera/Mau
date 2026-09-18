@@ -1021,6 +1021,33 @@ namespace CatHome4.Admin
             }
             return botName + "：发本地文件=单独一行写 [QQBot发送文件:\"<真实绝对路径>\"]（≤10MB · 仅私聊）";
         }
+        /// <summary>
+        /// 本地对话端点端口解析——info 环境信息消费（本猫实际监听端口）。
+        /// majordomo = 独立对话端口；多猫 = 注册表运行态端口；未监听 / 未知 key = 0。
+        /// </summary>
+        /// <param name="catKey">猫 key（majordomo=默认猫）</param>
+        /// <returns>监听端口；0=未监听</returns>
+        internal static int ResolveCatPort(string catKey)
+        {
+            if (catKey == null || catKey.Length == 0)
+            {
+                return 0;
+            }
+            if (catKey == "majordomo")
+            {
+                if (_majorPort < 0)
+                {
+                    return 0;
+                }
+                return _majorPort;
+            }
+            CatEntry cat = FindCat(catKey);
+            if (cat == null || !cat.Running)
+            {
+                return 0;
+            }
+            return cat.Port;
+        }
 
         /// <summary>
         /// Bot 显示名解析——Bot 池按身份查显示名（池内缺失 → 空串，调用方回退身份串）。
@@ -1223,7 +1250,7 @@ namespace CatHome4.Admin
                 PatchBuilder = null,
                 SessionStateBuilder = () => cat.Session.BuildRunStateJson(),
                 ServeChatPage = true,
-                RouteRegistrar = null,
+                RouteRegistrar = RegisterCmdUnknownRoutes,
                 HtmlRootProvider = HtmlRoot,
                 DisplayName = cat.DisplayName
             });
@@ -1260,7 +1287,7 @@ namespace CatHome4.Admin
                 PatchBuilder = null,
                 SessionStateBuilder = () => _chatBridge.DefaultSession.BuildRunStateJson(),
                 ServeChatPage = true,
-                RouteRegistrar = null,
+                RouteRegistrar = RegisterCmdUnknownRoutes,
                 HtmlRootProvider = HtmlRoot,
                 DisplayName = _chatBridge.DefaultSession.DisplayName
             });

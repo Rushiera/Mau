@@ -969,7 +969,8 @@ namespace CatHome4.QQ
                     sb.Append("\n\n【猫: " + tg.DisplayName + "】\n会话状态: " + state);
                     if (tg.GetInfo != null)
                     {
-                        sb.Append("\n" + tg.GetInfo());
+                        // info 返回体 = 分类 JSON 块（LLM 可读优先）——QQ 侧经解码器投影为 Markdown（可见根表格）
+                        sb.Append("\n" + QqInfoFormatter.ToMarkdown(tg.GetInfo()));
                     }
                 }
             }

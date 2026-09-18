@@ -170,6 +170,8 @@ function chatToolCard(tool, open) {
     if (isPs && typeof cmdDecodeTool === 'function') {
         cmdIntent = cmdDecodeTool(tool.arguments);
         if (cmdIntent) { summaryText = cmdIntent.brief; hasHeadline = false; }
+        // 覆盖率采集——未识别命令段上报（异步 fire-and-forget；渲染零阻塞）
+        if (cmdIntent && typeof cmdReportUnknown === 'function') { cmdReportUnknown(cmdIntent.unknown); }
     }
     var resultInfo = chatResultInfo(tool.result);
     // 骨架分派（chat-tools.js）——命中 → 段结构（含工具变体标签）；未登记 → null 走回落路径

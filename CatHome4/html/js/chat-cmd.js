@@ -11,7 +11,7 @@
 /**
  * 工具参数原文 → 命令解读。
  * @param {string} argsText 工具 arguments（JSON 字符串；实时 payload 可能被宿主截断）
- * @returns {object|null} {brief, detail, truncated}；无法解析返回 null（调用方回退宿主 summary）
+ * @returns {object|null} {brief, detail, truncated, unknown}；无法解析返回 null（调用方回退宿主 summary）
  */
 function cmdDecodeTool(argsText) {
     var got = cmdExtractCommand(argsText);
@@ -32,7 +32,8 @@ function cmdDecodeTool(argsText) {
     return {
         brief: cmdBrief(intents, got.truncated),
         detail: cmdDetail(intents, got.truncated),
-        truncated: got.truncated
+        truncated: got.truncated,
+        unknown: cmdUnknownItems(intents)
     };
 }
 
@@ -262,6 +263,107 @@ function cmdDetail(intents, truncated) {
         lines.push('（参数被宿主截断，仅前 200 字可见；完整命令见落盘历史）');
     }
     return lines.join('\n');
+}
+
+// ═══════════════════════════════════════════
+// 覆盖率采集——未识别段登记与上报（后端 Data/cmd-unknown.json 持久化）
+// 定位：CMD_RULES 未命中的命令段按 token 归并上报，后端聚合计数；定期查看后补规则，补完 clear 核销
+// 纪律：渲染路径零阻塞（异步 fire-and-forget）；本页去重（同 token 只报一次）；上报失败不打扰渲染
+// ═══════════════════════════════════════════
+
+/** 上报端点——后端 AdminService.CmdUnknown 分区 */
+var CMD_UNKNOWN_ENDPOINT = '/api/v1/cmd-unknown';
+
+/** 样本截断长度——与后端 CmdUnknownSampleMax 同口径 */
+var CMD_UNKNOWN_SAMPLE_MAX = 200;
+
+/** 本页已上报 token——同 token 只报一次（刷新页面后重新计数，后端按次数聚合） */
+var CMD_UNKNOWN_REPORTED = {};
+
+/**
+ * 段原文 → 首词原文（路径型取末段文件名；保留原始大小写——表里 raw 字段用）。
+ * @param {string} text 段原文
+ * @returns {string} 首词（空串=无法提取）
+ */
+function cmdUnknownRaw(text) {
+    var t = (text || '').replace(/^\s+/, '');
+    var m = /^("[^"]*"|'[^']*'|[^\s]+)/.exec(t);
+    if (!m) { return ''; }
+    var first = m[1].replace(/^["']|["']$/g, '');
+    var i = Math.max(first.lastIndexOf('/'), first.lastIndexOf('\\'));
+    if (i >= 0 && i + 1 < first.length) { first = first.substring(i + 1); }
+    return first;
+}
+
+/**
+ * 段原文 → 聚合 token（cmdUnknownRaw 的小写归一——后端按它聚合）。
+ * @param {string} text 段原文
+ * @returns {string} token（空串=无法提取）
+ */
+function cmdUnknownToken(text) {
+    return cmdUnknownRaw(text).toLowerCase();
+}
+
+/**
+ * 段意图数组 → 待上报项（仅未识别段；段内 token 去重）。
+ * @param {array} intents 段意图数组
+ * @returns {array} [{token, sample}]
+ */
+function cmdUnknownItems(intents) {
+    var items = [];
+    if (!intents) { return items; }
+    var seen = {};
+    for (var i = 0; i < intents.length; i = i + 1) {
+        if (intents[i].known) { continue; }
+        var token = cmdUnknownToken(intents[i].text);
+        if (token.length === 0 || seen[token] === true) { continue; }
+        seen[token] = true;
+        var sample = intents[i].text || '';
+        if (sample.length > CMD_UNKNOWN_SAMPLE_MAX) { sample = sample.substring(0, CMD_UNKNOWN_SAMPLE_MAX); }
+        items.push({ token: token, raw: cmdUnknownRaw(intents[i].text), sample: sample });
+    }
+    return items;
+}
+
+/**
+ * 上报未识别命令（异步 fire-and-forget）——本页去重后提交；上报失败释放标记（下次渲染可重试），渲染零阻塞。
+ * @param {array} items 待上报项（cmdUnknownItems 产出）
+ */
+function cmdReportUnknown(items) {
+    if (!items || items.length === 0 || typeof fetch !== 'function') { return; }
+    var fresh = [];
+    for (var i = 0; i < items.length; i = i + 1) {
+        var token = items[i].token;
+        if (CMD_UNKNOWN_REPORTED[token] === true) { continue; }
+        CMD_UNKNOWN_REPORTED[token] = true;
+        fresh.push(items[i]);
+    }
+    if (fresh.length === 0) { return; }
+    try {
+        fetch(CMD_UNKNOWN_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: fresh })
+        }).then(function (resp) {
+            // 失败（非 2xx）→ 释放标记：下次渲染仍可上报（不静默丢弃采集机会）
+            if (!resp || resp.ok !== true) { cmdUnknownRelease(fresh); }
+        }).catch(function () {
+            cmdUnknownRelease(fresh);
+        });
+    } catch (e) {
+        // 同步异常（fetch 不可用等）——释放标记 + 零阻塞（渲染不受影响）
+        cmdUnknownRelease(fresh);
+    }
+}
+
+/**
+ * 释放上报标记——上报失败时调用（本次页面会话内下次渲染仍可上报）。
+ * @param {array} items 已标记的待上报项
+ */
+function cmdUnknownRelease(items) {
+    for (var i = 0; i < items.length; i = i + 1) {
+        delete CMD_UNKNOWN_REPORTED[items[i].token];
+    }
 }
 
 // ═══════════════════════════════════════════

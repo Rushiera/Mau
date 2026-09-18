@@ -97,3 +97,55 @@ test('无 command 字段返回 null', () => {
   expect(cmdDecodeTool(null)).toBe(null);
   expect(cmdDecodeTool('{"command":"   "}')).toBe(null);
 });
+
+// ── 覆盖率采集——未识别段上报（cmd-unknown 持久化）──
+test('未识别段产出待上报项（token 小写归一 + raw 原文 + 样本）', () => {
+  const r = cmdDecodeTool(args('Get-CimInstance Win32_Process'));
+  expect(r.unknown.length).toBe(1);
+  expect(r.unknown[0].token).toBe('get-ciminstance');
+  expect(r.unknown[0].raw).toBe('Get-CimInstance');
+  expect(r.unknown[0].sample).toBe('Get-CimInstance Win32_Process');
+});
+
+test('已识别段不产出待上报项；混合命令只收未识别段', () => {
+  expect(cmdDecodeTool(args('git status')).unknown.length).toBe(0);
+  const r = cmdDecodeTool(args('git status; Get-CimInstance Win32_Process'));
+  expect(r.unknown.length).toBe(1);
+  expect(r.unknown[0].token).toBe('get-ciminstance');
+});
+
+test('token 归一——路径型取末段文件名；空段返回空串', () => {
+  expect(cmdUnknownToken('"C:\\tools\\Custom.exe" --flag')).toBe('custom.exe');
+  expect(cmdUnknownToken('Whatever-Func -Foo')).toBe('whatever-func');
+  expect(cmdUnknownToken('')).toBe('');
+});
+
+test('上报去重——同 token 本页只报一次（fetch 载荷核销）', () => {
+  const calls = [];
+  globalThis.fetch = function (url, opt) {
+    calls.push({ url: url, body: JSON.parse(opt.body) });
+    return Promise.resolve({ ok: true });
+  };
+  globalThis.CMD_UNKNOWN_REPORTED = {};
+  cmdReportUnknown([{ token: 'get-ciminstance', sample: 'a' }]);
+  cmdReportUnknown([{ token: 'get-ciminstance', sample: 'b' }, { token: 'x-y', sample: 'c' }]);
+  expect(calls.length).toBe(2);
+  expect(calls[0].url).toBe('/api/v1/cmd-unknown');
+  expect(calls[0].body.items.length).toBe(1);
+  expect(calls[1].body.items.length).toBe(1);
+  expect(calls[1].body.items[0].token).toBe('x-y');
+});
+
+test('上报失败释放标记——下次渲染可重试（不静默丢弃采集机会）', () => {
+  const calls = [];
+  globalThis.fetch = function (url, opt) {
+    calls.push(JSON.parse(opt.body));
+    return Promise.resolve({ ok: false });
+  };
+  globalThis.CMD_UNKNOWN_REPORTED = {};
+  cmdReportUnknown([{ token: 'retry-me', raw: 'Retry-Me', sample: 'Retry-Me' }]);
+  return Promise.resolve().then(() => Promise.resolve()).then(() => {
+    expect(calls.length).toBe(1);
+    expect(globalThis.CMD_UNKNOWN_REPORTED['retry-me']).toBe(undefined);
+  });
+});

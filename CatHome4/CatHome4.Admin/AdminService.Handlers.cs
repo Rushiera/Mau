@@ -64,6 +64,10 @@ namespace CatHome4.Admin
             sink.MapPost("/api/v1/packs/delete", (Delegate)HandlePacksDelete);
             // 打开数据目录——前端按钮（explorer.exe 打开持久化 Data 目录——三级锚定解析）
             sink.MapPost("/api/v1/open-data-dir", (Delegate)HandleOpenDataDir);
+            // 待识别命令表——PS 解读器覆盖率采集面（chat-cmd.js 上报 / 定期查看 / clear 核销）
+            sink.MapGet("/api/v1/cmd-unknown", (Delegate)HandleCmdUnknownGet);
+            sink.MapPost("/api/v1/cmd-unknown", (Delegate)HandleCmdUnknownPost);
+            sink.MapPost("/api/v1/cmd-unknown/clear", (Delegate)HandleCmdUnknownClear);
         }
 
         /// <summary>

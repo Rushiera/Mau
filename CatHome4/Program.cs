@@ -56,6 +56,12 @@ namespace CH4
         private static OA _oa;
         /// <summary>HTTP 外观层——Kestrel + Minimal API（P6：快照/SSE/指令/静态页）</summary>
         private static HttpHost _httpHost;
+        /// <summary>info 返回体序列化选项——缩进 + 中文直显（LLM 可读优先；JsonUtil 已文档化的例外条款：需自定义 options 的调用保持 JsonSerializer 原样）</summary>
+        private static readonly JsonSerializerOptions InfoJsonOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
 
         /// <summary>会话协调桥——S1 程序集拆分：会话注册表/默认猫配置/轮转泵/会话指令（Core 实例类）</summary>
         private static ChatBridge _chatBridge;
@@ -533,109 +539,114 @@ namespace CH4
             {
                 version = "?";
             }
-            string buildTime = VersionInfo.GetEntryBuildTime();
-            string buildInfo = "";
-            if (buildTime.Length > 0)
-            {
-                buildInfo = " | 编译: " + buildTime;
-            }
-            // M4e 猫级白名单——info 可见范围 = 当前猫（ToolCatContext 工具执行上下文）；A50：LLM 端同样按本猫解析
+            // info 返回体 = 分类 JSON 块（design-ch4-tools 附录 §info——LLM 可读优先：分类 + 缩进 + 中文直显）
+            // 分类：version(版本+编译时刻) / time(当前时间) / llm / endpoint(本地端点) / roots / tokens / packs / qqbot
             string catKey = ToolCatContext.CurrentCatKey;
-            string llmInfo = "未配置";
+            if (catKey == null)
+            {
+                catKey = "";
+            }
+            Dictionary<string, object> info = new Dictionary<string, object>();
+            info["ok"] = true;
+            info["tool"] = "info";
+            info["cat"] = catKey;
+            // [段1] version——版本与编译时刻（与 time 大类严格分开）
+            Dictionary<string, object> versionBlock = new Dictionary<string, object>();
+            versionBlock["version"] = version;
+            versionBlock["build"] = VersionInfo.GetEntryBuildTime();
+            info["version"] = versionBlock;
+            // [段2] time——当前时间
+            Dictionary<string, object> timeBlock = new Dictionary<string, object>();
+            timeBlock["now"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            info["time"] = timeBlock;
+            // [段3] llm——本猫实际生效端点（A50 端点解析同源化；零值/缺失 = 跟随全局默认）
+            Dictionary<string, object> llmBlock = new Dictionary<string, object>();
+            llmBlock["protocol"] = "未配置";
+            llmBlock["host"] = "";
+            llmBlock["model"] = "";
+            llmBlock["source"] = "";
             try
             {
-                // A50 端点解析同源化——本猫 cat.cfg apiConfigId（零值/缺失=跟随全局默认端点）
                 bool followDefault = true;
                 CH_LlmApiConfig cfg = AdminService.ResolveEffectiveApiConfig(catKey, out followDefault);
                 if (cfg != null)
                 {
-                    string endpoint = cfg.Endpoint;
-                    if (endpoint.Length > 0)
+                    // 端点摘要——主机（去协议与路径；端点非私密——key 在 secrets 面）
+                    string host = cfg.Endpoint;
+                    if (host.Length > 0)
                     {
-                        // 端点摘要——协议 + 主机（去路径尾斜杠；端点非私密——key 在 secrets 面）
-                        endpoint = endpoint.Replace("https://", "").Replace("http://", "");
-                        int slash = endpoint.IndexOf('/');
+                        host = host.Replace("https://", "").Replace("http://", "");
+                        int slash = host.IndexOf('/');
                         if (slash > 0)
                         {
-                            endpoint = endpoint.Substring(0, slash);
+                            host = host.Substring(0, slash);
                         }
                     }
-                    string apiSource = "猫绑定";
-                    if (followDefault)
-                    {
-                        apiSource = "跟随默认";
-                    }
-                    llmInfo = cfg.ApiType + " | " + endpoint + " | model=" + cfg.DefaultModel + " | " + apiSource;
+                    llmBlock["protocol"] = cfg.ApiType;
+                    llmBlock["host"] = host;
+                    llmBlock["model"] = cfg.DefaultModel;
+                    llmBlock["source"] = followDefault ? "跟随默认" : "猫绑定";
                 }
             }
             catch (Exception)
             {
-                llmInfo = "读取失败";
+                llmBlock["protocol"] = "读取失败";
             }
-            string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            // M4e 猫级白名单——info 可见范围 = 当前猫启用根（ToolCatContext 工具执行上下文）
-            string rootsInfo = "";
-            if (catKey != null && catKey.Length > 0)
+            info["llm"] = llmBlock;
+            // [段4] endpoint——本地端点位置（本猫对话页 + 主管理面板；端口未监听 = 空串）
+            Dictionary<string, object> endpointBlock = new Dictionary<string, object>();
+            int chatPort = AdminService.ResolveCatPort(catKey);
+            endpointBlock["chat"] = chatPort > 0 ? "http://127.0.0.1:" + chatPort.ToString() : "";
+            int panelPort = 0;
+            if (_httpHost != null)
+            {
+                panelPort = _httpHost.Port;
+            }
+            endpointBlock["panel"] = panelPort > 0 ? "http://127.0.0.1:" + panelPort.ToString() : "";
+            info["endpoint"] = endpointBlock;
+            // [段5] roots——猫可见受控根（M4e 猫级白名单；info 是猫自省目录范围的通道）
+            List<Dictionary<string, object>> rootList = new List<Dictionary<string, object>>();
+            if (catKey.Length > 0)
             {
                 WorkspaceConfig.RootEntry[] entries = AdminService.ResolveCatRootEntries(catKey);
-                System.Text.StringBuilder rb = new System.Text.StringBuilder();
-                for (int i = 0; i < entries.Length; i++)
+                for (int i = 0; i < entries.Length; i = i + 1)
                 {
-                    if (i > 0)
-                    {
-                        rb.Append(", ");
-                    }
-                    rb.Append(entries[i].Id);
-                    rb.Append("(");
-                    rb.Append(entries[i].Writable ? "rw" : "ro");
-                    rb.Append(")");
-                    if (entries[i].Note != null && entries[i].Note.Length > 0)
-                    {
-                        rb.Append("[");
-                        rb.Append(entries[i].Note);
-                        rb.Append("]");
-                    }
-                }
-                rootsInfo = " | roots[" + catKey + "]: " + rb.ToString();
-            }
-            // 加载包挂载——info 可见本猫已挂载包（key + 描述；空=不显示该行）
-            string packsInfo = "";
-            if (catKey != null && catKey.Length > 0)
-            {
-                string packsShow = AdminService.BuildMountedPacksInfo(catKey);
-                if (packsShow.Length > 0)
-                {
-                    packsInfo = " | packs: " + packsShow;
+                    Dictionary<string, object> item = new Dictionary<string, object>();
+                    item["id"] = entries[i].Id;
+                    item["writable"] = entries[i].Writable;
+                    item["note"] = entries[i].Note == null ? "" : entries[i].Note;
+                    rootList.Add(item);
                 }
             }
-            // A58 QQBot 渠道——info 可见本猫是否接入 qqbot（已接入 → 附文件发送用法；未接入 → 不显示相关内容）
-            string qqbotInfo = "";
-            if (catKey != null && catKey.Length > 0)
-            {
-                string qqbotShow = AdminService.BuildCatQqBotInfo(catKey);
-                if (qqbotShow.Length > 0)
-                {
-                    qqbotInfo = " | QQBot: " + qqbotShow;
-                }
-            }
-            // E3 前文统计——info 自查真实 usage（零估算：持久化 stats 直读；无统计=新会话零值）
-            string statsInfo = "";
+            info["roots"] = rootList;
+            // [段6] tokens——前文长度（请求级：最近一次请求送入的上下文长度；无统计 = 0）
             SessionStats? stats = AdminService.GetCatStats(catKey);
             long prompt = 0;
-            long hit = 0;
-            long completion = 0;
             long context = 0;
             if (stats != null)
             {
                 prompt = stats.Value.LastPromptTokens;
-                hit = stats.Value.LastCacheHitTokens;
-                completion = stats.Value.LastCompletionTokens;
                 context = stats.Value.LastContextTokens;
             }
-            // 前文长度 = 最近一次请求单次 prompt（context）；旧数据无 context 回退累计值
             long ctxLen = context > 0 ? context : prompt;
-            statsInfo = " | 前文: " + ctxLen.ToString() + " tokens";
-            return "CH4 v" + version + buildInfo + " | LLM: " + llmInfo + " | " + now + rootsInfo + statsInfo + packsInfo + qqbotInfo;
+            Dictionary<string, object> tokensBlock = new Dictionary<string, object>();
+            tokensBlock["context"] = ctxLen;
+            info["tokens"] = tokensBlock;
+            // [段7] packs——本猫挂载包（空 = 不输出该键）
+            List<Dictionary<string, object>> packList = AdminService.BuildMountedPackItems(catKey);
+            if (packList.Count > 0)
+            {
+                info["packs"] = packList;
+            }
+            // [段8] qqbot——渠道说明（未接入 = 不输出该键）
+            string qqbotShow = AdminService.BuildCatQqBotInfo(catKey);
+            if (qqbotShow.Length > 0)
+            {
+                Dictionary<string, object> qqbotBlock = new Dictionary<string, object>();
+                qqbotBlock["usage"] = qqbotShow;
+                info["qqbot"] = qqbotBlock;
+            }
+            return JsonSerializer.Serialize(info, InfoJsonOptions);
         }
         /// <summary>
         /// 前端测试服务拉起——宿主启动时自动启动 html/tests/server.js（未监听 8099 时）；失败不影响主功能

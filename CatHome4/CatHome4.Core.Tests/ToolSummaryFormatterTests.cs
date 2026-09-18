@@ -347,5 +347,24 @@ namespace CatHome4.Core.Tests
             Assert.Contains("file.txt", s);
             Assert.StartsWith("读取文件", s);
         }
+        /// <summary>
+        /// info 摘要——分类 JSON 块解析出版本 / 猫 / 本地对话端点。
+        /// </summary>
+        [Fact]
+        public void Info_JsonBlock_ShowsVersionCatAndEndpoint()
+        {
+            string json = "{\n  \"ok\": true,\n  \"tool\": \"info\",\n  \"cat\": \"cat-abc\",\n  \"version\": { \"version\": \"1.03.017\", \"build\": \"2026-09-18 20:00:00\" },\n  \"endpoint\": { \"chat\": \"http://127.0.0.1:8085\", \"panel\": \"http://127.0.0.1:8080\" }\n}";
+            string s = ToolSummaryFormatter.Build("info", "{}", json);
+            Assert.Equal("环境信息 → v1.03.017 · 猫 cat-abc · http://127.0.0.1:8085", s);
+        }
+        /// <summary>
+        /// info 摘要——非分类 JSON 退回原文首行，失败可见（不静默）。
+        /// </summary>
+        [Fact]
+        public void Info_NonJson_FallsBackToFirstLine()
+        {
+            string s = ToolSummaryFormatter.Build("info", "{}", "CH4 | 环境信息不可用");
+            Assert.Equal("环境信息 → \"CH4 | 环境信息不可用\"", s);
+        }
     }
 }

@@ -883,3 +883,40 @@ test('批4——内置件结构化头：Note / time / random / host-flows / pack
   const c6 = chatMsgs.querySelectorAll('.chat-tool')[5];
   expect(c6.querySelector('.tn').textContent).toBe('💻 热重载 TextCat · #9 → #17');
 });
+
+// ── info：分类 JSON 块（整块解析——后端不再包「头 + 正文」两段）──
+test('info——分类 JSON 块：折叠行取版本与猫；输出段按大类摊平成键值行', () => {
+  const result = JSON.stringify({
+    ok: true,
+    tool: 'info',
+    cat: 'cat-abc',
+    version: { version: '1.03.017', build: '2026-09-18 20:00:00' },
+    time: { now: '2026-09-18 21:00:00' },
+    llm: { protocol: 'opencode', host: 'opencode.ai', model: 'deepseek-v4-flash', source: '猫绑定' },
+    endpoint: { chat: 'http://127.0.0.1:8085', panel: 'http://127.0.0.1:8080' },
+    roots: [{ id: 'WorkSpace', writable: true, note: '默认工作区域' }, { id: 'Data', writable: false, note: '' }],
+    tokens: { context: 1234 },
+    packs: [{ key: 'overwork', desc: '收工加载包' }],
+    qqbot: { usage: 'Coder：发本地文件…' }
+  }, null, 2);
+  const card = renderTool({ name: 'info', arguments: '{}', result: result, summary: '环境信息' }, 130);
+  expect(card.querySelector('.tn').textContent).toBe('🧭 环境信息 · v1.03.017 · 猫 cat-abc');
+  expect(card.querySelectorAll('.seg-out .seg-kv').length).toBe(9);
+  const out = card.querySelector('.seg-out').textContent;
+  expect(out).toContain('http://127.0.0.1:8085');
+  expect(out).toContain('http://127.0.0.1:8080');
+  expect(out).toContain('WorkSpace(rw)[默认工作区域]');
+  expect(out).toContain('1234 tokens');
+  expect(out).toContain('overwork(收工加载包)');
+});
+
+test('info——非分类 JSON（provider 未注入）原文兜底，不静默空白', () => {
+  const card = renderTool({
+    name: 'info',
+    arguments: '{}',
+    result: 'ERR|INFO_NO_PROVIDER|环境信息不可用（未注入 provider）',
+    summary: '环境信息'
+  }, 131);
+  expect(card.querySelector('.tn').textContent).toContain('环境信息');
+  expect(card.querySelector('.seg-out').textContent).toContain('INFO_NO_PROVIDER');
+});
