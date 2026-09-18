@@ -358,6 +358,71 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
+        /// 提取工具结果文本——按 ToolCallId 从会话上下文取 tool 消息内容（工具批执行落点）。
+        /// </summary>
+        /// <param name="session">会话</param>
+        /// <param name="callId">工具调用 ID</param>
+        /// <returns>结果文本（无则空串）</returns>
+        private static string GetToolResultText(CH4.ChatSession session, string callId)
+        {
+            LlmMessage[] all = session.Context.GetMessages();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (all[i].Role == LlmRole.Tool && all[i].ToolCallId == callId)
+                {
+                    return all[i].Content ?? "";
+                }
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// Note 进度计数——set 三条：待完成 = 总数 - 已完成（已完成 + 待完成 == 总数）。
+        /// </summary>
+        [Fact]
+        public void Note_ProgressCounts_DonePlusTodoEqualsTotal()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"n1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":\\\"任务A\\\\n任务B\\\\n任务C\\\"}\"}}]");
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("创建三条计划");
+            PumpUntilIdle(session);
+            string text = GetToolResultText(session, "n1");
+            Assert.Contains("第1/3条  已完成0  待完成3", text);
+        }
+
+        /// <summary>
+        /// Note 进度计数——推进一条后仍自洽（已完成 1 + 待完成 2 == 总数 3）。
+        /// </summary>
+        [Fact]
+        public void Note_ProgressCounts_AfterAdvance()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"n1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":\\\"任务A\\\\n任务B\\\\n任务C\\\"}\"}}]");
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"n2\",\"function\":{\"name\":\"Note\",\"arguments\":\"{}\"}}]");
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("创建并推进");
+            PumpUntilIdle(session);
+            Assert.Contains("第2/3条  已完成1  待完成2", GetToolResultText(session, "n2"));
+        }
+
+        /// <summary>
+        /// Note 末条提示——单条计划：首条即最后一条（提示按当前索引判定，不随待完成口径漂移）。
+        /// </summary>
+        [Fact]
+        public void Note_LastItemHint_OnSingleTaskPlan()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"n1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":\\\"唯一任务\\\"}\"}}]");
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("创建单条计划");
+            PumpUntilIdle(session);
+            string text = GetToolResultText(session, "n1");
+            Assert.Contains("第1/1条  已完成0  待完成1", text);
+            Assert.Contains("已是最后一条需求", text);
+        }
+
+        /// <summary>
         /// Note 手动添加 + 启动——NoteAdd 入列 → NoteStart 触发 LLM 轮次。
         /// </summary>
         [Fact]

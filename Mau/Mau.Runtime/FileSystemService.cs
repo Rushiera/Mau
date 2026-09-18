@@ -880,6 +880,19 @@ namespace Mau.Runtime
                     }
                 }
             }
+            else
+            {
+                // 裸根名适配——整串即某根 id（无冒号）→ 该根根目录（text-tree("CCBP") ≡ "CCBP:"；2026-09-18）
+                // 歧义 escape：指根下同名子目录仍写 "根id:同名子目录" 显式形态
+                for (int i = 0; i < _roots.Length; i = i + 1)
+                {
+                    if (string.Equals(_rootIds[i], path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        path = _roots[i];
+                        break;
+                    }
+                }
+            }
             string resolved;
             if (Path.IsPathFullyQualified(path))
             {
@@ -900,15 +913,17 @@ namespace Mau.Runtime
                 throw new UnauthorizedAccessException("Path is in a read-only root: " + owningRoot);
             }
             return PathBoundary.ResolveOwnedPath(owningRoot, resolved);
-        }        /// <summary>
-                 /// 显式遍历搜索目录，并拒绝进入或返回重解析点。
-                 /// </summary>
-                 /// <param name="root">搜索相对根</param>
-                 /// <param name="current">当前目录</param>
-                 /// <param name="pattern">文件名模式</param>
-                 /// <param name="recursive">是否递归</param>
-                 /// <param name="limit">结果上限</param>
-                 /// <param name="output">绝对文件路径</param>
+        }
+
+        /// <summary>
+        /// 显式遍历搜索目录，并拒绝进入或返回重解析点。
+        /// </summary>
+        /// <param name="root">搜索相对根</param>
+        /// <param name="current">当前目录</param>
+        /// <param name="pattern">文件名模式</param>
+        /// <param name="recursive">是否递归</param>
+        /// <param name="limit">结果上限</param>
+        /// <param name="output">绝对文件路径</param>
         private void AppendFind(string root, string current, string pattern,
             bool recursive, int limit, List<string> output, ref int ignoredDirs)
         {

@@ -106,6 +106,37 @@ namespace Mau.Runtime.Tests
                 TryDelete(baseDir);
             }
         }
+        /// <summary>
+        /// 裸根名适配——整串即根 id（无冒号）→ 该根根目录（"rw" ≡ "rw:"；2026-09-18）
+        /// 负例：非根名仍按默认根下相对路径解析（不误判）。
+        /// </summary>
+        [Fact]
+        public void BareRootId_ResolvesToRootDirectory()
+        {
+            string baseDir = Path.Combine(Path.GetTempPath(), "mau_bare_root_" + Guid.NewGuid().ToString("N"));
+            string rw = Path.Combine(baseDir, "rw");
+            Directory.CreateDirectory(rw);
+            try
+            {
+                WorkspaceConfig.RootEntry[] entries = new WorkspaceConfig.RootEntry[]
+                {
+                    new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true }
+                };
+                FileSystemService fs = new FileSystemService(entries, Path.Combine(rw, "recycle"));
+                fs.WriteText("rw:probe.txt", "x");
+                // 裸根名 ≡ 带冒号形态（大小写宽容）——且能真实列树
+                Assert.Equal(Path.GetFullPath(rw), fs.Resolve("rw", false));
+                Assert.Equal(Path.GetFullPath(rw), fs.Resolve("rw:", false));
+                Assert.Equal(Path.GetFullPath(rw), fs.Resolve("RW", false));
+                Assert.Contains("probe.txt", fs.Tree("rw", 1, 10));
+                // 非根名——不误判为根，仍按默认根下相对路径（目录不存在 → 显式失败）
+                Assert.Throws<DirectoryNotFoundException>(() => fs.Tree("not-a-root", 1, 10));
+            }
+            finally
+            {
+                TryDelete(baseDir);
+            }
+        }
         /// <summary>编码内建 + 两态风格（P1/P2——design-ch4-text-tools §四）：新建按类型契约（.md/.cs/.mau 带 BOM、.cs/.mau CRLF、.bat GBK+CRLF），既有文件 BOM/换行保真，读侧 BOM 剥离。</summary>
         [Fact]
         public void AutoEncoding_TypeContractAndNewlinePreserve()

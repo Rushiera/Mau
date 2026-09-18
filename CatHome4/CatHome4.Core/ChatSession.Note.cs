@@ -136,9 +136,11 @@ namespace CH4
             {
                 return "[Note] 暂无计划。用 action=set + content=任务1\\n任务2 来创建。";
             }
-            int remain = _noteTasks.Length - _noteCurrent - 1;
+            // [段1] 待完成口径——总数 - 已完成（含当前未完成条）：已完成 + 待完成 == 总数
+            int remain = _noteTasks.Length - _noteDone;
             string msg = "[Note] 第" + (_noteCurrent + 1) + "/" + _noteTasks.Length + "条  已完成" + _noteDone + "  待完成" + remain + "\n任务目标：" + _noteTasks[_noteCurrent];
-            if (remain == 0)
+            // [段2] 末条提示——当前即最后一条（旧判据 remain==0 随待完成口径修正失效）
+            if (_noteCurrent + 1 >= _noteTasks.Length)
             {
                 msg = msg + "（已是最后一条需求，完成后可结束本轮）";
             }
