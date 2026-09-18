@@ -114,7 +114,11 @@ namespace CH4
                     _noteCurrent = 0;
                     _noteDone = 0;
                     _noteJustCompleted = true;
-                    result = "[Note] 🎉 全部 " + total + " 条任务已完成！";
+                    // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                    System.Collections.Generic.Dictionary<string, object> doneFields = new System.Collections.Generic.Dictionary<string, object>();
+                    doneFields["state"] = "done";
+                    doneFields["total"] = total;
+                    result = ToolMetaHead.With("Note", true, doneFields, "[Note] 🎉 全部 " + total + " 条任务已完成！");
                 }
                 else
                 {
@@ -134,17 +138,31 @@ namespace CH4
         {
             if (_noteTasks == null || _noteTasks.Length == 0)
             {
-                return "[Note] 暂无计划。用 action=set + content=任务1\\n任务2 来创建。";
+                string emptyText = "[Note] 暂无计划。用 action=set + content=任务1\\n任务2 来创建。";
+                // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                System.Collections.Generic.Dictionary<string, object> emptyFields = new System.Collections.Generic.Dictionary<string, object>();
+                emptyFields["state"] = "empty";
+                return ToolMetaHead.With("Note", true, emptyFields, emptyText);
             }
             // [段1] 待完成口径——总数 - 已完成（含当前未完成条）：已完成 + 待完成 == 总数
             int remain = _noteTasks.Length - _noteDone;
             string msg = "[Note] 第" + (_noteCurrent + 1) + "/" + _noteTasks.Length + "条  已完成" + _noteDone + "  待完成" + remain + "\n任务目标：" + _noteTasks[_noteCurrent];
             // [段2] 末条提示——当前即最后一条（旧判据 remain==0 随待完成口径修正失效）
+            bool last = false;
             if (_noteCurrent + 1 >= _noteTasks.Length)
             {
                 msg = msg + "（已是最后一条需求，完成后可结束本轮）";
+                last = true;
             }
-            return msg;
+            // [段3] 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            System.Collections.Generic.Dictionary<string, object> noteFields = new System.Collections.Generic.Dictionary<string, object>();
+            noteFields["state"] = "progress";
+            noteFields["index"] = _noteCurrent + 1;
+            noteFields["total"] = _noteTasks.Length;
+            noteFields["done"] = _noteDone;
+            noteFields["remain"] = remain;
+            noteFields["last"] = last;
+            return ToolMetaHead.With("Note", true, noteFields, msg);
         }
 
         /// <summary>

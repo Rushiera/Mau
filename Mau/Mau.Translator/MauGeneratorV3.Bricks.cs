@@ -131,6 +131,23 @@ namespace Mau.Translator
                 sb.AppendLine("// ═══ 积木: " + names[i] + "（来源 Bricks/" + entry.Path + "——复制即单包）═══");
                 string source = File.ReadAllText(path);
                 string[] lines = source.Split('\n');
+                // D6 修订（2026-09-18 莎拍板 A）：nullable 指令**段内保留 + 段末复位**——
+                //   原「剥离 + 文件头统一 enable」使积木自带的 #nullable disable warnings 失效
+                //   （MauCat 组 6 个存量警告的根因：mau.setup 既有代码在 enable 上下文下报 CS8600/CS8602）
+                string nullableDirective = "";
+                for (int l = 0; l < lines.Length; l++)
+                {
+                    string probe = lines[l].Trim();
+                    if (probe.StartsWith("#nullable", StringComparison.Ordinal))
+                    {
+                        nullableDirective = probe;
+                        break;
+                    }
+                }
+                if (nullableDirective.Length > 0)
+                {
+                    sb.AppendLine(nullableDirective);
+                }
                 for (int l = 0; l < lines.Length; l++)
                 {
                     string trimmed = lines[l].Trim();
@@ -144,10 +161,14 @@ namespace Mau.Translator
                     }
                     if (trimmed.StartsWith("#nullable", StringComparison.Ordinal))
                     {
-                        // D6：nullable 指令剥离——组合文件头统一唯一标记（避免拼接重复/上下文串扰）
                         continue;
                     }
                     sb.AppendLine(lines[l].TrimEnd('\r'));
+                }
+                if (nullableDirective.Length > 0)
+                {
+                    // 段末复位——避免 disable 上下文串扰后续积木（文件默认 = 头部 #nullable enable）
+                    sb.AppendLine("#nullable enable");
                 }
                 sb.AppendLine("");
             }

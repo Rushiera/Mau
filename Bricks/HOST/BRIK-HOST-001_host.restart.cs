@@ -47,7 +47,9 @@ namespace Mau.Bricks
             string push = ExtractArg(argsJson, "push");
             // 归一载荷——只落声明面字段（catId 为宿主注入保留键，不入请求）
             DataBox.Set<string>("global", "host_restart_request", "{\"target\":" + JsonSerializer.Serialize(target) + ",\"push\":" + JsonSerializer.Serialize(push) + "}");
-            result = "OK|RESTART_REQUESTED|宿主重启请求已登记（目标运行区: " + (target.Length > 0 ? target : "受控根 mauout")
+            string targetShow = (target.Length > 0) ? target : "受控根 mauout";
+            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            result = MetaHead(targetShow, push.Length > 0) + "\n" + "宿主重启请求已登记（目标运行区: " + targetShow
                 + "）。本轮将被强制中断（前文已落盘），宿主在全局空闲后接力部署并重启，结果回执将自动注入本会话。";
             return true;
         }
@@ -107,6 +109,23 @@ namespace Mau.Bricks
         /// <param name="argsJson">参数 JSON</param>
         /// <param name="key">参数名</param>
         /// <returns>参数值或空串</returns>
+        /// <summary>
+        /// 结构化元数据头——首行单行 JSON（ok/tool/target/push；键序稳定 = 插入序）
+        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
+        /// </summary>
+        /// <param name="target">目标运行区（已归一）</param>
+        /// <param name="push">是否带推送回执串</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string target, bool push)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = true;
+            head["tool"] = "majordomo-restart";
+            head["target"] = target;
+            head["push"] = push;
+            return JsonSerializer.Serialize(head);
+        }
+
         private static string ExtractArg(string argsJson, string key)
         {
             try
@@ -132,4 +151,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:261629ADC45CA0BAE6C25DB7A9A17D06315578179493AAA7D7C4BB971F1C8F9F
+// #MAU_CHECKSUM:SHA256:656AC5E17E384E0816F452E0C592188B6E47461D19A7F156CB55718B6645E5B1

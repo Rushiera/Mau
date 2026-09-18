@@ -169,18 +169,18 @@ test('exec 骨架——非 JSON 结果原文可见（不静默丢弃）', () => 
   expect(out.querySelector('.tr.err')).not.toBeNull();
 });
 
-test('exec 骨架——无 command 的工具（host-reload）走通用键值输入段', () => {
+test('exec 骨架——无 command 的工具（powershell 仅 cwd）走通用键值输入段', () => {
   const card = renderTool({
-    name: 'host-reload',
-    arguments: JSON.stringify({ cat: 'TextCat' }),
-    result: 'reload TextCat: #12 → #13',
-    summary: '重载 Flow "TextCat"'
+    name: 'powershell',
+    arguments: JSON.stringify({ cwd: 'C:\\work' }),
+    result: '{"exit":0,"stdout":"ok","stderr":"","truncated":false,"timeout":false}',
+    summary: '执行命令'
   });
   const inSeg = card.querySelector('.seg-in');
   expect(inSeg.querySelectorAll('.seg-kv').length).toBe(1);
-  expect(inSeg.querySelector('.seg-kv-k').textContent).toBe('cat: ');
-  expect(inSeg.querySelector('.seg-kv-v').textContent).toBe('TextCat');
-  expect(card.querySelector('.seg-out .tr').textContent).toContain('#12 → #13');
+  expect(inSeg.querySelector('.seg-kv-k').textContent).toBe('cwd: ');
+  expect(inSeg.querySelector('.seg-kv-v').textContent).toBe('C:\\work');
+  expect(card.querySelector('.seg-out .tr').textContent).toContain('ok');
 });
 
 // ── PowerShell 双线显式区分 ──
@@ -505,7 +505,7 @@ test('填充覆盖——text-tree 意图行含 depth/limit；未声明工具仍�
     summary: '展开目录 "CCBP"'
   }, 82);
   expect(card.querySelector('.seg-in .seg-line').textContent).toBe('展开 CCBP · depth 2 · limit 50');
-  renderTool({ name: 'mau-verify', arguments: JSON.stringify({ file: 'a.mau' }), result: 'MAU_VERIFY_OK' }, 83);
+  renderTool({ name: 'powershell', arguments: JSON.stringify({ cwd: 'C:\\work' }), result: '{"exit":0,"stdout":"","stderr":"","truncated":false,"timeout":false}' }, 83);
   const card2 = chatMsgs.querySelectorAll('.chat-tool')[1];
   expect(card2.querySelector('.seg-in .seg-kv')).not.toBeNull();
 });
@@ -687,4 +687,199 @@ test('写类三件——outputLines 由 meta 生成自然语言；无正文不�
   const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
   expect(c2.querySelector('.tn').textContent).toBe('📝 注释 A.M · summary');
   expect(c2.querySelector('.seg-out .seg-line').textContent).toContain('已写入 A.M 的 summary 注释');
+});
+
+// ── A64 批 1：SearchCat / VisionCat / TempToolCat / Majordomo（结构化头驱动）──
+test('批1——web-search 结构化头：引用数与协议入折叠行；正文剥头渲染', () => {
+  const card = renderTool({
+    name: 'web-search',
+    arguments: JSON.stringify({ query: 'CH4 工具渲染' }),
+    result: '{"ok":true,"tool":"web-search","query":"CH4 工具渲染","protocol":"anthropic","citations":2,"chars":14}\n答案正文第一行\n第二行',
+    summary: '搜索网页 "CH4 渲染"'
+  }, 107);
+  expect(card.querySelector('.tn').textContent).toBe('🌐 联网搜索 CH4 工具渲染 · 2 条引用 · anthropic');
+  const out = card.querySelector('.seg-out .tr');
+  expect(out.textContent).toContain('答案正文第一行');
+  expect(out.textContent.indexOf('"tool"')).toBe(-1);
+});
+
+test('批1——temp-info 结构化头：键值表由 meta 驱动 + 正文另起块；无注册显式', () => {
+  const card = renderTool({
+    name: 'temp-info',
+    arguments: '{}',
+    result: '{"ok":true,"tool":"temp-info","count":2,"keys":["demo.a","demo.b"]}\ndemo.a,demo.b',
+    summary: '临时工具信息'
+  }, 108);
+  expect(card.querySelector('.tn').textContent).toBe('🧩 临时工具 · 2 个可用 Key');
+  expect(card.querySelectorAll('.seg-out .seg-kv').length).toBe(4);
+  expect(card.querySelector('.seg-out .tr').textContent).toBe('demo.a,demo.b');
+  renderTool({ name: 'temp-info', arguments: '{}', result: '{"ok":true,"tool":"temp-info","count":0,"keys":[]}' }, 109);
+  const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
+  expect(c2.querySelector('.tn').textContent).toBe('🧩 临时工具 · 暂无注册');
+});
+
+test('批1——temp-exec / majordomo-restart 结构化头：exec 骨架剥头 + 输入意图行', () => {
+  const card = renderTool({
+    name: 'temp-exec',
+    arguments: JSON.stringify({ key: 'demo.echo', content: 'hi' }),
+    result: '{"ok":true,"tool":"temp-exec","key":"demo.echo","chars":2}\nhi',
+    summary: '临时执行 demo.echo'
+  }, 110);
+  expect(card.querySelector('.tn').textContent).toBe('💻 临时执行 demo.echo · 2 字');
+  expect(card.querySelector('.seg-out .tr').textContent).toBe('hi');
+  expect(card.querySelector('.seg-in .seg-line').textContent).toContain('临时执行 demo.echo');
+  renderTool({
+    name: 'majordomo-restart',
+    arguments: '{}',
+    result: '{"ok":true,"tool":"majordomo-restart","target":"mauout","push":true}\n宿主重启请求已登记（目标运行区: mauout）。',
+    summary: '宿主重启'
+  }, 111);
+  const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
+  expect(c2.querySelector('.tn').textContent).toBe('💻 宿主重启 · 目标 mauout · 带回执');
+  expect(c2.querySelector('.seg-out .tr').textContent).toContain('宿主重启请求已登记');
+});
+
+test('批1——image-analyze 结构化头：text 骨架剥头 + 字数；参数行含提示词', () => {
+  const card = renderTool({
+    name: 'image-analyze',
+    arguments: JSON.stringify({ path: 'MauOut/pet/idle.webp', question: '这是什么' }),
+    result: '{"ok":true,"tool":"image-analyze","path":"MauOut/pet/idle.webp","question":"这是什么","chars":6}\n一只猫在睡觉',
+    summary: '分析图片'
+  }, 112);
+  expect(card.querySelector('.tn').textContent).toBe('📝 识别图片 idle.webp · 6 字');
+  expect(card.querySelector('.seg-out .tr').textContent).toBe('一只猫在睡觉');
+  const inLines = card.querySelectorAll('.seg-in .seg-line');
+  expect(inLines.length).toBe(2);
+  expect(inLines[1].textContent).toContain('这是什么');
+});
+
+// ── A64 批 2：ConfigCat（config-* 4 件结构化头驱动）──
+test('批2——config-list 结构化头：条数与可写数入折叠行', () => {
+  const card = renderTool({
+    name: 'config-list',
+    arguments: '{}',
+    result: '{"ok":true,"tool":"config-list","count":37,"writable":12,"sensitive":4}\nllm.endpoint= | 来源=default | 默认= | 可写 | 描述…',
+    summary: '配置列表'
+  }, 113);
+  expect(card.querySelector('.tn').textContent).toBe('📂 配置列表 · 37 项 · 12 可写');
+});
+
+test('批2——config-get 结构化头：来源与键值表由 meta 驱动', () => {
+  const card = renderTool({
+    name: 'config-get',
+    arguments: JSON.stringify({ key: 'ui.port' }),
+    result: '{"ok":true,"tool":"config-get","key":"ui.port","source":"default","declared":true,"writable":true,"sensitive":false}\nui.port=8080 | 来源=default | 默认=8080 | 可写 | 描述…',
+    summary: '读取配置 ui.port'
+  }, 114);
+  expect(card.querySelector('.tn').textContent).toBe('🧩 读取配置 ui.port · 来源 default');
+  expect(card.querySelectorAll('.seg-out .seg-kv').length).toBe(7);
+});
+
+test('批2——config-set / config-reset 结构化头：text 骨架剥头 + 意图行', () => {
+  const card = renderTool({
+    name: 'config-set',
+    arguments: JSON.stringify({ key: 'ui.port', value: '8090' }),
+    result: '{"ok":true,"tool":"config-set","key":"ui.port","sensitive":false}\n配置已更新: ui.port=8090',
+    summary: '设置配置 ui.port'
+  }, 115);
+  expect(card.querySelector('.tn').textContent).toBe('📝 设置配置 ui.port · 已更新');
+  expect(card.querySelector('.seg-out .tr').textContent).toBe('配置已更新: ui.port=8090');
+  renderTool({
+    name: 'config-reset',
+    arguments: '{}',
+    result: '{"ok":true,"tool":"config-reset","key":"","scope":"all","count":12}\n已还原默认: 全部可写配置项',
+    summary: '重置配置'
+  }, 116);
+  const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
+  expect(c2.querySelector('.tn').textContent).toBe('📝 还原全部可写配置 · 12 项');
+});
+
+// ── A64 批 3：MauCat（mau-* 4 件结构化头驱动）──
+test('批3——mau-verify 结构化头：通过时报告数、失败时错误数', () => {
+  const c1 = renderTool({
+    name: 'mau-verify',
+    arguments: JSON.stringify({ file: 'corpus/ch4/TextCat/text_cat.mau' }),
+    result: '{"ok":true,"tool":"mau-verify","file":"corpus/ch4/TextCat/text_cat.mau","flow":"FL_TextCat","reports":2}\nOK 验证通过: corpus/ch4/TextCat/text_cat.mau → FL_TextCat\n报告: 3 导线',
+    summary: 'Mau验证'
+  }, 117);
+  expect(c1.querySelector('.tn').textContent).toBe('🩺 Mau 验证 text_cat.mau · 通过（2 报告）');
+  renderTool({
+    name: 'mau-verify',
+    arguments: JSON.stringify({ file: 'bad.mau' }),
+    result: '{"ok":false,"tool":"mau-verify","file":"bad.mau","flow":"FL_bad","errors":2}\nFAIL|VALIDATE|bad.mau\nbad.mau:3: E201: 引用缺失',
+    summary: 'Mau验证'
+  }, 118);
+  const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
+  expect(c2.querySelector('.tn').textContent).toBe('⚠️ Mau 验证 bad.mau · 2 个错误');
+  expect(c2.classList.contains('err')).toBe(true);
+});
+
+test('批3——mau-proj / mau-setup 结构化头：步数、编译标记、步通过数', () => {
+  const c1 = renderTool({
+    name: 'mau-proj',
+    arguments: JSON.stringify({ proj: 'corpus/ch4/ConfigCat/config_cat.mauproj', build: true }),
+    result: '{"ok":true,"tool":"mau-proj","proj":"ConfigCat","steps":4,"errors":0,"build":true}\n步骤 1/4 …\n构建成功: FL_ConfigCat.dll',
+    summary: 'Mau组翻译'
+  }, 119);
+  expect(c1.querySelector('.tn').textContent).toBe('🩺 组翻译 ConfigCat · 4 步 · 已编译');
+  renderTool({
+    name: 'mau-setup',
+    arguments: JSON.stringify({ mode: 'prepare' }),
+    result: '{"ok":true,"tool":"mau-setup","mode":"prepare","target":"","exit":0,"steps":7,"stepsOk":7,"artifacts":12}\nexit=0\nOk=true | 报告时间 …',
+    summary: 'SetUp'
+  }, 120);
+  const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
+  expect(c2.querySelector('.tn').textContent).toBe('💻 一键部署 prepare · 7/7 步 · 12 产物');
+});
+
+test('批3——mau-gen 结构化头：不编译路径的步数', () => {
+  const card = renderTool({
+    name: 'mau-gen',
+    arguments: JSON.stringify({ proj: 'corpus/ch4/MauCat/mau_cat.mauproj' }),
+    result: '{"ok":true,"tool":"mau-gen","proj":"MauCat","steps":4,"errors":0,"build":false}\n步骤 1/4 …',
+    summary: 'Mau生成'
+  }, 121);
+  expect(card.querySelector('.tn').textContent).toBe('🩺 Mau 生成 MauCat · 4 步');
+});
+
+// ── A64 批 4：PsCat 结构化回执 + 内置 7 件 ──
+test('批4——powershell 结构化头 + 正文：exit 徽标与 stdout / stderr 按行数切分', () => {
+  const card = renderTool({
+    name: 'powershell',
+    arguments: JSON.stringify({ command: 'Get-Date' }),
+    result: '{"ok":true,"tool":"powershell","exit":0,"truncated":false,"timeout":false,"stdoutLines":2,"stderrLines":1}\n第一行输出\n第二行输出\n错误信息',
+    summary: '执行命令 "Get-Date"'
+  }, 122);
+  const cap = card.querySelector('.seg-out .seg-cap').textContent;
+  expect(cap).toContain('exit 0');
+  const secCaps = card.querySelectorAll('.seg-out .seg-sec-cap');
+  expect(secCaps.length).toBe(2);
+  expect(secCaps[0].textContent).toContain('stdout');
+  expect(secCaps[1].textContent).toContain('stderr');
+  expect(card.querySelector('.seg-out .tr').textContent).toBe('第一行输出\n第二行输出');
+});
+
+test('批4——内置件结构化头：Note / time / random / host-flows / pack / host-reload', () => {
+  const c1 = renderTool({
+    name: 'Note',
+    arguments: '{}',
+    result: '{"ok":true,"tool":"Note","state":"progress","index":2,"total":3,"done":1,"remain":2,"last":false}\n[Note] 第2/3条  已完成1  待完成2\n任务目标：B',
+    summary: '任务追踪'
+  }, 123);
+  expect(c1.querySelector('.tn').textContent).toBe('📝 任务追踪 · 第2/3条 · 已完成1 待完成2');
+  renderTool({ name: 'time', arguments: '{}', result: '{"ok":true,"tool":"time","ts":"2026-09-18 19:00:00"}\n2026-09-18 19:00:00' }, 124);
+  const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
+  expect(c2.querySelector('.tn').textContent).toBe('📝 时间 · 2026-09-18 19:00:00');
+  renderTool({ name: 'random', arguments: JSON.stringify({ min: 1, max: 10 }), result: '{"ok":true,"tool":"random","min":1,"max":10,"value":7}\n7' }, 125);
+  const c3 = chatMsgs.querySelectorAll('.chat-tool')[2];
+  expect(c3.querySelector('.tn').textContent).toBe('📝 随机数 [1,10) → 7');
+  renderTool({ name: 'host-flows', arguments: '{}', result: '{"ok":true,"tool":"host-flows","count":10}\nFlow 运行现状（10 个）:' }, 126);
+  const c4 = chatMsgs.querySelectorAll('.chat-tool')[3];
+  expect(c4.querySelector('.tn').textContent).toBe('🧩 Flow 现状 · 10 个');
+  renderTool({ name: 'pack', arguments: JSON.stringify({ key: 'overwork' }), result: '{"ok":true,"tool":"pack","key":"overwork","files":7,"chars":42000}\n✅ PACK overwork | 7 件 / 42000 字符' }, 127);
+  const c5 = chatMsgs.querySelectorAll('.chat-tool')[4];
+  expect(c5.querySelector('.tn').textContent).toBe('📝 加载包 overwork · 7 件');
+  renderTool({ name: 'host-reload', arguments: JSON.stringify({ cat: 'TextCat' }), result: '{"ok":true,"tool":"host-reload","cat":"TextCat","oldId":9,"newId":17,"pid":2568}\nreload TextCat: #9 → #17 | pid=2568' }, 128);
+  const c6 = chatMsgs.querySelectorAll('.chat-tool')[5];
+  expect(c6.querySelector('.tn').textContent).toBe('💻 热重载 TextCat · #9 → #17');
 });

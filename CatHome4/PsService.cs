@@ -143,14 +143,41 @@ namespace CH4
             string errText = CleanErrorText(stderr.ToString());
             bool outTrunc = outText.Length >= MaxStdoutChars;
             bool errTrunc = errText.Length >= MaxStderrChars;
-            // [段6] JSON 回执——exit/stdout/stderr/truncated/timeout（失败侧非零退出也回执，Dog 可见）
-            Dictionary<string, object> resp = new Dictionary<string, object>();
-            resp["exit"] = timeout ? -1 : proc.ExitCode;
-            resp["stdout"] = outText;
-            resp["stderr"] = errText;
-            resp["truncated"] = outTrunc || errTrunc;
-            resp["timeout"] = timeout;
-            return Mau.Runtime.JsonUtil.Serialize(resp);
+            // [段6] 结构化回执（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            //   正文 = stdout（+ 换行 + stderr）；行数在头里给出，前端按行数切分（不依赖内容分隔符——零撞车）
+            int stdoutLines = CountLinesOf(outText);
+            int stderrLines = CountLinesOf(errText);
+            string shellName = string.Equals(shell, "powershell7", StringComparison.Ordinal) ? "powershell7" : "powershell";
+            Dictionary<string, object> fields = new Dictionary<string, object>();
+            fields["exit"] = timeout ? -1 : proc.ExitCode;
+            fields["truncated"] = outTrunc || errTrunc;
+            fields["timeout"] = timeout;
+            fields["stdoutLines"] = stdoutLines;
+            fields["stderrLines"] = stderrLines;
+            string bodyText = errText.Length > 0 ? (outText + "\n" + errText) : outText;
+            return ToolMetaHead.With(shellName, true, fields, bodyText);
+        }
+
+        /// <summary>
+        /// 行数统计——空串 0；否则 \n 计数 + 1（与前端 body.split('\n').length 同口径）
+        /// </summary>
+        /// <param name="text">源文本</param>
+        /// <returns>行数</returns>
+        private static int CountLinesOf(string text)
+        {
+            if (text == null || text.Length == 0)
+            {
+                return 0;
+            }
+            int n = 1;
+            for (int i = 0; i < text.Length; i = i + 1)
+            {
+                if (text[i] == '\n')
+                {
+                    n = n + 1;
+                }
+            }
+            return n;
         }
         /// <summary>
         /// 解析 PowerShell 7 可执行路径——读配置 ps.pwsh_path（未配置 / 路径不存在 → error 明示，不静默回落默认解释器）

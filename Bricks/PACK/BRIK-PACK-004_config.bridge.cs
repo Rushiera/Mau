@@ -174,7 +174,25 @@ namespace Mau.Bricks
                 sb.Append(" | ");
                 sb.AppendLine(entry.Desc);
             }
-            return TrimResult(sb.ToString(), 20000);
+            int writable = 0;
+            int sensitive = 0;
+            for (int i = 0; i < items.Length; i = i + 1)
+            {
+                if (items[i].Declared && items[i].Writable)
+                {
+                    writable = writable + 1;
+                }
+                if (items[i].Sensitive)
+                {
+                    sensitive = sensitive + 1;
+                }
+            }
+            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
+            fields["count"] = items.Length;
+            fields["writable"] = writable;
+            fields["sensitive"] = sensitive;
+            return MetaHead("config-list", fields) + "\n" + TrimResult(sb.ToString(), 20000);
         }
 
         /// <summary>
@@ -234,7 +252,14 @@ namespace Mau.Bricks
             }
             sb.Append(" | ");
             sb.Append(entry.Desc);
-            return sb.ToString();
+            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
+            fields["key"] = key;
+            fields["source"] = entry.Source;
+            fields["declared"] = entry.Declared;
+            fields["writable"] = entry.Writable;
+            fields["sensitive"] = entry.Sensitive;
+            return MetaHead("config-get", fields) + "\n" + sb.ToString();
         }
 
         /// <summary>
@@ -258,7 +283,11 @@ namespace Mau.Bricks
                 return "ERR|CONFIG_REJECT|" + error;
             }
             bool sensitive = schemaBound && schema != null && schema.IsSensitive(key);
-            return "OK 配置已更新: " + key + "=" + (sensitive ? "****" : value);
+            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
+            fields["key"] = key;
+            fields["sensitive"] = sensitive;
+            return MetaHead("config-set", fields) + "\n" + "配置已更新: " + key + "=" + (sensitive ? "****" : value);
         }
 
         /// <summary>
@@ -276,11 +305,22 @@ namespace Mau.Bricks
             {
                 return "ERR|CONFIG_REJECT|" + error;
             }
-            if (key == null || key.Length == 0)
+            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            string keyText = "";
+            if (key != null)
             {
-                return "OK 已还原默认: 全部可写配置项";
+                keyText = key;
             }
-            return "OK 已还原默认: " + key;
+            bool all = (keyText.Length == 0);
+            System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
+            fields["key"] = keyText;
+            fields["scope"] = all ? "all" : "single";
+            fields["count"] = all ? CountWritable(schema, schemaBound) : 1;
+            if (all)
+            {
+                return MetaHead("config-reset", fields) + "\n" + "已还原默认: 全部可写配置项";
+            }
+            return MetaHead("config-reset", fields) + "\n" + "已还原默认: " + keyText;
         }
 
         /// <summary>
@@ -395,6 +435,49 @@ namespace Mau.Bricks
         }
 
         /// <summary>
+        /// 结构化元数据头——首行单行 JSON（ok/tool + 调用方字段；键序稳定 = 插入序）
+        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
+        /// </summary>
+        /// <param name="tool">工具名（config-list / config-get / config-set / config-reset）</param>
+        /// <param name="fields">附加字段（按插入序输出）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, System.Collections.Generic.Dictionary<string, object> fields)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = true;
+            head["tool"] = tool;
+            foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
+            {
+                head[kv.Key] = kv.Value;
+            }
+            return JsonSerializer.Serialize(head);
+        }
+
+        /// <summary>
+        /// 可写项计数——全群还原的规模量（schema 未绑定时 0）
+        /// </summary>
+        /// <param name="schema">配置 schema</param>
+        /// <param name="schemaBound">schema 是否绑定</param>
+        /// <returns>writable 项数</returns>
+        private static int CountWritable(ConfigSchema schema, bool schemaBound)
+        {
+            if (!schemaBound || schema == null)
+            {
+                return 0;
+            }
+            int n = 0;
+            ConfigSchema.Item[] all = schema.All();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (all[i].Writable)
+                {
+                    n = n + 1;
+                }
+            }
+            return n;
+        }
+
+        /// <summary>
         /// 结果截断——超长文本保留头部 + 截断提示（上下文防爆）
         /// </summary>
         /// <param name="text">原文</param>
@@ -410,4 +493,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:ACF54AC0172B06B272FE395D72F4F7B63C5E45A10E3D83039C0EF504DD2F1ABD
+// #MAU_CHECKSUM:SHA256:7973C0861A704B5E8443FF055CA7F4BC21050427B537BCC710BAD9659F12BEFB

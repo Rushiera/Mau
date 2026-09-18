@@ -50,7 +50,11 @@ namespace CH4
             }
             if (name == "time")
             {
-                return DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                string nowText = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                Dictionary<string, object> timeFields = new Dictionary<string, object>();
+                timeFields["ts"] = nowText;
+                return ToolMetaHead.With("time", true, timeFields, nowText);
             }
             if (name == "random")
             {
@@ -109,7 +113,13 @@ namespace CH4
                 return "ERR|BAD_ARGS|random 需要 min < max 的整数参数";
             }
             Random rng = new Random();
-            return rng.Next(min, max).ToString();
+            int picked = rng.Next(min, max);
+            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            Dictionary<string, object> randomFields = new Dictionary<string, object>();
+            randomFields["min"] = min;
+            randomFields["max"] = max;
+            randomFields["value"] = picked;
+            return ToolMetaHead.With("random", true, randomFields, picked.ToString());
         }
 
         /// <summary>
@@ -340,7 +350,12 @@ namespace CH4
                 sb.Append("\n");
             }
             LogStore.Add("CatHome4", 1, "pack 注入: cat=" + _catKey + " | key=" + packKey + " | " + targets.Count.ToString() + " 件 / " + totalChars.ToString() + " 字符", "INJECT");
-            return sb.ToString();
+            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            Dictionary<string, object> packFields = new Dictionary<string, object>();
+            packFields["key"] = packKey;
+            packFields["files"] = targets.Count;
+            packFields["chars"] = totalChars;
+            return ToolMetaHead.With("pack", true, packFields, sb.ToString());
         }
 
         /// <summary>
@@ -356,7 +371,11 @@ namespace CH4
                 ToolCatContext.SetCat(_catKey);
                 try
                 {
-                    return _envInfoProvider();
+                    string infoText = _envInfoProvider();
+                    // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                    Dictionary<string, object> infoFields = new Dictionary<string, object>();
+                    infoFields["cat"] = _catKey;
+                    return ToolMetaHead.With("info", true, infoFields, infoText);
                 }
                 finally
                 {

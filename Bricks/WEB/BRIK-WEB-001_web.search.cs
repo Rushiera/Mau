@@ -61,7 +61,19 @@ namespace Mau.Bricks
             }
             try
             {
-                result = DoSearch(query);
+                string protocol = "";
+                string body = DoSearch(query, out protocol);
+                if (body.StartsWith("ERR|", StringComparison.Ordinal))
+                {
+                    result = body;
+                    return true;
+                }
+                // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                result = MetaHead(query, protocol, body);
+                if (body.Length > 0)
+                {
+                    result = result + "\n" + body;
+                }
                 return true;
             }
             catch (Exception ex)
@@ -76,8 +88,9 @@ namespace Mau.Bricks
         /// </summary>
         /// <param name="query">搜索查询</param>
         /// <returns>最终回答文本或 ERR| 错误</returns>
-        private static string DoSearch(string query)
+        private static string DoSearch(string query, out string protocol)
         {
+            protocol = "";
             // [段1] 配置解析——search.api_config_id → 池配置 → key（未配置 = 工具不可用）
             ConfigStore? config;
             if (!DataBox.TryResolve<ConfigStore>(out config) || config == null)
@@ -128,6 +141,7 @@ namespace Mau.Bricks
 
             // [段3] 协议判定——端点含 /anthropic/ → Anthropic Messages；否则 → OpenAI Responses
             bool isAnthropic = endpoint.IndexOf("/anthropic/", StringComparison.OrdinalIgnoreCase) >= 0;
+            protocol = isAnthropic ? "anthropic" : "responses";
             string body = isAnthropic ? BuildAnthropicBody(model, query) : BuildResponsesBody(model, query);
 
             // [段4] 发送请求——同步等待；超时 search.timeout_ms（默认 120000）
@@ -529,6 +543,48 @@ namespace Mau.Bricks
         /// </summary>
         /// <param name="s">原文</param>
         /// <returns>转义后文本</returns>
+        /// <summary>
+        /// 结构化元数据头——首行单行 JSON（ok/tool/query/protocol/citations/chars；键序稳定 = 插入序）
+        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
+        /// </summary>
+        /// <param name="query">检索词</param>
+        /// <param name="protocol">协议标识（anthropic / responses）</param>
+        /// <param name="body">回答正文</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string query, string protocol, string body)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = true;
+            head["tool"] = "web-search";
+            head["query"] = query;
+            head["protocol"] = protocol;
+            head["citations"] = CountCitations(body);
+            head["chars"] = body.Length;
+            return JsonSerializer.Serialize(head);
+        }
+
+        /// <summary>
+        /// 引用计数——正文中 [citation:n] 标记出现次数
+        /// </summary>
+        /// <param name="body">回答正文</param>
+        /// <returns>引用条数</returns>
+        private static int CountCitations(string body)
+        {
+            int n = 0;
+            int idx = 0;
+            while (true)
+            {
+                int hit = body.IndexOf("[citation:", idx, StringComparison.Ordinal);
+                if (hit < 0)
+                {
+                    break;
+                }
+                n = n + 1;
+                idx = hit + 1;
+            }
+            return n;
+        }
+
         private static string EscapeJson(string s)
         {
             if (s == null)
@@ -689,4 +745,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:CF215F3C6EEA093E5A0B77B4600C6CDB3F11015792B2A1E62AEB0C7D6CA886BC
+// #MAU_CHECKSUM:SHA256:955A665F347F48DF2134AFD466E1A073C321A82ABEA30F5DBFFC4636EF525E92

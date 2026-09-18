@@ -324,13 +324,31 @@ function chatSkelExec(tool, opts) {
     }
 
     // [段2] 输出——exit 徽标 + stdout / stderr 分段（各自规模）+ 截断 / 超时 / 空输出显式
-    var r = chatTryJson(tool.result);
+    // 结构化返回优先（首行 JSON 元数据 + 正文定界行）——剥头后按正文渲染；无头结果原路 JSON 解析
+    var head = chatMetaHead(tool.result);
+    var r = head ? null : chatTryJson(tool.result);
+    var bodyText = head ? head.body : tool.result;
     var outCap = '输出';
     var warnText = '';
     var blocks = [];
     if (tool.result === undefined) {
         outCap = '输出 · 处理中';
         blocks.push({ cap: '', cls: 'ta', text: '⏳ 处理中…' });
+    } else if (head && typeof head.meta.stdoutLines === 'number') {
+        // 结构化 ps 回执（首行头 + 正文）——正文按 stdoutLines / stderrLines 切分（不依赖内容分隔符，零撞车）
+        var allLines = chatLines(bodyText);
+        var soCount = head.meta.stdoutLines || 0;
+        var seCount = head.meta.stderrLines || 0;
+        var out = (soCount > 0) ? allLines.slice(0, soCount).join('\n') : '';
+        var err = (seCount > 0) ? allLines.slice(soCount, soCount + seCount).join('\n') : '';
+        outCap = '输出 · exit ' + head.meta.exit;
+        if (out.length > 0) { blocks.push({ cap: 'stdout · ' + chatSegSize(out), cls: 'tr', text: out }); }
+        if (err.length > 0) { blocks.push({ cap: 'stderr · ' + chatSegSize(err), cls: 'tr err', text: err }); }
+        if (out.length === 0 && err.length === 0) { outCap = outCap + ' · 无输出'; }
+        if (head.meta.truncated === true) {
+            outCap = outCap + ' · ⚠️ 已截断';
+            warnText = '⚠️ 输出已达上限被截断——后续内容未回传' + (head.meta.timeout === true ? '；进程超时已终止' : '');
+        }
     } else if (r && typeof r.exit !== 'undefined') {
         var out = chatField(r, 'stdout');
         var err = chatField(r, 'stderr');
@@ -346,10 +364,10 @@ function chatSkelExec(tool, opts) {
         outCap = '输出 · 无输出';
     } else {
         outCap = '输出 · 原始输出';
-        blocks.push({ cap: '', cls: (chatIsErrResult(tool.result) ? 'tr err' : 'tr'), text: tool.result });
+        blocks.push({ cap: '', cls: (chatIsErrResult(tool.result) ? 'tr err' : 'tr'), text: bodyText });
     }
     // 折叠摘要文本——stdout / stderr 合并（多块结果取整体）
-    var outPeek = tool.result;
+    var outPeek = bodyText;
     if (r && typeof r.exit !== 'undefined') {
         outPeek = chatField(r, 'stdout') + '\n' + chatField(r, 'stderr');
     }
@@ -554,25 +572,30 @@ function chatSkelLines(tool) {
 // withSize=true（file）标规模「字符 / 行」；false（text）只标行数——纯文本兜底不给体量噪音
 function chatSkelPlain(tool, withSize) {
     var segs = [chatSegInput(tool, '')];
+    // 结构化返回优先（首行 JSON 元数据 + 正文定界行）——剥头后按正文渲染
+    var head = chatMetaHead(tool.result);
+    var bodyText = head ? head.body : tool.result;
     var cap = '输出';
-    if (typeof tool.result === 'string' && tool.result.length > 0) {
+    if (typeof bodyText === 'string' && bodyText.length > 0) {
         if (withSize) {
-            cap = '输出 · ' + chatSegSize(tool.result);
+            cap = '输出 · ' + chatSegSize(bodyText);
         } else {
-            cap = '输出 · ' + chatCountLines(chatLines(tool.result)) + ' 行';
+            cap = '输出 · ' + chatCountLines(chatLines(bodyText)) + ' 行';
         }
     }
     segs.push(chatSegOutput(tool, cap, function (body, text, isErr) {
-        chatSegBlock(body, isErr ? 'tr err' : 'tr', text);
-    }));
+        chatSegBlock(body, isErr ? 'tr err' : 'tr', bodyText);
+    }, bodyText));
     return { tag: '', tagCls: '', segs: segs };
 }
 
 // ── json：通用结构（输入：键值表；输出：顶层键值 / 原文回落）──
-// 解析失败不静默——原样可见（规格 §七）
+// 解析失败不静默——原样可见（规格 §七）；结构化返回时元数据头作键值表、正文另起文本块
 function chatSkelJson(tool) {
     var segs = [chatSegInput(tool, '')];
-    var parsed = chatTryJson(tool.result);
+    var head = chatMetaHead(tool.result);
+    var parsed = head ? head.meta : chatTryJson(tool.result);
+    var bodyText = head ? head.body : '';
     var pairs = [];
     if (parsed) {
         var keys = Object.keys(parsed);
@@ -582,13 +605,18 @@ function chatSkelJson(tool) {
             pairs.push({ k: keys[i], v: String(v) });
         }
     }
+    var hasBody = (head !== null) && (bodyText.length > 0);
     var cap = '输出';
-    if (parsed) { cap = '输出 · ' + pairs.length + ' 键'; }
+    if (parsed) { cap = '输出 · ' + pairs.length + ' 键' + (hasBody ? ' + 正文' : ''); }
     else if (tool.result !== undefined && tool.result !== '') { cap = '输出 · 原始输出'; }
     segs.push(chatSegOutput(tool, cap, function (body, text, isErr) {
-        if (parsed) { chatSegKv(body, pairs); return; }
+        if (parsed) {
+            chatSegKv(body, pairs);
+            if (hasBody) { chatSegBlock(body, 'tr', bodyText); }
+            return;
+        }
         chatSegBlock(body, isErr ? 'tr err' : 'tr', text);
-    }));
+    }, hasBody ? bodyText : tool.result));
     return { tag: '', tagCls: '', segs: segs };
 }
 
@@ -913,8 +941,210 @@ var CHAT_TOOL_OVERRIDES = {
     // ── PsCat（powershell 双线——exec 骨架 + 版本标签）──
     'powershell': { tag: 'PS 5.1', tagCls: 'ps5' },
     'powershell7': { tag: 'PS 7', tagCls: 'ps7' },
-    // ── 其它组（随对应批次补齐；此处先落已定的专属图标）──
-    'web-search': { icon: '🌐' }
+    // ── SearchCat / VisionCat / TempToolCat / Majordomo（A64 批 1——结构化头驱动；2026-09-18）──
+    'web-search': {
+        icon: '🌐',
+        inputLines: function (a) { return ['联网搜索 ' + chatOvText(a.query)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '联网搜索 ' + chatOvText(a.query) + chatOvStat(r); }
+            var cite = (typeof h.meta.citations === 'number' && h.meta.citations > 0) ? (' · ' + h.meta.citations + ' 条引用') : '';
+            var proto = h.meta.protocol ? (' · ' + h.meta.protocol) : '';
+            return '联网搜索 ' + chatOvText(a.query) + cite + proto;
+        }
+    },
+    'image-analyze': {
+        inputLines: function (a) {
+            return ['识别图片 ' + chatOvText(a.path),
+                (a.question ? ('提示词 ' + chatOvPeek(a.question)) : '（默认描述）')];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            var name = chatOvShort(a.path);
+            if (!h) { return '识别图片 ' + name + chatOvStat(r); }
+            return '识别图片 ' + name + ' · ' + (h.meta.chars || 0) + ' 字';
+        }
+    },
+    'temp-info': {
+        inputLines: function () { return ['列出临时工具 Key（TempRegistry）']; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '临时工具 Key ' + chatOvStat(r); }
+            var n = h.meta.count || 0;
+            return '临时工具 · ' + (n > 0 ? (n + ' 个可用 Key') : '暂无注册');
+        }
+    },
+    'temp-exec': {
+        inputLines: function (a) { return ['临时执行 ' + chatOvText(a.key) + ' · 入参 ' + chatOvSize(a.content)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '临时执行 ' + chatOvText(a.key) + chatOvStat(r); }
+            return '临时执行 ' + h.meta.key + ' · ' + (h.meta.chars || 0) + ' 字';
+        }
+    },
+    'majordomo-restart': {
+        inputLines: function () { return ['请求宿主自更新（部署 + 重启）']; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '宿主重启 ' + chatOvStat(r); }
+            return '宿主重启 · 目标 ' + (h.meta.target || '默认') + (h.meta.push ? ' · 带回执' : '');
+        }
+    },
+    // ── ConfigCat（A64 批 2——结构化头驱动；2026-09-18）──
+    'config-list': {
+        inputLines: function () { return ['列出全部配置项（schema 声明 + 落盘未声明）']; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '配置列表 ' + chatOvStat(r); }
+            var m = h.meta;
+            return '配置列表 · ' + (m.count || 0) + ' 项 · ' + (m.writable || 0) + ' 可写';
+        }
+    },
+    'config-get': {
+        inputLines: function (a) { return ['读取配置 ' + chatOvText(a.key)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '读取配置 ' + chatOvText(a.key) + chatOvStat(r); }
+            var m = h.meta;
+            var src = m.source ? (' · 来源 ' + m.source) : '';
+            var ro = (m.declared === true && m.writable === false) ? ' · 只读' : '';
+            return '读取配置 ' + m.key + src + ro;
+        }
+    },
+    'config-set': {
+        inputLines: function (a) { return ['设置配置 ' + chatOvText(a.key) + ' = ' + chatOvPeek(a.value)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '设置配置 ' + chatOvText(a.key) + chatOvStat(r); }
+            return '设置配置 ' + h.meta.key + ' · 已更新';
+        }
+    },
+    'config-reset': {
+        inputLines: function (a) {
+            return [a.key ? ('还原配置 ' + a.key + ' 为默认') : '还原全部可写配置为默认'];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '还原配置 ' + chatOvStat(r); }
+            var m = h.meta;
+            if (m.scope === 'all') { return '还原全部可写配置 · ' + (m.count || 0) + ' 项'; }
+            return '还原配置 ' + (m.key || '') + ' · 默认值';
+        }
+    },
+    // ── MauCat（A64 批 3——结构化头驱动；2026-09-18）──
+    'mau-verify': {
+        inputLines: function (a) { return ['全链检查 ' + chatOvText(a.file)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return 'Mau 验证 ' + chatOvShort(a.file) + chatOvStat(r); }
+            var m = h.meta;
+            if (m.ok === false) { return 'Mau 验证 ' + chatOvShort(a.file) + ' · ' + (m.errors || 0) + ' 个错误'; }
+            return 'Mau 验证 ' + chatOvShort(a.file) + ' · 通过（' + (m.reports || 0) + ' 报告）';
+        }
+    },
+    'mau-gen': {
+        inputLines: function (a) { return ['组翻译（不编译）' + chatOvText(a.proj)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return 'Mau 生成 ' + chatOvShort(a.proj) + chatOvStat(r); }
+            var m = h.meta;
+            if (m.ok === false) { return 'Mau 生成 ' + m.proj + ' · ' + (m.errors || 0) + ' 个错误'; }
+            return 'Mau 生成 ' + m.proj + ' · ' + (m.steps || 0) + ' 步';
+        }
+    },
+    'mau-proj': {
+        inputLines: function (a) {
+            return ['组翻译 + 编译 ' + chatOvText(a.proj) + (a.build === true ? ' · build' : '')];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '组翻译 ' + chatOvShort(a.proj) + chatOvStat(r); }
+            var m = h.meta;
+            if (m.ok === false) { return '组翻译 ' + m.proj + ' · ' + (m.errors || 0) + ' 个错误'; }
+            return '组翻译 ' + m.proj + ' · ' + (m.steps || 0) + ' 步' + (m.build ? ' · 已编译' : '');
+        }
+    },
+    'mau-setup': {
+        inputLines: function (a) {
+            var mode = a.mode || 'prepare';
+            var extra = a.target ? (' · 目标 ' + a.target) : '';
+            return ['一键部署 ' + mode + extra];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '一键部署 ' + chatOvStat(r); }
+            var m = h.meta;
+            var base = '一键部署 ' + (m.mode || '') + ' · ' + (m.stepsOk || 0) + '/' + (m.steps || 0) + ' 步 · ' + (m.artifacts || 0) + ' 产物';
+            if (m.ok === false) { return base + ' · 失败'; }
+            return base;
+        }
+    },
+    // ── 内置 7 件（A64 批 4——结构化头驱动；2026-09-18）──
+    'Note': {
+        inputLines: function (a) {
+            if (a.action === 'set') { return ['写入计划 · ' + chatOvSize(a.content) + (a.force === true ? ' · 强制覆盖' : '')]; }
+            return ['推进到下一条任务'];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '任务追踪 ' + chatOvStat(r); }
+            var m = h.meta;
+            if (m.state === 'done') { return '任务追踪 · 全部完成（' + (m.total || 0) + ' 条）'; }
+            if (m.state === 'empty') { return '任务追踪 · 暂无计划'; }
+            return '任务追踪 · 第' + m.index + '/' + m.total + '条 · 已完成' + m.done + ' 待完成' + m.remain;
+        }
+    },
+    'time': {
+        inputLines: function () { return ['获取当前时间']; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '时间 ' + chatOvStat(r); }
+            return '时间 · ' + (h.meta.ts || '');
+        }
+    },
+    'random': {
+        inputLines: function (a) { return ['随机数 ' + chatOvText(a.min) + ' ~ ' + chatOvText(a.max)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '随机数 ' + chatOvStat(r); }
+            var m = h.meta;
+            return '随机数 [' + chatOvText(m.min) + ',' + chatOvText(m.max) + ') → ' + chatOvText(m.value);
+        }
+    },
+    'info': {
+        inputLines: function () { return ['查看运行环境与工具面']; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '环境信息 ' + chatOvStat(r); }
+            return '环境信息 · ' + (h.meta.cat || '');
+        }
+    },
+    'host-reload': {
+        inputLines: function (a) { return ['热重载组 ' + chatOvText(a.cat)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '热重载 ' + chatOvText(a.cat) + chatOvStat(r); }
+            var m = h.meta;
+            return '热重载 ' + m.cat + ' · #' + m.oldId + ' → #' + m.newId;
+        }
+    },
+    'host-flows': {
+        inputLines: function () { return ['查看当前运行 Flow 清单']; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return 'Flow 现状 ' + chatOvStat(r); }
+            return 'Flow 现状 · ' + (h.meta.count || 0) + ' 个';
+        }
+    },
+    'pack': {
+        inputLines: function (a) { return ['加载包 ' + chatOvText(a.key)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '加载包 ' + chatOvText(a.key) + chatOvStat(r); }
+            var m = h.meta;
+            return '加载包 ' + m.key + ' · ' + (m.files || 0) + ' 件';
+        }
+    }
 };
 
 // ═══════════════════════════════════════════

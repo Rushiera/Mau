@@ -27,7 +27,10 @@ namespace CH4
         {
             string name = toolName ?? "";
             Dictionary<string, string> p = ParseArgs(argsJson);
-            string body = Dispatch(name, p, resultText ?? "");
+            // 结构化返回头剥离（design-ch4-tools 附录）——非 cs-* 工具吃正文；cs-* 自解首行元数据（Fmt_CSharpCode）
+            string rawResult = resultText ?? "";
+            string dispatchText = name.StartsWith("cs-", StringComparison.Ordinal) ? rawResult : StripMetaHead(rawResult);
+            string body = Dispatch(name, p, dispatchText);
             if (body.Length == 0)
             {
                 body = "调用工具 \"" + name + "\"";
@@ -39,6 +42,40 @@ namespace CH4
         // ═══════════════════════════════════════════
         // 参数解析
         // ═══════════════════════════════════════════
+
+        /// <summary>
+        /// 结构化返回头剥离——首行 JSON 含 tool 字段 → 返回正文；无头 / 非结构化结果原样返回。
+        /// 约定：工具返回体 = 首行 JSON 元数据头 + 正文定界行（design-ch4-tools 附录）。
+        /// </summary>
+        /// <param name="text">工具结果原文</param>
+        /// <returns>正文（无头时 = 原文）</returns>
+        private static string StripMetaHead(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text[0] != '{')
+            {
+                return text;
+            }
+            int nl = text.IndexOf('\n');
+            string first = (nl < 0) ? text : text.Substring(0, nl);
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(first))
+                {
+                    JsonElement toolEl;
+                    if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                        !doc.RootElement.TryGetProperty("tool", out toolEl) ||
+                        toolEl.ValueKind != JsonValueKind.String)
+                    {
+                        return text;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return text;
+            }
+            return (nl < 0) ? "" : text.Substring(nl + 1);
+        }
 
         /// <summary>
         /// 将工具 args JSON 解析为扁平字典——字符串取值，数组/对象保留原始 JSON（供统计类 Fmt 再解析）。
@@ -501,12 +538,13 @@ namespace CH4
                 }
             }
 
-            // 结果——优先解析 JSON
+            // 结果——优先解析首行 JSON 元数据头（结构化返回体：首行头 + 正文定界）
             if (result.Length > 0)
             {
-                if (result.StartsWith("{"))
+                string headLine = FirstLine(result);
+                if (headLine.StartsWith("{"))
                 {
-                    string parsed = ParseCSharpResult(result);
+                    string parsed = ParseCSharpResult(headLine);
                     if (parsed.Length > 0)
                     {
                         sb.Append(" → "); sb.Append(parsed);

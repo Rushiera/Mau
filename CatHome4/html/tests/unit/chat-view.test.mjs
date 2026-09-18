@@ -361,7 +361,7 @@ test('view toolcard 渲染工具卡（含名称/参数/结果；默认折叠）'
   // details 结构——默认折叠（点击 summary 展开）
   expect(card.tagName).toBe('DETAILS');
   expect(card.open).toBe(false);
-  expect(card.querySelector('.tn').textContent).toContain('time');
+  expect(card.querySelector('.tn').textContent).toContain('时间');
   expect(card.querySelector('.tr').textContent).toBe('2026-08-30 00:00:00');
   // 展开后内容可见
   card.open = true;
@@ -447,7 +447,7 @@ test('toolcard 小结果——不标注（避免噪音）', () => {
     payload: { name: 'time', arguments: '{}', result: '2026-09-14 17:00:00' },
     replaceSeq: -1
   });
-  expect(chatMsgs.querySelector('.chat-tool .tn').textContent).toBe('📝 time');
+  expect(chatMsgs.querySelector('.chat-tool .tn').textContent).toBe('📝 时间  · 1 行 19 字符');
 });
 
 test('toolcard ps 结果截断——折叠行上限标注 + 展开区警示块', () => {

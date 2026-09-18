@@ -2,7 +2,7 @@
 // 积木: temp.exec
 // ID:   BRIK-TEMP-001
 // 类别: TEMP
-// 作用: 临时工具万能执行接口——按 Key 分发到 C# 函数（str→str）；Key 不存在报错并返回可用 Key 组
+// 作用: 临时工具万能执行接口——按 Key 分发到 C# 函数（str→str）；Key 不存在报错并返回可用 Key 组；返回体 = 首行 JSON 头 + 正文
 // 依赖: 无
 // 引用: System（Dictionary/Func/Exception）+ System.Text.Json
 // 原理: argsJson 解析 key+content → TempRegistry 查 Key → 调用 handler（str→str）→ result 回执
@@ -100,7 +100,13 @@ namespace Mau.Bricks
             string content = ExtractArg(argsJson, "content");
             try
             {
-                result = fn(content);
+                string body = fn(content);
+                // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                result = MetaHead(key, body);
+                if (body.Length > 0)
+                {
+                    result = result + "\n" + body;
+                }
                 return true;
             }
             catch (Exception ex)
@@ -194,6 +200,23 @@ namespace Mau.Bricks
             }
         }
 
+        /// <summary>
+        /// 结构化元数据头——首行单行 JSON（ok/tool/key/chars；键序稳定 = 插入序）
+        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
+        /// </summary>
+        /// <param name="key">临时工具 Key</param>
+        /// <param name="body">handler 结果</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string key, string body)
+        {
+            Dictionary<string, object> head = new Dictionary<string, object>();
+            head["ok"] = true;
+            head["tool"] = "temp-exec";
+            head["key"] = key;
+            head["chars"] = body.Length;
+            return JsonSerializer.Serialize(head);
+        }
+
         private static string ExtractArg(string argumentsJson, string key)
         {
             try
@@ -227,4 +250,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:15A6B8DC8012565F5E59D12818885874AFA9C1FEA59A36E5BB86476BDFD020B0
+// #MAU_CHECKSUM:SHA256:99D5D24D269392C07EFCB0053C05286F40461FA49AD786A10AA1B7DC653D26CA

@@ -2,7 +2,7 @@
 // 积木: vision.analyze
 // ID:   BRIK-VISION-001
 // 类别: VISION
-// 作用: 图像识别——读取图片（本地路径 base64 内联 / 外部 URL 直传）→ 视觉模型分析 → 返回基于提示词的文本
+// 作用: 图像识别——读取图片（本地路径 base64 内联 / 外部 URL 直传）→ 视觉模型分析 → 返回基于提示词的文本；返回体 = 首行 JSON 头 + 正文
 // 依赖: 无
 // 引用: Mau.Runtime（IVisionService/DataBox）
 // 原理: DataBox.TryResolve<IVisionService> → Analyze(path, question)；argsJson 内解析（语料零 JSON 解析）；
@@ -52,7 +52,18 @@ namespace Mau.Bricks
                     result = "ERR|VISION_NO_SERVICE|宿主未注入 IVisionService";
                     return false;
                 }
-                result = service.Analyze(path, question);
+                string body = service.Analyze(path, question);
+                if (body.StartsWith("ERR|", StringComparison.Ordinal))
+                {
+                    result = body;
+                    return true;
+                }
+                // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                result = MetaHead(path, question, body);
+                if (body.Length > 0)
+                {
+                    result = result + "\n" + body;
+                }
                 return true;
             }
             catch (Exception ex)
@@ -146,6 +157,25 @@ namespace Mau.Bricks
             }
         }
 
+        /// <summary>
+        /// 结构化元数据头——首行单行 JSON（ok/tool/path/question/chars；键序稳定 = 插入序）
+        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
+        /// </summary>
+        /// <param name="path">图片路径</param>
+        /// <param name="question">提示词</param>
+        /// <param name="body">分析正文</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string path, string question, string body)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = true;
+            head["tool"] = "image-analyze";
+            head["path"] = path;
+            head["question"] = question;
+            head["chars"] = body.Length;
+            return JsonSerializer.Serialize(head);
+        }
+
         private static string ExtractArg(string argumentsJson, string key)
         {
             try
@@ -174,4 +204,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:3550EF97FEDACB80072BCC7C81A2B817644A63C7BAC4E66C687B1E2927EDE832
+// #MAU_CHECKSUM:SHA256:025EAC891010E179E08D67F057F8A90DED6DDFA1EBA5357230B0920F9BFEF551

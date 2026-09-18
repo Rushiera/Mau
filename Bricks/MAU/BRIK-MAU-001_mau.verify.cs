@@ -75,7 +75,12 @@ namespace Mau.Bricks
                         sb.Append(Environment.NewLine);
                         sb.Append("报告: " + r.Reports[i]);
                     }
-                    result = sb.ToString();
+                    // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                    System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
+                    fields["file"] = file;
+                    fields["flow"] = "FL_" + flowName;
+                    fields["reports"] = r.Reports.Count;
+                    result = MetaHead("mau-verify", true, fields) + "\n" + sb.ToString();
                     return true;
                 }
                 StringBuilder err = new StringBuilder();
@@ -86,7 +91,12 @@ namespace Mau.Bricks
                     err.Append(Environment.NewLine);
                     err.Append(file + ":" + d.Line + ": " + d.Code + ": " + d.Message);
                 }
-                result = err.ToString();
+                // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                System.Collections.Generic.Dictionary<string, object> errFields = new System.Collections.Generic.Dictionary<string, object>();
+                errFields["file"] = file;
+                errFields["flow"] = "FL_" + flowName;
+                errFields["errors"] = r.Diagnostics.Count;
+                result = MetaHead("mau-verify", false, errFields) + "\n" + err.ToString();
                 return false;
             }
             catch (Exception ex)
@@ -226,6 +236,26 @@ namespace Mau.Bricks
             }
         }
 
+        /// <summary>
+        /// 结构化元数据头——首行单行 JSON（ok/tool + 调用方字段；键序稳定 = 插入序）
+        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
+        /// </summary>
+        /// <param name="tool">工具名（mau-verify / mau-gen / mau-proj / mau-setup）</param>
+        /// <param name="ok">成败（编译 / 验证是否通过）</param>
+        /// <param name="fields">附加字段（按插入序输出）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, System.Collections.Generic.Dictionary<string, object> fields)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
+            {
+                head[kv.Key] = kv.Value;
+            }
+            return JsonSerializer.Serialize(head);
+        }
+
         private static string ExtractArg(string argumentsJson, string key)
         {
             try
@@ -254,4 +284,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:E57B0535161A80DEF6C6D8DC2AD36925450F4DCBF09E321B79A51C393B72F2B3
+// #MAU_CHECKSUM:SHA256:5AC2C686476A3F687250686BAAD00A8B71138956F5E49BBDBB8E26EA8E2EC82C

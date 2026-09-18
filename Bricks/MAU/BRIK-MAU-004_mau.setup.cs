@@ -103,9 +103,20 @@ namespace Mau.Bricks
                     result = sb.ToString();
                     return false;
                 }
-                string summary = ReadReport(report, exitCode, logPath);
+                int stepCount = 0;
+                int stepOk = 0;
+                int artifactCount = 0;
+                string summary = ReadReport(report, exitCode, logPath, out stepCount, out stepOk, out artifactCount);
                 sb.Append(summary);
-                result = sb.ToString();
+                // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
+                fields["mode"] = mode;
+                fields["target"] = (mode == "deploy") ? target : "";
+                fields["exit"] = exitCode;
+                fields["steps"] = stepCount;
+                fields["stepsOk"] = stepOk;
+                fields["artifacts"] = artifactCount;
+                result = MetaHead("mau-setup", exitCode == 0, fields) + "\n" + sb.ToString();
                 return exitCode == 0;
             }
             catch (Exception ex)
@@ -159,9 +170,15 @@ namespace Mau.Bricks
         /// <param name="reportPath">报告文件路径</param>
         /// <param name="exitCode">进程退出码</param>
         /// <param name="logPath">同路径 .log 全量日志</param>
+        /// <param name="stepCount">步总数（out）</param>
+        /// <param name="stepOk">通过步数（out）</param>
+        /// <param name="artifactCount">产物件数（out）</param>
         /// <returns>摘要文本</returns>
-        private static string ReadReport(string reportPath, int exitCode, string logPath)
+        private static string ReadReport(string reportPath, int exitCode, string logPath, out int stepCount, out int stepOk, out int artifactCount)
         {
+            stepCount = 0;
+            stepOk = 0;
+            artifactCount = 0;
             StringBuilder sb = new StringBuilder();
             sb.Append("exit=" + exitCode.ToString());
             sb.Append(Environment.NewLine);
@@ -204,7 +221,13 @@ namespace Mau.Bricks
                                 sb.Append("  " + line);
                                 sb.Append(Environment.NewLine);
                             }
+                            JsonElement okFlag;
+                            if (step.ValueKind == JsonValueKind.Object && step.TryGetProperty("Ok", out okFlag) && okFlag.ValueKind == JsonValueKind.True)
+                            {
+                                stepOk = stepOk + 1;
+                            }
                         }
+                        stepCount = i;
                         sb.Append("步数: " + i.ToString());
                         sb.Append(Environment.NewLine);
                     }
@@ -216,6 +239,7 @@ namespace Mau.Bricks
                         {
                             n = n + 1;
                         }
+                        artifactCount = n;
                         sb.Append("产物: " + n.ToString() + " 件（时间戳见报告 JSON）");
                         sb.Append(Environment.NewLine);
                     }
@@ -373,6 +397,26 @@ namespace Mau.Bricks
             }
         }
 
+        /// <summary>
+        /// 结构化元数据头——首行单行 JSON（ok/tool + 调用方字段；键序稳定 = 插入序）
+        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
+        /// </summary>
+        /// <param name="tool">工具名（mau-verify / mau-gen / mau-proj / mau-setup）</param>
+        /// <param name="ok">成败（部署链成败）</param>
+        /// <param name="fields">附加字段（按插入序输出）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, System.Collections.Generic.Dictionary<string, object> fields)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
+            {
+                head[kv.Key] = kv.Value;
+            }
+            return JsonSerializer.Serialize(head);
+        }
+
         private static string ExtractArg(string argumentsJson, string key)
         {
             try
@@ -402,4 +446,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:9BD027A2B8BE6F840035AA614376EE87370FA9A338AF3178BA93CAC407B22F16
+// #MAU_CHECKSUM:SHA256:861EA6FD4AAE5A56F3E243C7825682B41E6C96C665E8EFFE1E2FEDD606E230A0
