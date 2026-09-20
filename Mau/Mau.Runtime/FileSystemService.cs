@@ -786,6 +786,62 @@ namespace Mau.Runtime
                 throw new FileNotFoundException("Move source was not found.", resolvedSource);
             }
         }
+
+        /// <summary>
+        /// 复制文件或目录（含非空目录——整棵子树）到目标；自动创建目标父目录；目标已存在拒绝
+        /// </summary>
+        /// <param name="source">源路径</param>
+        /// <param name="destination">目标路径</param>
+        public void Copy(string source, string destination)
+        {
+            string resolvedSource = Resolve(source, false);
+            string resolvedDestination = Resolve(destination, true);
+            lock (_writeGate)
+            {
+                if (File.Exists(resolvedDestination) || Directory.Exists(resolvedDestination))
+                {
+                    throw new IOException("Copy destination already exists.");
+                }
+                if (Directory.Exists(resolvedSource))
+                {
+                    CopyDirectory(resolvedSource, resolvedDestination);
+                    return;
+                }
+                if (File.Exists(resolvedSource))
+                {
+                    EnsureParentDirectory(resolvedDestination);
+                    File.Copy(resolvedSource, resolvedDestination, false);
+                    return;
+                }
+                throw new FileNotFoundException("Copy source was not found.", resolvedSource);
+            }
+        }
+
+        /// <summary>
+        /// 递归复制目录子树——重解析点（符号链接）跳过（拒绝穿过重解析点，与类边界语义一致）
+        /// </summary>
+        /// <param name="source">源目录（已校验）</param>
+        /// <param name="destination">目标目录（已校验）</param>
+        private static void CopyDirectory(string source, string destination)
+        {
+            Directory.CreateDirectory(destination);
+            foreach (string file in Directory.EnumerateFiles(source))
+            {
+                if (PathBoundary.IsReparsePoint(file))
+                {
+                    continue;
+                }
+                File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), false);
+            }
+            foreach (string sub in Directory.EnumerateDirectories(source))
+            {
+                if (PathBoundary.IsReparsePoint(sub))
+                {
+                    continue;
+                }
+                CopyDirectory(sub, Path.Combine(destination, Path.GetFileName(sub)));
+            }
+        }
         /// <summary>
         /// 将文件或目录（含非空目录——整棵子树）移动到受控回收站，并统计被移动内容
         /// </summary>

@@ -1,12 +1,12 @@
 ﻿// ═══════════════════════════════════════════════════
-// 积木: text.move
-// ID:   BRIK-TEXT-010
-// 类别: TEXT
-// 作用: 移动/重命名——文件与目录均支持（目录=整棵子树移动）；自动创建目标父目录；目标已存在拒绝——LLM 工具 text-move 语料执行面
+// 积木: file.copy
+// ID:   BRIK-FILE-005
+// 类别: FILE
+// 作用: 复制——文件与目录均支持（目录=整棵子树复制）；自动创建目标父目录；目标已存在拒绝——LLM 工具 file-copy 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
-// 原理: DataBox.TryResolve<FileSystemService> → Move(src, dest)；argsJson 内解析 src/dest
-// 常用: TextCat 认领线——'text.move'[@args] > @result
+// 原理: DataBox.TryResolve<FileSystemService> → Copy(src, dest)；argsJson 内解析 src/dest
+// 常用: FileCat 认领线——'file.copy'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
 using System.Text.Json;
@@ -15,17 +15,17 @@ using Mau.Runtime;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// 文本积木——text-move 移动/重命名（LLM 工具执行面：参数整包 argsJson）
+    /// 文件积木——file-copy 复制（LLM 工具执行面：参数整包 argsJson）
     /// </summary>
-    public static class TextMoveBrick
+    public static class FileCopyBrick
     {
         /// <summary>
-        /// 移动/重命名
+        /// 复制文件/目录
         /// </summary>
         /// <param name="argsJson">工具参数 JSON（src/dest）</param>
         /// <param name="result">确认文本或 ERR| 错误文本</param>
         /// <returns>true=执行成功</returns>
-        public static bool Move(string argsJson, out string result)
+        public static bool Copy(string argsJson, out string result)
         {
             result = "";
             // [参数面] 声明面口径零容忍——未知 / 缺值一律 ERR|BAD_ARGS（catId 保留键放行）
@@ -59,8 +59,8 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                fs.Move(src, dest);
-                result = "OK 已移动: " + src + " → " + dest;
+                fs.Copy(src, dest);
+                result = "OK 已复制: " + src + " → " + dest;
                 return true;
             }
             catch (Exception ex)
@@ -180,4 +180,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:13FB130C29F40DEC51DA170609FF0AE375B3A93C0292ED11B876E959DDF54D0D
+// #MAU_CHECKSUM:SHA256:1D2A18232493171610AA95D6CF23817EAB0014301AD3B80045AE81E400866849

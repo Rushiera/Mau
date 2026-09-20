@@ -1,12 +1,12 @@
 ﻿// ═══════════════════════════════════════════════════
-// 积木: text.tree
-// ID:   BRIK-TEXT-007
-// 类别: TEXT
-// 作用: 目录树——列目录结构（depth 层级 / limit 条数上限；稳定排序）——LLM 工具 text-tree 语料执行面
+// 积木: file.tree
+// ID:   BRIK-FILE-001
+// 类别: FILE
+// 作用: 目录树——列目录结构（depth 层级 / limit 条数上限；稳定排序）——LLM 工具 file-tree 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
 // 原理: DataBox.TryResolve<FileSystemService> → Tree(path, depth, limit)；argsJson 内解析 path/depth/limit
-// 常用: TextCat 认领线——'text.tree'[@args] > @result
+// 常用: FileCat 认领线——'file.tree'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
 using System.Text.Json;
@@ -15,9 +15,9 @@ using Mau.Runtime;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// 文本积木——text-tree 目录树（LLM 工具执行面：参数整包 argsJson）
+    /// 文件积木——file-tree 目录树（LLM 工具执行面：参数整包 argsJson）
     /// </summary>
-    public static class TextTreeBrick
+    public static class FileTreeBrick
     {
         /// <summary>
         /// 目录树
@@ -198,4 +198,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:479413F9C4CF765EA1476CC4FEFC43B1086B5B08B5B61D51E9CCE7BE67F10279
+// #MAU_CHECKSUM:SHA256:FDA61D5ECC73F87103C3A882646B80C2229BA7D9E2B8032B1F8BDE91C65C927B

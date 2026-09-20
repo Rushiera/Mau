@@ -1,12 +1,12 @@
 ﻿// ═══════════════════════════════════════════════════
-// 积木: text.find
-// ID:   BRIK-TEXT-008
-// 类别: TEXT
-// 作用: 文件名 glob 搜索——按文件名模式找文件（pattern 如 *.md / **/*.cs；recursive 默认 true）——LLM 工具 text-find 语料执行面
+// 积木: file.delete
+// ID:   BRIK-FILE-004
+// 类别: FILE
+// 作用: 软删除——移入受控回收站（可恢复）；支持文件与目录（含非空目录=整棵子树整体迁移，附内容统计）——LLM 工具 file-delete 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
-// 原理: DataBox.TryResolve<FileSystemService> → Find(dir, pattern, recursive, limit)；argsJson 内解析 dir/pattern/recursive/limit
-// 常用: TextCat 认领线——'text.find'[@args] > @result
+// 原理: DataBox.TryResolve<FileSystemService> → Recycle(path)；argsJson 内解析 path
+// 常用: FileCat 认领线——'file.delete'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
 using System.Text.Json;
@@ -15,58 +15,35 @@ using Mau.Runtime;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// 文本积木——text-find 文件名搜索（LLM 工具执行面：参数整包 argsJson）
+    /// 文件积木——file-delete 软删除（LLM 工具执行面：参数整包 argsJson）
     /// </summary>
-    public static class TextFindBrick
+    public static class FileDeleteBrick
     {
         /// <summary>
-        /// 文件名 glob 搜索
+        /// 软删除到回收站
         /// </summary>
-        /// <param name="argsJson">工具参数 JSON（dir/pattern/recursive/limit）</param>
-        /// <param name="result">相对路径列表（\n 分隔）或 ERR| 错误文本</param>
+        /// <param name="argsJson">工具参数 JSON（path）</param>
+        /// <param name="result">回收站路径确认或 ERR| 错误文本</param>
         /// <returns>true=执行成功</returns>
-        public static bool Find(string argsJson, out string result)
+        public static bool Delete(string argsJson, out string result)
         {
             result = "";
             // [参数面] 声明面口径零容忍——未知 / 缺值一律 ERR|BAD_ARGS（catId 保留键放行）
-            string badArgs = ValidateArgs(argsJson, "dir pattern recursive limit", "dir", "", "");
+            string badArgs = ValidateArgs(argsJson, "path", "path", "", "");
             if (badArgs.Length > 0)
             {
                 result = badArgs;
                 return false;
             }
-            string dir = ExtractArg(argsJson, "dir");
-            if (dir == "§PARSE_FAIL§")
+            string path = ExtractArg(argsJson, "path");
+            if (path == "§PARSE_FAIL§")
             {
                 result = "ERR|BAD_ARGS|工具参数 JSON 解析失败（LLM 生成参数可能被截断——超长内容请分段写入）";
                 return false;
             }
-            if (dir.Length == 0)
+            if (path.Length == 0)
             {
-                result = "ERR|BAD_ARGS|缺少参数 dir";
-                return false;
-            }
-            string pattern = ExtractArg(argsJson, "pattern");
-            if (pattern == "§PARSE_FAIL§")
-            {
-                result = "ERR|BAD_ARGS|工具参数 JSON 解析失败（LLM 生成参数可能被截断——超长内容请分段写入）";
-                return false;
-            }
-            if (pattern.Length == 0)
-            {
-                pattern = "*";
-            }
-            bool recursive = true;
-            string recRaw = ExtractArg(argsJson, "recursive");
-            if (recRaw.Length > 0 && (recRaw == "false" || recRaw == "0"))
-            {
-                recursive = false;
-            }
-            int limit = 500;
-            string limitRaw = ExtractArg(argsJson, "limit");
-            if (limitRaw.Length > 0 && !int.TryParse(limitRaw, out limit))
-            {
-                result = "ERR|BAD_ARGS|参数 limit 非整数: " + limitRaw;
+                result = "ERR|BAD_ARGS|缺少参数 path";
                 return false;
             }
             try
@@ -81,13 +58,8 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                string[] rows = fs.Find(dir, pattern, recursive, limit);
-                if (rows == null || rows.Length == 0)
-                {
-                    result = "（未找到匹配文件）";
-                    return true;
-                }
-                result = string.Join("\n", rows);
+                RecycleOutcome outcome = fs.Recycle(path);
+                result = "OK 已软删除 → " + outcome.Target + FormatStats(outcome);
                 return true;
             }
             catch (Exception ex)
@@ -95,6 +67,42 @@ namespace Mau.Bricks
                 result = "ERR|" + ex.GetType().Name + "|" + ex.Message;
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 内容统计文本——文件 = 体积；目录 = 文件数 + 子目录数 + 合计体积
+        /// </summary>
+        /// <param name="outcome">回收结果</param>
+        /// <returns>统计文本</returns>
+        private static string FormatStats(RecycleOutcome outcome)
+        {
+            if (!outcome.IsDirectory)
+            {
+                return "（文件 · " + SizeText(outcome.TotalBytes) + "）";
+            }
+            return "（目录 · 文件 " + outcome.FileCount + " / 子目录 " + outcome.DirectoryCount + " / 合计 " + SizeText(outcome.TotalBytes) + "）";
+        }
+
+        /// <summary>
+        /// 体积自适应文本（B / KB / MB / GB——整数运算，无小数文化差异）
+        /// </summary>
+        /// <param name="bytes">字节数</param>
+        /// <returns>可读体积</returns>
+        private static string SizeText(long bytes)
+        {
+            if (bytes < 1024)
+            {
+                return bytes + " B";
+            }
+            if (bytes < 1024 * 1024)
+            {
+                return ((bytes + 512) / 1024) + " KB";
+            }
+            if (bytes < 1024L * 1024 * 1024)
+            {
+                return ((bytes + (512 * 1024)) / (1024 * 1024)) + " MB";
+            }
+            return ((bytes + (512L * 1024 * 1024)) / (1024L * 1024 * 1024)) + " GB";
         }
 
         /// <summary>
@@ -207,4 +215,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:3C3A986E0672CAA0759D2F278FD8C2041E633F65F846240A2B7B399E057106D2
+// #MAU_CHECKSUM:SHA256:AF328A30E1A2007D2D2B43A25B1413CB2ED7800928DE6F365267B2D49902BBB1

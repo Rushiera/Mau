@@ -1,12 +1,12 @@
 ﻿// ═══════════════════════════════════════════════════
-// 积木: text.delete
-// ID:   BRIK-TEXT-011
-// 类别: TEXT
-// 作用: 软删除——移入受控回收站（可恢复）；支持文件与目录（含非空目录=整棵子树整体迁移，附内容统计）——LLM 工具 text-delete 语料执行面
+// 积木: file.move
+// ID:   BRIK-FILE-003
+// 类别: FILE
+// 作用: 移动/重命名——文件与目录均支持（目录=整棵子树移动）；自动创建目标父目录；目标已存在拒绝——LLM 工具 file-move 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox）
-// 原理: DataBox.TryResolve<FileSystemService> → Recycle(path)；argsJson 内解析 path
-// 常用: TextCat 认领线——'text.delete'[@args] > @result
+// 原理: DataBox.TryResolve<FileSystemService> → Move(src, dest)；argsJson 内解析 src/dest
+// 常用: FileCat 认领线——'file.move'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
 using System.Text.Json;
@@ -15,35 +15,36 @@ using Mau.Runtime;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// 文本积木——text-delete 软删除（LLM 工具执行面：参数整包 argsJson）
+    /// 文件积木——file-move 移动/重命名（LLM 工具执行面：参数整包 argsJson）
     /// </summary>
-    public static class TextDeleteBrick
+    public static class FileMoveBrick
     {
         /// <summary>
-        /// 软删除到回收站
+        /// 移动/重命名
         /// </summary>
-        /// <param name="argsJson">工具参数 JSON（path）</param>
-        /// <param name="result">回收站路径确认或 ERR| 错误文本</param>
+        /// <param name="argsJson">工具参数 JSON（src/dest）</param>
+        /// <param name="result">确认文本或 ERR| 错误文本</param>
         /// <returns>true=执行成功</returns>
-        public static bool Delete(string argsJson, out string result)
+        public static bool Move(string argsJson, out string result)
         {
             result = "";
             // [参数面] 声明面口径零容忍——未知 / 缺值一律 ERR|BAD_ARGS（catId 保留键放行）
-            string badArgs = ValidateArgs(argsJson, "path", "path", "", "");
+            string badArgs = ValidateArgs(argsJson, "src dest", "src dest", "", "");
             if (badArgs.Length > 0)
             {
                 result = badArgs;
                 return false;
             }
-            string path = ExtractArg(argsJson, "path");
-            if (path == "§PARSE_FAIL§")
+            string src = ExtractArg(argsJson, "src");
+            string dest = ExtractArg(argsJson, "dest");
+            if (src == "§PARSE_FAIL§" || dest == "§PARSE_FAIL§")
             {
                 result = "ERR|BAD_ARGS|工具参数 JSON 解析失败（LLM 生成参数可能被截断——超长内容请分段写入）";
                 return false;
             }
-            if (path.Length == 0)
+            if (src.Length == 0 || dest.Length == 0)
             {
-                result = "ERR|BAD_ARGS|缺少参数 path";
+                result = "ERR|BAD_ARGS|缺少参数 src 或 dest";
                 return false;
             }
             try
@@ -58,8 +59,8 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                RecycleOutcome outcome = fs.Recycle(path);
-                result = "OK 已软删除 → " + outcome.Target + FormatStats(outcome);
+                fs.Move(src, dest);
+                result = "OK 已移动: " + src + " → " + dest;
                 return true;
             }
             catch (Exception ex)
@@ -67,42 +68,6 @@ namespace Mau.Bricks
                 result = "ERR|" + ex.GetType().Name + "|" + ex.Message;
                 return false;
             }
-        }
-
-        /// <summary>
-        /// 内容统计文本——文件 = 体积；目录 = 文件数 + 子目录数 + 合计体积
-        /// </summary>
-        /// <param name="outcome">回收结果</param>
-        /// <returns>统计文本</returns>
-        private static string FormatStats(RecycleOutcome outcome)
-        {
-            if (!outcome.IsDirectory)
-            {
-                return "（文件 · " + SizeText(outcome.TotalBytes) + "）";
-            }
-            return "（目录 · 文件 " + outcome.FileCount + " / 子目录 " + outcome.DirectoryCount + " / 合计 " + SizeText(outcome.TotalBytes) + "）";
-        }
-
-        /// <summary>
-        /// 体积自适应文本（B / KB / MB / GB——整数运算，无小数文化差异）
-        /// </summary>
-        /// <param name="bytes">字节数</param>
-        /// <returns>可读体积</returns>
-        private static string SizeText(long bytes)
-        {
-            if (bytes < 1024)
-            {
-                return bytes + " B";
-            }
-            if (bytes < 1024 * 1024)
-            {
-                return ((bytes + 512) / 1024) + " KB";
-            }
-            if (bytes < 1024L * 1024 * 1024)
-            {
-                return ((bytes + (512 * 1024)) / (1024 * 1024)) + " MB";
-            }
-            return ((bytes + (512L * 1024 * 1024)) / (1024L * 1024 * 1024)) + " GB";
         }
 
         /// <summary>
@@ -215,4 +180,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:D18D4E3FB137822368A9F0EE643452056B2CC162BC0B6AE3FE0DF3214BB59DB6
+// #MAU_CHECKSUM:SHA256:63E178F4953D5BBD959200E207CB2917CE9F793ED9E0BA5B9FD255206FF1D9FA

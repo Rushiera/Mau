@@ -72,7 +72,7 @@ test('骨架全覆盖——8 类骨架均产出输入 / 输出两段', () => {
   const cases = [
     { name: 'powershell', arguments: '{"command":"x"}', result: '{"exit":0,"stdout":"a","stderr":""}' },
     { name: 'cs-build', arguments: '{}', result: '{"ok":true,"errors":0,"warnings":0}' },
-    { name: 'text-tree', arguments: '{}', result: 'a/\na\\b.txt' },
+    { name: 'file-tree', arguments: '{}', result: 'a/\na\\b.txt' },
     { name: 'text-grep', arguments: '{}', result: 'a.cs:1:x' },
     { name: 'text-read_lines', arguments: '{}', result: '1: x' },
     { name: 'text-read', arguments: '{}', result: 'x' },
@@ -246,7 +246,7 @@ test('diagnostics 骨架——纯文本清单退化行数徽标（解析不出�
 // ── listing 骨架（列举）──
 test('listing 骨架——条目计数排除提示行 + 逐行等宽可见', () => {
   const card = renderTool({
-    name: 'text-tree',
+    name: 'file-tree',
     arguments: JSON.stringify({ path: 'CCBP' }),
     result: 'L1/\nL1\\Tree.md\n[git] 存在 .git',
     summary: '展开目录 "CCBP" → "1文件 1目录"'
@@ -258,7 +258,7 @@ test('listing 骨架——条目计数排除提示行 + 逐行等宽可见', () 
 
 test('listing 骨架——空结果显式占位', () => {
   const card = renderTool({
-    name: 'text-find',
+    name: 'file-find',
     arguments: JSON.stringify({ dir: 'X', pattern: '*.zzz' }),
     result: '',
     summary: '搜索文件 "X" → 无结果'
@@ -370,7 +370,7 @@ test('回落三态——空结果显式占位 / ERR 失败配色 / 非法 JSON �
   expect(c1.querySelector('.seg-out .seg-cap').textContent).toContain('无输出');
   expect(c1.querySelector('.seg-out .tr').textContent).toBe('（无输出）');
 
-  renderTool({ name: 'text-delete', arguments: '{}', result: 'ERR|NO_SUCH_FILE' }, 73);
+  renderTool({ name: 'file-delete', arguments: '{}', result: 'ERR|NO_SUCH_FILE' }, 73);
   const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
   expect(c2.querySelector('.seg-out .seg-cap').textContent).toContain('失败');
   expect(c2.querySelector('.seg-out .tr.err')).not.toBeNull();
@@ -427,7 +427,7 @@ test('工具图标——三级回落（工具专属 → 骨架 → ❓）', () =
   // ② 骨架级——8 类各一
   expect(window.chatToolIcon('text-read')).toBe('📖');
   expect(window.chatToolIcon('cs-build')).toBe('🩺');
-  expect(window.chatToolIcon('text-tree')).toBe('📂');
+  expect(window.chatToolIcon('file-tree')).toBe('📂');
   expect(window.chatToolIcon('text-grep')).toBe('🔍');
   expect(window.chatToolIcon('text-read_lines')).toBe('🔢');
   expect(window.chatToolIcon('host-flows')).toBe('🧩');
@@ -497,9 +497,9 @@ test('填充覆盖——text-replace 输入段三行（标题 / 旧 / 新）', (
   expect(lines[2].textContent).toBe('新：新文本');
 });
 
-test('填充覆盖——text-tree 意图行含 depth/limit；未声明工具仍走键值表', () => {
+test('填充覆盖——file-tree 意图行含 depth/limit；未声明工具仍走键值表', () => {
   const card = renderTool({
-    name: 'text-tree',
+    name: 'file-tree',
     arguments: JSON.stringify({ path: 'CCBP', depth: 2, limit: 50 }),
     result: 'a/',
     summary: '展开目录 "CCBP"'
@@ -546,7 +546,7 @@ test('headline——text-grep 命中数进折叠行；未完成（无 result）�
   expect(card2.querySelector('.tn').textContent).toBe('🔢 按行读取 a.md · L3 起');
 });
 
-test('headline——text-replace 处数从结果提取；text-tree 条目数排除提示行', () => {
+test('headline——text-replace 处数从结果提取；file-tree 条目数排除提示行', () => {
   const card = renderTool({
     name: 'text-replace',
     arguments: JSON.stringify({ path: 'a.md', old: 'x', new: 'y' }),
@@ -554,15 +554,15 @@ test('headline——text-replace 处数从结果提取；text-tree 条目数排�
     summary: '替换文本 "a.md" → …'
   }, 88);
   expect(card.querySelector('.tn').textContent).toBe('🔄 替换 a.md · 1 处');
-  renderTool({ name: 'text-tree', arguments: JSON.stringify({ path: 'CCBP', depth: 2 }), result: 'a/\na\\b.txt\n[git] 存在 .git' }, 89);
+  renderTool({ name: 'file-tree', arguments: JSON.stringify({ path: 'CCBP', depth: 2 }), result: 'a/\na\\b.txt\n[git] 存在 .git' }, 89);
   const card2 = chatMsgs.querySelectorAll('.chat-tool')[1];
   expect(card2.querySelector('.tn').textContent).toBe('📂 展开 CCBP · depth 2 · 2 条目');
 });
 
 test('工具专属图标——find 🔍 / move 📦 / delete 🗑️ 覆盖骨架图标', () => {
-  expect(window.chatToolIcon('text-find')).toBe('🔍');
-  expect(window.chatToolIcon('text-move')).toBe('📦');
-  expect(window.chatToolIcon('text-delete')).toBe('🗑️');
+  expect(window.chatToolIcon('file-find')).toBe('🔍');
+  expect(window.chatToolIcon('file-move')).toBe('📦');
+  expect(window.chatToolIcon('file-delete')).toBe('🗑️');
   // 未配专属图标的 text-* 仍吃骨架图标
   expect(window.chatToolIcon('text-read')).toBe('📖');
   expect(window.chatToolIcon('text-write')).toBe('📝');

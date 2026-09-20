@@ -103,7 +103,7 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void TextFind_ShowsHitStats()
         {
-            string s = ToolSummaryFormatter.Build("text-find", "{\"dir\":\"D:\\\\x\",\"pattern\":\"**/*.cs\"}", "a.cs\nb.cs\nsub/c.cs");
+            string s = ToolSummaryFormatter.Build("file-find", "{\"dir\":\"D:\\\\x\",\"pattern\":\"**/*.cs\"}", "a.cs\nb.cs\nsub/c.cs");
             Assert.Equal("搜索文件 \"D:\\x\" glob=\"**/*.cs\" → 3文件（\"a.cs\", \"b.cs\", \"sub/c.cs\"）", s);
         }
 
@@ -123,7 +123,7 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void TextTree_ShowsFileDirCount()
         {
-            string s = ToolSummaryFormatter.Build("text-tree", "{\"path\":\"C:\\\\x\",\"depth\":\"2\"}", "  a.cs (1 KB)\n  dir/\n");
+            string s = ToolSummaryFormatter.Build("file-tree", "{\"path\":\"C:\\\\x\",\"depth\":\"2\"}", "  a.cs (1 KB)\n  dir/\n");
             Assert.StartsWith("展开目录 \"C:\\x\" depth=\"2\" → \"1文件 1目录", s);
         }
 
@@ -134,7 +134,7 @@ namespace CatHome4.Core.Tests
         public void TextTree_RealOutput_CountsFilesAndDirs()
         {
             // 回归——AppendTree 真实输出（纯相对路径 + 目录行 / 尾）必须正确统计（旧解析按 KB)/ 尾匹配 → 0文件 0目录）
-            string s = ToolSummaryFormatter.Build("text-tree", "{\"path\":\"C:\\\\x\",\"depth\":\"2\"}", "a.txt\nb/\nc/d.cs");
+            string s = ToolSummaryFormatter.Build("file-tree", "{\"path\":\"C:\\\\x\",\"depth\":\"2\"}", "a.txt\nb/\nc/d.cs");
             Assert.StartsWith("展开目录 \"C:\\x\" depth=\"2\" → \"2文件 1目录", s);
         }
 
@@ -144,7 +144,7 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void TextMove_ShowsSrcDest()
         {
-            string s = ToolSummaryFormatter.Build("text-move", "{\"src\":\"C:\\\\a.txt\",\"dest\":\"C:\\\\b.txt\"}", "移动成功: C:\\a.txt → C:\\b.txt");
+            string s = ToolSummaryFormatter.Build("file-move", "{\"src\":\"C:\\\\a.txt\",\"dest\":\"C:\\\\b.txt\"}", "移动成功: C:\\a.txt → C:\\b.txt");
             Assert.StartsWith("移动文件 \"C:\\a.txt\" → \"C:\\b.txt\" → \"移动成功", s);
         }
 
@@ -154,7 +154,7 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void TextDelete_ShowsResult()
         {
-            string s = ToolSummaryFormatter.Build("text-delete", "{\"path\":\"C:\\\\a.txt\"}", "软删除成功: DeleteIn20260907_a.txt");
+            string s = ToolSummaryFormatter.Build("file-delete", "{\"path\":\"C:\\\\a.txt\"}", "软删除成功: DeleteIn20260907_a.txt");
             Assert.Contains("删除文件 \"C:\\a.txt\"", s);
             Assert.Contains("软删除成功", s);
         }

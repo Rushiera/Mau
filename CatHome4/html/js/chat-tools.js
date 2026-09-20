@@ -131,8 +131,8 @@ var CHAT_TOOL_SKELETONS = {
     'mau-gen': 'diagnostics',
     'mau-proj': 'diagnostics',
     // listing——列举
-    'text-tree': 'listing',
-    'text-find': 'listing',
+    'file-tree': 'listing',
+    'file-find': 'listing',
     'cs-list': 'listing',
     'config-list': 'listing',
     // matches——检索命中
@@ -152,8 +152,9 @@ var CHAT_TOOL_SKELETONS = {
     'text-write': 'text',
     'text-append': 'text',
     'text-replace': 'text',
-    'text-move': 'text',
-    'text-delete': 'text',
+    'file-move': 'text',
+    'file-delete': 'text',
+    'file-copy': 'text',
     'cs-patch': 'text',
     'cs-member': 'text',
     'cs-comment': 'text',
@@ -875,13 +876,6 @@ var CHAT_TOOL_OVERRIDES = {
         },
         headline: function (a, r) { return '替换 ' + chatOvText(a.path) + chatOvMode(a) + chatOvReplaceTail(r); }
     },
-    'text-find': {
-        icon: '🔍',
-        inputLines: function (a) { return ['搜索 ' + chatOvText(a.dir) + ' · glob ' + chatOvText(a.pattern)]; },
-        headline: function (a, r) {
-            return '搜索 ' + chatOvText(a.dir) + ' · glob ' + chatOvText(a.pattern) + ' · ' + chatOvItems(r) + ' 条目';
-        }
-    },
     'text-grep': {
         inputLines: function (a) {
             var pat = a.pattern ? ' · 文件名 ' + a.pattern : '';
@@ -892,7 +886,8 @@ var CHAT_TOOL_OVERRIDES = {
             return '检索 ' + chatOvText(a.dir) + ' · 含 ' + chatOvText(a.keyword) + pat + ' · ' + chatOvItems(r) + ' 命中';
         }
     },
-    'text-tree': {
+    // ── FileCat（A67 拆分——结构面独立组；2026-09-20）──
+    'file-tree': {
         inputLines: function (a) {
             var extra = (a.limit === undefined) ? '' : ' · limit ' + a.limit;
             return ['展开 ' + chatOvText(a.path) + ' · depth ' + chatOvText(a.depth) + extra];
@@ -901,15 +896,27 @@ var CHAT_TOOL_OVERRIDES = {
             return '展开 ' + chatOvText(a.path) + ' · depth ' + chatOvText(a.depth) + ' · ' + chatOvItems(r) + ' 条目';
         }
     },
-    'text-move': {
+    'file-find': {
+        icon: '🔍',
+        inputLines: function (a) { return ['搜索 ' + chatOvText(a.dir) + ' · glob ' + chatOvText(a.pattern)]; },
+        headline: function (a, r) {
+            return '搜索 ' + chatOvText(a.dir) + ' · glob ' + chatOvText(a.pattern) + ' · ' + chatOvItems(r) + ' 条目';
+        }
+    },
+    'file-move': {
         icon: '📦',
         inputLines: function (a) { return ['移动 ' + chatOvText(a.src), '→ ' + chatOvText(a.dest)]; },
         headline: function (a, r) { return '移动 ' + chatOvText(a.src) + ' → ' + chatOvText(a.dest); }
     },
-    'text-delete': {
+    'file-delete': {
         icon: '🗑️',
         inputLines: function (a) { return ['删除 ' + chatOvText(a.path) + ' → 回收站']; },
         headline: function (a, r) { return '删除 ' + chatOvText(a.path) + ' → 回收站'; }
+    },
+    'file-copy': {
+        icon: '📋',
+        inputLines: function (a) { return ['复制 ' + chatOvText(a.src), '→ ' + chatOvText(a.dest)]; },
+        headline: function (a, r) { return '复制 ' + chatOvText(a.src) + ' → ' + chatOvText(a.dest); }
     },
     // ── CsCat（样板三件——结构化返回头驱动；2026-09-18）──
     'cs-check': {

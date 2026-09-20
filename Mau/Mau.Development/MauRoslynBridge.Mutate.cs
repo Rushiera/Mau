@@ -85,6 +85,7 @@ namespace Mau.Development
                 targetKeys.Add(RefKey(targets[i]));
             }
             List<string> hits = new List<string>();
+            Dictionary<string, string[]> lineCache = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
             for (int c = 0; c < caches.Count; c = c + 1)
             {
                 ProjectCache cache = caches[c];
@@ -147,7 +148,7 @@ namespace Mau.Development
                         if (matched)
                         {
                             FileLinePositionSpan span = namedNode.GetLocation().GetLineSpan();
-                            string lineText = ExtractLineText(pair.Key, span.StartLinePosition.Line);
+                            string lineText = ExtractLineText(pair.Key, span.StartLinePosition.Line, lineCache);
                             string mark = sameProject ? "" : "[跨程序集] ";
                             hits.Add(mark + RelativeToProject(cache, pair.Key) + ":" + (span.StartLinePosition.Line + 1) + ":" + (span.StartLinePosition.Character + 1) + ": " + lineText);
                         }
@@ -197,22 +198,24 @@ namespace Mau.Development
         /// </summary>
         /// <param name="filePath">文件</param>
         /// <param name="lineZero">0-based 行号</param>
+        /// <param name="cache">本次调用内行缓存（零共享状态——并发安全）</param>
         /// <returns>行文本（trim 80）</returns>
-        private static string ExtractLineText(string filePath, int lineZero)
+        private static string ExtractLineText(string filePath, int lineZero, Dictionary<string, string[]> cache)
         {
             try
             {
-                // 行缓存——同文件多次取行复用（R2-P3：原每次 ReadAllLines 全文件）
-                if (_lineCachePath != filePath)
+                // 行缓存——同文件多次取行复用（R2-P3 原意）；改调用内局部字典——原静态单槽跨会话并发串味（A66 修复 2026-09-20）
+                string[] lines = null!;
+                if (!cache.TryGetValue(filePath, out lines))
                 {
-                    _lineCache = File.ReadAllLines(filePath);
-                    _lineCachePath = filePath;
+                    lines = File.ReadAllLines(filePath);
+                    cache[filePath] = lines;
                 }
-                if (lineZero < 0 || lineZero >= _lineCache.Length)
+                if (lineZero < 0 || lineZero >= lines.Length)
                 {
                     return "";
                 }
-                string text = _lineCache[lineZero].Trim();
+                string text = lines[lineZero].Trim();
                 if (text.Length > 80)
                 {
                     text = text.Substring(0, 80) + "…";

@@ -2,7 +2,7 @@
 // 积木: tools.textcat
 // ID:   BRIK-TOOLS-001
 // 类别: TOOLS
-// 作用: 返回 TextCat 工具组全部工具的 OpenAI 兼容定义 JSON（宿主工具池拼装原料——design-ch4-tools-pool）
+// 作用: 返回 TextCat 工具组全部工具（A67 后 7 件·内容面）的 OpenAI 兼容定义 JSON（宿主工具池拼装原料——design-ch4-tools-pool）
 // 依赖: 无
 // 引用: 无（纯文本常量）
 // 原理: GetToolsJson() 返回本组工具定义整包 JSON——改描述只动本文件，mau proj 重建即生效
@@ -28,13 +28,9 @@ namespace Mau.Bricks
                 "{\"name\":\"text-replace\",\"description\":\"锚点替换——mode=exact/ignore_case 要求 old 全文唯一（出现多次报 ANCHOR_AMBIGUOUS 附候选行）；mode=all 全部出现替换返回数量；mode=regex 正则全部匹配支持 $1 捕获组；未找到报 ANCHOR_NOT_FOUND 附差异字节定位（路径支持受控根 id 前缀（或根名=该根根目录）或绝对路径）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目标文件路径\"},\"old\":{\"type\":\"string\",\"description\":\"要查找的旧文本（锚点；exact/ignore_case 须全文唯一）\"},\"new\":{\"type\":\"string\",\"description\":\"替换后的新文本\"},\"mode\":{\"type\":\"string\",\"description\":\"exact（默认，唯一锚点）/ ignore_case（唯一锚点不区分大小写）/ all（字面量全部替换）/ regex（正则全部匹配）\"}},\"required\":[\"path\",\"old\",\"new\"]}}," +
                 "{\"name\":\"text-read_lines\",\"description\":\"按行号区间读取文本（start 起 / end 止，1 起；end 省略读至文件尾；编码自动探测）——大文件省 token\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"文件路径\"},\"start\":{\"type\":\"integer\",\"description\":\"起始行（1 起，默认 1）\"},\"end\":{\"type\":\"integer\",\"description\":\"结束行（默认文件尾）\"}},\"required\":[\"path\"]}}," +
                 "{\"name\":\"text-read_between\",\"description\":\"锚点区间读取——str1 与 str2 之间内容（str1 空=文件头 / str2 空=文件尾；锚点须全文唯一；编码自动探测）——大文件精确取段\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"文件路径\"},\"str1\":{\"type\":\"string\",\"description\":\"起始锚点（空=文件头）\"},\"str2\":{\"type\":\"string\",\"description\":\"结束锚点（空=文件尾）\"}},\"required\":[\"path\"]}}," +
-                "{\"name\":\"text-tree\",\"description\":\"目录树——列目录结构（depth 层级 / limit 条数上限；稳定排序）；path 可用根名（如 CCBP）= 该根根目录\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目录路径（受控根 id 前缀 / 根名 / 绝对路径）\"},\"depth\":{\"type\":\"integer\",\"description\":\"递归深度（默认 2，≤10）\"},\"limit\":{\"type\":\"integer\",\"description\":\"最大条数（默认 500）\"}},\"required\":[\"path\"]}}," +
-                "{\"name\":\"text-find\",\"description\":\"文件名 glob 搜索——按文件名模式找文件（**/ 前缀=递归全部子目录；recursive 默认 true）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"dir\":{\"type\":\"string\",\"description\":\"搜索根目录（受控根 id 前缀 / 根名 / 绝对路径）\"},\"pattern\":{\"type\":\"string\",\"description\":\"文件名模式（默认 *；**/ 前缀=递归全部子目录）\"},\"recursive\":{\"type\":\"boolean\",\"description\":\"是否递归（默认 true）\"},\"limit\":{\"type\":\"integer\",\"description\":\"最大结果（默认 500）\"}},\"required\":[\"dir\"]}}," +
-                "{\"name\":\"text-grep\",\"description\":\"内容关键词搜索——目录内递归扫文本文件，返回 相对路径:行号:上下文（前后 ≤10 字符）——定位代码/文档关键词\",\"parameters\":{\"type\":\"object\",\"properties\":{\"dir\":{\"type\":\"string\",\"description\":\"搜索根目录（受控根 id 前缀 / 根名 / 绝对路径）\"},\"keyword\":{\"type\":\"string\",\"description\":\"搜索关键词（大小写敏感）\"},\"pattern\":{\"type\":\"string\",\"description\":\"文件名过滤（默认 *）\"},\"limit\":{\"type\":\"integer\",\"description\":\"最大结果（默认 200）\"}},\"required\":[\"dir\",\"keyword\"]}}," +
-                "{\"name\":\"text-move\",\"description\":\"移动/重命名——文件与目录均支持（目录=整棵子树移动）；自动创建目标父目录；目标已存在拒绝\",\"parameters\":{\"type\":\"object\",\"properties\":{\"src\":{\"type\":\"string\",\"description\":\"源路径\"},\"dest\":{\"type\":\"string\",\"description\":\"目标路径\"}},\"required\":[\"src\",\"dest\"]}}," +
-                "{\"name\":\"text-delete\",\"description\":\"软删除——移入受控回收站（可恢复）；支持文件与空目录\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"要删除的文件/空目录路径\"}},\"required\":[\"path\"]}}" +
+                "{\"name\":\"text-grep\",\"description\":\"内容关键词搜索——目录内递归扫文本文件，返回 相对路径:行号:上下文（前后 ≤10 字符）——定位代码/文档关键词\",\"parameters\":{\"type\":\"object\",\"properties\":{\"dir\":{\"type\":\"string\",\"description\":\"搜索根目录（受控根 id 前缀 / 根名 / 绝对路径）\"},\"keyword\":{\"type\":\"string\",\"description\":\"搜索关键词（大小写敏感）\"},\"pattern\":{\"type\":\"string\",\"description\":\"文件名过滤（默认 *）\"},\"limit\":{\"type\":\"integer\",\"description\":\"最大结果（默认 200）\"}},\"required\":[\"dir\",\"keyword\"]}}" +
                 "]}";
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:8E9F410DD015B6EA92242DFB67627523078AB24AEF5B6762F44138759112E53C
+// #MAU_CHECKSUM:SHA256:209338D0C95913A5D901565B15BA090DF82C0DF2FFF9302F31F9A57BA8008DFC

@@ -9,6 +9,11 @@
 |:--|:--|:--|:--|:--|:--|:--|
 | BRIK-DATA-001 | data.box_set_str | DATA | DATA/BRIK-DATA-001_data.box_set_str.cs | 无 | active |  |
 | BRIK-DATA-002 | data.box_get_str | DATA | DATA/BRIK-DATA-002_data.box_get_str.cs | 无 | active |  |
+| BRIK-FILE-001 | file.tree | FILE | FILE/BRIK-FILE-001_file.tree.cs | 无 | active |  |
+| BRIK-FILE-002 | file.find | FILE | FILE/BRIK-FILE-002_file.find.cs | 无 | active |  |
+| BRIK-FILE-003 | file.move | FILE | FILE/BRIK-FILE-003_file.move.cs | 无 | active |  |
+| BRIK-FILE-004 | file.delete | FILE | FILE/BRIK-FILE-004_file.delete.cs | 无 | active |  |
+| BRIK-FILE-005 | file.copy | FILE | FILE/BRIK-FILE-005_file.copy.cs | 无 | active |  |
 | BRIK-HOST-001 | host.restart | HOST | HOST/BRIK-HOST-001_host.restart.cs | 无 | active |  |
 | BRIK-HOST-002 | host.command | HOST | HOST/BRIK-HOST-002_host.command.cs | 无 | active |  |
 | BRIK-LLM-002 | llm.stream | LLM | LLM/BRIK-LLM-002_llm.stream.cs | 无 | active |  |
@@ -47,11 +52,7 @@
 | BRIK-TEXT-004 | text.replace | TEXT | TEXT/BRIK-TEXT-004_text.replace.cs | 无 | active |  |
 | BRIK-TEXT-005 | text.read_lines | TEXT | TEXT/BRIK-TEXT-005_text.read_lines.cs | 无 | active |  |
 | BRIK-TEXT-006 | text.read_between | TEXT | TEXT/BRIK-TEXT-006_text.read_between.cs | 无 | active |  |
-| BRIK-TEXT-007 | text.tree | TEXT | TEXT/BRIK-TEXT-007_text.tree.cs | 无 | active |  |
-| BRIK-TEXT-008 | text.find | TEXT | TEXT/BRIK-TEXT-008_text.find.cs | 无 | active |  |
 | BRIK-TEXT-009 | text.grep | TEXT | TEXT/BRIK-TEXT-009_text.grep.cs | 无 | active |  |
-| BRIK-TEXT-010 | text.move | TEXT | TEXT/BRIK-TEXT-010_text.move.cs | 无 | active |  |
-| BRIK-TEXT-011 | text.delete | TEXT | TEXT/BRIK-TEXT-011_text.delete.cs | 无 | active |  |
 | BRIK-TOOLS-001 | tools.textcat | TOOLS | TOOLS/BRIK-TOOLS-001_tools.textcat.cs | 无 | active |  |
 | BRIK-TOOLS-002 | tools.maucat | TOOLS | TOOLS/BRIK-TOOLS-002_tools.maucat.cs | 无 | active |  |
 | BRIK-TOOLS-003 | tools.cscat | TOOLS | TOOLS/BRIK-TOOLS-003_tools.cscat.cs | 无 | active |  |
@@ -62,6 +63,7 @@
 | BRIK-TOOLS-008 | tools.pscat | TOOLS | TOOLS/BRIK-TOOLS-008_tools.pscat.cs | 无 | active |  |
 | BRIK-TOOLS-009 | tools.majordomocat | TOOLS | TOOLS/BRIK-TOOLS-009_tools.majordomocat.cs | 无 | active |  |
 | BRIK-TOOLS-010 | tools.quickcat | TOOLS | TOOLS/BRIK-TOOLS-010_tools.quickcat.cs | 无 | active |  |
+| BRIK-TOOLS-011 | tools.filecat | TOOLS | TOOLS/BRIK-TOOLS-011_tools.filecat.cs | 无 | active |  |
 | BRIK-VISION-001 | vision.analyze | VISION | VISION/BRIK-VISION-001_vision.analyze.cs | 无 | active |  |
 | BRIK-WEB-001 | web.search | WEB | WEB/BRIK-WEB-001_web.search.cs | 无 | active |  |
 

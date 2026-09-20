@@ -148,11 +148,14 @@ namespace CH4
 
             // [段3] TextCat——修改/操作
             if (name == "text-replace") { return Fmt_Replace(p, result); }
-            if (name == "text-find") { return Fmt_Find(p, result, "搜索文件"); }
             if (name == "text-grep") { return Fmt_Find(p, result, "检索内容"); }
-            if (name == "text-tree") { return Fmt_Tree(p, result); }
-            if (name == "text-move") { return Fmt_Move(p, result); }
-            if (name == "text-delete") { return Fmt_Delete(p, result); }
+
+            // [段3b] FileCat——file-*（A67 拆分：结构面独立组——同一套格式化）
+            if (name == "file-tree") { return Fmt_Tree(p, result); }
+            if (name == "file-find") { return Fmt_Find(p, result, "搜索文件"); }
+            if (name == "file-move") { return Fmt_Move(p, result); }
+            if (name == "file-delete") { return Fmt_Delete(p, result); }
+            if (name == "file-copy") { return Fmt_Copy(p, result); }
 
             // [段4] CsCat——cs-* 统一（动词映射 + 类.成员 + 结果统计）
             if (name.StartsWith("cs-")) { return Fmt_CSharpCode(name, p, result); }
@@ -392,6 +395,14 @@ namespace CH4
         {
             string path = Arg(p, "path");
             return "删除文件 " + Q(TruncPath(path)) + " → " + Q(SummarizeBatch(result));
+        }
+
+        /// <summary>file-copy——源 → 目标（A67 拆分新增）</summary>
+        private static string Fmt_Copy(Dictionary<string, string> p, string result)
+        {
+            string src = Arg(p, "src");
+            string dest = Arg(p, "dest");
+            return "复制文件 " + Q(TruncPath(src)) + " → " + Q(TruncPath(dest)) + " → " + Q(SummarizeBatch(result));
         }
 
         // ═══════════════════════════════════════════

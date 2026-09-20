@@ -52,11 +52,7 @@ namespace Mau.Development
         /// LRU 淘汰锁
         /// </summary>
         private readonly object _lruGate;
-        /// <summary>行文本缓存——文件路径（R2-P3：引用报告逐行取文本时避免重复全文件读取）</summary>
-        private static string _lineCachePath = "";
-
-        /// <summary>行文本缓存——文件全部行（与 _lineCachePath 配对）</summary>
-        private static string[] _lineCache = new string[0];
+        // A66（2026-09-20）：行文本缓存改调用内局部——原静态单槽跨会话并发串味（字段已退役）
 
         /// <summary>
         /// 创建工具桥——受控根用于项目路径越界校验（id: 命名空间寻址对齐 FileSystemService）
