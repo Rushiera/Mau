@@ -198,10 +198,15 @@ function cmdSegmentIntent(segText, piped) {
     for (var i = 0; i < CMD_RULES.length; i = i + 1) {
         var m = CMD_RULES[i].re.exec(clean);
         if (m) {
-            return { known: true, text: CMD_RULES[i].fmt(clean, m) + suffix, piped: piped === true };
+            return {
+                known: true,
+                tag: cmdRuleTag(CMD_RULES[i], clean, m),
+                text: CMD_RULES[i].fmt(clean, m) + suffix,
+                piped: piped === true
+            };
         }
     }
-    return { known: false, text: clean + suffix, piped: piped === true };
+    return { known: false, tag: cmdTagWord(clean), text: clean + suffix, piped: piped === true };
 }
 
 /** 去前导调用运算符 & 与空白 */
@@ -230,7 +235,7 @@ function cmdBrief(intents, truncated) {
             unknown = unknown + 1;
         }
     }
-    var head = intents[0].known ? intents[0].text : '未识别命令';
+    var head = intents[0].known ? (intents[0].tag + ' · ' + intents[0].text) : '未识别命令';
     var body = (intents.length > 1) ? (head + ' 等 ' + intents.length + ' 段') : head;
     if (unknown > 0 && intents.length > 1) {
         body = body + '（' + unknown + ' 段未识别）';
@@ -254,7 +259,7 @@ function cmdDetail(intents, truncated) {
         var it = intents[i];
         var mark = it.piped ? ' ⤷' : '';
         if (it.known) {
-            lines.push(' ' + (i + 1) + '.' + mark + ' ' + it.text);
+            lines.push(' ' + (i + 1) + '.' + mark + ' ' + it.tag + ' · ' + it.text);
         } else {
             lines.push(' ' + (i + 1) + '.' + mark + ' ❓ 未识别：' + it.text);
         }
@@ -416,16 +421,26 @@ function cmdArgs(rest) {
 
 var CMD_RULES = [
     // ── 宿主 / 基座 CLI（子指令解码——高价值可见面）──
-    { re: /(^|[\/\\])cathome4\.exe\b\s*(.*)$/i, fmt: cmdFmtHostExe },
-    { re: /(^|[\/\\])setup\.exe\b\s*(.*)$/i, fmt: cmdFmtSetUp },
-    { re: /\bmau(\.exe)?\s+(\S+)/i, fmt: cmdFmtMauCli },
+    // 🔴 段首锚定——命令名只认段首（可带可执行路径 / 引号包裹）；段中出现的同名目录不误命中
+    //    （判例：`git -C <…\mau> status` 曾被无锚定的 mau 规则抢走——显示成「Mau 执行 status」）
+    { re: /^["']?(?:[^"'\s]*[\/\\])?cathome4\.exe["']?\s*(.*)$/i, fmt: cmdFmtHostExe, tag: cmdTagHostExe },
+    { re: /^["']?(?:[^"'\s]*[\/\\])?setup\.exe["']?\s*(.*)$/i, fmt: cmdFmtSetUp, tag: cmdTagSetUp },
+    { re: /^["']?(?:[^"'\s]*[\/\\])?mau(?:\.exe)?["']?\s+(\S+)/i, fmt: cmdFmtMauCli, tag: cmdTagMau },
+    // ── Godot 工具链（控制台可执行——headless 跑测 / 导入）──
+    { re: /^["']?(?:[^"'\s]*[\/\\])?godot[^\s"']*_console(?:\.exe)?["']?\s*(.*)$/i, fmt: cmdFmtGodot, tag: cmdTagGodot },
     // ── 编译链 / 版本控制 / Node ──
-    { re: /^dotnet\s+(build|test|publish|run|restore|clean|pack)\b\s*(.*)$/i, fmt: cmdFmtDotnet },
-    { re: /^git(\.exe)?\s+(\S+)\s*(.*)$/i, fmt: cmdFmtGit },
+    { re: /^dotnet\s+(build|test|publish|run|restore|clean|pack)\b\s*(.*)$/i, fmt: cmdFmtDotnet, tag: cmdTagDotnet },
+    { re: /^git(\.exe)?\s+(\S+)\s*(.*)$/i, fmt: cmdFmtGit, tag: cmdTagGit },
     { re: /^(npm|npx|node)\b\s*(.*)$/i, fmt: cmdVerb('运行 Node 工具链') },
+    // ── 嵌套解释器（cmd /c 与 powershell -Command 的内联命令）──
+    { re: /^cmd(?:\.exe)?\s+\/c\s+(.*)$/i, fmt: cmdFmtNested, tag: 'cmd' },
+    { re: /^powershell(?:\.exe)?\s+(?:-command|-c)\s+(.*)$/i, fmt: cmdFmtNested, tag: 'powershell' },
     // ── 文件系统 cmdlet（含常用别名）──
     { re: /^(Get-ChildItem|gci|ls|dir)\b\s*(.*)$/i, fmt: cmdVerb('列出目录') },
     { re: /^(Get-Content|gc|cat|type)\b\s*(.*)$/i, fmt: cmdVerb('读取文件内容') },
+    { re: /^(Get-FileHash)\b\s*(.*)$/i, fmt: cmdVerb('计算文件哈希') },
+    { re: /^(Get-PSDrive)\b\s*(.*)$/i, fmt: cmdVerbOnly('列出驱动器') },
+    { re: /^(Get-Command)\b\s*(.*)$/i, fmt: cmdVerb('查询命令') },
     { re: /^(Select-String|findstr)\b\s*(.*)$/i, fmt: cmdVerb('搜索文件内容') },
     { re: /^(Test-Path)\b\s*(.*)$/i, fmt: cmdVerb('检查路径是否存在') },
     { re: /^Test-NetConnection\b\s*(.*)$/i, fmt: cmdVerb('测试网络连通性') },
@@ -472,12 +487,20 @@ function cmdFmtDotnet(seg, m) {
     return (map[act] || ('dotnet ' + act)) + cmdTarget(m[2] || '');
 }
 
+/** git 命令解析——跳过带值开关（-C <repo> 等）取子命令与其余参数 */
+function cmdGitParts(seg) {
+    var mm = /^git(?:\.exe)?\s+(?:-[A-Za-z\-]+\s+\S+\s+)*(\S+)\s*(.*)$/i.exec(seg);
+    return {
+        act: mm ? (mm[1] || '').toLowerCase() : '',
+        rest: mm ? (mm[2] || '') : ''
+    };
+}
+
 /** git 子命令 → 中文动作 */
 function cmdFmtGit(seg, m) {
-    // 带值开关（-C <repo> 等）先行——动作在开关之后
-    var mm = /^git(?:\.exe)?\s+(?:-[A-Za-z\-]+\s+\S+\s+)*(\S+)\s*(.*)$/i.exec(seg);
-    var act = mm ? (mm[1] || '').toLowerCase() : '';
-    var rest = mm ? (mm[2] || '') : '';
+    var p = cmdGitParts(seg);
+    var act = p.act;
+    var rest = p.rest;
     var map = {
         status: '查看仓库状态',
         log: '查看提交历史',
@@ -501,7 +524,7 @@ function cmdFmtGit(seg, m) {
 
 /** 宿主 CLI——--run 子指令解码（部署/重载类命令可见性关键面） */
 function cmdFmtHostExe(seg, m) {
-    var rest = m[2] || '';
+    var rest = m[1] || '';
     var run = /--run\s+["']?([^"']*)/i.exec(rest);
     if (run) {
         return '宿主 CLI 执行指令「' + cmdHostCommand(cmdTrim(run[1])) + '」';
@@ -560,25 +583,58 @@ function cmdHostCommand(cmd) {
     return cmdTrunc(cmd, 50);
 }
 
+/** Godot 控制台 → 中文动作（版本 / 导入 / headless 运行） */
+function cmdFmtGodot(seg, m) {
+    var rest = m[1] || '';
+    if (/--version\b/i.test(rest)) {
+        return '查看 Godot 版本';
+    }
+    if (/--import\b/i.test(rest)) {
+        return '导入 Godot 资源';
+    }
+    var p = /--path\s+("[^"]*"|'[^']*'|[^\s]+)/i.exec(rest);
+    var target = p ? (' ' + cmdQuote(cmdTrim(p[1]).replace(/^["']|["']$/g, ''))) : '';
+    return (/--headless\b/i.test(rest) ? 'headless 运行 Godot 项目' : '运行 Godot') + target;
+}
+
+/** 嵌套解释器 → 中文动作（cmd /c 与 powershell -Command 的内联命令原样带入） */
+function cmdFmtNested(seg, m) {
+    var inner = cmdTrim(m[1] || '');
+    // 只剥成对的外层引号——内层命令自带的收尾引号保留（判例：cmd /c dir "…" 曾被误剥）
+    var q = inner.charAt(0);
+    if ((q === '"' || q === '\'') && inner.charAt(inner.length - 1) === q) {
+        inner = cmdTrim(inner.substring(1, inner.length - 1));
+    }
+    return '嵌套执行「' + cmdTrunc(inner, 60) + '」';
+}
+
+/** SetUp 模式——relaunch / deploy / prepare（无则空串） */
+function cmdSetUpMode(seg) {
+    if (/relaunch/i.test(seg || '')) { return 'relaunch'; }
+    if (/deploy/i.test(seg || '')) { return 'deploy'; }
+    if (/prepare/i.test(seg || '')) { return 'prepare'; }
+    return '';
+}
+
 /** SetUp 一键链 */
 function cmdFmtSetUp(seg, m) {
-    var rest = m[2] || '';
-    if (/relaunch/i.test(rest)) {
-        return '一键部署链·重启接力（relaunch）';
-    }
-    if (/deploy/i.test(rest)) {
-        return '一键部署链·发布到目标目录（deploy）';
-    }
-    if (/prepare/i.test(rest)) {
-        return '一键部署链·就地自举（prepare）';
-    }
+    var mode = cmdSetUpMode(seg);
+    if (mode === 'relaunch') { return '一键部署链·重启接力（relaunch）'; }
+    if (mode === 'deploy') { return '一键部署链·发布到目标目录（deploy）'; }
+    if (mode === 'prepare') { return '一键部署链·就地自举（prepare）'; }
     return '一键部署链（SetUp）';
+}
+
+/** mau 子命令——首个非开关参数（无则空串） */
+function cmdMauAct(seg) {
+    var all = cmdArgs(seg);
+    return (all[1] || '').toLowerCase();
 }
 
 /** Mau 基座 CLI */
 function cmdFmtMauCli(seg, m) {
     var all = cmdArgs(seg);
-    var act = (all[1] || '').toLowerCase();
+    var act = cmdMauAct(seg);
     var map = {
         verify: 'Mau 语料验证',
         gen: 'Mau 语料生成',
@@ -591,6 +647,74 @@ function cmdFmtMauCli(seg, m) {
     var head = map[act] || ('Mau 执行 ' + act);
     var target = (all.length > 2) ? (' ' + cmdQuote(cmdTrunc(all[2], 60))) : '';
     return head + target;
+}
+
+// ═══════════════════════════════════════════
+// 指令类标识（tag）——折叠行 / 展开区前缀（「git status · 查看仓库状态」）
+// 口径：tag = 命令标识（去路径 / 去引号 / 去 .exe）+ 子命令；带子命令的 CLI 由规则显式声明
+// ═══════════════════════════════════════════
+
+/** 段首命令名——去路径 / 去引号 / 去 .exe 后缀（规则未声明 tag 时的回落） */
+function cmdTagWord(seg) {
+    var m = /^("[^"]*"|'[^']*'|[^\s]+)/.exec(cmdTrim(seg || ''));
+    if (!m) {
+        return '';
+    }
+    var w = m[1].replace(/^["']|["']$/g, '');
+    var i = Math.max(w.lastIndexOf('/'), w.lastIndexOf('\\'));
+    if (i >= 0 && i + 1 < w.length) {
+        w = w.substring(i + 1);
+    }
+    if (/\.exe$/i.test(w)) {
+        w = w.substring(0, w.length - 4);
+    }
+    return w;
+}
+
+/** 规则 tag 取值——显式声明优先（字符串 / 函数），否则首词派生 */
+function cmdRuleTag(rule, seg, m) {
+    if (typeof rule.tag === 'function') {
+        return rule.tag(seg, m);
+    }
+    if (typeof rule.tag === 'string' && rule.tag.length > 0) {
+        return rule.tag;
+    }
+    return cmdTagWord(seg);
+}
+
+/** git 指令类标识——「git <子命令>」 */
+function cmdTagGit(seg) {
+    var act = cmdGitParts(seg).act;
+    return (act.length > 0) ? ('git ' + act) : 'git';
+}
+
+/** dotnet 指令类标识——「dotnet <子命令>」 */
+function cmdTagDotnet(seg, m) {
+    var act = (m && m[1]) ? m[1].toLowerCase() : '';
+    return (act.length > 0) ? ('dotnet ' + act) : 'dotnet';
+}
+
+/** mau 指令类标识——「mau <子命令>」 */
+function cmdTagMau(seg) {
+    var act = cmdMauAct(seg);
+    return (act.length > 0) ? ('mau ' + act) : 'mau';
+}
+
+/** Godot 指令类标识——「godot console」 */
+function cmdTagGodot(seg) {
+    return 'godot console';
+}
+
+/** SetUp 指令类标识——「SetUp <模式>」 */
+function cmdTagSetUp(seg) {
+    var mode = cmdSetUpMode(seg);
+    return (mode.length > 0) ? ('SetUp ' + mode) : 'SetUp';
+}
+
+/** 宿主 CLI 指令类标识——「CatHome4 <开关>」 */
+function cmdTagHostExe(seg) {
+    var m = /--(run|tool-check|script|selfcheck|probe-llm|majordomopush)/i.exec(seg || '');
+    return m ? ('CatHome4 --' + m[1].toLowerCase()) : 'CatHome4';
 }
 
 // ═══════════════════════════════════════════

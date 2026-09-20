@@ -407,12 +407,12 @@ test('toolcard powershell——命令解读覆盖 summary + 展开区意图块',
   });
   const card = chatMsgs.querySelector('.chat-tool');
   // 折叠行——宿主原始命令截断被解读结果覆盖 + PS 版本标签（双线区分，2026-09-18）
-  expect(card.querySelector('.tn').textContent).toBe('💻 PS 5.1 编译 C# 项目 「CatHome4.sln」 等 2 段');
-  // 展开区首块——逐段意图
+  expect(card.querySelector('.tn').textContent).toBe('💻 PS 5.1 dotnet build · 编译 C# 项目 「CatHome4.sln」 等 2 段');
+  // 展开区首块——逐段意图（含指令类标识 tag）
   const intent = card.querySelector('.cmd-intent');
   expect(intent).not.toBeNull();
-  expect(intent.textContent).toContain('1. 编译 C# 项目 「CatHome4.sln」');
-  expect(intent.textContent).toContain('2. 查看仓库状态');
+  expect(intent.textContent).toContain('1. dotnet build · 编译 C# 项目 「CatHome4.sln」');
+  expect(intent.textContent).toContain('2. git status · 查看仓库状态');
   // 原文块保留（意图块之后）
   expect(card.querySelector('.ta').textContent).toContain('dotnet build');
 });
