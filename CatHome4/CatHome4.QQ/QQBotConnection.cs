@@ -196,8 +196,9 @@ namespace CatHome4.QQ
                     _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None).GetAwaiter().GetResult();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Log("QQBot | " + _displayName + " | WS 关闭异常（停止链路继续）: " + ex.Message, 2);
             }
             try
             {
@@ -206,8 +207,9 @@ namespace CatHome4.QQ
                     _ws.Dispose();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Log("QQBot | " + _displayName + " | WS 释放异常（停止链路继续）: " + ex.Message, 2);
             }
             _ws = null;
             Log("QQBot | " + _displayName + " | 已停止", 1);
@@ -253,8 +255,9 @@ namespace CatHome4.QQ
                     {
                         errBody = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        Log("QQBot | " + _displayName + " | 错误响应体读取失败: " + ex.Message, 2);
                     }
                     Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(OneLine(text), 30) + " (" + status + ") " + Truncate(OneLine(errBody), 200), 2);
                     return false;
@@ -634,8 +637,9 @@ namespace CatHome4.QQ
                             _ws.Dispose();
                         }
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        Log("QQBot | " + _displayName + " | WS 释放异常（重连继续）: " + ex.Message, 2);
                     }
                     _ws = null;
                 }
@@ -669,8 +673,9 @@ namespace CatHome4.QQ
                     {
                         ws.Dispose();
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        Log("QQBot | " + _displayName + " | 心跳断开释放异常: " + ex.Message, 2);
                     }
                     break;
                 }
@@ -680,8 +685,9 @@ namespace CatHome4.QQ
                     ws.SendAsync(new ArraySegment<byte>(hb), WebSocketMessageType.Text, true, CancellationToken.None).GetAwaiter().GetResult();
                     _missedAcks = _missedAcks + 1;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Log("QQBot | " + _displayName + " | 心跳发送失败（断开重连）: " + ex.Message, 2);
                     break;
                 }
             }

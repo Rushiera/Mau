@@ -91,18 +91,31 @@ namespace Mau.Development
             }
             errors.Sort(DiagnosticComparer.Instance);
             warnings.Sort(DiagnosticComparer.Instance);
+            // 空 catch 检测（约定检查——默认总开；块内无语句且无注释即报，有注释视为已说明的降级不报）
+            List<string> emptyCatches = CollectEmptyCatches(cache);
             // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文定界诊断行（rel:line:col: id: 消息）
             Dictionary<string, object> meta = new Dictionary<string, object>();
             meta["project"] = cache.AssemblyName;
             meta["files"] = fileCount;
             meta["errors"] = errors.Count;
-            meta["warnings"] = warnings.Count;
+            meta["warnings"] = warnings.Count + emptyCatches.Count;
+            meta["emptyCatch"] = emptyCatches.Count;
             StringBuilder sb = new StringBuilder();
             sb.Append(MetaHead("cs-check", errors.Count == 0, meta));
             for (int i = 0; i < errors.Count; i = i + 1)
             {
                 sb.Append(Environment.NewLine);
                 sb.Append(FormatDiagnostic(cache, errors[i]));
+            }
+            if (emptyCatches.Count > 0)
+            {
+                sb.Append(Environment.NewLine);
+                sb.Append(CheckEmptyCatchSeparator);
+                for (int i = 0; i < emptyCatches.Count; i = i + 1)
+                {
+                    sb.Append(Environment.NewLine);
+                    sb.Append(emptyCatches[i]);
+                }
             }
             if (full && warnings.Count > 0)
             {
@@ -116,6 +129,62 @@ namespace Mau.Development
             }
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;
+        }
+
+        /// <summary>
+        /// 空 catch 收集——块内无语句且无注释的 catch 子句（约定检查：禁止空块吞异常；块内只有注释视为已说明的降级，不报）。
+        /// 文件遍历按树路径序（文件内文档序）——输出天然按 路径 → 行 有序。
+        /// </summary>
+        /// <param name="cache">项目缓存</param>
+        /// <returns>诊断行列表（rel:line:col: CS_EMPTY_CATCH: 消息）</returns>
+        private static List<string> CollectEmptyCatches(ProjectCache cache)
+        {
+            List<string> lines = new List<string>();
+            List<string> keys = new List<string>(cache.Trees.Keys);
+            keys.Sort(StringComparer.OrdinalIgnoreCase);
+            for (int k = 0; k < keys.Count; k = k + 1)
+            {
+                SyntaxTree tree = cache.Trees[keys[k]];
+                foreach (SyntaxNode node in tree.GetRoot().DescendantNodes())
+                {
+                    CatchClauseSyntax? clause = node as CatchClauseSyntax;
+                    if (clause == null)
+                    {
+                        continue;
+                    }
+                    if (clause.Block == null || clause.Block.Statements.Count > 0)
+                    {
+                        continue;
+                    }
+                    if (HasCommentInside(clause.Block))
+                    {
+                        continue;
+                    }
+                    FileLinePositionSpan span = tree.GetLineSpan(clause.GetLocation().SourceSpan);
+                    lines.Add(RelativeToProject(cache, tree.FilePath) + ":" + (span.StartLinePosition.Line + 1) + ":" + (span.StartLinePosition.Character + 1) + ": CS_EMPTY_CATCH: 空 catch 块——吞异常（补具名告警或说明注释）");
+                }
+            }
+            return lines;
+        }
+
+        /// <summary>
+        /// 块内注释探测——catch 块内是否含任意注释（单行 / 多行 / XML doc）。
+        /// </summary>
+        /// <param name="block">块节点</param>
+        /// <returns>true=含注释</returns>
+        private static bool HasCommentInside(BlockSyntax block)
+        {
+            foreach (SyntaxTrivia trivia in block.DescendantTrivia())
+            {
+                if (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia)
+                    || trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)
+                    || trivia.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia)
+                    || trivia.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>
@@ -633,6 +702,9 @@ namespace Mau.Development
 
         /// <summary>check 警告段分隔行——正文里 errors 行与 warnings 行的定界标记</summary>
         private const string CheckWarnSeparator = "-- 警告 --";
+
+        /// <summary>check 空 catch 段分隔行——约定检查（CS_EMPTY_CATCH）清单的定界标记</summary>
+        private const string CheckEmptyCatchSeparator = "-- 空 catch --";
 
         /// <summary>MSBuild 摘要计数提取——中文「N 个错误」/ 英文「N Error(s)」两形态（提不到返回 0）</summary>
         /// <param name="text">构建输出全文</param>

@@ -144,11 +144,12 @@ namespace Mau.Bricks
                     doc.Dispose();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("HOST", 2, "majordomo-restart 参数提取失败: " + ex.Message, "TOOL");
             }
             return "";
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:656AC5E17E384E0816F452E0C592188B6E47461D19A7F156CB55718B6645E5B1
+// #MAU_CHECKSUM:SHA256:F2D41511A53EC2950FCB674FE9DEF302D27B1D7C01816D3A295459AFB6D05B00

@@ -298,8 +298,9 @@ namespace CatHome4.Http
                     payloadObj = "";
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "工具载荷解析失败（按原文）: " + ex.Message, "TOOL");
                 payloadObj = payload;
             }
             var obj = new

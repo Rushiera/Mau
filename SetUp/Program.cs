@@ -144,8 +144,9 @@ namespace SetUp
                     _logFile.Close();
                     _logFile = null;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Console.WriteLine("[SetUp] 警告：日志文件关闭失败——" + ex.Message);
                 }
             }
             if (reportPath.Length > 0)
@@ -539,8 +540,9 @@ namespace SetUp
             {
                 proc = Process.Start(psi);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Console.WriteLine("[SetUp] 警告：进程启动失败——" + ex.Message);
                 return null;
             }
             if (proc == null)

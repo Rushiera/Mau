@@ -42,6 +42,7 @@ namespace CatHome4.Core.Tests
             }
             catch (Exception)
             {
+                // 测试夹具清理——尽力删除（目录被占用等不影响断言结论）
             }
         }
 

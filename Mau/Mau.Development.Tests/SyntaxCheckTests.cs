@@ -113,5 +113,76 @@ namespace Mau.Development.Tests
                 }
             }
         }
+
+        /// <summary>
+        /// 空 catch 块——约定检查（CS_EMPTY_CATCH）必须报出并计入 warnings（判据：块内无语句且无注释）
+        /// </summary>
+        [Fact]
+        public void EmptyCatchBlockReported()
+        {
+            string dir = Path.Combine(_root, "CatTemp", "EmptyCatchProbe");
+            string csproj = Path.Combine(dir, "EmptyCatchProbe.csproj");
+            try
+            {
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(csproj, ProbeProjectText("Bad.cs"));
+                File.WriteAllText(Path.Combine(dir, "Bad.cs"), "using System;\npublic class Bad\n{\n    public void M()\n    {\n        try\n        {\n            Console.WriteLine(1);\n        }\n        catch (Exception)\n        {\n        }\n    }\n}\n");
+                string result = Check(csproj);
+                Assert.Contains("\"emptyCatch\":1", result);
+                Assert.Contains("CS_EMPTY_CATCH", result);
+            }
+            finally
+            {
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 块内带注释——不报（注释即说明；判据：有注释视为已说明的降级）
+        /// </summary>
+        [Fact]
+        public void CommentedCatchBlockNotReported()
+        {
+            string dir = Path.Combine(_root, "CatTemp", "CommentedCatchProbe");
+            string csproj = Path.Combine(dir, "CommentedCatchProbe.csproj");
+            try
+            {
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(csproj, ProbeProjectText("Ok.cs"));
+                File.WriteAllText(Path.Combine(dir, "Ok.cs"), "using System;\npublic class Ok\n{\n    public void M()\n    {\n        try\n        {\n            Console.WriteLine(1);\n        }\n        catch (Exception)\n        {\n            // 有意忽略——清理失败不影响主链\n        }\n    }\n}\n");
+                string result = Check(csproj);
+                Assert.Contains("\"emptyCatch\":0", result);
+                Assert.DoesNotContain("CS_EMPTY_CATCH", result);
+            }
+            finally
+            {
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 探针工程文本——最小 csproj（显式 Compile 项；ImplicitUsings 关）
+        /// </summary>
+        /// <param name="sourceFile">源文件名</param>
+        /// <returns>csproj 文本</returns>
+        private static string ProbeProjectText(string sourceFile)
+        {
+            return "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+                "  <PropertyGroup>\n" +
+                "    <TargetFramework>net8.0</TargetFramework>\n" +
+                "    <ImplicitUsings>disable</ImplicitUsings>\n" +
+                "    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>\n" +
+                "  </PropertyGroup>\n" +
+                "  <ItemGroup>\n" +
+                "    <Compile Include=\"" + sourceFile + "\" />\n" +
+                "  </ItemGroup>\n" +
+                "</Project>\n";
+        }
     }
 }

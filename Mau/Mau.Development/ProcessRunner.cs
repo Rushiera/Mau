@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using Mau.Runtime;
 
 namespace Mau.Development
 {
@@ -77,8 +78,9 @@ namespace Mau.Development
             {
                 process = Process.Start(psi);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("Mau", 2, "进程启动失败: " + ex.Message, "PROC");
                 return result;
             }
             if (process == null)

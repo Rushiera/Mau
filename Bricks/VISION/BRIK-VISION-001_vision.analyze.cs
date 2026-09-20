@@ -197,11 +197,12 @@ namespace Mau.Bricks
                     doc.Dispose();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("VISION", 2, "image-analyze 参数提取失败: " + ex.Message, "TOOL");
             }
             return "";
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:025EAC891010E179E08D67F057F8A90DED6DDFA1EBA5357230B0920F9BFEF551
+// #MAU_CHECKSUM:SHA256:FB930FC6E36F97D3214D04D1419BB9C64F0172913787B2FDEBF51CEA5F9D5F6A

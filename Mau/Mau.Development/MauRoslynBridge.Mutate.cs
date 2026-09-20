@@ -298,6 +298,7 @@ namespace Mau.Development
                 }
                 catch (Exception)
                 {
+                    // 解析失败——走下方 fallback（整方法声明解析），最终失败以 ERR 回执可见
                     parsed = null!;
                 }
                 BlockSyntax? block = parsed as BlockSyntax;

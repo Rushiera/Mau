@@ -276,8 +276,9 @@ namespace CH4
                     System.IO.File.Copy(backupPath, dllPath, true);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "运行区备份还原失败（best-effort）: " + ex.Message, "RELOAD");
             }
         }
 
@@ -347,8 +348,9 @@ namespace CH4
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "host-reload cat 参数解析失败: " + ex.Message, "RELOAD");
                 cat = "";
             }
             if (cat.Length == 0)
@@ -434,8 +436,9 @@ namespace CH4
                     {
                         buildTime = VersionInfo.GetAssemblyBuildTime(curHandle.Flow.GetType().Assembly);
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        LogStore.Add("CatHome4", 2, "Flow 构建时刻读取失败（回落空）: " + ex.Message, "RELOAD");
                         buildTime = "";
                     }
                 }

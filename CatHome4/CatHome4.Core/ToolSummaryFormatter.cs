@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
+using Mau.Runtime;
 
 namespace CH4
 {
@@ -70,8 +71,9 @@ namespace CH4
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "工具头解析失败（按原文）: " + ex.Message, "TOOL");
                 return text;
             }
             return (nl < 0) ? "" : text.Substring(nl + 1);
@@ -108,8 +110,9 @@ namespace CH4
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "结构化头解析失败（按空表）: " + ex.Message, "TOOL");
             }
             return dic;
         }
@@ -715,8 +718,9 @@ namespace CH4
                     return "OK";
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "结果状态解析失败（按空）: " + ex.Message, "TOOL");
                 return "";
             }
         }
@@ -1214,8 +1218,9 @@ namespace CH4
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "环境信息摘要解析失败（按兜底）: " + ex.Message, "TOOL");
                 return "环境信息 → " + Q(Trunc(FirstLine(result), 60));
             }
             StringBuilder sb = new StringBuilder();

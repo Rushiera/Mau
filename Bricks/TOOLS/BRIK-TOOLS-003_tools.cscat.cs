@@ -22,7 +22,7 @@ namespace Mau.Bricks
         public static string GetToolsJson()
         {
             return "{\"group\":\"CsCat\",\"tools\":[" +
-                "{\"name\":\"cs-check\",\"description\":\"C# 语法层验证——写完代码后的第一轮全量语法检查（逐文件语法诊断，不解析类型/引用）；path 支持 csproj / .sln / 目录（聚合分组输出）；full=true 含语法警告；程序集引用与编译裁决以 cs-build 为唯一权威\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj / .sln / 目录（受控根内）\"},\"full\":{\"type\":\"boolean\",\"description\":\"true=输出全部语法警告\"}},\"required\":[\"path\"]}}," +
+                "{\"name\":\"cs-check\",\"description\":\"C# 语法层验证——写完代码后的第一轮全量语法检查（逐文件语法诊断，不解析类型/引用）；path 支持 csproj / .sln / 目录（聚合分组输出）；full=true 含语法警告；默认附空 catch 块检测（CS_EMPTY_CATCH——块内无语句且无注释即报，计入 warnings）；程序集引用与编译裁决以 cs-build 为唯一权威\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj / .sln / 目录（受控根内）\"},\"full\":{\"type\":\"boolean\",\"description\":\"true=输出全部语法警告\"}},\"required\":[\"path\"]}}," +
                 "{\"name\":\"cs-build\",\"description\":\"C# 实机编译——dotnet build 子进程（唯一权威裁决；成功后引用集自动刷新）；path 支持 csproj / .sln / 目录（多项目逐个执行）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj / .sln / 目录（受控根内）\"}},\"required\":[\"path\"]}}," +
                 "{\"name\":\"cs-list\",\"description\":\"类/成员签名清单（语法层；class 空=全项目类清单）；path 支持 csproj / .sln / 目录（聚合分组输出）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj / .sln / 目录（受控根内）\"},\"class\":{\"type\":\"string\",\"description\":\"类名（空=全项目）\"}},\"required\":[\"path\"]}}," +
                 "{\"name\":\"cs-read\",\"description\":\"成员源码 + 文件行号标注（统一文件坐标系；member 空=类概览）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj 路径或项目目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名（空=类概览；支持签名后缀如 SubmitChoice(int) 区分重载；.ctor/类名=构造函数）\"}},\"required\":[\"path\",\"class\"]}}," +
@@ -37,4 +37,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:A14B0FF8F2250C72B6ECEE93138C612037F780C820C8CD2995F928606A72E170
+// #MAU_CHECKSUM:SHA256:6227E69BF5EF12A21AE604200CCA71106CDAE0D08E7E32F47511569AA4FDED87

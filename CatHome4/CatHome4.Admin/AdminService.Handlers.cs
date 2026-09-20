@@ -1247,8 +1247,9 @@ namespace CatHome4.Admin
                         }
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    LogStore.Add("CatHome4", 2, "注入清单读取失败（按空清单）: " + ex.Message, "CONFIG");
                     injectJson = "[]";
                 }
             }

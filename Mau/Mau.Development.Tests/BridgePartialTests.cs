@@ -71,6 +71,7 @@ namespace Mau.Development.Tests
             }
             catch
             {
+                // 测试夹具清理——工作区可能持有句柄，尽力删除
             }
         }
 

@@ -569,8 +569,9 @@ namespace CatHome4.QQ
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("QQBot", 2, "群消息解析失败: " + ex.Message, "QQBOT");
             }
             return false;
         }        /// <summary>附件大小硬限制——200MB（官方硬限制）</summary>

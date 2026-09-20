@@ -173,10 +173,12 @@ namespace Mau.Cli
                 }
                 catch (IOException)
                 {
+                    // 占用（被其他进程持锁）——即"被锁文件"，命中语义
                     return paths[i];
                 }
                 catch (UnauthorizedAccessException)
                 {
+                    // 权限拒绝——同样不可写，按占用处理
                     return paths[i];
                 }
             }

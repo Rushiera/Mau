@@ -1476,8 +1476,9 @@ namespace CatHome4.Admin
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "载荷 content 提取失败（回落空）: " + ex.Message, "CHAT");
             }
             return "";
         }
@@ -1868,8 +1869,9 @@ namespace CatHome4.Admin
             {
                 dirs = Directory.GetDirectories(sessionsDir);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "启动扫描目录枚举失败（跳过加载）: " + ex.Message, "CHAT");
                 return;
             }
             // 运行态分离——running/port 取自 Data/runtime/cats.json（cat.cfg 只承载用户配置；启动链零写入 cat.cfg）

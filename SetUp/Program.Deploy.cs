@@ -144,8 +144,9 @@ namespace SetUp
                     {
                         Directory.Move(targetOld, target);
                     }
-                    catch (Exception)
+                    catch (Exception rollbackEx)
                     {
+                        Console.WriteLine("[SetUp] 警告：回滚失败——" + rollbackEx.Message);
                     }
                 }
                 return "新目录上架失败（已回滚）：" + ex.Message;
@@ -218,8 +219,9 @@ namespace SetUp
                 }
                 return text.Substring(start, end - start).Trim();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Console.WriteLine("[SetUp] 警告：版本读取失败——" + ex.Message);
                 return "unknown";
             }
         }

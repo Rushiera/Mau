@@ -143,11 +143,12 @@ namespace Mau.Bricks
                     doc.Dispose();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("HOST", 2, "宿主指令参数提取失败: " + ex.Message, "TOOL");
             }
             return "";
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:E65CE9B7C11E1FDBD9F44D288A114E45A3F3C7F40DC01007891750FA75295173
+// #MAU_CHECKSUM:SHA256:EF32199735D529A0304E350527886478CF2CF142A6FA14D57FD266E09DC44B3F

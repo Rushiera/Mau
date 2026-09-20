@@ -181,8 +181,9 @@ namespace CatHome4.Admin
                     return data;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "全局默认模板读取失败（按不存在处理）: " + ex.Message, "CONFIG");
                 return null;
             }
         }
@@ -274,8 +275,9 @@ namespace CatHome4.Admin
                     return data;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "猫配置读取失败（按损坏处理）: " + ex.Message, "CONFIG");
                 return null;
             }
         }

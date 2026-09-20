@@ -199,8 +199,9 @@ namespace Mau.Providers
                         }
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    LogStore.Add("LLM", 2, "错误响应体解析失败（回落原文）: " + ex.Message, "LLM");
                     message = TrimText(raw, 200);
                 }
             }
@@ -442,6 +443,7 @@ namespace Mau.Providers
             }
             catch
             {
+                // 解析失败=无有效 usage——调用方按零值处理（每帧调用，不落日志避免刷屏）
                 return false;
             }
         }

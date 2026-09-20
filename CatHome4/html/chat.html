@@ -124,7 +124,7 @@
             if (st) { st.textContent = t; }
         }
         es.addEventListener('snapshot', function (ev) {
-            try { chatApplyTitle(JSON.parse(ev.data).title); } catch (e) { }
+            try { chatApplyTitle(JSON.parse(ev.data).title); } catch (e) { uiWarn('标题快照解析', e); }
         });
         fetch('/api/v1/snapshot').then(function (r) { return r.json(); }).then(function (snap) {
             chatApplyTitle(snap.title);

@@ -91,8 +91,9 @@ namespace Mau.Runtime
                         buildTime = System.IO.File.GetLastWriteTime(location).ToString("yyyy-MM-dd HH:mm:ss");
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    LogStore.Add("Mau", 2, "构建时刻读取失败（回落空）: " + ex.Message, "SYS");
                     buildTime = "";
                 }
             }

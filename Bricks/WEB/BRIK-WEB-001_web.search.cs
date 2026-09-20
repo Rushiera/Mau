@@ -503,8 +503,9 @@ namespace Mau.Bricks
                         doc.Dispose();
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    LogStore.Add("WEB", 2, "搜索错误响应体解析失败: " + ex.Message, "WEB");
                 }
             }
             if (message.Length == 0 && json != null && json.Length > 200)
@@ -745,4 +746,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:955A665F347F48DF2134AFD466E1A073C321A82ABEA30F5DBFFC4636EF525E92
+// #MAU_CHECKSUM:SHA256:3E752BEFEF7DACB1C2FBC85E2A8C545927DA35252F5E213B2A1BAA6806C34519

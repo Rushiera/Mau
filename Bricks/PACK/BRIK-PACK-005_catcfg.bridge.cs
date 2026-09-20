@@ -180,11 +180,12 @@ namespace Mau.Bricks
                     doc.Dispose();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("PACK", 2, "cat.cfg 参数提取失败: " + ex.Message, "TOOL");
             }
             return "";
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:72057D6E64C07A97DE5453B2D1C1493DCECED51583B49C73C5CDBA6FFE6364B4
+// #MAU_CHECKSUM:SHA256:7E6BD713AD73B2538483BF95A8EA5469766E88318FB06925EFC7A1C1A3B873FA

@@ -591,8 +591,9 @@ namespace CH4
                     llmBlock["source"] = followDefault ? "跟随默认" : "猫绑定";
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "LLM 协议读取失败: " + ex.Message, "CONFIG");
                 llmBlock["protocol"] = "读取失败";
             }
             info["llm"] = llmBlock;

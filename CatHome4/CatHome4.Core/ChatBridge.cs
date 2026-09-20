@@ -487,8 +487,9 @@ namespace CH4
                     return doc.RootElement.Clone();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "JSON 解析失败（按原文返回）: " + ex.Message, "HTTP");
                 return json;
             }
         }

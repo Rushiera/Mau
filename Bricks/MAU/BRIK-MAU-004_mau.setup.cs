@@ -4,7 +4,7 @@
 // 类别: MAU
 // 作用: 一键部署链执行（SetUp.exe）——起进程并阻塞等待至结束，读 JSON 报告返回步明细/产物/成败；编译验证闭环
 // 依赖: 无
-// 引用: System.Diagnostics（进程）+ System.Text.Json + Mau.Development（仓库根探测）
+// 引用: System.Diagnostics（进程）+ System.Text.Json + Mau.Development（仓库根探测）+ Mau.Runtime（日志）
 // 原理: 仓库根 → SetUp.exe（prepare/deploy）+ --report → WaitForExit（内建看门狗）→ 读 <报告>.json 提炼摘要
 // 常用: mau_cat.mau 认领线——'mau.setup'[@args] > @result（载荷 mode/target/report）
 // ═══════════════════════════════════════════════════
@@ -15,6 +15,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using Mau.Development;
+using Mau.Runtime;
 
 namespace Mau.Bricks
 {
@@ -154,8 +155,10 @@ namespace Mau.Bricks
                 {
                     proc.Kill(true);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    sb.Append("WARN|KILL|强杀失败: " + ex.Message);
+                    sb.Append(Environment.NewLine);
                 }
                 sb.Append("FAIL|TIMEOUT|SetUp 超时（" + WatchdogMs.ToString() + " ms）已强杀");
                 sb.Append(Environment.NewLine);
@@ -439,11 +442,12 @@ namespace Mau.Bricks
                     doc.Dispose();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("MAU", 2, "mau-setup 参数提取失败: " + ex.Message, "TOOL");
             }
             return "";
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:861EA6FD4AAE5A56F3E243C7825682B41E6C96C665E8EFFE1E2FEDD606E230A0
+// #MAU_CHECKSUM:SHA256:4B9218F5EE371B923EFFA93F340CFD67E2DCA0AFE9B342B9FD7C50888A8C5241

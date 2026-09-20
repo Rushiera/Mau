@@ -345,8 +345,9 @@ namespace CH4
                     doc.Dispose();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "重启参数提取失败: " + ex.Message, "RESTART");
             }
             return "";
         }

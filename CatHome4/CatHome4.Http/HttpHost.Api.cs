@@ -364,8 +364,9 @@ namespace CatHome4.Http
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "前端版本读取失败（回落 0）: " + ex.Message, "HTTP");
             }
             return "0";
         }

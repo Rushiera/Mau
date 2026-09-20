@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using Mau.Runtime;
 
 namespace CH4
 {
@@ -925,8 +926,9 @@ namespace CH4
                     doc.Dispose();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("CatHome4", 2, "powershell 参数提取失败: " + ex.Message, "PS");
             }
             return "";
         }

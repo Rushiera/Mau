@@ -145,6 +145,7 @@ namespace Mau.Runtime
                 || exception is ArgumentException
                 || exception is System.Text.Json.JsonException)
             {
+                LogStore.Add("Mau", 2, "原子文件验证器异常（按结构无效处理）: " + exception.Message, "FILE");
                 return false;
             }
         }
