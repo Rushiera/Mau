@@ -222,10 +222,13 @@ namespace CH4
                 return; // 孤立 tool 丢弃
             }
             Dictionary<string, object> payload = new Dictionary<string, object>();
-            payload["name"] = target.Name.Length > 0 ? target.Name : (m.ToolName ?? "");
+            string name = target.Name.Length > 0 ? target.Name : (m.ToolName ?? "");
+            // A69 视图层报错中文注释——真实前文保持原文，仅视图块追加中文注释
+            string viewResult = ErrorNote.Apply(m.Content ?? "");
+            payload["name"] = name;
             payload["arguments"] = target.Arguments;
-            payload["result"] = m.Content ?? "";
-            payload["summary"] = ToolSummaryFormatter.Build(payload["name"] as string ?? "", target.Arguments, payload["result"] as string ?? "");
+            payload["result"] = viewResult;
+            payload["summary"] = ToolSummaryFormatter.Build(name, target.Arguments, viewResult);
             payload["toolIndex"] = target.Index;
             payload["toolTotal"] = target.Total;
             Append(m, "toolcard", payload, timestamp, msgIndex);

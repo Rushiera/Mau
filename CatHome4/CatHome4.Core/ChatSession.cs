@@ -984,23 +984,30 @@ namespace CH4
                         PhaseEnter(PhaseWait);
                         // S2 §8.4——重试可见性：独立视图条目（retry renderType）——不入会话槽/上下文/日志（Runtime 已记 L2）
                         _sawRetry = true;
-                        // RETRY|N/3|原因摘要 —— 提取尝试序号与原因
+                        // RETRY|N/3|原因摘要 —— 提取尝试序号与原因（原因摘要自身含 | —— 取第二个分隔符之后全段）
                         string retryText = ev.Text;
-                        string[] parts = retryText.Split('|');
                         string attempt = "";
                         string max = "";
                         string reason = retryText;
-                        if (parts.Length >= 3)
+                        int sep1 = retryText.IndexOf('|');
+                        int sep2 = sep1 < 0 ? -1 : retryText.IndexOf('|', sep1 + 1);
+                        if (sep2 > 0)
                         {
-                            attempt = parts[1];
-                            string[] am = parts[1].Split('/');
+                            string seg = retryText.Substring(sep1 + 1, sep2 - sep1 - 1);
+                            string[] am = seg.Split('/');
                             if (am.Length >= 2)
                             {
                                 attempt = am[0];
                                 max = am[1];
                             }
-                            reason = parts[2];
+                            else
+                            {
+                                attempt = seg;
+                            }
+                            reason = retryText.Substring(sep2 + 1);
                         }
+                        // A69 视图层报错中文注释——重试原因摘要追加中文注释
+                        reason = ErrorNote.Apply(reason);
                         string retryView = "{\"state\":\"retrying\",\"attempt\":\"" + attempt + "\",\"max\":\"" + max + "\",\"text\":" + JsonUtil.Serialize(reason) + "}";
                         _retryBlockIndex = _viewStore.UpsertRetry(retryView, ViewTimestamp(), _retryBlockIndex);
                         if (_httpHost != null)
@@ -1554,6 +1561,8 @@ namespace CH4
             {
                 result = "（本轮已中止——工具未执行完成）";
             }
+            // A69 视图层报错中文注释——真实前文保持原文
+            result = ErrorNote.Apply(result);
             string summary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, result);
             string json = "{\"name\":" + JsonUtil.Serialize(dog.Name)
                 + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson)
@@ -1760,8 +1769,10 @@ namespace CH4
                 // B4 对话区：工具结果实时推送 SSE（tool 事件——先行"进行中"卡原位替换为完整卡；参数/结果视图截断同 history）
                 if (_httpHost != null)
                 {
-                    string toolSummary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, dog.Result);
-                    string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(dog.Result) + ",\"summary\":" + JsonUtil.Serialize(toolSummary) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
+                    // A69 视图层报错中文注释——真实前文（dog.Result）保持原文
+                    string viewResult = ErrorNote.Apply(dog.Result);
+                    string toolSummary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, viewResult);
+                    string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(viewResult) + ",\"summary\":" + JsonUtil.Serialize(toolSummary) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
                     _httpHost.PushView("toolcard", toolJson, dog.CardSeq, 0);
                     dog.CardSeq = -1;
                 }
@@ -1820,10 +1831,12 @@ namespace CH4
             _lastStats.EntryCount = toSave.Length;
             _store.AppendMeta(_lastStats);
             // [段2] 错误可见——视图块落盘（持久化）+ 前端 error 事件（文本取清空前原值）
-            _viewStore.AppendError(_llmErrorText, ViewTimestamp());
+            // A69 视图层报错中文注释——错误原文仍进日志与前文面，仅视图块追加中文注释
+            string viewError = ErrorNote.Apply(_llmErrorText);
+            _viewStore.AppendError(viewError, ViewTimestamp());
             if (_httpHost != null)
             {
-                string errJson = "{\"type\":\"error\",\"text\":" + JsonUtil.Serialize(_llmErrorText) + "}";
+                string errJson = "{\"type\":\"error\",\"text\":" + JsonUtil.Serialize(viewError) + "}";
                 _httpHost.PushView("error", errJson, -1, 0);
             }
             // [段3] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——错误中止非正常完成语义）
