@@ -521,7 +521,7 @@ namespace CH4
                 return _catKey.Length == 0 && _displayName == "majordomo";
             }
         }
-        /// <summary>特权面可见性过滤——非默认会话剔除全部 majordomo-* 工具（默认会话判定见 IsDefaultSession）。设计依据：声明面（cat.cfg toolNames）的全量保底语义是「防外部损坏」，不构成授权通道（design-ch4-host-restart §二）——故特权工具在会话内单点剔除，与 IsToolAllowed 拦截构成双面。</summary>
+        /// <summary>特权面可见性过滤——非默认会话剔除全部特权工具（判据 = 注册面组级标记，见 IsPrivilegedTool；默认会话判定见 IsDefaultSession）。设计依据：声明面（cat.cfg toolNames）的全量保底语义是「防外部损坏」，不构成授权通道（design-ch4-host-restart §二）——故特权工具在会话内单点剔除，与 IsToolAllowed 拦截构成双面。</summary>
         /// <param name="specs">原始工具面</param>
         /// <returns>过滤后的工具面（默认会话原样返回）</returns>
         private ToolSpec[] FilterPrivilegedSpecs(ToolSpec[] specs)
@@ -533,12 +533,24 @@ namespace CH4
             List<ToolSpec> kept = new List<ToolSpec>();
             for (int i = 0; i < specs.Length; i = i + 1)
             {
-                if (!specs[i].Name.StartsWith("majordomo-", StringComparison.Ordinal))
+                if (!IsPrivilegedTool(specs[i].Name))
                 {
                     kept.Add(specs[i]);
                 }
             }
             return kept.ToArray();
+        }
+        /// <summary>特权工具判定——读注册面组级标记（ToolRegistry 单一真相源：工具定义 JSON 根级 privileged；未注册 = 非特权）。</summary>
+        /// <param name="name">工具名</param>
+        /// <returns>true=特权（仅主干会话可见可调）</returns>
+        private static bool IsPrivilegedTool(string name)
+        {
+            ToolRegistryEntry entry = ToolRegistry.Find(name);
+            if (entry == null)
+            {
+                return false;
+            }
+            return entry.Privileged;
         }
 
         /// <summary>
@@ -1645,8 +1657,8 @@ namespace CH4
         /// <returns>true=在声明面内</returns>
         private bool IsToolAllowed(string name)
         {
-            // 特权面硬编码——majordomo-* 仅默认会话可调（design-ch4-host-restart §二：单点授权；判据同 FilterPrivilegedSpecs）
-            if (name.StartsWith("majordomo-", StringComparison.Ordinal) && !IsDefaultSession)
+            // 特权面——仅默认会话可调（判据 = 注册面组级标记，单一真相源；design-ch4-host-restart §二）
+            if (IsPrivilegedTool(name) && !IsDefaultSession)
             {
                 return false;
             }

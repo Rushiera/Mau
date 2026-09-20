@@ -1,20 +1,23 @@
 ﻿// majordomo_cat.mau —— Majordomo 语料（CH4 宿主自更新工具组——BRIK-HOST-001 host.restart 登记面）
-// 角色：工具组 Flow——认领 TOOL 域 majordomo-restart 1 工具（宿主自更新：部署 + 重启 + 回执注入）
+// 角色：工具组 Flow——认领 TOOL 域 2 工具（majordomo-restart 宿主自更新 / majordomo-cmd 宿主管理指令执行）
 // 特权组：仅默认会话（catId=majordomo）可见可调——宿主侧单点授权（design-ch4-host-restart §二）
-// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 1 线认领执行 → complete_str 回执
-// 载荷协议：officeName = 工具名（majordomo-restart）；载荷 key "args" = 整包工具参数 JSON（target/push）
-// 数据面：@majOpen/@majOffice/@majArgs/@majRes 私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
+// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 2 线认领执行 → complete_str 回执
+// 载荷协议：officeName = 工具名（majordomo-restart / majordomo-cmd）；载荷 key "args" = 整包工具参数 JSON（target/push · cmd）
+// 数据面：@majOpen/@majOffice/@majArgs/@majRes + @mjdCmdOpen/@mjdOffice/@mjdArgs/@mjdRes 私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
 // 线程模型：全部主线程同步——积木只落盒即返回；进程动作（接力拉起/自杀）在宿主侧（design-ch4-host-restart §四 4.2）
+//   majordomo-cmd 线不得 par 化——管理指令族触碰注册表与会话面（ThreadGuard 主线程守卫）
 // 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）
 
-// ── 状态机（1 线——majordomo-restart）──
+// ── 状态机（2 线——majordomo-restart / majordomo-cmd）──
 § 'S_Restart' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Cmd' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
 § 'T_Init' : 'S_Restart' = 'Init' → 'self.desc'["Majordomo 自更新空闲待命", "", ""] | 'S_Restart' = 'Idle' | 'S_Restart' = 'Idle'
 
-// ── 主动传感器壳——1 线探测（纯只读判断积木 → bool 落盒）──
+// ── 主动传感器壳——2 线探测（纯只读判断积木 → bool 落盒）──
 § 'P_RestartOpen' ↻ [1]: 'oa.is_open'["TOOL", "majordomo-restart"] > @majOpen
+§ 'P_CmdOpen' ↻ [1]: 'oa.is_open'["TOOL", "majordomo-cmd"] > @mjdCmdOpen
 
 // ══════════════ majordomo-restart 线 ══════════════
 
@@ -32,3 +35,20 @@
 
 // T_RestartAbort：失败回执（@majRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
 § 'T_RestartAbort' : 'S_Restart' = 'Failed' → 'oa.complete_str'[@majOffice, @majRes] | 'S_Restart' = 'Idle' | 'S_Restart' = 'Idle'
+
+// ══════════════ majordomo-cmd 线 ══════════════
+
+// T_CmdClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_CmdClaim' : @mjdCmdOpen & 'S_Cmd' = 'Idle' → 'oa.claim_next_simple'["TOOL", "majordomo-cmd"] > @mjdOffice | 'S_Cmd' = 'Claimed' | 'S_Cmd' = 'Idle'
+
+// T_CmdArgs：读载荷 args（整包工具参数 JSON——cmd）
+§ 'T_CmdArgs' : 'S_Cmd' = 'Claimed' → 'oa.get_str'[@mjdOffice, "args"] > @mjdArgs | 'self.desc'["majordomo-cmd 执行中", "", ""] | 'S_Cmd' = 'Ready' | 'S_Cmd' = 'Failed'
+
+// T_CmdExec：宿主指令执行（主线程同步——管理指令族不得后台化；失败侧 ERR 文本也在 @mjdRes）
+§ 'T_CmdExec' : 'S_Cmd' = 'Ready' → 'host.command'[@mjdArgs] > @mjdRes | 'S_Cmd' = 'Done' | 'S_Cmd' = 'Failed'
+
+// T_CmdReply：成功回执（result=内核回执原文）
+§ 'T_CmdReply' : 'S_Cmd' = 'Done' → 'oa.complete_str'[@mjdOffice, @mjdRes] | 'self.desc'["Majordomo 空闲待命", "", ""] | 'S_Cmd' = 'Idle' | 'S_Cmd' = 'Idle'
+
+// T_CmdAbort：失败回执（@mjdRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
+§ 'T_CmdAbort' : 'S_Cmd' = 'Failed' → 'oa.complete_str'[@mjdOffice, @mjdRes] | 'S_Cmd' = 'Idle' | 'S_Cmd' = 'Idle'

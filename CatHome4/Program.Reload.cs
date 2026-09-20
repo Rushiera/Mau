@@ -188,7 +188,7 @@ namespace CH4
                     ToolPool.AddFromFlow(_quickHandle.Flow);
                 }
                 ToolPool.AddFromBuiltin(BuildBuiltinToolsJson());
-                ToolRegistry.Init(ToolPool.BuildSpecs(), ToolPool.BuildOwnerFlowMap());
+                ToolRegistry.Init(ToolPool.BuildSpecs(), ToolPool.BuildOwnerFlowMap(), ToolPool.BuildPrivilegedMap());
             }
             for (int i = 0; i < WarmupFrames; i++)
             {

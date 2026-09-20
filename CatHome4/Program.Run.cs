@@ -272,11 +272,12 @@ namespace CH4
             }
             // P9.3 多猫管理指令族——主线程直执 / HTTP 线程入队泵（ThreadGuard：注册表仅主线程触碰）
             // M3 catcfg.apply 同族路由（每猫配置运行时生效——HTTP 端点落盘后入队）
+            // 统一执行出口（Program.Command.cs）——CLI / HTTP / 工具桥三面同源（ExecuteAdminCommand）
             if (line.StartsWith("cat.", StringComparison.Ordinal) || line.StartsWith("catcfg.", StringComparison.Ordinal))
             {
                 if (Environment.CurrentManagedThreadId == _mainThreadId)
                 {
-                    Console.WriteLine("[CMD] " + AdminService.HandleCatCommand(line));
+                    Console.WriteLine("[CMD] " + ExecuteAdminCommand(line));
                 }
                 else
                 {

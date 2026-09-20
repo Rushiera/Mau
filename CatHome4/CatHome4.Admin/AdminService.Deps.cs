@@ -67,25 +67,20 @@ namespace CatHome4.Admin
         }
 
         // [段2] 工具名单处理——自持（原 Program.Tools.cs 静态面迁入；ToolRegistry 为 Core 静态注册表）
-        /// <summary>内置全量工具名清单——GetAllToolNames 懒加载缓存</summary>
-        private static string[] _allToolNames;
-
         /// <summary>
-        /// 内置全量工具名清单——懒加载从 ToolRegistry.BuildSpecs 派生（声明表是唯一真相源）。
+        /// 全量工具名清单——每次从 ToolRegistry.BuildSpecs 派生（声明表是唯一真相源）。
+        /// 🔴 不缓存——热重载/组重翻后清单即时同步（旧懒加载缓存在重载路径不失效 → 新工具被白名单过滤）。
         /// </summary>
         /// <returns>全量工具名数组</returns>
         internal static string[] GetAllToolNames()
         {
-            if (_allToolNames == null)
+            ToolSpec[] specs = ToolRegistry.BuildSpecs();
+            string[] names = new string[specs.Length];
+            for (int i = 0; i < specs.Length; i = i + 1)
             {
-                ToolSpec[] specs = ToolRegistry.BuildSpecs();
-                _allToolNames = new string[specs.Length];
-                for (int i = 0; i < specs.Length; i++)
-                {
-                    _allToolNames[i] = specs[i].Name;
-                }
+                names[i] = specs[i].Name;
             }
-            return _allToolNames;
+            return names;
         }
 
         /// <summary>

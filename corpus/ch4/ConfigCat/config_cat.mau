@@ -1,29 +1,36 @@
 ﻿// config_cat.mau —— ConfigCat 语料（CH4 R0.2 工具组 Flow 化——CONFIG 配置自改域独立 Flow，原 DevCat 分部拆分）
-// 角色：工具组 Flow——认领 TOOL 域 config-* 4 工具（list/get/set/reset）
-// 单级 OA 单：Dog Post → 本 Flow 4 线认领执行 → complete_str 回执
+// 角色：工具组 Flow——认领 TOOL 域 config-* 6 工具（list/get/set/reset + cat-get/cat-set 每猫配置读写）
+// 特权组：整组仅主干会话（catKey=majordomo）可见可调——工具定义积木组级 privileged 声明（design-ch4-cat-admin）
+// 单级 OA 单：Dog Post → 本 Flow 6 线认领执行 → complete_str 回执
 // 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON
-// 与 cs-* 线同构：oa.is_open 探测 → claim_next_simple 原子接单 → get_str 读载荷 → config.bridge[method] 直执 → complete_str 回执
+// 与 cs-* 线同构：oa.is_open 探测 → claim_next_simple 原子接单 → get_str 读载荷 → config.bridge / catcfg.bridge 直执 → complete_str 回执
 // 写入唯一实现 = ConfigStore.SetChecked/ResetToDefault（schema 白名单 + 值域校验 + 原子写 + 失败回滚）；llm.* 私密环境变量只读
-// 线程模型（A48 后台化）：收单/读参/回执主线程同步；执行步 [t=2400, par] 后台线程执行（主线程零阻塞）
+//   config-cat-* = cat.cfg 字段级合并写（读现值 → 改单字段 → 全量写回；内核指令 cat.cfg.get/set）
+// 线程模型（A48 后台化）：收单/读参/回执主线程同步；config-* 4 线执行步 [t=2400, par] 后台线程执行（主线程零阻塞）
+//   —— 🔴 config-cat-get / config-cat-set 两线不得 par 化：cat.cfg 内核触碰注册表与会话面（ThreadGuard 主线程守卫）
 //   —— 在途期间状态停在 Ready（不接新单，新单留 OA 队列）+ Busy 门防重入（线级唯一在途槽 = 结构性不可并发的锁）
 //   —— 回投由主线程 Drain 应用（代际守卫：超时作废后迟到的结果按代际丢弃）；超时 2400 帧（120s）
 // 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）+ trace.timeout / trace.late_discard
 // 变更（2026-09-14 A48）：exec 导线 par 化——self.desc 挪至 args 导线（par 导线单动作约束）
 
-// ── 状态机（4 线——每线独立生命周期）──
+// ── 状态机（6 线——每线独立生命周期）──
 § 'S_CfgList' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_CfgGet' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_CfgSet' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_CfgReset' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_CfgCatGet' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_CfgCatSet' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
 § 'T_Init' : 'S_CfgList' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_CfgList' = 'Idle' | 'S_CfgList' = 'Idle'
 
-// ── 主动传感器壳——4 线各自探测（officeName = 完整工具名）──
+// ── 主动传感器壳——6 线各自探测（officeName = 完整工具名）──
 § 'P_CfgListOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-list"] > @cfLstOpen
 § 'P_CfgGetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-get"] > @cfGetOpen
 § 'P_CfgSetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-set"] > @cfSetOpen
 § 'P_CfgResetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-reset"] > @cfRstOpen
+§ 'P_CfgCatGetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-cat-get"] > @cfCatGetOpen
+§ 'P_CfgCatSetOpen' ↻ [1]: 'oa.is_open'["TOOL", "config-cat-set"] > @cfCatSetOpen
 
 // ══════════════ config-list 线 ══════════════
 § 'T_CfgListClaim' : @cfLstOpen & 'S_CfgList' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config-list"] > @cfLstOffice | 'S_CfgList' = 'Claimed' | 'S_CfgList' = 'Idle'
@@ -52,3 +59,17 @@
 § 'T_CfgResetExec' [t=2400, par] : 'S_CfgReset' = 'Ready' → 'config.bridge'["reset", @cfRstArgs] > @cfRstRes | 'S_CfgReset' = 'Done' | 'S_CfgReset' = 'Failed'
 § 'T_CfgResetReply' : 'S_CfgReset' = 'Done' → 'oa.complete_str'[@cfRstOffice, @cfRstRes] | 'self.desc'["空闲待命", "", ""] | 'S_CfgReset' = 'Idle' | 'S_CfgReset' = 'Idle'
 § 'T_CfgResetAbort' : 'S_CfgReset' = 'Failed' → 'oa.complete_str'[@cfRstOffice, @cfRstRes] | 'S_CfgReset' = 'Idle' | 'S_CfgReset' = 'Idle'
+
+// ══════════════ config-cat-get 线（每猫配置读取——主线程同步，不 par） ══════════════
+§ 'T_CfgCatGetClaim' : @cfCatGetOpen & 'S_CfgCatGet' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config-cat-get"] > @cfCatGetOffice | 'S_CfgCatGet' = 'Claimed' | 'S_CfgCatGet' = 'Idle'
+§ 'T_CfgCatGetArgs' : 'S_CfgCatGet' = 'Claimed' → 'oa.get_str'[@cfCatGetOffice, "args"] > @cfCatGetArgs | 'self.desc'["config-cat-get 执行中", "", ""] | 'S_CfgCatGet' = 'Ready' | 'S_CfgCatGet' = 'Failed'
+§ 'T_CfgCatGetExec' : 'S_CfgCatGet' = 'Ready' → 'catcfg.bridge'["get", @cfCatGetArgs] > @cfCatGetRes | 'S_CfgCatGet' = 'Done' | 'S_CfgCatGet' = 'Failed'
+§ 'T_CfgCatGetReply' : 'S_CfgCatGet' = 'Done' → 'oa.complete_str'[@cfCatGetOffice, @cfCatGetRes] | 'self.desc'["空闲待命", "", ""] | 'S_CfgCatGet' = 'Idle' | 'S_CfgCatGet' = 'Idle'
+§ 'T_CfgCatGetAbort' : 'S_CfgCatGet' = 'Failed' → 'oa.complete_str'[@cfCatGetOffice, @cfCatGetRes] | 'S_CfgCatGet' = 'Idle' | 'S_CfgCatGet' = 'Idle'
+
+// ══════════════ config-cat-set 线（每猫配置字段级合并写——主线程同步，不 par） ══════════════
+§ 'T_CfgCatSetClaim' : @cfCatSetOpen & 'S_CfgCatSet' = 'Idle' → 'oa.claim_next_simple'["TOOL", "config-cat-set"] > @cfCatSetOffice | 'S_CfgCatSet' = 'Claimed' | 'S_CfgCatSet' = 'Idle'
+§ 'T_CfgCatSetArgs' : 'S_CfgCatSet' = 'Claimed' → 'oa.get_str'[@cfCatSetOffice, "args"] > @cfCatSetArgs | 'self.desc'["config-cat-set 执行中", "", ""] | 'S_CfgCatSet' = 'Ready' | 'S_CfgCatSet' = 'Failed'
+§ 'T_CfgCatSetExec' : 'S_CfgCatSet' = 'Ready' → 'catcfg.bridge'["set", @cfCatSetArgs] > @cfCatSetRes | 'S_CfgCatSet' = 'Done' | 'S_CfgCatSet' = 'Failed'
+§ 'T_CfgCatSetReply' : 'S_CfgCatSet' = 'Done' → 'oa.complete_str'[@cfCatSetOffice, @cfCatSetRes] | 'self.desc'["空闲待命", "", ""] | 'S_CfgCatSet' = 'Idle' | 'S_CfgCatSet' = 'Idle'
+§ 'T_CfgCatSetAbort' : 'S_CfgCatSet' = 'Failed' → 'oa.complete_str'[@cfCatSetOffice, @cfCatSetRes] | 'S_CfgCatSet' = 'Idle' | 'S_CfgCatSet' = 'Idle'

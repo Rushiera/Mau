@@ -119,6 +119,7 @@ var CHAT_TOOL_SKELETONS = {
     'mau-setup': 'exec',
     'host-reload': 'exec',
     'majordomo-restart': 'exec',
+    'majordomo-cmd': 'exec',
     'temp-exec': 'exec',
     // diagnostics——诊断列表
     'cs-check': 'diagnostics',
@@ -1119,6 +1120,14 @@ var CHAT_TOOL_OVERRIDES = {
             return '宿主重启 · 目标 ' + (h.meta.target || '默认') + (h.meta.push ? ' · 带回执' : '');
         }
     },
+    'majordomo-cmd': {
+        inputLines: function (a) { return ['宿主指令 ' + chatOvText(a.cmd)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '宿主指令 ' + chatOvStat(r); }
+            return '宿主指令 ' + chatOvShort(a.cmd);
+        }
+    },
     // ── ConfigCat（A64 批 2——结构化头驱动；2026-09-18）──
     'config-list': {
         inputLines: function () { return ['列出全部配置项（schema 声明 + 落盘未声明）']; },
@@ -1158,6 +1167,22 @@ var CHAT_TOOL_OVERRIDES = {
             var m = h.meta;
             if (m.scope === 'all') { return '还原全部可写配置 · ' + (m.count || 0) + ' 项'; }
             return '还原配置 ' + (m.key || '') + ' · 默认值';
+        }
+    },
+    'config-cat-get': {
+        inputLines: function (a) { return ['读取每猫配置 ' + chatOvText(a.cat)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '每猫配置 ' + chatOvText(a.cat) + chatOvStat(r); }
+            return '每猫配置 ' + h.meta.cat + ' · 全量字段';
+        }
+    },
+    'config-cat-set': {
+        inputLines: function (a) { return ['设置每猫配置 ' + chatOvText(a.cat) + ' · ' + chatOvText(a.field)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '每猫配置 ' + chatOvText(a.cat) + chatOvStat(r); }
+            return '每猫配置 ' + h.meta.cat + ' · ' + chatOvText(a.field) + ' 已更新';
         }
     },
     // ── MauCat（A64 批 3——结构化头驱动；2026-09-18）──

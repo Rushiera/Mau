@@ -22,6 +22,8 @@ namespace CH4
 
         /// <summary>归属组（TextCat 等；内置 = ""）</summary>
         public string Group = "";
+        /// <summary>组级特权声明——true=本组工具仅主干会话（catKey=majordomo）可见可调（工具定义 JSON 根级 privileged 字段；缺省 false）</summary>
+        public bool Privileged = false;
     }
 
     /// <summary>
@@ -61,6 +63,13 @@ namespace CH4
                     {
                         group = groupEl.GetString() ?? "";
                     }
+                    // 组级特权声明——根级 privileged=true → 本组全部工具标记特权（缺省 false）
+                    bool privileged = false;
+                    JsonElement privEl;
+                    if (root.TryGetProperty("privileged", out privEl) && privEl.ValueKind == JsonValueKind.True)
+                    {
+                        privileged = true;
+                    }
                     JsonElement tools;
                     if (!root.TryGetProperty("tools", out tools) || tools.ValueKind != JsonValueKind.Array)
                     {
@@ -75,6 +84,7 @@ namespace CH4
                         }
                         ToolDef def = new ToolDef();
                         def.Group = group;
+                        def.Privileged = privileged;
                         JsonElement nameEl;
                         if (item.TryGetProperty("name", out nameEl) && nameEl.ValueKind == JsonValueKind.String)
                         {
@@ -284,6 +294,19 @@ namespace CH4
             }
             return map;
         }
+        /// <summary>
+        /// 构建特权标记映射——工具名 → 是否特权（ToolRegistry 可见性判定数据源；组级声明派生）。
+        /// </summary>
+        /// <returns>工具名 → 特权标记映射</returns>
+        public static Dictionary<string, bool> BuildPrivilegedMap()
+        {
+            Dictionary<string, bool> map = new Dictionary<string, bool>(StringComparer.Ordinal);
+            foreach (KeyValuePair<string, ToolDef> kv in _byName)
+            {
+                map[kv.Key] = kv.Value.Privileged;
+            }
+            return map;
+        }
 
         /// <summary>
         /// 清空工具池——重载/重启重建面。
@@ -292,6 +315,7 @@ namespace CH4
         {
             _byName.Clear();
             _byGroup.Clear();
+            _order.Clear();
         }
     }
 }

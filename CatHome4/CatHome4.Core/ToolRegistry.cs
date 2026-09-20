@@ -23,6 +23,8 @@ namespace CH4
 
         /// <summary>是否启用——热重载注销/停用标记（false=从声明面剔除）</summary>
         public bool Enabled;
+        /// <summary>是否特权——true=仅主干会话（catKey=majordomo）可见可调（组级声明派生：工具定义 JSON 根级 privileged）</summary>
+        public bool Privileged;
     }
 
     /// <summary>
@@ -39,11 +41,13 @@ namespace CH4
         /// <summary>
         /// 注册表初始化——静态表灌入（R0.2：声明单一真相源 = 注册表；静态表仅作初始数据）
         /// OwnerFlow 优先从 Flow 自曝元数据映射（design-ch4-flow-scan §3.3——宿主扫描 dll 后传入）；
-        /// 映射缺失回退前缀映射 OwnerFlowFor；Note/host-* 标记内置（不走 OA）
+        /// 映射缺失回退前缀映射 OwnerFlowFor；Note/host-* 标记内置（不走 OA）；
+        /// 特权标记从组级声明映射灌入（工具定义 JSON 根级 privileged——ToolPool.BuildPrivilegedMap）
         /// </summary>
         /// <param name="specs">初始工具声明表（Program.BuildToolSpecs 产物）</param>
         /// <param name="ownerFlowMap">工具名 → 归属 Flow 名映射（null=回退前缀映射）</param>
-        public static void Init(ToolSpec[] specs, Dictionary<string, string> ownerFlowMap)
+        /// <param name="privilegedMap">工具名 → 特权标记映射（null=无特权项；显式传参——漏传即编译期报错，不静默失权）</param>
+        public static void Init(ToolSpec[] specs, Dictionary<string, string> ownerFlowMap, Dictionary<string, bool> privilegedMap)
         {
             for (int i = 0; i < specs.Length; i = i + 1)
             {
@@ -58,7 +62,12 @@ namespace CH4
                 {
                     ownerFlow = OwnerFlowFor(s.Name);
                 }
-                Register(s.Name, s, ownerFlow, builtin);
+                bool privileged = false;
+                if (privilegedMap != null && privilegedMap.TryGetValue(s.Name, out privileged))
+                {
+                    // 特权标记数据化——组级声明派生（工具定义 JSON 根级 privileged）
+                }
+                Register(s.Name, s, ownerFlow, builtin, privileged);
             }
         }
 
@@ -69,13 +78,15 @@ namespace CH4
         /// <param name="spec">工具声明</param>
         /// <param name="ownerFlow">归属 Flow 名（内置 = ""）</param>
         /// <param name="isBuiltin">是否内置（不走 OA）</param>
-        public static void Register(string name, ToolSpec spec, string ownerFlow, bool isBuiltin)
+        /// <param name="privileged">是否特权（仅主干会话可见可调——组级声明派生）</param>
+        public static void Register(string name, ToolSpec spec, string ownerFlow, bool isBuiltin, bool privileged)
         {
             ToolRegistryEntry entry = new ToolRegistryEntry();
             entry.Name = name;
             entry.Spec = spec;
             entry.OwnerFlow = ownerFlow;
             entry.IsBuiltin = isBuiltin;
+            entry.Privileged = privileged;
             entry.Enabled = true;
             _entries[name] = entry;
         }

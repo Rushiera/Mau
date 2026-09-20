@@ -216,6 +216,10 @@ namespace CatHome4.Admin
                 {
                     return "cat.pause | 用法: cat.pause <key>";
                 }
+                if (string.Equals(rest, "majordomo", StringComparison.Ordinal))
+                {
+                    return "cat.pause | majordomo 为特殊会话——不可自查（主干会话不能对自己下中止指令）";
+                }
                 CatEntry cat = FindCat(rest);
                 if (cat == null)
                 {
@@ -239,6 +243,10 @@ namespace CatHome4.Admin
                 {
                     return "cat.chat | 内容不能为空";
                 }
+                if (string.Equals(key, "majordomo", StringComparison.Ordinal))
+                {
+                    return "cat.chat | majordomo 为特殊会话——不可自查（主干会话不能对自己投递对话）";
+                }
                 CatEntry cat = FindCat(key);
                 if (cat == null)
                 {
@@ -257,7 +265,348 @@ namespace CatHome4.Admin
                 // M3 每猫配置运行时生效——主线程泵消费（HTTP 端点落盘后入队）
                 return HandleCatCfgApply(line.Substring(13).Trim());
             }
-            return "cat.* 指令未识别: " + line;
+            // A62 每猫配置读写指令——工具面 config-cat-get / config-cat-set 的调度底座（合并写语义）
+            if (line.StartsWith("cat.cfg.get ", StringComparison.Ordinal))
+            {
+                return HandleCatCfgGet(line.Substring(12).Trim());
+            }
+            if (line.StartsWith("cat.cfg.set ", StringComparison.Ordinal))
+            {
+                return HandleCatCfgSet(line.Substring(12).Trim());
+            }
+            return "cat.* 指令未识别: " + line + "\n" + CatCommandUsage();
+        }
+        /// <summary>
+        /// cat.* 指令族用法清单——错 key 自解释（入口面 = 用法声明面；design-ch4-cat-admin §五）。
+        /// </summary>
+        /// <returns>指令清单文本</returns>
+        internal static string CatCommandUsage()
+        {
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.AppendLine("cat.* / catcfg.* 可用指令:");
+            sb.AppendLine("  cat.list | 全部猫（id/显示名/运行态:端口）");
+            sb.AppendLine("  cat.new <显示名> | 新建猫（静默态，待 cat.start）");
+            sb.AppendLine("  cat.start <key> | 分配端口 + 拉起 HttpHost");
+            sb.AppendLine("  cat.stop <key> | 停止（majordomo 禁停）");
+            sb.AppendLine("  cat.delete <key> | 销毁（majordomo 禁删）");
+            sb.AppendLine("  cat.pause <key> | 中止当前回合");
+            sb.AppendLine("  cat.chat <key> <内容> | 内核对话投递");
+            sb.AppendLine("  cat.cfg.get <key> | 该猫 cat.cfg 全量字段");
+            sb.AppendLine("  cat.cfg.set <key> <字段> <值> | 字段级合并写（未提交字段保留）");
+            sb.Append("  catcfg.apply <key> | 每猫配置运行时生效");
+            return sb.ToString();
+        }
+        /// <summary>
+        /// 猫寻址 → cat.cfg 路径解析（majordomo=默认猫固定路径；多猫经 FindCat 寻址——id 精确 / 显示名 / id 前缀唯一）。
+        /// </summary>
+        /// <param name="key">猫寻址键</param>
+        /// <param name="id">输出：猫 id（cat.cfg 目录名）</param>
+        /// <param name="path">输出：cat.cfg 绝对路径</param>
+        /// <returns>错误文本（空=通过）</returns>
+        private static string ResolveCatCfgTarget(string key, out string id, out string path)
+        {
+            id = "";
+            path = "";
+            if (key == null || key.Length == 0)
+            {
+                return "缺少猫寻址键";
+            }
+            if (string.Equals(key, "majordomo", StringComparison.Ordinal))
+            {
+                id = "majordomo";
+            }
+            else
+            {
+                CatEntry cat = FindCat(key);
+                if (cat == null)
+                {
+                    return "未找到猫: " + key + "（cat.list 查看全部）";
+                }
+                id = cat.Id;
+            }
+            path = Path.Combine(_dataRoot, "Data", "sessions", id, "cat.cfg");
+            return "";
+        }
+        /// <summary>
+        /// 字符串数组 → 逗号清单（空数组空串）。
+        /// </summary>
+        /// <param name="values">数组</param>
+        /// <returns>逗号清单</returns>
+        private static string JoinArray(string[] values)
+        {
+            if (values == null || values.Length == 0)
+            {
+                return "";
+            }
+            return string.Join(",", values);
+        }
+        /// <summary>
+        /// cat.cfg 字段清单格式化——get / set 共用（写后读回对照用同一口径）。
+        /// </summary>
+        /// <param name="id">猫 id</param>
+        /// <param name="cfg">配置数据</param>
+        /// <returns>清单文本</returns>
+        private static string FormatCatCfg(string id, CatCfgData cfg)
+        {
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.AppendLine("cat.cfg | " + id);
+            sb.AppendLine("  id=" + cfg.Id);
+            sb.AppendLine("  displayName=" + cfg.DisplayName);
+            sb.AppendLine("  apiConfigId=" + cfg.ApiConfigId);
+            sb.AppendLine("  persona=" + cfg.Persona);
+            sb.AppendLine("  toolNames=" + cfg.ToolNames);
+            sb.AppendLine("  injectList=" + JoinArray(cfg.InjectList));
+            sb.AppendLine("  packs=" + JoinArray(cfg.Packs));
+            sb.AppendLine("  qqbotId=" + cfg.QqBotId);
+            sb.AppendLine("  qqbotEnable=" + (cfg.QqBotEnable ? "true" : "false"));
+            sb.Append("  enabledRoots=" + JoinArray(cfg.EnabledRoots));
+            return sb.ToString();
+        }
+        /// <summary>
+        /// cat.cfg.get——该猫 cat.cfg 全量字段（不设掩码：cat.cfg 不含密钥字段——密钥在 Data/secrets；design-ch4-cat-admin §三）。
+        /// </summary>
+        /// <param name="key">猫寻址键（majordomo=默认猫；多猫=会话 id / 显示名 / id 前缀唯一）</param>
+        /// <returns>字段清单文本</returns>
+        internal static string HandleCatCfgGet(string key)
+        {
+            string id;
+            string path;
+            string error = ResolveCatCfgTarget(key, out id, out path);
+            if (error.Length > 0)
+            {
+                return "cat.cfg.get | " + error;
+            }
+            CatCfgData cfg = LoadCatCfg(path);
+            if (cfg == null)
+            {
+                return "cat.cfg.get | cat.cfg 不存在: " + id;
+            }
+            return FormatCatCfg(id, cfg);
+        }
+        /// <summary>
+        /// 逗号 / 空白分隔清单解析——去空项（packs / enabledRoots 字段值用）。
+        /// </summary>
+        /// <param name="value">原始串（如 "overwork,ccbp-core"）</param>
+        /// <returns>去空项数组</returns>
+        private static string[] SplitList(string value)
+        {
+            if (value == null || value.Trim().Length == 0)
+            {
+                return new string[0];
+            }
+            string[] parts = value.Split(new char[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            List<string> list = new List<string>();
+            for (int i = 0; i < parts.Length; i = i + 1)
+            {
+                string item = parts[i].Trim();
+                if (item.Length > 0)
+                {
+                    list.Add(item);
+                }
+            }
+            return list.ToArray();
+        }
+        /// <summary>
+        /// API 配置身份归一——空 / 全零 = 默认端点语义（Guid.Empty 串，读侧实时解析全局默认）；否则须合法 Guid。
+        /// </summary>
+        /// <param name="value">原始值</param>
+        /// <param name="error">输出：错误文本（空=通过）</param>
+        /// <returns>归一后的身份串</returns>
+        private static string NormalizeApiConfigId(string value, out string error)
+        {
+            error = "";
+            string trimmed = (value == null) ? "" : value.Trim();
+            if (trimmed.Length == 0 || trimmed == Guid.Empty.ToString("D"))
+            {
+                return Guid.Empty.ToString("D");
+            }
+            Guid parsed;
+            if (!Guid.TryParse(trimmed, out parsed) || parsed == Guid.Empty)
+            {
+                error = "apiConfigId 非法: " + trimmed + "（空=默认端点）";
+                return "";
+            }
+            return trimmed;
+        }
+        /// <summary>
+        /// 注入清单解析——逗号分隔 + 路径合法性过滤（只接受完整路径：绝对路径 / id: 命名空间；非法项剔除并记 L2）。
+        /// </summary>
+        /// <param name="value">原始串（如 "CCBP:L1,CCBP:SOUL.md"）</param>
+        /// <returns>合法路径数组</returns>
+        private static string[] ParseInjectList(string value)
+        {
+            string[] parts = SplitList(value);
+            List<string> list = new List<string>();
+            for (int i = 0; i < parts.Length; i = i + 1)
+            {
+                if (IsValidInjectPath(parts[i]))
+                {
+                    list.Add(parts[i]);
+                }
+                else
+                {
+                    LogStore.Add("CatHome4", 2, "猫配置：注入路径被拒绝（非法格式）" + parts[i], "CONFIG");
+                }
+            }
+            return list.ToArray();
+        }
+        /// <summary>
+        /// cat.cfg.set——字段级合并写（读现值 → 改单字段 → 全量写回；未提交字段逐字保留）。
+        /// 🔴 不复用 POST /api/v1/cat-config 的整对象替换语义（判例 2026-09-16：部分字段提交致 qqbotEnable 被关、enabledRoots 收窄）。
+        /// 返回落盘实况（写后读回全量对照）；生效走 catcfg.apply 链（apiConfigId 立即，其余前文项新会话生效）。
+        /// </summary>
+        /// <param name="rest">参数串：&lt;key&gt; &lt;字段&gt; &lt;值…&gt;（值取行内剩余全部原文——persona 多行原样直达）</param>
+        /// <returns>落盘实况文本</returns>
+        internal static string HandleCatCfgSet(string rest)
+        {
+            if (rest == null || rest.Length == 0)
+            {
+                return "cat.cfg.set | 用法: cat.cfg.set <key> <字段> <值>";
+            }
+            int sp1 = rest.IndexOf(' ');
+            if (sp1 <= 0)
+            {
+                return "cat.cfg.set | 用法: cat.cfg.set <key> <字段> <值>";
+            }
+            string key = rest.Substring(0, sp1).Trim();
+            string tail = rest.Substring(sp1 + 1);
+            int sp2 = tail.IndexOf(' ');
+            if (sp2 <= 0)
+            {
+                return "cat.cfg.set | 用法: cat.cfg.set <key> <字段> <值>";
+            }
+            string field = tail.Substring(0, sp2).Trim();
+            string value = tail.Substring(sp2 + 1).Trim();
+            string id;
+            string path;
+            string error = ResolveCatCfgTarget(key, out id, out path);
+            if (error.Length > 0)
+            {
+                return "cat.cfg.set | " + error;
+            }
+            CatCfgData cfg = LoadCatCfg(path);
+            if (cfg == null)
+            {
+                return "cat.cfg.set | cat.cfg 不存在: " + id;
+            }
+            // [段1] 字段级写入——白名单 + 类型/值域校验（复用端点写时校验函数；非法一律报错退出，不静默回落）
+            string applied;
+            bool immediate = false;
+            if (field == "displayName")
+            {
+                if (value.Length == 0)
+                {
+                    return "cat.cfg.set | displayName 不能为空";
+                }
+                cfg.DisplayName = value;
+                applied = "displayName=" + value;
+            }
+            else if (field == "apiConfigId")
+            {
+                string normalized = NormalizeApiConfigId(value, out error);
+                if (error.Length > 0)
+                {
+                    return "cat.cfg.set | " + error;
+                }
+                cfg.ApiConfigId = normalized;
+                applied = "apiConfigId=" + normalized;
+                immediate = true;
+            }
+            else if (field == "persona")
+            {
+                cfg.Persona = value;
+                applied = "persona（" + value.Length.ToString() + " 字符）";
+            }
+            else if (field == "toolNames")
+            {
+                string valid = ValidateToolNames(value);
+                cfg.ToolNames = valid;
+                applied = "toolNames=" + valid;
+            }
+            else if (field == "injectList")
+            {
+                string[] paths = ParseInjectList(value);
+                cfg.InjectList = paths;
+                applied = "injectList=" + JoinArray(paths);
+            }
+            else if (field == "packs")
+            {
+                string[] packKeys = SplitList(value);
+                cfg.Packs = packKeys;
+                applied = "packs=" + JoinArray(packKeys);
+            }
+            else if (field == "qqbotId")
+            {
+                if (value.Length == 0)
+                {
+                    cfg.QqBotId = "";
+                    applied = "qqbotId=（已清空）";
+                }
+                else
+                {
+                    Guid parsed;
+                    if (!Guid.TryParse(value, out parsed) || parsed == Guid.Empty)
+                    {
+                        return "cat.cfg.set | qqbotId 非法: " + value;
+                    }
+                    string boundBy = FindQqBotBindingOwner(id, value);
+                    if (boundBy.Length > 0)
+                    {
+                        return "cat.cfg.set | 该 QQ Bot 已绑定猫「" + boundBy + "」——一只 Bot 只能绑一只猫";
+                    }
+                    cfg.QqBotId = value;
+                    applied = "qqbotId=" + value;
+                }
+            }
+            else if (field == "qqbotEnable")
+            {
+                if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase))
+                {
+                    cfg.QqBotEnable = true;
+                    applied = "qqbotEnable=true";
+                }
+                else if (string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
+                {
+                    cfg.QqBotEnable = false;
+                    applied = "qqbotEnable=false";
+                }
+                else
+                {
+                    return "cat.cfg.set | qqbotEnable 非法值: " + value + "（true/false）";
+                }
+            }
+            else if (field == "enabledRoots")
+            {
+                string[] roots = ValidateEnabledRoots(SplitList(value));
+                cfg.EnabledRoots = roots;
+                applied = "enabledRoots=" + JoinArray(roots);
+            }
+            else
+            {
+                return "cat.cfg.set | 非法字段: " + field + "（可用: displayName/apiConfigId/persona/toolNames/injectList/packs/qqbotId/qqbotEnable/enabledRoots）";
+            }
+            // [段2] 全量写回 + 生效入队（与端点同源：写后 catcfg.apply 主线程泵消费）
+            SaveCatCfgData(id, cfg);
+            _catQueue.Enqueue("catcfg.apply " + id);
+            // [段3] 落盘实况——写后读回对照（非"已提交"）
+            CatCfgData after = LoadCatCfg(path);
+            if (after == null)
+            {
+                return "cat.cfg.set | " + id + " | " + applied + " 已写入，但读回失败（落盘异常——请核查 cat.cfg）";
+            }
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.AppendLine("cat.cfg.set | " + id + " | " + applied + " 已更新");
+            sb.AppendLine("  [落盘] cat.cfg 已写回（未提交字段逐字保留）");
+            if (immediate)
+            {
+                sb.AppendLine("  [生效] 立即（LLM 端点已切换）");
+            }
+            else
+            {
+                sb.AppendLine("  [生效] 前文项新会话生效（catcfg.apply 已入队）");
+            }
+            sb.Append(FormatCatCfg(id, after));
+            return sb.ToString();
         }
 
         /// <summary>
@@ -498,17 +847,26 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// cat.list——注册表全量列出（id/显示名/状态/端口）。
+        /// cat.list——全猫列出（主干会话前置 + 多猫注册表；id/显示名/状态/端口）。
+        /// 主干会话口径与前端列表（BuildCatsJson）一致——_cats 注册表不含 majordomo。
         /// </summary>
         /// <returns>结果文本</returns>
         private static string HandleCatList()
         {
-            if (_cats.Count == 0)
-            {
-                return "cat.list | 0 只猫";
-            }
+            // 主干会话前置——与前端列表（BuildCatsJson）同口径：多猫注册表 _cats 不含 majordomo
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            sb.Append("cat.list | " + _cats.Count.ToString() + " 只猫");
+            sb.Append("cat.list | " + (_cats.Count + 1).ToString() + " 只猫");
+            sb.Append(Environment.NewLine);
+            string majorState;
+            if (_majorHost != null)
+            {
+                majorState = "运行中 :" + _majorPort.ToString();
+            }
+            else
+            {
+                majorState = "静默";
+            }
+            sb.Append("  majordomo | majordomo | " + majorState + " | 主干会话（禁停禁删）");
             for (int i = 0; i < _cats.Count; i++)
             {
                 CatEntry cat = _cats[i];

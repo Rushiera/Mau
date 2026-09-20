@@ -62,6 +62,8 @@ namespace CatHome4.Core.Tests
         /// <returns>会话实体</returns>
         private static CH4.ChatSession CreateSession(string displayName, ToolSpec[] tools, CaptureLlm llm)
         {
+            // 工具注册表——特权面判据读注册面条目标记（组级声明派生）；测试环境无宿主 Init，须显式灌入
+            CH4.ToolRegistry.Init(BuildToolFace(), null, new Dictionary<string, bool> { { "majordomo-restart", true } });
             ChatContext ctx = new ChatContext();
             string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".jsonl");
             SessionStore store = new SessionStore(tmp);

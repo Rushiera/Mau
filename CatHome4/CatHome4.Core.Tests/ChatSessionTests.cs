@@ -256,7 +256,7 @@ namespace CatHome4.Core.Tests
                 new ToolSpec("time", "当前时间", "{}"),
                 new ToolSpec("random", "随机整数", "{}"),
                 new ToolSpec("info", "运行状态", "{}")
-            }, null);
+            }, null, null);
             ChatContext ctx = new ChatContext();
             string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".jsonl");
             SessionStore store = new SessionStore(tmp);

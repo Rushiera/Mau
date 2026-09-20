@@ -282,6 +282,8 @@ namespace CH4
             DataBox.Bind<IVisionService>(new Mau.Providers.DeepSeekVisionService(apiConfigStore, llmConfig));
             // PsCat PowerShell 执行服务——EncodedCommand 免转义 + UTF-8 内建 + 写文件拦截 + 超时进程树杀（PsService）
             DataBox.Bind<IPsService>(new PsService());
+            // 宿主指令服务——工具面触达内核指令族（host.command 积木 → IHostCommandService；与 CLI/HTTP 面板同源单内核）
+            DataBox.Bind<IHostCommandService>(new HostCommandService());
             AuditStore audit = new AuditStore();
             AuditStore.Default = audit;
             _runner.Audit = audit;
@@ -353,7 +355,7 @@ namespace CH4
             Guid defaultApiConfigId = Guid.Empty;
             // R0.2 工具注册表——统一工具池灌入（Flow 自曝工具定义 + 内置定义源；替代 BuildToolSpecs 人工表）
             // 🔴 必须先于 EnsureMajordomoCfg——SaveCatCfgData 内 ValidateToolNames 依赖注册表（空表 → 模板工具全被过滤）
-            ToolRegistry.Init(ToolPool.BuildSpecs(), ToolPool.BuildOwnerFlowMap());
+            ToolRegistry.Init(ToolPool.BuildSpecs(), ToolPool.BuildOwnerFlowMap(), ToolPool.BuildPrivilegedMap());
             // 工具池摘要——启动观测（工具总数 + 组别分布；design-ch4-tools-pool §六）
             string poolSummary = "工具池已聚合：" + ToolPool.AllNames().Length.ToString() + " 个工具 / " + ToolPool.AllGroups().Length.ToString() + " 个组";
             LogStore.Add("CatHome4", 1, poolSummary, "CONFIG");
