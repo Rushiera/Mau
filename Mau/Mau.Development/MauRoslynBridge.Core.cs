@@ -1302,14 +1302,16 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 原子落盘——临时文件 + Move 覆盖（防半截写入）；编码保真（原文件 BOM 有则保留、无则不添加）。
+        /// 原子落盘——临时文件 + Move 覆盖（防半截写入）；编码保真（原文件 BOM 有则保留、无则不添加）+ 行尾按原文件多数归一。
+        /// 写侧共用出口（patch / member / comment 与 format 同源）——保真语义一处收口。
         /// </summary>
         /// <param name="path">目标文件</param>
         /// <param name="text">完整新内容</param>
-        private static void WriteAtomicText(string path, string text)
+        /// <returns>写盘诊断（空=正常；非空=行尾自检不一致描述）</returns>
+        private static string WriteAtomicText(string path, string text)
         {
             bool bom = File.Exists(path) && HasUtf8Bom(path);
-            WriteFilePreserving(path, text, bom);
+            return WriteFilePreserving(path, text, bom);
         }
 
         /// <summary>

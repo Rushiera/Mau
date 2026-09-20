@@ -15,7 +15,7 @@ namespace Mau.Development
     /// <summary>
     /// MauRoslynBridge 格式面——cs.format 空白 / 缩进规整（Roslyn Formatter，partial 分部）。
     /// 边界：只做空白与缩进规整（不做语法糖展开 / 单行块拆分 / 文档风格改写）——语义零变更由 token 流 + directive 双向校验保证。
-    /// mode=check 干跑（差异清单，零写入——探针面）/ mode=apply 写盘（保真 BOM 与换行，原子替换）。
+    /// mode=check 干跑（差异清单，零写入——探针面）/ mode=apply 写盘（保真 BOM + 行尾按文件现状归一 + 写后回读自检，原子替换）。
     /// </summary>
     public sealed partial class MauRoslynBridge
     {
@@ -53,18 +53,22 @@ namespace Mau.Development
                 return true;
             }
 
-            // [段4] 逐文件规整——校验不通过即跳过（令牌流 / directive / 幂等三重校验）
+            // [段4] 逐文件规整——目标行尾取自文件现状（多数优先）；结果文本整体归一后落盘，不允许 Roslyn 输出直接落盘
             StringBuilder sb = new StringBuilder();
             int changedFiles = 0;
             int changedLines = 0;
             int writtenFiles = 0;
             int failedFiles = 0;
+            int writeFailures = 0;
             for (int i = 0; i < files.Count; i = i + 1)
             {
                 string file = files[i];
+                string relative = RelativeToRoots(file);
                 string source = File.ReadAllText(file);
-                string newline = TargetNewline();
-                string formatted = FormatText(source, file, newline);
+                int crlfCount = 0;
+                int lfCount = 0;
+                string newline = DetectTargetNewline(source, out crlfCount, out lfCount);
+                string formatted = NormalizeNewLineText(FormatText(source, file, newline), newline);
                 if (string.Equals(formatted, source, StringComparison.Ordinal))
                 {
                     continue;
@@ -73,7 +77,7 @@ namespace Mau.Development
                 if (failure.Length > 0)
                 {
                     failedFiles = failedFiles + 1;
-                    sb.AppendLine("VERIFY_FAIL|" + RelativeToRoots(file) + "|" + failure);
+                    sb.AppendLine("VERIFY_FAIL|" + relative + "|" + failure);
                     continue;
                 }
                 int lines = CountChangedLines(source, formatted);
@@ -81,10 +85,19 @@ namespace Mau.Development
                 changedLines = changedLines + lines;
                 if (mode == "apply")
                 {
-                    WriteFilePreserving(file, formatted, HasUtf8Bom(file));
+                    string writeFailure = WriteFilePreserving(file, formatted, HasUtf8Bom(file));
                     writtenFiles = writtenFiles + 1;
+                    if (writeFailure.Length > 0)
+                    {
+                        writeFailures = writeFailures + 1;
+                        sb.AppendLine("WRITE_FAIL|" + relative + "|" + writeFailure);
+                    }
                 }
-                sb.AppendLine(RelativeToRoots(file) + " | lines=" + lines.ToString());
+                sb.AppendLine(relative + " | lines=" + lines.ToString());
+                if (crlfCount > 0 && lfCount > 0)
+                {
+                    sb.AppendLine("MIXED|" + relative + "|原文件行尾混合（CRLF " + crlfCount + " / LF " + lfCount + "）→ 按多数归一为 " + NewlineLabel(newline));
+                }
             }
 
             // [段5] 结果拼装——结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文逐文件差异行
@@ -97,9 +110,10 @@ namespace Mau.Development
             if (mode == "apply")
             {
                 fmtMeta["writtenFiles"] = writtenFiles;
+                fmtMeta["writeFailures"] = writeFailures;
             }
             StringBuilder output = new StringBuilder();
-            output.Append(MetaHead("cs-format", failedFiles == 0, fmtMeta));
+            output.Append(MetaHead("cs-format", failedFiles == 0 && writeFailures == 0, fmtMeta));
             output.AppendLine();
             output.Append(sb.ToString());
             result = TrimResult(output.ToString(), MaxResultChars);
@@ -257,6 +271,7 @@ namespace Mau.Development
         /// <summary>
         /// 写前校验——token 流等价 + directive 等价 + 幂等（任一不满足即拒写）。
         /// 动机：Formatter 只应改空白；token 流等价 ⊆ 语义等价，且比编译验证便宜（零编译成本）。
+        /// 幂等判定同样按归一后文本比较——否则 Formatter 输出的行尾差异会伪装成「非幂等」。
         /// </summary>
         /// <param name="source">原文</param>
         /// <param name="formatted">规整后</param>
@@ -273,7 +288,7 @@ namespace Mau.Development
             {
                 return "预处理指令不等价（#if/#pragma 面变动）";
             }
-            string again = FormatText(formatted, path, newline);
+            string again = NormalizeNewLineText(FormatText(formatted, path, newline), newline);
             if (!string.Equals(again, formatted, StringComparison.Ordinal))
             {
                 return "非幂等（二次规整仍有变化）";
@@ -365,12 +380,117 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 目标换行——仓库 .cs 一律 CRLF（行尾归一是空白规整的一部分：新建文件的 LF 在此收敛）。
+        /// 目标行尾探测——多数行尾优先（CRLF / LF 计数取多），平局回退首个出现的行尾；无任何换行回退平台默认。
+        /// 动机：Roslyn Formatter 对既有行保留原行尾、新插入行用 options 换行 ⇒ 单文件内混行；目标行尾必须取自文件现状而非平台常量。
         /// </summary>
-        /// <returns>换行串</returns>
-        private static string TargetNewline()
+        /// <param name="text">原文件文本</param>
+        /// <param name="crlfCount">输出——CRLF 行尾数</param>
+        /// <param name="lfCount">输出——LF 行尾数</param>
+        /// <returns>换行串（\r\n 或 \n）</returns>
+        private static string DetectTargetNewline(string text, out int crlfCount, out int lfCount)
         {
-            return "\r\n";
+            crlfCount = 0;
+            lfCount = 0;
+            string first = "";
+            for (int i = 0; i < text.Length; i = i + 1)
+            {
+                if (text[i] != '\n')
+                {
+                    continue;
+                }
+                bool crlf = i > 0 && text[i - 1] == '\r';
+                if (crlf)
+                {
+                    crlfCount = crlfCount + 1;
+                }
+                else
+                {
+                    lfCount = lfCount + 1;
+                }
+                if (first.Length == 0)
+                {
+                    first = crlf ? "\r\n" : "\n";
+                }
+            }
+            if (first.Length == 0)
+            {
+                return Environment.NewLine;
+            }
+            if (crlfCount > lfCount)
+            {
+                return "\r\n";
+            }
+            if (lfCount > crlfCount)
+            {
+                return "\n";
+            }
+            return first;
+        }
+
+        /// <summary>
+        /// 行尾文案——诊断输出用（CRLF / LF）
+        /// </summary>
+        /// <param name="newline">换行串</param>
+        /// <returns>文案</returns>
+        private static string NewlineLabel(string newline)
+        {
+            if (newline == "\r\n")
+            {
+                return "CRLF";
+            }
+            return "LF";
+        }
+
+        /// <summary>
+        /// 共享读文本——FileShare.ReadWrite 打开（活跃文件可读，避免占用冲突）；BOM 自动剥离。
+        /// </summary>
+        /// <param name="path">文件路径</param>
+        /// <returns>文本</returns>
+        private static string ReadTextShared(string path)
+        {
+            using (FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                using (StreamReader reader = new StreamReader(stream, Encoding.UTF8, true))
+                {
+                    return reader.ReadToEnd();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 行尾一致性检查——目标 CRLF 时不得残留独立 LF，目标 LF 时不得残留 CRLF；返回不一致描述（空=一致）。
+        /// </summary>
+        /// <param name="text">读回文本</param>
+        /// <param name="newline">目标换行</param>
+        /// <returns>不一致描述（空=一致）</returns>
+        private static string CheckNewlineUniform(string text, string newline)
+        {
+            int crlfCount = 0;
+            int lfCount = 0;
+            for (int i = 0; i < text.Length; i = i + 1)
+            {
+                if (text[i] != '\n')
+                {
+                    continue;
+                }
+                if (i > 0 && text[i - 1] == '\r')
+                {
+                    crlfCount = crlfCount + 1;
+                }
+                else
+                {
+                    lfCount = lfCount + 1;
+                }
+            }
+            if (newline == "\r\n" && lfCount > 0)
+            {
+                return "残留 LF " + lfCount + " 处";
+            }
+            if (newline == "\n" && crlfCount > 0)
+            {
+                return "残留 CRLF " + crlfCount + " 处";
+            }
+            return "";
         }
 
         /// <summary>
@@ -390,17 +510,28 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 保真原子落盘——临时文件 + Move 覆盖（防半截写入）；编码 / BOM 按原文状态。
+        /// 保真原子落盘——临时文件 + Move 覆盖（防半截写入）；编码 / BOM 按原文状态；行尾按原文件多数归一（Roslyn 输出不直接落盘）+ 写后回读自检。
         /// </summary>
         /// <param name="path">目标文件</param>
         /// <param name="text">完整新内容</param>
         /// <param name="bom">是否写 UTF-8 BOM</param>
-        private static void WriteFilePreserving(string path, string text, bool bom)
+        /// <returns>写盘诊断（空=正常；非空=行尾自检不一致描述）</returns>
+        private static string WriteFilePreserving(string path, string text, bool bom)
         {
+            // [段1] 目标行尾——原文件多数行尾优先（文件缺失 / 无换行回退平台默认）
+            string newline = Environment.NewLine;
+            if (File.Exists(path))
+            {
+                int crlfCount = 0;
+                int lfCount = 0;
+                newline = DetectTargetNewline(ReadTextShared(path), out crlfCount, out lfCount);
+            }
+            string payload = NormalizeNewLineText(text, newline);
+            // [段2] 原子写——临时文件 + Move 覆盖（防半截写入）
             string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                File.WriteAllText(temporary, text, new UTF8Encoding(bom));
+                File.WriteAllText(temporary, payload, new UTF8Encoding(bom));
                 File.Move(temporary, path, true);
             }
             finally
@@ -410,6 +541,13 @@ namespace Mau.Development
                     File.Delete(temporary);
                 }
             }
+            // [段3] 写后回读自检——行尾形态与目标不一致即报告（失败必须可见，不静默）
+            string mismatch = CheckNewlineUniform(ReadTextShared(path), newline);
+            if (mismatch.Length > 0)
+            {
+                return "写盘后行尾自检不一致（期望 " + NewlineLabel(newline) + "）: " + mismatch;
+            }
+            return "";
         }
 
         /// <summary>

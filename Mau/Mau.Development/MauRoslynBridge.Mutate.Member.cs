@@ -179,7 +179,7 @@ namespace Mau.Development
                     return true;
                 }
                 string filePath = foundTree.FilePath;
-                WriteAtomicText(filePath, newRoot.ToFullString());
+                string writeNote = WriteAtomicText(filePath, newRoot.ToFullString());
                 cache.Trees[filePath] = newTree;
                 cache.Compilation = trial;
                 cache.Stamps[filePath] = SnapshotOf(filePath);
@@ -200,6 +200,10 @@ namespace Mau.Development
                 miMeta["start"] = newTree.GetText().Lines.GetLineFromPosition(insertedMember.FullSpan.Start).LineNumber + 1;
                 miMeta["end"] = insertedMember.GetLocation().GetLineSpan().EndLinePosition.Line + 1;
                 miMeta["kind"] = newMember.GetType().Name;
+                if (writeNote.Length > 0)
+                {
+                    miMeta["writeNote"] = writeNote;
+                }
                 result = MetaHead("cs-member", true, miMeta);
                 return true;
             }
@@ -316,7 +320,7 @@ namespace Mau.Development
                     return true;
                 }
                 string filePath = foundTree.FilePath;
-                WriteAtomicText(filePath, newRoot.ToFullString());
+                string writeNote = WriteAtomicText(filePath, newRoot.ToFullString());
                 cache.Trees[filePath] = newTree;
                 cache.Compilation = trial;
                 cache.Stamps[filePath] = SnapshotOf(filePath);
@@ -327,6 +331,10 @@ namespace Mau.Development
                 mdMeta["class"] = className;
                 mdMeta["member"] = member;
                 mdMeta["file"] = RelativeToProject(cache, filePath);
+                if (writeNote.Length > 0)
+                {
+                    mdMeta["writeNote"] = writeNote;
+                }
                 result = MetaHead("cs-member", true, mdMeta);
                 return true;
             }
@@ -424,11 +432,16 @@ namespace Mau.Development
                     result = TrimResult(sb.ToString(), MaxResultChars);
                     return true;
                 }
+                List<string> writeNotes = new List<string>();
                 for (int i = 0; i < changedFiles.Count; i = i + 1)
                 {
                     string filePath = changedFiles[i];
                     SyntaxTree newTree = changedTrees[i];
-                    WriteAtomicText(filePath, newTree.GetRoot().ToFullString());
+                    string writeNote = WriteAtomicText(filePath, newTree.GetRoot().ToFullString());
+                    if (writeNote.Length > 0)
+                    {
+                        writeNotes.Add(Path.GetFileName(filePath) + ": " + writeNote);
+                    }
                     cache.Trees[filePath] = newTree;
                     cache.Stamps[filePath] = SnapshotOf(filePath);
                     SemanticModel removed = null!;
@@ -441,6 +454,10 @@ namespace Mau.Development
                 mrMeta["oldName"] = oldName;
                 mrMeta["newName"] = newName;
                 mrMeta["files"] = changedFiles.Count;
+                if (writeNotes.Count > 0)
+                {
+                    mrMeta["writeNote"] = string.Join(" | ", writeNotes);
+                }
                 result = MetaHead("cs-member", true, mrMeta);
                 return true;
             }

@@ -340,7 +340,7 @@ namespace Mau.Development
                     return true;
                 }
                 string filePath = foundTree.FilePath;
-                WriteAtomicText(filePath, newRoot.ToFullString());
+                string writeNote = WriteAtomicText(filePath, newRoot.ToFullString());
                 cache.Trees[filePath] = newTree;
                 cache.Compilation = newCompilation;
                 cache.Stamps[filePath] = SnapshotOf(filePath);
@@ -363,6 +363,10 @@ namespace Mau.Development
                 ptMeta["method"] = methodName;
                 ptMeta["start"] = methodStartLine;
                 ptMeta["end"] = methodEndLine;
+                if (writeNote.Length > 0)
+                {
+                    ptMeta["writeNote"] = writeNote;
+                }
                 result = TrimResult(MetaHead("cs-patch", true, ptMeta) + Environment.NewLine + NumberedSource(patchedNode.ToFullString(), methodStartLine), MaxResultChars);
                 return true;
             }

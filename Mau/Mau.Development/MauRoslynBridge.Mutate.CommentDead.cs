@@ -234,7 +234,7 @@ namespace Mau.Development
                     return true;
                 }
                 string filePath = foundTree.FilePath;
-                WriteAtomicText(filePath, newRoot.ToFullString());
+                string writeNote = WriteAtomicText(filePath, newRoot.ToFullString());
                 cache.Trees[filePath] = newTree;
                 cache.Compilation = trial;
                 cache.Stamps[filePath] = SnapshotOf(filePath);
@@ -245,6 +245,10 @@ namespace Mau.Development
                 cmMeta["class"] = className;
                 cmMeta["member"] = member;
                 cmMeta["type"] = type;
+                if (writeNote.Length > 0)
+                {
+                    cmMeta["writeNote"] = writeNote;
+                }
                 result = MetaHead("cs-comment", true, cmMeta);
                 return true;
             }

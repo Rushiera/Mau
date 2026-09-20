@@ -28,6 +28,16 @@ namespace Mau.Development.Tests
         private readonly string _badNoBomPath;
 
         /// <summary>
+        /// 整块缺一级缩进的探针文件（LF 行尾）
+        /// </summary>
+        private readonly string _badLfPath;
+
+        /// <summary>
+        /// 行尾混合探针文件（多数 CRLF + 少量 LF）
+        /// </summary>
+        private readonly string _mixedPath;
+
+        /// <summary>
         /// 已规范文件（零差异基线）
         /// </summary>
         private readonly string _cleanPath;
@@ -51,10 +61,14 @@ namespace Mau.Development.Tests
             Directory.CreateDirectory(_root);
             _badPath = Path.Combine(_root, "Bad.cs");
             _badNoBomPath = Path.Combine(_root, "BadNoBom.cs");
+            _badLfPath = Path.Combine(_root, "BadLf.cs");
+            _mixedPath = Path.Combine(_root, "Mixed.cs");
             _cleanPath = Path.Combine(_root, "Clean.cs");
             _generatedPath = Path.Combine(_root, "FL_Generated.cs");
             File.WriteAllText(_badPath, BadText(), new UTF8Encoding(true));
             File.WriteAllText(_badNoBomPath, BadText(), new UTF8Encoding(false));
+            File.WriteAllText(_badLfPath, BadTextLf(), new UTF8Encoding(true));
+            File.WriteAllText(_mixedPath, MixedText(), new UTF8Encoding(true));
             File.WriteAllText(_cleanPath, CleanText(), new UTF8Encoding(true));
             File.WriteAllText(_generatedPath, BadText(), new UTF8Encoding(true));
             WorkspaceConfig.RootEntry entry = new WorkspaceConfig.RootEntry();
@@ -120,6 +134,42 @@ namespace Mau.Development.Tests
             string result = InvokeFormat(_badNoBomPath, "apply");
             Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"apply\"", result);
             Assert.False(HasBom(_badNoBomPath), "无 BOM 文件被写入 BOM");
+        }
+        /// <summary>
+        /// apply——LF 文件保持 LF（行尾保真：lf → lf，不引入 CRLF 混行）
+        /// </summary>
+        [Fact]
+        public void ApplyKeepsLfNewline()
+        {
+            string result = InvokeFormat(_badLfPath, "apply");
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"apply\"", result);
+            string text = File.ReadAllText(_badLfPath);
+            Assert.Contains("    public int Run()\n", text);
+            Assert.True(AllLf(text), "出现 CRLF 行尾（LF 文件被写成混行）");
+        }
+        /// <summary>
+        /// apply——行尾混合文件按多数归一（落盘后不再是 mixed）并在正文报出混合提示
+        /// </summary>
+        [Fact]
+        public void ApplyNormalizesMixedToMajority()
+        {
+            string result = InvokeFormat(_mixedPath, "apply");
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"apply\"", result);
+            Assert.Contains("MIXED|", result);
+            string text = File.ReadAllText(_mixedPath);
+            Assert.True(AllCrlf(text), "混合行尾未被归一");
+        }
+        /// <summary>
+        /// apply——LF 文件二次 check 零差异（幂等；行尾归一后不再报「非幂等」）
+        /// </summary>
+        [Fact]
+        public void ApplyKeepsLfIdempotent()
+        {
+            string first = InvokeFormat(_badLfPath, "apply");
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"apply\"", first);
+            string second = InvokeFormat(_badLfPath, "check");
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"check\"", second);
+            Assert.DoesNotContain("BadLf.cs", second);
         }
 
         /// <summary>
@@ -286,6 +336,49 @@ namespace Mau.Development.Tests
                 "        }\r\n" +
                 "    }\r\n" +
                 "}\r\n";
+        }
+        /// <summary>
+        /// 全 LF 判定——不含 CR
+        /// </summary>
+        /// <param name="text">文本</param>
+        /// <returns>全 LF</returns>
+        private static bool AllLf(string text)
+        {
+            return text.IndexOf('\r') < 0;
+        }
+        /// <summary>
+        /// 缺一级缩进的探针源码（LF 行尾）
+        /// </summary>
+        /// <returns>源码文本</returns>
+        private static string BadTextLf()
+        {
+            return BadText().Replace("\r\n", "\n");
+        }
+        /// <summary>
+        /// 行尾混合探针源码——多数 CRLF + 第 2/5 行后为 LF
+        /// </summary>
+        /// <returns>源码文本</returns>
+        private static string MixedText()
+        {
+            string text = BadText();
+            string[] lines = text.Split(new string[] { "\r\n" }, StringSplitOptions.None);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < lines.Length; i = i + 1)
+            {
+                sb.Append(lines[i]);
+                if (i < lines.Length - 1)
+                {
+                    if (i == 2 || i == 5)
+                    {
+                        sb.Append("\n");
+                    }
+                    else
+                    {
+                        sb.Append("\r\n");
+                    }
+                }
+            }
+            return sb.ToString();
         }
     }
 }
