@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using CatHome4.Admin;
+using Mau.Runtime;
 using Xunit;
 
 namespace CatHome4.Core.Tests
@@ -101,6 +102,69 @@ namespace CatHome4.Core.Tests
         {
             Assert.True(AdminService.ImageDirs.Length >= 1);
             Assert.Equal(AdminService.ImageWriteDir, AdminService.ImageDirs[0]);
+        }
+
+        /// <summary>
+        /// 受控根寻址判定——根寻址真、盘符绝对路径假（与前端 chatImgIsRootAddress 同判据）。
+        /// </summary>
+        [Fact]
+        public void IsRootAddress_RootFormVsDrivePath()
+        {
+            Assert.True(AdminService.IsRootAddress("mau:CatTemp/a.png"));
+            Assert.True(AdminService.IsRootAddress("mau:a.png"));
+            Assert.True(AdminService.IsRootAddress("WorkSpace:out/shot 图.png"));
+            Assert.False(AdminService.IsRootAddress(@"C:\x\a.png"));
+            Assert.False(AdminService.IsRootAddress("C:/x/a.png"));
+            Assert.False(AdminService.IsRootAddress("a1b2.png"));
+            Assert.False(AdminService.IsRootAddress(""));
+            Assert.False(AdminService.IsRootAddress(null));
+        }
+
+        /// <summary>
+        /// 受控根图片解析——命中 / 根 id 大小写不敏感 / 根不存在 / 非图片扩展名 / 越界 / 空参 各态一律显式拒绝。
+        /// </summary>
+        [Fact]
+        public void TryResolveRootImage_HitAndGuards()
+        {
+            WorkspaceConfig ws = new WorkspaceConfig();
+            WorkspaceConfig.RootEntry root = new WorkspaceConfig.RootEntry();
+            root.Id = "mau";
+            root.Path = Path.Combine("X", "repo");
+            ws.Roots = new WorkspaceConfig.RootEntry[] { root };
+            string full;
+            string mime;
+            Assert.True(AdminService.TryResolveRootImage(ws, "mau:sub/a.png", out full, out mime));
+            Assert.Equal(Path.GetFullPath(Path.Combine("X", "repo", "sub", "a.png")), full);
+            Assert.Equal("image/png", mime);
+            Assert.True(AdminService.TryResolveRootImage(ws, "MAU:sub/shot 图.webp", out full, out mime));
+            Assert.Equal("image/webp", mime);
+            Assert.False(AdminService.TryResolveRootImage(ws, "ccbp:L1/Tree.md", out full, out mime));
+            Assert.False(AdminService.TryResolveRootImage(ws, "mau:src/Program.cs", out full, out mime));
+            Assert.False(AdminService.TryResolveRootImage(ws, "mau:../secret.png", out full, out mime));
+            Assert.False(AdminService.TryResolveRootImage(ws, "mau:", out full, out mime));
+            Assert.False(AdminService.TryResolveRootImage(null, "mau:a.png", out full, out mime));
+        }
+
+        /// <summary>
+        /// 受控根内绝对路径解析——根内命中 / 根外拒绝 / 非图片拒绝 / 空参拒绝（模型天然写绝对路径的兜底面）。
+        /// </summary>
+        [Fact]
+        public void TryResolveInsideRoots_HitAndGuards()
+        {
+            WorkspaceConfig ws = new WorkspaceConfig();
+            WorkspaceConfig.RootEntry root = new WorkspaceConfig.RootEntry();
+            root.Id = "WorkSpace";
+            root.Path = Path.Combine("X", "WorkSpace");
+            ws.Roots = new WorkspaceConfig.RootEntry[] { root };
+            string full;
+            string mime;
+            Assert.True(AdminService.TryResolveInsideRoots(ws, Path.Combine("X", "WorkSpace", "pet", "a.gif"), out full, out mime));
+            Assert.Equal("image/gif", mime);
+            Assert.True(AdminService.TryResolveInsideRoots(ws, Path.Combine("X", "WorkSpace", "shot 图.png"), out full, out mime));
+            Assert.False(AdminService.TryResolveInsideRoots(ws, Path.Combine("X", "Other", "a.png"), out full, out mime));
+            Assert.False(AdminService.TryResolveInsideRoots(ws, Path.Combine("X", "WorkSpace", "Program.cs"), out full, out mime));
+            Assert.False(AdminService.TryResolveInsideRoots(ws, "", out full, out mime));
+            Assert.False(AdminService.TryResolveInsideRoots(null, Path.Combine("X", "WorkSpace", "a.png"), out full, out mime));
         }
     }
 }

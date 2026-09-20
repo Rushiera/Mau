@@ -527,13 +527,55 @@ function chatImgName(path) {
 }
 
 function chatImgUrl(path) {
-    // 路径 → 可渲染 URL（单一出口）——http(s) 直通；本地路径取末段文件名交取图端点
-    // （浏览器不认本地路径；后端在白名单目录内按文件名查找）
+    // 路径 → 可渲染 URL（单一出口）——四态：
+    // ① http(s) 直通；② 受控根寻址 `<rootId>:<rel>` 整串进端点；③ 本地绝对路径整串进端点（宿主按受控根前缀匹配，
+    //    不在根内则回落缓存目录文件名）；④ 裸文件名进缓存目录分支
+    // （浏览器不认本地路径；端点按受控根 / 缓存目录白名单解析）
     var raw = String(path === undefined || path === null ? '' : path).trim();
+    if (raw.length === 0) { return ''; }
     if (raw.indexOf('http://') === 0 || raw.indexOf('https://') === 0) { return raw; }
+    if (chatImgIsRootAddress(raw) || chatImgIsAbsolutePath(raw)) {
+        return '/api/v1/cache-image/' + chatImgRootUrl(raw);
+    }
     var name = chatImgName(raw);
     if (name === '') { return ''; }
     return '/api/v1/cache-image/' + encodeURIComponent(name);
+}
+
+function chatImgIsAbsolutePath(path) {
+    // 本地绝对路径判定——UNC `\\host\share` / 正斜杠根 `/x` / 盘符 `C:\` 或 `C:/`
+    var raw = String(path === undefined || path === null ? '' : path);
+    if (raw.length === 0) { return false; }
+    if (raw.indexOf('\\\\') === 0) { return true; }
+    if (raw.indexOf('/') === 0) { return true; }
+    return /^[a-zA-Z]:[\\/]/.test(raw);
+}
+
+function chatImgIsRootAddress(path) {
+    // 受控根寻址判定——首个冒号在首个分隔符之前（Windows 盘符 C:\ 不算）；与宿主 IsRootAddress 同判据
+    var raw = String(path === undefined || path === null ? '' : path);
+    var colon = raw.indexOf(':');
+    if (colon <= 0) { return false; }
+    var slash = raw.indexOf('/');
+    var back = raw.indexOf('\\');
+    var sep = -1;
+    if (slash >= 0 && back >= 0) { sep = slash < back ? slash : back; }
+    else if (slash >= 0) { sep = slash; }
+    else { sep = back; }
+    if (sep >= 0 && sep < colon) { return false; }
+    if (colon === 1 && sep === 2) { return false; }
+    return true;
+}
+
+function chatImgRootUrl(path) {
+    // 受控根 URL 段——分隔符统一为 /；首段（含根 id 与冒号）原样，其余逐段编码（保 / 不被转义）
+    var raw = String(path === undefined || path === null ? '' : path).trim().replace(/\\/g, '/');
+    var parts = raw.split('/');
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+        if (i === 0) { out.push(parts[i]); } else { out.push(encodeURIComponent(parts[i])); }
+    }
+    return out.join('/');
 }
 
 function chatImgThumb(item) {

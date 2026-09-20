@@ -76,10 +76,20 @@ test('chatImgSplit 包裹内杂行或空行——不命中（严格门）', () =
   expect(window.chatImgSplit('[image-open]\n图片1-1：C:\\a.png\n\n[image-end]').items.length).toBe(0);
 });
 
-test('chatImgUrl 只取末段文件名（浏览器不认本地路径）', () => {
-  expect(window.chatImgUrl('C:\\Data\\chat-images\\a1b2.png')).toBe('/api/v1/cache-image/a1b2.png');
-  expect(window.chatImgUrl('/tmp/中文 图.png')).toBe('/api/v1/cache-image/' + encodeURIComponent('中文 图.png'));
+test('chatImgUrl 本地路径——绝对路径整串进端点 / 裸文件名走缓存分支', () => {
+  expect(window.chatImgUrl('C:\\Data\\chat-images\\a1b2.png')).toBe('/api/v1/cache-image/C:/Data/chat-images/a1b2.png');
+  expect(window.chatImgUrl('C:\\Users\\ASUS\\桌面\\图 1.png')).toBe('/api/v1/cache-image/C:/Users/ASUS/' + encodeURIComponent('桌面') + '/' + encodeURIComponent('图 1.png'));
+  expect(window.chatImgUrl('a1b2.png')).toBe('/api/v1/cache-image/a1b2.png');
   expect(window.chatImgUrl('')).toBe('');
+});
+
+test('chatImgIsAbsolutePath——盘符 / UNC / 正斜杠根 判定', () => {
+  expect(window.chatImgIsAbsolutePath('C:\\x\\a.png')).toBe(true);
+  expect(window.chatImgIsAbsolutePath('C:/x/a.png')).toBe(true);
+  expect(window.chatImgIsAbsolutePath('\\\\host\\share\\a.png')).toBe(true);
+  expect(window.chatImgIsAbsolutePath('/x/a.png')).toBe(true);
+  expect(window.chatImgIsAbsolutePath('mau:CatTemp/a.png')).toBe(false);
+  expect(window.chatImgIsAbsolutePath('a1b2.png')).toBe(false);
 });
 
 test('chatUserFill 命中包裹——缩略图组 + 正文文本', () => {
@@ -209,7 +219,7 @@ test('工具卡 image-analyze——输入图片段（本地路径走取图端点
   }
   expect(imgSeg).not.toBe(null);
   expect(imgSeg.querySelector('summary').textContent).toContain('输入图片 · 1 张');
-  expect(imgSeg.querySelector('img').getAttribute('src')).toBe('/api/v1/cache-image/a1b2.png');
+  expect(imgSeg.querySelector('img').getAttribute('src')).toBe('/api/v1/cache-image/C:/Data/chat-images/a1b2.png');
   expect(imgSeg.querySelector('figcaption').textContent).toBe('a1b2.png');
 });
 
@@ -254,4 +264,33 @@ test('chatImgName / chatImgUrl——http(s) 直通与查询串剥离', () => {
   expect(window.chatImgUrl('http://x.test/b.jpg')).toBe('http://x.test/b.jpg');
   expect(window.chatImgName('https://x.test/a.png?v=2')).toBe('a.png');
   expect(window.chatImgName('C:\\Data\\chat-images\\c3d4.png')).toBe('c3d4.png');
+});
+
+test('chatImgUrl 受控根寻址——保留分隔符 + 逐段编码', () => {
+  expect(window.chatImgUrl('mau:CatTemp/shot.png')).toBe('/api/v1/cache-image/mau:CatTemp/shot.png');
+  expect(window.chatImgUrl('WorkSpace:out/shot 图.png')).toBe('/api/v1/cache-image/WorkSpace:out/shot%20%E5%9B%BE.png');
+  expect(window.chatImgUrl('mau:CatTemp\\shot.png')).toBe('/api/v1/cache-image/mau:CatTemp/shot.png');
+  expect(window.chatImgUrl('mau:a.png')).toBe('/api/v1/cache-image/mau:a.png');
+});
+
+test('chatImgIsRootAddress——盘符绝对路径不算根寻址', () => {
+  expect(window.chatImgIsRootAddress('mau:CatTemp/a.png')).toBe(true);
+  expect(window.chatImgIsRootAddress('mau:a.png')).toBe(true);
+  expect(window.chatImgIsRootAddress('C:\\x\\a.png')).toBe(false);
+  expect(window.chatImgIsRootAddress('C:/x/a.png')).toBe(false);
+  expect(window.chatImgIsRootAddress('a1b2.png')).toBe(false);
+});
+
+test('工具卡 image-analyze——受控根路径走根寻址 URL（跑测产物可直接看）', () => {
+  const body = window.chatToolBody({
+    name: 'image-analyze',
+    arguments: JSON.stringify({ path: 'WorkSpace:CatTemp/shot.png' }),
+    result: 'ok'
+  });
+  let imgSeg = null;
+  for (let i = 0; i < body.segs.length; i++) {
+    if (body.segs[i].className.indexOf('seg-img') >= 0) { imgSeg = body.segs[i]; }
+  }
+  expect(imgSeg.querySelector('img').getAttribute('src')).toBe('/api/v1/cache-image/WorkSpace:CatTemp/shot.png');
+  expect(imgSeg.querySelector('figcaption').textContent).toBe('shot.png');
 });

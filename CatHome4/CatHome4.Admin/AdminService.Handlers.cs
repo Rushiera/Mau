@@ -70,7 +70,7 @@ namespace CatHome4.Admin
             sink.MapPost("/api/v1/cmd-unknown/clear", (Delegate)HandleCmdUnknownClear);
             // A65 对话图片附件——上传 + 取图（主端口注册；每猫 / majordomo 对话页走 RegisterChatPageRoutes）
             sink.MapPost("/api/v1/chat-images", (Delegate)HandleChatImagesUpload);
-            sink.MapGet("/api/v1/cache-image/{file}", (Delegate)HandleCacheImageGet);
+            sink.MapGet("/api/v1/cache-image/{**file}", (Delegate)HandleCacheImageGet);
         }
 
         /// <summary>

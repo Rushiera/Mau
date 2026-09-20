@@ -251,11 +251,13 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 取图端点——GET /api/v1/cache-image/{file}（仅文件名；白名单目录内查找；命中即返回字节 + 长缓存）。
-        /// 设计取舍：不认绝对路径 / 相对路径——避免成为任意文件读取面。
+        /// 取图端点——GET /api/v1/cache-image/{**file}（catch-all：受控根寻址含斜杠）。两分支：
+        /// ① 受控根寻址 `<rootId>:<rel>`——根内只读 + 图片扩展名白名单 + 越界拒绝（跑测产物等任意根内图片）；
+        /// ② 缓存目录白名单（纯文件名）——只认文件名，白名单目录内查找（对话图 / QQ 图）。
+        /// 设计取舍：不认绝对路径 / 不认白名单与受控根之外的路径——避免成为任意文件读取面。
         /// </summary>
         /// <param name="ctx">HTTP 上下文</param>
-        /// <returns>图片字节响应；未命中 / 名字非法 404</returns>
+        /// <returns>图片字节响应；未命中 / 名字非法 / 越界 404</returns>
         internal static IResult HandleCacheImageGet(HttpContext ctx)
         {
             string file = "";
@@ -264,6 +266,32 @@ namespace CatHome4.Admin
             {
                 file = fileValue.ToString();
             }
+            WorkspaceConfig ws = null;
+            DataBox.TryResolve<WorkspaceConfig>(out ws);
+            // [段1] 受控根寻址分支——`<rootId>:<rel>`（冒号在首个分隔符之前才视为根寻址）
+            if (IsRootAddress(file))
+            {
+                string rootFull = "";
+                string rootMime = "";
+                if (!TryResolveRootImage(ws, file, out rootFull, out rootMime))
+                {
+                    return Results.NotFound();
+                }
+                return ServeImageFile(ctx, rootFull, rootMime, true);
+            }
+            // [段2] 本地绝对路径分支——必须落在某个受控根内（视觉工具吃绝对路径，模型天然按绝对路径引用）；
+            //       不在任何根内 → 回落文件名分支（缓存目录图可能落在根外——三级 Data 锚定差异）
+            if (Path.IsPathRooted(file))
+            {
+                string absFull = "";
+                string absMime = "";
+                if (TryResolveInsideRoots(ws, file, out absFull, out absMime))
+                {
+                    return ServeImageFile(ctx, absFull, absMime, true);
+                }
+                file = Path.GetFileName(file);
+            }
+            // [段3] 缓存目录白名单分支——纯文件名
             if (!IsSafeImageName(file))
             {
                 return Results.NotFound();
@@ -277,10 +305,195 @@ namespace CatHome4.Admin
                 }
                 string mime = ImageMimeOfExt(Path.GetExtension(file));
                 // 内容寻址不可变——同文件名同内容，可长缓存
-                ctx.Response.Headers["Cache-Control"] = "public, max-age=31536000, immutable";
-                return Results.Bytes(File.ReadAllBytes(full), mime);
+                return ServeImageFile(ctx, full, mime, false);
             }
             return Results.NotFound();
+        }
+
+        /// <summary>
+        /// 图片响应单一出口——存在性检查 + 缓存头 + 字节响应。
+        /// 缓存语义：受控根内产物同名覆盖是常态（跑测出图）→ 禁缓存；缓存目录内容寻址不可变 → 长缓存。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <param name="full">图片绝对路径</param>
+        /// <param name="mime">响应 MIME</param>
+        /// <param name="noCache">true=禁缓存（根内可变产物）/ false=长缓存（内容寻址）</param>
+        /// <returns>字节响应；文件不存在 404</returns>
+        private static IResult ServeImageFile(HttpContext ctx, string full, string mime, bool noCache)
+        {
+            if (!File.Exists(full))
+            {
+                return Results.NotFound();
+            }
+            if (noCache)
+            {
+                ctx.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+            }
+            else
+            {
+                ctx.Response.Headers["Cache-Control"] = "public, max-age=31536000, immutable";
+            }
+            return Results.Bytes(File.ReadAllBytes(full), mime);
+        }
+
+        /// <summary>
+        /// 受控根内绝对路径解析——绝对路径必须落在某个受控根内 + 图片扩展名白名单（纯路径逻辑，不做存在性检查）。
+        /// 动机：视觉工具吃绝对路径，模型天然按绝对路径引用图片——端点兜底识别；**不新增可读面**（仍限根内 + 图片）。
+        /// </summary>
+        /// <param name="ws">工作区配置（可空 = 无根 = 不成立）</param>
+        /// <param name="path">绝对路径</param>
+        /// <param name="full">出参——规范化绝对路径</param>
+        /// <param name="mime">出参——响应 MIME</param>
+        /// <returns>true=可作为根内图片服务</returns>
+        internal static bool TryResolveInsideRoots(WorkspaceConfig ws, string path, out string full, out string mime)
+        {
+            full = "";
+            mime = "";
+            if (ws == null || path == null || path.Length == 0)
+            {
+                return false;
+            }
+            string candidate;
+            try
+            {
+                candidate = Path.GetFullPath(path);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+            // 扩展名白名单——端点只服务图片（非图片类型不借道取图面）
+            string resolvedMime = ImageMimeOfExt(Path.GetExtension(candidate));
+            if (resolvedMime == "application/octet-stream")
+            {
+                return false;
+            }
+            for (int i = 0; i < ws.Roots.Length; i = i + 1)
+            {
+                string rootPath = ws.Roots[i].Path;
+                if (rootPath == null || rootPath.Length == 0)
+                {
+                    continue;
+                }
+                string prefix = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                if (candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    full = candidate;
+                    mime = resolvedMime;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 受控根寻址判定——`&lt;rootId&gt;:&lt;rel&gt;` 形态（首个冒号出现在首个路径分隔符之前；Windows 盘符 `C:\` 不算）。
+        /// </summary>
+        /// <param name="addr">路由取值</param>
+        /// <returns>true=按受控根寻址解析</returns>
+        internal static bool IsRootAddress(string addr)
+        {
+            if (addr == null || addr.Length == 0)
+            {
+                return false;
+            }
+            int colon = addr.IndexOf(':');
+            if (colon <= 0)
+            {
+                return false;
+            }
+            int slash = addr.IndexOf('/');
+            int back = addr.IndexOf('\\');
+            int sep = -1;
+            if (slash >= 0 && back >= 0)
+            {
+                sep = slash < back ? slash : back;
+            }
+            else if (slash >= 0)
+            {
+                sep = slash;
+            }
+            else
+            {
+                sep = back;
+            }
+            if (sep >= 0 && sep < colon)
+            {
+                return false;
+            }
+            // 单字母盘符 + 随后的分隔符（C:\…）——按本地绝对路径处理，不作根寻址
+            if (colon == 1 && sep == 2)
+            {
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 受控根图片解析——`&lt;rootId&gt;:&lt;rel&gt;` → 绝对路径 + MIME（纯路径逻辑，不做存在性检查）。
+        /// 不成立（根不存在 / 非图片扩展名 / 越界）返回 false——调用方一律 404，不静默回落。
+        /// 安全约束：只读、只服务图片扩展名、解析后必须仍在根内（穿越拒绝）。
+        /// </summary>
+        /// <param name="ws">工作区配置（可空 = 无根 = 不成立）</param>
+        /// <param name="addr">`&lt;rootId&gt;:&lt;rel&gt;` 寻址</param>
+        /// <param name="full">出参——绝对路径</param>
+        /// <param name="mime">出参——响应 MIME</param>
+        /// <returns>true=可作为根内图片服务</returns>
+        internal static bool TryResolveRootImage(WorkspaceConfig ws, string addr, out string full, out string mime)
+        {
+            full = "";
+            mime = "";
+            if (ws == null || addr == null)
+            {
+                return false;
+            }
+            int colon = addr.IndexOf(':');
+            if (colon <= 0)
+            {
+                return false;
+            }
+            string rootId = addr.Substring(0, colon).Trim();
+            string rel = addr.Substring(colon + 1).Trim();
+            if (rootId.Length == 0 || rel.Length == 0)
+            {
+                return false;
+            }
+            string rootPath = "";
+            for (int i = 0; i < ws.Roots.Length; i = i + 1)
+            {
+                if (string.Equals(ws.Roots[i].Id, rootId, StringComparison.OrdinalIgnoreCase))
+                {
+                    rootPath = ws.Roots[i].Path;
+                    break;
+                }
+            }
+            if (rootPath == null || rootPath.Length == 0)
+            {
+                return false;
+            }
+            // 扩展名白名单——端点只服务图片（非图片类型不借道取图面）
+            string resolvedMime = ImageMimeOfExt(Path.GetExtension(rel));
+            if (resolvedMime == "application/octet-stream")
+            {
+                return false;
+            }
+            string candidate;
+            try
+            {
+                candidate = Path.GetFullPath(Path.Combine(rootPath, rel.Replace('/', Path.DirectorySeparatorChar)));
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+            string rootPrefix = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!candidate.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            full = candidate;
+            mime = resolvedMime;
+            return true;
         }
 
         /// <summary>
@@ -332,7 +545,7 @@ namespace CatHome4.Admin
         internal static void RegisterChatImageRoutes(IHttpRouteSink sink)
         {
             sink.MapPost("/api/v1/chat-images", (Delegate)HandleChatImagesUpload);
-            sink.MapGet("/api/v1/cache-image/{file}", (Delegate)HandleCacheImageGet);
+            sink.MapGet("/api/v1/cache-image/{**file}", (Delegate)HandleCacheImageGet);
         }
     }
 }
