@@ -235,12 +235,27 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
     50% { border-color: var(--bubble-line); }
 }
 .chat-bubble.pending, .chat-bubble.retry, .chat-bubble.streaming, .chat-bubble.paused { --bubble-alpha: 45%; animation: bubble-appear 0.3s ease-in-out, bubble-breathe 1.8s ease-in-out 0.3s infinite; }
-#chatinput { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--ch-line-faint); align-items: flex-end; }
+#chatinput { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--ch-line-faint); align-items: flex-end; }
 #chatSendInput { flex: 1; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 7px 10px; font-family: inherit; font-size: 12px; resize: none; line-height: 1.5; }
 #chatSendInput:focus { outline: none; border-color: var(--ch-focus); }
 #chatSendInput:disabled { opacity: 0.5; }
 #chatSendBtn { background: var(--ch-bg-accent); border: none; color: var(--ch-fg-inverse); padding: 7px 16px; cursor: pointer; font-family: inherit; font-size: 12px; }
 #chatSendBtn:disabled { opacity: 0.5; cursor: default; }
+/* A65 对话图片附件——待发图片条（flex-basis 100% 占满首行，输入框顺延下一行；空则整行消失） */
+#chatImages { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#chatImages:empty { display: none; }
+.chat-img { position: relative; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; max-width: 140px; }
+.chat-img img { max-height: 72px; max-width: 132px; display: block; border: 1px solid var(--ch-line); border-radius: 4px; }
+.chat-img figcaption { color: var(--ch-fg-muted); font-size: 10px; }
+.chat-img.missing { color: var(--ch-fg-muted); font-size: 11px; word-break: break-all; }
+.chat-img-del { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--ch-line); background: var(--ch-bg-panel); color: var(--ch-fg); cursor: pointer; font-family: inherit; font-size: 12px; line-height: 1; }
+.chat-img-del:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
+.chat-img-loading { color: var(--ch-fg-muted); font-size: 11px; }
+.chat-img-err { color: var(--ch-warn); font-size: 11px; }
+/* A65 气泡内图片组——user 泡 / assistant 泡共用（缩略图 + 编号角标；点击新标签开原图） */
+.chat-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.chat-imgs .chat-img img { max-height: 96px; max-width: 168px; }
+.chat-user-text { white-space: pre-wrap; }
 /* M4c Note——Q3 v2（2026-09-08）：输入区上方按钮（固定不占布局）+ 点击展开气泡区域（popover 贴按钮上方；高度变化零影响聊天区） */
 /* 2026-09-17：横向排布——Note 气泡 + 跳底按钮并排（popover 仍贴 wrap 上方居中）；bottom 随输入区 3→5 行 +36px */
 #noteWrap { position: fixed; bottom: 148px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: row; align-items: center; gap: 6px; }

@@ -234,6 +234,20 @@ function chatSegInput(tool, cap) {
     }, peekLines.join('\n'));
 }
 
+// 输入图片段——覆盖表声明 inputImages 的工具：在输入段之前展示被处理的图片（A65 §六 · 工具卡渲染）
+// 前端零路径知识：本地路径交 chatImgUrl 单一出口转取图端点；http(s) 直通
+// 未声明 / 返回空 → null（调用方跳过，零回归）
+function chatSegImages(tool) {
+    var ov = chatToolOverride(tool.name);
+    if (!ov || typeof ov.inputImages !== 'function') { return null; }
+    if (typeof chatImageGroupFromPaths !== 'function') { return null; }
+    var paths = ov.inputImages(chatArgObj(tool)) || [];
+    if (paths.length === 0) { return null; }
+    return chatSeg('seg-img', '输入图片 · ' + paths.length + ' 张', function (body) {
+        body.appendChild(chatImageGroupFromPaths(paths));
+    }, paths.join('\n'));
+}
+
 // 结果文本行——空串 / undefined → 空数组（保持原行内容，不 trim——缩进即语义）
 function chatLines(text) {
     if (typeof text !== 'string' || text.length === 0) { return []; }
@@ -571,7 +585,11 @@ function chatSkelLines(tool) {
 // ── file / text：正文渲染（共用一支）──
 // withSize=true（file）标规模「字符 / 行」；false（text）只标行数——纯文本兜底不给体量噪音
 function chatSkelPlain(tool, withSize) {
-    var segs = [chatSegInput(tool, '')];
+    var segs = [];
+    // A65——被处理的图片先行（覆盖表声明 inputImages 时；未声明零回归）
+    var imgSeg = chatSegImages(tool);
+    if (imgSeg) { segs.push(imgSeg); }
+    segs.push(chatSegInput(tool, ''));
     // 结构化返回优先（首行 JSON 元数据 + 正文定界行）——剥头后按正文渲染
     var head = chatMetaHead(tool.result);
     var bodyText = head ? head.body : tool.result;
@@ -1060,6 +1078,11 @@ var CHAT_TOOL_OVERRIDES = {
         }
     },
     'image-analyze': {
+        // A65——输入图片预览（被识别的图直接看得见；路径形态交 chatImgUrl 单一出口）
+        inputImages: function (a) {
+            if (!a || !a.path) { return []; }
+            return [a.path];
+        },
         inputLines: function (a) {
             return ['识别图片 ' + chatOvText(a.path),
                 (a.question ? ('提示词 ' + chatOvPeek(a.question)) : '（默认描述）')];

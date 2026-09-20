@@ -459,6 +459,8 @@ namespace CH4
             resp["version"] = 1;
             resp["sessionId"] = session.Id;
             resp["count"] = blocks.Length;
+            // A65 前文条数——送入 LLM 的消息数（含注入块）；前端「前文 n 条」文案唯一口径（与包裹编号同源）
+            resp["ctxCount"] = session.ContextCount;
             resp["blocks"] = view;
             // E3 真实 usage 统计——history 载荷携带（前端状态栏显示；零估算）
             SessionStats st = session.LastStats;

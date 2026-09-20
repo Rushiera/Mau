@@ -506,6 +506,7 @@ namespace CH4
                 SessionId = _chatBridge.DefaultSession.Id,
                 SnapshotBuilder = ObserveService.BuildSnapshotJson,
                 Dispatcher = DispatchCommand,
+                EnvelopeBuilder = AdminService.MakeChatEnvelopeBuilder(_chatBridge.DefaultSession),
                 FrameBuilder = ObserveService.BuildCompactFrameJson,
                 HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max),
                 CatsBuilder = AdminService.BuildCatsJson,

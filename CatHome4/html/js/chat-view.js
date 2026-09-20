@@ -340,7 +340,8 @@ function chatRenderHistory(data) {
         var p = blk.payload || {};
         if (blk.renderType === 'user') {
             var ub = chatBubble('user');
-            ub.textContent = p.content || '';
+            // A65 图片包裹——历史重建与实时渲染同一出口（命中即缩略图组 + 正文）
+            chatUserFill(ub, p.content || '');
         } else if (blk.renderType === 'reason') {
             var rb = chatBubble('assistant', 'reason');
             rb.appendChild(chatReasonBlock(p.content || ''));
@@ -364,14 +365,17 @@ function chatRenderHistory(data) {
             // F3 MD 渲染——历史 text 块同样走解析器（与实时渲染一致）；md-block 包裹=CSS 作用域锚点
             // P6b 节点操作条——msgIndex 顶层字段（视图块携带真实前文顺序；roundsum/inject_report=-1 不挂）
             var cb = chatBubble('assistant');
-            cb.innerHTML = '<div class="md-block">' + mdToHtml(p.content || '') + '</div>';
+            // A65——历史 text 块同走 chatMdFill（含包裹时先出缩略图组；无包裹与旧行为同构）
+            chatMdFill(cb, p.content || '');
             chatAppendNodeActions(cb, blk.msgIndex);
         }
     }
     // P9.3 会话归属动态化——SSE sessionId 随会话 ID（时间戳）变化；history 先于任何 view 事件到达（loading→idle 时序保证）
     // P20-P3-7 归属修正——渲染层不写全局状态：sessionId 随返回值交调用方（chat-core.chatLoadHistory）落库
     var sid = data.sessionId || CHAT_SESSION;
-    var infoText = '会话 ' + chatFmtCount(data.count || 0) + ' 条 | sessionId=' + sid;
+    // A65 口径统一——「前文 n 条」= 送入 LLM 的消息数（ctxCount 实时值；旧数据缺字段回落视图块数）
+    var ctxCount = (data.ctxCount !== undefined) ? data.ctxCount : (data.count || 0);
+    var infoText = '前文 ' + chatFmtCount(ctxCount) + ' 条 | sessionId=' + sid;
     var hs = data.stats;
     if (hs) {
         // 前文长度 = 最近一次请求的单次 prompt（context 字段）；旧数据无 context 时回退累计值
@@ -482,4 +486,125 @@ function chatOnRoundSum(payload) {
     }
     html += '<div class="rs-times">' + tparts.join(' · ') + '</div>';
     b.innerHTML = html;
+}
+
+// ============ A65 对话图片附件——包裹解析与渲染（规格 Project/CH4/design-ch4-chat-images.md §四/§六） ============
+// 严格门：段头 + ≥1 条目 + 段尾齐备，包裹内部无杂行；不成立 = 整段按普通文本（不渲染、不报错）
+// 单一出口：标记 / 条目正则 / 路径→URL 只在本节定义——user 泡、assistant 泡、未来工具卡共用
+var CHAT_IMG_OPEN = '[image-open]';
+var CHAT_IMG_END = '[image-end]';
+var CHAT_IMG_ITEM = /^图片(\d+)-(\d+)：(.+)$/;
+
+function chatImgSplit(text) {
+    // 包裹解析——命中 {items:[{ref,path}], body}；不成立 {items:[], body:原文}
+    var raw = (text === undefined || text === null) ? '' : String(text);
+    var lines = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    var i = 0;
+    while (i < lines.length && lines[i].trim() === '') { i = i + 1; }
+    if (i >= lines.length || lines[i].trim() !== CHAT_IMG_OPEN) { return { items: [], body: raw }; }
+    i = i + 1;
+    var items = [];
+    while (i < lines.length) {
+        var t = lines[i].trim();
+        if (t === CHAT_IMG_END) { break; }
+        if (t === '') { return { items: [], body: raw }; }
+        var m = CHAT_IMG_ITEM.exec(t);
+        if (!m) { return { items: [], body: raw }; }
+        items.push({ ref: m[1] + '-' + m[2], path: m[3].trim() });
+        i = i + 1;
+    }
+    if (items.length === 0 || i >= lines.length) { return { items: [], body: raw }; }
+    i = i + 1;
+    return { items: items, body: lines.slice(i).join('\n').replace(/^\s+/, '').replace(/\s+$/, '') };
+}
+
+function chatImgName(path) {
+    // 路径末段——文件名（本地路径与 http(s) URL 通用；查询串剥离）
+    var parts = String(path === undefined || path === null ? '' : path).split(/[\\/]/);
+    var name = parts.length > 0 ? parts[parts.length - 1] : '';
+    if (name.indexOf('?') >= 0) { name = name.split('?')[0]; }
+    return name;
+}
+
+function chatImgUrl(path) {
+    // 路径 → 可渲染 URL（单一出口）——http(s) 直通；本地路径取末段文件名交取图端点
+    // （浏览器不认本地路径；后端在白名单目录内按文件名查找）
+    var raw = String(path === undefined || path === null ? '' : path).trim();
+    if (raw.indexOf('http://') === 0 || raw.indexOf('https://') === 0) { return raw; }
+    var name = chatImgName(raw);
+    if (name === '') { return ''; }
+    return '/api/v1/cache-image/' + encodeURIComponent(name);
+}
+
+function chatImgThumb(item) {
+    // 缩略图——角标（包裹条目）/ 文件名（工具输入） + 点击新标签开原图；取图失败原位回落原始路径文本
+    var label = item.ref ? ('图片' + item.ref) : chatImgName(item.path);
+    var fig = document.createElement('figure');
+    fig.className = 'chat-img';
+    var url = chatImgUrl(item.path);
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    var img = document.createElement('img');
+    img.src = url;
+    img.alt = item.ref ? ('图片' + item.ref) : '输入图片';
+    img.addEventListener('error', function () {
+        fig.className = 'chat-img missing';
+        fig.textContent = (label ? (label + '：') : '') + item.path + '（取图失败）';
+    });
+    a.appendChild(img);
+    fig.appendChild(a);
+    if (label) {
+        var cap = document.createElement('figcaption');
+        cap.textContent = label;
+        fig.appendChild(cap);
+    }
+    return fig;
+}
+
+function chatImageGroupFromPaths(paths) {
+    // 工具输入图片组——路径列表 → 缩略图组（无编号：非包裹条目，标题走文件名）
+    var items = [];
+    for (var i = 0; i < paths.length; i++) { items.push({ ref: '', path: paths[i] }); }
+    return chatImageGroup(items);
+}
+
+function chatImageGroup(items) {
+    // 缩略图组——包裹命中时的图片块（各泡共用）
+    var wrap = document.createElement('div');
+    wrap.className = 'chat-imgs';
+    for (var i = 0; i < items.length; i++) {
+        wrap.appendChild(chatImgThumb(items[i]));
+    }
+    return wrap;
+}
+
+function chatUserFill(bubble, content) {
+    // user 泡内容填充——无包裹走原路径（textContent，零回归）；有包裹 = 缩略图组 + 正文文本
+    var r = chatImgSplit(content);
+    if (r.items.length === 0) {
+        bubble.textContent = content;
+        return;
+    }
+    bubble.appendChild(chatImageGroup(r.items));
+    if (r.body.length > 0) {
+        var t = document.createElement('div');
+        t.className = 'chat-user-text';
+        t.textContent = r.body;
+        bubble.appendChild(t);
+    }
+}
+
+function chatMdFill(bubble, content) {
+    // assistant 泡内容填充——无包裹走原路径（md-block 单块）；有包裹 = 缩略图组 + MD 正文块
+    var r = chatImgSplit(content);
+    var text = (r.items.length > 0) ? r.body : content;
+    if (r.items.length > 0) {
+        bubble.appendChild(chatImageGroup(r.items));
+    }
+    var md = document.createElement('div');
+    md.className = 'md-block';
+    md.innerHTML = mdToHtml(text);
+    bubble.appendChild(md);
 }

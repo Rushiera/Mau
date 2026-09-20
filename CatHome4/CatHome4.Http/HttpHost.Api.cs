@@ -80,6 +80,19 @@ namespace CatHome4.Http
                 body = await reader.ReadToEndAsync();
             }
             string text = ExtractText(body);
+            // A65 图片包裹——前端投递图片路径列表时由后端组装（编号取组装时刻前文条数真值；不成立时原样投递）
+            if (_envelopeBuilder != null)
+            {
+                List<string> images = ExtractImages(body);
+                if (images.Count > 0)
+                {
+                    string applied = _envelopeBuilder(text, images);
+                    if (applied != null && applied.Length > 0)
+                    {
+                        text = applied;
+                    }
+                }
+            }
             bool ok = _dispatcher(text);
             string cmdId = "cmd-" + Interlocked.Increment(ref _seq).ToString();
             long frame = FlowRunner.GlobalFrame;
@@ -270,6 +283,44 @@ namespace CatHome4.Http
                 // 解析失败——按空指令处理（错误可见性：回执 ok=false）
             }
             return "";
+        }
+
+        /// <summary>
+        /// 从请求 body 提取图片路径列表——防御式解析（协议 §5.1：{"text":"…","images":["…"]}；字段可缺）。
+        /// </summary>
+        /// <param name="body">原始 body</param>
+        /// <returns>图片绝对路径列表（缺字段 / 非数组 / 解析失败 = 空列表）</returns>
+        private static List<string> ExtractImages(string body)
+        {
+            List<string> images = new List<string>();
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(body))
+                {
+                    JsonElement root = doc.RootElement;
+                    JsonElement arr;
+                    if (root.TryGetProperty("images", out arr) && arr.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (JsonElement el in arr.EnumerateArray())
+                        {
+                            if (el.ValueKind != JsonValueKind.String)
+                            {
+                                continue;
+                            }
+                            string p = el.GetString();
+                            if (p != null && p.Trim().Length > 0)
+                            {
+                                images.Add(p.Trim());
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // 解析失败——按无图片处理（文本走原路径投递）
+            }
+            return images;
         }
 
         /// <summary>

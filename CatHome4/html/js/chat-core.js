@@ -18,6 +18,9 @@ var CHAT_TIMEOUT_MS = 120000;
 var chatPending = [];              // 插话队列——本地发送记录（user 事件到达 FIFO 移除；纯展示）
 var SYSTEM_AUTO_PREFIX = '[SystemAuto] ';   // 系统自动消息前缀（前端常量一处定义，微调只动此行）
 var chatPendingReset = false;      // 会话重置待确认——chatNewSession 置位；session_reset/chatdone 消费（miss 兜底）
+// A65 待发图片——粘贴即上传（后端缓存区），发送时投递路径列表；包裹格式与编号由后端组装（前端零业务规则）
+var chatImages = [];               // [{ path: 绝对路径, url: 本地 blob 预览地址 }]
+var chatImageUploading = 0;        // 上传中计数——>0 时发送动作等待（防投递半截列表）
 
 // A59——六态状态条（链路/等待/思考/工具/执行/回复）：数据源 = 后端权威运行态（快照 sessions 段 runState/runMs/requests）——计时单源在后端，前端只渲染不自算
 var chatPhaseMeta = [
@@ -193,7 +196,8 @@ function chatOnUser(payload) {
     var display = isSystem ? (SYSTEM_AUTO_PREFIX + content) : content;
     var bubble = chatBubble('user');
     if (isSystem) { bubble.classList.add('system'); }
-    bubble.textContent = display;
+    // A65 图片包裹——命中即缩略图组 + 正文；无包裹走原路径（textContent 零回归）
+    chatUserFill(bubble, display);
 }
 
 // 插话队列渲染——纯展示（数据源 = 本地发送记录 + 内核 user 事件确认）
@@ -292,7 +296,6 @@ function chatOnText(seq, replaceSeq, payload) {
     // F3 MD 渲染——整块 content 一次渲染（流式阶段 textContent 追加，不渲染不完整字符流）；md-block 包裹=CSS 作用域锚点
     chatSealStreams();   // 整块到达——seal 其余流式容器（残留 thinking 闪烁标记兜底）
     var content = payload.content || '';
-    var html = '<div class="md-block">' + mdToHtml(content) + '</div>';
     // P6b 节点操作条——正式回复块底部两按钮（回滚/分支）；msgIndex<0（工具轮 seal 文本）不挂
     var msgIndex = (payload.msgIndex !== undefined) ? payload.msgIndex : -1;
     // 思考段终结——回复整块到达即折叠全部思考块（2026-09-17：思考结束即折叠，不保留展开态）
@@ -301,12 +304,14 @@ function chatOnText(seq, replaceSeq, payload) {
     if (c && c.type === 'text') {
         c.bubble.classList.remove('streaming');
         c.bubble.classList.remove('streaming-wait');
-        c.bubble.innerHTML = html;
+        // A65 整块渲染改 DOM 填充——图片包裹命中时先出缩略图组；无包裹与旧行为同构（md-block 单块）
+        c.bubble.textContent = '';
+        chatMdFill(c.bubble, content);
         chatAppendNodeActions(c.bubble, msgIndex);
         delete viewContainers[replaceSeq];
     } else {
         var b = chatBubble('assistant');
-        b.innerHTML = html;
+        chatMdFill(b, content);
         chatAppendNodeActions(b, msgIndex);
     }
 }
@@ -448,6 +453,7 @@ function chatOnControl(payload) {
         viewContainers = {};
         chatPhaseResetFull();
         chatMsgs.textContent = '';
+        chatImagesClear();   // A65——会话重置后待发图片清空（前序语境已变）
         chatInfo.textContent = '新会话——注入完成，重建中…';
         chatLoadHistory();
     } else if (type === 'chatdone') {
@@ -462,7 +468,7 @@ function chatOnControl(payload) {
         }
         viewContainers = {};
         if (payload.count !== undefined) {
-            var doneText = '会话 ' + chatFmtCount(payload.count) + ' 条 | sessionId=' + CHAT_SESSION;
+            var doneText = '前文 ' + chatFmtCount(payload.count) + ' 条 | sessionId=' + CHAT_SESSION;
             var ds = payload.stats;
             if (ds) {
                 // 前文长度 = 最近一次请求的单次 prompt（context 字段）；旧数据无 context 时回退累计值
@@ -538,13 +544,152 @@ function chatFail(msg) {
     chatSetState('idle');
 }
 
+// ============ A65 待发图片——粘贴上传 / 待发区 / 清空（前端只上传+显示+投递路径） ============
+function chatImgPreviewUrl(file) {
+    // 本地预览地址——blob URL；环境不支持（或对象类型不兼容）时回落空串（预览降级，上传与投递不受影响）
+    try {
+        if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+            return URL.createObjectURL(file);
+        }
+    } catch (e) {
+        return '';
+    }
+    return '';
+}
+
+function chatImgRevokeUrl(url) {
+    // 预览地址释放——环境不支持时静默跳过
+    if (url && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+        URL.revokeObjectURL(url);
+    }
+}
+
+function chatOnPaste(e) {
+    // 粘贴拦截——仅图片项；纯文本粘贴不拦截（原样入框）
+    var dt = e.clipboardData;
+    if (!dt) { return; }
+    var files = [];
+    var items = dt.items || [];
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file' && items[i].type && items[i].type.indexOf('image/') === 0) {
+            var f = items[i].getAsFile();
+            if (f) { files.push(f); }
+        }
+    }
+    if (files.length === 0) { return; }
+    e.preventDefault();
+    for (var k = 0; k < files.length; k++) { chatUploadImage(files[k]); }
+}
+
+function chatUploadImage(file) {
+    // 逐张上传——成功后入待发区（路径供投递，blob 供本地预览）；失败给可见提示且不入列（防死路径进包裹）
+    chatImageUploading = chatImageUploading + 1;
+    chatRenderImages();
+    fetch('/api/v1/chat-images', {
+        method: 'POST',
+        headers: { 'Content-Type': file.type || 'image/png' },
+        body: file
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            chatImageUploading = chatImageUploading - 1;
+            if (!d || !d.ok || !d.path) {
+                // 失败可见化——先重绘（清空区）再挂提示，避免被重绘冲掉
+                chatRenderImages();
+                chatImageNotice((d && d.error) ? d.error : '图片上传失败');
+                return;
+            }
+            chatImages.push({ path: d.path, url: chatImgPreviewUrl(file) });
+            chatRenderImages();
+        })
+        .catch(function (err) {
+            chatImageUploading = chatImageUploading - 1;
+            chatRenderImages();
+            chatImageNotice('图片上传失败: ' + err);
+        });
+}
+
+function chatImageNotice(msg) {
+    // 失败可见化——待发区尾部提示（3 秒自动消失；不阻断）
+    var box = document.getElementById('chatImages');
+    if (!box) { return; }
+    var d = document.createElement('span');
+    d.className = 'chat-img-err';
+    d.textContent = msg;
+    box.appendChild(d);
+    window.setTimeout(function () {
+        if (d.parentNode) { d.parentNode.removeChild(d); }
+    }, 3000);
+}
+
+function chatRenderImages() {
+    // 待发区渲染——本地 blob 预览（零服务端往返）+ 移除按钮 + 上传中占位
+    var box = document.getElementById('chatImages');
+    if (!box) { return; }
+    box.textContent = '';
+    for (var i = 0; i < chatImages.length; i++) { box.appendChild(chatImgPendingItem(chatImages[i], i)); }
+    for (var k = 0; k < chatImageUploading; k++) {
+        var w = document.createElement('span');
+        w.className = 'chat-img-loading';
+        w.textContent = '上传中…';
+        box.appendChild(w);
+    }
+}
+
+function chatImgPendingItem(item, index) {
+    var fig = document.createElement('figure');
+    fig.className = 'chat-img';
+    var img = document.createElement('img');
+    img.src = item.url;
+    img.alt = '待发图片';
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'chat-img-del';
+    del.title = '移除这张图片（不发送）';
+    del.textContent = '×';
+    del.addEventListener('click', function () { chatImagesRemove(index); });
+    fig.appendChild(img);
+    fig.appendChild(del);
+    return fig;
+}
+
+function chatImagesRemove(index) {
+    if (index < 0 || index >= chatImages.length) { return; }
+    var it = chatImages[index];
+    if (it) { chatImgRevokeUrl(it.url); }
+    chatImages.splice(index, 1);
+    chatRenderImages();
+}
+
+function chatImagesClear() {
+    for (var i = 0; i < chatImages.length; i++) {
+        if (chatImages[i]) { chatImgRevokeUrl(chatImages[i].url); }
+    }
+    chatImages = [];
+    chatRenderImages();
+}
+
+function chatImagePaths() {
+    // 待发图片路径列表——投递载荷（编号与包裹由后端组装）
+    var paths = [];
+    for (var i = 0; i < chatImages.length; i++) { paths.push(chatImages[i].path); }
+    return paths;
+}
+
 // 单向数据流改造——发送零自产气泡：只投递 command 总线，气泡由 view user 事件渲染
 function chatSend() {
     var text = chatInput.value.trim();
-    if (text.length === 0 || chatState === 'loading') { return; }
+    if (chatState === 'loading') { return; }
+    if (chatImageUploading > 0) {
+        chatInfo.textContent = '图片上传中——稍候再发';
+        return;
+    }
+    if (text.length === 0 && chatImages.length === 0) { return; }
+    var paths = chatImagePaths();
     chatInput.value = '';
+    chatImagesClear();
     // 插话队列——本地记录（内核 user 事件到达后 FIFO 移除）
-    chatPending.push(text);
+    chatPending.push(text.length > 0 ? text : '（图片）');
     chatRenderPending();
     if (chatState === 'idle') {
         // idle 发送——清阶段残留（usage 会话累计保留——跨轮不清零；sending 态插话不清——不破坏当前流式渲染）
@@ -554,10 +699,12 @@ function chatSend() {
     }
     chatSetState('sending');
     chatKeepAlive();
+    var payload = { text: 'Chat ' + text };
+    if (paths.length > 0) { payload.images = paths; }
     fetch('/api/v1/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: 'Chat ' + text })
+        body: JSON.stringify(payload)
     })
         .then(function (r) { return r.json(); })
         .then(function (d) {
@@ -580,6 +727,7 @@ function chatNewSession() {
         body: JSON.stringify({ text: 'session.new' })
     }).catch(function (e) { uiWarn('新会话指令投递', e); });
     chatPendingReset = true;
+    chatImagesClear();   // A65——待发图片随会话切换清空（重新注入前文，前序语境已变）
     viewContainers = {};
     chatPhaseResetFull();
     chatMsgs.textContent = '';

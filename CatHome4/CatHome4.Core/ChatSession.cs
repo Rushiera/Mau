@@ -416,6 +416,18 @@ namespace CH4
         }
 
         /// <summary>
+        /// 前文条数——送入 LLM 的消息数（含注入块）。
+        /// 消费面：图片包裹编号前缀（组装时刻取真值）+ 前端「前文 n 条」文案口径（HTTP 线程读取，只读计数）。
+        /// </summary>
+        internal int ContextCount
+        {
+            get
+            {
+                return _context.GetMessageCount();
+            }
+        }
+
+        /// <summary>
         /// 设置注入报告——session.new 后调用（持久化进视图：内存设置 + view.json 落盘；独立字段 Rebuild 不清）。
         /// </summary>
         /// <param name="json">注入报告 JSON（BuildInjectReportJson 产物）</param>

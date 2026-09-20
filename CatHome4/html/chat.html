@@ -37,7 +37,8 @@
     <!-- 单向数据流改造——插话队列显示区（纯展示；正常流堆叠，对话区自动上移） -->
     <div id="chatPendingPanel"></div>
     <div id="chatinput">
-        <textarea id="chatSendInput" rows="5" placeholder="输入文本…（Enter 发送；Shift+Enter 换行）"></textarea>
+        <div id="chatImages" class="chat-images"></div>
+        <textarea id="chatSendInput" rows="5" placeholder="输入文本…（Enter 发送；Shift+Enter 换行；可直接粘贴图片）"></textarea>
         <button id="chatSendBtn">发送</button>
     </div>
     <!-- E 系列——状态区（四态计时 + Token 统计）：最底部持久存在 -->
@@ -97,6 +98,8 @@
             elChatSendInput.addEventListener('keydown', function (e) {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chatSend(); }
             });
+            // A65 图片粘贴——仅图片项被拦截（上传进缓存区），纯文本粘贴原样入框
+            elChatSendInput.addEventListener('paste', chatOnPaste);
         }
         var elNoteBubble = document.getElementById('noteBubble');
         if (elNoteBubble) { elNoteBubble.addEventListener('click', function (e) { e.stopPropagation(); noteToggle(); }); }

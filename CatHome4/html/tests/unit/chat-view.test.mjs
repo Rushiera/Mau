@@ -883,7 +883,7 @@ test('control session_reset 清空气泡 + 重拉 history（chatPendingReset 消
   window.fetch = origFetch;
   expect(window.chatPendingReset).toBe(false);
   expect(bubbles().length).toBe(0);   // 旧气泡已清
-  expect(chatInfo.textContent).toContain('会话 0 条');
+  expect(chatInfo.textContent).toContain('前文 0 条');
 });
 
 // ── 会话终态统计（问题三——chatdone 带真实 usage；顶部栏只显示前文长度=context 单次值）──
@@ -891,7 +891,7 @@ test('control chatdone 显示前文真实 usage（前文长度 context）', () =
   window.chatOnView({ seq: 1, renderType: 'stream', payload: { kind: 'text', text: '回复' }, replaceSeq: -1 });
   window.chatOnView({ seq: 2, renderType: 'control', payload: { type: 'chatdone', count: 5, stats: { prompt: 120, cacheHit: 40, completion: 30, context: 150 } }, replaceSeq: -1 });
   expect(window.chatState).toBe('idle');
-  expect(chatInfo.textContent).toContain('会话 5 条');
+  expect(chatInfo.textContent).toContain('前文 5 条');
   expect(chatInfo.textContent).toContain('前文 150 tokens');
   // 命中/非命中/输出归 roundsum 气泡——顶部栏不再显示
   expect(chatInfo.textContent).not.toContain('命中');
@@ -911,7 +911,7 @@ test('control chatdone 在 chatPendingReset 置位时兜底重拉 history', asyn
   await new Promise(function (r) { setTimeout(r, 20); });
   window.fetch = origFetch;
   expect(window.chatPendingReset).toBe(false);
-  expect(chatInfo.textContent).toContain('会话 0 条');
+  expect(chatInfo.textContent).toContain('前文 0 条');
 });
 
 // ── view/control note 分支（宿主经 PushView 推送 Note 状态——前端转交 noteOnEvent 重绘）──
@@ -943,7 +943,7 @@ test('chatFmtCount 大数格式化——k/M 边界', () => {
 
 test('chatdone 大数 usage 文本——k/M 格式化生效（context 前文长度）', () => {
   window.chatOnView({ seq: 1, renderType: 'control', payload: { type: 'chatdone', count: 48, stats: { prompt: 435652, cacheHit: 363008, completion: 12158, context: 151234 } }, replaceSeq: -1 });
-  expect(chatInfo.textContent).toContain('会话 48 条');
+  expect(chatInfo.textContent).toContain('前文 48 条');
   expect(chatInfo.textContent).toContain('前文 151.23k tokens');
 });
 
@@ -955,7 +955,7 @@ test('chatRenderHistory 大数 usage 文本——k/M 格式化生效（context �
     blocks: [],
     stats: { prompt: 1000000, cacheHit: 200000, completion: 1500000, context: 998877 }
   });
-  expect(chatInfo.textContent).toContain('会话 48 条');
+  expect(chatInfo.textContent).toContain('前文 48 条');
   expect(chatInfo.textContent).toContain('前文 998.88k tokens');
 });
 

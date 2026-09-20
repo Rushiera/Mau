@@ -1243,6 +1243,7 @@ namespace CatHome4.Admin
                 SessionId = cat.Session.Id,
                 SnapshotBuilder = BuildSnapshotJson,
                 Dispatcher = (string line) => DispatchCommandForCat(cat, line),
+                EnvelopeBuilder = MakeChatEnvelopeBuilder(cat.Session),
                 FrameBuilder = null,
                 HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(cat.Session, max),
                 CatsBuilder = null,
@@ -1250,7 +1251,7 @@ namespace CatHome4.Admin
                 PatchBuilder = null,
                 SessionStateBuilder = () => cat.Session.BuildRunStateJson(),
                 ServeChatPage = true,
-                RouteRegistrar = RegisterCmdUnknownRoutes,
+                RouteRegistrar = RegisterChatPageRoutes,
                 HtmlRootProvider = HtmlRoot,
                 DisplayName = cat.DisplayName
             });
@@ -1280,6 +1281,7 @@ namespace CatHome4.Admin
                 SessionId = _chatBridge.DefaultSession.Id,
                 SnapshotBuilder = BuildSnapshotJson,
                 Dispatcher = (string line) => DispatchCommandForMajor(line),
+                EnvelopeBuilder = MakeChatEnvelopeBuilder(_chatBridge.DefaultSession),
                 FrameBuilder = null,
                 HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max),
                 CatsBuilder = null,
@@ -1287,7 +1289,7 @@ namespace CatHome4.Admin
                 PatchBuilder = null,
                 SessionStateBuilder = () => _chatBridge.DefaultSession.BuildRunStateJson(),
                 ServeChatPage = true,
-                RouteRegistrar = RegisterCmdUnknownRoutes,
+                RouteRegistrar = RegisterChatPageRoutes,
                 HtmlRootProvider = HtmlRoot,
                 DisplayName = _chatBridge.DefaultSession.DisplayName
             });

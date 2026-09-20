@@ -38,6 +38,9 @@ namespace CatHome4.Http
         /// <summary>指令投递回调</summary>
         public Func<string, bool> Dispatcher { get; set; }
 
+        /// <summary>图片包裹组装回调（可空 = 不组装）——(指令行, 图片路径列表) → 套用后的指令行；宿主侧注入（按会话前文条数真值拼编号）</summary>
+        public Func<string, IList<string>, string> EnvelopeBuilder { get; set; }
+
         /// <summary>紧凑帧构建回调（可空=不落帧）</summary>
         public Func<string> FrameBuilder { get; set; }
 
@@ -95,6 +98,9 @@ namespace CatHome4.Http
 
         /// <summary>指令投递回调——宿主侧注入（Program.DispatchCommand）</summary>
         private Func<string, bool> _dispatcher;
+
+        /// <summary>图片包裹组装回调——宿主侧注入（Admin 按会话前文条数拼编号；可空 = 不组装）</summary>
+        private Func<string, IList<string>, string> _envelopeBuilder;
 
         /// <summary>SSE 事件序号——单调递增（协议 §4.3 seq 锚点；多线程并发写走 Interlocked——HTTP/LLM/泵三线程）</summary>
         private int _seq;
@@ -167,6 +173,7 @@ namespace CatHome4.Http
             host._sessionId = options.SessionId;
             host._snapshotBuilder = options.SnapshotBuilder;
             host._dispatcher = options.Dispatcher;
+            host._envelopeBuilder = options.EnvelopeBuilder;
             host._frameBuilder = options.FrameBuilder;
             host._historyBuilder = options.HistoryBuilder;
             host._catsBuilder = options.CatsBuilder;
