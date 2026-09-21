@@ -3,9 +3,7 @@ using System.Text;
 
 namespace Mau.Providers
 {
-    /// <summary>
-    /// LLM 请求体 JSON 文本辅助——跨服务共享（R4-P3-07：Vision / WebSearch 两处私有 EscapeJson 重复实现收拢）。
-    /// </summary>
+    /// <summary>LLM 请求体 JSON 文本辅助——Mau.Providers 内部共享的转义实现（R4-P3-07 收拢重复实现；A70 起消费方为 DeepSeekVisionService）。</summary>
     internal static class LlmJson
     {
         /// <summary>

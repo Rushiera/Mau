@@ -276,8 +276,6 @@ namespace CH4
             DataBox.Bind<ILlmRuntime>(_llmRuntime);
             // P8 三期——Roslyn cs.* 编码工具域（MauRoslynBridge——受控根=可写根子集，只读知识根不参与项目扫描；磁盘权威快照 + 三态缓存）
             DataBox.Bind<ICSharpBridge>(new MauRoslynBridge(WritableRootPaths(workspace)));
-            // R2.1 联网搜索服务——DeepSeek /responses + web_search（search.api_config_id 引用 LLM 池配置；未配置=不可用）
-            DataBox.Bind<IWebSearchService>(new Mau.Providers.DeepSeekWebSearchService(apiConfigStore, llmConfig));
             // R2.2 图像识别服务——DeepSeek vision 模型（vision.api_config_id 引用 LLM 池配置；未配置=不可用）
             DataBox.Bind<IVisionService>(new Mau.Providers.DeepSeekVisionService(apiConfigStore, llmConfig));
             // PsCat PowerShell 执行服务——EncodedCommand 免转义 + UTF-8 内建 + 写文件拦截 + 超时进程树杀（PsService）
