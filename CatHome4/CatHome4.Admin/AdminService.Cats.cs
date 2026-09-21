@@ -1426,7 +1426,7 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType + Content；text 块提取 payload.content）。
+        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType / Content / Done；text 块提取 payload.content）。
         /// </summary>
         /// <param name="blocks">视图块数组</param>
         /// <returns>QQ 转发项数组</returns>
@@ -1443,9 +1443,14 @@ namespace CatHome4.Admin
                 QqViewItem item = new QqViewItem();
                 item.RenderType = b.RenderType ?? "";
                 item.Content = "";
+                item.Done = "";
                 if (item.RenderType == "text")
                 {
                     item.Content = ExtractTextContent(b.Payload);
+                }
+                else if (item.RenderType == "roundsum")
+                {
+                    item.Done = ExtractRoundSumDone(b.Payload);
                 }
                 items[i] = item;
             }
@@ -1478,6 +1483,44 @@ namespace CatHome4.Admin
                 LogStore.Add("CatHome4", 2, "载荷 content 提取失败（回落空）: " + ex.Message, "CHAT");
             }
             return "";
+        }
+
+        /// <summary>
+        /// 提取 roundsum 块的 done 字段——本轮结束语义（tool=工具主动 done / stream=流式自然收尾）。
+        /// 缺失或解析失败回退 stream（保守按自然收尾：来源照常出队消费，不误留）。
+        /// </summary>
+        /// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...,"done":"..."}}）</param>
+        /// <returns>done 值（tool / stream）</returns>
+        private static string ExtractRoundSumDone(string payloadJson)
+        {
+            if (payloadJson == null || payloadJson.Length == 0)
+            {
+                return "stream";
+            }
+            try
+            {
+                using (JsonDocument d = JsonDocument.Parse(payloadJson))
+                {
+                    JsonElement data;
+                    if (d.RootElement.TryGetProperty("data", out data) && data.ValueKind == JsonValueKind.Object)
+                    {
+                        JsonElement done;
+                        if (data.TryGetProperty("done", out done) && done.ValueKind == JsonValueKind.String)
+                        {
+                            string got = done.GetString();
+                            if (got != null && got.Length > 0)
+                            {
+                                return got;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 2, "roundsum done 提取失败（按 stream 处理）: " + ex.Message, "CHAT");
+            }
+            return "stream";
         }
 
         /// <summary>

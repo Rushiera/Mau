@@ -121,6 +121,9 @@ namespace CH4
         /// <summary>本轮工具调用次数——工具 Dog 登记处累加（roundsum toolCount）</summary>
         private int _toolCallCount;
 
+        /// <summary>本轮工具主动 done 标记——sleep 等待登记 / restart 收尾登记置位（roundsum done=tool；QQ 转发面据此续约来源）</summary>
+        private bool _toolDone;
+
         /// <summary>当前运行态——PhaseIdle/Wait/Link/Think/Tool/Run/Reply（-1=无活跃）</summary>
         private int _phaseKind = -1;
 
@@ -770,6 +773,46 @@ namespace CH4
         }
 
         /// <summary>
+        /// sleep 作废——主干被「非 sleep 输入」启动时，本猫未到点 sleep 全部销毁（等待语义：人回来了就不再需要叫醒）。
+        /// 告知以 systemauto 名义汇总一条注入（在触发消息之前落前文 + 视图 + SSE）。
+        /// 触发点：Pump Idle 分支启动轮之前（唯一入口——含 QQ 消息 / Note 拉起 / timer / delay / restart 回执）。
+        /// </summary>
+        /// <param name="triggerSource">触发本轮的输入来源（sleep=自身到点，不销毁）</param>
+        private void ConsumeSleepOnWake(string triggerSource)
+        {
+            if (triggerSource == "sleep")
+            {
+                return;
+            }
+            DelayEntry[] killed = DelayQueue.CancelBySource(_catKey, "sleep");
+            if (killed.Length == 0)
+            {
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.Append("（系统自动 · sleep 作废）等待被提前启动打断——以下定时唤醒已销毁（共 ");
+            sb.Append(killed.Length.ToString());
+            sb.Append(" 条）：");
+            for (int i = 0; i < killed.Length; i = i + 1)
+            {
+                sb.Append("\n  #");
+                sb.Append(killed[i].Id.ToString());
+                sb.Append(" 原定 ");
+                sb.Append(DelayQueue.FormatTime(killed[i].DueAt));
+                sb.Append(" 到期");
+            }
+            string notice = sb.ToString();
+            AppendMessage(_context.AddUserMessage(notice));
+            _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
+            if (_httpHost != null)
+            {
+                string userJson = "{\"content\":" + JsonUtil.Serialize(notice) + ",\"source\":\"systemauto\"}";
+                _httpHost.PushView("user", userJson, -1, 0);
+            }
+            LogStore.Add("CatHome4", 1, "sleep 作废（等待被提前启动打断）: cat=" + _catKey + " | 销毁 " + killed.Length.ToString() + " 条 | 触发来源 " + triggerSource, "DELAY");
+        }
+
+        /// <summary>
         /// 用户消息入队——Idle 时 Pump 立即启动轮次；忙时排队等待（原同步阻塞天然排队语义保持）。
         /// 主线程泵消费调用（ThreadGuard：不推进相位——启动在 Pump）。
         /// </summary>
@@ -816,6 +859,8 @@ namespace CH4
                 if (_pending.Count > 0)
                 {
                     PendingMessage next = _pending.Dequeue();
+                    // sleep 作废——主干被「非 sleep 输入」启动即销毁本猫未到点 sleep（等待语义；告知先于触发消息）
+                    ConsumeSleepOnWake(next.Source);
                     StartRound(next.Content, next.Source);
                 }
                 return;
@@ -854,6 +899,7 @@ namespace CH4
             // 空回复续传计数——整轮清零（同 CH2 [段2.3] 每轮独立语义）
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
+            _toolDone = false;
             _roundStartTick = System.Diagnostics.Stopwatch.GetTimestamp();
             lock (_phaseLock)
             {
@@ -1295,7 +1341,7 @@ namespace CH4
                 + ",\"requests\":" + requests.ToString() + "}";
         }
 
-        /// <summary>构建 roundsum 载荷——本轮 Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 六态用时（idle 不计时故不入载荷；CloseRound 推送/落盘数据源）。</summary>
+        /// <summary>构建 roundsum 载荷——本轮 Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 六态用时（idle 不计时故不入载荷；CloseRound 推送/落盘数据源）+ done（本轮结束语义：stream=流式自然收尾 / tool=工具主动 done）。</summary>
         /// <returns>roundsum 视图载荷 JSON（{"type":"roundsum","data":{...}}）</returns>
         private string BuildRoundSumJson()
         {
@@ -1312,10 +1358,17 @@ namespace CH4
             Dictionary<string, long> ms = GetRunState(out stateName, out requests);
             // roundsum 只承载时长与计数——当前态名由此处不留档（观测面走 GetRunState）
             _ = stateName;
+            // done——工具主动 done（sleep 等待 / restart 收尾登记）与流式自然 done 的分野（QQ 转发面据此决定来源是否续约）
+            string doneKind = "stream";
+            if (_toolDone)
+            {
+                doneKind = "tool";
+            }
             return "{\"type\":\"roundsum\",\"data\":{\"prompt\":" + _usagePrompt.ToString()
                 + ",\"completion\":" + _usageCompletion.ToString()
                 + ",\"cacheHit\":" + _usageCacheHit.ToString()
                 + ",\"miss\":" + miss.ToString()
+                + ",\"done\":\"" + doneKind + "\""
                 + ",\"toolCount\":" + _toolCallCount.ToString()
                 + ",\"requests\":" + requests.ToString()
                 + ",\"elapsedMs\":" + elapsedMs.ToString()
@@ -1825,6 +1878,8 @@ namespace CH4
                     {
                         restartReq = "{}";
                     }
+                    // 工具主动 done——本轮结束语义为「工具收尾」（QQ 转发面据此续约来源：回执轮才是回复轮）
+                    _toolDone = true;
                     RestartRequest(restartReq);
                 }
             }

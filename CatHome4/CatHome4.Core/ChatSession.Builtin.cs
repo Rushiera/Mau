@@ -72,6 +72,10 @@ namespace CH4
             {
                 return ExecuteSleep(argsJson);
             }
+            if (name == "timer")
+            {
+                return ExecuteTimer(argsJson);
+            }
             return "ERR|UNKNOWN_BUILTIN|未知内置工具: " + name;
         }
 
@@ -194,11 +198,13 @@ namespace CH4
             // [段2] 登记——到点由调度器注入唤醒消息（本轮正常继续）
             long dueAt = DelayQueue.Now() + total * 1000;
             string content = "（定时唤醒 · " + total.ToString() + " 秒已到 · " + DelayQueue.FormatTime(dueAt) + "）";
-            string added = DelayQueue.Add(_catKey, content, "sleep", dueAt);
+            string added = DelayQueue.Add(_catKey, content, "sleep", dueAt, total * 1000, false);
             if (added.StartsWith("ERR|", StringComparison.Ordinal))
             {
                 return added;
             }
+            // 工具主动 done——本轮结束语义为「等待」（QQ 转发面据此续约来源：唤醒轮才是回复轮）
+            _toolDone = true;
             Dictionary<string, object> sleepFields = new Dictionary<string, object>();
             sleepFields["hours"] = hours;
             sleepFields["minutes"] = minutes;
@@ -206,6 +212,120 @@ namespace CH4
             sleepFields["dueAt"] = dueAt;
             string body = "已登记定时唤醒：" + DelayQueue.FormatTime(dueAt) + "（" + total.ToString() + " 秒后）——本轮请正常回复，到点会自动唤醒。";
             return ToolMetaHead.With("sleep", true, sleepFields, body);
+        }
+
+        /// <summary>timer 时长上限（秒）——24 小时（排程语义允许长周期；与 sleep 的 1 小时挂起防呆不同）</summary>
+        private const long MaxTimerSeconds = 86400;
+
+        /// <summary>
+        /// timer 执行体——登记延迟指令注入（design-ch4-delay §5.4）：本轮正常继续（不挂起、不阻塞），
+        /// 到点由调度器注入登记内容。与 sleep 的差别 = 不因主干启动而销毁（闹钟语义）+ 不置工具主动 done（本轮照常自然收尾）。
+        /// 参数面：content（必填，非空）+ hours/minutes/seconds（合计 1..86400 秒）+ loop（可缺省=false，触发后按投递时刻 + 时长重排）。
+        /// </summary>
+        /// <param name="argsJson">参数 JSON（content 必填；hours/minutes/seconds/loop 可缺省）</param>
+        /// <returns>结构化结果（元数据头 + 正文；失败 ERR| 前缀）</returns>
+        private string ExecuteTimer(string argsJson)
+        {
+            string content = "";
+            long hours = 0;
+            long minutes = 0;
+            long seconds = 0;
+            bool loop = false;
+            // [段0] 参数面——content 必填 + 时长非负整数 + loop 布尔 + 未知参数拒绝
+            if (argsJson != null && argsJson.Length > 0 && argsJson.StartsWith("{"))
+            {
+                try
+                {
+                    using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                    {
+                        JsonElement root = doc.RootElement;
+                        foreach (JsonProperty property in root.EnumerateObject())
+                        {
+                            if (property.Name == "catId")
+                            {
+                                continue;
+                            }
+                            if (property.Name == "content")
+                            {
+                                if (property.Value.ValueKind != JsonValueKind.String)
+                                {
+                                    return "ERR|BAD_ARGS|content 需为字符串";
+                                }
+                                content = property.Value.GetString() ?? "";
+                                continue;
+                            }
+                            if (property.Name == "loop")
+                            {
+                                if (property.Value.ValueKind != JsonValueKind.True && property.Value.ValueKind != JsonValueKind.False)
+                                {
+                                    return "ERR|BAD_ARGS|loop 需为布尔";
+                                }
+                                loop = property.Value.ValueKind == JsonValueKind.True;
+                                continue;
+                            }
+                            if (property.Name != "hours" && property.Name != "minutes" && property.Name != "seconds")
+                            {
+                                return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 content / hours / minutes / seconds / loop）";
+                            }
+                            if (property.Value.ValueKind != JsonValueKind.Number)
+                            {
+                                return "ERR|BAD_ARGS|" + property.Name + " 需为整数";
+                            }
+                            long value = property.Value.GetInt64();
+                            if (value < 0)
+                            {
+                                return "ERR|BAD_ARGS|" + property.Name + " 不能为负";
+                            }
+                            if (property.Name == "hours")
+                            {
+                                hours = value;
+                            }
+                            else if (property.Name == "minutes")
+                            {
+                                minutes = value;
+                            }
+                            else
+                            {
+                                seconds = value;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return "ERR|BAD_ARGS|timer 参数解析失败: " + ex.Message;
+                }
+            }
+            // [段1] 内容与时长校验——内容必填；合计 1..86400 秒
+            if (content.Trim().Length == 0)
+            {
+                return "ERR|BAD_ARGS|timer 内容为空（content 必填——到点注入的指令文本）";
+            }
+            long total = hours * 3600 + minutes * 60 + seconds;
+            if (total < DelayQueue.MinSleepSeconds || total > MaxTimerSeconds)
+            {
+                return "ERR|BAD_ARGS|timer 时长需在 " + DelayQueue.MinSleepSeconds.ToString() + ".." + MaxTimerSeconds.ToString() + " 秒之间（当前 " + total.ToString() + " 秒）";
+            }
+            // [段2] 登记——到点由调度器注入登记内容（本轮正常继续）
+            long dueAt = DelayQueue.Now() + total * 1000;
+            string added = DelayQueue.Add(_catKey, content, "timer", dueAt, total * 1000, loop);
+            if (added.StartsWith("ERR|", StringComparison.Ordinal))
+            {
+                return added;
+            }
+            Dictionary<string, object> timerFields = new Dictionary<string, object>();
+            timerFields["hours"] = hours;
+            timerFields["minutes"] = minutes;
+            timerFields["seconds"] = seconds;
+            timerFields["loop"] = loop;
+            timerFields["dueAt"] = dueAt;
+            string loopText = "单次";
+            if (loop)
+            {
+                loopText = "循环（每 " + total.ToString() + " 秒）";
+            }
+            string body = "已登记定时注入：" + DelayQueue.FormatTime(dueAt) + "（" + total.ToString() + " 秒后 · " + loopText + "）——到点自动注入本指令，本轮正常继续。";
+            return ToolMetaHead.With("timer", true, timerFields, body);
         }
 
         /// <summary>

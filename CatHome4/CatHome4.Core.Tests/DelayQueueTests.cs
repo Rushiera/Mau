@@ -242,5 +242,103 @@ namespace CatHome4.Core.Tests
             string empty = DelayQueue.BuildListJson("catX");
             Assert.Contains("\"entries\":[]", empty);
         }
+
+        /// <summary>
+        /// 循环重排——loop 条目触发后不出表：按「投递时刻 + 时长」重排 + Fired 累计。
+        /// </summary>
+        [Fact]
+        public void Pump_LoopReschedulesAndCountsFired()
+        {
+            DelayQueue.Add("catA", "tick", "timer", _now + 1000, 5000, true);
+            List<string> got = new List<string>();
+            _now = _now + 1000;
+            int first = DelayQueue.Pump(delegate (string cat, string content, string source) { got.Add(content); return true; });
+            Assert.Equal(1, first);
+            DelayEntry[] after = DelayQueue.List("catA");
+            Assert.Single(after);
+            Assert.True(after[0].Loop);
+            Assert.Equal(1, after[0].Fired);
+            Assert.Equal(_now + 5000, after[0].DueAt);
+            int none = DelayQueue.Pump(delegate (string cat, string content, string source) { got.Add(content); return true; });
+            Assert.Equal(0, none);
+            _now = _now + 5000;
+            int second = DelayQueue.Pump(delegate (string cat, string content, string source) { got.Add(content); return true; });
+            Assert.Equal(1, second);
+            Assert.Equal(2, DelayQueue.List("catA")[0].Fired);
+        }
+
+        /// <summary>
+        /// 循环重排基准 = 投递时刻——停机期间到期的 loop 条目重启后只补一次（不留积压追赶）。
+        /// </summary>
+        [Fact]
+        public void Pump_LoopRescheduleUsesDeliveryTime()
+        {
+            DelayQueue.Add("catA", "late", "timer", _now + 1000, 60000, true);
+            _now = _now + 600000;
+            int count = DelayQueue.Pump(delegate (string cat, string content, string source) { return true; });
+            Assert.Equal(1, count);
+            Assert.Equal(_now + 60000, DelayQueue.List("catA")[0].DueAt);
+        }
+
+        /// <summary>
+        /// 按来源批量取消——只清指定来源（sleep），其余来源与其他会话不受影响。
+        /// </summary>
+        [Fact]
+        public void CancelBySource_RemovesOnlyMatchingSource()
+        {
+            DelayQueue.Add("catA", "wait1", "sleep", _now + 1000);
+            DelayQueue.Add("catA", "wait2", "sleep", _now + 2000);
+            DelayQueue.Add("catA", "alarm", "timer", _now + 3000);
+            DelayQueue.Add("catB", "other", "sleep", _now + 4000);
+            DelayEntry[] killed = DelayQueue.CancelBySource("catA", "sleep");
+            Assert.Equal(2, killed.Length);
+            Assert.Equal("wait1", killed[0].Content);
+            Assert.Equal("wait2", killed[1].Content);
+            DelayEntry[] left = DelayQueue.List("catA");
+            Assert.Single(left);
+            Assert.Equal("alarm", left[0].Content);
+            Assert.Single(DelayQueue.List("catB"));
+            Assert.Empty(DelayQueue.CancelBySource("catA", "sleep"));
+        }
+
+        /// <summary>
+        /// 循环标记切换——无循环时长的条目拒绝开启；跨会话拒绝；有则切换成功。
+        /// </summary>
+        [Fact]
+        public void SetLoop_TogglesAndRejectsWithoutInterval()
+        {
+            DelayQueue.Add("catA", "once", "delay", _now + 1000, 0, false);
+            DelayQueue.Add("catA", "cyc", "delay", _now + 2000, 30000, false);
+            long onceId = DelayQueue.List("catA")[0].Id;
+            long cycId = DelayQueue.List("catA")[1].Id;
+            Assert.StartsWith("ERR|BAD_ARGS", DelayQueue.SetLoop("catA", onceId, true));
+            Assert.StartsWith("ERR|DELAY_NOT_FOUND", DelayQueue.SetLoop("catB", cycId, true));
+            Assert.StartsWith("ok", DelayQueue.SetLoop("catA", cycId, true));
+            Assert.True(DelayQueue.List("catA")[1].Loop);
+            Assert.StartsWith("ok", DelayQueue.SetLoop("catA", cycId, false));
+            Assert.False(DelayQueue.List("catA")[1].Loop);
+        }
+
+        /// <summary>
+        /// 落盘往返——loop / intervalMs / fired 随条目保留（跨宿主重启）。
+        /// </summary>
+        [Fact]
+        public void Persist_RoundTripsLoopFields()
+        {
+            string path = Path.Combine(_dir, "delays-loop.json");
+            DelayQueue.Configure(path);
+            DelayQueue.Add("catA", "cyc", "timer", _now + 1000, 7000, true);
+            _now = _now + 1000;
+            DelayQueue.Pump(delegate (string cat, string content, string source) { return true; });
+            DelayQueue.ResetForTest();
+            DelayQueue.NowProvider = FakeNow;
+            DelayQueue.Configure(path);
+            DelayQueue.Load();
+            DelayEntry[] loaded = DelayQueue.List("catA");
+            Assert.Single(loaded);
+            Assert.True(loaded[0].Loop);
+            Assert.Equal(7000, loaded[0].IntervalMs);
+            Assert.Equal(1, loaded[0].Fired);
+        }
     }
 }

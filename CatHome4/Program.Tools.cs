@@ -21,7 +21,7 @@ namespace CH4
         private static string BuildBuiltinToolsJson()
         {
             // 结构化构建——匿名对象树 → JsonSerializer（R6-P3-08：原手写字符串拼接易漏转义、难维护）
-            object[] tools = new object[8];
+            object[] tools = new object[9];
             tools[0] = new
             {
                 name = "Note",
@@ -114,7 +114,7 @@ namespace CH4
             tools[7] = new
             {
                 name = "sleep",
-                description = "登记定时唤醒（时/分/秒 · 合计 1..3600 秒）——本轮正常继续（不挂起）：到点由宿主自动注入一条唤醒消息，届时再继续做事。适合「N 分钟后提醒 / 再检查一次」类需求。",
+                description = "登记定时唤醒（时/分/秒 · 合计 1..3600 秒）——等待语义：本轮正常继续（不挂起），到点由宿主自动注入一条唤醒消息；主干被任何其他输入提前启动时本等待即作废（自动销毁并告知）。适合「等你回话 / 等外部条件」类需求。",
                 parameters = new
                 {
                     type = "object",
@@ -125,6 +125,24 @@ namespace CH4
                                 { "seconds", new { type = "integer", description = "秒（可缺省=0）" } }
                             },
                     required = new string[0]
+                }
+            };
+            tools[8] = new
+            {
+                name = "timer",
+                description = "登记延迟指令注入（content + 时/分/秒 · 合计 1..86400 秒）——排程语义：到点把 content 原样注入本会话（闹钟必响，不因主干启动而销毁）；loop=true 时触发后按「投递时刻 + 时长」重排（周期巡检）。本轮正常继续，且不影响本轮收尾语义。适合「长任务中途自查 / 周期巡检」。",
+                parameters = new
+                {
+                    type = "object",
+                    properties = new Dictionary<string, object>
+                            {
+                                { "content", new { type = "string", description = "到点注入的指令文本（必填）" } },
+                                { "hours", new { type = "integer", description = "小时（可缺省=0）" } },
+                                { "minutes", new { type = "integer", description = "分钟（可缺省=0）" } },
+                                { "seconds", new { type = "integer", description = "秒（可缺省=0）" } },
+                                { "loop", new { type = "boolean", description = "true=周期重排（可缺省=false）" } }
+                            },
+                    required = new string[] { "content" }
                 }
             };
             // 宽松转义——避免 < > 被编码为 \u003C（与旧手写字符串语义一致）

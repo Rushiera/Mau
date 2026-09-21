@@ -59,7 +59,16 @@ function delayFmtDue(ms) {
 function delaySrcMark(source) {
     if (source === 'sleep') { return '💤'; }
     if (source === 'restart') { return '🔄'; }
+    if (source === 'timer') { return '⏳'; }
     return '⏰';
+}
+
+// 行首文本——来源标记 + 到点时刻 + 循环/已响标记（渲染与测试共用单一出口）
+function delayWhenText(e) {
+    var mark = delaySrcMark(e.source) + ' ' + delayFmtDue(e.dueAt);
+    if (e.loop) { mark = mark + ' 🔁'; }
+    if (e.fired > 0) { mark = mark + ' 已响 ' + e.fired; }
+    return mark;
 }
 
 // 列表渲染——重建（数据变化时调用）；倒计时由 delayTick 原地更新
@@ -84,7 +93,7 @@ function delayRender() {
         row.setAttribute('data-id', String(e.id));
         var when = document.createElement('span');
         when.className = 'delay-when';
-        when.textContent = delaySrcMark(e.source) + ' ' + delayFmtDue(e.dueAt);
+        when.textContent = delayWhenText(e);
         var cd = document.createElement('span');
         cd.className = 'delay-cd';
         cd.setAttribute('data-due', String(e.dueAt));
@@ -97,6 +106,13 @@ function delayRender() {
         edit.textContent = '改';
         edit.setAttribute('data-id', String(e.id));
         edit.addEventListener('click', delayEditClick);
+        var loopBtn = document.createElement('button');
+        loopBtn.className = 'delay-act';
+        loopBtn.textContent = e.loop ? '🔁' : '单次';
+        loopBtn.title = '切换循环（触发后按相同时长重排，不自动移除）';
+        loopBtn.setAttribute('data-id', String(e.id));
+        loopBtn.setAttribute('data-loop', e.loop ? '1' : '0');
+        loopBtn.addEventListener('click', delayLoopClick);
         var cancel = document.createElement('button');
         cancel.className = 'delay-act';
         cancel.textContent = '×';
@@ -105,6 +121,7 @@ function delayRender() {
         row.appendChild(when);
         row.appendChild(cd);
         row.appendChild(text);
+        row.appendChild(loopBtn);
         row.appendChild(edit);
         row.appendChild(cancel);
         list.appendChild(row);
@@ -181,7 +198,10 @@ function delayAdd() {
     if (content.length === 0) { uiWarn('延迟指令新建', '内容为空'); return; }
     var dueAt = delayParseInput(timeInput.value);
     if (dueAt === null || dueAt <= 0) { uiWarn('延迟指令新建', '时长/时刻无法解析（示例：10m · 1h30m · 09:30）'); return; }
-    delaySend('delay.addat|' + String(dueAt) + '|' + content);
+    var loopInput = document.getElementById('delayLoop');
+    var line = 'delay.addat|' + String(dueAt) + '|' + content;
+    if (loopInput && loopInput.checked) { line = 'delay.addatloop|' + String(dueAt) + '|' + content; }
+    delaySend(line);
     timeInput.value = '';
     textInput.value = '';
 }
@@ -200,6 +220,14 @@ function delayEditClick(ev) {
 function delayCancelClick(ev) {
     var id = ev.target.getAttribute('data-id');
     delaySend('delay.cancel|' + id);
+}
+
+// 循环开关——切换条目 loop 标记（触发后按相同时长重排）
+function delayLoopClick(ev) {
+    var id = ev.target.getAttribute('data-id');
+    var cur = ev.target.getAttribute('data-loop');
+    var next = cur === '1' ? '0' : '1';
+    delaySend('delay.loop|' + id + '|' + next);
 }
 
 // 指令投递——写面复用 command 通道；随后重拉列表（列表为准）

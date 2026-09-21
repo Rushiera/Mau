@@ -190,6 +190,7 @@ namespace CH4
             if (name == "time") { return "获取时间 → " + Q(Trunc(FirstLine(result), 40)); }
             if (name == "random") { return Fmt_Random(p, result); }
             if (name == "sleep") { return Fmt_Sleep(p, result); }
+            if (name == "timer") { return Fmt_Timer(p, result); }
             if (name == "info") { return Fmt_Info(result); }
 
             // [段9] 未知工具——尽力展示参数
@@ -973,6 +974,25 @@ namespace CH4
             if (hours.Length > 0 && hours != "0") { sb.Append(hours); sb.Append("时"); }
             if (minutes.Length > 0 && minutes != "0") { sb.Append(minutes); sb.Append("分"); }
             if (seconds.Length > 0 && seconds != "0") { sb.Append(seconds); sb.Append("秒"); }
+            sb.Append(" → "); sb.Append(Q(Trunc(FirstLine(result), 40)));
+            return sb.ToString();
+        }
+
+        /// <summary>timer——定时注入时长 + 循环标记 + 内容摘要（design-ch4-delay §5.4）</summary>
+        private static string Fmt_Timer(Dictionary<string, string> p, string result)
+        {
+            string hours = Arg(p, "hours");
+            string minutes = Arg(p, "minutes");
+            string seconds = Arg(p, "seconds");
+            string loop = Arg(p, "loop");
+            string content = Arg(p, "content");
+            StringBuilder sb = new StringBuilder();
+            sb.Append("定时注入 ");
+            if (hours.Length > 0 && hours != "0") { sb.Append(hours); sb.Append("时"); }
+            if (minutes.Length > 0 && minutes != "0") { sb.Append(minutes); sb.Append("分"); }
+            if (seconds.Length > 0 && seconds != "0") { sb.Append(seconds); sb.Append("秒"); }
+            if (loop == "true") { sb.Append(" · 循环"); }
+            if (content.Length > 0) { sb.Append(" · "); sb.Append(Q(Trunc(content, 20))); }
             sb.Append(" → "); sb.Append(Q(Trunc(FirstLine(result), 40)));
             return sb.ToString();
         }

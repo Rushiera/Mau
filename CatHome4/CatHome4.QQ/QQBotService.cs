@@ -101,8 +101,8 @@ namespace CatHome4.QQ
                 _statePath = path;
             }
         }
-        /// <summary>接力来源一次性豁免——启动后首个残留来源免「异常中止轮」兜底清理（A33：回执轮据此转发回 QQ）</summary>
-        private static bool _relayPending = false;
+        /// <summary>来源续约态——猫 Key → true（工具主动 done 轮末来源保留：回执轮 / 唤醒轮才是回复轮；接力载入的残留来源同列）。保留期内兜底清理不生效。</summary>
+        private static readonly Dictionary<string, bool> _renewed = new Dictionary<string, bool>();
         /// <summary>
         /// 转发态落盘——独立文件（A33：挂载功能自持，不介入核心基座与真实会话）。
         /// 载荷：每猫 {游标、残留来源、轮状态（即时计数 / 最终回复池 / 轮内预算）} + 每连接 msg_seq 水位（不续号则重启后首条被官方去重拒）。
@@ -163,7 +163,8 @@ namespace CatHome4.QQ
                     }
                     first = false;
                     sb.Append(JsonSerializer.Serialize(key) + ":{\"cursor\":" + kv.Value.ToString() + ",\"imm\":" + imm.ToString()
-                        + ",\"calls\":" + calls.ToString() + ",\"acc\":" + JsonSerializer.Serialize(accText) + ",\"src\":" + srcJson + "}");
+                        + ",\"calls\":" + calls.ToString() + ",\"acc\":" + JsonSerializer.Serialize(accText) + ",\"renew\":"
+                        + (_renewed.ContainsKey(key) ? "true" : "false") + ",\"src\":" + srcJson + "}");
                 }
                 sb.Append("}}");
                 File.WriteAllText(_statePath, sb.ToString(), Encoding.UTF8);
@@ -271,7 +272,14 @@ namespace CatHome4.QQ
                             if (s.Type.Length > 0 && s.TargetId.Length > 0)
                             {
                                 EnqueueSource(p.Name, s);
+                                // 接力来源 → 续约态（保留期内免兜底清理；回执轮 / 唤醒轮消费后解除）
+                                _renewed[p.Name] = true;
                             }
+                        }
+                        JsonElement renewEl;
+                        if (c.ValueKind == JsonValueKind.Object && c.TryGetProperty("renew", out renewEl) && renewEl.ValueKind == JsonValueKind.True)
+                        {
+                            _renewed[p.Name] = true;
                         }
                         int imm = 0;
                         if (c.ValueKind == JsonValueKind.Object && c.TryGetProperty("imm", out numEl) && numEl.ValueKind == JsonValueKind.Number)
@@ -319,7 +327,6 @@ namespace CatHome4.QQ
             _startTime = DateTime.Now;
             Refresh();
             // A33——转发态续接：连接就位后加载（游标 / 残留来源 / 轮状态 / msg_seq 水位）——重启后接续转发回 QQ
-            _relayPending = true;
             if (_collector != null)
             {
                 LoadForwardState(_collector.CollectAll());
@@ -1124,13 +1131,15 @@ namespace CatHome4.QQ
         }
         /// <summary>
         /// 轮结束——roundsum 块哨兵：最终回复池非空 → 按 MD 结构切分（最多 2 段——2+2 预算的第二个 2）逐段发送；
-        /// 段数超限丢弃尾部 + L2 留痕；出队消费本轮来源；重置轮状态（即时计数 / 池 / 预算）。
+        /// 段数超限丢弃尾部 + L2 留痕；来源按 done 语义处置（tool=续约保留 / stream=出队消费）；重置轮状态（即时计数 / 池 / 预算）。
         /// </summary>
         /// <param name="tg">绑定目标</param>
-        private static void FinishRound(QqTarget tg)
+        /// <param name="done">本轮结束语义——tool=工具主动 done（来源续约）/ stream=流式自然收尾（来源出队）</param>
+        private static void FinishRound(QqTarget tg, string done)
         {
             QqSource source;
-            if (TryDequeueSource(tg.Key, out source))
+            bool hasSource = PeekSource(tg.Key, out source);
+            if (hasSource && source != null)
             {
                 System.Text.StringBuilder sb;
                 if (_accumulated.TryGetValue(tg.Key, out sb) && sb.Length > 0)
@@ -1140,8 +1149,26 @@ namespace CatHome4.QQ
                     SendRouted(tg, source, sb.ToString(), MaxRoundCalls, tg.Key);
                 }
             }
+            // 来源处置——done=tool（工具主动 done：本轮登记了等待/收尾，真正的回复在下一轮注入）→ 来源续约保留；
+            // done=stream（流式自然收尾）→ 出队消费（本轮即回复轮）
+            if (done == "tool")
+            {
+                if (hasSource)
+                {
+                    _renewed[tg.Key] = true;
+                    LogStore.Add("QQBot", 1, "来源续约（工具主动 done） | " + tg.Key, "QQBOT");
+                }
+            }
+            else
+            {
+                QqSource dropped;
+                if (TryDequeueSource(tg.Key, out dropped))
+                {
+                    _renewed.Remove(tg.Key);
+                }
+            }
             ResetRound(tg.Key);
-            // A33——来源出队即落盘（防重启后恢复已消费来源 → 错配转发）
+            // A33——来源处置即落盘（防重启后恢复已消费来源 → 错配转发）
             SaveForwardState();
         }
         /// <summary>游标——猫 Key → 已处理消息数（R2.3.5 只转发启用后新块）</summary>
@@ -1159,6 +1186,8 @@ namespace CatHome4.QQ
                 if (ev.Kind == "source")
                 {
                     EnqueueSource(ev.CatKey, ev.Source);
+                    // 新 QQ 输入开启新交互——续约态终结（保留来源仍在队首，由本轮 roundsum 消费）
+                    _renewed.Remove(ev.CatKey);
                     changed = true;
                 }
                 else if (ev.Kind == "reset")
@@ -1202,13 +1231,12 @@ namespace CatHome4.QQ
                 if (count <= cursor)
                 {
                     // 无新块——异常中止轮残留来源兜底清理（会话 Idle 且队列残留 = 上轮无 roundsum 结束）
+                    // 续约态（工具主动 done 保留的来源 / 接力载入的来源）免疫——留给真正的回复轮消费
                     if (HasPendingSource(tg.Key) && tg.IsIdle())
                     {
-                        if (_relayPending)
+                        if (_renewed.ContainsKey(tg.Key))
                         {
-                            // A33——接力来源一次性豁免：启动后首个残留来源是跨重启接力载荷，不做兜底清理（回执轮据此转发）
-                            _relayPending = false;
-                            LogStore.Add("QQBot", 1, "接力来源豁免兜底清理 | " + tg.Key, "QQBOT");
+                            // 保留期内不清——由回执轮 / 唤醒轮经 FinishRound 消费后解除
                         }
                         else
                         {
@@ -1222,8 +1250,8 @@ namespace CatHome4.QQ
                     QqViewItem it = items[j];
                     if (it.RenderType == "roundsum")
                     {
-                        // 轮结束哨兵——最终回复池切分发送（≤2 段）+ 出队来源 + 重置轮状态
-                        FinishRound(tg);
+                        // 轮结束哨兵——最终回复池切分发送（≤2 段）+ 来源按 done 处置 + 重置轮状态
+                        FinishRound(tg, it.Done);
                     }
                     else if (it.RenderType == "text" && it.Content.Length > 0)
                     {
@@ -1566,5 +1594,8 @@ namespace CatHome4.QQ
 
         /// <summary>文本内容——text 块内容（已解析 payload.content）；其他类型空串</summary>
         public string Content;
+
+        /// <summary>本轮结束语义——roundsum 块携带（tool=工具主动 done / stream=流式自然收尾）；其他类型空串</summary>
+        public string Done;
     }
 }

@@ -28,8 +28,17 @@ namespace CH4
         /// <summary>登记时刻——Unix 毫秒（观测与同刻排序用）</summary>
         public long CreatedAt;
 
-        /// <summary>来源标记——delay（人工定时）/ sleep（LLM 登记）/ restart（宿主重启回执）</summary>
+        /// <summary>来源标记——delay（人工定时）/ sleep（LLM 等待）/ timer（LLM 排程）/ restart（宿主重启回执）</summary>
         public string Source = "delay";
+
+        /// <summary>循环标记——true=触发后按「投递时刻 + 时长」重排回表（不出表）；false=一次性（触发即移除）</summary>
+        public bool Loop;
+
+        /// <summary>循环时长——Unix 毫秒（登记时的相对长度；重排基准 = 投递时刻 + 本值）</summary>
+        public long IntervalMs;
+
+        /// <summary>已触发次数——循环条目累计（观测面「已响 N 次」；一次性条目恒 0）</summary>
+        public int Fired;
     }
 
     /// <summary>
@@ -104,10 +113,12 @@ namespace CH4
         /// </summary>
         /// <param name="catKey">归属会话（猫 key）</param>
         /// <param name="content">注入内容</param>
-        /// <param name="source">来源标记（delay/sleep/restart）</param>
+        /// <param name="source">来源标记（delay/sleep/timer/restart）</param>
         /// <param name="dueAt">触发时刻——Unix 毫秒（UTC）</param>
-        /// <returns>结果 JSON（ok/id/dueAt/due；失败 ERR| 前缀）</returns>
-        public static string Add(string catKey, string content, string source, long dueAt)
+        /// <param name="intervalMs">循环时长——Unix 毫秒（loop=true 时重排基准；0=不可循环）</param>
+        /// <param name="loop">循环标记——true=触发后按投递时刻 + 时长重排回表（不出表）</param>
+        /// <returns>结果 JSON（ok/id/dueAt/loop/due；失败 ERR| 前缀）</returns>
+        public static string Add(string catKey, string content, string source, long dueAt, long intervalMs = 0, bool loop = false)
         {
             if (catKey == null || catKey.Length == 0)
             {
@@ -149,10 +160,22 @@ namespace CH4
                 entry.Source = useSource;
                 entry.DueAt = dueAt;
                 entry.CreatedAt = NowProvider();
+                entry.IntervalMs = intervalMs;
+                entry.Loop = loop && intervalMs > 0;
                 InsertSorted(entry);
                 SaveLocked();
-                LogStore.Add("CatHome4", 1, "延迟条目登记: id=#" + entry.Id.ToString() + " | cat=" + catKey + " | due=" + FormatTime(dueAt) + " | source=" + useSource, "DELAY");
-                return "{\"ok\":true,\"id\":" + entry.Id.ToString() + ",\"dueAt\":" + dueAt.ToString() + ",\"due\":\"" + FormatTime(dueAt) + "\"}";
+                string loopNote = "";
+                if (entry.Loop)
+                {
+                    loopNote = " | loop=" + intervalMs.ToString() + "ms";
+                }
+                LogStore.Add("CatHome4", 1, "延迟条目登记: id=#" + entry.Id.ToString() + " | cat=" + catKey + " | due=" + FormatTime(dueAt) + " | source=" + useSource + loopNote, "DELAY");
+                string loopJson = "false";
+                if (entry.Loop)
+                {
+                    loopJson = "true";
+                }
+                return "{\"ok\":true,\"id\":" + entry.Id.ToString() + ",\"dueAt\":" + dueAt.ToString() + ",\"loop\":" + loopJson + ",\"due\":\"" + FormatTime(dueAt) + "\"}";
             }
         }
 
@@ -222,6 +245,73 @@ namespace CH4
         }
 
         /// <summary>
+        /// 按来源批量取消——返回被取消条目（sleep 被打断即销毁的落点；运维批量清理）。
+        /// </summary>
+        /// <param name="catKey">归属会话（猫 key）</param>
+        /// <param name="source">来源标记（如 sleep）</param>
+        /// <returns>被取消条目数组（按表序升序；空=无匹配）</returns>
+        public static DelayEntry[] CancelBySource(string catKey, string source)
+        {
+            List<DelayEntry> removed = new List<DelayEntry>();
+            lock (QueueLock)
+            {
+                for (int i = _entries.Count - 1; i >= 0; i = i - 1)
+                {
+                    if (_entries[i].CatKey == catKey && _entries[i].Source == source)
+                    {
+                        removed.Insert(0, _entries[i]);
+                        _entries.RemoveAt(i);
+                    }
+                }
+                if (removed.Count > 0)
+                {
+                    SaveLocked();
+                    LogStore.Add("CatHome4", 1, "延迟条目批量取消: cat=" + catKey + " | source=" + source + " | 共 " + removed.Count.ToString() + " 条", "DELAY");
+                }
+            }
+            return removed.ToArray();
+        }
+
+        /// <summary>
+        /// 切换循环标记——loop=true 需条目已有循环时长（登记时给；无时长拒绝并出声）。
+        /// </summary>
+        /// <param name="catKey">归属会话（猫 key——越权校验）</param>
+        /// <param name="id">条目序号</param>
+        /// <param name="loop">目标标记</param>
+        /// <returns>结果文本（ok / ERR| 前缀）</returns>
+        public static string SetLoop(string catKey, long id, bool loop)
+        {
+            lock (QueueLock)
+            {
+                for (int i = 0; i < _entries.Count; i = i + 1)
+                {
+                    if (_entries[i].Id != id)
+                    {
+                        continue;
+                    }
+                    if (_entries[i].CatKey != catKey)
+                    {
+                        return "ERR|DELAY_NOT_FOUND|条目不属于本会话: #" + id.ToString();
+                    }
+                    if (loop && _entries[i].IntervalMs <= 0)
+                    {
+                        return "ERR|BAD_ARGS|条目缺少循环时长（重新登记时给定时长）: #" + id.ToString();
+                    }
+                    _entries[i].Loop = loop;
+                    SaveLocked();
+                    string mark = "关";
+                    if (loop)
+                    {
+                        mark = "开";
+                    }
+                    LogStore.Add("CatHome4", 1, "延迟条目循环标记: id=#" + id.ToString() + " | loop=" + mark, "DELAY");
+                    return "ok|#" + id.ToString() + " 循环" + mark;
+                }
+                return "ERR|DELAY_NOT_FOUND|条目不存在: #" + id.ToString();
+            }
+        }
+
+        /// <summary>
         /// 待触发条目快照——按 DueAt 升序（本会话）。
         /// </summary>
         /// <param name="catKey">归属会话（猫 key）</param>
@@ -270,6 +360,19 @@ namespace CH4
                 sb.Append(list[i].CreatedAt.ToString());
                 sb.Append(",\"source\":");
                 sb.Append(JsonUtil.Serialize(list[i].Source));
+                sb.Append(",\"loop\":");
+                if (list[i].Loop)
+                {
+                    sb.Append("true");
+                }
+                else
+                {
+                    sb.Append("false");
+                }
+                sb.Append(",\"intervalMs\":");
+                sb.Append(list[i].IntervalMs.ToString());
+                sb.Append(",\"fired\":");
+                sb.Append(list[i].Fired.ToString());
                 sb.Append("}");
             }
             sb.Append("]}");
@@ -300,6 +403,15 @@ namespace CH4
                 sb.Append(FormatTime(list[i].DueAt));
                 sb.Append(" | ");
                 sb.Append(list[i].Source);
+                if (list[i].Loop)
+                {
+                    sb.Append(" 🔁");
+                }
+                if (list[i].Fired > 0)
+                {
+                    sb.Append(" 已响 ");
+                    sb.Append(list[i].Fired.ToString());
+                }
                 sb.Append(" | ");
                 sb.Append(list[i].Content);
             }
@@ -309,6 +421,7 @@ namespace CH4
         /// <summary>
         /// 帧泵——摘出到点条目 → 按序投递（锁外）→ 未受理的重新入表。
         /// 积压语义：多个到点条目按序一次性立即注入（不丢、不合并、不覆盖）。
+        /// loop 语义：投递成功且 Loop=true → 按「投递时刻 + IntervalMs」重排回表（不出表；Fired 累计）。
         /// </summary>
         /// <param name="deliver">投递委托（catKey, content, source）→ true=已受理 / false=未受理（保留待重投）</param>
         /// <returns>本次投递条数</returns>
@@ -349,6 +462,7 @@ namespace CH4
             }
             int delivered = 0;
             List<DelayEntry> rejected = new List<DelayEntry>();
+            List<DelayEntry> repeated = new List<DelayEntry>();
             for (int i = 0; i < due.Count; i = i + 1)
             {
                 bool accepted = deliver(due[i].CatKey, due[i].Content, due[i].Source);
@@ -356,6 +470,21 @@ namespace CH4
                 {
                     delivered = delivered + 1;
                     LogStore.Add("CatHome4", 1, "延迟条目到点投递: id=#" + due[i].Id.ToString() + " | cat=" + due[i].CatKey + " | source=" + due[i].Source, "DELAY");
+                    // loop——触发后按「投递时刻 + 时长」重排回表（不出表；不留积压追赶）
+                    if (due[i].Loop)
+                    {
+                        if (due[i].IntervalMs > 0)
+                        {
+                            due[i].Fired = due[i].Fired + 1;
+                            due[i].DueAt = NowProvider() + due[i].IntervalMs;
+                            repeated.Add(due[i]);
+                            LogStore.Add("CatHome4", 1, "延迟条目循环重排: id=#" + due[i].Id.ToString() + " | next=" + FormatTime(due[i].DueAt) + " | 已响 " + due[i].Fired.ToString() + " 次", "DELAY");
+                        }
+                        else
+                        {
+                            LogStore.Add("CatHome4", 2, "延迟条目循环重排跳过（缺循环时长）: id=#" + due[i].Id.ToString(), "DELAY");
+                        }
+                    }
                 }
                 else
                 {
@@ -368,7 +497,11 @@ namespace CH4
                 {
                     InsertSorted(rejected[i]);
                 }
-                if (delivered > 0 || rejected.Count > 0)
+                for (int i = 0; i < repeated.Count; i = i + 1)
+                {
+                    InsertSorted(repeated[i]);
+                }
+                if (delivered > 0 || rejected.Count > 0 || repeated.Count > 0)
                 {
                     SaveLocked();
                 }
@@ -490,6 +623,25 @@ namespace CH4
                     entry.Source = got;
                 }
             }
+            JsonElement loopEl;
+            if (item.TryGetProperty("loop", out loopEl) && loopEl.ValueKind == JsonValueKind.True)
+            {
+                entry.Loop = true;
+            }
+            JsonElement intervalEl;
+            if (item.TryGetProperty("intervalMs", out intervalEl) && intervalEl.ValueKind == JsonValueKind.Number)
+            {
+                entry.IntervalMs = intervalEl.GetInt64();
+            }
+            JsonElement firedEl;
+            if (item.TryGetProperty("fired", out firedEl) && firedEl.ValueKind == JsonValueKind.Number)
+            {
+                entry.Fired = firedEl.GetInt32();
+            }
+            if (entry.Loop && entry.IntervalMs <= 0)
+            {
+                entry.Loop = false;
+            }
             if (entry.CatKey.Length == 0 || entry.Content.Length == 0 || entry.DueAt <= 0)
             {
                 return null;
@@ -555,6 +707,9 @@ namespace CH4
             copy.Source = entry.Source;
             copy.CreatedAt = entry.CreatedAt;
             copy.DueAt = dueAt;
+            copy.IntervalMs = entry.IntervalMs;
+            copy.Loop = entry.Loop;
+            copy.Fired = entry.Fired;
             return copy;
         }
 
@@ -596,6 +751,19 @@ namespace CH4
                     sb.Append(_entries[i].CreatedAt.ToString());
                     sb.Append(",\"source\":");
                     sb.Append(JsonUtil.Serialize(_entries[i].Source));
+                    sb.Append(",\"loop\":");
+                    if (_entries[i].Loop)
+                    {
+                        sb.Append("true");
+                    }
+                    else
+                    {
+                        sb.Append("false");
+                    }
+                    sb.Append(",\"intervalMs\":");
+                    sb.Append(_entries[i].IntervalMs.ToString());
+                    sb.Append(",\"fired\":");
+                    sb.Append(_entries[i].Fired.ToString());
                     sb.Append("}");
                 }
                 sb.Append("]}");

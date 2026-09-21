@@ -57,6 +57,10 @@ namespace CH4
             {
                 return AddAbsolute(catKey, line);
             }
+            if (line.StartsWith("delay.addatloop|", StringComparison.Ordinal))
+            {
+                return AddAbsoluteLoop(catKey, line);
+            }
             if (line.StartsWith("delay.set|", StringComparison.Ordinal))
             {
                 return SetDue(catKey, line);
@@ -65,7 +69,11 @@ namespace CH4
             {
                 return CancelEntry(catKey, line);
             }
-            return "ERR|BAD_ARGS|未知延迟指令（支持 delay.add|<秒>|<内容> · delay.addat|<unixms>|<内容> · delay.set|<id>|<unixms> · delay.cancel|<id> · delay.list）";
+            if (line.StartsWith("delay.loop|", StringComparison.Ordinal))
+            {
+                return SetLoopMark(catKey, line);
+            }
+            return "ERR|BAD_ARGS|未知延迟指令（支持 delay.add|<秒>|<内容> · delay.addat|<unixms>|<内容> · delay.addatloop|<unixms>|<内容> · delay.set|<id>|<unixms> · delay.cancel|<id> · delay.loop|<id>|<0|1> · delay.list）";
         }
 
         /// <summary>
@@ -100,7 +108,7 @@ namespace CH4
                 return "ERR|BAD_ARGS|延迟条目内容为空";
             }
             long dueAt = DelayQueue.Now() + seconds * 1000;
-            return DelayQueue.Add(catKey, tail, "delay", dueAt);
+            return DelayQueue.Add(catKey, tail, "delay", dueAt, seconds * 1000, false);
         }
 
         /// <summary>
@@ -130,7 +138,48 @@ namespace CH4
             {
                 return "ERR|BAD_ARGS|延迟条目内容为空";
             }
-            return DelayQueue.Add(catKey, tail, "delay", dueAt);
+            // 循环时长 = 登记时刻到绝对时刻的跨度（loop 打开时按此重排）
+            long span = dueAt - DelayQueue.Now();
+            if (span < 0)
+            {
+                span = 0;
+            }
+            return DelayQueue.Add(catKey, tail, "delay", dueAt, span, false);
+        }
+
+        /// <summary>
+        /// delay.addatloop|&lt;unixms&gt;|&lt;内容&gt;——绝对时刻 + 循环登记（前端新建勾选循环的通道；循环时长 = 登记跨度）。
+        /// </summary>
+        /// <param name="catKey">归属会话（猫 key）</param>
+        /// <param name="line">指令行</param>
+        /// <returns>结果文本</returns>
+        private static string AddAbsoluteLoop(string catKey, string line)
+        {
+            string head;
+            string tail;
+            if (!SplitPair(line.Substring(16), out head, out tail))
+            {
+                return "ERR|BAD_ARGS|delay.addatloop 需要 <unixms>|<内容>";
+            }
+            long dueAt;
+            if (!long.TryParse(head, NumberStyles.Integer, CultureInfo.InvariantCulture, out dueAt))
+            {
+                return "ERR|BAD_ARGS|时刻非法: " + head;
+            }
+            if (dueAt <= 0)
+            {
+                return "ERR|BAD_ARGS|时刻非法（需 Unix 毫秒）";
+            }
+            if (tail.Trim().Length == 0)
+            {
+                return "ERR|BAD_ARGS|延迟条目内容为空";
+            }
+            long span = dueAt - DelayQueue.Now();
+            if (span <= 0)
+            {
+                return "ERR|BAD_ARGS|循环条目需要未来的触发时刻（当前跨度 " + span.ToString() + "ms）";
+            }
+            return DelayQueue.Add(catKey, tail, "delay", dueAt, span, true);
         }
 
         /// <summary>
@@ -175,6 +224,33 @@ namespace CH4
                 return "ERR|BAD_ARGS|条目序号非法: " + idText;
             }
             return DelayQueue.Cancel(catKey, id);
+        }
+
+        /// <summary>
+        /// delay.loop|&lt;id&gt;|&lt;0|1&gt;——切换循环标记（前端列表开关；loop 需条目已有循环时长）。
+        /// </summary>
+        /// <param name="catKey">归属会话（猫 key）</param>
+        /// <param name="line">指令行</param>
+        /// <returns>结果文本</returns>
+        private static string SetLoopMark(string catKey, string line)
+        {
+            string head;
+            string tail;
+            if (!SplitPair(line.Substring(11), out head, out tail))
+            {
+                return "ERR|BAD_ARGS|delay.loop 需要 <id>|<0|1>";
+            }
+            long id;
+            if (!long.TryParse(head, NumberStyles.Integer, CultureInfo.InvariantCulture, out id))
+            {
+                return "ERR|BAD_ARGS|条目序号非法: " + head;
+            }
+            string mark = tail.Trim();
+            if (mark != "0" && mark != "1")
+            {
+                return "ERR|BAD_ARGS|loop 标记需为 0 或 1（当前 " + mark + "）";
+            }
+            return DelayQueue.SetLoop(catKey, id, mark == "1");
         }
 
         /// <summary>

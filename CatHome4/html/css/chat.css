@@ -296,6 +296,8 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 #delayTime { width: 150px; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: 11px; }
 #delayText { flex: 1; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: 11px; }
 #delayTime:focus, #delayText:focus { outline: none; border-color: var(--ch-focus); }
+#delayLoopLabel { display: flex; align-items: center; gap: 3px; color: var(--ch-fg-muted); font-size: 11px; white-space: nowrap; cursor: pointer; user-select: none; }
+#delayLoop { accent-color: var(--ch-warn); cursor: pointer; }
 #delayAddRow button { background: var(--ch-bg-accent); border: none; color: var(--ch-fg-inverse); padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
 /* 单向数据流改造——插话队列显示区（正常流堆叠——有排队消息显示/无则隐藏） */
 #chatPendingPanel { border-top: 1px solid var(--ch-line-faint); background: var(--ch-bg-sunken); font-size: 11px; padding: 5px 12px; color: var(--ch-fg-muted); }

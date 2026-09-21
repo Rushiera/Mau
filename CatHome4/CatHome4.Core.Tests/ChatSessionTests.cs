@@ -257,7 +257,8 @@ namespace CatHome4.Core.Tests
                 new ToolSpec("time", "当前时间", "{}"),
                 new ToolSpec("random", "随机整数", "{}"),
                 new ToolSpec("info", "运行状态", "{}"),
-                new ToolSpec("sleep", "定时唤醒", "{}")
+                new ToolSpec("sleep", "定时唤醒", "{}"),
+                new ToolSpec("timer", "定时注入", "{}")
             }, null, null);
             ChatContext ctx = new ChatContext();
             string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".jsonl");
@@ -417,6 +418,154 @@ namespace CatHome4.Core.Tests
             }
             Assert.True(sawError);
             CH4.DelayQueue.ResetForTest();
+        }
+
+        /// <summary>
+        /// timer 内置工具——登记延迟指令注入（排程语义）：source=timer + loop 标记 + 循环时长落表。
+        /// </summary>
+        [Fact]
+        public void Timer_ExecuteTool_RegistersLoopEntry()
+        {
+            CH4.DelayQueue.ResetForTest();
+            CH4.DelayQueue.NowProvider = delegate () { return 9000000; };
+            MockLlm llm = new MockLlm();
+            string tc = "[{\"id\":\"m1\",\"function\":{\"name\":\"timer\",\"arguments\":\"{\\\"content\\\":\\\"检查构建进度\\\",\\\"minutes\\\":5,\\\"loop\\\":true}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            CH4.ChatSession session = CreateSession(llm, new ToolSpec[]
+            {
+                new ToolSpec("Note", "Note 任务追踪", "{}"),
+                new ToolSpec("timer", "定时注入", "{}")
+            });
+            session.SetCatKey("test-session");
+            session.PostUserMessage("五分钟后自查");
+            PumpUntilIdle(session);
+            CH4.DelayEntry[] entries = CH4.DelayQueue.List("test-session");
+            Assert.Single(entries);
+            Assert.Equal("timer", entries[0].Source);
+            Assert.Equal("检查构建进度", entries[0].Content);
+            Assert.Equal(9000000 + 300000, entries[0].DueAt);
+            Assert.True(entries[0].Loop);
+            Assert.Equal(300000, entries[0].IntervalMs);
+            CH4.DelayQueue.ResetForTest();
+        }
+
+        /// <summary>
+        /// timer 参数面——内容缺失拒绝（content 必填；错误可见性：ERR| 文本进工具结果）。
+        /// </summary>
+        [Fact]
+        public void Timer_ExecuteTool_RejectsMissingContent()
+        {
+            CH4.DelayQueue.ResetForTest();
+            CH4.DelayQueue.NowProvider = delegate () { return 9100000; };
+            MockLlm llm = new MockLlm();
+            string tc = "[{\"id\":\"m2\",\"function\":{\"name\":\"timer\",\"arguments\":\"{\\\"minutes\\\":5}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            CH4.ChatSession session = CreateSession(llm, new ToolSpec[]
+            {
+                new ToolSpec("Note", "Note 任务追踪", "{}"),
+                new ToolSpec("timer", "定时注入", "{}")
+            });
+            session.SetCatKey("test-session");
+            session.PostUserMessage("五分钟后自查");
+            PumpUntilIdle(session);
+            Assert.Empty(CH4.DelayQueue.List("test-session"));
+            bool sawError = false;
+            LlmMessage[] all = session.Context.GetMessages();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (all[i].Role == LlmRole.Tool && all[i].Content != null && all[i].Content.Contains("ERR|BAD_ARGS"))
+                {
+                    sawError = true;
+                }
+            }
+            Assert.True(sawError);
+            CH4.DelayQueue.ResetForTest();
+        }
+
+        /// <summary>
+        /// sleep 作废——主干被非 sleep 输入启动时销毁未到点 sleep + systemauto 汇总告知（先于触发消息落前文）。
+        /// </summary>
+        [Fact]
+        public void Sleep_DestroyedWhenMainlineStarts()
+        {
+            CH4.DelayQueue.ResetForTest();
+            CH4.DelayQueue.NowProvider = delegate () { return 8000000; };
+            MockLlm llm = new MockLlm();
+            string tc = "[{\"id\":\"s3\",\"function\":{\"name\":\"sleep\",\"arguments\":\"{\\\"seconds\\\":60}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            CH4.ChatSession session = CreateSession(llm, new ToolSpec[]
+            {
+                new ToolSpec("Note", "Note 任务追踪", "{}"),
+                new ToolSpec("sleep", "定时唤醒", "{}")
+            });
+            session.SetCatKey("test-session");
+            session.PostUserMessage("一分钟后叫我");
+            PumpUntilIdle(session);
+            Assert.Single(CH4.DelayQueue.List("test-session"));
+            // 新输入启动主干 → sleep 作废 + systemauto 告知（在触发消息之前）
+            session.PostUserMessage("回来了");
+            PumpUntilIdle(session);
+            Assert.Empty(CH4.DelayQueue.List("test-session"));
+            LlmMessage[] all = session.Context.GetMessages();
+            int noticeIndex = -1;
+            int triggerIndex = -1;
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (all[i].Role == LlmRole.User && all[i].Content != null && all[i].Content.Contains("sleep 作废"))
+                {
+                    noticeIndex = i;
+                }
+                if (all[i].Role == LlmRole.User && all[i].Content == "回来了")
+                {
+                    triggerIndex = i;
+                }
+            }
+            Assert.True(noticeIndex >= 0);
+            Assert.True(triggerIndex > noticeIndex);
+            CH4.DelayQueue.ResetForTest();
+        }
+
+        /// <summary>
+        /// roundsum done 语义——含 sleep 登记的轮为 tool（工具主动 done），纯文本轮为 stream。
+        /// </summary>
+        [Fact]
+        public void RoundSum_CarriesDoneKind()
+        {
+            CH4.DelayQueue.ResetForTest();
+            CH4.DelayQueue.NowProvider = delegate () { return 9500000; };
+            MockLlm llm = new MockLlm();
+            string tc = "[{\"id\":\"s4\",\"function\":{\"name\":\"sleep\",\"arguments\":\"{\\\"seconds\\\":30}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            CH4.ChatSession session = CreateSession(llm, new ToolSpec[]
+            {
+                new ToolSpec("Note", "Note 任务追踪", "{}"),
+                new ToolSpec("sleep", "定时唤醒", "{}")
+            });
+            session.SetCatKey("test-session");
+            session.PostUserMessage("半分钟后叫我");
+            PumpUntilIdle(session);
+            Assert.Contains("\"done\":\"tool\"", LastRoundSumPayload(session));
+            // 第二轮（纯文本）——自然收尾
+            session.PostUserMessage("普通一轮");
+            PumpUntilIdle(session);
+            Assert.Contains("\"done\":\"stream\"", LastRoundSumPayload(session));
+            CH4.DelayQueue.ResetForTest();
+        }
+
+        /// <summary>取最近一个 roundsum 块载荷——done 语义断言用</summary>
+        /// <param name="session">会话</param>
+        /// <returns>载荷 JSON（无块=空串）</returns>
+        private static string LastRoundSumPayload(CH4.ChatSession session)
+        {
+            CH4.ViewBlock[] blocks = session.GetViewBlocks();
+            for (int i = blocks.Length - 1; i >= 0; i = i - 1)
+            {
+                if (blocks[i].RenderType == "roundsum")
+                {
+                    return blocks[i].Payload;
+                }
+            }
+            return "";
         }
 
         /// <summary>

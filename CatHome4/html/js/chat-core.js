@@ -197,6 +197,8 @@ function chatOnUser(payload) {
     if (isSystem) { prefix = SYSTEM_AUTO_PREFIX; }
     else if (source === 'delay') { prefix = '⏰ 定时 · '; }
     else if (source === 'sleep') { prefix = '💤 唤醒 · '; }
+    else if (source === 'timer') { prefix = '⏳ 定时注入 · '; }
+    else if (source === 'systemauto') { prefix = '⚙️ 系统 · '; }
     else if (source === 'restart') { prefix = '🔄 回执 · '; }
     var display = prefix + content;
     var bubble = chatBubble('user');

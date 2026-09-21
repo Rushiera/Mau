@@ -69,9 +69,21 @@ test('到点时刻文本——今天为 HH:mm:ss', () => {
 });
 
 // ── 来源标记 ──
-test('来源标记——delay/sleep/restart 三态', () => {
+test('来源标记——delay/sleep/restart/timer 四态', () => {
   expect(delaySrcMark('delay')).toBe('⏰');
   expect(delaySrcMark('sleep')).toBe('💤');
   expect(delaySrcMark('restart')).toBe('🔄');
+  expect(delaySrcMark('timer')).toBe('⏳');
   expect(delaySrcMark('')).toBe('⏰');
+});
+
+// ── 行首文本——循环与已响标记 ──
+test('行首文本——循环/已响标记组合', () => {
+  const d = new Date();
+  d.setHours(23, 5, 7, 0);
+  const base = { source: 'timer', dueAt: d.getTime(), loop: false, fired: 0 };
+  expect(delayWhenText(base)).toBe('⏳ 23:05:07');
+  expect(delayWhenText({ source: 'timer', dueAt: d.getTime(), loop: true, fired: 0 })).toBe('⏳ 23:05:07 🔁');
+  expect(delayWhenText({ source: 'timer', dueAt: d.getTime(), loop: true, fired: 3 })).toBe('⏳ 23:05:07 🔁 已响 3');
+  expect(delayWhenText({ source: 'delay', dueAt: d.getTime(), loop: false, fired: 2 })).toBe('⏰ 23:05:07 已响 2');
 });
