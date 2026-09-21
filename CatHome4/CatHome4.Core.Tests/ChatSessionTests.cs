@@ -14,6 +14,7 @@ namespace CatHome4.Core.Tests
     /// ChatSession 核心测试——相位环/工具批/Note 全链（S7 程序集拆分验收）。
     /// 覆盖：纯 LLM 回复相位环闭环 / 内置工具（Note）工具批路径 / Note 手动添加与启动 / 工具批无限续轮（2026-09-09 删收敛上限）。
     /// </summary>
+    [Collection("GlobalToolState")]
     public class ChatSessionTests
     {
         /// <summary>

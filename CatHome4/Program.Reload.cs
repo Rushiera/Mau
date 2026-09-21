@@ -178,16 +178,17 @@ namespace CH4
             // 工具定义热同步——新版本 GetToolsJson 可能已变（改 tools.<组> 积木描述 → reload 生效；design-ch4-tools-pool §七）
             if (name != "QuickCat")
             {
-                ToolPool.Clear();
+                List<IFlow> poolFlows = new List<IFlow>();
                 foreach (KeyValuePair<string, FlowHandle> kv in _toolFlowHandles)
                 {
-                    ToolPool.AddFromFlow(kv.Value.Flow);
+                    poolFlows.Add(kv.Value.Flow);
                 }
+                IFlow quickFlow = null;
                 if (_quickHandle != null)
                 {
-                    ToolPool.AddFromFlow(_quickHandle.Flow);
+                    quickFlow = _quickHandle.Flow;
                 }
-                ToolPool.AddFromBuiltin(BuildBuiltinToolsJson());
+                ToolPool.RebuildAll(poolFlows, quickFlow, BuildBuiltinToolsJson());
                 ToolRegistry.Init(ToolPool.BuildSpecs(), ToolPool.BuildOwnerFlowMap(), ToolPool.BuildPrivilegedMap());
             }
             for (int i = 0; i < WarmupFrames; i++)

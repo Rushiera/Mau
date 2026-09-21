@@ -13,6 +13,7 @@ namespace CatHome4.Core.Tests
     /// 特权面（majordomo-*）可见性测试——默认会话保留 / 非默认会话剔除（design-ch4-host-restart §二）。
     /// 回归判据：特权面授权基准 = 猫 key 或显示名，不取运行时会话 ID（时间戳）。
     /// </summary>
+    [Collection("GlobalToolState")]
     public class ChatSessionPrivilegedToolTests
     {
         /// <summary>

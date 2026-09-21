@@ -40,13 +40,13 @@ namespace CH4
         /// <summary>QuickCat Flow 句柄——热重载面</summary>
         private static FlowHandle _quickHandle;
 
-        /// <summary>工具组 Flow 句柄表——按 Flow 名索引（R0.2：TextCat/MauCat/CsCat/ConfigCat 独立 Flow——独立热重载/独立退役）</summary>
+        /// <summary>工具组 Flow 句柄表——按 Flow 名索引（R0.2：TextCat/MauCat/CsCat/ConfigCat 独立 Flow——独立热重载/独立退役）。🔴 线程契约：主线程独占（写 = Bootstrap/reload；读 = 观测打印 + 主循环 Idle 判定）——无跨线程访问，故不加锁；新增写点必须遵守本契约</summary>
         private static readonly Dictionary<string, FlowHandle> _toolFlowHandles = new Dictionary<string, FlowHandle>();
 
         /// <summary>注册 ID——观测与回收用</summary>
         private static long _quickId;
 
-        /// <summary>工具组 Flow 注册 ID 表——按 Flow 名索引（观测与回收用）</summary>
+        /// <summary>工具组 Flow 注册 ID 表——按 Flow 名索引（观测与回收用）。🔴 线程契约：主线程独占（与 _toolFlowHandles 同源同寿命）——无跨线程访问</summary>
         private static readonly Dictionary<string, long> _toolFlowIds = new Dictionary<string, long>();
 
         /// <summary>命令总线——Command 投递器直接引用（SetText 面）</summary>
@@ -302,7 +302,8 @@ namespace CH4
             // 扫描化：文件名去 FL_ 前缀得 Flow 名（dll 名 = 组名——QuickCat 与工具组一视同仁）
             // 容错：加载失败 → 警告 + 跳过注册（该组工具工单无人认领 → 超时诚实 ERR——不再宿主直执）
             // 路由表数据化 + 工具定义数据化：加载后经 IFlow.GetMetaJson/GetToolsJson 读自曝 → 统一工具池（design-ch4-tools-pool §六）
-            ToolPool.Clear();
+            List<IFlow> poolFlows = new List<IFlow>();
+            IFlow quickFlow = null;
             string[] flowDlls = Directory.GetFiles(dllDir, "FL_*.dll");
             Array.Sort(flowDlls, StringComparer.OrdinalIgnoreCase);
             for (int f = 0; f < flowDlls.Length; f = f + 1)
@@ -321,19 +322,19 @@ namespace CH4
                     // QuickCat 特殊字段——ObserveService/Reload/Run 引用（独立于工具组句柄表）
                     _quickHandle = FlowHandle.Load(flowDlls[f]);
                     _quickId = _runner.RegisterFlow(_quickHandle.Flow, "QuickCat");
-                    ToolPool.AddFromFlow(_quickHandle.Flow);
+                    quickFlow = _quickHandle.Flow;
                 }
                 else
                 {
                     FlowHandle handle = LoadToolGroup(flowName, dllDir);
                     if (handle != null)
                     {
-                        ToolPool.AddFromFlow(handle.Flow);
+                        poolFlows.Add(handle.Flow);
                     }
                 }
             }
             // 内置工具定义源——宿主内建小表（本质也是 BRIK，只是内置：Note/time/random/info/host-*）
-            ToolPool.AddFromBuiltin(BuildBuiltinToolsJson());
+            ToolPool.RebuildAll(poolFlows, quickFlow, BuildBuiltinToolsJson());
             // [段5] 会话面——上下文 + 前文恢复 + 工具定义 + 默认会话注册（P9.1 会话对象化：ChatSession 承载状态机——design-llm-streaming §六）
             ChatContext chatCtx = new ChatContext();
             // S1 ChatBridge 化——会话协调实例（注入提示词构建委托——CatCfg 域静态面 BuildInjectPrompt）

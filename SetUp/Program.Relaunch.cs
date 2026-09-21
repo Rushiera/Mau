@@ -29,11 +29,12 @@ namespace SetUp
         private static readonly List<ArtifactReport> _extraArtifacts = new List<ArtifactReport>();
 
         /// <summary>
-        /// relaunch 模式入口——参数解析（零容忍）→ 等旧宿主退出 → prepare（失败继续）→ deploy 原子切换 → 自启新宿主 → 失败回退旧版本。
+        /// relaunch 模式入口——参数解析（零容忍）→ 等旧宿主退出 → prepare → **仅通过才 deploy 原子切换**（未通过 = 不动运行区）→ 自启 → 已替换但新版本起不来才回退旧版本。
+        /// 失败面：验证不过 → 运行区保持现状（服务照旧、版本未变，无需回退）；已替换但新版本起不来 → 以 _old 回退。
         /// </summary>
         /// <param name="repoRoot">仓库根（Main 已探测）</param>
         /// <param name="args">命令行参数（--wait-pid / --target / --majordomopush / --report）</param>
-        /// <returns>退出码（0=部署与自启均成功；非0=有失败段——以报告为准）</returns>
+        /// <returns>退出码（0=替换与自启均成功；2=已回退旧版本；3=未替换、以现有版本运行；1=需人工介入）</returns>
         private static int Relaunch(string repoRoot, string[] args)
         {
             Console.WriteLine("[SetUp] relaunch —— 宿主自更新接力");
@@ -60,7 +61,7 @@ namespace SetUp
                 return Fail("旧宿主未在 " + RelaunchWaitPidMs.ToString() + " ms 内退出——中止，不触碰运行区。");
             }
 
-            // [段2] prepare 全链——失败继续（定位：小改动自测；失败步随注入串回执给 Majordomo）
+            // [段2] prepare 全链——失败即不替换运行区（验证不过 = 不动运行区）；失败步随注入串回执给 Majordomo
             long prepMs = Environment.TickCount64;
             bool prepOk = Prepare(repoRoot) == 0;
             if (!prepOk)
@@ -69,14 +70,23 @@ namespace SetUp
             }
             _steps.Add(new StepReport() { Step = 12, Name = "prepare 全链（步明细见 1-6）", Ok = prepOk, Ms = Environment.TickCount64 - prepMs });
 
-            // [段3] deploy 原子切换——失败不中止，交由启动段决定是否回退
+            // [段3] deploy 原子切换——仅 prepare 通过才替换运行区（验证不过 = 不动运行区：服务照旧、版本未变，无需 _old 回退）
             long depMs = Environment.TickCount64;
-            bool depOk = Deploy(repoRoot, target) == 0;
-            if (!depOk)
+            bool depOk = false;
+            if (prepOk)
             {
-                Console.WriteLine("[SetUp] 警告：deploy 未通过——尝试以现有运行区启动（步明细见 deploy 段）。");
+                depOk = Deploy(repoRoot, target) == 0;
+                if (!depOk)
+                {
+                    Console.WriteLine("[SetUp] 警告：deploy 未通过——尝试以现有运行区启动（步明细见 deploy 段）。");
+                }
+                _steps.Add(new StepReport() { Step = 13, Name = "deploy 原子切换（步明细见 1-3）", Ok = depOk, Ms = Environment.TickCount64 - depMs });
             }
-            _steps.Add(new StepReport() { Step = 13, Name = "deploy 原子切换（步明细见 1-3）", Ok = depOk, Ms = Environment.TickCount64 - depMs });
+            else
+            {
+                Console.WriteLine("[SetUp] 警告：prepare 未通过——跳过 deploy，运行区保持现状（未替换）。");
+                _steps.Add(new StepReport() { Step = 13, Name = "deploy 跳过（prepare 未通过——运行区未替换）", Ok = true, Ms = Environment.TickCount64 - depMs });
+            }
 
             // [段4] 拼回执注入串——由 SetUp 生成（非 LLM 自述），带部署结论与产物时间戳
             string targetFull = Path.GetFullPath(target);
@@ -89,9 +99,9 @@ namespace SetUp
             bool bootOk = StartHost(targetFull, push);
             _steps.Add(new StepReport() { Step = 14, Name = "自启新宿主（含探活 " + RelaunchProbeMs.ToString() + " ms）", Ok = bootOk, Ms = Environment.TickCount64 - bootMs });
 
-            // [段6] 回退——新版本起不来则以旧版本目录启动（"最坏 = 原地重启"的兑现路径）
+            // [段6] 回退——仅在本次已替换（deploy 成功）且新版本起不来时，_old 才是有效回退源（"最坏 = 原地重启"的兑现路径）
             bool fallbackOk = false;
-            if (!bootOk)
+            if (!bootOk && depOk)
             {
                 Console.WriteLine("[SetUp] 警告：新版本启动失败——回退旧版本目录。");
                 string fallbackPush = "[宿主自更新] 新版本启动失败——已回退旧版本。"
@@ -103,10 +113,16 @@ namespace SetUp
 
             // [段7] 运行区产物快照——报告附加项（版本自证）
             CollectTargetArtifacts(targetFull);
-            if (bootOk)
+            if (bootOk && depOk)
             {
                 Console.WriteLine("[SetUp] relaunch 完成——新宿主已接管运行区。");
                 return 0;
+            }
+            if (bootOk && !depOk)
+            {
+                // 未替换（prepare 未通过 / deploy 未通过）但服务已恢复——版本未变，失败面由返回码与报告承载
+                Console.WriteLine("[SetUp] relaunch 完成——运行区未替换，以现有版本继续运行。");
+                return 3;
             }
             if (fallbackOk)
             {
@@ -236,7 +252,7 @@ namespace SetUp
             sb.Append(Environment.NewLine);
             sb.Append("部署: prepare " + (prepOk ? "OK" : "FAIL") + " · deploy " + (depOk ? "OK" : "FAIL"));
             sb.Append(Environment.NewLine);
-            sb.Append("自启: 新版本");
+            sb.Append("自启: " + (prepOk && depOk ? "新版本" : "现有版本（运行区未替换）"));
             sb.Append(Environment.NewLine);
             sb.Append("产物: CatHome4.exe " + exeTs);
             sb.Append(Environment.NewLine);

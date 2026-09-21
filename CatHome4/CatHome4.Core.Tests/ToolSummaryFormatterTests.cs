@@ -366,5 +366,26 @@ namespace CatHome4.Core.Tests
             string s = ToolSummaryFormatter.Build("info", "{}", "CH4 | 环境信息不可用");
             Assert.Equal("环境信息 → \"CH4 | 环境信息不可用\"", s);
         }
+        /// <summary>
+        /// 元数据头剥离——首行单行 JSON 头 + 正文：头被剥离，正文进入摘要。
+        /// </summary>
+        [Fact]
+        public void MetaHead_SingleLineHeader_Stripped()
+        {
+            string result = "{\"ok\":true,\"tool\":\"text-read\"}\nCH4 | 正文首行\n第二行";
+            string s = ToolSummaryFormatter.Build("text-read", "{\"path\":\"a.md\"}", result);
+            Assert.Contains("CH4 | 正文首行", s);
+            Assert.DoesNotContain("tool", s);
+        }
+        /// <summary>
+        /// 元数据头剥离——多行 JSON 正文（首行仅 "{"）不是头：正文整体保留，不剥不告警（A75 回归）。
+        /// </summary>
+        [Fact]
+        public void MetaHead_MultiLineJsonBody_NotStripped()
+        {
+            string result = "{\n  \"ok\": true\n}";
+            string s = ToolSummaryFormatter.Build("text-read", "{\"path\":\"a.md\"}", result);
+            Assert.Contains("{（3行", s);
+        }
     }
 }

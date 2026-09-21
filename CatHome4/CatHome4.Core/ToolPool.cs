@@ -33,20 +33,29 @@ namespace CH4
     /// </summary>
     public static class ToolPool
     {
-        /// <summary>池条目——按名索引（重名覆盖：后注册优先）</summary>
-        private static readonly Dictionary<string, ToolDef> _byName = new Dictionary<string, ToolDef>(StringComparer.Ordinal);
+        /// <summary>
+        /// 池快照——三索引一次成型（写侧局部构建 → 整体换引用；读侧取局部引用即稳定视图，无半更新可见）。
+        /// </summary>
+        private sealed class PoolState
+        {
+            /// <summary>池条目——按名索引（重名覆盖：后注册优先）</summary>
+            public Dictionary<string, ToolDef> ByName = new Dictionary<string, ToolDef>(StringComparer.Ordinal);
 
-        /// <summary>池条目——插入序（All/BuildSpecs 确定性：注册序 = 扫描添加序）</summary>
-        private static readonly List<ToolDef> _order = new List<ToolDef>();
+            /// <summary>池条目——插入序（All/BuildSpecs 确定性：注册序 = 扫描添加序）</summary>
+            public List<ToolDef> Order = new List<ToolDef>();
 
-        /// <summary>池条目——按组索引（配置界面组别/名称自动生成）</summary>
-        private static readonly Dictionary<string, List<ToolDef>> _byGroup = new Dictionary<string, List<ToolDef>>(StringComparer.Ordinal);
+            /// <summary>池条目——按组索引（配置界面组别/名称自动生成）</summary>
+            public Dictionary<string, List<ToolDef>> ByGroup = new Dictionary<string, List<ToolDef>>(StringComparer.Ordinal);
+        }
+
+        /// <summary>当前池快照——唯一可变引用，写侧整体替换（RebuildAll）；读侧先取局部引用再遍历</summary>
+        private static PoolState _state = new PoolState();
 
         /// <summary>
         /// 解析工具定义 JSON——{"group":"X","tools":[{name,description,parameters}]}（与 BRIK GetToolsJson 返回值同构）。
         /// </summary>
         /// <param name="json">工具定义 JSON 文本</param>
-        private static void AddFromJson(string json)
+        private static void AddFromJson(PoolState target, string json)
         {
             if (json == null || json.Length == 0)
             {
@@ -104,7 +113,7 @@ namespace CH4
                         {
                             continue;
                         }
-                        Add(def);
+                        AddTo(target, def);
                     }
                 }
             }
@@ -118,26 +127,26 @@ namespace CH4
         /// 添加单条目——重名覆盖 + 组索引同步。
         /// </summary>
         /// <param name="def">工具定义</param>
-        public static void Add(ToolDef def)
+        private static void AddTo(PoolState target, ToolDef def)
         {
             if (def == null || def.Name.Length == 0)
             {
                 return;
             }
             // 重名覆盖——保持原插入序（确定性：注册序不因覆盖漂移）；内容跟随最新注册
-            bool isNew = !_byName.ContainsKey(def.Name);
-            _byName[def.Name] = def;
+            bool isNew = !target.ByName.ContainsKey(def.Name);
+            target.ByName[def.Name] = def;
             if (isNew)
             {
-                _order.Add(def);
+                target.Order.Add(def);
             }
             else
             {
-                for (int i = 0; i < _order.Count; i = i + 1)
+                for (int i = 0; i < target.Order.Count; i = i + 1)
                 {
-                    if (_order[i].Name == def.Name)
+                    if (target.Order[i].Name == def.Name)
                     {
-                        _order[i] = def;
+                        target.Order[i] = def;
                         break;
                     }
                 }
@@ -148,10 +157,10 @@ namespace CH4
                 group = def.Group;
             }
             List<ToolDef> list;
-            if (!_byGroup.TryGetValue(group, out list))
+            if (!target.ByGroup.TryGetValue(group, out list))
             {
                 list = new List<ToolDef>();
-                _byGroup[group] = list;
+                target.ByGroup[group] = list;
             }
             int exists = -1;
             for (int i = 0; i < list.Count; i = i + 1)
@@ -173,41 +182,17 @@ namespace CH4
         }
 
         /// <summary>
-        /// 从 Flow 自曝工具定义加入池——IFlow.GetToolsJson()（工具组 Flow 调用面）。
-        /// </summary>
-        /// <param name="flow">已加载 Flow</param>
-        public static void AddFromFlow(IFlow flow)
-        {
-            try
-            {
-                AddFromJson(flow.GetToolsJson());
-            }
-            catch (Exception)
-            {
-                // Flow 自曝失败——跳过（该组工具定义缺失）
-            }
-        }
-
-        /// <summary>
-        /// 从内置定义源加入池——宿主内建小表（本质也是 BRIK，只是内置：Note/time/random/info/host-*）。
-        /// </summary>
-        /// <param name="builtinJson">内置工具定义 JSON（同 GetToolsJson 格式）</param>
-        public static void AddFromBuiltin(string builtinJson)
-        {
-            AddFromJson(builtinJson);
-        }
-
-        /// <summary>
         /// 全量工具定义——声明面/白名单比对基准（注册序 = 添加序）。
         /// </summary>
         /// <returns>工具定义数组</returns>
         public static ToolDef[] All()
         {
-            // 注册序兑现——按插入序返回（_order 唯一序真源，不依赖 Dictionary 枚举序）
-            ToolDef[] result = new ToolDef[_order.Count];
-            for (int i = 0; i < _order.Count; i = i + 1)
+            // 读侧局部快照——写侧换引用不影响本次读取；注册序兑现（按插入序返回，不依赖 Dictionary 枚举序）
+            PoolState snapshot = _state;
+            ToolDef[] result = new ToolDef[snapshot.Order.Count];
+            for (int i = 0; i < snapshot.Order.Count; i = i + 1)
             {
-                result[i] = _order[i];
+                result[i] = snapshot.Order[i];
             }
             return result;
         }
@@ -234,9 +219,11 @@ namespace CH4
         /// <returns>组内工具定义数组（不存在空组 = 空数组）</returns>
         public static ToolDef[] ByGroup(string group)
         {
+            // 读侧局部快照——写侧换引用不影响本次读取
+            PoolState snapshot = _state;
             string key = group ?? "";
             List<ToolDef> list;
-            if (_byGroup.TryGetValue(key, out list))
+            if (snapshot.ByGroup.TryGetValue(key, out list))
             {
                 return list.ToArray();
             }
@@ -249,14 +236,15 @@ namespace CH4
         /// <returns>组名数组</returns>
         public static string[] AllGroups()
         {
-            // 首次出现序兑现——按注册序摄取组名（_order 派生，不依赖 Dictionary 枚举序）
+            // 读侧局部快照——写侧换引用不影响本次读取；首次出现序兑现（按注册序摄取组名）
+            PoolState snapshot = _state;
             List<string> groups = new List<string>();
-            for (int i = 0; i < _order.Count; i = i + 1)
+            for (int i = 0; i < snapshot.Order.Count; i = i + 1)
             {
                 string key = "";
-                if (_order[i].Group.Length > 0)
+                if (snapshot.Order[i].Group.Length > 0)
                 {
-                    key = _order[i].Group;
+                    key = snapshot.Order[i].Group;
                 }
                 if (!groups.Contains(key))
                 {
@@ -287,8 +275,10 @@ namespace CH4
         /// <returns>工具名 → 组名映射</returns>
         public static Dictionary<string, string> BuildOwnerFlowMap()
         {
+            // 读侧局部快照——写侧换引用不影响本次读取
+            PoolState snapshot = _state;
             Dictionary<string, string> map = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (KeyValuePair<string, ToolDef> kv in _byName)
+            foreach (KeyValuePair<string, ToolDef> kv in snapshot.ByName)
             {
                 map[kv.Key] = kv.Value.Group;
             }
@@ -300,22 +290,56 @@ namespace CH4
         /// <returns>工具名 → 特权标记映射</returns>
         public static Dictionary<string, bool> BuildPrivilegedMap()
         {
+            // 读侧局部快照——写侧换引用不影响本次读取
+            PoolState snapshot = _state;
             Dictionary<string, bool> map = new Dictionary<string, bool>(StringComparer.Ordinal);
-            foreach (KeyValuePair<string, ToolDef> kv in _byName)
+            foreach (KeyValuePair<string, ToolDef> kv in snapshot.ByName)
             {
                 map[kv.Key] = kv.Value.Privileged;
             }
             return map;
         }
-
         /// <summary>
-        /// 清空工具池——重载/重启重建面。
+        /// 从 Flow 自曝工具定义加入目标快照——IFlow.GetToolsJson()（工具组 Flow 调用面；自曝失败跳过该组）。
         /// </summary>
-        public static void Clear()
+        /// <param name="target">目标快照（构建期局部对象）</param>
+        /// <param name="flow">已加载 Flow</param>
+        private static void AddFromFlowTo(PoolState target, IFlow flow)
         {
-            _byName.Clear();
-            _byGroup.Clear();
-            _order.Clear();
+            try
+            {
+                AddFromJson(target, flow.GetToolsJson());
+            }
+            catch (Exception)
+            {
+                // Flow 自曝失败——跳过（该组工具定义缺失）
+            }
+        }
+        /// <summary>
+        /// 全量重建工具池——唯一写入口（Bootstrap / 热重载同源）：局部构建新快照 → 原子换引用。
+        /// 读者要么看到全旧、要么看到全新（无半更新窗口）；不在新表的工具随旧快照淘汰（无陈旧残留）。
+        /// </summary>
+        /// <param name="toolFlows">工具组 Flow 列表（GetToolsJson 自曝源）</param>
+        /// <param name="quickFlow">QuickCat Flow（组级工单消费者——空组声明；null=未加载）</param>
+        /// <param name="builtinJson">内置工具定义 JSON（Note/time/random/info/host-* 等）</param>
+        public static void RebuildAll(List<IFlow> toolFlows, IFlow quickFlow, string builtinJson)
+        {
+            // [段1] 局部构建新快照——旧快照只读，读者不受构建期影响
+            PoolState next = new PoolState();
+            if (toolFlows != null)
+            {
+                for (int i = 0; i < toolFlows.Count; i = i + 1)
+                {
+                    AddFromFlowTo(next, toolFlows[i]);
+                }
+            }
+            if (quickFlow != null)
+            {
+                AddFromFlowTo(next, quickFlow);
+            }
+            AddFromJson(next, builtinJson);
+            // [段2] 原子换引用——读者要么全旧要么全新；被删工具随旧快照淘汰
+            _state = next;
         }
     }
 }

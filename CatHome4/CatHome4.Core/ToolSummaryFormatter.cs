@@ -44,10 +44,7 @@ namespace CH4
         // 参数解析
         // ═══════════════════════════════════════════
 
-        /// <summary>
-        /// 结构化返回头剥离——首行 JSON 含 tool 字段 → 返回正文；无头 / 非结构化结果原样返回。
-        /// 约定：工具返回体 = 首行 JSON 元数据头 + 正文定界行（design-ch4-tools 附录）。
-        /// </summary>
+        /// <summary>结构化返回头剥离——首行单行 JSON 对象且含 tool 字段 → 返回正文；首行非完整单行 JSON（正文自身以 { 开头的正常形态，如 info 整块缩进 JSON）或无头 → 原样返回（不告警）。约定：工具返回体 = 首行单行 JSON 元数据头 + 正文（design-ch4-tools 附录）。</summary>
         /// <param name="text">工具结果原文</param>
         /// <returns>正文（无头时 = 原文）</returns>
         private static string StripMetaHead(string text)
@@ -58,9 +55,16 @@ namespace CH4
             }
             int nl = text.IndexOf('\n');
             string first = (nl < 0) ? text : text.Substring(0, nl);
+            // 头约定为单行完整 JSON 对象（design-ch4-tools 附录）——首行未以 } 收尾即非头
+            // （info 整块缩进 JSON 等正文自身以 { 开头的正常形态），静默按原文返回，不作告警
+            string head = first.TrimEnd('\r');
+            if (head.Length < 2 || head[head.Length - 1] != '}')
+            {
+                return text;
+            }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(first))
+                using (JsonDocument doc = JsonDocument.Parse(head))
                 {
                     JsonElement toolEl;
                     if (doc.RootElement.ValueKind != JsonValueKind.Object ||

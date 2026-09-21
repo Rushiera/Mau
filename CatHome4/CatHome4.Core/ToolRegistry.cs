@@ -27,28 +27,28 @@ namespace CH4
         public bool Privileged;
     }
 
-    /// <summary>
-    /// 运行时工具注册表——工具名 → 条目（CH4 基座单一真相源；内置 + OA 双轨）。
+    /// <summary>运行时工具注册表——工具名 → 条目（CH4 基座单一真相源；内置 + OA 双轨）。
     /// 消费面：BuildSpecs/GetAllNames 派生（声明表唯一来源）→ M2c 名单/裁剪/注入六处跟随。
-    /// 初始数据源：Program.BuildToolSpecs 静态表（Init 时灌入）；动态登记接口 Register/Unregister 预留——自举新工具组（R3）接入点。
+    /// 初始数据源：Program.BuildToolSpecs 静态表（Init 时灌入）；动态登记接口 Register/Unregister 预留——自举新工具组（R3）接入点（当前无生产调用点，Init 为唯一真实写入口）。
     /// 分层铁律：内置（无需 OA——会话内直执）vs OA 工具（按工具组独立 Flow 认领）——双轨并存不走同一执行面。
-    /// </summary>
+    /// 🔴 并发契约：写侧整表替换（局部构建 → 原子换引用；Register/Unregister 写时复制）——读侧先取局部快照再遍历，无锁并发安全；Init 全量重建，被删工具随旧表淘汰（无陈旧残留）。</summary>
     public static class ToolRegistry
     {
-        /// <summary>注册表字典——工具名 → 条目（主线程初始化/查询；动态登记 R3 前仅在 Bootstrap）</summary>
-        private static readonly Dictionary<string, ToolRegistryEntry> _entries = new Dictionary<string, ToolRegistryEntry>();
+        /// <summary>注册表字典——工具名 → 条目（写侧整表替换：局部构建 → 原子换引用；读侧先取局部快照再遍历——无锁并发安全，无陈旧残留）</summary>
+        private static Dictionary<string, ToolRegistryEntry> _entries = new Dictionary<string, ToolRegistryEntry>(StringComparer.Ordinal);
 
-        /// <summary>
-        /// 注册表初始化——静态表灌入（R0.2：声明单一真相源 = 注册表；静态表仅作初始数据）
+        /// <summary>注册表初始化——静态表灌入（R0.2：声明单一真相源 = 注册表；静态表仅作初始数据）。
         /// OwnerFlow 优先从 Flow 自曝元数据映射（design-ch4-flow-scan §3.3——宿主扫描 dll 后传入）；
         /// 映射缺失回退前缀映射 OwnerFlowFor；Note/host-* 标记内置（不走 OA）；
-        /// 特权标记从组级声明映射灌入（工具定义 JSON 根级 privileged——ToolPool.BuildPrivilegedMap）
-        /// </summary>
+        /// 特权标记从组级声明映射灌入（工具定义 JSON 根级 privileged——ToolPool.BuildPrivilegedMap）。
+        /// 🔴 写侧：局部构建新表 → 原子换引用——并发初始化 / 热重载各建各的互不干扰；被删工具随旧表淘汰（无陈旧残留）。</summary>
         /// <param name="specs">初始工具声明表（Program.BuildToolSpecs 产物）</param>
         /// <param name="ownerFlowMap">工具名 → 归属 Flow 名映射（null=回退前缀映射）</param>
         /// <param name="privilegedMap">工具名 → 特权标记映射（null=无特权项；显式传参——漏传即编译期报错，不静默失权）</param>
         public static void Init(ToolSpec[] specs, Dictionary<string, string> ownerFlowMap, Dictionary<string, bool> privilegedMap)
         {
+            // [段1] 局部构建新表——并发初始化 / 热重载各建各的，互不干扰（旧表只读）
+            Dictionary<string, ToolRegistryEntry> next = new Dictionary<string, ToolRegistryEntry>(StringComparer.Ordinal);
             for (int i = 0; i < specs.Length; i = i + 1)
             {
                 ToolSpec s = specs[i];
@@ -67,8 +67,30 @@ namespace CH4
                 {
                     // 特权标记数据化——组级声明派生（工具定义 JSON 根级 privileged）
                 }
-                Register(s.Name, s, ownerFlow, builtin, privileged);
+                next[s.Name] = BuildEntry(s.Name, s, ownerFlow, builtin, privileged);
             }
+            // [段2] 原子换引用——读者要么全旧要么全新；不在新表里的工具随旧表淘汰（无陈旧残留）
+            _entries = next;
+        }
+        /// <summary>
+        /// 构建注册条目——写侧共用出口（Init 局部构建 / Register 写时复制同源；Enabled 恒 true）。
+        /// </summary>
+        /// <param name="name">工具名</param>
+        /// <param name="spec">工具声明</param>
+        /// <param name="ownerFlow">归属 Flow 名（内置 = ""）</param>
+        /// <param name="isBuiltin">是否内置</param>
+        /// <param name="privileged">是否特权</param>
+        /// <returns>注册表条目</returns>
+        private static ToolRegistryEntry BuildEntry(string name, ToolSpec spec, string ownerFlow, bool isBuiltin, bool privileged)
+        {
+            ToolRegistryEntry entry = new ToolRegistryEntry();
+            entry.Name = name;
+            entry.Spec = spec;
+            entry.OwnerFlow = ownerFlow;
+            entry.IsBuiltin = isBuiltin;
+            entry.Privileged = privileged;
+            entry.Enabled = true;
+            return entry;
         }
 
         /// <summary>
@@ -81,14 +103,10 @@ namespace CH4
         /// <param name="privileged">是否特权（仅主干会话可见可调——组级声明派生）</param>
         public static void Register(string name, ToolSpec spec, string ownerFlow, bool isBuiltin, bool privileged)
         {
-            ToolRegistryEntry entry = new ToolRegistryEntry();
-            entry.Name = name;
-            entry.Spec = spec;
-            entry.OwnerFlow = ownerFlow;
-            entry.IsBuiltin = isBuiltin;
-            entry.Privileged = privileged;
-            entry.Enabled = true;
-            _entries[name] = entry;
+            // 写时复制——复制当前表后替换引用（读者持旧快照不受影响；R3 低频登记面，复制代价可接受）
+            Dictionary<string, ToolRegistryEntry> next = new Dictionary<string, ToolRegistryEntry>(_entries, StringComparer.Ordinal);
+            next[name] = BuildEntry(name, spec, ownerFlow, isBuiltin, privileged);
+            _entries = next;
         }
 
         /// <summary>
@@ -97,7 +115,10 @@ namespace CH4
         /// <param name="name">工具名</param>
         public static void Unregister(string name)
         {
-            _entries.Remove(name);
+            // 写时复制——同上（读者持旧快照不受影响）；不存在静默
+            Dictionary<string, ToolRegistryEntry> next = new Dictionary<string, ToolRegistryEntry>(_entries, StringComparer.Ordinal);
+            next.Remove(name);
+            _entries = next;
         }
 
         /// <summary>
@@ -107,8 +128,10 @@ namespace CH4
         /// <returns>条目（不存在 = null）</returns>
         public static ToolRegistryEntry Find(string name)
         {
+            // 读侧局部快照——遍历期间写侧换引用不影响本次读取
+            Dictionary<string, ToolRegistryEntry> snapshot = _entries;
             ToolRegistryEntry entry;
-            if (_entries.TryGetValue(name, out entry))
+            if (snapshot.TryGetValue(name, out entry))
             {
                 return entry;
             }
@@ -121,8 +144,10 @@ namespace CH4
         /// <returns>启用工具声明数组</returns>
         public static ToolSpec[] BuildSpecs()
         {
+            // 读侧局部快照——写侧换引用不影响本次遍历（并发读安全）
+            Dictionary<string, ToolRegistryEntry> snapshot = _entries;
             List<ToolSpec> list = new List<ToolSpec>();
-            foreach (KeyValuePair<string, ToolRegistryEntry> kv in _entries)
+            foreach (KeyValuePair<string, ToolRegistryEntry> kv in snapshot)
             {
                 if (kv.Value.Enabled)
                 {
