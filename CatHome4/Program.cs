@@ -116,7 +116,7 @@ namespace CH4
             try
             {
                 // [段1a] 参数面校验——零容忍（未知参数/缺值/互斥）；--majordomopush 仅常驻交互模式（design-ch4-host-restart §五）
-                string argErr = ValidateHostArgs(args);
+                string argErr = ValidateHostArgs(args, out bool nonInteractive);
                 if (argErr.Length > 0)
                 {
                     Console.WriteLine("[CMD] " + argErr);
@@ -132,20 +132,13 @@ namespace CH4
                 string dllDir = FindDllDir(args);
                 try
                 {
-                    Bootstrap(dllDir);
+                    Bootstrap(dllDir, nonInteractive);
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine("[CMD] 启动失败: " + ex.Message);
-                    // 脚本模式无人值守不暂停；交互模式暂停——错误可见（双击 exe 不闪退）
-                    bool pauseOnFail = true;
-                    for (int i = 0; i < args.Length; i = i + 1)
-                    {
-                        if (args[i] == "--run" || args[i] == "--script" || args[i] == "--selfcheck" || args[i] == "--tool-check")
-                        {
-                            pauseOnFail = false;
-                        }
-                    }
+                    // 脚本/自检模式无人值守不暂停；交互模式暂停——错误可见（双击 exe 不闪退）
+                    bool pauseOnFail = !nonInteractive;
                     if (pauseOnFail)
                     {
                         Console.WriteLine("[CMD] 按任意键退出……");
@@ -158,11 +151,15 @@ namespace CH4
                 {
                     _runner.Tick();
                 }
-                // 注册确认——预热后应见 1 模块 3 key（启动观测一行）
+                // 注册确认——启动观测一行（CommandBus 直执面已退役：当前应为 0 个模块，OA 认领为唯一执行路径）
                 string[] keyDic = _bus.GetKeyDic();
                 Console.WriteLine("[CMD] CommandBus " + keyDic[0]);
                 // [段2c] P1 自启同步——启动时注册表与配置对齐（防手动删注册表漂移）
-                InitAutoStart();
+                // 🔴 仅交互模式——非交互探针不得改写 HKCU Run 项（开发区 Data 无 app.cfg → 默认 false → 会静默删掉部署区自启项）
+                if (!nonInteractive)
+                {
+                    InitAutoStart();
+                }
                 // [段3] 模式路由
                 string mode = "";
                 for (int i = 0; i < args.Length; i++)
@@ -210,11 +207,15 @@ namespace CH4
             }
         }
         /// <summary>
-        /// 服务组装——OA/CommandBus/FlowRunner + DataBox 绑定 + 审计配置
+        /// 服务组装——OA/CommandBus/FlowRunner + DataBox 绑定 + 审计配置。
+        /// headless=true（非交互模式）跳过外观层与常驻附属（段6）——探针通道与常驻实例端口零耦合（A74）。
         /// </summary>
         /// <param name="dllDir">语料生成物 dll 目录</param>
-        private static void Bootstrap(string dllDir)
+        /// <param name="headless">非交互模式（--run/--script/--selfcheck/--tool-check）</param>
+        private static void Bootstrap(string dllDir, bool headless)
         {
+            // [段0] 端口段解析——机器级端口空间按区划分（开发区向下 / 部署区向上——A74：两区实例可同时运行）
+            _portBand = ResolvePortBand();
             // [段1] 线程守卫 + 机制服务
             ThreadGuard guard = new ThreadGuard();
             _oa = new OA(guard);
@@ -338,7 +339,7 @@ namespace CH4
             // S1 ChatBridge 化——会话协调实例（注入提示词构建委托——CatCfg 域静态面 BuildInjectPrompt）
             _chatBridge = new ChatBridge(BuildInjectPrompt);
             // S4 Admin 域接线——依赖注入（管理 API 处理器 + cat.* 指令族迁入 CatHome4.Admin）
-            AdminService.Configure(_chatBridge, _oa, dataRoot, _mainThreadId, ExecuteTool, ObserveService.BuildSnapshotJson, new HtmlRootProvider(), apiConfigStore, qqBotStore, llmConfig);
+            AdminService.Configure(_chatBridge, _oa, dataRoot, _mainThreadId, ExecuteTool, ObserveService.BuildSnapshotJson, new HtmlRootProvider(), apiConfigStore, qqBotStore, llmConfig, _portBand);
             AdminService.BuildEnvInfoProvider = BuildEnvInfo;
             // 加载包数据面接线——pack 内置工具（池定义与猫挂载解析归 Admin 域；Core 零配置面依赖）
             ChatSession.PackPayloadProvider = AdminService.BuildPackPayload;
@@ -500,9 +501,17 @@ namespace CH4
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
             // P9.3 多实例化签名——sessionId 归属默认会话；catsBuilder 多猫列表（管理页签数据源）；主端口服务 index.html
             // F2.1/F2.2——主端口纯管理面板（index.html）；majordomo 对话走独立端口（chat.html，与多猫同构）
+            // 🔴 非交互模式（--run/--script/--selfcheck/--tool-check）整段跳过——探针通道单指令直执 + 进程自退，
+            //    不启动外观层与常驻附属（多猫 / 前端测试服务 / QQ 桥）：端口零占用，与常驻实例彻底解耦（A74）
+            if (headless)
+            {
+                Console.WriteLine("[CMD] 非交互模式——外观层与常驻附属未启动（端口零占用）");
+                return;
+            }
             _httpHost = HttpHost.Start(new HttpHostOptions
             {
                 Port = ResolveHttpPort(llmConfig),
+                FrontendTestPort = _portBand.FrontendTestPort,
                 SessionId = _chatBridge.DefaultSession.Id,
                 SnapshotBuilder = ObserveService.BuildSnapshotJson,
                 Dispatcher = DispatchCommand,
@@ -651,7 +660,8 @@ namespace CH4
             return JsonSerializer.Serialize(info, InfoJsonOptions);
         }
         /// <summary>
-        /// 前端测试服务拉起——宿主启动时自动启动 html/tests/server.js（未监听 8099 时）；失败不影响主功能
+        /// 前端测试服务拉起——宿主启动时自动启动 html/tests/server.js（未监听本区段前端测试端口时）；失败不影响主功能。
+        /// 端口走端口段（开发区 8069 / 部署区 8099）——不跨区复用，避免开发区代理到部署区 node（假验证）。
         /// </summary>
         private static void EnsureFrontendTestService()
         {
@@ -660,7 +670,7 @@ namespace CH4
                 // 已监听则跳过（多实例/重复启动保护）
                 using (System.Net.Sockets.TcpClient probe = new System.Net.Sockets.TcpClient())
                 {
-                    IAsyncResult ar = probe.BeginConnect("127.0.0.1", 8099, null, null);
+                    IAsyncResult ar = probe.BeginConnect("127.0.0.1", _portBand.FrontendTestPort, null, null);
                     if (ar.AsyncWaitHandle.WaitOne(300))
                     {
                         probe.EndConnect(ar);
@@ -710,6 +720,7 @@ namespace CH4
                         UseShellExecute = false
                     };
                     // D9 修复——注入宿主 PID，server.js 守望宿主（宿主退出 → node 自退 → 目录解锁）
+                    deployPsi.EnvironmentVariables["FE_TEST_PORT"] = _portBand.FrontendTestPort.ToString();
                     deployPsi.EnvironmentVariables["FE_HOST_PID"] = System.Diagnostics.Process.GetCurrentProcess().Id.ToString();
                     System.Diagnostics.Process.Start(deployPsi);
                     LogStore.Add("CatHome4", 1, "前端测试服务依赖缺失，自动部署中（npm install）：" + testDir, "CONFIG");
@@ -724,6 +735,7 @@ namespace CH4
                     UseShellExecute = false
                 };
                 // D9 修复——注入宿主 PID，server.js 守望宿主（宿主退出 → node 自退 → 目录解锁）
+                nodePsi.EnvironmentVariables["FE_TEST_PORT"] = _portBand.FrontendTestPort.ToString();
                 nodePsi.EnvironmentVariables["FE_HOST_PID"] = System.Diagnostics.Process.GetCurrentProcess().Id.ToString();
                 System.Diagnostics.Process.Start(nodePsi);
                 LogStore.Add("CatHome4", 1, "前端测试服务已启动：" + testDir, "CONFIG");

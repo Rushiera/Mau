@@ -29,7 +29,7 @@ namespace CatHome4.Admin
         /// <summary>cat.* 指令队列——HTTP 线程投递 / 主线程泵消费（ThreadGuard：注册表仅主线程触碰）</summary>
         internal static readonly ConcurrentQueue<string> _catQueue = new ConcurrentQueue<string>();
 
-        /// <summary>majordomo 独立对话端口 HttpHost——serveChatPage=true（F2.2 方案 A：与多猫同构；主端口 8080 保留管理面板）</summary>
+        /// <summary>majordomo 独立对话端口 HttpHost——serveChatPage=true（F2.2 方案 A：与多猫同构；主端口保留管理面板）</summary>
         private static HttpHost _majorHost;
 
         /// <summary>
@@ -72,9 +72,6 @@ namespace CatHome4.Admin
 
         /// <summary>majordomo session.new 请求标志——HTTP 线程置位/主线程泵消费（F2.2 同多猫 M2d）</summary>
         private static bool _majorSessionNewRequested;
-
-        /// <summary>动态端口起始——8081 起（主端口 8080 保留）</summary>
-        private const int CatPortStart = 8081;
 
         /// <summary>
         /// 解析猫启用根条目——cat.cfg enabledRoots → 全局池子集（空/缺失=空白名单——仅常驻 workspace 可用；失败默认收紧，不回落全量）。
@@ -901,10 +898,10 @@ namespace CatHome4.Admin
             {
                 return "cat.start | 已在运行: " + cat.DisplayName + " :" + cat.Port.ToString();
             }
-            int port = AllocatePort(CatPortStart);
+            int port = AllocatePort(PortBand.FamilyFrom);
             if (port < 0)
             {
-                return "cat.start | 端口分配失败（8081-8180 全占用）";
+                return "cat.start | 端口分配失败（端口段 " + PortBand.FamilyFrom.ToString() + "-" + PortBand.FamilyTo.ToString() + " 全占用）";
             }
             HttpHost host;
             try
@@ -914,7 +911,7 @@ namespace CatHome4.Admin
             catch (Exception ex)
             {
                 // 试绑后释放的竞态窗口——换端口重试一次
-                int retryPort = AllocatePort(port + 1);
+                int retryPort = AllocatePort(port + PortBand.FamilyStep());
                 if (retryPort < 0)
                 {
                     return "cat.start | 端口绑定失败: " + ex.Message;
@@ -1544,29 +1541,46 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 动态端口分配——起始端口起 TCP 试绑（试绑后释放；竞态由 cat.start 重试兜底）。
+        /// 动态端口分配——从起始端口起沿端口段方向 TCP 试绑（试绑后释放；竞态由 cat.start 重试兜底）。
+        /// 扫描边界 = 端口段终点（开发区 8070 / 部署区 8180）——段内全占即失败，不越界到对方区段。
         /// </summary>
-        /// <param name="startPort">起始端口（含）</param>
-        /// <returns>可用端口；全占用 -1</returns>
+        /// <param name="startPort">起始端口（含；应在端口段内）</param>
+        /// <returns>可用端口；段内全占用 -1</returns>
         private static int AllocatePort(int startPort)
         {
-            for (int port = startPort; port < startPort + 100; port++)
+            if (PortBand == null)
             {
-                if (IsPortTaken(port))
+                LogStore.Add("CatHome4", 2, "端口分配失败：端口段未注入（AdminService.Configure 未接线）", "CHAT");
+                return -1;
+            }
+            int step = PortBand.FamilyStep();
+            int limit = PortBand.FamilyTo;
+            int port = startPort;
+            while (true)
+            {
+                if (step > 0 && port > limit)
                 {
-                    continue;
+                    break;
                 }
-                try
+                if (step < 0 && port < limit)
                 {
-                    TcpListener listener = new TcpListener(IPAddress.Loopback, port);
-                    listener.Start();
-                    listener.Stop();
-                    return port;
+                    break;
                 }
-                catch (Exception)
+                if (!IsPortTaken(port))
                 {
-                    // 试绑失败——继续下一端口
+                    try
+                    {
+                        TcpListener listener = new TcpListener(IPAddress.Loopback, port);
+                        listener.Start();
+                        listener.Stop();
+                        return port;
+                    }
+                    catch (Exception)
+                    {
+                        // 试绑失败——继续下一端口
+                    }
                 }
+                port = port + step;
             }
             return -1;
         }
@@ -1599,6 +1613,7 @@ namespace CatHome4.Admin
             return HttpHost.Start(new HttpHostOptions
             {
                 Port = port,
+                FrontendTestPort = PortBand.FrontendTestPort,
                 SessionId = cat.Session.Id,
                 SnapshotBuilder = BuildSnapshotJson,
                 Dispatcher = (string line) => DispatchCommandForCat(cat, line),
@@ -1618,7 +1633,7 @@ namespace CatHome4.Admin
 
         /// <summary>
         /// majordomo 独立对话端口启动——F2.2 方案 A（与多猫同构）：独立端口 serve chat.html，绑定 DefaultSession。
-        /// 主端口 8080 保留管理面板（index.html）；DefaultSession.AttachHost 改绑本端口（chat 事件推送走 chat.html）。
+        /// 主端口保留管理面板（index.html）；DefaultSession.AttachHost 改绑本端口（chat 事件推送走 chat.html）。
         /// 强制自启：Bootstrap 调用（段6b 前）；无关闭/删除（cat.stop/cat.delete 拒绝——HandleCatStop/HandleCatDelete）。
         /// </summary>
         /// <returns>是否成功启动（端口分配失败 false）</returns>
@@ -1628,15 +1643,16 @@ namespace CatHome4.Admin
             {
                 return true;
             }
-            int port = AllocatePort(CatPortStart);
+            int port = AllocatePort(PortBand.FamilyFrom);
             if (port < 0)
             {
-                LogStore.Add("CatHome4", 2, "majordomo 独立端口启动失败：8081-8180 全占用", "CHAT");
+                LogStore.Add("CatHome4", 2, "majordomo 独立端口启动失败：端口段 " + PortBand.FamilyFrom.ToString() + "-" + PortBand.FamilyTo.ToString() + " 全占用", "CHAT");
                 return false;
             }
             HttpHost host = HttpHost.Start(new HttpHostOptions
             {
                 Port = port,
+                FrontendTestPort = PortBand.FrontendTestPort,
                 SessionId = _chatBridge.DefaultSession.Id,
                 SnapshotBuilder = BuildSnapshotJson,
                 Dispatcher = (string line) => DispatchCommandForMajor(line),
@@ -1921,7 +1937,7 @@ namespace CatHome4.Admin
                 int port = rt.Port;
                 if (port < 1024 || IsPortTaken(port))
                 {
-                    port = AllocatePort(CatPortStart);
+                    port = AllocatePort(PortBand.FamilyFrom);
                 }
                 if (port < 0)
                 {

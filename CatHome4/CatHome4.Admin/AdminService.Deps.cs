@@ -39,6 +39,9 @@ namespace CatHome4.Admin
         /// <summary>html 根解析——StartCatHost 注入（入口壳适配）</summary>
         public static IHtmlRootProvider HtmlRoot;
 
+        /// <summary>端口段——入口壳注入（每猫与 majordomo 独立端口按区段分配——A74）</summary>
+        public static PortBand PortBand;
+
         /// <summary>
         /// 注入 Admin 域依赖——入口壳 Bootstrap 调用（S4：程序集拆分接线）。
         /// </summary>
@@ -52,7 +55,8 @@ namespace CatHome4.Admin
         /// <param name="apiStore">LLM API 配置池（catcfg.apply 重建 Runtime 消费）</param>
         /// <param name="qqBotStore">QQ Bot 配置池</param>
         /// <param name="globalConfig">全局配置存储（catcfg.apply 消费）</param>
-        public static void Configure(ChatBridge bridge, OA oa, string dataRoot, int mainThreadId, Func<string, string, string> executeTool, Func<bool, string> snapshotBuilder, IHtmlRootProvider htmlRoot, CH_LlmApiConfigStore apiStore, CH_QqBotConfigStore qqBotStore, ConfigStore globalConfig)
+        /// <param name="portBand">端口段（每猫与 majordomo 独立端口按区段分配——A74）</param>
+        public static void Configure(ChatBridge bridge, OA oa, string dataRoot, int mainThreadId, Func<string, string, string> executeTool, Func<bool, string> snapshotBuilder, IHtmlRootProvider htmlRoot, CH_LlmApiConfigStore apiStore, CH_QqBotConfigStore qqBotStore, ConfigStore globalConfig, PortBand portBand)
         {
             _chatBridge = bridge;
             _oa = oa;
@@ -64,6 +68,7 @@ namespace CatHome4.Admin
             _apiStore = apiStore;
             _qqBotStore = qqBotStore;
             _globalConfig = globalConfig;
+            PortBand = portBand;
         }
 
         // [段2] 工具名单处理——自持（原 Program.Tools.cs 静态面迁入；ToolRegistry 为 Core 静态注册表）

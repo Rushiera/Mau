@@ -29,9 +29,11 @@ namespace CH4
         /// 宿主参数面校验——零容忍：未知参数 / 缺值 / 与非常驻模式互斥一律报错（design-ch4-host-restart §五）。
         /// </summary>
         /// <param name="args">命令行参数</param>
+        /// <param name="nonInteractive">非交互模式（--run/--script/--selfcheck/--tool-check——不启动外观层与常驻附属）</param>
         /// <returns>错误文本（空=通过）</returns>
-        private static string ValidateHostArgs(string[] args)
+        private static string ValidateHostArgs(string[] args, out bool nonInteractive)
         {
+            nonInteractive = false;
             bool hasPush = false;
             bool hasNonInteractive = false;
             for (int i = 0; i < args.Length; i = i + 1)
@@ -80,6 +82,7 @@ namespace CH4
             {
                 return "参数错误：--majordomopush 仅用于常驻交互启动（不可与 --run/--script/--selfcheck/--tool-check 同用）。";
             }
+            nonInteractive = hasNonInteractive;
             return "";
         }
 

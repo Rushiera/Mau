@@ -29,6 +29,9 @@ namespace CatHome4.Http
         /// <summary>绑定端口</summary>
         public int Port { get; set; }
 
+        /// <summary>前端测试服务端口（/api/v1/frontend-test 转发目标——区段值：开发区 8069 / 部署区 8099）</summary>
+        public int FrontendTestPort { get; set; }
+
         /// <summary>会话归属 ID——SSE llm/chatdone 事件的 sessionId</summary>
         public string SessionId { get; set; }
 
@@ -81,8 +84,11 @@ namespace CatHome4.Http
         /// <summary>Kestrel 应用实例</summary>
         private WebApplication _app;
 
-        /// <summary>绑定端口（配置项接入前写死 8080——协议 §二）</summary>
+        /// <summary>绑定端口（区段值：开发区 8079 / 部署区 8080——协议 §二）</summary>
         private int _port;
+
+        /// <summary>前端测试服务端口（/api/v1/frontend-test 转发目标——区段值：开发区 8069 / 部署区 8099）</summary>
+        private int _frontendTestPort;
 
         /// <summary>快照 JSON 构建回调——宿主侧注入（Program.BuildSnapshotJson，includeLogs 参数）</summary>
         private Func<bool, string> _snapshotBuilder;
@@ -170,6 +176,7 @@ namespace CatHome4.Http
         {
             HttpHost host = new HttpHost();
             host._port = options.Port;
+            host._frontendTestPort = options.FrontendTestPort;
             host._sessionId = options.SessionId;
             host._snapshotBuilder = options.SnapshotBuilder;
             host._dispatcher = options.Dispatcher;
@@ -275,13 +282,13 @@ namespace CatHome4.Http
             _app.MapGet("/js/{file}", (HttpContext ctx) => ServeStatic(ctx, "js", "application/javascript"));
             // 桌宠资源——html/pet/*.webp（动画 WebP 二进制；禁缓存同 index 策略；路径穿越校验）
             _app.MapGet("/pet/{file}", (HttpContext ctx) => ServeStatic(ctx, "pet", "image/webp"));
-            // 前端测试服务代理——CH4 通过宿主端点触发前端测试（开发流程：改前端 → 跑测试 → 刷新生效；转发 8099）
+            // 前端测试服务代理——CH4 通过宿主端点触发前端测试（开发流程：改前端 → 跑测试 → 刷新生效；转发区段端口）
             _app.MapGet("/api/v1/frontend-test", async (HttpContext ctx) =>
             {
                 string path = "unit";   // E2E 已移除（2026-08-28）——只转发 Vitest
                 try
                 {
-                    System.Net.Http.HttpResponseMessage resp = await FrontendTestHttp.GetAsync("http://127.0.0.1:8099/api/test/" + path);
+                    System.Net.Http.HttpResponseMessage resp = await FrontendTestHttp.GetAsync("http://127.0.0.1:" + _frontendTestPort.ToString() + "/api/test/" + path);
                     string body = await resp.Content.ReadAsStringAsync();
                     return Results.Text(body, "application/json");
                 }

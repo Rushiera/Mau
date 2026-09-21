@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using Mau.Runtime;
 using Mau.Providers;
+using CatHome4.Contracts;
 
 namespace CH4
 {
@@ -64,14 +65,36 @@ namespace CH4
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CatHome4");
         }
 
+        /// <summary>端口段——Bootstrap 段0 解析（机器级端口空间按区划分：开发区向下 / 部署区向上——A74）</summary>
+        private static PortBand _portBand;
+
         /// <summary>
-        /// HTTP 端口解析——http.port 配置项（协议 §5b 预留）；缺省/非法/越界回退 8080
+        /// 端口段解析——区域判定与数据根解析同源（FindRepoRoot 命中 = exe 位于仓库树内 = 开发区）。
+        /// 开发区主端口 8079（端口族 8078 向下至 8070）、部署区主端口 8080（端口族 8081 向上至 8180）——
+        /// 两区端口空间完全分离，开发区实例与部署区实例可同时运行。结论打印一行（启动观测：本实例落在哪个区段）。
+        /// </summary>
+        /// <returns>端口段</returns>
+        private static PortBand ResolvePortBand()
+        {
+            bool devArea = FindRepoRoot(AppContext.BaseDirectory).Length > 0;
+            PortBand band = PortBand.Resolve(devArea);
+            Console.WriteLine("[CMD] 端口段 " + band.Area + " | 主端口 " + band.MainPort.ToString() + " | 端口族 " + band.FamilyFrom.ToString() + "→" + band.FamilyTo.ToString() + " | 前端测试 " + band.FrontendTestPort.ToString());
+            return band;
+        }
+
+        /// <summary>
+        /// HTTP 端口解析——显式 http.port 配置优先；缺省取区段主端口；非法/越界回退区段主端口（告警不静默）
         /// </summary>
         /// <param name="config">配置存储</param>
         /// <returns>监听端口</returns>
         private static int ResolveHttpPort(ConfigStore config)
         {
-            string raw = config.Get("http.port", "8080");
+            int fallback = _portBand.MainPort;
+            string raw = config.Get("http.port", "");
+            if (raw.Length == 0)
+            {
+                return fallback;
+            }
             int port;
             if (!int.TryParse(raw, out port))
             {
@@ -79,8 +102,8 @@ namespace CH4
             }
             if (port < 1024 || port > 65535)
             {
-                Console.WriteLine("[CMD] http.port 配置非法(" + raw + ")——回退 8080");
-                port = 8080;
+                Console.WriteLine("[CMD] http.port 配置非法(" + raw + ")——回退区段主端口 " + fallback.ToString());
+                port = fallback;
             }
             return port;
         }
