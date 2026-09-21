@@ -165,6 +165,7 @@ var CHAT_TOOL_SKELETONS = {
     'Note': 'text',
     'time': 'text',
     'random': 'text',
+    'sleep': 'text',
     'info': 'info',
     'pack': 'text'
 };

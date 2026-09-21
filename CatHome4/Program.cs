@@ -344,6 +344,9 @@ namespace CH4
             AdminService.BuildEnvInfoProvider = BuildEnvInfo;
             // 加载包数据面接线——pack 内置工具（池定义与猫挂载解析归 Admin 域；Core 零配置面依赖）
             ChatSession.PackPayloadProvider = AdminService.BuildPackPayload;
+            // 延迟队列落盘接线——Data/runtime/delays.json（跨宿主重启保留；design-ch4-delay §七）
+            DelayQueue.Configure(Path.Combine(dataRoot, "Data", "runtime", "delays.json"));
+            DelayQueue.Load();
             AdminService.NotifyBalloon = Program.NotifyBalloon;
             // S5 Observe 域接线——依赖注入（观测面迁入 CatHome4.Observe）
             ObserveService.Configure(_oa, _chatBridge, _quickHandle, _toolFlowHandles, _quickId, _toolFlowIds, _runner, null);
@@ -521,6 +524,7 @@ namespace CH4
                 HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max),
                 CatsBuilder = AdminService.BuildCatsJson,
                 NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
+                DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),
                 PatchBuilder = ObserveService.BuildPatchJson,
                 ServeChatPage = false,
                 RouteRegistrar = AdminService.RegisterAdminRoutes,

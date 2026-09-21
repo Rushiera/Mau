@@ -285,6 +285,11 @@ namespace CH4
                 }
                 return true;
             }
+            // 延迟指令族——delay.*（design-ch4-delay §5.1；调度器内部锁保护——HTTP 线程可直执）
+            if (DelayCommand.Handle(_chatBridge.DefaultSession.Id, line))
+            {
+                return true;
+            }
             return false;
         }
 

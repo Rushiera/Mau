@@ -133,8 +133,16 @@ namespace CH4
             {
                 return;
             }
-            _chatBridge.DefaultSession.PostUserMessage(push, "system");
-            LogStore.Add("CatHome4", 1, "宿主启动回执已注入 Majordomo 会话", "RESTART");
+            // A72——回执经延迟队列投递（dueAt=now 立即注入；统一出口，可观测、落盘可查——design-ch4-delay §7.2）
+            string added = DelayQueue.Add(_chatBridge.DefaultSession.Id, push, "restart", DelayQueue.Now());
+            if (added.StartsWith("ERR|", StringComparison.Ordinal))
+            {
+                // 失败可见——回落直投（回执不丢），并出声
+                LogStore.Add("CatHome4", 2, "宿主启动回执登记延迟队列失败（回落直投）: " + added, "RESTART");
+                _chatBridge.DefaultSession.PostUserMessage(push, "system");
+                return;
+            }
+            LogStore.Add("CatHome4", 1, "宿主启动回执已登记延迟队列（到点注入 Majordomo 会话）", "RESTART");
         }
 
         /// <summary>

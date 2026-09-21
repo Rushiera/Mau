@@ -670,7 +670,7 @@ namespace CH4
         }
         /// <summary>
         /// 中断收尾公共实现——已完成工具结果保留 + 上下文格式修复 + 截断落盘 + 序号复位 + 状态复位 Idle + control 事件。
-        /// 调用面：PauseFinalize（用户中止）/ RestartFinalize（宿主重启强制中断）——语义相同，仅事件文案与附加动作不同。
+        /// 调用面：PauseFinalize（用户中止）——宿主重启不再走强制中断（A72：本轮常规结束，见 RestartRequest）。
         /// </summary>
         /// <param name="ctrlJson">前端 control 事件 JSON（type/text）</param>
         /// <param name="logPrefix">日志前缀（实现追加落盘条数）</param>
@@ -725,16 +725,48 @@ namespace CH4
         }
 
         /// <summary>
-        /// 宿主重启收尾——majordomo-restart 回执一到即强制中断本轮（不续 LLM 轮）：复用中断收尾公共实现，
-        /// 并置宿主重启请求态（停机态拒收 + 全局 Idle 闸门等待在宿主侧；design-ch4-host-restart §三 T1/T2）。
+        /// 宿主重启请求登记（A72——design-ch4-delay §7.2）：登记重启请求 + 置停机态，**不中断本轮**。
+        /// 本轮照常续 LLM 轮并正常 CloseRound 完整结算（roundsum / chatdone / 前文落盘齐全）；
+        /// 停机态拒收新输入（在途排队消息丢弃并出声）；全局 Idle 后由主循环闸门执行接力（design-ch4-host-restart §三 T2/T3）。
         /// </summary>
         /// <param name="requestJson">重启请求 JSON（target/push，由 majordomo 工具组积木落盒）</param>
-        private void RestartFinalize(string requestJson)
+        private void RestartRequest(string requestJson)
         {
-            FinalizeInterrupted("{\"type\":\"restart\",\"text\":\"宿主即将重启（本轮强制中断，前文已落盘）\"}", "宿主重启——本轮强制中断，前文保留 + 格式修复");
             DataBox.Set<string>("global", "host_restart_request", requestJson);
             DataBox.Set<string>("global", "host_restart_state", "requested");
-            LogStore.Add("CatHome4", 1, "宿主重启请求已登记——拒绝新需求，等待全局空闲", "RESTART");
+            LogStore.Add("CatHome4", 1, "宿主重启请求已登记——本轮照常收尾（停机态拒收新输入），等待全局空闲", "RESTART");
+        }
+
+        /// <summary>
+        /// 宿主重启停机态判定——DataBox 全局盒（键与 Program.Restart 同源）。
+        /// </summary>
+        /// <returns>true=停机态（拒收新输入）</returns>
+        private static bool IsHostRestarting()
+        {
+            string state;
+            if (DataBox.TryGet<string>("global", "host_restart_state", out state))
+            {
+                return state == "requested";
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 停机态丢弃在途排队消息（A72）——宿主即将重启，不再开新轮；丢弃并出声（不静默）。
+        /// </summary>
+        private void DropPendingIfRestarting()
+        {
+            if (_pending.Count == 0)
+            {
+                return;
+            }
+            if (!IsHostRestarting())
+            {
+                return;
+            }
+            int dropped = _pending.Count;
+            _pending.Clear();
+            LogStore.Add("CatHome4", 2, "宿主重启停机态——丢弃在途排队消息 " + dropped.ToString() + " 条", "RESTART");
         }
 
         /// <summary>
@@ -779,6 +811,8 @@ namespace CH4
             }
             if (_phase == ChatPhase.Idle)
             {
+                // A72——停机态丢弃在途排队消息（宿主即将重启，不再开新轮）
+                DropPendingIfRestarting();
                 if (_pending.Count > 0)
                 {
                     PendingMessage next = _pending.Dequeue();
@@ -1780,7 +1814,7 @@ namespace CH4
                 _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             }
             _toolBatchActive = false;
-            // [段2c] 宿主重启检测——majordomo-restart 成功回执 → 强制中断本轮（不续 LLM 轮；design-ch4-host-restart §三 T1）
+            // [段2c] 宿主重启检测——majordomo-restart 成功回执 → 登记重启请求 + 停机态（A72：本轮走常规结束流程，不强制中断）
             for (int r = 0; r < _dogs.Count; r = r + 1)
             {
                 ToolOrderDog rd = _dogs[r];
@@ -1791,10 +1825,11 @@ namespace CH4
                     {
                         restartReq = "{}";
                     }
-                    RestartFinalize(restartReq);
-                    return;
+                    RestartRequest(restartReq);
                 }
             }
+            // A72——停机态丢弃在途排队消息（宿主即将重启，不再开新轮）
+            DropPendingIfRestarting();
             // 单向数据流改造——忙时插话：工具批完成有排队消息 → 插入 Ctx + user 事件 + 直接续轮（工具结果 + 插话同轮可见）
             if (_pending.Count > 0)
             {

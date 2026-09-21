@@ -192,10 +192,15 @@ function chatOnUser(payload) {
     var content = payload.content || '';
     var source = payload.source || 'user';
     var isSystem = (source === 'system');
-    // 系统自动消息——[SystemAuto] 前缀（Note 自动拉起/插话等内核自动消息与用户消息视觉区分）
-    var display = isSystem ? (SYSTEM_AUTO_PREFIX + content) : content;
+    // 来源前缀——系统自动 [SystemAuto] / 延迟队列 ⏰ 定时 · 💤 唤醒 · 🔄 回执（design-ch4-delay §六）
+    var prefix = '';
+    if (isSystem) { prefix = SYSTEM_AUTO_PREFIX; }
+    else if (source === 'delay') { prefix = '⏰ 定时 · '; }
+    else if (source === 'sleep') { prefix = '💤 唤醒 · '; }
+    else if (source === 'restart') { prefix = '🔄 回执 · '; }
+    var display = prefix + content;
     var bubble = chatBubble('user');
-    if (isSystem) { bubble.classList.add('system'); }
+    if (source !== 'user') { bubble.classList.add('system'); }
     // A65 图片包裹——命中即缩略图组 + 正文；无包裹走原路径（textContent 零回归）
     chatUserFill(bubble, display);
 }

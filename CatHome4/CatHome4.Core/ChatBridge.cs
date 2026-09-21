@@ -133,6 +133,43 @@ namespace CH4
             {
                 _sessions[i].Pump();
             }
+            PumpDelays();
+        }
+
+        /// <summary>
+        /// 延迟队列泵——主循环每帧调用（design-ch4-delay §四）：到点条目按序转入归属会话即时队。
+        /// 停机态（宿主重启中）不投递——条目保留，由重启后的新宿主加载后投递。
+        /// </summary>
+        private void PumpDelays()
+        {
+            DelayQueue.Pump(DeliverDelay);
+        }
+
+        /// <summary>
+        /// 延迟条目投递——按猫 key 找会话 → PostUserMessage（忙时天然排队，不打断在途轮次）。
+        /// 停机态：未受理（条目保留待重投）；归属会话不存在：条目丢弃并出声（不静默）。
+        /// </summary>
+        /// <param name="catKey">归属会话（猫 key）</param>
+        /// <param name="content">注入内容</param>
+        /// <param name="source">来源标记</param>
+        /// <returns>true=已受理 / false=未受理（保留待重投）</returns>
+        private bool DeliverDelay(string catKey, string content, string source)
+        {
+            string restartState;
+            if (DataBox.TryGet<string>("global", "host_restart_state", out restartState) && restartState == "requested")
+            {
+                return false;
+            }
+            for (int i = 0; i < _sessions.Count; i = i + 1)
+            {
+                if (_sessions[i].Id == catKey)
+                {
+                    _sessions[i].PostUserMessage(content, source);
+                    return true;
+                }
+            }
+            LogStore.Add("CatHome4", 2, "延迟条目归属会话不存在——已丢弃: cat=" + catKey, "DELAY");
+            return true;
         }
 
         /// <summary>

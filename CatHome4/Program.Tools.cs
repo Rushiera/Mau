@@ -14,14 +14,14 @@ namespace CH4
     public static partial class Program
     {
         /// <summary>
-        /// 内置工具定义源——宿主内建小表（本质也是 BRIK，只是内置：Note/time/random/info/host-*）。
+        /// 内置工具定义源——宿主内建小表（本质也是 BRIK，只是内置：Note/time/random/info/host-*/pack/sleep）。
         /// 格式与 Flow.GetToolsJson 同构（{"group":"","tools":[...]}）——同一解析器，统一工具池。
         /// </summary>
         /// <returns>内置工具定义 JSON</returns>
         private static string BuildBuiltinToolsJson()
         {
             // 结构化构建——匿名对象树 → JsonSerializer（R6-P3-08：原手写字符串拼接易漏转义、难维护）
-            object[] tools = new object[7];
+            object[] tools = new object[8];
             tools[0] = new
             {
                 name = "Note",
@@ -109,6 +109,22 @@ namespace CH4
                                 { "key", new { type = "string", description = "包 key（info 可见本猫已挂载包）" } }
                             },
                     required = new string[] { "key" }
+                }
+            };
+            tools[7] = new
+            {
+                name = "sleep",
+                description = "登记定时唤醒（时/分/秒 · 合计 1..3600 秒）——本轮正常继续（不挂起）：到点由宿主自动注入一条唤醒消息，届时再继续做事。适合「N 分钟后提醒 / 再检查一次」类需求。",
+                parameters = new
+                {
+                    type = "object",
+                    properties = new Dictionary<string, object>
+                            {
+                                { "hours", new { type = "integer", description = "小时（可缺省=0）" } },
+                                { "minutes", new { type = "integer", description = "分钟（可缺省=0）" } },
+                                { "seconds", new { type = "integer", description = "秒（可缺省=0）" } }
+                            },
+                    required = new string[0]
                 }
             };
             // 宽松转义——避免 < > 被编码为 \u003C（与旧手写字符串语义一致）

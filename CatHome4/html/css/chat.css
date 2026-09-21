@@ -277,6 +277,26 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 #noteAddRow button { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
 #noteStartBtn { background: var(--ch-bg-accent); border: none; color: var(--ch-fg-inverse); }
 #noteStartBtn:disabled { opacity: 0.5; cursor: default; }
+/* 延迟指令队列（design-ch4-delay §六）——定时按钮与 Note 气泡并排；弹层贴按钮上方右侧 */
+.delay-wrap { position: relative; display: flex; align-items: center; }
+#delayBtn { background: var(--ch-note-bg); border: 1px solid var(--ch-note-line); border-radius: 14px; color: var(--ch-note-fg); font-size: 11px; padding: 4px 14px; cursor: pointer; box-shadow: 0 2px 8px var(--ch-shadow-soft); user-select: none; font-family: inherit; }
+#delayBtn:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
+#delayCount { color: var(--ch-warn); }
+.delay-popover { position: absolute; bottom: calc(100% + 8px); right: 0; background: var(--ch-bg-page); border: 1px solid var(--ch-line); border-radius: 8px; width: min(560px, 80vw); max-height: 60vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px var(--ch-shadow-strong); z-index: 61; }
+.delay-popover-head { padding: 8px 14px; border-bottom: 1px solid var(--ch-line-faint); color: var(--ch-identity); font-weight: bold; font-size: 12px; }
+#delayList { display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; overflow-y: auto; flex: 1; }
+.delay-empty { color: var(--ch-fg-muted); font-size: 11px; }
+.delay-row { display: flex; gap: 6px; align-items: baseline; color: var(--ch-fg); font-size: 12px; }
+.delay-when { flex-shrink: 0; color: var(--ch-fg-muted); font-family: Consolas, monospace; font-size: 11px; }
+.delay-cd { flex-shrink: 0; color: var(--ch-warn); font-family: Consolas, monospace; font-size: 11px; }
+.delay-text { flex: 1; word-break: break-all; }
+.delay-act { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 1px 8px; cursor: pointer; font-family: inherit; font-size: 11px; }
+.delay-act:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
+#delayAddRow { display: flex; gap: 6px; padding: 8px 14px; border-top: 1px dashed var(--ch-line-soft); }
+#delayTime { width: 150px; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: 11px; }
+#delayText { flex: 1; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: 11px; }
+#delayTime:focus, #delayText:focus { outline: none; border-color: var(--ch-focus); }
+#delayAddRow button { background: var(--ch-bg-accent); border: none; color: var(--ch-fg-inverse); padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
 /* 单向数据流改造——插话队列显示区（正常流堆叠——有排队消息显示/无则隐藏） */
 #chatPendingPanel { border-top: 1px solid var(--ch-line-faint); background: var(--ch-bg-sunken); font-size: 11px; padding: 5px 12px; color: var(--ch-fg-muted); }
 #chatPendingPanel:empty { display: none; }

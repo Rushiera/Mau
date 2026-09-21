@@ -256,7 +256,8 @@ namespace CatHome4.Core.Tests
                 new ToolSpec("Note", "Note 任务追踪", "{}"),
                 new ToolSpec("time", "当前时间", "{}"),
                 new ToolSpec("random", "随机整数", "{}"),
-                new ToolSpec("info", "运行状态", "{}")
+                new ToolSpec("info", "运行状态", "{}"),
+                new ToolSpec("sleep", "定时唤醒", "{}")
             }, null, null);
             ChatContext ctx = new ChatContext();
             string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".jsonl");
@@ -356,6 +357,66 @@ namespace CatHome4.Core.Tests
                 Assert.Equal("任务A", ntasks[0].GetString());
                 Assert.Equal("任务B", ntasks[1].GetString());
             }
+        }
+
+        /// <summary>
+        /// sleep 内置工具——登记定时唤醒条目（design-ch4-delay §5.3）：本轮正常继续，条目落延迟队列。
+        /// </summary>
+        [Fact]
+        public void Sleep_ExecuteTool_RegistersDelayEntry()
+        {
+            CH4.DelayQueue.ResetForTest();
+            CH4.DelayQueue.NowProvider = delegate () { return 5000000; };
+            MockLlm llm = new MockLlm();
+            string tc = "[{\"id\":\"s1\",\"function\":{\"name\":\"sleep\",\"arguments\":\"{\\\"seconds\\\":30}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            CH4.ChatSession session = CreateSession(llm, new ToolSpec[]
+            {
+                new ToolSpec("Note", "Note 任务追踪", "{}"),
+                new ToolSpec("sleep", "定时唤醒", "{}")
+            });
+            session.SetCatKey("test-session");
+            session.PostUserMessage("30 秒后提醒我");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            CH4.DelayEntry[] entries = CH4.DelayQueue.List("test-session");
+            Assert.Single(entries);
+            Assert.Equal("sleep", entries[0].Source);
+            Assert.Equal(5030000, entries[0].DueAt);
+            CH4.DelayQueue.ResetForTest();
+        }
+
+        /// <summary>
+        /// sleep 参数面——超上限拒绝（1..3600 秒；错误可见性：ERR| 文本进工具结果）。
+        /// </summary>
+        [Fact]
+        public void Sleep_ExecuteTool_RejectsBadArgs()
+        {
+            CH4.DelayQueue.ResetForTest();
+            CH4.DelayQueue.NowProvider = delegate () { return 6000000; };
+            MockLlm llm = new MockLlm();
+            string tc = "[{\"id\":\"s2\",\"function\":{\"name\":\"sleep\",\"arguments\":\"{\\\"seconds\\\":7200}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            CH4.ChatSession session = CreateSession(llm, new ToolSpec[]
+            {
+                new ToolSpec("Note", "Note 任务追踪", "{}"),
+                new ToolSpec("sleep", "定时唤醒", "{}")
+            });
+            session.SetCatKey("test-session");
+            session.PostUserMessage("睡两小时");
+            PumpUntilIdle(session);
+            Assert.Empty(CH4.DelayQueue.List("test-session"));
+            bool sawError = false;
+            LlmMessage[] all = session.Context.GetMessages();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (all[i].Role == LlmRole.Tool && all[i].Content != null && all[i].Content.Contains("ERR|BAD_ARGS"))
+                {
+                    sawError = true;
+                }
+            }
+            Assert.True(sawError);
+            CH4.DelayQueue.ResetForTest();
         }
 
         /// <summary>

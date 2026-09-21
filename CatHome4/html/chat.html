@@ -32,6 +32,19 @@
         <div id="noteBubble" class="note-bubble" title="Note 工作进度——点击展开/收起">
             <span id="noteBubbleText">Note · 空</span>
         </div>
+        <!-- 延迟指令队列（design-ch4-delay §六）——定时按钮 + 弹层（列表/倒计时/改时刻/取消/新建） -->
+        <div id="delayWrap" class="delay-wrap">
+            <button id="delayBtn" title="定时指令队列——延迟注入 / 改时刻 / 取消">定时<span id="delayCount"></span></button>
+            <div id="delayPopover" class="delay-popover" style="display:none">
+                <div class="delay-popover-head"><span id="delayTitle">定时指令队列</span></div>
+                <div id="delayList"></div>
+                <div id="delayAddRow">
+                    <input id="delayTime" placeholder="时长/时刻（10m · 1h30m · 09:30）">
+                    <input id="delayText" placeholder="注入内容…（Enter 提交）">
+                    <button id="delayAddBtn">＋</button>
+                </div>
+            </div>
+        </div>
         <button id="chatJumpBottom" title="跳到最下层（回到最新内容）">↓</button>
     </div>
     <!-- 单向数据流改造——插话队列显示区（纯展示；正常流堆叠，对话区自动上移） -->
@@ -58,6 +71,8 @@
     <script src="js/chat-view.js?v=__V__"></script>
     <script src="js/chat-core.js?v=__V__"></script>
     <script src="js/chat-note.js?v=__V__"></script>
+    <!-- 延迟指令队列——列表/倒计时/新建/改时刻/取消（design-ch4-delay §六） -->
+    <script src="js/chat-delay.js?v=__V__"></script>
     <!-- 桌宠素材清单（WorkSpace/pet/convert_pet.py 生成——缓存失效键；须先于 chat-pet.js） -->
     <script src="js/pet-manifest.js?v=__V__"></script>
     <!-- 桌宠——纯前端渲染（js/chat-pet.js）：读运行态与停留计时调整形态；须在 chat-core.js 之后加载 -->
@@ -133,6 +148,7 @@
         // [段4] 初始化——历史加载 + Note 兜底拉取（版本填充已在引导头部完成）
         chatLoadHistory();
         chatPetInit();
+        delayInit();
         fetch('/api/v1/note').then(function (r) { return r.json(); }).then(function (j) { noteState = j; noteRender(); }).catch(function (e) { uiWarn('Note 兜底拉取', e); });
     </script>
 </body>

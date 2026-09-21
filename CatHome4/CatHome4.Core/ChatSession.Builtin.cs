@@ -10,7 +10,7 @@ namespace CH4
     /// <summary>
     /// 宿主会话实体——内置工具分部（R0.2/R1：会话内直执——无需 OA 的内置工具统一入口）。
     /// 分界铁律：内置（无需 OA——会话内/宿主直执）vs OA 工具（按工具组独立 Flow 认领）——双轨并存不走同一执行面。
-    /// 内置工具：Note（M4a）+ time/random（R1.1）+ info（R1.2——本会话环境自省，agent 的眼睛）。
+    /// 内置工具：Note（M4a）+ time/random（R1.1）+ info（R1.2——本会话环境自省，agent 的眼睛）+ sleep（design-ch4-delay §5.3——登记定时唤醒，本轮正常继续）。
     /// </summary>
     internal sealed partial class ChatSession
     {
@@ -37,7 +37,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 内置工具统一执行入口——EnterToolBatch 分派（Note/time/random/info/pack 会话内直执，不进 OA）。
+        /// 内置工具统一执行入口——EnterToolBatch 分派（Note/time/random/info/pack/sleep 会话内直执，不进 OA）。
         /// </summary>
         /// <param name="name">内置工具名</param>
         /// <param name="argsJson">参数 JSON</param>
@@ -67,6 +67,10 @@ namespace CH4
             if (name == "pack")
             {
                 return ExecutePack(argsJson);
+            }
+            if (name == "sleep")
+            {
+                return ExecuteSleep(argsJson);
             }
             return "ERR|UNKNOWN_BUILTIN|未知内置工具: " + name;
         }
@@ -120,6 +124,88 @@ namespace CH4
             randomFields["max"] = max;
             randomFields["value"] = picked;
             return ToolMetaHead.With("random", true, randomFields, picked.ToString());
+        }
+
+        /// <summary>
+        /// sleep 执行体——登记定时唤醒条目（design-ch4-delay §5.3）：本轮正常继续（不挂起、不阻塞），
+        /// 到点由调度器向本会话注入唤醒消息。
+        /// 参数面：hours/minutes/seconds（非负整数，合计 1..3600 秒；未知参数拒绝——零容忍）。
+        /// </summary>
+        /// <param name="argsJson">参数 JSON（hours/minutes/seconds 可缺省=0）</param>
+        /// <returns>结构化结果（元数据头 + 正文；失败 ERR| 前缀）</returns>
+        private string ExecuteSleep(string argsJson)
+        {
+            long hours = 0;
+            long minutes = 0;
+            long seconds = 0;
+            // [段0] 参数面——非负整数 + 未知参数拒绝
+            if (argsJson != null && argsJson.Length > 0 && argsJson.StartsWith("{"))
+            {
+                try
+                {
+                    using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                    {
+                        JsonElement root = doc.RootElement;
+                        foreach (JsonProperty property in root.EnumerateObject())
+                        {
+                            if (property.Name == "catId")
+                            {
+                                continue;
+                            }
+                            if (property.Name != "hours" && property.Name != "minutes" && property.Name != "seconds")
+                            {
+                                return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 hours / minutes / seconds）";
+                            }
+                            if (property.Value.ValueKind != JsonValueKind.Number)
+                            {
+                                return "ERR|BAD_ARGS|" + property.Name + " 需为整数";
+                            }
+                            long value = property.Value.GetInt64();
+                            if (value < 0)
+                            {
+                                return "ERR|BAD_ARGS|" + property.Name + " 不能为负";
+                            }
+                            if (property.Name == "hours")
+                            {
+                                hours = value;
+                            }
+                            else if (property.Name == "minutes")
+                            {
+                                minutes = value;
+                            }
+                            else
+                            {
+                                seconds = value;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return "ERR|BAD_ARGS|sleep 参数解析失败: " + ex.Message;
+                }
+            }
+            // [段1] 时长校验——合计 1..3600 秒（LLM 自主挂起防呆；人工登记不受此限）
+            long total = hours * 3600 + minutes * 60 + seconds;
+            if (total < DelayQueue.MinSleepSeconds || total > DelayQueue.MaxSleepSeconds)
+            {
+                return "ERR|BAD_ARGS|sleep 时长需在 " + DelayQueue.MinSleepSeconds.ToString() + ".." + DelayQueue.MaxSleepSeconds.ToString() + " 秒之间（当前 " + total.ToString() + " 秒）";
+            }
+            // [段2] 登记——到点由调度器注入唤醒消息（本轮正常继续）
+            long dueAt = DelayQueue.Now() + total * 1000;
+            string content = "（定时唤醒 · " + total.ToString() + " 秒已到 · " + DelayQueue.FormatTime(dueAt) + "）";
+            string added = DelayQueue.Add(_catKey, content, "sleep", dueAt);
+            if (added.StartsWith("ERR|", StringComparison.Ordinal))
+            {
+                return added;
+            }
+            Dictionary<string, object> sleepFields = new Dictionary<string, object>();
+            sleepFields["hours"] = hours;
+            sleepFields["minutes"] = minutes;
+            sleepFields["seconds"] = seconds;
+            sleepFields["dueAt"] = dueAt;
+            string body = "已登记定时唤醒：" + DelayQueue.FormatTime(dueAt) + "（" + total.ToString() + " 秒后）——本轮请正常回复，到点会自动唤醒。";
+            return ToolMetaHead.With("sleep", true, sleepFields, body);
         }
 
         /// <summary>

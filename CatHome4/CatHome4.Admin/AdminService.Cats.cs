@@ -1622,6 +1622,7 @@ namespace CatHome4.Admin
                 HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(cat.Session, max),
                 CatsBuilder = null,
                 NoteBuilder = () => cat.Session.BuildNoteJson(),
+                DelayBuilder = () => DelayQueue.BuildListJson(cat.Session.Id),
                 PatchBuilder = null,
                 SessionStateBuilder = () => cat.Session.BuildRunStateJson(),
                 ServeChatPage = true,
@@ -1661,6 +1662,7 @@ namespace CatHome4.Admin
                 HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max),
                 CatsBuilder = null,
                 NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
+                DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),
                 PatchBuilder = null,
                 SessionStateBuilder = () => _chatBridge.DefaultSession.BuildRunStateJson(),
                 ServeChatPage = true,
@@ -1752,6 +1754,11 @@ namespace CatHome4.Admin
                 }
                 return true;
             }
+            // 延迟指令族——delay.*（design-ch4-delay §5.1；调度器内部锁保护——HTTP 线程可直执）
+            if (DelayCommand.Handle(_chatBridge.DefaultSession.Id, line))
+            {
+                return true;
+            }
             return false;
         }
 
@@ -1829,6 +1836,11 @@ namespace CatHome4.Admin
                 {
                     cat.PendingNote.Enqueue(line.Substring(9).Trim());
                 }
+                return true;
+            }
+            // 延迟指令族——delay.*（design-ch4-delay §5.1；调度器内部锁保护——HTTP 线程可直执）
+            if (DelayCommand.Handle(cat.Session.Id, line))
+            {
                 return true;
             }
             return false;
