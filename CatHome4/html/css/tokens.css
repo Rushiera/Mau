@@ -61,9 +61,11 @@
     --ch-md-code-fg: #d4d4d4;           /* 代码块正文 */
     --ch-md-inline-code-bg: #2a2a2a;    /* 行内代码底 */
     --ch-md-inline-code-fg: #dcdcaa;    /* 行内代码字 */
-    --ch-md-table-head-bg: #1f1f1f;     /* 表头底 */
-    --ch-md-table-head-fg: #569cd6;     /* 表头字 */
-    --ch-md-table-zebra: #171717;       /* 斑马行 */
+    --ch-md-table-bg: #0d0d0d;          /* 表格底——纯黑块（同代码块档） */
+    --ch-md-table-line: #3a3a3a;        /* 表格描边——纯黑底上可见档（独立于 --ch-md-line） */
+    --ch-md-table-head-bg: #0d0d0d;     /* 表头底——同单元格底（不另设亮底） */
+    --ch-md-table-head-fg: #e8e8e8;     /* 表头字——中性亮色（蓝色归 User 面） */
+    --ch-md-table-zebra: #080808;       /* 斑马行——比单元格底更暗一档 */
     --ch-md-task-done: #6a8a6a;         /* 任务项已完成 */
     /* 扩展位（未启用——语法高亮需要时启用，源 VSCode Dark+）
        --ch-md-code-keyword: #569cd6;

@@ -120,8 +120,10 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 #chatStatus .st.req { color: var(--ch-state-api); }
 /* E 系列——活跃态呼吸动效（阶段切换过渡观感；2026-09-17 参数与气泡描边呼吸对齐：1.8s ease-in-out） */
 @keyframes chat-phase-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-/* 内容列（2026-09-22）——宽度 = 列宽 + 滚动条间距 + 滚动条宽（滚动条左缘 = 列右缘 + 间距）；左缘 = 气泡左缘 */
-#chatMsgs { flex: 1; overflow-y: auto; scrollbar-gutter: stable; width: calc(var(--ch-col-w) + var(--ch-scroll-gap) + var(--ch-scroll-w)); margin-left: var(--ch-col-left); padding: 12px 0; display: flex; flex-direction: column; gap: 10px; }
+/* 内容列（2026-09-22）——宽度 = 列宽 + 滚动条间距 + 滚动条宽（滚动条左缘 = 列右缘 + 间距）；左缘 = 气泡左缘
+   🔴 间距必须落在 padding-right——滚动条占的是内容盒右侧 10px：间距只加在 width 上会被内容盒吃掉，
+      气泡（flex 拉伸至内容盒宽）右缘照样顶到滚动条（A79 续二遗留几何，2026-09-22 修正） */
+#chatMsgs { flex: 1; overflow-y: auto; scrollbar-gutter: stable; width: calc(var(--ch-col-w) + var(--ch-scroll-gap) + var(--ch-scroll-w)); margin-left: var(--ch-col-left); padding: 12px var(--ch-scroll-gap) 12px 0; display: flex; flex-direction: column; gap: 10px; }
 /* A79 气泡宽度三段式——宽度收口已上移到 #chatMsgs（列宽 = 三段式、左缘 = 居中偏移），本行只承载布局；
    短气泡由 flex 收缩到内容宽、贴各自一侧（assistant 左缘 / user 右缘——2026-09-22 分侧） */
 .chat-row { display: flex; animation: chat-in 0.18s ease-out; }
@@ -363,12 +365,17 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
     border-collapse: collapse; margin: 6px 0; max-width: 100%; display: block; overflow-x: auto;
     white-space: normal; word-break: normal; font-size: 0.92em;
 }
+/* A80 亮度分层（2026-09-22）——表格 = 纯黑块：底铺在单元格上（宽度随表格，不随气泡整行铺黑）
+   三级亮度：单元格 --ch-md-table-bg（纯黑）→ 斑马行 --ch-md-table-zebra（略亮一档）→ 表头 --ch-md-table-head-bg（再亮一档）
+   描边单列令牌 --ch-md-table-line——不与代码块 / 标题下框线 / hr 共用的 --ch-md-line 混用
+   🔴 表头选择器兼容 th / td 两态：解析器当前输出 <td>（chat-md.js mdRenderTableRow）——只写 th 会让整条规则落空 */
 .chat-bubble .md-block th, .chat-bubble .md-block td {
-    border: 1px solid var(--ch-md-line); padding: 4px 8px; text-align: left; vertical-align: top;
+    border: 1px solid var(--ch-md-table-line); padding: 4px 8px; text-align: left; vertical-align: top;
     white-space: normal; word-break: break-all; overflow-wrap: break-word;
+    background: var(--ch-md-table-bg);
 }
-.chat-bubble .md-block thead th { background: var(--ch-md-table-head-bg); color: var(--ch-md-table-head-fg); font-weight: bold; }
-.chat-bubble .md-block tbody tr:nth-child(even) { background: var(--ch-md-table-zebra); }
+.chat-bubble .md-block thead th, .chat-bubble .md-block thead td { background: var(--ch-md-table-head-bg); color: var(--ch-md-table-head-fg); font-weight: bold; }
+.chat-bubble .md-block tbody tr:nth-child(even) td { background: var(--ch-md-table-zebra); }
 
 /* ============ P6b 节点操作条——text 块底部回滚/分支按钮（图标 + 悬浮提示） ============ */
 .node-actions {
