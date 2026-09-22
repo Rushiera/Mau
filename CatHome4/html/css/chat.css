@@ -204,6 +204,8 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-bubble.retry.resolved { color: var(--ch-chat-sys-ok); }
 /* P6 中止气泡——停止本轮提示（独立视图条目：弱化样式；宿主文本渲染） */
 .chat-bubble.paused { --bubble-line: var(--ch-state-link); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-ok); font-size: 11px; padding: 4px 10px; max-width: 60%; }
+/* A77 静默提示气泡——宿主静默超过阈值时的明确展示（独立气泡；前端不改任何在途块状态——收口交后端） */
+.chat-bubble.stall { --bubble-line: var(--ch-warn); background: var(--ch-chat-sys-bg); color: var(--ch-warn); font-size: 11px; padding: 4px 10px; max-width: 88%; }
 /* 注入报告气泡——新会话前文加载明细（📚 汇总头 + 逐文件三态；弱化系统样式） */
 .chat-bubble.inject { --bubble-line: var(--ch-state-all); background: var(--ch-inject-bg); color: var(--ch-inject-fg); font-size: 11px; max-width: 88%; }
 .inject-report .ir-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 4px; }

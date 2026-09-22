@@ -5,7 +5,7 @@
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import vm from 'node:vm';
-import { expect, test, beforeAll, beforeEach } from 'vitest';
+import { expect, test, beforeAll, beforeEach, vi } from 'vitest';
 
 let chatMsgs;
 let chatStatus;
@@ -1067,4 +1067,57 @@ test('F6 seal 补齐——工具卡与 text 整块到达后残留 reason 容器�
   window.chatOnView({ seq: 20, renderType: 'text', payload: { content: '最终回复' }, replaceSeq: -1 });
   expect(rb2.classList.contains('streaming')).toBe(false);
   expect(chatMsgs.querySelector('.md-block')).not.toBeNull();
+});
+
+// ═══════════════════════════════════════════
+// A77 静默兜底（C 方案 · 2026-09-22）——只作明确展示：不改在途块状态 / 不清容器 / 不假收口
+// ═══════════════════════════════════════════
+
+test('A77 静默兜底——120s 静默贴提示，且不动在途容器状态（pending 保留 · 容器不清 · 仍 sending）', () => {
+  vi.useFakeTimers();
+  try {
+    window.chatState = 'sending';
+    // 先行工具卡（pending——蓝色呼吸态来源）
+    window.chatOnToolCard(1, -1, { name: 'mau-setup', arguments: '{}', toolIndex: 1, toolTotal: 1 });
+    const bubble = chatMsgs.querySelector('.chat-bubble.tool');
+    expect(bubble.classList.contains('pending')).toBe(true);
+    expect(window.chatTimer).toBeTruthy();
+    vi.advanceTimersByTime(120000);
+    const stall = chatMsgs.querySelector('.chat-bubble.stall');
+    expect(stall).toBeTruthy();
+    expect(stall.textContent).toContain('120s');
+    // 在途状态不变——收口交后端（真实终态卡到达仍走原位替换）
+    expect(bubble.classList.contains('pending')).toBe(true);
+    expect(bubble.classList.contains('error')).toBe(false);
+    expect(Object.keys(window.viewContainers).length).toBe(1);
+    expect(window.chatState).toBe('sending');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('A77 静默兜底——非 sending 态不贴提示', () => {
+  vi.useFakeTimers();
+  try {
+    window.chatState = 'idle';
+    window.chatKeepAlive();
+    vi.advanceTimersByTime(120000);
+    expect(chatMsgs.querySelector('.chat-bubble.stall')).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('A77 静默提示——同一次静默只贴一条（去重）', () => {
+  window.chatShowStall();
+  window.chatShowStall();
+  expect(chatMsgs.querySelectorAll('.chat-bubble.stall').length).toBe(1);
+});
+
+test('A77 静默提示——view 事件到达即撤销（宿主复活自愈）', () => {
+  window.chatState = 'sending';
+  window.chatShowStall();
+  expect(chatMsgs.querySelector('.chat-bubble.stall')).toBeTruthy();
+  window.chatOnView({ renderType: 'text', seq: -1, replaceSeq: -1, payload: { content: '已恢复', msgIndex: -1 } });
+  expect(chatMsgs.querySelector('.chat-bubble.stall')).toBeNull();
 });

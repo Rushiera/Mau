@@ -12,7 +12,7 @@ var chatInput = document.getElementById('chatSendInput');
 var chatBtn = document.getElementById('chatSendBtn');
 var chatState = 'loading';        // loading/idle/sending
 var viewContainers = {};          // F4 视图容器——seq → {type:'text'|'reason', bubble, reasonPre}（流式容器；整块替换后删除）
-var chatTimer = null;             // 120s 无响应兜底定时器
+var chatTimer = null;             // 静默兜底定时器（A77：只作明确展示——不改在途块状态）
 var CHAT_SESSION = '';
 var CHAT_TIMEOUT_MS = 120000;
 var chatPending = [];              // 插话队列——本地发送记录（user 事件到达 FIFO 移除；纯展示）
@@ -152,24 +152,32 @@ function chatJumpBottom() {
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
 }
 
+// 静默兜底（A77 · C 方案 · 2026-09-22）——只作「明确展示」：宿主静默超过阈值时贴一条提示，
+// 前端不自改态（不摘 pending / streaming 类 · 不清容器 · 不置 idle）、不假装收口——
+// 超时判定与终态卡全交后端（工具单 120s / 工具批 150s 两闸）；宿主真死时前端如实提示即可。
+// 提示随下一条 view 事件撤销（宿主仍在跑 → 真实结果到达即自愈，见 chatClearStall）。
 function chatKeepAlive() {
     if (chatTimer) { clearTimeout(chatTimer); }
     chatTimer = setTimeout(function () {
-        if (chatState === 'sending') {
-            // 120s 无任何 view 事件——seal 全部流式容器 + 错误提示 + 恢复 idle
-            for (var k in viewContainers) {
-                var c = viewContainers[k];
-                if (c && c.bubble) {
-                    c.bubble.classList.remove('streaming');
-                    c.bubble.classList.remove('streaming-wait');
-                    chatAppend(c.bubble, '\n（LLM 无响应超过 120s——检查宿主控制台）');
-                    c.bubble.classList.add('error');
-                }
-            }
-            viewContainers = {};
-            chatSetState('idle');
-        }
+        if (chatState === 'sending') { chatShowStall(); }
     }, CHAT_TIMEOUT_MS);
+}
+
+// 静默提示——独立气泡（不动任何在途容器）；同一次静默期只贴一条（去重）
+function chatShowStall() {
+    if (chatMsgs.querySelector('.chat-bubble.stall')) { return; }
+    var b = chatBubble('assistant', 'stall');
+    b.textContent = '⚠️ 已 ' + Math.round(CHAT_TIMEOUT_MS / 1000) + 's 未收到任何新事件——宿主可能已退出或卡死；若宿主仍在运行，本条提示会在下一条消息到达时自动消失';
+    chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+
+// 静默提示撤销——view 事件到达即撤（宿主复活自愈；不残留误报）
+function chatClearStall() {
+    var els = chatMsgs.querySelectorAll('.chat-bubble.stall');
+    for (var i = 0; i < els.length; i = i + 1) {
+        var row = els[i].parentNode;
+        if (row) { row.parentNode.removeChild(row); }
+    }
 }
 
 function chatSealStreams() {
@@ -231,6 +239,8 @@ function chatRenderPending() {
 
 function chatOnView(d) {
     if (chatState === 'loading') { return; }
+    // A77 静默提示撤销——view 事件到达即撤（宿主复活自愈；不残留误报）
+    chatClearStall();
     // 跟随判定取样——「新内容到达前」是否贴近底部（新块自身高度不计入判定：多行 user 气泡 / 整块回复等
     // 大块会把插入后的距底距离顶过 80px 阈值 → 被误判为用户已上翻 → 不跟随、只延伸滚动条——2026-09-17 修复）
     var stickBottom = chatNearBottom();
