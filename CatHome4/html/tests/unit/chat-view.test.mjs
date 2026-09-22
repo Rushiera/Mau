@@ -539,11 +539,10 @@ test('新 reasoning 容器创建——残留 text 流式容器 streaming 移除'
 });
 
 // ── control usage ──
-test('view control usage 渲染 Token 统计', () => {
+test('view control usage 不再渲染 Token（状态条 Token 段已退役——2026-09-22）', () => {
   window.chatOnView({ seq: 40, renderType: 'control', payload: { type: 'usage', data: { prompt: 100, completion: 20, cacheHit: 30 } }, replaceSeq: -1 });
-  expect(chatStatus.textContent).toContain('↑100');
-  expect(chatStatus.textContent).toContain('↓20');
-  expect(chatStatus.textContent).toContain('cache 30');
+  expect(chatStatus.textContent).not.toContain('↑');
+  expect(chatStatus.textContent).not.toContain('cache');
 });
 
 // ── error 视图（A55——独立 renderType：恒定独立错误气泡；已有容器只 seal 不追加）──
@@ -669,15 +668,17 @@ test('A59 六态状态条——sessionstate 驱动渲染（六态时长 + 当前
 });
 
 // ── A61：底部行精简（去会话级统计）+ 轮结束整行清空 + 刷新后运行态恢复 sending ──
-test('A61 底部行——只留本轮 Token（会话级统计不再渲染）', () => {
+test('2026-09-22 底部行——Token 统计整体退役（会话级与本轮均不渲染）', () => {
   window.chatOnView({
     seq: 60, renderType: 'control',
     payload: { type: 'usage', data: { prompt: 100, completion: 20, cacheHit: 30, sessionPrompt: 5000, sessionCompletion: 1200, sessionCacheHit: 800 } },
     replaceSeq: -1
   });
   const bar = chatStatus;
-  expect(bar.textContent).toContain('↑100');
-  expect(bar.textContent).toContain('miss 70');
+  expect(bar.textContent).not.toContain('↑');
+  expect(bar.textContent).not.toContain('↓');
+  expect(bar.textContent).not.toContain('cache');
+  expect(bar.textContent).not.toContain('miss');
   expect(bar.textContent).not.toContain('会话 ↑');
 });
 
@@ -718,15 +719,7 @@ test('A59 状态条零值边界——零值态跳过 + 当前态零值仍显示'
   expect(bar.textContent).not.toContain('🔄');
 });
 
-// ── E 系列：Token 统计（F2.4 迁移）──
-test('E usage 事件渲染 Token 统计（含 miss）', () => {
-  window.chatOnView({ seq: 40, renderType: 'control', payload: { type: 'usage', data: { prompt: 100, completion: 20, cacheHit: 30 } }, replaceSeq: -1 });
-  const bar = chatStatus;
-  expect(bar.textContent).toContain('↑100');
-  expect(bar.textContent).toContain('↓20');
-  expect(bar.textContent).toContain('cache 30');
-  expect(bar.textContent).toContain('miss 70');
-});
+// ── E 系列：Token 统计（F2.4 迁移）——2026-09-22 用例随状态条 Token 段退役移除（回归防护见上方 usage 用例）──
 
 // ── 发送流程：user 事件 FIFO 移除插话队列（F2.4 迁移）──
 test('user 事件渲染用户气泡（含插话队列 FIFO 移除）', () => {

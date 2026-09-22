@@ -553,6 +553,17 @@ function chatPetDragMove(e)
 function chatPetDragEnd()
 {
     // 释放——结束拖动（moved 标志保留至下次按下，供 click 判据）
+    // 位置换算回 right/bottom 定位（2026-09-22 修）——拖动期用 left/top 像素坐标；若就地保留，
+    // 窗口缩小到小于该坐标时桌宠被挤出视口消失。换算回右下相对定位后，缩放窗口桌宠跟随右下角，不越界
+    var box = document.getElementById('chatPet');
+    if (box !== null && chatPetDragMoved === true)
+    {
+        var r = box.getBoundingClientRect();
+        box.style.left = 'auto';
+        box.style.top = 'auto';
+        box.style.right = Math.max(0, window.innerWidth - r.right) + 'px';
+        box.style.bottom = Math.max(0, window.innerHeight - r.bottom) + 'px';
+    }
     chatPetDrag = null;
 }
 

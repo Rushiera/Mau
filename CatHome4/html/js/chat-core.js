@@ -32,23 +32,16 @@ var chatPhaseMeta = [
     { key: 'reply', label: 'Reply', icon: '💬' }
 ];
 var chatRunState = { state: '', ms: {}, requests: 0 };   // 后端运行态快照（本猫会话条目——id 即猫 key；数据源 = SSE patch 推送，前端零轮询）
-var chatUsage = { prompt: 0, completion: 0, cacheHit: 0 };       // 轮级 Token——usage 事件覆盖式累计；轮结束清空（A61：去会话级显示——底部行只留本轮统计）
 
 function chatRunStart() {
-    // 活跃轮开始——清运行态 + 轮级 Token（新轮从零计；数据源 = SSE sessionstate 推送，前端零轮询、零自算计时）
+    // 活跃轮开始——清运行态（新轮从零计；数据源 = SSE sessionstate 推送，前端零轮询、零自算计时）
     chatRunState = { state: '', ms: {}, requests: 0 };
-    chatUsage.prompt = 0;
-    chatUsage.completion = 0;
-    chatUsage.cacheHit = 0;
     chatRenderStatus();
 }
 
 function chatPhaseReset() {
-    // 终态/失败——清运行态 + 轮级 Token：本轮统计已由 roundsum 气泡承载 → 底部"态 + 统计"一并消失（A61）
+    // 终态/失败——清运行态：本轮统计已由 roundsum 气泡承载 → 底部六态一并消失（A61）
     chatRunState = { state: '', ms: {}, requests: 0 };
-    chatUsage.prompt = 0;
-    chatUsage.completion = 0;
-    chatUsage.cacheHit = 0;
     chatRenderStatus();
 }
 
@@ -83,8 +76,8 @@ function chatOnSessionState(d) {
 }
 
 function chatRenderStatus() {
-    // 状态条渲染——六态完成后端时长（当前态高亮 + 呼吸动效）+ ⏱ 总 + 请求次数 + 最右本轮 Token 统计
-    // （A61：去会话级 token；本轮统计靠右 —— CSS .tok margin-left:auto；轮结束整行清空）
+    // 状态条渲染——六态完成后端时长（当前态高亮 + 呼吸动效）+ ⏱ 总 + 请求次数，整体居中
+    // （2026-09-22：本轮 Token 统计已去——Token 信息归 roundsum 轮末块；轮结束整行清空）
     var bar = document.getElementById('chatStatus');
     if (!bar) { return; }
     var html = '';
@@ -104,16 +97,6 @@ function chatRenderStatus() {
     }
     if (chatRunState.requests > 0) {
         html += '<span class="st req">🔄 Api ' + chatRunState.requests + '</span>';
-    }
-    if (chatUsage.prompt > 0 || chatUsage.completion > 0) {
-        var miss = chatUsage.prompt - chatUsage.cacheHit;
-        if (miss < 0) { miss = 0; }
-        html += '<span class="tok">'
-            + '<span class="tk">↑' + chatFmtCount(chatUsage.prompt) + '</span>'
-            + '<span class="tk c">↓' + chatFmtCount(chatUsage.completion) + '</span>'
-            + (chatUsage.cacheHit > 0 ? '<span class="tk ch">cache ' + chatFmtCount(chatUsage.cacheHit) + '</span>' : '')
-            + (miss > 0 ? '<span class="tk ms">miss ' + chatFmtCount(miss) + '</span>' : '')
-            + '</span>';
     }
     bar.innerHTML = html;
     // 桌宠——状态渲染汇聚点回调（chat-pet.js；未加载时静默跳过）
@@ -453,12 +436,8 @@ function chatOnError(payload) {
 function chatOnControl(payload) {
     var type = payload.type;
     if (type === 'usage') {
-        // E 系列——Token 统计：轮级覆盖式显示整轮累计 + 会话级同步（后端跨轮累计值；仅新会话归零）
+        // 2026-09-22：本轮 Token 统计已从状态条撤除（Token 信息归 roundsum 轮末块）——此处只保留前文长度实时化
         var u = payload.data || {};
-        chatUsage.prompt = u.prompt || 0;
-        chatUsage.completion = u.completion || 0;
-        chatUsage.cacheHit = u.cacheHit || 0;
-        chatRenderStatus();
         // Q1 顶端计数实时化——每次 API 请求返回后按真实 context（单次前文 token）更新前文长度，不等轮结束
         if (u.context !== undefined && u.context > 0) {
             var newCtx = '前文 ' + chatFmtCount(u.context) + ' tokens';

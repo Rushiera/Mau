@@ -21,6 +21,9 @@ beforeAll(async () => {
   globalThis.MouseEvent = dom.window.MouseEvent;
   globalThis.Image = dom.window.Image;
   globalThis.fetch = undefined;   // 预加载短路——jsdom 无 blob 通道，避免相对 URL 请求噪音（blob 分支由专门用例覆盖）
+  // 视口尺寸——jsdom 不做布局且 window 即 globalThis，须显式提供（拖动 clamp 与释放时的右下换算依赖）
+  globalThis.innerWidth = 1024;
+  globalThis.innerHeight = 768;
   const mods = ['ui-common.js', 'chat-md.js', 'chat-cmd.js', 'chat-tools.js', 'chat-view.js', 'chat-core.js', 'chat-note.js', 'chat-pet.js'];
   for (const m of mods) {
     const code = await readFile(new URL('../../js/' + m, import.meta.url), 'utf-8');
@@ -324,13 +327,16 @@ test('同值不切换层（防重复溶解）', () => {
 });
 
 // ── 拖动 ──
-test('拖动改变位置且不误触摸头', () => {
+test('拖动改变位置（释放换算回右下相对定位）且不误触摸头', () => {
   pushState('idle', 0);
   petBox.dispatchEvent(new MouseEvent('mousedown', { clientX: 500, clientY: 500, bubbles: true }));
   document.dispatchEvent(new MouseEvent('mousemove', { clientX: 400, clientY: 400, bubbles: true }));
   document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-  expect(petBox.style.left).toBe('0px');
-  expect(petBox.style.right).toBe('auto');
+  // 拖动期用 left/top 像素定位；释放即换算回 right/bottom——窗口缩放时跟随右下角，不被挤出视口消失
+  expect(petBox.style.left).toBe('auto');
+  expect(petBox.style.top).toBe('auto');
+  expect(petBox.style.right).toBe(window.innerWidth + 'px');
+  expect(petBox.style.bottom).toBe(window.innerHeight + 'px');
   petBox.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   expect(cur()).not.toContain('after-idle-check');
 });

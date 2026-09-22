@@ -3,6 +3,20 @@
 /* 规范：Project/CH4/design-ch4-frontend-theme.md —— 组件面零裸色值 */
 :root {
     --chat-font-size: 14px;
+    /* A79 气泡宽度三段式（2026-09-22）——比例档 / 固定上限档 / 边缘下限档，三者取最小：
+       气泡宽 = min(80% 对话区宽, 1000px, 对话区宽 − 200px)；两侧边缘各留 ≥100px（后续另有用处） */
+    --ch-bubble-max-pct: 80%;
+    --ch-bubble-max-w: 1000px;
+    --ch-bubble-edge-min: 100px;
+    /* 内容列（2026-09-22）——气泡 / 输入框 / 滚动条共用同一列宽与左缘。
+       🔴 下方百分比基准 = 视口宽：只在「内容盒 = 视口宽」的容器上引用（#chatMsgs / #chatinput）；
+       已收窄的容器内引用会按该容器宽解析，得到错误列宽 */
+    --ch-col-w: min(var(--ch-bubble-max-pct), var(--ch-bubble-max-w), 100% - var(--ch-bubble-edge-min) * 2);
+    --ch-col-left: max(var(--ch-bubble-edge-min), calc((100% - var(--ch-col-w)) / 2));
+    --ch-scroll-w: 10px;    /* 纵向滚动条宽——须与下方 ::-webkit-scrollbar 的 width 同值 */
+    --ch-send-w: 64px;      /* 发送按钮固定宽——落在右侧预留带（≥100px）内 */
+    --ch-scroll-gap: 5px;   /* 滚动条与列右缘的间距——滚动条不贴气泡，留一口气（2026-09-22） */
+    --ch-radius-bubble: 8px;/* 气泡圆角——输入框 / 发送按钮共用同一值（2026-09-22） */
     /* ===== L2 对话区令牌 ===== */
     /* 运行态六态（状态条 + roundsum 同源） */
     --ch-state-link: #8a8a8a;
@@ -54,11 +68,8 @@
     --ch-cmd-intent-bg: #0c1218;
     --ch-cmd-intent-fg: #9cdcfe;
     --ch-cmd-intent-line: #26404f;
-    /* Token 统计段 */
-    --ch-tok-prompt: var(--ch-tool-result);
+    /* Token 统计段——状态条 Token 段已去（2026-09-22），仅 roundsum 轮末块消费 completion */
     --ch-tok-completion: var(--ch-ok);
-    --ch-tok-cache: var(--ch-warn);
-    --ch-tok-miss: var(--ch-err);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--ch-bg-page); color: var(--ch-fg); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
@@ -91,8 +102,9 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 #chatNew, #chatRefresh, #chatPause, #chatCacheClear { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
 #chatNew:hover, #chatRefresh:hover, #chatCacheClear:hover, #chatPause:hover:not(:disabled) { background: var(--ch-bg-hover); }
 #chatPause:disabled { opacity: 0.35; cursor: default; }
-/* A59——六态状态条 + Token 统计（链路/等待/思考/工具/执行/回复；时长数据源 = 后端运行态）；位于页面最底部（输入框下方）持久存在 */
-#chatStatus { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-top: 1px solid var(--ch-line-faint); font-size: 11px; color: var(--ch-fg-weak); background: var(--ch-bg-page); min-height: 22px; flex-wrap: wrap; }
+/* A59——六态状态条（链路/等待/思考/工具/执行/回复；时长数据源 = 后端运行态）；位于页面最底部（输入框下方）持久存在
+   2026-09-22：内容整体居中（原左下靠左 + 右下本轮 Token 统计——后者已去，Token 信息归 roundsum 轮末块） */
+#chatStatus { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 4px 12px; border-top: 1px solid var(--ch-line-faint); font-size: 11px; color: var(--ch-fg-weak); background: var(--ch-bg-page); min-height: 22px; flex-wrap: wrap; }
 /* 持久存在——空态不隐藏（用户要求状态区常驻最底部） */
 /* 2026-09-17：六态常驻主题色（原「仅活跃态着色、其余暗灰」退役——每态一眼可辨）；活跃态走呼吸动效 */
 #chatStatus .st { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 3px; color: var(--ch-fg-faint); }
@@ -108,20 +120,19 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 #chatStatus .st.req { color: var(--ch-state-api); }
 /* E 系列——活跃态呼吸动效（阶段切换过渡观感；2026-09-17 参数与气泡描边呼吸对齐：1.8s ease-in-out） */
 @keyframes chat-phase-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-#chatStatus .tok { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--ch-ok-weak); font-size: 10px; }
-#chatStatus .tok .tk { padding: 0 5px; border-radius: 3px; background: var(--ch-bg-panel); border: 1px solid var(--ch-line-soft); }
-#chatStatus .tok .tk.c { color: var(--ch-tok-completion); }
-#chatStatus .tok .tk.ch { color: var(--ch-tok-cache); }
-#chatStatus .tok .tk.ms { color: var(--ch-tok-miss); }
-#chatMsgs { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+/* 内容列（2026-09-22）——宽度 = 列宽 + 滚动条间距 + 滚动条宽（滚动条左缘 = 列右缘 + 间距）；左缘 = 气泡左缘 */
+#chatMsgs { flex: 1; overflow-y: auto; scrollbar-gutter: stable; width: calc(var(--ch-col-w) + var(--ch-scroll-gap) + var(--ch-scroll-w)); margin-left: var(--ch-col-left); padding: 12px 0; display: flex; flex-direction: column; gap: 10px; }
+/* A79 气泡宽度三段式——宽度收口已上移到 #chatMsgs（列宽 = 三段式、左缘 = 居中偏移），本行只承载布局；
+   短气泡由 flex 收缩到内容宽、贴各自一侧（assistant 左缘 / user 右缘——2026-09-22 分侧） */
 .chat-row { display: flex; animation: chat-in 0.18s ease-out; }
 @keyframes chat-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
-.chat-row.user { justify-content: flex-start; }
+.chat-row.user { justify-content: flex-end; }
 .chat-row.assistant { justify-content: flex-start; }
 /* 气泡描边（2026-09-17）——线色 --bubble-line 与半透明度 --bubble-alpha 均按块类型赋值（基础 = Reply 态色 · 20%）；
    默认半透明（压亮度）；hover 经 0.3s ease-in-out 渐强到实心，移出即反向渐弱
    transition 可中断——渐强中移出从当前值转弱、渐弱中移入从当前值续强；用户气泡显式无边框 */
-.chat-bubble { --bubble-line: var(--ch-state-reply); --bubble-alpha: 20%; max-width: 78%; padding: 8px 12px; border-radius: 8px; font-size: var(--chat-font-size); line-height: 1.7; white-space: pre-wrap; word-break: break-all; border: 1px solid color-mix(in srgb, var(--bubble-line) var(--bubble-alpha), transparent); transition: border-color 0.3s ease-in-out; animation: bubble-appear 0.3s ease-in-out; }
+/* A79 宽度统一（2026-09-22）——气泡不再各设档位；宽度上限由 .chat-row 的对称 padding 收口（见上方 .chat-row 规则） */
+.chat-bubble { --bubble-line: var(--ch-state-reply); --bubble-alpha: 20%; max-width: 100%; padding: 8px 12px; border-radius: var(--ch-radius-bubble); font-size: var(--chat-font-size); line-height: 1.7; white-space: pre-wrap; word-break: break-all; border: 1px solid color-mix(in srgb, var(--bubble-line) var(--bubble-alpha), transparent); transition: border-color 0.3s ease-in-out; animation: bubble-appear 0.3s ease-in-out; }
 .chat-bubble:hover { border-color: var(--bubble-line); }
 /* 入场（2026-09-17）——新块创建瞬间以实心描边出现，随即按 hover 移出的同一节奏落到默认档（把注意力引到刚出现的块）；
    to 与静态值一致（呼吸组 45% / 其余 20%）→ 呼吸组可无缝接续 bubble-breathe（后者 delay 0.3s 起） */
@@ -199,14 +210,14 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-tool .seg-hit-cross { color: var(--ch-warn); }
 .chat-tool .seg-hit.err { color: var(--ch-tool-error); }
 /* S2 §8.4——重试过程记录气泡（独立视图条目：弱化灰底小号；⟳ 重试中 / ✓ 已恢复） */
-.chat-bubble.retry { --bubble-line: var(--ch-state-wait); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-fg); font-size: 11px; padding: 4px 10px; max-width: 60%; }
+.chat-bubble.retry { --bubble-line: var(--ch-state-wait); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-fg); font-size: 11px; padding: 4px 10px; }
 .chat-bubble.retry.resolved { color: var(--ch-chat-sys-ok); }
 /* P6 中止气泡——停止本轮提示（独立视图条目：弱化样式；宿主文本渲染） */
-.chat-bubble.paused { --bubble-line: var(--ch-state-link); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-ok); font-size: 11px; padding: 4px 10px; max-width: 60%; }
+.chat-bubble.paused { --bubble-line: var(--ch-state-link); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-ok); font-size: 11px; padding: 4px 10px; }
 /* A77 静默提示气泡——宿主静默超过阈值时的明确展示（独立气泡；前端不改任何在途块状态——收口交后端） */
-.chat-bubble.stall { --bubble-line: var(--ch-warn); background: var(--ch-chat-sys-bg); color: var(--ch-warn); font-size: 11px; padding: 4px 10px; max-width: 88%; }
+.chat-bubble.stall { --bubble-line: var(--ch-warn); background: var(--ch-chat-sys-bg); color: var(--ch-warn); font-size: 11px; padding: 4px 10px; }
 /* 注入报告气泡——新会话前文加载明细（📚 汇总头 + 逐文件三态；弱化系统样式） */
-.chat-bubble.inject { --bubble-line: var(--ch-state-all); background: var(--ch-inject-bg); color: var(--ch-inject-fg); font-size: 11px; max-width: 88%; }
+.chat-bubble.inject { --bubble-line: var(--ch-state-all); background: var(--ch-inject-bg); color: var(--ch-inject-fg); font-size: 11px; }
 .inject-report .ir-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 4px; }
 .inject-report .ir-list { display: flex; flex-direction: column; gap: 2px; }
 .inject-report .ir-item { word-break: break-all; white-space: pre-wrap; }
@@ -218,7 +229,7 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .inject-report .ir-tool-row { word-break: break-all; white-space: pre-wrap; color: var(--ch-inject-fg); }
 .inject-report .ir-tool-group { color: var(--ch-warn); font-weight: bold; }
 /* roundsum 轮末统计气泡——本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时（弱化系统样式；呼吸描边见下方 bubble-breathe，2026-09-17） */
-.chat-bubble.roundsum { --bubble-line: var(--ch-state-all); background: var(--ch-roundsum-bg); color: var(--ch-roundsum-fg); font-size: 11px; max-width: 88%; line-height: 1.6; }
+.chat-bubble.roundsum { --bubble-line: var(--ch-state-all); background: var(--ch-roundsum-bg); color: var(--ch-roundsum-fg); font-size: 11px; line-height: 1.6; }
 .chat-bubble.roundsum .rs-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 3px; }
 .chat-bubble.roundsum .rs-tok { color: var(--ch-tok-completion); word-break: break-all; white-space: pre-wrap; }
 .chat-bubble.roundsum .rs-tools { color: var(--ch-warn); margin-top: 2px; }
@@ -236,14 +247,18 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
     50% { border-color: var(--bubble-line); }
 }
 .chat-bubble.pending, .chat-bubble.retry, .chat-bubble.streaming, .chat-bubble.paused { --bubble-alpha: 45%; animation: bubble-appear 0.3s ease-in-out, bubble-breathe 1.8s ease-in-out 0.3s infinite; }
-#chatinput { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--ch-line-faint); align-items: flex-end; }
-#chatSendInput { flex: 1; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 7px 10px; font-family: inherit; font-size: 12px; resize: none; line-height: 1.5; }
+/* 输入区（2026-09-22）——三列网格：左预留带 | 内容列 | 右预留带（1fr）
+   列宽基准 = 视口宽（本容器无左右 padding）；输入框与气泡同宽同左缘，发送按钮固定宽落在右预留带、贴列右缘；
+   无上边框——输入区与气泡区之间不画分割线。
+   🔴 无 column-gap——列间距会把第 2 列整体右推，输入框左缘即与气泡左缘错开；按钮间距由自身 margin 承担 */
+#chatinput { display: grid; grid-template-columns: var(--ch-col-left) var(--ch-col-w) 1fr; row-gap: 6px; padding: 8px 0; align-items: end; }
+#chatSendInput { grid-column: 2; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-bubble); color: var(--ch-fg); padding: 7px 10px; font-family: inherit; font-size: 12px; resize: none; line-height: 1.5; }
 #chatSendInput:focus { outline: none; border-color: var(--ch-focus); }
 #chatSendInput:disabled { opacity: 0.5; }
-#chatSendBtn { background: var(--ch-bg-accent); border: none; color: var(--ch-fg-inverse); padding: 7px 16px; cursor: pointer; font-family: inherit; font-size: 12px; }
+#chatSendBtn { grid-column: 3; justify-self: start; margin-left: 6px; width: var(--ch-send-w); background: var(--ch-bg-accent); border: none; border-radius: var(--ch-radius-bubble); color: var(--ch-fg-inverse); padding: 7px 0; cursor: pointer; font-family: inherit; font-size: 12px; }
 #chatSendBtn:disabled { opacity: 0.5; cursor: default; }
-/* A65 对话图片附件——待发图片条（flex-basis 100% 占满首行，输入框顺延下一行；空则整行消失） */
-#chatImages { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* A65 对话图片附件——待发图片条（网格首行 · 与输入框同列宽；空则整行消失——自动放置不占行） */
+#chatImages { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 #chatImages:empty { display: none; }
 .chat-img { position: relative; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; max-width: 140px; }
 .chat-img img { max-height: 72px; max-width: 132px; display: block; border: 1px solid var(--ch-line); border-radius: 4px; }
@@ -300,8 +315,9 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 #delayLoopLabel { display: flex; align-items: center; gap: 3px; color: var(--ch-fg-muted); font-size: 11px; white-space: nowrap; cursor: pointer; user-select: none; }
 #delayLoop { accent-color: var(--ch-warn); cursor: pointer; }
 #delayAddRow button { background: var(--ch-bg-accent); border: none; color: var(--ch-fg-inverse); padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
-/* 单向数据流改造——插话队列显示区（正常流堆叠——有排队消息显示/无则隐藏） */
-#chatPendingPanel { border-top: 1px solid var(--ch-line-faint); background: var(--ch-bg-sunken); font-size: 11px; padding: 5px 12px; color: var(--ch-fg-muted); }
+/* 单向数据流改造——插话队列显示区（正常流堆叠——有排队消息显示/无则隐藏）
+   2026-09-22：文本缩进对齐内容列左缘（背景仍横贯）+ 去上边线（输入区与气泡区之间不画分割线） */
+#chatPendingPanel { background: var(--ch-bg-sunken); font-size: 11px; padding: 5px var(--ch-col-left); color: var(--ch-fg-muted); }
 #chatPendingPanel:empty { display: none; }
 
 /* F3 MD 渲染——手写解析器输出（chat-md.js）——表格/代码块/标题/列表样式 */
