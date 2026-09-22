@@ -140,7 +140,6 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-bubble.tool:has(.chat-tool.err) { --bubble-line: var(--ch-err); }
 .chat-bubble.error { --bubble-line: var(--ch-err); color: var(--ch-chat-error-fg); }
 .chat-bubble.streaming::after { content: '▌'; color: var(--ch-ok); animation: chatblink 1s infinite; }
-.chat-bubble.streaming-wait::after { content: '…'; color: var(--ch-fg-weak); }
 @keyframes chatblink { 50% { opacity: 0; } }
 /* 折叠头垂直居中（2026-09-17）——margin-top 只在「气泡内有前置文本」时给间距；
    纯折叠气泡（details 为首子元素）不加，否则上方多出留白、内容整体偏下 */

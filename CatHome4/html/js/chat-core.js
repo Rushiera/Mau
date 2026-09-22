@@ -73,6 +73,8 @@ function chatOnSessionState(d) {
         requests: d.requests || 0
     };
     chatRenderStatus();
+    // 进行中标记——全局态唯一出入口（态变化即同步气泡外观；与状态条/桌宠同源同时刻）
+    chatSyncRunningMarks();
     // A61 刷新兜底——后端轮次在跑而本端非发送态（刷新/新连接丢失本地态）→ 恢复 sending（停止按钮/插话面一致）
     if (chatRunning() && chatState !== 'sending' && chatState !== 'loading') {
         chatSetState('sending');
@@ -180,14 +182,24 @@ function chatClearStall() {
     }
 }
 
-function chatSealStreams() {
-    // 工具轮/整块到达——seal 全部未终结的流式容器（text + reason；防闪烁标记残留——宿主整块为正常 seal 路径，此处兜底协议缺口）
-    // 只撤标记不删容器——容器仍须承接后续同 seq 流式或 replaceSeq 整块替换
+// 进行中标记同步——**全局态唯一出入口**（莎 2026-09-22 定）：气泡的「进行中」外观一律由后端运行态驱动，
+// 不再由各 view 事件路径自判（原实现：新建容器即加标记 + 各处 seal 撤标记 = 多出口、时机不一）。
+// 映射：think → 思考块流式标识 · reply → 回复流式标识 · tool/run → 工具卡进行中 · 其余态 → 无标识。
+// 调用面：态变化（chatOnSessionState）+ 容器创建（chatOnStream / chatOnToolCard）——同一实现，无第二处判定。
+function chatSyncRunningMarks() {
+    var state = chatRunState.state || '';
     for (var k in viewContainers) {
         var c = viewContainers[k];
-        if (c && c.bubble) {
+        if (!c || !c.bubble) { continue; }
+        var active = false;
+        if (c.type === 'reason') { active = (state === 'think'); }
+        else if (c.type === 'text') { active = (state === 'reply'); }
+        else if (c.type === 'toolcard') { active = ((state === 'tool') || (state === 'run')); }
+        if (active) {
+            c.bubble.classList.add(c.type === 'toolcard' ? 'pending' : 'streaming');
+        } else {
             c.bubble.classList.remove('streaming');
-            c.bubble.classList.remove('streaming-wait');
+            c.bubble.classList.remove('pending');
         }
     }
 }
@@ -279,9 +291,7 @@ function chatOnStream(seq, payload) {
         // 思考流式——独立气泡流式展开（增量可见）
         if (!viewContainers[seq]) {
             // 新思考容器——上一轮文本流式已终结（多轮工具循环残留兜底）
-            chatSealStreams();
             var b = chatBubble('assistant', 'reason');
-            b.classList.add('streaming');
             var det = chatReasonBlock('', true);
             b.appendChild(det);
             viewContainers[seq] = { type: 'reason', bubble: b, reasonPre: det.querySelector('div') };
@@ -296,22 +306,21 @@ function chatOnStream(seq, payload) {
         var t = payload.text || '';
         if (t.length === 0) { return; }
         if (!viewContainers[seq]) {
-            // 思考段终结——reply 流式开始前折叠思考块（2026-09-17：思考结束即折叠，随后才开始流式 reply）
-            chatCollapseReasons();
+            // 思考段终结——折叠由后端思考整块（reason 事件）驱动，本路径不自判（唯一出口）
             var tb = chatBubble('assistant');
-            tb.classList.add('streaming');
             viewContainers[seq] = { type: 'text', bubble: tb, reasonPre: null };
         }
         var tc = viewContainers[seq];
         tc.bubble.classList.remove('error');
         chatAppend(tc.bubble, t);
     }
+    // 进行中标记——全局态唯一出入口（新建容器后立即按当前态同步）
+    chatSyncRunningMarks();
 }
 
 function chatOnText(seq, replaceSeq, payload) {
     // 回复整块——replaceSeq≥0 且容器存在 → 替换流式容器；否则新建气泡
     // F3 MD 渲染——整块 content 一次渲染（流式阶段 textContent 追加，不渲染不完整字符流）；md-block 包裹=CSS 作用域锚点
-    chatSealStreams();   // 整块到达——seal 其余流式容器（残留 thinking 闪烁标记兜底）
     var content = payload.content || '';
     // P6b 节点操作条——正式回复块底部两按钮（回滚/分支）；msgIndex<0（工具轮 seal 文本）不挂
     var msgIndex = (payload.msgIndex !== undefined) ? payload.msgIndex : -1;
@@ -320,7 +329,6 @@ function chatOnText(seq, replaceSeq, payload) {
     var c = viewContainers[replaceSeq];
     if (c && c.type === 'text') {
         c.bubble.classList.remove('streaming');
-        c.bubble.classList.remove('streaming-wait');
         // A65 整块渲染改 DOM 填充——图片包裹命中时先出缩略图组；无包裹与旧行为同构（md-block 单块）
         c.bubble.textContent = '';
         chatMdFill(c.bubble, content);
@@ -339,7 +347,6 @@ function chatOnReason(seq, replaceSeq, payload) {
     var c = viewContainers[replaceSeq];
     if (c && c.type === 'reason') {
         c.bubble.classList.remove('streaming');
-        c.bubble.classList.remove('streaming-wait');
         c.reasonPre.textContent = content;
         // 整块替换——流式展开 → 完成后折叠（_reasonText 同步 + _updateSummary 显式渲染——jsdom 不触发 toggle；真实浏览器 toggle 幂等同结果）
         var detEl = c.bubble.querySelector('details.chat-reason');
@@ -354,8 +361,6 @@ function chatOnReason(seq, replaceSeq, payload) {
 // 工具卡两段式——先行"进行中"卡（无 result → ⏳ 处理中，展开态）+ 完成/中断原位替换为完整卡（同气泡不新增）
 function chatOnToolCard(seq, replaceSeq, payload) {
     chatKeepAlive();
-    // 工具执行开始——上一轮文本流式已终结（宿主 seal 缺失兜底）
-    chatSealStreams();
     var pending = (payload.result === undefined);
     // 原位替换——命中先行卡容器（replaceSeq 指向其 seq）→ 换卡不换气泡
     if (replaceSeq !== undefined && replaceSeq >= 0) {
@@ -370,13 +375,14 @@ function chatOnToolCard(seq, replaceSeq, payload) {
         }
     }
     var tb = chatBubble('assistant', 'tool');
-    if (pending) { tb.classList.add('pending'); }
     var card = chatToolCard(payload, pending);
     tb.appendChild(card);
     if (pending) {
         // 先行卡登记——完成/中断事件以 replaceSeq 命中此处（完成卡不登记：无后续替换）
         viewContainers['toolcard_' + seq] = { type: 'toolcard', bubble: tb, card: card };
     }
+    // 进行中标记——全局态唯一出入口（先行卡按当前态决定是否挂 pending）
+    chatSyncRunningMarks();
 }
 
 // A55——重试气泡文本（渲染单例内文本面）
@@ -436,7 +442,6 @@ function chatOnError(payload) {
         var c = viewContainers[k];
         if (c && c.bubble) {
             c.bubble.classList.remove('streaming');
-            c.bubble.classList.remove('streaming-wait');
         }
     }
     viewContainers = {};
@@ -480,7 +485,6 @@ function chatOnControl(payload) {
             var c2 = viewContainers[k2];
             if (c2 && c2.bubble) {
                 c2.bubble.classList.remove('streaming');
-                c2.bubble.classList.remove('streaming-wait');
             }
         }
         viewContainers = {};
@@ -508,7 +512,6 @@ function chatOnControl(payload) {
             var cp = viewContainers[kp];
             if (cp && cp.bubble) {
                 cp.bubble.classList.remove('streaming');
-                cp.bubble.classList.remove('streaming-wait');
             }
         }
         viewContainers = {};
@@ -547,7 +550,6 @@ function chatFail(msg) {
         var c = viewContainers[k];
         if (c && c.bubble) {
             c.bubble.classList.remove('streaming');
-            c.bubble.classList.remove('streaming-wait');
         }
     }
     viewContainers = {};

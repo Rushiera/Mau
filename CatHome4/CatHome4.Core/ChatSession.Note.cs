@@ -30,6 +30,8 @@ namespace CH4
         private long _textStreamSeq;
         /// <summary>流式思考块序号——流式增量容器标识（reason 整块 replace；纯文本轮无整块）</summary>
         private long _reasonStreamSeq;
+        /// <summary>思考流式累积——reasoning_content 增量实时拼接（思考段终结 SealReasonStream 取值；LaunchLlm 清空）</summary>
+        private readonly StringBuilder _reasonAccum = new StringBuilder();
         /// <summary>
         /// Note 工具执行体——M4a（CH2 语义移植：set 写入/无参推进/全完成清空；返回文本 = LLM 唯一状态面）。
         /// </summary>

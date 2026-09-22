@@ -192,13 +192,13 @@ test('reason 流式展开增量可见——整块替换后折叠（summary 字�
   expect(det.querySelector('summary').textContent).toBe('Think：历史思考');
 });
 
-// ── 思考结束即折叠（2026-09-17 规格变更——原「最终回复前最后一块保持展开」退役）──
-test('思考流式 → reply 流式开始即折叠（不等整块、不等最终回复）', () => {
+// ── 思考结束即折叠（2026-09-17 规格变更；2026-09-22 收口唯一化——折叠由后端思考整块驱动）──
+test('思考流式 → 思考整块（离开 think 态）即折叠（不等最终回复）', () => {
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考' }, replaceSeq: -1 });
   let det = chatMsgs.querySelector('.chat-reason');
   expect(det.open).toBe(true);
-  // reply 流式开始——思考块立即折叠（summary 走折叠摘要渲染）
-  window.chatOnView({ seq: 12, renderType: 'stream', payload: { kind: 'text', text: '回复' }, replaceSeq: -1 });
+  // 后端思考段终结——reason 整块（replaceSeq 命中流式容器）→ 折叠（summary 走折叠摘要渲染）
+  window.chatOnView({ seq: 12, renderType: 'reason', payload: { content: '思考' }, replaceSeq: 11 });
   det = chatMsgs.querySelector('.chat-reason');
   expect(det.open).toBe(false);
   expect(det.querySelector('summary').textContent).toBe('Think：思考');
@@ -476,18 +476,21 @@ test('toolcard ps 正常结果——解析 stdout 长度标注', () => {
   expect(card.querySelector('.ta.warn')).toBeNull();
 });
 
-// ── 工具轮 seal——残留文本流式容器闪烁标记移除（toolcard 到达兜底；宿主 seal 缺失防线）──
-test('toolcard 到达——残留 text 流式容器 streaming 移除', () => {
+// ── 全局态驱动（2026-09-22 收口唯一化）——流式容器标记随后端运行态切换，不再由各 view 路径自判 ──
+test('全局态驱动——text 流式容器标记随态切换（reply 挂 / 离开 reply 撤）', () => {
+  window.chatOnSessionState({ sessionId: 's1', runState: 'reply', runMs: {}, requests: 1 });
   window.chatOnView({ seq: 10, renderType: 'stream', payload: { kind: 'text', text: '中间文本' }, replaceSeq: -1 });
   const tb = bubbles()[0];
   expect(tb.classList.contains('streaming')).toBe(true);
-  window.chatOnView({ seq: 30, renderType: 'toolcard', payload: { name: 'time', arguments: '{}', result: 'R' }, replaceSeq: -1 });
+  // 态离开 reply（工具决策流开始）——标记撤除；容器保留（仍须承接整块替换）
+  window.chatOnSessionState({ sessionId: 's1', runState: 'tool', runMs: {}, requests: 2 });
   expect(tb.classList.contains('streaming')).toBe(false);
   expect(window.viewContainers[10]).not.toBeUndefined();
 });
 
 // ── 工具卡两段式（2026-09-16）——先行"进行中"卡 + 完成/中断原位替换 ──
-test('toolcard 两段式——先行卡（无 result）显示 ⏳ 处理中 + pending 标记', () => {
+test('toolcard 两段式——先行卡（无 result）显示 ⏳ 处理中 + pending 标记（态驱动）', () => {
+  window.chatOnSessionState({ sessionId: 's1', runState: 'run', runMs: {}, requests: 1 });
   window.chatOnView({
     seq: 50, renderType: 'toolcard',
     payload: { name: 'text-read', arguments: JSON.stringify({ path: 'a.txt' }), toolIndex: 1, toolTotal: 1 },
@@ -569,6 +572,7 @@ test('view error 无容器——新建错误气泡', () => {
 
 // ── control chatdone 终态 ──
 test('view control chatdone seal 流式容器 + 恢复 idle', () => {
+  window.chatOnSessionState({ sessionId: 's1', runState: 'reply', runMs: {}, requests: 1 });
   window.chatOnView({ seq: 10, renderType: 'stream', payload: { kind: 'text', text: '流式' }, replaceSeq: -1 });
   const bubble = bubbles()[0];
   expect(bubble.classList.contains('streaming')).toBe(true);
@@ -1049,24 +1053,32 @@ test('A59 状态条时长进位——后端毫秒值走秒/分进位', () => {
   window.chatPhaseReset();
 });
 
-// ── F6 竞态补齐（P20-P2-1 回归）——整块/工具卡到达 seal 残留 reason 流式容器 ──
-test('F6 seal 补齐——工具卡与 text 整块到达后残留 reason 容器闪烁标记撤除', () => {
-  // 场景一：思考流式 → 工具卡（多轮工具循环常见路径）
+// ── A78 全局态唯一出入口（2026-09-22）——思考容器标记随 think 态挂载/撤除 ──
+test('A78 态驱动——思考容器标记随 think 态切换（think 挂 / 离开 think 撤）', () => {
+  // 思考流式——态 think 下挂标记
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考中' }, replaceSeq: -1 });
   const rb = chatMsgs.querySelector('.chat-reason').closest('.chat-bubble');
   expect(rb.classList.contains('streaming')).toBe(true);
-  window.chatOnView({ seq: 30, renderType: 'toolcard', payload: { name: 'time', arguments: '{}', result: 'R' }, replaceSeq: -1 });
+  // 离开 think（回复流式开始）——标记撤除；容器保留（仍须承接整块替换）
+  window.chatOnSessionState({ sessionId: 's1', runState: 'reply', runMs: {}, requests: 1 });
   expect(rb.classList.contains('streaming')).toBe(false);
-  // 容器保留——仍须承接后续同 seq 流式或 replaceSeq 整块替换
   expect(window.viewContainers[11]).not.toBeUndefined();
+});
 
-  // 场景二：思考流式 → 回复 text 整块（无 reason 整块替换路径）
+// ── A78 容器创建时按当前态初始化标记（态未变化时的补挂路径）──
+test('A78 态驱动——容器创建即按当前态挂标记（多容器各自归类）', () => {
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
   window.chatOnView({ seq: 12, renderType: 'stream', payload: { kind: 'reasoning', text: '二轮思考' }, replaceSeq: -1 });
-  const rb2 = chatMsgs.querySelectorAll('.chat-reason')[1].closest('.chat-bubble');
+  const rb2 = chatMsgs.querySelectorAll('.chat-reason')[0].closest('.chat-bubble');
   expect(rb2.classList.contains('streaming')).toBe(true);
-  window.chatOnView({ seq: 20, renderType: 'text', payload: { content: '最终回复' }, replaceSeq: -1 });
+  // 态切到 reply——思考容器撤、后续回复容器挂
+  window.chatOnSessionState({ sessionId: 's1', runState: 'reply', runMs: {}, requests: 1 });
+  window.chatOnView({ seq: 20, renderType: 'stream', payload: { kind: 'text', text: '回复' }, replaceSeq: -1 });
+  const tb = chatMsgs.querySelector('.chat-bubble.streaming');
+  expect(tb).not.toBeNull();
+  expect(tb.textContent).toBe('回复');
   expect(rb2.classList.contains('streaming')).toBe(false);
-  expect(chatMsgs.querySelector('.md-block')).not.toBeNull();
 });
 
 // ═══════════════════════════════════════════
@@ -1077,7 +1089,8 @@ test('A77 静默兜底——120s 静默贴提示，且不动在途容器状态�
   vi.useFakeTimers();
   try {
     window.chatState = 'sending';
-    // 先行工具卡（pending——蓝色呼吸态来源）
+    // 先行工具卡（pending——蓝色呼吸态来源；标记由全局态驱动）
+    window.chatOnSessionState({ sessionId: 's1', runState: 'run', runMs: {}, requests: 1 });
     window.chatOnToolCard(1, -1, { name: 'mau-setup', arguments: '{}', toolIndex: 1, toolTotal: 1 });
     const bubble = chatMsgs.querySelector('.chat-bubble.tool');
     expect(bubble.classList.contains('pending')).toBe(true);

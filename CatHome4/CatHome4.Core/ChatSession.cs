@@ -702,9 +702,9 @@ namespace CH4
             // [段2b] 运行态——中断结算（失败/中止轮同出统计：L2 摘要留档——design-ch4-llm §2.1 终止语义）
             PhaseSettle();
             LogStore.Add("LLM", 2, "本轮运行态统计（中断）: " + BuildRunStateSummary(), "LLM");
-            // [段3] 视图序号复位——流式容器由前端 seal（已显示内容保留）
+            // [段3] 视图序号复位——流式容器由前端 seal（已显示内容保留）；思考段经唯一出口收口
+            SealReasonStream();
             _textStreamSeq = 0;
-            _reasonStreamSeq = 0;
             _retryBlockIndex = -1;
             // [段4] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——中断非正常完成语义）
             _round = 0;
@@ -931,6 +931,7 @@ namespace CH4
             _llmBusy = true;
             _llmResultText = "";
             _llmReasoning = "";
+            _reasonAccum.Clear();
             _llmToolCallsJson = "";
             _llmError = false;
             _llmErrorText = "";
@@ -976,7 +977,6 @@ namespace CH4
             {
                 // [段1] 槽预置 + 后台流式消费
                 StringBuilder text = new StringBuilder();
-                StringBuilder reasoning = new StringBuilder();
                 string toolCalls = "";
                 await foreach (LlmStreamEvent ev in _llmRuntime.ChatStream(messages, _tools, ResolveCacheIsolationKey(), ct))
                 {
@@ -1016,7 +1016,7 @@ namespace CH4
                                 _httpHost.PushView("retry", resolvedJson, _retrySeq, 0);
                             }
                         }
-                        reasoning.Append(ev.Text);
+                        _reasonAccum.Append(ev.Text);
                         // 运行态——Reasoning 增量到达即思考态（远端·流；长度由远端决定）
                         PhaseEnter(PhaseThink);
                         if (_httpHost != null)
@@ -1146,7 +1146,7 @@ namespace CH4
                 }
                 // [段2] 结果槽落位
                 _llmResultText = text.ToString();
-                _llmReasoning = reasoning.ToString();
+                _llmReasoning = _reasonAccum.ToString();
                 _llmToolCallsJson = toolCalls;
                 // L1-META 结算行（D5 分级——观测全链：LLM 流完成一行为准，SSE log 事件实时可见）
                 string llmSummary = "模型已回复（" + text.Length.ToString() + " 字符）";
@@ -1196,11 +1196,31 @@ namespace CH4
                 _llmBusy = false;
             }
         }
+        /// <summary>
+        /// 思考段终结——离开 think 态的唯一收口（莎 2026-09-22 定）：流式思考块转整块（replaceSeq 命中流式容器）+ 序号复位。
+        /// 幂等——无在途思考流式（序号 0 或内容空）时静默返回。调用面：PhaseEnter 离开 think 态 + 中止/暂停收尾。
+        /// </summary>
+        private void SealReasonStream()
+        {
+            long seq = _reasonStreamSeq;
+            _reasonStreamSeq = 0;
+            string content = _reasonAccum.ToString();
+            if (seq == 0 || content.Length == 0)
+            {
+                return;
+            }
+            if (_httpHost != null)
+            {
+                string reasonJson = "{\"content\":" + JsonUtil.Serialize(content) + "}";
+                _httpHost.PushView("reason", reasonJson, seq, 0);
+            }
+        }
 
         /// <summary>运行态切换——结算旧态累计毫秒 + 进入新态（七态：idle/wait/link/think/tool/run/reply；锁内）；同态连续计时（重复事件不重置起表）；idle 不计时——只作态名。</summary>
         /// <param name="kind">目标态（PhaseIdle/PhaseWait/PhaseLink/PhaseThink/PhaseTool/PhaseRun/PhaseReply）</param>
         private void PhaseEnter(int kind)
         {
+            bool leaveThink = false;
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             lock (_phaseLock)
             {
@@ -1208,6 +1228,11 @@ namespace CH4
                 if (_phaseKind == kind)
                 {
                     return;
+                }
+                // 思考段终结判定——离开 think 态即收口（唯一出口：全部态转移都经本方法；莎 2026-09-22 定）
+                if (_phaseKind == PhaseThink && kind != PhaseThink)
+                {
+                    leaveThink = true;
                 }
                 if (_phaseKind >= 0 && _phaseStartTick > 0)
                 {
@@ -1225,6 +1250,11 @@ namespace CH4
                 {
                     _phaseStartTick = now;
                 }
+            }
+            // 锁外推事件——思考段整块（幂等：无在途思考流式时静默返回）
+            if (leaveThink)
+            {
+                SealReasonStream();
             }
         }
 
@@ -1492,11 +1522,7 @@ namespace CH4
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
             AppendMessage(_context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning));
             _viewStore.OnAssistantToolCalls(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
-            if (_httpHost != null && _llmReasoning.Length > 0)
-            {
-                string reasonJson = "{\"content\":" + JsonUtil.Serialize(_llmReasoning) + "}";
-                _httpHost.PushView("reason", reasonJson, _reasonStreamSeq, 0);
-            }
+            // 思考段整块——由 SealReasonStream 在离开 think 态时统一推送（工具决策流首帧即收口；唯一出口，莎 2026-09-22 定）
             // 工具轮 seal——视图层补 gap text 块（全量外观真源：前端历史/QQBot 转发消费）+ SSE 推送（实时）；空文本不推
             if (_llmResultText.Length > 0)
             {
@@ -1910,8 +1936,8 @@ namespace CH4
         /// </summary>
         private void AbortRoundError()
         {
+            SealReasonStream();
             _textStreamSeq = 0;
-            _reasonStreamSeq = 0;
             // 运行态——中止前结算当前态（失败轮同出统计：L2 摘要留档；不推 roundsum 气泡——中止非正常完成语义）
             PhaseSettle();
             LogStore.Add("LLM", 2, "本轮运行态统计（中止）: " + BuildRunStateSummary(), "LLM");

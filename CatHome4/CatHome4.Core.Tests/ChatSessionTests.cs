@@ -125,6 +125,15 @@ namespace CatHome4.Core.Tests
                 }
                 if (ToolCallsQueue.Count > 0)
                 {
+                    // A78——思考先于工具决策流（真实链路帧序：reasoning 增量帧 → tool_calls 增量帧）
+                    if (ChunkCount > 1)
+                    {
+                        for (int ri = 0; ri < ChunkCount; ri = ri + 1)
+                        {
+                            yield return new LlmStreamEvent(LlmStreamKind.Reasoning, "思");
+                            await Task.Delay(ChunkSleepMs);
+                        }
+                    }
                     string tc = ToolCallsQueue.Dequeue();
                     // 运行态七态——工具决策流开始（真实 Runtime：首个 tool_calls 增量帧产一次；2026-09-16）
                     yield return new LlmStreamEvent(LlmStreamKind.ToolCallsStart, "");
@@ -1521,6 +1530,61 @@ namespace CatHome4.Core.Tests
             // 四块思考增量各间隔 30ms——think 累计覆盖三段间隔（≥60ms 留抖动余量；旧实现同态重置只留最后一段 ≈0ms）
             Assert.True(ms["think"] >= 60, "think 累计应覆盖全部增量段（实际 " + ms["think"].ToString() + "ms）");
             Assert.Equal("idle", stateName);
+        }
+
+        /// <summary>
+        /// A78 思考段终结（纯文本轮）——离开 think 态（首个回复帧）即推思考整块：replaceSeq 命中流式容器序号；
+        /// 唯一出口 = PhaseEnter（莎 2026-09-22 定）。
+        /// </summary>
+        [Fact]
+        public void ReasonStream_SealedOnLeavingThink_TextReply()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ChunkCount = 2;
+            llm.ReplyText = "回复";
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            session.AttachHost(host);
+            session.PostUserMessage("想一想");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            // 流式容器事件——思考两条 + 回复一条（同 renderType=stream）
+            Assert.Equal(3, host.ViewEvents["stream"].Count);
+            // 思考整块——离开 think 态推一次，内容为流式累积值，replaceSeq 命中末条思考流式容器
+            Assert.Single(host.ViewEvents["reason"]);
+            using (JsonDocument d = JsonDocument.Parse(host.ViewEvents["reason"][0]))
+            {
+                Assert.Equal("思思", d.RootElement.GetProperty("content").GetString());
+            }
+            Assert.Equal(host.ViewSeqs["stream"][1], host.ViewReplaceSeqs["reason"][0]);
+        }
+
+        /// <summary>
+        /// A78 思考段终结（工具轮）——收口提前到工具决策流首帧（不等流末）：思考整块先于工具卡推送。
+        /// </summary>
+        [Fact]
+        public void ReasonStream_SealedOnToolCallsStart()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ChunkCount = 2;
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"t1\",\"function\":{\"name\":\"time\",\"arguments\":\"{}\"}}]");
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm, new ToolSpec[]
+            {
+                new ToolSpec("time", "当前时间", "{}")
+            });
+            session.AttachHost(host);
+            session.PostUserMessage("用工具");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            List<string> reasons = host.ViewEvents["reason"];
+            Assert.True(reasons.Count >= 1);
+            using (JsonDocument d = JsonDocument.Parse(reasons[0]))
+            {
+                Assert.Equal("思思", d.RootElement.GetProperty("content").GetString());
+            }
+            // 时序——思考整块先于工具卡（决策流首帧收口）
+            Assert.True(host.ViewSeqs["reason"][0] < host.ViewSeqs["toolcard"][0]);
         }
     }
 }
