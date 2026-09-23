@@ -267,7 +267,8 @@ namespace CatHome4.Observe
                     round = s.Round,
                     msgCount = s.MsgCount,
                     pending = s.PendingCount,
-                    noteActive = s.NoteActive
+                    noteActive = s.NoteActive,
+                    lastContextChangeAt = s.LastContextChangeAt
                 });
             }
             return sessions;

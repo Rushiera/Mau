@@ -635,18 +635,18 @@ namespace CH4
                 }
             }
             info["roots"] = rootList;
-            // [段6] tokens——前文长度（请求级：最近一次请求送入的上下文长度；无统计 = 0）
-            SessionStats? stats = AdminService.GetCatStats(catKey);
-            long prompt = 0;
-            long context = 0;
-            if (stats != null)
+            // [段6] tokens——前文长度（请求级实时值：最近一次请求送入的上下文长度；无请求 = 0）+ 最近前文变动时刻（Unix 毫秒；展示层格式化）
+            ChatSession session = AdminService.FindCatSession(catKey);
+            long ctxLen = 0;
+            long lastChangeAt = 0;
+            if (session != null)
             {
-                prompt = stats.Value.LastPromptTokens;
-                context = stats.Value.LastContextTokens;
+                ctxLen = session.ContextTokens;
+                lastChangeAt = session.LastContextChangeAt;
             }
-            long ctxLen = context > 0 ? context : prompt;
             Dictionary<string, object> tokensBlock = new Dictionary<string, object>();
             tokensBlock["context"] = ctxLen;
+            tokensBlock["lastContextChangeAt"] = lastChangeAt;
             info["tokens"] = tokensBlock;
             // [段7] packs——本猫挂载包（空 = 不输出该键）
             List<Dictionary<string, object>> packList = AdminService.BuildMountedPackItems(catKey);

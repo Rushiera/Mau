@@ -66,7 +66,7 @@ namespace CH4
             tools[3] = new
             {
                 name = "info",
-                description = "本会话环境自省——返回分类 JSON 块：version（版本 + 编译时刻）/ time（当前时间）/ llm（本猫生效端点）/ endpoint（本地端点：对话页 + 管理面板）/ roots（可见受控根）/ tokens（前文长度）/ packs（挂载包）/ qqbot（渠道说明）（agent 的眼睛；R1.2）",
+                description = "本会话环境自省——返回分类 JSON 块：version（版本 + 编译时刻）/ time（当前时间）/ llm（本猫生效端点）/ endpoint（本地端点：对话页 + 管理面板）/ roots（可见受控根）/ tokens（前文长度 + 最近前文变动时刻）/ packs（挂载包）/ qqbot（渠道说明）（agent 的眼睛；R1.2）",
                 parameters = new
                 {
                     type = "object",

@@ -1561,24 +1561,25 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 猫会话统计——info 自查数据源（M4e 猫级白名单同源寻址；majordomo 走默认会话）。
+        /// 猫会话——按猫键取会话实体（M4e 猫级白名单同源寻址；majordomo/空键走默认会话）。
+        /// 消费面：info 自查、快照 sessions 段的实时字段（前文长度 / 最近前文变动时刻）。
         /// </summary>
-        /// <param name="key">猫键（id/显示名；null=默认会话）</param>
-        /// <returns>会话统计；未找到 null</returns>
-        internal static SessionStats? GetCatStats(string key)
+        /// <param name="key">猫键（id/显示名；null/空=majordomo 默认会话）</param>
+        /// <returns>会话；未找到 null</returns>
+        internal static ChatSession FindCatSession(string key)
         {
             if (key == null || key.Length == 0 || key == "majordomo")
             {
                 if (_chatBridge != null && _chatBridge.DefaultSession != null)
                 {
-                    return _chatBridge.DefaultSession.LastStats;
+                    return _chatBridge.DefaultSession;
                 }
                 return null;
             }
             CatEntry cat = FindCat(key);
             if (cat != null && cat.Session != null)
             {
-                return cat.Session.LastStats;
+                return cat.Session;
             }
             return null;
         }

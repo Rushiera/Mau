@@ -21,6 +21,12 @@ namespace Mau.Runtime
         private string _systemPrompt;
 
         /// <summary>
+        /// 最后一次前文变动时刻（Unix 毫秒；0=从未变动）——追加消息即刷新（含工具结果写入）。
+        /// 恢复导入（ReplaceMessages）不算变动——「距今」问的是猫多久没干活，恢复不是干活。
+        /// </summary>
+        private long _lastChangeAt;
+
+        /// <summary>
         /// 建立空会话上下文
         /// </summary>
         public ChatContext()
@@ -51,6 +57,7 @@ namespace Mau.Runtime
             {
                 _history.Insert(0, CreateMessage(LlmRole.System, prompt));
             }
+            MarkChanged();
         }
 
         /// <summary>
@@ -66,6 +73,7 @@ namespace Mau.Runtime
             }
             LlmMessage msg = CreateMessage(LlmRole.User, text);
             _history.Add(msg);
+            MarkChanged();
             return msg;
         }
 
@@ -78,6 +86,7 @@ namespace Mau.Runtime
         {
             LlmMessage msg = CreateMessage(LlmRole.Assistant, text);
             _history.Add(msg);
+            MarkChanged();
             return msg;
         }
 
@@ -97,6 +106,7 @@ namespace Mau.Runtime
             msg.ToolCallsJson = toolCallsJson;
             msg.ReasoningContent = reasoning;
             _history.Add(msg);
+            MarkChanged();
             return msg;
         }
 
@@ -121,6 +131,7 @@ namespace Mau.Runtime
             msg.ToolCallId = toolCallId;
             msg.ToolName = toolName;
             _history.Add(msg);
+            MarkChanged();
             return msg;
         }
 
@@ -143,6 +154,26 @@ namespace Mau.Runtime
         }
 
         /// <summary>
+        /// 最后一次前文变动时刻——Unix 毫秒（0=从未变动）；展示层自行格式化「距今」。
+        /// 变动含工具结果写入；恢复导入（ReplaceMessages）不刷新。
+        /// </summary>
+        public long LastChangeAt
+        {
+            get
+            {
+                return _lastChangeAt;
+            }
+        }
+
+        /// <summary>
+        /// 标记前文变动——所有改变历史的写入路径统一调用（单一出口）。
+        /// </summary>
+        private void MarkChanged()
+        {
+            _lastChangeAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        }
+
+        /// <summary>
         /// 清除历史——保留系统提示词
         /// </summary>
         public void Clear()
@@ -156,6 +187,7 @@ namespace Mau.Runtime
             {
                 _history.Add(CreateMessage(LlmRole.System, _systemPrompt));
             }
+            MarkChanged();
         }
 
         /// <summary>以外部历史替换当前上下文（重启恢复）——结构修复：system 唯一（取第一条）、tool 无配对 ID 丢弃、声明无结果按声明序在结果块末尾补占位。</summary>

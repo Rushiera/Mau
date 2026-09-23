@@ -297,6 +297,20 @@ function buildBoxItem(b) {
 }
 
 // [段6b] 会话状态渲染——Majordomo + 多猫四相环预览（快照 sessions 段）
+// 距今文本——绝对毫秒戳 → 人读时长（刚刚 / N 分钟前 / N 小时前 / N 天前）；0/缺省 → 空串（不显示）
+function fmtAgo(ms) {
+    if (!ms || ms <= 0) { return ''; }
+    var delta = Date.now() - ms;
+    if (delta < 0) { delta = 0; }
+    var sec = Math.floor(delta / 1000);
+    if (sec < 60) { return '刚刚'; }
+    var min = Math.floor(sec / 60);
+    if (min < 60) { return min + ' 分钟前'; }
+    var hour = Math.floor(min / 60);
+    if (hour < 24) { return hour + ' 小时前'; }
+    return Math.floor(hour / 24) + ' 天前';
+}
+
 function renderSessions(sessions) {
     sessionsEl.textContent = '';
     if (!sessions || sessions.length === 0) {
@@ -330,6 +344,11 @@ function renderSessions(sessions) {
         var info = document.createElement('div');
         info.className = 'session-info';
         info.textContent = '轮次 ' + s.round + ' · 消息 ' + s.msgCount + ' · 待处理 ' + s.pending;
+        // 最近前文变动——绝对毫秒戳由后端给（快照 sessions 段），距今文本前端自算
+        var ago = fmtAgo(s.lastContextChangeAt);
+        if (ago) {
+            info.textContent += ' · 前文变动 ' + ago;
+        }
         card.appendChild(info);
         sessionsEl.appendChild(card);
     }

@@ -39,10 +39,18 @@ namespace CatHome4.QQ
             {
                 AppendKeyValue(sb, "本地端点", EndpointText(endpoint));
             }
-            string ctx = Num(Obj(root, "tokens"), "context");
+            JsonElement tokens = Obj(root, "tokens");
+            string ctx = Num(tokens, "context");
             if (ctx.Length > 0)
             {
-                AppendKeyValue(sb, "前文", ctx + " tokens");
+                // 前文长度 = 请求级实时值；最近前文变动时刻（绝对毫秒戳）在此格式化为「距今」——展示层各自格式化
+                string ctxLine = ctx + " tokens";
+                string ago = AgoText(NumLong(tokens, "lastContextChangeAt"));
+                if (ago.Length > 0)
+                {
+                    ctxLine = ctxLine + " · 前文变动 " + ago;
+                }
+                AppendKeyValue(sb, "前文", ctxLine);
             }
             AppendKeyValue(sb, "加载包", PacksText(root));
             AppendKeyValue(sb, "QQBot", Str(Obj(root, "qqbot"), "usage"));
@@ -245,6 +253,56 @@ namespace CatHome4.QQ
                 return "";
             }
             return v.ToString();
+        }
+
+        /// <summary>取长整数数值字段——非数值 / 缺键 → 0。</summary>
+        private static long NumLong(JsonElement obj, string key)
+        {
+            if (obj.ValueKind != JsonValueKind.Object)
+            {
+                return 0;
+            }
+            JsonElement el;
+            if (!obj.TryGetProperty(key, out el) || el.ValueKind != JsonValueKind.Number)
+            {
+                return 0;
+            }
+            long v;
+            if (!el.TryGetInt64(out v))
+            {
+                return 0;
+            }
+            return v;
+        }
+
+        /// <summary>距今文本——绝对毫秒戳 → 人读时长（刚刚 / N 分钟前 / N 小时前 / N 天前）；0 或负值 → 空串（不显示）。</summary>
+        private static string AgoText(long ms)
+        {
+            if (ms <= 0)
+            {
+                return "";
+            }
+            long delta = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - ms;
+            if (delta < 0)
+            {
+                delta = 0;
+            }
+            long sec = delta / 1000;
+            if (sec < 60)
+            {
+                return "刚刚";
+            }
+            long min = sec / 60;
+            if (min < 60)
+            {
+                return min.ToString() + " 分钟前";
+            }
+            long hour = min / 60;
+            if (hour < 24)
+            {
+                return hour.ToString() + " 小时前";
+            }
+            return (hour / 24).ToString() + " 天前";
         }
 
         /// <summary>取子对象——非对象 → Undefined 元素（下游 Str / Num 一律空串）。</summary>

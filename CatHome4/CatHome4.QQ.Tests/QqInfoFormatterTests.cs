@@ -63,5 +63,16 @@ namespace CatHome4.QQ.Tests
             Assert.Equal("", QqInfoFormatter.ToMarkdown(null));
             Assert.Equal("", QqInfoFormatter.ToMarkdown("{\"ok\":true,\"tool\":\"info\",\"cat\":\"c1\"}"));
         }
+
+        /// <summary>
+        /// 前文变动——tokens.lastContextChangeAt（绝对毫秒戳）投影为「距今」；缺字段 / 0 不显示（见 FullBlock 用例）。
+        /// </summary>
+        [Fact]
+        public void TokensWithChangeAt_AppendsAgo()
+        {
+            long fiveMinAgo = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - (5 * 60 + 10) * 1000;
+            string json = "{\"tokens\":{\"context\":223086,\"lastContextChangeAt\":" + fiveMinAgo.ToString() + "}}";
+            Assert.Equal("- **前文** 223086 tokens · 前文变动 5 分钟前", QqInfoFormatter.ToMarkdown(json));
+        }
     }
 }

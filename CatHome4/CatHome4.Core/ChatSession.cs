@@ -453,6 +453,30 @@ namespace CH4
         }
 
         /// <summary>
+        /// 最后一次前文变动时刻——Unix 毫秒（0=从未变动）；展示层自行格式化「距今」。
+        /// 数据源 = ChatContext.LastChangeAt（含工具结果写入；恢复导入不刷新）。消费面：info 自查 / 快照 sessions 段。
+        /// </summary>
+        public long LastContextChangeAt
+        {
+            get
+            {
+                return _context.LastChangeAt;
+            }
+        }
+
+        /// <summary>
+        /// 实时前文长度——最近一次请求的 prompt（请求级；每次 usage 帧覆盖）。
+        /// 对照 LastStats.LastContextTokens（轮末落盘的最近一轮值）——info 自查取本属性（跟真实值，不等轮末）。
+        /// </summary>
+        public long ContextTokens
+        {
+            get
+            {
+                return _contextTokens;
+            }
+        }
+
+        /// <summary>
         /// 设置注入报告——session.new 后调用（持久化进视图：内存设置 + view.json 落盘；独立字段 Rebuild 不清）。
         /// </summary>
         /// <param name="json">注入报告 JSON（BuildInjectReportJson 产物）</param>
