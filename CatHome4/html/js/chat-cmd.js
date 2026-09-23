@@ -209,10 +209,10 @@ function cmdSegmentIntent(segText, piped) {
     return { known: false, tag: cmdTagWord(clean), text: clean + suffix, piped: piped === true };
 }
 
-/** 去前导调用运算符 & 与空白 */
+/** 去前导调用运算符 & / 表达式括号 ( 与空白（`(Get-Item x).VersionInfo…` 形态） */
 function cmdStripCall(text) {
     var t = cmdTrim(text);
-    while (t.length > 0 && t.charAt(0) === '&' && t.charAt(1) !== '&') {
+    while (t.length > 0 && (t.charAt(0) === '(' || (t.charAt(0) === '&' && t.charAt(1) !== '&'))) {
         t = cmdTrim(t.substring(1));
     }
     return t;
@@ -430,6 +430,8 @@ var CMD_RULES = [
     { re: /^["']?(?:[^"'\s]*[\/\\])?godot[^\s"']*_console(?:\.exe)?["']?\s*(.*)$/i, fmt: cmdFmtGodot, tag: cmdTagGodot },
     // ── 编译链 / 版本控制 / Node ──
     { re: /^dotnet\s+(build|test|publish|run|restore|clean|pack)\b\s*(.*)$/i, fmt: cmdFmtDotnet, tag: cmdTagDotnet },
+    // dotnet 形态兜底——dll 直跑（测试程序集）/ 开关查询（子命令之外的常用形态）
+    { re: /^dotnet\s+(.*)$/i, fmt: cmdFmtDotnetOther, tag: cmdTagDotnetOther },
     { re: /^git(\.exe)?\s+(\S+)\s*(.*)$/i, fmt: cmdFmtGit, tag: cmdTagGit },
     { re: /^(npm|npx|node)\b\s*(.*)$/i, fmt: cmdVerb('运行 Node 工具链') },
     // ── 嵌套解释器（cmd /c 与 powershell -Command 的内联命令）──
@@ -443,6 +445,11 @@ var CMD_RULES = [
     { re: /^(Get-Command)\b\s*(.*)$/i, fmt: cmdVerb('查询命令') },
     { re: /^(Select-String|findstr)\b\s*(.*)$/i, fmt: cmdVerb('搜索文件内容') },
     { re: /^(Test-Path)\b\s*(.*)$/i, fmt: cmdVerb('检查路径是否存在') },
+    { re: /^where\.exe\b\s*(.*)$/i, fmt: cmdVerb('定位可执行文件') },
+    { re: /^(Get-Location)\b\s*(.*)$/i, fmt: cmdVerbOnly('查看当前目录') },
+    { re: /^(Get-CimInstance)\b\s*(.*)$/i, fmt: cmdVerb('查询系统信息') },
+    { re: /^(Expand-Archive)\b\s*(.*)$/i, fmt: cmdVerb('解压归档文件') },
+    { re: /^fc(?:\.exe)?\b\s*(.*)$/i, fmt: cmdVerbOnly('比较文件差异') },
     { re: /^Test-NetConnection\b\s*(.*)$/i, fmt: cmdVerb('测试网络连通性') },
     { re: /^(Get-Item|Get-ItemProperty)\b\s*(.*)$/i, fmt: cmdVerb('查看项属性') },
     { re: /^(Get-Process|gps)\b\s*(.*)$/i, fmt: cmdVerb('查看进程') },
@@ -485,6 +492,23 @@ function cmdFmtDotnet(seg, m) {
         pack: '打包 NuGet 包'
     };
     return (map[act] || ('dotnet ' + act)) + cmdTarget(m[2] || '');
+}
+
+/** dotnet 兜底形态（dll 直跑 / 开关查询）——子命令之外的常用写法 */
+function cmdFmtDotnetOther(seg, m) {
+    var rest = cmdTrim(m[1] || '');
+    var dll = /(?:[^"'\s]*[\/\\])?([^"'\s]+\.dll)\b/i.exec(rest);
+    if (dll) {
+        return '运行 .NET 程序集 ' + cmdQuote(dll[1]);
+    }
+    if (/^--version\b/i.test(rest)) {
+        return '查看 .NET SDK 版本';
+    }
+    var sw = /^(--[A-Za-z-]+)\b/.exec(rest);
+    if (sw) {
+        return '查看 .NET 环境信息（' + sw[1] + '）';
+    }
+    return 'dotnet ' + cmdTrunc(rest, 50);
 }
 
 /** git 命令解析——跳过带值开关（-C <repo> 等）取子命令与其余参数 */
@@ -692,6 +716,20 @@ function cmdTagGit(seg) {
 function cmdTagDotnet(seg, m) {
     var act = (m && m[1]) ? m[1].toLowerCase() : '';
     return (act.length > 0) ? ('dotnet ' + act) : 'dotnet';
+}
+
+/** dotnet 兜底指令类标识——「dotnet <程序集名 / 开关>」 */
+function cmdTagDotnetOther(seg, m) {
+    var rest = cmdTrim((m && m[1]) || '');
+    var dll = /(?:[^"'\s]*[\/\\])?([^"'\s]+\.dll)\b/i.exec(rest);
+    if (dll) {
+        return 'dotnet ' + dll[1];
+    }
+    var sw = /^(--[A-Za-z-]+)\b/.exec(rest);
+    if (sw) {
+        return 'dotnet ' + sw[1];
+    }
+    return 'dotnet';
 }
 
 /** mau 指令类标识——「mau <子命令>」 */

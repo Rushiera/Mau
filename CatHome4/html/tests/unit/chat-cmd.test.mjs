@@ -143,18 +143,18 @@ test('无 command 字段返回 null', () => {
 
 // ── 覆盖率采集——未识别段上报（cmd-unknown 持久化）──
 test('未识别段产出待上报项（token 小写归一 + raw 原文 + 样本）', () => {
-  const r = cmdDecodeTool(args('Get-CimInstance Win32_Process'));
+  const r = cmdDecodeTool(args('WT3Play.console.exe --headless --pack a.assets.pack'));
   expect(r.unknown.length).toBe(1);
-  expect(r.unknown[0].token).toBe('get-ciminstance');
-  expect(r.unknown[0].raw).toBe('Get-CimInstance');
-  expect(r.unknown[0].sample).toBe('Get-CimInstance Win32_Process');
+  expect(r.unknown[0].token).toBe('wt3play.console.exe');
+  expect(r.unknown[0].raw).toBe('WT3Play.console.exe');
+  expect(r.unknown[0].sample).toBe('WT3Play.console.exe --headless --pack a.assets.pack');
 });
 
 test('已识别段不产出待上报项；混合命令只收未识别段', () => {
   expect(cmdDecodeTool(args('git status')).unknown.length).toBe(0);
-  const r = cmdDecodeTool(args('git status; Get-CimInstance Win32_Process'));
+  const r = cmdDecodeTool(args('git status; ffprobe.exe -v error a.mp4'));
   expect(r.unknown.length).toBe(1);
-  expect(r.unknown[0].token).toBe('get-ciminstance');
+  expect(r.unknown[0].token).toBe('ffprobe.exe');
 });
 
 test('token 归一——路径型取末段文件名；空段返回空串', () => {
@@ -191,4 +191,26 @@ test('上报失败释放标记——下次渲染可重试（不静默丢弃采�
     expect(calls.length).toBe(1);
     expect(globalThis.CMD_UNKNOWN_REPORTED['retry-me']).toBe(undefined);
   });
+});
+
+// ── 补充规则（2026-09-23 收集表核销：dotnet 形态 / 表达式括号 / 外部命令）──
+test('dotnet 兜底形态——dll 直跑与开关查询', () => {
+  const r = cmdDecodeTool(args('dotnet C:\\Work\\Gitee\\mau\\Mau\\Mau.Development.Tests\\bin\\Debug\\net8.0\\Mau.Development.Tests.dll -class FormatTests'));
+  expect(r.brief).toBe('dotnet Mau.Development.Tests.dll · 运行 .NET 程序集 「Mau.Development.Tests.dll」');
+  expect(cmdDecodeTool(args('dotnet --version')).brief).toBe('dotnet --version · 查看 .NET SDK 版本');
+  expect(cmdDecodeTool(args('dotnet --info')).brief).toBe('dotnet --info · 查看 .NET 环境信息（--info）');
+});
+
+test('表达式括号前缀——(Get-Item …).VersionInfo 形态识别', () => {
+  expect(cmdDecodeTool(args('(Get-Item C:\\Work\\Gitee\\mau\\SetUp.exe).VersionInfo.ProductVersion')).brief)
+    .toContain('Get-Item · 查看项属性');
+});
+
+test('文件系统补充规则——where.exe / Get-Location / Get-CimInstance / Expand-Archive / fc', () => {
+  expect(cmdDecodeTool(args('where.exe ffmpeg')).brief).toBe('where · 定位可执行文件 「ffmpeg」');
+  expect(cmdDecodeTool(args('Get-Location')).brief).toBe('Get-Location · 查看当前目录');
+  expect(cmdDecodeTool(args('Get-CimInstance Win32_Process')).brief).toBe('Get-CimInstance · 查询系统信息 「Win32_Process」');
+  expect(cmdDecodeTool(args('Expand-Archive -Path C:\\Temp\\ffmpeg-shared.zip -DestinationPath C:\\Temp\\ffmpeg-shared -Force')).brief)
+    .toBe('Expand-Archive · 解压归档文件 「C:\\Temp\\ffmpeg-shared.zip」');
+  expect(cmdDecodeTool(args('fc.exe /b a.txt b.txt')).brief).toBe('fc · 比较文件差异');
 });
