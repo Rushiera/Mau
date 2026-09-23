@@ -377,6 +377,27 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-bubble .md-block thead th, .chat-bubble .md-block thead td { background: var(--ch-md-table-head-bg); color: var(--ch-md-table-head-fg); font-weight: bold; }
 .chat-bubble .md-block tbody tr:nth-child(even) td { background: var(--ch-md-table-zebra); }
 
+/* A81 MD 块复制原文（2026-09-23）——代码块 / 表格右上角图标按钮
+   包裹层 .md-copy = 按钮定位上下文（pre / table 自身是横滚容器——按钮放里面会随内容滚动）
+   图标走 ::before——按钮零文本节点（不污染 textContent 断言与无障碍朗读）；图标按钮族（design-ch4-frontend-theme §四）
+   首末 margin 归零需穿透包裹层：.md-block > *:first-child 只作用于包裹层本身，不达内部 pre / table */
+.chat-bubble .md-block .md-copy { position: relative; }
+.chat-bubble .md-block > .md-copy:first-child > pre, .chat-bubble .md-block > .md-copy:first-child > table { margin-top: 0; }
+.chat-bubble .md-block > .md-copy:last-child > pre, .chat-bubble .md-block > .md-copy:last-child > table { margin-bottom: 0; }
+.chat-bubble .md-block .md-copy-btn {
+    position: absolute; top: 4px; right: 4px;
+    background: none; border: none; cursor: pointer;
+    color: var(--ch-fg-muted); line-height: 0; padding: 4px; border-radius: 4px;
+    opacity: 0; transition: opacity 0.15s;
+}
+/* 图标 = 内联 SVG 线条双框（chat-view.js chatMdCopyIcon）——随 currentColor 取灰；成功态切 ✓（隐藏 svg 显示 ::after） */
+.chat-bubble .md-block .md-copy-btn svg { display: block; }
+.chat-bubble .md-block .md-copy-btn::after { content: '✓'; display: none; font-size: 12px; line-height: 1; }
+.chat-bubble .md-block .md-copy-btn.done svg { display: none; }
+.chat-bubble .md-block .md-copy-btn.done::after { display: block; }
+.chat-bubble .md-block .md-copy:hover .md-copy-btn { opacity: 1; }
+.chat-bubble .md-block .md-copy-btn:hover { background: var(--ch-hover-overlay); color: var(--ch-fg-strong); }
+
 /* ============ P6b 节点操作条——text 块底部回滚/分支按钮（图标 + 悬浮提示） ============ */
 .node-actions {
     display: flex;

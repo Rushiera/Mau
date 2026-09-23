@@ -12,6 +12,11 @@ function mdEscapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function mdEscapeAttr(s) {
+    // 属性值转义——mdEscapeHtml 基础上把换行转为 &#10;（属性值单行化；DOM getAttribute 解码回 LF）
+    return mdEscapeHtml(s).replace(/\n/g, '&#10;');
+}
+
 function mdParseInline(text) {
     // 行内解析——**粗体** / *斜体* / `代码`；未闭合标记按原文输出；内层递归（粗体内可含代码）
     var out = '';
@@ -97,6 +102,7 @@ function mdToHtml(md) {
     var codeBuf = [];
     var codeLang = '';           // 代码块语言标记（```markdown 递归渲染判定）
     var tableBuf = null;
+    var tableSrc = [];           // 表格源行（含分隔行原文——A81 复制用：渲染丢弃分隔行，源文本保留）
     var tableHasHeader = false;
     var listBuf = null;      // { tag:'ul'|'ol', items:[{html, done}] }
     var paraBuf = [];
@@ -124,9 +130,11 @@ function mdToHtml(md) {
     }
     function flushTable() {
         if (tableBuf && tableBuf.length > 0) {
-            out.push(mdRenderTable(tableBuf, tableHasHeader));
+            // A81 复制原文——包裹层 = 按钮定位上下文（pre / table 自身是横滚容器，按钮放里面会随内容滚动）
+            out.push('<div class="md-copy" data-md="' + mdEscapeAttr(tableSrc.join('\n')) + '">' + mdRenderTable(tableBuf, tableHasHeader) + '</div>');
         }
         tableBuf = null;
+        tableSrc = [];
         tableHasHeader = false;
     }
 
@@ -147,7 +155,7 @@ function mdToHtml(md) {
                 if (codeLang === 'markdown' || codeLang === 'md') {
                     out.push(mdToHtml(codeBuf.join('\n')));
                 } else {
-                    out.push('<pre><code>' + mdEscapeHtml(codeBuf.join('\n')) + '</code></pre>');
+                    out.push('<div class="md-copy"><pre><code>' + mdEscapeHtml(codeBuf.join('\n')) + '</code></pre></div>');
                 }
             }
             continue;
@@ -159,10 +167,12 @@ function mdToHtml(md) {
             flushPara(); flushList();
             if (mdIsTableSep(t)) {
                 tableHasHeader = (tableBuf !== null && tableBuf.length > 0);
+                if (tableBuf !== null) { tableSrc.push(t); }
                 continue;
             }
             if (tableBuf === null) { tableBuf = []; tableHasHeader = false; }
             tableBuf.push(t);
+            tableSrc.push(t);
             continue;
         }
         if (tableBuf !== null) { flushTable(); }
@@ -236,7 +246,7 @@ function mdToHtml(md) {
     // EOF flush 全部收集器
     flushPara(); flushList(); flushTable();
     if (inCode) {
-        out.push('<pre><code>' + mdEscapeHtml(codeBuf.join('\n')) + '</code></pre>');
+        out.push('<div class="md-copy"><pre><code>' + mdEscapeHtml(codeBuf.join('\n')) + '</code></pre></div>');
     }
     return out.join('\n');
 }

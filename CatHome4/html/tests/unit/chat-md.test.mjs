@@ -30,14 +30,14 @@ test('段落——多行聚合成一个 <p>（空行分隔）', () => {
 });
 
 // ── 代码块 ──
-test('代码块——``` 包裹，保留换行与缩进，语言标记忽略', () => {
+test('代码块——``` 包裹，保留换行与缩进，语言标记忽略（A81 外层 .md-copy 包裹）', () => {
   const md = '```csharp\nvoid Foo()\n{\n    var x = 1;\n}\n```';
   const html = mdToHtml(md);
-  expect(html).toBe('<pre><code>void Foo()\n{\n    var x = 1;\n}</code></pre>');
+  expect(html).toBe('<div class="md-copy"><pre><code>void Foo()\n{\n    var x = 1;\n}</code></pre></div>');
 });
 
 test('代码块——未闭合容错（EOF 强制闭合）', () => {
-  expect(mdToHtml('```\nabc')).toBe('<pre><code>abc</code></pre>');
+  expect(mdToHtml('```\nabc')).toBe('<div class="md-copy"><pre><code>abc</code></pre></div>');
 });
 
 test('代码块——```markdown 递归渲染为真 Markdown（LLM 常包表格/标题展示效果）', () => {
@@ -51,7 +51,7 @@ test('代码块——```markdown 递归渲染为真 Markdown（LLM 常包表格/
 });
 
 test('代码块——```csharp 保持代码块（非 markdown 语言不递归）', () => {
-  expect(mdToHtml('```csharp\nint x = 1;\n```')).toBe('<pre><code>int x = 1;</code></pre>');
+  expect(mdToHtml('```csharp\nint x = 1;\n```')).toBe('<div class="md-copy"><pre><code>int x = 1;</code></pre></div>');
 });
 
 // ── 引用 ──
@@ -92,6 +92,38 @@ test('表格——无分隔行则全部数据行（无 thead）', () => {
   const html = mdToHtml('| a | b |\n| c | d |');
   expect(html).toContain('<tbody>');
   expect(html).not.toContain('<thead>');
+});
+
+// ── A81 复制原文——包裹层与源文本载体 ──
+test('A81 代码块——外层 .md-copy 包裹，源文本走 pre code（不存 data-md）', () => {
+  const html = mdToHtml('```\nabc\ndef\n```');
+  expect(html).toBe('<div class="md-copy"><pre><code>abc\ndef</code></pre></div>');
+  expect(html).not.toContain('data-md');
+});
+
+test('A81 表格——.md-copy 包裹 + data-md 保留源行（含分隔行，换行转 &#10;）', () => {
+  const md = '| a | b |\n| --- | --- |\n| 1 | 2 |';
+  const html = mdToHtml(md);
+  expect(html).toContain('<div class="md-copy" data-md="| a | b |&#10;| --- | --- |&#10;| 1 | 2 |">');
+  expect(html).toContain('</table></div>');
+});
+
+test('A81 表格源文本——属性转义（& < > "）不破属性边界', () => {
+  const html = mdToHtml('| a & b | <x> | "q" |\n| --- | --- | --- |');
+  expect(html).toContain('data-md="| a &amp; b | &lt;x&gt; | &quot;q&quot; |&#10;| --- | --- | --- |"');
+  expect(html).not.toContain('data-md="| a & b');
+});
+
+test('A81 表格源文本——无分隔行时 data-md 只含数据行', () => {
+  const html = mdToHtml('| a | b |\n| c | d |');
+  expect(html).toContain('data-md="| a | b |&#10;| c | d |"');
+});
+
+test('A81 ```markdown 递归——内层表格同样带复制载体', () => {
+  const html = mdToHtml('```markdown\n| a | b |\n| --- | --- |\n| 1 | 2 |\n```');
+  expect(html).toContain('class="md-copy"');
+  expect(html).toContain('data-md="| a | b |&#10;| --- | --- |&#10;| 1 | 2 |"');
+  expect(html).not.toContain('<pre>');
 });
 
 // ── 行内 ──

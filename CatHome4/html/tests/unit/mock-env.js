@@ -46,3 +46,18 @@ export function installMockEventSource() {
 export function installMockFetch() {
   globalThis.fetch = async () => ({ json: async () => ({}), ok: true });
 }
+
+/**
+ * 安装剪贴板 mock（jsdom 无 navigator.clipboard——A81 复制原文消费面）
+ * 写入记录挂 globalThis.__clipboardWrites 供断言；用例前清空：`window.__clipboardWrites.length = 0`
+ * @returns {string[]} 写入记录数组（同 globalThis.__clipboardWrites）
+ */
+export function installMockClipboard() {
+  const writes = [];
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { clipboard: { writeText: async (text) => { writes.push(text); } } },
+    configurable: true
+  });
+  globalThis.__clipboardWrites = writes;
+  return writes;
+}

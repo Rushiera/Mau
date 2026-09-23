@@ -47,6 +47,7 @@ beforeEach(() => {
   if (window.chatTimer) { clearTimeout(window.chatTimer); window.chatTimer = null; }
   chatMsgs.textContent = '';
   chatStatus.textContent = '';
+  if (window.__clipboardWrites) { window.__clipboardWrites.length = 0; }
   window.chatPhaseReset();
 });
 
@@ -138,6 +139,42 @@ test('F3 user 气泡保持纯文本（不 MD 渲染）', () => {
   window.chatOnView({ seq: 1, renderType: 'user', payload: { content: '## 不是标题', source: 'user' }, replaceSeq: -1 });
   expect(bubbles()[0].querySelector('.md-block')).toBeNull();
   expect(bubbles()[0].textContent).toBe('## 不是标题');
+});
+
+// ── A81 MD 块复制原文——按钮挂载与剪贴板写入 ──
+test('A81 代码块挂复制按钮（零文本节点——不污染 textContent）', () => {
+  window.chatOnView({ seq: 20, renderType: 'text', payload: { content: '```\ncode\n```' }, replaceSeq: -1 });
+  const bubble = bubbles()[0];
+  const wrap = bubble.querySelector('.md-copy');
+  expect(wrap).not.toBeNull();
+  const btn = wrap.querySelector('button.md-copy-btn');
+  expect(btn).not.toBeNull();
+  expect(btn.textContent).toBe('');            // 图标是元素（SVG），非文本节点
+  expect(btn.querySelector('svg')).not.toBeNull();   // 线条复制图标（内联 SVG——非 emoji）
+  expect(bubble.textContent).toBe('code');     // 按钮与源文本载体均不进 textContent
+});
+
+test('A81 表格复制按钮——点击写入剪贴板（源文本含分隔行）', async () => {
+  const md = '| a | b |\n| --- | --- |\n| 1 | 2 |';
+  window.chatOnView({ seq: 20, renderType: 'text', payload: { content: md }, replaceSeq: -1 });
+  const btn = bubbles()[0].querySelector('.md-copy-btn');
+  btn.click();
+  await new Promise((r) => setTimeout(r, 0));
+  expect(window.__clipboardWrites).toEqual(['| a | b |\n| --- | --- |\n| 1 | 2 |']);
+  expect(btn.classList.contains('done')).toBe(true);
+});
+
+test('A81 代码块复制内容——不含围栏', async () => {
+  window.chatOnView({ seq: 20, renderType: 'text', payload: { content: '```\nx = 1\n```' }, replaceSeq: -1 });
+  const btn = bubbles()[0].querySelector('.md-copy-btn');
+  btn.click();
+  await new Promise((r) => setTimeout(r, 0));
+  expect(window.__clipboardWrites).toEqual(['x = 1']);
+});
+
+test('A81 无代码块/表格的回复不挂按钮', () => {
+  window.chatOnView({ seq: 20, renderType: 'text', payload: { content: '纯文本回复' }, replaceSeq: -1 });
+  expect(bubbles()[0].querySelector('.md-copy-btn')).toBeNull();
 });
 
 // ── P6b 节点操作条——text 块带 msgIndex 渲染两按钮（回滚/分支）；无 msgIndex 不渲染 ──
