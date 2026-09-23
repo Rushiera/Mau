@@ -14,6 +14,7 @@
 | BRIK-FILE-003 | file.move | FILE | FILE/BRIK-FILE-003_file.move.cs | 无 | active |  |
 | BRIK-FILE-004 | file.delete | FILE | FILE/BRIK-FILE-004_file.delete.cs | 无 | active |  |
 | BRIK-FILE-005 | file.copy | FILE | FILE/BRIK-FILE-005_file.copy.cs | 无 | active |  |
+| BRIK-FILE-006 | file.version | FILE | FILE/BRIK-FILE-006_file.version.cs | 无 | active |  |
 | BRIK-HOST-001 | host.restart | HOST | HOST/BRIK-HOST-001_host.restart.cs | 无 | active |  |
 | BRIK-HOST-002 | host.command | HOST | HOST/BRIK-HOST-002_host.command.cs | 无 | active |  |
 | BRIK-LLM-002 | llm.stream | LLM | LLM/BRIK-LLM-002_llm.stream.cs | 无 | active |  |

@@ -225,9 +225,10 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-tool .seg-hit-ctx { color: var(--ch-fg-muted); }
 .chat-tool .seg-hit-cross { color: var(--ch-warn); }
 .chat-tool .seg-hit.err { color: var(--ch-tool-error); }
-/* S2 §8.4——重试过程记录气泡（独立视图条目：弱化灰底小号；⟳ 重试中 / ✓ 已恢复） */
+/* S2 §8.4——重试过程记录气泡（独立视图条目：弱化灰底小号；⟳ 重试中 / ✓ 已恢复）
+   A86——resolved 不覆盖报错原文：仅换形态（描边色）与文本色，文本 = 原文 + 追加「已恢复」 */
 .chat-bubble.retry { --bubble-line: var(--ch-state-wait); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-fg); font-size: 11px; padding: 4px 10px; }
-.chat-bubble.retry.resolved { color: var(--ch-chat-sys-ok); }
+.chat-bubble.retry.resolved { --bubble-line: var(--ch-chat-sys-ok); color: var(--ch-chat-sys-ok); }
 /* P6 中止气泡——停止本轮提示（独立视图条目：弱化样式；宿主文本渲染） */
 .chat-bubble.paused { --bubble-line: var(--ch-state-link); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-ok); font-size: 11px; padding: 4px 10px; }
 /* A77 静默提示气泡——宿主静默超过阈值时的明确展示（独立气泡；前端不改任何在途块状态——收口交后端） */

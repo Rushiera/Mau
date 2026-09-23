@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -623,6 +624,73 @@ namespace Mau.Runtime
                 head = head.Substring(0, 7);
             }
             return "[git] 存在 .git（" + rel + "——HEAD: " + head + "）";
+        }
+
+        /// <summary>
+        /// 读取文件版本信息——PE 文件（exe/dll）的版本三件（Product/File/回落值）+ 修改时间与大小；
+        /// 非 PE 文件 / PE 无版本资源明确报错（不返回空版本，失败可见）。
+        /// </summary>
+        /// <param name="path">文件路径（受控根寻址——只读语义）</param>
+        /// <returns>版本信息多行文本（路径 / 版本 / FileVersion / ProductVersion / 修改时间 / 大小）</returns>
+        public string ReadVersionInfo(string path)
+        {
+            string resolved = Resolve(path, false);
+            if (!File.Exists(resolved))
+            {
+                throw new FileNotFoundException("File was not found.", resolved);
+            }
+            // [段1] PE 判定——首两字节 "MZ"（非 PE 直接报错，不让空版本伪装成正常）
+            bool isPe = false;
+            FileStream probe = new FileStream(resolved, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            try
+            {
+                int b0 = probe.ReadByte();
+                int b1 = probe.ReadByte();
+                isPe = b0 == 'M' && b1 == 'Z';
+            }
+            finally
+            {
+                probe.Dispose();
+            }
+            if (!isPe)
+            {
+                throw new InvalidDataException("Not a PE file (no version resource).");
+            }
+            // [段2] 版本三件——ProductVersion 承载 InformationalVersion（.NET SDK 注入 $(Version)+编译时刻——A53）
+            FileVersionInfo info = FileVersionInfo.GetVersionInfo(resolved);
+            string product = SafeText(info.ProductVersion);
+            string file = SafeText(info.FileVersion);
+            string version = product;
+            string fallbackNote = "";
+            if (version.Length == 0)
+            {
+                version = file;
+                fallbackNote = "（ProductVersion 为空——回落 FileVersion）";
+            }
+            if (version.Length == 0)
+            {
+                throw new InvalidDataException("PE file has no version resource.");
+            }
+            string fileText = file;
+            if (fileText.Length == 0)
+            {
+                fileText = "(无)";
+            }
+            string productText = product;
+            if (productText.Length == 0)
+            {
+                productText = "(无)";
+            }
+            // [段3] 元数据——修改时间与大小（同一次读取的自然产物）
+            FileInfo fi = new FileInfo(resolved);
+            StringBuilder sb = new StringBuilder();
+            sb.Append("路径: ").Append(resolved);
+            sb.Append("\n版本: ").Append(version).Append(fallbackNote);
+            sb.Append("\nFileVersion: ").Append(fileText);
+            sb.Append("\nProductVersion: ").Append(productText);
+            sb.Append("\n修改时间: ").Append(fi.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"));
+            sb.Append("\n大小: ").Append(fi.Length.ToString()).Append(" 字节");
+            return sb.ToString();
         }
 
         /// <summary>

@@ -455,16 +455,17 @@ function chatOnToolCard(seq, replaceSeq, payload) {
     chatLiveSyncTimer();
 }
 
-// A55——重试气泡文本（渲染单例内文本面）
+// A55——重试气泡文本（渲染单例内文本面）；A86——resolved 不覆盖报错信息：原文保留 + 追加「已恢复」
 function chatRetryText(payload) {
     var state = payload.state || 'retrying';
     var attempt = payload.attempt || '';
     var max = payload.max || '';
     var reason = payload.text || '';
+    var base = '⟳ 重试中 ' + attempt + (max ? '/' + max : '') + (reason ? ' · ' + reason : '');
     if (state === 'resolved') {
-        return '✓ 已恢复' + (attempt ? '（重试 ' + attempt + ' 次）' : '');
+        return base + ' ✓ 已恢复';
     }
-    return '⟳ 重试中 ' + attempt + '/' + max + (reason ? ' · ' + reason : '');
+    return base;
 }
 
 // A55——重试渲染单例：新建重试气泡（历史重建与实时事件共用同一渲染面）

@@ -74,3 +74,15 @@
 § 'T_CopyExec' [t=2400, par] : 'S_Copy' = 'Ready' → 'file.copy'[@cpArgs] > @cpRes | 'S_Copy' = 'Done' | 'S_Copy' = 'Failed'
 § 'T_CopyReply' : 'S_Copy' = 'Done' → 'oa.complete_str'[@cpOffice, @cpRes] | 'self.desc'["空闲待命", "", ""] | 'S_Copy' = 'Idle' | 'S_Copy' = 'Idle'
 § 'T_CopyAbort' : 'S_Copy' = 'Failed' → 'oa.complete_str'[@cpOffice, @cpRes] | 'S_Copy' = 'Idle' | 'S_Copy' = 'Idle'
+
+// ══════════════ file-version 线（A90——版本信息读取） ══════════════
+
+§ 'S_Version' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+
+§ 'P_VersionOpen' ↻ [1]: 'oa.is_open'["TOOL", "file-version"] > @vsOpen
+
+§ 'T_VersionClaim' : @vsOpen & 'S_Version' = 'Idle' → 'oa.claim_next_simple'["TOOL", "file-version"] > @vsOffice | 'S_Version' = 'Claimed' | 'S_Version' = 'Idle'
+§ 'T_VersionArgs' : 'S_Version' = 'Claimed' → 'oa.get_str'[@vsOffice, "args"] > @vsArgs | 'self.desc'["file-version 执行中", "", ""] | 'S_Version' = 'Ready' | 'S_Version' = 'Failed'
+§ 'T_VersionExec' [t=2400, par] : 'S_Version' = 'Ready' → 'file.version'[@vsArgs] > @vsRes | 'S_Version' = 'Done' | 'S_Version' = 'Failed'
+§ 'T_VersionReply' : 'S_Version' = 'Done' → 'oa.complete_str'[@vsOffice, @vsRes] | 'self.desc'["空闲待命", "", ""] | 'S_Version' = 'Idle' | 'S_Version' = 'Idle'
+§ 'T_VersionAbort' : 'S_Version' = 'Failed' → 'oa.complete_str'[@vsOffice, @vsRes] | 'S_Version' = 'Idle' | 'S_Version' = 'Idle'

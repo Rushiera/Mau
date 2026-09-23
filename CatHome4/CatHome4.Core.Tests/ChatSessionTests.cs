@@ -1051,10 +1051,13 @@ namespace CatHome4.Core.Tests
                 Assert.Equal("1", d1.RootElement.GetProperty("attempt").GetString());
                 Assert.Equal("3", d1.RootElement.GetProperty("max").GetString());
             }
-            // 末个 resolved 态——重试成功回填
+            // 末个 resolved 态——重试成功回填；A86——保留报错原文（attempt/max/原因摘要齐，不覆盖）
             using (JsonDocument dLast = JsonDocument.Parse(retryEvents[retryEvents.Count - 1]))
             {
                 Assert.Equal("resolved", dLast.RootElement.GetProperty("state").GetString());
+                Assert.Equal("1", dLast.RootElement.GetProperty("attempt").GetString());
+                Assert.Equal("3", dLast.RootElement.GetProperty("max").GetString());
+                Assert.False(string.IsNullOrEmpty(dLast.RootElement.GetProperty("text").GetString()));
             }
             // 重试后正常回复
             Assert.Contains("重试后正常回复", GetLastAssistantText(session));

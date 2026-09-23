@@ -865,12 +865,13 @@ test('view retry replaceSeq 更新同一气泡（多次重试不堆叠）', () =
   expect(bubbles()[0].textContent).toContain('⟳ 重试中 2/3');
 });
 
-test('view retry resolved 状态切换（✓ 已恢复）', () => {
+test('view retry resolved 状态切换（A86——保留报错原文 + 追加已恢复）', () => {
   window.chatOnView({ seq: 50, renderType: 'retry', payload: { state: 'retrying', attempt: '1', max: '3', text: '失败' }, replaceSeq: -1 });
   const first = bubbles()[0];
-  window.chatOnView({ seq: 52, renderType: 'retry', payload: { state: 'resolved', text: '已恢复' }, replaceSeq: 50 });
+  window.chatOnView({ seq: 52, renderType: 'retry', payload: { state: 'resolved', attempt: '1', max: '3', text: '失败' }, replaceSeq: 50 });
   expect(rows().length).toBe(1);
   expect(bubbles()[0]).toBe(first);
+  expect(bubbles()[0].textContent).toContain('⟳ 重试中 1/3 · 失败');
   expect(bubbles()[0].textContent).toContain('✓ 已恢复');
   expect(bubbles()[0].classList.contains('resolved')).toBe(true);
 });
@@ -879,13 +880,14 @@ test('view retry 历史重建——retry 块渲染（chatRenderHistory）', () =
   window.chatRenderHistory({
     blocks: [
       { renderType: 'retry', payload: { state: 'retrying', attempt: '2', max: '3', text: '历史失败' } },
-      { renderType: 'retry', payload: { state: 'resolved', attempt: '2' } }
+      { renderType: 'retry', payload: { state: 'resolved', attempt: '2', max: '3', text: '历史失败' } }
     ],
     sessionId: 's1',
     count: 2
   });
   expect(rows().length).toBe(2);
   expect(bubbles()[0].textContent).toContain('⟳ 重试中 2/3');
+  expect(bubbles()[1].textContent).toContain('⟳ 重试中 2/3 · 历史失败');
   expect(bubbles()[1].textContent).toContain('✓ 已恢复');
   expect(bubbles()[1].classList.contains('resolved')).toBe(true);
 });

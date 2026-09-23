@@ -133,6 +133,7 @@ var CHAT_TOOL_SKELETONS = {
     // listing——列举
     'file-tree': 'listing',
     'file-find': 'listing',
+    'file-version': 'listing',
     'cs-list': 'listing',
     'config-list': 'listing',
     // matches——检索命中

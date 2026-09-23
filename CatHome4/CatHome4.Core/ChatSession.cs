@@ -78,6 +78,15 @@ namespace CH4
         /// <summary>retry 视图块索引——同一重试序列原位更新落盘块（-1=无块；轮终复位）</summary>
         private int _retryBlockIndex = -1;
 
+        /// <summary>retry 气泡原文快照——最近一次重试的尝试序号（A86：resolved 保留报错信息）</summary>
+        private string _retryAttempt = "";
+
+        /// <summary>retry 气泡原文快照——最近一次重试的次数上限（A86）</summary>
+        private string _retryMax = "";
+
+        /// <summary>retry 气泡原文快照——最近一次重试的原因摘要（含中文注释；A86）</summary>
+        private string _retryReason = "";
+
         /// <summary>空回复续传计数——无回复/纯空格时同上下文重发（无上限——LLM 兜底；整轮清零）</summary>
         private int _emptyReplyRetry;
 
@@ -968,6 +977,15 @@ namespace CH4
         }
 
         /// <summary>
+        /// 构造 retry 气泡 resolved 载荷——保留原报错信息（尝试序号 / 次数上限 / 原因摘要），仅切换恢复状态（A86）。
+        /// </summary>
+        /// <returns>resolved 状态载荷 JSON——前端渲染为原文 + 追加「已恢复」+ 气泡形态与文本色变化</returns>
+        private string BuildRetryResolvedJson()
+        {
+            return "{\"state\":\"resolved\",\"attempt\":\"" + _retryAttempt + "\",\"max\":\"" + _retryMax + "\",\"text\":" + JsonUtil.Serialize(_retryReason) + "}";
+        }
+
+        /// <summary>
         /// 后台消费 LLM 流——写会话槽 + SSE 转发 + 结算行。Task.Run 执行——异常全兜底（错误可见性）。
         /// </summary>
         /// <param name="messages">消息序列</param>
@@ -986,7 +1004,7 @@ namespace CH4
                         if (_sawRetry)
                         {
                             _sawRetry = false;
-                            string resolvedJson = "{\"state\":\"resolved\",\"text\":\"已恢复\"}";
+                            string resolvedJson = BuildRetryResolvedJson();
                             _retryBlockIndex = _viewStore.UpsertRetry(resolvedJson, ViewTimestamp(), _retryBlockIndex);
                             if (_httpHost != null)
                             {
@@ -1009,7 +1027,7 @@ namespace CH4
                         if (_sawRetry)
                         {
                             _sawRetry = false;
-                            string resolvedJson = "{\"state\":\"resolved\",\"text\":\"已恢复\"}";
+                            string resolvedJson = BuildRetryResolvedJson();
                             _retryBlockIndex = _viewStore.UpsertRetry(resolvedJson, ViewTimestamp(), _retryBlockIndex);
                             if (_httpHost != null)
                             {
@@ -1031,7 +1049,7 @@ namespace CH4
                         if (_sawRetry)
                         {
                             _sawRetry = false;
-                            string resolvedJson = "{\"state\":\"resolved\",\"text\":\"已恢复\"}";
+                            string resolvedJson = BuildRetryResolvedJson();
                             _retryBlockIndex = _viewStore.UpsertRetry(resolvedJson, ViewTimestamp(), _retryBlockIndex);
                             if (_httpHost != null)
                             {
@@ -1088,6 +1106,10 @@ namespace CH4
                         }
                         // A69 视图层报错中文注释——重试原因摘要追加中文注释
                         reason = ErrorNote.Apply(reason);
+                        // A86——原文快照：resolved 时保留报错信息（前端原文 + 追加「已恢复」，不覆盖）
+                        _retryAttempt = attempt;
+                        _retryMax = max;
+                        _retryReason = reason;
                         string retryView = "{\"state\":\"retrying\",\"attempt\":\"" + attempt + "\",\"max\":\"" + max + "\",\"text\":" + JsonUtil.Serialize(reason) + "}";
                         _retryBlockIndex = _viewStore.UpsertRetry(retryView, ViewTimestamp(), _retryBlockIndex);
                         if (_httpHost != null)
