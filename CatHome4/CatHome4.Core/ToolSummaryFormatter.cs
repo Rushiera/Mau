@@ -283,7 +283,7 @@ namespace CH4
         // TextCat——修改/操作
         // ═══════════════════════════════════════════
 
-        /// <summary>text-replace——路径+新旧片段（UTF-8 字节数）</summary>
+        /// <summary>text-replace——路径+新旧片段（UTF-8 字节数；删除标记按语义显示，不暴露契约串）</summary>
         private static string Fmt_Replace(Dictionary<string, string> p, string result)
         {
             string path = Arg(p, "path");
@@ -296,10 +296,23 @@ namespace CH4
                 fileName = TruncPath(path);
             }
             string oldBrief = oldStr.Length > 15 ? oldStr.Substring(0, 15) + "…" : oldStr;
-            string newBrief = newStr.Length > 15 ? newStr.Substring(0, 15) + "…" : newStr;
+            string newDesc;
+            if (newStr == TextReplaceSpec.DeleteKey)
+            {
+                // 删除标记——摘要按语义显示，不暴露契约串（A88 / BRIK-TEXT-004）
+                newDesc = "（删除）";
+            }
+            else
+            {
+                string newBrief = newStr;
+                if (newStr.Length > 15)
+                {
+                    newBrief = newStr.Substring(0, 15) + "…";
+                }
+                newDesc = Q(newBrief) + "(" + Encoding.UTF8.GetByteCount(newStr) + "B)";
+            }
             int oldB = Encoding.UTF8.GetByteCount(oldStr);
-            int newB = Encoding.UTF8.GetByteCount(newStr);
-            return "替换文本 " + Q(fileName) + " → " + Q(newBrief) + "(" + newB + "B) 覆盖 " + Q(oldBrief) + "(" + oldB + "B)";
+            return "替换文本 " + Q(fileName) + " → " + newDesc + " 覆盖 " + Q(oldBrief) + "(" + oldB + "B)";
         }
         /// <summary>text-find / text-grep——命中统计+文件预览（verb 区分搜索文件/检索内容；CH4 输出适配：find=相对路径行，grep=相对路径:行号:上下文）</summary>
         private static string Fmt_Find(Dictionary<string, string> p, string result, string verb)

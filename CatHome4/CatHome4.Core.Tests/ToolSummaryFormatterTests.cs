@@ -96,6 +96,15 @@ namespace CatHome4.Core.Tests
             string s = ToolSummaryFormatter.Build("text-replace", "{\"path\":\"x.md\",\"old\":\"anchor_unique\",\"new\":\"replaced_ok\"}", "OK 替换完成: 1 处（x.md）");
             Assert.Equal("替换文本 \"x.md\" → \"replaced_ok\"(11B) 覆盖 \"anchor_unique\"(13B)", s);
         }
+        /// <summary>
+        /// 替换工具摘要——删除标记按语义显示（不暴露契约串；A88）。
+        /// </summary>
+        [Fact]
+        public void TextReplace_DeleteKey_ShowsSemanticDelete()
+        {
+            string s = ToolSummaryFormatter.Build("text-replace", "{\"path\":\"a.txt\",\"old\":\"old\",\"new\":\"黑暗剑+22\"}", "OK 替换完成: 1 处（a.txt）");
+            Assert.Equal("替换文本 \"a.txt\" → （删除） 覆盖 \"old\"(3B)", s);
+        }
 
         /// <summary>
         /// 文件搜索摘要——展示命中文件数与文件名列表。

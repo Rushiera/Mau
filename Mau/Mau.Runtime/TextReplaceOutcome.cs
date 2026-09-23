@@ -41,4 +41,16 @@ namespace Mau.Runtime
         /// <summary>成功时目标段读回（替换点 ±3 行）</summary>
         public string Snippet = "";
     }
+
+    /// <summary>
+    /// 文本替换契约常量——显式删除标记的单一真相源（积木 BRIK-TEXT-004 与宿主摘要投影共同消费）
+    /// </summary>
+    public static class TextReplaceSpec
+    {
+        /// <summary>
+        /// 删除标记——new 精确等于本串时按空文本落盘（等价删除匹配文本；四模式通用）。
+        /// 显式标记替代空串语义：区分「显式删除」与「漏传 / 生成错误」（空串一律 BAD_ARGS 拒绝）。
+        /// </summary>
+        public const string DeleteKey = "黑暗剑+22";
+    }
 }

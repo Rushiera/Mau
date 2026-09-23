@@ -2,7 +2,7 @@
 // 积木: text.replace
 // ID:   BRIK-TEXT-004
 // 类别: TEXT
-// 作用: 锚点替换——exact/ignore_case 唯一锚点替换，all/regex 全部匹配替换并原子写回（exact/ignore_case/all/regex；NotFound 带差异字节定位，Ambiguous 带候选行）——LLM 工具 text-replace 语料执行面
+// 作用: 锚点替换——exact/ignore_case 唯一锚点替换，all/regex 全部匹配替换并原子写回（exact/ignore_case/all/regex；NotFound 带差异字节定位，Ambiguous 带候选行）；new 传删除标记「黑暗剑+22」按空文本落盘（等价删除，四模式通用），空 new 一律拒绝——LLM 工具 text-replace 语料执行面
 // 依赖: 无
 // 引用: Mau.Runtime（FileSystemService/DataBox/TextReplaceOutcome）
 // 原理: DataBox.TryResolve<FileSystemService> → ReplaceTextAuto(path, old, new, mode)；argsJson 内解析 path/old/new/mode
@@ -19,8 +19,12 @@ namespace Mau.Bricks
     /// </summary>
     public static class TextReplaceBrick
     {
+        /// <summary>删除标记——单一真相源：Mau.Runtime.TextReplaceSpec（积木与宿主摘要投影共用）</summary>
+        private const string DeleteKey = TextReplaceSpec.DeleteKey;
+
         /// <summary>
-        /// 锚点替换——exact/ignore_case 唯一命中替换，all/regex 全部匹配；编码内建 + 换行保真
+        /// 锚点替换——exact/ignore_case 唯一命中替换，all/regex 全部匹配；编码内建 + 换行保真；
+        /// new 空值一律拒绝（错误文本提示删除标记），new 等于 DeleteKey 时按空文本落盘（等价删除），成功返回文本注明本次按空 New 删除
         /// </summary>
         /// <param name="argsJson">工具参数 JSON（path/old/new/mode）</param>
         /// <param name="result">三态确认文本或 ERR| 错误文本</param>
@@ -47,6 +51,17 @@ namespace Mau.Bricks
             {
                 result = "ERR|BAD_ARGS|缺少参数 path 或 old";
                 return false;
+            }
+            // [删除语义] new 面——空值 / 缺值一律拒绝（区分显式删除与漏传）；删除标记按空文本落盘（A88）
+            if (newText.Length == 0)
+            {
+                result = "ERR|BAD_ARGS|缺参数 new——替换文本不可为空；删除匹配文本请传删除标记「" + DeleteKey + "」";
+                return false;
+            }
+            bool deleteMode = newText == DeleteKey;
+            if (deleteMode)
+            {
+                newText = "";
             }
             try
             {
@@ -76,7 +91,8 @@ namespace Mau.Bricks
                     result = "ERR|ANCHOR_AMBIGUOUS|锚点出现 " + outcome.Count.ToString() + " 次，候选行: " + string.Join(", ", outcome.CandidateLines);
                     return false;
                 }
-                result = "OK 替换完成: " + outcome.Count.ToString() + " 处（" + path + "）--目标段--" + outcome.Snippet;
+                string deleteNote = deleteMode ? "——本次 New 为空（删除标记「" + DeleteKey + "」）：删除匹配的 Old 串" : "";
+                result = "OK 替换完成: " + outcome.Count.ToString() + " 处（" + path + "）" + deleteNote + "--目标段--" + outcome.Snippet;
                 return true;
             }
             catch (Exception ex)
@@ -87,7 +103,8 @@ namespace Mau.Bricks
         }
 
         /// <summary>
-        /// 参数面校验——声明面口径零容忍：未知参数 / 必填缺值 / 非法枚举值一律 ERR|BAD_ARGS（宿主注入保留键 catId 放行）。
+        /// 参数面校验——声明面口径零容忍：未知参数 / 必填缺键 / 非字符串值 / 非法枚举值一律 ERR|BAD_ARGS（宿主注入保留键 catId 放行）；
+        /// 空值与删除标记不在本层判定——结构性校验（键存在 + 类型）与内容性校验（空值语义）分离，后者归调用方。
         /// </summary>
         /// <param name="argsJson">工具参数 JSON</param>
         /// <param name="allowed">允许键（空格分隔）</param>
@@ -126,10 +143,13 @@ namespace Mau.Bricks
                     for (int i = 0; i < must.Length; i = i + 1)
                     {
                         JsonElement mustValue;
-                        if (!root.TryGetProperty(must[i], out mustValue) ||
-                            (mustValue.ValueKind == JsonValueKind.String && (mustValue.GetString() ?? "").Length == 0))
+                        if (!root.TryGetProperty(must[i], out mustValue))
                         {
                             return "ERR|BAD_ARGS|缺参数 " + must[i] + "（必填：" + required + "）";
+                        }
+                        if (mustValue.ValueKind != JsonValueKind.String)
+                        {
+                            return "ERR|BAD_ARGS|参数 " + must[i] + " 必须是字符串（当前 " + mustValue.ValueKind.ToString() + "）";
                         }
                     }
                     if (enumName.Length > 0)
@@ -196,4 +216,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:19F3C5B873F5AB382D32D77E0FBEF1C586A48EF505DACD445644806A21784C37
+// #MAU_CHECKSUM:SHA256:972CDA2C964442D9B70722602E936DC1E461787DEE770420D00E6BD89E58D816
