@@ -209,6 +209,8 @@ namespace CH4
             // E3 真实 usage 统计——新会话零统计起算
             session.ResetStats();
             session.Store.Rewrite(session.Context.GetMessages(), session.LastStats);
+            // A87 旧会话留档——清空前导出（user / 正式回复 / 加载报告 / 每轮结算 → sessions_old 落盘）
+            session.ArchiveLegacyView();
             // F4 视图——session.new 清前文 → 视图随生命周期清空
             session.ClearView();
             // 注入报告——逐文件结果持久化进视图（独立字段：Rebuild 不清，Save 落盘；前端 history 首块渲染）

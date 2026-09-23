@@ -360,6 +360,19 @@ namespace CH4
             // 注入报告——启动恢复时从 view.json 读回（非真实前文派生；Rebuild 不重建）
             _viewStore.LoadInjectReport();
         }
+        /// <summary>
+        /// 旧会话留档——session.new 清空前导出（A87：user 消息 / 正式回复 / 注入报告 / 每轮结算 → sessions_old 下 MD 文件）。
+        /// </summary>
+        /// <returns>落盘文件绝对路径（空串=未生成——失败已由视图层记 ERR 日志）</returns>
+        public string ArchiveLegacyView()
+        {
+            string path = _viewStore.ArchiveLegacy(_id, _displayName);
+            if (path.Length > 0)
+            {
+                LogStore.Add("CatHome4", 1, "旧会话留档: " + path, "CHAT");
+            }
+            return path;
+        }
 
         /// <summary>清空视图层——session.new 清前文时同步（视图随生命周期清理）</summary>
         public void ClearView()

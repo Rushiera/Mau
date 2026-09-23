@@ -545,5 +545,72 @@ namespace CatHome4.Core.Tests
             Assert.Equal(blocks[0].Timestamp.ToString() + ":" + blocks[0].Hash, blocks[0].Id);
             Assert.NotEqual(blocks[0].Id, blocks[1].Id);
         }
+
+        // ── A87 旧会话留档 ──────────────────────────────────────────
+
+        /// <summary>旧会话留档——四部分落档（user / 正式回复 / 加载报告 / 轮结算），思考与工具卡不进档</summary>
+        [Fact]
+        public void ArchiveLegacy_WritesFourPartsOnly()
+        {
+            string sessionDir = Path.Combine(_dir, "sessions", "cat_a");
+            Directory.CreateDirectory(sessionDir);
+            string viewPath = Path.Combine(sessionDir, "cat_a.view.json");
+            CH4.SessionViewStore store = new CH4.SessionViewStore(viewPath);
+            store.OnUserMessage(User("你好", 1000L), 1000L, 1);
+            store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2000L, 2);
+            store.OnToolResult(ToolResult("call_1", "Note", "工具结果", 3000L), 3000L, 3);
+            store.OnAssistantText(Assistant("正式回复", 4000L), 4000L, 4);
+            store.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{\"prompt\":100,\"completion\":50,\"cacheHit\":10,\"toolCount\":1,\"requests\":2,\"elapsedMs\":1234}}", 5000L);
+            store.SetInjectReport("{\"files\":[{\"file\":\"CCBP:SOUL.md\",\"status\":\"ok\",\"chars\":12}],\"total\":1,\"ok\":1,\"missing\":0,\"failed\":0,\"toolGroups\":[{\"group\":\"TextCat\",\"tools\":[{\"name\":\"text-read\",\"desc\":\"读\"}]}]}");
+            string path = store.ArchiveLegacy("cat_a", "小A");
+            Assert.Equal(Path.Combine(_dir, "sessions_old", Path.GetFileName(path)), path);
+            Assert.True(File.Exists(path));
+            string text = File.ReadAllText(path);
+            Assert.Contains("你好", text);
+            Assert.Contains("正式回复", text);
+            Assert.Contains("轮结算", text);
+            Assert.Contains("Token 上 100 / 下 50", text);
+            Assert.Contains("新会话加载报告", text);
+            Assert.Contains("CCBP:SOUL.md", text);
+            Assert.Contains("TextCat", text);
+            Assert.DoesNotContain("思考内容", text);
+            Assert.DoesNotContain("工具结果", text);
+            Assert.StartsWith("小A_", Path.GetFileName(path));
+            Assert.EndsWith(".md", path);
+        }
+
+        /// <summary>旧会话留档——四部分全空仍出档（档案面留痕优先于体积）</summary>
+        [Fact]
+        public void ArchiveLegacy_EmptyView_StillWritesFile()
+        {
+            string sessionDir = Path.Combine(_dir, "sessions", "cat_b");
+            Directory.CreateDirectory(sessionDir);
+            CH4.SessionViewStore store = new CH4.SessionViewStore(Path.Combine(sessionDir, "cat_b.view.json"));
+            string path = store.ArchiveLegacy("cat_b", "小B");
+            Assert.True(File.Exists(path));
+            string text = File.ReadAllText(path);
+            Assert.Contains("无（旧会话未生成注入报告）", text);
+            Assert.Contains("user 0", text);
+        }
+
+        /// <summary>旧会话留档——视图路径不满足 sessions 层级形态时不落盘并返回空串（不猜落点）</summary>
+        [Fact]
+        public void ArchiveLegacy_UnexpectedPathShape_ReturnsEmpty()
+        {
+            CH4.SessionViewStore store = new CH4.SessionViewStore("bare.view.json");
+            Assert.Equal("", store.ArchiveLegacy("cat_c", "小C"));
+            Assert.False(Directory.Exists(Path.Combine(_dir, "sessions_old")));
+        }
+
+        /// <summary>旧会话留档——显示名缺失时文件名前缀回落猫 key</summary>
+        [Fact]
+        public void ArchiveLegacy_EmptyDisplayName_FallsBackToCatKey()
+        {
+            string sessionDir = Path.Combine(_dir, "sessions", "cat_d");
+            Directory.CreateDirectory(sessionDir);
+            CH4.SessionViewStore store = new CH4.SessionViewStore(Path.Combine(sessionDir, "cat_d.view.json"));
+            string path = store.ArchiveLegacy("cat_d", "");
+            Assert.StartsWith("cat_d_", Path.GetFileName(path));
+        }
     }
 }

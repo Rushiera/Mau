@@ -390,9 +390,375 @@ namespace CH4
             Save();
             return _retries.Count - 1;
         }
+        /// <summary>文件名清洗——Windows 非法文件名字符替换为下划线并去首尾空白（显示名可含中文与空格）</summary>
+        /// <param name="name">原始名（猫显示名 / 猫 key）</param>
+        /// <returns>可作文件名前缀的串（空=原名缺失）</returns>
+        private static string SanitizeFileName(string name)
+        {
+            if (name == null)
+            {
+                return "";
+            }
+            char[] invalid = Path.GetInvalidFileNameChars();
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < name.Length; i = i + 1)
+            {
+                char c = name[i];
+                bool bad = false;
+                for (int j = 0; j < invalid.Length; j = j + 1)
+                {
+                    if (invalid[j] == c)
+                    {
+                        bad = true;
+                        break;
+                    }
+                }
+                if (bad)
+                {
+                    sb.Append('_');
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+            return sb.ToString().Trim();
+        }
+
         /// <summary>
-        /// 清空视图层——session.new 清前文时同步（真实前文 Clear 后视图随生命周期清理）
+        /// 旧会话留档——session.new 清空前导出（A87：user 消息 / 正式回复 / 注入报告 / 每轮结算 → sessions_old 下 MD 文件）。
+        /// 只留四部分（思考块 / 工具卡 / 间隙文本 / 错误 / 重试一律不进档）；四部分全空也照常出档（档案面留痕优先于体积）。
         /// </summary>
+        /// <param name="catKey">猫 key——文件名前缀（与会话目录名同源）</param>
+        /// <param name="displayName">会话显示名——写入文件头</param>
+        /// <returns>落盘文件绝对路径（空串=未生成；失败已记 ERR 日志）</returns>
+        public string ArchiveLegacy(string catKey, string displayName)
+        {
+            try
+            {
+                // [段1] 落点——sessions_old 与 sessions 同级（视图路径形态 <data>/sessions/<id>/<id>.view.json）
+                string sessionDir = Path.GetDirectoryName(_path);
+                string sessionsRoot = null;
+                if (sessionDir != null && sessionDir.Length > 0)
+                {
+                    sessionsRoot = Path.GetDirectoryName(sessionDir);
+                }
+                string dataDir = null;
+                if (sessionsRoot != null && sessionsRoot.Length > 0 && Path.GetFileName(sessionsRoot) == "sessions")
+                {
+                    dataDir = Path.GetDirectoryName(sessionsRoot);
+                }
+                if (dataDir == null || dataDir.Length == 0)
+                {
+                    LogStore.Add("CatHome4", 3, "旧会话留档跳过：视图路径形态不符 " + _path, "CHAT");
+                    return "";
+                }
+                string archiveDir = Path.Combine(dataDir, "sessions_old");
+                if (!Directory.Exists(archiveDir))
+                {
+                    Directory.CreateDirectory(archiveDir);
+                }
+                // [段2] 文件名——猫显示名 + 归档时间戳（非法字符清洗；显示名缺省回落猫 key；同秒重复触发加序号，不覆盖既有档案）
+                string prefix = SanitizeFileName(displayName);
+                if (prefix.Length == 0)
+                {
+                    prefix = SanitizeFileName(catKey);
+                }
+                string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string file = Path.Combine(archiveDir, prefix + "_" + stamp + ".md");
+                int suffix = 1;
+                while (File.Exists(file))
+                {
+                    suffix = suffix + 1;
+                    file = Path.Combine(archiveDir, prefix + "_" + stamp + "_" + suffix.ToString() + ".md");
+                }
+                // [段3] 生成 + 落盘（.md 契约：UTF-8 BOM；换行由写侧保真）
+                string text = BuildLegacyMarkdown(catKey, displayName, stamp);
+                File.WriteAllText(file, text, new UTF8Encoding(true));
+                return file;
+            }
+            catch (Exception ex)
+            {
+                // 留档失败不阻断新会话（失败可见——ERR 日志 + 空返回）
+                LogStore.Add("CatHome4", 3, "旧会话留档失败: " + ex.Message, "CHAT");
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// 生成留档 Markdown——文件头 + 新会话加载报告 + 对话时序（user / 正式回复 / 轮结算三类块，按时间戳归并）。
+        /// </summary>
+        /// <param name="catKey">猫 key</param>
+        /// <param name="displayName">会话显示名</param>
+        /// <param name="stamp">归档时间戳（文件名同源）</param>
+        /// <returns>Markdown 全文</returns>
+        private string BuildLegacyMarkdown(string catKey, string displayName, string stamp)
+        {
+            // [段1] 对话段——两源各自按时间戳升序，手工归并（_blocks 只取 user/text，roundsum 全取）
+            StringBuilder body = new StringBuilder();
+            long firstTs = 0;
+            long lastTs = 0;
+            bool hasTs = false;
+            int userCount = 0;
+            int replyCount = 0;
+            int blockCursor = 0;
+            int sumCursor = 0;
+            while (blockCursor < _blocks.Count || sumCursor < _roundSums.Count)
+            {
+                while (blockCursor < _blocks.Count && !IsLegacyBlock(_blocks[blockCursor].RenderType))
+                {
+                    blockCursor = blockCursor + 1;
+                }
+                bool takeBlock = false;
+                if (blockCursor >= _blocks.Count)
+                {
+                    takeBlock = false;
+                }
+                else if (sumCursor >= _roundSums.Count)
+                {
+                    takeBlock = true;
+                }
+                else if (_blocks[blockCursor].Timestamp <= _roundSums[sumCursor].Timestamp)
+                {
+                    takeBlock = true;
+                }
+                ViewBlock current;
+                if (takeBlock)
+                {
+                    current = _blocks[blockCursor];
+                    blockCursor = blockCursor + 1;
+                }
+                else
+                {
+                    current = _roundSums[sumCursor];
+                    sumCursor = sumCursor + 1;
+                }
+                if (current.RenderType == "user")
+                {
+                    userCount = userCount + 1;
+                }
+                else if (current.RenderType == "text")
+                {
+                    replyCount = replyCount + 1;
+                }
+                if (!hasTs || current.Timestamp < firstTs)
+                {
+                    firstTs = current.Timestamp;
+                }
+                hasTs = true;
+                if (current.Timestamp > lastTs)
+                {
+                    lastTs = current.Timestamp;
+                }
+                AppendLegacyBlock(body, current);
+            }
+            // [段2] 头部——猫 / 归档时刻 / 区间 / 块数（无时间块时区间记「—」）
+            string range = "—";
+            if (hasTs)
+            {
+                range = FormatLegacyTime(firstTs) + " ~ " + FormatLegacyTime(lastTs);
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.Append("# 会话留档 — " + displayName + "\n\n");
+            sb.Append("- 猫：`" + catKey + "`（" + displayName + "）\n");
+            sb.Append("- 归档：" + stamp + "\n");
+            sb.Append("- 区间：" + range + "\n");
+            sb.Append("- 块数：user " + userCount.ToString() + " · 回复 " + replyCount.ToString() + " · 轮结算 " + _roundSums.Count.ToString() + "\n\n");
+            sb.Append("---\n\n");
+            // [段3] 加载报告段 + 对话段
+            AppendInjectReportSection(sb, _injectReport);
+            sb.Append("---\n\n");
+            sb.Append("## 对话\n\n");
+            sb.Append(body.ToString());
+            return sb.ToString();
+        }
+
+        /// <summary>留档入选判定——user 消息与正式回复（text）进档，其余块型一律丢弃</summary>
+        /// <param name="renderType">块渲染类型</param>
+        /// <returns>true=进档</returns>
+        private static bool IsLegacyBlock(string renderType)
+        {
+            if (renderType == null)
+            {
+                return false;
+            }
+            return renderType == "user" || renderType == "text";
+        }
+
+        /// <summary>留档块渲染——按块型分派（user/text 取 content；roundsum 转简洁统计行）</summary>
+        /// <param name="sb">目标缓冲</param>
+        /// <param name="b">待渲染块</param>
+        private static void AppendLegacyBlock(StringBuilder sb, ViewBlock b)
+        {
+            string type = b.RenderType;
+            if (type == null)
+            {
+                type = "";
+            }
+            string title = "用户";
+            if (type == "text")
+            {
+                title = "回复";
+            }
+            else if (type == "roundsum")
+            {
+                title = "轮结算";
+            }
+            sb.Append("### " + FormatLegacyTime(b.Timestamp) + " · " + title + "\n\n");
+            if (type == "roundsum")
+            {
+                sb.Append(BuildRoundSumLine(b.Payload) + "\n\n");
+                return;
+            }
+            string content = "";
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(b.Payload))
+                {
+                    content = GetStringProp(doc.RootElement, "content");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 单块解析失败不拖垮整份留档（局部降级可见——不静默丢块）
+                LogStore.Add("CatHome4", 2, "旧会话留档块解析失败: " + ex.Message, "CHAT");
+            }
+            sb.Append(content + "\n\n");
+        }
+
+        /// <summary>轮结算行渲染——roundsum 载荷转人读一行（Token / 缓存 / 工具次数 / 请求次数 / 用时）</summary>
+        /// <param name="payloadJson">roundsum 载荷 JSON</param>
+        /// <returns>单行文本</returns>
+        private static string BuildRoundSumLine(string payloadJson)
+        {
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(payloadJson))
+                {
+                    JsonElement root = doc.RootElement;
+                    JsonElement data;
+                    if (!root.TryGetProperty("data", out data))
+                    {
+                        return "（载荷缺 data 字段）";
+                    }
+                    long prompt = ReadLongProp(data, "prompt");
+                    long completion = ReadLongProp(data, "completion");
+                    long cacheHit = ReadLongProp(data, "cacheHit");
+                    long toolCount = ReadLongProp(data, "toolCount");
+                    long requests = ReadLongProp(data, "requests");
+                    long elapsedMs = ReadLongProp(data, "elapsedMs");
+                    double seconds = elapsedMs / 1000.0;
+                    return "Token 上 " + prompt.ToString() + " / 下 " + completion.ToString()
+                        + "（缓存 " + cacheHit.ToString() + "）· 工具 " + toolCount.ToString() + " 次"
+                        + " · 请求 " + requests.ToString() + " 次 · 用时 " + seconds.ToString("0.0") + " 秒";
+                }
+            }
+            catch (Exception ex)
+            {
+                // 解析失败降级为原文（不静默丢统计）
+                LogStore.Add("CatHome4", 2, "旧会话留档结算解析失败: " + ex.Message, "CHAT");
+                return "（解析失败）" + payloadJson;
+            }
+        }
+
+        /// <summary>加载报告段渲染——旧会话注入报告（逐文件清单 + 工具组清单）；无报告记一行，解析失败降级为原文</summary>
+        /// <param name="sb">目标缓冲</param>
+        /// <param name="injectReport">注入报告 JSON（空=无）</param>
+        private static void AppendInjectReportSection(StringBuilder sb, string injectReport)
+        {
+            sb.Append("## 新会话加载报告\n\n");
+            if (injectReport == null || injectReport.Length == 0)
+            {
+                sb.Append("- 无（旧会话未生成注入报告）\n\n");
+                return;
+            }
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(injectReport))
+                {
+                    JsonElement root = doc.RootElement;
+                    long total = ReadLongProp(root, "total");
+                    long ok = ReadLongProp(root, "ok");
+                    long missing = ReadLongProp(root, "missing");
+                    long failed = ReadLongProp(root, "failed");
+                    sb.Append("- 注入清单：" + total.ToString() + " 个文件（ok " + ok.ToString()
+                        + " / missing " + missing.ToString() + " / 失败 " + failed.ToString() + "）\n");
+                    JsonElement files;
+                    if (root.TryGetProperty("files", out files) && files.ValueKind == JsonValueKind.Array)
+                    {
+                        sb.Append("\n");
+                        foreach (JsonElement f in files.EnumerateArray())
+                        {
+                            sb.Append("- `" + GetStringProp(f, "file") + "` — " + GetStringProp(f, "status")
+                                + "（" + ReadLongProp(f, "chars").ToString() + " 字符）\n");
+                        }
+                    }
+                    JsonElement groups;
+                    if (root.TryGetProperty("toolGroups", out groups) && groups.ValueKind == JsonValueKind.Array)
+                    {
+                        sb.Append("\n");
+                        foreach (JsonElement g in groups.EnumerateArray())
+                        {
+                            sb.Append("- 工具组 `" + GetStringProp(g, "group") + "`：");
+                            JsonElement tools;
+                            bool first = true;
+                            if (g.TryGetProperty("tools", out tools) && tools.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (JsonElement t in tools.EnumerateArray())
+                                {
+                                    if (!first)
+                                    {
+                                        sb.Append("、");
+                                    }
+                                    first = false;
+                                    sb.Append(GetStringProp(t, "name"));
+                                }
+                            }
+                            sb.Append("\n");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 报告解析失败降级为原文（可辨识——不静默丢内容）
+                LogStore.Add("CatHome4", 2, "旧会话留档报告解析失败: " + ex.Message, "CHAT");
+                sb.Append("- 解析失败，原文：\n\n```json\n" + injectReport + "\n```\n");
+            }
+            sb.Append("\n");
+        }
+
+        /// <summary>留档时间戳格式化——Unix 毫秒 → 本地「MM-dd HH:mm:ss」（非正值记「—」）</summary>
+        /// <param name="ts">Unix 毫秒时间戳</param>
+        /// <returns>格式化文本</returns>
+        private static string FormatLegacyTime(long ts)
+        {
+            if (ts <= 0)
+            {
+                return "—";
+            }
+            return DateTimeOffset.FromUnixTimeMilliseconds(ts).ToLocalTime().ToString("MM-dd HH:mm:ss");
+        }
+
+        /// <summary>读取 JSON 数值属性——防御式（缺字段 / 非数值返回 0）</summary>
+        /// <param name="data">JSON 对象</param>
+        /// <param name="prop">属性名</param>
+        /// <returns>数值（缺省 0）</returns>
+        private static long ReadLongProp(JsonElement data, string prop)
+        {
+            JsonElement value;
+            if (!data.TryGetProperty(prop, out value))
+            {
+                return 0;
+            }
+            if (value.ValueKind != JsonValueKind.Number)
+            {
+                return 0;
+            }
+            return value.GetInt64();
+        }
+
+        /// <summary>清空视图层——session.new 清前文时同步（真实前文 Clear 后视图随生命周期清理）</summary>
         public void Clear()
         {
             _blocks.Clear();
