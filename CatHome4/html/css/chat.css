@@ -34,6 +34,10 @@
     --ch-chat-ai-fg: var(--ch-fg-strong);
     --ch-chat-reason-bg: #1c1c1c;
     --ch-chat-reason-fg: var(--ch-fg-muted);
+    /* A85 Think 块——头行标签 / 统计项 / 高度档上限（正文色沿用 --ch-chat-reason-fg） */
+    --ch-think-head: var(--ch-state-think);
+    --ch-think-stat: var(--ch-fg-weak);
+    --ch-think-max-h: 500px;
     --ch-chat-tool-bg: var(--ch-bg-sunken);     /* 工具结果块底（原整卡底——2026-09-17 收窄到结果内容） */
     --ch-chat-tool-fg: #8a8a8a;
     --ch-chat-error-line: #5a2a24;
@@ -154,15 +158,25 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-bubble.error { --bubble-line: var(--ch-err); color: var(--ch-chat-error-fg); }
 .chat-bubble.streaming::after { content: '▌'; color: var(--ch-ok); animation: chatblink 1s infinite; }
 @keyframes chatblink { 50% { opacity: 0; } }
-/* 折叠头垂直居中（2026-09-17）——margin-top 只在「气泡内有前置文本」时给间距；
-   纯折叠气泡（details 为首子元素）不加，否则上方多出留白、内容整体偏下 */
-.chat-reason { font-size: 11px; color: var(--ch-fg-weak); }
-.chat-reason:not(:first-child) { margin-top: 6px; }
-.chat-reason summary { cursor: pointer; color: var(--ch-state-think); }
-/* 折叠摘要——标签「Think」走 Think 态色（--ch-state-think），缩略内容用展开正文的原灰（颜色分工 2026-09-16；标签改色 2026-09-17） */
-.chat-reason summary .rs-peek { color: var(--ch-fg-weak); }
+/* A85 Think 块——两态两渲染器（流式态 .stream live-only / 完成态 .done 落盘；规格 design-ch4-frontend-theme §六）
+   头行 = Think 标签（态色）+ 统计项（弱色）；完成态默认压缩档（缩略摘要），点击切展开档（全文 500px 滚动） */
+.chat-think { font-size: 11px; color: var(--ch-chat-reason-fg); }
+.chat-think:not(:first-child) { margin-top: 6px; }
+.chat-think .ct-head { cursor: pointer; }
+.chat-think .ct-label { color: var(--ch-think-head); }
+.chat-think .ct-stat { color: var(--ch-think-stat); }
+/* 流式态——正文恒展开（500px 封顶 + 溢出滚动；内容在增长，压缩无意义） */
+.chat-think.stream .ct-body { margin-top: 3px; max-height: var(--ch-think-max-h); overflow: auto; white-space: pre-wrap; word-break: break-all; }
+/* 流式态光标——块内自绘（不再走气泡级 .chat-bubble.streaming::after） */
+.chat-think .ct-cursor { animation: chatblink 1s infinite; }
+/* 完成态两档——压缩档为默认（缩略摘要，与旧折叠摘要同形）；点击切展开档（全文 500px 滚动） */
+.chat-think.done .ct-body { margin-top: 3px; }
+.chat-think.done .ct-peek { white-space: pre-wrap; word-break: break-all; }
+.chat-think.done .ct-full { display: none; }
+.chat-think.done.full .ct-peek { display: none; }
+.chat-think.done.full .ct-full { display: block; max-height: var(--ch-think-max-h); overflow: auto; white-space: pre-wrap; word-break: break-all; }
 /* 内层卡不再自绘底与边（2026-09-17）——原黑底 + 内框与气泡底/描边重复（失败时成两圈）；
-   类型识别由气泡描边承担；无内边距（原 padding-top 5px 致折叠单行偏下——同 .chat-reason 处理） */
+   类型识别由气泡描边承担；无内边距（原 padding-top 5px 致折叠单行偏下——同 .chat-think 处理） */
 .chat-tool { font-size: 11px; color: var(--ch-chat-tool-fg); font-family: Consolas, monospace; }
 .chat-tool:not(:first-child) { margin-top: 6px; }
 .chat-tool summary { cursor: pointer; color: var(--ch-tool-name); }
@@ -243,12 +257,12 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 /* 呼吸描边（2026-09-17）——「正在进行时」的自动标识：animation **只动 border-color**（描边本身呼吸，
    内容与底色不受影响）；keyframes 首尾同值 → 循环连续无跳变；
    animation 对 border-color 的占用天然覆盖 hover 声明 → 与「移入移出渐变」互斥，同一元素二者不同时存在。
-   适用面：正在进行的块——pending（工具运行中）· retry（重试中）· streaming（reply / think 流式中）· paused（本轮中止） */
+   适用面：正在进行的块——pending（工具运行中）· retry（重试中）· streaming（reply 流式中）· live（think 流式块——A85）· paused（本轮中止） */
 @keyframes bubble-breathe {
     0%, 100% { border-color: color-mix(in srgb, var(--bubble-line) var(--bubble-alpha), transparent); }
     50% { border-color: var(--bubble-line); }
 }
-.chat-bubble.pending, .chat-bubble.retry, .chat-bubble.streaming, .chat-bubble.paused { --bubble-alpha: 45%; animation: bubble-appear 0.3s ease-in-out, bubble-breathe 1.8s ease-in-out 0.3s infinite; }
+.chat-bubble.pending, .chat-bubble.retry, .chat-bubble.streaming, .chat-bubble.live, .chat-bubble.paused { --bubble-alpha: 45%; animation: bubble-appear 0.3s ease-in-out, bubble-breathe 1.8s ease-in-out 0.3s infinite; }
 /* 输入区（2026-09-22）——三列网格：左预留带 | 内容列 | 右预留带（1fr）
    列宽基准 = 视口宽（本容器无左右 padding）；输入框与气泡同宽同左缘，发送按钮固定宽落在右预留带、贴列右缘；
    无上边框——输入区与气泡区之间不画分割线。

@@ -24,6 +24,7 @@ beforeAll(async () => {
   const md = await readFile(new URL('../../js/chat-md.js', import.meta.url), 'utf-8');
   const cmd = await readFile(new URL('../../js/chat-cmd.js', import.meta.url), 'utf-8');
   const tools = await readFile(new URL('../../js/chat-tools.js', import.meta.url), 'utf-8');
+  const think = await readFile(new URL('../../js/chat-think.js', import.meta.url), 'utf-8');
   const view = await readFile(new URL('../../js/chat-view.js', import.meta.url), 'utf-8');
   const core = await readFile(new URL('../../js/chat-core.js', import.meta.url), 'utf-8');
   const note = await readFile(new URL('../../js/chat-note.js', import.meta.url), 'utf-8');
@@ -31,6 +32,7 @@ beforeAll(async () => {
   vm.runInThisContext(md, { filename: 'chat-md.js' });
   vm.runInThisContext(cmd, { filename: 'chat-cmd.js' });
   vm.runInThisContext(tools, { filename: 'chat-tools.js' });
+  vm.runInThisContext(think, { filename: 'chat-think.js' });
   vm.runInThisContext(view, { filename: 'chat-view.js' });
   vm.runInThisContext(core, { filename: 'chat-core.js' });
   vm.runInThisContext(note, { filename: 'chat-note.js' });
@@ -45,6 +47,8 @@ beforeEach(() => {
   window.viewContainers = {};
   window.chatPending = [];
   if (window.chatTimer) { clearTimeout(window.chatTimer); window.chatTimer = null; }
+  // A84/A85——活跃计时表清理（上一条用例遗留的秒表不跨用例）
+  if (window.chatLiveTimer) { clearInterval(window.chatLiveTimer); window.chatLiveTimer = null; }
   chatMsgs.textContent = '';
   chatStatus.textContent = '';
   if (window.__clipboardWrites) { window.__clipboardWrites.length = 0; }
@@ -85,14 +89,15 @@ test('view stream text 创建回复容器并流式追加（同 seq 复用）', (
   expect(window.viewContainers[10]).not.toBeUndefined();
 });
 
-// ── stream 流式容器（reasoning）──
-test('view stream reasoning 创建思考容器并流式追加', () => {
+// ── stream 流式容器（reasoning · A85 think 流式态）──
+test('view stream reasoning 创建 think 流式块并流式追加', () => {
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考' }, replaceSeq: -1 });
-  expect(window.viewContainers[11].type).toBe('reason');
-  const pre = window.viewContainers[11].reasonPre;
-  expect(pre.textContent).toBe('思考');
+  const c = window.viewContainers[11];
+  expect(c.type).toBe('thinkstream');
+  expect(c.bubble.querySelector('.chat-think.stream')).not.toBeNull();
+  expect(window.chatThinkBodyText(c.body)).toBe('思考');
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '中' }, replaceSeq: -1 });
-  expect(pre.textContent).toBe('思考中');
+  expect(window.chatThinkBodyText(c.body)).toBe('思考中');
 });
 
 // ── text 整块替换流式容器 ──
@@ -196,65 +201,73 @@ test('P6b text 块无 msgIndex（工具轮 seal/旧数据）不渲染操作条',
 });
 
 
-// ── reason 整块 ──
-test('view reason 整块替换思考流式容器', () => {
+// ── A85 think 两态（2026-09-23 规格变更：流式态 live-only / 完成态落盘；展开折叠 → 高度档）──
+test('A85 思考整块——流式块销毁、新建完成块（同屏只剩一个）', () => {
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考' }, replaceSeq: -1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(1);
   window.chatOnView({ seq: 21, renderType: 'reason', payload: { content: '最终思考' }, replaceSeq: 11 });
   expect(window.viewContainers[11]).toBeUndefined();
-  const reasonDetail = chatMsgs.querySelector('.chat-reason div');
-  expect(reasonDetail.textContent).toBe('最终思考');
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(0);
+  const box = chatMsgs.querySelector('.chat-think.done');
+  expect(box).not.toBeNull();
+  expect(box.querySelector('.ct-full').textContent).toBe('最终思考');
+  expect(bubbles().length).toBe(1);
 });
 
-// ── reason 流式展开 + 整块折叠 + summary 字数 ──
-test('reason 流式展开增量可见——整块替换后折叠（summary 字数同步）', () => {
-  // 流式创建——展开（增量可见）+ 流式同步字数
+test('A85 流式头行——字符/行数实时刷新；完成块取流式终值', () => {
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考' }, replaceSeq: -1 });
-  let det = chatMsgs.querySelector('.chat-reason');
-  expect(det.open).toBe(true);
-  expect(det.querySelector('summary').textContent).toContain('Thinking · 2');
-  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '中' }, replaceSeq: -1 });
-  expect(det.querySelector('summary').textContent).toContain('Thinking · 3');
-  // 整块替换——完成后折叠（字数同步）
-  window.chatOnView({ seq: 21, renderType: 'reason', payload: { content: '最终思考内容' }, replaceSeq: 11 });
-  det = chatMsgs.querySelector('.chat-reason');
-  expect(det.open).toBe(false);
-  expect(det.querySelector('summary').textContent).toBe('Think：最终思考内容');
-  // 历史重建——完成态折叠 + 字数
-  window.chatRenderHistory({
-    version: 1, sessionId: 's1', count: 1,
-    blocks: [{ seq: 1, id: '1:h1', renderType: 'reason', payload: { content: '历史思考' } }]
+  let head = chatMsgs.querySelector('.chat-think.stream .ct-head');
+  expect(head.textContent).toContain('Think · 2 字符 · 1 行');
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '中\n次行' }, replaceSeq: -1 });
+  head = chatMsgs.querySelector('.chat-think.stream .ct-head');
+  expect(head.textContent).toContain('6 字符 · 2 行');
+  window.chatOnView({ seq: 21, renderType: 'reason', payload: { content: '思考中\n次行' }, replaceSeq: 11 });
+  const done = chatMsgs.querySelector('.chat-think.done .ct-head');
+  expect(done.textContent).toContain('Think · 6 字符 · 2 行');
+  expect(done.textContent).not.toContain('未统计');
+});
+
+test('A85 压缩档——完成块推入即压缩态（缩略摘要与旧折叠摘要同形），点击切展开档', () => {
+  window.chatOnView({
+    seq: 41, renderType: 'reason',
+    payload: { content: '第一行开始\n第二行\n第三行\n第四行\n最后一行结束' },
+    replaceSeq: -1
   });
-  det = chatMsgs.querySelector('.chat-reason');
-  expect(det.open).toBe(false);
-  expect(det.querySelector('summary').textContent).toBe('Think：历史思考');
+  const box = chatMsgs.querySelector('.chat-think.done');
+  // 默认压缩档——缩略摘要（首行 + 省略行/字符计数 + 末行）
+  expect(box.classList.contains('full')).toBe(false);
+  expect(box.querySelector('.ct-peek').textContent).toBe('第一行开始（3行11字符已省略显示）最后一行结束');
+  expect(box.querySelector('.ct-full').textContent).toBe('第一行开始\n第二行\n第三行\n第四行\n最后一行结束');
+  // 点击 → 展开档；再点 → 回压缩档
+  box.querySelector('.ct-body').dispatchEvent(new Event('click', { bubbles: true }));
+  expect(box.classList.contains('full')).toBe(true);
+  box.querySelector('.ct-body').dispatchEvent(new Event('click', { bubbles: true }));
+  expect(box.classList.contains('full')).toBe(false);
 });
 
-// ── 思考结束即折叠（2026-09-17 规格变更；2026-09-22 收口唯一化——折叠由后端思考整块驱动）──
-test('思考流式 → 思考整块（离开 think 态）即折叠（不等最终回复）', () => {
-  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考' }, replaceSeq: -1 });
-  let det = chatMsgs.querySelector('.chat-reason');
-  expect(det.open).toBe(true);
-  // 后端思考段终结——reason 整块（replaceSeq 命中流式容器）→ 折叠（summary 走折叠摘要渲染）
-  window.chatOnView({ seq: 12, renderType: 'reason', payload: { content: '思考' }, replaceSeq: 11 });
-  det = chatMsgs.querySelector('.chat-reason');
-  expect(det.open).toBe(false);
-  expect(det.querySelector('summary').textContent).toBe('Think：思考');
+test('A85 压缩档——少于 3 行不压缩（原文直显，不回退省略）', () => {
+  window.chatOnView({ seq: 42, renderType: 'reason', payload: { content: '第一行\n第二行' }, replaceSeq: -1 });
+  const box = chatMsgs.querySelector('.chat-think.done');
+  expect(box.querySelector('.ct-peek').textContent).toBe('第一行\n第二行');
+  window.chatOnView({ seq: 43, renderType: 'reason', payload: { content: '单行思考' }, replaceSeq: -1 });
+  const box2 = chatMsgs.querySelectorAll('.chat-think.done')[1];
+  expect(box2.querySelector('.ct-peek').textContent).toBe('单行思考');
 });
 
-test('实时——最终回复（msgIndex≥0）后全部 reason 折叠', () => {
+test('A85 多轮思考——各自成完成块（默认压缩档，不随回复变动）', () => {
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '一轮思考' }, replaceSeq: -1 });
   window.chatOnView({ seq: 21, renderType: 'reason', payload: { content: '一轮思考' }, replaceSeq: 11 });
   window.chatOnView({ seq: 30, renderType: 'toolcard', payload: { name: 'time', arguments: '{}', result: 'R' }, replaceSeq: -1 });
   window.chatOnView({ seq: 12, renderType: 'stream', payload: { kind: 'reasoning', text: '二轮思考' }, replaceSeq: -1 });
   window.chatOnView({ seq: 22, renderType: 'reason', payload: { content: '二轮思考' }, replaceSeq: 12 });
   window.chatOnView({ seq: 40, renderType: 'text', payload: { content: '最终回复', msgIndex: 3 }, replaceSeq: -1 });
-  const dets = chatMsgs.querySelectorAll('details.chat-reason');
-  expect(dets.length).toBe(2);
-  expect(dets[0].open).toBe(false);
-  expect(dets[1].open).toBe(false);
+  const boxes = chatMsgs.querySelectorAll('.chat-think.done');
+  expect(boxes.length).toBe(2);
+  expect(boxes[0].classList.contains('full')).toBe(false);
+  expect(boxes[1].classList.contains('full')).toBe(false);
 });
 
-test('历史重建——全部 reason 折叠（与实时一致）', () => {
+test('A85 历史重建——完成块默认压缩档 + 无时长来源标识「未统计」', () => {
   window.chatRenderHistory({
     version: 1, sessionId: 's-open', count: 2,
     blocks: [
@@ -264,10 +277,10 @@ test('历史重建——全部 reason 折叠（与实时一致）', () => {
       { seq: 4, id: '4:t', renderType: 'text', payload: { content: '最终回复', msgIndex: 3 } }
     ]
   });
-  const dets = chatMsgs.querySelectorAll('details.chat-reason');
-  expect(dets.length).toBe(2);
-  expect(dets[0].open).toBe(false);
-  expect(dets[1].open).toBe(false);
+  const boxes = chatMsgs.querySelectorAll('.chat-think.done');
+  expect(boxes.length).toBe(2);
+  expect(boxes[0].classList.contains('full')).toBe(false);
+  expect(boxes[0].querySelector('.ct-head').textContent).toBe('Think · 4 字符 · 1 行 · 未统计');
 });
 
 // ── 展开态整块点击收起（2026-09-18）——原生 details 仅折叠头可点；展开后整块任意位置点击即收起 ──
@@ -286,18 +299,24 @@ test('展开态整块点击收起——工具卡内容区点击即折叠（折�
   expect(card.open).toBe(false);
 });
 
-test('展开态整块点击收起——思考块内容区点击即折叠（summary 回折叠摘要）', () => {
+test('A85 高度档——拖选（死区）不切换，快速点击切换（think 块）', () => {
   window.chatOnView({
     seq: 41, renderType: 'reason',
     payload: { content: '第一行\n第二行\n第三行' },
     replaceSeq: -1
   });
-  const det = chatMsgs.querySelector('details.chat-reason');
-  det.open = true;
-  det._updateSummary();
-  det.querySelector('div').dispatchEvent(new Event('click', { bubbles: true }));
-  expect(det.open).toBe(false);
-  expect(det.querySelector('summary').textContent).toContain('Think');
+  const box = chatMsgs.querySelector('.chat-think.done');
+  const body = box.querySelector('.ct-body');
+  const M = document.defaultView.MouseEvent;
+  expect(box.classList.contains('full')).toBe(false);
+  // 拖选——位移 60px 超限 → 不切换
+  body.dispatchEvent(new M('mousedown', { bubbles: true, clientX: 0, clientY: 0 }));
+  body.dispatchEvent(new M('click', { bubbles: true, clientX: 60, clientY: 0 }));
+  expect(box.classList.contains('full')).toBe(false);
+  // 普通点击——位移 2px 在限内 → 切全文档
+  body.dispatchEvent(new M('mousedown', { bubbles: true, clientX: 0, clientY: 0 }));
+  body.dispatchEvent(new M('click', { bubbles: true, clientX: 2, clientY: 2 }));
+  expect(box.classList.contains('full')).toBe(true);
 });
 
 test('展开态整块点击收起——拖选文本（按下时已有选区）不收起，选区清空后恢复收起', () => {
@@ -565,14 +584,14 @@ test('toolcard 两段式——完成卡以 replaceSeq 原位替换（气泡不�
   expect(window.viewContainers['toolcard_50']).toBeUndefined();
 });
 
-// ── 新思考容器创建——残留文本流式容器闪烁标记移除（多轮工具循环残留兜底）──
+// ── 新思考流式块创建——残留文本流式容器闪烁标记移除（多轮工具循环残留兜底）──
 test('新 reasoning 容器创建——残留 text 流式容器 streaming 移除', () => {
   window.chatOnView({ seq: 10, renderType: 'stream', payload: { kind: 'text', text: '前轮文本' }, replaceSeq: -1 });
   const tb = bubbles()[0];
   window.chatOnView({ seq: 21, renderType: 'stream', payload: { kind: 'reasoning', text: '新一轮思考' }, replaceSeq: -1 });
   expect(tb.classList.contains('streaming')).toBe(false);
-  // 同 seq 续流不清理（reasoning 容器本身不受影响）
-  expect(window.viewContainers[21].type).toBe('reason');
+  // 同 seq 续流不清理（think 流式块本身不受影响）
+  expect(window.viewContainers[21].type).toBe('thinkstream');
 });
 
 // ── control usage ──
@@ -634,7 +653,7 @@ test('chatRenderHistory 渲染 view blocks 结构', () => {
   });
   expect(rows().length).toBe(4);
   expect(bubbles()[0].textContent).toBe('用户');
-  expect(chatMsgs.querySelector('.chat-reason div').textContent).toBe('思考');
+  expect(chatMsgs.querySelector('.chat-think.done .ct-full').textContent).toBe('思考');
   expect(bubbles()[2].textContent).toBe('回复');
   expect(chatMsgs.querySelector('.chat-tool')).not.toBeNull();
   expect(chatInfo.textContent).toContain('s1');
@@ -1037,29 +1056,16 @@ test('chatRenderHistory roundsum 块渲染（历史重建保留轮末统计）',
   expect(rs2.textContent).not.toContain('🔄 Api');
 });
 
-// ── 外观层优化：思考折叠摘要——首行 +（N行M字符已省略显示）+ 末行 ──
-test('reason 折叠摘要——多行保留首尾行 + 省略行/字符计数（展开回退字数标题）', () => {
-  const text = '第一行开始\n第二行\n第三行\n第四行\n最后一行结束';
-  const det = window.chatReasonBlock(text, false);
-  // 折叠——Think 标签 + 灰色缩略内容（首行 +（3行11字符已省略显示）+ 末行）
-  expect(det.querySelector('summary').textContent).toBe('Think：第一行开始（3行11字符已省略显示）最后一行结束');
-  expect(det.querySelector('summary .rs-peek')).not.toBeNull();
-  // 展开——回退字数标题（jsdom 不触发 toggle——显式 _updateSummary；真实浏览器点击 toggle 自动同结果）
-  det.open = true;
-  det._updateSummary();
-  expect(det.querySelector('summary').textContent).toBe('Thinking · 24');
-  // 再折叠——回到折叠摘要
-  det.open = false;
-  det._updateSummary();
-  expect(det.querySelector('summary').textContent).toBe('Think：第一行开始（3行11字符已省略显示）最后一行结束');
+// ── A85 头行统计口径（原「折叠摘要」退役——展开/折叠已由高度档取代）──
+test('A85 头行统计——速率取整显示；已输出 <1s 不显示速率（分母无意义）', () => {
+  expect(window.chatThinkHeadText({ chars: 1200, lines: 34, ms: 12000 })).toBe('Think · 1.20k 字符 · 34 行 · 12.0s · 100 字符/s');
+  expect(window.chatThinkHeadText({ chars: 300, lines: 5, ms: 900 })).toBe('Think · 300 字符 · 5 行 · 0.9s');
 });
 
-// ── 折叠摘要——少于 3 行不压缩，直接显示原文（2026-09-16）──
-test('reason 折叠摘要——单行/两行直接显示原文，不回退字数', () => {
-  const one = window.chatReasonBlock('这是一段很短的思考', false);
-  expect(one.querySelector('summary').textContent).toBe('Think：这是一段很短的思考');
-  const two = window.chatReasonBlock('第一行\n第二行', false);
-  expect(two.querySelector('summary').textContent).toBe('Think：第一行\n第二行');
+// ── A85 无统计来源（历史重建 / 刷新重建）——时间与速率位跳过并标识「未统计」──
+test('A85 头行统计——无时长来源跳过时间与速率并标识「未统计」', () => {
+  expect(window.chatThinkHeadText({ chars: 12, lines: 2, ms: null })).toBe('Think · 12 字符 · 2 行 · 未统计');
+  expect(window.chatThinkHeadText({ chars: 0, lines: 0, ms: null })).toBe('Think · 0 字符 · 0 行 · 未统计');
 });
 
 // ── 外观层优化：时长三级进位——秒/分/小时（hour 最高单位）──
@@ -1083,16 +1089,16 @@ test('A59 状态条时长进位——后端毫秒值走秒/分进位', () => {
   window.chatPhaseReset();
 });
 
-// ── A78 全局态唯一出入口（2026-09-22）——思考容器标记随 think 态挂载/撤除 ──
-test('A78 态驱动——思考容器标记随 think 态切换（think 挂 / 离开 think 撤）', () => {
+// ── A78/A85 全局态唯一出入口——think 流式块标记（live）随 think 态挂载/撤除 ──
+test('A78/A85 态驱动——think 流式块标记随 think 态切换（think 挂 live / 离开 think 撤）', () => {
   // 思考流式——态 think 下挂标记
   window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考中' }, replaceSeq: -1 });
-  const rb = chatMsgs.querySelector('.chat-reason').closest('.chat-bubble');
-  expect(rb.classList.contains('streaming')).toBe(true);
-  // 离开 think（回复流式开始）——标记撤除；容器保留（仍须承接整块替换）
+  const rb = chatMsgs.querySelector('.chat-think.stream').closest('.chat-bubble');
+  expect(rb.classList.contains('live')).toBe(true);
+  // 离开 think（回复流式开始）——标记撤除；流式块保留（仍须承接整块销毁）
   window.chatOnSessionState({ sessionId: 's1', runState: 'reply', runMs: {}, requests: 1 });
-  expect(rb.classList.contains('streaming')).toBe(false);
+  expect(rb.classList.contains('live')).toBe(false);
   expect(window.viewContainers[11]).not.toBeUndefined();
 });
 
@@ -1100,15 +1106,15 @@ test('A78 态驱动——思考容器标记随 think 态切换（think 挂 / 离
 test('A78 态驱动——容器创建即按当前态挂标记（多容器各自归类）', () => {
   window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
   window.chatOnView({ seq: 12, renderType: 'stream', payload: { kind: 'reasoning', text: '二轮思考' }, replaceSeq: -1 });
-  const rb2 = chatMsgs.querySelectorAll('.chat-reason')[0].closest('.chat-bubble');
-  expect(rb2.classList.contains('streaming')).toBe(true);
-  // 态切到 reply——思考容器撤、后续回复容器挂
+  const rb2 = chatMsgs.querySelectorAll('.chat-think.stream')[0].closest('.chat-bubble');
+  expect(rb2.classList.contains('live')).toBe(true);
+  // 态切到 reply——思考块撤、后续回复容器挂
   window.chatOnSessionState({ sessionId: 's1', runState: 'reply', runMs: {}, requests: 1 });
   window.chatOnView({ seq: 20, renderType: 'stream', payload: { kind: 'text', text: '回复' }, replaceSeq: -1 });
   const tb = chatMsgs.querySelector('.chat-bubble.streaming');
   expect(tb).not.toBeNull();
   expect(tb.textContent).toBe('回复');
-  expect(rb2.classList.contains('streaming')).toBe(false);
+  expect(rb2.classList.contains('live')).toBe(false);
 });
 
 // ═══════════════════════════════════════════
@@ -1163,4 +1169,66 @@ test('A77 静默提示——view 事件到达即撤销（宿主复活自愈）',
   expect(chatMsgs.querySelector('.chat-bubble.stall')).toBeTruthy();
   window.chatOnView({ renderType: 'text', seq: -1, replaceSeq: -1, payload: { content: '已恢复', msgIndex: -1 } });
   expect(chatMsgs.querySelector('.chat-bubble.stall')).toBeNull();
+});
+
+// ═══════════════════════════════════════════
+// A84 工具卡「运行中」已运行时长（纯前端自算 · 1 秒粒度 · 2026-09-23）
+// ═══════════════════════════════════════════
+
+// 建先行卡（无 result → pending）并返回占位元素——exec 骨架与通用输出段共用同一占位出口
+function pendingHold(seq, name) {
+  window.chatOnToolCard(seq, -1, { name: name, arguments: '{}', toolIndex: 1, toolTotal: 1 });
+  return chatMsgs.querySelector('.chat-tool .' + window.CHAT_PENDING_HOLD_CLS);
+}
+
+test('A84 占位行带已运行时长——exec 骨架与通用输出段同一出口（初始 0s）', () => {
+  const exec = pendingHold(1, 'mau-setup');
+  expect(exec).toBeTruthy();
+  expect(exec.className).toContain('ta');
+  expect(exec.textContent).toBe('⏳ 处理中…（已运行 0s）');
+  const plain = pendingHold(2, 'text-read');
+  expect(plain.textContent).toBe('⏳ 处理中…（已运行 0s）');
+});
+
+test('A84 粒度 1 秒——整秒向下取整（3500ms → 3s · 12000ms → 12s）', () => {
+  vi.useFakeTimers();
+  try {
+    const hold = pendingHold(1, 'mau-setup');
+    hold.setAttribute('data-start', String(Date.now() - 3500));
+    window.chatLiveTick();
+    expect(hold.textContent).toBe('⏳ 处理中…（已运行 3s）');
+    hold.setAttribute('data-start', String(Date.now() - 12000));
+    window.chatLiveTick();
+    expect(hold.textContent).toBe('⏳ 处理中…（已运行 12s）');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('A84 1 秒表驱动——建卡即开表，每秒 tick 一次', () => {
+  vi.useFakeTimers();
+  try {
+    const spy = vi.spyOn(window, 'chatLiveTick');
+    pendingHold(1, 'mau-setup');
+    expect(window.chatLiveTimer).toBeTruthy();
+    vi.advanceTimersByTime(3000);
+    expect(spy).toHaveBeenCalledTimes(3);
+    spy.mockRestore();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('A84 完成原位替换——占位随换卡消失且停表', () => {
+  pendingHold(1, 'mau-setup');
+  expect(window.chatLiveTimer).toBeTruthy();
+  window.chatOnToolCard(9, 1, { name: 'mau-setup', arguments: '{}', result: 'OK', summary: '一键部署', toolIndex: 1, toolTotal: 1 });
+  expect(chatMsgs.querySelector('.chat-tool .' + window.CHAT_PENDING_HOLD_CLS)).toBeNull();
+  expect(window.chatLiveTimer).toBeNull();
+});
+
+test('A84 终态卡直达（无先行卡）——不建占位、不开表', () => {
+  window.chatOnToolCard(1, -1, { name: 'mau-setup', arguments: '{}', result: 'OK', summary: '一键部署', toolIndex: 1, toolTotal: 1 });
+  expect(chatMsgs.querySelector('.chat-tool .' + window.CHAT_PENDING_HOLD_CLS)).toBeNull();
+  expect(window.chatLiveTimer).toBeNull();
 });

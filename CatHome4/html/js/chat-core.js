@@ -160,8 +160,7 @@ function chatShowStall() {
 function chatClearStall() {
     var els = chatMsgs.querySelectorAll('.chat-bubble.stall');
     for (var i = 0; i < els.length; i = i + 1) {
-        var row = els[i].parentNode;
-        if (row) { row.parentNode.removeChild(row); }
+        chatRemoveBubble(els[i]);
     }
 }
 
@@ -174,18 +173,90 @@ function chatSyncRunningMarks() {
     for (var k in viewContainers) {
         var c = viewContainers[k];
         if (!c || !c.bubble) { continue; }
-        var active = false;
-        if (c.type === 'reason') { active = (state === 'think'); }
-        else if (c.type === 'text') { active = (state === 'reply'); }
-        else if (c.type === 'toolcard') { active = ((state === 'tool') || (state === 'run')); }
-        if (active) {
-            c.bubble.classList.add(c.type === 'toolcard' ? 'pending' : 'streaming');
+        var cls = '';
+        if (c.type === 'thinkstream') {
+            // A85——think 流式块（完成块不在容器表内，天然无进行中标记）
+            if (state === 'think') { cls = 'live'; }
+        } else if (c.type === 'text') {
+            if (state === 'reply') { cls = 'streaming'; }
+        } else if (c.type === 'toolcard') {
+            if (state === 'tool' || state === 'run') { cls = 'pending'; }
+        }
+        c.bubble.classList.remove('streaming');
+        c.bubble.classList.remove('pending');
+        c.bubble.classList.remove('live');
+        if (cls.length > 0) { c.bubble.classList.add(cls); }
+    }
+}
+
+// ============ A84/A85——活跃块计时表（纯前端自算 · 1 秒粒度 · 单一表驱动两类块） ============
+// 适用面：工具卡「运行中」占位行（A84——已运行时长）· think 流式块头行（A85——字符/行数/已输出时间/速率）
+// 起点写在元素 data-start（与块同生命周期——先行卡与 think 流式块都不落盘，刷新即随块消失）；
+// 1 秒表原地更新（文本一律从 data-start 与当前时刻重算，不是累加——隐藏/节流后不漂移）；
+// 无活跃元素即停表（新会话 / 历史重绘清空 DOM 后自停，无需各清空点挂勾）；页面隐藏停表、恢复即补算
+var chatLiveTimer = null;
+var CHAT_LIVE_TICK_MS = 1000;
+// 活跃计时元素——两类块各自的更新器按类分派（同一张表；选择器单一出口）
+var CHAT_LIVE_SELECTOR = '.chat-tool .' + CHAT_PENDING_HOLD_CLS + ', .chat-think.stream .ct-head';
+
+// 原地更新——按元素类分派：工具卡占位行（已运行时长）/ think 流式块头行（统计重算）
+function chatLiveTick() {
+    var nodes = chatMsgs.querySelectorAll(CHAT_LIVE_SELECTOR);
+    if (nodes.length === 0) {
+        chatLiveSyncTimer();
+        return;
+    }
+    var now = Date.now();
+    for (var i = 0; i < nodes.length; i = i + 1) {
+        var el = nodes[i];
+        var start = parseInt(el.getAttribute('data-start'), 10);
+        if (isNaN(start)) {
+            start = now;
+            el.setAttribute('data-start', String(start));
+        }
+        if (el.classList.contains('ct-head')) {
+            chatThinkHeadRefresh(el, now - start);
         } else {
-            c.bubble.classList.remove('streaming');
-            c.bubble.classList.remove('pending');
+            el.textContent = chatPendingHoldText(now - start);
         }
     }
 }
+
+// 计时器同步——有活跃元素且页面可见才跑表（空表 / 隐藏页零开销）
+function chatLiveSyncTimer() {
+    var need = (chatMsgs.querySelectorAll(CHAT_LIVE_SELECTOR).length > 0)
+        && document.visibilityState !== 'hidden';
+    if (need && chatLiveTimer === null) {
+        chatLiveTimer = setInterval(chatLiveTick, CHAT_LIVE_TICK_MS);
+    }
+    if (!need && chatLiveTimer !== null) {
+        clearInterval(chatLiveTimer);
+        chatLiveTimer = null;
+    }
+}
+
+// 起点登记——块新建后调用：块内全部活跃元素记同一时刻（并发多块各自独立计时）
+function chatLiveMark(bubble) {
+    if (!bubble) { return; }
+    var nodes = bubble.querySelectorAll(CHAT_LIVE_SELECTOR);
+    var now = Date.now();
+    for (var i = 0; i < nodes.length; i = i + 1) {
+        nodes[i].setAttribute('data-start', String(now));
+    }
+}
+
+// 页面可见性——隐藏停表（省开销）；恢复即补算一次再续表（文本从 data-start 重算，不丢时长）
+document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') {
+        if (chatLiveTimer !== null) {
+            clearInterval(chatLiveTimer);
+            chatLiveTimer = null;
+        }
+        return;
+    }
+    chatLiveTick();
+    chatLiveSyncTimer();
+});
 
 // user 视图块——内核确认消息进 Ctx 的唯一出口（单向数据流：前端气泡唯一来源）
 function chatOnUser(payload) {
@@ -271,19 +342,20 @@ function chatOnView(d) {
 function chatOnStream(seq, payload) {
     chatKeepAlive();
     if (payload.kind === 'reasoning') {
-        // 思考流式——独立气泡流式展开（增量可见）
+        // A85——think 流式态（live-only）：首帧新建独立块；终结由后端 reason 整块驱动（前端不自判）
         if (!viewContainers[seq]) {
-            // 新思考容器——上一轮文本流式已终结（多轮工具循环残留兜底）
-            var b = chatBubble('assistant', 'reason');
-            var det = chatReasonBlock('', true);
-            b.appendChild(det);
-            viewContainers[seq] = { type: 'reason', bubble: b, reasonPre: det.querySelector('div') };
+            var rb = chatBubble('assistant', 'reason');
+            var tk = chatThinkStream();
+            rb.appendChild(tk.box);
+            viewContainers[seq] = { type: 'thinkstream', bubble: rb, head: tk.head, body: tk.body, cursor: tk.cursor };
+            // 起点登记——头行 data-start（活跃计时表按此时刻算已输出时长与速率）
+            chatLiveMark(rb);
         }
         var rc = viewContainers[seq];
-        rc.reasonPre.textContent = rc.reasonPre.textContent + (payload.text || '');
-        // 流式展开——summary 实时字数感知（_reasonText 同步 + _updateSummary 统一渲染——中途折叠也走折叠摘要）
-        var detEl = rc.bubble.querySelector('details.chat-reason');
-        if (detEl) { detEl._reasonText = rc.reasonPre.textContent; detEl._updateSummary(); }
+        chatThinkAppend(rc.body, rc.cursor, payload.text || '');
+        chatThinkScroll(rc.body);
+        // 头行实时刷新——与 1 秒表同一出口（增量到达即更新，不等下一秒）
+        chatLiveTick();
     } else if (payload.kind === 'text') {
         // 回复流式——独立气泡流式；空增量（tool_calls 前的空 content 块）跳过——不建空气泡
         var t = payload.text || '';
@@ -299,6 +371,8 @@ function chatOnStream(seq, payload) {
     }
     // 进行中标记——全局态唯一出入口（新建容器后立即按当前态同步）
     chatSyncRunningMarks();
+    // 活跃计时表——think 流式块新建后保证表在跑（无活跃元素时为空操作）
+    chatLiveSyncTimer();
 }
 
 function chatOnText(seq, replaceSeq, payload) {
@@ -307,8 +381,7 @@ function chatOnText(seq, replaceSeq, payload) {
     var content = payload.content || '';
     // P6b 节点操作条——正式回复块底部两按钮（回滚/分支）；msgIndex<0（工具轮 seal 文本）不挂
     var msgIndex = (payload.msgIndex !== undefined) ? payload.msgIndex : -1;
-    // 思考段终结——回复整块到达即折叠全部思考块（2026-09-17：思考结束即折叠，不保留展开态）
-    chatCollapseReasons();
+    // A85——think 段终结不在此兜底（流式块由后端 reason 整块销毁；完成块默认压缩档）
     var c = viewContainers[replaceSeq];
     if (c && c.type === 'text') {
         c.bubble.classList.remove('streaming');
@@ -325,20 +398,29 @@ function chatOnText(seq, replaceSeq, payload) {
 }
 
 function chatOnReason(seq, replaceSeq, payload) {
-    // 思考整块——replaceSeq≥0 且容器存在 → 替换思考流式容器；否则新建
+    // A85 思考整块——流式块**销毁** + 新建完成块（两态是两个实体，不再原位替换）
+    // 统计取流式终值（字符 / 行数 / 已输出时间）——销毁前读流式头行 data-start 与正文
     var content = payload.content || '';
     var c = viewContainers[replaceSeq];
-    if (c && c.type === 'reason') {
-        c.bubble.classList.remove('streaming');
-        c.reasonPre.textContent = content;
-        // 整块替换——流式展开 → 完成后折叠（_reasonText 同步 + _updateSummary 显式渲染——jsdom 不触发 toggle；真实浏览器 toggle 幂等同结果）
-        var detEl = c.bubble.querySelector('details.chat-reason');
-        if (detEl) { detEl._reasonText = content; detEl.open = false; if (detEl._updateSummary) { detEl._updateSummary(); } }
+    if (c && c.type === 'thinkstream') {
+        var start = parseInt(c.head.getAttribute('data-start'), 10);
+        var elapsed = isNaN(start) ? null : (Date.now() - start);
+        var streamText = chatThinkBodyText(c.body);
+        var stats = chatThinkStats(streamText.length > 0 ? streamText : content, elapsed);
+        chatRemoveBubble(c.bubble);
         delete viewContainers[replaceSeq];
-    } else if (content.length > 0) {
-        var b = chatBubble('assistant', 'reason');
-        b.appendChild(chatReasonBlock(content));
+        var nb = chatBubble('assistant', 'reason');
+        nb.appendChild(chatThinkBlock(content, stats));
+        chatLiveSyncTimer();
+        chatSyncRunningMarks();
+        return;
     }
+    // 无流式容器（重连 / 直接整块到达）——无时长来源：头行标识「未统计」
+    if (content.length > 0) {
+        var b = chatBubble('assistant', 'reason');
+        b.appendChild(chatThinkBlock(content));
+    }
+    chatLiveSyncTimer();
 }
 
 // 工具卡两段式——先行"进行中"卡（无 result → ⏳ 处理中，展开态）+ 完成/中断原位替换为完整卡（同气泡不新增）
@@ -354,6 +436,8 @@ function chatOnToolCard(seq, replaceSeq, payload) {
             ec.card = replaced;
             ec.bubble.classList.remove('pending');
             delete viewContainers['toolcard_' + replaceSeq];
+            // A84——该卡占位已随换卡消失；并发其他运行中卡仍在则表继续（无活跃元素即自停）
+            chatLiveSyncTimer();
             return;
         }
     }
@@ -363,9 +447,12 @@ function chatOnToolCard(seq, replaceSeq, payload) {
     if (pending) {
         // 先行卡登记——完成/中断事件以 replaceSeq 命中此处（完成卡不登记：无后续替换）
         viewContainers['toolcard_' + seq] = { type: 'toolcard', bubble: tb, card: card };
+        // A84——登记已运行时长起点（卡内占位元素 data-start）并保证计时表在跑
+        chatLiveMark(tb);
     }
     // 进行中标记——全局态唯一出入口（先行卡按当前态决定是否挂 pending）
     chatSyncRunningMarks();
+    chatLiveSyncTimer();
 }
 
 // A55——重试气泡文本（渲染单例内文本面）

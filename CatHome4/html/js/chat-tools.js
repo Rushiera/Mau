@@ -299,7 +299,7 @@ function chatSegOutput(tool, cap, render, peek) {
         };
     }
     return chatSeg('seg-out', head, function (body) {
-        if (text === undefined) { chatSegBlock(body, 'ta', '⏳ 处理中…'); return; }
+        if (text === undefined) { chatSegBlock(body, 'ta ' + CHAT_PENDING_HOLD_CLS, chatPendingHoldText(0)); return; }
         if (text === '') { chatSegBlock(body, 'tr', '（无输出）'); return; }
         draw(body, text, chatIsErrResult(text));
     }, peekText);
@@ -351,7 +351,7 @@ function chatSkelExec(tool, opts) {
     var blocks = [];
     if (tool.result === undefined) {
         outCap = '输出 · 处理中';
-        blocks.push({ cap: '', cls: 'ta', text: '⏳ 处理中…' });
+        blocks.push({ cap: '', cls: 'ta ' + CHAT_PENDING_HOLD_CLS, text: chatPendingHoldText(0) });
     } else if (head && typeof head.meta.stdoutLines === 'number') {
         // 结构化 ps 回执（首行头 + 正文）——正文按 stdoutLines / stderrLines 切分（不依赖内容分隔符，零撞车）
         var allLines = chatLines(bodyText);

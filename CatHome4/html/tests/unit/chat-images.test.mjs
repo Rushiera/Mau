@@ -23,6 +23,7 @@ beforeAll(async () => {
   const md = await readFile(new URL('../../js/chat-md.js', import.meta.url), 'utf-8');
   const cmd = await readFile(new URL('../../js/chat-cmd.js', import.meta.url), 'utf-8');
   const tools = await readFile(new URL('../../js/chat-tools.js', import.meta.url), 'utf-8');
+  const think = await readFile(new URL('../../js/chat-think.js', import.meta.url), 'utf-8');
   const view = await readFile(new URL('../../js/chat-view.js', import.meta.url), 'utf-8');
   const core = await readFile(new URL('../../js/chat-core.js', import.meta.url), 'utf-8');
   const note = await readFile(new URL('../../js/chat-note.js', import.meta.url), 'utf-8');
@@ -30,6 +31,7 @@ beforeAll(async () => {
   vm.runInThisContext(md, { filename: 'chat-md.js' });
   vm.runInThisContext(cmd, { filename: 'chat-cmd.js' });
   vm.runInThisContext(tools, { filename: 'chat-tools.js' });
+  vm.runInThisContext(think, { filename: 'chat-think.js' });
   vm.runInThisContext(view, { filename: 'chat-view.js' });
   vm.runInThisContext(core, { filename: 'chat-core.js' });
   vm.runInThisContext(note, { filename: 'chat-note.js' });

@@ -32,15 +32,10 @@ function chatAppend(bubble, text) {
     chatScrollBottom();
 }
 
-// 思考段终结——折叠全部仍在展开的思考块（2026-09-17：思考结束立即折叠，不再为最终回复保留展开态）
-// 调用面：reply 流式开始（chatOnStream kind=text）+ 回复整块到达（chatOnText）——折叠后 summary 走折叠摘要渲染
-function chatCollapseReasons() {
-    var all = chatMsgs.querySelectorAll('details.chat-reason');
-    for (var i = 0; i < all.length; i++) {
-        if (all[i].open !== true) { continue; }
-        all[i].open = false;
-        if (all[i]._updateSummary) { all[i]._updateSummary(); }
-    }
+// 气泡整块移除——行容器一并摘除（A85 think 流式块销毁 / A77 静默提示撤销共用）
+function chatRemoveBubble(bubble) {
+    if (!bubble || !bubble.parentNode) { return; }
+    bubble.parentNode.removeChild(bubble);
 }
 
 // 工具图标——三级回落（2026-09-18 莎定）：工具专属（填充层）→ 骨架图标（默认）→ ❓（未登记）
@@ -137,6 +132,17 @@ function chatBindBodyCollapse(det) {
     });
 }
 
+// A84——工具卡「运行中」占位行（单一出口）
+// 起点（data-start）由 chat-core.js 在建先行卡时写入占位元素——宿主先行卡载荷无时间戳，已运行时长纯前端自算；
+// 类名常量同源（渲染面加类 / 计时表选元素共用一处），chat-tools.js 骨架占位亦引用
+var CHAT_PENDING_HOLD_CLS = 'pending-hold';
+
+// 占位行文本——「⏳ 处理中…（已运行 12s）」；粒度 1 秒（整秒向下取整）
+function chatPendingHoldText(ms) {
+    var s = Math.floor(Math.max(0, ms) / 1000);
+    return '⏳ 处理中…（已运行 ' + s + 's）';
+}
+
 function chatToolCard(tool, open) {
     // 工具卡——details 结构（open=true 展开：两段式先行卡直接展示 ⏳；缺省折叠——点击 summary 展开/收起）
     // .tn/.ta/.tr 类保留——测试与样式复用；result === undefined → 「⏳ 处理中…」占位（完成时整卡替换）
@@ -222,8 +228,8 @@ function chatToolCard(tool, open) {
             det.appendChild(r);
         } else if (tool.result === undefined) {
             var w = document.createElement('div');
-            w.className = 'ta';
-            w.textContent = '⏳ 处理中…';
+            w.className = 'ta ' + CHAT_PENDING_HOLD_CLS;
+            w.textContent = chatPendingHoldText(0);
             det.appendChild(w);
         }
     }
@@ -231,59 +237,8 @@ function chatToolCard(tool, open) {
     return det;
 }
 
-function chatReasonBlock(text, open) {
-    // 思考块——默认折叠（点击 summary 展开/收起）；open=true 流式展开（增量可见）
-    // 折叠摘要：首行 +（N行M字符已省略显示）+ 末行——最小化显示过程；展开态回退字数标题
-    // 渲染入口 det._updateSummary——toggle 事件（真实浏览器）+ 显式调用（流式/整块替换/jsdom 测试）双驱动，幂等同结果
-    var det = document.createElement('details');
-    det.className = 'chat-reason';
-    det.open = (open === true);
-    det._reasonText = text || '';
-    var sum = document.createElement('summary');
-    det.appendChild(sum);
-    var pre = document.createElement('div');
-    pre.textContent = text || '';
-    det.appendChild(pre);
-    det._updateSummary = function () {
-        var t = det._reasonText || '';
-        if (det.open) {
-            sum.textContent = (t.length > 0) ? ('Thinking · ' + t.length) : 'Think';
-            return;
-        }
-        // 折叠——Think 标签 + 灰色缩略内容（颜色分工：标签走 Think 态色，内容取展开正文原灰）
-        sum.textContent = '';
-        var label = document.createElement('span');
-        label.className = 'rs-label';
-        label.textContent = 'Think';
-        sum.appendChild(label);
-        var peek = chatReasonFoldedPeek(t);
-        if (peek.length > 0) {
-            var body = document.createElement('span');
-            body.className = 'rs-peek';
-            body.textContent = '：' + peek;
-            sum.appendChild(body);
-        }
-    };
-    det.addEventListener('toggle', det._updateSummary);
-    det._updateSummary();
-    chatBindBodyCollapse(det);
-    return det;
-}
-
-// 折叠摘要内容——<3 行不压缩直接显示原文；≥3 行取 首行 +（N行M字符已省略显示）+ 末行
-// （标签 Think 由 summary 渲染侧拼接——本函数只产缩略内容，2026-09-16）
-function chatReasonFoldedPeek(text) {
-    if (!text || text.length === 0) { return ''; }
-    var lines = text.split('\n');
-    if (lines.length < 3) {
-        return text;
-    }
-    var first = lines[0];
-    var last = lines[lines.length - 1];
-    var midLines = lines.length - 2;
-    var midText = lines.slice(1, lines.length - 1).join('\n');
-    return first + '（' + midLines + '行' + midText.length + '字符已省略显示）' + last;
-}
+// A85——思考块渲染迁至 js/chat-think.js（两态两渲染器）；原 details 折叠实现（chatReasonBlock /
+// chatReasonFoldedPeek）退役——「展开/折叠」语义已由「高度档」取代（design-ch4-frontend-theme §六「Think 块」）
 
 // 注入报告 HTML——新会话前文加载明细（ok/missing/error 三态 + 字符数 + 注入工具组；history 首块渲染）
 function chatInjectReportHtml(p) {
@@ -344,7 +299,7 @@ function chatRenderHistory(data) {
             chatUserFill(ub, p.content || '');
         } else if (blk.renderType === 'reason') {
             var rb = chatBubble('assistant', 'reason');
-            rb.appendChild(chatReasonBlock(p.content || ''));
+            rb.appendChild(chatThinkBlock(p.content || '', null));
         } else if (blk.renderType === 'toolcard') {
             var tb = chatBubble('assistant', 'tool');
             tb.appendChild(chatToolCard(p));
