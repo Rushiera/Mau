@@ -295,25 +295,46 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 #noteAddRow button { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
 #noteStartBtn { background: var(--ch-bg-accent); border: none; color: var(--ch-fg-inverse); }
 #noteStartBtn:disabled { opacity: 0.5; cursor: default; }
-/* 延迟指令队列（design-ch4-delay §六）——定时按钮与 Note 气泡并排；弹层贴按钮上方右侧 */
-.delay-wrap { position: relative; display: flex; align-items: center; }
+/* 延迟指令队列（design-ch4-delay §六）——定时按钮与 Note 气泡并排；弹层贴 wrap 上方、水平居中（A82/A83）
+   A82：定位基准由按钮（.delay-wrap）上移到居中容器（#noteWrap）——.delay-wrap 不再自持 relative */
+.delay-wrap { display: flex; align-items: center; }
 #delayBtn { background: var(--ch-note-bg); border: 1px solid var(--ch-note-line); border-radius: 14px; color: var(--ch-note-fg); font-size: 11px; padding: 4px 14px; cursor: pointer; box-shadow: 0 2px 8px var(--ch-shadow-soft); user-select: none; font-family: inherit; }
 #delayBtn:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
 #delayCount { color: var(--ch-warn); }
-.delay-popover { position: absolute; bottom: calc(100% + 8px); right: 0; background: var(--ch-bg-page); border: 1px solid var(--ch-line); border-radius: 8px; width: min(560px, 80vw); max-height: 60vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px var(--ch-shadow-strong); z-index: 61; }
+.delay-popover { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: var(--ch-bg-page); border: 1px solid var(--ch-line); border-radius: 8px; width: min(560px, 80vw); max-height: 60vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px var(--ch-shadow-strong); z-index: 61; }
 .delay-popover-head { padding: 8px 14px; border-bottom: 1px solid var(--ch-line-faint); color: var(--ch-identity); font-weight: bold; font-size: 12px; }
-#delayList { display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; overflow-y: auto; flex: 1; }
-.delay-empty { color: var(--ch-fg-muted); font-size: 11px; }
-.delay-row { display: flex; gap: 6px; align-items: baseline; color: var(--ch-fg); font-size: 12px; }
-.delay-when { flex-shrink: 0; color: var(--ch-fg-muted); font-family: Consolas, monospace; font-size: 11px; }
-.delay-cd { flex-shrink: 0; color: var(--ch-warn); font-family: Consolas, monospace; font-size: 11px; }
+/* 分区（A83）——待触发（列表，可滚动）| 插入指令（固定高） */
+.delay-sec { display: flex; flex-direction: column; min-height: 0; }
+.delay-sec-list { flex: 1; }
+.delay-sec-head { padding: 6px 14px 4px; color: var(--ch-fg-weak); font-size: 11px; }
+.delay-sec-add { border-top: 1px solid var(--ch-line-faint); padding-bottom: 6px; }
+#delayList { display: flex; flex-direction: column; gap: 3px; padding: 0 14px 8px; overflow-y: auto; }
+.delay-empty { color: var(--ch-fg-weak); font-size: 11px; }
+.delay-row { display: flex; gap: 8px; align-items: baseline; color: var(--ch-fg); font-size: 12px; padding: 2px 0; }
+.delay-mark { flex-shrink: 0; font-size: 11px; }
+.delay-cd { flex-shrink: 0; min-width: 58px; color: var(--ch-warn); font-family: Consolas, monospace; font-size: 13px; font-weight: bold; }
+.delay-cd.soon { color: var(--ch-err); }
+.delay-due { flex-shrink: 0; color: var(--ch-fg-weak); font-family: Consolas, monospace; font-size: 11px; }
 .delay-text { flex: 1; word-break: break-all; }
 .delay-act { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 1px 8px; cursor: pointer; font-family: inherit; font-size: 11px; }
 .delay-act:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
-#delayAddRow { display: flex; gap: 6px; padding: 8px 14px; border-top: 1px dashed var(--ch-line-soft); }
-#delayTime { width: 150px; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: 11px; }
+/* 快捷档 chips——新建区与行内编辑条共用（选中态 .on） */
+.delay-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.delay-chip { background: var(--ch-bg-chip); border: 1px solid var(--ch-line); border-radius: 14px; color: var(--ch-fg-muted); padding: 2px 12px; cursor: pointer; font-family: inherit; font-size: 11px; }
+.delay-chip:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
+.delay-chip.on { background: var(--ch-bg-accent); border-color: var(--ch-bg-accent); color: var(--ch-fg-inverse); }
+#delayQuickRow { padding: 0 14px 6px; }
+#delayCustomRow { display: flex; gap: 6px; padding: 0 14px 6px; }
+#delayCustomAt, .delay-edit-at { background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: 11px; }
+#delayCustomAt { flex: 1; min-width: 0; }
+#delayCustomAt:focus, .delay-edit-at:focus { outline: none; border-color: var(--ch-focus); }
+/* 行内编辑条（A83——退役 window.prompt：快捷档相对当前时刻 + datetime-local 绝对时刻） */
+.delay-edit { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 2px 0 6px 20px; }
+.delay-edit-label { flex-shrink: 0; color: var(--ch-fg-weak); font-size: 11px; }
+.delay-edit-at { max-width: 170px; }
+#delayAddRow { display: flex; gap: 6px; padding: 8px 14px 0; border-top: 1px dashed var(--ch-line-soft); }
 #delayText { flex: 1; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: 11px; }
-#delayTime:focus, #delayText:focus { outline: none; border-color: var(--ch-focus); }
+#delayText:focus { outline: none; border-color: var(--ch-focus); }
 #delayLoopLabel { display: flex; align-items: center; gap: 3px; color: var(--ch-fg-muted); font-size: 11px; white-space: nowrap; cursor: pointer; user-select: none; }
 #delayLoop { accent-color: var(--ch-warn); cursor: pointer; }
 #delayAddRow button { background: var(--ch-bg-accent); border: none; color: var(--ch-fg-inverse); padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }

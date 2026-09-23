@@ -45,7 +45,11 @@ function noteToggle() {
     noteModalOpen = !noteModalOpen;
     var pop = document.getElementById('notePopover');
     if (pop) { pop.style.display = noteModalOpen ? 'block' : 'none'; }
-    if (noteModalOpen) { noteRender(); }
+    if (noteModalOpen) {
+        noteRender();
+        // A83——两弹层同位置，互斥：Note 展开即收起定时面板（反向见 chat-delay.js delayToggle）
+        if (typeof delayClose === 'function') { delayClose(); }
+    }
 }
 
 // 外部点击收起——popover 展开时点击 noteWrap 外任意处关闭（网页常见 i 详情交互）

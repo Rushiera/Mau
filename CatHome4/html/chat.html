@@ -37,12 +37,21 @@
             <button id="delayBtn" title="定时指令队列——延迟注入 / 改时刻 / 取消">定时<span id="delayCount"></span></button>
             <div id="delayPopover" class="delay-popover" style="display:none">
                 <div class="delay-popover-head"><span id="delayTitle">定时指令队列</span></div>
-                <div id="delayList"></div>
-                <div id="delayAddRow">
-                    <input id="delayTime" placeholder="时长/时刻（10m · 1h30m · 09:30）">
-                    <input id="delayText" placeholder="注入内容…（Enter 提交）">
-                    <label id="delayLoopLabel" title="循环——每次触发后按相同时长重排（不自动移除）"><input type="checkbox" id="delayLoop">循环</label>
-                    <button id="delayAddBtn">＋</button>
+                <div class="delay-sec delay-sec-list">
+                    <div class="delay-sec-head">待触发<span id="delaySecCount"></span></div>
+                    <div id="delayList"></div>
+                </div>
+                <div class="delay-sec delay-sec-add">
+                    <div class="delay-sec-head">插入指令</div>
+                    <div id="delayQuickRow"></div>
+                    <div id="delayCustomRow" style="display:none">
+                        <input type="datetime-local" id="delayCustomAt" step="1">
+                    </div>
+                    <div id="delayAddRow">
+                        <input id="delayText" placeholder="注入内容…（Enter 提交）">
+                        <label id="delayLoopLabel" title="循环——每次触发后按相同时长重排（不自动移除）"><input type="checkbox" id="delayLoop">循环</label>
+                        <button id="delayAddBtn" title="按选中档位新建（或 Enter 提交）">＋</button>
+                    </div>
                 </div>
             </div>
         </div>

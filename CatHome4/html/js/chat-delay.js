@@ -1,8 +1,20 @@
-// 延迟指令队列（design-ch4-delay §六）——外观层：列表 + 倒计时 + 新建 / 改时刻 / 取消。
+// 延迟指令队列（design-ch4-delay §六）——外观层：分区（待触发 / 插入指令）+ 倒计时 + 快捷档 + 行内改时刻 + 取消。
 // 数据源 GET /api/v1/delay（绝对 dueAt 毫秒）；倒计时本地自算（1 秒粒度，页面不可见时停表——dueAt 权威）。
-// 写面复用 POST /api/v1/command（delay.add / delay.set / delay.cancel）——零新写端点。
+// 写面复用 POST /api/v1/command（delay.add / delay.addat / delay.addatloop / delay.set / delay.cancel / delay.loop）——零新写端点。
+// A83（2026-09-23）：面板分区 + 倒计时升为主信息 + 快捷档（5m/15m/30m/1h）+ datetime-local 自定义 + 行内改时刻（退役 window.prompt 与自由文本解析）。
 var delayEntries = [];
 var delayTimer = null;
+var delayCustomOpen = false;     // 新建区「自定义」时刻行展开态
+var delayEditingId = null;       // 行内编辑中的条目 id（null = 无）
+var delaySelectedSec = 300;      // 新建区选中档（秒）；null = 自定义时刻
+
+// 快捷档（相对时长·秒）——单一出口：新建区与行内编辑条共用同一份定义
+var delayQuickDefs = [
+    { label: '5m', sec: 300 },
+    { label: '15m', sec: 900 },
+    { label: '30m', sec: 1800 },
+    { label: '1h', sec: 3600 }
+];
 
 // 队列状态拉取——列表数据源（页面加载 / 每次变更后调用）
 function delayLoad() {
@@ -15,16 +27,29 @@ function delayLoad() {
         .catch(function (e) { uiWarn('延迟队列拉取', e); });
 }
 
-// 面板展开/收起
+// 面板展开/收起——与 Note 弹层互斥（两弹层同位置，避免重叠）
 function delayToggle() {
     var pop = document.getElementById('delayPopover');
     if (!pop) { return; }
     if (pop.style.display === 'none' || pop.style.display === '') {
+        var np = document.getElementById('notePopover');
+        if (np && np.style.display === 'block' && typeof noteToggle === 'function') { noteToggle(); }
         delayLoad();
         pop.style.display = 'flex';
+        delaySyncTimer();
     } else {
-        pop.style.display = 'none';
+        delayClose();
     }
+}
+
+// 收起——按钮切换 / 外部点击 / 与 Note 互斥三处共用
+function delayClose() {
+    var pop = document.getElementById('delayPopover');
+    if (!pop) { return; }
+    pop.style.display = 'none';
+    delayEditingId = null;
+    delayCustomOpen = false;
+    delaySyncTimer();
 }
 
 // 倒计时文本——剩余时长（>1 天显示天+时）
@@ -63,12 +88,81 @@ function delaySrcMark(source) {
     return '⏰';
 }
 
-// 行首文本——来源标记 + 到点时刻 + 循环/已响标记（渲染与测试共用单一出口）
-function delayWhenText(e) {
-    var mark = delaySrcMark(e.source) + ' ' + delayFmtDue(e.dueAt);
-    if (e.loop) { mark = mark + ' 🔁'; }
-    if (e.fired > 0) { mark = mark + ' 已响 ' + e.fired; }
-    return mark;
+// 副列文本——到点时刻 + 循环 / 已响标记（渲染与测试共用单一出口）
+function delayDueText(e) {
+    var t = delayFmtDue(e.dueAt);
+    if (e.loop) { t = t + ' 🔁'; }
+    if (e.fired > 0) { t = t + ' 已响 ' + e.fired; }
+    return t;
+}
+
+// 即将触发判据——倒计时 ≤60 秒高亮（主信息列）
+function delayCdSoon(ms) {
+    return ms <= 60000;
+}
+
+// 快捷档 → 绝对时刻（同刻取值——循环时长精确等于档位）
+function delayQuickDueAt(sec, now) {
+    var base = (typeof now === 'number') ? now : Date.now();
+    return base + sec * 1000;
+}
+
+// datetime-local 值（yyyy-MM-ddTHH:mm(:ss)）→ 毫秒（本机时区；空 / 非法返回 null）
+function delayParseLocalValue(v) {
+    var t = (v || '').trim();
+    if (t.length === 0) { return null; }
+    var m = t.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (m === null) { return null; }
+    var d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10),
+        parseInt(m[4], 10), parseInt(m[5], 10), m[6] ? parseInt(m[6], 10) : 0, 0);
+    if (isNaN(d.getTime())) { return null; }
+    return d.getTime();
+}
+
+// 毫秒 → datetime-local 值（编辑条回填；本机时区 yyyy-MM-ddTHH:mm:ss）
+function delayFmtLocalValue(ms) {
+    var d = new Date(ms);
+    return d.getFullYear() + '-' + delayPad(d.getMonth() + 1) + '-' + delayPad(d.getDate()) + 'T'
+        + delayPad(d.getHours()) + ':' + delayPad(d.getMinutes()) + ':' + delayPad(d.getSeconds());
+}
+
+// 指令行拼装——单一出口（格式漂移防线；写面通道见文件头）
+function delayAddLine(sec, content) {
+    return 'delay.add|' + String(sec) + '|' + content;
+}
+
+function delayAddAtLine(dueAt, content) {
+    return 'delay.addat|' + String(dueAt) + '|' + content;
+}
+
+function delayAddAtLoopLine(dueAt, content) {
+    return 'delay.addatloop|' + String(dueAt) + '|' + content;
+}
+
+function delaySetLine(id, dueAt) {
+    return 'delay.set|' + String(id) + '|' + String(dueAt);
+}
+
+function delayCancelLine(id) {
+    return 'delay.cancel|' + String(id);
+}
+
+function delayLoopLine(id, on) {
+    return 'delay.loop|' + String(id) + '|' + (on ? '1' : '0');
+}
+
+// 快捷档 chips HTML——单一出口（新建区与行内编辑条共用；act 区分提交面，extra 追加同容器按钮）
+function delayChipsHtml(act, id, extra) {
+    var html = '<div class="delay-chips">';
+    for (var i = 0; i < delayQuickDefs.length; i = i + 1) {
+        var d = delayQuickDefs[i];
+        html = html + '<button class="delay-chip" data-act="' + act + '" data-sec="' + String(d.sec) + '"';
+        if (id !== null && id !== undefined) { html = html + ' data-id="' + String(id) + '"'; }
+        html = html + '>' + d.label + '</button>';
+    }
+    if (extra) { html = html + extra; }
+    html = html + '</div>';
+    return html;
 }
 
 // 列表渲染——重建（数据变化时调用）；倒计时由 delayTick 原地更新
@@ -77,56 +171,111 @@ function delayRender() {
     if (!list) { return; }
     var count = document.getElementById('delayCount');
     if (count) { count.textContent = delayEntries.length > 0 ? (' ' + delayEntries.length) : ''; }
+    var secCount = document.getElementById('delaySecCount');
+    if (secCount) { secCount.textContent = delayEntries.length > 0 ? (' · ' + delayEntries.length + ' 条') : ''; }
     list.textContent = '';
     if (delayEntries.length === 0) {
         var empty = document.createElement('div');
         empty.className = 'delay-empty';
-        empty.textContent = '（队列为空——下方输入时长与内容新建）';
+        empty.textContent = '（空）';
         list.appendChild(empty);
         delaySyncTimer();
         return;
     }
     for (var i = 0; i < delayEntries.length; i = i + 1) {
         var e = delayEntries[i];
+        var remain = e.dueAt - Date.now();
         var row = document.createElement('div');
         row.className = 'delay-row';
         row.setAttribute('data-id', String(e.id));
-        var when = document.createElement('span');
-        when.className = 'delay-when';
-        when.textContent = delayWhenText(e);
+        var mark = document.createElement('span');
+        mark.className = 'delay-mark';
+        mark.textContent = delaySrcMark(e.source);
         var cd = document.createElement('span');
-        cd.className = 'delay-cd';
+        cd.className = delayCdSoon(remain) ? 'delay-cd soon' : 'delay-cd';
         cd.setAttribute('data-due', String(e.dueAt));
-        cd.textContent = delayFmtRemain(e.dueAt - Date.now());
+        cd.textContent = delayFmtRemain(remain);
+        var due = document.createElement('span');
+        due.className = 'delay-due';
+        due.textContent = delayDueText(e);
         var text = document.createElement('span');
         text.className = 'delay-text';
         text.textContent = e.content;
-        var edit = document.createElement('button');
-        edit.className = 'delay-act';
-        edit.textContent = '改';
-        edit.setAttribute('data-id', String(e.id));
-        edit.addEventListener('click', delayEditClick);
         var loopBtn = document.createElement('button');
         loopBtn.className = 'delay-act';
         loopBtn.textContent = e.loop ? '🔁' : '单次';
         loopBtn.title = '切换循环（触发后按相同时长重排，不自动移除）';
+        loopBtn.setAttribute('data-act', 'loop');
         loopBtn.setAttribute('data-id', String(e.id));
         loopBtn.setAttribute('data-loop', e.loop ? '1' : '0');
-        loopBtn.addEventListener('click', delayLoopClick);
+        var edit = document.createElement('button');
+        edit.className = 'delay-act';
+        edit.textContent = '改';
+        edit.title = '改触发时刻（快捷档为相对当前时刻；也可直接选时刻）';
+        edit.setAttribute('data-act', 'edit');
+        edit.setAttribute('data-id', String(e.id));
         var cancel = document.createElement('button');
         cancel.className = 'delay-act';
         cancel.textContent = '×';
+        cancel.title = '取消该条目';
+        cancel.setAttribute('data-act', 'cancel');
         cancel.setAttribute('data-id', String(e.id));
-        cancel.addEventListener('click', delayCancelClick);
-        row.appendChild(when);
+        row.appendChild(mark);
         row.appendChild(cd);
+        row.appendChild(due);
         row.appendChild(text);
         row.appendChild(loopBtn);
         row.appendChild(edit);
         row.appendChild(cancel);
         list.appendChild(row);
+        if (delayEditingId === e.id) { list.appendChild(delayBuildEditRow(e)); }
     }
     delaySyncTimer();
+}
+
+// 行内编辑条——快捷档（相对当前时刻）+ 自定义时刻（回填当前 dueAt）；与新建区共用 chips 出口
+function delayBuildEditRow(e) {
+    var wrap = document.createElement('div');
+    wrap.className = 'delay-edit';
+    wrap.innerHTML = '<span class="delay-edit-label">改为</span>'
+        + delayChipsHtml('edit-quick', e.id, null)
+        + '<input type="datetime-local" step="1" class="delay-edit-at" id="delayEditAt" value="' + delayFmtLocalValue(e.dueAt) + '">'
+        + '<button class="delay-act" data-act="edit-ok" data-id="' + String(e.id) + '">确定</button>'
+        + '<button class="delay-act" data-act="edit-cancel">取消</button>';
+    return wrap;
+}
+
+// 新建区快捷档渲染——四档 + 「自定义」（chips 出口 + 选中态标记）
+function delayRenderQuick() {
+    var row = document.getElementById('delayQuickRow');
+    if (!row) { return; }
+    row.innerHTML = delayChipsHtml('quick-pick', null, '<button class="delay-chip" id="delayChipCustom" data-act="custom-toggle">自定义</button>');
+    delayMarkQuickSel();
+    delayRenderCustom();
+}
+
+// 选中态标记——chip 与「自定义」按 delaySelectedSec 高亮（单一出口）
+function delayMarkQuickSel() {
+    var row = document.getElementById('delayQuickRow');
+    if (!row) { return; }
+    var chips = row.getElementsByClassName('delay-chip');
+    for (var i = 0; i < chips.length; i = i + 1) {
+        var sec = chips[i].getAttribute('data-sec');
+        var on = (sec !== null && delaySelectedSec !== null && parseInt(sec, 10) === delaySelectedSec);
+        chips[i].className = on ? 'delay-chip on' : 'delay-chip';
+    }
+    var custom = document.getElementById('delayChipCustom');
+    if (custom) { custom.className = (delaySelectedSec === null) ? 'delay-chip on' : 'delay-chip'; }
+}
+
+// 自定义时刻行显隐——默认值 = 当前 + 30 分钟（仅空值回填，不覆盖用户输入）
+function delayRenderCustom() {
+    var row = document.getElementById('delayCustomRow');
+    if (row) { row.style.display = delayCustomOpen ? 'flex' : 'none'; }
+    if (delayCustomOpen) {
+        var at = document.getElementById('delayCustomAt');
+        if (at && at.value.length === 0) { at.value = delayFmtLocalValue(delayQuickDueAt(1800)); }
+    }
 }
 
 // 倒计时刷新——原地更新（不重建 DOM；页面不可见时停表）
@@ -136,7 +285,10 @@ function delayTick() {
     var nodes = list.getElementsByClassName('delay-cd');
     for (var i = 0; i < nodes.length; i = i + 1) {
         var due = parseInt(nodes[i].getAttribute('data-due'), 10);
-        nodes[i].textContent = delayFmtRemain(due - Date.now());
+        var remain = due - Date.now();
+        nodes[i].textContent = delayFmtRemain(remain);
+        var want = delayCdSoon(remain) ? 'delay-cd soon' : 'delay-cd';
+        if (nodes[i].className !== want) { nodes[i].className = want; }
     }
 }
 
@@ -156,78 +308,90 @@ function delaySyncTimer() {
     }
 }
 
-// 时长/时刻解析——支持 90s / 5m / 1h30m（相对）、HH:mm(:ss)（今天或明天）、yyyy-MM-dd HH:mm(:ss)（绝对）
-function delayParseInput(raw) {
-    var t = (raw || '').trim();
-    if (t.length === 0) { return null; }
-    // 相对时长——数字 + 单位（可组合）
-    var re = /(\d+)\s*([hms])/gi;
-    var total = 0;
-    var matched = false;
-    var m = re.exec(t);
-    while (m !== null) {
-        matched = true;
-        var v = parseInt(m[1], 10);
-        var unit = m[2].toLowerCase();
-        if (unit === 'h') { total = total + v * 3600; }
-        else if (unit === 'm') { total = total + v * 60; }
-        else { total = total + v; }
-        m = re.exec(t);
-    }
-    if (matched) { return Date.now() + total * 1000; }
-    // 当日时刻——HH:mm(:ss)（已过则顺延明天）
-    var hms = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-    if (hms !== null) {
-        var d = new Date();
-        d.setHours(parseInt(hms[1], 10), parseInt(hms[2], 10), hms[3] ? parseInt(hms[3], 10) : 0, 0);
-        if (d.getTime() <= Date.now()) { d.setDate(d.getDate() + 1); }
-        return d.getTime();
-    }
-    // 绝对时刻——yyyy-MM-dd HH:mm(:ss)
-    var abs = Date.parse(t.replace(/-/g, '/'));
-    if (!isNaN(abs)) { return abs; }
-    return null;
+// 事件委托——列表行 / 编辑条 / 快捷档三面统一分派（列表重建无需重绑）
+function delayOnClick(ev) {
+    var t = ev.target;
+    if (!t || !t.getAttribute) { return; }
+    var act = t.getAttribute('data-act');
+    if (!act) { return; }
+    var id = t.getAttribute('data-id');
+    if (act === 'cancel') { delaySend(delayCancelLine(id)); return; }
+    if (act === 'loop') { delayLoopClick(t); return; }
+    if (act === 'edit') { delayToggleEdit(id); return; }
+    if (act === 'edit-cancel') { delayEditingId = null; delayRender(); return; }
+    if (act === 'edit-ok') { delayEditOk(id); return; }
+    if (act === 'edit-quick') { delayEditQuick(id, t.getAttribute('data-sec')); return; }
+    if (act === 'quick-pick') { delayPickQuick(t.getAttribute('data-sec')); return; }
+    if (act === 'custom-toggle') { delayPickCustom(); return; }
 }
 
-// 新建——时长 + 内容 → delay.addat（绝对时刻，前端已换算）
-function delayAdd() {
-    var timeInput = document.getElementById('delayTime');
+// 行内编辑开关——同一条目再点收起
+function delayToggleEdit(id) {
+    var n = parseInt(id, 10);
+    delayEditingId = (delayEditingId === n) ? null : n;
+    delayRender();
+}
+
+// 新建区档位选择——快捷档（相对）；清自定义行
+function delayPickQuick(secRaw) {
+    delaySelectedSec = parseInt(secRaw, 10);
+    delayCustomOpen = false;
+    delayMarkQuickSel();
+    delayRenderCustom();
+}
+
+// 新建区档位选择——自定义时刻（绝对）；展开 datetime-local 行
+function delayPickCustom() {
+    delaySelectedSec = null;
+    delayCustomOpen = true;
+    delayMarkQuickSel();
+    delayRenderCustom();
+}
+
+// 新建提交——选中档（相对·后端算 dueAt，零漂移）或自定义时刻（绝对）；循环走 addatloop（循环时长 = 档位）
+function delayAddSubmit() {
     var textInput = document.getElementById('delayText');
-    if (!timeInput || !textInput) { return; }
+    if (!textInput) { return; }
     var content = textInput.value.trim();
     if (content.length === 0) { uiWarn('延迟指令新建', '内容为空'); return; }
-    var dueAt = delayParseInput(timeInput.value);
-    if (dueAt === null || dueAt <= 0) { uiWarn('延迟指令新建', '时长/时刻无法解析（示例：10m · 1h30m · 09:30）'); return; }
     var loopInput = document.getElementById('delayLoop');
-    var line = 'delay.addat|' + String(dueAt) + '|' + content;
-    if (loopInput && loopInput.checked) { line = 'delay.addatloop|' + String(dueAt) + '|' + content; }
-    delaySend(line);
-    timeInput.value = '';
+    var loop = (loopInput && loopInput.checked) ? true : false;
+    var line;
+    if (delaySelectedSec === null) {
+        var at = document.getElementById('delayCustomAt');
+        var dueAt = at ? delayParseLocalValue(at.value) : null;
+        if (dueAt === null || dueAt <= Date.now()) { uiWarn('延迟指令新建', '时刻须为未来（yyyy-MM-dd HH:mm:ss）'); return; }
+        line = loop ? delayAddAtLoopLine(dueAt, content) : delayAddAtLine(dueAt, content);
+    } else if (loop) {
+        line = delayAddAtLoopLine(delayQuickDueAt(delaySelectedSec), content);
+    } else {
+        line = delayAddLine(delaySelectedSec, content);
+    }
     textInput.value = '';
+    delaySend(line);
 }
 
-// 改时刻——prompt 输入新时长/时刻（前端换算为绝对毫秒）
-function delayEditClick(ev) {
-    var id = ev.target.getAttribute('data-id');
-    var input = window.prompt('新的时长或时刻（示例：10m · 1h30m · 09:30 · 2026-09-22 09:00:00）', '10m');
-    if (input === null) { return; }
-    var dueAt = delayParseInput(input);
-    if (dueAt === null || dueAt <= 0) { uiWarn('延迟指令改时刻', '无法解析：' + input); return; }
-    delaySend('delay.set|' + id + '|' + String(dueAt));
+// 行内改时刻——快捷档（相对当前时刻，点即提交）
+function delayEditQuick(id, secRaw) {
+    delayEditingId = null;
+    delaySend(delaySetLine(id, delayQuickDueAt(parseInt(secRaw, 10))));
 }
 
-// 取消
-function delayCancelClick(ev) {
-    var id = ev.target.getAttribute('data-id');
-    delaySend('delay.cancel|' + id);
+// 行内改时刻——自定义时刻（绝对，须为未来）
+function delayEditOk(id) {
+    var at = document.getElementById('delayEditAt');
+    if (!at) { return; }
+    var dueAt = delayParseLocalValue(at.value);
+    if (dueAt === null || dueAt <= Date.now()) { uiWarn('延迟指令改时刻', '时刻须为未来（yyyy-MM-dd HH:mm:ss）'); return; }
+    delayEditingId = null;
+    delaySend(delaySetLine(id, dueAt));
 }
 
 // 循环开关——切换条目 loop 标记（触发后按相同时长重排）
-function delayLoopClick(ev) {
-    var id = ev.target.getAttribute('data-id');
-    var cur = ev.target.getAttribute('data-loop');
-    var next = cur === '1' ? '0' : '1';
-    delaySend('delay.loop|' + id + '|' + next);
+function delayLoopClick(t) {
+    var id = t.getAttribute('data-id');
+    var next = t.getAttribute('data-loop') === '1' ? '0' : '1';
+    delaySend(delayLoopLine(id, next === '1'));
 }
 
 // 指令投递——写面复用 command 通道；随后重拉列表（列表为准）
@@ -245,26 +409,28 @@ function delaySend(line) {
         .catch(function (e) { uiWarn('延迟指令投递', e); });
 }
 
-// 初始化——按钮/输入绑定 + 首次拉取 + 页面可见性联动
+// 初始化——按钮/输入绑定 + 快捷档渲染 + 首次拉取 + 页面可见性联动
 function delayInit() {
     var btn = document.getElementById('delayBtn');
     if (btn) { btn.addEventListener('click', function (e) { e.stopPropagation(); delayToggle(); }); }
+    var pop = document.getElementById('delayPopover');
+    if (pop) { pop.addEventListener('click', delayOnClick); }
     var addBtn = document.getElementById('delayAddBtn');
-    if (addBtn) { addBtn.addEventListener('click', delayAdd); }
+    if (addBtn) { addBtn.addEventListener('click', delayAddSubmit); }
     var textInput = document.getElementById('delayText');
     if (textInput) {
         textInput.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') { delayAdd(); }
+            if (e.key === 'Enter') { delayAddSubmit(); }
         });
     }
+    delayRenderQuick();
     document.addEventListener('click', function (e) {
-        var pop = document.getElementById('delayPopover');
+        var p = document.getElementById('delayPopover');
         var wrap = document.getElementById('delayWrap');
-        if (!pop || !wrap) { return; }
-        if (pop.style.display !== 'flex') { return; }
+        if (!p || !wrap) { return; }
+        if (p.style.display !== 'flex') { return; }
         if (wrap.contains(e.target)) { return; }
-        pop.style.display = 'none';
-        delaySyncTimer();
+        delayClose();
     });
     document.addEventListener('visibilitychange', function () {
         if (document.visibilityState === 'hidden') {

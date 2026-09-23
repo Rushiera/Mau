@@ -43,6 +43,18 @@ namespace SetUp
                 return Fail("public\\app\\CatHome4.exe 不存在——请先运行 SetUp.exe prepare 重建发布链。");
             }
 
+            // [段2b] 外观层静态资源对齐（G 方案 2026-09-23）——deploy 的来源是 public/app，html 面须先与源区对齐，
+            //        否则把落后版本推给运行区（产物区曾被 PreserveNewest 时间戳倒挂冻结）。失败即中止，不带落后版本部署。
+            string htmlSource = Path.Combine(repoRoot, "CatHome4", "html");
+            string htmlArtifact = Path.Combine(sourceDir, "html");
+            if (Directory.Exists(htmlSource))
+            {
+                if (!SyncOne(htmlSource, htmlArtifact, "产物区", 21))
+                {
+                    return Fail("外观层静态资源对齐失败——deploy 中止（避免把落后版本推给运行区）。");
+                }
+            }
+
             // [段3] 复制 public\app 平铺内容到 <target>_new（含 Flows/ html/）——先落新目录，全程不触碰现行实例
             string targetNew = targetFull + "_new";
             string targetOld = targetFull + "_old";

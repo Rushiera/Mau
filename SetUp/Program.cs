@@ -12,7 +12,8 @@ namespace SetUp
     /// SetUp 启动器——CH4/Mau 一键部署工具。
     /// 定位：单文件 exe 跟随 Git 放仓库根，clone 即用；双击即部署即运行。
     /// 规范：Project/CH4/design-ch4-release.md（D2 定稿）
-    /// 双模式：无参=WinForms UI 外观层（主线程） / prepare（重建全发布链） / deploy &lt;目标目录&gt;（产出正式运行实例）
+    /// 模式：无参=WinForms UI 外观层（主线程） / prepare（重建全发布链） / deploy &lt;目标目录&gt;（产出正式运行实例）
+    ///      / sync-html（外观层静态资源镜像同步——源区 → 产物区 + 运行区） / relaunch（宿主自更新接力）
     /// 前置检测：.NET 8 Runtime + SDK + WindowsDesktop + 同目录存在 Mau.sln 才运行。
     /// </summary>
     public static partial class Program
@@ -125,6 +126,11 @@ namespace SetUp
                     exitCode = Deploy(repoRoot, args[1]);
                 }
             }
+            else if (mode == "sync-html")
+            {
+                // sync-html —— 外观层静态资源镜像同步（源区 → 产物区 + 运行区；G 方案 2026-09-23）
+                exitCode = SyncHtml(repoRoot, args);
+            }
             else if (mode == "relaunch")
             {
                 // relaunch —— 宿主自更新接力（等旧宿主退出 → prepare → 原子切换 → 自启；参数零容忍校验在 Relaunch 内）
@@ -166,6 +172,8 @@ namespace SetUp
             Console.WriteLine("  SetUp.exe            打开图形界面（无参双击）");
             Console.WriteLine("  SetUp.exe prepare    重建全发布链（public/ + Mau-public/）");
             Console.WriteLine("  SetUp.exe deploy <目录>  部署正式运行实例到目标目录（原子切换——现行更名 _old 留作回退源）");
+            Console.WriteLine("  SetUp.exe sync-html [--target <运行区目录>] [--no-run] [--report <路径>]");
+            Console.WriteLine("                           外观层静态资源镜像同步：源区 html → 产物区 + 运行区（--target 缺省从运行中宿主反推）");
             Console.WriteLine("  SetUp.exe relaunch --wait-pid <pid> --target <目录> [--majordomopush <串>] [--report <路径>]");
             Console.WriteLine("                           宿主自更新接力：等旧宿主退出 → prepare → 原子切换 → 自启新宿主（回执注入）");
             Console.WriteLine("前置：.NET 8 Runtime + SDK + WindowsDesktop；本 exe 须位于 Mau 仓库根（含 Mau.sln）。");
@@ -304,6 +312,8 @@ namespace SetUp
             public bool Ok;
             /// <summary>耗时毫秒</summary>
             public long Ms;
+            /// <summary>步骤细节（可选——文件数 / 字节数 / 差异描述）</summary>
+            public string Detail = "";
         }
 
         /// <summary>

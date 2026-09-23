@@ -2,7 +2,7 @@
 // 积木: mau.setup
 // ID:   BRIK-MAU-004
 // 类别: MAU
-// 作用: 一键部署链执行（SetUp.exe）——起进程并阻塞等待至结束，读 JSON 报告返回步明细/产物/成败；编译验证闭环
+// 作用: 一键部署链执行（SetUp.exe）——prepare/deploy/sync-html 起进程并阻塞等待至结束，读 JSON 报告返回步明细/产物/成败；编译验证闭环
 // 依赖: 无
 // 引用: System.Diagnostics（进程）+ System.Text.Json + Mau.Development（仓库根探测）+ Mau.Runtime（日志）
 // 原理: 仓库根 → SetUp.exe（prepare/deploy）+ --report → WaitForExit（内建看门狗）→ 读 <报告>.json 提炼摘要
@@ -31,7 +31,7 @@ namespace Mau.Bricks
         private const int WatchdogMs = 900000;
 
         /// <summary>
-        /// 一键部署——mode=prepare（默认，就地自举 public/ + Mau-public/）| deploy（复制到目标目录）
+        /// 一键部署——mode=prepare（默认，就地自举 public/ + Mau-public/）| deploy（复制到目标目录）| sync-html（外观层静态资源镜像同步：源区 html → 产物区 + 运行区）
         /// </summary>
         /// <param name="argsJson">工具参数 JSON（mode/target/report）</param>
         /// <param name="result">步骤摘要/诊断文本或 ERR| 错误文本</param>
@@ -40,7 +40,7 @@ namespace Mau.Bricks
         {
             result = "";
             // [参数面] 声明面口径零容忍——未知 / 非法 mode 一律 ERR|BAD_ARGS（catId 保留键放行）
-            string badArgs = ValidateArgs(argsJson, "mode target report", "", "mode", "prepare|deploy");
+            string badArgs = ValidateArgs(argsJson, "mode target report", "", "mode", "prepare|deploy|sync-html");
             if (badArgs.Length > 0)
             {
                 result = badArgs;
@@ -51,9 +51,9 @@ namespace Mau.Bricks
             {
                 mode = "prepare";
             }
-            if (mode != "prepare" && mode != "deploy")
+            if (mode != "prepare" && mode != "deploy" && mode != "sync-html")
             {
-                result = "ERR|BAD_ARGS|mode 仅支持 prepare/deploy（当前: " + mode + "）";
+                result = "ERR|BAD_ARGS|mode 仅支持 prepare/deploy/sync-html（当前: " + mode + "）";
                 return false;
             }
             string target = ExtractArg(argsJson, "target");
@@ -92,6 +92,11 @@ namespace Mau.Bricks
                 {
                     args = args + " \"" + target + "\"";
                 }
+                else if (mode == "sync-html" && target.Length > 0)
+                {
+                    // sync-html：--target 可选（缺省 SetUp 侧从运行中宿主反推运行区）
+                    args = args + " --target \"" + target + "\"";
+                }
                 args = args + " --report \"" + report + "\"";
                 StringBuilder sb = new StringBuilder();
                 sb.Append("SetUp " + mode + " 执行中（仓库根 " + root + "）");
@@ -112,7 +117,7 @@ namespace Mau.Bricks
                 // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
                 System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
                 fields["mode"] = mode;
-                fields["target"] = (mode == "deploy") ? target : "";
+                fields["target"] = (mode == "deploy" || mode == "sync-html") ? target : "";
                 fields["exit"] = exitCode;
                 fields["steps"] = stepCount;
                 fields["stepsOk"] = stepOk;
@@ -450,4 +455,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:4B9218F5EE371B923EFFA93F340CFD67E2DCA0AFE9B342B9FD7C50888A8C5241
+// #MAU_CHECKSUM:SHA256:E7F307CC89894120F8CD0EFE883EFDEC93044100BCD8455904EF90414BD05E3A
