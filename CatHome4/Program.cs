@@ -56,13 +56,6 @@ namespace CH4
         private static OA _oa;
         /// <summary>HTTP 外观层——Kestrel + Minimal API（P6：快照/SSE/指令/静态页）</summary>
         private static HttpHost _httpHost;
-        /// <summary>info 返回体序列化选项——缩进 + 中文直显（LLM 可读优先；JsonUtil 已文档化的例外条款：需自定义 options 的调用保持 JsonSerializer 原样）</summary>
-        private static readonly JsonSerializerOptions InfoJsonOptions = new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        };
-
         /// <summary>会话协调桥——S1 程序集拆分：会话注册表/默认猫配置/轮转泵/会话指令（Core 实例类）</summary>
         private static ChatBridge _chatBridge;
         /// <summary>
@@ -635,13 +628,13 @@ namespace CH4
                 }
             }
             info["roots"] = rootList;
-            // [段6] tokens——前文长度（请求级实时值：最近一次请求送入的上下文长度；无请求 = 0）+ 最近前文变动时刻（Unix 毫秒；展示层格式化）
+            // [段6] tokens——前文长度（请求级实时值优先，未发起请求则回落最近一轮轮末落盘值——「看别猫」场景 idle 猫也有可读值）+ 最近前文变动时刻（Unix 毫秒；展示层格式化）
             ChatSession session = AdminService.FindCatSession(catKey);
             long ctxLen = 0;
             long lastChangeAt = 0;
             if (session != null)
             {
-                ctxLen = session.ContextTokens;
+                ctxLen = session.ContextTokensKnown;
                 lastChangeAt = session.LastContextChangeAt;
             }
             Dictionary<string, object> tokensBlock = new Dictionary<string, object>();
@@ -662,7 +655,7 @@ namespace CH4
                 qqbotBlock["usage"] = qqbotShow;
                 info["qqbot"] = qqbotBlock;
             }
-            return JsonSerializer.Serialize(info, InfoJsonOptions);
+            return JsonSerializer.Serialize(info, AdminService.InfoJsonOptions);
         }
         /// <summary>
         /// 前端测试服务拉起——宿主启动时自动启动 html/tests/server.js（未监听本区段前端测试端口时）；失败不影响主功能。

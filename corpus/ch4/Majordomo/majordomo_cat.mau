@@ -1,23 +1,25 @@
 ﻿// majordomo_cat.mau —— Majordomo 语料（CH4 宿主自更新工具组——BRIK-HOST-001 host.restart 登记面）
-// 角色：工具组 Flow——认领 TOOL 域 2 工具（majordomo-restart 宿主自更新 / majordomo-cmd 宿主管理指令执行）
+// 角色：工具组 Flow——认领 TOOL 域 3 工具（majordomo-restart 宿主自更新 / majordomo-cmd 宿主管理指令执行 / majordomo-catinfo 全猫状态统计）
 // 特权组：仅默认会话（catId=majordomo）可见可调——宿主侧单点授权（design-ch4-host-restart §二）
-// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 2 线认领执行 → complete_str 回执
-// 载荷协议：officeName = 工具名（majordomo-restart / majordomo-cmd）；载荷 key "args" = 整包工具参数 JSON（target/push · cmd）
-// 数据面：@majOpen/@majOffice/@majArgs/@majRes + @mjdCmdOpen/@mjdOffice/@mjdArgs/@mjdRes 私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
+// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 3 线认领执行 → complete_str 回执
+// 载荷协议：officeName = 工具名（majordomo-restart / majordomo-cmd / majordomo-catinfo）；载荷 key "args" = 整包工具参数 JSON（target/push · cmd · 零参数）
+// 数据面：@majOpen/@majOffice/@majArgs/@majRes + @mjdCmdOpen/@mjdOffice/@mjdArgs/@mjdRes + @mciOpen/@mciOffice/@mciArgs/@mciRes 私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
 // 线程模型：全部主线程同步——积木只落盒即返回；进程动作（接力拉起/自杀）在宿主侧（design-ch4-host-restart §四 4.2）
-//   majordomo-cmd 线不得 par 化——管理指令族触碰注册表与会话面（ThreadGuard 主线程守卫）
+//   majordomo-cmd / majordomo-catinfo 线不得 par 化——管理指令族触碰注册表与会话面（ThreadGuard 主线程守卫）；状态统计读会话观测面同属主线程域
 // 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）
 
-// ── 状态机（2 线——majordomo-restart / majordomo-cmd）──
+// ── 状态机（3 线——majordomo-restart / majordomo-cmd / majordomo-catinfo）──
 § 'S_Restart' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Cmd' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_CatInfo' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
 § 'T_Init' : 'S_Restart' = 'Init' → 'self.desc'["Majordomo 自更新空闲待命", "", ""] | 'S_Restart' = 'Idle' | 'S_Restart' = 'Idle'
 
-// ── 主动传感器壳——2 线探测（纯只读判断积木 → bool 落盒）──
+// ── 主动传感器壳——3 线探测（纯只读判断积木 → bool 落盒）──
 § 'P_RestartOpen' ↻ [1]: 'oa.is_open'["TOOL", "majordomo-restart"] > @majOpen
 § 'P_CmdOpen' ↻ [1]: 'oa.is_open'["TOOL", "majordomo-cmd"] > @mjdCmdOpen
+§ 'P_CatInfoOpen' ↻ [1]: 'oa.is_open'["TOOL", "majordomo-catinfo"] > @mciOpen
 
 // ══════════════ majordomo-restart 线 ══════════════
 
@@ -52,3 +54,20 @@
 
 // T_CmdAbort：失败回执（@mjdRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
 § 'T_CmdAbort' : 'S_Cmd' = 'Failed' → 'oa.complete_str'[@mjdOffice, @mjdRes] | 'S_Cmd' = 'Idle' | 'S_Cmd' = 'Idle'
+
+// ══════════════ majordomo-catinfo 线 ══════════════
+
+// T_CatInfoClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_CatInfoClaim' : @mciOpen & 'S_CatInfo' = 'Idle' → 'oa.claim_next_simple'["TOOL", "majordomo-catinfo"] > @mciOffice | 'S_CatInfo' = 'Claimed' | 'S_CatInfo' = 'Idle'
+
+// T_CatInfoArgs：读载荷 args（零参数工具——宿主注入保留键 catId 由积木放行）
+§ 'T_CatInfoArgs' : 'S_CatInfo' = 'Claimed' → 'oa.get_str'[@mciOffice, "args"] > @mciArgs | 'self.desc'["Majordomo 全猫状态统计中", "", ""] | 'S_CatInfo' = 'Ready' | 'S_CatInfo' = 'Failed'
+
+// T_CatInfoRun：全猫状态统计（主线程同步只读——不碰注册表写面；失败侧 ERR 文本也在 @mciRes）
+§ 'T_CatInfoRun' : 'S_CatInfo' = 'Ready' → 'host.catinfo'[@mciArgs] > @mciRes | 'S_CatInfo' = 'Done' | 'S_CatInfo' = 'Failed'
+
+// T_CatInfoReply：成功回执（result=整块状态 JSON——无「头 + 正文」两段，同 info 规格）
+§ 'T_CatInfoReply' : 'S_CatInfo' = 'Done' → 'oa.complete_str'[@mciOffice, @mciRes] | 'self.desc'["Majordomo 空闲待命", "", ""] | 'S_CatInfo' = 'Idle' | 'S_CatInfo' = 'Idle'
+
+// T_CatInfoAbort：失败回执（@mciRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
+§ 'T_CatInfoAbort' : 'S_CatInfo' = 'Failed' → 'oa.complete_str'[@mciOffice, @mciRes] | 'S_CatInfo' = 'Idle' | 'S_CatInfo' = 'Idle'

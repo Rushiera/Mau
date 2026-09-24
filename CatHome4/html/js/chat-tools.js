@@ -169,6 +169,7 @@ var CHAT_TOOL_SKELETONS = {
     'sleep': 'text',
     'timer': 'text',
     'info': 'info',
+    'majordomo-catinfo': 'catinfo',
     'pack': 'text'
 };
 
@@ -663,6 +664,85 @@ function chatSkelInfo(tool) {
     return { tag: '', tagCls: '', segs: segs };
 }
 
+// ── catinfo：全猫状态统计（返回体 = 整块分类 JSON；每猫一行键值）──
+// 口径（莎定 2026-09-24）：与 info 同规格——后端整块分类 JSON（缩进 / 中文直显），前端摊平为键值行；
+// 缺字段不显示该行（后端「无则省略键」约定——前端不补空行、不写 NaN）
+function chatSkelCatInfo(tool) {
+    var segs = [chatSegInput(tool, '')];
+    var d = chatTryJson(tool.result);
+    if (!d) {
+        segs.push(chatSegOutput(tool, '输出', function (body, text, isErr) {
+            chatSegBlock(body, isErr ? 'tr err' : 'tr', text);
+        }, tool.result));
+        return { tag: '', tagCls: '', segs: segs };
+    }
+    var pairs = chatCatInfoPairs(d);
+    segs.push(chatSegOutput(tool, '输出 · ' + pairs.length + ' 只猫', function (body, text, isErr) {
+        chatSegKv(body, pairs);
+    }, chatInfoPeek(pairs)));
+    return { tag: '', tagCls: '', segs: segs };
+}
+
+// 全猫状态块 → 键值行（每猫一行：名(id)★ · 运行态:端口 · 相位/流式态 · 前文 · 活跃 · 轮次 · 消息 · 待处理 · Note）
+function chatCatInfoPairs(d) {
+    var pairs = [];
+    var cats = d.cats;
+    if (!cats || !cats.length) { return pairs; }
+    for (var i = 0; i < cats.length; i = i + 1) {
+        var c = cats[i];
+        var name = chatField(c, 'name');
+        var id = chatField(c, 'id');
+        var head = name;
+        if (id.length > 0 && id !== name) { head = name + '(' + id + ')'; }
+        if (c.special === true) { head = head + '★'; }
+        var parts = [];
+        var port = chatFieldNum(c, 'port');
+        if (c.running === true) {
+            parts.push(port.length > 0 && port !== '0' ? '运行中 :' + port : '运行中');
+        } else {
+            parts.push('静默');
+        }
+        var phase = chatField(c, 'phase');
+        var runState = chatField(c, 'runState');
+        if (phase.length > 0) {
+            // 相位（四相环）+ 流式态（七态）——空闲态不重复标注（idle 与 Idle 同义）
+            parts.push(runState.length > 0 && runState !== 'idle' ? phase + '/' + runState : phase);
+        }
+        var ctx = chatFieldNum(c, 'context');
+        var ctxCount = chatFieldNum(c, 'contextCount');
+        if (ctx.length > 0) {
+            parts.push('前文 ' + ctx + ' tokens' + (ctxCount.length > 0 ? ' / ' + ctxCount + ' 条' : ''));
+        }
+        var last = chatFieldNum(c, 'lastActiveAt');
+        var ago = chatAgoText(last);
+        if (ago.length > 0) { parts.push('活跃 ' + ago); }
+        var round = chatFieldNum(c, 'round');
+        if (round.length > 0) { parts.push('轮 ' + round); }
+        var msgs = chatFieldNum(c, 'msgCount');
+        if (msgs.length > 0) { parts.push('消息 ' + msgs); }
+        var pending = chatFieldNum(c, 'pending');
+        if (pending.length > 0 && pending !== '0') { parts.push('待处理 ' + pending); }
+        if (c.noteActive === true) { parts.push('Note 激活'); }
+        pairs.push({ k: head, v: parts.join(' · ') });
+    }
+    return pairs;
+}
+
+// 距今文本——Unix 毫秒 → 「N 秒/分钟/小时/天前」（无效值返回空串，该段不显示）
+function chatAgoText(ms) {
+    var t = Number(ms);
+    if (!isFinite(t) || t <= 0) { return ''; }
+    var diff = Date.now() - t;
+    if (diff < 0) { diff = 0; }
+    var sec = Math.floor(diff / 1000);
+    if (sec < 60) { return sec + ' 秒前'; }
+    var min = Math.floor(sec / 60);
+    if (min < 60) { return min + ' 分钟前'; }
+    var hour = Math.floor(min / 60);
+    if (hour < 24) { return hour + ' 小时前'; }
+    return Math.floor(hour / 24) + ' 天前';
+}
+
 // 分类块 → 键值行（固定顺序：猫 / 版本 / 当前时间 / LLM / 本地端点 / 可见根 / 前文 / 加载包 / QQBot）
 // 缺类不显示该行（后端「无则省略键」约定——前端不补空行、不写 NaN）
 function chatInfoPairs(d) {
@@ -757,6 +837,7 @@ var CHAT_SKEL_RENDERERS = {
     'file': function (tool) { return chatSkelPlain(tool, true); },
     'json': chatSkelJson,
     'info': chatSkelInfo,
+    'catinfo': chatSkelCatInfo,
     'text': function (tool) { return chatSkelPlain(tool, false); }
 };
 
@@ -780,6 +861,7 @@ var CHAT_SKEL_ICONS = {
     'file': '📖',
     'json': '🧩',
     'info': '🧭',
+    'catinfo': '🐾',
     'text': '📝'
 };
 
@@ -1287,6 +1369,17 @@ var CHAT_TOOL_OVERRIDES = {
             var t = '环境信息 · v' + ver;
             if (cat.length > 0) { t = t + ' · 猫 ' + cat; }
             return t;
+        }
+    },
+    'majordomo-catinfo': {
+        inputLines: function () { return ['查看全猫状态统计']; },
+        headline: function (a, r) {
+            // 返回体 = 分类 JSON 块（无「头 + 正文」两段）——整块解析，不用 chatMetaHead
+            var d = chatTryJson(r);
+            if (!d) { return '全猫状态 ' + chatOvStat(r); }
+            var n = chatFieldNum(d, 'count');
+            if (n.length === 0) { return '全猫状态'; }
+            return '全猫状态 · ' + n + ' 只猫';
         }
     },
     'host-reload': {

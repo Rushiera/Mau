@@ -22,6 +22,15 @@ namespace CatHome4.Admin
     {
         /// <summary>数据根——Bootstrap 赋值（P9.3c 静态化条目提前落地一行；cat.cfg/前文路径构造依赖）</summary>
         internal static string _dataRoot;
+        /// <summary>
+        /// info 系返回体序列化选项——缩进 + 中文直显（LLM 可读优先）。
+        /// 消费面：info 内置工具（Program.BuildEnvInfo）与 cat.info（本类 HandleCatInfo）——单一定义两处共用。
+        /// </summary>
+        internal static readonly JsonSerializerOptions InfoJsonOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
 
         /// <summary>多猫注册表——cat.* 指令族管理面（默认 majordomo 会话不在此列——主端口对话区专属）</summary>
         private static readonly List<CatEntry> _cats = new List<CatEntry>();
@@ -193,6 +202,10 @@ namespace CatHome4.Admin
             {
                 return HandleCatList();
             }
+            if (line == "cat.info")
+            {
+                return HandleCatInfo();
+            }
             if (line.StartsWith("cat.start ", StringComparison.Ordinal))
             {
                 return HandleCatStart(line.Substring(10).Trim());
@@ -282,6 +295,7 @@ namespace CatHome4.Admin
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
             sb.AppendLine("cat.* / catcfg.* 可用指令:");
             sb.AppendLine("  cat.list | 全部猫（id/显示名/运行态:端口）");
+            sb.AppendLine("  cat.info | 全猫状态统计（运行态/端口/流式态/前文长度/最近活跃——整块 JSON）");
             sb.AppendLine("  cat.new <显示名> | 新建猫（静默态，待 cat.start）");
             sb.AppendLine("  cat.start <key> | 分配端口 + 拉起 HttpHost");
             sb.AppendLine("  cat.stop <key> | 停止（majordomo 禁停）");
@@ -880,6 +894,73 @@ namespace CatHome4.Admin
                 sb.Append("  " + cat.Id + " | " + cat.DisplayName + " | " + state);
             }
             return sb.ToString();
+        }
+        /// <summary>
+        /// cat.info——全猫状态统计（主干 + 多猫；字段与快照 sessions 段 / info tokens 段同源——不另起数据面）。
+        /// 返回体 = 整块分类 JSON（缩进 + 中文直显——同 info 规格，无「头 + 正文」两段）。
+        /// </summary>
+        /// <returns>JSON 文本</returns>
+        private static string HandleCatInfo()
+        {
+            List<object> catList = new List<object>();
+            ChatSession majorSession = null;
+            if (_chatBridge != null)
+            {
+                majorSession = _chatBridge.DefaultSession;
+            }
+            catList.Add(BuildCatInfoEntry("majordomo", "majordomo", _majorHost != null, _majorPort, true, majorSession));
+            for (int i = 0; i < _cats.Count; i = i + 1)
+            {
+                CatEntry cat = _cats[i];
+                catList.Add(BuildCatInfoEntry(cat.Id, cat.DisplayName, cat.Running, cat.Port, false, cat.Session));
+            }
+            Dictionary<string, object> info = new Dictionary<string, object>();
+            info["ok"] = true;
+            info["tool"] = "cat.info";
+            info["time"] = new { now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") };
+            info["count"] = catList.Count;
+            info["cats"] = catList;
+            return JsonSerializer.Serialize(info, InfoJsonOptions);
+        }
+        /// <summary>
+        /// 单猫状态条目——运行面（运行态 / 端口 / 主干标记）+ 会话观测字段（与快照 sessions 段 / info tokens 段同源）。
+        /// context 取 ContextTokensKnown（请求级实时优先，未请求回落轮末落盘值——看别猫场景 idle 猫亦有值）。
+        /// 会话缺失（未附加 / 已销毁）时只输出运行面字段——不补空值、不写 NaN（同 info「无则省略键」口径）。
+        /// </summary>
+        /// <param name="id">猫 id</param>
+        /// <param name="name">显示名</param>
+        /// <param name="running">是否运行</param>
+        /// <param name="port">监听端口（0=未监听）</param>
+        /// <param name="special">是否主干特殊会话（禁停禁删）</param>
+        /// <param name="session">会话实体（可空）</param>
+        /// <returns>状态条目字典</returns>
+        private static Dictionary<string, object> BuildCatInfoEntry(string id, string name, bool running, int port, bool special, ChatSession session)
+        {
+            Dictionary<string, object> entry = new Dictionary<string, object>();
+            entry["id"] = id;
+            entry["name"] = name;
+            entry["special"] = special;
+            entry["running"] = running;
+            entry["port"] = port;
+            if (session == null)
+            {
+                return entry;
+            }
+            string runStateName;
+            int requests;
+            Dictionary<string, long> runMs = session.GetRunState(out runStateName, out requests);
+            entry["phase"] = session.Phase.ToString();
+            entry["runState"] = runStateName;
+            entry["runMs"] = runMs;
+            entry["requests"] = requests;
+            entry["round"] = session.Round;
+            entry["msgCount"] = session.MsgCount;
+            entry["pending"] = session.PendingCount;
+            entry["noteActive"] = session.NoteActive;
+            entry["contextCount"] = session.ContextCount;
+            entry["context"] = session.ContextTokensKnown;
+            entry["lastActiveAt"] = session.LastContextChangeAt;
+            return entry;
         }
 
         /// <summary>

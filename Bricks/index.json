@@ -1,6 +1,6 @@
 ﻿{
   "version": 3,
-  "generatedAt": "2026-09-23T10:18:07Z",
+  "generatedAt": "2026-09-24T06:07:22Z",
   "packages": ["Microsoft.CodeAnalysis.CSharp@4.11.0"],
   "bricks": [
     {"id":"BRIK-DATA-001","name":"data.box_set_str","category":"DATA","path":"DATA/BRIK-DATA-001_data.box_set_str.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.DataBoxSetStrBrick.SetStr","inputs":[{"name":"scope","type":"string"},{"name":"key","type":"string"},{"name":"value","type":"string"}],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},
@@ -13,6 +13,7 @@
     {"id":"BRIK-FILE-006","name":"file.version","category":"FILE","path":"FILE/BRIK-FILE-006_file.version.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.FileVersionBrick.Version","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}},
     {"id":"BRIK-HOST-001","name":"host.restart","category":"HOST","path":"HOST/BRIK-HOST-001_host.restart.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.HostRestartBrick.Restart","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}},
     {"id":"BRIK-HOST-002","name":"host.command","category":"HOST","path":"HOST/BRIK-HOST-002_host.command.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.HostCommandBrick.Exec","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}},
+    {"id":"BRIK-HOST-003","name":"host.catinfo","category":"HOST","path":"HOST/BRIK-HOST-003_host.catinfo.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.HostCatInfoBrick.Exec","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}},
     {"id":"BRIK-LLM-002","name":"llm.stream","category":"LLM","path":"LLM/BRIK-LLM-002_llm.stream.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.LlmStreamBrick.StreamStart","inputs":[{"name":"system","type":"string"},{"name":"content","type":"string"}],"outputs":[{"name":"reply","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}},
     {"id":"BRIK-LLM-003","name":"llm.chunk_ready","category":"LLM","path":"LLM/BRIK-LLM-003_llm.chunk_ready.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.LlmChunkReadyBrick.ChunkReady","inputs":[],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},
     {"id":"BRIK-LLM-004","name":"llm.done_ready","category":"LLM","path":"LLM/BRIK-LLM-004_llm.done_ready.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.LlmDoneReadyBrick.DoneReady","inputs":[],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},

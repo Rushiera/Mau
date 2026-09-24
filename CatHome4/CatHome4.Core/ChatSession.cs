@@ -466,13 +466,28 @@ namespace CH4
 
         /// <summary>
         /// 实时前文长度——最近一次请求的 prompt（请求级；每次 usage 帧覆盖）。
-        /// 对照 LastStats.LastContextTokens（轮末落盘的最近一轮值）——info 自查取本属性（跟真实值，不等轮末）。
+        /// 对照 LastStats.LastContextTokens（轮末落盘的最近一轮值）；info / cat.info 消费 ContextTokensKnown（实时优先 + 轮末回落）。
         /// </summary>
         public long ContextTokens
         {
             get
             {
                 return _contextTokens;
+            }
+        }
+        /// <summary>
+        /// 已知最新前文长度——请求级实时值优先，未发起过请求（或宿主重启后未请求）回落最近一轮轮末落盘值。
+        /// 消费面：info tokens 段 / cat.info 每猫 context 字段——「看别猫」场景需要 idle 猫也有可读值（两者皆真实 usage 值，零估算）。
+        /// </summary>
+        public long ContextTokensKnown
+        {
+            get
+            {
+                if (_contextTokens > 0)
+                {
+                    return _contextTokens;
+                }
+                return _lastStats.LastContextTokens;
             }
         }
 

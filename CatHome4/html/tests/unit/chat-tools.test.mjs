@@ -920,3 +920,42 @@ test('info——非分类 JSON（provider 未注入）原文兜底，不静默�
   expect(card.querySelector('.tn').textContent).toContain('环境信息');
   expect(card.querySelector('.seg-out').textContent).toContain('INFO_NO_PROVIDER');
 });
+
+// ── catinfo：全猫状态统计（整块分类 JSON——同 info 规格）──
+test('majordomo-catinfo——分类 JSON 块：折叠行取猫数；输出段每猫一行键值', () => {
+  const result = JSON.stringify({
+    ok: true,
+    tool: 'cat.info',
+    time: { now: '2026-09-24 14:10:00' },
+    count: 2,
+    cats: [
+      {
+        id: 'majordomo', name: 'majordomo', special: true, running: true, port: 8082,
+        phase: 'Idle', runState: 'idle', requests: 0, round: 3, msgCount: 120,
+        pending: 0, noteActive: false, contextCount: 42, context: 35127, lastActiveAt: 0
+      },
+      { id: 'cat-2', name: 'Coder', special: false, running: false, port: 0 }
+    ]
+  }, null, 2);
+  const card = renderTool({ name: 'majordomo-catinfo', arguments: '{}', result: result, summary: '全猫状态' }, 132);
+  expect(card.querySelector('.tn').textContent).toBe('🐾 全猫状态 · 2 只猫');
+  expect(card.querySelectorAll('.seg-out .seg-kv').length).toBe(2);
+  const out = card.querySelector('.seg-out').textContent;
+  expect(out).toContain('majordomo★');
+  expect(out).toContain('运行中 :8082');
+  expect(out).toContain('前文 35127 tokens / 42 条');
+  expect(out).toContain('轮 3');
+  expect(out).toContain('Coder');
+  expect(out).toContain('静默');
+});
+
+test('majordomo-catinfo——非 JSON（服务未注入 / 指令未识别）原文兜底，不静默空白', () => {
+  const card = renderTool({
+    name: 'majordomo-catinfo',
+    arguments: '{}',
+    result: 'ERR|HOSTCMD_NO_SERVICE|宿主指令服务未注入（宿主未接线）',
+    summary: '全猫状态'
+  }, 133);
+  expect(card.querySelector('.tn').textContent).toContain('全猫状态');
+  expect(card.querySelector('.seg-out').textContent).toContain('HOSTCMD_NO_SERVICE');
+});
