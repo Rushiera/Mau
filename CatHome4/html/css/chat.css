@@ -13,9 +13,17 @@
        已收窄的容器内引用会按该容器宽解析，得到错误列宽 */
     --ch-col-w: min(var(--ch-bubble-max-pct), var(--ch-bubble-max-w), 100% - var(--ch-bubble-edge-min) * 2);
     --ch-col-left: max(var(--ch-bubble-edge-min), calc((100% - var(--ch-col-w)) / 2));
-    --ch-scroll-w: 10px;    /* 纵向滚动条宽——须与下方 ::-webkit-scrollbar 的 width 同值 */
     --ch-send-w: 64px;      /* 发送按钮固定宽——落在右侧预留带（≥100px）内 */
-    --ch-scroll-gap: 5px;   /* 滚动条与列右缘的间距——滚动条不贴气泡，留一口气（2026-09-22） */
+    /* 自绘滚动带（design-ch4-frontend-scroll）——原生滚动条已隐藏，滚动条位由带体自绘；
+       刻度色区分消息角色（user / reply），带体悬停加亮 */
+    --ch-band-w: 60px;      /* 带体宽——占气泡区右侧保留地（列右缘 + 20px 起；保留地 100px 时左右各留 20px） */
+    --ch-band-gap: 20px;    /* 带体左缘与列右缘的间距 */
+    --ch-band-thumb: var(--ch-scroll-thumb);   /* 视口框线基色（hover 转 Reply 亮白） */
+    --ch-band-tick-user: var(--ch-chat-user-bg);
+    --ch-band-tick-reply: var(--ch-chat-sys-fg);   /* 中性灰——比 user 蓝亮一档、远低于 sum 淡紫（占比最高，作底噪） */
+    --ch-band-tick-sum: var(--ch-state-all);   /* 本轮结算块刻度——All 态淡紫 */
+    --ch-band-tick-tool: var(--ch-state-tool); /* 展开的工具卡刻度——Tool 态军绿 */
+    --ch-band-tick-think: color-mix(in srgb, var(--ch-state-think) 70%, var(--ch-bg-page));   /* 思考块刻度——Think 黄降一档（混页面底，保饱和不灰） */
     --ch-radius-bubble: 8px;/* 气泡圆角——输入框 / 发送按钮共用同一值（2026-09-22） */
     /* ===== L2 对话区令牌 ===== */
     /* 运行态六态（状态条 + roundsum 同源） */
@@ -68,6 +76,7 @@
     --ch-inject-line: var(--ch-note-line);
     --ch-inject-miss: #b5a25e;
     --ch-roundsum-bg: #12161a;
+    --ch-round-gap: 200px;  /* 轮次分隔——本轮结算块行下留白（带上形成每轮之间的空隙，2026-09-24） */
     --ch-roundsum-fg: #9aa8b8;
     --ch-cmd-intent-bg: #0c1218;
     --ch-cmd-intent-fg: #9cdcfe;
@@ -79,8 +88,8 @@
 body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--ch-bg-page); color: var(--ch-fg); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
 
 /* ============ 滚动条——深色配色统一（2026-09-17） ============ */
-/* 动机：默认滚动条走系统浅色样式（白底轨道），与深色界面割裂——对话区右缘最明显 */
-/* 作用面：本页全部滚动容器（对话区纵向 / Note 列表纵向 / 代码块与表格横向） */
+/* 动机：默认滚动条走系统浅色样式（白底轨道），与深色界面割裂 */
+/* 作用面：仍走原生滚动的面（Note 列表 / 定时列表 / 代码块与表格横向）——对话区纵向已改自绘带（见 #chatScrollBand） */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 /* 滑轨渲染——轨道透明（浮在深底上不抢视线）；滑块留 2px 透明边（视觉宽 6px） */
@@ -124,10 +133,48 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 #chatStatus .st.req { color: var(--ch-state-api); }
 /* E 系列——活跃态呼吸动效（阶段切换过渡观感；2026-09-17 参数与气泡描边呼吸对齐：1.8s ease-in-out） */
 @keyframes chat-phase-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-/* 内容列（2026-09-22）——宽度 = 列宽 + 滚动条间距 + 滚动条宽（滚动条左缘 = 列右缘 + 间距）；左缘 = 气泡左缘
-   🔴 间距必须落在 padding-right——滚动条占的是内容盒右侧 10px：间距只加在 width 上会被内容盒吃掉，
-      气泡（flex 拉伸至内容盒宽）右缘照样顶到滚动条（A79 续二遗留几何，2026-09-22 修正） */
-#chatMsgs { flex: 1; overflow-y: auto; scrollbar-gutter: stable; width: calc(var(--ch-col-w) + var(--ch-scroll-gap) + var(--ch-scroll-w)); margin-left: var(--ch-col-left); padding: 12px var(--ch-scroll-gap) 12px 0; display: flex; flex-direction: column; gap: 10px; }
+/* 内容列（2026-09-22；2026-09-24 几何简化——自绘滚动带落地）——宽度 = 列宽；左缘 = 气泡左缘
+   🔴 原生滚动条已隐藏（scrollbar-width / ::-webkit-scrollbar 双写）——滚动条位由 #chatScrollBand 自绘，
+      列宽不再为它留空档；#chatMsgs 仍是滚动执行器（scrollTop 为唯一写入口） */
+#chatMsgs { flex: 1; overflow-y: auto; width: var(--ch-col-w); margin-left: var(--ch-col-left); padding: 12px 0; display: flex; flex-direction: column; gap: 10px; scrollbar-width: none; }
+#chatMsgs::-webkit-scrollbar { width: 0; height: 0; }
+
+/* ============ 自绘滚动带（design-ch4-frontend-scroll）——对话区滚动条替代物 ============ */
+/* 定位：紧贴气泡区右侧——左缘 = 列右缘 + 间距（占右侧保留地，左右各留 20px）；纵向对齐对话区矩形（JS 同步）
+   构成：视口指示块（高度 = 视口占比）+ 消息刻度（每条导航消息一道，user / reply 两色） */
+#chatScrollBand { position: fixed; left: calc(var(--ch-col-left) + var(--ch-col-w) + var(--ch-band-gap)); width: var(--ch-band-w); border-radius: 4px; z-index: 20; display: none; overflow: hidden; user-select: none; touch-action: none; }
+#chatScrollBand.on { display: block; }
+/* 视口框——线框标识当前屏幕在带上的真实占比（不填充；宽 = 带体宽）；可点可拖（点哪跳哪；IDE 手感）
+   🔴 层级在刻度之上（z-index 2）——框是"当前视口"的读数，不该被内容刻度盖住
+   hover：描边转 Reply 亮白 + 底色微亮（0.3s ease-in-out，可中断——与气泡描边同节奏） */
+#sbThumb { position: absolute; left: 0; width: 100%; z-index: 2; border: 2px solid var(--ch-band-thumb); border-radius: var(--ch-radius-bubble); background: transparent; cursor: pointer; transition: border-color 0.3s ease-in-out, background-color 0.3s ease-in-out; }
+/* 高亮两态同源——hover 与拖拽期（.dragging）共用同一组样式（拖拽中指针移出框，:hover 会失效） */
+#sbThumb:hover, #chatScrollBand.dragging #sbThumb { border-color: var(--ch-state-reply); background: color-mix(in srgb, var(--ch-state-reply) 10%, transparent); }
+/* 消息刻度——带内横向短线（左右各留 10px）；纯展示不接指针（点击走带体坐标就近判定）
+   🔴 高度由 JS 按块真实像素高比例写入（内联样式覆盖此处默认值）；此处默认值只在未同步时兜底
+   形态——横向 **S 曲线淡出**（8 采样色标，无实心平段；曲线由 mask 层承载，色由 background 纯色给）
+     user  ：起手在右、向左淡出（最缓——到 90% 才全透明，节拍点最醒目）
+     sum   ：中心向两侧对称淡出（覆盖整宽——2026-09-24 莎定）
+     reply ：起手在左、向右淡出（最急——35% 即全透明；占比最高，最快让位）
+     tool  ：起手在左、向右淡出（终点 50%——展开态工具卡）
+     think ：起手在左、向右淡出（终点 50%——展开态思考块）
+   上下边缘羽化——纵向 3px 渐隐（变量 --ch-band-fade-v；与横向层 alpha 相乘）
+     🔴 保底 2px 不羽化（与高度下限同值）：min(3px, 50% − 1px) / max(100% − 3px, 50% + 1px)
+     —— 矮条自动收窄羽化量，2px 条不羽化（mask 的 #000 = alpha 1，非配色值） */
+/* 🔴 多层 mask 的默认合成是 add（并集）——横向曲线层与纵向羽化层必须显式 intersect（相乘），
+   否则两层取较大 alpha → 视觉上退化为实心条（2026-09-24 判例）；
+   本属性写在基类即可：与子类规则作用于同一元素，无需逐条重复
+   2026-09-24：去 border-radius——极小高度（最小 2px）下圆角抗锯齿会在条端留 1px 亮点 */
+.sb-tick { position: absolute; left: 10px; width: 40px; height: 2px; pointer-events: none; --ch-band-fade-v: linear-gradient(to bottom, transparent 0, #000 min(3px, calc(50% - 1px)), #000 max(calc(100% - 3px), calc(50% + 1px)), transparent 100%); -webkit-mask-image: var(--ch-band-fade-v); mask-image: var(--ch-band-fade-v); -webkit-mask-composite: source-in; mask-composite: intersect; }
+/* 横向 S 曲线层（8 采样色标：100% → 95% → 80% → 60% → 40% → 20% → 5% → 0，无实心平段）
+   与纵向羽化层两层 alpha 相乘——颜色由 background 纯色承载（mask 只管透明度曲线） */
+.sb-tick.user { background: var(--ch-band-tick-user); -webkit-mask-image: linear-gradient(to left, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 13%, rgba(0,0,0,.8) 26%, rgba(0,0,0,.6) 39%, rgba(0,0,0,.4) 51%, rgba(0,0,0,.2) 64%, rgba(0,0,0,.05) 77%, transparent 90%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to left, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 13%, rgba(0,0,0,.8) 26%, rgba(0,0,0,.6) 39%, rgba(0,0,0,.4) 51%, rgba(0,0,0,.2) 64%, rgba(0,0,0,.05) 77%, transparent 90%, transparent 100%), var(--ch-band-fade-v); }
+.sb-tick.reply { background: var(--ch-band-tick-reply); -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 9%, rgba(0,0,0,.8) 17%, rgba(0,0,0,.6) 26%, rgba(0,0,0,.4) 34%, rgba(0,0,0,.2) 43%, rgba(0,0,0,.05) 51%, transparent 60%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 9%, rgba(0,0,0,.8) 17%, rgba(0,0,0,.6) 26%, rgba(0,0,0,.4) 34%, rgba(0,0,0,.2) 43%, rgba(0,0,0,.05) 51%, transparent 60%, transparent 100%), var(--ch-band-fade-v); }
+.sb-tick.sum { background: var(--ch-band-tick-sum); -webkit-mask-image: linear-gradient(to right, transparent 0, rgba(0,0,0,.05) 10%, rgba(0,0,0,.2) 20%, rgba(0,0,0,.4) 30%, rgba(0,0,0,.6) 40%, rgba(0,0,0,.8) 45%, rgba(0,0,0,1) 50%, rgba(0,0,0,.8) 55%, rgba(0,0,0,.6) 60%, rgba(0,0,0,.4) 70%, rgba(0,0,0,.2) 80%, rgba(0,0,0,.05) 90%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, transparent 0, rgba(0,0,0,.05) 10%, rgba(0,0,0,.2) 20%, rgba(0,0,0,.4) 30%, rgba(0,0,0,.6) 40%, rgba(0,0,0,.8) 45%, rgba(0,0,0,1) 50%, rgba(0,0,0,.8) 55%, rgba(0,0,0,.6) 60%, rgba(0,0,0,.4) 70%, rgba(0,0,0,.2) 80%, rgba(0,0,0,.05) 90%, transparent 100%), var(--ch-band-fade-v); }
+.sb-tick.tool { background: var(--ch-band-tick-tool); -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 11%, rgba(0,0,0,.8) 23%, rgba(0,0,0,.6) 34%, rgba(0,0,0,.4) 46%, rgba(0,0,0,.2) 57%, rgba(0,0,0,.05) 69%, transparent 80%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 11%, rgba(0,0,0,.8) 23%, rgba(0,0,0,.6) 34%, rgba(0,0,0,.4) 46%, rgba(0,0,0,.2) 57%, rgba(0,0,0,.05) 69%, transparent 80%, transparent 100%), var(--ch-band-fade-v); }
+.sb-tick.think { background: var(--ch-band-tick-think); -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 11%, rgba(0,0,0,.8) 23%, rgba(0,0,0,.6) 34%, rgba(0,0,0,.4) 46%, rgba(0,0,0,.2) 57%, rgba(0,0,0,.05) 69%, transparent 80%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 11%, rgba(0,0,0,.8) 23%, rgba(0,0,0,.6) 34%, rgba(0,0,0,.4) 46%, rgba(0,0,0,.2) 57%, rgba(0,0,0,.05) 69%, transparent 80%, transparent 100%), var(--ch-band-fade-v); }
+.sb-tick.tool-fold { background: var(--ch-band-tick-tool); -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 7%, rgba(0,0,0,.8) 14%, rgba(0,0,0,.6) 21%, rgba(0,0,0,.4) 29%, rgba(0,0,0,.2) 36%, rgba(0,0,0,.05) 43%, transparent 50%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 7%, rgba(0,0,0,.8) 14%, rgba(0,0,0,.6) 21%, rgba(0,0,0,.4) 29%, rgba(0,0,0,.2) 36%, rgba(0,0,0,.05) 43%, transparent 50%, transparent 100%), var(--ch-band-fade-v); }
+.sb-tick.think-fold { background: var(--ch-band-tick-think); -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 7%, rgba(0,0,0,.8) 14%, rgba(0,0,0,.6) 21%, rgba(0,0,0,.4) 29%, rgba(0,0,0,.2) 36%, rgba(0,0,0,.05) 43%, transparent 50%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 7%, rgba(0,0,0,.8) 14%, rgba(0,0,0,.6) 21%, rgba(0,0,0,.4) 29%, rgba(0,0,0,.2) 36%, rgba(0,0,0,.05) 43%, transparent 50%, transparent 100%), var(--ch-band-fade-v); }
 /* A79 气泡宽度三段式——宽度收口已上移到 #chatMsgs（列宽 = 三段式、左缘 = 居中偏移），本行只承载布局；
    短气泡由 flex 收缩到内容宽、贴各自一侧（assistant 左缘 / user 右缘——2026-09-22 分侧） */
 .chat-row { display: flex; animation: chat-in 0.18s ease-out; }
@@ -245,8 +292,11 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .inject-report .ir-tools-head { color: var(--ch-ok); font-weight: bold; margin-bottom: 3px; }
 .inject-report .ir-tool-row { word-break: break-all; white-space: pre-wrap; color: var(--ch-inject-fg); }
 .inject-report .ir-tool-group { color: var(--ch-warn); font-weight: bold; }
-/* roundsum 轮末统计气泡——本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时（弱化系统样式；呼吸描边见下方 bubble-breathe，2026-09-17） */
+/* roundsum 轮末统计气泡——本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时（弱化系统样式；呼吸描边见下方 bubble-breathe，2026-09-17）
+   2026-09-24：居中试作后撤回——保持靠左（与 assistant 正文同侧）；带上刻度的中心对称渐变不受影响 */
 .chat-bubble.roundsum { --bubble-line: var(--ch-state-all); background: var(--ch-roundsum-bg); color: var(--ch-roundsum-fg); font-size: 11px; line-height: 1.6; }
+/* 轮次分隔（2026-09-24）——结算块所在行下留白；带上呈空隙（刻度按内容坐标映射，留白即成段间隔） */
+.chat-row:has(.chat-bubble.roundsum) { margin-bottom: var(--ch-round-gap); }
 .chat-bubble.roundsum .rs-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 3px; }
 .chat-bubble.roundsum .rs-tok { color: var(--ch-tok-completion); word-break: break-all; white-space: pre-wrap; }
 .chat-bubble.roundsum .rs-tools { color: var(--ch-warn); margin-top: 2px; }
