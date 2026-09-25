@@ -488,7 +488,7 @@ namespace CatHome4.QQ
                 SendToSource(qqBotId, source, "目标 Cat 未启用 qqbot 转发功能");
                 return;
             }
-            // 注入唯一绑定猫——消息头区分渠道+来源（v0.96.1：私聊硬编码雾理莎/群@昵称+角色）
+            // 注入唯一绑定猫——消息头区分渠道+来源（v0.96.1：私聊硬编码Rushiera/群@昵称+角色）
             // 🔴 三字典单线程化（R6-P1-01）——WS 线程只入队事件，EnqueueSource/ResetRound 由主线程 Tick 事件泵统一消费
             tg.Inject("[来自QQ]" + BuildHeader(source) + " " + text + attachText);
             _eventQueue.Enqueue(new QqServiceEvent { Kind = "source", CatKey = tg.Key, Source = source });
@@ -807,17 +807,15 @@ namespace CatHome4.QQ
             }
             sb.Append(content.Substring(cursor));
             return sb.ToString();
-        }        /// <summary>
-                 /// 构建消息头——区分渠道+来源（v0.96.1）。
-                 /// 私聊：硬编码雾理莎（莎本人私聊 ID，User.md 补身份）；群@：昵称+角色（事件白拿字段）。
-                 /// </summary>
-                 /// <param name="source">消息来源</param>
-                 /// <returns>消息头——[私聊|雾理莎] / [群@|昵称(角色)]</returns>
+        }        /// <summary>构建消息头——区分渠道+来源（v0.96.1）。
+/// 私聊：硬编码Rushiera（Rushiera 本人私聊 ID，User.md 补身份）；群@：昵称+角色（事件白拿字段）。</summary>
+/// <param name="source">消息来源</param>
+/// <returns>消息头——[私聊|Rushiera] / [群@|昵称(角色)]</returns>
         private static string BuildHeader(QqSource source)
         {
             if (source.Type == "private")
             {
-                return "[私聊|雾理莎]";
+                return "[私聊|Rushiera]";
             }
             string name = source.DisplayName ?? "";
             string role = source.Role ?? "";
@@ -1503,7 +1501,7 @@ namespace CatHome4.QQ
         /// <summary>被动回复引用——事件 d.id；空=非被动</summary>
         public string MsgId;
 
-        /// <summary>发送者昵称——群@ author.username；私聊事件为空串（私聊 header 硬编码雾理莎）</summary>
+        /// <summary>发送者昵称——群@ author.username；私聊事件为空串（私聊 header 硬编码Rushiera）</summary>
         public string DisplayName;
 
         /// <summary>群内角色——owner/admin/member（事件白拿字段）；私聊空</summary>
