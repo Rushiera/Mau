@@ -61,6 +61,9 @@ namespace CatHome4.Core.Tests
             ToolSpec[] a = Specs("a-tool");
             ToolSpec[] b = Specs("b-tool");
             Exception captured = null;
+            // 基线——读侧前提 = 注册表已初始化（生产语义：读发生在宿主 Init 之后）；
+            // 否则读者首读可能落在写者首次 Init 之前，读到初始空表（干净进程必现——2026-09-25 判例）
+            ToolRegistry.Init(a, null, null);
             CancellationToken token = TestContext.Current.CancellationToken;
             Task writer = Task.Run(() =>
             {
