@@ -197,6 +197,19 @@ namespace Mau.Development.Tests
         }
 
         /// <summary>
+        /// code 与 codes 互斥——同给两参数一律拒绝（A92）；codes 非数组明示拒绝
+        /// </summary>
+        [Fact]
+        public void CodeAndCodesMutuallyExclusive()
+        {
+            string result;
+            _bridge.Invoke("member", "{\"path\":\"x\",\"class\":\"C\",\"op\":\"insert\",\"code\":\"public int A() { return 1; }\",\"codes\":[\"public int B() { return 2; }\"]}", out result);
+            Assert.Contains("互斥", result);
+            _bridge.Invoke("member", "{\"path\":\"x\",\"class\":\"C\",\"op\":\"insert\",\"codes\":\"nope\"}", out result);
+            Assert.Contains("codes 必须是字符串数组", result);
+        }
+
+        /// <summary>
         /// 宿主注入保留键放行——catId 不进声明面，校验面一律放行（不报未知参数）
         /// </summary>
         [Fact]

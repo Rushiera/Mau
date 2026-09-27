@@ -1113,7 +1113,10 @@ var CHAT_TOOL_OVERRIDES = {
     'cs-member': {
         inputLines: function (a) {
             var op = a.op || '';
-            if (op === 'insert') { return ['插入成员到 ' + chatOvText(a.class) + ' · 位置 ' + chatOvText(a.position)]; }
+            if (op === 'insert') {
+                if (a.codes && a.codes.length) { return ['批量插入 ' + a.codes.length + ' 个成员到 ' + chatOvText(a.class) + ' · 位置 ' + chatOvText(a.position)]; }
+                return ['插入成员到 ' + chatOvText(a.class) + ' · 位置 ' + chatOvText(a.position)];
+            }
             if (op === 'delete') { return ['删除成员 ' + chatOvText(a.class) + '.' + chatOvText(a.member)]; }
             if (op === 'rename') { return ['重命名 ' + chatOvText(a.class) + '.' + chatOvText(a.oldName) + ' → ' + chatOvText(a.newName)]; }
             return ['成员操作 ' + chatOvText(a.class) + ' · op=' + chatOvText(a.op)];
@@ -1122,7 +1125,12 @@ var CHAT_TOOL_OVERRIDES = {
             var h = chatMetaHead(r);
             if (!h) { return '成员操作 ' + chatOvText(a.class) + chatOvStat(r); }
             var m = h.meta;
-            if (m.op === 'insert') { return '插入 ' + m.class + ' · 落盘 L' + m.start + '-' + m.end; }
+            if (m.op === 'insert') {
+                if (m.items && m.items.length) {
+                    return '批量插入 ' + m.count + ' 个成员 · 落盘 L' + m.items[0].start + '-' + m.items[m.items.length - 1].end;
+                }
+                return '插入 ' + m.class + ' · 落盘 L' + m.start + '-' + m.end;
+            }
             if (m.op === 'delete') { return '删除 ' + m.class + '.' + m.member; }
             if (m.op === 'rename') { return '重命名 ' + m.oldName + ' → ' + m.newName + ' · ' + m.files + ' 文件'; }
             return '成员操作 ' + chatOvText(a.class);
@@ -1131,7 +1139,16 @@ var CHAT_TOOL_OVERRIDES = {
             var h = chatMetaHead(r);
             if (!h) { return null; }
             var m = h.meta;
-            if (m.op === 'insert') { return ['已落盘 ' + (m.file || '') + ' · L' + m.start + '-' + m.end + ' · ' + (m.kind || '')]; }
+            if (m.op === 'insert') {
+                if (m.items && m.items.length) {
+                    var bulk = [];
+                    for (var bi = 0; bi < m.items.length; bi++) {
+                        bulk.push('#' + (bi + 1) + ' L' + m.items[bi].start + '-' + m.items[bi].end + ' · ' + (m.items[bi].kind || ''));
+                    }
+                    return bulk;
+                }
+                return ['已落盘 ' + (m.file || '') + ' · L' + m.start + '-' + m.end + ' · ' + (m.kind || '')];
+            }
             if (m.op === 'delete') { return ['已删除 ' + m.class + '.' + m.member + '（' + (m.file || '') + '）']; }
             if (m.op === 'rename') { return ['已重命名 ' + m.oldName + ' → ' + m.newName + ' · ' + (m.files || 0) + ' 文件']; }
             return ['（已应用）'];

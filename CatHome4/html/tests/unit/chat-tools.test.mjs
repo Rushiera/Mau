@@ -689,6 +689,19 @@ test('写类三件——outputLines 由 meta 生成自然语言；无正文不�
   expect(c2.querySelector('.seg-out .seg-line').textContent).toContain('已写入 A.M 的 summary 注释');
 });
 
+test('cs-member 批量 insert——count/items 驱动折叠行与落盘清单', () => {
+  const card = renderTool({
+    name: 'cs-member',
+    arguments: JSON.stringify({ path: 'X.csproj', class: 'A', op: 'insert', position: 'end', codes: ['public int One() { return 1; }', 'public int Two() { return 2; }'] }),
+    result: '{"ok":true,"tool":"cs-member","op":"insert","class":"A","file":"A.cs","count":2,"items":[{"start":123,"end":126,"kind":"MethodDeclarationSyntax"},{"start":128,"end":131,"kind":"MethodDeclarationSyntax"}]}',
+    summary: 'C#成员操作'
+  }, 129);
+  expect(card.querySelector('.tn').textContent).toBe('📝 批量插入 2 个成员 · 落盘 L123-131');
+  const lines = card.querySelectorAll('.seg-out .seg-line');
+  expect(lines[0].textContent).toContain('#1 L123-126');
+  expect(lines[1].textContent).toContain('#2 L128-131');
+});
+
 // ── A64 批 1：SearchCat / VisionCat / TempToolCat / Majordomo（结构化头驱动）──
 test('批1——web-search 结构化头：引用数与协议入折叠行；正文剥头渲染', () => {
   const card = renderTool({

@@ -115,6 +115,52 @@ namespace Mau.Development.Tests
         }
 
         /// <summary>
+        /// member insert（codes 批量）——成组互相引用的成员一次落盘（A92：单成员预检必报缺名，整批一次编译可见）
+        /// </summary>
+        [Fact]
+        public void MemberInsertBatchResolvesMutualReferences()
+        {
+            string codeA = "/// <summary>入口</summary>\\n/// <returns>标记</returns>\\npublic int Entry()\\n{\\nreturn Mark();\\n}";
+            string codeB = "/// <summary>被引用</summary>\\n/// <returns>标记</returns>\\nprivate int Mark()\\n{\\nreturn 1;\\n}";
+            string result = Call("member", "\"class\":\"A22Probe\",\"op\":\"insert\",\"position\":\"end\",\"codes\":[\"" + codeA + "\",\"" + codeB + "\"]");
+            Assert.StartsWith("{\"ok\":true", result);
+            Assert.Contains("\"count\":2", result);
+            string after = File.ReadAllText(_target);
+            Assert.Contains("public int Entry()", after);
+            Assert.Contains("private int Mark()", after);
+            Assert.True(HasBom(_target), "批量 insert 落盘剥离了文件 BOM");
+        }
+
+        /// <summary>
+        /// member insert（codes 批量）——元素含多个声明 ⇒ 整批 BAD_ARGS 拒绝且不落盘
+        /// </summary>
+        [Fact]
+        public void MemberInsertBatchRejectsInvalidElement()
+        {
+            string before = File.ReadAllText(_target);
+            string good = "public int One()\\n{\\nreturn 1;\\n}";
+            string bad = "public int Two()\\n{\\nreturn 2;\\n}\\n\\npublic int Three()\\n{\\nreturn 3;\\n}";
+            string result = Call("member", "\"class\":\"A22Probe\",\"op\":\"insert\",\"position\":\"end\",\"codes\":[\"" + good + "\",\"" + bad + "\"]");
+            Assert.StartsWith("ERR|BAD_ARGS", result);
+            Assert.Contains("第 2 个元素", result);
+            Assert.Equal(before, File.ReadAllText(_target));
+        }
+
+        /// <summary>
+        /// member insert（codes 批量）——整批仍缺名 ⇒ ROLLED_BACK 不落盘（预检覆盖整批）
+        /// </summary>
+        [Fact]
+        public void MemberInsertBatchRollsBackOnMissingName()
+        {
+            string before = File.ReadAllText(_target);
+            string codeA = "public string Orphan()\\n{\\nreturn Absent();\\n}";
+            string codeB = "public int Plain()\\n{\\nreturn 1;\\n}";
+            string result = Call("member", "\"class\":\"A22Probe\",\"op\":\"insert\",\"position\":\"end\",\"codes\":[\"" + codeA + "\",\"" + codeB + "\"]");
+            Assert.StartsWith("ROLLED_BACK", result);
+            Assert.Equal(before, File.ReadAllText(_target));
+        }
+
+        /// <summary>
         /// 调用桥工具——path 自动补
         /// </summary>
         /// <param name="tool">工具名</param>
