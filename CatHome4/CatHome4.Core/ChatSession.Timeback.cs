@@ -46,6 +46,12 @@ namespace CH4
 
             /// <summary>上次状态自述时的计数水位——距其再满 10 个事件注入下一条（10 / 20 / 30…）。</summary>
             public long LastNotifyCount;
+
+            /// <summary>开锚时的已知前文长度快照——回收时对比算净增（请求级真实 usage 值，零估算）。</summary>
+            public long TokensAtOpen;
+
+            /// <summary>本次回收的释放条数——back 时刻预算（区间上下界已定，精确可算）；随返回值送出，并与批后实际删除数对账。</summary>
+            public int PendingReleased;
         }
 
         /// <summary>当前未闭合作用域——null=无作用域。</summary>
@@ -164,11 +170,13 @@ namespace CH4
             scope.StartDeclIndex = declIndex;
             scope.StartAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             scope.Purpose = purpose.Length > 48 ? purpose.Substring(0, 48) : purpose;
+            // 开锚快照——回收时据此算作用域净增 token（真实 usage 值，不估算）
+            scope.TokensAtOpen = ContextTokensKnown;
             TimebackArchive archive = ResolveTimebackArchive();
             if (archive != null)
             {
                 scope.Id = archive.NextId();
-                archive.AppendOpen(scope.Id, _catKey, _round, declIndex, scope.StartAtMs, scope.Purpose, _context.GetMessageCount());
+                archive.AppendOpen(scope.Id, _catKey, _round, declIndex, scope.StartAtMs, scope.Purpose, _context.GetMessageCount(), scope.TokensAtOpen);
             }
             _timebackScope = scope;
             Dictionary<string, object> fields = new Dictionary<string, object>();
@@ -198,10 +206,44 @@ namespace CH4
             }
             _timebackScope.PendingFindings = findings;
             _timebackScope.BackDeclIndex = _context.GetMessageCount() - 1;
+            // 释放条数预算——区间上下界此刻已定（[start 结果之后 .. back 声明之前]），精确可算；
+            // 该值随返回值送出，并与批后实际删除数对账（归档记实际）
+            _timebackScope.PendingReleased = CountTimebackReleased(_timebackScope);
+            long tokensNow = ContextTokensKnown;
             Dictionary<string, object> fields = new Dictionary<string, object>();
             fields["id"] = _timebackScope.Id;
             fields["anchor"] = _timebackScope.StartDeclIndex;
+            fields["released"] = _timebackScope.PendingReleased;
+            fields["tokens"] = tokensNow;
+            fields["grew"] = tokensNow - _timebackScope.TokensAtOpen;
             return ToolMetaHead.With("timeback", true, fields, findings);
+        }
+
+        /// <summary>
+        /// 释放条数预算——按当前前文算「[start 结果之后 .. back 声明之前]」的消息条数。
+        /// back 时刻区间上下界已定，故返回值给出的条数与批后实际删除数同源可对账（归档记实际，不一致记 L2）。
+        /// </summary>
+        /// <param name="scope">作用域</param>
+        /// <returns>释放条数（无可删区间 = 0）</returns>
+        private int CountTimebackReleased(TimebackScope scope)
+        {
+            LlmMessage[] all = _context.GetMessages();
+            int keepEnd = scope.StartDeclIndex;
+            while (keepEnd + 1 < all.Length && all[keepEnd + 1].Role == LlmRole.Tool)
+            {
+                keepEnd = keepEnd + 1;
+            }
+            int from = keepEnd + 1;
+            int to = scope.BackDeclIndex - 1;
+            if (from > to || from >= all.Length)
+            {
+                return 0;
+            }
+            if (to >= all.Length)
+            {
+                to = all.Length - 1;
+            }
+            return to - from + 1;
         }
 
         /// <summary>
@@ -262,7 +304,7 @@ namespace CH4
                 // 索引超界（前文被外部改动）——不删，仅出声
                 LogStore.Add("CatHome4", 2, "timeback 回收区间越界（from " + from.ToString() + " / to " + to.ToString() + " / len " + all.Length.ToString() + "）——本次未删", "TIMEBACK");
             }
-            // [段4] 归档 close——回收条数 + 存活秒数 + findings
+            // [段4] 归档 close——回收条数（实际）+ 存活秒数 + 回收时已知前文长度 + findings
             long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             long seconds = (nowMs - scope.StartAtMs) / 1000;
             if (seconds < 0)
@@ -273,9 +315,14 @@ namespace CH4
             TimebackArchive archive = ResolveTimebackArchive();
             if (archive != null)
             {
-                archived = archive.AppendClose(scope.Id, nowMs, removed, seconds, scope.PendingFindings);
+                archived = archive.AppendClose(scope.Id, nowMs, removed, seconds, scope.PendingFindings, ContextTokensKnown);
             }
-            // [段5] 作用域关闭——活跃期结束（TimebackActive 回 false；Note / sleep / timer 解锁）
+            // [段5] 释放条数对账——back 返回值给出的预算 vs 批后实际删除数（归档记实际；不一致必须出声）
+            if (removed != scope.PendingReleased)
+            {
+                LogStore.Add("CatHome4", 2, "timeback #" + scope.Id.ToString() + " 释放条数对账不一致（预算 " + scope.PendingReleased.ToString() + " / 实际 " + removed.ToString() + "）", "TIMEBACK");
+            }
+            // [段6] 作用域关闭——活跃期结束（TimebackActive 回 false；Note / sleep / timer 解锁）
             _timebackScope = null;
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 已回收 " + removed.ToString() + " 条（" + seconds.ToString() + " 秒 / 锚点 " + scope.StartDeclIndex.ToString() + "）", "TIMEBACK");
             if (!archived)

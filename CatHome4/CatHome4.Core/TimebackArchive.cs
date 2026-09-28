@@ -10,7 +10,7 @@ namespace CH4
 {
     /// <summary>
     /// timeback 全程归档——append-only JSONL（每猫一份；design-ch4-timeback §五 / §12.4）。
-    /// 落点：Data/sessions/&lt;猫key&gt;/timeback.jsonl——行型 open / close（T2 追加 review），以 id 关联。
+    /// 落点：Data/sessions/&lt;猫key&gt;/timeback.jsonl——行型 open / close，以 id 关联。
     /// 写面：追加即落盘（开-写-关，无长驻句柄；失败记 L3 且返回 false——归档不可写不阻断回卷，但必须可见）。
     /// 读面：逐行容错（坏行 / 末行残缺跳过），编号懒加载（首次使用时扫全文件取 max(id) 并缓存）。
     /// </summary>
@@ -73,8 +73,9 @@ namespace CH4
         /// <param name="startAt">开锚时刻（Unix 毫秒）</param>
         /// <param name="purpose">用途标签</param>
         /// <param name="n">开锚时前文条数</param>
+        /// <param name="tokens">开锚时的已知前文长度快照（真实 usage 值，零估算）</param>
         /// <returns>true=已落盘</returns>
-        public bool AppendOpen(long id, string catKey, long round, int anchor, long startAt, string purpose, int n)
+        public bool AppendOpen(long id, string catKey, long round, int anchor, long startAt, string purpose, int n, long tokens)
         {
             JsonObject obj = new JsonObject();
             obj["t"] = "open";
@@ -85,6 +86,7 @@ namespace CH4
             obj["startAt"] = startAt;
             obj["purpose"] = purpose ?? "";
             obj["n"] = n;
+            obj["tokens"] = tokens;
             return AppendLine(obj.ToJsonString(SerializerOptions));
         }
 
@@ -96,8 +98,9 @@ namespace CH4
         /// <param name="n">回收条数（锚点之后被销毁的前文消息数）</param>
         /// <param name="seconds">作用域存活时长（秒）</param>
         /// <param name="findings">带回载荷全文（事实 + 指针）</param>
+        /// <param name="tokens">回收时的已知前文长度（真实 usage 值，零估算）</param>
         /// <returns>true=已落盘</returns>
-        public bool AppendClose(long id, long backAt, int n, long seconds, string findings)
+        public bool AppendClose(long id, long backAt, int n, long seconds, string findings, long tokens)
         {
             JsonObject obj = new JsonObject();
             obj["t"] = "close";
@@ -106,6 +109,7 @@ namespace CH4
             obj["n"] = n;
             obj["seconds"] = seconds;
             obj["findings"] = findings ?? "";
+            obj["tokens"] = tokens;
             return AppendLine(obj.ToJsonString(SerializerOptions));
         }
 

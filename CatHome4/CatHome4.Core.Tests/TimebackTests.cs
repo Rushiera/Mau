@@ -253,6 +253,11 @@ namespace CatHome4.Core.Tests
             Assert.True(hasBackDecl);
             // 结论 = back 的工具返回值（tool 消息）
             Assert.True(HasMessage(session, LlmRole.Tool, "结论：目录 85 个"));
+            // 返回值元数据——释放条数（back 时刻预算）+ 前文长度快照与净增（真实 usage 值；测试环境尚未请求 → 0）
+            string backResult = ToolResultText(session, 1);
+            Assert.Contains("\"released\":2", backResult);
+            Assert.Contains("\"tokens\":0", backResult);
+            Assert.Contains("\"grew\":0", backResult);
             // 查证过程（random 调用与结果）已删
             for (int i = 0; i < all.Length; i = i + 1)
             {
@@ -424,6 +429,10 @@ namespace CatHome4.Core.Tests
             Assert.Contains("\"t\":\"open\"", lines[0]);
             Assert.Contains("\"t\":\"close\"", lines[1]);
             Assert.Contains("归档验证", lines[0]);
+            // 释放条数与前文长度快照入档（open 记开锚前长度 / close 记回收时长度）
+            Assert.Contains("\"n\":2", lines[1]);
+            Assert.Contains("\"tokens\":", lines[0]);
+            Assert.Contains("\"tokens\":", lines[1]);
             File.Delete(archivePath);
         }
 
@@ -466,11 +475,11 @@ namespace CatHome4.Core.Tests
             string path = Path.Combine(Path.GetTempPath(), "cat4tb_arch_" + Guid.NewGuid().ToString("N") + ".jsonl");
             CH4.TimebackArchive first = new CH4.TimebackArchive(path);
             Assert.Equal(1L, first.NextId());
-            Assert.True(first.AppendOpen(1, "cat", 0, 3, 1000, "用途", 5));
-            Assert.True(first.AppendClose(1, 2000, 4, 1, "结论"));
+            Assert.True(first.AppendOpen(1, "cat", 0, 3, 1000, "用途", 5, 500));
+            Assert.True(first.AppendClose(1, 2000, 4, 1, "结论", 900));
             CH4.TimebackArchive second = new CH4.TimebackArchive(path);
             Assert.Equal(2L, second.NextId());
-            Assert.True(second.AppendOpen(2, "cat", 1, 3, 1000, "用途2", 5));
+            Assert.True(second.AppendOpen(2, "cat", 1, 3, 1000, "用途2", 5, 600));
             File.AppendAllText(path, "{\"t\":\"open\",\"id\":9");
             CH4.TimebackArchive third = new CH4.TimebackArchive(path);
             Assert.Equal(3L, third.NextId());
@@ -537,13 +546,15 @@ namespace CatHome4.Core.Tests
             string path = Path.Combine(Path.GetTempPath(), "cat4tb_tail_" + Guid.NewGuid().ToString("N") + ".jsonl");
             CH4.TimebackArchive archive = new CH4.TimebackArchive(path);
             long id = archive.NextId();
-            Assert.True(archive.AppendOpen(id, "cat", 0, 3, 1000, "用途", 5));
+            Assert.True(archive.AppendOpen(id, "cat", 0, 3, 1000, "用途", 5, 500));
             File.AppendAllText(path, "{\"t\":\"open\",\"id\":9\n");
-            Assert.True(archive.AppendClose(id, 2000, 4, 7, "结论"));
+            Assert.True(archive.AppendClose(id, 2000, 4, 7, "结论", 900));
             List<string> tail = archive.ReadTailJson(5);
             Assert.Equal(2, tail.Count);
             Assert.DoesNotContain("seconds", tail[0]);
+            Assert.Contains("\"tokens\":500", tail[0]);
             Assert.Contains("\"seconds\":7", tail[1]);
+            Assert.Contains("\"tokens\":900", tail[1]);
             Assert.False(archive.LastWriteFailed);
             File.Delete(path);
         }
@@ -554,7 +565,7 @@ namespace CatHome4.Core.Tests
         public void Archive_WriteFailureIsVisible()
         {
             CH4.TimebackArchive archive = new CH4.TimebackArchive(Path.GetTempPath());
-            Assert.False(archive.AppendClose(1, 2000, 4, 7, "结论"));
+            Assert.False(archive.AppendClose(1, 2000, 4, 7, "结论", 700));
             Assert.True(archive.LastWriteFailed);
         }
     }
