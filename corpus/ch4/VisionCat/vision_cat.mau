@@ -36,3 +36,28 @@
 
 // T_VisionAbort：失败回执（@vrRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
 § 'T_VisionAbort' : 'S_Vision' = 'Failed' → 'oa.complete_str'[@vrOffice, @vrRes] | 'S_Vision' = 'Idle' | 'S_Vision' = 'Idle'
+
+// ══════════════ image-inject 线（A105 图片真实插入主干） ══════════════
+
+// 语义（design-ch4-chat-images §八）：本线只做 OA 闭环 + 参数回显；图片由宿主批后段合并注入一条 user 消息（引用随消息落盘、请求构造时展开为内容块）。
+// 门禁：仅 timeback 作用域内可用——在宿主工具登记段拦截（域外 ERR|TIMEBACK_REQUIRED），本线不重复判定。
+// 状态机（本线从 Idle 起——不设 Init 自述转移，避免与 S_Vision 首帧 desc 竞争）
+§ 'S_Inject' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+
+// 探测：本工具工单开（纯只读判断积木 → bool 落盒）
+§ 'P_InjectOpen' ↻ [1]: 'oa.is_open'["TOOL", "image-inject"] > @viOpen
+
+// T_InjectClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_InjectClaim' : @viOpen & 'S_Inject' = 'Idle' → 'oa.claim_next_simple'["TOOL", "image-inject"] > @viOffice | 'S_Inject' = 'Claimed' | 'S_Inject' = 'Idle'
+
+// T_InjectArgs：读载荷 args（整包工具参数 JSON——参数仅 path）
+§ 'T_InjectArgs' : 'S_Inject' = 'Claimed' → 'oa.get_str'[@viOffice, "args"] > @viArgs | 'self.desc'["image-inject 登记中", "", ""] | 'S_Inject' = 'Ready' | 'S_Inject' = 'Failed'
+
+// T_InjectExec：执行积木（参数面校验 + 登记回执；真图注入由宿主批后段执行——积木不触前文）
+§ 'T_InjectExec' : 'S_Inject' = 'Ready' → 'image.inject'[@viArgs] > @viRes | 'S_Inject' = 'Done' | 'S_Inject' = 'Failed'
+
+// T_InjectReply：成功回执（结构化头：ok/tool/path）
+§ 'T_InjectReply' : 'S_Inject' = 'Done' → 'oa.complete_str'[@viOffice, @viRes] | 'self.desc'["空闲待命", "", ""] | 'S_Inject' = 'Idle' | 'S_Inject' = 'Idle'
+
+// T_InjectAbort：失败回执（参数面错误文本——ERR|BAD_ARGS 等）
+§ 'T_InjectAbort' : 'S_Inject' = 'Failed' → 'oa.complete_str'[@viOffice, @viRes] | 'S_Inject' = 'Idle' | 'S_Inject' = 'Idle'

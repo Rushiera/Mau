@@ -426,6 +426,10 @@ namespace Mau.Runtime
             {
                 message.ReasoningContent = "";
             }
+            if (message.ImagesJson == null)
+            {
+                message.ImagesJson = "";
+            }
             return message;
         }
 

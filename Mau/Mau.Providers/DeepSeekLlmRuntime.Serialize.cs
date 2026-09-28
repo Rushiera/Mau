@@ -50,6 +50,86 @@ namespace Mau.Providers
             return wire;
         }
         /// <summary>
+        /// user 消息序列化（带图片附件）——content 输出为**内容块数组**：text 块（正文 + 失效引用提示）+ 每张图一个 image_url 块。
+        /// 引用形态 = 图片绝对路径（design-ch4-chat-images §8.2：持久层只存引用，此处展开）；单图读取失败不阻断请求，
+        /// 失败信息并入 text 块（失败必须可见）。无可用图片且正文为空 → text 兜底 "(图片)"，避免空内容块数组。
+        /// </summary>
+        /// <param name="m">user 消息（ImagesJson = 图片绝对路径 JSON 数组字符串）</param>
+        /// <returns>wire 消息对象（含内容块数组）</returns>
+        internal static object BuildUserMessageWithImages(LlmMessage m)
+        {
+            StringBuilder textBuilder = new StringBuilder();
+            textBuilder.Append(m.Content);
+            List<string> failures = new List<string>();
+            List<string> imageUrls = new List<string>();
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(m.ImagesJson))
+                {
+                    JsonElement root = doc.RootElement;
+                    if (root.ValueKind == JsonValueKind.Array)
+                    {
+                        for (int i = 0; i < root.GetArrayLength(); i = i + 1)
+                        {
+                            JsonElement item = root[i];
+                            if (item.ValueKind != JsonValueKind.String)
+                            {
+                                continue;
+                            }
+                            string? path = item.GetString();
+                            if (path == null || path.Length == 0)
+                            {
+                                continue;
+                            }
+                            string error = "";
+                            string url = ImagePayload.Resolve(path, out error);
+                            if (error.Length > 0)
+                            {
+                                failures.Add(error);
+                            }
+                            else
+                            {
+                                imageUrls.Add(url);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Add("ERR|IMAGE_REF_PARSE|附件引用解析失败: " + ex.Message);
+            }
+            if (failures.Count > 0)
+            {
+                textBuilder.Append("\n\n[图片引用失效]");
+                for (int i = 0; i < failures.Count; i = i + 1)
+                {
+                    textBuilder.Append("\n");
+                    textBuilder.Append(failures[i]);
+                }
+            }
+            string text = textBuilder.ToString();
+            if (text.Length == 0)
+            {
+                text = "(图片)";
+            }
+            List<object> parts = new List<object>();
+            parts.Add(new { type = "text", text = text });
+            for (int i = 0; i < imageUrls.Count; i = i + 1)
+            {
+                parts.Add(new
+                {
+                    type = "image_url",
+                    image_url = new { url = imageUrls[i] }
+                });
+            }
+            Dictionary<string, object> wire = new Dictionary<string, object>();
+            wire["role"] = "user";
+            wire["content"] = parts;
+            return wire;
+        }
+
+        /// <summary>
         /// tools 数组序列化——OpenAI function 定义；parameters JSON Schema 原样透传（空参数 = 空对象 schema）。
         /// </summary>
         /// <param name="tools">工具规格数组</param>
@@ -130,7 +210,14 @@ namespace Mau.Providers
                 }
                 else if (m.Role == LlmRole.User)
                 {
-                    wireMessages.Add(new { role = "user", content = m.Content });
+                    if (m.ImagesJson != null && m.ImagesJson.Length > 0)
+                    {
+                        wireMessages.Add(BuildUserMessageWithImages(m));
+                    }
+                    else
+                    {
+                        wireMessages.Add(new { role = "user", content = m.Content });
+                    }
                 }
                 else if (m.Role == LlmRole.Assistant)
                 {

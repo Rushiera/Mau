@@ -1,6 +1,6 @@
 ﻿{
   "version": 3,
-  "generatedAt": "2026-09-28T08:12:01Z",
+  "generatedAt": "2026-09-28T17:28:43Z",
   "packages": ["Microsoft.CodeAnalysis.CSharp@4.11.0"],
   "bricks": [
     {"id":"BRIK-DATA-001","name":"data.box_set_str","category":"DATA","path":"DATA/BRIK-DATA-001_data.box_set_str.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.DataBoxSetStrBrick.SetStr","inputs":[{"name":"scope","type":"string"},{"name":"key","type":"string"},{"name":"value","type":"string"}],"outputs":[],"return":"Bool","duration":"Sync","thread":"main"}},
@@ -63,6 +63,7 @@
     {"id":"BRIK-TOOLS-010","name":"tools.quickcat","category":"TOOLS","path":"TOOLS/BRIK-TOOLS-010_tools.quickcat.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.ToolsQuickcatBrick.GetToolsJson","inputs":[],"outputs":[],"return":"String","duration":"Sync","thread":"main"}},
     {"id":"BRIK-TOOLS-011","name":"tools.filecat","category":"TOOLS","path":"TOOLS/BRIK-TOOLS-011_tools.filecat.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.ToolsFilecatBrick.GetToolsJson","inputs":[],"outputs":[],"return":"String","duration":"Sync","thread":"main"}},
     {"id":"BRIK-VISION-001","name":"vision.analyze","category":"VISION","path":"VISION/BRIK-VISION-001_vision.analyze.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.VisionAnalyzeBrick.Analyze","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}},
+    {"id":"BRIK-VISION-002","name":"image.inject","category":"VISION","path":"VISION/BRIK-VISION-002_image.inject.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.ImageInjectBrick.Inject","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}},
     {"id":"BRIK-WEB-001","name":"web.search","category":"WEB","path":"WEB/BRIK-WEB-001_web.search.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.WebSearchBrick.Search","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}],"return":"Bool","duration":"Sync","thread":"main"}}
   ]
 }

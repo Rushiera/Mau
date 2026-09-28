@@ -1865,6 +1865,17 @@ namespace CH4
                             LogStore.Add("CatHome4", 2, "工具 " + name + " 被拒绝：timeback 作用域内禁止本体修正", "TIMEBACK");
                             continue;
                         }
+                        // image-inject 作用域门禁——仅 timeback 活跃时可用（design-ch4-chat-images §8.4-3：域外拒绝，不静默降级；
+                        // 方向与上一条黑名单相反——这里拦的是「域外调用」）
+                        if (name == "image-inject" && _timebackScope == null)
+                        {
+                            ToolOrderDog scopeDog = new ToolOrderDog(id, name, arguments);
+                            scopeDog.Result = "ERR|TIMEBACK_REQUIRED|图片插入仅在 timeback 作用域内可用（图片不必常驻主干）——先 start 开锚";
+                            scopeDog.IsClosed = true;
+                            _dogs.Add(scopeDog);
+                            LogStore.Add("CatHome4", 2, "工具 " + name + " 被拒绝：timeback 作用域外不可用", "TIMEBACK");
+                            continue;
+                        }
                         // per-cat 路由——载荷注入猫 key（会话标识 ≡ 猫 key；积木按 catId 解析猫级文件系统与配置面）
                         arguments = InjectCatId(arguments);
                         // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
@@ -2055,6 +2066,8 @@ namespace CH4
                 _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             }
             _toolBatchActive = false;
+            // [段2d-0] 图片注入——本批 image-inject 登记合并为一条 user 注入消息（落在作用域区间内：back 回收时一并删除）
+            FlushImageInjections();
             // [段2d] timeback 回卷——本批请求了 back 则在此执行（工具结果已全部回填：截断 + 结论注入 + 工具主动 done）
             ApplyTimebackBack();
             // [段2e] timeback 状态自述——回收后作用域已关（自然跳过）；未关且累计满 10 事件则追加一条 assistant 自述
