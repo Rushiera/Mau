@@ -495,20 +495,19 @@ test('toolcard 并发批次渲染 [icon n/m] 前缀——单次用类型图标�
   expect(chatMsgs.querySelectorAll('.chat-tool .tn')[2].textContent).toBe('[⚠️ 2/4] 读取 (未指定) · 1 行 5 字符');
 });
 
-// ── powershell 命令解读——折叠行覆盖宿主 summary + 展开区意图块（chat-cmd.js 接入）──
-test('toolcard powershell——命令解读覆盖 summary + 展开区意图块', () => {
+// ── powershell 命令解读——折叠行由解读承担（PS 双线不配 headline）+ 展开区意图块（chat-cmd.js 接入）──
+test('toolcard powershell——命令解读承担折叠行 + 展开区意图块', () => {
   window.chatOnView({
     seq: 33, renderType: 'toolcard',
     payload: {
       name: 'powershell',
       arguments: JSON.stringify({ command: 'dotnet build CatHome4.sln; git status' }),
-      result: '{"exit":0}',
-      summary: '执行命令 "dotnet build CatHome4.sln; git status" → ...'
+      result: '{"exit":0}'
     },
     replaceSeq: -1
   });
   const card = chatMsgs.querySelector('.chat-tool');
-  // 折叠行——宿主原始命令截断被解读结果覆盖 + PS 版本标签（双线区分，2026-09-18）
+  // 折叠行——由命令解读产出 + PS 版本标签（双线区分，2026-09-18）
   expect(card.querySelector('.tn').textContent).toBe('💻 PS 5.1 dotnet build · 编译 C# 项目 「CatHome4.sln」 等 2 段');
   // 展开区首块——逐段意图（含指令类标识 tag）
   const intent = card.querySelector('.cmd-intent');
@@ -519,11 +518,11 @@ test('toolcard powershell——命令解读覆盖 summary + 展开区意图块',
   expect(card.querySelector('.ta').textContent).toContain('dotnet build');
 });
 
-// ── 非 powershell 工具——不进解读（宿主 summary 原样展示）──
+// ── 非 powershell 工具——不进解读（折叠行由覆盖表 headline 产出）──
 test('toolcard 非 powershell——不插命令意图块', () => {
   window.chatOnView({
     seq: 34, renderType: 'toolcard',
-    payload: { name: 'text-read', arguments: '{"path":"a.txt"}', result: 'OK', summary: '读取文件 "a.txt" → "OK"' },
+    payload: { name: 'text-read', arguments: '{"path":"a.txt"}', result: 'OK' },
     replaceSeq: -1
   });
   const card = chatMsgs.querySelector('.chat-tool');
@@ -535,7 +534,7 @@ test('toolcard 非 powershell——不插命令意图块', () => {
 test('toolcard 大结果——折叠行标注字符数', () => {
   window.chatOnView({
     seq: 40, renderType: 'toolcard',
-    payload: { name: 'text-read', arguments: '{"path":"big.txt"}', result: 'x'.repeat(2000), summary: '读取文件 "big.txt" → ...' },
+    payload: { name: 'text-read', arguments: '{"path":"big.txt"}', result: 'x'.repeat(2000) },
     replaceSeq: -1
   });
   const card = chatMsgs.querySelector('.chat-tool');
@@ -618,7 +617,7 @@ test('toolcard 两段式——完成卡以 replaceSeq 原位替换（气泡不�
   });
   window.chatOnView({
     seq: 51, renderType: 'toolcard',
-    payload: { name: 'text-read', arguments: JSON.stringify({ path: 'a.txt' }), result: '文件内容', summary: '读取文件 a.txt', toolIndex: 1, toolTotal: 1 },
+    payload: { name: 'text-read', arguments: JSON.stringify({ path: 'a.txt' }), result: '文件内容', toolIndex: 1, toolTotal: 1 },
     replaceSeq: 50
   });
   expect(bubbles().length).toBe(1);
@@ -1270,13 +1269,13 @@ test('A84 1 秒表驱动——建卡即开表，每秒 tick 一次', () => {
 test('A84 完成原位替换——占位随换卡消失且停表', () => {
   pendingHold(1, 'mau-setup');
   expect(window.chatLiveTimer).toBeTruthy();
-  window.chatOnToolCard(9, 1, { name: 'mau-setup', arguments: '{}', result: 'OK', summary: '一键部署', toolIndex: 1, toolTotal: 1 });
+  window.chatOnToolCard(9, 1, { name: 'mau-setup', arguments: '{}', result: 'OK', toolIndex: 1, toolTotal: 1 });
   expect(chatMsgs.querySelector('.chat-tool .' + window.CHAT_PENDING_HOLD_CLS)).toBeNull();
   expect(window.chatLiveTimer).toBeNull();
 });
 
 test('A84 终态卡直达（无先行卡）——不建占位、不开表', () => {
-  window.chatOnToolCard(1, -1, { name: 'mau-setup', arguments: '{}', result: 'OK', summary: '一键部署', toolIndex: 1, toolTotal: 1 });
+  window.chatOnToolCard(1, -1, { name: 'mau-setup', arguments: '{}', result: 'OK', toolIndex: 1, toolTotal: 1 });
   expect(chatMsgs.querySelector('.chat-tool .' + window.CHAT_PENDING_HOLD_CLS)).toBeNull();
   expect(window.chatLiveTimer).toBeNull();
 });

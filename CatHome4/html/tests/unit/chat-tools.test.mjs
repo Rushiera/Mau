@@ -93,8 +93,7 @@ test('exec 骨架——输入段（命令原文）+ 输出段（exit 徽标 + st
   const card = renderTool({
     name: 'powershell',
     arguments: JSON.stringify({ command: 'Get-Date' }),
-    result: psResult(0, '2026-09-18 14:00:00'),
-    summary: '执行命令 "Get-Date"'
+    result: psResult(0, '2026-09-18 14:00:00')
   });
   const segs = card.querySelectorAll('.seg');
   expect(segs.length).toBe(2);
@@ -173,8 +172,7 @@ test('exec 骨架——无 command 的工具（powershell 仅 cwd）走通用键
   const card = renderTool({
     name: 'powershell',
     arguments: JSON.stringify({ cwd: 'C:\\work' }),
-    result: '{"exit":0,"stdout":"ok","stderr":"","truncated":false,"timeout":false}',
-    summary: '执行命令'
+    result: '{"exit":0,"stdout":"ok","stderr":"","truncated":false,"timeout":false}'
   });
   const inSeg = card.querySelector('.seg-in');
   expect(inSeg.querySelectorAll('.seg-kv').length).toBe(1);
@@ -188,8 +186,7 @@ test('双线区分——powershell 与 powershell7 的折叠行标签 / 类 / �
   const card5 = renderTool({
     name: 'powershell',
     arguments: JSON.stringify({ command: 'Get-Date' }),
-    result: psResult(0, 'a'),
-    summary: '执行命令 "Get-Date"'
+    result: psResult(0, 'a')
   }, 61);
   expect(card5.querySelector('.tn').textContent).toContain('PS 5.1');
   expect(card5.querySelector('.ps-tag').classList.contains('ps5')).toBe(true);
@@ -197,8 +194,7 @@ test('双线区分——powershell 与 powershell7 的折叠行标签 / 类 / �
   renderTool({
     name: 'powershell7',
     arguments: JSON.stringify({ command: 'Get-Date' }),
-    result: psResult(0, 'a'),
-    summary: '执行命令 "Get-Date"'
+    result: psResult(0, 'a')
   }, 62);
   const card7 = chatMsgs.querySelectorAll('.chat-tool')[1];
   expect(card7.querySelector('.tn').textContent).toContain('PS 7');
@@ -213,8 +209,7 @@ test('diagnostics 骨架——JSON 计数徽标（ok 态不标失败）', () => 
   const card = renderTool({
     name: 'cs-build',
     arguments: JSON.stringify({ path: 'X.csproj' }),
-    result: JSON.stringify({ ok: true, errors: 0, warnings: 2 }),
-    summary: 'C#构建 "X.csproj" → OK（共0错 2警）'
+    result: JSON.stringify({ ok: true, errors: 0, warnings: 2 })
   });
   const cap = card.querySelector('.seg-out .seg-cap').textContent;
   expect(cap).toContain('0 错 2 警');
@@ -236,8 +231,7 @@ test('diagnostics 骨架——纯文本清单退化行数徽标（解析不出�
   const card = renderTool({
     name: 'cs-comment_check',
     arguments: JSON.stringify({ path: 'X.csproj' }),
-    result: 'A.cs:12: 缺少 summary\nB.cs:34: 缺少 summary',
-    summary: 'C#注释检查 → "共2处缺注释"'
+    result: 'A.cs:12: 缺少 summary\nB.cs:34: 缺少 summary'
   });
   expect(card.querySelector('.seg-out .seg-cap').textContent).toContain('2 行');
   expect(card.querySelectorAll('.seg-out .tr').length).toBe(2);
@@ -248,8 +242,7 @@ test('listing 骨架——条目计数排除提示行 + 逐行等宽可见', () 
   const card = renderTool({
     name: 'file-tree',
     arguments: JSON.stringify({ path: 'CCBP' }),
-    result: 'L1/\nL1\\Tree.md\n[git] 存在 .git',
-    summary: '展开目录 "CCBP" → "1文件 1目录"'
+    result: 'L1/\nL1\\Tree.md\n[git] 存在 .git'
   });
   const out = card.querySelector('.seg-out');
   expect(out.querySelector('.seg-cap').textContent).toContain('2 条目');
@@ -260,8 +253,7 @@ test('listing 骨架——空结果显式占位', () => {
   const card = renderTool({
     name: 'file-find',
     arguments: JSON.stringify({ dir: 'X', pattern: '*.zzz' }),
-    result: '',
-    summary: '搜索文件 "X" → 无结果'
+    result: ''
   });
   expect(card.querySelector('.seg-out .seg-cap').textContent).toContain('无输出');
   expect(card.querySelector('.seg-out .tr').textContent).toBe('（无输出）');
@@ -272,8 +264,7 @@ test('matches 骨架——text-grep 路径 / 行号 / 上下文 三列', () => {
   const card = renderTool({
     name: 'text-grep',
     arguments: JSON.stringify({ dir: 'src', keyword: 'foo' }),
-    result: 'src/A.cs:12:foo bar\nsrc/B.cs:7:baz foo',
-    summary: '检索内容 "src" 含 "foo" → 2文件·2命中'
+    result: 'src/A.cs:12:foo bar\nsrc/B.cs:7:baz foo'
   });
   const out = card.querySelector('.seg-out');
   expect(out.querySelector('.seg-cap').textContent).toContain('2 命中');
@@ -302,8 +293,7 @@ test('lines 骨架——行号列与内容分列', () => {
   const card = renderTool({
     name: 'text-read_lines',
     arguments: JSON.stringify({ path: 'a.md', start: 1, end: 2 }),
-    result: '1: # 标题\n2: 正文',
-    summary: '按行读取 "a.md" "第 1 行到第 2 行" → …'
+    result: '1: # 标题\n2: 正文'
   });
   const out = card.querySelector('.seg-out');
   expect(out.querySelector('.seg-cap').textContent).toContain('2 行');
@@ -318,8 +308,7 @@ test('file 骨架——正文 + 规模标注（字符 / 行）', () => {
   const card = renderTool({
     name: 'text-read',
     arguments: JSON.stringify({ path: 'a.txt' }),
-    result: 'line1\nline2',
-    summary: '读取文件 "a.txt" → "line1（2行 · 11 B）"'
+    result: 'line1\nline2'
   });
   const out = card.querySelector('.seg-out');
   expect(out.querySelector('.seg-cap').textContent).toContain('11 字符 / 2 行');
@@ -331,8 +320,7 @@ test('json 骨架——JSON 结果拆键值表（键 / 值分色）', () => {
   const card = renderTool({
     name: 'host-flows',
     arguments: '{}',
-    result: JSON.stringify({ id: 'TextCat', kind: 'Flow', alive: true }),
-    summary: 'Flow 清单 → 3 项'
+    result: JSON.stringify({ id: 'TextCat', kind: 'Flow', alive: true })
   });
   const out = card.querySelector('.seg-out');
   expect(out.querySelector('.seg-cap').textContent).toContain('3 键');
@@ -347,8 +335,7 @@ test('text 骨架——原文 + 行数徽标', () => {
   const card = renderTool({
     name: 'text-write',
     arguments: JSON.stringify({ path: 'a.txt', content: 'x' }),
-    result: 'OK',
-    summary: '写入文件 "a.txt" → OK'
+    result: 'OK'
   });
   const out = card.querySelector('.seg-out');
   expect(out.querySelector('.seg-cap').textContent).toContain('1 行');
@@ -393,8 +380,7 @@ test('段折叠——行数 ≤5 默认展开（短内容不折叠）', () => {
   const card = renderTool({
     name: 'text-read',
     arguments: JSON.stringify({ path: 'a.txt' }),
-    result: 'l1\nl2\nl3\nl4\nl5',
-    summary: '读取文件 "a.txt" → …'
+    result: 'l1\nl2\nl3\nl4\nl5'
   });
   const out = card.querySelector('.seg-out');
   expect(out.open).toBe(true);
@@ -407,8 +393,7 @@ test('段折叠——行数 >5 默认折叠并显示摘要（前 2 + 折叠提�
   const card = renderTool({
     name: 'text-read',
     arguments: JSON.stringify({ path: 'a.txt' }),
-    result: lines.join('\n'),
-    summary: '读取文件 "a.txt" → …'
+    result: lines.join('\n')
   });
   const out = card.querySelector('.seg-out');
   expect(out.open).toBe(false);
@@ -445,8 +430,7 @@ test('内层段让位——段折叠头点击不收整块；段内容点击仍�
   const card = renderTool({
     name: 'powershell',
     arguments: JSON.stringify({ command: 'Get-Date' }),
-    result: psResult(0, 'a'),
-    summary: '执行命令 "Get-Date"'
+    result: psResult(0, 'a')
   });
   card.open = true;
   // 段折叠头——只切该段，不收整块
@@ -461,8 +445,7 @@ test('内层段让位——外层内容区（非段内）点击收起整块', ()
   const card = renderTool({
     name: 'powershell',
     arguments: JSON.stringify({ command: 'Get-Date' }),
-    result: psResult(0, 'a'),
-    summary: '执行命令 "Get-Date"'
+    result: psResult(0, 'a')
   });
   card.open = true;
   card.dispatchEvent(new Event('click', { bubbles: true }));
@@ -474,8 +457,7 @@ test('填充覆盖——text-read 输入段为自然语言意图行（非键值�
   const card = renderTool({
     name: 'text-read',
     arguments: JSON.stringify({ path: 'a/b.md' }),
-    result: 'x',
-    summary: '读取文件 "a/b.md"'
+    result: 'x'
   }, 80);
   const inSeg = card.querySelector('.seg-in');
   expect(inSeg.querySelector('.seg-kv')).toBeNull();
@@ -487,8 +469,7 @@ test('填充覆盖——text-replace 输入段三行（标题 / 旧 / 新）', (
   const card = renderTool({
     name: 'text-replace',
     arguments: JSON.stringify({ path: 'a.md', old: '旧文本', new: '新文本', mode: 'exact' }),
-    result: 'OK 替换完成: 1 处',
-    summary: '替换文本 "a.md" → …'
+    result: 'OK 替换完成: 1 处'
   }, 81);
   const lines = card.querySelectorAll('.seg-in .seg-line');
   expect(lines.length).toBe(3);
@@ -501,8 +482,7 @@ test('填充覆盖——file-tree 意图行含 depth/limit；未声明工具仍�
   const card = renderTool({
     name: 'file-tree',
     arguments: JSON.stringify({ path: 'CCBP', depth: 2, limit: 50 }),
-    result: 'a/',
-    summary: '展开目录 "CCBP"'
+    result: 'a/'
   }, 82);
   expect(card.querySelector('.seg-in .seg-line').textContent).toBe('展开 CCBP · depth 2 · limit 50');
   renderTool({ name: 'powershell', arguments: JSON.stringify({ cwd: 'C:\\work' }), result: '{"exit":0,"stdout":"","stderr":"","truncated":false,"timeout":false}' }, 83);
@@ -514,21 +494,19 @@ test('填充覆盖——text-read_between 锚点缺省显式化（(文件头) / 
   const card = renderTool({
     name: 'text-read_between',
     arguments: JSON.stringify({ path: 'a.md' }),
-    result: 'x',
-    summary: '区间读取 "a.md"'
+    result: 'x'
   }, 84);
   const lines = card.querySelectorAll('.seg-in .seg-line');
   expect(lines.length).toBe(2);
   expect(lines[1].textContent).toBe('锚点 （文件头） ~ （文件尾）');
 });
 
-// ── 折叠行文案（headline——前端自然语言，优先于宿主 summary）──
+// ── 折叠行文案（headline——前端自然语言，折叠行唯一产出）──
 test('headline——text-read 折叠行为自然语言（无「→」箭头，规模自然拼接）', () => {
   const card = renderTool({
     name: 'text-read',
     arguments: JSON.stringify({ path: 'a.md' }),
-    result: 'l1\nl2\nl3',
-    summary: '读取文件 "a.md" → "l1（3行 · 11 B）"'
+    result: 'l1\nl2\nl3'
   }, 85);
   expect(card.querySelector('.tn').textContent).toBe('📖 读取 a.md · 3 行 8 字符');
 });
@@ -537,8 +515,7 @@ test('headline——text-grep 命中数进折叠行；未完成（无 result）�
   const card = renderTool({
     name: 'text-grep',
     arguments: JSON.stringify({ dir: 'src', keyword: 'foo' }),
-    result: 'a.cs:1:x\na.cs:2:y',
-    summary: '检索内容 "src" 含 "foo" → 1文件·2命中'
+    result: 'a.cs:1:x\na.cs:2:y'
   }, 86);
   expect(card.querySelector('.tn').textContent).toBe('🔍 检索 src · 含 foo · 2 命中');
   renderTool({ name: 'text-read_lines', arguments: JSON.stringify({ path: 'a.md', start: 3 }), toolIndex: 1, toolTotal: 1 }, 87);
@@ -550,8 +527,7 @@ test('headline——text-replace 处数从结果提取；file-tree 条目数排�
   const card = renderTool({
     name: 'text-replace',
     arguments: JSON.stringify({ path: 'a.md', old: 'x', new: 'y' }),
-    result: 'OK 替换完成: 1 处（a.md）',
-    summary: '替换文本 "a.md" → …'
+    result: 'OK 替换完成: 1 处（a.md）'
   }, 88);
   expect(card.querySelector('.tn').textContent).toBe('🔄 替换 a.md · 1 处');
   renderTool({ name: 'file-tree', arguments: JSON.stringify({ path: 'CCBP', depth: 2 }), result: 'a/\na\\b.txt\n[git] 存在 .git\n[skip] 3 个忽略目录（.git/bin/obj/node_modules 等）未扫描——条目在其内已跳过\n[截断] 共 93 条，已列 2 条——提高 limit 至 ≥93，或收窄 path / 降 depth 可看全' }, 89);
@@ -574,8 +550,7 @@ test('段折叠摘要——摘要挂 summary 内（details 折叠时可见）', 
   const card = renderTool({
     name: 'text-read',
     arguments: JSON.stringify({ path: 'a.txt' }),
-    result: lines.join('\n'),
-    summary: '读取文件 "a.txt"'
+    result: lines.join('\n')
   }, 90);
   const out = card.querySelector('.seg-out');
   expect(out.open).toBe(false);
@@ -595,8 +570,7 @@ test('diagnostics + 结构化头——计数徽标由 meta 驱动（正文只承
   const card = renderTool({
     name: 'cs-check',
     arguments: JSON.stringify({ path: 'X.csproj' }),
-    result: '{"ok":false,"tool":"cs-check","project":"X","files":3,"errors":2,"warnings":1}\nA.cs:3:1: CS1026: 缺少 )\nB.cs:9:5: CS1002: 需要 ;',
-    summary: 'C#检查 "X.csproj" → …'
+    result: '{"ok":false,"tool":"cs-check","project":"X","files":3,"errors":2,"warnings":1}\nA.cs:3:1: CS1026: 缺少 )\nB.cs:9:5: CS1002: 需要 ;'
   }, 91);
   const cap = card.querySelector('.seg-out .seg-cap').textContent;
   expect(cap).toContain('2 错 1 警');
@@ -608,8 +582,7 @@ test('lines + 结构化头——行号列按 meta.start 计算，行尾标注剥
   const card = renderTool({
     name: 'cs-read',
     arguments: JSON.stringify({ path: 'X.csproj', class: 'A', member: 'M' }),
-    result: '{"ok":true,"tool":"cs-read","file":"C:\\\\x\\\\A.cs","class":"A","member":"M","start":612,"end":614}\n        private void M() // L612\n        { // L613\n        } // L614',
-    summary: 'C#读取 "A"."M"'
+    result: '{"ok":true,"tool":"cs-read","file":"C:\\\\x\\\\A.cs","class":"A","member":"M","start":612,"end":614}\n        private void M() // L612\n        { // L613\n        } // L614'
   }, 92);
   const rows = card.querySelectorAll('.seg-out .seg-line');
   expect(rows.length).toBe(3);
@@ -621,7 +594,7 @@ test('lines + 结构化头——行号列按 meta.start 计算，行尾标注剥
 test('headline——cs-check / cs-build / cs-read 全由结构化字段拼接', () => {
   const c1 = renderTool({ name: 'cs-check', arguments: JSON.stringify({ path: 'Git:mau/CatHome4/X.csproj' }), result: '{"ok":true,"tool":"cs-check","errors":0,"warnings":0}' }, 93);
   expect(c1.querySelector('.tn').textContent).toBe('🩺 语法检查 X.csproj · 0 错 0 警');
-  renderTool({ name: 'cs-build', arguments: JSON.stringify({ path: 'C:/a/B.csproj' }), result: '{"ok":true,"tool":"cs-build","project":"B","exit":0,"errors":0,"warnings":0,"ms":4600}', summary: 'C#构建' }, 94);
+  renderTool({ name: 'cs-build', arguments: JSON.stringify({ path: 'C:/a/B.csproj' }), result: '{"ok":true,"tool":"cs-build","project":"B","exit":0,"errors":0,"warnings":0,"ms":4600}' }, 94);
   const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
   expect(c2.querySelector('.tn').textContent).toBe('🩺 编译 B.csproj · 成功 0 错 0 警 · 4.6s');
   renderTool({ name: 'cs-read', arguments: JSON.stringify({ path: 'X.csproj', class: 'A', member: 'M' }), result: '{"ok":true,"tool":"cs-read","file":"x","class":"A","member":"M","start":26,"end":37}' }, 95);
@@ -633,8 +606,7 @@ test('结构化失败——ok:false 触发红色标记（卡片 err 类 + 折叠
   const card = renderTool({
     name: 'cs-check',
     arguments: JSON.stringify({ path: 'Bad.csproj' }),
-    result: '{"ok":false,"tool":"cs-check","project":"Bad","files":1,"errors":1,"warnings":0}\nBad.cs:3:19: CS1026: 应输入 )',
-    summary: 'C#检查'
+    result: '{"ok":false,"tool":"cs-check","project":"Bad","files":1,"errors":1,"warnings":0}\nBad.cs:3:19: CS1026: 应输入 )'
   }, 96);
   expect(card.classList.contains('err')).toBe(true);
   const cap = card.querySelector('.seg-out .seg-cap').textContent;
@@ -662,8 +634,7 @@ test('cs-find_ref——三列含列号 + [跨程序集] 徽标；headline 命中
   const card = renderTool({
     name: 'cs-find_ref',
     arguments: JSON.stringify({ path: 'Git:mau/CatHome4.sln', class: 'X', member: 'Y' }),
-    result: '{"ok":true,"tool":"cs-find_ref","class":"X","member":"Y","hits":2,"projects":9}\nA.cs:228:55: payload["summary"] = Build(...)\n[跨程序集] B.cs:20:45: string s = Build("text-read", ...)',
-    summary: 'C#查找引用'
+    result: '{"ok":true,"tool":"cs-find_ref","class":"X","member":"Y","hits":2,"projects":9}\nA.cs:228:55: payload["summary"] = Build(...)\n[跨程序集] B.cs:20:45: string s = Build("text-read", ...)'
   }, 104);
   expect(card.querySelector('.tn').textContent).toBe('🔍 引用 X.Y · 2 处 · 9 项目');
   const hits = card.querySelectorAll('.seg-out .seg-hit');
@@ -678,8 +649,7 @@ test('写类三件——outputLines 由 meta 生成自然语言；无正文不�
   const card = renderTool({
     name: 'cs-member',
     arguments: JSON.stringify({ path: 'X.csproj', class: 'A', op: 'insert' }),
-    result: '{"ok":true,"tool":"cs-member","op":"insert","class":"A","file":"A.cs","start":123,"end":140,"kind":"MethodDeclarationSyntax"}',
-    summary: 'C#成员操作'
+    result: '{"ok":true,"tool":"cs-member","op":"insert","class":"A","file":"A.cs","start":123,"end":140,"kind":"MethodDeclarationSyntax"}'
   }, 105);
   expect(card.querySelector('.tn').textContent).toBe('📝 插入 A · 落盘 L123-140');
   expect(card.querySelector('.seg-out .seg-line').textContent).toContain('已落盘 A.cs · L123-140');
@@ -693,8 +663,7 @@ test('cs-member 批量 insert——count/items 驱动折叠行与落盘清单', 
   const card = renderTool({
     name: 'cs-member',
     arguments: JSON.stringify({ path: 'X.csproj', class: 'A', op: 'insert', position: 'end', codes: ['public int One() { return 1; }', 'public int Two() { return 2; }'] }),
-    result: '{"ok":true,"tool":"cs-member","op":"insert","class":"A","file":"A.cs","count":2,"items":[{"start":123,"end":126,"kind":"MethodDeclarationSyntax"},{"start":128,"end":131,"kind":"MethodDeclarationSyntax"}]}',
-    summary: 'C#成员操作'
+    result: '{"ok":true,"tool":"cs-member","op":"insert","class":"A","file":"A.cs","count":2,"items":[{"start":123,"end":126,"kind":"MethodDeclarationSyntax"},{"start":128,"end":131,"kind":"MethodDeclarationSyntax"}]}'
   }, 129);
   expect(card.querySelector('.tn').textContent).toBe('📝 批量插入 2 个成员 · 落盘 L123-131');
   const lines = card.querySelectorAll('.seg-out .seg-line');
@@ -707,8 +676,7 @@ test('批1——web-search 结构化头：引用数与协议入折叠行；正�
   const card = renderTool({
     name: 'web-search',
     arguments: JSON.stringify({ query: 'CH4 工具渲染' }),
-    result: '{"ok":true,"tool":"web-search","query":"CH4 工具渲染","protocol":"anthropic","citations":2,"chars":14}\n答案正文第一行\n第二行',
-    summary: '搜索网页 "CH4 渲染"'
+    result: '{"ok":true,"tool":"web-search","query":"CH4 工具渲染","protocol":"anthropic","citations":2,"chars":14}\n答案正文第一行\n第二行'
   }, 107);
   expect(card.querySelector('.tn').textContent).toBe('🌐 联网搜索 CH4 工具渲染 · 2 条引用 · anthropic');
   const out = card.querySelector('.seg-out .tr');
@@ -720,8 +688,7 @@ test('批1——temp-info 结构化头：键值表由 meta 驱动 + 正文另起
   const card = renderTool({
     name: 'temp-info',
     arguments: '{}',
-    result: '{"ok":true,"tool":"temp-info","count":2,"keys":["demo.a","demo.b"]}\ndemo.a,demo.b',
-    summary: '临时工具信息'
+    result: '{"ok":true,"tool":"temp-info","count":2,"keys":["demo.a","demo.b"]}\ndemo.a,demo.b'
   }, 108);
   expect(card.querySelector('.tn').textContent).toBe('🧩 临时工具 · 2 个可用 Key');
   expect(card.querySelectorAll('.seg-out .seg-kv').length).toBe(4);
@@ -735,8 +702,7 @@ test('批1——temp-exec / majordomo-restart 结构化头：exec 骨架剥头 +
   const card = renderTool({
     name: 'temp-exec',
     arguments: JSON.stringify({ key: 'demo.echo', content: 'hi' }),
-    result: '{"ok":true,"tool":"temp-exec","key":"demo.echo","chars":2}\nhi',
-    summary: '临时执行 demo.echo'
+    result: '{"ok":true,"tool":"temp-exec","key":"demo.echo","chars":2}\nhi'
   }, 110);
   expect(card.querySelector('.tn').textContent).toBe('💻 临时执行 demo.echo · 2 字');
   expect(card.querySelector('.seg-out .tr').textContent).toBe('hi');
@@ -744,8 +710,7 @@ test('批1——temp-exec / majordomo-restart 结构化头：exec 骨架剥头 +
   renderTool({
     name: 'majordomo-restart',
     arguments: '{}',
-    result: '{"ok":true,"tool":"majordomo-restart","target":"mauout","push":true}\n宿主重启请求已登记（目标运行区: mauout）。',
-    summary: '宿主重启'
+    result: '{"ok":true,"tool":"majordomo-restart","target":"mauout","push":true}\n宿主重启请求已登记（目标运行区: mauout）。'
   }, 111);
   const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
   expect(c2.querySelector('.tn').textContent).toBe('💻 宿主重启 · 目标 mauout · 带回执');
@@ -756,8 +721,7 @@ test('批1——image-analyze 结构化头：text 骨架剥头 + 字数；参数
   const card = renderTool({
     name: 'image-analyze',
     arguments: JSON.stringify({ path: 'MauOut/pet/idle.webp', question: '这是什么' }),
-    result: '{"ok":true,"tool":"image-analyze","path":"MauOut/pet/idle.webp","question":"这是什么","chars":6}\n一只猫在睡觉',
-    summary: '分析图片'
+    result: '{"ok":true,"tool":"image-analyze","path":"MauOut/pet/idle.webp","question":"这是什么","chars":6}\n一只猫在睡觉'
   }, 112);
   expect(card.querySelector('.tn').textContent).toBe('📝 识别图片 idle.webp · 6 字');
   expect(card.querySelector('.seg-out .tr').textContent).toBe('一只猫在睡觉');
@@ -771,8 +735,7 @@ test('批2——config-list 结构化头：条数与可写数入折叠行', () =
   const card = renderTool({
     name: 'config-list',
     arguments: '{}',
-    result: '{"ok":true,"tool":"config-list","count":37,"writable":12,"sensitive":4}\nllm.endpoint= | 来源=default | 默认= | 可写 | 描述…',
-    summary: '配置列表'
+    result: '{"ok":true,"tool":"config-list","count":37,"writable":12,"sensitive":4}\nllm.endpoint= | 来源=default | 默认= | 可写 | 描述…'
   }, 113);
   expect(card.querySelector('.tn').textContent).toBe('📂 配置列表 · 37 项 · 12 可写');
 });
@@ -781,8 +744,7 @@ test('批2——config-get 结构化头：来源与键值表由 meta 驱动', ()
   const card = renderTool({
     name: 'config-get',
     arguments: JSON.stringify({ key: 'ui.port' }),
-    result: '{"ok":true,"tool":"config-get","key":"ui.port","source":"default","declared":true,"writable":true,"sensitive":false}\nui.port=8080 | 来源=default | 默认=8080 | 可写 | 描述…',
-    summary: '读取配置 ui.port'
+    result: '{"ok":true,"tool":"config-get","key":"ui.port","source":"default","declared":true,"writable":true,"sensitive":false}\nui.port=8080 | 来源=default | 默认=8080 | 可写 | 描述…'
   }, 114);
   expect(card.querySelector('.tn').textContent).toBe('🧩 读取配置 ui.port · 来源 default');
   expect(card.querySelectorAll('.seg-out .seg-kv').length).toBe(7);
@@ -792,16 +754,14 @@ test('批2——config-set / config-reset 结构化头：text 骨架剥头 + 意
   const card = renderTool({
     name: 'config-set',
     arguments: JSON.stringify({ key: 'ui.port', value: '8090' }),
-    result: '{"ok":true,"tool":"config-set","key":"ui.port","sensitive":false}\n配置已更新: ui.port=8090',
-    summary: '设置配置 ui.port'
+    result: '{"ok":true,"tool":"config-set","key":"ui.port","sensitive":false}\n配置已更新: ui.port=8090'
   }, 115);
   expect(card.querySelector('.tn').textContent).toBe('📝 设置配置 ui.port · 已更新');
   expect(card.querySelector('.seg-out .tr').textContent).toBe('配置已更新: ui.port=8090');
   renderTool({
     name: 'config-reset',
     arguments: '{}',
-    result: '{"ok":true,"tool":"config-reset","key":"","scope":"all","count":12}\n已还原默认: 全部可写配置项',
-    summary: '重置配置'
+    result: '{"ok":true,"tool":"config-reset","key":"","scope":"all","count":12}\n已还原默认: 全部可写配置项'
   }, 116);
   const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
   expect(c2.querySelector('.tn').textContent).toBe('📝 还原全部可写配置 · 12 项');
@@ -812,15 +772,13 @@ test('批3——mau-verify 结构化头：通过时报告数、失败时错误�
   const c1 = renderTool({
     name: 'mau-verify',
     arguments: JSON.stringify({ file: 'corpus/ch4/TextCat/text_cat.mau' }),
-    result: '{"ok":true,"tool":"mau-verify","file":"corpus/ch4/TextCat/text_cat.mau","flow":"FL_TextCat","reports":2}\nOK 验证通过: corpus/ch4/TextCat/text_cat.mau → FL_TextCat\n报告: 3 导线',
-    summary: 'Mau验证'
+    result: '{"ok":true,"tool":"mau-verify","file":"corpus/ch4/TextCat/text_cat.mau","flow":"FL_TextCat","reports":2}\nOK 验证通过: corpus/ch4/TextCat/text_cat.mau → FL_TextCat\n报告: 3 导线'
   }, 117);
   expect(c1.querySelector('.tn').textContent).toBe('🩺 Mau 验证 text_cat.mau · 通过（2 报告）');
   renderTool({
     name: 'mau-verify',
     arguments: JSON.stringify({ file: 'bad.mau' }),
-    result: '{"ok":false,"tool":"mau-verify","file":"bad.mau","flow":"FL_bad","errors":2}\nFAIL|VALIDATE|bad.mau\nbad.mau:3: E201: 引用缺失',
-    summary: 'Mau验证'
+    result: '{"ok":false,"tool":"mau-verify","file":"bad.mau","flow":"FL_bad","errors":2}\nFAIL|VALIDATE|bad.mau\nbad.mau:3: E201: 引用缺失'
   }, 118);
   const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
   expect(c2.querySelector('.tn').textContent).toBe('⚠️ Mau 验证 bad.mau · 2 个错误');
@@ -831,15 +789,13 @@ test('批3——mau-proj / mau-setup 结构化头：步数、编译标记、步�
   const c1 = renderTool({
     name: 'mau-proj',
     arguments: JSON.stringify({ proj: 'corpus/ch4/ConfigCat/config_cat.mauproj', build: true }),
-    result: '{"ok":true,"tool":"mau-proj","proj":"ConfigCat","steps":4,"errors":0,"build":true}\n步骤 1/4 …\n构建成功: FL_ConfigCat.dll',
-    summary: 'Mau组翻译'
+    result: '{"ok":true,"tool":"mau-proj","proj":"ConfigCat","steps":4,"errors":0,"build":true}\n步骤 1/4 …\n构建成功: FL_ConfigCat.dll'
   }, 119);
   expect(c1.querySelector('.tn').textContent).toBe('🩺 组翻译 ConfigCat · 4 步 · 已编译');
   renderTool({
     name: 'mau-setup',
     arguments: JSON.stringify({ mode: 'prepare' }),
-    result: '{"ok":true,"tool":"mau-setup","mode":"prepare","target":"","exit":0,"steps":7,"stepsOk":7,"artifacts":12}\nexit=0\nOk=true | 报告时间 …',
-    summary: 'SetUp'
+    result: '{"ok":true,"tool":"mau-setup","mode":"prepare","target":"","exit":0,"steps":7,"stepsOk":7,"artifacts":12}\nexit=0\nOk=true | 报告时间 …'
   }, 120);
   const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
   expect(c2.querySelector('.tn').textContent).toBe('💻 一键部署 prepare · 7/7 步 · 12 产物');
@@ -849,8 +805,7 @@ test('批3——mau-gen 结构化头：不编译路径的步数', () => {
   const card = renderTool({
     name: 'mau-gen',
     arguments: JSON.stringify({ proj: 'corpus/ch4/MauCat/mau_cat.mauproj' }),
-    result: '{"ok":true,"tool":"mau-gen","proj":"MauCat","steps":4,"errors":0,"build":false}\n步骤 1/4 …',
-    summary: 'Mau生成'
+    result: '{"ok":true,"tool":"mau-gen","proj":"MauCat","steps":4,"errors":0,"build":false}\n步骤 1/4 …'
   }, 121);
   expect(card.querySelector('.tn').textContent).toBe('🩺 Mau 生成 MauCat · 4 步');
 });
@@ -860,8 +815,7 @@ test('批4——powershell 结构化头 + 正文：exit 徽标与 stdout / stder
   const card = renderTool({
     name: 'powershell',
     arguments: JSON.stringify({ command: 'Get-Date' }),
-    result: '{"ok":true,"tool":"powershell","exit":0,"truncated":false,"timeout":false,"stdoutLines":2,"stderrLines":1}\n第一行输出\n第二行输出\n错误信息',
-    summary: '执行命令 "Get-Date"'
+    result: '{"ok":true,"tool":"powershell","exit":0,"truncated":false,"timeout":false,"stdoutLines":2,"stderrLines":1}\n第一行输出\n第二行输出\n错误信息'
   }, 122);
   const cap = card.querySelector('.seg-out .seg-cap').textContent;
   expect(cap).toContain('exit 0');
@@ -876,8 +830,7 @@ test('批4——内置件结构化头：Note / time / random / host-flows / pack
   const c1 = renderTool({
     name: 'Note',
     arguments: '{}',
-    result: '{"ok":true,"tool":"Note","state":"progress","index":2,"total":3,"done":1,"remain":2,"last":false}\n[Note] 第2/3条  已完成1  待完成2\n任务目标：B',
-    summary: '任务追踪'
+    result: '{"ok":true,"tool":"Note","state":"progress","index":2,"total":3,"done":1,"remain":2,"last":false}\n[Note] 第2/3条  已完成1  待完成2\n任务目标：B'
   }, 123);
   expect(c1.querySelector('.tn').textContent).toBe('📝 任务追踪 · 第2/3条 · 已完成1 待完成2');
   renderTool({ name: 'time', arguments: '{}', result: '{"ok":true,"tool":"time","ts":"2026-09-18 19:00:00"}\n2026-09-18 19:00:00' }, 124);
@@ -912,7 +865,7 @@ test('info——分类 JSON 块：折叠行取版本与猫；输出段按大类�
     packs: [{ key: 'overwork', desc: '收工加载包' }],
     qqbot: { usage: 'Coder：发本地文件…' }
   }, null, 2);
-  const card = renderTool({ name: 'info', arguments: '{}', result: result, summary: '环境信息' }, 130);
+  const card = renderTool({ name: 'info', arguments: '{}', result: result }, 130);
   expect(card.querySelector('.tn').textContent).toBe('🧭 环境信息 · v1.03.017 · 猫 cat-abc');
   expect(card.querySelectorAll('.seg-out .seg-kv').length).toBe(9);
   const out = card.querySelector('.seg-out').textContent;
@@ -927,8 +880,7 @@ test('info——非分类 JSON（provider 未注入）原文兜底，不静默�
   const card = renderTool({
     name: 'info',
     arguments: '{}',
-    result: 'ERR|INFO_NO_PROVIDER|环境信息不可用（未注入 provider）',
-    summary: '环境信息'
+    result: 'ERR|INFO_NO_PROVIDER|环境信息不可用（未注入 provider）'
   }, 131);
   expect(card.querySelector('.tn').textContent).toContain('环境信息');
   expect(card.querySelector('.seg-out').textContent).toContain('INFO_NO_PROVIDER');
@@ -950,7 +902,7 @@ test('majordomo-catinfo——分类 JSON 块：折叠行取猫数；输出段每
       { id: 'cat-2', name: 'Coder', special: false, running: false, port: 0 }
     ]
   }, null, 2);
-  const card = renderTool({ name: 'majordomo-catinfo', arguments: '{}', result: result, summary: '全猫状态' }, 132);
+  const card = renderTool({ name: 'majordomo-catinfo', arguments: '{}', result: result }, 132);
   expect(card.querySelector('.tn').textContent).toBe('🐾 全猫状态 · 2 只猫');
   expect(card.querySelectorAll('.seg-out .seg-kv').length).toBe(2);
   const out = card.querySelector('.seg-out').textContent;
@@ -966,8 +918,7 @@ test('majordomo-catinfo——非 JSON（服务未注入 / 指令未识别）原�
   const card = renderTool({
     name: 'majordomo-catinfo',
     arguments: '{}',
-    result: 'ERR|HOSTCMD_NO_SERVICE|宿主指令服务未注入（宿主未接线）',
-    summary: '全猫状态'
+    result: 'ERR|HOSTCMD_NO_SERVICE|宿主指令服务未注入（宿主未接线）'
   }, 133);
   expect(card.querySelector('.tn').textContent).toContain('全猫状态');
   expect(card.querySelector('.seg-out').textContent).toContain('HOSTCMD_NO_SERVICE');
@@ -1000,4 +951,30 @@ test('骨架落位——config-cat-get / config-cat-set 登记 text · file-vers
   expect(window.chatToolSkeleton('config-cat-set')).toBe('text');
   expect(window.chatToolSkeleton('file-version')).toBe('listing');
   expect(window.chatToolSkeleton('sleep')).toBe('text');
+});
+
+// ── Z8 折叠行兜底（2026-09-28）——宿主 summary 退役后的两层保障 ──
+test('折叠行覆盖哨兵——有骨架的工具必配 headline（PS 双线豁免）', () => {
+  const exempt = ['powershell', 'powershell7'];
+  const missing = [];
+  const names = Object.keys(window.CHAT_TOOL_SKELETONS);
+  for (let i = 0; i < names.length; i = i + 1) {
+    const n = names[i];
+    if (exempt.indexOf(n) >= 0) { continue; }
+    const ov = window.CHAT_TOOL_OVERRIDES[n];
+    if (!ov || typeof ov.headline !== 'function') { missing.push(n); }
+  }
+  expect(missing).toEqual([]);
+});
+
+test('骨架兜底折叠行——「骨架名 · 工具名」；未登记骨架回落工具名；空名回落 ?', () => {
+  expect(window.chatToolFallbackHeadline({ name: 'powershell' })).toBe('命令执行 · powershell');
+  expect(window.chatToolFallbackHeadline({ name: 'text-read' })).toBe('读取文件 · text-read');
+  expect(window.chatToolFallbackHeadline({ name: 'brand-new-tool' })).toBe('brand-new-tool');
+  expect(window.chatToolFallbackHeadline({})).toBe('?');
+});
+
+test('未登记工具折叠行——骨架兜底不空白（Z8）', () => {
+  const card = renderTool({ name: 'brand-new-tool', arguments: '{}', result: 'OK' }, 200);
+  expect(card.querySelector('.tn').textContent).toContain('brand-new-tool');
 });

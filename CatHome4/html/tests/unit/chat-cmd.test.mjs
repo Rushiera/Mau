@@ -133,7 +133,7 @@ test('参数截断兜底——JSON 未闭合仍可解读', () => {
   expect(r.detail).toContain('参数被宿主截断');
 });
 
-// ── 兜底：无法解读返回 null（调用方回退宿主 summary）──
+// ── 兜底：无法解读返回 null（调用方回退覆盖表 headline / 骨架兜底）──
 test('无 command 字段返回 null', () => {
   expect(cmdDecodeTool('{"path":"a.txt"}')).toBe(null);
   expect(cmdDecodeTool('')).toBe(null);

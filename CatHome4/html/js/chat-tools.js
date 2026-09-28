@@ -81,7 +81,7 @@ function chatField(obj, key) {
 }
 
 // ═══════════════════════════════════════════
-// 工具填充单例——每工具一支（对齐宿主 ToolSummaryFormatter 的「一处分派 + 一工具一支 Fmt_*」）
+// 工具填充单例——每工具一支（覆盖表声明式：图标 / 标签 / 输入行 / 输出行 / 徽标；Z8 起折叠行唯一产出在前端）
 // 返回 {tag, tagCls, segs}：tag = 折叠行工具变体标签（可空）；segs = 段数组
 // ═══════════════════════════════════════════
 
@@ -867,6 +867,20 @@ var CHAT_SKEL_ICONS = {
     'text': '📝'
 };
 
+// 骨架中文名——兜底折叠行用（Z8：覆盖表未配 headline 的工具由骨架兜底接管）
+var CHAT_SKEL_LABELS = {
+    'exec': '命令执行',
+    'diagnostics': '诊断',
+    'listing': '列举',
+    'matches': '检索',
+    'lines': '按行读取',
+    'file': '读取文件',
+    'json': '结构查看',
+    'info': '环境信息',
+    'catinfo': '全猫状态',
+    'text': '工具调用'
+};
+
 // 工具 → 骨架 id（未登记返回空串；探测骨架不参与图标——未知工具保持默认图标）
 function chatToolSkeleton(name) {
     var skel = CHAT_TOOL_SKELETONS[name];
@@ -895,7 +909,7 @@ function chatToolIconOf(name) {
 
 // ═══════════════════════════════════════════
 // 填充覆盖表——逐工具「肉」（全工具覆盖，按工具组推进）
-// 定位：把工具参数与结果里的信息，按固定语句组合成自然语言（前端侧镜像宿主 ToolSummaryFormatter）
+// 定位：把工具参数与结果里的信息，按固定语句组合成自然语言（含折叠行 headline——Z8 起为唯一产出；宿主侧摘要已退役）
 // 契约：只声明偏离骨架的字段——未声明项一律吃骨架默认（结构 / 折叠 / 三态永远归骨架）
 //   icon        —— 折叠行专属图标（默认：骨架图标 → ❓）
 //   tag/tagCls  —— 折叠行工具变体标签（如 PowerShell PS 5.1 / PS 7）
@@ -1507,11 +1521,11 @@ var CHAT_TOOL_OVERRIDES = {
 
 // ═══════════════════════════════════════════
 // 折叠行文案（headline）——前端按固定语句组合的自然语言摘要
-// 口径（2026-09-18 莎定）：headline 优先于宿主 summary（宿主 summary 退为兜底）；
-// 有 headline 时不再追加结果规模后缀（同一语义不两处实现）
+// 口径（2026-09-18 莎定；2026-09-28 Z8 修订）：覆盖表 headline 为折叠行唯一产出；
+// 未配 headline 的工具由骨架兜底（chatToolFallbackHeadline）接管；有 headline 时不追加结果规模后缀（同一语义不两处实现）
 // ═══════════════════════════════════════════
 
-// 折叠行文案取值——覆盖表 headline 优先；无则返回空串（调用方回落宿主 summary）
+// 折叠行文案取值——覆盖表 headline 优先；无则返回空串（调用方回落骨架兜底 chatToolFallbackHeadline）
 function chatToolHeadline(tool) {
     var ov = chatToolOverride(tool.name);
     if (ov && typeof ov.headline === 'function') {
@@ -1519,6 +1533,16 @@ function chatToolHeadline(tool) {
         if (typeof t === 'string' && t.length > 0) { return t; }
     }
     return '';
+}
+
+// 骨架兜底折叠行——覆盖表未配 headline 时接管（Z8：宿主 summary 退役后的唯一兜底）
+// 口径：骨架中文名 + 工具名——骨架只决定壳、不猜工具语义；未登记骨架的工具回落工具名本身
+function chatToolFallbackHeadline(tool) {
+    if (!tool || typeof tool.name !== 'string' || tool.name.length === 0) { return '?'; }
+    var skel = chatToolSkeleton(tool.name);
+    var label = CHAT_SKEL_LABELS[skel];
+    if (typeof label !== 'string') { return tool.name; }
+    return label + ' · ' + tool.name;
 }
 
 // 结果行数——空结果 0

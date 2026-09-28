@@ -744,7 +744,7 @@ namespace Mau.Runtime
                         total = total + 1;
                         if (total <= limit)
                         {
-                            // 目录行尾加 "/" 标记——消费面（ToolSummaryFormatter.SummarizeFileTree）按尾斜杠区分目录/文件
+                            // 目录行尾加 "/" 标记——显示约定（前端 file-tree 原样展示，供人眼区分目录/文件；Z8 起宿主侧摘要已退役，不再有按尾斜杠计数的消费方）
                             if (isDir)
                             {
                                 rel = rel + "/";

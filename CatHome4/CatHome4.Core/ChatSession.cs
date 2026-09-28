@@ -1762,11 +1762,9 @@ namespace CH4
             }
             // A69 视图层报错中文注释——真实前文保持原文
             result = ErrorNote.Apply(result);
-            string summary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, result);
             string json = "{\"name\":" + JsonUtil.Serialize(dog.Name)
                 + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson)
                 + ",\"result\":" + JsonUtil.Serialize(result)
-                + ",\"summary\":" + JsonUtil.Serialize(summary)
                 + ",\"toolIndex\":" + index.ToString()
                 + ",\"toolTotal\":" + total.ToString() + "}";
             _httpHost.PushView("toolcard", json, dog.CardSeq, 0);
@@ -1970,8 +1968,7 @@ namespace CH4
                 {
                     // A69 视图层报错中文注释——真实前文（dog.Result）保持原文
                     string viewResult = ErrorNote.Apply(dog.Result);
-                    string toolSummary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, viewResult);
-                    string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(viewResult) + ",\"summary\":" + JsonUtil.Serialize(toolSummary) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
+                    string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(viewResult) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
                     _httpHost.PushView("toolcard", toolJson, dog.CardSeq, 0);
                     dog.CardSeq = -1;
                 }

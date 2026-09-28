@@ -177,7 +177,7 @@ namespace CatHome4.Core.Tests
 
         // ── 工具配对 ────────────────────────────────────────────────
 
-        /// <summary>工具配对——声明与结果按 call_id 配对生成 toolcard（名称 / 参数 / 结果 / 摘要 / 序号）</summary>
+        /// <summary>工具配对——声明与结果按 call_id 配对生成 toolcard（名称 / 参数 / 结果 / 序号；Z8 起载荷不含摘要字段）</summary>
         [Fact]
         public void OnToolResult_PairedByCallId_AppendsToolCard()
         {
@@ -191,7 +191,7 @@ namespace CatHome4.Core.Tests
             Assert.Equal("note.set", payload.GetProperty("name").GetString());
             Assert.Equal("{\"k\":1}", payload.GetProperty("arguments").GetString());
             Assert.Equal("已写入", payload.GetProperty("result").GetString());
-            Assert.False(string.IsNullOrEmpty(payload.GetProperty("summary").GetString()));
+            Assert.False(payload.TryGetProperty("summary", out _));
             Assert.Equal(1, payload.GetProperty("toolIndex").GetInt32());
             Assert.Equal(1, payload.GetProperty("toolTotal").GetInt32());
         }

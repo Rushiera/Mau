@@ -228,7 +228,6 @@ namespace CH4
             payload["name"] = name;
             payload["arguments"] = target.Arguments;
             payload["result"] = viewResult;
-            payload["summary"] = ToolSummaryFormatter.Build(name, target.Arguments, viewResult);
             payload["toolIndex"] = target.Index;
             payload["toolTotal"] = target.Total;
             Append(m, "toolcard", payload, timestamp, msgIndex);

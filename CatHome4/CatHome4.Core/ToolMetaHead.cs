@@ -7,7 +7,7 @@ namespace CH4
     /// 工具结构化返回头——首行单行 JSON 元数据（ok / tool + 调用方字段；键序稳定 = 插入序）。
     /// 约定（Project/CH4/design-ch4-tools.md 附录）：返回体 = 首行 JSON 头 + 正文定界行
     /// （正文不塞进 JSON——避免转义膨胀撞截断面）。
-    /// 消费面：前端 chatMetaHead 拆分（headline / 计数徽标由确定字段驱动）+ 宿主 ToolSummaryFormatter 入口剥头。
+    /// 消费面：前端 chatMetaHead 拆分（headline / 计数徽标由确定字段驱动）——Z8 起宿主侧摘要退役，剥头唯一消费方在前端。
     /// </summary>
     internal static class ToolMetaHead
     {

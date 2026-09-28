@@ -163,10 +163,11 @@ function chatToolCard(tool, open) {
         // 单发同样用类型图标（原固定 🔧 扳手——2026-09-17）
         prefix = chatToolIcon(tool.name) + ' ';
     }
-    // 可见性适配——powershell 命令硬解码为自然语言意图（chat-cmd.js；宿主 summary 为原始命令截断，此处覆盖）
+    // 可见性适配——powershell 命令硬解码为自然语言意图（chat-cmd.js；PS 双线不配 headline，折叠行由解读承担）
     var isPs = (tool.name === 'powershell' || tool.name === 'powershell7');
-    var summaryText = tool.summary || tool.name || '?';
-    // 覆盖表 headline——前端自然语言折叠行（优先于宿主 summary；2026-09-18）
+    // 折叠行文案来源（唯一产出在前端）：覆盖表 headline → 骨架兜底 → 工具名
+    var summaryText = (typeof chatToolFallbackHeadline === 'function') ? chatToolFallbackHeadline(tool) : (tool.name || '?');
+    // 覆盖表 headline——前端自然语言折叠行（2026-09-18 莎定）
     var hasHeadline = false;
     if (typeof chatToolHeadline === 'function') {
         var hl = chatToolHeadline(tool);
