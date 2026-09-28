@@ -219,6 +219,16 @@ namespace CH4
         /// <summary>工具定义表——后台流式携带（宿主 BuildToolSpecs 产物；M3 改 toolNames 新会话 SetToolSpecs 更新）</summary>
         private ToolSpec[] _tools;
 
+        /// <summary>
+        /// 当前授权工具名提供者——catKey → 工具名数组（Admin 域实时解析当前 cat.cfg 名单；宿主启动期组合根注入）。
+        /// 授权面与注入面解耦（design-ch4-tools §三·十一）：注入面 _tools 是会话级提示快照，授权面实时查询。
+        /// 未接线（测试 / 裸构造）→ 回落 _tools 快照（旧语义）+ 一次告警——不静默放宽、不静默拒绝。
+        /// </summary>
+        internal static Func<string, string[]> AuthorizedToolNamesProvider;
+
+        /// <summary>授权面提供者缺失告警标志——只报一次（防每次判定刷屏）</summary>
+        private bool _authorizedProviderWarned;
+
         /// <summary>宿主工具直执回调——host-* 延迟直执（批次末尾执行；OA 工具一律走 OA 认领，无直执）</summary>
         private readonly Func<string, string, string> _executeTool;
 
@@ -562,12 +572,31 @@ namespace CH4
         }
 
         /// <summary>
-        /// 更新工具声明面——session.new 时从最新 cat.cfg 重裁剪后调用（M3：改 toolNames 新会话生效；主线程 Idle 时调用）。
+        /// 更新工具注入面——session.new 时从最新 cat.cfg 重裁剪后调用（会话级生效；授权面实时查询见 IsToolAllowed——design-ch4-tools §三·十一）。
         /// </summary>
-        /// <param name="specs">新声明面数组（FilterToolSpecs 产物）</param>
+        /// <param name="specs">新注入面数组（FilterToolSpecs 产物）</param>
         public void SetToolSpecs(ToolSpec[] specs)
         {
             _tools = FilterPrivilegedSpecs(specs);
+        }
+        /// <summary>
+        /// 会话注入面工具名——_tools 快照派生（info tools_drift 左值：与本猫当前授权集比对；design-ch4-tools §三·十一）。
+        /// </summary>
+        public string[] DeclaredToolNames
+        {
+            get
+            {
+                if (_tools == null)
+                {
+                    return new string[0];
+                }
+                string[] names = new string[_tools.Length];
+                for (int i = 0; i < _tools.Length; i = i + 1)
+                {
+                    names[i] = _tools[i].Name;
+                }
+                return names;
+            }
         }
         /// <summary>
         /// 默认会话判定——特权面（majordomo-*）可见与可调的授权基准。
@@ -1812,7 +1841,7 @@ namespace CH4
                         if (!IsToolAllowed(name))
                         {
                             ToolOrderDog forbiddenDog = new ToolOrderDog(id, name, arguments);
-                            forbiddenDog.Result = "ERR|TOOL_FORBIDDEN|工具不在本会话声明面: " + name;
+                            forbiddenDog.Result = "ERR|TOOL_FORBIDDEN|工具不在当前授权面: " + name;
                             forbiddenDog.IsClosed = true;
                             _dogs.Add(forbiddenDog);
                             LogStore.Add("CatHome4", 2, "工具 " + name + " 被拒绝：不在本会话声明面", "TOOL");
@@ -1857,10 +1886,11 @@ namespace CH4
         }
 
         /// <summary>
-        /// 工具声明面比对——线性扫描本会话 _tools（M2c 拦截：名单外直接拒绝；21 件量级线性够用）。
+        /// 工具可用性判定——特权面 + 池校验 + 当前授权集实时查询（design-ch4-tools §三·十一：注入面 = 提示，授权面 = 真相）。
+        /// 授权集由组合根注入的 AuthorizedToolNamesProvider 提供（Admin 域实时解析 cat.cfg 名单）；未接线 → 回落 _tools 快照（旧语义）+ 一次告警。
         /// </summary>
         /// <param name="name">工具名</param>
-        /// <returns>true=在声明面内</returns>
+        /// <returns>true=可调用</returns>
         private bool IsToolAllowed(string name)
         {
             // 特权面——仅默认会话可调（判据 = 注册面组级标记，单一真相源；design-ch4-host-restart §二）
@@ -1868,14 +1898,43 @@ namespace CH4
             {
                 return false;
             }
-            for (int i = 0; i < _tools.Length; i = i + 1)
+            // 池校验——工具须在运行时注册表内（未加载 / 已退役 = 拒）
+            if (ToolRegistry.Find(name) == null)
             {
-                if (string.Equals(_tools[i].Name, name, StringComparison.Ordinal))
+                return false;
+            }
+            // 当前授权集——实时查询（改配置 / 热重载即时生效，无需新会话）
+            string[] authorized = ResolveAuthorizedToolNames();
+            for (int i = 0; i < authorized.Length; i = i + 1)
+            {
+                if (string.Equals(authorized[i], name, StringComparison.Ordinal))
                 {
                     return true;
                 }
             }
             return false;
+        }
+        /// <summary>
+        /// 解析当前授权工具名——委托链（Admin 域实时解析当前 cat.cfg 名单）；未接线回落会话注入面快照。
+        /// </summary>
+        /// <returns>授权工具名数组（非 null）</returns>
+        private string[] ResolveAuthorizedToolNames()
+        {
+            if (AuthorizedToolNamesProvider == null)
+            {
+                if (!_authorizedProviderWarned)
+                {
+                    _authorizedProviderWarned = true;
+                    LogStore.Add("CatHome4", 2, "授权面提供者未接线——工具判定回落会话声明面快照", "TOOL");
+                }
+                return DeclaredToolNames;
+            }
+            string[] names = AuthorizedToolNamesProvider(_catKey);
+            if (names == null)
+            {
+                return new string[0];
+            }
+            return names;
         }
 
         /// <summary>

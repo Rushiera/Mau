@@ -268,17 +268,35 @@ namespace CatHome4.Core.Tests
         /// <returns>会话实体</returns>
         private static CH4.ChatSession CreateSession(ILlmRuntime llm, ToolSpec[] declared = null)
         {
-            // 工具注册表初始化——内置判定（IsBuiltinTool）读 ToolRegistry 单一真相源；测试环境无宿主 Init，
-            // 须显式灌入内置表（否则 Note 被判非内置 → 走 OA 工单 → 测试无消费者卡死；判例 2026-09-16）
-            CH4.ToolRegistry.Init(new ToolSpec[]
+            // 工具注册表初始化——内置判定（IsBuiltinTool）+ 池校验（IsToolAllowed：工具须在注册面内）读 ToolRegistry 单一真相源；
+            // 测试环境无宿主 Init，须显式灌入（内置表 + 声明面工具——生产环境声明面必为池子集，测试同构；判例 2026-09-16）
+            List<ToolSpec> regSpecs = new List<ToolSpec>();
+            regSpecs.Add(new ToolSpec("Note", "Note 任务追踪", "{}"));
+            regSpecs.Add(new ToolSpec("time", "当前时间", "{}"));
+            regSpecs.Add(new ToolSpec("random", "随机整数", "{}"));
+            regSpecs.Add(new ToolSpec("info", "运行状态", "{}"));
+            regSpecs.Add(new ToolSpec("sleep", "定时唤醒", "{}"));
+            regSpecs.Add(new ToolSpec("timer", "定时注入", "{}"));
+            if (declared != null)
             {
-                new ToolSpec("Note", "Note 任务追踪", "{}"),
-                new ToolSpec("time", "当前时间", "{}"),
-                new ToolSpec("random", "随机整数", "{}"),
-                new ToolSpec("info", "运行状态", "{}"),
-                new ToolSpec("sleep", "定时唤醒", "{}"),
-                new ToolSpec("timer", "定时注入", "{}")
-            }, null, null);
+                for (int d = 0; d < declared.Length; d = d + 1)
+                {
+                    bool duplicate = false;
+                    for (int r = 0; r < regSpecs.Count; r = r + 1)
+                    {
+                        if (regSpecs[r].Name == declared[d].Name)
+                        {
+                            duplicate = true;
+                            break;
+                        }
+                    }
+                    if (!duplicate)
+                    {
+                        regSpecs.Add(declared[d]);
+                    }
+                }
+            }
+            CH4.ToolRegistry.Init(regSpecs.ToArray(), null, null);
             ChatContext ctx = new ChatContext();
             string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".jsonl");
             SessionStore store = new SessionStore(tmp);
@@ -813,6 +831,36 @@ namespace CatHome4.Core.Tests
                 Assert.Contains("已中止", d.RootElement.GetProperty("result").GetString());
             }
         }
+        /// <summary>
+        /// 授权面实时查询——AuthorizedToolNamesProvider 压过会话注入面：声明面含 text-read 而提供者未放行 → 调用被 TOOL_FORBIDDEN 拒（design-ch4-tools §三·十一）。
+        /// </summary>
+        [Fact]
+        public void ToolAuth_ProviderOverridesDeclaredFace()
+        {
+            MockLlm llm = new MockLlm();
+            string tc = "[{\"id\":\"a1\",\"function\":{\"name\":\"text-read\",\"arguments\":\"{\\\"path\\\":\\\"a.txt\\\"}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            MockHost host = new MockHost();
+            ToolSpec[] declared = new ToolSpec[]
+            {
+                        new ToolSpec("text-read", "读取文本", "{}")
+            };
+            CH4.ChatSession session = CreateSession(llm, declared);
+            session.AttachHost(host);
+            CH4.ChatSession.AuthorizedToolNamesProvider = delegate (string catKey) { return new string[] { "Note" }; };
+            try
+            {
+                session.PostUserMessage("授权面外工具调用");
+                PumpUntilIdle(session);
+            }
+            finally
+            {
+                CH4.ChatSession.AuthorizedToolNamesProvider = null;
+            }
+            List<string> cards;
+            Assert.True(host.ViewEvents.TryGetValue("toolcard", out cards));
+            Assert.Contains("TOOL_FORBIDDEN", string.Join("|", cards));
+        }
 
         /// <summary>
         /// E3 usage 转发——LLM 流带 Usage 事件 → 宿主收到 PushLlm("usage") 且累计整轮（覆盖式）。
@@ -1138,6 +1186,7 @@ namespace CatHome4.Core.Tests
             Assert.True(host.ViewEvents.ContainsKey("error"));
         }
 
+        /// <summary>
         /// 空回复续传——MockLlm 模拟流正常结束但只产思考不产文本（CH2 [段2.3] 语义）：
         /// 第一次调用 EmptyReply=true（空回复）→ 续传（同上下文重发）→ 第二次调用正常回复。
         /// 断言：续传后正常完成 + 无空 assistant 消息入上下文 + 无前端 error（续传可恢复不推 error）。

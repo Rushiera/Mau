@@ -1642,6 +1642,37 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
+        /// 当前授权工具名——工具判定授权面的实时查询入口（design-ch4-tools §三·十一）。
+        /// 实时解析当前 cat.cfg 名单（空 / 全非法 → 全量保底；随注册表变化即时反映）；默认猫读静态面原始串，多猫读 CatEntry。
+        /// </summary>
+        /// <param name="catKey">猫键（null / 空 / majordomo = 默认猫）</param>
+        /// <returns>授权工具名数组（非 null）</returns>
+        internal static string[] ResolveCatAuthorizedToolNames(string catKey)
+        {
+            string raw = "";
+            if (catKey == null || catKey.Length == 0 || catKey == "majordomo")
+            {
+                if (_chatBridge != null)
+                {
+                    raw = _chatBridge.DefaultToolNames;
+                }
+            }
+            else
+            {
+                CatEntry cat = FindCat(catKey);
+                if (cat != null && cat.ToolNames != null)
+                {
+                    raw = cat.ToolNames;
+                }
+            }
+            if (raw == null)
+            {
+                raw = "";
+            }
+            return ResolveToolNames(raw);
+        }
+
+        /// <summary>
         /// 猫会话——按猫键取会话实体（M4e 猫级白名单同源寻址；majordomo/空键走默认会话）。
         /// 消费面：info 自查、快照 sessions 段的实时字段（前文长度 / 最近前文变动时刻）。
         /// </summary>

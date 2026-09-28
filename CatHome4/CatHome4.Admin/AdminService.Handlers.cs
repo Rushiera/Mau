@@ -1334,6 +1334,8 @@ namespace CatHome4.Admin
                 _chatBridge.DefaultPersona = persona;
                 _chatBridge.DefaultInjectList = injectList;
                 _chatBridge.DefaultToolSpecs = specs;
+                // 授权面原始串——实时解析输入（改配置即改内存；design-ch4-tools §三·十一）
+                _chatBridge.DefaultToolNames = toolNames;
                 _chatBridge.DefaultQqBotId = ResolveQqBotId(cfg);
                 _chatBridge.DefaultQqBotEnable = cfg.QqBotEnable;
                 Guid newApi = ResolveApiConfigId(cfg);

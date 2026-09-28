@@ -337,6 +337,8 @@ namespace CH4
             AdminService.BuildEnvInfoProvider = BuildEnvInfo;
             // 加载包数据面接线——pack 内置工具（池定义与猫挂载解析归 Admin 域；Core 零配置面依赖）
             ChatSession.PackPayloadProvider = AdminService.BuildPackPayload;
+            // 授权面实时查询接线——工具调用判定按当前 cat.cfg 名单实时解析（design-ch4-tools §三·十一：注入面=提示，授权面=真相）
+            ChatSession.AuthorizedToolNamesProvider = AdminService.ResolveCatAuthorizedToolNames;
             // 延迟队列落盘接线——Data/runtime/delays.json（跨宿主重启保留；design-ch4-delay §七）
             DelayQueue.Configure(Path.Combine(dataRoot, "Data", "runtime", "delays.json"));
             DelayQueue.Load();
@@ -387,6 +389,8 @@ namespace CH4
             }
             // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）；session.new 重注入复用
             _chatBridge.DefaultToolSpecs = AdminService.FilterToolSpecs(AdminService.ResolveToolNames(defaultToolNames));
+            // 授权面原始串——实时解析输入（design-ch4-tools §三·十一）
+            _chatBridge.DefaultToolNames = defaultToolNames;
             AdminService._defaultApiConfigId = defaultApiConfigId;
             // R2.3 默认猫 qqbot 配置——majordomo cat.cfg 读取（缺省未绑定/禁用）
             Guid defaultQqBotId = Guid.Empty;
@@ -654,6 +658,35 @@ namespace CH4
                 Dictionary<string, object> qqbotBlock = new Dictionary<string, object>();
                 qqbotBlock["usage"] = qqbotShow;
                 info["qqbot"] = qqbotBlock;
+            }
+            // [段9] tools_drift——工具面漂移（会话注入面 vs 当前授权集；仅不一致时输出——design-ch4-tools §三·十一）
+            if (session != null)
+            {
+                string[] declaredNames = session.DeclaredToolNames;
+                string[] authorizedNames = AdminService.ResolveCatAuthorizedToolNames(catKey);
+                List<string> driftAdded = new List<string>();
+                List<string> driftRemoved = new List<string>();
+                for (int i = 0; i < authorizedNames.Length; i = i + 1)
+                {
+                    if (Array.IndexOf(declaredNames, authorizedNames[i]) < 0)
+                    {
+                        driftAdded.Add(authorizedNames[i]);
+                    }
+                }
+                for (int i = 0; i < declaredNames.Length; i = i + 1)
+                {
+                    if (Array.IndexOf(authorizedNames, declaredNames[i]) < 0)
+                    {
+                        driftRemoved.Add(declaredNames[i]);
+                    }
+                }
+                if (driftAdded.Count > 0 || driftRemoved.Count > 0)
+                {
+                    Dictionary<string, object> driftBlock = new Dictionary<string, object>();
+                    driftBlock["added"] = driftAdded;
+                    driftBlock["removed"] = driftRemoved;
+                    info["tools_drift"] = driftBlock;
+                }
             }
             return JsonSerializer.Serialize(info, AdminService.InfoJsonOptions);
         }
