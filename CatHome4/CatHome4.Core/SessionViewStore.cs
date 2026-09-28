@@ -234,6 +234,90 @@ namespace CH4
         }
 
         /// <summary>
+        /// 区间块转 gap——真实前文被删段对应的视图块搬入 gap 容器（非前文派生，Rebuild 不清：跨宿主重启仍可回看）。
+        /// 文本形态按块型组装（user / text / reason 取正文；toolcard 取「工具名 + 参数 + 结果」）；
+        /// 时间戳沿用原块（归并排序位不变）；转换后从 _blocks 移除并落盘。
+        /// </summary>
+        /// <param name="fromMsgIndex">区间下界（真实前文消息索引，含）</param>
+        /// <param name="toMsgIndex">区间上界（含）</param>
+        /// <returns>转换块数</returns>
+        public int ConvertRangeToGap(int fromMsgIndex, int toMsgIndex)
+        {
+            int moved = 0;
+            for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
+            {
+                ViewBlock b = _blocks[i];
+                if (b.MsgIndex < fromMsgIndex || b.MsgIndex > toMsgIndex)
+                {
+                    continue;
+                }
+                string content = BuildGapContent(b);
+                _blocks.RemoveAt(i);
+                moved = moved + 1;
+                if (content.Length == 0)
+                {
+                    continue;
+                }
+                ViewBlock gap = new ViewBlock();
+                gap.Timestamp = b.Timestamp;
+                gap.Hash = "gap_" + _gapTexts.Count.ToString();
+                gap.MsgIndex = -1;
+                gap.RenderType = "text";
+                Dictionary<string, object> payload = new Dictionary<string, object>();
+                payload["content"] = content;
+                gap.Payload = JsonUtil.Serialize(payload);
+                _gapTexts.Add(gap);
+            }
+            if (moved > 0)
+            {
+                Save();
+            }
+            return moved;
+        }
+
+        /// <summary>
+        /// 组装 gap 文本——按块型取正文（toolcard 走名称 + 参数 + 结果；其余取 payload.content；解析失败回落原文）。
+        /// </summary>
+        /// <param name="b">源视图块</param>
+        /// <returns>gap 文本（空串=无正文可用）</returns>
+        private static string BuildGapContent(ViewBlock b)
+        {
+            string type = b.RenderType == null ? "" : b.RenderType;
+            string payloadJson = b.Payload == null ? "" : b.Payload;
+            if (payloadJson.Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(payloadJson))
+                {
+                    JsonElement root = doc.RootElement;
+                    if (type == "toolcard")
+                    {
+                        JsonElement nameEl;
+                        JsonElement argsEl;
+                        JsonElement resultEl;
+                        string name = root.TryGetProperty("name", out nameEl) && nameEl.ValueKind == JsonValueKind.String ? nameEl.GetString() ?? "" : "工具";
+                        string args = root.TryGetProperty("arguments", out argsEl) && argsEl.ValueKind == JsonValueKind.String ? argsEl.GetString() ?? "" : "";
+                        string result = root.TryGetProperty("result", out resultEl) && resultEl.ValueKind == JsonValueKind.String ? resultEl.GetString() ?? "" : "";
+                        return "【工具 · " + name + "】\n参数：" + args + "\n结果：" + result;
+                    }
+                    JsonElement contentEl;
+                    if (root.TryGetProperty("content", out contentEl) && contentEl.ValueKind == JsonValueKind.String)
+                    {
+                        return contentEl.GetString() ?? "";
+                    }
+                }
+                return "";
+            }
+            catch (Exception)
+            {
+                return payloadJson;
+            }
+        }
+
+        /// <summary>
         /// 从真实前文重建视图层——完全重置（真实前文绝对可用；启动恢复/视图文件缺失时调用）。
         /// 块时间戳取消息 CreatedAt——真实时序权威（跨重启稳定；旧消息 CreatedAt=0 按 List 顺序稳定排前——重建是兜底场景，不做兼容维护）。
         /// </summary>

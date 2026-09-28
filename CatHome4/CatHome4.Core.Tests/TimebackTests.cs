@@ -12,8 +12,8 @@ using Xunit;
 namespace CatHome4.Core.Tests
 {
     /// <summary>
-    /// timeback 上下文作用域测试（A101 / design-ch4-timeback §七）——
-    /// 回卷语义与切点安全 / Note 豁免 / 归档编号递增 / 视图不缩水 / 参数面拒绝。
+    /// timeback 上下文作用域测试（design-ch4-timeback · 2026-09-28 语义重设）——
+    /// 区间删除（锚点 = start 调用 / 结论 = back 返回值）/ 同批空区间 / 三工具锁定 / 视图转 gap / 参数面。
     /// </summary>
     [Collection("GlobalToolState")]
     public class TimebackTests
@@ -59,7 +59,7 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 构造测试会话——临时前文文件 + 唯一临时归档路径 + Mock LLM（Note / timeback 工具面）。
+        /// 构造测试会话——临时前文文件 + 唯一临时归档路径 + Mock LLM（Note / timeback / random 工具面）。
         /// </summary>
         /// <param name="llm">Mock LLM</param>
         /// <returns>会话实体</returns>
@@ -68,9 +68,11 @@ namespace CatHome4.Core.Tests
             ToolSpec[] tools = new ToolSpec[]
             {
                 new ToolSpec("Note", "Note 任务追踪", "{}"),
-                new ToolSpec("timeback", "上下文作用域", "{}")
+                new ToolSpec("timeback", "上下文作用域", "{}"),
+                new ToolSpec("random", "目录树", "{}"),
+                new ToolSpec("sleep", "定时唤醒", "{}"),
+                new ToolSpec("timer", "延迟注入", "{}")
             };
-            // 内置判定读注册面名单（timeback 已在名单内）；授权面回落会话声明面快照（provider 清空——防跨测试静态污染）
             CH4.ToolRegistry.Init(tools, null, null);
             CH4.ChatSession.AuthorizedToolNamesProvider = null;
             string archivePath = Path.Combine(Path.GetTempPath(), "cat4tb_" + Guid.NewGuid().ToString("N") + ".jsonl");
@@ -106,7 +108,7 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 构造函数单条 tool_calls JSON（OpenAI wire 形态）。
+        /// 构造单条 tool_calls JSON（OpenAI wire 形态）。
         /// </summary>
         /// <param name="toolName">工具名</param>
         /// <param name="id">调用 id</param>
@@ -165,7 +167,7 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 前文是否含指定角色与子串的消息——结论注入 / Note 拉起断言用。
+        /// 前文是否含指定角色与子串的消息。
         /// </summary>
         /// <param name="session">会话</param>
         /// <param name="role">角色</param>
@@ -185,75 +187,180 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 同批 start + back——回卷到锚点（上一轮正式回复）+ 结论注入 + 视图不缩水。
+        /// 视图块是否含指定子串（任意块型的 payload）。
+        /// </summary>
+        /// <param name="session">会话</param>
+        /// <param name="fragment">子串</param>
+        /// <returns>true=命中</returns>
+        private static bool ViewHas(CH4.ChatSession session, string fragment)
+        {
+            CH4.ViewBlock[] blocks = session.GetViewBlocks();
+            for (int i = 0; i < blocks.Length; i = i + 1)
+            {
+                string payload = blocks[i].Payload == null ? "" : blocks[i].Payload;
+                if (payload.Contains(fragment, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 跨轮取证——start → 查证（random）→ back：区间删除后前文只留两次调用对与结论。
         /// </summary>
         [Fact]
-        public void Back_TruncatesToAnchorAndInjectsConclusion()
+        public void Back_DeletesScopeRange_KeepsBothCalls()
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            // 第一轮：纯文本正式回复——成为锚点
-            session.PostUserMessage("先聊一句");
-            PumpUntilIdle(session);
-            int anchorCount = session.Context.GetMessageCount();
-            Assert.Equal(2, anchorCount);
-            // 第二轮：同批 start + back（取证型链）
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"start\",\"purpose\":\"测试取证\"}"));
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t2", "{\"action\":\"back\",\"findings\":\"结论：文件在 X 路径\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"start\",\"purpose\":\"跨轮取证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "f1", "{\"min\":1,\"max\":10}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t2", "{\"action\":\"back\",\"findings\":\"结论：目录 85 个\"}"));
             session.PostUserMessage("开始取证");
             PumpUntilIdle(session);
-            Assert.True(session.IsIdle);
-            // 回卷：锚点（含）保留 + 结论（user）+ 结论轮回复 = anchorCount + 3
-            // （B 方案 2026-09-28：锚点取更晚的边界——本轮 user 请求，而非上一轮 assistant 回复）
-            Assert.Equal(anchorCount + 3, session.Context.GetMessageCount());
-            Assert.True(HasMessage(session, LlmRole.User, "结论：文件在 X 路径"));
-            // 末条为结论轮的正式回复（无孤立 tool 消息——切点未劈开工具对）
+            Assert.True(session.IsIdle, "msgCount=" + session.Context.GetMessageCount().ToString() + " phase=" + session.Phase.ToString() + " round=" + session.Round.ToString());
+            // 前文：[user][start 声明][start 结果][back 声明][back 结果][结论轮回复] = 6 条
+            Assert.Equal(6, session.Context.GetMessageCount());
+            // 两次调用对保留——assistant 声明（ToolCallsJson）仍在
             LlmMessage[] all = session.Context.GetMessages();
+            bool hasStartDecl = false;
+            bool hasBackDecl = false;
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                string tcJson = all[i].ToolCallsJson == null ? "" : all[i].ToolCallsJson;
+                if (all[i].Role != LlmRole.Assistant || !tcJson.Contains("timeback", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                if (tcJson.Contains("start", StringComparison.Ordinal))
+                {
+                    hasStartDecl = true;
+                }
+                if (tcJson.Contains("back", StringComparison.Ordinal))
+                {
+                    hasBackDecl = true;
+                }
+            }
+            Assert.True(hasStartDecl);
+            Assert.True(hasBackDecl);
+            // 结论 = back 的工具返回值（tool 消息）
+            Assert.True(HasMessage(session, LlmRole.Tool, "结论：目录 85 个"));
+            // 查证过程（random 调用与结果）已删
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                Assert.DoesNotContain("random", all[i].Content == null ? "" : all[i].Content);
+                Assert.DoesNotContain("random", all[i].ToolCallsJson == null ? "" : all[i].ToolCallsJson);
+            }
+            // 序列合法：末尾为结论轮的正式回复
             Assert.Equal(LlmRole.Assistant, all[all.Length - 1].Role);
-            // 视图层零重建——被卷掉的取证过程仍在人可见面（块数 > 当前前文条数）
-            Assert.True(session.GetViewBlocks().Length > session.Context.GetMessageCount());
-            // 活跃期已结束
             Assert.False(session.TimebackActive);
         }
 
         /// <summary>
-        /// 首轮 user 边界（B 方案 2026-09-28）——新会话首轮无正式回复节点时，
-        /// 锚点回落到最后一条 user（不再 ERR|TIMEBACK_ANCHOR）：保留该 user + 结论 + 结论轮回复 = 3 条。
+        /// 同批 start + back——无可删区间（两次调用同一批），作用域照常关闭。
         /// </summary>
         [Fact]
-        public void Start_FirstRoundWithoutReply_UsesUserAnchor()
+        public void StartAndBackInSameBatch_DeletesNothing()
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            // 首轮即取证：前文只有 user 请求（无 assistant 正式回复）
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"start\",\"purpose\":\"首轮取证\"}"));
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t2", "{\"action\":\"back\",\"findings\":\"结论：首轮\"}"));
-            session.PostUserMessage("直接取证");
+            string batch = BuildToolCallsBatch(
+                new string[] { "timeback", "timeback" },
+                new string[] { "t1", "t2" },
+                new string[] { "{\"action\":\"start\",\"purpose\":\"同批\"}", "{\"action\":\"back\",\"findings\":\"结论：同批\"}" });
+            llm.ToolCallsQueue.Enqueue(batch);
+            session.PostUserMessage("同批开收");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
-            // 锚点 = user 请求（index 0）→ 保留 1 条 + 结论 + 结论轮回复 = 3 条
-            Assert.Equal(3, session.Context.GetMessageCount());
-            Assert.True(HasMessage(session, LlmRole.User, "结论：首轮"));
+            // user + 声明 + 两个结果 + 结论轮回复 = 5 条（无删除）
+            Assert.Equal(5, session.Context.GetMessageCount());
+            Assert.True(HasMessage(session, LlmRole.Tool, "结论：同批"));
             Assert.False(session.TimebackActive);
         }
 
         /// <summary>
-        /// 归档落盘——open + close 两行（本猫文件）。
+        /// 同批多调用——start 与另一工具同批时，start 的完整结果块必须原样保留。
+        /// （回归：曾按「声明 + 1」算保留边界，把同批其余结果误删 → 格式修复补「宿主中断」占位）
+        /// </summary>
+        [Fact]
+        public void StartBatchWithSiblingTool_KeepsAllResults()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            string batch = BuildToolCallsBatch(
+                new string[] { "timeback", "random" },
+                new string[] { "t1", "r1" },
+                new string[] { "{\"action\":\"start\",\"purpose\":\"同批多调用\"}", "{\"min\":1,\"max\":10}" });
+            llm.ToolCallsQueue.Enqueue(batch);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "r2", "{\"min\":1,\"max\":10}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t2", "{\"action\":\"back\",\"findings\":\"结论：多调用\"}"));
+            session.PostUserMessage("同批多调用取证");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
+            // 前文：user + 声明(2 调用) + 结果×2 + back 声明 + back 结果 + 结论轮回复 = 7 条
+            Assert.Equal(7, session.Context.GetMessageCount());
+            // start 的真实结果保留（非「宿主中断」占位）
+            Assert.True(HasMessage(session, LlmRole.Tool, "已锚定"));
+            Assert.DoesNotContain("宿主中断", ToolResultText(session, 1));
+            Assert.True(HasMessage(session, LlmRole.Tool, "结论：多调用"));
+        }
+
+        /// <summary>
+        /// 作用域锁定——Note / sleep / timer 在活跃期一律拒绝（ERR|TIMEBACK_LOCKED）。
+        /// </summary>
+        [Fact]
+        public void Scope_Locks_Note_Sleep_Timer()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            string batch = BuildToolCallsBatch(
+                new string[] { "timeback", "Note", "sleep", "timer" },
+                new string[] { "t1", "n1", "s1", "m1" },
+                new string[] { "{\"action\":\"start\",\"purpose\":\"锁定验证\"}", "{\"action\":\"set\",\"content\":\"任务A\"}", "{\"seconds\":30}", "{\"content\":\"回来看看\",\"seconds\":60}" });
+            llm.ToolCallsQueue.Enqueue(batch);
+            session.PostUserMessage("锁定验证");
+            PumpUntilIdle(session);
+            Assert.Contains("TIMEBACK_LOCKED", ToolResultText(session, 1));
+            Assert.Contains("TIMEBACK_LOCKED", ToolResultText(session, 2));
+            Assert.Contains("TIMEBACK_LOCKED", ToolResultText(session, 3));
+            // 作用域仍开着（锁定不影响 start 本身）
+            Assert.True(session.TimebackActive);
+        }
+
+        /// <summary>
+        /// 被删区间的视图块转 gap——人可见面保住查证过程（且落在 Rebuild 不清的容器）。
+        /// </summary>
+        [Fact]
+        public void DeletedRange_ViewConvertedToGap()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"start\",\"purpose\":\"视图转 gap\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "f1", "{\"min\":1,\"max\":10}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t2", "{\"action\":\"back\",\"findings\":\"结论：视图验证\"}"));
+            session.PostUserMessage("开始取证");
+            PumpUntilIdle(session);
+            // 被删的 random 工具卡内容仍在视图层（转 gap 文本）
+            Assert.True(ViewHas(session, "random"));
+            Assert.True(ViewHas(session, "结论：视图验证"));
+        }
+
+        /// <summary>
+        /// 归档落盘——open + close 两行（本猫文件；close.n = 实际删除条数）。
         /// </summary>
         [Fact]
         public void Back_WritesArchiveOpenAndClose()
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            // 用例专属归档路径（会话首次使用归档时构造实例——此前可覆盖 provider）
             string archivePath = Path.Combine(Path.GetTempPath(), "cat4tb_arch_" + Guid.NewGuid().ToString("N") + ".jsonl");
             CH4.ChatSession.TimebackArchivePathProvider = delegate (string catKey)
             {
                 return archivePath;
             };
-            session.PostUserMessage("先聊一句");
-            PumpUntilIdle(session);
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"start\",\"purpose\":\"归档验证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "f1", "{\"min\":1,\"max\":10}"));
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t2", "{\"action\":\"back\",\"findings\":\"结论：A\"}"));
             session.PostUserMessage("开始取证");
             PumpUntilIdle(session);
@@ -267,75 +374,33 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// Note 豁免（C3）——回卷不清 Note：同批 Note 计划 + start + back 后，
-        /// 轮末 Note 拉起仍发生（计划存活的最强证据——被清则拉起不发生）。
+        /// 参数面——未闭合时再次 start 被拒（ERR|TIMEBACK_NESTED）；无作用域 / 缺载荷的 back 被拒。
         /// </summary>
         [Fact]
-        public void Back_KeepsNotePlan()
+        public void Args_RejectedAsNestedOrWithoutScope()
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            // 第一轮：纯文本正式回复——成为锚点
-            session.PostUserMessage("先聊一句");
-            PumpUntilIdle(session);
-            // 第二轮：同批 Note 计划（2 条——未完成时会拉起）+ timeback start + back
-            string batch = BuildToolCallsBatch(
-                new string[] { "Note", "timeback", "timeback" },
-                new string[] { "n1", "t1", "t2" },
-                new string[] { "{\"action\":\"set\",\"content\":\"任务A\\n任务B\"}", "{\"action\":\"start\",\"purpose\":\"取证\"}", "{\"action\":\"back\",\"findings\":\"结论：B\"}" });
-            llm.ToolCallsQueue.Enqueue(batch);
-            session.PostUserMessage("建计划并取证");
-            // 定长泵（Note 拉起会续轮——不依赖 Idle 收敛）
-            for (int i = 0; i < 200; i = i + 1)
-            {
-                session.Pump();
-                Thread.Sleep(5);
-            }
-            // C3——Note 计划存活：轮末拉起发生（人工回滚路径才清 Note）
-            Assert.True(HasMessage(session, LlmRole.User, "[Note 未完成]"));
-        }
-
-        /// <summary>
-        /// 参数面——未闭合时再次 start 被拒（ERR|TIMEBACK_NESTED）。
-        /// </summary>
-        [Fact]
-        public void Start_Twice_RejectedAsNested()
-        {
-            MockLlm llm = new MockLlm();
-            CH4.ChatSession session = CreateSession(llm);
-            session.PostUserMessage("先聊一句");
-            PumpUntilIdle(session);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"start\",\"purpose\":\"甲\"}"));
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t2", "{\"action\":\"start\",\"purpose\":\"乙\"}"));
-            session.PostUserMessage("连开两次");
-            PumpUntilIdle(session);
-            Assert.Contains("TIMEBACK_NESTED", ToolResultText(session, 1));
-            Assert.True(session.TimebackActive);
-        }
-
-        /// <summary>
-        /// 参数面——无作用域 back 被拒（ERR|TIMEBACK_NO_SCOPE）与缺 findings 被拒（ERR|TIMEBACK_ARGS）。
-        /// </summary>
-        [Fact]
-        public void Back_RejectedWithoutScopeOrFindings()
-        {
-            MockLlm llm = new MockLlm();
-            CH4.ChatSession session = CreateSession(llm);
-            session.PostUserMessage("先聊一句");
-            PumpUntilIdle(session);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"back\",\"findings\":\"结论：C\"}"));
+            // 无作用域 back
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t0", "{\"action\":\"back\",\"findings\":\"结论：C\"}"));
             session.PostUserMessage("空 back");
             PumpUntilIdle(session);
             Assert.Contains("TIMEBACK_NO_SCOPE", ToolResultText(session, 0));
-            // 缺 findings——先正常 start，再发一次不带 findings 的 back（同批：结果序号 1=start / 2=back）
+            // 嵌套 start（同批：第二个 start 被拒）
             string batch = BuildToolCallsBatch(
                 new string[] { "timeback", "timeback" },
-                new string[] { "t2", "t3" },
-                new string[] { "{\"action\":\"start\",\"purpose\":\"取证\"}", "{\"action\":\"back\"}" });
+                new string[] { "t1", "t2" },
+                new string[] { "{\"action\":\"start\",\"purpose\":\"甲\"}", "{\"action\":\"start\",\"purpose\":\"乙\"}" });
             llm.ToolCallsQueue.Enqueue(batch);
+            session.PostUserMessage("连开两次");
+            PumpUntilIdle(session);
+            Assert.Contains("TIMEBACK_NESTED", ToolResultText(session, 2));
+            Assert.True(session.TimebackActive);
+            // 缺 findings 的 back
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t3", "{\"action\":\"back\"}"));
             session.PostUserMessage("缺载荷");
             PumpUntilIdle(session);
-            Assert.Contains("TIMEBACK_ARGS", ToolResultText(session, 2));
+            Assert.Contains("TIMEBACK_ARGS", ToolResultText(session, 3));
         }
 
         /// <summary>
@@ -349,11 +414,9 @@ namespace CatHome4.Core.Tests
             Assert.Equal(1L, first.NextId());
             Assert.True(first.AppendOpen(1, "cat", 0, 3, 1000, "用途", 5, 0));
             Assert.True(first.AppendClose(1, 2000, 4, 1, "结论"));
-            // 新实例（同路径）——编号从已落盘最大值续接
             CH4.TimebackArchive second = new CH4.TimebackArchive(path);
             Assert.Equal(2L, second.NextId());
             Assert.True(second.AppendOpen(2, "cat", 1, 3, 1000, "用途2", 5, 0));
-            // 末行残缺——不影响取号（以最大可解析 id 为准）
             File.AppendAllText(path, "{\"t\":\"open\",\"id\":9");
             CH4.TimebackArchive third = new CH4.TimebackArchive(path);
             Assert.Equal(3L, third.NextId());

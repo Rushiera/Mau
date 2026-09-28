@@ -6,12 +6,14 @@ using Mau.Runtime;
 namespace CH4
 {
     /// <summary>
-    /// 宿主会话实体——timeback 上下文作用域分部（design-ch4-timeback §2 / §三 / §12）。
-    /// 语义：取证型任务把膨胀过程关进作用域——start 开锚 → 查证膨胀 → back 回卷（前文截断到锚点 + 一条 findings 结论注入）。
-    /// 执行时机：实际回卷在**工具批后段**（PumpToolBatch 尾段调用 ApplyTimebackBack）——工具结果进前文之后才截断，
-    /// 避免 tool 消息失去配对声明；执行体（ExecuteTimeback）只做参数校验与登记。
-    /// 同轮继续：回卷后置 _toolDone，不新起收尾路径，直接走既有 _round++ → LaunchLlm（莎 2026-09-28 定案）。
-    /// 视图层零动作：不重建 / 不清空 / 不推 session_reset（保层——人可见的取证过程原地保留；design §四）。
+    /// 宿主会话实体——timeback 上下文作用域分部（design-ch4-timeback §2 / §三 · 2026-09-28 语义重设）。
+    /// 语义（莎定）：**锚点 = start 的 tool_calls 声明本身；回收 = back 的返回值**。
+    ///   前文形态：[start 声明][start 结果] [查证过程…] [back 声明][back 结果 = findings]
+    ///   回收动作：删除「start 结果之后、back 声明之前」的全部消息——两次调用对与结论原样保留。
+    /// 由此收益：历史里不新增注入消息（无连续 user）、无绕点搜索、无轮末特判、无「劈开工具对」风险；
+    /// 回卷后序列天然合法，本轮照常续跑（LLM 直接从 back 的工具返回继续）。
+    /// 锁定：作用域存活期间 Note / sleep / timer 不可用（ERR|TIMEBACK_LOCKED——与区间删除语义冲突）。
+    /// 视图层：删除区间对应的前文派生块转 gap 块（Rebuild 不清——跨宿主重启仍可回看）。
     /// </summary>
     internal sealed partial class ChatSession
     {
@@ -24,28 +26,31 @@ namespace CH4
             /// <summary>作用域编号——本猫内永久递增（归档 open/close 以 id 关联）。</summary>
             public long Id;
 
-            /// <summary>锚点——不晚于 start 调用时刻的最近安全边界（assistant 正式回复节点）。</summary>
-            public int Anchor;
+            /// <summary>start 的 tool_calls 声明消息索引——锚点（回收时保留，含其后续的 start 结果）。</summary>
+            public int StartDeclIndex;
 
-            /// <summary>开锚时刻——Unix 毫秒（状态标记「已用 T 秒」数据源）。</summary>
+            /// <summary>back 的 tool_calls 声明消息索引——回收区间上界（回收时保留，含其后续的 back 结果）。</summary>
+            public int BackDeclIndex;
+
+            /// <summary>开锚时刻——Unix 毫秒。</summary>
             public long StartAtMs;
 
             /// <summary>用途标签——归档与事后判读原料。</summary>
             public string Purpose = "";
+
+            /// <summary>待执行回收的带回载荷——back 已作为工具返回值送出，批后段据此执行区间删除。</summary>
+            public string PendingFindings;
         }
 
         /// <summary>当前未闭合作用域——null=无作用域。</summary>
         private TimebackScope _timebackScope;
 
-        /// <summary>待执行回卷的带回载荷——back 调用暂存，工具批后段消费（null=本批未请求回卷）。</summary>
-        private string _timebackPendingFindings;
-
         /// <summary>归档实例——懒建（首次使用时按本猫路径构造）。</summary>
         private TimebackArchive _timebackArchive;
 
         /// <summary>
-        /// timeback 活跃态——start 之后至 back 回卷完成。
-        /// 消费方（活跃期内对所有消费方可见）：QQ 转发豁免（不消费来源 / 不推进游标）、观测面。
+        /// timeback 活跃态——start 之后至 back 回收完成。
+        /// 消费方：QQ 转发豁免（不消费来源 / 不推进游标）· 工具锁定（Note / sleep / timer）· 观测面。
         /// </summary>
         public bool TimebackActive
         {
@@ -57,8 +62,8 @@ namespace CH4
 
         /// <summary>
         /// timeback 执行体——参数面（action 必填：start 需 purpose / back 需 findings；未知参数拒绝）。
-        /// start：登记作用域（锚点 = 不晚于本刻的最近安全边界）+ 归档 open 行。
-        /// back：暂存 findings——实际回卷在工具批后段（ApplyTimebackBack）。
+        /// start：锚点 = 本刻前文末条（即本次 start 的 tool_calls 声明）+ 归档 open 行。
+        /// back：结论即本次调用的返回值（findings 全文）——区间删除在工具批后段执行。
         /// </summary>
         /// <param name="argsJson">参数 JSON（action / purpose / findings）</param>
         /// <returns>结构化结果（元数据头 + 正文；失败 ERR| 前缀）</returns>
@@ -129,7 +134,8 @@ namespace CH4
         }
 
         /// <summary>
-        /// start——登记作用域（v1 未闭合前禁止再次 start）。
+        /// start——登记作用域：锚点 = 本刻前文末条（本次 start 的 tool_calls 声明，工具批执行点已在盘上）。
+        /// v1 未闭合前禁止再次 start。
         /// </summary>
         /// <param name="purpose">用途标签</param>
         /// <returns>回执文本</returns>
@@ -143,35 +149,37 @@ namespace CH4
             {
                 return "ERR|TIMEBACK_ARGS|start 需要 purpose（用途标签）";
             }
-            int anchor = ResolveTimebackAnchor();
-            if (anchor < 0)
+            int declIndex = _context.GetMessageCount() - 1;
+            if (declIndex < 0)
             {
-                return "ERR|TIMEBACK_ANCHOR|前文无可用安全边界（无正式回复节点）";
+                return "ERR|TIMEBACK_ANCHOR|前文为空——无锚点可记";
             }
             TimebackScope scope = new TimebackScope();
-            scope.Anchor = anchor;
+            scope.StartDeclIndex = declIndex;
             scope.StartAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             scope.Purpose = purpose.Length > 48 ? purpose.Substring(0, 48) : purpose;
             TimebackArchive archive = ResolveTimebackArchive();
             if (archive != null)
             {
                 scope.Id = archive.NextId();
-                archive.AppendOpen(scope.Id, _catKey, _round, anchor, scope.StartAtMs, scope.Purpose, _context.GetMessageCount(), 0);
+                archive.AppendOpen(scope.Id, _catKey, _round, declIndex, scope.StartAtMs, scope.Purpose, _context.GetMessageCount(), 0);
             }
             _timebackScope = scope;
             Dictionary<string, object> fields = new Dictionary<string, object>();
             fields["id"] = scope.Id;
-            fields["anchor"] = anchor;
-            string body = "timeback #" + scope.Id.ToString() + " 已锚定（起点=节点 " + anchor.ToString() + "）——查证过程留在作用域内，回收时用 back 带回 findings。";
-            LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 开锚（锚点 " + anchor.ToString() + " / 用途 " + scope.Purpose + "）", "TIMEBACK");
+            fields["anchor"] = declIndex;
+            string body = "timeback #" + scope.Id.ToString() + " 已锚定（锚点 = 本次调用声明 · 节点 " + declIndex.ToString() + "）——查证过程留在作用域内；"
+                + "回收时用 back 带回 findings（作为该调用的返回值），两次调用之间的内容一并删除。"
+                + "作用域内 Note / sleep / timer 已锁定。";
+            LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 开锚（锚点 " + declIndex.ToString() + " / 用途 " + scope.Purpose + "）", "TIMEBACK");
             return ToolMetaHead.With("timeback", true, fields, body);
         }
 
         /// <summary>
-        /// back——校验（须有未闭合作用域 + findings 非空）后暂存载荷；实际回卷在工具批后段执行。
+        /// back——校验后返回结论（findings 即本次工具调用的返回值）；区间删除在工具批后段执行。
         /// </summary>
         /// <param name="findings">带回载荷（事实 + 指针）</param>
-        /// <returns>回执文本</returns>
+        /// <returns>回执 + findings 全文（工具返回值）</returns>
         private string TimebackBack(string findings)
         {
             if (_timebackScope == null)
@@ -182,44 +190,73 @@ namespace CH4
             {
                 return "ERR|TIMEBACK_ARGS|back 需要 findings（带回载荷）";
             }
-            _timebackPendingFindings = findings;
+            _timebackScope.PendingFindings = findings;
+            _timebackScope.BackDeclIndex = _context.GetMessageCount() - 1;
             Dictionary<string, object> fields = new Dictionary<string, object>();
             fields["id"] = _timebackScope.Id;
-            fields["anchor"] = _timebackScope.Anchor;
-            string body = "timeback #" + _timebackScope.Id.ToString() + " 已登记回收——本轮结束前回卷到锚点 " + _timebackScope.Anchor.ToString() + "，findings 随下一请求带回。";
-            return ToolMetaHead.With("timeback", true, fields, body);
+            fields["anchor"] = _timebackScope.StartDeclIndex;
+            return ToolMetaHead.With("timeback", true, fields, findings);
         }
 
         /// <summary>
-        /// 批后回卷执行——工具批结果全部回填后调用（design §12.2）：
-        /// 截断前文到锚点 → 归档 close → 注入 findings 结论（user 角色）→ 置工具主动 done；
-        /// 视图层零动作（不重建 / 不清空 / 不推 session_reset——保层）。
-        /// 无待执行回卷时静默返回（本批未调用 timeback back）。
+        /// 批后回收执行——工具批结果全部回填后调用（design §12.2）：
+        /// 删除「start 结果之后、back 声明之前」的全部消息（两次调用对与结论保留）→ 被删区间视图块转 gap
+        /// → 归档 close → 关闭作用域。本轮照常续跑（不置工具主动 done、不注入消息）。
+        /// 无可删区间（同批 start+back / 索引异常）时仅关闭作用域。
         /// </summary>
         private void ApplyTimebackBack()
         {
-            if (_timebackPendingFindings == null)
-            {
-                return;
-            }
-            string findings = _timebackPendingFindings;
-            _timebackPendingFindings = null;
             TimebackScope scope = _timebackScope;
-            if (scope == null)
+            if (scope == null || scope.PendingFindings == null)
             {
-                // 防御分支——执行体已校验；到这里即状态不一致（失败必须可见）
-                LogStore.Add("CatHome4", 2, "timeback 回卷请求无作用域——已忽略（防御分支）", "TIMEBACK");
                 return;
             }
-            // [段1] 回收条数——截断前取（锚点之后的前文条数，含本批工具调用与结果）
-            int before = _context.GetMessageCount();
-            int removed = before - (scope.Anchor + 1);
-            if (removed < 0)
+            LlmMessage[] all = _context.GetMessages();
+            // 保留终点 = start 声明 + 其完整结果块（同批多调用时结果不止一条——逐条数到非 tool 为止）
+            int keepEnd = scope.StartDeclIndex;
+            while (keepEnd + 1 < all.Length && all[keepEnd + 1].Role == LlmRole.Tool)
             {
-                removed = 0;
+                keepEnd = keepEnd + 1;
             }
-            TruncateMessages(scope.Anchor + 1);
-            // [段2] 归档 close——回收条数 + 存活秒数 + findings
+            int from = keepEnd + 1;
+            int to = scope.BackDeclIndex - 1;
+            int removed = 0;
+            // [段1] 区间删除——保留 [0..保留终点] + [back 声明..尾]（同批 start+back 时区间为空）
+            if (from <= to && from < all.Length)
+            {
+                if (to >= all.Length)
+                {
+                    to = all.Length - 1;
+                }
+                int secondStart = scope.BackDeclIndex;
+                if (secondStart < keepEnd + 1)
+                {
+                    secondStart = keepEnd + 1;
+                }
+                List<LlmMessage> keep = new List<LlmMessage>();
+                for (int i = 0; i <= keepEnd && i < all.Length; i = i + 1)
+                {
+                    keep.Add(all[i]);
+                }
+                for (int i = secondStart; i < all.Length; i = i + 1)
+                {
+                    keep.Add(all[i]);
+                }
+                removed = all.Length - keep.Count;
+                // [段2] 视图层——被删区间的块转 gap（非前文派生，Rebuild 不清：跨重启可回看）
+                _viewStore.ConvertRangeToGap(from, to);
+                // [段3] 前文落盘——区间删除重写（append-only 的合法例外）
+                _context.ReplaceMessages(keep.ToArray());
+                LlmMessage[] toSave = _context.GetMessages();
+                _lastStats.EntryCount = toSave.Length;
+                _store.Rewrite(toSave, _lastStats);
+            }
+            else if (from <= to)
+            {
+                // 索引超界（前文被外部改动）——不删，仅出声
+                LogStore.Add("CatHome4", 2, "timeback 回收区间越界（from " + from.ToString() + " / to " + to.ToString() + " / len " + all.Length.ToString() + "）——本次未删", "TIMEBACK");
+            }
+            // [段4] 归档 close——回收条数 + 存活秒数 + findings
             long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             long seconds = (nowMs - scope.StartAtMs) / 1000;
             if (seconds < 0)
@@ -230,50 +267,15 @@ namespace CH4
             TimebackArchive archive = ResolveTimebackArchive();
             if (archive != null)
             {
-                archived = archive.AppendClose(scope.Id, nowMs, removed, seconds, findings);
+                archived = archive.AppendClose(scope.Id, nowMs, removed, seconds, scope.PendingFindings);
             }
-            // [段3] 结论注入——user 角色（tool 角色无配对声明即协议非法；伪造 assistant 混淆模型历史）
-            string conclusion = "（timeback #" + scope.Id.ToString() + " 已回收 " + removed.ToString() + " 条 / " + seconds.ToString() + " 秒）\n" + findings;
+            // [段5] 作用域关闭——活跃期结束（TimebackActive 回 false；Note / sleep / timer 解锁）
+            _timebackScope = null;
+            LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 已回收 " + removed.ToString() + " 条（" + seconds.ToString() + " 秒 / 锚点 " + scope.StartDeclIndex.ToString() + "）", "TIMEBACK");
             if (!archived)
             {
-                conclusion = conclusion + "\n（提示：本次归档落档失败——明细见 runs/err_all.txt）";
+                LogStore.Add("CatHome4", 2, "timeback #" + scope.Id.ToString() + " 归档落档失败（运行不受影响）", "TIMEBACK");
             }
-            AppendMessage(_context.AddUserMessage(conclusion));
-            _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
-            if (_httpHost != null)
-            {
-                string userJson = "{\"content\":" + JsonUtil.Serialize(conclusion) + ",\"source\":\"systemauto\"}";
-                _httpHost.PushView("user", userJson, -1, 0);
-            }
-            // [段4] 本轮结束语义 = 工具主动 done（同轮继续——不新起收尾路径；QQ 面据此续约来源）
-            _toolDone = true;
-            // [段5] 作用域关闭——活跃期结束（TimebackActive 回 false）
-            _timebackScope = null;
-            LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 已回收 " + removed.ToString() + " 条（" + seconds.ToString() + " 秒 / 锚点 " + scope.Anchor.ToString() + "）", "TIMEBACK");
-        }
-
-        /// <summary>
-        /// 锚点解析——不晚于当前时刻的最近安全边界（最晚者优先）：assistant 正式回复（Content>0）或 user 消息。
-        /// 硬约束只有一条（C2）：不劈开「工具调用—结果」对——两类节点都是合法交替边界，取更晚的那条（少卷）。
-        /// 说明：回卷后结论与下一条 user 相邻（连续 user），端点容忍度确认可行（莎 2026-09-28 批准 B 方案）。
-        /// </summary>
-        /// <returns>消息索引（-1=无可用边界——前文除 system 外为空）</returns>
-        private int ResolveTimebackAnchor()
-        {
-            LlmMessage[] all = _context.GetMessages();
-            for (int i = all.Length - 1; i >= 0; i = i - 1)
-            {
-                LlmMessage m = all[i];
-                if (m.Role == LlmRole.User)
-                {
-                    return i;
-                }
-                if (m.Role == LlmRole.Assistant && m.Content != null && m.Content.Length > 0)
-                {
-                    return i;
-                }
-            }
-            return -1;
         }
 
         /// <summary>
