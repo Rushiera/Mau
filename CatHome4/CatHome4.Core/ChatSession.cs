@@ -766,7 +766,7 @@ namespace CH4
             // [段3] 视图序号复位——流式容器由前端 seal（已显示内容保留）；思考段经唯一出口收口
             SealReasonStream();
             _textStreamSeq = 0;
-            _retryBlockIndex = -1;
+            ResetRetryView();
             // [段4] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——中断非正常完成语义）
             _round = 0;
             _phase = ChatPhase.Idle;
@@ -779,7 +779,6 @@ namespace CH4
             _llmToolCallsJson = "";
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
-            _sawRetry = false;
             SetChatState("idle");
             // [段5] 前端通知——control 事件（seal + 按钮复位）
             if (_httpHost != null)
@@ -1017,24 +1016,57 @@ namespace CH4
             _emptyReplyRetry = _emptyReplyRetry + 1;
             _streamClosedRetry = false;
             LogStore.Add("LLM", 2, "空回复续传 第" + _emptyReplyRetry.ToString() + "/∞ 次（" + reason + "）——同上下文重发", "LLM");
-            string emptyRetryView = "{\"state\":\"retrying\",\"attempt\":\"" + _emptyReplyRetry.ToString() + "\",\"max\":\"" + "∞" + "\",\"text\":" + JsonUtil.Serialize(reason) + "}";
-            _retryBlockIndex = _viewStore.UpsertRetry(emptyRetryView, ViewTimestamp(), _retryBlockIndex);
+            // A94——原文快照齐备：续传路径同样写入三元组（否则 resolved / failed 终态丢失报错原文；原因加中文注释与 Retrying 分支同源）
+            _retryAttempt = _emptyReplyRetry.ToString();
+            _retryMax = "∞";
+            _retryReason = ErrorNote.Apply(reason);
             _sawRetry = true;
-            if (_httpHost != null)
-            {
-                _retrySeq = _httpHost.PushView("retry", emptyRetryView, -1, _retrySeq);
-            }
+            PushRetryView("retrying");
             // 同上下文重发——LaunchLlm 内部清槽 + 帧计数归零（上下文未污染：空文本未入 Ctx/无错误文本入 Ctx）
             LaunchLlm();
         }
-
         /// <summary>
-        /// 构造 retry 气泡 resolved 载荷——保留原报错信息（尝试序号 / 次数上限 / 原因摘要），仅切换恢复状态（A86）。
+        /// 构造 retry 视图载荷（A94 统一出口）——报错原文三元组（尝试序号 / 次数上限 / 原因摘要）在所有状态下齐备，
+        /// 终态（resolved / failed）只追加状态标注，不覆盖原文。
         /// </summary>
-        /// <returns>resolved 状态载荷 JSON——前端渲染为原文 + 追加「已恢复」+ 气泡形态与文本色变化</returns>
-        private string BuildRetryResolvedJson()
+        /// <param name="state">状态（retrying / resolved / failed）</param>
+        /// <returns>retry 视图载荷 JSON</returns>
+        private string BuildRetryViewJson(string state)
         {
-            return "{\"state\":\"resolved\",\"attempt\":\"" + _retryAttempt + "\",\"max\":\"" + _retryMax + "\",\"text\":" + JsonUtil.Serialize(_retryReason) + "}";
+            return "{\"state\":" + JsonUtil.Serialize(state) + ",\"attempt\":\"" + _retryAttempt + "\",\"max\":\"" + _retryMax + "\",\"text\":" + JsonUtil.Serialize(_retryReason) + "}";
+        }
+        /// <summary>
+        /// retry 视图推送统一出口（A94）——构造载荷 + 原位落盘 + 推事件：
+        /// retrying 新建气泡（replaceSeq=-1，返回序号存 _retrySeq）；resolved / failed 替换既有气泡（replaceSeq=_retrySeq）。
+        /// </summary>
+        /// <param name="state">状态（retrying / resolved / failed）</param>
+        private void PushRetryView(string state)
+        {
+            string json = BuildRetryViewJson(state);
+            _retryBlockIndex = _viewStore.UpsertRetry(json, ViewTimestamp(), _retryBlockIndex);
+            if (_httpHost == null)
+            {
+                return;
+            }
+            if (state == "retrying")
+            {
+                _retrySeq = _httpHost.PushView("retry", json, -1, _retrySeq);
+                return;
+            }
+            _httpHost.PushView("retry", json, _retrySeq, 0);
+        }
+        /// <summary>
+        /// 重试视图态清零（A94 单一出口）——气泡序号 / 落盘块索引 / 原文三元组 / 待回填标志；
+        /// 轮终（正常 / 中断 / 错误中止）统一调用，防跨轮残留污染（旧原因被复用 / 陈旧序号替换错气泡）。
+        /// </summary>
+        private void ResetRetryView()
+        {
+            _retrySeq = 0;
+            _retryBlockIndex = -1;
+            _retryAttempt = "";
+            _retryMax = "";
+            _retryReason = "";
+            _sawRetry = false;
         }
 
         /// <summary>
@@ -1056,12 +1088,7 @@ namespace CH4
                         if (_sawRetry)
                         {
                             _sawRetry = false;
-                            string resolvedJson = BuildRetryResolvedJson();
-                            _retryBlockIndex = _viewStore.UpsertRetry(resolvedJson, ViewTimestamp(), _retryBlockIndex);
-                            if (_httpHost != null)
-                            {
-                                _httpHost.PushView("retry", resolvedJson, _retrySeq, 0);
-                            }
+                            PushRetryView("resolved");
                         }
                         text.Append(ev.Text);
                         // 运行态——Text 增量到达即回复态（远端·流；长度由远端决定）
@@ -1079,12 +1106,7 @@ namespace CH4
                         if (_sawRetry)
                         {
                             _sawRetry = false;
-                            string resolvedJson = BuildRetryResolvedJson();
-                            _retryBlockIndex = _viewStore.UpsertRetry(resolvedJson, ViewTimestamp(), _retryBlockIndex);
-                            if (_httpHost != null)
-                            {
-                                _httpHost.PushView("retry", resolvedJson, _retrySeq, 0);
-                            }
+                            PushRetryView("resolved");
                         }
                         _reasonAccum.Append(ev.Text);
                         // 运行态——Reasoning 增量到达即思考态（远端·流；长度由远端决定）
@@ -1101,12 +1123,7 @@ namespace CH4
                         if (_sawRetry)
                         {
                             _sawRetry = false;
-                            string resolvedJson = BuildRetryResolvedJson();
-                            _retryBlockIndex = _viewStore.UpsertRetry(resolvedJson, ViewTimestamp(), _retryBlockIndex);
-                            if (_httpHost != null)
-                            {
-                                _httpHost.PushView("retry", resolvedJson, _retrySeq, 0);
-                            }
+                            PushRetryView("resolved");
                         }
                         toolCalls = ev.Text;
                         // 运行态——ToolCalls（流末聚合）不切态：tool 态已由 ToolCallsStart（首个增量帧）进入；
@@ -1162,12 +1179,7 @@ namespace CH4
                         _retryAttempt = attempt;
                         _retryMax = max;
                         _retryReason = reason;
-                        string retryView = "{\"state\":\"retrying\",\"attempt\":\"" + attempt + "\",\"max\":\"" + max + "\",\"text\":" + JsonUtil.Serialize(reason) + "}";
-                        _retryBlockIndex = _viewStore.UpsertRetry(retryView, ViewTimestamp(), _retryBlockIndex);
-                        if (_httpHost != null)
-                        {
-                            _retrySeq = _httpHost.PushView("retry", retryView, -1, _retrySeq);
-                        }
+                        PushRetryView("retrying");
                     }
                     else if (ev.Kind == LlmStreamKind.Usage)
                     {
@@ -2029,11 +2041,16 @@ namespace CH4
                 string errJson = "{\"type\":\"error\",\"text\":" + JsonUtil.Serialize(viewError) + "}";
                 _httpHost.PushView("error", errJson, -1, 0);
             }
-            // [段3] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——错误中止非正常完成语义）
+            // [段3] 重试耗尽终态（A94——本轮推过 retry 气泡则补 failed 终态，保留报错原文；最终错误详情仍归 error 气泡）
+            if (_retrySeq != 0)
+            {
+                PushRetryView("failed");
+            }
+            // [段4] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——错误中止非正常完成语义）
             _round = 0;
             _phase = ChatPhase.Idle;
             _phaseFrames = 0;
-            _retryBlockIndex = -1;
+            ResetRetryView();
             _llmBusy = false;
             _llmError = false;
             _llmErrorText = "";
@@ -2042,7 +2059,6 @@ namespace CH4
             _llmToolCallsJson = "";
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
-            _sawRetry = false;
             SetChatState("idle");
         }
 
@@ -2119,7 +2135,7 @@ namespace CH4
             PushNoteState();
             _round = 0;
             _phase = ChatPhase.Idle;
-            _retryBlockIndex = -1;
+            ResetRetryView();
         }
 
         /// <summary>

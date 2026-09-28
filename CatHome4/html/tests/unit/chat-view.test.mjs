@@ -1234,3 +1234,37 @@ test('A84 终态卡直达（无先行卡）——不建占位、不开表', () =
   expect(chatMsgs.querySelector('.chat-tool .' + window.CHAT_PENDING_HOLD_CLS)).toBeNull();
   expect(window.chatLiveTimer).toBeNull();
 });
+
+// ── A94 重试语义流补全（failed 终态 + 原文不丢）──
+test('view retry failed 终态——保留报错原文 + ⚠ 重试失败 + 终态类', () => {
+  window.chatOnView({ seq: 60, renderType: 'retry', payload: { state: 'retrying', attempt: '3', max: '3', text: 'ERR|TRANSPORT|连接失败' }, replaceSeq: -1 });
+  const first = bubbles()[0];
+  window.chatOnView({ seq: 61, renderType: 'retry', payload: { state: 'failed', attempt: '3', max: '3', text: 'ERR|TRANSPORT|连接失败' }, replaceSeq: 60 });
+  expect(rows().length).toBe(1);
+  expect(bubbles()[0]).toBe(first);
+  expect(bubbles()[0].textContent).toContain('⚠ 重试失败 3/3');
+  expect(bubbles()[0].textContent).toContain('连接失败');
+  expect(bubbles()[0].classList.contains('failed')).toBe(true);
+  expect(bubbles()[0].classList.contains('resolved')).toBe(false);
+});
+
+test('view retry 终态切换——resolved → failed 时 resolved 类移除（状态类单一出口）', () => {
+  window.chatOnView({ seq: 70, renderType: 'retry', payload: { state: 'resolved', attempt: '1', max: '3', text: 'x' }, replaceSeq: -1 });
+  expect(bubbles()[0].classList.contains('resolved')).toBe(true);
+  window.chatOnView({ seq: 71, renderType: 'retry', payload: { state: 'failed', attempt: '1', max: '3', text: 'x' }, replaceSeq: 70 });
+  expect(bubbles()[0].classList.contains('failed')).toBe(true);
+  expect(bubbles()[0].classList.contains('resolved')).toBe(false);
+});
+
+test('view retry 历史重建——failed 块渲染（原文 + 失败标注 + 终态类）', () => {
+  window.chatRenderHistory({
+    blocks: [
+      { renderType: 'retry', payload: { state: 'failed', attempt: '3', max: '3', text: '历史失败原文' } }
+    ],
+    sessionId: 's2',
+    count: 1
+  });
+  expect(rows().length).toBe(1);
+  expect(bubbles()[0].textContent).toContain('⚠ 重试失败 3/3 · 历史失败原文');
+  expect(bubbles()[0].classList.contains('failed')).toBe(true);
+});

@@ -54,6 +54,9 @@ namespace CatHome4.Core.Tests
 
             /// <summary>STREAM_CLOSED 次数——前 N 次调用产 Error（0=每次）</summary>
             public int StreamClosedTimes = 0;
+
+            /// <summary>A94——重试耗尽模拟：产 Retrying 事件后直接产 Error（Runtime 重试后仍失败路径）</summary>
+            public bool RetryThenFail = false;
             /// <summary>是否模拟纯空格回复——只产空格 Text（Trim 判空续传验证）</summary>
             public bool WhitespaceReply = false;
             /// <summary>纯空格次数——前 N 次调用产空格（0=每次）</summary>
@@ -86,6 +89,13 @@ namespace CatHome4.Core.Tests
                 if (CallCount <= FailTimes)
                 {
                     yield return new LlmStreamEvent(LlmStreamKind.Error, FailText);
+                    yield break;
+                }
+                // A94——重试耗尽模拟：产 Retrying → 产 Error（Runtime 有限重试后仍失败路径）
+                if (RetryThenFail)
+                {
+                    yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|1/3|ERR|TRANSPORT|模拟连接失败");
+                    yield return new LlmStreamEvent(LlmStreamKind.Error, "ERR|TRANSPORT|模拟连接失败（重试耗尽）");
                     yield break;
                 }
                 // 空回复续传——STREAM_CLOSED 模拟：前 N 次产 Error（未以 [DONE] 结束）
@@ -1064,6 +1074,70 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
+        /// <summary>
+        /// A94——续传路径终态载荷齐备：空回复 / STREAM_CLOSED 续传同样写入原文三元组，
+        /// resolved 回填不丢报错原文（attempt/max/reason 齐备；修复前载荷为空 → 前端只剩「✓ 已恢复」）。
+        /// </summary>
+        [Fact]
+        public void A94_EmptyReplyResolvedKeepsReason()
+        {
+            MockLlm llm = new MockLlm();
+            llm.EmitStreamClosed = true;
+            llm.StreamClosedTimes = 1;
+            llm.ReplyText = "续传后正常回复";
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            session.AttachHost(host);
+            session.PostUserMessage("续传终态载荷");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            List<string> retryEvents;
+            Assert.True(host.ViewEvents.TryGetValue("retry", out retryEvents));
+            Assert.True(retryEvents.Count >= 2);
+            using (JsonDocument dLast = JsonDocument.Parse(retryEvents[retryEvents.Count - 1]))
+            {
+                Assert.Equal("resolved", dLast.RootElement.GetProperty("state").GetString());
+                Assert.Equal("1", dLast.RootElement.GetProperty("attempt").GetString());
+                Assert.Equal("∞", dLast.RootElement.GetProperty("max").GetString());
+                Assert.False(string.IsNullOrEmpty(dLast.RootElement.GetProperty("text").GetString()));
+            }
+        }
+
+        /// <summary>
+        /// A94——重试耗尽终态：本轮推过 retry 气泡后错误耗尽 → 补 failed 终态（保留原文）；
+        /// error 气泡仍给最终错误详情（过程 + 结论双气泡语义）。
+        /// </summary>
+        [Fact]
+        public void A94_RetryExhaustedPushesFailedTerminal()
+        {
+            MockLlm llm = new MockLlm();
+            llm.RetryThenFail = true;
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            session.AttachHost(host);
+            session.PostUserMessage("重试耗尽终态");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            List<string> retryEvents;
+            Assert.True(host.ViewEvents.TryGetValue("retry", out retryEvents));
+            Assert.True(retryEvents.Count >= 2);
+            using (JsonDocument d1 = JsonDocument.Parse(retryEvents[0]))
+            {
+                Assert.Equal("retrying", d1.RootElement.GetProperty("state").GetString());
+                Assert.Equal("1", d1.RootElement.GetProperty("attempt").GetString());
+                Assert.Equal("3", d1.RootElement.GetProperty("max").GetString());
+                Assert.False(string.IsNullOrEmpty(d1.RootElement.GetProperty("text").GetString()));
+            }
+            using (JsonDocument dLast = JsonDocument.Parse(retryEvents[retryEvents.Count - 1]))
+            {
+                Assert.Equal("failed", dLast.RootElement.GetProperty("state").GetString());
+                Assert.Equal("1", dLast.RootElement.GetProperty("attempt").GetString());
+                Assert.Equal("3", dLast.RootElement.GetProperty("max").GetString());
+                Assert.False(string.IsNullOrEmpty(dLast.RootElement.GetProperty("text").GetString()));
+            }
+            Assert.True(host.ViewEvents.ContainsKey("error"));
+        }
+
         /// 空回复续传——MockLlm 模拟流正常结束但只产思考不产文本（CH2 [段2.3] 语义）：
         /// 第一次调用 EmptyReply=true（空回复）→ 续传（同上下文重发）→ 第二次调用正常回复。
         /// 断言：续传后正常完成 + 无空 assistant 消息入上下文 + 无前端 error（续传可恢复不推 error）。

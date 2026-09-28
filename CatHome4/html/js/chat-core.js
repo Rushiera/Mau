@@ -456,23 +456,32 @@ function chatOnToolCard(seq, replaceSeq, payload) {
 }
 
 // A55——重试气泡文本（渲染单例内文本面）；A86——resolved 不覆盖报错信息：原文保留 + 追加「已恢复」
+// A94——三态齐备：retrying（⟳ 重试中 N/3 · 原因）/ resolved（原文 + ✓ 已恢复）/ failed（原文 + ⚠ 重试失败）
 function chatRetryText(payload) {
     var state = payload.state || 'retrying';
     var attempt = payload.attempt || '';
     var max = payload.max || '';
     var reason = payload.text || '';
-    var base = '⟳ 重试中 ' + attempt + (max ? '/' + max : '') + (reason ? ' · ' + reason : '');
-    if (state === 'resolved') {
-        return base + ' ✓ 已恢复';
+    var bar = attempt + (max ? '/' + max : '');
+    var tail = reason ? (' · ' + reason) : '';
+    if (state === 'failed') {
+        return '⚠ 重试失败 ' + bar + tail;
     }
-    return base;
+    return '⟳ 重试中 ' + bar + tail + (state === 'resolved' ? ' ✓ 已恢复' : '');
+}
+
+// A94——retry 气泡状态类单一出口（resolved / failed 终态；retrying 无附加类）
+function chatApplyRetryState(bubble, payload) {
+    var state = payload.state || 'retrying';
+    bubble.classList.toggle('resolved', state === 'resolved');
+    bubble.classList.toggle('failed', state === 'failed');
 }
 
 // A55——重试渲染单例：新建重试气泡（历史重建与实时事件共用同一渲染面）
 function chatRenderRetry(payload) {
     var b = chatBubble('assistant', 'retry');
     b.textContent = chatRetryText(payload);
-    if ((payload.state || 'retrying') === 'resolved') { b.classList.add('resolved'); }
+    chatApplyRetryState(b, payload);
     return b;
 }
 
@@ -487,7 +496,7 @@ function chatOnRetry(seq, replaceSeq, payload) {
     }
     if (existing) {
         existing.bubble.textContent = chatRetryText(payload);
-        if ((payload.state || 'retrying') === 'resolved') { existing.bubble.classList.add('resolved'); }
+        chatApplyRetryState(existing.bubble, payload);
     } else {
         var b = chatRenderRetry(payload);
         // 记录用 seq——后续 replaceSeq 指向本次 seq 实现原位更新

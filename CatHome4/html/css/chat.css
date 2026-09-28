@@ -276,6 +276,9 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
    A86——resolved 不覆盖报错原文：仅换形态（描边色）与文本色，文本 = 原文 + 追加「已恢复」 */
 .chat-bubble.retry { --bubble-line: var(--ch-state-wait); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-fg); font-size: 11px; padding: 4px 10px; }
 .chat-bubble.retry.resolved { --bubble-line: var(--ch-chat-sys-ok); color: var(--ch-chat-sys-ok); }
+/* A94——重试耗尽终态：原文保留 + 「⚠ 重试失败」（形态与文本色同错误面）；终态不呼吸（仅 retrying 呼吸） */
+.chat-bubble.retry.failed { --bubble-line: var(--ch-chat-error-fg); color: var(--ch-chat-error-fg); }
+.chat-bubble.retry.resolved, .chat-bubble.retry.failed { animation: none; }
 /* P6 中止气泡——停止本轮提示（独立视图条目：弱化样式；宿主文本渲染） */
 .chat-bubble.paused { --bubble-line: var(--ch-state-link); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-ok); font-size: 11px; padding: 4px 10px; }
 /* A77 静默提示气泡——宿主静默超过阈值时的明确展示（独立气泡；前端不改任何在途块状态——收口交后端） */

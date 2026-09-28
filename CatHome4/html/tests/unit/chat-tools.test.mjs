@@ -972,3 +972,32 @@ test('majordomo-catinfo——非 JSON（服务未注入 / 指令未识别）原�
   expect(card.querySelector('.tn').textContent).toContain('全猫状态');
   expect(card.querySelector('.seg-out').textContent).toContain('HOSTCMD_NO_SERVICE');
 });
+
+// ── 覆盖缺口补齐（2026-09-28 · Z8 前置）——file-version / sleep / timer / config-cat-* ──
+test('折叠行——file-version 从正文「版本:」行取版本（编译时刻留在正文）', () => {
+  const body = '路径: app.dll\n版本: 1.03.039+2026-09-28 11:09:09\nFileVersion: 1.3.39.0\nProductVersion: 1.03.039+2026-09-28 11:09:09\n修改时间: 2026-09-28 11:09:09\n大小: 12345 字节';
+  const t = window.chatToolHeadline({ name: 'file-version', arguments: '{"path":"app.dll"}', result: body });
+  expect(t).toBe('版本信息 app.dll · 1.03.039');
+});
+
+test('折叠行——sleep 从结构化头取时长与到点时刻', () => {
+  const due = new Date(2026, 8, 28, 12, 30, 0).getTime();
+  const result = '{"ok":true,"tool":"sleep","hours":0,"minutes":5,"seconds":0,"dueAt":' + due + '}\n已登记定时唤醒。';
+  const t = window.chatToolHeadline({ name: 'sleep', arguments: '{"minutes":5}', result: result });
+  expect(t).toBe('定时唤醒 · 5 分 · 到点 12:30:00');
+});
+
+test('折叠行——timer 标注循环 + 到点时刻；骨架落位 text', () => {
+  const due = new Date(2026, 8, 28, 13, 0, 0).getTime();
+  const result = '{"ok":true,"tool":"timer","hours":1,"minutes":0,"seconds":0,"loop":true,"dueAt":' + due + '}\n已登记定时注入。';
+  const t = window.chatToolHeadline({ name: 'timer', arguments: '{"content":"巡检","hours":1,"loop":true}', result: result });
+  expect(t).toBe('定时注入 · 1 时 · 循环 · 到点 13:00:00');
+  expect(window.chatToolSkeleton('timer')).toBe('text');
+});
+
+test('骨架落位——config-cat-get / config-cat-set 登记 text · file-version 登记 listing', () => {
+  expect(window.chatToolSkeleton('config-cat-get')).toBe('text');
+  expect(window.chatToolSkeleton('config-cat-set')).toBe('text');
+  expect(window.chatToolSkeleton('file-version')).toBe('listing');
+  expect(window.chatToolSkeleton('sleep')).toBe('text');
+});

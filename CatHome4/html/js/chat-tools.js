@@ -161,6 +161,8 @@ var CHAT_TOOL_SKELETONS = {
     'cs-comment': 'text',
     'config-set': 'text',
     'config-reset': 'text',
+    'config-cat-get': 'text',
+    'config-cat-set': 'text',
     'web-search': 'text',
     'image-analyze': 'text',
     'Note': 'text',
@@ -921,6 +923,42 @@ function chatOvPeek(v) {
     return (t.length > 60) ? (t.substring(0, 60) + '…') : t;
 }
 
+// 多行文本字段值——取以 key 开头的行，返回其后值（去首尾空白；无匹配返回空串）
+function chatOvLineField(r, key) {
+    if (typeof r !== 'string' || r.length === 0) { return ''; }
+    var lines = r.split('\n');
+    for (var i = 0; i < lines.length; i = i + 1) {
+        var t = lines[i];
+        if (t.indexOf(key) === 0) {
+            return t.substring(key.length).replace(/^\s+/, '').replace(/\s+$/, '');
+        }
+    }
+    return '';
+}
+
+// 时长文本——{hours, minutes, seconds} → 「1 时 30 分」（全零 / 空对象 → 空串）
+function chatOvDurText(o) {
+    if (!o || typeof o !== 'object') { return ''; }
+    var parts = [];
+    var h = Number(o.hours) || 0;
+    var mi = Number(o.minutes) || 0;
+    var s = Number(o.seconds) || 0;
+    if (h > 0) { parts.push(h + ' 时'); }
+    if (mi > 0) { parts.push(mi + ' 分'); }
+    if (s > 0) { parts.push(s + ' 秒'); }
+    return parts.join(' ');
+}
+
+// 时刻文本——Unix 毫秒 → 本地「HH:mm:ss」（缺值 / 非法 → 空串）
+function chatOvClock(ms) {
+    if (typeof ms !== 'number' || ms <= 0) { return ''; }
+    var d = new Date(ms);
+    var hh = ('0' + d.getHours()).slice(-2);
+    var mm = ('0' + d.getMinutes()).slice(-2);
+    var ss = ('0' + d.getSeconds()).slice(-2);
+    return hh + ':' + mm + ':' + ss;
+}
+
 // 规模——字符数
 function chatOvSize(v) {
     return ((typeof v === 'string') ? v.length : 0) + ' 字符';
@@ -1002,6 +1040,17 @@ var CHAT_TOOL_OVERRIDES = {
         icon: '📋',
         inputLines: function (a) { return ['复制 ' + chatOvText(a.src), '→ ' + chatOvText(a.dest)]; },
         headline: function (a, r) { return '复制 ' + chatOvText(a.src) + ' → ' + chatOvText(a.dest); }
+    },
+    'file-version': {
+        inputLines: function (a) { return ['读取版本信息 ' + chatOvText(a.path)]; },
+        headline: function (a, r) {
+            var name = chatOvShort(a.path);
+            var v = chatOvLineField(r, '版本:');
+            var plus = v.indexOf('+');
+            if (plus > 0) { v = v.substring(0, plus); }
+            if (v.length > 0) { return '版本信息 ' + name + ' · ' + v; }
+            return '版本信息 ' + name + chatOvStat(r);
+        }
     },
     // ── CsCat（样板三件——结构化返回头驱动；2026-09-18）──
     'cs-check': {
@@ -1414,6 +1463,35 @@ var CHAT_TOOL_OVERRIDES = {
             var h = chatMetaHead(r);
             if (!h) { return 'Flow 现状 ' + chatOvStat(r); }
             return 'Flow 现状 · ' + (h.meta.count || 0) + ' 个';
+        }
+    },
+    // ── 延迟指令（A71/A72——sleep 等待 / timer 排程；结构化头驱动；2026-09-28）──
+    'sleep': {
+        inputLines: function (a) {
+            var d = chatOvDurText(a);
+            return ['登记定时唤醒' + ((d.length > 0) ? (' · ' + d) : '')];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '定时唤醒 ' + chatOvStat(r); }
+            var d = chatOvDurText(h.meta);
+            var clock = chatOvClock(h.meta.dueAt);
+            return '定时唤醒 · ' + ((d.length > 0) ? d : '待唤醒') + ((clock.length > 0) ? (' · 到点 ' + clock) : '');
+        }
+    },
+    'timer': {
+        inputLines: function (a) {
+            var d = chatOvDurText(a);
+            var loop = (a.loop === true) ? ' · 循环' : '';
+            return ['登记定时注入' + ((d.length > 0) ? (' · ' + d) : '') + loop, '内容 ' + chatOvPeek(a.content)];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '定时注入 ' + chatOvStat(r); }
+            var d = chatOvDurText(h.meta);
+            var loop = (h.meta.loop === true) ? ' · 循环' : '';
+            var clock = chatOvClock(h.meta.dueAt);
+            return '定时注入 · ' + ((d.length > 0) ? d : '待注入') + loop + ((clock.length > 0) ? (' · 到点 ' + clock) : '');
         }
     },
     'pack': {
