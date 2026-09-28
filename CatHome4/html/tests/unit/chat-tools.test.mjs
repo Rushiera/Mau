@@ -554,9 +554,9 @@ test('headline——text-replace 处数从结果提取；file-tree 条目数排�
     summary: '替换文本 "a.md" → …'
   }, 88);
   expect(card.querySelector('.tn').textContent).toBe('🔄 替换 a.md · 1 处');
-  renderTool({ name: 'file-tree', arguments: JSON.stringify({ path: 'CCBP', depth: 2 }), result: 'a/\na\\b.txt\n[git] 存在 .git' }, 89);
+  renderTool({ name: 'file-tree', arguments: JSON.stringify({ path: 'CCBP', depth: 2 }), result: 'a/\na\\b.txt\n[git] 存在 .git\n[skip] 3 个忽略目录（.git/bin/obj/node_modules 等）未扫描——条目在其内已跳过\n[截断] 共 93 条，已列 2 条——提高 limit 至 ≥93，或收窄 path / 降 depth 可看全' }, 89);
   const card2 = chatMsgs.querySelectorAll('.chat-tool')[1];
-  expect(card2.querySelector('.tn').textContent).toBe('📂 展开 CCBP · depth 2 · 2 条目');
+  expect(card2.querySelector('.tn').textContent).toBe('📂 展开 CCBP · depth 2 · 2 条目（共 93 条）');
 });
 
 test('工具专属图标——find 🔍 / move 📦 / delete 🗑️ 覆盖骨架图标', () => {

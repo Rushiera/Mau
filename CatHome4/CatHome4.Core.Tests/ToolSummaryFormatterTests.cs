@@ -115,6 +115,16 @@ namespace CatHome4.Core.Tests
             string s = ToolSummaryFormatter.Build("file-find", "{\"dir\":\"D:\\\\x\",\"pattern\":\"**/*.cs\"}", "a.cs\nb.cs\nsub/c.cs");
             Assert.Equal("搜索文件 \"D:\\x\" glob=\"**/*.cs\" → 3文件（\"a.cs\", \"b.cs\", \"sub/c.cs\"）", s);
         }
+        /// <summary>
+        /// 文件搜索摘要——提示行（[skip] / [截断]）不计入文件统计（2026-09-28）
+        /// </summary>
+        [Fact]
+        public void TextFind_HintLinesExcluded()
+        {
+            string s = ToolSummaryFormatter.Build("file-find", "{\"dir\":\"D:\\\\x\",\"pattern\":\"**/*.cs\"}",
+                "a.cs\nb.cs\n[skip] 3 个忽略目录（.git/bin/obj/node_modules 等）未扫描——条目在其内已跳过\n[截断] 已列 2 条（limit=2）——匹配未列全：收窄 dir / pattern 或提高 limit 可看全");
+            Assert.Equal("搜索文件 \"D:\\x\" glob=\"**/*.cs\" → 2文件（\"a.cs\", \"b.cs\"）", s);
+        }
 
         /// <summary>
         /// 内容检索摘要——展示命中文件数与命中次数。
@@ -134,6 +144,18 @@ namespace CatHome4.Core.Tests
         {
             string s = ToolSummaryFormatter.Build("file-tree", "{\"path\":\"C:\\\\x\",\"depth\":\"2\"}", "  a.cs (1 KB)\n  dir/\n");
             Assert.StartsWith("展开目录 \"C:\\x\" depth=\"2\" → \"1文件 1目录", s);
+        }
+        /// <summary>
+        /// 目录树摘要——提示行（[git] / [skip] / [截断]）不计入文件与目录统计（2026-09-28）
+        /// </summary>
+        [Fact]
+        public void TextTree_HintLinesExcluded()
+        {
+            string s = ToolSummaryFormatter.Build("file-tree", "{\"path\":\"C:\\\\x\",\"depth\":\"2\"}",
+                "a/\na\\b.cs\n[skip] 3 个忽略目录（.git/bin/obj/node_modules 等）未扫描——条目在其内已跳过\n[截断] 共 93 条，已列 2 条——提高 limit 至 ≥93，或收窄 path / 降 depth 可看全");
+            Assert.StartsWith("展开目录", s);
+            Assert.Contains("1文件 1目录", s);
+            Assert.Contains("·共 93 条", s);
         }
 
         /// <summary>

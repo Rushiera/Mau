@@ -562,7 +562,7 @@ namespace Mau.Runtime
         /// <summary>忽略目录名单——递归遍历时跳过（.git/bin/obj 等版本控制/编译产物；精确匹配目录名忽略大小写；显式以忽略名为根的查询不受影响——Q4 2026-09-08）</summary>
         private static readonly string[] IgnoredDirNames = new string[]
         {
-            ".git", "bin", "obj", "node_modules", ".vs", "dist", "build", "out", ".idea"
+            ".git", "bin", "obj", "node_modules", ".vs", "dist", "build", "out", ".idea", ".godot"
         };
 
         /// <summary>
@@ -694,15 +694,15 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 按深度和数量上限列出稳定排序目录树
+        /// 列稳定排序目录树——广度优先逐层推进（同层出完再进下一层；limit 截断先保上层结构完整）。
         /// </summary>
         /// <param name="path">受控目录</param>
-        /// <param name="depth">零到十层</param>
-        /// <param name="limit">最大条数</param>
-        /// <returns>相对目录路径</returns>
+        /// <param name="depth">输出层数（1–10；1 = 只列直属子项——自然语义）</param>
+        /// <param name="limit">最大条数（上限 10000）——触顶时末行附 [截断] 提示（含总条数；提示行不占配额）</param>
+        /// <returns>相对目录路径列表 + 尾部行（[git] 特征 / [skip] 忽略目录计数 / [截断]）</returns>
         public string[] Tree(string path, int depth, int limit)
         {
-            if (depth < 0 || depth > 10 || limit < 1 || limit > 10000)
+            if (depth < 1 || depth > 10 || limit < 1 || limit > 10000)
             {
                 throw new ArgumentOutOfRangeException("depth");
             }
@@ -713,23 +713,97 @@ namespace Mau.Runtime
             }
             List<string> output = new List<string>();
             List<string> gitLines = new List<string>();
-            AppendTree(root, root, depth, limit, output, gitLines);
-            // Q4 git 特征提示——[git] 前缀行追加末尾（SummarizeFileTree 识别前缀不计入文件统计；多 .git 多行）
-            for (int i = 0; i < gitLines.Count && output.Count < limit; i = i + 1)
+            int ignoredDirs = 0;
+            int total = 0;
+            // [段1] 广度优先逐层推进——同层条目全部出完再进下一层；depth = 输出层数（自然语义，1 起）
+            // 遍历不因 limit 提前退出——超出部分只计数：截断提示报告总量，忽略目录计数同时补齐
+            List<string> currentLayer = new List<string>();
+            currentLayer.Add(root);
+            int remainLayer = depth;
+            while (currentLayer.Count > 0)
             {
-                output.Add(gitLines[i]);
+                List<string> nextLayer = new List<string>();
+                for (int d = 0; d < currentLayer.Count; d = d + 1)
+                {
+                    string[] entries = Directory.GetFileSystemEntries(currentLayer[d]);
+                    Array.Sort(entries, StringComparer.OrdinalIgnoreCase);
+                    for (int i = 0; i < entries.Length; i = i + 1)
+                    {
+                        string rel = Path.GetRelativePath(root, entries[i]);
+                        bool isDir = Directory.Exists(entries[i]);
+                        // Q4 忽略目录——.git 记录特征行（不列出），其余忽略名单目录跳过（子项不展开）；计数提示不静默
+                        if (isDir && IsIgnoredDir(Path.GetFileName(entries[i])))
+                        {
+                            if (string.Equals(Path.GetFileName(entries[i]), ".git", StringComparison.OrdinalIgnoreCase))
+                            {
+                                gitLines.Add(CollectGitInfo(rel, entries[i]));
+                            }
+                            ignoredDirs = ignoredDirs + 1;
+                            continue;
+                        }
+                        total = total + 1;
+                        if (total <= limit)
+                        {
+                            // 目录行尾加 "/" 标记——消费面（ToolSummaryFormatter.SummarizeFileTree）按尾斜杠区分目录/文件
+                            if (isDir)
+                            {
+                                rel = rel + "/";
+                            }
+                            output.Add(rel);
+                        }
+                        if (remainLayer > 1 && isDir
+                            && !PathBoundary.IsReparsePoint(entries[i]))
+                        {
+                            nextLayer.Add(entries[i]);
+                        }
+                    }
+                }
+                if (remainLayer <= 1)
+                {
+                    break;
+                }
+                remainLayer = remainLayer - 1;
+                currentLayer = nextLayer;
             }
-            return output.ToArray();
+            bool truncated = total > limit;
+            // [段2] 尾部行——git 特征行（limit 有余量时补位）+ 提示行（不占 limit 配额）
+            List<string> tail = new List<string>();
+            for (int i = 0; i < gitLines.Count; i = i + 1)
+            {
+                if (output.Count + tail.Count >= limit)
+                {
+                    break;
+                }
+                tail.Add(gitLines[i]);
+            }
+            if (ignoredDirs > 0)
+            {
+                tail.Add("[skip] " + ignoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——条目在其内已跳过");
+            }
+            if (truncated)
+            {
+                tail.Add("[截断] 共 " + total.ToString() + " 条，已列 " + output.Count.ToString() + " 条——提高 limit 至 ≥" + total.ToString() + "，或收窄 path / 降 depth 可看全");
+            }
+            string[] result = new string[output.Count + tail.Count];
+            for (int i = 0; i < output.Count; i = i + 1)
+            {
+                result[i] = output[i];
+            }
+            for (int i = 0; i < tail.Count; i = i + 1)
+            {
+                result[output.Count + i] = tail[i];
+            }
+            return result;
         }
 
         /// <summary>
-        /// 按文件名通配符搜索并稳定排序
+        /// 按文件名通配符搜索并稳定排序——达 limit 时末行附 [截断] 提示（含总条数；提示行不占配额）。
         /// </summary>
         /// <param name="directory">受控目录</param>
         /// <param name="pattern">文件名模式</param>
         /// <param name="recursive">是否递归</param>
-        /// <param name="limit">最大结果</param>
-        /// <returns>相对搜索根的路径</returns>
+        /// <param name="limit">最大结果条数（收集上限）</param>
+        /// <returns>相对搜索根路径列表 + 尾部行（[skip] 忽略目录计数 / [截断]）</returns>
         public string[] Find(string directory, string pattern, bool recursive, int limit)
         {
             if (string.IsNullOrWhiteSpace(pattern) || limit < 1 || limit > 10000)
@@ -739,18 +813,28 @@ namespace Mau.Runtime
             string root = Resolve(directory, false);
             List<string> files = new List<string>();
             int ignoredDirs = 0;
-            AppendFind(root, root, pattern, recursive, limit, files, ref ignoredDirs);
+            int matched = 0;
+            AppendFind(root, root, pattern, recursive, limit, files, ref ignoredDirs, ref matched);
             files.Sort(StringComparer.OrdinalIgnoreCase);
-            int extra = ignoredDirs > 0 ? 1 : 0;
-            string[] result = new string[files.Count + extra];
+            // [段1] 尾部行——提示行不占 limit 配额（与 Tree 同口径）
+            List<string> tail = new List<string>();
+            if (ignoredDirs > 0)
+            {
+                // Q4 忽略目录提示——不静默（find 与 tree 一致：忽略目录内条目不列出但计数可见）
+                tail.Add("[skip] " + ignoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——条目在其内已跳过");
+            }
+            if (matched > files.Count)
+            {
+                tail.Add("[截断] 共 " + matched.ToString() + " 条，已列 " + files.Count.ToString() + " 条——提高 limit 至 ≥" + matched.ToString() + "，或收窄 dir / pattern 可看全");
+            }
+            string[] result = new string[files.Count + tail.Count];
             for (int i = 0; i < files.Count; i = i + 1)
             {
                 result[i] = Path.GetRelativePath(root, files[i]);
             }
-            if (ignoredDirs > 0)
+            for (int i = 0; i < tail.Count; i = i + 1)
             {
-                // Q4 忽略目录提示——不静默（find 与 tree 一致：忽略目录内条目不列出但计数可见）
-                result[files.Count] = "[skip] " + ignoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——条目在其内已跳过";
+                result[files.Count + i] = tail[i];
             }
             return result;
         }
@@ -760,8 +844,8 @@ namespace Mau.Runtime
         /// <param name="directory">受控目录</param>
         /// <param name="keyword">关键词（大小写敏感）</param>
         /// <param name="pattern">文件名过滤（默认 *）</param>
-        /// <param name="limit">最大结果</param>
-        /// <returns>匹配行（相对搜索根的路径:行号:上下文）</returns>
+        /// <param name="limit">最大结果条数——触顶时末行附 [截断] 提示（含总条数；提示行不占配额）</param>
+        /// <returns>匹配行（相对搜索根的路径:行号:上下文）+ 尾部行（[skip] 忽略 / [skip-file] 不可读 / [截断]）</returns>
         public string[] Grep(string directory, string keyword, string pattern, int limit)
         {
             if (string.IsNullOrWhiteSpace(keyword) || limit < 1 || limit > 10000)
@@ -773,10 +857,14 @@ namespace Mau.Runtime
             string filter = (string.IsNullOrWhiteSpace(pattern) || pattern == "*") ? "*" : pattern;
             List<string> files = new List<string>();
             int ignoredDirs = 0;
-            AppendFind(root, root, filter, true, 10000, files, ref ignoredDirs);
+            // 文件收集上限 10000——收集超出部分只计数（与 Tree / Find 同口径）
+            int collectMatched = 0;
+            AppendFind(root, root, filter, true, 10000, files, ref ignoredDirs, ref collectMatched);
             List<string> hits = new List<string>();
             List<string> skipped = new List<string>();
-            for (int i = 0; i < files.Count && hits.Count < limit; i = i + 1)
+            int hitTotal = 0;
+            // 命中上限 limit——超出部分只计数（不提前退出：截断提示需报总条数）
+            for (int i = 0; i < files.Count; i = i + 1)
             {
                 string file = files[i];
                 if (PathBoundary.IsReparsePoint(file))
@@ -791,16 +879,20 @@ namespace Mau.Runtime
                     System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(file, raw);
                     int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
                     string[] lines = enc.GetString(raw, bom, raw.Length - bom).Replace("\r\n", "\n").Split('\n');
-                    for (int n = 0; n < lines.Length && hits.Count < limit; n = n + 1)
+                    for (int n = 0; n < lines.Length; n = n + 1)
                     {
                         string line = lines[n];
                         int idx = line.IndexOf(keyword, StringComparison.Ordinal);
                         if (idx >= 0)
                         {
-                            int start = Math.Max(0, idx - 10);
-                            int len = Math.Min(10 + keyword.Length + 10, line.Length - start);
-                            string ctx = line.Substring(start, len);
-                            hits.Add(relative + ":" + (n + 1).ToString() + ":" + ctx);
+                            hitTotal = hitTotal + 1;
+                            if (hits.Count < limit)
+                            {
+                                int start = Math.Max(0, idx - 10);
+                                int len = Math.Min(10 + keyword.Length + 10, line.Length - start);
+                                string ctx = line.Substring(start, len);
+                                hits.Add(relative + ":" + (n + 1).ToString() + ":" + ctx);
+                            }
                         }
                     }
                 }
@@ -811,10 +903,16 @@ namespace Mau.Runtime
                 }
             }
 
+            // [段1] 尾部行——忽略计数 / 截断提示（均不占 limit 配额；顺序与 Tree / Find 一致）
+            int shownHits = hits.Count;
             if (ignoredDirs > 0)
             {
                 // Q4 忽略目录提示——不静默（grep 与 tree/find 一致：忽略目录内不扫描但计数可见）
                 hits.Add("[skip] " + ignoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——匹配条目在其内已跳过");
+            }
+            if (hitTotal > shownHits)
+            {
+                hits.Add("[截断] 共 " + hitTotal.ToString() + " 条，已列 " + shownHits.ToString() + " 条——提高 limit 至 ≥" + hitTotal.ToString() + "，或收窄 dir / keyword 可看全");
             }
 
             for (int i = 0; i < skipped.Count; i = i + 1)
@@ -1046,10 +1144,12 @@ namespace Mau.Runtime
         /// <param name="current">当前目录</param>
         /// <param name="pattern">文件名模式</param>
         /// <param name="recursive">是否递归</param>
-        /// <param name="limit">结果上限</param>
-        /// <param name="output">绝对文件路径</param>
+        /// <param name="limit">收集上限（output 至多 limit 条）</param>
+        /// <param name="output">绝对文件路径（前 limit 条）</param>
+        /// <param name="ignoredDirs">忽略目录计数（累加）</param>
+        /// <param name="matched">匹配总数（累加——遍历不因 limit 提前退出，供总量报告）</param>
         private void AppendFind(string root, string current, string pattern,
-            bool recursive, int limit, List<string> output, ref int ignoredDirs)
+            bool recursive, int limit, List<string> output, ref int ignoredDirs, ref int matched)
         {
             // [段0] **/ 目录通配前缀——剥前缀 + 强制递归（text-find 的 **/*.txt 语义；连续段剥净；剥空回退 *）
             string dirWild = "**/";
@@ -1062,28 +1162,29 @@ namespace Mau.Runtime
             {
                 pattern = "*";
             }
-            if (output.Count >= limit)
-            {
-                return;
-            }
-            // [段1] 当前目录文件按稳定顺序加入，文件链接本身也不暴露
+            // [段1] 当前目录文件按稳定顺序加入——匹配即计数；前 limit 条入 output（不提前退出：总量可见）
             string[] files = Directory.GetFiles(current, pattern, SearchOption.TopDirectoryOnly);
             Array.Sort(files, StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < files.Length && output.Count < limit; i = i + 1)
+            for (int i = 0; i < files.Length; i = i + 1)
             {
-                if (!PathBoundary.IsReparsePoint(files[i]))
+                if (PathBoundary.IsReparsePoint(files[i]))
+                {
+                    continue;
+                }
+                matched = matched + 1;
+                if (output.Count < limit)
                 {
                     output.Add(files[i]);
                 }
             }
-            if (!recursive || output.Count >= limit)
+            if (!recursive)
             {
                 return;
             }
             // [段2] 逐目录验证后递归，避免 AllDirectories 隐式穿过链接
             string[] directories = Directory.GetDirectories(current, "*", SearchOption.TopDirectoryOnly);
             Array.Sort(directories, StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < directories.Length && output.Count < limit; i = i + 1)
+            for (int i = 0; i < directories.Length; i = i + 1)
             {
                 if (PathBoundary.IsReparsePoint(directories[i]))
                 {
@@ -1096,49 +1197,7 @@ namespace Mau.Runtime
                     continue;
                 }
                 PathBoundary.ResolveOwnedPath(root, directories[i]);
-                AppendFind(root, directories[i], pattern, true, limit, output, ref ignoredDirs);
-            }
-        }
-        /// <summary>
-        /// 递归追加目录树
-        /// </summary>
-        /// <param name="root">输出相对根</param>
-        /// <param name="current">当前目录</param>
-        /// <param name="depth">剩余深度</param>
-        /// <param name="limit">条数上限</param>
-        /// <param name="output">输出列表</param>
-        private void AppendTree(string root, string current, int depth, int limit, List<string> output, List<string> gitLines)
-        {
-            if (output.Count >= limit)
-            {
-                return;
-            }
-            string[] entries = Directory.GetFileSystemEntries(current);
-            Array.Sort(entries, StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < entries.Length && output.Count < limit; i = i + 1)
-            {
-                string rel = Path.GetRelativePath(root, entries[i]);
-                bool isDir = Directory.Exists(entries[i]);
-                // Q4 忽略目录——.git 记录特征行（不列出），其余忽略名单目录静默跳过（子项不展开；显式以忽略名为根不受影响）
-                if (isDir && IsIgnoredDir(Path.GetFileName(entries[i])))
-                {
-                    if (string.Equals(Path.GetFileName(entries[i]), ".git", StringComparison.OrdinalIgnoreCase))
-                    {
-                        gitLines.Add(CollectGitInfo(rel, entries[i]));
-                    }
-                    continue;
-                }
-                // 目录行尾加 "/" 标记——消费面（ToolSummaryFormatter.SummarizeFileTree）按尾斜杠区分目录/文件
-                if (isDir)
-                {
-                    rel = rel + "/";
-                }
-                output.Add(rel);
-                if (depth > 0 && isDir
-                    && !PathBoundary.IsReparsePoint(entries[i]))
-                {
-                    AppendTree(root, entries[i], depth - 1, limit, output, gitLines);
-                }
+                AppendFind(root, directories[i], pattern, true, limit, output, ref ignoredDirs, ref matched);
             }
         }
         /// <summary>

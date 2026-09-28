@@ -537,7 +537,9 @@ namespace Mau.Runtime.Tests
                 File.WriteAllText(Path.Combine(rw, "sub", "sub.txt"), "sub");
                 // [段1] Tree——.git/bin 不列出；末尾 [git] 特征行（多 .git 多行）；正常条目保留
                 string[] tree = fs.Tree(rw, 5, 500);
-                Assert.DoesNotContain(tree, line => line.Contains(".git") && !line.StartsWith("[git]"));
+                Assert.DoesNotContain(tree, line => line.Contains(".git") && !line.StartsWith("[git]") && !line.StartsWith("[skip]"));
+                // Tree 忽略计数提示——与 Find/Grep 同口径（2026-09-28 补齐；原为静默跳过）
+                Assert.Contains(tree, line => line.StartsWith("[skip] "));
                 Assert.DoesNotContain(tree, line => line == "bin/");
                 Assert.Contains(tree, line => line == "keep.txt");
                 Assert.Contains(tree, line => line.StartsWith("[git] 存在 .git（.git——HEAD: refs/heads/main", StringComparison.Ordinal));
@@ -662,6 +664,109 @@ namespace Mau.Runtime.Tests
             catch (Exception)
             {
                 // 清理尽力而为
+            }
+        }
+        /// <summary>
+        /// Tree 广度优先与截断提示（2026-09-28）——同层条目先出（顶层结构不被深层吃掉）；limit 触顶时末行附 [截断] 提示
+        /// </summary>
+        [Fact]
+        public void Tree_BreadthFirst_TruncationHint()
+        {
+            string baseDir = Path.Combine(Path.GetTempPath(), "mau_tree_bfs_" + Guid.NewGuid().ToString("N"));
+            string rw = Path.Combine(baseDir, "rw");
+            Directory.CreateDirectory(rw);
+            try
+            {
+                FileSystemService fs = new FileSystemService(
+                    new WorkspaceConfig.RootEntry[] { new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true } },
+                    Path.Combine(rw, "recycle"));
+                // 布置——三个顶层目录各含子项（广度优先下同层先出）
+                Directory.CreateDirectory(Path.Combine(rw, "aa", "deep"));
+                File.WriteAllText(Path.Combine(rw, "aa", "a1.txt"), "a");
+                File.WriteAllText(Path.Combine(rw, "aa", "deep", "a2.txt"), "a");
+                Directory.CreateDirectory(Path.Combine(rw, "bb"));
+                File.WriteAllText(Path.Combine(rw, "bb", "b1.txt"), "b");
+                Directory.CreateDirectory(Path.Combine(rw, "cc"));
+                File.WriteAllText(Path.Combine(rw, "cc", "c1.txt"), "c");
+                // [段1] 广度优先——顶层三目录占据前三行（深度优先会把 aa 的整棵子树提前）
+                string[] all = fs.Tree(rw, 3, 500);
+                Assert.Equal(new string[] { "aa/", "bb/", "cc/" }, new string[] { all[0], all[1], all[2] });
+                // [段2] limit 截断——先保顶层（aa/bb/cc 一个不少）+ 末行 [截断] 提示
+                string[] cut = fs.Tree(rw, 3, 3);
+                Assert.Contains(cut, line => line == "aa/");
+                Assert.Contains(cut, line => line == "bb/");
+                Assert.Contains(cut, line => line == "cc/");
+                // 截断提示含总量——总数取未截断时的条目数（不写死字面量）
+                Assert.StartsWith("[截断] 共 " + all.Length.ToString() + " 条，已列 3 条", cut[cut.Length - 1]);
+                // [段3] 未截断——无 [截断] 行
+                Assert.DoesNotContain(all, line => line.StartsWith("[截断]"));
+            }
+            finally
+            {
+                TryDelete(baseDir);
+            }
+        }
+        /// <summary>
+        /// Find limit 截断提示（2026-09-28）——达上限时末行附 [截断]（原为静默截断）；未触顶无该行
+        /// </summary>
+        [Fact]
+        public void Find_LimitTruncationHint()
+        {
+            string baseDir = Path.Combine(Path.GetTempPath(), "mau_find_cut_" + Guid.NewGuid().ToString("N"));
+            string rw = Path.Combine(baseDir, "rw");
+            Directory.CreateDirectory(rw);
+            try
+            {
+                FileSystemService fs = new FileSystemService(
+                    new WorkspaceConfig.RootEntry[] { new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true } },
+                    Path.Combine(rw, "recycle"));
+                for (int i = 1; i <= 5; i = i + 1)
+                {
+                    File.WriteAllText(Path.Combine(rw, "f" + i.ToString() + ".txt"), "x");
+                }
+                // [段1] 未触顶——5 条全出、无 [截断] 行
+                string[] all = fs.Find(rw, "*.txt", true, 500);
+                Assert.Equal(5, all.Length);
+                Assert.DoesNotContain(all, line => line.StartsWith("[截断]"));
+                // [段2] 触顶——3 条 + 末行 [截断]
+                string[] cut = fs.Find(rw, "*.txt", true, 3);
+                Assert.Equal(4, cut.Length);
+                // 截断提示含总量——5 个匹配，limit=3
+                Assert.StartsWith("[截断] 共 5 条，已列 3 条", cut[cut.Length - 1]);
+            }
+            finally
+            {
+                TryDelete(baseDir);
+            }
+        }
+        /// <summary>
+        /// Grep limit 截断提示（2026-09-28）——命中达上限时末行附 [截断]（含总条数）；未触顶无该行
+        /// </summary>
+        [Fact]
+        public void Grep_LimitTruncationHint()
+        {
+            string baseDir = Path.Combine(Path.GetTempPath(), "mau_grep_cut_" + Guid.NewGuid().ToString("N"));
+            string rw = Path.Combine(baseDir, "rw");
+            Directory.CreateDirectory(rw);
+            try
+            {
+                FileSystemService fs = new FileSystemService(
+                    new WorkspaceConfig.RootEntry[] { new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true } },
+                    Path.Combine(rw, "recycle"));
+                File.WriteAllText(Path.Combine(rw, "a.txt"), "hit\nhit\nhit\nhit");
+                File.WriteAllText(Path.Combine(rw, "b.txt"), "hit\nhit");
+                // [段1] 未触顶——6 命中全出、无 [截断] 行
+                string[] all = fs.Grep(rw, "hit", "*", 100);
+                Assert.Equal(6, all.Length);
+                Assert.DoesNotContain(all, line => line.StartsWith("[截断]"));
+                // [段2] 触顶——limit=2 出 2 条 + 末行 [截断] 共 6 条
+                string[] cut = fs.Grep(rw, "hit", "*", 2);
+                Assert.Equal(3, cut.Length);
+                Assert.StartsWith("[截断] 共 6 条，已列 2 条", cut[cut.Length - 1]);
+            }
+            finally
+            {
+                TryDelete(baseDir);
             }
         }
     }

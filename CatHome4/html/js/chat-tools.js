@@ -453,7 +453,7 @@ function chatSkelDiagnostics(tool) {
 }
 
 // ── listing：列举（输入：条件；输出：计数 + 条目列表，缩进保留）──
-// 计数不含提示行（[git] / [skip]）——提示是元信息，不是条目
+// 计数不含提示行（[git] / [skip] / [截断]）——提示是元信息，不是条目
 function chatSkelListing(tool) {
     var segs = [chatSegInput(tool, '')];
     // 结构化返回优先（首行 JSON 元数据 + 正文定界行）；旧格式原路（纯文本清单）
@@ -463,11 +463,11 @@ function chatSkelListing(tool) {
     var items = [];
     for (var i = 0; i < lines.length; i++) {
         if (lines[i].replace(/\s/g, '').length === 0) { continue; }
-        if (lines[i].indexOf('[git]') === 0 || lines[i].indexOf('[skip]') === 0) { continue; }
+        if (lines[i].indexOf('[git]') === 0 || lines[i].indexOf('[skip]') === 0 || lines[i].indexOf('[截断]') === 0) { continue; }
         items.push(lines[i]);
     }
     var cap = '输出';
-    if (typeof bodyText === 'string' && bodyText.length > 0) { cap = '输出 · ' + items.length + ' 条目'; }
+    if (typeof bodyText === 'string' && bodyText.length > 0) { cap = '输出 · ' + items.length + ' 条目' + chatOvTotalTail(bodyText); }
     segs.push(chatSegOutput(tool, cap, function (body, text, isErr) {
         if (items.length === 0) { chatSegBlock(body, 'tr', '（无匹配条目）'); return; }
         chatSegLines(body, items, isErr ? 'tr err' : 'seg-line');
@@ -1016,14 +1016,14 @@ var CHAT_TOOL_OVERRIDES = {
             return ['展开 ' + chatOvText(a.path) + ' · depth ' + chatOvText(a.depth) + extra];
         },
         headline: function (a, r) {
-            return '展开 ' + chatOvText(a.path) + ' · depth ' + chatOvText(a.depth) + ' · ' + chatOvItems(r) + ' 条目';
+            return '展开 ' + chatOvText(a.path) + ' · depth ' + chatOvText(a.depth) + ' · ' + chatOvItems(r) + ' 条目' + chatOvTotalTail(r);
         }
     },
     'file-find': {
         icon: '🔍',
         inputLines: function (a) { return ['搜索 ' + chatOvText(a.dir) + ' · glob ' + chatOvText(a.pattern)]; },
         headline: function (a, r) {
-            return '搜索 ' + chatOvText(a.dir) + ' · glob ' + chatOvText(a.pattern) + ' · ' + chatOvItems(r) + ' 条目';
+            return '搜索 ' + chatOvText(a.dir) + ' · glob ' + chatOvText(a.pattern) + ' · ' + chatOvItems(r) + ' 条目' + chatOvTotalTail(r);
         }
     },
     'file-move': {
@@ -1534,7 +1534,7 @@ function chatOvStat(r) {
     return ' · ' + chatOvLines(r) + ' 行 ' + chatFmtCount(r.length) + ' 字符';
 }
 
-// 结果条目数——空行与提示行（[git] / [skip]）不计
+// 结果条目数——空行与提示行（[git] / [skip] / [截断]）不计
 function chatOvItems(r) {
     if (typeof r !== 'string' || r.length === 0) { return 0; }
     var lines = r.split('\n');
@@ -1542,10 +1542,23 @@ function chatOvItems(r) {
     for (var i = 0; i < lines.length; i++) {
         var t = lines[i];
         if (t.replace(/\s/g, '').length === 0) { continue; }
-        if (t.indexOf('[git]') === 0 || t.indexOf('[skip]') === 0) { continue; }
+        if (t.indexOf('[git]') === 0 || t.indexOf('[skip]') === 0 || t.indexOf('[截断]') === 0) { continue; }
         n = n + 1;
     }
     return n;
+}
+
+// 截断总量——结果含「[截断] 共 N 条」时返回 N，否则 0
+function chatOvTotal(r) {
+    if (typeof r !== 'string' || r.length === 0) { return 0; }
+    var m = /\[截断\] 共 (\d+) 条/.exec(r);
+    return m ? parseInt(m[1], 10) : 0;
+}
+
+// 截断总量后缀——「（共 N 条）」；无截断返回空串
+function chatOvTotalTail(r) {
+    var t = chatOvTotal(r);
+    return t > 0 ? '（共 ' + t + ' 条）' : '';
 }
 
 // 结果中提取首个「N <单位>」计数——替换处数等固定语句用（提不到返回空串）

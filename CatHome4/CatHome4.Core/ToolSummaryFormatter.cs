@@ -338,7 +338,7 @@ namespace CH4
             for (int i = 0; i < lines.Length; i = i + 1)
             {
                 string line = lines[i].Trim();
-                if (line.Length == 0 || line.StartsWith("ERR|") || line.StartsWith("（"))
+                if (line.Length == 0 || line.StartsWith("ERR|") || line.StartsWith("（") || line.StartsWith("[git]") || line.StartsWith("[skip]") || line.StartsWith("[截断]"))
                 {
                     continue;
                 }
@@ -390,6 +390,11 @@ namespace CH4
             else
             {
                 sb.Append(" → 无结果");
+            }
+            long total = ExtractTotalCount(result);
+            if (total > files.Count)
+            {
+                sb.Append("·共 "); sb.Append(total); sb.Append(" 条");
             }
             return sb.ToString();
         }
@@ -1060,7 +1065,7 @@ namespace CH4
             {
                 string line = lines[i].Trim();
                 // Q4 忽略/git 提示行不计入统计（text-tree 结果 [git]/[skip] 前缀——2026-09-08）
-                if (line.Length == 0 || line.StartsWith("ERR|") || line.StartsWith("[git]") || line.StartsWith("[skip]"))
+                if (line.Length == 0 || line.StartsWith("ERR|") || line.StartsWith("[git]") || line.StartsWith("[skip]") || line.StartsWith("[截断]"))
                 {
                     continue;
                 }
@@ -1080,7 +1085,46 @@ namespace CH4
             {
                 sb.Append("（"); sb.Append(FormatSize(text.Length)); sb.Append("）");
             }
+            long total = ExtractTotalCount(text);
+            if (total > files + dirs)
+            {
+                sb.Append("·共 "); sb.Append(total); sb.Append(" 条");
+            }
             return sb.ToString();
+        }
+        /// <summary>
+        /// 从结果尾部提示行提取总条数——「[截断] 共 N 条，…」；无截断提示返回 -1（摘要据此附总量后缀）。
+        /// </summary>
+        /// <param name="text">工具结果文本</param>
+        /// <returns>总条数；无截断提示返回 -1</returns>
+        private static long ExtractTotalCount(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return -1;
+            }
+            string marker = "[截断] 共 ";
+            int at = text.IndexOf(marker, StringComparison.Ordinal);
+            if (at < 0)
+            {
+                return -1;
+            }
+            int start = at + marker.Length;
+            int end = start;
+            while (end < text.Length && text[end] >= '0' && text[end] <= '9')
+            {
+                end = end + 1;
+            }
+            if (end <= start)
+            {
+                return -1;
+            }
+            long value;
+            if (!long.TryParse(text.Substring(start, end - start), out value))
+            {
+                return -1;
+            }
+            return value;
         }
         /// <summary>批量类结果摘要——成功/失败首行或大小</summary>
         private static string SummarizeBatch(string result)
