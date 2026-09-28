@@ -283,6 +283,52 @@ test('A85 历史重建——完成块默认压缩档 + 无时长来源标识「�
   expect(boxes[0].querySelector('.ct-head').textContent).toBe('Think · 4 字符 · 1 行 · 未统计');
 });
 
+// ── A95 live think 块生命周期归前端（2026-09-28）——态驱动销毁，与后续接什么无关；后端零改动 ──
+
+test('A95 态驱动——离开 think 即销毁 live 块（无效请求无内容收口也不残留）', () => {
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '半截思考' }, replaceSeq: -1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(1);
+  // 后端离开 think 且不推 reason（无效请求的思考已丢）——只有态变化
+  window.chatOnSessionState({ sessionId: 's1', runState: 'idle', runMs: {}, requests: 1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(0);
+  expect(chatMsgs.querySelectorAll('.chat-think.done').length).toBe(0);
+  expect(window.viewContainers[11]).toBeUndefined();
+});
+
+test('A95 续传切态（think→link）——旧请求 live 块销毁，续传请求另起新块', () => {
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '无效请求的思考' }, replaceSeq: -1 });
+  window.chatOnSessionState({ sessionId: 's1', runState: 'link', runMs: {}, requests: 2 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(0);
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 2 });
+  window.chatOnView({ seq: 31, renderType: 'stream', payload: { kind: 'reasoning', text: '续传思考' }, replaceSeq: -1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(1);
+  expect(window.chatThinkBodyText(window.viewContainers[31].body)).toBe('续传思考');
+});
+
+test('A95 误伤防线——同态重推 / 态起点缺失（刷新重连）不销毁', () => {
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考中' }, replaceSeq: -1 });
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(1);
+  // 刷新重连——DOM/容器清空 + 本端态起点为空，首帧即非 think（prev 缺失）→ 不误销毁
+  chatMsgs.textContent = '';
+  window.viewContainers = {};
+  window.chatPhaseReset();
+  window.chatOnView({ seq: 12, renderType: 'stream', payload: { kind: 'reasoning', text: '重连思考' }, replaceSeq: -1 });
+  window.chatOnSessionState({ sessionId: 's1', runState: 'reply', runMs: {}, requests: 1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(1);
+});
+
+test('A95 兜底——error 事件销毁 live 块（态推送错过的路径也清场）', () => {
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考中' }, replaceSeq: -1 });
+  window.chatOnView({ seq: 12, renderType: 'error', payload: { text: 'ERR|TEST|模拟失败' }, replaceSeq: -1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(0);
+  expect(chatMsgs.querySelectorAll('.chat-bubble.error').length).toBe(1);
+});
+
 // ── 展开态整块点击收起（2026-09-18）——原生 details 仅折叠头可点；展开后整块任意位置点击即收起 ──
 test('展开态整块点击收起——工具卡内容区点击即折叠（折叠态不误触）', () => {
   window.chatOnView({
@@ -1098,10 +1144,10 @@ test('A78/A85 态驱动——think 流式块标记随 think 态切换（think �
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考中' }, replaceSeq: -1 });
   const rb = chatMsgs.querySelector('.chat-think.stream').closest('.chat-bubble');
   expect(rb.classList.contains('live')).toBe(true);
-  // 离开 think（回复流式开始）——标记撤除；流式块保留（仍须承接整块销毁）
+  // 离开 think（回复流式开始）——标记撤除；A95 起 live 块随离态即销毁（前端自持，不依赖 reason 整块事件到达）
   window.chatOnSessionState({ sessionId: 's1', runState: 'reply', runMs: {}, requests: 1 });
-  expect(rb.classList.contains('live')).toBe(false);
-  expect(window.viewContainers[11]).not.toBeUndefined();
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(0);
+  expect(window.viewContainers[11]).toBeUndefined();
 });
 
 // ── A78 容器创建时按当前态初始化标记（态未变化时的补挂路径）──

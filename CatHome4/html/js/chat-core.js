@@ -60,11 +60,14 @@ function chatRunning() {
 function chatOnSessionState(d) {
     // 运行态推送——本猫运行态块（服务端变化或新连接首帧才推；状态条唯一数据源——空闲期零推送、前端零轮询）
     if (!d || !d.sessionId) { return; }
+    var prevState = chatRunState.state || '';
     chatRunState = {
         state: d.runState || '',
         ms: d.runMs || {},
         requests: d.requests || 0
     };
+    // A95——live think 块生命周期归前端：运行态离开 think 即销毁（与后续接 reply/tool/run/link/idle 无关）
+    if (prevState === 'think' && chatRunState.state !== 'think') { chatClearLiveThink(); }
     chatRenderStatus();
     // 进行中标记——全局态唯一出入口（态变化即同步气泡外观；与状态条/桌宠同源同时刻）
     chatSyncRunningMarks();
@@ -187,6 +190,22 @@ function chatSyncRunningMarks() {
         c.bubble.classList.remove('live');
         if (cls.length > 0) { c.bubble.classList.add(cls); }
     }
+}
+
+// A95——live think 块统一清理出口（预览面自持）：think 态结束即销毁，与后续接 reply/tool/run/link/idle 无关。
+// 动机：live 块是前端私有实体（不落盘、不进视图层、后端不感知）——生命周期必须由前端自持；
+//      旧实现把销毁绑在后端 reason 整块的 replaceSeq 命中上，事件缺席（无效请求无内容可收口）即永久残留。
+// 幂等——无 live 块时空操作；调用面 = 运行态离开 think + 终态清理点（error / chatdone / paused / 发送失败）。
+function chatClearLiveThink() {
+    for (var k in viewContainers) {
+        var c = viewContainers[k];
+        if (c && c.type === 'thinkstream') {
+            c.bubble.classList.remove('live');
+            chatRemoveBubble(c.bubble);
+            delete viewContainers[k];
+        }
+    }
+    chatLiveSyncTimer();
 }
 
 // ============ A84/A85——活跃块计时表（纯前端自算 · 1 秒粒度 · 单一表驱动两类块） ============
@@ -518,6 +537,7 @@ function chatOnError(payload) {
     chatKeepAlive();
     chatPhaseReset();
     var text = payload.text || 'LLM 错误';
+    chatClearLiveThink();   // A95——live 块清理（错误路径兜底：不依赖后端 reason 事件是否推得到）
     for (var k in viewContainers) {
         var c = viewContainers[k];
         if (c && c.bubble) {
@@ -557,6 +577,7 @@ function chatOnControl(payload) {
     } else if (type === 'chatdone') {
         // 会话终态——seal 全部流式容器 + 未回填兜底已由 toolcard 整块覆盖 + 恢复 idle
         chatPhaseReset();
+        chatClearLiveThink();   // A95——live 块清理（终态兜底）
         for (var k2 in viewContainers) {
             var c2 = viewContainers[k2];
             if (c2 && c2.bubble) {
@@ -584,6 +605,7 @@ function chatOnControl(payload) {
     } else if (type === 'paused') {
         // P6 中止——独立气泡提示（宿主文本；单向数据流：前端只渲染）+ seal 全部流式容器 + 复位 idle（已生成内容保留显示）
         chatPhaseReset();
+        chatClearLiveThink();   // A95——live 块清理（中止兜底：seal 无内容时后端不推 reason 事件）
         for (var kp in viewContainers) {
             var cp = viewContainers[kp];
             if (cp && cp.bubble) {
@@ -622,6 +644,7 @@ function chatFail(msg) {
     // E 系列——失败：四态状态条清零隐藏
     chatPhaseReset();
     // 发送失败——seal 全部流式容器 + 独立错误气泡 + 恢复 idle
+    chatClearLiveThink();   // A95——live 块清理（发送失败兜底）
     for (var k in viewContainers) {
         var c = viewContainers[k];
         if (c && c.bubble) {
