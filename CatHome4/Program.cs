@@ -342,6 +342,8 @@ namespace CH4
             // 延迟队列落盘接线——Data/runtime/delays.json（跨宿主重启保留；design-ch4-delay §七）
             DelayQueue.Configure(Path.Combine(dataRoot, "Data", "runtime", "delays.json"));
             DelayQueue.Load();
+            // timeback 归档落点接线——Data/sessions/<猫>/timeback.jsonl（每猫自持；design-ch4-timeback §5.1）
+            ChatSession.TimebackArchivePathProvider = AdminService.ResolveTimebackArchivePath;
             AdminService.NotifyBalloon = Program.NotifyBalloon;
             // S5 Observe 域接线——依赖注入（观测面迁入 CatHome4.Observe）
             ObserveService.Configure(_oa, _chatBridge, _quickHandle, _toolFlowHandles, _quickId, _toolFlowIds, _runner, null);

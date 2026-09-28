@@ -76,6 +76,10 @@ namespace CH4
             {
                 return ExecuteTimer(argsJson);
             }
+            if (name == "timeback")
+            {
+                return ExecuteTimeback(argsJson);
+            }
             return "ERR|UNKNOWN_BUILTIN|未知内置工具: " + name;
         }
 

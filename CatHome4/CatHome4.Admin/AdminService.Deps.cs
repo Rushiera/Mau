@@ -87,21 +87,6 @@ namespace CatHome4.Admin
             }
             return names;
         }
-
-        /// <summary>
-        /// 全量工具清单（含组别）——统一工具池派生（design-ch4-tools-pool §六：配置界面组别/名称自动生成统一走池）。
-        /// </summary>
-        /// <returns>工具名+组别数组（name/group）</returns>
-        internal static object[] GetAllToolsWithGroup()
-        {
-            ToolDef[] defs = ToolPool.All();
-            object[] result = new object[defs.Length];
-            for (int i = 0; i < defs.Length; i = i + 1)
-            {
-                result[i] = new { name = defs[i].Name, group = defs[i].Group };
-            }
-            return result;
-        }
         /// <summary>
         /// 可配置工具名清单——全量剔除特权工具（特权组不入配置面：前端勾选面 / cat.cfg 名单 / 新猫模板；design-ch4-tools §三·十）。
         /// </summary>
@@ -254,16 +239,6 @@ namespace CatHome4.Admin
                 }
             }
             return false;
-        }
-
-        /// <summary>
-        /// 工具名单解析（非默认会话口径）——可配置清单过滤 + 不并入特权（特权组不入配置面；默认会话口径见双参重载）。
-        /// </summary>
-        /// <param name="raw">cat.cfg toolNames 原始串（逗号/空白分隔）</param>
-        /// <returns>合法工具名数组（保底全量，去特权）</returns>
-        internal static string[] ResolveToolNames(string raw)
-        {
-            return ResolveToolNames(raw, false);
         }
 
         /// <summary>

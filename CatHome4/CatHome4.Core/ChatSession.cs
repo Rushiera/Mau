@@ -2036,6 +2036,8 @@ namespace CH4
                 _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             }
             _toolBatchActive = false;
+            // [段2d] timeback 回卷——本批请求了 back 则在此执行（工具结果已全部回填：截断 + 结论注入 + 工具主动 done）
+            ApplyTimebackBack();
             // [段2c] 宿主重启检测——majordomo-restart 成功回执 → 登记重启请求 + 停机态（A72：本轮走常规结束流程，不强制中断）
             for (int r = 0; r < _dogs.Count; r = r + 1)
             {
@@ -2196,6 +2198,43 @@ namespace CH4
         }
 
         /// <summary>
+        /// 前文截断到指定条数——截断唯一共用实现（人工回滚 / timeback 回卷同源；design-ch4-timeback §12.5）。
+        /// 执行：截断上下文 → 前文落盘（截断重写：append-only 的合法例外）→ 轮级计数与统计条数复位。
+        /// 不含：会话级统计归零（调用方决定）/ Note 处置 / 视图处置 / 前端通知——各路径语义不同，分头保留。
+        /// </summary>
+        /// <param name="keepCount">保留条数（保留 [0..keepCount-1]）</param>
+        private void TruncateMessages(int keepCount)
+        {
+            // [段1] 截断上下文——保留前 keepCount 条（ReplaceMessages 安全面——格式修复幂等）
+            LlmMessage[] all = _context.GetMessages();
+            int count = keepCount;
+            if (count < 0)
+            {
+                count = 0;
+            }
+            if (count > all.Length)
+            {
+                count = all.Length;
+            }
+            LlmMessage[] keep = new LlmMessage[count];
+            for (int i = 0; i < count; i = i + 1)
+            {
+                keep[i] = all[i];
+            }
+            _context.ReplaceMessages(keep);
+            // [段2] 前文落盘——落盘保真（截断重写：append-only 的合法例外）
+            LlmMessage[] toSave = _context.GetMessages();
+            _lastStats.EntryCount = toSave.Length;
+            _store.Rewrite(toSave, _lastStats);
+            // [段3] 轮级计数复位——新起点零统计起算（会话级累计不动——同会话延续）
+            _usagePrompt = 0;
+            _usageCompletion = 0;
+            _usageCacheHit = 0;
+            _contextTokens = 0;
+            _toolCallCount = 0;
+        }
+
+        /// <summary>
         /// 回滚——从指定正式回复节点重新开始（P6b：裁剪唯一通道；该节点后消息全部丢弃）。
         /// 校验：仅 Idle；msgIndex 指向 assistant 正式回复（Content>0——工具声明轮天然排除）。执行：截断上下文 → 落盘 → 统计/视图/Note 复位 → 视图重建 → session_reset 推送。
         /// </summary>
@@ -2217,24 +2256,11 @@ namespace CH4
             {
                 return "ERR|ROLLBACK_NODE|节点不是正式回复（仅 assistant 回复可作切点）";
             }
-            // [段1] 截断上下文——保留 [0..msgIndex]（ReplaceMessages 安全面——格式修复幂等）
-            LlmMessage[] keep = new LlmMessage[msgIndex + 1];
-            for (int i = 0; i <= msgIndex; i = i + 1)
-            {
-                keep[i] = all[i];
-            }
-            _context.ReplaceMessages(keep);
-            // [段2] 前文落盘——落盘保真（截断重写：append-only 的合法例外）
-            LlmMessage[] toSave = _context.GetMessages();
-            _lastStats.EntryCount = toSave.Length;
-            _store.Rewrite(toSave, _lastStats);
-            // [段3] 统计与运行期参数复位——新起点零统计起算
-            ResetStats();
-            _usagePrompt = 0;
-            _usageCompletion = 0;
-            _usageCacheHit = 0;
-            _contextTokens = 0;
-            _toolCallCount = 0;
+            // [段1] 截断前文到切点——共用实现（timeback 回卷同源；含落盘与轮级计数复位）
+            TruncateMessages(msgIndex + 1);
+            // [段2] 最近轮统计重置——新起点零统计起算（会话级累计不动：回滚属同会话延续；
+            //        原实现调 ResetStats() 会清会话级 token 累计——与 glossary「回滚不归零」口径冲突，2026-09-28 修正）
+            _lastStats = new SessionStats();
             // [段4] 视图——从新前文完全重建 + roundsum 清空（roundsum 非真实前文派生；RebuildView 的 LoadInjectReport 会读回旧 view.json 统计——重建后清空并落盘，防下次启动读回）
             RebuildView();
             _viewStore.ClearRoundSums();

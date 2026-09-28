@@ -1322,6 +1322,7 @@ namespace CatHome4.Admin
                     Inject = delegate (string s) { captured.PostUserMessage(s); },
                     GetViewItems = delegate () { return ConvertQqViewItems(captured.ViewStore.GetBlocks()); },
                     IsIdle = delegate () { return captured.IsIdle; },
+                    IsTimebackActive = delegate () { return captured.TimebackActive; },
                     NewSession = delegate ()
                     {
                         _majorSessionNewRequested = true;
@@ -1345,6 +1346,7 @@ namespace CatHome4.Admin
                         Inject = delegate (string s) { captured.Session.PostUserMessage(s); },
                         GetViewItems = delegate () { return ConvertQqViewItems(captured.Session.ViewStore.GetBlocks()); },
                         IsIdle = delegate () { return captured.Session.IsIdle; },
+                        IsTimebackActive = delegate () { return captured.Session.TimebackActive; },
                         NewSession = delegate ()
                         {
                             captured.SessionNewRequested = true;

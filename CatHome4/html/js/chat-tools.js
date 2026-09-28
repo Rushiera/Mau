@@ -169,6 +169,7 @@ var CHAT_TOOL_SKELETONS = {
     'time': 'text',
     'random': 'text',
     'sleep': 'text',
+    'timeback': 'text',
     'timer': 'text',
     'info': 'info',
     'majordomo-catinfo': 'catinfo',
@@ -1506,6 +1507,20 @@ var CHAT_TOOL_OVERRIDES = {
             var loop = (h.meta.loop === true) ? ' · 循环' : '';
             var clock = chatOvClock(h.meta.dueAt);
             return '定时注入 · ' + ((d.length > 0) ? d : '待注入') + loop + ((clock.length > 0) ? (' · 到点 ' + clock) : '');
+        }
+    },
+    // ── 上下文作用域（A101——start 开锚 / back 回收；结构化头驱动）──
+    'timeback': {
+        inputLines: function (a) {
+            if (a.action === 'back') { return ['回收上下文作用域', '载荷 ' + chatOvPeek(a.findings)]; }
+            return ['开锚上下文作用域' + ((a.purpose) ? (' · ' + chatOvPeek(a.purpose)) : '')];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return ((a.action === 'back') ? '作用域回收' : '作用域开锚') + chatOvStat(r); }
+            var m = h.meta;
+            if (a.action === 'back') { return '作用域 #' + m.id + ' 已登记回收 · 锚点 ' + m.anchor; }
+            return '作用域 #' + m.id + ' 已锚定 · 起点 ' + m.anchor;
         }
     },
     'pack': {

@@ -1221,6 +1221,17 @@ namespace CatHome4.QQ
                 QqTarget tg = targets[i];
                 QqViewItem[] items = tg.GetViewItems();
                 int count = items.Length;
+                // timeback 活跃期——不计入转发（design-ch4-timeback §11.1）：游标跟随但不消费（取证过程不外发、
+                // 来源与轮状态保留至结论轮）；回卷不改变块数语义（视图层零重建，游标天然连续）
+                if (tg.IsTimebackActive != null && tg.IsTimebackActive())
+                {
+                    if (GetCursor(tg.Key) != count)
+                    {
+                        _cursors[tg.Key] = count;
+                        SaveForwardState();
+                    }
+                    continue;
+                }
                 int cursor = GetCursor(tg.Key);
                 if (count < cursor)
                 {
@@ -1576,6 +1587,9 @@ namespace CatHome4.QQ
 
         /// <summary>会话空闲判定——异常中止轮残留来源兜底清理（null=永不空闲）</summary>
         public Func<bool> IsIdle;
+
+        /// <summary>timeback 活跃判定——活跃期不计入转发（游标跟随但不消费、来源保留；null=视为不活跃）</summary>
+        public Func<bool> IsTimebackActive;
 
         /// <summary>新会话桥——触发 session.new（异步置位）+ 返回注入摘要文本（Q5 /new 指令；null=不支持）</summary>
         public Func<string> NewSession;
