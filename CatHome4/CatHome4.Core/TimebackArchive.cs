@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -23,6 +24,8 @@ namespace CH4
 
         /// <summary>编号缓存加载标志——首次取号时扫全文件一次</summary>
         private bool _loaded;
+        /// <summary>最近一次写面结果——false=上次写入成功（或尚未写入）；true=最近一次写入失败（info timeback.archive.ok 数据源）。</summary>
+        private bool _lastWriteFailed;
 
         /// <summary>UTF-8 无 BOM 编码——JSONL 写入（与 SessionStore 同族）</summary>
         private static readonly UTF8Encoding Utf8NoBom = new UTF8Encoding(false);
@@ -49,9 +52,19 @@ namespace CH4
             _maxId = _maxId + 1;
             return _maxId;
         }
+        /// <summary>
+        /// 写面可用性——最近一次追加是否失败（false=可用 / 尚未写入；info timeback.archive.ok 数据源）。
+        /// </summary>
+        public bool LastWriteFailed
+        {
+            get
+            {
+                return _lastWriteFailed;
+            }
+        }
 
         /// <summary>
-        /// 追加开锚行——start 登记时写入（n 与耗时是「多大算该回」的阈值原料）。
+        /// 追加开锚行——start 登记时写入（n 是「多大算该回」的阈值原料；存活时长归 close 行）。
         /// </summary>
         /// <param name="id">作用域编号</param>
         /// <param name="catKey">猫 key</param>
@@ -60,9 +73,8 @@ namespace CH4
         /// <param name="startAt">开锚时刻（Unix 毫秒）</param>
         /// <param name="purpose">用途标签</param>
         /// <param name="n">开锚时前文条数</param>
-        /// <param name="seconds">开锚时刻距会话轮开始的耗时秒（预留观测）</param>
         /// <returns>true=已落盘</returns>
-        public bool AppendOpen(long id, string catKey, long round, int anchor, long startAt, string purpose, int n, long seconds)
+        public bool AppendOpen(long id, string catKey, long round, int anchor, long startAt, string purpose, int n)
         {
             JsonObject obj = new JsonObject();
             obj["t"] = "open";
@@ -73,7 +85,6 @@ namespace CH4
             obj["startAt"] = startAt;
             obj["purpose"] = purpose ?? "";
             obj["n"] = n;
-            obj["seconds"] = seconds;
             return AppendLine(obj.ToJsonString(SerializerOptions));
         }
 
@@ -164,6 +175,57 @@ namespace CH4
                 return 0;
             }
         }
+        /// <summary>
+        /// 读取归档尾部若干行——逐行容错（坏行 / 末行残缺跳过），返回原始 JSON 行字符串（字段提取归调用方）。
+        /// 读面只服务观测（info timeback.recent）——不参与编号与回收逻辑。
+        /// </summary>
+        /// <param name="max">最大行数（≤0 = 空列表）</param>
+        /// <returns>JSON 行列表（文件顺序，最旧在前）</returns>
+        public List<string> ReadTailJson(int max)
+        {
+            List<string> result = new List<string>();
+            if (max <= 0 || !File.Exists(_path))
+            {
+                return result;
+            }
+            string[] lines;
+            try
+            {
+                lines = File.ReadAllLines(_path, Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 3, "timeback 归档读取失败（读面不可用）: " + ex.Message, "TIMEBACK");
+                return result;
+            }
+            int start = lines.Length - max;
+            if (start < 0)
+            {
+                start = 0;
+            }
+            for (int i = start; i < lines.Length; i = i + 1)
+            {
+                string text = lines[i] == null ? "" : lines[i].Trim();
+                if (text.Length == 0)
+                {
+                    continue;
+                }
+                try
+                {
+                    JsonNode node = JsonNode.Parse(text);
+                    if (node as JsonObject == null)
+                    {
+                        continue;
+                    }
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+                result.Add(text);
+            }
+            return result;
+        }
 
         /// <summary>
         /// 追加一行到归档——开-写-关（无长驻句柄）；失败记 L3 并返回 false（失败必须可见，不阻断回卷）。
@@ -187,10 +249,12 @@ namespace CH4
                         sw.Write('\n');
                     }
                 }
+                _lastWriteFailed = false;
                 return true;
             }
             catch (Exception ex)
             {
+                _lastWriteFailed = true;
                 LogStore.Add("CatHome4", 3, "timeback 归档写入失败（本次未落档）: " + ex.Message, "TIMEBACK");
                 return false;
             }

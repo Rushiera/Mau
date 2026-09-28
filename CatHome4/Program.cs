@@ -702,7 +702,107 @@ namespace CH4
                     info["tools_drift"] = driftBlock;
                 }
             }
+            // [段10] timeback——上下文作用域现状 + 归档到达面（design-ch4-timeback §八 T2）
+            // active：未闭合作用域（id / purpose / anchor / startAt / seconds / events）——无作用域不输出
+            // recent：归档尾部 5 条（t / id / n / seconds / purpose）——findings 全文不进 info（归档面不得大于会话面）
+            // archive：写面可用性（ok=false = 最近一次落档失败；失败不阻断回卷，但必须可见）
+            Dictionary<string, object> timebackBlock = new Dictionary<string, object>();
+            bool timebackAny = false;
+            if (session != null)
+            {
+                Dictionary<string, object> timebackActive = session.TimebackActiveSnapshot();
+                if (timebackActive != null)
+                {
+                    long activeStartAt = 0;
+                    object startAtObj;
+                    if (timebackActive.TryGetValue("startAt", out startAtObj) && startAtObj is long)
+                    {
+                        activeStartAt = (long)startAtObj;
+                    }
+                    long activeSeconds = (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - activeStartAt) / 1000;
+                    if (activeSeconds < 0)
+                    {
+                        activeSeconds = 0;
+                    }
+                    timebackActive["seconds"] = activeSeconds;
+                    timebackBlock["active"] = timebackActive;
+                    timebackAny = true;
+                }
+            }
+            string timebackPath = AdminService.ResolveTimebackArchivePath(catKey);
+            if (timebackPath.Length > 0)
+            {
+                TimebackArchive timebackArchive = new TimebackArchive(timebackPath);
+                List<string> timebackTail = timebackArchive.ReadTailJson(5);
+                List<Dictionary<string, object>> timebackRecent = new List<Dictionary<string, object>>();
+                for (int i = 0; i < timebackTail.Count; i = i + 1)
+                {
+                    Dictionary<string, object> item = BuildTimebackSummary(timebackTail[i]);
+                    if (item != null)
+                    {
+                        timebackRecent.Add(item);
+                    }
+                }
+                if (timebackRecent.Count > 0)
+                {
+                    timebackBlock["recent"] = timebackRecent;
+                }
+                Dictionary<string, object> archiveBlock = new Dictionary<string, object>();
+                archiveBlock["ok"] = !timebackArchive.LastWriteFailed;
+                timebackBlock["archive"] = archiveBlock;
+                timebackAny = true;
+            }
+            if (timebackAny)
+            {
+                info["timeback"] = timebackBlock;
+            }
             return JsonSerializer.Serialize(info, AdminService.InfoJsonOptions);
+        }
+        /// <summary>
+        /// timeback 归档行摘要——info timeback.recent 条目（只取观测字段；findings 全文不进 info）。
+        /// </summary>
+        /// <param name="line">归档单行 JSON</param>
+        /// <returns>摘要字典（不可解析 = null）</returns>
+        private static Dictionary<string, object> BuildTimebackSummary(string line)
+        {
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(line))
+                {
+                    JsonElement root = doc.RootElement;
+                    Dictionary<string, object> item = new Dictionary<string, object>();
+                    JsonElement tNode;
+                    if (root.TryGetProperty("t", out tNode) && tNode.ValueKind == JsonValueKind.String)
+                    {
+                        item["t"] = tNode.GetString();
+                    }
+                    JsonElement idNode;
+                    if (root.TryGetProperty("id", out idNode) && idNode.ValueKind == JsonValueKind.Number)
+                    {
+                        item["id"] = idNode.GetInt64();
+                    }
+                    JsonElement nNode;
+                    if (root.TryGetProperty("n", out nNode) && nNode.ValueKind == JsonValueKind.Number)
+                    {
+                        item["n"] = nNode.GetInt32();
+                    }
+                    JsonElement secNode;
+                    if (root.TryGetProperty("seconds", out secNode) && secNode.ValueKind == JsonValueKind.Number)
+                    {
+                        item["seconds"] = secNode.GetInt64();
+                    }
+                    JsonElement purposeNode;
+                    if (root.TryGetProperty("purpose", out purposeNode) && purposeNode.ValueKind == JsonValueKind.String)
+                    {
+                        item["purpose"] = purposeNode.GetString();
+                    }
+                    return item;
+                }
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
         /// <summary>
         /// 前端测试服务拉起——宿主启动时自动启动 html/tests/server.js（未监听本区段前端测试端口时）；失败不影响主功能。

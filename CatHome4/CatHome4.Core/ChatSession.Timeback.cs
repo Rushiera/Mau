@@ -40,6 +40,12 @@ namespace CH4
 
             /// <summary>待执行回收的带回载荷——back 已作为工具返回值送出，批后段据此执行区间删除。</summary>
             public string PendingFindings;
+
+            /// <summary>作用域内事件累计——think / 工具完成 / assistant 产出各计 1（状态自述阈值数据源）。</summary>
+            public long EventCount;
+
+            /// <summary>上次状态自述时的计数水位——距其再满 10 个事件注入下一条（10 / 20 / 30…）。</summary>
+            public long LastNotifyCount;
         }
 
         /// <summary>当前未闭合作用域——null=无作用域。</summary>
@@ -162,7 +168,7 @@ namespace CH4
             if (archive != null)
             {
                 scope.Id = archive.NextId();
-                archive.AppendOpen(scope.Id, _catKey, _round, declIndex, scope.StartAtMs, scope.Purpose, _context.GetMessageCount(), 0);
+                archive.AppendOpen(scope.Id, _catKey, _round, declIndex, scope.StartAtMs, scope.Purpose, _context.GetMessageCount());
             }
             _timebackScope = scope;
             Dictionary<string, object> fields = new Dictionary<string, object>();
@@ -301,6 +307,95 @@ namespace CH4
             }
             _timebackArchive = new TimebackArchive(path);
             return _timebackArchive;
+        }
+        /// <summary>状态自述步长——作用域内每累计 10 个事件注入一条 assistant 自述（莎 2026-09-28 定）。</summary>
+        private const long TimebackNoticeStep = 10;
+        /// <summary>
+        /// 作用域内事件计数——think / 工具完成 / assistant 产出各计 1（莎 2026-09-28 定）。
+        /// 只累加，不触碰前文——注入时机归批后段 FlushTimebackNotice（批中注入会打乱 tool_call 配对）。
+        /// </summary>
+        private void NoteTimebackEvent()
+        {
+            TimebackScope scope = _timebackScope;
+            if (scope == null)
+            {
+                return;
+            }
+            scope.EventCount = scope.EventCount + 1;
+        }
+        /// <summary>状态提示注入——批后段调用：距上次提示累计满 10 个事件则追加一条角色 user 的系统提示（source=systemauto）。
+        /// C1 纪律：只追加新块、绝不回改历史块（前缀一字未动 → 缓存仍命中）。
+        /// 🔴 角色是 user 不是 assistant（判例 2026-09-28 · 1.03.049 运行态）：思考模式下注入的 assistant 无 reasoning_content 回传 → 端点 400（`The reasoning_content in the thinking mode must be passed back to the API`）→ 本轮中止；user 注入走既有系统通道，零协议风险。
+        /// 提示块落在作用域区间内——回收时与查证过程一并删除（零残留）；本轮照常续跑，不置工具主动 done。</summary>
+        private void FlushTimebackNotice()
+        {
+            TimebackScope scope = _timebackScope;
+            if (scope == null)
+            {
+                return;
+            }
+            if (scope.EventCount - scope.LastNotifyCount < TimebackNoticeStep)
+            {
+                return;
+            }
+            long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            long seconds = (nowMs - scope.StartAtMs) / 1000;
+            if (seconds < 0)
+            {
+                seconds = 0;
+            }
+            scope.LastNotifyCount = scope.EventCount;
+            string text = "（系统自动 · timeback #" + scope.Id.ToString() + "）你处在 timeback 中，已经历【" + scope.EventCount.ToString()
+                + "】条前文条目（已用 " + seconds.ToString() + " 秒）——回收时用 back 带回 findings。";
+            AppendMessage(_context.AddUserMessage(text));
+            _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
+            if (_httpHost != null)
+            {
+                string userJson = "{\"content\":" + JsonUtil.Serialize(text) + ",\"source\":\"systemauto\"}";
+                _httpHost.PushView("user", userJson, -1, 0);
+            }
+            LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 状态提示注入（累计 " + scope.EventCount.ToString()
+                + " 事件 / 已用 " + seconds.ToString() + " 秒）", "TIMEBACK");
+        }
+        /// <summary>
+        /// 活跃作用域快照——info timeback.active 数据源（无作用域 = null）。
+        /// </summary>
+        /// <returns>字段字典（id / purpose / anchor / startAt / events；无作用域 = null）</returns>
+        public Dictionary<string, object> TimebackActiveSnapshot()
+        {
+            TimebackScope scope = _timebackScope;
+            if (scope == null)
+            {
+                return null;
+            }
+            Dictionary<string, object> map = new Dictionary<string, object>();
+            map["id"] = scope.Id;
+            map["purpose"] = scope.Purpose;
+            map["anchor"] = scope.StartDeclIndex;
+            map["startAt"] = scope.StartAtMs;
+            map["events"] = scope.EventCount;
+            return map;
+        }
+        /// <summary>
+        /// timeback 本体修正黑名单（莎 2026-09-28 定）——作用域存活期禁止对 CH4 自身做修正：
+        /// 宿主重启 / 热重载 / 自举链（mau-*）/ 全局与每猫配置写入 / 管理指令族。
+        /// 判据 = 工具名精确匹配（黑名单式，不用前缀通配——只读面如 host-flows / config-get / config-cat-get / mau-verify 与文本工具不受影响）。
+        /// 与 C3 的 Note / sleep / timer 锁定并列：前者防「区间删除语义冲突」，本项防「作用域内改本体」。
+        /// </summary>
+        /// <param name="name">工具名</param>
+        /// <returns>true=作用域内禁用</returns>
+        private static bool IsTimebackBodyLocked(string name)
+        {
+            return name == "majordomo-restart"
+                || name == "host-reload"
+                || name == "mau-verify"
+                || name == "mau-gen"
+                || name == "mau-proj"
+                || name == "mau-setup"
+                || name == "config-set"
+                || name == "config-reset"
+                || name == "config-cat-set"
+                || name == "majordomo-cmd";
         }
     }
 }

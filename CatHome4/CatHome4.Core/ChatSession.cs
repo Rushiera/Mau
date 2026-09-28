@@ -777,6 +777,7 @@ namespace CH4
                 if (done)
                 {
                     AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
+                    NoteTimebackEvent();
                 }
                 PushToolCardFinal(dog, i + 1, _dogs.Count, done);
             }
@@ -1596,6 +1597,11 @@ namespace CH4
                 AbortRoundError();
                 return;
             }
+            // timeback 事件计数——think（本轮产出思考内容）计 1；assistant 产出在下文两分支各计 1
+            if (_llmReasoning.Length > 0)
+            {
+                NoteTimebackEvent();
+            }
             if (_llmToolCallsJson.Length == 0)
             {
                 // 空回复续传——流正常结束但无回复文本（有思考无回复或完全空）→ 同上下文重发（CH2 [段2.3] 移植；无上限——LLM 兜底；Trim 判空）
@@ -1606,6 +1612,7 @@ namespace CH4
                 }
                 // 纯文本回复——本轮完成
                 AppendMessage(_context.AddAssistantMessage(_llmResultText));
+                NoteTimebackEvent();
                 _viewStore.OnAssistantText(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                 if (_httpHost != null)
                 {
@@ -1636,6 +1643,7 @@ namespace CH4
             }
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
             AppendMessage(_context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning));
+            NoteTimebackEvent();
             _viewStore.OnAssistantToolCalls(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             // 思考段整块——由 SealReasonStream 在离开 think 态时统一推送（工具决策流首帧即收口；唯一出口，莎 2026-09-22 定）
             // 工具轮 seal——视图层补 gap text 块（全量外观真源：前端历史/QQBot 转发消费）+ SSE 推送（实时）；空文本不推
@@ -1847,6 +1855,16 @@ namespace CH4
                             LogStore.Add("CatHome4", 2, "工具 " + name + " 被拒绝：不在本会话声明面", "TOOL");
                             continue;
                         }
+                        // timeback 本体修正黑名单——作用域存活期禁止对 CH4 自身做修正（莎 2026-09-28 定；统一在此点拦 host-* / 内置 / OA 三分支）
+                        if (_timebackScope != null && IsTimebackBodyLocked(name))
+                        {
+                            ToolOrderDog lockedDog = new ToolOrderDog(id, name, arguments);
+                            lockedDog.Result = "ERR|TIMEBACK_LOCKED|timeback 作用域内禁止对 CH4 自身做修正: " + name + "——先 back 回收";
+                            lockedDog.IsClosed = true;
+                            _dogs.Add(lockedDog);
+                            LogStore.Add("CatHome4", 2, "工具 " + name + " 被拒绝：timeback 作用域内禁止本体修正", "TIMEBACK");
+                            continue;
+                        }
                         // per-cat 路由——载荷注入猫 key（会话标识 ≡ 猫 key；积木按 catId 解析猫级文件系统与配置面）
                         arguments = InjectCatId(arguments);
                         // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
@@ -2033,11 +2051,14 @@ namespace CH4
                     dog.CardSeq = -1;
                 }
                 AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
+                NoteTimebackEvent();
                 _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             }
             _toolBatchActive = false;
             // [段2d] timeback 回卷——本批请求了 back 则在此执行（工具结果已全部回填：截断 + 结论注入 + 工具主动 done）
             ApplyTimebackBack();
+            // [段2e] timeback 状态自述——回收后作用域已关（自然跳过）；未关且累计满 10 事件则追加一条 assistant 自述
+            FlushTimebackNotice();
             // [段2c] 宿主重启检测——majordomo-restart 成功回执 → 登记重启请求 + 停机态（A72：本轮走常规结束流程，不强制中断）
             for (int r = 0; r < _dogs.Count; r = r + 1)
             {
