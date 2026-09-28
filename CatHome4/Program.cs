@@ -388,7 +388,7 @@ namespace CH4
                 }
             }
             // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）；session.new 重注入复用
-            _chatBridge.DefaultToolSpecs = AdminService.FilterToolSpecs(AdminService.ResolveToolNames(defaultToolNames));
+            _chatBridge.DefaultToolSpecs = AdminService.FilterToolSpecs(AdminService.ResolveToolNames(defaultToolNames, true), true);
             // 授权面原始串——实时解析输入（design-ch4-tools §三·十一）
             _chatBridge.DefaultToolNames = defaultToolNames;
             AdminService._defaultApiConfigId = defaultApiConfigId;
@@ -660,6 +660,7 @@ namespace CH4
                 info["qqbot"] = qqbotBlock;
             }
             // [段9] tools_drift——工具面漂移（会话注入面 vs 当前授权集；仅不一致时输出——design-ch4-tools §三·十一）
+            // added 附用法摘要（name/desc/args——注册表声明派生，冷启动猫不新会话即可上手；removed 只给名字）
             if (session != null)
             {
                 string[] declaredNames = session.DeclaredToolNames;
@@ -668,10 +669,16 @@ namespace CH4
                 List<string> driftRemoved = new List<string>();
                 for (int i = 0; i < authorizedNames.Length; i = i + 1)
                 {
-                    if (Array.IndexOf(declaredNames, authorizedNames[i]) < 0)
+                    if (Array.IndexOf(declaredNames, authorizedNames[i]) >= 0)
                     {
-                        driftAdded.Add(authorizedNames[i]);
+                        continue;
                     }
+                    // 三面判定——特权面 / 池校验 / 授权集全过才算「新增可用」（不能用 = 不报；莎 2026-09-28）
+                    if (!session.IsToolAllowed(authorizedNames[i]))
+                    {
+                        continue;
+                    }
+                    driftAdded.Add(authorizedNames[i]);
                 }
                 for (int i = 0; i < declaredNames.Length; i = i + 1)
                 {
@@ -683,7 +690,12 @@ namespace CH4
                 if (driftAdded.Count > 0 || driftRemoved.Count > 0)
                 {
                     Dictionary<string, object> driftBlock = new Dictionary<string, object>();
-                    driftBlock["added"] = driftAdded;
+                    List<object> addedBriefs = new List<object>();
+                    for (int i = 0; i < driftAdded.Count; i = i + 1)
+                    {
+                        addedBriefs.Add(BuildToolBrief(driftAdded[i]));
+                    }
+                    driftBlock["added"] = addedBriefs;
                     driftBlock["removed"] = driftRemoved;
                     info["tools_drift"] = driftBlock;
                 }

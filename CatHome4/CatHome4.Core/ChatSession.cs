@@ -1888,10 +1888,11 @@ namespace CH4
         /// <summary>
         /// 工具可用性判定——特权面 + 池校验 + 当前授权集实时查询（design-ch4-tools §三·十一：注入面 = 提示，授权面 = 真相）。
         /// 授权集由组合根注入的 AuthorizedToolNamesProvider 提供（Admin 域实时解析 cat.cfg 名单）；未接线 → 回落 _tools 快照（旧语义）+ 一次告警。
+        /// 公开面——漂移观测等诊断消费（info tools_drift.added 只报三面全过者；莎 2026-09-28）。
         /// </summary>
         /// <param name="name">工具名</param>
         /// <returns>true=可调用</returns>
-        private bool IsToolAllowed(string name)
+        public bool IsToolAllowed(string name)
         {
             // 特权面——仅默认会话可调（判据 = 注册面组级标记，单一真相源；design-ch4-host-restart §二）
             if (IsPrivilegedTool(name) && !IsDefaultSession)

@@ -613,8 +613,8 @@ namespace CatHome4.Admin
                 qqbotEnable = cfg.QqBotEnable,
                 enabledRoots = cfg.EnabledRoots,
                 allRoots = BuildAllRootsJson(),
-                allToolNames = GetAllToolNames(),
-                allTools = GetAllToolsWithGroup(),
+                allToolNames = GetConfigurableToolNames(),
+                allTools = GetConfigurableToolsWithGroup(),
                 apiOptions = apiOptions,
                 qqbotOptions = qqbotOptions
             };
@@ -866,8 +866,8 @@ namespace CatHome4.Admin
                 defaultToolNames = defaultToolNames,
                 defaultInjectList = defaultInjectList,
                 defaultPacks = defaultPacks,
-                allToolNames = GetAllToolNames(),
-                allTools = GetAllToolsWithGroup(),
+                allToolNames = GetConfigurableToolNames(),
+                allTools = GetConfigurableToolsWithGroup(),
                 allPacks = BuildAllPacks()
             };
             return Results.Json(resp);
@@ -1325,7 +1325,8 @@ namespace CatHome4.Admin
             {
                 toolNames = cfg.ToolNames;
             }
-            ToolSpec[] specs = FilterToolSpecs(ResolveToolNames(toolNames));
+            bool includePrivileged = IsDefaultCatKey(key);
+            ToolSpec[] specs = FilterToolSpecs(ResolveToolNames(toolNames, includePrivileged), includePrivileged);
             // M4e 猫级白名单——配置变更后重建猫文件系统（启用根子集）
             ApplyCatRoots(key);
             if (key == "majordomo")

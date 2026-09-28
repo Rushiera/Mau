@@ -102,6 +102,141 @@ namespace CatHome4.Admin
             }
             return result;
         }
+        /// <summary>
+        /// 可配置工具名清单——全量剔除特权工具（特权组不入配置面：前端勾选面 / cat.cfg 名单 / 新猫模板；design-ch4-tools §三·十）。
+        /// </summary>
+        /// <returns>可配置工具名数组</returns>
+        internal static string[] GetConfigurableToolNames()
+        {
+            string[] all = GetAllToolNames();
+            List<string> list = new List<string>();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (!IsPrivilegedName(all[i]))
+                {
+                    list.Add(all[i]);
+                }
+            }
+            return list.ToArray();
+        }
+        /// <summary>
+        /// 可配置工具清单（含组别）——配置面勾选数据源（特权组不出现；design-ch4-tools §三·十）。
+        /// </summary>
+        /// <returns>工具名+组别数组（name/group，不含特权）</returns>
+        internal static object[] GetConfigurableToolsWithGroup()
+        {
+            ToolDef[] defs = ToolPool.All();
+            List<object> result = new List<object>();
+            for (int i = 0; i < defs.Length; i = i + 1)
+            {
+                if (!IsPrivilegedName(defs[i].Name))
+                {
+                    result.Add(new { name = defs[i].Name, group = defs[i].Group });
+                }
+            }
+            return result.ToArray();
+        }
+        /// <summary>
+        /// 特权工具判定——读注册面组级标记（ToolRegistry 单一真相源；未注册 = 非特权）。
+        /// </summary>
+        /// <param name="name">工具名</param>
+        /// <returns>true=特权（仅默认会话永久激活，不入配置面）</returns>
+        internal static bool IsPrivilegedName(string name)
+        {
+            ToolRegistryEntry entry = ToolRegistry.Find(name);
+            if (entry == null)
+            {
+                return false;
+            }
+            return entry.Privileged;
+        }
+        /// <summary>
+        /// 特权工具全量名——默认会话永久激活集来源（不入 cat.cfg 名单；莎 2026-09-28 定）。
+        /// </summary>
+        /// <returns>特权工具名数组</returns>
+        internal static string[] GetAllPrivilegedToolNames()
+        {
+            string[] all = GetAllToolNames();
+            List<string> list = new List<string>();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (IsPrivilegedName(all[i]))
+                {
+                    list.Add(all[i]);
+                }
+            }
+            return list.ToArray();
+        }
+        /// <summary>
+        /// 特权工具并入——默认会话永久激活（去重并入；其他会话原样返回）。
+        /// </summary>
+        /// <param name="names">名单解析结果（可配置面）</param>
+        /// <param name="includePrivileged">是否并入特权工具</param>
+        /// <returns>最终工具名数组</returns>
+        internal static string[] AppendPrivilegedNames(string[] names, bool includePrivileged)
+        {
+            if (!includePrivileged)
+            {
+                return names;
+            }
+            string[] privileged = GetAllPrivilegedToolNames();
+            List<string> list = new List<string>();
+            for (int i = 0; i < names.Length; i = i + 1)
+            {
+                list.Add(names[i]);
+            }
+            for (int i = 0; i < privileged.Length; i = i + 1)
+            {
+                if (!ContainsToolName(names, privileged[i]))
+                {
+                    list.Add(privileged[i]);
+                }
+            }
+            return list.ToArray();
+        }
+        /// <summary>
+        /// 名单解析（可配置口径）——白名单 = 可配置清单；空 / "*" / 过滤后全空 → 全量保底（去特权）。
+        /// </summary>
+        /// <param name="raw">cat.cfg toolNames 原始串（逗号/空白分隔）</param>
+        /// <returns>可配置工具名数组（保底去特权）</returns>
+        internal static string[] ResolveConfigurableNames(string raw)
+        {
+            string[] all = GetConfigurableToolNames();
+            if (raw == null || raw.Trim().Length == 0)
+            {
+                return all;
+            }
+            string[] parts = raw.Split(new char[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            List<string> names = new List<string>();
+            for (int i = 0; i < parts.Length; i = i + 1)
+            {
+                string name = parts[i].Trim();
+                if (name == "*")
+                {
+                    return all;
+                }
+                if (ContainsToolName(all, name))
+                {
+                    names.Add(name);
+                }
+            }
+            if (names.Count == 0)
+            {
+                return all;
+            }
+            return names.ToArray();
+        }
+        /// <summary>
+        /// 工具名单解析（含特权并入）——默认会话永久激活口径（design-ch4-tools §三·十）。
+        /// 白名单 = 可配置清单（特权名不入名单）；includePrivileged=true 时结果并入全部特权工具。
+        /// </summary>
+        /// <param name="raw">cat.cfg toolNames 原始串</param>
+        /// <param name="includePrivileged">是否并入特权工具（默认会话 true）</param>
+        /// <returns>工具名数组（空 / "*" / 全非法 → 全量保底，按同口径含或去特权）</returns>
+        internal static string[] ResolveToolNames(string raw, bool includePrivileged)
+        {
+            return AppendPrivilegedNames(ResolveConfigurableNames(raw), includePrivileged);
+        }
 
         /// <summary>
         /// 工具名比对——线性扫描内置清单。
@@ -122,36 +257,13 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 工具名单解析——读时比对（M2c 外部损坏防御：空/缺省 → 全量保底；非法名过滤；过滤后全空 → 全量保底）。
+        /// 工具名单解析（非默认会话口径）——可配置清单过滤 + 不并入特权（特权组不入配置面；默认会话口径见双参重载）。
         /// </summary>
         /// <param name="raw">cat.cfg toolNames 原始串（逗号/空白分隔）</param>
-        /// <returns>合法工具名数组（保底全量）</returns>
+        /// <returns>合法工具名数组（保底全量，去特权）</returns>
         internal static string[] ResolveToolNames(string raw)
         {
-            string[] all = GetAllToolNames();
-            if (raw == null || raw.Trim().Length == 0)
-            {
-                return all;
-            }
-            string[] parts = raw.Split(new char[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-            List<string> names = new List<string>();
-            for (int i = 0; i < parts.Length; i++)
-            {
-                string name = parts[i].Trim();
-                if (name == "*")
-                {
-                    return all;
-                }
-                if (ContainsToolName(all, name))
-                {
-                    names.Add(name);
-                }
-            }
-            if (names.Count == 0)
-            {
-                return all;
-            }
-            return names.ToArray();
+            return ResolveToolNames(raw, false);
         }
 
         /// <summary>
@@ -165,7 +277,7 @@ namespace CatHome4.Admin
             {
                 return "";
             }
-            string[] all = GetAllToolNames();
+            string[] all = GetConfigurableToolNames();
             string[] parts = raw.Split(new char[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
             List<string> names = new List<string>();
             for (int i = 0; i < parts.Length; i++)
@@ -180,28 +292,44 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 工具声明面裁剪——按名单从全量表取子集（M2c 每会话独立声明面；保序）。
+        /// 工具声明面裁剪——按名单从全量表取子集（M2c 每会话独立声明面）；特权组按 includePrivileged 处置（默认会话永久激活 / 其他会话恒剔除；莎 2026-09-28）。
         /// </summary>
         /// <param name="names">合法工具名数组（ResolveToolNames 产物）</param>
-        /// <returns>裁剪后工具数组；名单空 → 全量</returns>
-        internal static ToolSpec[] FilterToolSpecs(string[] names)
+        /// <param name="includePrivileged">是否并入特权工具（默认会话 true）</param>
+        /// <returns>裁剪后工具数组；名单全非法 → 全量保底（按同口径含或去特权）</returns>
+        internal static ToolSpec[] FilterToolSpecs(string[] names, bool includePrivileged)
         {
             ToolSpec[] all = ToolRegistry.BuildSpecs();
-            if (names == null || names.Length == 0)
-            {
-                return all;
-            }
             List<ToolSpec> list = new List<ToolSpec>();
-            for (int i = 0; i < all.Length; i++)
+            for (int i = 0; i < all.Length; i = i + 1)
             {
-                if (ContainsToolName(names, all[i].Name))
+                ToolSpec spec = all[i];
+                if (IsPrivilegedName(spec.Name))
                 {
-                    list.Add(all[i]);
+                    // 特权面——默认会话永久激活（不受名单约束）；其他会话恒剔除（莎 2026-09-28）
+                    if (includePrivileged)
+                    {
+                        list.Add(spec);
+                    }
+                    continue;
+                }
+                if (ContainsToolName(names, spec.Name))
+                {
+                    list.Add(spec);
                 }
             }
             if (list.Count == 0)
             {
-                return all;
+                // 全空保底——全量（默认会话含特权，其他会话去特权）
+                List<ToolSpec> fallback = new List<ToolSpec>();
+                for (int i = 0; i < all.Length; i = i + 1)
+                {
+                    if (includePrivileged || !IsPrivilegedName(all[i].Name))
+                    {
+                        fallback.Add(all[i]);
+                    }
+                }
+                return fallback.ToArray();
             }
             return list.ToArray();
         }

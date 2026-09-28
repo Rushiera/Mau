@@ -1181,7 +1181,7 @@ namespace CatHome4.Admin
                     }
                 }
                 // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）
-                ToolSpec[] catSpecs = FilterToolSpecs(ResolveToolNames(toolNames));
+                ToolSpec[] catSpecs = FilterToolSpecs(ResolveToolNames(toolNames, false), false);
                 // [段3] 上下文 + 前文恢复/注入
                 ChatContext context = new ChatContext();
                 SessionStore store = new SessionStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".jsonl"));
@@ -1640,6 +1640,19 @@ namespace CatHome4.Admin
             }
             return prefix;
         }
+        /// <summary>
+        /// 默认会话判定——特权工具永久激活基准（猫 key = majordomo / 空；design-ch4-tools §三·十）。
+        /// </summary>
+        /// <param name="key">猫寻址键</param>
+        /// <returns>true=默认会话</returns>
+        internal static bool IsDefaultCatKey(string key)
+        {
+            if (key == null || key.Length == 0)
+            {
+                return true;
+            }
+            return string.Equals(key, "majordomo", StringComparison.Ordinal);
+        }
 
         /// <summary>
         /// 当前授权工具名——工具判定授权面的实时查询入口（design-ch4-tools §三·十一）。
@@ -1669,7 +1682,7 @@ namespace CatHome4.Admin
             {
                 raw = "";
             }
-            return ResolveToolNames(raw);
+            return ResolveToolNames(raw, IsDefaultCatKey(catKey));
         }
 
         /// <summary>
