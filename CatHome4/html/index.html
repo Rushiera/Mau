@@ -162,10 +162,10 @@
                     <!-- 重启生效区——受控根（workspace roots；安全边界管理员面） -->
                     <h2 style="margin:16px 0 8px;color:var(--ch-err)">🔁 重启生效</h2>
                     <div style="border:1px solid var(--ch-line-strong);border-radius:6px;padding:10px;background:var(--ch-bg-raised)">
-                        <div style="font-size:11px;color:var(--ch-fg-weak);margin-bottom:6px">受控根（workspace roots——安全边界；保存后重启宿主生效；LLM 工具面保持只读）</div>
+                        <div style="font-size:11px;color:var(--ch-fg-weak);margin-bottom:6px">受控根（workspace roots——安全边界；保存后重启宿主生效；LLM 工具面保持只读）｜系统根 workspace / mau / mauout / data 的 id 与注释固定，仅可改路径</div>
                         <table class="box-table" id="rootsTable"><thead><tr><th style="width:12%">id</th><th style="width:42%">路径</th><th style="width:20%">注释（≤20 字·给 LLM 认路）</th><th style="width:10%">权限</th><th style="width:16%">操作</th></tr></thead><tbody></tbody></table>
                         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-                            <input id="rootNewId" placeholder="id（字母/数字/下划线）" style="width:150px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
+                            <input id="rootNewId" placeholder="id（小写字母/数字）" style="width:150px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
                             <input id="rootNewPath" placeholder="绝对路径（目录必须存在）" style="flex:2;min-width:220px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
                             <input id="rootNewNote" placeholder="注释（≤20 字）" maxlength="20" style="width:150px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
                             <select id="rootNewWritable" style="background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">

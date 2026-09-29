@@ -88,7 +88,7 @@ namespace CatHome4.Admin
             return names;
         }
         /// <summary>
-        /// 可配置工具名清单——全量剔除特权工具（特权组不入配置面：前端勾选面 / cat.cfg 名单 / 新猫模板；design-ch4-tools §三·十）。
+        /// 可配置工具名清单——全量剔除特权工具（可配白名单：cat.cfg 名单写时校验 / 新猫模板校验；design-ch4-tools §三·十 2026-09-29 修订）。
         /// </summary>
         /// <returns>可配置工具名数组</returns>
         internal static string[] GetConfigurableToolNames()
@@ -105,19 +105,17 @@ namespace CatHome4.Admin
             return list.ToArray();
         }
         /// <summary>
-        /// 可配置工具清单（含组别）——配置面勾选数据源（特权组不出现；design-ch4-tools §三·十）。
+        /// 配置面勾选清单（全量 + 特权标记）——配置面渲染数据源：特权工具可见不可选（design-ch4-tools §三·十 渲染三态，2026-09-29）。
+        /// 可配白名单仍走 GetConfigurableToolNames——校验面不放开。
         /// </summary>
-        /// <returns>工具名+组别数组（name/group，不含特权）</returns>
-        internal static object[] GetConfigurableToolsWithGroup()
+        /// <returns>工具名 + 组别 + 特权标记数组（name/group/privileged）</returns>
+        internal static object[] GetToolsWithGroupForConfig()
         {
             ToolDef[] defs = ToolPool.All();
             List<object> result = new List<object>();
             for (int i = 0; i < defs.Length; i = i + 1)
             {
-                if (!IsPrivilegedName(defs[i].Name))
-                {
-                    result.Add(new { name = defs[i].Name, group = defs[i].Group });
-                }
+                result.Add(new { name = defs[i].Name, group = defs[i].Group, privileged = IsPrivilegedName(defs[i].Name) });
             }
             return result.ToArray();
         }

@@ -111,9 +111,11 @@ function parseToolChecked(toolNames) {
 
 // 通用分组勾选渲染——优先按工具池 group 字段分组（allTools: [{name,group}]——design-ch4-tools-pool §六）；
 // 兼容纯名数组（allToolNames: string[]）回退 - 前缀分组（text-*/mau-* 视为一组；无前缀归 other）；组头开关一键全组
-function renderGroupedChecks(boxId, allTools, checked) {
+function renderGroupedChecks(boxId, allTools, checked, privilegedMode) {
     var box = document.getElementById(boxId);
     box.textContent = '';
+    // 特权面三态（2026-09-29）——'on'=默认猫面（已选 + 禁用）；'off'=其他猫面与模板面（未选 + 禁用）
+    if (privilegedMode !== 'on') { privilegedMode = 'off'; }
     var groups = {};
     var order = [];
     // A107——不可用工具组直接不加载（后端池派生已不含；此处为契约显式化，防两面漂移）
@@ -125,6 +127,7 @@ function renderGroupedChecks(boxId, allTools, checked) {
         var item = allTools[k];
         var toolName = typeof item === 'string' ? item : (item && item.name) || '';
         if (toolName.length === 0) { continue; }
+        var isPriv = typeof item === 'object' && item.privileged === true;
         var group;
         if (typeof item === 'object' && item.group) {
             group = item.group;               // 工具池组别（TextCat/PsCat/...）——统一接口
@@ -134,7 +137,7 @@ function renderGroupedChecks(boxId, allTools, checked) {
         }
         if (blocked[group] === true) { continue; }
         if (!groups[group]) { groups[group] = []; order.push(group); }
-        groups[group].push(toolName);
+        groups[group].push({ name: toolName, privileged: isPriv });
     }
     for (var g = 0; g < order.length; g++) {
         (function (groupName, tools) {
@@ -149,23 +152,45 @@ function renderGroupedChecks(boxId, allTools, checked) {
             groupBox.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px 12px;width:100%';
             var cbs = [];
             for (var t = 0; t < tools.length; t++) {
-                (function (toolName) {
+                (function (tool) {
                     var label = document.createElement('label');
                     label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--ch-fg);cursor:pointer';
                     var cb = document.createElement('input');
                     cb.type = 'checkbox';
                     cb.className = 'tool-cb';
-                    cb.setAttribute('data-tool', toolName);
-                    cb.checked = checked[toolName] === true;
+                    cb.setAttribute('data-tool', tool.name);
+                    cb.checked = checked[tool.name] === true;
+                    if (tool.privileged) {
+                        // 特权面——可见不可配：主干会话面显示已选、其余面显示未选，一律禁用（不入名单）
+                        cb.disabled = true;
+                        cb.checked = (privilegedMode === 'on');
+                        label.style.borderColor = 'var(--ch-warn)';
+                        label.style.opacity = '0.7';
+                        label.title = privilegedMode === 'on'
+                            ? '特权面——主干会话永久激活，不受名单约束'
+                            : '特权面——仅主干会话可用，不入名单';
+                        label.appendChild(cb);
+                        label.appendChild(document.createTextNode(tool.name + ' · 特权面'));
+                        groupBox.appendChild(label);
+                        return;
+                    }
                     cbs.push(cb);
                     label.appendChild(cb);
-                    label.appendChild(document.createTextNode(toolName));
+                    label.appendChild(document.createTextNode(tool.name));
                     groupBox.appendChild(label);
                 })(tools[t]);
             }
             box.appendChild(groupBox);
             // 组开关——全选/全不选；组内变化回写半选态
             function syncHead() {
+                if (cbs.length === 0) {
+                    // 全特权组——组头开关无可用项可切
+                    hcb.disabled = true;
+                    hcb.checked = false;
+                    hcb.indeterminate = false;
+                    hcb.title = '该组全部为特权工具——不入名单';
+                    return;
+                }
                 var on = 0;
                 for (var i = 0; i < cbs.length; i++) { if (cbs[i].checked) { on = on + 1; } }
                 hcb.checked = (on === cbs.length);
@@ -182,11 +207,12 @@ function renderGroupedChecks(boxId, allTools, checked) {
     }
 }
 
-// 通用勾选收集——data-tool 属性直读（不依赖渲染顺序）
+// 通用勾选收集——data-tool 属性直读（不依赖渲染顺序）；禁用项（特权面锁定项）不计入提交
 function collectChecked(boxId) {
     var names = [];
     var boxes = document.querySelectorAll('#' + boxId + ' input[type=checkbox].tool-cb');
     for (var i = 0; i < boxes.length; i++) {
+        if (boxes[i].disabled) { continue; }
         if (boxes[i].checked) { names.push(boxes[i].getAttribute('data-tool')); }
     }
     return names;
@@ -210,8 +236,9 @@ function renderToolDefectNote(defects, stale) {
     msg.textContent = text;
 }
 
+// 每猫工具勾选——默认猫（majordomo）面：特权项已选 + 禁用；其他猫面：未选 + 禁用（后端白名单兜底剔除）
 function renderToolChecks(toolNames) {
-    renderGroupedChecks('catCfgTools', catCfgAllTools, parseToolChecked(toolNames));
+    renderGroupedChecks('catCfgTools', catCfgAllTools, parseToolChecked(toolNames), catCfgTarget === 'majordomo' ? 'on' : 'off');
 }
 
 // 拖拽排序（最简原生实现——容器级事件委托；行设 draggable=true 即可拖；onReorder(from, to) 自行搬移数组并重渲染）
@@ -331,9 +358,12 @@ function renderRootChecks(allRoots, enabledRoots) {
         return;
     }
     // 未配置（空/null）= 空白名单——仅常驻 workspace 可用（如实渲染，不默认勾选）
+    // 大小写归一——比对键一律小写（池内 id 已统一小写；历史值容错）
     var enabled = {};
     if (enabledRoots && enabledRoots.length > 0) {
-        for (var i = 0; i < enabledRoots.length; i++) { enabled[enabledRoots[i]] = true; }
+        for (var i = 0; i < enabledRoots.length; i++) {
+            if (enabledRoots[i] && enabledRoots[i].length > 0) { enabled[enabledRoots[i].toLowerCase()] = true; }
+        }
     }
     var hasEnabled = enabledRoots && enabledRoots.length > 0;
     if (!hasEnabled) {
@@ -344,7 +374,9 @@ function renderRootChecks(allRoots, enabledRoots) {
     }
     for (var j = 0; j < allRoots.length; j++) {
         (function (root) {
-            var isWs = root.id === 'workspace' || root.id === 'runtime';
+            var rid = (root.id || '').toLowerCase();
+            var isFixed = root.fixedRoot === true;
+            var isWs = rid === 'workspace' || rid === 'runtime';
             var label = document.createElement('label');
             label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--ch-fg);cursor:pointer';
             var cb = document.createElement('input');
@@ -352,16 +384,23 @@ function renderRootChecks(allRoots, enabledRoots) {
             cb.className = 'root-cb';
             cb.setAttribute('data-root', root.id);
             // workspace 强制必选且不可取消；其余按显式清单勾选（未配置 = 不勾——如实反映生效范围）
-            cb.checked = isWs || (hasEnabled && enabled[root.id] === true);
+            cb.checked = isWs || (hasEnabled && enabled[rid] === true);
             if (isWs) {
                 cb.checked = true;
                 cb.disabled = true;
                 label.style.color = 'var(--ch-warn)';
                 label.title = '系统根——必选不可取消';
+            } else if (isFixed) {
+                // 固定命名根（mau / mauout / data）——呈现区分，不加权限
+                label.style.borderColor = 'var(--ch-warn)';
+                label.title = '系统根（固定命名）——' + (root.note || '');
             }
             label.appendChild(cb);
             var txt = document.createElement('span');
-            txt.textContent = (isWs ? 'workspace（系统根·必选）' : root.id) + ' — ' + root.path + (root.writable ? '' : ' [只读]');
+            var nameLabel = root.id;
+            if (isWs) { nameLabel = root.id + '（系统根·必选）'; }
+            else if (isFixed) { nameLabel = root.id + '（系统根）'; }
+            txt.textContent = nameLabel + ' — ' + root.path + (root.writable ? '' : ' [只读]');
             txt.style.wordBreak = 'break-all';
             label.appendChild(txt);
             box.appendChild(label);
@@ -437,7 +476,7 @@ function loadTpl() {
             document.getElementById('tplBaseRole').value = d.baseRole || '';
             document.getElementById('tplPersona').value = d.defaultPersona || '';
             catCfgDefectGroups = d.defectGroups || [];
-            renderGroupedChecks('tplTools', d.allTools || d.allToolNames || [], parseToolChecked(d.defaultToolNames || ''));
+            renderGroupedChecks('tplTools', d.allTools || d.allToolNames || [], parseToolChecked(d.defaultToolNames || ''), 'off');
             tplInjectList = (d.defaultInjectList || []).slice();
             renderTplInject();
             renderTplPacks(d.allPacks || [], d.defaultPacks || []);
@@ -492,7 +531,7 @@ function renderRoots() {
         (function (idx) {
             var tr = document.createElement('tr');
             var tdId = document.createElement('td');
-            tdId.textContent = rootsList[idx].id;
+            tdId.textContent = rootsList[idx].id + (rootsList[idx].fixedRoot ? ' · 系统根' : '');
             tdId.style.color = 'var(--ch-identity)';
             tr.appendChild(tdId);
             var tdPath = document.createElement('td');
@@ -518,12 +557,18 @@ function renderRoots() {
             var rm = document.createElement('button');
             rm.textContent = '移除';
             rm.className = 'btn-mini tight danger';
-            rm.onclick = function () {
-                // 移除确认——保存并重启后生效；未保存前可刷新页面恢复
-                if (!window.confirm('移除受控根「' + rootsList[idx].id + '」？（保存并重启宿主后生效）')) { return; }
-                rootsList.splice(idx, 1);
-                renderRoots();
-            };
+            if (rootsList[idx].fixedRoot) {
+                // 系统根——三列固定且不可移除（后端同校验兜底）
+                rm.disabled = true;
+                rm.title = '系统根——不可移除';
+            } else {
+                rm.onclick = function () {
+                    // 移除确认——保存并重启后生效；未保存前可刷新页面恢复
+                    if (!window.confirm('移除受控根「' + rootsList[idx].id + '」？（保存并重启宿主后生效）')) { return; }
+                    rootsList.splice(idx, 1);
+                    renderRoots();
+                };
+            }
             tdOp.appendChild(rm);
             tr.appendChild(tdOp);
             body.appendChild(tr);
@@ -539,11 +584,17 @@ function enterEditRoot(idx) {
         (function (rowIdx) {
             var tr = document.createElement('tr');
             if (rowIdx === idx) {
+                var isFixedRow = rootsList[rowIdx].fixedRoot === true;
                 var tdId = document.createElement('td');
                 var idIn = document.createElement('input');
                 idIn.value = rootsList[rowIdx].id;
                 idIn.className = 'input-mini';
                 idIn.style.width = '90%';
+                if (isFixedRow) {
+                    // 系统根——id / 注释 / 读写标志固定，只放开路径
+                    idIn.disabled = true;
+                    idIn.title = '系统根——id 不可修改';
+                }
                 tdId.appendChild(idIn);
                 tr.appendChild(tdId);
                 var tdPath = document.createElement('td');
@@ -560,6 +611,10 @@ function enterEditRoot(idx) {
                 noteIn.placeholder = '≤20 字';
                 noteIn.className = 'input-mini';
                 noteIn.style.width = '96%';
+                if (isFixedRow) {
+                    noteIn.disabled = true;
+                    noteIn.title = '系统根——注释固定';
+                }
                 tdNote.appendChild(noteIn);
                 tr.appendChild(tdNote);
                 var tdW = document.createElement('td');
@@ -574,6 +629,10 @@ function enterEditRoot(idx) {
                 wSel.appendChild(optR);
                 wSel.value = rootsList[rowIdx].writable ? 'true' : 'false';
                 wSel.className = 'input-mini';
+                if (isFixedRow) {
+                    wSel.disabled = true;
+                    wSel.title = '系统根——读写标志固定';
+                }
                 tdW.appendChild(wSel);
                 tr.appendChild(tdW);
                 var tdOp = document.createElement('td');
@@ -581,19 +640,19 @@ function enterEditRoot(idx) {
                 okBtn.textContent = '确定';
                 okBtn.className = 'btn-mini primary tight';
                 okBtn.onclick = function () {
-                    var nid = idIn.value.trim();
+                    var nid = idIn.value.trim().toLowerCase();
                     var npath = pathIn.value.trim();
                     var nw = wSel.value === 'true';
                     if (nid.length === 0 || npath.length === 0) {
                         document.getElementById('rootsMsg').textContent = 'id 和路径不能为空';
                         return;
                     }
-                    if (!/^[A-Za-z0-9_]+$/.test(nid)) {
-                        document.getElementById('rootsMsg').textContent = 'id 非法——仅字母/数字/下划线';
+                    if (!/^[a-z0-9]+$/.test(nid)) {
+                        document.getElementById('rootsMsg').textContent = 'id 非法——仅字母/数字（自动转小写）';
                         return;
                     }
                     for (var k = 0; k < rootsList.length; k++) {
-                        if (k !== rowIdx && rootsList[k].id === nid) {
+                        if (k !== rowIdx && (rootsList[k].id || '').toLowerCase() === nid) {
                             document.getElementById('rootsMsg').textContent = 'id 重复: ' + nid;
                             return;
                         }
@@ -603,7 +662,12 @@ function enterEditRoot(idx) {
                         document.getElementById('rootsMsg').textContent = '注释超长——最多 20 字';
                         return;
                     }
-                    rootsList[rowIdx] = { id: nid, path: npath, writable: nw, note: nnote };
+                    if (isFixedRow) {
+                        // 系统根——只放开路径（id/注释/读写由系统固定，后端同校验兜底）
+                        rootsList[rowIdx].path = npath;
+                    } else {
+                        rootsList[rowIdx] = { id: nid, path: npath, writable: nw, note: nnote, fixedRoot: false };
+                    }
                     renderRoots();
                 };
                 tdOp.appendChild(okBtn);
@@ -671,19 +735,19 @@ function saveRoots() {
 }
 
 document.getElementById('rootAddBtn').onclick = function () {
-    var id = document.getElementById('rootNewId').value.trim();
+    var id = document.getElementById('rootNewId').value.trim().toLowerCase();
     var path = document.getElementById('rootNewPath').value.trim();
     var writable = document.getElementById('rootNewWritable').value === 'true';
     if (id.length === 0 || path.length === 0) {
         document.getElementById('rootsMsg').textContent = 'id 和路径不能为空';
         return;
     }
-    if (!/^[A-Za-z0-9_]+$/.test(id)) {
-        document.getElementById('rootsMsg').textContent = 'id 非法——仅字母/数字/下划线';
+    if (!/^[a-z0-9]+$/.test(id)) {
+        document.getElementById('rootsMsg').textContent = 'id 非法——仅字母/数字（自动转小写）';
         return;
     }
     for (var i = 0; i < rootsList.length; i++) {
-        if (rootsList[i].id === id) {
+        if ((rootsList[i].id || '').toLowerCase() === id) {
             document.getElementById('rootsMsg').textContent = 'id 重复: ' + id;
             return;
         }
@@ -693,7 +757,7 @@ document.getElementById('rootAddBtn').onclick = function () {
         document.getElementById('rootsMsg').textContent = '注释超长——最多 20 字';
         return;
     }
-    rootsList.push({ id: id, path: path, writable: writable, note: note });
+    rootsList.push({ id: id, path: path, writable: writable, note: note, fixedRoot: false });
     document.getElementById('rootNewId').value = '';
     document.getElementById('rootNewPath').value = '';
     document.getElementById('rootNewNote').value = '';
