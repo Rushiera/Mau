@@ -13,12 +13,16 @@ namespace CH4
     /// 由此收益：历史里不新增注入消息（无连续 user）、无绕点搜索、无轮末特判、无「劈开工具对」风险；
     /// 回卷后序列天然合法，本轮照常续跑（LLM 直接从 back 的工具返回继续）。
     /// 锁定：作用域存活期间 Note / sleep / timer 不可用（ERR|TIMEBACK_LOCKED——与区间删除语义冲突）。
-    /// 视图层：删除区间对应的前文派生块转 gap 块（Rebuild 不清——跨宿主重启仍可回看）。
+    /// 视图层：删除区间对应的前文派生块合并为一个废弃块（Rebuild 不清——跨宿主重启仍可回看）。
+    /// 归档（A104）：全局计数（Data/runtime/timeback/count.json）+ 每次回收一个作用域文件（&lt;编号&gt;-&lt;时间戳&gt;.jsonl）。
     /// </summary>
     internal sealed partial class ChatSession
     {
-        /// <summary>归档路径提供者——catKey → timeback.jsonl 路径（宿主启动期由组合根注入；空=归档不可用）。</summary>
-        internal static Func<string, string> TimebackArchivePathProvider;
+        /// <summary>归档目录提供者——catKey → Data/runtime/timeback 目录（宿主启动期由组合根注入；空=归档不可用）。</summary>
+        internal static Func<string, string> TimebackArchiveDirProvider;
+
+        /// <summary>info 快照提供者——归档文件第二行的现场记录（宿主启动期由组合根注入；空=该行不写）。</summary>
+        internal static Func<string> TimebackInfoProvider;
 
         /// <summary>timeback 作用域——内存单对象（v1 不嵌套；宿主重启即失效，兜底走 session.rollback）。</summary>
         private sealed class TimebackScope
@@ -172,11 +176,12 @@ namespace CH4
             scope.Purpose = purpose.Length > 48 ? purpose.Substring(0, 48) : purpose;
             // 开锚快照——回收时据此算作用域净增 token（真实 usage 值，不估算）
             scope.TokensAtOpen = ContextTokensKnown;
+            // A104 新机制——取号 = 全局计数落盘（count.json；跨猫 / 跨重启递增）；不再写 open 行
+            // （回收时一次成档：首行 meta + info 快照 + 被删前文消息）；开了不回 = 号已耗而无文件
             TimebackArchive archive = ResolveTimebackArchive();
             if (archive != null)
             {
                 scope.Id = archive.NextId();
-                archive.AppendOpen(scope.Id, _catKey, _round, declIndex, scope.StartAtMs, scope.Purpose, _context.GetMessageCount(), scope.TokensAtOpen);
             }
             _timebackScope = scope;
             Dictionary<string, object> fields = new Dictionary<string, object>();
@@ -250,7 +255,7 @@ namespace CH4
         /// 批后回收执行——工具批结果全部回填后调用（design §12.2）：
         /// ① 前文删除「start 结果之后、back 声明之前」的全部消息（两次调用对与结论保留）
         /// ② 视图层移出「**锚定声明之后**、back 声明之前」的块 → 合并为一个废弃块（`void`；timeback 自己的卡保留在对话流）
-        /// ③ 归档 close → 关闭作用域。本轮照常续跑（不置工具主动 done、不注入消息）。
+        /// ③ 归档一次成档（A104：首行 meta + 该猫 info 快照 + 被删前文消息）→ 关闭作用域。本轮照常续跑（不置工具主动 done、不注入消息）。
         /// 前文无可删区间（同批 start+back / 索引异常）时跳过 ①，② 仍执行（锚定批的 sibling 结果卡照归废弃段）。
         /// </summary>
         private void ApplyTimebackBack()
@@ -270,6 +275,15 @@ namespace CH4
             int from = keepEnd + 1;
             int to = scope.BackDeclIndex - 1;
             int removed = 0;
+            List<LlmMessage> removedMessages = new List<LlmMessage>();
+            // [段0] 现场采集——info 快照取删除之前（归档第二行记录回收动作发生时的状态）
+            string infoJson = CollectTimebackInfo();
+            long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            long seconds = (nowMs - scope.StartAtMs) / 1000;
+            if (seconds < 0)
+            {
+                seconds = 0;
+            }
             // [段1] 前文删除——保留 [0..保留终点] + [back 声明..尾]（同批 start+back 时区间为空）
             if (from <= to && from < all.Length)
             {
@@ -291,6 +305,11 @@ namespace CH4
                 {
                     keep.Add(all[i]);
                 }
+                // 被删前文快照——归档文件的正文（删除前按原序取值）
+                for (int i = from; i <= to && i < all.Length; i = i + 1)
+                {
+                    removedMessages.Add(all[i]);
+                }
                 removed = all.Length - keep.Count;
                 // [段2] 前文落盘——区间删除重写（append-only 的合法例外）
                 _context.ReplaceMessages(keep.ToArray());
@@ -307,19 +326,8 @@ namespace CH4
             // 前文里它们删不得：assistant 声明的 tool_calls 必须与结果配对）。前文无删除区间时同样执行——sibling 卡仍应归段。
             // timeback 自己的工具卡（锚定 / 回收）保留在对话流（刷新后即「锚定卡 → 废弃段 → 回收卡」三段式；实时面不重建，屏幕上是正常块）。
             _viewStore.ConvertRangeToVoid(scope.StartDeclIndex + 1, to, "timeback");
-            // [段4] 归档 close——回收条数（实际）+ 存活秒数 + 回收时已知前文长度 + findings
-            long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            long seconds = (nowMs - scope.StartAtMs) / 1000;
-            if (seconds < 0)
-            {
-                seconds = 0;
-            }
-            bool archived = true;
-            TimebackArchive archive = ResolveTimebackArchive();
-            if (archive != null)
-            {
-                archived = archive.AppendClose(scope.Id, nowMs, removed, seconds, scope.PendingFindings, ContextTokensKnown);
-            }
+            // [段4] 归档——一次回收一个文件（A104）：首行 meta + 该猫 info 快照 + 被删前文消息
+            bool archived = WriteTimebackArchiveFile(scope, removed, removedMessages, infoJson, nowMs, seconds);
             // [段5] 释放条数对账——back 返回值给出的预算 vs 批后实际删除数（归档记实际；不一致必须出声）
             if (removed != scope.PendingReleased)
             {
@@ -335,7 +343,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 归档实例解析——懒建（首次使用时按本猫路径构造）；provider 未接线或路径为空 → null（归档不可用，功能不阻断）。
+        /// 归档实例解析——懒建（首次使用时按归档目录构造）；provider 未接线或目录为空 → null（归档不可用，功能不阻断）。
         /// </summary>
         /// <returns>归档实例（null=不可用）</returns>
         private TimebackArchive ResolveTimebackArchive()
@@ -344,19 +352,83 @@ namespace CH4
             {
                 return _timebackArchive;
             }
-            if (TimebackArchivePathProvider == null)
+            if (TimebackArchiveDirProvider == null)
             {
-                LogStore.Add("CatHome4", 2, "timeback 归档路径提供者未接线——本次不落档", "TIMEBACK");
+                LogStore.Add("CatHome4", 2, "timeback 归档目录提供者未接线——本次不落档", "TIMEBACK");
                 return null;
             }
-            string path = TimebackArchivePathProvider(_catKey);
-            if (path == null || path.Length == 0)
+            string dir = TimebackArchiveDirProvider(_catKey);
+            if (dir == null || dir.Length == 0)
             {
-                LogStore.Add("CatHome4", 2, "timeback 归档路径解析为空——本次不落档", "TIMEBACK");
+                LogStore.Add("CatHome4", 2, "timeback 归档目录解析为空——本次不落档", "TIMEBACK");
                 return null;
             }
-            _timebackArchive = new TimebackArchive(path);
+            _timebackArchive = new TimebackArchive(dir);
             return _timebackArchive;
+        }
+        /// <summary>
+        /// 归档写出一一一次回收一个文件（A104）：首行 meta + 该猫 info 快照 + 被删前文消息。
+        /// 文件名 &lt;编号&gt;-&lt;回收时刻&gt;.jsonl；失败不阻断回收（记 L3 + 写面标志）。
+        /// </summary>
+        /// <param name="scope">作用域（记录字段数据源）</param>
+        /// <param name="removed">实际删除条数</param>
+        /// <param name="removedMessages">被删前文消息（原序）</param>
+        /// <param name="infoJson">info 快照 JSON（空=不写该行）</param>
+        /// <param name="nowMs">回收时刻——Unix 毫秒</param>
+        /// <param name="seconds">存活时长（秒）</param>
+        /// <returns>true=已落盘</returns>
+        private bool WriteTimebackArchiveFile(TimebackScope scope, int removed, List<LlmMessage> removedMessages, string infoJson, long nowMs, long seconds)
+        {
+            TimebackArchive archive = ResolveTimebackArchive();
+            if (archive == null)
+            {
+                return false;
+            }
+            TimebackScopeRecord record = new TimebackScopeRecord();
+            record.Id = scope.Id;
+            record.CatKey = _catKey;
+            record.Purpose = scope.Purpose;
+            record.Anchor = scope.StartDeclIndex;
+            record.StartAt = scope.StartAtMs;
+            record.BackAt = nowMs;
+            record.Seconds = seconds;
+            record.N = removed;
+            record.Tokens = ContextTokensKnown;
+            record.Grew = ContextTokensKnown - scope.TokensAtOpen;
+            record.Released = scope.PendingReleased;
+            record.Findings = scope.PendingFindings;
+            string path = "";
+            bool ok = archive.WriteScopeFile(record, infoJson, removedMessages.ToArray(), out path);
+            if (ok)
+            {
+                LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 归档落档: " + path, "TIMEBACK");
+            }
+            return ok;
+        }
+        /// <summary>
+        /// 采集本猫 info 快照——归档文件第二行的现场记录（provider 未接线 / 采集失败 = 空串，不阻断回收）。
+        /// </summary>
+        /// <returns>info JSON（单行；不可用=空串）</returns>
+        private static string CollectTimebackInfo()
+        {
+            if (TimebackInfoProvider == null)
+            {
+                return "";
+            }
+            try
+            {
+                string info = TimebackInfoProvider();
+                if (info == null)
+                {
+                    return "";
+                }
+                return info;
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 2, "timeback info 快照采集失败（归档缺该行）: " + ex.Message, "TIMEBACK");
+                return "";
+            }
         }
         /// <summary>状态自述步长——作用域内每累计 10 个事件注入一条 assistant 自述（莎 2026-09-28 定）。</summary>
         private const long TimebackNoticeStep = 10;

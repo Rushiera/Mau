@@ -82,10 +82,14 @@ namespace CatHome4.Core.Tests
             }
             CH4.ToolRegistry.Init(tools, null, null);
             CH4.ChatSession.AuthorizedToolNamesProvider = null;
-            string archivePath = Path.Combine(Path.GetTempPath(), "cat4tb_" + Guid.NewGuid().ToString("N") + ".jsonl");
-            CH4.ChatSession.TimebackArchivePathProvider = delegate (string catKey)
+            string archiveDir = Path.Combine(Path.GetTempPath(), "cat4tb_" + Guid.NewGuid().ToString("N"));
+            CH4.ChatSession.TimebackArchiveDirProvider = delegate (string catKey)
             {
-                return archivePath;
+                return archiveDir;
+            };
+            CH4.ChatSession.TimebackInfoProvider = delegate ()
+            {
+                return "{\"cat\":\"tb-session\",\"note\":\"info 快照占位\"}";
             };
             ChatContext ctx = new ChatContext();
             string tmp = Path.Combine(Path.GetTempPath(), "cat4tb_" + Guid.NewGuid().ToString("N") + ".jsonl");
@@ -406,34 +410,42 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 归档落盘——open + close 两行（本猫文件；close.n = 实际删除条数）。
+        /// 归档落盘（A104）——一次回收一个文件：首行 meta + 次行 info 快照 + 其后被删前文消息；全局计数落 count.json。
         /// </summary>
         [Fact]
-        public void Back_WritesArchiveOpenAndClose()
+        public void Back_WritesScopeArchiveFile()
         {
             MockLlm llm = new MockLlm();
+            string archiveDir = Path.Combine(Path.GetTempPath(), "cat4tb_scope_" + Guid.NewGuid().ToString("N"));
             CH4.ChatSession session = CreateSession(llm);
-            string archivePath = Path.Combine(Path.GetTempPath(), "cat4tb_arch_" + Guid.NewGuid().ToString("N") + ".jsonl");
-            CH4.ChatSession.TimebackArchivePathProvider = delegate (string catKey)
+            CH4.ChatSession.TimebackArchiveDirProvider = delegate (string catKey)
             {
-                return archivePath;
+                return archiveDir;
             };
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"start\",\"purpose\":\"归档验证\"}"));
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "f1", "{\"min\":1,\"max\":10}"));
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t2", "{\"action\":\"back\",\"findings\":\"结论：A\"}"));
             session.PostUserMessage("开始取证");
             PumpUntilIdle(session);
-            Assert.True(File.Exists(archivePath));
-            string[] lines = File.ReadAllLines(archivePath);
-            Assert.Equal(2, lines.Length);
-            Assert.Contains("\"t\":\"open\"", lines[0]);
-            Assert.Contains("\"t\":\"close\"", lines[1]);
+            // [断言1] 全局计数——count.json 落盘且为 1
+            string countPath = Path.Combine(archiveDir, "count.json");
+            Assert.True(File.Exists(countPath));
+            Assert.Contains("\"count\":1", File.ReadAllText(countPath));
+            // [断言2] 作用域文件——<编号>-<回收时刻>.jsonl（一次回收一个文件）
+            string[] files = Directory.GetFiles(archiveDir, "*.jsonl");
+            Assert.Single(files);
+            Assert.StartsWith("1-", Path.GetFileName(files[0]));
+            string[] lines = File.ReadAllLines(files[0]);
+            // [断言3] 首行 meta（记录字段）+ 次行 info 快照 + 其后被删前文消息
+            Assert.Contains("\"t\":\"timeback\"", lines[0]);
             Assert.Contains("归档验证", lines[0]);
-            // 释放条数与前文长度快照入档（open 记开锚前长度 / close 记回收时长度）
-            Assert.Contains("\"n\":2", lines[1]);
-            Assert.Contains("\"tokens\":", lines[0]);
-            Assert.Contains("\"tokens\":", lines[1]);
-            File.Delete(archivePath);
+            Assert.Contains("\"n\":2", lines[0]);
+            Assert.Contains("\"findings\":\"结论：A\"", lines[0]);
+            Assert.Contains("info 快照占位", lines[1]);
+            Assert.True(lines.Length >= 4);
+            Assert.Contains("\"t\":\"m\"", lines[2]);
+            Assert.Contains("\"t\":\"m\"", lines[3]);
+            Directory.Delete(archiveDir, true);
         }
 
         /// <summary>
@@ -472,23 +484,22 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 归档编号——跨实例（等价跨重启）递增；末行残缺不影响取号。
+        /// 归档编号（A104）——count.json 全局递增：跨实例（等价跨重启）续接；不依赖归档文件内容。
         /// </summary>
         [Fact]
         public void Archive_NumberIncrementsAcrossInstances()
         {
-            string path = Path.Combine(Path.GetTempPath(), "cat4tb_arch_" + Guid.NewGuid().ToString("N") + ".jsonl");
-            CH4.TimebackArchive first = new CH4.TimebackArchive(path);
+            string dir = Path.Combine(Path.GetTempPath(), "cat4tb_count_" + Guid.NewGuid().ToString("N"));
+            CH4.TimebackArchive first = new CH4.TimebackArchive(dir);
             Assert.Equal(1L, first.NextId());
-            Assert.True(first.AppendOpen(1, "cat", 0, 3, 1000, "用途", 5, 500));
-            Assert.True(first.AppendClose(1, 2000, 4, 1, "结论", 900));
-            CH4.TimebackArchive second = new CH4.TimebackArchive(path);
+            // 跨实例（等价跨重启）续接——读 count.json，不扫归档文件
+            CH4.TimebackArchive second = new CH4.TimebackArchive(dir);
             Assert.Equal(2L, second.NextId());
-            Assert.True(second.AppendOpen(2, "cat", 1, 3, 1000, "用途2", 5, 600));
-            File.AppendAllText(path, "{\"t\":\"open\",\"id\":9");
-            CH4.TimebackArchive third = new CH4.TimebackArchive(path);
-            Assert.Equal(3L, third.NextId());
-            File.Delete(path);
+            Assert.Equal(3L, second.NextId());
+            Assert.Contains("\"count\":3", File.ReadAllText(Path.Combine(dir, "count.json")));
+            CH4.TimebackArchive third = new CH4.TimebackArchive(dir);
+            Assert.Equal(4L, third.NextId());
+            Directory.Delete(dir, true);
         }
         /// <summary>
         /// 状态提示（T2）——作用域内累计满 10 个事件（think / 工具完成 / assistant 各计 1）时注入一条 user 系统提示。
@@ -543,35 +554,76 @@ namespace CatHome4.Core.Tests
             }
         }
         /// <summary>
-        /// 归档读面（T2）——尾部读取跳坏行；open 行不含 seconds 字段（口径：存活时长归 close 行）。
+        /// 归档读面（A104）——只读各文件首行 meta、按编号取末尾 N 个；异名文件跳过。
         /// </summary>
         [Fact]
-        public void Archive_ReadTailSkipsBadLinesAndOpenHasNoSeconds()
+        public void Archive_ReadRecentMetaSkipsBadFiles()
         {
-            string path = Path.Combine(Path.GetTempPath(), "cat4tb_tail_" + Guid.NewGuid().ToString("N") + ".jsonl");
-            CH4.TimebackArchive archive = new CH4.TimebackArchive(path);
-            long id = archive.NextId();
-            Assert.True(archive.AppendOpen(id, "cat", 0, 3, 1000, "用途", 5, 500));
-            File.AppendAllText(path, "{\"t\":\"open\",\"id\":9\n");
-            Assert.True(archive.AppendClose(id, 2000, 4, 7, "结论", 900));
-            List<string> tail = archive.ReadTailJson(5);
-            Assert.Equal(2, tail.Count);
-            Assert.DoesNotContain("seconds", tail[0]);
-            Assert.Contains("\"tokens\":500", tail[0]);
-            Assert.Contains("\"seconds\":7", tail[1]);
-            Assert.Contains("\"tokens\":900", tail[1]);
+            string dir = Path.Combine(Path.GetTempPath(), "cat4tb_recent_" + Guid.NewGuid().ToString("N"));
+            CH4.TimebackArchive archive = new CH4.TimebackArchive(dir);
+            CH4.TimebackScopeRecord first = BuildScopeRecord(archive.NextId(), "用途甲", "结论甲", 1000);
+            string path1 = "";
+            // info 快照含缩进换行——入档须归一为单行（JSONL 每行独立）
+            string multilineInfo = "{\n  \"cat\": \"cat\",\n  \"version\": \"1.0\"\n}";
+            Assert.True(archive.WriteScopeFile(first, multilineInfo, new LlmMessage[0], out path1));
+            Assert.Equal(2, File.ReadAllLines(path1).Length);
+            CH4.TimebackScopeRecord second = BuildScopeRecord(archive.NextId(), "用途乙", "结论乙", 2000);
+            string path2 = "";
+            Assert.True(archive.WriteScopeFile(second, "", new LlmMessage[0], out path2));
+            // 异名文件（编号前缀不可解析）——不参与读面
+            File.WriteAllText(Path.Combine(dir, "readme.jsonl"), "{\"t\":\"timeback\",\"id\":99}");
+            List<string> one = archive.ReadRecentMeta(1);
+            Assert.Single(one);
+            Assert.Contains("结论乙", one[0]);
+            List<string> all = archive.ReadRecentMeta(5);
+            Assert.Equal(2, all.Count);
+            // 最旧在前（按编号升序）
+            Assert.Contains("结论甲", all[0]);
+            Assert.Contains("结论乙", all[1]);
             Assert.False(archive.LastWriteFailed);
-            File.Delete(path);
+            Directory.Delete(dir, true);
+        }
+
+        /// <summary>
+        /// 构造归档记录——读面用例用（编号 / 用途 / findings / 回收时刻可变）。
+        /// </summary>
+        /// <param name="id">编号</param>
+        /// <param name="purpose">用途标签</param>
+        /// <param name="findings">带回载荷</param>
+        /// <param name="backAt">回收时刻——Unix 毫秒</param>
+        /// <returns>记录实例</returns>
+        private static CH4.TimebackScopeRecord BuildScopeRecord(long id, string purpose, string findings, long backAt)
+        {
+            CH4.TimebackScopeRecord record = new CH4.TimebackScopeRecord();
+            record.Id = id;
+            record.CatKey = "cat";
+            record.Purpose = purpose;
+            record.Anchor = 3;
+            record.StartAt = backAt - 1000;
+            record.BackAt = backAt;
+            record.Seconds = 1;
+            record.N = 2;
+            record.Tokens = 900;
+            record.Grew = 100;
+            record.Released = 2;
+            record.Findings = findings;
+            return record;
         }
         /// <summary>
-        /// 归档写失败（T2 判据 8）——写面失败可见（返回 false + LastWriteFailed 立起；info archive.ok 数据源）。
+        /// 归档写失败（A104 判据）——写面失败可见（返回 false + LastWriteFailed / LastWriteFailedAny 立起；info archive.ok 数据源）。
         /// </summary>
         [Fact]
         public void Archive_WriteFailureIsVisible()
         {
-            CH4.TimebackArchive archive = new CH4.TimebackArchive(Path.GetTempPath());
-            Assert.False(archive.AppendClose(1, 2000, 4, 7, "结论", 700));
+            // 目录路径指向一个已存在的文件——建目录必然失败（写面失败必须可见）
+            string blockPath = Path.Combine(Path.GetTempPath(), "cat4tb_block_" + Guid.NewGuid().ToString("N") + ".txt");
+            File.WriteAllText(blockPath, "x");
+            CH4.TimebackArchive archive = new CH4.TimebackArchive(blockPath);
+            string path = "";
+            Assert.False(archive.WriteScopeFile(BuildScopeRecord(1, "用途", "结论", 1000), "", new LlmMessage[0], out path));
             Assert.True(archive.LastWriteFailed);
+            Assert.True(CH4.TimebackArchive.LastWriteFailedAny);
+            File.Delete(blockPath);
         }
         /// <summary>
         /// A106 批内次序——start 在数组后位也必须先执行：数组前位的 C5 黑名单工具（host-reload）按作用域活跃判定被拒。

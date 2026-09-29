@@ -349,8 +349,10 @@ namespace CH4
             // 延迟队列落盘接线——Data/runtime/delays.json（跨宿主重启保留；design-ch4-delay §七）
             DelayQueue.Configure(Path.Combine(dataRoot, "Data", "runtime", "delays.json"));
             DelayQueue.Load();
-            // timeback 归档落点接线——Data/sessions/<猫>/timeback.jsonl（每猫自持；design-ch4-timeback §5.1）
-            ChatSession.TimebackArchivePathProvider = AdminService.ResolveTimebackArchivePath;
+            // timeback 归档落点接线——Data/runtime/timeback（全局计数 + 每次回收一个作用域文件；A104）
+            ChatSession.TimebackArchiveDirProvider = AdminService.ResolveTimebackArchiveDir;
+            // timeback 归档现场记录接线——回收时采集本猫 info 快照（归档文件第二行）
+            ChatSession.TimebackInfoProvider = BuildEnvInfo;
             AdminService.NotifyBalloon = Program.NotifyBalloon;
             // S5 Observe 域接线——依赖注入（观测面迁入 CatHome4.Observe）
             ObserveService.Configure(_oa, _chatBridge, _quickHandle, _toolFlowHandles, _quickId, _toolFlowIds, _runner, null);
@@ -726,7 +728,7 @@ namespace CH4
             }
             // [段10] timeback——上下文作用域现状 + 归档到达面（design-ch4-timeback §八 T2）
             // active：未闭合作用域（id / purpose / anchor / startAt / seconds / events）——无作用域不输出
-            // recent：归档尾部 5 条（t / id / n / seconds / purpose）——findings 全文不进 info（归档面不得大于会话面）
+            // recent：最近 5 次回收的首行 meta（t / id / n / seconds / purpose）——findings 全文不进 info（归档面不得大于会话面）
             // archive：写面可用性（ok=false = 最近一次落档失败；失败不阻断回卷，但必须可见）
             Dictionary<string, object> timebackBlock = new Dictionary<string, object>();
             bool timebackAny = false;
@@ -751,11 +753,11 @@ namespace CH4
                     timebackAny = true;
                 }
             }
-            string timebackPath = AdminService.ResolveTimebackArchivePath(catKey);
-            if (timebackPath.Length > 0)
+            string timebackDir = AdminService.ResolveTimebackArchiveDir(catKey);
+            if (timebackDir.Length > 0)
             {
-                TimebackArchive timebackArchive = new TimebackArchive(timebackPath);
-                List<string> timebackTail = timebackArchive.ReadTailJson(5);
+                TimebackArchive timebackArchive = new TimebackArchive(timebackDir);
+                List<string> timebackTail = timebackArchive.ReadRecentMeta(5);
                 List<Dictionary<string, object>> timebackRecent = new List<Dictionary<string, object>>();
                 for (int i = 0; i < timebackTail.Count; i = i + 1)
                 {
@@ -770,7 +772,8 @@ namespace CH4
                     timebackBlock["recent"] = timebackRecent;
                 }
                 Dictionary<string, object> archiveBlock = new Dictionary<string, object>();
-                archiveBlock["ok"] = !timebackArchive.LastWriteFailed;
+                // 写面可用性取进程内标志——info 每次新建归档实例，实例标志（LastWriteFailed）在新实例上恒 false
+                archiveBlock["ok"] = !TimebackArchive.LastWriteFailedAny;
                 timebackBlock["archive"] = archiveBlock;
                 timebackAny = true;
             }

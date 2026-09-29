@@ -70,10 +70,14 @@ namespace CatHome4.Core.Tests
             }
             CH4.ToolRegistry.Init(tools, null, null);
             CH4.ChatSession.AuthorizedToolNamesProvider = null;
-            string archivePath = Path.Combine(Path.GetTempPath(), "cat4ii_" + Guid.NewGuid().ToString("N") + ".jsonl");
-            CH4.ChatSession.TimebackArchivePathProvider = delegate (string catKey)
+            string archiveDir = Path.Combine(Path.GetTempPath(), "cat4ii_" + Guid.NewGuid().ToString("N"));
+            CH4.ChatSession.TimebackArchiveDirProvider = delegate (string catKey)
             {
-                return archivePath;
+                return archiveDir;
+            };
+            CH4.ChatSession.TimebackInfoProvider = delegate ()
+            {
+                return "{\"cat\":\"ii-session\",\"note\":\"info 快照占位\"}";
             };
             ChatContext ctx = new ChatContext();
             string tmp = Path.Combine(Path.GetTempPath(), "cat4ii_" + Guid.NewGuid().ToString("N") + ".jsonl");

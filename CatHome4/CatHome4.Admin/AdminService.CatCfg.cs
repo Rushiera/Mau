@@ -301,20 +301,17 @@ namespace CatHome4.Admin
             SaveCatCfgData(cat.Id, data);
         }
 
-        /// <summary>
-        /// timeback 归档路径——Data/sessions/&lt;猫key&gt;/timeback.jsonl（每猫自持；design-ch4-timeback §5.1）。
-        /// 接线：ChatSession.TimebackArchivePathProvider（Core 零配置面依赖）。
-        /// </summary>
+        /// <summary>timeback 归档目录——Data/runtime/timeback（全局：count.json 全局计数 + 每次回收一个作用域文件；design-ch4-timeback §5.1）。接线：ChatSession.TimebackArchiveDirProvider（Core 零配置面依赖）。</summary>
         /// <param name="catKey">猫 key</param>
         /// <returns>归档文件路径（猫 key 空 = 空串，调用方不落档）</returns>
-        public static string ResolveTimebackArchivePath(string catKey)
+        public static string ResolveTimebackArchiveDir(string catKey)
         {
             string id = catKey == null ? "" : catKey;
             if (id.Length == 0)
             {
                 return "";
             }
-            return Path.Combine(_dataRoot, "Data", "sessions", id, "timeback.jsonl");
+            return Path.Combine(_dataRoot, "Data", "runtime", "timeback");
         }
 
         /// <summary>

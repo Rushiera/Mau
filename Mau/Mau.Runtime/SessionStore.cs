@@ -360,6 +360,15 @@ namespace Mau.Runtime
                 Directory.CreateDirectory(dir);
             }
         }
+        /// <summary>
+        /// 序列化消息行——外部归档等落盘复用同一出口（t=m 形态与真实前文同构；避免两处实现漂移）。
+        /// </summary>
+        /// <param name="message">待序列化消息</param>
+        /// <returns>单行 JSON</returns>
+        public static string SerializeMessageLine(LlmMessage message)
+        {
+            return BuildMessageLine(Normalize(message));
+        }
 
         /// <summary>
         /// 构建消息行——LlmMessage 全字段 + t 标记。
