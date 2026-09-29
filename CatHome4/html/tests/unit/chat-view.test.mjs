@@ -548,7 +548,28 @@ test('toolcard 小结果——不标注（避免噪音）', () => {
     payload: { name: 'time', arguments: '{}', result: '2026-09-14 17:00:00' },
     replaceSeq: -1
   });
-  expect(chatMsgs.querySelector('.chat-tool .tn').textContent).toBe('📝 时间  · 1 行 19 字符');
+  expect(chatMsgs.querySelector('.chat-tool .tn').textContent).toBe('🕒 时间  · 1 行 19 字符');
+});
+
+test('废弃块——timeback 回收归档：折叠气泡 + 计数 + 全文（历史重建）', () => {
+  window.chatRenderHistory({
+    sessionId: 's1',
+    ctxCount: 1,
+    blocks: [
+      { renderType: 'void', msgIndex: -1, payload: { count: 4, text: '【工具 · random】\n参数：{}\n结果：7' } }
+    ]
+  });
+  const card = chatMsgs.querySelector('.chat-void');
+  expect(card).not.toBe(null);
+  expect(card.querySelector('summary').textContent).toContain('已废弃 · 4 条');
+  // 规模统计（2026-09-29 莎）——折叠行带「N 行 M 字符」
+  expect(card.querySelector('summary').textContent).toContain('3 行');
+  expect(card.querySelector('summary').textContent).toContain('字符');
+  expect(card.querySelector('.chat-void-body').textContent).toContain('random');
+  // 默认折叠——只留档，不抢注意力（与活块区分）
+  expect(card.open).toBe(false);
+  // 独立块型：不进对话流（无 user/assistant 气泡样式）
+  expect(chatMsgs.querySelector('.chat-bubble.void')).not.toBe(null);
 });
 
 test('toolcard ps 结果截断——折叠行上限标注 + 展开区警示块', () => {

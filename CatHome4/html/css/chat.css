@@ -308,6 +308,14 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-bubble.roundsum .rs-tool { color: var(--ch-state-tool); }
 .chat-bubble.roundsum .rs-api { color: var(--ch-state-api); }
 .chat-bubble.roundsum .rs-all { color: var(--ch-state-all); }
+/* 废弃块（2026-09-29）——timeback 回收区间的合并归档：内容已被主干排除（LLM 看不见），仅人可见留档
+   视觉：灰调 + 虚线描边 + 默认折叠——与活块明确区分（不进对话流、不参与 QQ 转发） */
+.chat-bubble.void { --bubble-line: var(--ch-line); background: var(--ch-roundsum-bg); color: var(--ch-fg-muted); font-size: 11px; line-height: 1.6; border-style: dashed; }
+.chat-void { width: 100%; }
+.chat-void > summary { cursor: pointer; color: var(--ch-fg-muted); list-style: none; }
+.chat-void > summary::-webkit-details-marker { display: none; }
+.chat-void[open] > summary { margin-bottom: 4px; color: var(--ch-inject-miss); }
+.chat-void-body { white-space: pre-wrap; word-break: break-all; max-height: 40vh; overflow: auto; padding: 4px 6px; border-left: 2px solid var(--ch-line); color: var(--ch-roundsum-fg); }
 /* 呼吸描边（2026-09-17）——「正在进行时」的自动标识：animation **只动 border-color**（描边本身呼吸，
    内容与底色不受影响）；keyframes 首尾同值 → 循环连续无跳变；
    animation 对 border-color 的占用天然覆盖 hover 声明 → 与「移入移出渐变」互斥，同一元素二者不同时存在。

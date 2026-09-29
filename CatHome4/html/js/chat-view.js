@@ -286,6 +286,25 @@ function chatInjectReportHtml(p) {
     return html;
 }
 
+// 废弃块渲染——timeback 回收区间的合并归档（已被主干排除；折叠气泡，展开看全文）
+// 语义（莎 2026-09-29）：这些内容不在前文面（LLM 看不见），仅人可见留档——独立块型，不进对话流、不参与 QQ 转发
+function chatRenderVoid(p) {
+    var wrap = chatBubble('assistant', 'void');
+    var det = document.createElement('details');
+    det.className = 'chat-void';
+    var sum = document.createElement('summary');
+    var n = (typeof p.count === 'number') ? p.count : 0;
+    var vtxt = (typeof p.text === 'string') ? p.text : '';
+    var vlines = (vtxt.length === 0) ? 0 : vtxt.split('\n').length;
+    sum.textContent = '⏪ 已废弃 · ' + n + ' 条 · ' + vlines + ' 行 ' + chatFmtCount(vtxt.length) + ' 字符（timeback 回收 · 仅留档）';
+    det.appendChild(sum);
+    var body = document.createElement('div');
+    body.className = 'chat-void-body';
+    body.textContent = p.text || '';
+    det.appendChild(body);
+    wrap.appendChild(det);
+}
+
 function chatRenderHistory(data) {
     // F4 视图块历史渲染——按 blocks[] renderType 分派（view 协议；无 messages[] 旧结构）
     chatMsgs.textContent = '';
@@ -317,6 +336,9 @@ function chatRenderHistory(data) {
         } else if (blk.renderType === 'roundsum') {
             // roundsum 轮末统计——历史重建：独立气泡（本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时）
             chatOnRoundSum(p);
+        } else if (blk.renderType === 'void') {
+            // 废弃块——timeback 回收区间的合并归档（已被主干排除，前端仅「能看」；不进对话流、不参与 QQ 转发）
+            chatRenderVoid(p);
         } else if (blk.renderType === 'text') {
             // F3 MD 渲染——历史 text 块同样走解析器（与实时渲染一致）；md-block 包裹=CSS 作用域锚点
             // P6b 节点操作条——msgIndex 顶层字段（视图块携带真实前文顺序；roundsum/inject_report=-1 不挂）

@@ -182,6 +182,8 @@ namespace CH4
         private readonly List<ToolOrderDog> _dogs;
         /// <summary>host-* 延迟直执清单——批次末尾宿主直执（顺序保证：同批 mau-proj 等先完成产物落地）</summary>
         private readonly List<ToolOrderDog> _hostDogs;
+        /// <summary>timeback back 后置执行单——批内剥离出的 back（A106 批内次序：批内其余工具完成后执行；null=本批无 back）</summary>
+        private ToolOrderDog _timebackBackDog;
 
         // [段4] 相位环
         /// <summary>当前相位</summary>
@@ -1818,97 +1820,161 @@ namespace CH4
             _toolBatchActive = true;
             _dogs.Clear();
             _hostDogs.Clear();
-            JsonDocument doc = null;
-            try
+            _timebackBackDog = null;
+            List<ToolCallInfo> calls = ParseToolCalls(toolCallsJson);
+            // [P0] 剥离——批内 timeback 至多 start × 1 + back × 1（A106 批内次序 · design-ch4-timeback §2.4）：
+            // 各取首条剥离，重复调用（同类第 2 条起）判参数面拒绝（不静默丢弃）
+            int startIndex = -1;
+            int backIndex = -1;
+            bool[] duplicated = new bool[calls.Count];
+            for (int i = 0; i < calls.Count; i = i + 1)
             {
-                doc = JsonDocument.Parse(toolCallsJson);
-            }
-            catch (Exception ex)
-            {
-                LogStore.Add("CatHome4", 3, "tool_calls 解析失败: " + ex.Message, "TOOL");
-            }
-            if (doc != null)
-            {
-                using (doc)
+                if (calls[i].Name != "timeback")
                 {
-                    JsonElement root = doc.RootElement;
-                    for (int i = 0; i < root.GetArrayLength(); i = i + 1)
+                    continue;
+                }
+                string action = ExtractTimebackAction(calls[i].Arguments);
+                if (action == "start")
+                {
+                    if (startIndex < 0)
                     {
-                        JsonElement call = root[i];
-                        string id = GetStringProp(call, "id");
-                        // OpenAI wire：name/arguments 在 function 嵌套对象内
-                        string name = "";
-                        string arguments = "";
-                        JsonElement funcEl;
-                        if (call.TryGetProperty("function", out funcEl))
-                        {
-                            name = GetStringProp(funcEl, "name");
-                            arguments = GetStringProp(funcEl, "arguments");
-                        }
-                        // M2c 拦截——声明面外工具直接拒绝（ERR 回执不进 OA；host-* 同拦；拦截即时生效）
-                        if (!IsToolAllowed(name))
-                        {
-                            ToolOrderDog forbiddenDog = new ToolOrderDog(id, name, arguments);
-                            forbiddenDog.Result = "ERR|TOOL_FORBIDDEN|工具不在当前授权面: " + name;
-                            forbiddenDog.IsClosed = true;
-                            _dogs.Add(forbiddenDog);
-                            LogStore.Add("CatHome4", 2, "工具 " + name + " 被拒绝：不在本会话声明面", "TOOL");
-                            continue;
-                        }
-                        // timeback 本体修正黑名单——作用域存活期禁止对 CH4 自身做修正（莎 2026-09-28 定；统一在此点拦 host-* / 内置 / OA 三分支）
-                        if (_timebackScope != null && IsTimebackBodyLocked(name))
-                        {
-                            ToolOrderDog lockedDog = new ToolOrderDog(id, name, arguments);
-                            lockedDog.Result = "ERR|TIMEBACK_LOCKED|timeback 作用域内禁止对 CH4 自身做修正: " + name + "——先 back 回收";
-                            lockedDog.IsClosed = true;
-                            _dogs.Add(lockedDog);
-                            LogStore.Add("CatHome4", 2, "工具 " + name + " 被拒绝：timeback 作用域内禁止本体修正", "TIMEBACK");
-                            continue;
-                        }
-                        // image-inject 作用域门禁——仅 timeback 活跃时可用（design-ch4-chat-images §8.4-3：域外拒绝，不静默降级；
-                        // 方向与上一条黑名单相反——这里拦的是「域外调用」）
-                        if (name == "image-inject" && _timebackScope == null)
-                        {
-                            ToolOrderDog scopeDog = new ToolOrderDog(id, name, arguments);
-                            scopeDog.Result = "ERR|TIMEBACK_REQUIRED|图片插入仅在 timeback 作用域内可用（图片不必常驻主干）——先 start 开锚";
-                            scopeDog.IsClosed = true;
-                            _dogs.Add(scopeDog);
-                            LogStore.Add("CatHome4", 2, "工具 " + name + " 被拒绝：timeback 作用域外不可用", "TIMEBACK");
-                            continue;
-                        }
-                        // per-cat 路由——载荷注入猫 key（会话标识 ≡ 猫 key；积木按 catId 解析猫级文件系统与配置面）
-                        arguments = InjectCatId(arguments);
-                        // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
-                        _toolCallCount = _toolCallCount + 1;
-                        ToolOrderDog dog = new ToolOrderDog(id, name, arguments);
-                        long pendingCardSeq;
-                        dog.CardSeq = cardSeqs.TryGetValue(id, out pendingCardSeq) ? pendingCardSeq : -1;
-                        if (name.StartsWith("host-", StringComparison.Ordinal))
-                        {
-                            // host-* 延迟直执登记——批次末尾执行（顺序保证：同批 mau-proj 等先完成产物落地）
-                            _hostDogs.Add(dog);
-                            dog.IsClosed = true;
-                        }
-                        else if (IsBuiltinTool(name))
-                        {
-                            // 内置工具会话内直执——不需 OA（R0.2 分层：Note 状态在会话实例；time/random/info 宿主直执）
-                            dog.Result = ExecuteBuiltin(name, arguments);
-                            dog.IsClosed = true;
-                        }
-                        else
-                        {
-                            dog.Post(_oa, ToolOwnerId);
-                            if (dog.OfficeId == 0)
-                            {
-                                // Post 失败——诚实失败（直执面已移除 2026-09-04——OA 不可用即 ERR，不静默降级）
-                                dog.Result = "ERR|OA_POST_FAIL|工单提交失败（OA 不可用）: " + name;
-                                dog.IsClosed = true;
-                                LogStore.Add("CatHome4", 2, "工具 " + name + " 工单提交失败（OA 不可用）——诚实 ERR", "TOOL");
-                            }
-                        }
-                        _dogs.Add(dog);
+                        startIndex = i;
+                    }
+                    else
+                    {
+                        duplicated[i] = true;
+                    }
+                    continue;
+                }
+                if (action == "back")
+                {
+                    if (backIndex < 0)
+                    {
+                        backIndex = i;
+                    }
+                    else
+                    {
+                        duplicated[i] = true;
                     }
                 }
+            }
+            // [P1] 前置——start 先于同批其余工具执行（前文末条仍为本批 assistant 声明 → 锚点可信）；
+            // 失败不阻断（作用域未开时其余工具按真实态判定）
+            ToolOrderDog startDog = null;
+            if (startIndex >= 0)
+            {
+                ToolCallInfo startCall = calls[startIndex];
+                ToolOrderDog preDog = new ToolOrderDog(startCall.Id, startCall.Name, InjectCatId(startCall.Arguments));
+                long startCardSeq;
+                preDog.CardSeq = cardSeqs.TryGetValue(startCall.Id, out startCardSeq) ? startCardSeq : -1;
+                if (!IsToolAllowed(startCall.Name))
+                {
+                    preDog.Result = "ERR|TOOL_FORBIDDEN|工具不在当前授权面: " + startCall.Name;
+                    LogStore.Add("CatHome4", 2, "工具 " + startCall.Name + " 被拒绝：不在本会话声明面", "TOOL");
+                }
+                else
+                {
+                    preDog.Result = ExecuteBuiltin(startCall.Name, preDog.ArgsJson);
+                    _toolCallCount = _toolCallCount + 1;
+                }
+                preDog.IsClosed = true;
+                startDog = preDog;
+            }
+            // [P2] 主体——按原数组序分派（_dogs 入列序 = 声明序：结果回填序与声明序一致）；
+            // 判定读 P1 之后的作用域终局态（本批含 start 则整批按作用域活跃判定——防数组前位工具逃逸）
+            for (int i = 0; i < calls.Count; i = i + 1)
+            {
+                ToolCallInfo call = calls[i];
+                // 批内重复 timeback——参数面拒绝（批内至多 start × 1 + back × 1）
+                if (duplicated[i])
+                {
+                    ToolOrderDog dupDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
+                    dupDog.Result = "ERR|TIMEBACK_ARGS|批内不允许多条 timeback 调用（至多 start × 1 + back × 1）——第 " + (i + 1).ToString() + " 条被拒";
+                    dupDog.IsClosed = true;
+                    _dogs.Add(dupDog);
+                    LogStore.Add("CatHome4", 2, "timeback 批内重复调用被拒（第 " + (i + 1).ToString() + " 条）", "TIMEBACK");
+                    continue;
+                }
+                // 剥离条目——start 已在前置段执行（授权面判定已在 P1 完成）
+                if (i == startIndex)
+                {
+                    _dogs.Add(startDog);
+                    continue;
+                }
+                // M2c 拦截——声明面外工具直接拒绝（ERR 回执不进 OA；host-* 同拦；拦截即时生效）
+                if (!IsToolAllowed(call.Name))
+                {
+                    ToolOrderDog forbiddenDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
+                    forbiddenDog.Result = "ERR|TOOL_FORBIDDEN|工具不在当前授权面: " + call.Name;
+                    forbiddenDog.IsClosed = true;
+                    _dogs.Add(forbiddenDog);
+                    LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：不在本会话声明面", "TOOL");
+                    continue;
+                }
+                // timeback 本体修正黑名单——作用域存活期禁止对 CH4 自身做修正（莎 2026-09-28 定；统一在此点拦 host-* / 内置 / OA 三分支）
+                if (_timebackScope != null && IsTimebackBodyLocked(call.Name))
+                {
+                    ToolOrderDog lockedDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
+                    lockedDog.Result = "ERR|TIMEBACK_LOCKED|timeback 作用域内禁止对 CH4 自身做修正: " + call.Name + "——先 back 回收";
+                    lockedDog.IsClosed = true;
+                    _dogs.Add(lockedDog);
+                    LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：timeback 作用域内禁止本体修正", "TIMEBACK");
+                    continue;
+                }
+                // image-inject 作用域门禁——仅 timeback 活跃时可用（design-ch4-chat-images §8.4-3：域外拒绝，不静默降级；
+                // 方向与上一条黑名单相反——这里拦的是「域外调用」）
+                if (call.Name == "image-inject" && _timebackScope == null)
+                {
+                    ToolOrderDog scopeDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
+                    scopeDog.Result = "ERR|TIMEBACK_REQUIRED|图片插入仅在 timeback 作用域内可用（图片不必常驻主干）——先 start 开锚";
+                    scopeDog.IsClosed = true;
+                    _dogs.Add(scopeDog);
+                    LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：timeback 作用域外不可用", "TIMEBACK");
+                    continue;
+                }
+                // per-cat 路由——载荷注入猫 key（会话标识 ≡ 猫 key；积木按 catId 解析猫级文件系统与配置面）
+                string arguments = InjectCatId(call.Arguments);
+                // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
+                _toolCallCount = _toolCallCount + 1;
+                // 剥离条目——back 后置执行（PumpToolBatch 段2b-2：其余工具全部完成之后、结果回填之前）
+                if (i == backIndex)
+                {
+                    ToolOrderDog backDog = new ToolOrderDog(call.Id, call.Name, arguments);
+                    long backCardSeq;
+                    backDog.CardSeq = cardSeqs.TryGetValue(call.Id, out backCardSeq) ? backCardSeq : -1;
+                    // 不参与本批轮询（后置段执行）——IsClosed 直置，防 allDone 判定空等
+                    backDog.IsClosed = true;
+                    _timebackBackDog = backDog;
+                    _dogs.Add(backDog);
+                    continue;
+                }
+                ToolOrderDog dog = new ToolOrderDog(call.Id, call.Name, arguments);
+                long pendingCardSeq;
+                dog.CardSeq = cardSeqs.TryGetValue(call.Id, out pendingCardSeq) ? pendingCardSeq : -1;
+                if (call.Name.StartsWith("host-", StringComparison.Ordinal))
+                {
+                    // host-* 延迟直执登记——批次末尾执行（顺序保证：同批 mau-proj 等先完成产物落地）
+                    _hostDogs.Add(dog);
+                    dog.IsClosed = true;
+                }
+                else if (IsBuiltinTool(call.Name))
+                {
+                    // 内置工具会话内直执——不需 OA（R0.2 分层：Note 状态在会话实例；time/random/info 宿主直执）
+                    dog.Result = ExecuteBuiltin(call.Name, arguments);
+                    dog.IsClosed = true;
+                }
+                else
+                {
+                    dog.Post(_oa, ToolOwnerId);
+                    if (dog.OfficeId == 0)
+                    {
+                        // Post 失败——诚实失败（直执面已移除 2026-09-04——OA 不可用即 ERR，不静默降级）
+                        dog.Result = "ERR|OA_POST_FAIL|工单提交失败（OA 不可用）: " + call.Name;
+                        dog.IsClosed = true;
+                        LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 工单提交失败（OA 不可用）——诚实 ERR", "TOOL");
+                    }
+                }
+                _dogs.Add(dog);
             }
             _phase = ChatPhase.ToolBatchRunning;
             _phaseFrames = 0;
@@ -2034,6 +2100,9 @@ namespace CH4
                 }
                 dog.Result = hr;
             }
+            // [段2b-2] timeback back 后置执行（A106 批内次序）——本批其余工具（含 host-* 延迟直执）全部完成之后、
+            // 结果回填之前执行：前文末条仍为本批 assistant 声明 → 回收区间上界与释放条数预算同源可对账
+            RunDeferredTimebackBack();
             // [段3] 收集——Closed 取回执；TimeOut/帧超限 → 诚实 ERR（OA 链路失败即报错，不直执）
             for (int i = 0; i < _dogs.Count; i = i + 1)
             {

@@ -542,6 +542,27 @@ test('工具专属图标——find 🔍 / move 📦 / delete 🗑️ 覆盖骨�
   // 未配专属图标的 text-* 仍吃骨架图标
   expect(window.chatToolIcon('text-read')).toBe('📖');
   expect(window.chatToolIcon('text-write')).toBe('📝');
+  // 2026-09-29 补配——内置件与 VisionCat 新件脱离 📝 兜底
+  expect(window.chatToolIcon('timeback')).toBe('⚓');
+  expect(window.chatToolIcon('image-inject')).toBe('🖼️');
+  expect(window.chatToolIcon('Note')).toBe('📌');
+  expect(window.chatToolIcon('time')).toBe('🕒');
+  expect(window.chatToolIcon('random')).toBe('🎲');
+  expect(window.chatToolIcon('sleep')).toBe('⏳');
+  expect(window.chatToolIcon('timer')).toBe('⏰');
+  expect(window.chatToolIcon('pack')).toBe('📚');
+});
+
+test('image-inject——登记 text 骨架（不再落探测回落）；折叠行「已插入主干」+ 输入图片预览', () => {
+  expect(window.chatToolSkeleton('image-inject')).toBe('text');
+  const card = renderTool({
+    name: 'image-inject',
+    arguments: JSON.stringify({ path: 'C:/x/a.png' }),
+    result: '{"ok":true,"tool":"image-inject","path":"C:/x/a.png"}'
+  }, 201);
+  expect(card.querySelector('.tn').textContent).toBe('🖼️ 已插入主干 · a.png');
+  // 输入段前置图片预览（覆盖表 inputImages——被插入的图直接看得见）
+  expect(card.querySelectorAll('.seg-img img').length).toBe(1);
 });
 
 test('段折叠摘要——摘要挂 summary 内（details 折叠时可见）', () => {
@@ -832,19 +853,19 @@ test('批4——内置件结构化头：Note / time / random / host-flows / pack
     arguments: '{}',
     result: '{"ok":true,"tool":"Note","state":"progress","index":2,"total":3,"done":1,"remain":2,"last":false}\n[Note] 第2/3条  已完成1  待完成2\n任务目标：B'
   }, 123);
-  expect(c1.querySelector('.tn').textContent).toBe('📝 任务追踪 · 第2/3条 · 已完成1 待完成2');
+  expect(c1.querySelector('.tn').textContent).toBe('📌 任务追踪 · 第2/3条 · 已完成1 待完成2');
   renderTool({ name: 'time', arguments: '{}', result: '{"ok":true,"tool":"time","ts":"2026-09-18 19:00:00"}\n2026-09-18 19:00:00' }, 124);
   const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
-  expect(c2.querySelector('.tn').textContent).toBe('📝 时间 · 2026-09-18 19:00:00');
+  expect(c2.querySelector('.tn').textContent).toBe('🕒 时间 · 2026-09-18 19:00:00');
   renderTool({ name: 'random', arguments: JSON.stringify({ min: 1, max: 10 }), result: '{"ok":true,"tool":"random","min":1,"max":10,"value":7}\n7' }, 125);
   const c3 = chatMsgs.querySelectorAll('.chat-tool')[2];
-  expect(c3.querySelector('.tn').textContent).toBe('📝 随机数 [1,10) → 7');
+  expect(c3.querySelector('.tn').textContent).toBe('🎲 随机数 [1,10) → 7');
   renderTool({ name: 'host-flows', arguments: '{}', result: '{"ok":true,"tool":"host-flows","count":10}\nFlow 运行现状（10 个）:' }, 126);
   const c4 = chatMsgs.querySelectorAll('.chat-tool')[3];
   expect(c4.querySelector('.tn').textContent).toBe('🧩 Flow 现状 · 10 个');
   renderTool({ name: 'pack', arguments: JSON.stringify({ key: 'overwork' }), result: '{"ok":true,"tool":"pack","key":"overwork","files":7,"chars":42000}\n✅ PACK overwork | 7 件 / 42000 字符' }, 127);
   const c5 = chatMsgs.querySelectorAll('.chat-tool')[4];
-  expect(c5.querySelector('.tn').textContent).toBe('📝 加载包 overwork · 7 件');
+  expect(c5.querySelector('.tn').textContent).toBe('📚 加载包 overwork · 7 件');
   renderTool({ name: 'host-reload', arguments: JSON.stringify({ cat: 'TextCat' }), result: '{"ok":true,"tool":"host-reload","cat":"TextCat","oldId":9,"newId":17,"pid":2568}\nreload TextCat: #9 → #17 | pid=2568' }, 128);
   const c6 = chatMsgs.querySelectorAll('.chat-tool')[5];
   expect(c6.querySelector('.tn').textContent).toBe('💻 热重载 TextCat · #9 → #17');

@@ -248,9 +248,10 @@ namespace CH4
 
         /// <summary>
         /// 批后回收执行——工具批结果全部回填后调用（design §12.2）：
-        /// 删除「start 结果之后、back 声明之前」的全部消息（两次调用对与结论保留）→ 被删区间视图块转 gap
-        /// → 归档 close → 关闭作用域。本轮照常续跑（不置工具主动 done、不注入消息）。
-        /// 无可删区间（同批 start+back / 索引异常）时仅关闭作用域。
+        /// ① 前文删除「start 结果之后、back 声明之前」的全部消息（两次调用对与结论保留）
+        /// ② 视图层移出「**锚定声明之后**、back 声明之前」的块 → 合并为一个废弃块（`void`；timeback 自己的卡保留在对话流）
+        /// ③ 归档 close → 关闭作用域。本轮照常续跑（不置工具主动 done、不注入消息）。
+        /// 前文无可删区间（同批 start+back / 索引异常）时跳过 ①，② 仍执行（锚定批的 sibling 结果卡照归废弃段）。
         /// </summary>
         private void ApplyTimebackBack()
         {
@@ -269,7 +270,7 @@ namespace CH4
             int from = keepEnd + 1;
             int to = scope.BackDeclIndex - 1;
             int removed = 0;
-            // [段1] 区间删除——保留 [0..保留终点] + [back 声明..尾]（同批 start+back 时区间为空）
+            // [段1] 前文删除——保留 [0..保留终点] + [back 声明..尾]（同批 start+back 时区间为空）
             if (from <= to && from < all.Length)
             {
                 if (to >= all.Length)
@@ -291,9 +292,7 @@ namespace CH4
                     keep.Add(all[i]);
                 }
                 removed = all.Length - keep.Count;
-                // [段2] 视图层——被删区间的块转 gap（非前文派生，Rebuild 不清：跨重启可回看）
-                _viewStore.ConvertRangeToGap(from, to);
-                // [段3] 前文落盘——区间删除重写（append-only 的合法例外）
+                // [段2] 前文落盘——区间删除重写（append-only 的合法例外）
                 _context.ReplaceMessages(keep.ToArray());
                 LlmMessage[] toSave = _context.GetMessages();
                 _lastStats.EntryCount = toSave.Length;
@@ -304,6 +303,10 @@ namespace CH4
                 // 索引超界（前文被外部改动）——不删，仅出声
                 LogStore.Add("CatHome4", 2, "timeback 回收区间越界（from " + from.ToString() + " / to " + to.ToString() + " / len " + all.Length.ToString() + "）——本次未删", "TIMEBACK");
             }
+            // [段3] 视图层移出——与前文删除面**解耦**：从**锚定声明之后**起算（比前文删除面宽一段——锚定批的 sibling 结果卡一并归入废弃段；
+            // 前文里它们删不得：assistant 声明的 tool_calls 必须与结果配对）。前文无删除区间时同样执行——sibling 卡仍应归段。
+            // timeback 自己的工具卡（锚定 / 回收）保留在对话流（刷新后即「锚定卡 → 废弃段 → 回收卡」三段式；实时面不重建，屏幕上是正常块）。
+            _viewStore.ConvertRangeToVoid(scope.StartDeclIndex + 1, to, "timeback");
             // [段4] 归档 close——回收条数（实际）+ 存活秒数 + 回收时已知前文长度 + findings
             long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             long seconds = (nowMs - scope.StartAtMs) / 1000;
@@ -423,6 +426,67 @@ namespace CH4
             map["events"] = scope.EventCount;
             return map;
         }
+        /// <summary>
+        /// 提取 timeback 参数中的 action——批内剥离判定专用（start / back 各取首条；A106 批内次序）。
+        /// 解析失败 / 缺失 / 非对象 → 空串（该条不剥离，留主体段由执行体按参数面拒绝）。
+        /// </summary>
+        /// <param name="argsJson">参数 JSON</param>
+        /// <returns>action 值（空=无法识别）</returns>
+        private static string ExtractTimebackAction(string argsJson)
+        {
+            if (argsJson == null || argsJson.Length == 0 || !argsJson.StartsWith("{"))
+            {
+                return "";
+            }
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                {
+                    JsonElement root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                    {
+                        return "";
+                    }
+                    JsonElement actionEl;
+                    if (!root.TryGetProperty("action", out actionEl) || actionEl.ValueKind != JsonValueKind.String)
+                    {
+                        return "";
+                    }
+                    string action = actionEl.GetString();
+                    if (action == null)
+                    {
+                        return "";
+                    }
+                    return action.Trim();
+                }
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// 批内后置执行——剥离出的 back 在本批其余工具（含 host-* 延迟直执）全部完成之后、结果回填之前执行
+        /// （A106 批内次序 · design-ch4-timeback §2.4）：前文末条仍为本批 assistant 声明，
+        /// 故回收区间上界与释放条数预算同源可对账。
+        /// 失败（NO_SCOPE / ARGS）照常作为工具返回值送出——批后段因无待回收载荷自然跳过。
+        /// </summary>
+        private void RunDeferredTimebackBack()
+        {
+            ToolOrderDog dog = _timebackBackDog;
+            if (dog == null)
+            {
+                return;
+            }
+            dog.Result = ExecuteBuiltin(dog.Name, dog.ArgsJson);
+            if (dog.Result == null || dog.Result.Length == 0)
+            {
+                dog.Result = "ERR|EMPTY_RESULT|工具执行无结果";
+            }
+            LogStore.Add("CatHome4", 1, "timeback 批内后置执行（back）", "TIMEBACK");
+        }
+
         /// <summary>
         /// timeback 本体修正黑名单（莎 2026-09-28 定）——作用域存活期禁止对 CH4 自身做修正：
         /// 宿主重启 / 热重载 / 自举链（mau-*）/ 全局与每猫配置写入 / 管理指令族。

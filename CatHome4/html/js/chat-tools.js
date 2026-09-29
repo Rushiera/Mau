@@ -165,6 +165,7 @@ var CHAT_TOOL_SKELETONS = {
     'config-cat-set': 'text',
     'web-search': 'text',
     'image-analyze': 'text',
+    'image-inject': 'text',
     'Note': 'text',
     'time': 'text',
     'random': 'text',
@@ -1268,6 +1269,18 @@ var CHAT_TOOL_OVERRIDES = {
             return '识别图片 ' + name + ' · ' + (h.meta.chars || 0) + ' 字';
         }
     },
+    'image-inject': {
+        // A108 配套——输入图片预览（被插入的图直接看得见；路径形态交 chatImgUrl 单一出口）
+        inputImages: function (a) {
+            if (!a || !a.path) { return []; }
+            return [a.path];
+        },
+        icon: '🖼️',
+        inputLines: function (a) { return ['插入主干 ' + chatOvText(a.path)]; },
+        headline: function (a, r) {
+            return '已插入主干 · ' + chatOvShort(a.path);
+        }
+    },
     'temp-info': {
         inputLines: function () { return ['列出临时工具 Key（TempRegistry）']; },
         headline: function (a, r) {
@@ -1408,6 +1421,7 @@ var CHAT_TOOL_OVERRIDES = {
     },
     // ── 内置 7 件（A64 批 4——结构化头驱动；2026-09-18）──
     'Note': {
+        icon: '📌',
         inputLines: function (a) {
             if (a.action === 'set') { return ['写入计划 · ' + chatOvSize(a.content) + (a.force === true ? ' · 强制覆盖' : '')]; }
             return ['推进到下一条任务'];
@@ -1422,6 +1436,7 @@ var CHAT_TOOL_OVERRIDES = {
         }
     },
     'time': {
+        icon: '🕒',
         inputLines: function () { return ['获取当前时间']; },
         headline: function (a, r) {
             var h = chatMetaHead(r);
@@ -1430,6 +1445,7 @@ var CHAT_TOOL_OVERRIDES = {
         }
     },
     'random': {
+        icon: '🎲',
         inputLines: function (a) { return ['随机数 ' + chatOvText(a.min) + ' ~ ' + chatOvText(a.max)]; },
         headline: function (a, r) {
             var h = chatMetaHead(r);
@@ -1482,6 +1498,7 @@ var CHAT_TOOL_OVERRIDES = {
     },
     // ── 延迟指令（A71/A72——sleep 等待 / timer 排程；结构化头驱动；2026-09-28）──
     'sleep': {
+        icon: '⏳',
         inputLines: function (a) {
             var d = chatOvDurText(a);
             return ['登记定时唤醒' + ((d.length > 0) ? (' · ' + d) : '')];
@@ -1495,6 +1512,7 @@ var CHAT_TOOL_OVERRIDES = {
         }
     },
     'timer': {
+        icon: '⏰',
         inputLines: function (a) {
             var d = chatOvDurText(a);
             var loop = (a.loop === true) ? ' · 循环' : '';
@@ -1511,6 +1529,7 @@ var CHAT_TOOL_OVERRIDES = {
     },
     // ── 上下文作用域（A101——start 开锚 / back 回收；结构化头驱动）──
     'timeback': {
+        icon: '⚓',
         inputLines: function (a) {
             if (a.action === 'back') { return ['回收上下文作用域', '载荷 ' + chatOvPeek(a.findings)]; }
             return ['开锚上下文作用域' + ((a.purpose) ? (' · ' + chatOvPeek(a.purpose)) : '')];
@@ -1524,6 +1543,7 @@ var CHAT_TOOL_OVERRIDES = {
         }
     },
     'pack': {
+        icon: '📚',
         inputLines: function (a) { return ['加载包 ' + chatOvText(a.key)]; },
         headline: function (a, r) {
             var h = chatMetaHead(r);

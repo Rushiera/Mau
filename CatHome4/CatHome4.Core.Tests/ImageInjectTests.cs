@@ -234,5 +234,85 @@ namespace CatHome4.Core.Tests
             session.FlushImageInjections(dogs);
             Assert.Equal(0, CountInjectedMessages(session));
         }
+        /// <summary>
+        /// A108——image-inject 的根寻址形态在注入时规范化为绝对路径（复用 FileSystemService.Resolve）：
+        /// 引用数组落绝对路径，请求构造面的展开不再依赖根表。
+        /// </summary>
+        [Fact]
+        public void RootAddress_NormalizedToAbsolutePathOnInject()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            string rootDir = Path.Combine(Path.GetTempPath(), "cat4ii_root_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(rootDir);
+            CH4.ToolCatContext.UpdateCatFileSystem("ii-session", new WorkspaceConfig.RootEntry[]
+            {
+                        new WorkspaceConfig.RootEntry { Id = "imgs", Path = rootDir, Writable = true, Note = "测试根" }
+            }, Path.Combine(rootDir, "_recycle"));
+            try
+            {
+                List<CH4.ToolOrderDog> dogs = new List<CH4.ToolOrderDog>();
+                CH4.ToolOrderDog d1 = new CH4.ToolOrderDog("i1", "image-inject", "{\"path\":\"imgs:a.png\"}");
+                d1.Result = "{\"path\":\"imgs:a.png\"}";
+                dogs.Add(d1);
+                session.FlushImageInjections(dogs);
+                Assert.Equal(1, CountInjectedMessages(session));
+                string imagesJson = LastImagesJson(session);
+                // 引用已解析为绝对路径（根寻址形态不再出现在引用数组里）
+                Assert.Contains(rootDir.Replace("\\", "\\\\"), imagesJson, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("imgs:", imagesJson, StringComparison.Ordinal);
+            }
+            finally
+            {
+                CH4.ToolCatContext.RemoveCatFileSystem("ii-session");
+                try
+                {
+                    Directory.Delete(rootDir, true);
+                }
+                catch (Exception)
+                {
+                    // 清理失败不影响断言
+                }
+            }
+        }
+        /// <summary>
+        /// A108 回归——非根寻址形态不被根解析吞掉：外部 URL 原样透传；盘符绝对路径照常入引用数组
+        /// （盘符路径若落在某受控根内会被 Resolve 规范化，故只断言文件名存活，不锁定路径形态）。
+        /// </summary>
+        [Fact]
+        public void NonRootAddress_PassesThroughUnchanged()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            List<CH4.ToolOrderDog> dogs = new List<CH4.ToolOrderDog>();
+            CH4.ToolOrderDog d1 = new CH4.ToolOrderDog("i1", "image-inject", "{\"path\":\"https://example.com/a.png\"}");
+            d1.Result = "{\"path\":\"https://example.com/a.png\"}";
+            CH4.ToolOrderDog d2 = new CH4.ToolOrderDog("i2", "image-inject", "{\"path\":\"C:/tmp/b.png\"}");
+            d2.Result = "{\"path\":\"C:/tmp/b.png\"}";
+            dogs.Add(d1);
+            dogs.Add(d2);
+            session.FlushImageInjections(dogs);
+            string imagesJson = LastImagesJson(session);
+            Assert.Contains("https://example.com/a.png", imagesJson, StringComparison.Ordinal);
+            Assert.Contains("b.png", imagesJson, StringComparison.Ordinal);
+        }
+        /// <summary>
+        /// 取最后一条带附件引用的 user 消息的引用数组——注入断言用。
+        /// </summary>
+        /// <param name="session">会话</param>
+        /// <returns>ImagesJson（无=空串）</returns>
+        private static string LastImagesJson(CH4.ChatSession session)
+        {
+            string imagesJson = "";
+            LlmMessage[] all = session.Context.GetMessages();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (all[i].Role == LlmRole.User && all[i].ImagesJson != null && all[i].ImagesJson.Length > 0)
+                {
+                    imagesJson = all[i].ImagesJson;
+                }
+            }
+            return imagesJson;
+        }
     }
 }

@@ -37,6 +37,8 @@ namespace CH4
         private readonly List<ViewBlock> _errors = new List<ViewBlock>();
         /// <summary>重试过程块——retry 气泡（非真实前文派生；同一重试序列原位更新不堆叠；写入即落盘）</summary>
         private readonly List<ViewBlock> _retries = new List<ViewBlock>();
+        /// <summary>废弃块——timeback 回收区间的合并归档块（非真实前文派生，Rebuild 不清；Save 落盘；前端「已废弃」气泡）</summary>
+        private readonly List<ViewBlock> _voids = new List<ViewBlock>();
         /// <summary>
         /// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）
         /// </summary>
@@ -93,6 +95,9 @@ namespace CH4
 
             /// <summary>重试过程块数组——retry（非真实前文派生；Rebuild 不清，Save 落盘，Load 恢复）</summary>
             public ViewBlock[] Retries { get; set; }
+
+            /// <summary>废弃块数组——void（timeback 回收区间合并归档；非真实前文派生；Rebuild 不清，Save 落盘，Load 恢复）</summary>
+            public ViewBlock[] Voids { get; set; }
         }
 
         /// <summary>
@@ -107,8 +112,8 @@ namespace CH4
         /// <summary>内存视图块——按生成序（history 数据源）</summary>
         public ViewBlock[] GetBlocks()
         {
-            // 合并面——真实前文块 + 间隙文本块 + roundsum 轮末统计块 + error 错误块 + retry 重试块（按时间戳升序——同一坐标系：消息 CreatedAt / CloseRound 时刻）
-            List<ViewBlock>[] sources = new List<ViewBlock>[] { _blocks, _gapTexts, _roundSums, _errors, _retries };
+            // 合并面——真实前文块 + 间隙文本块 + roundsum 轮末统计块 + error 错误块 + retry 重试块 + void 废弃块（按时间戳升序——同一坐标系：消息 CreatedAt / CloseRound 时刻）
+            List<ViewBlock>[] sources = new List<ViewBlock>[] { _blocks, _gapTexts, _roundSums, _errors, _retries, _voids };
             int total = 0;
             for (int si = 0; si < sources.Length; si = si + 1)
             {
@@ -234,16 +239,19 @@ namespace CH4
         }
 
         /// <summary>
-        /// 区间块转 gap——真实前文被删段对应的视图块搬入 gap 容器（非前文派生，Rebuild 不清：跨宿主重启仍可回看）。
-        /// 文本形态按块型组装（user / text / reason 取正文；toolcard 取「工具名 + 参数 + 结果」）；
-        /// 时间戳沿用原块（归并排序位不变）；转换后从 _blocks 移除并落盘。
+        /// 区间块转废弃块（timeback 回收）——区间内全部视图块**合并为一个**废弃块，从对话流移出进独立容器（非前文派生，Rebuild 不清：跨重启仍可回看）。
+        /// 语义（莎 2026-09-29）：这些内容已被主干排除（前文面不再含），前端只是「能看」——故不进对话流、不参与 QQ 转发（renderType≠text），独立块型 `void`。
+        /// 移出面由调用方按语义给界（timeback 取「锚定声明之后」——比前文删除区间更宽：锚定批的 sibling 结果卡一并移出）；
+        /// `keepToolName` 指定工具名的工具卡**保留在对话流**（timeback 自己的锚定卡——三段式「锚定 → 废弃段 → 回收」的锚）。
+        /// 内容按块型组装（user / text / reason 取正文；toolcard 取「工具名 + 参数 + 结果」）；块时间戳取移出块中最早者（归并排序位不变）。
         /// </summary>
         /// <param name="fromMsgIndex">区间下界（真实前文消息索引，含）</param>
         /// <param name="toMsgIndex">区间上界（含）</param>
-        /// <returns>转换块数</returns>
-        public int ConvertRangeToGap(int fromMsgIndex, int toMsgIndex)
+        /// <param name="keepToolName">区间内保留不动的工具卡名（空=不保留）</param>
+        /// <returns>移出的视图块数（无命中 = 0，零动作）</returns>
+        public int ConvertRangeToVoid(int fromMsgIndex, int toMsgIndex, string keepToolName)
         {
-            int moved = 0;
+            List<ViewBlock> removed = new List<ViewBlock>();
             for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
             {
                 ViewBlock b = _blocks[i];
@@ -251,27 +259,44 @@ namespace CH4
                 {
                     continue;
                 }
-                string content = BuildGapContent(b);
-                _blocks.RemoveAt(i);
-                moved = moved + 1;
-                if (content.Length == 0)
+                // 保留面——锚定/回收卡不走废弃段（三段式的锚；判据 = 工具卡名）
+                if (keepToolName != null && keepToolName.Length > 0 && IsToolCardOf(b, keepToolName))
                 {
                     continue;
                 }
-                ViewBlock gap = new ViewBlock();
-                gap.Timestamp = b.Timestamp;
-                gap.Hash = "gap_" + _gapTexts.Count.ToString();
-                gap.MsgIndex = -1;
-                gap.RenderType = "text";
-                Dictionary<string, object> payload = new Dictionary<string, object>();
-                payload["content"] = content;
-                gap.Payload = JsonUtil.Serialize(payload);
-                _gapTexts.Add(gap);
+                removed.Insert(0, b);   // 逆序扫描——插回头部保持原生成序
+                _blocks.RemoveAt(i);
             }
-            if (moved > 0)
+            int moved = removed.Count;
+            if (moved == 0)
             {
-                Save();
+                return 0;
             }
+            StringBuilder body = new StringBuilder();
+            for (int i = 0; i < removed.Count; i = i + 1)
+            {
+                string text = BuildGapContent(removed[i]);
+                if (text.Length == 0)
+                {
+                    continue;
+                }
+                if (body.Length > 0)
+                {
+                    body.Append("\n\n");
+                }
+                body.Append(text);
+            }
+            ViewBlock block = new ViewBlock();
+            block.Timestamp = removed[0].Timestamp;
+            block.Hash = "void_" + _voids.Count.ToString();
+            block.MsgIndex = -1;
+            block.RenderType = "void";
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["count"] = moved;
+            payload["text"] = body.ToString();
+            block.Payload = JsonUtil.Serialize(payload);
+            _voids.Add(block);
+            Save();
             return moved;
         }
 
@@ -379,6 +404,7 @@ namespace CH4
                 data.RoundSums = _roundSums.ToArray();
                 data.Errors = _errors.ToArray();
                 data.Retries = _retries.ToArray();
+                data.Voids = _voids.ToArray();
                 JsonSerializerOptions options = new JsonSerializerOptions();
                 options.IncludeFields = true;
                 options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;   // 中文直出（默认 \uXXXX 转义人读不便——2026-09-08 全局统一）
@@ -856,6 +882,8 @@ namespace CH4
             _errors.Clear();
             // 重试过程块随视图层清理——新会话不保留旧重试记录
             _retries.Clear();
+            // 废弃块随视图层清理——新会话不保留旧回收归档
+            _voids.Clear();
         }
         /// <summary>
         /// 清空轮末统计块——回滚裁剪后调用（roundsum 非真实前文派生，Rebuild 不清——裁剪后残留旧统计）
@@ -1010,11 +1038,47 @@ namespace CH4
                     _retries.Clear();
                     _retries.AddRange(data.Retries);
                 }
+                if (data != null && data.Voids != null)
+                {
+                    _voids.Clear();
+                    _voids.AddRange(data.Voids);
+                }
             }
             catch (Exception)
             {
                 // 加载失败静默——注入报告缺失不阻断（视图可重建）
             }
+        }
+        /// <summary>
+        /// 工具卡归属判定——该块是否为指定工具名的工具卡（仅 toolcard 块型；载荷解析失败 = false，进废弃块）。
+        /// 用途：`ConvertRangeToVoid` 的保留面（timeback 自己的锚定卡保留在对话流——三段式的锚）。
+        /// </summary>
+        /// <param name="b">视图块</param>
+        /// <param name="toolName">工具名</param>
+        /// <returns>true=命中（保留在对话流）</returns>
+        private static bool IsToolCardOf(ViewBlock b, string toolName)
+        {
+            if (b.RenderType != "toolcard" || b.Payload == null || b.Payload.Length == 0)
+            {
+                return false;
+            }
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(b.Payload))
+                {
+                    JsonElement nameEl;
+                    if (doc.RootElement.TryGetProperty("name", out nameEl) && nameEl.ValueKind == JsonValueKind.String)
+                    {
+                        string got = nameEl.GetString();
+                        return got != null && string.Equals(got, toolName, StringComparison.Ordinal);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // 载荷解析失败——不保留（走废弃块）
+            }
+            return false;
         }
     }
 }
