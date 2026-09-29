@@ -69,9 +69,10 @@ namespace Mau.Development.Tests
                     Directory.Delete(_root, true);
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // 测试夹具清理——工作区可能持有句柄，尽力删除
+                Console.WriteLine("[测试清理] 工作区目录删除失败: " + ex.Message);
             }
         }
 

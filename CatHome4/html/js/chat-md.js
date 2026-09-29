@@ -37,7 +37,8 @@ function mdParseInline(text) {
         }
         var end = text.indexOf(kind, next + kind.length);
         if (end < 0) {
-            out += mdEscapeHtml(text.substring(pos));
+            // 未闭合标记——从标记处原样输出（前缀 [pos,next) 已输出；从 pos 重出会重复文本）
+            out += mdEscapeHtml(text.substring(next));
             break;
         }
         var inner = text.substring(next + kind.length, end);
@@ -62,9 +63,31 @@ function mdIsTableSep(line) {
     return true;
 }
 
+function mdSplitTableCells(line) {
+    // 单元格切分——按未转义的 | 分割（GFM 表格约定：\| = 字面量管道）；仅 | 一种转义，其余反斜杠原样保留
+    var cells = [];
+    var cur = '';
+    for (var i = 0; i < line.length; i = i + 1) {
+        var ch = line[i];
+        if (ch === '\\' && i + 1 < line.length && line[i + 1] === '|') {
+            cur += '|';
+            i = i + 1;
+            continue;
+        }
+        if (ch === '|') {
+            cells.push(cur);
+            cur = '';
+            continue;
+        }
+        cur += ch;
+    }
+    cells.push(cur);
+    return cells;
+}
+
 function mdRenderTableRow(line) {
-    // 单行单元格解析——按 | 分割（首尾空串剥离），每个单元格走行内解析
-    var cells = line.split('|');
+    // 单行单元格解析——按未转义的 | 分割（首尾空串剥离），每个单元格走行内解析
+    var cells = mdSplitTableCells(line);
     var start = 0;
     var end = cells.length;
     if (cells[0].trim() === '') { start = 1; }

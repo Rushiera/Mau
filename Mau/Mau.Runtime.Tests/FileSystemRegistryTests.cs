@@ -192,9 +192,10 @@ namespace Mau.Runtime.Tests
                     Directory.Delete(dir, true);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 测试夹具清理——尽力删除（目录被占用等不影响用例结论）
+                Console.WriteLine("[测试清理] 目录删除失败: " + ex.Message);
             }
         }
     }

@@ -43,9 +43,10 @@ namespace CatHome4.Core.Tests
                     Directory.Delete(_dir, true);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 清理失败不影响断言结论（临时目录随系统清理）
+                Console.WriteLine("[测试清理] 延迟队列临时目录删除失败: " + ex.Message);
             }
         }
 

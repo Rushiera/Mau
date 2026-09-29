@@ -91,9 +91,10 @@ namespace CH4
                 {
                     psi.WorkingDirectory = cwd;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // 工作目录无效——回退默认（不阻断执行）
+                    LogStore.Add("CatHome4", 2, "PS 工作目录无效，回退默认: " + ex.Message, "SYS");
                 }
             }
             // [段4] 启动 + 异步读流（异步读防管道缓冲区死锁——同步 ReadToEnd 大输出会卡）
@@ -136,9 +137,10 @@ namespace CH4
                     KillTree(proc);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 等待异常（进程已退出等）——按已退出处理
+                LogStore.Add("CatHome4", 2, "PS 等待进程异常，按已退出处理: " + ex.Message, "SYS");
             }
             string outText = stdout.ToString();
             string errText = CleanErrorText(stderr.ToString());
@@ -420,12 +422,12 @@ namespace CH4
             }
         }
 
-        /// <summary>词法拦截检查——最小面（单命令语句：禁多段/管道/块/过程语句/变量赋值）/ 写文件语义 / Start-Process / ReadKey-ReadLine。git 仅豁免写文件词表。</summary>
+        /// <summary>词法拦截检查——最小面（单命令语句：禁多段/管道/块/过程语句/变量赋值）/ 写文件语义 / 目录列举 / Start-Process / ReadKey-ReadLine。git 仅豁免写文件与列目录词表。</summary>
         /// <param name="command">命令全文</param>
         /// <returns>拦截错误文本（空=放行）</returns>
         private static string DetectForbidden(string command)
         {
-            // [段1] git 前缀豁免——仅豁免写文件词表（commit message 内的词文本会误伤——判例 2026-09-11）；最小面与重定向检查照常
+            // [段1] git 前缀豁免——仅豁免写文件 / 列目录词表（命令内路径文本会误伤——判例 2026-09-11）；最小面与重定向检查照常
             bool isGit = IsGitCommand(command);
             // [段2] 最小面检查——语句形态：多段 / 管道 / 块 / 过程语句 / 变量赋值（一次调用只发一个命令，判断归 LLM）
             string minimal = DetectNonMinimal(command);
@@ -465,6 +467,23 @@ namespace CH4
                     {
                         return "ERR|PS_READ_FILE_FORBIDDEN|命令含文件读取语义（" + readApis[i] + "）——文件内容读取请走 text-* 工具（text-read / text-read_between / text-read_lines）";
                     }
+                }
+                // [段3c] 目录列举语义——列目录一律走 file-tree（按文件名查找走 file-find）；git 豁免同族（路径文本防误伤）
+                string[] listCmdlets = new string[]
+                {
+                            "Get-ChildItem", "gci", "ls", "dir"
+                };
+                for (int i = 0; i < listCmdlets.Length; i = i + 1)
+                {
+                    if (ContainsWord(command, listCmdlets[i]))
+                    {
+                        return ListForbidden(listCmdlets[i]);
+                    }
+                }
+                // tree 原生 exe——仅段首形态判（路径 / 参数中的同形词，如 Tree.md，不误伤）
+                if (StartsWithWord(command.TrimStart(), "tree"))
+                {
+                    return ListForbidden("tree");
                 }
             }
             // [段4] 重定向操作符——语义判定（引号内文本 / 箭头 / 比较符 一律放行）
@@ -640,6 +659,15 @@ namespace CH4
         private static string MultiErr(string token)
         {
             return "ERR|PS_MULTI_FORBIDDEN|命令含多段（" + token + "）——最小面规则：一次调用只发一个命令；请拆成多次工具调用（同一轮可并发提交）";
+        }
+        /// <summary>
+        /// 目录列举拦截文案——统一指引（列目录走 file-tree；按文件名查找走 file-find）。
+        /// </summary>
+        /// <param name="hit">命中的词</param>
+        /// <returns>错误文本</returns>
+        private static string ListForbidden(string hit)
+        {
+            return "ERR|PS_LIST_FORBIDDEN|命令含目录列举语义（" + hit + "）——列目录请使用 file-tree 工具（按文件名查找用 file-find）";
         }
 
         /// <summary>
@@ -880,17 +908,19 @@ namespace CH4
                     killer.WaitForExit(5000);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 杀树失败静默——进程可能已退出
+                LogStore.Add("CatHome4", 2, "进程树强杀失败: " + ex.Message, "SYS");
             }
             try
             {
                 proc.Kill();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 已退出
+                LogStore.Add("CatHome4", 1, "进程已退出，Kill 跳过: " + ex.Message, "SYS");
             }
         }
 

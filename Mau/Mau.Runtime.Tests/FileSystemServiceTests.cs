@@ -661,9 +661,10 @@ namespace Mau.Runtime.Tests
             {
                 Directory.Delete(dir, true);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 清理尽力而为
+                Console.WriteLine("[测试清理] 临时目录删除失败: " + ex.Message);
             }
         }
         /// <summary>

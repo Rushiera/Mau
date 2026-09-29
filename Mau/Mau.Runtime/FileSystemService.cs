@@ -595,9 +595,10 @@ namespace Mau.Runtime
             {
                 head = ReadTextShared(Path.Combine(gitDir, "HEAD"), Encoding.UTF8).Trim();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // HEAD 不可读——按空处理（无特征可报）
+                LogStore.Add("FileSystemService", 2, "git HEAD 读取失败，按空处理: " + ex.Message, "SYS");
             }
             if (head.StartsWith("ref:", StringComparison.Ordinal))
             {
@@ -608,9 +609,10 @@ namespace Mau.Runtime
                 {
                     commit = ReadTextShared(refPath, Encoding.UTF8).Trim();
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // ref 文件缺失（packed-refs 场景）——仅报 HEAD 指向
+                    LogStore.Add("FileSystemService", 2, "git ref 读取失败，仅报 HEAD 指向: " + ex.Message, "SYS");
                 }
                 if (commit.Length > 7)
                 {

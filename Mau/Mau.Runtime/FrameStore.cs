@@ -88,9 +88,10 @@ namespace Mau.Runtime
                         _lastFlush = now;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
                     // 写失败静默——帧流是观测缓存非关键路径
+                    LogStore.Add("FrameStore", 2, "帧快照写入失败: " + ex.Message, "SYS");
                 }
             }
         }
@@ -108,9 +109,10 @@ namespace Mau.Runtime
                     {
                         _writer.Flush();
                     }
-                    catch
+                    catch (Exception ex)
                     {
                         // Flush 失败不影响释放（帧流是观测缓存）
+                        Console.Error.WriteLine("[FrameStore] 帧快照写者 Flush 失败: " + ex.Message);
                     }
                     _writer.Dispose();
                     _writer = null;

@@ -609,9 +609,10 @@ namespace Mau.Runtime
                 File.Move(_path, badPath);
                 LogStore.Add("CatHome4", 3, "会话前文全部不可解析，已备份为 " + badPath + "（本次按新会话启动）", "CHAT");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 备份失败不阻断加载失败语义——原文件保留
+                LogStore.Add("CatHome4", 2, "坏前文备份失败，保留原文件: " + ex.Message, "CHAT");
             }
         }
 

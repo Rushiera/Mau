@@ -411,9 +411,10 @@ namespace CH4
                 string json = JsonSerializer.Serialize(data, options);
                 File.WriteAllText(_path, json);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 保存失败不阻断会话（下次收工再试）——视图是派生态，真实前文可重建
+                LogStore.Add("SessionViewStore", 2, "视图保存失败: " + ex.Message, "SYS");
             }
         }        /// <summary>追加轮末统计块——roundsum（Token 消耗 + 工具次数 + 总耗时 + 四态用时）。非真实前文派生（Rebuild 不清）；写入即落盘——宿主中断不丢。</summary>
 /// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...}}）</param>
@@ -948,9 +949,10 @@ namespace CH4
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 解析失败——空登记（容错）
+                LogStore.Add("SessionViewStore", 2, "工具卡登记解析失败，按空登记: " + ex.Message, "SYS");
             }
         }
 
@@ -1044,9 +1046,10 @@ namespace CH4
                     _voids.AddRange(data.Voids);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 加载失败静默——注入报告缺失不阻断（视图可重建）
+                LogStore.Add("SessionViewStore", 2, "视图加载失败，按空视图继续: " + ex.Message, "SYS");
             }
         }
         /// <summary>
@@ -1074,9 +1077,10 @@ namespace CH4
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 载荷解析失败——不保留（走废弃块）
+                LogStore.Add("SessionViewStore", 2, "工具卡载荷解析失败，不进保留面: " + ex.Message, "SYS");
             }
             return false;
         }

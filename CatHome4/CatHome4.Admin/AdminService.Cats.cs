@@ -1069,9 +1069,10 @@ namespace CatHome4.Admin
                 {
                     cat.Host.Stop();
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // 停止异常不阻断删除
+                    LogStore.Add("AdminService", 2, "停止猫实例异常，不阻断删除: " + ex.Message, "SYS");
                 }
             }
             _cats.Remove(cat);
@@ -1746,9 +1747,10 @@ namespace CatHome4.Admin
                         listener.Stop();
                         return port;
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
                         // 试绑失败——继续下一端口
+                        LogStore.Add("AdminService", 1, "端口试绑未成，继续下一端口: " + ex.Message, "SYS");
                     }
                 }
                 port = port + step;

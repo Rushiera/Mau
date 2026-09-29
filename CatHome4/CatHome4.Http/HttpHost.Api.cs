@@ -54,9 +54,10 @@ namespace CatHome4.Http
                     await client.Response.Body.FlushAsync();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 客户端断开——静默移除
+                LogStore.Add("HttpHost", 1, "SSE 客户端断开: " + ex.Message, "SYS");
             }
             finally
             {
@@ -278,9 +279,10 @@ namespace CatHome4.Http
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 解析失败——按空指令处理（错误可见性：回执 ok=false）
+                LogStore.Add("HttpHost", 2, "指令解析失败，按空指令处理: " + ex.Message, "SYS");
             }
             return "";
         }
@@ -316,9 +318,10 @@ namespace CatHome4.Http
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 解析失败——按无图片处理（文本走原路径投递）
+                LogStore.Add("HttpHost", 2, "图片列表解析失败，按无图片处理: " + ex.Message, "SYS");
             }
             return images;
         }

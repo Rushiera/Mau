@@ -280,9 +280,10 @@ namespace Mau.Runtime
                         RotateIfDue();
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
                     // 磁盘写失败——内存总账已保留
+                    Console.Error.WriteLine("[LogStore] 磁盘投影写入失败: " + ex.Message);
                 }
             }
             // [段2] Console 订阅——窗口同构（O4 全量接入后宿主过程行不再直打）；skipDisk 类（L0-TRACE）跳过感官通道
@@ -292,9 +293,10 @@ namespace Mau.Runtime
                 {
                     ConsoleSink(FormatLine(entry));
                 }
-                catch
+                catch (Exception ex)
                 {
                     // 订阅异常不影响日志主链
+                    Console.Error.WriteLine("[LogStore] Console 订阅回调异常: " + ex.Message);
                 }
             }
         }
@@ -401,9 +403,10 @@ namespace Mau.Runtime
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 解析失败——回落原文
+                Console.Error.WriteLine("[LogStore] 载荷解析失败，回落原文: " + ex.Message);
             }
             if (payload.Length > 120)
             {
@@ -497,9 +500,10 @@ namespace Mau.Runtime
                     sw.Write(line);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 诊断通道自身失败——无处可报（不递归）
+                Console.Error.WriteLine("[LogStore] 诊断通道写入失败: " + ex.Message);
             }
         }
 
@@ -527,9 +531,10 @@ namespace Mau.Runtime
                     RotateWriter(ref _errWriter, System.IO.Path.Combine(_runDir, "err_all.txt"));
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // 轮转异常——保留现状继续写（磁盘异常不阻断日志主链）
+                Console.Error.WriteLine("[LogStore] 日志轮转异常，保留现状继续写: " + ex.Message);
             }
         }
 
@@ -552,9 +557,10 @@ namespace Mau.Runtime
                 System.IO.File.Move(path, archive);
                 writer = OpenWriter(path);
             }
-            catch
+            catch (Exception ex)
             {
                 // 轮转失败——保留当前写者（下次写入再试；日志主链不受影响）
+                Console.Error.WriteLine("[LogStore] 轮转失败，保留当前写者: " + ex.Message);
             }
         }
 
@@ -593,9 +599,10 @@ namespace Mau.Runtime
                 {
                     _logWriter.Flush();
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Flush 失败不影响释放（日志内存总账已保留）
+                    Console.Error.WriteLine("[LogStore] log_all 写者 Flush 失败: " + ex.Message);
                 }
                 _logWriter.Dispose();
                 _logWriter = null;
@@ -606,9 +613,10 @@ namespace Mau.Runtime
                 {
                     _oaWriter.Flush();
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Flush 失败不影响释放（日志内存总账已保留）
+                    Console.Error.WriteLine("[LogStore] oa_all 写者 Flush 失败: " + ex.Message);
                 }
                 _oaWriter.Dispose();
                 _oaWriter = null;
@@ -619,9 +627,10 @@ namespace Mau.Runtime
                 {
                     _errWriter.Flush();
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Flush 失败不影响释放（日志内存总账已保留）
+                    Console.Error.WriteLine("[LogStore] err_all 写者 Flush 失败: " + ex.Message);
                 }
                 _errWriter.Dispose();
                 _errWriter = null;

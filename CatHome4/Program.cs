@@ -102,9 +102,10 @@ namespace CH4
             {
                 Console.OutputEncoding = System.Text.Encoding.UTF8;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 输出编码设置失败不影响功能
+                LogStore.Add("CatHome4", 2, "控制台编码设置失败: " + ex.Message, "CONFIG");
             }
             try
             {
@@ -906,9 +907,10 @@ namespace CH4
                 System.Diagnostics.Process.Start(nodePsi);
                 LogStore.Add("CatHome4", 1, "前端测试服务已启动：" + testDir, "CONFIG");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 测试服务启动失败不影响宿主主功能
+                LogStore.Add("CatHome4", 2, "前端测试服务启动失败: " + ex.Message, "CONFIG");
             }
         }
         /// <summary>

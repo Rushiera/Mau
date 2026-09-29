@@ -1562,9 +1562,10 @@ namespace CH4
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // 解析失败静默——观测面不受单帧畸形影响
+                LogStore.Add("ChatSession", 2, "usage 帧解析失败，累计跳过: " + ex.Message, "SYS");
             }
         }
 

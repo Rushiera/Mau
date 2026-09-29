@@ -277,11 +277,13 @@ namespace Mau.Bricks
                     doc.Dispose();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                // JSON 解析失败——回落空串（调用方按缺字段处理）
+                LogStore.Add("MAU", 2, "载荷 JSON 解析失败，回落空串: " + ex.Message, "SYS");
             }
             return "";
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:5AC2C686476A3F687250686BAAD00A8B71138956F5E49BBDBB8E26EA8E2EC82C
+// #MAU_CHECKSUM:SHA256:61C81F7F86EF70544D0E104A6D8069F2D4CE486735630D717E7418F29F914296

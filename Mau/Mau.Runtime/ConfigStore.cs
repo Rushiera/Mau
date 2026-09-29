@@ -438,9 +438,10 @@ namespace Mau.Runtime
 
                     Save();
                 }
-                catch (Exception)
+                catch (Exception rollbackEx)
                 {
                     // 回滚再失败——内存保持一致，磁盘差异交由审计提示
+                    LogStore.Add("ConfigStore", 2, "回滚再失败（内存一致/磁盘差异）: " + rollbackEx.Message, "SYS");
                 }
 
                 error = "写入失败: " + ex.Message;
@@ -531,9 +532,10 @@ namespace Mau.Runtime
                     }
                     Save();
                 }
-                catch (Exception)
+                catch (Exception rollbackEx)
                 {
                     // 回滚再失败——内存保持一致，磁盘差异交由审计提示
+                    LogStore.Add("ConfigStore", 2, "回滚再失败（内存一致/磁盘差异）: " + rollbackEx.Message, "SYS");
                 }
                 error = "还原失败: " + ex.Message;
                 return false;

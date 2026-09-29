@@ -196,13 +196,15 @@ namespace Mau.Runtime.Tests
                     Directory.Delete(path, true);
                 }
             }
-            catch (IOException)
+            catch (IOException ex)
             {
                 // 占用忽略
+                Console.WriteLine("[测试清理] 目录删除失败（占用）: " + ex.Message);
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException ex)
             {
                 // 权限忽略
+                Console.WriteLine("[测试清理] 目录删除失败（权限）: " + ex.Message);
             }
         }
     }

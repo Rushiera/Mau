@@ -40,9 +40,10 @@ namespace CatHome4.Core.Tests
             {
                 Directory.Delete(_dir, true);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 测试夹具清理——尽力删除（目录被占用等不影响断言结论）
+                Console.WriteLine("[测试清理] 视图临时目录删除失败: " + ex.Message);
             }
         }
 

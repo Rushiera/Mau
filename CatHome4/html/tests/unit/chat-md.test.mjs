@@ -94,6 +94,14 @@ test('表格——无分隔行则全部数据行（无 thead）', () => {
   expect(html).not.toContain('<thead>');
 });
 
+test('表格——\\| 转义管道：不切分单元格 + 行内标记不破（判例 2026-09-29）', () => {
+  const md = '| 项 | 输入 | 结果 |\n| --- | --- | --- |\n| PS 禁目录列举 | 本会话 powershell 直调 Get-ChildItem | **`ERR\\|PS_LIST_FORBIDDEN\\|命令含目录列举语义，列目录请使用 file-tree 工具`** |';
+  const html = mdToHtml(md);
+  expect(html).toContain('<tr><td>PS 禁目录列举</td><td>本会话 powershell 直调 Get-ChildItem</td><td><strong><code>ERR|PS_LIST_FORBIDDEN|命令含目录列举语义，列目录请使用 file-tree 工具</code></strong></td></tr>');
+  // 复制原文保真——data-md 存源文本（\| 不还原）
+  expect(html).toContain('data-md="| 项 | 输入 | 结果 |&#10;| --- | --- | --- |&#10;| PS 禁目录列举 | 本会话 powershell 直调 Get-ChildItem | **`ERR\\|PS_LIST_FORBIDDEN\\|命令含目录列举语义，列目录请使用 file-tree 工具`** |"');
+});
+
 // ── A81 复制原文——包裹层与源文本载体 ──
 test('A81 代码块——外层 .md-copy 包裹，源文本走 pre code（不存 data-md）', () => {
   const html = mdToHtml('```\nabc\ndef\n```');

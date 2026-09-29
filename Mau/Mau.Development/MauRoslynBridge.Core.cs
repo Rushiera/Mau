@@ -10,6 +10,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.Options;
+using Mau.Runtime;
 
 namespace Mau.Development
 {
@@ -130,9 +131,10 @@ namespace Mau.Development
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 解析失败保留默认——语义诊断可能噪音，cs.build 权威兜底
+                LogStore.Add("Mau", 2, "csproj 解析失败，保留默认: " + ex.Message, "SYS");
             }
         }
 
@@ -643,9 +645,10 @@ namespace Mau.Development
                 {
                     references.Add(MetadataReference.CreateFromFile(pair.Value));
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // 单个引用失败跳过——编译器会报缺失引用而非崩溃
+                    LogStore.Add("Mau", 2, "引用程序集加载失败，跳过: " + ex.Message, "SYS");
                 }
             }
             return references;

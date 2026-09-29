@@ -23,9 +23,10 @@ namespace Mau.Cli
             {
                 Console.OutputEncoding = System.Text.Encoding.UTF8;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 输出编码设置失败不影响功能
+                Console.Error.WriteLine("[mau] 控制台编码设置失败: " + ex.Message);
             }
             DateTime start = DateTime.Now;
             string commandName = args.Length > 0 ? args[0] : "(help)";

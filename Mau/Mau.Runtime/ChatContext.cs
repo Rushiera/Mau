@@ -454,9 +454,10 @@ namespace Mau.Runtime
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 解析失败——返回空字典（调用方按无声明/降级处理）
+                LogStore.Add("ChatContext", 2, "主机声明解析失败，返回空表: " + ex.Message, "SYS");
             }
             return result;
         }

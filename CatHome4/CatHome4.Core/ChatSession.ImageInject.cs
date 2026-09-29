@@ -168,9 +168,10 @@ namespace CH4
                     return full;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 越界 / 未知根 id / 解析异常——原样透传（失败可见性归下游）
+                LogStore.Add("ChatSession", 2, "图片路径解析失败，原样透传: " + ex.Message, "SYS");
             }
             return path;
         }
