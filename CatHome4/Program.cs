@@ -295,7 +295,8 @@ namespace CH4
             // 扫描化：文件名去 FL_ 前缀得 Flow 名（dll 名 = 组名——QuickCat 与工具组一视同仁）
             // 容错：加载失败 → 警告 + 跳过注册（该组工具工单无人认领 → 超时诚实 ERR——不再宿主直执）
             // 路由表数据化 + 工具定义数据化：加载后经 IFlow.GetMetaJson/GetToolsJson 读自曝 → 统一工具池（design-ch4-tools-pool §六）
-            List<IFlow> poolFlows = new List<IFlow>();
+            // 工具组来源（组名 + Flow——A107：定义自曝失败时必须报得出是哪一组）
+            List<ToolGroupSource> poolGroups = new List<ToolGroupSource>();
             IFlow quickFlow = null;
             string[] flowDlls = Directory.GetFiles(dllDir, "FL_*.dll");
             Array.Sort(flowDlls, StringComparer.OrdinalIgnoreCase);
@@ -322,12 +323,17 @@ namespace CH4
                     FlowHandle handle = LoadToolGroup(flowName, dllDir);
                     if (handle != null)
                     {
-                        poolFlows.Add(handle.Flow);
+                        ToolGroupSource groupSource = new ToolGroupSource();
+                        groupSource.Name = flowName;
+                        groupSource.Flow = handle.Flow;
+                        poolGroups.Add(groupSource);
                     }
                 }
             }
             // 内置工具定义源——宿主内建小表（本质也是 BRIK，只是内置：Note/time/random/info/host-*）
-            ToolPool.RebuildAll(poolFlows, quickFlow, BuildBuiltinToolsJson());
+            ToolPool.RebuildAll(poolGroups, quickFlow, BuildBuiltinToolsJson());
+            // A107——定义缺陷出声：逐条 L3 落盘（判例：整组静默消失无人知）
+            LogToolPoolDefects();
             // [段5] 会话面——上下文 + 前文恢复 + 工具定义 + 默认会话注册（P9.1 会话对象化：ChatSession 承载状态机——design-llm-streaming §六）
             ChatContext chatCtx = new ChatContext();
             // S1 ChatBridge 化——会话协调实例（注入提示词构建委托——CatCfg 域静态面 BuildInjectPrompt）
@@ -358,6 +364,10 @@ namespace CH4
             ToolRegistry.Init(ToolPool.BuildSpecs(), ToolPool.BuildOwnerFlowMap(), ToolPool.BuildPrivilegedMap());
             // 工具池摘要——启动观测（工具总数 + 组别分布；design-ch4-tools-pool §六）
             string poolSummary = "工具池已聚合：" + ToolPool.AllNames().Length.ToString() + " 个工具 / " + ToolPool.AllGroups().Length.ToString() + " 个组";
+            if (ToolPool.Defects().Length > 0)
+            {
+                poolSummary = poolSummary + "｜定义缺陷 " + ToolPool.Defects().Length.ToString() + " 组（详见 err 面）";
+            }
             LogStore.Add("CatHome4", 1, poolSummary, "CONFIG");
 
             // 默认猫 cat.cfg 补建——缺失时按全局默认模板创建（新用户无 cfg 必然态；运行时缺省回退 → 启动落盘）
@@ -701,6 +711,17 @@ namespace CH4
                     driftBlock["removed"] = driftRemoved;
                     info["tools_drift"] = driftBlock;
                 }
+            }
+            // [段9b] tools_defect——工具组定义缺陷（A107：解析失败 / 结构不符 / 零产出；仅非空时输出——design-ch4-tools §三·十三）
+            ToolDefect[] poolDefects = ToolPool.Defects();
+            if (poolDefects.Length > 0)
+            {
+                List<object> defectItems = new List<object>();
+                for (int i = 0; i < poolDefects.Length; i = i + 1)
+                {
+                    defectItems.Add(new { group = poolDefects[i].Group, stage = poolDefects[i].Stage, reason = poolDefects[i].Reason });
+                }
+                info["tools_defect"] = defectItems;
             }
             // [段10] timeback——上下文作用域现状 + 归档到达面（design-ch4-timeback §八 T2）
             // active：未闭合作用域（id / purpose / anchor / startAt / seconds / events）——无作用域不输出

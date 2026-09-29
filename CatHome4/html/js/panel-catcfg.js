@@ -8,6 +8,8 @@ var catCfgTarget = '';
 var catCfgAllTools = [];
 var catCfgInjectList = [];
 var catCfgAllPacks = [];
+// A107——工具组定义缺陷（后端 defectGroups——不可用组不进勾选面 + 弹层提示）
+var catCfgDefectGroups = [];
 
 function openCatCfg(catId, name) {
     catCfgTarget = catId;
@@ -22,6 +24,8 @@ function openCatCfg(catId, name) {
                 return;
             }
             catCfgAllTools = d.allTools || d.allToolNames || [];
+            catCfgDefectGroups = d.defectGroups || [];
+            renderToolDefectNote(catCfgDefectGroups, d.staleToolNames || []);
             renderApiOptions(d.apiOptions || [], d.apiConfigId || '');
             renderQqBotOptions(d.qqbotOptions || [], d.qqbotId || '');
             document.getElementById('catCfgQqEnable').checked = !!d.qqbotEnable;
@@ -112,6 +116,11 @@ function renderGroupedChecks(boxId, allTools, checked) {
     box.textContent = '';
     var groups = {};
     var order = [];
+    // A107——不可用工具组直接不加载（后端池派生已不含；此处为契约显式化，防两面漂移）
+    var blocked = {};
+    for (var b = 0; b < catCfgDefectGroups.length; b++) {
+        blocked[catCfgDefectGroups[b].group] = true;
+    }
     for (var k = 0; k < allTools.length; k++) {
         var item = allTools[k];
         var toolName = typeof item === 'string' ? item : (item && item.name) || '';
@@ -123,6 +132,7 @@ function renderGroupedChecks(boxId, allTools, checked) {
             var dash = toolName.indexOf('-');
             group = dash > 0 ? toolName.substring(0, dash) : 'other';  // 回退前缀
         }
+        if (blocked[group] === true) { continue; }
         if (!groups[group]) { groups[group] = []; order.push(group); }
         groups[group].push(toolName);
     }
@@ -180,6 +190,24 @@ function collectChecked(boxId) {
         if (boxes[i].checked) { names.push(boxes[i].getAttribute('data-tool')); }
     }
     return names;
+}
+
+// A107——不可用组 / 失效工具名可见化（不可用组不渲染勾选面，此处只解释"为什么少了"）
+function renderToolDefectNote(defects, stale) {
+    var msg = document.getElementById('catCfgMsg');
+    var parts = [];
+    for (var i = 0; i < defects.length; i++) {
+        parts.push(defects[i].group + '（' + defects[i].stage + '：' + (defects[i].reason || '') + '）');
+    }
+    var text = '';
+    if (parts.length > 0) {
+        text = '⚠ 工具组不可用，其工具未加载: ' + parts.join(' / ');
+    }
+    if (stale.length > 0) {
+        if (text.length > 0) { text = text + ' ｜ '; }
+        text = text + '清单含已失效工具名（保存时会被剔除）: ' + stale.join(', ');
+    }
+    msg.textContent = text;
 }
 
 function renderToolChecks(toolNames) {
@@ -408,6 +436,7 @@ function loadTpl() {
             }
             document.getElementById('tplBaseRole').value = d.baseRole || '';
             document.getElementById('tplPersona').value = d.defaultPersona || '';
+            catCfgDefectGroups = d.defectGroups || [];
             renderGroupedChecks('tplTools', d.allTools || d.allToolNames || [], parseToolChecked(d.defaultToolNames || ''));
             tplInjectList = (d.defaultInjectList || []).slice();
             renderTplInject();

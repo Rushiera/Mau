@@ -27,6 +27,34 @@ namespace CH4
     }
 
     /// <summary>
+    /// 工具组定义缺陷条目——工具定义自曝链路的失败记录（A107；design-ch4-tools §三·十三）。
+    /// 随池快照原子换代：reload 成功即清零，不留陈旧残留。
+    /// </summary>
+    public sealed class ToolDefect
+    {
+        /// <summary>组名（组 Flow 名 / 内置源）</summary>
+        public string Group = "";
+
+        /// <summary>缺陷阶段——throw（自曝抛异常）/ parse（JSON 非法）/ shape（结构不符）/ empty（已加载但零工具入池）</summary>
+        public string Stage = "";
+
+        /// <summary>原因——异常消息 / 结构说明（日志与 info 直读，不再二次解释）</summary>
+        public string Reason = "";
+    }
+
+    /// <summary>
+    /// 工具组定义来源——组名 + Flow 实例（A107：原 RebuildAll 只收 IFlow，失败时无从报出是哪一组）。
+    /// </summary>
+    public sealed class ToolGroupSource
+    {
+        /// <summary>组名（组 Flow 名——dll 名派生）</summary>
+        public string Name = "";
+
+        /// <summary>已加载 Flow 实例（GetToolsJson 自曝源）</summary>
+        public IFlow Flow;
+    }
+
+    /// <summary>
     /// 统一工具池——工具定义唯一真相源（消费面统一从此派生，不各自实现）。
     /// 聚合路径：Flow 自曝 GetToolsJson（工具组）+ 内置定义源（宿主内建——本质也是 BRIK，只是内置）。
     /// 消费面：ToolRegistry.Init（specs + ownerFlowMap）/ 配置界面名称/组别 / 快照 tools 段。
@@ -46,6 +74,12 @@ namespace CH4
 
             /// <summary>池条目——按组索引（配置界面组别/名称自动生成）</summary>
             public Dictionary<string, List<ToolDef>> ByGroup = new Dictionary<string, List<ToolDef>>(StringComparer.Ordinal);
+
+            /// <summary>缺陷清单——工具定义自曝失败记录（A107；与池同代，换代即清零）</summary>
+            public List<ToolDefect> Defects = new List<ToolDefect>();
+
+            /// <summary>已产出定义的组名——成功取到 tools 数组即计入（显式空组声明亦计；empty 缺陷判定基准）</summary>
+            public List<string> ProducedGroups = new List<string>();
         }
 
         /// <summary>当前池快照——唯一可变引用，写侧整体替换（RebuildAll）；读侧先取局部引用再遍历</summary>
@@ -55,10 +89,14 @@ namespace CH4
         /// 解析工具定义 JSON——{"group":"X","tools":[{name,description,parameters}]}（与 BRIK GetToolsJson 返回值同构）。
         /// </summary>
         /// <param name="json">工具定义 JSON 文本</param>
-        private static void AddFromJson(PoolState target, string json)
+        /// <param name="groupHint">组名提示（组 Flow 名 / 内置源——失败归因用；A107）</param>
+        private static void AddFromJson(PoolState target, string json, string groupHint)
         {
+            // A107——四条静默路径全部出声（原为空串 return / 缺 tools return / 异常空 catch 吞掉——整组工具无声消失）
+            string groupName = groupHint == null ? "" : groupHint;
             if (json == null || json.Length == 0)
             {
+                target.Defects.Add(BuildDefect(groupName, "shape", "工具定义 JSON 为空"));
                 return;
             }
             try
@@ -82,8 +120,15 @@ namespace CH4
                     JsonElement tools;
                     if (!root.TryGetProperty("tools", out tools) || tools.ValueKind != JsonValueKind.Array)
                     {
+                        target.Defects.Add(BuildDefect(groupName, "shape", "工具定义缺 tools 数组"));
                         return;
                     }
+                    // 已产出登记——取到 tools 数组即算定义到位（显式空组声明 tools:[] 合法，不判缺陷）
+                    if (!target.ProducedGroups.Contains(groupName))
+                    {
+                        target.ProducedGroups.Add(groupName);
+                    }
+                    int accepted = 0;
                     for (int i = 0; i < tools.GetArrayLength(); i = i + 1)
                     {
                         JsonElement item = tools[i];
@@ -114,12 +159,19 @@ namespace CH4
                             continue;
                         }
                         AddTo(target, def);
+                        accepted = accepted + 1;
+                    }
+                    // 有声明却零入池——与合法空组区分（空数组走上面的已产出登记，不在此列）
+                    if (tools.GetArrayLength() > 0 && accepted == 0)
+                    {
+                        target.Defects.Add(BuildDefect(groupName, "shape", "工具条目全部无效——" + tools.GetArrayLength().ToString() + " 条均缺 name 或非对象"));
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // 定义 JSON 损坏——跳过该批（工具池缺条目；不阻断启动）
+                // 解析失败——整组工具定义缺失（A107：原为静默跳过，池里查无此组）
+                target.Defects.Add(BuildDefect(groupName, "parse", "工具定义 JSON 非法: " + ex.Message));
             }
         }
 
@@ -253,6 +305,57 @@ namespace CH4
             }
             return groups.ToArray();
         }
+        /// <summary>
+        /// 构建缺陷条目——写侧共用出口（A107）。
+        /// </summary>
+        /// <param name="group">组名（组 Flow 名 / 内置源）</param>
+        /// <param name="stage">缺陷阶段（throw / parse / shape / empty）</param>
+        /// <param name="reason">原因文本</param>
+        /// <returns>缺陷条目</returns>
+        private static ToolDefect BuildDefect(string group, string stage, string reason)
+        {
+            ToolDefect defect = new ToolDefect();
+            defect.Group = group;
+            defect.Stage = stage;
+            defect.Reason = reason;
+            return defect;
+        }
+        /// <summary>
+        /// 工具定义缺陷清单——定义自曝失败可见面（A107：日志 / info.tools_defect / 配置面 / reload 报告四层同源）。
+        /// 读侧局部快照——与池同代（reload 换代即清零）。
+        /// </summary>
+        /// <returns>缺陷条目数组（无缺陷 = 空数组）</returns>
+        public static ToolDefect[] Defects()
+        {
+            PoolState snapshot = _state;
+            return snapshot.Defects.ToArray();
+        }
+        /// <summary>
+        /// 空产出兜底登记——组 Flow 已加载却零工具入池，且此前无更具体缺陷记录时记一条 empty（A107）。
+        /// 合法空组声明（tools:[]）已在 AddFromJson 登记产出，不在此列。
+        /// </summary>
+        /// <param name="target">目标快照（构建期局部对象）</param>
+        /// <param name="groupName">组名</param>
+        private static void NoteEmptyIfSilent(PoolState target, string groupName)
+        {
+            string name = groupName == null ? "" : groupName;
+            if (name.Length == 0)
+            {
+                return;
+            }
+            for (int i = 0; i < target.Defects.Count; i = i + 1)
+            {
+                if (target.Defects[i].Group == name)
+                {
+                    return;
+                }
+            }
+            if (target.ProducedGroups.Contains(name))
+            {
+                return;
+            }
+            target.Defects.Add(BuildDefect(name, "empty", "组 Flow 已加载但工具定义零产出——池内无本组工具"));
+        }
 
         /// <summary>
         /// 构建 ToolRegistry 数据——specs 数组（ToolSpec 投影）。
@@ -304,41 +407,64 @@ namespace CH4
         /// </summary>
         /// <param name="target">目标快照（构建期局部对象）</param>
         /// <param name="flow">已加载 Flow</param>
-        private static void AddFromFlowTo(PoolState target, IFlow flow)
+        /// <param name="flowName">组名（组 Flow 名——失败归因用；A107）</param>
+        private static void AddFromFlowTo(PoolState target, IFlow flow, string flowName)
         {
+            // A107——自曝调用面异常同样出声（组名由调用点带入——Flow 实例自身报不出是哪一组）
+            string groupName = flowName == null ? "" : flowName;
             try
             {
-                AddFromJson(target, flow.GetToolsJson());
+                AddFromJson(target, flow.GetToolsJson(), groupName);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Flow 自曝失败——跳过（该组工具定义缺失）
+                target.Defects.Add(BuildDefect(groupName, "throw", "工具定义自曝失败: " + ex.Message));
             }
         }
         /// <summary>
         /// 全量重建工具池——唯一写入口（Bootstrap / 热重载同源）：局部构建新快照 → 原子换引用。
         /// 读者要么看到全旧、要么看到全新（无半更新窗口）；不在新表的工具随旧快照淘汰（无陈旧残留）。
         /// </summary>
-        /// <param name="toolFlows">工具组 Flow 列表（GetToolsJson 自曝源）</param>
+        /// <param name="toolGroups">工具组来源列表（组名 + Flow——A107：失败时能报出是哪一组）</param>
         /// <param name="quickFlow">QuickCat Flow（组级工单消费者——空组声明；null=未加载）</param>
         /// <param name="builtinJson">内置工具定义 JSON（Note/time/random/info/host-* 等）</param>
-        public static void RebuildAll(List<IFlow> toolFlows, IFlow quickFlow, string builtinJson)
+        public static void RebuildAll(List<ToolGroupSource> toolGroups, IFlow quickFlow, string builtinJson)
         {
             // [段1] 局部构建新快照——旧快照只读，读者不受构建期影响
             PoolState next = new PoolState();
-            if (toolFlows != null)
+            if (toolGroups != null)
             {
-                for (int i = 0; i < toolFlows.Count; i = i + 1)
+                for (int i = 0; i < toolGroups.Count; i = i + 1)
                 {
-                    AddFromFlowTo(next, toolFlows[i]);
+                    if (toolGroups[i] == null || toolGroups[i].Flow == null)
+                    {
+                        continue;
+                    }
+                    AddFromFlowTo(next, toolGroups[i].Flow, toolGroups[i].Name);
                 }
             }
             if (quickFlow != null)
             {
-                AddFromFlowTo(next, quickFlow);
+                AddFromFlowTo(next, quickFlow, "QuickCat");
             }
-            AddFromJson(next, builtinJson);
-            // [段2] 原子换引用——读者要么全旧要么全新；被删工具随旧快照淘汰
+            AddFromJson(next, builtinJson, "内置");
+            // [段2] 空产出兜底——组 Flow 已加载却零工具入池，且此前无更具体的缺陷记录（覆盖无异常路径：不报错也不产出）
+            if (toolGroups != null)
+            {
+                for (int i = 0; i < toolGroups.Count; i = i + 1)
+                {
+                    if (toolGroups[i] == null)
+                    {
+                        continue;
+                    }
+                    NoteEmptyIfSilent(next, toolGroups[i].Name);
+                }
+            }
+            if (quickFlow != null)
+            {
+                NoteEmptyIfSilent(next, "QuickCat");
+            }
+            // [段3] 原子换引用——读者要么全旧要么全新；被删工具随旧快照淘汰
             _state = next;
         }
     }

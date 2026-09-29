@@ -122,6 +122,48 @@ namespace CatHome4.Admin
             return result.ToArray();
         }
         /// <summary>
+        /// 工具组定义缺陷清单——配置面暴露（A107：不可用组在前端可见，不静默消失）。
+        /// </summary>
+        /// <returns>缺陷对象数组（group / stage / reason）</returns>
+        internal static object[] BuildToolDefectItems()
+        {
+            ToolDefect[] defects = ToolPool.Defects();
+            List<object> list = new List<object>();
+            for (int i = 0; i < defects.Length; i = i + 1)
+            {
+                list.Add(new { group = defects[i].Group, stage = defects[i].Stage, reason = defects[i].Reason });
+            }
+            return list.ToArray();
+        }
+        /// <summary>
+        /// 清单里已失效的工具名——cat.cfg 名单含而注册表（池）无（A107：保存时会被静默剔除的那些名）。
+        /// </summary>
+        /// <param name="raw">cat.cfg toolNames 原始串</param>
+        /// <returns>失效名数组（空 = 全部合法）</returns>
+        internal static string[] ResolveStaleToolNames(string raw)
+        {
+            if (raw == null || raw.Trim().Length == 0)
+            {
+                return new string[0];
+            }
+            string[] all = GetAllToolNames();
+            List<string> stale = new List<string>();
+            string[] parts = raw.Split(new char[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < parts.Length; i = i + 1)
+            {
+                string name = parts[i].Trim();
+                if (name.Length == 0 || name == "*")
+                {
+                    continue;
+                }
+                if (!ContainsToolName(all, name))
+                {
+                    stale.Add(name);
+                }
+            }
+            return stale.ToArray();
+        }
+        /// <summary>
         /// 特权工具判定——读注册面组级标记（ToolRegistry 单一真相源；未注册 = 非特权）。
         /// </summary>
         /// <param name="name">工具名</param>

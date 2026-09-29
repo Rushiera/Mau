@@ -615,6 +615,8 @@ namespace CatHome4.Admin
                 allRoots = BuildAllRootsJson(),
                 allToolNames = GetConfigurableToolNames(),
                 allTools = GetConfigurableToolsWithGroup(),
+                defectGroups = BuildToolDefectItems(),
+                staleToolNames = ResolveStaleToolNames(cfg.ToolNames),
                 apiOptions = apiOptions,
                 qqbotOptions = qqbotOptions
             };
@@ -868,6 +870,8 @@ namespace CatHome4.Admin
                 defaultPacks = defaultPacks,
                 allToolNames = GetConfigurableToolNames(),
                 allTools = GetConfigurableToolsWithGroup(),
+                defectGroups = BuildToolDefectItems(),
+                staleToolNames = ResolveStaleToolNames(defaultToolNames),
                 allPacks = BuildAllPacks()
             };
             return Results.Json(resp);

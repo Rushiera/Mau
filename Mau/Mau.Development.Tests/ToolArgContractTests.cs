@@ -221,6 +221,150 @@ namespace Mau.Development.Tests
         }
 
         /// <summary>
+        /// 工具定义 JSON 解析探针（A107）——遍历 Bricks/TOOLS 全部工具定义积木，反转义拼接后真正解析。
+        /// 判例 2026-09-29：漏项间逗号 → JSON 非法 → 整组被 ToolPool 静默丢弃；原正则式断言"匹配成功"不等于"JSON 合法"。
+        /// </summary>
+        [Fact]
+        public void ToolDefinitionJsonParses()
+        {
+            string dir = AppContext.BaseDirectory;
+            while (dir.Length > 3 && !Directory.Exists(Path.Combine(dir, "Bricks")))
+            {
+                dir = Path.GetDirectoryName(dir) ?? "";
+            }
+            string toolsDir = Path.Combine(dir, "Bricks", "TOOLS");
+            Assert.True(Directory.Exists(toolsDir), "工具定义积木目录缺失: " + toolsDir);
+            string[] files = Directory.GetFiles(toolsDir, "BRIK-TOOLS-*.cs");
+            Assert.NotEmpty(files);
+            for (int f = 0; f < files.Length; f = f + 1)
+            {
+                string name = Path.GetFileName(files[f]);
+                string json = ExtractToolsJson(files[f]);
+                Assert.True(json.Length > 0, "未提取到工具定义 JSON: " + name);
+                JsonDocument doc = null!;
+                try
+                {
+                    doc = JsonDocument.Parse(json);
+                }
+                catch (JsonException ex)
+                {
+                    Assert.Fail("工具定义 JSON 非法: " + name + " —— " + ex.Message);
+                }
+                JsonElement root = doc.RootElement;
+                JsonElement groupEl;
+                Assert.True(root.TryGetProperty("group", out groupEl), "缺 group 字段: " + name);
+                JsonElement toolsEl;
+                Assert.True(root.TryGetProperty("tools", out toolsEl), "缺 tools 数组: " + name);
+                Assert.Equal(JsonValueKind.Array, toolsEl.ValueKind);
+                for (int t = 0; t < toolsEl.GetArrayLength(); t = t + 1)
+                {
+                    JsonElement item = toolsEl[t];
+                    JsonElement itemName;
+                    Assert.True(item.TryGetProperty("name", out itemName), "工具条目缺 name: " + name);
+                    Assert.Equal(JsonValueKind.String, itemName.ValueKind);
+                }
+                doc.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// 提取工具定义积木的 JSON——取 GetToolsJson 的 return 语句区间，反转义拼接全部字符串字面量（A107 探针）。
+        /// </summary>
+        /// <param name="file">积木源码路径</param>
+        /// <returns>拼接后的 JSON 文本（未提取到 = 空串）</returns>
+        private static string ExtractToolsJson(string file)
+        {
+            string text = File.ReadAllText(file);
+            int start = text.IndexOf("return \"", StringComparison.Ordinal);
+            if (start < 0)
+            {
+                return "";
+            }
+            int end = text.IndexOf(';', start);
+            if (end <= start)
+            {
+                return "";
+            }
+            string region = text.Substring(start, end - start);
+            StringBuilder json = new StringBuilder();
+            int i = 0;
+            while (i < region.Length)
+            {
+                if (region[i] != '"')
+                {
+                    i = i + 1;
+                    continue;
+                }
+                i = i + 1;
+                StringBuilder literal = new StringBuilder();
+                while (i < region.Length && region[i] != '"')
+                {
+                    if (region[i] == '\\' && i + 1 < region.Length)
+                    {
+                        literal.Append(region[i]);
+                        literal.Append(region[i + 1]);
+                        i = i + 2;
+                        continue;
+                    }
+                    literal.Append(region[i]);
+                    i = i + 1;
+                }
+                i = i + 1;
+                json.Append(UnescapeLiteral(literal.ToString()));
+            }
+            return json.ToString();
+        }
+
+        /// <summary>
+        /// C# 字面量反转义——\" \\ \n \r \t 还原（A107 探针；其余原样保留）。
+        /// </summary>
+        /// <param name="literal">字面量内容（不含引号）</param>
+        /// <returns>还原文本</returns>
+        private static string UnescapeLiteral(string literal)
+        {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < literal.Length; i = i + 1)
+            {
+                if (literal[i] == '\\' && i + 1 < literal.Length)
+                {
+                    char next = literal[i + 1];
+                    if (next == '"')
+                    {
+                        sb.Append('"');
+                        i = i + 1;
+                        continue;
+                    }
+                    if (next == '\\')
+                    {
+                        sb.Append('\\');
+                        i = i + 1;
+                        continue;
+                    }
+                    if (next == 'n')
+                    {
+                        sb.Append('\n');
+                        i = i + 1;
+                        continue;
+                    }
+                    if (next == 'r')
+                    {
+                        sb.Append('\r');
+                        i = i + 1;
+                        continue;
+                    }
+                    if (next == 't')
+                    {
+                        sb.Append('\t');
+                        i = i + 1;
+                        continue;
+                    }
+                }
+                sb.Append(literal[i]);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
         /// 多项目入口解析——.sln 聚合分派（受控根 = 仓库根；断言分项目分组输出）
         /// </summary>
         [Fact]
