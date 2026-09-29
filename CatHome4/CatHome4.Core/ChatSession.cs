@@ -1922,12 +1922,12 @@ namespace CH4
                     LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：timeback 作用域内禁止本体修正", "TIMEBACK");
                     continue;
                 }
-                // image-inject 作用域门禁——仅 timeback 活跃时可用（design-ch4-chat-images §8.4-3：域外拒绝，不静默降级；
-                // 方向与上一条黑名单相反——这里拦的是「域外调用」）
-                if (call.Name == "image-inject" && _timebackScope == null)
+                // 域限定工具门禁——仅 timeback 活跃时可用（image-inject / browser-* 四件：域外拒绝，不静默降级；
+                // 方向与上一条黑名单相反——这里拦的是「域外调用」；名单判定见 ChatSession.Timeback.IsTimebackScopedTool）
+                if (IsTimebackScopedTool(call.Name) && _timebackScope == null)
                 {
                     ToolOrderDog scopeDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
-                    scopeDog.Result = "ERR|TIMEBACK_REQUIRED|图片插入仅在 timeback 作用域内可用（图片不必常驻主干）——先 start 开锚";
+                    scopeDog.Result = "ERR|TIMEBACK_REQUIRED|" + call.Name + " 仅在 timeback 作用域内可用（非主干信息——用完回收）——先 start 开锚";
                     scopeDog.IsClosed = true;
                     _dogs.Add(scopeDog);
                     LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：timeback 作用域外不可用", "TIMEBACK");

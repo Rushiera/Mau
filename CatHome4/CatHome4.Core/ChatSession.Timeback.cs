@@ -340,6 +340,13 @@ namespace CH4
             {
                 LogStore.Add("CatHome4", 2, "timeback #" + scope.Id.ToString() + " 归档落档失败（运行不受影响）", "TIMEBACK");
             }
+            // [段7] 浏览器实例关闭——域级生命周期（A110）：浏览器是非主干信息的载体，域收即关（不跨域残留）
+            Mau.Runtime.IBrowserLifecycle browserLifecycle;
+            Mau.Runtime.DataBox.TryResolve<Mau.Runtime.IBrowserLifecycle>(out browserLifecycle);
+            if (browserLifecycle != null)
+            {
+                browserLifecycle.CloseCat(_catKey);
+            }
         }
 
         /// <summary>
@@ -579,6 +586,22 @@ namespace CH4
                 || name == "config-reset"
                 || name == "config-cat-set"
                 || name == "majordomo-cmd";
+        }
+
+        /// <summary>
+        /// timeback 域限定工具判定（A110）——仅作用域内可用（域外 ERR|TIMEBACK_REQUIRED）：
+        /// image-inject（图片不必常驻主干）· browser-*（网页内容属非主干信息——用完回收）。
+        /// 与本体修正黑名单方向相反：黑名单拦「域内调用」，本项拦「域外调用」。
+        /// </summary>
+        /// <param name="name">工具名</param>
+        /// <returns>true=需要活跃作用域</returns>
+        private static bool IsTimebackScopedTool(string name)
+        {
+            if (name == "image-inject")
+            {
+                return true;
+            }
+            return name.StartsWith("browser-", StringComparison.Ordinal);
         }
     }
 }

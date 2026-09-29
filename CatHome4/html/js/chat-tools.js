@@ -166,6 +166,12 @@ var CHAT_TOOL_SKELETONS = {
     'web-search': 'text',
     'image-analyze': 'text',
     'image-inject': 'text',
+    // browser——浏览器域（A110；read 走文件骨架，其余纯文本兜底）
+    'browser-open': 'text',
+    'browser-read': 'file',
+    'browser-eval': 'text',
+    'browser-shot': 'text',
+    'browser-tabs': 'text',
     'Note': 'text',
     'time': 'text',
     'random': 'text',
@@ -1279,6 +1285,59 @@ var CHAT_TOOL_OVERRIDES = {
         inputLines: function (a) { return ['插入主干 ' + chatOvText(a.path)]; },
         headline: function (a, r) {
             return '已插入主干 · ' + chatOvShort(a.path);
+        }
+    },
+    // ── BrowserCat（A110 浏览器域——域限定：仅 timeback 作用域内可用）──
+    'browser-open': {
+        icon: '🌐',
+        inputLines: function (a) { return ['打开网页 ' + chatOvText(a.url)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '打开网页 ' + chatOvShort(a.url) + chatOvStat(r); }
+            return '打开网页 ' + chatOvShort(a.url);
+        }
+    },
+    'browser-read': {
+        icon: '📄',
+        inputLines: function (a) { return ['读取页面 · ' + (a.mode || 'text')]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '读取页面(' + (a.mode || 'text') + ')' + chatOvStat(r); }
+            return '读取页面(' + (h.meta.mode || 'text') + ') · ' + (h.meta.chars || 0) + ' 字';
+        }
+    },
+    'browser-eval': {
+        icon: '⌨️',
+        inputLines: function (a) { return ['执行 JS ' + chatOvPeek(a.expression)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '执行 JS' + chatOvStat(r); }
+            return '执行 JS · ' + (h.meta.chars || 0) + ' 字';
+        }
+    },
+    'browser-shot': {
+        icon: '📷',
+        inputLines: function (a) { return ['截图页面' + (a.full ? '（整页）' : '（视口）')]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '截图页面' + chatOvStat(r); }
+            return '截图页面' + (h.meta.full ? '（整页）' : '（视口）');
+        }
+    },
+    'browser-tabs': {
+        icon: '🗂️',
+        inputLines: function (a) {
+            var act = a.action || 'list';
+            if (act === 'new') { return ['新开页签 ' + chatOvText(a.url || '（空白页）')]; }
+            if (act === 'select') { return ['切换页签 ' + chatOvShort(a.target)]; }
+            if (act === 'close') { return ['关闭页签 ' + chatOvShort(a.target)]; }
+            return ['列出页签'];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            var act = h ? (h.meta.action || 'list') : (a.action || 'list');
+            if (!h) { return '页签 ' + act + chatOvStat(r); }
+            return '页签 ' + act + ' · ' + (h.meta.chars || 0) + ' 字';
         }
     },
     'temp-info': {

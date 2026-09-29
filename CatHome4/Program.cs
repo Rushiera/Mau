@@ -198,6 +198,13 @@ namespace CH4
                 // O4 优雅收尾——统一观测四文件 flush 落盘（0 字节判例根因修复：--run 模式直接 return 丢缓冲）
                 LogStore.CloseWriters();
                 FrameStore.Close();
+                // A110 浏览器实例清理——Chromium detach（宿主退出不带走子进程）；不清会留孤儿实例占用 profile
+                IBrowserLifecycle browserLifecycle;
+                DataBox.TryResolve<IBrowserLifecycle>(out browserLifecycle);
+                if (browserLifecycle != null)
+                {
+                    browserLifecycle.Shutdown();
+                }
             }
         }
         /// <summary>
@@ -275,6 +282,10 @@ namespace CH4
             DataBox.Bind<IVisionService>(new Mau.Providers.DeepSeekVisionService(apiConfigStore, llmConfig));
             // PsCat PowerShell 执行服务——EncodedCommand 免转义 + UTF-8 内建 + 写文件拦截 + 超时进程树杀（PsService）
             DataBox.Bind<IPsService>(new PsService());
+            // A110 浏览器服务——系统 Edge headless + 裸 CDP（零第三方依赖 · 每猫独立 profile · timeback 域限定）
+            CdpBrowserService browserSvc = new CdpBrowserService(dataRoot);
+            DataBox.Bind<IBrowserService>(browserSvc);
+            DataBox.Bind<IBrowserLifecycle>(browserSvc);
             // 宿主指令服务——工具面触达内核指令族（host.command 积木 → IHostCommandService；与 CLI/HTTP 面板同源单内核）
             DataBox.Bind<IHostCommandService>(new HostCommandService());
             AuditStore audit = new AuditStore();

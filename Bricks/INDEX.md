@@ -7,6 +7,11 @@
 
 | ID | 名字 | 类别 | 工程路径 | 依赖 | 状态 | 来源 |
 |:--|:--|:--|:--|:--|:--|:--|
+| BRIK-BROWSER-001 | browser.open | BROWSER | BROWSER/BRIK-BROWSER-001_browser.open.cs | 无 | active |  |
+| BRIK-BROWSER-002 | browser.read | BROWSER | BROWSER/BRIK-BROWSER-002_browser.read.cs | 无 | active |  |
+| BRIK-BROWSER-003 | browser.eval | BROWSER | BROWSER/BRIK-BROWSER-003_browser.eval.cs | 无 | active |  |
+| BRIK-BROWSER-004 | browser.shot | BROWSER | BROWSER/BRIK-BROWSER-004_browser.shot.cs | 无 | active |  |
+| BRIK-BROWSER-005 | browser.tabs | BROWSER | BROWSER/BRIK-BROWSER-005_browser.tabs.cs | 无 | active |  |
 | BRIK-DATA-001 | data.box_set_str | DATA | DATA/BRIK-DATA-001_data.box_set_str.cs | 无 | active |  |
 | BRIK-DATA-002 | data.box_get_str | DATA | DATA/BRIK-DATA-002_data.box_get_str.cs | 无 | active |  |
 | BRIK-FILE-001 | file.tree | FILE | FILE/BRIK-FILE-001_file.tree.cs | 无 | active |  |
@@ -66,6 +71,7 @@
 | BRIK-TOOLS-009 | tools.majordomocat | TOOLS | TOOLS/BRIK-TOOLS-009_tools.majordomocat.cs | 无 | active |  |
 | BRIK-TOOLS-010 | tools.quickcat | TOOLS | TOOLS/BRIK-TOOLS-010_tools.quickcat.cs | 无 | active |  |
 | BRIK-TOOLS-011 | tools.filecat | TOOLS | TOOLS/BRIK-TOOLS-011_tools.filecat.cs | 无 | active |  |
+| BRIK-TOOLS-012 | tools.browsercat | TOOLS | TOOLS/BRIK-TOOLS-012_tools.browsercat.cs | 无 | active |  |
 | BRIK-VISION-001 | vision.analyze | VISION | VISION/BRIK-VISION-001_vision.analyze.cs | 无 | active |  |
 | BRIK-VISION-002 | image.inject | VISION | VISION/BRIK-VISION-002_image.inject.cs | 无 | active |  |
 | BRIK-WEB-001 | web.search | WEB | WEB/BRIK-WEB-001_web.search.cs | 无 | active |  |
