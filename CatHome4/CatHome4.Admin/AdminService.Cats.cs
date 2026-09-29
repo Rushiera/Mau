@@ -8,6 +8,7 @@ using System.Text.Json;
 using Mau.Runtime;
 using CatHome4.Http;
 using CatHome4.QQ;
+using CatHome4.Contracts;
 using Mau.Providers;
 using CH4;
 
@@ -1217,6 +1218,8 @@ namespace CatHome4.Admin
                 ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig);
                 SessionViewStore viewStore = new SessionViewStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".view.json"));
                 ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, catSpecs, ExecuteTool, viewStore);
+                // A111——块序变更通知接线（视图层变更 → 转发面游标校正；猫 key 在组合根注入）
+                AttachViewOrderNotify(id, viewStore);
                 // M4e 猫级白名单——多猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
                 session.SetCatKey(id);
                 AdminService.ApplyCatRoots(id);
@@ -1510,7 +1513,26 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType / Content / Done；text 块提取 payload.content）。
+        /// 装配块序变更通知（A111）——视图层变更（清除 / 重建 / 轮统计清理 / 区间转废弃）→ QQ 转发面游标校正。
+        /// 猫 key 由组合根注入（Core 不知猫 key、QQ 不知视图层——两侧零耦合）；未挂 qqbot 的猫同样接线（无转发态即无动作）。
+        /// </summary>
+        /// <param name="catKey">猫 key（转发态游标键——与 QqTarget.Key 同源）</param>
+        /// <param name="viewStore">会话视图存储</param>
+        internal static void AttachViewOrderNotify(string catKey, SessionViewStore viewStore)
+        {
+            if (viewStore == null)
+            {
+                return;
+            }
+            viewStore.OnBlocksReordered = delegate (ViewOrderChange change)
+            {
+                QQBotService.NotifyBlocksReordered(catKey, change);
+            };
+        }
+
+        /// <summary>
+        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType / Content / Done / Hash；text 块提取 payload.content，
+        /// Hash 供转发面锚定游标——A111）。
         /// </summary>
         /// <param name="blocks">视图块数组</param>
         /// <returns>QQ 转发项数组</returns>
@@ -1528,6 +1550,14 @@ namespace CatHome4.Admin
                 item.RenderType = b.RenderType ?? "";
                 item.Content = "";
                 item.Done = "";
+                if (b.Hash == null)
+                {
+                    item.Hash = "";
+                }
+                else
+                {
+                    item.Hash = b.Hash;
+                }
                 if (item.RenderType == "text")
                 {
                     item.Content = ExtractTextContent(b.Payload);

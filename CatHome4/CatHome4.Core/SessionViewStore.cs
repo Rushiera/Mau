@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Mau.Runtime;
+using CatHome4.Contracts;
 
 namespace CH4
 {
@@ -39,6 +40,12 @@ namespace CH4
         private readonly List<ViewBlock> _retries = new List<ViewBlock>();
         /// <summary>废弃块——timeback 回收区间的合并归档块（非真实前文派生，Rebuild 不清；Save 落盘；前端「已废弃」气泡）</summary>
         private readonly List<ViewBlock> _voids = new List<ViewBlock>();
+
+        /// <summary>
+        /// 块序变更通知——视图层唯一出声点（清除 / 重建 / 轮统计清理 / 区间转废弃四处变更点统一调用）：
+        /// 转发面（QQ）订阅后按变更区间 / 内容锚点校正块游标（A111）。空=无消费方（无动作）。
+        /// </summary>
+        public Action<ViewOrderChange> OnBlocksReordered;
         /// <summary>
         /// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）
         /// </summary>
@@ -107,6 +114,59 @@ namespace CH4
         public SessionViewStore(string path)
         {
             _path = path;
+        }
+
+        /// <summary>
+        /// 块序变更通知——变更前快照与当前块序取最小差异（公共前缀 / 公共后缀之外即变更区间）后发出（A111：校正入口单一——四处变更点共用）。
+        /// 无消费方（未接线）或块序未变（差异为零）→ 零动作。
+        /// </summary>
+        /// <param name="before">变更前的合并视图块数组（调用方在变更前取快照）</param>
+        public void NotifyBlocksReordered(ViewBlock[] before)
+        {
+            Action<ViewOrderChange> handler = OnBlocksReordered;
+            if (handler == null || before == null)
+            {
+                return;
+            }
+            ViewBlock[] after = GetBlocks();
+            // [段1] 公共前缀——头部保留的未变块
+            int prefix = 0;
+            while (prefix < before.Length && prefix < after.Length && SameBlock(before[prefix], after[prefix]))
+            {
+                prefix = prefix + 1;
+            }
+            // [段2] 公共后缀——尾部保留的未变块（前缀区之后才参与）
+            int suffix = 0;
+            while (suffix < before.Length - prefix && suffix < after.Length - prefix
+                && SameBlock(before[before.Length - 1 - suffix], after[after.Length - 1 - suffix]))
+            {
+                suffix = suffix + 1;
+            }
+            int removed = before.Length - prefix - suffix;
+            int added = after.Length - prefix - suffix;
+            if (removed == 0 && added == 0)
+            {
+                return;
+            }
+            ViewOrderChange change = new ViewOrderChange();
+            change.From = prefix;
+            change.RemovedCount = removed;
+            change.AddedCount = added;
+            handler(change);
+        }
+
+        /// <summary>块同一判定——哈希 + 时间戳 + 渲染类型三者相同才算同一块（变更比对口径；载荷不参与——注入报告内容变化不影响块序）</summary>
+        private static bool SameBlock(ViewBlock a, ViewBlock b)
+        {
+            if (a == null || b == null)
+            {
+                return false;
+            }
+            if (a.Hash != b.Hash || a.Timestamp != b.Timestamp || a.RenderType != b.RenderType)
+            {
+                return false;
+            }
+            return true;
         }
 
         /// <summary>内存视图块——按生成序（history 数据源）</summary>
@@ -251,6 +311,8 @@ namespace CH4
         /// <returns>移出的视图块数（无命中 = 0，零动作）</returns>
         public int ConvertRangeToVoid(int fromMsgIndex, int toMsgIndex, string keepToolName)
         {
+            // A111——块序变更快照（区间块移出 + 合并归档块插入：转发面游标按区间平移 / 锚点重定位）
+            ViewBlock[] before = GetBlocks();
             List<ViewBlock> removed = new List<ViewBlock>();
             for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
             {
@@ -297,6 +359,7 @@ namespace CH4
             block.Payload = JsonUtil.Serialize(payload);
             _voids.Add(block);
             Save();
+            NotifyBlocksReordered(before);
             return moved;
         }
 
@@ -349,6 +412,8 @@ namespace CH4
         /// <param name="messages">真实前文消息数组</param>
         public void Rebuild(LlmMessage[] messages)
         {
+            // A111——块序变更快照（重建 = 完全重置：转发面游标按锚点重定位，不以块数比对追发历史）
+            ViewBlock[] before = GetBlocks();
             _blocks.Clear();
             _pendingTools.Clear();
             for (int i = 0; i < messages.Length; i++)
@@ -381,6 +446,7 @@ namespace CH4
                     OnToolResult(m, m.CreatedAt, i);
                 }
             }
+            NotifyBlocksReordered(before);
         }
 
         /// <summary>
@@ -871,6 +937,8 @@ namespace CH4
         /// <summary>清空视图层——session.new 清前文时同步（真实前文 Clear 后视图随生命周期清理）</summary>
         public void Clear()
         {
+            // A111——块序变更快照（清空 = 全量移除：转发面游标随之归位）
+            ViewBlock[] before = GetBlocks();
             _blocks.Clear();
             _pendingTools.Clear();
             // 注入报告随视图层清理——session.new 后 HandleSessionNew 重新 Set + Save
@@ -885,13 +953,17 @@ namespace CH4
             _retries.Clear();
             // 废弃块随视图层清理——新会话不保留旧回收归档
             _voids.Clear();
+            NotifyBlocksReordered(before);
         }
         /// <summary>
         /// 清空轮末统计块——回滚裁剪后调用（roundsum 非真实前文派生，Rebuild 不清——裁剪后残留旧统计）
         /// </summary>
         public void ClearRoundSums()
         {
+            // A111——块序变更快照（轮统计块移出：转发面游标随之前移）
+            ViewBlock[] before = GetBlocks();
             _roundSums.Clear();
+            NotifyBlocksReordered(before);
         }
         /// <summary>
         /// 生成视图块——内容哈希 = 真实前文单块完整字段 SHA256（裁决：前文块哈希作唯一标识）
