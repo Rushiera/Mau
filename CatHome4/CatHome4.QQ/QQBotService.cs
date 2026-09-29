@@ -890,10 +890,8 @@ namespace CatHome4.QQ
             }
             return null;
         }
-        /// <summary>
-        /// 构建 /last 回复（A58）——取绑定猫（1:1 唯一）视图层最后一条 text 块，正文不截断。
-        /// 超长由发送面（SendLastReply）按 MD 结构切分，最多 4 段独立发送（末尾段优先）。
-        /// </summary>
+        /// <summary>构建 /last 回复（A58）——取绑定猫（1:1 唯一）视图层最后一条 text 块，正文不截断。
+        /// 超长由发送面（SendLastReply）按 MD 结构切分，最多 4 段独立发送（末尾段优先）；文件标记（A112）同样由发送面扫描剥离并经文件通道发送。</summary>
         /// <param name="qqBotId">Bot 配置身份——1:1 唯一绑定猫</param>
         /// <returns>回复正文（含【猫名：】前缀）</returns>
         private static string BuildLastText(Guid qqBotId)
@@ -1675,9 +1673,30 @@ namespace CatHome4.QQ
             }
         }
         /// <summary>
-        /// 转发发送统一出口（A58）——提取文件标记 → 正文加【猫名：】前缀 → MD 结构切分 → 逐段发送 → 文件逐条发送。
-        /// 段数超上限丢弃尾部 + L2 留痕；每次被动调用占轮内预算（budgetKey 空 = 不占，指令通道独立配额）。
+        /// 文件发送段（A112 统一出口）——逐条经文件通道发送（仅私聊；失败错误文本由 SendFileToTarget 嵌回消息渠道）。
+        /// 转发路与 /last 共用本实现——文件标记扫描（QqFileMarker）与文件发送各只有一处实现。
         /// </summary>
+        /// <param name="tg">绑定目标（空=不发送）</param>
+        /// <param name="source">来源</param>
+        /// <param name="files">文件路径列表</param>
+        /// <param name="budgetKey">预算键（猫标识；空=不占预算——调用方已按额度规划）</param>
+        private static void SendFilesToTarget(QqTarget tg, QqSource source, List<string> files, string budgetKey)
+        {
+            if (tg == null || files == null)
+            {
+                return;
+            }
+            for (int i = 0; i < files.Count; i = i + 1)
+            {
+                if (budgetKey.Length > 0 && !TakeRoundBudget(budgetKey, "file"))
+                {
+                    return;
+                }
+                SendFileToTarget(tg, source, files[i]);
+            }
+        }
+        /// <summary>转发发送统一出口（A58 / A112）——提取文件标记 → 正文加【猫名：】前缀 → MD 结构切分 → 逐段发送 → 文件逐条发送（经文件发送统一出口）。
+        /// 段数超上限丢弃尾部 + L2 留痕；每次被动调用占轮内预算（budgetKey 空 = 不占，指令通道独立配额）。</summary>
         /// <param name="tg">绑定目标</param>
         /// <param name="source">来源</param>
         /// <param name="text">回复正文</param>
@@ -1716,20 +1735,12 @@ namespace CatHome4.QQ
                     SendSegment(tg, source, seg);
                 }
             }
-            // [段3] 文件逐条发送（仅私聊通道；失败错误文本由 SendFileToTarget 嵌回消息渠道）
-            for (int i = 0; i < files.Count; i = i + 1)
-            {
-                if (budgetKey.Length > 0 && !TakeRoundBudget(budgetKey, "file"))
-                {
-                    break;
-                }
-                SendFileToTarget(tg, source, files[i]);
-            }
+            // [段3] 文件逐条发送（A112——统一出口；预算与文本段共用官方 4 次上限）
+            SendFilesToTarget(tg, source, files, budgetKey);
         }
-        /// <summary>
-        /// /last 回复发送（A58）——按 MD 结构切分，最多 4 段独立发送；超出取末尾段（丢弃开头段 + L2 留痕）。
-        /// 不占转发预算（指令通道独立 msg_id 配额）；任一段失败停止后续 + L2 留痕。
-        /// </summary>
+        /// <summary>/last 回复发送（A58 / A112）——先扫描剥离文件标记（标记行不进正文，文件经文件通道发送，与转发路共用同一实现）；
+        /// 正文按 MD 结构切分，最多 4 段独立发送；超出取末尾段（丢弃开头段 + L2 留痕）。
+        /// 文本段与文件发送共用同一被动调用上限（planner 按剩余额度分配，执行期不再判定）；不占转发轮预算（指令通道独立 msg_id 配额）；任一段失败停止后续 + L2 留痕。</summary>
         /// <param name="qqBotId">Bot 配置身份</param>
         /// <param name="source">来源</param>
         /// <param name="body">回复正文（含【猫名：】前缀）</param>
@@ -1740,23 +1751,44 @@ namespace CatHome4.QQ
             {
                 return;
             }
-            List<string> parts = QqTextSplitter.Split(body, MaxChunkChars);
-            if (parts.Count == 0)
+            // A112——文件标记扫描面统一：标记行剥离（不被当普通文本发出），文件经文件通道发送（与转发路同一实现）
+            List<string> files = QqFileMarker.Extract(body, out string textBody);
+            QqLastReplyPlan plan = QqLastReplyPlanner.Plan(textBody, files, MaxChunkChars, MaxLastParts);
+            if (plan.DroppedHeadSegments > 0)
             {
-                return;
+                LogStore.Add("QQBot", 2, "/last 段数超限（取末尾段） | 丢弃前 " + plan.DroppedHeadSegments.ToString() + " 段 | " + source.ToString(), "QQBOT");
             }
-            int from = 0;
-            if (parts.Count > MaxLastParts)
+            if (plan.DroppedFiles > 0)
             {
-                from = parts.Count - MaxLastParts;
-                LogStore.Add("QQBot", 2, "/last 段数超限（取末尾段） | " + parts.Count.ToString() + " → " + MaxLastParts.ToString() + " 段，丢弃前 " + from.ToString() + " 段 | " + source.ToString(), "QQBOT");
+                LogStore.Add("QQBot", 2, "/last 文件预算耗尽（跳过） | " + plan.DroppedFiles.ToString() + " 个 | " + source.ToString(), "QQBOT");
             }
-            for (int i = from; i < parts.Count; i = i + 1)
+            for (int i = 0; i < plan.Segments.Count; i = i + 1)
             {
-                if (!SendWithFallback(conn, source.Type, source.TargetId, parts[i], source.MsgId, true))
+                if (!SendWithFallback(conn, source.Type, source.TargetId, plan.Segments[i], source.MsgId, true))
                 {
-                    LogStore.Add("QQBot", 2, "/last 发送中断（第 " + (i - from + 1).ToString() + " 段失败） | " + source.ToString(), "QQBOT");
-                    break;
+                    LogStore.Add("QQBot", 2, "/last 发送中断（第 " + (i + 1).ToString() + " 段失败） | " + source.ToString(), "QQBOT");
+                    return;
+                }
+            }
+            // 文件发送——文本段与文件共用被动调用预算（planner 已按剩余额度截断，执行期不再判定）
+            if (plan.Files.Count > 0)
+            {
+                QqTarget tg = null;
+                if (_collector != null)
+                {
+                    List<QqTarget> targets = _collector.CollectByBot(qqBotId);
+                    if (targets.Count > 0)
+                    {
+                        tg = targets[0];
+                    }
+                }
+                if (tg == null)
+                {
+                    LogStore.Add("QQBot", 2, "/last 文件发送跳过（无绑定目标） | " + plan.Files.Count.ToString() + " 个 | " + source.ToString(), "QQBOT");
+                }
+                else
+                {
+                    SendFilesToTarget(tg, source, plan.Files, "");
                 }
             }
         }
