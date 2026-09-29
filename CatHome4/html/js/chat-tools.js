@@ -1590,15 +1590,15 @@ var CHAT_TOOL_OVERRIDES = {
     'timeback': {
         icon: '⚓',
         inputLines: function (a) {
-            if (a.action === 'back') { return ['回收上下文作用域', '载荷 ' + chatOvPeek(a.findings)]; }
-            return ['开锚上下文作用域' + ((a.purpose) ? (' · ' + chatOvPeek(a.purpose)) : '')];
+            if (a.action === 'back') { return ['TimeBack 回收', '载荷 ' + chatOvPeek(a.findings)]; }
+            return ['TimeBack 开锚' + ((a.purpose) ? (' · ' + chatOvPeek(a.purpose)) : '')];
         },
         headline: function (a, r) {
             var h = chatMetaHead(r);
-            if (!h) { return ((a.action === 'back') ? '作用域回收' : '作用域开锚') + chatOvStat(r); }
+            if (!h) { return ((a.action === 'back') ? 'TimeBack 回收' : 'TimeBack 开锚') + chatOvStat(r); }
             var m = h.meta;
-            if (a.action === 'back') { return '作用域 #' + m.id + ' 已登记回收 · 锚点 ' + m.anchor; }
-            return '作用域 #' + m.id + ' 已锚定 · 起点 ' + m.anchor;
+            if (a.action === 'back') { return 'TimeBack #' + m.id + ' 已登记回收 · 锚点 ' + m.anchor; }
+            return 'TimeBack #' + m.id + ' 已锚定 · 起点 ' + m.anchor;
         }
     },
     'pack': {

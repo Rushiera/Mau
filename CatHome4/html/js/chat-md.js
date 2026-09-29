@@ -65,8 +65,10 @@ function mdIsTableSep(line) {
 
 function mdSplitTableCells(line) {
     // 单元格切分——按未转义的 | 分割（GFM 表格约定：\| = 字面量管道）；仅 | 一种转义，其余反斜杠原样保留
+    // 行内代码态——`...` 内的 | 不作分隔符（判例 2026-09-29：`.resolution.width|height` 把数据行切成三列）
     var cells = [];
     var cur = '';
+    var inCode = false;
     for (var i = 0; i < line.length; i = i + 1) {
         var ch = line[i];
         if (ch === '\\' && i + 1 < line.length && line[i + 1] === '|') {
@@ -74,7 +76,12 @@ function mdSplitTableCells(line) {
             i = i + 1;
             continue;
         }
-        if (ch === '|') {
+        if (ch === '`') {
+            inCode = !inCode;
+            cur += ch;
+            continue;
+        }
+        if (ch === '|' && !inCode) {
             cells.push(cur);
             cur = '';
             continue;

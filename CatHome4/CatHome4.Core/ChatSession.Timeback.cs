@@ -254,7 +254,7 @@ namespace CH4
         /// <summary>
         /// 批后回收执行——工具批结果全部回填后调用（design §12.2）：
         /// ① 前文删除「start 结果之后、back 声明之前」的全部消息（两次调用对与结论保留）
-        /// ② 视图层移出「**锚定声明之后**、back 声明之前」的块 → 合并为一个废弃块（`void`；timeback 自己的卡保留在对话流）
+        /// ② 视图层移出「**锚定声明之后**、back 声明（含）」的块 → 合并为一个废弃块（`void`；timeback 自己的卡保留在对话流）
         /// ③ 归档一次成档（A104：首行 meta + 该猫 info 快照 + 被删前文消息）→ 关闭作用域。本轮照常续跑（不置工具主动 done、不注入消息）。
         /// 前文无可删区间（同批 start+back / 索引异常）时跳过 ①，② 仍执行（锚定批的 sibling 结果卡照归废弃段）。
         /// </summary>
@@ -324,8 +324,10 @@ namespace CH4
             }
             // [段3] 视图层移出——与前文删除面**解耦**：从**锚定声明之后**起算（比前文删除面宽一段——锚定批的 sibling 结果卡一并归入废弃段；
             // 前文里它们删不得：assistant 声明的 tool_calls 必须与结果配对）。前文无删除区间时同样执行——sibling 卡仍应归段。
-            // timeback 自己的工具卡（锚定 / 回收）保留在对话流（刷新后即「锚定卡 → 废弃段 → 回收卡」三段式；实时面不重建，屏幕上是正常块）。
-            _viewStore.ConvertRangeToVoid(scope.StartDeclIndex + 1, to, "timeback");
+            // 上界**含 back 声明**（back 声明之前的删除面不含它）——发起回收那条声明消息的 reason 块同属回收决策过程，一并归段
+            // （判例 2026-09-29 莎定：「think 后使用工具，那么这个 think 不被锚回收吗」——三段式须干净为 锚定卡 → 废弃段 → 回收卡，中间不留 think）；
+            // timeback 自己的工具卡（锚定 / 回收）保留在对话流（keepToolName 保留面；实时面不重建，屏幕上是正常块）。
+            _viewStore.ConvertRangeToVoid(scope.StartDeclIndex + 1, scope.BackDeclIndex, "timeback");
             // [段4] 归档——一次回收一个文件（A104）：首行 meta + 该猫 info 快照 + 被删前文消息
             bool archived = WriteTimebackArchiveFile(scope, removed, removedMessages, infoJson, nowMs, seconds);
             // [段5] 释放条数对账——back 返回值给出的预算 vs 批后实际删除数（归档记实际；不一致必须出声）
@@ -556,6 +558,14 @@ namespace CH4
             ToolOrderDog dog = _timebackBackDog;
             if (dog == null)
             {
+                return;
+            }
+            // 消费即清 + 已有结果不覆盖——置空后本字段不再持有该 Dog（下一批由 EnterToolBatch 重建），
+            // 同一 Dog 若被重复调起则直接跳过并出声 L2（防回执被覆盖导致观测面失真）
+            _timebackBackDog = null;
+            if (dog.Result != null && dog.Result.Length > 0)
+            {
+                LogStore.Add("CatHome4", 2, "timeback 后置执行重入（已有回执——跳过，防覆盖）", "TIMEBACK");
                 return;
             }
             dog.Result = ExecuteBuiltin(dog.Name, dog.ArgsJson);

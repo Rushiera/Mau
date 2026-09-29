@@ -1659,7 +1659,9 @@ namespace CH4
                     _httpHost.PushView("text", sealTextJson, _textStreamSeq, 0);
                 }
             }
-            _reasonStreamSeq = 0;
+            // 思考段整块——先于工具先行卡推送（实时序对齐视图块生成序：assistant 思考块在工具卡之前）；
+            // 判例 2026-09-29：此前直接清序（不推整块），实时面仅剩前端 live 块，F5 重建后 think 块与工具卡换位
+            SealReasonStream();
             _textStreamSeq = 0;
             // 工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即出"进行中"卡；完成 / 中断时以同序号原位替换
             List<ToolCallInfo> toolCalls = ParseToolCalls(_llmToolCallsJson);
