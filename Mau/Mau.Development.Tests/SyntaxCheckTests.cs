@@ -89,7 +89,7 @@ namespace Mau.Development.Tests
                 Directory.CreateDirectory(dir);
                 string projText = "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
                     "  <PropertyGroup>\n" +
-                    "    <TargetFramework>net8.0</TargetFramework>\n" +
+                    "    <TargetFramework>net10.0</TargetFramework>\n" +
                     "    <ImplicitUsings>disable</ImplicitUsings>\n" +
                     "    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>\n" +
                     "  </PropertyGroup>\n" +
@@ -175,7 +175,7 @@ namespace Mau.Development.Tests
         {
             return "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
                 "  <PropertyGroup>\n" +
-                "    <TargetFramework>net8.0</TargetFramework>\n" +
+                "    <TargetFramework>net10.0</TargetFramework>\n" +
                 "    <ImplicitUsings>disable</ImplicitUsings>\n" +
                 "    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>\n" +
                 "  </PropertyGroup>\n" +

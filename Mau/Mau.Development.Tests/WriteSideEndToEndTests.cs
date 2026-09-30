@@ -211,7 +211,7 @@ namespace Mau.Development.Tests
         /// <returns>csproj 文本</returns>
         private static string ProjectText()
         {
-            return "<Project Sdk=\"Microsoft.NET.Sdk\">\r\n  <PropertyGroup>\r\n    <TargetFramework>net8.0</TargetFramework>\r\n    <Nullable>enable</Nullable>\r\n    <ImplicitUsings>disable</ImplicitUsings>\r\n    <OutputType>Library</OutputType>\r\n  </PropertyGroup>\r\n</Project>\r\n";
+            return "<Project Sdk=\"Microsoft.NET.Sdk\">\r\n  <PropertyGroup>\r\n    <TargetFramework>net10.0</TargetFramework>\r\n    <Nullable>enable</Nullable>\r\n    <ImplicitUsings>disable</ImplicitUsings>\r\n    <OutputType>Library</OutputType>\r\n  </PropertyGroup>\r\n</Project>\r\n";
         }
 
         /// <summary>

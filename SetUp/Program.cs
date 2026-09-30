@@ -14,7 +14,7 @@ namespace SetUp
     /// 规范：Project/CH4/design-ch4-release.md（D2 定稿）
     /// 模式：无参=WinForms UI 外观层（主线程） / prepare（重建全发布链） / deploy &lt;目标目录&gt;（产出正式运行实例）
     ///      / sync-html（外观层静态资源镜像同步——源区 → 产物区 + 运行区） / relaunch（宿主自更新接力）
-    /// 前置检测：.NET 8 Runtime + SDK + WindowsDesktop + 同目录存在 Mau.sln 才运行。
+    /// 前置检测：.NET 10 Runtime + SDK + WindowsDesktop + 同目录存在 Mau.sln 才运行。
     /// </summary>
     public static partial class Program
     {
@@ -99,7 +99,7 @@ namespace SetUp
             }
             Console.WriteLine("[SetUp] 仓库根: " + repoRoot);
 
-            // [段3] 环境检测——.NET 8 Runtime + SDK
+            // [段3] 环境检测——.NET 10 Runtime + SDK
             if (!CheckEnvironment())
             {
                 Console.WriteLine("[SetUp] 环境检测未通过，部署中止。");
@@ -176,7 +176,7 @@ namespace SetUp
             Console.WriteLine("                           外观层静态资源镜像同步：源区 html → 产物区 + 运行区（--target 缺省从运行中宿主反推）");
             Console.WriteLine("  SetUp.exe relaunch --wait-pid <pid> --target <目录> [--majordomopush <串>] [--report <路径>]");
             Console.WriteLine("                           宿主自更新接力：等旧宿主退出 → prepare → 原子切换 → 自启新宿主（回执注入）");
-            Console.WriteLine("前置：.NET 8 Runtime + SDK + WindowsDesktop；本 exe 须位于 Mau 仓库根（含 Mau.sln）。");
+            Console.WriteLine("前置：.NET 10 Runtime + SDK + WindowsDesktop；本 exe 须位于 Mau 仓库根（含 Mau.sln）。");
         }
 
         /// <summary>
@@ -203,7 +203,7 @@ namespace SetUp
         }
 
         /// <summary>
-        /// 环境检测——.NET 8 Runtime（自启前提）+ SDK（部署前置）。
+        /// 环境检测——.NET 10 Runtime（自启前提）+ SDK（部署前置）。
         /// 检测命令：dotnet --list-runtimes / --list-sdks。
         /// </summary>
         /// <returns>true=环境就绪，false=缺 runtime 或 SDK</returns>
@@ -213,74 +213,74 @@ namespace SetUp
             string dotnetOut = RunProcessCapture("dotnet", "--list-runtimes", Environment.CurrentDirectory);
             if (dotnetOut == null)
             {
-                Console.WriteLine("[SetUp] 错误：未检测到 dotnet 命令——需要 .NET 8 Runtime。");
-                Console.WriteLine("  安装指引: https://dotnet.microsoft.com/download/dotnet/8.0");
+                Console.WriteLine("[SetUp] 错误：未检测到 dotnet 命令——需要 .NET 10 Runtime。");
+                Console.WriteLine("  安装指引: https://dotnet.microsoft.com/download/dotnet/10.0");
                 return false;
             }
 
-            // [段2] Runtime 检测——找 Microsoft.NETCore.App 主版本 ≥ 8（SDK 9 可构建 net8.0——向后兼容，≥8 即通过）
-            bool runtime8 = false;
+            // [段2] Runtime 检测——找 Microsoft.NETCore.App 主版本 ≥ 10（部署链目标框架 net10.0——≥10 即通过）
+            bool runtime10 = false;
             string[] runtimeLines = dotnetOut.Split('\n');
             for (int i = 0; i < runtimeLines.Length; i = i + 1)
             {
                 string line = runtimeLines[i].Trim();
                 if (line.StartsWith("Microsoft.NETCore.App", StringComparison.Ordinal))
                 {
-                    if (VersionAtLeast8(line))
+                    if (VersionAtLeast10(line))
                     {
-                        runtime8 = true;
+                        runtime10 = true;
                     }
                 }
             }
-            if (!runtime8)
+            if (!runtime10)
             {
-                Console.WriteLine("[SetUp] 错误：需要 .NET 8 及以上 Runtime（当前未装）。");
-                Console.WriteLine("  安装指引: https://dotnet.microsoft.com/download/dotnet/8.0");
+                Console.WriteLine("[SetUp] 错误：需要 .NET 10 及以上 Runtime（当前未装）。");
+                Console.WriteLine("  安装指引: https://dotnet.microsoft.com/download/dotnet/10.0");
                 return false;
             }
 
             // [段2b] WindowsDesktop 检测——WinForms 外观层前置（UI 模式必需；SDK 安装默认带）
-            bool desktop8 = false;
+            bool desktop10 = false;
             for (int i = 0; i < runtimeLines.Length; i = i + 1)
             {
                 string line = runtimeLines[i].Trim();
                 if (line.StartsWith("Microsoft.WindowsDesktop.App", StringComparison.Ordinal))
                 {
-                    if (VersionAtLeast8(line))
+                    if (VersionAtLeast10(line))
                     {
-                        desktop8 = true;
+                        desktop10 = true;
                     }
                 }
             }
-            if (!desktop8)
+            if (!desktop10)
             {
-                Console.WriteLine("[SetUp] 错误：需要 .NET 8 及以上 WindowsDesktop Runtime（WinForms 外观层）。");
-                Console.WriteLine("  安装指引: https://dotnet.microsoft.com/download/dotnet/8.0");
+                Console.WriteLine("[SetUp] 错误：需要 .NET 10 及以上 WindowsDesktop Runtime（WinForms 外观层）。");
+                Console.WriteLine("  安装指引: https://dotnet.microsoft.com/download/dotnet/10.0");
                 return false;
             }
 
-            // [段3] SDK 检测——dotnet --list-sdks 找主版本 ≥ 8
+            // [段3] SDK 检测——dotnet --list-sdks 找主版本 ≥ 10
             string sdkOut = RunProcessCapture("dotnet", "--list-sdks", Environment.CurrentDirectory);
-            bool sdk8 = false;
+            bool sdk10 = false;
             if (sdkOut != null)
             {
                 string[] sdkLines = sdkOut.Split('\n');
                 for (int i = 0; i < sdkLines.Length; i = i + 1)
                 {
-                    if (VersionAtLeast8(sdkLines[i]))
+                    if (VersionAtLeast10(sdkLines[i]))
                     {
-                        sdk8 = true;
+                        sdk10 = true;
                     }
                 }
             }
-            if (!sdk8)
+            if (!sdk10)
             {
-                Console.WriteLine("[SetUp] 错误：需要 .NET 8 及以上 SDK（部署全程 build/test/publish 前置）。");
-                Console.WriteLine("  安装指引: https://dotnet.microsoft.com/download/dotnet/8.0");
+                Console.WriteLine("[SetUp] 错误：需要 .NET 10 及以上 SDK（部署全程 build/test/publish 前置）。");
+                Console.WriteLine("  安装指引: https://dotnet.microsoft.com/download/dotnet/10.0");
                 return false;
             }
 
-            Console.WriteLine("[SetUp] 环境就绪：.NET 8 Runtime + SDK + WindowsDesktop 已检测到。");
+            Console.WriteLine("[SetUp] 环境就绪：.NET 10 Runtime + SDK + WindowsDesktop 已检测到。");
             return true;
         }
 
@@ -565,12 +565,12 @@ namespace SetUp
         }
 
         /// <summary>
-        /// 版本行解析——提取首段版本号并判断主版本 ≥ 8（兼容 .NET 9/10——向后构建 net8.0）。
+        /// 版本行解析——提取首段版本号并判断主版本 ≥ 10（部署链目标框架 net10.0）。
         /// 输入示例：Microsoft.NETCore.App 8.0.15 [...] 或 9.0.314 [...]
         /// </summary>
         /// <param name="line">dotnet 输出行</param>
-        /// <returns>true=主版本 ≥ 8</returns>
-        private static bool VersionAtLeast8(string line)
+        /// <returns>true=主版本 ≥ 10</returns>
+        private static bool VersionAtLeast10(string line)
         {
             // [段1] 找第一个数字开头段（版本号）
             string[] tokens = line.Split(' ');
@@ -586,7 +586,7 @@ namespace SetUp
                 string majorStr = dot > 0 ? token.Substring(0, dot) : token;
                 if (int.TryParse(majorStr, out major))
                 {
-                    return major >= 8;
+                    return major >= 10;
                 }
             }
             return false;

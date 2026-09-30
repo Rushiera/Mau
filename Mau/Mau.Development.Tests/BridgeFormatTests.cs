@@ -472,7 +472,7 @@ namespace Mau.Development.Tests
         {
             string nl = "\r\n";
             return "<Project Sdk=\"Microsoft.NET.Sdk\">" + nl + nl + "  <PropertyGroup>" + nl
-                + "    <TargetFramework>net8.0</TargetFramework>" + nl
+                + "    <TargetFramework>net10.0</TargetFramework>" + nl
                 + "    <Nullable>enable</Nullable>" + nl + "  </PropertyGroup>" + nl + nl + "</Project>" + nl;
         }
 

@@ -13,7 +13,7 @@ namespace Mau.Development.Tests
     /// 源收集：obj 下同名 AssemblyInfo 只收一套（多 Configuration / publish 产物并存 → CS0579 特性重复）。
     /// 引用集：共享框架探测按目标 TFM 判定——非 -windows 项目不得注入 WindowsDesktop.App
     /// （Accessibility.dll 与 Roslyn 的 Accessibility 枚举抢名 → CS0118/CS0234，A46）。
-    /// 注：宿主进程 TPA 段（A46 根因②）需 -windows 同构进程方可验证，本工程（net8.0）不覆盖该段。
+    /// 注：宿主进程 TPA 段（A46 根因②）需 -windows 同构进程方可验证，本工程（net10.0）不覆盖该段。
     /// </summary>
     public sealed class BridgeProbeTests
     {
@@ -63,11 +63,11 @@ namespace Mau.Development.Tests
             string dir = Path.Combine(_root, "CatTemp", "DedupProbe");
             try
             {
-                Directory.CreateDirectory(Path.Combine(dir, "obj", "Debug", "net8.0"));
-                Directory.CreateDirectory(Path.Combine(dir, "obj", "Release", "net8.0", "win-x64"));
+                Directory.CreateDirectory(Path.Combine(dir, "obj", "Debug", "net10.0"));
+                Directory.CreateDirectory(Path.Combine(dir, "obj", "Release", "net10.0", "win-x64"));
                 File.WriteAllText(Path.Combine(dir, "Main.cs"), "/// <summary>\n/// 探针类\n/// </summary>\npublic class Main\n{\n}\n");
-                File.WriteAllText(Path.Combine(dir, "obj", "Debug", "net8.0", "DedupProbe.AssemblyInfo.cs"), "// debug\n");
-                File.WriteAllText(Path.Combine(dir, "obj", "Release", "net8.0", "win-x64", "DedupProbe.AssemblyInfo.cs"), "// release\n");
+                File.WriteAllText(Path.Combine(dir, "obj", "Debug", "net10.0", "DedupProbe.AssemblyInfo.cs"), "// debug\n");
+                File.WriteAllText(Path.Combine(dir, "obj", "Release", "net10.0", "win-x64", "DedupProbe.AssemblyInfo.cs"), "// release\n");
                 ProjectCache cache = new ProjectCache();
                 cache.ProjectDir = dir;
                 cache.AssemblyName = "DedupProbe";
@@ -107,7 +107,7 @@ namespace Mau.Development.Tests
             ProjectCache cache = new ProjectCache();
             cache.ProjectDir = Path.Combine(_root, "Mau", "Mau.Development");
             cache.AssemblyName = "Mau.Development";
-            cache.Tfm = "net8.0";
+            cache.Tfm = "net10.0";
             cache.SourceFiles = new string[0];
             List<MetadataReference> references = _bridge.BuildReferences(cache);
             for (int i = 0; i < references.Count; i = i + 1)
@@ -137,7 +137,7 @@ namespace Mau.Development.Tests
             try
             {
                 Directory.CreateDirectory(sub);
-                File.WriteAllText(Path.Combine(sub, "SubProj.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n  </PropertyGroup>\n</Project>\n");
+                File.WriteAllText(Path.Combine(sub, "SubProj.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <TargetFramework>net10.0</TargetFramework>\n  </PropertyGroup>\n</Project>\n");
                 string result;
                 _bridge.Invoke("check", "{\"path\":\"" + dir.Replace("\\", "\\\\") + "\"}", out result);
                 Assert.StartsWith("ERR|BAD_PATH|", result);
