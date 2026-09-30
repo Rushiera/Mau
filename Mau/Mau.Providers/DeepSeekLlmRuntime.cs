@@ -246,7 +246,7 @@ namespace Mau.Providers
         }
 
         /// <summary>
-        /// 实时读取完整端点——API 配置池 endpoint → MAU_LLM_BASE_URL（base 格式兼容拼接）→ 空串（每次调用取当前值）
+        /// 实时读取完整端点——API 配置池 endpoint → MAU_LLM_BASE_URL（两来源同一推导：已含 /chat/completions 原样，否则拼尾）→ 空串（每次调用取当前值）
         /// </summary>
         /// <returns>完整 API 端点（含 /chat/completions）</returns>
         private string GetBaseUrl()
@@ -256,18 +256,14 @@ namespace Mau.Providers
                 CH_LlmApiConfig? config = ResolveTarget();
                 if (config != null && config.Endpoint.Length > 0)
                 {
-                    return config.Endpoint;
+                    // 与视觉 / env 回退同一推导——池配置填 base 地址不再 404（M2e 立即生效语义不变）
+                    return CH_LlmApiConfigStore.DeriveChatEndpoint(config.Endpoint);
                 }
             }
             string? env = Environment.GetEnvironmentVariable("MAU_LLM_BASE_URL");
             if (!string.IsNullOrEmpty(env))
             {
-                // 兼容两种格式：完整端点原样 / 旧 base 格式拼接
-                if (env.EndsWith("/chat/completions", StringComparison.Ordinal))
-                {
-                    return env;
-                }
-                return env.TrimEnd('/') + "/chat/completions";
+                return CH_LlmApiConfigStore.DeriveChatEndpoint(env);
             }
             return "";
         }

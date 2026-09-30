@@ -220,7 +220,7 @@ namespace Mau.Providers
             }
             else
             {
-                string derived = DeriveChatEndpoint(config.Endpoint);
+                string derived = CH_LlmApiConfigStore.DeriveChatEndpoint(config.Endpoint);
                 if (derived.Length == 0)
                 {
                     return "ERR|API_NOT_CONFIGURED|视觉端点推导失败（池配置 endpoint 结尾不识别: " + config.Endpoint + "——请配置 vision.endpoint 显式指定）";
@@ -243,25 +243,6 @@ namespace Mau.Providers
                 model = FallbackModel;
             }
             return "";
-        }
-
-        /// <summary>
-        /// 池配置 endpoint → chat completions 端点推导——已含 /chat/completions 原样；其余直接拼 /chat/completions。失败返回空串（不猜——调用侧显式提示）。
-        /// </summary>
-        /// <param name="poolEndpoint">池配置 endpoint</param>
-        /// <returns>推导后端点（失败空串）</returns>
-        private static string DeriveChatEndpoint(string poolEndpoint)
-        {
-            if (poolEndpoint == null || poolEndpoint.Length == 0)
-            {
-                return "";
-            }
-            string trimmed = poolEndpoint.TrimEnd('/');
-            if (trimmed.EndsWith("/chat/completions", StringComparison.Ordinal))
-            {
-                return trimmed;
-            }
-            return trimmed + "/chat/completions";
         }
 
         /// <summary>

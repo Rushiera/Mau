@@ -129,6 +129,25 @@ namespace Mau.Runtime
             return null;
         }
         /// <summary>
+        /// 池配置 endpoint → chat completions 端点推导——已含 /chat/completions 原样；其余拼 /chat/completions 尾。
+        /// 消费点统一入口（LLM 运行时 / 视觉服务共用）——填 base 地址不再 404。
+        /// </summary>
+        /// <param name="endpoint">池配置 endpoint（base 或完整路径）</param>
+        /// <returns>完整 chat completions 端点（空输入返回空串）</returns>
+        public static string DeriveChatEndpoint(string? endpoint)
+        {
+            if (endpoint == null || endpoint.Length == 0)
+            {
+                return "";
+            }
+            string trimmed = endpoint.TrimEnd('/');
+            if (trimmed.EndsWith("/chat/completions", StringComparison.Ordinal))
+            {
+                return trimmed;
+            }
+            return trimmed + "/chat/completions";
+        }
+        /// <summary>
         /// 设置默认端点——清除其他默认标记 + 置目标默认（唯一默认语义；目标不存在返回 false）。
         /// </summary>
         /// <param name="apiConfigId">目标配置身份</param>
@@ -148,7 +167,10 @@ namespace Mau.Runtime
             {
                 if (configs[i].ApiConfigId == config.ApiConfigId)
                 {
+                    // 默认标记归 SetDefault 专管——替换普通字段时保留原标记（编辑面不得静默清默认）
+                    bool keepDefault = configs[i].IsDefault;
                     configs[i] = CopyConfig(config);
+                    configs[i].IsDefault = keepDefault;
                     replaced = true;
                     break;
                 }

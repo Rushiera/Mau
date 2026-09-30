@@ -127,6 +127,51 @@ namespace Mau.Runtime.Tests
                 CleanDir(secretsRoot);
             }
         }
+        /// <summary>编辑既有配置不清默认标记——Save 替换普通字段后 IsDefault 保留（面板编辑即清默认的坑回归测试）。</summary>
+        [Fact]
+        public void Store_Save_EditKeepsDefault()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                Guid idA = new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+                store.Save(MakeConfig(idA, "A", "https://a.example/v1"), "");
+                CH_LlmApiConfig? before = store.ResolveDefault();
+                Assert.NotNull(before);
+                Assert.Equal(idA, before.ApiConfigId);
+                CH_LlmApiConfig edited = MakeConfig(idA, "A2",
+                    "https://a.example/v1/chat/completions");
+                store.Save(edited, "");
+                CH_LlmApiConfig? resolved = store.ResolveDefault();
+                Assert.NotNull(resolved);
+                Assert.Equal(idA, resolved.ApiConfigId);
+                CH_LlmApiConfig found;
+                Assert.True(store.TryGet(idA, out found));
+                Assert.Equal("A2", found.DisplayName);
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
+        /// <summary>端点推导——base 地址拼 /chat/completions 尾，已含尾原样（池配置与 env 回退统一口径）。</summary>
+        [Fact]
+        public void Store_DeriveChatEndpoint_Normalizes()
+        {
+            Assert.Equal("https://x.example/v1/chat/completions",
+                CH_LlmApiConfigStore.DeriveChatEndpoint("https://x.example/v1"));
+            Assert.Equal("https://x.example/v1/chat/completions",
+                CH_LlmApiConfigStore.DeriveChatEndpoint("https://x.example/v1/"));
+            Assert.Equal("https://x.example/v1/chat/completions",
+                CH_LlmApiConfigStore.DeriveChatEndpoint(
+                    "https://x.example/v1/chat/completions"));
+            Assert.Equal("", CH_LlmApiConfigStore.DeriveChatEndpoint(""));
+            Assert.Equal("", CH_LlmApiConfigStore.DeriveChatEndpoint(null));
+        }
 
         /// <summary>Save + GetAll——按稳定 ID 排序 + TryGet 命中/未命中。</summary>
         [Fact]

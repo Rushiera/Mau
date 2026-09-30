@@ -139,6 +139,13 @@ namespace CH4
                 payload["tools"] = tools;
             }
             string requestBody = JsonUtil.Serialize(payload);
+            // 端点推导——与运行时同源（已含 /chat/completions 原样，否则拼尾；填 base 地址亦可用）
+            string endpoint = CH_LlmApiConfigStore.DeriveChatEndpoint(config.Endpoint);
+            if (endpoint.Length == 0)
+            {
+                Console.WriteLine("[CMD] 探针失败：端点为空（" + config.DisplayName + "）");
+                return 2;
+            }
             // [段4] 发送与帧收集——SSE 按行取 data 载荷（探针面简化为单行 data；SseParser 的多行合并仅影响正文分片，不影响结构判定）
             int httpStatus = 0;
             string[] frames = new string[0];
@@ -147,7 +154,7 @@ namespace CH4
             client.Timeout = TimeSpan.FromSeconds(ProbeTimeoutSeconds);
             try
             {
-                using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, config.Endpoint))
+                using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, endpoint))
                 {
                     request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
                     request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
@@ -169,7 +176,7 @@ namespace CH4
             frames = SplitSseFrames(rawBody);
             // [段5] 输出——结构摘要 JSON + 人读提示
             Console.WriteLine("[CMD] LLM 返回体探针 → " + config.DisplayName + "  model=" + model + "  tools=" + (withTools ? "yes" : "no"));
-            Console.WriteLine(SseFrameProbe.Describe(frames, httpStatus, config.Endpoint, model));
+            Console.WriteLine(SseFrameProbe.Describe(frames, httpStatus, endpoint, model));
             // 运行时同源回放——探针帧直接喂运行时解析函数（修复回归证据；无需启动宿主）
             Console.WriteLine("[CMD] 运行时解析回放: " + DeepSeekLlmRuntime.ReplayUsageFrames(frames));
             if (httpStatus != 200)
