@@ -73,7 +73,9 @@ namespace CH4
             {
                 prefix = prefix + "$PSStyle.OutputRendering='PlainText'; ";
             }
-            string prefixed = prefix + command;
+            // [段2b] 根寻址前缀——猫可见受控根注册为本会话 PS 驱动器（命令内可直接写 ccbp:L1/Tree.md）
+            string rootPrefix = BuildRootDrivePrefix(argsJson);
+            string prefixed = prefix + rootPrefix + command;
             // [段3] EncodedCommand——UTF-16LE → Base64（免转义：引号/反斜杠/JSON 原样直达 PS 解析器）
             string base64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(prefixed));
             ProcessStartInfo psi = new ProcessStartInfo();
@@ -182,6 +184,42 @@ namespace CH4
             }
             return n;
         }
+        /// <summary>
+        /// 根寻址前缀——猫可见受控根注册为本次 PS 会话的驱动器（New-PSDrive）。
+        /// 注入后命令内可直接写 ccbp:L1/Tree.md / mau:README.md（驱动器相对路径——正反斜杠均可）。
+        /// 失败出声不中断：注册异常写入错误流（重名等由管理员面黑名单规避，此处不静默、不改名）。
+        /// </summary>
+        /// <param name="argsJson">工具参数 JSON（catId 取猫级根集）</param>
+        /// <returns>PS 前缀片段（无可注入根时空串）</returns>
+        private static string BuildRootDrivePrefix(string argsJson)
+        {
+            string catId = ExtractArg(argsJson, "catId");
+            if (catId.Length == 0)
+            {
+                return "";
+            }
+            FileSystemService fs = ToolCatContext.ResolveCatFileSystem(catId);
+            if (fs == null)
+            {
+                return "";
+            }
+            // [段1] 逐根生成注册片段——try/catch 出声（注册失败不阻断命令本身）
+            Dictionary<string, string> roots = fs.DescribeRoots();
+            StringBuilder sb = new StringBuilder();
+            foreach (KeyValuePair<string, string> pair in roots)
+            {
+                string safeRoot = pair.Value.Replace("'", "''");
+                sb.Append("try { New-PSDrive -Name ");
+                sb.Append(pair.Key);
+                sb.Append(" -PSProvider FileSystem -Root '");
+                sb.Append(safeRoot);
+                sb.Append("' -ErrorAction Stop | Out-Null } catch { Write-Error ('根寻址注册失败: ");
+                sb.Append(pair.Key);
+                sb.Append(" — ' + $_.Exception.Message) }; ");
+            }
+            return sb.ToString();
+        }
+
         /// <summary>
         /// 解析 PowerShell 7 可执行路径——读配置 ps.pwsh_path（未配置 / 路径不存在 → error 明示，不静默回落默认解释器）
         /// </summary>

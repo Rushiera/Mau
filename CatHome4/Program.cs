@@ -666,6 +666,16 @@ namespace CH4
                     item["id"] = entries[i].Id;
                     item["writable"] = entries[i].Writable;
                     item["note"] = entries[i].Note == null ? "" : entries[i].Note;
+                    // [段5b] path——规范绝对路径（物理位置认知；与文件工具根解析同规）
+                    string rootPath = entries[i].Path;
+                    if (string.IsNullOrWhiteSpace(rootPath))
+                    {
+                        item["path"] = "";
+                    }
+                    else
+                    {
+                        item["path"] = WorkspaceConfig.NormalizeRoot(rootPath);
+                    }
                     rootList.Add(item);
                 }
             }

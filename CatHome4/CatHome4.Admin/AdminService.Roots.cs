@@ -76,6 +76,41 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
+        /// PS 内置驱动器保留名——PowerShell 会话内建（根 id 重名则 New-PSDrive 失败，根寻址失效）。
+        /// 来源：Get-PSDrive 实测并集（5.1 + 7；2026-10-01）；盘符单字母（A-Z）另行判定。
+        /// </summary>
+        private static readonly string[] ReservedPsDriveNames = new string[]
+        {
+            "alias", "cert", "env", "function", "hkcu", "hklm", "variable", "wsman", "temp"
+        };
+
+        /// <summary>
+        /// PS 保留驱动器名判定——固定名（小写比对）或单字母盘符（a-z）。
+        /// </summary>
+        /// <param name="id">根标识（任意大小写）</param>
+        /// <returns>true=保留名（应拒绝）</returns>
+        internal static bool IsReservedPsDriveName(string id)
+        {
+            string norm = NormalizeRootId(id);
+            if (norm.Length == 1)
+            {
+                char ch = norm[0];
+                if (ch >= 'a' && ch <= 'z')
+                {
+                    return true;
+                }
+            }
+            for (int i = 0; i < ReservedPsDriveNames.Length; i = i + 1)
+            {
+                if (string.Equals(ReservedPsDriveNames[i], norm, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// 固定根定义查找——判定与校验共用。
         /// </summary>
         /// <param name="id">根标识（任意大小写）</param>
@@ -105,7 +140,7 @@ namespace CatHome4.Admin
 
         // [段2] 写入校验
         /// <summary>
-        /// 受控根提交校验——id 字符集（小写字母数字）+ 重名（忽略大小写）+ path 绝对且存在 + 固定根齐备且三列一致。
+        /// 受控根提交校验——id 字符集（小写字母数字）+ 非 PS 内置驱动器名 + 重名（忽略大小写）+ path 绝对且存在 + 固定根齐备且三列一致。
         /// 语义：缺任一固定根 → 拒绝（不静默造根）；固定根 note/writable 与定义不符 → 拒绝（前端已灰化，直调 API 亦同规）。
         /// </summary>
         /// <param name="rootsIn">提交条目（Id 须已归一为小写）</param>
@@ -123,6 +158,10 @@ namespace CatHome4.Admin
                 if (!IsValidRootIdChars(input.Id))
                 {
                     return "roots[" + i.ToString() + "] id 非法（仅小写字母/数字）: " + input.Id;
+                }
+                if (IsReservedPsDriveName(input.Id))
+                {
+                    return "roots[" + i.ToString() + "] id 与 PowerShell 内置驱动器同名（ps 根寻址会失效）: " + input.Id;
                 }
                 bool dup = false;
                 for (int k = 0; k < ids.Count; k = k + 1)

@@ -1323,6 +1323,20 @@ namespace Mau.Runtime
         }
 
         /// <summary>
+        /// 根清单——id → 规范绝对路径（只读快照；PsCat 根寻址注入等消费面用）。
+        /// </summary>
+        /// <returns>根 id 到规范路径的映射（键大小写不敏感）</returns>
+        public Dictionary<string, string> DescribeRoots()
+        {
+            Dictionary<string, string> map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < _roots.Length; i = i + 1)
+            {
+                map[_rootIds[i]] = _roots[i];
+            }
+            return map;
+        }
+
+        /// <summary>
         /// 查询根是否只读——按归属根路径匹配（Resolve forWrite 校验用）
         /// </summary>
         /// <param name="rootPath">归属根路径</param>

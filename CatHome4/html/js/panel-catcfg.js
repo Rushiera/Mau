@@ -746,6 +746,12 @@ document.getElementById('rootAddBtn').onclick = function () {
         document.getElementById('rootsMsg').textContent = 'id 非法——仅字母/数字（自动转小写）';
         return;
     }
+    // PS 保留驱动器名镜像——权威在后端 AdminService.IsReservedPsDriveName（此处只为即时反馈）
+    var PS_RESERVED = ['alias', 'cert', 'env', 'function', 'hkcu', 'hklm', 'variable', 'wsman', 'temp'];
+    if (/^[a-z]$/.test(id) || PS_RESERVED.indexOf(id) >= 0) {
+        document.getElementById('rootsMsg').textContent = 'id 与 PowerShell 内置驱动器同名（ps 根寻址会失效）: ' + id;
+        return;
+    }
     for (var i = 0; i < rootsList.length; i++) {
         if ((rootsList[i].id || '').toLowerCase() === id) {
             document.getElementById('rootsMsg').textContent = 'id 重复: ' + id;
