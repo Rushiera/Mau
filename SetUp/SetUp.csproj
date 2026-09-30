@@ -8,7 +8,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>SetUp</AssemblyName>
     <RootNamespace>SetUp</RootNamespace>
-    <Version>0.5.0</Version>
+    <Version>0.5.1</Version>
     <!-- 单文件发布——框架依赖（需 .NET 10 runtime；runtime 缺失时 apphost 自带友好提示
          跟随 Git 发布：dotnet publish 后复制 SetUp.exe 到仓库根 -->
     <PublishSingleFile>true</PublishSingleFile>

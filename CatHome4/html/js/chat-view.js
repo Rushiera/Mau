@@ -443,7 +443,13 @@ function chatOnRoundSum(payload) {
     var toolsLine = '';
     if (d.toolCount > 0) { toolsLine = '<span class="rs-tool">🔧 Tool ' + d.toolCount + '</span>'; }
     if (d.requests !== undefined) {
-        toolsLine += (toolsLine ? ' · ' : '') + '<span class="rs-api">🔄 Api ' + (d.requests || 0) + '</span>';
+        // A114 平均首 token 延迟——link（请求发出到首个语义增量帧）累计 ÷ 请求次数；旧载荷无 link 时不加后缀
+        var apiText = '🔄 Api ' + (d.requests || 0);
+        var linkMs = phases.link || 0;
+        if (d.requests > 0 && linkMs > 0) {
+            apiText += '（' + (linkMs / 1000 / d.requests).toFixed(2) + ' s /use）';
+        }
+        toolsLine += (toolsLine ? ' · ' : '') + '<span class="rs-api">' + apiText + '</span>';
     }
     toolsLine += (toolsLine ? ' · ' : '') + '<span class="rs-all">⏱ All ' + chatFmtMs(d.elapsedMs) + '</span>';
     html += '<div class="rs-tools">' + toolsLine + '</div>';

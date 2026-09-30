@@ -1215,7 +1215,7 @@ namespace CH4
                     }
                     else if (ev.Kind == LlmStreamKind.Usage)
                     {
-                        // E3 Token 统计——解析 usage JSON 累计整轮（工具多轮累加）+ 单次前文覆盖 + 转发 SSE（前端覆盖式显示整轮累计值）
+                        // E3 Token 统计——解析 usage JSON 累计整轮（工具多轮累加）+ 单次前文覆盖 + 转发 SSE（前端覆盖式显示整轮累计值）；A115 载荷补 count（前文条数——前端「前文 N 条」与 tokens 同节奏刷新）
                         // 会话级累计——本次请求增量随轮同期堆入（跨轮保留；仅新会话复位）
                         long reqPrompt = _usagePrompt;
                         long reqCompletion = _usageCompletion;
@@ -1230,6 +1230,7 @@ namespace CH4
                                 + ",\"completion\":" + _usageCompletion.ToString()
                                 + ",\"cacheHit\":" + _usageCacheHit.ToString()
                                 + ",\"context\":" + _contextTokens.ToString()
+                                + ",\"count\":" + _context.GetMessageCount().ToString()
                                 + ",\"sessionPrompt\":" + _sessionPrompt.ToString()
                                 + ",\"sessionCompletion\":" + _sessionCompletion.ToString()
                                 + ",\"sessionCacheHit\":" + _sessionCacheHit.ToString() + "}";

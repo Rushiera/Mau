@@ -38,6 +38,8 @@ namespace SetUp
         private static int Relaunch(string repoRoot, string[] args)
         {
             Console.WriteLine("[SetUp] relaunch —— 宿主自更新接力");
+            // A116 重启用时起算点——接力进程进入 relaunch 段（终点 = 新宿主拉起前一刻；探活窗口为固定常数，不计入）
+            long relaunchStartMs = Environment.TickCount64;
             string badArgs = ValidateRelaunchArgs(args);
             if (badArgs.Length > 0)
             {
@@ -88,14 +90,14 @@ namespace SetUp
                 _steps.Add(new StepReport() { Step = 13, Name = "deploy 跳过（prepare 未通过——运行区未替换）", Ok = true, Ms = Environment.TickCount64 - depMs });
             }
 
-            // [段4] 拼回执注入串——由 SetUp 生成（非 LLM 自述），带部署结论与产物时间戳
+            // [段4] 拼回执注入串——由 SetUp 生成（非 LLM 自述），带部署结论 / 产物时间戳 / 重启用时（A116）
             string targetFull = Path.GetFullPath(target);
             string version = ReadVersion(repoRoot);
             string reportPath = ExtractOption(args, "--report");
-            string push = BuildPushText(prepOk, depOk, version, targetFull, pushIn, reportPath);
 
-            // [段5] 自启新宿主 + 探活
+            // [段5] 自启新宿主 + 探活（重启用时终点 = 拉起动作发起前一刻——探活窗口固定，不计入）
             long bootMs = Environment.TickCount64;
+            string push = BuildPushText(prepOk, depOk, version, targetFull, pushIn, reportPath, bootMs - relaunchStartMs);
             bool bootOk = StartHost(targetFull, push);
             _steps.Add(new StepReport() { Step = 14, Name = "自启新宿主（含探活 " + RelaunchProbeMs.ToString() + " ms）", Ok = bootOk, Ms = Environment.TickCount64 - bootMs });
 
@@ -104,7 +106,9 @@ namespace SetUp
             if (!bootOk && depOk)
             {
                 Console.WriteLine("[SetUp] 警告：新版本启动失败——回退旧版本目录。");
+                long fallbackElapsedMs = Environment.TickCount64 - relaunchStartMs;
                 string fallbackPush = "[宿主自更新] 新版本启动失败——已回退旧版本。"
+                    + Environment.NewLine + "重启用时: " + (fallbackElapsedMs / 1000.0).ToString("0.0") + " s（接力起算）"
                     + Environment.NewLine + "说明: " + pushIn;
                 long fbMs = Environment.TickCount64;
                 fallbackOk = StartHost(targetFull + "_old", fallbackPush);
@@ -232,8 +236,9 @@ namespace SetUp
         /// <param name="targetFull">运行区绝对路径</param>
         /// <param name="pushIn">调用方附加说明（可为空）</param>
         /// <param name="reportPath">报告路径（可为空）</param>
+        /// <param name="elapsedMs">重启用时毫秒（relaunch 入口起算 → 新宿主拉起前一刻；A116）</param>
         /// <returns>注入串全文</returns>
-        private static string BuildPushText(bool prepOk, bool depOk, string version, string targetFull, string pushIn, string reportPath)
+        private static string BuildPushText(bool prepOk, bool depOk, string version, string targetFull, string pushIn, string reportPath, long elapsedMs)
         {
             string exeTs = "";
             string exePath = Path.Combine(targetFull, "CatHome4.exe");
@@ -253,6 +258,8 @@ namespace SetUp
             sb.Append("部署: prepare " + (prepOk ? "OK" : "FAIL") + " · deploy " + (depOk ? "OK" : "FAIL"));
             sb.Append(Environment.NewLine);
             sb.Append("自启: " + (prepOk && depOk ? "新版本" : "现有版本（运行区未替换）"));
+            sb.Append(Environment.NewLine);
+            sb.Append("重启用时: " + (elapsedMs / 1000.0).ToString("0.0") + " s（接力起算）");
             sb.Append(Environment.NewLine);
             sb.Append("产物: CatHome4.exe " + exeTs);
             sb.Append(Environment.NewLine);

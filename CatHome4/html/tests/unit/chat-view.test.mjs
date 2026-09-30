@@ -777,6 +777,8 @@ test('A59 六态状态条——sessionstate 驱动渲染（六态时长 + 当前
   expect(bar.textContent).toContain('💬 Reply 2.4s');
   expect(bar.textContent).toContain('⏱ All 43.9s');
   expect(bar.textContent).toContain('🔄 Api 5');
+  // A114 平均首 token 延迟——link 320ms ÷ 5 次 = 0.06 s/use
+  expect(bar.textContent).toContain('🔄 Api 5（0.06 s /use）');
   // 当前态高亮（呼吸动效类）
   expect(bar.querySelector('.st.run').classList.contains('active')).toBe(true);
   // 畸形载荷（无 sessionId）——忽略（状态条不动）
@@ -1092,6 +1094,8 @@ test('view roundsum 渲染独立气泡（token + 工具/请求次数 + 六态用
   expect(rs.textContent).toContain('miss 4.07k');
   expect(rs.textContent).toContain('🎯99.5%');
   expect(rs.textContent).toContain('🔧 Tool 6 · 🔄 Api 5');
+  // A114 平均首 token 延迟——link 200ms ÷ 5 次 = 0.04 s/use
+  expect(rs.textContent).toContain('🔄 Api 5（0.04 s /use）');
   expect(rs.textContent).toContain('Link 0.2s');
   expect(rs.textContent).toContain('Wait 0.5s');
   expect(rs.textContent).toContain('Think 28.5s');
@@ -1122,6 +1126,24 @@ test('chatRenderHistory roundsum 块渲染（历史重建保留轮末统计）',
   expect(rs2.textContent).toContain('All 15.0s');
   // 旧数据兼容——无 requests 字段时不显示请求段（历史块零迁移）
   expect(rs2.textContent).not.toContain('🔄 Api');
+});
+
+// ── A114 旧载荷兼容：无 link 时不加平均后缀（历史块零迁移）──
+test('A114 旧载荷无 link——请求段不加平均后缀', () => {
+  window.chatOnView({ seq: 72, renderType: 'roundsum', payload: { type: 'roundsum', data: { prompt: 100, completion: 10, cacheHit: 0, miss: 100, toolCount: 0, requests: 3, elapsedMs: 5000, phases: { think: 100 } } }, replaceSeq: -1 });
+  const all = chatMsgs.querySelectorAll('.chat-bubble.roundsum');
+  const last = all[all.length - 1];
+  expect(last.textContent).toContain('🔄 Api 3');
+  expect(last.textContent).not.toContain('s /use');
+});
+
+// ── A115 前文条数与 tokens 同节奏（usage 事件双更新）──
+test('A115 usage 事件同步刷新前文条数与 tokens（不等轮结束）', () => {
+  window.chatRenderHistory({ version: 1, sessionId: 's-a115', ctxCount: 12, count: 12, blocks: [], stats: { context: 1000 } });
+  expect(chatInfo.textContent).toContain('前文 12 条');
+  window.chatOnView({ seq: 73, renderType: 'control', payload: { type: 'usage', data: { prompt: 100, completion: 20, cacheHit: 30, context: 1200, count: 14 } }, replaceSeq: -1 });
+  expect(chatInfo.textContent).toContain('前文 14 条');
+  expect(chatInfo.textContent).toContain('前文 1.20k tokens');
 });
 
 // ── A85 头行统计口径（原「折叠摘要」退役——展开/折叠已由高度档取代）──

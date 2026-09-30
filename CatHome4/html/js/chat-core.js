@@ -99,7 +99,12 @@ function chatRenderStatus() {
         html += '<span class="st total">⏱ All ' + chatFmtMs(totalMs) + '</span>';
     }
     if (chatRunState.requests > 0) {
-        html += '<span class="st req">🔄 Api ' + chatRunState.requests + '</span>';
+        // A114 平均首 token 延迟——link 累计 ÷ 请求次数（实时态：含当前进行中的 link 等待）
+        var apiText = '🔄 Api ' + chatRunState.requests;
+        if ((ms.link || 0) > 0) {
+            apiText += '（' + (ms.link / 1000 / chatRunState.requests).toFixed(2) + ' s /use）';
+        }
+        html += '<span class="st req">' + apiText + '</span>';
     }
     bar.innerHTML = html;
     // 桌宠——状态渲染汇聚点回调（chat-pet.js；未加载时静默跳过）
@@ -555,16 +560,21 @@ function chatOnControl(payload) {
     if (type === 'usage') {
         // 2026-09-22：本轮 Token 统计已从状态条撤除（Token 信息归 roundsum 轮末块）——此处只保留前文长度实时化
         var u = payload.data || {};
+        var infoText = chatInfo.textContent || '';
+        // A115 前文条数实时化——每次 API 请求返回后按真实条数更新（与 tokens 同节奏，不等轮结束）
+        if (u.count !== undefined && infoText.indexOf(' 条 |') >= 0) {
+            infoText = infoText.replace(/前文 [\d.]+[kKmM]? 条/, '前文 ' + chatFmtCount(u.count) + ' 条');
+        }
         // Q1 顶端计数实时化——每次 API 请求返回后按真实 context（单次前文 token）更新前文长度，不等轮结束
         if (u.context !== undefined && u.context > 0) {
             var newCtx = '前文 ' + chatFmtCount(u.context) + ' tokens';
-            var oldCtx = chatInfo.textContent;
-            if (oldCtx.indexOf('前文 ') >= 0) {
-                chatInfo.textContent = oldCtx.replace(/前文 [\d.]+[kKmM]? tokens/, newCtx);
+            if (infoText.indexOf('前文 ') >= 0) {
+                infoText = infoText.replace(/前文 [\d.]+[kKmM]? tokens/, newCtx);
             } else {
-                chatInfo.textContent = oldCtx + ' | ' + newCtx;
+                infoText = infoText + ' | ' + newCtx;
             }
         }
+        chatInfo.textContent = infoText;
     } else if (type === 'session_reset') {
         // 会话重置——session.new 清前文后显式信号（问题一修复：消除本地抢跑竞态；收到即清空再拉 history）
         chatPendingReset = false;

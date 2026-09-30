@@ -901,6 +901,8 @@ namespace CatHome4.Core.Tests
                 Assert.Equal(100, data.GetProperty("prompt").GetInt64());
                 Assert.Equal(20, data.GetProperty("completion").GetInt64());
                 Assert.Equal(30, data.GetProperty("cacheHit").GetInt64());
+                // A115——前文条数随 usage 载荷下发（前端「前文 N 条」实时化数据源）
+                Assert.True(data.GetProperty("count").GetInt64() > 0);
             }
         }
 
