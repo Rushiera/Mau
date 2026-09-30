@@ -239,6 +239,26 @@ namespace CatHome4.Admin
                 cat.Session.Pause();
                 return "cat.pause | 已投递中止: " + cat.DisplayName;
             }
+            if (line.StartsWith("cat.continue", StringComparison.Ordinal))
+            {
+                // 继续——管理面指定猫（每猫端口无 key 版本走 DispatchCommandForCat）
+                string rest = line.Substring(12).Trim();
+                if (rest.Length == 0)
+                {
+                    return "cat.continue | 用法: cat.continue <key>";
+                }
+                if (string.Equals(rest, "majordomo", StringComparison.Ordinal))
+                {
+                    return "cat.continue | majordomo 为特殊会话——不可自查（主干会话不能对自己下继续指令）";
+                }
+                CatEntry cat = FindCat(rest);
+                if (cat == null)
+                {
+                    return "cat.continue | 未找到猫: " + rest;
+                }
+                cat.Session.Continue();
+                return "cat.continue | 已投递继续: " + cat.DisplayName;
+            }
             if (line.StartsWith("cat.chat ", StringComparison.Ordinal))
             {
                 // 格式：cat.chat <key> <内容>——内核每猫对话通道（M1d 验收 + 回归复用；DriveUntilIdle 等回复完成）
@@ -302,6 +322,7 @@ namespace CatHome4.Admin
             sb.AppendLine("  cat.stop <key> | 停止（majordomo 禁停）");
             sb.AppendLine("  cat.delete <key> | 销毁（majordomo 禁删）");
             sb.AppendLine("  cat.pause <key> | 中止当前回合");
+            sb.AppendLine("  cat.continue <key> | 继续（当前前文再发一次请求）");
             sb.AppendLine("  cat.chat <key> <内容> | 内核对话投递");
             sb.AppendLine("  cat.cfg.get <key> | 该猫 cat.cfg 全量字段");
             sb.AppendLine("  cat.cfg.set <key> <字段> <值> | 字段级合并写（未提交字段保留）");
@@ -1912,6 +1933,12 @@ namespace CatHome4.Admin
                 _chatBridge.DefaultSession.Pause();
                 return true;
             }
+            if (line == "cat.continue")
+            {
+                // 继续——HTTP 线程直接调用（内部仅前文非空校验 + 入队——线程安全；相位推进主线程 Pump 消费）
+                _chatBridge.DefaultSession.Continue();
+                return true;
+            }
             if (line == "session.new")
             {
                 // F2.2 按 DefaultSession 重注入——HTTP 线程置位/主线程泵消费（PumpCatQueues 段3）
@@ -1994,6 +2021,12 @@ namespace CatHome4.Admin
             {
                 // P6 中止——HTTP 线程直接调用（内部仅置位 + 取消令牌——线程安全；相位推进主线程 Pump 消费）
                 cat.Session.Pause();
+                return true;
+            }
+            if (line == "cat.continue")
+            {
+                // 继续——HTTP 线程直接调用（内部仅前文非空校验 + 入队——线程安全；相位推进主线程 Pump 消费）
+                cat.Session.Continue();
                 return true;
             }
             if (line == "session.new")

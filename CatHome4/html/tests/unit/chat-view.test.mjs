@@ -1356,3 +1356,40 @@ test('view retry 历史重建——failed 块渲染（原文 + 失败标注 + �
   expect(bubbles()[0].textContent).toContain('⚠ 重试失败 3/3 · 历史失败原文');
   expect(bubbles()[0].classList.contains('failed')).toBe(true);
 });
+
+// ── 继续指令（cat.continue）——不追加消息：用当前前文再发一次请求；与停止互斥（仅 idle 可用）──
+test('chatContinue——投递 cat.continue + 本地转 sending + 清阶段残留', async () => {
+  let sent = null;
+  globalThis.fetch = async function (url, opts) {
+    sent = JSON.parse(opts.body);
+    return { json: async function () { return { ok: true }; } };
+  };
+  window.chatState = 'idle';
+  window.chatSetState('idle');
+  window.viewContainers = { stale: 1 };
+  window.chatContinue();
+  expect(sent.text).toBe('cat.continue');
+  expect(window.chatState).toBe('sending');
+  expect(Object.keys(window.viewContainers).length).toBe(0);
+});
+
+test('继续按钮——仅 idle 可用（sending 禁用，与停止互补）', () => {
+  const contBtn = document.getElementById('chatContinue');
+  const pauseBtn = document.getElementById('chatPause');
+  window.chatSetState('idle');
+  expect(contBtn.disabled).toBe(false);
+  expect(pauseBtn.disabled).toBe(true);
+  window.chatSetState('sending');
+  expect(contBtn.disabled).toBe(true);
+  expect(pauseBtn.disabled).toBe(false);
+  window.chatSetState('idle');
+});
+
+test('chatContinue——非 idle 不投递（与停止互斥）', () => {
+  let called = false;
+  globalThis.fetch = async function () { called = true; return { json: async function () { return { ok: true }; } }; };
+  window.chatState = 'sending';
+  window.chatContinue();
+  expect(called).toBe(false);
+  window.chatState = 'idle';
+});

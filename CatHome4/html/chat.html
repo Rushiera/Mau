@@ -13,7 +13,6 @@
         <span style="flex:1"></span>
         <span id="uiVer" data-version title="前端版本——每次 Vitest 自动递增 + 最后更新时间">UI v?</span>
         <button id="chatNew" title="新会话（session.new——清前文并重新注入）">新会话</button>
-        <button id="chatPause" title="停止本轮（cat.pause——已生成内容保留，前文格式修复）" disabled>停止</button>
         <button id="chatRefresh" title="刷新——重建界面气泡（纯前端）">刷新</button>
         <button id="chatCacheClear" title="清理素材缓存——下次刷新重新下载桌宠素材（改图不改名 / 缓存脏数据时用）">清理缓存</button>
     </div>
@@ -65,7 +64,12 @@
     <div id="chatinput">
         <div id="chatImages" class="chat-images"></div>
         <textarea id="chatSendInput" rows="5" placeholder="输入文本…（Enter 发送；Shift+Enter 换行；可直接粘贴图片）"></textarea>
-        <button id="chatSendBtn">发送</button>
+        <!-- 输入区动作列（2026-09-30）——停止/继续/发送竖排同列、同款实心（底色区分语义）；原「停止」在顶部栏 -->
+        <div id="chatActions">
+            <button id="chatPause" class="ch-iabtn ch-iabtn-stop" title="停止本轮（cat.pause——已生成内容保留，前文格式修复）" disabled>停止</button>
+            <button id="chatContinue" class="ch-iabtn ch-iabtn-continue" title="继续——用当前前文直接发一次 LLM 请求（cat.continue：不追加消息，模型续写）" disabled>继续</button>
+            <button id="chatSendBtn" class="ch-iabtn ch-iabtn-send">发送</button>
+        </div>
     </div>
     <!-- E 系列——状态区（四态计时 + Token 统计）：最底部持久存在 -->
     <div id="chatStatus"></div>
@@ -122,6 +126,8 @@
         if (elChatRefresh) { elChatRefresh.addEventListener('click', chatRefresh); }
         var elChatPause = document.getElementById('chatPause');
         if (elChatPause) { elChatPause.addEventListener('click', chatPause); }
+        var elChatContinue = document.getElementById('chatContinue');
+        if (elChatContinue) { elChatContinue.addEventListener('click', chatContinue); }
         var elChatSendBtn = document.getElementById('chatSendBtn');
         if (elChatSendBtn) { elChatSendBtn.addEventListener('click', chatSend); }
         var elChatSendInput = document.getElementById('chatSendInput');

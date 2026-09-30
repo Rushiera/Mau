@@ -96,6 +96,10 @@ namespace CH4
         // [段2b] P6 中止——暂停标志与取消令牌（LLM 流物理取消面）
         /// <summary>中止请求标志——HTTP 线程置位（volatile 跨线程可见），主线程 Pump 消费执行收尾</summary>
         private volatile bool _pauseRequested;
+        /// <summary>
+        /// 继续请求标志——HTTP 线程置位（volatile 跨线程可见），主线程 Pump 消费（Idle 时启动继续轮）。
+        /// </summary>
+        volatile bool _continueRequested;
 
         /// <summary>本轮 LLM 流取消令牌——LaunchLlm 创建；Pause 时 Cancel（下一轮重建——取消不跨轮）</summary>
         private System.Threading.CancellationTokenSource _pauseCts;
@@ -756,6 +760,23 @@ namespace CH4
             }
             LogStore.Add("CatHome4", 1, "收到中止指令——正在停止本轮（已完成内容保留）", "CHAT");
         }
+        /// <summary>
+        /// 继续——不追加任何用户消息，直接用当前前文发起一次 LLM 请求（模型续写；空回复续传同上下文语义的显式入口）。
+        /// 线程安全：前文非空校验 + 入队（相位推进归主线程 Pump——Idle 才消费，忙时按插话队列语义排队）。
+        /// </summary>
+        public void Continue()
+        {
+            if (_context.GetMessageCount() == 0)
+            {
+                // 空前文无可续内容——前端按钮同条件禁用；此处防御性出声（不静默吞掉）
+                LogStore.Add("CatHome4", 2, "继续指令未受理——前文为空", "CHAT");
+                return;
+            }
+            // 跨线程只置位（与 Pause / SessionNewRequested 同模式）——HTTP 线程不得直接触碰会话内部队列；
+            // 轮次启动归主线程 Pump Idle 分支消费（Idle 才启动，忙时等同排队）。
+            _continueRequested = true;
+            LogStore.Add("CatHome4", 1, "收到继续指令——本轮结束后启动继续轮（不追加消息，用当前前文再发一次请求）", "CHAT");
+        }
 
         /// <summary>中止收尾——主线程 Pump 消费（相位串行）。已完成工具结果保留（不丢信息）/未完成放弃+格式修复/前文落盘/复位 Idle + paused 事件；实现委托 FinalizeInterrupted（中断收尾公共实现）。</summary>
         private void PauseFinalize()
@@ -948,6 +969,20 @@ namespace CH4
             {
                 // A72——停机态丢弃在途排队消息（宿主即将重启，不再开新轮）
                 DropPendingIfRestarting();
+                // 继续——HTTP 线程置位、主线程消费（与 Pause / SessionNewRequested 同模式）：Idle 才启动继续轮
+                if (_continueRequested)
+                {
+                    _continueRequested = false;
+                    if (IsHostRestarting())
+                    {
+                        LogStore.Add("CatHome4", 2, "宿主重启中——继续请求未受理", "RESTART");
+                        return;
+                    }
+                    // sleep 作废——继续属「非 sleep 输入」（与常规轮同口径）
+                    ConsumeSleepOnWake("continue");
+                    StartContinueRound();
+                    return;
+                }
                 if (_pending.Count > 0)
                 {
                     PendingMessage next = _pending.Dequeue();
@@ -972,13 +1007,10 @@ namespace CH4
                 CloseRound();
             }
         }
-
         /// <summary>
-        /// 启动新轮次——追加用户消息 + chat_state=working + StartLlm 动作段（构造消息序列 → 后台流式消费）。
+        /// 轮首计数与相位复位——StartRound 与 StartContinueRound 共用（统计清零 + 进入 link 相位；消息追加由各自承担）。
         /// </summary>
-        /// <param name="content">用户消息</param>
-        /// <param name="source">来源——user/system</param>
-        private void StartRound(string content, string source)
+        private void ResetRoundCounters()
         {
             // E3 Token 统计——整轮清零（工具续轮 LaunchLlm 不清——跨轮累加语义）
             _usagePrompt = 0;
@@ -1000,6 +1032,27 @@ namespace CH4
                 _phaseStartTick = 0;
             }
             PhaseEnter(PhaseLink);
+        }
+        /// <summary>
+        /// 启动继续轮——不追加任何消息，直接用当前前文发起请求（继续入口 pump 消费点）。
+        /// 与 StartRound 的差别仅在「不追加用户消息 / 不推 user 事件」（无新消息即无新视图块）。
+        /// </summary>
+        private void StartContinueRound()
+        {
+            ResetRoundCounters();
+            SetChatState("working");
+            LaunchLlm();
+        }
+
+        /// <summary>
+        /// 启动新轮次——追加用户消息 + chat_state=working + StartLlm 动作段（构造消息序列 → 后台流式消费）。
+        /// </summary>
+        /// <param name="content">用户消息</param>
+        /// <param name="source">来源——user/system</param>
+        private void StartRound(string content, string source)
+        {
+            // 轮首计数与相位复位——与继续轮共用（统计清零 + 进入 link 相位）
+            ResetRoundCounters();
             AppendMessage(_context.AddUserMessage(content));
             _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
@@ -1597,7 +1650,7 @@ namespace CH4
                     RetryEmptyReply("SSE 流中断（未以 [DONE] 结束）");
                     return;
                 }
-                // API 错误重试耗尽（Runtime 有限重试 3 次已过）——中止本轮：落盘断点 + 错误气泡（不走 CloseRound——不 roundsum/chatdone/Note 拉起）
+                // API 错误中止——重试策略归 Runtime（429/5xx/传输类有限重试；4xx 参数/额度类单次即返），此处统一收尾：落盘断点 + 错误气泡（不走 CloseRound——不 roundsum/chatdone/Note 拉起）
                 AbortRoundError();
                 return;
             }
@@ -2182,10 +2235,7 @@ namespace CH4
             // 续轮——StartLlm 动作段（无收敛上限——LLM 未给出最终回复前持续工具循环；终止条件 = 正常回复 / 空回复续传 / API 错误中止）
             LaunchLlm();
         }
-        /// <summary>
-        /// 错误中止收尾——LLM API 错误重试耗尽后调用（保留断点上下文 + 错误气泡；不走 CloseRound——中止非正常完成语义）。
-        /// 对齐 PauseFinalize：落盘断点（落盘保真）+ 视图序号复位 + 状态复位 Idle + chat_state=idle + 推 error 事件（前端 seal + 错误气泡）。
-        /// </summary>
+        /// <summary>错误中止收尾——LLM API 错误后调用（重试型：Runtime 对 429/5xx/传输类有限重试耗尽；单次型：4xx 参数/额度类 Runtime 不重试——两者同路径，日志措辞按是否真重试分档）。保留断点上下文 + 错误气泡；不走 CloseRound——中止非正常完成语义。</summary>
         private void AbortRoundError()
         {
             SealReasonStream();
@@ -2193,7 +2243,18 @@ namespace CH4
             // 运行态——中止前结算当前态（失败轮同出统计：L2 摘要留档；不推 roundsum 气泡——中止非正常完成语义）
             PhaseSettle();
             LogStore.Add("LLM", 2, "本轮运行态统计（中止）: " + BuildRunStateSummary(), "LLM");
-            LogStore.Add("LLM", 3, "LLM 错误（重试耗尽——本轮中止，上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
+            // 失败措辞如实分档（2026-09-30）——重试型（Runtime 对 429/5xx/传输类有限重试后）与本轮从未重试的单次失败
+            // （4xx 参数/额度类——Runtime 不重试）不可混称「重试耗尽」；判据 = 本轮是否推过 retry 视图（_retrySeq）
+            string abortKind;
+            if (_retrySeq != 0)
+            {
+                abortKind = "重试耗尽";
+            }
+            else
+            {
+                abortKind = "请求失败（未重试）";
+            }
+            LogStore.Add("LLM", 3, "LLM 错误（" + abortKind + "——本轮中止，上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
             // [段1] 前文落盘——落盘保真
             LlmMessage[] toSave = _context.GetMessages();
             _lastStats.EntryCount = toSave.Length;

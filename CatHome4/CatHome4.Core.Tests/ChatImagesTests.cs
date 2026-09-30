@@ -10,6 +10,7 @@ namespace CatHome4.Core.Tests
     /// 对话图片附件测试（A65 Admin 面纯逻辑）——类型映射 / 文件名安全判定 / 内容寻址命名 / 目录解析。
     /// 端点 IO 面（上传落盘 / 取图）走部署实测（design-ch4-chat-images §九）。
     /// </summary>
+    [Collection("GlobalToolState")]
     public sealed class ChatImagesTests
     {
         /// <summary>

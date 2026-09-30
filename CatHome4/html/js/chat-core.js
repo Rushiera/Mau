@@ -121,6 +121,9 @@ function chatSetState(s) {
     // P6 中止——停止按钮仅 sending 可用（不常用按钮：流式/工具执行中才可点）
     var psb = document.getElementById('chatPause');
     if (psb) { psb.disabled = (s !== 'sending'); }
+    // 继续——仅 idle 可用（与停止互斥；「前文非空」由后端复核并出声）
+    var ctb = document.getElementById('chatContinue');
+    if (ctb) { ctb.disabled = (s !== 'idle'); }
 }
 
 function chatScrollBottom(force) {
@@ -870,6 +873,28 @@ function chatPause() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'cat.pause' })
     }).catch(function (e) { uiWarn('停止指令投递', e); });
+}
+
+// 继续——cat.continue 指令（不追加消息：直接用当前前文再发一次 LLM 请求；仅 idle 可用，与停止互斥）
+// 与 chatSend 的 idle 起始面同构（清阶段残留 + 运行态拉取 + sending + 守护），差别仅在载荷与不产生 user 气泡
+function chatContinue() {
+    if (chatState !== 'idle') { return; }
+    viewContainers = {};
+    chatRunStart();
+    chatSetState('sending');
+    chatKeepAlive();
+    fetch('/api/v1/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'cat.continue' })
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok && d.error) {
+                chatFail('继续失败: ' + d.error);
+            }
+        })
+        .catch(function (err) { chatFail('请求失败: ' + err); });
 }
 
 // 刷新——纯前端重建界面气泡（重新拉历史渲染，不发指令）

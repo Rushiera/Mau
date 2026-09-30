@@ -1714,5 +1714,99 @@ namespace CatHome4.Core.Tests
             // 时序——思考整块先于工具卡（决策流首帧收口）
             Assert.True(host.ViewSeqs["reason"][0] < host.ViewSeqs["toolcard"][0]);
         }
+        /// <summary>
+        /// 继续轮——不追加任何用户消息，直接用当前前文发一次 LLM 请求（cat.continue 后端语义）。
+        /// 判据：请求次数 +1（真发请求）· 前文只多回复一条（不产生新 user 消息——常规轮为 +2）。
+        /// </summary>
+        [Fact]
+        public void Continue_NoNewMessage()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "续写内容";
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("第一轮问题");
+            PumpUntilIdle(session);
+            int beforeCount = session.Context.GetMessages().Length;
+            int callsBefore = llm.CallCount;
+            session.Continue();
+            PumpUntilIdle(session);
+            // 真发了一次请求
+            Assert.Equal(callsBefore + 1, llm.CallCount);
+            // 前文只多一条 assistant 回复（无新 user 消息）
+            LlmMessage[] after = session.Context.GetMessages();
+            Assert.Equal(beforeCount + 1, after.Length);
+            Assert.Equal(LlmRole.Assistant, after[after.Length - 1].Role);
+            Assert.Equal("续写内容", after[after.Length - 1].Content);
+        }
+        /// <summary>继续——忙时不打断当前轮（仅置位排队：跨线程不碰会话内部队列），轮末 Idle 后消费。</summary>
+        [Fact]
+        public void Continue_WhileBusy_QueuedUntilIdle()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "回复";
+            llm.HoldStream = new AutoResetEvent(false);
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("第一轮");
+            for (int i = 0; i < 100 && session.IsIdle; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+            }
+            Assert.False(session.IsIdle);
+            Assert.Equal(1, llm.CallCount);
+            // 忙时继续——仅置位（不打断当前轮：请求次数不变）
+            session.Continue();
+            Assert.Equal(1, llm.CallCount);
+            // 放行当前轮 → 轮末 Idle 消费继续请求（第二次请求）；继续轮同样挂起——逐帧放行
+            for (int i = 0; i < 300; i = i + 1)
+            {
+                llm.HoldStream.Set();
+                session.Pump();
+                Thread.Sleep(5);
+                if (llm.CallCount >= 2 && session.IsIdle)
+                {
+                    break;
+                }
+            }
+            Assert.Equal(2, llm.CallCount);
+            Assert.True(session.IsIdle);
+        }
+        /// <summary>
+        /// 继续——空前文拒绝（无可续内容）：不入队、不发请求（防御性出声，不静默）。
+        /// </summary>
+        [Fact]
+        public void Continue_EmptyContext_Rejected()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            session.Continue();
+            PumpUntilIdle(session);
+            Assert.Equal(0, llm.CallCount);
+            Assert.True(session.IsIdle);
+        }
+        /// <summary>
+        /// 继续——跨线程调用路径（HTTP 线程置位 → 主线程 Pump 消费）。
+        /// 回归：2026-09-30 缺陷——Continue 曾在 HTTP 线程直接改会话内部队列（无内存屏障），主线程读不到 → 指令被受理却无轮次；
+        /// 现行 = volatile 置位（与 Pause / SessionNewRequested 同模式）——跨线程置位后主线程必须能启动继续轮。
+        /// </summary>
+        [Fact]
+        public void Continue_FromOtherThread_ConsumedByPump()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "回复";
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("第一轮");
+            PumpUntilIdle(session);
+            int callsBefore = llm.CallCount;
+            // 模拟 HTTP 线程调用（非主线程）——只置位，不碰会话内部队列
+            Thread worker = new Thread(delegate () { session.Continue(); });
+            worker.Start();
+            worker.Join();
+            PumpUntilIdle(session);
+            Assert.Equal(callsBefore + 1, llm.CallCount);
+            // 前文只多回复一条（继续轮不追加用户消息）
+            LlmMessage[] msgs = session.Context.GetMessages();
+            Assert.Equal(LlmRole.Assistant, msgs[msgs.Length - 1].Role);
+        }
     }
 }

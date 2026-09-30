@@ -112,9 +112,8 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 #chatbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--ch-line-faint); font-size: 11px; color: var(--ch-fg-weak); }
 #chatbar .sid { color: var(--ch-identity); font-weight: bold; }
 #uiVer { background: var(--ch-bg-deep); border: 1px solid var(--ch-line); border-radius: 4px; padding: 1px 8px; color: var(--ch-ok-weak); font-size: 11px; }
-#chatNew, #chatRefresh, #chatPause, #chatCacheClear { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
-#chatNew:hover, #chatRefresh:hover, #chatCacheClear:hover, #chatPause:hover:not(:disabled) { background: var(--ch-bg-hover); }
-#chatPause:disabled { opacity: 0.35; cursor: default; }
+#chatNew, #chatRefresh, #chatCacheClear { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
+#chatNew:hover, #chatRefresh:hover, #chatCacheClear:hover { background: var(--ch-bg-hover); }
 /* A59——六态状态条（链路/等待/思考/工具/执行/回复；时长数据源 = 后端运行态）；位于页面最底部（输入框下方）持久存在
    2026-09-22：内容整体居中（原左下靠左 + 右下本轮 Token 统计——后者已去，Token 信息归 roundsum 轮末块） */
 #chatStatus { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 4px 12px; border-top: 1px solid var(--ch-line-faint); font-size: 11px; color: var(--ch-fg-weak); background: var(--ch-bg-page); min-height: 22px; flex-wrap: wrap; }
@@ -333,8 +332,14 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 #chatSendInput { grid-column: 2; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-bubble); color: var(--ch-fg); padding: 7px 10px; font-family: inherit; font-size: 12px; resize: none; line-height: 1.5; }
 #chatSendInput:focus { outline: none; border-color: var(--ch-focus); }
 #chatSendInput:disabled { opacity: 0.5; }
-#chatSendBtn { grid-column: 3; justify-self: start; margin-left: 6px; width: var(--ch-send-w); background: var(--ch-bg-accent); border: none; border-radius: var(--ch-radius-bubble); color: var(--ch-fg-inverse); padding: 7px 0; cursor: pointer; font-family: inherit; font-size: 12px; }
-#chatSendBtn:disabled { opacity: 0.5; cursor: default; }
+/* 输入区动作列（2026-09-30）——停止/继续/发送竖排同列、撑满输入框高度（三格均分）；同款实心、底色区分语义（停止红 / 继续黄 / 发送主色） */
+#chatActions { grid-column: 3; justify-self: start; align-self: stretch; margin-left: 6px; width: var(--ch-send-w); display: flex; flex-direction: column; gap: 6px; }
+.ch-iabtn { flex: 1 1 0; width: 100%; border: none; border-radius: var(--ch-radius-bubble); color: var(--ch-fg-inverse); padding: 0; cursor: pointer; font-family: inherit; font-size: 12px; }
+.ch-iabtn:hover:not(:disabled) { filter: brightness(1.15); }
+.ch-iabtn:disabled { opacity: 0.5; cursor: default; }
+.ch-iabtn-stop { background: var(--ch-bg-danger); }
+.ch-iabtn-continue { background: var(--ch-bg-warn); }
+.ch-iabtn-send { background: var(--ch-bg-accent); }
 /* A65 对话图片附件——待发图片条（网格首行 · 与输入框同列宽；空则整行消失——自动放置不占行） */
 #chatImages { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 #chatImages:empty { display: none; }
