@@ -48,7 +48,7 @@ namespace CH4
             /// <summary>作用域内事件累计——think / 工具完成 / assistant 产出各计 1（状态自述阈值数据源）。</summary>
             public long EventCount;
 
-            /// <summary>上次状态自述时的计数水位——距其再满 10 个事件注入下一条（10 / 20 / 30…）。</summary>
+            /// <summary>上次状态自述时的计数水位——距其再满 25 个事件注入下一条（25 / 50 / 75…）。</summary>
             public long LastNotifyCount;
 
             /// <summary>开锚时的已知前文长度快照——回收时对比算净增（请求级真实 usage 值，零估算）。</summary>
@@ -439,8 +439,8 @@ namespace CH4
                 return "";
             }
         }
-        /// <summary>状态自述步长——作用域内每累计 10 个事件注入一条 assistant 自述（莎 2026-09-28 定）。</summary>
-        private const long TimebackNoticeStep = 10;
+        /// <summary>状态自述步长——作用域内每累计 25 个事件注入一条 user 系统提示（莎 2026-09-30 定：10 → 25）。</summary>
+        private const long TimebackNoticeStep = 25;
         /// <summary>
         /// 作用域内事件计数——think / 工具完成 / assistant 产出各计 1（莎 2026-09-28 定）。
         /// 只累加，不触碰前文——注入时机归批后段 FlushTimebackNotice（批中注入会打乱 tool_call 配对）。
@@ -454,7 +454,7 @@ namespace CH4
             }
             scope.EventCount = scope.EventCount + 1;
         }
-        /// <summary>状态提示注入——批后段调用：距上次提示累计满 10 个事件则追加一条角色 user 的系统提示（source=systemauto）。
+        /// <summary>状态提示注入——批后段调用：距上次提示累计满 25 个事件则追加一条角色 user 的系统提示（source=systemauto）。
         /// C1 纪律：只追加新块、绝不回改历史块（前缀一字未动 → 缓存仍命中）。
         /// 🔴 角色是 user 不是 assistant（判例 2026-09-28 · 1.03.049 运行态）：思考模式下注入的 assistant 无 reasoning_content 回传 → 端点 400（`The reasoning_content in the thinking mode must be passed back to the API`）→ 本轮中止；user 注入走既有系统通道，零协议风险。
         /// 提示块落在作用域区间内——回收时与查证过程一并删除（零残留）；本轮照常续跑，不置工具主动 done。</summary>

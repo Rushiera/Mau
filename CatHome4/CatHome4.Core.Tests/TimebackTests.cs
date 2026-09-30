@@ -502,18 +502,18 @@ namespace CatHome4.Core.Tests
             Directory.Delete(dir, true);
         }
         /// <summary>
-        /// 状态提示（T2）——作用域内累计满 10 个事件（think / 工具完成 / assistant 各计 1）时注入一条 user 系统提示。
+        /// 状态提示（T2）——作用域内累计满 25 个事件（think / 工具完成 / assistant 各计 1）时注入一条 user 系统提示。
         /// 角色 user（source=systemauto）——思考模式下 assistant 注入缺 reasoning 回传会致端点 400（判例 2026-09-28）。
         /// </summary>
         [Fact]
-        public void Notice_InjectedAfterTenEvents()
+        public void Notice_InjectedAfterTwentyFiveEvents()
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"start\",\"purpose\":\"计数取证\"}"));
             // 计数从作用域开启后起算：start 批只计其结果 1（该批 assistant 产出于开锚之前）；
-            // 其后每批 +2（assistant + 工具完成）——第 5 个 random 批后累计 11，越过 10 阈值触发一次自述
-            for (int i = 0; i < 5; i = i + 1)
+            // 其后每批 +2（assistant + 工具完成）——第 12 个 random 批后累计 25，越过 25 阈值触发一次自述
+            for (int i = 0; i < 12; i = i + 1)
             {
                 llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "r" + i.ToString(), "{\"min\":1,\"max\":10}"));
             }
@@ -522,7 +522,7 @@ namespace CatHome4.Core.Tests
             Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
             Assert.True(session.TimebackActive);
             Assert.True(HasMessage(session, LlmRole.User, "你处在 timeback 中"));
-            Assert.True(HasMessage(session, LlmRole.User, "已经历【11】条"));
+            Assert.True(HasMessage(session, LlmRole.User, "已经历【25】条"));
         }
         /// <summary>
         /// 状态提示归作用域区间——回收时与查证过程一并删除（零残留）。
@@ -533,7 +533,8 @@ namespace CatHome4.Core.Tests
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"start\",\"purpose\":\"计数取证\"}"));
-            for (int i = 0; i < 5; i = i + 1)
+            // 先凑满 25 阈值触发一次状态提示（1 + 2×12），再由 back 批验证提示随区间回收删除
+            for (int i = 0; i < 12; i = i + 1)
             {
                 llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "r" + i.ToString(), "{\"min\":1,\"max\":10}"));
             }
