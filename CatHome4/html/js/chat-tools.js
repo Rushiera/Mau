@@ -753,7 +753,7 @@ function chatAgoText(ms) {
     return Math.floor(hour / 24) + ' 天前';
 }
 
-// 分类块 → 键值行（固定顺序：猫 / 版本 / 当前时间 / LLM / 本地端点 / 可见根 / 前文 / 加载包 / QQBot）
+// 分类块 → 键值行（固定顺序：猫 / 版本 / 当前时间 / LLM / 本地端点 / 可见根 / 根路径 / 前文 / 加载包 / QQBot）
 // 缺类不显示该行（后端「无则省略键」约定——前端不补空行、不写 NaN）
 function chatInfoPairs(d) {
     var pairs = [];
@@ -793,14 +793,18 @@ function chatInfoPairs(d) {
     }
     if (d.roots && d.roots.length > 0) {
         var roots = [];
+        var rootPaths = [];
         for (var i = 0; i < d.roots.length; i = i + 1) {
             var r = d.roots[i];
             var one = chatField(r, 'id') + '(' + (r.writable === true ? 'rw' : 'ro') + ')';
             var note = chatField(r, 'note');
             if (note.length > 0) { one = one + '[' + note + ']'; }
             roots.push(one);
+            var rp = chatField(r, 'path');
+            if (rp.length > 0) { rootPaths.push(chatField(r, 'id') + ' → ' + rp); }
         }
         pairs.push({ k: '可见根', v: roots.join(' · ') });
+        if (rootPaths.length > 0) { pairs.push({ k: '根路径', v: rootPaths.join(' · ') }); }
     }
     if (d.tokens && typeof d.tokens === 'object') {
         var ctx = chatFieldNum(d.tokens, 'context');

@@ -67,6 +67,7 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 .box-key { color: var(--ch-info); }
 .box-val { color: var(--ch-fg-strong); }
 .box-tag { color: var(--ch-fg-weak); font-size: var(--ch-fs-sub); }
+.cfg-note { color: var(--ch-fg-faint); font-size: var(--ch-fs-sub); margin-top: 2px; }
 
 /* ── Log 区 ── */
 #logbar { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--ch-line-faint); }

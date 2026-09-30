@@ -881,18 +881,20 @@ test('info——分类 JSON 块：折叠行取版本与猫；输出段按大类�
     time: { now: '2026-09-18 21:00:00' },
     llm: { protocol: 'opencode', host: 'opencode.ai', model: 'deepseek-v4-flash', source: '猫绑定' },
     endpoint: { chat: 'http://127.0.0.1:8085', panel: 'http://127.0.0.1:8080' },
-    roots: [{ id: 'WorkSpace', writable: true, note: '默认工作区域' }, { id: 'Data', writable: false, note: '' }],
+    roots: [{ id: 'WorkSpace', writable: true, note: '默认工作区域', path: 'C:/roots/WorkSpace' }, { id: 'Data', writable: false, note: '', path: 'C:/roots/Data' }],
     tokens: { context: 1234 },
     packs: [{ key: 'overwork', desc: '收工加载包' }],
     qqbot: { usage: 'Coder：发本地文件…' }
   }, null, 2);
   const card = renderTool({ name: 'info', arguments: '{}', result: result }, 130);
   expect(card.querySelector('.tn').textContent).toBe('🧭 环境信息 · v1.03.017 · 猫 cat-abc');
-  expect(card.querySelectorAll('.seg-out .seg-kv').length).toBe(9);
+  expect(card.querySelectorAll('.seg-out .seg-kv').length).toBe(10);
   const out = card.querySelector('.seg-out').textContent;
   expect(out).toContain('http://127.0.0.1:8085');
   expect(out).toContain('http://127.0.0.1:8080');
   expect(out).toContain('WorkSpace(rw)[默认工作区域]');
+  expect(out).toContain('WorkSpace → C:/roots/WorkSpace');
+  expect(out).toContain('Data → C:/roots/Data');
   expect(out).toContain('1234 tokens');
   expect(out).toContain('overwork(收工加载包)');
 });
