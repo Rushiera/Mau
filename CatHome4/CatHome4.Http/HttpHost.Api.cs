@@ -405,5 +405,28 @@ namespace CatHome4.Http
             byte[] bytes = System.IO.File.ReadAllBytes(filePath);
             return Results.Bytes(bytes, mime);
         }
+
+        /// <summary>
+        /// 静态资源服务——html 根**顶层文件**（favicon.ico 等；无路由参数，故与 ServeStatic 分开）。
+        /// 同口径：路径穿越校验（GetFullPath + StartsWith）+ 二进制安全（Bytes 响应）。
+        /// </summary>
+        /// <param name="fileName">文件名（不含路径分隔符）</param>
+        /// <param name="mime">响应 MIME</param>
+        /// <returns>文件响应；未找到/越界 404</returns>
+        private IResult ServeRootFile(string fileName, string mime)
+        {
+            string htmlRoot = System.IO.Path.GetFullPath(_htmlRootProvider.ResolveHtmlRoot());
+            string filePath = System.IO.Path.GetFullPath(System.IO.Path.Combine(htmlRoot, fileName));
+            if (!filePath.StartsWith(htmlRoot + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.NotFound();
+            }
+            if (!System.IO.File.Exists(filePath))
+            {
+                return Results.NotFound();
+            }
+            byte[] bytes = System.IO.File.ReadAllBytes(filePath);
+            return Results.Bytes(bytes, mime);
+        }
     }
 }

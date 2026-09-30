@@ -134,81 +134,28 @@ namespace CH4
         }
 
         // [段3] 托盘——独立 STA 线程 + Application.Run 消息泵（主循环零改动）
-        /// <summary>
-        /// 创建托盘图标——手绘猫脸（橙色圆脸 + 三角耳 + 眼鼻）→ PNG → ICO 容器（Q3：托盘自定义图标）。
-        /// 零外部资源零部署改动：System.Drawing 运行时绘制；ICO 头手写（ICONDIR + ICONDIRENTRY + PNG——C# exp §五 ICO 手写经验）。
-        /// 失败回退系统默认图标（托盘不因图标崩溃）。
-        /// </summary>
+        /// <summary>应用图标加载——从 exe 嵌入图标提取（多尺寸猫爪印 ico 随 ApplicationIcon 编译期嵌入——exe 文件 / 任务栏 / 窗体标题栏 / 托盘四处同源）。失败回退系统图标（托盘不因图标崩溃）。</summary>
         /// <returns>托盘 Icon</returns>
-        private static Icon CreateTrayIcon()
+        private static Icon LoadAppIcon()
         {
             try
             {
-                int size = 32;
-                using (Bitmap bmp = new Bitmap(size, size))
+                string exePath = Environment.ProcessPath;
+                if (exePath != null && exePath.Length > 0)
                 {
-                    using (Graphics g = Graphics.FromImage(bmp))
+                    Icon extracted = Icon.ExtractAssociatedIcon(exePath);
+                    if (extracted != null)
                     {
-                        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                        g.Clear(Color.Transparent);
-                        // 耳朵——左右三角
-                        Point[] leftEar = new Point[] { new Point(4, 11), new Point(13, 3), new Point(15, 12) };
-                        Point[] rightEar = new Point[] { new Point(28, 11), new Point(19, 3), new Point(17, 12) };
-                        using (SolidBrush earBrush = new SolidBrush(Color.FromArgb(255, 200, 120, 40)))
-                        {
-                            g.FillPolygon(earBrush, leftEar);
-                            g.FillPolygon(earBrush, rightEar);
-                        }
-                        // 脸——橙色圆
-                        using (SolidBrush faceBrush = new SolidBrush(Color.FromArgb(255, 230, 140, 50)))
-                        {
-                            g.FillEllipse(faceBrush, 3, 6, 26, 24);
-                        }
-                        // 眼睛——深色椭圆
-                        using (SolidBrush eyeBrush = new SolidBrush(Color.FromArgb(255, 40, 30, 20)))
-                        {
-                            g.FillEllipse(eyeBrush, 9, 13, 4, 5);
-                            g.FillEllipse(eyeBrush, 19, 13, 4, 5);
-                        }
-                        // 鼻子——小三角
-                        Point[] nose = new Point[] { new Point(14, 20), new Point(18, 20), new Point(16, 23) };
-                        using (SolidBrush noseBrush = new SolidBrush(Color.FromArgb(255, 120, 60, 30)))
-                        {
-                            g.FillPolygon(noseBrush, nose);
-                        }
-                    }
-                    using (System.IO.MemoryStream png = new System.IO.MemoryStream())
-                    {
-                        bmp.Save(png, System.Drawing.Imaging.ImageFormat.Png);
-                        byte[] pngData = png.ToArray();
-                        // ICO 容器——ICONDIR(6) + ICONDIRENTRY(16) + PNG 数据（Vista+ 支持 PNG 压缩图标）
-                        using (System.IO.MemoryStream ico = new System.IO.MemoryStream())
-                        {
-                            System.IO.BinaryWriter w = new System.IO.BinaryWriter(ico);
-                            w.Write((short)0);          // reserved
-                            w.Write((short)1);          // type=icon
-                            w.Write((short)1);          // count=1
-                            w.Write((byte)size);        // width
-                            w.Write((byte)size);        // height
-                            w.Write((byte)0);           // colors
-                            w.Write((byte)0);           // reserved
-                            w.Write((short)1);          // planes
-                            w.Write((short)32);         // bitcount
-                            w.Write(pngData.Length);    // bytesInRes
-                            w.Write(22);                // imageOffset
-                            w.Write(pngData);
-                            w.Flush();
-                            ico.Position = 0;
-                            return new Icon(ico);
-                        }
+                        return extracted;
                     }
                 }
+                LogStore.Add("CatHome4", 2, "应用图标提取失败（exe 路径缺失）——回退系统图标", "TRAY");
             }
             catch (Exception ex)
             {
-                LogStore.Add("CatHome4", 2, "托盘图标生成失败（回退系统图标）: " + ex.Message, "TRAY");
-                return SystemIcons.Application;
+                LogStore.Add("CatHome4", 2, "应用图标提取失败（回退系统图标）: " + ex.Message, "TRAY");
             }
+            return SystemIcons.Application;
         }
 
         /// <summary>
@@ -244,8 +191,19 @@ namespace CH4
             NotifyIcon icon = new NotifyIcon();
             try
             {
-                icon.Icon = CreateTrayIcon();
-                icon.Text = "CatHome4";
+                // 区标识与版本并入提示——开发区 / 部署区两实例并存时可区分（A118）
+                string trayArea = "";
+                if (_portBand != null)
+                {
+                    trayArea = _portBand.Area;
+                }
+                string trayVersion = VersionInfo.GetEntryVersion();
+                if (trayVersion.Length == 0)
+                {
+                    trayVersion = "?";
+                }
+                icon.Icon = LoadAppIcon();
+                icon.Text = "CatHome4 " + trayVersion + "（" + trayArea + "）";
                 icon.Visible = true;
                 // Q 通知消费——托盘线程 Timer 轮询队列（BalloonTip 仅 STA 线程安全；任意线程入队不越界）
                 System.Windows.Forms.Timer balloonTimer = new System.Windows.Forms.Timer();
@@ -290,6 +248,14 @@ namespace CH4
 
                 menu.Items.Add(new ToolStripSeparator());
 
+                // 显示控制台——总控窗（A118；窗口线程按需起停，左键单击同入口）
+                ToolStripMenuItem showShellItem = new ToolStripMenuItem("显示控制台");
+                showShellItem.Click += delegate (object sender, EventArgs e)
+                {
+                    ShowShellWindow();
+                };
+                menu.Items.Add(showShellItem);
+
                 // 打开数据目录——复用既有端点逻辑（explorer.exe + LogStore；托盘线程安全）
                 ToolStripMenuItem openDataItem = new ToolStripMenuItem("打开数据目录");
                 openDataItem.Click += delegate (object sender, EventArgs e)
@@ -304,13 +270,22 @@ namespace CH4
                 ToolStripMenuItem exitItem = new ToolStripMenuItem("退出");
                 exitItem.Click += delegate (object sender, EventArgs e)
                 {
-                    _trayExitRequested = true;
                     icon.Visible = false;
-                    Application.Exit();
+                    RequestHostExit();
                 };
                 menu.Items.Add(exitItem);
 
                 icon.ContextMenuStrip = menu;
+
+                // 左键单击——显示/前置总控窗（与菜单项同入口；窗口线程按需起停）
+                icon.MouseClick += delegate (object sender, MouseEventArgs e)
+                {
+                    if (e.Button == MouseButtons.Left)
+                    {
+                        ShowShellWindow();
+                    }
+                };
+
                 Application.Run();
             }
             finally

@@ -98,6 +98,9 @@ namespace CH4
         public static int Main(string[] args)
         {
             _mainThreadId = Environment.CurrentManagedThreadId;
+            // A118 外壳初始化——高 DPI（必须早于任何窗口创建）+ 启动时刻（已运行时间基准）+ AUMID（通知图标身份键）
+            ShellInit();
+            InitAppUserModelId();
             try
             {
                 Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -116,6 +119,11 @@ namespace CH4
                     Console.WriteLine("[CMD] " + argErr);
                     return 1;
                 }
+                // A118：非交互模式输出双写落盘（WinExe 无控制台——shell 直调取不到 stdout；父进程重定向链路不受影响）
+                if (nonInteractive)
+                {
+                    EnableCmdCapture();
+                }
                 _majordomoPush = ExtractArgValue(args, "--majordomopush");
                 // [段1b] 探针通道——LLM 返回体结构诊断（方案 B：宿主能力；不启动宿主/不占端口/不载语料，先于 Bootstrap 返回）
                 if (HasProbeLlmArg(args))
@@ -131,12 +139,12 @@ namespace CH4
                 catch (Exception ex)
                 {
                     Console.WriteLine("[CMD] 启动失败: " + ex.Message);
-                    // 脚本/自检模式无人值守不暂停；交互模式暂停——错误可见（双击 exe 不闪退）
-                    bool pauseOnFail = !nonInteractive;
-                    if (pauseOnFail)
+                    // A118：WinExe 无控制台——启动失败必须可见（原 Console.ReadKey 在无控制台时抛异常且失败静默）；
+                    // 脚本/自检/探针模式无人值守不弹窗，仅以退出码 1 表达
+                    bool showFailBox = !nonInteractive;
+                    if (showFailBox)
                     {
-                        Console.WriteLine("[CMD] 按任意键退出……");
-                        Console.ReadKey();
+                        ShowStartupFailure(ex.Message);
                     }
                     return 1;
                 }
@@ -198,6 +206,8 @@ namespace CH4
                 // O4 优雅收尾——统一观测四文件 flush 落盘（0 字节判例根因修复：--run 模式直接 return 丢缓冲）
                 LogStore.CloseWriters();
                 FrameStore.Close();
+                // A118：非交互输出落盘收尾
+                CloseCmdCapture();
                 // A110 浏览器实例清理——Chromium detach（宿主退出不带走子进程）；不清会留孤儿实例占用 profile
                 IBrowserLifecycle browserLifecycle;
                 DataBox.TryResolve<IBrowserLifecycle>(out browserLifecycle);

@@ -56,11 +56,12 @@ namespace CH4
         /// <returns>退出码</returns>
         private static int RunInteractive()
         {
-            Console.WriteLine("[CMD] 指令: QuickCat <system>|<content> | Chat <内容> | status | reload <quick|dev> [dll] | run <n> | pid | quit");
             // 运行模式标记——工具侧读取（非常驻模式 = 无闸门可等，重启请求直接拒绝；design-ch4-host-restart §五）
             DataBox.Set<string>("global", RunModeKey, "interactive");
-            // P1 托盘——独立 STA UI 线程（开机自启勾选/打开数据目录/退出）；仅交互模式启用（无头通道保持纯文本）
+            // P1 托盘——独立 STA UI 线程（常驻：开机自启 / 打开数据目录 / 显示控制台 / 退出）；仅交互模式启用
             StartTray();
+            // A118 外壳——启动显示一次总控窗（WinExe 形态的启动反馈；关闭即结束窗线程，再点托盘重新拉起）
+            ShowShellWindow();
             int autoStartPoll = 0;
             while (true)
             {
@@ -89,25 +90,8 @@ namespace CH4
                     autoStartPoll = 0;
                     CheckAutoStartPoll();
                 }
-                // [段2] 按键轮询——有输入才 ReadLine（阻塞读会卡住帧驱动）
-                if (Console.KeyAvailable)
-                {
-                    string line = Console.ReadLine();
-                    if (line == null)
-                    {
-                        break;
-                    }
-                    line = line.Trim();
-                    if (line.Length == 0)
-                    {
-                        Thread.Sleep(FrameSleepMs);
-                        continue;
-                    }
-                    if (!ExecuteLine(line))
-                    {
-                        break;
-                    }
-                }
+                // [段2] A118 起交互输入面退役——WinExe 无控制台（Console.KeyAvailable 会抛 InvalidOperationException）；
+                // 控制台指令（status / pid / reload / Chat / quit）不再由交互形态承载，仅 --script / --run 等非交互通道保留 ExecuteLine
                 Thread.Sleep(FrameSleepMs);
             }
             return 0;
