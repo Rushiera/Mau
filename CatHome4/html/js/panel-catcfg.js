@@ -142,7 +142,7 @@ function renderGroupedChecks(boxId, allTools, checked, privilegedMode) {
     for (var g = 0; g < order.length; g++) {
         (function (groupName, tools) {
             var head = document.createElement('label');
-            head.style.cssText = 'display:flex;align-items:center;gap:4px;width:100%;background:var(--ch-bg-elevated);border:1px solid var(--ch-line-strong);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--ch-warn);cursor:pointer;font-weight:bold';
+            head.style.cssText = 'display:flex;align-items:center;gap:4px;width:100%;background:var(--ch-bg-elevated);border:1px solid var(--ch-line-strong);border-radius:4px;padding:3px 8px;font-size:var(--ch-fs-tag);color:var(--ch-warn);cursor:pointer;font-weight:bold';
             var hcb = document.createElement('input');
             hcb.type = 'checkbox';
             head.appendChild(hcb);
@@ -154,7 +154,7 @@ function renderGroupedChecks(boxId, allTools, checked, privilegedMode) {
             for (var t = 0; t < tools.length; t++) {
                 (function (tool) {
                     var label = document.createElement('label');
-                    label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--ch-fg);cursor:pointer';
+                    label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:var(--ch-fs-tag);color:var(--ch-fg);cursor:pointer';
                     var cb = document.createElement('input');
                     cb.type = 'checkbox';
                     cb.className = 'tool-cb';
@@ -282,11 +282,11 @@ function renderInjectList(list) {
             row.title = '拖动调整顺序（保存后生效）';
             var handle = document.createElement('span');
             handle.textContent = '≡';
-            handle.style.cssText = 'color:var(--ch-fg-weak);font-size:12px;cursor:move';
+            handle.style.cssText = 'color:var(--ch-fg-weak);font-size:var(--ch-fs-tag);cursor:move';
             row.appendChild(handle);
             var txt = document.createElement('span');
             txt.textContent = catCfgInjectList[idx];
-            txt.style.cssText = 'flex:1;color:var(--ch-ok-weak);font-size:11px;word-break:break-all';
+            txt.style.cssText = 'flex:1;color:var(--ch-ok-weak);font-size:var(--ch-fs-tag);word-break:break-all';
             row.appendChild(txt);
             var rm = document.createElement('button');
             rm.textContent = '移除';
@@ -368,7 +368,7 @@ function renderRootChecks(allRoots, enabledRoots) {
     var hasEnabled = enabledRoots && enabledRoots.length > 0;
     if (!hasEnabled) {
         var tip = document.createElement('div');
-        tip.style.cssText = 'width:100%;font-size:11px;color:var(--ch-err);margin-bottom:4px';
+        tip.style.cssText = 'width:100%;font-size:var(--ch-fs-tag);color:var(--ch-err);margin-bottom:4px';
         tip.textContent = '⚠ 未配置根白名单——本猫仅常驻 workspace 可用（保存一次即固化为显式清单）';
         box.appendChild(tip);
     }
@@ -378,7 +378,7 @@ function renderRootChecks(allRoots, enabledRoots) {
             var isFixed = root.fixedRoot === true;
             var isWs = rid === 'workspace' || rid === 'runtime';
             var label = document.createElement('label');
-            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--ch-fg);cursor:pointer';
+            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:var(--ch-fs-tag);color:var(--ch-fg);cursor:pointer';
             var cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.className = 'root-cb';
@@ -439,11 +439,11 @@ function renderTplInject() {
             row.title = '拖动调整顺序（保存后生效）';
             var handle = document.createElement('span');
             handle.textContent = '≡';
-            handle.style.cssText = 'color:var(--ch-fg-weak);font-size:12px;cursor:move';
+            handle.style.cssText = 'color:var(--ch-fg-weak);font-size:var(--ch-fs-tag);cursor:move';
             row.appendChild(handle);
             var txt = document.createElement('span');
             txt.textContent = tplInjectList[idx];
-            txt.style.cssText = 'flex:1;color:var(--ch-ok-weak);font-size:11px;word-break:break-all';
+            txt.style.cssText = 'flex:1;color:var(--ch-ok-weak);font-size:var(--ch-fs-tag);word-break:break-all';
             row.appendChild(txt);
             var rm = document.createElement('button');
             rm.textContent = '移除';
@@ -772,7 +772,7 @@ function renderPackChecks(allPacks, packs) {
     box.textContent = '';
     if (!allPacks || allPacks.length === 0) {
         var empty = document.createElement('span');
-        empty.style.cssText = 'font-size:11px;color:var(--ch-fg-weak)';
+        empty.style.cssText = 'font-size:var(--ch-fs-tag);color:var(--ch-fg-weak)';
         empty.textContent = '（池为空——在配置页「加载包池」新建）';
         box.appendChild(empty);
         return;
@@ -784,7 +784,7 @@ function renderPackChecks(allPacks, packs) {
     for (var j = 0; j < allPacks.length; j++) {
         (function (pack) {
             var label = document.createElement('label');
-            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--ch-fg);cursor:pointer';
+            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:var(--ch-fs-tag);color:var(--ch-fg);cursor:pointer';
             var cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.className = 'pack-cb';
@@ -818,7 +818,7 @@ function renderTplPacks(allPacks, defaultPacks) {
     box.textContent = '';
     if (!allPacks || allPacks.length === 0) {
         var empty = document.createElement('span');
-        empty.style.cssText = 'font-size:11px;color:var(--ch-fg-weak)';
+        empty.style.cssText = 'font-size:var(--ch-fs-tag);color:var(--ch-fg-weak)';
         empty.textContent = '（池为空——在「加载包池」区新建）';
         box.appendChild(empty);
         return;
@@ -830,7 +830,7 @@ function renderTplPacks(allPacks, defaultPacks) {
     for (var j = 0; j < allPacks.length; j++) {
         (function (pack) {
             var label = document.createElement('label');
-            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--ch-fg);cursor:pointer';
+            label.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--ch-bg-chip);border:1px solid var(--ch-line);border-radius:4px;padding:3px 8px;font-size:var(--ch-fs-tag);color:var(--ch-fg);cursor:pointer';
             var cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.className = 'tpl-pack-cb';

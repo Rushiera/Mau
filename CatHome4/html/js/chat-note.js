@@ -22,7 +22,7 @@ function noteRender() {
             if (bubble) { bubble.textContent = 'Note · 空'; }
             if (title) { title.textContent = 'Note · 空'; }
         }
-        if (list) { list.innerHTML = '<div class="note-row" style="color:var(--ch-fg-weak);font-size:12px">暂无计划——可手动新增任务</div>'; }
+        if (list) { list.innerHTML = '<div class="note-row" style="color:var(--ch-fg-weak);font-size:var(--ch-fs-tag)">暂无计划——可手动新增任务</div>'; }
         return;
     }
     // 按钮——条数 + 当前任务摘要（30 字截断——固定大小不撑布局）

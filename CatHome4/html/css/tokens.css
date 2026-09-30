@@ -4,6 +4,16 @@
    纪律：改色只改本文件；组件面零裸色值；L3 为独立色系——与 L1 同值不算重复
    加载：两页 <link> 先于页样式（tokens.css → style.css / chat.css） */
 :root {
+    /* ============ L1 字号阶梯（五档 + 全局缩放） ============ */
+    /* 全局缩放——前端读配置 ui.font_scale 注入（100 = 基准；本地适配不同桌面缩放倍率）；
+       档位基准 px 与缩放系数解耦：调基准改档位，调系数改整站观感 */
+    --ch-fs-scale: 1;
+    --ch-fs-tag: calc(12px * var(--ch-fs-scale));       /* 标签角标——chip / badge / 工具卡 / 系统气泡 / 状态条 / 小控件 */
+    --ch-fs-sub: calc(13px * var(--ch-fs-scale));       /* 次要内容——次级信息行 / 辅助说明 */
+    --ch-fs-body: calc(14px * var(--ch-fs-scale));      /* 正文——气泡正文 / 日志 / 表格 */
+    --ch-fs-strong: calc(15px * var(--ch-fs-scale));    /* 强调正文——主面板行 / 管理标题 */
+    --ch-fs-title: calc(16px * var(--ch-fs-scale));     /* 标题——猫名 / 区块标题 */
+
     /* ============ L1 界面基础 ============ */
     /* 背景 */
     --ch-bg-page: #141414;          /* 页面底 / Note 弹层底 */

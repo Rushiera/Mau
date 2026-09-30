@@ -371,8 +371,8 @@ namespace CatHome4.Core.Tests
                             "{\"proj\":\"corpus/ch4/text_cat/text_cat.mauproj\",\"build\":true}",
                             "{\"mode\":\"prepare\"}",
                             "{}",
-                            "{\"key\":\"ui.chat_font_size\",\"value\":\"15\"}",
-                            "{\"key\":\"ui.chat_font_size\"}",
+                            "{\"key\":\"ui.font_scale\",\"value\":\"15\"}",
+                            "{\"key\":\"ui.font_scale\"}",
                             "{\"cat\":\"tb\",\"field\":\"displayName\",\"value\":\"x\"}",
                             "cat.list"
                 });

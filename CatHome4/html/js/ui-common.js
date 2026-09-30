@@ -16,15 +16,15 @@ function loadUiVersion() {
 }
 
 /**
- * ui.* 字号配置 → CSS 变量（P8.5d 接线——读配置覆盖 CSS 默认；读不到默认 14px；全局字号配置已移除——静态提档替代 2026-08-28）
- * @param {Array} items 配置项列表（/api/v1/config 的 items 段；缺失按默认 14px 处理）
+ * ui.* 字号缩放配置 → CSS 变量（读配置覆盖 tokens.css 默认；读不到或越界一律按默认 100）
+ * @param {Array} items 配置项列表（/api/v1/config 的 items 段；缺失按默认 100 处理）
  */
 function applyUiConfig(items) {
-    var chat = 14;
+    var scale = 100;
     for (var i = 0; i < (items || []).length; i++) {
-        if (items[i].key === 'ui.chat_font_size') { var c = parseInt(items[i].value, 10); if (c > 0) { chat = c; } }
+        if (items[i].key === 'ui.font_scale') { var v = parseInt(items[i].value, 10); if (v >= 50 && v <= 300) { scale = v; } }
     }
-    document.documentElement.style.setProperty('--chat-font-size', chat + 'px');
+    document.documentElement.style.setProperty('--ch-fs-scale', String(scale / 100));
 }
 
 function loadUiConfig() {
