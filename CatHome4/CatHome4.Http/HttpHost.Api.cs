@@ -374,9 +374,9 @@ namespace CatHome4.Http
             return "0";
         }
 
-        /// <summary>静态资源服务——html/css|js|pet/{file}（路径穿越校验 GetFullPath+StartsWith；禁缓存同 index 策略；二进制安全——Bytes 响应）。</summary>
+        /// <summary>静态资源服务——html/css|js|pet|fonts/{file}（路径穿越校验 GetFullPath+StartsWith；缓存口径按面——fonts 长缓存 / 其余禁缓存；二进制安全——Bytes 响应）。</summary>
         /// <param name="ctx">HTTP 上下文</param>
-        /// <param name="subDir">子目录名（css/js/pet）</param>
+        /// <param name="subDir">子目录名（css/js/pet/fonts）</param>
         /// <param name="mime">响应 MIME</param>
         /// <returns>文件响应；未找到/越界 404</returns>
         private IResult ServeStatic(HttpContext ctx, string subDir, string mime)
@@ -399,8 +399,16 @@ namespace CatHome4.Http
             {
                 return Results.NotFound();
             }
-            // 禁缓存——前端频繁迭代（同 index 策略）
-            ctx.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+            // 缓存口径分面（A120）——fonts：几十 MB 二进制走长缓存（URL 固定，换代随文件名/版本变化）；
+            // 其余静态资源保持禁缓存（前端频繁迭代，同 index 策略）
+            if (subDir == "fonts")
+            {
+                ctx.Response.Headers["Cache-Control"] = "public, max-age=604800";
+            }
+            else
+            {
+                ctx.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+            }
             // 二进制安全——文本（css/js）与二进制（pet webp）共用；ReadAllText 会破坏二进制资源
             byte[] bytes = System.IO.File.ReadAllBytes(filePath);
             return Results.Bytes(bytes, mime);

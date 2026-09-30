@@ -184,6 +184,15 @@ namespace CH4
                 scope.Id = archive.NextId();
             }
             _timebackScope = scope;
+            // [段6] 浏览器实例预热（A123）——域 = 浏览器进程容器：开锚即起进程，锚关即关（CloseCat）；
+            // 锚内 browser-* 工具只操作该进程（多页签 = 同一进程内的多个 target），不涉及孤儿与交接。
+            // 失败不阻断开锚（浏览器起不来不该让取证任务开不了局）——锚内工具调用会重试并如实返回 ERR
+            Mau.Runtime.IBrowserLifecycle browserLifecycle;
+            Mau.Runtime.DataBox.TryResolve<Mau.Runtime.IBrowserLifecycle>(out browserLifecycle);
+            if (browserLifecycle != null)
+            {
+                browserLifecycle.PrepareCat(_catKey);
+            }
             Dictionary<string, object> fields = new Dictionary<string, object>();
             fields["id"] = scope.Id;
             fields["anchor"] = declIndex;

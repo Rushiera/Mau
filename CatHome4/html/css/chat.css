@@ -84,7 +84,9 @@
     --ch-tok-completion: var(--ch-ok);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--ch-bg-page); color: var(--ch-fg); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var(--ch-fg); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+/* 内容面字体（A120）——对话正文/思考/工具卡/Note/定时/插话队列走内容字体（更纱等宽）；界面控件与状态条继承 body */
+.chat-bubble, .chat-think, .chat-tool, .note-row, .delay-row, #chatPendingPanel { font-family: var(--ch-font-content); }
 
 /* ============ 滚动条——深色配色统一（2026-09-17） ============ */
 /* 动机：默认滚动条走系统浅色样式（白底轨道），与深色界面割裂 */
@@ -222,7 +224,7 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-think.done.full .ct-full { display: block; max-height: var(--ch-think-max-h); overflow: auto; white-space: pre-wrap; word-break: break-all; }
 /* 内层卡不再自绘底与边（2026-09-17）——原黑底 + 内框与气泡底/描边重复（失败时成两圈）；
    类型识别由气泡描边承担；无内边距（原 padding-top 5px 致折叠单行偏下——同 .chat-think 处理） */
-.chat-tool { font-size: var(--ch-fs-tag); color: var(--ch-chat-tool-fg); font-family: Consolas, monospace; }
+.chat-tool { font-size: var(--ch-fs-tag); color: var(--ch-chat-tool-fg); font-family: var(--ch-font-content); }
 .chat-tool:not(:first-child) { margin-top: 6px; }
 .chat-tool summary { cursor: pointer; color: var(--ch-tool-name); }
 .chat-tool .tn { color: var(--ch-tool-name); }
@@ -327,7 +329,7 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
    列宽基准 = 视口宽（本容器无左右 padding）；输入框与气泡同宽同左缘，发送按钮固定宽落在右预留带、贴列右缘；
    无上边框——输入区与气泡区之间不画分割线。
    🔴 无 column-gap——列间距会把第 2 列整体右推，输入框左缘即与气泡左缘错开；按钮间距由自身 margin 承担 */
-#chatinput { display: grid; grid-template-columns: var(--ch-col-left) var(--ch-col-w) 1fr; row-gap: 6px; padding: 8px 0; align-items: end; }
+#chatinput { position: relative; display: grid; grid-template-columns: var(--ch-col-left) var(--ch-col-w) 1fr; row-gap: 6px; padding: 8px 0; align-items: end; }
 #chatSendInput { grid-column: 2; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-bubble); color: var(--ch-fg); padding: 7px 10px; font-family: inherit; font-size: var(--ch-fs-tag); resize: none; line-height: 1.5; }
 #chatSendInput:focus { outline: none; border-color: var(--ch-focus); }
 #chatSendInput:disabled { opacity: 0.5; }
@@ -354,13 +356,16 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .chat-imgs .chat-img img { max-height: 96px; max-width: 168px; }
 .chat-user-text { white-space: pre-wrap; }
-/* M4c Note——Q3 v2（2026-09-08）：输入区上方按钮（固定不占布局）+ 点击展开气泡区域（popover 贴按钮上方；高度变化零影响聊天区） */
-/* 2026-09-17：横向排布——Note 气泡 + 跳底按钮并排（popover 仍贴 wrap 上方居中）；bottom 随输入区 3→5 行 +36px */
-#noteWrap { position: fixed; bottom: 148px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: row; align-items: center; gap: 6px; }
+/* M4c Note——输入区上方按钮行（不占布局）+ 点击展开气泡区域（popover 贴按钮上方；再点按钮/点外部收起——高度变化零影响聊天区） */
+/* 2026-09-17：横向排布——Note 气泡 + 跳底按钮并排（popover 仍贴 wrap 上方居中） */
+/* A121 几何修正（2026-10-01）——原 `position: fixed; bottom: 148px` 是硬编码像素：ui.font_scale 放大 → 输入框变高 → 按钮行被输入区吞掉（遮挡输入文字）。
+   现基准改 #chatinput（position: relative）——bottom:100% = 输入区顶边，再留 8px 间距；按钮行随输入区高度自动让位
+   （字号缩放 / 输入行数 / 待发图片行 / 插话队列变化均不再遮挡）；本块已随之移入 #chatinput 内（绝对定位，不参与 grid 行） */
+#noteWrap { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: row; align-items: center; gap: 6px; }
 #noteBubble { background: var(--ch-note-bg); border: 1px solid var(--ch-note-line); border-radius: 14px; color: var(--ch-note-fg); font-size: var(--ch-fs-tag); padding: 4px 14px; cursor: pointer; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 2px 8px var(--ch-shadow-soft); user-select: none; }
 #noteBubble:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
 /* 跳底按钮——回到最新内容（无条件滚到底；与智能跟随互不影响，2026-09-17） */
-#chatJumpBottom { width: 26px; height: 26px; padding: 0; border-radius: 50%; background: var(--ch-note-bg); border: 1px solid var(--ch-note-line); color: var(--ch-note-fg); font-family: inherit; font-size: var(--ch-fs-sub); line-height: 1; cursor: pointer; box-shadow: 0 2px 8px var(--ch-shadow-soft); user-select: none; }
+#chatJumpBottom { width: 2em; height: 2em; padding: 0; border-radius: 50%; background: var(--ch-note-bg); border: 1px solid var(--ch-note-line); color: var(--ch-note-fg); font-family: inherit; font-size: var(--ch-fs-sub); line-height: 1; cursor: pointer; box-shadow: 0 2px 8px var(--ch-shadow-soft); user-select: none; }
 #chatJumpBottom:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
 #notePopover { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: var(--ch-bg-page); border: 1px solid var(--ch-line); border-radius: 8px; width: min(520px, 80vw); max-height: 60vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px var(--ch-shadow-strong); }
 .note-popover-head { padding: 8px 14px; border-bottom: 1px solid var(--ch-line-faint); color: var(--ch-identity); font-weight: bold; font-size: var(--ch-fs-tag); }
@@ -368,7 +373,7 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .note-row { display: flex; gap: 6px; align-items: baseline; color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); word-break: break-all; }
 .note-row.done { color: var(--ch-note-done); text-decoration: line-through; }
 .note-row.current { color: var(--ch-warn); }
-.note-row .mark { flex-shrink: 0; font-family: Consolas, monospace; }
+.note-row .mark { flex-shrink: 0; font-family: var(--ch-font-content); }
 #noteAddRow { display: flex; gap: 6px; padding: 8px 14px; border-top: 1px dashed var(--ch-line-soft); }
 #noteAddInput { flex: 1; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: var(--ch-fs-tag); }
 #noteAddInput:focus { outline: none; border-color: var(--ch-focus); }
@@ -392,9 +397,9 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .delay-empty { color: var(--ch-fg-weak); font-size: var(--ch-fs-tag); }
 .delay-row { display: flex; gap: 8px; align-items: baseline; color: var(--ch-fg); font-size: var(--ch-fs-tag); padding: 2px 0; }
 .delay-mark { flex-shrink: 0; font-size: var(--ch-fs-tag); }
-.delay-cd { flex-shrink: 0; min-width: 58px; color: var(--ch-warn); font-family: Consolas, monospace; font-size: var(--ch-fs-sub); font-weight: bold; }
+.delay-cd { flex-shrink: 0; min-width: 58px; color: var(--ch-warn); font-family: var(--ch-font-content); font-size: var(--ch-fs-sub); font-weight: bold; }
 .delay-cd.soon { color: var(--ch-err); }
-.delay-due { flex-shrink: 0; color: var(--ch-fg-weak); font-family: Consolas, monospace; font-size: var(--ch-fs-tag); }
+.delay-due { flex-shrink: 0; color: var(--ch-fg-weak); font-family: var(--ch-font-content); font-size: var(--ch-fs-tag); }
 .delay-text { flex: 1; word-break: break-all; }
 .delay-act { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 1px 8px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
 .delay-act:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
@@ -441,11 +446,11 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 /* 段落 */
 .chat-bubble .md-block p { margin: 4px 0; white-space: pre-wrap; word-break: break-all; }
 /* 行内代码 */
-.chat-bubble .md-block code { background: var(--ch-md-inline-code-bg); border-radius: 3px; padding: 1px 4px; font-family: Consolas, monospace; font-size: 0.9em; color: var(--ch-md-inline-code-fg); }
+.chat-bubble .md-block code { background: var(--ch-md-inline-code-bg); border-radius: 3px; padding: 1px 4px; font-family: var(--ch-font-content); font-size: 0.9em; color: var(--ch-md-inline-code-fg); }
 /* 代码块——pre 内部必须 white-space:pre 保留缩进换行；横向溢出滚动 */
 .chat-bubble .md-block pre {
     background: var(--ch-md-code-bg); border: 1px solid var(--ch-md-line); border-radius: 4px; padding: 8px 10px; margin: 6px 0;
-    font-family: Consolas, monospace; font-size: 0.9em; line-height: 1.5;
+    font-family: var(--ch-font-content); font-size: 0.9em; line-height: 1.5;
     white-space: pre; word-break: normal; overflow-x: auto; max-width: 100%;
 }
 .chat-bubble .md-block pre code { background: none; padding: 0; font-size: 1em; color: var(--ch-md-code-fg); }

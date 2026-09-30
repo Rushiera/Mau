@@ -276,6 +276,26 @@ namespace CH4
             }
             LogStore.Add("CatHome4", 1, "浏览器实例清理完成，共 " + i.ToString() + " 个", "BROWSER");
         }
+        /// <summary>
+        /// 预热指定猫的浏览器实例——timeback 开锚时调用（A123 域级生命周期主路径）。
+        /// 起失败不抛（开锚不该被浏览器问题阻断）：错误已记日志，锚内工具调用会再试一次并如实返回 ERR。
+        /// </summary>
+        /// <param name="catId">猫 key</param>
+        public void PrepareCat(string catId)
+        {
+            if (catId.Length == 0)
+            {
+                return;
+            }
+            string error = "";
+            CatBrowser browser = Ensure(catId, out error);
+            if (browser == null)
+            {
+                LogStore.Add("CatHome4", 2, "开锚预热浏览器未成功（锚内工具调用会重试）: " + error, "BROWSER");
+                return;
+            }
+            LogStore.Add("CatHome4", 1, "开锚预热浏览器就绪: " + catId + " port=" + browser.Port.ToString(), "BROWSER");
+        }
 
         /// <summary>
         /// 关闭并清理指定猫的实例——timeback 作用域回收时调用（域级生命周期主路径）。
@@ -309,6 +329,18 @@ namespace CH4
             {
                 Cleanup(targets[i]);
                 i = i + 1;
+            }
+            // 兜底（A123）——本次宿主未曾接管的残留实例（宿主上次被强杀遗留）不在内存表里，
+            // 但锚文件仍指向它：域结束 = 实例不该存在，按锚补一刀（探测不通即静默返回）
+            if (catId.Length > 0)
+            {
+                string anchor = Path.Combine(_dataRoot, "Data", "browser", catId, "port.txt");
+                int stale = ReadAnchorPort(anchor);
+                if (stale > 0)
+                {
+                    CloseBrowserProcess(stale);
+                }
+                ClearPortAnchor(anchor);
             }
             if (i > 0)
             {
@@ -423,9 +455,7 @@ namespace CH4
             }
         }
 
-        /// <summary>
-        /// 取本猫实例——存活则复用，否则懒启动（失败返回 null 并给错误文本）
-        /// </summary>
+        /// <summary>取本猫实例——三级取用：内存实例存活复用 → 接管 profile 内活实例（A122）→ 懒启动（失败返回 null 并给错误文本）</summary>
         /// <param name="catId">猫 key</param>
         /// <param name="error">失败时的 ERR| 文本</param>
         /// <returns>可用实例或 null</returns>
@@ -450,12 +480,97 @@ namespace CH4
                     Cleanup(existing);
                     _cats.Remove(catId);
                 }
+                // 接管优先（A122）——宿主重启后 _cats 为空，但 profile 里可能有活实例
+                // （Chromium detach：启动器进程退出、真正的 browser 进程存活并持有调试端口）。
+                // 端口文件 + CDP 探测是唯一稳定锚：接管成功即零启动开销，同时避开
+                // 「起新进程 → 被转交旧实例后退出 → DevToolsActivePort 永不出现」的启动失败
+                CatBrowser adopted = TryAdopt(catId);
+                if (adopted != null)
+                {
+                    _cats[catId] = adopted;
+                    return adopted;
+                }
                 CatBrowser launched = Launch(catId, out error);
                 if (launched == null)
                 {
                     return null;
                 }
                 return launched;
+            }
+        }
+        /// <summary>
+        /// 读端口锚文件（首行端口号）——文件缺失 / 首行非正整数 / 读取异常一律返回 0（调用方按无锚处理）
+        /// </summary>
+        /// <param name="file">锚文件路径</param>
+        /// <returns>端口号；0=无有效锚</returns>
+        private static int ReadAnchorPort(string file)
+        {
+            try
+            {
+                if (!File.Exists(file))
+                {
+                    return 0;
+                }
+                string[] lines = File.ReadAllLines(file);
+                if (lines.Length == 0)
+                {
+                    return 0;
+                }
+                int port = 0;
+                if (!int.TryParse(lines[0].Trim(), out port) || port <= 0)
+                {
+                    return 0;
+                }
+                return port;
+            }
+            catch (IOException)
+            {
+                return 0;
+            }
+        }
+        /// <summary>
+        /// 接管已存在的浏览器实例（A122）——读 profile 里的 DevToolsActivePort，端口可连则复用（不启新进程）。
+        /// 动机：Chromium detach——启动器进程写完端口文件后即退出，真正的 browser 进程存活并持有 profile 与调试端口；
+        /// 宿主重启 / 进程句柄失效后，起新进程会被「转交旧实例」并立即退出，DevToolsActivePort 永不出现（A110 判例根治）。
+        /// </summary>
+        /// <param name="catId">猫 key</param>
+        /// <returns>接管成功的实例（Edge 为空——无进程句柄）；无活实例返回 null</returns>
+        private CatBrowser TryAdopt(string catId)
+        {
+            string dir = Path.Combine(_dataRoot, "Data", "browser", catId);
+            string profileDir = Path.Combine(dir, "profile");
+            // 锚双源（A122）——自维护 port.txt（启动成功时落盘、从不删除）优先；
+            // Chromium 的 DevToolsActivePort 兜底（它会被下次启动删除，失败路径后可能已缺失）
+            int port = ReadAnchorPort(Path.Combine(dir, "port.txt"));
+            if (port == 0)
+            {
+                port = ReadAnchorPort(Path.Combine(profileDir, "DevToolsActivePort"));
+            }
+            if (port == 0)
+            {
+                return null;
+            }
+            try
+            {
+                // 端口探测——只认 CDP 有响应者（陈旧锚在此被拒，随后由 Launch 重建）
+                string probe = HttpCall("http://127.0.0.1:" + port.ToString() + "/json/version", false);
+                if (probe.Length == 0)
+                {
+                    return null;
+                }
+                CatBrowser adopted = new CatBrowser();
+                adopted.CatId = catId;
+                adopted.Port = port;
+                adopted.ProfileDir = profileDir;
+                adopted.OutDir = Path.Combine(dir, "out");
+                AttachTarget(adopted, "");
+                LogStore.Add("CatHome4", 1, "接管已有浏览器实例: " + catId + " port=" + port.ToString(), "BROWSER");
+                return adopted;
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 1, "接管探测失败（按无实例处理）: " + ex.Message, "BROWSER");
+                return null;
             }
         }
 
@@ -557,8 +672,79 @@ namespace CH4
                 return null;
             }
             _cats[catId] = browser;
+            // 持久端口锚（A122）——DevToolsActivePort 会被下次启动删除，一旦启动失败就永久丢锚；
+            // 本文件只在启动成功时覆写、从不删除：宿主重启 / 启动失败后据此接管存活实例
+            try
+            {
+                File.WriteAllText(Path.Combine(dir, "port.txt"), port.ToString());
+            }
+            catch (IOException ex)
+            {
+                LogStore.Add("CatHome4", 2, "端口锚落盘失败（接管能力降级）: " + ex.Message, "BROWSER");
+            }
             LogStore.Add("CatHome4", 1, "浏览器实例就绪: " + catId + " port=" + port.ToString() + " pid=" + proc.Id.ToString() + " target=" + browser.TargetId, "BROWSER");
             return browser;
+        }
+        /// <summary>
+        /// 关闭浏览器进程（A123）——连 browser 级 CDP 端点发 Browser.close，浏览器自行退出（连带全部子进程）。
+        /// 为什么不靠进程句柄：`Process.Start` 拿到的是 Chromium **启动器进程**，它写完 DevToolsActivePort 即退出；
+        /// 真正持有 profile 的 browser 进程既不在这条句柄链上、也不在任何 pid 文件里——只有 CDP 端点认得它。
+        /// </summary>
+        /// <param name="port">CDP 端口（≤0 视为无实例，直接返回）</param>
+        private static void CloseBrowserProcess(int port)
+        {
+            if (port <= 0)
+            {
+                return;
+            }
+            try
+            {
+                string version = HttpCall("http://127.0.0.1:" + port.ToString() + "/json/version", false);
+                string wsUrl = ExtractJsonString(version, "webSocketDebuggerUrl");
+                if (wsUrl.Length == 0)
+                {
+                    return;
+                }
+                ClientWebSocket ws = new ClientWebSocket();
+                ws.ConnectAsync(new Uri(wsUrl), CancellationToken.None).GetAwaiter().GetResult();
+                CdpClient cdp = new CdpClient(ws);
+                try
+                {
+                    cdp.Call("Browser.close", "{}");
+                }
+                catch (Exception ex)
+                {
+                    // Browser.close 一生效，浏览器立即退出、连接随之断开——握手未完成属预期，不是失败
+                    LogStore.Add("CatHome4", 1, "Browser.close 已发出（连接随实例退出关闭，预期）: " + ex.Message, "BROWSER");
+                    ws.Dispose();
+                    return;
+                }
+                ws.Dispose();
+                LogStore.Add("CatHome4", 1, "浏览器进程已关闭（CDP Browser.close）: port=" + port.ToString(), "BROWSER");
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 1, "Browser.close 未能发出（实例可能已退出）: " + ex.Message, "BROWSER");
+            }
+        }
+        /// <summary>
+        /// 清理端口锚文件——域回收 / 实例关闭后调用：锚只在实例存活期间有意义，
+        /// 留着会让下次启动读到陈旧端口（探测虽会拒绝，但白付一次探测）。
+        /// </summary>
+        /// <param name="file">锚文件路径</param>
+        private static void ClearPortAnchor(string file)
+        {
+            try
+            {
+                if (File.Exists(file))
+                {
+                    File.Delete(file);
+                }
+            }
+            catch (IOException ex)
+            {
+                LogStore.Add("CatHome4", 2, "端口锚清理失败: " + ex.Message, "BROWSER");
+            }
         }
 
         /// <summary>
@@ -567,6 +753,10 @@ namespace CH4
         /// <param name="browser">目标实例</param>
         private static void Cleanup(CatBrowser browser)
         {
+            // [段1] 关浏览器进程（A123）——CDP Browser.close 是唯一可靠手段：
+            // 启动器进程句柄早已退出，KillTree 打空；只有 CDP 端点认得真正持有 profile 的那个进程
+            CloseBrowserProcess(browser.Port);
+            // [段2] 释放 CDP 连接
             if (browser.Ws != null)
             {
                 try
@@ -578,6 +768,7 @@ namespace CH4
                     LogStore.Add("CatHome4", 1, "WS 释放异常（忽略）: " + ex.Message, "BROWSER");
                 }
             }
+            // [段3] 进程句柄兜底（句柄仍有效且进程活着时才需要）——正常路径已在段1 关掉
             if (browser.Edge != null)
             {
                 try
@@ -1199,17 +1390,11 @@ namespace CH4
             /// <summary>当前页签 id——操作面（Read / Eval / Shot）作用的 target</summary>
             public string TargetId = "";
 
-            /// <summary>
-            /// 存活判定——进程未退出且连接仍开
-            /// </summary>
+            /// <summary>存活判定（A122 修正）——CDP 连接仍开即可复用；不再看进程句柄：Chromium 启动器进程写完端口文件后即退出，按句柄判活会把可用实例误判为失效（进而重启 → 被转交旧实例 → 启动失败）</summary>
             /// <returns>true=可复用</returns>
             public bool IsAlive()
             {
-                if (Edge == null || Ws == null)
-                {
-                    return false;
-                }
-                if (Edge.HasExited)
+                if (Ws == null)
                 {
                     return false;
                 }

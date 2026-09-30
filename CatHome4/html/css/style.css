@@ -10,7 +10,9 @@
     --ch-phase-done-bg: var(--ch-ok);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--ch-bg-page); color: var(--ch-fg); height: 100vh; overflow: hidden; }
+body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var(--ch-fg); height: 100vh; overflow: hidden; }
+/* 内容面字体（A120）——文本/数据展示区走内容字体（更纱等宽）；界面控件继承 body 系统字体栈 */
+.session-list, .cat-grid, .oa-line, #toolreg, #boxes, #logevents, #cmdResult, #rawJson { font-family: var(--ch-font-content); }
 
 /* ============ 滚动条——深色配色统一（2026-09-17） ============ */
 /* 动机：默认滚动条走系统浅色样式（白底轨道），与深色界面割裂——与 chat.css 同款 */

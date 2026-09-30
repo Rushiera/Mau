@@ -17,6 +17,14 @@
         void CloseCat(string catId);
 
         /// <summary>
+        /// 预热指定猫的浏览器实例——timeback 作用域**开锚**时调用（A123 域级生命周期主路径）：
+        /// 域 = 浏览器进程容器，锚内工具只操作该进程，不涉及孤儿与交接。
+        /// 起失败不阻断开锚（失败只记日志；锚内工具调用会再试一次并如实返回 ERR）。
+        /// </summary>
+        /// <param name="catId">猫 key</param>
+        void PrepareCat(string catId);
+
+        /// <summary>
         /// 关闭并清理本服务管理的全部实例——宿主退出钩子调用（Main finally 与 CloseWriters 同处）。
         /// 正常退出路径；被强杀时不会执行，靠启动前 PID 自愈兜底。
         /// </summary>
