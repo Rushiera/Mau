@@ -82,7 +82,7 @@ test('编辑模式机件已撤——取消编辑按钮与行内编辑函数都�
 test('API 池——可编辑列是输入框、配置 ID 是纯文本、行内无「编辑」按钮', () => {
   window.renderApis([API_ROW]);
   const tr = document.querySelector('#apisTable tbody tr');
-  expect(tr.children.length).toBe(8);
+  expect(tr.children.length).toBe(9);
   expect(tr.children[0].querySelector('input')).toBeNull();   // 最左默认列——状态 + 动作，无输入框
   expect(tr.children[1].querySelector('input').value).toBe('主端点');
   expect(tr.children[2].querySelector('input')).toBeNull();
@@ -91,6 +91,9 @@ test('API 池——可编辑列是输入框、配置 ID 是纯文本、行内无
   expect(tr.children[4].querySelector('input').value).toBe('https://a.example/v1');
   expect(tr.children[5].querySelector('input').value).toBe('deepseek-v4-flash');
   expect(tr.children[6].querySelector('input').value).toBe('sk-ab****yz');
+  // 最右测试列——未测态是单个「测试」按钮（行内零报告内容，结果全走弹窗）
+  expect(tr.children[8].querySelector('input')).toBeNull();
+  expect(tr.children[8].querySelector('button').textContent).toBe('测试');
   const labels = [];
   for (const b of tr.querySelectorAll('button')) { labels.push(b.textContent); }
   expect(labels.indexOf('编辑')).toBe(-1);

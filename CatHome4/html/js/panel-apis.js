@@ -129,6 +129,24 @@ function renderApiRow(api) {
     };
     tdOp.appendChild(delBtn);
     tr.appendChild(tdOp);
+
+    // 测试列（最右）——未测=「测试」；已测=「内容报告」（点击开弹窗看结果，弹窗内可重新测试）
+    var tdTest = document.createElement('td');
+    tdTest.style.whiteSpace = 'nowrap';
+    var testBtn = document.createElement('button');
+    applyProbeButtonState(api, testBtn);
+    apiProbeBtns[api.apiConfigId] = testBtn;
+    testBtn.onclick = function () {
+        var cached = apiProbeCache[api.apiConfigId];
+        if (cached) {
+            openApiProbe(api, cached);
+            return;
+        }
+        runApiProbe(api);
+    };
+    tdTest.appendChild(testBtn);
+    tr.appendChild(tdTest);
+
     apisTableBody.appendChild(tr);
 }
 
@@ -210,6 +228,331 @@ function setDefaultApi(api) {
 document.getElementById('apiAddBtn').onclick = apiSubmit;
 document.getElementById('apisRefresh').onclick = loadApis;
 loadApis();
+
+// [段14a] LLM API 池连通性测试——「测试」按钮 → 弹窗报告（模型清单 / 站点信息 / 定价与分组）
+// 按钮两态：未测=「测试」（点击跑一次）；已测=「内容报告」（点击开弹窗看上次结果，弹窗内可重新测试）
+// 结果缓存在页面内存（apiProbeCache）——刷新页面即清空（重新按钮回到「测试」态）
+var apiProbeCache = {};
+var apiProbeBtns = {};
+var apiProbeOpen = null;
+var apiProbeModal = document.getElementById('apiProbeModal');
+var apiProbeBody = document.getElementById('apiProbeBody');
+var apiProbeMsg = document.getElementById('apiProbeMsg');
+
+function applyProbeButtonState(api, btn) {
+    var cached = apiProbeCache[api.apiConfigId];
+    if (cached) {
+        btn.textContent = '内容报告';
+        btn.className = cached.ok ? 'btn-mini accent' : 'btn-mini';
+        btn.title = '上次测试 ' + (cached.probedAt || '') + '（点击查看，可重新测试）';
+    } else {
+        btn.textContent = '测试';
+        btn.className = 'btn-mini';
+        btn.title = '测试该端点：模型清单 / 站点信息 / 定价与分组';
+    }
+}
+
+// 跑一次测试——三探由后端完成（模型清单带 Key，站点信息与定价免 Key）；行内按钮态随之刷新
+function runApiProbe(api) {
+    var btn = apiProbeBtns[api.apiConfigId];
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '测试中…';
+    }
+    apiProbeMsg.textContent = '测试中…（' + (api.displayName || '') + '）';
+    fetch('/api/v1/llm-apis/probe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiConfigId: api.apiConfigId })
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (btn) { btn.disabled = false; }
+            if (!d || (d.ok === false && d.error)) {
+                if (btn) { applyProbeButtonState(api, btn); }
+                apiProbeMsg.textContent = '测试失败: ' + ((d && d.error) || '无响应');
+                return;
+            }
+            apiProbeCache[api.apiConfigId] = d;
+            if (btn) { applyProbeButtonState(api, btn); }
+            openApiProbe(api, d);
+        })
+        .catch(function (e) {
+            if (btn) {
+                btn.disabled = false;
+                applyProbeButtonState(api, btn);
+            }
+            apiProbeMsg.textContent = '请求失败: ' + e.message + '（宿主未运行或端点不存在？）';
+        });
+}
+
+// 弹窗——渲染报告（概览 + 三段）
+function openApiProbe(api, report) {
+    apiProbeOpen = api;
+    document.getElementById('apiProbeTitle').textContent = (api.displayName || '') + ' — ' + (api.endpoint || '');
+    apiProbeMsg.textContent = '探于 ' + (report.probedAt || '') + ' · 耗时 ' + (report.elapsedMs || 0) + ' ms';
+    apiProbeBody.textContent = '';
+    apiProbeBody.appendChild(buildProbeOverview(api, report));
+    apiProbeBody.appendChild(buildProbeModelsSection(report.models));
+    apiProbeBody.appendChild(buildProbeSiteSection(report.site));
+    apiProbeBody.appendChild(buildProbePricingSection(report.pricing));
+    apiProbeModal.style.display = 'flex';
+}
+
+// 概览段——显示名 / 端点 / 默认模型 / Key / 结果状态
+function buildProbeOverview(api, report) {
+    var box = document.createElement('div');
+    box.style.cssText = 'border:1px solid var(--ch-line);border-radius:6px;padding:8px;margin-bottom:8px';
+    var rows = [
+        ['端点', report.endpoint || api.endpoint || ''],
+        ['默认模型', report.defaultModel || ''],
+        ['Key', report.hasKey ? '已配置' : '未配置（模型探可能 401）'],
+        ['模型清单 URL', report.modelsUrl || ''],
+        ['站点根 URL', report.siteOrigin || ''],
+        ['结论', report.ok ? '模型探通过（Key 有效）' : '模型探未通过——见下方分段']
+    ];
+    for (var i = 0; i < rows.length; i++) {
+        box.appendChild(probeKVRow(rows[i][0], rows[i][1], i === 5 ? (report.ok ? 'var(--ch-ok)' : 'var(--ch-err)') : ''));
+    }
+    return box;
+}
+
+function probeKVRow(key, value, color) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;line-height:1.8';
+    var k = document.createElement('span');
+    k.style.cssText = 'color:var(--ch-fg-weak);min-width:110px';
+    k.textContent = key;
+    var v = document.createElement('span');
+    v.style.cssText = 'word-break:break-all;flex:1';
+    if (color) { v.style.color = color; }
+    v.textContent = value;
+    row.appendChild(k);
+    row.appendChild(v);
+    return row;
+}
+
+// 分段外壳——标题 + 状态徽标 + 内容位
+function probeSection(title, ok, status) {
+    var sec = document.createElement('div');
+    sec.style.cssText = 'border:1px solid var(--ch-line);border-radius:6px;padding:8px;margin-bottom:8px';
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:4px';
+    var t = document.createElement('span');
+    t.style.cssText = 'color:var(--ch-identity);font-weight:bold';
+    t.textContent = title;
+    var badge = document.createElement('span');
+    badge.style.color = ok ? 'var(--ch-ok)' : 'var(--ch-err)';
+    badge.textContent = ok ? '通过' : '未通过';
+    head.appendChild(t);
+    head.appendChild(badge);
+    if (status) {
+        var st = document.createElement('span');
+        st.style.cssText = 'color:var(--ch-fg-weak)';
+        st.textContent = status;
+        head.appendChild(st);
+    }
+    sec.appendChild(head);
+    return sec;
+}
+
+// 模型清单段——一个模型一行（id + 归属 + 支持协议）
+function buildProbeModelsSection(sec) {
+    var ok = sec && sec.ok;
+    var box = probeSection('可用模型（/v1/models）', ok, sec && sec.httpStatus ? ('HTTP ' + sec.httpStatus) : '');
+    if (!ok) {
+        box.appendChild(probeErrLine(sec));
+        return box;
+    }
+    var items = sec.payload || [];
+    var summary = document.createElement('div');
+    summary.style.color = 'var(--ch-fg-weak)';
+    summary.textContent = '该 Key 可见 ' + items.length + ' 个模型';
+    box.appendChild(summary);
+    for (var i = 0; i < items.length; i++) {
+        var it = items[i] || {};
+        var line = document.createElement('div');
+        line.style.cssText = 'line-height:1.8;word-break:break-all';
+        var name = document.createElement('span');
+        name.style.color = 'var(--ch-ok)';
+        name.textContent = it.id || '(无名)';
+        line.appendChild(name);
+        var extra = [];
+        if (it.ownedBy) { extra.push('归属 ' + it.ownedBy); }
+        if (it.endpointTypes && it.endpointTypes.length) { extra.push('协议 ' + it.endpointTypes.join('/')); }
+        if (extra.length) {
+            var ex = document.createElement('span');
+            ex.style.cssText = 'color:var(--ch-fg-weak);margin-left:8px';
+            ex.textContent = extra.join(' · ');
+            line.appendChild(ex);
+        }
+        box.appendChild(line);
+    }
+    return box;
+}
+
+// 站点信息段——new-api /api/status 字段表（公告已由后端剔除）
+function buildProbeSiteSection(sec) {
+    var ok = sec && sec.ok;
+    var box = probeSection('站点信息（/api/status）', ok, sec && sec.httpStatus ? ('HTTP ' + sec.httpStatus) : '');
+    if (!ok) {
+        box.appendChild(probeErrLine(sec));
+        return box;
+    }
+    var fields = sec.payload || {};
+    var table = document.createElement('table');
+    table.className = 'box-table';
+    table.style.marginTop = '4px';
+    var tbody = document.createElement('tbody');
+    var keys = Object.keys(fields).sort();
+    for (var i = 0; i < keys.length; i++) {
+        var tr = document.createElement('tr');
+        var tdK = document.createElement('td');
+        tdK.style.cssText = 'width:30%;color:var(--ch-fg-weak);vertical-align:top';
+        tdK.textContent = keys[i];
+        var tdV = document.createElement('td');
+        tdV.style.cssText = 'word-break:break-all';
+        tdV.textContent = probeValueText(fields[keys[i]]);
+        tr.appendChild(tdK);
+        tr.appendChild(tdV);
+        tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    box.appendChild(table);
+    return box;
+}
+
+// 定价与分组段——分组倍率 + 模型倍率 + 分组说明 + 供应商
+function buildProbePricingSection(sec) {
+    var ok = sec && sec.ok;
+    var box = probeSection('定价与分组（/api/pricing）', ok, sec && sec.httpStatus ? ('HTTP ' + sec.httpStatus) : '');
+    if (!ok) {
+        box.appendChild(probeErrLine(sec));
+        return box;
+    }
+    var p = sec.payload || {};
+    // 分组倍率
+    var groupRatio = p.groupRatio || {};
+    var groupKeys = Object.keys(groupRatio);
+    if (groupKeys.length > 0) {
+        box.appendChild(probeSubTitle('分组倍率'));
+        var gTable = probeTable(['分组', '倍率', '说明'], buildGroupRatioRows(groupKeys, groupRatio, p.usableGroup || {}));
+        box.appendChild(gTable);
+    }
+    // 模型倍率
+    var models = p.models || [];
+    if (models.length > 0) {
+        box.appendChild(probeSubTitle('模型倍率（' + models.length + ' 项）'));
+        box.appendChild(probeTable(['模型', '倍率', '补全比', '缓存比', '单价', '可用分组'], buildPricingRows(models)));
+    }
+    // 供应商
+    var vendors = p.vendors || [];
+    if (vendors.length > 0) {
+        var names = [];
+        for (var v = 0; v < vendors.length; v++) {
+            if (vendors[v] && vendors[v].name) { names.push(vendors[v].name); }
+        }
+        if (names.length > 0) {
+            box.appendChild(probeSubTitle('供应商：' + names.join(' / ')));
+        }
+    }
+    // 支持协议
+    var ep = p.supportedEndpoint || {};
+    var epKeys = Object.keys(ep);
+    if (epKeys.length > 0) {
+        var parts = [];
+        for (var e = 0; e < epKeys.length; e++) {
+            var one = ep[epKeys[e]] || {};
+            parts.push(epKeys[e] + ' → ' + (one.path || '') + ' ' + (one.method || ''));
+        }
+        box.appendChild(probeSubTitle('支持协议：' + parts.join(' · ')));
+    }
+    return box;
+}
+
+function buildGroupRatioRows(keys, ratio, usable) {
+    var rows = [];
+    for (var i = 0; i < keys.length; i++) {
+        rows.push([keys[i], probeValueText(ratio[keys[i]]), usable[keys[i]] || '']);
+    }
+    return rows;
+}
+
+function buildPricingRows(models) {
+    var rows = [];
+    for (var i = 0; i < models.length; i++) {
+        var m = models[i] || {};
+        var groups = m.enable_groups || [];
+        rows.push([
+            m.model_name || '',
+            probeValueText(m.model_ratio),
+            probeValueText(m.completion_ratio),
+            probeValueText(m.cache_ratio),
+            probeValueText(m.model_price),
+            groups.join(' / ')
+        ]);
+    }
+    return rows;
+}
+
+function probeSubTitle(text) {
+    var el = document.createElement('div');
+    el.style.cssText = 'margin-top:6px;color:var(--ch-warn)';
+    el.textContent = text;
+    return el;
+}
+
+function probeTable(headers, rows) {
+    var table = document.createElement('table');
+    table.className = 'box-table';
+    table.style.marginTop = '4px';
+    var thead = document.createElement('thead');
+    var htr = document.createElement('tr');
+    for (var h = 0; h < headers.length; h++) {
+        var th = document.createElement('th');
+        th.textContent = headers[h];
+        htr.appendChild(th);
+    }
+    thead.appendChild(htr);
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    for (var r = 0; r < rows.length; r++) {
+        var tr = document.createElement('tr');
+        for (var c = 0; c < rows[r].length; c++) {
+            var td = document.createElement('td');
+            td.style.cssText = 'word-break:break-all;vertical-align:top';
+            td.textContent = rows[r][c];
+            tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    return table;
+}
+
+function probeErrLine(sec) {
+    var el = document.createElement('div');
+    el.style.cssText = 'color:var(--ch-err);word-break:break-all';
+    el.textContent = (sec && sec.error) ? sec.error : '未取到数据';
+    return el;
+}
+
+// 值文本化——标量直出；数组/对象转 JSON（截断防刷屏）
+function probeValueText(value) {
+    if (value === null || typeof value === 'undefined') { return ''; }
+    if (typeof value === 'object') {
+        var text = JSON.stringify(value);
+        if (text.length > 160) { return text.substring(0, 160) + '…'; }
+        return text;
+    }
+    return String(value);
+}
+
+document.getElementById('apiProbeClose').onclick = function () { apiProbeModal.style.display = 'none'; };
+document.getElementById('apiProbeRerun').onclick = function () {
+    if (!apiProbeOpen) { return; }
+    runApiProbe(apiProbeOpen);
+};
 
 // [段14b] R2.3 QQ Bot 池管理（config 页签——行内编辑 + 新建 + 删除；secret 掩码；注册即建 WS 连接）
 var qqbotsTableBody = document.querySelector('#qqbotsTable tbody');

@@ -106,7 +106,7 @@
                             <span style="flex:1"></span>
                             <button id="apisRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
                         </div>
-                        <table class="box-table" id="apisTable"><thead><tr><th style="width:13%">默认</th><th style="width:11%">名称</th><th style="width:13%">配置 ID</th><th style="width:9%">类型</th><th style="width:24%">端点</th><th style="width:11%">模型</th><th style="width:11%">Key</th><th style="width:8%">操作</th></tr></thead><tbody></tbody></table>
+                        <table class="box-table" id="apisTable"><thead><tr><th style="width:11%">默认</th><th style="width:10%">名称</th><th style="width:11%">配置 ID</th><th style="width:8%">类型</th><th style="width:21%">端点</th><th style="width:10%">模型</th><th style="width:10%">Key</th><th style="width:8%">操作</th><th style="width:11%">测试</th></tr></thead><tbody></tbody></table>
                         <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
                             <input id="apiNewName" placeholder="名称" style="width:110px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
                             <input id="apiNewType" placeholder="类型(deepseek)" style="width:110px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
@@ -382,6 +382,23 @@
                 <button id="catNewGo" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">确定</button>
             </div>
             <div id="catNewMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag);margin-top:6px"></div>
+        </div>
+    </div>
+
+    <!-- LLM API 池测试报告弹层——「测试」按钮产物（模型清单 / 站点信息 / 定价与分组；公告不入报告） -->
+    <div id="apiProbeModal" style="display:none;position:fixed;inset:0;background:var(--ch-overlay);z-index:50;align-items:center;justify-content:center">
+        <div style="width:820px;max-height:84vh;display:flex;flex-direction:column;background:var(--ch-bg-panel);border:1px solid var(--ch-line);border-radius:8px;padding:14px">
+            <div style="display:flex;align-items:center;margin-bottom:8px">
+                <span style="color:var(--ch-identity);font-weight:bold;font-size:var(--ch-fs-sub)">API 测试报告 — </span>
+                <span id="apiProbeTitle" style="color:var(--ch-identity);font-weight:bold;font-size:var(--ch-fs-sub)"></span>
+                <span style="flex:1"></span>
+                <button id="apiProbeClose" style="background:transparent;border:none;color:var(--ch-fg-weak);font-size:var(--ch-fs-title);cursor:pointer">✕</button>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+                <button id="apiProbeRerun" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:4px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">重新测试</button>
+                <span id="apiProbeMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag)"></span>
+            </div>
+            <div id="apiProbeBody" style="flex:1;overflow-y:auto;font-size:var(--ch-fs-tag)"></div>
         </div>
     </div>
 

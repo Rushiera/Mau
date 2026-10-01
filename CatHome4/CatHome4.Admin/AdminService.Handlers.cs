@@ -44,6 +44,8 @@ namespace CatHome4.Admin
             sink.MapPost("/api/v1/llm-apis/edit", (Delegate)HandleLlmApisEdit);
             sink.MapPost("/api/v1/llm-apis/delete", (Delegate)HandleLlmApisDelete);
             sink.MapPost("/api/v1/llm-apis/default", (Delegate)HandleLlmApisDefault);
+            // LLM API 池连通性测试——「测试」按钮（模型清单 + 站点信息 + 定价与分组）
+            sink.MapPost("/api/v1/llm-apis/probe", (Delegate)HandleLlmApisProbe);
             // QQ Bot 池 CRUD——R2.3 管理面
             sink.MapGet("/api/v1/qqbot-apis", (Delegate)HandleQqBotApisGet);
             sink.MapPost("/api/v1/qqbot-apis", (Delegate)HandleQqBotApisPost);
