@@ -805,6 +805,7 @@ namespace CH4
                 {
                     AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
                     NoteTimebackEvent();
+                    NoteTimebackWrite(dog.Name, dog.ArgsJson, dog.Result);
                 }
                 PushToolCardFinal(dog, i + 1, _dogs.Count, done);
             }
@@ -2332,6 +2333,7 @@ namespace CH4
                 FlushToolCard(dog);
                 AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
                 NoteTimebackEvent();
+                NoteTimebackWrite(dog.Name, dog.ArgsJson, dog.Result);
                 _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             }
             _toolBatchActive = false;

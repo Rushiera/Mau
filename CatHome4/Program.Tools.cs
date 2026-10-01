@@ -149,7 +149,7 @@ namespace CH4
             tools[9] = new
             {
                 name = "timeback",
-                description = "上下文作用域（取证型任务专用）——action='start' 开锚（purpose 记用途）→ 查证过程在作用域内膨胀 → action='back' 回卷：膨胀过程从上下文销毁，只把 findings 带回主干（下一轮首条可见）。只服务取证型任务（巡检 / 查文档 / 查日志 / 探路）；建设型与推理链型任务禁用。findings 只放事实 + 指针（路径 / 单号 / 时间戳），不放推理与结论；写入按骨架——首行「结论：<一句话>」，随后「事实：」逐条、「指针：」逐条（每段 ≤5 条，无内容写「（无）」）。v1 未闭合前禁止再次 start。",
+                description = "上下文作用域——action='start' 开锚（purpose 记用途）→ 过程在作用域内膨胀 → action='back' 回卷：膨胀过程从上下文销毁，只把 findings 带回主干（下一轮首条可见）。开域时机按工作环节——取证（调研边界 / 查文档 / 查日志 / 全项目扫描）与实施（写码 / 编译 / 跑测 / 排错）：这两类环节过程输出 ≫ 结论且成败可判；设计环节留主干（短小、信息量大、是后续环节的指导源），确认方向 / 拍板 / 影响面同步 / 交付汇报同样留主干。热重载 / 重启 / 部署不在域内（进程中断即失域）——这类收尾留域外。back 的 findings 按 start 回执给出的骨架写（每段 ≤5 条，段内无内容写「（无）」）。v1 未闭合前禁止再次 start。",
                 parameters = new
                 {
                     type = "object",
@@ -157,7 +157,7 @@ namespace CH4
                             {
                                 { "action", new { type = "string", description = "start=开锚 / back=回卷回收" } },
                                 { "purpose", new { type = "string", description = "start 必填——用途标签（短）" } },
-                                { "findings", new { type = "string", description = "back 必填——带回载荷（骨架：结论 / 事实 / 指针 三段）" } }
+                                { "findings", new { type = "string", description = "back 必填——带回载荷（骨架见 start 回执：结论 / 事实 / 进度 / 跑测 / 变更 / 卡点与解法 / 失败 / 指针）" } }
                             },
                     required = new string[] { "action" }
                 }
