@@ -635,7 +635,7 @@ function closeTplApply() {
 }
 
 // 一键套用——逐猫串行：模板四字段覆盖 + 该猫 API/QQBot/白名单原样带回
-// （后端 cat-config 对 apiConfigId/qqbotId 是「缺省=保留」，但 qqbotEnable/enabledRoots 缺省会被清空——必须显式带上）
+// （后端 cat-config 2026-10-01 起为字段级合并写——缺省即保留；此处显式带回 qqbotId/qqbotEnable/enabledRoots 属幂等冗余，行为不变）
 function applyTplToCats() {
     var boxes = document.querySelectorAll('#tplApplyList input.tpl-apply-cb');
     var targets = [];
@@ -1129,7 +1129,7 @@ function saveCatRoots() {
     postCatConfig(payload, 'catRootsMsg');
 }
 
-// 部分字段写入——POST /api/v1/cat-config（缺省字段保留旧值；回执 = 落盘受理结果）
+// 部分字段写入——POST /api/v1/cat-config（字段级合并写：出现即覆盖 / 缺省即保留；回执 = 落盘结果）
 function postCatConfig(payload, msgId) {
     var msg = document.getElementById(msgId);
     msg.textContent = '保存中…';
@@ -1141,7 +1141,8 @@ function postCatConfig(payload, msgId) {
         .then(function (r) { return r.json(); })
         .then(function (d) {
             msg.textContent = d.ok ? '已保存——新会话生效' : ('保存失败: ' + (d.error || ''));
-            if (d.ok && typeof loadCats === 'function') { setTimeout(loadCats, 400); }
+            // 端点同步落盘——回执到达即真相，直接刷新多猫列表（不再赌 400ms 延迟）
+            if (d.ok && typeof loadCats === 'function') { loadCats(); }
         })
         .catch(function (e) {
             msg.textContent = '请求失败: ' + e.message + '（宿主未运行或端点不存在？）';

@@ -1,6 +1,6 @@
 // tests/unit/panel-cats.test.mjs —— 主面板多猫行（2026-10-01 主面板轮）
-// 覆盖：列结构（ID 列撤除）· 名称行内编辑（cat.cfg.set displayName；未改动 / 清空不提交）
-//       · LLM API / QQ Bot 下拉 · 目录白名单无权目录展示 + 专用弹层入口 · 工具清单单按钮
+// 覆盖：列结构（ID 列撤除）· 名称行内编辑（POST cat-config displayName；未改动 / 清空不提交）
+//       · LLM API / QQ Bot 下拉（change 即提交 cat-config 单字段）· 目录白名单无权目录展示 + 专用弹层入口 · 工具清单单按钮
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { expect, test, beforeAll } from 'vitest';
@@ -102,25 +102,44 @@ test('目录白名单列——启用根为空 = 空白名单（非系统根全�
   expect(td.textContent).toContain('无权: ccbp, mau');
 });
 
-test('名称行内编辑——改动提交 cat.cfg.set displayName；未改动 / 清空不提交', async () => {
+test('名称行内编辑——改动提交 POST cat-config displayName；未改动 / 清空不提交', async () => {
   captureFetch();
   const tr = renderRow(CAT_ROW);
   const input = tr.children[0].querySelector('input');
 
   input.dispatchEvent(new Event('change'));
   await tick();
-  expect(callsTo('/api/v1/command').length).toBe(0);
+  expect(callsTo('/api/v1/cat-config').length).toBe(0);
 
   input.value = '  ';
   input.dispatchEvent(new Event('change'));
   expect(input.value).toBe('测试猫');
   await tick();
-  expect(callsTo('/api/v1/command').length).toBe(0);
+  expect(callsTo('/api/v1/cat-config').length).toBe(0);
 
   input.value = '新名字';
   input.dispatchEvent(new Event('change'));
   await tick();
-  const cmds = callsTo('/api/v1/command');
-  expect(cmds.length).toBe(1);
-  expect(cmds[0].body.text).toBe('cat.cfg.set ' + CAT_ROW.id + ' displayName 新名字');
+  const posts = callsTo('/api/v1/cat-config');
+  expect(posts.length).toBe(1);
+  expect(posts[0].body.cat).toBe(CAT_ROW.id);
+  expect(posts[0].body.displayName).toBe('新名字');
+});
+
+test('LLM API / QQ Bot 下拉——change 即提交 cat-config 单字段（空值 = 清空语义）', async () => {
+  captureFetch();
+  const tr = renderRow(Object.assign({}, CAT_ROW, {
+    apiConfigId: 'aaaaaaaa-0000-0000-0000-000000000000',
+    qqbotId: 'bbbbbbbb-0000-0000-0000-000000000000'
+  }));
+  const apiSel = tr.children[1].querySelector('select');
+  apiSel.value = '';
+  apiSel.dispatchEvent(new Event('change'));
+  await tick();
+  const posts = callsTo('/api/v1/cat-config');
+  expect(posts.length).toBe(1);
+  expect(posts[0].body.cat).toBe(CAT_ROW.id);
+  expect(posts[0].body.apiConfigId).toBe('');
+  // 单字段写——未提交字段不出现在 payload（后端缺省即保留）
+  expect(posts[0].body.qqbotId).toBe(undefined);
 });

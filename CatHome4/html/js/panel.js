@@ -272,18 +272,27 @@ function collectDeniedRoots(cat) {
     return denied;
 }
 
-// 主面板行内字段提交——cat.cfg.set（字段级合并写；未提交字段逐字保留；空值 = 清空语义，末尾保留空格）
+// 主面板行内字段提交——POST /api/v1/cat-config（字段级合并写：出现即覆盖 / 缺省即保留）
+// 2026-10-01 修正：原走 cat.cfg.set 文本指令（HTTP 线程入队主线程泵，回执只报"已受理"）——空值被行首 Trim 吃掉（改成默认 API / 解绑 QQ Bot 必然失败），
+// 且写入未落盘就先重建列表（固定 400ms）→ 表现为「改完瞬间跳回原值」+「显示与实际不符」。
+// 现改走端点：同步落盘、回执即结果、落盘后才刷新。空值语义 = 清空（apiConfigId 回默认 / qqbotId 解绑 / displayName 拒绝空值）。
 function submitCatField(cat, field, value, label) {
     catsMsgEl.textContent = '保存中…（' + label + '）';
-    fetch('/api/v1/command', {
+    var payload = { cat: cat.id };
+    payload[field] = value;
+    fetch('/api/v1/cat-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: 'cat.cfg.set ' + cat.id + ' ' + field + ' ' + value })
+        body: JSON.stringify(payload)
     })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-            catsMsgEl.textContent = d.ok ? ('已保存（' + label + '）') : ('保存失败: ' + (d.error || ''));
-            setTimeout(loadCats, 400);
+            if (d.ok) {
+                catsMsgEl.textContent = '已保存（' + label + '）';
+                loadCats();
+            } else {
+                catsMsgEl.textContent = '保存失败（' + label + '）: ' + (d.error || '');
+            }
         })
         .catch(function (e) {
             catsMsgEl.textContent = '请求失败: ' + e.message;
