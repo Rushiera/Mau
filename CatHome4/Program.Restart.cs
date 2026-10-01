@@ -9,7 +9,7 @@ namespace CH4
     /// <summary>
     /// Program 宿主重启分部——重启态判定 / 停机拒收 / 全局 Idle 闸门 / 接力拉起（SetUp relaunch）/ 启动回执注入。
     /// 规范：Project/CH4/design-ch4-host-restart.md（§三 T2-T6 / §四 4.3 / §五 参数契约）。
-    /// 定位：小改动自测的宿主自更新链——调用方固定为 Majordomo 会话经 majordomo-restart 特权工具。
+    /// 定位：小改动自测的宿主自更新链——调用方固定为 Majordomo 会话经 restart-full / restart-incr / restart-host 特权工具（三类分层：全链 / 纯搬运 / 原地）。
     /// </summary>
     public static partial class Program
     {
@@ -155,6 +155,12 @@ namespace CH4
             {
                 return;
             }
+            // incr 握手等待态——接力者已起，等 ready 哨兵（此态下不看全局 Idle：宿主已在停机态，等的是信号）
+            if (_relayWaiting)
+            {
+                PumpRelayWait();
+                return;
+            }
             if (!AllIdle())
             {
                 return;
@@ -174,6 +180,16 @@ namespace CH4
             if (DataBox.TryGet<string>("global", RestartRequestKey, out raw) && raw != null)
             {
                 reqJson = raw;
+            }
+            string mode = ReadJsonField(reqJson, "mode");
+            if (mode.Length == 0)
+            {
+                mode = "full";
+            }
+            if (mode != "full" && mode != "incr" && mode != "host")
+            {
+                AbortRestart("重启模式非法（" + mode + "）——已撤销重启态。");
+                return;
             }
             string target = ReadJsonField(reqJson, "target");
             string push = ReadJsonField(reqJson, "push");
@@ -198,7 +214,24 @@ namespace CH4
                 AbortRestart("SetUp.exe 不存在：" + setupExe + "——已撤销重启态。");
                 return;
             }
-            string report = Path.Combine(repoRoot, "CatTemp", "restart_report.json");
+            // incr 握手——先清陈旧哨兵（防上一轮残留被误当本轮就绪信号：陈旧命中是本链最隐蔽的假绿源）
+            if (mode == "incr")
+            {
+                try
+                {
+                    string stale = RelayReadyPath(repoRoot);
+                    if (File.Exists(stale))
+                    {
+                        File.Delete(stale);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogStore.Add("CatHome4", 2, "陈旧 ready 哨兵清理失败: " + ex.Message, "RESTART");
+                }
+            }
+            // A135——报告路径带时间戳：固定名会让「本次」的结论被上一次覆盖（读者可能读到旧的"成功"）
+            string report = Path.Combine(repoRoot, "CatTemp", "restart_report_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".json");
             try
             {
                 string reportDir = Path.GetDirectoryName(report);
@@ -216,6 +249,12 @@ namespace CH4
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
             psi.ArgumentList.Add("relaunch");
+            // mode 显式声明——full 不传（缺省即 full，兼容旧 SetUp 的口径）；incr / host 必传
+            if (mode != "full")
+            {
+                psi.ArgumentList.Add("--mode");
+                psi.ArgumentList.Add(mode);
+            }
             psi.ArgumentList.Add("--wait-pid");
             psi.ArgumentList.Add(pid.ToString());
             psi.ArgumentList.Add("--target");
@@ -246,17 +285,30 @@ namespace CH4
             bool relayDead = relay.WaitForExit(1000);
             if (relayDead)
             {
+                // A134——incr 早退不是「接力者起不来」：前置段失败会正常退出，结论落在 ready 哨兵里（先读哨兵再定性）
+                if (mode == "incr")
+                {
+                    string relayReason = ReadRelayReason(repoRoot);
+                    if (relayReason.Length > 0)
+                    {
+                        AbortRestart("incr 前置段未通过——" + relayReason);
+                        return;
+                    }
+                }
                 AbortRestart("SetUp relaunch 启动后立即退出（exit=" + relay.ExitCode.ToString() + "）——已撤销重启态。");
                 return;
             }
-            LogStore.Add("CatHome4", 1, "重启接力已拉起：SetUp relaunch pid " + relay.Id.ToString() + " → 目标 " + target, "RESTART");
-            Console.WriteLine("[CMD] 重启接力已拉起（SetUp pid " + relay.Id.ToString() + "）——宿主退出。");
-            // A33——转发态全量快照兜底（T4）：稳态虽已「变更即落盘」，此处再覆写一次（覆盖收尾窗口内尚未落盘的状态变更）
-            CatHome4.QQ.QQBotService.SaveForwardState();
-            // 观测收尾——四文件 flush（与 Main finally 同一路径）
-            LogStore.CloseWriters();
-            FrameStore.Close();
-            Environment.Exit(0);
+            LogStore.Add("CatHome4", 1, "重启接力已拉起（mode=" + mode + "）：SetUp relaunch pid " + relay.Id.ToString() + " → 目标 " + target, "RESTART");
+            Console.WriteLine("[CMD] 重启接力已拉起（mode=" + mode + "，SetUp pid " + relay.Id.ToString() + "）。");
+            if (mode == "incr")
+            {
+                // 握手等待——等接力者落 ready 哨兵（探活前置的兑现路径）：此间宿主不退出，停机态继续拒收新需求
+                _relayWaiting = true;
+                _relayWaitStartMs = Environment.TickCount64;
+                Console.WriteLine("[CMD] incr 握手等待中——等接力者探活结论（上限 " + (RelayWaitMs / 1000).ToString() + " s）。");
+                return;
+            }
+            FinishRestartAndExit();
         }
 
         /// <summary>
@@ -267,8 +319,11 @@ namespace CH4
         {
             DataBox.Set<string>("global", RestartStateKey, "");
             DataBox.Remove("global", RestartRequestKey);
+            _relayWaiting = false;
             LogStore.Add("CatHome4", 3, "重启已撤销：" + reason, "RESTART");
             Console.WriteLine("[CMD] " + reason);
+            // A134——单点回执：所有撤销路径都出声（静默撤销违反「失败必须可见」；判例 = incr 早退无回声）
+            NotifyRestartAborted(reason);
         }
         /// <summary>
         /// 重启链仓库根解析——三级锚定（与 ResolveDataRoot 同构）：
@@ -361,6 +416,170 @@ namespace CH4
                 LogStore.Add("CatHome4", 2, "重启参数提取失败: " + ex.Message, "RESTART");
             }
             return "";
+        }
+        /// <summary>incr 握手等待上限毫秒——接力者须在此窗口内落 ready 哨兵，超时即撤销重启态（宿主继续运行）</summary>
+        private const int RelayWaitMs = 180000;
+        /// <summary>握手等待态——接力已起、等 ready 哨兵（仅 incr；full / host 不起等待）</summary>
+        private static bool _relayWaiting;
+        /// <summary>握手等待起始时刻（TickCount64）</summary>
+        private static long _relayWaitStartMs;
+        /// <summary>
+        /// ready 哨兵路径——与 SetUp 侧同为仓库根 CatTemp/restart_relay.json（握手两端同源）。
+        /// </summary>
+        /// <param name="repoRoot">仓库根</param>
+        /// <returns>哨兵文件绝对路径</returns>
+        private static string RelayReadyPath(string repoRoot)
+        {
+            return Path.Combine(repoRoot, "CatTemp", "restart_relay.json");
+        }
+        /// <summary>
+        /// 读 ready 哨兵失败原因（A134）——早退路径取结论用（前置段失败会正常退出，不是「接力者起不来」）。
+        /// </summary>
+        /// <param name="repoRoot">仓库根</param>
+        /// <returns>失败原因（空=无哨兵 / 哨兵为 ok=true）</returns>
+        private static string ReadRelayReason(string repoRoot)
+        {
+            string relay = RelayReadyPath(repoRoot);
+            if (!File.Exists(relay))
+            {
+                return "";
+            }
+            string json = "";
+            try
+            {
+                json = File.ReadAllText(relay);
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 2, "ready 哨兵读取失败: " + ex.Message, "RESTART");
+                return "";
+            }
+            bool ok;
+            if (!ReadJsonBoolField(json, "ok", out ok) || ok)
+            {
+                return "";
+            }
+            string reason = ReadJsonField(json, "reason");
+            if (reason.Length == 0)
+            {
+                return "（哨兵未带原因）";
+            }
+            return reason;
+        }
+        /// <summary>
+        /// 握手等待泵（仅 incr）——轮询接力者落的 ready 哨兵：ok=true → 收尾退出；ok=false → 撤销重启态 + 失败原因回执；超时 → 撤销。
+        /// 反序（先退出再探活）则探活无从前置（design-ch4-host-restart §三·五）。
+        /// </summary>
+        private static void PumpRelayWait()
+        {
+            string repoRoot = ResolveRepoRootForRestart();
+            if (repoRoot.Length == 0)
+            {
+                AbortRestart("incr 握手失败：未找到仓库根（读不到 ready 哨兵）——已撤销重启态。");
+                return;
+            }
+            string relay = RelayReadyPath(repoRoot);
+            if (File.Exists(relay))
+            {
+                string json = "";
+                try
+                {
+                    json = File.ReadAllText(relay);
+                }
+                catch (Exception ex)
+                {
+                    LogStore.Add("CatHome4", 2, "ready 哨兵读取失败: " + ex.Message, "RESTART");
+                }
+                bool ok;
+                if (json.Length > 0 && ReadJsonBoolField(json, "ok", out ok))
+                {
+                    if (ok)
+                    {
+                        LogStore.Add("CatHome4", 1, "incr 前置段通过——握手完成，宿主退出交接力者", "RESTART");
+                        FinishRestartAndExit();
+                        return;
+                    }
+                    string reason = ReadJsonField(json, "reason");
+                    AbortRestart("incr 前置段未通过——" + reason);
+                    return;
+                }
+            }
+            if (Environment.TickCount64 - _relayWaitStartMs > RelayWaitMs)
+            {
+                AbortRestart("incr 握手超时（" + (RelayWaitMs / 1000).ToString() + " s 内未见 ready 哨兵）——已撤销重启态。");
+            }
+        }
+        /// <summary>
+        /// 失败回执——把重启未执行的原因投给 Majordomo 会话（system 来源；失败必须可见，不留静默放弃）。
+        /// </summary>
+        /// <param name="reason">失败原因</param>
+        private static void NotifyRestartAborted(string reason)
+        {
+            if (_chatBridge == null)
+            {
+                return;
+            }
+            string text = "[宿主自更新] 重启未执行"
+                + Environment.NewLine + "原因: " + reason
+                + Environment.NewLine + "宿主继续运行（运行区未改动）。";
+            _chatBridge.DefaultSession.PostUserMessage(text, "system");
+        }
+        /// <summary>
+        /// 取 JSON 对象布尔字段——防御式（非对象 / 缺字段 / 类型不符返回 false）。
+        /// </summary>
+        /// <param name="json">JSON 文本</param>
+        /// <param name="field">字段名</param>
+        /// <param name="value">字段值</param>
+        /// <returns>true=成功取到布尔值</returns>
+        private static bool ReadJsonBoolField(string json, string field, out bool value)
+        {
+            value = false;
+            if (json == null || json.Length == 0)
+            {
+                return false;
+            }
+            try
+            {
+                JsonDocument doc = JsonDocument.Parse(json);
+                try
+                {
+                    JsonElement el;
+                    if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty(field, out el))
+                    {
+                        if (el.ValueKind == JsonValueKind.True)
+                        {
+                            value = true;
+                            return true;
+                        }
+                        if (el.ValueKind == JsonValueKind.False)
+                        {
+                            value = false;
+                            return true;
+                        }
+                    }
+                }
+                finally
+                {
+                    doc.Dispose();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 2, "重启哨兵解析失败: " + ex.Message, "RESTART");
+            }
+            return false;
+        }
+        /// <summary>
+        /// 收尾并退出——转发态快照兜底 + 观测收尾 + Exit(0)（闸门退出与 incr 握手放行共用同一路径）。
+        /// </summary>
+        private static void FinishRestartAndExit()
+        {
+            // A33——转发态全量快照兜底（T4）：稳态虽已「变更即落盘」，此处再覆写一次（覆盖收尾窗口内尚未落盘的状态变更）
+            CatHome4.QQ.QQBotService.SaveForwardState();
+            // 观测收尾——四文件 flush（与 Main finally 同一路径）
+            LogStore.CloseWriters();
+            FrameStore.Close();
+            Environment.Exit(0);
         }
     }
 }

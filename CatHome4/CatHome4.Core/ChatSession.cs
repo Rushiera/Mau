@@ -923,6 +923,28 @@ namespace CH4
             DataBox.Set<string>("global", "host_restart_state", "requested");
             LogStore.Add("CatHome4", 1, "宿主重启请求已登记——本轮照常收尾（停机态拒收新输入），等待全局空闲", "RESTART");
         }
+        /// <summary>重启族工具名单——请求判定的单点真相源（批次结果检测、timeback 暴毙黑名单共用同一清单；改名 / 增件只动此处）</summary>
+        internal static readonly string[] RestartToolNames = new string[] { "restart-full", "restart-incr", "restart-host" };
+        /// <summary>
+        /// 是否重启族工具——判定单点（不散落字符串比较）。
+        /// </summary>
+        /// <param name="name">工具名</param>
+        /// <returns>true=重启族</returns>
+        internal static bool IsRestartTool(string name)
+        {
+            if (name == null || name.Length == 0)
+            {
+                return false;
+            }
+            for (int i = 0; i < RestartToolNames.Length; i = i + 1)
+            {
+                if (name == RestartToolNames[i])
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         /// <summary>
         /// 宿主重启停机态判定——DataBox 全局盒（键与 Program.Restart 同源）。
@@ -1871,7 +1893,7 @@ namespace CH4
                     if (call.TryGetProperty("function", out funcEl))
                     {
                         info.Name = GetStringProp(funcEl, "name");
-                        info.Arguments = GetStringProp(funcEl, "arguments");
+                        info.Arguments = DecodeToolArgEntities(info.Name, GetStringProp(funcEl, "arguments"));
                     }
                     else
                     {
@@ -2387,7 +2409,7 @@ namespace CH4
             for (int r = 0; r < _dogs.Count; r = r + 1)
             {
                 ToolOrderDog rd = _dogs[r];
-                if (rd.Name == "majordomo-restart" && rd.Result != null && !rd.Result.StartsWith("ERR|", StringComparison.Ordinal))
+                if (IsRestartTool(rd.Name) && rd.Result != null && !rd.Result.StartsWith("ERR|", StringComparison.Ordinal))
                 {
                     string restartReq;
                     if (!DataBox.TryGet<string>("global", "host_restart_request", out restartReq) || restartReq == null || restartReq.Length == 0)
@@ -2649,6 +2671,132 @@ namespace CH4
                 }
             }
             return "";
+        }
+
+        /// <summary>实体解码的内容面豁免名单——这些参数承载「写什么存什么」的正文语义，解码会损坏内容（A133）</summary>
+        private static readonly string[] EntityDecodeExemptArgs = new string[]
+        {
+            "content", "body", "code", "codes", "value", "new", "findings", "cmd", "command",
+            "expression", "question", "text", "purpose", "push", "persona", "description", "note"
+        };
+
+        /// <summary>
+        /// 是否内容面豁免参数——名单内不解码（一参数一判定，不按前缀打包）。
+        /// </summary>
+        /// <param name="name">参数名</param>
+        /// <returns>true=豁免（原样保留）</returns>
+        private static bool IsEntityDecodeExempt(string name)
+        {
+            if (name == null || name.Length == 0)
+            {
+                return false;
+            }
+            for (int i = 0; i < EntityDecodeExemptArgs.Length; i = i + 1)
+            {
+                if (name == EntityDecodeExemptArgs[i])
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 工具参数实体解码（A133）——把模型侧误转义的 HTML 实体还原为字符形态。
+        /// 落点 = ParseToolCalls 统一入口（全工具面一次覆盖——内置与 OA 工具同源）；豁免内容面参数（正文写什么存什么）。
+        /// 逃生口：要表达字面量实体文本，写双写形态（见 TextUtil.DecodeEntities）。
+        /// 解码发生时出声（L2）——静默改写模型输入不可观测。
+        /// </summary>
+        /// <param name="toolName">工具名（日志用）</param>
+        /// <param name="argsJson">参数 JSON（整包）</param>
+        /// <returns>解码后的参数 JSON（无改动时原样返回同一引用）</returns>
+        internal static string DecodeToolArgEntities(string toolName, string argsJson)
+        {
+            if (argsJson == null || argsJson.Length == 0 || argsJson.IndexOf('&') < 0)
+            {
+                return argsJson ?? "";
+            }
+            JsonDocument doc;
+            try
+            {
+                doc = JsonDocument.Parse(argsJson);
+            }
+            catch (Exception)
+            {
+                // 参数 JSON 非法——原样透传（下游按 BAD_ARGS 出声，本入口不抢报）
+                return argsJson;
+            }
+            string result = argsJson;
+            using (doc)
+            {
+                JsonElement root = doc.RootElement;
+                if (root.ValueKind == JsonValueKind.Object)
+                {
+                    List<KeyValuePair<string, string>> changed = new List<KeyValuePair<string, string>>();
+                    foreach (JsonProperty property in root.EnumerateObject())
+                    {
+                        if (property.Value.ValueKind != JsonValueKind.String)
+                        {
+                            continue;
+                        }
+                        if (IsEntityDecodeExempt(property.Name))
+                        {
+                            continue;
+                        }
+                        string original = property.Value.GetString() ?? "";
+                        string decoded = TextUtil.DecodeEntities(original);
+                        if (!string.Equals(original, decoded, StringComparison.Ordinal))
+                        {
+                            changed.Add(new KeyValuePair<string, string>(property.Name, decoded));
+                        }
+                    }
+                    if (changed.Count > 0)
+                    {
+                        StringBuilder sb = new StringBuilder();
+                        sb.Append("{");
+                        bool first = true;
+                        string names = "";
+                        foreach (JsonProperty property in root.EnumerateObject())
+                        {
+                            if (!first)
+                            {
+                                sb.Append(",");
+                            }
+                            first = false;
+                            sb.Append(JsonUtil.Serialize(property.Name));
+                            sb.Append(":");
+                            string replacement = null;
+                            for (int i = 0; i < changed.Count; i = i + 1)
+                            {
+                                if (changed[i].Key == property.Name)
+                                {
+                                    replacement = changed[i].Value;
+                                }
+                            }
+                            if (replacement != null)
+                            {
+                                sb.Append(JsonUtil.Serialize(replacement));
+                            }
+                            else
+                            {
+                                sb.Append(property.Value.GetRawText());
+                            }
+                        }
+                        sb.Append("}");
+                        for (int i = 0; i < changed.Count; i = i + 1)
+                        {
+                            if (names.Length > 0)
+                            {
+                                names = names + ",";
+                            }
+                            names = names + changed[i].Key;
+                        }
+                        LogStore.Add("CatHome4", 2, "工具参数实体解码: " + toolName + " · 字段 " + names, "TOOL");
+                        result = sb.ToString();
+                    }
+                }
+            }
+            return result;
         }
 
         /// <summary>

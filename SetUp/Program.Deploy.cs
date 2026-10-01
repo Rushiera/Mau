@@ -43,56 +43,17 @@ namespace SetUp
                 return Fail("public\\app\\CatHome4.exe 不存在——请先运行 SetUp.exe prepare 重建发布链。");
             }
 
-            // [段2b] 外观层静态资源对齐（G 方案 2026-09-23）——deploy 的来源是 public/app，html 面须先与源区对齐，
-            //        否则把落后版本推给运行区（产物区曾被 PreserveNewest 时间戳倒挂冻结）。失败即中止，不带落后版本部署。
-            string htmlSource = Path.Combine(repoRoot, "CatHome4", "html");
-            string htmlArtifact = Path.Combine(sourceDir, "html");
-            if (Directory.Exists(htmlSource))
+            // [段2b-4] 准备段——外观层对齐 + 复制 _new + config 模板 + version.txt（与 incr 重启链共用同一实现）
+            string prepErr = PrepareTargetDir(repoRoot, sourceDir, targetFull, true);
+            if (prepErr.Length > 0)
             {
-                if (!SyncOne(htmlSource, htmlArtifact, "产物区", 21))
-                {
-                    return Fail("外观层静态资源对齐失败——deploy 中止（避免把落后版本推给运行区）。");
-                }
+                return Fail(prepErr);
             }
-
-            // [段3] 复制 public\app 平铺内容到 <target>_new（含 Flows/ html/）——先落新目录，全程不触碰现行实例
-            string targetNew = targetFull + "_new";
-            string targetOld = targetFull + "_old";
-            Console.WriteLine("[SetUp] 复制中——落新目录: " + targetNew);
-            long copyMs = Environment.TickCount64;
-            bool copyOk = CopyDirectory(sourceDir, targetNew);
-            _steps.Add(new StepReport() { Step = 1, Name = "复制 public/app -> <target>_new", Ok = copyOk, Ms = Environment.TickCount64 - copyMs });
-            if (!copyOk)
-            {
-                return Fail("目录复制失败——新目录可能被占用或不可写。");
-            }
-
-            // [段3b] 配置模板复制——仓库 config/ 模板 → 新目录 config/（规范 §二：配置模板进部署包；Data 自举在首次运行完成）
-            string configTpl = Path.Combine(repoRoot, "config");
-            if (Directory.Exists(configTpl))
-            {
-                CopyDirectory(configTpl, Path.Combine(targetNew, "config"));
-            }
-
-            // [段4] 版本落盘——version.txt（读取 CatHome4.csproj <Version>；写新目录）
-            string version = ReadVersion(repoRoot);
-            long verMs = Environment.TickCount64;
-            bool verOk = true;
-            try
-            {
-                File.WriteAllText(Path.Combine(targetNew, "version.txt"), version);
-            }
-            catch (Exception ex)
-            {
-                verOk = false;
-                Console.WriteLine("[SetUp] 警告：version.txt 写入失败——" + ex.Message);
-            }
-            _steps.Add(new StepReport() { Step = 2, Name = "版本落盘 version.txt", Ok = verOk, Ms = Environment.TickCount64 - verMs });
-            Console.WriteLine("[SetUp] 版本: " + version);
 
             // [段4b] 原子切换——现行更名 _old（留作回退源）→ 新目录更名上架（同卷改名 = 原子）
+            string targetOld = targetFull + "_old";
             long switchMs = Environment.TickCount64;
-            string switchErr = SwitchDirectory(targetFull, targetNew, targetOld);
+            string switchErr = SwitchDirectory(targetFull, targetFull + "_new", targetOld);
             _steps.Add(new StepReport() { Step = 3, Name = "原子切换运行区", Ok = switchErr.Length == 0, Ms = Environment.TickCount64 - switchMs });
             if (switchErr.Length > 0)
             {
@@ -108,6 +69,75 @@ namespace SetUp
             return 0;
         }
         /// <summary>
+        /// 准备段——public/app 落 &lt;target&gt;_new（外观层对齐（可选）+ 复制 + config 模板 + version.txt）。
+        /// 与 incr 重启链共用同一实现：实现只有一份，入口有三个（design-ch4-host-restart §三·五）。
+        /// </summary>
+        /// <param name="repoRoot">仓库根</param>
+        /// <param name="sourceDir">产物区目录（public/app 绝对路径）</param>
+        /// <param name="targetFull">运行区绝对路径（本方法写 &lt;target&gt;_new）</param>
+        /// <param name="syncHtml">是否执行「源区 html → 产物区」对齐——deploy / full 为 true；incr 为 false（纯搬运产物区，前端改动走 sync-html）</param>
+        /// <returns>空串=成功；非空=错误描述</returns>
+        private static string PrepareTargetDir(string repoRoot, string sourceDir, string targetFull, bool syncHtml)
+        {
+            // [段0] 干净起点——暂存目录若存在（上次失败残留）先清（A135，带退避重试；清理失败即中止，不留混合态）
+            string stageErr;
+            if (!DeleteDirectoryWithRetry(targetFull + "_new", out stageErr))
+            {
+                return "暂存目录清理失败（" + targetFull + "_new）：" + stageErr + "——请检查是否有程序占用该目录。";
+            }
+
+            // [段2b] 外观层静态资源对齐（G 方案 2026-09-23）——deploy 的来源是 public/app，html 面须先与源区对齐，
+            //        否则把落后版本推给运行区（产物区曾被 PreserveNewest 时间戳倒挂冻结）。失败即中止，不带落后版本部署。
+            //        incr 关闭本段——它是「搬运产物区」，不是「顺手又部署一次前端」
+            if (syncHtml)
+            {
+                string htmlSource = Path.Combine(repoRoot, "CatHome4", "html");
+                string htmlArtifact = Path.Combine(sourceDir, "html");
+                if (Directory.Exists(htmlSource))
+                {
+                    if (!SyncOne(htmlSource, htmlArtifact, "产物区", 21))
+                    {
+                        return "外观层静态资源对齐失败——中止（避免把落后版本推给运行区）。";
+                    }
+                }
+            }
+
+            // [段3] 复制 public\app 平铺内容到 <target>_new（含 Flows/ html/）——先落新目录，全程不触碰现行实例
+            string targetNew = targetFull + "_new";
+            Console.WriteLine("[SetUp] 复制中——落新目录: " + targetNew);
+            long copyMs = Environment.TickCount64;
+            bool copyOk = CopyDirectory(sourceDir, targetNew);
+            _steps.Add(new StepReport() { Step = 1, Name = "复制 public/app -> <target>_new", Ok = copyOk, Ms = Environment.TickCount64 - copyMs });
+            if (!copyOk)
+            {
+                return "目录复制失败——新目录可能被占用或不可写。";
+            }
+
+            // [段3b] 配置模板复制——仓库 config/ 模板 → 新目录 config/（规范 §二：配置模板进部署包；Data 自举在首次运行完成）
+            string configTpl = Path.Combine(repoRoot, "config");
+            if (Directory.Exists(configTpl))
+            {
+                CopyDirectory(configTpl, Path.Combine(targetNew, "config"));
+            }
+
+            // [段4] 版本落盘——version.txt（读取 Directory.Build.props 单点 Version；写新目录）
+            string version = ReadVersion(repoRoot);
+            long verMs = Environment.TickCount64;
+            bool verOk = true;
+            try
+            {
+                File.WriteAllText(Path.Combine(targetNew, "version.txt"), version);
+            }
+            catch (Exception ex)
+            {
+                verOk = false;
+                Console.WriteLine("[SetUp] 警告：version.txt 写入失败——" + ex.Message);
+            }
+            _steps.Add(new StepReport() { Step = 2, Name = "版本落盘 version.txt", Ok = verOk, Ms = Environment.TickCount64 - verMs });
+            Console.WriteLine("[SetUp] 版本: " + version);
+            return "";
+        }
+        /// <summary>
         /// 原子切换运行区——现行目录更名 _old（先清旧回退源）→ 新目录更名上架；任一步失败即回滚。
         /// 前提：运行区（MauOut）无持久信息——持久数据在 Data 三级锚定区，整目录替换安全。
         /// </summary>
@@ -117,53 +147,134 @@ namespace SetUp
         /// <returns>空串=切换成功；非空=错误描述（已尽力回滚）</returns>
         private static string SwitchDirectory(string target, string targetNew, string targetOld)
         {
-            // [段1] 清旧回退源——上一次切换的残留（旧宿主已退出，模块锁已释放）
+            // [段1] 清旧回退源——上一次切换的残留（带退避重试：句柄未释放时删除同样失败）
             if (Directory.Exists(targetOld))
             {
-                try
+                string delErr;
+                if (!DeleteDirectoryWithRetry(targetOld, out delErr))
                 {
-                    Directory.Delete(targetOld, true);
-                }
-                catch (Exception ex)
-                {
-                    return "回退源清理失败（" + targetOld + "）：" + ex.Message;
+                    return "回退源清理失败（" + targetOld + "）：" + delErr;
                 }
             }
-            // [段2] 现行 → 回退源
+            // [段2] 现行 → 回退源（A135——退避重试：宿主退出到文件映射 / 句柄完全回收存在时序窗口）
             bool movedOld = false;
             if (Directory.Exists(target))
             {
-                try
+                string moveErr;
+                if (!MoveDirectoryWithRetry(target, targetOld, out moveErr))
                 {
-                    Directory.Move(target, targetOld);
-                    movedOld = true;
+                    CleanupStaging(targetNew);
+                    return "现行目录更名失败：" + moveErr;
                 }
-                catch (Exception ex)
-                {
-                    return "现行目录更名失败（模块锁？）：" + ex.Message;
-                }
+                movedOld = true;
             }
-            // [段3] 新目录上架——失败回滚（回退源改回现行）
-            try
-            {
-                Directory.Move(targetNew, target);
-            }
-            catch (Exception ex)
+            // [段3] 新目录上架——失败回滚（回退源改回现行；回滚同样带退避重试）
+            string upErr;
+            if (!MoveDirectoryWithRetry(targetNew, target, out upErr))
             {
                 if (movedOld)
                 {
-                    try
+                    string rollbackErr;
+                    if (!MoveDirectoryWithRetry(targetOld, target, out rollbackErr))
                     {
-                        Directory.Move(targetOld, target);
-                    }
-                    catch (Exception rollbackEx)
-                    {
-                        Console.WriteLine("[SetUp] 警告：回滚失败——" + rollbackEx.Message);
+                        Console.WriteLine("[SetUp] 警告：回滚失败——" + rollbackErr);
                     }
                 }
-                return "新目录上架失败（已回滚）：" + ex.Message;
+                CleanupStaging(targetNew);
+                return "新目录上架失败（已回滚）：" + upErr;
             }
             return "";
+        }
+        /// <summary>
+        /// 清理暂存目录（A135）——切换失败后不留 _new 残留（下次准备段会重建）；清理失败出声但不改判定。
+        /// </summary>
+        /// <param name="targetNew">暂存目录（&lt;target&gt;_new）</param>
+        private static void CleanupStaging(string targetNew)
+        {
+            string err;
+            if (!DeleteDirectoryWithRetry(targetNew, out err))
+            {
+                Console.WriteLine("[SetUp] 警告：暂存目录清理失败——" + targetNew + "：" + err);
+            }
+            else
+            {
+                Console.WriteLine("[SetUp] 暂存目录已清理：" + targetNew);
+            }
+        }
+        /// <summary>切换类目录操作的退避重试次数（A135——宿主退出后其文件映射 / 句柄回收存在时序窗口）</summary>
+        private const int SwitchRetryAttempts = 10;
+        /// <summary>切换类目录操作的退避间隔毫秒（10 × 300 ms = 3 s 上限）</summary>
+        private const int SwitchRetryDelayMs = 300;
+        /// <summary>
+        /// 目录改名（带退避重试）——一次失败即判死会写出不健壮的底层实现：宿主刚退出时其文件映射 / 句柄可能尚未回收。
+        /// </summary>
+        /// <param name="src">源目录</param>
+        /// <param name="dest">目标目录</param>
+        /// <param name="err">错误描述（空=成功）</param>
+        /// <returns>true=改名成功</returns>
+        private static bool MoveDirectoryWithRetry(string src, string dest, out string err)
+        {
+            err = "";
+            for (int attempt = 1; attempt <= SwitchRetryAttempts; attempt = attempt + 1)
+            {
+                try
+                {
+                    Directory.Move(src, dest);
+                    if (attempt > 1)
+                    {
+                        Console.WriteLine("[SetUp] 目录改名重试成功（第 " + attempt.ToString() + " 次）: " + src);
+                    }
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    err = ex.Message;
+                    if (attempt < SwitchRetryAttempts)
+                    {
+                        Console.WriteLine("[SetUp] 目录改名失败（第 " + attempt.ToString() + "/" + SwitchRetryAttempts.ToString() + " 次）——" + ex.Message + "；退避 " + SwitchRetryDelayMs.ToString() + " ms 后重试。");
+                        System.Threading.Thread.Sleep(SwitchRetryDelayMs);
+                    }
+                }
+            }
+            err = err + "（重试 " + SwitchRetryAttempts.ToString() + " 次仍失败——疑似外部程序仍持有该目录句柄）";
+            return false;
+        }
+        /// <summary>
+        /// 目录删除（带退避重试）——目录不存在视为成功；句柄未释放时删除同样会失败。
+        /// </summary>
+        /// <param name="dir">目标目录</param>
+        /// <param name="err">错误描述（空=成功）</param>
+        /// <returns>true=已删除或本就不存在</returns>
+        private static bool DeleteDirectoryWithRetry(string dir, out string err)
+        {
+            err = "";
+            if (!Directory.Exists(dir))
+            {
+                return true;
+            }
+            for (int attempt = 1; attempt <= SwitchRetryAttempts; attempt = attempt + 1)
+            {
+                try
+                {
+                    Directory.Delete(dir, true);
+                    if (attempt > 1)
+                    {
+                        Console.WriteLine("[SetUp] 目录删除重试成功（第 " + attempt.ToString() + " 次）: " + dir);
+                    }
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    err = ex.Message;
+                    if (attempt < SwitchRetryAttempts)
+                    {
+                        Console.WriteLine("[SetUp] 目录删除失败（第 " + attempt.ToString() + "/" + SwitchRetryAttempts.ToString() + " 次）——" + ex.Message + "；退避 " + SwitchRetryDelayMs.ToString() + " ms 后重试。");
+                        System.Threading.Thread.Sleep(SwitchRetryDelayMs);
+                    }
+                }
+            }
+            err = err + "（重试 " + SwitchRetryAttempts.ToString() + " 次仍失败——疑似外部程序仍持有该目录句柄）";
+            return false;
         }
 
         /// <summary>

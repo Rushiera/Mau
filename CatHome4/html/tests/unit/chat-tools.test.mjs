@@ -743,7 +743,7 @@ test('批1——temp-info 结构化头：键值表由 meta 驱动 + 正文另起
   expect(c2.querySelector('.tn').textContent).toBe('🧩 临时工具 · 暂无注册');
 });
 
-test('批1——temp-exec / majordomo-restart 结构化头：exec 骨架剥头 + 输入意图行', () => {
+test('批1——temp-exec / restart-full 结构化头：exec 骨架剥头 + 输入意图行', () => {
   const card = renderTool({
     name: 'temp-exec',
     arguments: JSON.stringify({ key: 'demo.echo', content: 'hi' }),
@@ -753,13 +753,13 @@ test('批1——temp-exec / majordomo-restart 结构化头：exec 骨架剥头 +
   expect(card.querySelector('.seg-out .tr').textContent).toBe('hi');
   expect(card.querySelector('.seg-in .seg-line').textContent).toContain('临时执行 demo.echo');
   renderTool({
-    name: 'majordomo-restart',
+    name: 'restart-full',
     arguments: '{}',
-    result: '{"ok":true,"tool":"majordomo-restart","target":"mauout","push":true}\n宿主重启请求已登记（目标运行区: mauout）。'
+    result: '{"ok":true,"tool":"restart-full","target":"mauout","push":true}\n宿主全链重启请求已登记（目标运行区: mauout）。'
   }, 111);
   const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
-  expect(c2.querySelector('.tn').textContent).toBe('💻 宿主重启 · 目标 mauout · 带回执');
-  expect(c2.querySelector('.seg-out .tr').textContent).toContain('宿主重启请求已登记');
+  expect(c2.querySelector('.tn').textContent).toBe('💻 宿主全链重启 · 目标 mauout · 带回执');
+  expect(c2.querySelector('.seg-out .tr').textContent).toContain('宿主全链重启请求已登记');
 });
 
 test('批1——image-analyze 结构化头：text 骨架剥头 + 字数；参数行含提示词', () => {

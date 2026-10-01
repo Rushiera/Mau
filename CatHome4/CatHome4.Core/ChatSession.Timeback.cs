@@ -561,7 +561,7 @@ namespace CH4
         /// <summary>
         /// timeback 暴毙风险黑名单（莎 2026-09-28 定 · 2026-10-01 宽松化）——只隔离「会让 Mau 框架 / 宿主进程自身当场失效」的行为，
         /// 判据 = 该动作是否可能立刻中断进程或让作用域上下文失效（重启 / 程序集句柄替换 / 运行区文件被重写）。
-        /// 拦三件：majordomo-restart（重启——本轮中断，作用域随内存丢失）· host-reload（换程序集句柄 + 重建工具池）·
+        /// 拦三类：restart-*（重启族——本轮中断，作用域随内存丢失）· host-reload（换程序集句柄 + 重建工具池）·
         /// mau-setup（deploy 重写运行区文件）。其余一律放行——只读（mau-verify / host-flows / config-get / cat.list 类指令）、
         /// 写仓库产物区（mau-gen / mau-proj）、配置写（config-*）、管理指令（majordomo-cmd）：改的是行为与产物，不会让进程或作用域当场失效。
         /// 判据 = 工具名精确匹配（黑名单式，不用前缀通配）。
@@ -571,7 +571,7 @@ namespace CH4
         /// <returns>true=作用域内禁用</returns>
         private static bool IsTimebackBodyLocked(string name)
         {
-            return name == "majordomo-restart"
+            return IsRestartTool(name)
                 || name == "host-reload"
                 || name == "mau-setup";
         }
