@@ -34,6 +34,9 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 #sidebar button { width: 44px; height: 44px; background: transparent; border: none; color: var(--ch-fg-weak); font-size: var(--ch-fs-strong); cursor: pointer; border-radius: 6px; font-family: inherit; }
 #sidebar button:hover { background: var(--ch-bg-hover); color: var(--ch-fg); }
 #sidebar button.active { background: var(--ch-bg-accent); color: var(--ch-fg-inverse); }
+/* 当前用户项（用户态）——侧栏首项，显示当前用户；双击开弹层；名字长时自动换行 */
+#sidebar button.sidebar-user { font-size: var(--ch-fs-tag); line-height: 1.05; word-break: break-all; padding: 2px; color: var(--ch-identity); border: 1px solid var(--ch-line); margin-bottom: 2px; }
+#sidebar button.sidebar-user:hover { border-color: var(--ch-bg-accent); }
 
 /* ── 主区 ── */
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; }

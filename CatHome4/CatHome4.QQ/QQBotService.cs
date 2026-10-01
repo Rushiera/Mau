@@ -501,7 +501,7 @@ namespace CatHome4.QQ
                 SendToSource(qqBotId, source, "目标 Cat 未启用 qqbot 转发功能");
                 return;
             }
-            // 注入唯一绑定猫——消息头区分渠道+来源（v0.96.1：私聊硬编码Rushiera/群@昵称+角色）
+            // 注入唯一绑定猫——消息头区分渠道+来源+身份（design-ch4-user-state：私聊=当前用户 / 群@ 昵称+角色+本人或非用户标记）
             // 🔴 三字典单线程化（R6-P1-01）——WS 线程只入队事件，EnqueueSource/ResetRound 由主线程 Tick 事件泵统一消费
             tg.Inject("[来自QQ]" + BuildHeader(source) + " " + text + attachText);
             _eventQueue.Enqueue(new QqServiceEvent { Kind = "source", CatKey = tg.Key, Source = source });
@@ -551,8 +551,13 @@ namespace CatHome4.QQ
                         {
                             msgId = idE.GetString() ?? "";
                         }
+                        string unionOpenId = "";
+                        if (authorE.TryGetProperty("union_openid", out JsonElement uo))
+                        {
+                            unionOpenId = uo.GetString() ?? "";
+                        }
                         attachments = ParseAttachments(dd);
-                        source = new QqSource("private", uid, msgId, authorName, "");
+                        source = new QqSource("private", uid, msgId, authorName, "", uid, unionOpenId);
                         text = StripAtMention(content);
                         return true;
                     }
@@ -582,8 +587,13 @@ namespace CatHome4.QQ
                         {
                             msgId = idE.GetString() ?? "";
                         }
+                        string unionOpenId = "";
+                        if (authorE.TryGetProperty("union_openid", out JsonElement uo))
+                        {
+                            unionOpenId = uo.GetString() ?? "";
+                        }
                         attachments = ParseAttachments(dd);
-                        source = new QqSource("group", gid + ":" + mid, msgId, authorName, memberRole);
+                        source = new QqSource("group", gid + ":" + mid, msgId, authorName, memberRole, mid, unionOpenId);
                         text = StripAtMention(content);
                         return true;
                     }
@@ -820,27 +830,128 @@ namespace CatHome4.QQ
             }
             sb.Append(content.Substring(cursor));
             return sb.ToString();
-        }        /// <summary>构建消息头——区分渠道+来源（v0.96.1）。
-/// 私聊：硬编码Rushiera（Rushiera 本人私聊 ID，User.md 补身份）；群@：昵称+角色（事件白拿字段）。</summary>
-/// <param name="source">消息来源</param>
-/// <returns>消息头——[私聊|Rushiera] / [群@|昵称(角色)]</returns>
-        private static string BuildHeader(QqSource source)
+        }
+
+        /// <summary>构建消息头——区分渠道 + 来源 + 身份（design-ch4-user-state）。
+        /// 私聊：当前用户显示名（用户态 user.current）；群@：昵称 + 角色 + 身份标记（·本人 / ·非用户[·视为指令]）。</summary>
+        /// <param name="source">消息来源</param>
+        /// <returns>消息头——[私聊|莎] / [群@|昵称(角色)·本人] / [群@|昵称(角色)·非用户]</returns>
+        internal static string BuildHeader(QqSource source)
         {
             if (source.Type == "private")
             {
-                return "[私聊|Rushiera]";
+                return "[私聊|" + CurrentUserName() + "]";
             }
             string name = source.DisplayName ?? "";
             string role = source.Role ?? "";
+            string inner;
             if (name.Length == 0)
             {
-                return "[群@]";
+                inner = "群@";
             }
-            if (role.Length == 0)
+            else if (role.Length == 0)
             {
-                return "[群@|" + name + "]";
+                inner = "群@|" + name;
             }
-            return "[群@|" + name + "(" + RoleText(role) + ")]";
+            else
+            {
+                inner = "群@|" + name + "(" + RoleText(role) + ")";
+            }
+            if (IsCurrentUserIdentity(source))
+            {
+                inner = inner + "·本人";
+            }
+            else if (AcceptNonUserCommands())
+            {
+                inner = inner + "·非用户·视为指令";
+            }
+            else
+            {
+                inner = inner + "·非用户";
+            }
+            return "[" + inner + "]";
+        }
+
+        /// <summary>当前用户显示名——配置群 user.current（缺失 / 空回落缺省名）。</summary>
+        /// <returns>显示名</returns>
+        internal static string CurrentUserName()
+        {
+            ConfigStore cfg = ResolveUserConfig();
+            if (cfg != null)
+            {
+                string name = cfg.Get(UserStateKeys.Current, "");
+                if (name.Length > 0)
+                {
+                    return name;
+                }
+            }
+            return UserStateKeys.DefaultUserName;
+        }
+
+        /// <summary>接受非用户的指令——配置群 user.qq_accept_nonuser（缺失 / 非法回落 false）。</summary>
+        /// <returns>是否接受</returns>
+        internal static bool AcceptNonUserCommands()
+        {
+            ConfigStore cfg = ResolveUserConfig();
+            if (cfg != null)
+            {
+                string value = cfg.Get(UserStateKeys.QqAcceptNonUser, "false");
+                if (value == "true" || value == "1")
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>配置存储解析——DataBox 绑定面（未绑定 = null → 缺省值）。</summary>
+        /// <returns>配置存储或 null</returns>
+        private static ConfigStore ResolveUserConfig()
+        {
+            ConfigStore cfg = null;
+            DataBox.TryResolve<ConfigStore>(out cfg);
+            return cfg;
+        }
+
+        /// <summary>是否当前用户本人——私聊恒为本人；群@ 按 user.qq_ids 清单匹配（昵称 / member_openid / union_openid）。</summary>
+        /// <param name="source">消息来源</param>
+        /// <returns>是否本人</returns>
+        internal static bool IsCurrentUserIdentity(QqSource source)
+        {
+            if (source == null)
+            {
+                return false;
+            }
+            if (source.Type == "private")
+            {
+                return true;
+            }
+            ConfigStore cfg = ResolveUserConfig();
+            if (cfg == null)
+            {
+                return false;
+            }
+            string ids = cfg.Get(UserStateKeys.QqIds, "");
+            if (ids.Length == 0)
+            {
+                return false;
+            }
+            string[] tokens = ids.Split(',');
+            for (int i = 0; i < tokens.Length; i = i + 1)
+            {
+                string token = tokens[i].Trim();
+                if (token.Length == 0)
+                {
+                    continue;
+                }
+                if (string.Equals(token, source.DisplayName, StringComparison.Ordinal)
+                    || string.Equals(token, source.MemberOpenId, StringComparison.Ordinal)
+                    || string.Equals(token, source.UnionOpenId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>群角色中文映射——owner=群主 / admin=管理员 / member=成员；未知原值</summary>
@@ -1806,23 +1917,35 @@ namespace CatHome4.QQ
         /// <summary>被动回复引用——事件 d.id；空=非被动</summary>
         public string MsgId;
 
-        /// <summary>发送者昵称——群@ author.username；私聊事件为空串（私聊 header 硬编码Rushiera）</summary>
+        /// <summary>发送者昵称——群@ author.username；私聊事件可能为空（私聊 header 走当前用户显示名）</summary>
         public string DisplayName;
 
         /// <summary>群内角色——owner/admin/member（事件白拿字段）；私聊空</summary>
         public string Role;
 
+        /// <summary>发送者成员 ID——群@ author.member_openid；私聊填 user_openid（两个 ID 空间不同，不可互认）</summary>
+        public string MemberOpenId;
+
+        /// <summary>发送者统一 ID——author.union_openid（事件提供时才有；跨场景识别当前用户本人用）</summary>
+        public string UnionOpenId;
+
         /// <summary>构造来源。</summary>
         /// <param name="type">消息类型</param>
         /// <param name="targetId">目标 ID</param>
         /// <param name="msgId">被动回复 msg_id</param>
-        public QqSource(string type, string targetId, string msgId, string displayName = "", string role = "")
+        /// <param name="displayName">发送者昵称</param>
+        /// <param name="role">群内角色</param>
+        /// <param name="memberOpenId">成员 ID（私聊 = user_openid）</param>
+        /// <param name="unionOpenId">统一 ID（事件提供时才有）</param>
+        public QqSource(string type, string targetId, string msgId, string displayName = "", string role = "", string memberOpenId = "", string unionOpenId = "")
         {
             Type = type;
             TargetId = targetId;
             MsgId = msgId;
             DisplayName = displayName;
             Role = role;
+            MemberOpenId = memberOpenId;
+            UnionOpenId = unionOpenId;
         }
 
         /// <summary>显示——private:uid / group:gid:mid（日志兼容）</summary>

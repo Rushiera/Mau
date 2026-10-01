@@ -24,8 +24,8 @@ var logs = [];               // 内存日志数组（Log 区真相源）
 var logDedupeKey = '';       // 已渲染最后一条日志的 key——拉取合并去重（同帧精确比对）
 var logDedupeFrame = -1;     // 已渲染最后一条日志的帧号——拉取合并去重（数值单调比较，不受字典序影响）
 
-// [段2] 侧栏页签切换
-var tabs = document.querySelectorAll('#sidebar button');
+// [段2] 侧栏页签切换——只取 data-tab 按钮（侧栏「当前用户」项无 data-tab，由 panel-user.js 接管双击）
+var tabs = document.querySelectorAll('#sidebar button[data-tab]');
 for (var i = 0; i < tabs.length; i++) {
     tabs[i].addEventListener('click', function () {
         for (var j = 0; j < tabs.length; j++) { tabs[j].classList.remove('active'); }

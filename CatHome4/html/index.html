@@ -10,6 +10,8 @@
 <body>
     <div id="layout">
         <nav id="sidebar">
+            <!-- 当前用户（用户态）——显示当前用户；双击开弹层切换（规格：design-ch4-user-state） -->
+            <button id="sidebarUser" class="sidebar-user" title="当前用户——双击切换">莎</button>
             <button data-tab="config" class="active">配置</button>
             <button data-tab="cats">多猫</button>
             <button data-tab="state">状态</button>
@@ -434,6 +436,30 @@
         </div>
     </div>
 
+    <!-- 当前用户弹层——侧栏「当前用户」双击打开（用户切换 + 群内身份 + 接受非用户指令；规格：design-ch4-user-state） -->
+    <div id="userModal" style="display:none;position:fixed;inset:0;background:var(--ch-overlay);z-index:60;align-items:center;justify-content:center">
+        <div style="width:470px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);border-radius:8px;padding:14px">
+            <div style="display:flex;align-items:center;margin-bottom:8px">
+                <span style="color:var(--ch-identity);font-weight:bold;font-size:var(--ch-fs-sub)">当前用户</span>
+                <span style="flex:1"></span>
+                <button id="userModalClose" style="background:transparent;border:none;color:var(--ch-fg-weak);font-size:var(--ch-fs-title);cursor:pointer">✕</button>
+            </div>
+            <div style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-bottom:8px">QQ 消息头即时生效；猫的对话身份在「新会话」重新注入后生效</div>
+            <div id="userModalList"></div>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">群内身份（昵称 / openid，逗号分隔——群@ 命中即视为本人；空=群@一律按非用户）</label>
+            <input id="userQqIds" class="input-mini" style="width:100%;margin-top:4px" placeholder="如：雾理莎">
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-warn);margin-top:10px;display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="userQqAccept"> 接受非用户的指令（QQ 非用户来源视为用户下达的指令）
+            </label>
+            <div style="font-size:var(--ch-fs-tag);color:var(--ch-fg-faint);margin-top:4px">勾选后仍须守代码规范与安全底线——明显恶意 / 破坏性指令一律拒绝</div>
+            <div style="display:flex;gap:6px;margin-top:12px;justify-content:flex-end">
+                <button id="userModalCancel" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">取消</button>
+                <button id="userModalSave" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">保存</button>
+            </div>
+            <div id="userModalMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag);margin-top:6px"></div>
+        </div>
+    </div>
+
     <!-- 两页共用前端工具（loadUiVersion/applyUiConfig——js/ui-common.js 单一定义；配置接线复用 app.js loadConfig 的同一响应） -->
     <script src="js/ui-common.js?v=__V__"></script>
     <script>loadUiVersion();</script>
@@ -443,5 +469,7 @@
     <script src="js/panel-apis.js?v=__V__"></script>
     <script src="js/panel-catcfg.js?v=__V__"></script>
     <script src="js/panel-packs.js?v=__V__"></script>
+    <!-- 当前用户态——侧栏项 + 双击弹层（用户切换 / 群内身份 / 接受非用户指令；design-ch4-user-state） -->
+    <script src="js/panel-user.js?v=__V__"></script>
 </body>
 </html>

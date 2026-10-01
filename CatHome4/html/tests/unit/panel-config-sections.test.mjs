@@ -34,7 +34,10 @@ beforeAll(async () => {
 });
 
 test('侧栏顺序——配置居首且为默认页签', () => {
-  const btns = document.querySelectorAll('#sidebar button');
+  // 首项为「当前用户」（用户态项，无 data-tab）——页签序列从第二项起（2026-10-01 用户态轮）
+  const all = document.querySelectorAll('#sidebar button');
+  expect(all[0].id).toBe('sidebarUser');
+  const btns = document.querySelectorAll('#sidebar button[data-tab]');
   expect(btns[0].getAttribute('data-tab')).toBe('config');
   expect(btns[1].getAttribute('data-tab')).toBe('cats');
   expect(btns[0].classList.contains('active')).toBe(true);
