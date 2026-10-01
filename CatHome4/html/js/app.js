@@ -381,6 +381,11 @@ var catDetailKey = '';
 var catDetailData = null;
 var catDetailInfoOn = false;
 var catDetailArchiveOn = false;
+// 弹层动作面 DOM——停止按钮 + 一行输入（发送）/回执（2026-10-01 易用性轮）
+var catDetailPauseBtn = document.getElementById('catDetailPause');
+var catDetailInput = document.getElementById('catDetailInput');
+var catDetailSendBtn = document.getElementById('catDetailSend');
+var catDetailSendMsg = document.getElementById('catDetailSendMsg');
 
 // /info 展示字段——与 cat.info 单猫条目同源（BuildCatInfoEntry 产物）
 var CAT_DETAIL_FIELDS = ['id', 'name', 'special', 'running', 'port', 'isIdle', 'phase', 'runState', 'requests', 'round', 'msgCount', 'pending', 'noteActive', 'contextCount', 'context', 'lastActiveAt'];
@@ -486,8 +491,19 @@ function renderCatDetail() {
         portBtn.onclick = null;
     }
     if (catDetailInfoOn) { catDetailBody.appendChild(catDetailInfoBlock(d)); }
-    catDetailBody.appendChild(catDetailMsgBlock('用户上一次的输入', d.lastUser, '无——本会话与留档均无用户消息'));
-    catDetailBody.appendChild(catDetailMsgBlock('猫上一次的输入', d.lastReply, '无——本会话与留档均无回复'));
+    // 两条输入按「上一次输入时间」升序——更晚的一条沉底（用户最后输入晚于猫 → 用户输入在最下方）
+    var userBlock = catDetailMsgBlock('用户上一次的输入', d.lastUser, '无——本会话与留档均无用户消息');
+    var replyBlock = catDetailMsgBlock('猫上一次的输入', d.lastReply, '无——本会话与留档均无回复');
+    var userTime = d.lastUser ? (d.lastUser.time || 0) : 0;
+    var replyTime = d.lastReply ? (d.lastReply.time || 0) : 0;
+    if (userTime <= replyTime) {
+        catDetailBody.appendChild(userBlock);
+        catDetailBody.appendChild(replyBlock);
+    } else {
+        catDetailBody.appendChild(replyBlock);
+        catDetailBody.appendChild(userBlock);
+    }
+    applyCatDetailActions(d);
     if (catDetailArchiveOn) { catDetailBody.appendChild(catDetailArchiveBlock(d)); }
 }
 
@@ -536,6 +552,52 @@ function catDetailArchiveBlock(d) {
     pre.textContent = d.archive.text;
     box.appendChild(pre);
     return box;
+}
+
+// 动作面态——停止 / 发送入口随猫类型：主干（special）由后端拒绝（cat.pause / cat.chat 不收主干自查），入口前置收口（不做假成功）
+function applyCatDetailActions(d) {
+    catDetailPauseBtn.style.display = d.special ? 'none' : '';
+    catDetailInput.disabled = !!d.special;
+    catDetailSendBtn.disabled = !!d.special;
+    catDetailInput.placeholder = d.special ? '主干会话——请在对话窗口输入' : '输入内容——发送给该猫（cat.chat）';
+    catDetailSendMsg.textContent = '';
+}
+
+// 会话详情指令投递——POST /api/v1/command；失败写 catDetailMsg，成功回调收尾
+function catDetailCommand(cmd, onOk) {
+    fetch('/api/v1/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cmd })
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok) { catDetailMsg.textContent = '投递失败: ' + (d.error || ''); return; }
+            if (onOk) { onOk(); }
+        })
+        .catch(function (e) { catDetailMsg.textContent = '投递失败: ' + e; });
+}
+
+// 停止本轮——cat.pause <key>
+function catDetailPause() {
+    if (catDetailKey.length === 0) { return; }
+    catDetailMsg.textContent = '';
+    catDetailCommand('cat.pause ' + catDetailKey, function () {
+        catDetailMsg.textContent = '已投递停止本轮';
+    });
+}
+
+// 一行输入发送——cat.chat <key> <内容>（成功才清空输入 + 延迟刷新详情）
+function catDetailSend() {
+    if (catDetailKey.length === 0) { return; }
+    var text = catDetailInput.value.trim();
+    if (text.length === 0) { catDetailSendMsg.textContent = '内容为空——未发送'; return; }
+    catDetailSendMsg.textContent = '';
+    catDetailCommand('cat.chat ' + catDetailKey + ' ' + text, function () {
+        catDetailInput.value = '';
+        catDetailSendMsg.textContent = '已发送';
+        setTimeout(loadCatDetail, 500);
+    });
 }
 
 // /new——先重取实时状态（isIdle 判定取当下值，不依赖快照相位），再开确认弹层
@@ -614,6 +676,12 @@ document.getElementById('catDetailReload').addEventListener('click', function ()
 document.getElementById('catDetailInfo').addEventListener('click', function () { catDetailInfoOn = !catDetailInfoOn; renderCatDetail(); });
 document.getElementById('catDetailArchive').addEventListener('click', function () { catDetailArchiveOn = !catDetailArchiveOn; renderCatDetail(); });
 document.getElementById('catDetailNew').addEventListener('click', catDetailNewSession);
+document.getElementById('catDetailPause').addEventListener('click', catDetailPause);
+document.getElementById('catDetailSend').addEventListener('click', catDetailSend);
+// 遮罩点击关闭——点弹层外区域（事件目标 = 遮罩本体）快速关闭
+catDetailModal.addEventListener('click', function (e) {
+    if (e.target === catDetailModal) { closeCatDetail(); }
+});
 document.getElementById('catNewCancel').addEventListener('click', function () { catNewModal.style.display = 'none'; });
 document.getElementById('catNewGo').addEventListener('click', catNewSubmit);
 

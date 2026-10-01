@@ -201,3 +201,90 @@ test('端口入口——刷新左边可点直达对话窗口；静默猫隐藏',
   await openDetail();
   expect(document.getElementById('catDetailPort').style.display).toBe('none');
 });
+
+// ── 2026-10-01 易用性轮：按时间排序 / 停止 / 一行输入 / 遮罩关闭 ──
+
+test('排序——用户最后输入晚于猫 → 用户块沉底', async () => {
+  detail = detailCurrent();
+  detail.lastUser = { text: '晚的输入', source: 'current', time: Date.now(), timeText: '' };
+  detail.lastReply = { text: '早的回复', source: 'current', time: Date.now() - 10000, timeText: '' };
+  await openDetail();
+  const heads = document.querySelectorAll('#catDetailBody .cd-block-head');
+  expect(heads.length).toBe(2);
+  expect(heads[0].textContent).toContain('猫上一次的输入');
+  expect(heads[1].textContent).toContain('用户上一次的输入');
+});
+
+test('排序——猫更晚时保持用户在上', async () => {
+  detail = detailCurrent();
+  await openDetail();
+  const heads = document.querySelectorAll('#catDetailBody .cd-block-head');
+  expect(heads[0].textContent).toContain('用户上一次的输入');
+  expect(heads[1].textContent).toContain('猫上一次的输入');
+});
+
+test('停止按钮——/new 右边；非主干猫点击投递 cat.pause', async () => {
+  detail = detailCurrent();
+  detail.special = false;
+  detail.cat = 'cat-a';
+  await openDetail({ id: 'cat-a', name: '小猫', phase: 'Idle', round: 1, msgCount: 2, pending: 0 });
+  const pause = document.getElementById('catDetailPause');
+  expect(pause.style.display).not.toBe('none');
+  expect(document.getElementById('catDetailNew').nextElementSibling).toBe(pause);
+  calls.length = 0;
+  pause.dispatchEvent(new Event('click'));
+  await tick();
+  await tick();
+  const cmds = calls.filter((c) => c.url === '/api/v1/command');
+  expect(cmds.length).toBe(1);
+  expect(cmds[0].body.text).toBe('cat.pause cat-a');
+  expect(document.getElementById('catDetailMsg').textContent).toBe('已投递停止本轮');
+});
+
+test('一行输入——发送投递 cat.chat，成功清空输入框', async () => {
+  detail = detailCurrent();
+  detail.special = false;
+  await openDetail({ id: 'cat-a', name: '小猫' });
+  const input = document.getElementById('catDetailInput');
+  input.value = '  你好啊  ';
+  calls.length = 0;
+  document.getElementById('catDetailSend').dispatchEvent(new Event('click'));
+  await tick();
+  await tick();
+  const cmds = calls.filter((c) => c.url === '/api/v1/command');
+  expect(cmds.length).toBe(1);
+  expect(cmds[0].body.text).toBe('cat.chat cat-a 你好啊');
+  expect(input.value).toBe('');
+  expect(document.getElementById('catDetailSendMsg').textContent).toBe('已发送');
+});
+
+test('一行输入——空内容不投递', async () => {
+  detail = detailCurrent();
+  detail.special = false;
+  await openDetail({ id: 'cat-a', name: '小猫' });
+  document.getElementById('catDetailInput').value = '   ';
+  calls.length = 0;
+  document.getElementById('catDetailSend').dispatchEvent(new Event('click'));
+  await tick();
+  expect(calls.filter((c) => c.url === '/api/v1/command').length).toBe(0);
+  expect(document.getElementById('catDetailSendMsg').textContent).toBe('内容为空——未发送');
+});
+
+test('主干会话——停止入口隐藏 + 输入禁用', async () => {
+  detail = detailCurrent();
+  await openDetail();
+  expect(document.getElementById('catDetailPause').style.display).toBe('none');
+  expect(document.getElementById('catDetailInput').disabled).toBe(true);
+  expect(document.getElementById('catDetailSend').disabled).toBe(true);
+});
+
+test('遮罩点击——点弹层外区域关闭；点内容区不关闭', async () => {
+  detail = detailCurrent();
+  await openDetail();
+  const modal = document.getElementById('catDetailModal');
+  expect(modal.style.display).toBe('flex');
+  document.querySelector('#catDetailModal > div').dispatchEvent(new Event('click', { bubbles: true }));
+  expect(modal.style.display).toBe('flex');
+  modal.dispatchEvent(new Event('click'));
+  expect(modal.style.display).toBe('none');
+});

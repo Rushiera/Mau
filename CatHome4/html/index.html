@@ -359,6 +359,8 @@
             <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
                 <button id="catDetailInfo" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-ok);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">/info</button>
                 <button id="catDetailNew" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-warn);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">/new</button>
+                <!-- 停止本轮——cat.pause <key>；主干会话（special）由后端拒绝，入口隐藏（与多猫行「停止」同惯例） -->
+                <button id="catDetailPause" title="停止本轮——已生成内容保留" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-err);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">停止</button>
                 <button id="catDetailArchive" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">上一个被销毁的会话内容</button>
                 <button id="catDetailPort" style="display:none;background:var(--ch-bg-raised);border:1px solid var(--ch-bg-accent);color:var(--ch-ok);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)" title="点击打开对话窗口">:—</button>
                 <button id="catDetailReload" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
@@ -366,6 +368,12 @@
                 <span id="catDetailMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag)"></span>
             </div>
             <div id="catDetailBody" style="flex:1;overflow-y:auto"></div>
+            <!-- 一行输入——发送给该猫（cat.chat <key> <内容>）；主干会话禁填（后端不收主干自查） -->
+            <div id="catDetailInputRow" style="display:flex;gap:6px;align-items:center;margin-top:8px">
+                <input id="catDetailInput" class="input-mini" style="flex:1;min-width:0" placeholder="输入内容——发送给该猫（cat.chat）">
+                <button id="catDetailSend" class="btn-mini primary">发送</button>
+                <span id="catDetailSendMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag)"></span>
+            </div>
         </div>
     </div>
 
