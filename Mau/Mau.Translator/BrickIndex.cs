@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using Mau.Runtime;
 
 namespace Mau.Translator
 {
@@ -98,7 +99,7 @@ namespace Mau.Translator
             try
             {
                 string json = File.ReadAllText(indexPath);
-                using (JsonDocument document = JsonDocument.Parse(json))
+                using (JsonDocument document = JsonUtil.ParseStrict(json))
                 {
                     JsonElement root = document.RootElement;
                     JsonElement bricks;

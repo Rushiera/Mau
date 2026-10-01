@@ -98,7 +98,7 @@ namespace CatHome4.Http
             string value = "";
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement root = doc.RootElement;
                     if (root.TryGetProperty("key", out JsonElement k))

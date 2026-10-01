@@ -89,7 +89,7 @@ namespace Mau.Runtime
                 cfg.Inject = new InjectEntry[0];
                 return cfg;
             }
-            using (JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path)))
+            using (JsonDocument doc = JsonUtil.ParseStrict(File.ReadAllText(path)))
             {
                 JsonElement root = doc.RootElement;
                 // [段1a] roots 解析

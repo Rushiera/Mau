@@ -170,12 +170,12 @@ namespace CH4
                     loopNote = " | loop=" + intervalMs.ToString() + "ms";
                 }
                 LogStore.Add("CatHome4", 1, "延迟条目登记: id=#" + entry.Id.ToString() + " | cat=" + catKey + " | due=" + FormatTime(dueAt) + " | source=" + useSource + loopNote, "DELAY");
-                string loopJson = "false";
-                if (entry.Loop)
-                {
-                    loopJson = "true";
-                }
-                return "{\"ok\":true,\"id\":" + entry.Id.ToString() + ",\"dueAt\":" + dueAt.ToString() + ",\"loop\":" + loopJson + ",\"due\":\"" + FormatTime(dueAt) + "\"}";
+                return JsonUtil.Object(
+                    ("ok", true),
+                    ("id", entry.Id),
+                    ("dueAt", dueAt),
+                    ("loop", entry.Loop),
+                    ("due", FormatTime(dueAt)));
             }
         }
 
@@ -340,43 +340,20 @@ namespace CH4
         public static string BuildListJson(string catKey)
         {
             DelayEntry[] list = List(catKey);
-            StringBuilder sb = new StringBuilder();
-            sb.Append("{\"ok\":true,\"now\":");
-            sb.Append(NowProvider().ToString());
-            sb.Append(",\"entries\":[");
+            List<string> items = new List<string>();
             for (int i = 0; i < list.Length; i = i + 1)
             {
-                if (i > 0)
-                {
-                    sb.Append(",");
-                }
-                sb.Append("{\"id\":");
-                sb.Append(list[i].Id.ToString());
-                sb.Append(",\"content\":");
-                sb.Append(JsonUtil.Serialize(list[i].Content));
-                sb.Append(",\"dueAt\":");
-                sb.Append(list[i].DueAt.ToString());
-                sb.Append(",\"createdAt\":");
-                sb.Append(list[i].CreatedAt.ToString());
-                sb.Append(",\"source\":");
-                sb.Append(JsonUtil.Serialize(list[i].Source));
-                sb.Append(",\"loop\":");
-                if (list[i].Loop)
-                {
-                    sb.Append("true");
-                }
-                else
-                {
-                    sb.Append("false");
-                }
-                sb.Append(",\"intervalMs\":");
-                sb.Append(list[i].IntervalMs.ToString());
-                sb.Append(",\"fired\":");
-                sb.Append(list[i].Fired.ToString());
-                sb.Append("}");
+                items.Add(JsonUtil.Object(
+                    ("id", list[i].Id),
+                    ("content", list[i].Content),
+                    ("dueAt", list[i].DueAt),
+                    ("createdAt", list[i].CreatedAt),
+                    ("source", list[i].Source),
+                    ("loop", list[i].Loop),
+                    ("intervalMs", list[i].IntervalMs),
+                    ("fired", list[i].Fired)));
             }
-            sb.Append("]}");
-            return sb.ToString();
+            return JsonUtil.Object(("ok", true), ("now", NowProvider()), ("entries", JsonUtil.RawArray(items.ToArray())));
         }
 
         /// <summary>
@@ -523,7 +500,7 @@ namespace CH4
                 try
                 {
                     string text = File.ReadAllText(_storePath);
-                    using (JsonDocument doc = JsonDocument.Parse(text))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(text))
                     {
                         JsonElement root = doc.RootElement;
                         JsonElement nextEl;
@@ -729,46 +706,23 @@ namespace CH4
                 {
                     Directory.CreateDirectory(dir);
                 }
-                StringBuilder sb = new StringBuilder();
-                sb.Append("{\"version\":1,\"nextId\":");
-                sb.Append(_nextId.ToString());
-                sb.Append(",\"entries\":[");
+                List<string> entryItems = new List<string>();
                 for (int i = 0; i < _entries.Count; i = i + 1)
                 {
-                    if (i > 0)
-                    {
-                        sb.Append(",");
-                    }
-                    sb.Append("{\"id\":");
-                    sb.Append(_entries[i].Id.ToString());
-                    sb.Append(",\"cat\":");
-                    sb.Append(JsonUtil.Serialize(_entries[i].CatKey));
-                    sb.Append(",\"content\":");
-                    sb.Append(JsonUtil.Serialize(_entries[i].Content));
-                    sb.Append(",\"dueAt\":");
-                    sb.Append(_entries[i].DueAt.ToString());
-                    sb.Append(",\"createdAt\":");
-                    sb.Append(_entries[i].CreatedAt.ToString());
-                    sb.Append(",\"source\":");
-                    sb.Append(JsonUtil.Serialize(_entries[i].Source));
-                    sb.Append(",\"loop\":");
-                    if (_entries[i].Loop)
-                    {
-                        sb.Append("true");
-                    }
-                    else
-                    {
-                        sb.Append("false");
-                    }
-                    sb.Append(",\"intervalMs\":");
-                    sb.Append(_entries[i].IntervalMs.ToString());
-                    sb.Append(",\"fired\":");
-                    sb.Append(_entries[i].Fired.ToString());
-                    sb.Append("}");
+                    entryItems.Add(JsonUtil.Object(
+                        ("id", _entries[i].Id),
+                        ("cat", _entries[i].CatKey),
+                        ("content", _entries[i].Content),
+                        ("dueAt", _entries[i].DueAt),
+                        ("createdAt", _entries[i].CreatedAt),
+                        ("source", _entries[i].Source),
+                        ("loop", _entries[i].Loop),
+                        ("intervalMs", _entries[i].IntervalMs),
+                        ("fired", _entries[i].Fired)));
                 }
-                sb.Append("]}");
+                string payload = JsonUtil.Object(("version", 1), ("nextId", _nextId), ("entries", JsonUtil.RawArray(entryItems.ToArray())));
                 string temp = _storePath + ".tmp";
-                File.WriteAllText(temp, sb.ToString(), new UTF8Encoding(false));
+                File.WriteAllText(temp, payload, new UTF8Encoding(false));
                 if (File.Exists(_storePath))
                 {
                     File.Delete(_storePath);

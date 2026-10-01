@@ -40,13 +40,13 @@ namespace Mau.Bricks
         {
             result = "";
             // [参数面] 声明面口径零容忍——未知 / 非法 mode 一律 ERR|BAD_ARGS（catId 保留键放行）
-            string badArgs = ValidateArgs(argsJson, "mode target report", "", "mode", "prepare|deploy|sync-html");
+            string badArgs = JsonArgs.Validate(argsJson, "mode target report", "", "mode", "prepare|deploy|sync-html");
             if (badArgs.Length > 0)
             {
                 result = badArgs;
                 return false;
             }
-            string mode = ExtractArg(argsJson, "mode");
+            string mode = JsonArgs.Get(argsJson, "mode");
             if (mode.Length == 0)
             {
                 mode = "prepare";
@@ -56,7 +56,7 @@ namespace Mau.Bricks
                 result = "ERR|BAD_ARGS|mode 仅支持 prepare/deploy/sync-html（当前: " + mode + "）";
                 return false;
             }
-            string target = ExtractArg(argsJson, "target");
+            string target = JsonArgs.Get(argsJson, "target");
             if (mode == "deploy" && target.Length == 0)
             {
                 result = "ERR|BAD_ARGS|deploy 模式需 target（目标目录）";
@@ -76,7 +76,7 @@ namespace Mau.Bricks
                     result = "ERR|NOT_FOUND|SetUp.exe 不存在: " + exe;
                     return false;
                 }
-                string report = ExtractArg(argsJson, "report");
+                string report = JsonArgs.Get(argsJson, "report");
                 if (report.Length == 0)
                 {
                     report = Path.Combine(root, "CatTemp", "setup_report.json");
@@ -330,81 +330,6 @@ namespace Mau.Bricks
         /// </summary>
         /// <param name="argumentsJson">参数 JSON</param>
         /// <param name="key">参数名</param>
-        /// <returns>参数值</returns>
-        /// <summary>
-        /// 参数面校验——声明面口径零容忍：未知参数 / 必填缺值 / 非法枚举值一律 ERR|BAD_ARGS（宿主注入保留键 catId 放行）。
-        /// </summary>
-        /// <param name="argsJson">工具参数 JSON</param>
-        /// <param name="allowed">允许键（空格分隔）</param>
-        /// <param name="required">必填键（空格分隔；空=无必填）</param>
-        /// <param name="enumName">枚举参数名（空=无）</param>
-        /// <param name="enumValues">枚举合法值（| 分隔）</param>
-        /// <returns>错误文本（空=通过）</returns>
-        private static string ValidateArgs(string argsJson, string allowed, string required, string enumName, string enumValues)
-        {
-            if (argsJson == null || argsJson.Length == 0)
-            {
-                return "ERR|BAD_ARGS|工具参数 JSON 解析失败（LLM 生成参数可能被截断——超长内容请分段写入）";
-            }
-            try
-            {
-                JsonDocument doc = JsonDocument.Parse(argsJson);
-                try
-                {
-                    JsonElement root = doc.RootElement;
-                    if (root.ValueKind != JsonValueKind.Object)
-                    {
-                        return "ERR|BAD_ARGS|参数必须是 JSON 对象";
-                    }
-                    foreach (JsonProperty property in root.EnumerateObject())
-                    {
-                        if (property.Name == "catId")
-                        {
-                            continue;
-                        }
-                        if ((" " + allowed + " ").IndexOf(" " + property.Name + " ", StringComparison.Ordinal) < 0)
-                        {
-                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 " + allowed + "）";
-                        }
-                    }
-                    if (required.Length > 0)
-                    {
-                        string[] must = required.Split(' ');
-                        for (int i = 0; i < must.Length; i = i + 1)
-                        {
-                            JsonElement mustValue;
-                            if (!root.TryGetProperty(must[i], out mustValue) ||
-                                (mustValue.ValueKind == JsonValueKind.String && (mustValue.GetString() ?? "").Length == 0))
-                            {
-                                return "ERR|BAD_ARGS|缺参数 " + must[i] + "（必填：" + required + "）";
-                            }
-                        }
-                    }
-                    if (enumName.Length > 0)
-                    {
-                        JsonElement enumValue;
-                        if (root.TryGetProperty(enumName, out enumValue) && enumValue.ValueKind == JsonValueKind.String)
-                        {
-                            string value = enumValue.GetString() ?? "";
-                            if (value.Length > 0 && ("|" + enumValues + "|").IndexOf("|" + value + "|", StringComparison.Ordinal) < 0)
-                            {
-                                return "ERR|BAD_ARGS|" + enumName + " 非法值: " + value + "（" + enumValues + "）";
-                            }
-                        }
-                    }
-                    return "";
-                }
-                finally
-                {
-                    doc.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                return "ERR|BAD_ARGS|参数 JSON 解析失败: " + ex.Message;
-            }
-        }
-
         /// <summary>
         /// 结构化元数据头——首行单行 JSON（ok/tool + 调用方字段；键序稳定 = 插入序）
         /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
@@ -423,35 +348,6 @@ namespace Mau.Bricks
                 head[kv.Key] = kv.Value;
             }
             return JsonSerializer.Serialize(head);
-        }
-
-        private static string ExtractArg(string argumentsJson, string key)
-        {
-            try
-            {
-                JsonDocument doc = JsonDocument.Parse(argumentsJson);
-                try
-                {
-                    JsonElement el;
-                    if (doc.RootElement.TryGetProperty(key, out el))
-                    {
-                        if (el.ValueKind == JsonValueKind.String)
-                        {
-                            return el.GetString() ?? "";
-                        }
-                        return el.GetRawText();
-                    }
-                }
-                finally
-                {
-                    doc.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                LogStore.Add("MAU", 2, "mau-setup 参数提取失败: " + ex.Message, "TOOL");
-            }
-            return "";
         }
     }
 }

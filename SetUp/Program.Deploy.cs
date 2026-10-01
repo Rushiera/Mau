@@ -153,7 +153,10 @@ namespace SetUp
                 string delErr;
                 if (!DeleteDirectoryWithRetry(targetOld, out delErr))
                 {
-                    return "回退源清理失败（" + targetOld + "）：" + delErr;
+                    string diag = DiagnoseDirectoryHolders(targetOld);
+                    Console.WriteLine("[SetUp] 持有者诊断（" + targetOld + "）：");
+                    Console.WriteLine(diag);
+                    return "回退源清理失败（" + targetOld + "）：" + delErr + Environment.NewLine + diag;
                 }
             }
             // [段2] 现行 → 回退源（A135——退避重试：宿主退出到文件映射 / 句柄完全回收存在时序窗口）
@@ -164,7 +167,10 @@ namespace SetUp
                 if (!MoveDirectoryWithRetry(target, targetOld, out moveErr))
                 {
                     CleanupStaging(targetNew);
-                    return "现行目录更名失败：" + moveErr;
+                    string diag = DiagnoseDirectoryHolders(target);
+                    Console.WriteLine("[SetUp] 持有者诊断（" + target + "）：");
+                    Console.WriteLine(diag);
+                    return "现行目录改名失败：" + moveErr + Environment.NewLine + diag;
                 }
                 movedOld = true;
             }
@@ -201,9 +207,9 @@ namespace SetUp
                 Console.WriteLine("[SetUp] 暂存目录已清理：" + targetNew);
             }
         }
-        /// <summary>切换类目录操作的退避重试次数（A135——宿主退出后其文件映射 / 句柄回收存在时序窗口）</summary>
-        private const int SwitchRetryAttempts = 10;
-        /// <summary>切换类目录操作的退避间隔毫秒（10 × 300 ms = 3 s 上限）</summary>
+        /// <summary>切换类目录操作的退避重试次数（A135 引入；A139 由 10 提升至 20——实测 3 s 窗口不够，持有者可能是稳定持有而非正在退出）</summary>
+        private const int SwitchRetryAttempts = 20;
+        /// <summary>切换类目录操作的退避间隔毫秒（20 × 300 ms = 6 s 上限）</summary>
         private const int SwitchRetryDelayMs = 300;
         /// <summary>
         /// 目录改名（带退避重试）——一次失败即判死会写出不健壮的底层实现：宿主刚退出时其文件映射 / 句柄可能尚未回收。

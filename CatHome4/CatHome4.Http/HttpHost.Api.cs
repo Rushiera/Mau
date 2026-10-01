@@ -265,7 +265,7 @@ namespace CatHome4.Http
         {
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement root = doc.RootElement;
                     JsonElement textEl;
@@ -297,7 +297,7 @@ namespace CatHome4.Http
             List<string> images = new List<string>();
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement root = doc.RootElement;
                     JsonElement arr;

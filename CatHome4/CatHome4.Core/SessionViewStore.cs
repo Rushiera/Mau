@@ -378,7 +378,7 @@ namespace CH4
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(payloadJson))
+                using (JsonDocument doc = JsonUtil.ParseStrict(payloadJson))
                 {
                     JsonElement root = doc.RootElement;
                     if (type == "toolcard")
@@ -789,7 +789,7 @@ namespace CH4
             string content = "";
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(b.Payload))
+                using (JsonDocument doc = JsonUtil.ParseStrict(b.Payload))
                 {
                     content = GetStringProp(doc.RootElement, "content");
                 }
@@ -809,7 +809,7 @@ namespace CH4
         {
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(payloadJson))
+                using (JsonDocument doc = JsonUtil.ParseStrict(payloadJson))
                 {
                     JsonElement root = doc.RootElement;
                     JsonElement data;
@@ -850,7 +850,7 @@ namespace CH4
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(injectReport))
+                using (JsonDocument doc = JsonUtil.ParseStrict(injectReport))
                 {
                     JsonElement root = doc.RootElement;
                     long total = ReadLongProp(root, "total");
@@ -992,7 +992,7 @@ namespace CH4
         {
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(toolCallsJson))
+                using (JsonDocument doc = JsonUtil.ParseStrict(toolCallsJson))
                 {
                     JsonElement root = doc.RootElement;
                     if (root.ValueKind != JsonValueKind.Array)
@@ -1139,7 +1139,7 @@ namespace CH4
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(b.Payload))
+                using (JsonDocument doc = JsonUtil.ParseStrict(b.Payload))
                 {
                     JsonElement nameEl;
                     if (doc.RootElement.TryGetProperty("name", out nameEl) && nameEl.ValueKind == JsonValueKind.String)

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
+using Mau.Runtime;
 
 namespace CatHome4.QQ
 {
@@ -322,7 +323,7 @@ namespace CatHome4.QQ
             root = default(JsonElement);
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(json))
+                using (JsonDocument doc = JsonUtil.ParseStrict(json))
                 {
                     if (doc.RootElement.ValueKind != JsonValueKind.Object)
                     {

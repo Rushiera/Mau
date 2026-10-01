@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using Mau.Runtime;
 
 namespace CH4
 {
@@ -254,7 +255,7 @@ namespace CH4
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
                 {
                     JsonElement root = doc.RootElement;
                     if (root.ValueKind != JsonValueKind.Object)

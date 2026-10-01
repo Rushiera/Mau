@@ -253,49 +253,29 @@ namespace CH4
         /// <returns>注入报告 JSON 字符串</returns>
         private static string BuildInjectReportJson(List<InjectFileResult> files, string[] injectList, ToolSpec[] specs)
         {
-            System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            sb.Append("{\"files\":[");
+            List<string> fileItems = new List<string>();
             int total = 0;
             int ok = 0;
             int missing = 0;
             int failed = 0;
             if (files != null)
             {
-                for (int i = 0; i < files.Count; i++)
+                for (int i = 0; i < files.Count; i = i + 1)
                 {
-                    if (i > 0)
-                    {
-                        sb.Append(",");
-                    }
                     InjectFileResult f = files[i];
                     string status = f.Status;
                     if (status == "ok") { ok = ok + 1; }
                     else if (status == "missing") { missing = missing + 1; }
                     else { failed = failed + 1; }
-                    sb.Append("{\"file\":");
-                    sb.Append(JsonUtil.Serialize(f.File));
-                    sb.Append(",\"status\":");
-                    sb.Append(JsonUtil.Serialize(status));
-                    sb.Append(",\"message\":");
-                    sb.Append(JsonUtil.Serialize(f.Message ?? ""));
-                    sb.Append(",\"chars\":");
-                    sb.Append(f.Chars.ToString());
-                    sb.Append("}");
+                    fileItems.Add(JsonUtil.Object(
+                        ("file", f.File),
+                        ("status", status),
+                        ("message", f.Message ?? ""),
+                        ("chars", f.Chars)));
                     total = total + 1;
                 }
             }
-            sb.Append("],\"total\":");
-            sb.Append(total.ToString());
-            sb.Append(",\"ok\":");
-            sb.Append(ok.ToString());
-            sb.Append(",\"missing\":");
-            sb.Append(missing.ToString());
-            sb.Append(",\"failed\":");
-            sb.Append(failed.ToString());
-            sb.Append(",\"injectCount\":");
-            sb.Append(injectList != null ? injectList.Length.ToString() : "0");
             // Q5 注入工具组——按组聚合（工具名→组名映射来自 ToolPool；每工具 name+desc；前端独立气泡全文展示）
-            sb.Append(",\"toolGroups\":[");
             Dictionary<string, List<ToolSpec>> groups = new Dictionary<string, List<ToolSpec>>(StringComparer.Ordinal);
             if (specs != null)
             {
@@ -317,33 +297,29 @@ namespace CH4
                     groupTools.Add(spec);
                 }
             }
-            bool firstGroup = true;
+            List<string> groupItems = new List<string>();
             foreach (KeyValuePair<string, List<ToolSpec>> kv in groups)
             {
-                if (!firstGroup)
-                {
-                    sb.Append(",");
-                }
-                firstGroup = false;
-                sb.Append("{\"group\":");
-                sb.Append(JsonUtil.Serialize(kv.Key));
-                sb.Append(",\"tools\":[");
+                List<string> toolItems = new List<string>();
                 for (int i = 0; i < kv.Value.Count; i = i + 1)
                 {
-                    if (i > 0)
-                    {
-                        sb.Append(",");
-                    }
-                    sb.Append("{\"name\":");
-                    sb.Append(JsonUtil.Serialize(kv.Value[i].Name));
-                    sb.Append(",\"desc\":");
-                    sb.Append(JsonUtil.Serialize(kv.Value[i].Description ?? ""));
-                    sb.Append("}");
+                    toolItems.Add(JsonUtil.Object(("name", kv.Value[i].Name), ("desc", kv.Value[i].Description ?? "")));
                 }
-                sb.Append("]}");
+                groupItems.Add(JsonUtil.Object(("group", kv.Key), ("tools", JsonUtil.RawArray(toolItems.ToArray()))));
             }
-            sb.Append("]}");
-            return sb.ToString();
+            int injectCount = 0;
+            if (injectList != null)
+            {
+                injectCount = injectList.Length;
+            }
+            return JsonUtil.Object(
+                ("files", JsonUtil.RawArray(fileItems.ToArray())),
+                ("total", total),
+                ("ok", ok),
+                ("missing", missing),
+                ("failed", failed),
+                ("injectCount", injectCount),
+                ("toolGroups", JsonUtil.RawArray(groupItems.ToArray())));
         }
 
         /// <summary>
@@ -531,7 +507,7 @@ namespace CH4
         {
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(json))
+                using (JsonDocument doc = JsonUtil.ParseStrict(json))
                 {
                     return doc.RootElement.Clone();
                 }

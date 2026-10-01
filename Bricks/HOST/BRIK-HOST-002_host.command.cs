@@ -38,7 +38,7 @@ namespace Mau.Bricks
                 result = badArgs;
                 return false;
             }
-            string cmd = ExtractArg(argsJson, "cmd");
+            string cmd = JsonArgs.Get(argsJson, "cmd");
             if (cmd == null || cmd.Trim().Length == 0)
             {
                 result = "ERR|BAD_ARGS|缺少参数 cmd（一行管理指令，如 cat.list）";
@@ -117,37 +117,6 @@ namespace Mau.Bricks
             {
                 return "ERR|BAD_ARGS|参数 JSON 解析失败: " + ex.Message;
             }
-        }
-
-        /// <summary>
-        /// 展平参数提取——argsJson 中取字符串值（不存在返回空串）。
-        /// </summary>
-        /// <param name="argsJson">参数 JSON</param>
-        /// <param name="key">参数名</param>
-        /// <returns>参数值或空串</returns>
-        private static string ExtractArg(string argsJson, string key)
-        {
-            try
-            {
-                JsonDocument doc = JsonDocument.Parse(argsJson);
-                try
-                {
-                    JsonElement el;
-                    if (doc.RootElement.TryGetProperty(key, out el) && el.ValueKind == JsonValueKind.String)
-                    {
-                        return el.GetString() ?? "";
-                    }
-                }
-                finally
-                {
-                    doc.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                LogStore.Add("HOST", 2, "宿主指令参数提取失败: " + ex.Message, "TOOL");
-            }
-            return "";
         }
     }
 }

@@ -47,7 +47,7 @@ namespace CH4
             {
                 try
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
                     {
                         JsonElement root = doc.RootElement;
                         if (root.TryGetProperty("action", out JsonElement a) && a.ValueKind == JsonValueKind.String)
@@ -205,7 +205,7 @@ namespace CH4
             if (_httpHost != null)
             {
                 // F4 视图——note 控制块（SSE view 事件；前端悬浮气泡实时重绘）
-                string noteJson = "{\"type\":\"note\",\"state\":" + BuildNoteJson() + "}";
+                string noteJson = JsonUtil.Object(("type", "note"), ("state", JsonUtil.Raw(BuildNoteJson())));
                 _httpHost.PushView("control", noteJson, -1, 0);
             }
         }

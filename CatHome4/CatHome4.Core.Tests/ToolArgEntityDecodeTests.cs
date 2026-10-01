@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using CH4;
+using Mau.Runtime;
 using Xunit;
 
 namespace CatHome4.Core.Tests
@@ -16,7 +17,7 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void AnchorArg_Decoded()
         {
-            string outJson = ChatSession.DecodeToolArgEntities("text-read_between", "{\"path\":\"a.md\",\"str1\":\"&lt;PropertyGroup&gt;\"}");
+            string outJson = TextUtil.DecodeArgEntities("text-read_between", "{\"path\":\"a.md\",\"str1\":\"&lt;PropertyGroup&gt;\"}");
             using (JsonDocument doc = JsonDocument.Parse(outJson))
             {
                 Assert.Equal("<PropertyGroup>", doc.RootElement.GetProperty("str1").GetString());
@@ -31,7 +32,7 @@ namespace CatHome4.Core.Tests
         public void ContentArg_Exempt()
         {
             string inJson = "{\"path\":\"a.md\",\"content\":\"&lt;b&gt;\"}";
-            Assert.Same(inJson, ChatSession.DecodeToolArgEntities("text-write", inJson));
+            Assert.Same(inJson, TextUtil.DecodeArgEntities("text-write", inJson));
         }
 
         /// <summary>
@@ -41,7 +42,7 @@ namespace CatHome4.Core.Tests
         public void NoEntity_FastPath_SameReference()
         {
             string inJson = "{\"path\":\"a.md\",\"str1\":\"abc\"}";
-            Assert.Same(inJson, ChatSession.DecodeToolArgEntities("text-read", inJson));
+            Assert.Same(inJson, TextUtil.DecodeArgEntities("text-read", inJson));
         }
 
         /// <summary>
@@ -51,7 +52,7 @@ namespace CatHome4.Core.Tests
         public void InvalidJson_PassedThrough()
         {
             string inJson = "{not json &lt;";
-            Assert.Same(inJson, ChatSession.DecodeToolArgEntities("text-read", inJson));
+            Assert.Same(inJson, TextUtil.DecodeArgEntities("text-read", inJson));
         }
     }
 }

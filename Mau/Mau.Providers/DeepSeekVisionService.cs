@@ -312,15 +312,15 @@ namespace Mau.Providers
                 intent = DefaultPrompt;
             }
             StringBuilder sb = new StringBuilder();
-            sb.Append("{\"model\":\"");
-            sb.Append(LlmJson.Escape(model));
-            sb.Append("\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"");
-            sb.Append(LlmJson.Escape(intent + "\n\n" + OutputFormatSpec));
-            sb.Append("\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"");
-            sb.Append(LlmJson.Escape(imageUrl));
-            sb.Append("\",\"detail\":\"");
-            sb.Append(LlmJson.Escape(detail));
-            sb.Append("\"}}]}],\"stream\":false}");
+            sb.Append("{\"model\":");
+            sb.Append(JsonUtil.Str(model));
+            sb.Append(",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":");
+            sb.Append(JsonUtil.Str(intent + "\n\n" + OutputFormatSpec));
+            sb.Append("},{\"type\":\"image_url\",\"image_url\":{\"url\":");
+            sb.Append(JsonUtil.Str(imageUrl));
+            sb.Append(",\"detail\":");
+            sb.Append(JsonUtil.Str(detail));
+            sb.Append("}}]}],\"stream\":false}");
             return sb.ToString();
         }
 
@@ -350,7 +350,7 @@ namespace Mau.Providers
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(json))
+                using (JsonDocument doc = JsonUtil.ParseStrict(json))
                 {
                     JsonElement root = doc.RootElement;
                     if (root.ValueKind != JsonValueKind.Object)
@@ -433,7 +433,7 @@ namespace Mau.Providers
             {
                 try
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(raw))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(raw))
                     {
                         JsonElement root = doc.RootElement;
                         JsonElement error;

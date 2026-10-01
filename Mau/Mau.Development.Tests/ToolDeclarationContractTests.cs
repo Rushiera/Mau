@@ -235,7 +235,7 @@ namespace Mau.Development.Tests
                     continue;
                 }
                 string text = File.ReadAllText(files[i]);
-                Match call = Regex.Match(text, "ValidateArgs\\(argsJson,\\s*\"([^\"]*)\"\\s*,\\s*\"([^\"]*)\"(?:\\s*,\\s*\"([^\"]*)\"\\s*,\\s*\"([^\"]*)\")?\\)");
+                Match call = Regex.Match(text, "(?:ValidateArgs|JsonArgs\\.Validate)\\(argsJson,\\s*\"([^\"]*)\"\\s*,\\s*\"([^\"]*)\"(?:\\s*,\\s*\"([^\"]*)\"\\s*,\\s*\"([^\"]*)\")?\\)");
                 if (!call.Success)
                 {
                     return new ValidSpec();

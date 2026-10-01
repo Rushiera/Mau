@@ -52,13 +52,13 @@ namespace Mau.Bricks
                 result = "ERR|UNKNOWN_METHOD|catcfg." + method;
                 return false;
             }
-            string badArgs = ValidateArgs(argsJson, allowedKeys, requiredKeys);
+            string badArgs = JsonArgs.Validate(argsJson, allowedKeys, requiredKeys, "", "");
             if (badArgs.Length > 0)
             {
                 result = badArgs;
                 return false;
             }
-            string cat = ExtractArg(argsJson, "cat");
+            string cat = JsonArgs.Get(argsJson, "cat");
             IHostCommandService service = null!;
             bool bound = DataBox.TryResolve<IHostCommandService>(out service);
             if (!bound || service == null)
@@ -74,7 +74,7 @@ namespace Mau.Bricks
             }
             else
             {
-                line = "cat.cfg.set " + cat + " " + ExtractArg(argsJson, "field") + " " + ExtractArg(argsJson, "value");
+                line = "cat.cfg.set " + cat + " " + JsonArgs.Get(argsJson, "field") + " " + JsonArgs.Get(argsJson, "value");
             }
             string reply = service.Execute(line);
             if (reply == null)
@@ -94,97 +94,6 @@ namespace Mau.Bricks
             head["cat"] = cat;
             result = JsonSerializer.Serialize(head) + "\n" + reply;
             return true;
-        }
-
-        /// <summary>
-        /// 参数面校验——声明面口径零容忍：未知参数 / 必填缺值一律 ERR|BAD_ARGS（宿主注入保留键 catId 放行）。
-        /// </summary>
-        /// <param name="argsJson">工具参数 JSON</param>
-        /// <param name="allowed">允许键（空格分隔）</param>
-        /// <param name="required">必填键（空格分隔；空=无必填）</param>
-        /// <returns>错误文本（空=通过）</returns>
-        private static string ValidateArgs(string argsJson, string allowed, string required)
-        {
-            if (argsJson == null || argsJson.Length == 0)
-            {
-                return "ERR|BAD_ARGS|工具参数 JSON 解析失败（LLM 生成参数可能被截断——超长内容请分段写入）";
-            }
-            try
-            {
-                JsonDocument doc = JsonDocument.Parse(argsJson);
-                try
-                {
-                    JsonElement root = doc.RootElement;
-                    if (root.ValueKind != JsonValueKind.Object)
-                    {
-                        return "ERR|BAD_ARGS|参数必须是 JSON 对象";
-                    }
-                    foreach (JsonProperty property in root.EnumerateObject())
-                    {
-                        if (property.Name == "catId")
-                        {
-                            continue;
-                        }
-                        if ((" " + allowed + " ").IndexOf(" " + property.Name + " ", StringComparison.Ordinal) < 0)
-                        {
-                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 " + allowed + "）";
-                        }
-                    }
-                    if (required.Length > 0)
-                    {
-                        string[] must = required.Split(' ');
-                        for (int i = 0; i < must.Length; i = i + 1)
-                        {
-                            JsonElement mustValue;
-                            if (!root.TryGetProperty(must[i], out mustValue) ||
-                                (mustValue.ValueKind == JsonValueKind.String && (mustValue.GetString() ?? "").Length == 0))
-                            {
-                                return "ERR|BAD_ARGS|缺参数 " + must[i] + "（必填：" + required + "）";
-                            }
-                        }
-                    }
-                    return "";
-                }
-                finally
-                {
-                    doc.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                return "ERR|BAD_ARGS|参数 JSON 解析失败: " + ex.Message;
-            }
-        }
-
-        /// <summary>
-        /// 展平参数提取——argsJson 中取字符串值（不存在返回空串）。
-        /// </summary>
-        /// <param name="argsJson">参数 JSON</param>
-        /// <param name="key">参数名</param>
-        /// <returns>参数值或空串</returns>
-        private static string ExtractArg(string argsJson, string key)
-        {
-            try
-            {
-                JsonDocument doc = JsonDocument.Parse(argsJson);
-                try
-                {
-                    JsonElement el;
-                    if (doc.RootElement.TryGetProperty(key, out el) && el.ValueKind == JsonValueKind.String)
-                    {
-                        return el.GetString() ?? "";
-                    }
-                }
-                finally
-                {
-                    doc.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                LogStore.Add("PACK", 2, "cat.cfg 参数提取失败: " + ex.Message, "TOOL");
-            }
-            return "";
         }
     }
 }

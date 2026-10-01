@@ -420,7 +420,7 @@ namespace Mau.Runtime
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(payload))
+                using (JsonDocument doc = JsonUtil.ParseStrict(payload))
                 {
                     JsonElement root = doc.RootElement;
                     if (root.ValueKind != JsonValueKind.Array)

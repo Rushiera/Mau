@@ -50,7 +50,7 @@ namespace CatHome4.Admin
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path)))
+                using (JsonDocument doc = JsonUtil.ParseStrict(File.ReadAllText(path)))
                 {
                     JsonElement itemsEl;
                     if (!doc.RootElement.TryGetProperty("items", out itemsEl) || itemsEl.ValueKind != JsonValueKind.Array)
@@ -249,7 +249,7 @@ namespace CatHome4.Admin
             List<Dictionary<string, string>> reported = new List<Dictionary<string, string>>();
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement itemsEl;
                     if (doc.RootElement.TryGetProperty("items", out itemsEl) && itemsEl.ValueKind == JsonValueKind.Array)

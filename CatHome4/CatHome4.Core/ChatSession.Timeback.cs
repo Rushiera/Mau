@@ -93,7 +93,7 @@ namespace CH4
             {
                 try
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
                     {
                         JsonElement root = doc.RootElement;
                         foreach (JsonProperty property in root.EnumerateObject())
@@ -493,7 +493,7 @@ namespace CH4
             _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             if (_httpHost != null)
             {
-                string userJson = "{\"content\":" + JsonUtil.Serialize(text) + ",\"source\":\"systemauto\"}";
+                string userJson = JsonUtil.Object(("content", text), ("source", "systemauto"));
                 _httpHost.PushView("user", userJson, -1, 0);
             }
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 状态提示注入（累计 " + scope.EventCount.ToString()
@@ -532,7 +532,7 @@ namespace CH4
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
                 {
                     JsonElement root = doc.RootElement;
                     if (root.ValueKind != JsonValueKind.Object)

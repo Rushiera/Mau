@@ -69,7 +69,8 @@ function cmdExtractCommand(argsText) {
 }
 
 /**
- * JSON 字符串转义还原（正则兜底路径用）。
+ * JSON 字符串转义还原（正则兜底路径用）——规则与 C# 侧 Mau.Runtime.TextUtil.JsonUnescape 同源（双实现须同步）：
+ * 标准八种转义 + \uXXXX；未识别序列原样保留（不吞反斜杠）。
  * @param {string} s 原始转义片段
  * @returns {string} 还原文本
  */
@@ -87,15 +88,18 @@ function cmdUnescapeJson(s) {
         if (n === 'n') { out = out + '\n'; i = i + 2; }
         else if (n === 'r') { out = out + '\r'; i = i + 2; }
         else if (n === 't') { out = out + '\t'; i = i + 2; }
+        else if (n === 'b') { out = out + '\b'; i = i + 2; }
+        else if (n === 'f') { out = out + '\f'; i = i + 2; }
         else if (n === '"') { out = out + '"'; i = i + 2; }
         else if (n === '\\') { out = out + '\\'; i = i + 2; }
         else if (n === '/') { out = out + '/'; i = i + 2; }
         else if (n === 'u' && i + 5 < s.length) {
-            out = out + String.fromCharCode(parseInt(s.substring(i + 2, i + 6), 16));
-            i = i + 6;
+            var code = parseInt(s.substring(i + 2, i + 6), 16);
+            if (isNaN(code)) { out = out + c; i = i + 1; }
+            else { out = out + String.fromCharCode(code); i = i + 6; }
         } else {
-            out = out + n;
-            i = i + 2;
+            out = out + c;
+            i = i + 1;
         }
     }
     return out;

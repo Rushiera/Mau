@@ -162,10 +162,8 @@ namespace CH4
                     required = new string[] { "action" }
                 }
             };
-            // 宽松转义——避免 < > 被编码为 \u003C（与旧手写字符串语义一致）
-            JsonSerializerOptions options = new JsonSerializerOptions();
-            options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
-            return JsonSerializer.Serialize(new { group = "", tools = tools }, options);
+            // 统一序列化入口——中文与 < > 直显（JsonUtil=UnsafeRelaxedJsonEscaping 单一真相源）
+            return JsonUtil.Serialize(new { group = "", tools = tools });
         }
 
         /// <summary>
@@ -182,7 +180,7 @@ namespace CH4
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
                 {
                     JsonElement root = doc.RootElement;
                     if (root.ValueKind != JsonValueKind.Object)
@@ -377,7 +375,7 @@ namespace CH4
             try
             {
                 // [段1] 必填清单——required 数组成员
-                using (JsonDocument doc = JsonDocument.Parse(parametersJson))
+                using (JsonDocument doc = JsonUtil.ParseStrict(parametersJson))
                 {
                     JsonElement root = doc.RootElement;
                     List<string> required = new List<string>();
@@ -415,7 +413,7 @@ namespace CH4
                     return keys.ToString();
                 }
             }
-            catch (JsonException ex)
+            catch (Exception ex)
             {
                 // 声明面 JSON 不可析——摘要退化（工具名仍可见；不阻断 info）
                 LogStore.Add("CatHome4", 2, "工具参数摘要解析失败: " + ex.Message, "TOOLBRIEF");

@@ -302,7 +302,7 @@ namespace SetUp
         /// <param name="mode">重启模式（full / incr / host）</param>
         /// <param name="prepOk">prepare 是否通过（incr / host 跳过本段，恒 true）</param>
         /// <param name="replaced">本次是否替换了运行区（host 恒 false——原地重启）</param>
-        /// <param name="version">仓库单点版本号（full 为自增后新号；incr / host 不自增）</param>
+        /// <param name="version">仓库单点版本号（full 为自增后新号；incr / host 不自增——回执显示产物区既有版本，避免被误读为「本链把版本涨到了该号」）</param>
         /// <param name="targetFull">运行区绝对路径</param>
         /// <param name="pushIn">调用方附加说明（可为空）</param>
         /// <param name="reportPath">报告路径（可为空）</param>
@@ -327,7 +327,7 @@ namespace SetUp
             sb.Append(Environment.NewLine);
             sb.Append("结果: " + (ok ? "OK" : "FAIL") + (prepOk ? "" : " | prepare 未通过") + (mode == "full" && !replaced ? " | deploy 未通过" : ""));
             sb.Append(Environment.NewLine);
-            sb.Append("版本: " + version + (mode == "full" ? "" : "（incr / host 不自增）"));
+            sb.Append("版本: " + version + (mode == "full" ? "" : "（本链不自增——显示产物区既有版本，自增点仅 prepare）"));
             sb.Append(Environment.NewLine);
             sb.Append("部署: prepare " + prepText + " · deploy " + depText);
             sb.Append(Environment.NewLine);
@@ -670,5 +670,207 @@ namespace SetUp
             Console.WriteLine("[SetUp] incr 前置段通过——已放行宿主退场。");
             return true;
         }
+        /// <summary>
+        /// 目录持有者诊断（A139）——改名 / 删除失败后回答「谁锁着它」：先独占打开探测定位被占文件，再由 Restart Manager 反查持有进程。
+        /// 判据：独占打开失败 = 该文件被别的进程持有；Restart Manager 只认文件（不认目录），故逐文件查询。
+        /// 诊断自身失败不外抛（诊断不是主流程）。
+        /// </summary>
+        /// <param name="dir">目标目录</param>
+        /// <returns>逐行诊断文本</returns>
+        private static string DiagnoseDirectoryHolders(string dir)
+        {
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            try
+            {
+                if (!Directory.Exists(dir))
+                {
+                    return "  （目录不存在——无需诊断）" + Environment.NewLine;
+                }
+                string[] files = Directory.GetFiles(dir);
+                int held = 0;
+                for (int i = 0; i < files.Length && held < 20; i = i + 1)
+                {
+                    string path = files[i];
+                    if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && !path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                    if (CanOpenExclusive(path))
+                    {
+                        continue;
+                    }
+                    held = held + 1;
+                    sb.Append("  · 被占文件: " + Path.GetFileName(path));
+                    sb.Append(Environment.NewLine);
+                    string owners = QueryFileHolders(path);
+                    if (owners.Length > 0)
+                    {
+                        sb.Append("    持有进程: " + owners);
+                        sb.Append(Environment.NewLine);
+                    }
+                    else
+                    {
+                        sb.Append("    持有进程: （Restart Manager 未报——可能是目录级句柄或系统组件）");
+                        sb.Append(Environment.NewLine);
+                    }
+                }
+                if (held == 0)
+                {
+                    string[] subDirs = Directory.GetDirectories(dir);
+                    sb.Append("  （顶层 exe/dll 均可独占打开——持有者可能在子目录或为目录级句柄；子目录 " + subDirs.Length.ToString() + " 个）");
+                    sb.Append(Environment.NewLine);
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.Append("  （诊断自身失败: " + ex.Message + "）");
+                sb.Append(Environment.NewLine);
+            }
+            return sb.ToString();
+        }
+        /// <summary>
+        /// 独占打开探测——能独占打开 = 无持有者；失败 = 被别的进程持有。
+        /// 用只读打开（FileAccess.Read）：ReadWrite 会对只读文件 / 权限受限文件直接抛 UnauthorizedAccessException，被误判成「被占」。
+        /// </summary>
+        /// <param name="path">文件路径</param>
+        /// <returns>true=可独占打开</returns>
+        private static bool CanOpenExclusive(string path)
+        {
+            try
+            {
+                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+                {
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+        /// <summary>
+        /// Restart Manager 查询——反查持有指定文件的进程（应用名 + PID）；不可用 / 无命中返回空串。
+        /// </summary>
+        /// <param name="path">文件路径</param>
+        /// <returns>持有者描述（多个以 / 分隔）</returns>
+        private static string QueryFileHolders(string path)
+        {
+            uint session = 0;
+            try
+            {
+                if (RmStartSession(out session, 0, Guid.NewGuid().ToString()) != 0)
+                {
+                    return "";
+                }
+                string[] resources = new string[] { path };
+                if (RmRegisterResources(session, 1, resources, 0, null, 0, null) != 0)
+                {
+                    return "";
+                }
+                uint needed = 0;
+                uint count = 0;
+                uint reasons = 0;
+                RmGetList(session, out needed, ref count, null, ref reasons);
+                if (needed == 0)
+                {
+                    return "";
+                }
+                RmProcessInfo[] infos = new RmProcessInfo[needed];
+                count = needed;
+                if (RmGetList(session, out needed, ref count, infos, ref reasons) != 0)
+                {
+                    return "";
+                }
+                System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                for (uint i = 0; i < count; i = i + 1)
+                {
+                    if (sb.Length > 0)
+                    {
+                        sb.Append(" / ");
+                    }
+                    string name = infos[i].strAppName;
+                    if (name == null || name.Length == 0)
+                    {
+                        name = "?";
+                    }
+                    sb.Append(name + "(pid=" + infos[i].Process.dwProcessId.ToString() + ")");
+                }
+                return sb.ToString();
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+            finally
+            {
+                if (session != 0)
+                {
+                    RmEndSession(session);
+                }
+            }
+        }
+        /// <summary>Restart Manager 进程唯一标识——只消费 PID</summary>
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct RmUniqueProcess
+        {
+            /// <summary>进程 ID</summary>
+            public int dwProcessId;
+            /// <summary>进程启动时刻（FILETIME 原始值）</summary>
+            public long ProcessStartTime;
+        }
+        /// <summary>Restart Manager 受影响进程条目——只消费应用名与 PID</summary>
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private struct RmProcessInfo
+        {
+            /// <summary>进程唯一标识</summary>
+            public RmUniqueProcess Process;
+            /// <summary>应用名（可执行文件名）</summary>
+            [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 256)]
+            public string strAppName;
+            /// <summary>服务短名</summary>
+            [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 64)]
+            public string strServiceShortName;
+            /// <summary>应用类型</summary>
+            public int ApplicationType;
+            /// <summary>应用状态</summary>
+            public uint AppStatus;
+            /// <summary>会话 ID</summary>
+            public uint TSSessionId;
+            /// <summary>可否重启</summary>
+            [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+            public bool bRestartable;
+        }
+        /// <summary>Restart Manager 会话开启</summary>
+        /// <param name="pSessionHandle">会话句柄（出参）</param>
+        /// <param name="dwSessionFlags">标志（0）</param>
+        /// <param name="strSessionKey">会话键（唯一串）</param>
+        /// <returns>0=成功</returns>
+        [System.Runtime.InteropServices.DllImport("rstrtmgr.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern int RmStartSession(out uint pSessionHandle, int dwSessionFlags, string strSessionKey);
+        /// <summary>Restart Manager 会话结束</summary>
+        /// <param name="pSessionHandle">会话句柄</param>
+        /// <returns>0=成功</returns>
+        [System.Runtime.InteropServices.DllImport("rstrtmgr.dll")]
+        private static extern int RmEndSession(uint pSessionHandle);
+        /// <summary>Restart Manager 注册资源（文件路径）</summary>
+        /// <param name="pSessionHandle">会话句柄</param>
+        /// <param name="nFiles">文件数</param>
+        /// <param name="rgsFilenames">文件路径数组</param>
+        /// <param name="nApplications">应用数（0）</param>
+        /// <param name="rgApplications">应用数组（null）</param>
+        /// <param name="nServices">服务数（0）</param>
+        /// <param name="rgsServiceNames">服务名数组（null）</param>
+        /// <returns>0=成功</returns>
+        [System.Runtime.InteropServices.DllImport("rstrtmgr.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern int RmRegisterResources(uint pSessionHandle, uint nFiles, string[] rgsFilenames, uint nApplications, RmUniqueProcess[] rgApplications, uint nServices, string[] rgsServiceNames);
+        /// <summary>Restart Manager 取受影响进程清单（两段式：先探需求数，再取明细）</summary>
+        /// <param name="dwSessionHandle">会话句柄</param>
+        /// <param name="pnProcInfoNeeded">所需条目数（出参）</param>
+        /// <param name="pnProcInfo">条目数（入=容量 / 出=实取）</param>
+        /// <param name="rgAffectedApps">条目数组（可空以探数）</param>
+        /// <param name="lpdwRebootReasons">重启原因（出参）</param>
+        /// <returns>0=成功</returns>
+        [System.Runtime.InteropServices.DllImport("rstrtmgr.dll")]
+        private static extern int RmGetList(uint dwSessionHandle, out uint pnProcInfoNeeded, ref uint pnProcInfo, [System.Runtime.InteropServices.In, System.Runtime.InteropServices.Out] RmProcessInfo[] rgAffectedApps, ref uint lpdwRebootReasons);
     }
 }

@@ -169,7 +169,7 @@ namespace CatHome4.Admin
                     return null;
                 }
                 string json = File.ReadAllText(path);
-                using (JsonDocument doc = JsonDocument.Parse(json))
+                using (JsonDocument doc = JsonUtil.ParseStrict(json))
                 {
                     JsonElement root = doc.RootElement;
                     CatDefaultCfgData data = new CatDefaultCfgData();
@@ -256,7 +256,7 @@ namespace CatHome4.Admin
             try
             {
                 string json = File.ReadAllText(path);
-                using (JsonDocument doc = JsonDocument.Parse(json))
+                using (JsonDocument doc = JsonUtil.ParseStrict(json))
                 {
                     JsonElement root = doc.RootElement;
                     CatCfgData data = new CatCfgData();

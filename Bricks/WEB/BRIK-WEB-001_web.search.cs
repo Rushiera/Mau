@@ -48,13 +48,13 @@ namespace Mau.Bricks
         {
             result = "";
             // [参数面] 声明面口径零容忍——未知 / 缺值一律 ERR|BAD_ARGS（catId 保留键放行）
-            string badArgs = ValidateArgs(argsJson, "query", "query", "", "");
+            string badArgs = JsonArgs.Validate(argsJson, "query", "query", "", "");
             if (badArgs.Length > 0)
             {
                 result = badArgs;
                 return false;
             }
-            string query = ExtractArg(argsJson, "query");
+            string query = JsonArgs.Get(argsJson, "query");
             if (query == "§PARSE_FAIL§")
             {
                 result = "ERR|BAD_ARGS|工具参数 JSON 解析失败（LLM 生成参数可能被截断）";
@@ -202,13 +202,13 @@ namespace Mau.Bricks
         private static string BuildAnthropicBody(string model, string query)
         {
             StringBuilder sb = new StringBuilder();
-            sb.Append("{\"model\":\"");
-            sb.Append(EscapeJson(model));
-            sb.Append("\",\"max_tokens\":2048,\"system\":\"");
-            sb.Append(EscapeJson(SearchSystemPrompt));
-            sb.Append("\",\"messages\":[{\"role\":\"user\",\"content\":\"");
-            sb.Append(EscapeJson(query));
-            sb.Append("\"}],\"tools\":[{\"type\":\"web_search_20250305\",\"name\":\"web_search\"}]}");
+            sb.Append("{\"model\":");
+            sb.Append(JsonUtil.Str(model));
+            sb.Append(",\"max_tokens\":2048,\"system\":");
+            sb.Append(JsonUtil.Str(SearchSystemPrompt));
+            sb.Append(",\"messages\":[{\"role\":\"user\",\"content\":");
+            sb.Append(JsonUtil.Str(query));
+            sb.Append("}],\"tools\":[{\"type\":\"web_search_20250305\",\"name\":\"web_search\"}]}");
             return sb.ToString();
         }
 
@@ -221,13 +221,13 @@ namespace Mau.Bricks
         private static string BuildResponsesBody(string model, string query)
         {
             StringBuilder sb = new StringBuilder();
-            sb.Append("{\"model\":\"");
-            sb.Append(EscapeJson(model));
-            sb.Append("\",\"instructions\":\"");
-            sb.Append(EscapeJson(SearchSystemPrompt));
-            sb.Append("\",\"input\":[{\"role\":\"user\",\"content\":\"");
-            sb.Append(EscapeJson(query));
-            sb.Append("\"}],\"tools\":[{\"type\":\"web_search\"}],\"tool_choice\":{\"type\":\"web_search\"}}");
+            sb.Append("{\"model\":");
+            sb.Append(JsonUtil.Str(model));
+            sb.Append(",\"instructions\":");
+            sb.Append(JsonUtil.Str(SearchSystemPrompt));
+            sb.Append(",\"input\":[{\"role\":\"user\",\"content\":");
+            sb.Append(JsonUtil.Str(query));
+            sb.Append("}],\"tools\":[{\"type\":\"web_search\"}],\"tool_choice\":{\"type\":\"web_search\"}}");
             return sb.ToString();
         }
 
@@ -592,164 +592,11 @@ namespace Mau.Bricks
             return n;
         }
 
-        private static string EscapeJson(string s)
-        {
-            if (s == null)
-            {
-                return "";
-            }
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < s.Length; i++)
-            {
-                char c = s[i];
-                switch (c)
-                {
-                    case '\\':
-                        sb.Append("\\\\");
-                        break;
-                    case '"':
-                        sb.Append("\\\"");
-                        break;
-                    case '\n':
-                        sb.Append("\\n");
-                        break;
-                    case '\r':
-                        sb.Append("\\r");
-                        break;
-                    case '\t':
-                        sb.Append("\\t");
-                        break;
-                    default:
-                        if (c < 0x20)
-                        {
-                            sb.Append("\\u");
-                            sb.Append(((int)c).ToString("x4"));
-                        }
-                        else
-                        {
-                            sb.Append(c);
-                        }
-                        break;
-                }
-            }
-            return sb.ToString();
-        }
-
         /// <summary>
         /// 展平参数提取——argsJson 中取字符串值（不存在返回空串）
         /// </summary>
         /// <param name="argumentsJson">参数 JSON</param>
         /// <param name="key">参数名</param>
-        /// <returns>参数值</returns>
-        /// <summary>
-        /// 参数面校验——声明面口径零容忍：未知参数 / 必填缺值 / 非法枚举值一律 ERR|BAD_ARGS（宿主注入保留键 catId 放行）。
-        /// </summary>
-        /// <param name="argsJson">工具参数 JSON</param>
-        /// <param name="allowed">允许键（空格分隔；空=无参数）</param>
-        /// <param name="required">必填键（空格分隔；空=无必填）</param>
-        /// <param name="enumName">枚举参数名（空=无）</param>
-        /// <param name="enumValues">枚举合法值（| 分隔）</param>
-        /// <returns>错误文本（空=通过）</returns>
-        private static string ValidateArgs(string argsJson, string allowed, string required, string enumName, string enumValues)
-        {
-            if (argsJson == null || argsJson.Length == 0)
-            {
-                return "";
-            }
-            try
-            {
-                JsonDocument doc = JsonDocument.Parse(argsJson);
-                try
-                {
-                    JsonElement root = doc.RootElement;
-                    if (root.ValueKind != JsonValueKind.Object)
-                    {
-                        return "ERR|BAD_ARGS|参数必须是 JSON 对象";
-                    }
-                    foreach (JsonProperty property in root.EnumerateObject())
-                    {
-                        if (property.Name == "catId")
-                        {
-                            continue;
-                        }
-                        if (allowed.Length == 0)
-                        {
-                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（本工具无参数）";
-                        }
-                        if ((" " + allowed + " ").IndexOf(" " + property.Name + " ", StringComparison.Ordinal) < 0)
-                        {
-                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 " + allowed + "）";
-                        }
-                    }
-                    if (required.Length > 0)
-                    {
-                        string[] must = required.Split(' ');
-                        for (int i = 0; i < must.Length; i = i + 1)
-                        {
-                            JsonElement mustValue;
-                            if (!root.TryGetProperty(must[i], out mustValue) ||
-                                (mustValue.ValueKind == JsonValueKind.String && (mustValue.GetString() ?? "").Length == 0))
-                            {
-                                return "ERR|BAD_ARGS|缺参数 " + must[i] + "（必填：" + required + "）";
-                            }
-                        }
-                    }
-                    if (enumName.Length > 0)
-                    {
-                        JsonElement enumValue;
-                        if (root.TryGetProperty(enumName, out enumValue) && enumValue.ValueKind == JsonValueKind.String)
-                        {
-                            string value = enumValue.GetString() ?? "";
-                            if (value.Length > 0 && ("|" + enumValues + "|").IndexOf("|" + value + "|", StringComparison.Ordinal) < 0)
-                            {
-                                return "ERR|BAD_ARGS|" + enumName + " 非法值: " + value + "（" + enumValues + "）";
-                            }
-                        }
-                    }
-                    return "";
-                }
-                finally
-                {
-                    doc.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                return "ERR|BAD_ARGS|参数 JSON 解析失败: " + ex.Message;
-            }
-        }
-
-        private static string ExtractArg(string argumentsJson, string key)
-        {
-            if (argumentsJson == null || argumentsJson.Length == 0)
-            {
-                return "§PARSE_FAIL§";
-            }
-            try
-            {
-                JsonDocument doc = JsonDocument.Parse(argumentsJson);
-                try
-                {
-                    if (doc.RootElement.TryGetProperty(key, out JsonElement el))
-                    {
-                        if (el.ValueKind == JsonValueKind.String)
-                        {
-                            return el.GetString() ?? "";
-                        }
-                        return el.GetRawText();
-                    }
-                }
-                finally
-                {
-                    doc.Dispose();
-                }
-            }
-            catch (Exception)
-            {
-                return "§PARSE_FAIL§";
-            }
-            return "";
-        }
     }
 }
-// #MAU_CHECKSUM:SHA256:2997B7B544337789C1855008EFA53346D6B34CF27AE7FD3006F9C741AD2ABEE6
+// #MAU_CHECKSUM:SHA256:2729904E8F1B5FE2794523D28822D96971C14DCC0CFC61E7DE5F9A8E78063A0B

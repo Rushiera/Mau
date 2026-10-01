@@ -104,7 +104,7 @@ namespace CH4
             {
                 try
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
                     {
                         JsonElement root = doc.RootElement;
                         JsonElement mn;
@@ -157,7 +157,7 @@ namespace CH4
             {
                 try
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
                     {
                         JsonElement root = doc.RootElement;
                         foreach (JsonProperty property in root.EnumerateObject())
@@ -246,7 +246,7 @@ namespace CH4
             {
                 try
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
                     {
                         JsonElement root = doc.RootElement;
                         foreach (JsonProperty property in root.EnumerateObject())
@@ -352,7 +352,7 @@ namespace CH4
             {
                 try
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
                     {
                         JsonElement root = doc.RootElement;
                         if (root.ValueKind != JsonValueKind.Object)
@@ -402,7 +402,7 @@ namespace CH4
             string[] paths = new string[0];
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(payload))
+                using (JsonDocument doc = JsonUtil.ParseStrict(payload))
                 {
                     JsonElement root = doc.RootElement;
                     JsonElement okEl;

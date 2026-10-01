@@ -102,7 +102,7 @@ namespace Mau.Development
                 JsonDocument args;
                 try
                 {
-                    args = JsonDocument.Parse(argsJson);
+                    args = JsonUtil.ParseStrict(argsJson);
                 }
                 catch (Exception ex)
                 {

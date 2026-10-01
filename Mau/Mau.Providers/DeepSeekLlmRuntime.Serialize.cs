@@ -32,7 +32,7 @@ namespace Mau.Providers
             bool hasTools = m.ToolCallsJson.Length > 0;
             if (hasTools)
             {
-                using (JsonDocument doc = JsonDocument.Parse(m.ToolCallsJson))
+                using (JsonDocument doc = JsonUtil.ParseStrict(m.ToolCallsJson))
                 {
                     wire["tool_calls"] = doc.RootElement.Clone();
                 }
@@ -64,7 +64,7 @@ namespace Mau.Providers
             List<string> imageUrls = new List<string>();
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(m.ImagesJson))
+                using (JsonDocument doc = JsonUtil.ParseStrict(m.ImagesJson))
                 {
                     JsonElement root = doc.RootElement;
                     if (root.ValueKind == JsonValueKind.Array)
@@ -150,7 +150,7 @@ namespace Mau.Providers
                 function["description"] = spec.Description;
                 if (spec.ParametersJson.Length > 0)
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(spec.ParametersJson))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(spec.ParametersJson))
                     {
                         function["parameters"] = doc.RootElement.Clone();
                     }

@@ -51,25 +51,18 @@ namespace CH4
             }
 
             // [段1] 引用数组 + 注入文本——引用形态 = 图片绝对路径（请求构造面展开为内容块）
-            StringBuilder imagesJson = new StringBuilder();
-            imagesJson.Append("[");
             StringBuilder notice = new StringBuilder();
             notice.Append("（系统自动 · 图片插入）以下图片已插入主干，可直接查看：");
             for (int i = 0; i < paths.Count; i = i + 1)
             {
-                if (i > 0)
-                {
-                    imagesJson.Append(",");
-                }
-                imagesJson.Append(JsonUtil.Serialize(paths[i]));
                 notice.Append("\n");
                 notice.Append(paths[i]);
             }
-            imagesJson.Append("]");
+            string imagesJson = JsonUtil.Array(paths.ToArray());
             string text = notice.ToString();
 
             // [段2] 注入消息——只追加不改写；视图层走 user 系统通道（source=systemauto）
-            LlmMessage? injected = _context.AddUserMessage(text, imagesJson.ToString());
+            LlmMessage? injected = _context.AddUserMessage(text, imagesJson);
             if (injected == null)
             {
                 return;
@@ -78,7 +71,7 @@ namespace CH4
             _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             if (_httpHost != null)
             {
-                string userJson = "{\"content\":" + JsonUtil.Serialize(text) + ",\"source\":\"systemauto\"}";
+                string userJson = JsonUtil.Object(("content", text), ("source", "systemauto"));
                 _httpHost.PushView("user", userJson, -1, 0);
             }
             LogStore.Add("CatHome4", 1, "图片注入：本批 " + paths.Count.ToString() + " 张（首张 " + paths[0] + "）", "IMAGE");
@@ -100,7 +93,7 @@ namespace CH4
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
                 {
                     JsonElement root = doc.RootElement;
                     if (root.ValueKind != JsonValueKind.Object)
