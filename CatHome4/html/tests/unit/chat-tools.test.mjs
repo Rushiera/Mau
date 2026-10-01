@@ -666,6 +666,30 @@ test('cs-find_ref——三列含列号 + [跨程序集] 徽标；headline 命中
   expect(hits[1].querySelector('.seg-hit-line').textContent).toBe(':20:45');
 });
 
+test('cs-find——headline 命中数/项目数；声明行整行渲染；输入段含查找值', () => {
+  const card = renderTool({
+    name: 'cs-find',
+    arguments: JSON.stringify({ path: 'Git:mau/Mau.sln', name: 'WorkspaceConfig' }),
+    result: '{"ok":true,"tool":"cs-find","name":"WorkspaceConfig","hits":1,"projects":10}\n[Mau.Runtime] WorkspaceConfig.cs:12: 类 WorkspaceConfig'
+  }, 130);
+  expect(card.querySelector('.tn').textContent).toBe('🔍 查找 WorkspaceConfig · 1 处 · 10 项目');
+  const hits = card.querySelectorAll('.seg-out .seg-hit');
+  expect(hits.length).toBe(1);
+  expect(hits[0].querySelector('.seg-hit-path').textContent).toBe('[Mau.Runtime] WorkspaceConfig.cs');
+  expect(hits[0].querySelector('.seg-hit-line').textContent).toBe(':12');
+  expect(hits[0].querySelector('.seg-hit-ctx').textContent).toBe(': 类 WorkspaceConfig');
+  expect(card.textContent).toContain('查找声明 WorkspaceConfig');
+});
+
+test('cs-find——无命中（ERR，无结构化头）折叠行不空白', () => {
+  const card = renderTool({
+    name: 'cs-find',
+    arguments: JSON.stringify({ path: 'Git:mau/Mau.sln', name: 'NoSuchSymbolXyz' }),
+    result: 'ERR|SYMBOL_NOT_FOUND|未找到匹配的声明: NoSuchSymbolXyz'
+  }, 131);
+  expect(card.querySelector('.tn').textContent).toContain('查找 NoSuchSymbolXyz');
+});
+
 test('写类三件——outputLines 由 meta 生成自然语言；无正文不留白', () => {
   const card = renderTool({
     name: 'cs-member',
@@ -995,6 +1019,24 @@ test('骨架兜底折叠行——「骨架名 · 工具名」；未登记骨架�
   expect(window.chatToolFallbackHeadline({ name: 'text-read' })).toBe('读取文件 · text-read');
   expect(window.chatToolFallbackHeadline({ name: 'brand-new-tool' })).toBe('brand-new-tool');
   expect(window.chatToolFallbackHeadline({})).toBe('?');
+});
+
+test('timeback——折叠行带 purpose（结构化头驱动；start / back 两侧）', () => {
+  const c1 = renderTool({
+    name: 'timeback',
+    arguments: JSON.stringify({ action: 'start', purpose: 'A125 探索' }),
+    result: '{"ok":true,"tool":"timeback","id":13,"anchor":287,"purpose":"A125 探索"}\ntimeback #13 已锚定（锚点 = 本次调用声明 · 节点 287 · 用途「A125 探索」）——查证过程留在作用域内。'
+  }, 132);
+  expect(c1.querySelector('.tn').textContent).toContain('TimeBack #13 已锚定 · 起点 287');
+  expect(c1.querySelector('.tn').textContent).toContain('A125 探索');
+  renderTool({
+    name: 'timeback',
+    arguments: JSON.stringify({ action: 'back', findings: '结论：X' }),
+    result: '{"ok":true,"tool":"timeback","id":13,"anchor":287,"purpose":"A125 探索","released":17,"tokens":297884,"grew":6120}\n结论：X'
+  }, 133);
+  const c2 = chatMsgs.querySelectorAll('.chat-tool')[1];
+  expect(c2.querySelector('.tn').textContent).toContain('TimeBack #13 已登记回收 · 锚点 287');
+  expect(c2.querySelector('.tn').textContent).toContain('A125 探索');
 });
 
 test('未登记工具折叠行——骨架兜底不空白（Z8）', () => {

@@ -196,7 +196,8 @@ namespace CH4
             Dictionary<string, object> fields = new Dictionary<string, object>();
             fields["id"] = scope.Id;
             fields["anchor"] = declIndex;
-            string body = "timeback #" + scope.Id.ToString() + " 已锚定（锚点 = 本次调用声明 · 节点 " + declIndex.ToString() + "）——查证过程留在作用域内；"
+            fields["purpose"] = scope.Purpose;
+            string body = "timeback #" + scope.Id.ToString() + " 已锚定（锚点 = 本次调用声明 · 节点 " + declIndex.ToString() + " · 用途「" + scope.Purpose + "」）——查证过程留在作用域内；"
                 + "回收时用 back 带回 findings（作为该调用的返回值），两次调用之间的内容一并删除。"
                 + "作用域内 Note / sleep / timer 已锁定。";
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 开锚（锚点 " + declIndex.ToString() + " / 用途 " + scope.Purpose + "）", "TIMEBACK");
@@ -227,6 +228,7 @@ namespace CH4
             Dictionary<string, object> fields = new Dictionary<string, object>();
             fields["id"] = _timebackScope.Id;
             fields["anchor"] = _timebackScope.StartDeclIndex;
+            fields["purpose"] = _timebackScope.Purpose;
             fields["released"] = _timebackScope.PendingReleased;
             fields["tokens"] = tokensNow;
             fields["grew"] = tokensNow - _timebackScope.TokensAtOpen;
@@ -586,10 +588,13 @@ namespace CH4
         }
 
         /// <summary>
-        /// timeback 本体修正黑名单（莎 2026-09-28 定）——作用域存活期禁止对 CH4 自身做修正：
-        /// 宿主重启 / 热重载 / 自举链（mau-*）/ 全局与每猫配置写入 / 管理指令族。
-        /// 判据 = 工具名精确匹配（黑名单式，不用前缀通配——只读面如 host-flows / config-get / config-cat-get / mau-verify 与文本工具不受影响）。
-        /// 与 C3 的 Note / sleep / timer 锁定并列：前者防「区间删除语义冲突」，本项防「作用域内改本体」。
+        /// timeback 暴毙风险黑名单（莎 2026-09-28 定 · 2026-10-01 宽松化）——只隔离「会让 Mau 框架 / 宿主进程自身当场失效」的行为，
+        /// 判据 = 该动作是否可能立刻中断进程或让作用域上下文失效（重启 / 程序集句柄替换 / 运行区文件被重写）。
+        /// 拦三件：majordomo-restart（重启——本轮中断，作用域随内存丢失）· host-reload（换程序集句柄 + 重建工具池）·
+        /// mau-setup（deploy 重写运行区文件）。其余一律放行——只读（mau-verify / host-flows / config-get / cat.list 类指令）、
+        /// 写仓库产物区（mau-gen / mau-proj）、配置写（config-*）、管理指令（majordomo-cmd）：改的是行为与产物，不会让进程或作用域当场失效。
+        /// 判据 = 工具名精确匹配（黑名单式，不用前缀通配）。
+        /// 与 C3 的 Note / sleep / timer 锁定并列：前者防「区间删除语义冲突」，本项防「作用域内把本体搞崩」。
         /// </summary>
         /// <param name="name">工具名</param>
         /// <returns>true=作用域内禁用</returns>
@@ -597,14 +602,7 @@ namespace CH4
         {
             return name == "majordomo-restart"
                 || name == "host-reload"
-                || name == "mau-verify"
-                || name == "mau-gen"
-                || name == "mau-proj"
-                || name == "mau-setup"
-                || name == "config-set"
-                || name == "config-reset"
-                || name == "config-cat-set"
-                || name == "majordomo-cmd";
+                || name == "mau-setup";
         }
 
         /// <summary>

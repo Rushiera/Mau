@@ -955,15 +955,97 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 跨分部方法定位——在全部同名类声明中聚合查找（候选签名列表附带分部文件）
+        /// 成员签名标签——歧义候选列表用（与 FindMemberInClass 候选口径一致）
         /// </summary>
-        /// <param name="parts">类分部列表</param>
-        /// <param name="methodName">方法名</param>
-        /// <param name="part">命中分部（唯一命中时）</param>
-        /// <param name="found">命中方法</param>
+        /// <param name="node">成员节点</param>
+        /// <returns>标签文本</returns>
+        private static string MemberSignatureLabel(SyntaxNode node)
+        {
+            MethodDeclarationSyntax? method = node as MethodDeclarationSyntax;
+            if (method != null)
+            {
+                return method.Identifier.Text + method.ParameterList.ToString();
+            }
+            ConstructorDeclarationSyntax? ctor = node as ConstructorDeclarationSyntax;
+            if (ctor != null)
+            {
+                return ".ctor" + ctor.ParameterList.ToString();
+            }
+            return FindMemberLabel(node);
+        }
+        /// <summary>
+        /// 定位 patch 目标声明——类内按名，覆盖方法（MethodDeclarationSyntax）与构造函数（ConstructorDeclarationSyntax）。
+        /// 锚点口径与成员级（cs-read / cs-member / cs-comment）对齐：".ctor" / 类名 = 构造函数；重载歧义时返回全部签名供区分。
+        /// </summary>
+        /// <param name="classNode">类声明</param>
+        /// <param name="methodName">方法名（".ctor" / 类名 = 构造函数）</param>
+        /// <param name="found">命中声明</param>
         /// <param name="signatures">全部同名签名（歧义时输出）</param>
         /// <returns>0=唯一命中 1=无 2=歧义</returns>
-        private static int FindMethodInParts(List<ClassPart> parts, string methodName, out ClassPart part, out MethodDeclarationSyntax found, out List<string> signatures)
+        private static int FindPatchTargetInClass(ClassDeclarationSyntax classNode, string methodName, out BaseMethodDeclarationSyntax found, out List<string> signatures)
+        {
+            found = null!;
+            signatures = new List<string>();
+            bool ctorRequest = methodName == ".ctor" || methodName == classNode.Identifier.Text;
+            List<BaseMethodDeclarationSyntax> matches = new List<BaseMethodDeclarationSyntax>();
+            foreach (SyntaxNode node in classNode.DescendantNodes())
+            {
+                MethodDeclarationSyntax? method = node as MethodDeclarationSyntax;
+                if (method != null && method.Identifier.Text == methodName)
+                {
+                    matches.Add(method);
+                    continue;
+                }
+                ConstructorDeclarationSyntax? ctor = node as ConstructorDeclarationSyntax;
+                if (ctor != null && ctorRequest)
+                {
+                    matches.Add(ctor);
+                }
+            }
+            for (int i = 0; i < matches.Count; i = i + 1)
+            {
+                signatures.Add(PatchSignature(matches[i]));
+            }
+            if (matches.Count == 0)
+            {
+                return 1;
+            }
+            if (matches.Count > 1)
+            {
+                return 2;
+            }
+            found = matches[0];
+            return 0;
+        }
+        /// <summary>
+        /// patch 目标参数表文本——方法 / 构造函数通用（歧义候选签名回显用）
+        /// </summary>
+        /// <param name="node">声明节点</param>
+        /// <returns>参数表文本</returns>
+        private static string PatchSignature(BaseMethodDeclarationSyntax node)
+        {
+            MethodDeclarationSyntax? method = node as MethodDeclarationSyntax;
+            if (method != null)
+            {
+                return method.ParameterList.ToString();
+            }
+            ConstructorDeclarationSyntax? ctor = node as ConstructorDeclarationSyntax;
+            if (ctor != null)
+            {
+                return ctor.ParameterList.ToString();
+            }
+            return "";
+        }
+        /// <summary>
+        /// 跨分部 patch 目标定位——在全部同名类声明中聚合查找方法与构造函数（候选签名列表附带分部文件）
+        /// </summary>
+        /// <param name="parts">类分部列表</param>
+        /// <param name="methodName">方法名（".ctor" / 类名 = 构造函数）</param>
+        /// <param name="part">命中分部（唯一命中时）</param>
+        /// <param name="found">命中声明</param>
+        /// <param name="signatures">全部同名签名（歧义时输出）</param>
+        /// <returns>0=唯一命中 1=无 2=歧义</returns>
+        private static int FindPatchTargetInParts(List<ClassPart> parts, string methodName, out ClassPart part, out BaseMethodDeclarationSyntax found, out List<string> signatures)
         {
             part = null!;
             found = null!;
@@ -972,9 +1054,9 @@ namespace Mau.Development
             int hits = 0;
             for (int i = 0; i < parts.Count; i = i + 1)
             {
-                MethodDeclarationSyntax localFound;
+                BaseMethodDeclarationSyntax localFound;
                 List<string> localSignatures;
-                int local = FindMethodInClass(parts[i].Node, methodName, out localFound, out localSignatures);
+                int local = FindPatchTargetInClass(parts[i].Node, methodName, out localFound, out localSignatures);
                 if (local == 1)
                 {
                     continue;
@@ -984,7 +1066,7 @@ namespace Mau.Development
                     hits = hits + 1;
                     part = parts[i];
                     found = localFound;
-                    signatures.Add(localFound.ParameterList.ToString() + (multiPart ? " @" + Path.GetFileName(parts[i].Tree.FilePath) : ""));
+                    signatures.Add(PatchSignature(localFound) + (multiPart ? " @" + Path.GetFileName(parts[i].Tree.FilePath) : ""));
                     continue;
                 }
                 for (int k = 0; k < localSignatures.Count; k = k + 1)
@@ -1007,62 +1089,58 @@ namespace Mau.Development
             }
             return 0;
         }
-
         /// <summary>
-        /// 成员签名标签——歧义候选列表用（与 FindMemberInClass 候选口径一致）
+        /// 不支持成员类型的定向提示——锚点按名找不到方法 / 构造函数时，若类内确有同名其它成员，
+        /// 提示「该成员类型不在 cs-patch 支持面」（区分「名字写错」与「类型不支持」——两者最小修复动作不同）。
         /// </summary>
-        /// <param name="node">成员节点</param>
-        /// <returns>标签文本</returns>
-        private static string MemberSignatureLabel(SyntaxNode node)
+        /// <param name="parts">类分部列表</param>
+        /// <param name="methodName">锚点名</param>
+        /// <returns>提示串（无同名成员时空串）</returns>
+        private static string UnsupportedMemberHint(List<ClassPart> parts, string methodName)
         {
-            MethodDeclarationSyntax? method = node as MethodDeclarationSyntax;
-            if (method != null)
+            string pureName = methodName;
+            int paren = pureName.IndexOf('(');
+            if (paren >= 0)
             {
-                return method.Identifier.Text + method.ParameterList.ToString();
+                pureName = pureName.Substring(0, paren).Trim();
             }
-            ConstructorDeclarationSyntax? ctor = node as ConstructorDeclarationSyntax;
-            if (ctor != null)
+            string accessorOwner = "";
+            if (pureName.StartsWith("get_", StringComparison.Ordinal) || pureName.StartsWith("set_", StringComparison.Ordinal))
             {
-                return ".ctor" + ctor.ParameterList.ToString();
+                accessorOwner = pureName.Substring(4);
             }
-            return FindMemberLabel(node);
-        }
-
-        /// <summary>
-        /// 定位方法声明——类内按名；重载歧义检测（返回全部签名供 LLM 区分）
-        /// </summary>
-        /// <param name="classNode">类声明</param>
-        /// <param name="methodName">方法名</param>
-        /// <param name="found">命中方法</param>
-        /// <param name="signatures">全部同名签名（歧义时输出）</param>
-        /// <returns>0=唯一命中 1=无 2=歧义</returns>
-        private static int FindMethodInClass(ClassDeclarationSyntax classNode, string methodName, out MethodDeclarationSyntax found, out List<string> signatures)
-        {
-            found = null!;
-            signatures = new List<string>();
-            List<MethodDeclarationSyntax> matches = new List<MethodDeclarationSyntax>();
-            foreach (SyntaxNode node in classNode.DescendantNodes())
+            for (int i = 0; i < parts.Count; i = i + 1)
             {
-                MethodDeclarationSyntax? method = node as MethodDeclarationSyntax;
-                if (method != null && method.Identifier.Text == methodName)
+                foreach (SyntaxNode node in parts[i].Node.DescendantNodes())
                 {
-                    matches.Add(method);
+                    PropertyDeclarationSyntax? property = node as PropertyDeclarationSyntax;
+                    if (property != null && (property.Identifier.Text == pureName || (accessorOwner.Length > 0 && property.Identifier.Text == accessorOwner)))
+                    {
+                        return "；类内存在属性 " + property.Identifier.Text + "——属性访问器不在 cs-patch 支持面（改访问器体走 text-replace，增删属性走 cs-member）";
+                    }
+                    EventDeclarationSyntax? evt = node as EventDeclarationSyntax;
+                    if (evt != null && evt.Identifier.Text == pureName)
+                    {
+                        return "；类内存在事件 " + evt.Identifier.Text + "——事件不在 cs-patch 支持面（改事件声明走 text-replace）";
+                    }
+                    IndexerDeclarationSyntax? indexer = node as IndexerDeclarationSyntax;
+                    if (indexer != null && (pureName == "this" || pureName == "Item"))
+                    {
+                        return "；类内存在索引器——索引器不在 cs-patch 支持面（改访问器体走 text-replace）";
+                    }
+                    DestructorDeclarationSyntax? destructor = node as DestructorDeclarationSyntax;
+                    if (destructor != null && (pureName == "~" + parts[i].Node.Identifier.Text || pureName.StartsWith("~", StringComparison.Ordinal)))
+                    {
+                        return "；类内存在析构函数——析构函数不在 cs-patch 支持面（改其体走 text-replace）";
+                    }
+                    OperatorDeclarationSyntax? op = node as OperatorDeclarationSyntax;
+                    if (op != null && pureName.IndexOf("operator", StringComparison.Ordinal) >= 0)
+                    {
+                        return "；类内存在运算符声明——运算符不在 cs-patch 支持面（改其体走 text-replace）";
+                    }
                 }
             }
-            for (int i = 0; i < matches.Count; i = i + 1)
-            {
-                signatures.Add(matches[i].ParameterList.ToString());
-            }
-            if (matches.Count == 0)
-            {
-                return 1;
-            }
-            if (matches.Count > 1)
-            {
-                return 2;
-            }
-            found = matches[0];
-            return 0;
+            return "";
         }
 
         /// <summary>

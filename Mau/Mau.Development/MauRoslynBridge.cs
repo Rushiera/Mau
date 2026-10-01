@@ -14,7 +14,7 @@ namespace Mau.Development
     /// 磁盘权威 + 快照监管（mtime+size 前缀对账）+ 项目键隔离常驻池（LRU 4）+ 树/编译/语义三态无感。
     /// 引用集 = 目标项目已 build 的 bin 产物 + TPA + 共享框架探测（AspNetCore/WindowsDesktop——莎拍板 A 方案）——
     /// bin 缺失 → 引导先 cs.build（check 快、build 权威的闭环）。
-    /// 工具面 11 件：check / build / list / read / find_ref / patch / member / comment / dead / comment_check / format。
+    /// 工具面 12 件：check / build / list / read / find_ref / find / patch / member / comment / dead / comment_check / format。
     /// </summary>
     public sealed partial class MauRoslynBridge : ICSharpBridge
     {
@@ -89,7 +89,7 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 单方法调度入口——method 白名单 11 件分派；异常不外泄（ERR|EX）
+        /// 单方法调度入口——method 白名单 12 件分派；异常不外泄（ERR|EX）
         /// </summary>
         /// <param name="method">操作名</param>
         /// <param name="argsJson">展平参数 JSON</param>
@@ -138,6 +138,10 @@ namespace Mau.Development
                     if (method == "find_ref")
                     {
                         return ToolFindRef(root, out result);
+                    }
+                    if (method == "find")
+                    {
+                        return ToolFind(root, out result);
                     }
                     if (method == "patch")
                     {
@@ -393,7 +397,7 @@ namespace Mau.Development
                 error = "路径存在但类型不符（需 csproj / .sln / 目录）: " + full;
                 return projects;
             }
-            error = "路径不存在: " + full;
+            error = "路径不存在: " + full + NeighborCandidates(full);
             return projects;
         }
         /// <summary>
@@ -427,6 +431,128 @@ namespace Mau.Development
                 return "";
             }
             return "；子目录发现 " + names.Count + " 个项目（如 " + names[0] + "）——目录入口仅扫顶层，请传 .sln 或具体 csproj";
+        }
+        /// <summary>
+        /// 邻近候选提示——路径不存在时列出同级（父目录）与上一级（祖父目录）内的 .sln / .csproj（各扫 1 级，不递归）。
+        /// 结果只进报错文本，不改变寻路结果——不静默切换、不自动适应（失败必须可见）。
+        /// </summary>
+        /// <param name="full">请求的绝对路径（不存在）</param>
+        /// <returns>提示串（无候选时空串）</returns>
+        private string NeighborCandidates(string full)
+        {
+            string name = Path.GetFileName(full);
+            string dir = Path.GetDirectoryName(full) ?? "";
+            List<string> lines = new List<string>();
+            CollectNeighbor(dir, name, "同级", lines);
+            string upper = dir.Length > 0 ? (Path.GetDirectoryName(dir) ?? "") : "";
+            if (upper.Length > 0 && !string.Equals(upper, dir, StringComparison.OrdinalIgnoreCase))
+            {
+                CollectNeighbor(upper, name, "上一级", lines);
+            }
+            if (lines.Count == 0)
+            {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.Append("；邻近候选（仅提示，不自动切换）:");
+            for (int i = 0; i < lines.Count; i = i + 1)
+            {
+                sb.Append(Environment.NewLine + "  " + lines[i]);
+            }
+            return sb.ToString();
+        }
+        /// <summary>
+        /// 单层候选收集——目录内 .sln / .csproj（同名优先，每层上限 3 条）
+        /// </summary>
+        /// <param name="dir">待扫目录</param>
+        /// <param name="wantedName">请求的文件名（同名优先）</param>
+        /// <param name="level">层级标签（同级 / 上一级）</param>
+        /// <param name="lines">输出行集合</param>
+        private void CollectNeighbor(string dir, string wantedName, string level, List<string> lines)
+        {
+            if (dir.Length == 0 || !Directory.Exists(dir))
+            {
+                return;
+            }
+            List<string> hits = new List<string>();
+            try
+            {
+                string[] solutions = Directory.GetFiles(dir, "*.sln", SearchOption.TopDirectoryOnly);
+                string[] projects = Directory.GetFiles(dir, "*.csproj", SearchOption.TopDirectoryOnly);
+                for (int i = 0; i < solutions.Length; i = i + 1)
+                {
+                    hits.Add(solutions[i]);
+                }
+                for (int i = 0; i < projects.Length; i = i + 1)
+                {
+                    hits.Add(projects[i]);
+                }
+            }
+            catch (Exception)
+            {
+                return;
+            }
+            hits.Sort(StringComparer.OrdinalIgnoreCase);
+            int added = 0;
+            for (int i = 0; i < hits.Count && added < 3; i = i + 1)
+            {
+                if (string.Equals(Path.GetFileName(hits[i]), wantedName, StringComparison.OrdinalIgnoreCase))
+                {
+                    lines.Add(level + "同名: " + DescribePath(hits[i]));
+                    added = added + 1;
+                }
+            }
+            for (int i = 0; i < hits.Count && added < 3; i = i + 1)
+            {
+                if (!string.Equals(Path.GetFileName(hits[i]), wantedName, StringComparison.OrdinalIgnoreCase))
+                {
+                    lines.Add(level + ": " + DescribePath(hits[i]));
+                    added = added + 1;
+                }
+            }
+        }
+        /// <summary>
+        /// 路径描述——落在受控根内时用「根id:相对路径」形式（与工具寻址同口径），否则原样绝对路径。
+        /// 根重叠时取**最具体的根**（路径最长者）——嵌套根（如 gitee ⊃ mau）下给出对使用者更有意义的短形式。
+        /// </summary>
+        /// <param name="full">绝对路径</param>
+        /// <returns>描述串</returns>
+        private string DescribePath(string full)
+        {
+            int best = -1;
+            for (int i = 0; i < _roots.Length; i = i + 1)
+            {
+                if (full.StartsWith(_roots[i] + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (best < 0 || _roots[i].Length > _roots[best].Length)
+                    {
+                        best = i;
+                    }
+                }
+            }
+            if (best >= 0)
+            {
+                return _rootIds[best] + ":" + full.Substring(_roots[best].Length + 1).Replace(Path.DirectorySeparatorChar, '/');
+            }
+            return full;
+        }
+        /// <summary>
+        /// 单项目入口的诊断串——请求路径归一后仅在「路径不存在」时附邻近候选（其余情形返回空串）
+        /// </summary>
+        /// <param name="pathParam">原始路径参数</param>
+        /// <returns>诊断串（空安全）</returns>
+        private string ProjectPathDiagnostic(string pathParam)
+        {
+            string full = ResolveInRoots(pathParam);
+            if (full.Length == 0)
+            {
+                return "";
+            }
+            if (File.Exists(full) || Directory.Exists(full))
+            {
+                return "";
+            }
+            return NeighborCandidates(full);
         }
 
         /// <summary>
@@ -565,6 +691,11 @@ namespace Mau.Development
             {
                 allowed = "path class member";
                 required = "path class member";
+            }
+            else if (method == "find")
+            {
+                allowed = "path name";
+                required = "path name";
             }
             else if (method == "patch")
             {

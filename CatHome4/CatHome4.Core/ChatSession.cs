@@ -1968,14 +1968,15 @@ namespace CH4
                     LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：不在本会话声明面", "TOOL");
                     continue;
                 }
-                // timeback 本体修正黑名单——作用域存活期禁止对 CH4 自身做修正（莎 2026-09-28 定；统一在此点拦 host-* / 内置 / OA 三分支）
+                // timeback 暴毙风险黑名单——作用域存活期只拦「会让进程 / 作用域当场失效」的操作
+                // （莎 2026-09-28 定 · 2026-10-01 判据收窄：从「改动本体」改为「暴毙风险」；统一在此点拦 host-* / 内置 / OA 三分支）
                 if (_timebackScope != null && IsTimebackBodyLocked(call.Name))
                 {
                     ToolOrderDog lockedDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
-                    lockedDog.Result = "ERR|TIMEBACK_LOCKED|timeback 作用域内禁止对 CH4 自身做修正: " + call.Name + "——先 back 回收";
+                    lockedDog.Result = "ERR|TIMEBACK_LOCKED|timeback 作用域内禁止会让进程或作用域当场失效的操作（重启 / 热重载 / 部署）: " + call.Name + "——先 back 回收";
                     lockedDog.IsClosed = true;
                     _dogs.Add(lockedDog);
-                    LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：timeback 作用域内禁止本体修正", "TIMEBACK");
+                    LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：timeback 作用域内暴毙风险操作", "TIMEBACK");
                     continue;
                 }
                 // 域限定工具门禁——仅 timeback 活跃时可用（image-inject / browser-* 四件：域外拒绝，不静默降级；

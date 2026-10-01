@@ -48,7 +48,7 @@ namespace Mau.Development
             string csproj = ResolveProject(path);
             if (csproj.Length == 0)
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path;
+                result = "ERR|BAD_PATH|项目路径无效或越界: " + path + ProjectPathDiagnostic(path);
                 return false;
             }
             ProjectCache cache = EnsureProject(csproj);
