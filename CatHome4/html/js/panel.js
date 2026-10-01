@@ -3,7 +3,7 @@
 // 加载顺序：app.js → panel.js → panel-apis.js → panel-catcfg.js（index.html 引用）
 
 // [段13] 多猫管理区（P9.3d）——GET /api/v1/cats 列表 + POST command cat.* 指令族
-// 2026-10-01 主面板轮：ID 列撤除；新增 LLM API / QQ Bot（行内直改）+ 目录白名单 / 工具清单（专用弹层入口）
+// 2026-10-01 主面板轮：ID 列撤除；新增 LLM API / QQ Bot（行内直改）+ 目录白名单 / 工具清单 / 前文注入（专用弹层入口）
 var catsTableBody = document.querySelector('#catsTable tbody');
 var catsMsgEl = document.getElementById('catsMsg');
 var catNewInput = document.getElementById('catNewName');
@@ -215,6 +215,16 @@ function renderCatRow(cat) {
     toolsBtn.onclick = function () { openCatTools(cat.id, cat.name); };
     tdTools.appendChild(toolsBtn);
     tr.appendChild(tdTools);
+
+    // [列6] 前文注入——单按钮入口（专用弹层：候选 = 新猫默认模板的默认前文池）
+    var tdInject = document.createElement('td');
+    var injectBtn = document.createElement('button');
+    injectBtn.textContent = '前文注入';
+    injectBtn.className = 'btn-mini';
+    injectBtn.onclick = function () { openCatInject(cat.id, cat.name); };
+    tdInject.appendChild(injectBtn);
+    tr.appendChild(tdInject);
+
     var tdPort = document.createElement('td');
     tdPort.textContent = cat.running ? (':' + cat.port) : '-';
     tr.appendChild(tdPort);

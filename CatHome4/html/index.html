@@ -240,7 +240,7 @@
                     <button id="catsRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
                 </div>
                 <div style="flex:1;overflow-y:auto;padding:8px 12px">
-                    <table class="box-table" id="catsTable"><thead><tr><th style="width:18%">会话状态</th><th style="width:12%">名称</th><th style="width:13%">LLM API</th><th style="width:13%">QQ Bot</th><th style="width:15%">目录白名单</th><th style="width:8%">工具清单</th><th style="width:6%">端口</th><th style="width:15%">操作</th></tr></thead><tbody></tbody></table>
+                    <table class="box-table" id="catsTable"><thead><tr><th style="width:17%">会话状态</th><th style="width:11%">名称</th><th style="width:12%">LLM API</th><th style="width:12%">QQ Bot</th><th style="width:12%">目录白名单</th><th style="width:8%">工具清单</th><th style="width:8%">前文注入</th><th style="width:5%">端口</th><th style="width:15%">操作</th></tr></thead><tbody></tbody></table>
                     <div id="catsMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag);margin-top:6px"></div>
                 </div>
             </section>
@@ -270,11 +270,11 @@
             <textarea id="catCfgPersona" rows="3" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px;resize:vertical"></textarea>
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">目录白名单（enabledRoots——全局根池子集；workspace 系统根必选；空=全量）</label>
             <div id="catCfgRoots" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
-            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">前文注入 List（injectList——id:相对路径 / 绝对路径 / 目录（加载其一级 *.md，文件名升序）；拖动 ≡ 调顺序；新会话时按序注入）</label>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">前文注入 List（injectList——候选取自「配置页 → 新猫默认模板 → 默认前文」池；拖动 ≡ 调顺序；新会话时按序注入）</label>
             <div id="catCfgInject" style="margin-top:5px"></div>
-            <div style="display:flex;gap:6px;margin-top:6px">
-                <input id="catCfgInjectAdd" placeholder="添加路径（如 ccbp:L1/Tree.md）" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
-                <button id="catCfgInjectAddBtn" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">添加</button>
+            <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
+                <button id="catCfgInjectPick" class="btn-mini">选择前文</button>
+                <span style="font-size:var(--ch-fs-tag);color:var(--ch-fg-faint)">候选 = 新猫默认模板的默认前文池</span>
             </div>
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">
                 加载包挂载（packs——池内 key 子集；挂载后本猫可用 pack 工具按需注入；空=未挂载；池在「配置页 → 加载包池」管理）
@@ -307,6 +307,30 @@
                 <button id="catToolsCancel" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">取消</button>
             </div>
             <div id="catToolsMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag);margin-top:6px"></div>
+        </div>
+    </div>
+
+    <!-- 前文注入弹层——候选 = 新猫默认模板的默认前文池（多猫行「前文注入」按钮 + 猫配置弹层「选择前文」按钮共用） -->
+    <div id="catInjectModal" style="display:none;position:fixed;inset:0;background:var(--ch-overlay);z-index:55;align-items:center;justify-content:center">
+        <div style="width:620px;max-height:82vh;overflow-y:auto;background:var(--ch-bg-panel);border:1px solid var(--ch-line);border-radius:8px;padding:14px">
+            <div style="display:flex;align-items:center;margin-bottom:8px">
+                <span style="color:var(--ch-identity);font-weight:bold;font-size:var(--ch-fs-sub)">前文注入 — </span>
+                <span id="catInjectTitle" style="color:var(--ch-identity);font-weight:bold;font-size:var(--ch-fs-sub)"></span>
+                <span style="flex:1"></span>
+                <button id="catInjectClose" style="background:transparent;border:none;color:var(--ch-fg-weak);font-size:var(--ch-fs-title);cursor:pointer">✕</button>
+            </div>
+            <div style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-bottom:10px">候选来自「配置页 → 新猫默认模板 → 默认前文」；保存后「新会话」生效</div>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);display:block">默认前文池（勾选注入项——按池内顺序注入）</label>
+            <div id="catInjectPool" style="margin-top:5px"></div>
+            <div id="catInjectExtraWrap" style="display:none;margin-top:10px">
+                <label style="font-size:var(--ch-fs-tag);color:var(--ch-warn);display:block">不在池中（本猫已有——默认保留；点「移除」即丢弃）</label>
+                <div id="catInjectExtra" style="margin-top:5px"></div>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:12px;justify-content:flex-end">
+                <button id="catInjectSave" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">保存</button>
+                <button id="catInjectCancel" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">取消</button>
+            </div>
+            <div id="catInjectMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag);margin-top:6px"></div>
         </div>
     </div>
 

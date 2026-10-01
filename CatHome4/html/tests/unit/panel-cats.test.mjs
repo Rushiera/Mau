@@ -1,6 +1,6 @@
 // tests/unit/panel-cats.test.mjs —— 主面板多猫行（2026-10-01 主面板轮）
 // 覆盖：列结构（ID 列撤除）· 名称行内编辑（POST cat-config displayName；未改动 / 清空不提交）
-//       · LLM API / QQ Bot 下拉（change 即提交 cat-config 单字段）· 目录白名单无权目录展示 + 专用弹层入口 · 工具清单单按钮
+//       · LLM API / QQ Bot 下拉（change 即提交 cat-config 单字段）· 目录白名单无权目录展示 + 专用弹层入口 · 工具清单 / 前文注入单按钮
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { expect, test, beforeAll } from 'vitest';
@@ -72,13 +72,18 @@ beforeAll(async () => {
   await tick();
 });
 
-test('主面板行——8 列（会话状态列前置 + ID 列已撤）；名称可编辑、API/QQBot 是下拉、工具清单是按钮', () => {
+test('主面板行——9 列（会话状态列前置 + ID 列已撤）；名称可编辑、API/QQBot 是下拉、工具清单 / 前文注入是按钮', () => {
   const tr = renderRow(CAT_ROW);
-  expect(tr.children.length).toBe(8);
+  expect(tr.children.length).toBe(9);
   expect(tr.children[1].querySelector('input').value).toBe('测试猫');
   expect(tr.children[2].querySelector('select')).not.toBeNull();
   expect(tr.children[3].querySelector('select')).not.toBeNull();
   expect(tr.children[5].querySelector('button').textContent).toBe('工具清单');
+  // 前文注入列——紧随工具清单，样式与工具清单按钮同源（btn-mini）
+  const injectBtn = tr.children[6].querySelector('button');
+  expect(injectBtn.textContent).toBe('前文注入');
+  expect(injectBtn.className).toBe('btn-mini');
+  expect(tr.children[7].textContent).toBe('-');
   // ID 不再出现在任何单元格
   const texts = [];
   for (let i = 0; i < tr.children.length; i = i + 1) { texts.push(tr.children[i].textContent); }
@@ -188,4 +193,10 @@ test('整行点击——内容区开会话详情；按钮 / 输入控件不触�
   await tick();
   expect(document.getElementById('catDetailModal').style.display).toBe('none');
   document.getElementById('catToolsModal').style.display = 'none';
+  // 前文注入按钮 → 不触发详情；开前文注入弹层
+  tr.children[6].querySelector('button').dispatchEvent(new Event('click', { bubbles: true }));
+  await tick();
+  expect(document.getElementById('catDetailModal').style.display).toBe('none');
+  expect(document.getElementById('catInjectModal').style.display).toBe('flex');
+  document.getElementById('catInjectModal').style.display = 'none';
 });

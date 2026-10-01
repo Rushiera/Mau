@@ -5,6 +5,7 @@
 // [段15] M3c 每猫配置弹层——API 下拉/人设/工具勾选/前文 List
 var catCfgModal = document.getElementById('catCfgModal');
 var catCfgTarget = '';
+var catCfgName = '';
 var catCfgAllTools = [];
 var catCfgInjectList = [];
 var catCfgAllPacks = [];
@@ -13,6 +14,7 @@ var catCfgDefectGroups = [];
 
 function openCatCfg(catId, name) {
     catCfgTarget = catId;
+    catCfgName = name || catId;
     document.getElementById('catCfgTitle').textContent = name + ' (' + catId + ')';
     document.getElementById('catCfgMsg').textContent = '';
     fetch('/api/v1/cat-config?cat=' + encodeURIComponent(catId))
@@ -336,17 +338,10 @@ function saveCatCfg() {
 document.getElementById('catCfgSave').onclick = saveCatCfg;
 document.getElementById('catCfgCancel').onclick = function () { catCfgModal.style.display = 'none'; };
 document.getElementById('catCfgClose').onclick = function () { catCfgModal.style.display = 'none'; };
-document.getElementById('catCfgInjectAddBtn').onclick = function () {
-    var input = document.getElementById('catCfgInjectAdd');
-    var val = input.value.trim();
-    if (val.length === 0) { return; }
-    if (!isValidInjectPath(val)) {
-        document.getElementById('catCfgMsg').textContent = '路径拒绝——只接受完整路径（绝对路径或 id: 命名空间）: ' + val;
-        return;
-    }
-    catCfgInjectList.push(val);
-    input.value = '';
-    renderInjectList(catCfgInjectList);
+// 前文注入入口——手动路径输入已撤（2026-10-01 易用性轮）：候选取自「新猫默认模板」的默认前文池
+// 本面只保留清单展示 + 拖拽排序；增删走弹层（openCatInject——与多猫行「前文注入」按钮同一面）
+document.getElementById('catCfgInjectPick').onclick = function () {
+    openCatInject(catCfgTarget, catCfgName, function (list) { renderInjectList(list); });
 };
 // 默认猫配置入口——统一由多猫页 Majordomo 行「配置」按钮承担（openCatCfg 见 panel.js renderCatRow；F2.1 对话页签已移除，页面无独立 chatCfg 元素）
 
@@ -1132,7 +1127,8 @@ function saveCatRoots() {
 }
 
 // 部分字段写入——POST /api/v1/cat-config（字段级合并写：出现即覆盖 / 缺省即保留；回执 = 落盘结果）
-function postCatConfig(payload, msgId) {
+// onOk：可选成功回调（调用面同步自己的待保存清单——如前文注入弹层回填猫配置弹层的清单）
+function postCatConfig(payload, msgId, onOk) {
     var msg = document.getElementById(msgId);
     msg.textContent = '保存中…';
     fetch('/api/v1/cat-config', {
@@ -1143,6 +1139,7 @@ function postCatConfig(payload, msgId) {
         .then(function (r) { return r.json(); })
         .then(function (d) {
             msg.textContent = d.ok ? '已保存——新会话生效' : ('保存失败: ' + (d.error || ''));
+            if (d.ok && onOk) { onOk(); }
             // 端点同步落盘——回执到达即真相，直接刷新多猫列表（不再赌 400ms 延迟）
             if (d.ok && typeof loadCats === 'function') { loadCats(); }
         })
@@ -1157,3 +1154,134 @@ document.getElementById('catToolsClose').onclick = function () { catToolsModalEl
 document.getElementById('catRootsSave').onclick = saveCatRoots;
 document.getElementById('catRootsCancel').onclick = function () { catRootsModalEl.style.display = 'none'; };
 document.getElementById('catRootsClose').onclick = function () { catRootsModalEl.style.display = 'none'; };
+
+// [段16] 前文注入弹层（2026-10-01 易用性轮）——候选 = 新猫默认模板的默认前文池（配置页 → 新猫默认模板 → 默认前文）
+// 入口两处：多猫行「前文注入」按钮 / 猫配置弹层「选择前文」按钮——共用同一面
+// 语义：池内条目勾选（按池内顺序注入）+ 池外条目单列保留（可逐个移除——不静默丢）；保存走字段级合并写
+var catInjectModalEl = document.getElementById('catInjectModal');
+var catInjectTarget = '';
+var catInjectPool = [];
+var catInjectChecked = {};
+var catInjectExtra = [];
+var catInjectOnSaved = null;
+
+function openCatInject(catId, name, onSaved) {
+    catInjectTarget = catId;
+    catInjectOnSaved = onSaved || null;
+    catInjectPool = [];
+    catInjectChecked = {};
+    catInjectExtra = [];
+    document.getElementById('catInjectTitle').textContent = name || catId;
+    document.getElementById('catInjectMsg').textContent = '';
+    var cur = null;
+    var pending = 2;
+    function step() {
+        pending = pending - 1;
+        if (pending > 0) { return; }
+        classifyCatInject(cur);
+        renderCatInject();
+        catInjectModalEl.style.display = 'flex';
+    }
+    // 池 = 新猫默认模板的默认前文（读取失败 = 空池 + 出声，不静默降级）
+    fetch('/api/v1/cat-default')
+        .then(function (r) { return r.json(); })
+        .then(function (d) { catInjectPool = (d && d.defaultInjectList) ? d.defaultInjectList.slice() : []; step(); })
+        .catch(function () { step(); });
+    // 现值 = 该猫 injectList（读取失败出声，不把失败当空清单）
+    fetch('/api/v1/cat-config?cat=' + encodeURIComponent(catId))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok) {
+                document.getElementById('catInjectMsg').textContent = '读取失败: ' + (d.error || '');
+                step();
+                return;
+            }
+            cur = d.injectList || [];
+            step();
+        })
+        .catch(function () {
+            document.getElementById('catInjectMsg').textContent = '读取失败——宿主未运行？';
+            step();
+        });
+}
+
+// 现值分类——池内条目进勾选态（勾上）/ 池外条目进保留区（不静默丢）
+function classifyCatInject(cur) {
+    catInjectChecked = {};
+    catInjectExtra = [];
+    var poolSet = {};
+    for (var i = 0; i < catInjectPool.length; i++) { poolSet[catInjectPool[i]] = true; }
+    var list = cur || [];
+    for (var j = 0; j < list.length; j++) {
+        if (poolSet[list[j]] === true) { catInjectChecked[list[j]] = true; }
+        else { catInjectExtra.push(list[j]); }
+    }
+}
+
+function renderCatInject() {
+    var box = document.getElementById('catInjectPool');
+    box.textContent = '';
+    if (catInjectPool.length === 0) {
+        var empty = document.createElement('div');
+        empty.style.cssText = 'color:var(--ch-fg-faint);font-size:var(--ch-fs-tag)';
+        empty.textContent = '（默认前文池为空——先到「配置页 → 新猫默认模板 → 默认前文」添加条目）';
+        box.appendChild(empty);
+    }
+    for (var i = 0; i < catInjectPool.length; i++) {
+        (function (path) {
+            var row = document.createElement('label');
+            row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:3px;font-size:var(--ch-fs-tag);color:var(--ch-ok-weak);cursor:pointer';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = catInjectChecked[path] === true;
+            cb.onchange = function () { catInjectChecked[path] = cb.checked; };
+            row.appendChild(cb);
+            var txt = document.createElement('span');
+            txt.textContent = path;
+            txt.style.cssText = 'word-break:break-all';
+            row.appendChild(txt);
+            box.appendChild(row);
+        })(catInjectPool[i]);
+    }
+    var wrap = document.getElementById('catInjectExtraWrap');
+    var exBox = document.getElementById('catInjectExtra');
+    exBox.textContent = '';
+    wrap.style.display = catInjectExtra.length > 0 ? 'block' : 'none';
+    for (var j = 0; j < catInjectExtra.length; j++) {
+        (function (idx) {
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:3px';
+            var txt = document.createElement('span');
+            txt.textContent = catInjectExtra[idx];
+            txt.style.cssText = 'flex:1;color:var(--ch-warn);font-size:var(--ch-fs-tag);word-break:break-all';
+            row.appendChild(txt);
+            var rm = document.createElement('button');
+            rm.textContent = '移除';
+            rm.className = 'btn-mini tight danger';
+            rm.onclick = function () { catInjectExtra.splice(idx, 1); renderCatInject(); };
+            row.appendChild(rm);
+            exBox.appendChild(row);
+        })(j);
+    }
+}
+
+// 保存载荷——池内勾选项（池序）+ 池外保留项（原序）
+function catInjectPayloadList() {
+    var list = [];
+    for (var i = 0; i < catInjectPool.length; i++) {
+        if (catInjectChecked[catInjectPool[i]] === true) { list.push(catInjectPool[i]); }
+    }
+    for (var j = 0; j < catInjectExtra.length; j++) { list.push(catInjectExtra[j]); }
+    return list;
+}
+
+function saveCatInject() {
+    var list = catInjectPayloadList();
+    postCatConfig({ cat: catInjectTarget, injectList: list }, 'catInjectMsg', function () {
+        if (catInjectOnSaved) { catInjectOnSaved(list); }
+    });
+}
+
+document.getElementById('catInjectSave').onclick = saveCatInject;
+document.getElementById('catInjectCancel').onclick = function () { catInjectModalEl.style.display = 'none'; };
+document.getElementById('catInjectClose').onclick = function () { catInjectModalEl.style.display = 'none'; };
