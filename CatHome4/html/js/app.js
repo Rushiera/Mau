@@ -324,6 +324,10 @@ function renderSessions(sessions) {
         var s = sessions[i];
         var card = document.createElement('div');
         card.className = 'session-card';
+        // 会话详情入口——点击打开详情弹层（上一条 user / 回复 + 预设动作）
+        card.setAttribute('data-cat', s.id);
+        card.setAttribute('data-name', s.name);
+        card.title = '点击查看会话详情';
         var head = document.createElement('div');
         head.className = 'session-head';
         var name = document.createElement('span');
@@ -353,6 +357,244 @@ function renderSessions(sessions) {
         sessionsEl.appendChild(card);
     }
 }
+
+// [段6d] 会话详情弹层——会话状态卡点击打开（上一条 user / 回复 + 预设动作 /info · /new · 会话留档）
+// 数据源：GET /api/v1/cat-detail?cat=<key>（状态字段与 cat.info 同源；本会话无消息时回落 sessions_old 留档末条）
+var catDetailModal = document.getElementById('catDetailModal');
+var catDetailTitle = document.getElementById('catDetailTitle');
+var catDetailBody = document.getElementById('catDetailBody');
+var catDetailMsg = document.getElementById('catDetailMsg');
+var catNewModal = document.getElementById('catNewModal');
+var catNewTitle = document.getElementById('catNewTitle');
+var catNewText = document.getElementById('catNewText');
+var catNewConfirmWrap = document.getElementById('catNewConfirmWrap');
+var catNewConfirm = document.getElementById('catNewConfirm');
+var catNewGo = document.getElementById('catNewGo');
+var catNewMsg = document.getElementById('catNewMsg');
+var catDetailKey = '';
+var catDetailData = null;
+var catDetailInfoOn = false;
+var catDetailArchiveOn = false;
+
+// /info 展示字段——与 cat.info 单猫条目同源（BuildCatInfoEntry 产物）
+var CAT_DETAIL_FIELDS = ['id', 'name', 'special', 'running', 'port', 'isIdle', 'phase', 'runState', 'requests', 'round', 'msgCount', 'pending', 'noteActive', 'contextCount', 'context', 'lastActiveAt'];
+
+// 会话卡点击——事件委托（卡片由 renderSessions 动态重建，逐卡绑定会随快照重建失效）
+sessionsEl.addEventListener('click', function (e) {
+    var el = e.target;
+    while (el && el !== sessionsEl) {
+        if (el.classList && el.classList.contains('session-card')) {
+            openCatDetail(el.getAttribute('data-cat'), el.getAttribute('data-name'));
+            return;
+        }
+        el = el.parentNode;
+    }
+});
+
+function openCatDetail(key, name) {
+    catDetailKey = key;
+    catDetailTitle.textContent = name || key;
+    catDetailMsg.textContent = '';
+    catDetailInfoOn = false;
+    catDetailArchiveOn = false;
+    catDetailData = null;
+    catDetailBody.textContent = '读取中…';
+    catDetailModal.style.display = 'flex';
+    loadCatDetail();
+}
+
+function closeCatDetail() {
+    catDetailModal.style.display = 'none';
+    catDetailKey = '';
+    catDetailData = null;
+}
+
+function loadCatDetail() {
+    if (catDetailKey.length === 0) { return; }
+    fetch('/api/v1/cat-detail?cat=' + encodeURIComponent(catDetailKey))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok) { catDetailBody.textContent = '读取失败: ' + (d.error || '未知错误'); return; }
+            catDetailData = d;
+            renderCatDetail();
+        })
+        .catch(function (e) { catDetailBody.textContent = '读取失败: ' + e; });
+}
+
+// 文本块——标题 + 元信息（source=archive 时标注「上一会话」）+ 正文
+function catDetailMsgBlock(title, item, emptyText) {
+    var box = document.createElement('div');
+    box.className = 'cd-block';
+    var head = document.createElement('div');
+    head.className = 'cd-block-head';
+    head.textContent = title;
+    if (item) {
+        var tag = document.createElement('span');
+        tag.className = 'cd-block-meta';
+        if (item.source === 'archive') {
+            tag.textContent = '上一会话' + (item.timeText ? ' · ' + item.timeText : '');
+        } else {
+            tag.textContent = item.time ? fmtAgo(item.time) : '';
+        }
+        head.appendChild(tag);
+    }
+    box.appendChild(head);
+    var body = document.createElement('div');
+    body.className = 'cd-block-body';
+    if (item) {
+        body.textContent = item.text;
+    } else {
+        body.textContent = emptyText;
+        body.classList.add('cd-empty');
+    }
+    box.appendChild(body);
+    return box;
+}
+
+function renderCatDetail() {
+    var d = catDetailData;
+    catDetailBody.textContent = '';
+    var line = document.createElement('div');
+    line.className = 'cd-status';
+    var bits = [];
+    bits.push(d.special ? '主干' : '多猫');
+    bits.push(d.running ? ('运行中 :' + d.port) : '静默');
+    bits.push('四相 ' + (d.phase || '-'));
+    bits.push('轮次 ' + d.round + ' · 消息 ' + d.msgCount + ' · 待处理 ' + d.pending);
+    if (d.noteActive) { bits.push('📋 Note'); }
+    line.textContent = bits.join(' · ');
+    catDetailBody.appendChild(line);
+    if (catDetailInfoOn) { catDetailBody.appendChild(catDetailInfoBlock(d)); }
+    catDetailBody.appendChild(catDetailMsgBlock('用户上一次的输入', d.lastUser, '无——本会话与留档均无用户消息'));
+    catDetailBody.appendChild(catDetailMsgBlock('猫上一次的输入', d.lastReply, '无——本会话与留档均无回复'));
+    if (catDetailArchiveOn) { catDetailBody.appendChild(catDetailArchiveBlock(d)); }
+}
+
+// /info 区——状态字段键值（与 cat.info 单猫条目同源）
+function catDetailInfoBlock(d) {
+    var box = document.createElement('div');
+    box.className = 'cd-block';
+    var head = document.createElement('div');
+    head.className = 'cd-block-head';
+    head.textContent = '/info — 状态';
+    box.appendChild(head);
+    var lines = [];
+    for (var i = 0; i < CAT_DETAIL_FIELDS.length; i++) {
+        var k = CAT_DETAIL_FIELDS[i];
+        if (typeof d[k] === 'undefined') { continue; }
+        lines.push(k + ' = ' + d[k]);
+    }
+    var pre = document.createElement('pre');
+    pre.className = 'cd-pre';
+    pre.textContent = lines.join('\n');
+    box.appendChild(pre);
+    return box;
+}
+
+// 留档区——上一个被销毁的会话内容（sessions_old 最近一份全文）
+function catDetailArchiveBlock(d) {
+    var box = document.createElement('div');
+    box.className = 'cd-block';
+    var head = document.createElement('div');
+    head.className = 'cd-block-head';
+    head.textContent = '上一个被销毁的会话内容';
+    box.appendChild(head);
+    if (!d.archive) {
+        var none = document.createElement('div');
+        none.className = 'cd-block-body cd-empty';
+        none.textContent = '无——该猫尚无会话留档（sessions_old）';
+        box.appendChild(none);
+        return box;
+    }
+    var meta = document.createElement('div');
+    meta.className = 'cd-block-meta';
+    meta.textContent = d.archive.file;
+    box.appendChild(meta);
+    var pre = document.createElement('pre');
+    pre.className = 'cd-pre';
+    pre.textContent = d.archive.text;
+    box.appendChild(pre);
+    return box;
+}
+
+// /new——先重取实时状态（isIdle 判定取当下值，不依赖快照相位），再开确认弹层
+function catDetailNewSession() {
+    if (catDetailKey.length === 0) { return; }
+    catDetailMsg.textContent = '';
+    fetch('/api/v1/cat-detail?cat=' + encodeURIComponent(catDetailKey))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok) { catDetailMsg.textContent = '状态读取失败: ' + (d.error || ''); return; }
+            catDetailData = d;
+            renderCatDetail();
+            openCatNewConfirm(d);
+        })
+        .catch(function (e) { catDetailMsg.textContent = '状态读取失败: ' + e; });
+}
+
+// 确认弹层——Idle=确认即执行；非 Idle=警示 + 勾选「我确认」方可执行
+function openCatNewConfirm(d) {
+    catNewTitle.textContent = d.name || d.cat;
+    catNewMsg.textContent = '';
+    catNewConfirm.checked = false;
+    if (d.isIdle) {
+        catNewText.textContent = '当前会话前文将被清空，并按注入清单重新注入。';
+        catNewConfirmWrap.style.display = 'none';
+        catNewGo.disabled = false;
+        catNewGo.style.opacity = '1';
+    } else {
+        catNewText.textContent = '这只猫可能还在运行，确定要开新会话？';
+        catNewConfirmWrap.style.display = 'flex';
+        catNewGo.disabled = true;
+        catNewGo.style.opacity = '0.5';
+    }
+    catNewModal.style.display = 'flex';
+}
+
+catNewConfirm.addEventListener('change', function () {
+    catNewGo.disabled = !catNewConfirm.checked;
+    catNewGo.style.opacity = catNewConfirm.checked ? '1' : '0.5';
+});
+
+function catNewSubmit() {
+    if (catNewGo.disabled) { return; }
+    catNewGo.disabled = true;
+    catNewGo.style.opacity = '0.5';
+    fetch('/api/v1/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'cat.new-session ' + catDetailKey })
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok) {
+                catNewMsg.textContent = '投递失败: ' + (d.error || '');
+                catNewGo.disabled = false;
+                catNewGo.style.opacity = '1';
+                return;
+            }
+            catNewMsg.textContent = '已请求新会话——前文清空并重新注入中';
+            setTimeout(function () {
+                catNewModal.style.display = 'none';
+                catDetailMsg.textContent = '已请求新会话';
+                loadCatDetail();
+            }, 1500);
+        })
+        .catch(function (e) {
+            catNewMsg.textContent = '投递失败: ' + e;
+            catNewGo.disabled = false;
+            catNewGo.style.opacity = '1';
+        });
+}
+
+// 接线——详情弹层 + 新会话确认弹层（静态元素，一次绑定）
+document.getElementById('catDetailClose').addEventListener('click', closeCatDetail);
+document.getElementById('catDetailReload').addEventListener('click', function () { catDetailMsg.textContent = ''; loadCatDetail(); });
+document.getElementById('catDetailInfo').addEventListener('click', function () { catDetailInfoOn = !catDetailInfoOn; renderCatDetail(); });
+document.getElementById('catDetailArchive').addEventListener('click', function () { catDetailArchiveOn = !catDetailArchiveOn; renderCatDetail(); });
+document.getElementById('catDetailNew').addEventListener('click', catDetailNewSession);
+document.getElementById('catNewCancel').addEventListener('click', function () { catNewModal.style.display = 'none'; });
+document.getElementById('catNewGo').addEventListener('click', catNewSubmit);
 
 // [段6c] 工具注册表渲染——按组分类 chips（快照 tools 段）
 function renderTools(tools) {

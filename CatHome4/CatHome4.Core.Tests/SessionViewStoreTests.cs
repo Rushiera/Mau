@@ -613,5 +613,49 @@ namespace CatHome4.Core.Tests
             string path = store.ArchiveLegacy("cat_d", "");
             Assert.StartsWith("cat_d_", Path.GetFileName(path));
         }
+
+        // ── 猫详情面留档读取（会话状态卡详情——「上一会话」回落数据源） ──
+
+        /// <summary>留档扫描——取该猫最近一份（写入时间降序 + 头部反引号猫 key 归属校验）</summary>
+        [Fact]
+        public void FindLatestArchive_PicksNewestOfCat()
+        {
+            string dir = Path.Combine(_dir, "sessions_old");
+            Directory.CreateDirectory(dir);
+            string older = Path.Combine(dir, "小A_20261001_010000.md");
+            File.WriteAllText(older, "# 会话留档 — 小A\n\n- 猫：`cat_a`（小A）\n\n");
+            string newer = Path.Combine(dir, "小A_20261001_020000.md");
+            File.WriteAllText(newer, "# 会话留档 — 小A\n\n- 猫：`cat_a`（小A）\n\n");
+            string other = Path.Combine(dir, "小B_20261001_030000.md");
+            File.WriteAllText(other, "# 会话留档 — 小B\n\n- 猫：`cat_b`（小B）\n\n");
+            File.SetLastWriteTime(older, new DateTime(2026, 10, 1, 1, 0, 0));
+            File.SetLastWriteTime(newer, new DateTime(2026, 10, 1, 2, 0, 0));
+            File.SetLastWriteTime(other, new DateTime(2026, 10, 1, 3, 0, 0));
+            // 全局最新属别猫——仍取本猫最近一份（归属校验生效）
+            Assert.Equal(newer, CH4.SessionViewStore.FindLatestArchive(dir, "cat_a"));
+            Assert.Equal(other, CH4.SessionViewStore.FindLatestArchive(dir, "cat_b"));
+            Assert.Equal("", CH4.SessionViewStore.FindLatestArchive(dir, "cat_z"));
+            Assert.Equal("", CH4.SessionViewStore.FindLatestArchive(Path.Combine(_dir, "no_such"), "cat_a"));
+        }
+
+        /// <summary>留档末条条目——取指定类别最后一条（段头「### 时刻 · 类别」；未命中类别 / 空档返回 false）</summary>
+        [Fact]
+        public void TryReadLastLegacyEntry_ReturnsLastOfTitle()
+        {
+            string md = "# 会话留档 — 小A\n\n- 猫：`cat_a`（小A）\n\n---\n\n## 对话\n\n"
+                + "### 10-01 01:00:00 · 用户\n\n第一条\n\n"
+                + "### 10-01 01:00:01 · 回复\n\n甲回复\n\n"
+                + "### 10-01 02:00:00 · 用户\n\n第二条\n多行\n\n"
+                + "### 10-01 02:00:05 · 轮结算\n\nToken 上 1 / 下 2\n\n";
+            string timeText;
+            string content;
+            Assert.True(CH4.SessionViewStore.TryReadLastLegacyEntry(md, "用户", out timeText, out content));
+            Assert.Equal("10-01 02:00:00", timeText);
+            Assert.Equal("第二条\n多行", content);
+            Assert.True(CH4.SessionViewStore.TryReadLastLegacyEntry(md, "回复", out timeText, out content));
+            Assert.Equal("甲回复", content);
+            Assert.False(CH4.SessionViewStore.TryReadLastLegacyEntry(md, "系统", out timeText, out content));
+            Assert.False(CH4.SessionViewStore.TryReadLastLegacyEntry("", "用户", out timeText, out content));
+        }
     }
 }

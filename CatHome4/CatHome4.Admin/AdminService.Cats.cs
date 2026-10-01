@@ -287,6 +287,27 @@ namespace CatHome4.Admin
                 cat.Session.PostUserMessage(content);
                 return "cat.chat | 已投递: " + cat.DisplayName;
             }
+            if (line.StartsWith("cat.new-session", StringComparison.Ordinal))
+            {
+                // 猫详情弹层预设 /new——按猫请求新会话（等价该猫前端 session.new；HTTP 线程置位/主线程泵消费）
+                string rest = line.Substring(15).Trim();
+                if (rest.Length == 0)
+                {
+                    return "cat.new-session | 用法: cat.new-session <key>";
+                }
+                if (string.Equals(rest, "majordomo", StringComparison.Ordinal))
+                {
+                    _majorSessionNewRequested = true;
+                    return "cat.new-session | 已请求新会话: majordomo";
+                }
+                CatEntry cat = FindCat(rest);
+                if (cat == null)
+                {
+                    return "cat.new-session | 未找到猫: " + rest;
+                }
+                cat.SessionNewRequested = true;
+                return "cat.new-session | 已请求新会话: " + cat.DisplayName;
+            }
             if (line.StartsWith("session.rollback ", StringComparison.Ordinal) || line.StartsWith("session.fork ", StringComparison.Ordinal))
             {
                 // P6b 回滚/分支——管理端口通道（CLI/HTTP 主线程直执；HTTP 线程经 _catQueue 泵）
@@ -325,6 +346,7 @@ namespace CatHome4.Admin
             sb.AppendLine("  cat.pause <key> | 中止当前回合");
             sb.AppendLine("  cat.continue <key> | 继续（当前前文再发一次请求）");
             sb.AppendLine("  cat.chat <key> <内容> | 内核对话投递");
+            sb.AppendLine("  cat.new-session <key> | 按猫请求新会话（清前文 + 重新注入）");
             sb.AppendLine("  cat.cfg.get <key> | 该猫 cat.cfg 全量字段");
             sb.AppendLine("  cat.cfg.set <key> <字段> <值> | 字段级合并写（未提交字段保留）");
             sb.Append("  catcfg.apply <key> | 每猫配置运行时生效");

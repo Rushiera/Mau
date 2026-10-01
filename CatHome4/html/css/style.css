@@ -99,7 +99,8 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 
 /* ── 会话状态（外观层 v2——Majordomo + 多猫四相环预览）── */
 .session-list { padding: 0 12px 8px 12px; display: flex; flex-direction: column; gap: 6px; }
-.session-card { border: 1px solid var(--ch-line); border-radius: 6px; padding: 8px 10px; background: var(--ch-bg-panel); }
+.session-card { border: 1px solid var(--ch-line); border-radius: 6px; padding: 8px 10px; background: var(--ch-bg-panel); cursor: pointer; }
+.session-card:hover { background: var(--ch-bg-hover); border-color: var(--ch-line-strong); }
 .session-head { display: flex; align-items: center; gap: 8px; }
 .session-name { color: var(--ch-info); font-size: var(--ch-fs-strong); font-weight: bold; }
 .session-badge { font-size: var(--ch-fs-sub); padding: 2px 8px; border-radius: 8px; }
@@ -110,6 +111,16 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 .session-note { color: var(--ch-warn); font-size: var(--ch-fs-sub); }
 .session-info { color: var(--ch-fg-weak); font-size: var(--ch-fs-body); margin-top: 3px; }
 .session-empty { color: var(--ch-fg-faint); font-size: var(--ch-fs-body); padding: 4px 12px; }
+
+/* ── 会话详情弹层（会话状态卡点击——上一条输入 / 预设动作 / 会话留档）── */
+.cd-status { color: var(--ch-fg-weak); font-size: var(--ch-fs-body); padding-bottom: 6px; border-bottom: 1px solid var(--ch-line-faint); margin-bottom: 8px; }
+.cd-block { border: 1px solid var(--ch-line); border-radius: 6px; background: var(--ch-bg-raised); margin-bottom: 8px; }
+.cd-block-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; color: var(--ch-info); font-size: var(--ch-fs-body); font-weight: bold; border-bottom: 1px solid var(--ch-line-faint); }
+.cd-block-meta { color: var(--ch-fg-faint); font-size: var(--ch-fs-tag); font-weight: normal; }
+.cd-block > .cd-block-meta { display: block; padding: 6px 10px 0 10px; }
+.cd-block-body { padding: 8px 10px; color: var(--ch-fg-strong); font-size: var(--ch-fs-body); white-space: pre-wrap; word-break: break-word; }
+.cd-empty { color: var(--ch-fg-faint); }
+.cd-pre { margin: 0; padding: 8px 10px; color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); white-space: pre-wrap; word-break: break-word; font-family: inherit; }
 
 /* ── 工具注册表（外观层 v2——按组分类 chips）── */
 #toolreg { padding: 0 12px 8px 12px; }

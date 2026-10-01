@@ -52,6 +52,8 @@ namespace CatHome4.Admin
             // 每猫配置读写——M3
             sink.MapGet("/api/v1/cat-config", (Delegate)HandleCatConfigGet);
             sink.MapPost("/api/v1/cat-config", (Delegate)HandleCatConfigPost);
+            // 会话状态卡详情——猫详情弹层数据源（状态 + 本会话末条 user/回复 + 会话留档）
+            sink.MapGet("/api/v1/cat-detail", (Delegate)HandleCatDetail);
             // 新猫默认模板——全局配置管理面（M3d）
             sink.MapGet("/api/v1/cat-default", (Delegate)HandleCatDefaultGet);
             sink.MapPost("/api/v1/cat-default", (Delegate)HandleCatDefaultPost);

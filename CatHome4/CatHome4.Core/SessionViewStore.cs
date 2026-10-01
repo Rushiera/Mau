@@ -1156,5 +1156,121 @@ namespace CH4
             }
             return false;
         }
+        /// <summary>
+        /// 会话留档扫描——sessions_old 内该猫最近一份留档 MD（A87 归档物；猫详情面「上一个被销毁的会话」数据源）。
+        /// 文件名前缀为显示名（字典序 ≠ 时间序）——按最后写入时间降序扫描 + 头部归属校验（反引号包裹的猫 key）。
+        /// </summary>
+        /// <param name="sessionsOldDir">sessions_old 目录（缺失/不存在=返回空串）</param>
+        /// <param name="catKey">猫 key（留档头部归属锚）</param>
+        /// <returns>留档文件绝对路径（空串=无该猫留档）</returns>
+        public static string FindLatestArchive(string sessionsOldDir, string catKey)
+        {
+            if (sessionsOldDir == null || sessionsOldDir.Length == 0 || catKey == null || catKey.Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                if (!Directory.Exists(sessionsOldDir))
+                {
+                    return "";
+                }
+                string[] files = Directory.GetFiles(sessionsOldDir, "*.md");
+                Array.Sort(files, delegate (string a, string b)
+                {
+                    return File.GetLastWriteTime(b).CompareTo(File.GetLastWriteTime(a));
+                });
+                string needle = "`" + catKey + "`";
+                for (int i = 0; i < files.Length; i = i + 1)
+                {
+                    if (ReadHead(files[i], 512).IndexOf(needle, StringComparison.Ordinal) >= 0)
+                    {
+                        return files[i];
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 扫描失败不阻断消费面（失败可见——WARN 日志 + 空返回）
+                LogStore.Add("SessionViewStore", 2, "会话留档扫描失败: " + ex.Message, "SYS");
+            }
+            return "";
+        }
+        /// <summary>
+        /// 留档 Markdown → 末条指定类别条目（段头形态「### MM-dd HH:mm:ss · 用户 / 回复」）。
+        /// 猫详情面「上一会话」回落数据源——本会话无对应消息时取最近一份留档的末条。
+        /// </summary>
+        /// <param name="markdown">留档全文</param>
+        /// <param name="title">条目类别（用户 / 回复）</param>
+        /// <param name="timeText">输出：段头时刻文本（MM-dd HH:mm:ss；未命中=空串）</param>
+        /// <param name="content">输出：条目正文（未命中/空正文=空串）</param>
+        /// <returns>true=命中非空条目</returns>
+        public static bool TryReadLastLegacyEntry(string markdown, string title, out string timeText, out string content)
+        {
+            timeText = "";
+            content = "";
+            if (markdown == null || markdown.Length == 0 || title == null || title.Length == 0)
+            {
+                return false;
+            }
+            string[] lines = markdown.Replace("\r\n", "\n").Split('\n');
+            for (int i = lines.Length - 1; i >= 0; i = i - 1)
+            {
+                string line = lines[i].Trim();
+                if (!line.StartsWith("### ", StringComparison.Ordinal) || line.IndexOf("· " + title, StringComparison.Ordinal) < 0)
+                {
+                    continue;
+                }
+                StringBuilder body = new StringBuilder();
+                for (int j = i + 1; j < lines.Length; j = j + 1)
+                {
+                    if (lines[j].StartsWith("### ", StringComparison.Ordinal))
+                    {
+                        break;
+                    }
+                    if (body.Length > 0)
+                    {
+                        body.Append('\n');
+                    }
+                    body.Append(lines[j]);
+                }
+                int sep = line.IndexOf(" · ", StringComparison.Ordinal);
+                if (sep > 4)
+                {
+                    timeText = line.Substring(4, sep - 4).Trim();
+                }
+                else
+                {
+                    timeText = line.Substring(4).Trim();
+                }
+                content = body.ToString().Trim();
+                return content.Length > 0;
+            }
+            return false;
+        }
+        /// <summary>
+        /// 文件头部读取——前 maxChars 个字符（留档归属校验用；不全量读入大档）。
+        /// </summary>
+        /// <param name="path">文件路径</param>
+        /// <param name="maxChars">读取字符数上限</param>
+        /// <returns>头部文本（读取失败=空串——跳过该文件）</returns>
+        private static string ReadHead(string path, int maxChars)
+        {
+            try
+            {
+                using (StreamReader sr = new StreamReader(path, Encoding.UTF8, true))
+                {
+                    char[] buf = new char[maxChars];
+                    int n = sr.Read(buf, 0, maxChars);
+                    return new string(buf, 0, n);
+                }
+            }
+            catch (Exception ex)
+            {
+                // 单文件读取失败不拖垮扫描（失败可见——WARN 日志）
+                LogStore.Add("SessionViewStore", 2, "留档头部读取失败: " + ex.Message, "SYS");
+                return "";
+            }
+        }
     }
 }

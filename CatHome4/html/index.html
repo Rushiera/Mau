@@ -345,6 +345,43 @@
         </div>
     </div>
 
+    <!-- 会话详情弹层——会话状态卡点击打开（上一条 user / 回复 + 预设动作 /info · /new · 会话留档） -->
+    <div id="catDetailModal" style="display:none;position:fixed;inset:0;background:var(--ch-overlay);z-index:50;align-items:center;justify-content:center">
+        <div style="width:760px;max-height:84vh;display:flex;flex-direction:column;background:var(--ch-bg-panel);border:1px solid var(--ch-line);border-radius:8px;padding:14px">
+            <div style="display:flex;align-items:center;margin-bottom:8px">
+                <span style="color:var(--ch-identity);font-weight:bold;font-size:var(--ch-fs-sub)">会话详情 — </span>
+                <span id="catDetailTitle" style="color:var(--ch-identity);font-weight:bold;font-size:var(--ch-fs-sub)"></span>
+                <span style="flex:1"></span>
+                <button id="catDetailClose" style="background:transparent;border:none;color:var(--ch-fg-weak);font-size:var(--ch-fs-title);cursor:pointer">✕</button>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+                <button id="catDetailInfo" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-ok);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">/info</button>
+                <button id="catDetailNew" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-warn);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">/new</button>
+                <button id="catDetailArchive" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">上一个被销毁的会话内容</button>
+                <button id="catDetailReload" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
+                <span style="flex:1"></span>
+                <span id="catDetailMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag)"></span>
+            </div>
+            <div id="catDetailBody" style="flex:1;overflow-y:auto"></div>
+        </div>
+    </div>
+
+    <!-- 新会话确认弹层——Idle=确认即执行；非 Idle=警示 + 勾选「我确认」方可执行（会话详情 /new 入口） -->
+    <div id="catNewModal" style="display:none;position:fixed;inset:0;background:var(--ch-overlay);z-index:60;align-items:center;justify-content:center">
+        <div style="width:440px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);border-radius:8px;padding:14px">
+            <div style="font-size:var(--ch-fs-sub);color:var(--ch-identity);font-weight:bold;margin-bottom:8px">开启新会话 — <span id="catNewTitle"></span></div>
+            <div id="catNewText" style="font-size:var(--ch-fs-tag);color:var(--ch-fg-muted);line-height:1.7"></div>
+            <label id="catNewConfirmWrap" style="display:none;align-items:center;gap:6px;margin-top:10px;font-size:var(--ch-fs-tag);color:var(--ch-warn);cursor:pointer">
+                <input type="checkbox" id="catNewConfirm"> 我确认
+            </label>
+            <div style="display:flex;gap:6px;margin-top:12px;justify-content:flex-end">
+                <button id="catNewCancel" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">取消</button>
+                <button id="catNewGo" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">确定</button>
+            </div>
+            <div id="catNewMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag);margin-top:6px"></div>
+        </div>
+    </div>
+
     <!-- 两页共用前端工具（loadUiVersion/applyUiConfig——js/ui-common.js 单一定义；配置接线复用 app.js loadConfig 的同一响应） -->
     <script src="js/ui-common.js?v=__V__"></script>
     <script>loadUiVersion();</script>
