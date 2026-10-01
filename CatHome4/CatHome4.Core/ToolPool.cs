@@ -464,6 +464,21 @@ namespace CH4
             {
                 NoteEmptyIfSilent(next, "QuickCat");
             }
+            // [段2b] order 注记注入——工具执行序表（A127）作为工具定义标准注释追加到描述尾行
+            // （单点 = 此处即全池生效：12 组自曝 + 内置定义同池；改表随池重建）
+            for (int i = 0; i < next.Order.Count; i = i + 1)
+            {
+                ToolDef def = next.Order[i];
+                string note = ToolOrderTable.NoteLine(def.Name);
+                if (def.Description.Length == 0)
+                {
+                    def.Description = note;
+                }
+                else
+                {
+                    def.Description = def.Description + "\n" + note;
+                }
+            }
             // [段3] 原子换引用——读者要么全旧要么全新；被删工具随旧快照淘汰
             _state = next;
         }

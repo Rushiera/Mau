@@ -356,6 +356,8 @@ namespace CH4
             ToolPool.RebuildAll(poolGroups, quickFlow, BuildBuiltinToolsJson());
             // A107——定义缺陷出声：逐条 L3 落盘（判例：整组静默消失无人知）
             LogToolPoolDefects();
+            // A127——执行序对账：池内工具须在 ToolOrderTable 全量登记（未登记者静默落默认档 = 隐性缺口，此处出声）
+            LogToolOrderAccounting();
             // [段5] 会话面——上下文 + 前文恢复 + 工具定义 + 默认会话注册（P9.1 会话对象化：ChatSession 承载状态机——design-llm-streaming §六）
             ChatContext chatCtx = new ChatContext();
             // S1 ChatBridge 化——会话协调实例（注入提示词构建委托——CatCfg 域静态面 BuildInjectPrompt）

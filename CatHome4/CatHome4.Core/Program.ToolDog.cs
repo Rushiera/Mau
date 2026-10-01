@@ -56,6 +56,12 @@ namespace CH4
         public long CardSeq;
 
         /// <summary>
+        /// 执行序值——工具分批调度的分桶依据（A127；宿主内部静态表裁决，非 LLM 传参）。
+        /// 缺省 0 = 默认档；timeback 按 action 取 ±100 钉死值。
+        /// </summary>
+        public int Order;
+
+        /// <summary>
         /// 创建工具单 Dog——超时按工具名映射
         /// </summary>
         /// <param name="toolCallId">tool_call_id</param>
@@ -71,6 +77,7 @@ namespace CH4
             IsTimedOut = false;
             Result = "";
             CardSeq = -1;
+            Order = ToolOrderTable.OrderDefault;
             TimeoutFrames = MapTimeoutFrames(name);
         }
 

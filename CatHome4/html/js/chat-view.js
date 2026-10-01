@@ -185,6 +185,14 @@ function chatToolCard(tool, open) {
     var body = (typeof chatToolBody === 'function') ? chatToolBody(tool) : null;
     sum.textContent = '';
     sum.appendChild(document.createTextNode(prefix));
+    // A127——执行序徽标（宿主 order 表裁决；载荷缺 order 字段 = 旧块 / 未带——不渲染，零猜测）
+    if (tool.order !== undefined && tool.order !== null && String(tool.order).length > 0) {
+        var ordEl = document.createElement('span');
+        ordEl.className = 'chat-order';
+        ordEl.textContent = '⚙' + tool.order;
+        sum.appendChild(ordEl);
+        sum.appendChild(document.createTextNode(' '));
+    }
     if (body && body.tag) {
         // 工具变体标签——双线工具的显式区分（如 PowerShell PS 5.1 / PS 7）
         var tagEl = document.createElement('span');

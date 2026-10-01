@@ -1043,3 +1043,16 @@ test('未登记工具折叠行——骨架兜底不空白（Z8）', () => {
   const card = renderTool({ name: 'brand-new-tool', arguments: '{}', result: 'OK' }, 200);
   expect(card.querySelector('.tn').textContent).toContain('brand-new-tool');
 });
+
+// ── A127 执行序徽标（折叠行；宿主 order 表裁决）──
+test('A127——工具卡折叠行渲染 order 徽标（载荷带 order 才渲染）', () => {
+  const det = renderTool({ name: 'text-read', arguments: '{}', result: 'ok', toolIndex: 1, toolTotal: 1, order: '-1' }, 61);
+  const badge = det.querySelector('summary .chat-order');
+  expect(badge).not.toBeNull();
+  expect(badge.textContent).toBe('⚙-1');
+});
+
+test('A127——载荷缺 order 字段不渲染徽标（旧块 / 未带——零猜测）', () => {
+  const det = renderTool({ name: 'text-read', arguments: '{}', result: 'ok', toolIndex: 1, toolTotal: 1 }, 62);
+  expect(det.querySelector('summary .chat-order')).toBeNull();
+});

@@ -182,12 +182,14 @@ namespace CH4
         // [段3] 工具批
         /// <summary>工具批执行中——reload 拒绝检查面（任一会话 TRUE 即拒绝）</summary>
         private bool _toolBatchActive;
-        /// <summary>工具单列表——普通工单（OA 认领；host-* 延迟直执登记）</summary>
+        /// <summary>工具单列表——全量工具单按 LLM 声明序入列（A127：入列序即回填序与视图编号基准；执行按批次推进）</summary>
         private readonly List<ToolOrderDog> _dogs;
-        /// <summary>host-* 延迟直执清单——批次末尾宿主直执（顺序保证：同批 mau-proj 等先完成产物落地）</summary>
+        /// <summary>host-* 延迟直执清单——当前批末尾宿主直执（顺序保证：同批构建类工具先完成产物落地）</summary>
         private readonly List<ToolOrderDog> _hostDogs;
-        /// <summary>timeback back 后置执行单——批内剥离出的 back（A106 批内次序：批内其余工具完成后执行；null=本批无 back）</summary>
-        private ToolOrderDog _timebackBackDog;
+        /// <summary>分批计划——按 order 值升序的批次列表（A127：同值一批 · 批内 = LLM 声明序）</summary>
+        private readonly List<List<ToolOrderDog>> _batches;
+        /// <summary>当前批序号——_batches 索引（-1 = 无待执行批次，直接收口）</summary>
+        private int _batchIndex;
 
         // [段4] 相位环
         /// <summary>当前相位</summary>
@@ -345,6 +347,8 @@ namespace CH4
             _executeTool = executeTool;
             _dogs = new List<ToolOrderDog>();
             _hostDogs = new List<ToolOrderDog>();
+            _batches = new List<List<ToolOrderDog>>();
+            _batchIndex = -1;
             _pending = new Queue<PendingMessage>();
             _phase = ChatPhase.Idle;
             _round = 0;
@@ -806,6 +810,8 @@ namespace CH4
             }
             _dogs.Clear();
             _hostDogs.Clear();
+            _batches.Clear();
+            _batchIndex = -1;
             _toolBatchActive = false;
             // [段1] 上下文格式修复——S3 ReplaceMessages 原地（幂等；孤儿 tool_calls 补占位/孤立结果丢弃）
             _context.ReplaceMessages(_context.GetMessages());
@@ -1826,7 +1832,8 @@ namespace CH4
                 string json = "{\"name\":" + JsonUtil.Serialize(call.Name)
                     + ",\"arguments\":" + JsonUtil.Serialize(InjectCatId(call.Arguments))
                     + ",\"toolIndex\":" + call.Index.ToString()
-                    + ",\"toolTotal\":" + call.Total.ToString() + "}";
+                    + ",\"toolTotal\":" + call.Total.ToString()
+                    + ",\"order\":" + JsonUtil.Serialize(ToolOrderTable.OrderText(call.Name)) + "}";
                 long seq = _httpHost.PushView("toolcard", json, -1, 0);
                 seqs[call.Id] = seq;
             }
@@ -1862,7 +1869,8 @@ namespace CH4
                 + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson)
                 + ",\"result\":" + JsonUtil.Serialize(result)
                 + ",\"toolIndex\":" + index.ToString()
-                + ",\"toolTotal\":" + total.ToString() + "}";
+                + ",\"toolTotal\":" + total.ToString()
+                + ",\"order\":" + JsonUtil.Serialize(ToolOrderTable.OrderText(dog.Name)) + "}";
             _httpHost.PushView("toolcard", json, dog.CardSeq, 0);
             dog.CardSeq = -1;
         }
@@ -1877,9 +1885,10 @@ namespace CH4
             _toolBatchActive = true;
             _dogs.Clear();
             _hostDogs.Clear();
-            _timebackBackDog = null;
+            _batches.Clear();
+            _batchIndex = -1;
             List<ToolCallInfo> calls = ParseToolCalls(toolCallsJson);
-            // [P0] 剥离——批内 timeback 至多 start × 1 + back × 1（A106 批内次序 · design-ch4-timeback §2.4）：
+            // [P0] 剥离——批内 timeback 至多 start × 1 + back × 1（design-ch4-timeback §2.4）：
             // 各取首条剥离，重复调用（同类第 2 条起）判参数面拒绝（不静默丢弃）
             int startIndex = -1;
             int backIndex = -1;
@@ -1915,8 +1924,8 @@ namespace CH4
                     }
                 }
             }
-            // [P1] 前置——start 先于同批其余工具执行（前文末条仍为本批 assistant 声明 → 锚点可信）；
-            // 失败不阻断（作用域未开时其余工具按真实态判定）
+            // [P1] 前置——start 同步直执（不并入批次）：其余工具的授权 / 门禁判定读的是 start 之后的
+            // 作用域终局态，认定时点必须晚于 start 执行（会话结构约束，非 order 可表达）；失败不阻断
             ToolOrderDog startDog = null;
             if (startIndex >= 0)
             {
@@ -1937,8 +1946,9 @@ namespace CH4
                 preDog.IsClosed = true;
                 startDog = preDog;
             }
-            // [P2] 主体——按原数组序分派（_dogs 入列序 = 声明序：结果回填序与声明序一致）；
-            // 判定读 P1 之后的作用域终局态（本批含 start 则整批按作用域活跃判定——防数组前位工具逃逸）
+            // [P2] 建单——按原数组序构建全部工具单（_dogs 入列序 = 声明序：结果回填序与视图编号基准）；
+            // 判定读 P1 之后的作用域终局态（本批含 start 则整批按作用域活跃判定——防数组前位工具逃逸）；
+            // A127：本段只建单与判定，实际派发（host-* 登记 / 内置直执 / OA Post）推迟到批启动
             for (int i = 0; i < calls.Count; i = i + 1)
             {
                 ToolCallInfo call = calls[i];
@@ -1994,48 +2004,104 @@ namespace CH4
                 string arguments = InjectCatId(call.Arguments);
                 // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
                 _toolCallCount = _toolCallCount + 1;
-                // 剥离条目——back 后置执行（PumpToolBatch 段2b-2：其余工具全部完成之后、结果回填之前）
-                if (i == backIndex)
-                {
-                    ToolOrderDog backDog = new ToolOrderDog(call.Id, call.Name, arguments);
-                    long backCardSeq;
-                    backDog.CardSeq = cardSeqs.TryGetValue(call.Id, out backCardSeq) ? backCardSeq : -1;
-                    // 不参与本批轮询（后置段执行）——IsClosed 直置，防 allDone 判定空等
-                    backDog.IsClosed = true;
-                    _timebackBackDog = backDog;
-                    _dogs.Add(backDog);
-                    continue;
-                }
                 ToolOrderDog dog = new ToolOrderDog(call.Id, call.Name, arguments);
+                // A127——执行序裁决（参数相关：timeback 按 action 分走两端钉死值）
+                dog.Order = ToolOrderTable.Resolve(call.Name, call.Arguments);
                 long pendingCardSeq;
                 dog.CardSeq = cardSeqs.TryGetValue(call.Id, out pendingCardSeq) ? pendingCardSeq : -1;
-                if (call.Name.StartsWith("host-", StringComparison.Ordinal))
-                {
-                    // host-* 延迟直执登记——批次末尾执行（顺序保证：同批 mau-proj 等先完成产物落地）
-                    _hostDogs.Add(dog);
-                    dog.IsClosed = true;
-                }
-                else if (IsBuiltinTool(call.Name))
-                {
-                    // 内置工具会话内直执——不需 OA（R0.2 分层：Note 状态在会话实例；time/random/info 宿主直执）
-                    dog.Result = ExecuteBuiltin(call.Name, arguments);
-                    dog.IsClosed = true;
-                }
-                else
-                {
-                    dog.Post(_oa, ToolOwnerId);
-                    if (dog.OfficeId == 0)
-                    {
-                        // Post 失败——诚实失败（直执面已移除 2026-09-04——OA 不可用即 ERR，不静默降级）
-                        dog.Result = "ERR|OA_POST_FAIL|工单提交失败（OA 不可用）: " + call.Name;
-                        dog.IsClosed = true;
-                        LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 工单提交失败（OA 不可用）——诚实 ERR", "TOOL");
-                    }
-                }
                 _dogs.Add(dog);
+            }
+            // [P3] 分批——按 order 值升序分桶（同值一批 · 批内声明序）+ 启动首批
+            // （A127：批间串行 / 批内并发；timeback start 已在 P1 前置，back 作为末批自然后置）
+            BuildBatches();
+            if (_batches.Count > 0)
+            {
+                StartBatch(0);
             }
             _phase = ChatPhase.ToolBatchRunning;
             _phaseFrames = 0;
+        }
+        /// <summary>
+        /// 分批计划构建——按 order 值升序分桶（A127：同值一批 · 批内保持 LLM 声明序）。
+        /// 已闭合单（拦截 / start 前置执行）不入批——它们无待执行动作（由 _dogs 序承担回填与视图编号基准）。
+        /// </summary>
+        private void BuildBatches()
+        {
+            _batches.Clear();
+            _batchIndex = -1;
+            List<int> values = new List<int>();
+            for (int i = 0; i < _dogs.Count; i = i + 1)
+            {
+                ToolOrderDog dog = _dogs[i];
+                if (dog.IsClosed)
+                {
+                    continue;
+                }
+                if (!values.Contains(dog.Order))
+                {
+                    values.Add(dog.Order);
+                }
+            }
+            values.Sort();
+            for (int v = 0; v < values.Count; v = v + 1)
+            {
+                List<ToolOrderDog> batch = new List<ToolOrderDog>();
+                for (int i = 0; i < _dogs.Count; i = i + 1)
+                {
+                    ToolOrderDog dog = _dogs[i];
+                    if (dog.IsClosed)
+                    {
+                        continue;
+                    }
+                    if (dog.Order == values[v])
+                    {
+                        batch.Add(dog);
+                    }
+                }
+                _batches.Add(batch);
+            }
+        }
+        /// <summary>
+        /// 批启动——派发本批工具单（host-* 延迟直执登记 / 内置直执 / 其余 OA Post）+ 帧预算复位。
+        /// 批间串行由此保证：上一批全部闭合后才启动下一批（见 PumpToolBatch 段2b-2）。
+        /// </summary>
+        /// <param name="index">批次序号（_batches 索引）</param>
+        private void StartBatch(int index)
+        {
+            _batchIndex = index;
+            _hostDogs.Clear();
+            _phaseFrames = 0;
+            List<ToolOrderDog> batch = _batches[index];
+            for (int i = 0; i < batch.Count; i = i + 1)
+            {
+                ToolOrderDog dog = batch[i];
+                if (dog.IsClosed)
+                {
+                    continue;
+                }
+                if (dog.Name.StartsWith("host-", StringComparison.Ordinal))
+                {
+                    // host-* 延迟直执登记——本批末尾执行（顺序保证：同批构建类工具先完成产物落地）
+                    _hostDogs.Add(dog);
+                    dog.IsClosed = true;
+                    continue;
+                }
+                if (IsBuiltinTool(dog.Name))
+                {
+                    // 内置工具会话内直执——不需 OA（R0.2 分层：Note 状态在会话实例；time/random/info 宿主直执）
+                    dog.Result = ExecuteBuiltin(dog.Name, dog.ArgsJson);
+                    dog.IsClosed = true;
+                    continue;
+                }
+                dog.Post(_oa, ToolOwnerId);
+                if (dog.OfficeId == 0)
+                {
+                    // Post 失败——诚实失败（直执面已移除 2026-09-04——OA 不可用即 ERR，不静默降级）
+                    dog.Result = "ERR|OA_POST_FAIL|工单提交失败（OA 不可用）: " + dog.Name;
+                    dog.IsClosed = true;
+                    LogStore.Add("CatHome4", 2, "工具 " + dog.Name + " 工单提交失败（OA 不可用）——诚实 ERR", "TOOL");
+                }
+            }
         }
 
         /// <summary>
@@ -2132,19 +2198,24 @@ namespace CH4
         {
             _phaseFrames = _phaseFrames + 1;
             bool allDone = true;
-            for (int i = 0; i < _dogs.Count; i = i + 1)
+            // A127——只轮询当前批：未启动批次的工具单尚未 Post，Tick 会即时判超时（结构性错误）
+            if (_batchIndex >= 0 && _batchIndex < _batches.Count)
             {
-                _dogs[i].Tick(_oa);
-                if (!_dogs[i].IsClosed && !_dogs[i].IsTimedOut)
+                List<ToolOrderDog> batch = _batches[_batchIndex];
+                for (int i = 0; i < batch.Count; i = i + 1)
                 {
-                    allDone = false;
+                    batch[i].Tick(_oa);
+                    if (!batch[i].IsClosed && !batch[i].IsTimedOut)
+                    {
+                        allDone = false;
+                    }
                 }
             }
             if (!allDone && _phaseFrames < ToolBatchWaitFrames)
             {
                 return;
             }
-            // [段2b] host-* 延迟直执——批次其他工具完成后宿主直执（忙时豁免：主线程串行——宿主 ExecuteReload 事务三段式兜底）
+            // [段2b] host-* 延迟直执——本批其他工具完成后宿主直执（忙时豁免：主线程串行——宿主 ExecuteReload 事务三段式兜底）
             for (int h = 0; h < _hostDogs.Count; h = h + 1)
             {
                 ToolOrderDog dog = _hostDogs[h];
@@ -2158,9 +2229,14 @@ namespace CH4
                 }
                 dog.Result = hr;
             }
-            // [段2b-2] timeback back 后置执行（A106 批内次序）——本批其余工具（含 host-* 延迟直执）全部完成之后、
-            // 结果回填之前执行：前文末条仍为本批 assistant 声明 → 回收区间上界与释放条数预算同源可对账
-            RunDeferredTimebackBack();
+            // [段2b-2] 批间推进——本批收口即启动下一批（A127：批间串行 / 批内并发；批间失败不阻断——
+            // 失败由工具卡红标可见，不构成链断）。timeback back 作为 order 100 末批在此自然后置：
+            // 前文末条仍为本批 assistant 声明 → 回收区间上界与释放条数预算同源可对账
+            if (_batchIndex + 1 < _batches.Count)
+            {
+                StartBatch(_batchIndex + 1);
+                return;
+            }
             // [段3] 收集——Closed 取回执；TimeOut/帧超限 → 诚实 ERR（OA 链路失败即报错，不直执）
             for (int i = 0; i < _dogs.Count; i = i + 1)
             {
@@ -2184,7 +2260,7 @@ namespace CH4
                 {
                     // A69 视图层报错中文注释——真实前文（dog.Result）保持原文
                     string viewResult = ErrorNote.Apply(dog.Result);
-                    string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(viewResult) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
+                    string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(viewResult) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + ",\"order\":" + JsonUtil.Serialize(ToolOrderTable.OrderText(dog.Name)) + "}";
                     _httpHost.PushView("toolcard", toolJson, dog.CardSeq, 0);
                     dog.CardSeq = -1;
                 }

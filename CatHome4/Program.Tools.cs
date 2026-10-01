@@ -226,6 +226,29 @@ namespace CH4
         }
 
         /// <summary>
+        /// 执行序对账出声——池内工具逐一比对 ToolOrderTable（A127）：未登记者静默落默认档，
+        /// 此处出声 L2（新增工具忘记登记 = 隐性缺口，不静默）。
+        /// </summary>
+        private static void LogToolOrderAccounting()
+        {
+            string[] missing = ToolOrderTable.FindUnregistered(ToolPool.AllNames());
+            if (missing.Length == 0)
+            {
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < missing.Length; i = i + 1)
+            {
+                if (i > 0)
+                {
+                    sb.Append(",");
+                }
+                sb.Append(missing[i]);
+            }
+            LogStore.Add("CatHome4", 2, "工具执行序未登记（落默认档 0）| " + sb.ToString(), "TOOL");
+        }
+
+        /// <summary>
         /// 工具自检工单 ownerId——独立于会话 ToolOwnerId（避免与会话工单归属混淆）
         /// </summary>
         private const long ToolCheckOwnerId = 9001;

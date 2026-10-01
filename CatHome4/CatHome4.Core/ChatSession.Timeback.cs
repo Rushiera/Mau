@@ -559,35 +559,6 @@ namespace CH4
         }
 
         /// <summary>
-        /// 批内后置执行——剥离出的 back 在本批其余工具（含 host-* 延迟直执）全部完成之后、结果回填之前执行
-        /// （A106 批内次序 · design-ch4-timeback §2.4）：前文末条仍为本批 assistant 声明，
-        /// 故回收区间上界与释放条数预算同源可对账。
-        /// 失败（NO_SCOPE / ARGS）照常作为工具返回值送出——批后段因无待回收载荷自然跳过。
-        /// </summary>
-        private void RunDeferredTimebackBack()
-        {
-            ToolOrderDog dog = _timebackBackDog;
-            if (dog == null)
-            {
-                return;
-            }
-            // 消费即清 + 已有结果不覆盖——置空后本字段不再持有该 Dog（下一批由 EnterToolBatch 重建），
-            // 同一 Dog 若被重复调起则直接跳过并出声 L2（防回执被覆盖导致观测面失真）
-            _timebackBackDog = null;
-            if (dog.Result != null && dog.Result.Length > 0)
-            {
-                LogStore.Add("CatHome4", 2, "timeback 后置执行重入（已有回执——跳过，防覆盖）", "TIMEBACK");
-                return;
-            }
-            dog.Result = ExecuteBuiltin(dog.Name, dog.ArgsJson);
-            if (dog.Result == null || dog.Result.Length == 0)
-            {
-                dog.Result = "ERR|EMPTY_RESULT|工具执行无结果";
-            }
-            LogStore.Add("CatHome4", 1, "timeback 批内后置执行（back）", "TIMEBACK");
-        }
-
-        /// <summary>
         /// timeback 暴毙风险黑名单（莎 2026-09-28 定 · 2026-10-01 宽松化）——只隔离「会让 Mau 框架 / 宿主进程自身当场失效」的行为，
         /// 判据 = 该动作是否可能立刻中断进程或让作用域上下文失效（重启 / 程序集句柄替换 / 运行区文件被重写）。
         /// 拦三件：majordomo-restart（重启——本轮中断，作用域随内存丢失）· host-reload（换程序集句柄 + 重建工具池）·

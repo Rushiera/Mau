@@ -140,3 +140,6 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 .btn-mini.tight { padding: 2px 8px; }
 .input-mini { background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 3px 6px; font-family: inherit; font-size: var(--ch-fs-tag); }
 .input-mini.text { color: var(--ch-fg-strong); }
+
+/* A127 执行序徽标——配置页工具勾选项（与对话页 .chat-order 同口径：显示宿主 order 表裁决的层级） */
+.tool-order { display: inline-block; margin-left: 4px; padding: 0 4px; border-radius: 3px; font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); background: var(--ch-bg-hover); }

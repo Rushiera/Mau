@@ -115,7 +115,7 @@ namespace CatHome4.Admin
             List<object> result = new List<object>();
             for (int i = 0; i < defs.Length; i = i + 1)
             {
-                result.Add(new { name = defs[i].Name, group = defs[i].Group, privileged = IsPrivilegedName(defs[i].Name) });
+                result.Add(new { name = defs[i].Name, group = defs[i].Group, privileged = IsPrivilegedName(defs[i].Name), order = ToolOrderTable.OrderText(defs[i].Name) });
             }
             return result.ToArray();
         }

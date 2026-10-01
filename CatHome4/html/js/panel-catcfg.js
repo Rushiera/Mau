@@ -109,6 +109,15 @@ function parseToolChecked(toolNames) {
     return checked;
 }
 
+// A127——执行序徽标（配置面显示工具 order 层级；空值 = 不渲染，零猜测）
+function toolOrderBadge(order) {
+    if (!order || String(order).length === 0) { return null; }
+    var el = document.createElement('span');
+    el.className = 'tool-order';
+    el.textContent = '⚙' + order;
+    return el;
+}
+
 // 通用分组勾选渲染——优先按工具池 group 字段分组（allTools: [{name,group}]——design-ch4-tools-pool §六）；
 // 兼容纯名数组（allToolNames: string[]）回退 - 前缀分组（text-*/mau-* 视为一组；无前缀归 other）；组头开关一键全组
 function renderGroupedChecks(boxId, allTools, checked, privilegedMode) {
@@ -137,7 +146,7 @@ function renderGroupedChecks(boxId, allTools, checked, privilegedMode) {
         }
         if (blocked[group] === true) { continue; }
         if (!groups[group]) { groups[group] = []; order.push(group); }
-        groups[group].push({ name: toolName, privileged: isPriv });
+        groups[group].push({ name: toolName, privileged: isPriv, order: (typeof item === 'object' && item.order !== undefined && item.order !== null) ? String(item.order) : '' });
     }
     for (var g = 0; g < order.length; g++) {
         (function (groupName, tools) {
@@ -171,12 +180,16 @@ function renderGroupedChecks(boxId, allTools, checked, privilegedMode) {
                             : '特权面——仅主干会话可用，不入名单';
                         label.appendChild(cb);
                         label.appendChild(document.createTextNode(tool.name + ' · 特权面'));
+                        var ordPriv = toolOrderBadge(tool.order);
+                        if (ordPriv) { label.appendChild(ordPriv); }
                         groupBox.appendChild(label);
                         return;
                     }
                     cbs.push(cb);
                     label.appendChild(cb);
                     label.appendChild(document.createTextNode(tool.name));
+                    var ordEl = toolOrderBadge(tool.order);
+                    if (ordEl) { label.appendChild(ordEl); }
                     groupBox.appendChild(label);
                 })(tools[t]);
             }
