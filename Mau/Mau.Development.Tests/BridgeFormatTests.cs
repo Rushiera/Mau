@@ -280,9 +280,10 @@ namespace Mau.Development.Tests
                     Directory.Delete(_root, true);
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // 测试夹具清理——工作区可能持有句柄，尽力删除
+                Console.WriteLine("[测试清理] 工作区目录删除失败: " + ex.Message);
             }
         }
 
@@ -471,7 +472,7 @@ namespace Mau.Development.Tests
         {
             string nl = "\r\n";
             return "<Project Sdk=\"Microsoft.NET.Sdk\">" + nl + nl + "  <PropertyGroup>" + nl
-                + "    <TargetFramework>net8.0</TargetFramework>" + nl
+                + "    <TargetFramework>net10.0</TargetFramework>" + nl
                 + "    <Nullable>enable</Nullable>" + nl + "  </PropertyGroup>" + nl + nl + "</Project>" + nl;
         }
 

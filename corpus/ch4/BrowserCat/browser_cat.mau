@@ -1,0 +1,96 @@
+﻿// browser_cat.mau —— BrowserCat 语料（CH4 A110 工具组——浏览器域独立 Flow）
+// 角色：工具组 Flow——认领 TOOL 域 browser-open / browser-read / browser-eval / browser-shot / browser-tabs 5 工具
+// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 5 线各自认领执行 → complete_str 回执
+// 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON
+// 无值分支：工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
+// 数据面：@boOffice 等私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
+// 线程模型（A48 后台化）：收单/读参/回执主线程同步；执行步 [t=2400, par] 后台线程执行（主线程零阻塞）
+//   —— 浏览器导航可达数十秒（首调还要拉起 Edge 实例），必须后台化
+//   —— 在途期间状态停在 Ready（不接新单，新单留 OA 队列）+ Busy 门防重入（线级唯一在途槽）
+//   —— 回投由主线程 Drain 应用（代际守卫：超时作废后迟到的结果按代际丢弃）；超时 2400 帧（120s）
+// 门禁：5 工具均域限定（仅 timeback 作用域内可用）——宿主工具登记段拦截（域外 ERR|TIMEBACK_REQUIRED），本语料不重复判定
+// 生命周期（A110 域级）：实例随域起停——首次调用懒启动 Edge；timeback back 回收时由会话侧关闭该猫实例
+//   （ChatSession.ApplyTimebackBack 段7 → IBrowserLifecycle.CloseCat）；宿主正常退出走 Main finally 钩子；被强杀靠启动前 PID 自愈
+// 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）+ trace.timeout / trace.late_discard
+
+// ── 状态机（5 线——独立生命周期；仅首线设 Init 自述，余线从 Idle 起避免 desc 竞争）──
+§ 'S_Open' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Read' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Eval' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Shot' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Tabs' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+
+// T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
+§ 'T_Init' : 'S_Open' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Open' = 'Idle' | 'S_Open' = 'Idle'
+
+// ── 主动传感器壳——5 线探测（纯只读判断积木 → bool 落盒）──
+§ 'P_OpenOpen' ↻ [1]: 'oa.is_open'["TOOL", "browser-open"] > @boOpen
+§ 'P_ReadOpen' ↻ [1]: 'oa.is_open'["TOOL", "browser-read"] > @brOpen
+§ 'P_EvalOpen' ↻ [1]: 'oa.is_open'["TOOL", "browser-eval"] > @beOpen
+§ 'P_ShotOpen' ↻ [1]: 'oa.is_open'["TOOL", "browser-shot"] > @bsOpen
+§ 'P_TabsOpen' ↻ [1]: 'oa.is_open'["TOOL", "browser-tabs"] > @btOpen
+
+// ══════════════ browser-open 线 ══════════════
+
+// T_OpenClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_OpenClaim' : @boOpen & 'S_Open' = 'Idle' → 'oa.claim_next_simple'["TOOL", "browser-open"] > @boOffice | 'S_Open' = 'Claimed' | 'S_Open' = 'Idle'
+
+// T_OpenArgs：读载荷 args（整包工具参数 JSON）+ 执行中自述（par 导线单动作约束——desc 前移）
+§ 'T_OpenArgs' : 'S_Open' = 'Claimed' → 'oa.get_str'[@boOffice, "args"] > @boArgs | 'self.desc'["browser-open 执行中", "", ""] | 'S_Open' = 'Ready' | 'S_Open' = 'Failed'
+
+// T_OpenExec：执行积木（导航 + 等加载——含首调 Edge 拉起）——后台执行
+§ 'T_OpenExec' [t=2400, par] : 'S_Open' = 'Ready' → 'browser.open'[@boArgs] > @boRes | 'S_Open' = 'Done' | 'S_Open' = 'Failed'
+
+// T_OpenReply：成功回执
+§ 'T_OpenReply' : 'S_Open' = 'Done' → 'oa.complete_str'[@boOffice, @boRes] | 'self.desc'["空闲待命", "", ""] | 'S_Open' = 'Idle' | 'S_Open' = 'Idle'
+
+// T_OpenAbort：失败回执（@boRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
+§ 'T_OpenAbort' : 'S_Open' = 'Failed' → 'oa.complete_str'[@boOffice, @boRes] | 'S_Open' = 'Idle' | 'S_Open' = 'Idle'
+
+// ══════════════ browser-read 线 ══════════════
+
+§ 'T_ReadClaim' : @brOpen & 'S_Read' = 'Idle' → 'oa.claim_next_simple'["TOOL", "browser-read"] > @brOffice | 'S_Read' = 'Claimed' | 'S_Read' = 'Idle'
+
+§ 'T_ReadArgs' : 'S_Read' = 'Claimed' → 'oa.get_str'[@brOffice, "args"] > @brArgs | 'self.desc'["browser-read 执行中", "", ""] | 'S_Read' = 'Ready' | 'S_Read' = 'Failed'
+
+§ 'T_ReadExec' [t=2400, par] : 'S_Read' = 'Ready' → 'browser.read'[@brArgs] > @brRes | 'S_Read' = 'Done' | 'S_Read' = 'Failed'
+
+§ 'T_ReadReply' : 'S_Read' = 'Done' → 'oa.complete_str'[@brOffice, @brRes] | 'self.desc'["空闲待命", "", ""] | 'S_Read' = 'Idle' | 'S_Read' = 'Idle'
+
+§ 'T_ReadAbort' : 'S_Read' = 'Failed' → 'oa.complete_str'[@brOffice, @brRes] | 'S_Read' = 'Idle' | 'S_Read' = 'Idle'
+
+// ══════════════ browser-eval 线 ══════════════
+
+§ 'T_EvalClaim' : @beOpen & 'S_Eval' = 'Idle' → 'oa.claim_next_simple'["TOOL", "browser-eval"] > @beOffice | 'S_Eval' = 'Claimed' | 'S_Eval' = 'Idle'
+
+§ 'T_EvalArgs' : 'S_Eval' = 'Claimed' → 'oa.get_str'[@beOffice, "args"] > @beArgs | 'self.desc'["browser-eval 执行中", "", ""] | 'S_Eval' = 'Ready' | 'S_Eval' = 'Failed'
+
+§ 'T_EvalExec' [t=2400, par] : 'S_Eval' = 'Ready' → 'browser.eval'[@beArgs] > @beRes | 'S_Eval' = 'Done' | 'S_Eval' = 'Failed'
+
+§ 'T_EvalReply' : 'S_Eval' = 'Done' → 'oa.complete_str'[@beOffice, @beRes] | 'self.desc'["空闲待命", "", ""] | 'S_Eval' = 'Idle' | 'S_Eval' = 'Idle'
+
+§ 'T_EvalAbort' : 'S_Eval' = 'Failed' → 'oa.complete_str'[@beOffice, @beRes] | 'S_Eval' = 'Idle' | 'S_Eval' = 'Idle'
+
+// ══════════════ browser-shot 线 ══════════════
+
+§ 'T_ShotClaim' : @bsOpen & 'S_Shot' = 'Idle' → 'oa.claim_next_simple'["TOOL", "browser-shot"] > @bsOffice | 'S_Shot' = 'Claimed' | 'S_Shot' = 'Idle'
+
+§ 'T_ShotArgs' : 'S_Shot' = 'Claimed' → 'oa.get_str'[@bsOffice, "args"] > @bsArgs | 'self.desc'["browser-shot 执行中", "", ""] | 'S_Shot' = 'Ready' | 'S_Shot' = 'Failed'
+
+§ 'T_ShotExec' [t=2400, par] : 'S_Shot' = 'Ready' → 'browser.shot'[@bsArgs] > @bsRes | 'S_Shot' = 'Done' | 'S_Shot' = 'Failed'
+
+§ 'T_ShotReply' : 'S_Shot' = 'Done' → 'oa.complete_str'[@bsOffice, @bsRes] | 'self.desc'["空闲待命", "", ""] | 'S_Shot' = 'Idle' | 'S_Shot' = 'Idle'
+
+§ 'T_ShotAbort' : 'S_Shot' = 'Failed' → 'oa.complete_str'[@bsOffice, @bsRes] | 'S_Shot' = 'Idle' | 'S_Shot' = 'Idle'
+
+// ══════════════ browser-tabs 线（A110 多页签） ══════════════
+
+§ 'T_TabsClaim' : @btOpen & 'S_Tabs' = 'Idle' → 'oa.claim_next_simple'["TOOL", "browser-tabs"] > @btOffice | 'S_Tabs' = 'Claimed' | 'S_Tabs' = 'Idle'
+
+§ 'T_TabsArgs' : 'S_Tabs' = 'Claimed' → 'oa.get_str'[@btOffice, "args"] > @btArgs | 'self.desc'["browser-tabs 执行中", "", ""] | 'S_Tabs' = 'Ready' | 'S_Tabs' = 'Failed'
+
+§ 'T_TabsExec' [t=2400, par] : 'S_Tabs' = 'Ready' → 'browser.tabs'[@btArgs] > @btRes | 'S_Tabs' = 'Done' | 'S_Tabs' = 'Failed'
+
+§ 'T_TabsReply' : 'S_Tabs' = 'Done' → 'oa.complete_str'[@btOffice, @btRes] | 'self.desc'["空闲待命", "", ""] | 'S_Tabs' = 'Idle' | 'S_Tabs' = 'Idle'
+
+§ 'T_TabsAbort' : 'S_Tabs' = 'Failed' → 'oa.complete_str'[@btOffice, @btRes] | 'S_Tabs' = 'Idle' | 'S_Tabs' = 'Idle'

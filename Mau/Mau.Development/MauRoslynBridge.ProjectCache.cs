@@ -44,7 +44,7 @@ namespace Mau.Development
         public string AssemblyName;
 
         /// <summary>
-        /// 目标框架（net8.0 等）
+        /// 目标框架（net10.0 等）
         /// </summary>
         public string Tfm;
 
@@ -131,7 +131,7 @@ namespace Mau.Development
             CsprojPath = "";
             ProjectDir = "";
             AssemblyName = "";
-            Tfm = "net8.0";
+            Tfm = "net10.0";
             NullableEnable = false;
             IsExe = false;
             DefaultExcludes = new List<string>();

@@ -54,6 +54,9 @@ namespace CatHome4.Core.Tests
 
             /// <summary>STREAM_CLOSED 次数——前 N 次调用产 Error（0=每次）</summary>
             public int StreamClosedTimes = 0;
+
+            /// <summary>A94——重试耗尽模拟：产 Retrying 事件后直接产 Error（Runtime 重试后仍失败路径）</summary>
+            public bool RetryThenFail = false;
             /// <summary>是否模拟纯空格回复——只产空格 Text（Trim 判空续传验证）</summary>
             public bool WhitespaceReply = false;
             /// <summary>纯空格次数——前 N 次调用产空格（0=每次）</summary>
@@ -86,6 +89,13 @@ namespace CatHome4.Core.Tests
                 if (CallCount <= FailTimes)
                 {
                     yield return new LlmStreamEvent(LlmStreamKind.Error, FailText);
+                    yield break;
+                }
+                // A94——重试耗尽模拟：产 Retrying → 产 Error（Runtime 有限重试后仍失败路径）
+                if (RetryThenFail)
+                {
+                    yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|1/3|ERR|TRANSPORT|模拟连接失败");
+                    yield return new LlmStreamEvent(LlmStreamKind.Error, "ERR|TRANSPORT|模拟连接失败（重试耗尽）");
                     yield break;
                 }
                 // 空回复续传——STREAM_CLOSED 模拟：前 N 次产 Error（未以 [DONE] 结束）
@@ -258,17 +268,35 @@ namespace CatHome4.Core.Tests
         /// <returns>会话实体</returns>
         private static CH4.ChatSession CreateSession(ILlmRuntime llm, ToolSpec[] declared = null)
         {
-            // 工具注册表初始化——内置判定（IsBuiltinTool）读 ToolRegistry 单一真相源；测试环境无宿主 Init，
-            // 须显式灌入内置表（否则 Note 被判非内置 → 走 OA 工单 → 测试无消费者卡死；判例 2026-09-16）
-            CH4.ToolRegistry.Init(new ToolSpec[]
+            // 工具注册表初始化——内置判定（IsBuiltinTool）+ 池校验（IsToolAllowed：工具须在注册面内）读 ToolRegistry 单一真相源；
+            // 测试环境无宿主 Init，须显式灌入（内置表 + 声明面工具——生产环境声明面必为池子集，测试同构；判例 2026-09-16）
+            List<ToolSpec> regSpecs = new List<ToolSpec>();
+            regSpecs.Add(new ToolSpec("Note", "Note 任务追踪", "{}"));
+            regSpecs.Add(new ToolSpec("time", "当前时间", "{}"));
+            regSpecs.Add(new ToolSpec("random", "随机整数", "{}"));
+            regSpecs.Add(new ToolSpec("info", "运行状态", "{}"));
+            regSpecs.Add(new ToolSpec("sleep", "定时唤醒", "{}"));
+            regSpecs.Add(new ToolSpec("timer", "定时注入", "{}"));
+            if (declared != null)
             {
-                new ToolSpec("Note", "Note 任务追踪", "{}"),
-                new ToolSpec("time", "当前时间", "{}"),
-                new ToolSpec("random", "随机整数", "{}"),
-                new ToolSpec("info", "运行状态", "{}"),
-                new ToolSpec("sleep", "定时唤醒", "{}"),
-                new ToolSpec("timer", "定时注入", "{}")
-            }, null, null);
+                for (int d = 0; d < declared.Length; d = d + 1)
+                {
+                    bool duplicate = false;
+                    for (int r = 0; r < regSpecs.Count; r = r + 1)
+                    {
+                        if (regSpecs[r].Name == declared[d].Name)
+                        {
+                            duplicate = true;
+                            break;
+                        }
+                    }
+                    if (!duplicate)
+                    {
+                        regSpecs.Add(declared[d]);
+                    }
+                }
+            }
+            CH4.ToolRegistry.Init(regSpecs.ToArray(), null, null);
             ChatContext ctx = new ChatContext();
             string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".jsonl");
             SessionStore store = new SessionStore(tmp);
@@ -803,6 +831,36 @@ namespace CatHome4.Core.Tests
                 Assert.Contains("已中止", d.RootElement.GetProperty("result").GetString());
             }
         }
+        /// <summary>
+        /// 授权面实时查询——AuthorizedToolNamesProvider 压过会话注入面：声明面含 text-read 而提供者未放行 → 调用被 TOOL_FORBIDDEN 拒（design-ch4-tools §三·十一）。
+        /// </summary>
+        [Fact]
+        public void ToolAuth_ProviderOverridesDeclaredFace()
+        {
+            MockLlm llm = new MockLlm();
+            string tc = "[{\"id\":\"a1\",\"function\":{\"name\":\"text-read\",\"arguments\":\"{\\\"path\\\":\\\"a.txt\\\"}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            MockHost host = new MockHost();
+            ToolSpec[] declared = new ToolSpec[]
+            {
+                        new ToolSpec("text-read", "读取文本", "{}")
+            };
+            CH4.ChatSession session = CreateSession(llm, declared);
+            session.AttachHost(host);
+            CH4.ChatSession.AuthorizedToolNamesProvider = delegate (string catKey) { return new string[] { "Note" }; };
+            try
+            {
+                session.PostUserMessage("授权面外工具调用");
+                PumpUntilIdle(session);
+            }
+            finally
+            {
+                CH4.ChatSession.AuthorizedToolNamesProvider = null;
+            }
+            List<string> cards;
+            Assert.True(host.ViewEvents.TryGetValue("toolcard", out cards));
+            Assert.Contains("TOOL_FORBIDDEN", string.Join("|", cards));
+        }
 
         /// <summary>
         /// E3 usage 转发——LLM 流带 Usage 事件 → 宿主收到 PushLlm("usage") 且累计整轮（覆盖式）。
@@ -843,6 +901,8 @@ namespace CatHome4.Core.Tests
                 Assert.Equal(100, data.GetProperty("prompt").GetInt64());
                 Assert.Equal(20, data.GetProperty("completion").GetInt64());
                 Assert.Equal(30, data.GetProperty("cacheHit").GetInt64());
+                // A115——前文条数随 usage 载荷下发（前端「前文 N 条」实时化数据源）
+                Assert.True(data.GetProperty("count").GetInt64() > 0);
             }
         }
 
@@ -1061,6 +1121,71 @@ namespace CatHome4.Core.Tests
             }
             // 重试后正常回复
             Assert.Contains("重试后正常回复", GetLastAssistantText(session));
+        }
+
+        /// <summary>
+        /// <summary>
+        /// A94——续传路径终态载荷齐备：空回复 / STREAM_CLOSED 续传同样写入原文三元组，
+        /// resolved 回填不丢报错原文（attempt/max/reason 齐备；修复前载荷为空 → 前端只剩「✓ 已恢复」）。
+        /// </summary>
+        [Fact]
+        public void A94_EmptyReplyResolvedKeepsReason()
+        {
+            MockLlm llm = new MockLlm();
+            llm.EmitStreamClosed = true;
+            llm.StreamClosedTimes = 1;
+            llm.ReplyText = "续传后正常回复";
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            session.AttachHost(host);
+            session.PostUserMessage("续传终态载荷");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            List<string> retryEvents;
+            Assert.True(host.ViewEvents.TryGetValue("retry", out retryEvents));
+            Assert.True(retryEvents.Count >= 2);
+            using (JsonDocument dLast = JsonDocument.Parse(retryEvents[retryEvents.Count - 1]))
+            {
+                Assert.Equal("resolved", dLast.RootElement.GetProperty("state").GetString());
+                Assert.Equal("1", dLast.RootElement.GetProperty("attempt").GetString());
+                Assert.Equal("∞", dLast.RootElement.GetProperty("max").GetString());
+                Assert.False(string.IsNullOrEmpty(dLast.RootElement.GetProperty("text").GetString()));
+            }
+        }
+
+        /// <summary>
+        /// A94——重试耗尽终态：本轮推过 retry 气泡后错误耗尽 → 补 failed 终态（保留原文）；
+        /// error 气泡仍给最终错误详情（过程 + 结论双气泡语义）。
+        /// </summary>
+        [Fact]
+        public void A94_RetryExhaustedPushesFailedTerminal()
+        {
+            MockLlm llm = new MockLlm();
+            llm.RetryThenFail = true;
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            session.AttachHost(host);
+            session.PostUserMessage("重试耗尽终态");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            List<string> retryEvents;
+            Assert.True(host.ViewEvents.TryGetValue("retry", out retryEvents));
+            Assert.True(retryEvents.Count >= 2);
+            using (JsonDocument d1 = JsonDocument.Parse(retryEvents[0]))
+            {
+                Assert.Equal("retrying", d1.RootElement.GetProperty("state").GetString());
+                Assert.Equal("1", d1.RootElement.GetProperty("attempt").GetString());
+                Assert.Equal("3", d1.RootElement.GetProperty("max").GetString());
+                Assert.False(string.IsNullOrEmpty(d1.RootElement.GetProperty("text").GetString()));
+            }
+            using (JsonDocument dLast = JsonDocument.Parse(retryEvents[retryEvents.Count - 1]))
+            {
+                Assert.Equal("failed", dLast.RootElement.GetProperty("state").GetString());
+                Assert.Equal("1", dLast.RootElement.GetProperty("attempt").GetString());
+                Assert.Equal("3", dLast.RootElement.GetProperty("max").GetString());
+                Assert.False(string.IsNullOrEmpty(dLast.RootElement.GetProperty("text").GetString()));
+            }
+            Assert.True(host.ViewEvents.ContainsKey("error"));
         }
 
         /// <summary>
@@ -1588,6 +1713,100 @@ namespace CatHome4.Core.Tests
             }
             // 时序——思考整块先于工具卡（决策流首帧收口）
             Assert.True(host.ViewSeqs["reason"][0] < host.ViewSeqs["toolcard"][0]);
+        }
+        /// <summary>
+        /// 继续轮——不追加任何用户消息，直接用当前前文发一次 LLM 请求（cat.continue 后端语义）。
+        /// 判据：请求次数 +1（真发请求）· 前文只多回复一条（不产生新 user 消息——常规轮为 +2）。
+        /// </summary>
+        [Fact]
+        public void Continue_NoNewMessage()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "续写内容";
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("第一轮问题");
+            PumpUntilIdle(session);
+            int beforeCount = session.Context.GetMessages().Length;
+            int callsBefore = llm.CallCount;
+            session.Continue();
+            PumpUntilIdle(session);
+            // 真发了一次请求
+            Assert.Equal(callsBefore + 1, llm.CallCount);
+            // 前文只多一条 assistant 回复（无新 user 消息）
+            LlmMessage[] after = session.Context.GetMessages();
+            Assert.Equal(beforeCount + 1, after.Length);
+            Assert.Equal(LlmRole.Assistant, after[after.Length - 1].Role);
+            Assert.Equal("续写内容", after[after.Length - 1].Content);
+        }
+        /// <summary>继续——忙时不打断当前轮（仅置位排队：跨线程不碰会话内部队列），轮末 Idle 后消费。</summary>
+        [Fact]
+        public void Continue_WhileBusy_QueuedUntilIdle()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "回复";
+            llm.HoldStream = new AutoResetEvent(false);
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("第一轮");
+            for (int i = 0; i < 100 && session.IsIdle; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+            }
+            Assert.False(session.IsIdle);
+            Assert.Equal(1, llm.CallCount);
+            // 忙时继续——仅置位（不打断当前轮：请求次数不变）
+            session.Continue();
+            Assert.Equal(1, llm.CallCount);
+            // 放行当前轮 → 轮末 Idle 消费继续请求（第二次请求）；继续轮同样挂起——逐帧放行
+            for (int i = 0; i < 300; i = i + 1)
+            {
+                llm.HoldStream.Set();
+                session.Pump();
+                Thread.Sleep(5);
+                if (llm.CallCount >= 2 && session.IsIdle)
+                {
+                    break;
+                }
+            }
+            Assert.Equal(2, llm.CallCount);
+            Assert.True(session.IsIdle);
+        }
+        /// <summary>
+        /// 继续——空前文拒绝（无可续内容）：不入队、不发请求（防御性出声，不静默）。
+        /// </summary>
+        [Fact]
+        public void Continue_EmptyContext_Rejected()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            session.Continue();
+            PumpUntilIdle(session);
+            Assert.Equal(0, llm.CallCount);
+            Assert.True(session.IsIdle);
+        }
+        /// <summary>
+        /// 继续——跨线程调用路径（HTTP 线程置位 → 主线程 Pump 消费）。
+        /// 回归：2026-09-30 缺陷——Continue 曾在 HTTP 线程直接改会话内部队列（无内存屏障），主线程读不到 → 指令被受理却无轮次；
+        /// 现行 = volatile 置位（与 Pause / SessionNewRequested 同模式）——跨线程置位后主线程必须能启动继续轮。
+        /// </summary>
+        [Fact]
+        public void Continue_FromOtherThread_ConsumedByPump()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "回复";
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("第一轮");
+            PumpUntilIdle(session);
+            int callsBefore = llm.CallCount;
+            // 模拟 HTTP 线程调用（非主线程）——只置位，不碰会话内部队列
+            Thread worker = new Thread(delegate () { session.Continue(); });
+            worker.Start();
+            worker.Join();
+            PumpUntilIdle(session);
+            Assert.Equal(callsBefore + 1, llm.CallCount);
+            // 前文只多回复一条（继续轮不追加用户消息）
+            LlmMessage[] msgs = session.Context.GetMessages();
+            Assert.Equal(LlmRole.Assistant, msgs[msgs.Length - 1].Role);
         }
     }
 }

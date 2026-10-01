@@ -178,17 +178,22 @@ namespace CH4
             // 工具定义热同步——新版本 GetToolsJson 可能已变（改 tools.<组> 积木描述 → reload 生效；design-ch4-tools-pool §七）
             if (name != "QuickCat")
             {
-                List<IFlow> poolFlows = new List<IFlow>();
+                List<ToolGroupSource> poolGroups = new List<ToolGroupSource>();
                 foreach (KeyValuePair<string, FlowHandle> kv in _toolFlowHandles)
                 {
-                    poolFlows.Add(kv.Value.Flow);
+                    ToolGroupSource groupSource = new ToolGroupSource();
+                    groupSource.Name = kv.Key;
+                    groupSource.Flow = kv.Value.Flow;
+                    poolGroups.Add(groupSource);
                 }
                 IFlow quickFlow = null;
                 if (_quickHandle != null)
                 {
                     quickFlow = _quickHandle.Flow;
                 }
-                ToolPool.RebuildAll(poolFlows, quickFlow, BuildBuiltinToolsJson());
+                ToolPool.RebuildAll(poolGroups, quickFlow, BuildBuiltinToolsJson());
+                // A107——定义缺陷出声：日志落 L3（改积木改坏 JSON 当场可见）
+                LogToolPoolDefects();
                 ToolRegistry.Init(ToolPool.BuildSpecs(), ToolPool.BuildOwnerFlowMap(), ToolPool.BuildPrivilegedMap());
             }
             for (int i = 0; i < WarmupFrames; i++)
@@ -207,6 +212,12 @@ namespace CH4
             if (backupPath.Length > 0)
             {
                 sb.AppendLine("旧版备份: " + backupPath);
+            }
+            // A107——定义缺陷随 reload 报告回执（改坏定义 JSON 当场看见，不等下次 info）
+            ToolDefect[] reloadDefects = ToolPool.Defects();
+            for (int d = 0; d < reloadDefects.Length; d = d + 1)
+            {
+                sb.AppendLine("定义缺陷: " + reloadDefects[d].Group + " | " + reloadDefects[d].Stage + " | " + reloadDefects[d].Reason);
             }
             // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
             System.Collections.Generic.Dictionary<string, object> reloadFields = new System.Collections.Generic.Dictionary<string, object>();

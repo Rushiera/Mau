@@ -115,9 +115,10 @@ namespace Mau.Translator
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 索引损坏——按未命中处理（空索引）
+                Console.Error.WriteLine("[BrickIndex] 索引解析失败，按空索引处理: " + ex.Message);
             }
             BrickIndex_Cache = result;
             return result;

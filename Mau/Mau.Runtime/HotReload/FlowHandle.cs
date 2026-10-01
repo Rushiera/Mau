@@ -252,9 +252,10 @@ namespace Mau.Runtime
                         {
                             handles[i].TryUnload(1);
                         }
-                        catch (Exception)
+                        catch (Exception ex)
                         {
                             // 卸载尽力而为——不掩盖原始异常
+                            LogStore.Add("FlowHandle", 2, "失败路径卸载句柄异常: " + ex.Message, "SYS");
                         }
                     }
                 }

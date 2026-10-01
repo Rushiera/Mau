@@ -34,7 +34,7 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: 翻译器测试项目构建失败");
                 return 1;
             }
-            string testExe = Path.Combine(root, "Mau", "Mau.Translator.Tests", "bin", "Debug", "net8.0", "Mau.Translator.Tests.exe");
+            string testExe = Path.Combine(root, "Mau", "Mau.Translator.Tests", "bin", "Debug", "net10.0", "Mau.Translator.Tests.exe");
             if (!RunProcess(testExe, ""))
             {
                 Console.WriteLine("FAIL: 翻译器测试失败");
@@ -46,7 +46,7 @@ namespace Mau.Cli
                 Console.WriteLine("FAIL: 运行时测试项目构建失败");
                 return 1;
             }
-            string runtimeExe = Path.Combine(root, "Mau", "Mau.Runtime.Tests", "bin", "Debug", "net8.0", "Mau.Runtime.Tests.exe");
+            string runtimeExe = Path.Combine(root, "Mau", "Mau.Runtime.Tests", "bin", "Debug", "net10.0", "Mau.Runtime.Tests.exe");
             if (!RunProcess(runtimeExe, ""))
             {
                 Console.WriteLine("FAIL: 运行时机制测试失败");

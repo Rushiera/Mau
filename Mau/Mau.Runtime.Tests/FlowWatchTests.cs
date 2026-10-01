@@ -63,9 +63,10 @@ namespace Mau.Runtime.Tests
                     Directory.Delete(_watchDir, true);
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // 清理失败不影响结果
+                Console.WriteLine("[测试清理] 监视目录删除失败: " + ex.Message);
             }
         }
 

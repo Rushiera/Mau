@@ -360,6 +360,15 @@ namespace Mau.Runtime
                 Directory.CreateDirectory(dir);
             }
         }
+        /// <summary>
+        /// 序列化消息行——外部归档等落盘复用同一出口（t=m 形态与真实前文同构；避免两处实现漂移）。
+        /// </summary>
+        /// <param name="message">待序列化消息</param>
+        /// <returns>单行 JSON</returns>
+        public static string SerializeMessageLine(LlmMessage message)
+        {
+            return BuildMessageLine(Normalize(message));
+        }
 
         /// <summary>
         /// 构建消息行——LlmMessage 全字段 + t 标记。
@@ -425,6 +434,10 @@ namespace Mau.Runtime
             if (message.ReasoningContent == null)
             {
                 message.ReasoningContent = "";
+            }
+            if (message.ImagesJson == null)
+            {
+                message.ImagesJson = "";
             }
             return message;
         }
@@ -605,9 +618,10 @@ namespace Mau.Runtime
                 File.Move(_path, badPath);
                 LogStore.Add("CatHome4", 3, "会话前文全部不可解析，已备份为 " + badPath + "（本次按新会话启动）", "CHAT");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 备份失败不阻断加载失败语义——原文件保留
+                LogStore.Add("CatHome4", 2, "坏前文备份失败，保留原文件: " + ex.Message, "CHAT");
             }
         }
 

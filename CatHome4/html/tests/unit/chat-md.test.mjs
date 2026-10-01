@@ -94,6 +94,21 @@ test('表格——无分隔行则全部数据行（无 thead）', () => {
   expect(html).not.toContain('<thead>');
 });
 
+test('表格——\\| 转义管道：不切分单元格 + 行内标记不破（判例 2026-09-29）', () => {
+  const md = '| 项 | 输入 | 结果 |\n| --- | --- | --- |\n| PS 禁目录列举 | 本会话 powershell 直调 Get-ChildItem | **`ERR\\|PS_LIST_FORBIDDEN\\|命令含目录列举语义，列目录请使用 file-tree 工具`** |';
+  const html = mdToHtml(md);
+  expect(html).toContain('<tr><td>PS 禁目录列举</td><td>本会话 powershell 直调 Get-ChildItem</td><td><strong><code>ERR|PS_LIST_FORBIDDEN|命令含目录列举语义，列目录请使用 file-tree 工具</code></strong></td></tr>');
+  // 复制原文保真——data-md 存源文本（\| 不还原）
+  expect(html).toContain('data-md="| 项 | 输入 | 结果 |&#10;| --- | --- | --- |&#10;| PS 禁目录列举 | 本会话 powershell 直调 Get-ChildItem | **`ERR\\|PS_LIST_FORBIDDEN\\|命令含目录列举语义，列目录请使用 file-tree 工具`** |"');
+});
+
+test('表格——行内代码内裸 | 不切分单元格（判例 2026-09-29：`.resolution.width|height` 曾把数据行切成三列）', () => {
+  const md = '| 件 | 内容 |\n| --- | --- |\n| `UiSnapshotPet` | 发布 `ui.settings.revision` / `.volume` / `.resolution.width|height` / `.resolution.count` |\n| `Core.Tests/SettingsModuleTests.cs` | 6 用例：装机即发布 · 音量落盘+版本递增 |';
+  const html = mdToHtml(md);
+  expect(html).toContain('<tr><td><code>UiSnapshotPet</code></td><td>发布 <code>ui.settings.revision</code> / <code>.volume</code> / <code>.resolution.width|height</code> / <code>.resolution.count</code></td></tr>');
+  expect(html).toContain('<tr><td><code>Core.Tests/SettingsModuleTests.cs</code></td><td>6 用例：装机即发布 · 音量落盘+版本递增</td></tr>');
+});
+
 // ── A81 复制原文——包裹层与源文本载体 ──
 test('A81 代码块——外层 .md-copy 包裹，源文本走 pre code（不存 data-md）', () => {
   const html = mdToHtml('```\nabc\ndef\n```');

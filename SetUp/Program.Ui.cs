@@ -178,7 +178,7 @@ namespace SetUp
                 bool ok = CheckEnvironment();
                 if (ok)
                 {
-                    SetStatus("环境就绪：.NET 8 Runtime + SDK + WindowsDesktop");
+                    SetStatus("环境就绪：.NET 10 Runtime + SDK + WindowsDesktop");
                 }
                 else
                 {

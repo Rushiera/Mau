@@ -2,7 +2,6 @@
 /* 令牌化（2026-09-17 批 2）——色值一律引令牌（tokens.css 定义 L1/L3 + 本文件 :root 定义 L2 对话区） */
 /* 规范：Project/CH4/design-ch4-frontend-theme.md —— 组件面零裸色值 */
 :root {
-    --chat-font-size: 14px;
     /* A79 气泡宽度三段式（2026-09-22）——比例档 / 固定上限档 / 边缘下限档，三者取最小：
        气泡宽 = min(80% 对话区宽, 1000px, 对话区宽 − 200px)；两侧边缘各留 ≥100px（后续另有用处） */
     --ch-bubble-max-pct: 80%;
@@ -85,7 +84,9 @@
     --ch-tok-completion: var(--ch-ok);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--ch-bg-page); color: var(--ch-fg); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var(--ch-fg); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+/* 内容面字体（A120）——对话正文/思考/工具卡/Note/定时/插话队列走内容字体（更纱等宽）；界面控件与状态条继承 body */
+.chat-bubble, .chat-think, .chat-tool, .note-row, .delay-row, #chatPendingPanel { font-family: var(--ch-font-content); }
 
 /* ============ 滚动条——深色配色统一（2026-09-17） ============ */
 /* 动机：默认滚动条走系统浅色样式（白底轨道），与深色界面割裂 */
@@ -109,15 +110,14 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-bubble .md-block table::-webkit-scrollbar-thumb { background-color: var(--ch-scroll-thumb); background-clip: padding-box; border: 2px solid transparent; border-radius: 5px; }
 .chat-bubble .md-block pre::-webkit-scrollbar-thumb:hover,
 .chat-bubble .md-block table::-webkit-scrollbar-thumb:hover { background-color: var(--ch-scroll-thumb-hover); }
-#chatbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--ch-line-faint); font-size: 11px; color: var(--ch-fg-weak); }
+#chatbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--ch-line-faint); font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); }
 #chatbar .sid { color: var(--ch-identity); font-weight: bold; }
-#uiVer { background: var(--ch-bg-deep); border: 1px solid var(--ch-line); border-radius: 4px; padding: 1px 8px; color: var(--ch-ok-weak); font-size: 11px; }
-#chatNew, #chatRefresh, #chatPause, #chatCacheClear { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
-#chatNew:hover, #chatRefresh:hover, #chatCacheClear:hover, #chatPause:hover:not(:disabled) { background: var(--ch-bg-hover); }
-#chatPause:disabled { opacity: 0.35; cursor: default; }
+#uiVer { background: var(--ch-bg-deep); border: 1px solid var(--ch-line); border-radius: 4px; padding: 1px 8px; color: var(--ch-ok-weak); font-size: var(--ch-fs-tag); }
+#chatNew, #chatRefresh, #chatCacheClear { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
+#chatNew:hover, #chatRefresh:hover, #chatCacheClear:hover { background: var(--ch-bg-hover); }
 /* A59——六态状态条（链路/等待/思考/工具/执行/回复；时长数据源 = 后端运行态）；位于页面最底部（输入框下方）持久存在
    2026-09-22：内容整体居中（原左下靠左 + 右下本轮 Token 统计——后者已去，Token 信息归 roundsum 轮末块） */
-#chatStatus { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 4px 12px; border-top: 1px solid var(--ch-line-faint); font-size: 11px; color: var(--ch-fg-weak); background: var(--ch-bg-page); min-height: 22px; flex-wrap: wrap; }
+#chatStatus { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 4px 12px; border-top: 1px solid var(--ch-line-faint); font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); background: var(--ch-bg-page); min-height: 22px; flex-wrap: wrap; }
 /* 持久存在——空态不隐藏（用户要求状态区常驻最底部） */
 /* 2026-09-17：六态常驻主题色（原「仅活跃态着色、其余暗灰」退役——每态一眼可辨）；活跃态走呼吸动效 */
 #chatStatus .st { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 3px; color: var(--ch-fg-faint); }
@@ -185,7 +185,7 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
    默认半透明（压亮度）；hover 经 0.3s ease-in-out 渐强到实心，移出即反向渐弱
    transition 可中断——渐强中移出从当前值转弱、渐弱中移入从当前值续强；用户气泡显式无边框 */
 /* A79 宽度统一（2026-09-22）——气泡不再各设档位；宽度上限由 .chat-row 的对称 padding 收口（见上方 .chat-row 规则） */
-.chat-bubble { --bubble-line: var(--ch-state-reply); --bubble-alpha: 20%; max-width: 100%; padding: 8px 12px; border-radius: var(--ch-radius-bubble); font-size: var(--chat-font-size); line-height: 1.7; white-space: pre-wrap; word-break: break-all; border: 1px solid color-mix(in srgb, var(--bubble-line) var(--bubble-alpha), transparent); transition: border-color 0.3s ease-in-out; animation: bubble-appear 0.3s ease-in-out; }
+.chat-bubble { --bubble-line: var(--ch-state-reply); --bubble-alpha: 20%; max-width: 100%; padding: 8px 12px; border-radius: var(--ch-radius-bubble); font-size: var(--ch-fs-body); line-height: 1.7; white-space: pre-wrap; word-break: break-all; border: 1px solid color-mix(in srgb, var(--bubble-line) var(--bubble-alpha), transparent); transition: border-color 0.3s ease-in-out; animation: bubble-appear 0.3s ease-in-out; }
 .chat-bubble:hover { border-color: var(--bubble-line); }
 /* 入场（2026-09-17）——新块创建瞬间以实心描边出现，随即按 hover 移出的同一节奏落到默认档（把注意力引到刚出现的块）；
    to 与静态值一致（呼吸组 45% / 其余 20%）→ 呼吸组可无缝接续 bubble-breathe（后者 delay 0.3s 起） */
@@ -195,8 +195,8 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 }
 .chat-row.user .chat-bubble { background: var(--ch-chat-user-bg); color: var(--ch-chat-user-fg); border: none; }
 .chat-row.assistant .chat-bubble { background: var(--ch-chat-ai-bg); color: var(--ch-chat-ai-fg); }
-.chat-bubble.reason { --bubble-line: var(--ch-state-think); background: var(--ch-chat-reason-bg); color: var(--ch-chat-reason-fg); font-size: 11px; }
-.chat-bubble.tool { --bubble-line: var(--ch-state-tool); background: var(--ch-chat-ai-bg); font-size: 11px; padding: 6px 10px; }
+.chat-bubble.reason { --bubble-line: var(--ch-state-think); background: var(--ch-chat-reason-bg); color: var(--ch-chat-reason-fg); font-size: var(--ch-fs-tag); }
+.chat-bubble.tool { --bubble-line: var(--ch-state-tool); background: var(--ch-chat-ai-bg); font-size: var(--ch-fs-tag); padding: 6px 10px; }
 /* 工具运行中（pending）——线色转 Run 态色 + 呼吸描边表示「正在执行」（见下方 bubble-breathe）；
    完成/中断原位替换后转常态：成功保持军绿，失败转红（见下条）（A60 两段式） */
 .chat-bubble.tool.pending { --bubble-line: var(--ch-state-run); }
@@ -207,7 +207,7 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 @keyframes chatblink { 50% { opacity: 0; } }
 /* A85 Think 块——两态两渲染器（流式态 .stream live-only / 完成态 .done 落盘；规格 design-ch4-frontend-theme §六）
    头行 = Think 标签（态色）+ 统计项（弱色）；完成态默认压缩档（缩略摘要），点击切展开档（全文 500px 滚动） */
-.chat-think { font-size: 11px; color: var(--ch-chat-reason-fg); }
+.chat-think { font-size: var(--ch-fs-tag); color: var(--ch-chat-reason-fg); }
 .chat-think:not(:first-child) { margin-top: 6px; }
 .chat-think .ct-head { cursor: pointer; }
 .chat-think .ct-label { color: var(--ch-think-head); }
@@ -224,7 +224,7 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-think.done.full .ct-full { display: block; max-height: var(--ch-think-max-h); overflow: auto; white-space: pre-wrap; word-break: break-all; }
 /* 内层卡不再自绘底与边（2026-09-17）——原黑底 + 内框与气泡底/描边重复（失败时成两圈）；
    类型识别由气泡描边承担；无内边距（原 padding-top 5px 致折叠单行偏下——同 .chat-think 处理） */
-.chat-tool { font-size: 11px; color: var(--ch-chat-tool-fg); font-family: Consolas, monospace; }
+.chat-tool { font-size: var(--ch-fs-tag); color: var(--ch-chat-tool-fg); font-family: var(--ch-font-content); }
 .chat-tool:not(:first-child) { margin-top: 6px; }
 .chat-tool summary { cursor: pointer; color: var(--ch-tool-name); }
 .chat-tool .tn { color: var(--ch-tool-name); }
@@ -249,9 +249,9 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-tool .seg[open] > summary.seg-cap { color: var(--ch-tool-name); }
 .chat-tool .seg-body { margin-top: 3px; max-height: 340px; overflow: auto; }
 .chat-tool .seg-sec { margin-top: 4px; }
-.chat-tool .seg-sec-cap { color: var(--ch-fg-weak); font-size: 10px; }
+.chat-tool .seg-sec-cap { color: var(--ch-fg-weak); font-size: var(--ch-fs-tag); }
 /* PowerShell 版本标签——5.1 / 7 一眼可辨（色 + 文字双通道；令牌见本文件 :root L2） */
-.chat-tool .ps-tag { display: inline-block; margin-right: 2px; padding: 0 4px; border-radius: 3px; font-size: 10px; }
+.chat-tool .ps-tag { display: inline-block; margin-right: 2px; padding: 0 4px; border-radius: 3px; font-size: var(--ch-fs-tag); }
 .chat-tool .ps-tag.ps5 { color: var(--ch-tool-ps5-fg); background: var(--ch-tool-ps5-bg); }
 .chat-tool .ps-tag.ps7 { color: var(--ch-tool-ps7-fg); background: var(--ch-tool-ps7-bg); }
 /* 段折叠摘要（2026-09-18）——行数 >5 的段折叠态即「5 行摘要」（首 2 + 折叠提示 + 末 2）；
@@ -274,14 +274,17 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-tool .seg-hit.err { color: var(--ch-tool-error); }
 /* S2 §8.4——重试过程记录气泡（独立视图条目：弱化灰底小号；⟳ 重试中 / ✓ 已恢复）
    A86——resolved 不覆盖报错原文：仅换形态（描边色）与文本色，文本 = 原文 + 追加「已恢复」 */
-.chat-bubble.retry { --bubble-line: var(--ch-state-wait); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-fg); font-size: 11px; padding: 4px 10px; }
+.chat-bubble.retry { --bubble-line: var(--ch-state-wait); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-fg); font-size: var(--ch-fs-tag); padding: 4px 10px; }
 .chat-bubble.retry.resolved { --bubble-line: var(--ch-chat-sys-ok); color: var(--ch-chat-sys-ok); }
+/* A94——重试耗尽终态：原文保留 + 「⚠ 重试失败」（形态与文本色同错误面）；终态不呼吸（仅 retrying 呼吸） */
+.chat-bubble.retry.failed { --bubble-line: var(--ch-chat-error-fg); color: var(--ch-chat-error-fg); }
+.chat-bubble.retry.resolved, .chat-bubble.retry.failed { animation: none; }
 /* P6 中止气泡——停止本轮提示（独立视图条目：弱化样式；宿主文本渲染） */
-.chat-bubble.paused { --bubble-line: var(--ch-state-link); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-ok); font-size: 11px; padding: 4px 10px; }
+.chat-bubble.paused { --bubble-line: var(--ch-state-link); background: var(--ch-chat-sys-bg); color: var(--ch-chat-sys-ok); font-size: var(--ch-fs-tag); padding: 4px 10px; }
 /* A77 静默提示气泡——宿主静默超过阈值时的明确展示（独立气泡；前端不改任何在途块状态——收口交后端） */
-.chat-bubble.stall { --bubble-line: var(--ch-warn); background: var(--ch-chat-sys-bg); color: var(--ch-warn); font-size: 11px; padding: 4px 10px; }
+.chat-bubble.stall { --bubble-line: var(--ch-warn); background: var(--ch-chat-sys-bg); color: var(--ch-warn); font-size: var(--ch-fs-tag); padding: 4px 10px; }
 /* 注入报告气泡——新会话前文加载明细（📚 汇总头 + 逐文件三态；弱化系统样式） */
-.chat-bubble.inject { --bubble-line: var(--ch-state-all); background: var(--ch-inject-bg); color: var(--ch-inject-fg); font-size: 11px; }
+.chat-bubble.inject { --bubble-line: var(--ch-state-all); background: var(--ch-inject-bg); color: var(--ch-inject-fg); font-size: var(--ch-fs-tag); }
 .inject-report .ir-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 4px; }
 .inject-report .ir-list { display: flex; flex-direction: column; gap: 2px; }
 .inject-report .ir-item { word-break: break-all; white-space: pre-wrap; }
@@ -294,7 +297,7 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .inject-report .ir-tool-group { color: var(--ch-warn); font-weight: bold; }
 /* roundsum 轮末统计气泡——本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时（弱化系统样式；呼吸描边见下方 bubble-breathe，2026-09-17）
    2026-09-24：居中试作后撤回——保持靠左（与 assistant 正文同侧）；带上刻度的中心对称渐变不受影响 */
-.chat-bubble.roundsum { --bubble-line: var(--ch-state-all); background: var(--ch-roundsum-bg); color: var(--ch-roundsum-fg); font-size: 11px; line-height: 1.6; }
+.chat-bubble.roundsum { --bubble-line: var(--ch-state-all); background: var(--ch-roundsum-bg); color: var(--ch-roundsum-fg); font-size: var(--ch-fs-tag); line-height: 1.6; }
 /* 轮次分隔（2026-09-24）——结算块所在行下留白；带上呈空隙（刻度按内容坐标映射，留白即成段间隔） */
 .chat-row:has(.chat-bubble.roundsum) { margin-bottom: var(--ch-round-gap); }
 .chat-bubble.roundsum .rs-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 3px; }
@@ -305,6 +308,14 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 .chat-bubble.roundsum .rs-tool { color: var(--ch-state-tool); }
 .chat-bubble.roundsum .rs-api { color: var(--ch-state-api); }
 .chat-bubble.roundsum .rs-all { color: var(--ch-state-all); }
+/* 废弃块（2026-09-29）——timeback 回收区间的合并归档：内容已被主干排除（LLM 看不见），仅人可见留档
+   视觉：灰调 + 虚线描边 + 默认折叠——与活块明确区分（不进对话流、不参与 QQ 转发） */
+.chat-bubble.void { --bubble-line: var(--ch-line); background: var(--ch-roundsum-bg); color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); line-height: 1.6; border-style: dashed; }
+.chat-void { width: 100%; }
+.chat-void > summary { cursor: pointer; color: var(--ch-fg-muted); list-style: none; }
+.chat-void > summary::-webkit-details-marker { display: none; }
+.chat-void[open] > summary { margin-bottom: 4px; color: var(--ch-inject-miss); }
+.chat-void-body { white-space: pre-wrap; word-break: break-all; max-height: 40vh; overflow: auto; padding: 4px 6px; border-left: 2px solid var(--ch-line); color: var(--ch-roundsum-fg); }
 /* 呼吸描边（2026-09-17）——「正在进行时」的自动标识：animation **只动 border-color**（描边本身呼吸，
    内容与底色不受影响）；keyframes 首尾同值 → 循环连续无跳变；
    animation 对 border-color 的占用天然覆盖 hover 声明 → 与「移入移出渐变」互斥，同一元素二者不同时存在。
@@ -318,94 +329,103 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
    列宽基准 = 视口宽（本容器无左右 padding）；输入框与气泡同宽同左缘，发送按钮固定宽落在右预留带、贴列右缘；
    无上边框——输入区与气泡区之间不画分割线。
    🔴 无 column-gap——列间距会把第 2 列整体右推，输入框左缘即与气泡左缘错开；按钮间距由自身 margin 承担 */
-#chatinput { display: grid; grid-template-columns: var(--ch-col-left) var(--ch-col-w) 1fr; row-gap: 6px; padding: 8px 0; align-items: end; }
-#chatSendInput { grid-column: 2; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-bubble); color: var(--ch-fg); padding: 7px 10px; font-family: inherit; font-size: 12px; resize: none; line-height: 1.5; }
+#chatinput { position: relative; display: grid; grid-template-columns: var(--ch-col-left) var(--ch-col-w) 1fr; row-gap: 6px; padding: 8px 0; align-items: end; }
+#chatSendInput { grid-column: 2; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-bubble); color: var(--ch-fg); padding: 7px 10px; font-family: inherit; font-size: var(--ch-fs-tag); resize: none; line-height: 1.5; }
 #chatSendInput:focus { outline: none; border-color: var(--ch-focus); }
 #chatSendInput:disabled { opacity: 0.5; }
-#chatSendBtn { grid-column: 3; justify-self: start; margin-left: 6px; width: var(--ch-send-w); background: var(--ch-bg-accent); border: none; border-radius: var(--ch-radius-bubble); color: var(--ch-fg-inverse); padding: 7px 0; cursor: pointer; font-family: inherit; font-size: 12px; }
-#chatSendBtn:disabled { opacity: 0.5; cursor: default; }
+/* 输入区动作列（2026-09-30）——停止/继续/发送竖排同列、撑满输入框高度（三格均分）；同款实心、底色区分语义（停止红 / 继续黄 / 发送主色） */
+#chatActions { grid-column: 3; justify-self: start; align-self: stretch; margin-left: 6px; width: var(--ch-send-w); display: flex; flex-direction: column; gap: 6px; }
+.ch-iabtn { flex: 1 1 0; width: 100%; border: none; border-radius: var(--ch-radius-bubble); color: var(--ch-fg-inverse); padding: 0; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
+.ch-iabtn:hover:not(:disabled) { filter: brightness(1.15); }
+.ch-iabtn:disabled { opacity: 0.5; cursor: default; }
+.ch-iabtn-stop { background: var(--ch-bg-danger); }
+.ch-iabtn-continue { background: var(--ch-bg-warn); }
+.ch-iabtn-send { background: var(--ch-bg-accent); }
 /* A65 对话图片附件——待发图片条（网格首行 · 与输入框同列宽；空则整行消失——自动放置不占行） */
 #chatImages { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 #chatImages:empty { display: none; }
 .chat-img { position: relative; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; max-width: 140px; }
 .chat-img img { max-height: 72px; max-width: 132px; display: block; border: 1px solid var(--ch-line); border-radius: 4px; }
-.chat-img figcaption { color: var(--ch-fg-muted); font-size: 10px; }
-.chat-img.missing { color: var(--ch-fg-muted); font-size: 11px; word-break: break-all; }
-.chat-img-del { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--ch-line); background: var(--ch-bg-panel); color: var(--ch-fg); cursor: pointer; font-family: inherit; font-size: 12px; line-height: 1; }
+.chat-img figcaption { color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); }
+.chat-img.missing { color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); word-break: break-all; }
+.chat-img-del { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--ch-line); background: var(--ch-bg-panel); color: var(--ch-fg); cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); line-height: 1; }
 .chat-img-del:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
-.chat-img-loading { color: var(--ch-fg-muted); font-size: 11px; }
-.chat-img-err { color: var(--ch-warn); font-size: 11px; }
+.chat-img-loading { color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); }
+.chat-img-err { color: var(--ch-warn); font-size: var(--ch-fs-tag); }
 /* A65 气泡内图片组——user 泡 / assistant 泡共用（缩略图 + 编号角标；点击新标签开原图） */
 .chat-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .chat-imgs .chat-img img { max-height: 96px; max-width: 168px; }
 .chat-user-text { white-space: pre-wrap; }
-/* M4c Note——Q3 v2（2026-09-08）：输入区上方按钮（固定不占布局）+ 点击展开气泡区域（popover 贴按钮上方；高度变化零影响聊天区） */
-/* 2026-09-17：横向排布——Note 气泡 + 跳底按钮并排（popover 仍贴 wrap 上方居中）；bottom 随输入区 3→5 行 +36px */
-#noteWrap { position: fixed; bottom: 148px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: row; align-items: center; gap: 6px; }
-#noteBubble { background: var(--ch-note-bg); border: 1px solid var(--ch-note-line); border-radius: 14px; color: var(--ch-note-fg); font-size: 11px; padding: 4px 14px; cursor: pointer; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 2px 8px var(--ch-shadow-soft); user-select: none; }
+/* M4c Note——输入区上方按钮行（不占布局）+ 点击展开气泡区域（popover 贴按钮上方；再点按钮/点外部收起——高度变化零影响聊天区） */
+/* 2026-09-17：横向排布——Note 气泡 + 跳底按钮并排（popover 仍贴 wrap 上方居中） */
+/* A121 几何修正（2026-10-01）——原 `position: fixed; bottom: 148px` 是硬编码像素：ui.font_scale 放大 → 输入框变高 → 按钮行被输入区吞掉（遮挡输入文字）。
+   现基准改 #chatinput（position: relative）——bottom:100% = 输入区顶边，再留 8px 间距；按钮行随输入区高度自动让位
+   （字号缩放 / 输入行数 / 待发图片行 / 插话队列变化均不再遮挡）；本块已随之移入 #chatinput 内（绝对定位，不参与 grid 行） */
+#noteWrap { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: row; align-items: center; gap: 6px; }
+#noteBubble { background: var(--ch-note-bg); border: 1px solid var(--ch-note-line); border-radius: 14px; color: var(--ch-note-fg); font-size: var(--ch-fs-tag); padding: 4px 14px; cursor: pointer; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 2px 8px var(--ch-shadow-soft); user-select: none; }
 #noteBubble:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
 /* 跳底按钮——回到最新内容（无条件滚到底；与智能跟随互不影响，2026-09-17） */
-#chatJumpBottom { width: 26px; height: 26px; padding: 0; border-radius: 50%; background: var(--ch-note-bg); border: 1px solid var(--ch-note-line); color: var(--ch-note-fg); font-family: inherit; font-size: 13px; line-height: 1; cursor: pointer; box-shadow: 0 2px 8px var(--ch-shadow-soft); user-select: none; }
+#chatJumpBottom { width: 2em; height: 2em; padding: 0; border-radius: 50%; background: var(--ch-note-bg); border: 1px solid var(--ch-note-line); color: var(--ch-note-fg); font-family: inherit; font-size: var(--ch-fs-sub); line-height: 1; cursor: pointer; box-shadow: 0 2px 8px var(--ch-shadow-soft); user-select: none; }
 #chatJumpBottom:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
 #notePopover { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: var(--ch-bg-page); border: 1px solid var(--ch-line); border-radius: 8px; width: min(520px, 80vw); max-height: 60vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px var(--ch-shadow-strong); }
-.note-popover-head { padding: 8px 14px; border-bottom: 1px solid var(--ch-line-faint); color: var(--ch-identity); font-weight: bold; font-size: 12px; }
+.note-popover-head { padding: 8px 14px; border-bottom: 1px solid var(--ch-line-faint); color: var(--ch-identity); font-weight: bold; font-size: var(--ch-fs-tag); }
 #noteList { display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; overflow-y: auto; flex: 1; }
-.note-row { display: flex; gap: 6px; align-items: baseline; color: var(--ch-fg-muted); font-size: 12px; word-break: break-all; }
+.note-row { display: flex; gap: 6px; align-items: baseline; color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); word-break: break-all; }
 .note-row.done { color: var(--ch-note-done); text-decoration: line-through; }
 .note-row.current { color: var(--ch-warn); }
-.note-row .mark { flex-shrink: 0; font-family: Consolas, monospace; }
+.note-row .mark { flex-shrink: 0; font-family: var(--ch-font-content); }
 #noteAddRow { display: flex; gap: 6px; padding: 8px 14px; border-top: 1px dashed var(--ch-line-soft); }
-#noteAddInput { flex: 1; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: 11px; }
+#noteAddInput { flex: 1; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: var(--ch-fs-tag); }
 #noteAddInput:focus { outline: none; border-color: var(--ch-focus); }
-#noteAddRow button { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
+#noteAddRow button { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
 #noteStartBtn { background: var(--ch-bg-accent); border: none; color: var(--ch-fg-inverse); }
 #noteStartBtn:disabled { opacity: 0.5; cursor: default; }
 /* 延迟指令队列（design-ch4-delay §六）——定时按钮与 Note 气泡并排；弹层贴 wrap 上方、水平居中（A82/A83）
    A82：定位基准由按钮（.delay-wrap）上移到居中容器（#noteWrap）——.delay-wrap 不再自持 relative */
 .delay-wrap { display: flex; align-items: center; }
-#delayBtn { background: var(--ch-note-bg); border: 1px solid var(--ch-note-line); border-radius: 14px; color: var(--ch-note-fg); font-size: 11px; padding: 4px 14px; cursor: pointer; box-shadow: 0 2px 8px var(--ch-shadow-soft); user-select: none; font-family: inherit; }
+#delayBtn { background: var(--ch-note-bg); border: 1px solid var(--ch-note-line); border-radius: 14px; color: var(--ch-note-fg); font-size: var(--ch-fs-tag); padding: 4px 14px; cursor: pointer; box-shadow: 0 2px 8px var(--ch-shadow-soft); user-select: none; font-family: inherit; }
 #delayBtn:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
 #delayCount { color: var(--ch-warn); }
 .delay-popover { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: var(--ch-bg-page); border: 1px solid var(--ch-line); border-radius: 8px; width: min(560px, 80vw); max-height: 60vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px var(--ch-shadow-strong); z-index: 61; }
-.delay-popover-head { padding: 8px 14px; border-bottom: 1px solid var(--ch-line-faint); color: var(--ch-identity); font-weight: bold; font-size: 12px; }
+.delay-popover-head { padding: 8px 14px; border-bottom: 1px solid var(--ch-line-faint); color: var(--ch-identity); font-weight: bold; font-size: var(--ch-fs-tag); }
 /* 分区（A83）——待触发（列表，可滚动）| 插入指令（固定高） */
 .delay-sec { display: flex; flex-direction: column; min-height: 0; }
 .delay-sec-list { flex: 1; }
-.delay-sec-head { padding: 6px 14px 4px; color: var(--ch-fg-weak); font-size: 11px; }
+.delay-sec-head { padding: 6px 14px 4px; color: var(--ch-fg-weak); font-size: var(--ch-fs-tag); }
 .delay-sec-add { border-top: 1px solid var(--ch-line-faint); padding-bottom: 6px; }
 #delayList { display: flex; flex-direction: column; gap: 3px; padding: 0 14px 8px; overflow-y: auto; }
-.delay-empty { color: var(--ch-fg-weak); font-size: 11px; }
-.delay-row { display: flex; gap: 8px; align-items: baseline; color: var(--ch-fg); font-size: 12px; padding: 2px 0; }
-.delay-mark { flex-shrink: 0; font-size: 11px; }
-.delay-cd { flex-shrink: 0; min-width: 58px; color: var(--ch-warn); font-family: Consolas, monospace; font-size: 13px; font-weight: bold; }
+.delay-empty { color: var(--ch-fg-weak); font-size: var(--ch-fs-tag); }
+.delay-row { display: flex; gap: 8px; align-items: baseline; color: var(--ch-fg); font-size: var(--ch-fs-tag); padding: 2px 0; }
+.delay-mark { flex-shrink: 0; font-size: var(--ch-fs-tag); }
+.delay-cd { flex-shrink: 0; min-width: 58px; color: var(--ch-warn); font-family: var(--ch-font-content); font-size: var(--ch-fs-sub); font-weight: bold; }
 .delay-cd.soon { color: var(--ch-err); }
-.delay-due { flex-shrink: 0; color: var(--ch-fg-weak); font-family: Consolas, monospace; font-size: 11px; }
+.delay-due { flex-shrink: 0; color: var(--ch-fg-weak); font-family: var(--ch-font-content); font-size: var(--ch-fs-tag); }
 .delay-text { flex: 1; word-break: break-all; }
-.delay-act { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 1px 8px; cursor: pointer; font-family: inherit; font-size: 11px; }
+.delay-act { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 1px 8px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
 .delay-act:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
 /* 快捷档 chips——新建区与行内编辑条共用（选中态 .on） */
 .delay-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.delay-chip { background: var(--ch-bg-chip); border: 1px solid var(--ch-line); border-radius: 14px; color: var(--ch-fg-muted); padding: 2px 12px; cursor: pointer; font-family: inherit; font-size: 11px; }
+.delay-chip { background: var(--ch-bg-chip); border: 1px solid var(--ch-line); border-radius: 14px; color: var(--ch-fg-muted); padding: 2px 12px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
 .delay-chip:hover { border-color: var(--ch-note-line-hover); color: var(--ch-note-fg-hover); }
 .delay-chip.on { background: var(--ch-bg-accent); border-color: var(--ch-bg-accent); color: var(--ch-fg-inverse); }
 #delayQuickRow { padding: 0 14px 6px; }
 #delayCustomRow { display: flex; gap: 6px; padding: 0 14px 6px; }
-#delayCustomAt, .delay-edit-at { background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: 11px; }
+#delayCustomAt, .delay-edit-at { background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: var(--ch-fs-tag); }
 #delayCustomAt { flex: 1; min-width: 0; }
 #delayCustomAt:focus, .delay-edit-at:focus { outline: none; border-color: var(--ch-focus); }
 /* 行内编辑条（A83——退役 window.prompt：快捷档相对当前时刻 + datetime-local 绝对时刻） */
 .delay-edit { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 2px 0 6px 20px; }
-.delay-edit-label { flex-shrink: 0; color: var(--ch-fg-weak); font-size: 11px; }
+.delay-edit-label { flex-shrink: 0; color: var(--ch-fg-weak); font-size: var(--ch-fs-tag); }
 .delay-edit-at { max-width: 170px; }
 #delayAddRow { display: flex; gap: 6px; padding: 8px 14px 0; border-top: 1px dashed var(--ch-line-soft); }
-#delayText { flex: 1; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: 11px; }
+#delayText { flex: 1; background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 4px 8px; font-family: inherit; font-size: var(--ch-fs-tag); }
 #delayText:focus { outline: none; border-color: var(--ch-focus); }
-#delayLoopLabel { display: flex; align-items: center; gap: 3px; color: var(--ch-fg-muted); font-size: 11px; white-space: nowrap; cursor: pointer; user-select: none; }
+#delayLoopLabel { display: flex; align-items: center; gap: 3px; color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); white-space: nowrap; cursor: pointer; user-select: none; }
 #delayLoop { accent-color: var(--ch-warn); cursor: pointer; }
-#delayAddRow button { background: var(--ch-bg-accent); border: none; color: var(--ch-fg-inverse); padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
+#delayAddRow button { background: var(--ch-bg-accent); border: none; color: var(--ch-fg-inverse); padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
 /* 单向数据流改造——插话队列显示区（正常流堆叠——有排队消息显示/无则隐藏）
    2026-09-22：文本缩进对齐内容列左缘（背景仍横贯）+ 去上边线（输入区与气泡区之间不画分割线） */
-#chatPendingPanel { background: var(--ch-bg-sunken); font-size: 11px; padding: 5px var(--ch-col-left); color: var(--ch-fg-muted); }
+#chatPendingPanel { background: var(--ch-bg-sunken); font-size: var(--ch-fs-tag); padding: 5px var(--ch-col-left); color: var(--ch-fg-muted); }
 #chatPendingPanel:empty { display: none; }
 
 /* F3 MD 渲染——手写解析器输出（chat-md.js）——表格/代码块/标题/列表样式 */
@@ -426,11 +446,11 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 /* 段落 */
 .chat-bubble .md-block p { margin: 4px 0; white-space: pre-wrap; word-break: break-all; }
 /* 行内代码 */
-.chat-bubble .md-block code { background: var(--ch-md-inline-code-bg); border-radius: 3px; padding: 1px 4px; font-family: Consolas, monospace; font-size: 0.9em; color: var(--ch-md-inline-code-fg); }
+.chat-bubble .md-block code { background: var(--ch-md-inline-code-bg); border-radius: 3px; padding: 1px 4px; font-family: var(--ch-font-content); font-size: 0.9em; color: var(--ch-md-inline-code-fg); }
 /* 代码块——pre 内部必须 white-space:pre 保留缩进换行；横向溢出滚动 */
 .chat-bubble .md-block pre {
     background: var(--ch-md-code-bg); border: 1px solid var(--ch-md-line); border-radius: 4px; padding: 8px 10px; margin: 6px 0;
-    font-family: Consolas, monospace; font-size: 0.9em; line-height: 1.5;
+    font-family: var(--ch-font-content); font-size: 0.9em; line-height: 1.5;
     white-space: pre; word-break: normal; overflow-x: auto; max-width: 100%;
 }
 .chat-bubble .md-block pre code { background: none; padding: 0; font-size: 1em; color: var(--ch-md-code-fg); }
@@ -478,7 +498,7 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
 }
 /* 图标 = 内联 SVG 线条双框（chat-view.js chatMdCopyIcon）——随 currentColor 取灰；成功态切 ✓（隐藏 svg 显示 ::after） */
 .chat-bubble .md-block .md-copy-btn svg { display: block; }
-.chat-bubble .md-block .md-copy-btn::after { content: '✓'; display: none; font-size: 12px; line-height: 1; }
+.chat-bubble .md-block .md-copy-btn::after { content: '✓'; display: none; font-size: var(--ch-fs-tag); line-height: 1; }
 .chat-bubble .md-block .md-copy-btn.done svg { display: none; }
 .chat-bubble .md-block .md-copy-btn.done::after { display: block; }
 .chat-bubble .md-block .md-copy:hover .md-copy-btn { opacity: 1; }
@@ -496,7 +516,7 @@ body { font-family: "Consolas", "Microsoft YaHei", monospace; background: var(--
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 14px;
+    font-size: var(--ch-fs-body);
     color: var(--ch-fg-muted);
     padding: 2px 6px;
     border-radius: 4px;

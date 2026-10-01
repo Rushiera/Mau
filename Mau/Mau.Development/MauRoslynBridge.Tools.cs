@@ -91,7 +91,7 @@ namespace Mau.Development
             }
             errors.Sort(DiagnosticComparer.Instance);
             warnings.Sort(DiagnosticComparer.Instance);
-            // 空 catch 检测（约定检查——默认总开；块内无语句且无注释即报，有注释视为已说明的降级不报）
+            // 空 catch 检测（约定检查——默认总开；块内无语句即报，注释不构成运行观测面）
             List<string> emptyCatches = CollectEmptyCatches(cache);
             // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文定界诊断行（rel:line:col: id: 消息）
             Dictionary<string, object> meta = new Dictionary<string, object>();
@@ -132,7 +132,7 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 空 catch 收集——块内无语句且无注释的 catch 子句（约定检查：禁止空块吞异常；块内只有注释视为已说明的降级，不报）。
+        /// 空 catch 收集——块内无语句的 catch 子句（约定检查：禁止空块吞异常；注释不构成运行观测面，仅注释同样报）。
         /// 文件遍历按树路径序（文件内文档序）——输出天然按 路径 → 行 有序。
         /// </summary>
         /// <param name="cache">项目缓存</param>
@@ -156,35 +156,11 @@ namespace Mau.Development
                     {
                         continue;
                     }
-                    if (HasCommentInside(clause.Block))
-                    {
-                        continue;
-                    }
                     FileLinePositionSpan span = tree.GetLineSpan(clause.GetLocation().SourceSpan);
-                    lines.Add(RelativeToProject(cache, tree.FilePath) + ":" + (span.StartLinePosition.Line + 1) + ":" + (span.StartLinePosition.Character + 1) + ": CS_EMPTY_CATCH: 空 catch 块——吞异常（补具名告警或说明注释）");
+                    lines.Add(RelativeToProject(cache, tree.FilePath) + ":" + (span.StartLinePosition.Line + 1) + ":" + (span.StartLinePosition.Character + 1) + ": CS_EMPTY_CATCH: 空 catch 块——吞异常（补具名告警或日志语句；注释不构成运行观测面）");
                 }
             }
             return lines;
-        }
-
-        /// <summary>
-        /// 块内注释探测——catch 块内是否含任意注释（单行 / 多行 / XML doc）。
-        /// </summary>
-        /// <param name="block">块节点</param>
-        /// <returns>true=含注释</returns>
-        private static bool HasCommentInside(BlockSyntax block)
-        {
-            foreach (SyntaxTrivia trivia in block.DescendantTrivia())
-            {
-                if (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia)
-                    || trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)
-                    || trivia.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia)
-                    || trivia.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia))
-                {
-                    return true;
-                }
-            }
-            return false;
         }
 
         /// <summary>

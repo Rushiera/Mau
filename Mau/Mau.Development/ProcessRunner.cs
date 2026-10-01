@@ -98,26 +98,29 @@ namespace Mau.Development
                 {
                     process.Kill(true);
                 }
-                catch (InvalidOperationException)
+                catch (InvalidOperationException ex)
                 {
                     // 进程已在强杀前自行退出
+                    LogStore.Add("Mau", 2, "强杀前进程已自行退出: " + ex.Message, "PROC");
                 }
             }
             try
             {
                 result.Stdout = outTask.GetAwaiter().GetResult();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 读取异常不掩盖主结果
+                LogStore.Add("Mau", 2, "子进程 stdout 读取失败: " + ex.Message, "PROC");
             }
             try
             {
                 result.Stderr = errTask.GetAwaiter().GetResult();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 读取异常不掩盖主结果
+                LogStore.Add("Mau", 2, "子进程 stderr 读取失败: " + ex.Message, "PROC");
             }
             result.Exited = exited;
             if (exited)

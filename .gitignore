@@ -1,5 +1,5 @@
 ﻿# Mau .gitignore
-# .NET 8 build artifacts and IDE temp files
+# .NET 10 build artifacts and IDE temp files
 
 # === Build output ===
 [Bb]in/

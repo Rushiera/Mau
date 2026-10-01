@@ -60,11 +60,14 @@ function chatRunning() {
 function chatOnSessionState(d) {
     // 运行态推送——本猫运行态块（服务端变化或新连接首帧才推；状态条唯一数据源——空闲期零推送、前端零轮询）
     if (!d || !d.sessionId) { return; }
+    var prevState = chatRunState.state || '';
     chatRunState = {
         state: d.runState || '',
         ms: d.runMs || {},
         requests: d.requests || 0
     };
+    // A95——live think 块生命周期归前端：运行态离开 think 即销毁（与后续接 reply/tool/run/link/idle 无关）
+    if (prevState === 'think' && chatRunState.state !== 'think') { chatClearLiveThink(); }
     chatRenderStatus();
     // 进行中标记——全局态唯一出入口（态变化即同步气泡外观；与状态条/桌宠同源同时刻）
     chatSyncRunningMarks();
@@ -96,7 +99,12 @@ function chatRenderStatus() {
         html += '<span class="st total">⏱ All ' + chatFmtMs(totalMs) + '</span>';
     }
     if (chatRunState.requests > 0) {
-        html += '<span class="st req">🔄 Api ' + chatRunState.requests + '</span>';
+        // A114 平均首 token 延迟——link 累计 ÷ 请求次数（实时态：含当前进行中的 link 等待）
+        var apiText = '🔄 Api ' + chatRunState.requests;
+        if ((ms.link || 0) > 0) {
+            apiText += '（' + (ms.link / 1000 / chatRunState.requests).toFixed(2) + ' s /use）';
+        }
+        html += '<span class="st req">' + apiText + '</span>';
     }
     bar.innerHTML = html;
     // 桌宠——状态渲染汇聚点回调（chat-pet.js；未加载时静默跳过）
@@ -113,6 +121,9 @@ function chatSetState(s) {
     // P6 中止——停止按钮仅 sending 可用（不常用按钮：流式/工具执行中才可点）
     var psb = document.getElementById('chatPause');
     if (psb) { psb.disabled = (s !== 'sending'); }
+    // 继续——仅 idle 可用（与停止互斥；「前文非空」由后端复核并出声）
+    var ctb = document.getElementById('chatContinue');
+    if (ctb) { ctb.disabled = (s !== 'idle'); }
 }
 
 function chatScrollBottom(force) {
@@ -187,6 +198,22 @@ function chatSyncRunningMarks() {
         c.bubble.classList.remove('live');
         if (cls.length > 0) { c.bubble.classList.add(cls); }
     }
+}
+
+// A95——live think 块统一清理出口（预览面自持）：think 态结束即销毁，与后续接 reply/tool/run/link/idle 无关。
+// 动机：live 块是前端私有实体（不落盘、不进视图层、后端不感知）——生命周期必须由前端自持；
+//      旧实现把销毁绑在后端 reason 整块的 replaceSeq 命中上，事件缺席（无效请求无内容可收口）即永久残留。
+// 幂等——无 live 块时空操作；调用面 = 运行态离开 think + 终态清理点（error / chatdone / paused / 发送失败）。
+function chatClearLiveThink() {
+    for (var k in viewContainers) {
+        var c = viewContainers[k];
+        if (c && c.type === 'thinkstream') {
+            c.bubble.classList.remove('live');
+            chatRemoveBubble(c.bubble);
+            delete viewContainers[k];
+        }
+    }
+    chatLiveSyncTimer();
 }
 
 // ============ A84/A85——活跃块计时表（纯前端自算 · 1 秒粒度 · 单一表驱动两类块） ============
@@ -456,23 +483,32 @@ function chatOnToolCard(seq, replaceSeq, payload) {
 }
 
 // A55——重试气泡文本（渲染单例内文本面）；A86——resolved 不覆盖报错信息：原文保留 + 追加「已恢复」
+// A94——三态齐备：retrying（⟳ 重试中 N/3 · 原因）/ resolved（原文 + ✓ 已恢复）/ failed（原文 + ⚠ 重试失败）
 function chatRetryText(payload) {
     var state = payload.state || 'retrying';
     var attempt = payload.attempt || '';
     var max = payload.max || '';
     var reason = payload.text || '';
-    var base = '⟳ 重试中 ' + attempt + (max ? '/' + max : '') + (reason ? ' · ' + reason : '');
-    if (state === 'resolved') {
-        return base + ' ✓ 已恢复';
+    var bar = attempt + (max ? '/' + max : '');
+    var tail = reason ? (' · ' + reason) : '';
+    if (state === 'failed') {
+        return '⚠ 重试失败 ' + bar + tail;
     }
-    return base;
+    return '⟳ 重试中 ' + bar + tail + (state === 'resolved' ? ' ✓ 已恢复' : '');
+}
+
+// A94——retry 气泡状态类单一出口（resolved / failed 终态；retrying 无附加类）
+function chatApplyRetryState(bubble, payload) {
+    var state = payload.state || 'retrying';
+    bubble.classList.toggle('resolved', state === 'resolved');
+    bubble.classList.toggle('failed', state === 'failed');
 }
 
 // A55——重试渲染单例：新建重试气泡（历史重建与实时事件共用同一渲染面）
 function chatRenderRetry(payload) {
     var b = chatBubble('assistant', 'retry');
     b.textContent = chatRetryText(payload);
-    if ((payload.state || 'retrying') === 'resolved') { b.classList.add('resolved'); }
+    chatApplyRetryState(b, payload);
     return b;
 }
 
@@ -487,7 +523,7 @@ function chatOnRetry(seq, replaceSeq, payload) {
     }
     if (existing) {
         existing.bubble.textContent = chatRetryText(payload);
-        if ((payload.state || 'retrying') === 'resolved') { existing.bubble.classList.add('resolved'); }
+        chatApplyRetryState(existing.bubble, payload);
     } else {
         var b = chatRenderRetry(payload);
         // 记录用 seq——后续 replaceSeq 指向本次 seq 实现原位更新
@@ -509,6 +545,7 @@ function chatOnError(payload) {
     chatKeepAlive();
     chatPhaseReset();
     var text = payload.text || 'LLM 错误';
+    chatClearLiveThink();   // A95——live 块清理（错误路径兜底：不依赖后端 reason 事件是否推得到）
     for (var k in viewContainers) {
         var c = viewContainers[k];
         if (c && c.bubble) {
@@ -526,16 +563,21 @@ function chatOnControl(payload) {
     if (type === 'usage') {
         // 2026-09-22：本轮 Token 统计已从状态条撤除（Token 信息归 roundsum 轮末块）——此处只保留前文长度实时化
         var u = payload.data || {};
+        var infoText = chatInfo.textContent || '';
+        // A115 前文条数实时化——每次 API 请求返回后按真实条数更新（与 tokens 同节奏，不等轮结束）
+        if (u.count !== undefined && infoText.indexOf(' 条 |') >= 0) {
+            infoText = infoText.replace(/前文 [\d.]+[kKmM]? 条/, '前文 ' + chatFmtCount(u.count) + ' 条');
+        }
         // Q1 顶端计数实时化——每次 API 请求返回后按真实 context（单次前文 token）更新前文长度，不等轮结束
         if (u.context !== undefined && u.context > 0) {
             var newCtx = '前文 ' + chatFmtCount(u.context) + ' tokens';
-            var oldCtx = chatInfo.textContent;
-            if (oldCtx.indexOf('前文 ') >= 0) {
-                chatInfo.textContent = oldCtx.replace(/前文 [\d.]+[kKmM]? tokens/, newCtx);
+            if (infoText.indexOf('前文 ') >= 0) {
+                infoText = infoText.replace(/前文 [\d.]+[kKmM]? tokens/, newCtx);
             } else {
-                chatInfo.textContent = oldCtx + ' | ' + newCtx;
+                infoText = infoText + ' | ' + newCtx;
             }
         }
+        chatInfo.textContent = infoText;
     } else if (type === 'session_reset') {
         // 会话重置——session.new 清前文后显式信号（问题一修复：消除本地抢跑竞态；收到即清空再拉 history）
         chatPendingReset = false;
@@ -548,6 +590,7 @@ function chatOnControl(payload) {
     } else if (type === 'chatdone') {
         // 会话终态——seal 全部流式容器 + 未回填兜底已由 toolcard 整块覆盖 + 恢复 idle
         chatPhaseReset();
+        chatClearLiveThink();   // A95——live 块清理（终态兜底）
         for (var k2 in viewContainers) {
             var c2 = viewContainers[k2];
             if (c2 && c2.bubble) {
@@ -575,6 +618,7 @@ function chatOnControl(payload) {
     } else if (type === 'paused') {
         // P6 中止——独立气泡提示（宿主文本；单向数据流：前端只渲染）+ seal 全部流式容器 + 复位 idle（已生成内容保留显示）
         chatPhaseReset();
+        chatClearLiveThink();   // A95——live 块清理（中止兜底：seal 无内容时后端不推 reason 事件）
         for (var kp in viewContainers) {
             var cp = viewContainers[kp];
             if (cp && cp.bubble) {
@@ -613,6 +657,7 @@ function chatFail(msg) {
     // E 系列——失败：四态状态条清零隐藏
     chatPhaseReset();
     // 发送失败——seal 全部流式容器 + 独立错误气泡 + 恢复 idle
+    chatClearLiveThink();   // A95——live 块清理（发送失败兜底）
     for (var k in viewContainers) {
         var c = viewContainers[k];
         if (c && c.bubble) {
@@ -828,6 +873,28 @@ function chatPause() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'cat.pause' })
     }).catch(function (e) { uiWarn('停止指令投递', e); });
+}
+
+// 继续——cat.continue 指令（不追加消息：直接用当前前文再发一次 LLM 请求；仅 idle 可用，与停止互斥）
+// 与 chatSend 的 idle 起始面同构（清阶段残留 + 运行态拉取 + sending + 守护），差别仅在载荷与不产生 user 气泡
+function chatContinue() {
+    if (chatState !== 'idle') { return; }
+    viewContainers = {};
+    chatRunStart();
+    chatSetState('sending');
+    chatKeepAlive();
+    fetch('/api/v1/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'cat.continue' })
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok && d.error) {
+                chatFail('继续失败: ' + d.error);
+            }
+        })
+        .catch(function (err) { chatFail('请求失败: ' + err); });
 }
 
 // 刷新——纯前端重建界面气泡（重新拉历史渲染，不发指令）

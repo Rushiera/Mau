@@ -9,6 +9,7 @@ namespace CatHome4.Core.Tests
     /// <summary>
     /// 待识别命令表测试（Admin 域覆盖率采集聚合面）——合并计数 / 样本去重与截断 / 超限裁剪 / 落盘往返。
     /// </summary>
+    [Collection("GlobalToolState")]
     public class CmdUnknownTests
     {
         /// <summary>

@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Mau.Runtime;
+using CatHome4.Contracts;
 
 namespace CatHome4.QQ
 {
@@ -157,6 +158,13 @@ namespace CatHome4.QQ
                     {
                         accText = acc.ToString();
                     }
+                    // A111——转发锚点（末次消费块哈希 + 位置）：块序变更后游标重定位依据；缺失写 null（回落块数比对）
+                    QqAnchor anchor;
+                    string anchorJson = "null";
+                    if (_anchors.TryGetValue(key, out anchor) && anchor != null)
+                    {
+                        anchorJson = "{\"hash\":" + JsonSerializer.Serialize(anchor.Hash) + ",\"pos\":" + anchor.Position.ToString() + "}";
+                    }
                     if (!first)
                     {
                         sb.Append(",");
@@ -164,7 +172,7 @@ namespace CatHome4.QQ
                     first = false;
                     sb.Append(JsonSerializer.Serialize(key) + ":{\"cursor\":" + kv.Value.ToString() + ",\"imm\":" + imm.ToString()
                         + ",\"calls\":" + calls.ToString() + ",\"acc\":" + JsonSerializer.Serialize(accText) + ",\"renew\":"
-                        + (_renewed.ContainsKey(key) ? "true" : "false") + ",\"src\":" + srcJson + "}");
+                        + (_renewed.ContainsKey(key) ? "true" : "false") + ",\"anchor\":" + anchorJson + ",\"src\":" + srcJson + "}");
                 }
                 sb.Append("}}");
                 File.WriteAllText(_statePath, sb.ToString(), Encoding.UTF8);
@@ -191,7 +199,8 @@ namespace CatHome4.QQ
         }
         /// <summary>
         /// 转发态加载与续接——启动时调用（此时前文/视图已恢复，避免读到半成品块数）。
-        /// 续接判据（防重放）：块数 == 落盘游标 → 直接续接；块数不等 → 保守前看（不追发历史；/new 清空另走 Tick 既有归零分支）。
+        /// 续接判据（防重放，A111）：优先按锚点内容哈希定位（命中 = 精确续接——块数增长但前缀一致同样命中）；
+        /// 锚点未命中 → 保守前看（游标 = 当前块数，不追发历史）；锚点缺失（旧快照）→ 回落块数比对（块数 == 游标 → 直接续接）。
         /// 残留来源恢复入队——重启后回执轮的回复据此转发回 QQ。
         /// </summary>
         /// <param name="targets">当前绑定目标集合</param>
@@ -234,7 +243,7 @@ namespace CatHome4.QQ
                             }
                         }
                     }
-                    // ② 每猫——游标续接 + 残留来源入队 + 轮状态恢复（即时计数 / 最终回复池 / 轮内预算）
+                    // ② 每猫——游标续接（A111 锚点判据）+ 残留来源入队 + 轮状态恢复（即时计数 / 最终回复池 / 轮内预算）
                     JsonElement cats;
                     if (!root.TryGetProperty("cats", out cats) || cats.ValueKind != JsonValueKind.Object)
                     {
@@ -263,8 +272,12 @@ namespace CatHome4.QQ
                             cursor = numEl.GetInt32();
                         }
                         QqViewItem[] items = tg.GetViewItems != null ? tg.GetViewItems() : new QqViewItem[0];
-                        int resolved = cursor == items.Length ? cursor : items.Length;
+                        // A111——续接判据（防重放）：① 锚点命中 → 精确续接（块数增长但前缀一致同样命中，落点 = 命中位置 + 1）
+                        // ② 锚点未命中 → 保守前看（不追发历史，/last 兜底）③ 锚点缺失（旧快照）→ 回落块数比对（块数 == 游标 → 直接续接）
+                        string how = "";
+                        int resolved = ComputeCursor(cursor, null, ReadAnchor(c), items, out how);
                         _cursors[p.Name] = resolved;
+                        UpdateAnchor(p.Name, items, resolved);
                         JsonElement src;
                         if (c.ValueKind == JsonValueKind.Object && c.TryGetProperty("src", out src) && src.ValueKind == JsonValueKind.Object)
                         {
@@ -304,7 +317,7 @@ namespace CatHome4.QQ
                         {
                             _accumulated[p.Name] = new System.Text.StringBuilder(accText);
                         }
-                        LogStore.Add("QQBot", 1, "转发态续接 | " + p.Name + " 游标 " + cursor.ToString() + " → " + resolved.ToString() + "（块数 " + items.Length.ToString() + "）", "QQBOT");
+                        LogStore.Add("QQBot", 1, "转发态续接 | " + p.Name + " 游标 " + cursor.ToString() + " → " + resolved.ToString() + "（块数 " + items.Length.ToString() + " · " + how + "）", "QQBOT");
                     }
                 }
             }
@@ -875,10 +888,8 @@ namespace CatHome4.QQ
             }
             return null;
         }
-        /// <summary>
-        /// 构建 /last 回复（A58）——取绑定猫（1:1 唯一）视图层最后一条 text 块，正文不截断。
-        /// 超长由发送面（SendLastReply）按 MD 结构切分，最多 4 段独立发送（末尾段优先）。
-        /// </summary>
+        /// <summary>构建 /last 回复（A58）——取绑定猫（1:1 唯一）视图层最后一条 text 块，正文不截断。
+        /// 超长由发送面（SendLastReply）按 MD 结构切分，最多 4 段独立发送（末尾段优先）；文件标记（A112）同样由发送面扫描剥离并经文件通道发送。</summary>
         /// <param name="qqBotId">Bot 配置身份——1:1 唯一绑定猫</param>
         /// <returns>回复正文（含【猫名：】前缀）</returns>
         private static string BuildLastText(Guid qqBotId)
@@ -1171,6 +1182,8 @@ namespace CatHome4.QQ
         }
         /// <summary>游标——猫 Key → 已处理消息数（R2.3.5 只转发启用后新块）</summary>
         private static readonly Dictionary<string, int> _cursors = new Dictionary<string, int>();
+        /// <summary>转发锚点——猫 Key → 末次消费块的内容哈希 + 位置（A111：块序变更后游标重定位依据；随游标同批落盘）</summary>
+        private static readonly Dictionary<string, QqAnchor> _anchors = new Dictionary<string, QqAnchor>();
         /// <summary>
         /// 事件泵——WS 线程入队事件统一在主线程消费（R6-P1-01 单线程化）。
         /// source 事件 → 注入来源入队；reset 事件 → 轮状态重置（即时计数归零 + 最终回复池清空 + 轮内预算归零）。
@@ -1200,7 +1213,7 @@ namespace CatHome4.QQ
                 SaveForwardState();
             }
         }
-        /// <summary>输出转发轮询——主线程每帧调用（宿主主循环接入）。视图块游标增量：text 块 → 即时转发 ≤2（超长块入池）/ 其余入池；roundsum 块 → 轮结束哨兵（最终回复池按 MD 结构切分 ≤2 段 + 出队来源 + 重置）。无 qqbot 来源（前端对话）不转发——被动机制。</summary>
+        /// <summary>输出转发轮询——主线程每帧调用（宿主主循环接入）。视图块游标增量：text 块 → 即时转发 ≤2（超长块入池）/ 其余入池；roundsum 块 → 轮结束哨兵（最终回复池按 MD 结构切分 ≤2 段 + 出队来源 + 重置）。无 qqbot 来源（前端对话）不转发——被动机制。A111——推进前先做游标漂移校正（块数回退 / 锚点位置内容不符 → 与块序变更通知共用同一重定位实现），推进后锚点随游标同批落盘。</summary>
         public static void Tick()
         {
             if (!_started)
@@ -1219,12 +1232,23 @@ namespace CatHome4.QQ
                 QqTarget tg = targets[i];
                 QqViewItem[] items = tg.GetViewItems();
                 int count = items.Length;
-                int cursor = GetCursor(tg.Key);
-                if (count < cursor)
+                // timeback 活跃期——不计入转发（design-ch4-timeback §11.1）：游标跟随但不消费（取证过程不外发、
+                // 来源与轮状态保留至结论轮）；回卷不改变块数语义（视图层零重建，游标天然连续）
+                if (tg.IsTimebackActive != null && tg.IsTimebackActive())
                 {
-                    // 会话重建（/new 清空后视图块数回退）——游标归零重新扫描
-                    cursor = 0;
-                    _cursors[tg.Key] = 0;
+                    if (GetCursor(tg.Key) != count)
+                    {
+                        _cursors[tg.Key] = count;
+                        UpdateAnchor(tg.Key, items, count);
+                        SaveForwardState();
+                    }
+                    continue;
+                }
+                int cursor = GetCursor(tg.Key);
+                // A111——游标漂移校正：块数回退或锚点位置内容不符 → 统一重定位（与块序变更通知共用同一实现）
+                if (count < cursor || AnchorDrifted(tg.Key, items, count))
+                {
+                    cursor = RelocateCursor(tg.Key, items, null, "Tick 漂移");
                 }
                 if (count <= cursor)
                 {
@@ -1253,11 +1277,13 @@ namespace CatHome4.QQ
                     }
                     else if (it.RenderType == "text" && it.Content.Length > 0)
                     {
-                        // 即时转发 ≤3；超限累计到轮末汇总
+                        // 即时转发 ≤2（短块）；超长块与超额块累计到轮末最终回复池
                         ForwardText(tg, it.Content);
                     }
                 }
                 _cursors[tg.Key] = count;
+                // A111——锚点随游标同批推进（块序变更 / 重启续接的重定位依据）
+                UpdateAnchor(tg.Key, items, count);
                 // A33——游标推进即落盘（T4 收尾不调 QQ Stop，退出前 flush 不可依赖）
                 SaveForwardState();
             }
@@ -1271,6 +1297,251 @@ namespace CatHome4.QQ
                 return c;
             }
             return 0;
+        }
+
+        /// <summary>
+        /// 块序变更通知入口（A111）——视图层发出（清除 / 重建 / 轮统计清理 / 区间转废弃），转发面据此立即校正游标。
+        /// 只对已建立转发态的猫生效（未启动 / 未加载转发态 / 无游标的猫 = 零动作，防误伤新猫与首次启动）。
+        /// </summary>
+        /// <param name="catKey">猫 Key（转发态游标键）</param>
+        /// <param name="change">块序变更区间（合并数组坐标，变更前）</param>
+        public static void NotifyBlocksReordered(string catKey, ViewOrderChange change)
+        {
+            if (!_started || !_stateLoaded || change == null)
+            {
+                return;
+            }
+            if (catKey == null || catKey.Length == 0)
+            {
+                return;
+            }
+            if (!_cursors.ContainsKey(catKey))
+            {
+                return;
+            }
+            QqTarget tg = FindTarget(catKey);
+            if (tg == null || tg.GetViewItems == null)
+            {
+                return;
+            }
+            QqViewItem[] items = tg.GetViewItems();
+            RelocateCursor(catKey, items, change, "块序变更");
+        }
+
+        /// <summary>取绑定目标——按猫 Key 从收集面查找（通知入口用；null=该猫未绑定 qqbot）</summary>
+        private static QqTarget FindTarget(string catKey)
+        {
+            if (_collector == null)
+            {
+                return null;
+            }
+            List<QqTarget> all = _collector.CollectAll();
+            for (int i = 0; i < all.Count; i = i + 1)
+            {
+                if (all[i].Key == catKey)
+                {
+                    return all[i];
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 游标重定位——块序变更 / Tick 漂移的统一校正出口（A111）：计算新游标 → 推进锚点 → 留痕 → 落盘。
+        /// </summary>
+        /// <param name="catKey">猫 Key</param>
+        /// <param name="items">当前视图块数组</param>
+        /// <param name="change">块序变更区间（null=Tick 漂移检测——按锚点定位）</param>
+        /// <param name="trigger">触发来源（留痕用：块序变更 / Tick 漂移）</param>
+        /// <returns>校正后的游标</returns>
+        private static int RelocateCursor(string catKey, QqViewItem[] items, ViewOrderChange change, string trigger)
+        {
+            int cursor = GetCursor(catKey);
+            QqAnchor anchor;
+            if (!_anchors.TryGetValue(catKey, out anchor))
+            {
+                anchor = null;
+            }
+            string how = "";
+            int resolved = ComputeCursor(cursor, change, anchor, items, out how);
+            _cursors[catKey] = resolved;
+            UpdateAnchor(catKey, items, resolved);
+            LogStore.Add("QQBot", 1, "转发游标校正（" + trigger + "） | " + catKey + " | " + how + " | " + cursor.ToString() + " → " + resolved.ToString() + "（块数 " + CountOf(items).ToString() + "）", "QQBOT");
+            SaveForwardState();
+            return resolved;
+        }
+
+        /// <summary>块数——空数组安全取值</summary>
+        private static int CountOf(QqViewItem[] items)
+        {
+            if (items == null)
+            {
+                return 0;
+            }
+            return items.Length;
+        }
+
+        /// <summary>
+        /// 游标校正计算（A111 纯函数——可单测）：① 变更区间完全在游标之前 → 位置平移（游标 += 新增 − 移除）；
+        /// ② 区间跨越游标 / 无区间（Tick 漂移）→ 按内容哈希定位末次消费块（命中 → 命中位置 + 1，精确续接）；
+        /// ③ 锚点未命中 / 缺失 → 保守前看（游标 = 当前块数——不追发历史，尾块由 /last 兜底）。
+        /// </summary>
+        /// <param name="cursor">当前游标</param>
+        /// <param name="change">块序变更区间（null=无区间信息）</param>
+        /// <param name="anchor">末次消费块锚点（null=无锚点）</param>
+        /// <param name="items">当前视图块数组</param>
+        /// <param name="how">输出：命中的判据（留痕用）</param>
+        /// <returns>校正后的游标（夹取到 [0, 块数]）</returns>
+        internal static int ComputeCursor(int cursor, ViewOrderChange change, QqAnchor anchor, QqViewItem[] items, out string how)
+        {
+            int count = CountOf(items);
+            // [判据1] 区间完全在游标之前——纯位置平移（前缀区未动，游标随之平移；新增块插在同一位置同样计入）
+            if (change != null && (change.RemovedCount > 0 || change.AddedCount > 0)
+                && change.From + change.RemovedCount <= cursor)
+            {
+                int shifted = cursor - change.RemovedCount + change.AddedCount;
+                how = "区间平移（起点 " + change.From.ToString() + " / 移除 " + change.RemovedCount.ToString() + " / 新增 " + change.AddedCount.ToString() + "）";
+                return ClampCursor(shifted, count);
+            }
+            // [判据2] 锚点定位——末次消费块的哈希在当前数组中仍在（位置可变）：命中即精确续接
+            if (anchor != null && anchor.Hash != null && anchor.Hash.Length > 0 && items != null)
+            {
+                int hit = FindAnchor(items, anchor);
+                if (hit >= 0)
+                {
+                    how = "锚点定位（哈希 " + anchor.Hash + " → 位置 " + hit.ToString() + "）";
+                    return ClampCursor(hit + 1, count);
+                }
+                how = "保守前看（锚点未命中，哈希 " + anchor.Hash + "）";
+                return count;
+            }
+            // [判据3] 无锚点（旧快照 / 首次）——保守前看（块数 == 游标时与直接续接等价）
+            how = "保守前看（无锚点）";
+            return count;
+        }
+
+        /// <summary>锚点定位——按内容哈希查块（同哈希多命中时取与记录位置最近者；-1=未命中）</summary>
+        /// <param name="items">当前视图块数组</param>
+        /// <param name="anchor">锚点（哈希 + 记录位置）</param>
+        /// <returns>命中下标；-1=未命中</returns>
+        private static int FindAnchor(QqViewItem[] items, QqAnchor anchor)
+        {
+            int hit = -1;
+            int bestDist = -1;
+            for (int i = 0; i < items.Length; i = i + 1)
+            {
+                if (items[i] == null || items[i].Hash != anchor.Hash)
+                {
+                    continue;
+                }
+                int dist = i - anchor.Position;
+                if (dist < 0)
+                {
+                    dist = -dist;
+                }
+                if (hit < 0 || dist < bestDist)
+                {
+                    hit = i;
+                    bestDist = dist;
+                }
+            }
+            return hit;
+        }
+
+        /// <summary>游标夹取——限定在 [0, 块数]（越界安全）</summary>
+        /// <param name="value">待夹取值</param>
+        /// <param name="count">块数上界</param>
+        /// <returns>夹取后的游标</returns>
+        private static int ClampCursor(int value, int count)
+        {
+            if (value < 0)
+            {
+                return 0;
+            }
+            if (value > count)
+            {
+                return count;
+            }
+            return value;
+        }
+
+        /// <summary>
+        /// 锚点推进——记录末次消费块（游标 − 1）的哈希与位置（A111：块序变更后的重定位依据）；
+        /// 游标 0 / 越界 / 块无哈希 → 清锚点（无可定位内容）。
+        /// </summary>
+        /// <param name="catKey">猫 Key</param>
+        /// <param name="items">当前视图块数组</param>
+        /// <param name="cursor">消费边界（已消费块数）</param>
+        private static void UpdateAnchor(string catKey, QqViewItem[] items, int cursor)
+        {
+            if (items == null || cursor <= 0 || cursor > items.Length)
+            {
+                _anchors.Remove(catKey);
+                return;
+            }
+            QqViewItem last = items[cursor - 1];
+            if (last == null || last.Hash == null || last.Hash.Length == 0)
+            {
+                _anchors.Remove(catKey);
+                return;
+            }
+            QqAnchor anchor = new QqAnchor();
+            anchor.Hash = last.Hash;
+            anchor.Position = cursor - 1;
+            _anchors[catKey] = anchor;
+        }
+
+        /// <summary>锚点漂移判定——记录位置的块哈希与当前不符（块序变更未走通知路径时的兜底探测；无锚点 = 未漂移）</summary>
+        /// <param name="catKey">猫 Key</param>
+        /// <param name="items">当前视图块数组</param>
+        /// <param name="count">当前块数</param>
+        /// <returns>true=已漂移（需重定位）</returns>
+        private static bool AnchorDrifted(string catKey, QqViewItem[] items, int count)
+        {
+            QqAnchor anchor;
+            if (!_anchors.TryGetValue(catKey, out anchor) || anchor == null)
+            {
+                return false;
+            }
+            if (anchor.Position < 0 || anchor.Position >= count)
+            {
+                return true;
+            }
+            QqViewItem it = items[anchor.Position];
+            if (it == null)
+            {
+                return true;
+            }
+            return it.Hash != anchor.Hash;
+        }
+
+        /// <summary>读取落盘锚点——{hash, pos}（缺失 / 非对象 / 空哈希 → null：续接回落块数比对判据）</summary>
+        /// <param name="cat">落盘猫条目 JsonElement</param>
+        /// <returns>锚点；无有效锚点 null</returns>
+        private static QqAnchor ReadAnchor(JsonElement cat)
+        {
+            JsonElement el;
+            if (cat.ValueKind != JsonValueKind.Object || !cat.TryGetProperty("anchor", out el) || el.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+            string hash = ReadJsonStr(el, "hash");
+            if (hash.Length == 0)
+            {
+                return null;
+            }
+            QqAnchor anchor = new QqAnchor();
+            anchor.Hash = hash;
+            JsonElement numEl;
+            if (el.TryGetProperty("pos", out numEl) && numEl.ValueKind == JsonValueKind.Number)
+            {
+                anchor.Position = numEl.GetInt32();
+            }
+            else
+            {
+                anchor.Position = -1;
+            }
+            return anchor;
         }
         /// <summary>
         /// 发送回复（被动优先 + 超窗降级）——首次失败且携带 msg_id 时，清 msg_id 走主动消息重试一次（design-qqbot-forward §六）。
@@ -1400,9 +1671,30 @@ namespace CatHome4.QQ
             }
         }
         /// <summary>
-        /// 转发发送统一出口（A58）——提取文件标记 → 正文加【猫名：】前缀 → MD 结构切分 → 逐段发送 → 文件逐条发送。
-        /// 段数超上限丢弃尾部 + L2 留痕；每次被动调用占轮内预算（budgetKey 空 = 不占，指令通道独立配额）。
+        /// 文件发送段（A112 统一出口）——逐条经文件通道发送（仅私聊；失败错误文本由 SendFileToTarget 嵌回消息渠道）。
+        /// 转发路与 /last 共用本实现——文件标记扫描（QqFileMarker）与文件发送各只有一处实现。
         /// </summary>
+        /// <param name="tg">绑定目标（空=不发送）</param>
+        /// <param name="source">来源</param>
+        /// <param name="files">文件路径列表</param>
+        /// <param name="budgetKey">预算键（猫标识；空=不占预算——调用方已按额度规划）</param>
+        private static void SendFilesToTarget(QqTarget tg, QqSource source, List<string> files, string budgetKey)
+        {
+            if (tg == null || files == null)
+            {
+                return;
+            }
+            for (int i = 0; i < files.Count; i = i + 1)
+            {
+                if (budgetKey.Length > 0 && !TakeRoundBudget(budgetKey, "file"))
+                {
+                    return;
+                }
+                SendFileToTarget(tg, source, files[i]);
+            }
+        }
+        /// <summary>转发发送统一出口（A58 / A112）——提取文件标记 → 正文加【猫名：】前缀 → MD 结构切分 → 逐段发送 → 文件逐条发送（经文件发送统一出口）。
+        /// 段数超上限丢弃尾部 + L2 留痕；每次被动调用占轮内预算（budgetKey 空 = 不占，指令通道独立配额）。</summary>
         /// <param name="tg">绑定目标</param>
         /// <param name="source">来源</param>
         /// <param name="text">回复正文</param>
@@ -1441,20 +1733,12 @@ namespace CatHome4.QQ
                     SendSegment(tg, source, seg);
                 }
             }
-            // [段3] 文件逐条发送（仅私聊通道；失败错误文本由 SendFileToTarget 嵌回消息渠道）
-            for (int i = 0; i < files.Count; i = i + 1)
-            {
-                if (budgetKey.Length > 0 && !TakeRoundBudget(budgetKey, "file"))
-                {
-                    break;
-                }
-                SendFileToTarget(tg, source, files[i]);
-            }
+            // [段3] 文件逐条发送（A112——统一出口；预算与文本段共用官方 4 次上限）
+            SendFilesToTarget(tg, source, files, budgetKey);
         }
-        /// <summary>
-        /// /last 回复发送（A58）——按 MD 结构切分，最多 4 段独立发送；超出取末尾段（丢弃开头段 + L2 留痕）。
-        /// 不占转发预算（指令通道独立 msg_id 配额）；任一段失败停止后续 + L2 留痕。
-        /// </summary>
+        /// <summary>/last 回复发送（A58 / A112）——先扫描剥离文件标记（标记行不进正文，文件经文件通道发送，与转发路共用同一实现）；
+        /// 正文按 MD 结构切分，最多 4 段独立发送；超出取末尾段（丢弃开头段 + L2 留痕）。
+        /// 文本段与文件发送共用同一被动调用上限（planner 按剩余额度分配，执行期不再判定）；不占转发轮预算（指令通道独立 msg_id 配额）；任一段失败停止后续 + L2 留痕。</summary>
         /// <param name="qqBotId">Bot 配置身份</param>
         /// <param name="source">来源</param>
         /// <param name="body">回复正文（含【猫名：】前缀）</param>
@@ -1465,23 +1749,44 @@ namespace CatHome4.QQ
             {
                 return;
             }
-            List<string> parts = QqTextSplitter.Split(body, MaxChunkChars);
-            if (parts.Count == 0)
+            // A112——文件标记扫描面统一：标记行剥离（不被当普通文本发出），文件经文件通道发送（与转发路同一实现）
+            List<string> files = QqFileMarker.Extract(body, out string textBody);
+            QqLastReplyPlan plan = QqLastReplyPlanner.Plan(textBody, files, MaxChunkChars, MaxLastParts);
+            if (plan.DroppedHeadSegments > 0)
             {
-                return;
+                LogStore.Add("QQBot", 2, "/last 段数超限（取末尾段） | 丢弃前 " + plan.DroppedHeadSegments.ToString() + " 段 | " + source.ToString(), "QQBOT");
             }
-            int from = 0;
-            if (parts.Count > MaxLastParts)
+            if (plan.DroppedFiles > 0)
             {
-                from = parts.Count - MaxLastParts;
-                LogStore.Add("QQBot", 2, "/last 段数超限（取末尾段） | " + parts.Count.ToString() + " → " + MaxLastParts.ToString() + " 段，丢弃前 " + from.ToString() + " 段 | " + source.ToString(), "QQBOT");
+                LogStore.Add("QQBot", 2, "/last 文件预算耗尽（跳过） | " + plan.DroppedFiles.ToString() + " 个 | " + source.ToString(), "QQBOT");
             }
-            for (int i = from; i < parts.Count; i = i + 1)
+            for (int i = 0; i < plan.Segments.Count; i = i + 1)
             {
-                if (!SendWithFallback(conn, source.Type, source.TargetId, parts[i], source.MsgId, true))
+                if (!SendWithFallback(conn, source.Type, source.TargetId, plan.Segments[i], source.MsgId, true))
                 {
-                    LogStore.Add("QQBot", 2, "/last 发送中断（第 " + (i - from + 1).ToString() + " 段失败） | " + source.ToString(), "QQBOT");
-                    break;
+                    LogStore.Add("QQBot", 2, "/last 发送中断（第 " + (i + 1).ToString() + " 段失败） | " + source.ToString(), "QQBOT");
+                    return;
+                }
+            }
+            // 文件发送——文本段与文件共用被动调用预算（planner 已按剩余额度截断，执行期不再判定）
+            if (plan.Files.Count > 0)
+            {
+                QqTarget tg = null;
+                if (_collector != null)
+                {
+                    List<QqTarget> targets = _collector.CollectByBot(qqBotId);
+                    if (targets.Count > 0)
+                    {
+                        tg = targets[0];
+                    }
+                }
+                if (tg == null)
+                {
+                    LogStore.Add("QQBot", 2, "/last 文件发送跳过（无绑定目标） | " + plan.Files.Count.ToString() + " 个 | " + source.ToString(), "QQBOT");
+                }
+                else
+                {
+                    SendFilesToTarget(tg, source, plan.Files, "");
                 }
             }
         }
@@ -1575,6 +1880,9 @@ namespace CatHome4.QQ
         /// <summary>会话空闲判定——异常中止轮残留来源兜底清理（null=永不空闲）</summary>
         public Func<bool> IsIdle;
 
+        /// <summary>timeback 活跃判定——活跃期不计入转发（游标跟随但不消费、来源保留；null=视为不活跃）</summary>
+        public Func<bool> IsTimebackActive;
+
         /// <summary>新会话桥——触发 session.new（异步置位）+ 返回注入摘要文本（Q5 /new 指令；null=不支持）</summary>
         public Func<string> NewSession;
 
@@ -1595,5 +1903,21 @@ namespace CatHome4.QQ
 
         /// <summary>本轮结束语义——roundsum 块携带（tool=工具主动 done / stream=流式自然收尾）；其他类型空串</summary>
         public string Done;
+
+        /// <summary>块内容哈希——视图块 Hash（A111：块序变更后游标重定位的锚点；空=不可作锚）</summary>
+        public string Hash;
+    }
+
+    /// <summary>
+    /// 转发锚点——末次消费块的内容哈希 + 位置（A111）。游标是位置语义（块序一变即失真），锚点是内容语义：
+    /// 块在数组里搬家仍可按哈希找回；两者随游标同批落盘（qq-forward.json）。
+    /// </summary>
+    internal sealed class QqAnchor
+    {
+        /// <summary>块内容哈希——视图块 Hash（消息块 SHA256 十六进制 / gap_N / roundsum_N / void_N / inject_report）</summary>
+        public string Hash;
+
+        /// <summary>记录时的数组位置——同哈希多命中时取最近者（-1=无位置参考）</summary>
+        public int Position;
     }
 }

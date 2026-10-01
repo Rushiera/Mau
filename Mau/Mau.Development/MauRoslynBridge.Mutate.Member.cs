@@ -41,7 +41,7 @@ namespace Mau.Development
             return false;
         }
 
-        /// <summary>member insert——类中插入成员（position: end/before/after/after_fields；🔴 一次一成员——code 含多个成员声明即 BAD_ARGS 拒绝，不静默截断）</summary>
+        /// <summary>member insert——类中插入成员（position: end/before/after/after_fields；code 单成员 / codes 批量数组二选一——批量整批一次构树 + 一次编译预检，A92；单成员含多个声明即 BAD_ARGS 拒绝，不静默截断）</summary>
         /// <param name="args">参数</param>
         /// <param name="result">结果</param>
         /// <returns>调用完成</returns>
@@ -52,16 +52,63 @@ namespace Mau.Development
             string code = Arg(args, "code");
             string position = Arg(args, "position");
             string anchor = Arg(args, "anchor");
-            if (className.Length == 0 || code.Length == 0)
+            if (className.Length == 0)
             {
-                result = "ERR|BAD_ARGS|缺少参数 class/code";
+                result = "ERR|BAD_ARGS|缺少参数 class";
                 return false;
             }
-            int declaredMembers = CountMemberDeclarations(code);
-            if (declaredMembers > 1)
+            // [段1] 入参形态归一——code 单成员 / codes 批量数组二选一（A92；互斥在参数面拦，此处兜底）
+            List<string> codes = new List<string>();
+            JsonElement codesElement;
+            if (args.TryGetProperty("codes", out codesElement))
             {
-                result = "ERR|BAD_ARGS|code 含 " + declaredMembers + " 个成员声明——member insert 一次一成员，请分多次调用";
-                return true;
+                if (codesElement.ValueKind != JsonValueKind.Array)
+                {
+                    result = "ERR|BAD_ARGS|codes 必须是字符串数组";
+                    return false;
+                }
+                foreach (JsonElement item in codesElement.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.String)
+                    {
+                        result = "ERR|BAD_ARGS|codes 元素必须是字符串";
+                        return false;
+                    }
+                    string itemText = item.GetString();
+                    if (itemText == null)
+                    {
+                        itemText = "";
+                    }
+                    codes.Add(itemText);
+                }
+            }
+            if (codes.Count == 0)
+            {
+                if (code.Length == 0)
+                {
+                    result = "ERR|BAD_ARGS|缺少参数 code 或 codes";
+                    return false;
+                }
+                codes.Add(code);
+            }
+            bool batch = codes.Count > 1;
+            // [段2] 声明数防线——单成员路径一次一成员；批量路径每元素恰一成员（防 ParseMemberDeclaration 静默截断）
+            for (int i = 0; i < codes.Count; i = i + 1)
+            {
+                int declared = CountMemberDeclarations(codes[i]);
+                if (batch)
+                {
+                    if (declared != 1)
+                    {
+                        result = "ERR|BAD_ARGS|codes 第 " + (i + 1) + " 个元素含 " + declared + " 个成员声明——批量路径每个元素须恰一个成员声明";
+                        return true;
+                    }
+                }
+                else if (declared > 1)
+                {
+                    result = "ERR|BAD_ARGS|code 含 " + declared + " 个成员声明——member insert 一次一成员，请分多次调用";
+                    return true;
+                }
             }
             if (position.Length == 0)
             {
@@ -132,7 +179,14 @@ namespace Mau.Development
                         return true;
                     }
                     targetPart = anchorPart;
-                    insertIndex = position == "after" ? foundIndex + 1 : foundIndex;
+                    if (position == "after")
+                    {
+                        insertIndex = foundIndex + 1;
+                    }
+                    else
+                    {
+                        insertIndex = foundIndex;
+                    }
                 }
                 else
                 {
@@ -141,30 +195,43 @@ namespace Mau.Development
                 }
                 SyntaxTree foundTree = targetPart.Tree;
                 ClassDeclarationSyntax classNode = targetPart.Node;
-                // 写侧规整——行尾归一 + 规范化布局 + 基准缩进平移（规范格式是写侧责任，不依赖事后格式重整器）
+                // [段3] 成员逐个解析 + 写侧规整（行尾归一 + 规范化布局 + 基准缩进平移）——规范格式是写侧责任
                 string memberNewline = DetectNewLine(foundTree);
                 string memberIndent = classNode.Members.Count > 0 ? IndentAt(foundTree, classNode.Members[0]) : IndentAt(foundTree, classNode) + "    ";
-                MemberDeclarationSyntax? parsedMember = SyntaxFactory.ParseMemberDeclaration(NormalizeNewLineText(code, memberNewline));
-                if (parsedMember == null)
+                List<MemberDeclarationSyntax> newMembers = new List<MemberDeclarationSyntax>();
+                List<SyntaxAnnotation> insertMarks = new List<SyntaxAnnotation>();
+                for (int i = 0; i < codes.Count; i = i + 1)
                 {
-                    result = "ERR|BAD_CODE|code 不是有效的成员声明";
-                    return true;
+                    string label;
+                    if (batch)
+                    {
+                        label = "codes 第 " + (i + 1) + " 个元素";
+                    }
+                    else
+                    {
+                        label = "code";
+                    }
+                    MemberDeclarationSyntax? parsedMember = SyntaxFactory.ParseMemberDeclaration(NormalizeNewLineText(codes[i], memberNewline));
+                    if (parsedMember == null)
+                    {
+                        result = "ERR|BAD_CODE|" + label + "不是有效的成员声明";
+                        return true;
+                    }
+                    MemberDeclarationSyntax? formattedMember = SyntaxFactory.ParseMemberDeclaration(FormatNodeText(parsedMember, memberIndent, memberNewline));
+                    if (formattedMember == null)
+                    {
+                        result = "ERR|BAD_CODE|" + label + "不是有效的成员声明";
+                        return true;
+                    }
+                    SyntaxAnnotation insertMark = new SyntaxAnnotation();
+                    newMembers.Add(EnsureMemberTrailingNewLine(formattedMember, memberNewline).WithAdditionalAnnotations(insertMark));
+                    insertMarks.Add(insertMark);
                 }
-                MemberDeclarationSyntax? newMember = SyntaxFactory.ParseMemberDeclaration(FormatNodeText(parsedMember, memberIndent, memberNewline));
-                if (newMember == null)
-                {
-                    result = "ERR|BAD_CODE|code 不是有效的成员声明";
-                    return true;
-                }
-                // 落盘格式规整——尾部补换行（后续 token 的缩进前导 trivia 依赖前一 token 以换行结尾）
-                // 行号锚——插入的成员节点经 WithMembers 生成、未挂载语法树（位置从片段起点起算）
-                SyntaxAnnotation insertMark = new SyntaxAnnotation();
-                newMember = EnsureMemberTrailingNewLine(newMember, memberNewline).WithAdditionalAnnotations(insertMark);
-                ClassDeclarationSyntax newClassNode = classNode.WithMembers(classNode.Members.Insert(insertIndex, newMember));
+                // [段4] 整批一次构树 + 一次编译预检——互相引用的成组成员同批可见（A92 痛点：单成员预检必报缺名）
+                ClassDeclarationSyntax newClassNode = classNode.WithMembers(classNode.Members.InsertRange(insertIndex, newMembers));
                 SyntaxNode root = foundTree.GetRoot();
                 SyntaxNode newRoot = root.ReplaceNode(classNode, newClassNode);
                 SyntaxTree newTree = CreateTreeFromRoot(foundTree, newRoot);
-                // 编译验证——有新增错误回滚
                 List<string> newErrors;
                 CSharpCompilation trial = (CSharpCompilation)cache.Compilation.ReplaceSyntaxTree(foundTree, newTree);
                 if (!ValidateNoNewErrors(cache.Compilation, trial, out newErrors))
@@ -185,26 +252,56 @@ namespace Mau.Development
                 cache.Stamps[filePath] = SnapshotOf(filePath);
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
-                // P3-4：返回落盘行号区间——行号基准 = 完整文件树上的 attached 节点（类片段 / 未挂载节点给出的都是片段相对行号）
-                // 结构化返回（2026-09-18）：JSON 元数据头（正文由前端按字段生成）
-                SyntaxNode insertedMember;
-                if (!TryResolveAnnotated(newTree, insertMark, out insertedMember))
+                // [段5] 结构化返回——行号基准 = 完整文件树上的 attached 节点（插入节点未挂载，Span 从片段起点起算）
+                string relFile = RelativeToProject(cache, filePath);
+                if (!batch)
                 {
-                    result = "ERR|LINE_BASE|插入后节点定位失败——修改已落盘但返回行号不可信: " + className;
+                    SyntaxNode insertedMember;
+                    if (!TryResolveAnnotated(newTree, insertMarks[0], out insertedMember))
+                    {
+                        result = "ERR|LINE_BASE|插入后节点定位失败——修改已落盘但返回行号不可信: " + className;
+                        return true;
+                    }
+                    Dictionary<string, object> miMeta = new Dictionary<string, object>();
+                    miMeta["op"] = "insert";
+                    miMeta["class"] = className;
+                    miMeta["file"] = relFile;
+                    miMeta["start"] = newTree.GetText().Lines.GetLineFromPosition(insertedMember.FullSpan.Start).LineNumber + 1;
+                    miMeta["end"] = insertedMember.GetLocation().GetLineSpan().EndLinePosition.Line + 1;
+                    miMeta["kind"] = newMembers[0].GetType().Name;
+                    if (writeNote.Length > 0)
+                    {
+                        miMeta["writeNote"] = writeNote;
+                    }
+                    result = MetaHead("cs-member", true, miMeta);
                     return true;
                 }
-                Dictionary<string, object> miMeta = new Dictionary<string, object>();
-                miMeta["op"] = "insert";
-                miMeta["class"] = className;
-                miMeta["file"] = RelativeToProject(cache, filePath);
-                miMeta["start"] = newTree.GetText().Lines.GetLineFromPosition(insertedMember.FullSpan.Start).LineNumber + 1;
-                miMeta["end"] = insertedMember.GetLocation().GetLineSpan().EndLinePosition.Line + 1;
-                miMeta["kind"] = newMember.GetType().Name;
+                List<Dictionary<string, object>> items = new List<Dictionary<string, object>>();
+                for (int i = 0; i < insertMarks.Count; i = i + 1)
+                {
+                    SyntaxNode insertedItem;
+                    if (!TryResolveAnnotated(newTree, insertMarks[i], out insertedItem))
+                    {
+                        result = "ERR|LINE_BASE|插入后节点定位失败——修改已落盘但返回行号不可信: " + className;
+                        return true;
+                    }
+                    Dictionary<string, object> itemMeta = new Dictionary<string, object>();
+                    itemMeta["start"] = newTree.GetText().Lines.GetLineFromPosition(insertedItem.FullSpan.Start).LineNumber + 1;
+                    itemMeta["end"] = insertedItem.GetLocation().GetLineSpan().EndLinePosition.Line + 1;
+                    itemMeta["kind"] = newMembers[i].GetType().Name;
+                    items.Add(itemMeta);
+                }
+                Dictionary<string, object> mbMeta = new Dictionary<string, object>();
+                mbMeta["op"] = "insert";
+                mbMeta["class"] = className;
+                mbMeta["file"] = relFile;
+                mbMeta["count"] = items.Count;
+                mbMeta["items"] = items;
                 if (writeNote.Length > 0)
                 {
-                    miMeta["writeNote"] = writeNote;
+                    mbMeta["writeNote"] = writeNote;
                 }
-                result = MetaHead("cs-member", true, miMeta);
+                result = MetaHead("cs-member", true, mbMeta);
                 return true;
             }
         }

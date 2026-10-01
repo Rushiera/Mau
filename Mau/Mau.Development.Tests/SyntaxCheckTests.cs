@@ -89,7 +89,7 @@ namespace Mau.Development.Tests
                 Directory.CreateDirectory(dir);
                 string projText = "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
                     "  <PropertyGroup>\n" +
-                    "    <TargetFramework>net8.0</TargetFramework>\n" +
+                    "    <TargetFramework>net10.0</TargetFramework>\n" +
                     "    <ImplicitUsings>disable</ImplicitUsings>\n" +
                     "    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>\n" +
                     "  </PropertyGroup>\n" +
@@ -115,7 +115,7 @@ namespace Mau.Development.Tests
         }
 
         /// <summary>
-        /// 空 catch 块——约定检查（CS_EMPTY_CATCH）必须报出并计入 warnings（判据：块内无语句且无注释）
+        /// 空 catch 块——约定检查（CS_EMPTY_CATCH）必须报出并计入 warnings（判据：块内无语句）
         /// </summary>
         [Fact]
         public void EmptyCatchBlockReported()
@@ -141,21 +141,21 @@ namespace Mau.Development.Tests
         }
 
         /// <summary>
-        /// 块内带注释——不报（注释即说明；判据：有注释视为已说明的降级）
+        /// 块内只有注释——必须报（注释是给读者的交代，不构成运行观测面；判据：块内无语句即报）
         /// </summary>
         [Fact]
-        public void CommentedCatchBlockNotReported()
+        public void CommentedCatchBlockReported()
         {
             string dir = Path.Combine(_root, "CatTemp", "CommentedCatchProbe");
             string csproj = Path.Combine(dir, "CommentedCatchProbe.csproj");
             try
             {
                 Directory.CreateDirectory(dir);
-                File.WriteAllText(csproj, ProbeProjectText("Ok.cs"));
-                File.WriteAllText(Path.Combine(dir, "Ok.cs"), "using System;\npublic class Ok\n{\n    public void M()\n    {\n        try\n        {\n            Console.WriteLine(1);\n        }\n        catch (Exception)\n        {\n            // 有意忽略——清理失败不影响主链\n        }\n    }\n}\n");
+                File.WriteAllText(csproj, ProbeProjectText("Commented.cs"));
+                File.WriteAllText(Path.Combine(dir, "Commented.cs"), "using System;\npublic class Commented\n{\n    public void M()\n    {\n        try\n        {\n            Console.WriteLine(1);\n        }\n        catch (Exception)\n        {\n            // 有意忽略——清理失败不影响主链\n        }\n    }\n}\n");
                 string result = Check(csproj);
-                Assert.Contains("\"emptyCatch\":0", result);
-                Assert.DoesNotContain("CS_EMPTY_CATCH", result);
+                Assert.Contains("\"emptyCatch\":1", result);
+                Assert.Contains("CS_EMPTY_CATCH", result);
             }
             finally
             {
@@ -175,7 +175,7 @@ namespace Mau.Development.Tests
         {
             return "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
                 "  <PropertyGroup>\n" +
-                "    <TargetFramework>net8.0</TargetFramework>\n" +
+                "    <TargetFramework>net10.0</TargetFramework>\n" +
                 "    <ImplicitUsings>disable</ImplicitUsings>\n" +
                 "    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>\n" +
                 "  </PropertyGroup>\n" +

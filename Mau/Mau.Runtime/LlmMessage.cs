@@ -63,6 +63,13 @@
         public string ReasoningContent;
 
         /// <summary>
+        /// user 消息附件引用——JSON 数组字符串，元素为图片绝对路径；空串 = 无附件。
+        /// 持久层只存引用不存字节（design-ch4-chat-images §8.2）；请求构造时展开为 image_url 内容块。
+        /// 当前唯一写入方 = 会话批后段的图片注入（image-inject 工具 · design-ch4-chat-images §八）。
+        /// </summary>
+        public string ImagesJson;
+
+        /// <summary>
         /// 创建时间戳——Unix 毫秒（DateTimeOffset.UtcNow；视图排序键——真实时序权威，跨重启稳定）
         /// </summary>
         public long CreatedAt;

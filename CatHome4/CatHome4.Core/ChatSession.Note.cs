@@ -63,9 +63,10 @@ namespace CH4
                         }
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // 参数 JSON 损坏——按无参数推进语义处理（CH2 同款容错）
+                    LogStore.Add("ChatSession", 2, "Note 参数 JSON 损坏，按无参数推进: " + ex.Message, "SYS");
                 }
             }
             string result;

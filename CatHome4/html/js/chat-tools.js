@@ -81,7 +81,7 @@ function chatField(obj, key) {
 }
 
 // ═══════════════════════════════════════════
-// 工具填充单例——每工具一支（对齐宿主 ToolSummaryFormatter 的「一处分派 + 一工具一支 Fmt_*」）
+// 工具填充单例——每工具一支（覆盖表声明式：图标 / 标签 / 输入行 / 输出行 / 徽标；Z8 起折叠行唯一产出在前端）
 // 返回 {tag, tagCls, segs}：tag = 折叠行工具变体标签（可空）；segs = 段数组
 // ═══════════════════════════════════════════
 
@@ -161,12 +161,22 @@ var CHAT_TOOL_SKELETONS = {
     'cs-comment': 'text',
     'config-set': 'text',
     'config-reset': 'text',
+    'config-cat-get': 'text',
+    'config-cat-set': 'text',
     'web-search': 'text',
     'image-analyze': 'text',
+    'image-inject': 'text',
+    // browser——浏览器域（A110；read 走文件骨架，其余纯文本兜底）
+    'browser-open': 'text',
+    'browser-read': 'file',
+    'browser-eval': 'text',
+    'browser-shot': 'text',
+    'browser-tabs': 'text',
     'Note': 'text',
     'time': 'text',
     'random': 'text',
     'sleep': 'text',
+    'timeback': 'text',
     'timer': 'text',
     'info': 'info',
     'majordomo-catinfo': 'catinfo',
@@ -451,7 +461,7 @@ function chatSkelDiagnostics(tool) {
 }
 
 // ── listing：列举（输入：条件；输出：计数 + 条目列表，缩进保留）──
-// 计数不含提示行（[git] / [skip]）——提示是元信息，不是条目
+// 计数不含提示行（[git] / [skip] / [截断]）——提示是元信息，不是条目
 function chatSkelListing(tool) {
     var segs = [chatSegInput(tool, '')];
     // 结构化返回优先（首行 JSON 元数据 + 正文定界行）；旧格式原路（纯文本清单）
@@ -461,11 +471,11 @@ function chatSkelListing(tool) {
     var items = [];
     for (var i = 0; i < lines.length; i++) {
         if (lines[i].replace(/\s/g, '').length === 0) { continue; }
-        if (lines[i].indexOf('[git]') === 0 || lines[i].indexOf('[skip]') === 0) { continue; }
+        if (lines[i].indexOf('[git]') === 0 || lines[i].indexOf('[skip]') === 0 || lines[i].indexOf('[截断]') === 0) { continue; }
         items.push(lines[i]);
     }
     var cap = '输出';
-    if (typeof bodyText === 'string' && bodyText.length > 0) { cap = '输出 · ' + items.length + ' 条目'; }
+    if (typeof bodyText === 'string' && bodyText.length > 0) { cap = '输出 · ' + items.length + ' 条目' + chatOvTotalTail(bodyText); }
     segs.push(chatSegOutput(tool, cap, function (body, text, isErr) {
         if (items.length === 0) { chatSegBlock(body, 'tr', '（无匹配条目）'); return; }
         chatSegLines(body, items, isErr ? 'tr err' : 'seg-line');
@@ -743,7 +753,7 @@ function chatAgoText(ms) {
     return Math.floor(hour / 24) + ' 天前';
 }
 
-// 分类块 → 键值行（固定顺序：猫 / 版本 / 当前时间 / LLM / 本地端点 / 可见根 / 前文 / 加载包 / QQBot）
+// 分类块 → 键值行（固定顺序：猫 / 版本 / 当前时间 / LLM / 本地端点 / 可见根 / 根路径 / 前文 / 加载包 / QQBot）
 // 缺类不显示该行（后端「无则省略键」约定——前端不补空行、不写 NaN）
 function chatInfoPairs(d) {
     var pairs = [];
@@ -783,14 +793,18 @@ function chatInfoPairs(d) {
     }
     if (d.roots && d.roots.length > 0) {
         var roots = [];
+        var rootPaths = [];
         for (var i = 0; i < d.roots.length; i = i + 1) {
             var r = d.roots[i];
             var one = chatField(r, 'id') + '(' + (r.writable === true ? 'rw' : 'ro') + ')';
             var note = chatField(r, 'note');
             if (note.length > 0) { one = one + '[' + note + ']'; }
             roots.push(one);
+            var rp = chatField(r, 'path');
+            if (rp.length > 0) { rootPaths.push(chatField(r, 'id') + ' → ' + rp); }
         }
         pairs.push({ k: '可见根', v: roots.join(' · ') });
+        if (rootPaths.length > 0) { pairs.push({ k: '根路径', v: rootPaths.join(' · ') }); }
     }
     if (d.tokens && typeof d.tokens === 'object') {
         var ctx = chatFieldNum(d.tokens, 'context');
@@ -865,6 +879,20 @@ var CHAT_SKEL_ICONS = {
     'text': '📝'
 };
 
+// 骨架中文名——兜底折叠行用（Z8：覆盖表未配 headline 的工具由骨架兜底接管）
+var CHAT_SKEL_LABELS = {
+    'exec': '命令执行',
+    'diagnostics': '诊断',
+    'listing': '列举',
+    'matches': '检索',
+    'lines': '按行读取',
+    'file': '读取文件',
+    'json': '结构查看',
+    'info': '环境信息',
+    'catinfo': '全猫状态',
+    'text': '工具调用'
+};
+
 // 工具 → 骨架 id（未登记返回空串；探测骨架不参与图标——未知工具保持默认图标）
 function chatToolSkeleton(name) {
     var skel = CHAT_TOOL_SKELETONS[name];
@@ -893,7 +921,7 @@ function chatToolIconOf(name) {
 
 // ═══════════════════════════════════════════
 // 填充覆盖表——逐工具「肉」（全工具覆盖，按工具组推进）
-// 定位：把工具参数与结果里的信息，按固定语句组合成自然语言（前端侧镜像宿主 ToolSummaryFormatter）
+// 定位：把工具参数与结果里的信息，按固定语句组合成自然语言（含折叠行 headline——Z8 起为唯一产出；宿主侧摘要已退役）
 // 契约：只声明偏离骨架的字段——未声明项一律吃骨架默认（结构 / 折叠 / 三态永远归骨架）
 //   icon        —— 折叠行专属图标（默认：骨架图标 → ❓）
 //   tag/tagCls  —— 折叠行工具变体标签（如 PowerShell PS 5.1 / PS 7）
@@ -919,6 +947,42 @@ function chatOvPeek(v) {
     if (typeof v !== 'string') { return chatOvText(v); }
     var t = v.replace(/\r/g, '').replace(/\n/g, ' ');
     return (t.length > 60) ? (t.substring(0, 60) + '…') : t;
+}
+
+// 多行文本字段值——取以 key 开头的行，返回其后值（去首尾空白；无匹配返回空串）
+function chatOvLineField(r, key) {
+    if (typeof r !== 'string' || r.length === 0) { return ''; }
+    var lines = r.split('\n');
+    for (var i = 0; i < lines.length; i = i + 1) {
+        var t = lines[i];
+        if (t.indexOf(key) === 0) {
+            return t.substring(key.length).replace(/^\s+/, '').replace(/\s+$/, '');
+        }
+    }
+    return '';
+}
+
+// 时长文本——{hours, minutes, seconds} → 「1 时 30 分」（全零 / 空对象 → 空串）
+function chatOvDurText(o) {
+    if (!o || typeof o !== 'object') { return ''; }
+    var parts = [];
+    var h = Number(o.hours) || 0;
+    var mi = Number(o.minutes) || 0;
+    var s = Number(o.seconds) || 0;
+    if (h > 0) { parts.push(h + ' 时'); }
+    if (mi > 0) { parts.push(mi + ' 分'); }
+    if (s > 0) { parts.push(s + ' 秒'); }
+    return parts.join(' ');
+}
+
+// 时刻文本——Unix 毫秒 → 本地「HH:mm:ss」（缺值 / 非法 → 空串）
+function chatOvClock(ms) {
+    if (typeof ms !== 'number' || ms <= 0) { return ''; }
+    var d = new Date(ms);
+    var hh = ('0' + d.getHours()).slice(-2);
+    var mm = ('0' + d.getMinutes()).slice(-2);
+    var ss = ('0' + d.getSeconds()).slice(-2);
+    return hh + ':' + mm + ':' + ss;
 }
 
 // 规模——字符数
@@ -978,14 +1042,14 @@ var CHAT_TOOL_OVERRIDES = {
             return ['展开 ' + chatOvText(a.path) + ' · depth ' + chatOvText(a.depth) + extra];
         },
         headline: function (a, r) {
-            return '展开 ' + chatOvText(a.path) + ' · depth ' + chatOvText(a.depth) + ' · ' + chatOvItems(r) + ' 条目';
+            return '展开 ' + chatOvText(a.path) + ' · depth ' + chatOvText(a.depth) + ' · ' + chatOvItems(r) + ' 条目' + chatOvTotalTail(r);
         }
     },
     'file-find': {
         icon: '🔍',
         inputLines: function (a) { return ['搜索 ' + chatOvText(a.dir) + ' · glob ' + chatOvText(a.pattern)]; },
         headline: function (a, r) {
-            return '搜索 ' + chatOvText(a.dir) + ' · glob ' + chatOvText(a.pattern) + ' · ' + chatOvItems(r) + ' 条目';
+            return '搜索 ' + chatOvText(a.dir) + ' · glob ' + chatOvText(a.pattern) + ' · ' + chatOvItems(r) + ' 条目' + chatOvTotalTail(r);
         }
     },
     'file-move': {
@@ -1002,6 +1066,17 @@ var CHAT_TOOL_OVERRIDES = {
         icon: '📋',
         inputLines: function (a) { return ['复制 ' + chatOvText(a.src), '→ ' + chatOvText(a.dest)]; },
         headline: function (a, r) { return '复制 ' + chatOvText(a.src) + ' → ' + chatOvText(a.dest); }
+    },
+    'file-version': {
+        inputLines: function (a) { return ['读取版本信息 ' + chatOvText(a.path)]; },
+        headline: function (a, r) {
+            var name = chatOvShort(a.path);
+            var v = chatOvLineField(r, '版本:');
+            var plus = v.indexOf('+');
+            if (plus > 0) { v = v.substring(0, plus); }
+            if (v.length > 0) { return '版本信息 ' + name + ' · ' + v; }
+            return '版本信息 ' + name + chatOvStat(r);
+        }
     },
     // ── CsCat（样板三件——结构化返回头驱动；2026-09-18）──
     'cs-check': {
@@ -1113,7 +1188,10 @@ var CHAT_TOOL_OVERRIDES = {
     'cs-member': {
         inputLines: function (a) {
             var op = a.op || '';
-            if (op === 'insert') { return ['插入成员到 ' + chatOvText(a.class) + ' · 位置 ' + chatOvText(a.position)]; }
+            if (op === 'insert') {
+                if (a.codes && a.codes.length) { return ['批量插入 ' + a.codes.length + ' 个成员到 ' + chatOvText(a.class) + ' · 位置 ' + chatOvText(a.position)]; }
+                return ['插入成员到 ' + chatOvText(a.class) + ' · 位置 ' + chatOvText(a.position)];
+            }
             if (op === 'delete') { return ['删除成员 ' + chatOvText(a.class) + '.' + chatOvText(a.member)]; }
             if (op === 'rename') { return ['重命名 ' + chatOvText(a.class) + '.' + chatOvText(a.oldName) + ' → ' + chatOvText(a.newName)]; }
             return ['成员操作 ' + chatOvText(a.class) + ' · op=' + chatOvText(a.op)];
@@ -1122,7 +1200,12 @@ var CHAT_TOOL_OVERRIDES = {
             var h = chatMetaHead(r);
             if (!h) { return '成员操作 ' + chatOvText(a.class) + chatOvStat(r); }
             var m = h.meta;
-            if (m.op === 'insert') { return '插入 ' + m.class + ' · 落盘 L' + m.start + '-' + m.end; }
+            if (m.op === 'insert') {
+                if (m.items && m.items.length) {
+                    return '批量插入 ' + m.count + ' 个成员 · 落盘 L' + m.items[0].start + '-' + m.items[m.items.length - 1].end;
+                }
+                return '插入 ' + m.class + ' · 落盘 L' + m.start + '-' + m.end;
+            }
             if (m.op === 'delete') { return '删除 ' + m.class + '.' + m.member; }
             if (m.op === 'rename') { return '重命名 ' + m.oldName + ' → ' + m.newName + ' · ' + m.files + ' 文件'; }
             return '成员操作 ' + chatOvText(a.class);
@@ -1131,7 +1214,16 @@ var CHAT_TOOL_OVERRIDES = {
             var h = chatMetaHead(r);
             if (!h) { return null; }
             var m = h.meta;
-            if (m.op === 'insert') { return ['已落盘 ' + (m.file || '') + ' · L' + m.start + '-' + m.end + ' · ' + (m.kind || '')]; }
+            if (m.op === 'insert') {
+                if (m.items && m.items.length) {
+                    var bulk = [];
+                    for (var bi = 0; bi < m.items.length; bi++) {
+                        bulk.push('#' + (bi + 1) + ' L' + m.items[bi].start + '-' + m.items[bi].end + ' · ' + (m.items[bi].kind || ''));
+                    }
+                    return bulk;
+                }
+                return ['已落盘 ' + (m.file || '') + ' · L' + m.start + '-' + m.end + ' · ' + (m.kind || '')];
+            }
             if (m.op === 'delete') { return ['已删除 ' + m.class + '.' + m.member + '（' + (m.file || '') + '）']; }
             if (m.op === 'rename') { return ['已重命名 ' + m.oldName + ' → ' + m.newName + ' · ' + (m.files || 0) + ' 文件']; }
             return ['（已应用）'];
@@ -1185,6 +1277,71 @@ var CHAT_TOOL_OVERRIDES = {
             var name = chatOvShort(a.path);
             if (!h) { return '识别图片 ' + name + chatOvStat(r); }
             return '识别图片 ' + name + ' · ' + (h.meta.chars || 0) + ' 字';
+        }
+    },
+    'image-inject': {
+        // A108 配套——输入图片预览（被插入的图直接看得见；路径形态交 chatImgUrl 单一出口）
+        inputImages: function (a) {
+            if (!a || !a.path) { return []; }
+            return [a.path];
+        },
+        icon: '🖼️',
+        inputLines: function (a) { return ['插入主干 ' + chatOvText(a.path)]; },
+        headline: function (a, r) {
+            return '已插入主干 · ' + chatOvShort(a.path);
+        }
+    },
+    // ── BrowserCat（A110 浏览器域——域限定：仅 timeback 作用域内可用）──
+    'browser-open': {
+        icon: '🌐',
+        inputLines: function (a) { return ['打开网页 ' + chatOvText(a.url)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '打开网页 ' + chatOvShort(a.url) + chatOvStat(r); }
+            return '打开网页 ' + chatOvShort(a.url);
+        }
+    },
+    'browser-read': {
+        icon: '📄',
+        inputLines: function (a) { return ['读取页面 · ' + (a.mode || 'text')]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '读取页面(' + (a.mode || 'text') + ')' + chatOvStat(r); }
+            return '读取页面(' + (h.meta.mode || 'text') + ') · ' + (h.meta.chars || 0) + ' 字';
+        }
+    },
+    'browser-eval': {
+        icon: '⌨️',
+        inputLines: function (a) { return ['执行 JS ' + chatOvPeek(a.expression)]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '执行 JS' + chatOvStat(r); }
+            return '执行 JS · ' + (h.meta.chars || 0) + ' 字';
+        }
+    },
+    'browser-shot': {
+        icon: '📷',
+        inputLines: function (a) { return ['截图页面' + (a.full ? '（整页）' : '（视口）')]; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '截图页面' + chatOvStat(r); }
+            return '截图页面' + (h.meta.full ? '（整页）' : '（视口）');
+        }
+    },
+    'browser-tabs': {
+        icon: '🗂️',
+        inputLines: function (a) {
+            var act = a.action || 'list';
+            if (act === 'new') { return ['新开页签 ' + chatOvText(a.url || '（空白页）')]; }
+            if (act === 'select') { return ['切换页签 ' + chatOvShort(a.target)]; }
+            if (act === 'close') { return ['关闭页签 ' + chatOvShort(a.target)]; }
+            return ['列出页签'];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            var act = h ? (h.meta.action || 'list') : (a.action || 'list');
+            if (!h) { return '页签 ' + act + chatOvStat(r); }
+            return '页签 ' + act + ' · ' + (h.meta.chars || 0) + ' 字';
         }
     },
     'temp-info': {
@@ -1327,6 +1484,7 @@ var CHAT_TOOL_OVERRIDES = {
     },
     // ── 内置 7 件（A64 批 4——结构化头驱动；2026-09-18）──
     'Note': {
+        icon: '📌',
         inputLines: function (a) {
             if (a.action === 'set') { return ['写入计划 · ' + chatOvSize(a.content) + (a.force === true ? ' · 强制覆盖' : '')]; }
             return ['推进到下一条任务'];
@@ -1341,6 +1499,7 @@ var CHAT_TOOL_OVERRIDES = {
         }
     },
     'time': {
+        icon: '🕒',
         inputLines: function () { return ['获取当前时间']; },
         headline: function (a, r) {
             var h = chatMetaHead(r);
@@ -1349,6 +1508,7 @@ var CHAT_TOOL_OVERRIDES = {
         }
     },
     'random': {
+        icon: '🎲',
         inputLines: function (a) { return ['随机数 ' + chatOvText(a.min) + ' ~ ' + chatOvText(a.max)]; },
         headline: function (a, r) {
             var h = chatMetaHead(r);
@@ -1399,7 +1559,54 @@ var CHAT_TOOL_OVERRIDES = {
             return 'Flow 现状 · ' + (h.meta.count || 0) + ' 个';
         }
     },
+    // ── 延迟指令（A71/A72——sleep 等待 / timer 排程；结构化头驱动；2026-09-28）──
+    'sleep': {
+        icon: '⏳',
+        inputLines: function (a) {
+            var d = chatOvDurText(a);
+            return ['登记定时唤醒' + ((d.length > 0) ? (' · ' + d) : '')];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '定时唤醒 ' + chatOvStat(r); }
+            var d = chatOvDurText(h.meta);
+            var clock = chatOvClock(h.meta.dueAt);
+            return '定时唤醒 · ' + ((d.length > 0) ? d : '待唤醒') + ((clock.length > 0) ? (' · 到点 ' + clock) : '');
+        }
+    },
+    'timer': {
+        icon: '⏰',
+        inputLines: function (a) {
+            var d = chatOvDurText(a);
+            var loop = (a.loop === true) ? ' · 循环' : '';
+            return ['登记定时注入' + ((d.length > 0) ? (' · ' + d) : '') + loop, '内容 ' + chatOvPeek(a.content)];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '定时注入 ' + chatOvStat(r); }
+            var d = chatOvDurText(h.meta);
+            var loop = (h.meta.loop === true) ? ' · 循环' : '';
+            var clock = chatOvClock(h.meta.dueAt);
+            return '定时注入 · ' + ((d.length > 0) ? d : '待注入') + loop + ((clock.length > 0) ? (' · 到点 ' + clock) : '');
+        }
+    },
+    // ── 上下文作用域（A101——start 开锚 / back 回收；结构化头驱动）──
+    'timeback': {
+        icon: '⚓',
+        inputLines: function (a) {
+            if (a.action === 'back') { return ['TimeBack 回收', '载荷 ' + chatOvPeek(a.findings)]; }
+            return ['TimeBack 开锚' + ((a.purpose) ? (' · ' + chatOvPeek(a.purpose)) : '')];
+        },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return ((a.action === 'back') ? 'TimeBack 回收' : 'TimeBack 开锚') + chatOvStat(r); }
+            var m = h.meta;
+            if (a.action === 'back') { return 'TimeBack #' + m.id + ' 已登记回收 · 锚点 ' + m.anchor; }
+            return 'TimeBack #' + m.id + ' 已锚定 · 起点 ' + m.anchor;
+        }
+    },
     'pack': {
+        icon: '📚',
         inputLines: function (a) { return ['加载包 ' + chatOvText(a.key)]; },
         headline: function (a, r) {
             var h = chatMetaHead(r);
@@ -1412,11 +1619,11 @@ var CHAT_TOOL_OVERRIDES = {
 
 // ═══════════════════════════════════════════
 // 折叠行文案（headline）——前端按固定语句组合的自然语言摘要
-// 口径（2026-09-18 莎定）：headline 优先于宿主 summary（宿主 summary 退为兜底）；
-// 有 headline 时不再追加结果规模后缀（同一语义不两处实现）
+// 口径（2026-09-18 莎定；2026-09-28 Z8 修订）：覆盖表 headline 为折叠行唯一产出；
+// 未配 headline 的工具由骨架兜底（chatToolFallbackHeadline）接管；有 headline 时不追加结果规模后缀（同一语义不两处实现）
 // ═══════════════════════════════════════════
 
-// 折叠行文案取值——覆盖表 headline 优先；无则返回空串（调用方回落宿主 summary）
+// 折叠行文案取值——覆盖表 headline 优先；无则返回空串（调用方回落骨架兜底 chatToolFallbackHeadline）
 function chatToolHeadline(tool) {
     var ov = chatToolOverride(tool.name);
     if (ov && typeof ov.headline === 'function') {
@@ -1424,6 +1631,16 @@ function chatToolHeadline(tool) {
         if (typeof t === 'string' && t.length > 0) { return t; }
     }
     return '';
+}
+
+// 骨架兜底折叠行——覆盖表未配 headline 时接管（Z8：宿主 summary 退役后的唯一兜底）
+// 口径：骨架中文名 + 工具名——骨架只决定壳、不猜工具语义；未登记骨架的工具回落工具名本身
+function chatToolFallbackHeadline(tool) {
+    if (!tool || typeof tool.name !== 'string' || tool.name.length === 0) { return '?'; }
+    var skel = chatToolSkeleton(tool.name);
+    var label = CHAT_SKEL_LABELS[skel];
+    if (typeof label !== 'string') { return tool.name; }
+    return label + ' · ' + tool.name;
 }
 
 // 结果行数——空结果 0
@@ -1439,7 +1656,7 @@ function chatOvStat(r) {
     return ' · ' + chatOvLines(r) + ' 行 ' + chatFmtCount(r.length) + ' 字符';
 }
 
-// 结果条目数——空行与提示行（[git] / [skip]）不计
+// 结果条目数——空行与提示行（[git] / [skip] / [截断]）不计
 function chatOvItems(r) {
     if (typeof r !== 'string' || r.length === 0) { return 0; }
     var lines = r.split('\n');
@@ -1447,10 +1664,23 @@ function chatOvItems(r) {
     for (var i = 0; i < lines.length; i++) {
         var t = lines[i];
         if (t.replace(/\s/g, '').length === 0) { continue; }
-        if (t.indexOf('[git]') === 0 || t.indexOf('[skip]') === 0) { continue; }
+        if (t.indexOf('[git]') === 0 || t.indexOf('[skip]') === 0 || t.indexOf('[截断]') === 0) { continue; }
         n = n + 1;
     }
     return n;
+}
+
+// 截断总量——结果含「[截断] 共 N 条」时返回 N，否则 0
+function chatOvTotal(r) {
+    if (typeof r !== 'string' || r.length === 0) { return 0; }
+    var m = /\[截断\] 共 (\d+) 条/.exec(r);
+    return m ? parseInt(m[1], 10) : 0;
+}
+
+// 截断总量后缀——「（共 N 条）」；无截断返回空串
+function chatOvTotalTail(r) {
+    var t = chatOvTotal(r);
+    return t > 0 ? '（共 ' + t + ' 条）' : '';
 }
 
 // 结果中提取首个「N <单位>」计数——替换处数等固定语句用（提不到返回空串）

@@ -297,6 +297,14 @@ namespace CatHome4.Http
             _app.MapGet("/js/{file}", (HttpContext ctx) => ServeStatic(ctx, "js", "application/javascript"));
             // 桌宠资源——html/pet/*.webp（动画 WebP 二进制；禁缓存同 index 策略；路径穿越校验）
             _app.MapGet("/pet/{file}", (HttpContext ctx) => ServeStatic(ctx, "pet", "image/webp"));
+            // A120 字体资源——html/fonts/*.ttf（web 字体二进制；缓存口径与其余静态资源不同——见 ServeStatic）
+            _app.MapGet("/fonts/{file}", (HttpContext ctx) => ServeStatic(ctx, "fonts", "font/ttf"));
+            // A118 应用图标——浏览器标签页 favicon（html/favicon.ico；与 exe 内嵌图标同源，由 tools/icongen 一并产出）
+            _app.MapGet("/favicon.ico", (HttpContext ctx) =>
+            {
+                ctx.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+                return ServeRootFile("favicon.ico", "image/x-icon");
+            });
             // 前端测试服务代理——CH4 通过宿主端点触发前端测试（开发流程：改前端 → 跑测试 → 刷新生效；转发区段端口）
             _app.MapGet("/api/v1/frontend-test", async (HttpContext ctx) =>
             {

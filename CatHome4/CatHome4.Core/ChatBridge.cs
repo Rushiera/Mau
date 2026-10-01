@@ -25,6 +25,9 @@ namespace CH4
         /// <summary>默认猫工具声明面——Bootstrap 按 toolNames 裁剪（M2c；session.new 重注入复用）</summary>
         private ToolSpec[] _defaultToolSpecs;
 
+        /// <summary>默认猫工具名单原始串——授权面实时解析入口（design-ch4-tools §三·十一；逗号 / 空白分隔，空 = 全量保底语义）</summary>
+        private string _defaultToolNames = "";
+
         /// <summary>默认猫 qqbot 配置身份——Guid.Empty=未绑定（R2.3）</summary>
         private Guid _defaultQqBotId = Guid.Empty;
 
@@ -77,6 +80,13 @@ namespace CH4
         {
             get { return _defaultToolSpecs; }
             set { _defaultToolSpecs = value; }
+        }
+
+        /// <summary>默认猫工具名单原始串——授权面实时解析（design-ch4-tools §三·十一；空 = 全量保底语义）</summary>
+        public string DefaultToolNames
+        {
+            get { return _defaultToolNames; }
+            set { _defaultToolNames = value; }
         }
 
         /// <summary>默认猫 qqbot 配置身份——Guid.Empty=未绑定（R2.3）</summary>

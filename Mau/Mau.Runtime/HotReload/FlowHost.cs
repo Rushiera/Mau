@@ -107,9 +107,10 @@ namespace Mau.Runtime
                         {
                             newHandles[h].TryUnload(1);
                         }
-                        catch (Exception)
+                        catch (Exception unloadEx)
                         {
                             // 卸载尽力而为——不掩盖原始失败
+                            LogStore.Add("FlowHost", 2, "失败路径卸载新句柄异常: " + unloadEx.Message, "SYS");
                         }
                     }
                     report.Add("❌ " + fileName + ": 新版本加载失败——" + ex.Message);

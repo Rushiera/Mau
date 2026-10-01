@@ -44,6 +44,12 @@ namespace CH4
         /// <returns>执行结果文本</returns>
         private string ExecuteBuiltin(string name, string argsJson)
         {
+            // timeback 作用域锁定——Note（轮末拉起）/ sleep（等待语义 + 未来注入）/ timer（排程注入）
+            // 与「作用域内区间删除」语义冲突，作用域存活期间一律拒绝（莎 2026-09-28 定）
+            if (_timebackScope != null && (name == "Note" || name == "sleep" || name == "timer"))
+            {
+                return "ERR|TIMEBACK_LOCKED|timeback 作用域内 " + name + " 不可用——先 back 回收再调用";
+            }
             if (name == "Note")
             {
                 return ExecuteNote(argsJson);
@@ -75,6 +81,10 @@ namespace CH4
             if (name == "timer")
             {
                 return ExecuteTimer(argsJson);
+            }
+            if (name == "timeback")
+            {
+                return ExecuteTimeback(argsJson);
             }
             return "ERR|UNKNOWN_BUILTIN|未知内置工具: " + name;
         }

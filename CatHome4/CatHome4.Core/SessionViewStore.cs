@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Mau.Runtime;
+using CatHome4.Contracts;
 
 namespace CH4
 {
@@ -37,6 +38,14 @@ namespace CH4
         private readonly List<ViewBlock> _errors = new List<ViewBlock>();
         /// <summary>重试过程块——retry 气泡（非真实前文派生；同一重试序列原位更新不堆叠；写入即落盘）</summary>
         private readonly List<ViewBlock> _retries = new List<ViewBlock>();
+        /// <summary>废弃块——timeback 回收区间的合并归档块（非真实前文派生，Rebuild 不清；Save 落盘；前端「已废弃」气泡）</summary>
+        private readonly List<ViewBlock> _voids = new List<ViewBlock>();
+
+        /// <summary>
+        /// 块序变更通知——视图层唯一出声点（清除 / 重建 / 轮统计清理 / 区间转废弃四处变更点统一调用）：
+        /// 转发面（QQ）订阅后按变更区间 / 内容锚点校正块游标（A111）。空=无消费方（无动作）。
+        /// </summary>
+        public Action<ViewOrderChange> OnBlocksReordered;
         /// <summary>
         /// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）
         /// </summary>
@@ -93,6 +102,9 @@ namespace CH4
 
             /// <summary>重试过程块数组——retry（非真实前文派生；Rebuild 不清，Save 落盘，Load 恢复）</summary>
             public ViewBlock[] Retries { get; set; }
+
+            /// <summary>废弃块数组——void（timeback 回收区间合并归档；非真实前文派生；Rebuild 不清，Save 落盘，Load 恢复）</summary>
+            public ViewBlock[] Voids { get; set; }
         }
 
         /// <summary>
@@ -104,11 +116,64 @@ namespace CH4
             _path = path;
         }
 
+        /// <summary>
+        /// 块序变更通知——变更前快照与当前块序取最小差异（公共前缀 / 公共后缀之外即变更区间）后发出（A111：校正入口单一——四处变更点共用）。
+        /// 无消费方（未接线）或块序未变（差异为零）→ 零动作。
+        /// </summary>
+        /// <param name="before">变更前的合并视图块数组（调用方在变更前取快照）</param>
+        public void NotifyBlocksReordered(ViewBlock[] before)
+        {
+            Action<ViewOrderChange> handler = OnBlocksReordered;
+            if (handler == null || before == null)
+            {
+                return;
+            }
+            ViewBlock[] after = GetBlocks();
+            // [段1] 公共前缀——头部保留的未变块
+            int prefix = 0;
+            while (prefix < before.Length && prefix < after.Length && SameBlock(before[prefix], after[prefix]))
+            {
+                prefix = prefix + 1;
+            }
+            // [段2] 公共后缀——尾部保留的未变块（前缀区之后才参与）
+            int suffix = 0;
+            while (suffix < before.Length - prefix && suffix < after.Length - prefix
+                && SameBlock(before[before.Length - 1 - suffix], after[after.Length - 1 - suffix]))
+            {
+                suffix = suffix + 1;
+            }
+            int removed = before.Length - prefix - suffix;
+            int added = after.Length - prefix - suffix;
+            if (removed == 0 && added == 0)
+            {
+                return;
+            }
+            ViewOrderChange change = new ViewOrderChange();
+            change.From = prefix;
+            change.RemovedCount = removed;
+            change.AddedCount = added;
+            handler(change);
+        }
+
+        /// <summary>块同一判定——哈希 + 时间戳 + 渲染类型三者相同才算同一块（变更比对口径；载荷不参与——注入报告内容变化不影响块序）</summary>
+        private static bool SameBlock(ViewBlock a, ViewBlock b)
+        {
+            if (a == null || b == null)
+            {
+                return false;
+            }
+            if (a.Hash != b.Hash || a.Timestamp != b.Timestamp || a.RenderType != b.RenderType)
+            {
+                return false;
+            }
+            return true;
+        }
+
         /// <summary>内存视图块——按生成序（history 数据源）</summary>
         public ViewBlock[] GetBlocks()
         {
-            // 合并面——真实前文块 + 间隙文本块 + roundsum 轮末统计块 + error 错误块 + retry 重试块（按时间戳升序——同一坐标系：消息 CreatedAt / CloseRound 时刻）
-            List<ViewBlock>[] sources = new List<ViewBlock>[] { _blocks, _gapTexts, _roundSums, _errors, _retries };
+            // 合并面——真实前文块 + 间隙文本块 + roundsum 轮末统计块 + error 错误块 + retry 重试块 + void 废弃块（按时间戳升序——同一坐标系：消息 CreatedAt / CloseRound 时刻）
+            List<ViewBlock>[] sources = new List<ViewBlock>[] { _blocks, _gapTexts, _roundSums, _errors, _retries, _voids };
             int total = 0;
             for (int si = 0; si < sources.Length; si = si + 1)
             {
@@ -228,10 +293,116 @@ namespace CH4
             payload["name"] = name;
             payload["arguments"] = target.Arguments;
             payload["result"] = viewResult;
-            payload["summary"] = ToolSummaryFormatter.Build(name, target.Arguments, viewResult);
             payload["toolIndex"] = target.Index;
             payload["toolTotal"] = target.Total;
             Append(m, "toolcard", payload, timestamp, msgIndex);
+        }
+
+        /// <summary>
+        /// 区间块转废弃块（timeback 回收）——区间内全部视图块**合并为一个**废弃块，从对话流移出进独立容器（非前文派生，Rebuild 不清：跨重启仍可回看）。
+        /// 语义（莎 2026-09-29）：这些内容已被主干排除（前文面不再含），前端只是「能看」——故不进对话流、不参与 QQ 转发（renderType≠text），独立块型 `void`。
+        /// 移出面由调用方按语义给界（timeback 取「锚定声明之后」——比前文删除区间更宽：锚定批的 sibling 结果卡一并移出）；
+        /// `keepToolName` 指定工具名的工具卡**保留在对话流**（timeback 自己的锚定卡——三段式「锚定 → 废弃段 → 回收」的锚）。
+        /// 内容按块型组装（user / text / reason 取正文；toolcard 取「工具名 + 参数 + 结果」）；块时间戳取移出块中最早者（归并排序位不变）。
+        /// </summary>
+        /// <param name="fromMsgIndex">区间下界（真实前文消息索引，含）</param>
+        /// <param name="toMsgIndex">区间上界（含）</param>
+        /// <param name="keepToolName">区间内保留不动的工具卡名（空=不保留）</param>
+        /// <returns>移出的视图块数（无命中 = 0，零动作）</returns>
+        public int ConvertRangeToVoid(int fromMsgIndex, int toMsgIndex, string keepToolName)
+        {
+            // A111——块序变更快照（区间块移出 + 合并归档块插入：转发面游标按区间平移 / 锚点重定位）
+            ViewBlock[] before = GetBlocks();
+            List<ViewBlock> removed = new List<ViewBlock>();
+            for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
+            {
+                ViewBlock b = _blocks[i];
+                if (b.MsgIndex < fromMsgIndex || b.MsgIndex > toMsgIndex)
+                {
+                    continue;
+                }
+                // 保留面——锚定/回收卡不走废弃段（三段式的锚；判据 = 工具卡名）
+                if (keepToolName != null && keepToolName.Length > 0 && IsToolCardOf(b, keepToolName))
+                {
+                    continue;
+                }
+                removed.Insert(0, b);   // 逆序扫描——插回头部保持原生成序
+                _blocks.RemoveAt(i);
+            }
+            int moved = removed.Count;
+            if (moved == 0)
+            {
+                return 0;
+            }
+            StringBuilder body = new StringBuilder();
+            for (int i = 0; i < removed.Count; i = i + 1)
+            {
+                string text = BuildGapContent(removed[i]);
+                if (text.Length == 0)
+                {
+                    continue;
+                }
+                if (body.Length > 0)
+                {
+                    body.Append("\n\n");
+                }
+                body.Append(text);
+            }
+            ViewBlock block = new ViewBlock();
+            block.Timestamp = removed[0].Timestamp;
+            block.Hash = "void_" + _voids.Count.ToString();
+            block.MsgIndex = -1;
+            block.RenderType = "void";
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["count"] = moved;
+            payload["text"] = body.ToString();
+            block.Payload = JsonUtil.Serialize(payload);
+            _voids.Add(block);
+            Save();
+            NotifyBlocksReordered(before);
+            return moved;
+        }
+
+        /// <summary>
+        /// 组装 gap 文本——按块型取正文（toolcard 走名称 + 参数 + 结果；其余取 payload.content；解析失败回落原文）。
+        /// </summary>
+        /// <param name="b">源视图块</param>
+        /// <returns>gap 文本（空串=无正文可用）</returns>
+        private static string BuildGapContent(ViewBlock b)
+        {
+            string type = b.RenderType == null ? "" : b.RenderType;
+            string payloadJson = b.Payload == null ? "" : b.Payload;
+            if (payloadJson.Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(payloadJson))
+                {
+                    JsonElement root = doc.RootElement;
+                    if (type == "toolcard")
+                    {
+                        JsonElement nameEl;
+                        JsonElement argsEl;
+                        JsonElement resultEl;
+                        string name = root.TryGetProperty("name", out nameEl) && nameEl.ValueKind == JsonValueKind.String ? nameEl.GetString() ?? "" : "工具";
+                        string args = root.TryGetProperty("arguments", out argsEl) && argsEl.ValueKind == JsonValueKind.String ? argsEl.GetString() ?? "" : "";
+                        string result = root.TryGetProperty("result", out resultEl) && resultEl.ValueKind == JsonValueKind.String ? resultEl.GetString() ?? "" : "";
+                        return "【工具 · " + name + "】\n参数：" + args + "\n结果：" + result;
+                    }
+                    JsonElement contentEl;
+                    if (root.TryGetProperty("content", out contentEl) && contentEl.ValueKind == JsonValueKind.String)
+                    {
+                        return contentEl.GetString() ?? "";
+                    }
+                }
+                return "";
+            }
+            catch (Exception)
+            {
+                return payloadJson;
+            }
         }
 
         /// <summary>
@@ -241,6 +412,8 @@ namespace CH4
         /// <param name="messages">真实前文消息数组</param>
         public void Rebuild(LlmMessage[] messages)
         {
+            // A111——块序变更快照（重建 = 完全重置：转发面游标按锚点重定位，不以块数比对追发历史）
+            ViewBlock[] before = GetBlocks();
             _blocks.Clear();
             _pendingTools.Clear();
             for (int i = 0; i < messages.Length; i++)
@@ -273,6 +446,7 @@ namespace CH4
                     OnToolResult(m, m.CreatedAt, i);
                 }
             }
+            NotifyBlocksReordered(before);
         }
 
         /// <summary>
@@ -296,15 +470,17 @@ namespace CH4
                 data.RoundSums = _roundSums.ToArray();
                 data.Errors = _errors.ToArray();
                 data.Retries = _retries.ToArray();
+                data.Voids = _voids.ToArray();
                 JsonSerializerOptions options = new JsonSerializerOptions();
                 options.IncludeFields = true;
                 options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;   // 中文直出（默认 \uXXXX 转义人读不便——2026-09-08 全局统一）
                 string json = JsonSerializer.Serialize(data, options);
                 File.WriteAllText(_path, json);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 保存失败不阻断会话（下次收工再试）——视图是派生态，真实前文可重建
+                LogStore.Add("SessionViewStore", 2, "视图保存失败: " + ex.Message, "SYS");
             }
         }        /// <summary>追加轮末统计块——roundsum（Token 消耗 + 工具次数 + 总耗时 + 四态用时）。非真实前文派生（Rebuild 不清）；写入即落盘——宿主中断不丢。</summary>
 /// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...}}）</param>
@@ -761,6 +937,8 @@ namespace CH4
         /// <summary>清空视图层——session.new 清前文时同步（真实前文 Clear 后视图随生命周期清理）</summary>
         public void Clear()
         {
+            // A111——块序变更快照（清空 = 全量移除：转发面游标随之归位）
+            ViewBlock[] before = GetBlocks();
             _blocks.Clear();
             _pendingTools.Clear();
             // 注入报告随视图层清理——session.new 后 HandleSessionNew 重新 Set + Save
@@ -773,13 +951,19 @@ namespace CH4
             _errors.Clear();
             // 重试过程块随视图层清理——新会话不保留旧重试记录
             _retries.Clear();
+            // 废弃块随视图层清理——新会话不保留旧回收归档
+            _voids.Clear();
+            NotifyBlocksReordered(before);
         }
         /// <summary>
         /// 清空轮末统计块——回滚裁剪后调用（roundsum 非真实前文派生，Rebuild 不清——裁剪后残留旧统计）
         /// </summary>
         public void ClearRoundSums()
         {
+            // A111——块序变更快照（轮统计块移出：转发面游标随之前移）
+            ViewBlock[] before = GetBlocks();
             _roundSums.Clear();
+            NotifyBlocksReordered(before);
         }
         /// <summary>
         /// 生成视图块——内容哈希 = 真实前文单块完整字段 SHA256（裁决：前文块哈希作唯一标识）
@@ -837,9 +1021,10 @@ namespace CH4
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 解析失败——空登记（容错）
+                LogStore.Add("SessionViewStore", 2, "工具卡登记解析失败，按空登记: " + ex.Message, "SYS");
             }
         }
 
@@ -927,11 +1112,49 @@ namespace CH4
                     _retries.Clear();
                     _retries.AddRange(data.Retries);
                 }
+                if (data != null && data.Voids != null)
+                {
+                    _voids.Clear();
+                    _voids.AddRange(data.Voids);
+                }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 加载失败静默——注入报告缺失不阻断（视图可重建）
+                LogStore.Add("SessionViewStore", 2, "视图加载失败，按空视图继续: " + ex.Message, "SYS");
             }
+        }
+        /// <summary>
+        /// 工具卡归属判定——该块是否为指定工具名的工具卡（仅 toolcard 块型；载荷解析失败 = false，进废弃块）。
+        /// 用途：`ConvertRangeToVoid` 的保留面（timeback 自己的锚定卡保留在对话流——三段式的锚）。
+        /// </summary>
+        /// <param name="b">视图块</param>
+        /// <param name="toolName">工具名</param>
+        /// <returns>true=命中（保留在对话流）</returns>
+        private static bool IsToolCardOf(ViewBlock b, string toolName)
+        {
+            if (b.RenderType != "toolcard" || b.Payload == null || b.Payload.Length == 0)
+            {
+                return false;
+            }
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(b.Payload))
+                {
+                    JsonElement nameEl;
+                    if (doc.RootElement.TryGetProperty("name", out nameEl) && nameEl.ValueKind == JsonValueKind.String)
+                    {
+                        string got = nameEl.GetString();
+                        return got != null && string.Equals(got, toolName, StringComparison.Ordinal);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 载荷解析失败——不保留（走废弃块）
+                LogStore.Add("SessionViewStore", 2, "工具卡载荷解析失败，不进保留面: " + ex.Message, "SYS");
+            }
+            return false;
         }
     }
 }

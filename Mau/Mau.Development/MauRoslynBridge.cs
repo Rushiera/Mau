@@ -533,9 +533,7 @@ namespace Mau.Development
         {
             return string.Equals(name, "catId", StringComparison.Ordinal);
         }
-        /// <summary>
-        /// cs-* 参数面校验——声明面口径零容忍：未知参数 / 必填缺值 / 枚举非法值一律 ERR|BAD_ARGS（校验归工具内部；宿主注入保留键 IsHostInjectedArg 放行）。
-        /// </summary>
+        /// <summary>cs-* 参数面校验——声明面口径零容忍：未知参数 / 必填缺值 / 枚举非法值 / code-codes 互斥一律 ERR|BAD_ARGS（校验归工具内部；宿主注入保留键 IsHostInjectedArg 放行）。</summary>
         /// <param name="method">方法名（已过白名单分派）</param>
         /// <param name="args">参数对象</param>
         /// <returns>错误文本（空=通过）</returns>
@@ -575,7 +573,7 @@ namespace Mau.Development
             }
             else if (method == "member")
             {
-                allowed = "path class op member position anchor code oldName newName";
+                allowed = "path class op member position anchor code codes oldName newName";
                 required = "path class op";
             }
             else if (method == "comment")
@@ -636,6 +634,23 @@ namespace Mau.Development
                 if (position.Length > 0 && position != "end" && position != "before" && position != "after" && position != "after_fields")
                 {
                     return "ERR|BAD_ARGS|position 非法值: " + position + "（end|before|after|after_fields）";
+                }
+                // code 与 codes 互斥——单成员用 code，批量用 codes（A92）
+                bool hasCode = false;
+                JsonElement codeValue;
+                if (args.TryGetProperty("code", out codeValue))
+                {
+                    hasCode = Arg(args, "code").Length > 0;
+                }
+                bool hasCodes = false;
+                JsonElement codesValue;
+                if (args.TryGetProperty("codes", out codesValue))
+                {
+                    hasCodes = codesValue.ValueKind == JsonValueKind.Array && codesValue.GetArrayLength() > 0;
+                }
+                if (hasCode && hasCodes)
+                {
+                    return "ERR|BAD_ARGS|code 与 codes 互斥——单成员用 code，批量用 codes";
                 }
             }
             if (method == "comment")

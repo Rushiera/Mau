@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>CH4 外观层 v2</title>
+    <link rel="icon" href="/favicon.ico?v=__V__">
     <link rel="stylesheet" href="css/tokens.css?v=__V__">
     <link rel="stylesheet" href="css/style.css?v=__V__">
 </head>
@@ -15,7 +16,7 @@
             <button data-tab="log">日志</button>
             <button data-tab="raw">原始</button>
             <!-- 前端版本标记——每次改动前端递增；刷新后数字变化 = 拿到新版（人眼 cache-busting） -->
-            <div style="margin-top:auto;color:var(--ch-fg-faint);font-size:10px;writing-mode:vertical-rl" data-version>UI v?</div>
+            <div style="margin-top:auto;color:var(--ch-fg-faint);font-size:var(--ch-fs-tag);writing-mode:vertical-rl" data-version>UI v?</div>
         </nav>
         <main>
             <!-- 状态区 -->
@@ -32,8 +33,8 @@
                     <div id="toolreg"></div>
                     <h2>盒子截面</h2>
                     <div id="boxSearchBar" style="display:flex;gap:6px;padding:0 12px 6px 12px;align-items:center">
-                        <input id="boxFilter" placeholder="过滤盒子 key…" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:4px 8px;font-family:inherit;font-size:11px">
-                        <span id="boxCount" style="color:var(--ch-fg-faint);font-size:10px"></span>
+                        <input id="boxFilter" placeholder="过滤盒子 key…" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:4px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                        <span id="boxCount" style="color:var(--ch-fg-faint);font-size:var(--ch-fs-tag)"></span>
                     </div>
                     <div id="boxes"></div>
                 </div>
@@ -55,81 +56,81 @@
             <section id="tab-raw" class="tab">
                 <div id="rawbar">
                     <button id="rawPause">暂停</button>
-                    <span id="rawInfo" style="color:var(--ch-fg-weak);font-size:11px"></span>
+                    <span id="rawInfo" style="color:var(--ch-fg-weak);font-size:var(--ch-fs-tag)"></span>
                 </div>
                 <pre id="rawJson"></pre>
             </section>
             <!-- 配置区 -->
             <section id="tab-config" class="tab">
                 <div id="configbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--ch-line-faint);align-items:center">
-                    <span style="color:var(--ch-fg-weak);font-size:11px">有效配置项读写——列表含 schema 声明全项 + 未声明落盘键（来源列：file=落盘 / env=环境变量 / default=未落盘；「·未声明」=只读项，需在模板声明后生效）；写盘即生效（llm.* 实时读取 / ui.* 前端刷新可见）；灰置项为只读声明；API 连接三参走 LLM API 池管理</span>
-                    <button id="configRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:12px">刷新</button>
-                    <button id="openDataDir" style="background:var(--ch-bg-raised);border:1px solid var(--ch-bg-accent);color:var(--ch-ok);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:12px">📂 打开数据目录</button>
+                    <span style="color:var(--ch-fg-weak);font-size:var(--ch-fs-tag)">有效配置项读写——列表含 schema 声明全项 + 未声明落盘键（来源列：file=落盘 / env=环境变量 / default=未落盘；「·未声明」=只读项，需在模板声明后生效）；写盘即生效（llm.* 实时读取 / ui.* 前端刷新可见）；灰置项为只读声明；API 连接三参走 LLM API 池管理</span>
+                    <button id="configRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
+                    <button id="openDataDir" style="background:var(--ch-bg-raised);border:1px solid var(--ch-bg-accent);color:var(--ch-ok);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">📂 打开数据目录</button>
                 </div>
                 <div style="flex:1;overflow-y:auto;padding:8px 12px">
                     <h2 style="margin:6px 0 8px;color:var(--ch-ok)">⚡ 立即生效</h2>
                     <table class="box-table" id="configTable"><thead><tr><th style="width:28%">key</th><th style="width:42%">value</th><th style="width:8%">来源</th><th style="width:22%">操作</th></tr></thead><tbody></tbody></table>
-                    <div id="configMsg" style="color:var(--ch-ok);font-size:11px;margin-top:6px"></div>
+                    <div id="configMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag);margin-top:6px"></div>
                     <!-- M3b LLM API 池管理——列表/新建/编辑/删除（key 掩码） -->
                     <div style="margin-top:16px;border-top:1px solid var(--ch-line);padding-top:10px">
                         <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
                             <h2 style="margin:0">LLM API 池</h2>
-                            <span id="apisMsg" style="color:var(--ch-ok);font-size:11px"></span>
+                            <span id="apisMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag)"></span>
                             <span style="flex:1"></span>
-                            <button id="apisRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:12px">刷新</button>
+                            <button id="apisRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
                         </div>
                         <table class="box-table" id="apisTable"><thead><tr><th style="width:12%">名称</th><th style="width:14%">配置 ID</th><th style="width:10%">类型</th><th style="width:26%">端点</th><th style="width:12%">模型</th><th style="width:14%">Key</th><th style="width:12%">操作</th></tr></thead><tbody></tbody></table>
                         <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
-                            <input id="apiNewName" placeholder="名称" style="width:110px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <input id="apiNewType" placeholder="类型(deepseek)" style="width:110px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <input id="apiNewEndpoint" placeholder="端点 URL" style="width:180px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <input id="apiNewModel" placeholder="模型" style="width:130px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <input id="apiNewKey" placeholder="API Key（编辑留空=保留）" style="flex:2;min-width:200px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <button id="apiAddBtn" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">新建</button>
-                            <button id="apiCancelEdit" style="display:none;background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">取消编辑</button>
+                            <input id="apiNewName" placeholder="名称" style="width:110px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <input id="apiNewType" placeholder="类型(deepseek)" style="width:110px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <input id="apiNewEndpoint" placeholder="端点 URL" style="width:180px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <input id="apiNewModel" placeholder="模型" style="width:130px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <input id="apiNewKey" placeholder="API Key（编辑留空=保留）" style="flex:2;min-width:200px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <button id="apiAddBtn" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">新建</button>
+                            <button id="apiCancelEdit" style="display:none;background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">取消编辑</button>
                         </div>
                     </div>
                     <!-- R2.3 QQ Bot 池管理——列表/新建/编辑/删除（secret 掩码；注册即建 WS 连接） -->
                     <div style="margin-top:16px;border-top:1px solid var(--ch-line);padding-top:10px">
                         <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
                             <h2 style="margin:0">QQ Bot 池</h2>
-                            <span id="qqbotsMsg" style="color:var(--ch-ok);font-size:11px"></span>
+                            <span id="qqbotsMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag)"></span>
                             <span style="flex:1"></span>
-                            <button id="qqbotsRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:12px">刷新</button>
+                            <button id="qqbotsRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
                         </div>
                         <table class="box-table" id="qqbotsTable"><thead><tr><th style="width:14%">名称</th><th style="width:18%">配置 ID</th><th style="width:14%">AppId</th><th style="width:10%">环境</th><th style="width:16%">Secret</th><th style="width:28%">操作</th></tr></thead><tbody></tbody></table>
                         <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
-                            <input id="qqNewName" placeholder="名称" style="width:120px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <input id="qqNewAppId" placeholder="AppId" style="width:160px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <select id="qqNewSandbox" style="background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
+                            <input id="qqNewName" placeholder="名称" style="width:120px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <input id="qqNewAppId" placeholder="AppId" style="width:160px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <select id="qqNewSandbox" style="background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
                                 <option value="true">沙箱</option>
                                 <option value="false">正式</option>
                             </select>
-                            <input id="qqNewSecret" placeholder="Secret（编辑留空=保留）" style="width:200px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <button id="qqAddBtn" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">新建</button>
-                            <button id="qqCancelEdit" style="display:none;background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">取消编辑</button>
+                            <input id="qqNewSecret" placeholder="Secret（编辑留空=保留）" style="width:200px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <button id="qqAddBtn" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">新建</button>
+                            <button id="qqCancelEdit" style="display:none;background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">取消编辑</button>
                         </div>
                     </div>
                     <!-- 加载包池（R4 加载包——池 CRUD；猫级挂载在猫配置弹层） -->
                     <div style="margin-top:16px;border-top:1px solid var(--ch-line);padding-top:10px">
                         <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
                             <h2 style="margin:0">加载包池</h2>
-                            <span id="packsMsg" style="color:var(--ch-ok);font-size:11px"></span>
+                            <span id="packsMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag)"></span>
                             <span style="flex:1"></span>
-                            <button id="packsRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:12px">刷新</button>
+                            <button id="packsRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
                         </div>
-                        <div style="font-size:11px;color:var(--ch-fg-weak);margin-bottom:6px">包 = 一组知识路径（key → 描述 + 路径清单）；某猫要用某包，需在「多猫 → 该猫配置 → 加载包挂载」勾选</div>
+                        <div style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-bottom:6px">包 = 一组知识路径（key → 描述 + 路径清单）；某猫要用某包，需在「多猫 → 该猫配置 → 加载包挂载」勾选</div>
                         <table class="box-table" id="packsTable"><thead><tr><th style="width:20%">key</th><th style="width:36%">描述</th><th style="width:12%">路径项</th><th style="width:32%">操作</th></tr></thead><tbody id="packsTbody"></tbody></table>
                         <div style="margin-top:10px">
-                            <div style="font-size:11px;color:var(--ch-fg-weak);margin-bottom:4px">新建 / 编辑（同名覆盖）</div>
+                            <div style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-bottom:4px">新建 / 编辑（同名覆盖）</div>
                             <div style="display:flex;gap:6px">
-                                <input id="packKey" placeholder="key（唯一索引，如 overwork）" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                                <input id="packDesc" placeholder="描述（≤20 字，info 展示用）" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
+                                <input id="packKey" placeholder="key（唯一索引，如 overwork）" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                                <input id="packDesc" placeholder="描述（≤20 字，info 展示用）" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
                             </div>
-                            <textarea id="packPaths" rows="4" placeholder="路径清单——一行一个（受控根 id: 前缀或绝对路径；目录项加载其一级 *.md）&#10;如：CCBP:L2/Worker/Majordomo" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:12px;margin-top:6px;resize:vertical"></textarea>
+                            <textarea id="packPaths" rows="4" placeholder="路径清单——一行一个（受控根 id: 前缀或绝对路径；目录项加载其一级 *.md）&#10;如：CCBP:L2/Worker/Majordomo" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:6px;resize:vertical"></textarea>
                             <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
-                                <button id="packNew" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:6px 14px;cursor:pointer;font-family:inherit;font-size:12px">清空</button>
-                                <button id="packSave" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:12px">保存</button>
+                                <button id="packNew" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:6px 14px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">清空</button>
+                                <button id="packSave" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">保存</button>
                             </div>
                         </div>
                     </div>
@@ -137,60 +138,60 @@
                     <div style="margin-top:16px;border-top:1px solid var(--ch-line);padding-top:10px">
                         <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
                             <h2 style="margin:0">新猫默认模板</h2>
-                            <span id="tplMsg" style="color:var(--ch-ok);font-size:11px"></span>
+                            <span id="tplMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag)"></span>
                             <span style="flex:1"></span>
-                            <button id="tplRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:12px">刷新</button>
+                            <button id="tplRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
                         </div>
-                        <label style="font-size:11px;color:var(--ch-fg-weak);display:block">基础角色段（baseRole——所有猫系统提示词首行；空=无）</label>
-                        <textarea id="tplBaseRole" rows="2" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:12px;margin-top:3px;resize:vertical"></textarea>
-                        <label style="font-size:11px;color:var(--ch-fg-weak);margin-top:10px;display:block">默认人设（defaultPersona——新猫创建时继承）</label>
-                        <textarea id="tplPersona" rows="2" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:12px;margin-top:3px;resize:vertical"></textarea>
-                        <label style="font-size:11px;color:var(--ch-fg-weak);margin-top:10px;display:block">默认工具（defaultToolNames——空=全量保底）</label>
+                        <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);display:block">基础角色段（baseRole——所有猫系统提示词首行；空=无）</label>
+                        <textarea id="tplBaseRole" rows="2" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px;resize:vertical"></textarea>
+                        <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">默认人设（defaultPersona——新猫创建时继承）</label>
+                        <textarea id="tplPersona" rows="2" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px;resize:vertical"></textarea>
+                        <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">默认工具（defaultToolNames——空=全量保底）</label>
                         <div id="tplTools" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
-                        <label style="font-size:11px;color:var(--ch-fg-weak);margin-top:10px;display:block">默认加载包（defaultPacks——池内 key 子集；新猫创建时继承；空=不挂载；池在「加载包池」区管理）</label>
+                        <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">默认加载包（defaultPacks——池内 key 子集；新猫创建时继承；空=不挂载；池在「加载包池」区管理）</label>
                         <div id="tplPacks" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
-                        <label style="font-size:11px;color:var(--ch-fg-weak);margin-top:10px;display:block">默认前文 List（defaultInjectList——完整路径或目录（目录加载其一级 *.md）；拖动 ≡ 调顺序；新猫创建时继承）</label>
+                        <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">默认前文 List（defaultInjectList——完整路径或目录（目录加载其一级 *.md）；拖动 ≡ 调顺序；新猫创建时继承）</label>
                         <div id="tplInject" style="margin-top:5px"></div>
                         <div style="display:flex;gap:6px;margin-top:6px">
-                            <input id="tplInjectAdd" placeholder="添加完整路径（如 ccbp:L1/Tree.md 或 C:\...）" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <button id="tplInjectAddBtn" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">添加</button>
+                            <input id="tplInjectAdd" placeholder="添加完整路径（如 ccbp:L1/Tree.md 或 C:\...）" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <button id="tplInjectAddBtn" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">添加</button>
                         </div>
                         <div style="display:flex;gap:6px;margin-top:12px;justify-content:flex-end">
-                            <button id="tplSave" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:12px">保存模板</button>
+                            <button id="tplSave" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">保存模板</button>
                         </div>
                     </div>
                     <!-- 重启生效区——受控根（workspace roots；安全边界管理员面） -->
                     <h2 style="margin:16px 0 8px;color:var(--ch-err)">🔁 重启生效</h2>
                     <div style="border:1px solid var(--ch-line-strong);border-radius:6px;padding:10px;background:var(--ch-bg-raised)">
-                        <div style="font-size:11px;color:var(--ch-fg-weak);margin-bottom:6px">受控根（workspace roots——安全边界；保存后重启宿主生效；LLM 工具面保持只读）</div>
+                        <div style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-bottom:6px">受控根（workspace roots——安全边界；保存后重启宿主生效；LLM 工具面保持只读）｜系统根 workspace / mau / mauout / data 的 id 与注释固定，仅可改路径</div>
                         <table class="box-table" id="rootsTable"><thead><tr><th style="width:12%">id</th><th style="width:42%">路径</th><th style="width:20%">注释（≤20 字·给 LLM 认路）</th><th style="width:10%">权限</th><th style="width:16%">操作</th></tr></thead><tbody></tbody></table>
                         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-                            <input id="rootNewId" placeholder="id（字母/数字/下划线）" style="width:150px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <input id="rootNewPath" placeholder="绝对路径（目录必须存在）" style="flex:2;min-width:220px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <input id="rootNewNote" placeholder="注释（≤20 字）" maxlength="20" style="width:150px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                            <select id="rootNewWritable" style="background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
+                            <input id="rootNewId" placeholder="id（小写字母/数字）" style="width:150px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <input id="rootNewPath" placeholder="绝对路径（目录必须存在）" style="flex:2;min-width:220px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <input id="rootNewNote" placeholder="注释（≤20 字）" maxlength="20" style="width:150px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <select id="rootNewWritable" style="background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
                                 <option value="true">读写</option>
                                 <option value="false">只读</option>
                             </select>
-                            <button id="rootAddBtn" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">添加</button>
+                            <button id="rootAddBtn" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">添加</button>
                         </div>
                         <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end">
-                            <button id="rootsSave" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:12px">保存（重启生效）</button>
+                            <button id="rootsSave" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">保存（重启生效）</button>
                         </div>
-                        <div id="rootsMsg" style="color:var(--ch-ok);font-size:11px;margin-top:6px"></div>
+                        <div id="rootsMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag);margin-top:6px"></div>
                     </div>
                 </div>
             </section>
             <!-- 多猫管理区（P9.3d） -->
             <section id="tab-cats" class="tab active">
                 <div id="catsbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--ch-line-faint);align-items:center">
-                    <input id="catNewName" placeholder="新猫显示名（如 super）" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                    <button id="catNewBtn" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">新建</button>
-                    <button id="catsRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 10px;cursor:pointer;font-family:inherit;font-size:12px">刷新</button>
+                    <input id="catNewName" placeholder="新猫显示名（如 super）" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                    <button id="catNewBtn" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">新建</button>
+                    <button id="catsRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
                 </div>
                 <div style="flex:1;overflow-y:auto;padding:8px 12px">
                     <table class="box-table" id="catsTable"><thead><tr><th style="width:22%">名称</th><th style="width:30%">ID</th><th style="width:14%">状态</th><th style="width:10%">端口</th><th style="width:24%">操作</th></tr></thead><tbody></tbody></table>
-                    <div id="catsMsg" style="color:var(--ch-ok);font-size:11px;margin-top:6px"></div>
+                    <div id="catsMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag);margin-top:6px"></div>
                 </div>
             </section>
         </main>
@@ -200,40 +201,40 @@
     <div id="catCfgModal" style="display:none;position:fixed;inset:0;background:var(--ch-overlay);z-index:50;align-items:center;justify-content:center">
         <div style="width:660px;max-height:82vh;overflow-y:auto;background:var(--ch-bg-panel);border:1px solid var(--ch-line);border-radius:8px;padding:14px">
             <div style="display:flex;align-items:center;margin-bottom:8px">
-                <span style="color:var(--ch-identity);font-weight:bold;font-size:13px">猫配置 — </span>
-                <span id="catCfgTitle" style="color:var(--ch-identity);font-weight:bold;font-size:13px"></span>
+                <span style="color:var(--ch-identity);font-weight:bold;font-size:var(--ch-fs-sub)">猫配置 — </span>
+                <span id="catCfgTitle" style="color:var(--ch-identity);font-weight:bold;font-size:var(--ch-fs-sub)"></span>
                 <span style="flex:1"></span>
-                <button id="catCfgClose" style="background:transparent;border:none;color:var(--ch-fg-weak);font-size:16px;cursor:pointer">✕</button>
+                <button id="catCfgClose" style="background:transparent;border:none;color:var(--ch-fg-weak);font-size:var(--ch-fs-title);cursor:pointer">✕</button>
             </div>
-            <div style="font-size:11px;color:var(--ch-fg-weak);margin-bottom:10px">API 切换立即生效；人设/工具/前文 List 保存后「新会话」生效</div>
-            <label style="font-size:11px;color:var(--ch-fg-weak)">LLM API 配置</label>
-            <select id="catCfgApi" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:12px;margin-top:3px"></select>
-            <label style="font-size:11px;color:var(--ch-fg-weak);margin-top:10px;display:block">QQ Bot 绑定（qqbotId——一只 Bot 只能绑一只猫；空=未绑定）</label>
-            <select id="catCfgQqBot" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:12px;margin-top:3px"></select>
-            <label style="font-size:11px;color:var(--ch-fg-weak);margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
+            <div style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-bottom:10px">API 切换立即生效；人设/工具/前文 List 保存后「新会话」生效</div>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak)">LLM API 配置</label>
+            <select id="catCfgApi" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px"></select>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">QQ Bot 绑定（qqbotId——一只 Bot 只能绑一只猫；空=未绑定）</label>
+            <select id="catCfgQqBot" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px"></select>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="checkbox" id="catCfgQqEnable"> 启用 qqbot 转发（qqbotEnable——false=不注入不转发）
             </label>
-            <label style="font-size:11px;color:var(--ch-fg-weak);margin-top:10px;display:block">人设（persona——注入后追加角色段；空=仅基础角色）</label>
-            <textarea id="catCfgPersona" rows="3" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:12px;margin-top:3px;resize:vertical"></textarea>
-            <label style="font-size:11px;color:var(--ch-fg-weak);margin-top:10px;display:block">工具清单（toolNames——全勾=全量；空=全量保底；非法名自动过滤）</label>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">人设（persona——注入后追加角色段；空=仅基础角色）</label>
+            <textarea id="catCfgPersona" rows="3" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px;resize:vertical"></textarea>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">工具清单（toolNames——全勾=全量；空=全量保底；非法名自动过滤）</label>
             <div id="catCfgTools" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
-            <label style="font-size:11px;color:var(--ch-fg-weak);margin-top:10px;display:block">目录白名单（enabledRoots——全局根池子集；workspace 系统根必选；空=全量）</label>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">目录白名单（enabledRoots——全局根池子集；workspace 系统根必选；空=全量）</label>
             <div id="catCfgRoots" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
-            <label style="font-size:11px;color:var(--ch-fg-weak);margin-top:10px;display:block">前文注入 List（injectList——id:相对路径 / 绝对路径 / 目录（加载其一级 *.md，文件名升序）；拖动 ≡ 调顺序；新会话时按序注入）</label>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">前文注入 List（injectList——id:相对路径 / 绝对路径 / 目录（加载其一级 *.md，文件名升序）；拖动 ≡ 调顺序；新会话时按序注入）</label>
             <div id="catCfgInject" style="margin-top:5px"></div>
             <div style="display:flex;gap:6px;margin-top:6px">
-                <input id="catCfgInjectAdd" placeholder="添加路径（如 ccbp:L1/Tree.md）" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:12px">
-                <button id="catCfgInjectAddBtn" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px">添加</button>
+                <input id="catCfgInjectAdd" placeholder="添加路径（如 ccbp:L1/Tree.md）" style="flex:1;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                <button id="catCfgInjectAddBtn" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">添加</button>
             </div>
-            <label style="font-size:11px;color:var(--ch-fg-weak);margin-top:10px;display:block">
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">
                 加载包挂载（packs——池内 key 子集；挂载后本猫可用 pack 工具按需注入；空=未挂载；池在「配置页 → 加载包池」管理）
             </label>
             <div id="catCfgPacks" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
             <div style="display:flex;gap:6px;margin-top:12px;justify-content:flex-end">
-                <button id="catCfgSave" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:12px">保存</button>
-                <button id="catCfgCancel" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:12px">取消</button>
+                <button id="catCfgSave" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">保存</button>
+                <button id="catCfgCancel" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">取消</button>
             </div>
-            <div id="catCfgMsg" style="color:var(--ch-ok);font-size:11px;margin-top:6px"></div>
+            <div id="catCfgMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag);margin-top:6px"></div>
         </div>
     </div>
 

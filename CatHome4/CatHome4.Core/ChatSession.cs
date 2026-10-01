@@ -96,6 +96,10 @@ namespace CH4
         // [段2b] P6 中止——暂停标志与取消令牌（LLM 流物理取消面）
         /// <summary>中止请求标志——HTTP 线程置位（volatile 跨线程可见），主线程 Pump 消费执行收尾</summary>
         private volatile bool _pauseRequested;
+        /// <summary>
+        /// 继续请求标志——HTTP 线程置位（volatile 跨线程可见），主线程 Pump 消费（Idle 时启动继续轮）。
+        /// </summary>
+        volatile bool _continueRequested;
 
         /// <summary>本轮 LLM 流取消令牌——LaunchLlm 创建；Pause 时 Cancel（下一轮重建——取消不跨轮）</summary>
         private System.Threading.CancellationTokenSource _pauseCts;
@@ -182,6 +186,8 @@ namespace CH4
         private readonly List<ToolOrderDog> _dogs;
         /// <summary>host-* 延迟直执清单——批次末尾宿主直执（顺序保证：同批 mau-proj 等先完成产物落地）</summary>
         private readonly List<ToolOrderDog> _hostDogs;
+        /// <summary>timeback back 后置执行单——批内剥离出的 back（A106 批内次序：批内其余工具完成后执行；null=本批无 back）</summary>
+        private ToolOrderDog _timebackBackDog;
 
         // [段4] 相位环
         /// <summary>当前相位</summary>
@@ -218,6 +224,16 @@ namespace CH4
 
         /// <summary>工具定义表——后台流式携带（宿主 BuildToolSpecs 产物；M3 改 toolNames 新会话 SetToolSpecs 更新）</summary>
         private ToolSpec[] _tools;
+
+        /// <summary>
+        /// 当前授权工具名提供者——catKey → 工具名数组（Admin 域实时解析当前 cat.cfg 名单；宿主启动期组合根注入）。
+        /// 授权面与注入面解耦（design-ch4-tools §三·十一）：注入面 _tools 是会话级提示快照，授权面实时查询。
+        /// 未接线（测试 / 裸构造）→ 回落 _tools 快照（旧语义）+ 一次告警——不静默放宽、不静默拒绝。
+        /// </summary>
+        internal static Func<string, string[]> AuthorizedToolNamesProvider;
+
+        /// <summary>授权面提供者缺失告警标志——只报一次（防每次判定刷屏）</summary>
+        private bool _authorizedProviderWarned;
 
         /// <summary>宿主工具直执回调——host-* 延迟直执（批次末尾执行；OA 工具一律走 OA 认领，无直执）</summary>
         private readonly Func<string, string, string> _executeTool;
@@ -562,12 +578,31 @@ namespace CH4
         }
 
         /// <summary>
-        /// 更新工具声明面——session.new 时从最新 cat.cfg 重裁剪后调用（M3：改 toolNames 新会话生效；主线程 Idle 时调用）。
+        /// 更新工具注入面——session.new 时从最新 cat.cfg 重裁剪后调用（会话级生效；授权面实时查询见 IsToolAllowed——design-ch4-tools §三·十一）。
         /// </summary>
-        /// <param name="specs">新声明面数组（FilterToolSpecs 产物）</param>
+        /// <param name="specs">新注入面数组（FilterToolSpecs 产物）</param>
         public void SetToolSpecs(ToolSpec[] specs)
         {
             _tools = FilterPrivilegedSpecs(specs);
+        }
+        /// <summary>
+        /// 会话注入面工具名——_tools 快照派生（info tools_drift 左值：与本猫当前授权集比对；design-ch4-tools §三·十一）。
+        /// </summary>
+        public string[] DeclaredToolNames
+        {
+            get
+            {
+                if (_tools == null)
+                {
+                    return new string[0];
+                }
+                string[] names = new string[_tools.Length];
+                for (int i = 0; i < _tools.Length; i = i + 1)
+                {
+                    names[i] = _tools[i].Name;
+                }
+                return names;
+            }
         }
         /// <summary>
         /// 默认会话判定——特权面（majordomo-*）可见与可调的授权基准。
@@ -725,6 +760,23 @@ namespace CH4
             }
             LogStore.Add("CatHome4", 1, "收到中止指令——正在停止本轮（已完成内容保留）", "CHAT");
         }
+        /// <summary>
+        /// 继续——不追加任何用户消息，直接用当前前文发起一次 LLM 请求（模型续写；空回复续传同上下文语义的显式入口）。
+        /// 线程安全：前文非空校验 + 入队（相位推进归主线程 Pump——Idle 才消费，忙时按插话队列语义排队）。
+        /// </summary>
+        public void Continue()
+        {
+            if (_context.GetMessageCount() == 0)
+            {
+                // 空前文无可续内容——前端按钮同条件禁用；此处防御性出声（不静默吞掉）
+                LogStore.Add("CatHome4", 2, "继续指令未受理——前文为空", "CHAT");
+                return;
+            }
+            // 跨线程只置位（与 Pause / SessionNewRequested 同模式）——HTTP 线程不得直接触碰会话内部队列；
+            // 轮次启动归主线程 Pump Idle 分支消费（Idle 才启动，忙时等同排队）。
+            _continueRequested = true;
+            LogStore.Add("CatHome4", 1, "收到继续指令——本轮结束后启动继续轮（不追加消息，用当前前文再发一次请求）", "CHAT");
+        }
 
         /// <summary>中止收尾——主线程 Pump 消费（相位串行）。已完成工具结果保留（不丢信息）/未完成放弃+格式修复/前文落盘/复位 Idle + paused 事件；实现委托 FinalizeInterrupted（中断收尾公共实现）。</summary>
         private void PauseFinalize()
@@ -748,6 +800,7 @@ namespace CH4
                 if (done)
                 {
                     AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
+                    NoteTimebackEvent();
                 }
                 PushToolCardFinal(dog, i + 1, _dogs.Count, done);
             }
@@ -766,7 +819,7 @@ namespace CH4
             // [段3] 视图序号复位——流式容器由前端 seal（已显示内容保留）；思考段经唯一出口收口
             SealReasonStream();
             _textStreamSeq = 0;
-            _retryBlockIndex = -1;
+            ResetRetryView();
             // [段4] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——中断非正常完成语义）
             _round = 0;
             _phase = ChatPhase.Idle;
@@ -779,7 +832,6 @@ namespace CH4
             _llmToolCallsJson = "";
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
-            _sawRetry = false;
             SetChatState("idle");
             // [段5] 前端通知——control 事件（seal + 按钮复位）
             if (_httpHost != null)
@@ -917,6 +969,20 @@ namespace CH4
             {
                 // A72——停机态丢弃在途排队消息（宿主即将重启，不再开新轮）
                 DropPendingIfRestarting();
+                // 继续——HTTP 线程置位、主线程消费（与 Pause / SessionNewRequested 同模式）：Idle 才启动继续轮
+                if (_continueRequested)
+                {
+                    _continueRequested = false;
+                    if (IsHostRestarting())
+                    {
+                        LogStore.Add("CatHome4", 2, "宿主重启中——继续请求未受理", "RESTART");
+                        return;
+                    }
+                    // sleep 作废——继续属「非 sleep 输入」（与常规轮同口径）
+                    ConsumeSleepOnWake("continue");
+                    StartContinueRound();
+                    return;
+                }
                 if (_pending.Count > 0)
                 {
                     PendingMessage next = _pending.Dequeue();
@@ -941,13 +1007,10 @@ namespace CH4
                 CloseRound();
             }
         }
-
         /// <summary>
-        /// 启动新轮次——追加用户消息 + chat_state=working + StartLlm 动作段（构造消息序列 → 后台流式消费）。
+        /// 轮首计数与相位复位——StartRound 与 StartContinueRound 共用（统计清零 + 进入 link 相位；消息追加由各自承担）。
         /// </summary>
-        /// <param name="content">用户消息</param>
-        /// <param name="source">来源——user/system</param>
-        private void StartRound(string content, string source)
+        private void ResetRoundCounters()
         {
             // E3 Token 统计——整轮清零（工具续轮 LaunchLlm 不清——跨轮累加语义）
             _usagePrompt = 0;
@@ -969,6 +1032,27 @@ namespace CH4
                 _phaseStartTick = 0;
             }
             PhaseEnter(PhaseLink);
+        }
+        /// <summary>
+        /// 启动继续轮——不追加任何消息，直接用当前前文发起请求（继续入口 pump 消费点）。
+        /// 与 StartRound 的差别仅在「不追加用户消息 / 不推 user 事件」（无新消息即无新视图块）。
+        /// </summary>
+        private void StartContinueRound()
+        {
+            ResetRoundCounters();
+            SetChatState("working");
+            LaunchLlm();
+        }
+
+        /// <summary>
+        /// 启动新轮次——追加用户消息 + chat_state=working + StartLlm 动作段（构造消息序列 → 后台流式消费）。
+        /// </summary>
+        /// <param name="content">用户消息</param>
+        /// <param name="source">来源——user/system</param>
+        private void StartRound(string content, string source)
+        {
+            // 轮首计数与相位复位——与继续轮共用（统计清零 + 进入 link 相位）
+            ResetRoundCounters();
             AppendMessage(_context.AddUserMessage(content));
             _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
@@ -1017,24 +1101,57 @@ namespace CH4
             _emptyReplyRetry = _emptyReplyRetry + 1;
             _streamClosedRetry = false;
             LogStore.Add("LLM", 2, "空回复续传 第" + _emptyReplyRetry.ToString() + "/∞ 次（" + reason + "）——同上下文重发", "LLM");
-            string emptyRetryView = "{\"state\":\"retrying\",\"attempt\":\"" + _emptyReplyRetry.ToString() + "\",\"max\":\"" + "∞" + "\",\"text\":" + JsonUtil.Serialize(reason) + "}";
-            _retryBlockIndex = _viewStore.UpsertRetry(emptyRetryView, ViewTimestamp(), _retryBlockIndex);
+            // A94——原文快照齐备：续传路径同样写入三元组（否则 resolved / failed 终态丢失报错原文；原因加中文注释与 Retrying 分支同源）
+            _retryAttempt = _emptyReplyRetry.ToString();
+            _retryMax = "∞";
+            _retryReason = ErrorNote.Apply(reason);
             _sawRetry = true;
-            if (_httpHost != null)
-            {
-                _retrySeq = _httpHost.PushView("retry", emptyRetryView, -1, _retrySeq);
-            }
+            PushRetryView("retrying");
             // 同上下文重发——LaunchLlm 内部清槽 + 帧计数归零（上下文未污染：空文本未入 Ctx/无错误文本入 Ctx）
             LaunchLlm();
         }
-
         /// <summary>
-        /// 构造 retry 气泡 resolved 载荷——保留原报错信息（尝试序号 / 次数上限 / 原因摘要），仅切换恢复状态（A86）。
+        /// 构造 retry 视图载荷（A94 统一出口）——报错原文三元组（尝试序号 / 次数上限 / 原因摘要）在所有状态下齐备，
+        /// 终态（resolved / failed）只追加状态标注，不覆盖原文。
         /// </summary>
-        /// <returns>resolved 状态载荷 JSON——前端渲染为原文 + 追加「已恢复」+ 气泡形态与文本色变化</returns>
-        private string BuildRetryResolvedJson()
+        /// <param name="state">状态（retrying / resolved / failed）</param>
+        /// <returns>retry 视图载荷 JSON</returns>
+        private string BuildRetryViewJson(string state)
         {
-            return "{\"state\":\"resolved\",\"attempt\":\"" + _retryAttempt + "\",\"max\":\"" + _retryMax + "\",\"text\":" + JsonUtil.Serialize(_retryReason) + "}";
+            return "{\"state\":" + JsonUtil.Serialize(state) + ",\"attempt\":\"" + _retryAttempt + "\",\"max\":\"" + _retryMax + "\",\"text\":" + JsonUtil.Serialize(_retryReason) + "}";
+        }
+        /// <summary>
+        /// retry 视图推送统一出口（A94）——构造载荷 + 原位落盘 + 推事件：
+        /// retrying 新建气泡（replaceSeq=-1，返回序号存 _retrySeq）；resolved / failed 替换既有气泡（replaceSeq=_retrySeq）。
+        /// </summary>
+        /// <param name="state">状态（retrying / resolved / failed）</param>
+        private void PushRetryView(string state)
+        {
+            string json = BuildRetryViewJson(state);
+            _retryBlockIndex = _viewStore.UpsertRetry(json, ViewTimestamp(), _retryBlockIndex);
+            if (_httpHost == null)
+            {
+                return;
+            }
+            if (state == "retrying")
+            {
+                _retrySeq = _httpHost.PushView("retry", json, -1, _retrySeq);
+                return;
+            }
+            _httpHost.PushView("retry", json, _retrySeq, 0);
+        }
+        /// <summary>
+        /// 重试视图态清零（A94 单一出口）——气泡序号 / 落盘块索引 / 原文三元组 / 待回填标志；
+        /// 轮终（正常 / 中断 / 错误中止）统一调用，防跨轮残留污染（旧原因被复用 / 陈旧序号替换错气泡）。
+        /// </summary>
+        private void ResetRetryView()
+        {
+            _retrySeq = 0;
+            _retryBlockIndex = -1;
+            _retryAttempt = "";
+            _retryMax = "";
+            _retryReason = "";
+            _sawRetry = false;
         }
 
         /// <summary>
@@ -1056,12 +1173,7 @@ namespace CH4
                         if (_sawRetry)
                         {
                             _sawRetry = false;
-                            string resolvedJson = BuildRetryResolvedJson();
-                            _retryBlockIndex = _viewStore.UpsertRetry(resolvedJson, ViewTimestamp(), _retryBlockIndex);
-                            if (_httpHost != null)
-                            {
-                                _httpHost.PushView("retry", resolvedJson, _retrySeq, 0);
-                            }
+                            PushRetryView("resolved");
                         }
                         text.Append(ev.Text);
                         // 运行态——Text 增量到达即回复态（远端·流；长度由远端决定）
@@ -1079,12 +1191,7 @@ namespace CH4
                         if (_sawRetry)
                         {
                             _sawRetry = false;
-                            string resolvedJson = BuildRetryResolvedJson();
-                            _retryBlockIndex = _viewStore.UpsertRetry(resolvedJson, ViewTimestamp(), _retryBlockIndex);
-                            if (_httpHost != null)
-                            {
-                                _httpHost.PushView("retry", resolvedJson, _retrySeq, 0);
-                            }
+                            PushRetryView("resolved");
                         }
                         _reasonAccum.Append(ev.Text);
                         // 运行态——Reasoning 增量到达即思考态（远端·流；长度由远端决定）
@@ -1101,12 +1208,7 @@ namespace CH4
                         if (_sawRetry)
                         {
                             _sawRetry = false;
-                            string resolvedJson = BuildRetryResolvedJson();
-                            _retryBlockIndex = _viewStore.UpsertRetry(resolvedJson, ViewTimestamp(), _retryBlockIndex);
-                            if (_httpHost != null)
-                            {
-                                _httpHost.PushView("retry", resolvedJson, _retrySeq, 0);
-                            }
+                            PushRetryView("resolved");
                         }
                         toolCalls = ev.Text;
                         // 运行态——ToolCalls（流末聚合）不切态：tool 态已由 ToolCallsStart（首个增量帧）进入；
@@ -1162,16 +1264,11 @@ namespace CH4
                         _retryAttempt = attempt;
                         _retryMax = max;
                         _retryReason = reason;
-                        string retryView = "{\"state\":\"retrying\",\"attempt\":\"" + attempt + "\",\"max\":\"" + max + "\",\"text\":" + JsonUtil.Serialize(reason) + "}";
-                        _retryBlockIndex = _viewStore.UpsertRetry(retryView, ViewTimestamp(), _retryBlockIndex);
-                        if (_httpHost != null)
-                        {
-                            _retrySeq = _httpHost.PushView("retry", retryView, -1, _retrySeq);
-                        }
+                        PushRetryView("retrying");
                     }
                     else if (ev.Kind == LlmStreamKind.Usage)
                     {
-                        // E3 Token 统计——解析 usage JSON 累计整轮（工具多轮累加）+ 单次前文覆盖 + 转发 SSE（前端覆盖式显示整轮累计值）
+                        // E3 Token 统计——解析 usage JSON 累计整轮（工具多轮累加）+ 单次前文覆盖 + 转发 SSE（前端覆盖式显示整轮累计值）；A115 载荷补 count（前文条数——前端「前文 N 条」与 tokens 同节奏刷新）
                         // 会话级累计——本次请求增量随轮同期堆入（跨轮保留；仅新会话复位）
                         long reqPrompt = _usagePrompt;
                         long reqCompletion = _usageCompletion;
@@ -1186,6 +1283,7 @@ namespace CH4
                                 + ",\"completion\":" + _usageCompletion.ToString()
                                 + ",\"cacheHit\":" + _usageCacheHit.ToString()
                                 + ",\"context\":" + _contextTokens.ToString()
+                                + ",\"count\":" + _context.GetMessageCount().ToString()
                                 + ",\"sessionPrompt\":" + _sessionPrompt.ToString()
                                 + ",\"sessionCompletion\":" + _sessionCompletion.ToString()
                                 + ",\"sessionCacheHit\":" + _sessionCacheHit.ToString() + "}";
@@ -1518,9 +1616,10 @@ namespace CH4
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // 解析失败静默——观测面不受单帧畸形影响
+                LogStore.Add("ChatSession", 2, "usage 帧解析失败，累计跳过: " + ex.Message, "SYS");
             }
         }
 
@@ -1551,9 +1650,14 @@ namespace CH4
                     RetryEmptyReply("SSE 流中断（未以 [DONE] 结束）");
                     return;
                 }
-                // API 错误重试耗尽（Runtime 有限重试 3 次已过）——中止本轮：落盘断点 + 错误气泡（不走 CloseRound——不 roundsum/chatdone/Note 拉起）
+                // API 错误中止——重试策略归 Runtime（429/5xx/传输类有限重试；4xx 参数/额度类单次即返），此处统一收尾：落盘断点 + 错误气泡（不走 CloseRound——不 roundsum/chatdone/Note 拉起）
                 AbortRoundError();
                 return;
+            }
+            // timeback 事件计数——think（本轮产出思考内容）计 1；assistant 产出在下文两分支各计 1
+            if (_llmReasoning.Length > 0)
+            {
+                NoteTimebackEvent();
             }
             if (_llmToolCallsJson.Length == 0)
             {
@@ -1565,6 +1669,7 @@ namespace CH4
                 }
                 // 纯文本回复——本轮完成
                 AppendMessage(_context.AddAssistantMessage(_llmResultText));
+                NoteTimebackEvent();
                 _viewStore.OnAssistantText(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                 if (_httpHost != null)
                 {
@@ -1595,6 +1700,7 @@ namespace CH4
             }
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
             AppendMessage(_context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning));
+            NoteTimebackEvent();
             _viewStore.OnAssistantToolCalls(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             // 思考段整块——由 SealReasonStream 在离开 think 态时统一推送（工具决策流首帧即收口；唯一出口，莎 2026-09-22 定）
             // 工具轮 seal——视图层补 gap text 块（全量外观真源：前端历史/QQBot 转发消费）+ SSE 推送（实时）；空文本不推
@@ -1607,7 +1713,9 @@ namespace CH4
                     _httpHost.PushView("text", sealTextJson, _textStreamSeq, 0);
                 }
             }
-            _reasonStreamSeq = 0;
+            // 思考段整块——先于工具先行卡推送（实时序对齐视图块生成序：assistant 思考块在工具卡之前）；
+            // 判例 2026-09-29：此前直接清序（不推整块），实时面仅剩前端 live 块，F5 重建后 think 块与工具卡换位
+            SealReasonStream();
             _textStreamSeq = 0;
             // 工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即出"进行中"卡；完成 / 中断时以同序号原位替换
             List<ToolCallInfo> toolCalls = ParseToolCalls(_llmToolCallsJson);
@@ -1750,11 +1858,9 @@ namespace CH4
             }
             // A69 视图层报错中文注释——真实前文保持原文
             result = ErrorNote.Apply(result);
-            string summary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, result);
             string json = "{\"name\":" + JsonUtil.Serialize(dog.Name)
                 + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson)
                 + ",\"result\":" + JsonUtil.Serialize(result)
-                + ",\"summary\":" + JsonUtil.Serialize(summary)
                 + ",\"toolIndex\":" + index.ToString()
                 + ",\"toolTotal\":" + total.ToString() + "}";
             _httpHost.PushView("toolcard", json, dog.CardSeq, 0);
@@ -1771,101 +1877,217 @@ namespace CH4
             _toolBatchActive = true;
             _dogs.Clear();
             _hostDogs.Clear();
-            JsonDocument doc = null;
-            try
+            _timebackBackDog = null;
+            List<ToolCallInfo> calls = ParseToolCalls(toolCallsJson);
+            // [P0] 剥离——批内 timeback 至多 start × 1 + back × 1（A106 批内次序 · design-ch4-timeback §2.4）：
+            // 各取首条剥离，重复调用（同类第 2 条起）判参数面拒绝（不静默丢弃）
+            int startIndex = -1;
+            int backIndex = -1;
+            bool[] duplicated = new bool[calls.Count];
+            for (int i = 0; i < calls.Count; i = i + 1)
             {
-                doc = JsonDocument.Parse(toolCallsJson);
-            }
-            catch (Exception ex)
-            {
-                LogStore.Add("CatHome4", 3, "tool_calls 解析失败: " + ex.Message, "TOOL");
-            }
-            if (doc != null)
-            {
-                using (doc)
+                if (calls[i].Name != "timeback")
                 {
-                    JsonElement root = doc.RootElement;
-                    for (int i = 0; i < root.GetArrayLength(); i = i + 1)
+                    continue;
+                }
+                string action = ExtractTimebackAction(calls[i].Arguments);
+                if (action == "start")
+                {
+                    if (startIndex < 0)
                     {
-                        JsonElement call = root[i];
-                        string id = GetStringProp(call, "id");
-                        // OpenAI wire：name/arguments 在 function 嵌套对象内
-                        string name = "";
-                        string arguments = "";
-                        JsonElement funcEl;
-                        if (call.TryGetProperty("function", out funcEl))
-                        {
-                            name = GetStringProp(funcEl, "name");
-                            arguments = GetStringProp(funcEl, "arguments");
-                        }
-                        // M2c 拦截——声明面外工具直接拒绝（ERR 回执不进 OA；host-* 同拦；拦截即时生效）
-                        if (!IsToolAllowed(name))
-                        {
-                            ToolOrderDog forbiddenDog = new ToolOrderDog(id, name, arguments);
-                            forbiddenDog.Result = "ERR|TOOL_FORBIDDEN|工具不在本会话声明面: " + name;
-                            forbiddenDog.IsClosed = true;
-                            _dogs.Add(forbiddenDog);
-                            LogStore.Add("CatHome4", 2, "工具 " + name + " 被拒绝：不在本会话声明面", "TOOL");
-                            continue;
-                        }
-                        // per-cat 路由——载荷注入猫 key（会话标识 ≡ 猫 key；积木按 catId 解析猫级文件系统与配置面）
-                        arguments = InjectCatId(arguments);
-                        // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
-                        _toolCallCount = _toolCallCount + 1;
-                        ToolOrderDog dog = new ToolOrderDog(id, name, arguments);
-                        long pendingCardSeq;
-                        dog.CardSeq = cardSeqs.TryGetValue(id, out pendingCardSeq) ? pendingCardSeq : -1;
-                        if (name.StartsWith("host-", StringComparison.Ordinal))
-                        {
-                            // host-* 延迟直执登记——批次末尾执行（顺序保证：同批 mau-proj 等先完成产物落地）
-                            _hostDogs.Add(dog);
-                            dog.IsClosed = true;
-                        }
-                        else if (IsBuiltinTool(name))
-                        {
-                            // 内置工具会话内直执——不需 OA（R0.2 分层：Note 状态在会话实例；time/random/info 宿主直执）
-                            dog.Result = ExecuteBuiltin(name, arguments);
-                            dog.IsClosed = true;
-                        }
-                        else
-                        {
-                            dog.Post(_oa, ToolOwnerId);
-                            if (dog.OfficeId == 0)
-                            {
-                                // Post 失败——诚实失败（直执面已移除 2026-09-04——OA 不可用即 ERR，不静默降级）
-                                dog.Result = "ERR|OA_POST_FAIL|工单提交失败（OA 不可用）: " + name;
-                                dog.IsClosed = true;
-                                LogStore.Add("CatHome4", 2, "工具 " + name + " 工单提交失败（OA 不可用）——诚实 ERR", "TOOL");
-                            }
-                        }
-                        _dogs.Add(dog);
+                        startIndex = i;
+                    }
+                    else
+                    {
+                        duplicated[i] = true;
+                    }
+                    continue;
+                }
+                if (action == "back")
+                {
+                    if (backIndex < 0)
+                    {
+                        backIndex = i;
+                    }
+                    else
+                    {
+                        duplicated[i] = true;
                     }
                 }
+            }
+            // [P1] 前置——start 先于同批其余工具执行（前文末条仍为本批 assistant 声明 → 锚点可信）；
+            // 失败不阻断（作用域未开时其余工具按真实态判定）
+            ToolOrderDog startDog = null;
+            if (startIndex >= 0)
+            {
+                ToolCallInfo startCall = calls[startIndex];
+                ToolOrderDog preDog = new ToolOrderDog(startCall.Id, startCall.Name, InjectCatId(startCall.Arguments));
+                long startCardSeq;
+                preDog.CardSeq = cardSeqs.TryGetValue(startCall.Id, out startCardSeq) ? startCardSeq : -1;
+                if (!IsToolAllowed(startCall.Name))
+                {
+                    preDog.Result = "ERR|TOOL_FORBIDDEN|工具不在当前授权面: " + startCall.Name;
+                    LogStore.Add("CatHome4", 2, "工具 " + startCall.Name + " 被拒绝：不在本会话声明面", "TOOL");
+                }
+                else
+                {
+                    preDog.Result = ExecuteBuiltin(startCall.Name, preDog.ArgsJson);
+                    _toolCallCount = _toolCallCount + 1;
+                }
+                preDog.IsClosed = true;
+                startDog = preDog;
+            }
+            // [P2] 主体——按原数组序分派（_dogs 入列序 = 声明序：结果回填序与声明序一致）；
+            // 判定读 P1 之后的作用域终局态（本批含 start 则整批按作用域活跃判定——防数组前位工具逃逸）
+            for (int i = 0; i < calls.Count; i = i + 1)
+            {
+                ToolCallInfo call = calls[i];
+                // 批内重复 timeback——参数面拒绝（批内至多 start × 1 + back × 1）
+                if (duplicated[i])
+                {
+                    ToolOrderDog dupDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
+                    dupDog.Result = "ERR|TIMEBACK_ARGS|批内不允许多条 timeback 调用（至多 start × 1 + back × 1）——第 " + (i + 1).ToString() + " 条被拒";
+                    dupDog.IsClosed = true;
+                    _dogs.Add(dupDog);
+                    LogStore.Add("CatHome4", 2, "timeback 批内重复调用被拒（第 " + (i + 1).ToString() + " 条）", "TIMEBACK");
+                    continue;
+                }
+                // 剥离条目——start 已在前置段执行（授权面判定已在 P1 完成）
+                if (i == startIndex)
+                {
+                    _dogs.Add(startDog);
+                    continue;
+                }
+                // M2c 拦截——声明面外工具直接拒绝（ERR 回执不进 OA；host-* 同拦；拦截即时生效）
+                if (!IsToolAllowed(call.Name))
+                {
+                    ToolOrderDog forbiddenDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
+                    forbiddenDog.Result = "ERR|TOOL_FORBIDDEN|工具不在当前授权面: " + call.Name;
+                    forbiddenDog.IsClosed = true;
+                    _dogs.Add(forbiddenDog);
+                    LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：不在本会话声明面", "TOOL");
+                    continue;
+                }
+                // timeback 本体修正黑名单——作用域存活期禁止对 CH4 自身做修正（莎 2026-09-28 定；统一在此点拦 host-* / 内置 / OA 三分支）
+                if (_timebackScope != null && IsTimebackBodyLocked(call.Name))
+                {
+                    ToolOrderDog lockedDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
+                    lockedDog.Result = "ERR|TIMEBACK_LOCKED|timeback 作用域内禁止对 CH4 自身做修正: " + call.Name + "——先 back 回收";
+                    lockedDog.IsClosed = true;
+                    _dogs.Add(lockedDog);
+                    LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：timeback 作用域内禁止本体修正", "TIMEBACK");
+                    continue;
+                }
+                // 域限定工具门禁——仅 timeback 活跃时可用（image-inject / browser-* 四件：域外拒绝，不静默降级；
+                // 方向与上一条黑名单相反——这里拦的是「域外调用」；名单判定见 ChatSession.Timeback.IsTimebackScopedTool）
+                if (IsTimebackScopedTool(call.Name) && _timebackScope == null)
+                {
+                    ToolOrderDog scopeDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
+                    scopeDog.Result = "ERR|TIMEBACK_REQUIRED|" + call.Name + " 仅在 timeback 作用域内可用（非主干信息——用完回收）——先 start 开锚";
+                    scopeDog.IsClosed = true;
+                    _dogs.Add(scopeDog);
+                    LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：timeback 作用域外不可用", "TIMEBACK");
+                    continue;
+                }
+                // per-cat 路由——载荷注入猫 key（会话标识 ≡ 猫 key；积木按 catId 解析猫级文件系统与配置面）
+                string arguments = InjectCatId(call.Arguments);
+                // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
+                _toolCallCount = _toolCallCount + 1;
+                // 剥离条目——back 后置执行（PumpToolBatch 段2b-2：其余工具全部完成之后、结果回填之前）
+                if (i == backIndex)
+                {
+                    ToolOrderDog backDog = new ToolOrderDog(call.Id, call.Name, arguments);
+                    long backCardSeq;
+                    backDog.CardSeq = cardSeqs.TryGetValue(call.Id, out backCardSeq) ? backCardSeq : -1;
+                    // 不参与本批轮询（后置段执行）——IsClosed 直置，防 allDone 判定空等
+                    backDog.IsClosed = true;
+                    _timebackBackDog = backDog;
+                    _dogs.Add(backDog);
+                    continue;
+                }
+                ToolOrderDog dog = new ToolOrderDog(call.Id, call.Name, arguments);
+                long pendingCardSeq;
+                dog.CardSeq = cardSeqs.TryGetValue(call.Id, out pendingCardSeq) ? pendingCardSeq : -1;
+                if (call.Name.StartsWith("host-", StringComparison.Ordinal))
+                {
+                    // host-* 延迟直执登记——批次末尾执行（顺序保证：同批 mau-proj 等先完成产物落地）
+                    _hostDogs.Add(dog);
+                    dog.IsClosed = true;
+                }
+                else if (IsBuiltinTool(call.Name))
+                {
+                    // 内置工具会话内直执——不需 OA（R0.2 分层：Note 状态在会话实例；time/random/info 宿主直执）
+                    dog.Result = ExecuteBuiltin(call.Name, arguments);
+                    dog.IsClosed = true;
+                }
+                else
+                {
+                    dog.Post(_oa, ToolOwnerId);
+                    if (dog.OfficeId == 0)
+                    {
+                        // Post 失败——诚实失败（直执面已移除 2026-09-04——OA 不可用即 ERR，不静默降级）
+                        dog.Result = "ERR|OA_POST_FAIL|工单提交失败（OA 不可用）: " + call.Name;
+                        dog.IsClosed = true;
+                        LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 工单提交失败（OA 不可用）——诚实 ERR", "TOOL");
+                    }
+                }
+                _dogs.Add(dog);
             }
             _phase = ChatPhase.ToolBatchRunning;
             _phaseFrames = 0;
         }
 
         /// <summary>
-        /// 工具声明面比对——线性扫描本会话 _tools（M2c 拦截：名单外直接拒绝；21 件量级线性够用）。
+        /// 工具可用性判定——特权面 + 池校验 + 当前授权集实时查询（design-ch4-tools §三·十一：注入面 = 提示，授权面 = 真相）。
+        /// 授权集由组合根注入的 AuthorizedToolNamesProvider 提供（Admin 域实时解析 cat.cfg 名单）；未接线 → 回落 _tools 快照（旧语义）+ 一次告警。
+        /// 公开面——漂移观测等诊断消费（info tools_drift.added 只报三面全过者；莎 2026-09-28）。
         /// </summary>
         /// <param name="name">工具名</param>
-        /// <returns>true=在声明面内</returns>
-        private bool IsToolAllowed(string name)
+        /// <returns>true=可调用</returns>
+        public bool IsToolAllowed(string name)
         {
             // 特权面——仅默认会话可调（判据 = 注册面组级标记，单一真相源；design-ch4-host-restart §二）
             if (IsPrivilegedTool(name) && !IsDefaultSession)
             {
                 return false;
             }
-            for (int i = 0; i < _tools.Length; i = i + 1)
+            // 池校验——工具须在运行时注册表内（未加载 / 已退役 = 拒）
+            if (ToolRegistry.Find(name) == null)
             {
-                if (string.Equals(_tools[i].Name, name, StringComparison.Ordinal))
+                return false;
+            }
+            // 当前授权集——实时查询（改配置 / 热重载即时生效，无需新会话）
+            string[] authorized = ResolveAuthorizedToolNames();
+            for (int i = 0; i < authorized.Length; i = i + 1)
+            {
+                if (string.Equals(authorized[i], name, StringComparison.Ordinal))
                 {
                     return true;
                 }
             }
             return false;
+        }
+        /// <summary>
+        /// 解析当前授权工具名——委托链（Admin 域实时解析当前 cat.cfg 名单）；未接线回落会话注入面快照。
+        /// </summary>
+        /// <returns>授权工具名数组（非 null）</returns>
+        private string[] ResolveAuthorizedToolNames()
+        {
+            if (AuthorizedToolNamesProvider == null)
+            {
+                if (!_authorizedProviderWarned)
+                {
+                    _authorizedProviderWarned = true;
+                    LogStore.Add("CatHome4", 2, "授权面提供者未接线——工具判定回落会话声明面快照", "TOOL");
+                }
+                return DeclaredToolNames;
+            }
+            string[] names = AuthorizedToolNamesProvider(_catKey);
+            if (names == null)
+            {
+                return new string[0];
+            }
+            return names;
         }
 
         /// <summary>
@@ -1935,6 +2157,9 @@ namespace CH4
                 }
                 dog.Result = hr;
             }
+            // [段2b-2] timeback back 后置执行（A106 批内次序）——本批其余工具（含 host-* 延迟直执）全部完成之后、
+            // 结果回填之前执行：前文末条仍为本批 assistant 声明 → 回收区间上界与释放条数预算同源可对账
+            RunDeferredTimebackBack();
             // [段3] 收集——Closed 取回执；TimeOut/帧超限 → 诚实 ERR（OA 链路失败即报错，不直执）
             for (int i = 0; i < _dogs.Count; i = i + 1)
             {
@@ -1958,15 +2183,21 @@ namespace CH4
                 {
                     // A69 视图层报错中文注释——真实前文（dog.Result）保持原文
                     string viewResult = ErrorNote.Apply(dog.Result);
-                    string toolSummary = ToolSummaryFormatter.Build(dog.Name, dog.ArgsJson, viewResult);
-                    string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(viewResult) + ",\"summary\":" + JsonUtil.Serialize(toolSummary) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
+                    string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(viewResult) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + "}";
                     _httpHost.PushView("toolcard", toolJson, dog.CardSeq, 0);
                     dog.CardSeq = -1;
                 }
                 AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
+                NoteTimebackEvent();
                 _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             }
             _toolBatchActive = false;
+            // [段2d-0] 图片注入——本批 image-inject 登记合并为一条 user 注入消息（落在作用域区间内：back 回收时一并删除）
+            FlushImageInjections();
+            // [段2d] timeback 回卷——本批请求了 back 则在此执行（工具结果已全部回填：截断 + 结论注入 + 工具主动 done）
+            ApplyTimebackBack();
+            // [段2e] timeback 状态自述——回收后作用域已关（自然跳过）；未关且累计满 10 事件则追加一条 assistant 自述
+            FlushTimebackNotice();
             // [段2c] 宿主重启检测——majordomo-restart 成功回执 → 登记重启请求 + 停机态（A72：本轮走常规结束流程，不强制中断）
             for (int r = 0; r < _dogs.Count; r = r + 1)
             {
@@ -2004,10 +2235,7 @@ namespace CH4
             // 续轮——StartLlm 动作段（无收敛上限——LLM 未给出最终回复前持续工具循环；终止条件 = 正常回复 / 空回复续传 / API 错误中止）
             LaunchLlm();
         }
-        /// <summary>
-        /// 错误中止收尾——LLM API 错误重试耗尽后调用（保留断点上下文 + 错误气泡；不走 CloseRound——中止非正常完成语义）。
-        /// 对齐 PauseFinalize：落盘断点（落盘保真）+ 视图序号复位 + 状态复位 Idle + chat_state=idle + 推 error 事件（前端 seal + 错误气泡）。
-        /// </summary>
+        /// <summary>错误中止收尾——LLM API 错误后调用（重试型：Runtime 对 429/5xx/传输类有限重试耗尽；单次型：4xx 参数/额度类 Runtime 不重试——两者同路径，日志措辞按是否真重试分档）。保留断点上下文 + 错误气泡；不走 CloseRound——中止非正常完成语义。</summary>
         private void AbortRoundError()
         {
             SealReasonStream();
@@ -2015,7 +2243,18 @@ namespace CH4
             // 运行态——中止前结算当前态（失败轮同出统计：L2 摘要留档；不推 roundsum 气泡——中止非正常完成语义）
             PhaseSettle();
             LogStore.Add("LLM", 2, "本轮运行态统计（中止）: " + BuildRunStateSummary(), "LLM");
-            LogStore.Add("LLM", 3, "LLM 错误（重试耗尽——本轮中止，上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
+            // 失败措辞如实分档（2026-09-30）——重试型（Runtime 对 429/5xx/传输类有限重试后）与本轮从未重试的单次失败
+            // （4xx 参数/额度类——Runtime 不重试）不可混称「重试耗尽」；判据 = 本轮是否推过 retry 视图（_retrySeq）
+            string abortKind;
+            if (_retrySeq != 0)
+            {
+                abortKind = "重试耗尽";
+            }
+            else
+            {
+                abortKind = "请求失败（未重试）";
+            }
+            LogStore.Add("LLM", 3, "LLM 错误（" + abortKind + "——本轮中止，上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
             // [段1] 前文落盘——落盘保真
             LlmMessage[] toSave = _context.GetMessages();
             _lastStats.EntryCount = toSave.Length;
@@ -2029,11 +2268,16 @@ namespace CH4
                 string errJson = "{\"type\":\"error\",\"text\":" + JsonUtil.Serialize(viewError) + "}";
                 _httpHost.PushView("error", errJson, -1, 0);
             }
-            // [段3] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——错误中止非正常完成语义）
+            // [段3] 重试耗尽终态（A94——本轮推过 retry 气泡则补 failed 终态，保留报错原文；最终错误详情仍归 error 气泡）
+            if (_retrySeq != 0)
+            {
+                PushRetryView("failed");
+            }
+            // [段4] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——错误中止非正常完成语义）
             _round = 0;
             _phase = ChatPhase.Idle;
             _phaseFrames = 0;
-            _retryBlockIndex = -1;
+            ResetRetryView();
             _llmBusy = false;
             _llmError = false;
             _llmErrorText = "";
@@ -2042,7 +2286,6 @@ namespace CH4
             _llmToolCallsJson = "";
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
-            _sawRetry = false;
             SetChatState("idle");
         }
 
@@ -2119,7 +2362,44 @@ namespace CH4
             PushNoteState();
             _round = 0;
             _phase = ChatPhase.Idle;
-            _retryBlockIndex = -1;
+            ResetRetryView();
+        }
+
+        /// <summary>
+        /// 前文截断到指定条数——截断唯一共用实现（人工回滚 / timeback 回卷同源；design-ch4-timeback §12.5）。
+        /// 执行：截断上下文 → 前文落盘（截断重写：append-only 的合法例外）→ 轮级计数与统计条数复位。
+        /// 不含：会话级统计归零（调用方决定）/ Note 处置 / 视图处置 / 前端通知——各路径语义不同，分头保留。
+        /// </summary>
+        /// <param name="keepCount">保留条数（保留 [0..keepCount-1]）</param>
+        private void TruncateMessages(int keepCount)
+        {
+            // [段1] 截断上下文——保留前 keepCount 条（ReplaceMessages 安全面——格式修复幂等）
+            LlmMessage[] all = _context.GetMessages();
+            int count = keepCount;
+            if (count < 0)
+            {
+                count = 0;
+            }
+            if (count > all.Length)
+            {
+                count = all.Length;
+            }
+            LlmMessage[] keep = new LlmMessage[count];
+            for (int i = 0; i < count; i = i + 1)
+            {
+                keep[i] = all[i];
+            }
+            _context.ReplaceMessages(keep);
+            // [段2] 前文落盘——落盘保真（截断重写：append-only 的合法例外）
+            LlmMessage[] toSave = _context.GetMessages();
+            _lastStats.EntryCount = toSave.Length;
+            _store.Rewrite(toSave, _lastStats);
+            // [段3] 轮级计数复位——新起点零统计起算（会话级累计不动——同会话延续）
+            _usagePrompt = 0;
+            _usageCompletion = 0;
+            _usageCacheHit = 0;
+            _contextTokens = 0;
+            _toolCallCount = 0;
         }
 
         /// <summary>
@@ -2144,24 +2424,11 @@ namespace CH4
             {
                 return "ERR|ROLLBACK_NODE|节点不是正式回复（仅 assistant 回复可作切点）";
             }
-            // [段1] 截断上下文——保留 [0..msgIndex]（ReplaceMessages 安全面——格式修复幂等）
-            LlmMessage[] keep = new LlmMessage[msgIndex + 1];
-            for (int i = 0; i <= msgIndex; i = i + 1)
-            {
-                keep[i] = all[i];
-            }
-            _context.ReplaceMessages(keep);
-            // [段2] 前文落盘——落盘保真（截断重写：append-only 的合法例外）
-            LlmMessage[] toSave = _context.GetMessages();
-            _lastStats.EntryCount = toSave.Length;
-            _store.Rewrite(toSave, _lastStats);
-            // [段3] 统计与运行期参数复位——新起点零统计起算
-            ResetStats();
-            _usagePrompt = 0;
-            _usageCompletion = 0;
-            _usageCacheHit = 0;
-            _contextTokens = 0;
-            _toolCallCount = 0;
+            // [段1] 截断前文到切点——共用实现（timeback 回卷同源；含落盘与轮级计数复位）
+            TruncateMessages(msgIndex + 1);
+            // [段2] 最近轮统计重置——新起点零统计起算（会话级累计不动：回滚属同会话延续；
+            //        原实现调 ResetStats() 会清会话级 token 累计——与 glossary「回滚不归零」口径冲突，2026-09-28 修正）
+            _lastStats = new SessionStats();
             // [段4] 视图——从新前文完全重建 + roundsum 清空（roundsum 非真实前文派生；RebuildView 的 LoadInjectReport 会读回旧 view.json 统计——重建后清空并落盘，防下次启动读回）
             RebuildView();
             _viewStore.ClearRoundSums();

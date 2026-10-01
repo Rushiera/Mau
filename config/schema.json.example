@@ -5,11 +5,11 @@
     { "key": "llm.reasoning_effort", "file": "llm.cfg", "default": "medium", "sensitive": false, "writable": false, "desc": "思考强度" },
     { "key": "http.port", "file": "app.cfg", "default": "", "sensitive": false, "writable": false, "empty_desc": "空=按端口段取值（开发区 8079 / 部署区 8080）", "desc": "HTTP 端口——显式覆盖端口段主端口；非法/越界回退区段主端口（启动时读取，改后重启生效）" },
     { "key": "llm.cache_isolation", "file": "llm.cfg", "default": "cat", "sensitive": false, "writable": true, "type": "string", "values": ["cat", "off"], "empty_desc": "空=非声明值 → 运行时回落 cat（启动与运行时各告警一次）", "desc": "LLM 缓存隔离粒度（cat=按猫 key / off=不隔离；会话标识 ≡ 猫 key，无按会话粒度）" },
-    { "key": "ui.chat_font_size", "file": "ui.cfg", "default": "14", "sensitive": false, "writable": true, "type": "int", "min": "8", "max": "32", "desc": "对话区字体大小 px" },
+    { "key": "ui.font_scale", "file": "ui.cfg", "default": "100", "sensitive": false, "writable": true, "type": "int", "min": "50", "max": "300", "desc": "界面字号缩放（百分比）——本地适配不同桌面缩放倍率；100=基准" },
     { "key": "app.autostart", "file": "app.cfg", "default": "false", "sensitive": false, "writable": true, "type": "bool", "desc": "开机自启（注册 HKCU Run）" },
     { "key": "app.round_notify", "file": "app.cfg", "default": "true", "sensitive": false, "writable": true, "type": "bool", "desc": "本轮结束系统通知（托盘 BalloonTip）" },
     { "key": "search.api_config_id", "file": "search.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=未配置 → 搜索工具明示不可用", "desc": "搜索 API 池配置 ID（未配置=搜索不可用）" },
-    { "key": "search.endpoint", "file": "search.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=按池配置推导 /responses", "desc": "搜索端点（含 /anthropic/ 走 Anthropic 消息协议；空=池配置推导 /responses；示例 https://api.deepseek.com/anthropic/v1/messages）" },
+    { "key": "search.endpoint", "file": "search.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=取 LLM 池配置端点原值（不拼后缀；协议按端点是否含 /anthropic/ 分流）", "desc": "搜索端点——含 /anthropic/ 走 Anthropic 消息协议（x-api-key 头），否则走 OpenAI Responses（Bearer）；空=取 LLM 池配置端点原值；现行使用 https://api.deepseek.com/anthropic/v1/messages（DS 官方 Anthropic 端点）" },
     { "key": "search.model", "file": "search.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=池配置默认模型", "desc": "搜索模型（空=池配置默认模型）" },
     { "key": "search.timeout_ms", "file": "search.cfg", "default": "120000", "sensitive": false, "writable": true, "type": "int", "min": "1000", "max": "120000", "desc": "搜索超时毫秒（上限 120 秒——与工具执行层统一口径）" },
     { "key": "vision.api_config_id", "file": "vision.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=未配置 → 识图工具明示不可用", "desc": "视觉 API 池配置 ID（未配置=识图不可用）" },
@@ -17,6 +17,7 @@
     { "key": "vision.model", "file": "vision.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=池配置默认模型", "desc": "视觉模型（空=池配置默认模型）" },
     { "key": "vision.detail", "file": "vision.cfg", "default": "auto", "sensitive": false, "writable": true, "desc": "图片细节（low/high/original/auto）" },
     { "key": "vision.timeout_ms", "file": "vision.cfg", "default": "120000", "sensitive": false, "writable": true, "type": "int", "min": "1000", "max": "120000", "desc": "视觉超时毫秒（上限 120 秒——与工具执行层统一口径）" },
-    { "key": "ps.pwsh_path", "file": "ps.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=未配置 → powershell7 工具明示不可用（不静默回落默认解释器）", "desc": "PowerShell 7 可执行路径（pwsh.exe 全路径；空=未配置——powershell7 工具明示不可用）" }
+    { "key": "ps.pwsh_path", "file": "ps.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=未配置 → powershell7 工具明示不可用（不静默回落默认解释器）", "desc": "PowerShell 7 可执行路径（pwsh.exe 全路径；空=未配置——powershell7 工具明示不可用）" },
+    { "key": "browser.kernel_path", "file": "browser.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=未配置 → browser-* 工具明示不可用（不静默回落探测路径）", "desc": "浏览器内核可执行路径（Chromium 系全路径：msedge.exe / chrome.exe 等；空=未配置——浏览器工具明示不可用；换内核只需改本项——协议同为 CDP）" }
   ]
 }

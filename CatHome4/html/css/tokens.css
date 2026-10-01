@@ -1,9 +1,36 @@
 /* CH4 外观层——设计令牌（两页共用值表）
-   定位：色彩字面量的唯一定义处（L1 界面基础 + L3 MD 内容）；页样式只引用不定义
+   定位：色彩字面量与字体族的唯一定义处（L1 界面基础 + L1 字体族 + L3 MD 内容）；页样式只引用不定义
    规范：Project/CH4/design-ch4-frontend-theme.md §二（分层职责 + 铁律）
    纪律：改色只改本文件；组件面零裸色值；L3 为独立色系——与 L1 同值不算重复
    加载：两页 <link> 先于页样式（tokens.css → style.css / chat.css） */
+
+/* ============ 字体面——内容字体（A120） ============ */
+/* 内容字体 = Sarasa Mono SC（更纱等宽 CJK，中英 1:2 对齐）——随前端分发（html/fonts/SarasaMonoSC-Regular.ttf）
+   分层：内容面（文本/数据展示）走更纱；界面面（控件/标签/输入框/标题）走系统字体栈
+   font-display: swap——字体未就绪时先用回落后栈渲染，不阻塞首屏 */
+@font-face {
+    font-family: "Sarasa Mono SC";
+    src: url("../fonts/SarasaMonoSC-Regular.ttf") format("truetype");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
 :root {
+    /* ============ L1 字体族 ============ */
+    --ch-font-ui: "Consolas", "Microsoft YaHei", monospace;                        /* 界面面——控件 / 标签 / 标题 */
+    --ch-font-content: "Sarasa Mono SC", "Consolas", "Microsoft YaHei", monospace;  /* 内容面——文本 / 数据展示 */
+
+    /* ============ L1 字号阶梯（五档 + 全局缩放） ============ */
+    /* 全局缩放——前端读配置 ui.font_scale 注入（100 = 基准；本地适配不同桌面缩放倍率）；
+       档位基准 px 与缩放系数解耦：调基准改档位，调系数改整站观感 */
+    --ch-fs-scale: 1;
+    --ch-fs-tag: calc(12px * var(--ch-fs-scale));       /* 标签角标——chip / badge / 工具卡 / 系统气泡 / 状态条 / 小控件 */
+    --ch-fs-sub: calc(13px * var(--ch-fs-scale));       /* 次要内容——次级信息行 / 辅助说明 */
+    --ch-fs-body: calc(14px * var(--ch-fs-scale));      /* 正文——气泡正文 / 日志 / 表格 */
+    --ch-fs-strong: calc(15px * var(--ch-fs-scale));    /* 强调正文——主面板行 / 管理标题 */
+    --ch-fs-title: calc(16px * var(--ch-fs-scale));     /* 标题——猫名 / 区块标题 */
+
     /* ============ L1 界面基础 ============ */
     /* 背景 */
     --ch-bg-page: #141414;          /* 页面底 / Note 弹层底 */
@@ -16,6 +43,8 @@
     --ch-bg-deep: rgba(0, 0, 0, 0.6);   /* 半透明深底（版本角标等浮于页面的小徽标） */
     --ch-bg-hover: #242424;         /* 悬浮反馈（侧栏 / 次按钮 / 折叠头 / 图标按钮） */
     --ch-bg-accent: #0e639c;        /* 主色块——用户气泡 / 主按钮 / 侧栏 active */
+    --ch-bg-danger: #a1260d;        /* 危险动作块——输入区「停止」按钮（实心红） */
+    --ch-bg-warn: #b8860b;          /* 警示动作块——输入区「继续」按钮（实心黄） */
     /* 文字 */
     --ch-fg: #c8c8c8;               /* 默认字 / 输入框 */
     --ch-fg-strong: #d4d4d4;        /* 正文 / 强调数值 */

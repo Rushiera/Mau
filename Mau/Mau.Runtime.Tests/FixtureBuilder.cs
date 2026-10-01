@@ -141,9 +141,10 @@ namespace Mau.Runtime.Tests
                     {
                         Directory.Delete(pocketRoot, true);
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
                         // 清理失败不影响
+                        Console.WriteLine("[测试清理] pocket 目录删除失败: " + ex.Message);
                     }
                 }
             }

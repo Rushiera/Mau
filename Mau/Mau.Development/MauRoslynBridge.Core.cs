@@ -10,6 +10,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.Options;
+using Mau.Runtime;
 
 namespace Mau.Development
 {
@@ -77,7 +78,7 @@ namespace Mau.Development
         private void ParseCsproj(ProjectCache cache)
         {
             cache.AssemblyName = Path.GetFileNameWithoutExtension(cache.CsprojPath);
-            cache.Tfm = "net8.0";
+            cache.Tfm = "net10.0";
             cache.NullableEnable = false;
             cache.IsExe = false;
             cache.DefaultExcludes = new List<string>();
@@ -130,9 +131,10 @@ namespace Mau.Development
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 解析失败保留默认——语义诊断可能噪音，cs.build 权威兜底
+                LogStore.Add("Mau", 2, "csproj 解析失败，保留默认: " + ex.Message, "SYS");
             }
         }
 
@@ -426,7 +428,7 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 解析选项——C# 12（net8 默认语言版本）
+        /// 解析选项——固定 C# 12（语法分析档；与编译期 LangVersion 解耦）
         /// </summary>
         /// <returns>解析选项</returns>
         private static CSharpParseOptions ParseOptions()
@@ -643,21 +645,22 @@ namespace Mau.Development
                 {
                     references.Add(MetadataReference.CreateFromFile(pair.Value));
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // 单个引用失败跳过——编译器会报缺失引用而非崩溃
+                    LogStore.Add("Mau", 2, "引用程序集加载失败，跳过: " + ex.Message, "SYS");
                 }
             }
             return references;
         }
 
         /// <summary>
-        /// 共享框架探测——dotnet/shared/&lt;框架名&gt;/ 按项目 TFM 主版本匹配（net8.0-windows → 8.0.x）的托管 dll 并入引用集（按名去重）
+        /// 共享框架探测——dotnet/shared/&lt;框架名&gt;/ 按项目 TFM 主版本匹配（net10.0-windows → 8.0.x）的托管 dll 并入引用集（按名去重）
         /// </summary>
         /// <param name="pathsByName">按名路径表（写）</param>
         /// <param name="sharedDir">shared 根目录</param>
         /// <param name="frameworkName">框架目录名（Microsoft.AspNetCore.App / Microsoft.WindowsDesktop.App）</param>
-        /// <param name="tfm">项目 TFM（如 net8.0-windows）——主版本不匹配则跳过该框架</param>
+        /// <param name="tfm">项目 TFM（如 net10.0-windows）——主版本不匹配则跳过该框架</param>
         private static void ProbeSharedFramework(Dictionary<string, string> pathsByName, string sharedDir, string frameworkName, string tfm)
         {
             string frameworkDir = Path.Combine(sharedDir, frameworkName);
@@ -665,7 +668,7 @@ namespace Mau.Development
             {
                 return;
             }
-            // TFM 主版本提取——net8.0-windows → "8.0"；解析失败跳过（宁缺勿错——引入错误版本 = CS1705 洪水）
+            // TFM 主版本提取——net10.0-windows → "8.0"；解析失败跳过（宁缺勿错——引入错误版本 = CS1705 洪水）
             int dash = tfm.IndexOf('-');
             string baseTfm = dash >= 0 ? tfm.Substring(0, dash) : tfm;
             string netPart = baseTfm.StartsWith("net", StringComparison.OrdinalIgnoreCase) ? baseTfm.Substring(3) : "";

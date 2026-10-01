@@ -156,9 +156,10 @@ namespace Mau.Cli
                     {
                         Directory.Delete(pocketRoot, true);
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
                         // 清理失败不影响
+                        Console.Error.WriteLine("[mau debug] 临时目录清理失败: " + ex.Message);
                     }
                 }
             }

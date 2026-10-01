@@ -428,8 +428,10 @@ namespace Mau.Bricks
                     doc.Dispose();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                // JSON 解析失败——回落空串（调用方按缺字段处理）
+                LogStore.Add("PACK", 2, "载荷 JSON 解析失败，回落空串: " + ex.Message, "SYS");
             }
             return "";
         }
@@ -493,4 +495,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:7973C0861A704B5E8443FF055CA7F4BC21050427B537BCC710BAD9659F12BEFB
+// #MAU_CHECKSUM:SHA256:DF885E85188480D53438A31B1F25EE60388CD1310DAB497756FE60357EE4AA24

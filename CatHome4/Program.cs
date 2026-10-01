@@ -98,13 +98,17 @@ namespace CH4
         public static int Main(string[] args)
         {
             _mainThreadId = Environment.CurrentManagedThreadId;
+            // A118 外壳初始化——高 DPI（必须早于任何窗口创建）+ 启动时刻（已运行时间基准）+ AUMID（通知图标身份键）
+            ShellInit();
+            InitAppUserModelId();
             try
             {
                 Console.OutputEncoding = System.Text.Encoding.UTF8;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 输出编码设置失败不影响功能
+                LogStore.Add("CatHome4", 2, "控制台编码设置失败: " + ex.Message, "CONFIG");
             }
             try
             {
@@ -114,6 +118,11 @@ namespace CH4
                 {
                     Console.WriteLine("[CMD] " + argErr);
                     return 1;
+                }
+                // A118：非交互模式输出双写落盘（WinExe 无控制台——shell 直调取不到 stdout；父进程重定向链路不受影响）
+                if (nonInteractive)
+                {
+                    EnableCmdCapture();
                 }
                 _majordomoPush = ExtractArgValue(args, "--majordomopush");
                 // [段1b] 探针通道——LLM 返回体结构诊断（方案 B：宿主能力；不启动宿主/不占端口/不载语料，先于 Bootstrap 返回）
@@ -130,12 +139,12 @@ namespace CH4
                 catch (Exception ex)
                 {
                     Console.WriteLine("[CMD] 启动失败: " + ex.Message);
-                    // 脚本/自检模式无人值守不暂停；交互模式暂停——错误可见（双击 exe 不闪退）
-                    bool pauseOnFail = !nonInteractive;
-                    if (pauseOnFail)
+                    // A118：WinExe 无控制台——启动失败必须可见（原 Console.ReadKey 在无控制台时抛异常且失败静默）；
+                    // 脚本/自检/探针模式无人值守不弹窗，仅以退出码 1 表达
+                    bool showFailBox = !nonInteractive;
+                    if (showFailBox)
                     {
-                        Console.WriteLine("[CMD] 按任意键退出……");
-                        Console.ReadKey();
+                        ShowStartupFailure(ex.Message);
                     }
                     return 1;
                 }
@@ -197,6 +206,15 @@ namespace CH4
                 // O4 优雅收尾——统一观测四文件 flush 落盘（0 字节判例根因修复：--run 模式直接 return 丢缓冲）
                 LogStore.CloseWriters();
                 FrameStore.Close();
+                // A118：非交互输出落盘收尾
+                CloseCmdCapture();
+                // A110 浏览器实例清理——Chromium detach（宿主退出不带走子进程）；不清会留孤儿实例占用 profile
+                IBrowserLifecycle browserLifecycle;
+                DataBox.TryResolve<IBrowserLifecycle>(out browserLifecycle);
+                if (browserLifecycle != null)
+                {
+                    browserLifecycle.Shutdown();
+                }
             }
         }
         /// <summary>
@@ -274,6 +292,10 @@ namespace CH4
             DataBox.Bind<IVisionService>(new Mau.Providers.DeepSeekVisionService(apiConfigStore, llmConfig));
             // PsCat PowerShell 执行服务——EncodedCommand 免转义 + UTF-8 内建 + 写文件拦截 + 超时进程树杀（PsService）
             DataBox.Bind<IPsService>(new PsService());
+            // A110 浏览器服务——系统 Edge headless + 裸 CDP（零第三方依赖 · 每猫独立 profile · timeback 域限定）
+            CdpBrowserService browserSvc = new CdpBrowserService(dataRoot);
+            DataBox.Bind<IBrowserService>(browserSvc);
+            DataBox.Bind<IBrowserLifecycle>(browserSvc);
             // 宿主指令服务——工具面触达内核指令族（host.command 积木 → IHostCommandService；与 CLI/HTTP 面板同源单内核）
             DataBox.Bind<IHostCommandService>(new HostCommandService());
             AuditStore audit = new AuditStore();
@@ -295,7 +317,8 @@ namespace CH4
             // 扫描化：文件名去 FL_ 前缀得 Flow 名（dll 名 = 组名——QuickCat 与工具组一视同仁）
             // 容错：加载失败 → 警告 + 跳过注册（该组工具工单无人认领 → 超时诚实 ERR——不再宿主直执）
             // 路由表数据化 + 工具定义数据化：加载后经 IFlow.GetMetaJson/GetToolsJson 读自曝 → 统一工具池（design-ch4-tools-pool §六）
-            List<IFlow> poolFlows = new List<IFlow>();
+            // 工具组来源（组名 + Flow——A107：定义自曝失败时必须报得出是哪一组）
+            List<ToolGroupSource> poolGroups = new List<ToolGroupSource>();
             IFlow quickFlow = null;
             string[] flowDlls = Directory.GetFiles(dllDir, "FL_*.dll");
             Array.Sort(flowDlls, StringComparer.OrdinalIgnoreCase);
@@ -322,12 +345,17 @@ namespace CH4
                     FlowHandle handle = LoadToolGroup(flowName, dllDir);
                     if (handle != null)
                     {
-                        poolFlows.Add(handle.Flow);
+                        ToolGroupSource groupSource = new ToolGroupSource();
+                        groupSource.Name = flowName;
+                        groupSource.Flow = handle.Flow;
+                        poolGroups.Add(groupSource);
                     }
                 }
             }
             // 内置工具定义源——宿主内建小表（本质也是 BRIK，只是内置：Note/time/random/info/host-*）
-            ToolPool.RebuildAll(poolFlows, quickFlow, BuildBuiltinToolsJson());
+            ToolPool.RebuildAll(poolGroups, quickFlow, BuildBuiltinToolsJson());
+            // A107——定义缺陷出声：逐条 L3 落盘（判例：整组静默消失无人知）
+            LogToolPoolDefects();
             // [段5] 会话面——上下文 + 前文恢复 + 工具定义 + 默认会话注册（P9.1 会话对象化：ChatSession 承载状态机——design-llm-streaming §六）
             ChatContext chatCtx = new ChatContext();
             // S1 ChatBridge 化——会话协调实例（注入提示词构建委托——CatCfg 域静态面 BuildInjectPrompt）
@@ -337,9 +365,15 @@ namespace CH4
             AdminService.BuildEnvInfoProvider = BuildEnvInfo;
             // 加载包数据面接线——pack 内置工具（池定义与猫挂载解析归 Admin 域；Core 零配置面依赖）
             ChatSession.PackPayloadProvider = AdminService.BuildPackPayload;
+            // 授权面实时查询接线——工具调用判定按当前 cat.cfg 名单实时解析（design-ch4-tools §三·十一：注入面=提示，授权面=真相）
+            ChatSession.AuthorizedToolNamesProvider = AdminService.ResolveCatAuthorizedToolNames;
             // 延迟队列落盘接线——Data/runtime/delays.json（跨宿主重启保留；design-ch4-delay §七）
             DelayQueue.Configure(Path.Combine(dataRoot, "Data", "runtime", "delays.json"));
             DelayQueue.Load();
+            // timeback 归档落点接线——Data/runtime/timeback（全局计数 + 每次回收一个作用域文件；A104）
+            ChatSession.TimebackArchiveDirProvider = AdminService.ResolveTimebackArchiveDir;
+            // timeback 归档现场记录接线——回收时采集本猫 info 快照（归档文件第二行）
+            ChatSession.TimebackInfoProvider = BuildEnvInfo;
             AdminService.NotifyBalloon = Program.NotifyBalloon;
             // S5 Observe 域接线——依赖注入（观测面迁入 CatHome4.Observe）
             ObserveService.Configure(_oa, _chatBridge, _quickHandle, _toolFlowHandles, _quickId, _toolFlowIds, _runner, null);
@@ -354,6 +388,10 @@ namespace CH4
             ToolRegistry.Init(ToolPool.BuildSpecs(), ToolPool.BuildOwnerFlowMap(), ToolPool.BuildPrivilegedMap());
             // 工具池摘要——启动观测（工具总数 + 组别分布；design-ch4-tools-pool §六）
             string poolSummary = "工具池已聚合：" + ToolPool.AllNames().Length.ToString() + " 个工具 / " + ToolPool.AllGroups().Length.ToString() + " 个组";
+            if (ToolPool.Defects().Length > 0)
+            {
+                poolSummary = poolSummary + "｜定义缺陷 " + ToolPool.Defects().Length.ToString() + " 组（详见 err 面）";
+            }
             LogStore.Add("CatHome4", 1, poolSummary, "CONFIG");
 
             // 默认猫 cat.cfg 补建——缺失时按全局默认模板创建（新用户无 cfg 必然态；运行时缺省回退 → 启动落盘）
@@ -386,7 +424,9 @@ namespace CH4
                 }
             }
             // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）；session.new 重注入复用
-            _chatBridge.DefaultToolSpecs = AdminService.FilterToolSpecs(AdminService.ResolveToolNames(defaultToolNames));
+            _chatBridge.DefaultToolSpecs = AdminService.FilterToolSpecs(AdminService.ResolveToolNames(defaultToolNames, true), true);
+            // 授权面原始串——实时解析输入（design-ch4-tools §三·十一）
+            _chatBridge.DefaultToolNames = defaultToolNames;
             AdminService._defaultApiConfigId = defaultApiConfigId;
             // R2.3 默认猫 qqbot 配置——majordomo cat.cfg 读取（缺省未绑定/禁用）
             Guid defaultQqBotId = Guid.Empty;
@@ -430,6 +470,8 @@ namespace CH4
             SessionViewStore chatViewStore = new SessionViewStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.view.json"));
             _chatBridge.DefaultSession = new ChatSession(defaultSessionId, "majordomo", chatCtx, chatStore,
                 new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _chatBridge.DefaultToolSpecs, ExecuteTool, chatViewStore);
+            // A111——块序变更通知接线（视图层变更 → 转发面游标校正）
+            AdminService.AttachViewOrderNotify("majordomo", chatViewStore);
             // M4e 猫级白名单——默认猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
             _chatBridge.DefaultSession.SetCatKey("majordomo");
             AdminService.ApplyCatRoots("majordomo");
@@ -624,6 +666,16 @@ namespace CH4
                     item["id"] = entries[i].Id;
                     item["writable"] = entries[i].Writable;
                     item["note"] = entries[i].Note == null ? "" : entries[i].Note;
+                    // [段5b] path——规范绝对路径（物理位置认知；与文件工具根解析同规）
+                    string rootPath = entries[i].Path;
+                    if (string.IsNullOrWhiteSpace(rootPath))
+                    {
+                        item["path"] = "";
+                    }
+                    else
+                    {
+                        item["path"] = WorkspaceConfig.NormalizeRoot(rootPath);
+                    }
                     rootList.Add(item);
                 }
             }
@@ -655,7 +707,160 @@ namespace CH4
                 qqbotBlock["usage"] = qqbotShow;
                 info["qqbot"] = qqbotBlock;
             }
+            // [段9] tools_drift——工具面漂移（会话注入面 vs 当前授权集；仅不一致时输出——design-ch4-tools §三·十一）
+            // added 附用法摘要（name/desc/args——注册表声明派生，冷启动猫不新会话即可上手；removed 只给名字）
+            if (session != null)
+            {
+                string[] declaredNames = session.DeclaredToolNames;
+                string[] authorizedNames = AdminService.ResolveCatAuthorizedToolNames(catKey);
+                List<string> driftAdded = new List<string>();
+                List<string> driftRemoved = new List<string>();
+                for (int i = 0; i < authorizedNames.Length; i = i + 1)
+                {
+                    if (Array.IndexOf(declaredNames, authorizedNames[i]) >= 0)
+                    {
+                        continue;
+                    }
+                    // 三面判定——特权面 / 池校验 / 授权集全过才算「新增可用」（不能用 = 不报；莎 2026-09-28）
+                    if (!session.IsToolAllowed(authorizedNames[i]))
+                    {
+                        continue;
+                    }
+                    driftAdded.Add(authorizedNames[i]);
+                }
+                for (int i = 0; i < declaredNames.Length; i = i + 1)
+                {
+                    if (Array.IndexOf(authorizedNames, declaredNames[i]) < 0)
+                    {
+                        driftRemoved.Add(declaredNames[i]);
+                    }
+                }
+                if (driftAdded.Count > 0 || driftRemoved.Count > 0)
+                {
+                    Dictionary<string, object> driftBlock = new Dictionary<string, object>();
+                    List<object> addedBriefs = new List<object>();
+                    for (int i = 0; i < driftAdded.Count; i = i + 1)
+                    {
+                        addedBriefs.Add(BuildToolBrief(driftAdded[i]));
+                    }
+                    driftBlock["added"] = addedBriefs;
+                    driftBlock["removed"] = driftRemoved;
+                    info["tools_drift"] = driftBlock;
+                }
+            }
+            // [段9b] tools_defect——工具组定义缺陷（A107：解析失败 / 结构不符 / 零产出；仅非空时输出——design-ch4-tools §三·十三）
+            ToolDefect[] poolDefects = ToolPool.Defects();
+            if (poolDefects.Length > 0)
+            {
+                List<object> defectItems = new List<object>();
+                for (int i = 0; i < poolDefects.Length; i = i + 1)
+                {
+                    defectItems.Add(new { group = poolDefects[i].Group, stage = poolDefects[i].Stage, reason = poolDefects[i].Reason });
+                }
+                info["tools_defect"] = defectItems;
+            }
+            // [段10] timeback——上下文作用域现状 + 归档到达面（design-ch4-timeback §八 T2）
+            // active：未闭合作用域（id / purpose / anchor / startAt / seconds / events）——无作用域不输出
+            // recent：最近 5 次回收的首行 meta（t / id / n / seconds / purpose）——findings 全文不进 info（归档面不得大于会话面）
+            // archive：写面可用性（ok=false = 最近一次落档失败；失败不阻断回卷，但必须可见）
+            Dictionary<string, object> timebackBlock = new Dictionary<string, object>();
+            bool timebackAny = false;
+            if (session != null)
+            {
+                Dictionary<string, object> timebackActive = session.TimebackActiveSnapshot();
+                if (timebackActive != null)
+                {
+                    long activeStartAt = 0;
+                    object startAtObj;
+                    if (timebackActive.TryGetValue("startAt", out startAtObj) && startAtObj is long)
+                    {
+                        activeStartAt = (long)startAtObj;
+                    }
+                    long activeSeconds = (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - activeStartAt) / 1000;
+                    if (activeSeconds < 0)
+                    {
+                        activeSeconds = 0;
+                    }
+                    timebackActive["seconds"] = activeSeconds;
+                    timebackBlock["active"] = timebackActive;
+                    timebackAny = true;
+                }
+            }
+            string timebackDir = AdminService.ResolveTimebackArchiveDir(catKey);
+            if (timebackDir.Length > 0)
+            {
+                TimebackArchive timebackArchive = new TimebackArchive(timebackDir);
+                List<string> timebackTail = timebackArchive.ReadRecentMeta(5);
+                List<Dictionary<string, object>> timebackRecent = new List<Dictionary<string, object>>();
+                for (int i = 0; i < timebackTail.Count; i = i + 1)
+                {
+                    Dictionary<string, object> item = BuildTimebackSummary(timebackTail[i]);
+                    if (item != null)
+                    {
+                        timebackRecent.Add(item);
+                    }
+                }
+                if (timebackRecent.Count > 0)
+                {
+                    timebackBlock["recent"] = timebackRecent;
+                }
+                Dictionary<string, object> archiveBlock = new Dictionary<string, object>();
+                // 写面可用性取进程内标志——info 每次新建归档实例，实例标志（LastWriteFailed）在新实例上恒 false
+                archiveBlock["ok"] = !TimebackArchive.LastWriteFailedAny;
+                timebackBlock["archive"] = archiveBlock;
+                timebackAny = true;
+            }
+            if (timebackAny)
+            {
+                info["timeback"] = timebackBlock;
+            }
             return JsonSerializer.Serialize(info, AdminService.InfoJsonOptions);
+        }
+        /// <summary>
+        /// timeback 归档行摘要——info timeback.recent 条目（只取观测字段；findings 全文不进 info）。
+        /// </summary>
+        /// <param name="line">归档单行 JSON</param>
+        /// <returns>摘要字典（不可解析 = null）</returns>
+        private static Dictionary<string, object> BuildTimebackSummary(string line)
+        {
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(line))
+                {
+                    JsonElement root = doc.RootElement;
+                    Dictionary<string, object> item = new Dictionary<string, object>();
+                    JsonElement tNode;
+                    if (root.TryGetProperty("t", out tNode) && tNode.ValueKind == JsonValueKind.String)
+                    {
+                        item["t"] = tNode.GetString();
+                    }
+                    JsonElement idNode;
+                    if (root.TryGetProperty("id", out idNode) && idNode.ValueKind == JsonValueKind.Number)
+                    {
+                        item["id"] = idNode.GetInt64();
+                    }
+                    JsonElement nNode;
+                    if (root.TryGetProperty("n", out nNode) && nNode.ValueKind == JsonValueKind.Number)
+                    {
+                        item["n"] = nNode.GetInt32();
+                    }
+                    JsonElement secNode;
+                    if (root.TryGetProperty("seconds", out secNode) && secNode.ValueKind == JsonValueKind.Number)
+                    {
+                        item["seconds"] = secNode.GetInt64();
+                    }
+                    JsonElement purposeNode;
+                    if (root.TryGetProperty("purpose", out purposeNode) && purposeNode.ValueKind == JsonValueKind.String)
+                    {
+                        item["purpose"] = purposeNode.GetString();
+                    }
+                    return item;
+                }
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
         /// <summary>
         /// 前端测试服务拉起——宿主启动时自动启动 html/tests/server.js（未监听本区段前端测试端口时）；失败不影响主功能。
@@ -738,9 +943,10 @@ namespace CH4
                 System.Diagnostics.Process.Start(nodePsi);
                 LogStore.Add("CatHome4", 1, "前端测试服务已启动：" + testDir, "CONFIG");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 测试服务启动失败不影响宿主主功能
+                LogStore.Add("CatHome4", 2, "前端测试服务启动失败: " + ex.Message, "CONFIG");
             }
         }
         /// <summary>

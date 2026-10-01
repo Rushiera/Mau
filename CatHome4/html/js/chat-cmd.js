@@ -1,6 +1,6 @@
 // CH4 外观层——chat-cmd.js：PowerShell 命令解读器（纯函数，无依赖）
 // 定位：powershell 工具 command 原文硬解码为自然语言意图——工具卡折叠行 + 展开区（可见性适配）
-// 消费：chat-view.js chatToolCard（工具名 = powershell 时覆盖宿主 summary）
+// 消费：chat-view.js chatToolCard（工具名 = powershell 时承担折叠行——PS 双线不配 headline）
 // 原则：表驱动确定性解析——零 LLM / 零网络 / 零状态；未识别段原样标注（不编造、不静默）
 // 加载顺序：chat-cmd.js → chat-view.js → chat-core.js（chat.html 引导层引用）
 
@@ -11,7 +11,7 @@
 /**
  * 工具参数原文 → 命令解读。
  * @param {string} argsText 工具 arguments（JSON 字符串；实时 payload 可能被宿主截断）
- * @returns {object|null} {brief, detail, truncated, unknown}；无法解析返回 null（调用方回退宿主 summary）
+ * @returns {object|null} {brief, detail, truncated, unknown}；无法解析返回 null（调用方回退覆盖表 headline / 骨架兜底）
  */
 function cmdDecodeTool(argsText) {
     var got = cmdExtractCommand(argsText);

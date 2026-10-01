@@ -133,7 +133,7 @@ test('参数截断兜底——JSON 未闭合仍可解读', () => {
   expect(r.detail).toContain('参数被宿主截断');
 });
 
-// ── 兜底：无法解读返回 null（调用方回退宿主 summary）──
+// ── 兜底：无法解读返回 null（调用方回退覆盖表 headline / 骨架兜底）──
 test('无 command 字段返回 null', () => {
   expect(cmdDecodeTool('{"path":"a.txt"}')).toBe(null);
   expect(cmdDecodeTool('')).toBe(null);
@@ -195,7 +195,7 @@ test('上报失败释放标记——下次渲染可重试（不静默丢弃采�
 
 // ── 补充规则（2026-09-23 收集表核销：dotnet 形态 / 表达式括号 / 外部命令）──
 test('dotnet 兜底形态——dll 直跑与开关查询', () => {
-  const r = cmdDecodeTool(args('dotnet C:\\Work\\Gitee\\mau\\Mau\\Mau.Development.Tests\\bin\\Debug\\net8.0\\Mau.Development.Tests.dll -class FormatTests'));
+  const r = cmdDecodeTool(args('dotnet C:\\Work\\Gitee\\mau\\Mau\\Mau.Development.Tests\\bin\\Debug\\net10.0\\Mau.Development.Tests.dll -class FormatTests'));
   expect(r.brief).toBe('dotnet Mau.Development.Tests.dll · 运行 .NET 程序集 「Mau.Development.Tests.dll」');
   expect(cmdDecodeTool(args('dotnet --version')).brief).toBe('dotnet --version · 查看 .NET SDK 版本');
   expect(cmdDecodeTool(args('dotnet --info')).brief).toBe('dotnet --info · 查看 .NET 环境信息（--info）');

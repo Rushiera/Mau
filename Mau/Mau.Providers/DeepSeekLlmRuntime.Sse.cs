@@ -336,9 +336,10 @@ namespace Mau.Providers
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // 畸形帧跳过——容忍上游抖动
+                LogStore.Add("LLM", 2, "SSE 畸形帧跳过: " + ex.Message, "LLM");
             }
         }
         /// <summary>
@@ -486,9 +487,10 @@ namespace Mau.Providers
                         cacheHit = ReadReplayNumber(root, "cacheHit");
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
                     // 回放解析失败保持零值——诊断面不抛异常
+                    LogStore.Add("LLM", 2, "回放 usage 解析失败，保持零值: " + ex.Message, "LLM");
                 }
             }
             StringBuilder builder = new StringBuilder();

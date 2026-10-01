@@ -553,6 +553,14 @@ function renderConfig(items) {
         var td1 = document.createElement('td');
         td1.className = 'box-key';
         td1.textContent = it.key;
+        // 项注释——schema desc 单源（后端下发；未声明项无 desc，来源列已标「·未声明」）
+        var noteText = it.desc || '';
+        if (noteText.length > 0) {
+            var noteEl = document.createElement('div');
+            noteEl.className = 'cfg-note';
+            noteEl.textContent = noteText;
+            td1.appendChild(noteEl);
+        }
         var td2 = document.createElement('td');
         var inp = document.createElement('input');
         inp.value = it.value;

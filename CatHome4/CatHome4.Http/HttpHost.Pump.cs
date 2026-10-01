@@ -33,9 +33,10 @@ namespace CatHome4.Http
                     _snapshotPending = true;
                     PushLogIncrements();
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // 推送异常不炸宿主——静默跳过下一轮
+                    LogStore.Add("HttpHost", 2, "日志增量推送异常，跳过本轮: " + ex.Message, "SYS");
                 }
             }
         }
@@ -128,9 +129,10 @@ namespace CatHome4.Http
                         FrameStore.Append(frameJson);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
                     // 帧流异常不阻塞主线程泵
+                    LogStore.Add("HttpHost", 2, "帧流构建异常，不阻塞主线程泵: " + ex.Message, "SYS");
                 }
             }
         }

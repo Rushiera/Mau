@@ -106,9 +106,10 @@ namespace Mau.Development
                     {
                         Directory.Delete(pocketRoot, true);
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
                         // 清理失败不影响
+                        LogStore.Add("Mau", 2, "积木谱跑测临时目录清理失败: " + ex.Message, "SYS");
                     }
                 }
             }

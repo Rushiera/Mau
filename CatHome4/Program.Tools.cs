@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using Mau.Runtime;
@@ -21,7 +22,7 @@ namespace CH4
         private static string BuildBuiltinToolsJson()
         {
             // 结构化构建——匿名对象树 → JsonSerializer（R6-P3-08：原手写字符串拼接易漏转义、难维护）
-            object[] tools = new object[9];
+            object[] tools = new object[10];
             tools[0] = new
             {
                 name = "Note",
@@ -66,7 +67,7 @@ namespace CH4
             tools[3] = new
             {
                 name = "info",
-                description = "本会话环境自省——返回分类 JSON 块：version（版本 + 编译时刻）/ time（当前时间）/ llm（本猫生效端点）/ endpoint（本地端点：对话页 + 管理面板）/ roots（可见受控根）/ tokens（前文长度 + 最近前文变动时刻）/ packs（挂载包）/ qqbot（渠道说明）（agent 的眼睛；R1.2）",
+                description = "本会话环境自省——返回分类 JSON 块：version（版本 + 编译时刻）/ time（当前时间）/ llm（本猫生效端点）/ endpoint（本地端点：对话页 + 管理面板）/ roots（可见受控根 id/writable/note/path——绝对路径）/ tokens（前文长度 + 最近前文变动时刻）/ packs（挂载包）/ qqbot（渠道说明）/ tools_drift（漂移——added 附用法摘要 name/desc/args（*=必填）· removed 给名字；仅不一致时输出）/ tools_defect（工具组定义缺陷——group/stage/reason；仅非空时输出）/ timeback（上下文作用域——active 活跃作用域 · recent 归档尾部 5 条 · archive 写面可用性；无数据时不出该键）（agent 的眼睛；R1.2）",
                 parameters = new
                 {
                     type = "object",
@@ -82,7 +83,7 @@ namespace CH4
                     type = "object",
                     properties = new Dictionary<string, object>
                             {
-                                { "cat", new { type = "string", description = "Flow 注册名（QuickCat/TextCat/MauCat/CsCat/ConfigCat/SearchCat/VisionCat/TempToolCat/PsCat——host-flows 查当前全部）" } }
+                                { "cat", new { type = "string", description = "Flow 注册名（host-flows 查当前全部）" } }
                             },
                     required = new string[] { "cat" }
                 }
@@ -145,6 +146,22 @@ namespace CH4
                     required = new string[] { "content" }
                 }
             };
+            tools[9] = new
+            {
+                name = "timeback",
+                description = "上下文作用域（取证型任务专用）——action='start' 开锚（purpose 记用途）→ 查证过程在作用域内膨胀 → action='back' 回卷：膨胀过程从上下文销毁，只把 findings 带回主干（下一轮首条可见）。只服务取证型任务（巡检 / 查文档 / 查日志 / 探路）；建设型与推理链型任务禁用。findings 只放事实 + 指针（路径 / 单号 / 时间戳），不放推理与结论。v1 未闭合前禁止再次 start。",
+                parameters = new
+                {
+                    type = "object",
+                    properties = new Dictionary<string, object>
+                            {
+                                { "action", new { type = "string", description = "start=开锚 / back=回卷回收" } },
+                                { "purpose", new { type = "string", description = "start 必填——用途标签（短）" } },
+                                { "findings", new { type = "string", description = "back 必填——带回载荷（事实 + 指针）" } }
+                            },
+                    required = new string[] { "action" }
+                }
+            };
             // 宽松转义——避免 < > 被编码为 \u003C（与旧手写字符串语义一致）
             JsonSerializerOptions options = new JsonSerializerOptions();
             options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
@@ -193,6 +210,18 @@ namespace CH4
             catch (Exception ex)
             {
                 return "ERR|BAD_ARGS|参数 JSON 解析失败: " + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// 工具组定义缺陷出声——池缺陷逐条落 L3 日志（A107：定义自曝失败不再静默丢组；design-ch4-tools §三·十三）。
+        /// </summary>
+        private static void LogToolPoolDefects()
+        {
+            ToolDefect[] defects = ToolPool.Defects();
+            for (int i = 0; i < defects.Length; i = i + 1)
+            {
+                LogStore.Add("CatHome4", 3, "工具组定义缺陷 | " + defects[i].Group + " | " + defects[i].Stage + " | " + defects[i].Reason, "TOOL");
             }
         }
 
@@ -252,6 +281,123 @@ namespace CH4
                 return ExecHostFlows(argsJson);
             }
             return "ERR|UNKNOWN_TOOL|未知工具: " + name;
+        }
+        /// <summary>
+        /// 工具用法摘要——漂移新增工具（info tools_drift.added 条目；design-ch4-tools §三·十一）。
+        /// 数据源 = 注册表声明（ToolRegistry.Find(name).Spec）：描述首句 + 参数键（必填标 *）。
+        /// 注册表缺失 / 参数 JSON 不可析 → 退化为仅名字（未知工具仍可见，不静默丢条目）。
+        /// </summary>
+        /// <param name="name">工具名</param>
+        /// <returns>摘要字典（name / desc / args）</returns>
+        private static Dictionary<string, object> BuildToolBrief(string name)
+        {
+            Dictionary<string, object> brief = new Dictionary<string, object>();
+            brief["name"] = name;
+            brief["desc"] = "";
+            brief["args"] = "";
+            ToolRegistryEntry entry = ToolRegistry.Find(name);
+            if (entry == null || entry.Spec == null)
+            {
+                return brief;
+            }
+            brief["desc"] = FirstSentence(entry.Spec.Description, 60);
+            brief["args"] = BuildArgKeys(entry.Spec.ParametersJson);
+            return brief;
+        }
+        /// <summary>
+        /// 描述首句——截到首个句读（。；换行）；超出上限按字符截断加省略号。
+        /// </summary>
+        /// <param name="text">完整描述</param>
+        /// <param name="max">字符上限</param>
+        /// <returns>首句文本（无描述 = 空串）</returns>
+        private static string FirstSentence(string text, int max)
+        {
+            if (text == null)
+            {
+                return "";
+            }
+            string line = text.Trim();
+            // [段1] 取最早句读——多个标点命中时取位置最小者
+            string[] stops = new string[] { "。", "；", "\n", ". " };
+            int cut = -1;
+            for (int i = 0; i < stops.Length; i = i + 1)
+            {
+                int idx = line.IndexOf(stops[i], StringComparison.Ordinal);
+                if (idx >= 0 && (cut < 0 || idx < cut))
+                {
+                    cut = idx;
+                }
+            }
+            if (cut >= 0)
+            {
+                line = line.Substring(0, cut);
+            }
+            line = line.Trim();
+            // [段2] 超长截断——字符上限 + 省略号
+            if (line.Length > max)
+            {
+                line = line.Substring(0, max) + "…";
+            }
+            return line;
+        }
+        /// <summary>
+        /// 参数键摘要——从工具声明 parameters JSON 提取属性名（required 成员标 *）。
+        /// </summary>
+        /// <param name="parametersJson">参数 JSON Schema（空 = 无参数工具）</param>
+        /// <returns>键摘要（如 "path*、start"；无参 / 不可析 = 空串）</returns>
+        private static string BuildArgKeys(string parametersJson)
+        {
+            if (parametersJson == null || parametersJson.Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                // [段1] 必填清单——required 数组成员
+                using (JsonDocument doc = JsonDocument.Parse(parametersJson))
+                {
+                    JsonElement root = doc.RootElement;
+                    List<string> required = new List<string>();
+                    JsonElement requiredEl;
+                    if (root.TryGetProperty("required", out requiredEl) && requiredEl.ValueKind == JsonValueKind.Array)
+                    {
+                        for (int i = 0; i < requiredEl.GetArrayLength(); i = i + 1)
+                        {
+                            JsonElement item = requiredEl[i];
+                            if (item.ValueKind == JsonValueKind.String)
+                            {
+                                required.Add(item.GetString() ?? "");
+                            }
+                        }
+                    }
+                    // [段2] 属性名清单——按声明序拼接，必填标 *
+                    JsonElement propertiesEl;
+                    if (!root.TryGetProperty("properties", out propertiesEl) || propertiesEl.ValueKind != JsonValueKind.Object)
+                    {
+                        return "";
+                    }
+                    StringBuilder keys = new StringBuilder();
+                    foreach (JsonProperty property in propertiesEl.EnumerateObject())
+                    {
+                        if (keys.Length > 0)
+                        {
+                            keys.Append("、");
+                        }
+                        keys.Append(property.Name);
+                        if (required.Contains(property.Name))
+                        {
+                            keys.Append("*");
+                        }
+                    }
+                    return keys.ToString();
+                }
+            }
+            catch (JsonException ex)
+            {
+                // 声明面 JSON 不可析——摘要退化（工具名仍可见；不阻断 info）
+                LogStore.Add("CatHome4", 2, "工具参数摘要解析失败: " + ex.Message, "TOOLBRIEF");
+                return "";
+            }
         }
 
     }

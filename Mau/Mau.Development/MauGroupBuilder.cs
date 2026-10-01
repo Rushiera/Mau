@@ -196,7 +196,7 @@ namespace Mau.Development
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("<Project Sdk=\"Microsoft.NET.Sdk\">");
             sb.AppendLine("  <PropertyGroup>");
-            sb.AppendLine("    <TargetFramework>net8.0</TargetFramework>");
+            sb.AppendLine("    <TargetFramework>net10.0</TargetFramework>");
             sb.AppendLine("    <Nullable>disable</Nullable>");
             sb.AppendLine("    <ImplicitUsings>disable</ImplicitUsings>");
             sb.AppendLine("    <AssemblyName>FL_" + proj.Name + "</AssemblyName>");

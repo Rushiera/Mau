@@ -36,9 +36,10 @@ namespace Mau.Development.Tests
                     Directory.Delete(_root, true);
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // 忽略
+                Console.WriteLine("[测试清理] 工作区目录删除失败: " + ex.Message);
             }
         }
 

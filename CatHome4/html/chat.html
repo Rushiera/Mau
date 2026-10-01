@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cat Chat</title>
+    <link rel="icon" href="/favicon.ico?v=__V__">
     <link rel="stylesheet" href="css/tokens.css?v=__V__">
     <link rel="stylesheet" href="css/chat.css?v=__V__">
 </head>
@@ -13,7 +14,6 @@
         <span style="flex:1"></span>
         <span id="uiVer" data-version title="前端版本——每次 Vitest 自动递增 + 最后更新时间">UI v?</span>
         <button id="chatNew" title="新会话（session.new——清前文并重新注入）">新会话</button>
-        <button id="chatPause" title="停止本轮（cat.pause——已生成内容保留，前文格式修复）" disabled>停止</button>
         <button id="chatRefresh" title="刷新——重建界面气泡（纯前端）">刷新</button>
         <button id="chatCacheClear" title="清理素材缓存——下次刷新重新下载桌宠素材（改图不改名 / 缓存脏数据时用）">清理缓存</button>
     </div>
@@ -21,51 +21,58 @@
     <!-- 自绘滚动带（design-ch4-frontend-scroll）——IDE 风格滚动带：视口指示块 + 消息刻度 + 点击跳转 + 拖拽；
          原生滚动条已隐藏（js/chat-scroll.js §二 为滚动执行器的呈现层）；几何由 JS 按对话区矩形同步 -->
     <div id="chatScrollBand"><div id="sbThumb"></div><div id="sbTicks"></div></div>
-    <!-- M4c Note——Q3 v2（2026-09-08）：输入区上方按钮 + 点击展开气泡区域（popover 贴按钮上方；再点按钮/点外部收起——高度变化零影响聊天区） -->
-    <div id="noteWrap" class="note-wrap">
-        <div id="notePopover" class="note-popover" style="display:none">
-            <div class="note-popover-head"><span id="noteTitle">Note</span></div>
-            <div id="noteList"></div>
-            <div id="noteAddRow">
-                <input id="noteAddInput" placeholder="新增任务…（Enter 提交）">
-                <button id="noteAddBtn">＋</button>
-                <button id="noteStartBtn" title="把 Note 计划拼接进度推给 LLM 开始执行">开始 Note</button>
-            </div>
-        </div>
-        <div id="noteBubble" class="note-bubble" title="Note 工作进度——点击展开/收起">
-            <span id="noteBubbleText">Note · 空</span>
-        </div>
-        <!-- 延迟指令队列（design-ch4-delay §六）——定时按钮 + 弹层（列表/倒计时/改时刻/取消/新建） -->
-        <div id="delayWrap" class="delay-wrap">
-            <button id="delayBtn" title="定时指令队列——延迟注入 / 改时刻 / 取消">定时<span id="delayCount"></span></button>
-            <div id="delayPopover" class="delay-popover" style="display:none">
-                <div class="delay-popover-head"><span id="delayTitle">定时指令队列</span></div>
-                <div class="delay-sec delay-sec-list">
-                    <div class="delay-sec-head">待触发<span id="delaySecCount"></span></div>
-                    <div id="delayList"></div>
-                </div>
-                <div class="delay-sec delay-sec-add">
-                    <div class="delay-sec-head">插入指令</div>
-                    <div id="delayQuickRow"></div>
-                    <div id="delayCustomRow" style="display:none">
-                        <input type="datetime-local" id="delayCustomAt" step="1">
-                    </div>
-                    <div id="delayAddRow">
-                        <input id="delayText" placeholder="注入内容…（Enter 提交）">
-                        <label id="delayLoopLabel" title="循环——每次触发后按相同时长重排（不自动移除）"><input type="checkbox" id="delayLoop">循环</label>
-                        <button id="delayAddBtn" title="按选中档位新建（或 Enter 提交）">＋</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <button id="chatJumpBottom" title="跳到最下层（回到最新内容）">↓</button>
-    </div>
+
     <!-- 单向数据流改造——插话队列显示区（纯展示；正常流堆叠，对话区自动上移） -->
     <div id="chatPendingPanel"></div>
     <div id="chatinput">
+        <!-- Note / 定时 / 跳底 按钮行（A121）——绝对定位贴输入区上缘（不占布局：按钮行与 popover 均不影响聊天区高度）；
+             位置随 #chatinput 高度自动让位——ui.font_scale / 输入行数 / 待发图片行 / 插话队列变化均不再遮挡输入区 -->
+        <div id="noteWrap" class="note-wrap">
+            <div id="notePopover" class="note-popover" style="display:none">
+                <div class="note-popover-head"><span id="noteTitle">Note</span></div>
+                <div id="noteList"></div>
+                <div id="noteAddRow">
+                    <input id="noteAddInput" placeholder="新增任务…（Enter 提交）">
+                    <button id="noteAddBtn">＋</button>
+                    <button id="noteStartBtn" title="把 Note 计划拼接进度推给 LLM 开始执行">开始 Note</button>
+                </div>
+            </div>
+            <div id="noteBubble" class="note-bubble" title="Note 工作进度——点击展开/收起">
+                <span id="noteBubbleText">Note · 空</span>
+            </div>
+            <!-- 延迟指令队列（design-ch4-delay §六）——定时按钮 + 弹层（列表/倒计时/改时刻/取消/新建） -->
+            <div id="delayWrap" class="delay-wrap">
+                <button id="delayBtn" title="定时指令队列——延迟注入 / 改时刻 / 取消">定时<span id="delayCount"></span></button>
+                <div id="delayPopover" class="delay-popover" style="display:none">
+                    <div class="delay-popover-head"><span id="delayTitle">定时指令队列</span></div>
+                    <div class="delay-sec delay-sec-list">
+                        <div class="delay-sec-head">待触发<span id="delaySecCount"></span></div>
+                        <div id="delayList"></div>
+                    </div>
+                    <div class="delay-sec delay-sec-add">
+                        <div class="delay-sec-head">插入指令</div>
+                        <div id="delayQuickRow"></div>
+                        <div id="delayCustomRow" style="display:none">
+                            <input type="datetime-local" id="delayCustomAt" step="1">
+                        </div>
+                        <div id="delayAddRow">
+                            <input id="delayText" placeholder="注入内容…（Enter 提交）">
+                            <label id="delayLoopLabel" title="循环——每次触发后按相同时长重排（不自动移除）"><input type="checkbox" id="delayLoop">循环</label>
+                            <button id="delayAddBtn" title="按选中档位新建（或 Enter 提交）">＋</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button id="chatJumpBottom" title="跳到最下层（回到最新内容）">↓</button>
+        </div>
         <div id="chatImages" class="chat-images"></div>
         <textarea id="chatSendInput" rows="5" placeholder="输入文本…（Enter 发送；Shift+Enter 换行；可直接粘贴图片）"></textarea>
-        <button id="chatSendBtn">发送</button>
+        <!-- 输入区动作列（2026-09-30）——停止/继续/发送竖排同列、同款实心（底色区分语义）；原「停止」在顶部栏 -->
+        <div id="chatActions">
+            <button id="chatPause" class="ch-iabtn ch-iabtn-stop" title="停止本轮（cat.pause——已生成内容保留，前文格式修复）" disabled>停止</button>
+            <button id="chatContinue" class="ch-iabtn ch-iabtn-continue" title="继续——用当前前文直接发一次 LLM 请求（cat.continue：不追加消息，模型续写）" disabled>继续</button>
+            <button id="chatSendBtn" class="ch-iabtn ch-iabtn-send">发送</button>
+        </div>
     </div>
     <!-- E 系列——状态区（四态计时 + Token 统计）：最底部持久存在 -->
     <div id="chatStatus"></div>
@@ -122,6 +129,8 @@
         if (elChatRefresh) { elChatRefresh.addEventListener('click', chatRefresh); }
         var elChatPause = document.getElementById('chatPause');
         if (elChatPause) { elChatPause.addEventListener('click', chatPause); }
+        var elChatContinue = document.getElementById('chatContinue');
+        if (elChatContinue) { elChatContinue.addEventListener('click', chatContinue); }
         var elChatSendBtn = document.getElementById('chatSendBtn');
         if (elChatSendBtn) { elChatSendBtn.addEventListener('click', chatSend); }
         var elChatSendInput = document.getElementById('chatSendInput');

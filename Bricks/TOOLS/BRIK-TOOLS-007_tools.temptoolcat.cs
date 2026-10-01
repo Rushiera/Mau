@@ -22,10 +22,10 @@ namespace Mau.Bricks
         public static string GetToolsJson()
         {
             return "{\"group\":\"TempToolCat\",\"tools\":[" +
-                "{\"name\":\"temp-info\",\"description\":\"临时工具信息——返回当前 TempToolCat 全部可用临时工具 Key 组（逗号分隔；R3.1 万能接口试验场——temp.exec 的 Key 注册表枚举）\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}," +
-                "{\"name\":\"temp-exec\",\"description\":\"临时工具万能执行——输入 Key + content，按 Key 调度到临时工具并返回 str 结果；Key 不存在报 ERR|TEMP_KEY_NOT_FOUND（R3.1 万能接口——临时工具本体在 BRIK-TEMP-001 LLM 可改区）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"临时工具 Key（temp-info 可查当前可用 Key 组）\"},\"content\":{\"type\":\"string\",\"description\":\"输入内容\"}},\"required\":[\"key\",\"content\"]}}" +
+                "{\"name\":\"temp-info\",\"description\":\"临时工具信息——返回当前全部可用临时工具 Key 组（逗号分隔）\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}," +
+                "{\"name\":\"temp-exec\",\"description\":\"临时工具万能执行——按 Key 调度到临时工具并返回结果文本；Key 不存在报 ERR|TEMP_KEY_NOT_FOUND\",\"parameters\":{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"临时工具 Key（temp-info 可查当前可用 Key 组）\"},\"content\":{\"type\":\"string\",\"description\":\"输入内容\"}},\"required\":[\"key\",\"content\"]}}" +
                 "]}";
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:B129A97E5897FD24D2CF999E9D745FC551D644EBB441FD57363F2C54CDA11ABF
+// #MAU_CHECKSUM:SHA256:14DD65C412893C7FCAAA6C4B47C8B08CCAC3582A092F426D08EFBDEA94B61F67

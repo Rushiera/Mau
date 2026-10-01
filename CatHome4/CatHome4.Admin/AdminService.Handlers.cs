@@ -613,8 +613,10 @@ namespace CatHome4.Admin
                 qqbotEnable = cfg.QqBotEnable,
                 enabledRoots = cfg.EnabledRoots,
                 allRoots = BuildAllRootsJson(),
-                allToolNames = GetAllToolNames(),
-                allTools = GetAllToolsWithGroup(),
+                allToolNames = GetConfigurableToolNames(),
+                allTools = GetToolsWithGroupForConfig(),
+                defectGroups = BuildToolDefectItems(),
+                staleToolNames = ResolveStaleToolNames(cfg.ToolNames),
                 apiOptions = apiOptions,
                 qqbotOptions = qqbotOptions
             };
@@ -866,8 +868,10 @@ namespace CatHome4.Admin
                 defaultToolNames = defaultToolNames,
                 defaultInjectList = defaultInjectList,
                 defaultPacks = defaultPacks,
-                allToolNames = GetAllToolNames(),
-                allTools = GetAllToolsWithGroup(),
+                allToolNames = GetConfigurableToolNames(),
+                allTools = GetToolsWithGroupForConfig(),
+                defectGroups = BuildToolDefectItems(),
+                staleToolNames = ResolveStaleToolNames(defaultToolNames),
                 allPacks = BuildAllPacks()
             };
             return Results.Json(resp);
@@ -946,7 +950,7 @@ namespace CatHome4.Admin
             CatDefaultCfgData data = new CatDefaultCfgData();
             data.BaseRole = baseRole;
             data.DefaultPersona = defaultPersona;
-            data.DefaultToolNames = defaultToolNames;
+            data.DefaultToolNames = ValidateToolNames(defaultToolNames);
             data.DefaultInjectList = defaultInjectList.ToArray();
             data.DefaultPacks = defaultPacks.ToArray();
             SaveCatDefaultCfg(data);
@@ -992,7 +996,8 @@ namespace CatHome4.Admin
                     id = ws.Roots[i].Id,
                     path = ws.Roots[i].Path,
                     writable = ws.Roots[i].Writable,
-                    note = ws.Roots[i].Note
+                    note = ws.Roots[i].Note,
+                    fixedRoot = IsFixedRootId(ws.Roots[i].Id)
                 });
             }
             return Results.Json(new { ok = true, roots = roots });
@@ -1001,7 +1006,7 @@ namespace CatHome4.Admin
         /// <summary>
         /// 全局根池 JSON——供猫配置界面勾选（cat-config GET allRoots 字段；workspace 强制必选）。
         /// </summary>
-        /// <returns>根池数组 [{id,path,writable}]</returns>
+        /// <returns>根池数组 [{id,path,writable,note,fixedRoot}]——fixedRoot=系统固定命名根（前端渲染锁定用）</returns>
         internal static object[] BuildAllRootsJson()
         {
             WorkspaceConfig ws = null;
@@ -1016,7 +1021,8 @@ namespace CatHome4.Admin
                         id = ws.Roots[i].Id,
                         path = ws.Roots[i].Path,
                         writable = ws.Roots[i].Writable,
-                        note = ws.Roots[i].Note
+                        note = ws.Roots[i].Note,
+                        fixedRoot = IsFixedRootId(ws.Roots[i].Id)
                     });
                 }
             }
@@ -1155,8 +1161,8 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 受控根写入——POST /api/v1/workspace（body: {roots:[{id,path,writable}]}）。
-        /// 校验：id 安全标识符不重复 + path 非空绝对路径 + 目录存在；空列表=重置默认（Load 兜底单根 runtime）。
+        /// 受控根写入——POST /api/v1/workspace（body: {roots:[{id,path,writable,note}]}）。
+        /// 校验：id 归一（小写字母数字）+ 重名忽略大小写 + path 非空绝对路径 + 目录存在 + 固定命名根齐备且三列一致（缺则拒绝——不静默造根）。
         /// 生效语义：落盘 + 重启生效（roots 是 Bootstrap 一次性读取——低频事件，莎拍板 2026-08-25）。
         /// </summary>
         /// <param name="ctx">HTTP 上下文</param>
@@ -1195,43 +1201,18 @@ namespace CatHome4.Admin
             {
                 return Results.Json(new { ok = false, error = "body 非 JSON" });
             }
-            // [段1] 校验——id 安全标识符不重复 / path 绝对路径 + 目录存在；空列表=重置默认（Load 兜底单根 runtime）
-            List<string> ids = new List<string>();
-            for (int i = 0; i < rootsIn.Count; i++)
+            // [段1] 归一——id 去空白 + 大写转小写（写面统一小写；读面按小写识别）
+            for (int i = 0; i < rootsIn.Count; i = i + 1)
             {
-                WorkspaceRootInput input = rootsIn[i];
-                if (input.Id.Length == 0)
-                {
-                    return Results.Json(new { ok = false, error = "roots[" + i.ToString() + "] id 为空" });
-                }
-                for (int c = 0; c < input.Id.Length; c++)
-                {
-                    char ch = input.Id[c];
-                    bool ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_';
-                    if (!ok)
-                    {
-                        return Results.Json(new { ok = false, error = "roots[" + i.ToString() + "] id 非法（仅字母/数字/下划线）: " + input.Id });
-                    }
-                }
-                if (ids.Contains(input.Id))
-                {
-                    return Results.Json(new { ok = false, error = "roots id 重复: " + input.Id });
-                }
-                ids.Add(input.Id);
-                if (input.Path.Length == 0)
-                {
-                    return Results.Json(new { ok = false, error = "roots[" + i.ToString() + "] path 为空" });
-                }
-                if (!Path.IsPathRooted(input.Path))
-                {
-                    return Results.Json(new { ok = false, error = "roots[" + i.ToString() + "] path 非绝对路径: " + input.Path });
-                }
-                if (!Directory.Exists(input.Path))
-                {
-                    return Results.Json(new { ok = false, error = "roots[" + i.ToString() + "] 目录不存在: " + input.Path });
-                }
+                rootsIn[i].Id = NormalizeRootId(rootsIn[i].Id);
             }
-            // [段2] 落盘——保留 inject 字段（读旧文件；M2 后宿主不消费但结构保留）
+            // [段2] 校验——字符集（小写字母数字）+ 重名（忽略大小写）+ path 绝对且存在 + 固定命名根齐备且三列一致
+            string rootErr = ValidateRootsInput(rootsIn);
+            if (rootErr.Length > 0)
+            {
+                return Results.Json(new { ok = false, error = rootErr });
+            }
+            // [段3] 落盘——保留 inject 字段（读旧文件；M2 后宿主不消费但结构保留）
             string wsPath = Path.Combine(_dataRoot, "Data", "config", "workspace.json");
             string injectJson = "[]";
             if (File.Exists(wsPath))
@@ -1325,7 +1306,8 @@ namespace CatHome4.Admin
             {
                 toolNames = cfg.ToolNames;
             }
-            ToolSpec[] specs = FilterToolSpecs(ResolveToolNames(toolNames));
+            bool includePrivileged = IsDefaultCatKey(key);
+            ToolSpec[] specs = FilterToolSpecs(ResolveToolNames(toolNames, includePrivileged), includePrivileged);
             // M4e 猫级白名单——配置变更后重建猫文件系统（启用根子集）
             ApplyCatRoots(key);
             if (key == "majordomo")
@@ -1334,6 +1316,8 @@ namespace CatHome4.Admin
                 _chatBridge.DefaultPersona = persona;
                 _chatBridge.DefaultInjectList = injectList;
                 _chatBridge.DefaultToolSpecs = specs;
+                // 授权面原始串——实时解析输入（改配置即改内存；design-ch4-tools §三·十一）
+                _chatBridge.DefaultToolNames = toolNames;
                 _chatBridge.DefaultQqBotId = ResolveQqBotId(cfg);
                 _chatBridge.DefaultQqBotEnable = cfg.QqBotEnable;
                 Guid newApi = ResolveApiConfigId(cfg);

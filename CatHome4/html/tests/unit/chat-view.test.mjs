@@ -283,6 +283,52 @@ test('A85 历史重建——完成块默认压缩档 + 无时长来源标识「�
   expect(boxes[0].querySelector('.ct-head').textContent).toBe('Think · 4 字符 · 1 行 · 未统计');
 });
 
+// ── A95 live think 块生命周期归前端（2026-09-28）——态驱动销毁，与后续接什么无关；后端零改动 ──
+
+test('A95 态驱动——离开 think 即销毁 live 块（无效请求无内容收口也不残留）', () => {
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '半截思考' }, replaceSeq: -1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(1);
+  // 后端离开 think 且不推 reason（无效请求的思考已丢）——只有态变化
+  window.chatOnSessionState({ sessionId: 's1', runState: 'idle', runMs: {}, requests: 1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(0);
+  expect(chatMsgs.querySelectorAll('.chat-think.done').length).toBe(0);
+  expect(window.viewContainers[11]).toBeUndefined();
+});
+
+test('A95 续传切态（think→link）——旧请求 live 块销毁，续传请求另起新块', () => {
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '无效请求的思考' }, replaceSeq: -1 });
+  window.chatOnSessionState({ sessionId: 's1', runState: 'link', runMs: {}, requests: 2 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(0);
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 2 });
+  window.chatOnView({ seq: 31, renderType: 'stream', payload: { kind: 'reasoning', text: '续传思考' }, replaceSeq: -1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(1);
+  expect(window.chatThinkBodyText(window.viewContainers[31].body)).toBe('续传思考');
+});
+
+test('A95 误伤防线——同态重推 / 态起点缺失（刷新重连）不销毁', () => {
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考中' }, replaceSeq: -1 });
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(1);
+  // 刷新重连——DOM/容器清空 + 本端态起点为空，首帧即非 think（prev 缺失）→ 不误销毁
+  chatMsgs.textContent = '';
+  window.viewContainers = {};
+  window.chatPhaseReset();
+  window.chatOnView({ seq: 12, renderType: 'stream', payload: { kind: 'reasoning', text: '重连思考' }, replaceSeq: -1 });
+  window.chatOnSessionState({ sessionId: 's1', runState: 'reply', runMs: {}, requests: 1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(1);
+});
+
+test('A95 兜底——error 事件销毁 live 块（态推送错过的路径也清场）', () => {
+  window.chatOnSessionState({ sessionId: 's1', runState: 'think', runMs: {}, requests: 1 });
+  window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考中' }, replaceSeq: -1 });
+  window.chatOnView({ seq: 12, renderType: 'error', payload: { text: 'ERR|TEST|模拟失败' }, replaceSeq: -1 });
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(0);
+  expect(chatMsgs.querySelectorAll('.chat-bubble.error').length).toBe(1);
+});
+
 // ── 展开态整块点击收起（2026-09-18）——原生 details 仅折叠头可点；展开后整块任意位置点击即收起 ──
 test('展开态整块点击收起——工具卡内容区点击即折叠（折叠态不误触）', () => {
   window.chatOnView({
@@ -449,20 +495,19 @@ test('toolcard 并发批次渲染 [icon n/m] 前缀——单次用类型图标�
   expect(chatMsgs.querySelectorAll('.chat-tool .tn')[2].textContent).toBe('[⚠️ 2/4] 读取 (未指定) · 1 行 5 字符');
 });
 
-// ── powershell 命令解读——折叠行覆盖宿主 summary + 展开区意图块（chat-cmd.js 接入）──
-test('toolcard powershell——命令解读覆盖 summary + 展开区意图块', () => {
+// ── powershell 命令解读——折叠行由解读承担（PS 双线不配 headline）+ 展开区意图块（chat-cmd.js 接入）──
+test('toolcard powershell——命令解读承担折叠行 + 展开区意图块', () => {
   window.chatOnView({
     seq: 33, renderType: 'toolcard',
     payload: {
       name: 'powershell',
       arguments: JSON.stringify({ command: 'dotnet build CatHome4.sln; git status' }),
-      result: '{"exit":0}',
-      summary: '执行命令 "dotnet build CatHome4.sln; git status" → ...'
+      result: '{"exit":0}'
     },
     replaceSeq: -1
   });
   const card = chatMsgs.querySelector('.chat-tool');
-  // 折叠行——宿主原始命令截断被解读结果覆盖 + PS 版本标签（双线区分，2026-09-18）
+  // 折叠行——由命令解读产出 + PS 版本标签（双线区分，2026-09-18）
   expect(card.querySelector('.tn').textContent).toBe('💻 PS 5.1 dotnet build · 编译 C# 项目 「CatHome4.sln」 等 2 段');
   // 展开区首块——逐段意图（含指令类标识 tag）
   const intent = card.querySelector('.cmd-intent');
@@ -473,11 +518,11 @@ test('toolcard powershell——命令解读覆盖 summary + 展开区意图块',
   expect(card.querySelector('.ta').textContent).toContain('dotnet build');
 });
 
-// ── 非 powershell 工具——不进解读（宿主 summary 原样展示）──
+// ── 非 powershell 工具——不进解读（折叠行由覆盖表 headline 产出）──
 test('toolcard 非 powershell——不插命令意图块', () => {
   window.chatOnView({
     seq: 34, renderType: 'toolcard',
-    payload: { name: 'text-read', arguments: '{"path":"a.txt"}', result: 'OK', summary: '读取文件 "a.txt" → "OK"' },
+    payload: { name: 'text-read', arguments: '{"path":"a.txt"}', result: 'OK' },
     replaceSeq: -1
   });
   const card = chatMsgs.querySelector('.chat-tool');
@@ -489,7 +534,7 @@ test('toolcard 非 powershell——不插命令意图块', () => {
 test('toolcard 大结果——折叠行标注字符数', () => {
   window.chatOnView({
     seq: 40, renderType: 'toolcard',
-    payload: { name: 'text-read', arguments: '{"path":"big.txt"}', result: 'x'.repeat(2000), summary: '读取文件 "big.txt" → ...' },
+    payload: { name: 'text-read', arguments: '{"path":"big.txt"}', result: 'x'.repeat(2000) },
     replaceSeq: -1
   });
   const card = chatMsgs.querySelector('.chat-tool');
@@ -503,7 +548,28 @@ test('toolcard 小结果——不标注（避免噪音）', () => {
     payload: { name: 'time', arguments: '{}', result: '2026-09-14 17:00:00' },
     replaceSeq: -1
   });
-  expect(chatMsgs.querySelector('.chat-tool .tn').textContent).toBe('📝 时间  · 1 行 19 字符');
+  expect(chatMsgs.querySelector('.chat-tool .tn').textContent).toBe('🕒 时间  · 1 行 19 字符');
+});
+
+test('废弃块——timeback 回收归档：折叠气泡 + 计数 + 全文（历史重建）', () => {
+  window.chatRenderHistory({
+    sessionId: 's1',
+    ctxCount: 1,
+    blocks: [
+      { renderType: 'void', msgIndex: -1, payload: { count: 4, text: '【工具 · random】\n参数：{}\n结果：7' } }
+    ]
+  });
+  const card = chatMsgs.querySelector('.chat-void');
+  expect(card).not.toBe(null);
+  expect(card.querySelector('summary').textContent).toContain('已废弃 · 4 条');
+  // 规模统计（2026-09-29 莎）——折叠行带「N 行 M 字符」
+  expect(card.querySelector('summary').textContent).toContain('3 行');
+  expect(card.querySelector('summary').textContent).toContain('字符');
+  expect(card.querySelector('.chat-void-body').textContent).toContain('random');
+  // 默认折叠——只留档，不抢注意力（与活块区分）
+  expect(card.open).toBe(false);
+  // 独立块型：不进对话流（无 user/assistant 气泡样式）
+  expect(chatMsgs.querySelector('.chat-bubble.void')).not.toBe(null);
 });
 
 test('toolcard ps 结果截断——折叠行上限标注 + 展开区警示块', () => {
@@ -572,7 +638,7 @@ test('toolcard 两段式——完成卡以 replaceSeq 原位替换（气泡不�
   });
   window.chatOnView({
     seq: 51, renderType: 'toolcard',
-    payload: { name: 'text-read', arguments: JSON.stringify({ path: 'a.txt' }), result: '文件内容', summary: '读取文件 a.txt', toolIndex: 1, toolTotal: 1 },
+    payload: { name: 'text-read', arguments: JSON.stringify({ path: 'a.txt' }), result: '文件内容', toolIndex: 1, toolTotal: 1 },
     replaceSeq: 50
   });
   expect(bubbles().length).toBe(1);
@@ -711,6 +777,8 @@ test('A59 六态状态条——sessionstate 驱动渲染（六态时长 + 当前
   expect(bar.textContent).toContain('💬 Reply 2.4s');
   expect(bar.textContent).toContain('⏱ All 43.9s');
   expect(bar.textContent).toContain('🔄 Api 5');
+  // A114 平均首 token 延迟——link 320ms ÷ 5 次 = 0.06 s/use
+  expect(bar.textContent).toContain('🔄 Api 5（0.06 s /use）');
   // 当前态高亮（呼吸动效类）
   expect(bar.querySelector('.st.run').classList.contains('active')).toBe(true);
   // 畸形载荷（无 sessionId）——忽略（状态条不动）
@@ -1026,6 +1094,8 @@ test('view roundsum 渲染独立气泡（token + 工具/请求次数 + 六态用
   expect(rs.textContent).toContain('miss 4.07k');
   expect(rs.textContent).toContain('🎯99.5%');
   expect(rs.textContent).toContain('🔧 Tool 6 · 🔄 Api 5');
+  // A114 平均首 token 延迟——link 200ms ÷ 5 次 = 0.04 s/use
+  expect(rs.textContent).toContain('🔄 Api 5（0.04 s /use）');
   expect(rs.textContent).toContain('Link 0.2s');
   expect(rs.textContent).toContain('Wait 0.5s');
   expect(rs.textContent).toContain('Think 28.5s');
@@ -1056,6 +1126,24 @@ test('chatRenderHistory roundsum 块渲染（历史重建保留轮末统计）',
   expect(rs2.textContent).toContain('All 15.0s');
   // 旧数据兼容——无 requests 字段时不显示请求段（历史块零迁移）
   expect(rs2.textContent).not.toContain('🔄 Api');
+});
+
+// ── A114 旧载荷兼容：无 link 时不加平均后缀（历史块零迁移）──
+test('A114 旧载荷无 link——请求段不加平均后缀', () => {
+  window.chatOnView({ seq: 72, renderType: 'roundsum', payload: { type: 'roundsum', data: { prompt: 100, completion: 10, cacheHit: 0, miss: 100, toolCount: 0, requests: 3, elapsedMs: 5000, phases: { think: 100 } } }, replaceSeq: -1 });
+  const all = chatMsgs.querySelectorAll('.chat-bubble.roundsum');
+  const last = all[all.length - 1];
+  expect(last.textContent).toContain('🔄 Api 3');
+  expect(last.textContent).not.toContain('s /use');
+});
+
+// ── A115 前文条数与 tokens 同节奏（usage 事件双更新）──
+test('A115 usage 事件同步刷新前文条数与 tokens（不等轮结束）', () => {
+  window.chatRenderHistory({ version: 1, sessionId: 's-a115', ctxCount: 12, count: 12, blocks: [], stats: { context: 1000 } });
+  expect(chatInfo.textContent).toContain('前文 12 条');
+  window.chatOnView({ seq: 73, renderType: 'control', payload: { type: 'usage', data: { prompt: 100, completion: 20, cacheHit: 30, context: 1200, count: 14 } }, replaceSeq: -1 });
+  expect(chatInfo.textContent).toContain('前文 14 条');
+  expect(chatInfo.textContent).toContain('前文 1.20k tokens');
 });
 
 // ── A85 头行统计口径（原「折叠摘要」退役——展开/折叠已由高度档取代）──
@@ -1098,10 +1186,10 @@ test('A78/A85 态驱动——think 流式块标记随 think 态切换（think �
   window.chatOnView({ seq: 11, renderType: 'stream', payload: { kind: 'reasoning', text: '思考中' }, replaceSeq: -1 });
   const rb = chatMsgs.querySelector('.chat-think.stream').closest('.chat-bubble');
   expect(rb.classList.contains('live')).toBe(true);
-  // 离开 think（回复流式开始）——标记撤除；流式块保留（仍须承接整块销毁）
+  // 离开 think（回复流式开始）——标记撤除；A95 起 live 块随离态即销毁（前端自持，不依赖 reason 整块事件到达）
   window.chatOnSessionState({ sessionId: 's1', runState: 'reply', runMs: {}, requests: 1 });
-  expect(rb.classList.contains('live')).toBe(false);
-  expect(window.viewContainers[11]).not.toBeUndefined();
+  expect(chatMsgs.querySelectorAll('.chat-think.stream').length).toBe(0);
+  expect(window.viewContainers[11]).toBeUndefined();
 });
 
 // ── A78 容器创建时按当前态初始化标记（态未变化时的补挂路径）──
@@ -1224,13 +1312,84 @@ test('A84 1 秒表驱动——建卡即开表，每秒 tick 一次', () => {
 test('A84 完成原位替换——占位随换卡消失且停表', () => {
   pendingHold(1, 'mau-setup');
   expect(window.chatLiveTimer).toBeTruthy();
-  window.chatOnToolCard(9, 1, { name: 'mau-setup', arguments: '{}', result: 'OK', summary: '一键部署', toolIndex: 1, toolTotal: 1 });
+  window.chatOnToolCard(9, 1, { name: 'mau-setup', arguments: '{}', result: 'OK', toolIndex: 1, toolTotal: 1 });
   expect(chatMsgs.querySelector('.chat-tool .' + window.CHAT_PENDING_HOLD_CLS)).toBeNull();
   expect(window.chatLiveTimer).toBeNull();
 });
 
 test('A84 终态卡直达（无先行卡）——不建占位、不开表', () => {
-  window.chatOnToolCard(1, -1, { name: 'mau-setup', arguments: '{}', result: 'OK', summary: '一键部署', toolIndex: 1, toolTotal: 1 });
+  window.chatOnToolCard(1, -1, { name: 'mau-setup', arguments: '{}', result: 'OK', toolIndex: 1, toolTotal: 1 });
   expect(chatMsgs.querySelector('.chat-tool .' + window.CHAT_PENDING_HOLD_CLS)).toBeNull();
   expect(window.chatLiveTimer).toBeNull();
+});
+
+// ── A94 重试语义流补全（failed 终态 + 原文不丢）──
+test('view retry failed 终态——保留报错原文 + ⚠ 重试失败 + 终态类', () => {
+  window.chatOnView({ seq: 60, renderType: 'retry', payload: { state: 'retrying', attempt: '3', max: '3', text: 'ERR|TRANSPORT|连接失败' }, replaceSeq: -1 });
+  const first = bubbles()[0];
+  window.chatOnView({ seq: 61, renderType: 'retry', payload: { state: 'failed', attempt: '3', max: '3', text: 'ERR|TRANSPORT|连接失败' }, replaceSeq: 60 });
+  expect(rows().length).toBe(1);
+  expect(bubbles()[0]).toBe(first);
+  expect(bubbles()[0].textContent).toContain('⚠ 重试失败 3/3');
+  expect(bubbles()[0].textContent).toContain('连接失败');
+  expect(bubbles()[0].classList.contains('failed')).toBe(true);
+  expect(bubbles()[0].classList.contains('resolved')).toBe(false);
+});
+
+test('view retry 终态切换——resolved → failed 时 resolved 类移除（状态类单一出口）', () => {
+  window.chatOnView({ seq: 70, renderType: 'retry', payload: { state: 'resolved', attempt: '1', max: '3', text: 'x' }, replaceSeq: -1 });
+  expect(bubbles()[0].classList.contains('resolved')).toBe(true);
+  window.chatOnView({ seq: 71, renderType: 'retry', payload: { state: 'failed', attempt: '1', max: '3', text: 'x' }, replaceSeq: 70 });
+  expect(bubbles()[0].classList.contains('failed')).toBe(true);
+  expect(bubbles()[0].classList.contains('resolved')).toBe(false);
+});
+
+test('view retry 历史重建——failed 块渲染（原文 + 失败标注 + 终态类）', () => {
+  window.chatRenderHistory({
+    blocks: [
+      { renderType: 'retry', payload: { state: 'failed', attempt: '3', max: '3', text: '历史失败原文' } }
+    ],
+    sessionId: 's2',
+    count: 1
+  });
+  expect(rows().length).toBe(1);
+  expect(bubbles()[0].textContent).toContain('⚠ 重试失败 3/3 · 历史失败原文');
+  expect(bubbles()[0].classList.contains('failed')).toBe(true);
+});
+
+// ── 继续指令（cat.continue）——不追加消息：用当前前文再发一次请求；与停止互斥（仅 idle 可用）──
+test('chatContinue——投递 cat.continue + 本地转 sending + 清阶段残留', async () => {
+  let sent = null;
+  globalThis.fetch = async function (url, opts) {
+    sent = JSON.parse(opts.body);
+    return { json: async function () { return { ok: true }; } };
+  };
+  window.chatState = 'idle';
+  window.chatSetState('idle');
+  window.viewContainers = { stale: 1 };
+  window.chatContinue();
+  expect(sent.text).toBe('cat.continue');
+  expect(window.chatState).toBe('sending');
+  expect(Object.keys(window.viewContainers).length).toBe(0);
+});
+
+test('继续按钮——仅 idle 可用（sending 禁用，与停止互补）', () => {
+  const contBtn = document.getElementById('chatContinue');
+  const pauseBtn = document.getElementById('chatPause');
+  window.chatSetState('idle');
+  expect(contBtn.disabled).toBe(false);
+  expect(pauseBtn.disabled).toBe(true);
+  window.chatSetState('sending');
+  expect(contBtn.disabled).toBe(true);
+  expect(pauseBtn.disabled).toBe(false);
+  window.chatSetState('idle');
+});
+
+test('chatContinue——非 idle 不投递（与停止互斥）', () => {
+  let called = false;
+  globalThis.fetch = async function () { called = true; return { json: async function () { return { ok: true }; } }; };
+  window.chatState = 'sending';
+  window.chatContinue();
+  expect(called).toBe(false);
+  window.chatState = 'idle';
 });

@@ -8,6 +8,7 @@ using System.Text.Json;
 using Mau.Runtime;
 using CatHome4.Http;
 using CatHome4.QQ;
+using CatHome4.Contracts;
 using Mau.Providers;
 using CH4;
 
@@ -238,6 +239,26 @@ namespace CatHome4.Admin
                 cat.Session.Pause();
                 return "cat.pause | 已投递中止: " + cat.DisplayName;
             }
+            if (line.StartsWith("cat.continue", StringComparison.Ordinal))
+            {
+                // 继续——管理面指定猫（每猫端口无 key 版本走 DispatchCommandForCat）
+                string rest = line.Substring(12).Trim();
+                if (rest.Length == 0)
+                {
+                    return "cat.continue | 用法: cat.continue <key>";
+                }
+                if (string.Equals(rest, "majordomo", StringComparison.Ordinal))
+                {
+                    return "cat.continue | majordomo 为特殊会话——不可自查（主干会话不能对自己下继续指令）";
+                }
+                CatEntry cat = FindCat(rest);
+                if (cat == null)
+                {
+                    return "cat.continue | 未找到猫: " + rest;
+                }
+                cat.Session.Continue();
+                return "cat.continue | 已投递继续: " + cat.DisplayName;
+            }
             if (line.StartsWith("cat.chat ", StringComparison.Ordinal))
             {
                 // 格式：cat.chat <key> <内容>——内核每猫对话通道（M1d 验收 + 回归复用；DriveUntilIdle 等回复完成）
@@ -301,6 +322,7 @@ namespace CatHome4.Admin
             sb.AppendLine("  cat.stop <key> | 停止（majordomo 禁停）");
             sb.AppendLine("  cat.delete <key> | 销毁（majordomo 禁删）");
             sb.AppendLine("  cat.pause <key> | 中止当前回合");
+            sb.AppendLine("  cat.continue <key> | 继续（当前前文再发一次请求）");
             sb.AppendLine("  cat.chat <key> <内容> | 内核对话投递");
             sb.AppendLine("  cat.cfg.get <key> | 该猫 cat.cfg 全量字段");
             sb.AppendLine("  cat.cfg.set <key> <字段> <值> | 字段级合并写（未提交字段保留）");
@@ -1069,9 +1091,10 @@ namespace CatHome4.Admin
                 {
                     cat.Host.Stop();
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // 停止异常不阻断删除
+                    LogStore.Add("AdminService", 2, "停止猫实例异常，不阻断删除: " + ex.Message, "SYS");
                 }
             }
             _cats.Remove(cat);
@@ -1181,7 +1204,7 @@ namespace CatHome4.Admin
                     }
                 }
                 // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）
-                ToolSpec[] catSpecs = FilterToolSpecs(ResolveToolNames(toolNames));
+                ToolSpec[] catSpecs = FilterToolSpecs(ResolveToolNames(toolNames, false), false);
                 // [段3] 上下文 + 前文恢复/注入
                 ChatContext context = new ChatContext();
                 SessionStore store = new SessionStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".jsonl"));
@@ -1216,6 +1239,8 @@ namespace CatHome4.Admin
                 ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig);
                 SessionViewStore viewStore = new SessionViewStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".view.json"));
                 ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, catSpecs, ExecuteTool, viewStore);
+                // A111——块序变更通知接线（视图层变更 → 转发面游标校正；猫 key 在组合根注入）
+                AttachViewOrderNotify(id, viewStore);
                 // M4e 猫级白名单——多猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
                 session.SetCatKey(id);
                 AdminService.ApplyCatRoots(id);
@@ -1322,6 +1347,7 @@ namespace CatHome4.Admin
                     Inject = delegate (string s) { captured.PostUserMessage(s); },
                     GetViewItems = delegate () { return ConvertQqViewItems(captured.ViewStore.GetBlocks()); },
                     IsIdle = delegate () { return captured.IsIdle; },
+                    IsTimebackActive = delegate () { return captured.TimebackActive; },
                     NewSession = delegate ()
                     {
                         _majorSessionNewRequested = true;
@@ -1345,6 +1371,7 @@ namespace CatHome4.Admin
                         Inject = delegate (string s) { captured.Session.PostUserMessage(s); },
                         GetViewItems = delegate () { return ConvertQqViewItems(captured.Session.ViewStore.GetBlocks()); },
                         IsIdle = delegate () { return captured.Session.IsIdle; },
+                        IsTimebackActive = delegate () { return captured.Session.TimebackActive; },
                         NewSession = delegate ()
                         {
                             captured.SessionNewRequested = true;
@@ -1507,7 +1534,26 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType / Content / Done；text 块提取 payload.content）。
+        /// 装配块序变更通知（A111）——视图层变更（清除 / 重建 / 轮统计清理 / 区间转废弃）→ QQ 转发面游标校正。
+        /// 猫 key 由组合根注入（Core 不知猫 key、QQ 不知视图层——两侧零耦合）；未挂 qqbot 的猫同样接线（无转发态即无动作）。
+        /// </summary>
+        /// <param name="catKey">猫 key（转发态游标键——与 QqTarget.Key 同源）</param>
+        /// <param name="viewStore">会话视图存储</param>
+        internal static void AttachViewOrderNotify(string catKey, SessionViewStore viewStore)
+        {
+            if (viewStore == null)
+            {
+                return;
+            }
+            viewStore.OnBlocksReordered = delegate (ViewOrderChange change)
+            {
+                QQBotService.NotifyBlocksReordered(catKey, change);
+            };
+        }
+
+        /// <summary>
+        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType / Content / Done / Hash；text 块提取 payload.content，
+        /// Hash 供转发面锚定游标——A111）。
         /// </summary>
         /// <param name="blocks">视图块数组</param>
         /// <returns>QQ 转发项数组</returns>
@@ -1525,6 +1571,14 @@ namespace CatHome4.Admin
                 item.RenderType = b.RenderType ?? "";
                 item.Content = "";
                 item.Done = "";
+                if (b.Hash == null)
+                {
+                    item.Hash = "";
+                }
+                else
+                {
+                    item.Hash = b.Hash;
+                }
                 if (item.RenderType == "text")
                 {
                     item.Content = ExtractTextContent(b.Payload);
@@ -1640,6 +1694,50 @@ namespace CatHome4.Admin
             }
             return prefix;
         }
+        /// <summary>
+        /// 默认会话判定——特权工具永久激活基准（猫 key = majordomo / 空；design-ch4-tools §三·十）。
+        /// </summary>
+        /// <param name="key">猫寻址键</param>
+        /// <returns>true=默认会话</returns>
+        internal static bool IsDefaultCatKey(string key)
+        {
+            if (key == null || key.Length == 0)
+            {
+                return true;
+            }
+            return string.Equals(key, "majordomo", StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// 当前授权工具名——工具判定授权面的实时查询入口（design-ch4-tools §三·十一）。
+        /// 实时解析当前 cat.cfg 名单（空 / 全非法 → 全量保底；随注册表变化即时反映）；默认猫读静态面原始串，多猫读 CatEntry。
+        /// </summary>
+        /// <param name="catKey">猫键（null / 空 / majordomo = 默认猫）</param>
+        /// <returns>授权工具名数组（非 null）</returns>
+        internal static string[] ResolveCatAuthorizedToolNames(string catKey)
+        {
+            string raw = "";
+            if (catKey == null || catKey.Length == 0 || catKey == "majordomo")
+            {
+                if (_chatBridge != null)
+                {
+                    raw = _chatBridge.DefaultToolNames;
+                }
+            }
+            else
+            {
+                CatEntry cat = FindCat(catKey);
+                if (cat != null && cat.ToolNames != null)
+                {
+                    raw = cat.ToolNames;
+                }
+            }
+            if (raw == null)
+            {
+                raw = "";
+            }
+            return ResolveToolNames(raw, IsDefaultCatKey(catKey));
+        }
 
         /// <summary>
         /// 猫会话——按猫键取会话实体（M4e 猫级白名单同源寻址；majordomo/空键走默认会话）。
@@ -1700,9 +1798,10 @@ namespace CatHome4.Admin
                         listener.Stop();
                         return port;
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
                         // 试绑失败——继续下一端口
+                        LogStore.Add("AdminService", 1, "端口试绑未成，继续下一端口: " + ex.Message, "SYS");
                     }
                 }
                 port = port + step;
@@ -1834,6 +1933,12 @@ namespace CatHome4.Admin
                 _chatBridge.DefaultSession.Pause();
                 return true;
             }
+            if (line == "cat.continue")
+            {
+                // 继续——HTTP 线程直接调用（内部仅前文非空校验 + 入队——线程安全；相位推进主线程 Pump 消费）
+                _chatBridge.DefaultSession.Continue();
+                return true;
+            }
             if (line == "session.new")
             {
                 // F2.2 按 DefaultSession 重注入——HTTP 线程置位/主线程泵消费（PumpCatQueues 段3）
@@ -1916,6 +2021,12 @@ namespace CatHome4.Admin
             {
                 // P6 中止——HTTP 线程直接调用（内部仅置位 + 取消令牌——线程安全；相位推进主线程 Pump 消费）
                 cat.Session.Pause();
+                return true;
+            }
+            if (line == "cat.continue")
+            {
+                // 继续——HTTP 线程直接调用（内部仅前文非空校验 + 入队——线程安全；相位推进主线程 Pump 消费）
+                cat.Session.Continue();
                 return true;
             }
             if (line == "session.new")

@@ -78,6 +78,30 @@ namespace Mau.Runtime
         }
 
         /// <summary>
+        /// 追加用户消息（带图片附件引用）——引用随消息落盘，请求构造时展开为内容块（design-ch4-chat-images §8.2/§8.4）。
+        /// 图片来源 = 注入点（image-inject 工具批后段）；文本与附件皆空 = 不入上下文。
+        /// </summary>
+        /// <param name="text">用户文本</param>
+        /// <param name="imagesJson">附件引用 JSON 数组字符串（图片绝对路径；空=无附件）</param>
+        /// <returns>追加的消息（文本与附件皆空=null）</returns>
+        public LlmMessage? AddUserMessage(string text, string imagesJson)
+        {
+            if (imagesJson == null)
+            {
+                imagesJson = "";
+            }
+            if (text.Length == 0 && imagesJson.Length == 0)
+            {
+                return null;
+            }
+            LlmMessage msg = CreateMessage(LlmRole.User, text);
+            msg.ImagesJson = imagesJson;
+            _history.Add(msg);
+            MarkChanged();
+            return msg;
+        }
+
+        /// <summary>
         /// 追加助手文本回复——返回追加的消息（落盘挂点显式消费）。
         /// </summary>
         /// <param name="text">回复文本</param>
@@ -226,6 +250,10 @@ namespace Mau.Runtime
                 {
                     m.ReasoningContent = "";
                 }
+                if (m.ImagesJson == null)
+                {
+                    m.ImagesJson = "";
+                }
                 if (m.Role == LlmRole.Assistant && m.ToolCallsJson.Length > 0)
                 {
                     List<KeyValuePair<string, string>> decls = ParseToolCallDecls(m.ToolCallsJson);
@@ -338,6 +366,7 @@ namespace Mau.Runtime
             msg.ToolName = "";
             msg.ToolCallsJson = "";
             msg.ReasoningContent = "";
+            msg.ImagesJson = "";
             // 视图排序键——真实时序权威（Unix 毫秒；跨重启稳定——帧号为运行时态，重建即失真）
             msg.CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             return msg;
@@ -425,9 +454,10 @@ namespace Mau.Runtime
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 解析失败——返回空字典（调用方按无声明/降级处理）
+                LogStore.Add("ChatContext", 2, "主机声明解析失败，返回空表: " + ex.Message, "SYS");
             }
             return result;
         }
