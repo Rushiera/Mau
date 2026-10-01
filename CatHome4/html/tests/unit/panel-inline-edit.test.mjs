@@ -82,26 +82,42 @@ test('编辑模式机件已撤——取消编辑按钮与行内编辑函数都�
 test('API 池——可编辑列是输入框、配置 ID 是纯文本、行内无「编辑」按钮', () => {
   window.renderApis([API_ROW]);
   const tr = document.querySelector('#apisTable tbody tr');
-  expect(tr.children.length).toBe(7);
-  expect(tr.children[0].querySelector('input').value).toBe('主端点');
-  expect(tr.children[1].querySelector('input')).toBeNull();
-  expect(tr.children[1].textContent).toBe(API_ROW.apiConfigId);
-  expect(tr.children[2].querySelector('input').value).toBe('deepseek');
-  expect(tr.children[3].querySelector('input').value).toBe('https://a.example/v1');
-  expect(tr.children[4].querySelector('input').value).toBe('deepseek-v4-flash');
-  expect(tr.children[5].querySelector('input').value).toBe('sk-ab****yz');
+  expect(tr.children.length).toBe(8);
+  expect(tr.children[0].querySelector('input')).toBeNull();   // 最左默认列——状态 + 动作，无输入框
+  expect(tr.children[1].querySelector('input').value).toBe('主端点');
+  expect(tr.children[2].querySelector('input')).toBeNull();
+  expect(tr.children[2].textContent).toBe(API_ROW.apiConfigId);
+  expect(tr.children[3].querySelector('input').value).toBe('deepseek');
+  expect(tr.children[4].querySelector('input').value).toBe('https://a.example/v1');
+  expect(tr.children[5].querySelector('input').value).toBe('deepseek-v4-flash');
+  expect(tr.children[6].querySelector('input').value).toBe('sk-ab****yz');
   const labels = [];
   for (const b of tr.querySelectorAll('button')) { labels.push(b.textContent); }
   expect(labels.indexOf('编辑')).toBe(-1);
   expect(labels.indexOf('删除')).toBeGreaterThanOrEqual(0);
 });
 
+test('API 池——最左默认列：默认行紫星 + 已是默认；非默认行灰星 + 设为默认按钮', () => {
+  window.renderApis([API_ROW]);
+  const tdOn = document.querySelector('#apisTable tbody tr').children[0];
+  expect(tdOn.querySelector('span').className).toBe('api-star-on');
+  expect(tdOn.querySelector('span').textContent).toBe('★');
+  expect(tdOn.textContent).toContain('已是默认');
+  expect(tdOn.querySelector('button')).toBeNull();
+
+  window.renderApis([Object.assign({}, API_ROW, { isDefault: false })]);
+  const tdOff = document.querySelector('#apisTable tbody tr').children[0];
+  expect(tdOff.querySelector('span').className).toBe('api-star-off');
+  expect(tdOff.querySelector('button').textContent).toBe('设为默认');
+  expect(tdOff.textContent).not.toContain('已是默认');
+});
+
 test('API 池——未改动 / 清空都不发请求（清空回落原值）；改动提交整行', async () => {
   captureFetch();
   window.renderApis([API_ROW]);
   const tr = document.querySelector('#apisTable tbody tr');
-  const nameInput = tr.children[0].querySelector('input');
-  const keyInput = tr.children[5].querySelector('input');
+  const nameInput = tr.children[1].querySelector('input');
+  const keyInput = tr.children[6].querySelector('input');
 
   nameInput.dispatchEvent(new Event('change'));
   await tick();
@@ -138,7 +154,7 @@ test('API 池——Key 列真改动才送新值', async () => {
   captureFetch();
   window.renderApis([API_ROW]);
   const tr = document.querySelector('#apisTable tbody tr');
-  const keyInput = tr.children[5].querySelector('input');
+  const keyInput = tr.children[6].querySelector('input');
   keyInput.value = 'sk-brand-new-key';
   keyInput.dispatchEvent(new Event('change'));
   await tick();

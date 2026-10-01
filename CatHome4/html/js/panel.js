@@ -3,11 +3,37 @@
 // 加载顺序：app.js → panel.js → panel-apis.js → panel-catcfg.js（index.html 引用）
 
 // [段13] 多猫管理区（P9.3d）——GET /api/v1/cats 列表 + POST command cat.* 指令族
+// 2026-10-01 主面板轮：ID 列撤除；新增 LLM API / QQ Bot（行内直改）+ 目录白名单 / 工具清单（专用弹层入口）
 var catsTableBody = document.querySelector('#catsTable tbody');
 var catsMsgEl = document.getElementById('catsMsg');
 var catNewInput = document.getElementById('catNewName');
+// 行内编辑数据面——API 池 / QQ Bot 池 / 全局根池（首屏加载一次，渲染时查表）
+var catApiOptions = [];
+var catQqBotOptions = [];
+var catAllRoots = [];
 
-// 猫列表加载——渲染表格（名称/ID/状态/端口/操作按钮）
+// 池数据加载——三源就绪后渲染列表（任一失败不阻塞：降级为空池）
+function loadCatPools() {
+    var pending = 3;
+    function step() {
+        pending = pending - 1;
+        if (pending === 0) { loadCats(); }
+    }
+    fetch('/api/v1/llm-apis')
+        .then(function (r) { return r.json(); })
+        .then(function (d) { catApiOptions = d.items || []; step(); })
+        .catch(function () { step(); });
+    fetch('/api/v1/qqbot-apis')
+        .then(function (r) { return r.json(); })
+        .then(function (d) { catQqBotOptions = d.items || []; step(); })
+        .catch(function () { step(); });
+    fetch('/api/v1/workspace')
+        .then(function (r) { return r.json(); })
+        .then(function (d) { catAllRoots = d.roots || []; step(); })
+        .catch(function () { step(); });
+}
+
+// 猫列表加载——渲染表格（名称/LLM API/QQ Bot/目录白名单/工具清单/状态/端口/操作）
 function loadCats() {
     fetch('/api/v1/cats')
         .then(function (r) { return r.json(); })
@@ -33,21 +59,108 @@ function loadCats() {
         });
 }
 
-// 单猫行渲染——操作按钮按状态启用（启动/停止互斥）；special（Majordomo）强制自启 + 无停止/删除
+// 单猫行渲染——名称/LLM API/QQ Bot 行内直改；目录白名单 + 工具清单走专用弹层；操作按钮按状态启用（special 强制自启 + 无停止/删除）
 function renderCatRow(cat) {
     var tr = document.createElement('tr');
+    // [列1] 名称——行内编辑（未改动 / 清空 = 不提交；special 行 ★ 前缀独立于输入框）
     var tdName = document.createElement('td');
+    var nameWrap = document.createElement('div');
+    nameWrap.style.cssText = 'display:flex;align-items:center;gap:4px';
     if (cat.special) {
-        tdName.textContent = '★ ' + (cat.name || '');
-    } else {
-        tdName.textContent = cat.name || '';
+        var star = document.createElement('span');
+        star.textContent = '★';
+        star.style.color = 'var(--ch-warn)';
+        nameWrap.appendChild(star);
     }
-    tdName.style.color = 'var(--ch-identity)';
+    var nameInput = document.createElement('input');
+    nameInput.className = 'input-mini';
+    nameInput.style.flex = '1';
+    nameInput.style.minWidth = '0';
+    nameInput.style.color = 'var(--ch-identity)';
+    nameInput.value = cat.name || '';
+    nameInput.placeholder = '名称';
+    wireInlineEdit(nameInput, cat.name || '', function (v) { submitCatField(cat, 'displayName', v, '名称'); });
+    nameWrap.appendChild(nameInput);
+    tdName.appendChild(nameWrap);
     tr.appendChild(tdName);
-    var tdId = document.createElement('td');
-    tdId.textContent = cat.id || '';
-    tdId.style.color = 'var(--ch-fg-weak)';
-    tr.appendChild(tdId);
+
+    // [列2] LLM API——下拉直改（首项「默认 · 跟随全局」= 零值语义）
+    var tdApi = document.createElement('td');
+    var apiSel = document.createElement('select');
+    apiSel.className = 'input-mini';
+    apiSel.style.width = '100%';
+    var apiDefOpt = document.createElement('option');
+    apiDefOpt.value = '';
+    apiDefOpt.textContent = '（默认 · 跟随全局）';
+    apiSel.appendChild(apiDefOpt);
+    for (var a = 0; a < catApiOptions.length; a++) {
+        var apiOpt = document.createElement('option');
+        apiOpt.value = catApiOptions[a].apiConfigId;
+        var apiLabel = catApiOptions[a].displayName || catApiOptions[a].apiConfigId;
+        if (catApiOptions[a].isDefault) { apiLabel = apiLabel + ' · 全局默认'; }
+        apiOpt.textContent = apiLabel;
+        apiSel.appendChild(apiOpt);
+    }
+    if (isDefaultApiValue(cat.apiConfigId)) { apiSel.value = ''; } else { apiSel.value = cat.apiConfigId; }
+    apiSel.addEventListener('change', function () { submitCatField(cat, 'apiConfigId', apiSel.value, 'LLM API'); });
+    tdApi.appendChild(apiSel);
+    tr.appendChild(tdApi);
+
+    // [列3] QQ Bot——下拉直改（空 = 未绑定；已被他猫占用项禁用）
+    var tdQq = document.createElement('td');
+    var qqSel = document.createElement('select');
+    qqSel.className = 'input-mini';
+    qqSel.style.width = '100%';
+    var qqNone = document.createElement('option');
+    qqNone.value = '';
+    qqNone.textContent = '（未绑定）';
+    qqSel.appendChild(qqNone);
+    for (var q = 0; q < catQqBotOptions.length; q++) {
+        var qqOpt = document.createElement('option');
+        qqOpt.value = catQqBotOptions[q].qqBotId;
+        var qqLabel = catQqBotOptions[q].displayName || catQqBotOptions[q].qqBotId;
+        if (catQqBotOptions[q].boundCat && catQqBotOptions[q].qqBotId !== cat.qqbotId) {
+            qqLabel = qqLabel + '（已被 ' + catQqBotOptions[q].boundCat + ' 绑定）';
+            qqOpt.disabled = true;
+        }
+        qqOpt.textContent = qqLabel;
+        qqSel.appendChild(qqOpt);
+    }
+    qqSel.value = cat.qqbotId || '';
+    qqSel.addEventListener('change', function () { submitCatField(cat, 'qqbotId', qqSel.value, 'QQ Bot'); });
+    tdQq.appendChild(qqSel);
+    tr.appendChild(tdQq);
+
+    // [列4] 目录白名单——显示无权目录 + 设置入口（专用弹层）
+    var tdRoots = document.createElement('td');
+    var denied = collectDeniedRoots(cat);
+    var deniedSpan = document.createElement('span');
+    deniedSpan.style.fontSize = 'var(--ch-fs-tag)';
+    if (denied.length === 0) {
+        deniedSpan.textContent = '（全部可访问）';
+        deniedSpan.style.color = 'var(--ch-fg-weak)';
+    } else {
+        deniedSpan.textContent = '无权: ' + denied.join(', ');
+        deniedSpan.style.color = 'var(--ch-err)';
+        deniedSpan.title = '本猫不可访问的根——点「设置」调整';
+    }
+    tdRoots.appendChild(deniedSpan);
+    var rootsBtn = document.createElement('button');
+    rootsBtn.textContent = '设置';
+    rootsBtn.className = 'btn-mini';
+    rootsBtn.style.marginLeft = '4px';
+    rootsBtn.onclick = function () { openCatRoots(cat.id, cat.name); };
+    tdRoots.appendChild(rootsBtn);
+    tr.appendChild(tdRoots);
+
+    // [列5] 工具清单——单按钮入口（专用弹层：工具勾选 + 人设）
+    var tdTools = document.createElement('td');
+    var toolsBtn = document.createElement('button');
+    toolsBtn.textContent = '工具清单';
+    toolsBtn.className = 'btn-mini';
+    toolsBtn.onclick = function () { openCatTools(cat.id, cat.name); };
+    tdTools.appendChild(toolsBtn);
+    tr.appendChild(tdTools);
     var tdState = document.createElement('td');
     if (cat.running) {
         tdState.textContent = '运行中';
@@ -121,14 +234,14 @@ function catAction(cmd) {
         });
 }
 
-// 新建猫——cat.new <显示名>（空名拒绝）
+// 新建猫——cat.new [显示名]（空名 = 后端自动命名：默认小猫 / 默认小猫(1)…）
 function catNew() {
     var name = catNewInput.value.trim();
+    catNewInput.value = '';
     if (name.length === 0) {
-        catsMsgEl.textContent = '显示名不能为空';
+        catAction('cat.new');
         return;
     }
-    catNewInput.value = '';
     catAction('cat.new ' + name);
 }
 
@@ -138,4 +251,41 @@ document.getElementById('catsRefresh').addEventListener('click', loadCats);
 catNewInput.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { catNew(); }
 });
-loadCats();
+loadCatPools();
+
+// 无权目录——全局根池 ∖ 本猫启用根（workspace/runtime 系统根恒可用，不计入无权；未配置 = 空白名单）
+function collectDeniedRoots(cat) {
+    var denied = [];
+    if (!catAllRoots || catAllRoots.length === 0) { return denied; }
+    var enabled = {};
+    var list = cat.enabledRoots || [];
+    for (var i = 0; i < list.length; i++) {
+        if (list[i]) { enabled[String(list[i]).toLowerCase()] = true; }
+    }
+    for (var j = 0; j < catAllRoots.length; j++) {
+        var root = catAllRoots[j];
+        var rid = (root.id || '').toLowerCase();
+        if (rid === 'workspace' || rid === 'runtime') { continue; }
+        if (enabled[rid] === true) { continue; }
+        denied.push(root.id);
+    }
+    return denied;
+}
+
+// 主面板行内字段提交——cat.cfg.set（字段级合并写；未提交字段逐字保留；空值 = 清空语义，末尾保留空格）
+function submitCatField(cat, field, value, label) {
+    catsMsgEl.textContent = '保存中…（' + label + '）';
+    fetch('/api/v1/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'cat.cfg.set ' + cat.id + ' ' + field + ' ' + value })
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            catsMsgEl.textContent = d.ok ? ('已保存（' + label + '）') : ('保存失败: ' + (d.error || ''));
+            setTimeout(loadCats, 400);
+        })
+        .catch(function (e) {
+            catsMsgEl.textContent = '请求失败: ' + e.message;
+        });
+}

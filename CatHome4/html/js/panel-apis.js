@@ -1,6 +1,7 @@
 // CH4 外观层——panel-apis.js：LLM API 池 + QQ Bot 池管理（config 页签）——panel.js 拆分（2026-09-08 体量治理）
 // 依赖：app.js + panel.js 先加载（全局状态已就位）；本文件承载 API/QQBot 两池的列表（行内编辑）+ 新建 + 删除
 // 2026-10-01 行内编辑轮：行内「编辑」按钮撤除——可编辑列直接在格内改（配置 ID 只读）；未改动 / 清空 = 不改动（不发请求）
+// 2026-10-01 默认列轮：★ 独立为最左「默认」列——紫星=当前默认 / 灰星=非默认；「设为默认 / 已是默认」随星同列（原在操作列）
 
 // [段14] M3b LLM API 池管理（config 页签——行内编辑 + 新建 + 删除；key 掩码）
 var apisTableBody = document.querySelector('#apisTable tbody');
@@ -43,13 +44,30 @@ function renderApiRow(api) {
     };
     var inputs = {};
 
+    // 默认列（最左）——紫星=当前默认 / 灰星=非默认；状态与动作同格
+    var tdDefault = document.createElement('td');
+    tdDefault.style.whiteSpace = 'nowrap';
+    var star = document.createElement('span');
+    star.className = api.isDefault ? 'api-star-on' : 'api-star-off';
+    star.textContent = '★';
+    tdDefault.appendChild(star);
+    if (api.isDefault) {
+        var nowTag = document.createElement('span');
+        nowTag.className = 'api-def-now';
+        nowTag.textContent = '已是默认';
+        tdDefault.appendChild(nowTag);
+    } else {
+        var defBtn = document.createElement('button');
+        defBtn.textContent = '设为默认';
+        defBtn.className = 'btn-mini accent';
+        defBtn.style.marginLeft = '4px';
+        defBtn.onclick = function () { setDefaultApi(api); };
+        tdDefault.appendChild(defBtn);
+    }
+    tr.appendChild(tdDefault);
+
     var tdName = document.createElement('td');
     tdName.style.color = 'var(--ch-identity)';
-    if (api.isDefault) {
-        var star = document.createElement('span');
-        star.textContent = '★ ';
-        tdName.appendChild(star);
-    }
     inputs.displayName = cellInput(cells.displayName, '名称');
     tdName.appendChild(inputs.displayName);
     tr.appendChild(tdName);
@@ -90,13 +108,6 @@ function renderApiRow(api) {
 
     var tdOp = document.createElement('td');
     tdOp.style.whiteSpace = 'nowrap';
-    if (!api.isDefault) {
-        var defBtn = document.createElement('button');
-        defBtn.textContent = '设为默认';
-        defBtn.className = 'btn-mini accent';
-        defBtn.onclick = function () { setDefaultApi(api); };
-        tdOp.appendChild(defBtn);
-    }
     var delBtn = document.createElement('button');
     delBtn.textContent = '删除';
     delBtn.className = 'btn-mini danger';

@@ -190,12 +190,13 @@ namespace CatHome4.Admin
         /// <returns>结果文本（CLI 输出 / HTTP 回执）</returns>
         internal static string HandleCatCommand(string line)
         {
-            if (line.StartsWith("cat.new ", StringComparison.Ordinal))
+            if (line == "cat.new" || line.StartsWith("cat.new ", StringComparison.Ordinal))
             {
-                string name = line.Substring(8).Trim();
-                if (name.Length == 0)
+                // 空名 = 自动命名（默认小猫 / 默认小猫(1)…）——新建不再强制输入显示名
+                string name = "";
+                if (line.Length > 8)
                 {
-                    return "cat.new | 显示名不能为空";
+                    name = line.Substring(8).Trim();
                 }
                 return HandleCatNew(name);
             }
@@ -746,6 +747,11 @@ namespace CatHome4.Admin
         private static string HandleCatNew(string name)
         {
             string id = SessionStore.NewSessionId();
+            if (name == null || name.Length == 0)
+            {
+                // 空名 = 自动命名（默认小猫 / 默认小猫(1)…）——新建不再强制输入显示名
+                name = NextDefaultCatName();
+            }
             CatEntry cat = CreateCatEntry(id, name, null);
             if (cat == null)
             {
@@ -755,6 +761,36 @@ namespace CatHome4.Admin
             SaveCatCfg(cat);
             LogStore.Add("CatHome4", 1, "已创建猫「" + name + "」（id " + id + "），静默待启动", "CHAT");
             return "cat.new | id=" + id + " | name=" + name + " | 静默态（cat.start 启动）";
+        }
+        /// <summary>
+        /// 默认猫名生成——「默认小猫」占用时依次「默认小猫(1)」「默认小猫(2)」…（注册表内已用名比对，大小写不敏感）。
+        /// </summary>
+        /// <returns>未占用的默认显示名</returns>
+        private static string NextDefaultCatName()
+        {
+            string baseName = "默认小猫";
+            HashSet<string> used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < _cats.Count; i++)
+            {
+                if (_cats[i].DisplayName != null)
+                {
+                    used.Add(_cats[i].DisplayName);
+                }
+            }
+            if (!used.Contains(baseName))
+            {
+                return baseName;
+            }
+            int n = 1;
+            while (true)
+            {
+                string candidate = baseName + "(" + n.ToString() + ")";
+                if (!used.Contains(candidate))
+                {
+                    return candidate;
+                }
+                n = n + 1;
+            }
         }
 
         /// <summary>
@@ -2091,23 +2127,73 @@ namespace CatHome4.Admin
         {
             List<object> list = new List<object>();
             // F2.2 majordomo 特殊会话——置顶 + special 标记（前端不视为多猫；无停止/删除）
+            // 主面板数据面扩展——补 apiConfigId / qqbotId / enabledRoots（行内编辑与目录白名单展示用）
+            CatCfgData majorCfg = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", "majordomo", "cat.cfg"));
+            string majorName = "majordomo";
+            string majorApi = "";
+            string majorQq = "";
+            string[] majorRoots = new string[0];
+            if (majorCfg != null)
+            {
+                if (majorCfg.DisplayName != null && majorCfg.DisplayName.Length > 0)
+                {
+                    majorName = majorCfg.DisplayName;
+                }
+                if (majorCfg.ApiConfigId != null)
+                {
+                    majorApi = majorCfg.ApiConfigId;
+                }
+                if (majorCfg.QqBotId != null)
+                {
+                    majorQq = majorCfg.QqBotId;
+                }
+                if (majorCfg.EnabledRoots != null)
+                {
+                    majorRoots = majorCfg.EnabledRoots;
+                }
+            }
             list.Add(new
             {
                 id = "majordomo",
-                name = "majordomo",
+                name = majorName,
                 running = _majorHost != null,
                 port = _majorPort,
-                special = true
+                special = true,
+                apiConfigId = majorApi,
+                qqbotId = majorQq,
+                enabledRoots = majorRoots
             });
             for (int i = 0; i < _cats.Count; i++)
             {
                 CatEntry cat = _cats[i];
+                CatCfgData cfg = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", cat.Id, "cat.cfg"));
+                string apiConfigId = "";
+                string qqbotId = "";
+                string[] enabledRoots = new string[0];
+                if (cfg != null)
+                {
+                    if (cfg.ApiConfigId != null)
+                    {
+                        apiConfigId = cfg.ApiConfigId;
+                    }
+                    if (cfg.QqBotId != null)
+                    {
+                        qqbotId = cfg.QqBotId;
+                    }
+                    if (cfg.EnabledRoots != null)
+                    {
+                        enabledRoots = cfg.EnabledRoots;
+                    }
+                }
                 list.Add(new
                 {
                     id = cat.Id,
                     name = cat.DisplayName,
                     running = cat.Running,
-                    port = cat.Port
+                    port = cat.Port,
+                    apiConfigId = apiConfigId,
+                    qqbotId = qqbotId,
+                    enabledRoots = enabledRoots
                 });
             }
             var resp = new

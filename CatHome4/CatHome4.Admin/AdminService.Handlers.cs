@@ -1334,6 +1334,11 @@ namespace CatHome4.Admin
             {
                 return "catcfg.apply | 猫不存在: " + key;
             }
+            // 改名生效——displayName 同步注册表（主面板列表与日志读 cat.DisplayName）
+            if (cfg.DisplayName != null && cfg.DisplayName.Length > 0)
+            {
+                cat.DisplayName = cfg.DisplayName;
+            }
             cat.Persona = persona;
             cat.InjectList = injectList;
             cat.ToolNames = toolNames;

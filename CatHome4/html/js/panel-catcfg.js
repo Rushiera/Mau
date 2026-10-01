@@ -35,7 +35,7 @@ function openCatCfg(catId, name) {
             catCfgAllPacks = d.allPacks || [];
             renderPackChecks(catCfgAllPacks, d.packs || []);
             // M4e 猫级白名单——启用根勾选（workspace 强制常驻不可取消）
-            renderRootChecks(d.allRoots || [], d.enabledRoots || []);
+            renderRootChecks('catCfgRoots', d.allRoots || [], d.enabledRoots || []);
             catCfgModal.style.display = 'flex';
         })
         .catch(function () {
@@ -319,7 +319,7 @@ function saveCatCfg() {
         packs: collectPackChecks(),
         qqbotId: document.getElementById('catCfgQqBot').value,
         qqbotEnable: document.getElementById('catCfgQqEnable').checked,
-        enabledRoots: collectRootChecks()
+        enabledRoots: collectRootChecks('catCfgRoots')
     };
     fetch('/api/v1/cat-config', {
         method: 'POST',
@@ -350,8 +350,8 @@ document.getElementById('catCfgInjectAddBtn').onclick = function () {
 // 默认猫配置入口——统一由多猫页 Majordomo 行「配置」按钮承担（openCatCfg 见 panel.js renderCatRow；F2.1 对话页签已移除，页面无独立 chatCfg 元素）
 
 // M4e 猫级白名单——启用根勾选（allRoots 全局池；enabledRoots 当前猫已启用；workspace 强制常驻不可取消）
-function renderRootChecks(allRoots, enabledRoots) {
-    var box = document.getElementById('catCfgRoots');
+function renderRootChecks(boxId, allRoots, enabledRoots) {
+    var box = document.getElementById(boxId);
     box.textContent = '';
     if (!allRoots || allRoots.length === 0) {
         box.textContent = '（全局根池为空）';
@@ -408,9 +408,9 @@ function renderRootChecks(allRoots, enabledRoots) {
     }
 }
 
-function collectRootChecks() {
+function collectRootChecks(boxId) {
     var ids = [];
-    var boxes = document.querySelectorAll('#catCfgRoots input[type=checkbox].root-cb');
+    var boxes = document.querySelectorAll('#' + boxId + ' input[type=checkbox].root-cb');
     for (var i = 0; i < boxes.length; i++) {
         if (boxes[i].checked) { ids.push(boxes[i].getAttribute('data-root')); }
     }
@@ -1058,3 +1058,99 @@ function collectTplPacks() {
     }
     return keys;
 }
+
+// [段15c] 主面板专用弹层——工具清单（含人设）/ 目录白名单（2026-10-01 主面板轮）
+// 定位：主面板行内入口——打开时拉该猫配置（与完整配置弹层同源）；保存走 POST /api/v1/cat-config 部分字段写（缺省字段保留旧值）
+var catToolsModalEl = document.getElementById('catToolsModal');
+var catRootsModalEl = document.getElementById('catRootsModal');
+var catQuickTarget = '';
+
+// 工具清单弹层——工具勾选（分组）+ 人设（同块，与完整配置弹层一致）
+function openCatTools(catId, name) {
+    catQuickTarget = catId;
+    document.getElementById('catToolsTitle').textContent = name;
+    document.getElementById('catToolsMsg').textContent = '';
+    fetch('/api/v1/cat-config?cat=' + encodeURIComponent(catId))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok) {
+                document.getElementById('catToolsMsg').textContent = '读取失败: ' + (d.error || '');
+                catToolsModalEl.style.display = 'flex';
+                return;
+            }
+            catCfgAllTools = d.allTools || d.allToolNames || [];
+            catCfgDefectGroups = d.defectGroups || [];
+            renderGroupedChecks('catToolsChecks', catCfgAllTools, parseToolChecked(d.toolNames || ''), catId === 'majordomo' ? 'on' : 'off');
+            document.getElementById('catToolsPersona').value = d.persona || '';
+            catToolsModalEl.style.display = 'flex';
+        })
+        .catch(function () {
+            document.getElementById('catToolsMsg').textContent = '读取失败——宿主未运行？';
+            catToolsModalEl.style.display = 'flex';
+        });
+}
+
+function saveCatTools() {
+    var payload = {
+        cat: catQuickTarget,
+        toolNames: collectChecked('catToolsChecks').join(','),
+        persona: document.getElementById('catToolsPersona').value
+    };
+    postCatConfig(payload, 'catToolsMsg');
+}
+
+// 目录白名单弹层——根勾选（workspace 系统根必选不可取消）
+function openCatRoots(catId, name) {
+    catQuickTarget = catId;
+    document.getElementById('catRootsTitle').textContent = name;
+    document.getElementById('catRootsMsg').textContent = '';
+    fetch('/api/v1/cat-config?cat=' + encodeURIComponent(catId))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok) {
+                document.getElementById('catRootsMsg').textContent = '读取失败: ' + (d.error || '');
+                catRootsModalEl.style.display = 'flex';
+                return;
+            }
+            renderRootChecks('catRootsChecks', d.allRoots || [], d.enabledRoots || []);
+            catRootsModalEl.style.display = 'flex';
+        })
+        .catch(function () {
+            document.getElementById('catRootsMsg').textContent = '读取失败——宿主未运行？';
+            catRootsModalEl.style.display = 'flex';
+        });
+}
+
+function saveCatRoots() {
+    var payload = {
+        cat: catQuickTarget,
+        enabledRoots: collectRootChecks('catRootsChecks')
+    };
+    postCatConfig(payload, 'catRootsMsg');
+}
+
+// 部分字段写入——POST /api/v1/cat-config（缺省字段保留旧值；回执 = 落盘受理结果）
+function postCatConfig(payload, msgId) {
+    var msg = document.getElementById(msgId);
+    msg.textContent = '保存中…';
+    fetch('/api/v1/cat-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            msg.textContent = d.ok ? '已保存——新会话生效' : ('保存失败: ' + (d.error || ''));
+            if (d.ok && typeof loadCats === 'function') { setTimeout(loadCats, 400); }
+        })
+        .catch(function (e) {
+            msg.textContent = '请求失败: ' + e.message + '（宿主未运行或端点不存在？）';
+        });
+}
+
+document.getElementById('catToolsSave').onclick = saveCatTools;
+document.getElementById('catToolsCancel').onclick = function () { catToolsModalEl.style.display = 'none'; };
+document.getElementById('catToolsClose').onclick = function () { catToolsModalEl.style.display = 'none'; };
+document.getElementById('catRootsSave').onclick = saveCatRoots;
+document.getElementById('catRootsCancel').onclick = function () { catRootsModalEl.style.display = 'none'; };
+document.getElementById('catRootsClose').onclick = function () { catRootsModalEl.style.display = 'none'; };
