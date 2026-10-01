@@ -45,6 +45,8 @@ const SESSION_ROW = {
   msgCount: 8,
   pending: 0,
   noteActive: false,
+  context: 12345,
+  contextCount: 42,
   lastContextChangeAt: 0
 };
 
@@ -53,6 +55,7 @@ function detailCurrent() {
   return {
     ok: true, cat: 'majordomo', name: 'majordomo', special: true, running: true, port: 8081,
     isIdle: true, phase: 'Idle', round: 3, msgCount: 8, pending: 0, noteActive: false,
+    context: 12345, contextCount: 42,
     lastUser: { text: '你好猫猫', source: 'current', time: Date.now() - 60000, timeText: '' },
     lastReply: { text: '在的', source: 'current', time: Date.now() - 30000, timeText: '' },
     archive: { file: 'majordomo_20261001_120000.md', path: 'X:/sessions_old/majordomo_20261001_120000.md', text: '# 会话留档 — majordomo\n\n旧会话正文' }
@@ -163,4 +166,38 @@ test('/new（非 Idle）——警示 + 勾选「我确认」后方可确定', as
   await tick();
   await tick();
   expect(calls.filter((c) => c.url === '/api/v1/command').length).toBe(1);
+});
+
+test('前文 tokens——会话卡在轮次前显示；详情状态行在运行态后显示（端口让位）', async () => {
+  detail = detailCurrent();
+  await openDetail();
+  const status = document.querySelector('.cd-status').textContent;
+  expect(status).toContain('运行中');
+  expect(status).not.toContain(':8081');
+  expect(status).toContain('前文 12345 tokens / 42 条');
+
+  // 会话卡——tokens 在轮次之前
+  const card = document.querySelector('.session-info').textContent;
+  expect(card).toContain('前文 12345 tokens / 42 条');
+  expect(card.indexOf('前文')).toBeLessThan(card.indexOf('轮次'));
+});
+
+test('端口入口——刷新左边可点直达对话窗口；静默猫隐藏', async () => {
+  const opened = [];
+  window.open = (url) => { opened.push(url); };
+  detail = detailCurrent();
+  await openDetail();
+  const btn = document.getElementById('catDetailPort');
+  expect(btn.style.display).toBe('');
+  expect(btn.textContent).toBe(':8081');
+  // 位置——紧邻刷新按钮左边
+  expect(document.getElementById('catDetailReload').previousElementSibling).toBe(btn);
+  btn.dispatchEvent(new Event('click'));
+  expect(opened).toEqual(['http://127.0.0.1:8081/']);
+
+  // 静默——端口入口隐藏
+  detail = detailCurrent();
+  detail.running = false;
+  await openDetail();
+  expect(document.getElementById('catDetailPort').style.display).toBe('none');
 });

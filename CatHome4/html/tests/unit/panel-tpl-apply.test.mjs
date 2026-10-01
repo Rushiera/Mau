@@ -1,5 +1,6 @@
 // tests/unit/panel-tpl-apply.test.mjs —— 新猫默认模板（三列三大类 + 保存后套用询问）（2026-10-01）
-// 覆盖：三列结构（默认人设 / 默认工具 / 默认加载包和前文）· 基础角色与保存横条在三列之外 · 子类可收起
+// 覆盖：三列结构（默认人设 / 默认工具 / 默认加载包和前文）· 「保存并应用」整行按钮在区标题下、三列上 · 底部横条=刷新+回执 · 子类可收起
+//       · 模板面特权组整组隐藏（每猫面保持可见不可配）
 //       · 保存后弹层：一致者自动勾选 / 不一致不勾 / 读取失败禁用 · 套用载荷（模板四字段 + 保留猫的 API/QQBot/白名单）
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
@@ -64,13 +65,44 @@ test('新猫模板——基础角色并入默认人设列；保存横条在网�
   expect(subs[2].contains(document.getElementById('tplPacks'))).toBe(true);
   expect(subs[2].contains(document.getElementById('tplInject'))).toBe(true);
 
-  // 保存横条在三列之外
+  // 保存并应用——整行按钮位于区标题之下、三列之上（2026-10-01 体验轮）
+  const applyBar = document.querySelector('.tpl-applybar');
+  expect(applyBar).not.toBeNull();
+  expect(cols.contains(applyBar)).toBe(false);
+  expect(applyBar.contains(document.getElementById('tplSave'))).toBe(true);
+  expect(document.getElementById('tplSave').textContent.trim()).toBe('保存并应用');
+  const sec = document.querySelector('.cfg-sec[data-cfg="tpl"]');
+  const kids = Array.prototype.slice.call(sec.children);
+  expect(kids.indexOf(applyBar)).toBeLessThan(kids.indexOf(cols));
+
+  // 底部横条——保存按钮已上移，只留刷新 + 回执，且在三列之外
   const bar = document.querySelector('.tpl-savebar');
   expect(bar).not.toBeNull();
   expect(cols.contains(bar)).toBe(false);
-  expect(bar.contains(document.getElementById('tplSave'))).toBe(true);
+  expect(bar.contains(document.getElementById('tplSave'))).toBe(false);
   expect(bar.contains(document.getElementById('tplRefresh'))).toBe(true);
   expect(bar.contains(document.getElementById('tplMsg'))).toBe(true);
+});
+
+test('模板面——特权组整组隐藏（组头与工具项都不出）；每猫面保持可见不可配', () => {
+  const allTools = [
+    { name: 'text-read', group: 'TextCat' },
+    { name: 'config-get', group: 'ConfigCat', privileged: true },
+    { name: 'majordomo-cmd', group: 'MajordomoCat', privileged: true }
+  ];
+  const box = document.getElementById('tplTools');
+
+  // 模板面（hide）——特权组连组头一起不出，普通组照常
+  window.renderGroupedChecks('tplTools', allTools, {}, 'hide');
+  expect(box.textContent).toContain('text-read');
+  expect(box.textContent).not.toContain('ConfigCat');
+  expect(box.textContent).not.toContain('config-get');
+  expect(box.textContent).not.toContain('majordomo-cmd');
+
+  // 每猫面（off）——特权项可见不可配，保留说明性标记
+  window.renderGroupedChecks('tplTools', allTools, {}, 'off');
+  expect(box.textContent).toContain('ConfigCat');
+  expect(box.textContent).toContain('config-get · 特权面');
 });
 
 test('新猫模板——网格版式契约（左列人设 + 包 1fr / 右列工具 2fr 跨两行）', async () => {

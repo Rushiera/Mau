@@ -244,7 +244,7 @@ namespace CatHome4.Observe
         /// 会话状态段——会话注册表（Majordomo + 多猫）四相环预览（外观层状态区）。
         /// 数据源：Program._sessions（P9.1 会话对象化注册表）；ChatSession 公开观测属性。
         /// </summary>
-        /// <returns>会话条目数组（id/name/phase/round/msgCount/pending/noteActive）</returns>
+        /// <returns>会话条目数组（id/name/phase/runState/runMs/requests/round/msgCount/pending/noteActive/context/contextCount/lastContextChangeAt）</returns>
         private static List<object> BuildSessionsJson()
         {
             List<object> sessions = new List<object>();
@@ -268,6 +268,9 @@ namespace CatHome4.Observe
                     msgCount = s.MsgCount,
                     pending = s.PendingCount,
                     noteActive = s.NoteActive,
+                    // 前文长度（2026-10-01 体验轮）——与 cat.info context/contextCount 同源（请求级实时优先 + 轮末回落）
+                    context = s.ContextTokensKnown,
+                    contextCount = s.ContextCount,
                     lastContextChangeAt = s.LastContextChangeAt
                 });
             }

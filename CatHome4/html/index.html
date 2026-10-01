@@ -123,6 +123,10 @@
                             <span class="cfg-sec-title">新猫默认模板</span>
                             <span class="cfg-sec-desc">新建猫时继承的默认值——基础角色 / 人设 / 工具 / 加载包 / 前文 List</span>
                         </div>
+                        <!-- 保存并应用——整行主操作，置于区标题之下、三大类之上（2026-10-01 体验轮） -->
+                        <div class="tpl-applybar">
+                            <button id="tplSave" style="width:100%;background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">保存并应用</button>
+                        </div>
                         <div class="tpl-cols">
                             <div class="cfg-sec" data-cfg="tpl-persona">
                                 <div class="cfg-sec-head">
@@ -163,8 +167,6 @@
                         <div class="tpl-savebar">
                             <button id="tplRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
                             <span id="tplMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag)"></span>
-                            <span style="flex:1"></span>
-                            <button id="tplSave" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:6px 16px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">保存模板</button>
                         </div>
                     </div>
                     <!-- R2.3 QQ Bot 池管理——列表/新建/编辑/删除（secret 掩码；注册即建 WS 连接） -->
@@ -327,7 +329,7 @@
         </div>
     </div>
 
-    <!-- 新猫模板套用弹层——保存模板后询问是否把模板参数套用到已有猫（与模板一致者自动勾选） -->
+    <!-- 新猫模板套用弹层——「保存并应用」后询问是否把模板参数套用到已有猫（与模板一致者自动勾选） -->
     <div id="tplApplyModal" style="display:none;position:fixed;inset:0;background:var(--ch-overlay);z-index:50;align-items:center;justify-content:center">
         <div style="width:580px;max-height:80vh;overflow-y:auto;background:var(--ch-bg-panel);border:1px solid var(--ch-line);border-radius:8px;padding:14px">
             <div style="display:flex;align-items:center;margin-bottom:8px">
@@ -358,6 +360,7 @@
                 <button id="catDetailInfo" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-ok);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">/info</button>
                 <button id="catDetailNew" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-warn);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">/new</button>
                 <button id="catDetailArchive" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">上一个被销毁的会话内容</button>
+                <button id="catDetailPort" style="display:none;background:var(--ch-bg-raised);border:1px solid var(--ch-bg-accent);color:var(--ch-ok);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)" title="点击打开对话窗口">:—</button>
                 <button id="catDetailReload" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
                 <span style="flex:1"></span>
                 <span id="catDetailMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag)"></span>

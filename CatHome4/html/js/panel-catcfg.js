@@ -114,8 +114,8 @@ function parseToolChecked(toolNames) {
 function renderGroupedChecks(boxId, allTools, checked, privilegedMode) {
     var box = document.getElementById(boxId);
     box.textContent = '';
-    // 特权面三态（2026-09-29）——'on'=默认猫面（已选 + 禁用）；'off'=其他猫面与模板面（未选 + 禁用）
-    if (privilegedMode !== 'on') { privilegedMode = 'off'; }
+    // 特权面四态（2026-09-29；2026-10-01 增 'hide'）——'on'=默认猫面（已选 + 禁用）；'off'=其他猫面（未选 + 禁用）；'hide'=新猫模板面（整组不渲染）
+    if (privilegedMode !== 'on' && privilegedMode !== 'hide') { privilegedMode = 'off'; }
     var groups = {};
     var order = [];
     // A107——不可用工具组直接不加载（后端池派生已不含；此处为契约显式化，防两面漂移）
@@ -136,6 +136,7 @@ function renderGroupedChecks(boxId, allTools, checked, privilegedMode) {
             group = dash > 0 ? toolName.substring(0, dash) : 'other';  // 回退前缀
         }
         if (blocked[group] === true) { continue; }
+        if (isPriv && privilegedMode === 'hide') { continue; }   // 模板面——特权工具不入组（整组皆特权即整组不出，组头一并隐藏）
         if (!groups[group]) { groups[group] = []; order.push(group); }
         groups[group].push({ name: toolName, privileged: isPriv });
     }
@@ -489,7 +490,8 @@ function loadTpl() {
             document.getElementById('tplBaseRole').value = d.baseRole || '';
             document.getElementById('tplPersona').value = d.defaultPersona || '';
             catCfgDefectGroups = d.defectGroups || [];
-            renderGroupedChecks('tplTools', d.allTools || d.allToolNames || [], parseToolChecked(d.defaultToolNames || ''), 'off');
+            // 模板面——特权组（ConfigCat / MajordomoCat）整组隐藏：新猫模板不该配特权工具，见亦不可配（2026-10-01 体验轮）
+            renderGroupedChecks('tplTools', d.allTools || d.allToolNames || [], parseToolChecked(d.defaultToolNames || ''), 'hide');
             tplInjectList = (d.defaultInjectList || []).slice();
             renderTplInject();
             renderTplPacks(d.allPacks || [], d.defaultPacks || []);

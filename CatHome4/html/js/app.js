@@ -347,7 +347,13 @@ function renderSessions(sessions) {
         card.appendChild(head);
         var info = document.createElement('div');
         info.className = 'session-info';
-        info.textContent = '轮次 ' + s.round + ' · 消息 ' + s.msgCount + ' · 待处理 ' + s.pending;
+        // 前文长度（2026-10-01 体验轮）——快照 sessions 段 context/contextCount；0 也是真实值（新会话 / 未落盘）
+        var infoBits = [];
+        if (typeof s.context !== 'undefined' && s.context !== null) {
+            infoBits.push('前文 ' + s.context + ' tokens' + (s.contextCount ? ' / ' + s.contextCount + ' 条' : ''));
+        }
+        infoBits.push('轮次 ' + s.round + ' · 消息 ' + s.msgCount + ' · 待处理 ' + s.pending);
+        info.textContent = infoBits.join(' · ');
         // 最近前文变动——绝对毫秒戳由后端给（快照 sessions 段），距今文本前端自算
         var ago = fmtAgo(s.lastContextChangeAt);
         if (ago) {
@@ -458,12 +464,27 @@ function renderCatDetail() {
     line.className = 'cd-status';
     var bits = [];
     bits.push(d.special ? '主干' : '多猫');
-    bits.push(d.running ? ('运行中 :' + d.port) : '静默');
+    bits.push(d.running ? '运行中' : '静默');
+    // 前文长度（2026-10-01 体验轮）——与 cat.info / 快照 sessions 段同源；端口让位给刷新左边的可点入口
+    if (typeof d.context !== 'undefined' && d.context !== null) {
+        bits.push('前文 ' + d.context + ' tokens' + (d.contextCount ? ' / ' + d.contextCount + ' 条' : ''));
+    }
     bits.push('四相 ' + (d.phase || '-'));
     bits.push('轮次 ' + d.round + ' · 消息 ' + d.msgCount + ' · 待处理 ' + d.pending);
     if (d.noteActive) { bits.push('📋 Note'); }
     line.textContent = bits.join(' · ');
     catDetailBody.appendChild(line);
+    // 端口入口——刷新按钮左边：状态行不再显示端口号，端口本身可点直达对话窗口（2026-10-01 体验轮）
+    var portBtn = document.getElementById('catDetailPort');
+    if (d.running && d.port) {
+        portBtn.style.display = '';
+        portBtn.textContent = ':' + d.port;
+        portBtn.title = '点击打开对话窗口（http://127.0.0.1:' + d.port + '/）';
+        portBtn.onclick = function () { window.open('http://127.0.0.1:' + d.port + '/', '_blank'); };
+    } else {
+        portBtn.style.display = 'none';
+        portBtn.onclick = null;
+    }
     if (catDetailInfoOn) { catDetailBody.appendChild(catDetailInfoBlock(d)); }
     catDetailBody.appendChild(catDetailMsgBlock('用户上一次的输入', d.lastUser, '无——本会话与留档均无用户消息'));
     catDetailBody.appendChild(catDetailMsgBlock('猫上一次的输入', d.lastReply, '无——本会话与留档均无回复'));
