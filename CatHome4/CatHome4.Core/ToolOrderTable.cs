@@ -65,7 +65,7 @@ namespace CH4
             "powershell", "powershell7",
             "cs-build",
             "mau-gen", "mau-proj", "host-reload", "mau-setup",
-            "majordomo-restart", "majordomo-cmd",
+            "restart-full", "restart-incr", "restart-host", "majordomo-cmd",
             "temp-exec"
         };
 

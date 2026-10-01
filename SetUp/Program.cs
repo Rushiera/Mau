@@ -174,8 +174,8 @@ namespace SetUp
             Console.WriteLine("  SetUp.exe deploy <目录>  部署正式运行实例到目标目录（原子切换——现行更名 _old 留作回退源）");
             Console.WriteLine("  SetUp.exe sync-html [--target <运行区目录>] [--no-run] [--report <路径>]");
             Console.WriteLine("                           外观层静态资源镜像同步：源区 html → 产物区 + 运行区（--target 缺省从运行中宿主反推）");
-            Console.WriteLine("  SetUp.exe relaunch --wait-pid <pid> --target <目录> [--majordomopush <串>] [--report <路径>]");
-            Console.WriteLine("                           宿主自更新接力：等旧宿主退出 → prepare → 原子切换 → 自启新宿主（回执注入）");
+            Console.WriteLine("  SetUp.exe relaunch [--mode <full|incr|host>] --wait-pid <pid> --target <目录> [--majordomopush <串>] [--report <路径>]");
+            Console.WriteLine("                           宿主自更新接力（--mode 缺省 full）：等旧宿主退出 → 全链 prepare / 纯搬运 / 原地 → 原子切换 → 自启新宿主（回执注入）");
             Console.WriteLine("前置：.NET 10 Runtime + SDK + WindowsDesktop；本 exe 须位于 Mau 仓库根（含 Mau.sln）。");
         }
 
@@ -346,6 +346,8 @@ namespace SetUp
             public StepReport[] Steps = new StepReport[0];
             /// <summary>关键产物时间戳</summary>
             public ArtifactReport[] Artifacts = new ArtifactReport[0];
+            /// <summary>是否完整（A136）——false=自启前排空的前置版（步 11-13），true=收尾终版（含自启 / 回退结论）</summary>
+            public bool Complete;
         }
 
         /// <summary>
@@ -407,7 +409,8 @@ namespace SetUp
         /// <param name="mode">模式（prepare/deploy）</param>
         /// <param name="exitCode">退出码</param>
         /// <param name="repoRoot">仓库根（产物收集基准）</param>
-        private static void WriteReport(string reportPath, string mode, int exitCode, string repoRoot)
+        /// <param name="complete">是否完整（false=自启前排空的前置版——读者任何时刻都能读到文件；true=收尾终版）</param>
+        private static void WriteReport(string reportPath, string mode, int exitCode, string repoRoot, bool complete = true)
         {
             try
             {
@@ -416,6 +419,7 @@ namespace SetUp
                 doc.Mode = mode;
                 doc.Ok = exitCode == 0;
                 doc.ExitCode = exitCode;
+                doc.Complete = complete;
                 doc.Steps = _steps.ToArray();
                 List<ArtifactReport> artifacts = CollectArtifacts(repoRoot);
                 artifacts.AddRange(_extraArtifacts);
@@ -424,7 +428,10 @@ namespace SetUp
                 options.WriteIndented = true;
                 options.IncludeFields = true;   // 报告 DTO 为 public 字段——System.Text.Json 默认只序列化属性，必须显式 IncludeFields
                 options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;   // 中文直出（默认 \uXXXX 转义人读不便）
-                File.WriteAllText(reportPath, JsonSerializer.Serialize(doc, options), new UTF8Encoding(false));
+                                                                                                           // A136——原子替换：先写临时文件再改名（读者不会读到半截 JSON；同卷改名 = 原子）
+                string tmpPath = reportPath + ".tmp";
+                File.WriteAllText(tmpPath, JsonSerializer.Serialize(doc, options), new UTF8Encoding(false));
+                File.Move(tmpPath, reportPath, true);
             }
             catch (Exception ex)
             {
@@ -476,7 +483,8 @@ namespace SetUp
         /// <param name="arguments">参数串</param>
         /// <param name="workingDir">工作目录</param>
         /// <returns>true=退出码 0</returns>
-        private static bool RunProcess(string fileName, string arguments, string workingDir)
+        /// <param name="timeoutMs">超时毫秒（0=无限等待——原行为；&gt;0 超时即按失败处置并终止进程树，不留孤儿）</param>
+        private static bool RunProcess(string fileName, string arguments, string workingDir, int timeoutMs = 0)
         {
             Console.WriteLine("[SetUp] >>> " + fileName + " " + arguments);
             ProcessStartInfo psi = new ProcessStartInfo(fileName, arguments);
@@ -506,6 +514,16 @@ namespace SetUp
             proc.ErrorDataReceived += OnProcessOutput;
             proc.BeginOutputReadLine();
             proc.BeginErrorReadLine();
+            // A135——可选超时：超时按失败处置并终止进程树（不留孤儿）；未传超时=原行为（无限等待）
+            if (timeoutMs > 0)
+            {
+                if (!proc.WaitForExit(timeoutMs))
+                {
+                    Console.WriteLine("[SetUp] 错误：子进程超时（" + timeoutMs.ToString() + " ms）——按失败处置并终止进程树：" + fileName);
+                    KillProcessTree(proc);
+                    return false;
+                }
+            }
             proc.WaitForExit();
             // 第二次无参 WaitForExit()——等待异步输出流（OutputDataReceived/ErrorDataReceived）结清，非冗余（R7-P3-7 判定）
             proc.WaitForExit();
@@ -515,6 +533,32 @@ namespace SetUp
                 return false;
             }
             return true;
+        }
+        /// <summary>
+        /// 终止进程树（A135）——超时子进程按失败处置时不留孤儿（宿主 --run 自检 / 探活进程可能挂起）。
+        /// </summary>
+        /// <param name="proc">目标进程</param>
+        private static void KillProcessTree(Process proc)
+        {
+            try
+            {
+                if (!proc.HasExited)
+                {
+                    proc.Kill(true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[SetUp] 警告：超时子进程终止失败——" + ex.Message);
+            }
+            try
+            {
+                proc.WaitForExit(5000);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[SetUp] 警告：超时进程收尾等待异常——" + ex.Message);
+            }
         }
 
         /// <summary>

@@ -1,42 +1,88 @@
 ﻿// majordomo_cat.mau —— Majordomo 语料（CH4 宿主自更新工具组——BRIK-HOST-001 host.restart 登记面）
-// 角色：工具组 Flow——认领 TOOL 域 3 工具（majordomo-restart 宿主自更新 / majordomo-cmd 宿主管理指令执行 / majordomo-catinfo 全猫状态统计）
+// 角色：工具组 Flow——认领 TOOL 域 5 工具（restart-full 全链重启 / restart-incr 增量搬运重启 / restart-host 原地重启
+//       / majordomo-cmd 宿主管理指令执行 / majordomo-catinfo 全猫状态统计）
 // 特权组：仅默认会话（catId=majordomo）可见可调——宿主侧单点授权（design-ch4-host-restart §二）
-// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 3 线认领执行 → complete_str 回执
-// 载荷协议：officeName = 工具名（majordomo-restart / majordomo-cmd / majordomo-catinfo）；载荷 key "args" = 整包工具参数 JSON（target/push · cmd · 零参数）
-// 数据面：@majOpen/@majOffice/@majArgs/@majRes + @mjdCmdOpen/@mjdOffice/@mjdArgs/@mjdRes + @mciOpen/@mciOffice/@mciArgs/@mciRes 私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
-// 线程模型：全部主线程同步——积木只落盒即返回；进程动作（接力拉起/自杀）在宿主侧（design-ch4-host-restart §四 4.2）
-//   majordomo-cmd / majordomo-catinfo 线不得 par 化——管理指令族触碰注册表与会话面（ThreadGuard 主线程守卫）；状态统计读会话观测面同属主线程域
+// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 5 线认领执行 → complete_str 回执
+// 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON（target/push · cmd · 零参数）
+// 模式承载：mode 不进参数面——由工具名承载，语料线以常量入参传给积木（'host.restart'[@args, "incr"]）
+// 数据面：@majOpen/@majOffice/@majArgs/@majRes + @incr* + @host* + @mjdCmd* + @mci* 私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
+// 线程模型：全部主线程同步——积木只落盒即返回；进程动作（接力拉起/自杀/握手等待）在宿主侧（design-ch4-host-restart §四 4.2）
+//   restart-* / majordomo-cmd / majordomo-catinfo 线不得 par 化——管理指令族触碰注册表与会话面（ThreadGuard 主线程守卫）；状态统计读会话观测面同属主线程域
 // 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）
 
-// ── 状态机（3 线——majordomo-restart / majordomo-cmd / majordomo-catinfo）──
+// ── 状态机（5 线——restart-full / restart-incr / restart-host / majordomo-cmd / majordomo-catinfo）──
 § 'S_Restart' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Incr' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_HostRestart' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Cmd' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_CatInfo' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
-§ 'T_Init' : 'S_Restart' = 'Init' → 'self.desc'["Majordomo 自更新空闲待命", "", ""] | 'S_Restart' = 'Idle' | 'S_Restart' = 'Idle'
+§ 'T_Init' : 'S_Restart' = 'Init' → 'self.desc'["Majordomo 全链重启空闲待命", "", ""] | 'S_Restart' = 'Idle' | 'S_Restart' = 'Idle'
 
-// ── 主动传感器壳——3 线探测（纯只读判断积木 → bool 落盒）──
-§ 'P_RestartOpen' ↻ [1]: 'oa.is_open'["TOOL", "majordomo-restart"] > @majOpen
+// ── 主动传感器壳——5 线探测（纯只读判断积木 → bool 落盒）──
+§ 'P_RestartOpen' ↻ [1]: 'oa.is_open'["TOOL", "restart-full"] > @majOpen
+§ 'P_IncrOpen' ↻ [1]: 'oa.is_open'["TOOL", "restart-incr"] > @incrOpen
+§ 'P_HostOpen' ↻ [1]: 'oa.is_open'["TOOL", "restart-host"] > @hostOpen
 § 'P_CmdOpen' ↻ [1]: 'oa.is_open'["TOOL", "majordomo-cmd"] > @mjdCmdOpen
 § 'P_CatInfoOpen' ↻ [1]: 'oa.is_open'["TOOL", "majordomo-catinfo"] > @mciOpen
 
-// ══════════════ majordomo-restart 线 ══════════════
+// ══════════════ restart-full 线（全链保底——唯一带版本自增）══════════════
 
 // T_RestartClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
-§ 'T_RestartClaim' : @majOpen & 'S_Restart' = 'Idle' → 'oa.claim_next_simple'["TOOL", "majordomo-restart"] > @majOffice | 'S_Restart' = 'Claimed' | 'S_Restart' = 'Idle'
+§ 'T_RestartClaim' : @majOpen & 'S_Restart' = 'Idle' → 'oa.claim_next_simple'["TOOL", "restart-full"] > @majOffice | 'S_Restart' = 'Claimed' | 'S_Restart' = 'Idle'
 
 // T_RestartArgs：读载荷 args（整包工具参数 JSON——target/push）
 § 'T_RestartArgs' : 'S_Restart' = 'Claimed' → 'oa.get_str'[@majOffice, "args"] > @majArgs | 'S_Restart' = 'Ready' | 'S_Restart' = 'Failed'
 
 // T_RestartRun：登记请求（只落盒即返回——不碰进程；失败侧 ERR 文本也在 @majRes）
-§ 'T_RestartRun' : 'S_Restart' = 'Ready' → 'host.restart'[@majArgs] > @majRes | 'self.desc'["Majordomo 登记重启请求", "", ""] | 'S_Restart' = 'Done' | 'S_Restart' = 'Failed'
+§ 'T_RestartRun' : 'S_Restart' = 'Ready' → 'host.restart'[@majArgs, "full"] > @majRes | 'self.desc'["Majordomo 登记全链重启请求", "", ""] | 'S_Restart' = 'Done' | 'S_Restart' = 'Failed'
 
 // T_RestartReply：成功回执（result=登记结论）
-§ 'T_RestartReply' : 'S_Restart' = 'Done' → 'oa.complete_str'[@majOffice, @majRes] | 'self.desc'["Majordomo 自更新空闲待命", "", ""] | 'S_Restart' = 'Idle' | 'S_Restart' = 'Idle'
+§ 'T_RestartReply' : 'S_Restart' = 'Done' → 'oa.complete_str'[@majOffice, @majRes] | 'self.desc'["Majordomo 全链重启空闲待命", "", ""] | 'S_Restart' = 'Idle' | 'S_Restart' = 'Idle'
 
 // T_RestartAbort：失败回执（@majRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
 § 'T_RestartAbort' : 'S_Restart' = 'Failed' → 'oa.complete_str'[@majOffice, @majRes] | 'S_Restart' = 'Idle' | 'S_Restart' = 'Idle'
+
+// ══════════════ restart-incr 线（纯搬运——不编译/不测试/不组翻译）══════════════
+
+// T_IncrInit：启动初始化自述——Init → Idle 首帧写"空闲待命"
+§ 'T_IncrInit' : 'S_Incr' = 'Init' → 'self.desc'["Majordomo 增量重启空闲待命", "", ""] | 'S_Incr' = 'Idle' | 'S_Incr' = 'Idle'
+
+// T_IncrClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_IncrClaim' : @incrOpen & 'S_Incr' = 'Idle' → 'oa.claim_next_simple'["TOOL", "restart-incr"] > @incrOffice | 'S_Incr' = 'Claimed' | 'S_Incr' = 'Idle'
+
+// T_IncrArgs：读载荷 args（整包工具参数 JSON——target/push）
+§ 'T_IncrArgs' : 'S_Incr' = 'Claimed' → 'oa.get_str'[@incrOffice, "args"] > @incrArgs | 'S_Incr' = 'Ready' | 'S_Incr' = 'Failed'
+
+// T_IncrRun：登记请求（只落盒即返回——哨兵/拒绝面/准备段/探活在接力者侧）
+§ 'T_IncrRun' : 'S_Incr' = 'Ready' → 'host.restart'[@incrArgs, "incr"] > @incrRes | 'self.desc'["Majordomo 登记增量重启请求", "", ""] | 'S_Incr' = 'Done' | 'S_Incr' = 'Failed'
+
+// T_IncrReply：成功回执（result=登记结论）
+§ 'T_IncrReply' : 'S_Incr' = 'Done' → 'oa.complete_str'[@incrOffice, @incrRes] | 'self.desc'["Majordomo 增量重启空闲待命", "", ""] | 'S_Incr' = 'Idle' | 'S_Incr' = 'Idle'
+
+// T_IncrAbort：失败回执（@incrRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
+§ 'T_IncrAbort' : 'S_Incr' = 'Failed' → 'oa.complete_str'[@incrOffice, @incrRes] | 'S_Incr' = 'Idle' | 'S_Incr' = 'Idle'
+
+// ══════════════ restart-host 线（原地重启——不编译/不覆盖）══════════════
+
+// T_HostInit：启动初始化自述——Init → Idle 首帧写"空闲待命"
+§ 'T_HostInit' : 'S_HostRestart' = 'Init' → 'self.desc'["Majordomo 原地重启空闲待命", "", ""] | 'S_HostRestart' = 'Idle' | 'S_HostRestart' = 'Idle'
+
+// T_HostClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_HostClaim' : @hostOpen & 'S_HostRestart' = 'Idle' → 'oa.claim_next_simple'["TOOL", "restart-host"] > @hostOffice | 'S_HostRestart' = 'Claimed' | 'S_HostRestart' = 'Idle'
+
+// T_HostArgs：读载荷 args（整包工具参数 JSON——target/push）
+§ 'T_HostArgs' : 'S_HostRestart' = 'Claimed' → 'oa.get_str'[@hostOffice, "args"] > @hostArgs | 'S_HostRestart' = 'Ready' | 'S_HostRestart' = 'Failed'
+
+// T_HostRun：登记请求（只落盒即返回——不编译不覆盖，仅重启进程）
+§ 'T_HostRun' : 'S_HostRestart' = 'Ready' → 'host.restart'[@hostArgs, "host"] > @hostRes | 'self.desc'["Majordomo 登记原地重启请求", "", ""] | 'S_HostRestart' = 'Done' | 'S_HostRestart' = 'Failed'
+
+// T_HostReply：成功回执（result=登记结论）
+§ 'T_HostReply' : 'S_HostRestart' = 'Done' → 'oa.complete_str'[@hostOffice, @hostRes] | 'self.desc'["Majordomo 原地重启空闲待命", "", ""] | 'S_HostRestart' = 'Idle' | 'S_HostRestart' = 'Idle'
+
+// T_HostAbort：失败回执（@hostRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
+§ 'T_HostAbort' : 'S_HostRestart' = 'Failed' → 'oa.complete_str'[@hostOffice, @hostRes] | 'S_HostRestart' = 'Idle' | 'S_HostRestart' = 'Idle'
 
 // ══════════════ majordomo-cmd 线 ══════════════
 

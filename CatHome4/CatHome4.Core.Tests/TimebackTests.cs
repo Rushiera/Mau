@@ -363,7 +363,7 @@ namespace CatHome4.Core.Tests
         }
         /// <summary>
         /// 暴毙风险黑名单（T2 扩展 · 2026-10-01 宽松化）——作用域存活期只拦「会让进程 / 作用域当场失效」的三件：
-        /// majordomo-restart / host-reload / mau-setup 一律 ERR|TIMEBACK_LOCKED；
+        /// restart-full / restart-incr / restart-host / host-reload / mau-setup 一律 ERR|TIMEBACK_LOCKED；
         /// 其余（只读 / 仓库产物 / 配置写 / 管理指令）放行——作用域外同工具不受该判定拦截。
         /// </summary>
         [Fact]
@@ -372,14 +372,14 @@ namespace CatHome4.Core.Tests
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm, new string[]
             {
-                        "timeback", "random", "info", "host-flows", "host-reload", "mau-setup", "majordomo-restart"
+                        "timeback", "random", "info", "host-flows", "host-reload", "mau-setup", "restart-full"
             });
             // 作用域外——host-reload 不被该判定拦（测试环境直执回落 ERR|NO_TOOL）
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("host-reload", "h0", "{\"cat\":\"TextCat\"}"));
             // 作用域内——start 与「三件拦 + 三件放行」同批
             // （OA 工具在测试环境无工单消费者会挂起，故放行面以内置只读工具为代表——黑名单清单本身由 §C5 规格 + 代码审查锁定）
             string batch = BuildToolCallsBatch(
-                new string[] { "timeback", "host-reload", "mau-setup", "majordomo-restart", "host-flows", "info", "random" },
+                new string[] { "timeback", "host-reload", "mau-setup", "restart-full", "host-flows", "info", "random" },
                 new string[] { "t1", "h1", "s1", "r1", "f1", "i1", "x1" },
                 new string[]
                 {

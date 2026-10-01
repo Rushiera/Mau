@@ -118,7 +118,9 @@ var CHAT_TOOL_SKELETONS = {
     'powershell7': 'exec',
     'mau-setup': 'exec',
     'host-reload': 'exec',
-    'majordomo-restart': 'exec',
+    'restart-full': 'exec',
+    'restart-incr': 'exec',
+    'restart-host': 'exec',
     'majordomo-cmd': 'exec',
     'temp-exec': 'exec',
     // diagnostics——诊断列表
@@ -1378,12 +1380,28 @@ var CHAT_TOOL_OVERRIDES = {
             return '临时执行 ' + h.meta.key + ' · ' + (h.meta.chars || 0) + ' 字';
         }
     },
-    'majordomo-restart': {
-        inputLines: function () { return ['请求宿主自更新（部署 + 重启）']; },
+    'restart-full': {
+        inputLines: function () { return ['请求宿主全链重启（prepare + 部署 + 重启）']; },
         headline: function (a, r) {
             var h = chatMetaHead(r);
-            if (!h) { return '宿主重启 ' + chatOvStat(r); }
-            return '宿主重启 · 目标 ' + (h.meta.target || '默认') + (h.meta.push ? ' · 带回执' : '');
+            if (!h) { return '宿主全链重启 ' + chatOvStat(r); }
+            return '宿主全链重启 · 目标 ' + (h.meta.target || '默认') + (h.meta.push ? ' · 带回执' : '');
+        }
+    },
+    'restart-incr': {
+        inputLines: function () { return ['请求宿主增量重启（搬运 + 探活 + 重启）']; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '宿主增量重启 ' + chatOvStat(r); }
+            return '宿主增量重启 · 目标 ' + (h.meta.target || '默认') + (h.meta.push ? ' · 带回执' : '');
+        }
+    },
+    'restart-host': {
+        inputLines: function () { return ['请求宿主原地重启（不编译 / 不覆盖）']; },
+        headline: function (a, r) {
+            var h = chatMetaHead(r);
+            if (!h) { return '宿主原地重启 ' + chatOvStat(r); }
+            return '宿主原地重启 · 目标 ' + (h.meta.target || '默认') + (h.meta.push ? ' · 带回执' : '');
         }
     },
     'majordomo-cmd': {
