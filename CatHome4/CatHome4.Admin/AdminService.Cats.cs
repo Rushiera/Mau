@@ -1294,9 +1294,12 @@ namespace CatHome4.Admin
                     LogStore.Add("CatHome4", 1, "会话标识对齐猫 key: " + id, "CHAT");
                 }
                 // [段4] 会话构造——M1c 每猫独立 Runtime（API 配置池按该猫 apiConfigId 构造）；M2c 声明面按猫裁剪
-                ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig);
+                // 端点角色——会话级主要 / 备用（同一实例注入 Runtime 与会话：自动故障转移与手动对调共用一份状态）
+                LlmEndpointRole apiRole = new LlmEndpointRole();
+                ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig, apiRole);
                 SessionViewStore viewStore = new SessionViewStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".view.json"));
                 ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, catSpecs, ExecuteTool, viewStore);
+                session.AttachApiRole(apiRole);
                 // A111——块序变更通知接线（视图层变更 → 转发面游标校正；猫 key 在组合根注入）
                 AttachViewOrderNotify(id, viewStore);
                 // M4e 猫级白名单——多猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
@@ -1320,6 +1323,7 @@ namespace CatHome4.Admin
                 cat.PendingSessionCmd = new ConcurrentQueue<string>();
                 cat.ApiConfigId = apiConfigId;
                 cat.ApiConfig = apiConfig;
+                cat.ApiRole = apiRole;
                 cat.Persona = persona;
                 cat.ToolNames = toolNames;
                 cat.InjectList = injectList;
@@ -1907,6 +1911,8 @@ namespace CatHome4.Admin
                 DelayBuilder = () => DelayQueue.BuildListJson(cat.Session.Id),
                 PatchBuilder = null,
                 SessionStateBuilder = () => cat.Session.BuildRunStateJson(),
+                ApiRoleBuilder = () => BuildApiRoleJson(cat.Session),
+                ApiRoleToggler = () => ToggleApiRoleJson(cat.Session),
                 ServeChatPage = true,
                 RouteRegistrar = RegisterChatPageRoutes,
                 HtmlRootProvider = HtmlRoot,
@@ -1947,6 +1953,8 @@ namespace CatHome4.Admin
                 DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),
                 PatchBuilder = null,
                 SessionStateBuilder = () => _chatBridge.DefaultSession.BuildRunStateJson(),
+                ApiRoleBuilder = () => BuildApiRoleJson(_chatBridge.DefaultSession),
+                ApiRoleToggler = () => ToggleApiRoleJson(_chatBridge.DefaultSession),
                 ServeChatPage = true,
                 RouteRegistrar = RegisterChatPageRoutes,
                 HtmlRootProvider = HtmlRoot,

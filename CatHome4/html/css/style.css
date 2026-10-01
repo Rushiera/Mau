@@ -159,10 +159,11 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 .input-mini { background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 3px 6px; font-family: inherit; font-size: var(--ch-fs-tag); }
 .input-mini.text { color: var(--ch-fg-strong); }
 
-/* ── API 池默认列（2026-10-01 默认列轮——紫星=当前默认 / 灰星=非默认）── */
+/* ── API 池默认 / 备用列（2026-10-01 默认列轮——紫星=当前默认 / 灰星=非默认；备用轮——绿菱=当前备用）── */
 .api-star-on { color: var(--ch-identity); }
 .api-star-off { color: var(--ch-fg-weak); }
 .api-def-now { color: var(--ch-fg-weak); margin-left: 4px; }
+.api-backup-on { color: var(--ch-ok); margin-left: 4px; }
 
 /* ── 配置区大项（收起 / 展开——头部恒显一行：标题 + 说明；正文随 collapsed 隐藏）── */
 .cfg-sec { margin-bottom: 12px; }

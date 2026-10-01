@@ -113,8 +113,10 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 #chatbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--ch-line-faint); font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); }
 #chatbar .sid { color: var(--ch-identity); font-weight: bold; }
 #uiVer { background: var(--ch-bg-deep); border: 1px solid var(--ch-line); border-radius: 4px; padding: 1px 8px; color: var(--ch-ok-weak); font-size: var(--ch-fs-tag); }
-#chatNew, #chatRefresh, #chatCacheClear { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
-#chatNew:hover, #chatRefresh:hover, #chatCacheClear:hover { background: var(--ch-bg-hover); }
+#chatNew, #chatRefresh, #chatCacheClear, #chatApiRole { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
+#chatNew:hover, #chatRefresh:hover, #chatCacheClear:hover, #chatApiRole:hover { background: var(--ch-bg-hover); }
+/* 端点角色标签（备用轮）——主要=常规弱信息色；备用=绿（与 API 池备用标记同色系） */
+#chatApiRole.backup { color: var(--ch-ok); border-color: var(--ch-ok); }
 /* A59——六态状态条（链路/等待/思考/工具/执行/回复；时长数据源 = 后端运行态）；位于页面最底部（输入框下方）持久存在
    2026-09-22：内容整体居中（原左下靠左 + 右下本轮 Token 统计——后者已去，Token 信息归 roundsum 轮末块） */
 #chatStatus { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 4px 12px; border-top: 1px solid var(--ch-line-faint); font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); background: var(--ch-bg-page); min-height: 22px; flex-wrap: wrap; }

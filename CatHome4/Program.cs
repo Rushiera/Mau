@@ -467,9 +467,13 @@ namespace CH4
                 Console.WriteLine("[CMD] 会话标识对齐猫 key: " + defaultSessionId);
             }
             // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面；M2c 声明面按猫裁剪）
+            // 端点角色——默认猫主要 / 备用（同一实例注入 Runtime 与会话；自动故障转移与手动对调共用）
+            LlmEndpointRole defaultApiRole = new LlmEndpointRole();
+            AdminService._defaultApiRole = defaultApiRole;
             SessionViewStore chatViewStore = new SessionViewStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.view.json"));
             _chatBridge.DefaultSession = new ChatSession(defaultSessionId, "majordomo", chatCtx, chatStore,
-                new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _chatBridge.DefaultToolSpecs, ExecuteTool, chatViewStore);
+                new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig, defaultApiRole), _oa, _chatBridge.DefaultToolSpecs, ExecuteTool, chatViewStore);
+            _chatBridge.DefaultSession.AttachApiRole(defaultApiRole);
             // A111——块序变更通知接线（视图层变更 → 转发面游标校正）
             AdminService.AttachViewOrderNotify("majordomo", chatViewStore);
             // M4e 猫级白名单——默认猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文

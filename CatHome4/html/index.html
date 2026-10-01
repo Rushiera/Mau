@@ -99,14 +99,14 @@
                         <div class="cfg-sec-head">
                             <span class="cfg-sec-mark">▾</span>
                             <span class="cfg-sec-title">LLM API 池</span>
-                            <span class="cfg-sec-desc">多套 LLM 端点 / 密钥的候选池——猫级切换即生效；Key 掩码显示</span>
+                            <span class="cfg-sec-desc">多套 LLM 端点 / 密钥的候选池——猫级切换即生效；默认=常规消费站，备用=上游异常时会话临时切换站（180 秒自动回默认）；Key 掩码显示</span>
                         </div>
                         <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
                             <span id="apisMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag)"></span>
                             <span style="flex:1"></span>
                             <button id="apisRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
                         </div>
-                        <table class="box-table" id="apisTable"><thead><tr><th style="width:11%">默认</th><th style="width:10%">名称</th><th style="width:11%">配置 ID</th><th style="width:8%">类型</th><th style="width:21%">端点</th><th style="width:10%">模型</th><th style="width:10%">Key</th><th style="width:8%">操作</th><th style="width:11%">测试</th></tr></thead><tbody></tbody></table>
+                        <table class="box-table" id="apisTable"><thead><tr><th style="width:16%">默认/备用</th><th style="width:10%">名称</th><th style="width:10%">配置 ID</th><th style="width:7%">类型</th><th style="width:19%">端点</th><th style="width:9%">模型</th><th style="width:9%">Key</th><th style="width:8%">操作</th><th style="width:12%">测试</th></tr></thead><tbody></tbody></table>
                         <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
                             <input id="apiNewName" placeholder="名称" style="width:110px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
                             <input id="apiNewType" placeholder="类型(deepseek)" style="width:110px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">

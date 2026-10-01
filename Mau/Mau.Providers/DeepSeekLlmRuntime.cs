@@ -41,6 +41,11 @@ namespace Mau.Providers
         private readonly ConfigStore? _globalConfig;
 
         /// <summary>
+        /// 会话级端点角色——备用 / 故障转移状态（可 null：语料面与不启用故障转移的调用点保持原语义）
+        /// </summary>
+        private readonly LlmEndpointRole? _role;
+
+        /// <summary>
         /// 默认兜底模型名——官方现役 v4-pro / v4-flash（deepseek-chat 已废弃）
         /// </summary>
         private const string FallbackModel = "deepseek-v4-flash";
@@ -75,12 +80,14 @@ namespace Mau.Providers
         /// <param name="apiConfigId">API 配置身份</param>
         /// <param name="globalConfig">全局配置存储（可 null——默认值）</param>
         public DeepSeekLlmRuntime(CH_LlmApiConfigStore apiStore,
-            Guid apiConfigId, ConfigStore? globalConfig)
+            Guid apiConfigId, ConfigStore? globalConfig, LlmEndpointRole? role = null)
         {
             // [段1] 配置源持有——运行期实时读取（P7 热载拍板：配置以本地持久化为准，构造期快照退役）
             _apiStore = apiStore;
             _apiConfigId = apiConfigId;
             _globalConfig = globalConfig;
+            // [段2] 会话级端点角色——备用 / 故障转移（空=不启用角色切换；角色状态归会话，运行期实时读取）
+            _role = role;
             _client = new HttpClient();
             _client.Timeout = TimeSpan.FromSeconds(60);
         }
@@ -117,22 +124,41 @@ namespace Mau.Providers
                     }
                     catch (Exception ex)
                     {
-                        // P6 中止——取消不是传输错误：冒泡（取消不重试——重试分支 Task.Delay(ct) 也会立即取消）
+                        // P6 中止——用户取消不是传输错误：冒泡（取消不重试——重试分支 Task.Delay(ct) 也会立即取消）
+                        // 2026-10-01 超时区分——HttpClient.Timeout（60 秒无回应）抛 TaskCanceledException（OCE 子类）：
+                        // 非用户取消时按传输错误处理（否则被会话层当流中断无限续传，站级故障永远等不到切换）
                         if (ex is System.OperationCanceledException)
                         {
-                            throw;
+                            if (ct.IsCancellationRequested)
+                            {
+                                throw;
+                            }
+                            netError = "ERR|TRANSPORT|Timeout|请求发出后 " + ((int)_client.Timeout.TotalSeconds).ToString() + " 秒无回应";
                         }
-                        netError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
+                        else
+                        {
+                            netError = "ERR|TRANSPORT|" + ex.GetType().Name + "|" + ex.Message;
+                        }
                     }
 
                     if (netError.Length > 0)
                     {
-                        if (retryCount < MaxRetries)
+                        // 无回应超时不重试——同一站再等一轮无益；直接进故障转移判定
+                        bool noReplyTimeout = netError.StartsWith("ERR|TRANSPORT|Timeout", StringComparison.Ordinal);
+                        if (!noReplyTimeout && retryCount < MaxRetries)
                         {
                             retryCount = retryCount + 1;
                             LogStore.Add("LLM", 2, "LLM 请求传输失败，自动重试（" + retryCount.ToString() + "/" + MaxRetries.ToString() + "）：" + TrimText(netError, 200), "LLM");
                             yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|" + retryCount.ToString() + "/" + MaxRetries.ToString() + "|" + TrimText(netError, 200));
                             await Task.Delay(RetryDelayMs(retryCount - 1), ct);
+                            yield return new LlmStreamEvent(LlmStreamKind.RetryResume, "");
+                            continue;
+                        }
+                        // 故障转移——重试耗尽后先做双打探针判定：当前站无回应且候选站正常 → 切换 + 重发（切不了则按原错误收口）
+                        if (await TryFailoverAsync(netError, ct))
+                        {
+                            retryCount = 0;
+                            yield return new LlmStreamEvent(LlmStreamKind.Failover, BuildFailoverText(netError));
                             yield return new LlmStreamEvent(LlmStreamKind.RetryResume, "");
                             continue;
                         }
@@ -195,7 +221,16 @@ namespace Mau.Providers
                                 rawText = raw;
                             }
 
-                            yield return new LlmStreamEvent(LlmStreamKind.Error, ParseErrorText(statusCode, rawText));
+                            // 故障转移——HTTP 失败（不可重试 / 重试耗尽）同样先探针判定（上游 5xx / 网关错误常是站级故障）
+                            string httpError = ParseErrorText(statusCode, rawText);
+                            if (await TryFailoverAsync(httpError, ct))
+                            {
+                                retryCount = 0;
+                                yield return new LlmStreamEvent(LlmStreamKind.Failover, BuildFailoverText(httpError));
+                                yield return new LlmStreamEvent(LlmStreamKind.RetryResume, "");
+                                continue;
+                            }
+                            yield return new LlmStreamEvent(LlmStreamKind.Error, httpError);
                             yield break;
                         }
 
@@ -225,6 +260,14 @@ namespace Mau.Providers
                                 LogStore.Add("LLM", 2, "LLM 读取响应流失败，自动重试（" + retryCount.ToString() + "/" + MaxRetries.ToString() + "）：" + TrimText(streamError, 200), "LLM");
                                 yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|" + retryCount.ToString() + "/" + MaxRetries.ToString() + "|" + TrimText(streamError, 200));
                                 await Task.Delay(RetryDelayMs(retryCount - 1), ct);
+                                yield return new LlmStreamEvent(LlmStreamKind.RetryResume, "");
+                                continue;
+                            }
+                            // 故障转移——读流失败重试耗尽同样先探针判定
+                            if (await TryFailoverAsync(streamError, ct))
+                            {
+                                retryCount = 0;
+                                yield return new LlmStreamEvent(LlmStreamKind.Failover, BuildFailoverText(streamError));
                                 yield return new LlmStreamEvent(LlmStreamKind.RetryResume, "");
                                 continue;
                             }
@@ -322,6 +365,25 @@ namespace Mau.Providers
         /// <returns>目标配置；未命中 null</returns>
         private CH_LlmApiConfig? ResolveTarget()
         {
+            if (_role != null && _role.EffectiveUseBackup())
+            {
+                // 备用角色生效——池内备用站优先；池内无备用回落原解析（不静默：审计一次）
+                CH_LlmApiConfig? backup = _apiStore!.ResolveBackup();
+                if (backup != null)
+                {
+                    return backup;
+                }
+                LogStore.Add("LLM", 2, "备用角色生效但池内无备用端点——回落原解析", "LLM");
+            }
+            return ResolvePrimary();
+        }
+
+        /// <summary>
+        /// 解析主要站配置——猫绑定身份（Guid.Empty=默认端点语义），不受会话角色影响（故障转移的对照站）。
+        /// </summary>
+        /// <returns>主要站配置；未命中 null</returns>
+        private CH_LlmApiConfig? ResolvePrimary()
+        {
             if (_apiConfigId == Guid.Empty)
             {
                 return _apiStore!.ResolveDefault();
@@ -332,6 +394,73 @@ namespace Mau.Providers
                 return config;
             }
             return null;
+        }
+
+        /// <summary>
+        /// 故障转移判定——当前站与候选站双打低 token 探针：当前站无回应 / 返回非预期 且 候选站正常 → 临时切换（180 秒窗口）。
+        /// 不切的三种情形：无角色面 · 两侧配置缺一或同站 · 当前站可用 或 候选站也不可用。
+        /// </summary>
+        /// <param name="errorText">触发探测的错误原文（审计留痕）</param>
+        /// <param name="ct">取消令牌（用户暂停时中止探测）</param>
+        /// <returns>true=已切换（调用方重发本轮请求）</returns>
+        private async Task<bool> TryFailoverAsync(string errorText, CancellationToken ct)
+        {
+            if (_role == null || _apiStore == null)
+            {
+                return false;
+            }
+            bool useBackup = _role.EffectiveUseBackup();
+            CH_LlmApiConfig? current = useBackup ? _apiStore.ResolveBackup() : ResolvePrimary();
+            CH_LlmApiConfig? other = useBackup ? ResolvePrimary() : _apiStore.ResolveBackup();
+            if (current == null || other == null)
+            {
+                return false;
+            }
+            if (current.ApiConfigId == other.ApiConfigId)
+            {
+                return false;
+            }
+            Task<bool> currentTask = LlmEndpointProbe.ProbeAsync(
+                CH_LlmApiConfigStore.DeriveChatEndpoint(current.Endpoint),
+                _apiStore.GetSecret(current.ApiConfigId),
+                current.DefaultModel,
+                ct);
+            Task<bool> otherTask = LlmEndpointProbe.ProbeAsync(
+                CH_LlmApiConfigStore.DeriveChatEndpoint(other.Endpoint),
+                _apiStore.GetSecret(other.ApiConfigId),
+                other.DefaultModel,
+                ct);
+            bool[] results = await Task.WhenAll(currentTask, otherTask);
+            if (results[0])
+            {
+                // 当前站能返回——不改：错误可能出在请求侧，切站无益
+                LogStore.Add("LLM", 2, "端点探针：当前站可用（" + current.DisplayName + "）——不切换。触发原因：" + TrimText(errorText, 200), "LLM");
+                return false;
+            }
+            if (!results[1])
+            {
+                // 候选站也无结果——不改：两边都不通，切了同样失败
+                LogStore.Add("LLM", 3, "端点探针：当前站与候选站均无回应（" + current.DisplayName + " / " + other.DisplayName + "）——不切换", "LLM");
+                return false;
+            }
+            _role.SetFailover(!useBackup);
+            LogStore.Add("LLM", 2, "上游异常——临时切换端点：" + current.DisplayName + " → " + other.DisplayName + "（" + LlmEndpointRole.FailoverSeconds.ToString() + " 秒后自动回退）。触发原因：" + TrimText(errorText, 200), "LLM");
+            return true;
+        }
+
+        /// <summary>
+        /// 构造切换事件文本——FAILOVER|目标角色|原因摘要（会话层据此渲染切换提示）。
+        /// </summary>
+        /// <param name="reason">触发原因摘要</param>
+        /// <returns>事件文本</returns>
+        private string BuildFailoverText(string reason)
+        {
+            string role = "主要";
+            if (_role != null && _role.EffectiveUseBackup())
+            {
+                role = "备用";
+            }
+            return "FAILOVER|" + role + "|" + TrimText(reason, 200);
         }
 
         /// <summary>

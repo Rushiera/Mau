@@ -398,6 +398,71 @@ namespace Mau.Runtime.Tests
             Assert.Equal(2, port.FileCount);
         }
 
+        /// <summary>备用标记——唯一备用 / 与默认互斥 / 空 Guid 取消备用 / 设默认清备用标记。</summary>
+        [Fact]
+        public void Store_SetBackup_UniqueAndMutuallyExclusive()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                Guid idA = Guid.NewGuid();
+                Guid idB = Guid.NewGuid();
+                store.Save(MakeConfig(idA, "A", "https://a.example/v1"), "");
+                store.Save(MakeConfig(idB, "B", "https://b.example/v1"), "");
+                Assert.Null(store.ResolveBackup());
+                Assert.True(store.SetBackup(idB));
+                CH_LlmApiConfig? backup = store.ResolveBackup();
+                Assert.NotNull(backup);
+                Assert.Equal(idB, backup.ApiConfigId);
+                // 互斥——默认端点不得兼为备用
+                Assert.False(store.SetBackup(idA));
+                // 空 Guid——取消备用（池内可以没有备用）
+                Assert.True(store.SetBackup(Guid.Empty));
+                Assert.Null(store.ResolveBackup());
+                // 设默认——目标兼带备用标记时一并清除（默认优先）
+                Assert.True(store.SetBackup(idB));
+                Assert.True(store.SetDefault(idB));
+                Assert.Null(store.ResolveBackup());
+                CH_LlmApiConfig? nowDefault = store.ResolveDefault();
+                Assert.NotNull(nowDefault);
+                Assert.Equal(idB, nowDefault.ApiConfigId);
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
+        /// <summary>编辑保留备用标记——Save 替换普通字段时标记归 SetBackup 专管（不被静默清）。</summary>
+        [Fact]
+        public void Store_Save_KeepsBackupFlag()
+        {
+            string settingsRoot;
+            string secretsRoot;
+            CH_LlmApiConfigStore store = NewStore(out settingsRoot, out secretsRoot);
+            try
+            {
+                Guid idA = Guid.NewGuid();
+                Guid idB = Guid.NewGuid();
+                store.Save(MakeConfig(idA, "A", "https://a.example/v1"), "");
+                store.Save(MakeConfig(idB, "B", "https://b.example/v1"), "");
+                Assert.True(store.SetBackup(idB));
+                store.Save(MakeConfig(idB, "B2", "https://b2.example/v1"), "");
+                CH_LlmApiConfig? backup = store.ResolveBackup();
+                Assert.NotNull(backup);
+                Assert.Equal("B2", backup.DisplayName);
+                Assert.Equal("https://b2.example/v1", backup.Endpoint);
+            }
+            finally
+            {
+                CleanDir(settingsRoot);
+                CleanDir(secretsRoot);
+            }
+        }
+
         /// <summary>建立字段完整的测试配置。</summary>
         /// <param name="id">稳定身份</param>
         /// <param name="name">显示名</param>

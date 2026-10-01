@@ -2,6 +2,7 @@
 // 依赖：app.js + panel.js 先加载（全局状态已就位）；本文件承载 API/QQBot 两池的列表（行内编辑）+ 新建 + 删除
 // 2026-10-01 行内编辑轮：行内「编辑」按钮撤除——可编辑列直接在格内改（配置 ID 只读）；未改动 / 清空 = 不改动（不发请求）
 // 2026-10-01 默认列轮：★ 独立为最左「默认」列——紫星=当前默认 / 灰星=非默认；「设为默认 / 已是默认」随星同列（原在操作列）
+// 2026-10-01 备用轮：同列增「设为备用 / 取消备用」——绿菱 ◈=当前备用；默认与备用互斥（默认行不出备用入口）
 
 // [段14] M3b LLM API 池管理（config 页签——行内编辑 + 新建 + 删除；key 掩码）
 var apisTableBody = document.querySelector('#apisTable tbody');
@@ -44,7 +45,8 @@ function renderApiRow(api) {
     };
     var inputs = {};
 
-    // 默认列（最左）——紫星=当前默认 / 灰星=非默认；状态与动作同格
+    // 默认 / 备用列（最左）——紫星=当前默认 / 灰星=非默认；备用位绿菱 ◈ + 「取消备用」
+    // 互斥：默认行不出备用入口（默认与备用不得兼）；备用行仍可「设为默认」（后端置默认时清备用标记）
     var tdDefault = document.createElement('td');
     tdDefault.style.whiteSpace = 'nowrap';
     var star = document.createElement('span');
@@ -63,6 +65,25 @@ function renderApiRow(api) {
         defBtn.style.marginLeft = '4px';
         defBtn.onclick = function () { setDefaultApi(api); };
         tdDefault.appendChild(defBtn);
+        if (api.isBackup) {
+            var bStar = document.createElement('span');
+            bStar.className = 'api-backup-on';
+            bStar.textContent = '◈';
+            tdDefault.appendChild(bStar);
+            var bOff = document.createElement('button');
+            bOff.textContent = '取消备用';
+            bOff.className = 'btn-mini';
+            bOff.style.marginLeft = '4px';
+            bOff.onclick = function () { setBackupApi(api, true); };
+            tdDefault.appendChild(bOff);
+        } else {
+            var bBtn = document.createElement('button');
+            bBtn.textContent = '设为备用';
+            bBtn.className = 'btn-mini info';
+            bBtn.style.marginLeft = '4px';
+            bBtn.onclick = function () { setBackupApi(api, false); };
+            tdDefault.appendChild(bBtn);
+        }
     }
     tr.appendChild(tdDefault);
 
@@ -218,6 +239,29 @@ function setDefaultApi(api) {
         .then(function (r) { return r.json(); })
         .then(function (d) {
             apisMsgEl.textContent = d.ok ? '默认端点已切换: ' + api.displayName : '失败: ' + d.error;
+            loadApis();
+        })
+        .catch(function (e) {
+            apisMsgEl.textContent = '请求失败: ' + e.message + '（宿主未运行或端点不存在？）';
+        });
+}
+
+// 设为备用 / 取消备用——POST /api/v1/llm-apis/backup（唯一备用；与默认互斥——默认端点后端拒绝）
+// 备用语义：会话遇上游异常时临时切换的候选站（探测判据成立才切；180 秒后自动回默认）
+function setBackupApi(api, clear) {
+    var payload = { apiConfigId: clear ? '' : api.apiConfigId };
+    fetch('/api/v1/llm-apis/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (d.ok) {
+                apisMsgEl.textContent = clear ? '已取消备用端点' : ('备用端点已设为: ' + api.displayName);
+            } else {
+                apisMsgEl.textContent = '失败: ' + d.error;
+            }
             loadApis();
         })
         .catch(function (e) {

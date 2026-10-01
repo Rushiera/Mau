@@ -48,6 +48,12 @@
         RetryResume,
 
         /// <summary>
+        /// 端点切换通知——上游异常经双打探针判定后，临时切到另一站（备用 / 主要）之前产出；
+        /// Text 携带 FAILOVER|目标站名|原因摘要（会话层据此渲染切换提示气泡）。
+        /// </summary>
+        Failover,
+
+        /// <summary>
         /// 工具决策流开始——首个 tool_calls 增量帧产出一次（后续分片静默；Text 为空）——2026-09-16：会话层 Tool 态判定依据
         /// </summary>
         ToolCallsStart

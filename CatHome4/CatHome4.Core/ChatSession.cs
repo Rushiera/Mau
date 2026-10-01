@@ -219,6 +219,12 @@ namespace CH4
         /// <summary>LLM 运行时——ChatStream 调度（宿主 Bootstrap 注入；M3 apiConfigId 切换 SwapLlmRuntime 替换）</summary>
         private ILlmRuntime _llmRuntime;
 
+        /// <summary>
+        /// 会话级端点角色——主要 / 备用（点击对调 + 上游异常自动故障转移；仅本会话有效）。
+        /// 空=未接线（测试 / 裸构造）：不启用角色切换，行为与旧版一致。
+        /// </summary>
+        private LlmEndpointRole _apiRole;
+
         /// <summary>OA 工单平台——Dog Post/轮询</summary>
         private readonly OA _oa;
 
@@ -251,6 +257,65 @@ namespace CH4
         public void SetCatKey(string catKey)
         {
             _catKey = catKey;
+        }
+
+        /// <summary>
+        /// 接线端点角色——组合根构造会话时注入（与 Runtime 构造共用同一实例：角色状态归会话，运行期实时读取）。
+        /// </summary>
+        /// <param name="role">角色状态实例</param>
+        public void AttachApiRole(LlmEndpointRole role)
+        {
+            _apiRole = role;
+        }
+
+        /// <summary>
+        /// 端点角色标签——外观层 [API:主要/备用] 标签数据源（未接线 = 主要）。
+        /// </summary>
+        /// <returns>「主要」/「备用」</returns>
+        public string GetApiRoleText()
+        {
+            if (_apiRole != null && _apiRole.EffectiveUseBackup())
+            {
+                return "备用";
+            }
+            return "主要";
+        }
+
+        /// <summary>
+        /// 手动对调端点角色——仅本会话有效（清自动窗口：用户意志优先）；推视图提示 + 审计。
+        /// </summary>
+        /// <returns>切换后的角色文本（主要 / 备用）</returns>
+        public string ToggleApiRole()
+        {
+            if (_apiRole == null)
+            {
+                return "主要";
+            }
+            bool backup = _apiRole.ToggleManual();
+            string text = "主要";
+            if (backup)
+            {
+                text = "备用";
+            }
+            LogStore.Add("LLM", 1, "手动切换端点角色：" + _catKey + " → " + text + "（仅本会话有效）", "LLM");
+            PushApiRoleView(text, "");
+            return text;
+        }
+
+        /// <summary>
+        /// 端点切换视图提示——复用 retry 视图面（独立气泡；前端 retry 渲染的 failover 态）。
+        /// 消费方：手动切换（原因空）+ 自动故障转移（原因 = 触发错误摘要）。
+        /// </summary>
+        /// <param name="role">切换后的角色文本（主要 / 备用）</param>
+        /// <param name="reason">原因摘要（空=手动切换）</param>
+        private void PushApiRoleView(string role, string reason)
+        {
+            string payload = "{\"state\":\"failover\",\"role\":" + JsonUtil.Serialize(role) + ",\"text\":" + JsonUtil.Serialize(reason) + "}";
+            _viewStore.UpsertRetry(payload, ViewTimestamp(), -1);
+            if (_httpHost != null)
+            {
+                _httpHost.PushView("retry", payload, -1, 0);
+            }
         }
 
         /// <summary>
@@ -1297,6 +1362,19 @@ namespace CH4
                         {
                             // F4 视图——done 由整块 replace 表达（流式结束不单独推事件）
                         }
+                    }
+                    else if (ev.Kind == LlmStreamKind.Failover)
+                    {
+                        // 端点切换——上游异常后经双打探针判定临时切换（180 秒窗口）/ 手动对调：独立提示气泡（不静默）
+                        string foRole = "主要";
+                        string foReason = "";
+                        string[] foParts = ev.Text.Split(new char[] { '|' }, 3);
+                        if (foParts.Length >= 3)
+                        {
+                            foRole = foParts[1];
+                            foReason = foParts[2];
+                        }
+                        PushApiRoleView(foRole, foReason);
                     }
                     else if (ev.Kind == LlmStreamKind.Error)
                     {

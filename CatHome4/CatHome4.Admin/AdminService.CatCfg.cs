@@ -54,6 +54,9 @@ namespace CatHome4.Admin
             /// <summary>API 配置解析副本——M1c 每猫 Runtime 构造消费</summary>
             public CH_LlmApiConfig ApiConfig;
 
+            /// <summary>会话级端点角色——主要 / 备用（同一实例注入 Runtime 与会话；catcfg.apply 换 Runtime 时复用）</summary>
+            public LlmEndpointRole ApiRole;
+
             /// <summary>角色段——cat.cfg 持久化（M2b；空=无角色段）</summary>
             public string Persona;
 

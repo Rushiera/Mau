@@ -65,6 +65,12 @@ namespace CatHome4.Http
         /// <summary>本猫运行态构建回调（可空=不推运行态）——对话端口用：变化才推（替代每 250ms 全量快照推送）</summary>
         public Func<string> SessionStateBuilder { get; set; }
 
+        /// <summary>端点角色读取回调（可空=不注册该端点）——GET /api/v1/api-role（对话页 [API:主要/备用] 标签）</summary>
+        public Func<string> ApiRoleBuilder { get; set; }
+
+        /// <summary>端点角色手动对调回调（可空=不注册该端点）——POST /api/v1/api-role/toggle（仅本会话有效）</summary>
+        public Func<string> ApiRoleToggler { get; set; }
+
         /// <summary>静态页模式（true=chat.html / false=index.html）</summary>
         public bool ServeChatPage { get; set; }
 
@@ -101,6 +107,12 @@ namespace CatHome4.Http
 
         /// <summary>本猫运行态构建回调——对话端口注入（Session.BuildRunStateJson；可空=不推运行态）</summary>
         private Func<string> _sessionStateBuilder;
+
+        /// <summary>端点角色读取回调——GET /api/v1/api-role（可空=不注册；对话端口注入）</summary>
+        private Func<string> _apiRoleBuilder;
+
+        /// <summary>端点角色手动对调回调——POST /api/v1/api-role/toggle（可空=不注册）</summary>
+        private Func<string> _apiRoleToggler;
 
         /// <summary>上次运行态 JSON——本地 diff（变化才推；空闲期零推送）——主线程独占</summary>
         private string _lastSessionState;
@@ -194,6 +206,8 @@ namespace CatHome4.Http
             host._delayBuilder = options.DelayBuilder;
             host._patchBuilder = options.PatchBuilder;
             host._sessionStateBuilder = options.SessionStateBuilder;
+            host._apiRoleBuilder = options.ApiRoleBuilder;
+            host._apiRoleToggler = options.ApiRoleToggler;
             host._serveChatPage = options.ServeChatPage;
             host._routeRegistrar = options.RouteRegistrar;
             host._htmlRootProvider = options.HtmlRootProvider;
@@ -277,6 +291,22 @@ namespace CatHome4.Http
                 {
                     // P9.3 多猫列表——catsBuilder 非空才注册（主端口管理页签数据源；每猫实例不注册）
                     return Results.Text(_catsBuilder(), "application/json");
+                });
+            }
+            // 端点角色面——对话页 [API:主要/备用] 标签（读 + 手动对调；可空=不注册——管理端口不注入）
+            if (_apiRoleBuilder != null)
+            {
+                _app.MapGet("/api/v1/api-role", (HttpContext ctx) =>
+                {
+                    return Results.Text(_apiRoleBuilder(), "application/json");
+                });
+            }
+            if (_apiRoleToggler != null)
+            {
+                _app.MapPost("/api/v1/api-role/toggle", (HttpContext ctx) =>
+                {
+                    // 手动对调——仅本会话有效（清自动窗口；结果视图提示由宿主侧推送）
+                    return Results.Text(_apiRoleToggler(), "application/json");
                 });
             }
             // S2 管理端点族——经 IHttpRouteSink 由 Admin 域注册（Http 域零依赖 Admin 域）

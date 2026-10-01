@@ -31,6 +31,9 @@ namespace CatHome4.Admin
         /// <summary>默认猫当前 API 配置身份——Bootstrap 赋值（catcfg.apply 变更比对）</summary>
         internal static Guid _defaultApiConfigId;
 
+        /// <summary>默认猫端点角色——Bootstrap 赋值（自动故障转移与手动对调共用；catcfg.apply 换 Runtime 时复用）</summary>
+        internal static LlmEndpointRole _defaultApiRole;
+
         /// <summary>
         /// 管理路由注册——S2 解耦：入口壳经 IHttpRouteSink 向 Http 域注册管理端点（主端口仅一次）。
         /// 归属：Admin 域——llm-apis/qqbot-apis/cat-config/cat-default/workspace 管理面（S4 随 Admin 域迁 CatHome4.Admin）。
@@ -44,6 +47,7 @@ namespace CatHome4.Admin
             sink.MapPost("/api/v1/llm-apis/edit", (Delegate)HandleLlmApisEdit);
             sink.MapPost("/api/v1/llm-apis/delete", (Delegate)HandleLlmApisDelete);
             sink.MapPost("/api/v1/llm-apis/default", (Delegate)HandleLlmApisDefault);
+            sink.MapPost("/api/v1/llm-apis/backup", (Delegate)HandleLlmApisBackup);
             // LLM API 池连通性测试——「测试」按钮（模型清单 + 站点信息 + 定价与分组）
             sink.MapPost("/api/v1/llm-apis/probe", (Delegate)HandleLlmApisProbe);
             // QQ Bot 池 CRUD——R2.3 管理面
@@ -136,6 +140,7 @@ namespace CatHome4.Admin
                         endpoint = c.Endpoint,
                         defaultModel = c.DefaultModel,
                         isDefault = c.IsDefault,
+                        isBackup = c.IsBackup,
                         apiKey = keyShown,
                         hasKey = key.Length > 0
                     });
@@ -246,6 +251,77 @@ namespace CatHome4.Admin
             }
             LogStore.Add("CatHome4", 1, "LLM API 池已设为默认：" + apiConfigId, "CONFIG");
             return Results.Json(new { ok = true });
+        }
+
+        /// <summary>
+        /// LLM API 池设为备用——POST /api/v1/llm-apis/backup（body: apiConfigId；空=取消备用）。
+        /// 备用语义：会话遇上游异常时临时切换的候选站（唯一备用；与默认互斥——默认端点不可设为备用）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>回执 JSON</returns>
+        internal static async Task<IResult> HandleLlmApisBackup(HttpContext ctx)
+        {
+            string body = await ReadBodyText(ctx);
+            string apiConfigId = "";
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(body))
+                {
+                    JsonElement root = doc.RootElement;
+                    apiConfigId = GetJsonString(root, "apiConfigId");
+                }
+            }
+            catch (Exception)
+            {
+                return Results.Json(new { ok = false, error = "body 非 JSON" });
+            }
+            Guid parsed = Guid.Empty;
+            if (apiConfigId.Length > 0 && !Guid.TryParse(apiConfigId, out parsed))
+            {
+                return Results.Json(new { ok = false, error = "apiConfigId 无效" });
+            }
+            CH_LlmApiConfigStore store = null;
+            DataBox.TryResolve<CH_LlmApiConfigStore>(out store);
+            if (store == null)
+            {
+                return Results.Json(new { ok = false, error = "配置池未绑定" });
+            }
+            if (!store.SetBackup(parsed))
+            {
+                return Results.Json(new { ok = false, error = "配置不存在或已是默认端点（默认与备用互斥）" });
+            }
+            string note;
+            if (parsed == Guid.Empty)
+            {
+                note = "LLM API 池已取消备用端点";
+            }
+            else
+            {
+                note = "LLM API 池已设为备用：" + parsed.ToString("D");
+            }
+            LogStore.Add("CatHome4", 1, note, "CONFIG");
+            return Results.Json(new { ok = true });
+        }
+
+        /// <summary>
+        /// 端点角色 JSON——GET /api/v1/api-role 数据源（对话页 [API:主要/备用] 标签）。
+        /// </summary>
+        /// <param name="session">目标会话</param>
+        /// <returns>角色 JSON（{"role":"主要|备用"}）</returns>
+        internal static string BuildApiRoleJson(ChatSession session)
+        {
+            return "{\"role\":\"" + session.GetApiRoleText() + "\"}";
+        }
+
+        /// <summary>
+        /// 手动对调端点角色——POST /api/v1/api-role/toggle 数据源（仅本会话有效；视图提示由会话侧推送）。
+        /// </summary>
+        /// <param name="session">目标会话</param>
+        /// <returns>回执 JSON（{"ok":true,"role":"主要|备用"}）</returns>
+        internal static string ToggleApiRoleJson(ChatSession session)
+        {
+            string role = session.ToggleApiRole();
+            return "{\"ok\":true,\"role\":\"" + role + "\"}";
         }
 
         /// <summary>
@@ -1410,7 +1486,7 @@ namespace CatHome4.Admin
                 if (_defaultApiConfigId != newApi)
                 {
                     _defaultApiConfigId = newApi;
-                    _chatBridge.DefaultSession.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApi, _globalConfig));
+                    _chatBridge.DefaultSession.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApi, _globalConfig, _defaultApiRole));
                     LogStore.Add("CatHome4", 1, "majordomo 配置生效：LLM 端点切换为 " + newApi.ToString("D"), "CONFIG");
                 }
                 return "catcfg.apply | majordomo | 已生效（前文项新会话生效）";
@@ -1442,7 +1518,12 @@ namespace CatHome4.Admin
                     _apiStore.TryGet(newApiId, out apiConfig);
                 }
                 cat.ApiConfig = apiConfig;
-                cat.Session.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApiId, _globalConfig));
+                if (cat.ApiRole == null)
+                {
+                    cat.ApiRole = new LlmEndpointRole();
+                    cat.Session.AttachApiRole(cat.ApiRole);
+                }
+                cat.Session.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApiId, _globalConfig, cat.ApiRole));
                 LogStore.Add("CatHome4", 1, "猫「" + cat.DisplayName + "」配置生效：LLM 端点切换为 " + newApiId.ToString("D"), "CONFIG");
             }
             return "catcfg.apply | " + cat.DisplayName + " | 已生效（前文项新会话生效）";

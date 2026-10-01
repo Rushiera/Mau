@@ -147,12 +147,93 @@ namespace Mau.Runtime
             }
             return trimmed + "/chat/completions";
         }
-        /// <summary>
-        /// 设置默认端点——清除其他默认标记 + 置目标默认（唯一默认语义；目标不存在返回 false）。
-        /// </summary>
+        /// <summary>设置默认端点——清除其他默认标记 + 置目标默认（唯一默认语义；目标不存在返回 false）；目标兼带备用标记时一并清除（默认与备用互斥——同一配置不得兼两角色）。</summary>
         /// <param name="apiConfigId">目标配置身份</param>
         /// <returns>true=设置成功</returns>
-        public bool SetDefault(Guid apiConfigId) { CH_LlmApiConfig[] configs = GetAll(); bool found = false; for (int i = 0; i < configs.Length; i = i + 1) { if (configs[i].ApiConfigId == apiConfigId) { configs[i].IsDefault = true; found = true; } else { configs[i].IsDefault = false; } } if (!found) { return false; } SaveConfigs(configs); return true; }
+        public bool SetDefault(Guid apiConfigId)
+        {
+            CH_LlmApiConfig[] configs = GetAll();
+            bool found = false;
+            for (int i = 0; i < configs.Length; i = i + 1)
+            {
+                if (configs[i].ApiConfigId == apiConfigId)
+                {
+                    configs[i].IsDefault = true;
+                    // 互斥——默认优先：目标兼带备用标记时清除（同一配置不得兼两角色）
+                    configs[i].IsBackup = false;
+                    found = true;
+                }
+                else
+                {
+                    configs[i].IsDefault = false;
+                }
+            }
+            if (!found)
+            {
+                return false;
+            }
+            SaveConfigs(configs);
+            return true;
+        }
+        /// <summary>
+        /// 解析备用端点——IsBackup=true 的配置；无备用返回 null（不静默回退——无备用即不启用故障转移）。
+        /// </summary>
+        /// <returns>备用配置；无备用 null</returns>
+        public CH_LlmApiConfig? ResolveBackup()
+        {
+            CH_LlmApiConfig[] configs = GetAll();
+            for (int i = 0; i < configs.Length; i = i + 1)
+            {
+                if (configs[i].IsBackup)
+                {
+                    return configs[i];
+                }
+            }
+            return null;
+        }
+        /// <summary>
+        /// 设置 / 取消备用端点——唯一备用语义（清其他备用标记 + 置目标备用）。
+        /// 目标为默认端点返回 false（默认与备用互斥）；apiConfigId 为空 Guid = 取消备用（池内可以没有备用）。
+        /// </summary>
+        /// <param name="apiConfigId">目标配置身份；Guid.Empty=取消备用</param>
+        /// <returns>true=设置成功</returns>
+        public bool SetBackup(Guid apiConfigId)
+        {
+            CH_LlmApiConfig[] configs = GetAll();
+            if (apiConfigId == Guid.Empty)
+            {
+                for (int i = 0; i < configs.Length; i = i + 1)
+                {
+                    configs[i].IsBackup = false;
+                }
+                SaveConfigs(configs);
+                return true;
+            }
+            bool found = false;
+            for (int i = 0; i < configs.Length; i = i + 1)
+            {
+                if (configs[i].ApiConfigId == apiConfigId)
+                {
+                    if (configs[i].IsDefault)
+                    {
+                        // 互斥——默认端点不得兼为备用（前端隐藏入口，后端双面防护）
+                        return false;
+                    }
+                    configs[i].IsBackup = true;
+                    found = true;
+                }
+                else
+                {
+                    configs[i].IsBackup = false;
+                }
+            }
+            if (!found)
+            {
+                return false;
+            }
+            SaveConfigs(configs);
+            return true;
+        }
 
 
         /// <summary>新增或替换一份普通配置与可选 Key。</summary>
@@ -167,10 +248,12 @@ namespace Mau.Runtime
             {
                 if (configs[i].ApiConfigId == config.ApiConfigId)
                 {
-                    // 默认标记归 SetDefault 专管——替换普通字段时保留原标记（编辑面不得静默清默认）
+                    // 默认 / 备用标记归 SetDefault / SetBackup 专管——替换普通字段时保留原标记（编辑面不得静默清标记）
                     bool keepDefault = configs[i].IsDefault;
+                    bool keepBackup = configs[i].IsBackup;
                     configs[i] = CopyConfig(config);
                     configs[i].IsDefault = keepDefault;
+                    configs[i].IsBackup = keepBackup;
                     replaced = true;
                     break;
                 }
@@ -394,6 +477,7 @@ namespace Mau.Runtime
             result.Endpoint = source.Endpoint;
             result.DefaultModel = source.DefaultModel;
             result.IsDefault = source.IsDefault;
+            result.IsBackup = source.IsBackup;
             return result;
         }
         /// <summary>把可空文本规范为空字符串。</summary>

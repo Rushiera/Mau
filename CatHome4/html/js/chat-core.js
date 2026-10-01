@@ -489,6 +489,12 @@ function chatRetryText(payload) {
     var attempt = payload.attempt || '';
     var max = payload.max || '';
     var reason = payload.text || '';
+    if (state === 'failover') {
+        // 端点切换提示（备用轮）——role=切换后角色（主要 / 备用）；reason 空=手动对调
+        var foRole = payload.role || '备用';
+        var foTail = reason ? (' · ' + reason) : '';
+        return '⇄ 已切换端点：' + foRole + '站' + foTail;
+    }
     var bar = attempt + (max ? '/' + max : '');
     var tail = reason ? (' · ' + reason) : '';
     if (state === 'failed') {
@@ -844,6 +850,40 @@ function chatSend() {
             }
         })
         .catch(function (err) { chatFail('请求失败: ' + err); });
+}
+
+// 端点角色标签——[API:主要/备用]（会话级：自动故障转移 180 秒窗口 / 手动对调；仅本会话有效）
+// 数据源：GET /api/v1/api-role（对话端口注入槽）；点击 → POST /api/v1/api-role/toggle
+function chatApiRoleRender(role) {
+    var btn = document.getElementById('chatApiRole');
+    if (!btn) { return; }
+    var text = role || '主要';
+    btn.textContent = 'API:' + text;
+    if (text === '备用') {
+        btn.classList.add('backup');
+    } else {
+        btn.classList.remove('backup');
+    }
+}
+
+function chatApiRoleRefresh() {
+    fetch('/api/v1/api-role')
+        .then(function (r) { return r.json(); })
+        .then(function (d) { chatApiRoleRender(d ? d.role : ''); })
+        .catch(function () { /* 端点缺失（旧宿主 / 管理端口）——标签保持默认，不报错 */ });
+}
+
+function chatApiRoleToggle() {
+    fetch('/api/v1/api-role/toggle', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (d && d.ok) {
+                chatApiRoleRender(d.role);
+                return;
+            }
+            uiWarn('端点角色切换', new Error((d && d.error) || '未生效'));
+        })
+        .catch(function (e) { uiWarn('端点角色切换', e); });
 }
 
 // 新会话——session.new 指令（P8.5 design-ch4-workspace §六：清前文 + 按清单重新注入；走 CommandBus 无飞线）

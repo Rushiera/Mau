@@ -13,6 +13,7 @@
         <span id="chatInfo">—</span>
         <span style="flex:1"></span>
         <span id="uiVer" data-version title="前端版本——每次 Vitest 自动递增 + 最后更新时间">UI v?</span>
+        <button id="chatApiRole" title="LLM 端点角色——点击对调主要 / 备用（仅本会话有效）">API:主要</button>
         <button id="chatNew" title="新会话（session.new——清前文并重新注入）">新会话</button>
         <button id="chatRefresh" title="刷新——重建界面气泡（纯前端）">刷新</button>
         <button id="chatCacheClear" title="清理素材缓存——下次刷新重新下载桌宠素材（改图不改名 / 缓存脏数据时用）">清理缓存</button>
@@ -125,6 +126,12 @@
         // [段3] 按钮绑定（防御式——元素缺失跳过；F2.3 从内联 onclick 迁出）
         var elChatNew = document.getElementById('chatNew');
         if (elChatNew) { elChatNew.addEventListener('click', chatNewSession); }
+        // 端点角色——[API:主要/备用] 标签（点击对调；仅本会话有效）
+        var elChatApiRole = document.getElementById('chatApiRole');
+        if (elChatApiRole) {
+            elChatApiRole.addEventListener('click', chatApiRoleToggle);
+            chatApiRoleRefresh();
+        }
         var elChatRefresh = document.getElementById('chatRefresh');
         if (elChatRefresh) { elChatRefresh.addEventListener('click', chatRefresh); }
         var elChatPause = document.getElementById('chatPause');

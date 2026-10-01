@@ -26,6 +26,12 @@ namespace Mau.Runtime
         /// 默认端点标记——true=未显式指定 API 的消费面（QuickCat 语料面）固定走此配置。
         /// </summary>
         public bool IsDefault;
+
+        /// <summary>
+        /// 备用端点标记——true=上游异常时会话级临时切换的目标（唯一备用；与 IsDefault 互斥——同一配置不得兼两角色）。
+        /// 只作故障转移的候选站，不改变默认端点语义。
+        /// </summary>
+        public bool IsBackup;
         /// <summary>创建字段完整的空配置。</summary>
         public CH_LlmApiConfig()
         {
