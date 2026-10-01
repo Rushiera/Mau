@@ -112,6 +112,13 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 .session-info { color: var(--ch-fg-weak); font-size: var(--ch-fs-body); margin-top: 3px; }
 .session-empty { color: var(--ch-fg-faint); font-size: var(--ch-fs-body); padding: 4px 12px; }
 
+/* ── 多猫行会话状态列（2026-10-01 会话状态下沉主面板——两行：徽标行 + 参数 / 前文 tokens 行）── */
+.cat-state { display: flex; flex-direction: column; gap: 3px; }
+.cat-state-head { display: flex; align-items: center; gap: 6px; }
+.cat-state-info { color: var(--ch-fg-weak); font-size: var(--ch-fs-tag); }
+.cat-state-run { color: var(--ch-ok); font-size: var(--ch-fs-sub); }
+.cat-state-idle { color: var(--ch-fg-weak); font-size: var(--ch-fs-sub); }
+
 /* ── 会话详情弹层（会话状态卡点击——上一条输入 / 预设动作 / 会话留档）── */
 .cd-status { color: var(--ch-fg-weak); font-size: var(--ch-fs-body); padding-bottom: 6px; border-bottom: 1px solid var(--ch-line-faint); margin-bottom: 8px; }
 .cd-block { border: 1px solid var(--ch-line); border-radius: 6px; background: var(--ch-bg-raised); margin-bottom: 8px; }

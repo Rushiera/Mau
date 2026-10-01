@@ -62,6 +62,60 @@ function loadCats() {
 // 单猫行渲染——名称/LLM API/QQ Bot 行内直改；目录白名单 + 工具清单走专用弹层；操作按钮按状态启用（special 强制自启 + 无停止/删除）
 function renderCatRow(cat) {
     var tr = document.createElement('tr');
+    // 行点击入口——整行可点开会话详情（排除按钮 / 输入类控件；事件委托见文件末 tbody 绑定）
+    tr.setAttribute('data-cat', cat.id);
+    tr.setAttribute('data-name', cat.name || cat.id);
+    // [列首] 会话状态——phase 徽标 + Note 标（上行）/ 前文 tokens · 轮次 · 消息 · 待处理 · 前文变动（下行）
+    // 数据面 = /api/v1/cats 会话字段（BuildCatInfoEntry 产物——与 cat.info / 快照 sessions 段同源）
+    var tdState = document.createElement('td');
+    var stateWrap = document.createElement('div');
+    stateWrap.className = 'cat-state';
+    var stateHead = document.createElement('div');
+    stateHead.className = 'cat-state-head';
+    if (cat.running) {
+        if (cat.phase) {
+            var phaseBadge = document.createElement('span');
+            phaseBadge.className = 'session-badge ph-' + cat.phase;
+            phaseBadge.textContent = cat.phase;
+            stateHead.appendChild(phaseBadge);
+        } else {
+            var runTag = document.createElement('span');
+            runTag.className = 'cat-state-run';
+            runTag.textContent = '运行中';
+            stateHead.appendChild(runTag);
+        }
+    } else {
+        var idleTag = document.createElement('span');
+        idleTag.className = 'cat-state-idle';
+        idleTag.textContent = '静默';
+        stateHead.appendChild(idleTag);
+    }
+    if (cat.noteActive) {
+        var stateNote = document.createElement('span');
+        stateNote.className = 'session-note';
+        stateNote.textContent = '📋 Note';
+        stateHead.appendChild(stateNote);
+    }
+    stateWrap.appendChild(stateHead);
+    var stateBits = [];
+    if (typeof cat.context !== 'undefined' && cat.context !== null) {
+        stateBits.push('前文 ' + cat.context + ' tokens' + (cat.contextCount ? ' / ' + cat.contextCount + ' 条' : ''));
+    }
+    if (typeof cat.round !== 'undefined' && cat.round !== null) {
+        stateBits.push('轮次 ' + cat.round + ' · 消息 ' + cat.msgCount + ' · 待处理 ' + cat.pending);
+    }
+    var stateAgo = fmtAgo(cat.lastContextChangeAt);
+    if (stateAgo) {
+        stateBits.push('前文变动 ' + stateAgo);
+    }
+    if (stateBits.length > 0) {
+        var stateInfo = document.createElement('div');
+        stateInfo.className = 'cat-state-info';
+        stateInfo.textContent = stateBits.join(' · ');
+        stateWrap.appendChild(stateInfo);
+    }
+    tdState.appendChild(stateWrap);
+    tr.appendChild(tdState);
     // [列1] 名称——行内编辑（未改动 / 清空 = 不提交；special 行 ★ 前缀独立于输入框）
     var tdName = document.createElement('td');
     var nameWrap = document.createElement('div');
@@ -161,15 +215,6 @@ function renderCatRow(cat) {
     toolsBtn.onclick = function () { openCatTools(cat.id, cat.name); };
     tdTools.appendChild(toolsBtn);
     tr.appendChild(tdTools);
-    var tdState = document.createElement('td');
-    if (cat.running) {
-        tdState.textContent = '运行中';
-        tdState.style.color = 'var(--ch-ok)';
-    } else {
-        tdState.textContent = '静默';
-        tdState.style.color = 'var(--ch-fg-weak)';
-    }
-    tr.appendChild(tdState);
     var tdPort = document.createElement('td');
     tdPort.textContent = cat.running ? (':' + cat.port) : '-';
     tr.appendChild(tdPort);
@@ -244,6 +289,34 @@ function catNew() {
     }
     catAction('cat.new ' + name);
 }
+
+// 整行点击——打开会话详情弹层（openCatDetail 在 app.js；只点「内容区」才开）
+// 判据：点击目标或其祖先链上出现 button / input / select / textarea / a / label → 视为操作，不触发详情
+function isRowInteractive(el) {
+    while (el && el.tagName) {
+        var tag = el.tagName.toLowerCase();
+        if (tag === 'button' || tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'a' || tag === 'label') {
+            return true;
+        }
+        el = el.parentNode;
+    }
+    return false;
+}
+
+function onCatsRowClick(e) {
+    if (isRowInteractive(e.target)) { return; }
+    var el = e.target;
+    while (el && el !== catsTableBody) {
+        if (el.tagName && el.tagName.toLowerCase() === 'tr') {
+            var key = el.getAttribute('data-cat');
+            if (key) { openCatDetail(key, el.getAttribute('data-name') || key); }
+            return;
+        }
+        el = el.parentNode;
+    }
+}
+
+catsTableBody.addEventListener('click', onCatsRowClick);
 
 // 多猫区按钮绑定 + 列表初始化
 document.getElementById('catNewBtn').addEventListener('click', catNew);

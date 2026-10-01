@@ -72,13 +72,13 @@ beforeAll(async () => {
   await tick();
 });
 
-test('主面板行——8 列（ID 列已撤）；名称可编辑、API/QQBot 是下拉、工具清单是按钮', () => {
+test('主面板行——8 列（会话状态列前置 + ID 列已撤）；名称可编辑、API/QQBot 是下拉、工具清单是按钮', () => {
   const tr = renderRow(CAT_ROW);
   expect(tr.children.length).toBe(8);
-  expect(tr.children[0].querySelector('input').value).toBe('测试猫');
-  expect(tr.children[1].querySelector('select')).not.toBeNull();
+  expect(tr.children[1].querySelector('input').value).toBe('测试猫');
   expect(tr.children[2].querySelector('select')).not.toBeNull();
-  expect(tr.children[4].querySelector('button').textContent).toBe('工具清单');
+  expect(tr.children[3].querySelector('select')).not.toBeNull();
+  expect(tr.children[5].querySelector('button').textContent).toBe('工具清单');
   // ID 不再出现在任何单元格
   const texts = [];
   for (let i = 0; i < tr.children.length; i = i + 1) { texts.push(tr.children[i].textContent); }
@@ -87,7 +87,7 @@ test('主面板行——8 列（ID 列已撤）；名称可编辑、API/QQBot �
 
 test('目录白名单列——显示无权目录（池 ∖ 启用根），点「设置」开专用弹层', async () => {
   const tr = renderRow(CAT_ROW);   // enabledRoots = ['ccbp'] → 无权仅 mau（workspace 为系统根不计）
-  const td = tr.children[3];
+  const td = tr.children[4];
   expect(td.textContent).toContain('无权: mau');
   expect(td.textContent.indexOf('ccbp')).toBe(-1);
   td.querySelector('button').onclick();
@@ -98,14 +98,14 @@ test('目录白名单列——显示无权目录（池 ∖ 启用根），点「
 
 test('目录白名单列——启用根为空 = 空白名单（非系统根全部无权）', () => {
   const tr = renderRow(Object.assign({}, CAT_ROW, { enabledRoots: [] }));
-  const td = tr.children[3];
+  const td = tr.children[4];
   expect(td.textContent).toContain('无权: ccbp, mau');
 });
 
 test('名称行内编辑——改动提交 POST cat-config displayName；未改动 / 清空不提交', async () => {
   captureFetch();
   const tr = renderRow(CAT_ROW);
-  const input = tr.children[0].querySelector('input');
+  const input = tr.children[1].querySelector('input');
 
   input.dispatchEvent(new Event('change'));
   await tick();
@@ -132,7 +132,7 @@ test('LLM API / QQ Bot 下拉——change 即提交 cat-config 单字段（空�
     apiConfigId: 'aaaaaaaa-0000-0000-0000-000000000000',
     qqbotId: 'bbbbbbbb-0000-0000-0000-000000000000'
   }));
-  const apiSel = tr.children[1].querySelector('select');
+  const apiSel = tr.children[2].querySelector('select');
   apiSel.value = '';
   apiSel.dispatchEvent(new Event('change'));
   await tick();
@@ -142,4 +142,50 @@ test('LLM API / QQ Bot 下拉——change 即提交 cat-config 单字段（空�
   expect(posts[0].body.apiConfigId).toBe('');
   // 单字段写——未提交字段不出现在 payload（后端缺省即保留）
   expect(posts[0].body.qqbotId).toBe(undefined);
+});
+
+test('会话状态列——phase 徽标 + Note 标 + 前文 tokens / 轮次 · 消息 · 待处理', () => {
+  const row = Object.assign({}, CAT_ROW, {
+    running: true, port: 8081, phase: 'LlmRunning', round: 3, msgCount: 8, pending: 1,
+    noteActive: true, context: 12345, contextCount: 42, lastContextChangeAt: 0
+  });
+  const tr = renderRow(row);
+  const td = tr.children[0];
+  const badge = td.querySelector('.session-badge');
+  expect(badge).not.toBeNull();
+  expect(badge.className).toContain('ph-LlmRunning');
+  expect(badge.textContent).toBe('LlmRunning');
+  expect(td.textContent).toContain('📋 Note');
+  expect(td.textContent).toContain('前文 12345 tokens / 42 条');
+  expect(td.textContent).toContain('轮次 3 · 消息 8 · 待处理 1');
+  // 顺序——参数在前，前文变动在后
+  expect(td.textContent.indexOf('前文')).toBeLessThan(td.textContent.indexOf('轮次'));
+});
+
+test('会话状态列——静默猫显示「静默」标（无 phase 徽标）', () => {
+  const tr = renderRow(CAT_ROW);
+  const td = tr.children[0];
+  expect(td.textContent).toContain('静默');
+  expect(td.querySelector('.session-badge')).toBeNull();
+});
+
+test('整行点击——内容区开会话详情；按钮 / 输入控件不触发', async () => {
+  captureFetch();
+  const row = Object.assign({}, CAT_ROW, { running: true, port: 8081, phase: 'Idle' });
+  const tr = renderRow(row);
+  // 内容区（会话状态单元格）→ 打开详情弹层
+  tr.children[0].dispatchEvent(new Event('click', { bubbles: true }));
+  await tick();
+  expect(document.getElementById('catDetailModal').style.display).toBe('flex');
+  expect(callsTo('/api/v1/cat-detail?cat=' + CAT_ROW.id).length).toBe(1);
+  document.getElementById('catDetailModal').style.display = 'none';
+  // 名称输入框 → 不触发
+  tr.children[1].querySelector('input').dispatchEvent(new Event('click', { bubbles: true }));
+  await tick();
+  expect(document.getElementById('catDetailModal').style.display).toBe('none');
+  // 工具清单按钮 → 不触发
+  tr.children[5].querySelector('button').dispatchEvent(new Event('click', { bubbles: true }));
+  await tick();
+  expect(document.getElementById('catDetailModal').style.display).toBe('none');
+  document.getElementById('catToolsModal').style.display = 'none';
 });

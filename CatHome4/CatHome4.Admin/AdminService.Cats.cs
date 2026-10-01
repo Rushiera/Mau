@@ -2150,6 +2150,7 @@ namespace CatHome4.Admin
             List<object> list = new List<object>();
             // F2.2 majordomo 特殊会话——置顶 + special 标记（前端不视为多猫；无停止/删除）
             // 主面板数据面扩展——补 apiConfigId / qqbotId / enabledRoots（行内编辑与目录白名单展示用）
+            // 会话状态扩展（2026-10-01）——复用 BuildCatInfoEntry（与 cat.info / 快照 sessions 段同源，不另起数据面）
             CatCfgData majorCfg = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", "majordomo", "cat.cfg"));
             string majorName = "majordomo";
             string majorApi = "";
@@ -2174,17 +2175,16 @@ namespace CatHome4.Admin
                     majorRoots = majorCfg.EnabledRoots;
                 }
             }
-            list.Add(new
+            ChatSession majorSession = null;
+            if (_chatBridge != null)
             {
-                id = "majordomo",
-                name = majorName,
-                running = _majorHost != null,
-                port = _majorPort,
-                special = true,
-                apiConfigId = majorApi,
-                qqbotId = majorQq,
-                enabledRoots = majorRoots
-            });
+                majorSession = _chatBridge.DefaultSession;
+            }
+            Dictionary<string, object> majorEntry = BuildCatInfoEntry("majordomo", majorName, _majorHost != null, _majorPort, true, majorSession);
+            majorEntry["apiConfigId"] = majorApi;
+            majorEntry["qqbotId"] = majorQq;
+            majorEntry["enabledRoots"] = majorRoots;
+            list.Add(majorEntry);
             for (int i = 0; i < _cats.Count; i++)
             {
                 CatEntry cat = _cats[i];
@@ -2207,16 +2207,11 @@ namespace CatHome4.Admin
                         enabledRoots = cfg.EnabledRoots;
                     }
                 }
-                list.Add(new
-                {
-                    id = cat.Id,
-                    name = cat.DisplayName,
-                    running = cat.Running,
-                    port = cat.Port,
-                    apiConfigId = apiConfigId,
-                    qqbotId = qqbotId,
-                    enabledRoots = enabledRoots
-                });
+                Dictionary<string, object> entry = BuildCatInfoEntry(cat.Id, cat.DisplayName, cat.Running, cat.Port, false, cat.Session);
+                entry["apiConfigId"] = apiConfigId;
+                entry["qqbotId"] = qqbotId;
+                entry["enabledRoots"] = enabledRoots;
+                list.Add(entry);
             }
             var resp = new
             {
