@@ -9,7 +9,7 @@
   <PropertyGroup>
     <Deterministic>true</Deterministic>
     <LangVersion>latest</LangVersion>
-    <Version>1.06.014</Version>
+    <Version>1.7.0</Version>
   </PropertyGroup>
 
 </Project>
