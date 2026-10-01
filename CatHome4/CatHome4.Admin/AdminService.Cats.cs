@@ -552,9 +552,15 @@ namespace CatHome4.Admin
             }
             else if (field == "toolNames")
             {
-                string valid = ValidateToolNames(value);
+                string[] removedNames;
+                string valid = ValidateToolNames(value, out removedNames);
                 cfg.ToolNames = valid;
                 applied = "toolNames=" + valid;
+                // A132 剔除出声——被剔名字随回执带回（调用方可见；明细已记日志，不静默）
+                if (removedNames.Length > 0)
+                {
+                    applied = applied + "｜⚠️ 已剔除池外工具名 " + removedNames.Length.ToString() + " 个：" + JoinArray(removedNames);
+                }
             }
             else if (field == "injectList")
             {

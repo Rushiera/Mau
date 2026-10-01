@@ -986,8 +986,15 @@ function chatOvClock(ms) {
     return hh + ':' + mm + ':' + ss;
 }
 
-// 规模——字符数
+// 规模——字符数（数组 = 条数 · 总字符数——A129 多值参数一律原生数组）
 function chatOvSize(v) {
+    if (Array.isArray(v)) {
+        var n = 0;
+        for (var i = 0; i < v.length; i = i + 1) {
+            if (typeof v[i] === 'string') { n = n + v[i].length; }
+        }
+        return v.length + ' 条 · ' + n + ' 字符';
+    }
     return ((typeof v === 'string') ? v.length : 0) + ' 字符';
 }
 

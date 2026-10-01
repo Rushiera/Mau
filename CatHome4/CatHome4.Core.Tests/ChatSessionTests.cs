@@ -379,7 +379,7 @@ namespace CatHome4.Core.Tests
         {
             MockLlm llm = new MockLlm();
             // 第一轮：Note 工具调用（set 计划）
-            string tc = "[{\"id\":\"n1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":\\\"任务A\\\\n任务B\\\"}\"}}]";
+            string tc = "[{\"id\":\"n1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":[\\\"任务A\\\",\\\"任务B\\\"]}\"}}]";
             llm.ToolCallsQueue.Enqueue(tc);
             CH4.ChatSession session = CreateSession(llm);
             session.PostUserMessage("创建计划");
@@ -631,7 +631,7 @@ namespace CatHome4.Core.Tests
         public void Note_ProgressCounts_DonePlusTodoEqualsTotal()
         {
             MockLlm llm = new MockLlm();
-            llm.ToolCallsQueue.Enqueue("[{\"id\":\"n1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":\\\"任务A\\\\n任务B\\\\n任务C\\\"}\"}}]");
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"n1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":[\\\"任务A\\\",\\\"任务B\\\",\\\"任务C\\\"]}\"}}]");
             CH4.ChatSession session = CreateSession(llm);
             session.PostUserMessage("创建三条计划");
             PumpUntilIdle(session);
@@ -646,7 +646,7 @@ namespace CatHome4.Core.Tests
         public void Note_ProgressCounts_AfterAdvance()
         {
             MockLlm llm = new MockLlm();
-            llm.ToolCallsQueue.Enqueue("[{\"id\":\"n1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":\\\"任务A\\\\n任务B\\\\n任务C\\\"}\"}}]");
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"n1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":[\\\"任务A\\\",\\\"任务B\\\",\\\"任务C\\\"]}\"}}]");
             llm.ToolCallsQueue.Enqueue("[{\"id\":\"n2\",\"function\":{\"name\":\"Note\",\"arguments\":\"{}\"}}]");
             CH4.ChatSession session = CreateSession(llm);
             session.PostUserMessage("创建并推进");
@@ -661,13 +661,41 @@ namespace CatHome4.Core.Tests
         public void Note_LastItemHint_OnSingleTaskPlan()
         {
             MockLlm llm = new MockLlm();
-            llm.ToolCallsQueue.Enqueue("[{\"id\":\"n1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":\\\"唯一任务\\\"}\"}}]");
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"n1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":[\\\"唯一任务\\\"]}\"}}]");
             CH4.ChatSession session = CreateSession(llm);
             session.PostUserMessage("创建单条计划");
             PumpUntilIdle(session);
             string text = GetToolResultText(session, "n1");
             Assert.Contains("第1/1条  已完成0  待完成1", text);
             Assert.Contains("已是最后一条需求", text);
+        }
+        /// <summary>
+        /// A129 参数形态——Note.content 非原生字符串数组一律 ERR|BAD_ARGS（旧字符串形态 / 非字符串元素 / 空串元素 / 空数组四态出声，
+        /// 退役静默回落与静默截断——参数面零容忍）。
+        /// </summary>
+        [Fact]
+        public void Note_ContentShape_RejectsNonArray()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"s1\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":\\\"任务A\\\\n任务B\\\"}\"}}]");
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"s2\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":[\\\"任务A\\\",1]}\"}}]");
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"s3\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":[\\\"任务A\\\",\\\"\\\"]}\"}}]");
+            llm.ToolCallsQueue.Enqueue("[{\"id\":\"s4\",\"function\":{\"name\":\"Note\",\"arguments\":\"{\\\"action\\\":\\\"set\\\",\\\"content\\\":[]}\"}}]");
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("形态校验");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            Assert.Contains("ERR|BAD_ARGS", GetToolResultText(session, "s1"));
+            Assert.Contains("ERR|BAD_ARGS", GetToolResultText(session, "s2"));
+            Assert.Contains("ERR|BAD_ARGS", GetToolResultText(session, "s3"));
+            Assert.Contains("ERR|BAD_ARGS", GetToolResultText(session, "s4"));
+            // 四态全拒——计划未写入（零静默回落）
+            using (JsonDocument nd = JsonDocument.Parse(session.BuildNoteJson()))
+            {
+                JsonElement tasks;
+                Assert.True(nd.RootElement.TryGetProperty("tasks", out tasks));
+                Assert.Equal(0, tasks.GetArrayLength());
+            }
         }
 
         /// <summary>
@@ -829,6 +857,50 @@ namespace CatHome4.Core.Tests
             using (JsonDocument d = JsonDocument.Parse(cards[1]))
             {
                 Assert.Contains("已中止", d.RootElement.GetProperty("result").GetString());
+            }
+        }
+        /// <summary>
+        /// A128 逐条回填——同批调度下先完成的工具即出终态卡，不等整批收口。
+        /// 声明序 [text-write(order 1), host-flows(order -1)] → 执行按 order 分桶：host-flows 批先、text-write 批后（OA 无消费者 → 停留）。
+        /// 旧实现（全批尽后段3 收口）在此刻只有先行卡；本实现 host-flows 终态卡已可观测。
+        /// </summary>
+        [Fact]
+        public void ToolCard_FilledOnSingleCompletion()
+        {
+            MockLlm llm = new MockLlm();
+            string tc = "[{\"id\":\"e1\",\"function\":{\"name\":\"text-write\",\"arguments\":\"{}\"}},{\"id\":\"e2\",\"function\":{\"name\":\"host-flows\",\"arguments\":\"{}\"}}]";
+            llm.ToolCallsQueue.Enqueue(tc);
+            MockHost host = new MockHost();
+            ToolSpec[] declared = new ToolSpec[]
+            {
+                        new ToolSpec("text-write", "写入文本", "{}"),
+                        new ToolSpec("host-flows", "Flow 清单", "{}")
+            };
+            CH4.ChatSession session = CreateSession(llm, declared);
+            session.AttachHost(host);
+            session.PostUserMessage("逐条回填验证");
+            // 泵到 host-flows 终态卡出现（此时后批 text-write 仍在进行中）
+            for (int i = 0; i < 200; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+                List<string> now;
+                if (host.ViewEvents.TryGetValue("toolcard", out now) && now.Count >= 3)
+                {
+                    break;
+                }
+            }
+            // 批未收口——后批 OA 工具仍在进行中
+            Assert.False(session.IsIdle);
+            List<string> cards = host.ViewEvents["toolcard"];
+            Assert.Equal(3, cards.Count);
+            // cards[0] = text-write 先行卡（无 result）；cards[2] = host-flows 终态卡（已完成）
+            using (JsonDocument d = JsonDocument.Parse(cards[2]))
+            {
+                JsonElement res;
+                Assert.True(d.RootElement.TryGetProperty("result", out res));
+                Assert.Equal("host-flows", d.RootElement.GetProperty("name").GetString());
+                Assert.Equal(2, d.RootElement.GetProperty("toolIndex").GetInt32());
             }
         }
         /// <summary>

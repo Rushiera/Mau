@@ -341,7 +341,17 @@ function saveCatCfg() {
     })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-            document.getElementById('catCfgMsg').textContent = d.ok ? '已保存——API 即时生效；人设/工具/前文 List 新会话生效' : '保存失败: ' + d.error;
+            if (d.ok) {
+                // A132 剔除出声——被剔池外工具名显式告知（不静默；明细同时进宿主日志）
+                var removed = d.removedToolNames;
+                if (removed && removed.length > 0) {
+                    document.getElementById('catCfgMsg').textContent = '已保存——⚠️ 已剔除池外工具名 ' + removed.length + ' 个：' + removed.join('、') + '（请重开配置确认名单）';
+                } else {
+                    document.getElementById('catCfgMsg').textContent = '已保存——API 即时生效；人设/工具/前文 List 新会话生效';
+                }
+            } else {
+                document.getElementById('catCfgMsg').textContent = '保存失败: ' + d.error;
+            }
         });
 }
 
@@ -514,7 +524,17 @@ function saveTpl() {
     })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-            document.getElementById('tplMsg').textContent = d.ok ? '已保存——新猫创建时继承；baseRole 新会话生效' : '保存失败: ' + d.error;
+            if (d.ok) {
+                // A132 剔除出声——被剔池外工具名显式告知（不静默；明细同时进宿主日志）
+                var removed = d.removedToolNames;
+                if (removed && removed.length > 0) {
+                    document.getElementById('tplMsg').textContent = '已保存——⚠️ 已剔除池外工具名 ' + removed.length + ' 个：' + removed.join('、') + '（请重开确认名单）';
+                } else {
+                    document.getElementById('tplMsg').textContent = '已保存——新猫创建时继承；baseRole 新会话生效';
+                }
+            } else {
+                document.getElementById('tplMsg').textContent = '保存失败: ' + d.error;
+            }
         });
 }
 

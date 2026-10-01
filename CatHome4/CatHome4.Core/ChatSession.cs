@@ -1808,11 +1808,7 @@ namespace CH4
             return list;
         }
 
-        /// <summary>
-        /// 工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即推"进行中"卡（无 result 字段 → 前端 ⏳ 处理中）；
-        /// 工具完成 / 中断时以同序号 replaceSeq 原位替换（PumpToolBatch 段3 / PushToolCardFinal）。
-        /// 声明面外工具不推卡（拦截是即时的——只在完成时出 ERR 卡）。
-        /// </summary>
+        /// <summary>工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即推“进行中”卡（无 result 字段 → 前端 ⏳ 处理中）；工具完成 / 中断时以同序号 replaceSeq 原位替换（A128 起完成由 FlushToolCard 逐条回填，中断由 PushToolCardFinal 补终态）。声明面外工具不推卡（拦截是即时的——只在完成时出 ERR 卡）。</summary>
         /// <param name="calls">工具调用条目（ParseToolCalls 产物）</param>
         /// <returns>tool_call_id → 先行卡视图序号（空=无推送通道 / 无可推工具）</returns>
         private Dictionary<string, long> PushToolCardPending(List<ToolCallInfo> calls)
@@ -1840,10 +1836,7 @@ namespace CH4
             return seqs;
         }
 
-        /// <summary>
-        /// 工具卡终态补推——中断收尾（中止 / 宿主重启）时先行卡补终态：已完成 → 完整卡；未完成 → 已中止卡。
-        /// 无先行卡（声明面拦截 / 已由段3 终结）不推——防重复卡。
-        /// </summary>
+        /// <summary>工具卡终态补推——中断收尾（中止 / 宿主重启）时先行卡补终态：已完成 → 完整卡；未完成 → 已中止卡。无先行卡（CardSeq &lt; 0）或已由 FlushToolCard（A128 逐条回填）终结不推——防重复卡。</summary>
         /// <param name="dog">工具单</param>
         /// <param name="index">并发序号（1-based）</param>
         /// <param name="total">并发总数</param>
@@ -1873,6 +1866,40 @@ namespace CH4
                 + ",\"order\":" + JsonUtil.Serialize(ToolOrderTable.OrderText(dog.Name)) + "}";
             _httpHost.PushView("toolcard", json, dog.CardSeq, 0);
             dog.CardSeq = -1;
+        }
+        /// <summary>工具卡终态哨兵——FlushToolCard 推过终态后置此值（区别于 -1 = 无先行卡、需新建推送）。</summary>
+        private const long ToolCardSeqDone = -2;
+        /// <summary>工具卡逐条回填（A128）——单工具完成即定稿结果并推送终态卡（有先行卡 → 原位替换；无先行卡如声明面拦截 → 新建），不再等整批收口。幂等：已推过终态（CardSeq = ToolCardSeqDone）不重推；结果定稿（超时 / 空结果兜底）在推送前完成。前文消息与持久视图块仍由段3 按声明序统一落位——实时面序（先行卡位）与持久块序不分叉。</summary>
+        /// <param name="dog">工具单</param>
+        private void FlushToolCard(ToolOrderDog dog)
+        {
+            if (dog.Result == null || dog.Result.Length == 0)
+            {
+                if (dog.IsTimedOut)
+                {
+                    LogStore.Add("CatHome4", 2, "工具 " + dog.Name + " 工单 #" + dog.OfficeId + " 超时（无人认领）——诚实 ERR", "TOOL");
+                    dog.Result = "ERR|OA_TIMEOUT|工单超时无人认领: " + dog.Name;
+                }
+                else
+                {
+                    dog.Result = "ERR|EMPTY_RESULT|工具执行无结果";
+                }
+            }
+            if (_httpHost == null || dog.CardSeq == ToolCardSeqDone)
+            {
+                return;
+            }
+            int index = _dogs.IndexOf(dog);
+            if (index < 0)
+            {
+                LogStore.Add("CatHome4", 2, "工具卡回填——工具单不在声明列（内部错误）: " + dog.Name, "TOOL");
+                return;
+            }
+            // A69 视图层报错中文注释——真实前文（dog.Result）保持原文
+            string viewResult = ErrorNote.Apply(dog.Result);
+            string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(viewResult) + ",\"toolIndex\":" + (index + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + ",\"order\":" + JsonUtil.Serialize(ToolOrderTable.OrderText(dog.Name)) + "}";
+            _httpHost.PushView("toolcard", toolJson, dog.CardSeq, 0);
+            dog.CardSeq = ToolCardSeqDone;
         }
 
         /// <summary>
@@ -2014,6 +2041,14 @@ namespace CH4
             // [P3] 分批——按 order 值升序分桶（同值一批 · 批内声明序）+ 启动首批
             // （A127：批间串行 / 批内并发；timeback start 已在 P1 前置，back 作为末批自然后置）
             BuildBatches();
+            // A128——已闭合单（声明面拦截 / start 前置 / 批内重复调用）即刻出终态卡，不随批次推进延后
+            for (int i = 0; i < _dogs.Count; i = i + 1)
+            {
+                if (_dogs[i].IsClosed)
+                {
+                    FlushToolCard(_dogs[i]);
+                }
+            }
             if (_batches.Count > 0)
             {
                 StartBatch(0);
@@ -2209,6 +2244,12 @@ namespace CH4
                     {
                         allDone = false;
                     }
+                    else if (!_hostDogs.Contains(batch[i]))
+                    {
+                        // A128 逐条回填——单工具完成（回执 / 超时 / 内置直执）即出终态卡（幂等）；
+                        // host-* 在 StartBatch 已置 IsClosed（认领态）而结果待段2b 直执——不在此推
+                        FlushToolCard(batch[i]);
+                    }
                 }
             }
             if (!allDone && _phaseFrames < ToolBatchWaitFrames)
@@ -2228,6 +2269,8 @@ namespace CH4
                     hr = "ERR|EMPTY_RESULT|工具执行无结果";
                 }
                 dog.Result = hr;
+                // A128 逐条回填——host-* 直执结果就位即出终态卡（不等段3 收口）
+                FlushToolCard(dog);
             }
             // [段2b-2] 批间推进——本批收口即启动下一批（A127：批间串行 / 批内并发；批间失败不阻断——
             // 失败由工具卡红标可见，不构成链断）。timeback back 作为 order 100 末批在此自然后置：
@@ -2247,23 +2290,10 @@ namespace CH4
                 }
                 if (dog.IsTimedOut)
                 {
-                    LogStore.Add("CatHome4", 2, "工具 " + dog.Name + " 工单 #" + dog.OfficeId + " 超时（无人认领）——诚实 ERR", "TOOL");
-                    dog.Result = "ERR|OA_TIMEOUT|工单超时无人认领: " + dog.Name;
                     dog.IsClosed = true;
                 }
-                if (dog.Result == null || dog.Result.Length == 0)
-                {
-                    dog.Result = "ERR|EMPTY_RESULT|工具执行无结果";
-                }
-                // B4 对话区：工具结果实时推送 SSE（tool 事件——先行"进行中"卡原位替换为完整卡；参数/结果视图截断同 history）
-                if (_httpHost != null)
-                {
-                    // A69 视图层报错中文注释——真实前文（dog.Result）保持原文
-                    string viewResult = ErrorNote.Apply(dog.Result);
-                    string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(viewResult) + ",\"toolIndex\":" + (i + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + ",\"order\":" + JsonUtil.Serialize(ToolOrderTable.OrderText(dog.Name)) + "}";
-                    _httpHost.PushView("toolcard", toolJson, dog.CardSeq, 0);
-                    dog.CardSeq = -1;
-                }
+                // A128——终态卡已随各工具完成即时回填（FlushToolCard 幂等，此处兜底：结果定稿 + 未推过的补齐）
+                FlushToolCard(dog);
                 AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
                 NoteTimebackEvent();
                 _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);

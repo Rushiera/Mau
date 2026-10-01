@@ -26,14 +26,14 @@ namespace CH4
             tools[0] = new
             {
                 name = "Note",
-                description = "轻量任务追踪器（内存存储，会话关闭即消失）。无参数=推进到下一条；action='set'+content='任务1\\n任务2'=写入新计划（已有未完成需force=true强制覆盖）。返回当前第X/Y条 已完成Z 待完成W 任务目标：... 最后一条时追加提示（已是最后一条需求，完成后可结束本轮）。全部完成后自动清空。剩余1条时引擎不自动拉起。",
+                description = "轻量任务追踪器（内存存储，会话关闭即消失）。无参数=推进到下一条；action='set'+content=[\"任务1\",\"任务2\"]=写入新计划（已有未完成需force=true强制覆盖）。返回当前第X/Y条 已完成Z 待完成W 任务目标：... 最后一条时追加提示（已是最后一条需求，完成后可结束本轮）。全部完成后自动清空。剩余1条时引擎不自动拉起。",
                 parameters = new
                 {
                     type = "object",
                     properties = new Dictionary<string, object>
                             {
                                 { "action", new { type = "string", description = "set=写入新计划，不传=推进" } },
-                                { "content", new { type = "string", description = "action=set时必填，\\n分割" } },
+                                { "content", new { type = "array", items = new { type = "string" }, description = "action=set时必填——任务条目数组（每元素一条）" } },
                                 { "force", new { type = "boolean", description = "覆盖已有未完成计划时传true" } }
                             },
                     required = new string[0]

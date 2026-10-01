@@ -871,6 +871,15 @@ test('批4——powershell 结构化头 + 正文：exit 徽标与 stdout / stder
   expect(card.querySelector('.seg-out .tr').textContent).toBe('第一行输出\n第二行输出');
 });
 
+test('A129——Note.content 原生数组：输入意图行显示条数 · 字符数', () => {
+  const card = renderTool({
+    name: 'Note',
+    arguments: JSON.stringify({ action: 'set', content: ['任务A', '任务B', '任务C'] }),
+    result: '{"ok":true,"tool":"Note","state":"progress","index":1,"total":3,"done":0,"remain":3,"last":false}\n[Note] 第1/3条  已完成0  待完成3\n任务目标：任务A'
+  }, 200);
+  expect(card.querySelector('.seg-in .seg-line').textContent).toBe('写入计划 · 3 条 · 9 字符');
+});
+
 test('批4——内置件结构化头：Note / time / random / host-flows / pack / host-reload', () => {
   const c1 = renderTool({
     name: 'Note',

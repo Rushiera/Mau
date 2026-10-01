@@ -49,10 +49,7 @@ namespace CH4
         /// </summary>
         public long TimeoutFrames;
 
-        /// <summary>
-        /// 工具卡视图序号——LLM 输出工具时先行推送的"进行中"卡（完成/中断时以该序号 replaceSeq 原位替换；
-        /// -1=无先行卡——声明面拦截 / 无推送通道 / 已终结）
-        /// </summary>
+        /// <summary>工具卡视图序号——LLM 输出工具时先行推送的“进行中”卡序号（完成 / 中断时以该序号 replaceSeq 原位替换）。取值：正值 = 先行卡序号；-1 = 无先行卡（推送即新建）；-2 = 已推过终态（ChatSession.ToolCardSeqDone 哨兵，不重推）。</summary>
         public long CardSeq;
 
         /// <summary>
