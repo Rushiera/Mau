@@ -140,3 +140,25 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 .btn-mini.tight { padding: 2px 8px; }
 .input-mini { background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 3px 6px; font-family: inherit; font-size: var(--ch-fs-tag); }
 .input-mini.text { color: var(--ch-fg-strong); }
+
+/* ── 配置区大项（收起 / 展开——头部恒显一行：标题 + 说明；正文随 collapsed 隐藏）── */
+.cfg-sec { margin-bottom: 12px; }
+.cfg-sec-head { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; padding: 6px 8px; background: var(--ch-bg-elevated); border: 1px solid var(--ch-line); border-radius: 4px; }
+.cfg-sec-head:hover { background: var(--ch-bg-hover); }
+.cfg-sec > .cfg-sec-head + * { margin-top: 6px; }
+.cfg-sec-mark { color: var(--ch-fg-weak); font-size: var(--ch-fs-tag); }
+.cfg-sec-title { color: var(--ch-title); font-size: var(--ch-fs-strong); white-space: nowrap; }
+.cfg-sec-title-ok { color: var(--ch-ok); }
+.cfg-sec-title-err { color: var(--ch-err); }
+.cfg-sec-desc { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ch-fg-weak); font-size: var(--ch-fs-tag); }
+/* 🔴 !important——正文行带 inline display（display:flex / block），普通规则被内联压过 → 收起态压不住 */
+.cfg-sec.collapsed > *:not(.cfg-sec-head) { display: none !important; }
+.cfg-hint { color: var(--ch-fg-weak); font-size: var(--ch-fs-tag); margin-bottom: 6px; }
+
+/* ── 新猫默认模板（两列网格：左列「默认人设」+「默认加载包和前文」，右列「默认工具」双宽跨两行；保存横条在外）── */
+.tpl-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 10px; margin-top: 8px; align-items: start; }
+.tpl-cols > .cfg-sec { margin-bottom: 0; }
+.tpl-cols > [data-cfg="tpl-persona"] { grid-column: 1; grid-row: 1; }
+.tpl-cols > [data-cfg="tpl-packs"] { grid-column: 1; grid-row: 2; }
+.tpl-cols > [data-cfg="tpl-tools"] { grid-column: 2; grid-row: 1 / span 2; }
+.tpl-savebar { display: flex; gap: 6px; align-items: center; margin-top: 10px; border-top: 1px solid var(--ch-line); padding-top: 8px; }

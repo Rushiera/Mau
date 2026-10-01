@@ -627,3 +627,50 @@ if (openDataBtn) {
     });
 }
 loadConfig();
+// [段13] 配置区大项收起 / 展开——头部点击切换（收起态只留「标题 + 说明」一行）
+// 展开态记录：localStorage 键 cfg-sec:<data-cfg>（'1' 收起 / '0' 展开）——有记录按记录落态，无记录用页面默认态（首两项展开 / 后四项收起）
+var CFG_SEC_STORE = 'cfg-sec:';
+var cfgSectionList = document.querySelectorAll('#tab-config .cfg-sec');
+for (var cfgIdx = 0; cfgIdx < cfgSectionList.length; cfgIdx++) {
+    wireCfgSection(cfgSectionList[cfgIdx]);
+}
+function wireCfgSection(sec) {
+    var head = sec.querySelector('.cfg-sec-head');
+    if (!head) { return; }
+    var mark = head.querySelector('.cfg-sec-mark');
+    var key = sec.getAttribute('data-cfg') || '';
+    var saved = cfgSecLoad(key);
+    if (saved !== null) { cfgSecSet(sec, mark, saved); }
+    head.addEventListener('click', function () {
+        var collapsed = sec.classList.toggle('collapsed');
+        if (mark) { mark.textContent = collapsed ? '▸' : '▾'; }
+        cfgSecSave(key, collapsed);
+    });
+}
+// 记录读取——三态：true 收起 / false 展开 / null 无记录（含存储不可用——回落页面默认态）
+function cfgSecLoad(key) {
+    if (key.length === 0) { return null; }
+    try {
+        var v = localStorage.getItem(CFG_SEC_STORE + key);
+        if (v === '1') { return true; }
+        if (v === '0') { return false; }
+    } catch (e) {
+        console.warn('[UI] 配置区展开态读取失败——回落页面默认态: ' + e);
+    }
+    return null;
+}
+// 记录写入——失败可见（console 具名），不中断交互
+function cfgSecSave(key, collapsed) {
+    if (key.length === 0) { return; }
+    try {
+        localStorage.setItem(CFG_SEC_STORE + key, collapsed ? '1' : '0');
+    } catch (e) {
+        console.warn('[UI] 配置区展开态记录失败: ' + e);
+    }
+}
+// 落态——类与箭头一并同步（记录回放与点击共用同一出口）
+function cfgSecSet(sec, mark, collapsed) {
+    if (collapsed) { sec.classList.add('collapsed'); }
+    else { sec.classList.remove('collapsed'); }
+    if (mark) { mark.textContent = collapsed ? '▸' : '▾'; }
+}

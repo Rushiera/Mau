@@ -428,6 +428,7 @@ function isValidInjectPath(p) {
     return m !== null && m[2].length > 0;
 }
 
+// 新猫默认模板——默认前文 List（条目行内编辑：未改动 / 清空 = 不改动，改完由「保存模板」落盘）
 function renderTplInject() {
     var box = document.getElementById('tplInject');
     box.textContent = '';
@@ -435,16 +436,28 @@ function renderTplInject() {
         (function (idx) {
             var row = document.createElement('div');
             row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:3px';
-            row.draggable = true;
-            row.title = '拖动调整顺序（保存后生效）';
+            row.title = '拖动 ≡ 调整顺序（保存后生效）';
             var handle = document.createElement('span');
             handle.textContent = '≡';
             handle.style.cssText = 'color:var(--ch-fg-weak);font-size:var(--ch-fs-tag);cursor:move';
+            // 拖拽柄独占 draggable——行级 draggable 会吃掉输入框内的拖选
+            handle.draggable = true;
             row.appendChild(handle);
-            var txt = document.createElement('span');
-            txt.textContent = tplInjectList[idx];
-            txt.style.cssText = 'flex:1;color:var(--ch-ok-weak);font-size:var(--ch-fs-tag);word-break:break-all';
-            row.appendChild(txt);
+            var inp = document.createElement('input');
+            inp.className = 'input-mini';
+            inp.style.cssText = 'flex:1;min-width:0;color:var(--ch-ok-weak)';
+            inp.value = tplInjectList[idx];
+            inp.placeholder = '完整路径（如 ccbp:L1/Tree.md）';
+            wireInlineEdit(inp, tplInjectList[idx], function (v) {
+                if (!isValidInjectPath(v)) {
+                    document.getElementById('tplMsg').textContent = '路径拒绝——只接受完整路径（绝对路径或 id: 命名空间）: ' + v;
+                    inp.value = tplInjectList[idx];
+                    return;
+                }
+                tplInjectList[idx] = v;
+                renderTplInject();
+            });
+            row.appendChild(inp);
             var rm = document.createElement('button');
             rm.textContent = '移除';
             rm.className = 'btn-mini tight danger';
@@ -486,14 +499,19 @@ function loadTpl() {
         });
 }
 
-function saveTpl() {
-    var payload = {
+// 模板表单取值——保存与套用共用同一出口（单点真相源）
+function tplFormValues() {
+    return {
         baseRole: document.getElementById('tplBaseRole').value,
         defaultPersona: document.getElementById('tplPersona').value,
         defaultToolNames: collectChecked('tplTools').join(','),
-        defaultInjectList: tplInjectList,
+        defaultInjectList: tplInjectList.slice(),
         defaultPacks: collectTplPacks()
     };
+}
+
+function saveTpl() {
+    var payload = tplFormValues();
     fetch('/api/v1/cat-default', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -502,8 +520,188 @@ function saveTpl() {
         .then(function (r) { return r.json(); })
         .then(function (d) {
             document.getElementById('tplMsg').textContent = d.ok ? '已保存——新猫创建时继承；baseRole 新会话生效' : '保存失败: ' + d.error;
-        });
+            if (d.ok) { openTplApply(); }   // 顺带询问：是否把模板参数套用到已有猫
+        })
+        .catch(function (e) { document.getElementById('tplMsg').textContent = '请求失败: ' + e; });
 }
+
+// ── 模板套用面——保存后询问是否更新已有猫配置（与模板一致者自动勾选，其余自行勾选） ──
+var tplApplyCats = [];   // [{id, name, cfg}]——比对与套用共用同一次读取
+
+// 逗号清单归一——去空白 + 排序（工具名顺序无语义）
+function splitCsvNames(s) {
+    var out = [];
+    var parts = String(s || '').split(',');
+    for (var i = 0; i < parts.length; i++) {
+        var v = parts[i].trim();
+        if (v.length > 0) { out.push(v); }
+    }
+    out.sort();
+    return out;
+}
+
+// 集合比对（入参须已排序）
+function sameSet(a, b) {
+    if (a.length !== b.length) { return false; }
+    for (var i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) { return false; }
+    }
+    return true;
+}
+
+// 序列比对（前文 List 注入顺序有语义）
+function sameSeq(a, b) {
+    if (a.length !== b.length) { return false; }
+    for (var i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) { return false; }
+    }
+    return true;
+}
+
+// 猫配置 vs 当前模板表单——四项全同才算「一模一样」（baseRole 非猫级字段，不参与）
+function isCatMatchingTpl(cfg) {
+    var tpl = tplFormValues();
+    if ((cfg.persona || '') !== tpl.defaultPersona) { return false; }
+    if (!sameSet(splitCsvNames(cfg.toolNames), splitCsvNames(tpl.defaultToolNames))) { return false; }
+    if (!sameSet((cfg.packs || []).slice().sort(), tpl.defaultPacks.slice().sort())) { return false; }
+    if (!sameSeq(cfg.injectList || [], tpl.defaultInjectList)) { return false; }
+    return true;
+}
+
+function openTplApply() {
+    document.getElementById('tplApplyList').textContent = '读取猫列表…';
+    document.getElementById('tplApplyMsg').textContent = '';
+    document.getElementById('tplApplyModal').style.display = 'flex';
+    fetch('/api/v1/cats')
+        .then(function (r) { return r.json(); })
+        .then(function (d) { return loadTplApplyCats(d.cats || []); })
+        .then(function () { renderTplApplyList(); })
+        .catch(function (e) { document.getElementById('tplApplyList').textContent = '读取失败: ' + e; });
+}
+
+// 逐猫读配置（串行）——比对要现况；套用要保留字段（qqbotEnable / enabledRoots / qqbotId）
+function loadTplApplyCats(cats) {
+    tplApplyCats = [];
+    var idx = 0;
+    function next() {
+        if (idx >= cats.length) { return Promise.resolve(); }
+        var c = cats[idx];
+        idx = idx + 1;
+        return fetch('/api/v1/cat-config?cat=' + encodeURIComponent(c.id))
+            .then(function (r) { return r.json(); })
+            .then(function (cfg) {
+                tplApplyCats.push({ id: c.id, name: c.name, cfg: (cfg && cfg.ok) ? cfg : null });
+                return next();
+            })
+            .catch(function () {
+                tplApplyCats.push({ id: c.id, name: c.name, cfg: null });
+                return next();
+            });
+    }
+    return next();
+}
+
+function renderTplApplyList() {
+    var box = document.getElementById('tplApplyList');
+    box.textContent = '';
+    if (tplApplyCats.length === 0) {
+        box.textContent = '暂无猫';
+        return;
+    }
+    for (var i = 0; i < tplApplyCats.length; i++) {
+        var item = tplApplyCats[i];
+        var matched = item.cfg !== null && isCatMatchingTpl(item.cfg);
+        var row = document.createElement('label');
+        row.style.cssText = 'display:flex;gap:6px;align-items:center;font-size:var(--ch-fs-tag);padding:3px 0;cursor:pointer';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'tpl-apply-cb';
+        cb.setAttribute('data-cat', item.id);
+        cb.checked = matched;
+        // 配置读不到 → 无法安全套用（缺字段会丢 qqbotEnable / enabledRoots）——禁用勾选
+        cb.disabled = item.cfg === null;
+        row.appendChild(cb);
+        var txt = document.createElement('span');
+        txt.textContent = item.name + '（' + item.id + '）'
+            + (item.cfg === null ? ' · 配置读取失败（不可套用）' : (matched ? ' · 与模板一致' : ''));
+        txt.style.color = item.cfg === null ? 'var(--ch-err)' : (matched ? 'var(--ch-ok-weak)' : 'var(--ch-fg-muted)');
+        row.appendChild(txt);
+        box.appendChild(row);
+    }
+}
+
+function closeTplApply() {
+    document.getElementById('tplApplyModal').style.display = 'none';
+}
+
+// 一键套用——逐猫串行：模板四字段覆盖 + 该猫 API/QQBot/白名单原样带回
+// （后端 cat-config 对 apiConfigId/qqbotId 是「缺省=保留」，但 qqbotEnable/enabledRoots 缺省会被清空——必须显式带上）
+function applyTplToCats() {
+    var boxes = document.querySelectorAll('#tplApplyList input.tpl-apply-cb');
+    var targets = [];
+    for (var i = 0; i < boxes.length; i++) {
+        if (boxes[i].checked && !boxes[i].disabled) { targets.push(boxes[i].getAttribute('data-cat')); }
+    }
+    var msg = document.getElementById('tplApplyMsg');
+    if (targets.length === 0) {
+        msg.textContent = '未勾选任何猫';
+        return;
+    }
+    var tpl = tplFormValues();
+    var idx = 0;
+    var okCount = 0;
+    var fail = [];
+    function findItem(id) {
+        for (var k = 0; k < tplApplyCats.length; k++) {
+            if (tplApplyCats[k].id === id) { return tplApplyCats[k]; }
+        }
+        return null;
+    }
+    function next() {
+        if (idx >= targets.length) {
+            msg.textContent = '套用完成——成功 ' + okCount + ' 只' + (fail.length > 0 ? '；失败: ' + fail.join('、') : '');
+            return;
+        }
+        var id = targets[idx];
+        idx = idx + 1;
+        var item = findItem(id);
+        if (item === null || item.cfg === null) {
+            fail.push(id);
+            return next();
+        }
+        var payload = {
+            cat: id,
+            persona: tpl.defaultPersona,
+            toolNames: tpl.defaultToolNames,
+            packs: tpl.defaultPacks,
+            injectList: tpl.defaultInjectList,
+            qqbotEnable: !!item.cfg.qqbotEnable,
+            enabledRoots: item.cfg.enabledRoots || []
+        };
+        if (item.cfg.qqbotId) { payload.qqbotId = item.cfg.qqbotId; }
+        msg.textContent = '套用中… ' + idx + '/' + targets.length;
+        fetch('/api/v1/cat-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.ok) { okCount = okCount + 1; }
+                else { fail.push(id + '(' + d.error + ')'); }
+                return next();
+            })
+            .catch(function () {
+                fail.push(id);
+                return next();
+            });
+    }
+    next();
+}
+
+document.getElementById('tplApplyGo').onclick = applyTplToCats;
+document.getElementById('tplApplyCancel').onclick = closeTplApply;
+document.getElementById('tplApplyClose').onclick = closeTplApply;
 
 document.getElementById('tplRefresh').onclick = loadTpl;
 document.getElementById('tplSave').onclick = saveTpl;

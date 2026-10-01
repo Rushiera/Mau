@@ -17,6 +17,8 @@ export function installDom(html, url) {
   globalThis.Node = dom.window.Node;
   globalThis.Event = dom.window.Event;
   globalThis.HTMLElement = dom.window.HTMLElement;
+  // localStorage——jsdom 按 url 提供真实实现（不装配则裸标识符 ReferenceError；消费面 = app.js 段13 展开态记录）
+  globalThis.localStorage = dom.window.localStorage;
   return dom;
 }
 

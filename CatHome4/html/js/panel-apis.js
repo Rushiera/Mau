@@ -1,11 +1,10 @@
 // CH4 外观层——panel-apis.js：LLM API 池 + QQ Bot 池管理（config 页签）——panel.js 拆分（2026-09-08 体量治理）
-// 依赖：app.js + panel.js 先加载（全局状态已就位）；本文件只承载 API/QQBot 两池的列表/新建/编辑/删除
-// 段14（M3b LLM API 池）+ 段14b（R2.3 QQ Bot 池）原样迁出，逻辑零改动
+// 依赖：app.js + panel.js 先加载（全局状态已就位）；本文件承载 API/QQBot 两池的列表（行内编辑）+ 新建 + 删除
+// 2026-10-01 行内编辑轮：行内「编辑」按钮撤除——可编辑列直接在格内改（配置 ID 只读）；未改动 / 清空 = 不改动（不发请求）
 
-// [段14] M3b LLM API 池管理（config 页签——列表/新建/编辑/删除；key 掩码）
+// [段14] M3b LLM API 池管理（config 页签——行内编辑 + 新建 + 删除；key 掩码）
 var apisTableBody = document.querySelector('#apisTable tbody');
 var apisMsgEl = document.getElementById('apisMsg');
-var editingApiId = '';
 
 function loadApis() {
     fetch('/api/v1/llm-apis')
@@ -22,33 +21,73 @@ function renderApis(items) {
     }
 }
 
+// 行内文本输入框——撑满单元格（列宽由 thead 控制）
+function cellInput(value, placeholder) {
+    var inp = document.createElement('input');
+    inp.className = 'input-mini';
+    inp.style.width = '100%';
+    inp.value = value;
+    inp.placeholder = placeholder;
+    return inp;
+}
+
 function renderApiRow(api) {
     var tr = document.createElement('tr');
+    // 原值对照面——未改动 / 清空判据；inputs 供整行提交取值
+    var cells = {
+        displayName: api.displayName || '',
+        apiType: api.apiType || '',
+        endpoint: api.endpoint || '',
+        defaultModel: api.defaultModel || '',
+        apiKey: api.apiKey || ''
+    };
+    var inputs = {};
+
     var tdName = document.createElement('td');
-    tdName.textContent = api.displayName || '';
     tdName.style.color = 'var(--ch-identity)';
-    if (api.isDefault) { tdName.textContent = '★ ' + tdName.textContent; }
+    if (api.isDefault) {
+        var star = document.createElement('span');
+        star.textContent = '★ ';
+        tdName.appendChild(star);
+    }
+    inputs.displayName = cellInput(cells.displayName, '名称');
+    tdName.appendChild(inputs.displayName);
     tr.appendChild(tdName);
+
     var tdId = document.createElement('td');
     tdId.textContent = api.apiConfigId || '';
     tdId.style.color = 'var(--ch-fg-weak)';
     tdId.style.fontSize = '10px';
     tdId.style.wordBreak = 'break-all';
     tr.appendChild(tdId);
+
     var tdType = document.createElement('td');
-    tdType.textContent = api.apiType || '';
+    inputs.apiType = cellInput(cells.apiType, '类型（deepseek）');
+    tdType.appendChild(inputs.apiType);
     tr.appendChild(tdType);
+
     var tdEndpoint = document.createElement('td');
-    tdEndpoint.textContent = api.endpoint || '';
-    tdEndpoint.style.wordBreak = 'break-all';
+    inputs.endpoint = cellInput(cells.endpoint, '端点 URL');
+    tdEndpoint.appendChild(inputs.endpoint);
     tr.appendChild(tdEndpoint);
+
     var tdModel = document.createElement('td');
-    tdModel.textContent = api.defaultModel || '';
+    inputs.defaultModel = cellInput(cells.defaultModel, '模型');
+    tdModel.appendChild(inputs.defaultModel);
     tr.appendChild(tdModel);
+
     var tdKey = document.createElement('td');
-    tdKey.textContent = api.hasKey ? api.apiKey : '（未配置）';
-    tdKey.style.color = api.hasKey ? 'var(--ch-ok-weak)' : 'var(--ch-fg-weak)';
+    inputs.apiKey = cellInput(cells.apiKey, api.hasKey ? '留空=不改' : '（未配置）');
+    tdKey.appendChild(inputs.apiKey);
     tr.appendChild(tdKey);
+
+    // 行内编辑接线——未改动 / 清空都不提交（清空回落原值）
+    wireInlineEdit(inputs.displayName, cells.displayName, function () { submitApiEdit(api, cells, inputs, '名称'); });
+    wireInlineEdit(inputs.apiType, cells.apiType, function () { submitApiEdit(api, cells, inputs, '类型'); });
+    wireInlineEdit(inputs.endpoint, cells.endpoint, function () { submitApiEdit(api, cells, inputs, '端点'); });
+    wireInlineEdit(inputs.defaultModel, cells.defaultModel, function () { submitApiEdit(api, cells, inputs, '模型'); });
+    wireInlineEdit(inputs.apiKey, cells.apiKey, function () { submitApiEdit(api, cells, inputs, 'Key'); });
+
     var tdOp = document.createElement('td');
     tdOp.style.whiteSpace = 'nowrap';
     if (!api.isDefault) {
@@ -58,11 +97,6 @@ function renderApiRow(api) {
         defBtn.onclick = function () { setDefaultApi(api); };
         tdOp.appendChild(defBtn);
     }
-    var editBtn = document.createElement('button');
-    editBtn.textContent = '编辑';
-    editBtn.className = 'btn-mini';
-    editBtn.onclick = function () { startApiEdit(api); };
-    tdOp.appendChild(editBtn);
     var delBtn = document.createElement('button');
     delBtn.textContent = '删除';
     delBtn.className = 'btn-mini danger';
@@ -87,30 +121,34 @@ function renderApiRow(api) {
     apisTableBody.appendChild(tr);
 }
 
-function startApiEdit(api) {
-    editingApiId = api.apiConfigId;
-    document.getElementById('apiNewName').value = api.displayName || '';
-    document.getElementById('apiNewType').value = api.apiType || '';
-    document.getElementById('apiNewEndpoint').value = api.endpoint || '';
-    document.getElementById('apiNewModel').value = api.defaultModel || '';
-    document.getElementById('apiNewKey').value = '';
-    document.getElementById('apiAddBtn').textContent = '保存';
-    document.getElementById('apiCancelEdit').style.display = '';
-    apisMsgEl.textContent = '编辑中: ' + api.displayName + '（Key 留空=保留原 Key）';
+// 行内提交——整行字段一起送（后端按字段整体写入）；apiKey 未改动送空串（空=保留原 key）
+function submitApiEdit(api, cells, inputs, label) {
+    var keyVal = inputs.apiKey.value.trim();
+    var payload = {
+        apiConfigId: api.apiConfigId,
+        displayName: inputs.displayName.value.trim(),
+        apiType: inputs.apiType.value.trim(),
+        endpoint: inputs.endpoint.value.trim(),
+        defaultModel: inputs.defaultModel.value.trim(),
+        apiKey: keyVal === cells.apiKey ? '' : keyVal
+    };
+    apisMsgEl.textContent = '保存中…（' + label + '）';
+    fetch('/api/v1/llm-apis/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            apisMsgEl.textContent = d.ok ? ('已保存（' + label + '）') : '保存失败: ' + d.error;
+            loadApis();
+        })
+        .catch(function (e) {
+            apisMsgEl.textContent = '请求失败: ' + e.message + '（宿主未运行或端点不存在？）';
+        });
 }
 
-function cancelApiEdit() {
-    editingApiId = '';
-    document.getElementById('apiNewName').value = '';
-    document.getElementById('apiNewType').value = '';
-    document.getElementById('apiNewEndpoint').value = '';
-    document.getElementById('apiNewModel').value = '';
-    document.getElementById('apiNewKey').value = '';
-    document.getElementById('apiAddBtn').textContent = '新建';
-    document.getElementById('apiCancelEdit').style.display = 'none';
-    apisMsgEl.textContent = '';
-}
-
+// 新建——底部表单（行内编辑后表单只承担新建；Key 可留空）
 function apiSubmit() {
     var payload = {
         displayName: document.getElementById('apiNewName').value.trim(),
@@ -119,21 +157,22 @@ function apiSubmit() {
         defaultModel: document.getElementById('apiNewModel').value.trim(),
         apiKey: document.getElementById('apiNewKey').value.trim()
     };
-    var url = '/api/v1/llm-apis';
-    if (editingApiId.length > 0) {
-        url = '/api/v1/llm-apis/edit';
-        payload.apiConfigId = editingApiId;
-    }
-    fetch(url, {
+    fetch('/api/v1/llm-apis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-            apisMsgEl.textContent = d.ok ? (editingApiId.length > 0 ? '已保存' : '已新建') : '失败: ' + d.error;
-            cancelApiEdit();
-            loadApis();
+            apisMsgEl.textContent = d.ok ? '已新建' : '失败: ' + d.error;
+            if (d.ok) {
+                document.getElementById('apiNewName').value = '';
+                document.getElementById('apiNewType').value = '';
+                document.getElementById('apiNewEndpoint').value = '';
+                document.getElementById('apiNewModel').value = '';
+                document.getElementById('apiNewKey').value = '';
+                loadApis();
+            }
         })
         .catch(function (e) {
             apisMsgEl.textContent = '请求失败: ' + e.message + '（宿主未运行或端点不存在？）';
@@ -159,13 +198,11 @@ function setDefaultApi(api) {
 
 document.getElementById('apiAddBtn').onclick = apiSubmit;
 document.getElementById('apisRefresh').onclick = loadApis;
-document.getElementById('apiCancelEdit').onclick = cancelApiEdit;
 loadApis();
 
-// [段14b] R2.3 QQ Bot 池管理（config 页签——列表/新建/编辑/删除；secret 掩码；注册即建 WS 连接）
+// [段14b] R2.3 QQ Bot 池管理（config 页签——行内编辑 + 新建 + 删除；secret 掩码；注册即建 WS 连接）
 var qqbotsTableBody = document.querySelector('#qqbotsTable tbody');
 var qqbotsMsgEl = document.getElementById('qqbotsMsg');
-var editingQqBotId = '';
 
 function loadQqBots() {
     fetch('/api/v1/qqbot-apis')
@@ -184,34 +221,66 @@ function renderQqBots(items) {
 
 function renderQqBotRow(bot) {
     var tr = document.createElement('tr');
+    var cells = {
+        displayName: bot.displayName || '',
+        appId: bot.appId || '',
+        sandbox: bot.sandbox ? true : false,
+        secret: bot.secret || ''
+    };
+    var inputs = {};
+
     var tdName = document.createElement('td');
-    tdName.textContent = bot.displayName || '';
     tdName.style.color = 'var(--ch-identity)';
+    inputs.displayName = cellInput(cells.displayName, '名称');
+    tdName.appendChild(inputs.displayName);
     tr.appendChild(tdName);
+
     var tdId = document.createElement('td');
     tdId.textContent = bot.qqBotId || '';
     tdId.style.color = 'var(--ch-fg-weak)';
     tdId.style.fontSize = '10px';
     tdId.style.wordBreak = 'break-all';
     tr.appendChild(tdId);
+
     var tdAppId = document.createElement('td');
-    tdAppId.textContent = bot.appId || '';
+    inputs.appId = cellInput(cells.appId, 'AppId');
+    tdAppId.appendChild(inputs.appId);
     tr.appendChild(tdAppId);
+
+    // 环境列——下拉直改（沙箱 / 正式）
     var tdSandbox = document.createElement('td');
-    tdSandbox.textContent = bot.sandbox ? '沙箱' : '正式';
-    tdSandbox.style.color = bot.sandbox ? 'var(--ch-warn)' : 'var(--ch-ok-weak)';
+    inputs.sandbox = document.createElement('select');
+    inputs.sandbox.className = 'input-mini';
+    inputs.sandbox.style.width = '100%';
+    var optSandbox = document.createElement('option');
+    optSandbox.value = 'true';
+    optSandbox.textContent = '沙箱';
+    var optProd = document.createElement('option');
+    optProd.value = 'false';
+    optProd.textContent = '正式';
+    inputs.sandbox.appendChild(optSandbox);
+    inputs.sandbox.appendChild(optProd);
+    inputs.sandbox.value = cells.sandbox ? 'true' : 'false';
+    inputs.sandbox.style.color = cells.sandbox ? 'var(--ch-warn)' : 'var(--ch-ok-weak)';
+    tdSandbox.appendChild(inputs.sandbox);
     tr.appendChild(tdSandbox);
+
     var tdSecret = document.createElement('td');
-    tdSecret.textContent = bot.hasSecret ? bot.secret : '（未配置）';
-    tdSecret.style.color = bot.hasSecret ? 'var(--ch-ok-weak)' : 'var(--ch-fg-weak)';
+    inputs.secret = cellInput(cells.secret, bot.hasSecret ? '留空=不改' : '（未配置）');
+    tdSecret.appendChild(inputs.secret);
     tr.appendChild(tdSecret);
+
+    wireInlineEdit(inputs.displayName, cells.displayName, function () { submitQqBotEdit(bot, cells, inputs, '名称'); });
+    wireInlineEdit(inputs.appId, cells.appId, function () { submitQqBotEdit(bot, cells, inputs, 'AppId'); });
+    wireInlineEdit(inputs.secret, cells.secret, function () { submitQqBotEdit(bot, cells, inputs, 'Secret'); });
+    inputs.sandbox.addEventListener('change', function () {
+        var sandbox = inputs.sandbox.value === 'true';
+        if (sandbox === cells.sandbox) { return; }   // 未改动
+        submitQqBotEdit(bot, cells, inputs, '环境');
+    });
+
     var tdOp = document.createElement('td');
     tdOp.style.whiteSpace = 'nowrap';
-    var editBtn = document.createElement('button');
-    editBtn.textContent = '编辑';
-    editBtn.className = 'btn-mini';
-    editBtn.onclick = function () { startQqBotEdit(bot); };
-    tdOp.appendChild(editBtn);
     var delBtn = document.createElement('button');
     delBtn.textContent = '删除';
     delBtn.className = 'btn-mini danger';
@@ -236,28 +305,33 @@ function renderQqBotRow(bot) {
     qqbotsTableBody.appendChild(tr);
 }
 
-function startQqBotEdit(bot) {
-    editingQqBotId = bot.qqBotId;
-    document.getElementById('qqNewName').value = bot.displayName || '';
-    document.getElementById('qqNewAppId').value = bot.appId || '';
-    document.getElementById('qqNewSandbox').value = bot.sandbox ? 'true' : 'false';
-    document.getElementById('qqNewSecret').value = '';
-    document.getElementById('qqAddBtn').textContent = '保存';
-    document.getElementById('qqCancelEdit').style.display = '';
-    qqbotsMsgEl.textContent = '编辑中: ' + bot.displayName + '（Secret 留空=保留原 Secret）';
+// 行内提交——整行字段一起送；secret 未改动送空串（空=保留原 secret）；改完宿主即刷新 WS 连接
+function submitQqBotEdit(bot, cells, inputs, label) {
+    var secretVal = inputs.secret.value.trim();
+    var payload = {
+        qqBotId: bot.qqBotId,
+        displayName: inputs.displayName.value.trim(),
+        appId: inputs.appId.value.trim(),
+        sandbox: inputs.sandbox.value === 'true',
+        secret: secretVal === cells.secret ? '' : secretVal
+    };
+    qqbotsMsgEl.textContent = '保存中…（' + label + '）';
+    fetch('/api/v1/qqbot-apis/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            qqbotsMsgEl.textContent = d.ok ? ('已保存（' + label + '）') : '保存失败: ' + d.error;
+            loadQqBots();
+        })
+        .catch(function (e) {
+            qqbotsMsgEl.textContent = '请求失败: ' + e.message + '（宿主未运行或端点不存在？）';
+        });
 }
 
-function cancelQqBotEdit() {
-    editingQqBotId = '';
-    document.getElementById('qqNewName').value = '';
-    document.getElementById('qqNewAppId').value = '';
-    document.getElementById('qqNewSandbox').value = 'true';
-    document.getElementById('qqNewSecret').value = '';
-    document.getElementById('qqAddBtn').textContent = '新建';
-    document.getElementById('qqCancelEdit').style.display = 'none';
-    qqbotsMsgEl.textContent = '';
-}
-
+// 新建——底部表单（行内编辑后表单只承担新建；Secret 可留空）
 function qqBotSubmit() {
     var payload = {
         displayName: document.getElementById('qqNewName').value.trim(),
@@ -265,21 +339,21 @@ function qqBotSubmit() {
         sandbox: document.getElementById('qqNewSandbox').value === 'true',
         secret: document.getElementById('qqNewSecret').value.trim()
     };
-    var url = '/api/v1/qqbot-apis';
-    if (editingQqBotId.length > 0) {
-        url = '/api/v1/qqbot-apis/edit';
-        payload.qqBotId = editingQqBotId;
-    }
-    fetch(url, {
+    fetch('/api/v1/qqbot-apis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-            qqbotsMsgEl.textContent = d.ok ? (editingQqBotId.length > 0 ? '已保存' : '已新建') : '失败: ' + d.error;
-            cancelQqBotEdit();
-            loadQqBots();
+            qqbotsMsgEl.textContent = d.ok ? '已新建' : '失败: ' + d.error;
+            if (d.ok) {
+                document.getElementById('qqNewName').value = '';
+                document.getElementById('qqNewAppId').value = '';
+                document.getElementById('qqNewSandbox').value = 'true';
+                document.getElementById('qqNewSecret').value = '';
+                loadQqBots();
+            }
         })
         .catch(function (e) {
             qqbotsMsgEl.textContent = '请求失败: ' + e.message + '（宿主未运行或端点不存在？）';
@@ -288,5 +362,4 @@ function qqBotSubmit() {
 
 document.getElementById('qqAddBtn').onclick = qqBotSubmit;
 document.getElementById('qqbotsRefresh').onclick = loadQqBots;
-document.getElementById('qqCancelEdit').onclick = cancelQqBotEdit;
 loadQqBots();

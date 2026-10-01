@@ -56,3 +56,20 @@ function uiWarn(scope, err) {
     var el = document.getElementById('meta');
     if (el) { el.textContent = msg; }
 }
+
+/**
+ * 行内编辑接线——change 三态分流：未改动 / 清空 / 改动
+ * 未改动（去空白后等于原值）与清空（去空白后为空）都算「不改动」——清空回落原值，两者都不提交；
+ * 只有真改动才调 onCommit（新值已去空白）。判据来源：配置页行内编辑轮（API 池 / QQ Bot 池 / 默认前文）
+ * @param {HTMLInputElement} inp 行内输入框（初值 = 原值）
+ * @param {string} origValue 原值（对照面）
+ * @param {function(string)} onCommit 真改动时提交（参数 = 去空白后的新值）
+ */
+function wireInlineEdit(inp, origValue, onCommit) {
+    inp.addEventListener('change', function () {
+        var v = inp.value.trim();
+        if (v === origValue) { return; }
+        if (v.length === 0) { inp.value = origValue; return; }
+        onCommit(v);
+    });
+}
