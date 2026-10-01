@@ -115,7 +115,7 @@ namespace CatHome4.Admin
             List<object> result = new List<object>();
             for (int i = 0; i < defs.Length; i = i + 1)
             {
-                result.Add(new { name = defs[i].Name, group = defs[i].Group, privileged = IsPrivilegedName(defs[i].Name) });
+                result.Add(new { name = defs[i].Name, group = defs[i].Group, privileged = IsPrivilegedName(defs[i].Name), order = ToolOrderTable.OrderText(defs[i].Name) });
             }
             return result.ToArray();
         }
@@ -282,12 +282,15 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 工具名单写时校验——序列化落盘前比对内置清单（M2c：非法名剔除，合法名逗号重拼）。
+        /// 工具名单写时校验——序列化落盘前比对工具池（M2c：池外名剔除，合法名逗号重拼）。
+        /// A132 剔除出声——被剔名字经 removed 带回（调用方在响应面报告），同时记日志（失败必须可见，不静默）。
         /// </summary>
         /// <param name="raw">待写入工具名单原始串</param>
+        /// <param name="removed">被剔除名字清单（工具池中不存在；空 = 无剔除）</param>
         /// <returns>过滤后逗号清单（空串=全量语义）</returns>
-        internal static string ValidateToolNames(string raw)
+        internal static string ValidateToolNames(string raw, out string[] removed)
         {
+            removed = new string[0];
             if (raw == null || raw.Trim().Length == 0)
             {
                 return "";
@@ -295,6 +298,7 @@ namespace CatHome4.Admin
             string[] all = GetConfigurableToolNames();
             string[] parts = raw.Split(new char[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
             List<string> names = new List<string>();
+            List<string> dropped = new List<string>();
             for (int i = 0; i < parts.Length; i++)
             {
                 string name = parts[i].Trim();
@@ -302,8 +306,28 @@ namespace CatHome4.Admin
                 {
                     names.Add(name);
                 }
+                else
+                {
+                    dropped.Add(name);
+                }
+            }
+            if (dropped.Count > 0)
+            {
+                removed = dropped.ToArray();
+                LogStore.Add("CatHome4", 2, "工具名单写时剔除 " + dropped.Count.ToString() + " 个池外工具名：" + string.Join(",", dropped.ToArray()) + "（工具池中不存在——名单以池为准）", "CONFIG");
             }
             return string.Join(",", names.ToArray());
+        }
+
+        /// <summary>
+        /// 工具名单写时校验（无报告面）——内部落盘兜底路径调用；剔除仍记日志（出声不静默）。
+        /// </summary>
+        /// <param name="raw">待写入工具名单原始串</param>
+        /// <returns>过滤后逗号清单（空串=全量语义）</returns>
+        internal static string ValidateToolNames(string raw)
+        {
+            string[] removed;
+            return ValidateToolNames(raw, out removed);
         }
 
         /// <summary>

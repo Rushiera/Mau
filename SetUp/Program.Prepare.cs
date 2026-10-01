@@ -28,6 +28,19 @@ namespace SetUp
 
             try
             {
+                // [段0] 版本自增——全量部署唯一自增点（design-ch4-release.md §6.1）：读单点 → 递增序号 +1 → 写回后编译
+                // 版本 ≡ full 代际——自增失败即中止（不变量优先），不留「同号双代际」；incr / host 重启链不经过本段
+                long verMs = Environment.TickCount64;
+                string verFrom = "";
+                string verTo = "";
+                bool verOk = BumpVersion(repoRoot, out verFrom, out verTo);
+                _steps.Add(new StepReport() { Step = 0, Name = "版本自增 " + verFrom + " -> " + verTo, Ok = verOk, Ms = Environment.TickCount64 - verMs });
+                if (!verOk)
+                {
+                    return Fail("步0 版本自增失败——Directory.Build.props 的 Version 缺失或非 1.yy.xxx 三段式，中止。");
+                }
+                Console.WriteLine("[SetUp] 版本: " + verFrom + " → " + verTo);
+
                 // [段1] 步1：dotnet build Mau.sln（构建 + NuGet 还原——0 错误 0 警告底线）
                 long stepMs = Environment.TickCount64;
                 bool stepOk = RunProcess("dotnet", "build Mau.sln", repoRoot);

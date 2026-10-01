@@ -111,6 +111,15 @@ function parseToolChecked(toolNames) {
     return checked;
 }
 
+// A127——执行序徽标（配置面显示工具 order 层级；空值 = 不渲染，零猜测）
+function toolOrderBadge(order) {
+    if (!order || String(order).length === 0) { return null; }
+    var el = document.createElement('span');
+    el.className = 'tool-order';
+    el.textContent = '⚙' + order;
+    return el;
+}
+
 // 通用分组勾选渲染——优先按工具池 group 字段分组（allTools: [{name,group}]——design-ch4-tools-pool §六）；
 // 兼容纯名数组（allToolNames: string[]）回退 - 前缀分组（text-*/mau-* 视为一组；无前缀归 other）；组头开关一键全组
 function renderGroupedChecks(boxId, allTools, checked, privilegedMode) {
@@ -140,7 +149,7 @@ function renderGroupedChecks(boxId, allTools, checked, privilegedMode) {
         if (blocked[group] === true) { continue; }
         if (isPriv && privilegedMode === 'hide') { continue; }   // 模板面——特权工具不入组（整组皆特权即整组不出，组头一并隐藏）
         if (!groups[group]) { groups[group] = []; order.push(group); }
-        groups[group].push({ name: toolName, privileged: isPriv });
+        groups[group].push({ name: toolName, privileged: isPriv, order: (typeof item === 'object' && item.order !== undefined && item.order !== null) ? String(item.order) : '' });
     }
     for (var g = 0; g < order.length; g++) {
         (function (groupName, tools) {
@@ -174,12 +183,16 @@ function renderGroupedChecks(boxId, allTools, checked, privilegedMode) {
                             : '特权面——仅主干会话可用，不入名单';
                         label.appendChild(cb);
                         label.appendChild(document.createTextNode(tool.name + ' · 特权面'));
+                        var ordPriv = toolOrderBadge(tool.order);
+                        if (ordPriv) { label.appendChild(ordPriv); }
                         groupBox.appendChild(label);
                         return;
                     }
                     cbs.push(cb);
                     label.appendChild(cb);
                     label.appendChild(document.createTextNode(tool.name));
+                    var ordEl = toolOrderBadge(tool.order);
+                    if (ordEl) { label.appendChild(ordEl); }
                     groupBox.appendChild(label);
                 })(tools[t]);
             }
@@ -331,7 +344,17 @@ function saveCatCfg() {
     })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-            document.getElementById('catCfgMsg').textContent = d.ok ? '已保存——API 即时生效；人设/工具/前文 List 新会话生效' : '保存失败: ' + d.error;
+            if (d.ok) {
+                // A132 剔除出声——被剔池外工具名显式告知（不静默；明细同时进宿主日志）
+                var removed = d.removedToolNames;
+                if (removed && removed.length > 0) {
+                    document.getElementById('catCfgMsg').textContent = '已保存——⚠️ 已剔除池外工具名 ' + removed.length + ' 个：' + removed.join('、') + '（请重开配置确认名单）';
+                } else {
+                    document.getElementById('catCfgMsg').textContent = '已保存——API 即时生效；人设/工具/前文 List 新会话生效';
+                }
+            } else {
+                document.getElementById('catCfgMsg').textContent = '保存失败: ' + d.error;
+            }
         });
 }
 
@@ -516,8 +539,18 @@ function saveTpl() {
     })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-            document.getElementById('tplMsg').textContent = d.ok ? '已保存——新猫创建时继承；baseRole 新会话生效' : '保存失败: ' + d.error;
-            if (d.ok) { openTplApply(); }   // 顺带询问：是否把模板参数套用到已有猫
+            if (d.ok) {
+                // A132 剔除出声——被剔池外工具名显式告知（不静默；明细同时进宿主日志）
+                var removed = d.removedToolNames;
+                if (removed && removed.length > 0) {
+                    document.getElementById('tplMsg').textContent = '已保存——⚠️ 已剔除池外工具名 ' + removed.length + ' 个：' + removed.join('、') + '（请重开确认名单）';
+                } else {
+                    document.getElementById('tplMsg').textContent = '已保存——新猫创建时继承；baseRole 新会话生效';
+                }
+                openTplApply();   // 顺带询问：是否把模板参数套用到已有猫
+            } else {
+                document.getElementById('tplMsg').textContent = '保存失败: ' + d.error;
+            }
         })
         .catch(function (e) { document.getElementById('tplMsg').textContent = '请求失败: ' + e; });
 }

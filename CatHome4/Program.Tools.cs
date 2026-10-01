@@ -26,14 +26,14 @@ namespace CH4
             tools[0] = new
             {
                 name = "Note",
-                description = "轻量任务追踪器（内存存储，会话关闭即消失）。无参数=推进到下一条；action='set'+content='任务1\\n任务2'=写入新计划（已有未完成需force=true强制覆盖）。返回当前第X/Y条 已完成Z 待完成W 任务目标：... 最后一条时追加提示（已是最后一条需求，完成后可结束本轮）。全部完成后自动清空。剩余1条时引擎不自动拉起。",
+                description = "轻量任务追踪器（内存存储，会话关闭即消失）。无参数=推进到下一条；action='set'+content=[\"任务1\",\"任务2\"]=写入新计划（已有未完成需force=true强制覆盖）。返回当前第X/Y条 已完成Z 待完成W 任务目标：... 最后一条时追加提示（已是最后一条需求，完成后可结束本轮）。全部完成后自动清空。剩余1条时引擎不自动拉起。",
                 parameters = new
                 {
                     type = "object",
                     properties = new Dictionary<string, object>
                             {
                                 { "action", new { type = "string", description = "set=写入新计划，不传=推进" } },
-                                { "content", new { type = "string", description = "action=set时必填，\\n分割" } },
+                                { "content", new { type = "array", items = new { type = "string" }, description = "action=set时必填——任务条目数组（每元素一条）" } },
                                 { "force", new { type = "boolean", description = "覆盖已有未完成计划时传true" } }
                             },
                     required = new string[0]
@@ -149,7 +149,7 @@ namespace CH4
             tools[9] = new
             {
                 name = "timeback",
-                description = "上下文作用域（取证型任务专用）——action='start' 开锚（purpose 记用途）→ 查证过程在作用域内膨胀 → action='back' 回卷：膨胀过程从上下文销毁，只把 findings 带回主干（下一轮首条可见）。只服务取证型任务（巡检 / 查文档 / 查日志 / 探路）；建设型与推理链型任务禁用。findings 只放事实 + 指针（路径 / 单号 / 时间戳），不放推理与结论。v1 未闭合前禁止再次 start。",
+                description = "上下文作用域（取证型任务专用）——action='start' 开锚（purpose 记用途）→ 查证过程在作用域内膨胀 → action='back' 回卷：膨胀过程从上下文销毁，只把 findings 带回主干（下一轮首条可见）。只服务取证型任务（巡检 / 查文档 / 查日志 / 探路）；建设型与推理链型任务禁用。findings 只放事实 + 指针（路径 / 单号 / 时间戳），不放推理与结论；写入按骨架——首行「结论：<一句话>」，随后「事实：」逐条、「指针：」逐条（每段 ≤5 条，无内容写「（无）」）。v1 未闭合前禁止再次 start。",
                 parameters = new
                 {
                     type = "object",
@@ -157,7 +157,7 @@ namespace CH4
                             {
                                 { "action", new { type = "string", description = "start=开锚 / back=回卷回收" } },
                                 { "purpose", new { type = "string", description = "start 必填——用途标签（短）" } },
-                                { "findings", new { type = "string", description = "back 必填——带回载荷（事实 + 指针）" } }
+                                { "findings", new { type = "string", description = "back 必填——带回载荷（骨架：结论 / 事实 / 指针 三段）" } }
                             },
                     required = new string[] { "action" }
                 }
@@ -223,6 +223,29 @@ namespace CH4
             {
                 LogStore.Add("CatHome4", 3, "工具组定义缺陷 | " + defects[i].Group + " | " + defects[i].Stage + " | " + defects[i].Reason, "TOOL");
             }
+        }
+
+        /// <summary>
+        /// 执行序对账出声——池内工具逐一比对 ToolOrderTable（A127）：未登记者静默落默认档，
+        /// 此处出声 L2（新增工具忘记登记 = 隐性缺口，不静默）。
+        /// </summary>
+        private static void LogToolOrderAccounting()
+        {
+            string[] missing = ToolOrderTable.FindUnregistered(ToolPool.AllNames());
+            if (missing.Length == 0)
+            {
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < missing.Length; i = i + 1)
+            {
+                if (i > 0)
+                {
+                    sb.Append(",");
+                }
+                sb.Append(missing[i]);
+            }
+            LogStore.Add("CatHome4", 2, "工具执行序未登记（落默认档 0）| " + sb.ToString(), "TOOL");
         }
 
         /// <summary>

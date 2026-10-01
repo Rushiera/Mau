@@ -895,7 +895,10 @@ namespace CatHome4.Admin
             {
                 return Results.Json(new { ok = false, error = "猫不存在: " + catKey });
             }
-            // 落盘——读旧配置为基底，只覆盖本次提交出现的字段
+            // M2c 写时校验——池外工具名过滤（持久化面只落合法名）；A132 被剔名字随响应带回（调用方可见，不静默）
+            string[] removedToolNames;
+            string validToolNames = ValidateToolNames(toolNames, out removedToolNames);
+            // 落盘——读旧配置为基底，只覆盖本次提交出现的字段（保留 id/displayName/running/port）
             CatCfgData cfg = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", catKey, "cat.cfg"));
             if (cfg == null)
             {
@@ -964,8 +967,8 @@ namespace CatHome4.Admin
             }
             if (toolNamesPresent)
             {
-                // M2c 写时校验——非法工具名过滤（持久化面只落合法名）
-                cfg.ToolNames = ValidateToolNames(toolNames);
+                // M2c 写时校验已在段前完成（validToolNames）——此处落校验结果，不重复过滤
+                cfg.ToolNames = validToolNames;
             }
             if (injectListPresent)
             {
@@ -983,9 +986,9 @@ namespace CatHome4.Admin
             SaveCatCfgData(catKey, cfg);
             // 运行时生效——入队主线程泵（注册表/会话面仅主线程触碰）
             _catQueue.Enqueue("catcfg.apply " + catKey);
-            LogStore.Add("CatHome4", 1, "猫配置已写入：" + catKey + "（字段级合并写——未提交字段逐字保留）", "CONFIG");
-            string resultToolNames = cfg.ToolNames == null ? "" : cfg.ToolNames;
-            return Results.Json(new { ok = true, cat = catKey, toolNames = resultToolNames });
+            LogStore.Add("CatHome4", 1, "猫配置已写入：" + catKey + "（字段级合并写——未提交字段逐字保留；工具面 " + validToolNames + "）", "CONFIG");
+            // A132 剔除出声——被剔名字随响应带回（调用方可见；明细已记日志，不静默）
+            return Results.Json(new { ok = true, cat = catKey, toolNames = validToolNames, removedToolNames = removedToolNames });
         }
 
         /// <summary>
@@ -1115,12 +1118,14 @@ namespace CatHome4.Admin
             CatDefaultCfgData data = new CatDefaultCfgData();
             data.BaseRole = baseRole;
             data.DefaultPersona = defaultPersona;
-            data.DefaultToolNames = ValidateToolNames(defaultToolNames);
+            string[] removedDefaultToolNames;
+            data.DefaultToolNames = ValidateToolNames(defaultToolNames, out removedDefaultToolNames);
             data.DefaultInjectList = defaultInjectList.ToArray();
             data.DefaultPacks = defaultPacks.ToArray();
             SaveCatDefaultCfg(data);
             LogStore.Add("CatHome4", 1, "全局默认模板已保存（注入 " + defaultInjectList.Count.ToString() + " 条）", "CONFIG");
-            return Results.Json(new { ok = true });
+            // A132 剔除出声——被剔名字随响应带回（调用方可见；明细已记日志，不静默）
+            return Results.Json(new { ok = true, removedToolNames = removedDefaultToolNames });
         }
 
         /// <summary>受控根写入输入条目——POST /api/v1/workspace body 解析形态</summary>

@@ -248,7 +248,7 @@ namespace Mau.Development
             string csproj = ResolveProject(path);
             if (csproj.Length == 0)
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path;
+                result = "ERR|BAD_PATH|项目路径无效或越界: " + path + ProjectPathDiagnostic(path);
                 return false;
             }
             ProjectCache cache = EnsureProject(csproj);
@@ -262,12 +262,12 @@ namespace Mau.Development
                     return true;
                 }
                 ClassPart methodPart;
-                MethodDeclarationSyntax methodNode;
+                BaseMethodDeclarationSyntax methodNode;
                 List<string> signatures;
-                int methodFind = FindMethodInParts(parts, methodName, out methodPart, out methodNode, out signatures);
+                int methodFind = FindPatchTargetInParts(parts, methodName, out methodPart, out methodNode, out signatures);
                 if (methodFind == 1)
                 {
-                    result = "ERR|METHOD_NOT_FOUND|方法不存在: " + className + "." + methodName + PartialHint(parts.Count);
+                    result = "ERR|METHOD_NOT_FOUND|方法不存在: " + className + "." + methodName + PartialHint(parts.Count) + UnsupportedMemberHint(parts, methodName);
                     return true;
                 }
                 if (methodFind == 2)
@@ -285,7 +285,7 @@ namespace Mau.Development
                 SyntaxTree foundTree = methodNode.SyntaxTree;
                 if (methodNode.Body == null)
                 {
-                    result = "ERR|ARROW_BODY|表达式体方法请先展开为块体（语法糖展开铁律）: " + className + "." + methodName;
+                    result = "ERR|ARROW_BODY|表达式体成员（方法 / 构造函数）请先展开为块体（语法糖展开铁律）: " + className + "." + methodName;
                     return true;
                 }
                 // 写侧规整——行尾归一 + 规范化布局 + 基准缩进平移（规范格式是写侧责任，不依赖事后格式重整器）
@@ -326,7 +326,17 @@ namespace Mau.Development
                 // 尾部补换行——后续 token 的缩进前导 trivia 依赖前一 token 以换行结尾（与 member insert 同规）
                 // 行号锚——新节点由 WithBody 生成、未挂载语法树，其 Span 从自身起点起算（行号恒为 1）
                 SyntaxAnnotation patchMark = new SyntaxAnnotation();
-                MethodDeclarationSyntax newMethod = (MethodDeclarationSyntax)EnsureMemberTrailingNewLine(methodNode.WithBody(finalBlock), patchNewline).WithAdditionalAnnotations(patchMark);
+                BaseMethodDeclarationSyntax patchedDecl;
+                ConstructorDeclarationSyntax? ctorDecl = methodNode as ConstructorDeclarationSyntax;
+                if (ctorDecl != null)
+                {
+                    patchedDecl = ctorDecl.WithBody(finalBlock);
+                }
+                else
+                {
+                    patchedDecl = ((MethodDeclarationSyntax)methodNode).WithBody(finalBlock);
+                }
+                BaseMethodDeclarationSyntax newMethod = (BaseMethodDeclarationSyntax)EnsureMemberTrailingNewLine(patchedDecl, patchNewline).WithAdditionalAnnotations(patchMark);
                 SyntaxNode root = foundTree.GetRoot();
                 SyntaxNode newRoot = root.ReplaceNode(methodNode, newMethod);
                 SyntaxTree newTree = CreateTreeFromRoot(foundTree, newRoot);

@@ -1,6 +1,6 @@
 ﻿// cs_cat.mau —— CsCat 语料（CH4 R0.2 工具组 Flow 化——CS 编码工具域独立 Flow，原 DevCat 分部拆分）
-// 角色：工具组 Flow——认领 TOOL 域 cs-* 11 工具（check/build/list/read/find_ref/patch/member/comment/dead/comment_check/format）
-// 单级 OA 单：Dog Post → 本 Flow 11 线认领执行 → complete_str 回执
+// 角色：工具组 Flow——认领 TOOL 域 cs-* 12 工具（check/build/list/read/find_ref/find/patch/member/comment/dead/comment_check/format）
+// 单级 OA 单：Dog Post → 本 Flow 12 线认领执行 → complete_str 回执
 // 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON
 // 无值分支：每工具一条认领线，工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
 // 数据面：@ckOffice 等私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
@@ -11,12 +11,13 @@
 // 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）+ trace.timeout / trace.late_discard
 // 变更（2026-09-14 A48）：exec 导线 par 化——self.desc 挪至 args 导线（par 导线单动作约束）；执行脱离主线程
 
-// ── 状态机（10 线——每线独立生命周期）──
+// ── 状态机（12 线——每线独立生命周期）──
 § 'S_Check' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Build' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_List' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_CsRead' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_FindRef' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Find' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Patch' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Member' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Comment' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
@@ -27,12 +28,13 @@
 // T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
 § 'T_Init' : 'S_Check' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Check' = 'Idle' | 'S_Check' = 'Idle'
 
-// ── 主动传感器壳——11 线各自探测（officeName = 完整工具名）──
+// ── 主动传感器壳——12 线各自探测（officeName = 完整工具名）──
 § 'P_CheckOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-check"] > @ckOpen
 § 'P_BuildOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-build"] > @buOpen
 § 'P_ListOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-list"] > @liOpen
 § 'P_CsReadOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-read"] > @csOpen
 § 'P_FindRefOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-find_ref"] > @frOpen
+§ 'P_FindOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-find"] > @fiOpen
 § 'P_PatchOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-patch"] > @ptOpen
 § 'P_MemberOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-member"] > @mbOpen
 § 'P_CommentOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-comment"] > @cmOpen
@@ -74,6 +76,13 @@
 § 'T_FindRefExec' [t=2400, par] : 'S_FindRef' = 'Ready' → 'csharp.bridge'["find_ref", @frArgs] > @frRes | 'S_FindRef' = 'Done' | 'S_FindRef' = 'Failed'
 § 'T_FindRefReply' : 'S_FindRef' = 'Done' → 'oa.complete_str'[@frOffice, @frRes] | 'self.desc'["空闲待命", "", ""] | 'S_FindRef' = 'Idle' | 'S_FindRef' = 'Idle'
 § 'T_FindRefAbort' : 'S_FindRef' = 'Failed' → 'oa.complete_str'[@frOffice, @frRes] | 'S_FindRef' = 'Idle' | 'S_FindRef' = 'Idle'
+
+// ══════════════ cs-find 线 ══════════════
+§ 'T_FindClaim' : @fiOpen & 'S_Find' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-find"] > @fiOffice | 'S_Find' = 'Claimed' | 'S_Find' = 'Idle'
+§ 'T_FindArgs' : 'S_Find' = 'Claimed' → 'oa.get_str'[@fiOffice, "args"] > @fiArgs | 'self.desc'["cs-find 执行中", "", ""] | 'S_Find' = 'Ready' | 'S_Find' = 'Failed'
+§ 'T_FindExec' [t=2400, par] : 'S_Find' = 'Ready' → 'csharp.bridge'["find", @fiArgs] > @fiRes | 'S_Find' = 'Done' | 'S_Find' = 'Failed'
+§ 'T_FindReply' : 'S_Find' = 'Done' → 'oa.complete_str'[@fiOffice, @fiRes] | 'self.desc'["空闲待命", "", ""] | 'S_Find' = 'Idle' | 'S_Find' = 'Idle'
+§ 'T_FindAbort' : 'S_Find' = 'Failed' → 'oa.complete_str'[@fiOffice, @fiRes] | 'S_Find' = 'Idle' | 'S_Find' = 'Idle'
 
 // ══════════════ cs-patch 线 ══════════════
 § 'T_PatchClaim' : @ptOpen & 'S_Patch' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-patch"] > @ptOffice | 'S_Patch' = 'Claimed' | 'S_Patch' = 'Idle'

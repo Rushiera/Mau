@@ -139,6 +139,7 @@ var CHAT_TOOL_SKELETONS = {
     // matches——检索命中
     'text-grep': 'matches',
     'cs-find_ref': 'matches',
+    'cs-find': 'matches',
     // lines——带行号文本
     'text-read_lines': 'lines',
     'cs-read': 'lines',
@@ -985,8 +986,15 @@ function chatOvClock(ms) {
     return hh + ':' + mm + ':' + ss;
 }
 
-// 规模——字符数
+// 规模——字符数（数组 = 条数 · 总字符数——A129 多值参数一律原生数组）
 function chatOvSize(v) {
+    if (Array.isArray(v)) {
+        var n = 0;
+        for (var i = 0; i < v.length; i = i + 1) {
+            if (typeof v[i] === 'string') { n = n + v[i].length; }
+        }
+        return v.length + ' 条 · ' + n + ' 字符';
+    }
     return ((typeof v === 'string') ? v.length : 0) + ' 字符';
 }
 
@@ -1128,6 +1136,15 @@ var CHAT_TOOL_OVERRIDES = {
             var h = chatMetaHead(r);
             if (!h) { return '引用 ' + target + chatOvStat(r); }
             return '引用 ' + target + ' · ' + (h.meta.hits || 0) + ' 处 · ' + (h.meta.projects || 0) + ' 项目';
+        }
+    },
+    'cs-find': {
+        inputLines: function (a) { return ['查找声明 ' + chatOvText(a.name), '项目 ' + chatOvText(a.path)]; },
+        headline: function (a, r) {
+            var target = chatOvText(a.name);
+            var h = chatMetaHead(r);
+            if (!h) { return '查找 ' + target + chatOvStat(r); }
+            return '查找 ' + target + ' · ' + (h.meta.hits || 0) + ' 处 · ' + (h.meta.projects || 0) + ' 项目';
         }
     },
     'cs-dead': {
@@ -1601,8 +1618,8 @@ var CHAT_TOOL_OVERRIDES = {
             var h = chatMetaHead(r);
             if (!h) { return ((a.action === 'back') ? 'TimeBack 回收' : 'TimeBack 开锚') + chatOvStat(r); }
             var m = h.meta;
-            if (a.action === 'back') { return 'TimeBack #' + m.id + ' 已登记回收 · 锚点 ' + m.anchor; }
-            return 'TimeBack #' + m.id + ' 已锚定 · 起点 ' + m.anchor;
+            if (a.action === 'back') { return 'TimeBack #' + m.id + ' 已登记回收 · 锚点 ' + m.anchor + ((m.purpose) ? (' · ' + chatOvPeek(m.purpose)) : ''); }
+            return 'TimeBack #' + m.id + ' 已锚定 · 起点 ' + m.anchor + ((m.purpose) ? (' · ' + chatOvPeek(m.purpose)) : '');
         }
     },
     'pack': {

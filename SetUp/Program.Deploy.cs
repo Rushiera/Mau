@@ -200,42 +200,5 @@ namespace SetUp
                 return false;
             }
         }
-
-        /// <summary>
-        /// 读取仓库单点版本号——Directory.Build.props 的 Version 标签（A53 唯一事实源：CH4 + Mau 全跟随，
-        /// SetUp 独立）；消费路径 = deploy 落盘 version.txt / relaunch 回执。
-        /// </summary>
-        /// <param name="repoRoot">仓库根</param>
-        /// <returns>版本号（未找到返回 unknown）</returns>
-        private static string ReadVersion(string repoRoot)
-        {
-            string props = Path.Combine(repoRoot, "Directory.Build.props");
-            try
-            {
-                if (!File.Exists(props))
-                {
-                    return "unknown";
-                }
-                string text = File.ReadAllText(props);
-                string marker = "<Version>";
-                int start = text.IndexOf(marker, StringComparison.Ordinal);
-                if (start < 0)
-                {
-                    return "unknown";
-                }
-                start = start + marker.Length;
-                int end = text.IndexOf("</Version>", start, StringComparison.Ordinal);
-                if (end < 0)
-                {
-                    return "unknown";
-                }
-                return text.Substring(start, end - start).Trim();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("[SetUp] 警告：版本读取失败——" + ex.Message);
-                return "unknown";
-            }
-        }
     }
 }

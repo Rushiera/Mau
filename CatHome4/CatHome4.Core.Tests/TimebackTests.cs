@@ -274,6 +274,24 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
+        /// 回执自带用途（2026-10-01 · B 档）——start 回执正文含 purpose（第一个保留的工具对自解释）；
+        /// back 结构化头含 purpose（回收卡自解释——不必回翻锚定声明）。
+        /// </summary>
+        [Fact]
+        public void Back_MetaCarriesPurpose()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"start\",\"purpose\":\"回执用途验证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "f1", "{\"min\":1,\"max\":10}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t2", "{\"action\":\"back\",\"findings\":\"结论：验证\\n事实：（无）\\n指针：（无）\"}"));
+            session.PostUserMessage("开始取证");
+            PumpUntilIdle(session);
+            Assert.Contains("用途「回执用途验证」", ToolResultText(session, 0));
+            Assert.Contains("\"purpose\":\"回执用途验证\"", ToolResultText(session, 1));
+        }
+
+        /// <summary>
         /// 同批 start + back——无可删区间（两次调用同一批），作用域照常关闭。
         /// </summary>
         [Fact]
@@ -344,8 +362,9 @@ namespace CatHome4.Core.Tests
             Assert.True(session.TimebackActive);
         }
         /// <summary>
-        /// 本体修正黑名单（T2 扩展）——作用域存活期禁止对 CH4 自身做修正：
-        /// majordomo-restart / host-reload / mau-* / config-* / majordomo-cmd 一律 ERR|TIMEBACK_LOCKED；作用域外同工具不受该判定拦截。
+        /// 暴毙风险黑名单（T2 扩展 · 2026-10-01 宽松化）——作用域存活期只拦「会让进程 / 作用域当场失效」的三件：
+        /// majordomo-restart / host-reload / mau-setup 一律 ERR|TIMEBACK_LOCKED；
+        /// 其余（只读 / 仓库产物 / 配置写 / 管理指令）放行——作用域外同工具不受该判定拦截。
         /// </summary>
         [Fact]
         public void Scope_Locks_BodyRepairTools()
@@ -353,28 +372,24 @@ namespace CatHome4.Core.Tests
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm, new string[]
             {
-                        "timeback", "random", "host-reload", "mau-verify", "mau-gen", "mau-proj", "mau-setup",
-                        "majordomo-restart", "config-set", "config-reset", "config-cat-set", "majordomo-cmd"
+                        "timeback", "random", "info", "host-flows", "host-reload", "mau-setup", "majordomo-restart"
             });
             // 作用域外——host-reload 不被该判定拦（测试环境直执回落 ERR|NO_TOOL）
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("host-reload", "h0", "{\"cat\":\"TextCat\"}"));
-            // 作用域内——start 与全部黑名单工具同批
+            // 作用域内——start 与「三件拦 + 三件放行」同批
+            // （OA 工具在测试环境无工单消费者会挂起，故放行面以内置只读工具为代表——黑名单清单本身由 §C5 规格 + 代码审查锁定）
             string batch = BuildToolCallsBatch(
-                new string[] { "timeback", "host-reload", "mau-verify", "mau-gen", "mau-proj", "mau-setup", "majordomo-restart", "config-set", "config-reset", "config-cat-set", "majordomo-cmd" },
-                new string[] { "t1", "h1", "m1", "m2", "m3", "m4", "r1", "c1", "c2", "c3", "g1" },
+                new string[] { "timeback", "host-reload", "mau-setup", "majordomo-restart", "host-flows", "info", "random" },
+                new string[] { "t1", "h1", "s1", "r1", "f1", "i1", "x1" },
                 new string[]
                 {
                             "{\"action\":\"start\",\"purpose\":\"黑名单验证\"}",
                             "{\"cat\":\"TextCat\"}",
-                            "{\"file\":\"corpus/ch4/text_cat/text_cat.mau\"}",
-                            "{\"proj\":\"corpus/ch4/text_cat/text_cat.mauproj\"}",
-                            "{\"proj\":\"corpus/ch4/text_cat/text_cat.mauproj\",\"build\":true}",
                             "{\"mode\":\"prepare\"}",
                             "{}",
-                            "{\"key\":\"ui.font_scale\",\"value\":\"15\"}",
-                            "{\"key\":\"ui.font_scale\"}",
-                            "{\"cat\":\"tb\",\"field\":\"displayName\",\"value\":\"x\"}",
-                            "cat.list"
+                            "{}",
+                            "{}",
+                            "{\"min\":1,\"max\":10}"
                 });
             llm.ToolCallsQueue.Enqueue(batch);
             session.PostUserMessage("黑名单验证");
@@ -382,11 +397,15 @@ namespace CatHome4.Core.Tests
             Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
             // 作用域外那一批未被锁定
             Assert.False(ToolResultText(session, 0).Contains("TIMEBACK_LOCKED", StringComparison.Ordinal));
-            // 作用域内：start 回执保留 + 其后 10 件全拒
+            // 作用域内：start 回执保留 + 其后三件全拒（暴毙风险面）
             Assert.Contains("已锚定", ToolResultText(session, 1));
-            for (int i = 2; i <= 11; i = i + 1)
+            Assert.Contains("TIMEBACK_LOCKED", ToolResultText(session, 2));
+            Assert.Contains("TIMEBACK_LOCKED", ToolResultText(session, 3));
+            Assert.Contains("TIMEBACK_LOCKED", ToolResultText(session, 4));
+            // 放行面——只读 / 常驻内置工具不再被锁
+            for (int i = 5; i <= 7; i = i + 1)
             {
-                Assert.Contains("TIMEBACK_LOCKED", ToolResultText(session, i));
+                Assert.False(ToolResultText(session, i).Contains("TIMEBACK_LOCKED", StringComparison.Ordinal), "第 " + i.ToString() + " 件被误锁");
             }
             Assert.True(session.TimebackActive);
         }

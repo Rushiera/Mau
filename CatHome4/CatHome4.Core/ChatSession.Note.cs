@@ -40,7 +40,8 @@ namespace CH4
         private string ExecuteNote(string argsJson)
         {
             string action = "";
-            string content = "";
+            string[] contentItems = null;
+            string contentError = "";
             bool force = false;
             if (argsJson != null && argsJson.Length > 0 && argsJson.StartsWith("{"))
             {
@@ -53,9 +54,41 @@ namespace CH4
                         {
                             action = a.GetString() ?? "";
                         }
-                        if (root.TryGetProperty("content", out JsonElement c) && c.ValueKind == JsonValueKind.String)
+                        if (root.TryGetProperty("content", out JsonElement c))
                         {
-                            content = c.GetString() ?? "";
+                            if (c.ValueKind != JsonValueKind.Array)
+                            {
+                                contentError = "content 须为字符串数组（原生 JSON array）——收到 " + c.ValueKind.ToString();
+                            }
+                            else if (c.GetArrayLength() == 0)
+                            {
+                                contentError = "content 为空数组——计划至少一条";
+                            }
+                            else
+                            {
+                                List<string> items = new List<string>();
+                                int itemIndex = 0;
+                                foreach (JsonElement item in c.EnumerateArray())
+                                {
+                                    itemIndex = itemIndex + 1;
+                                    if (item.ValueKind != JsonValueKind.String)
+                                    {
+                                        contentError = "content 第 " + itemIndex + " 项须为字符串——收到 " + item.ValueKind.ToString();
+                                        break;
+                                    }
+                                    string one = (item.GetString() ?? "").Trim();
+                                    if (one.Length == 0)
+                                    {
+                                        contentError = "content 第 " + itemIndex + " 项为空——条目不得为空串";
+                                        break;
+                                    }
+                                    items.Add(one);
+                                }
+                                if (contentError.Length == 0)
+                                {
+                                    contentItems = items.ToArray();
+                                }
+                            }
                         }
                         if (root.TryGetProperty("force", out JsonElement f) && f.ValueKind == JsonValueKind.True)
                         {
@@ -69,9 +102,15 @@ namespace CH4
                     LogStore.Add("ChatSession", 2, "Note 参数 JSON 损坏，按无参数推进: " + ex.Message, "SYS");
                 }
             }
+            // [段1] 形态校验（A129——多值参数一律原生数组；非数组 / 非字符串元素 / 空串元素一律出声，退役静默回落与静默截断）
+            if (contentError.Length > 0)
+            {
+                LogStore.Add("ChatSession", 2, "Note 参数形态非法——" + contentError, "SYS");
+                return "ERR|BAD_ARGS|Note content 形态非法——" + contentError + "；正确形态 content=[\"任务1\",\"任务2\"]";
+            }
             string result;
-            // [段2] set——写入新计划（\n 分割 + Trim 过滤空行；未完成时无 force 拒绝覆盖）
-            if (action == "set" && content.Length > 0)
+            // [段2] set——写入新计划（A129：原生数组，元素已 Trim；未完成时无 force 拒绝覆盖）
+            if (action == "set" && contentItems != null && contentItems.Length > 0)
             {
                 int oldRemain = 0;
                 if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent < _noteTasks.Length)
@@ -84,17 +123,7 @@ namespace CH4
                 }
                 else
                 {
-                    string[] lines = content.Replace("\r\n", "\n").Split('\n');
-                    List<string> valid = new List<string>();
-                    for (int i = 0; i < lines.Length; i = i + 1)
-                    {
-                        string t = lines[i].Trim();
-                        if (t.Length > 0)
-                        {
-                            valid.Add(t);
-                        }
-                    }
-                    _noteTasks = valid.ToArray();
+                    _noteTasks = contentItems;
                     _noteCurrent = 0;
                     _noteDone = 0;
                     _noteJustCompleted = false;
