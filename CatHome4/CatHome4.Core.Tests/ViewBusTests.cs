@@ -9,13 +9,14 @@ using Xunit;
 namespace CatHome4.Core.Tests
 {
     /// <summary>
-    /// 会话视图出口测试（A158 期三）——两区镜像语义：
-    /// 流式区三 op（live.add / live.update / live.remove）· 持久区推入（persist.append）与同键换手 ·
-    /// 工具卡先行 → 终态 → 持久块换手 · 流式区清空 · 推送面未就绪静默。
+    /// 会话视图出口测试（A162 批次二）——状态推送语义：
+    /// 状态表（当前全部块）· 变更集增量（TryTakeDelta：增改块 + 移除键，取走即清）·
+    /// 全量载荷（BuildFull）· 同键换手（持久块覆盖流式块，不产生移除）· 瞬时事件（control 仍即时推送）·
+    /// 推送面未就绪静默。
     /// </summary>
     public sealed class ViewBusTests
     {
-        /// <summary>捕获型推送面——记录每次 PushView 的 op / payload / meta 三件</summary>
+        /// <summary>捕获型推送面——记录每次 PushView 的 op / payload / meta 三件（新模型下仅 control 走此出口）</summary>
         private sealed class RecordingHost : IHostPush
         {
             /// <summary>事件 op 序列（按发出序）</summary>
@@ -35,8 +36,8 @@ namespace CatHome4.Core.Tests
             /// <param name="json">Note 状态 JSON</param>
             public void PushNoteState(string json) { }
 
-            /// <summary>视图事件捕获——op / payload / meta（A158 期三：序号与会话侧序号一并退役）</summary>
-            /// <param name="op">事件操作（live.add / live.update / live.remove / persist.append / control）</param>
+            /// <summary>视图事件捕获——op / payload / meta</summary>
+            /// <param name="op">事件操作（control 为唯一在用的即时事件）</param>
             /// <param name="payload">载荷 JSON</param>
             /// <param name="meta">块元数据 JSON</param>
             public void PushView(string op, string payload, string meta)
@@ -64,7 +65,73 @@ namespace CatHome4.Core.Tests
             return "";
         }
 
-        /// <summary>流式文本——首个增量入区（live.add），后续增量区内容变化（live.update），复位撤区（live.remove）；复位后不再有事件</summary>
+        /// <summary>取增量载荷——无变化返回 null</summary>
+        /// <param name="bus">视图出口</param>
+        /// <returns>载荷 JSON 或 null</returns>
+        private static string TakeDelta(CH4.ViewBus bus)
+        {
+            string json;
+            if (bus.TryTakeDelta(out json))
+            {
+                return json;
+            }
+            return null;
+        }
+
+        /// <summary>取载荷块字段——blocks[index] 的字段值串（缺失 = 空串）</summary>
+        /// <param name="payloadJson">载荷 JSON（full / delta）</param>
+        /// <param name="index">块下标</param>
+        /// <param name="field">字段名</param>
+        /// <returns>字段值串</returns>
+        private static string BlockField(string payloadJson, int index, string field)
+        {
+            using (JsonDocument doc = JsonDocument.Parse(payloadJson))
+            {
+                JsonElement block = doc.RootElement.GetProperty("blocks")[index];
+                JsonElement value;
+                if (block.TryGetProperty(field, out value))
+                {
+                    return value.ToString();
+                }
+            }
+            return "";
+        }
+
+        /// <summary>取载荷块数</summary>
+        /// <param name="payloadJson">载荷 JSON（full / delta）</param>
+        /// <returns>块数</returns>
+        private static int BlockCount(string payloadJson)
+        {
+            using (JsonDocument doc = JsonDocument.Parse(payloadJson))
+            {
+                return doc.RootElement.GetProperty("blocks").GetArrayLength();
+            }
+        }
+
+        /// <summary>取载荷移除键数</summary>
+        /// <param name="payloadJson">载荷 JSON（delta）</param>
+        /// <returns>移除键数</returns>
+        private static int RemoveCount(string payloadJson)
+        {
+            using (JsonDocument doc = JsonDocument.Parse(payloadJson))
+            {
+                return doc.RootElement.GetProperty("remove").GetArrayLength();
+            }
+        }
+
+        /// <summary>取载荷移除键——remove[index]</summary>
+        /// <param name="payloadJson">载荷 JSON（delta）</param>
+        /// <param name="index">下标</param>
+        /// <returns>块键</returns>
+        private static string RemoveKey(string payloadJson, int index)
+        {
+            using (JsonDocument doc = JsonDocument.Parse(payloadJson))
+            {
+                return doc.RootElement.GetProperty("remove")[index].GetString();
+            }
+        }
+
+        /// <summary>流式文本——首个增量入状态表，后续增量同键更新，复位记移除；取走后再复位无变化</summary>
         [Fact]
         public void TextStreamAddThenUpdateThenRemove()
         {
@@ -73,21 +140,25 @@ namespace CatHome4.Core.Tests
             bus.Attach(host);
 
             bus.PushTextStream("{\"kind\":\"text\",\"text\":\"a\"}");
+            string first = TakeDelta(bus);
+            Assert.NotNull(first);
+            Assert.Equal(1, BlockCount(first));
+            Assert.Equal("stream", BlockField(first, 0, "renderType"));
+            string key = BlockField(first, 0, "key");
+
             bus.PushTextStream("{\"kind\":\"text\",\"text\":\"b\"}");
-
-            Assert.Equal(2, host.Ops.Count);
-            Assert.Equal("live.add", host.Ops[0]);
-            Assert.Equal("live.update", host.Ops[1]);
-            Assert.Equal("stream", MetaField(host.Metas[0], "renderType"));
-            Assert.Equal(MetaField(host.Metas[0], "key"), MetaField(host.Metas[1], "key"));
+            string second = TakeDelta(bus);
+            Assert.Equal(1, BlockCount(second));
+            Assert.Equal(key, BlockField(second, 0, "key"));
 
             bus.ResetTextStream();
-            Assert.Equal(3, host.Ops.Count);
-            Assert.Equal("live.remove", host.Ops[2]);
-            Assert.Equal("", host.Payloads[2]);
+            string third = TakeDelta(bus);
+            Assert.Equal(0, BlockCount(third));
+            Assert.Equal(1, RemoveCount(third));
+            Assert.Equal(key, RemoveKey(third, 0));
 
             bus.ResetTextStream();
-            Assert.Equal(3, host.Ops.Count);
+            Assert.Null(TakeDelta(bus));
         }
 
         /// <summary>流式思考与文本各自独立容器（互不干扰），键在区内存续期内复用</summary>
@@ -100,16 +171,19 @@ namespace CatHome4.Core.Tests
 
             bus.PushTextStream("{\"kind\":\"text\",\"text\":\"a\"}");
             bus.PushReasonStream("{\"kind\":\"reasoning\",\"text\":\"r\"}");
-            bus.PushTextStream("{\"kind\":\"text\",\"text\":\"b\"}");
+            string both = TakeDelta(bus);
+            Assert.Equal(2, BlockCount(both));
+            string textKey = BlockField(both, 0, "key");
+            string reasonKey = BlockField(both, 1, "key");
+            Assert.NotEqual(textKey, reasonKey);
 
-            Assert.Equal("live.add", host.Ops[0]);
-            Assert.Equal("live.add", host.Ops[1]);
-            Assert.Equal("live.update", host.Ops[2]);
-            Assert.NotEqual(MetaField(host.Metas[0], "key"), MetaField(host.Metas[1], "key"));
-            Assert.Equal(MetaField(host.Metas[0], "key"), MetaField(host.Metas[2], "key"));
+            bus.PushTextStream("{\"kind\":\"text\",\"text\":\"b\"}");
+            string third = TakeDelta(bus);
+            Assert.Equal(1, BlockCount(third));
+            Assert.Equal(textKey, BlockField(third, 0, "key"));
         }
 
-        /// <summary>工具卡先行 → 终态——终态为区内原位更新（live.update），块留流式区等持久块换手；同键重复先行不堆叠</summary>
+        /// <summary>工具卡先行 → 终态——同键原位更新（仍留在流式区等持久块换手）；同键重复先行不堆叠</summary>
         [Fact]
         public void ToolCardPendingThenDoneStaysLive()
         {
@@ -121,25 +195,30 @@ namespace CatHome4.Core.Tests
             bus.PushToolCardPending("tool:c1", "{\"name\":\"t\"}", 100);
             Assert.True(bus.IsToolCardPending("tool:c1"));
             Assert.False(bus.IsToolCardFinaled("tool:c1"));
-            Assert.Equal("live.add", host.Ops[0]);
-            Assert.Equal("tool:c1", MetaField(host.Metas[0], "key"));
-            Assert.Equal("pending", MetaField(host.Metas[0], "state"));
-            Assert.Equal("100", MetaField(host.Metas[0], "ts"));
-            Assert.Equal("-1", MetaField(host.Metas[0], "durMs"));
+            string pending = TakeDelta(bus);
+            Assert.Equal(1, BlockCount(pending));
+            Assert.Equal("tool:c1", BlockField(pending, 0, "key"));
+            Assert.Equal("pending", BlockField(pending, 0, "state"));
+            Assert.Equal("100", BlockField(pending, 0, "ts"));
+            Assert.Equal("-1", BlockField(pending, 0, "durMs"));
 
             bus.PushToolCardPending("tool:c1", "{\"name\":\"t\"}", 100);
-            Assert.Equal("live.update", host.Ops[1]);
+            string again = TakeDelta(bus);
+            Assert.Equal(1, BlockCount(again));
+            Assert.Equal("tool:c1", BlockField(again, 0, "key"));
 
             bus.PushToolCardDone("tool:c1", "{\"name\":\"t\",\"result\":\"ok\"}", 250);
-            Assert.Equal("live.update", host.Ops[2]);
-            Assert.Equal("final", MetaField(host.Metas[2], "state"));
-            Assert.Equal("250", MetaField(host.Metas[2], "durMs"));
-            Assert.Equal("100", MetaField(host.Metas[2], "ts"));
+            string done = TakeDelta(bus);
+            Assert.Equal("final", BlockField(done, 0, "state"));
+            Assert.Equal("250", BlockField(done, 0, "durMs"));
+            Assert.Equal("100", BlockField(done, 0, "ts"));
             Assert.True(bus.IsToolCardPending("tool:c1"));
             Assert.True(bus.IsToolCardFinaled("tool:c1"));
+
+            Assert.Null(TakeDelta(bus));
         }
 
-        /// <summary>工具卡终态无先行卡——先入区（live.add）再定稿（live.update）；被拦工具 / 直执路径</summary>
+        /// <summary>工具卡终态无先行卡——先入区再定稿，同一次取走只见最终态一块（被拦工具 / 直执路径）</summary>
         [Fact]
         public void ToolCardDoneWithoutPendingCreatesLive()
         {
@@ -149,16 +228,15 @@ namespace CatHome4.Core.Tests
 
             bus.PushToolCardDone("tool:c9", "{\"name\":\"t\",\"result\":\"err\"}", 120);
 
-            Assert.Equal(2, host.Ops.Count);
-            Assert.Equal("live.add", host.Ops[0]);
-            Assert.Equal("live.update", host.Ops[1]);
-            Assert.Equal("tool:c9", MetaField(host.Metas[1], "key"));
-            Assert.Equal("final", MetaField(host.Metas[1], "state"));
-            Assert.Equal("120", MetaField(host.Metas[1], "durMs"));
+            string delta = TakeDelta(bus);
+            Assert.Equal(1, BlockCount(delta));
+            Assert.Equal("tool:c9", BlockField(delta, 0, "key"));
+            Assert.Equal("final", BlockField(delta, 0, "state"));
+            Assert.Equal("120", BlockField(delta, 0, "durMs"));
             Assert.True(bus.IsToolCardFinaled("tool:c9"));
         }
 
-        /// <summary>持久块推入——persist.append 带块元数据（key / id / durMs / state）· 同键流式块换手出区（live.remove）· 同键二次推入幂等</summary>
+        /// <summary>持久块记入——同键覆盖流式块（不产生移除指令）· 载荷带块元数据（key / id / durMs / state）· 同键二次记入幂等</summary>
         [Fact]
         public void PersistAppendEvictsLiveAndIsIdempotent()
         {
@@ -167,24 +245,26 @@ namespace CatHome4.Core.Tests
             bus.Attach(host);
 
             bus.PushToolCardPending("tool:c1", "{\"name\":\"t\"}", 100);
+            Assert.NotNull(TakeDelta(bus));
+
             ViewBlock block = ViewBlock.BuildPending("tool:c1", "toolcard", "{\"name\":\"t\",\"result\":\"ok\"}", 100, null, "independent");
             block.Finalize(250);
             bus.PushPersist(block);
 
-            Assert.Equal(3, host.Ops.Count);
-            Assert.Equal("persist.append", host.Ops[1]);
-            Assert.Equal("live.remove", host.Ops[2]);
-            Assert.Equal("tool:c1", MetaField(host.Metas[1], "key"));
-            Assert.Equal(block.Id, MetaField(host.Metas[1], "id"));
-            Assert.Equal("250", MetaField(host.Metas[1], "durMs"));
-            Assert.Equal("final", MetaField(host.Metas[1], "state"));
+            string delta = TakeDelta(bus);
+            Assert.Equal(1, BlockCount(delta));
+            Assert.Equal(0, RemoveCount(delta));
+            Assert.Equal("tool:c1", BlockField(delta, 0, "key"));
+            Assert.Equal(block.Id, BlockField(delta, 0, "id"));
+            Assert.Equal("250", BlockField(delta, 0, "durMs"));
+            Assert.Equal("final", BlockField(delta, 0, "state"));
             Assert.False(bus.IsToolCardPending("tool:c1"));
 
             bus.PushPersist(block);
-            Assert.Equal(3, host.Ops.Count);
+            Assert.Null(TakeDelta(bus));
         }
 
-        /// <summary>持久块推入——前文派生块随带 origin 关系字段（src=front）；无 origin 独立块写 null</summary>
+        /// <summary>持久块记入——前文派生块随带 origin 关系字段（src=front）；无 origin 独立块写 null</summary>
         [Fact]
         public void PersistCarriesOrigin()
         {
@@ -199,13 +279,35 @@ namespace CatHome4.Core.Tests
             block.Finalize(-1);
             bus.PushPersist(block);
 
-            Assert.Equal("persist.append", host.Ops[0]);
-            Assert.Equal("front", MetaField(host.Metas[0], "src"));
-            Assert.Contains("\"msgIndex\":7", host.Metas[0]);
-            Assert.Contains("\"hash\":\"abc\"", host.Metas[0]);
+            string delta = TakeDelta(bus);
+            Assert.Equal("front", BlockField(delta, 0, "src"));
+            Assert.Contains("\"msgIndex\":7", delta);
+            Assert.Contains("\"hash\":\"abc\"", delta);
         }
 
-        /// <summary>瞬时事件——control op（非块：前端按事件处理，不渲气泡）</summary>
+        /// <summary>全量载荷——当前状态全部块（按时间戳升序），供连接建立时取一次</summary>
+        [Fact]
+        public void BuildFullCarriesAllBlocks()
+        {
+            RecordingHost host = new RecordingHost();
+            CH4.ViewBus bus = new CH4.ViewBus();
+            bus.Attach(host);
+
+            ViewBlock first = ViewBlock.BuildPending("msg:1:text", "text", "{\"content\":\"a\"}", 1000, null, "front");
+            first.Finalize(-1);
+            bus.PushPersist(first);
+            bus.PushTextStream("{\"kind\":\"text\",\"text\":\"live\"}");
+
+            string full = bus.BuildFull();
+            Assert.Equal(2, BlockCount(full));
+            Assert.Equal("msg:1:text", BlockField(full, 0, "key"));
+            Assert.Equal("stream", BlockField(full, 1, "renderType"));
+
+            // 全量取用不动变更集——随后增量仍能取到未取走的变更
+            Assert.NotNull(TakeDelta(bus));
+        }
+
+        /// <summary>瞬时事件——control 仍即时推送（非块：前端按事件处理，不渲气泡）</summary>
         [Fact]
         public void ControlIsEventNotBlock()
         {
@@ -220,7 +322,7 @@ namespace CatHome4.Core.Tests
             Assert.Equal("control", MetaField(host.Metas[0], "renderType"));
         }
 
-        /// <summary>流式区清空——逐块 live.remove；持久推入记录一并作废（同键可再次推入）</summary>
+        /// <summary>状态清空——流式块逐个记移除；状态表与幂等记录一并作废（同键可再次记入）</summary>
         [Fact]
         public void ResetLiveRemovesAllAndClearsPersist()
         {
@@ -229,21 +331,23 @@ namespace CatHome4.Core.Tests
             bus.Attach(host);
 
             bus.PushTextStream("{\"kind\":\"text\",\"text\":\"a\"}");
+            Assert.NotNull(TakeDelta(bus));
             ViewBlock block = ViewBlock.BuildPending("tool:c1", "toolcard", "{}", 100, null, "independent");
             block.Finalize(10);
             bus.PushPersist(block);
+            Assert.NotNull(TakeDelta(bus));
 
             bus.ResetLive();
-            Assert.Equal("live.remove", host.Ops[host.Ops.Count - 1]);
+            string delta = TakeDelta(bus);
+            Assert.Equal(1, RemoveCount(delta));
             Assert.False(bus.IsToolCardPending("tool:c1"));
+            Assert.Equal(0, BlockCount(bus.BuildFull()));
 
-            int before = host.Ops.Count;
             bus.PushPersist(block);
-            Assert.Equal(before + 1, host.Ops.Count);
-            Assert.Equal("persist.append", host.Ops[host.Ops.Count - 1]);
+            Assert.NotNull(TakeDelta(bus));
         }
 
-        /// <summary>推送面未就绪——全部入口静默（与拆分前会话侧判空语义一致），流式区不落块</summary>
+        /// <summary>推送面未就绪——全部入口静默（与拆分前会话侧判空语义一致），状态表不落块</summary>
         [Fact]
         public void DetachedBusIsSilent()
         {
@@ -264,6 +368,7 @@ namespace CatHome4.Core.Tests
 
             Assert.False(bus.IsToolCardPending("tool:c1"));
             Assert.False(bus.IsToolCardFinaled("tool:c1"));
+            Assert.Equal(0, BlockCount(bus.BuildFull()));
 
             RecordingHost host = new RecordingHost();
             bus.Attach(host);

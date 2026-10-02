@@ -1551,6 +1551,23 @@ namespace CH4
                     ("reply", ms["reply"])))),
                 ("requests", requests));
         }
+        /// <summary>视图全量载荷——A162 状态推送（连接建立首帧取一次；宿主 HTTP 侧注入）</summary>
+        /// <returns>载荷 JSON（{"op":"full","blocks":[…] }）</returns>
+        public string BuildViewFullJson()
+        {
+            return _viewBus.BuildFull();
+        }
+        /// <summary>视图增量载荷——A162 状态推送（帧轮取；变更集为空返回 null）</summary>
+        /// <returns>载荷 JSON（{"op":"delta",…}）或 null</returns>
+        public string TakeViewDeltaJson()
+        {
+            string json;
+            if (_viewBus.TryTakeDelta(out json))
+            {
+                return json;
+            }
+            return null;
+        }
 
         /// <summary>构建 roundsum 载荷——本轮 Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 六态用时（idle 不计时故不入载荷；CloseRound 推送/落盘数据源）+ done（本轮结束语义：stream=流式自然收尾 / tool=工具主动 done）。</summary>
         /// <returns>roundsum 视图载荷 JSON（{"type":"roundsum","data":{...}}）</returns>

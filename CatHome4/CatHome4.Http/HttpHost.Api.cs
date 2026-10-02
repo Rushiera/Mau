@@ -51,6 +51,16 @@ namespace CatHome4.Http
                         client.Queue.Writer.TryWrite(client.NextFrame("sessionstate", stateHello));
                     }
                 }
+                // A162 状态推送——视图全量首帧：新连接取一次当前状态（替代前端连接建立后自行拉取并重建）；
+                // 连接私有帧（不广播、不进变更集）——此后帧轮增量自然接续；断线重连即自愈（自动再取一次全量）
+                if (_viewFullBuilder != null && client.Wants("view"))
+                {
+                    string full = _viewFullBuilder();
+                    if (full != null && full.Length > 0)
+                    {
+                        client.Queue.Writer.TryWrite(client.NextFrame("view", full));
+                    }
+                }
             }
             try
             {

@@ -22,6 +22,16 @@ beforeAll(async () => {
     const code = await readFile(new URL('../../js/' + m, import.meta.url), 'utf-8');
     vm.runInThisContext(code, { filename: m });
   }
+  // A162 测试垫片——旧 op 面（live.* / persist.append）归一化为状态推送载荷（生产前端已退役旧 op，
+  // 用例形态与覆盖面不变；渲染路径仍走 chatOnView → chatApplyBlock）
+  const rawOnView = globalThis.chatOnView;
+  globalThis.chatOnView = function (d) {
+    if (d && d.op === 'live.remove') { return rawOnView({ op: 'delta', blocks: [], remove: [d.key] }); }
+    if (d && (d.op === 'live.add' || d.op === 'live.update' || d.op === 'persist.append')) {
+      return rawOnView({ op: 'delta', blocks: [d], remove: [] });
+    }
+    return rawOnView(d);
+  };
   chatMsgs = document.getElementById('chatMsgs');
 });
 

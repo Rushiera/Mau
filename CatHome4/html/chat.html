@@ -108,23 +108,15 @@
         // [段2] SSE 事件流——view/note 两事件（相对路径——天然按端口路由；F4 view 协议收敛唯一入口）
         // A141——按订阅推送：本页只订阅四类，不订阅 log（日志帧不进本连接队列）
         var es = new EventSource('/api/v1/stream?topics=view,sessionstate,note,cmd');
-        // A140——每类事件先过落差检测（SSE id 跳号 = 事件未达；出声 + 防抖补拉）
-        es.addEventListener('view', function (ev) { chatSseSeq(ev); chatOnView(JSON.parse(ev.data)); });
-        es.addEventListener('note', function (ev) { chatSseSeq(ev); noteOnEvent(JSON.parse(ev.data)); });   // M4c——Note 状态实时重绘
+        es.addEventListener('view', function (ev) { chatOnView(JSON.parse(ev.data)); });
+        es.addEventListener('note', function (ev) { noteOnEvent(JSON.parse(ev.data)); });   // M4c——Note 状态实时重绘
         // A59——运行态：本猫运行态（sessionstate）变化时推送 → 状态条；空闲期零推送（前端零轮询、零自算计时）
-        es.addEventListener('sessionstate', function (ev) { chatSseSeq(ev); chatOnSessionState(JSON.parse(ev.data)); });
+        es.addEventListener('sessionstate', function (ev) { chatOnSessionState(JSON.parse(ev.data)); });
         es.onerror = function () { chatInfo.textContent = 'SSE 断线——自动重连...'; chatPetSetOffline(true); };
         es.onopen = function () {
-            // A142——重连分流：有续传基线走增量 append（不重建）；无基线（首连 / 会话切换）走全量分片重建。
-            // 旧行为「无条件全量重拉」已退役——长会话全量重建是卡顿主因（秒级长任务 → 页面无响应）。
-            // A140——落差基线重置：新连接 id 序列从头开始，旧基线不适用
-            sseSeqReset();
+            // A162——连接建立（首连 / 自动重连同一路径）：服务端随首帧推一次全量（view.op=full），前端零请求。
+            // 事件流补课机制（落差检测 / 增量续传 / 重连分流 / 本地清容器）已退役。
             chatPetSetOffline(false);
-            if (chatState === 'sending') {
-                viewContainers = {};
-                if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
-            }
-            chatReconnectResume();
         };
 
         // [段3] 按钮绑定（防御式——元素缺失跳过；F2.3 从内联 onclick 迁出）
@@ -170,15 +162,13 @@
             if (st) { st.textContent = t; }
         }
         es.addEventListener('snapshot', function (ev) {
-            chatSseSeq(ev);
             try { chatApplyTitle(JSON.parse(ev.data).title); } catch (e) { uiWarn('标题快照解析', e); }
         });
         fetch('/api/v1/snapshot').then(function (r) { return r.json(); }).then(function (snap) {
             chatApplyTitle(snap.title);
         }).catch(function (e) { uiWarn('标题快照', e); });
 
-        // [段4] 初始化——历史加载 + Note 兜底拉取（版本填充已在引导头部完成）
-        chatLoadHistory();
+        // [段4] 初始化——Note 兜底拉取（历史加载已由服务端连接建立首帧送达；版本填充已在引导头部完成）
         chatPetInit();
         delayInit();
         fetch('/api/v1/note').then(function (r) { return r.json(); }).then(function (j) { noteState = j; noteRender(); }).catch(function (e) { uiWarn('Note 兜底拉取', e); });

@@ -331,64 +331,83 @@ function chatRenderPending() {
     panel.innerHTML = html;
 }
 
-// ============ A158 view 协议分发（两区镜像） ============
-// 流式区（live.add / live.update / live.remove）——后端流式区里有什么就渲染什么：块键定位容器，
-//   不做配对、不做替换判定、不判归属（谁进谁出由后端 op 表达）
-// 持久区（persist.append）——落盘块追加渲染（只增不改：同一块不会重复推送，前端不去重）
+// ============ A162 状态推送分发（快照模型） ============
+// full——连接建立时服务端推一次（网页刷新 / 断线重连同一路径）：清容器后整体重绘
+// delta——帧轮增量：blocks 逐块按块键应用（同键覆盖）+ remove 逐键删容器；无变化服务端零字节
 // control——阶段控制（usage / chatdone / paused / note / session_reset）
-// 旧 renderType + seq / replaceSeq 分派已退役（A158 期三——计数退役）
+// 旧 op 面（live.add / live.update / live.remove / persist.append）随 A162 退役
 
 function chatOnView(d) {
-    if (chatState === 'loading') { return; }
+    // A162 状态推送——loading 态放行全量帧（全量即服务端送达的初始状态；其余事件待就绪后再收）
+    if (chatState === 'loading' && d.op !== 'full') { return; }
     // A77 静默提示撤销——view 事件到达即撤（宿主复活自愈；不残留误报）
     chatClearStall();
     // 跟随判定取样——「新内容到达前」是否贴近底部（新块自身高度不计入判定：多行 user 气泡 / 整块回复等
     // 大块会把插入后的距底距离顶过 80px 阈值 → 被误判为用户已上翻 → 不跟随、只延伸滚动条——2026-09-17 修复）
     var stickBottom = chatNearBottom();
     var op = d.op;
-    var payload = d.payload || {};
-    if (op === 'live.add' || op === 'live.update') {
-        chatOnLive(d);
-    } else if (op === 'live.remove') {
-        chatOnLiveRemove(d.key);
-    } else if (op === 'persist.append') {
-        chatOnPersist(d, payload);
+    if (op === 'full') {
+        chatOnViewFull(d);
+    } else if (op === 'delta') {
+        chatOnViewDelta(d);
     } else if (op === 'control') {
-        chatOnControl(payload);
+        chatOnControl(d.payload || {});
     }
     // 末尾按取样结果滚动——stickBottom（到达前已贴近底部）则维持在最下层；否则尊重用户上翻位置不动
     if (stickBottom) { chatMsgs.scrollTop = chatMsgs.scrollHeight; }
 }
 
-// 持久块追加——落盘块到达即渲（只增不改）
-function chatOnPersist(d, payload) {
-    if (d.renderType === 'user') {
+// 全量——清空流式容器与对话区后整体重绘（全量的唯一入口：连接建立时服务端推送）
+function chatOnViewFull(d) {
+    chatClearLiveRegion();
+    chatMsgs.textContent = '';
+    var blocks = d.blocks || [];
+    for (var i = 0; i < blocks.length; i++) {
+        chatApplyBlock(blocks[i]);
+    }
+    chatSyncRunningMarks();
+    chatLiveSyncTimer();
+    // A162——全量帧即初始状态就绪：退出 loading 态（此前由 chatLoadHistory 收尾置位，纯化后改由此处收口）
+    if (chatState === 'loading') { chatSetState('idle'); }
+}
+
+// 增量——blocks 逐块应用（同键覆盖）+ remove 逐键删容器
+function chatOnViewDelta(d) {
+    var blocks = d.blocks || [];
+    for (var i = 0; i < blocks.length; i++) {
+        chatApplyBlock(blocks[i]);
+    }
+    var remove = d.remove || [];
+    for (var j = 0; j < remove.length; j++) {
+        chatOnLiveRemove(remove[j]);
+    }
+    chatSyncRunningMarks();
+    chatLiveSyncTimer();
+}
+
+// 单块应用——按块键定位容器：流式类（stream / toolcard）走实时渲染，其余走历史块渲染
+function chatApplyBlock(b) {
+    var key = b.key || '';
+    var payload = b.payload || {};
+    if (b.renderType === 'stream') {
+        chatOnLiveStream(key, payload);
+        return;
+    }
+    if (b.renderType === 'toolcard') {
+        chatOnLiveToolCard(key, payload);
+        return;
+    }
+    if (b.renderType === 'user') {
         // 进内核消息——保留实时语义（source 前缀 + 插话队列确认）
         chatOnUser(payload);
         return;
     }
-    chatAppendHistoryBlock(d);
+    chatAppendHistoryBlock(b);
     // A55——错误块到达即恢复 idle（旧 chatOnError 的收尾语义）
-    if (d.renderType === 'error') { chatSetState('idle'); }
-    chatSyncRunningMarks();
+    if (b.renderType === 'error') { chatSetState('idle'); }
 }
 
-// 流式区渲染——按块键建容器或就地更新（语义由后端 op 表达，前端零判定）
-function chatOnLive(d) {
-    var key = d.key || '';
-    var payload = d.payload || {};
-    if (d.renderType === 'stream') {
-        chatOnLiveStream(key, payload);
-    } else if (d.renderType === 'toolcard') {
-        chatOnLiveToolCard(key, payload);
-    }
-    // 进行中标记——全局态唯一出入口
-    chatSyncRunningMarks();
-    // 活跃计时表——think 流式块 / 工具卡新建后保证表在跑（无活跃元素时为空操作）
-    chatLiveSyncTimer();
-}
-
-// 流式区移除——区里没了就删气泡（后端清空流式区的唯一表达）
+// 流式区移除——区里没了就删气泡（delta 的 remove 表达）
 function chatOnLiveRemove(key) {
     var c = viewContainers[key];
     if (!c) { return; }
@@ -572,9 +591,6 @@ function chatOnControl(payload) {
     }
 }
 
-// SSE 落差处理计时句柄——防抖补拉（3 秒窗口内只补一次）
-var chatGapReloadTimer = null;
-
 // A158——流式区快照重建（全量加载时消费 history 的 live 数组）
 function chatClearLiveRegion() {
     for (var k in viewContainers) {
@@ -586,34 +602,7 @@ function chatClearLiveRegion() {
 }
 
 /**
- * 落差响应——顶部提示缺失条数 + 防抖触发一次补齐拉取
- * 声明：design-ch4-push-perf §3.2（丢帧必须可见）；A142 起补齐走增量续传（有基线时）
- * @param {Object} ev SSE 事件对象
- * @returns {number} 本次落差条数（0=连续）
- */
-function chatSseSeq(ev) {
-    var gap = sseSeqTrack(ev);
-    if (gap <= 0) { return 0; }
-    chatInfo.textContent = '⚠️ 事件缺失 ' + gap + ' 条（本次连接累计 ' + sseGapTotal + '）——正在补齐';
-    if (chatGapReloadTimer === null) {
-        chatGapReloadTimer = setTimeout(function () {
-            chatGapReloadTimer = null;
-            chatReconnectResume();
-        }, 3000);
-    }
-    return gap;
-}
-
-/**
- * 重连 / 补齐分流——A158：一律全量（增量续传已退役——无 gen / count / prefixOk 判据）
- * 声明：design-ch4-view-blocks §十（计数退役）；重连 / 刷新 / 落差补齐 = 全量重拉
- */
-function chatReconnectResume() {
-    chatLoadHistory();
-}
-
-/**
- * 全量历史加载——清空重建（首连 / 重连 / 会话切换一律走此口；A158 期三：增量路径已退役）
+ * 全量历史加载——清空重建（首连 / 重连 / 会话切换一律走此口——顶层数据流：连接建立即拉一次全量）
  * 持久块渲染 + 流式区快照重建（响应 live 数组 = 后端流式区当前内容——忠实镜像）
  */
 function chatLoadHistory() {
@@ -626,7 +615,7 @@ function chatLoadHistory() {
             var sid = chatRenderHistory(d);
             if (sid) { CHAT_SESSION = sid; }
             var live = d.live || [];
-            for (var i = 0; i < live.length; i++) { chatOnLive(live[i]); }
+            for (var i = 0; i < live.length; i++) { chatApplyBlock(live[i]); }
             // A61 刷新兜底——后端轮次仍在跑（运行态已由 sessionstate 首帧送达）→ 保持 sending（停止按钮可用）
             chatSetState(chatRunning() ? 'sending' : 'idle');
         })

@@ -185,36 +185,131 @@ namespace CatHome4.Core.Tests
         /// </summary>
         private sealed class MockHost : IHostPush
         {
+            /// <summary>被观察会话——A162 状态推送：视图变更经会话增量取用回放（表读取时自动回放未取走的增量）</summary>
+            public CH4.ChatSession Session;
+
+            /// <summary>已见块键 → 渲染类型（增量移除条目无 renderType，按此回溯归属）</summary>
+            private readonly Dictionary<string, string> _keyRenderTypes = new Dictionary<string, string>();
+
+            /// <summary>捕获的视图块——renderType → payload 列表（F4 视图事件）</summary>
+            private readonly Dictionary<string, List<string>> _viewEvents = new Dictionary<string, List<string>>();
+
+            /// <summary>捕获的事件 op——renderType → op 列表（A162：块面统一 delta；旧 live.* / persist.append 已退役）</summary>
+            private readonly Dictionary<string, List<string>> _viewOps = new Dictionary<string, List<string>>();
+
+            /// <summary>捕获的事件块键——renderType → key 列表（同键原位更新断言用）</summary>
+            private readonly Dictionary<string, List<string>> _viewKeys = new Dictionary<string, List<string>>();
+
+            /// <summary>事件到达序——renderType 列表（跨类型时序断言用）</summary>
+            private readonly List<string> _eventOrder = new List<string>();
+
             /// <summary>会话完成事件（不捕获）</summary>
             public void PushChatDone(int count) { }
 
             /// <summary>Note 状态事件（不捕获）</summary>
             public void PushNoteState(string json) { }
 
-            /// <summary>捕获的 PushView 调用——renderType → payload 列表（F4 视图事件）</summary>
-            public Dictionary<string, List<string>> ViewEvents = new Dictionary<string, List<string>>();
+            /// <summary>捕获视图块——renderType → payload 列表（读取即先回放未取走的增量）</summary>
+            public Dictionary<string, List<string>> ViewEvents
+            {
+                get
+                {
+                    FlushView();
+                    return _viewEvents;
+                }
+            }
 
-            /// <summary>捕获的事件 op——renderType → op 列表（期三：live.add / live.update / live.remove / persist.append）</summary>
-            public Dictionary<string, List<string>> ViewOps = new Dictionary<string, List<string>>();
+            /// <summary>捕获事件 op——renderType → op 列表（读取即先回放未取走的增量）</summary>
+            public Dictionary<string, List<string>> ViewOps
+            {
+                get
+                {
+                    FlushView();
+                    return _viewOps;
+                }
+            }
 
-            /// <summary>捕获的事件块键——renderType → key 列表（同键原位更新断言用）</summary>
-            public Dictionary<string, List<string>> ViewKeys = new Dictionary<string, List<string>>();
+            /// <summary>捕获事件块键——renderType → key 列表（读取即先回放未取走的增量）</summary>
+            public Dictionary<string, List<string>> ViewKeys
+            {
+                get
+                {
+                    FlushView();
+                    return _viewKeys;
+                }
+            }
 
-            /// <summary>事件到达序——renderType 列表（跨类型时序断言用）</summary>
-            public List<string> EventOrder = new List<string>();
+            /// <summary>事件到达序——renderType 列表（读取即先回放未取走的增量）</summary>
+            public List<string> EventOrder
+            {
+                get
+                {
+                    FlushView();
+                    return _eventOrder;
+                }
+            }
 
-            /// <summary>视图事件捕获——按 renderType 累积（F4；期三：op + key 从 meta 解析）</summary>
-            /// <param name="op">事件语义（live.add / live.update / live.remove / persist.append / control）</param>
-            /// <param name="payload">载荷 JSON（live.remove 为空）</param>
-            /// <param name="meta">块元数据 JSON（key / renderType / ts / durMs / state / id / src / origin）</param>
+            /// <summary>
+            /// A162——取会话未取走的视图增量并回放为捕获事件：块按 renderType / key / payload 入表（op 记 delta），
+            /// 移除条目按键回溯已见 renderType。增量取走即清（会话侧变更集），故表读取可反复安全调用。
+            /// </summary>
+            public void FlushView()
+            {
+                if (Session == null)
+                {
+                    return;
+                }
+                string json = Session.TakeViewDeltaJson();
+                if (json == null || json.Length == 0)
+                {
+                    return;
+                }
+                using (JsonDocument doc = JsonDocument.Parse(json))
+                {
+                    JsonElement blocks = doc.RootElement.GetProperty("blocks");
+                    foreach (JsonElement b in blocks.EnumerateArray())
+                    {
+                        string renderType = b.GetProperty("renderType").GetString();
+                        string key = b.GetProperty("key").GetString();
+                        string payload = "";
+                        JsonElement p;
+                        if (b.TryGetProperty("payload", out p))
+                        {
+                            payload = p.GetRawText();
+                        }
+                        Accumulate(_viewEvents, renderType, payload);
+                        Accumulate(_viewOps, renderType, "delta");
+                        Accumulate(_viewKeys, renderType, key);
+                        _eventOrder.Add(renderType);
+                        _keyRenderTypes[key] = renderType;
+                    }
+                    JsonElement removes = doc.RootElement.GetProperty("remove");
+                    foreach (JsonElement r in removes.EnumerateArray())
+                    {
+                        string key = r.GetString();
+                        string renderType;
+                        if (!_keyRenderTypes.TryGetValue(key, out renderType))
+                        {
+                            renderType = "unknown";
+                        }
+                        Accumulate(_viewOps, renderType, "delta");
+                        _eventOrder.Add(renderType);
+                    }
+                }
+            }
+
+            /// <summary>即时事件捕获——control 等非块事件仍走推送面（A162：块面不再即时推送）</summary>
+            /// <param name="op">事件语义（control）</param>
+            /// <param name="payload">载荷 JSON</param>
+            /// <param name="meta">块元数据 JSON</param>
             public void PushView(string op, string payload, string meta)
             {
                 string renderType = MetaValue(meta, "renderType");
                 string key = MetaValue(meta, "key");
-                Accumulate(ViewEvents, renderType, payload);
-                Accumulate(ViewOps, renderType, op);
-                Accumulate(ViewKeys, renderType, key);
-                EventOrder.Add(renderType);
+                Accumulate(_viewEvents, renderType, payload);
+                Accumulate(_viewOps, renderType, op);
+                Accumulate(_viewKeys, renderType, key);
+                _eventOrder.Add(renderType);
             }
 
             /// <summary>累积辅助——按 renderType 列表追加</summary>
@@ -747,6 +842,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("并发调用工具");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
@@ -785,30 +881,23 @@ namespace CatHome4.Core.Tests
             };
             CH4.ChatSession session = CreateSession(llm, declared);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("调用工具");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
             List<string> cards = host.ViewEvents["toolcard"];
-            Assert.True(cards.Count >= 2);
-            // 先行卡——无 result 字段（前端 ⏳ 处理中）+ 工具名 + 并发编号
-            using (JsonDocument p = JsonDocument.Parse(cards[0]))
-            {
-                JsonElement res;
-                Assert.False(p.RootElement.TryGetProperty("result", out res));
-                Assert.Equal("time", p.RootElement.GetProperty("name").GetString());
-                Assert.Equal(1, p.RootElement.GetProperty("toolIndex").GetInt32());
-                Assert.Equal(1, p.RootElement.GetProperty("toolTotal").GetInt32());
-            }
-            // 完成卡——同块键原位更新（期三：live.add 先行、live.update 定稿；前端按 key 就地刷新）
-            List<string> cardOps = host.ViewOps["toolcard"];
-            Assert.Equal("live.add", cardOps[0]);
-            Assert.Equal("live.update", cardOps[1]);
-            Assert.Equal(host.ViewKeys["toolcard"][0], host.ViewKeys["toolcard"][1]);
-            using (JsonDocument d = JsonDocument.Parse(cards[1]))
+            Assert.True(cards.Count >= 1);
+            // A162 状态同步——同键在未取走期间合并（先行态被终态覆盖）：末条即最终卡（含 result）
+            using (JsonDocument d = JsonDocument.Parse(cards[cards.Count - 1]))
             {
                 JsonElement res;
                 Assert.True(d.RootElement.TryGetProperty("result", out res));
+                Assert.Equal("time", d.RootElement.GetProperty("name").GetString());
+                Assert.Equal(1, d.RootElement.GetProperty("toolIndex").GetInt32());
+                Assert.Equal(1, d.RootElement.GetProperty("toolTotal").GetInt32());
             }
+            List<string> cardOps = host.ViewOps["toolcard"];
+            Assert.Equal("delta", cardOps[0]);
         }
 
         /// <summary>
@@ -828,6 +917,7 @@ namespace CatHome4.Core.Tests
             };
             CH4.ChatSession session = CreateSession(llm, declared);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("调用 OA 工具");
             // 泵帧直到先行卡出现（工具批已进入）
             for (int i = 0; i < 200; i = i + 1)
@@ -848,8 +938,8 @@ namespace CatHome4.Core.Tests
             List<string> cards = host.ViewEvents["toolcard"];
             Assert.True(cards.Count >= 2);
             List<string> abortOps = host.ViewOps["toolcard"];
-            Assert.Equal("live.add", abortOps[0]);
-            Assert.Equal("live.update", abortOps[1]);
+            Assert.Equal("delta", abortOps[0]);
+            Assert.Equal("delta", abortOps[1]);
             using (JsonDocument d = JsonDocument.Parse(cards[1]))
             {
                 Assert.Contains("已中止", d.RootElement.GetProperty("result").GetString());
@@ -874,6 +964,7 @@ namespace CatHome4.Core.Tests
             };
             CH4.ChatSession session = CreateSession(llm, declared);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("逐条回填验证");
             // 泵到 host-flows 终态卡出现（此时后批 text-write 仍在进行中）
             for (int i = 0; i < 200; i = i + 1)
@@ -915,6 +1006,7 @@ namespace CatHome4.Core.Tests
             };
             CH4.ChatSession session = CreateSession(llm, declared);
             session.AttachHost(host);
+            host.Session = session;
             CH4.ChatSession.AuthorizedToolNamesProvider = delegate (string catKey) { return new string[] { "Note" }; };
             try
             {
@@ -942,6 +1034,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("统计一下");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
@@ -986,6 +1079,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("算一下");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
@@ -1166,6 +1260,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("重试可见性");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
@@ -1207,6 +1302,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("续传终态载荷");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
@@ -1234,6 +1330,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("重试耗尽终态");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
@@ -1349,6 +1446,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("测试暂停");
             // 泵帧直到进入活跃相位（后台流挂起在 HoldStream——保证 Pause 时 LlmRunning）
             for (int i = 0; i < 100 && session.IsIdle; i++)
@@ -1403,6 +1501,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("暂停重试测试");
             // 泵帧直到活跃（后台流挂起在 Retrying 前——等待取消）
             for (int i = 0; i < 100 && session.IsIdle; i++)
@@ -1739,12 +1838,13 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("想一想");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
-            // 流式容器事件——思考两条 + 回复一条（同 renderType=stream）
-            Assert.Equal(3, host.ViewEvents["stream"].Count);
-            // 期三——纯文本轮的思考段只属流式区（live 三 op）：前文消息不带 reasoning → 不产 reason 持久块
+            // A162 状态同步——流式容器在轮末全部撤离（作为 remove 条目送出，不进状态表）：ViewEvents 无 stream 键
+            Assert.False(host.ViewEvents.ContainsKey("stream"));
+            // 纯文本轮的思考段只属流式区：前文消息不带 reasoning → 不产 reason 持久块
             Assert.False(host.ViewEvents.ContainsKey("reason"));
         }
 
@@ -1763,6 +1863,7 @@ namespace CatHome4.Core.Tests
                 new ToolSpec("time", "当前时间", "{}")
             });
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("用工具");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);

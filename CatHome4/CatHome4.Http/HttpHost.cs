@@ -65,6 +65,12 @@ namespace CatHome4.Http
         /// <summary>本猫运行态构建回调（可空=不推运行态）——对话端口用：变化才推（替代每 250ms 全量快照推送）</summary>
         public Func<string> SessionStateBuilder { get; set; }
 
+        /// <summary>视图全量构建回调（可空=连接建立不推视图）——A162 状态推送：连接建立取一次（连接私有首帧）</summary>
+        public Func<string> ViewFullBuilder { get; set; }
+
+        /// <summary>视图增量构建回调（可空=不推视图增量）——A162 状态推送：帧轮取，无变化返回 null/空（零推送）</summary>
+        public Func<string> ViewDeltaBuilder { get; set; }
+
         /// <summary>静态页模式（true=chat.html / false=index.html）</summary>
         public bool ServeChatPage { get; set; }
 
@@ -101,6 +107,12 @@ namespace CatHome4.Http
 
         /// <summary>本猫运行态构建回调——对话端口注入（Session.BuildRunStateJson；可空=不推运行态）</summary>
         private Func<string> _sessionStateBuilder;
+
+        /// <summary>视图全量构建回调——对话端口注入（Session.BuildViewFullJson；可空=连接建立不推视图）</summary>
+        private Func<string> _viewFullBuilder;
+
+        /// <summary>视图增量构建回调——对话端口注入（Session.TakeViewDeltaJson；可空=不推视图增量）</summary>
+        private Func<string> _viewDeltaBuilder;
 
         /// <summary>上次运行态 JSON——本地 diff（变化才推；空闲期零推送）——主线程独占</summary>
         private string _lastSessionState;
@@ -194,6 +206,8 @@ namespace CatHome4.Http
             host._delayBuilder = options.DelayBuilder;
             host._patchBuilder = options.PatchBuilder;
             host._sessionStateBuilder = options.SessionStateBuilder;
+            host._viewFullBuilder = options.ViewFullBuilder;
+            host._viewDeltaBuilder = options.ViewDeltaBuilder;
             host._serveChatPage = options.ServeChatPage;
             host._routeRegistrar = options.RouteRegistrar;
             host._htmlRootProvider = options.HtmlRootProvider;

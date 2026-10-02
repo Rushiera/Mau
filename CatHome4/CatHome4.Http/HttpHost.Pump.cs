@@ -95,6 +95,15 @@ namespace CatHome4.Http
                 json = InjectSnapshotTitle(json, _pageTitle);
             }
             _snapshotCache = json;
+            // A162 状态推送——视图增量：有变化推 delta、无变化零字节（与运行态推送并列，各自独立判据）
+            if (_viewDeltaBuilder != null)
+            {
+                string delta = _viewDeltaBuilder();
+                if (delta != null && delta.Length > 0)
+                {
+                    PushEvent("view", delta);
+                }
+            }
             // 增量流式——只推变化段；无变化零推送（Idle 稳态静默）：对话端口推本猫运行态（sessionstate）、主端口推全局 patch、两者皆缺时回落全量快照
             if (_sessionStateBuilder != null)
             {
