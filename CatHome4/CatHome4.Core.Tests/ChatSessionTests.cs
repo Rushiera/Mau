@@ -185,29 +185,6 @@ namespace CatHome4.Core.Tests
         /// </summary>
         private sealed class MockHost : IHostPush
         {
-            /// <summary>捕获的 PushLlm 调用——kind → text 列表</summary>
-            public Dictionary<string, List<string>> LlmEvents = new Dictionary<string, List<string>>();
-
-            /// <summary>用户消息事件（不捕获）</summary>
-            public void PushUserMessage(string text, string source) { }
-
-            /// <summary>LLM 事件捕获——按 kind 累积</summary>
-            /// <param name="kind">事件类型</param>
-            /// <param name="text">载荷</param>
-            public void PushLlm(string kind, string text)
-            {
-                List<string> list;
-                if (!LlmEvents.TryGetValue(kind, out list))
-                {
-                    list = new List<string>();
-                    LlmEvents[kind] = list;
-                }
-                list.Add(text);
-            }
-
-            /// <summary>工具结果事件（不捕获）</summary>
-            public void PushToolResult(string name, string arguments, string result) { }
-
             /// <summary>会话完成事件（不捕获）</summary>
             public void PushChatDone(int count) { }
 
@@ -935,7 +912,7 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// E3 usage 转发——LLM 流带 Usage 事件 → 宿主收到 PushLlm("usage") 且累计整轮（覆盖式）。
+        /// E3 usage 转发——LLM 流带 Usage 事件 → 宿主收到 view 事件（control 段 usage 块）且累计整轮（覆盖式）。
         /// </summary>
         [Fact]
         public void Usage_ForwardedToHost()

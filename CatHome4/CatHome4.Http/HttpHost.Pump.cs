@@ -233,22 +233,6 @@ namespace CatHome4.Http
         {
             string frame = "{\"sessionId\":\"" + _sessionId + "\",\"state\":" + json + "}";
             PushEvent("note", frame);
-        }        /// <summary>
-                 /// 工具结果实时推送——宿主 ChatBridge ExecuteToolBatch 调用（B4 对话区：tool 事件）。
-                 /// 载荷与 history 视图同截断（参数 ≤200/结果 ≤300）；事件顺序 = 执行顺序 = toolCalls 数组顺序（前端 FIFO 配对）。
-                 /// </summary>
-                 /// <param name="name">工具名</param>
-                 /// <param name="arguments">参数摘要（≤200）</param>
-                 /// <param name="result">结果摘要（≤300；ERR 前缀失败）</param>
-        public void PushToolResult(string name, string arguments, string result)
-        {
-            var obj = new
-            {
-                name = name,
-                arguments = arguments,
-                result = result
-            };
-            PushEvent("tool", JsonUtil.Serialize(obj));
         }
 
         /// <summary>
@@ -264,44 +248,6 @@ namespace CatHome4.Http
                 count = count
             };
             PushEvent("chatdone", JsonUtil.Serialize(obj));
-        }
-
-        /// <summary>
-        /// LLM 流式事件转发——宿主 ChatBridge 调用（协议 §4.2 llm 事件：seq 单调 + kind 五态 + sessionId 归属）。
-        /// sessionId：本实例归属会话（P9.3 多实例化——每猫 HttpHost 绑定自身会话；B4 归属性保持）。
-        /// </summary>
-        /// <param name="kind">事件态——text/reasoning/toolCalls/done/error（直映 LlmStreamKind）</param>
-        /// <param name="text">增量文本或错误文本</param>
-        public void PushLlm(string kind, string text)
-        {
-            // 先取自身序号（线性可用与广播推进并存——PushEvent 内部再递增；seq 单调即满足排序锚点语义）
-            int seq = Interlocked.Increment(ref _seq);
-            var obj = new
-            {
-                seq = seq,
-                kind = kind,
-                text = text,
-                sessionId = _sessionId
-            };
-            PushEvent("llm", JsonUtil.Serialize(obj));
-        }
-
-        /// <summary>
-        /// 用户消息事件——所有进内核的消息统一出口（单向数据流改造：前端气泡唯一来源）。
-        /// </summary>
-        /// <param name="text">消息文本</param>
-        /// <param name="source">来源——user/system</param>
-        public void PushUserMessage(string text, string source)
-        {
-            int seq = Interlocked.Increment(ref _seq);
-            var obj = new
-            {
-                seq = seq,
-                source = source,
-                content = text,
-                sessionId = _sessionId
-            };
-            PushEvent("user", JsonUtil.Serialize(obj));
         }
 
         /// <summary>

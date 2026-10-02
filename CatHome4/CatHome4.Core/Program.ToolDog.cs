@@ -49,8 +49,11 @@ namespace CH4
         /// </summary>
         public long TimeoutFrames;
 
-        /// <summary>工具卡视图序号——LLM 输出工具时先行推送的“进行中”卡序号（完成 / 中断时以该序号 replaceSeq 原位替换）。取值：正值 = 先行卡序号；-1 = 无先行卡（推送即新建）；-2 = 已推过终态（ChatSession.ToolCardSeqDone 哨兵，不重推）。</summary>
+        /// <summary>工具卡视图序号——LLM 输出工具时先行推送的“进行中”卡序号（完成 / 中断时以该序号 replaceSeq 原位替换）。取值：正值 = 先行卡序号；-1 = 无先行卡（推送即新建）。</summary>
         public long CardSeq;
+
+        /// <summary>终态卡是否已推——FlushToolCard 幂等标志（A155 2b：原哨兵值 ChatSession.ToolCardSeqDone = -2 显式化）。置位后不再重推终态卡。</summary>
+        public bool CardFlushed;
 
         /// <summary>
         /// 执行序值——工具分批调度的分桶依据（A127；宿主内部静态表裁决，非 LLM 传参）。
@@ -74,6 +77,7 @@ namespace CH4
             IsTimedOut = false;
             Result = "";
             CardSeq = -1;
+            CardFlushed = false;
             Order = ToolOrderTable.OrderDefault;
             TimeoutFrames = MapTimeoutFrames(name);
         }
