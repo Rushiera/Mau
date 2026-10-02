@@ -12,36 +12,63 @@
 var liveShown = false;
 
 /// 指令投递——统一出口（失败可见；投递即回执，结果异步经 SSE 回来）
-function postCommand(text) {
-    fetch('/api/v1/command', {
+/// images 可选——图片绝对路径列表（待发区）；编号与包裹由后端组装，前端只投路径
+function postCommand(text, images) {
+    var payload = { text: text };
+    if (images && images.length > 0) {
+        payload.images = images;
+    }
+    return fetch('/api/v1/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text })
+        body: JSON.stringify(payload)
     }).then(function (r) {
         return r.json();
     }).then(function (j) {
         if (!j || j.ok !== true) {
             warn('指令未受理：' + text + (j && j.error ? '（' + j.error + '）' : ''));
         }
+        return j;
     }).catch(function (e) {
         warn('指令投递失败', e);
+        return null;
     });
 }
 
-/// 发送——空文本零动作；发送后自动切回流式显示（用户想看内容而非留在临时面板）
+/// 发送——空文本且无待发图零动作；发送后自动切回流式显示（用户想看内容而非留在临时面板）
 function chatSend() {
     var box = document.getElementById('chatSendInput');
     if (!box) {
         return;
     }
     var text = (box.value || '').replace(/^\s+|\s+$/g, '');
-    if (text.length === 0) {
+    if (typeof pendBusy === 'function' && pendBusy()) {
+        // 上传未完成不发——防漏图（提示走待发区尾部，不抢顶部状态位）
+        pendNotice('图片上传中——稍候再发');
         return;
+    }
+    var paths = (typeof pendPaths === 'function') ? pendPaths() : [];
+    if (text.length === 0 && paths.length === 0) {
+        return;
+    }
+    // 插话队列——本地入列（内核 user 块到达时出列——见 pending.js / persist.js 钩子）
+    if (typeof pendingAdd === 'function') {
+        pendingAdd(text.length > 0 ? text : '（图片）');
     }
     // 🔴 用户消息必须带 `Chat ` 前缀——宿主 `DispatchCommandForCat` 只认前缀行，裸文本 `return false` 不投递
     //    （A167 主干重建时漏掉，判例 2026-10-03：前端回车发送收不到）
-    postCommand('Chat ' + text);
+    postCommand('Chat ' + text, paths).then(function (j) {
+        if (!j || j.ok !== true) {
+            // 投递未受理——本地在途记录失去意义（防幽灵队列）
+            if (typeof pendingClear === 'function') {
+                pendingClear();
+            }
+        }
+    });
     box.value = '';
+    if (typeof pendClear === 'function') {
+        pendClear();
+    }
     showStreamArea();
 }
 

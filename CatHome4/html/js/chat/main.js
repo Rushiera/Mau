@@ -126,9 +126,11 @@ function chatConnect() {
     });
     chatSse.onopen = function () {
         // 连接建立（首连 / 自动重连同一路径）：服务端随首帧推全量——前端零请求、零补课
+        if (typeof chatPetSetOffline === 'function') { chatPetSetOffline(false); }
     };
     chatSse.onerror = function () {
         warn('SSE 断线——自动重连中');
+        if (typeof chatPetSetOffline === 'function') { chatPetSetOffline(true); }
     };
 }
 

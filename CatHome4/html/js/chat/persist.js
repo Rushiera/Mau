@@ -36,6 +36,10 @@ function persistFull(items) {
         return;
     }
     box.textContent = '';
+    // 插话队列——全量重绘即清队（连接首帧 / 重连 / 新会话：本地在途记录失去意义）
+    if (typeof pendingClear === 'function') {
+        pendingClear();
+    }
     persistAppend(items);
     scrollBottomNow(true);
 }
@@ -47,6 +51,10 @@ function persistAppend(items) {
         return;
     }
     for (var i = 0; i < items.length; i++) {
+        // 插话队列——user 块到达 = 内核确认，本地在途记录 FIFO 出队
+        if (items[i] && items[i].type === 'user' && typeof pendingConsume === 'function') {
+            pendingConsume();
+        }
         var node = null;
         try {
             node = persistRender(items[i]);

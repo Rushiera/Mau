@@ -49,6 +49,7 @@ function stateApply(st) {
     stateRenderTokens();
     stateSyncControls();
     stateRenderNote();
+    stateRenderPet();
 }
 
 /// Note 段单独应用——note 事件为兼容面（状态段已含 Note）；载荷形态与 state.note 一致
@@ -124,5 +125,12 @@ function stateSyncControls() {
 function stateRenderNote() {
     if (typeof noteRenderFromState === 'function') {
         noteRenderFromState(appState.note);
+    }
+}
+
+/// 桌宠投影——状态段渲染后同步桌宠（纯前端调度，零后端面；无容器时零动作）
+function stateRenderPet() {
+    if (typeof chatPetSync === 'function') {
+        chatPetSync();
     }
 }

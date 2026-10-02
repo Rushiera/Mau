@@ -96,10 +96,23 @@ function buildToolCard(tool, open) {
         sum.appendChild(document.createTextNode(' '));
     }
 
-    // 折叠行文案——骨架中文名兜底 → 工具名（逐工具自然语言 headline 属覆盖层，已丢弃）
-    var headline = SKEL_LABELS[skeletonOf(t.name)] || t.name || '?';
+    // 折叠行文案——PS 双线：命令意图硬解码（lib/cmd.js）→ 骨架中文名兜底 → 工具名
+    // （逐工具自然语言 headline 覆盖层不采用；**PS 解码与未识别上报属渲染的一部分**——A174 恢复）
+    var cmdIntent = null;
+    if ((t.name === 'powershell' || t.name === 'powershell7') && typeof cmdDecodeTool === 'function') {
+        cmdIntent = cmdDecodeTool(t.arguments);
+        // 覆盖率采集——规则表未命中的命令段上报（异步 fire-and-forget；渲染零阻塞）
+        if (cmdIntent && typeof cmdReportUnknown === 'function') {
+            cmdReportUnknown(cmdIntent.unknown);
+        }
+    }
+    var headline = cmdIntent ? cmdIntent.brief : (SKEL_LABELS[skeletonOf(t.name)] || t.name || '?');
     sum.appendChild(document.createTextNode(headline + (body ? resultSuffix(resultInfo2) : '')));
     det.appendChild(sum);
+    if (cmdIntent) {
+        // 展开区首块——逐段意图对照（命令原文仍在输入段；未识别段标 ❓）
+        det.appendChild(elText('div', 'cmd-intent', cmdIntent.detail));
+    }
 
     if (body && body.segs) {
         // 骨架路径——输入 / 输出段（二级折叠；段内沿用 .ta / .tr / .ta.warn 锚点类）

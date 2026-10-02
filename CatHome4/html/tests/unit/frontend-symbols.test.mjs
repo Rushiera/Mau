@@ -67,12 +67,19 @@ describe('前端符号自检', () => {
             const rel = file.slice(ROOT.length + 1);
             const lines = readFileSync(file, 'utf-8').split(/\r?\n/);
             for (let i = 0; i < lines.length; i = i + 1) {
-                const text = lines[i];
-                const trimmed = text.replace(/^\s+/, '');
+                const raw = lines[i];
+                const trimmed = raw.replace(/^\s+/, '');
                 // 行首注释跳过（注释里提到的历史名不算引用）
                 if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) {
                     continue;
                 }
+                // 字符串与正则字面量剥离——引号 / 斜杠内是内容、不参与求值
+                // （CSS `var(--x)` · 文案 `'Note ('` · 规则表 `/^git(\.exe)?/` 均非调用）
+                const text = raw
+                    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+                    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+                    .replace(/`(?:[^`\\]|\\.)*`/g, '``')
+                    .replace(/\/(?:[^\n\/\\\[]|\\.|\[(?:[^\]\\]|\\.)*\])+\/[gimsuy]*/g, '/re/');
                 let m;
                 // 声明 ①：函数（含缩进——局部函数也算「声明过」，宁宽勿误报）
                 const reDefFn = /\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g;
@@ -96,8 +103,9 @@ describe('前端符号自检', () => {
                     }
                 }
                 // 声明 ④：防御式可选钩子——`typeof NAME === 'function'` 即声明「可能不存在」
+                // 🔴 在 raw 上扫——`'function'` 是语法形态，字符串剥离后会失配
                 const reTypeof = /\btypeof\s+([A-Za-z_$][\w$]*)\s*===?\s*['"]function['"]/g;
-                while ((m = reTypeof.exec(text)) !== null) {
+                while ((m = reTypeof.exec(raw)) !== null) {
                     declared.add(m[1]);
                 }
                 // 引用：裸调用（前置字符非「.」非标识符字符——排除 obj.method(）

@@ -17,7 +17,9 @@
 //   · 60 工具落位表（CHAT_TOOL_SKELETONS）——数据非逻辑；本文件只留一张示例表
 //   · 逐工具覆盖表（CHAT_TOOL_OVERRIDES：icon / tag / inputLines / outputLines / badge）
 //   · info / catinfo 的逐字段摊平（chatInfoPairs / chatCatInfoPairs）——逐工具定制
-//   · 命令解码（chat-cmd.js 的 powershell 意图识别与未识别段上报）
+//
+// 不在本件（但保留为渲染的一部分）：
+//   · PS 命令解码与未识别段上报 → `lib/cmd.js`（A174 恢复；`blocks/toolcard.js` 折叠行 + 展开区消费）
 // ═══════════════════════════════════════════
 
 // ═══ 阈值与小件 ═══

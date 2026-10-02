@@ -10,9 +10,10 @@
 
 | 目录 | 内容 |
 |:--|:--|
-| `lib/` | 渲染共用件（8 件）——DOM 构造 `el` / 格式化 `fmtCount`·`fmtMs` / MD 渲染 / 图片包裹 / 按压判据 / 思考头行 / 工具骨架 |
+| `lib/` | 渲染共用件（9 件）——DOM 构造 `el` / 格式化 `fmtCount`·`fmtMs` / MD 渲染 / 图片包裹 / 按压判据 / 思考头行 / 工具骨架 / **命令解码 `cmd`（PS 意图 + 未识别上报）** |
 | `blocks/` | 契约 11 类块型，**每类一件**（persist 8 + live 3） |
 | 主干 | `registry.js`（映射表）· `persist.js`（持久区）· `live.js`（临时区）· `state.js`（状态投影）· `main.js`（收包入口）· `input.js`（用户出口） |
+| 侧翼件 | `scroll.js`（滚动自持——滚轮兜底转发 + 自绘滚动带）· `note.js`（Note 面板——气泡 + 弹层）· `delay.js`（定时面板——列表 / 倒计时 / 改时刻）· `pet.js`（桌宠渲染——纯前端调度；素材清单 `../pet-manifest.js`）· `paste.js`（图片粘贴上传 + 待发区）· `pending.js`（插话队列显示——本地入列 / user 块出列） |
 
 ---
 
@@ -59,5 +60,5 @@
 ## 四、边界
 
 - **不含**：面板面（`../app.js` · `../panel*.js` · `../index.html`）· 两页共用件（`../ui-common.js`）
-- **待转移侧翼件**（页面功能件，不属 11 类块型；清单与要点 → `design-ch4-frontend-rebuild_log.md` 阶段 3 §侧翼件清单）：滚动自持 · Note · 定时 · 桌宠 · 图片粘贴 · 插话队列 · 命令解码
+- **侧翼件全部就位**（A168-A174 转移完成）：`scroll.js` 滚动自持 · `note.js` · `delay.js` · `pet.js` · `paste.js` · `pending.js` · 命令解码并入 `lib/cmd.js`（清单与要点 → `design-ch4-frontend-rebuild_log.md` 阶段 3 §侧翼件清单）
 - **测试**：`../tests/`（vitest；对话面用例随重构销毁，面板面用例保留）
