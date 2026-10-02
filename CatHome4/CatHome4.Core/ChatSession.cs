@@ -1905,8 +1905,8 @@ namespace CH4
             {
                 if (dog.IsTimedOut)
                 {
-                    LogStore.Add("CatHome4", 2, "工具 " + dog.Name + " 工单 #" + dog.OfficeId + " 超时（无人认领）——诚实 ERR", "TOOL");
-                    dog.Result = "ERR|OA_TIMEOUT|工单超时无人认领: " + dog.Name;
+                    LogStore.Add("CatHome4", 2, "工具 " + dog.Name + " 工单 #" + dog.OfficeId + " 超时（时限内无回执）——诚实 ERR；超时 ≠ 终止：底层执行可能仍在跑", "TOOL");
+                    dog.Result = "ERR|OA_TIMEOUT|工单超时（时限内无回执）: " + dog.Name + "——超时 ≠ 终止：只失去回执，宿主不中断已认领的执行，底层可能仍在跑；勿用同参数重试（可能重复执行），长任务请分片（拆成多次小批）或走断点续传";
                 }
                 else
                 {

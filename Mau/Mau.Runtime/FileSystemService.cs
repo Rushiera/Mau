@@ -222,14 +222,14 @@ namespace Mau.Runtime
 
             return unified.Substring(start, end - start);
         }
-        /// <summary>自动编码覆写——既有文件的 BOM/换行保真，新建文件按类型契约（P1/P2；A25）。</summary>
+        /// <summary>自动编码覆写——既有文件的 BOM/换行保真，新建文件按类型契约（P1/P2；A25）；返回写入风格描述（编码 + BOM / 换行——A148）。</summary>
         /// <param name="path">受控路径</param>
         /// <param name="content">完整正文（换行自动归一为目标风格）</param>
-        public void WriteTextAuto(string path, string content) { string resolved = Resolve(path, true); lock (_writeGate) { WriteAutoCore(resolved, path, SafeText(content)); } }
-        /// <summary>自动编码追加——既有文件的 BOM/换行保真，新建文件按类型契约（P1/P2；A25）。</summary>
+        public string WriteTextAuto(string path, string content) { string resolved = Resolve(path, true); lock (_writeGate) { return WriteAutoCore(resolved, path, SafeText(content)); } }
+        /// <summary>自动编码追加——既有文件的 BOM/换行保真，新建文件按类型契约（P1/P2；A25）；返回写入风格描述（编码 + BOM / 换行——A148）。</summary>
         /// <param name="path">受控路径</param>
         /// <param name="content">追加正文（换行自动归一为目标风格）</param>
-        public void AppendTextAuto(string path, string content)
+        public string AppendTextAuto(string path, string content)
         {
             string resolved = Resolve(path, true);
             lock (_writeGate)
@@ -239,17 +239,15 @@ namespace Mau.Runtime
                 string newline = ResolveWriteStyle(resolved, path, out bom);
                 string body = TextFileCodec.NormalizeNewlines(SafeText(content), newline);
                 File.AppendAllText(resolved, body, TextFileCodec.WriteEncoding(path, bom));
+                return TextFileCodec.DescribeStyle(path, bom, newline);
             }
         }
-        /// <summary>
-        /// 锚点三态替换——P3 核心（design-ch4-text-tools §六）：exact/ignore_case 要求唯一（0→NotFound+差异定位 / 1→替换 / >1→Ambiguous+候选）；
-        /// regex/all 模式替换全部匹配（0→NotFound）；exact/ignore_case 要求唯一（>1→Ambiguous+候选行）。编码 + 换行保真（P1/P2），绝不静默写入。
-        /// </summary>
+        /// <summary>锚点三态替换——P3 核心（design-ch4-text-tools §六）：exact/ignore_case 要求唯一（0→NotFound+差异定位 / 1→替换 / &gt;1→Ambiguous+候选）；regex/all 模式替换全部匹配（0→NotFound）。编码 + 换行保真（P1/P2），绝不静默写入。regex 模式另记匹配跨度（最长行数 / 字符数 + 命中合计 + 超阈值出声判据——A146）。</summary>
         /// <param name="path">受控路径</param>
         /// <param name="oldText">锚点文本</param>
         /// <param name="newText">替换文本（regex 模式支持 $1 捕获组）</param>
         /// <param name="mode">exact（默认）/ ignore_case / all（字面量全部替换）/ regex</param>
-        /// <returns>三态诊断结果</returns>
+        /// <returns>三态诊断结果（regex 模式附匹配跨度记账——A146）</returns>
         public TextReplaceOutcome ReplaceTextAuto(string path, string oldText, string newText, string mode)
         {
             if (string.IsNullOrEmpty(oldText))
@@ -268,7 +266,29 @@ namespace Mau.Runtime
                 string newline = TextFileCodec.DetectNewline(raw);
                 string unified = content.Replace("\r\n", "\n");
                 string target = oldText.Replace("\r\n", "\n");
-                int[] indexes = FindAll(unified, target, mode);
+                // [命中面] regex 一次取索引 + 匹配长度（跨度记账用——A146）；其余模式长度 = 锚点长度
+                int[] indexes;
+                int[] lengths;
+                if (mode == "regex")
+                {
+                    MatchCollection matches = Regex.Matches(unified, target, RegexOptions.None, TimeSpan.FromSeconds(5));
+                    indexes = new int[matches.Count];
+                    lengths = new int[matches.Count];
+                    for (int i = 0; i < matches.Count; i = i + 1)
+                    {
+                        indexes[i] = matches[i].Index;
+                        lengths[i] = matches[i].Length;
+                    }
+                }
+                else
+                {
+                    indexes = FindAll(unified, target, mode);
+                    lengths = new int[indexes.Length];
+                    for (int i = 0; i < lengths.Length; i = i + 1)
+                    {
+                        lengths[i] = target.Length;
+                    }
+                }
                 if (indexes.Length == 0)
                 {
                     outcome.Status = TextReplaceStatus.NotFound;
@@ -297,6 +317,31 @@ namespace Mau.Runtime
                 }
                 outcome.Status = TextReplaceStatus.Ok;
                 outcome.Count = indexes.Length;
+                // [行号面] all 模式成功回执列命中行号（前 5 + 计数——A147）
+                if (mode == "all")
+                {
+                    outcome.CandidateLines = LineNumbersOf(unified, indexes);
+                }
+                // [跨度记账] regex 匹配无边界约束——逐匹配记账，供回执出声（A146）
+                if (mode == "regex")
+                {
+                    int maxChars = 0;
+                    int maxIndex = 0;
+                    int totalChars = 0;
+                    for (int i = 0; i < lengths.Length; i = i + 1)
+                    {
+                        totalChars = totalChars + lengths[i];
+                        if (lengths[i] > maxChars)
+                        {
+                            maxChars = lengths[i];
+                            maxIndex = indexes[i];
+                        }
+                    }
+                    outcome.MaxSpanChars = maxChars;
+                    outcome.TotalSpanChars = totalChars;
+                    outcome.MaxSpanLines = CountLinesOf(unified.Substring(maxIndex, maxChars));
+                    outcome.SpanWarned = outcome.MaxSpanLines >= TextReplaceSpec.SpanWarnLines || outcome.MaxSpanChars >= TextReplaceSpec.SpanWarnChars;
+                }
                 // 换行保真写回（新行归一为目标风格）+ 原子写
                 string body = TextFileCodec.NormalizeNewlines(replaced, newline);
                 ConfigStore.AtomicWrite(resolved, body, enc);
@@ -349,7 +394,32 @@ namespace Mau.Runtime
         /// <param name="content">归一化正文</param>
         /// <param name="target">归一化锚点</param>
         /// <param name="outcome">结果载荷（写差异字段）</param>
-        private static void LocateBestDiff(string content, string target, TextReplaceOutcome outcome) { string first = target.Length > 0 ? target.Substring(0, 1) : ""; int bestPos = 0; int bestCommon = -1; int scan = content.IndexOf(first, StringComparison.Ordinal); while (scan >= 0) { int common = 0; while (common < target.Length && scan + common < content.Length && content[scan + common] == target[common]) { common = common + 1; } if (common > bestCommon) { bestCommon = common; bestPos = scan; } if (common >= target.Length) { break; } scan = content.IndexOf(first, scan + 1, StringComparison.Ordinal); } if (bestCommon < 0) { bestCommon = 0; } int diff = bestPos + bestCommon; outcome.DiffByteIndex = diff; outcome.Expected = Slice(target, bestCommon, 10); outcome.Actual = Slice(content, diff, 10); }
+        private static void LocateBestDiff(string content, string target, TextReplaceOutcome outcome) { string first = target.Length > 0 ? target.Substring(0, 1) : ""; int bestPos = 0; int bestCommon = -1; int scan = content.IndexOf(first, StringComparison.Ordinal); while (scan >= 0) { int common = 0; while (common < target.Length && scan + common < content.Length && content[scan + common] == target[common]) { common = common + 1; } if (common > bestCommon) { bestCommon = common; bestPos = scan; } if (common >= target.Length) { break; } scan = content.IndexOf(first, scan + 1, StringComparison.Ordinal); } if (bestCommon < 0) { bestCommon = 0; } int diff = bestPos + bestCommon; outcome.DiffByteIndex = diff; outcome.Expected = Slice(target, bestCommon, 10); outcome.Actual = Slice(content, diff, 10); outcome.EntitySuspect = ContainsEntityForm(target) || ContainsEntityForm(outcome.Actual); }
+        /// <summary>
+        /// 实体形态检测——文本含 lt / gt / amp / quot 转义写法（A149 锚点未命中出声判据）
+        /// </summary>
+        /// <param name="text">待检文本</param>
+        /// <returns>true=含实体形态</returns>
+        private static bool ContainsEntityForm(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return false;
+            }
+            if (text.IndexOf("&lt;", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+            if (text.IndexOf("&gt;", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+            if (text.IndexOf("&amp;", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+            return text.IndexOf("&quot;", StringComparison.Ordinal) >= 0;
+        }
         /// <summary>
         /// 截取片段（越界截断）
         /// </summary>
@@ -372,6 +442,27 @@ namespace Mau.Runtime
         /// <param name="index">命中起始索引</param>
         /// <returns>行摘要文本</returns>
         private static string SnippetAround(string content, int index) { int lineStart = index; int lineEnd = index; while (lineStart > 0 && content[lineStart - 1] != '\n') { lineStart = lineStart - 1; } while (lineEnd < content.Length && content[lineEnd] != '\n') { lineEnd = lineEnd + 1; } int start = lineStart; for (int i = 0; i < 3 && start > 0; i = i + 1) { int prev = content.LastIndexOf('\n', start - 1); if (prev < 0) { start = 0; break; } start = prev + 1; } int end = lineEnd; for (int i = 0; i < 3 && end < content.Length; i = i + 1) { int next = content.IndexOf('\n', end); if (next < 0) { end = content.Length; break; } end = next + 1; } return content.Substring(start, end - start); }
+        /// <summary>
+        /// 匹配跨度行数——空串 0；否则换行数 + 1（A146：regex 单次匹配跨度出声）
+        /// </summary>
+        /// <param name="text">匹配文本</param>
+        /// <returns>行数（空串 0）</returns>
+        private static int CountLinesOf(string text)
+        {
+            if (text.Length == 0)
+            {
+                return 0;
+            }
+            int lines = 1;
+            for (int i = 0; i < text.Length; i = i + 1)
+            {
+                if (text[i] == '\n')
+                {
+                    lines = lines + 1;
+                }
+            }
+            return lines;
+        }
         /// <summary>
         /// 写侧风格解析——既有文件探测实际 BOM + 换行并保真；新建文件按类型契约（P1/P2；A25）。
         /// 单次读取同时产出两者（BOM 保真 + 换行保真共用一份字节）。
@@ -400,11 +491,11 @@ namespace Mau.Runtime
             return TextFileCodec.DefaultNewline(path);
         }
 
-        /// <summary>编码内建写核心——两态风格（既有文件 BOM/换行保真；新建文件按类型契约）+ 原子写。</summary>
+        /// <summary>编码内建写核心——两态风格（既有文件 BOM/换行保真；新建文件按类型契约）+ 原子写；返回写入风格描述（A148）。</summary>
         /// <param name="resolved">规范绝对路径</param>
         /// <param name="path">用户路径（契约判定用）</param>
         /// <param name="content">正文</param>
-        private void WriteAutoCore(string resolved, string path, string content)
+        private string WriteAutoCore(string resolved, string path, string content)
         {
             bool bom = false;
             string newline = ResolveWriteStyle(resolved, path, out bom);
@@ -419,6 +510,7 @@ namespace Mau.Runtime
             string tmp = resolved + ".tmp";
             File.WriteAllText(tmp, body, enc);
             File.Move(tmp, resolved, true);
+            return TextFileCodec.DescribeStyle(path, bom, newline);
         }
 
         /// <summary>

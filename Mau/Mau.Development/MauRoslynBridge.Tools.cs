@@ -182,11 +182,13 @@ namespace Mau.Development
             string slnPath = ResolveSolutionPath(path);
             if (slnPath.Length > 0)
             {
-                return BuildOne(slnPath, out result);
+                string slnScope = SolutionScopeLine(slnPath);
+                return BuildOne(slnPath, slnScope, out result);
             }
             if (projects.Count == 1)
             {
-                return BuildOne(projects[0], out result);
+                string singleScope = "── 构建面：单项目入口（含其依赖闭包）——入口外项目未覆盖；需全解决方案请传 .sln 或目录 ──";
+                return BuildOne(projects[0], singleScope, out result);
             }
             // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文按项目分节
             StringBuilder sb = new StringBuilder();
@@ -195,7 +197,7 @@ namespace Mau.Development
             for (int i = 0; i < projects.Count; i = i + 1)
             {
                 string one;
-                BuildOne(projects[i], out one);
+                BuildOne(projects[i], "", out one);
                 if (one.StartsWith("{\"ok\":false", StringComparison.Ordinal))
                 {
                     failed = failed + 1;
@@ -205,7 +207,10 @@ namespace Mau.Development
             Dictionary<string, object> aggMeta = new Dictionary<string, object>();
             aggMeta["projects"] = projects.Count;
             aggMeta["failed"] = failed;
+            aggMeta["scope"] = "projects";
             sb.Append(MetaHead("cs-build", failed == 0, aggMeta));
+            sb.Append(Environment.NewLine);
+            sb.Append("── 构建面：" + projects.Count + " 个项目（逐项目编译）──");
             for (int i = 0; i < sections.Count; i = i + 1)
             {
                 sb.Append(Environment.NewLine);
@@ -220,7 +225,7 @@ namespace Mau.Development
         /// <param name="target">csproj / .sln 绝对路径</param>
         /// <param name="result">结果文本</param>
         /// <returns>调用完成</returns>
-        private bool BuildOne(string target, out string result)
+        private bool BuildOne(string target, string scopeLine, out string result)
         {
             // 轻量缓存条目——不 Parse 全树（build 只裁决，不建编译态）
             ProjectCache cache = null!;
@@ -258,11 +263,19 @@ namespace Mau.Development
             meta["errors"] = CountBuildMark(buildText, "个错误", "Error(s)");
             meta["warnings"] = CountBuildMark(buildText, "个警告", "Warning(s)");
             meta["ms"] = elapsedMs;
+            meta["scope"] = BuildScopeLabel(target);
             if (run.ExitCode == 0)
             {
                 cache.ReferencesDirty = true;
             }
-            result = TrimResult(MetaHead("cs-build", run.ExitCode == 0, meta) + Environment.NewLine + tail, MaxResultChars);
+            StringBuilder head = new StringBuilder();
+            head.Append(MetaHead("cs-build", run.ExitCode == 0, meta));
+            if (scopeLine.Length > 0)
+            {
+                head.Append(Environment.NewLine);
+                head.Append(scopeLine);
+            }
+            result = TrimResult(head.ToString() + Environment.NewLine + tail, MaxResultChars);
             return true;
         }
 
@@ -279,6 +292,59 @@ namespace Mau.Development
                 return full;
             }
             return "";
+        }
+        /// <summary>
+        /// 构建面标签——solution（.sln 全量）/ single（单项目入口）。
+        /// </summary>
+        /// <param name="target">csproj / .sln 绝对路径</param>
+        /// <returns>标签串</returns>
+        internal static string BuildScopeLabel(string target)
+        {
+            if (target.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+            {
+                return "solution";
+            }
+            return "single";
+        }
+        /// <summary>
+        /// 解决方案项目计数——统计 .sln 内 Project(...) 行（构建面声明用；读取失败给 0，由调用方出声）。
+        /// </summary>
+        /// <param name="slnPath">.sln 绝对路径</param>
+        /// <returns>项目数（读取失败 0）</returns>
+        internal static int CountSolutionProjects(string slnPath)
+        {
+            try
+            {
+                string[] lines = File.ReadAllLines(slnPath);
+                int count = 0;
+                for (int i = 0; i < lines.Length; i = i + 1)
+                {
+                    if (lines[i].TrimStart().StartsWith("Project(", StringComparison.Ordinal))
+                    {
+                        count = count + 1;
+                    }
+                }
+                return count;
+            }
+            catch (IOException)
+            {
+                return 0;
+            }
+        }
+        /// <summary>
+        /// 构建面声明行——解决方案入口（项目数解析失败时出声「未解析」，不静默给 0）。
+        /// </summary>
+        /// <param name="slnPath">.sln 绝对路径</param>
+        /// <returns>构建面文本行</returns>
+        internal static string SolutionScopeLine(string slnPath)
+        {
+            int count = CountSolutionProjects(slnPath);
+            string name = Path.GetFileName(slnPath);
+            if (count > 0)
+            {
+                return "── 构建面：解决方案全量（" + count + " 个项目 · " + name + "）──";
+            }
+            return "── 构建面：解决方案全量（项目数未解析 · " + name + "）──";
         }
         /// <summary>
         /// cs.list——类/成员签名（语法层提取，无需语义）

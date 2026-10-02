@@ -178,8 +178,10 @@ namespace CH4
         /// 调用点：Bootstrap 段2 末尾（ConfigSchema.Load 前；此时 LogStore 未 Configure——日志直打 Console 与早期 Bootstrap 风格一致）。
         /// </summary>
         /// <param name="configDir">Data/config 目录（绝对路径）</param>
-        private static string EnsureSchemaSync(string configDir)
+        /// <param name="templatePath">schema 模板绝对路径（未找到为空串——出参，供声明通道写模板）</param>
+        private static string EnsureSchemaSync(string configDir, out string templatePath)
         {
+            templatePath = "";
             string target = Path.Combine(configDir, "schema.json");
             string template = "";
             string[] candidates = new string[]
@@ -195,6 +197,7 @@ namespace CH4
                     break;
                 }
             }
+            templatePath = template;
             if (template.Length == 0)
             {
                 Console.WriteLine("[CMD] schema 同步: 模板未找到——保持现有 schema（声明面可能过期，请检查部署包 config/）");
@@ -248,6 +251,71 @@ namespace CH4
                 }
             }
             return true;
+        }
+
+        /// <summary>
+        /// 受控根启动对账（A153）——回显生效根（id=path·可写/只读），并检出**同 path 多根**：
+        /// 路径等值时解析取首个等值匹配，其余根的 writable / note 声明不生效（原为静默）——此处具名两组根 id。
+        /// </summary>
+        /// <param name="workspace">工作区配置（workspace.json 解析结果）</param>
+        /// <param name="conflict">输出：是否检出同 path 多根</param>
+        /// <returns>一行对账文本（进启动审计）</returns>
+        internal static string RootsAuditNote(WorkspaceConfig workspace, out bool conflict)
+        {
+            conflict = false;
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.Append("生效根 ");
+            sb.Append(workspace.Roots.Length.ToString());
+            sb.Append(" 个: ");
+            for (int i = 0; i < workspace.Roots.Length; i = i + 1)
+            {
+                WorkspaceConfig.RootEntry entry = workspace.Roots[i];
+                if (i > 0)
+                {
+                    sb.Append(" | ");
+                }
+                sb.Append(entry.Id);
+                sb.Append("=");
+                sb.Append(entry.Path);
+                if (entry.Writable)
+                {
+                    sb.Append("(可写)");
+                }
+                else
+                {
+                    sb.Append("(只读)");
+                }
+            }
+            System.Text.StringBuilder dup = new System.Text.StringBuilder();
+            int dupCount = 0;
+            for (int i = 0; i < workspace.Roots.Length; i = i + 1)
+            {
+                for (int j = i + 1; j < workspace.Roots.Length; j = j + 1)
+                {
+                    if (!string.Equals(workspace.Roots[i].Path, workspace.Roots[j].Path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                    if (dupCount > 0)
+                    {
+                        dup.Append(" / ");
+                    }
+                    dupCount = dupCount + 1;
+                    dup.Append(workspace.Roots[i].Id);
+                    dup.Append(" 与 ");
+                    dup.Append(workspace.Roots[j].Id);
+                }
+            }
+            if (dupCount > 0)
+            {
+                conflict = true;
+                sb.Append(" | ⚠ 同 path 多根 ");
+                sb.Append(dupCount.ToString());
+                sb.Append(" 组: ");
+                sb.Append(dup.ToString());
+                sb.Append("——按 id 解析取首个等值匹配，其余根的 writable / note 声明不生效（请改路径或合并为单根）");
+            }
+            return sb.ToString();
         }
 
         /// <summary>

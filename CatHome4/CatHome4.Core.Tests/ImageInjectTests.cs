@@ -217,7 +217,7 @@ namespace CatHome4.Core.Tests
             CH4.ChatSession session = CreateSession(llm);
             List<CH4.ToolOrderDog> dogs = new List<CH4.ToolOrderDog>();
             CH4.ToolOrderDog d1 = new CH4.ToolOrderDog("i1", "image-inject", "{\"path\":\"C:/tmp/a.png\"}");
-            d1.Result = "ERR|OA_TIMEOUT|工单超时无人认领: image-inject";
+            d1.Result = "ERR|OA_TIMEOUT|工单超时（时限内无回执）: image-inject——超时 ≠ 终止：只失去回执，宿主不中断已认领的执行";
             dogs.Add(d1);
             session.FlushImageInjections(dogs);
             Assert.Equal(0, CountInjectedMessages(session));

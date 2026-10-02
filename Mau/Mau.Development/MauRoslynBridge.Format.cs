@@ -53,7 +53,10 @@ namespace Mau.Development
                 return true;
             }
 
-            // [段4] 逐文件规整——目标行尾取自文件现状（多数优先）；结果文本整体归一后落盘，不允许 Roslyn 输出直接落盘
+            // [段4] 行尾策略 + 逐文件规整——项目属性 eol（.editorconfig / .gitattributes 自入口向上查找）优先，
+            //        未命中回落文件现状（多数优先）；结果文本整体归一后落盘，不允许 Roslyn 输出直接落盘
+            string eolSource;
+            string projectEol = DetectProjectNewline(entry, out eolSource);
             StringBuilder sb = new StringBuilder();
             int changedFiles = 0;
             int changedLines = 0;
@@ -68,6 +71,17 @@ namespace Mau.Development
                 int crlfCount = 0;
                 int lfCount = 0;
                 string newline = DetectTargetNewline(source, out crlfCount, out lfCount);
+                if (projectEol.Length > 0)
+                {
+                    if (projectEol == "crlf")
+                    {
+                        newline = "\r\n";
+                    }
+                    else
+                    {
+                        newline = "\n";
+                    }
+                }
                 string formatted = NormalizeNewLineText(FormatText(source, file, newline), newline);
                 if (string.Equals(formatted, source, StringComparison.Ordinal))
                 {
@@ -85,7 +99,7 @@ namespace Mau.Development
                 changedLines = changedLines + lines;
                 if (mode == "apply")
                 {
-                    string writeFailure = WriteFilePreserving(file, formatted, HasUtf8Bom(file));
+                    string writeFailure = WriteFilePreserving(file, formatted, HasUtf8Bom(file), newline);
                     writtenFiles = writtenFiles + 1;
                     if (writeFailure.Length > 0)
                     {
@@ -96,7 +110,14 @@ namespace Mau.Development
                 sb.AppendLine(relative + " | lines=" + lines.ToString());
                 if (crlfCount > 0 && lfCount > 0)
                 {
-                    sb.AppendLine("MIXED|" + relative + "|原文件行尾混合（CRLF " + crlfCount + " / LF " + lfCount + "）→ 按多数归一为 " + NewlineLabel(newline));
+                    if (projectEol.Length > 0)
+                    {
+                        sb.AppendLine("MIXED|" + relative + "|原文件行尾混合（CRLF " + crlfCount + " / LF " + lfCount + "）→ 按项目属性 eol=" + projectEol + " 归一为 " + NewlineLabel(newline) + "（来源 " + RelativeToRoots(eolSource) + "）");
+                    }
+                    else
+                    {
+                        sb.AppendLine("MIXED|" + relative + "|原文件行尾混合（CRLF " + crlfCount + " / LF " + lfCount + "）→ 按多数归一为 " + NewlineLabel(newline));
+                    }
                 }
             }
 
@@ -107,6 +128,15 @@ namespace Mau.Development
             fmtMeta["changedFiles"] = changedFiles;
             fmtMeta["changedLines"] = changedLines;
             fmtMeta["failedFiles"] = failedFiles;
+            if (projectEol.Length > 0)
+            {
+                fmtMeta["eol"] = projectEol;
+                fmtMeta["eolSource"] = RelativeToRoots(eolSource);
+            }
+            else
+            {
+                fmtMeta["eol"] = "file";
+            }
             if (mode == "apply")
             {
                 fmtMeta["writtenFiles"] = writtenFiles;
@@ -115,6 +145,14 @@ namespace Mau.Development
             StringBuilder output = new StringBuilder();
             output.Append(MetaHead("cs-format", failedFiles == 0 && writeFailures == 0, fmtMeta));
             output.AppendLine();
+            if (projectEol.Length > 0)
+            {
+                output.AppendLine("── 行尾策略：项目属性 eol=" + projectEol + "（来源 " + RelativeToRoots(eolSource) + "）──");
+            }
+            else
+            {
+                output.AppendLine("── 行尾策略：按各文件现状多数归一（未发现 .editorconfig / .gitattributes 的 eol 声明）──");
+            }
             output.Append(sb.ToString());
             result = TrimResult(output.ToString(), MaxResultChars);
             return true;
@@ -426,6 +464,158 @@ namespace Mau.Development
             }
             return first;
         }
+        /// <summary>
+        /// 项目行尾探测——自入口目录向上查找 .editorconfig / .gitattributes 的 eol 声明（跨仓场景）。
+        /// 语义：命中即以此为规整目标行尾（覆盖文件现状多数）；未命中返回空串（回落文件现状多数）。
+        /// </summary>
+        /// <param name="entry">入口路径（文件或目录）</param>
+        /// <param name="source">输出——命中声明所在文件路径（未命中空串）</param>
+        /// <returns>crlf / lf / 空串</returns>
+        internal static string DetectProjectNewline(string entry, out string source)
+        {
+            source = "";
+            string dir = entry;
+            if (File.Exists(entry))
+            {
+                dir = Path.GetDirectoryName(entry);
+            }
+            for (int depth = 0; depth < 12; depth = depth + 1)
+            {
+                if (dir == null || dir.Length == 0)
+                {
+                    break;
+                }
+                string editorPath = Path.Combine(dir, ".editorconfig");
+                if (File.Exists(editorPath))
+                {
+                    string editorEol = ReadEditorConfigEol(editorPath);
+                    if (editorEol.Length > 0)
+                    {
+                        source = editorPath;
+                        return editorEol;
+                    }
+                }
+                string attrPath = Path.Combine(dir, ".gitattributes");
+                if (File.Exists(attrPath))
+                {
+                    string attrEol = ReadGitAttributesEol(attrPath);
+                    if (attrEol.Length > 0)
+                    {
+                        source = attrPath;
+                        return attrEol;
+                    }
+                }
+                DirectoryInfo parent = Directory.GetParent(dir);
+                if (parent == null)
+                {
+                    break;
+                }
+                dir = parent.FullName;
+            }
+            return "";
+        }
+        /// <summary>
+        /// .editorconfig 的 end_of_line 读取——取最后一条适用于 .cs（`*` / `*.cs` 族）段的声明。
+        /// </summary>
+        /// <param name="path">.editorconfig 路径</param>
+        /// <returns>crlf / lf / 空串</returns>
+        internal static string ReadEditorConfigEol(string path)
+        {
+            string[] lines = File.ReadAllLines(path);
+            bool applies = false;
+            string result = "";
+            for (int i = 0; i < lines.Length; i = i + 1)
+            {
+                string line = lines[i].Trim();
+                if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal) || line.StartsWith(";", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                if (line.StartsWith("[", StringComparison.Ordinal) && line.EndsWith("]", StringComparison.Ordinal))
+                {
+                    applies = SectionAppliesToCs(line.Substring(1, line.Length - 2));
+                    continue;
+                }
+                if (!applies)
+                {
+                    continue;
+                }
+                int eq = line.IndexOf('=');
+                if (eq <= 0)
+                {
+                    continue;
+                }
+                string key = line.Substring(0, eq).Trim().ToLowerInvariant();
+                if (key != "end_of_line")
+                {
+                    continue;
+                }
+                string value = line.Substring(eq + 1).Trim().ToLowerInvariant();
+                if (value == "crlf" || value == "lf")
+                {
+                    result = value;
+                }
+            }
+            return result;
+        }
+        /// <summary>
+        /// 段是否适用于 .cs——`*` 或 `.cs` 结尾的模式（含 `{*.cs,*.csx}` 逗号列表形态）。
+        /// </summary>
+        /// <param name="section">段名（去方括号）</param>
+        /// <returns>true=适用</returns>
+        internal static bool SectionAppliesToCs(string section)
+        {
+            string[] tokens = section.Split(',');
+            for (int i = 0; i < tokens.Length; i = i + 1)
+            {
+                string token = tokens[i].Trim().Trim('{', '}', '[', ']').Trim();
+                if (token == "*" || token.EndsWith(".cs", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+        /// <summary>
+        /// .gitattributes 的 eol 读取——取最后一条适用于 .cs（`*` / `*.cs`）的 `eol=` 属性。
+        /// </summary>
+        /// <param name="path">.gitattributes 路径</param>
+        /// <returns>crlf / lf / 空串</returns>
+        internal static string ReadGitAttributesEol(string path)
+        {
+            string[] lines = File.ReadAllLines(path);
+            string result = "";
+            for (int i = 0; i < lines.Length; i = i + 1)
+            {
+                string line = lines[i].Trim();
+                if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                string[] parts = line.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 2)
+                {
+                    continue;
+                }
+                if (parts[0] != "*" && !parts[0].EndsWith(".cs", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                for (int j = 1; j < parts.Length; j = j + 1)
+                {
+                    string token = parts[j].ToLowerInvariant();
+                    if (token == "eol=crlf")
+                    {
+                        result = "crlf";
+                    }
+                    else if (token == "eol=lf")
+                    {
+                        result = "lf";
+                    }
+                }
+            }
+            return result;
+        }
 
         /// <summary>
         /// 行尾文案——诊断输出用（CRLF / LF）
@@ -510,21 +700,26 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 保真原子落盘——临时文件 + Move 覆盖（防半截写入）；编码 / BOM 按原文状态；行尾按原文件多数归一（Roslyn 输出不直接落盘）+ 写后回读自检。
+        /// 保真原子落盘——临时文件 + Move 覆盖（防半截写入）；编码 / BOM 按原文状态；行尾由调用方显式指定（空串=按原文件多数归一，Roslyn 输出不直接落盘）+ 写后回读自检。
         /// </summary>
         /// <param name="path">目标文件</param>
         /// <param name="text">完整新内容</param>
         /// <param name="bom">是否写 UTF-8 BOM</param>
+        /// <param name="newlineOverride">显式目标行尾（空串=按原文件多数归一）</param>
         /// <returns>写盘诊断（空=正常；非空=行尾自检不一致描述）</returns>
-        private static string WriteFilePreserving(string path, string text, bool bom)
+        private static string WriteFilePreserving(string path, string text, bool bom, string newlineOverride)
         {
-            // [段1] 目标行尾——原文件多数行尾优先（文件缺失 / 无换行回退平台默认）
-            string newline = Environment.NewLine;
-            if (File.Exists(path))
+            // [段1] 目标行尾——调用方显式指定优先（cs-format 项目属性 eol）；否则原文件多数行尾（文件缺失 / 无换行回退平台默认）
+            string newline = newlineOverride;
+            if (newline.Length == 0)
             {
-                int crlfCount = 0;
-                int lfCount = 0;
-                newline = DetectTargetNewline(ReadTextShared(path), out crlfCount, out lfCount);
+                newline = Environment.NewLine;
+                if (File.Exists(path))
+                {
+                    int crlfCount = 0;
+                    int lfCount = 0;
+                    newline = DetectTargetNewline(ReadTextShared(path), out crlfCount, out lfCount);
+                }
             }
             string payload = NormalizeNewLineText(text, newline);
             // [段2] 原子写——临时文件 + Move 覆盖（防半截写入）
