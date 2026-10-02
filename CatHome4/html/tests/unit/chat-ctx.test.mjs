@@ -320,7 +320,7 @@ test('full 视图——宿主未回折算值即出声（不静默留白）', () 
   expect(document.getElementById('ctxMeta').textContent).toContain('token 未知');
 });
 
-test('弹层刷新按钮——点击拉完整前文（采集就绪）+ 全量重拉会话页面', () => {
+test('弹层刷新按钮——点击拉完整前文（采集就绪）+ 重建会话页面（首屏尾部窗口）', () => {
   const urls = [];
   vi.stubGlobal('fetch', (u) => {
     urls.push(u);
@@ -332,7 +332,7 @@ test('弹层刷新按钮——点击拉完整前文（采集就绪）+ 全量重
   window.chatCtxMode = 'full';
   document.getElementById('ctxRefresh').dispatchEvent(clickEv());
   expect(urls).toContain('/api/v1/fullctx');
-  expect(urls).toContain('/api/v1/history?max=2000');
+  expect(urls).toContain('/api/v1/history?max=' + window.CHAT_HISTORY_PAGE);
   vi.unstubAllGlobals();
 });
 

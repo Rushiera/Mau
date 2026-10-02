@@ -453,23 +453,25 @@ namespace CH4
         /// <summary>
         /// 构建会话历史视图 JSON——B4 对话区（GET /api/v1/history 回调）。
         /// 会话视图转换：system 跳过；user/assistant 文本直出；assistant tool_calls 与后续 tool 结果配对合入工具卡片（参数 ≤200/结果 ≤300）；
-        /// 孤立 tool 丢弃；保留尾部 max 条视图消息；seq 1-based 渲染锚点。
+        /// 孤立 tool 丢弃；窗口 = [end−max, end)（before = 排他上界，缺省/越界 = 会话末尾）；seq 1-based 窗口内渲染锚点。
         /// </summary>
         /// <param name="session">目标会话（P9.3 按猫参数化——每猫闭包传各自会话）</param>
-        /// <param name="max">视图消息条数上限（1-2000）</param>
+        /// <param name="before">窗口排他上界（全局块序；0 / 越界 = 会话末尾）——上拉补历史时带当前窗口起点</param>
+        /// <param name="max">窗口块数上限（0 = 不限）</param>
         /// <returns>会话视图 JSON</returns>
-        public string BuildHistoryView(ChatSession session, int max)
+        public string BuildHistoryView(ChatSession session, int before, int max)
         {
             ViewBlock[] blocks = session.GetViewBlocks();
-            // 尾部 max 块——视图块裁剪（旧块丢弃；前端固定拉尾部 100）
+            // 窗口语义——before 为排他上界（全局块序；0 / 越界 = 会话末尾），max 为窗口块数（0 = 不限）
+            int end = (before > 0 && before < blocks.Length) ? before : blocks.Length;
             int start = 0;
-            if (max > 0 && blocks.Length > max)
+            if (max > 0 && end > max)
             {
-                start = blocks.Length - max;
+                start = end - max;
             }
             List<object> view = new List<object>();
             long seq = 0;
-            for (int i = start; i < blocks.Length; i++)
+            for (int i = start; i < end; i++)
             {
                 seq = seq + 1;
                 ViewBlock b = blocks[i];
@@ -657,28 +659,29 @@ namespace CH4
             return "tool";
         }
         /// <summary>
-        /// 构建会话历史增量响应——A142 重连续传（GET /api/v1/history?gen=&amp;count=）。
-        /// 语义：前端持块序代际号 + 已持有块数；宿主比对代际号判断前缀是否仍有效——
-        /// 有效则只回 blocks[from..]（窗口起点恒为会话开头——缺省不限）；失效则回 prefixOk=false，由前端回落全量重建。
+        /// 构建会话历史增量响应——A142 重连续传（GET /api/v1/history 带 gen/start/count 三参）。
+        /// 语义：前端持块序代际号 + 窗口起点 + 已持有块数；宿主比对代际号判断前缀是否仍有效——
+        /// 有效则只回 blocks[from..]（from = start + count；窗口起点缺省 0 = 会话开头）；失效则回 prefixOk=false，由前端回落全量重建。
         /// </summary>
         /// <param name="session">目标会话（P9.3 按猫参数化）</param>
         /// <param name="gen">前端持有的块序代际号</param>
+        /// <param name="start">前端当前窗口起点（全局块序；0 = 会话开头）</param>
         /// <param name="count">前端已持有的块数（当前窗口内）</param>
         /// <returns>增量响应 JSON（含 gen / count / start / prefixOk / blocks）</returns>
-        public string BuildHistoryDelta(ChatSession session, int gen, int count)
+        public string BuildHistoryDelta(ChatSession session, int gen, int start, int count)
         {
             ViewBlock[] blocks = session.GetViewBlocks();
             int curGen = session.GetViewGen();
-            // 窗口起点恒为会话开头——缺省不限（与 /api/v1/history 全量缺省同口径）
-            int start = 0;
-            int from = start + count;
+            // 窗口起点 = 前端当前窗口起点（全局块序；0 = 会话开头）——上拉补历史后不再恒为 0
+            int win = start > 0 ? start : 0;
+            int from = win + count;
             bool prefixOk = gen == curGen && count >= 0 && from <= blocks.Length;
             Dictionary<string, object> resp = new Dictionary<string, object>();
             resp["version"] = 1;
             resp["sessionId"] = session.Id;
             resp["gen"] = curGen;
             resp["count"] = blocks.Length;
-            resp["start"] = start;
+            resp["start"] = win;
             resp["ctxCount"] = session.ContextCount;
             resp["prefixOk"] = prefixOk;
             List<object> view = new List<object>();
@@ -688,7 +691,7 @@ namespace CH4
                 {
                     ViewBlock b = blocks[i];
                     Dictionary<string, object> entry = new Dictionary<string, object>();
-                    entry["seq"] = i - start + 1;
+                    entry["seq"] = i - win + 1;
                     entry["id"] = b.Id;
                     entry["renderType"] = b.RenderType;
                     entry["msgIndex"] = b.MsgIndex;

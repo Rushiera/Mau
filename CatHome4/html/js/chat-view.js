@@ -367,6 +367,8 @@ function chatHistoryFinish(data) {
     var ctxTokens = hs ? ((hs.context !== undefined && hs.context > 0) ? hs.context : (hs.prompt || 0)) : 0;
     chatInfoSet(sid, ctxCount, ctxTokens);
     chatScrollBottomNow(true);
+    // 首屏落地——哨兵态 + 视口填充（chat-core 提供；未加载时静默跳过）
+    if (typeof chatHistorySettled === 'function') { chatHistorySettled(); }
 }
 
 // A142 历史全量重建——清空 + 分片渲染（块数 ≤ 批次时同步完成，语义与旧实现等价）
@@ -390,6 +392,37 @@ function chatRenderHistory(data) {
     }
     step();
     return data.sessionId || '';
+}
+
+// 上拉哨兵行——置顶提示（更多历史状态；恒为 #chatMsgs 首子节点，不参与刻度与导航收集）
+function chatOlderEnsure() {
+    var el = chatMsgs.querySelector('.chat-older');
+    if (el) { return el; }
+    el = document.createElement('div');
+    el.className = 'chat-older';
+    el.addEventListener('click', function () {
+        if (typeof chatLoadOlder === 'function') { chatLoadOlder(); }
+    });
+    chatMsgs.insertBefore(el, chatMsgs.firstChild);
+    return el;
+}
+
+// 历史块前插——更早的块保序插到窗口头部，并保住当前阅读位置（不打断阅读）
+function chatPrependHistoryBlocks(blocks) {
+    if (!blocks || blocks.length === 0) { return; }
+    var sentinel = chatMsgs.querySelector('.chat-older');
+    // 插入锚——哨兵行之下（哨兵恒在带顶）；无哨兵时为首子节点
+    var anchor = sentinel ? sentinel.nextSibling : chatMsgs.firstChild;
+    var oldHeight = chatMsgs.scrollHeight;
+    var oldTop = chatMsgs.scrollTop;
+    var oldCount = chatMsgs.children.length;
+    for (var i = 0; i < blocks.length; i++) { chatAppendHistoryBlock(blocks[i]); }
+    // 新块（尾部追加）整体前移到锚点之前——逐节点 insertBefore 保序
+    var moved = [];
+    for (var k = chatMsgs.children.length - 1; k >= oldCount; k = k - 1) { moved.unshift(chatMsgs.children[k]); }
+    for (var m = 0; m < moved.length; m++) { chatMsgs.insertBefore(moved[m], anchor); }
+    // 保位——新增高度补进 scrollTop：视口内仍是原来那一屏内容
+    chatMsgs.scrollTop = oldTop + (chatMsgs.scrollHeight - oldHeight);
 }
 
 // P6b 节点操作条——text 块底部两按钮（⟲ 回滚 / ⧉ 分支）；指令走 command 总线（单向数据流：前端零寻路，只回传 MsgIndex）

@@ -47,8 +47,8 @@ namespace CatHome4.Http
         /// <summary>紧凑帧构建回调（可空=不落帧）</summary>
         public Func<string> FrameBuilder { get; set; }
 
-        /// <summary>会话历史构建回调（可空=不注册该端点）</summary>
-        public Func<int, string> HistoryBuilder { get; set; }
+        /// <summary>会话历史构建回调（可空=不注册该端点）——(before, max)：before 为排他上界（0=会话末尾）</summary>
+        public Func<int, int, string> HistoryBuilder { get; set; }
 
         /// <summary>前文条目构建回调（可空=不注册该端点）——GET /api/v1/context（对话页状态栏「前文 n 条 / n tokens」点击弹层数据源）</summary>
         public Func<int, string> ContextBuilder { get; set; }
@@ -58,8 +58,8 @@ namespace CatHome4.Http
         /// <summary>完整前文构建回调（可空=不注册该端点）——GET /api/v1/fullctx（对话页弹层「完整前文」数据源）</summary>
         public Func<int, string> FullContextBuilder { get; set; }
 
-        /// <summary>会话历史增量构建回调（A142 重连续传；可空=不支持增量——端点回落全量语义）</summary>
-        public Func<int, int, string> HistoryDeltaBuilder { get; set; }
+        /// <summary>会话历史增量构建回调（A142 重连续传；(gen, start, count) 三参；可空=不支持增量——端点回落全量语义）</summary>
+        public Func<int, int, int, string> HistoryDeltaBuilder { get; set; }
 
         /// <summary>多猫列表构建回调（可空=不注册该端点）</summary>
         public Func<string> CatsBuilder { get; set; }
@@ -164,8 +164,8 @@ namespace CatHome4.Http
         /// <summary>紧凑帧构建回调——frame.txt 帧流（可空=不落帧）</summary>
         private Func<string> _frameBuilder;
 
-        /// <summary>会话历史构建回调——Program.BuildHistoryView（B4 对话区；GET /api/v1/history）</summary>
-        private Func<int, string> _historyBuilder;
+        /// <summary>会话历史构建回调——Program.BuildHistoryView（B4 对话区；GET /api/v1/history——(before, max) 窗口语义）</summary>
+        private Func<int, int, string> _historyBuilder;
 
         /// <summary>前文条目构建回调——ChatBridge.BuildContextView（对话页前文弹层；GET /api/v1/context）</summary>
         private Func<int, string> _contextBuilder;
@@ -174,8 +174,8 @@ namespace CatHome4.Http
         /// <summary>完整前文构建回调——ChatBridge.BuildFullContextView（对话页弹层「完整前文」；GET /api/v1/fullctx）</summary>
         private Func<int, string> _fullContextBuilder;
 
-        /// <summary>会话历史增量构建回调——ChatBridge.BuildHistoryDelta（A142 重连续传；可空=不支持增量）</summary>
-        private Func<int, int, string> _historyDeltaBuilder;
+        /// <summary>会话历史增量构建回调——ChatBridge.BuildHistoryDelta（A142 重连续传；(gen, start, count) 三参；可空=不支持增量）</summary>
+        private Func<int, int, int, string> _historyDeltaBuilder;
 
         /// <summary>会话归属 ID——SSE llm/chatdone 事件 sessionId 字段（P9.3 多实例化：每猫实例绑定自身会话）</summary>
         private string _sessionId;
@@ -283,18 +283,21 @@ namespace CatHome4.Http
             _app.MapPost("/api/v1/config", (Delegate)HandleConfigPost);
             _app.MapGet("/api/v1/history", (HttpContext ctx) =>
             {
-                // B4 对话区——会话历史视图（内存 ChatContext 实时真源；缺省不限——全量回传）
-                // A142——带 gen+count 走增量续传（重连路径不重建）；否则全量语义
+                // B4 对话区——会话历史视图（内存 ChatContext 实时真源；窗口语义——?before= 排他上界 / ?max= 窗口块数，缺省 = 全量）
+                // A142——带 gen+count 走增量续传（重连路径不重建；start = 前端窗口起点）；否则窗口语义
                 if (_historyDeltaBuilder != null && ctx.Request.Query.ContainsKey("gen") && ctx.Request.Query.ContainsKey("count"))
                 {
                     int gen = 0;
                     int have = 0;
+                    int winStart = 0;
                     int.TryParse(ctx.Request.Query["gen"].ToString(), out gen);
                     int.TryParse(ctx.Request.Query["count"].ToString(), out have);
-                    return Results.Text(_historyDeltaBuilder(gen, have), "application/json");
+                    int.TryParse(ctx.Request.Query["start"].ToString(), out winStart);
+                    return Results.Text(_historyDeltaBuilder(gen, winStart, have), "application/json");
                 }
                 int max = ReadMaxQuery(ctx);
-                return Results.Text(_historyBuilder(max), "application/json");
+                int before = ReadBeforeQuery(ctx);
+                return Results.Text(_historyBuilder(before, max), "application/json");
             });
             _app.MapGet("/api/v1/note", (HttpContext ctx) =>
             {

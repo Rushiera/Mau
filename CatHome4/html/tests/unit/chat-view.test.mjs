@@ -1393,3 +1393,141 @@ test('chatContinue——非 idle 不投递（与停止互斥）', () => {
   expect(called).toBe(false);
   window.chatState = 'idle';
 });
+
+// ═══════════════════════════════════════════
+// 历史窗口分页（2026-10-02）——首屏只拉尾部窗口（最新数据最先出现）+ 上拉补更早的块（保位，不打断阅读）
+// ═══════════════════════════════════════════
+
+// fetch 桩——按 match 子串返回固定响应；记录请求 URL（断言请求形态）
+function historyFetchStub(routes) {
+  const urls = [];
+  const orig = window.fetch;
+  window.fetch = function (url) {
+    urls.push(String(url));
+    for (let i = 0; i < routes.length; i++) {
+      if (String(url).indexOf(routes[i].match) >= 0) {
+        return Promise.resolve({ json: async function () { return routes[i].body; } });
+      }
+    }
+    return Promise.resolve({ json: async function () { return {}; } });
+  };
+  return { urls: urls, restore: function () { window.fetch = orig; } };
+}
+
+function textBlock(n) {
+  return { renderType: 'text', payload: { content: '块' + n }, msgIndex: n };
+}
+
+// 伪布局——jsdom 无排版：scrollHeight 按子节点数折算，scrollTop/clientHeight 可读写
+function fakeScrollMetrics(height, clientH) {
+  Object.defineProperty(chatMsgs, 'scrollHeight', { get: function () { return height(); }, configurable: true });
+  let top = 0;
+  Object.defineProperty(chatMsgs, 'scrollTop', { get: function () { return top; }, set: function (v) { top = v; }, configurable: true });
+  Object.defineProperty(chatMsgs, 'clientHeight', { get: function () { return clientH; }, configurable: true });
+  return { top: function () { return top; } };
+}
+
+test('历史首屏——只拉尾部窗口（max=CHAT_HISTORY_PAGE）并记录窗口起点/代际号', async () => {
+  window.chatViewStart = -1;
+  window.chatViewCount = 0;
+  window.chatViewGen = -1;
+  const stub = historyFetchStub([{ match: '/api/v1/history', body: { sessionId: 's1', count: 300, start: 298, gen: 7, ctxCount: 300, blocks: [textBlock(299), textBlock(300)], stats: { context: 0 } } }]);
+  window.chatLoadHistory();
+  await new Promise(function (r) { setTimeout(r, 30); });
+  stub.restore();
+  expect(stub.urls.length).toBe(1);
+  expect(stub.urls[0]).toBe('/api/v1/history?max=' + window.CHAT_HISTORY_PAGE);
+  expect(window.chatViewStart).toBe(298);
+  expect(window.chatViewCount).toBe(2);
+  expect(window.chatViewGen).toBe(7);
+  // 顶部哨兵行——还有更早的块（恒为首子节点）
+  const sentinel = chatMsgs.querySelector('.chat-older');
+  expect(sentinel).not.toBeNull();
+  expect(sentinel.textContent).toContain('上拉加载更早的消息');
+  expect(chatMsgs.firstChild).toBe(sentinel);
+});
+
+test('历史首屏——窗口已含会话开头（start=0）时哨兵报「已到最早」', async () => {
+  window.chatViewStart = -1;
+  const stub = historyFetchStub([{ match: '/api/v1/history', body: { sessionId: 's2', count: 2, start: 0, gen: 1, blocks: [textBlock(1), textBlock(2)], stats: { context: 0 } } }]);
+  window.chatLoadHistory();
+  await new Promise(function (r) { setTimeout(r, 30); });
+  stub.restore();
+  expect(window.chatViewStart).toBe(0);
+  expect(chatMsgs.querySelector('.chat-older').textContent).toContain('已到最早');
+});
+
+test('上拉补历史——before=窗口起点 + 更早块插到窗口头部保序 + 阅读位置保位', async () => {
+  chatMsgs.textContent = '';
+  window.CHAT_SESSION = 's3';
+  window.chatViewStart = 298;
+  window.chatViewCount = 2;
+  window.chatViewGen = 7;
+  window.chatOlderLoading = false;
+  window.chatRenderHistory({ sessionId: 's3', count: 300, start: 298, gen: 7, blocks: [textBlock(299), textBlock(300)], stats: { context: 0 } });
+  await new Promise(function (r) { setTimeout(r, 10); });
+  // 伪布局——3 个子节点（哨兵 + 2 行）× 100px；clientHeight 0 = 不触发视口填充（单页断言）
+  const metrics = fakeScrollMetrics(function () { return chatMsgs.children.length * 100; }, 0);
+  chatMsgs.scrollTop = 50;
+  const stub = historyFetchStub([{ match: 'before=', body: { sessionId: 's3', count: 300, start: 296, gen: 7, blocks: [textBlock(297), textBlock(298)] } }]);
+  window.chatLoadOlder();
+  await new Promise(function (r) { setTimeout(r, 30); });
+  stub.restore();
+  expect(stub.urls[0]).toBe('/api/v1/history?before=298&max=' + window.CHAT_HISTORY_PAGE);
+  // 顺序——哨兵 → 297 → 298 → 299 → 300（更早的块插到窗口头部，不是追加到尾部）
+  const order = [];
+  const all = chatMsgs.querySelectorAll('.chat-bubble');
+  for (let i = 0; i < all.length; i++) { order.push(all[i].textContent.replace(/[⟲⧉]/g, '')); }
+  expect(order).toEqual(['块297', '块298', '块299', '块300']);
+  expect(chatMsgs.firstChild.className).toBe('chat-older');
+  // 窗口基线推进 + 阅读位置保位（新增两行 200px 补进 scrollTop）
+  expect(window.chatViewStart).toBe(296);
+  expect(window.chatViewCount).toBe(4);
+  expect(metrics.top()).toBe(250);
+});
+
+test('上拉补历史——已到最早（start=0）不发请求', () => {
+  window.chatViewStart = 0;
+  window.chatOlderLoading = false;
+  const stub = historyFetchStub([]);
+  window.chatLoadOlder();
+  stub.restore();
+  expect(stub.urls.length).toBe(0);
+  expect(chatMsgs.querySelector('.chat-older').textContent).toContain('已到最早');
+});
+
+test('上拉补历史——块序代际号变化（视图重建）回落首屏窗口', async () => {
+  chatMsgs.textContent = '';
+  window.CHAT_SESSION = 's4';
+  window.chatViewStart = 10;
+  window.chatViewCount = 2;
+  window.chatViewGen = 3;
+  window.chatOlderLoading = false;
+  const stub = historyFetchStub([
+    { match: 'before=', body: { sessionId: 's4', count: 12, start: 8, gen: 4, blocks: [textBlock(9)] } },
+    { match: '/api/v1/history', body: { sessionId: 's4', count: 12, start: 10, gen: 4, blocks: [textBlock(11), textBlock(12)], stats: { context: 0 } } }
+  ]);
+  window.chatLoadOlder();
+  await new Promise(function (r) { setTimeout(r, 30); });
+  stub.restore();
+  expect(stub.urls[0]).toBe('/api/v1/history?before=10&max=' + window.CHAT_HISTORY_PAGE);
+  expect(stub.urls[1]).toBe('/api/v1/history?max=' + window.CHAT_HISTORY_PAGE);
+  expect(window.chatViewGen).toBe(4);
+});
+
+test('增量续传——请求带窗口起点 start；新块到达不无条件拉底（不打断阅读）', async () => {
+  chatMsgs.textContent = '';
+  window.CHAT_SESSION = 's5';
+  window.chatViewStart = 100;
+  window.chatViewCount = 2;
+  window.chatViewGen = 9;
+  // 伪布局——远离底部（scrollHeight 5000 / clientHeight 1000 / scrollTop 0）
+  const metrics = fakeScrollMetrics(function () { return 5000; }, 1000);
+  const stub = historyFetchStub([{ match: 'gen=', body: { prefixOk: true, sessionId: 's5', gen: 9, start: 100, count: 103, blocks: [textBlock(103)] } }]);
+  window.chatLoadHistoryDelta();
+  await new Promise(function (r) { setTimeout(r, 30); });
+  stub.restore();
+  expect(stub.urls[0]).toBe('/api/v1/history?gen=9&start=100&count=2');
+  expect(window.chatViewCount).toBe(3);
+  expect(metrics.top()).toBe(0);   // 上翻读历史时不被拽到底部
+});

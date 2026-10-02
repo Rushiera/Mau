@@ -257,6 +257,23 @@ namespace CatHome4.Http
             return 0;
         }
 
+        /// <summary>
+        /// 解析 ?before=N 查询参数——history 窗口排他上界（全局块序；前端上拉补历史时带当前窗口起点）。
+        /// 缺省/非法/非正 = 0 = 会话末尾（窗口取尾部）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>排他上界；0 = 会话末尾</returns>
+        private static int ReadBeforeQuery(HttpContext ctx)
+        {
+            string raw = ctx.Request.Query["before"].ToString();
+            int parsed;
+            if (int.TryParse(raw, out parsed) && parsed > 0)
+            {
+                return parsed;
+            }
+            return 0;
+        }
+
         /// <summary>构建日志段 JSON——LogStore 尾部 N 条（与 PushLogIncrements 同格式；锁内快照）；trace 类审计不进前端（IsTraceAudit，2026-09-17）。</summary>
         /// <param name="count">条数</param>
         /// <returns>日志数组 JSON；无日志返回空串（不拼接）</returns>
