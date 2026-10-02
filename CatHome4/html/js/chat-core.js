@@ -22,6 +22,50 @@ var chatPendingReset = false;      // 会话重置待确认——chatNewSession 
 var chatImages = [];               // [{ path: 绝对路径, url: 本地 blob 预览地址 }]
 var chatImageUploading = 0;        // 上传中计数——>0 时发送动作等待（防投递半截列表）
 
+// 状态栏前文信息（2026-10-02）——「前文 n 条」「前文 n tokens」两段可点击，点击开前文弹层（js/chat-ctx.js）
+// 其它临时提示（回滚投递 / 已停止 / 加载失败）仍走 chatInfo.textContent 直写——下次数据帧本函数重建结构
+var chatInfoState = { sid: '', count: 0, tokens: 0 };
+
+// 结构化设置——history / chatdone / usage 三处统一入口（局部更新走 chatInfoPatch）
+function chatInfoSet(sid, count, tokens) {
+    chatInfoState.sid = sid || '';
+    chatInfoState.count = Number(count) || 0;
+    chatInfoState.tokens = Number(tokens) || 0;
+    chatInfoRender();
+}
+
+// 局部更新——usage / chatdone 帧只改数值（结构被临时提示覆盖时自动重建）
+function chatInfoPatch(count, tokens) {
+    if (count !== undefined && count !== null && Number(count) >= 0) { chatInfoState.count = Number(count) || 0; }
+    if (tokens !== undefined && tokens !== null && Number(tokens) > 0) { chatInfoState.tokens = Number(tokens) || 0; }
+    chatInfoRender();
+}
+
+// 结构重建——两段可点击（条数 → 按条视图；tokens → 按 token 视图）
+function chatInfoRender() {
+    chatInfo.textContent = '';
+    var c = document.createElement('span');
+    c.id = 'chatCtxCount';
+    c.className = 'ctx-link';
+    c.title = '前文条数——点击查看前文条目';
+    c.textContent = '前文 ' + chatFmtCount(chatInfoState.count) + ' 条';
+    c.addEventListener('click', function (ev) { ev.stopPropagation(); chatCtxOpen('list'); });
+    chatInfo.appendChild(c);
+    if (chatInfoState.sid) {
+        chatInfo.appendChild(document.createTextNode(' | sessionId=' + chatInfoState.sid));
+    }
+    if (chatInfoState.tokens > 0) {
+        var t = document.createElement('span');
+        t.id = 'chatCtxTokens';
+        t.className = 'ctx-link';
+        t.title = '前文长度（最近一次请求真实 prompt）——点击查看 token 明细';
+        t.textContent = '前文 ' + chatFmtCount(chatInfoState.tokens) + ' tokens';
+        t.addEventListener('click', function (ev) { ev.stopPropagation(); chatCtxOpen('tokens'); });
+        chatInfo.appendChild(document.createTextNode(' | '));
+        chatInfo.appendChild(t);
+    }
+}
+
 // A59——六态状态条（链路/等待/思考/工具/执行/回复）：数据源 = 后端权威运行态（快照 sessions 段 runState/runMs/requests）——计时单源在后端，前端只渲染不自算
 var chatPhaseMeta = [
     { key: 'link', label: 'Link', icon: '🔗' },
@@ -568,22 +612,9 @@ function chatOnControl(payload) {
     var type = payload.type;
     if (type === 'usage') {
         // 2026-09-22：本轮 Token 统计已从状态条撤除（Token 信息归 roundsum 轮末块）——此处只保留前文长度实时化
+        // 2026-10-02：状态栏前文两段改结构化（可点击开弹层）——数值更新统一走 chatInfoPatch
         var u = payload.data || {};
-        var infoText = chatInfo.textContent || '';
-        // A115 前文条数实时化——每次 API 请求返回后按真实条数更新（与 tokens 同节奏，不等轮结束）
-        if (u.count !== undefined && infoText.indexOf(' 条 |') >= 0) {
-            infoText = infoText.replace(/前文 [\d.]+[kKmM]? 条/, '前文 ' + chatFmtCount(u.count) + ' 条');
-        }
-        // Q1 顶端计数实时化——每次 API 请求返回后按真实 context（单次前文 token）更新前文长度，不等轮结束
-        if (u.context !== undefined && u.context > 0) {
-            var newCtx = '前文 ' + chatFmtCount(u.context) + ' tokens';
-            if (infoText.indexOf('前文 ') >= 0) {
-                infoText = infoText.replace(/前文 [\d.]+[kKmM]? tokens/, newCtx);
-            } else {
-                infoText = infoText + ' | ' + newCtx;
-            }
-        }
-        chatInfo.textContent = infoText;
+        chatInfoPatch(u.count, u.context);
     } else if (type === 'session_reset') {
         // 会话重置——session.new 清前文后显式信号（问题一修复：消除本地抢跑竞态；收到即清空再拉 history）
         chatPendingReset = false;
@@ -605,14 +636,10 @@ function chatOnControl(payload) {
         }
         viewContainers = {};
         if (payload.count !== undefined) {
-            var doneText = '前文 ' + chatFmtCount(payload.count) + ' 条 | sessionId=' + CHAT_SESSION;
             var ds = payload.stats;
-            if (ds) {
-                // 前文长度 = 最近一次请求的单次 prompt（context 字段）；旧数据无 context 时回退累计值
-                var ctx2 = (ds.context !== undefined && ds.context > 0) ? ds.context : (ds.prompt || 0);
-                doneText += ' | 前文 ' + chatFmtCount(ctx2) + ' tokens';
-            }
-            chatInfo.textContent = doneText;
+            // 前文长度 = 最近一次请求的单次 prompt（context 字段）；旧数据无 context 时回退累计值
+            var ctx2 = ds ? ((ds.context !== undefined && ds.context > 0) ? ds.context : (ds.prompt || 0)) : 0;
+            chatInfoPatch(payload.count, ctx2);
         }
         if (chatPendingReset) {
             // session_reset 事件 miss 兜底——chatdone 到达仍未确认重置 → 重拉 history 保一致性

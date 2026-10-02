@@ -50,6 +50,9 @@ namespace CatHome4.Http
         /// <summary>会话历史构建回调（可空=不注册该端点）</summary>
         public Func<int, string> HistoryBuilder { get; set; }
 
+        /// <summary>前文条目构建回调（可空=不注册该端点）——GET /api/v1/context（对话页状态栏「前文 n 条 / n tokens」点击弹层数据源）</summary>
+        public Func<int, string> ContextBuilder { get; set; }
+
         /// <summary>多猫列表构建回调（可空=不注册该端点）</summary>
         public Func<string> CatsBuilder { get; set; }
 
@@ -156,6 +159,9 @@ namespace CatHome4.Http
         /// <summary>会话历史构建回调——Program.BuildHistoryView（B4 对话区；GET /api/v1/history）</summary>
         private Func<int, string> _historyBuilder;
 
+        /// <summary>前文条目构建回调——ChatBridge.BuildContextView（对话页前文弹层；GET /api/v1/context）</summary>
+        private Func<int, string> _contextBuilder;
+
         /// <summary>会话归属 ID——SSE llm/chatdone 事件 sessionId 字段（P9.3 多实例化：每猫实例绑定自身会话）</summary>
         private string _sessionId;
 
@@ -201,6 +207,7 @@ namespace CatHome4.Http
             host._envelopeBuilder = options.EnvelopeBuilder;
             host._frameBuilder = options.FrameBuilder;
             host._historyBuilder = options.HistoryBuilder;
+            host._contextBuilder = options.ContextBuilder;
             host._catsBuilder = options.CatsBuilder;
             host._noteBuilder = options.NoteBuilder;
             host._delayBuilder = options.DelayBuilder;
@@ -307,6 +314,26 @@ namespace CatHome4.Http
                 {
                     // 手动对调——仅本会话有效（清自动窗口；结果视图提示由宿主侧推送）
                     return Results.Text(_apiRoleToggler(), "application/json");
+                });
+            }
+            // 前文条目面——对话页状态栏「前文 n 条 / n tokens」点击弹层数据源（可空=不注册——管理端口不注入）
+            if (_contextBuilder != null)
+            {
+                _app.MapGet("/api/v1/context", (HttpContext ctx) =>
+                {
+                    // 前文条目视图（内存 ChatContext 实时真源；max 夹取 1-500 缺省 200）
+                    int max = 200;
+                    string raw = ctx.Request.Query["max"].ToString();
+                    int parsed;
+                    if (int.TryParse(raw, out parsed) && parsed > 0)
+                    {
+                        max = parsed;
+                    }
+                    if (max > 500)
+                    {
+                        max = 500;
+                    }
+                    return Results.Text(_contextBuilder(max), "application/json");
                 });
             }
             // S2 管理端点族——经 IHttpRouteSink 由 Admin 域注册（Http 域零依赖 Admin 域）

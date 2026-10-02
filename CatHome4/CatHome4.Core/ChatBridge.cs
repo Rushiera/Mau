@@ -498,6 +498,126 @@ namespace CH4
             resp["stats"] = stats;
             return JsonUtil.Serialize(resp);
         }
+
+        /// <summary>前文条目单条正文上限（字符）——弹层展示截断阈值（truncated 标记 + chars 给真实长度）</summary>
+        private const int ContextItemLimit = 8000;
+
+        /// <summary>前文条目摘要上限（字符）——弹层折叠行显示</summary>
+        private const int ContextPreviewLimit = 120;
+
+        /// <summary>
+        /// 构建前文条目视图 JSON——对话页状态栏「前文 n 条 / n tokens」点击弹层数据源（GET /api/v1/context）。
+        /// 条目源 = 会话消息序列（送入 LLM 的真实前文——含 system 注入与 tool 结果）；每条正文截断 ≤ContextItemLimit 字符（truncated 标记 + chars 真实长度）。
+        /// ctxTokens = ContextTokensKnown（真实 usage 值，零估算）；线程模型同 BuildHistoryView（HTTP 线程直读内存真源）。
+        /// </summary>
+        /// <param name="session">目标会话（P9.3 按猫参数化——每猫闭包传各自会话）</param>
+        /// <param name="max">返回条目上限（1-500 夹取，缺省 200；超出取尾部）</param>
+        /// <returns>前文视图 JSON</returns>
+        public string BuildContextView(ChatSession session, int max)
+        {
+            LlmMessage[] msgs;
+            try
+            {
+                msgs = session.Context.GetMessages();
+            }
+            catch (Exception ex)
+            {
+                // 失败可见——并发写入致快照失败时显式报错（不静默返回空列表）
+                LogStore.Add("CatHome4", 2, "前文条目快照失败: " + ex.Message, "HTTP");
+                Dictionary<string, object> err = new Dictionary<string, object>();
+                err["ok"] = false;
+                err["error"] = "前文快照失败: " + ex.Message;
+                return JsonUtil.Serialize(err);
+            }
+            int total = msgs.Length;
+            int start = 0;
+            if (max > 0 && total > max)
+            {
+                start = total - max;
+            }
+            long totalChars = 0;
+            for (int i = 0; i < total; i++)
+            {
+                totalChars = totalChars + MessageBodyChars(msgs[i]);
+            }
+            List<object> items = new List<object>();
+            for (int i = start; i < total; i++)
+            {
+                LlmMessage m = msgs[i];
+                string full = MessageBody(m);
+                bool truncated = full.Length > ContextItemLimit;
+                string body = truncated ? full.Substring(0, ContextItemLimit) : full;
+                Dictionary<string, object> item = new Dictionary<string, object>();
+                item["i"] = i + 1;
+                item["role"] = RoleName(m.Role);
+                item["tool"] = m.ToolName == null ? "" : m.ToolName;
+                item["chars"] = full.Length;
+                item["time"] = m.CreatedAt;
+                item["truncated"] = truncated;
+                item["preview"] = MessagePreview(full);
+                item["content"] = body;
+                items.Add(item);
+            }
+            Dictionary<string, object> resp = new Dictionary<string, object>();
+            resp["ok"] = true;
+            resp["sessionId"] = session.Id;
+            resp["count"] = total;
+            resp["start"] = start + 1;
+            resp["shown"] = items.Count;
+            resp["chars"] = totalChars;
+            resp["ctxTokens"] = session.ContextTokensKnown;
+            resp["items"] = items;
+            return JsonUtil.Serialize(resp);
+        }
+
+        /// <summary>前文条目正文——content 与 assistant tool_calls 声明合并（声明同属送入 LLM 的载荷）</summary>
+        /// <param name="m">消息</param>
+        /// <returns>正文（无正文=空串）</returns>
+        private static string MessageBody(LlmMessage m)
+        {
+            string body = m.Content == null ? "" : m.Content;
+            if (m.Role == LlmRole.Assistant && m.ToolCallsJson != null && m.ToolCallsJson.Length > 0)
+            {
+                body = body.Length > 0 ? body + "\n" + m.ToolCallsJson : m.ToolCallsJson;
+            }
+            return body;
+        }
+
+        /// <summary>前文条目正文长度——统计用（截断前真实长度）</summary>
+        /// <param name="m">消息</param>
+        /// <returns>字符数</returns>
+        private static long MessageBodyChars(LlmMessage m)
+        {
+            return MessageBody(m).Length;
+        }
+
+        /// <summary>前文条目摘要——单行化后取首 ContextPreviewLimit 字符（弹层折叠行显示）</summary>
+        /// <param name="body">条目正文</param>
+        /// <returns>摘要文本</returns>
+        private static string MessagePreview(string body)
+        {
+            if (body == null || body.Length == 0)
+            {
+                return "";
+            }
+            string flat = body.Replace("\r", " ").Replace("\n", " ");
+            if (flat.Length > ContextPreviewLimit)
+            {
+                flat = flat.Substring(0, ContextPreviewLimit) + "…";
+            }
+            return flat;
+        }
+
+        /// <summary>前文条目角色名——OpenAI 兼容小写四 role（前端样式类锚）</summary>
+        /// <param name="role">角色枚举</param>
+        /// <returns>角色名</returns>
+        private static string RoleName(LlmRole role)
+        {
+            if (role == LlmRole.System) { return "system"; }
+            if (role == LlmRole.User) { return "user"; }
+            if (role == LlmRole.Assistant) { return "assistant"; }
+            return "tool";
+        }
         /// <summary>
         /// 视图块载荷 JSON 字符串 → JSON 元素（history 响应内嵌对象；解析失败回退字符串）
         /// </summary>

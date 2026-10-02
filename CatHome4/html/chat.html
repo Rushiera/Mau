@@ -10,10 +10,10 @@
 <body>
     <div id="chatbar">
         <span class="sid" id="chatTitle">—</span>
+        <button id="chatApiRole" title="LLM 端点角色——点击对调主要 / 备用（仅本会话有效）">API:主要</button>
         <span id="chatInfo">—</span>
         <span style="flex:1"></span>
         <span id="uiVer" data-version title="前端版本——每次 Vitest 自动递增 + 最后更新时间">UI v?</span>
-        <button id="chatApiRole" title="LLM 端点角色——点击对调主要 / 备用（仅本会话有效）">API:主要</button>
         <button id="chatNew" title="新会话（session.new——清前文并重新注入）">新会话</button>
         <button id="chatRefresh" title="刷新——重建界面气泡（纯前端）">刷新</button>
         <button id="chatCacheClear" title="清理素材缓存——下次刷新重新下载桌宠素材（改图不改名 / 缓存脏数据时用）">清理缓存</button>
@@ -80,6 +80,19 @@
     <!-- 桌宠（纯前端渲染）——fixed 浮动层不占布局；纯展示（pointer-events:none，不拦对话区操作） -->
     <div id="chatPet"><img id="chatPetImgA" alt="桌宠"><img id="chatPetImgB" alt=""></div>
 
+    <!-- 前文弹层（js/chat-ctx.js）——状态栏「前文 n 条 / n tokens」点击开的小窗口；两视图：按条（list）/ 按 token（tokens） -->
+    <div id="ctxPopover" class="ctx-popover" style="display:none">
+        <div class="ctx-head">
+            <span id="ctxTitle">前文条目</span>
+            <span id="ctxMeta"></span>
+            <span style="flex:1"></span>
+            <span id="ctxModeList" class="ctx-mode" title="按条目顺序显示前文">按条</span>
+            <span id="ctxModeTokens" class="ctx-mode" title="按字符规模显示前文分布">按 tokens</span>
+            <button id="ctxClose" title="关闭（Esc）">×</button>
+        </div>
+        <div id="ctxList" class="ctx-list"></div>
+    </div>
+
     <!-- F2.3 引导层——对话核心逻辑在外部模块（js/chat-md.js 渲染器 + js/chat-view.js 渲染面 + js/chat-core.js 状态分发 + js/chat-note.js——对话逻辑唯一真相源）；本页只承接引导：SSE/按钮绑定（防御式）/初始化 -->
     <!-- 两页共用前端工具（loadUiVersion/applyUiConfig/loadUiConfig）——js/ui-common.js 单一定义（消除内联副本） -->
     <script src="js/ui-common.js?v=__V__"></script>
@@ -93,6 +106,8 @@
     <script src="js/chat-think.js?v=__V__"></script>
     <script src="js/chat-view.js?v=__V__"></script>
     <script src="js/chat-core.js?v=__V__"></script>
+    <!-- 前文弹层——状态栏「前文 n 条 / n tokens」点击开的小窗口（按条 / 按 token 两视图）；须在 chat-view.js 之后（chatFmtCount 依赖） -->
+    <script src="js/chat-ctx.js?v=__V__"></script>
     <!-- 对话区滚动自持层（design-ch4-frontend-scroll）——滚轮兜底转发 + 自绘滚动带；须在 chat-core.js 之后加载（#chatMsgs 已就位） -->
     <script src="js/chat-scroll.js?v=__V__"></script>
     <script src="js/chat-note.js?v=__V__"></script>

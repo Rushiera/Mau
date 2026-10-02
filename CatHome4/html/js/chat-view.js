@@ -361,14 +361,10 @@ function chatRenderHistory(data) {
     var sid = data.sessionId || CHAT_SESSION;
     // A65 口径统一——「前文 n 条」= 送入 LLM 的消息数（ctxCount 实时值；旧数据缺字段回落视图块数）
     var ctxCount = (data.ctxCount !== undefined) ? data.ctxCount : (data.count || 0);
-    var infoText = '前文 ' + chatFmtCount(ctxCount) + ' 条 | sessionId=' + sid;
     var hs = data.stats;
-    if (hs) {
-        // 前文长度 = 最近一次请求的单次 prompt（context 字段）；旧数据无 context 时回退累计值
-        var ctx = (hs.context !== undefined && hs.context > 0) ? hs.context : (hs.prompt || 0);
-        infoText += ' | 前文 ' + chatFmtCount(ctx) + ' tokens';
-    }
-    chatInfo.textContent = infoText;
+    // 前文长度 = 最近一次请求的单次 prompt（context 字段）；旧数据无 context 时回退累计值
+    var ctxTokens = hs ? ((hs.context !== undefined && hs.context > 0) ? hs.context : (hs.prompt || 0)) : 0;
+    chatInfoSet(sid, ctxCount, ctxTokens);
     chatScrollBottom(true);
     return data.sessionId || '';
 }
