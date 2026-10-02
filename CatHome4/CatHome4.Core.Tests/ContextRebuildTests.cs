@@ -26,7 +26,7 @@ namespace CatHome4.Core.Tests
         public ContextRebuildTests()
         {
             _dir = Path.Combine(Path.GetTempPath(), "cat4rebuild_" + Guid.NewGuid().ToString("N"));
-            _store = new CH4.FullContextStore(_dir, "cat_r", () => _msgs.ToArray(), () => 3);
+            _store = new CH4.FullContextStore(_dir, "cat_r", () => _msgs.ToArray(), () => 3, () => 0);
         }
 
         /// <summary>释放夹具——尽力删除临时目录（清理失败不影响断言结论）</summary>

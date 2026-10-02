@@ -8,8 +8,8 @@
 var chatCtxData = null;      // 前文响应（null=未加载；list / tokens 两视图共用）
 var chatKeyData = null;      // 关键信息响应（null=未加载；key 视图用）
 var chatFullData = null;     // 完整前文响应（null=未加载；full 视图用）
-// 完整前文 token 预估系数——字符数 ÷ 系数 = 估算 token（实测口径：618.86k 字符 ÷ 388,861 真实 prompt ≈ 1.59，取 1.6）
-var chatCtxCharsPerToken = 1.6;
+// 完整前文 token 口径——宿主按本会话实测比值折算（A93：真实 prompt token + 当时前文字符数反推）；
+// 无实测时回落缺省 2.4 并由宿主标注（estimated）——前端不自持系数（折算口径单点在宿主）
 var chatCtxMode = 'list';    // 当前视图——list（按条）/ tokens（按 token 分布）/ key（会话关键信息）/ full（完整前文）
 
 // 三态：未开 → 打开 + 切到目标视图 + 读取；已开且同视图 → 收起（不重复读取）；已开且异视图 → 切视图 + 复用已读数据
@@ -190,13 +190,19 @@ function chatCtxRenderFull(list, meta, title) {
     }
     var items = d.items || [];
     if (meta) {
-        // 统计口径——字符数 ÷ 系数 = 预估 token（完整前文是留档，不参与请求，无真实 prompt 值）
-        meta.textContent = '共 ' + chatFmtCount(d.count) + ' 条 · 约 '
-            + chatFmtCount(Math.round((d.chars || 0) / chatCtxCharsPerToken)) + ' tokens（估算）· '
+        meta.textContent = '共 ' + chatFmtCount(d.count) + ' 条 · ' + chatFullTokensText(d) + ' · '
             + chatFmtCount(d.chars) + ' 字符'
             + chatCtxWindowNote(d, items);
     }
     chatCtxRenderList(list, items, '本次会话暂无完整前文', chatFullRoleLabels);
+}
+
+// token 文案——宿主折算值直显（A93）；缺省回落由宿主标注 estimated，前端原样转述不冒充实测
+function chatFullTokensText(d) {
+    var tok = Number(d.tokens) || 0;
+    if (tok <= 0) { return 'token 未知（宿主未回折算值）'; }
+    if (d.estimated) { return '约 ' + chatFmtCount(tok) + ' tokens（缺省比值 2.4 折算——本会话无实测）'; }
+    return '约 ' + chatFmtCount(tok) + ' tokens（实测比值 ' + (Number(d.ratio) || 0).toFixed(2) + ' 折算）';
 }
 
 // list 视图——按条目顺序；点击条目头展开全文（折叠态显示摘要）

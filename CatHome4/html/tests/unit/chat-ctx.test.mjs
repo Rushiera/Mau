@@ -243,6 +243,7 @@ function fakeFullData() {
   return {
     ok: true, count: 3, start: 1, shown: 3, chars: 300, session: 'majordomo',
     path: 'D:/Data/sessions_ctx/majordomo_20261002_120000.txt',
+    tokens: 125, ratio: 2.4, estimated: false,
     items: [
       { i: 1, role: 'system', tool: '', chars: 200, time: 0, truncated: false, preview: '注入内容', content: '注入内容全文' },
       { i: 2, role: 'user', tool: '', chars: 60, time: 0, truncated: false, preview: '你好', content: '你好' },
@@ -293,12 +294,30 @@ test('视图切换——已开时切到完整前文读 /api/v1/fullctx', () => {
   vi.unstubAllGlobals();
 });
 
-test('full 视图——统计口径按字符 ÷ 1.6 折算预估 token（估算标注 + 字符数保留可追溯）', () => {
+test('full 视图——token 按宿主折算值直显（实测比值 + 字符数保留可追溯）', () => {
   window.chatFullData = fakeFullData();
   window.chatCtxMode = 'full';
   window.chatCtxRender();
-  expect(document.getElementById('ctxMeta').textContent).toContain('约 188 tokens（估算）');
+  expect(document.getElementById('ctxMeta').textContent).toContain('约 125 tokens（实测比值 2.40 折算）');
   expect(document.getElementById('ctxMeta').textContent).toContain('300 字符');
+});
+
+test('full 视图——无实测回落缺省 2.4 并标注（不冒充实测）', () => {
+  const d = fakeFullData();
+  d.estimated = true;
+  window.chatFullData = d;
+  window.chatCtxMode = 'full';
+  window.chatCtxRender();
+  expect(document.getElementById('ctxMeta').textContent).toContain('缺省比值 2.4 折算——本会话无实测');
+});
+
+test('full 视图——宿主未回折算值即出声（不静默留白）', () => {
+  const d = fakeFullData();
+  d.tokens = 0;
+  window.chatFullData = d;
+  window.chatCtxMode = 'full';
+  window.chatCtxRender();
+  expect(document.getElementById('ctxMeta').textContent).toContain('token 未知');
 });
 
 test('弹层刷新按钮——点击拉完整前文（采集就绪）+ 全量重拉会话页面', () => {

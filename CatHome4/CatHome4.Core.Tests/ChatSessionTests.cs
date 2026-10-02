@@ -2059,6 +2059,49 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
+        /// A93 实测比值——usage 帧取真实 prompt token + 当时前文字符数 → 留档头 tokens / ratio 行（source=measured）。
+        /// 判据：比值 = 请求时前文字符数 ÷ 真实 prompt token；头部 tokens = 采集时前文字符数 ÷ 该比值。
+        /// </summary>
+        [Fact]
+        public void Usage_MeasuresCharsPerToken_WritesHeader()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "回复";
+            llm.UsageJson = "{\"prompt\":100,\"completion\":20,\"cacheHit\":30}";
+            CH4.ChatSession session = CreateSession(llm);
+            string dir = Path.Combine(Path.GetTempPath(), "cat4ratio_" + Guid.NewGuid().ToString("N"));
+            session.AttachFullContext(dir);
+            session.Context.SetSystemPrompt("系统注入块：" + new string('注', 300));
+            session.PostUserMessage("问题");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            LlmMessage[] after = session.Context.GetMessages();
+            Assert.Equal(3, after.Length);
+            // 请求时前文（system + user）字符数——usage 帧取样口径
+            long reqChars = CH4.FullContextStore.MergeBodyLength(after[0].Content, after[0].ToolCallsJson, after[0].ReasoningContent, after[0].ImagesJson)
+                + CH4.FullContextStore.MergeBodyLength(after[1].Content, after[1].ToolCallsJson, after[1].ReasoningContent, after[1].ImagesJson);
+            long milli = (long)Math.Round((double)reqChars * 1000 / 100);
+            double ratio = milli / 1000.0;
+            Assert.Equal(ratio, session.ContextCharsPerToken, 3);
+            string[] files = Directory.GetFiles(dir, "*.txt");
+            Assert.Single(files);
+            string text = File.ReadAllText(files[0]);
+            Assert.Contains("ratio=" + ratio.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " source=measured", text);
+            // 头部 tokens = 采集时前文字符数 ÷ 实测比值（采集在轮末强制——含本轮回复）
+            long captureChars = CH4.FullContextStore.ContextChars(after);
+            long tokens = (long)Math.Round(captureChars / ratio);
+            Assert.Contains("# tokens=" + tokens.ToString() + " ratio=", text);
+            try
+            {
+                Directory.Delete(dir, true);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[测试清理] A93 比值临时目录删除失败: " + ex.Message);
+            }
+        }
+
+        /// <summary>
         /// 完整前文采集入口 4——停工（本轮收尾）强制采集：回合结束即补齐留档尾部，不再依赖 30 秒节流或端点读取兜底。
         /// 判据：轮末留档条目数 == 前文条数（末轮回复落在节流窗口内，缺本入口时留档滞后一条）。
         /// </summary>

@@ -62,6 +62,15 @@ namespace CH4
         /// <summary>条目摘要长度——单行化后取首 N 字符</summary>
         private const int PreviewLimit = 120;
 
+        /// <summary>缺省字符/token 比值——本会话无实测（未发起过请求）时回落（A93；实测比值随内容浮动 1.70-2.49，单常量必偏）</summary>
+        private const double DefaultCharsPerToken = 2.4;
+
+        /// <summary>头部比值来源标记——实测（本会话已发起过请求，比值来自真实 prompt token）</summary>
+        private const string MeasuredSource = "measured";
+
+        /// <summary>头部比值来源标记——缺省回落（本会话无实测——出声标注，不静默冒充实测）</summary>
+        private const string DefaultSource = "default";
+
         /// <summary>文件头版本行——格式契约标识（剥离时跳过 # 开头行）</summary>
         private const string HeaderVersion = "# CH4-FULLCTX v1";
 
@@ -70,8 +79,11 @@ namespace CH4
 
         /// <summary>消息段结束标记</summary>
         private const string CtxClose = "[[/CH4-CTX]]";
-        /// <summary>巡检判据长度——前文与留档首段比对字符数（400）</summary>
+        /// <summary>巡检判据长度——前文与留档正文首段比对字符数（400）</summary>
         private const int HeadChars = 400;
+
+        /// <summary>巡检读取余量——正文比对前的文件头预留字符数（头部字段可变，不参与比对）</summary>
+        private const int HeadReserveChars = 256;
 
         /// <summary>落点目录——&lt;data&gt;/sessions_ctx</summary>
         private readonly string _dir;
@@ -84,6 +96,9 @@ namespace CH4
 
         /// <summary>留档份数读取器——chat.full_ctx_keep 实时读取（null=缺省）</summary>
         private readonly Func<int> _keep;
+
+        /// <summary>字符/token 比值读取器——本会话实测比值实时读取（null / 返回 0 = 无实测，回落缺省）</summary>
+        private readonly Func<double> _charsPerToken;
 
         /// <summary>采集与轮转互斥锁——主线程与 HTTP 线程共用</summary>
         private readonly object _gate = new object();
@@ -102,6 +117,9 @@ namespace CH4
         /// <summary>留档头部漂移告警标志——每会话只出声一次（头部恢复即复位）</summary>
         private bool _headDriftWarned;
 
+        /// <summary>UTF-8 无 BOM 编码——头部字节长度度量与原地覆盖（文件 BOM 由 BomLength 单独探测）</summary>
+        private static readonly UTF8Encoding Utf8NoBom = new UTF8Encoding(false);
+
         /// <summary>
         /// 建立完整前文存储
         /// </summary>
@@ -109,12 +127,14 @@ namespace CH4
         /// <param name="catKey">猫 key（文件名前缀）</param>
         /// <param name="messages">消息读取器（会话上下文真源）</param>
         /// <param name="keep">留档份数读取器（null=缺省 3）</param>
-        public FullContextStore(string dir, string catKey, Func<LlmMessage[]> messages, Func<int> keep)
+        /// <param name="charsPerToken">字符/token 比值读取器（null / 返回 0 = 无实测，回落缺省 2.4）</param>
+        public FullContextStore(string dir, string catKey, Func<LlmMessage[]> messages, Func<int> keep, Func<double> charsPerToken)
         {
             _dir = dir == null ? "" : dir;
             _catKey = catKey == null ? "" : catKey;
             _messages = messages;
             _keep = keep;
+            _charsPerToken = charsPerToken;
         }
 
         /// <summary>
@@ -201,6 +221,7 @@ namespace CH4
         /// <summary>
         /// 完整前文视图 JSON——对话页弹层「完整前文」数据源（GET /api/v1/fullctx）。
         /// 读取前强制采集一次（展示面不受 30 秒节流滞后影响）；条目形态与 /api/v1/context、/api/v1/keyinfo 同构。
+        /// token 字段 = 前文字符数 ÷ 比值（A93 实测反推；无实测回落缺省 2.4 且 estimated=true——前端据此标注）。
         /// </summary>
         /// <param name="max">返回条目上限（1-500 夹取，缺省 200；超出取尾部 + 恒含首条）</param>
         /// <returns>视图 JSON</returns>
@@ -220,12 +241,19 @@ namespace CH4
                 resp["ok"] = true;
                 resp["session"] = _catKey;
                 resp["path"] = path;
+                // A93 token 折算——实测比值优先（本会话最近一次请求）；无实测回落缺省 2.4 并标记（estimated=true）
+                double ratio;
+                bool measured;
+                ResolveRatio(out ratio, out measured);
+                resp["ratio"] = Math.Round(ratio, 2);
+                resp["estimated"] = !measured;
                 if (text.Length == 0)
                 {
                     resp["count"] = 0;
                     resp["start"] = 0;
                     resp["shown"] = 0;
                     resp["chars"] = 0L;
+                    resp["tokens"] = 0L;
                     resp["items"] = new List<object>();
                     return JsonUtil.Serialize(resp);
                 }
@@ -278,6 +306,7 @@ namespace CH4
                 resp["start"] = start + 1;
                 resp["shown"] = items.Count;
                 resp["chars"] = totalChars;
+                resp["tokens"] = EstimateTokens(totalChars, ratio);
                 resp["items"] = items;
             }
             catch (Exception ex)
@@ -424,8 +453,9 @@ namespace CH4
                     File.WriteAllText(path, newText, new UTF8Encoding(true));
                     return;
                 }
-                // 头部漂移守卫——留档头部 ≠ 前文头部 = 前文丢头：拒绝全量重写
-                // （留档是重建唯一源，被覆写即失去修复依据）；出声一次，头部恢复即复位
+                // 头部漂移守卫——留档正文首段 ≠ 前文正文首段 = 前文丢头：拒绝全量重写
+                // （留档是重建唯一源，被覆写即失去修复依据）；出声一次，正文首段恢复即复位
+                // （比对面为正文——文件头折算值随采集变化，不参与判据）
                 bool headDrift = HeadDiffers(stored, newText);
                 if (!headDrift)
                 {
@@ -447,6 +477,12 @@ namespace CH4
                     int hit = newText.LastIndexOf(anchor, StringComparison.Ordinal);
                     if (hit >= 0 && hit == stored.Length - AnchorChars && hit + AnchorChars <= newText.Length)
                     {
+                        // 头部刷新——tokens / ratio 随采集重算（头部字节长度变化时锚点位置本就不符，走全量重写）
+                        if (!TryRefreshHeader(path, newText, stored))
+                        {
+                            File.WriteAllText(path, newText, new UTF8Encoding(true));
+                            return;
+                        }
                         if (hit + AnchorChars < newText.Length)
                         {
                             // 增量追加——BOM 只在首写时落（文件非空不重复写）
@@ -462,6 +498,73 @@ namespace CH4
             {
                 LogStore.Add("FullContextStore", 3, "完整前文采集失败: " + ex.Message, "CHAT");
             }
+        }
+
+        /// <summary>
+        /// 头部原地刷新——把在盘文件头的 `# ` 注释行覆盖为新头部（正文与尾部不动，尾部增量语义不变）。
+        /// 新头部与在盘头部字节长度不一致 = 返回 false（调用方全量重写）；一致 = 原地覆盖（不整文件重写）。
+        /// </summary>
+        /// <param name="path">留档路径</param>
+        /// <param name="newText">新构全量文本（头部来源）</param>
+        /// <param name="stored">在盘文本（头部长度比对来源）</param>
+        /// <returns>true=头部已对齐（无需再动）</returns>
+        private bool TryRefreshHeader(string path, string newText, string stored)
+        {
+            string header = newText.Substring(0, BodyStart(newText));
+            int storedEnd = BodyStart(stored);
+            if (header.Length == 0 || storedEnd == 0)
+            {
+                return false;
+            }
+            string storedHeader = stored.Substring(0, storedEnd);
+            if (string.Equals(storedHeader, header, StringComparison.Ordinal))
+            {
+                return true;
+            }
+            byte[] bytes = Utf8NoBom.GetBytes(header);
+            if (Utf8NoBom.GetByteCount(storedHeader) != bytes.Length)
+            {
+                return false;
+            }
+            try
+            {
+                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
+                {
+                    fs.Position = BomLength(path);
+                    fs.Write(bytes, 0, bytes.Length);
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("FullContextStore", 3, "留档头部刷新失败（走全量重写）: " + ex.Message, "CHAT");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// BOM 字节数——文件头三字节探测（EF BB BF = 3；无 BOM = 0）。原地覆盖以 BOM 之后为起点。
+        /// </summary>
+        /// <param name="path">文件路径</param>
+        /// <returns>BOM 字节数</returns>
+        private static int BomLength(string path)
+        {
+            try
+            {
+                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    byte[] head = new byte[3];
+                    if (fs.Read(head, 0, 3) == 3 && head[0] == 0xEF && head[1] == 0xBB && head[2] == 0xBF)
+                    {
+                        return 3;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("FullContextStore", 2, "留档 BOM 探测失败（按无 BOM 处理）: " + ex.Message, "CHAT");
+            }
+            return 0;
         }
 
         /// <summary>
@@ -506,7 +609,7 @@ namespace CH4
         private string BuildText(LlmMessage[] msgs)
         {
             StringBuilder sb = new StringBuilder();
-            AppendHeader(sb);
+            AppendHeader(sb, msgs);
             for (int i = 0; i < msgs.Length; i = i + 1)
             {
                 AppendMessageSection(sb, msgs[i]);
@@ -681,6 +784,65 @@ namespace CH4
             return body.Length > 0 ? body + "\n" + part : part;
         }
 
+        /// <summary>
+        /// 载荷正文长度——四字段按序合并后的字符数（口径同 MergeBody：空字段跳过、非空字段间一个换行）。
+        /// 免分配（大前文逐请求折算不产中间串）；口径同源由测试逐组合比对 MergeBody 长度守住。
+        /// </summary>
+        /// <param name="content">正文</param>
+        /// <param name="toolCalls">工具调用 JSON（assistant）</param>
+        /// <param name="reasoning">思考内容（assistant）</param>
+        /// <param name="images">附件引用 JSON（user）</param>
+        /// <returns>合并正文长度（全空=0）</returns>
+        public static long MergeBodyLength(string content, string toolCalls, string reasoning, string images)
+        {
+            long sum = 0;
+            int parts = 0;
+            AppendPartLength(content, ref sum, ref parts);
+            AppendPartLength(toolCalls, ref sum, ref parts);
+            AppendPartLength(reasoning, ref sum, ref parts);
+            AppendPartLength(images, ref sum, ref parts);
+            if (parts > 1)
+            {
+                sum = sum + parts - 1;
+            }
+            return sum;
+        }
+
+        /// <summary>非空字段长度累计——空字段跳过（口径同 MergePart）。</summary>
+        /// <param name="part">待累计字段</param>
+        /// <param name="sum">累计长度</param>
+        /// <param name="parts">非空字段数</param>
+        private static void AppendPartLength(string part, ref long sum, ref int parts)
+        {
+            if (part == null || part.Length == 0)
+            {
+                return;
+            }
+            sum = sum + part.Length;
+            parts = parts + 1;
+        }
+
+        /// <summary>
+        /// 前文字符数——消息序列四字段合并字符数之和（与 GET /api/v1/context 的 chars 同口径）。
+        /// 消费面：留档头 token 折算（A93）。
+        /// </summary>
+        /// <param name="msgs">消息序列（可空）</param>
+        /// <returns>字符数（空序列 = 0）</returns>
+        public static long ContextChars(LlmMessage[] msgs)
+        {
+            if (msgs == null)
+            {
+                return 0;
+            }
+            long total = 0;
+            for (int i = 0; i < msgs.Length; i = i + 1)
+            {
+                LlmMessage m = msgs[i];
+                total = total + MergeBodyLength(m.Content, m.ToolCallsJson, m.ReasoningContent, m.ImagesJson);
+            }
+            return total;
+        }
+
         /// <summary>条目展示正文——与 /api/v1/context 同口径（四字段合并；单点实现见 MergeBody）。</summary>
         /// <param name="entry">条目</param>
         /// <returns>展示文本</returns>
@@ -748,7 +910,7 @@ namespace CH4
             return removed;
         }
         /// <summary>
-        /// 巡检判据——前文首段与留档首段逐字符一致（比对长度 = min(400, 两侧长度)）（design-ch4-ctx-rebuild §二）。
+        /// 巡检判据——前文正文首段与留档正文首段逐字符一致（比对长度 = min(400, 两侧正文长度)）（design-ch4-ctx-rebuild §二）。
         /// 无留档 / 留档为空 = 无判据（返回 true，不触发重建）；首段不一致 = 前文丢头或被裁剪。
         /// </summary>
         /// <param name="msgs">当前前文消息序列</param>
@@ -765,12 +927,12 @@ namespace CH4
                 {
                     return true;
                 }
-                string stored = ReadHead(_path, HeadChars);
+                string stored = ReadHead(_path, HeadChars + HeadReserveChars);
                 if (stored.Length == 0)
                 {
                     return true;
                 }
-                string live = BuildHead(msgs, HeadChars);
+                string live = BuildHead(msgs, HeadChars + HeadReserveChars);
                 return !HeadDiffers(stored, live);
             }
         }
@@ -872,8 +1034,8 @@ namespace CH4
         /// <returns>首段文本（不足=全部）</returns>
         private string BuildHead(LlmMessage[] msgs, int chars)
         {
-            StringBuilder sb = new StringBuilder(chars + 256);
-            AppendHeader(sb);
+            StringBuilder sb = new StringBuilder(chars + HeadReserveChars);
+            AppendHeader(sb, msgs);
             for (int i = 0; i < msgs.Length && sb.Length < chars; i = i + 1)
             {
                 AppendMessageSection(sb, msgs[i]);
@@ -885,36 +1047,100 @@ namespace CH4
             return sb.ToString();
         }
         /// <summary>
-        /// 首段比对——留档首段与现构首段是否不一致（比对长度 = min(400, 两侧长度)；任一侧为空 = 无判据）。
-        /// 前文被裁剪（丢头 / 丢尾）时现构首段更短——比对区内的段头差异即暴露不一致。
+        /// 首段比对——留档正文首段与现构正文首段是否不一致（比对长度 = min(400, 两侧正文长度)；任一侧正文为空 = 无判据）。
+        /// 比对面 = 正文：文件头字段随采集变化（token 折算值），不参与比对——否则折算值一变即误判丢头。
+        /// 前文被裁剪（丢头 / 丢尾）时现构正文首段更短——比对区内的段头差异即暴露不一致。
         /// </summary>
         /// <param name="stored">留档侧文本（首段）</param>
         /// <param name="live">现构侧文本（首段）</param>
         /// <returns>true=不一致（触发重建 / 拒绝覆写）</returns>
         private static bool HeadDiffers(string stored, string live)
         {
-            int chars = stored.Length;
+            int storedStart = BodyStart(stored);
+            int liveStart = BodyStart(live);
+            int chars = stored.Length - storedStart;
             if (chars > HeadChars)
             {
                 chars = HeadChars;
             }
-            if (live.Length < chars)
+            if (live.Length - liveStart < chars)
             {
-                chars = live.Length;
+                chars = live.Length - liveStart;
             }
             if (chars == 0)
             {
                 return false;
             }
-            return !string.Equals(stored.Substring(0, chars), live.Substring(0, chars), StringComparison.Ordinal);
+            return string.CompareOrdinal(stored, storedStart, live, liveStart, chars) != 0;
         }
-        /// <summary>文件头——版本行 + 猫 / 会话 / 起时（采集与首段构建共用同一出口）。</summary>
-        /// <param name="sb">目标缓冲</param>
-        private void AppendHeader(StringBuilder sb)
+        /// <summary>
+        /// 正文起点——跳过文件头 `# ` 注释行（与剥离器同口径：行首两字符为 `# ` 即头部行）。
+        /// 头部字段可变（tokens / ratio / source），比对与原地刷新都以正文起点为界。
+        /// </summary>
+        /// <param name="text">文本</param>
+        /// <returns>正文起始下标（全为头部行 / 无换行 = 文本长度）</returns>
+        private static int BodyStart(string text)
         {
+            int pos = 0;
+            while (pos + 1 < text.Length && text[pos] == '#' && text[pos + 1] == ' ')
+            {
+                int lineEnd = text.IndexOf('\n', pos);
+                if (lineEnd < 0)
+                {
+                    return text.Length;
+                }
+                pos = lineEnd + 1;
+            }
+            return pos;
+        }
+        /// <summary>
+        /// 字符/token 比值——本会话实测值优先（读取器实时读取；A93：宿主在每次请求的 usage 帧取真实 prompt token + 当时前文字符数）；
+        /// 无实测（本会话未发起过请求）= 回落缺省 2.4 并标记（不静默冒充实测）。
+        /// </summary>
+        /// <param name="ratio">输出：比值（前文字符数 ÷ 真实 token 数）</param>
+        /// <param name="measured">输出：true=实测值 / false=缺省回落</param>
+        private void ResolveRatio(out double ratio, out bool measured)
+        {
+            ratio = 0;
+            if (_charsPerToken != null)
+            {
+                ratio = _charsPerToken();
+            }
+            measured = ratio > 0;
+            if (!measured)
+            {
+                ratio = DefaultCharsPerToken;
+            }
+        }
+
+        /// <summary>token 折算——字符数 ÷ 比值（四舍五入；字符或比值非法 = 0）。</summary>
+        /// <param name="chars">字符数</param>
+        /// <param name="ratio">字符/token 比值</param>
+        /// <returns>折算 token 数</returns>
+        private static long EstimateTokens(long chars, double ratio)
+        {
+            if (chars <= 0 || ratio <= 0)
+            {
+                return 0;
+            }
+            return (long)Math.Round(chars / ratio);
+        }
+
+        /// <summary>文件头——版本行 + 猫 / 会话 / 起时 + token 折算行（采集与首段构建共用同一出口）。</summary>
+        /// <param name="sb">目标缓冲</param>
+        /// <param name="msgs">消息序列（折算字符数数据源）</param>
+        private void AppendHeader(StringBuilder sb, LlmMessage[] msgs)
+        {
+            double ratio;
+            bool measured;
+            ResolveRatio(out ratio, out measured);
+            long tokens = EstimateTokens(ContextChars(msgs), ratio);
             sb.Append(HeaderVersion).Append('\n');
             sb.Append("# cat=").Append(_catKey).Append(" session=").Append(_stamp)
                 .Append(" start=").Append(_startText).Append('\n');
+            sb.Append("# tokens=").Append(tokens.ToString())
+                .Append(" ratio=").Append(ratio.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture))
+                .Append(" source=").Append(measured ? MeasuredSource : DefaultSource).Append('\n');
         }
         /// <summary>留档条目 → 消息——四字段 + 配对 ID + 时刻全字段还原（角色非法返回 false）。</summary>
         /// <param name="entry">留档条目</param>

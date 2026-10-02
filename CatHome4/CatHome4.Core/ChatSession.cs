@@ -148,6 +148,9 @@ namespace CH4
         /// <summary>单次前文长度——最近一次请求的 prompt（覆盖式；非累计——前文长度数据源）</summary>
         private long _contextTokens;
 
+        /// <summary>A93 实测字符/token 比值 ×1000——最近一次请求（真实 prompt token + 当时前文字符数）；0=无实测（消费面回落缺省 2.4）</summary>
+        private long _ctxRatioMilli;
+
         /// <summary>本轮开始时间戳——Stopwatch.GetTimestamp（roundsum 总耗时）</summary>
         private long _roundStartTick;
 
@@ -582,6 +585,7 @@ namespace CH4
 
         /// <summary>
         /// 挂载完整前文存储——宿主注入落点目录（采集源 = 本会话上下文；空=不启用）。
+        /// 比值读取器同源挂载（A93：留档头 token 折算 + 端点 tokens 字段取本会话实测比值）。
         /// </summary>
         /// <param name="dir">落点目录（&lt;data&gt;/sessions_ctx）</param>
         public void AttachFullContext(string dir)
@@ -591,7 +595,7 @@ namespace CH4
                 _fullCtx = null;
                 return;
             }
-            _fullCtx = new FullContextStore(dir, _id, () => _context.GetMessages(), FullContextStore.ConfigKeep);
+            _fullCtx = new FullContextStore(dir, _id, () => _context.GetMessages(), FullContextStore.ConfigKeep, () => ContextCharsPerToken);
         }
 
         /// <summary>完整前文定稿——session.new 清前文前调用（当前份转历史 + 份数轮转；未挂载=无动作）。</summary>
@@ -612,7 +616,7 @@ namespace CH4
         {
             if (_fullCtx == null)
             {
-                return "{\"ok\":true,\"count\":0,\"start\":0,\"shown\":0,\"chars\":0,\"items\":[]}";
+                return "{\"ok\":true,\"count\":0,\"start\":0,\"shown\":0,\"chars\":0,\"tokens\":0,\"ratio\":0,\"estimated\":true,\"items\":[]}";
             }
             return _fullCtx.BuildView(max);
         }
@@ -792,6 +796,24 @@ namespace CH4
                     return _contextTokens;
                 }
                 return _lastStats.LastContextTokens;
+            }
+        }
+
+        /// <summary>
+        /// A93 实测字符/token 比值——本会话最近一次请求（真实 prompt token + 当时前文字符数）；0=无实测。
+        /// 消费面：完整前文留档头 token 折算 + GET /api/v1/fullctx 的 tokens 字段。
+        /// 线程：主线程取样（usage 帧），HTTP 线程读取——整数字段读写，免双精度撕裂。
+        /// </summary>
+        public double ContextCharsPerToken
+        {
+            get
+            {
+                long milli = _ctxRatioMilli;
+                if (milli <= 0)
+                {
+                    return 0;
+                }
+                return milli / 1000.0;
             }
         }
 
@@ -1618,7 +1640,10 @@ namespace CH4
                         long reqPrompt = _usagePrompt;
                         long reqCompletion = _usageCompletion;
                         long reqCacheHit = _usageCacheHit;
+                        long reqContext = _contextTokens;
                         ParseUsage(ev.Text, ref _usagePrompt, ref _usageCompletion, ref _usageCacheHit, ref _contextTokens);
+                        // A93 实测比值——本帧真实 prompt token + 当时前文字符数 → 本会话比值（留档头折算与端点显示数据源）
+                        MeasureCharsPerToken(reqContext);
                         _sessionPrompt = _sessionPrompt + (_usagePrompt - reqPrompt);
                         _sessionCompletion = _sessionCompletion + (_usageCompletion - reqCompletion);
                         _sessionCacheHit = _sessionCacheHit + (_usageCacheHit - reqCacheHit);
@@ -1986,6 +2011,29 @@ namespace CH4
             {
                 // 解析失败静默——观测面不受单帧畸形影响
                 LogStore.Add("ChatSession", 2, "usage 帧解析失败，累计跳过: " + ex.Message, "SYS");
+            }
+        }
+
+        /// <summary>
+        /// A93 实测比值——真实 prompt token（本帧 usage）+ 当时前文字符数 → 本会话字符/token 比值（存 ×1000 整数）。
+        /// 取样判据：本帧确实刷新了单次前文长度（与上一值不同）——usage 缺 prompt 字段的帧不拿陈旧 token 配当前字符数。
+        /// </summary>
+        /// <param name="prevContextTokens">本帧之前的单次前文长度（判据：本帧是否刷新）</param>
+        private void MeasureCharsPerToken(long prevContextTokens)
+        {
+            if (_contextTokens <= 0 || _contextTokens == prevContextTokens)
+            {
+                return;
+            }
+            long chars = FullContextStore.ContextChars(_context.GetMessages());
+            if (chars <= 0)
+            {
+                return;
+            }
+            long milli = (long)Math.Round((double)chars * 1000 / _contextTokens);
+            if (milli > 0)
+            {
+                _ctxRatioMilli = milli;
             }
         }
 

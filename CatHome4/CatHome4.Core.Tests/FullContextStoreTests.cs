@@ -24,11 +24,14 @@ namespace CatHome4.Core.Tests
         /// <summary>被测存储（份数 3）</summary>
         private readonly CH4.FullContextStore _store;
 
+        /// <summary>比值读取器返回值——0=无实测（A93 头折算用例按需改写）</summary>
+        private double _ratio;
+
         /// <summary>建立夹具——临时目录 + 份数 3 的被测实例</summary>
         public FullContextStoreTests()
         {
             _dir = Path.Combine(Path.GetTempPath(), "cat4full_" + Guid.NewGuid().ToString("N"));
-            _store = new CH4.FullContextStore(_dir, "cat_a", () => _msgs.ToArray(), () => 3);
+            _store = new CH4.FullContextStore(_dir, "cat_a", () => _msgs.ToArray(), () => 3, () => _ratio);
         }
 
         /// <summary>释放夹具——尽力删除临时目录（清理失败不影响断言结论）</summary>
@@ -110,7 +113,7 @@ namespace CatHome4.Core.Tests
 
         // ── 格式契约与落盘 ──────────────────────────────────────────
 
-        /// <summary>采集——文件头两行 + 逐消息段（四属性恒全写；空字段整块不出现）</summary>
+        /// <summary>采集——文件头三行（版本 / 猫会话起时 / token 折算）+ 逐消息段（四属性恒全写；空字段整块不出现）</summary>
         [Fact]
         public void Capture_WritesHeaderAndSections()
         {
@@ -119,9 +122,22 @@ namespace CatHome4.Core.Tests
             string text = File.ReadAllText(CurrentFile());
             Assert.StartsWith("# CH4-FULLCTX v1\n# cat=cat_a session=", text);
             Assert.Contains(" start=", text);
+            // A93 折算行——无实测（比值读取器 0）回落缺省 2.4 并标注；2 字符 ÷ 2.4 → 1
+            Assert.Contains("\n# tokens=1 ratio=2.40 source=default\n", text);
             int idx = text.IndexOf("[[CH4-CTX", StringComparison.Ordinal);
             Assert.True(idx > 0);
             Assert.Equal(Section("user", 2000L, "", "", "你好", "", "", ""), text.Substring(idx));
+        }
+
+        /// <summary>采集——实测比值（比值读取器非 0）：头部按实测值折算 + source=measured（不回落缺省）</summary>
+        [Fact]
+        public void Capture_HeaderTokens_MeasuredRatio()
+        {
+            _ratio = 2.0;
+            _msgs.Add(User(new string('甲', 400), 1000L));
+            _store.Capture(true);
+            // 400 字符 ÷ 2.00 → 200 tokens
+            Assert.Contains("\n# tokens=200 ratio=2.00 source=measured\n", File.ReadAllText(CurrentFile()));
         }
 
         /// <summary>采集——消息未入前文（空序列）不落盘</summary>
@@ -145,7 +161,7 @@ namespace CatHome4.Core.Tests
 
         // ── 增量（尾部 400 字符锚点） ───────────────────────────────
 
-        /// <summary>增量——第二轮采集只追加新增消息段（前缀逐字符不变）</summary>
+        /// <summary>增量——第二轮采集正文前缀逐字符不变（只追加新增消息段）+ 头部折算值随采集刷新</summary>
         [Fact]
         public void Capture_SecondRound_AppendsOnly()
         {
@@ -156,7 +172,27 @@ namespace CatHome4.Core.Tests
             Assert.True(first.Length > 400);
             _msgs.Add(User("第二条", 2000L));
             _store.Capture(true);
-            Assert.Equal(first + Section("user", 2000L, "", "", "第二条", "", "", ""), File.ReadAllText(path));
+            string second = File.ReadAllText(path);
+            // 正文口径——首轮正文 + 新段（头部不计入正文比对）
+            string bodyFirst = first.Substring(first.IndexOf("[[CH4-CTX", StringComparison.Ordinal));
+            string bodySecond = second.Substring(second.IndexOf("[[CH4-CTX", StringComparison.Ordinal));
+            Assert.Equal(bodyFirst + Section("user", 2000L, "", "", "第二条", "", "", ""), bodySecond);
+            // A93 头部刷新——折算值随前文字符数重算（603 字符 ÷ 2.40 → 251）
+            Assert.Contains("# tokens=251 ratio=2.40 source=default", second);
+        }
+
+        /// <summary>巡检——头部折算值变化不误判丢头（比对面 = 正文；A93 头部字段可变）</summary>
+        [Fact]
+        public void HeadMatches_HeaderRefresh_NoFalseDrift()
+        {
+            _msgs.Add(User(new string('甲', 500), 1000L));
+            _store.Capture(true);
+            Assert.True(_store.HeadMatches(_msgs.ToArray()));
+            // 比值由缺省切实测——头部折算行变化（正文本未动）
+            _ratio = 2.0;
+            _store.Capture(true);
+            Assert.True(_store.HeadMatches(_msgs.ToArray()));
+            Assert.Contains("# tokens=250 ratio=2.00 source=measured", File.ReadAllText(CurrentFile()));
         }
 
         /// <summary>增量——追加后剥离器仍可还原全部消息（结构自洽）</summary>
@@ -214,7 +250,7 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void FinalizeSession_RotatesOldestOut()
         {
-            CH4.FullContextStore store = new CH4.FullContextStore(_dir, "cat_a", () => _msgs.ToArray(), () => 2);
+            CH4.FullContextStore store = new CH4.FullContextStore(_dir, "cat_a", () => _msgs.ToArray(), () => 2, () => _ratio);
             _msgs.Add(User("第一会话", 1000L));
             store.Capture(true);
             string first = CurrentFile();
@@ -309,7 +345,7 @@ namespace CatHome4.Core.Tests
 
         // ── 视图 JSON ───────────────────────────────────────────────
 
-        /// <summary>视图——空态 ok=true 零条目（前端空态文案自持，不静默留白）</summary>
+        /// <summary>视图——空态 ok=true 零条目（前端空态文案自持，不静默留白）；A93 token 字段同形（tokens=0 + estimated）</summary>
         [Fact]
         public void BuildView_Empty_OkZeroItems()
         {
@@ -318,6 +354,8 @@ namespace CatHome4.Core.Tests
                 Assert.True(doc.RootElement.GetProperty("ok").GetBoolean());
                 Assert.Equal(0, doc.RootElement.GetProperty("count").GetInt32());
                 Assert.Equal(0, doc.RootElement.GetProperty("items").GetArrayLength());
+                Assert.Equal(0, doc.RootElement.GetProperty("tokens").GetInt64());
+                Assert.True(doc.RootElement.GetProperty("estimated").GetBoolean());
             }
         }
 
@@ -375,6 +413,64 @@ namespace CatHome4.Core.Tests
             Assert.Equal("b", CH4.FullContextStore.MergeBody("", "b", "", ""));
             Assert.Equal("", CH4.FullContextStore.MergeBody("", "", "", ""));
             Assert.Equal("a", CH4.FullContextStore.MergeBody("a", null, null, null));
+        }
+
+        /// <summary>载荷正文长度——与 MergeBody 逐组合同口径（免分配折算路径不得与合并实现漂移）</summary>
+        [Fact]
+        public void MergeBodyLength_MatchesMergeBody()
+        {
+            string[] parts = { "", "a", "甲乙丙", null };
+            for (int i = 0; i < parts.Length; i = i + 1)
+            {
+                for (int j = 0; j < parts.Length; j = j + 1)
+                {
+                    for (int k = 0; k < parts.Length; k = k + 1)
+                    {
+                        for (int l = 0; l < parts.Length; l = l + 1)
+                        {
+                            string merged = CH4.FullContextStore.MergeBody(parts[i], parts[j], parts[k], parts[l]);
+                            Assert.Equal(merged.Length, CH4.FullContextStore.MergeBodyLength(parts[i], parts[j], parts[k], parts[l]));
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>前文字符数——四字段合并长度之和（空序列 = 0）</summary>
+        [Fact]
+        public void ContextChars_SumsMergeBodyLength()
+        {
+            Assert.Equal(0, CH4.FullContextStore.ContextChars(null));
+            Assert.Equal(0, CH4.FullContextStore.ContextChars(new LlmMessage[0]));
+            _msgs.Add(User("甲乙", 1000L));
+            _msgs.Add(Msg(LlmRole.Assistant, "丙", "", "", "{\"id\":\"c\"}", "", "", 2000L));
+            // 2 + （1 + 10 + 1）
+            Assert.Equal(14, CH4.FullContextStore.ContextChars(_msgs.ToArray()));
+        }
+
+        /// <summary>视图——A93 token 字段：前文字符数 ÷ 实测比值（estimated=false）；无实测回落缺省 2.4 且 estimated=true</summary>
+        [Fact]
+        public void BuildView_TokensByMeasuredRatio()
+        {
+            _msgs.Add(User(new string('甲', 400), 1000L));
+            _ratio = 2.0;
+            using (JsonDocument doc = JsonDocument.Parse(_store.BuildView(200)))
+            {
+                JsonElement root = doc.RootElement;
+                Assert.Equal(400, root.GetProperty("chars").GetInt64());
+                Assert.Equal(200, root.GetProperty("tokens").GetInt64());
+                Assert.Equal(2.0, root.GetProperty("ratio").GetDouble(), 3);
+                Assert.False(root.GetProperty("estimated").GetBoolean());
+            }
+            // 缺省回落——400 ÷ 2.4 → 167，标注 estimated=true
+            _ratio = 0;
+            using (JsonDocument doc2 = JsonDocument.Parse(_store.BuildView(200)))
+            {
+                JsonElement root2 = doc2.RootElement;
+                Assert.Equal(167, root2.GetProperty("tokens").GetInt64());
+                Assert.Equal(2.4, root2.GetProperty("ratio").GetDouble(), 3);
+                Assert.True(root2.GetProperty("estimated").GetBoolean());
+            }
         }
 
         /// <summary>视图——单条正文四字段合并（content / tool_calls / reasoning / images 按序，空字段跳过）；
