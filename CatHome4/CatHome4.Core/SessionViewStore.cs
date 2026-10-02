@@ -300,15 +300,10 @@ namespace CH4
             {
                 return; // 孤立 tool 丢弃
             }
-            Dictionary<string, object> payload = new Dictionary<string, object>();
             string name = target.Name.Length > 0 ? target.Name : (m.ToolName ?? "");
             // A69 视图层报错中文注释——真实前文保持原文，仅视图块追加中文注释
             string viewResult = ErrorNote.Apply(m.Content ?? "");
-            payload["name"] = name;
-            payload["arguments"] = target.Arguments;
-            payload["result"] = viewResult;
-            payload["toolIndex"] = target.Index;
-            payload["toolTotal"] = target.Total;
+            Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(name, target.Arguments, viewResult, target.Index, target.Total);
             Append(m, "toolcard", payload, timestamp, msgIndex);
         }
 
@@ -367,14 +362,94 @@ namespace CH4
             block.Hash = "void_" + _voids.Count.ToString();
             block.MsgIndex = -1;
             block.RenderType = "void";
-            Dictionary<string, object> payload = new Dictionary<string, object>();
-            payload["count"] = moved;
-            payload["text"] = body.ToString();
-            block.Payload = JsonUtil.Serialize(payload);
+            // 留档被移出块的内容哈希——Rebuild 据此过滤（视图层 = f(真实前文, 视图层留档)）；
+            // 判据取内容哈希不取索引：timeback 删前文后索引漂移，哈希跨删稳定。
+            // 骨架式构造——Dictionary + Serialize 不识别 JsonFragment（片段会落成转义对象），须走 Object + Raw
+            List<string> movedHashes = new List<string>();
+            for (int i = 0; i < removed.Count; i = i + 1)
+            {
+                movedHashes.Add(removed[i].Hash == null ? "" : removed[i].Hash);
+            }
+            block.Payload = JsonUtil.Object(
+                ("count", moved),
+                ("text", body.ToString()),
+                ("hashes", JsonUtil.Raw(JsonUtil.Array(movedHashes.ToArray()))));
             _voids.Add(block);
             Save();
             NotifyBlocksReordered(before);
             return moved;
+        }
+        /// <summary>
+        /// 重建后置过滤——按废弃段留档的内容哈希移除已移出块（视图层 = f(真实前文, 视图层留档)）。
+        /// 为什么需要：timeback 的 sibling 结果卡「前文里删不得」（assistant 声明的 tool_calls 必须与结果配对），
+        /// 而重建只认前文 → 每次启动恢复都会把已入废弃段的块复活，与永久留档的废弃段重复。
+        /// 判据取内容哈希（前文单块 SHA256）不取索引——timeback 删前文后索引漂移，哈希跨删稳定。
+        /// 旧档（无 hashes 字段的废弃段）不追溯——仅在本次变更后新产生的废弃段生效。
+        /// </summary>
+        private void PurgeVoidedBlocks()
+        {
+            HashSet<string> voided = new HashSet<string>(StringComparer.Ordinal);
+            for (int v = 0; v < _voids.Count; v = v + 1)
+            {
+                string[] hashes = ExtractVoidHashes(_voids[v]);
+                for (int h = 0; h < hashes.Length; h = h + 1)
+                {
+                    if (hashes[h].Length > 0)
+                    {
+                        voided.Add(hashes[h]);
+                    }
+                }
+            }
+            if (voided.Count == 0)
+            {
+                return;
+            }
+            for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
+            {
+                string hash = _blocks[i].Hash;
+                if (hash != null && voided.Contains(hash))
+                {
+                    _blocks.RemoveAt(i);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 取废弃段留档的被移出块哈希集合——载荷字段 hashes（解析失败 / 旧档无该字段 = 空数组）。
+        /// </summary>
+        /// <param name="voidBlock">废弃块</param>
+        /// <returns>哈希数组（空 = 无留档）</returns>
+        private static string[] ExtractVoidHashes(ViewBlock voidBlock)
+        {
+            string payloadJson = voidBlock.Payload == null ? "" : voidBlock.Payload;
+            if (payloadJson.Length == 0)
+            {
+                return new string[0];
+            }
+            try
+            {
+                using (JsonDocument doc = JsonUtil.ParseStrict(payloadJson))
+                {
+                    JsonElement root = doc.RootElement;
+                    JsonElement hashesEl;
+                    if (!root.TryGetProperty("hashes", out hashesEl) || hashesEl.ValueKind != JsonValueKind.Array)
+                    {
+                        return new string[0];
+                    }
+                    int count = hashesEl.GetArrayLength();
+                    string[] result = new string[count];
+                    for (int i = 0; i < count; i = i + 1)
+                    {
+                        JsonElement item = hashesEl[i];
+                        result[i] = item.ValueKind == JsonValueKind.String ? (item.GetString() ?? "") : "";
+                    }
+                    return result;
+                }
+            }
+            catch (Exception)
+            {
+                return new string[0];
+            }
         }
 
         /// <summary>
@@ -460,6 +535,8 @@ namespace CH4
                     OnToolResult(m, m.CreatedAt, i);
                 }
             }
+            // 视图层留档重放——前文不含「已移出」信息，须由废弃段哈希补齐（否则 sibling 卡每次重启复活）
+            PurgeVoidedBlocks();
             NotifyBlocksReordered(before);
         }
 

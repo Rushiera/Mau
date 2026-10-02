@@ -654,7 +654,8 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 每猫配置写入——POST /api/v1/cat-config（body: cat/apiConfigId/persona/toolNames/injectList）。
+        /// 每猫配置写入——POST /api/v1/cat-config（body: cat/apiConfigId/persona/toolNames/injectList/packs/enabledRoots/qqbotId/qqbotEnable）。
+        /// 🔴 字段级合并写（PUT 语义 · 2026-10-02 判例蒸馏轮）——字段出现才落盘，缺省保留磁盘现值；显式空值（空数组 / 空串）= 清空。
         /// toolNames 写时校验（非法名过滤）；落盘 HTTP 线程原子写；运行时生效（字段更新 + Swap）入队主线程泵 catcfg.apply。
         /// 生效语义：apiConfigId 立即生效（SwapLlmRuntime）；persona/toolNames/injectList 新会话生效（session.new 重注入）。
         /// </summary>
@@ -667,6 +668,12 @@ namespace CatHome4.Admin
             string apiConfigId = "";
             // A41-3 显式空值语义——字段出现且为空/全零 = 清空回默认端点（字段缺省 = 保留旧值）
             bool apiConfigIdPresent = false;
+            bool personaPresent = false;
+            bool toolNamesPresent = false;
+            bool qqbotEnablePresent = false;
+            bool injectListPresent = false;
+            bool packsPresent = false;
+            bool enabledRootsPresent = false;
             string persona = "";
             string toolNames = "";
             string qqbotId = "";
@@ -680,6 +687,14 @@ namespace CatHome4.Admin
                 {
                     JsonElement root = doc.RootElement;
                     catKey = GetJsonString(root, "cat");
+                    // 字段级合并写（2026-10-02 判例蒸馏轮）——先登记本请求出现的字段（缺省 = 保留旧值）
+                    JsonElement probeEl;
+                    personaPresent = root.TryGetProperty("persona", out probeEl);
+                    toolNamesPresent = root.TryGetProperty("toolNames", out probeEl);
+                    qqbotEnablePresent = root.TryGetProperty("qqbotEnable", out probeEl);
+                    enabledRootsPresent = root.TryGetProperty("enabledRoots", out probeEl);
+                    packsPresent = root.TryGetProperty("packs", out probeEl);
+                    injectListPresent = root.TryGetProperty("injectList", out probeEl);
                     JsonElement apiConfigIdEl;
                     if (root.TryGetProperty("apiConfigId", out apiConfigIdEl))
                     {
@@ -810,19 +825,39 @@ namespace CatHome4.Admin
                 }
                 cfg.QqBotId = qqbotId;
             }
-            cfg.QqBotEnable = qqbotEnable;
-            cfg.Persona = persona;
-            cfg.ToolNames = validToolNames;
-            cfg.InjectList = injectList.ToArray();
-            cfg.Packs = packs.ToArray();
-            // 启用根校验——workspace 强制 + 全局池子集；非法 id 剔除
-            cfg.EnabledRoots = ValidateEnabledRoots(enabledRoots.ToArray());
+            // 字段级合并写（2026-10-02 判例蒸馏轮）——字段出现才落盘，缺省保留磁盘现值（空数组 / 空串 = 显式清空）
+            if (qqbotEnablePresent)
+            {
+                cfg.QqBotEnable = qqbotEnable;
+            }
+            if (personaPresent)
+            {
+                cfg.Persona = persona;
+            }
+            if (toolNamesPresent)
+            {
+                cfg.ToolNames = validToolNames;
+            }
+            if (injectListPresent)
+            {
+                cfg.InjectList = injectList.ToArray();
+            }
+            if (packsPresent)
+            {
+                cfg.Packs = packs.ToArray();
+            }
+            if (enabledRootsPresent)
+            {
+                // 启用根校验——workspace 强制 + 全局池子集；非法 id 剔除
+                cfg.EnabledRoots = ValidateEnabledRoots(enabledRoots.ToArray());
+            }
             SaveCatCfgData(catKey, cfg);
             // 运行时生效——入队主线程泵（注册表/会话面仅主线程触碰）
             _catQueue.Enqueue("catcfg.apply " + catKey);
-            LogStore.Add("CatHome4", 1, "猫配置已受理：" + catKey + "（工具面 " + validToolNames + "）", "CONFIG");
+            LogStore.Add("CatHome4", 1, "猫配置已受理：" + catKey + "（工具面 " + cfg.ToolNames + "）", "CONFIG");
             // A132 剔除出声——被剔名字随响应带回（调用方可见；明细已记日志，不静默）
-            return Results.Json(new { ok = true, cat = catKey, toolNames = validToolNames, removedToolNames = removedToolNames });
+            // 字段级合并写——回执取落盘实况（cfg.ToolNames），不取本次提交值（字段缺省时二者不同）
+            return Results.Json(new { ok = true, cat = catKey, toolNames = cfg.ToolNames, removedToolNames = removedToolNames });
         }
 
         /// <summary>

@@ -1860,12 +1860,8 @@ namespace CH4
                 {
                     continue;
                 }
-                string json = JsonUtil.Object(
-                    ("name", call.Name),
-                    ("arguments", InjectCatId(call.Arguments)),
-                    ("toolIndex", call.Index),
-                    ("toolTotal", call.Total),
-                    ("order", ToolOrderTable.OrderText(call.Name)));
+                Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(call.Name, InjectCatId(call.Arguments), null, call.Index, call.Total);
+                string json = JsonUtil.Serialize(payload);
                 long seq = _httpHost.PushView("toolcard", json, -1, 0);
                 seqs[call.Id] = seq;
             }
@@ -1894,13 +1890,8 @@ namespace CH4
             }
             // A69 视图层报错中文注释——真实前文保持原文
             result = ErrorNote.Apply(result);
-            string json = JsonUtil.Object(
-                ("name", dog.Name),
-                ("arguments", dog.ArgsJson),
-                ("result", result),
-                ("toolIndex", index),
-                ("toolTotal", total),
-                ("order", ToolOrderTable.OrderText(dog.Name)));
+            Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, result, index, total);
+            string json = JsonUtil.Serialize(payload);
             _httpHost.PushView("toolcard", json, dog.CardSeq, 0);
             dog.CardSeq = -1;
         }
@@ -1934,13 +1925,8 @@ namespace CH4
             }
             // A69 视图层报错中文注释——真实前文（dog.Result）保持原文
             string viewResult = ErrorNote.Apply(dog.Result);
-            string toolJson = JsonUtil.Object(
-                ("name", dog.Name),
-                ("arguments", dog.ArgsJson),
-                ("result", viewResult),
-                ("toolIndex", index + 1),
-                ("toolTotal", _dogs.Count),
-                ("order", ToolOrderTable.OrderText(dog.Name)));
+            Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, viewResult, index + 1, _dogs.Count);
+            string toolJson = JsonUtil.Serialize(payload);
             _httpHost.PushView("toolcard", toolJson, dog.CardSeq, 0);
             dog.CardSeq = ToolCardSeqDone;
         }
@@ -2081,7 +2067,7 @@ namespace CH4
                 dog.CardSeq = cardSeqs.TryGetValue(call.Id, out pendingCardSeq) ? pendingCardSeq : -1;
                 _dogs.Add(dog);
             }
-            // [P3] 分批——按 order 值升序分桶（同值一批 · 批内声明序）+ 启动首批
+            // [P3] 分批——按 order 值升序分桶（同值一批 · 批内声明序；独占档每个调用各自成批）+ 启动首批
             // （A127：批间串行 / 批内并发；timeback start 已在 P1 前置，back 作为末批自然后置）
             BuildBatches();
             // A128——已闭合单（声明面拦截 / start 前置 / 批内重复调用）即刻出终态卡，不随批次推进延后
@@ -2099,15 +2085,16 @@ namespace CH4
             _phase = ChatPhase.ToolBatchRunning;
             _phaseFrames = 0;
         }
-        /// <summary>
-        /// 分批计划构建——按 order 值升序分桶（A127：同值一批 · 批内保持 LLM 声明序）。
-        /// 已闭合单（拦截 / start 前置执行）不入批——它们无待执行动作（由 _dogs 序承担回填与视图编号基准）。
-        /// </summary>
+        /// <summary>分批计划构建——规则单点实装 `ToolOrderTable.PlanBatches`：按 order 值升序分桶（A127：同值一批 · 批内保持 LLM 声明序），**独占档工具每次调用各自成批**（A144：cs-* 预检写与 cs-build 不与任何工具同批）。
+        /// 已闭合单（拦截 / start 前置执行）不入批——它们无待执行动作（由 _dogs 序承担回填与视图编号基准）。</summary>
         private void BuildBatches()
         {
             _batches.Clear();
             _batchIndex = -1;
-            List<int> values = new List<int>();
+            // 批次规则单点实装 → ToolOrderTable.PlanBatches（同值一批 · 值升序 · 批内保持声明序；独占档每次调用各自成批）
+            List<ToolOrderDog> open = new List<ToolOrderDog>();
+            List<string> names = new List<string>();
+            List<int> orders = new List<int>();
             for (int i = 0; i < _dogs.Count; i = i + 1)
             {
                 ToolOrderDog dog = _dogs[i];
@@ -2115,26 +2102,18 @@ namespace CH4
                 {
                     continue;
                 }
-                if (!values.Contains(dog.Order))
-                {
-                    values.Add(dog.Order);
-                }
+                open.Add(dog);
+                names.Add(dog.Name);
+                orders.Add(dog.Order);
             }
-            values.Sort();
-            for (int v = 0; v < values.Count; v = v + 1)
+            List<List<int>> plan = ToolOrderTable.PlanBatches(names, orders);
+            for (int p = 0; p < plan.Count; p = p + 1)
             {
                 List<ToolOrderDog> batch = new List<ToolOrderDog>();
-                for (int i = 0; i < _dogs.Count; i = i + 1)
+                List<int> indexes = plan[p];
+                for (int k = 0; k < indexes.Count; k = k + 1)
                 {
-                    ToolOrderDog dog = _dogs[i];
-                    if (dog.IsClosed)
-                    {
-                        continue;
-                    }
-                    if (dog.Order == values[v])
-                    {
-                        batch.Add(dog);
-                    }
+                    batch.Add(open[indexes[k]]);
                 }
                 _batches.Add(batch);
             }

@@ -485,7 +485,7 @@ namespace CatHome4.Admin
         }
         /// <summary>
         /// cat.cfg.set——字段级合并写（读现值 → 改单字段 → 全量写回；未提交字段逐字保留）。
-        /// 🔴 不复用 POST /api/v1/cat-config 的整对象替换语义（判例 2026-09-16：部分字段提交致 qqbotEnable 被关、enabledRoots 收窄）。
+        /// 🔴 两条写入通道同语义（2026-10-02 判例蒸馏轮收口：POST /api/v1/cat-config 已改为字段级合并写；2026-09-16 的「整对象替换」语义退役）。
         /// 返回落盘实况（写后读回全量对照）；生效走 catcfg.apply 链（apiConfigId 立即，其余前文项新会话生效）。
         /// </summary>
         /// <param name="rest">参数串：&lt;key&gt; &lt;字段&gt; &lt;值…&gt;（值取行内剩余全部原文——persona 多行原样直达）</param>

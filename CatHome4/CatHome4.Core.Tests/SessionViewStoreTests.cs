@@ -196,6 +196,16 @@ namespace CatHome4.Core.Tests
             Assert.Equal(1, payload.GetProperty("toolIndex").GetInt32());
             Assert.Equal(1, payload.GetProperty("toolTotal").GetInt32());
         }
+        /// <summary>工具卡载荷带执行序注记——视图块字段与实时推送同源取表（重建路径不再丢前端徽标）</summary>
+        [Fact]
+        public void OnToolResult_CarriesOrderFromTable()
+        {
+            _store.OnAssistantToolCalls(AssistantWithTools("", OneToolCall("call_1", "cs-patch", "{}"), 200L), 200L, 4);
+            _store.OnToolResult(ToolResult("call_1", "cs-patch", "结果", 300L), 300L, 5);
+            CH4.ViewBlock[] blocks = _store.GetBlocks();
+            Assert.Single(blocks);
+            Assert.Equal(CH4.ToolOrderTable.OrderText("cs-patch"), ParsePayload(blocks[0]).GetProperty("order").GetString());
+        }
 
         /// <summary>孤立工具结果——无声明配对则丢弃（视图容错，不产块）</summary>
         [Fact]
@@ -264,6 +274,37 @@ namespace CatHome4.Core.Tests
             Assert.Equal(3, blocks[1].MsgIndex);
             Assert.Equal("text", blocks[2].RenderType);
             Assert.Equal(4, blocks[2].MsgIndex);
+        }
+        /// <summary>重建重放视图层留档——已入废弃段的块按内容哈希过滤，不随重建复活（timeback sibling：前文删不得）</summary>
+        [Fact]
+        public void Rebuild_PurgesVoidedBlocks_ByContentHash()
+        {
+            LlmMessage[] messages = new LlmMessage[]
+            {
+                        User("问题", 100L),
+                        AssistantWithTools("", OneToolCall("call_1", "text-read", "{}"), 200L),
+                        ToolResult("call_1", "text-read", "内容", 300L),
+                        Assistant("回复", 400L)
+            };
+            _store.Rebuild(messages);
+            Assert.Equal(3, _store.GetBlocks().Length);
+            // 前文不动（tool_calls 须配对）——仅视图层移出（用户消息 + sibling 工具卡）
+            int moved = _store.ConvertRangeToVoid(0, 2, "");
+            Assert.Equal(2, moved);
+            // 废弃段留档——hashes 必须是 JSON 数组（片段值须走 Raw 包裹，否则落成转义字符串）
+            CH4.ViewBlock[] afterMove = _store.GetBlocks();
+            Assert.Equal(2, afterMove.Length);
+            JsonElement voidPayload = ParsePayload(afterMove[0]);
+            JsonElement hashesEl = voidPayload.GetProperty("hashes");
+            Assert.Equal(JsonValueKind.Array, hashesEl.ValueKind);
+            Assert.Equal(2, hashesEl.GetArrayLength());
+            // 重建——已移出块不复活（修复前：user 与 toolcard 各复活一份 → 4 块，废弃段内容重复）
+            _store.Rebuild(messages);
+            CH4.ViewBlock[] blocks = _store.GetBlocks();
+            Assert.Equal(2, blocks.Length);
+            Assert.Equal("void", blocks[0].RenderType);
+            Assert.Equal("text", blocks[1].RenderType);
+            Assert.Equal("回复", ParsePayload(blocks[1]).GetProperty("content").GetString());
         }
 
         /// <summary>重建——完全重置消息块（真实前文绝对可用；增量块不留残余）</summary>
