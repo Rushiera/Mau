@@ -34,9 +34,9 @@ beforeEach(() => {
   window.chatPhaseReset();
 });
 
-// 工具卡渲染快捷入口——返回 details.chat-tool
-function renderTool(payload, seq) {
-  window.chatOnView({ seq: seq || 60, renderType: 'toolcard', payload: payload, replaceSeq: -1 });
+// 工具卡渲染快捷入口——返回 details.chat-tool（A158 期三：op 协议——工具卡属流式区，按块键入区）
+function renderTool(payload, key) {
+  window.chatOnView({ op: 'live.add', key: key || 'tool:test', renderType: 'toolcard', payload: payload });
   return chatMsgs.querySelector('.chat-tool');
 }
 

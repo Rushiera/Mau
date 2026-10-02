@@ -313,7 +313,13 @@ function chatRenderVoid(p) {
     wrap.appendChild(det);
 }
 
-// A142 历史单块渲染——按 renderType 分派（历史重建与增量续传共用出口；语义与实时渲染一致）
+// 块的前文消息索引——A158 期三：前文来源判据（origin 关系字段；null / 缺字段 = 独立块不挂操作条）
+function chatBlockMsgIndex(blk) {
+    if (!blk || !blk.origin || typeof blk.origin.msgIndex !== 'number') { return -1; }
+    return blk.origin.msgIndex;
+}
+
+// 历史单块渲染——按 renderType 分派（持久块唯一渲染出口：历史重建与实时 persist.append 共用）
 function chatAppendHistoryBlock(blk) {
     var p = blk.payload || {};
     if (blk.renderType === 'user') {
@@ -344,11 +350,11 @@ function chatAppendHistoryBlock(blk) {
         chatRenderVoid(p);
     } else if (blk.renderType === 'text') {
         // F3 MD 渲染——历史 text 块同样走解析器（与实时渲染一致）；md-block 包裹=CSS 作用域锚点
-        // P6b 节点操作条——msgIndex 顶层字段（视图块携带真实前文顺序；roundsum/inject_report=-1 不挂）
+        // P6b 节点操作条——前文来源判据（A158 期三：msgIndex 顶层字段退役，改读 origin）
         var cb = chatBubble('assistant');
         // A65——历史 text 块同走 chatMdFill（含包裹时先出缩略图组；无包裹与旧行为同构）
         chatMdFill(cb, p.content || '');
-        chatAppendNodeActions(cb, blk.msgIndex);
+        chatAppendNodeActions(cb, chatBlockMsgIndex(blk));
     }
 }
 

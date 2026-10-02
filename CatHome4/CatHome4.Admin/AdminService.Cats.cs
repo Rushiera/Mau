@@ -1577,7 +1577,7 @@ namespace CatHome4.Admin
                 item.RenderType = b.RenderType ?? "";
                 item.Content = "";
                 item.Done = "";
-                                // A156：游标锚取块键——稳定句柄（前文派生 msg:序:型 / 工具 tool:callId / 独立块 容器:序号）
+                // A156：游标锚取块键——稳定句柄（前文派生 msg:序:型 / 工具 tool:callId / 独立块 容器:序号）
                 item.Hash = b.Key == null ? "" : b.Key;
                 if (item.RenderType == "text")
                 {
@@ -1844,7 +1844,6 @@ namespace CatHome4.Admin
                 EnvelopeBuilder = MakeChatEnvelopeBuilder(cat.Session),
                 FrameBuilder = null,
                 HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(cat.Session, max),
-                HistoryDeltaBuilder = (int gen, int have) => _chatBridge.BuildHistoryDelta(cat.Session, gen, have),
                 CatsBuilder = null,
                 NoteBuilder = () => cat.Session.BuildNoteJson(),
                 DelayBuilder = () => DelayQueue.BuildListJson(cat.Session.Id),
@@ -1885,7 +1884,6 @@ namespace CatHome4.Admin
                 EnvelopeBuilder = MakeChatEnvelopeBuilder(_chatBridge.DefaultSession),
                 FrameBuilder = null,
                 HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max),
-                HistoryDeltaBuilder = (int gen, int have) => _chatBridge.BuildHistoryDelta(_chatBridge.DefaultSession, gen, have),
                 CatsBuilder = null,
                 NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
                 DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),

@@ -251,50 +251,37 @@ namespace CatHome4.Http
         }
 
         /// <summary>
-        /// 视图事件推送——F4 视图块统一出口（流式增量/整块/控制块；seq 全局单调）。
-        /// 载荷语义：seq = 全局单调序号（流式容器标识）；renderType = 前端渲染类型；
-        /// replaceSeq = 被替换块序号（流式→整块替换）；seqHint &gt; 0 时复用该序号（流式增量不递增）；
-        /// meta = 块元数据（A157 块契约：key / ts / durMs / state / id——空串 = 不带）。
+        /// 视图事件推送——视图出口统一 op 面（A158 期三：两区镜像）。
+        /// op 取值：persist.append（持久块建块即推）· live.add / live.update / live.remove（流式区镜像）
+        /// · control（瞬时事件面：usage / chatdone / paused / note / session_reset）。
         /// </summary>
-        /// <param name="renderType">渲染类型——stream/user/text/reason/toolcard/control</param>
-        /// <param name="payload">载荷 JSON 字符串（内嵌对象）</param>
-        /// <param name="replaceSeq">被替换块序号（-1=无替换）</param>
-        /// <param name="seqHint">流式增量带已分配序号（&gt;0 不递增；≤0 分配新序号）</param>
-        /// <param name="meta">块元数据 JSON（空串 = 不带）</param>
-        /// <returns>事件序号</returns>
-        public int PushView(string renderType, string payload, long replaceSeq, long seqHint, string meta)
+        /// <param name="op">出口事件类型</param>
+        /// <param name="payload">载荷 JSON 字符串（内嵌对象；live.remove 为空串——不解析）</param>
+        /// <param name="meta">块元数据 JSON（A158 块字段：key / renderType / ts / durMs / state / id / src / origin——空串 = 不带）</param>
+        public void PushView(string op, string payload, string meta)
         {
-            int seq;
-            if (seqHint > 0)
+            object payloadObj = "";
+            if (payload != null && payload.Length > 0)
             {
-                seq = (int)seqHint;
-            }
-            else
-            {
-                seq = Interlocked.Increment(ref _seq);
-            }
-            object payloadObj;
-            try
-            {
-                payloadObj = JsonSerializer.Deserialize<object>(payload);
-                if (payloadObj == null)
+                try
                 {
-                    payloadObj = "";
+                    payloadObj = JsonSerializer.Deserialize<object>(payload);
+                    if (payloadObj == null)
+                    {
+                        payloadObj = "";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogStore.Add("CatHome4", 2, "视图载荷解析失败（按原文）: " + ex.Message, "TOOL");
+                    payloadObj = payload;
                 }
             }
-            catch (Exception ex)
-            {
-                LogStore.Add("CatHome4", 2, "工具载荷解析失败（按原文）: " + ex.Message, "TOOL");
-                payloadObj = payload;
-            }
             Dictionary<string, object> ev = new Dictionary<string, object>();
-            ev["seq"] = seq;
-            ev["renderType"] = renderType;
+            ev["op"] = op;
             ev["payload"] = payloadObj;
-            ev["replaceSeq"] = replaceSeq;
             MergeViewMeta(ev, meta);
             PushEvent("view", JsonUtil.Serialize(ev));
-            return seq;
         }
 
         /// <summary>

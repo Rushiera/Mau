@@ -627,8 +627,6 @@ namespace CH4
                 + "】条前文条目（已用 " + seconds.ToString() + " 秒）——回收时用 back 带回 findings。";
             AppendMessage(_context.AddUserMessage(text));
             _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
-            string userJson = JsonUtil.Object(("content", text), ("source", "systemauto"));
-            _viewBus.PushUser(userJson, "msg:" + (_context.GetMessageCount() - 1).ToString() + ":user", LastMessage().CreatedAt);
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 状态提示注入（累计 " + scope.EventCount.ToString()
                 + " 事件 / 已用 " + seconds.ToString() + " 秒）", "TIMEBACK");
         }

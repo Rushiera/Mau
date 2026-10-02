@@ -69,8 +69,6 @@ namespace CH4
             }
             AppendMessage(injected.Value);
             _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
-            string userJson = JsonUtil.Object(("content", text), ("source", "systemauto"));
-            _viewBus.PushUser(userJson, "msg:" + (_context.GetMessageCount() - 1).ToString() + ":user", LastMessage().CreatedAt);
             LogStore.Add("CatHome4", 1, "图片注入：本批 " + paths.Count.ToString() + " 张（首张 " + paths[0] + "）", "IMAGE");
             NoteTimebackEvent();
         }

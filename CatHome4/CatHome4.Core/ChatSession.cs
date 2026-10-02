@@ -72,8 +72,8 @@ namespace CH4
         /// <summary>本轮是否发生过重试——首个 Text/Reasoning 到达时回填 retry 视图 resolved（S2 §8.4）</summary>
         private bool _sawRetry;
 
-        /// <summary>retry 视图块索引——同一重试序列原位更新落盘块（-1=无块；轮终复位）</summary>
-        private int _retryBlockIndex = -1;
+        /// <summary>本轮是否推过 retry 视图——错误中止措辞分档判据（A158：取代视图出口在途序号；轮终复位）</summary>
+        private bool _retryPushed;
 
         /// <summary>retry 气泡原文快照——最近一次重试的尝试序号（A86：resolved 保留报错信息）</summary>
         private string _retryAttempt = "";
@@ -434,7 +434,7 @@ namespace CH4
         public void PushSessionReset()
         {
             string resetJson = "{\"type\":\"session_reset\"}";
-            _viewBus.ResetToolCards();
+            _viewBus.ResetLive();
             _viewBus.PushControl(resetJson);
         }
 
@@ -539,11 +539,11 @@ namespace CH4
         {
             return _viewStore.GetBlocks();
         }
-
-        /// <summary>块序代际号——A142 增量续传锚（前端重连时带回比对前缀有效性）</summary>
-        public int GetViewGen()
+        /// <summary>取流式区块快照——history 全量载荷随带（期三：前端重连 / 刷新忠实重建流式区）。</summary>
+        /// <returns>流式区块数组（按时间戳升序）</returns>
+        public ViewBlock[] GetLiveBlocks()
         {
-            return _viewStore.GetBlockGen();
+            return _viewBus.GetLiveBlocks();
         }
 
         /// <summary>会话唯一 ID——构造注入 = 猫 key（唯一标识；无独立"会话身份"层）</summary>
@@ -745,6 +745,7 @@ namespace CH4
         public void AttachHost(IHostPush host)
         {
             _viewBus.Attach(host);
+            _viewStore.OnBlockAppended = _viewBus.PushPersist;
         }
 
         /// <summary>
@@ -962,8 +963,6 @@ namespace CH4
             string notice = sb.ToString();
             AppendMessage(_context.AddUserMessage(notice));
             _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
-            string userJson = JsonUtil.Object(("content", notice), ("source", "systemauto"));
-            _viewBus.PushUser(userJson, "msg:" + (_context.GetMessageCount() - 1).ToString() + ":user", LastMessage().CreatedAt);
             LogStore.Add("CatHome4", 1, "sleep 作废（等待被提前启动打断）: cat=" + _catKey + " | 销毁 " + killed.Length.ToString() + " 条 | 触发来源 " + triggerSource, "DELAY");
         }
 
@@ -1097,9 +1096,6 @@ namespace CH4
             ResetRoundCounters();
             AppendMessage(_context.AddUserMessage(content));
             _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
-            // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
-            string userJson = JsonUtil.Object(("content", content), ("source", source));
-            _viewBus.PushUser(userJson, "msg:" + (_context.GetMessageCount() - 1).ToString() + ":user", LastMessage().CreatedAt);
             SetChatState("working");
             LaunchLlm();
         }
@@ -1160,30 +1156,24 @@ namespace CH4
             return JsonUtil.Object(("state", state), ("attempt", _retryAttempt), ("max", _retryMax), ("text", _retryReason));
         }
         /// <summary>
-        /// retry 视图推送统一出口（A94）——构造载荷 + 原位落盘 + 推事件：
-        /// retrying 新建气泡（视图出口分配 / 复用气泡序号）；resolved / failed 替换既有气泡（原位更新）。
+        /// retry 视图推送统一出口（A94；A158 期三改「只增不改」）——构造载荷 + 落盘追加块（推送由建块事件驱动）：
+        /// retrying / resolved / failed 各推一块——不做原位更新（持久区只增不改，前端只追加渲染）。
         /// </summary>
         /// <param name="state">状态（retrying / resolved / failed）</param>
         private void PushRetryView(string state)
         {
             string json = BuildRetryViewJson(state);
             long ts = ViewTimestamp();
-            _retryBlockIndex = _viewStore.UpsertRetry(json, ts, _retryBlockIndex);
-            if (state == "retrying")
-            {
-                _viewBus.PushRetryNew(json, ts);
-                return;
-            }
-            _viewBus.PushRetryUpdate(json, ts);
+            _retryPushed = true;
+            _viewStore.AppendRetry(json, ts);
         }
         /// <summary>
-        /// 重试视图态清零（A94 单一出口）——气泡序号 / 落盘块索引 / 原文三元组 / 待回填标志；
-        /// 轮终（正常 / 中断 / 错误中止）统一调用，防跨轮残留污染（旧原因被复用 / 陈旧序号替换错气泡）。
+        /// 重试视图态清零（A94 单一出口）——在途标志 / 原文三元组 / 待回填标志；
+        /// 轮终（正常 / 中断 / 错误中止）统一调用，防跨轮污染。
         /// </summary>
         private void ResetRetryView()
         {
-            _viewBus.ResetRetry();
-            _retryBlockIndex = -1;
+            _retryPushed = false;
             _retryAttempt = "";
             _retryMax = "";
             _retryReason = "";
@@ -1395,19 +1385,14 @@ namespace CH4
             }
         }
         /// <summary>
-        /// 思考段终结——离开 think 态的唯一收口（莎 2026-09-22 定）：流式思考块转整块（replaceSeq 命中流式容器）+ 序号复位。
-        /// 幂等——无在途思考流式（序号 0 或内容空）时静默返回。调用面：PhaseEnter 离开 think 态 + 中止/暂停收尾。
+        /// 思考段终结——离开 think 态的唯一收口（莎 2026-09-22 定）：撤下流式思考容器（live.remove）。
+        /// A158 期三：思考内容由持久区流容器承载（PushReasonStream 落块 + live.update），本方法只负责撤场——
+        /// 前端见 live.remove 即撤临时气泡，持久块换手由持久区推送完成。
+        /// 幂等——无在途容器时零动作。调用面：PhaseEnter 离开 think 态 + 中止/暂停收尾。
         /// </summary>
         private void SealReasonStream()
         {
-            long seq = _viewBus.TakeReasonStreamSeq();
-            string content = _reasonAccum.ToString();
-            if (seq == 0 || content.Length == 0)
-            {
-                return;
-            }
-            string reasonJson = JsonUtil.Object(("content", content));
-            _viewBus.PushReasonBlock(reasonJson, seq, "", ViewTimestamp());
+            _viewBus.ResetReasonStream();
         }
 
         /// <summary>运行态切换——结算旧态累计毫秒 + 进入新态（七态：idle/wait/link/think/tool/run/reply；锁内）；同态连续计时（重复事件不重置起表）；idle 不计时——只作态名。</summary>
@@ -1698,18 +1683,14 @@ namespace CH4
                 AppendMessage(_context.AddAssistantMessage(_llmResultText));
                 NoteTimebackEvent();
                 _viewStore.OnAssistantText(LastMessage(), _context.GetMessageCount() - 1);
-                string textJson = JsonUtil.Object(("content", _llmResultText), ("msgIndex", _context.GetMessageCount() - 1));
-                _viewBus.PushTextBlock(textJson, "msg:" + (_context.GetMessageCount() - 1).ToString() + ":text", LastMessage().CreatedAt);
                 _viewBus.ResetTextStream();
                 _viewBus.ResetReasonStream();
-                // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + user 事件 + 直接开新轮（跳过 Done/CloseRound）
+                // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + 直接开新轮（跳过 Done/CloseRound）
                 if (_pending.Count > 0)
                 {
                     PendingMessage next = _pending.Dequeue();
                     AppendMessage(_context.AddUserMessage(next.Content));
                     _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
-                    string userJson = JsonUtil.Object(("content", next.Content), ("source", next.Source));
-                    _viewBus.PushUser(userJson, "msg:" + (_context.GetMessageCount() - 1).ToString() + ":user", LastMessage().CreatedAt);
                     _round = 0;
                     LaunchLlm();
                     return;
@@ -1728,9 +1709,7 @@ namespace CH4
             if (_llmResultText.Length > 0)
             {
                 long gapTs = ViewTimestamp();
-                string gapKey = _viewStore.AppendGapText(_llmResultText, gapTs);
-                string sealTextJson = JsonUtil.Object(("content", _llmResultText), ("msgIndex", -1));
-                _viewBus.PushTextBlock(sealTextJson, gapKey, gapTs);
+                _viewStore.AppendGapText(_llmResultText, gapTs);
             }
             // 思考段整块——先于工具先行卡推送（实时序对齐视图块生成序：assistant 思考块在工具卡之前）；
             // 判例 2026-09-29：此前直接清序（不推整块），实时面仅剩前端 live 块，F5 重建后 think 块与工具卡换位
@@ -1843,7 +1822,7 @@ namespace CH4
             }
         }
 
-        /// <summary>工具卡终态补推——中断收尾（中止 / 宿主重启）时先行卡补终态：已完成 → 完整卡；未完成 → 已中止卡。无在途先行卡或已定稿（FlushToolCard 逐条回填）不推——防重复卡（A157：判据取视图出口的块槽位与定稿记录，不再用 dog 上的双标志）。</summary>
+        /// <summary>工具卡终态补推——中断收尾（中止 / 宿主重启）时先行卡补终态：已完成 → 完整卡；未完成 → 已中止卡。无在途先行卡或已定稿（FlushToolCard 逐条回填）不推——防重复卡（A158：判据取流式区键存在性 + 区内块定稿状态）。</summary>
         /// <param name="dog">工具单</param>
         /// <param name="index">并发序号（1-based）</param>
         /// <param name="total">并发总数</param>
@@ -1855,7 +1834,7 @@ namespace CH4
                 return;
             }
             string key = "tool:" + dog.ToolCallId;
-            if (!_viewBus.IsToolCardPending(key))
+            if (!_viewBus.IsToolCardPending(key) || _viewBus.IsToolCardFinaled(key))
             {
                 return;
             }
@@ -1872,7 +1851,7 @@ namespace CH4
             result = ErrorNote.Apply(result);
             Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, result, index, total);
             string json = JsonUtil.Serialize(payload);
-            _viewBus.PushToolCardFinal(key, json, dog.ElapsedMs(), dog.StartedAtMs);
+            _viewBus.PushToolCardDone(key, json, dog.ElapsedMs());
         }
         /// <summary>工具卡逐条回填（A128）——单工具完成即定稿结果并推送终态卡（有先行卡 → 原位替换；无先行卡如声明面拦截 → 新建），不再等整批收口。幂等：同一工具单终态卡至多一次（A157 由视图出口的定稿记录承担——不再用 dog 标志）；结果定稿（超时 / 空结果兜底）在推送前完成。前文消息与持久视图块仍由段3 按声明序统一落位——实时面序（先行卡位）与持久块序不分叉。</summary>
         /// <param name="dog">工具单</param>
@@ -1904,7 +1883,7 @@ namespace CH4
             string viewResult = ErrorNote.Apply(dog.Result);
             Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, viewResult, index + 1, _dogs.Count);
             string toolJson = JsonUtil.Serialize(payload);
-            _viewBus.PushToolCardFinal("tool:" + dog.ToolCallId, toolJson, dog.ElapsedMs(), dog.StartedAtMs);
+            _viewBus.PushToolCardDone("tool:" + dog.ToolCallId, toolJson, dog.ElapsedMs());
         }
 
         /// <summary>
@@ -2319,14 +2298,12 @@ namespace CH4
             }
             // A72——停机态丢弃在途排队消息（宿主即将重启，不再开新轮）
             DropPendingIfRestarting();
-            // 单向数据流改造——忙时插话：工具批完成有排队消息 → 插入 Ctx + user 事件 + 直接续轮（工具结果 + 插话同轮可见）
+            // 单向数据流改造——忙时插话：工具批完成有排队消息 → 插入 Ctx + 直接续轮（工具结果 + 插话同轮可见）
             if (_pending.Count > 0)
             {
                 PendingMessage next = _pending.Dequeue();
                 AppendMessage(_context.AddUserMessage(next.Content));
                 _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
-                string userJson = JsonUtil.Object(("content", next.Content), ("source", next.Source));
-                _viewBus.PushUser(userJson, "msg:" + (_context.GetMessageCount() - 1).ToString() + ":user", LastMessage().CreatedAt);
                 _round = 0;
                 LaunchLlm();
                 return;
@@ -2346,7 +2323,7 @@ namespace CH4
             // 失败措辞如实分档（2026-09-30）——重试型（Runtime 对 429/5xx/传输类有限重试后）与本轮从未重试的单次失败
             // （4xx 参数/额度类——Runtime 不重试）不可混称「重试耗尽」；判据 = 本轮是否推过 retry 视图（视图出口在途标志）
             string abortKind;
-            if (_viewBus.RetryActive)
+            if (_retryPushed)
             {
                 abortKind = "重试耗尽";
             }
@@ -2363,11 +2340,9 @@ namespace CH4
             // A69 视图层报错中文注释——错误原文仍进日志与前文面，仅视图块追加中文注释
             string viewError = ErrorNote.Apply(_llmErrorText);
             long errTs = ViewTimestamp();
-            string errKey = _viewStore.AppendError(viewError, errTs);
-            string errJson = JsonUtil.Object(("type", "error"), ("text", viewError));
-            _viewBus.PushError(errJson, errKey, errTs);
+            _viewStore.AppendError(viewError, errTs);
             // [段3] 重试耗尽终态（A94——本轮推过 retry 气泡则补 failed 终态，保留报错原文；最终错误详情仍归 error 气泡）
-            if (_viewBus.RetryActive)
+            if (_retryPushed)
             {
                 PushRetryView("failed");
             }
@@ -2415,8 +2390,7 @@ namespace CH4
             PhaseSettle();
             string roundsumJson = BuildRoundSumJson();
             long sumTs = ViewTimestamp();
-            string sumKey = _viewStore.AppendRoundSummary(roundsumJson, sumTs);
-            _viewBus.PushRoundSum(roundsumJson, sumKey, sumTs);
+            _viewStore.AppendRoundSummary(roundsumJson, sumTs);
             SetChatState("idle");
             // B4 对话区：会话终态事件——前端定型（llm done 仅一轮结束；chatdone 才是整次会话结束；count = 原始消息数——实时同步状态区）
             // E3 扩展——chatdone 带真实 usage（命中/非命中/输出/前文长度；前端状态栏同步显示）

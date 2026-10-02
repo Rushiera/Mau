@@ -5,13 +5,14 @@ using Mau.Runtime;
 namespace CH4
 {
     /// <summary>
-    /// 会话视图出口——实时区（A155 步二 2a：视图层双区化的结构收口）。
-    /// 职责：全部视图 SSE 直推 + 实时区状态（流式容器 / retry 气泡 / 工具卡先行卡）。
-    /// 分区：固化块区（SessionViewStore）管落盘持久块；本类管不落盘的过程块出口与状态。
-    /// A157：推送事件随带块元数据（key / ts / durMs / state）；工具卡生命周期（pending → final）
-    /// 收口于本类槽位表——取代工具单 Dog 上的 CardSeq / CardFlushed 双标志（定稿幂等由键集合承担）。
-    /// 时间戳口径：前文派生块（user / text / reason）由调用方传消息 CreatedAt；
-    /// 独立块与流式容器取<b>生成时刻</b>（本类 NowMs——块契约 §3.1：独立块取生成时刻）。
+    /// 会话视图出口——两区镜像出口（A158 期三）。
+    /// ① 流式区（live）：持有「当前正在进行的块」——流式文本 / 思考容器、工具卡先行卡；
+    ///    变更以三 op 推送（live.add / live.update / live.remove），前端忠实镜像（不配对、不判断）。
+    /// ② 持久区（persist）：持久块建块即推 persist.append（由 SessionViewStore 建块事件驱动）；
+    ///    本类按块键幂等（同一键至多推一次），推入时同键流式块出区（工具卡换手收口于本方法）。
+    /// ③ 瞬时事件（control）：usage / chatdone / paused / note / session_reset——非块，前端按事件处理。
+    /// A158 计数退役：流式三序号 / retry 序号 / 工具卡槽位与定稿双标志并入本类流式表与块键。
+    /// 时间戳口径：前文派生块由调用方传消息 CreatedAt；流式容器取生成时刻（块契约 §3.1）。
     /// 宿主推送面未附加时全部推送静默跳过（与拆分前会话侧 _httpHost 判空语义一致）。
     /// </summary>
     internal sealed class ViewBus
@@ -19,22 +20,19 @@ namespace CH4
         /// <summary>宿主推送面——Bootstrap 段6 宿主 HTTP 启动后 Attach 赋值（构造时宿主 HTTP 未启动）</summary>
         private IHostPush _host;
 
-        /// <summary>流式文本块序号——流式增量容器标识（整块到达时 replace 定位）</summary>
-        private long _textStreamSeq;
+        /// <summary>流式区块表——块键 → 块（当前正在进行的块；出区即移除）</summary>
+        private readonly Dictionary<string, ViewBlock> _live = new Dictionary<string, ViewBlock>();
 
-        /// <summary>流式思考块序号——流式增量容器标识（reason 整块 replace；纯文本轮无整块）</summary>
-        private long _reasonStreamSeq;
+        /// <summary>持久区已推键集合——同一块键至多推一次 persist.append（幂等在后端，前端零规则）</summary>
+        private readonly HashSet<string> _persisted = new HashSet<string>();
 
-        /// <summary>retry 气泡视图序号——多次重试复用同一气泡（replaceSeq 替换不堆叠）</summary>
-        private long _retrySeq;
-
-        /// <summary>实时块键序号——流式容器与独立块的实时键分配（A157：持久面按容器计数，实时面自持计数）</summary>
+        /// <summary>实时块键序号——流式容器键分配（持久面键由块自身承载，实时面自持计数）</summary>
         private long _realtimeKeySeq;
 
         /// <summary>流式文本容器键——首增量分配后复用（容器块的实时身份）</summary>
         private string _textStreamKey;
 
-        /// <summary>流式文本容器时刻——首次增量确定，后续增量复用（同块同 ts）</summary>
+        /// <summary>流式文本容器时刻——首增量确定，后续增量复用（同块同 ts）</summary>
         private long _textStreamTs;
 
         /// <summary>流式思考容器键——首增量分配后复用</summary>
@@ -43,26 +41,21 @@ namespace CH4
         /// <summary>流式思考容器时刻——首次增量确定，后续增量复用</summary>
         private long _reasonStreamTs;
 
-        /// <summary>retry 气泡容器键——新建时分配后复用（原位更新沿用同键）</summary>
-        private string _retryKey;
-
-        /// <summary>retry 气泡时刻——新建时确定，原位更新复用</summary>
-        private long _retryTs;
-
-        /// <summary>工具卡实时槽位——块键 → 槽位（块 + SSE 序号）；pending → final 生命周期由本表承担</summary>
-        private readonly Dictionary<string, ToolCardSlot> _toolCards = new Dictionary<string, ToolCardSlot>();
-
-        /// <summary>工具卡已定稿键集合——同一工具单终态卡至多一次（A157：定稿幂等）</summary>
-        private readonly HashSet<string> _toolCardFinaled = new HashSet<string>();
-
-        /// <summary>工具卡实时槽位——先行卡的块对象与推送序号</summary>
-        private sealed class ToolCardSlot
+        /// <summary>取流式区当前块快照——history 全量载荷随带（重连 / 刷新后前端忠实重建流式区）</summary>
+        /// <returns>区内块数组（按时间戳升序）</returns>
+        public ViewBlock[] GetLiveBlocks()
         {
-            /// <summary>先行卡块（pending 态——定稿时补 ID 与运行时长）</summary>
-            public ViewBlock Block;
-
-            /// <summary>先行卡 SSE 序号（终态卡原位替换定位）</summary>
-            public long Seq;
+            // 主线程调用——与其余推送同域（会话轮内），无锁
+            List<ViewBlock> list = new List<ViewBlock>();
+            foreach (KeyValuePair<string, ViewBlock> kv in _live)
+            {
+                list.Add(kv.Value);
+            }
+            list.Sort(delegate (ViewBlock a, ViewBlock b)
+            {
+                return a.Timestamp.CompareTo(b.Timestamp);
+            });
+            return list.ToArray();
         }
 
         /// <summary>推送面就绪标志——宿主外观层已附加</summary>
@@ -71,15 +64,6 @@ namespace CH4
             get
             {
                 return _host != null;
-            }
-        }
-
-        /// <summary>retry 气泡在途标志——本轮是否推过 retry 视图（错误中止措辞分档判据）</summary>
-        public bool RetryActive
-        {
-            get
-            {
-                return _retrySeq != 0;
             }
         }
 
@@ -92,8 +76,8 @@ namespace CH4
             _host = host;
         }
 
-        /// <summary>流式文本增量——首个增量分配容器键与序号，后续复用（整块 text 到达时以该序号替换）</summary>
-        /// <param name="json">载荷 JSON</param>
+        /// <summary>流式文本增量——首个增量入流式区（live.add），后续增量区内容变化（live.update）</summary>
+        /// <param name="json">载荷 JSON（增量片段）</param>
         public void PushTextStream(string json)
         {
             if (_host == null)
@@ -104,12 +88,14 @@ namespace CH4
             {
                 _textStreamKey = NextKey("stream:text");
                 _textStreamTs = NowMs();
+                LiveAdd(_textStreamKey, "stream", json, _textStreamTs);
+                return;
             }
-            _textStreamSeq = PushView("stream", json, -1, _textStreamSeq, _textStreamKey, _textStreamTs, -1, ViewBlock.StatePending);
+            LiveUpdate(_textStreamKey, json, -1, ViewBlock.StatePending);
         }
 
-        /// <summary>流式思考增量——reasoning 独立容器（reason 整块到达时替换）</summary>
-        /// <param name="json">载荷 JSON</param>
+        /// <summary>流式思考增量——reasoning 独立容器（首个增量 live.add，后续 live.update）</summary>
+        /// <param name="json">载荷 JSON（增量片段）</param>
         public void PushReasonStream(string json)
         {
             if (_host == null)
@@ -120,151 +106,32 @@ namespace CH4
             {
                 _reasonStreamKey = NextKey("stream:reason");
                 _reasonStreamTs = NowMs();
+                LiveAdd(_reasonStreamKey, "stream", json, _reasonStreamTs);
+                return;
             }
-            _reasonStreamSeq = PushView("stream", json, -1, _reasonStreamSeq, _reasonStreamKey, _reasonStreamTs, -1, ViewBlock.StatePending);
+            LiveUpdate(_reasonStreamKey, json, -1, ViewBlock.StatePending);
         }
 
-        /// <summary>流式文本序号复位——整块到达 / 轮终统一调用（容器键与时刻同时作废）</summary>
+        /// <summary>流式文本容器移除——整块到达 / 轮终（live.remove；容器不在途时零动作）</summary>
         public void ResetTextStream()
         {
-            _textStreamSeq = 0;
+            if (_textStreamKey != null)
+            {
+                LiveRemove(_textStreamKey);
+            }
             _textStreamKey = null;
             _textStreamTs = 0;
         }
 
-        /// <summary>流式思考序号复位——整块收口 / 轮终统一调用（容器键与时刻同时作废）</summary>
+        /// <summary>流式思考容器移除——思考段终结 / 轮终（live.remove；容器不在途时零动作）</summary>
         public void ResetReasonStream()
         {
-            _reasonStreamSeq = 0;
+            if (_reasonStreamKey != null)
+            {
+                LiveRemove(_reasonStreamKey);
+            }
             _reasonStreamKey = null;
             _reasonStreamTs = 0;
-        }
-
-        /// <summary>取流式思考序号并复位——思考段终结取值（容器键保留至整块推送，供整块沿用同一块键）</summary>
-        /// <returns>在途思考容器序号（0 = 无在途流式块）</returns>
-        public long TakeReasonStreamSeq()
-        {
-            long seq = _reasonStreamSeq;
-            _reasonStreamSeq = 0;
-            return seq;
-        }
-
-        /// <summary>文本整块——replaceSeq 指向流式容器（无容器时前端新建气泡）</summary>
-        /// <param name="json">载荷 JSON</param>
-        /// <param name="key">块键（空 = 沿用流式容器键；调用方按块来源给 msg:&lt;index&gt;:text / gap:&lt;n&gt;）</param>
-        /// <param name="ts">块时间戳（Unix 毫秒——消息 CreatedAt；独立块取生成时刻）</param>
-        public void PushTextBlock(string json, string key, long ts)
-        {
-            if (_host == null)
-            {
-                return;
-            }
-            string useKey = FallbackKey(key, _textStreamKey, "rt:text");
-            PushView("text", json, _textStreamSeq, 0, useKey, ts, -1, ViewBlock.StateFinal);
-        }
-
-        /// <summary>思考整块——replaceSeq 指向流式容器序号（思考段终结唯一出口传入）</summary>
-        /// <param name="json">载荷 JSON</param>
-        /// <param name="streamSeq">流式容器序号（0 = 无在途流式块）</param>
-        /// <param name="key">块键（空 = 沿用流式容器键；调用方按块来源给 msg:&lt;index&gt;:reason）</param>
-        /// <param name="ts">块时间戳（Unix 毫秒）</param>
-        public void PushReasonBlock(string json, long streamSeq, string key, long ts)
-        {
-            if (_host == null)
-            {
-                return;
-            }
-            string useKey = FallbackKey(key, _reasonStreamKey, "rt:reason");
-            PushView("reason", json, streamSeq, 0, useKey, ts, -1, ViewBlock.StateFinal);
-        }
-
-        /// <summary>用户消息块——所有进内核消息的统一出口（前端气泡唯一来源）</summary>
-        /// <param name="json">载荷 JSON</param>
-        /// <param name="key">块键（空 = 实时自动键；调用方按块来源给 msg:&lt;index&gt;:user）</param>
-        /// <param name="ts">块时间戳（Unix 毫秒——消息 CreatedAt）</param>
-        public void PushUser(string json, string key, long ts)
-        {
-            if (_host == null)
-            {
-                return;
-            }
-            PushView("user", json, -1, 0, FallbackKey(key, null, "rt:user"), ts, -1, ViewBlock.StateFinal);
-        }
-
-        /// <summary>控制块——usage / chatdone / paused / note / session_reset（前端阶段控制唯一入口）</summary>
-        /// <param name="json">载荷 JSON</param>
-        public void PushControl(string json)
-        {
-            if (_host == null)
-            {
-                return;
-            }
-            PushView("control", json, -1, 0, NextKey("rt:control"), NowMs(), -1, ViewBlock.StateFinal);
-        }
-
-        /// <summary>错误气泡块——LLM 错误 / 发送失败（独立渲染面）</summary>
-        /// <param name="json">载荷 JSON</param>
-        /// <param name="key">块键（空 = 实时自动键；调用方按块来源给 error:&lt;n&gt;）</param>
-        /// <param name="ts">块时间戳（Unix 毫秒——独立块取生成时刻）</param>
-        public void PushError(string json, string key, long ts)
-        {
-            if (_host == null)
-            {
-                return;
-            }
-            PushView("error", json, -1, 0, FallbackKey(key, null, "rt:error"), ts, -1, ViewBlock.StateFinal);
-        }
-
-        /// <summary>轮末统计块——本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时</summary>
-        /// <param name="json">载荷 JSON</param>
-        /// <param name="key">块键（空 = 实时自动键；调用方按块来源给 roundsum:&lt;n&gt;）</param>
-        /// <param name="ts">块时间戳（Unix 毫秒——独立块取生成时刻）</param>
-        public void PushRoundSum(string json, string key, long ts)
-        {
-            if (_host == null)
-            {
-                return;
-            }
-            PushView("roundsum", json, -1, 0, FallbackKey(key, null, "rt:roundsum"), ts, -1, ViewBlock.StateFinal);
-        }
-
-        /// <summary>retry 气泡新建——分配 / 复用气泡序号（retrying 态）</summary>
-        /// <param name="json">载荷 JSON</param>
-        /// <param name="ts">块时间戳（Unix 毫秒——独立块取生成时刻）</param>
-        public void PushRetryNew(string json, long ts)
-        {
-            if (_host == null)
-            {
-                return;
-            }
-            if (_retryKey == null)
-            {
-                _retryKey = NextKey("rt:retry");
-                _retryTs = ts;
-            }
-            _retrySeq = PushView("retry", json, -1, _retrySeq, _retryKey, _retryTs, -1, ViewBlock.StatePending);
-        }
-
-        /// <summary>retry 气泡原位更新——replaceSeq = 既有气泡序号（resolved / failed 态）</summary>
-        /// <param name="json">载荷 JSON</param>
-        /// <param name="ts">块时间戳（Unix 毫秒——无在途气泡时用作新块时刻）</param>
-        public void PushRetryUpdate(string json, long ts)
-        {
-            if (_host == null)
-            {
-                return;
-            }
-            string useKey = _retryKey == null ? NextKey("rt:retry") : _retryKey;
-            long useTs = _retryKey == null ? ts : _retryTs;
-            PushView("retry", json, _retrySeq, 0, useKey, useTs, -1, ViewBlock.StateFinal);
-        }
-
-        /// <summary>retry 气泡序号复位——轮终（正常 / 中断 / 错误中止）统一调用，防跨轮残留</summary>
-        public void ResetRetry()
-        {
-            _retrySeq = 0;
-            _retryKey = null;
-            _retryTs = 0;
         }
 
         /// <summary>工具卡是否有在途先行卡——批派发时判断该工具是否已推过「进行中」卡</summary>
@@ -276,24 +143,29 @@ namespace CH4
             {
                 return false;
             }
-            return _toolCards.ContainsKey(key);
+            return _live.ContainsKey(key);
         }
 
-        /// <summary>工具卡是否已定稿——终态卡幂等判据（同一工具单至多一次）</summary>
+        /// <summary>工具卡是否已定稿——区内块状态为 final（中断补推的幂等判据：终态卡出区前不得重复补推）</summary>
         /// <param name="key">块键（tool:&lt;toolCallId&gt;）</param>
-        /// <returns>true = 已推过终态卡</returns>
+        /// <returns>true = 区内块已定稿</returns>
         public bool IsToolCardFinaled(string key)
         {
             if (key == null)
             {
                 return false;
             }
-            return _toolCardFinaled.Contains(key);
+            ViewBlock block;
+            if (!_live.TryGetValue(key, out block))
+            {
+                return false;
+            }
+            return block.State == ViewBlock.StateFinal;
         }
 
         /// <summary>
-        /// 工具卡先行卡——建 pending 块入槽位（同一键重复推送原位替换，不堆叠）。
-        /// A157：块键 = tool:&lt;toolCallId&gt;（与持久块同键）；事件随带 key / ts / durMs=-1 / state=pending。
+        /// 工具卡先行卡——建 pending 块入流式区（同键重复推送为区内容变化，不堆叠）。
+        /// 块键 = tool:&lt;toolCallId&gt;（与持久块同键——持久块建立时按同键换手移除）。
         /// </summary>
         /// <param name="key">块键（tool:&lt;toolCallId&gt;）</param>
         /// <param name="json">载荷 JSON</param>
@@ -304,110 +176,183 @@ namespace CH4
             {
                 return;
             }
-            ViewBlock block = ViewBlock.BuildPending(key, "toolcard", json, ts, null, "independent");
-            ToolCardSlot slot = new ToolCardSlot();
-            slot.Block = block;
-            slot.Seq = PushView("toolcard", json, -1, 0, key, ts, -1, block.State);
-            _toolCards[key] = slot;
+            if (_live.ContainsKey(key))
+            {
+                LiveUpdate(key, json, -1, ViewBlock.StatePending);
+                return;
+            }
+            LiveAdd(key, "toolcard", json, ts);
         }
 
         /// <summary>
-        /// 工具卡终态——有槽位则原位替换先行卡（replaceSeq = 槽位序号），无槽位则新建推送（被拦工具 / 直执路径）。
-        /// 定稿幂等：同一键第二次调用直接忽略（等价原 CardFlushed 语义，且不依赖调用方判据）。
+        /// 工具卡终态——流式区内原位更新（完成由 FlushToolCard 逐条回填 / 中断由收尾补推）。
+        /// 块留在流式区：持久块建立时按同键换手移除；无在途先行卡（被拦工具 / 直执路径）先入区再定稿。
         /// </summary>
         /// <param name="key">块键（tool:&lt;toolCallId&gt;）</param>
         /// <param name="json">载荷 JSON</param>
         /// <param name="durMs">运行时长（毫秒；-1 = 未记录）</param>
-        /// <param name="ts">块时间戳（Unix 毫秒——无槽位时用作块时间戳）</param>
-        public void PushToolCardFinal(string key, string json, long durMs, long ts)
+        public void PushToolCardDone(string key, string json, long durMs)
         {
             if (_host == null || key == null || key.Length == 0)
             {
                 return;
             }
-            if (_toolCardFinaled.Contains(key))
+            if (!_live.ContainsKey(key))
             {
-                return;
+                LiveAdd(key, "toolcard", json, NowMs());
             }
-            ToolCardSlot slot;
-            if (_toolCards.TryGetValue(key, out slot))
-            {
-                slot.Block.Payload = json;
-                slot.Block.Finalize(durMs);
-                PushView("toolcard", json, slot.Seq, 0, key, slot.Block.Timestamp, slot.Block.DurMs, slot.Block.State);
-                _toolCards.Remove(key);
-                _toolCardFinaled.Add(key);
-                return;
-            }
-            ViewBlock block = ViewBlock.BuildPending(key, "toolcard", json, ts, null, "independent");
-            block.Finalize(durMs);
-            PushView("toolcard", json, -1, 0, key, block.Timestamp, block.DurMs, block.State);
-            _toolCardFinaled.Add(key);
+            LiveUpdate(key, json, durMs, ViewBlock.StateFinal);
         }
 
-        /// <summary>工具卡槽位与定稿记录复位——新会话 / 清空前文时调用（防跨会话残留）</summary>
-        public void ResetToolCards()
+        /// <summary>
+        /// 持久块推送——持久区建块即推（由 SessionViewStore 建块事件驱动，本类不建持久块）。
+        /// 幂等：同一块键至多推一次（后端承担，前端只追加）；推入后同键流式块出区（换手收口于本方法）。
+        /// </summary>
+        /// <param name="block">已定稿的持久块</param>
+        public void PushPersist(ViewBlock block)
         {
-            _toolCards.Clear();
-            _toolCardFinaled.Clear();
+            if (block == null || _host == null)
+            {
+                return;
+            }
+            string key = block.Key == null ? "" : block.Key;
+            if (key.Length > 0 && !_persisted.Add(key))
+            {
+                return;
+            }
+            string originJson = block.Origin == null
+                ? "null"
+                : JsonUtil.Object(("msgIndex", block.Origin.MsgIndex), ("hash", block.Origin.Hash == null ? "" : block.Origin.Hash));
+            string meta = JsonUtil.Object(
+                ("key", key),
+                ("renderType", block.RenderType == null ? "" : block.RenderType),
+                ("ts", block.Timestamp),
+                ("durMs", block.DurMs),
+                ("state", block.State == null ? "" : block.State),
+                ("id", block.Id == null ? "" : block.Id),
+                ("src", block.Src == null ? "" : block.Src),
+                ("origin", JsonUtil.Raw(originJson)));
+            _host.PushView("persist.append", block.Payload, meta);
+            if (key.Length > 0 && _live.ContainsKey(key))
+            {
+                LiveRemove(key);
+            }
         }
 
-        /// <summary>生成时刻——独立块与流式容器的时间戳（Unix 毫秒；前文派生块由调用方传消息 CreatedAt）</summary>
+        /// <summary>瞬时事件推送——usage / chatdone / paused / note / session_reset（非块：前端按事件处理，不渲气泡）</summary>
+        /// <param name="json">载荷 JSON</param>
+        public void PushControl(string json)
+        {
+            if (_host == null)
+            {
+                return;
+            }
+            string meta = JsonUtil.Object(
+                ("key", NextKey("rt:control")),
+                ("renderType", "control"),
+                ("ts", NowMs()));
+            _host.PushView("control", json, meta);
+        }
+
+        /// <summary>流式区清空——轮终 / 新会话 / 清空前文（逐块 live.remove；持久区记录一并作废）</summary>
+        public void ResetLive()
+        {
+            string[] keys = new string[_live.Count];
+            _live.Keys.CopyTo(keys, 0);
+            for (int i = 0; i < keys.Length; i = i + 1)
+            {
+                LiveRemove(keys[i]);
+            }
+            _textStreamKey = null;
+            _textStreamTs = 0;
+            _reasonStreamKey = null;
+            _reasonStreamTs = 0;
+            _persisted.Clear();
+        }
+
+        /// <summary>流式区入块——建 pending 块入表 + live.add</summary>
+        /// <param name="key">块键</param>
+        /// <param name="renderType">渲染类型</param>
+        /// <param name="json">载荷 JSON</param>
+        /// <param name="ts">块时间戳（Unix 毫秒）</param>
+        private void LiveAdd(string key, string renderType, string json, long ts)
+        {
+            if (_host == null)
+            {
+                return;
+            }
+            ViewBlock block = ViewBlock.BuildPending(key, renderType, json, ts, null, "independent");
+            _live[key] = block;
+            string meta = JsonUtil.Object(
+                ("key", key),
+                ("renderType", renderType),
+                ("ts", ts),
+                ("durMs", -1),
+                ("state", ViewBlock.StatePending));
+            _host.PushView("live.add", json, meta);
+        }
+
+        /// <summary>流式区内容变化——区内块更新（不在区则零动作）+ live.update</summary>
+        /// <param name="key">块键</param>
+        /// <param name="json">载荷 JSON</param>
+        /// <param name="durMs">运行时长（毫秒；-1 = 不适用 / 未记录）</param>
+        /// <param name="state">生命周期状态（ViewBlock.State*）</param>
+        private void LiveUpdate(string key, string json, long durMs, string state)
+        {
+            if (_host == null)
+            {
+                return;
+            }
+            ViewBlock block;
+            if (!_live.TryGetValue(key, out block))
+            {
+                return;
+            }
+            block.Payload = json;
+            block.State = state;
+            if (durMs >= 0)
+            {
+                block.DurMs = durMs;
+            }
+            string meta = JsonUtil.Object(
+                ("key", key),
+                ("renderType", block.RenderType == null ? "" : block.RenderType),
+                ("ts", block.Timestamp),
+                ("durMs", durMs),
+                ("state", state == null ? "" : state));
+            _host.PushView("live.update", json, meta);
+        }
+
+        /// <summary>流式区出块——表内移除 + live.remove（不在区则零动作）</summary>
+        /// <param name="key">块键</param>
+        private void LiveRemove(string key)
+        {
+            if (!_live.Remove(key))
+            {
+                return;
+            }
+            if (_host == null)
+            {
+                return;
+            }
+            string meta = JsonUtil.Object(("key", key));
+            _host.PushView("live.remove", "", meta);
+        }
+
+        /// <summary>生成时刻——流式容器的时间戳（Unix 毫秒；前文派生块由调用方传消息 CreatedAt）</summary>
         /// <returns>当前墙钟毫秒</returns>
         private static long NowMs()
         {
             return System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         }
 
-        /// <summary>实时块键分配——自持计数，与持久面容器计数相互独立</summary>
+        /// <summary>实时块键分配——自持计数，与持久面键相互独立</summary>
         /// <param name="prefix">键前缀</param>
         /// <returns>实时块键</returns>
         private string NextKey(string prefix)
         {
             _realtimeKeySeq = _realtimeKeySeq + 1;
             return prefix + ":" + _realtimeKeySeq.ToString();
-        }
-
-        /// <summary>块键取舍——调用方给键优先，其次流式容器键，最后实时自动键</summary>
-        /// <param name="key">调用方给的块键（可空）</param>
-        /// <param name="streamKey">流式容器键（可空）</param>
-        /// <param name="autoPrefix">自动键前缀</param>
-        /// <returns>实际使用的块键</returns>
-        private string FallbackKey(string key, string streamKey, string autoPrefix)
-        {
-            if (key != null && key.Length > 0)
-            {
-                return key;
-            }
-            if (streamKey != null && streamKey.Length > 0)
-            {
-                return streamKey;
-            }
-            return NextKey(autoPrefix);
-        }
-
-        /// <summary>视图事件推送——附加块元数据（key / ts / durMs / state；A157 块契约随事件下发）</summary>
-        /// <param name="renderType">渲染类型</param>
-        /// <param name="json">载荷 JSON</param>
-        /// <param name="replaceSeq">被替换块序号（-1 = 无）</param>
-        /// <param name="seqHint">流式增量已分配序号（0 = 新分配）</param>
-        /// <param name="key">块键</param>
-        /// <param name="ts">块时间戳（Unix 毫秒）</param>
-        /// <param name="durMs">运行时长（毫秒；-1 = 不适用 / 未定稿）</param>
-        /// <param name="state">块生命周期状态（ViewBlock.State*）</param>
-        /// <returns>事件序号</returns>
-        private int PushView(string renderType, string json, long replaceSeq, long seqHint, string key, long ts, long durMs, string state)
-        {
-            if (_host == null)
-            {
-                return 0;
-            }
-            Dictionary<string, object> meta = new Dictionary<string, object>();
-            meta["key"] = key == null ? "" : key;
-            meta["ts"] = ts;
-            meta["durMs"] = durMs;
-            meta["state"] = state == null ? "" : state;
-            return _host.PushView(renderType, json, replaceSeq, seqHint, JsonUtil.Serialize(meta));
         }
     }
 }

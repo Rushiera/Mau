@@ -56,6 +56,13 @@ namespace CH4
         public Action<ViewOrderChange> OnBlocksReordered;
 
         /// <summary>
+        /// 建块通知——块定稿入容器后调用（A158 期三：持久区「建块即推」的单一出口）。
+        /// 消费方 = 会话侧接 ViewBus.PushPersist；前端语义「持久区多一块就渲一块」（只增不改、零配对）。
+        /// 空 = 无消费方（无动作；视图层照常落盘）。
+        /// </summary>
+        public Action<ViewBlock> OnBlockAppended;
+
+        /// <summary>
         /// 块序代际号——读（HTTP 增量历史口比对前缀有效性用）
         /// </summary>
         /// <returns>当前代际号（0 = 从未变更）</returns>
@@ -248,12 +255,20 @@ namespace CH4
         }
 
         /// <summary>
-        /// 真实前文 append 钩子——assistant 纯文本回复 → text 块
+        /// 真实前文 append 钩子——assistant 纯文本回复 → reason 块（有思考时，先落）+ text 块
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="msgIndex">真实前文消息索引（块来源关系字段）</param>
         public void OnAssistantText(LlmMessage m, int msgIndex)
         {
+            // A158 期三——纯文本轮的思考段落块（工具轮走 OnAssistantToolCalls；缺此路径思考内容在持久区丢失）
+            string reasoning = m.ReasoningContent ?? "";
+            if (reasoning.Length > 0)
+            {
+                Dictionary<string, object> reasonPayload = new Dictionary<string, object>();
+                reasonPayload["content"] = reasoning;
+                Append(m, "reason", reasonPayload, msgIndex);
+            }
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["content"] = m.Content ?? "";
             Append(m, "text", payload, msgIndex);
@@ -370,6 +385,7 @@ namespace CH4
             ViewBlock block = NewBlock("void:" + _voids.Count.ToString(), "void", voidPayload, removed[0].Timestamp, null, "independent", -1, false);
             _voids.Add(block);
             Save();
+            EmitBlock(block);
             NotifyBlocksReordered(before);
             return moved;
         }
@@ -559,6 +575,7 @@ namespace CH4
             ViewBlock block = NewBlock(key, "roundsum", payloadJson, timestamp, null, "independent", -1);
             _roundSums.Add(block);
             Save();
+            EmitBlock(block);
             return key;
         }
         /// <summary>追加间隙文本块——工具轮 seal 文本（模型调用工具前说的话）。非真实前文派生（Rebuild 不清）；写入即落盘——工具轮中途中断不丢。视图层 = 全部外观真源——前端历史/QQBot 转发统一消费此块。</summary>
@@ -577,6 +594,7 @@ namespace CH4
             ViewBlock block = NewBlock(key, "text", JsonUtil.Serialize(payload), timestamp, null, "independent", -1);
             _gapTexts.Add(block);
             Save();
+            EmitBlock(block);
             return key;
         }
 
@@ -599,30 +617,24 @@ namespace CH4
             ViewBlock block = NewBlock(key, "error", JsonUtil.Serialize(payload), timestamp, null, "independent", -1);
             _errors.Add(block);
             Save();
+            EmitBlock(block);
             return key;
         }
 
         /// <summary>
-        /// 写入重试块——retry 气泡（同一重试序列原位更新不堆叠；写入即落盘）。index 越界或为负 → 新建块。
+        /// 追加重试块——retry 气泡（A158 期三：只增不改——「重试中 / 成功 / 失败」各推一块，不做原位更新）。
         /// </summary>
         /// <param name="payloadJson">retry 载荷 JSON（state/attempt/max/text）</param>
-        /// <param name="timestamp">创建时间戳（Unix 毫秒——新建块时使用）</param>
-        /// <param name="index">既有块索引（-1=新建）</param>
-        /// <returns>块索引（后续更新回传）</returns>
-        public int UpsertRetry(string payloadJson, long timestamp, int index)
+        /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
+        /// <returns>块键</returns>
+        public string AppendRetry(string payloadJson, long timestamp)
         {
-            if (index >= 0 && index < _retries.Count)
-            {
-                ViewBlock exist = _retries[index];
-                exist.Payload = payloadJson;
-                exist.Id = ViewBlock.ComputeId(exist.RenderType, exist.Timestamp, exist.Origin, exist.Src, exist.DurMs, payloadJson);
-                Save();
-                return index;
-            }
-            ViewBlock block = NewBlock("retry:" + _retries.Count.ToString(), "retry", payloadJson, timestamp, null, "independent", -1);
+            string key = "retry:" + _retries.Count.ToString();
+            ViewBlock block = NewBlock(key, "retry", payloadJson, timestamp, null, "independent", -1);
             _retries.Add(block);
             Save();
-            return _retries.Count - 1;
+            EmitBlock(block);
+            return key;
         }
         /// <summary>文件名清洗——Windows 非法文件名字符替换为下划线并去首尾空白（显示名可含中文与空格）</summary>
         /// <param name="name">原始名（猫显示名 / 猫 key）</param>
@@ -1047,6 +1059,7 @@ namespace CH4
             long timestamp = timestampOverride > 0 ? timestampOverride : m.CreatedAt;
             ViewBlock block = NewBlock(key, renderType, payloadJson, timestamp, origin, "front", durMs);
             _blocks.Add(block);
+            EmitBlock(block);
         }
 
         /// <summary>
@@ -1093,6 +1106,19 @@ namespace CH4
             ViewBlock block = ViewBlock.BuildPending(key, renderType, payloadJson, ts, origin, src);
             block.Finalize(durMs);
             return block;
+        }
+
+        /// <summary>
+        /// 建块通知（A158 期三）——块定稿入容器后调用，供会话侧接持久区推送出口（ViewBus.PushPersist）。
+        /// </summary>
+        /// <param name="block">已入容器的定稿块</param>
+        private void EmitBlock(ViewBlock block)
+        {
+            Action<ViewBlock> handler = OnBlockAppended;
+            if (handler != null)
+            {
+                handler(block);
+            }
         }
 
         /// <summary>

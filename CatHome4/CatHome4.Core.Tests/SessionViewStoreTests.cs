@@ -364,7 +364,7 @@ namespace CatHome4.Core.Tests
             _store.AppendGapText("间隙", 110L);
             _store.AppendRoundSummary("{\"type\":\"roundsum\"}", 120L);
             _store.AppendError("ERR|TEST|坏", 130L);
-            _store.UpsertRetry("{\"state\":\"wait\"}", 140L, -1);
+            _store.AppendRetry("{\"state\":\"wait\"}", 140L);
             _store.SetInjectReport("{\"file\":\"a.md\"}");
             ReplayAll(_store, new LlmMessage[] { SystemMsg("系统", 10L) });
             CH4.ViewBlock[] blocks = _store.GetBlocks();
@@ -502,39 +502,29 @@ namespace CatHome4.Core.Tests
             Assert.Equal("ERR|LLM|超时", payload.GetProperty("text").GetString());
         }
 
-        /// <summary>重试块——首次写入建块并返回索引 0</summary>
+        /// <summary>重试块——首次写入追加一块（只增不改）</summary>
         [Fact]
-        public void UpsertRetry_FirstCall_CreatesBlock()
+        public void AppendRetry_FirstCall_CreatesBlock()
         {
-            int index = _store.UpsertRetry("{\"state\":\"wait\"}", 300L, -1);
-            Assert.Equal(0, index);
+            _store.AppendRetry("{\"state\":\"wait\"}", 300L);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("retry", blocks[0].RenderType);
             Assert.Equal("retry:0", blocks[0].Key);
         }
 
-        /// <summary>重试块——同一序列原位更新（一块不堆叠，哈希与时间戳不变）</summary>
+        /// <summary>重试块——只增不改：重试中 / 结果各追加一块，不原位更新（莎 2026-10-02 红线）</summary>
         [Fact]
-        public void UpsertRetry_SameIndex_UpdatesInPlace()
+        public void AppendRetry_KeepsEveryState()
         {
-            int first = _store.UpsertRetry("{\"state\":\"wait\"}", 300L, -1);
-            int second = _store.UpsertRetry("{\"state\":\"resolved\"}", 500L, first);
-            Assert.Equal(first, second);
+            _store.AppendRetry("{\"state\":\"wait\"}", 300L);
+            _store.AppendRetry("{\"state\":\"resolved\"}", 500L);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
-            Assert.Single(blocks);
-            Assert.Equal("{\"state\":\"resolved\"}", blocks[0].Payload);
-            Assert.Equal(300L, blocks[0].Timestamp);
-        }
-
-        /// <summary>重试块——索引越界或为负则新建（防误覆盖既有块）</summary>
-        [Fact]
-        public void UpsertRetry_OutOfRange_CreatesNew()
-        {
-            _store.UpsertRetry("{\"state\":\"wait\"}", 300L, -1);
-            int index = _store.UpsertRetry("{\"state\":\"resolved\"}", 400L, 9);
-            Assert.Equal(1, index);
-            Assert.Equal(2, _store.GetBlocks().Length);
+            Assert.Equal(2, blocks.Length);
+            Assert.Equal("retry:0", blocks[0].Key);
+            Assert.Equal("retry:1", blocks[1].Key);
+            Assert.Equal("{\"state\":\"wait\"}", blocks[0].Payload);
+            Assert.Equal("{\"state\":\"resolved\"}", blocks[1].Payload);
         }
 
         // ── 清理语义 ────────────────────────────────────────────────
@@ -547,7 +537,7 @@ namespace CatHome4.Core.Tests
             _store.AppendGapText("间隙", 110L);
             _store.AppendRoundSummary("{\"type\":\"roundsum\"}", 120L);
             _store.AppendError("ERR|TEST|坏", 130L);
-            _store.UpsertRetry("{\"state\":\"wait\"}", 140L, -1);
+            _store.AppendRetry("{\"state\":\"wait\"}", 140L);
             _store.SetInjectReport("{\"file\":\"a.md\"}");
             _store.Clear();
             Assert.Empty(_store.GetBlocks());
@@ -587,7 +577,7 @@ namespace CatHome4.Core.Tests
             _store.AppendGapText("间隙", 110L);
             _store.AppendRoundSummary("{\"type\":\"roundsum\"}", 120L);
             _store.AppendError("ERR|TEST|坏", 130L);
-            _store.UpsertRetry("{\"state\":\"wait\"}", 140L, -1);
+            _store.AppendRetry("{\"state\":\"wait\"}", 140L);
             _store.SetInjectReport("{\"file\":\"a.md\"}");
             _store.Save();
             CH4.SessionViewStore reloaded = new CH4.SessionViewStore(_path);

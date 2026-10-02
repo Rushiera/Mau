@@ -194,47 +194,59 @@ namespace CatHome4.Core.Tests
             /// <summary>捕获的 PushView 调用——renderType → payload 列表（F4 视图事件）</summary>
             public Dictionary<string, List<string>> ViewEvents = new Dictionary<string, List<string>>();
 
-            /// <summary>捕获的 PushView 替换序号——renderType → replaceSeq 列表（-1=新建；工具卡先行→替换断言用）</summary>
-            public Dictionary<string, List<long>> ViewReplaceSeqs = new Dictionary<string, List<long>>();
+            /// <summary>捕获的事件 op——renderType → op 列表（期三：live.add / live.update / live.remove / persist.append）</summary>
+            public Dictionary<string, List<string>> ViewOps = new Dictionary<string, List<string>>();
 
-            /// <summary>捕获的 PushView 分配序号——renderType → seq 列表（先行卡 seq 与完成卡 replaceSeq 对照用）</summary>
-            public Dictionary<string, List<long>> ViewSeqs = new Dictionary<string, List<long>>();
+            /// <summary>捕获的事件块键——renderType → key 列表（同键原位更新断言用）</summary>
+            public Dictionary<string, List<string>> ViewKeys = new Dictionary<string, List<string>>();
 
-            /// <summary>视图事件序号——递增分配（F4）</summary>
-            private int _viewSeq;
+            /// <summary>事件到达序——renderType 列表（跨类型时序断言用）</summary>
+            public List<string> EventOrder = new List<string>();
 
-            /// <summary>视图事件捕获——按 renderType 累积（F4）</summary>
-            /// <param name="renderType">渲染类型</param>
-            /// <param name="payload">载荷 JSON</param>
-            /// <param name="replaceSeq">被替换序号（记录——先行卡替换断言）</param>
-            /// <param name="seqHint">序号提示（忽略——测试独立分配）</param>
-            /// <param name="meta">块元数据 JSON（A157——记录以供断言）</param>
-            /// <returns>分配序号</returns>
-            public int PushView(string renderType, string payload, long replaceSeq, long seqHint, string meta)
+            /// <summary>视图事件捕获——按 renderType 累积（F4；期三：op + key 从 meta 解析）</summary>
+            /// <param name="op">事件语义（live.add / live.update / live.remove / persist.append / control）</param>
+            /// <param name="payload">载荷 JSON（live.remove 为空）</param>
+            /// <param name="meta">块元数据 JSON（key / renderType / ts / durMs / state / id / src / origin）</param>
+            public void PushView(string op, string payload, string meta)
+            {
+                string renderType = MetaValue(meta, "renderType");
+                string key = MetaValue(meta, "key");
+                Accumulate(ViewEvents, renderType, payload);
+                Accumulate(ViewOps, renderType, op);
+                Accumulate(ViewKeys, renderType, key);
+                EventOrder.Add(renderType);
+            }
+
+            /// <summary>累积辅助——按 renderType 列表追加</summary>
+            /// <param name="map">目标表</param>
+            /// <param name="renderType">渲染类型键</param>
+            /// <param name="value">追加值</param>
+            private static void Accumulate(Dictionary<string, List<string>> map, string renderType, string value)
             {
                 List<string> list;
-                if (!ViewEvents.TryGetValue(renderType, out list))
+                if (!map.TryGetValue(renderType, out list))
                 {
                     list = new List<string>();
-                    ViewEvents[renderType] = list;
+                    map[renderType] = list;
                 }
-                list.Add(payload);
-                List<long> repSeqs;
-                if (!ViewReplaceSeqs.TryGetValue(renderType, out repSeqs))
+                list.Add(value);
+            }
+
+            /// <summary>块元数据取值——meta JSON 内单键字符串（缺失回空串）</summary>
+            /// <param name="meta">块元数据 JSON</param>
+            /// <param name="name">键名</param>
+            /// <returns>字符串值（缺失 = 空串）</returns>
+            private static string MetaValue(string meta, string name)
+            {
+                using (JsonDocument doc = JsonDocument.Parse(meta))
                 {
-                    repSeqs = new List<long>();
-                    ViewReplaceSeqs[renderType] = repSeqs;
+                    JsonElement el;
+                    if (!doc.RootElement.TryGetProperty(name, out el))
+                    {
+                        return "";
+                    }
+                    return el.ToString();
                 }
-                repSeqs.Add(replaceSeq);
-                _viewSeq = _viewSeq + 1;
-                List<long> allocatedSeqs;
-                if (!ViewSeqs.TryGetValue(renderType, out allocatedSeqs))
-                {
-                    allocatedSeqs = new List<long>();
-                    ViewSeqs[renderType] = allocatedSeqs;
-                }
-                allocatedSeqs.Add(_viewSeq);
-                return _viewSeq;
             }
         }
 
@@ -739,17 +751,22 @@ namespace CatHome4.Core.Tests
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
             List<string> cards = host.ViewEvents["toolcard"];
-            Assert.Equal(2, cards.Count);
-            using (JsonDocument d1 = JsonDocument.Parse(cards[0]))
+            Assert.True(cards.Count >= 2);
+            // 期三——每次推送都是一条新事件（无原位替换）；批内编号按工具逐条核
+            bool sawFirst = false;
+            bool sawSecond = false;
+            for (int i = 0; i < cards.Count; i = i + 1)
             {
-                Assert.Equal(1, d1.RootElement.GetProperty("toolIndex").GetInt32());
-                Assert.Equal(2, d1.RootElement.GetProperty("toolTotal").GetInt32());
+                using (JsonDocument d = JsonDocument.Parse(cards[i]))
+                {
+                    Assert.Equal(2, d.RootElement.GetProperty("toolTotal").GetInt32());
+                    int idx = d.RootElement.GetProperty("toolIndex").GetInt32();
+                    if (idx == 1) { sawFirst = true; }
+                    if (idx == 2) { sawSecond = true; }
+                }
             }
-            using (JsonDocument d2 = JsonDocument.Parse(cards[1]))
-            {
-                Assert.Equal(2, d2.RootElement.GetProperty("toolIndex").GetInt32());
-                Assert.Equal(2, d2.RootElement.GetProperty("toolTotal").GetInt32());
-            }
+            Assert.True(sawFirst);
+            Assert.True(sawSecond);
         }
 
         /// <summary>
@@ -772,7 +789,7 @@ namespace CatHome4.Core.Tests
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
             List<string> cards = host.ViewEvents["toolcard"];
-            Assert.Equal(2, cards.Count);
+            Assert.True(cards.Count >= 2);
             // 先行卡——无 result 字段（前端 ⏳ 处理中）+ 工具名 + 并发编号
             using (JsonDocument p = JsonDocument.Parse(cards[0]))
             {
@@ -782,10 +799,11 @@ namespace CatHome4.Core.Tests
                 Assert.Equal(1, p.RootElement.GetProperty("toolIndex").GetInt32());
                 Assert.Equal(1, p.RootElement.GetProperty("toolTotal").GetInt32());
             }
-            // 完成卡——以先行卡序号原位替换（replaceSeq = 先行卡 seq）
-            List<long> repSeqs = host.ViewReplaceSeqs["toolcard"];
-            Assert.Equal(-1, repSeqs[0]);
-            Assert.Equal(host.ViewSeqs["toolcard"][0], repSeqs[1]);
+            // 完成卡——同块键原位更新（期三：live.add 先行、live.update 定稿；前端按 key 就地刷新）
+            List<string> cardOps = host.ViewOps["toolcard"];
+            Assert.Equal("live.add", cardOps[0]);
+            Assert.Equal("live.update", cardOps[1]);
+            Assert.Equal(host.ViewKeys["toolcard"][0], host.ViewKeys["toolcard"][1]);
             using (JsonDocument d = JsonDocument.Parse(cards[1]))
             {
                 JsonElement res;
@@ -828,10 +846,10 @@ namespace CatHome4.Core.Tests
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
             List<string> cards = host.ViewEvents["toolcard"];
-            Assert.Equal(2, cards.Count);
-            List<long> repSeqs = host.ViewReplaceSeqs["toolcard"];
-            Assert.Equal(-1, repSeqs[0]);
-            Assert.Equal(host.ViewSeqs["toolcard"][0], repSeqs[1]);
+            Assert.True(cards.Count >= 2);
+            List<string> abortOps = host.ViewOps["toolcard"];
+            Assert.Equal("live.add", abortOps[0]);
+            Assert.Equal("live.update", abortOps[1]);
             using (JsonDocument d = JsonDocument.Parse(cards[1]))
             {
                 Assert.Contains("已中止", d.RootElement.GetProperty("result").GetString());
@@ -1130,7 +1148,8 @@ namespace CatHome4.Core.Tests
                     payload = blocks[i].Payload;
                 }
             }
-            Assert.Equal(1, retryCount);
+            // 期三——只增不改：retrying 与 resolved 各落一块（莎 2026-10-02 红线）
+            Assert.Equal(2, retryCount);
             Assert.Contains("resolved", payload);
         }
 
@@ -1725,13 +1744,8 @@ namespace CatHome4.Core.Tests
             Assert.True(session.IsIdle);
             // 流式容器事件——思考两条 + 回复一条（同 renderType=stream）
             Assert.Equal(3, host.ViewEvents["stream"].Count);
-            // 思考整块——离开 think 态推一次，内容为流式累积值，replaceSeq 命中末条思考流式容器
-            Assert.Single(host.ViewEvents["reason"]);
-            using (JsonDocument d = JsonDocument.Parse(host.ViewEvents["reason"][0]))
-            {
-                Assert.Equal("思思", d.RootElement.GetProperty("content").GetString());
-            }
-            Assert.Equal(host.ViewSeqs["stream"][1], host.ViewReplaceSeqs["reason"][0]);
+            // 期三——纯文本轮的思考段只属流式区（live 三 op）：前文消息不带 reasoning → 不产 reason 持久块
+            Assert.False(host.ViewEvents.ContainsKey("reason"));
         }
 
         /// <summary>
@@ -1759,7 +1773,7 @@ namespace CatHome4.Core.Tests
                 Assert.Equal("思思", d.RootElement.GetProperty("content").GetString());
             }
             // 时序——思考整块先于工具卡（决策流首帧收口）
-            Assert.True(host.ViewSeqs["reason"][0] < host.ViewSeqs["toolcard"][0]);
+            Assert.True(host.EventOrder.IndexOf("reason") < host.EventOrder.IndexOf("toolcard"));
         }
         /// <summary>
         /// 继续轮——不追加任何用户消息，直接用当前前文发一次 LLM 请求（cat.continue 后端语义）。

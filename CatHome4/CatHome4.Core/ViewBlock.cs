@@ -87,27 +87,24 @@ namespace CH4
                 return false;
             }
             DurMs = durMs;
-            Id = ComputeId(RenderType, Timestamp, Origin, Src, durMs, Payload);
+            Id = ComputeId(RenderType, Timestamp, durMs, Payload);
             State = StateFinal;
             return true;
         }
         /// <summary>
-        /// 块自哈希——块 ID（renderType|ts|origin|src|durMs|payload 的 SHA256 十六进制；定稿后永不变更）。
+        /// 块自哈希——块 ID（renderType|ts|durMs|payload 的 SHA256 十六进制；定稿后永不变更）。
+        /// A158 期三：口径为内容身份——origin / src 属「来源关系」字段，不参与哈希
+        /// （实时面推送时前文尚无对应消息、给不出 origin；同一块跨两区必须同 ID）。
         /// </summary>
         /// <param name="renderType">渲染类型</param>
         /// <param name="timestamp">块时间戳（含单调补差后值）</param>
-        /// <param name="origin">前文来源（null = 独立块）</param>
-        /// <param name="src">来源类别</param>
         /// <param name="durMs">运行时长</param>
         /// <param name="payloadJson">渲染载荷 JSON</param>
         /// <returns>SHA256 十六进制串</returns>
-        public static string ComputeId(string renderType, long timestamp, ViewOrigin origin, string src, long durMs, string payloadJson)
+        public static string ComputeId(string renderType, long timestamp, long durMs, string payloadJson)
         {
             string raw = (renderType == null ? "" : renderType)
                 + "\u0001" + timestamp.ToString()
-                + "\u0001" + (origin == null ? "" : origin.MsgIndex.ToString())
-                + "\u0001" + (origin == null ? "" : (origin.Hash == null ? "" : origin.Hash))
-                + "\u0001" + (src == null ? "" : src)
                 + "\u0001" + durMs.ToString()
                 + "\u0001" + (payloadJson == null ? "" : payloadJson);
             return Sha256Hex(raw);
