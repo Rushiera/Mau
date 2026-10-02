@@ -1,5 +1,5 @@
-// tests/unit/chat-ctx.test.mjs —— 前文弹层单元测试（js/chat-ctx.js + 状态栏前文两段 chat-core.js chatInfo*）
-// 覆盖：弹层两视图渲染（按条 / 按 token 分布）· 空态与错误态 · 条目展开折叠 · 状态栏两段结构化 + patch 重建 + 点击开层
+// tests/unit/chat-ctx.test.mjs —— 前文弹层单元测试（js/chat-ctx.js + 状态栏前文三段 chat-core.js chatInfo*）
+// 覆盖：弹层四视图渲染（按条 / 按 token 分布 / 关键信息 / 完整前文）· 空态与错误态 · 条目展开折叠 · 状态栏结构化 + patch 重建 + 点击开层
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import vm from 'node:vm';
@@ -42,6 +42,7 @@ function fakeData() {
 beforeEach(() => {
   window.chatCtxData = null;
   window.chatKeyData = null;
+  window.chatFullData = null;
   window.chatCtxMode = 'list';
   document.getElementById('ctxList').textContent = '';
   document.getElementById('ctxPopover').style.display = 'none';
@@ -235,6 +236,61 @@ test('key 视图——错误响应原样出声（宿主 error 文本）', () => 
   window.chatCtxMode = 'key';
   window.chatCtxRender();
   expect(document.getElementById('ctxList').textContent).toContain('关键信息快照失败: boom');
+});
+
+// ── full 视图（完整前文——送入 LLM 的全量消息落档，剥离修饰后还原） ──
+function fakeFullData() {
+  return {
+    ok: true, count: 3, start: 1, shown: 3, chars: 300, session: 'majordomo',
+    path: 'D:/Data/sessions_ctx/majordomo_20261002_120000.txt',
+    items: [
+      { i: 1, role: 'system', tool: '', chars: 200, time: 0, truncated: false, preview: '注入内容', content: '注入内容全文' },
+      { i: 2, role: 'user', tool: '', chars: 60, time: 0, truncated: false, preview: '你好', content: '你好' },
+      { i: 3, role: 'tool', tool: 'text-read', chars: 40, time: 0, truncated: false, preview: '结果', content: '结果全文' }
+    ]
+  };
+}
+
+test('full 视图——标题 / meta / 四类角色中文标签', () => {
+  window.chatFullData = fakeFullData();
+  window.chatCtxMode = 'full';
+  window.chatCtxRender();
+  expect(document.getElementById('ctxTitle').textContent).toBe('完整前文');
+  expect(document.getElementById('ctxMeta').textContent).toContain('共 3 条');
+  const rows = document.querySelectorAll('#ctxList .ctx-item');
+  expect(rows.length).toBe(3);
+  expect(rows[0].querySelector('.ctx-role').textContent).toBe('系统');
+  expect(rows[0].querySelector('.ctx-role').className).toContain('ctx-role-system');
+  expect(rows[1].querySelector('.ctx-role').textContent).toBe('用户');
+  expect(rows[2].querySelector('.ctx-role').textContent).toBe('工具');
+  expect(rows[2].querySelector('.ctx-tool').textContent).toBe('text-read');
+});
+
+test('full 视图——空态出声（不静默留白）', () => {
+  window.chatFullData = { ok: true, count: 0, chars: 0, items: [] };
+  window.chatCtxMode = 'full';
+  window.chatCtxRender();
+  expect(document.getElementById('ctxList').textContent).toContain('本次会话暂无完整前文');
+});
+
+test('full 视图——错误响应原样出声（宿主 error 文本）', () => {
+  window.chatFullData = { ok: false, error: '完整前文解析失败: 字段 content 正文越界' };
+  window.chatCtxMode = 'full';
+  window.chatCtxRender();
+  expect(document.getElementById('ctxList').textContent).toContain('完整前文解析失败');
+});
+
+test('视图切换——已开时切到完整前文读 /api/v1/fullctx', () => {
+  let url = '';
+  vi.stubGlobal('fetch', (u) => { url = u; return Promise.resolve({ json: () => Promise.resolve(fakeFullData()) }); });
+  window.chatInfoSet('s', 3, 1200);
+  document.getElementById('chatCtxCount').dispatchEvent(clickEv());
+  document.getElementById('ctxModeFull').dispatchEvent(clickEv());
+  expect(window.chatCtxMode).toBe('full');
+  expect(url).toBe('/api/v1/fullctx');
+  expect(document.getElementById('ctxTitle').textContent).toBe('完整前文');
+  expect(document.getElementById('ctxModeFull').className).toContain('ctx-mode-on');
+  vi.unstubAllGlobals();
 });
 
 test('状态栏第三段——「前文关键信息」渲染 + 点击开层读 /api/v1/keyinfo', () => {

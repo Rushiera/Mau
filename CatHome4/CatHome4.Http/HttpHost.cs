@@ -55,6 +55,9 @@ namespace CatHome4.Http
         /// <summary>关键信息构建回调（可空=不注册该端点）——GET /api/v1/keyinfo（对话页状态栏「前文关键信息」点击弹层数据源）</summary>
         public Func<int, string> KeyInfoBuilder { get; set; }
 
+        /// <summary>完整前文构建回调（可空=不注册该端点）——GET /api/v1/fullctx（对话页弹层「完整前文」数据源）</summary>
+        public Func<int, string> FullContextBuilder { get; set; }
+
         /// <summary>多猫列表构建回调（可空=不注册该端点）</summary>
         public Func<string> CatsBuilder { get; set; }
 
@@ -165,6 +168,8 @@ namespace CatHome4.Http
         private Func<int, string> _contextBuilder;
         /// <summary>关键信息构建回调——ChatBridge.BuildKeyInfoView（对话页「前文关键信息」弹层；GET /api/v1/keyinfo）</summary>
         private Func<int, string> _keyInfoBuilder;
+        /// <summary>完整前文构建回调——ChatBridge.BuildFullContextView（对话页弹层「完整前文」；GET /api/v1/fullctx）</summary>
+        private Func<int, string> _fullContextBuilder;
 
         /// <summary>会话归属 ID——SSE llm/chatdone 事件 sessionId 字段（P9.3 多实例化：每猫实例绑定自身会话）</summary>
         private string _sessionId;
@@ -213,6 +218,7 @@ namespace CatHome4.Http
             host._historyBuilder = options.HistoryBuilder;
             host._contextBuilder = options.ContextBuilder;
             host._keyInfoBuilder = options.KeyInfoBuilder;
+            host._fullContextBuilder = options.FullContextBuilder;
             host._catsBuilder = options.CatsBuilder;
             host._noteBuilder = options.NoteBuilder;
             host._delayBuilder = options.DelayBuilder;
@@ -329,6 +335,16 @@ namespace CatHome4.Http
                     // 关键信息视图（视图层内存真源——与旧会话留档同源四部分；max 夹取 1-500 缺省 200）
                     int max = ReadMaxQuery(ctx, 200, 500);
                     return Results.Text(_keyInfoBuilder(max), "application/json");
+                });
+            }
+            // 完整前文面——对话页弹层「完整前文」视图数据源（可空=不注册——管理端口不注入）
+            if (_fullContextBuilder != null)
+            {
+                _app.MapGet("/api/v1/fullctx", (HttpContext ctx) =>
+                {
+                    // 完整前文视图（留档文本剥离修饰后还原；读取前强制采集——不受 30 秒节流滞后影响；max 夹取 1-500 缺省 200）
+                    int max = ReadMaxQuery(ctx, 200, 500);
+                    return Results.Text(_fullContextBuilder(max), "application/json");
                 });
             }
             // S2 管理端点族——经 IHttpRouteSink 由 Admin 域注册（Http 域零依赖 Admin 域）

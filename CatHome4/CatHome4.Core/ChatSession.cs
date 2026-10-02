@@ -561,6 +561,46 @@ namespace CH4
             _viewStore.Clear();
         }
 
+        /// <summary>完整前文存储——完整会话前文留档（与视图层独立并行；未挂载=该面不启用）</summary>
+        private FullContextStore _fullCtx;
+
+        /// <summary>
+        /// 挂载完整前文存储——宿主注入落点目录（采集源 = 本会话上下文；空=不启用）。
+        /// </summary>
+        /// <param name="dir">落点目录（&lt;data&gt;/sessions_ctx）</param>
+        public void AttachFullContext(string dir)
+        {
+            if (dir == null || dir.Length == 0)
+            {
+                _fullCtx = null;
+                return;
+            }
+            _fullCtx = new FullContextStore(dir, _id, () => _context.GetMessages(), FullContextStore.ConfigKeep);
+        }
+
+        /// <summary>完整前文定稿——session.new 清前文前调用（当前份转历史 + 份数轮转；未挂载=无动作）。</summary>
+        public void FinalizeFullContext()
+        {
+            if (_fullCtx != null)
+            {
+                _fullCtx.FinalizeSession();
+            }
+        }
+
+        /// <summary>
+        /// 完整前文视图 JSON——对话页弹层「完整前文」数据源（GET /api/v1/fullctx；未挂载=空视图）。
+        /// </summary>
+        /// <param name="max">返回条目上限（1-500 夹取，缺省 200；超出取尾部）</param>
+        /// <returns>完整前文视图 JSON</returns>
+        public string BuildFullContextView(int max)
+        {
+            if (_fullCtx == null)
+            {
+                return "{\"ok\":true,\"count\":0,\"start\":0,\"shown\":0,\"chars\":0,\"items\":[]}";
+            }
+            return _fullCtx.BuildView(max);
+        }
+
         /// <summary>
         /// 消息落盘——上下文追加后立即 append（A47 增量落盘：每消息完成即落盘，崩溃只影响最后一行）。
         /// </summary>
@@ -572,6 +612,11 @@ namespace CH4
                 return;
             }
             _store.Append(msg.Value);
+            // 完整前文采集——消息入前文即触发（节流 30 秒；会话定稿与端点读取各自兜底）
+            if (_fullCtx != null)
+            {
+                _fullCtx.OnMessageAppended();
+            }
         }
 
         /// <summary>

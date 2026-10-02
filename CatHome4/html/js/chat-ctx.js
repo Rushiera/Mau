@@ -1,12 +1,14 @@
 // CH4 外观层——chat-ctx.js：前文弹层（状态栏「前文 n 条 / n tokens / 前文关键信息」点击开的小窗口）
 // 数据源：GET /api/v1/context（前文条目序列 = 送入 LLM 的真实消息；ctxTokens = 最近一次请求真实 prompt 值）
 //         GET /api/v1/keyinfo（本次会话关键信息 = 旧会话留档同源四部分：加载报告 / user 消息 / 正式回复 / 轮结算）
-// 三视图：list（按条目顺序——点击条目展开全文）/ tokens（按字符规模降序——占比条）/ key（会话关键信息）
+//         GET /api/v1/fullctx（本次会话完整前文 = 送入 LLM 的全量消息落档；宿主读取前强制采集一次）
+// 四视图：list（按条目顺序——点击条目展开全文）/ tokens（按字符规模降序——占比条）/ key（会话关键信息）/ full（完整前文）
 // 口径：条目 token 无逐条真实值（API 只回总量）——tokens 视图按字符占比呈现并显式标注为估算，不假装精确
 
 var chatCtxData = null;      // 前文响应（null=未加载；list / tokens 两视图共用）
 var chatKeyData = null;      // 关键信息响应（null=未加载；key 视图用）
-var chatCtxMode = 'list';    // 当前视图——list（按条）/ tokens（按 token 分布）/ key（会话关键信息）
+var chatFullData = null;     // 完整前文响应（null=未加载；full 视图用）
+var chatCtxMode = 'list';    // 当前视图——list（按条）/ tokens（按 token 分布）/ key（会话关键信息）/ full（完整前文）
 
 // 三态：未开 → 打开 + 切到目标视图 + 读取；已开且同视图 → 收起（不重复读取）；已开且异视图 → 切视图 + 复用已读数据
 function chatCtxOpen(mode) {
@@ -25,18 +27,24 @@ function chatCtxOpen(mode) {
     chatCtxLoad(opened);
 }
 
-// 视图名归一——非法值回落 list（三个入口各传自己的视图名）
+// 视图名归一——非法值回落 list（四个入口各传自己的视图名）
 function chatCtxModeOf(mode) {
     if (mode === 'tokens') { return 'tokens'; }
     if (mode === 'key') { return 'key'; }
+    if (mode === 'full') { return 'full'; }
     return 'list';
 }
 
-// 数据装载——按当前视图选数据面（key → /api/v1/keyinfo；其余 → /api/v1/context）；reuse=true 且有缓存直接重渲染
+// 数据装载——按当前视图选数据面（key → /api/v1/keyinfo；full → /api/v1/fullctx；其余 → /api/v1/context）；reuse=true 且有缓存直接重渲染
 function chatCtxLoad(reuse) {
     if (chatCtxMode === 'key') {
         if (reuse && chatKeyData) { chatCtxRender(); return; }
         chatCtxFetch('/api/v1/keyinfo', '关键信息', function (d) { chatKeyData = d; });
+        return;
+    }
+    if (chatCtxMode === 'full') {
+        if (reuse && chatFullData) { chatCtxRender(); return; }
+        chatCtxFetch('/api/v1/fullctx', '完整前文', function (d) { chatFullData = d; });
         return;
     }
     if (reuse && chatCtxData) { chatCtxRender(); return; }
@@ -79,9 +87,11 @@ function chatCtxModeMark() {
     var l = document.getElementById('ctxModeList');
     var t = document.getElementById('ctxModeTokens');
     var k = document.getElementById('ctxModeKey');
+    var f = document.getElementById('ctxModeFull');
     if (l) { l.classList.toggle('ctx-mode-on', chatCtxMode === 'list'); }
     if (t) { t.classList.toggle('ctx-mode-on', chatCtxMode === 'tokens'); }
     if (k) { k.classList.toggle('ctx-mode-on', chatCtxMode === 'key'); }
+    if (f) { f.classList.toggle('ctx-mode-on', chatCtxMode === 'full'); }
 }
 
 function chatCtxRender() {
@@ -93,6 +103,11 @@ function chatCtxRender() {
     if (chatCtxMode === 'key') {
         // 关键信息视图——独立数据面（chatKeyData）
         chatCtxRenderKey(list, meta, title);
+        return;
+    }
+    if (chatCtxMode === 'full') {
+        // 完整前文视图——独立数据面（chatFullData）
+        chatCtxRenderFull(list, meta, title);
         return;
     }
     var d = chatCtxData;
@@ -138,6 +153,26 @@ function chatCtxRenderKey(list, meta, title) {
             + (items.length < d.count ? ('（显示尾部 ' + items.length + ' 条）') : '');
     }
     chatCtxRenderList(list, items, '本次会话暂无关键信息', chatKeyRoleLabels);
+}
+
+// full 视图——本次会话完整前文（送入 LLM 的全量消息；宿主侧留档文本剥离修饰后还原）
+// 与 key 视图独立并行：各自端点、各自数据面；条目样式与前文弹层同款（复用 ctx-item 族）
+var chatFullRoleLabels = { system: '系统', user: '用户', assistant: '助手', tool: '工具' };
+
+function chatCtxRenderFull(list, meta, title) {
+    var d = chatFullData;
+    if (title) { title.textContent = '完整前文'; }
+    if (!d || d.ok !== true) {
+        if (meta) { meta.textContent = ''; }
+        list.textContent = '完整前文不可读：' + ((d && d.error) || '宿主未响应 / 端点未注册');
+        return;
+    }
+    var items = d.items || [];
+    if (meta) {
+        meta.textContent = '共 ' + chatFmtCount(d.count) + ' 条 · ' + chatFmtCount(d.chars) + ' 字符'
+            + (items.length < d.count ? ('（显示尾部 ' + items.length + ' 条）') : '');
+    }
+    chatCtxRenderList(list, items, '本次会话暂无完整前文', chatFullRoleLabels);
 }
 
 // list 视图——按条目顺序；点击条目头展开全文（折叠态显示摘要）
@@ -240,10 +275,12 @@ function chatCtxFmtTime(ms) {
     var ml = document.getElementById('ctxModeList');
     var mt = document.getElementById('ctxModeTokens');
     var mk = document.getElementById('ctxModeKey');
+    var mf = document.getElementById('ctxModeFull');
     if (close) { close.addEventListener('click', chatCtxClose); }
     if (ml) { ml.addEventListener('click', function () { chatCtxSwitch('list'); }); }
     if (mt) { mt.addEventListener('click', function () { chatCtxSwitch('tokens'); }); }
     if (mk) { mk.addEventListener('click', function () { chatCtxSwitch('key'); }); }
+    if (mf) { mf.addEventListener('click', function () { chatCtxSwitch('full'); }); }
     if (pop) {
         // 弹层内点击不冒泡到文档（避免被「点外部关闭」误判）
         pop.addEventListener('click', function (ev) { ev.stopPropagation(); });

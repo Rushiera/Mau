@@ -478,6 +478,8 @@ namespace CH4
             _chatBridge.DefaultSession.AttachApiRole(defaultApiRole);
             // A111——块序变更通知接线（视图层变更 → 转发面游标校正）
             AdminService.AttachViewOrderNotify("majordomo", chatViewStore);
+            // 完整前文留档——落点 sessions_ctx（与 sessions / sessions_old 同级；份数走 chat.full_ctx_keep）
+            _chatBridge.DefaultSession.AttachFullContext(Path.Combine(dataRoot, "Data", "sessions_ctx"));
             // M4e 猫级白名单——默认猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
             _chatBridge.DefaultSession.SetCatKey("majordomo");
             AdminService.ApplyCatRoots("majordomo");

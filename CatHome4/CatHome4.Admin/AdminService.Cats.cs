@@ -1309,6 +1309,8 @@ namespace CatHome4.Admin
                 session.SetApiConfigId(apiConfigId);
                 // A111——块序变更通知接线（视图层变更 → 转发面游标校正；猫 key 在组合根注入）
                 AttachViewOrderNotify(id, viewStore);
+                // 完整前文留档——落点 sessions_ctx（与 sessions / sessions_old 同级；份数走 chat.full_ctx_keep）
+                session.AttachFullContext(Path.Combine(_dataRoot, "Data", "sessions_ctx"));
                 // M4e 猫级白名单——多猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
                 session.SetCatKey(id);
                 AdminService.ApplyCatRoots(id);
@@ -1915,6 +1917,7 @@ namespace CatHome4.Admin
                 HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(cat.Session, max),
                 ContextBuilder = (int max) => _chatBridge.BuildContextView(cat.Session, max),
                 KeyInfoBuilder = (int max) => _chatBridge.BuildKeyInfoView(cat.Session, max),
+                FullContextBuilder = (int max) => _chatBridge.BuildFullContextView(cat.Session, max),
                 CatsBuilder = null,
                 NoteBuilder = () => cat.Session.BuildNoteJson(),
                 DelayBuilder = () => DelayQueue.BuildListJson(cat.Session.Id),
@@ -1959,6 +1962,7 @@ namespace CatHome4.Admin
                 HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max),
                 ContextBuilder = (int max) => _chatBridge.BuildContextView(_chatBridge.DefaultSession, max),
                 KeyInfoBuilder = (int max) => _chatBridge.BuildKeyInfoView(_chatBridge.DefaultSession, max),
+                FullContextBuilder = (int max) => _chatBridge.BuildFullContextView(_chatBridge.DefaultSession, max),
                 CatsBuilder = null,
                 NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
                 DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),

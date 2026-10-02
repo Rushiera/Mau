@@ -80,7 +80,7 @@
     <!-- 桌宠（纯前端渲染）——fixed 浮动层不占布局；纯展示（pointer-events:none，不拦对话区操作） -->
     <div id="chatPet"><img id="chatPetImgA" alt="桌宠"><img id="chatPetImgB" alt=""></div>
 
-    <!-- 前文弹层（js/chat-ctx.js）——状态栏「前文 n 条 / n tokens / 前文关键信息」点击开的小窗口；三视图：按条（list）/ 按 token（tokens）/ 关键信息（key） -->
+    <!-- 前文弹层（js/chat-ctx.js）——状态栏「前文 n 条 / n tokens / 前文关键信息」点击开的小窗口；四视图：按条（list）/ 按 token（tokens）/ 关键信息（key）/ 完整前文（full） -->
     <div id="ctxPopover" class="ctx-popover" style="display:none">
         <div class="ctx-head">
             <span id="ctxTitle">前文条目</span>
@@ -89,6 +89,7 @@
             <span id="ctxModeList" class="ctx-mode" title="按条目顺序显示前文">按条</span>
             <span id="ctxModeTokens" class="ctx-mode" title="按字符规模显示前文分布">按 tokens</span>
             <span id="ctxModeKey" class="ctx-mode" title="本次会话关键信息——加载报告 / 用户消息 / 正式回复 / 轮结算">关键信息</span>
+            <span id="ctxModeFull" class="ctx-mode" title="本次会话完整前文——送入 LLM 的全量消息（留档文本剥离修饰后还原）">完整前文</span>
             <button id="ctxClose" title="关闭（Esc）">×</button>
         </div>
         <div id="ctxList" class="ctx-list"></div>

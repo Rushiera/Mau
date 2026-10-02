@@ -21,6 +21,7 @@
     { "key": "browser.kernel_path", "file": "browser.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=未配置 → browser-* 工具明示不可用（不静默回落探测路径）", "desc": "浏览器内核可执行路径（Chromium 系全路径：msedge.exe / chrome.exe 等；空=未配置——浏览器工具明示不可用；换内核只需改本项——协议同为 CDP）" },
     { "key": "user.current", "file": "user.cfg", "default": "莎", "sensitive": false, "writable": true, "type": "string", "values": ["莎", "Rushiera"], "desc": "当前用户（莎 / Rushiera）——注入段与 QQ 消息头随此切换" },
     { "key": "user.qq_accept_nonuser", "file": "user.cfg", "default": "false", "sensitive": false, "writable": true, "type": "bool", "desc": "接受非用户的指令——QQ 非用户来源视为用户指令；默认关" },
-    { "key": "user.qq_ids", "file": "user.cfg", "default": "", "sensitive": false, "writable": true, "type": "string", "empty_desc": "空=群@一律按非用户", "desc": "当前用户群内身份（昵称 / openid，逗号分隔）——群@ 命中视为本人" }
+    { "key": "user.qq_ids", "file": "user.cfg", "default": "", "sensitive": false, "writable": true, "type": "string", "empty_desc": "空=群@一律按非用户", "desc": "当前用户群内身份（昵称 / openid，逗号分隔）——群@ 命中视为本人" },
+    { "key": "chat.full_ctx_keep", "file": "chat.cfg", "default": "3", "sensitive": false, "writable": true, "type": "int", "min": "1", "max": "20", "desc": "完整前文留档份数（历史会话）——当前会话不计入；点新会话时当前份定稿并销毁最旧一份（运行时读取，立即生效）" }
   ]
 }

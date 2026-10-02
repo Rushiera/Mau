@@ -221,6 +221,8 @@ namespace CH4
             session.Store.Rewrite(session.Context.GetMessages(), session.LastStats);
             // A87 旧会话留档——清空前导出（user / 正式回复 / 加载报告 / 每轮结算 → sessions_old 落盘）
             session.ArchiveLegacyView();
+            // 完整前文定稿——当前份转历史 + 份数轮转（清空前文之前；与留档各自独立）
+            session.FinalizeFullContext();
             // F4 视图——session.new 清前文 → 视图随生命周期清空
             session.ClearView();
             // 注入报告——逐文件结果持久化进视图（独立字段：Rebuild 不清，Save 落盘；前端 history 首块渲染）
@@ -579,6 +581,18 @@ namespace CH4
         public string BuildKeyInfoView(ChatSession session, int max)
         {
             return session.BuildKeyInfoView(max);
+        }
+
+        /// <summary>
+        /// 构建会话完整前文视图 JSON——对话页弹层「完整前文」数据源（GET /api/v1/fullctx）。
+        /// 内容 = 送入 LLM 的全量消息（留档文本剥离修饰后还原）；条目形态与 BuildContextView 同构。
+        /// </summary>
+        /// <param name="session">目标会话（按猫参数化——每猫闭包传各自会话）</param>
+        /// <param name="max">返回条目上限（1-500 夹取，缺省 200；超出取尾部）</param>
+        /// <returns>完整前文视图 JSON</returns>
+        public string BuildFullContextView(ChatSession session, int max)
+        {
+            return session.BuildFullContextView(max);
         }
 
         /// <summary>前文条目正文——content 与 assistant tool_calls 声明合并（声明同属送入 LLM 的载荷）</summary>
