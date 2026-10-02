@@ -208,8 +208,9 @@ namespace CatHome4.Core.Tests
             /// <param name="payload">载荷 JSON</param>
             /// <param name="replaceSeq">被替换序号（记录——先行卡替换断言）</param>
             /// <param name="seqHint">序号提示（忽略——测试独立分配）</param>
+            /// <param name="meta">块元数据 JSON（A157——记录以供断言）</param>
             /// <returns>分配序号</returns>
-            public int PushView(string renderType, string payload, long replaceSeq, long seqHint)
+            public int PushView(string renderType, string payload, long replaceSeq, long seqHint, string meta)
             {
                 List<string> list;
                 if (!ViewEvents.TryGetValue(renderType, out list))

@@ -474,9 +474,15 @@ namespace CH4
                 Dictionary<string, object> entry = new Dictionary<string, object>();
                 entry["seq"] = seq;
                 entry["id"] = b.Id;
+                entry["key"] = b.Key;
+                entry["ts"] = b.Timestamp;
+                entry["src"] = b.Src;
+                entry["durMs"] = b.DurMs;
+                entry["state"] = b.State;
                 entry["renderType"] = b.RenderType;
                 // P6b 节点定位锚——真实前文消息索引（前端操作条数据源；-1=非消息派生块）
                 entry["msgIndex"] = b.Origin == null ? -1 : b.Origin.MsgIndex;
+                entry["origin"] = BuildOrigin(b.Origin);
                 entry["payload"] = ParseViewPayload(b.Payload);
                 view.Add(entry);
             }
@@ -539,8 +545,14 @@ namespace CH4
                     Dictionary<string, object> entry = new Dictionary<string, object>();
                     entry["seq"] = i - start + 1;
                     entry["id"] = b.Id;
+                    entry["key"] = b.Key;
+                    entry["ts"] = b.Timestamp;
+                    entry["src"] = b.Src;
+                    entry["durMs"] = b.DurMs;
+                    entry["state"] = b.State;
                     entry["renderType"] = b.RenderType;
                     entry["msgIndex"] = b.Origin == null ? -1 : b.Origin.MsgIndex;
+                    entry["origin"] = BuildOrigin(b.Origin);
                     entry["payload"] = ParseViewPayload(b.Payload);
                     view.Add(entry);
                 }
@@ -548,6 +560,23 @@ namespace CH4
             resp["blocks"] = view;
             return JsonUtil.Serialize(resp);
         }
+        /// <summary>
+        /// 前文来源对象——A157 块契约（msgIndex + hash 双字段）；无来源 = null（独立块）。
+        /// </summary>
+        /// <param name="origin">块前文来源</param>
+        /// <returns>来源字典（null = 独立块）</returns>
+        private static Dictionary<string, object> BuildOrigin(ViewOrigin origin)
+        {
+            if (origin == null)
+            {
+                return null;
+            }
+            Dictionary<string, object> o = new Dictionary<string, object>();
+            o["msgIndex"] = origin.MsgIndex;
+            o["hash"] = origin.Hash;
+            return o;
+        }
+
         /// <summary>
         /// 视图块载荷 JSON 字符串 → JSON 元素（history 响应内嵌对象；解析失败回退字符串）
         /// </summary>

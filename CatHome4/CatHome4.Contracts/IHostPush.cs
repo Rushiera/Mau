@@ -20,7 +20,8 @@
         /// <param name="payload">载荷 JSON 字符串</param>
         /// <param name="replaceSeq">被替换块序号（流式→整块替换；-1=无替换）</param>
         /// <param name="seqHint">流式增量带已分配序号（&gt;0 不递增；≤0 分配新序号并返回）</param>
+        /// <param name="meta">块元数据 JSON（A157 块契约：key / ts / durMs / state / id——后端自述，前端按契约消费；空串 = 不带）</param>
         /// <returns>事件序号（流式容器标识）</returns>
-        int PushView(string renderType, string payload, long replaceSeq, long seqHint);
+        int PushView(string renderType, string payload, long replaceSeq, long seqHint, string meta);
     }
 }

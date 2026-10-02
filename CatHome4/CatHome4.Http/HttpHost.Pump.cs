@@ -253,14 +253,16 @@ namespace CatHome4.Http
         /// <summary>
         /// 视图事件推送——F4 视图块统一出口（流式增量/整块/控制块；seq 全局单调）。
         /// 载荷语义：seq = 全局单调序号（流式容器标识）；renderType = 前端渲染类型；
-        /// replaceSeq = 被替换块序号（流式→整块替换）；seqHint &gt; 0 时复用该序号（流式增量不递增）。
+        /// replaceSeq = 被替换块序号（流式→整块替换）；seqHint &gt; 0 时复用该序号（流式增量不递增）；
+        /// meta = 块元数据（A157 块契约：key / ts / durMs / state / id——空串 = 不带）。
         /// </summary>
         /// <param name="renderType">渲染类型——stream/user/text/reason/toolcard/control</param>
         /// <param name="payload">载荷 JSON 字符串（内嵌对象）</param>
         /// <param name="replaceSeq">被替换块序号（-1=无替换）</param>
         /// <param name="seqHint">流式增量带已分配序号（&gt;0 不递增；≤0 分配新序号）</param>
+        /// <param name="meta">块元数据 JSON（空串 = 不带）</param>
         /// <returns>事件序号</returns>
-        public int PushView(string renderType, string payload, long replaceSeq, long seqHint)
+        public int PushView(string renderType, string payload, long replaceSeq, long seqHint, string meta)
         {
             int seq;
             if (seqHint > 0)
@@ -285,15 +287,51 @@ namespace CatHome4.Http
                 LogStore.Add("CatHome4", 2, "工具载荷解析失败（按原文）: " + ex.Message, "TOOL");
                 payloadObj = payload;
             }
-            var obj = new
-            {
-                seq = seq,
-                renderType = renderType,
-                payload = payloadObj,
-                replaceSeq = replaceSeq
-            };
-            PushEvent("view", JsonUtil.Serialize(obj));
+            Dictionary<string, object> ev = new Dictionary<string, object>();
+            ev["seq"] = seq;
+            ev["renderType"] = renderType;
+            ev["payload"] = payloadObj;
+            ev["replaceSeq"] = replaceSeq;
+            MergeViewMeta(ev, meta);
+            PushEvent("view", JsonUtil.Serialize(ev));
             return seq;
+        }
+
+        /// <summary>
+        /// 块元数据并入视图事件（A157）——meta 是 JSON 对象串时逐键并入事件顶层（同名键以 meta 为准）。
+        /// 解析失败或非对象：出声并忽略——元数据缺失可见，不阻断事件推送。
+        /// </summary>
+        /// <param name="ev">视图事件字典</param>
+        /// <param name="meta">块元数据 JSON（空串 = 无）</param>
+        private static void MergeViewMeta(Dictionary<string, object> ev, string meta)
+        {
+            if (meta == null || meta.Length == 0)
+            {
+                return;
+            }
+            try
+            {
+                using (JsonDocument doc = JsonUtil.ParseStrict(meta))
+                {
+                    JsonElement root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                    {
+                        LogStore.Add("CatHome4", 2, "视图块元数据非对象——已忽略: " + meta, "TOOL");
+                        return;
+                    }
+                    foreach (JsonProperty prop in root.EnumerateObject())
+                    {
+                        // Clone——值节点独立于 JsonDocument：using 结束释放 doc 后仍可序列化。
+                        // 未 Clone 的 JsonElement 逃出作用域 → 序列化时 ObjectDisposedException
+                        // （2026-10-02 判例：视图事件推送即崩，exit 0xE0434352）
+                        ev[prop.Name] = prop.Value.Clone();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 2, "视图块元数据解析失败（已忽略）: " + ex.Message, "TOOL");
+            }
         }
     }
 }

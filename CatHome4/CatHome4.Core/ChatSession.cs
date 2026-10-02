@@ -434,6 +434,7 @@ namespace CH4
         public void PushSessionReset()
         {
             string resetJson = "{\"type\":\"session_reset\"}";
+            _viewBus.ResetToolCards();
             _viewBus.PushControl(resetJson);
         }
 
@@ -962,7 +963,7 @@ namespace CH4
             AppendMessage(_context.AddUserMessage(notice));
             _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
             string userJson = JsonUtil.Object(("content", notice), ("source", "systemauto"));
-            _viewBus.PushUser(userJson);
+            _viewBus.PushUser(userJson, "msg:" + (_context.GetMessageCount() - 1).ToString() + ":user", LastMessage().CreatedAt);
             LogStore.Add("CatHome4", 1, "sleep 作废（等待被提前启动打断）: cat=" + _catKey + " | 销毁 " + killed.Length.ToString() + " 条 | 触发来源 " + triggerSource, "DELAY");
         }
 
@@ -1098,7 +1099,7 @@ namespace CH4
             _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
             string userJson = JsonUtil.Object(("content", content), ("source", source));
-            _viewBus.PushUser(userJson);
+            _viewBus.PushUser(userJson, "msg:" + (_context.GetMessageCount() - 1).ToString() + ":user", LastMessage().CreatedAt);
             SetChatState("working");
             LaunchLlm();
         }
@@ -1166,13 +1167,14 @@ namespace CH4
         private void PushRetryView(string state)
         {
             string json = BuildRetryViewJson(state);
-            _retryBlockIndex = _viewStore.UpsertRetry(json, ViewTimestamp(), _retryBlockIndex);
+            long ts = ViewTimestamp();
+            _retryBlockIndex = _viewStore.UpsertRetry(json, ts, _retryBlockIndex);
             if (state == "retrying")
             {
-                _viewBus.PushRetryNew(json);
+                _viewBus.PushRetryNew(json, ts);
                 return;
             }
-            _viewBus.PushRetryUpdate(json);
+            _viewBus.PushRetryUpdate(json, ts);
         }
         /// <summary>
         /// 重试视图态清零（A94 单一出口）——气泡序号 / 落盘块索引 / 原文三元组 / 待回填标志；
@@ -1405,7 +1407,7 @@ namespace CH4
                 return;
             }
             string reasonJson = JsonUtil.Object(("content", content));
-            _viewBus.PushReasonBlock(reasonJson, seq);
+            _viewBus.PushReasonBlock(reasonJson, seq, "", ViewTimestamp());
         }
 
         /// <summary>运行态切换——结算旧态累计毫秒 + 进入新态（七态：idle/wait/link/think/tool/run/reply；锁内）；同态连续计时（重复事件不重置起表）；idle 不计时——只作态名。</summary>
@@ -1697,7 +1699,7 @@ namespace CH4
                 NoteTimebackEvent();
                 _viewStore.OnAssistantText(LastMessage(), _context.GetMessageCount() - 1);
                 string textJson = JsonUtil.Object(("content", _llmResultText), ("msgIndex", _context.GetMessageCount() - 1));
-                _viewBus.PushTextBlock(textJson);
+                _viewBus.PushTextBlock(textJson, "msg:" + (_context.GetMessageCount() - 1).ToString() + ":text", LastMessage().CreatedAt);
                 _viewBus.ResetTextStream();
                 _viewBus.ResetReasonStream();
                 // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + user 事件 + 直接开新轮（跳过 Done/CloseRound）
@@ -1707,7 +1709,7 @@ namespace CH4
                     AppendMessage(_context.AddUserMessage(next.Content));
                     _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
                     string userJson = JsonUtil.Object(("content", next.Content), ("source", next.Source));
-                    _viewBus.PushUser(userJson);
+                    _viewBus.PushUser(userJson, "msg:" + (_context.GetMessageCount() - 1).ToString() + ":user", LastMessage().CreatedAt);
                     _round = 0;
                     LaunchLlm();
                     return;
@@ -1725,9 +1727,10 @@ namespace CH4
             // 工具轮 seal——视图层补 gap text 块（全量外观真源：前端历史/QQBot 转发消费）+ SSE 推送（实时）；空文本不推
             if (_llmResultText.Length > 0)
             {
-                _viewStore.AppendGapText(_llmResultText, ViewTimestamp());
+                long gapTs = ViewTimestamp();
+                string gapKey = _viewStore.AppendGapText(_llmResultText, gapTs);
                 string sealTextJson = JsonUtil.Object(("content", _llmResultText), ("msgIndex", -1));
-                _viewBus.PushTextBlock(sealTextJson);
+                _viewBus.PushTextBlock(sealTextJson, gapKey, gapTs);
             }
             // 思考段整块——先于工具先行卡推送（实时序对齐视图块生成序：assistant 思考块在工具卡之前）；
             // 判例 2026-09-29：此前直接清序（不推整块），实时面仅剩前端 live 块，F5 重建后 think 块与工具卡换位
@@ -1735,11 +1738,11 @@ namespace CH4
             _viewBus.ResetTextStream();
             // 工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即出"进行中"卡；完成 / 中断时以同序号原位替换
             List<ToolCallInfo> toolCalls = ParseToolCalls(_llmToolCallsJson);
-            Dictionary<string, long> cardSeqs = PushToolCardPending(toolCalls);
+            PushToolCardPending(toolCalls, LastMessage().CreatedAt);
             // 运行态——发单即执行态（本地·程序过程：工具批到下一请求发出；长度由本地决定）
             PhaseEnter(PhaseRun);
             SetChatState("tools");
-            EnterToolBatch(_llmToolCallsJson, cardSeqs);
+            EnterToolBatch(_llmToolCallsJson);
         }
         /// <summary>
         /// 工具调用条目——tool_calls JSON 解析产物（先行推卡消费；字段与 OpenAI wire 对齐）。
@@ -1818,15 +1821,14 @@ namespace CH4
             return list;
         }
 
-        /// <summary>工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即推“进行中”卡（无 result 字段 → 前端 ⏳ 处理中）；工具完成 / 中断时以同序号 replaceSeq 原位替换（A128 起完成由 FlushToolCard 逐条回填，中断由 PushToolCardFinal 补终态）。声明面外工具不推卡（拦截是即时的——只在完成时出 ERR 卡）。</summary>
+        /// <summary>工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即推“进行中”卡（无 result 字段 → 前端 ⏳ 处理中）；工具完成 / 中断时以同块键原位替换（A128 起完成由 FlushToolCard 逐条回填，中断由 PushToolCardFinal 补终态）。声明面外工具不推卡（拦截是即时的——只在完成时出 ERR 卡）。A157：块键 = tool:&lt;toolCallId&gt;（与持久块同键），时间戳取工具调用声明时刻。</summary>
         /// <param name="calls">工具调用条目（ParseToolCalls 产物）</param>
-        /// <returns>tool_call_id → 先行卡视图序号（空=无推送通道 / 无可推工具）</returns>
-        private Dictionary<string, long> PushToolCardPending(List<ToolCallInfo> calls)
+        /// <param name="declaredTs">声明时刻（Unix 毫秒——工具调用消息 CreatedAt，与持久块同基点）</param>
+        private void PushToolCardPending(List<ToolCallInfo> calls, long declaredTs)
         {
-            Dictionary<string, long> seqs = new Dictionary<string, long>(StringComparer.Ordinal);
             if (!_viewBus.Ready)
             {
-                return seqs;
+                return;
             }
             for (int i = 0; i < calls.Count; i = i + 1)
             {
@@ -1837,20 +1839,23 @@ namespace CH4
                 }
                 Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(call.Name, InjectCatId(call.Arguments), null, call.Index, call.Total);
                 string json = JsonUtil.Serialize(payload);
-                long seq = _viewBus.PushToolCardPending(json);
-                seqs[call.Id] = seq;
+                _viewBus.PushToolCardPending("tool:" + call.Id, json, declaredTs);
             }
-            return seqs;
         }
 
-        /// <summary>工具卡终态补推——中断收尾（中止 / 宿主重启）时先行卡补终态：已完成 → 完整卡；未完成 → 已中止卡。无先行卡（CardSeq &lt; 0）或已由 FlushToolCard（A128 逐条回填）终结不推——防重复卡。</summary>
+        /// <summary>工具卡终态补推——中断收尾（中止 / 宿主重启）时先行卡补终态：已完成 → 完整卡；未完成 → 已中止卡。无在途先行卡或已定稿（FlushToolCard 逐条回填）不推——防重复卡（A157：判据取视图出口的块槽位与定稿记录，不再用 dog 上的双标志）。</summary>
         /// <param name="dog">工具单</param>
         /// <param name="index">并发序号（1-based）</param>
         /// <param name="total">并发总数</param>
         /// <param name="done">true=已完成（结果保留）；false=未完成（本轮中止）</param>
         private void PushToolCardFinal(ToolOrderDog dog, int index, int total, bool done)
         {
-            if (!_viewBus.Ready || dog.CardSeq < 0 || dog.CardFlushed)
+            if (!_viewBus.Ready)
+            {
+                return;
+            }
+            string key = "tool:" + dog.ToolCallId;
+            if (!_viewBus.IsToolCardPending(key))
             {
                 return;
             }
@@ -1867,10 +1872,9 @@ namespace CH4
             result = ErrorNote.Apply(result);
             Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, result, index, total);
             string json = JsonUtil.Serialize(payload);
-            _viewBus.PushToolCardFinal(json, dog.CardSeq);
-            dog.CardSeq = -1;
+            _viewBus.PushToolCardFinal(key, json, dog.ElapsedMs(), dog.StartedAtMs);
         }
-        /// <summary>工具卡逐条回填（A128）——单工具完成即定稿结果并推送终态卡（有先行卡 → 原位替换；无先行卡如声明面拦截 → 新建），不再等整批收口。幂等：已推过终态（dog.CardFlushed）不重推；结果定稿（超时 / 空结果兜底）在推送前完成。前文消息与持久视图块仍由段3 按声明序统一落位——实时面序（先行卡位）与持久块序不分叉。</summary>
+        /// <summary>工具卡逐条回填（A128）——单工具完成即定稿结果并推送终态卡（有先行卡 → 原位替换；无先行卡如声明面拦截 → 新建），不再等整批收口。幂等：同一工具单终态卡至多一次（A157 由视图出口的定稿记录承担——不再用 dog 标志）；结果定稿（超时 / 空结果兜底）在推送前完成。前文消息与持久视图块仍由段3 按声明序统一落位——实时面序（先行卡位）与持久块序不分叉。</summary>
         /// <param name="dog">工具单</param>
         private void FlushToolCard(ToolOrderDog dog)
         {
@@ -1886,7 +1890,7 @@ namespace CH4
                     dog.Result = "ERR|EMPTY_RESULT|工具执行无结果";
                 }
             }
-            if (!_viewBus.Ready || dog.CardFlushed)
+            if (!_viewBus.Ready)
             {
                 return;
             }
@@ -1900,16 +1904,14 @@ namespace CH4
             string viewResult = ErrorNote.Apply(dog.Result);
             Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, viewResult, index + 1, _dogs.Count);
             string toolJson = JsonUtil.Serialize(payload);
-            _viewBus.PushToolCardFinal(toolJson, dog.CardSeq);
-            dog.CardFlushed = true;
+            _viewBus.PushToolCardFinal("tool:" + dog.ToolCallId, toolJson, dog.ElapsedMs(), dog.StartedAtMs);
         }
 
         /// <summary>
         /// StartToolBatch 动作段——解析 tool_calls → OA 发单（host-* 延迟直执登记 / 普通工单 Post / Post 失败诚实 ERR）→ ToolBatchRunning。解析失败 = 空批（allDone 立即成立——等价原 try-catch 跳过语义：续轮保持）。
         /// </summary>
         /// <param name="toolCallsJson">tool_calls JSON 数组</param>
-        /// <param name="cardSeqs">tool_call_id → 先行"进行中"卡视图序号（PushToolCardPending 产物；缺省 -1=无先行卡）</param>
-        private void EnterToolBatch(string toolCallsJson, Dictionary<string, long> cardSeqs)
+        private void EnterToolBatch(string toolCallsJson)
         {
             _toolBatchActive = true;
             _dogs.Clear();
@@ -1960,8 +1962,6 @@ namespace CH4
             {
                 ToolCallInfo startCall = calls[startIndex];
                 ToolOrderDog preDog = new ToolOrderDog(startCall.Id, startCall.Name, InjectCatId(startCall.Arguments));
-                long startCardSeq;
-                preDog.CardSeq = cardSeqs.TryGetValue(startCall.Id, out startCardSeq) ? startCardSeq : -1;
                 if (!IsToolAllowed(startCall.Name))
                 {
                     preDog.Result = "ERR|TOOL_FORBIDDEN|工具不在当前授权面: " + startCall.Name;
@@ -2036,8 +2036,6 @@ namespace CH4
                 ToolOrderDog dog = new ToolOrderDog(call.Id, call.Name, arguments);
                 // A127——执行序裁决（参数相关：timeback 按 action 分走两端钉死值）
                 dog.Order = ToolOrderTable.Resolve(call.Name, call.Arguments);
-                long pendingCardSeq;
-                dog.CardSeq = cardSeqs.TryGetValue(call.Id, out pendingCardSeq) ? pendingCardSeq : -1;
                 _dogs.Add(dog);
             }
             // [P3] 分批——按 order 值升序分桶（同值一批 · 批内声明序；独占档每个调用各自成批）+ 启动首批
@@ -2109,6 +2107,8 @@ namespace CH4
                 {
                     continue;
                 }
+                // A157——运行时长起表（工具卡时长基准：批派发时刻 → 完成时刻）
+                dog.StartedAtMs = ViewTimestamp();
                 if (dog.Name.StartsWith("host-", StringComparison.Ordinal))
                 {
                     // host-* 延迟直执登记——本批末尾执行（顺序保证：同批构建类工具先完成产物落地）
@@ -2292,7 +2292,7 @@ namespace CH4
                 AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
                 NoteTimebackEvent();
                 NoteTimebackWrite(dog.Name, dog.ArgsJson, dog.Result);
-                _viewStore.OnToolResult(LastMessage(), _context.GetMessageCount() - 1, -1);
+                _viewStore.OnToolResult(LastMessage(), _context.GetMessageCount() - 1, dog.ElapsedMs());
             }
             _toolBatchActive = false;
             // [段2d-0] 图片注入——本批 image-inject 登记合并为一条 user 注入消息（落在作用域区间内：back 回收时一并删除）
@@ -2326,7 +2326,7 @@ namespace CH4
                 AppendMessage(_context.AddUserMessage(next.Content));
                 _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
                 string userJson = JsonUtil.Object(("content", next.Content), ("source", next.Source));
-                _viewBus.PushUser(userJson);
+                _viewBus.PushUser(userJson, "msg:" + (_context.GetMessageCount() - 1).ToString() + ":user", LastMessage().CreatedAt);
                 _round = 0;
                 LaunchLlm();
                 return;
@@ -2362,9 +2362,10 @@ namespace CH4
             // [段2] 错误可见——视图块落盘（持久化）+ 前端 error 事件（文本取清空前原值）
             // A69 视图层报错中文注释——错误原文仍进日志与前文面，仅视图块追加中文注释
             string viewError = ErrorNote.Apply(_llmErrorText);
-            _viewStore.AppendError(viewError, ViewTimestamp());
+            long errTs = ViewTimestamp();
+            string errKey = _viewStore.AppendError(viewError, errTs);
             string errJson = JsonUtil.Object(("type", "error"), ("text", viewError));
-            _viewBus.PushError(errJson);
+            _viewBus.PushError(errJson, errKey, errTs);
             // [段3] 重试耗尽终态（A94——本轮推过 retry 气泡则补 failed 终态，保留报错原文；最终错误详情仍归 error 气泡）
             if (_viewBus.RetryActive)
             {
@@ -2413,8 +2414,9 @@ namespace CH4
             // roundsum 轮末统计——相位结算 + 载荷构建（Appender 内落盘）+ SSE 推送（本轮 Token 消耗 + 工具次数 + 总耗时 + 四态用时）
             PhaseSettle();
             string roundsumJson = BuildRoundSumJson();
-            _viewStore.AppendRoundSummary(roundsumJson, ViewTimestamp());
-            _viewBus.PushRoundSum(roundsumJson);
+            long sumTs = ViewTimestamp();
+            string sumKey = _viewStore.AppendRoundSummary(roundsumJson, sumTs);
+            _viewBus.PushRoundSum(roundsumJson, sumKey, sumTs);
             SetChatState("idle");
             // B4 对话区：会话终态事件——前端定型（llm done 仅一轮结束；chatdone 才是整次会话结束；count = 原始消息数——实时同步状态区）
             // E3 扩展——chatdone 带真实 usage（命中/非命中/输出/前文长度；前端状态栏同步显示）

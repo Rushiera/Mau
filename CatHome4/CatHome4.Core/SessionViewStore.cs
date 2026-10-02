@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Mau.Runtime;
@@ -89,6 +88,9 @@ namespace CH4
 
             /// <summary>并发总数（同批 tool_calls 数组长度）</summary>
             public int Total;
+
+            /// <summary>声明时刻（Unix 毫秒）——工具卡块时间戳基准（A157：取工具调用声明消息 CreatedAt，与实时先行卡同基点）</summary>
+            public long Ts;
         }
 
         /// <summary>视图文件数据——JSON 形态（blocks 按到达序）</summary>
@@ -271,14 +273,16 @@ namespace CH4
                 payload["content"] = reasoning;
                 Append(m, "reason", payload, msgIndex);
             }
-            RegisterPendingTools(m.ToolCallsJson ?? "");
+            RegisterPendingTools(m.ToolCallsJson ?? "", m.CreatedAt);
         }
 
         /// <summary>
-        /// 真实前文 append 钩子——tool 结果 → 配对生成工具卡块（孤立 tool 丢弃——视图容错）
+        /// 真实前文 append 钩子——tool 结果 → 配对生成工具卡块（孤立 tool 丢弃——视图容错）。
+        /// A157：块时间戳取工具调用声明时刻（target.Ts），与实时区先行卡同基点。
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="msgIndex">真实前文消息索引（块来源关系字段）</param>
+        /// <param name="durMs">运行时长（毫秒；-1 = 未记录——由会话侧按工具单派发时刻结算）</param>
         public void OnToolResult(LlmMessage m, int msgIndex, long durMs)
         {
             string toolCallId = m.ToolCallId ?? "";
@@ -300,7 +304,7 @@ namespace CH4
             // A69 视图层报错中文注释——真实前文保持原文，仅视图块追加中文注释
             string viewResult = ErrorNote.Apply(m.Content ?? "");
             Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(name, target.Arguments, viewResult, target.Index, target.Total);
-            Append(m, "toolcard", payload, msgIndex, durMs);
+            Append(m, "toolcard", payload, msgIndex, durMs, target.Ts);
         }
 
         /// <summary>
@@ -546,28 +550,34 @@ namespace CH4
         {
             return _path + ".pending";
         }        /// <summary>追加轮末统计块——roundsum（Token 消耗 + 工具次数 + 总耗时 + 四态用时）。非真实前文派生（Rebuild 不清）；写入即落盘——宿主中断不丢。</summary>
-/// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...}}）</param>
-/// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系，归并排序键）</param>
-        public void AppendRoundSummary(string payloadJson, long timestamp)
+                 /// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...}}）</param>
+                 /// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系，归并排序键）</param>
+                 /// <returns>块键（A157：实时推送沿用同一键）</returns>
+        public string AppendRoundSummary(string payloadJson, long timestamp)
         {
-            ViewBlock block = NewBlock("roundsum:" + _roundSums.Count.ToString(), "roundsum", payloadJson, timestamp, null, "independent", -1);
+            string key = "roundsum:" + _roundSums.Count.ToString();
+            ViewBlock block = NewBlock(key, "roundsum", payloadJson, timestamp, null, "independent", -1);
             _roundSums.Add(block);
             Save();
+            return key;
         }
         /// <summary>追加间隙文本块——工具轮 seal 文本（模型调用工具前说的话）。非真实前文派生（Rebuild 不清）；写入即落盘——工具轮中途中断不丢。视图层 = 全部外观真源——前端历史/QQBot 转发统一消费此块。</summary>
         /// <param name="content">间隙文本</param>
         /// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系）</param>
-        public void AppendGapText(string content, long timestamp)
+        /// <returns>块键（A157：实时推送沿用同一键；空内容 = 空串）</returns>
+        public string AppendGapText(string content, long timestamp)
         {
             if (content == null || content.Length == 0)
             {
-                return;
+                return "";
             }
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["content"] = content;
-            ViewBlock block = NewBlock("gap:" + _gapTexts.Count.ToString(), "text", JsonUtil.Serialize(payload), timestamp, null, "independent", -1);
+            string key = "gap:" + _gapTexts.Count.ToString();
+            ViewBlock block = NewBlock(key, "text", JsonUtil.Serialize(payload), timestamp, null, "independent", -1);
             _gapTexts.Add(block);
             Save();
+            return key;
         }
 
         /// <summary>
@@ -575,18 +585,21 @@ namespace CH4
         /// </summary>
         /// <param name="text">错误文本</param>
         /// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系）</param>
-        public void AppendError(string text, long timestamp)
+        /// <returns>块键（A157：实时推送沿用同一键；空文本 = 空串）</returns>
+        public string AppendError(string text, long timestamp)
         {
             if (text == null || text.Length == 0)
             {
-                return;
+                return "";
             }
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["type"] = "error";
             payload["text"] = text;
-            ViewBlock block = NewBlock("error:" + _errors.Count.ToString(), "error", JsonUtil.Serialize(payload), timestamp, null, "independent", -1);
+            string key = "error:" + _errors.Count.ToString();
+            ViewBlock block = NewBlock(key, "error", JsonUtil.Serialize(payload), timestamp, null, "independent", -1);
             _errors.Add(block);
             Save();
+            return key;
         }
 
         /// <summary>
@@ -602,7 +615,7 @@ namespace CH4
             {
                 ViewBlock exist = _retries[index];
                 exist.Payload = payloadJson;
-                exist.Id = ComputeBlockId(exist.RenderType, exist.Timestamp, exist.Origin, exist.Src, exist.DurMs, payloadJson);
+                exist.Id = ViewBlock.ComputeId(exist.RenderType, exist.Timestamp, exist.Origin, exist.Src, exist.DurMs, payloadJson);
                 Save();
                 return index;
             }
@@ -1012,12 +1025,15 @@ namespace CH4
         }
         /// <summary>
         /// 生成前文派生视图块——块键 + 来源关系 + 自哈希 ID（A156）；时间戳取消息 CreatedAt。
+        /// A157：工具卡可指定时间戳覆盖——取工具调用声明时刻，与实时区先行卡同基点。
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="renderType">渲染类型</param>
         /// <param name="payload">渲染载荷（字典）</param>
         /// <param name="msgIndex">真实前文消息索引（块来源关系字段）</param>
-        private void Append(LlmMessage m, string renderType, Dictionary<string, object> payload, int msgIndex, long durMs = -1)
+        /// <param name="durMs">运行时长（毫秒；-1 = 不适用）</param>
+        /// <param name="timestampOverride">时间戳覆盖（>0 生效；0 = 取消息 CreatedAt——工具卡取声明时刻）</param>
+        private void Append(LlmMessage m, string renderType, Dictionary<string, object> payload, int msgIndex, long durMs = -1, long timestampOverride = 0)
         {
             string payloadJson = JsonUtil.Serialize(payload);
             ViewOrigin origin = new ViewOrigin();
@@ -1028,7 +1044,8 @@ namespace CH4
             {
                 key = "tool:" + (m.ToolCallId ?? "");
             }
-            ViewBlock block = NewBlock(key, renderType, payloadJson, m.CreatedAt, origin, "front", durMs);
+            long timestamp = timestampOverride > 0 ? timestampOverride : m.CreatedAt;
+            ViewBlock block = NewBlock(key, renderType, payloadJson, timestamp, origin, "front", durMs);
             _blocks.Add(block);
         }
 
@@ -1059,7 +1076,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 建块单点——块键 / 时间戳单调化 / 自哈希 ID / 来源关系（A156：两区共用构造内核）。
+        /// 建块单点——块键 / 时间戳单调化 / 自哈希 ID / 来源关系（A157：构造内核对齐 ViewBlock，两区共用）。
         /// </summary>
         /// <param name="key">块键（建块即定的稳定句柄——msg:&lt;index&gt; / tool:&lt;toolCallId&gt; / 容器:&lt;序号&gt;）</param>
         /// <param name="renderType">渲染类型</param>
@@ -1073,16 +1090,8 @@ namespace CH4
         private ViewBlock NewBlock(string key, string renderType, string payloadJson, long timestamp, ViewOrigin origin, string src, long durMs, bool monotonic = true)
         {
             long ts = monotonic ? MonotonicTs(timestamp) : timestamp;
-            ViewBlock block = new ViewBlock();
-            block.Key = key;
-            block.Timestamp = ts;
-            block.RenderType = renderType;
-            block.Payload = payloadJson;
-            block.Origin = origin;
-            block.Src = src;
-            block.DurMs = durMs;
-            block.State = "final";
-            block.Id = ComputeBlockId(renderType, ts, origin, src, durMs, payloadJson);
+            ViewBlock block = ViewBlock.BuildPending(key, renderType, payloadJson, ts, origin, src);
+            block.Finalize(durMs);
             return block;
         }
 
@@ -1102,51 +1111,11 @@ namespace CH4
         }
 
         /// <summary>
-        /// 块自哈希——块 ID（renderType|ts|origin|src|durMs|payload 的 SHA256 十六进制；定稿后永不变更）。
-        /// </summary>
-        /// <param name="renderType">渲染类型</param>
-        /// <param name="timestamp">块时间戳（含单调补差后值）</param>
-        /// <param name="origin">前文来源（null = 独立块）</param>
-        /// <param name="src">来源类别</param>
-        /// <param name="durMs">运行时长</param>
-        /// <param name="payloadJson">渲染载荷 JSON</param>
-        /// <returns>SHA256 十六进制串</returns>
-        private static string ComputeBlockId(string renderType, long timestamp, ViewOrigin origin, string src, long durMs, string payloadJson)
-        {
-            string raw = (renderType == null ? "" : renderType)
-                + "\u0001" + timestamp.ToString()
-                + "\u0001" + (origin == null ? "" : origin.MsgIndex.ToString())
-                + "\u0001" + (origin == null ? "" : (origin.Hash == null ? "" : origin.Hash))
-                + "\u0001" + (src == null ? "" : src)
-                + "\u0001" + durMs.ToString()
-                + "\u0001" + (payloadJson == null ? "" : payloadJson);
-            return Sha256Hex(raw);
-        }
-
-        /// <summary>
-        /// SHA256 十六进制——哈希统一出口（前文消息哈希与块自哈希共用）。
-        /// </summary>
-        /// <param name="raw">待哈希原文</param>
-        /// <returns>十六进制串</returns>
-        private static string Sha256Hex(string raw)
-        {
-            using (SHA256 sha = SHA256.Create())
-            {
-                byte[] bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(raw));
-                StringBuilder sb = new StringBuilder();
-                for (int i = 0; i < bytes.Length; i = i + 1)
-                {
-                    sb.Append(bytes[i].ToString("x2"));
-                }
-                return sb.ToString();
-            }
-        }
-
-        /// <summary>
         /// 登记待配对工具——解析 tool_calls JSON 数组（{id,function:{name,arguments}}；解析失败空登记——容错）
         /// </summary>
         /// <param name="toolCallsJson">tool_calls JSON</param>
-        private void RegisterPendingTools(string toolCallsJson)
+        /// <param name="declaredTs">声明时刻（Unix 毫秒——工具卡块时间戳基准，A157）</param>
+        private void RegisterPendingTools(string toolCallsJson, long declaredTs)
         {
             try
             {
@@ -1175,6 +1144,7 @@ namespace CH4
                         pt.Arguments = arguments;
                         pt.Index = i + 1;
                         pt.Total = root.GetArrayLength();
+                        pt.Ts = declaredTs;
                         _pendingTools.Add(pt);
                     }
                 }
@@ -1219,7 +1189,7 @@ namespace CH4
                 + "\u0001" + (m.ToolName ?? "")
                 + "\u0001" + (m.ToolCallsJson ?? "")
                 + "\u0001" + (m.ReasoningContent ?? "");
-            return Sha256Hex(raw);
+            return ViewBlock.Sha256Hex(raw);
         }
         /// <summary>
         /// 载入视图层——读回持久块 + 五个独立数组 + 注入报告（A156：载入即权威，不再从前文重建）。
