@@ -677,38 +677,11 @@ namespace CH4
             bool hasTs = false;
             int userCount = 0;
             int replyCount = 0;
-            int blockCursor = 0;
-            int sumCursor = 0;
-            while (blockCursor < _blocks.Count || sumCursor < _roundSums.Count)
+            int sumCount = 0;
+            List<ViewBlock> seq = CollectLegacyBlocks();
+            for (int i = 0; i < seq.Count; i++)
             {
-                while (blockCursor < _blocks.Count && !IsLegacyBlock(_blocks[blockCursor].RenderType))
-                {
-                    blockCursor = blockCursor + 1;
-                }
-                bool takeBlock = false;
-                if (blockCursor >= _blocks.Count)
-                {
-                    takeBlock = false;
-                }
-                else if (sumCursor >= _roundSums.Count)
-                {
-                    takeBlock = true;
-                }
-                else if (_blocks[blockCursor].Timestamp <= _roundSums[sumCursor].Timestamp)
-                {
-                    takeBlock = true;
-                }
-                ViewBlock current;
-                if (takeBlock)
-                {
-                    current = _blocks[blockCursor];
-                    blockCursor = blockCursor + 1;
-                }
-                else
-                {
-                    current = _roundSums[sumCursor];
-                    sumCursor = sumCursor + 1;
-                }
+                ViewBlock current = seq[i];
                 if (current.RenderType == "user")
                 {
                     userCount = userCount + 1;
@@ -716,6 +689,10 @@ namespace CH4
                 else if (current.RenderType == "text")
                 {
                     replyCount = replyCount + 1;
+                }
+                else if (current.RenderType == "roundsum")
+                {
+                    sumCount = sumCount + 1;
                 }
                 if (!hasTs || current.Timestamp < firstTs)
                 {
@@ -739,7 +716,7 @@ namespace CH4
             sb.Append("- 猫：`" + catKey + "`（" + displayName + "）\n");
             sb.Append("- 归档：" + stamp + "\n");
             sb.Append("- 区间：" + range + "\n");
-            sb.Append("- 块数：user " + userCount.ToString() + " · 回复 " + replyCount.ToString() + " · 轮结算 " + _roundSums.Count.ToString() + "\n\n");
+            sb.Append("- 块数：user " + userCount.ToString() + " · 回复 " + replyCount.ToString() + " · 轮结算 " + sumCount.ToString() + "\n\n");
             sb.Append("---\n\n");
             // [段3] 加载报告段 + 对话段
             AppendInjectReportSection(sb, _injectReport);
@@ -786,20 +763,7 @@ namespace CH4
                 sb.Append(BuildRoundSumLine(b.Payload) + "\n\n");
                 return;
             }
-            string content = "";
-            try
-            {
-                using (JsonDocument doc = JsonUtil.ParseStrict(b.Payload))
-                {
-                    content = GetStringProp(doc.RootElement, "content");
-                }
-            }
-            catch (Exception ex)
-            {
-                // 单块解析失败不拖垮整份留档（局部降级可见——不静默丢块）
-                LogStore.Add("CatHome4", 2, "旧会话留档块解析失败: " + ex.Message, "CHAT");
-            }
-            sb.Append(content + "\n\n");
+            sb.Append(LegacyBlockContent(b) + "\n\n");
         }
 
         /// <summary>轮结算行渲染——roundsum 载荷转人读一行（Token / 缓存 / 工具次数 / 请求次数 / 用时）</summary>
@@ -843,65 +807,7 @@ namespace CH4
         private static void AppendInjectReportSection(StringBuilder sb, string injectReport)
         {
             sb.Append("## 新会话加载报告\n\n");
-            if (injectReport == null || injectReport.Length == 0)
-            {
-                sb.Append("- 无（旧会话未生成注入报告）\n\n");
-                return;
-            }
-            try
-            {
-                using (JsonDocument doc = JsonUtil.ParseStrict(injectReport))
-                {
-                    JsonElement root = doc.RootElement;
-                    long total = ReadLongProp(root, "total");
-                    long ok = ReadLongProp(root, "ok");
-                    long missing = ReadLongProp(root, "missing");
-                    long failed = ReadLongProp(root, "failed");
-                    sb.Append("- 注入清单：" + total.ToString() + " 个文件（ok " + ok.ToString()
-                        + " / missing " + missing.ToString() + " / 失败 " + failed.ToString() + "）\n");
-                    JsonElement files;
-                    if (root.TryGetProperty("files", out files) && files.ValueKind == JsonValueKind.Array)
-                    {
-                        sb.Append("\n");
-                        foreach (JsonElement f in files.EnumerateArray())
-                        {
-                            sb.Append("- `" + GetStringProp(f, "file") + "` — " + GetStringProp(f, "status")
-                                + "（" + ReadLongProp(f, "chars").ToString() + " 字符）\n");
-                        }
-                    }
-                    JsonElement groups;
-                    if (root.TryGetProperty("toolGroups", out groups) && groups.ValueKind == JsonValueKind.Array)
-                    {
-                        sb.Append("\n");
-                        foreach (JsonElement g in groups.EnumerateArray())
-                        {
-                            sb.Append("- 工具组 `" + GetStringProp(g, "group") + "`：");
-                            JsonElement tools;
-                            bool first = true;
-                            if (g.TryGetProperty("tools", out tools) && tools.ValueKind == JsonValueKind.Array)
-                            {
-                                foreach (JsonElement t in tools.EnumerateArray())
-                                {
-                                    if (!first)
-                                    {
-                                        sb.Append("、");
-                                    }
-                                    first = false;
-                                    sb.Append(GetStringProp(t, "name"));
-                                }
-                            }
-                            sb.Append("\n");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                // 报告解析失败降级为原文（可辨识——不静默丢内容）
-                LogStore.Add("CatHome4", 2, "旧会话留档报告解析失败: " + ex.Message, "CHAT");
-                sb.Append("- 解析失败，原文：\n\n```json\n" + injectReport + "\n```\n");
-            }
-            sb.Append("\n");
+            AppendInjectReportBody(sb, injectReport);
         }
 
         /// <summary>留档时间戳格式化——Unix 毫秒 → 本地「MM-dd HH:mm:ss」（非正值记「—」）</summary>
@@ -1271,6 +1177,252 @@ namespace CH4
                 LogStore.Add("SessionViewStore", 2, "留档头部读取失败: " + ex.Message, "SYS");
                 return "";
             }
+        }
+        /// <summary>关键信息条目正文上限（字符）——弹层展示截断阈值（truncated 标记 + chars 给真实长度）</summary>
+        private const int KeyInfoItemLimit = 8000;
+        /// <summary>关键信息条目摘要上限（字符）——弹层折叠行显示</summary>
+        private const int KeyInfoPreviewLimit = 120;
+        /// <summary>
+        /// 留档块序列——user/text 视图块与轮末统计块按时间戳升序归并（_blocks 只取 user/text，roundsum 全取）。
+        /// 单一出口：旧会话留档（ArchiveLegacy）与关键信息弹层（BuildKeyInfo）共用——不两处各写一遍归并。
+        /// </summary>
+        /// <returns>归并后的块序列（按时间戳升序）</returns>
+        private List<ViewBlock> CollectLegacyBlocks()
+        {
+            List<ViewBlock> seq = new List<ViewBlock>();
+            int blockCursor = 0;
+            int sumCursor = 0;
+            while (true)
+            {
+                while (blockCursor < _blocks.Count && !IsLegacyBlock(_blocks[blockCursor].RenderType))
+                {
+                    blockCursor = blockCursor + 1;
+                }
+                bool hasBlock = blockCursor < _blocks.Count;
+                bool hasSum = sumCursor < _roundSums.Count;
+                if (!hasBlock && !hasSum)
+                {
+                    break;
+                }
+                // 🔴 两源各留「有货」判据再取——尾部非留档块 + 轮结算取尽时，旧实现取空列表越界（2026-10-02 判例）
+                bool takeBlock = hasBlock && (!hasSum || _blocks[blockCursor].Timestamp <= _roundSums[sumCursor].Timestamp);
+                if (takeBlock)
+                {
+                    seq.Add(_blocks[blockCursor]);
+                    blockCursor = blockCursor + 1;
+                }
+                else
+                {
+                    seq.Add(_roundSums[sumCursor]);
+                    sumCursor = sumCursor + 1;
+                }
+            }
+            return seq;
+        }
+        /// <summary>留档 / 关键信息块正文——user/text 块取载荷 content（解析失败记 ERR 并返回空串，不静默丢块）</summary>
+        /// <param name="b">视图块（user / text）</param>
+        /// <returns>正文（空串=载荷无 content 或解析失败）</returns>
+        private static string LegacyBlockContent(ViewBlock b)
+        {
+            try
+            {
+                using (JsonDocument doc = JsonUtil.ParseStrict(b.Payload))
+                {
+                    return GetStringProp(doc.RootElement, "content");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 单块解析失败不拖垮整份留档（局部降级可见——不静默丢块）
+                LogStore.Add("CatHome4", 2, "旧会话留档块解析失败: " + ex.Message, "CHAT");
+                return "";
+            }
+        }
+        /// <summary>加载报告正文——逐文件清单 + 工具组清单（无报告记一行；解析失败降级为原文）。留档段与关键信息弹层共用。</summary>
+        /// <param name="sb">目标缓冲</param>
+        /// <param name="injectReport">注入报告 JSON（空=无报告）</param>
+        private static void AppendInjectReportBody(StringBuilder sb, string injectReport)
+        {
+            if (injectReport == null || injectReport.Length == 0)
+            {
+                sb.Append("- 无（旧会话未生成注入报告）\n\n");
+                return;
+            }
+            try
+            {
+                using (JsonDocument doc = JsonUtil.ParseStrict(injectReport))
+                {
+                    JsonElement root = doc.RootElement;
+                    long total = ReadLongProp(root, "total");
+                    long ok = ReadLongProp(root, "ok");
+                    long missing = ReadLongProp(root, "missing");
+                    long failed = ReadLongProp(root, "failed");
+                    sb.Append("- 注入清单：" + total.ToString() + " 个文件（ok " + ok.ToString()
+                        + " / missing " + missing.ToString() + " / 失败 " + failed.ToString() + "）\n");
+                    JsonElement files;
+                    if (root.TryGetProperty("files", out files) && files.ValueKind == JsonValueKind.Array)
+                    {
+                        sb.Append("\n");
+                        foreach (JsonElement f in files.EnumerateArray())
+                        {
+                            sb.Append("- `" + GetStringProp(f, "file") + "` — " + GetStringProp(f, "status")
+                                + "（" + ReadLongProp(f, "chars").ToString() + " 字符）\n");
+                        }
+                    }
+                    JsonElement groups;
+                    if (root.TryGetProperty("toolGroups", out groups) && groups.ValueKind == JsonValueKind.Array)
+                    {
+                        sb.Append("\n");
+                        foreach (JsonElement g in groups.EnumerateArray())
+                        {
+                            sb.Append("- 工具组 `" + GetStringProp(g, "group") + "`：");
+                            JsonElement tools;
+                            bool first = true;
+                            if (g.TryGetProperty("tools", out tools) && tools.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (JsonElement t in tools.EnumerateArray())
+                                {
+                                    if (!first)
+                                    {
+                                        sb.Append("、");
+                                    }
+                                    first = false;
+                                    sb.Append(GetStringProp(t, "name"));
+                                }
+                            }
+                            sb.Append("\n");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 报告解析失败降级为原文（可辨识——不静默丢内容）
+                LogStore.Add("CatHome4", 2, "旧会话留档报告解析失败: " + ex.Message, "CHAT");
+                sb.Append("- 解析失败，原文：\n\n```json\n" + injectReport + "\n```\n");
+            }
+            sb.Append("\n");
+        }
+        /// <summary>加载报告文本——报告正文（无标题行；关键信息弹层条目正文用）</summary>
+        /// <returns>报告文本（空报告=空串）</returns>
+        private string BuildInjectReportText()
+        {
+            if (_injectReport == null || _injectReport.Length == 0)
+            {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder();
+            AppendInjectReportBody(sb, _injectReport);
+            return sb.ToString().Trim();
+        }
+        /// <summary>
+        /// 关键信息视图 JSON——对话页状态栏「前文关键信息」弹层数据源（GET /api/v1/keyinfo）。
+        /// 内容 = 旧会话留档同源四部分（加载报告 / user 消息 / 正式回复 / 每轮结算——思考、工具卡、间隙文本、错误不进）；
+        /// 条目形态与 BuildContextView 同构（i/role/time/chars/truncated/preview/content）——前端复用同一套渲染。
+        /// </summary>
+        /// <param name="max">返回条目上限（1-500 夹取，缺省 200；超出取尾部）</param>
+        /// <returns>关键信息视图 JSON</returns>
+        public string BuildKeyInfo(int max)
+        {
+            Dictionary<string, object> resp = new Dictionary<string, object>();
+            try
+            {
+                List<Dictionary<string, object>> all = new List<Dictionary<string, object>>();
+                // 加载报告——会话元数据（先于对话内容；无报告不出条目）
+                string report = BuildInjectReportText();
+                if (report.Length > 0)
+                {
+                    all.Add(KeyInfoItem("report", 0, report));
+                }
+                List<ViewBlock> seq = CollectLegacyBlocks();
+                for (int i = 0; i < seq.Count; i++)
+                {
+                    ViewBlock b = seq[i];
+                    string type = b.RenderType == null ? "" : b.RenderType;
+                    string role = "user";
+                    string content;
+                    if (type == "roundsum")
+                    {
+                        role = "roundsum";
+                        content = BuildRoundSumLine(b.Payload);
+                    }
+                    else
+                    {
+                        if (type == "text")
+                        {
+                            role = "reply";
+                        }
+                        content = LegacyBlockContent(b);
+                    }
+                    all.Add(KeyInfoItem(role, b.Timestamp, content));
+                }
+                long totalChars = 0;
+                for (int i = 0; i < all.Count; i++)
+                {
+                    all[i]["i"] = i + 1;
+                    totalChars = totalChars + (long)all[i]["chars"];
+                }
+                int total = all.Count;
+                int start = 0;
+                if (max > 0 && total > max)
+                {
+                    start = total - max;
+                }
+                List<object> items = new List<object>();
+                for (int i = start; i < total; i++)
+                {
+                    items.Add(all[i]);
+                }
+                resp["ok"] = true;
+                resp["count"] = total;
+                resp["start"] = start + 1;
+                resp["shown"] = items.Count;
+                resp["chars"] = totalChars;
+                resp["items"] = items;
+            }
+            catch (Exception ex)
+            {
+                // 失败可见——快照失败显式报错（不静默返回空列表）
+                LogStore.Add("CatHome4", 2, "关键信息快照失败: " + ex.Message, "HTTP");
+                resp["ok"] = false;
+                resp["error"] = "关键信息快照失败: " + ex.Message;
+            }
+            return JsonUtil.Serialize(resp);
+        }
+        /// <summary>关键信息条目——形态与 BuildContextView 条目同构（前端同一套渲染）</summary>
+        /// <param name="role">条目类别（report / user / reply / roundsum）</param>
+        /// <param name="timestamp">条目时刻——Unix 毫秒（0=无时刻：加载报告）</param>
+        /// <param name="content">条目正文</param>
+        /// <returns>条目字典</returns>
+        private static Dictionary<string, object> KeyInfoItem(string role, long timestamp, string content)
+        {
+            string full = content == null ? "" : content;
+            bool truncated = full.Length > KeyInfoItemLimit;
+            string body = truncated ? full.Substring(0, KeyInfoItemLimit) : full;
+            Dictionary<string, object> item = new Dictionary<string, object>();
+            item["role"] = role;
+            item["time"] = timestamp;
+            item["chars"] = (long)full.Length;
+            item["truncated"] = truncated;
+            item["preview"] = KeyInfoPreview(full);
+            item["content"] = body;
+            return item;
+        }
+        /// <summary>关键信息摘要——单行化后取首 KeyInfoPreviewLimit 字符（弹层折叠行显示）</summary>
+        /// <param name="body">条目正文</param>
+        /// <returns>摘要文本</returns>
+        private static string KeyInfoPreview(string body)
+        {
+            if (body == null || body.Length == 0)
+            {
+                return "";
+            }
+            string flat = body.Replace("\r", " ").Replace("\n", " ");
+            if (flat.Length > KeyInfoPreviewLimit)
+            {
+                flat = flat.Substring(0, KeyInfoPreviewLimit) + "…";
+            }
+            return flat;
         }
     }
 }

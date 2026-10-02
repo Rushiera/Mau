@@ -569,6 +569,17 @@ namespace CH4
             resp["items"] = items;
             return JsonUtil.Serialize(resp);
         }
+        /// <summary>
+        /// 构建会话关键信息视图 JSON——对话页状态栏「前文关键信息」点击弹层数据源（GET /api/v1/keyinfo）。
+        /// 内容 = 旧会话留档同源四部分（加载报告 / user 消息 / 正式回复 / 每轮结算）；条目形态与 BuildContextView 同构。
+        /// </summary>
+        /// <param name="session">目标会话（P9.3 按猫参数化——每猫闭包传各自会话）</param>
+        /// <param name="max">返回条目上限（1-500 夹取，缺省 200；超出取尾部）</param>
+        /// <returns>关键信息视图 JSON</returns>
+        public string BuildKeyInfoView(ChatSession session, int max)
+        {
+            return session.BuildKeyInfoView(max);
+        }
 
         /// <summary>前文条目正文——content 与 assistant tool_calls 声明合并（声明同属送入 LLM 的载荷）</summary>
         /// <param name="m">消息</param>

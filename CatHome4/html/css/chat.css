@@ -139,6 +139,10 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .ctx-role-user { color: var(--ch-chat-user-bg); border: 1px solid var(--ch-chat-user-bg); }
 .ctx-role-assistant { color: var(--ch-ok-weak); border: 1px solid var(--ch-ok-weak); }
 .ctx-role-tool { color: var(--ch-state-tool); border: 1px solid var(--ch-state-tool); }
+/* 关键信息四类（2026-10-02）——用户 / 回复 / 加载报告 / 轮结算（key 视图 role 标签；用户沿用 ctx-role-user） */
+.ctx-role-reply { color: var(--ch-ok-weak); border: 1px solid var(--ch-ok-weak); }
+.ctx-role-report { color: var(--ch-identity); border: 1px solid var(--ch-identity); }
+.ctx-role-roundsum { color: var(--ch-state-run); border: 1px solid var(--ch-state-run); }
 .ctx-role-bg-system { background: var(--ch-state-all); }
 .ctx-role-bg-user { background: var(--ch-chat-user-bg); }
 .ctx-role-bg-assistant { background: var(--ch-ok-weak); }

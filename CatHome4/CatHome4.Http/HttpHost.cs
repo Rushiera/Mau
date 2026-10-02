@@ -52,6 +52,8 @@ namespace CatHome4.Http
 
         /// <summary>前文条目构建回调（可空=不注册该端点）——GET /api/v1/context（对话页状态栏「前文 n 条 / n tokens」点击弹层数据源）</summary>
         public Func<int, string> ContextBuilder { get; set; }
+        /// <summary>关键信息构建回调（可空=不注册该端点）——GET /api/v1/keyinfo（对话页状态栏「前文关键信息」点击弹层数据源）</summary>
+        public Func<int, string> KeyInfoBuilder { get; set; }
 
         /// <summary>多猫列表构建回调（可空=不注册该端点）</summary>
         public Func<string> CatsBuilder { get; set; }
@@ -161,6 +163,8 @@ namespace CatHome4.Http
 
         /// <summary>前文条目构建回调——ChatBridge.BuildContextView（对话页前文弹层；GET /api/v1/context）</summary>
         private Func<int, string> _contextBuilder;
+        /// <summary>关键信息构建回调——ChatBridge.BuildKeyInfoView（对话页「前文关键信息」弹层；GET /api/v1/keyinfo）</summary>
+        private Func<int, string> _keyInfoBuilder;
 
         /// <summary>会话归属 ID——SSE llm/chatdone 事件 sessionId 字段（P9.3 多实例化：每猫实例绑定自身会话）</summary>
         private string _sessionId;
@@ -208,6 +212,7 @@ namespace CatHome4.Http
             host._frameBuilder = options.FrameBuilder;
             host._historyBuilder = options.HistoryBuilder;
             host._contextBuilder = options.ContextBuilder;
+            host._keyInfoBuilder = options.KeyInfoBuilder;
             host._catsBuilder = options.CatsBuilder;
             host._noteBuilder = options.NoteBuilder;
             host._delayBuilder = options.DelayBuilder;
@@ -266,17 +271,7 @@ namespace CatHome4.Http
             _app.MapGet("/api/v1/history", (HttpContext ctx) =>
             {
                 // B4 对话区——会话历史视图（内存 ChatContext 实时真源；max 夹取 1-2000 缺省 200）
-                int max = 200;
-                string raw = ctx.Request.Query["max"].ToString();
-                int parsed;
-                if (int.TryParse(raw, out parsed) && parsed > 0)
-                {
-                    max = parsed;
-                }
-                if (max > 2000)
-                {
-                    max = 2000;
-                }
+                int max = ReadMaxQuery(ctx, 200, 2000);
                 return Results.Text(_historyBuilder(max), "application/json");
             });
             _app.MapGet("/api/v1/note", (HttpContext ctx) =>
@@ -322,18 +317,18 @@ namespace CatHome4.Http
                 _app.MapGet("/api/v1/context", (HttpContext ctx) =>
                 {
                     // 前文条目视图（内存 ChatContext 实时真源；max 夹取 1-500 缺省 200）
-                    int max = 200;
-                    string raw = ctx.Request.Query["max"].ToString();
-                    int parsed;
-                    if (int.TryParse(raw, out parsed) && parsed > 0)
-                    {
-                        max = parsed;
-                    }
-                    if (max > 500)
-                    {
-                        max = 500;
-                    }
+                    int max = ReadMaxQuery(ctx, 200, 500);
                     return Results.Text(_contextBuilder(max), "application/json");
+                });
+            }
+            // 关键信息面——对话页状态栏「前文关键信息」点击弹层数据源（可空=不注册——管理端口不注入）
+            if (_keyInfoBuilder != null)
+            {
+                _app.MapGet("/api/v1/keyinfo", (HttpContext ctx) =>
+                {
+                    // 关键信息视图（视图层内存真源——与旧会话留档同源四部分；max 夹取 1-500 缺省 200）
+                    int max = ReadMaxQuery(ctx, 200, 500);
+                    return Results.Text(_keyInfoBuilder(max), "application/json");
                 });
             }
             // S2 管理端点族——经 IHttpRouteSink 由 Admin 域注册（Http 域零依赖 Admin 域）
@@ -388,11 +383,11 @@ namespace CatHome4.Http
                 string hint;
                 if (detail.IndexOf("in use", StringComparison.OrdinalIgnoreCase) >= 0 || detail.IndexOf("占用", StringComparison.Ordinal) >= 0)
                 {
-                    hint = "端口 " + _port + " 已被占用——可能已有 CH4 实例在运行";
+                    hint = "端口 " + _port.ToString() + " 已被占用——可能已有 CH4 实例在运行";
                 }
                 else
                 {
-                    hint = "HTTP 端口 " + _port + " 绑定失败";
+                    hint = "HTTP 端口 " + _port.ToString() + " 绑定失败";
                 }
                 throw new InvalidOperationException(hint + "（" + detail + "）", ex);
             }

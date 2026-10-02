@@ -614,6 +614,117 @@ namespace CatHome4.Core.Tests
             Assert.StartsWith("cat_d_", Path.GetFileName(path));
         }
 
+        // ── 关键信息（前文关键信息弹层——GET /api/v1/keyinfo） ──────────
+
+        /// <summary>关键信息——尾部非留档块 + 轮结算取尽（旧实现取空 _roundSums 越界；2026-10-02 判例回归）</summary>
+        [Fact]
+        public void BuildKeyInfo_TrailingNonLegacyBlocks_NoRoundsums()
+        {
+            _store.OnUserMessage(User("甲", 1000L), 1000L, 1);
+            _store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2000L, 2);
+            using (JsonDocument doc = JsonDocument.Parse(_store.BuildKeyInfo(200)))
+            {
+                Assert.True(doc.RootElement.GetProperty("ok").GetBoolean());
+                Assert.Equal(1, doc.RootElement.GetProperty("count").GetInt32());
+                Assert.Equal("甲", doc.RootElement.GetProperty("items")[0].GetProperty("content").GetString());
+            }
+        }
+
+        /// <summary>旧会话留档——同一形态（尾部非留档块 + 零轮结算）不越界（归并出口共用，判例同源）</summary>
+        [Fact]
+        public void ArchiveLegacy_TrailingNonLegacyBlocks_NoRoundsums()
+        {
+            string sessionDir = Path.Combine(_dir, "sessions", "cat_e");
+            Directory.CreateDirectory(sessionDir);
+            CH4.SessionViewStore store = new CH4.SessionViewStore(Path.Combine(sessionDir, "cat_e.view.json"));
+            store.OnUserMessage(User("甲", 1000L), 1000L, 1);
+            store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2000L, 2);
+            string path = store.ArchiveLegacy("cat_e", "小E");
+            Assert.True(File.Exists(path));
+            Assert.Contains("甲", File.ReadAllText(path));
+        }
+
+        /// <summary>关键信息——四部分条目齐备（加载报告首条 + user / 回复 / 轮结算按时间戳归并；思考与工具卡不进）</summary>
+        [Fact]
+        public void BuildKeyInfo_FourPartsWithReportFirst()
+        {
+            _store.OnUserMessage(User("问题一", 1000L), 1000L, 1);
+            _store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2000L, 2);
+            _store.OnToolResult(ToolResult("call_1", "Note", "工具结果", 3000L), 3000L, 3);
+            _store.OnAssistantText(Assistant("回复一", 4000L), 4000L, 4);
+            _store.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{\"prompt\":100,\"completion\":50,\"cacheHit\":10,\"toolCount\":1,\"requests\":2,\"elapsedMs\":1234}}", 5000L);
+            _store.SetInjectReport("{\"files\":[{\"file\":\"CCBP:SOUL.md\",\"status\":\"ok\",\"chars\":12}],\"total\":1,\"ok\":1,\"missing\":0,\"failed\":0,\"toolGroups\":[]}");
+            using (JsonDocument doc = JsonDocument.Parse(_store.BuildKeyInfo(200)))
+            {
+                JsonElement root = doc.RootElement;
+                Assert.True(root.GetProperty("ok").GetBoolean());
+                Assert.Equal(4, root.GetProperty("count").GetInt32());
+                JsonElement items = root.GetProperty("items");
+                Assert.Equal(4, items.GetArrayLength());
+                Assert.Equal("report", items[0].GetProperty("role").GetString());
+                Assert.Contains("CCBP:SOUL.md", items[0].GetProperty("content").GetString());
+                Assert.Equal("user", items[1].GetProperty("role").GetString());
+                Assert.Equal("问题一", items[1].GetProperty("content").GetString());
+                Assert.Equal("reply", items[2].GetProperty("role").GetString());
+                Assert.Equal("回复一", items[2].GetProperty("content").GetString());
+                Assert.Equal("roundsum", items[3].GetProperty("role").GetString());
+                Assert.Contains("Token 上 100 / 下 50", items[3].GetProperty("content").GetString());
+                Assert.Equal(1, items[0].GetProperty("i").GetInt32());
+                Assert.Equal(4, items[3].GetProperty("i").GetInt32());
+                string raw = root.GetRawText();
+                Assert.DoesNotContain("思考内容", raw);
+                Assert.DoesNotContain("工具结果", raw);
+            }
+        }
+
+        /// <summary>关键信息——空视图出声（count 0 + items 空，不静默造条目）</summary>
+        [Fact]
+        public void BuildKeyInfo_EmptyView_CountsZero()
+        {
+            using (JsonDocument doc = JsonDocument.Parse(_store.BuildKeyInfo(200)))
+            {
+                Assert.True(doc.RootElement.GetProperty("ok").GetBoolean());
+                Assert.Equal(0, doc.RootElement.GetProperty("count").GetInt32());
+                Assert.Equal(0, doc.RootElement.GetProperty("items").GetArrayLength());
+            }
+        }
+
+        /// <summary>关键信息——max 切片取尾部（条目序号仍为全序列绝对序号）</summary>
+        [Fact]
+        public void BuildKeyInfo_MaxKeepsTailWithAbsoluteIndex()
+        {
+            _store.OnUserMessage(User("甲", 1000L), 1000L, 1);
+            _store.OnAssistantText(Assistant("乙", 2000L), 2000L, 2);
+            _store.OnUserMessage(User("丙", 3000L), 3000L, 3);
+            using (JsonDocument doc = JsonDocument.Parse(_store.BuildKeyInfo(2)))
+            {
+                JsonElement root = doc.RootElement;
+                Assert.Equal(3, root.GetProperty("count").GetInt32());
+                Assert.Equal(2, root.GetProperty("shown").GetInt32());
+                Assert.Equal(2, root.GetProperty("start").GetInt32());
+                JsonElement items = root.GetProperty("items");
+                Assert.Equal(2, items[0].GetProperty("i").GetInt32());
+                Assert.Equal("乙", items[0].GetProperty("content").GetString());
+                Assert.Equal("丙", items[1].GetProperty("content").GetString());
+            }
+        }
+
+        /// <summary>关键信息——超长条目截断（truncated 标记 + chars 给真实长度 + 摘要截到 120 字加省略号）</summary>
+        [Fact]
+        public void BuildKeyInfo_LongContent_TruncatedWithRealChars()
+        {
+            string big = new string('字', 8100);
+            _store.OnUserMessage(User(big, 1000L), 1000L, 1);
+            using (JsonDocument doc = JsonDocument.Parse(_store.BuildKeyInfo(200)))
+            {
+                JsonElement item = doc.RootElement.GetProperty("items")[0];
+                Assert.True(item.GetProperty("truncated").GetBoolean());
+                Assert.Equal(8100L, item.GetProperty("chars").GetInt64());
+                Assert.Equal(8000, item.GetProperty("content").GetString().Length);
+                Assert.Equal(121, item.GetProperty("preview").GetString().Length);
+            }
+        }
+
         // ── 猫详情面留档读取（会话状态卡详情——「上一会话」回落数据源） ──
 
         /// <summary>留档扫描——取该猫最近一份（写入时间降序 + 头部反引号猫 key 归属校验）</summary>

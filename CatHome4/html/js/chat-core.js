@@ -22,7 +22,7 @@ var chatPendingReset = false;      // 会话重置待确认——chatNewSession 
 var chatImages = [];               // [{ path: 绝对路径, url: 本地 blob 预览地址 }]
 var chatImageUploading = 0;        // 上传中计数——>0 时发送动作等待（防投递半截列表）
 
-// 状态栏前文信息（2026-10-02）——「前文 n 条」「前文 n tokens」两段可点击，点击开前文弹层（js/chat-ctx.js）
+// 状态栏前文信息（2026-10-02）——「前文 n 条」「前文 n tokens」「前文关键信息」三段可点击，点击开前文弹层（js/chat-ctx.js）
 // 其它临时提示（回滚投递 / 已停止 / 加载失败）仍走 chatInfo.textContent 直写——下次数据帧本函数重建结构
 var chatInfoState = { sid: '', count: 0, tokens: 0 };
 
@@ -64,6 +64,15 @@ function chatInfoRender() {
         chatInfo.appendChild(document.createTextNode(' | '));
         chatInfo.appendChild(t);
     }
+    // 前文关键信息——本次会话的四部分内容（加载报告 / 用户消息 / 正式回复 / 轮结算；与旧会话留档同源）
+    var k = document.createElement('span');
+    k.id = 'chatKeyInfo';
+    k.className = 'ctx-link';
+    k.title = '前文关键信息——本次会话的加载报告 / 用户消息 / 正式回复 / 轮结算';
+    k.textContent = '前文关键信息';
+    k.addEventListener('click', function (ev) { ev.stopPropagation(); chatCtxOpen('key'); });
+    chatInfo.appendChild(document.createTextNode(' | '));
+    chatInfo.appendChild(k);
 }
 
 // A59——六态状态条（链路/等待/思考/工具/执行/回复）：数据源 = 后端权威运行态（快照 sessions 段 runState/runMs/requests）——计时单源在后端，前端只渲染不自算

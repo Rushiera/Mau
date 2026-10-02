@@ -1,14 +1,16 @@
-// CH4 外观层——chat-ctx.js：前文弹层（状态栏「前文 n 条 / n tokens」点击开的小窗口）
+// CH4 外观层——chat-ctx.js：前文弹层（状态栏「前文 n 条 / n tokens / 前文关键信息」点击开的小窗口）
 // 数据源：GET /api/v1/context（前文条目序列 = 送入 LLM 的真实消息；ctxTokens = 最近一次请求真实 prompt 值）
-// 两视图：list（按条目顺序——点击条目展开全文）/ tokens（按字符规模降序——占比条）
+//         GET /api/v1/keyinfo（本次会话关键信息 = 旧会话留档同源四部分：加载报告 / user 消息 / 正式回复 / 轮结算）
+// 三视图：list（按条目顺序——点击条目展开全文）/ tokens（按字符规模降序——占比条）/ key（会话关键信息）
 // 口径：条目 token 无逐条真实值（API 只回总量）——tokens 视图按字符占比呈现并显式标注为估算，不假装精确
 
-var chatCtxData = null;      // 最近一次响应（null=未加载）
-var chatCtxMode = 'list';    // 当前视图——list（按条）/ tokens（按 token 分布）
+var chatCtxData = null;      // 前文响应（null=未加载；list / tokens 两视图共用）
+var chatKeyData = null;      // 关键信息响应（null=未加载；key 视图用）
+var chatCtxMode = 'list';    // 当前视图——list（按条）/ tokens（按 token 分布）/ key（会话关键信息）
 
 // 三态：未开 → 打开 + 切到目标视图 + 读取；已开且同视图 → 收起（不重复读取）；已开且异视图 → 切视图 + 复用已读数据
 function chatCtxOpen(mode) {
-    var m = (mode === 'tokens') ? 'tokens' : 'list';
+    var m = chatCtxModeOf(mode);
     var pop = document.getElementById('ctxPopover');
     if (!pop) { return; }
     var opened = (pop.style.display !== 'none');
@@ -19,23 +21,42 @@ function chatCtxOpen(mode) {
     chatCtxMode = m;
     pop.style.display = 'block';
     chatCtxModeMark();
-    if (opened && chatCtxData) {
-        // 切视图——同一份前文快照直接重渲染，不再发请求
-        chatCtxRender();
+    // 已开时切视图复用该视图已读数据；新开一律重新读取（点一下展开是读取）
+    chatCtxLoad(opened);
+}
+
+// 视图名归一——非法值回落 list（三个入口各传自己的视图名）
+function chatCtxModeOf(mode) {
+    if (mode === 'tokens') { return 'tokens'; }
+    if (mode === 'key') { return 'key'; }
+    return 'list';
+}
+
+// 数据装载——按当前视图选数据面（key → /api/v1/keyinfo；其余 → /api/v1/context）；reuse=true 且有缓存直接重渲染
+function chatCtxLoad(reuse) {
+    if (chatCtxMode === 'key') {
+        if (reuse && chatKeyData) { chatCtxRender(); return; }
+        chatCtxFetch('/api/v1/keyinfo', '关键信息', function (d) { chatKeyData = d; });
         return;
     }
+    if (reuse && chatCtxData) { chatCtxRender(); return; }
+    chatCtxFetch('/api/v1/context', '前文', function (d) { chatCtxData = d; });
+}
+
+// 读取——失败出声（不静默留白）
+function chatCtxFetch(url, label, apply) {
     var list = document.getElementById('ctxList');
-    if (list) { list.textContent = '读取前文…'; }
-    fetch('/api/v1/context')
+    if (list) { list.textContent = '读取' + label + '…'; }
+    fetch(url)
         .then(function (r) { return r.json(); })
         .then(function (d) {
-            chatCtxData = d || null;
+            apply(d || null);
             chatCtxRender();
         })
         .catch(function (e) {
-            chatCtxData = null;
+            apply(null);
             var l = document.getElementById('ctxList');
-            if (l) { l.textContent = '前文读取失败——' + e; }
+            if (l) { l.textContent = label + '读取失败——' + e; }
         });
 }
 
@@ -45,17 +66,22 @@ function chatCtxClose() {
 }
 
 function chatCtxSwitch(mode) {
-    chatCtxMode = (mode === 'tokens') ? 'tokens' : 'list';
+    var m = chatCtxModeOf(mode);
+    if (m === chatCtxMode) { return; }
+    chatCtxMode = m;
     chatCtxModeMark();
-    chatCtxRender();
+    // 已开状态下切视图——复用该视图已读数据（未读则读一次）
+    chatCtxLoad(true);
 }
 
 // 视图标签高亮——当前视图加 ctx-mode-on
 function chatCtxModeMark() {
     var l = document.getElementById('ctxModeList');
     var t = document.getElementById('ctxModeTokens');
+    var k = document.getElementById('ctxModeKey');
     if (l) { l.classList.toggle('ctx-mode-on', chatCtxMode === 'list'); }
     if (t) { t.classList.toggle('ctx-mode-on', chatCtxMode === 'tokens'); }
+    if (k) { k.classList.toggle('ctx-mode-on', chatCtxMode === 'key'); }
 }
 
 function chatCtxRender() {
@@ -64,6 +90,11 @@ function chatCtxRender() {
     var title = document.getElementById('ctxTitle');
     if (!list) { return; }
     list.textContent = '';
+    if (chatCtxMode === 'key') {
+        // 关键信息视图——独立数据面（chatKeyData）
+        chatCtxRenderKey(list, meta, title);
+        return;
+    }
     var d = chatCtxData;
     if (!d || d.ok !== true) {
         if (title) { title.textContent = '前文'; }
@@ -89,15 +120,35 @@ function chatCtxRender() {
     }
 }
 
+// key 视图——本次会话关键信息（加载报告 / user 消息 / 正式回复 / 轮结算；与旧会话留档同源）
+// 条目样式与前文弹层同款（复用 ctx-item 族），role 标签走中文名
+var chatKeyRoleLabels = { user: '用户', reply: '回复', report: '加载报告', roundsum: '轮结算' };
+
+function chatCtxRenderKey(list, meta, title) {
+    var d = chatKeyData;
+    if (title) { title.textContent = '前文关键信息'; }
+    if (!d || d.ok !== true) {
+        if (meta) { meta.textContent = ''; }
+        list.textContent = '关键信息不可读：' + ((d && d.error) || '宿主未响应 / 端点未注册');
+        return;
+    }
+    var items = d.items || [];
+    if (meta) {
+        meta.textContent = '共 ' + chatFmtCount(d.count) + ' 条 · ' + chatFmtCount(d.chars) + ' 字符'
+            + (items.length < d.count ? ('（显示尾部 ' + items.length + ' 条）') : '');
+    }
+    chatCtxRenderList(list, items, '本次会话暂无关键信息', chatKeyRoleLabels);
+}
+
 // list 视图——按条目顺序；点击条目头展开全文（折叠态显示摘要）
-function chatCtxRenderList(list, items) {
+function chatCtxRenderList(list, items, emptyText, roleLabels) {
     for (var i = 0; i < items.length; i++) {
         var it = items[i];
         var row = document.createElement('div');
         row.className = 'ctx-item';
         var head = document.createElement('div');
         head.className = 'ctx-item-head';
-        head.appendChild(chatCtxRoleTag(it));
+        head.appendChild(chatCtxRoleTag(it, roleLabels));
         head.appendChild(chatCtxText('span', 'ctx-i', '#' + it.i));
         head.appendChild(chatCtxText('span', 'ctx-size', chatFmtCount(it.chars) + ' 字符' + (it.truncated ? '（已截断）' : '')));
         if (it.tool) { head.appendChild(chatCtxText('span', 'ctx-tool', it.tool)); }
@@ -115,7 +166,7 @@ function chatCtxRenderList(list, items) {
         chatCtxBindToggle(head, row, body, full);
         list.appendChild(row);
     }
-    if (items.length === 0) { list.textContent = '前文为空'; }
+    if (items.length === 0) { list.textContent = emptyText || '前文为空'; }
 }
 
 // tokens 视图——按字符规模降序；占比 = 该条字符 / 展示条目字符合计（估算口径）
@@ -158,10 +209,11 @@ function chatCtxBindToggle(head, row, body, full) {
     });
 }
 
-function chatCtxRoleTag(it) {
+function chatCtxRoleTag(it, roleLabels) {
+    var role = it.role || 'user';
     var tag = document.createElement('span');
-    tag.className = 'ctx-role ctx-role-' + (it.role || 'user');
-    tag.textContent = it.role || '?';
+    tag.className = 'ctx-role ctx-role-' + role;
+    tag.textContent = (roleLabels && roleLabels[role]) ? roleLabels[role] : role;
     return tag;
 }
 
@@ -187,9 +239,11 @@ function chatCtxFmtTime(ms) {
     var close = document.getElementById('ctxClose');
     var ml = document.getElementById('ctxModeList');
     var mt = document.getElementById('ctxModeTokens');
+    var mk = document.getElementById('ctxModeKey');
     if (close) { close.addEventListener('click', chatCtxClose); }
     if (ml) { ml.addEventListener('click', function () { chatCtxSwitch('list'); }); }
     if (mt) { mt.addEventListener('click', function () { chatCtxSwitch('tokens'); }); }
+    if (mk) { mk.addEventListener('click', function () { chatCtxSwitch('key'); }); }
     if (pop) {
         // 弹层内点击不冒泡到文档（避免被「点外部关闭」误判）
         pop.addEventListener('click', function (ev) { ev.stopPropagation(); });

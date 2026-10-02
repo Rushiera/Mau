@@ -41,6 +41,7 @@ function fakeData() {
 
 beforeEach(() => {
   window.chatCtxData = null;
+  window.chatKeyData = null;
   window.chatCtxMode = 'list';
   document.getElementById('ctxList').textContent = '';
   document.getElementById('ctxPopover').style.display = 'none';
@@ -179,6 +180,86 @@ test('点击切换——已开时点另一段切视图，复用缓存不重复�
   expect(document.getElementById('ctxPopover').style.display).toBe('block');
   expect(window.chatCtxMode).toBe('tokens');
   expect(document.getElementById('ctxTitle').textContent).toBe('前文 token 明细');
+  expect(calls).toBe(1);
+  vi.unstubAllGlobals();
+});
+
+// ── key 视图（前文关键信息——本次会话四部分：加载报告 / 用户消息 / 正式回复 / 轮结算） ──
+function fakeKeyData() {
+  return {
+    ok: true, count: 3, start: 1, shown: 3, chars: 260,
+    items: [
+      { i: 1, role: 'report', time: 0, chars: 120, truncated: false, preview: '注入清单：12 个文件', content: '注入清单：12 个文件（ok 12 / missing 0 / 失败 0）' },
+      { i: 2, role: 'user', time: 0, chars: 80, truncated: false, preview: '我想给mau加一些易用性改动', content: '我想给mau加一些易用性改动，上工把' },
+      { i: 3, role: 'roundsum', time: 0, chars: 60, truncated: false, preview: 'Token 上 100 / 下 50', content: 'Token 上 100 / 下 50（缓存 10）· 工具 1 次 · 请求 2 次 · 用时 1.2 秒' }
+    ]
+  };
+}
+
+test('key 视图——标题 / meta / 四类条目中文标签', () => {
+  window.chatKeyData = fakeKeyData();
+  window.chatCtxMode = 'key';
+  window.chatCtxRender();
+  expect(document.getElementById('ctxTitle').textContent).toBe('前文关键信息');
+  expect(document.getElementById('ctxMeta').textContent).toContain('共 3 条');
+  const rows = document.querySelectorAll('#ctxList .ctx-item');
+  expect(rows.length).toBe(3);
+  expect(rows[0].querySelector('.ctx-role').textContent).toBe('加载报告');
+  expect(rows[0].querySelector('.ctx-role').className).toContain('ctx-role-report');
+  expect(rows[1].querySelector('.ctx-role').textContent).toBe('用户');
+  expect(rows[2].querySelector('.ctx-role').textContent).toBe('轮结算');
+});
+
+test('key 视图——条目可展开全文（与前文弹层同款交互）', () => {
+  window.chatKeyData = fakeKeyData();
+  window.chatCtxMode = 'key';
+  window.chatCtxRender();
+  const row = document.querySelectorAll('#ctxList .ctx-item')[1];
+  const head = row.querySelector('.ctx-item-head');
+  const full = row.querySelector('.ctx-full');
+  expect(full.style.display).toBe('none');
+  head.dispatchEvent(clickEv());
+  expect(full.style.display).toBe('block');
+  expect(full.textContent).toBe('我想给mau加一些易用性改动，上工把');
+});
+
+test('key 视图——空态出声（不静默留白）', () => {
+  window.chatKeyData = { ok: true, count: 0, chars: 0, items: [] };
+  window.chatCtxMode = 'key';
+  window.chatCtxRender();
+  expect(document.getElementById('ctxList').textContent).toContain('本次会话暂无关键信息');
+});
+
+test('key 视图——错误响应原样出声（宿主 error 文本）', () => {
+  window.chatKeyData = { ok: false, error: '关键信息快照失败: boom' };
+  window.chatCtxMode = 'key';
+  window.chatCtxRender();
+  expect(document.getElementById('ctxList').textContent).toContain('关键信息快照失败: boom');
+});
+
+test('状态栏第三段——「前文关键信息」渲染 + 点击开层读 /api/v1/keyinfo', () => {
+  let url = '';
+  vi.stubGlobal('fetch', (u) => { url = u; return Promise.resolve({ json: () => Promise.resolve(fakeKeyData()) }); });
+  window.chatInfoSet('s', 3, 1200);
+  const k = document.getElementById('chatKeyInfo');
+  expect(k.textContent).toBe('前文关键信息');
+  k.dispatchEvent(clickEv());
+  expect(document.getElementById('ctxPopover').style.display).toBe('block');
+  expect(url).toBe('/api/v1/keyinfo');
+  expect(document.getElementById('ctxModeKey').className).toContain('ctx-mode-on');
+  vi.unstubAllGlobals();
+});
+
+test('视图切换——已开时切到关键信息复用缓存，不重复读取', () => {
+  let calls = 0;
+  vi.stubGlobal('fetch', () => { calls = calls + 1; return Promise.resolve({ json: () => Promise.resolve(fakeData()) }); });
+  window.chatInfoSet('s', 3, 1200);
+  document.getElementById('chatCtxCount').dispatchEvent(clickEv());
+  expect(calls).toBe(1);
+  window.chatKeyData = fakeKeyData();
+  document.getElementById('chatKeyInfo').dispatchEvent(clickEv());
+  expect(window.chatCtxMode).toBe('key');
+  expect(document.getElementById('ctxTitle').textContent).toBe('前文关键信息');
   expect(calls).toBe(1);
   vi.unstubAllGlobals();
 });

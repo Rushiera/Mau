@@ -210,6 +210,28 @@ namespace CatHome4.Http
             }
             return count;
         }
+        /// <summary>
+        /// 解析 ?max=N 查询参数——缺省/非法回落 fallback，上限 cap 夹取（history / context / keyinfo 三处同源，不各写一遍）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <param name="fallback">缺省值（无参或非法）</param>
+        /// <param name="cap">上限（超出夹取）</param>
+        /// <returns>条目上限（1..cap）</returns>
+        private static int ReadMaxQuery(HttpContext ctx, int fallback, int cap)
+        {
+            int max = fallback;
+            string raw = ctx.Request.Query["max"].ToString();
+            int parsed;
+            if (int.TryParse(raw, out parsed) && parsed > 0)
+            {
+                max = parsed;
+            }
+            if (max > cap)
+            {
+                max = cap;
+            }
+            return max;
+        }
 
         /// <summary>构建日志段 JSON——LogStore 尾部 N 条（与 PushLogIncrements 同格式；锁内快照）；trace 类审计不进前端（IsTraceAudit，2026-09-17）。</summary>
         /// <param name="count">条数</param>

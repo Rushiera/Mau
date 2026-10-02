@@ -458,6 +458,16 @@ namespace CH4
             }
             return path;
         }
+        /// <summary>
+        /// 关键信息视图 JSON——本次会话的四部分内容（加载报告 / user 消息 / 正式回复 / 每轮结算），
+        /// 与旧会话留档同源（SessionViewStore 单一出口）。消费面：对话页状态栏「前文关键信息」弹层（GET /api/v1/keyinfo）。
+        /// </summary>
+        /// <param name="max">返回条目上限（1-500 夹取，缺省 200；超出取尾部）</param>
+        /// <returns>关键信息视图 JSON</returns>
+        public string BuildKeyInfoView(int max)
+        {
+            return _viewStore.BuildKeyInfo(max);
+        }
 
         /// <summary>清空视图层——session.new 清前文时同步（视图随生命周期清理）</summary>
         public void ClearView()
