@@ -43,6 +43,7 @@ function chatCtxWindowNote(d, items) {
 }
 
 // 数据装载——按当前视图选数据面（key → /api/v1/keyinfo；full → /api/v1/fullctx；其余 → /api/v1/context）；reuse=true 且有缓存直接重渲染
+// 三视图统一不带 ?max——窗口随端点缺省（配置项 chat.ctx_view_max，默认 200 · 上限 2000）；首条恒在窗口内（1.7.26 加固），尾部窗口不再挤出 system 注入块
 function chatCtxLoad(reuse) {
     if (chatCtxMode === 'key') {
         if (reuse && chatKeyData) { chatCtxRender(); return; }
@@ -51,13 +52,11 @@ function chatCtxLoad(reuse) {
     }
     if (chatCtxMode === 'full') {
         if (reuse && chatFullData) { chatCtxRender(); return; }
-        // 取 max=500——缺省尾部窗口 200 会把首条（system 注入块）挤出窗口（判例 2026-10-02）
-        chatCtxFetch('/api/v1/fullctx?max=500', '完整前文', function (d) { chatFullData = d; });
+        chatCtxFetch('/api/v1/fullctx', '完整前文', function (d) { chatFullData = d; });
         return;
     }
     if (reuse && chatCtxData) { chatCtxRender(); return; }
-    // 取 max=500——缺省尾部窗口 200 会把首条（system 注入块）挤出窗口（判例 2026-10-02：本会话 250 条时面板首条不可见）
-    chatCtxFetch('/api/v1/context?max=500', '前文', function (d) { chatCtxData = d; });
+    chatCtxFetch('/api/v1/context', '前文', function (d) { chatCtxData = d; });
 }
 
 // 读取——失败出声（不静默留白）
