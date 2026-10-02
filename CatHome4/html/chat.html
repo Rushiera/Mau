@@ -10,7 +10,7 @@
 <body>
     <div id="chatbar">
         <span class="sid" id="chatTitle">—</span>
-        <button id="chatApiRole" title="LLM 端点角色——点击对调主要 / 备用（仅本会话有效）">API:主要</button>
+        <button id="chatApiRole" title="LLM 端点角色——点击对调主要 / 备用（仅本会话有效）；方括号内为当前生效站模型名">API 主要[—]</button>
         <span id="chatInfo">—</span>
         <span style="flex:1"></span>
         <span id="uiVer" data-version title="前端版本——每次 Vitest 自动递增 + 最后更新时间">UI v?</span>
@@ -142,7 +142,7 @@
         // [段3] 按钮绑定（防御式——元素缺失跳过；F2.3 从内联 onclick 迁出）
         var elChatNew = document.getElementById('chatNew');
         if (elChatNew) { elChatNew.addEventListener('click', chatNewSession); }
-        // 端点角色——[API:主要/备用] 标签（点击对调；仅本会话有效）
+        // 端点角色——[API 主要[模型]] / [API 备用[模型]] 标签（只显当前生效站；点击对调）
         var elChatApiRole = document.getElementById('chatApiRole');
         if (elChatApiRole) {
             elChatApiRole.addEventListener('click', chatApiRoleToggle);

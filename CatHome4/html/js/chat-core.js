@@ -574,6 +574,8 @@ function chatRenderRetry(payload) {
 // S2 §8.4——重试过程记录气泡（独立视图条目：⟳ 重试中 / ✓ 已恢复；弱化样式不抢占对话主视觉）
 function chatOnRetry(seq, replaceSeq, payload) {
     chatKeepAlive();
+    // 端点切换提示——顶栏标签同步刷新（自动故障转移后角色 + 两站模型名）
+    if (payload && payload.state === 'failover') { chatApiRoleRefresh(); }
     // replaceSeq 指向首次 retry 事件的 seq——命中已有气泡更新（多次重试不堆叠）；-1/无 → 新建
     var existing = null;
     if (replaceSeq !== undefined && replaceSeq >= 0) {
@@ -673,6 +675,23 @@ function chatOnControl(payload) {
         chatAppend(pb, payload.text || '已停止本轮（前文保留）');
         chatInfo.textContent = '已停止本轮（前文保留）';
         chatSetState('idle');
+    } else if (type === 'autocontinue') {
+        // 端点切换后自动继续——提示气泡 + 进入新一轮 sending 态（后端已置继续请求，前端只跟进状态，不重发指令）
+        chatPhaseReset();
+        chatClearLiveThink();
+        for (var ka in viewContainers) {
+            var ca = viewContainers[ka];
+            if (ca && ca.bubble) {
+                ca.bubble.classList.remove('streaming');
+            }
+        }
+        viewContainers = {};
+        var ab = chatBubble('assistant', 'paused');
+        chatAppend(ab, payload.text || '端点切换后自动继续');
+        chatInfo.textContent = payload.text || '';
+        chatRunStart();
+        chatSetState('sending');
+        chatKeepAlive();
     } else if (type === 'note') {
         // 问题一修复——宿主经 view/control 通道推送 Note 状态（ChatSession.PushNoteState→PushView）；转交 noteOnEvent 重绘（chat-note.js）
         noteOnEvent(payload);
@@ -888,24 +907,27 @@ function chatSend() {
         .catch(function (err) { chatFail('请求失败: ' + err); });
 }
 
-// 端点角色标签——[API:主要/备用]（会话级：自动故障转移 180 秒窗口 / 手动对调；仅本会话有效）
-// 数据源：GET /api/v1/api-role（对话端口注入槽）；点击 → POST /api/v1/api-role/toggle
-function chatApiRoleRender(role) {
+// 端点角色标签——[API 主要[模型]] / [API 备用[模型]]（只显当前生效站；会话级：自动故障转移 180 秒窗口 / 手动对调）
+// 数据源：GET /api/v1/api-role（对话端口注入槽，含两站模型名）；点击 → POST /api/v1/api-role/toggle
+function chatApiRoleRender(info) {
     var btn = document.getElementById('chatApiRole');
     if (!btn) { return; }
-    var text = role || '主要';
-    btn.textContent = 'API:' + text;
-    if (text === '备用') {
+    var role = (info && info.role) ? info.role : '主要';
+    var model = '—';
+    if (role === '备用') {
+        model = (info && info.backup) ? info.backup : '—';
         btn.classList.add('backup');
     } else {
+        model = (info && info.primary) ? info.primary : '—';
         btn.classList.remove('backup');
     }
+    btn.textContent = 'API ' + role + '[' + model + ']';
 }
 
 function chatApiRoleRefresh() {
     fetch('/api/v1/api-role')
         .then(function (r) { return r.json(); })
-        .then(function (d) { chatApiRoleRender(d ? d.role : ''); })
+        .then(function (d) { chatApiRoleRender(d); })
         .catch(function () { /* 端点缺失（旧宿主 / 管理端口）——标签保持默认，不报错 */ });
 }
 
@@ -914,7 +936,8 @@ function chatApiRoleToggle() {
         .then(function (r) { return r.json(); })
         .then(function (d) {
             if (d && d.ok) {
-                chatApiRoleRender(d.role);
+                // 重拉信息面——切换后角色与两站模型名一并刷新（toggle 回执只带角色）
+                chatApiRoleRefresh();
                 return;
             }
             uiWarn('端点角色切换', new Error((d && d.error) || '未生效'));

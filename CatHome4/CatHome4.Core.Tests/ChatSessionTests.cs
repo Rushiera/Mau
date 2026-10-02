@@ -57,6 +57,9 @@ namespace CatHome4.Core.Tests
 
             /// <summary>A94——重试耗尽模拟：产 Retrying 事件后直接产 Error（Runtime 重试后仍失败路径）</summary>
             public bool RetryThenFail = false;
+
+            /// <summary>端点切换模拟——前 N 次调用产 Failover + Error（切换后重发仍失败路径；0=不模拟）</summary>
+            public int FailoverThenFailTimes = 0;
             /// <summary>是否模拟纯空格回复——只产空格 Text（Trim 判空续传验证）</summary>
             public bool WhitespaceReply = false;
             /// <summary>纯空格次数——前 N 次调用产空格（0=每次）</summary>
@@ -96,6 +99,13 @@ namespace CatHome4.Core.Tests
                 {
                     yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|1/3|ERR|TRANSPORT|模拟连接失败");
                     yield return new LlmStreamEvent(LlmStreamKind.Error, "ERR|TRANSPORT|模拟连接失败（重试耗尽）");
+                    yield break;
+                }
+                // 端点切换模拟——产 Failover（会话置自动继续判据）+ Error（本轮中止 → 自动重发）
+                if (FailoverThenFailTimes > 0 && CallCount <= FailoverThenFailTimes)
+                {
+                    yield return new LlmStreamEvent(LlmStreamKind.Failover, "FAILOVER|备用|ERR|TRANSPORT|模拟站级故障");
+                    yield return new LlmStreamEvent(LlmStreamKind.Error, "ERR|TRANSPORT|模拟切换后仍失败");
                     yield break;
                 }
                 // 空回复续传——STREAM_CLOSED 模拟：前 N 次产 Error（未以 [DONE] 结束）
@@ -1879,6 +1889,71 @@ namespace CatHome4.Core.Tests
             // 前文只多回复一条（继续轮不追加用户消息）
             LlmMessage[] msgs = session.Context.GetMessages();
             Assert.Equal(LlmRole.Assistant, msgs[msgs.Length - 1].Role);
+        }
+        /// <summary>
+        /// 端点切换自动继续——本轮发生过 Failover 且以错误中止：自动置继续请求，主线程下一帧重发（不等人点继续）。
+        /// 判据：请求次数 +1（自动重发）· 前文只多一条 assistant 回复（继续轮不追加 user 消息）· autocontinue 控制事件可见。
+        /// </summary>
+        [Fact]
+        public void FailoverAbort_AutoContinue_ResendsWithoutUserClick()
+        {
+            MockLlm llm = new MockLlm();
+            llm.FailoverThenFailTimes = 1;
+            llm.ReplyText = "自动续写内容";
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            // 延迟注入 0 秒——测试不等 15 秒间隔（生产默认走常量）
+            session.SetAutoContinueDelaySeconds(0);
+            session.AttachHost(host);
+            session.PostUserMessage("第一轮问题");
+            for (int i = 0; i < 200; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+                if (llm.CallCount >= 2 && session.IsIdle)
+                {
+                    break;
+                }
+            }
+            // 自动重发——第二次请求由会话自行发起（无人点继续）
+            Assert.Equal(2, llm.CallCount);
+            Assert.True(session.IsIdle);
+            LlmMessage[] msgs = session.Context.GetMessages();
+            Assert.Equal(LlmRole.Assistant, msgs[msgs.Length - 1].Role);
+            Assert.Equal("自动续写内容", msgs[msgs.Length - 1].Content);
+            // 可见性——自动继续控制事件已推（不静默）
+            Assert.True(host.ViewEvents.ContainsKey("control"));
+        }
+        /// <summary>
+        /// 端点切换自动继续——上限终止：两侧站点持续不可用时不再无限重发（上限 12 次自动继续）。
+        /// 判据：总请求数 = 首次 1 + 自动继续 12 = 13，之后停住（不烧量）。
+        /// </summary>
+        [Fact]
+        public void FailoverAbort_AutoContinue_StopsAtMax()
+        {
+            MockLlm llm = new MockLlm();
+            llm.FailoverThenFailTimes = 99;
+            CH4.ChatSession session = CreateSession(llm);
+            // 延迟注入 0 秒——测试不等 15 秒间隔（生产默认走常量）
+            session.SetAutoContinueDelaySeconds(0);
+            session.PostUserMessage("第一轮问题");
+            for (int i = 0; i < 800; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+                if (llm.CallCount >= 13 && session.IsIdle)
+                {
+                    break;
+                }
+            }
+            // 上限后再泵——不产生第 14 次请求
+            for (int j = 0; j < 40; j = j + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+            }
+            Assert.Equal(13, llm.CallCount);
+            Assert.True(session.IsIdle);
         }
     }
 }

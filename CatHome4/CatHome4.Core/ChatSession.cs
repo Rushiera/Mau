@@ -38,6 +38,12 @@ namespace CH4
         /// <summary>工具单 Dog owner ID——宿主 Dog 域（同 ToolOwnerId——OA 未开存活校验，多 Dog 未来可扩展独立 ID）</summary>
         private const long ToolOwnerId = 1;
 
+        /// <summary>连续自动继续上限——端点切换后自动重发轮次上限（两侧站点均不可用时停止，避免无限重发烧量）</summary>
+        private const int AutoContinueMax = 12;
+
+        /// <summary>连续自动继续间隔——每次重发前的等待秒数（站点恢复需时间，连发无益）</summary>
+        private const int AutoContinueDelaySeconds = 15;
+
         // [段1] 标识与持久化
         /// <summary>会话唯一 ID——构造注入 = 猫 key（唯一标识；会话重建不换键）</summary>
         private string _id;
@@ -92,6 +98,18 @@ namespace CH4
 
         /// <summary>STREAM_CLOSED 续传标志——SSE 流未以 [DONE] 结束时置位（PumpLlm 检查；续传后复位）</summary>
         private bool _streamClosedRetry;
+
+        /// <summary>本轮发生过端点切换标志——自动故障转移事件到达即置位（错误中止后自动继续判据；轮首清零）</summary>
+        private bool _sawFailover;
+
+        /// <summary>连续自动继续计数——端点切换后自动重发轮次；正常完成 / 用户新消息清零</summary>
+        private int _autoContinueCount;
+
+        /// <summary>待自动继续到点时刻（UTC ticks；0=无待继续）——错误中止后延迟重发；用户接管（新消息 / 手动继续 / 新会话）即作废</summary>
+        private long _autoContinueDueTick;
+
+        /// <summary>自动继续间隔秒数——生产走常量默认 15；测试注入 0（立即重发）</summary>
+        private int _autoContinueDelaySeconds = AutoContinueDelaySeconds;
 
         // [段2b] P6 中止——暂停标志与取消令牌（LLM 流物理取消面）
         /// <summary>中止请求标志——HTTP 线程置位（volatile 跨线程可见），主线程 Pump 消费执行收尾</summary>
@@ -227,6 +245,12 @@ namespace CH4
         /// </summary>
         private LlmEndpointRole _apiRole;
 
+        /// <summary>
+        /// API 配置身份——猫绑定（Guid.Empty=跟随默认端点语义）；组合根构造会话时注入。
+        /// 端点信息面（主要站模型名）数据源——角色标签与自动继续判据用。
+        /// </summary>
+        private Guid _apiConfigId;
+
         /// <summary>OA 工单平台——Dog Post/轮询</summary>
         private readonly OA _oa;
 
@@ -269,6 +293,23 @@ namespace CH4
         {
             _apiRole = role;
         }
+        /// <summary>
+        /// 接线 API 配置身份——组合根构造会话时注入（Guid.Empty=跟随默认端点）。
+        /// 端点信息面数据源：主要站模型名解析用（备用站走池内备用标记）。
+        /// </summary>
+        /// <param name="apiConfigId">猫绑定 API 配置身份</param>
+        public void SetApiConfigId(Guid apiConfigId)
+        {
+            _apiConfigId = apiConfigId;
+        }
+        /// <summary>
+        /// 注入自动继续间隔秒数——测试用（0=立即重发）；生产走常量默认 15 秒。
+        /// </summary>
+        /// <param name="seconds">间隔秒数</param>
+        internal void SetAutoContinueDelaySeconds(int seconds)
+        {
+            _autoContinueDelaySeconds = seconds;
+        }
 
         /// <summary>
         /// 端点角色标签——外观层 [API:主要/备用] 标签数据源（未接线 = 主要）。
@@ -281,6 +322,51 @@ namespace CH4
                 return "备用";
             }
             return "主要";
+        }
+        /// <summary>
+        /// 端点角色信息 JSON——外观层 [API 主要[模型]｜备用[模型]] 标签数据源。
+        /// 结构：{"role":"主要|备用","primary":"主要站模型名","backup":"备用站模型名"}；
+        /// 池未绑定 / 无备用端点时对应字段为空串（前端回落占位符——不静默显示假值）。
+        /// </summary>
+        /// <returns>端点角色信息 JSON</returns>
+        public string GetApiRoleJson()
+        {
+            string role = GetApiRoleText();
+            string primaryModel = "";
+            string backupModel = "";
+            CH_LlmApiConfigStore store = null;
+            if (DataBox.TryResolve<CH_LlmApiConfigStore>(out store) && store != null)
+            {
+                CH_LlmApiConfig primary = ResolvePrimaryConfig(store);
+                if (primary != null)
+                {
+                    primaryModel = primary.DefaultModel;
+                }
+                CH_LlmApiConfig backup = store.ResolveBackup();
+                if (backup != null)
+                {
+                    backupModel = backup.DefaultModel;
+                }
+            }
+            return JsonUtil.Object(("role", role), ("primary", primaryModel), ("backup", backupModel));
+        }
+        /// <summary>
+        /// 解析主要站配置——猫绑定身份（Guid.Empty=默认端点语义），不受会话角色影响（故障转移的对照站）。
+        /// </summary>
+        /// <param name="store">API 配置池</param>
+        /// <returns>主要站配置；未命中 null</returns>
+        private CH_LlmApiConfig ResolvePrimaryConfig(CH_LlmApiConfigStore store)
+        {
+            if (_apiConfigId == Guid.Empty)
+            {
+                return store.ResolveDefault();
+            }
+            CH_LlmApiConfig config;
+            if (store.TryGet(_apiConfigId, out config))
+            {
+                return config;
+            }
+            return null;
         }
 
         /// <summary>
@@ -851,6 +937,8 @@ namespace CH4
                 LogStore.Add("CatHome4", 2, "继续指令未受理——前文为空", "CHAT");
                 return;
             }
+            // 人工接管——待自动继续作废（防人工继续与延迟自动继续重复触发）
+            _autoContinueDueTick = 0;
             // 跨线程只置位（与 Pause / SessionNewRequested 同模式）——HTTP 线程不得直接触碰会话内部队列；
             // 轮次启动归主线程 Pump Idle 分支消费（Idle 才启动，忙时等同排队）。
             _continueRequested = true;
@@ -1087,6 +1175,20 @@ namespace CH4
                     StartContinueRound();
                     return;
                 }
+                // 端点切换自动继续——延迟到点后置继续请求（下一帧走上方 continue 分支；有排队消息时让位用户输入）
+                if (_pending.Count == 0 && _autoContinueDueTick != 0 && DateTime.UtcNow.Ticks >= _autoContinueDueTick)
+                {
+                    _autoContinueDueTick = 0;
+                    _continueRequested = true;
+                    string autoText = "端点切换后自动继续（" + _autoContinueCount.ToString() + "/" + AutoContinueMax.ToString() + "）——延迟重发";
+                    LogStore.Add("LLM", 1, autoText, "LLM");
+                    if (_httpHost != null)
+                    {
+                        string autoJson = JsonUtil.Object(("type", "autocontinue"), ("text", autoText));
+                        _httpHost.PushView("control", autoJson, -1, 0);
+                    }
+                    return;
+                }
                 if (_pending.Count > 0)
                 {
                     PendingMessage next = _pending.Dequeue();
@@ -1127,6 +1229,7 @@ namespace CH4
             // 空回复续传计数——整轮清零（同 CH2 [段2.3] 每轮独立语义）
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
+            _sawFailover = false;
             _toolDone = false;
             _roundStartTick = System.Diagnostics.Stopwatch.GetTimestamp();
             lock (_phaseLock)
@@ -1157,6 +1260,9 @@ namespace CH4
         {
             // 轮首计数与相位复位——与继续轮共用（统计清零 + 进入 link 相位）
             ResetRoundCounters();
+            // 用户新消息 = 人在场——连续自动继续计数与待继续作废（自动链让位人工）
+            _autoContinueCount = 0;
+            _autoContinueDueTick = 0;
             AppendMessage(_context.AddUserMessage(content));
             _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
@@ -1406,6 +1512,8 @@ namespace CH4
                     else if (ev.Kind == LlmStreamKind.Failover)
                     {
                         // 端点切换——上游异常后经双打探针判定临时切换（180 秒窗口）/ 手动对调：独立提示气泡（不静默）
+                        // 自动继续判据置位——本轮若以错误中止，AbortRoundError 据此自动重发（避免会话断电）
+                        _sawFailover = true;
                         string foRole = "主要";
                         string foReason = "";
                         string[] foParts = ev.Text.Split(new char[] { '|' }, 3);
@@ -2520,6 +2628,17 @@ namespace CH4
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
             SetChatState("idle");
+            // [段5] 端点切换自动继续——本轮因上游异常中止且期间发生过端点切换：延迟重发（避免会话停在断点等人工点继续）
+            if (_sawFailover && _autoContinueCount < AutoContinueMax)
+            {
+                _autoContinueCount = _autoContinueCount + 1;
+                _autoContinueDueTick = DateTime.UtcNow.AddSeconds(_autoContinueDelaySeconds).Ticks;
+                LogStore.Add("LLM", 1, "端点切换后 " + _autoContinueDelaySeconds.ToString() + " 秒自动继续（" + _autoContinueCount.ToString() + "/" + AutoContinueMax.ToString() + "）——本轮中止后延迟重发", "LLM");
+            }
+            else if (_sawFailover)
+            {
+                LogStore.Add("LLM", 2, "端点切换自动继续已达上限（" + AutoContinueMax.ToString() + " 次）——停止重发，等待人工继续", "LLM");
+            }
         }
 
         /// <summary>
@@ -2597,6 +2716,9 @@ namespace CH4
             _round = 0;
             _phase = ChatPhase.Idle;
             ResetRetryView();
+            // 正常完成——连续自动继续计数与待继续清零（自动链终止于一次成功轮）
+            _autoContinueCount = 0;
+            _autoContinueDueTick = 0;
         }
 
         /// <summary>

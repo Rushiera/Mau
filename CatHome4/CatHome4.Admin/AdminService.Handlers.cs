@@ -306,14 +306,12 @@ namespace CatHome4.Admin
             return Results.Json(new { ok = true });
         }
 
-        /// <summary>
-        /// 端点角色 JSON——GET /api/v1/api-role 数据源（对话页 [API:主要/备用] 标签）。
-        /// </summary>
+        /// <summary>端点角色信息 JSON——GET /api/v1/api-role 数据源（对话页 [API 主要[模型]｜备用[模型]] 标签）。</summary>
         /// <param name="session">目标会话</param>
-        /// <returns>角色 JSON（{"role":"主要|备用"}）</returns>
+        /// <returns>端点角色信息 JSON（{"role":"主要|备用","primary":"主要站模型名","backup":"备用站模型名"}）</returns>
         internal static string BuildApiRoleJson(ChatSession session)
         {
-            return "{\"role\":\"" + session.GetApiRoleText() + "\"}";
+            return session.GetApiRoleJson();
         }
 
         /// <summary>
@@ -1502,6 +1500,7 @@ namespace CatHome4.Admin
             if (cat.ApiConfigId != newApiId)
             {
                 cat.ApiConfigId = newApiId;
+                cat.Session.SetApiConfigId(newApiId);
                 CH_LlmApiConfig apiConfig = new CH_LlmApiConfig();
                 if (_apiStore != null)
                 {

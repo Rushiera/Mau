@@ -1306,6 +1306,7 @@ namespace CatHome4.Admin
                 SessionViewStore viewStore = new SessionViewStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".view.json"));
                 ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, catSpecs, ExecuteTool, viewStore);
                 session.AttachApiRole(apiRole);
+                session.SetApiConfigId(apiConfigId);
                 // A111——块序变更通知接线（视图层变更 → 转发面游标校正；猫 key 在组合根注入）
                 AttachViewOrderNotify(id, viewStore);
                 // M4e 猫级白名单——多猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
