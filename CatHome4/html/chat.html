@@ -90,7 +90,7 @@
             <span id="ctxModeTokens" class="ctx-mode" title="按字符规模显示前文分布">按 tokens</span>
             <span id="ctxModeKey" class="ctx-mode" title="本次会话关键信息——加载报告 / 用户消息 / 正式回复 / 轮结算">关键信息</span>
             <span id="ctxModeFull" class="ctx-mode" title="本次会话完整前文——送入 LLM 的全量消息（留档文本剥离修饰后还原）">完整前文</span>
-            <button id="ctxClose" title="关闭（Esc）">×</button>
+            <button id="ctxRefresh" title="刷新——①确保完整前文采集就绪（端点读取前强制采集）②完全重建会话页面（全量重拉，含首块注入报告）；关闭走 Esc / 点弹层外">⟳</button>
         </div>
         <div id="ctxList" class="ctx-list"></div>
     </div>

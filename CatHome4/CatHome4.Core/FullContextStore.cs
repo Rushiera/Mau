@@ -654,29 +654,39 @@ namespace CH4
             }
             return string.CompareOrdinal(text, pos, value, 0, value.Length) == 0;
         }
+        /// <summary>
+        /// 消息载荷正文——四字段按序合并（content / tool_calls / reasoning / images），空字段跳过。
+        /// 单点实现：前文条目（/api/v1/context）与完整前文条目（/api/v1/fullctx）共用同一口径。
+        /// </summary>
+        /// <param name="content">正文</param>
+        /// <param name="toolCalls">工具调用 JSON（assistant）</param>
+        /// <param name="reasoning">思考内容（assistant——有工具调用轮次随请求回传）</param>
+        /// <param name="images">附件引用 JSON（user——请求构造时展开为 image_url 块）</param>
+        /// <returns>合并正文（全空=空串）</returns>
+        public static string MergeBody(string content, string toolCalls, string reasoning, string images)
+        {
+            string body = content == null ? "" : content;
+            body = MergePart(body, toolCalls);
+            body = MergePart(body, reasoning);
+            body = MergePart(body, images);
+            return body;
+        }
+        /// <summary>载荷正文拼接——非空才拼（空=原样返回）</summary>
+        /// <param name="body">已拼接正文</param>
+        /// <param name="part">待拼接字段</param>
+        /// <returns>拼接后正文</returns>
+        private static string MergePart(string body, string part)
+        {
+            if (part == null || part.Length == 0) { return body; }
+            return body.Length > 0 ? body + "\n" + part : part;
+        }
 
-        /// <summary>条目展示正文——正文优先，空则依次回落到工具调用 / 思考 / 图片引用。</summary>
+        /// <summary>条目展示正文——与 /api/v1/context 同口径（四字段合并；单点实现见 MergeBody）。</summary>
         /// <param name="entry">条目</param>
         /// <returns>展示文本</returns>
         private static string DisplayBody(FullContextEntry entry)
         {
-            if (entry.Content.Length > 0)
-            {
-                return entry.Content;
-            }
-            if (entry.ToolCalls.Length > 0)
-            {
-                return entry.ToolCalls;
-            }
-            if (entry.Reasoning.Length > 0)
-            {
-                return entry.Reasoning;
-            }
-            if (entry.Images.Length > 0)
-            {
-                return entry.Images;
-            }
-            return "";
+            return MergeBody(entry.Content, entry.ToolCalls, entry.Reasoning, entry.Images);
         }
 
         /// <summary>条目摘要——单行化后取首 PreviewLimit 字符（弹层折叠行显示）。</summary>

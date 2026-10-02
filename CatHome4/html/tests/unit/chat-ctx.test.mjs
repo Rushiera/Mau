@@ -293,6 +293,30 @@ test('视图切换——已开时切到完整前文读 /api/v1/fullctx', () => {
   vi.unstubAllGlobals();
 });
 
+test('full 视图——统计口径按字符 ÷ 1.6 折算预估 token（估算标注 + 字符数保留可追溯）', () => {
+  window.chatFullData = fakeFullData();
+  window.chatCtxMode = 'full';
+  window.chatCtxRender();
+  expect(document.getElementById('ctxMeta').textContent).toContain('约 188 tokens（估算）');
+  expect(document.getElementById('ctxMeta').textContent).toContain('300 字符');
+});
+
+test('弹层刷新按钮——点击拉完整前文（采集就绪）+ 全量重拉会话页面', () => {
+  const urls = [];
+  vi.stubGlobal('fetch', (u) => {
+    urls.push(u);
+    if (u.indexOf('/api/v1/history') === 0) {
+      return Promise.resolve({ json: () => Promise.resolve({ version: 1, sessionId: 'majordomo', gen: 1, count: 0, start: 0, blocks: [] }) });
+    }
+    return Promise.resolve({ json: () => Promise.resolve(fakeFullData()) });
+  });
+  window.chatCtxMode = 'full';
+  document.getElementById('ctxRefresh').dispatchEvent(clickEv());
+  expect(urls).toContain('/api/v1/fullctx');
+  expect(urls).toContain('/api/v1/history?max=2000');
+  vi.unstubAllGlobals();
+});
+
 test('状态栏第三段——「前文关键信息」渲染 + 点击开层读 /api/v1/keyinfo', () => {
   let url = '';
   vi.stubGlobal('fetch', (u) => { url = u; return Promise.resolve({ json: () => Promise.resolve(fakeKeyData()) }); });

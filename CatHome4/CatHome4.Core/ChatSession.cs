@@ -2808,6 +2808,11 @@ namespace CH4
             {
                 _httpHost.PushView("roundsum", roundsumJson, -1, 0);
             }
+            // 完整前文采集入口 4——停工（本轮收尾）强制采集一次：尾部不再依赖 30 秒节流或端点读取兜底
+            if (_fullCtx != null)
+            {
+                _fullCtx.Capture(true);
+            }
             SetChatState("idle");
             // B4 对话区：会话终态事件——前端定型（llm done 仅一轮结束；chatdone 才是整次会话结束；count = 原始消息数——实时同步状态区）
             // E3 扩展——chatdone 带真实 usage（命中/非命中/输出/前文长度；前端状态栏同步显示）

@@ -2057,5 +2057,43 @@ namespace CatHome4.Core.Tests
                 Console.WriteLine("[测试清理] 前文重建临时目录删除失败: " + ex.Message);
             }
         }
+
+        /// <summary>
+        /// 完整前文采集入口 4——停工（本轮收尾）强制采集：回合结束即补齐留档尾部，不再依赖 30 秒节流或端点读取兜底。
+        /// 判据：轮末留档条目数 == 前文条数（末轮回复落在节流窗口内，缺本入口时留档滞后一条）。
+        /// </summary>
+        [Fact]
+        public void CloseRound_CapturesFullContext()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "第一轮回复";
+            CH4.ChatSession session = CreateSession(llm);
+            string dir = Path.Combine(Path.GetTempPath(), "cat4close_" + Guid.NewGuid().ToString("N"));
+            session.AttachFullContext(dir);
+            session.Context.SetSystemPrompt("系统注入块");
+            session.PostUserMessage("问题");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle);
+            int expect = session.Context.GetMessages().Length;
+            string[] files = Directory.GetFiles(dir, "*.txt");
+            Assert.Single(files);
+            string text = File.ReadAllText(files[0]);
+            int count = 0;
+            int pos = text.IndexOf("[[CH4-CTX role=", StringComparison.Ordinal);
+            while (pos >= 0)
+            {
+                count = count + 1;
+                pos = text.IndexOf("[[CH4-CTX role=", pos + 1, StringComparison.Ordinal);
+            }
+            Assert.Equal(expect, count);
+            try
+            {
+                Directory.Delete(dir, true);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[测试清理] 完整前文临时目录删除失败: " + ex.Message);
+            }
+        }
     }
 }

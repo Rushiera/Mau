@@ -8,6 +8,8 @@
 var chatCtxData = null;      // 前文响应（null=未加载；list / tokens 两视图共用）
 var chatKeyData = null;      // 关键信息响应（null=未加载；key 视图用）
 var chatFullData = null;     // 完整前文响应（null=未加载；full 视图用）
+// 完整前文 token 预估系数——字符数 ÷ 系数 = 估算 token（实测口径：618.86k 字符 ÷ 388,861 真实 prompt ≈ 1.59，取 1.6）
+var chatCtxCharsPerToken = 1.6;
 var chatCtxMode = 'list';    // 当前视图——list（按条）/ tokens（按 token 分布）/ key（会话关键信息）/ full（完整前文）
 
 // 三态：未开 → 打开 + 切到目标视图 + 读取；已开且同视图 → 收起（不重复读取）；已开且异视图 → 切视图 + 复用已读数据
@@ -79,6 +81,16 @@ function chatCtxFetch(url, label, apply) {
 function chatCtxClose() {
     var pop = document.getElementById('ctxPopover');
     if (pop) { pop.style.display = 'none'; }
+}
+
+/**
+ * 刷新（弹层右上按钮）——两步：
+ * ① 完整前文采集就绪——读一次 /api/v1/fullctx（端点读取前强制采集，不受 30 秒节流滞后影响）
+ * ② 完全重建会话页面——全量重拉历史（含首块注入报告），不走 200 块窗口
+ */
+function chatCtxRefresh() {
+    chatCtxFetch('/api/v1/fullctx', '完整前文', function (d) { chatFullData = d; });
+    chatLoadHistory(true);
 }
 
 function chatCtxSwitch(mode) {
@@ -178,7 +190,10 @@ function chatCtxRenderFull(list, meta, title) {
     }
     var items = d.items || [];
     if (meta) {
-        meta.textContent = '共 ' + chatFmtCount(d.count) + ' 条 · ' + chatFmtCount(d.chars) + ' 字符'
+        // 统计口径——字符数 ÷ 系数 = 预估 token（完整前文是留档，不参与请求，无真实 prompt 值）
+        meta.textContent = '共 ' + chatFmtCount(d.count) + ' 条 · 约 '
+            + chatFmtCount(Math.round((d.chars || 0) / chatCtxCharsPerToken)) + ' tokens（估算）· '
+            + chatFmtCount(d.chars) + ' 字符'
             + chatCtxWindowNote(d, items);
     }
     chatCtxRenderList(list, items, '本次会话暂无完整前文', chatFullRoleLabels);
@@ -280,12 +295,12 @@ function chatCtxFmtTime(ms) {
 // 事件绑定——弹层控件（脚本位于元素之后，元素已就位）
 (function () {
     var pop = document.getElementById('ctxPopover');
-    var close = document.getElementById('ctxClose');
+    var refresh = document.getElementById('ctxRefresh');
     var ml = document.getElementById('ctxModeList');
     var mt = document.getElementById('ctxModeTokens');
     var mk = document.getElementById('ctxModeKey');
     var mf = document.getElementById('ctxModeFull');
-    if (close) { close.addEventListener('click', chatCtxClose); }
+    if (refresh) { refresh.addEventListener('click', chatCtxRefresh); }
     if (ml) { ml.addEventListener('click', function () { chatCtxSwitch('list'); }); }
     if (mt) { mt.addEventListener('click', function () { chatCtxSwitch('tokens'); }); }
     if (mk) { mk.addEventListener('click', function () { chatCtxSwitch('key'); }); }

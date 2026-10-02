@@ -128,8 +128,8 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .ctx-mode { cursor: pointer; color: var(--ch-fg-muted); border: 1px solid var(--ch-line); border-radius: 4px; padding: 1px 8px; user-select: none; }
 .ctx-mode:hover { color: var(--ch-fg); }
 .ctx-mode-on { color: var(--ch-bg-page); background: var(--ch-identity); border-color: var(--ch-identity); }
-#ctxClose { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); line-height: 1; padding: 1px 8px; }
-#ctxClose:hover { background: var(--ch-bg-hover); }
+#ctxRefresh { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); line-height: 1; padding: 1px 8px; }
+#ctxRefresh:hover { background: var(--ch-bg-hover); }
 .ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 14px; display: flex; flex-direction: column; gap: 4px; }
 .ctx-item { border: 1px solid var(--ch-line-faint); border-radius: 4px; padding: 4px 8px; }
 .ctx-item.open { border-color: var(--ch-line); }

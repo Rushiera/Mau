@@ -765,9 +765,11 @@ function chatReconnectResume() {
 
 /**
  * 全量历史加载——清空重建（首连 / 会话切换 / 增量不可用时使用）；成功后记录续传基线
+ * full=true 拉全量（max 上限 2000）——弹层刷新按钮用；缺省走 200 块窗口（长会话性能口径）
  */
-function chatLoadHistory() {
-    fetch('/api/v1/history')
+function chatLoadHistory(full) {
+    var url = (full === true) ? '/api/v1/history?max=2000' : '/api/v1/history';
+    fetch(url)
         .then(function (r) { return r.json(); })
         .then(function (d) {
             // 会话归属落库——渲染层只渲染并返回 sessionId（P20-P3-7：渲染层不写全局状态）

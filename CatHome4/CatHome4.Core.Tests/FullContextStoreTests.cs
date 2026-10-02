@@ -365,5 +365,31 @@ namespace CatHome4.Core.Tests
                 Assert.Equal(3, items[1].GetProperty("i").GetInt32());
             }
         }
+
+        /// <summary>载荷正文合并——四字段按序拼接、空字段跳过（单点实现：前文条目与完整前文条目共用同一口径）</summary>
+        [Fact]
+        public void MergeBody_FourFields_SkipsEmpty()
+        {
+            Assert.Equal("a\nb\nc\nd", CH4.FullContextStore.MergeBody("a", "b", "c", "d"));
+            Assert.Equal("a\nc", CH4.FullContextStore.MergeBody("a", "", "c", ""));
+            Assert.Equal("b", CH4.FullContextStore.MergeBody("", "b", "", ""));
+            Assert.Equal("", CH4.FullContextStore.MergeBody("", "", "", ""));
+            Assert.Equal("a", CH4.FullContextStore.MergeBody("a", null, null, null));
+        }
+
+        /// <summary>视图——单条正文四字段合并（content / tool_calls / reasoning / images 按序，空字段跳过）；
+        /// 旧行为只取首个非空字段，assistant 的 tool_calls 被 content 吞掉，与前文条目口径不一致（本次修复点）</summary>
+        [Fact]
+        public void BuildView_BodyMergesAllFields()
+        {
+            _msgs.Add(Msg(LlmRole.Assistant, "正文", "", "", "{\"id\":\"c1\"}", "思考", "", 1000L));
+            _msgs.Add(Msg(LlmRole.User, "图片消息", "", "", "", "", "[\"D:/a.png\"]", 2000L));
+            using (JsonDocument doc = JsonDocument.Parse(_store.BuildView(200)))
+            {
+                JsonElement items = doc.RootElement.GetProperty("items");
+                Assert.Equal("正文\n{\"id\":\"c1\"}\n思考", items[0].GetProperty("content").GetString());
+                Assert.Equal("图片消息\n[\"D:/a.png\"]", items[1].GetProperty("content").GetString());
+            }
+        }
     }
 }

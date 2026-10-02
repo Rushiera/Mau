@@ -613,17 +613,12 @@ namespace CH4
             return session.BuildFullContextView(max);
         }
 
-        /// <summary>前文条目正文——content 与 assistant tool_calls 声明合并（声明同属送入 LLM 的载荷）</summary>
+        /// <summary>前文条目正文——四字段合并（content / tool_calls / reasoning / images；单点实现见 FullContextStore.MergeBody）。</summary>
         /// <param name="m">消息</param>
         /// <returns>正文（无正文=空串）</returns>
         private static string MessageBody(LlmMessage m)
         {
-            string body = m.Content == null ? "" : m.Content;
-            if (m.Role == LlmRole.Assistant && m.ToolCallsJson != null && m.ToolCallsJson.Length > 0)
-            {
-                body = body.Length > 0 ? body + "\n" + m.ToolCallsJson : m.ToolCallsJson;
-            }
-            return body;
+            return FullContextStore.MergeBody(m.Content, m.ToolCallsJson, m.ReasoningContent, m.ImagesJson);
         }
 
         /// <summary>前文条目正文长度——统计用（截断前真实长度）</summary>
