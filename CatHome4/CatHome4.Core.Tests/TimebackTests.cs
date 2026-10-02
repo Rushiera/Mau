@@ -814,75 +814,74 @@ namespace CatHome4.Core.Tests
             Assert.True(session.TimebackActive);
         }
         /// <summary>
-        /// 废弃块——回收区间的视图块**合并为一个** void 块（renderType=void / count=移出块数 / 文本含被删内容）；
-        /// 旧行为（每块一个 gap 文本）已退役——废弃内容不进对话流，独立块型只留档。
+        /// A165 契约 H——timeback 回收**不触碰视图层**：持久区只增不改，回收只作用于送入 LLM 的前文；
+        /// 视图层不再产 `void` 块（移出语义整体退役）。
         /// </summary>
         [Fact]
-        public void Back_MergesRangeIntoVoidBlock()
+        public void Back_DoesNotTouchViewBlocks()
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"start\",\"purpose\":\"废弃块验证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t1", "{\"action\":\"start\",\"purpose\":\"视图不受影响验证\"}"));
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "f1", "{\"min\":1,\"max\":10}"));
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t2", "{\"action\":\"back\",\"findings\":\"结论：废弃块\"}"));
-            session.PostUserMessage("废弃块验证");
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t2", "{\"action\":\"back\",\"findings\":\"结论：视图不受影响\"}"));
+            session.PostUserMessage("视图不受影响验证");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
             CH4.ViewBlock[] blocks = session.GetViewBlocks();
             int voidCount = 0;
-            string voidPayload = "";
             for (int i = 0; i < blocks.Length; i = i + 1)
             {
                 if (blocks[i].RenderType == "void")
                 {
                     voidCount = voidCount + 1;
-                    voidPayload = blocks[i].Payload == null ? "" : blocks[i].Payload;
                 }
             }
-            Assert.Equal(1, voidCount);
-            Assert.Contains("\"count\":1", voidPayload);
-            Assert.Contains("random", voidPayload);
-            // 归档块不参与对话流——对话区仍只看得到两次调用对与结论
-            Assert.True(HasMessage(session, LlmRole.Tool, "结论：废弃块"));
+            Assert.Equal(0, voidCount);
+            // 回收仍在前文生效——区间内容已从送入 LLM 的前文移除，结论保留
+            Assert.True(HasMessage(session, LlmRole.Tool, "结论：视图不受影响"));
         }
         /// <summary>
-        /// 废弃段移出面 = 锚定声明之后（含同批 sibling 结果卡）：sibling 卡进废弃块、timeback 锚定卡保留在对话流
-        /// ——刷新后即「锚定 → 废弃段 → 回收」三段式（sibling 结果在前文仍保留：tool_call 配对约束）。
+        /// A165 契约 H——同批 sibling 结果卡**留在视图层**：视图层与真实前文并列，
+        /// 前文侧回收只影响前文，不驱动视图（不再有「移出 / 废弃段」概念）。
         /// </summary>
         [Fact]
-        public void Back_SiblingResultGoesToVoidButAnchorCardStays()
+        public void Back_KeepsSiblingResultCardInView()
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
             string batch = BuildToolCallsBatch(
                 new string[] { "timeback", "random" },
                 new string[] { "t1", "r1" },
-                new string[] { "{\"action\":\"start\",\"purpose\":\"sibling 归段\"}", "{\"min\":1,\"max\":10}" });
+                new string[] { "{\"action\":\"start\",\"purpose\":\"sibling 保留\"}", "{\"min\":1,\"max\":10}" });
             llm.ToolCallsQueue.Enqueue(batch);
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "t2", "{\"action\":\"back\",\"findings\":\"结论：sibling\"}"));
-            session.PostUserMessage("sibling 归段");
+            session.PostUserMessage("sibling 保留");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
             CH4.ViewBlock[] blocks = session.GetViewBlocks();
             int voidCount = 0;
             bool anchorCardKept = false;
-            string voidPayload = "";
+            bool siblingCardKept = false;
             for (int i = 0; i < blocks.Length; i = i + 1)
             {
                 string candidatePayload = blocks[i].Payload == null ? "" : blocks[i].Payload;
                 if (blocks[i].RenderType == "void")
                 {
                     voidCount = voidCount + 1;
-                    voidPayload = candidatePayload;
                 }
                 if (blocks[i].RenderType == "toolcard" && candidatePayload.Contains("\"timeback\"", StringComparison.Ordinal))
                 {
                     anchorCardKept = true;
                 }
+                if (blocks[i].RenderType == "toolcard" && candidatePayload.Contains("\"random\"", StringComparison.Ordinal))
+                {
+                    siblingCardKept = true;
+                }
             }
-            Assert.Equal(1, voidCount);
-            Assert.Contains("random", voidPayload);
+            Assert.Equal(0, voidCount);
             Assert.True(anchorCardKept);
+            Assert.True(siblingCardKept);
         }
     }
 }

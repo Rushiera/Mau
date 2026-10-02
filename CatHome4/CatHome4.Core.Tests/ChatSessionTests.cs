@@ -188,9 +188,6 @@ namespace CatHome4.Core.Tests
             /// <summary>被观察会话——A162 状态推送：视图变更经会话增量取用回放（表读取时自动回放未取走的增量）</summary>
             public CH4.ChatSession Session;
 
-            /// <summary>已见块键 → 渲染类型（增量移除条目无 renderType，按此回溯归属）</summary>
-            private readonly Dictionary<string, string> _keyRenderTypes = new Dictionary<string, string>();
-
             /// <summary>捕获的视图块——renderType → payload 列表（F4 视图事件）</summary>
             private readonly Dictionary<string, List<string>> _viewEvents = new Dictionary<string, List<string>>();
 
@@ -250,8 +247,9 @@ namespace CatHome4.Core.Tests
             }
 
             /// <summary>
-            /// A162——取会话未取走的视图增量并回放为捕获事件：块按 renderType / key / payload 入表（op 记 delta），
-            /// 移除条目按键回溯已见 renderType。增量取走即清（会话侧变更集），故表读取可反复安全调用。
+            /// A165——取会话未取走的视图帧并回放为捕获事件（chat 快照协议 v2）：
+            /// persist 段条目按 type / payload 入表（op 记 full / append）· live 段条目记 op=live ·
+            /// state 段的 note 并入事件序（消费面保留）。帧取走即清，故表读取可反复安全调用。
             /// </summary>
             public void FlushView()
             {
@@ -259,41 +257,71 @@ namespace CatHome4.Core.Tests
                 {
                     return;
                 }
-                string json = Session.TakeViewDeltaJson();
+                string json = Session.TakeViewFrameJson();
                 if (json == null || json.Length == 0)
                 {
                     return;
                 }
                 using (JsonDocument doc = JsonDocument.Parse(json))
                 {
-                    JsonElement blocks = doc.RootElement.GetProperty("blocks");
-                    foreach (JsonElement b in blocks.EnumerateArray())
+                    JsonElement persist;
+                    if (doc.RootElement.TryGetProperty("persist", out persist))
                     {
-                        string renderType = b.GetProperty("renderType").GetString();
-                        string key = b.GetProperty("key").GetString();
-                        string payload = "";
-                        JsonElement p;
-                        if (b.TryGetProperty("payload", out p))
+                        string mode = persist.GetProperty("mode").GetString();
+                        foreach (JsonElement it in persist.GetProperty("items").EnumerateArray())
                         {
-                            payload = p.GetRawText();
+                            string renderType = it.GetProperty("type").GetString();
+                            string payload = "";
+                            JsonElement p;
+                            if (it.TryGetProperty("payload", out p))
+                            {
+                                payload = p.GetRawText();
+                            }
+                            Accumulate(_viewEvents, renderType, payload);
+                            Accumulate(_viewOps, renderType, mode);
+                            _eventOrder.Add(renderType);
                         }
-                        Accumulate(_viewEvents, renderType, payload);
-                        Accumulate(_viewOps, renderType, "delta");
-                        Accumulate(_viewKeys, renderType, key);
-                        _eventOrder.Add(renderType);
-                        _keyRenderTypes[key] = renderType;
                     }
-                    JsonElement removes = doc.RootElement.GetProperty("remove");
-                    foreach (JsonElement r in removes.EnumerateArray())
+                    JsonElement live;
+                    if (doc.RootElement.TryGetProperty("live", out live))
                     {
-                        string key = r.GetString();
-                        string renderType;
-                        if (!_keyRenderTypes.TryGetValue(key, out renderType))
+                        foreach (JsonElement it in live.GetProperty("items").EnumerateArray())
                         {
-                            renderType = "unknown";
+                            string renderType = it.GetProperty("type").GetString();
+                            string payload = "";
+                            JsonElement p;
+                            if (it.TryGetProperty("payload", out p))
+                            {
+                                payload = p.GetRawText();
+                            }
+                            Accumulate(_viewEvents, renderType, payload);
+                            Accumulate(_viewOps, renderType, "live");
+                            _eventOrder.Add(renderType);
                         }
-                        Accumulate(_viewOps, renderType, "delta");
-                        _eventOrder.Add(renderType);
+                    }
+                    JsonElement state;
+                    if (doc.RootElement.TryGetProperty("state", out state))
+                    {
+                        JsonElement note;
+                        if (state.TryGetProperty("note", out note) && note.ValueKind != JsonValueKind.Null)
+                        {
+                            Accumulate(_viewEvents, "note", note.GetRawText());
+                            Accumulate(_viewOps, "note", "state");
+                            _eventOrder.Add("note");
+                        }
+                        // A165——业务态面（原 usage / chatdone / paused 三条 control 事件并入 state 段）
+                        JsonElement tokens;
+                        if (state.TryGetProperty("tokens", out tokens) && tokens.ValueKind != JsonValueKind.Null)
+                        {
+                            Accumulate(_viewEvents, "tokens", tokens.GetRawText());
+                            Accumulate(_viewOps, "tokens", "state");
+                        }
+                        JsonElement runState;
+                        if (state.TryGetProperty("runState", out runState) && runState.ValueKind == JsonValueKind.String)
+                        {
+                            Accumulate(_viewEvents, "runState", runState.GetString());
+                            Accumulate(_viewOps, "runState", "state");
+                        }
                     }
                 }
             }
@@ -897,7 +925,7 @@ namespace CatHome4.Core.Tests
                 Assert.Equal(1, d.RootElement.GetProperty("toolTotal").GetInt32());
             }
             List<string> cardOps = host.ViewOps["toolcard"];
-            Assert.Equal("delta", cardOps[0]);
+            Assert.Equal("append", cardOps[0]);
         }
 
         /// <summary>
@@ -925,33 +953,33 @@ namespace CatHome4.Core.Tests
                 session.Pump();
                 Thread.Sleep(5);
                 List<string> cardsNow;
-                if (host.ViewEvents.TryGetValue("toolcard", out cardsNow) && cardsNow.Count > 0)
+                if (host.ViewEvents.TryGetValue("toolcard.pending", out cardsNow) && cardsNow.Count > 0)
                 {
                     break;
                 }
             }
             Assert.False(session.IsIdle);
-            // 中止——先行卡补终态（已中止）而非停留"处理中"
+            // 中止——面板项补终态（已中止）而非停留"处理中"（A165：进行中工具在临时区面板）
             session.Pause();
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
-            List<string> cards = host.ViewEvents["toolcard"];
+            List<string> cards = host.ViewEvents["toolcard.pending"];
             Assert.True(cards.Count >= 2);
-            List<string> abortOps = host.ViewOps["toolcard"];
-            Assert.Equal("delta", abortOps[0]);
-            Assert.Equal("delta", abortOps[1]);
+            List<string> abortOps = host.ViewOps["toolcard.pending"];
+            Assert.Equal("live", abortOps[0]);
+            Assert.Equal("live", abortOps[1]);
             using (JsonDocument d = JsonDocument.Parse(cards[1]))
             {
                 Assert.Contains("已中止", d.RootElement.GetProperty("result").GetString());
             }
         }
         /// <summary>
-        /// A128 逐条回填——同批调度下先完成的工具即出终态卡，不等整批收口。
-        /// 声明序 [text-write(order 1), host-flows(order -1)] → 执行按 order 分桶：host-flows 批先、text-write 批后（OA 无消费者 → 停留）。
-        /// 旧实现（全批尽后段3 收口）在此刻只有先行卡；本实现 host-flows 终态卡已可观测。
+        /// 分批调度的观测面（A165 改写）——声明序 [text-write(order 1), host-flows(order -1)]：
+        /// 执行按 order 分桶（host-flows 批先、text-write 批后，OA 无消费者 → 停留）。
+        /// v2 契约下持久卡按声明序待整批收口落位，进行中工具在临时区面板——此刻两工具均在面板。
         /// </summary>
         [Fact]
-        public void ToolCard_FilledOnSingleCompletion()
+        public void ToolCard_PendingBatchStaysInLivePanel()
         {
             MockLlm llm = new MockLlm();
             string tc = "[{\"id\":\"e1\",\"function\":{\"name\":\"text-write\",\"arguments\":\"{}\"}},{\"id\":\"e2\",\"function\":{\"name\":\"host-flows\",\"arguments\":\"{}\"}}]";
@@ -966,29 +994,40 @@ namespace CatHome4.Core.Tests
             session.AttachHost(host);
             host.Session = session;
             session.PostUserMessage("逐条回填验证");
-            // 泵到 host-flows 终态卡出现（此时后批 text-write 仍在进行中）
+            // 泵到 text-write 批派发（前批 host-flows 已完成）
             for (int i = 0; i < 200; i = i + 1)
             {
                 session.Pump();
                 Thread.Sleep(5);
                 List<string> now;
-                if (host.ViewEvents.TryGetValue("toolcard", out now) && now.Count >= 3)
+                if (host.ViewEvents.TryGetValue("toolcard.pending", out now) && now.Count >= 1
+                    && now[now.Count - 1].Contains("text-write", StringComparison.Ordinal))
                 {
                     break;
                 }
             }
             // 批未收口——后批 OA 工具仍在进行中
             Assert.False(session.IsIdle);
-            List<string> cards = host.ViewEvents["toolcard"];
-            Assert.Equal(3, cards.Count);
-            // cards[0] = text-write 先行卡（无 result）；cards[2] = host-flows 终态卡（已完成）
-            using (JsonDocument d = JsonDocument.Parse(cards[2]))
+            // A165——批未收口时持久区尚无工具卡（持久卡按声明序待整批收口落位）；
+            // 两个工具都在临时区面板（已完成的 host-flows 待整批收口时交接给持久块）
+            Assert.False(host.ViewEvents.ContainsKey("toolcard"));
+            List<string> pendingCards = host.ViewEvents["toolcard.pending"];
+            Assert.True(pendingCards.Count >= 1);
+            bool sawFlows = false;
+            bool sawWrite = false;
+            for (int i = 0; i < pendingCards.Count; i = i + 1)
             {
-                JsonElement res;
-                Assert.True(d.RootElement.TryGetProperty("result", out res));
-                Assert.Equal("host-flows", d.RootElement.GetProperty("name").GetString());
-                Assert.Equal(2, d.RootElement.GetProperty("toolIndex").GetInt32());
+                if (pendingCards[i].Contains("\"host-flows\"", StringComparison.Ordinal))
+                {
+                    sawFlows = true;
+                }
+                if (pendingCards[i].Contains("\"text-write\"", StringComparison.Ordinal))
+                {
+                    sawWrite = true;
+                }
             }
+            Assert.True(sawFlows);
+            Assert.True(sawWrite);
         }
         /// <summary>
         /// 授权面实时查询——AuthorizedToolNamesProvider 压过会话注入面：声明面含 text-read 而提供者未放行 → 调用被 TOOL_FORBIDDEN 拒（design-ch4-tools §三·十一）。
@@ -1023,7 +1062,7 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// E3 usage 转发——LLM 流带 Usage 事件 → 宿主收到 view 事件（control 段 usage 块）且累计整轮（覆盖式）。
+        /// E3 usage 转发——LLM 流带 Usage 事件 → 宿主收到 state 段 tokens（A165：原 control 段 usage 块整体并入 state 段）且累计整轮（覆盖式）。
         /// </summary>
         [Fact]
         public void Usage_ForwardedToHost()
@@ -1038,31 +1077,17 @@ namespace CatHome4.Core.Tests
             session.PostUserMessage("统计一下");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
-            List<string> usageEvents;
-            Assert.True(host.ViewEvents.TryGetValue("control", out usageEvents));
-            Assert.True(usageEvents.Count > 0);
-            // 找 usage 控制块（可能混有 chatdone）
-            string usageCtrl = null;
-            for (int i = usageEvents.Count - 1; i >= 0; i--)
+            List<string> tokenStates;
+            Assert.True(host.ViewEvents.TryGetValue("tokens", out tokenStates));
+            Assert.True(tokenStates.Count > 0);
+            // 末条即最新累计（整轮累计值；覆盖式）
+            using (JsonDocument ud = JsonDocument.Parse(tokenStates[tokenStates.Count - 1]))
             {
-                using (JsonDocument cd = JsonDocument.Parse(usageEvents[i]))
-                {
-                    if (cd.RootElement.TryGetProperty("type", out JsonElement t) && t.GetString() == "usage")
-                    {
-                        usageCtrl = usageEvents[i];
-                        break;
-                    }
-                }
-            }
-            Assert.NotNull(usageCtrl);
-            // 累计 JSON 含三字段（整轮累计值）
-            using (JsonDocument ud = JsonDocument.Parse(usageCtrl))
-            {
-                JsonElement data = ud.RootElement.GetProperty("data");
+                JsonElement data = ud.RootElement;
                 Assert.Equal(100, data.GetProperty("prompt").GetInt64());
                 Assert.Equal(20, data.GetProperty("completion").GetInt64());
                 Assert.Equal(30, data.GetProperty("cacheHit").GetInt64());
-                // A115——前文条数随 usage 载荷下发（前端「前文 N 条」实时化数据源）
+                // A115——前文条数随 state 下发（前端「前文 N 条」实时化数据源）
                 Assert.True(data.GetProperty("count").GetInt64() > 0);
             }
         }
@@ -1111,26 +1136,13 @@ namespace CatHome4.Core.Tests
                 JsonElement idlePhase;
                 Assert.False(phases.TryGetProperty("idle", out idlePhase));
             }
-            // chatdone stats 带 context（单次前文长度——非累计）
-            List<string> ctrlEvents;
-            Assert.True(host.ViewEvents.TryGetValue("control", out ctrlEvents));
-            string doneCtrl = null;
-            for (int i = ctrlEvents.Count - 1; i >= 0; i--)
+            // state 段 tokens 带 context（单次前文长度——非累计；A165：原 chatdone stats 并入 state 段）
+            List<string> tokenStates;
+            Assert.True(host.ViewEvents.TryGetValue("tokens", out tokenStates));
+            Assert.True(tokenStates.Count > 0);
+            using (JsonDocument dd = JsonDocument.Parse(tokenStates[tokenStates.Count - 1]))
             {
-                using (JsonDocument cd = JsonDocument.Parse(ctrlEvents[i]))
-                {
-                    if (cd.RootElement.TryGetProperty("type", out JsonElement t) && t.GetString() == "chatdone")
-                    {
-                        doneCtrl = ctrlEvents[i];
-                        break;
-                    }
-                }
-            }
-            Assert.NotNull(doneCtrl);
-            using (JsonDocument dd = JsonDocument.Parse(doneCtrl))
-            {
-                JsonElement stats = dd.RootElement.GetProperty("stats");
-                Assert.Equal(1000, stats.GetProperty("context").GetInt64());
+                Assert.Equal(1000, dd.RootElement.GetProperty("context").GetInt64());
             }
         }
 
@@ -1463,31 +1475,11 @@ namespace CatHome4.Core.Tests
             LlmMessage[] msgs = session.Context.GetMessages();
             Assert.Single(msgs); // user（半截丢弃）
             Assert.Equal(LlmRole.User, msgs[0].Role);
-            // paused 控制事件推送 + 无 chatdone（中止非正常完成语义）
-            List<string> ctrlEvents;
-            Assert.True(host.ViewEvents.TryGetValue("control", out ctrlEvents));
-            bool foundPaused = false;
-            bool foundChatDone = false;
-            for (int i = ctrlEvents.Count - 1; i >= 0; i--)
-            {
-                using (JsonDocument cd = JsonDocument.Parse(ctrlEvents[i]))
-                {
-                    if (cd.RootElement.TryGetProperty("type", out JsonElement t))
-                    {
-                        string tv = t.GetString();
-                        if (tv == "paused")
-                        {
-                            foundPaused = true;
-                        }
-                        if (tv == "chatdone")
-                        {
-                            foundChatDone = true;
-                        }
-                    }
-                }
-            }
-            Assert.True(foundPaused);
-            Assert.False(foundChatDone);
+            // 运行态回归 idle（A165：原 paused 控制事件整体并入 state 段 runState）——中止非正常完成语义
+            List<string> runStates;
+            Assert.True(host.ViewEvents.TryGetValue("runState", out runStates));
+            Assert.True(runStates.Count > 0);
+            Assert.Equal("idle", runStates[runStates.Count - 1]);
         }
         /// <summary>
         /// P6 中止——取消识别：Runtime 取消路径不产 Retrying（挂起在 Retrying 前）→ Pause 后无 retry 气泡 + paused 气泡 + user 保留。
@@ -1515,22 +1507,11 @@ namespace CatHome4.Core.Tests
             Assert.True(session.IsIdle);
             // 无 retry 视图气泡（取消不产重试）
             Assert.False(host.ViewEvents.ContainsKey("retry"));
-            // paused 气泡存在
-            List<string> ctrlEvents;
-            Assert.True(host.ViewEvents.TryGetValue("control", out ctrlEvents));
-            bool foundPaused = false;
-            for (int i = ctrlEvents.Count - 1; i >= 0; i--)
-            {
-                using (JsonDocument cd = JsonDocument.Parse(ctrlEvents[i]))
-                {
-                    if (cd.RootElement.TryGetProperty("type", out JsonElement t) && t.GetString() == "paused")
-                    {
-                        foundPaused = true;
-                        break;
-                    }
-                }
-            }
-            Assert.True(foundPaused);
+            // 运行态回归 idle（A165：原 paused 控制事件并入 state 段 runState）
+            List<string> runStates;
+            Assert.True(host.ViewEvents.TryGetValue("runState", out runStates));
+            Assert.True(runStates.Count > 0);
+            Assert.Equal("idle", runStates[runStates.Count - 1]);
             // 用户消息保留（不裁剪）
             Assert.Single(session.Context.GetMessages());
         }
@@ -1605,6 +1586,7 @@ namespace CatHome4.Core.Tests
             PumpUntilIdle(session);
             LlmMessage[] before = session.Context.GetMessages();
             Assert.Equal(4, before.Length);
+            CH4.ViewBlock[] viewBefore = session.GetViewBlocks();
             // 回滚到第一个正式回复（索引 1）
             string result = session.Rollback(1);
             Assert.StartsWith("rollback", result);
@@ -1617,13 +1599,13 @@ namespace CatHome4.Core.Tests
             SessionStats? stats;
             Assert.True(session.Store.TryLoad(out restored, out stats));
             Assert.Equal(2, restored.Length);
-            // 视图验证——user + text 两块，MsgIndex 指向真实前文索引
+            // 视图验证——A165 契约 H：回滚只截断真实前文，视图层持久区只增不改（不裁剪、不产生移除面）
             CH4.ViewBlock[] blocks = session.GetViewBlocks();
-            Assert.Equal(2, blocks.Length);
+            Assert.Equal(viewBefore.Length, blocks.Length);
             Assert.Equal("user", blocks[0].RenderType);
-            Assert.Equal(0, blocks[0].Origin.MsgIndex);
+            Assert.Equal(0, blocks[0].MsgIndex);
             Assert.Equal("text", blocks[1].RenderType);
-            Assert.Equal(1, blocks[1].Origin.MsgIndex);
+            Assert.Equal(1, blocks[1].MsgIndex);
             // 统计复位——新起点零统计
             Assert.Equal(0, session.LastStats.EntryCount);
         }
@@ -1694,9 +1676,9 @@ namespace CatHome4.Core.Tests
             viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[2].CreatedAt + 1);
             CH4.ViewBlock[] blocks = viewStore.GetBlocks();
             Assert.Equal(3, blocks.Length);
-            Assert.Equal(1, blocks[0].Origin.MsgIndex);
-            Assert.Equal(2, blocks[1].Origin.MsgIndex);
-            Assert.Null(blocks[2].Origin);
+            Assert.Equal(1, blocks[0].MsgIndex);
+            Assert.Equal(2, blocks[1].MsgIndex);
+            Assert.Equal(-1, blocks[2].MsgIndex);
         }
 
         /// <summary>
@@ -1842,8 +1824,9 @@ namespace CatHome4.Core.Tests
             session.PostUserMessage("想一想");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
-            // A162 状态同步——流式容器在轮末全部撤离（作为 remove 条目送出，不进状态表）：ViewEvents 无 stream 键
-            Assert.False(host.ViewEvents.ContainsKey("stream"));
+            // A165——流式容器在轮末全部撤离（临时区全量镜像随之清空）：ViewEvents 无流式两类型键
+            Assert.False(host.ViewEvents.ContainsKey("stream.text"));
+            Assert.False(host.ViewEvents.ContainsKey("stream.reason"));
             // 纯文本轮的思考段只属流式区：前文消息不带 reasoning → 不产 reason 持久块
             Assert.False(host.ViewEvents.ContainsKey("reason"));
         }
@@ -1871,7 +1854,7 @@ namespace CatHome4.Core.Tests
             Assert.True(reasons.Count >= 1);
             using (JsonDocument d = JsonDocument.Parse(reasons[0]))
             {
-                Assert.Equal("思思", d.RootElement.GetProperty("content").GetString());
+                Assert.Equal("思思", d.RootElement.GetProperty("text").GetString());
             }
             // 时序——思考整块先于工具卡（决策流首帧收口）
             Assert.True(host.EventOrder.IndexOf("reason") < host.EventOrder.IndexOf("toolcard"));

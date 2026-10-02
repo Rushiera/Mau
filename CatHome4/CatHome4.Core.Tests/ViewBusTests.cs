@@ -9,24 +9,18 @@ using Xunit;
 namespace CatHome4.Core.Tests
 {
     /// <summary>
-    /// 会话视图出口测试（A162 批次二）——状态推送语义：
-    /// 状态表（当前全部块）· 变更集增量（TryTakeDelta：增改块 + 移除键，取走即清）·
-    /// 全量载荷（BuildFull）· 同键换手（持久块覆盖流式块，不产生移除）· 瞬时事件（control 仍即时推送）·
-    /// 推送面未就绪静默。
+    /// 会话视图出口测试（A165 阶段 1 · chat 快照协议 v2）——三段结构：
+    /// state（后端权威业务态整段比对，变化才推）· persist（持久对话区只增：全量 / 追加两模式）·
+    /// live（临时区全量镜像：stream.text / stream.reason / toolcard.pending）。
+    /// 铁律：无事发生零字节 · 推送序即渲染序 · 同步标识面（块键 / 块 ID / 生命周期态 / 移除指令 / 两区换手）全部退役。
     /// </summary>
     public sealed class ViewBusTests
     {
-        /// <summary>捕获型推送面——记录每次 PushView 的 op / payload / meta 三件（新模型下仅 control 走此出口）</summary>
+        /// <summary>捕获型推送面——记录每次 PushView 的 op（v2 下视图面不再走此出口；保留以满足接口契约）</summary>
         private sealed class RecordingHost : IHostPush
         {
             /// <summary>事件 op 序列（按发出序）</summary>
             public readonly List<string> Ops = new List<string>();
-
-            /// <summary>事件载荷序列</summary>
-            public readonly List<string> Payloads = new List<string>();
-
-            /// <summary>事件块元数据序列</summary>
-            public readonly List<string> Metas = new List<string>();
 
             /// <summary>会话完成事件（不捕获）</summary>
             /// <param name="count">会话消息数</param>
@@ -36,156 +30,190 @@ namespace CatHome4.Core.Tests
             /// <param name="json">Note 状态 JSON</param>
             public void PushNoteState(string json) { }
 
-            /// <summary>视图事件捕获——op / payload / meta</summary>
-            /// <param name="op">事件操作（control 为唯一在用的即时事件）</param>
+            /// <summary>视图事件捕获——op</summary>
+            /// <param name="op">事件操作</param>
             /// <param name="payload">载荷 JSON</param>
             /// <param name="meta">块元数据 JSON</param>
             public void PushView(string op, string payload, string meta)
             {
                 Ops.Add(op);
-                Payloads.Add(payload);
-                Metas.Add(meta);
             }
         }
 
-        /// <summary>取块元数据字段串——测试内轻量解析（测试面不受统一入口约束）</summary>
-        /// <param name="meta">块元数据 JSON</param>
-        /// <param name="field">字段名</param>
-        /// <returns>字段值串（缺失 = 空串）</returns>
-        private static string MetaField(string meta, string field)
+        /// <summary>构造持久块——v2 五字段（测试面直赋）</summary>
+        /// <param name="type">渲染类型</param>
+        /// <param name="payload">载荷 JSON</param>
+        /// <param name="ts">事件时刻</param>
+        /// <param name="msgIndex">前文来源索引（独立块 -1）</param>
+        /// <param name="round">所属轮次</param>
+        /// <returns>视图块</returns>
+        private static ViewBlock Block(string type, string payload, long ts, int msgIndex, int round)
         {
-            using (JsonDocument doc = JsonDocument.Parse(meta))
-            {
-                JsonElement value;
-                if (doc.RootElement.TryGetProperty(field, out value))
-                {
-                    return value.ToString();
-                }
-            }
-            return "";
+            ViewBlock block = new ViewBlock();
+            block.RenderType = type;
+            block.Payload = payload;
+            block.Timestamp = ts;
+            block.MsgIndex = msgIndex;
+            block.Round = round;
+            return block;
         }
 
-        /// <summary>取增量载荷——无变化返回 null</summary>
+        /// <summary>取帧——无变化返回 null</summary>
         /// <param name="bus">视图出口</param>
-        /// <returns>载荷 JSON 或 null</returns>
-        private static string TakeDelta(CH4.ViewBus bus)
+        /// <returns>帧 JSON 或 null</returns>
+        private static string TakeFrame(CH4.ViewBus bus)
         {
             string json;
-            if (bus.TryTakeDelta(out json))
+            if (bus.TryTakeFrame(out json))
             {
                 return json;
             }
             return null;
         }
 
-        /// <summary>取载荷块字段——blocks[index] 的字段值串（缺失 = 空串）</summary>
-        /// <param name="payloadJson">载荷 JSON（full / delta）</param>
-        /// <param name="index">块下标</param>
-        /// <param name="field">字段名</param>
-        /// <returns>字段值串</returns>
-        private static string BlockField(string payloadJson, int index, string field)
+        /// <summary>解析 JSON 根节点（独立副本——原 document 立刻释放）</summary>
+        /// <param name="json">JSON 文本</param>
+        /// <returns>根元素副本</returns>
+        private static JsonElement Root(string json)
         {
-            using (JsonDocument doc = JsonDocument.Parse(payloadJson))
+            using (JsonDocument doc = JsonDocument.Parse(json))
             {
-                JsonElement block = doc.RootElement.GetProperty("blocks")[index];
-                JsonElement value;
-                if (block.TryGetProperty(field, out value))
-                {
-                    return value.ToString();
-                }
-            }
-            return "";
-        }
-
-        /// <summary>取载荷块数</summary>
-        /// <param name="payloadJson">载荷 JSON（full / delta）</param>
-        /// <returns>块数</returns>
-        private static int BlockCount(string payloadJson)
-        {
-            using (JsonDocument doc = JsonDocument.Parse(payloadJson))
-            {
-                return doc.RootElement.GetProperty("blocks").GetArrayLength();
+                return doc.RootElement.Clone();
             }
         }
 
-        /// <summary>取载荷移除键数</summary>
-        /// <param name="payloadJson">载荷 JSON（delta）</param>
-        /// <returns>移除键数</returns>
-        private static int RemoveCount(string payloadJson)
+        /// <summary>取临时区条目数组</summary>
+        /// <param name="frame">帧 JSON</param>
+        /// <returns>live items 数组</returns>
+        private static JsonElement LiveItems(string frame)
         {
-            using (JsonDocument doc = JsonDocument.Parse(payloadJson))
-            {
-                return doc.RootElement.GetProperty("remove").GetArrayLength();
-            }
+            return Root(frame).GetProperty("live").GetProperty("items");
         }
 
-        /// <summary>取载荷移除键——remove[index]</summary>
-        /// <param name="payloadJson">载荷 JSON（delta）</param>
-        /// <param name="index">下标</param>
-        /// <returns>块键</returns>
-        private static string RemoveKey(string payloadJson, int index)
-        {
-            using (JsonDocument doc = JsonDocument.Parse(payloadJson))
-            {
-                return doc.RootElement.GetProperty("remove")[index].GetString();
-            }
-        }
-
-        /// <summary>流式文本——首个增量入状态表，后续增量同键更新，复位记移除；取走后再复位无变化</summary>
+        /// <summary>全量帧——三段齐备；条目只带业务定位字段（无键 / 无 ID / 无生命周期态）</summary>
         [Fact]
-        public void TextStreamAddThenUpdateThenRemove()
+        public void FullFrameCarriesThreeSegments()
+        {
+            RecordingHost host = new RecordingHost();
+            CH4.ViewBus bus = new CH4.ViewBus();
+            bus.Attach(host);
+            bus.SetState("{\"runState\":\"idle\"}");
+            bus.PushPersist(Block("text", "{\"text\":\"甲\"}", 1000, 0, 1));
+            bus.PushTextStream("流");
+
+            string full = bus.BuildFull();
+            JsonElement root = Root(full);
+            Assert.Equal(2, root.GetProperty("v").GetInt32());
+            Assert.Equal("idle", root.GetProperty("state").GetProperty("runState").GetString());
+            Assert.Equal("full", root.GetProperty("persist").GetProperty("mode").GetString());
+            JsonElement items = root.GetProperty("persist").GetProperty("items");
+            Assert.Equal(1, items.GetArrayLength());
+            JsonElement item = items[0];
+            Assert.Equal("text", item.GetProperty("type").GetString());
+            Assert.Equal(1000L, item.GetProperty("ts").GetInt64());
+            Assert.Equal(1, item.GetProperty("round").GetInt32());
+            Assert.Equal(0, item.GetProperty("msgIndex").GetInt32());
+            Assert.Equal("甲", item.GetProperty("payload").GetProperty("text").GetString());
+            JsonElement unused;
+            Assert.False(item.TryGetProperty("key", out unused));
+            Assert.False(item.TryGetProperty("id", out unused));
+            Assert.False(item.TryGetProperty("state", out unused));
+            Assert.Equal("stream.text", LiveItems(full)[0].GetProperty("type").GetString());
+        }
+
+        /// <summary>追加帧——新持久条目按 append 模式推送（其余段省略）</summary>
+        [Fact]
+        public void AppendFrameCarriesPersistAppendOnly()
         {
             RecordingHost host = new RecordingHost();
             CH4.ViewBus bus = new CH4.ViewBus();
             bus.Attach(host);
 
-            bus.PushTextStream("{\"kind\":\"text\",\"text\":\"a\"}");
-            string first = TakeDelta(bus);
-            Assert.NotNull(first);
-            Assert.Equal(1, BlockCount(first));
-            Assert.Equal("stream", BlockField(first, 0, "renderType"));
-            string key = BlockField(first, 0, "key");
-
-            bus.PushTextStream("{\"kind\":\"text\",\"text\":\"b\"}");
-            string second = TakeDelta(bus);
-            Assert.Equal(1, BlockCount(second));
-            Assert.Equal(key, BlockField(second, 0, "key"));
-
-            bus.ResetTextStream();
-            string third = TakeDelta(bus);
-            Assert.Equal(0, BlockCount(third));
-            Assert.Equal(1, RemoveCount(third));
-            Assert.Equal(key, RemoveKey(third, 0));
-
-            bus.ResetTextStream();
-            Assert.Null(TakeDelta(bus));
+            bus.PushPersist(Block("user", "{\"text\":\"问\"}", 1000, 0, 1));
+            string frame = TakeFrame(bus);
+            Assert.NotNull(frame);
+            JsonElement root = Root(frame);
+            Assert.Equal("append", root.GetProperty("persist").GetProperty("mode").GetString());
+            Assert.Equal(1, root.GetProperty("persist").GetProperty("items").GetArrayLength());
+            JsonElement unused;
+            Assert.False(root.TryGetProperty("state", out unused));
+            Assert.False(root.TryGetProperty("live", out unused));
         }
 
-        /// <summary>流式思考与文本各自独立容器（互不干扰），键在区内存续期内复用</summary>
+        /// <summary>无事发生零字节——取走后再取返回空</summary>
         [Fact]
-        public void ReasonStreamHasOwnContainer()
+        public void NoChangeYieldsNoFrame()
         {
             RecordingHost host = new RecordingHost();
             CH4.ViewBus bus = new CH4.ViewBus();
             bus.Attach(host);
 
-            bus.PushTextStream("{\"kind\":\"text\",\"text\":\"a\"}");
-            bus.PushReasonStream("{\"kind\":\"reasoning\",\"text\":\"r\"}");
-            string both = TakeDelta(bus);
-            Assert.Equal(2, BlockCount(both));
-            string textKey = BlockField(both, 0, "key");
-            string reasonKey = BlockField(both, 1, "key");
-            Assert.NotEqual(textKey, reasonKey);
-
-            bus.PushTextStream("{\"kind\":\"text\",\"text\":\"b\"}");
-            string third = TakeDelta(bus);
-            Assert.Equal(1, BlockCount(third));
-            Assert.Equal(textKey, BlockField(third, 0, "key"));
+            bus.PushPersist(Block("text", "{}", 1000, 0, 1));
+            Assert.NotNull(TakeFrame(bus));
+            Assert.Null(TakeFrame(bus));
         }
 
-        /// <summary>工具卡先行 → 终态——同键原位更新（仍留在流式区等持久块换手）；同键重复先行不堆叠</summary>
+        /// <summary>状态段——整段比对：同值零帧，变化才入帧</summary>
         [Fact]
-        public void ToolCardPendingThenDoneStaysLive()
+        public void StateSegmentPushesOnChangeOnly()
+        {
+            RecordingHost host = new RecordingHost();
+            CH4.ViewBus bus = new CH4.ViewBus();
+            bus.Attach(host);
+
+            bus.SetState("{\"runState\":\"idle\"}");
+            Assert.NotNull(TakeFrame(bus));
+
+            bus.SetState("{\"runState\":\"idle\"}");
+            Assert.Null(TakeFrame(bus));
+
+            bus.SetState("{\"runState\":\"wait\"}");
+            string frame = TakeFrame(bus);
+            Assert.Equal("wait", Root(frame).GetProperty("state").GetProperty("runState").GetString());
+        }
+
+        /// <summary>临时区全量镜像——流式文本累积全文（非增量）；出区后条目消失</summary>
+        [Fact]
+        public void TextStreamMirrorsAccumulatedText()
+        {
+            RecordingHost host = new RecordingHost();
+            CH4.ViewBus bus = new CH4.ViewBus();
+            bus.Attach(host);
+
+            bus.PushTextStream("甲");
+            Assert.Equal("甲", LiveItems(TakeFrame(bus))[0].GetProperty("payload").GetProperty("text").GetString());
+
+            bus.PushTextStream("乙");
+            Assert.Equal("甲乙", LiveItems(TakeFrame(bus))[0].GetProperty("payload").GetProperty("text").GetString());
+
+            bus.ResetTextStream();
+            Assert.Equal(0, LiveItems(TakeFrame(bus)).GetArrayLength());
+            Assert.Null(TakeFrame(bus));
+        }
+
+        /// <summary>临时区两类流式互不干扰——文本与思考各一容器，同帧全量镜像两条目</summary>
+        [Fact]
+        public void StreamTypesAreIndependent()
+        {
+            RecordingHost host = new RecordingHost();
+            CH4.ViewBus bus = new CH4.ViewBus();
+            bus.Attach(host);
+
+            bus.PushTextStream("甲");
+            bus.PushReasonStream("乙");
+            JsonElement items = LiveItems(TakeFrame(bus));
+            Assert.Equal(2, items.GetArrayLength());
+            Assert.Equal("stream.text", items[0].GetProperty("type").GetString());
+            Assert.Equal("stream.reason", items[1].GetProperty("type").GetString());
+
+            bus.PushReasonStream("丙");
+            JsonElement mirror = LiveItems(TakeFrame(bus));
+            Assert.Equal("乙丙", mirror[1].GetProperty("payload").GetProperty("text").GetString());
+        }
+
+        /// <summary>工具卡交接——进行中入面板；完成态以同时间戳落地即清面板项（同一次调用两态不并存于两区）</summary>
+        [Fact]
+        public void ToolCardHandoverClearsLiveSlot()
         {
             RecordingHost host = new RecordingHost();
             CH4.ViewBus bus = new CH4.ViewBus();
@@ -195,30 +223,27 @@ namespace CatHome4.Core.Tests
             bus.PushToolCardPending("tool:c1", "{\"name\":\"t\"}", 100);
             Assert.True(bus.IsToolCardPending("tool:c1"));
             Assert.False(bus.IsToolCardFinaled("tool:c1"));
-            string pending = TakeDelta(bus);
-            Assert.Equal(1, BlockCount(pending));
-            Assert.Equal("tool:c1", BlockField(pending, 0, "key"));
-            Assert.Equal("pending", BlockField(pending, 0, "state"));
-            Assert.Equal("100", BlockField(pending, 0, "ts"));
-            Assert.Equal("-1", BlockField(pending, 0, "durMs"));
+            JsonElement pending = LiveItems(TakeFrame(bus));
+            Assert.Equal(1, pending.GetArrayLength());
+            Assert.Equal("toolcard.pending", pending[0].GetProperty("type").GetString());
+            Assert.Equal("t", pending[0].GetProperty("payload").GetProperty("name").GetString());
 
             bus.PushToolCardPending("tool:c1", "{\"name\":\"t\"}", 100);
-            string again = TakeDelta(bus);
-            Assert.Equal(1, BlockCount(again));
-            Assert.Equal("tool:c1", BlockField(again, 0, "key"));
+            Assert.Equal(1, LiveItems(TakeFrame(bus)).GetArrayLength());
 
-            bus.PushToolCardDone("tool:c1", "{\"name\":\"t\",\"result\":\"ok\"}", 250);
-            string done = TakeDelta(bus);
-            Assert.Equal("final", BlockField(done, 0, "state"));
-            Assert.Equal("250", BlockField(done, 0, "durMs"));
-            Assert.Equal("100", BlockField(done, 0, "ts"));
-            Assert.True(bus.IsToolCardPending("tool:c1"));
+            bus.PushToolCardDone("tool:c1", "{\"name\":\"t\",\"result\":\"ok\"}");
             Assert.True(bus.IsToolCardFinaled("tool:c1"));
+            Assert.NotNull(TakeFrame(bus));
 
-            Assert.Null(TakeDelta(bus));
+            bus.PushPersist(Block("toolcard", "{\"name\":\"t\",\"result\":\"ok\"}", 100, -1, 3));
+            string frame = TakeFrame(bus);
+            Assert.Equal(1, Root(frame).GetProperty("persist").GetProperty("items").GetArrayLength());
+            Assert.Equal(0, LiveItems(frame).GetArrayLength());
+            Assert.False(bus.IsToolCardPending("tool:c1"));
+            Assert.Null(TakeFrame(bus));
         }
 
-        /// <summary>工具卡终态无先行卡——先入区再定稿，同一次取走只见最终态一块（被拦工具 / 直执路径）</summary>
+        /// <summary>工具卡终态无先行卡——直接建面板项并登记交接（被拦工具 / 直执路径）</summary>
         [Fact]
         public void ToolCardDoneWithoutPendingCreatesLive()
         {
@@ -226,149 +251,54 @@ namespace CatHome4.Core.Tests
             CH4.ViewBus bus = new CH4.ViewBus();
             bus.Attach(host);
 
-            bus.PushToolCardDone("tool:c9", "{\"name\":\"t\",\"result\":\"err\"}", 120);
-
-            string delta = TakeDelta(bus);
-            Assert.Equal(1, BlockCount(delta));
-            Assert.Equal("tool:c9", BlockField(delta, 0, "key"));
-            Assert.Equal("final", BlockField(delta, 0, "state"));
-            Assert.Equal("120", BlockField(delta, 0, "durMs"));
+            bus.PushToolCardDone("tool:c9", "{\"name\":\"t\",\"result\":\"err\"}");
             Assert.True(bus.IsToolCardFinaled("tool:c9"));
+            JsonElement items = LiveItems(TakeFrame(bus));
+            Assert.Equal(1, items.GetArrayLength());
+            Assert.Equal("err", items[0].GetProperty("payload").GetProperty("result").GetString());
         }
 
-        /// <summary>持久块记入——同键覆盖流式块（不产生移除指令）· 载荷带块元数据（key / id / durMs / state）· 同键二次记入幂等</summary>
+        /// <summary>重置——两区全清并置全量待发（帧轮广播空态全量帧，前端整体重绘）</summary>
         [Fact]
-        public void PersistAppendEvictsLiveAndIsIdempotent()
+        public void ResetAllEmitsFullFrame()
         {
             RecordingHost host = new RecordingHost();
             CH4.ViewBus bus = new CH4.ViewBus();
             bus.Attach(host);
 
-            bus.PushToolCardPending("tool:c1", "{\"name\":\"t\"}", 100);
-            Assert.NotNull(TakeDelta(bus));
+            bus.PushPersist(Block("text", "{}", 1000, 0, 1));
+            bus.PushTextStream("甲");
+            Assert.NotNull(TakeFrame(bus));
 
-            ViewBlock block = ViewBlock.BuildPending("tool:c1", "toolcard", "{\"name\":\"t\",\"result\":\"ok\"}", 100, null, "independent");
-            block.Finalize(250);
-            bus.PushPersist(block);
-
-            string delta = TakeDelta(bus);
-            Assert.Equal(1, BlockCount(delta));
-            Assert.Equal(0, RemoveCount(delta));
-            Assert.Equal("tool:c1", BlockField(delta, 0, "key"));
-            Assert.Equal(block.Id, BlockField(delta, 0, "id"));
-            Assert.Equal("250", BlockField(delta, 0, "durMs"));
-            Assert.Equal("final", BlockField(delta, 0, "state"));
-            Assert.False(bus.IsToolCardPending("tool:c1"));
-
-            bus.PushPersist(block);
-            Assert.Null(TakeDelta(bus));
+            bus.ResetAll();
+            string frame = TakeFrame(bus);
+            JsonElement root = Root(frame);
+            Assert.Equal("full", root.GetProperty("persist").GetProperty("mode").GetString());
+            Assert.Equal(0, root.GetProperty("persist").GetProperty("items").GetArrayLength());
+            Assert.Equal(0, root.GetProperty("live").GetProperty("items").GetArrayLength());
+            Assert.Null(TakeFrame(bus));
         }
 
-        /// <summary>持久块记入——前文派生块随带 origin 关系字段（src=front）；无 origin 独立块写 null</summary>
-        [Fact]
-        public void PersistCarriesOrigin()
-        {
-            RecordingHost host = new RecordingHost();
-            CH4.ViewBus bus = new CH4.ViewBus();
-            bus.Attach(host);
-
-            ViewOrigin origin = new ViewOrigin();
-            origin.MsgIndex = 7;
-            origin.Hash = "abc";
-            ViewBlock block = ViewBlock.BuildPending("msg:7:text", "text", "{\"content\":\"hi\"}", 1000, origin, "front");
-            block.Finalize(-1);
-            bus.PushPersist(block);
-
-            string delta = TakeDelta(bus);
-            Assert.Equal("front", BlockField(delta, 0, "src"));
-            Assert.Contains("\"msgIndex\":7", delta);
-            Assert.Contains("\"hash\":\"abc\"", delta);
-        }
-
-        /// <summary>全量载荷——当前状态全部块（按时间戳升序），供连接建立时取一次</summary>
-        [Fact]
-        public void BuildFullCarriesAllBlocks()
-        {
-            RecordingHost host = new RecordingHost();
-            CH4.ViewBus bus = new CH4.ViewBus();
-            bus.Attach(host);
-
-            ViewBlock first = ViewBlock.BuildPending("msg:1:text", "text", "{\"content\":\"a\"}", 1000, null, "front");
-            first.Finalize(-1);
-            bus.PushPersist(first);
-            bus.PushTextStream("{\"kind\":\"text\",\"text\":\"live\"}");
-
-            string full = bus.BuildFull();
-            Assert.Equal(2, BlockCount(full));
-            Assert.Equal("msg:1:text", BlockField(full, 0, "key"));
-            Assert.Equal("stream", BlockField(full, 1, "renderType"));
-
-            // 全量取用不动变更集——随后增量仍能取到未取走的变更
-            Assert.NotNull(TakeDelta(bus));
-        }
-
-        /// <summary>瞬时事件——control 仍即时推送（非块：前端按事件处理，不渲气泡）</summary>
-        [Fact]
-        public void ControlIsEventNotBlock()
-        {
-            RecordingHost host = new RecordingHost();
-            CH4.ViewBus bus = new CH4.ViewBus();
-            bus.Attach(host);
-
-            bus.PushControl("{\"type\":\"chatdone\"}");
-
-            Assert.Single(host.Ops);
-            Assert.Equal("control", host.Ops[0]);
-            Assert.Equal("control", MetaField(host.Metas[0], "renderType"));
-        }
-
-        /// <summary>状态清空——流式块逐个记移除；状态表与幂等记录一并作废（同键可再次记入）</summary>
-        [Fact]
-        public void ResetLiveRemovesAllAndClearsPersist()
-        {
-            RecordingHost host = new RecordingHost();
-            CH4.ViewBus bus = new CH4.ViewBus();
-            bus.Attach(host);
-
-            bus.PushTextStream("{\"kind\":\"text\",\"text\":\"a\"}");
-            Assert.NotNull(TakeDelta(bus));
-            ViewBlock block = ViewBlock.BuildPending("tool:c1", "toolcard", "{}", 100, null, "independent");
-            block.Finalize(10);
-            bus.PushPersist(block);
-            Assert.NotNull(TakeDelta(bus));
-
-            bus.ResetLive();
-            string delta = TakeDelta(bus);
-            Assert.Equal(1, RemoveCount(delta));
-            Assert.False(bus.IsToolCardPending("tool:c1"));
-            Assert.Equal(0, BlockCount(bus.BuildFull()));
-
-            bus.PushPersist(block);
-            Assert.NotNull(TakeDelta(bus));
-        }
-
-        /// <summary>推送面未就绪——全部入口静默（与拆分前会话侧判空语义一致），状态表不落块</summary>
+        /// <summary>推送面未就绪——全部入口静默（不落块、不积帧、槽位不建）</summary>
         [Fact]
         public void DetachedBusIsSilent()
         {
             CH4.ViewBus bus = new CH4.ViewBus();
 
             Assert.False(bus.Ready);
-            bus.PushTextStream("{\"kind\":\"text\",\"text\":\"a\"}");
-            bus.PushReasonStream("{\"kind\":\"reasoning\",\"text\":\"r\"}");
-            bus.PushControl("{\"type\":\"chatdone\"}");
+            bus.SetState("{\"runState\":\"idle\"}");
+            bus.PushTextStream("甲");
+            bus.PushReasonStream("乙");
             bus.PushToolCardPending("tool:c1", "{\"name\":\"t\"}", 8);
-            bus.PushToolCardDone("tool:c1", "{\"name\":\"t\"}", 7);
+            bus.PushToolCardDone("tool:c1", "{\"name\":\"t\"}");
             bus.ResetTextStream();
             bus.ResetReasonStream();
-            bus.ResetLive();
-            ViewBlock block = ViewBlock.BuildPending("tool:c1", "toolcard", "{}", 8, null, "independent");
-            block.Finalize(-1);
-            bus.PushPersist(block);
+            bus.PushPersist(Block("text", "{}", 1000, -1, 1));
 
+            Assert.Null(TakeFrame(bus));
             Assert.False(bus.IsToolCardPending("tool:c1"));
             Assert.False(bus.IsToolCardFinaled("tool:c1"));
-            Assert.Equal(0, BlockCount(bus.BuildFull()));
+            Assert.Empty(bus.GetLiveBlocks());
 
             RecordingHost host = new RecordingHost();
             bus.Attach(host);
@@ -378,13 +308,13 @@ namespace CatHome4.Core.Tests
 
         /// <summary>
         /// 元数据并入的生命周期契约（A157）——JsonElement 是 JsonDocument 的引用视图，
-        /// document 释放后再序列化**必须失败**：这是 HttpHost.MergeViewMeta 必须 Clone 的根据。
+        /// document 释放后再序列化**必须失败**：这是宿主侧 MergeViewMeta 必须 Clone 的根据。
         /// </summary>
         [Fact]
         public void MetaElementEscapingDocumentThrows()
         {
             Dictionary<string, object> ev = new Dictionary<string, object>();
-            using (JsonDocument doc = JsonDocument.Parse("{\"key\":\"tool:c1\",\"ts\":1000}"))
+            using (JsonDocument doc = JsonDocument.Parse("{\"ts\":1000,\"round\":3}"))
             {
                 foreach (JsonProperty prop in doc.RootElement.EnumerateObject())
                 {
@@ -403,7 +333,7 @@ namespace CatHome4.Core.Tests
         {
             Dictionary<string, object> ev = new Dictionary<string, object>();
             ev["seq"] = 1L;
-            using (JsonDocument doc = JsonDocument.Parse("{\"key\":\"tool:c1\",\"ts\":1000,\"durMs\":-1,\"state\":\"pending\"}"))
+            using (JsonDocument doc = JsonDocument.Parse("{\"ts\":1000,\"round\":3}"))
             {
                 foreach (JsonProperty prop in doc.RootElement.EnumerateObject())
                 {
@@ -412,8 +342,8 @@ namespace CatHome4.Core.Tests
             }
 
             string json = JsonUtil.Serialize(ev);
-            Assert.Contains("\"key\":\"tool:c1\"", json);
-            Assert.Contains("\"durMs\":-1", json);
+            Assert.Contains("\"ts\":1000", json);
+            Assert.Contains("\"round\":3", json);
         }
     }
 }

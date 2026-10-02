@@ -198,9 +198,8 @@ namespace CH4
         /// </summary>
         private void PushNoteState()
         {
-            // F4 视图——note 控制块（SSE view 事件；前端悬浮气泡实时重绘）
-            string noteJson = JsonUtil.Object(("type", "note"), ("state", JsonUtil.Raw(BuildNoteJson())));
-            _viewBus.PushControl(noteJson);
+            // F4 视图——状态段推送（Note 变化；v2：状态段承载 note 字段，无独立事件）
+            PushState();
         }
 
         /// <summary>

@@ -173,9 +173,9 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("user", blocks[0].RenderType);
-            Assert.Equal(3, blocks[0].Origin.MsgIndex);
+            Assert.Equal(3, blocks[0].MsgIndex);
             Assert.Equal(100L, blocks[0].Timestamp);
-            Assert.Equal("你好", ParsePayload(blocks[0]).GetProperty("content").GetString());
+            Assert.Equal("你好", ParsePayload(blocks[0]).GetProperty("text").GetString());
         }
 
         /// <summary>assistant 纯文本钩子——text 块</summary>
@@ -186,7 +186,7 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("text", blocks[0].RenderType);
-            Assert.Equal("回复", ParsePayload(blocks[0]).GetProperty("content").GetString());
+            Assert.Equal("回复", ParsePayload(blocks[0]).GetProperty("text").GetString());
         }
 
         /// <summary>工具调用钩子（有思考）——reason 块（思考只为工具轮投影）</summary>
@@ -197,7 +197,7 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("reason", blocks[0].RenderType);
-            Assert.Equal("想想", ParsePayload(blocks[0]).GetProperty("content").GetString());
+            Assert.Equal("想想", ParsePayload(blocks[0]).GetProperty("text").GetString());
         }
 
         /// <summary>工具调用钩子（无思考）——不产 reason 块（视图不留空块）</summary>
@@ -219,7 +219,7 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("toolcard", blocks[0].RenderType);
-            Assert.Equal(5, blocks[0].Origin.MsgIndex);
+            Assert.Equal(5, blocks[0].MsgIndex);
             JsonElement payload = ParsePayload(blocks[0]);
             Assert.Equal("note.set", payload.GetProperty("name").GetString());
             Assert.Equal("{\"k\":1}", payload.GetProperty("arguments").GetString());
@@ -301,49 +301,13 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Equal(3, blocks.Length);
             Assert.Equal("user", blocks[0].RenderType);
-            Assert.Equal(1, blocks[0].Origin.MsgIndex);
+            Assert.Equal(1, blocks[0].MsgIndex);
             Assert.Equal("toolcard", blocks[1].RenderType);
-            Assert.Equal(3, blocks[1].Origin.MsgIndex);
+            Assert.Equal(3, blocks[1].MsgIndex);
             Assert.Equal("text", blocks[2].RenderType);
-            Assert.Equal(4, blocks[2].Origin.MsgIndex);
-            // A156 块契约——前文派生块：src=front / state=final / 键带前文坐标 / 自哈希 ID 已定稿
-            Assert.Equal("front", blocks[0].Src);
-            Assert.Equal("final", blocks[0].State);
-            Assert.Equal("msg:1:user", blocks[0].Key);
-            Assert.Equal(64, blocks[0].Id.Length);
-        }
-
-        /// <summary>移出块不随载入复活——timeback 回收后从块序移除 + 落盘，重新载入以文件为准（前文不动：tool_calls 须配对）</summary>
-        [Fact]
-        public void Load_AfterVoid_MovedBlocksDoNotReturn()
-        {
-            LlmMessage[] messages = new LlmMessage[]
-            {
-                        User("问题", 100L),
-                        AssistantWithTools("", OneToolCall("call_1", "text-read", "{}"), 200L),
-                        ToolResult("call_1", "text-read", "内容", 300L),
-                        Assistant("回复", 400L)
-            };
-            ReplayAll(_store, messages);
-            Assert.Equal(3, _store.GetBlocks().Length);
-            // 前文不动（tool_calls 须配对）——仅视图层移出（用户消息 + sibling 工具卡）
-            int moved = _store.ConvertRangeToVoid(0, 2, "");
-            Assert.Equal(2, moved);
-            // 废弃段留档——hashes 必须是 JSON 数组（片段值须走 Raw 包裹，否则落成转义字符串）
-            CH4.ViewBlock[] afterMove = _store.GetBlocks();
-            Assert.Equal(2, afterMove.Length);
-            JsonElement voidPayload = ParsePayload(afterMove[0]);
-            JsonElement hashesEl = voidPayload.GetProperty("hashes");
-            Assert.Equal(JsonValueKind.Array, hashesEl.ValueKind);
-            Assert.Equal(2, hashesEl.GetArrayLength());
-            // A156：载入以落盘文件为准——已移出块不复活（旧架构靠重建重放 + 哈希过滤，本版不再重建）
-            CH4.SessionViewStore reloaded = new CH4.SessionViewStore(_path);
-            reloaded.Load();
-            CH4.ViewBlock[] blocks = reloaded.GetBlocks();
-            Assert.Equal(2, blocks.Length);
-            Assert.Equal("void", blocks[0].RenderType);
-            Assert.Equal("text", blocks[1].RenderType);
-            Assert.Equal("回复", ParsePayload(blocks[1]).GetProperty("content").GetString());
+            Assert.Equal(4, blocks[2].MsgIndex);
+            // A165 块契约——前文派生条目只带业务定位字段（msgIndex / round），无同步标识面
+            Assert.Equal(0, blocks[0].Round);
         }
 
         /// <summary>载入——文件缺失即为空视图（不从前文重建：旧数据不迁移）</summary>
@@ -371,7 +335,7 @@ namespace CatHome4.Core.Tests
             // 四类独立块 + 合成首块（注入报告）
             Assert.Equal(5, blocks.Length);
             Assert.Equal("inject_report", blocks[0].RenderType);
-            Assert.Equal("independent", blocks[1].Src);
+            Assert.Equal(-1, blocks[1].MsgIndex);
         }
 
         /// <summary>事件重放——块时间戳取消息 CreatedAt（消息块创建时刻）</summary>
@@ -424,8 +388,7 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Equal(2, blocks.Length);
             Assert.Equal("inject_report", blocks[0].RenderType);
-            Assert.Equal("inject_report", blocks[0].Key);
-            Assert.Null(blocks[0].Origin);
+            Assert.Equal(-1, blocks[0].MsgIndex);
             Assert.Equal(0L, blocks[0].Timestamp);
             Assert.Equal("{\"file\":\"a.md\"}", blocks[0].Payload);
         }
@@ -453,9 +416,7 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Equal(2, blocks.Length);
             Assert.Equal("roundsum", blocks[0].RenderType);
-            Assert.Equal("roundsum:0", blocks[0].Key);
-            Assert.Equal("roundsum:1", blocks[1].Key);
-            Assert.Null(blocks[0].Origin);
+            Assert.Equal(-1, blocks[0].MsgIndex);
             Assert.Equal("{\"type\":\"roundsum\"}", blocks[0].Payload);
         }
 
@@ -476,8 +437,8 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("text", blocks[0].RenderType);
-            Assert.Null(blocks[0].Origin);
-            Assert.Equal("我这就去查", ParsePayload(blocks[0]).GetProperty("content").GetString());
+            Assert.Equal(-1, blocks[0].MsgIndex);
+            Assert.Equal("我这就去查", ParsePayload(blocks[0]).GetProperty("text").GetString());
         }
 
         /// <summary>错误块——空文本不建块</summary>
@@ -489,7 +450,7 @@ namespace CatHome4.Core.Tests
             Assert.Empty(_store.GetBlocks());
         }
 
-        /// <summary>错误块——渲染类型 error + 类型/文本载荷</summary>
+        /// <summary>错误块——渲染类型 error + 文本载荷</summary>
         [Fact]
         public void AppendError_AppendsErrorBlock()
         {
@@ -498,7 +459,6 @@ namespace CatHome4.Core.Tests
             Assert.Single(blocks);
             Assert.Equal("error", blocks[0].RenderType);
             JsonElement payload = ParsePayload(blocks[0]);
-            Assert.Equal("error", payload.GetProperty("type").GetString());
             Assert.Equal("ERR|LLM|超时", payload.GetProperty("text").GetString());
         }
 
@@ -510,7 +470,6 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("retry", blocks[0].RenderType);
-            Assert.Equal("retry:0", blocks[0].Key);
         }
 
         /// <summary>重试块——只增不改：重试中 / 结果各追加一块，不原位更新（莎 2026-10-02 红线）</summary>
@@ -521,8 +480,6 @@ namespace CatHome4.Core.Tests
             _store.AppendRetry("{\"state\":\"resolved\"}", 500L);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Equal(2, blocks.Length);
-            Assert.Equal("retry:0", blocks[0].Key);
-            Assert.Equal("retry:1", blocks[1].Key);
             Assert.Equal("{\"state\":\"wait\"}", blocks[0].Payload);
             Assert.Equal("{\"state\":\"resolved\"}", blocks[1].Payload);
         }
@@ -542,20 +499,6 @@ namespace CatHome4.Core.Tests
             _store.Clear();
             Assert.Empty(_store.GetBlocks());
             Assert.Equal("", _store.GetInjectReport());
-        }
-
-        /// <summary>清轮末统计——只清 roundsum（消息块与间隙文本保留）</summary>
-        [Fact]
-        public void ClearRoundSums_KeepsMessageAndGapBlocks()
-        {
-            _store.OnUserMessage(User("问题", 100L), 0);
-            _store.AppendGapText("间隙", 110L);
-            _store.AppendRoundSummary("{\"type\":\"roundsum\"}", 120L);
-            _store.ClearRoundSums();
-            CH4.ViewBlock[] blocks = _store.GetBlocks();
-            Assert.Equal(2, blocks.Length);
-            Assert.Equal("user", blocks[0].RenderType);
-            Assert.Equal("text", blocks[1].RenderType);
         }
 
         // ── 落盘与往返 ──────────────────────────────────────────────
@@ -606,31 +549,6 @@ namespace CatHome4.Core.Tests
             CH4.SessionViewStore store = new CH4.SessionViewStore(_path);
             store.Load();
             Assert.Equal("", store.GetInjectReport());
-        }
-
-        // ── 哈希与块 ID ─────────────────────────────────────────────
-
-        /// <summary>内容哈希——同内容稳定、内容不同则不同（时空双索引的"空间"维）</summary>
-        [Fact]
-        public void ContentHash_Stable_AndContentSensitive()
-        {
-            _store.OnUserMessage(User("甲", 100L), 0);
-            _store.OnUserMessage(User("甲", 100L), 1);
-            _store.OnUserMessage(User("乙", 100L), 2);
-            CH4.ViewBlock[] blocks = _store.GetBlocks();
-            Assert.Equal(blocks[0].Origin.Hash, blocks[1].Origin.Hash);
-            Assert.NotEqual(blocks[0].Origin.Hash, blocks[2].Origin.Hash);
-        }
-
-        /// <summary>块 ID——块自哈希（64 位十六进制；同内容不同键 / 时刻可区分，A156）</summary>
-        [Fact]
-        public void BlockId_SelfHash_UniquePerBlock()
-        {
-            _store.OnUserMessage(User("甲", 100L), 0);
-            _store.OnUserMessage(User("甲", 100L), 1);
-            CH4.ViewBlock[] blocks = _store.GetBlocks();
-            Assert.Equal(64, blocks[0].Id.Length);
-            Assert.NotEqual(blocks[0].Id, blocks[1].Id);
         }
 
         // ── A87 旧会话留档 ──────────────────────────────────────────

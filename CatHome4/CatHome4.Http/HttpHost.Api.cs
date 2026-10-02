@@ -41,17 +41,7 @@ namespace CatHome4.Http
                 {
                     client.Queue.Writer.TryWrite(client.NextFrame("snapshot", _snapshotCache));
                 }
-                // A61——运行态首帧：新连接立即补一条当前运行态（"变化才推"语义下新订阅者拿不到当前值——
-                // 刷新后前端据此恢复"本轮进行中"面：停止按钮可用 + 状态条续显）；仅写本连接，不广播、不动 diff 基线
-                if (_sessionStateBuilder != null && client.Wants("sessionstate"))
-                {
-                    string stateHello = _sessionStateBuilder();
-                    if (stateHello != null && stateHello.Length > 0)
-                    {
-                        client.Queue.Writer.TryWrite(client.NextFrame("sessionstate", stateHello));
-                    }
-                }
-                // A162 状态推送——视图全量首帧：新连接取一次当前状态（替代前端连接建立后自行拉取并重建）；
+                // v2 契约——视图全量首帧（含状态段）：新连接取一次当前快照（替代前端连接建立后自行拉取）；
                 // 连接私有帧（不广播、不进变更集）——此后帧轮增量自然接续；断线重连即自愈（自动再取一次全量）
                 if (_viewFullBuilder != null && client.Wants("view"))
                 {

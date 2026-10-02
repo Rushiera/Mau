@@ -1245,8 +1245,6 @@ namespace CatHome4.Admin
                 ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig);
                 SessionViewStore viewStore = new SessionViewStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".view.json"));
                 ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, catSpecs, ExecuteTool, viewStore);
-                // A111——块序变更通知接线（视图层变更 → 转发面游标校正；猫 key 在组合根注入）
-                AttachViewOrderNotify(id, viewStore);
                 // M4e 猫级白名单——多猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
                 session.SetCatKey(id);
                 AdminService.ApplyCatRoots(id);
@@ -1540,26 +1538,8 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 装配块序变更通知（A111）——视图层变更（清除 / 重建 / 轮统计清理 / 区间转废弃）→ QQ 转发面游标校正。
-        /// 猫 key 由组合根注入（Core 不知猫 key、QQ 不知视图层——两侧零耦合）；未挂 qqbot 的猫同样接线（无转发态即无动作）。
-        /// </summary>
-        /// <param name="catKey">猫 key（转发态游标键——与 QqTarget.Key 同源）</param>
-        /// <param name="viewStore">会话视图存储</param>
-        internal static void AttachViewOrderNotify(string catKey, SessionViewStore viewStore)
-        {
-            if (viewStore == null)
-            {
-                return;
-            }
-            viewStore.OnBlocksReordered = delegate (ViewOrderChange change)
-            {
-                QQBotService.NotifyBlocksReordered(catKey, change);
-            };
-        }
-
-        /// <summary>
-        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType / Content / Done / Hash；text 块提取 payload.content，
-        /// Hash 供转发面锚定游标——A111）。
+        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType / Content / Done / Round；text 块提取 payload.text，
+        /// Round 供转发面按轮次定位——A165 v2 无键面）。
         /// </summary>
         /// <param name="blocks">视图块数组</param>
         /// <returns>QQ 转发项数组</returns>
@@ -1577,8 +1557,8 @@ namespace CatHome4.Admin
                 item.RenderType = b.RenderType ?? "";
                 item.Content = "";
                 item.Done = "";
-                // A156：游标锚取块键——稳定句柄（前文派生 msg:序:型 / 工具 tool:callId / 独立块 容器:序号）
-                item.Hash = b.Key == null ? "" : b.Key;
+                // A165 v2：无键面——按轮次定位（Round 随块给，重启续接跳过已消费轮）
+                item.Round = b.Round;
                 if (item.RenderType == "text")
                 {
                     item.Content = ExtractTextContent(b.Payload);
@@ -1593,7 +1573,7 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 提取 text 块内容——payload JSON 的 content 字段（防御式解析失败返回空串）。
+        /// 提取 text 块内容——payload JSON 的 text 字段（A165 v2 键名统一；防御式解析失败返回空串）。
         /// </summary>
         /// <param name="payloadJson">块载荷 JSON</param>
         /// <returns>内容文本</returns>
@@ -1607,7 +1587,7 @@ namespace CatHome4.Admin
             {
                 using (JsonDocument d = JsonUtil.ParseStrict(payloadJson))
                 {
-                    if (d.RootElement.TryGetProperty("content", out JsonElement c) && c.ValueKind == JsonValueKind.String)
+                    if (d.RootElement.TryGetProperty("text", out JsonElement c) && c.ValueKind == JsonValueKind.String)
                     {
                         return c.GetString() ?? "";
                     }
@@ -1615,7 +1595,7 @@ namespace CatHome4.Admin
             }
             catch (Exception ex)
             {
-                LogStore.Add("CatHome4", 2, "载荷 content 提取失败（回落空）: " + ex.Message, "CHAT");
+                LogStore.Add("CatHome4", 2, "载荷 text 提取失败（回落空）: " + ex.Message, "CHAT");
             }
             return "";
         }
@@ -1843,14 +1823,12 @@ namespace CatHome4.Admin
                 Dispatcher = (string line) => DispatchCommandForCat(cat, line),
                 EnvelopeBuilder = MakeChatEnvelopeBuilder(cat.Session),
                 FrameBuilder = null,
-                HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(cat.Session, max),
                 CatsBuilder = null,
                 NoteBuilder = () => cat.Session.BuildNoteJson(),
                 DelayBuilder = () => DelayQueue.BuildListJson(cat.Session.Id),
                 PatchBuilder = null,
-                SessionStateBuilder = () => cat.Session.BuildRunStateJson(),
                 ViewFullBuilder = () => cat.Session.BuildViewFullJson(),
-                ViewDeltaBuilder = () => cat.Session.TakeViewDeltaJson(),
+                ViewFrameBuilder = () => cat.Session.TakeViewFrameJson(),
                 ServeChatPage = true,
                 RouteRegistrar = RegisterChatPageRoutes,
                 HtmlRootProvider = HtmlRoot,
@@ -1885,14 +1863,12 @@ namespace CatHome4.Admin
                 Dispatcher = (string line) => DispatchCommandForMajor(line),
                 EnvelopeBuilder = MakeChatEnvelopeBuilder(_chatBridge.DefaultSession),
                 FrameBuilder = null,
-                HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max),
                 CatsBuilder = null,
                 NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
                 DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),
                 PatchBuilder = null,
-                SessionStateBuilder = () => _chatBridge.DefaultSession.BuildRunStateJson(),
                 ViewFullBuilder = () => _chatBridge.DefaultSession.BuildViewFullJson(),
-                ViewDeltaBuilder = () => _chatBridge.DefaultSession.TakeViewDeltaJson(),
+                ViewFrameBuilder = () => _chatBridge.DefaultSession.TakeViewFrameJson(),
                 ServeChatPage = true,
                 RouteRegistrar = RegisterChatPageRoutes,
                 HtmlRootProvider = HtmlRoot,

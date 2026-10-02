@@ -47,9 +47,6 @@ namespace CatHome4.Http
         /// <summary>紧凑帧构建回调（可空=不落帧）</summary>
         public Func<string> FrameBuilder { get; set; }
 
-        /// <summary>会话历史构建回调（可空=不注册该端点）</summary>
-        public Func<int, string> HistoryBuilder { get; set; }
-
         /// <summary>多猫列表构建回调（可空=不注册该端点）</summary>
         public Func<string> CatsBuilder { get; set; }
 
@@ -62,14 +59,11 @@ namespace CatHome4.Http
         /// <summary>增量 patch 构建回调（可空=全量推送）</summary>
         public Func<string> PatchBuilder { get; set; }
 
-        /// <summary>本猫运行态构建回调（可空=不推运行态）——对话端口用：变化才推（替代每 250ms 全量快照推送）</summary>
-        public Func<string> SessionStateBuilder { get; set; }
-
-        /// <summary>视图全量构建回调（可空=连接建立不推视图）——A162 状态推送：连接建立取一次（连接私有首帧）</summary>
+        /// <summary>视图全量帧构建回调（可空=连接建立不推视图）——v2 契约：连接建立取一次（连接私有首帧）</summary>
         public Func<string> ViewFullBuilder { get; set; }
 
-        /// <summary>视图增量构建回调（可空=不推视图增量）——A162 状态推送：帧轮取，无变化返回 null/空（零推送）</summary>
-        public Func<string> ViewDeltaBuilder { get; set; }
+        /// <summary>视图增量帧构建回调（可空=不推）——v2 契约：帧轮取，无变化返回 null/空（零推送）</summary>
+        public Func<string> ViewFrameBuilder { get; set; }
 
         /// <summary>静态页模式（true=chat.html / false=index.html）</summary>
         public bool ServeChatPage { get; set; }
@@ -105,17 +99,11 @@ namespace CatHome4.Http
         /// <summary>增量 patch 构建回调——宿主侧注入（Program.BuildPatchJson；可空=不推 patch 保持全量推送）</summary>
         private Func<string> _patchBuilder;
 
-        /// <summary>本猫运行态构建回调——对话端口注入（Session.BuildRunStateJson；可空=不推运行态）</summary>
-        private Func<string> _sessionStateBuilder;
-
-        /// <summary>视图全量构建回调——对话端口注入（Session.BuildViewFullJson；可空=连接建立不推视图）</summary>
+        /// <summary>视图全量帧构建回调——对话端口注入（Session.BuildViewFullJson；可空=连接建立不推视图）</summary>
         private Func<string> _viewFullBuilder;
 
-        /// <summary>视图增量构建回调——对话端口注入（Session.TakeViewDeltaJson；可空=不推视图增量）</summary>
-        private Func<string> _viewDeltaBuilder;
-
-        /// <summary>上次运行态 JSON——本地 diff（变化才推；空闲期零推送）——主线程独占</summary>
-        private string _lastSessionState;
+        /// <summary>视图增量帧构建回调——对话端口注入（Session.TakeViewFrameJson；可空=不推）</summary>
+        private Func<string> _viewFrameBuilder;
 
         /// <summary>指令投递回调——宿主侧注入（Program.DispatchCommand）</summary>
         private Func<string, bool> _dispatcher;
@@ -152,9 +140,6 @@ namespace CatHome4.Http
 
         /// <summary>紧凑帧构建回调——frame.txt 帧流（可空=不落帧）</summary>
         private Func<string> _frameBuilder;
-
-        /// <summary>会话历史构建回调——Program.BuildHistoryView（B4 对话区；GET /api/v1/history）</summary>
-        private Func<int, string> _historyBuilder;
 
         /// <summary>会话归属 ID——SSE llm/chatdone 事件 sessionId 字段（P9.3 多实例化：每猫实例绑定自身会话）</summary>
         private string _sessionId;
@@ -200,14 +185,12 @@ namespace CatHome4.Http
             host._dispatcher = options.Dispatcher;
             host._envelopeBuilder = options.EnvelopeBuilder;
             host._frameBuilder = options.FrameBuilder;
-            host._historyBuilder = options.HistoryBuilder;
             host._catsBuilder = options.CatsBuilder;
             host._noteBuilder = options.NoteBuilder;
             host._delayBuilder = options.DelayBuilder;
             host._patchBuilder = options.PatchBuilder;
-            host._sessionStateBuilder = options.SessionStateBuilder;
             host._viewFullBuilder = options.ViewFullBuilder;
-            host._viewDeltaBuilder = options.ViewDeltaBuilder;
+            host._viewFrameBuilder = options.ViewFrameBuilder;
             host._serveChatPage = options.ServeChatPage;
             host._routeRegistrar = options.RouteRegistrar;
             host._htmlRootProvider = options.HtmlRootProvider;
@@ -256,23 +239,6 @@ namespace CatHome4.Http
             _app.MapGet("/api/v1/logs", (Delegate)HandleLogs);
             _app.MapGet("/api/v1/config", (Delegate)HandleConfigGet);
             _app.MapPost("/api/v1/config", (Delegate)HandleConfigPost);
-            _app.MapGet("/api/v1/history", (HttpContext ctx) =>
-            {
-                // B4 对话区——会话历史视图（内存 ChatContext 实时真源；max 夹取 1-2000 缺省 200）
-                // 期三——增量续传口退役：重连 / 刷新一律全量（前端两区镜像，零配对）
-                int max = 200;
-                string raw = ctx.Request.Query["max"].ToString();
-                int parsed;
-                if (int.TryParse(raw, out parsed) && parsed > 0)
-                {
-                    max = parsed;
-                }
-                if (max > 2000)
-                {
-                    max = 2000;
-                }
-                return Results.Text(_historyBuilder(max), "application/json");
-            });
             _app.MapGet("/api/v1/note", (HttpContext ctx) =>
             {
                 // M4c Note 状态——前端悬浮气泡数据源（页面加载兜底；实时更新走 SSE note 事件）

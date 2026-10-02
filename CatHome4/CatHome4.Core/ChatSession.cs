@@ -393,7 +393,7 @@ namespace CH4
                     LogStore.Add("CatHome4", 3, "视图顶尾补差：" + added.ToString() + " 块（上次保存失败留下的尾部缺口）", "SYS");
                 }
             }
-            _viewStore.AuditOrigins(_context.GetMessages(), 5);
+            _viewStore.AuditEntries(_context.GetMessages(), 5);
         }
         /// <summary>
         /// 旧会话留档——session.new 清空前导出（A87：user 消息 / 正式回复 / 注入报告 / 每轮结算 → sessions_old 下 MD 文件）。
@@ -429,13 +429,11 @@ namespace CH4
         }
 
         /// <summary>
-        /// 会话重置显式事件——session.new 清前文后推送（前端收到后清空气泡再拉 history——消除竞态；问题一修复）。
+        /// 会话重置显式事件——session.new 清前文后调用（视图层两区全清 + 置全量待发：帧轮广播全量帧，前端整体重绘空态）。
         /// </summary>
         public void PushSessionReset()
         {
-            string resetJson = "{\"type\":\"session_reset\"}";
-            _viewBus.ResetLive();
-            _viewBus.PushControl(resetJson);
+            _viewBus.ResetAll();
         }
 
         /// <summary>
@@ -806,15 +804,14 @@ namespace CH4
         private void PauseFinalize()
         {
             _pauseRequested = false;
-            FinalizeInterrupted("{\"type\":\"paused\",\"text\":\"已停止本轮（前文保留 + 格式修复）\"}", "本轮已中止——前文保留 + 格式修复");
+            FinalizeInterrupted("本轮已中止——前文保留 + 格式修复");
         }
         /// <summary>
-        /// 中断收尾公共实现——已完成工具结果保留 + 上下文格式修复 + 截断落盘 + 序号复位 + 状态复位 Idle + control 事件。
+        /// 中断收尾公共实现——已完成工具结果保留 + 上下文格式修复 + 截断落盘 + 序号复位 + 状态复位 Idle + 状态段推送。
         /// 调用面：PauseFinalize（用户中止）——宿主重启不再走强制中断（A72：本轮常规结束，见 RestartRequest）。
         /// </summary>
-        /// <param name="ctrlJson">前端 control 事件 JSON（type/text）</param>
         /// <param name="logPrefix">日志前缀（实现追加落盘条数）</param>
-        private void FinalizeInterrupted(string ctrlJson, string logPrefix)
+        private void FinalizeInterrupted(string logPrefix)
         {
             // [段0] 已完成工具结果保留——未完成放弃（ReplaceMessages 对未配对声明补占位）+ 先行卡补终态（完成/已中止）
             for (int i = 0; i < _dogs.Count; i = i + 1)
@@ -860,8 +857,8 @@ namespace CH4
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
             SetChatState("idle");
-            // [段5] 前端通知——control 事件（seal + 按钮复位）
-            _viewBus.PushControl(ctrlJson);
+            // [段5] 状态段推送——按钮复位与运行态就位（v2：状态段承载业务态，无独立事件）
+            PushState();
         }
 
         /// <summary>
@@ -1297,18 +1294,8 @@ namespace CH4
                         _sessionPrompt = _sessionPrompt + (_usagePrompt - reqPrompt);
                         _sessionCompletion = _sessionCompletion + (_usageCompletion - reqCompletion);
                         _sessionCacheHit = _sessionCacheHit + (_usageCacheHit - reqCacheHit);
-                        // F4 视图——usage 控制块（前端前文长度与条数实时化）
-                        string usageJson = JsonUtil.Object(
-                            ("prompt", _usagePrompt),
-                            ("completion", _usageCompletion),
-                            ("cacheHit", _usageCacheHit),
-                            ("context", _contextTokens),
-                            ("count", _context.GetMessageCount()),
-                            ("sessionPrompt", _sessionPrompt),
-                            ("sessionCompletion", _sessionCompletion),
-                            ("sessionCacheHit", _sessionCacheHit));
-                        string usageCtrl = JsonUtil.Object(("type", "usage"), ("data", JsonUtil.Raw(usageJson)));
-                        _viewBus.PushControl(usageCtrl);
+                        // F4 视图——状态段推送（前文长度与条数实时化；v2：状态段承载，无独立事件）
+                        PushState();
                     }
                     else if (ev.Kind == LlmStreamKind.Done)
                     {
@@ -1551,22 +1538,64 @@ namespace CH4
                     ("reply", ms["reply"])))),
                 ("requests", requests));
         }
-        /// <summary>视图全量载荷——A162 状态推送（连接建立首帧取一次；宿主 HTTP 侧注入）</summary>
-        /// <returns>载荷 JSON（{"op":"full","blocks":[…] }）</returns>
+        /// <summary>快照全量帧——v2 契约（连接建立首帧取一次；宿主 HTTP 侧注入）</summary>
+        /// <returns>全量帧 JSON（state + persist:full + live）</returns>
         public string BuildViewFullJson()
         {
+            _viewBus.SetState(BuildStateJson());
             return _viewBus.BuildFull();
         }
-        /// <summary>视图增量载荷——A162 状态推送（帧轮取；变更集为空返回 null）</summary>
-        /// <returns>载荷 JSON（{"op":"delta",…}）或 null</returns>
-        public string TakeViewDeltaJson()
+        /// <summary>取快照帧——v2 契约（帧轮取；无变化返回 null——零字节）</summary>
+        /// <returns>帧 JSON（追加 / 状态 / 临时区可同帧承载）或 null</returns>
+        public string TakeViewFrameJson()
         {
+            _viewBus.SetState(BuildStateJson());
             string json;
-            if (_viewBus.TryTakeDelta(out json))
+            if (_viewBus.TryTakeFrame(out json))
             {
                 return json;
             }
             return null;
+        }
+        /// <summary>
+        /// 状态段整段 JSON——后端权威业务态（v2 契约：轮阶段 / 六态用时 / Note / Token 三级 / 前文长度与条数）。
+        /// 前端零推断：状态位与数字就位即渲染；整段比对去重由视图出口承担（无变化零字节）。
+        /// </summary>
+        /// <returns>状态段 JSON</returns>
+        public string BuildStateJson()
+        {
+            string name;
+            int requests;
+            Dictionary<string, long> ms = GetRunState(out name, out requests);
+            string runMsJson = JsonUtil.Object(
+                ("idle", ms["idle"]),
+                ("wait", ms["wait"]),
+                ("link", ms["link"]),
+                ("think", ms["think"]),
+                ("tool", ms["tool"]),
+                ("run", ms["run"]),
+                ("reply", ms["reply"]));
+            string tokensJson = JsonUtil.Object(
+                ("prompt", _usagePrompt),
+                ("completion", _usageCompletion),
+                ("cacheHit", _usageCacheHit),
+                ("context", _contextTokens),
+                ("count", _context.GetMessageCount()),
+                ("sessionPrompt", _sessionPrompt),
+                ("sessionCompletion", _sessionCompletion),
+                ("sessionCacheHit", _sessionCacheHit));
+            return JsonUtil.Object(
+                ("sessionId", Id),
+                ("runState", name),
+                ("runMs", JsonUtil.Raw(runMsJson)),
+                ("requests", requests),
+                ("note", JsonUtil.Raw(BuildNoteJson())),
+                ("tokens", JsonUtil.Raw(tokensJson)));
+        }
+        /// <summary>状态段推送——状态变化即推（视图出口整段比对去重；未 Attach 时静默）</summary>
+        public void PushState()
+        {
+            _viewBus.SetState(BuildStateJson());
         }
 
         /// <summary>构建 roundsum 载荷——本轮 Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 六态用时（idle 不计时故不入载荷；CloseRound 推送/落盘数据源）+ done（本轮结束语义：stream=流式自然收尾 / tool=工具主动 done）。</summary>
@@ -1866,9 +1895,9 @@ namespace CH4
             }
             // A69 视图层报错中文注释——真实前文保持原文
             result = ErrorNote.Apply(result);
-            Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, result, index, total);
+            Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, result, index, total, dog.ElapsedMs());
             string json = JsonUtil.Serialize(payload);
-            _viewBus.PushToolCardDone(key, json, dog.ElapsedMs());
+            _viewBus.PushToolCardDone(key, json);
         }
         /// <summary>工具卡逐条回填（A128）——单工具完成即定稿结果并推送终态卡（有先行卡 → 原位替换；无先行卡如声明面拦截 → 新建），不再等整批收口。幂等：同一工具单终态卡至多一次（A157 由视图出口的定稿记录承担——不再用 dog 标志）；结果定稿（超时 / 空结果兜底）在推送前完成。前文消息与持久视图块仍由段3 按声明序统一落位——实时面序（先行卡位）与持久块序不分叉。</summary>
         /// <param name="dog">工具单</param>
@@ -1898,9 +1927,9 @@ namespace CH4
             }
             // A69 视图层报错中文注释——真实前文（dog.Result）保持原文
             string viewResult = ErrorNote.Apply(dog.Result);
-            Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, viewResult, index + 1, _dogs.Count);
+            Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, viewResult, index + 1, _dogs.Count, dog.ElapsedMs());
             string toolJson = JsonUtil.Serialize(payload);
-            _viewBus.PushToolCardDone("tool:" + dog.ToolCallId, toolJson, dog.ElapsedMs());
+            _viewBus.PushToolCardDone("tool:" + dog.ToolCallId, toolJson);
         }
 
         /// <summary>
@@ -2409,18 +2438,8 @@ namespace CH4
             long sumTs = ViewTimestamp();
             _viewStore.AppendRoundSummary(roundsumJson, sumTs);
             SetChatState("idle");
-            // B4 对话区：会话终态事件——前端定型（llm done 仅一轮结束；chatdone 才是整次会话结束；count = 原始消息数——实时同步状态区）
-            // E3 扩展——chatdone 带真实 usage（命中/非命中/输出/前文长度；前端状态栏同步显示）
-            string statsJson = JsonUtil.Object(
-                ("prompt", _usagePrompt),
-                ("cacheHit", _usageCacheHit),
-                ("completion", _usageCompletion),
-                ("context", _contextTokens),
-                ("sessionPrompt", _sessionPrompt),
-                ("sessionCompletion", _sessionCompletion),
-                ("sessionCacheHit", _sessionCacheHit));
-            string doneJson = JsonUtil.Object(("type", "chatdone"), ("count", _context.GetMessages().Length), ("stats", JsonUtil.Raw(statsJson)));
-            _viewBus.PushControl(doneJson);
+            // B4 对话区：轮末状态段推送——v2 契约下会话终态由 state 段承载（runState 回 idle + Token 三级就位；前端零推断）
+            PushState();
             // Q 本轮结束系统通知——配置 app.round_notify 可开关（默认开启）；正文优先末轮回复前 40 字符，空则回退 Token 统计
             if (_roundNotify != null)
             {
@@ -2514,11 +2533,7 @@ namespace CH4
             // [段2] 最近轮统计重置——新起点零统计起算（会话级累计不动：回滚属同会话延续；
             //        原实现调 ResetStats() 会清会话级 token 累计——与 glossary「回滚不归零」口径冲突，2026-09-28 修正）
             _lastStats = new SessionStats();
-            // [段4] 视图——截断到切点（A156：不再从前文重建；两面并列，裁剪须显式同步）+ roundsum 清空
-            //        （roundsum 非真实前文派生；清空后落盘，防下次启动读回旧统计）
-            _viewStore.TruncateFrom(msgIndex + 1);
-            _viewStore.ClearRoundSums();
-            _viewStore.Save();
+            // [段4] 视图——不动（v2 契约：持久即持久，截断通道退役；视图层与真实前文并列，回滚只作用于前文）
             // [段5] Note 任务清空——防旧任务自动拉起新轮
             _noteTasks = null;
             _noteCurrent = 0;

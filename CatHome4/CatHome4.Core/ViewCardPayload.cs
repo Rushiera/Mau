@@ -22,8 +22,9 @@ namespace CH4
         /// <param name="result">结果文本（null = 先行卡）</param>
         /// <param name="index">并发序号（1-based）</param>
         /// <param name="total">并发总数</param>
+        /// <param name="durMs">运行时长（毫秒；-1 = 未记录 / 不适用——进载荷供前端显示）</param>
         /// <returns>工具卡载荷字典</returns>
-        public static Dictionary<string, object> BuildToolCard(string name, string arguments, string result, int index, int total)
+        public static Dictionary<string, object> BuildToolCard(string name, string arguments, string result, int index, int total, long durMs = -1)
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["name"] = name;
@@ -35,6 +36,7 @@ namespace CH4
             payload["toolIndex"] = index;
             payload["toolTotal"] = total;
             payload["order"] = ToolOrderTable.OrderText(name);
+            payload["durMs"] = durMs;
             return payload;
         }
     }
