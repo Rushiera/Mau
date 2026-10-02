@@ -277,7 +277,7 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 重写会话文件（原子——临时文件 + 替换）——会话起点 / 截断场景唯一写通道（无统计）。
+        /// 重写会话文件（原子——临时文件 + 替换）——会话起点 / 截断 / 前文重建场景唯一写通道（无统计）。
         /// </summary>
         /// <param name="messages">保留的消息数组</param>
         public void Rewrite(LlmMessage[] messages)
@@ -286,8 +286,8 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 重写会话文件（原子——临时文件 + 替换）——会话起点 / 截断场景唯一写通道。
-        /// append-only 的合法例外：起点写入与尾部截断无法用追加表达（低频操作）。
+        /// 重写会话文件（原子——临时文件 + 替换）——会话起点 / 截断 / 前文重建场景唯一写通道。
+        /// append-only 的合法例外：起点写入、尾部截断与丢头重建无法用追加表达（低频操作）。
         /// </summary>
         /// <param name="messages">保留的消息数组</param>
         /// <param name="stats">会话统计（可空=不写统计）</param>

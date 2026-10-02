@@ -43,6 +43,8 @@ namespace CH4
 
         /// <summary>连续自动继续间隔——每次重发前的等待秒数（站点恢复需时间，连发无益）</summary>
         private const int AutoContinueDelaySeconds = 15;
+        /// <summary>前文巡检间隔毫秒——60 秒（常量，不配置；非空闲轮节流窗口）</summary>
+        private const int ContextPatrolIntervalMs = 60000;
 
         // [段1] 标识与持久化
         /// <summary>会话唯一 ID——构造注入 = 猫 key（唯一标识；会话重建不换键）</summary>
@@ -310,6 +312,14 @@ namespace CH4
         {
             _autoContinueDelaySeconds = seconds;
         }
+        /// <summary>
+        /// 注入前文巡检间隔毫秒——测试用（0=每帧巡检）；生产走常量默认 60000（design-ch4-ctx-rebuild §二）。
+        /// </summary>
+        /// <param name="ms">间隔毫秒</param>
+        public void SetContextPatrolIntervalMs(int ms)
+        {
+            _ctxPatrolIntervalMs = ms;
+        }
 
         /// <summary>
         /// 端点角色标签——外观层 [API:主要/备用] 标签数据源（未接线 = 主要）。
@@ -563,6 +573,12 @@ namespace CH4
 
         /// <summary>完整前文存储——完整会话前文留档（与视图层独立并行；未挂载=该面不启用）</summary>
         private FullContextStore _fullCtx;
+        /// <summary>上次前文巡检时刻——Environment.TickCount64（节流基准）</summary>
+        private long _ctxPatrolMs;
+        /// <summary>上次前文重建失败标志——失败后请求前巡检回落 60 秒窗口（防每请求重试刷日志）</summary>
+        private bool _ctxRebuildFailed;
+        /// <summary>前文巡检间隔毫秒——生产走常量默认 60 秒；测试注入 0（每帧巡检）</summary>
+        private int _ctxPatrolIntervalMs = ContextPatrolIntervalMs;
 
         /// <summary>
         /// 挂载完整前文存储——宿主注入落点目录（采集源 = 本会话上下文；空=不启用）。
@@ -599,6 +615,68 @@ namespace CH4
                 return "{\"ok\":true,\"count\":0,\"start\":0,\"shown\":0,\"chars\":0,\"items\":[]}";
             }
             return _fullCtx.BuildView(max);
+        }
+        /// <summary>
+        /// 前文巡检——判据：前文首 400 字符与完整前文留档首 400 字符逐字符一致（design-ch4-ctx-rebuild §二）。
+        /// 不一致 = 前文丢头 → 从留档静默重建（不推视图 / 不推 SSE / 不发通知）。
+        /// 节流：非空闲轮按 60 秒窗口；请求前巡检不节流，仅在上次重建失败后回落窗口（防每请求重试刷日志）。
+        /// </summary>
+        /// <param name="throttle">true=按 60 秒窗口节流（非空闲轮）；false=请求前巡检（立即）</param>
+        private void PatrolContext(bool throttle)
+        {
+            if (_fullCtx == null)
+            {
+                return;
+            }
+            long now = Environment.TickCount64;
+            if (throttle || _ctxRebuildFailed)
+            {
+                if (now - _ctxPatrolMs < _ctxPatrolIntervalMs)
+                {
+                    return;
+                }
+            }
+            _ctxPatrolMs = now;
+            LlmMessage[] msgs = _context.GetMessages();
+            if (msgs.Length == 0)
+            {
+                return;
+            }
+            if (_fullCtx.HeadMatches(msgs))
+            {
+                _ctxRebuildFailed = false;
+                return;
+            }
+            _ctxRebuildFailed = !RebuildContext();
+        }
+        /// <summary>
+        /// 前文重建——从完整前文留档还原消息序列（留档末条之后的前文消息续接），替换上下文 + 落盘 + 留档对齐。
+        /// 静默修复：不产生视图块 / SSE 事件 / 通知；事实与失败只进宿主日志。
+        /// </summary>
+        /// <returns>true=重建完成（false=重建源不可用——已出声）</returns>
+        private bool RebuildContext()
+        {
+            LlmMessage[] live = _context.GetMessages();
+            LlmMessage[] rebuilt;
+            string error;
+            if (!_fullCtx.TryRebuild(live, out rebuilt, out error))
+            {
+                LogStore.Add("CatHome4", 3, "前文重建失败: " + error, "CHAT");
+                return false;
+            }
+            // [段1] 上下文替换——结构修复走 ReplaceMessages（system 唯一 / 工具配对补全）
+            _context.ReplaceMessages(rebuilt);
+            LlmMessage[] saved = _context.GetMessages();
+            // [段2] 落盘——重写唯一通道（append-only 的合法例外：重建）；只改内存 = 一次修复只保一次
+            if (_store != null)
+            {
+                _lastStats.EntryCount = saved.Length;
+                _store.Rewrite(saved, _lastStats);
+            }
+            // [段3] 留档对齐——重建后强制采集一次（尾锚命中即追加；头部已复原）
+            _fullCtx.Capture(true);
+            LogStore.Add("CatHome4", 2, "前文重建（静默修复）: " + live.Length.ToString() + " → " + saved.Length.ToString() + " 条", "CHAT");
+            return true;
         }
 
         /// <summary>
@@ -1217,6 +1295,8 @@ namespace CH4
                     }
                     // sleep 作废——继续属「非 sleep 输入」（与常规轮同口径）
                     ConsumeSleepOnWake("continue");
+                    // 请求前巡检——重建先于请求构造（前文丢头时本次请求即用重建结果）
+                    PatrolContext(false);
                     StartContinueRound();
                     return;
                 }
@@ -1239,10 +1319,14 @@ namespace CH4
                     PendingMessage next = _pending.Dequeue();
                     // sleep 作废——主干被「非 sleep 输入」启动即销毁本猫未到点 sleep（等待语义；告知先于触发消息）
                     ConsumeSleepOnWake(next.Source);
+                    // 请求前巡检——重建先于消息追加与请求构造（design-ch4-ctx-rebuild §五）
+                    PatrolContext(false);
                     StartRound(next.Content, next.Source);
                 }
                 return;
             }
+            // 非空闲巡检——每 60 秒一次；本帧相位推进之前完成重建（后续请求自动放行）
+            PatrolContext(true);
             if (_phase == ChatPhase.LlmRunning)
             {
                 PumpLlm();

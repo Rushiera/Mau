@@ -321,7 +321,7 @@ namespace CatHome4.Core.Tests
             }
         }
 
-        /// <summary>视图——条目数与消息数一致；max 取尾部窗口；空正文回落工具调用正文</summary>
+        /// <summary>视图——条目数与消息数一致；max 取尾部窗口且恒含首条（2026-10-02 判例）；空正文回落工具调用正文</summary>
         [Fact]
         public void BuildView_ItemsAndTailWindow()
         {
@@ -333,12 +333,36 @@ namespace CatHome4.Core.Tests
                 JsonElement root = doc.RootElement;
                 Assert.True(root.GetProperty("ok").GetBoolean());
                 Assert.Equal(3, root.GetProperty("count").GetInt32());
-                Assert.Equal(2, root.GetProperty("shown").GetInt32());
+                // 窗口形态——首条恒在窗口内 + 尾部 max-1 条
+                Assert.Equal(3, root.GetProperty("shown").GetInt32());
                 Assert.Equal(2, root.GetProperty("start").GetInt32());
-                Assert.Equal(2, root.GetProperty("items")[0].GetProperty("i").GetInt32());
-                Assert.Equal("assistant", root.GetProperty("items")[0].GetProperty("role").GetString());
-                Assert.Equal("{\"id\":\"call_2\"}", root.GetProperty("items")[0].GetProperty("content").GetString());
-                Assert.Equal("Note", root.GetProperty("items")[0].GetProperty("tool").GetString());
+                Assert.Equal(1, root.GetProperty("items")[0].GetProperty("i").GetInt32());
+                Assert.Equal("第一条", root.GetProperty("items")[0].GetProperty("content").GetString());
+                Assert.Equal(2, root.GetProperty("items")[1].GetProperty("i").GetInt32());
+                Assert.Equal("assistant", root.GetProperty("items")[1].GetProperty("role").GetString());
+                Assert.Equal("{\"id\":\"call_2\"}", root.GetProperty("items")[1].GetProperty("content").GetString());
+                Assert.Equal("Note", root.GetProperty("items")[1].GetProperty("tool").GetString());
+                Assert.Equal(3, root.GetProperty("items")[2].GetProperty("i").GetInt32());
+            }
+        }
+        /// <summary>视图窗口——条目超上限时恒含首条（system 段不因尾部窗口而不可见；判例 2026-10-02）</summary>
+        [Fact]
+        public void BuildView_OverWindow_KeepsHead()
+        {
+            _msgs.Add(Msg(LlmRole.System, new string('注', 500), "", "", "", "", "", 1000L));
+            _msgs.Add(User("第一条", 2000L));
+            _msgs.Add(User("第二条", 3000L));
+            _store.Capture(true);
+            string json = _store.BuildView(1);
+            using (JsonDocument doc = JsonDocument.Parse(json))
+            {
+                JsonElement root = doc.RootElement;
+                Assert.Equal(3, root.GetProperty("count").GetInt32());
+                JsonElement items = root.GetProperty("items");
+                Assert.Equal(2, items.GetArrayLength());
+                Assert.Equal(1, items[0].GetProperty("i").GetInt32());
+                Assert.Equal("system", items[0].GetProperty("role").GetString());
+                Assert.Equal(3, items[1].GetProperty("i").GetInt32());
             }
         }
     }

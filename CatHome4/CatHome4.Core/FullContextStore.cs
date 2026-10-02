@@ -70,6 +70,8 @@ namespace CH4
 
         /// <summary>消息段结束标记</summary>
         private const string CtxClose = "[[/CH4-CTX]]";
+        /// <summary>巡检判据长度——前文与留档首段比对字符数（400）</summary>
+        private const int HeadChars = 400;
 
         /// <summary>落点目录——&lt;data&gt;/sessions_ctx</summary>
         private readonly string _dir;
@@ -97,6 +99,8 @@ namespace CH4
 
         /// <summary>上次采集时刻——Environment.TickCount64（节流基准）</summary>
         private long _lastCaptureMs;
+        /// <summary>留档头部漂移告警标志——每会话只出声一次（头部恢复即复位）</summary>
+        private bool _headDriftWarned;
 
         /// <summary>
         /// 建立完整前文存储
@@ -198,7 +202,7 @@ namespace CH4
         /// 完整前文视图 JSON——对话页弹层「完整前文」数据源（GET /api/v1/fullctx）。
         /// 读取前强制采集一次（展示面不受 30 秒节流滞后影响）；条目形态与 /api/v1/context、/api/v1/keyinfo 同构。
         /// </summary>
-        /// <param name="max">返回条目上限（1-500 夹取，缺省 200；超出取尾部）</param>
+        /// <param name="max">返回条目上限（1-500 夹取，缺省 200；超出取尾部 + 恒含首条）</param>
         /// <returns>视图 JSON</returns>
         public string BuildView(int max)
         {
@@ -261,6 +265,11 @@ namespace CH4
                     start = total - max;
                 }
                 List<object> items = new List<object>();
+                if (start > 0)
+                {
+                    // 首条恒在窗口内——前文头部（system 注入块）不因尾部窗口而不可见（2026-10-02 判例）
+                    items.Add(all[0]);
+                }
                 for (int i = start; i < total; i = i + 1)
                 {
                     items.Add(all[i]);
@@ -415,6 +424,22 @@ namespace CH4
                     File.WriteAllText(path, newText, new UTF8Encoding(true));
                     return;
                 }
+                // 头部漂移守卫——留档头部 ≠ 前文头部 = 前文丢头：拒绝全量重写
+                // （留档是重建唯一源，被覆写即失去修复依据）；出声一次，头部恢复即复位
+                bool headDrift = HeadDiffers(stored, newText);
+                if (!headDrift)
+                {
+                    _headDriftWarned = false;
+                }
+                else
+                {
+                    if (!_headDriftWarned)
+                    {
+                        _headDriftWarned = true;
+                        LogStore.Add("FullContextStore", 3, "留档头部与前文不一致——拒绝全量重写（等待前文重建）: " + path, "CHAT");
+                    }
+                    return;
+                }
                 if (stored.Length >= AnchorChars)
                 {
                     // 尾部锚点——已存文本末 400 字符；自新文本尾端向前搜（LastIndexOf 即「从尾端向前」）
@@ -481,9 +506,7 @@ namespace CH4
         private string BuildText(LlmMessage[] msgs)
         {
             StringBuilder sb = new StringBuilder();
-            sb.Append(HeaderVersion).Append('\n');
-            sb.Append("# cat=").Append(_catKey).Append(" session=").Append(_stamp)
-                .Append(" start=").Append(_startText).Append('\n');
+            AppendHeader(sb);
             for (int i = 0; i < msgs.Length; i = i + 1)
             {
                 AppendMessageSection(sb, msgs[i]);
@@ -713,6 +736,268 @@ namespace CH4
                 removed = removed + 1;
             }
             return removed;
+        }
+        /// <summary>
+        /// 巡检判据——前文首段与留档首段逐字符一致（比对长度 = min(400, 两侧长度)）（design-ch4-ctx-rebuild §二）。
+        /// 无留档 / 留档为空 = 无判据（返回 true，不触发重建）；首段不一致 = 前文丢头或被裁剪。
+        /// </summary>
+        /// <param name="msgs">当前前文消息序列</param>
+        /// <returns>true=头部一致（无需重建）</returns>
+        public bool HeadMatches(LlmMessage[] msgs)
+        {
+            lock (_gate)
+            {
+                if (_path.Length == 0 || !File.Exists(_path))
+                {
+                    return true;
+                }
+                if (msgs == null || msgs.Length == 0)
+                {
+                    return true;
+                }
+                string stored = ReadHead(_path, HeadChars);
+                if (stored.Length == 0)
+                {
+                    return true;
+                }
+                string live = BuildHead(msgs, HeadChars);
+                return !HeadDiffers(stored, live);
+            }
+        }
+        /// <summary>
+        /// 重建源——留档剥离为消息序列 + 留档末条之后的前文消息续接（节流窗口内的新消息不丢）。
+        /// 调用方：前文巡检（design-ch4-ctx-rebuild §三）。
+        /// </summary>
+        /// <param name="live">当前前文消息序列（尾部续接来源；可空）</param>
+        /// <param name="messages">输出：重建后的消息序列（失败=null）</param>
+        /// <param name="error">输出：失败描述（空=成功）</param>
+        /// <returns>true=重建源可用</returns>
+        public bool TryRebuild(LlmMessage[] live, out LlmMessage[] messages, out string error)
+        {
+            messages = null;
+            error = "";
+            lock (_gate)
+            {
+                // [段1] 留档读取与剥离——无留档 / 结构非法即失败出声
+                if (_path.Length == 0 || !File.Exists(_path))
+                {
+                    error = "本会话无完整前文留档";
+                    return false;
+                }
+                string text;
+                try
+                {
+                    text = File.ReadAllText(_path);
+                }
+                catch (Exception ex)
+                {
+                    error = "留档读取失败: " + ex.Message;
+                    return false;
+                }
+                List<FullContextEntry> entries;
+                if (!TryParse(text, out entries, out error))
+                {
+                    return false;
+                }
+                if (entries.Count == 0)
+                {
+                    error = "留档无消息段";
+                    return false;
+                }
+                // [段2] 条目 → 消息——角色非法即失败（不静默降级）
+                List<LlmMessage> list = new List<LlmMessage>();
+                for (int i = 0; i < entries.Count; i = i + 1)
+                {
+                    LlmMessage msg;
+                    if (!ToMessage(entries[i], out msg))
+                    {
+                        error = "留档角色非法: " + entries[i].Role;
+                        return false;
+                    }
+                    list.Add(msg);
+                }
+                // [段3] 尾部续接——留档末条在现前文中定位，其后消息按序接上
+                int resume = MatchTail(entries, live);
+                if (resume < 0)
+                {
+                    LogStore.Add("FullContextStore", 2, "前文重建：留档末条未在当前前文中命中——尾部不续接（留档 "
+                        + entries.Count.ToString() + " 条）", "CHAT");
+                }
+                else
+                {
+                    for (int i = resume; i < live.Length; i = i + 1)
+                    {
+                        list.Add(live[i]);
+                    }
+                }
+                messages = list.ToArray();
+                return true;
+            }
+        }
+        /// <summary>读留档首段——有界读取（不整文件载入）；BOM 由 StreamReader 自动剥离。</summary>
+        /// <param name="path">留档路径</param>
+        /// <param name="chars">读取字符数上限</param>
+        /// <returns>首段文本（不足=全部）</returns>
+        private static string ReadHead(string path, int chars)
+        {
+            char[] buffer = new char[chars];
+            int total = 0;
+            using (StreamReader reader = new StreamReader(path, Encoding.UTF8, true))
+            {
+                while (total < chars)
+                {
+                    int read = reader.Read(buffer, total, chars - total);
+                    if (read <= 0)
+                    {
+                        break;
+                    }
+                    total = total + read;
+                }
+            }
+            return new string(buffer, 0, total);
+        }
+        /// <summary>构建前文首段——文件头 + 逐消息段（累积到 chars 即截断；与留档同一构建面）。</summary>
+        /// <param name="msgs">消息序列</param>
+        /// <param name="chars">构建字符数上限</param>
+        /// <returns>首段文本（不足=全部）</returns>
+        private string BuildHead(LlmMessage[] msgs, int chars)
+        {
+            StringBuilder sb = new StringBuilder(chars + 256);
+            AppendHeader(sb);
+            for (int i = 0; i < msgs.Length && sb.Length < chars; i = i + 1)
+            {
+                AppendMessageSection(sb, msgs[i]);
+            }
+            if (sb.Length > chars)
+            {
+                return sb.ToString(0, chars);
+            }
+            return sb.ToString();
+        }
+        /// <summary>
+        /// 首段比对——留档首段与现构首段是否不一致（比对长度 = min(400, 两侧长度)；任一侧为空 = 无判据）。
+        /// 前文被裁剪（丢头 / 丢尾）时现构首段更短——比对区内的段头差异即暴露不一致。
+        /// </summary>
+        /// <param name="stored">留档侧文本（首段）</param>
+        /// <param name="live">现构侧文本（首段）</param>
+        /// <returns>true=不一致（触发重建 / 拒绝覆写）</returns>
+        private static bool HeadDiffers(string stored, string live)
+        {
+            int chars = stored.Length;
+            if (chars > HeadChars)
+            {
+                chars = HeadChars;
+            }
+            if (live.Length < chars)
+            {
+                chars = live.Length;
+            }
+            if (chars == 0)
+            {
+                return false;
+            }
+            return !string.Equals(stored.Substring(0, chars), live.Substring(0, chars), StringComparison.Ordinal);
+        }
+        /// <summary>文件头——版本行 + 猫 / 会话 / 起时（采集与首段构建共用同一出口）。</summary>
+        /// <param name="sb">目标缓冲</param>
+        private void AppendHeader(StringBuilder sb)
+        {
+            sb.Append(HeaderVersion).Append('\n');
+            sb.Append("# cat=").Append(_catKey).Append(" session=").Append(_stamp)
+                .Append(" start=").Append(_startText).Append('\n');
+        }
+        /// <summary>留档条目 → 消息——四字段 + 配对 ID + 时刻全字段还原（角色非法返回 false）。</summary>
+        /// <param name="entry">留档条目</param>
+        /// <param name="message">输出：消息</param>
+        /// <returns>true=角色合法</returns>
+        private static bool ToMessage(FullContextEntry entry, out LlmMessage message)
+        {
+            message = new LlmMessage();
+            LlmRole role;
+            if (!RoleFromText(entry.Role, out role))
+            {
+                return false;
+            }
+            message.Role = role;
+            message.Content = entry.Content;
+            message.ToolCallId = entry.ToolCallId;
+            message.ToolName = entry.ToolName;
+            message.ToolCallsJson = entry.ToolCalls;
+            message.ReasoningContent = entry.Reasoning;
+            message.ImagesJson = entry.Images;
+            message.CreatedAt = entry.Time;
+            return true;
+        }
+        /// <summary>角色文本 → 角色（wire 四 role 小写；未知返回 false）。</summary>
+        /// <param name="text">角色文本</param>
+        /// <param name="role">输出：角色</param>
+        /// <returns>true=已知角色</returns>
+        private static bool RoleFromText(string text, out LlmRole role)
+        {
+            role = LlmRole.Tool;
+            if (text == "system")
+            {
+                role = LlmRole.System;
+                return true;
+            }
+            if (text == "user")
+            {
+                role = LlmRole.User;
+                return true;
+            }
+            if (text == "assistant")
+            {
+                role = LlmRole.Assistant;
+                return true;
+            }
+            if (text == "tool")
+            {
+                role = LlmRole.Tool;
+                return true;
+            }
+            return false;
+        }
+        /// <summary>
+        /// 尾部续接定位——留档末条在现前文中的位置（逐字段全等，自尾端向前找），命中即返回其后一条下标。
+        /// 未命中返回 -1（两端不同源——不续接，由调用方出声）。
+        /// </summary>
+        /// <param name="entries">留档条目序列</param>
+        /// <param name="live">当前前文消息序列</param>
+        /// <returns>续接起点下标（-1=未命中）</returns>
+        private static int MatchTail(List<FullContextEntry> entries, LlmMessage[] live)
+        {
+            if (live == null || live.Length == 0)
+            {
+                return -1;
+            }
+            FullContextEntry last = entries[entries.Count - 1];
+            for (int i = live.Length - 1; i >= 0; i = i - 1)
+            {
+                if (SameMessage(last, live[i]))
+                {
+                    return i + 1;
+                }
+            }
+            return -1;
+        }
+        /// <summary>留档条目与消息逐字段全等——续接定位判据（角色 / 四字段 / 配对 ID / 时刻）。</summary>
+        /// <param name="entry">留档条目</param>
+        /// <param name="msg">消息</param>
+        /// <returns>true=同一消息</returns>
+        private static bool SameMessage(FullContextEntry entry, LlmMessage msg)
+        {
+            LlmRole role;
+            if (!RoleFromText(entry.Role, out role))
+            {
+                return false;
+            }
+            return role == msg.Role
+                && entry.Time == msg.CreatedAt
+                && string.Equals(entry.Content, msg.Content, StringComparison.Ordinal)
+                && string.Equals(entry.ToolCallId, msg.ToolCallId, StringComparison.Ordinal)
+                && string.Equals(entry.ToolCalls, msg.ToolCallsJson, StringComparison.Ordinal)
+                && string.Equals(entry.Reasoning, msg.ReasoningContent, StringComparison.Ordinal)
+                && string.Equals(entry.Images, msg.ImagesJson, StringComparison.Ordinal);
         }
     }
 }

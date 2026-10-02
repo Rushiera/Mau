@@ -513,7 +513,7 @@ namespace CH4
         /// ctxTokens = ContextTokensKnown（真实 usage 值，零估算）；线程模型同 BuildHistoryView（HTTP 线程直读内存真源）。
         /// </summary>
         /// <param name="session">目标会话（P9.3 按猫参数化——每猫闭包传各自会话）</param>
-        /// <param name="max">返回条目上限（1-500 夹取，缺省 200；超出取尾部）</param>
+        /// <param name="max">返回条目上限（1-500 夹取，缺省 200；超出取尾部 + 恒含首条）</param>
         /// <returns>前文视图 JSON</returns>
         public string BuildContextView(ChatSession session, int max)
         {
@@ -543,22 +543,14 @@ namespace CH4
                 totalChars = totalChars + MessageBodyChars(msgs[i]);
             }
             List<object> items = new List<object>();
+            if (start > 0)
+            {
+                // 首条恒在窗口内——前文头部（system 注入块）不因尾部窗口而不可见（2026-10-02 判例）
+                items.Add(BuildContextItem(msgs, 0));
+            }
             for (int i = start; i < total; i++)
             {
-                LlmMessage m = msgs[i];
-                string full = MessageBody(m);
-                bool truncated = full.Length > ContextItemLimit;
-                string body = truncated ? full.Substring(0, ContextItemLimit) : full;
-                Dictionary<string, object> item = new Dictionary<string, object>();
-                item["i"] = i + 1;
-                item["role"] = RoleName(m.Role);
-                item["tool"] = m.ToolName == null ? "" : m.ToolName;
-                item["chars"] = full.Length;
-                item["time"] = m.CreatedAt;
-                item["truncated"] = truncated;
-                item["preview"] = MessagePreview(full);
-                item["content"] = body;
-                items.Add(item);
+                items.Add(BuildContextItem(msgs, i));
             }
             Dictionary<string, object> resp = new Dictionary<string, object>();
             resp["ok"] = true;
@@ -570,6 +562,29 @@ namespace CH4
             resp["ctxTokens"] = session.ContextTokensKnown;
             resp["items"] = items;
             return JsonUtil.Serialize(resp);
+        }
+        /// <summary>
+        /// 单条前文条目——i / role / tool / chars / time / truncated / preview / content（视图与完整前文同构）。
+        /// </summary>
+        /// <param name="msgs">消息序列</param>
+        /// <param name="index">消息下标（0 基）</param>
+        /// <returns>条目对象</returns>
+        private Dictionary<string, object> BuildContextItem(LlmMessage[] msgs, int index)
+        {
+            LlmMessage m = msgs[index];
+            string full = MessageBody(m);
+            bool truncated = full.Length > ContextItemLimit;
+            string body = truncated ? full.Substring(0, ContextItemLimit) : full;
+            Dictionary<string, object> item = new Dictionary<string, object>();
+            item["i"] = index + 1;
+            item["role"] = RoleName(m.Role);
+            item["tool"] = m.ToolName == null ? "" : m.ToolName;
+            item["chars"] = full.Length;
+            item["time"] = m.CreatedAt;
+            item["truncated"] = truncated;
+            item["preview"] = MessagePreview(full);
+            item["content"] = body;
+            return item;
         }
         /// <summary>
         /// 构建会话关键信息视图 JSON——对话页状态栏「前文关键信息」点击弹层数据源（GET /api/v1/keyinfo）。

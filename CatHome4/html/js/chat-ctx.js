@@ -35,6 +35,13 @@ function chatCtxModeOf(mode) {
     return 'list';
 }
 
+// 窗口提示——条目被截断时标注窗口形态（首条恒在窗口内：显示首条 + 尾部；否则显示尾部）
+function chatCtxWindowNote(d, items) {
+    if (!d || items.length >= d.count) { return ''; }
+    if (items.length > 0 && items[0].i === 1) { return '（显示首条 + 尾部 ' + (items.length - 1) + ' 条）'; }
+    return '（显示尾部 ' + items.length + ' 条）';
+}
+
 // 数据装载——按当前视图选数据面（key → /api/v1/keyinfo；full → /api/v1/fullctx；其余 → /api/v1/context）；reuse=true 且有缓存直接重渲染
 function chatCtxLoad(reuse) {
     if (chatCtxMode === 'key') {
@@ -44,11 +51,13 @@ function chatCtxLoad(reuse) {
     }
     if (chatCtxMode === 'full') {
         if (reuse && chatFullData) { chatCtxRender(); return; }
-        chatCtxFetch('/api/v1/fullctx', '完整前文', function (d) { chatFullData = d; });
+        // 取 max=500——缺省尾部窗口 200 会把首条（system 注入块）挤出窗口（判例 2026-10-02）
+        chatCtxFetch('/api/v1/fullctx?max=500', '完整前文', function (d) { chatFullData = d; });
         return;
     }
     if (reuse && chatCtxData) { chatCtxRender(); return; }
-    chatCtxFetch('/api/v1/context', '前文', function (d) { chatCtxData = d; });
+    // 取 max=500——缺省尾部窗口 200 会把首条（system 注入块）挤出窗口（判例 2026-10-02：本会话 250 条时面板首条不可见）
+    chatCtxFetch('/api/v1/context?max=500', '前文', function (d) { chatCtxData = d; });
 }
 
 // 读取——失败出声（不静默留白）
@@ -122,14 +131,15 @@ function chatCtxRender() {
     if (chatCtxMode === 'tokens') {
         if (title) { title.textContent = '前文 token 明细'; }
         if (meta) {
-            meta.textContent = '真实 ' + tokText + '（最近一次请求）· 前文 ' + chatFmtCount(d.chars) + ' 字符 · 分布按字符占比（估算）';
+            meta.textContent = '真实 ' + tokText + '（最近一次请求）· 前文 ' + chatFmtCount(d.chars) + ' 字符 · 分布按字符占比（估算）'
+                + chatCtxWindowNote(d, items);
         }
         chatCtxRenderTokens(list, items);
     } else {
         if (title) { title.textContent = '前文条目'; }
         if (meta) {
             meta.textContent = '共 ' + chatFmtCount(d.count) + ' 条 · ' + chatFmtCount(d.chars) + ' 字符 · 真实 ' + tokText
-                + (items.length < d.count ? ('（显示尾部 ' + items.length + ' 条）') : '');
+                + chatCtxWindowNote(d, items);
         }
         chatCtxRenderList(list, items);
     }
@@ -150,7 +160,7 @@ function chatCtxRenderKey(list, meta, title) {
     var items = d.items || [];
     if (meta) {
         meta.textContent = '共 ' + chatFmtCount(d.count) + ' 条 · ' + chatFmtCount(d.chars) + ' 字符'
-            + (items.length < d.count ? ('（显示尾部 ' + items.length + ' 条）') : '');
+            + chatCtxWindowNote(d, items);
     }
     chatCtxRenderList(list, items, '本次会话暂无关键信息', chatKeyRoleLabels);
 }
@@ -170,7 +180,7 @@ function chatCtxRenderFull(list, meta, title) {
     var items = d.items || [];
     if (meta) {
         meta.textContent = '共 ' + chatFmtCount(d.count) + ' 条 · ' + chatFmtCount(d.chars) + ' 字符'
-            + (items.length < d.count ? ('（显示尾部 ' + items.length + ' 条）') : '');
+            + chatCtxWindowNote(d, items);
     }
     chatCtxRenderList(list, items, '本次会话暂无完整前文', chatFullRoleLabels);
 }

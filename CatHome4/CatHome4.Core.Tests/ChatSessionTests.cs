@@ -33,6 +33,8 @@ namespace CatHome4.Core.Tests
 
             /// <summary>ChatStream 调用次数——工具批收敛验证</summary>
             public int CallCount = 0;
+            /// <summary>最近一次请求的消息序列——前文重建验证（请求内容是否已含重建后的前文）</summary>
+            public LlmMessage[] LastMessages;
 
             /// <summary>前 N 次调用返回错误——S2 重试/错误隔离验证（0=不注入错误）</summary>
             public int FailTimes = 0;
@@ -88,6 +90,7 @@ namespace CatHome4.Core.Tests
             public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, string userId = "", [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
             {
                 CallCount = CallCount + 1;
+                LastMessages = messages;
                 // S2 错误注入——前 N 次调用产出 Error 事件（对应 Runtime 重试耗尽前/后两态）
                 if (CallCount <= FailTimes)
                 {
@@ -1954,6 +1957,105 @@ namespace CatHome4.Core.Tests
             }
             Assert.Equal(13, llm.CallCount);
             Assert.True(session.IsIdle);
+        }
+
+        /// <summary>
+        /// 前文重建——请求前巡检发现丢头（system 段缺失）：静默重建，本次请求即用重建后的前文（design-ch4-ctx-rebuild §二 / §五）。
+        /// 判据：上下文首条回到 system · 请求实收序列首条 = system · 丢头前消息与节流窗口内新消息全部还原。
+        /// </summary>
+        [Fact]
+        public void Patrol_RebuildBeforeRequest_RestoresSystemHead()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "第一轮回复";
+            CH4.ChatSession session = CreateSession(llm);
+            string dir = Path.Combine(Path.GetTempPath(), "cat4patrol_" + Guid.NewGuid().ToString("N"));
+            session.AttachFullContext(dir);
+            session.Context.SetSystemPrompt("系统注入块：" + new string('注', 500));
+            session.PostUserMessage("第一轮问题");
+            PumpUntilIdle(session);
+            // 留档就位——system + user1（末条回复在采集节流窗口内未入档）
+            Assert.Equal(3, session.Context.GetMessages().Length);
+            // 模拟丢头——前文只剩末两条
+            LlmMessage[] all = session.Context.GetMessages();
+            session.Context.ReplaceMessages(new LlmMessage[] { all[1], all[2] });
+            Assert.Equal(LlmRole.User, session.Context.GetMessages()[0].Role);
+            // 请求前巡检——丢头即重建（重建先于消息追加与请求构造）
+            llm.ReplyText = "第二轮回复";
+            session.PostUserMessage("第二轮问题");
+            PumpUntilIdle(session);
+            LlmMessage[] after = session.Context.GetMessages();
+            Assert.Equal(5, after.Length);
+            Assert.Equal(LlmRole.System, after[0].Role);
+            Assert.StartsWith("系统注入块：", after[0].Content, StringComparison.Ordinal);
+            // 节流窗口内的新消息（末条回复）经尾部续接保留
+            Assert.Equal("第一轮回复", after[2].Content);
+            // 请求实收序列首条 = system（重建结果即本次请求内容）
+            Assert.Equal(LlmRole.System, llm.LastMessages[0].Role);
+            try
+            {
+                Directory.Delete(dir, true);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[测试清理] 前文重建临时目录删除失败: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// 前文重建——非空闲轮巡检：流进行中丢头，本帧相位推进之前重建完成（后续请求自动用上重建结果）。
+        /// </summary>
+        [Fact]
+        public void Patrol_NonIdle_RebuildsMidRound()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "回复";
+            llm.HoldStream = new AutoResetEvent(false);
+            CH4.ChatSession session = CreateSession(llm);
+            string dir = Path.Combine(Path.GetTempPath(), "cat4patrol_" + Guid.NewGuid().ToString("N"));
+            session.AttachFullContext(dir);
+            // 巡检间隔注入 0——每帧巡检（生产恒 60 秒）
+            session.SetContextPatrolIntervalMs(0);
+            session.Context.SetSystemPrompt("系统注入块：" + new string('注', 500));
+            session.PostUserMessage("问题");
+            // 泵到请求在途（非空闲）
+            for (int i = 0; i < 100 && session.IsIdle; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+            }
+            Assert.False(session.IsIdle);
+            // 流进行中丢头——前文只剩 user 一条
+            LlmMessage[] all = session.Context.GetMessages();
+            session.Context.ReplaceMessages(new LlmMessage[] { all[1] });
+            Assert.Equal(LlmRole.User, session.Context.GetMessages()[0].Role);
+            // 非空闲巡检——重建在相位推进之前完成
+            session.Pump();
+            Thread.Sleep(5);
+            Assert.Equal(LlmRole.System, session.Context.GetMessages()[0].Role);
+            // 放行流——本轮正常收尾
+            for (int i = 0; i < 200; i = i + 1)
+            {
+                llm.HoldStream.Set();
+                session.Pump();
+                Thread.Sleep(5);
+                if (session.IsIdle)
+                {
+                    break;
+                }
+            }
+            Assert.True(session.IsIdle);
+            LlmMessage[] after = session.Context.GetMessages();
+            Assert.Equal(3, after.Length);
+            Assert.Equal(LlmRole.System, after[0].Role);
+            try
+            {
+                Directory.Delete(dir, true);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[测试清理] 前文重建临时目录删除失败: " + ex.Message);
+            }
         }
     }
 }
