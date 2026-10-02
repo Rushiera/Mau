@@ -10,9 +10,9 @@ using CatHome4.Contracts;
 namespace CH4
 {
     /// <summary>
-    /// 会话视图存储——F4 视图持久化（内存整块列表 + 文件落盘 + 从真实前文重建）。
-    /// 只存整块（流式中间态/占位卡不落盘）；重建 = 真实前文绝对可用 → 完全重置视图层。
-    /// 数据源语义：内存真源（运行时增量构建）；文件 = 落盘面（CloseRound 同步写）。
+    /// 会话视图存储——视图层持久区（A156：与真实前文并列，载入即权威）。
+    /// 块在事件发生点一次性定稿落盘（写入序即权威序）；载入读回持久块与独立块，不再从前文重建。
+    /// 残留重建面只余两处：顶尾补差（AppendTailMissing）与对账哨兵（AuditOrigins），且不得改写已有块。
     /// </summary>
     internal sealed class SessionViewStore
     {
@@ -41,14 +41,17 @@ namespace CH4
         /// <summary>废弃块——timeback 回收区间的合并归档块（非真实前文派生，Rebuild 不清；Save 落盘；前端「已废弃」气泡）</summary>
         private readonly List<ViewBlock> _voids = new List<ViewBlock>();
 
+        /// <summary>最近块时间戳——单调补差基准（载入后按既有块最大值初始化；A156 I5）</summary>
+        private long _lastTs;
+
         /// <summary>
-        /// 块序代际号——任何块序变更（清除 / 重建 / 轮统计清理 / 区间转废弃）递增（A142）：
+        /// 块序代际号——任何块序变更（清除 / 轮统计清理 / 区间转废弃 / 截断）递增（A142）：
         /// 前端重连时带 gen + 已持有块数请求增量历史；gen 不匹配 = 前缀失效 → 回落全量重建。
         /// </summary>
         private int _blockGen;
 
         /// <summary>
-        /// 块序变更通知——视图层唯一出声点（清除 / 重建 / 轮统计清理 / 区间转废弃四处变更点统一调用）：
+        /// 块序变更通知——视图层唯一出声点（清除 / 轮统计清理 / 区间转废弃 / 截断四处变更点统一调用）：
         /// 转发面（QQ）订阅后按变更区间 / 内容锚点校正块游标（A111）。空=无消费方（无动作）。
         /// </summary>
         public Action<ViewOrderChange> OnBlocksReordered;
@@ -97,7 +100,7 @@ namespace CH4
             /// <summary>会话 ID</summary>
             public string SessionId { get; set; }
 
-            /// <summary>视图块数组（按到达序——重建后重新生成）</summary>
+            /// <summary>视图块数组（写入序——事件直落，载入即权威；A156）</summary>
             public ViewBlock[] Blocks { get; set; }
 
             /// <summary>注入报告 JSON——会话元数据（非真实前文派生；Rebuild 不清，Save 落盘）</summary>
@@ -176,7 +179,9 @@ namespace CH4
             {
                 return false;
             }
-            if (a.Hash != b.Hash || a.Timestamp != b.Timestamp || a.RenderType != b.RenderType)
+            string hashA = a.Origin == null ? "" : a.Origin.Hash;
+            string hashB = b.Origin == null ? "" : b.Origin.Hash;
+            if (hashA != hashB || a.Timestamp != b.Timestamp || a.RenderType != b.RenderType)
             {
                 return false;
             }
@@ -219,12 +224,7 @@ namespace CH4
             if (_injectReport.Length > 0)
             {
                 ViewBlock[] withReport = new ViewBlock[merged.Length + 1];
-                ViewBlock report = new ViewBlock();
-                report.Timestamp = 0;
-                report.Hash = "inject_report";
-                report.MsgIndex = -1;
-                report.RenderType = "inject_report";
-                report.Payload = _injectReport;
+                ViewBlock report = NewBlock("inject_report", "inject_report", _injectReport, 0, null, "independent", -1, false);
                 withReport[0] = report;
                 for (int i = 0; i < merged.Length; i = i + 1)
                 {
@@ -237,42 +237,39 @@ namespace CH4
                  /// 真实前文 append 钩子——用户消息 → user 块
                  /// </summary>
                  /// <param name="m">真实前文消息</param>
-                 /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
-                 /// <param name="msgIndex">真实前文消息索引（节点定位锚）</param>
-        public void OnUserMessage(LlmMessage m, long timestamp, int msgIndex)
+                 /// <param name="msgIndex">真实前文消息索引（块来源关系字段）</param>
+        public void OnUserMessage(LlmMessage m, int msgIndex)
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["content"] = m.Content ?? "";
-            Append(m, "user", payload, timestamp, msgIndex);
+            Append(m, "user", payload, msgIndex);
         }
 
         /// <summary>
         /// 真实前文 append 钩子——assistant 纯文本回复 → text 块
         /// </summary>
         /// <param name="m">真实前文消息</param>
-        /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
-        /// <param name="msgIndex">真实前文消息索引（节点定位锚）</param>
-        public void OnAssistantText(LlmMessage m, long timestamp, int msgIndex)
+        /// <param name="msgIndex">真实前文消息索引（块来源关系字段）</param>
+        public void OnAssistantText(LlmMessage m, int msgIndex)
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["content"] = m.Content ?? "";
-            Append(m, "text", payload, timestamp, msgIndex);
+            Append(m, "text", payload, msgIndex);
         }
 
         /// <summary>
         /// 真实前文 append 钩子——assistant 工具调用声明 → reason 块（有思考时）+ 登记待配对工具
         /// </summary>
         /// <param name="m">真实前文消息</param>
-        /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
-        /// <param name="msgIndex">真实前文消息索引（节点定位锚）</param>
-        public void OnAssistantToolCalls(LlmMessage m, long timestamp, int msgIndex)
+        /// <param name="msgIndex">真实前文消息索引（块来源关系字段）</param>
+        public void OnAssistantToolCalls(LlmMessage m, int msgIndex)
         {
             string reasoning = m.ReasoningContent ?? "";
             if (reasoning.Length > 0)
             {
                 Dictionary<string, object> payload = new Dictionary<string, object>();
                 payload["content"] = reasoning;
-                Append(m, "reason", payload, timestamp, msgIndex);
+                Append(m, "reason", payload, msgIndex);
             }
             RegisterPendingTools(m.ToolCallsJson ?? "");
         }
@@ -281,9 +278,8 @@ namespace CH4
         /// 真实前文 append 钩子——tool 结果 → 配对生成工具卡块（孤立 tool 丢弃——视图容错）
         /// </summary>
         /// <param name="m">真实前文消息</param>
-        /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
-        /// <param name="msgIndex">真实前文消息索引（节点定位锚）</param>
-        public void OnToolResult(LlmMessage m, long timestamp, int msgIndex)
+        /// <param name="msgIndex">真实前文消息索引（块来源关系字段）</param>
+        public void OnToolResult(LlmMessage m, int msgIndex, long durMs)
         {
             string toolCallId = m.ToolCallId ?? "";
             PendingTool target = null;
@@ -304,7 +300,7 @@ namespace CH4
             // A69 视图层报错中文注释——真实前文保持原文，仅视图块追加中文注释
             string viewResult = ErrorNote.Apply(m.Content ?? "");
             Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(name, target.Arguments, viewResult, target.Index, target.Total);
-            Append(m, "toolcard", payload, timestamp, msgIndex);
+            Append(m, "toolcard", payload, msgIndex, durMs);
         }
 
         /// <summary>
@@ -326,7 +322,7 @@ namespace CH4
             for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
             {
                 ViewBlock b = _blocks[i];
-                if (b.MsgIndex < fromMsgIndex || b.MsgIndex > toMsgIndex)
+                if (b.Origin == null || b.Origin.MsgIndex < fromMsgIndex || b.Origin.MsgIndex > toMsgIndex)
                 {
                     continue;
                 }
@@ -357,100 +353,26 @@ namespace CH4
                 }
                 body.Append(text);
             }
-            ViewBlock block = new ViewBlock();
-            block.Timestamp = removed[0].Timestamp;
-            block.Hash = "void_" + _voids.Count.ToString();
-            block.MsgIndex = -1;
-            block.RenderType = "void";
-            // 留档被移出块的内容哈希——Rebuild 据此过滤（视图层 = f(真实前文, 视图层留档)）；
-            // 判据取内容哈希不取索引：timeback 删前文后索引漂移，哈希跨删稳定。
-            // 骨架式构造——Dictionary + Serialize 不识别 JsonFragment（片段会落成转义对象），须走 Object + Raw
             List<string> movedHashes = new List<string>();
             for (int i = 0; i < removed.Count; i = i + 1)
             {
-                movedHashes.Add(removed[i].Hash == null ? "" : removed[i].Hash);
+                string movedHash = removed[i].Origin == null ? "" : removed[i].Origin.Hash;
+                movedHashes.Add(movedHash == null ? "" : movedHash);
             }
-            block.Payload = JsonUtil.Object(
+            string voidPayload = JsonUtil.Object(
                 ("count", moved),
                 ("text", body.ToString()),
                 ("hashes", JsonUtil.Raw(JsonUtil.Array(movedHashes.ToArray()))));
+            ViewBlock block = NewBlock("void:" + _voids.Count.ToString(), "void", voidPayload, removed[0].Timestamp, null, "independent", -1, false);
             _voids.Add(block);
             Save();
             NotifyBlocksReordered(before);
             return moved;
         }
-        /// <summary>
-        /// 重建后置过滤——按废弃段留档的内容哈希移除已移出块（视图层 = f(真实前文, 视图层留档)）。
-        /// 为什么需要：timeback 的 sibling 结果卡「前文里删不得」（assistant 声明的 tool_calls 必须与结果配对），
-        /// 而重建只认前文 → 每次启动恢复都会把已入废弃段的块复活，与永久留档的废弃段重复。
-        /// 判据取内容哈希（前文单块 SHA256）不取索引——timeback 删前文后索引漂移，哈希跨删稳定。
-        /// 旧档（无 hashes 字段的废弃段）不追溯——仅在本次变更后新产生的废弃段生效。
-        /// </summary>
-        private void PurgeVoidedBlocks()
-        {
-            HashSet<string> voided = new HashSet<string>(StringComparer.Ordinal);
-            for (int v = 0; v < _voids.Count; v = v + 1)
-            {
-                string[] hashes = ExtractVoidHashes(_voids[v]);
-                for (int h = 0; h < hashes.Length; h = h + 1)
-                {
-                    if (hashes[h].Length > 0)
-                    {
-                        voided.Add(hashes[h]);
-                    }
-                }
-            }
-            if (voided.Count == 0)
-            {
-                return;
-            }
-            for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
-            {
-                string hash = _blocks[i].Hash;
-                if (hash != null && voided.Contains(hash))
-                {
-                    _blocks.RemoveAt(i);
-                }
-            }
-        }
+        // A156：PurgeVoidedBlocks 已退役——视图层不再从前文重建（载入即权威），
+        // 被移出的块不会在前文重放时复活，无需按废弃段哈希过滤。
 
-        /// <summary>
-        /// 取废弃段留档的被移出块哈希集合——载荷字段 hashes（解析失败 / 旧档无该字段 = 空数组）。
-        /// </summary>
-        /// <param name="voidBlock">废弃块</param>
-        /// <returns>哈希数组（空 = 无留档）</returns>
-        private static string[] ExtractVoidHashes(ViewBlock voidBlock)
-        {
-            string payloadJson = voidBlock.Payload == null ? "" : voidBlock.Payload;
-            if (payloadJson.Length == 0)
-            {
-                return new string[0];
-            }
-            try
-            {
-                using (JsonDocument doc = JsonUtil.ParseStrict(payloadJson))
-                {
-                    JsonElement root = doc.RootElement;
-                    JsonElement hashesEl;
-                    if (!root.TryGetProperty("hashes", out hashesEl) || hashesEl.ValueKind != JsonValueKind.Array)
-                    {
-                        return new string[0];
-                    }
-                    int count = hashesEl.GetArrayLength();
-                    string[] result = new string[count];
-                    for (int i = 0; i < count; i = i + 1)
-                    {
-                        JsonElement item = hashesEl[i];
-                        result[i] = item.ValueKind == JsonValueKind.String ? (item.GetString() ?? "") : "";
-                    }
-                    return result;
-                }
-            }
-            catch (Exception)
-            {
-                return new string[0];
-            }
-        }
+        // A156：ExtractVoidHashes 随 PurgeVoidedBlocks 一并退役（void 块 hashes 载荷字段保留作留档信息）。
 
         /// <summary>
         /// 组装 gap 文本——按块型取正文（toolcard 走名称 + 参数 + 结果；其余取 payload.content；解析失败回落原文）。
@@ -495,17 +417,20 @@ namespace CH4
         }
 
         /// <summary>
-        /// 从真实前文重建视图层——完全重置（真实前文绝对可用；启动恢复/视图文件缺失时调用）。
-        /// 块时间戳取消息 CreatedAt——真实时序权威（跨重启稳定；旧消息 CreatedAt=0 按 List 顺序稳定排前——重建是兜底场景，不做兼容维护）。
+        /// 顶尾补差——从最后一块的前文来源之后重放缺失消息（A156：视图层写失败 / 中断留下的缺口修复）。
+        /// 判据：只补尾部缺口——不重置已有块、不追改历史（无既有块时不做全量重放：旧数据不迁移）。
         /// </summary>
         /// <param name="messages">真实前文消息数组</param>
-        public void Rebuild(LlmMessage[] messages)
+        /// <returns>补入的块数（0 = 无缺口 / 无锚不可补）</returns>
+        public int AppendTailMissing(LlmMessage[] messages)
         {
-            // A111——块序变更快照（重建 = 完全重置：转发面游标按锚点重定位，不以块数比对追发历史）
-            ViewBlock[] before = GetBlocks();
-            _blocks.Clear();
-            _pendingTools.Clear();
-            for (int i = 0; i < messages.Length; i++)
+            int from = LastOriginMsgIndex() + 1;
+            if (from <= 0)
+            {
+                return 0;
+            }
+            int added = 0;
+            for (int i = from; i < messages.Length; i++)
             {
                 LlmMessage m = messages[i];
                 if (m.Role == LlmRole.System)
@@ -514,7 +439,8 @@ namespace CH4
                 }
                 if (m.Role == LlmRole.User)
                 {
-                    OnUserMessage(m, m.CreatedAt, i);
+                    OnUserMessage(m, i);
+                    added = added + 1;
                     continue;
                 }
                 if (m.Role == LlmRole.Assistant)
@@ -522,22 +448,41 @@ namespace CH4
                     string toolCalls = m.ToolCallsJson ?? "";
                     if (toolCalls.Length > 0)
                     {
-                        OnAssistantToolCalls(m, m.CreatedAt, i);
+                        OnAssistantToolCalls(m, i);
                     }
                     else
                     {
-                        OnAssistantText(m, m.CreatedAt, i);
+                        OnAssistantText(m, i);
                     }
+                    added = added + 1;
                     continue;
                 }
                 if (m.Role == LlmRole.Tool)
                 {
-                    OnToolResult(m, m.CreatedAt, i);
+                    OnToolResult(m, i, -1);
+                    added = added + 1;
                 }
             }
-            // 视图层留档重放——前文不含「已移出」信息，须由废弃段哈希补齐（否则 sibling 卡每次重启复活）
-            PurgeVoidedBlocks();
-            NotifyBlocksReordered(before);
+            NotifyBlocksReordered(null);
+            return added;
+        }
+
+        /// <summary>
+        /// 最后一块的前文来源消息索引——补差锚（-1 = 无前文派生块）。
+        /// </summary>
+        /// <returns>消息索引（-1 = 无）</returns>
+        private int LastOriginMsgIndex()
+        {
+            int best = -1;
+            for (int i = 0; i < _blocks.Count; i = i + 1)
+            {
+                ViewBlock b = _blocks[i];
+                if (b.Origin != null && b.Origin.MsgIndex > best)
+                {
+                    best = b.Origin.MsgIndex;
+                }
+            }
+            return best;
         }
 
         /// <summary>
@@ -553,7 +498,7 @@ namespace CH4
                     Directory.CreateDirectory(dir);
                 }
                 ViewFileData data = new ViewFileData();
-                data.Version = 1;
+                data.Version = 2;
                 data.SessionId = "";
                 data.Blocks = _blocks.ToArray();
                 data.InjectReport = _injectReport;
@@ -570,20 +515,42 @@ namespace CH4
             }
             catch (Exception ex)
             {
-                // 保存失败不阻断会话（下次收工再试）——视图是派生态，真实前文可重建
-                LogStore.Add("SessionViewStore", 2, "视图保存失败: " + ex.Message, "SYS");
+                // A156：视图层为权威（不再可从前文重建）——保存失败必须可见 + 落待补标记（下次载入顶尾补差）
+                LogStore.Add("SessionViewStore", 3, "视图保存失败（已落待补标记，下次载入顶尾补差）: " + ex.Message, "SYS");
+                MarkPendingGap(ex.Message);
             }
+        }
+
+        /// <summary>
+        /// 落待补标记——视图保存失败留痕（A156：视图层为权威，静默失败不可接受）。
+        /// 标记文件 = view 文件同址 + ".pending"；载入时检出即顶尾补差并清除。
+        /// </summary>
+        /// <param name="reason">失败原因</param>
+        private void MarkPendingGap(string reason)
+        {
+            try
+            {
+                File.WriteAllText(_path + ".pending", reason == null ? "" : reason);
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("SessionViewStore", 2, "待补标记写入失败: " + ex.Message, "SYS");
+            }
+        }
+
+        /// <summary>
+        /// 待补标记路径——保存失败留痕文件（载入时据此触发顶尾补差）。
+        /// </summary>
+        /// <returns>标记文件路径</returns>
+        public string PendingGapPath()
+        {
+            return _path + ".pending";
         }        /// <summary>追加轮末统计块——roundsum（Token 消耗 + 工具次数 + 总耗时 + 四态用时）。非真实前文派生（Rebuild 不清）；写入即落盘——宿主中断不丢。</summary>
 /// <param name="payloadJson">roundsum 载荷 JSON（{"type":"roundsum","data":{...}}）</param>
 /// <param name="timestamp">创建时间戳（Unix 毫秒——与消息块同坐标系，归并排序键）</param>
         public void AppendRoundSummary(string payloadJson, long timestamp)
         {
-            ViewBlock block = new ViewBlock();
-            block.Timestamp = timestamp;
-            block.Hash = "roundsum_" + _roundSums.Count.ToString();
-            block.MsgIndex = -1;
-            block.RenderType = "roundsum";
-            block.Payload = payloadJson;
+            ViewBlock block = NewBlock("roundsum:" + _roundSums.Count.ToString(), "roundsum", payloadJson, timestamp, null, "independent", -1);
             _roundSums.Add(block);
             Save();
         }
@@ -596,14 +563,9 @@ namespace CH4
             {
                 return;
             }
-            ViewBlock block = new ViewBlock();
-            block.Timestamp = timestamp;
-            block.Hash = "gap_" + _gapTexts.Count.ToString();
-            block.MsgIndex = -1;
-            block.RenderType = "text";
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["content"] = content;
-            block.Payload = JsonUtil.Serialize(payload);
+            ViewBlock block = NewBlock("gap:" + _gapTexts.Count.ToString(), "text", JsonUtil.Serialize(payload), timestamp, null, "independent", -1);
             _gapTexts.Add(block);
             Save();
         }
@@ -619,15 +581,10 @@ namespace CH4
             {
                 return;
             }
-            ViewBlock block = new ViewBlock();
-            block.Timestamp = timestamp;
-            block.Hash = "error_" + _errors.Count.ToString();
-            block.MsgIndex = -1;
-            block.RenderType = "error";
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["type"] = "error";
             payload["text"] = text;
-            block.Payload = JsonUtil.Serialize(payload);
+            ViewBlock block = NewBlock("error:" + _errors.Count.ToString(), "error", JsonUtil.Serialize(payload), timestamp, null, "independent", -1);
             _errors.Add(block);
             Save();
         }
@@ -643,16 +600,13 @@ namespace CH4
         {
             if (index >= 0 && index < _retries.Count)
             {
-                _retries[index].Payload = payloadJson;
+                ViewBlock exist = _retries[index];
+                exist.Payload = payloadJson;
+                exist.Id = ComputeBlockId(exist.RenderType, exist.Timestamp, exist.Origin, exist.Src, exist.DurMs, payloadJson);
                 Save();
                 return index;
             }
-            ViewBlock block = new ViewBlock();
-            block.Timestamp = timestamp;
-            block.Hash = "retry_" + _retries.Count.ToString();
-            block.MsgIndex = -1;
-            block.RenderType = "retry";
-            block.Payload = payloadJson;
+            ViewBlock block = NewBlock("retry:" + _retries.Count.ToString(), "retry", payloadJson, timestamp, null, "independent", -1);
             _retries.Add(block);
             Save();
             return _retries.Count - 1;
@@ -1057,22 +1011,135 @@ namespace CH4
             NotifyBlocksReordered(before);
         }
         /// <summary>
-        /// 生成视图块——内容哈希 = 真实前文单块完整字段 SHA256（裁决：前文块哈希作唯一标识）
+        /// 生成前文派生视图块——块键 + 来源关系 + 自哈希 ID（A156）；时间戳取消息 CreatedAt。
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="renderType">渲染类型</param>
         /// <param name="payload">渲染载荷（字典）</param>
-        /// <param name="timestamp">创建时间戳（Unix 毫秒）</param>
-        /// <param name="msgIndex">真实前文消息索引（节点定位锚）</param>
-        private void Append(LlmMessage m, string renderType, Dictionary<string, object> payload, long timestamp, int msgIndex)
+        /// <param name="msgIndex">真实前文消息索引（块来源关系字段）</param>
+        private void Append(LlmMessage m, string renderType, Dictionary<string, object> payload, int msgIndex, long durMs = -1)
         {
-            ViewBlock block = new ViewBlock();
-            block.Timestamp = timestamp;
-            block.Hash = ComputeHash(m);
-            block.MsgIndex = msgIndex;
-            block.RenderType = renderType;
-            block.Payload = JsonUtil.Serialize(payload);
+            string payloadJson = JsonUtil.Serialize(payload);
+            ViewOrigin origin = new ViewOrigin();
+            origin.MsgIndex = msgIndex;
+            origin.Hash = ComputeHash(m);
+            string key = "msg:" + msgIndex.ToString() + ":" + renderType;
+            if (renderType == "toolcard")
+            {
+                key = "tool:" + (m.ToolCallId ?? "");
+            }
+            ViewBlock block = NewBlock(key, renderType, payloadJson, m.CreatedAt, origin, "front", durMs);
             _blocks.Add(block);
+        }
+
+        /// <summary>
+        /// 截断视图层——移除前文来源索引 ≥ fromMsgIndex 的块（回滚 / 前文裁剪的显式同步；A156：两面不互派生）。
+        /// 独立块（roundsum / error / retry 等）不受影响——由调用方另行清理。
+        /// </summary>
+        /// <param name="fromMsgIndex">起点消息索引（含——该索引及其后的前文派生块全部移除）</param>
+        /// <returns>移除的块数（0 = 无需截断）</returns>
+        public int TruncateFrom(int fromMsgIndex)
+        {
+            ViewBlock[] before = GetBlocks();
+            int removed = 0;
+            for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
+            {
+                ViewBlock b = _blocks[i];
+                if (b.Origin != null && b.Origin.MsgIndex >= fromMsgIndex)
+                {
+                    _blocks.RemoveAt(i);
+                    removed = removed + 1;
+                }
+            }
+            if (removed > 0)
+            {
+                NotifyBlocksReordered(before);
+            }
+            return removed;
+        }
+
+        /// <summary>
+        /// 建块单点——块键 / 时间戳单调化 / 自哈希 ID / 来源关系（A156：两区共用构造内核）。
+        /// </summary>
+        /// <param name="key">块键（建块即定的稳定句柄——msg:&lt;index&gt; / tool:&lt;toolCallId&gt; / 容器:&lt;序号&gt;）</param>
+        /// <param name="renderType">渲染类型</param>
+        /// <param name="payloadJson">渲染载荷 JSON</param>
+        /// <param name="timestamp">创建时间戳（Unix 毫秒——前文派生取消息 CreatedAt）</param>
+        /// <param name="origin">前文来源（null = 独立块）</param>
+        /// <param name="src">来源类别（front / independent）</param>
+        /// <param name="durMs">运行时长（毫秒；-1 = 不适用）</param>
+        /// <param name="monotonic">是否参与时间戳单调化（默认 true；归档类块取历史时间戳时传 false）</param>
+        /// <returns>已定稿的视图块</returns>
+        private ViewBlock NewBlock(string key, string renderType, string payloadJson, long timestamp, ViewOrigin origin, string src, long durMs, bool monotonic = true)
+        {
+            long ts = monotonic ? MonotonicTs(timestamp) : timestamp;
+            ViewBlock block = new ViewBlock();
+            block.Key = key;
+            block.Timestamp = ts;
+            block.RenderType = renderType;
+            block.Payload = payloadJson;
+            block.Origin = origin;
+            block.Src = src;
+            block.DurMs = durMs;
+            block.State = "final";
+            block.Id = ComputeBlockId(renderType, ts, origin, src, durMs, payloadJson);
+            return block;
+        }
+
+        /// <summary>
+        /// 时间戳单调化——同刻或回退由写入侧 +1 保证全序（A156 I5：前端可无脑按 ts 冒泡插入）。
+        /// </summary>
+        /// <param name="timestamp">原始时间戳（Unix 毫秒）</param>
+        /// <returns>单调递增后的时间戳</returns>
+        private long MonotonicTs(long timestamp)
+        {
+            if (timestamp <= _lastTs)
+            {
+                timestamp = _lastTs + 1;
+            }
+            _lastTs = timestamp;
+            return timestamp;
+        }
+
+        /// <summary>
+        /// 块自哈希——块 ID（renderType|ts|origin|src|durMs|payload 的 SHA256 十六进制；定稿后永不变更）。
+        /// </summary>
+        /// <param name="renderType">渲染类型</param>
+        /// <param name="timestamp">块时间戳（含单调补差后值）</param>
+        /// <param name="origin">前文来源（null = 独立块）</param>
+        /// <param name="src">来源类别</param>
+        /// <param name="durMs">运行时长</param>
+        /// <param name="payloadJson">渲染载荷 JSON</param>
+        /// <returns>SHA256 十六进制串</returns>
+        private static string ComputeBlockId(string renderType, long timestamp, ViewOrigin origin, string src, long durMs, string payloadJson)
+        {
+            string raw = (renderType == null ? "" : renderType)
+                + "\u0001" + timestamp.ToString()
+                + "\u0001" + (origin == null ? "" : origin.MsgIndex.ToString())
+                + "\u0001" + (origin == null ? "" : (origin.Hash == null ? "" : origin.Hash))
+                + "\u0001" + (src == null ? "" : src)
+                + "\u0001" + durMs.ToString()
+                + "\u0001" + (payloadJson == null ? "" : payloadJson);
+            return Sha256Hex(raw);
+        }
+
+        /// <summary>
+        /// SHA256 十六进制——哈希统一出口（前文消息哈希与块自哈希共用）。
+        /// </summary>
+        /// <param name="raw">待哈希原文</param>
+        /// <returns>十六进制串</returns>
+        private static string Sha256Hex(string raw)
+        {
+            using (SHA256 sha = SHA256.Create())
+            {
+                byte[] bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(raw));
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < bytes.Length; i = i + 1)
+                {
+                    sb.Append(bytes[i].ToString("x2"));
+                }
+                return sb.ToString();
+            }
         }
 
         /// <summary>
@@ -1140,7 +1207,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 真实前文块内容哈希——单块完整字段 SHA256 十六进制（时空双索引的"空间"维）
+        /// 前文消息内容哈希——单块完整字段 SHA256 十六进制（块来源关系字段 origin.hash 的取值）。
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <returns>哈希十六进制串</returns>
@@ -1152,21 +1219,13 @@ namespace CH4
                 + "\u0001" + (m.ToolName ?? "")
                 + "\u0001" + (m.ToolCallsJson ?? "")
                 + "\u0001" + (m.ReasoningContent ?? "");
-            using (SHA256 sha = SHA256.Create())
-            {
-                byte[] bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(raw));
-                StringBuilder sb = new StringBuilder();
-                for (int i = 0; i < bytes.Length; i = i + 1)
-                {
-                    sb.Append(bytes[i].ToString("x2"));
-                }
-                return sb.ToString();
-            }
+            return Sha256Hex(raw);
         }
         /// <summary>
-        /// 加载注入报告 + 轮末统计——启动恢复时调用（Rebuild 后读回；view.json 缺失/损坏静默空报告）
+        /// 载入视图层——读回持久块 + 五个独立数组 + 注入报告（A156：载入即权威，不再从前文重建）。
+        /// 失败出声——视图层为权威，空视图继续 = 前端历史整体缺口，静默不可接受。
         /// </summary>
-        public void LoadInjectReport()
+        public void Load()
         {
             try
             {
@@ -1179,41 +1238,103 @@ namespace CH4
                 JsonSerializerOptions options = new JsonSerializerOptions();
                 options.IncludeFields = true;
                 ViewFileData data = JsonSerializer.Deserialize<ViewFileData>(json, options);
-                if (data != null && data.InjectReport != null)
+                if (data == null)
+                {
+                    LogStore.Add("SessionViewStore", 3, "视图载入失败——文件内容为空（视图层为权威：本会话历史将为空白）", "SYS");
+                    return;
+                }
+                _blocks.Clear();
+                if (data.Blocks != null)
+                {
+                    _blocks.AddRange(data.Blocks);
+                }
+                if (data.InjectReport != null)
                 {
                     _injectReport = data.InjectReport;
                 }
-                if (data != null && data.GapTexts != null)
+                _gapTexts.Clear();
+                if (data.GapTexts != null)
                 {
-                    _gapTexts.Clear();
                     _gapTexts.AddRange(data.GapTexts);
                 }
-                if (data != null && data.RoundSums != null)
+                _roundSums.Clear();
+                if (data.RoundSums != null)
                 {
-                    _roundSums.Clear();
                     _roundSums.AddRange(data.RoundSums);
                 }
-                if (data != null && data.Errors != null)
+                _errors.Clear();
+                if (data.Errors != null)
                 {
-                    _errors.Clear();
                     _errors.AddRange(data.Errors);
                 }
-                if (data != null && data.Retries != null)
+                _retries.Clear();
+                if (data.Retries != null)
                 {
-                    _retries.Clear();
                     _retries.AddRange(data.Retries);
                 }
-                if (data != null && data.Voids != null)
+                _voids.Clear();
+                if (data.Voids != null)
                 {
-                    _voids.Clear();
                     _voids.AddRange(data.Voids);
                 }
+                _lastTs = MaxTimestamp();
             }
             catch (Exception ex)
             {
-                // 加载失败静默——注入报告缺失不阻断（视图可重建）
-                LogStore.Add("SessionViewStore", 2, "视图加载失败，按空视图继续: " + ex.Message, "SYS");
+                // A156：视图层为权威——载入失败出声（空视图继续 = 前端历史整体缺口）
+                LogStore.Add("SessionViewStore", 3, "视图载入失败（按空视图继续——本会话历史将空白）: " + ex.Message, "SYS");
             }
+        }
+
+        /// <summary>
+        /// 六源块最大时间戳——单调补差基准初始化（载入后调用）。
+        /// </summary>
+        /// <returns>最大时间戳（无块 = 0）</returns>
+        private long MaxTimestamp()
+        {
+            long max = 0;
+            ViewBlock[] all = GetBlocks();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (all[i].Timestamp > max)
+                {
+                    max = all[i].Timestamp;
+                }
+            }
+            return max;
+        }
+
+        /// <summary>
+        /// 对账哨兵——抽样比对块的前文来源哈希与真实前文对应消息（A156：替代常驻重建作正确性保证）。
+        /// 不一致出声（L3）；不修改任何块。
+        /// </summary>
+        /// <param name="messages">真实前文消息数组</param>
+        /// <param name="sample">抽样块数（0 或负 = 全量比对）</param>
+        /// <returns>不一致块数（0 = 全对）</returns>
+        public int AuditOrigins(LlmMessage[] messages, int sample)
+        {
+            int checkedCount = 0;
+            int bad = 0;
+            for (int i = 0; i < _blocks.Count; i = i + 1)
+            {
+                ViewBlock b = _blocks[i];
+                if (b.Origin == null || b.Origin.MsgIndex < 0 || b.Origin.MsgIndex >= messages.Length)
+                {
+                    continue;
+                }
+                if (sample > 0 && checkedCount >= sample)
+                {
+                    break;
+                }
+                checkedCount = checkedCount + 1;
+                string expect = ComputeHash(messages[b.Origin.MsgIndex]);
+                if (expect != b.Origin.Hash)
+                {
+                    bad = bad + 1;
+                    LogStore.Add("SessionViewStore", 3, "对账哨兵：块来源哈希与前文不一致（块 " + (b.Key == null ? "" : b.Key) + " / 消息 " + b.Origin.MsgIndex.ToString() + "）", "SYS");
+                }
+            }
+            return bad;
         }
         /// <summary>
         /// 工具卡归属判定——该块是否为指定工具名的工具卡（仅 toolcard 块型；载荷解析失败 = false，进废弃块）。

@@ -1434,7 +1434,7 @@ namespace CatHome4.Core.Tests
             ctx.AddUserMessage("第三轮问题");
             ctx.AddAssistantMessage("第三轮回复");
             LlmMessage[] msgs = ctx.GetMessages();
-            // 增量写入视图（与真实运行一致：每轮 CloseRound 追加 roundsum——时间戳 = 轮末块之后）
+            // 增量写入视图（与真实运行一致：每轮末 CloseRound 追加 roundsum——时间戳 = 轮末块之后）
             string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.json");
             CH4.SessionViewStore viewStore = new CH4.SessionViewStore(tmp);
             for (int i = 0; i < msgs.Length; i++)
@@ -1446,21 +1446,18 @@ namespace CatHome4.Core.Tests
                 }
                 if (m.Role == LlmRole.User)
                 {
-                    viewStore.OnUserMessage(m, m.CreatedAt, i);
+                    viewStore.OnUserMessage(m, i);
                 }
                 else if (m.Role == LlmRole.Assistant)
                 {
-                    viewStore.OnAssistantText(m, m.CreatedAt, i);
+                    viewStore.OnAssistantText(m, i);
+                    // 该轮末 CloseRound——rs 时间戳略大于本轮末块（真实语义：CloseRound 在该轮结束后）
+                    viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", m.CreatedAt + 1);
                 }
             }
-            // 每轮 CloseRound——rs 时间戳略大于该轮末块（真实语义：CloseRound 在该轮结束后）
-            viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[2].CreatedAt + 1);
-            viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[4].CreatedAt + 1);
-            viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[6].CreatedAt + 1);
             viewStore.Save();
-            // 重建——从真实前文（重启场景；rs 从 view.json 读回——LoadInjectReport）
-            viewStore.Rebuild(msgs);
-            viewStore.LoadInjectReport();
+            // A156：重启场景 = 载入持久块（不再从前文重建）
+            viewStore.Load();
             // 归并顺序断言——每轮：user, text, roundsum（rs 紧跟轮末块，不在末尾堆叠）
             CH4.ViewBlock[] merged = viewStore.GetBlocks();
             Assert.Equal(9, merged.Length); // 6 blocks + 3 rs（无注入报告）
@@ -1505,9 +1502,9 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = session.GetViewBlocks();
             Assert.Equal(2, blocks.Length);
             Assert.Equal("user", blocks[0].RenderType);
-            Assert.Equal(0, blocks[0].MsgIndex);
+            Assert.Equal(0, blocks[0].Origin.MsgIndex);
             Assert.Equal("text", blocks[1].RenderType);
-            Assert.Equal(1, blocks[1].MsgIndex);
+            Assert.Equal(1, blocks[1].Origin.MsgIndex);
             // 统计复位——新起点零统计
             Assert.Equal(0, session.LastStats.EntryCount);
         }
@@ -1568,19 +1565,19 @@ namespace CatHome4.Core.Tests
                 }
                 if (m.Role == LlmRole.User)
                 {
-                    viewStore.OnUserMessage(m, m.CreatedAt, i);
+                    viewStore.OnUserMessage(m, i);
                 }
                 else if (m.Role == LlmRole.Assistant)
                 {
-                    viewStore.OnAssistantText(m, m.CreatedAt, i);
+                    viewStore.OnAssistantText(m, i);
                 }
             }
             viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[2].CreatedAt + 1);
             CH4.ViewBlock[] blocks = viewStore.GetBlocks();
             Assert.Equal(3, blocks.Length);
-            Assert.Equal(1, blocks[0].MsgIndex);
-            Assert.Equal(2, blocks[1].MsgIndex);
-            Assert.Equal(-1, blocks[2].MsgIndex);
+            Assert.Equal(1, blocks[0].Origin.MsgIndex);
+            Assert.Equal(2, blocks[1].Origin.MsgIndex);
+            Assert.Null(blocks[2].Origin);
         }
 
         /// <summary>

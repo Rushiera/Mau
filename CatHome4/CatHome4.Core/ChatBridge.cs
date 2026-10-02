@@ -476,7 +476,7 @@ namespace CH4
                 entry["id"] = b.Id;
                 entry["renderType"] = b.RenderType;
                 // P6b 节点定位锚——真实前文消息索引（前端操作条数据源；-1=非消息派生块）
-                entry["msgIndex"] = b.MsgIndex;
+                entry["msgIndex"] = b.Origin == null ? -1 : b.Origin.MsgIndex;
                 entry["payload"] = ParseViewPayload(b.Payload);
                 view.Add(entry);
             }
@@ -540,7 +540,7 @@ namespace CH4
                     entry["seq"] = i - start + 1;
                     entry["id"] = b.Id;
                     entry["renderType"] = b.RenderType;
-                    entry["msgIndex"] = b.MsgIndex;
+                    entry["msgIndex"] = b.Origin == null ? -1 : b.Origin.MsgIndex;
                     entry["payload"] = ParseViewPayload(b.Payload);
                     view.Add(entry);
                 }

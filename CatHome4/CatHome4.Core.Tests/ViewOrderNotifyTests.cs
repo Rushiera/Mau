@@ -70,10 +70,10 @@ namespace CatHome4.Core.Tests
         /// <summary>灌入两轮往返——块序：user(0) / text(1) / user(2) / text(3)</summary>
         private void SeedTwoRounds()
         {
-            _store.OnUserMessage(User("问一", 100L), 100L, 0);
-            _store.OnAssistantText(Assistant("答一", 110L), 110L, 1);
-            _store.OnUserMessage(User("问二", 120L), 120L, 2);
-            _store.OnAssistantText(Assistant("答二", 130L), 130L, 3);
+            _store.OnUserMessage(User("问一", 100L), 0);
+            _store.OnAssistantText(Assistant("答一", 110L), 1);
+            _store.OnUserMessage(User("问二", 120L), 2);
+            _store.OnAssistantText(Assistant("答二", 130L), 3);
         }
 
         /// <summary>未接线（无消费方）时变更点零动作且不抛异常</summary>
@@ -116,14 +116,14 @@ namespace CatHome4.Core.Tests
             Assert.Equal(0, _changes[0].AddedCount);
         }
 
-        /// <summary>重建——截断后的尾部块移除（前缀一致区不动）</summary>
+        /// <summary>截断——切点之后的尾部块移除并通知（前缀一致区不动；A156：回滚走显式截断，不再重建）</summary>
         [Fact]
-        public void Rebuild_NotifiesRemovedTail()
+        public void TruncateFrom_NotifiesRemovedTail()
         {
             SeedTwoRounds();
             _changes.Clear();
-            LlmMessage[] keep = new LlmMessage[] { User("问一", 100L), Assistant("答一", 110L) };
-            _store.Rebuild(keep);
+            int removed = _store.TruncateFrom(2);
+            Assert.Equal(2, removed);
             Assert.Single(_changes);
             Assert.Equal(2, _changes[0].From);
             Assert.Equal(2, _changes[0].RemovedCount);

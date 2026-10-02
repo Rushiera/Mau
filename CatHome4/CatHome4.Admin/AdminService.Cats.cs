@@ -1252,7 +1252,7 @@ namespace CatHome4.Admin
                 AdminService.ApplyCatRoots(id);
                 session.AttachEnvInfo(() => BuildEnvInfoProvider());
                 session.AttachRoundNotify(NotifyBalloon);
-                session.RebuildView();
+                session.LoadView();
                 // E3 前文统计——启动恢复持久化真实 usage（旧文件 null=零值）
                 session.SetLoadedStats(restoredStats);
                 _chatBridge.RegisterSession(session);
@@ -1577,14 +1577,8 @@ namespace CatHome4.Admin
                 item.RenderType = b.RenderType ?? "";
                 item.Content = "";
                 item.Done = "";
-                if (b.Hash == null)
-                {
-                    item.Hash = "";
-                }
-                else
-                {
-                    item.Hash = b.Hash;
-                }
+                                // A156：游标锚取块键——稳定句柄（前文派生 msg:序:型 / 工具 tool:callId / 独立块 容器:序号）
+                item.Hash = b.Key == null ? "" : b.Key;
                 if (item.RenderType == "text")
                 {
                     item.Content = ExtractTextContent(b.Payload);

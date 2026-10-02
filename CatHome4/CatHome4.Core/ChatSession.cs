@@ -369,12 +369,31 @@ namespace CH4
             return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         }
 
-        /// <summary>重建视图层——从真实前文完全重置（启动恢复后调用；真实前文绝对可用）</summary>
-        public void RebuildView()
+        /// <summary>
+        /// 载入视图层——读回持久块与独立块（A156：载入即权威，不再从前文重建）。
+        /// 载入后检出待补标记 → 顶尾补差（视图写失败 / 中断留下的尾部缺口）+ 对账抽样哨兵。
+        /// </summary>
+        public void LoadView()
         {
-            _viewStore.Rebuild(_context.GetMessages());
-            // 注入报告——启动恢复时从 view.json 读回（非真实前文派生；Rebuild 不重建）
-            _viewStore.LoadInjectReport();
+            _viewStore.Load();
+            int added = 0;
+            if (System.IO.File.Exists(_viewStore.PendingGapPath()))
+            {
+                added = _viewStore.AppendTailMissing(_context.GetMessages());
+                try
+                {
+                    System.IO.File.Delete(_viewStore.PendingGapPath());
+                }
+                catch (Exception ex)
+                {
+                    LogStore.Add("CatHome4", 2, "待补标记清除失败: " + ex.Message, "SYS");
+                }
+                if (added > 0)
+                {
+                    LogStore.Add("CatHome4", 3, "视图顶尾补差：" + added.ToString() + " 块（上次保存失败留下的尾部缺口）", "SYS");
+                }
+            }
+            _viewStore.AuditOrigins(_context.GetMessages(), 5);
         }
         /// <summary>
         /// 旧会话留档——session.new 清空前导出（A87：user 消息 / 正式回复 / 注入报告 / 每轮结算 → sessions_old 下 MD 文件）。
@@ -941,7 +960,7 @@ namespace CH4
             }
             string notice = sb.ToString();
             AppendMessage(_context.AddUserMessage(notice));
-            _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
+            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
             string userJson = JsonUtil.Object(("content", notice), ("source", "systemauto"));
             _viewBus.PushUser(userJson);
             LogStore.Add("CatHome4", 1, "sleep 作废（等待被提前启动打断）: cat=" + _catKey + " | 销毁 " + killed.Length.ToString() + " 条 | 触发来源 " + triggerSource, "DELAY");
@@ -1076,7 +1095,7 @@ namespace CH4
             // 轮首计数与相位复位——与继续轮共用（统计清零 + 进入 link 相位）
             ResetRoundCounters();
             AppendMessage(_context.AddUserMessage(content));
-            _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
+            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
             string userJson = JsonUtil.Object(("content", content), ("source", source));
             _viewBus.PushUser(userJson);
@@ -1676,7 +1695,7 @@ namespace CH4
                 // 纯文本回复——本轮完成
                 AppendMessage(_context.AddAssistantMessage(_llmResultText));
                 NoteTimebackEvent();
-                _viewStore.OnAssistantText(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
+                _viewStore.OnAssistantText(LastMessage(), _context.GetMessageCount() - 1);
                 string textJson = JsonUtil.Object(("content", _llmResultText), ("msgIndex", _context.GetMessageCount() - 1));
                 _viewBus.PushTextBlock(textJson);
                 _viewBus.ResetTextStream();
@@ -1686,7 +1705,7 @@ namespace CH4
                 {
                     PendingMessage next = _pending.Dequeue();
                     AppendMessage(_context.AddUserMessage(next.Content));
-                    _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
+                    _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
                     string userJson = JsonUtil.Object(("content", next.Content), ("source", next.Source));
                     _viewBus.PushUser(userJson);
                     _round = 0;
@@ -1701,7 +1720,7 @@ namespace CH4
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
             AppendMessage(_context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning));
             NoteTimebackEvent();
-            _viewStore.OnAssistantToolCalls(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
+            _viewStore.OnAssistantToolCalls(LastMessage(), _context.GetMessageCount() - 1);
             // 思考段整块——由 SealReasonStream 在离开 think 态时统一推送（工具决策流首帧即收口；唯一出口，莎 2026-09-22 定）
             // 工具轮 seal——视图层补 gap text 块（全量外观真源：前端历史/QQBot 转发消费）+ SSE 推送（实时）；空文本不推
             if (_llmResultText.Length > 0)
@@ -2273,7 +2292,7 @@ namespace CH4
                 AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
                 NoteTimebackEvent();
                 NoteTimebackWrite(dog.Name, dog.ArgsJson, dog.Result);
-                _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
+                _viewStore.OnToolResult(LastMessage(), _context.GetMessageCount() - 1, -1);
             }
             _toolBatchActive = false;
             // [段2d-0] 图片注入——本批 image-inject 登记合并为一条 user 注入消息（落在作用域区间内：back 回收时一并删除）
@@ -2305,7 +2324,7 @@ namespace CH4
             {
                 PendingMessage next = _pending.Dequeue();
                 AppendMessage(_context.AddUserMessage(next.Content));
-                _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
+                _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
                 string userJson = JsonUtil.Object(("content", next.Content), ("source", next.Source));
                 _viewBus.PushUser(userJson);
                 _round = 0;
@@ -2477,7 +2496,7 @@ namespace CH4
 
         /// <summary>
         /// 回滚——从指定正式回复节点重新开始（P6b：裁剪唯一通道；该节点后消息全部丢弃）。
-        /// 校验：仅 Idle；msgIndex 指向 assistant 正式回复（Content>0——工具声明轮天然排除）。执行：截断上下文 → 落盘 → 统计/视图/Note 复位 → 视图重建 → session_reset 推送。
+        /// 校验：仅 Idle；msgIndex 指向 assistant 正式回复（Content>0——工具声明轮天然排除）。执行：截断上下文 → 落盘 → 统计/视图截断/Note 复位 → session_reset 推送。
         /// </summary>
         /// <param name="msgIndex">真实前文消息索引（指向 assistant 正式回复——前端 text 块 MsgIndex）</param>
         /// <returns>ERR| 前缀失败 / 成功摘要</returns>
@@ -2502,8 +2521,9 @@ namespace CH4
             // [段2] 最近轮统计重置——新起点零统计起算（会话级累计不动：回滚属同会话延续；
             //        原实现调 ResetStats() 会清会话级 token 累计——与 glossary「回滚不归零」口径冲突，2026-09-28 修正）
             _lastStats = new SessionStats();
-            // [段4] 视图——从新前文完全重建 + roundsum 清空（roundsum 非真实前文派生；RebuildView 的 LoadInjectReport 会读回旧 view.json 统计——重建后清空并落盘，防下次启动读回）
-            RebuildView();
+            // [段4] 视图——截断到切点（A156：不再从前文重建；两面并列，裁剪须显式同步）+ roundsum 清空
+            //        （roundsum 非真实前文派生；清空后落盘，防下次启动读回旧统计）
+            _viewStore.TruncateFrom(msgIndex + 1);
             _viewStore.ClearRoundSums();
             _viewStore.Save();
             // [段5] Note 任务清空——防旧任务自动拉起新轮

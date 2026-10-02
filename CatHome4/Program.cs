@@ -496,7 +496,7 @@ namespace CH4
             _chatBridge.DefaultSession.AttachRoundNotify(Program.NotifyBalloon);
             _chatBridge.RegisterSession(_chatBridge.DefaultSession);
             // F4 视图——从真实前文重建视图层（恢复/注入后——真实前文绝对可用）
-            _chatBridge.DefaultSession.RebuildView();
+            _chatBridge.DefaultSession.LoadView();
             // E3 前文统计——启动恢复持久化真实 usage（旧文件 null=零值）
             _chatBridge.DefaultSession.SetLoadedStats(restoredStats);
             // LLM 注入探测——默认端点解析（无默认端点 = 未注入；启动失败语义由语料面消费时暴露）
