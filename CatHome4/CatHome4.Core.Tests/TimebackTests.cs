@@ -361,35 +361,31 @@ namespace CatHome4.Core.Tests
             // 作用域仍开着（锁定不影响 start 本身）
             Assert.True(session.TimebackActive);
         }
-        /// <summary>
-        /// 暴毙风险黑名单（T2 扩展 · 2026-10-01 宽松化）——作用域存活期只拦「会让进程 / 作用域当场失效」的三件：
-        /// restart-full / restart-incr / restart-host / host-reload / mau-setup 一律 ERR|TIMEBACK_LOCKED；
-        /// 其余（只读 / 仓库产物 / 配置写 / 管理指令）放行——作用域外同工具不受该判定拦截。
-        /// </summary>
+        /// <summary>暴毙风险黑名单（T2 扩展 · 2026-10-01 宽松化 · 2026-10-02 放行 mau-setup）——作用域存活期只拦「会让进程 / 作用域当场失效」的两件：restart-full / restart-incr / restart-host / host-reload 一律 ERR|TIMEBACK_LOCKED；其余（只读 / 仓库产物 / 一键链 prepare·sync-html / 配置写 / 管理指令）放行——作用域外同工具不受该判定拦截。</summary>
         [Fact]
         public void Scope_Locks_BodyRepairTools()
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm, new string[]
             {
-                        "timeback", "random", "info", "host-flows", "host-reload", "mau-setup", "restart-full"
+                                "timeback", "random", "info", "host-flows", "host-reload", "restart-full"
             });
             // 作用域外——host-reload 不被该判定拦（测试环境直执回落 ERR|NO_TOOL）
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("host-reload", "h0", "{\"cat\":\"TextCat\"}"));
-            // 作用域内——start 与「三件拦 + 三件放行」同批
-            // （OA 工具在测试环境无工单消费者会挂起，故放行面以内置只读工具为代表——黑名单清单本身由 §C5 规格 + 代码审查锁定）
+            // 作用域内——start 与「两件拦 + 三件放行」同批。
+            // mau-setup 已于 2026-10-02 放行（deploy 从工具面退役后无暴毙风险），但它是 OA 工具——
+            // 测试环境无工单消费者会挂起，故不在此批验证；黑名单清单本身由 §C5 规格 + 代码审查锁定。
             string batch = BuildToolCallsBatch(
-                new string[] { "timeback", "host-reload", "mau-setup", "restart-full", "host-flows", "info", "random" },
-                new string[] { "t1", "h1", "s1", "r1", "f1", "i1", "x1" },
+                new string[] { "timeback", "host-reload", "restart-full", "host-flows", "info", "random" },
+                new string[] { "t1", "h1", "r1", "f1", "i1", "x1" },
                 new string[]
                 {
-                            "{\"action\":\"start\",\"purpose\":\"黑名单验证\"}",
-                            "{\"cat\":\"TextCat\"}",
-                            "{\"mode\":\"prepare\"}",
-                            "{}",
-                            "{}",
-                            "{}",
-                            "{\"min\":1,\"max\":10}"
+                                    "{\"action\":\"start\",\"purpose\":\"黑名单验证\"}",
+                                    "{\"cat\":\"TextCat\"}",
+                                    "{}",
+                                    "{}",
+                                    "{}",
+                                    "{\"min\":1,\"max\":10}"
                 });
             llm.ToolCallsQueue.Enqueue(batch);
             session.PostUserMessage("黑名单验证");
@@ -397,17 +393,77 @@ namespace CatHome4.Core.Tests
             Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
             // 作用域外那一批未被锁定
             Assert.False(ToolResultText(session, 0).Contains("TIMEBACK_LOCKED", StringComparison.Ordinal));
-            // 作用域内：start 回执保留 + 其后三件全拒（暴毙风险面）
+            // 作用域内：start 回执保留 + 其后两件全拒（暴毙风险面）
             Assert.Contains("已锚定", ToolResultText(session, 1));
             Assert.Contains("TIMEBACK_LOCKED", ToolResultText(session, 2));
             Assert.Contains("TIMEBACK_LOCKED", ToolResultText(session, 3));
-            Assert.Contains("TIMEBACK_LOCKED", ToolResultText(session, 4));
             // 放行面——只读 / 常驻内置工具不再被锁
-            for (int i = 5; i <= 7; i = i + 1)
+            for (int i = 4; i <= 6; i = i + 1)
             {
                 Assert.False(ToolResultText(session, i).Contains("TIMEBACK_LOCKED", StringComparison.Ordinal), "第 " + i.ToString() + " 件被误锁");
             }
             Assert.True(session.TimebackActive);
+        }
+        /// <summary>
+        /// start 回执带 findings 骨架（2026-10-02 定）——开锚即给格式，八段齐备（结论 / 事实 / 进度 / 跑测 / 变更 / 卡点与解法 / 失败 / 指针）。
+        /// </summary>
+        [Fact]
+        public void Start_ReceiptCarriesFindingsSkeleton()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "s1", "{\"action\":\"start\",\"purpose\":\"骨架验证\"}"));
+            session.PostUserMessage("骨架验证");
+            PumpUntilIdle(session);
+            string receipt = ToolResultText(session, 0);
+            Assert.Contains("已锚定", receipt);
+            Assert.Contains("结论：", receipt);
+            Assert.Contains("事实：", receipt);
+            Assert.Contains("进度：", receipt);
+            Assert.Contains("跑测：", receipt);
+            Assert.Contains("变更：", receipt);
+            Assert.Contains("卡点与解法：", receipt);
+            Assert.Contains("失败：", receipt);
+            Assert.Contains("指针：", receipt);
+        }
+        /// <summary>
+        /// 写操作台账——域内 order ≥ 1 的工具逐条登记（宿主记录），只读面不入账；back 回执附于 findings 之前。
+        /// </summary>
+        [Fact]
+        public void Back_ReceiptCarriesWriteLog()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "s1", "{\"action\":\"start\",\"purpose\":\"台账验证\"}"));
+            session.PostUserMessage("开锚");
+            PumpUntilIdle(session);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("time", "s2", "{}"));
+            session.PostUserMessage("读时间");
+            PumpUntilIdle(session);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("host-reload", "s3", "{\"cat\":\"TextCat\"}"));
+            session.PostUserMessage("域内热重载");
+            PumpUntilIdle(session);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback", "s4", "{\"action\":\"back\",\"findings\":\"结论：台账验证\\n事实：（无）\\n指针：（无）\"}"));
+            session.PostUserMessage("收域");
+            PumpUntilIdle(session);
+            string receipt = ToolResultText(session, 1);
+            Assert.Contains("本域写操作台账", receipt);
+            Assert.Contains("host-reload", receipt);
+            Assert.Contains("FAIL", receipt);
+            Assert.DoesNotContain("time · ", receipt);
+        }
+
+        /// <summary>
+        /// 台账目标标识提取（2026-10-02）——路径类取末段 · 标识类原样 · powershell 取命令行原文（不截断）· 取不到写「—」。
+        /// </summary>
+        [Fact]
+        public void TimebackWriteTarget_ShapesAndPowerShellCommand()
+        {
+            Assert.Equal("Tree.md", CH4.ChatSession.TimebackWriteTarget(@"{""path"":""ccbp:L1/Tree.md""}"));
+            Assert.Equal("Foo", CH4.ChatSession.TimebackWriteTarget(@"{""class"":""Foo""}"));
+            string psArg = @"{""command"":""dotnet test CatHome4.sln --nologo""}";
+            Assert.Equal("dotnet test CatHome4.sln --nologo", CH4.ChatSession.TimebackWriteTarget(psArg));
+            Assert.Equal("—", CH4.ChatSession.TimebackWriteTarget("{}"));
         }
 
         /// <summary>

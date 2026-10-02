@@ -56,6 +56,11 @@ namespace CH4
 
             /// <summary>本次回收的释放条数——back 时刻预算（区间上下界已定，精确可算）；随返回值送出，并与批后实际删除数对账。</summary>
             public int PendingReleased;
+            /// <summary>
+            /// 本域写操作台账——宿主记录（order ≥ 1 的工具逐条登记：工具名 · 目标标识 · 成败）。
+            /// 客观事实面：从实际执行流水提取（不由 LLM 自述）；back 回执附于 findings 之前，主干据此抽样核对。
+            /// </summary>
+            public List<string> WriteLog = new List<string>();
         }
 
         /// <summary>当前未闭合作用域——null=无作用域。</summary>
@@ -93,7 +98,7 @@ namespace CH4
             {
                 try
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
                     {
                         JsonElement root = doc.RootElement;
                         foreach (JsonProperty property in root.EnumerateObject())
@@ -197,9 +202,18 @@ namespace CH4
             fields["id"] = scope.Id;
             fields["anchor"] = declIndex;
             fields["purpose"] = scope.Purpose;
-            string body = "timeback #" + scope.Id.ToString() + " 已锚定（锚点 = 本次调用声明 · 节点 " + declIndex.ToString() + " · 用途「" + scope.Purpose + "」）——查证过程留在作用域内；"
+            string body = "timeback #" + scope.Id.ToString() + " 已锚定（锚点 = 本次调用声明 · 节点 " + declIndex.ToString() + " · 用途「" + scope.Purpose + "」）——过程留在作用域内；"
                 + "回收时用 back 带回 findings（作为该调用的返回值），两次调用之间的内容一并删除。"
-                + "作用域内 Note / sleep / timer 已锁定。";
+                + "作用域内 Note / sleep / timer 已锁定。\n"
+                + "findings 按骨架写（段内无内容写「（无）」· 每段 ≤5 条）：\n"
+                + "  结论：<这一趟做完了什么 / 成还是败——一句话>\n"
+                + "  事实：<可直接用的事实，逐条——取证型的主段>\n"
+                + "  进度：<已完成步骤 / 未完成步骤>\n"
+                + "  跑测：<编译 0/0 ｜ 测试 N 绿 ｜ 未通过——附命令与结果>\n"
+                + "  变更：<逐条：文件:行 — 改了什么——与宿主台账交叉核对>\n"
+                + "  卡点与解法：<卡在哪 · 怎么绕过去——决策理由只在这里留得下>\n"
+                + "  失败：<失败原因（未失败写「（无）」）>\n"
+                + "  指针：<路径 / 行号 / 日志位置——复取入口>";
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 开锚（锚点 " + declIndex.ToString() + " / 用途 " + scope.Purpose + "）", "TIMEBACK");
             return ToolMetaHead.With("timeback", true, fields, body);
         }
@@ -232,7 +246,9 @@ namespace CH4
             fields["released"] = _timebackScope.PendingReleased;
             fields["tokens"] = tokensNow;
             fields["grew"] = tokensNow - _timebackScope.TokensAtOpen;
-            return ToolMetaHead.With("timeback", true, fields, findings);
+            fields["writes"] = _timebackScope.WriteLog.Count;
+            // 台账附于 findings 之前——头 = 宿主事实（从执行流水提取，不可编），体 = LLM 自述；主干据此抽样核对
+            return ToolMetaHead.With("timeback", true, fields, BuildTimebackWrites() + findings);
         }
 
         /// <summary>
@@ -417,6 +433,7 @@ namespace CH4
             record.Grew = ContextTokensKnown - scope.TokensAtOpen;
             record.Released = scope.PendingReleased;
             record.Findings = scope.PendingFindings;
+            record.Writes = scope.WriteLog;
             string path = "";
             bool ok = archive.WriteScopeFile(record, infoJson, removedMessages.ToArray(), out path);
             if (ok)
@@ -465,6 +482,125 @@ namespace CH4
             }
             scope.EventCount = scope.EventCount + 1;
         }
+        /// <summary>
+        /// 台账回执内联上限——超出后回执只列前 N 条 + 归档指针，全文进 jsonl（不静默截断）。
+        /// </summary>
+        private const int TimebackWriteLogInlineLimit = 20;
+        /// <summary>
+        /// 作用域内写操作台账——工具结果回填时登记（order ≥ 1：写入 / 构建执行）。
+        /// 判据复用 ToolOrderTable.Resolve（与工具分批调度同源）；只记事实，不做语义判断。
+        /// </summary>
+        /// <param name="name">工具名</param>
+        /// <param name="argsJson">工具参数 JSON</param>
+        /// <param name="result">工具结果文本</param>
+        private void NoteTimebackWrite(string name, string argsJson, string result)
+        {
+            TimebackScope scope = _timebackScope;
+            if (scope == null)
+            {
+                return;
+            }
+            if (ToolOrderTable.Resolve(name, argsJson) < 1)
+            {
+                return;
+            }
+            bool ok = true;
+            if (result != null && result.Length > 0)
+            {
+                ok = !result.StartsWith("ERR|", StringComparison.Ordinal) && !result.StartsWith("ROLLED_BACK", StringComparison.Ordinal);
+            }
+            scope.WriteLog.Add(name + " · " + TimebackWriteTarget(argsJson) + " · " + (ok ? "OK" : "FAIL"));
+        }
+        /// <summary>台账目标标识——从参数约定键取首个非空值（路径 / 目录类取文件名，标识类原样）；powershell 取命令行原文（外部通道 · 单行指令一次一条，不截断）。</summary>
+        /// <param name="argsJson">工具参数 JSON</param>
+        /// <returns>目标标识（取不到写「—」）</returns>
+        internal static string TimebackWriteTarget(string argsJson)
+        {
+            if (argsJson == null || argsJson.Length == 0)
+            {
+                return "—";
+            }
+            JsonDocument doc = JsonUtil.Parse(argsJson, "timeback.write");
+            if (doc == null)
+            {
+                return "—";
+            }
+            try
+            {
+                string[] keys = new string[] { "path", "dest", "src", "file", "proj", "dir", "class", "member" };
+                for (int i = 0; i < keys.Length; i = i + 1)
+                {
+                    string value = JsonUtil.GetStr(doc.RootElement, keys[i], "");
+                    if (value.Length > 0)
+                    {
+                        return ShortenTimebackTarget(value);
+                    }
+                }
+                // powershell——命令行本身即标识（外部通道 · 单行指令一次一条），取原文不截断（莎 2026-10-02 定）
+                string cmd = JsonUtil.GetStr(doc.RootElement, "command", "");
+                if (cmd.Length > 0)
+                {
+                    return cmd;
+                }
+            }
+            finally
+            {
+                doc.Dispose();
+            }
+            return "—";
+        }
+        /// <summary>
+        /// 目标标识截短——取路径最后一段；超 48 字符截断。
+        /// </summary>
+        /// <param name="value">原始值</param>
+        /// <returns>短标识</returns>
+        private static string ShortenTimebackTarget(string value)
+        {
+            string text = value;
+            int cut = text.LastIndexOf('/');
+            int cut2 = text.LastIndexOf('\\');
+            if (cut2 > cut)
+            {
+                cut = cut2;
+            }
+            if (cut >= 0 && cut + 1 < text.Length)
+            {
+                text = text.Substring(cut + 1);
+            }
+            if (text.Length > 48)
+            {
+                text = text.Substring(0, 48);
+            }
+            return text;
+        }
+        /// <summary>
+        /// 本域写操作台账文本——附于 findings 之前（头 = 宿主事实，体 = LLM 自述）。
+        /// 超上限给「计数 + 首 N 条 + 归档指针」，全文进归档 jsonl——不静默截断。
+        /// </summary>
+        /// <returns>台账段（无写操作返回空串）</returns>
+        private string BuildTimebackWrites()
+        {
+            TimebackScope scope = _timebackScope;
+            if (scope == null || scope.WriteLog.Count == 0)
+            {
+                return "";
+            }
+            string text = "[本域写操作台账 · 宿主记录 · " + scope.WriteLog.Count.ToString() + " 条]\n";
+            int shown = scope.WriteLog.Count;
+            if (shown > TimebackWriteLogInlineLimit)
+            {
+                shown = TimebackWriteLogInlineLimit;
+            }
+            for (int i = 0; i < shown; i = i + 1)
+            {
+                text = text + (i + 1).ToString() + ". " + scope.WriteLog[i] + "\n";
+            }
+            if (shown < scope.WriteLog.Count)
+            {
+                text = text + "…（余 " + (scope.WriteLog.Count - shown).ToString() + " 条见归档 jsonl）\n";
+            }
+            return text + "\n";
+        }
         /// <summary>状态提示注入——批后段调用：距上次提示累计满 25 个事件则追加一条角色 user 的系统提示（source=systemauto）。
         /// C1 纪律：只追加新块、绝不回改历史块（前缀一字未动 → 缓存仍命中）。
         /// 🔴 角色是 user 不是 assistant（判例 2026-09-28 · 1.03.049 运行态）：思考模式下注入的 assistant 无 reasoning_content 回传 → 端点 400（`The reasoning_content in the thinking mode must be passed back to the API`）→ 本轮中止；user 注入走既有系统通道，零协议风险。
@@ -493,7 +629,7 @@ namespace CH4
             _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             if (_httpHost != null)
             {
-                string userJson = "{\"content\":" + JsonUtil.Serialize(text) + ",\"source\":\"systemauto\"}";
+                string userJson = JsonUtil.Object(("content", text), ("source", "systemauto"));
                 _httpHost.PushView("user", userJson, -1, 0);
             }
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 状态提示注入（累计 " + scope.EventCount.ToString()
@@ -532,7 +668,7 @@ namespace CH4
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(argsJson))
+                using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
                 {
                     JsonElement root = doc.RootElement;
                     if (root.ValueKind != JsonValueKind.Object)
@@ -558,22 +694,13 @@ namespace CH4
             }
         }
 
-        /// <summary>
-        /// timeback 暴毙风险黑名单（莎 2026-09-28 定 · 2026-10-01 宽松化）——只隔离「会让 Mau 框架 / 宿主进程自身当场失效」的行为，
-        /// 判据 = 该动作是否可能立刻中断进程或让作用域上下文失效（重启 / 程序集句柄替换 / 运行区文件被重写）。
-        /// 拦三类：restart-*（重启族——本轮中断，作用域随内存丢失）· host-reload（换程序集句柄 + 重建工具池）·
-        /// mau-setup（deploy 重写运行区文件）。其余一律放行——只读（mau-verify / host-flows / config-get / cat.list 类指令）、
-        /// 写仓库产物区（mau-gen / mau-proj）、配置写（config-*）、管理指令（majordomo-cmd）：改的是行为与产物，不会让进程或作用域当场失效。
-        /// 判据 = 工具名精确匹配（黑名单式，不用前缀通配）。
-        /// 与 C3 的 Note / sleep / timer 锁定并列：前者防「区间删除语义冲突」，本项防「作用域内把本体搞崩」。
-        /// </summary>
+        /// <summary>timeback 暴毙风险黑名单（莎 2026-09-28 定 · 2026-10-01 宽松化 · 2026-10-02 放行 mau-setup）——只隔离「会让 Mau 框架 / 宿主进程自身当场失效」的行为，判据 = 该动作是否可能立刻中断进程或让作用域上下文失效（重启 / 程序集句柄替换）。拦两类：restart-*（重启族——本轮中断，作用域随内存丢失）· host-reload（换程序集句柄 + 重建工具池，无后悔药）。其余一律放行——只读（mau-verify / host-flows / config-get / cat.list 类指令）、写仓库产物区（mau-gen / mau-proj）、一键链（prepare / sync-html——只写仓库与静态资源，不换程序集）、配置写（config-*）、管理指令（majordomo-cmd）。判据 = 工具名精确匹配（黑名单式，不用前缀通配）。与 C3 的 Note / sleep / timer 锁定并列：前者防「区间删除语义冲突」，本项防「作用域内把本体搞崩」。🔴 本判据是工具边界要求（机制层），不是使用授权——放行不等于该在域内用，开域时机归规范层（环节判据，见工具描述与设计 §三）。</summary>
         /// <param name="name">工具名</param>
         /// <returns>true=作用域内禁用</returns>
         private static bool IsTimebackBodyLocked(string name)
         {
             return IsRestartTool(name)
-                || name == "host-reload"
-                || name == "mau-setup";
+                || name == "host-reload";
         }
 
         /// <summary>

@@ -831,7 +831,7 @@ namespace CH4
         {
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(line))
+                using (JsonDocument doc = JsonUtil.ParseStrict(line))
                 {
                     JsonElement root = doc.RootElement;
                     Dictionary<string, object> item = new Dictionary<string, object>();

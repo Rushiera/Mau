@@ -870,6 +870,7 @@ namespace CH4
                 {
                     AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
                     NoteTimebackEvent();
+                    NoteTimebackWrite(dog.Name, dog.ArgsJson, dog.Result);
                 }
                 PushToolCardFinal(dog, i + 1, _dogs.Count, done);
             }
@@ -1012,7 +1013,7 @@ namespace CH4
             _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             if (_httpHost != null)
             {
-                string userJson = "{\"content\":" + JsonUtil.Serialize(notice) + ",\"source\":\"systemauto\"}";
+                string userJson = JsonUtil.Object(("content", notice), ("source", "systemauto"));
                 _httpHost.PushView("user", userJson, -1, 0);
             }
             LogStore.Add("CatHome4", 1, "sleep 作废（等待被提前启动打断）: cat=" + _catKey + " | 销毁 " + killed.Length.ToString() + " 条 | 触发来源 " + triggerSource, "DELAY");
@@ -1151,7 +1152,7 @@ namespace CH4
             // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
             if (_httpHost != null)
             {
-                string userJson = "{\"content\":" + JsonUtil.Serialize(content) + ",\"source\":\"" + source + "\"}";
+                string userJson = JsonUtil.Object(("content", content), ("source", source));
                 _httpHost.PushView("user", userJson, -1, 0);
             }
             SetChatState("working");
@@ -1211,7 +1212,7 @@ namespace CH4
         /// <returns>retry 视图载荷 JSON</returns>
         private string BuildRetryViewJson(string state)
         {
-            return "{\"state\":" + JsonUtil.Serialize(state) + ",\"attempt\":\"" + _retryAttempt + "\",\"max\":\"" + _retryMax + "\",\"text\":" + JsonUtil.Serialize(_retryReason) + "}";
+            return JsonUtil.Object(("state", state), ("attempt", _retryAttempt), ("max", _retryMax), ("text", _retryReason));
         }
         /// <summary>
         /// retry 视图推送统一出口（A94）——构造载荷 + 原位落盘 + 推事件：
@@ -1274,7 +1275,7 @@ namespace CH4
                         // P6 外观层转发——LLM 增量实时推送 SSE（协议 §4.2 llm 事件）
                         if (_httpHost != null)
                         {
-                            string streamTextJson = "{\"kind\":\"text\",\"text\":" + JsonUtil.Serialize(ev.Text) + "}";
+                            string streamTextJson = JsonUtil.Object(("kind", "text"), ("text", ev.Text));
                             _textStreamSeq = _httpHost.PushView("stream", streamTextJson, -1, _textStreamSeq);
                         }
                     }
@@ -1291,7 +1292,7 @@ namespace CH4
                         PhaseEnter(PhaseThink);
                         if (_httpHost != null)
                         {
-                            string streamReasonJson = "{\"kind\":\"reasoning\",\"text\":" + JsonUtil.Serialize(ev.Text) + "}";
+                            string streamReasonJson = JsonUtil.Object(("kind", "reasoning"), ("text", ev.Text));
                             _reasonStreamSeq = _httpHost.PushView("stream", streamReasonJson, -1, _reasonStreamSeq);
                         }
                     }
@@ -1372,15 +1373,16 @@ namespace CH4
                         _sessionCacheHit = _sessionCacheHit + (_usageCacheHit - reqCacheHit);
                         if (_httpHost != null)
                         {
-                            string usageJson = "{\"prompt\":" + _usagePrompt.ToString()
-                                + ",\"completion\":" + _usageCompletion.ToString()
-                                + ",\"cacheHit\":" + _usageCacheHit.ToString()
-                                + ",\"context\":" + _contextTokens.ToString()
-                                + ",\"count\":" + _context.GetMessageCount().ToString()
-                                + ",\"sessionPrompt\":" + _sessionPrompt.ToString()
-                                + ",\"sessionCompletion\":" + _sessionCompletion.ToString()
-                                + ",\"sessionCacheHit\":" + _sessionCacheHit.ToString() + "}";
-                            string usageCtrl = "{\"type\":\"usage\",\"data\":" + usageJson + "}";
+                            string usageJson = JsonUtil.Object(
+                                ("prompt", _usagePrompt),
+                                ("completion", _usageCompletion),
+                                ("cacheHit", _usageCacheHit),
+                                ("context", _contextTokens),
+                                ("count", _context.GetMessageCount()),
+                                ("sessionPrompt", _sessionPrompt),
+                                ("sessionCompletion", _sessionCompletion),
+                                ("sessionCacheHit", _sessionCacheHit));
+                            string usageCtrl = JsonUtil.Object(("type", "usage"), ("data", JsonUtil.Raw(usageJson)));
                             _httpHost.PushView("control", usageCtrl, -1, 0);
                         }
                     }
@@ -1489,7 +1491,7 @@ namespace CH4
             }
             if (_httpHost != null)
             {
-                string reasonJson = "{\"content\":" + JsonUtil.Serialize(content) + "}";
+                string reasonJson = JsonUtil.Object(("content", content));
                 _httpHost.PushView("reason", reasonJson, seq, 0);
             }
         }
@@ -1637,16 +1639,18 @@ namespace CH4
             string name;
             int requests;
             Dictionary<string, long> ms = GetRunState(out name, out requests);
-            return "{\"sessionId\":" + JsonUtil.Serialize(Id)
-                + ",\"runState\":\"" + name + "\""
-                + ",\"runMs\":{\"idle\":" + ms["idle"].ToString()
-                + ",\"wait\":" + ms["wait"].ToString()
-                + ",\"link\":" + ms["link"].ToString()
-                + ",\"think\":" + ms["think"].ToString()
-                + ",\"tool\":" + ms["tool"].ToString()
-                + ",\"run\":" + ms["run"].ToString()
-                + ",\"reply\":" + ms["reply"].ToString() + "}"
-                + ",\"requests\":" + requests.ToString() + "}";
+            return JsonUtil.Object(
+                ("sessionId", Id),
+                ("runState", name),
+                ("runMs", JsonUtil.Raw(JsonUtil.Object(
+                    ("idle", ms["idle"]),
+                    ("wait", ms["wait"]),
+                    ("link", ms["link"]),
+                    ("think", ms["think"]),
+                    ("tool", ms["tool"]),
+                    ("run", ms["run"]),
+                    ("reply", ms["reply"])))),
+                ("requests", requests));
         }
 
         /// <summary>构建 roundsum 载荷——本轮 Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 六态用时（idle 不计时故不入载荷；CloseRound 推送/落盘数据源）+ done（本轮结束语义：stream=流式自然收尾 / tool=工具主动 done）。</summary>
@@ -1672,20 +1676,23 @@ namespace CH4
             {
                 doneKind = "tool";
             }
-            return "{\"type\":\"roundsum\",\"data\":{\"prompt\":" + _usagePrompt.ToString()
-                + ",\"completion\":" + _usageCompletion.ToString()
-                + ",\"cacheHit\":" + _usageCacheHit.ToString()
-                + ",\"miss\":" + miss.ToString()
-                + ",\"done\":\"" + doneKind + "\""
-                + ",\"toolCount\":" + _toolCallCount.ToString()
-                + ",\"requests\":" + requests.ToString()
-                + ",\"elapsedMs\":" + elapsedMs.ToString()
-                + ",\"phases\":{\"wait\":" + ms["wait"].ToString()
-                + ",\"link\":" + ms["link"].ToString()
-                + ",\"think\":" + ms["think"].ToString()
-                + ",\"tool\":" + ms["tool"].ToString()
-                + ",\"run\":" + ms["run"].ToString()
-                + ",\"reply\":" + ms["reply"].ToString() + "}}}";
+            string dataJson = JsonUtil.Object(
+                ("prompt", _usagePrompt),
+                ("completion", _usageCompletion),
+                ("cacheHit", _usageCacheHit),
+                ("miss", miss),
+                ("done", doneKind),
+                ("toolCount", _toolCallCount),
+                ("requests", requests),
+                ("elapsedMs", elapsedMs),
+                ("phases", JsonUtil.Raw(JsonUtil.Object(
+                    ("wait", ms["wait"]),
+                    ("link", ms["link"]),
+                    ("think", ms["think"]),
+                    ("tool", ms["tool"]),
+                    ("run", ms["run"]),
+                    ("reply", ms["reply"])))));
+            return JsonUtil.Object(("type", "roundsum"), ("data", JsonUtil.Raw(dataJson)));
         }
 
         /// <summary>
@@ -1704,7 +1711,7 @@ namespace CH4
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(usageJson))
+                using (JsonDocument doc = JsonUtil.ParseStrict(usageJson))
                 {
                     JsonElement root = doc.RootElement;
                     if (root.TryGetProperty("prompt", out JsonElement p) && p.ValueKind == JsonValueKind.Number)
@@ -1779,7 +1786,7 @@ namespace CH4
                 _viewStore.OnAssistantText(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                 if (_httpHost != null)
                 {
-                    string textJson = "{\"content\":" + JsonUtil.Serialize(_llmResultText) + ",\"msgIndex\":" + (_context.GetMessageCount() - 1).ToString() + "}";
+                    string textJson = JsonUtil.Object(("content", _llmResultText), ("msgIndex", _context.GetMessageCount() - 1));
                     _httpHost.PushView("text", textJson, _textStreamSeq, 0);
                 }
                 _textStreamSeq = 0;
@@ -1792,7 +1799,7 @@ namespace CH4
                     _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                     if (_httpHost != null)
                     {
-                        string userJson = "{\"content\":" + JsonUtil.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
+                        string userJson = JsonUtil.Object(("content", next.Content), ("source", next.Source));
                         _httpHost.PushView("user", userJson, -1, 0);
                     }
                     _round = 0;
@@ -1815,7 +1822,7 @@ namespace CH4
                 _viewStore.AppendGapText(_llmResultText, ViewTimestamp());
                 if (_httpHost != null)
                 {
-                    string sealTextJson = "{\"content\":" + JsonUtil.Serialize(_llmResultText) + ",\"msgIndex\":-1}";
+                    string sealTextJson = JsonUtil.Object(("content", _llmResultText), ("msgIndex", -1));
                     _httpHost.PushView("text", sealTextJson, _textStreamSeq, 0);
                 }
             }
@@ -1868,7 +1875,7 @@ namespace CH4
             JsonDocument doc = null;
             try
             {
-                doc = JsonDocument.Parse(toolCallsJson);
+                doc = JsonUtil.ParseStrict(toolCallsJson);
             }
             catch (Exception ex)
             {
@@ -1893,7 +1900,7 @@ namespace CH4
                     if (call.TryGetProperty("function", out funcEl))
                     {
                         info.Name = GetStringProp(funcEl, "name");
-                        info.Arguments = DecodeToolArgEntities(info.Name, GetStringProp(funcEl, "arguments"));
+                        info.Arguments = TextUtil.DecodeArgEntities(info.Name, GetStringProp(funcEl, "arguments"));
                     }
                     else
                     {
@@ -1925,11 +1932,12 @@ namespace CH4
                 {
                     continue;
                 }
-                string json = "{\"name\":" + JsonUtil.Serialize(call.Name)
-                    + ",\"arguments\":" + JsonUtil.Serialize(InjectCatId(call.Arguments))
-                    + ",\"toolIndex\":" + call.Index.ToString()
-                    + ",\"toolTotal\":" + call.Total.ToString()
-                    + ",\"order\":" + JsonUtil.Serialize(ToolOrderTable.OrderText(call.Name)) + "}";
+                string json = JsonUtil.Object(
+                    ("name", call.Name),
+                    ("arguments", InjectCatId(call.Arguments)),
+                    ("toolIndex", call.Index),
+                    ("toolTotal", call.Total),
+                    ("order", ToolOrderTable.OrderText(call.Name)));
                 long seq = _httpHost.PushView("toolcard", json, -1, 0);
                 seqs[call.Id] = seq;
             }
@@ -1958,12 +1966,13 @@ namespace CH4
             }
             // A69 视图层报错中文注释——真实前文保持原文
             result = ErrorNote.Apply(result);
-            string json = "{\"name\":" + JsonUtil.Serialize(dog.Name)
-                + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson)
-                + ",\"result\":" + JsonUtil.Serialize(result)
-                + ",\"toolIndex\":" + index.ToString()
-                + ",\"toolTotal\":" + total.ToString()
-                + ",\"order\":" + JsonUtil.Serialize(ToolOrderTable.OrderText(dog.Name)) + "}";
+            string json = JsonUtil.Object(
+                ("name", dog.Name),
+                ("arguments", dog.ArgsJson),
+                ("result", result),
+                ("toolIndex", index),
+                ("toolTotal", total),
+                ("order", ToolOrderTable.OrderText(dog.Name)));
             _httpHost.PushView("toolcard", json, dog.CardSeq, 0);
             dog.CardSeq = -1;
         }
@@ -1997,7 +2006,13 @@ namespace CH4
             }
             // A69 视图层报错中文注释——真实前文（dog.Result）保持原文
             string viewResult = ErrorNote.Apply(dog.Result);
-            string toolJson = "{\"name\":" + JsonUtil.Serialize(dog.Name) + ",\"arguments\":" + JsonUtil.Serialize(dog.ArgsJson) + ",\"result\":" + JsonUtil.Serialize(viewResult) + ",\"toolIndex\":" + (index + 1).ToString() + ",\"toolTotal\":" + _dogs.Count.ToString() + ",\"order\":" + JsonUtil.Serialize(ToolOrderTable.OrderText(dog.Name)) + "}";
+            string toolJson = JsonUtil.Object(
+                ("name", dog.Name),
+                ("arguments", dog.ArgsJson),
+                ("result", viewResult),
+                ("toolIndex", index + 1),
+                ("toolTotal", _dogs.Count),
+                ("order", ToolOrderTable.OrderText(dog.Name)));
             _httpHost.PushView("toolcard", toolJson, dog.CardSeq, 0);
             dog.CardSeq = ToolCardSeqDone;
         }
@@ -2305,7 +2320,7 @@ namespace CH4
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(arguments))
+                using (JsonDocument doc = JsonUtil.ParseStrict(arguments))
                 {
                     if (doc.RootElement.ValueKind != JsonValueKind.Object)
                     {
@@ -2396,6 +2411,7 @@ namespace CH4
                 FlushToolCard(dog);
                 AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
                 NoteTimebackEvent();
+                NoteTimebackWrite(dog.Name, dog.ArgsJson, dog.Result);
                 _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
             }
             _toolBatchActive = false;
@@ -2431,7 +2447,7 @@ namespace CH4
                 _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
                 if (_httpHost != null)
                 {
-                    string userJson = "{\"content\":" + JsonUtil.Serialize(next.Content) + ",\"source\":\"" + next.Source + "\"}";
+                    string userJson = JsonUtil.Object(("content", next.Content), ("source", next.Source));
                     _httpHost.PushView("user", userJson, -1, 0);
                 }
                 _round = 0;
@@ -2472,7 +2488,7 @@ namespace CH4
             _viewStore.AppendError(viewError, ViewTimestamp());
             if (_httpHost != null)
             {
-                string errJson = "{\"type\":\"error\",\"text\":" + JsonUtil.Serialize(viewError) + "}";
+                string errJson = JsonUtil.Object(("type", "error"), ("text", viewError));
                 _httpHost.PushView("error", errJson, -1, 0);
             }
             // [段3] 重试耗尽终态（A94——本轮推过 retry 气泡则补 failed 终态，保留报错原文；最终错误详情仍归 error 气泡）
@@ -2533,14 +2549,15 @@ namespace CH4
             // E3 扩展——chatdone 带真实 usage（命中/非命中/输出/前文长度；前端状态栏同步显示）
             if (_httpHost != null)
             {
-                string doneJson = "{\"type\":\"chatdone\",\"count\":" + _context.GetMessages().Length.ToString()
-                    + ",\"stats\":{\"prompt\":" + _usagePrompt.ToString()
-                    + ",\"cacheHit\":" + _usageCacheHit.ToString()
-                    + ",\"completion\":" + _usageCompletion.ToString()
-                    + ",\"context\":" + _contextTokens.ToString()
-                    + ",\"sessionPrompt\":" + _sessionPrompt.ToString()
-                    + ",\"sessionCompletion\":" + _sessionCompletion.ToString()
-                    + ",\"sessionCacheHit\":" + _sessionCacheHit.ToString() + "}}";
+                string statsJson = JsonUtil.Object(
+                    ("prompt", _usagePrompt),
+                    ("cacheHit", _usageCacheHit),
+                    ("completion", _usageCompletion),
+                    ("context", _contextTokens),
+                    ("sessionPrompt", _sessionPrompt),
+                    ("sessionCompletion", _sessionCompletion),
+                    ("sessionCacheHit", _sessionCacheHit));
+                string doneJson = JsonUtil.Object(("type", "chatdone"), ("count", _context.GetMessages().Length), ("stats", JsonUtil.Raw(statsJson)));
                 _httpHost.PushView("control", doneJson, -1, 0);
             }
             // Q 本轮结束系统通知——配置 app.round_notify 可开关（默认开启）；正文优先末轮回复前 40 字符，空则回退 Token 统计
@@ -2671,132 +2688,6 @@ namespace CH4
                 }
             }
             return "";
-        }
-
-        /// <summary>实体解码的内容面豁免名单——这些参数承载「写什么存什么」的正文语义，解码会损坏内容（A133）</summary>
-        private static readonly string[] EntityDecodeExemptArgs = new string[]
-        {
-            "content", "body", "code", "codes", "value", "new", "findings", "cmd", "command",
-            "expression", "question", "text", "purpose", "push", "persona", "description", "note"
-        };
-
-        /// <summary>
-        /// 是否内容面豁免参数——名单内不解码（一参数一判定，不按前缀打包）。
-        /// </summary>
-        /// <param name="name">参数名</param>
-        /// <returns>true=豁免（原样保留）</returns>
-        private static bool IsEntityDecodeExempt(string name)
-        {
-            if (name == null || name.Length == 0)
-            {
-                return false;
-            }
-            for (int i = 0; i < EntityDecodeExemptArgs.Length; i = i + 1)
-            {
-                if (name == EntityDecodeExemptArgs[i])
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// 工具参数实体解码（A133）——把模型侧误转义的 HTML 实体还原为字符形态。
-        /// 落点 = ParseToolCalls 统一入口（全工具面一次覆盖——内置与 OA 工具同源）；豁免内容面参数（正文写什么存什么）。
-        /// 逃生口：要表达字面量实体文本，写双写形态（见 TextUtil.DecodeEntities）。
-        /// 解码发生时出声（L2）——静默改写模型输入不可观测。
-        /// </summary>
-        /// <param name="toolName">工具名（日志用）</param>
-        /// <param name="argsJson">参数 JSON（整包）</param>
-        /// <returns>解码后的参数 JSON（无改动时原样返回同一引用）</returns>
-        internal static string DecodeToolArgEntities(string toolName, string argsJson)
-        {
-            if (argsJson == null || argsJson.Length == 0 || argsJson.IndexOf('&') < 0)
-            {
-                return argsJson ?? "";
-            }
-            JsonDocument doc;
-            try
-            {
-                doc = JsonDocument.Parse(argsJson);
-            }
-            catch (Exception)
-            {
-                // 参数 JSON 非法——原样透传（下游按 BAD_ARGS 出声，本入口不抢报）
-                return argsJson;
-            }
-            string result = argsJson;
-            using (doc)
-            {
-                JsonElement root = doc.RootElement;
-                if (root.ValueKind == JsonValueKind.Object)
-                {
-                    List<KeyValuePair<string, string>> changed = new List<KeyValuePair<string, string>>();
-                    foreach (JsonProperty property in root.EnumerateObject())
-                    {
-                        if (property.Value.ValueKind != JsonValueKind.String)
-                        {
-                            continue;
-                        }
-                        if (IsEntityDecodeExempt(property.Name))
-                        {
-                            continue;
-                        }
-                        string original = property.Value.GetString() ?? "";
-                        string decoded = TextUtil.DecodeEntities(original);
-                        if (!string.Equals(original, decoded, StringComparison.Ordinal))
-                        {
-                            changed.Add(new KeyValuePair<string, string>(property.Name, decoded));
-                        }
-                    }
-                    if (changed.Count > 0)
-                    {
-                        StringBuilder sb = new StringBuilder();
-                        sb.Append("{");
-                        bool first = true;
-                        string names = "";
-                        foreach (JsonProperty property in root.EnumerateObject())
-                        {
-                            if (!first)
-                            {
-                                sb.Append(",");
-                            }
-                            first = false;
-                            sb.Append(JsonUtil.Serialize(property.Name));
-                            sb.Append(":");
-                            string replacement = null;
-                            for (int i = 0; i < changed.Count; i = i + 1)
-                            {
-                                if (changed[i].Key == property.Name)
-                                {
-                                    replacement = changed[i].Value;
-                                }
-                            }
-                            if (replacement != null)
-                            {
-                                sb.Append(JsonUtil.Serialize(replacement));
-                            }
-                            else
-                            {
-                                sb.Append(property.Value.GetRawText());
-                            }
-                        }
-                        sb.Append("}");
-                        for (int i = 0; i < changed.Count; i = i + 1)
-                        {
-                            if (names.Length > 0)
-                            {
-                                names = names + ",";
-                            }
-                            names = names + changed[i].Key;
-                        }
-                        LogStore.Add("CatHome4", 2, "工具参数实体解码: " + toolName + " · 字段 " + names, "TOOL");
-                        result = sb.ToString();
-                    }
-                }
-            }
-            return result;
         }
 
         /// <summary>

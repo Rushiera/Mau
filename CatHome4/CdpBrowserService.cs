@@ -93,7 +93,7 @@ namespace CH4
                 try
                 {
                     Stopwatch sw = Stopwatch.StartNew();
-                    browser.Cdp.Call("Page.navigate", JsonSerializer.Serialize(new { url = url }));
+                    browser.Cdp.Call("Page.navigate", JsonUtil.Serialize(new { url = url }));
                     string state = WaitReady(browser.Cdp, NavTimeoutMs);
                     if (state != "interactive" && state != "complete")
                     {
@@ -151,7 +151,7 @@ namespace CH4
                         string path = NextOutPath(browser, "read-links", "json");
                         File.WriteAllText(path, linksJson, new UTF8Encoding(false));
                         int count = 0;
-                        using (JsonDocument doc = JsonDocument.Parse(linksJson))
+                        using (JsonDocument doc = JsonUtil.ParseStrict(linksJson))
                         {
                             count = doc.RootElement.GetArrayLength();
                         }
@@ -228,7 +228,7 @@ namespace CH4
             {
                 try
                 {
-                    JsonElement shot = browser.Cdp.Call("Page.captureScreenshot", JsonSerializer.Serialize(new { format = "png", captureBeyondViewport = fullPage }));
+                    JsonElement shot = browser.Cdp.Call("Page.captureScreenshot", JsonUtil.Serialize(new { format = "png", captureBeyondViewport = fullPage }));
                     string b64 = "";
                     if (shot.TryGetProperty("result", out JsonElement res) && res.TryGetProperty("data", out JsonElement dataEl))
                     {
@@ -410,7 +410,7 @@ namespace CH4
                         if (url.Length > 0)
                         {
                             Stopwatch navSw = Stopwatch.StartNew();
-                            browser.Cdp.Call("Page.navigate", JsonSerializer.Serialize(new { url = url }));
+                            browser.Cdp.Call("Page.navigate", JsonUtil.Serialize(new { url = url }));
                             string navState = WaitReady(browser.Cdp, NavTimeoutMs);
                             if (navState != "interactive" && navState != "complete")
                             {
@@ -856,7 +856,7 @@ namespace CH4
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(json))
+                using (JsonDocument doc = JsonUtil.ParseStrict(json))
                 {
                     foreach (JsonElement item in doc.RootElement.EnumerateArray())
                     {
@@ -874,7 +874,7 @@ namespace CH4
                     }
                 }
             }
-            catch (JsonException ex)
+            catch (Exception ex)
             {
                 LogStore.Add("CatHome4", 2, "页签清单解析失败: " + ex.Message, "BROWSER");
             }
@@ -941,7 +941,7 @@ namespace CH4
             CdpClient cdp = new CdpClient(ws);
             cdp.Call("Page.enable", "{}");
             cdp.Call("Runtime.enable", "{}");
-            cdp.Call("Emulation.setDeviceMetricsOverride", JsonSerializer.Serialize(new { width = ViewportWidth, height = ViewportHeight, deviceScaleFactor = 1, mobile = false }));
+            cdp.Call("Emulation.setDeviceMetricsOverride", JsonUtil.Serialize(new { width = ViewportWidth, height = ViewportHeight, deviceScaleFactor = 1, mobile = false }));
             browser.Ws = ws;
             browser.Cdp = cdp;
             browser.TargetId = target.Id;
@@ -990,12 +990,12 @@ namespace CH4
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(json))
+                using (JsonDocument doc = JsonUtil.ParseStrict(json))
                 {
                     return JsonString(doc.RootElement, key);
                 }
             }
-            catch (JsonException ex)
+            catch (Exception ex)
             {
                 LogStore.Add("CatHome4", 2, "JSON 解析失败: " + ex.Message, "BROWSER");
             }
@@ -1126,7 +1126,7 @@ namespace CH4
         /// <returns>取值结果（失败为空串）</returns>
         private static string EvalRaw(CdpClient cdp, string expression)
         {
-            JsonElement r = cdp.Call("Runtime.evaluate", JsonSerializer.Serialize(new { expression = expression, returnByValue = true }));
+            JsonElement r = cdp.Call("Runtime.evaluate", JsonUtil.Serialize(new { expression = expression, returnByValue = true }));
             JsonElement res;
             if (!r.TryGetProperty("result", out res))
             {
@@ -1249,7 +1249,7 @@ namespace CH4
         private static string BuildLinkPreview(string linksJson)
         {
             StringBuilder sb = new StringBuilder();
-            using (JsonDocument doc = JsonDocument.Parse(linksJson))
+            using (JsonDocument doc = JsonUtil.ParseStrict(linksJson))
             {
                 int total = doc.RootElement.GetArrayLength();
                 int i = 0;
@@ -1432,13 +1432,13 @@ namespace CH4
             {
                 int id = _id + 1;
                 _id = id;
-                string msg = "{\"id\":" + id.ToString() + ",\"method\":\"" + method + "\",\"params\":" + paramsJson + "}";
+                string msg = JsonUtil.Object(("id", id), ("method", method), ("params", JsonUtil.Raw(paramsJson)));
                 byte[] bytes = Encoding.UTF8.GetBytes(msg);
                 _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None).GetAwaiter().GetResult();
                 while (true)
                 {
                     string text = ReceiveText();
-                    using (JsonDocument doc = JsonDocument.Parse(text))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(text))
                     {
                         JsonElement root = doc.RootElement;
                         JsonElement idEl;

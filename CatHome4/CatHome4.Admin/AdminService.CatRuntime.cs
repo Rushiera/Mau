@@ -49,7 +49,7 @@ namespace CatHome4.Admin
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path)))
+                using (JsonDocument doc = JsonUtil.ParseStrict(File.ReadAllText(path)))
                 {
                     JsonElement catsEl;
                     if (doc.RootElement.TryGetProperty("cats", out catsEl) && catsEl.ValueKind == JsonValueKind.Object)
@@ -85,24 +85,12 @@ namespace CatHome4.Admin
         /// <param name="map">猫 id → 运行态条目</param>
         private static void SaveCatRuntime(Dictionary<string, CatRuntimeEntry> map)
         {
-            System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            sb.Append("{\"cats\":{");
-            bool first = true;
+            System.Collections.Generic.List<(string Key, object Value)> items = new System.Collections.Generic.List<(string Key, object Value)>();
             foreach (KeyValuePair<string, CatRuntimeEntry> pair in map)
             {
-                if (!first)
-                {
-                    sb.Append(",");
-                }
-                first = false;
-                sb.Append(JsonUtil.Serialize(pair.Key));
-                sb.Append(":{\"running\":");
-                sb.Append(pair.Value.Running ? "true" : "false");
-                sb.Append(",\"port\":");
-                sb.Append(pair.Value.Port.ToString());
-                sb.Append("}");
+                items.Add((pair.Key, JsonUtil.Raw(JsonUtil.Object(("running", pair.Value.Running), ("port", pair.Value.Port)))));
             }
-            sb.Append("}}");
+            string payload = JsonUtil.Object(("cats", JsonUtil.Raw(JsonUtil.Object(items.ToArray()))));
             try
             {
                 string path = CatRuntimePath();
@@ -111,7 +99,7 @@ namespace CatHome4.Admin
                 {
                     Directory.CreateDirectory(dir);
                 }
-                ConfigStore.AtomicWrite(path, sb.ToString());
+                ConfigStore.AtomicWrite(path, payload);
             }
             catch (Exception ex)
             {

@@ -51,7 +51,7 @@ namespace CatHome4.Http
         {
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(json))
+                using (JsonDocument doc = JsonUtil.ParseStrict(json))
                 {
                     JsonElement root = doc.RootElement;
                     using (System.IO.MemoryStream ms = new System.IO.MemoryStream())

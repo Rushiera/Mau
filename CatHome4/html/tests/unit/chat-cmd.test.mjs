@@ -214,3 +214,10 @@ test('文件系统补充规则——where.exe / Get-Location / Get-CimInstance /
     .toBe('Expand-Archive · 解压归档文件 「C:\\Temp\\ffmpeg-shared.zip」');
   expect(cmdDecodeTool(args('fc.exe /b a.txt b.txt')).brief).toBe('fc · 比较文件差异');
 });
+
+// ── JSON 转义还原——截断载荷兜底（cmdUnescapeJson 与 C# TextUtil.JsonUnescape 同规则，A137）──
+test('截断载荷还原——\\b \\f 支持 + 未识别序列原样保留', () => {
+  const r = cmdExtractCommand('{"command":"echo \\\"a\\\" \\u0041 \\b\\f \\q');
+  expect(r.truncated).toBe(true);
+  expect(r.command).toBe('echo "a" A \b\f \\q');
+});

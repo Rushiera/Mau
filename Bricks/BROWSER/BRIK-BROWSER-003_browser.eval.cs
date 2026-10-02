@@ -29,14 +29,14 @@ namespace Mau.Bricks
         public static bool Eval(string argsJson, out string result)
         {
             result = "";
-            string badArgs = ValidateArgs(argsJson, "expression", "expression", "", "");
+            string badArgs = JsonArgs.Validate(argsJson, "expression", "expression", "", "");
             if (badArgs.Length > 0)
             {
                 result = badArgs;
                 return false;
             }
-            string catId = ExtractArg(argsJson, "catId");
-            string expression = ExtractArg(argsJson, "expression");
+            string catId = JsonArgs.Get(argsJson, "catId");
+            string expression = JsonArgs.Get(argsJson, "expression");
             if (expression.Length == 0)
             {
                 result = "ERR|BAD_ARGS|缺少参数 expression";
@@ -85,119 +85,6 @@ namespace Mau.Bricks
             head["chars"] = body.Length;
             return JsonSerializer.Serialize(head);
         }
-
-        /// <summary>
-        /// 参数面校验——未知 / 缺值 / 枚举非法一律拒绝（参数面零容忍；catId 保留键放行）
-        /// </summary>
-        /// <param name="argsJson">参数 JSON</param>
-        /// <param name="allowed">允许的参数名（空格分隔）</param>
-        /// <param name="required">必填参数名（空格分隔）</param>
-        /// <param name="enumName">枚举参数名（空=无）</param>
-        /// <param name="enumValues">枚举合法值（| 分隔）</param>
-        /// <returns>错误文本（空=通过）</returns>
-        private static string ValidateArgs(string argsJson, string allowed, string required, string enumName, string enumValues)
-        {
-            if (argsJson == null || argsJson.Length == 0)
-            {
-                return "";
-            }
-            try
-            {
-                JsonDocument doc = JsonDocument.Parse(argsJson);
-                try
-                {
-                    JsonElement root = doc.RootElement;
-                    if (root.ValueKind != JsonValueKind.Object)
-                    {
-                        return "ERR|BAD_ARGS|参数必须是 JSON 对象";
-                    }
-                    foreach (JsonProperty property in root.EnumerateObject())
-                    {
-                        if (property.Name == "catId")
-                        {
-                            continue;
-                        }
-                        if (allowed.Length == 0)
-                        {
-                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（本工具无参数）";
-                        }
-                        if ((" " + allowed + " ").IndexOf(" " + property.Name + " ", StringComparison.Ordinal) < 0)
-                        {
-                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 " + allowed + "）";
-                        }
-                    }
-                    if (required.Length > 0)
-                    {
-                        string[] must = required.Split(' ');
-                        for (int i = 0; i < must.Length; i = i + 1)
-                        {
-                            JsonElement mustValue;
-                            if (!root.TryGetProperty(must[i], out mustValue) ||
-                                (mustValue.ValueKind == JsonValueKind.String && (mustValue.GetString() ?? "").Length == 0))
-                            {
-                                return "ERR|BAD_ARGS|缺参数 " + must[i] + "（必填：" + required + "）";
-                            }
-                        }
-                    }
-                    if (enumName.Length > 0)
-                    {
-                        JsonElement enumValue;
-                        if (root.TryGetProperty(enumName, out enumValue) && enumValue.ValueKind == JsonValueKind.String)
-                        {
-                            string value = enumValue.GetString() ?? "";
-                            if (value.Length > 0 && ("|" + enumValues + "|").IndexOf("|" + value + "|", StringComparison.Ordinal) < 0)
-                            {
-                                return "ERR|BAD_ARGS|" + enumName + " 非法值: " + value + "（" + enumValues + "）";
-                            }
-                        }
-                    }
-                    return "";
-                }
-                finally
-                {
-                    doc.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                return "ERR|BAD_ARGS|参数 JSON 解析失败: " + ex.Message;
-            }
-        }
-
-        /// <summary>
-        /// 展平参数提取——argsJson 中取字符串值（不存在返回空串）
-        /// </summary>
-        /// <param name="argumentsJson">参数 JSON</param>
-        /// <param name="key">键名</param>
-        /// <returns>值文本（非字符串按 JSON 文本返回）</returns>
-        private static string ExtractArg(string argumentsJson, string key)
-        {
-            try
-            {
-                JsonDocument doc = JsonDocument.Parse(argumentsJson);
-                try
-                {
-                    JsonElement el;
-                    if (doc.RootElement.TryGetProperty(key, out el))
-                    {
-                        if (el.ValueKind == JsonValueKind.String)
-                        {
-                            return el.GetString() ?? "";
-                        }
-                        return el.GetRawText();
-                    }
-                }
-                finally
-                {
-                    doc.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                LogStore.Add("BROWSER", 2, "browser-eval 参数提取失败: " + ex.Message, "TOOL");
-            }
-            return "";
-        }
     }
 }
-// #MAU_CHECKSUM:SHA256:BC8762FF50777F29F52141A2FBAF12D71BE2FB9DFE2654C22F6B8D0C03963492
+// #MAU_CHECKSUM:SHA256:1F099A04FD89B71FA81842DF4A2B323D24718679D95A49C1D212A6ABD9ED7834

@@ -59,5 +59,33 @@ namespace Mau.Runtime.Tests
             string plain = "plain text";
             Assert.Same(plain, TextUtil.DecodeEntities(plain));
         }
+
+        /// <summary>
+        /// JSON 转义——标准八种转义 + 控制字符兜底（U+0008 / U+000C / U+0001 不得裸出——非法 JSON）
+        /// </summary>
+        [Fact]
+        public void JsonEscape_StandardAndControlChars()
+        {
+            Assert.Equal("a\\\"b", TextUtil.JsonEscape("a\"b"));
+            Assert.Equal("a\\\\b", TextUtil.JsonEscape("a\\b"));
+            Assert.Equal("a\\nb", TextUtil.JsonEscape("a\nb"));
+            Assert.Equal("a\\rb", TextUtil.JsonEscape("a\rb"));
+            Assert.Equal("a\\tb", TextUtil.JsonEscape("a\tb"));
+            Assert.Equal("a\\bb", TextUtil.JsonEscape("a\bb"));
+            Assert.Equal("a\\fb", TextUtil.JsonEscape("a\fb"));
+            Assert.Equal("\\u0001", TextUtil.JsonEscape("\u0001"));
+        }
+
+        /// <summary>
+        /// JSON 还原——与 JsonEscape 往返一致；未识别序列原样保留（不吞反斜杠）；斜杠转义可还原
+        /// </summary>
+        [Fact]
+        public void JsonUnescape_RoundTripAndUnknownKept()
+        {
+            string source = "a\"b\\c\nd\te\bf\u0001中文";
+            Assert.Equal(source, TextUtil.JsonUnescape(TextUtil.JsonEscape(source)));
+            Assert.Equal("a\\qb", TextUtil.JsonUnescape("a\\qb"));
+            Assert.Equal("/x", TextUtil.JsonUnescape("\\/x"));
+        }
     }
 }

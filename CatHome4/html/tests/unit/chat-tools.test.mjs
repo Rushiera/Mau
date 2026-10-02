@@ -1048,6 +1048,23 @@ test('timeback——折叠行带 purpose（结构化头驱动；start / back 两
   expect(c2.querySelector('.tn').textContent).toContain('A125 探索');
 });
 
+test('timeback——台账可视化（折叠行改动计数 · 输出段台账段标记）', () => {
+  const res = '{"ok":true,"tool":"timeback","id":21,"anchor":300,"purpose":"台账验收","released":4,"tokens":100,"grew":10,"writes":2}\n[本域写操作台账 · 宿主记录 · 2 条]\n1. text-replace · a.md · OK\n2. cs-patch · B.cs · TimebackStart · OK\n\n结论：完成';
+  const c = renderTool({ name: 'timeback', arguments: JSON.stringify({ action: 'back', findings: '结论：完成' }), result: res }, 134);
+  expect(c.querySelector('.tn').textContent).toContain('改动 2 处');
+  const ov = window.chatToolOverride('timeback');
+  const lines = ov.outputLines(res);
+  expect(lines[0]).toBe('⚙ [本域写操作台账 · 宿主记录 · 2 条]');
+  expect(lines[1]).toBe('   1. text-replace · a.md · OK');
+  expect(lines[2]).toBe('   2. cs-patch · B.cs · TimebackStart · OK');
+  expect(lines[3]).toBe('结论：完成');
+});
+
+test('timeback——无台账段时输出段回落骨架渲染（不改造型）', () => {
+  const ov = window.chatToolOverride('timeback');
+  expect(ov.outputLines('{"ok":true,"tool":"timeback","id":21}\n结论：X')).toBe(null);
+});
+
 test('未登记工具折叠行——骨架兜底不空白（Z8）', () => {
   const card = renderTool({ name: 'brand-new-tool', arguments: '{}', result: 'OK' }, 200);
   expect(card.querySelector('.tn').textContent).toContain('brand-new-tool');

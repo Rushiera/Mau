@@ -95,7 +95,7 @@ namespace Mau.Runtime
             {
                 return schema;
             }
-            using (JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path)))
+            using (JsonDocument doc = JsonUtil.ParseStrict(File.ReadAllText(path)))
             {
                 JsonElement root = doc.RootElement;
                 JsonElement itemsEl;

@@ -56,7 +56,7 @@ namespace CatHome4.Admin
                     return list;
                 }
                 string json = File.ReadAllText(path);
-                using (JsonDocument doc = JsonDocument.Parse(json))
+                using (JsonDocument doc = JsonUtil.ParseStrict(json))
                 {
                     JsonElement root = doc.RootElement;
                     JsonElement packs;
@@ -307,7 +307,7 @@ namespace CatHome4.Admin
             List<string> paths = new List<string>();
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement root = doc.RootElement;
                     key = GetJsonString(root, "key").Trim();
@@ -386,7 +386,7 @@ namespace CatHome4.Admin
             string key = "";
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     key = GetJsonString(doc.RootElement, "key").Trim();
                 }

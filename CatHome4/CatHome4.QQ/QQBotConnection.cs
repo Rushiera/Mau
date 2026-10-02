@@ -282,12 +282,16 @@ namespace CatHome4.QQ
         /// <returns>请求体 JSON</returns>
         private static string BuildBody(string text, bool isMarkdown, string msgId, long msgSeq)
         {
-            string idPart = msgId.Length > 0 ? ",\"msg_id\":\"" + EscapeJson(msgId) + "\",\"msg_seq\":" + msgSeq.ToString() : "";
+            string idPart = "";
+            if (msgId.Length > 0)
+            {
+                idPart = ",\"msg_id\":" + JsonUtil.Str(msgId) + ",\"msg_seq\":" + msgSeq.ToString();
+            }
             if (isMarkdown)
             {
-                return "{\"msg_type\":2,\"markdown\":{\"content\":\"" + EscapeJson(text) + "\"}" + idPart + "}";
+                return "{\"msg_type\":2,\"markdown\":{\"content\":" + JsonUtil.Str(text) + "}" + idPart + "}";
             }
-            return "{\"content\":\"" + EscapeJson(text) + "\",\"msg_type\":0" + idPart + "}";
+            return "{\"content\":" + JsonUtil.Str(text) + ",\"msg_type\":0" + idPart + "}";
         }
 
         /// <summary>
@@ -348,7 +352,7 @@ namespace CatHome4.QQ
                 string fileName = Path.GetFileName(path);
                 int fileType = ResolveFileType(fileName);
                 byte[] data = File.ReadAllBytes(path);
-                string json = "{\"file_type\":" + fileType + ",\"srv_send_msg\":false,\"file_data\":\"" + Convert.ToBase64String(data) + "\",\"file_name\":\"" + EscapeJson(fileName) + "\"}";
+                string json = JsonUtil.Object(("file_type", fileType), ("srv_send_msg", false), ("file_data", Convert.ToBase64String(data)), ("file_name", fileName));
                 string uploadUrl = _apiHost + "/v2/users/" + targetId + "/files";
                 System.Net.Http.HttpResponseMessage r = PostJson(uploadUrl, json, true);
                 if (!r.IsSuccessStatusCode)
@@ -358,7 +362,7 @@ namespace CatHome4.QQ
                 }
                 string raw = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 string fileInfo = "";
-                using (JsonDocument d = JsonDocument.Parse(raw))
+                using (JsonDocument d = JsonUtil.ParseStrict(raw))
                 {
                     if (d.RootElement.TryGetProperty("file_info", out JsonElement fiE))
                     {
@@ -370,8 +374,8 @@ namespace CatHome4.QQ
                     return "文件发送失败: 上传未返回 file_info";
                 }
                 // 发送媒体消息——msg_type=7 + 可选被动 msg_id
-                string msg = "{\"msg_type\":7,\"media\":{\"file_info\":\"" + EscapeJson(fileInfo) + "\"}"
-                    + (msgId.Length > 0 ? ",\"msg_id\":\"" + EscapeJson(msgId) + "\"" : "") + "}";
+                string msg = "{\"msg_type\":7,\"media\":{\"file_info\":" + JsonUtil.Str(fileInfo) + "}"
+                    + (msgId.Length > 0 ? ",\"msg_id\":" + JsonUtil.Str(msgId) : "") + "}";
                 System.Net.Http.HttpResponseMessage r2 = PostJson(_apiHost + "/v2/users/" + targetId + "/messages", msg, true);
                 if (!r2.IsSuccessStatusCode)
                 {
@@ -423,13 +427,12 @@ namespace CatHome4.QQ
         {
             try
             {
-                string body = "{\"appId\":\"" + EscapeJson(_appId)
-                    + "\",\"clientSecret\":\"" + EscapeJson(_secret) + "\"}";
+                string body = JsonUtil.Object(("appId", _appId), ("clientSecret", _secret));
                 System.Net.Http.HttpResponseMessage r = SendJson("https://bots.qq.com/app/getAppAccessToken", body, false);
                 string raw = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 int expires = 7200;
                 // 单次解析——access_token + expires_in 同文档取（原两次 JsonDocument.Parse 合并，R6-P3-07）
-                using (JsonDocument d = JsonDocument.Parse(raw))
+                using (JsonDocument d = JsonUtil.ParseStrict(raw))
                 {
                     JsonElement tokenE;
                     if (d.RootElement.TryGetProperty("access_token", out tokenE))
@@ -510,7 +513,7 @@ namespace CatHome4.QQ
                                 break;
                             }
                             string raw = Encoding.UTF8.GetString(buf, 0, result.Count);
-                            using (JsonDocument d = JsonDocument.Parse(raw))
+                            using (JsonDocument d = JsonUtil.ParseStrict(raw))
                             {
                                 int op = d.RootElement.GetProperty("op").GetInt32();
                                 // ── op=10: Hello ──────────────────────
@@ -713,47 +716,6 @@ namespace CatHome4.QQ
                 return "";
             }
             return s.Replace("\r", " ").Replace("\n", " ");
-        }
-
-        /// <summary>JSON 转义——发送载荷</summary>
-        private static string EscapeJson(string s)
-        {
-            StringBuilder sb = new StringBuilder(s.Length + 8);
-            for (int i = 0; i < s.Length; i++)
-            {
-                char c = s[i];
-                if (c == '"')
-                {
-                    sb.Append("\\\"");
-                }
-                else if (c == '\\')
-                {
-                    sb.Append("\\\\");
-                }
-                else if (c == '\n')
-                {
-                    sb.Append("\\n");
-                }
-                else if (c == '\r')
-                {
-                    sb.Append("\\r");
-                }
-                else if (c == '\t')
-                {
-                    sb.Append("\\t");
-                }
-                else if (c < ' ')
-                {
-                    // 其余控制字符——\u00XX（JSON 规范：U+0000-U+001F 必须转义，R6-P3-03）
-                    sb.Append("\\u");
-                    sb.Append(((int)c).ToString("x4"));
-                }
-                else
-                {
-                    sb.Append(c);
-                }
-            }
-            return sb.ToString();
         }
         /// <summary>
         /// 单次 JSON POST——独立请求消息（HttpRequestMessage 不可重用；头走请求级，静态客户端无并发污染）。

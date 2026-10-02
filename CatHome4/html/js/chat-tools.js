@@ -1636,8 +1636,33 @@ var CHAT_TOOL_OVERRIDES = {
             var h = chatMetaHead(r);
             if (!h) { return ((a.action === 'back') ? 'TimeBack 回收' : 'TimeBack 开锚') + chatOvStat(r); }
             var m = h.meta;
-            if (a.action === 'back') { return 'TimeBack #' + m.id + ' 已登记回收 · 锚点 ' + m.anchor + ((m.purpose) ? (' · ' + chatOvPeek(m.purpose)) : ''); }
+            var w = ((typeof m.writes === 'number') && m.writes > 0) ? (' · 改动 ' + m.writes + ' 处') : '';
+            if (a.action === 'back') { return 'TimeBack #' + m.id + ' 已登记回收 · 锚点 ' + m.anchor + w + ((m.purpose) ? (' · ' + chatOvPeek(m.purpose)) : ''); }
             return 'TimeBack #' + m.id + ' 已锚定 · 起点 ' + m.anchor + ((m.purpose) ? (' · ' + chatOvPeek(m.purpose)) : '');
+        },
+        // 台账可视化（2026-10-02）——宿主台账段（[本域写操作台账 · 宿主记录 · N 条]）提取前置并加标记，
+        // 与 findings 自述面在视觉上分离（头 = 宿主事实，体 = 模型自述）；无台账段时返回 null 回落骨架渲染
+        outputLines: function (r) {
+            var h = chatMetaHead(r);
+            if (!h) { return null; }
+            var body = h.body;
+            if (typeof body !== 'string' || body.length === 0) { return null; }
+            // 无台账段回落骨架默认渲染（覆盖契约：只声明偏离骨架的项）
+            if (body.indexOf('[本域写操作台账') < 0) { return null; }
+            var lines = body.replace(/\r/g, '').split('\n');
+            var out = [];
+            var inWrites = false;
+            for (var i = 0; i < lines.length; i = i + 1) {
+                var t = lines[i];
+                if (t.indexOf('[本域写操作台账') === 0) { inWrites = true; out.push('⚙ ' + t); continue; }
+                if (inWrites) {
+                    if (t.length === 0) { inWrites = false; continue; }
+                    out.push('   ' + t);
+                    continue;
+                }
+                out.push(t);
+            }
+            return out;
         }
     },
     'pack': {

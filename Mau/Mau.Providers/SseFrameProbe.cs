@@ -72,9 +72,9 @@ namespace Mau.Providers
                     JsonDocument doc;
                     try
                     {
-                        doc = JsonDocument.Parse(data);
+                        doc = JsonUtil.ParseStrict(data);
                     }
-                    catch (JsonException)
+                    catch (Exception)
                     {
                         malformedFrames = malformedFrames + 1;
                         continue;
@@ -219,55 +219,30 @@ namespace Mau.Providers
             {
                 usageLocation = "usage-only-frame";
             }
-            StringBuilder builder = new StringBuilder();
-            builder.Append("{\"httpStatus\":");
-            builder.Append(httpStatus.ToString());
-            builder.Append(",\"endpoint\":");
-            builder.Append(JsonUtil.Serialize(endpoint == null ? "" : endpoint));
-            builder.Append(",\"model\":");
-            builder.Append(JsonUtil.Serialize(model == null ? "" : model));
-            builder.Append(",\"frameCount\":");
-            builder.Append(frameCount.ToString());
-            builder.Append(",\"malformedFrames\":");
-            builder.Append(malformedFrames.ToString());
-            builder.Append(",\"doneSeen\":");
-            builder.Append(doneSeen ? "true" : "false");
-            builder.Append(",\"trailingAfterDone\":");
-            builder.Append(trailingAfterDone.ToString());
-            builder.Append(",\"usageLocation\":");
-            builder.Append(JsonUtil.Serialize(usageLocation));
-            builder.Append(",\"usageFrames\":");
-            builder.Append(usageFrames.ToString());
-            builder.Append(",\"finishFrameUsageCount\":");
-            builder.Append(finishFrameUsageCount.ToString());
-            builder.Append(",\"usageOnlyFrameCount\":");
-            builder.Append(usageOnlyFrameUsageCount.ToString());
-            builder.Append(",\"nullUsageFrames\":");
-            builder.Append(nullUsageFrames.ToString());
-            builder.Append(",\"emptyChoicesFrames\":");
-            builder.Append(emptyChoicesFrames.ToString());
-            builder.Append(",\"usageValueSeen\":");
-            builder.Append(usageValueSeen ? "true" : "false");
-            builder.Append(",\"usagePrompt\":");
-            builder.Append(lastPrompt.ToString());
-            builder.Append(",\"usageCompletion\":");
-            builder.Append(lastCompletion.ToString());
-            builder.Append(",\"usageCacheHit\":");
-            builder.Append(lastCacheHit.ToString());
-            builder.Append(",\"reasoningSeen\":");
-            builder.Append(reasoningSeen ? "true" : "false");
-            builder.Append(",\"toolCallsSeen\":");
-            builder.Append(toolCallsSeen ? "true" : "false");
-            builder.Append(",\"topLevelFields\":");
-            builder.Append(BuildArray(topLevel));
-            builder.Append(",\"usageFields\":");
-            builder.Append(BuildArray(usageFields));
-            builder.Append(",\"deltaFields\":");
-            builder.Append(BuildArray(deltaFields));
-            builder.Append(",\"finishReasons\":");
-            builder.Append(BuildArray(finishReasons));
-            builder.Append("}");
-            return builder.ToString();
+            return JsonUtil.Object(
+                ("httpStatus", httpStatus),
+                ("endpoint", endpoint == null ? "" : endpoint),
+                ("model", model == null ? "" : model),
+                ("frameCount", frameCount),
+                ("malformedFrames", malformedFrames),
+                ("doneSeen", doneSeen),
+                ("trailingAfterDone", trailingAfterDone),
+                ("usageLocation", usageLocation),
+                ("usageFrames", usageFrames),
+                ("finishFrameUsageCount", finishFrameUsageCount),
+                ("usageOnlyFrameCount", usageOnlyFrameUsageCount),
+                ("nullUsageFrames", nullUsageFrames),
+                ("emptyChoicesFrames", emptyChoicesFrames),
+                ("usageValueSeen", usageValueSeen),
+                ("usagePrompt", lastPrompt),
+                ("usageCompletion", lastCompletion),
+                ("usageCacheHit", lastCacheHit),
+                ("reasoningSeen", reasoningSeen),
+                ("toolCallsSeen", toolCallsSeen),
+                ("topLevelFields", JsonUtil.Raw(BuildArray(topLevel))),
+                ("usageFields", JsonUtil.Raw(BuildArray(usageFields))),
+                ("deltaFields", JsonUtil.Raw(BuildArray(deltaFields))),
+                ("finishReasons", JsonUtil.Raw(BuildArray(finishReasons))));
         }
 
         /// <summary>

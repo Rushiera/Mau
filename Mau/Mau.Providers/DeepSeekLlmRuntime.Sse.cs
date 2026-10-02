@@ -116,7 +116,7 @@ namespace Mau.Providers
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(data))
+                using (JsonDocument doc = JsonUtil.ParseStrict(data))
                 {
                     JsonElement root = doc.RootElement;
                     JsonElement choices;
@@ -173,7 +173,7 @@ namespace Mau.Providers
             {
                 try
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(raw))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(raw))
                     {
                         JsonElement root = doc.RootElement;
                         JsonElement err;
@@ -256,7 +256,7 @@ namespace Mau.Providers
         {
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(data))
+                using (JsonDocument doc = JsonUtil.ParseStrict(data))
                 {
                     JsonElement root = doc.RootElement;
                     JsonElement choices;
@@ -368,13 +368,8 @@ namespace Mau.Providers
                     argsText = "{}";
                 }
                 // OpenAI wire 标准：{"id","type":"function","function":{"name","arguments"}}——function 为嵌套对象（判例：missing field function）
-                builder.Append("{\"id\":");
-                builder.Append(JsonUtil.Serialize(ids[index]));
-                builder.Append(",\"type\":\"function\",\"function\":{\"name\":");
-                builder.Append(JsonUtil.Serialize(names[index]));
-                builder.Append(",\"arguments\":");
-                builder.Append(JsonUtil.Serialize(argsText));
-                builder.Append("}}");
+                string functionJson = JsonUtil.Object(("name", names[index]), ("arguments", argsText));
+                builder.Append(JsonUtil.Object(("id", ids[index]), ("type", "function"), ("function", JsonUtil.Raw(functionJson))));
             }
             builder.Append("]");
             return builder.ToString();
@@ -402,7 +397,7 @@ namespace Mau.Providers
 
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(data))
+                using (JsonDocument doc = JsonUtil.ParseStrict(data))
                 {
                     JsonElement root = doc.RootElement;
                     JsonElement usage;
@@ -479,7 +474,7 @@ namespace Mau.Providers
             {
                 try
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(lastUsage))
+                    using (JsonDocument doc = JsonUtil.ParseStrict(lastUsage))
                     {
                         JsonElement root = doc.RootElement;
                         prompt = ReadReplayNumber(root, "prompt");

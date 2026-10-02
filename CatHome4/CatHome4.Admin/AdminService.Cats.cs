@@ -1673,7 +1673,7 @@ namespace CatHome4.Admin
             }
             try
             {
-                using (JsonDocument d = JsonDocument.Parse(payloadJson))
+                using (JsonDocument d = JsonUtil.ParseStrict(payloadJson))
                 {
                     if (d.RootElement.TryGetProperty("content", out JsonElement c) && c.ValueKind == JsonValueKind.String)
                     {
@@ -1702,7 +1702,7 @@ namespace CatHome4.Admin
             }
             try
             {
-                using (JsonDocument d = JsonDocument.Parse(payloadJson))
+                using (JsonDocument d = JsonUtil.ParseStrict(payloadJson))
                 {
                     JsonElement data;
                     if (d.RootElement.TryGetProperty("data", out data) && data.ValueKind == JsonValueKind.Object)

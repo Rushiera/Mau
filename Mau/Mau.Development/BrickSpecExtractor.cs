@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using Mau.Runtime;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -398,45 +399,33 @@ namespace Mau.Development
         /// <returns>JSON 片段</returns>
         private static string EntryJson(BrickSpecEntry entry)
         {
-            StringBuilder sb = new StringBuilder();
-            sb.Append("    {\"id\":\"" + entry.Id + "\",\"name\":\"" + entry.Name + "\",\"category\":\"" + entry.Category + "\",\"path\":\"" + entry.Path + "\",\"dependencies\":[");
-            for (int d = 0; d < entry.Dependencies.Count; d++)
+            List<string> inputs = new List<string>();
+            for (int i = 0; i < entry.Inputs.Count; i = i + 1)
             {
-                if (d > 0)
-                {
-                    sb.Append(",");
-                }
-                sb.Append("\"" + entry.Dependencies[d] + "\"");
+                inputs.Add(JsonUtil.Object(("name", entry.Inputs[i].Name), ("type", entry.Inputs[i].Type)));
             }
-            sb.Append("],\"packages\":[");
-            for (int p = 0; p < entry.Packages.Count; p++)
+            List<string> outputs = new List<string>();
+            for (int o = 0; o < entry.Outputs.Count; o = o + 1)
             {
-                if (p > 0)
-                {
-                    sb.Append(",");
-                }
-                sb.Append("\"" + entry.Packages[p] + "\"");
+                outputs.Add(JsonUtil.Object(("name", entry.Outputs[o].Name), ("type", entry.Outputs[o].Type)));
             }
-            sb.Append("],\"status\":\"active\",\"contract\":{\"implementation\":\"" + entry.Implementation + "\",\"inputs\":[");
-            for (int i = 0; i < entry.Inputs.Count; i++)
-            {
-                if (i > 0)
-                {
-                    sb.Append(",");
-                }
-                sb.Append("{\"name\":\"" + entry.Inputs[i].Name + "\",\"type\":\"" + entry.Inputs[i].Type + "\"}");
-            }
-            sb.Append("],\"outputs\":[");
-            for (int o = 0; o < entry.Outputs.Count; o++)
-            {
-                if (o > 0)
-                {
-                    sb.Append(",");
-                }
-                sb.Append("{\"name\":\"" + entry.Outputs[o].Name + "\",\"type\":\"" + entry.Outputs[o].Type + "\"}");
-            }
-            sb.Append("],\"return\":\"" + entry.Return + "\",\"duration\":\"" + entry.Duration + "\",\"thread\":\"" + entry.Thread + "\"}}");
-            return sb.ToString();
+            string contractJson = JsonUtil.Object(
+                ("implementation", entry.Implementation),
+                ("inputs", JsonUtil.RawArray(inputs.ToArray())),
+                ("outputs", JsonUtil.RawArray(outputs.ToArray())));
+            string json = JsonUtil.Object(
+                ("id", entry.Id),
+                ("name", entry.Name),
+                ("category", entry.Category),
+                ("path", entry.Path),
+                ("dependencies", entry.Dependencies),
+                ("packages", entry.Packages),
+                ("status", "active"),
+                ("contract", JsonUtil.Raw(contractJson)),
+                ("return", entry.Return),
+                ("duration", entry.Duration),
+                ("thread", entry.Thread));
+            return "    " + json;
         }
 
         /// <summary>

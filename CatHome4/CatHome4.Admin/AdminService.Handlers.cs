@@ -172,7 +172,7 @@ namespace CatHome4.Admin
             string apiKey = "";
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement root = doc.RootElement;
                     displayName = GetJsonString(root, "displayName");
@@ -227,7 +227,7 @@ namespace CatHome4.Admin
             string apiConfigId = "";
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement root = doc.RootElement;
                     apiConfigId = GetJsonString(root, "apiConfigId");
@@ -344,7 +344,7 @@ namespace CatHome4.Admin
             string apiKey = "";
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement root = doc.RootElement;
                     apiConfigId = GetJsonString(root, "apiConfigId");
@@ -401,7 +401,7 @@ namespace CatHome4.Admin
             string apiConfigId = "";
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     apiConfigId = GetJsonString(doc.RootElement, "apiConfigId");
                 }
@@ -487,7 +487,7 @@ namespace CatHome4.Admin
             bool sandbox = true;
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement root = doc.RootElement;
                     displayName = GetJsonString(root, "displayName");
@@ -540,7 +540,7 @@ namespace CatHome4.Admin
             bool sandbox = true;
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement root = doc.RootElement;
                     qqBotId = GetJsonString(root, "qqBotId");
@@ -595,7 +595,7 @@ namespace CatHome4.Admin
             string qqBotId = "";
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     qqBotId = GetJsonString(doc.RootElement, "qqBotId");
                 }
@@ -768,7 +768,7 @@ namespace CatHome4.Admin
             List<string> packs = new List<string>();
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement root = doc.RootElement;
                     catKey = GetJsonString(root, "cat");
@@ -1062,7 +1062,7 @@ namespace CatHome4.Admin
             List<string> defaultPacks = new List<string>();
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement root = doc.RootElement;
                     baseRole = GetJsonString(root, "baseRole");
@@ -1343,7 +1343,7 @@ namespace CatHome4.Admin
             List<WorkspaceRootInput> rootsIn = new List<WorkspaceRootInput>();
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(body))
+                using (JsonDocument doc = JsonUtil.ParseStrict(body))
                 {
                     JsonElement root = doc.RootElement;
                     JsonElement rootsEl;
@@ -1389,7 +1389,7 @@ namespace CatHome4.Admin
             {
                 try
                 {
-                    using (JsonDocument old = JsonDocument.Parse(File.ReadAllText(wsPath)))
+                    using (JsonDocument old = JsonUtil.ParseStrict(File.ReadAllText(wsPath)))
                     {
                         JsonElement injectEl;
                         if (old.RootElement.TryGetProperty("inject", out injectEl))
@@ -1404,42 +1404,24 @@ namespace CatHome4.Admin
                     injectJson = "[]";
                 }
             }
-            System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            sb.Append("{\"roots\":[");
+            System.Collections.Generic.List<string> rootItems = new System.Collections.Generic.List<string>();
             for (int i = 0; i < rootsIn.Count; i++)
             {
                 WorkspaceRootInput input = rootsIn[i];
-                if (i > 0)
-                {
-                    sb.Append(",");
-                }
                 string norm = WorkspaceConfig.NormalizeRoot(input.Path);
-                sb.Append("{\"id\":");
-                sb.Append(JsonUtil.Serialize(input.Id));
-                sb.Append(",\"path\":");
-                sb.Append(JsonUtil.Serialize(norm.Replace('\\', '/')));
-                sb.Append(",\"writable\":");
-                if (input.Writable)
+                if (input.Note.Length > 0)
                 {
-                    sb.Append("true");
+                    rootItems.Add(JsonUtil.Object(("id", input.Id), ("path", norm.Replace('\\', '/')), ("writable", input.Writable), ("note", input.Note)));
                 }
                 else
                 {
-                    sb.Append("false");
+                    rootItems.Add(JsonUtil.Object(("id", input.Id), ("path", norm.Replace('\\', '/')), ("writable", input.Writable)));
                 }
-                if (input.Note.Length > 0)
-                {
-                    sb.Append(",\"note\":");
-                    sb.Append(JsonUtil.Serialize(input.Note));
-                }
-                sb.Append("}");
             }
-            sb.Append("],\"inject\":");
-            sb.Append(injectJson);
-            sb.Append("}");
+            string wsJson = JsonUtil.Object(("roots", JsonUtil.RawArray(rootItems.ToArray())), ("inject", JsonUtil.Raw(injectJson)));
             try
             {
-                ConfigStore.AtomicWrite(wsPath, sb.ToString());
+                ConfigStore.AtomicWrite(wsPath, wsJson);
             }
             catch (Exception ex)
             {

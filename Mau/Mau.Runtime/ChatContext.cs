@@ -399,7 +399,7 @@ namespace Mau.Runtime
             }
             try
             {
-                using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(toolCallsJson))
+                using (System.Text.Json.JsonDocument doc = JsonUtil.ParseStrict(toolCallsJson))
                 {
                     System.Text.Json.JsonElement root = doc.RootElement;
                     if (root.ValueKind != System.Text.Json.JsonValueKind.Array)

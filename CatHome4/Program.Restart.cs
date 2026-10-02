@@ -397,7 +397,7 @@ namespace CH4
             }
             try
             {
-                JsonDocument doc = JsonDocument.Parse(json);
+                JsonDocument doc = JsonUtil.ParseStrict(json);
                 try
                 {
                     JsonElement el;
@@ -540,7 +540,7 @@ namespace CH4
             }
             try
             {
-                JsonDocument doc = JsonDocument.Parse(json);
+                JsonDocument doc = JsonUtil.ParseStrict(json);
                 try
                 {
                     JsonElement el;

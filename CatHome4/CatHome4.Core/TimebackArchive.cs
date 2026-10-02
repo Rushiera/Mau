@@ -48,6 +48,10 @@ namespace CH4
 
         /// <summary>带回载荷全文（findings）</summary>
         public string Findings = "";
+        /// <summary>
+        /// 本域写操作台账——宿主记录（order ≥ 1 的工具逐条：工具名 · 目标标识 · 成败）；空=无写操作。
+        /// </summary>
+        public List<string> Writes = new List<string>();
     }
 
     /// <summary>
@@ -445,6 +449,7 @@ namespace CH4
             obj["tokens"] = record.Tokens;
             obj["grew"] = record.Grew;
             obj["released"] = record.Released;
+            obj["writes"] = JsonSerializer.SerializeToNode(record.Writes, SerializerOptions);
             obj["findings"] = record.Findings == null ? "" : record.Findings;
             return obj.ToJsonString(SerializerOptions);
         }

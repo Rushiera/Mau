@@ -2,10 +2,10 @@
 // 积木: mau.setup
 // ID:   BRIK-MAU-004
 // 类别: MAU
-// 作用: 一键部署链执行（SetUp.exe）——prepare/deploy/sync-html 起进程并阻塞等待至结束，读 JSON 报告返回步明细/产物/成败；编译验证闭环
+// 作用: 一键部署链执行（SetUp.exe）——prepare/sync-html 起进程并阻塞等待至结束，读 JSON 报告返回步明细/产物/成败；编译验证闭环
 // 依赖: 无
 // 引用: System.Diagnostics（进程）+ System.Text.Json + Mau.Development（仓库根探测）+ Mau.Runtime（日志）
-// 原理: 仓库根 → SetUp.exe（prepare/deploy）+ --report → WaitForExit（内建看门狗）→ 读 <报告>.json 提炼摘要
+// 原理: 仓库根 → SetUp.exe（prepare/sync-html）+ --report → WaitForExit（内建看门狗）→ 读 <报告>.json 提炼摘要
 // 常用: mau_cat.mau 认领线——'mau.setup'[@args] > @result（载荷 mode/target/report）
 // ═══════════════════════════════════════════════════
 #nullable disable warnings
@@ -31,7 +31,7 @@ namespace Mau.Bricks
         private const int WatchdogMs = 900000;
 
         /// <summary>
-        /// 一键部署——mode=prepare（默认，就地自举 public/ + Mau-public/）| deploy（复制到目标目录）| sync-html（外观层静态资源镜像同步：源区 html → 产物区 + 运行区）
+        /// 一键部署——mode=prepare（默认，就地自举 public/ + Mau-public/）| sync-html（外观层静态资源镜像同步：源区 html → 产物区 + 运行区）；deploy 已从工具面退役——对外部署归 SetUp.exe 人工通道
         /// </summary>
         /// <param name="argsJson">工具参数 JSON（mode/target/report）</param>
         /// <param name="result">步骤摘要/诊断文本或 ERR| 错误文本</param>
@@ -40,28 +40,23 @@ namespace Mau.Bricks
         {
             result = "";
             // [参数面] 声明面口径零容忍——未知 / 非法 mode 一律 ERR|BAD_ARGS（catId 保留键放行）
-            string badArgs = ValidateArgs(argsJson, "mode target report", "", "mode", "prepare|deploy|sync-html");
+            string badArgs = JsonArgs.Validate(argsJson, "mode target report", "", "mode", "prepare|sync-html");
             if (badArgs.Length > 0)
             {
                 result = badArgs;
                 return false;
             }
-            string mode = ExtractArg(argsJson, "mode");
+            string mode = JsonArgs.Get(argsJson, "mode");
             if (mode.Length == 0)
             {
                 mode = "prepare";
             }
-            if (mode != "prepare" && mode != "deploy" && mode != "sync-html")
+            if (mode != "prepare" && mode != "sync-html")
             {
-                result = "ERR|BAD_ARGS|mode 仅支持 prepare/deploy/sync-html（当前: " + mode + "）";
+                result = "ERR|BAD_ARGS|mode 仅支持 prepare/sync-html（当前: " + mode + "）";
                 return false;
             }
-            string target = ExtractArg(argsJson, "target");
-            if (mode == "deploy" && target.Length == 0)
-            {
-                result = "ERR|BAD_ARGS|deploy 模式需 target（目标目录）";
-                return false;
-            }
+            string target = JsonArgs.Get(argsJson, "target");
             try
             {
                 string root = RepoRoot();
@@ -76,7 +71,7 @@ namespace Mau.Bricks
                     result = "ERR|NOT_FOUND|SetUp.exe 不存在: " + exe;
                     return false;
                 }
-                string report = ExtractArg(argsJson, "report");
+                string report = JsonArgs.Get(argsJson, "report");
                 if (report.Length == 0)
                 {
                     report = Path.Combine(root, "CatTemp", "setup_report.json");
@@ -88,11 +83,7 @@ namespace Mau.Bricks
                 }
                 string logPath = report + ".log";
                 string args = mode;
-                if (mode == "deploy")
-                {
-                    args = args + " \"" + target + "\"";
-                }
-                else if (mode == "sync-html" && target.Length > 0)
+                if (mode == "sync-html" && target.Length > 0)
                 {
                     // sync-html：--target 可选（缺省 SetUp 侧从运行中宿主反推运行区）
                     args = args + " --target \"" + target + "\"";
@@ -117,7 +108,7 @@ namespace Mau.Bricks
                 // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
                 System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
                 fields["mode"] = mode;
-                fields["target"] = (mode == "deploy" || mode == "sync-html") ? target : "";
+                fields["target"] = mode == "sync-html" ? target : "";
                 fields["exit"] = exitCode;
                 fields["steps"] = stepCount;
                 fields["stepsOk"] = stepOk;
@@ -330,81 +321,6 @@ namespace Mau.Bricks
         /// </summary>
         /// <param name="argumentsJson">参数 JSON</param>
         /// <param name="key">参数名</param>
-        /// <returns>参数值</returns>
-        /// <summary>
-        /// 参数面校验——声明面口径零容忍：未知参数 / 必填缺值 / 非法枚举值一律 ERR|BAD_ARGS（宿主注入保留键 catId 放行）。
-        /// </summary>
-        /// <param name="argsJson">工具参数 JSON</param>
-        /// <param name="allowed">允许键（空格分隔）</param>
-        /// <param name="required">必填键（空格分隔；空=无必填）</param>
-        /// <param name="enumName">枚举参数名（空=无）</param>
-        /// <param name="enumValues">枚举合法值（| 分隔）</param>
-        /// <returns>错误文本（空=通过）</returns>
-        private static string ValidateArgs(string argsJson, string allowed, string required, string enumName, string enumValues)
-        {
-            if (argsJson == null || argsJson.Length == 0)
-            {
-                return "ERR|BAD_ARGS|工具参数 JSON 解析失败（LLM 生成参数可能被截断——超长内容请分段写入）";
-            }
-            try
-            {
-                JsonDocument doc = JsonDocument.Parse(argsJson);
-                try
-                {
-                    JsonElement root = doc.RootElement;
-                    if (root.ValueKind != JsonValueKind.Object)
-                    {
-                        return "ERR|BAD_ARGS|参数必须是 JSON 对象";
-                    }
-                    foreach (JsonProperty property in root.EnumerateObject())
-                    {
-                        if (property.Name == "catId")
-                        {
-                            continue;
-                        }
-                        if ((" " + allowed + " ").IndexOf(" " + property.Name + " ", StringComparison.Ordinal) < 0)
-                        {
-                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 " + allowed + "）";
-                        }
-                    }
-                    if (required.Length > 0)
-                    {
-                        string[] must = required.Split(' ');
-                        for (int i = 0; i < must.Length; i = i + 1)
-                        {
-                            JsonElement mustValue;
-                            if (!root.TryGetProperty(must[i], out mustValue) ||
-                                (mustValue.ValueKind == JsonValueKind.String && (mustValue.GetString() ?? "").Length == 0))
-                            {
-                                return "ERR|BAD_ARGS|缺参数 " + must[i] + "（必填：" + required + "）";
-                            }
-                        }
-                    }
-                    if (enumName.Length > 0)
-                    {
-                        JsonElement enumValue;
-                        if (root.TryGetProperty(enumName, out enumValue) && enumValue.ValueKind == JsonValueKind.String)
-                        {
-                            string value = enumValue.GetString() ?? "";
-                            if (value.Length > 0 && ("|" + enumValues + "|").IndexOf("|" + value + "|", StringComparison.Ordinal) < 0)
-                            {
-                                return "ERR|BAD_ARGS|" + enumName + " 非法值: " + value + "（" + enumValues + "）";
-                            }
-                        }
-                    }
-                    return "";
-                }
-                finally
-                {
-                    doc.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                return "ERR|BAD_ARGS|参数 JSON 解析失败: " + ex.Message;
-            }
-        }
-
         /// <summary>
         /// 结构化元数据头——首行单行 JSON（ok/tool + 调用方字段；键序稳定 = 插入序）
         /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
@@ -424,35 +340,6 @@ namespace Mau.Bricks
             }
             return JsonSerializer.Serialize(head);
         }
-
-        private static string ExtractArg(string argumentsJson, string key)
-        {
-            try
-            {
-                JsonDocument doc = JsonDocument.Parse(argumentsJson);
-                try
-                {
-                    JsonElement el;
-                    if (doc.RootElement.TryGetProperty(key, out el))
-                    {
-                        if (el.ValueKind == JsonValueKind.String)
-                        {
-                            return el.GetString() ?? "";
-                        }
-                        return el.GetRawText();
-                    }
-                }
-                finally
-                {
-                    doc.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                LogStore.Add("MAU", 2, "mau-setup 参数提取失败: " + ex.Message, "TOOL");
-            }
-            return "";
-        }
     }
 }
-// #MAU_CHECKSUM:SHA256:E7F307CC89894120F8CD0EFE883EFDEC93044100BCD8455904EF90414BD05E3A
+// #MAU_CHECKSUM:SHA256:DB16DE43CFCE4790E307B97F763D7402B5BF64FD1ADB02856B57FCA72C83DFF2

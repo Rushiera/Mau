@@ -118,7 +118,7 @@ namespace CatHome4.QQ
             try
             {
                 StringBuilder sb = new StringBuilder();
-                sb.Append("{\"at\":" + JsonSerializer.Serialize(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")) + ",\"seqs\":{");
+                sb.Append("{\"at\":" + JsonUtil.Scalar(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")) + ",\"seqs\":{");
                 bool first = true;
                 foreach (KeyValuePair<Guid, QQBotConnection> kv in _connections)
                 {
@@ -127,7 +127,7 @@ namespace CatHome4.QQ
                         sb.Append(",");
                     }
                     first = false;
-                    sb.Append(JsonSerializer.Serialize(kv.Key.ToString()) + ":" + kv.Value.MsgSeq.ToString());
+                    sb.Append(JsonUtil.Scalar(kv.Key.ToString()) + ":" + kv.Value.MsgSeq.ToString());
                 }
                 sb.Append("},\"cats\":{");
                 first = true;
@@ -148,9 +148,9 @@ namespace CatHome4.QQ
                     string srcJson = "null";
                     if (PeekSource(key, out src) && src != null)
                     {
-                        srcJson = "{\"type\":" + JsonSerializer.Serialize(src.Type) + ",\"targetId\":" + JsonSerializer.Serialize(src.TargetId)
-                            + ",\"msgId\":" + JsonSerializer.Serialize(src.MsgId) + ",\"displayName\":" + JsonSerializer.Serialize(src.DisplayName)
-                            + ",\"role\":" + JsonSerializer.Serialize(src.Role) + "}";
+                        srcJson = "{\"type\":" + JsonUtil.Scalar(src.Type) + ",\"targetId\":" + JsonUtil.Scalar(src.TargetId)
+                            + ",\"msgId\":" + JsonUtil.Scalar(src.MsgId) + ",\"displayName\":" + JsonUtil.Scalar(src.DisplayName)
+                            + ",\"role\":" + JsonUtil.Scalar(src.Role) + "}";
                     }
                     System.Text.StringBuilder acc;
                     string accText = "";
@@ -163,15 +163,15 @@ namespace CatHome4.QQ
                     string anchorJson = "null";
                     if (_anchors.TryGetValue(key, out anchor) && anchor != null)
                     {
-                        anchorJson = "{\"hash\":" + JsonSerializer.Serialize(anchor.Hash) + ",\"pos\":" + anchor.Position.ToString() + "}";
+                        anchorJson = "{\"hash\":" + JsonUtil.Scalar(anchor.Hash) + ",\"pos\":" + anchor.Position.ToString() + "}";
                     }
                     if (!first)
                     {
                         sb.Append(",");
                     }
                     first = false;
-                    sb.Append(JsonSerializer.Serialize(key) + ":{\"cursor\":" + kv.Value.ToString() + ",\"imm\":" + imm.ToString()
-                        + ",\"calls\":" + calls.ToString() + ",\"acc\":" + JsonSerializer.Serialize(accText) + ",\"renew\":"
+                    sb.Append(JsonUtil.Scalar(key) + ":{\"cursor\":" + kv.Value.ToString() + ",\"imm\":" + imm.ToString()
+                        + ",\"calls\":" + calls.ToString() + ",\"acc\":" + JsonUtil.Scalar(accText) + ",\"renew\":"
                         + (_renewed.ContainsKey(key) ? "true" : "false") + ",\"anchor\":" + anchorJson + ",\"src\":" + srcJson + "}");
                 }
                 sb.Append("}}");
@@ -226,7 +226,7 @@ namespace CatHome4.QQ
             }
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(raw))
+                using (JsonDocument doc = JsonUtil.ParseStrict(raw))
                 {
                     JsonElement root = doc.RootElement;
                     // ① msg_seq 水位续接——同 msg_id 重复 seq 会被官方去重拒（40054005）
@@ -524,7 +524,7 @@ namespace CatHome4.QQ
             attachments = null;
             try
             {
-                using (JsonDocument d = JsonDocument.Parse(raw))
+                using (JsonDocument d = JsonUtil.ParseStrict(raw))
                 {
                     if (!d.RootElement.TryGetProperty("t", out JsonElement tp))
                     {
