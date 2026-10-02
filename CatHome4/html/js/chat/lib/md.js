@@ -1,8 +1,10 @@
-﻿// CH4 外观层——chat-md.js：手写 Markdown 渲染器（F3——MD 真实渲染）
+// ═══════════════════════════════════════════
+// lib/md.js —— 手写 Markdown 渲染器
+// 来源：chat-md.js 全文（F3——MD 真实渲染）
 // 定位：纯函数，无 DOM 依赖，输出受控 HTML 字符串（自控标签 + 全文本转义 = 无 XSS，不需 DOMPurify）
-// 语法子集（与 CH2 CH_Tool_MD 同构 + HTML 真表格）：代码块/标题/引用/任务列表/无序有序列表/表格/水平线 + 行内 **bold** *italic* `code`
-// 加载顺序：chat-core.js 之前（chat.html 引导层引用 chat-md.js → chat-core.js → chat-note.js）
-// 输出约定：块级元素输出 HTML 字符串；文本全部经 mdEscapeHtml 转义——标签名/属性全部由本文件硬编码，无任何用户可控注入面
+// 语法子集：代码块 / 标题 / 引用 / 任务列表 / 无序有序列表 / 表格 / 水平线 + 行内 **bold** *italic* `code`
+// 取舍：原样保留（已是合格素材形态）
+// ═══════════════════════════════════════════
 
 // 行内标记扫描正则——** 优先于 *（交替顺序即优先级）；g 标志 + lastIndex 手动控制（递归重入安全：每轮重设）
 var MD_INLINE_MARK = /(\*\*|\*|`)/g;
@@ -23,7 +25,7 @@ function mdParseInline(text) {
     var pos = 0;
     var n = text.length;
     while (pos < n) {
-        // 标记扫描——单正则线性推进（原三连 indexOf 在超长回复 + 深嵌套下退化 O(n²)）
+        // 标记扫描——单正则线性推进（三连 indexOf 在超长回复 + 深嵌套下退化 O(n²)）
         MD_INLINE_MARK.lastIndex = pos;
         var m = MD_INLINE_MARK.exec(text);
         var next = (m === null) ? -1 : m.index;
@@ -107,7 +109,7 @@ function mdRenderTableRow(line) {
 }
 
 function mdRenderTable(rows, hasHeader) {
-    // 表格渲染——HTML 真表格（优于 CH2 文本对齐）：有分隔行 → 首行表头；无 → 全部数据行
+    // 表格渲染——HTML 真表格：有分隔行 → 首行表头；无 → 全部数据行
     var html = '<table>';
     if (hasHeader && rows.length > 0) {
         html += '<thead><tr>' + mdRenderTableRow(rows[0]) + '</tr></thead>';
@@ -134,7 +136,7 @@ function mdToHtml(md) {
     var tableBuf = null;
     var tableSrc = [];           // 表格源行（含分隔行原文——A81 复制用：渲染丢弃分隔行，源文本保留）
     var tableHasHeader = false;
-    var listBuf = null;      // { tag:'ul'|'ol', items:[{html, done}] }
+    var listBuf = null;          // { tag:'ul'|'ol', items:[{html, done}] }
     var paraBuf = [];
 
     function flushPara() {
@@ -160,7 +162,7 @@ function mdToHtml(md) {
     }
     function flushTable() {
         if (tableBuf && tableBuf.length > 0) {
-            // A81 复制原文——包裹层 = 按钮定位上下文（pre / table 自身是横滚容器，按钮放里面会随内容滚动）
+            // 复制原文——包裹层 = 按钮定位上下文（pre / table 自身是横滚容器，按钮放里面会随内容滚动）
             out.push('<div class="md-copy" data-md="' + mdEscapeAttr(tableSrc.join('\n')) + '">' + mdRenderTable(tableBuf, tableHasHeader) + '</div>');
         }
         tableBuf = null;
@@ -173,7 +175,7 @@ function mdToHtml(md) {
         var t = line.trim();
 
         // [块1] 代码块——``` 开关；语言标记（```csharp）忽略只取内容
-        // 🔴 ```markdown / ```md 代码块 → 递归按 Markdown 渲染（LLM 常用 ```markdown 包表格/标题展示源码效果——判例 2026-08-30）
+        // 🔴 ```markdown / ```md 代码块 → 递归按 Markdown 渲染（LLM 常用 ```markdown 包表格/标题展示源码效果）
         if (t.indexOf('```') === 0) {
             flushPara(); flushList(); flushTable();
             if (!inCode) {
@@ -207,7 +209,7 @@ function mdToHtml(md) {
         }
         if (tableBuf !== null) { flushTable(); }
 
-        // [块3] 标题——#~######（h1-h6；一级标题禁用于对话——但解析保留；CH2 同构到 h4，HTML 原生到 h6）
+        // [块3] 标题——#~######（h1-h6；一级标题禁用于对话——但解析保留）
         var hc = 0;
         while (hc < line.length && line[hc] === '#') { hc = hc + 1; }
         if (hc >= 1 && hc <= 6 && hc < line.length && line[hc] === ' ') {

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Text;
 using CatHome4.Contracts;
 using Mau.Runtime;
@@ -18,8 +19,16 @@ namespace CH4
         /// <summary>宿主推送面——Bootstrap 段6 宿主 HTTP 启动后 Attach 赋值（构造时宿主 HTTP 未启动）</summary>
         private IHostPush _host;
 
-        /// <summary>持久区全表——只增序列（全量帧数据源；无移除面）</summary>
+        /// <summary>持久区全表——只增序列（**降级路径**：全量数据源未注入时使用；无移除面）</summary>
         private readonly List<ViewBlock> _persist = new List<ViewBlock>();
+
+        /// <summary>
+        /// 全量数据源——会话侧注入（视图存储的合成出口 GetBlocks）。
+        /// 🔴 单一真相源：全量帧每次**现取**，不依赖任何「启动时同步」——视图存储是唯一权威，
+        /// 本类不持副本（副本必然与权威分叉：载入 / 清空 / 回滚三处都是分叉点）。
+        /// 未注入时回落 `_persist`（降级，仅供测试与未接线场景）。
+        /// </summary>
+        private Func<ViewBlock[]> _fullSource;
 
         /// <summary>待推追加——自上次取帧以来的新增持久条目（取走即清）</summary>
         private readonly List<ViewBlock> _pendingAppend = new List<ViewBlock>();
@@ -186,6 +195,16 @@ namespace CH4
                     RemoveLive(slot);
                 }
             }
+        }
+
+        /// <summary>
+        /// 注入全量数据源——会话侧接线（ChatSession.AttachHost）时调用一次。
+        /// 全量帧（连接建立 / 重连 / 刷新）每次经此**现取**——不缓存、不同步、不分叉。
+        /// </summary>
+        /// <param name="source">全量块取数委托（视图存储合成出口）</param>
+        public void AttachSource(Func<ViewBlock[]> source)
+        {
+            _fullSource = source;
         }
 
         /// <summary>流式文本推送——累计全文入临时区（契约 G：全量镜像，非增量；首推建容器，后续原位覆盖载荷）</summary>
@@ -359,16 +378,35 @@ namespace CH4
             _fullPending = true;
         }
 
-        /// <summary>持久条目片段数组——全量数据源（按时间戳升序）</summary>
-        /// <returns>条目 JSON 片段数组</returns>
-        private string[] PersistItems()
+        /// <summary>
+        /// 全量块集——**单一真相源优先**：注入的全量数据源（视图存储合成出口）→ 未注入时回落内部累积（降级）。
+        /// 排序在此完成（前端零排序——推送序即渲染序）。
+        /// </summary>
+        /// <returns>全量持久块（时间戳升序）</returns>
+        private ViewBlock[] FullBlocks()
         {
-            List<ViewBlock> list = new List<ViewBlock>(_persist);
+            ViewBlock[] all = null;
+            if (_fullSource != null)
+            {
+                all = _fullSource();
+            }
+            if (all == null)
+            {
+                all = _persist.ToArray();
+            }
+            List<ViewBlock> list = new List<ViewBlock>(all);
             list.Sort(delegate (ViewBlock a, ViewBlock b)
             {
                 return a.Timestamp.CompareTo(b.Timestamp);
             });
-            return PersistItems(list.ToArray());
+            return list.ToArray();
+        }
+
+        /// <summary>持久条目片段数组——全量数据源（单一真相源取数 + 时间戳升序）</summary>
+        /// <returns>条目 JSON 片段数组</returns>
+        private string[] PersistItems()
+        {
+            return PersistItems(FullBlocks());
         }
 
         /// <summary>持久条目片段数组——指定块集（追加帧数据源，保持入队序）</summary>

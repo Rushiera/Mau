@@ -71,6 +71,31 @@ namespace CatHome4.Core.Tests
             return null;
         }
 
+        /// <summary>
+        /// 全量帧取自注入的数据源——单一真相源（视图存储），每次现取、按时间戳升序（前端零排序）。
+        /// 判例 2026-10-03：输出侧持副本 → 载入的历史发不出去（刷新即丢视图面历史）。
+        /// </summary>
+        [Fact]
+        public void FullFrame_TakesFromInjectedSource()
+        {
+            CH4.ViewBus bus = new CH4.ViewBus();
+            RecordingHost host = new RecordingHost();
+            bus.Attach(host);
+            bus.AttachSource(delegate ()
+            {
+                return new ViewBlock[]
+                {
+                    Block("user", "{\"text\":\"旧消息\"}", 2000, 1, 0),
+                    Block("reason", "{\"text\":\"旧思考\"}", 1000, 2, 0)
+                };
+            });
+            JsonElement root = Root(bus.BuildFull());
+            JsonElement items = root.GetProperty("persist").GetProperty("items");
+            Assert.Equal(2, items.GetArrayLength());
+            Assert.Equal("reason", items[0].GetProperty("type").GetString());
+            Assert.Equal("user", items[1].GetProperty("type").GetString());
+        }
+
         /// <summary>解析 JSON 根节点（独立副本——原 document 立刻释放）</summary>
         /// <param name="json">JSON 文本</param>
         /// <returns>根元素副本</returns>

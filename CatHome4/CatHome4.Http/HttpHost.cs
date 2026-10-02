@@ -274,8 +274,10 @@ namespace CatHome4.Http
                 return ServeIndex();
             });
             // 2026-08-25 模块化拆分——静态资源多文件路由（css/js 子目录；禁缓存同 index 策略；路径穿越校验）
+            // A167——js 面改 catch-all（{**file}）：前端重构后脚本分 lib/ · blocks/ 子目录，单段 {file} 匹配不到含斜杠路径；
+            //        css 面仍平铺（无子目录），保持单段
             _app.MapGet("/css/{file}", (HttpContext ctx) => ServeStatic(ctx, "css", "text/css"));
-            _app.MapGet("/js/{file}", (HttpContext ctx) => ServeStatic(ctx, "js", "application/javascript"));
+            _app.MapGet("/js/{**file}", (HttpContext ctx) => ServeStatic(ctx, "js", "application/javascript"));
             // 桌宠资源——html/pet/*.webp（动画 WebP 二进制；禁缓存同 index 策略；路径穿越校验）
             _app.MapGet("/pet/{file}", (HttpContext ctx) => ServeStatic(ctx, "pet", "image/webp"));
             // A120 字体资源——html/fonts/*.ttf（web 字体二进制；缓存口径与其余静态资源不同——见 ServeStatic）

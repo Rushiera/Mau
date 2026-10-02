@@ -744,6 +744,9 @@ namespace CH4
         {
             _viewBus.Attach(host);
             _viewStore.OnBlockAppended = _viewBus.PushPersist;
+            // 全量数据源接线（2026-10-03）——视图存储是唯一权威：全量帧每次现取（GetBlocks），
+            // 输出侧不持副本（副本必与权威分叉——载入 / 清空 / 回滚都是分叉点；判例：刷新丢历史）。
+            _viewBus.AttachSource(_viewStore.GetBlocks);
         }
 
         /// <summary>
