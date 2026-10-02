@@ -8,7 +8,7 @@
 //   口径三级（会话 / 轮 / 请求）——本块只承载「轮」级：本轮全部请求的累加
 //   平均首 token 延迟 = phases.link 累计 ÷ requests（缺 link 不加后缀）
 //
-// 产出：.chat-row.assistant.roundsum > .chat-bubble > .rs-head + .rs-tok + .rs-tools + .rs-times
+// 产出：.chat-row.assistant.roundsum > .chat-plain.roundsum > .rs-head + .rs-tok + .rs-tools + .rs-times（形态见 registry.js §形态声明）
 //
 // 来源：chat-view.js chatOnRoundSum（第 447-494 行）
 //
@@ -69,7 +69,7 @@ function roundsumHtml(payload) {
 function buildRoundSumBlock(payload) {
     // 轮末统计气泡——弱化系统样式；历史重建与实时推送共用同一渲染面
     var row = el('div', 'chat-row assistant roundsum');
-    var bubble = el('div', 'chat-bubble');
+    var bubble = el('div', formClass('roundsum') + ' roundsum');
     bubble.innerHTML = roundsumHtml(payload);
     row.appendChild(bubble);
     return row;

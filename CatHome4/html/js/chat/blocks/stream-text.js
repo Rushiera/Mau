@@ -10,7 +10,7 @@
 //   appendStreamText(h, chunk);             // 追加增量（每帧）
 //   setStreamText(h, fullText);             // 或按全量镜像覆盖
 //
-// 产出：.chat-row.assistant > .chat-bubble[.streaming] >（专用文本节点）
+// 产出：.chat-row.assistant > .chat-plain[.streaming] >（专用文本节点）（形态见 registry.js §形态声明）
 //
 // 来源：chat-core.js chatOnLiveStream 文本分支（第 440-450 行）+ chat-view.js chatAppend（第 14-24 行）
 //
@@ -23,7 +23,7 @@
 function buildStreamText() {
     // 流式文本块——新建（气泡内只有文本节点，随增量增长）
     var row = el('div', 'chat-row assistant');
-    var bubble = el('div', 'chat-bubble streaming');
+    var bubble = el('div', formClass('stream.text') + ' streaming');
     row.appendChild(bubble);
     return { row: row, bubble: bubble };
 }

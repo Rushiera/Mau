@@ -6,7 +6,7 @@
 //   state = retrying（默认）/ resolved（原文 + ✓ 已恢复）/ failed（原文 + ⚠ 重试失败）
 //   attempt / max = 第几次 / 上限；text = 原因原文（resolved 时不覆盖原文——原文保留 + 追加）
 //
-// 产出：.chat-row.assistant > .chat-bubble.retry[.resolved|.failed]
+// 产出：.chat-row.assistant > .chat-plain.retry[.resolved|.failed]（形态见 registry.js §形态声明）
 //
 // 来源：chat-core.js chatRetryText / chatApplyRetryState / chatRenderRetry（第 477-505 行）
 //
@@ -39,7 +39,7 @@ function applyRetryState(bubble, payload) {
 function buildRetryBlock(payload) {
     // 重试气泡——历史重建与实时事件共用同一渲染面
     var row = el('div', 'chat-row assistant');
-    var bubble = el('div', 'chat-bubble retry');
+    var bubble = el('div', formClass('retry') + ' retry');
     bubble.textContent = chatRetryText(payload);
     applyRetryState(bubble, payload);
     row.appendChild(bubble);

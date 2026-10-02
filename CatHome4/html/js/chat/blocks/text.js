@@ -21,7 +21,7 @@ function buildTextBlock(payload) {
     // payload.text = Markdown 原文；旧落盘块字段为 content——兼容读，旧数据退役后移除
     var p = payload || {};
     var row = el('div', 'chat-row assistant');
-    var bubble = el('div', 'chat-bubble');
+    var bubble = el('div', formClass('text'));
     row.appendChild(bubble);
     fillMdBlock(bubble, p.text || p.content || '');
     return row;

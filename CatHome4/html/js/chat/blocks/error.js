@@ -5,7 +5,7 @@
 //   item = { type:'error', ts, msgIndex, round, payload:{ text } }
 //   text = 错误原文（缺省「LLM 错误」）
 //
-// 产出：.chat-row.assistant > .chat-bubble.error
+// 产出：.chat-row.assistant > .chat-plain.error（形态见 registry.js §形态声明）
 //
 // 来源：chat-core.js chatRenderError（第 507-513 行）+ chat-view.js chatAppendHistoryBlock「error」分支
 //
@@ -17,7 +17,7 @@ function buildErrorBlock(payload) {
     // 错误气泡——恒定新建独立块（不与重试气泡合并）
     var p = payload || {};
     var row = el('div', 'chat-row assistant');
-    var bubble = el('div', 'chat-bubble error');
+    var bubble = el('div', formClass('error') + ' error');
     bubble.textContent = p.text || 'LLM 错误';
     row.appendChild(bubble);
     return row;

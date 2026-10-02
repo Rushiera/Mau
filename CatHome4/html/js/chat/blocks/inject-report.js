@@ -6,7 +6,7 @@
 //            payload:{ files:[{file, status, chars?, message?}], total, ok, missing, failed, toolGroups:[{group, tools:[{name}]}] } }
 //   status = ok / missing / error 三态；工具组段为「已启用 N 个工具」明细
 //
-// 产出：.chat-row.assistant.inject > .chat-bubble > .inject-report
+// 产出：.chat-row.assistant.inject > .chat-plain.inject > .inject-report（形态见 registry.js §形态声明）
 //
 // 来源：chat-view.js chatInjectReportHtml（第 268-300 行）
 //
@@ -64,7 +64,7 @@ function injectReportHtml(p) {
 function buildInjectReportBlock(payload) {
     // 注入报告块——前文加载明细（独立持久化字段，重建不清）
     var row = el('div', 'chat-row assistant inject');
-    var bubble = el('div', 'chat-bubble');
+    var bubble = el('div', formClass('inject_report') + ' inject');
     bubble.innerHTML = injectReportHtml(payload);
     row.appendChild(bubble);
     return row;

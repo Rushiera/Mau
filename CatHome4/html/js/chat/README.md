@@ -19,26 +19,32 @@
 
 ## 二、块型 ↔ 文件（契约 §12.5）
 
+**形态**列 = 该 type 的行形态（气泡 `.chat-bubble` / 朴素件 `.chat-plain`）。
+🔴 **形态归属的唯一声明处 = `registry.js` §形态声明 `BLOCK_FORM`**——渲染函数经 `formClass(type)` 取类名，不自持形态字符串；改形态 = 改表一行。本表仅作可读快照。
+
 ### persist 类——条目 `{ type, ts, msgIndex, round, payload }`
 
-| type | 文件 | 渲染函数 |
-|:--|:--|:--|
-| `user` | `blocks/user.js` | `buildUserBlock(payload)` |
-| `text` | `blocks/text.js` | `buildTextBlock(payload)` |
-| `reason` | `blocks/reason.js` | `buildReasonBlock(payload)` |
-| `toolcard` | `blocks/toolcard.js` | `buildToolBlock(payload)` |
-| `retry` | `blocks/retry.js` | `buildRetryBlock(payload)` |
-| `error` | `blocks/error.js` | `buildErrorBlock(payload)` |
-| `inject_report` | `blocks/inject-report.js` | `buildInjectReportBlock(payload)` |
-| `roundsum` | `blocks/roundsum.js` | `buildRoundSumBlock(payload)` |
+| type | 文件 | 渲染函数 | 形态 |
+|:--|:--|:--|:--:|
+| `user` | `blocks/user.js` | `buildUserBlock(payload)` | 🫧 气泡 |
+| `text` | `blocks/text.js` | `buildTextBlock(payload)` | 🫧 气泡 |
+| `reason` | `blocks/reason.js` | `buildReasonBlock(payload)` | ▬ 朴素 |
+| `toolcard` | `blocks/toolcard.js` | `buildToolBlock(payload)` | ▬ 朴素 |
+| `retry` | `blocks/retry.js` | `buildRetryBlock(payload)` | ▬ 朴素 |
+| `error` | `blocks/error.js` | `buildErrorBlock(payload)` | ▬ 朴素 |
+| `inject_report` | `blocks/inject-report.js` | `buildInjectReportBlock(payload)` | ▬ 朴素 |
+| `roundsum` | `blocks/roundsum.js` | `buildRoundSumBlock(payload)` | ▬ 朴素 |
 
 ### live 类——条目 `{ type, payload }`（按帧全量镜像）
 
-| type | 文件 | 渲染函数 |
-|:--|:--|:--|
-| `stream.text` | `blocks/stream-text.js` | `buildStreamText()` + `setStreamText(h, full)` |
-| `stream.reason` | `blocks/stream-reason.js` | `buildStreamReason()` + `appendStreamReason(h, text)` |
-| `toolcard.pending` | `blocks/stream-toolcard.js` | `buildStreamToolCard(payload)`（`payload.result` 有值即终态） |
+| type | 文件 | 渲染函数 | 形态 |
+|:--|:--|:--|:--:|
+| `stream.text` | `blocks/stream-text.js` | `buildStreamText()` + `setStreamText(h, full)` | ▬ 朴素 |
+| `stream.reason` | `blocks/stream-reason.js` | `buildStreamReason()` + `appendStreamReason(h, text)` | ▬ 朴素 |
+| `toolcard.pending` | `blocks/stream-toolcard.js` | `buildStreamToolCard(payload)`（`payload.result` 有值即终态） | ▬ 朴素 |
+
+**形态契约（2026-10-03 莎定）**——气泡只给「会被人当对话内容读」的两类：**用户输入（`user`）+ LLM 最终输出（`text`）**；
+其余一切（过程件 / 系统件 / 临时区）一律朴素件。两种形态的样式：`.chat-bubble`（底 + 描边 + 圆角 + 内边距）· `.chat-plain`（无底无描边无圆角无内边距，只有字号与语义字色）。
 
 ---
 
@@ -50,7 +56,7 @@
 | `state.js` | state 段整段投影——六态状态条 / 头部数字 / 按钮可用性 / Note 钩子 | §12.2 ① |
 | `persist.js` | 持久区——`full` 清区重绘 / `append` 逐条追加；不判流式结束、不判换手 | §12.2 ② / §6.1-D |
 | `live.js` | 临时区——全量镜像整体替换（不比对、不 diff） | §12.2 ③ / §6.1-G |
-| `registry.js` | type → 渲染函数映射——**前端唯一扩展点**：新增块型 = 后端加 type + 本表加一行 + 一个渲染函数 | §12.5 |
+| `registry.js` | type → 渲染函数映射 + **形态声明表 `BLOCK_FORM`**——**前端唯一扩展点**：新增块型 = 后端加 type + 本表加一行（渲染函数 + 形态）+ 一个渲染函数；形态类名一律经 `formClass(type)` 取用 | §12.5 |
 | `input.js` | 用户出口——发送 / 停止 / 继续 / 新会话 / 刷新 / 临时区切换（回车发送自动切回流式态） | §6.1-F |
 
 **帧形**（后端 `ViewBus`）：全量 `{v:2, state, persist:{mode:"full",items}, live:{items}}` · 追加 `{persist:{mode:"append",items}}` · 变化增量 `{state:{…整段…}}` / `{live:{items}}`；无事发生零字节。
