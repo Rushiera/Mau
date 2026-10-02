@@ -56,3 +56,33 @@ function uiWarn(scope, err) {
     var el = document.getElementById('meta');
     if (el) { el.textContent = msg; }
 }
+
+// SSE 帧序号基线——落差检测用（每连接独立序列：宿主入队即分配 id，重连后从 1 重来）
+var sseLastEventId = 0;
+// 本次连接累计缺失条数（诊断面——顶部提示直接引用）
+var sseGapTotal = 0;
+
+/**
+ * SSE 帧序号落差检测——标准 id 行（宿主每连接单调分配，入队即取号）
+ * 判据：id 跳号 = 事件未达（队列溢出丢帧 / 断线期间丢弃）——丢帧必须可见，不允许静默
+ * 声明：design-ch4-push-perf §3.2
+ * @param {Object} ev SSE 事件对象（浏览器自动填 lastEventId）
+ * @returns {number} 本次落差条数（0=连续；>0=缺失条数）
+ */
+function sseSeqTrack(ev) {
+    var id = 0;
+    if (ev && ev.lastEventId) { id = parseInt(ev.lastEventId, 10); }
+    if (!(id > 0)) { return 0; }
+    var gap = 0;
+    if (sseLastEventId > 0 && id > sseLastEventId + 1) { gap = id - sseLastEventId - 1; }
+    sseLastEventId = id;
+    if (gap > 0) { sseGapTotal = sseGapTotal + gap; }
+    return gap;
+}
+
+/**
+ * 落差基线重置——重连（onopen）与全量重建后调用：新连接 id 从头，旧基线不适用
+ */
+function sseSeqReset() {
+    sseLastEventId = 0;
+}

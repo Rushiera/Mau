@@ -484,6 +484,9 @@ namespace CH4
             resp["version"] = 1;
             resp["sessionId"] = session.Id;
             resp["count"] = blocks.Length;
+            // A142 增量续传锚——窗口起点（全局块序）+ 块序代际号（前端重连时带回比对前缀有效性）
+            resp["start"] = start;
+            resp["gen"] = session.GetViewGen();
             // A65 前文条数——送入 LLM 的消息数（含注入块）；前端「前文 n 条」文案唯一口径（与包裹编号同源）
             resp["ctxCount"] = session.ContextCount;
             resp["blocks"] = view;
@@ -496,6 +499,53 @@ namespace CH4
             stats["completion"] = st.LastCompletionTokens;
             stats["context"] = st.LastContextTokens;
             resp["stats"] = stats;
+            return JsonUtil.Serialize(resp);
+        }
+        /// <summary>
+        /// 构建会话历史增量响应——A142 重连续传（GET /api/v1/history?gen=&amp;count=）。
+        /// 语义：前端持块序代际号 + 已持有块数；宿主比对代际号判断前缀是否仍有效——
+        /// 有效则只回 blocks[from..]（窗口相对序号续接）；失效则回 prefixOk=false，由前端回落全量重建。
+        /// </summary>
+        /// <param name="session">目标会话（P9.3 按猫参数化）</param>
+        /// <param name="gen">前端持有的块序代际号</param>
+        /// <param name="count">前端已持有的块数（当前窗口内）</param>
+        /// <returns>增量响应 JSON（含 gen / count / start / prefixOk / blocks）</returns>
+        public string BuildHistoryDelta(ChatSession session, int gen, int count)
+        {
+            ViewBlock[] blocks = session.GetViewBlocks();
+            int curGen = session.GetViewGen();
+            const int window = 200;
+            int start = 0;
+            if (blocks.Length > window)
+            {
+                start = blocks.Length - window;
+            }
+            int from = start + count;
+            bool prefixOk = gen == curGen && count >= 0 && from <= blocks.Length;
+            Dictionary<string, object> resp = new Dictionary<string, object>();
+            resp["version"] = 1;
+            resp["sessionId"] = session.Id;
+            resp["gen"] = curGen;
+            resp["count"] = blocks.Length;
+            resp["start"] = start;
+            resp["ctxCount"] = session.ContextCount;
+            resp["prefixOk"] = prefixOk;
+            List<object> view = new List<object>();
+            if (prefixOk)
+            {
+                for (int i = from; i < blocks.Length; i++)
+                {
+                    ViewBlock b = blocks[i];
+                    Dictionary<string, object> entry = new Dictionary<string, object>();
+                    entry["seq"] = i - start + 1;
+                    entry["id"] = b.Id;
+                    entry["renderType"] = b.RenderType;
+                    entry["msgIndex"] = b.MsgIndex;
+                    entry["payload"] = ParseViewPayload(b.Payload);
+                    view.Add(entry);
+                }
+            }
+            resp["blocks"] = view;
             return JsonUtil.Serialize(resp);
         }
         /// <summary>

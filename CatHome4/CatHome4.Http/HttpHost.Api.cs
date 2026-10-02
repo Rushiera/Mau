@@ -29,21 +29,27 @@ namespace CatHome4.Http
             ctx.Response.Headers["Cache-Control"] = "no-cache";
             ctx.Response.Headers["Connection"] = "keep-alive";
             SseClient client = new SseClient(ctx.Response);
+            // A141 按订阅推送——?topics=a,b,c；无参数 = 全量订阅（向后兼容）
+            client.Topics = ParseTopics(ctx);
             lock (_clientLock)
             {
                 _clients.Add(client);
-            }
-            // 连接建立即推全量快照——单写本连接队列（重连兜底语义：仅补给新客户端，不广播已有连接——Codex P1）
-            string helloFrame = "event: snapshot\ndata: " + _snapshotCache + "\n\n";
-            client.Queue.Writer.TryWrite(helloFrame);
-            // A61——运行态首帧：新连接立即补一条当前运行态（"变化才推"语义下新订阅者拿不到当前值——
-            // 刷新后前端据此恢复"本轮进行中"面：停止按钮可用 + 状态条续显）；仅写本连接，不广播、不动 diff 基线
-            if (_sessionStateBuilder != null)
-            {
-                string stateHello = _sessionStateBuilder();
-                if (stateHello != null && stateHello.Length > 0)
+                // 连接建立即推全量快照——单写本连接队列（重连兜底语义：仅补给新客户端，不广播已有连接——Codex P1）；
+                // 首帧同走 NextFrame——帧序号与广播帧共用同一条 per-连接序列（取号与入队同在锁内，顺序不乱）；
+                // A141——首帧同样按订阅过滤：不订阅 snapshot 的连接不推全量快照（帧序号也不消耗）
+                if (client.Wants("snapshot"))
                 {
-                    client.Queue.Writer.TryWrite("event: sessionstate\ndata: " + stateHello + "\n\n");
+                    client.Queue.Writer.TryWrite(client.NextFrame("snapshot", _snapshotCache));
+                }
+                // A61——运行态首帧：新连接立即补一条当前运行态（"变化才推"语义下新订阅者拿不到当前值——
+                // 刷新后前端据此恢复"本轮进行中"面：停止按钮可用 + 状态条续显）；仅写本连接，不广播、不动 diff 基线
+                if (_sessionStateBuilder != null && client.Wants("sessionstate"))
+                {
+                    string stateHello = _sessionStateBuilder();
+                    if (stateHello != null && stateHello.Length > 0)
+                    {
+                        client.Queue.Writer.TryWrite(client.NextFrame("sessionstate", stateHello));
+                    }
                 }
             }
             try
@@ -66,6 +72,30 @@ namespace CatHome4.Http
                     _clients.Remove(client);
                 }
             }
+        }
+        /// <summary>
+        /// 解析 ?topics= 订阅清单——按消费方裁剪推送负载（A141：不订阅的事件根本不入队）。
+        /// </summary>
+        /// <param name="ctx">HTTP 上下文</param>
+        /// <returns>订阅集合；无参数返回 null（= 全量订阅，向后兼容）</returns>
+        private static HashSet<string> ParseTopics(HttpContext ctx)
+        {
+            string raw = ctx.Request.Query["topics"].ToString();
+            if (raw == null || raw.Length == 0)
+            {
+                return null;
+            }
+            HashSet<string> set = new HashSet<string>(StringComparer.Ordinal);
+            string[] parts = raw.Split(',');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string t = parts[i].Trim();
+                if (t.Length > 0)
+                {
+                    set.Add(t);
+                }
+            }
+            return (set.Count > 0) ? set : null;
         }
 
         /// <summary>

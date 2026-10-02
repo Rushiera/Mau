@@ -42,10 +42,22 @@ namespace CH4
         private readonly List<ViewBlock> _voids = new List<ViewBlock>();
 
         /// <summary>
+        /// 块序代际号——任何块序变更（清除 / 重建 / 轮统计清理 / 区间转废弃）递增（A142）：
+        /// 前端重连时带 gen + 已持有块数请求增量历史；gen 不匹配 = 前缀失效 → 回落全量重建。
+        /// </summary>
+        private int _blockGen;
+
+        /// <summary>
         /// 块序变更通知——视图层唯一出声点（清除 / 重建 / 轮统计清理 / 区间转废弃四处变更点统一调用）：
         /// 转发面（QQ）订阅后按变更区间 / 内容锚点校正块游标（A111）。空=无消费方（无动作）。
         /// </summary>
         public Action<ViewOrderChange> OnBlocksReordered;
+
+        /// <summary>
+        /// 块序代际号——读（HTTP 增量历史口比对前缀有效性用）
+        /// </summary>
+        /// <returns>当前代际号（0 = 从未变更）</returns>
+        public int GetBlockGen() { return _blockGen; }
         /// <summary>
         /// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）
         /// </summary>
@@ -123,6 +135,8 @@ namespace CH4
         /// <param name="before">变更前的合并视图块数组（调用方在变更前取快照）</param>
         public void NotifyBlocksReordered(ViewBlock[] before)
         {
+            // A142——代际号无条件递增（与消费方接线无关；块序未变的空转也计一次，保守不出错）
+            _blockGen = _blockGen + 1;
             Action<ViewOrderChange> handler = OnBlocksReordered;
             if (handler == null || before == null)
             {

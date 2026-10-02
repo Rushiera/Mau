@@ -137,6 +137,33 @@ function chatScrollBottom(force) {
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
 }
 
+// 跟随合并（A143）——流式期间每增量一次强制布局是主线程最大开销源之一；
+// 合并到一帧至多一次（rAF 不可用时同步执行，行为保真）
+var chatScrollRaf = 0;
+
+function chatScrollSoon() {
+    if (typeof requestAnimationFrame !== 'function') {
+        chatScrollBottom(false);
+        return;
+    }
+    if (chatScrollRaf !== 0) {
+        return;
+    }
+    chatScrollRaf = requestAnimationFrame(function () {
+        chatScrollRaf = 0;
+        chatScrollBottom(false);
+    });
+}
+
+// 强制滚底（force 语义）——先取消挂起的跟随合并，避免随后又被拉回
+function chatScrollBottomNow(force) {
+    if (chatScrollRaf !== 0 && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(chatScrollRaf);
+        chatScrollRaf = 0;
+    }
+    chatScrollBottom(force);
+}
+
 // 是否贴近底部——供「内容插入之前」取样（插入后新块自身高度会顶过阈值：多行 user 气泡 / 整块回复 /
 // 工具卡等大块被误判为"用户已上翻"→ 不跟随，只延伸滚动条）
 function chatNearBottom() {
@@ -637,6 +664,47 @@ function chatOnControl(payload) {
     }
 }
 
+// SSE 落差处理计时句柄——防抖补拉（3 秒窗口内只补一次）
+var chatGapReloadTimer = null;
+
+// A142——重连续传基线（全量加载/增量续传时维护；-1 = 无基线 → 走全量）
+var chatViewGen = -1;      // 块序代际号（宿主视图层；变即前缀失效）
+var chatViewCount = 0;     // 已渲染块数（当前窗口内）
+
+/**
+ * 落差响应——顶部提示缺失条数 + 防抖触发一次补齐拉取
+ * 声明：design-ch4-push-perf §3.2（丢帧必须可见）；A142 起补齐走增量续传（有基线时）
+ * @param {Object} ev SSE 事件对象
+ * @returns {number} 本次落差条数（0=连续）
+ */
+function chatSseSeq(ev) {
+    var gap = sseSeqTrack(ev);
+    if (gap <= 0) { return 0; }
+    chatInfo.textContent = '⚠️ 事件缺失 ' + gap + ' 条（本次连接累计 ' + sseGapTotal + '）——正在补齐';
+    if (chatGapReloadTimer === null) {
+        chatGapReloadTimer = setTimeout(function () {
+            chatGapReloadTimer = null;
+            chatReconnectResume();
+        }, 3000);
+    }
+    return gap;
+}
+
+/**
+ * 重连 / 补齐分流——A142：有基线走增量续传（不清空、不重建），无基线走全量
+ * 声明：design-ch4-push-perf §4.1（断线是常态——默认不重建）
+ */
+function chatReconnectResume() {
+    if (chatViewGen < 0) {
+        chatLoadHistory();
+        return;
+    }
+    chatLoadHistoryDelta();
+}
+
+/**
+ * 全量历史加载——清空重建（首连 / 会话切换 / 增量不可用时使用）；成功后记录续传基线
+ */
 function chatLoadHistory() {
     fetch('/api/v1/history')
         .then(function (r) { return r.json(); })
@@ -644,12 +712,41 @@ function chatLoadHistory() {
             // 会话归属落库——渲染层只渲染并返回 sessionId（P20-P3-7：渲染层不写全局状态）
             var sid = chatRenderHistory(d);
             if (sid) { CHAT_SESSION = sid; }
+            // A142——续传基线（缺字段回落 -1 → 下次重连走全量，安全）
+            chatViewGen = (d.gen !== undefined && d.gen !== null) ? d.gen : -1;
+            chatViewCount = (d.blocks || []).length;
             // A61 刷新兜底——后端轮次仍在跑（运行态已由 sessionstate 首帧送达）→ 保持 sending（停止按钮可用）
             chatSetState(chatRunning() ? 'sending' : 'idle');
         })
         .catch(function () {
             chatInfo.textContent = '历史加载失败——宿主未运行？';
             chatSetState('idle');
+        });
+}
+
+/**
+ * 增量续传——带 gen + 已持有块数请求缺失块（append；前缀失效时回落全量重建）
+ * 声明：design-ch4-push-perf §4.2（宿主 prefixOk 判据）
+ */
+function chatLoadHistoryDelta() {
+    fetch('/api/v1/history?gen=' + chatViewGen + '&count=' + chatViewCount)
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d || d.prefixOk !== true || (d.sessionId && d.sessionId !== CHAT_SESSION)) {
+                // 前缀失效 / 会话已切换——回落全量重建
+                chatLoadHistory();
+                return;
+            }
+            var blocks = d.blocks || [];
+            for (var i = 0; i < blocks.length; i++) { chatAppendHistoryBlock(blocks[i]); }
+            chatViewCount = chatViewCount + blocks.length;
+            if (d.gen !== undefined && d.gen !== null) { chatViewGen = d.gen; }
+            if (blocks.length > 0) { chatMsgs.scrollTop = chatMsgs.scrollHeight; }
+            chatSetState(chatRunning() ? 'sending' : 'idle');
+        })
+        .catch(function () {
+            // 增量口异常（旧宿主 / 网络）——回落全量
+            chatLoadHistory();
         });
 }
 

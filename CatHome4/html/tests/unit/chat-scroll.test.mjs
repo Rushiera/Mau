@@ -191,9 +191,10 @@ test('刻度重建——每条导航消息一道刻度，角色类名区分', ()
   expect(ticks[0].getAttribute('data-idx')).toBe('0');
 });
 
-test('刻度重建——子节点变化经观察器自动重建', async () => {
+test('刻度重建——子节点变化经观察器节流重建（A143）', async () => {
   mkRow('user');
-  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  // A143：childList 由「立即全量重建」改为 50ms 节流重建——等待节流窗口
+  await new Promise((resolve) => { setTimeout(resolve, 80); });
   expect(document.querySelectorAll('#sbTicks .sb-tick').length).toBe(1);
 });
 

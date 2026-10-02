@@ -14,9 +14,13 @@ function chatThinkToggle(el) {
     if (!el) { return; }
     if (el.classList.contains('full')) {
         el.classList.remove('full');
-        return;
+    } else {
+        el.classList.add('full');
     }
-    el.classList.add('full');
+    // A143——档位切换改变对话区内容高：刻度观察器已收窄（不再观察 class），此处显式触发节流重建
+    if (typeof chatBandScheduleRebuild === 'function') {
+        chatBandScheduleRebuild();
+    }
 }
 
 // 高度档切换绑定——点击块内任意位置（死区判据与工具卡同源：位移 <20px 且 <300ms；排除交互元素与拖选文本）

@@ -527,6 +527,12 @@ namespace CH4
             return _viewStore.GetBlocks();
         }
 
+        /// <summary>块序代际号——A142 增量续传锚（前端重连时带回比对前缀有效性）</summary>
+        public int GetViewGen()
+        {
+            return _viewStore.GetBlockGen();
+        }
+
         /// <summary>会话唯一 ID——构造注入 = 猫 key（唯一标识；无独立"会话身份"层）</summary>
         public string Id
         {
