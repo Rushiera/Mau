@@ -136,10 +136,12 @@ namespace CatHome4.Http
                 }
             }
         }
-        /// <summary>LogStore 增量推送——游标后新条目逐条推 log 事件（协议 §4.2）；trace 类审计不进前端（IsTraceAudit，2026-09-17）。</summary>
+        /// <summary>LogStore 增量推送——锁内只取区间快照 + 推进游标，序列化与广播在锁外；一轮泵的多条日志批量合帧为单个 log 事件（载荷数组，A141）；trace 类审计不进前端（IsTraceAudit，2026-09-17）。</summary>
         private void PushLogIncrements()
         {
             List<LogStore.LogEntry> logs = LogStore.AllLog;
+            List<LogStore.LogEntry> pending = new List<LogStore.LogEntry>();
+            // A141 锁内只做「取区间快照 + 推进游标」——序列化与广播移到锁外（宿主主循环写日志不再与推送面竞争同一把锁）
             lock (LogStore.Sync)
             {
                 while (_logCursor < logs.Count)
@@ -151,23 +153,33 @@ namespace CatHome4.Http
                     {
                         continue;
                     }
-                    var obj = new
-                    {
-                        time = entry.Time,
-                        frame = entry.Frame,
-                        level = LogStore.LevelText(entry.Level),
-                        category = entry.Category,
-                        module = entry.Module,
-                        message = entry.Message
-                    };
-                    PushEvent("log", JsonUtil.Serialize(obj));
+                    pending.Add(entry);
                 }
             }
+            if (pending.Count == 0)
+            {
+                return;
+            }
+            // A141 批量合帧——一轮泵的多条日志合成一个 log 帧（载荷为数组，前端按数组逐条消费；
+            // 日志属"可弃"级：整批丢弃代价远低于每帧一槽的队列占用）
+            List<object> list = new List<object>();
+            for (int i = 0; i < pending.Count; i++)
+            {
+                LogStore.LogEntry entry = pending[i];
+                list.Add(new
+                {
+                    time = entry.Time,
+                    frame = entry.Frame,
+                    level = LogStore.LevelText(entry.Level),
+                    category = entry.Category,
+                    module = entry.Module,
+                    message = entry.Message
+                });
+            }
+            PushEvent("log", JsonUtil.Serialize(list));
         }
 
-        /// <summary>
-        /// 广播 SSE 事件帧——event: 名 + data: JSON（协议 §4.1 标准 text/event-stream）。
-        /// </summary>
+        /// <summary>广播 SSE 事件帧——id 行（每连接帧序号，入队即分配）+ event 行 + data 行（协议 §4.1 标准 text/event-stream）。队列满时丢弃最旧帧不再静默：溢出计数 + 首次出声；丢弃条数体现为客户端所见 id 落差（design-ch4-push-perf §3.2）。</summary>
         /// <param name="eventName">事件名（snapshot/llm/log/cmd）</param>
         /// <param name="data">JSON 载荷</param>
         private void PushEvent(string eventName, string data)
@@ -176,19 +188,41 @@ namespace CatHome4.Http
             {
                 return;
             }
-            Interlocked.Increment(ref _seq);
-            string frame = "event: " + eventName + "\ndata: " + data + "\n\n";
+            bool overflow = false;
+            int overflowSeq = 0;
             lock (_clientLock)
             {
                 for (int i = 0; i < _clients.Count; i++)
                 {
                     SseClient client = _clients[i];
+                    // A141 按订阅推送——不订阅本事件名的连接根本不入队（也不消耗其帧序号）
+                    if (!client.Wants(eventName))
+                    {
+                        continue;
+                    }
+                    // 队列已满——本次 TryWrite 将丢弃最旧帧（DropOldest 内部完成、无回调）→ 显式计数
+                    if (client.Queue.Reader.CanCount && client.Queue.Reader.Count >= SseClient.Capacity)
+                    {
+                        client.OverflowCount = client.OverflowCount + 1;
+                        if (!client.OverflowReported)
+                        {
+                            client.OverflowReported = true;
+                            overflow = true;
+                            overflowSeq = client.SentSeq;
+                        }
+                    }
+                    string frame = client.NextFrame(eventName, data);
                     if (!client.Queue.Writer.TryWrite(frame))
                     {
                         // 队列写失败（客户端断开）——完成该队列（消费端退出清理）
                         client.Queue.Writer.TryComplete();
                     }
                 }
+            }
+            if (overflow)
+            {
+                // 锁外出声——失败必须可见（丢弃条数体现为客户端所见 id 落差）
+                LogStore.Add("HttpHost", 2, "SSE 队列溢出——丢弃最旧帧（客户端已发 seq=" + overflowSeq + "；丢弃条数以 lastEventId 落差体现）", "SYS");
             }
         }
         /// <summary>

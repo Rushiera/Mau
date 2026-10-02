@@ -634,12 +634,14 @@ function chatBandInit()
         chatScrollMsgs.addEventListener('scroll', chatBandSyncThumb);
         if (typeof MutationObserver === 'function')
         {
-            // 子节点变化（新块 / 清空）——直接重建
-            var mo = new MutationObserver(function () { chatBandBuildTicks(); });
+            // 子节点变化（新块 / 清空）——节流重建（A143：原实现立即全量重建，流式期间每建一块都遍历全部行）
+            var mo = new MutationObserver(function () { chatBandScheduleRebuild(); });
             mo.observe(chatScrollMsgs, { childList: true });
-            // 展开 / 折叠态变化（details[open] / think 档位类）——节流重建（属性变化高频）
+            // 展开 / 折叠态变化（details[open]）——节流重建（属性变化高频）；
+            // A143 收窄：不再观察 class——流式进行中标记每增量改 class，曾导致每增量全量重建刻度；
+            // 思考块高度档切换等 class 场景改由调用方显式走 chatBandScheduleRebuild()
             var ma = new MutationObserver(function () { chatBandScheduleRebuild(); });
-            ma.observe(chatScrollMsgs, { attributes: true, subtree: true, attributeFilter: ['open', 'class'] });
+            ma.observe(chatScrollMsgs, { attributes: true, subtree: true, attributeFilter: ['open'] });
         }
         if (typeof ResizeObserver === 'function')
         {

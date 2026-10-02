@@ -565,6 +565,7 @@ namespace CH4
                 EnvelopeBuilder = AdminService.MakeChatEnvelopeBuilder(_chatBridge.DefaultSession),
                 FrameBuilder = ObserveService.BuildCompactFrameJson,
                 HistoryBuilder = (int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, max),
+                HistoryDeltaBuilder = (int gen, int have) => _chatBridge.BuildHistoryDelta(_chatBridge.DefaultSession, gen, have),
                 CatsBuilder = AdminService.BuildCatsJson,
                 NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
                 DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),

@@ -37,17 +37,62 @@ for (var i = 0; i < tabs.length; i++) {
     });
 }
 
+// A140——SSE 落差响应（面板页）：出声 + 防抖补拉全量快照（增量合并断链后本地快照会停在旧值）
+var appGapReloadTimer = null;
+
+/**
+ * 落差处理——meta 位出声缺失条数 + 防抖补拉
+ * @param {Object} ev SSE 事件对象
+ * @returns {number} 本次落差条数（0=连续）
+ */
+function appSseSeq(ev) {
+    var gap = sseSeqTrack(ev);
+    if (gap <= 0) { return 0; }
+    metaEl.textContent = '⚠️ 事件缺失 ' + gap + ' 条（本次连接累计 ' + sseGapTotal + '）——正在补齐';
+    if (appGapReloadTimer === null) {
+        appGapReloadTimer = setTimeout(function () {
+            appGapReloadTimer = null;
+            appReloadSnapshot();
+        }, 3000);
+    }
+    return gap;
+}
+
+/**
+ * 全量快照补拉——帧号守卫（旧快照不覆盖新）
+ */
+function appReloadSnapshot() {
+    fetch('/api/v1/snapshot?logs=200')
+        .then(function (r) { return r.json(); })
+        .then(function (s) {
+            if (s.frame >= lastFrame) { fullSnapshot = s; applySnapshot(s); lastFrame = s.frame; }
+        })
+        .catch(function (e) { uiWarn('落差补拉快照', e); });
+}
+
 // [段3] SSE 事件流——四类事件分派
-var es = new EventSource('/api/v1/stream');
+// A141——按订阅推送：面板只订阅四类（对话页另订阅 view/sessionstate/note/cmd）
+var es = new EventSource('/api/v1/stream?topics=snapshot,patch,log,cmd');
 es.addEventListener('snapshot', function (ev) {
     // 增量流式——全量快照到达（helloFrame 重连兜底）整体替换本地全快照
+    appSseSeq(ev);
     var s = JSON.parse(ev.data);
     fullSnapshot = s;
     applySnapshot(s);
 });
-es.addEventListener('patch', function (ev) { applyPatch(JSON.parse(ev.data)); });   // 增量流式——变化段合并进本地全快照
-es.addEventListener('log', function (ev) { pushLog(JSON.parse(ev.data)); });
+es.addEventListener('patch', function (ev) { appSseSeq(ev); applyPatch(JSON.parse(ev.data)); });   // 增量流式——变化段合并进本地全快照
+es.addEventListener('log', function (ev) {
+    appSseSeq(ev);
+    // A141——服务端批量合帧：载荷为数组（兼容单条形态）
+    var d = JSON.parse(ev.data);
+    if (Object.prototype.toString.call(d) === '[object Array]') {
+        for (var i = 0; i < d.length; i++) { pushLog(d[i]); }
+    } else {
+        pushLog(d);
+    }
+});
 es.addEventListener('cmd', function (ev) {
+    appSseSeq(ev);
     var d = JSON.parse(ev.data);
     pushLog({ time: '', frame: d.frame, level: d.ok ? 'INFO' : 'ERROR', category: 'CMD', module: d.cmdId, message: d.ok ? 'ok' : ('err=' + (d.error || '')) });
     cmdResultEl.textContent = '回执: ' + d.cmdId + ' ok=' + d.ok + ' frame=' + d.frame + (d.error ? ' error=' + d.error : '');
@@ -55,6 +100,8 @@ es.addEventListener('cmd', function (ev) {
 es.onerror = function () { metaEl.textContent = 'SSE 断线——自动重连...'; };
 es.onopen = function () {
     // 对话已迁 chat.html 独立页（F2.1 主面板纯管理面）——重连无需对话历史兜底
+    // A140——落差基线重置：新连接 id 序列从头开始，旧基线不适用
+    sseSeqReset();
 };
 
 // 初始兜底——帧号守卫（旧快照不覆盖新）
@@ -722,10 +769,42 @@ function renderTools(tools) {
 }
 
 // [段7] Log 流——内存数组 + 筛选 + 去重
+// 日志批量渲染（A143）——原实现每条日志一次 DOM 追加 + 一次强制滚动（日志爆发时拖垮主线程）；
+// 合并到一帧一批（rAF 不可用时同步执行，行为保真）
+var logPending = [];
+var logFlushRaf = 0;
+
 function pushLog(e) {
     logs.push({ time: e.time, frame: e.frame, level: e.level, category: e.category, module: e.module, message: e.message });
     if (logs.length > 3000) { logs.shift(); }
-    appendLogDom(logs[logs.length - 1]);
+    logPending.push(logs[logs.length - 1]);
+    scheduleLogFlush();
+}
+
+function scheduleLogFlush() {
+    if (typeof requestAnimationFrame !== 'function') { flushLogDom(); return; }
+    if (logFlushRaf !== 0) { return; }
+    logFlushRaf = requestAnimationFrame(function () {
+        logFlushRaf = 0;
+        flushLogDom();
+    });
+}
+
+function flushLogDom() {
+    if (logPending.length === 0) { return; }
+    var batch = logPending;
+    logPending = [];
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < batch.length; i++) {
+        var div = document.createElement('div');
+        div.className = logClass(batch[i]);
+        div.textContent = logText(batch[i]);
+        frag.appendChild(div);
+        applyFilterToEl(div);
+    }
+    logEvents.appendChild(frag);
+    while (logEvents.children.length > 2000) { logEvents.removeChild(logEvents.firstChild); }
+    logEvents.scrollTop = logEvents.scrollHeight;
 }
 function unshiftLog(e) {
     // 拉取合并去重——帧号数值单调比较（旧实现用字符串字典序，帧号位数变化时判定失真）
@@ -736,15 +815,6 @@ function unshiftLog(e) {
     logDedupeFrame = f;
     logDedupeKey = key;
     logs.push(e);
-}
-function appendLogDom(e) {
-    var div = document.createElement('div');
-    div.className = logClass(e);
-    div.textContent = logText(e);
-    logEvents.appendChild(div);
-    while (logEvents.children.length > 2000) { logEvents.removeChild(logEvents.firstChild); }
-    logEvents.scrollTop = logEvents.scrollHeight;
-    applyFilterToEl(div);
 }
 function logText(e) {
     var t = e.time ? e.time + ' ' : '';

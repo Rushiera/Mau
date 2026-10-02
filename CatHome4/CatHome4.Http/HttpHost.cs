@@ -58,6 +58,9 @@ namespace CatHome4.Http
         /// <summary>完整前文构建回调（可空=不注册该端点）——GET /api/v1/fullctx（对话页弹层「完整前文」数据源）</summary>
         public Func<int, string> FullContextBuilder { get; set; }
 
+        /// <summary>会话历史增量构建回调（A142 重连续传；可空=不支持增量——端点回落全量语义）</summary>
+        public Func<int, int, string> HistoryDeltaBuilder { get; set; }
+
         /// <summary>多猫列表构建回调（可空=不注册该端点）</summary>
         public Func<string> CatsBuilder { get; set; }
 
@@ -171,6 +174,9 @@ namespace CatHome4.Http
         /// <summary>完整前文构建回调——ChatBridge.BuildFullContextView（对话页弹层「完整前文」；GET /api/v1/fullctx）</summary>
         private Func<int, string> _fullContextBuilder;
 
+        /// <summary>会话历史增量构建回调——ChatBridge.BuildHistoryDelta（A142 重连续传；可空=不支持增量）</summary>
+        private Func<int, int, string> _historyDeltaBuilder;
+
         /// <summary>会话归属 ID——SSE llm/chatdone 事件 sessionId 字段（P9.3 多实例化：每猫实例绑定自身会话）</summary>
         private string _sessionId;
 
@@ -219,6 +225,7 @@ namespace CatHome4.Http
             host._contextBuilder = options.ContextBuilder;
             host._keyInfoBuilder = options.KeyInfoBuilder;
             host._fullContextBuilder = options.FullContextBuilder;
+            host._historyDeltaBuilder = options.HistoryDeltaBuilder;
             host._catsBuilder = options.CatsBuilder;
             host._noteBuilder = options.NoteBuilder;
             host._delayBuilder = options.DelayBuilder;
@@ -277,6 +284,15 @@ namespace CatHome4.Http
             _app.MapGet("/api/v1/history", (HttpContext ctx) =>
             {
                 // B4 对话区——会话历史视图（内存 ChatContext 实时真源；max 夹取 1-2000 缺省 200）
+                // A142——带 gen+count 走增量续传（重连路径不重建）；否则全量语义
+                if (_historyDeltaBuilder != null && ctx.Request.Query.ContainsKey("gen") && ctx.Request.Query.ContainsKey("count"))
+                {
+                    int gen = 0;
+                    int have = 0;
+                    int.TryParse(ctx.Request.Query["gen"].ToString(), out gen);
+                    int.TryParse(ctx.Request.Query["count"].ToString(), out have);
+                    return Results.Text(_historyDeltaBuilder(gen, have), "application/json");
+                }
                 int max = ReadMaxQuery(ctx, 200, 2000);
                 return Results.Text(_historyBuilder(max), "application/json");
             });
@@ -461,8 +477,37 @@ namespace CatHome4.Http
         /// </summary>
         private sealed class SseClient
         {
+            /// <summary>队列容量——满时丢最旧（PushEvent 溢出判定同源单点）</summary>
+            public const int Capacity = 512;
+
             /// <summary>事件队列——宿主 Push 入队 / 连接消费写响应</summary>
             public Channel<string> Queue;
+
+            /// <summary>本连接帧序号——入队即分配（被丢弃的帧带走自身序号，客户端因此见 id 落差；仅 _clientLock 内推进）</summary>
+            public int SentSeq;
+
+            /// <summary>溢出出声哨兵——首次队列满时出声一次（避免刷屏）</summary>
+            public bool OverflowReported;
+
+            /// <summary>溢出计数——本连接累计丢弃次数（诊断面）</summary>
+            public long OverflowCount;
+
+            /// <summary>订阅主题集——null = 全量（缺省向后兼容）；非 null 时只接收集合内的事件名</summary>
+            public HashSet<string> Topics;
+
+            /// <summary>
+            /// 是否订阅该事件——按消费方裁剪负载（不订阅的类型根本不入队）。
+            /// </summary>
+            /// <param name="eventName">事件名</param>
+            /// <returns>true = 订阅（Topics 为 null 时全量订阅）</returns>
+            public bool Wants(string eventName)
+            {
+                if (Topics == null)
+                {
+                    return true;
+                }
+                return Topics.Contains(eventName);
+            }
 
             /// <summary>HTTP 响应——写入 SSE 帧</summary>
             public HttpResponse Response;
@@ -475,10 +520,22 @@ namespace CatHome4.Http
             {
                 Response = response;
                 // 有界队列 + 满时丢最旧——保留最新事件；慢客户端内存有界（协议 §四"写失败静默丢弃"；无界队列慢客户端堆积判例）
-                BoundedChannelOptions options = new BoundedChannelOptions(512);
+                BoundedChannelOptions options = new BoundedChannelOptions(Capacity);
                 options.FullMode = BoundedChannelFullMode.DropOldest;
                 options.SingleReader = true;
                 Queue = Channel.CreateBounded<string>(options);
+            }
+
+            /// <summary>
+            /// 组装一帧 SSE 文本——标准 id 行 + event 行 + data 行；id 入队即分配（被丢弃的帧带走自身序号，客户端因此见落差）。
+            /// </summary>
+            /// <param name="eventName">事件名</param>
+            /// <param name="data">JSON 载荷</param>
+            /// <returns>完整帧文本</returns>
+            public string NextFrame(string eventName, string data)
+            {
+                SentSeq = SentSeq + 1;
+                return "id: " + SentSeq + "\nevent: " + eventName + "\ndata: " + data + "\n\n";
             }
         }
         /// <summary>
