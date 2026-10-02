@@ -659,7 +659,7 @@ namespace CH4
         /// <summary>
         /// 构建会话历史增量响应——A142 重连续传（GET /api/v1/history?gen=&amp;count=）。
         /// 语义：前端持块序代际号 + 已持有块数；宿主比对代际号判断前缀是否仍有效——
-        /// 有效则只回 blocks[from..]（窗口相对序号续接）；失效则回 prefixOk=false，由前端回落全量重建。
+        /// 有效则只回 blocks[from..]（窗口起点恒为会话开头——缺省不限）；失效则回 prefixOk=false，由前端回落全量重建。
         /// </summary>
         /// <param name="session">目标会话（P9.3 按猫参数化）</param>
         /// <param name="gen">前端持有的块序代际号</param>
@@ -669,12 +669,8 @@ namespace CH4
         {
             ViewBlock[] blocks = session.GetViewBlocks();
             int curGen = session.GetViewGen();
-            const int window = 200;
+            // 窗口起点恒为会话开头——缺省不限（与 /api/v1/history 全量缺省同口径）
             int start = 0;
-            if (blocks.Length > window)
-            {
-                start = blocks.Length - window;
-            }
             int from = start + count;
             bool prefixOk = gen == curGen && count >= 0 && from <= blocks.Length;
             Dictionary<string, object> resp = new Dictionary<string, object>();

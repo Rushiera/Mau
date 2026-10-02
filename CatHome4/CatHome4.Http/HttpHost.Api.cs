@@ -240,57 +240,21 @@ namespace CatHome4.Http
             }
             return count;
         }
-        /// <summary>前文类视图缺省条目上限——chat.ctx_view_max 缺失/非法时回落（schema 声明默认 200）</summary>
-        private const int DefaultViewMax = 200;
-
-        /// <summary>前文类视图条目上限——与 schema 值域一致（context / keyinfo / fullctx 三端点夹取）</summary>
-        private const int ViewMaxCap = 2000;
-
         /// <summary>
-        /// 解析 ?max=N 查询参数——缺省/非法回落 fallback，上限 cap 夹取（history / context / keyinfo 三处同源，不各写一遍）。
+        /// 解析 ?max=N 查询参数——缺省/非法 = 0（不限，回传全部）；正数 = 该上限（不夹取）。
+        /// history 全量 / context / keyinfo / fullctx 四处同源，不各写一遍。
         /// </summary>
         /// <param name="ctx">HTTP 上下文</param>
-        /// <param name="fallback">缺省值（无参或非法）</param>
-        /// <param name="cap">上限（超出夹取）</param>
-        /// <returns>条目上限（1..cap）</returns>
-        private static int ReadMaxQuery(HttpContext ctx, int fallback, int cap)
+        /// <returns>条目上限；0 = 不限</returns>
+        private static int ReadMaxQuery(HttpContext ctx)
         {
-            int max = fallback;
             string raw = ctx.Request.Query["max"].ToString();
             int parsed;
             if (int.TryParse(raw, out parsed) && parsed > 0)
             {
-                max = parsed;
+                return parsed;
             }
-            if (max > cap)
-            {
-                max = cap;
-            }
-            return max;
-        }
-
-        /// <summary>
-        /// 前文类视图缺省条目上限——chat.ctx_view_max 运行时读取（立即生效）；配置面不可用 = 缺省 200。
-        /// 值存在但越界/非数 = 出声告警后回落缺省（不静默）。
-        /// </summary>
-        /// <returns>条目上限（1..ViewMaxCap）</returns>
-        private static int ConfigViewMax()
-        {
-            ConfigStore cfg = null;
-            if (DataBox.TryResolve<ConfigStore>(out cfg) && cfg != null)
-            {
-                string raw = cfg.Get("chat.ctx_view_max", "");
-                int parsed;
-                if (int.TryParse(raw, out parsed) && parsed >= 1 && parsed <= ViewMaxCap)
-                {
-                    return parsed;
-                }
-                if (raw.Length > 0)
-                {
-                    LogStore.Add("HttpHost", 2, "chat.ctx_view_max 非法值（" + raw + "）——按缺省 " + DefaultViewMax.ToString() + " 条", "CHAT");
-                }
-            }
-            return DefaultViewMax;
+            return 0;
         }
 
         /// <summary>构建日志段 JSON——LogStore 尾部 N 条（与 PushLogIncrements 同格式；锁内快照）；trace 类审计不进前端（IsTraceAudit，2026-09-17）。</summary>

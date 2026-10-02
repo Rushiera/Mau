@@ -283,7 +283,7 @@ namespace CatHome4.Http
             _app.MapPost("/api/v1/config", (Delegate)HandleConfigPost);
             _app.MapGet("/api/v1/history", (HttpContext ctx) =>
             {
-                // B4 对话区——会话历史视图（内存 ChatContext 实时真源；max 夹取 1-2000 缺省 200）
+                // B4 对话区——会话历史视图（内存 ChatContext 实时真源；缺省不限——全量回传）
                 // A142——带 gen+count 走增量续传（重连路径不重建）；否则全量语义
                 if (_historyDeltaBuilder != null && ctx.Request.Query.ContainsKey("gen") && ctx.Request.Query.ContainsKey("count"))
                 {
@@ -293,7 +293,7 @@ namespace CatHome4.Http
                     int.TryParse(ctx.Request.Query["count"].ToString(), out have);
                     return Results.Text(_historyDeltaBuilder(gen, have), "application/json");
                 }
-                int max = ReadMaxQuery(ctx, 200, 2000);
+                int max = ReadMaxQuery(ctx);
                 return Results.Text(_historyBuilder(max), "application/json");
             });
             _app.MapGet("/api/v1/note", (HttpContext ctx) =>
@@ -338,8 +338,8 @@ namespace CatHome4.Http
             {
                 _app.MapGet("/api/v1/context", (HttpContext ctx) =>
                 {
-                    // 前文条目视图（内存 ChatContext 实时真源；max 夹取 1-2000 缺省 chat.ctx_view_max）
-                    int max = ReadMaxQuery(ctx, ConfigViewMax(), 2000);
+                    // 前文条目视图（内存 ChatContext 实时真源；缺省不限——全量回传）
+                    int max = ReadMaxQuery(ctx);
                     return Results.Text(_contextBuilder(max), "application/json");
                 });
             }
@@ -348,8 +348,8 @@ namespace CatHome4.Http
             {
                 _app.MapGet("/api/v1/keyinfo", (HttpContext ctx) =>
                 {
-                    // 关键信息视图（视图层内存真源——与旧会话留档同源四部分；max 夹取 1-2000 缺省 chat.ctx_view_max）
-                    int max = ReadMaxQuery(ctx, ConfigViewMax(), 2000);
+                    // 关键信息视图（视图层内存真源——与旧会话留档同源四部分；缺省不限——全量回传）
+                    int max = ReadMaxQuery(ctx);
                     return Results.Text(_keyInfoBuilder(max), "application/json");
                 });
             }
@@ -358,8 +358,8 @@ namespace CatHome4.Http
             {
                 _app.MapGet("/api/v1/fullctx", (HttpContext ctx) =>
                 {
-                    // 完整前文视图（留档文本剥离修饰后还原；读取前强制采集——不受 30 秒节流滞后影响；max 夹取 1-2000 缺省 chat.ctx_view_max）
-                    int max = ReadMaxQuery(ctx, ConfigViewMax(), 2000);
+                    // 完整前文视图（留档文本剥离修饰后还原；读取前强制采集——不受 30 秒节流滞后影响；缺省不限——全量回传）
+                    int max = ReadMaxQuery(ctx);
                     return Results.Text(_fullContextBuilder(max), "application/json");
                 });
             }

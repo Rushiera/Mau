@@ -45,7 +45,7 @@ function chatCtxWindowNote(d, items) {
 }
 
 // 数据装载——按当前视图选数据面（key → /api/v1/keyinfo；full → /api/v1/fullctx；其余 → /api/v1/context）；reuse=true 且有缓存直接重渲染
-// 三视图统一不带 ?max——窗口随端点缺省（配置项 chat.ctx_view_max，默认 200 · 上限 2000）；首条恒在窗口内（1.7.26 加固），尾部窗口不再挤出 system 注入块
+// 三视图统一不带 ?max——窗口随端点缺省（缺省不限 = 全量回传）；首条恒在窗口内（1.7.26 加固），尾部窗口不再挤出 system 注入块
 function chatCtxLoad(reuse) {
     if (chatCtxMode === 'key') {
         if (reuse && chatKeyData) { chatCtxRender(); return; }
@@ -86,11 +86,11 @@ function chatCtxClose() {
 /**
  * 刷新（弹层右上按钮）——两步：
  * ① 完整前文采集就绪——读一次 /api/v1/fullctx（端点读取前强制采集，不受 30 秒节流滞后影响）
- * ② 完全重建会话页面——全量重拉历史（含首块注入报告），不走 200 块窗口
+ * ② 完全重建会话页面——全量重拉历史（含首块注入报告）
  */
 function chatCtxRefresh() {
     chatCtxFetch('/api/v1/fullctx', '完整前文', function (d) { chatFullData = d; });
-    chatLoadHistory(true);
+    chatLoadHistory();
 }
 
 function chatCtxSwitch(mode) {
