@@ -77,7 +77,6 @@
     --ch-shadow-strong: rgba(0, 0, 0, 0.6);     /* 弹层阴影 */
     --ch-overlay: rgba(0, 0, 0, 0.55);          /* 模态遮罩 */
     --ch-hover-overlay: rgba(128, 128, 128, 0.18);
-    --ch-divider-dash: rgba(128, 128, 128, 0.35);
 
     /* ============ L3 MD 内容（独立色系——不引 L1，可自造值） ============ */
     --ch-md-text: #d4d4d4;              /* 正文 */

@@ -34,7 +34,6 @@ function replaceStreamToolCard(h, payload) {
     var next = buildToolCard(payload, false);
     h.card.parentNode.replaceChild(next, h.card);
     h.card = next;
-    if (h.row) { h.row.classList.remove('pending'); }
 }
 
 /// live 区入口——payload.result 有值即终态（同一次调用，两态不是两条记录；LIVE_RENDERERS 消费）
