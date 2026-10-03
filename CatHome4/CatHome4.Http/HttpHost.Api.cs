@@ -252,30 +252,13 @@ namespace CatHome4.Http
         }
         /// <summary>
         /// 解析 ?max=N 查询参数——缺省/非法 = 0（不限，回传全部）；正数 = 该上限（不夹取）。
-        /// history 全量 / context / keyinfo / fullctx 四处同源，不各写一遍。
+        /// context / keyinfo / fullctx 三处同源，不各写一遍。
         /// </summary>
         /// <param name="ctx">HTTP 上下文</param>
         /// <returns>条目上限；0 = 不限</returns>
         private static int ReadMaxQuery(HttpContext ctx)
         {
             string raw = ctx.Request.Query["max"].ToString();
-            int parsed;
-            if (int.TryParse(raw, out parsed) && parsed > 0)
-            {
-                return parsed;
-            }
-            return 0;
-        }
-
-        /// <summary>
-        /// 解析 ?before=N 查询参数——history 窗口排他上界（全局块序；前端上拉补历史时带当前窗口起点）。
-        /// 缺省/非法/非正 = 0 = 会话末尾（窗口取尾部）。
-        /// </summary>
-        /// <param name="ctx">HTTP 上下文</param>
-        /// <returns>排他上界；0 = 会话末尾</returns>
-        private static int ReadBeforeQuery(HttpContext ctx)
-        {
-            string raw = ctx.Request.Query["before"].ToString();
             int parsed;
             if (int.TryParse(raw, out parsed) && parsed > 0)
             {

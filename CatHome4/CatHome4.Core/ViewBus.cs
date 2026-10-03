@@ -86,9 +86,15 @@ namespace CH4
             _host = host;
         }
 
-        /// <summary>全量载荷——当前状态全部块（连接建立时取一次，前端整体重建）</summary>
-        /// <returns>载荷 JSON（{"op":"full","blocks":[…] }）</returns>
-        public string BuildFull()
+        /// <summary>
+        /// 全量载荷——当前状态全部块（连接建立时取一次，前端整体重建）+ 状态栏前文三段数据（A97）。
+        /// 前文条数与长度由会话侧传入（本类不持有前文——只持视图块）。
+        /// </summary>
+        /// <param name="sessionId">会话 ID（前端状态栏归属）</param>
+        /// <param name="ctxCount">前文条数（送入 LLM 的消息数——与 history 端点同源）</param>
+        /// <param name="ctxTokens">前文长度（已知最新——请求级实时优先 + 轮末回落）</param>
+        /// <returns>载荷 JSON（{"op":"full","sessionId":…,"ctxCount":…,"ctxTokens":…,"blocks":[…] }）</returns>
+        public string BuildFull(string sessionId, int ctxCount, long ctxTokens)
         {
             List<ViewBlock> list = new List<ViewBlock>();
             foreach (KeyValuePair<string, ViewBlock> kv in _blocks)
@@ -104,7 +110,12 @@ namespace CH4
             {
                 fragments.Add(BlockJson(list[i]));
             }
-            return JsonUtil.Object(("op", "full"), ("blocks", JsonUtil.RawArray(fragments.ToArray())));
+            return JsonUtil.Object(
+                ("op", "full"),
+                ("sessionId", sessionId == null ? "" : sessionId),
+                ("ctxCount", ctxCount),
+                ("ctxTokens", ctxTokens),
+                ("blocks", JsonUtil.RawArray(fragments.ToArray())));
         }
 
         /// <summary>
@@ -300,6 +311,28 @@ namespace CH4
             _dirty[key] = block;
             _removed.Remove(key);
             _live.Remove(key);
+        }
+        /// <summary>
+        /// 状态表恢复——宿主重启后把已落盘的持久块灌回状态表（A96：首连全量帧含完整历史）。
+        /// 只填状态表与幂等集，不记增改（历史块不该以增量重推——前端已由全量帧持有）。
+        /// </summary>
+        /// <param name="blocks">已落盘的持久块（按生成序）</param>
+        public void Seed(ViewBlock[] blocks)
+        {
+            if (blocks == null)
+            {
+                return;
+            }
+            for (int i = 0; i < blocks.Length; i = i + 1)
+            {
+                ViewBlock block = blocks[i];
+                if (block == null || block.Key == null || block.Key.Length == 0)
+                {
+                    continue;
+                }
+                _blocks[block.Key] = block;
+                _persisted.Add(block.Key);
+            }
         }
 
         /// <summary>瞬时事件推送——usage / chatdone / paused / note / session_reset（非块：前端按事件处理，不渲气泡）</summary>

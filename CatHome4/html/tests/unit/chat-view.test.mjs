@@ -1407,7 +1407,8 @@ test('chatContinue——非 idle 不投递（与停止互斥）', () => {
 });
 
 // ═══════════════════════════════════════════
-// 历史窗口分页（2026-10-02）——首屏只拉尾部窗口（最新数据最先出现）+ 上拉补更早的块（保位，不打断阅读）
+// 历史全量重建（A95 · 2026-10-03）——后端一次发完整（零分页）+ 前端从尾往头渐进渲染
+// 规格：design-ch4-frontend-history §三
 // ═══════════════════════════════════════════
 
 // fetch 桩——按 match 子串返回固定响应；记录请求 URL（断言请求形态）
@@ -1439,80 +1440,123 @@ function fakeScrollMetrics(height, clientH) {
   return { top: function () { return top; } };
 }
 
-test('历史首屏——只拉尾部窗口（max=CHAT_HISTORY_PAGE）并记录窗口起点', async () => {
-  window.chatViewStart = -1;
-  const stub = historyFetchStub([{ match: '/api/v1/history', body: { sessionId: 's1', count: 300, start: 298, ctxCount: 300, blocks: [textBlock(299), textBlock(300)], stats: { context: 0 } } }]);
-  window.chatLoadHistory();
-  await new Promise(function (r) { setTimeout(r, 30); });
-  stub.restore();
-  expect(stub.urls.length).toBe(1);
-  expect(stub.urls[0]).toBe('/api/v1/history?max=' + window.CHAT_HISTORY_PAGE);
-  expect(window.chatViewStart).toBe(298);
-  // 顶部哨兵行——还有更早的块（恒为首子节点）
-  const sentinel = chatMsgs.querySelector('.chat-older');
-  expect(sentinel).not.toBeNull();
-  expect(sentinel.textContent).toContain('上拉加载更早的消息');
-  expect(chatMsgs.firstChild).toBe(sentinel);
-});
+// 连续块序列——全量载荷构造
+function textBlocks(from, to) {
+  const arr = [];
+  for (let i = from; i <= to; i++) { arr.push(textBlock(i)); }
+  return arr;
+}
 
-test('历史首屏——窗口已含会话开头（start=0）时哨兵报「已到最早」', async () => {
-  window.chatViewStart = -1;
-  const stub = historyFetchStub([{ match: '/api/v1/history', body: { sessionId: 's2', count: 2, start: 0, gen: 1, blocks: [textBlock(1), textBlock(2)], stats: { context: 0 } } }]);
-  window.chatLoadHistory();
-  await new Promise(function (r) { setTimeout(r, 30); });
-  stub.restore();
-  expect(window.chatViewStart).toBe(0);
-  expect(chatMsgs.querySelector('.chat-older').textContent).toContain('已到最早');
-});
+// 可控 rAF——渐进补齐的中间态断言（无 rAF 环境为同步补齐，测不出首屏窗口）
+function manualRaf() {
+  const queue = [];
+  const orig = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = function (cb) { queue.push(cb); return queue.length; };
+  return {
+    flush: function () { while (queue.length > 0) { const cb = queue.shift(); cb(); } },
+    restore: function () { globalThis.requestAnimationFrame = orig; }
+  };
+}
 
-test('上拉补历史——before=窗口起点 + 更早块插到窗口头部保序 + 阅读位置保位', async () => {
+// 气泡文本序列——渲染顺序断言（剥掉节点操作条按钮字形）
+function bubbleTexts() {
+  const out = [];
+  const all = chatMsgs.querySelectorAll('.chat-bubble');
+  for (let i = 0; i < all.length; i++) { out.push(all[i].textContent.replace(/[⟲⧉]/g, '')); }
+  return out;
+}
+
+test('历史全量——无参请求（零分页）+ 首屏只出尾部窗口、补齐后全量就位', async () => {
   chatMsgs.textContent = '';
-  window.CHAT_SESSION = 's3';
-  window.chatViewStart = 298;
-  window.chatOlderLoading = false;
-  window.chatRenderHistory({ sessionId: 's3', count: 300, start: 298, blocks: [textBlock(299), textBlock(300)], stats: { context: 0 } });
-  await new Promise(function (r) { setTimeout(r, 10); });
-  // 伪布局——3 个子节点（哨兵 + 2 行）× 100px；clientHeight 0 = 不触发视口填充（单页断言）
+  const raf = manualRaf();
+  const stub = historyFetchStub([{ match: '/api/v1/history', body: { sessionId: 's1', count: 300, ctxCount: 300, blocks: textBlocks(1, 300), stats: { context: 0 } } }]);
+  window.chatLoadHistory();
+  await new Promise(function (r) { setTimeout(r, 30); });
+  stub.restore();
+  // 请求形态——无参全量（零分页：补齐不产生第二次请求）
+  expect(stub.urls.length).toBe(1);
+  expect(stub.urls[0]).toBe('/api/v1/history');
+  // 首屏——尾部窗口 CHAT_HISTORY_FIRST 块（最新内容最先出现）
+  const first = bubbleTexts();
+  expect(first.length).toBe(window.CHAT_HISTORY_FIRST);
+  expect(first[0]).toBe('块241');
+  expect(first[first.length - 1]).toBe('块300');
+  // 补齐——逐帧前插，全量就位且顺序完整
+  raf.flush();
+  raf.restore();
+  const all = bubbleTexts();
+  expect(all.length).toBe(300);
+  expect(all[0]).toBe('块1');
+  expect(all[299]).toBe('块300');
+  // 上拉哨兵退役——消息区无「更早的消息」提示行
+  expect(chatMsgs.querySelector('.chat-older')).toBeNull();
+});
+
+test('历史补齐——更早块前插到头部 + 阅读位置保位', async () => {
+  chatMsgs.textContent = '';
+  const raf = manualRaf();
+  const stub = historyFetchStub([{ match: '/api/v1/history', body: { sessionId: 's2', count: 180, ctxCount: 180, blocks: textBlocks(1, 180), stats: { context: 0 } } }]);
+  window.chatLoadHistory();
+  await new Promise(function (r) { setTimeout(r, 30); });
+  stub.restore();
+  // 伪布局——每行 100px；用户已上翻到 scrollTop 50（补齐不打断阅读）
   const metrics = fakeScrollMetrics(function () { return chatMsgs.children.length * 100; }, 0);
   chatMsgs.scrollTop = 50;
-  const stub = historyFetchStub([{ match: 'before=', body: { sessionId: 's3', count: 300, start: 296, blocks: [textBlock(297), textBlock(298)] } }]);
-  window.chatLoadOlder();
-  await new Promise(function (r) { setTimeout(r, 30); });
-  stub.restore();
-  expect(stub.urls[0]).toBe('/api/v1/history?before=298&max=' + window.CHAT_HISTORY_PAGE);
-  // 顺序——哨兵 → 297 → 298 → 299 → 300（更早的块插到窗口头部，不是追加到尾部）
-  const order = [];
-  const all = chatMsgs.querySelectorAll('.chat-bubble');
-  for (let i = 0; i < all.length; i++) { order.push(all[i].textContent.replace(/[⟲⧉]/g, '')); }
-  expect(order).toEqual(['块297', '块298', '块299', '块300']);
-  expect(chatMsgs.firstChild.className).toBe('chat-older');
-  // 窗口基线推进 + 阅读位置保位（新增两行 200px 补进 scrollTop）
-  expect(window.chatViewStart).toBe(296);
-  expect(metrics.top()).toBe(250);
+  raf.flush();
+  raf.restore();
+  const all = bubbleTexts();
+  expect(all.length).toBe(180);
+  expect(all[0]).toBe('块1');
+  // 补齐 120 块 = 新增 12000px 补进 scrollTop（视口内仍是原来那一屏）
+  expect(metrics.top()).toBe(50 + 120 * 100);
 });
 
-test('上拉补历史——已到最早（start=0）不发请求', () => {
-  window.chatViewStart = 0;
-  window.chatOlderLoading = false;
-  const stub = historyFetchStub([]);
-  window.chatLoadOlder();
-  stub.restore();
-  expect(stub.urls.length).toBe(0);
-  expect(chatMsgs.querySelector('.chat-older').textContent).toContain('已到最早');
-});
-
-test('上拉补历史——会话已切换回落首屏窗口', async () => {
+test('历史补齐——代际守卫（补齐途中重新加载，旧会话块不混入）', async () => {
   chatMsgs.textContent = '';
-  window.CHAT_SESSION = 's4';
-  window.chatViewStart = 10;
-  window.chatOlderLoading = false;
-  const stub = historyFetchStub([
-    { match: 'before=', body: { sessionId: 's9', count: 12, start: 8, blocks: [textBlock(9)] } },
-    { match: '/api/v1/history', body: { sessionId: 's9', count: 12, start: 10, blocks: [textBlock(11), textBlock(12)], stats: { context: 0 } } }
-  ]);
-  window.chatLoadOlder();
+  const raf = manualRaf();
+  const stub = historyFetchStub([{ match: '/api/v1/history', body: { sessionId: 's3', count: 180, ctxCount: 180, blocks: textBlocks(1, 180), stats: { context: 0 } } }]);
+  window.chatLoadHistory();
+  await new Promise(function (r) { setTimeout(r, 30); });
+  // 第二次加载（会话切换 / 刷新同路径）——前一代在途补齐作废
+  window.chatLoadHistory();
   await new Promise(function (r) { setTimeout(r, 30); });
   stub.restore();
-  expect(stub.urls[0]).toBe('/api/v1/history?before=10&max=' + window.CHAT_HISTORY_PAGE);
-  expect(stub.urls[1]).toBe('/api/v1/history?max=' + window.CHAT_HISTORY_PAGE);
+  raf.flush();
+  raf.restore();
+  const all = bubbleTexts();
+  expect(all.length).toBe(180);
+  expect(all[0]).toBe('块1');
+});
+
+test('历史首屏——块数不超首屏窗口时一次出全（无补齐在途）', async () => {
+  chatMsgs.textContent = '';
+  const raf = manualRaf();
+  const stub = historyFetchStub([{ match: '/api/v1/history', body: { sessionId: 's4', count: 2, ctxCount: 2, blocks: textBlocks(1, 2), stats: { context: 0 } } }]);
+  window.chatLoadHistory();
+  await new Promise(function (r) { setTimeout(r, 30); });
+  stub.restore();
+  raf.restore();
+  expect(bubbleTexts()).toEqual(['块1', '块2']);
+});
+
+test('全量帧——从尾往头渐进（尾部窗口先出 + 补齐后全量就位）+ 状态栏前文三段到位', () => {
+  chatMsgs.textContent = '';
+  const raf = manualRaf();
+  window.chatOnViewFull({ op: 'full', sessionId: 's1', ctxCount: 7, ctxTokens: 900, blocks: textBlocks(1, 150) });
+  // 首屏——尾部窗口 CHAT_HISTORY_FIRST 块（最新内容最先出现）
+  const first = bubbleTexts();
+  expect(first.length).toBe(window.CHAT_HISTORY_FIRST);
+  expect(first[0]).toBe('块91');
+  expect(first[first.length - 1]).toBe('块150');
+  // 补齐——逐帧前插，全量就位且顺序完整
+  raf.flush();
+  raf.restore();
+  const all = bubbleTexts();
+  expect(all.length).toBe(150);
+  expect(all[0]).toBe('块1');
+  expect(all[149]).toBe('块150');
+  // A97——状态栏前文三段随全量帧到位（刷新 / 重连后直接可见）
+  expect(chatInfo.textContent).toContain('前文 7 条');
+  expect(chatInfo.textContent).toContain('前文 900 tokens');
+  expect(chatInfo.textContent).toContain('前文关键信息');
 });

@@ -453,24 +453,16 @@ namespace CH4
         /// <summary>
         /// 构建会话历史视图 JSON——B4 对话区（GET /api/v1/history 回调）。
         /// 会话视图转换：system 跳过；user/assistant 文本直出；assistant tool_calls 与后续 tool 结果配对合入工具卡片（参数 ≤200/结果 ≤300）；
-        /// 孤立 tool 丢弃；窗口 = [end−max, end)（before = 排他上界，缺省/越界 = 会话末尾）；seq 1-based 窗口内渲染锚点。
+        /// 孤立 tool 丢弃；全量块序列（design-ch4-frontend-history §二——后端一次发完整，前端零分页拼接）。
         /// </summary>
         /// <param name="session">目标会话（P9.3 按猫参数化——每猫闭包传各自会话）</param>
-        /// <param name="before">窗口排他上界（全局块序；0 / 越界 = 会话末尾）——上拉补历史时带当前窗口起点</param>
-        /// <param name="max">窗口块数上限（0 = 不限）</param>
         /// <returns>会话视图 JSON</returns>
-        public string BuildHistoryView(ChatSession session, int before, int max)
+        public string BuildHistoryView(ChatSession session)
         {
             ViewBlock[] blocks = session.GetViewBlocks();
-            // 窗口语义——before 为排他上界（全局块序；0 / 越界 = 会话末尾），max 为窗口块数（0 = 不限）
-            int end = (before > 0 && before < blocks.Length) ? before : blocks.Length;
-            int start = 0;
-            if (max > 0 && end > max)
-            {
-                start = end - max;
-            }
+            // 全量语义——一次发完整块序列（design-ch4-frontend-history §二；无窗口 / 无分页）
             List<object> view = new List<object>();
-            for (int i = start; i < end; i++)
+            for (int i = 0; i < blocks.Length; i++)
             {
                 ViewBlock b = blocks[i];
                 Dictionary<string, object> entry = new Dictionary<string, object>();
@@ -489,8 +481,6 @@ namespace CH4
             resp["version"] = 1;
             resp["sessionId"] = session.Id;
             resp["count"] = blocks.Length;
-            // 窗口起点——分片拉取用（期三：增量续传口退役，重连 / 刷新一律全量）
-            resp["start"] = start;
             // 期三——流式区快照随带（前端重连 / 刷新后忠实重建流式区；莎红线：流式区只映后端现状）
             ViewBlock[] liveBlocks = session.GetLiveBlocks();
             List<object> liveView = new List<object>();

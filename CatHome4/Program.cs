@@ -579,7 +579,7 @@ namespace CH4
                 Dispatcher = DispatchCommand,
                 EnvelopeBuilder = AdminService.MakeChatEnvelopeBuilder(_chatBridge.DefaultSession),
                 FrameBuilder = ObserveService.BuildCompactFrameJson,
-                HistoryBuilder = (int before, int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, before, max),
+                HistoryBuilder = () => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession),
                 CatsBuilder = AdminService.BuildCatsJson,
                 NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
                 DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),

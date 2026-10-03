@@ -411,12 +411,14 @@ function chatOnView(d) {
 }
 
 // 全量——清空流式容器与对话区后整体重绘（全量的唯一入口：连接建立时服务端推送）
+// A96——从尾往头渐进：尾部窗口先出（最新内容最先可见 + 立即贴底），其余逐帧前插补齐（不打断阅读）
+// A97——状态栏前文三段随全量帧一并到位（刷新 / 重连后「前文 n 条 / n tokens / 前文关键信息」直接可见）
 function chatOnViewFull(d) {
     chatClearLiveRegion();
-    chatMsgs.textContent = '';
-    var blocks = d.blocks || [];
-    for (var i = 0; i < blocks.length; i++) {
-        chatApplyBlock(blocks[i]);
+    chatRenderFullProgressive(d.blocks || []);
+    if (d.sessionId) { CHAT_SESSION = d.sessionId; }
+    if (d.ctxCount !== undefined && d.ctxCount !== null) {
+        chatInfoSet(d.sessionId || CHAT_SESSION, d.ctxCount, d.ctxTokens || 0);
     }
     chatSyncRunningMarks();
     chatLiveSyncTimer();
@@ -650,14 +652,12 @@ function chatOnControl(payload) {
     }
 }
 
-// 上拉补历史——窗口起点（全局块序；0 = 窗口含会话开头，-1 = 未加载）
-var chatViewStart = -1;
-// 每页块数（首屏与上拉同一口径）
-var CHAT_HISTORY_PAGE = 60;
-// 上拉触发阈值（距顶 ≤ 该像素即补一页）
-var CHAT_HISTORY_TOP_GAP = 120;
-// 补历史在途标志——防并发重复请求
-var chatOlderLoading = false;
+// A95——渐进渲染参数（design-ch4-frontend-history §三）
+// 首屏尾部窗口（最新内容最先出现）+ 每帧往前补齐的块数
+var CHAT_HISTORY_FIRST = 60;
+var CHAT_HISTORY_STEP = 60;
+// 补齐代际——每次加载递增；在途补齐发现代际变化即自行作废（会话切换 / 刷新不画出上一会话的块）
+var chatBackfillGen = 0;
 
 // A158——流式区快照重建（全量加载时消费 history 的 live 数组）
 function chatClearLiveRegion() {
@@ -671,16 +671,14 @@ function chatClearLiveRegion() {
 
 /**
  * 全量历史加载——清空重建（首连 / 重连 / 会话切换一律走此口——顶层数据流：连接建立即拉一次全量）
- * 持久块渲染 + 流式区快照重建（响应 live 数组 = 后端流式区当前内容——忠实镜像）
+ * 后端一次回完整块序列（A95——零分页）；渲染侧先出尾部窗口，其余逐帧往前补齐（chat-view.chatRenderHistory）
  */
 function chatLoadHistory() {
-    fetch('/api/v1/history?max=' + CHAT_HISTORY_PAGE)
+    fetch('/api/v1/history')
         .then(function (r) { return r.json(); })
         .then(function (d) {
             // 流式区先清——快照随后重建（后端区里有什么就显示什么）
             chatClearLiveRegion();
-            // 窗口起点（上拉补历史用；0 = 窗口含会话开头）
-            chatViewStart = (d.start !== undefined && d.start !== null) ? d.start : 0;
             // 会话归属落库——渲染层只渲染并返回 sessionId（P20-P3-7：渲染层不写全局状态）
             var sid = chatRenderHistory(d);
             if (sid) { CHAT_SESSION = sid; }
@@ -696,94 +694,40 @@ function chatLoadHistory() {
 }
 
 /**
- * 上拉补历史——窗口之前的块按需拉取（before = 当前窗口起点）；保位插入，不打断阅读
- * 语义：只在用户上拉到顶附近时触发（不预取）；已到最早 / 在途时直接返回
+ * 补齐调度——有 rAF 走帧回调（每帧一批，不阻塞交互）；无 rAF 环境同步补齐（测试 / 老浏览器——行为保真）
+ * @param {Function} fn 一帧动作
  */
-function chatLoadOlder() {
-    if (chatOlderLoading) { return; }
-    if (chatViewStart <= 0) { chatOlderSet('top'); return; }
-    chatOlderLoading = true;
-    chatOlderSet('loading');
-    var before = chatViewStart;
-    fetch('/api/v1/history?before=' + before + '&max=' + CHAT_HISTORY_PAGE)
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-            chatOlderLoading = false;
-            if (!d || (d.sessionId && CHAT_SESSION && d.sessionId !== CHAT_SESSION)) {
-                // 会话已切换——窗口失效，回落首屏（尾部窗口）
-                chatLoadHistory();
-                return;
-            }
-            var blocks = d.blocks || [];
-            if (blocks.length === 0) {
-                chatViewStart = 0;
-                chatOlderSet('top');
-                return;
-            }
-            chatPrependHistoryBlocks(blocks);
-            chatViewStart = (d.start !== undefined && d.start !== null) ? d.start : (before - blocks.length);
-            chatOlderSet(chatViewStart > 0 ? 'more' : 'top');
-            chatFillViewport();
-        })
-        .catch(function () {
-            chatOlderLoading = false;
-            chatOlderSet('error');
-        });
-}
-
-/**
- * 视口填充——内容不满一屏时继续补更早的块（内容不满一屏 = 用户无从「往上拉」）
- * 无布局环境（clientHeight 恒 0）不判——防测试环境空转
- */
-function chatFillViewport() {
-    if (chatMsgs.clientHeight <= 0) { return; }
-    if (chatViewStart <= 0 || chatOlderLoading) { return; }
-    if (chatMsgs.scrollHeight > chatMsgs.clientHeight + 4) { return; }
-    chatLoadOlder();
-}
-
-/**
- * 上拉哨兵同步——置顶提示行文案（more / loading / top / error）
- * @param {string} state 状态
- */
-function chatOlderSet(state) {
-    var el = chatOlderEnsure();
-    if (state === 'loading') {
-        el.textContent = '正在加载更早的消息…';
-        el.classList.add('loading');
+function chatBackfillSchedule(fn) {
+    if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(fn);
         return;
     }
-    el.classList.remove('loading');
-    if (state === 'top') {
-        el.textContent = '— 已到最早 —';
-        return;
-    }
-    if (state === 'error') {
-        el.textContent = '⚠️ 更早的消息加载失败——点上拉重试';
-        return;
-    }
-    el.textContent = '↑ 上拉加载更早的消息';
+    fn();
 }
 
 /**
- * 首屏渲染收尾——哨兵态同步 + 视口填充（chat-view.chatHistoryFinish 回调；渲染完成后才判）
+ * 历史补齐——首屏之后的更早块逐帧前插（保位，不打断阅读）
+ * 语义：一次加载一次补齐；补齐期间发生新加载（代际变化）→ 在途补齐自行作废
+ * @param {Array} blocks 全量块序列
+ * @param {number} from 首屏窗口起点（该序之前的块待补齐）
+ * @param {Function} [apply] 单块渲染函数（缺省 = chatAppendHistoryBlock；全量帧路径传 chatApplyBlock）
  */
-function chatHistorySettled() {
-    chatOlderSet(chatViewStart > 0 ? 'more' : 'top');
-    chatFillViewport();
-}
-
-/**
- * 对话区滚动——上拉到顶附近补一页（用户自己往上拉才拉，不预取）
- */
-function chatOnMsgsScroll() {
-    if (chatMsgs.scrollTop <= CHAT_HISTORY_TOP_GAP) {
-        chatLoadOlder();
+function chatHistoryBackfill(blocks, from, apply) {
+    chatBackfillGen = chatBackfillGen + 1;
+    var gen = chatBackfillGen;
+    var idx = from;
+    var render = apply || chatAppendHistoryBlock;
+    function step() {
+        if (gen !== chatBackfillGen) { return; }
+        if (idx <= 0) { return; }
+        var next = (idx > CHAT_HISTORY_STEP) ? (idx - CHAT_HISTORY_STEP) : 0;
+        chatPrependBlocks(blocks.slice(next, idx), render);
+        idx = next;
+        chatBackfillSchedule(step);
     }
+    chatBackfillSchedule(step);
 }
 
-// 上拉监听登记——原生滚动与自绘带拖拽都走 scroll 事件
-chatMsgs.addEventListener('scroll', chatOnMsgsScroll);
 
 function chatFail(msg) {
     // E 系列——失败：四态状态条清零隐藏

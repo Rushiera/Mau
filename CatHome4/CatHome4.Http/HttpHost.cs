@@ -47,8 +47,8 @@ namespace CatHome4.Http
         /// <summary>紧凑帧构建回调（可空=不落帧）</summary>
         public Func<string> FrameBuilder { get; set; }
 
-        /// <summary>会话历史构建回调（可空=不注册该端点）——(before, max)：before 为排他上界（0=会话末尾）</summary>
-        public Func<int, int, string> HistoryBuilder { get; set; }
+        /// <summary>会话历史构建回调（可空=不注册该端点）——全量块序列（design-ch4-frontend-history §二）</summary>
+        public Func<string> HistoryBuilder { get; set; }
 
         /// <summary>前文条目构建回调（可空=不注册该端点）——GET /api/v1/context（对话页状态栏「前文 n 条 / n tokens」点击弹层数据源）</summary>
         public Func<int, string> ContextBuilder { get; set; }
@@ -173,8 +173,8 @@ namespace CatHome4.Http
         /// <summary>紧凑帧构建回调——frame.txt 帧流（可空=不落帧）</summary>
         private Func<string> _frameBuilder;
 
-        /// <summary>会话历史构建回调——Program.BuildHistoryView（B4 对话区；GET /api/v1/history——(before, max) 窗口语义）</summary>
-        private Func<int, int, string> _historyBuilder;
+        /// <summary>会话历史构建回调——Program.BuildHistoryView（B4 对话区；GET /api/v1/history——全量语义）</summary>
+        private Func<string> _historyBuilder;
 
         /// <summary>前文条目构建回调——ChatBridge.BuildContextView（对话页前文弹层；GET /api/v1/context）</summary>
         private Func<int, string> _contextBuilder;
@@ -288,24 +288,12 @@ namespace CatHome4.Http
             _app.MapGet("/api/v1/logs", (Delegate)HandleLogs);
             _app.MapGet("/api/v1/config", (Delegate)HandleConfigGet);
             _app.MapPost("/api/v1/config", (Delegate)HandleConfigPost);
-            _app.MapGet("/api/v1/history", (HttpContext ctx) =>
+            _app.MapGet("/api/v1/history", () =>
             {
-                // B4 对话区——会话历史视图（内存 ChatContext 实时真源；max 夹取 1-2000 缺省 200）
+                // B4 对话区——会话历史视图（内存 ChatContext 实时真源；全量块序列）
                 // 期三——增量续传口退役：重连 / 刷新一律全量（前端两区镜像，零配对）
-                // 窗口分页——?before= 排他上界（0 / 缺省 = 会话末尾）；上拉补历史按页取更早块
-                int max = 200;
-                string raw = ctx.Request.Query["max"].ToString();
-                int parsed;
-                if (int.TryParse(raw, out parsed) && parsed > 0)
-                {
-                    max = parsed;
-                }
-                if (max > 2000)
-                {
-                    max = 2000;
-                }
-                int before = ReadBeforeQuery(ctx);
-                return Results.Text(_historyBuilder(before, max), "application/json");
+                // A95——分页参数退役（max / before）：后端一次发完整，前端从尾往头渐进渲染（design-ch4-frontend-history §二）
+                return Results.Text(_historyBuilder(), "application/json");
             });
             _app.MapGet("/api/v1/note", (HttpContext ctx) =>
             {

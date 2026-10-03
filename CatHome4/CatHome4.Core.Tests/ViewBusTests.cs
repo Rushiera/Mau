@@ -298,13 +298,44 @@ namespace CatHome4.Core.Tests
             bus.PushPersist(first);
             bus.PushTextStream("{\"kind\":\"text\",\"text\":\"live\"}");
 
-            string full = bus.BuildFull();
+            string full = bus.BuildFull("s1", 7, 1234);
             Assert.Equal(2, BlockCount(full));
             Assert.Equal("msg:1:text", BlockField(full, 0, "key"));
             Assert.Equal("stream", BlockField(full, 1, "renderType"));
+            // A97——状态栏前文三段随带（会话归属 / 条数 / 长度）
+            Assert.Contains("\"sessionId\":\"s1\"", full);
+            Assert.Contains("\"ctxCount\":7", full);
+            Assert.Contains("\"ctxTokens\":1234", full);
 
             // 全量取用不动变更集——随后增量仍能取到未取走的变更
             Assert.NotNull(TakeDelta(bus));
+        }
+        /// <summary>A96 状态表恢复——重启后灌入的持久块进全量帧，且不以增量重推（前端已由全量帧持有）</summary>
+        [Fact]
+        public void SeedRestoresFullWithoutDelta()
+        {
+            RecordingHost host = new RecordingHost();
+            CH4.ViewBus bus = new CH4.ViewBus();
+            bus.Attach(host);
+
+            ViewBlock first = ViewBlock.BuildPending("msg:1:text", "text", "{\"content\":\"a\"}", 1000, null, "front");
+            first.Finalize(-1);
+            ViewBlock second = ViewBlock.BuildPending("msg:2:text", "text", "{\"content\":\"b\"}", 2000, null, "front");
+            second.Finalize(-1);
+            bus.Seed(new ViewBlock[] { second, first });
+
+            // 全量帧含全部灌入块（按时间戳升序）
+            string full = bus.BuildFull("s1", 7, 1234);
+            Assert.Equal(2, BlockCount(full));
+            Assert.Equal("msg:1:text", BlockField(full, 0, "key"));
+            Assert.Equal("msg:2:text", BlockField(full, 1, "key"));
+
+            // 灌入不产生增量（历史块不该重推——前端已由全量帧持有）
+            Assert.Null(TakeDelta(bus));
+
+            // 幂等集已填——同键持久块再入不重复记增改
+            bus.PushPersist(first);
+            Assert.Null(TakeDelta(bus));
         }
 
         /// <summary>瞬时事件——control 仍即时推送（非块：前端按事件处理，不渲气泡）</summary>
@@ -341,7 +372,7 @@ namespace CatHome4.Core.Tests
             string delta = TakeDelta(bus);
             Assert.Equal(1, RemoveCount(delta));
             Assert.False(bus.IsToolCardPending("tool:c1"));
-            Assert.Equal(0, BlockCount(bus.BuildFull()));
+            Assert.Equal(0, BlockCount(bus.BuildFull("s1", 7, 1234)));
 
             bus.PushPersist(block);
             Assert.NotNull(TakeDelta(bus));
@@ -368,7 +399,7 @@ namespace CatHome4.Core.Tests
 
             Assert.False(bus.IsToolCardPending("tool:c1"));
             Assert.False(bus.IsToolCardFinaled("tool:c1"));
-            Assert.Equal(0, BlockCount(bus.BuildFull()));
+            Assert.Equal(0, BlockCount(bus.BuildFull("s1", 7, 1234)));
 
             RecordingHost host = new RecordingHost();
             bus.Attach(host);

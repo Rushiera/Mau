@@ -1047,6 +1047,8 @@ namespace CH4
         public void AttachHost(IHostPush host)
         {
             _viewBus.Attach(host);
+            // A96——重启后状态表恢复：首连全量帧含完整历史（不恢复则只含本次启动后新产生的块）
+            _viewBus.Seed(GetViewBlocks());
             _viewStore.OnBlockAppended = _viewBus.PushPersist;
         }
 
@@ -1894,11 +1896,11 @@ namespace CH4
                     ("reply", ms["reply"])))),
                 ("requests", requests));
         }
-        /// <summary>视图全量载荷——A162 状态推送（连接建立首帧取一次；宿主 HTTP 侧注入）</summary>
-        /// <returns>载荷 JSON（{"op":"full","blocks":[…] }）</returns>
+        /// <summary>视图全量载荷——A162 状态推送（连接建立首帧取一次；宿主 HTTP 侧注入）。A97——随带状态栏前文三段数据（条数 / 长度 / 会话归属）。</summary>
+        /// <returns>载荷 JSON（{"op":"full","sessionId":…,"ctxCount":…,"ctxTokens":…,"blocks":[…] }）</returns>
         public string BuildViewFullJson()
         {
-            return _viewBus.BuildFull();
+            return _viewBus.BuildFull(Id, ContextCount, ContextTokensKnown);
         }
         /// <summary>视图增量载荷——A162 状态推送（帧轮取；变更集为空返回 null）</summary>
         /// <returns>载荷 JSON（{"op":"delta",…}）或 null</returns>

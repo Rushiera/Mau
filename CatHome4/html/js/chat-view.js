@@ -372,43 +372,43 @@ function chatHistoryFinish(data) {
     var ctxTokens = hs ? ((hs.context !== undefined && hs.context > 0) ? hs.context : (hs.prompt || 0)) : 0;
     chatInfoSet(sid, ctxCount, ctxTokens);
     chatScrollBottomNow(true);
-    // 首屏落地——哨兵态 + 视口填充（chat-core 提供；未加载时静默跳过）
-    if (typeof chatHistorySettled === 'function') { chatHistorySettled(); }
 }
 
-// A162 历史全量渲染——清空 + 一次性渲染（A142 分片让出主线程已退役：顶层数据流回归「拿到快照即绘制」）
-function chatRenderHistory(data) {
-    // F4 视图块历史渲染——按 blocks[] renderType 分派（view 协议；无 messages[] 旧结构）
+// A95 渐进渲染内核——清空 + 尾部窗口先出 + 其余逐帧往前补齐（design-ch4-frontend-history §三）
+// 两路径共用：history 端点（chatAppendHistoryBlock）/ 全量帧（chatApplyBlock——含流式类与 user 块分派）
+function chatRenderProgressive(blocks, apply) {
     chatMsgs.textContent = '';
-    var blocks = data.blocks || [];
-    for (var i = 0; i < blocks.length; i++) { chatAppendHistoryBlock(blocks[i]); }
+    var n = blocks.length;
+    // 首屏窗口——尾部 CHAT_HISTORY_FIRST 块（最新内容最先出现 + 立即贴底）
+    var from = (n > CHAT_HISTORY_FIRST) ? (n - CHAT_HISTORY_FIRST) : 0;
+    for (var i = from; i < n; i++) { apply(blocks[i]); }
+    // 其余块逐帧前插补齐（代际守卫在 chat-core.chatHistoryBackfill）
+    if (from > 0 && typeof chatHistoryBackfill === 'function') { chatHistoryBackfill(blocks, from, apply); }
+}
+
+// A95 历史全量渲染——history 端点载荷（F4 视图块；无 messages[] 旧结构）
+function chatRenderHistory(data) {
+    chatRenderProgressive(data.blocks || [], chatAppendHistoryBlock);
     chatHistoryFinish(data);
     return data.sessionId || '';
 }
 
-// 上拉哨兵行——置顶提示（更多历史状态；恒为 #chatMsgs 首子节点，不参与刻度与导航收集）
-function chatOlderEnsure() {
-    var el = chatMsgs.querySelector('.chat-older');
-    if (el) { return el; }
-    el = document.createElement('div');
-    el.className = 'chat-older';
-    el.addEventListener('click', function () {
-        if (typeof chatLoadOlder === 'function') { chatLoadOlder(); }
-    });
-    chatMsgs.insertBefore(el, chatMsgs.firstChild);
-    return el;
+// A96 全量帧渐进渲染——连接建立时服务端推送的 full 帧（含流式类与 user 块——走 chatApplyBlock 分派）
+function chatRenderFullProgressive(blocks) {
+    chatRenderProgressive(blocks, chatApplyBlock);
 }
 
-// 历史块前插——更早的块保序插到窗口头部，并保住当前阅读位置（不打断阅读）
-function chatPrependHistoryBlocks(blocks) {
+// 块前插——一批块保序插到消息区头部，并保住当前阅读位置（不打断阅读）
+// @param {Array} blocks 待前插块序列
+// @param {Function} apply 单块渲染函数（chatAppendHistoryBlock / chatApplyBlock）
+function chatPrependBlocks(blocks, apply) {
     if (!blocks || blocks.length === 0) { return; }
-    var sentinel = chatMsgs.querySelector('.chat-older');
-    // 插入锚——哨兵行之下（哨兵恒在带顶）；无哨兵时为首子节点
-    var anchor = sentinel ? sentinel.nextSibling : chatMsgs.firstChild;
+    // 插入锚——当前首子节点（无子节点时 insertBefore 即追加）
+    var anchor = chatMsgs.firstChild;
     var oldHeight = chatMsgs.scrollHeight;
     var oldTop = chatMsgs.scrollTop;
     var oldCount = chatMsgs.children.length;
-    for (var i = 0; i < blocks.length; i++) { chatAppendHistoryBlock(blocks[i]); }
+    for (var i = 0; i < blocks.length; i++) { apply(blocks[i]); }
     // 新块（尾部追加）整体前移到锚点之前——逐节点 insertBefore 保序
     var moved = [];
     for (var k = chatMsgs.children.length - 1; k >= oldCount; k = k - 1) { moved.unshift(chatMsgs.children[k]); }

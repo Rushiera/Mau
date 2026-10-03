@@ -178,12 +178,6 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
       列宽不再为它留空档；#chatMsgs 仍是滚动执行器（scrollTop 为唯一写入口） */
 #chatMsgs { flex: 1; overflow-y: auto; width: var(--ch-col-w); margin-left: var(--ch-col-left); padding: 12px 0; display: flex; flex-direction: column; gap: 10px; scrollbar-width: none; }
 #chatMsgs::-webkit-scrollbar { width: 0; height: 0; }
-/* 上拉哨兵行（2026-10-02）——窗口头部提示：更早消息的加载状态（可拉 / 加载中 / 已到最早 / 失败）；
-   非消息行（不参与滚动带刻度与导航收集）；点击 = 补一页（上拉到顶附近亦自动触发） */
-.chat-older { text-align: center; font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); cursor: pointer; user-select: none; }
-.chat-older:hover { color: var(--ch-fg-muted); }
-.chat-older.loading { color: var(--ch-fg-muted); cursor: default; }
-
 /* ============ 自绘滚动带（design-ch4-frontend-scroll）——对话区滚动条替代物 ============ */
 /* 定位：紧贴气泡区右侧——左缘 = 列右缘 + 间距（占右侧保留地，左右各留 20px）；纵向对齐对话区矩形（JS 同步）
    构成：视口指示块（高度 = 视口占比）+ 消息刻度（每条导航消息一道，user / reply 两色） */
