@@ -37,52 +37,17 @@ for (var i = 0; i < tabs.length; i++) {
     });
 }
 
-// A140——SSE 落差响应（面板页）：出声 + 防抖补拉全量快照（增量合并断链后本地快照会停在旧值）
-var appGapReloadTimer = null;
-
-/**
- * 落差处理——meta 位出声缺失条数 + 防抖补拉
- * @param {Object} ev SSE 事件对象
- * @returns {number} 本次落差条数（0=连续）
- */
-function appSseSeq(ev) {
-    var gap = sseSeqTrack(ev);
-    if (gap <= 0) { return 0; }
-    metaEl.textContent = '⚠️ 事件缺失 ' + gap + ' 条（本次连接累计 ' + sseGapTotal + '）——正在补齐';
-    if (appGapReloadTimer === null) {
-        appGapReloadTimer = setTimeout(function () {
-            appGapReloadTimer = null;
-            appReloadSnapshot();
-        }, 3000);
-    }
-    return gap;
-}
-
-/**
- * 全量快照补拉——帧号守卫（旧快照不覆盖新）
- */
-function appReloadSnapshot() {
-    fetch('/api/v1/snapshot?logs=200')
-        .then(function (r) { return r.json(); })
-        .then(function (s) {
-            if (s.frame >= lastFrame) { fullSnapshot = s; applySnapshot(s); lastFrame = s.frame; }
-        })
-        .catch(function (e) { uiWarn('落差补拉快照', e); });
-}
-
 // [段3] SSE 事件流——四类事件分派
 // A141——按订阅推送：面板只订阅四类（对话页另订阅 view/sessionstate/note/cmd）
 var es = new EventSource('/api/v1/stream?topics=snapshot,patch,log,cmd');
 es.addEventListener('snapshot', function (ev) {
     // 增量流式——全量快照到达（helloFrame 重连兜底）整体替换本地全快照
-    appSseSeq(ev);
     var s = JSON.parse(ev.data);
     fullSnapshot = s;
     applySnapshot(s);
 });
-es.addEventListener('patch', function (ev) { appSseSeq(ev); applyPatch(JSON.parse(ev.data)); });   // 增量流式——变化段合并进本地全快照
+es.addEventListener('patch', function (ev) { applyPatch(JSON.parse(ev.data)); });   // 增量流式——变化段合并进本地全快照
 es.addEventListener('log', function (ev) {
-    appSseSeq(ev);
     // A141——服务端批量合帧：载荷为数组（兼容单条形态）
     var d = JSON.parse(ev.data);
     if (Object.prototype.toString.call(d) === '[object Array]') {
@@ -92,16 +57,13 @@ es.addEventListener('log', function (ev) {
     }
 });
 es.addEventListener('cmd', function (ev) {
-    appSseSeq(ev);
     var d = JSON.parse(ev.data);
     pushLog({ time: '', frame: d.frame, level: d.ok ? 'INFO' : 'ERROR', category: 'CMD', module: d.cmdId, message: d.ok ? 'ok' : ('err=' + (d.error || '')) });
     cmdResultEl.textContent = '回执: ' + d.cmdId + ' ok=' + d.ok + ' frame=' + d.frame + (d.error ? ' error=' + d.error : '');
 });
 es.onerror = function () { metaEl.textContent = 'SSE 断线——自动重连...'; };
 es.onopen = function () {
-    // 对话已迁 chat.html 独立页（F2.1 主面板纯管理面）——重连无需对话历史兜底
-    // A140——落差基线重置：新连接 id 序列从头开始，旧基线不适用
-    sseSeqReset();
+    // 对话已迁 chat.html 独立页（F2.1 主面板纯管理面）——重连无需对话历史兜底（A162：落差检测已退役）
 };
 
 // 初始兜底——帧号守卫（旧快照不覆盖新）

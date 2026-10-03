@@ -59,8 +59,8 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                fs.WriteTextAuto(path, content);
-                result = "OK 已覆写: " + path + "（" + content.Length.ToString() + " 字符）";
+                string style = fs.WriteTextAuto(path, content);
+                result = "OK 已覆写: " + path + "（" + content.Length.ToString() + " 字符 · " + style + "）";
                 return true;
             }
             catch (Exception ex)
@@ -71,4 +71,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:9369514B966D23173B91174E7466A5E30A068B67053C65F43B60CA7D303CBF2D
+// #MAU_CHECKSUM:SHA256:747E57185895F1EB219E9340F516AE78D88E3E7D233FE2A0D3E29D28A5D4262F

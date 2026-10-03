@@ -113,14 +113,11 @@ function chatRunning() {
 function chatOnSessionState(d) {
     // 运行态推送——本猫运行态块（服务端变化或新连接首帧才推；状态条唯一数据源——空闲期零推送、前端零轮询）
     if (!d || !d.sessionId) { return; }
-    var prevState = chatRunState.state || '';
     chatRunState = {
         state: d.runState || '',
         ms: d.runMs || {},
         requests: d.requests || 0
     };
-    // A95——live think 块生命周期归前端：运行态离开 think 即销毁（与后续接 reply/tool/run/link/idle 无关）
-    if (prevState === 'think' && chatRunState.state !== 'think') { chatClearLiveThink(); }
     chatRenderStatus();
     // 进行中标记——全局态唯一出入口（态变化即同步气泡外观；与状态条/桌宠同源同时刻）
     chatSyncRunningMarks();
@@ -280,22 +277,6 @@ function chatSyncRunningMarks() {
     }
 }
 
-// A95——live think 块统一清理出口（预览面自持）：think 态结束即销毁，与后续接 reply/tool/run/link/idle 无关。
-// 动机：live 块是前端私有实体（不落盘、不进视图层、后端不感知）——生命周期必须由前端自持；
-//      旧实现把销毁绑在后端 reason 整块的 replaceSeq 命中上，事件缺席（无效请求无内容可收口）即永久残留。
-// 幂等——无 live 块时空操作；调用面 = 运行态离开 think + 终态清理点（error / chatdone / paused / 发送失败）。
-function chatClearLiveThink() {
-    for (var k in viewContainers) {
-        var c = viewContainers[k];
-        if (c && c.type === 'thinkstream') {
-            c.bubble.classList.remove('live');
-            chatRemoveBubble(c.bubble);
-            delete viewContainers[k];
-        }
-    }
-    chatLiveSyncTimer();
-}
-
 // ============ A84/A85——活跃块计时表（纯前端自算 · 1 秒粒度 · 单一表驱动两类块） ============
 // 适用面：工具卡「运行中」占位行（A84——已运行时长）· think 流式块头行（A85——字符/行数/已输出时间/速率）
 // 起点写在元素 data-start（与块同生命周期——先行卡与 think 流式块都不落盘，刷新即随块消失）；
@@ -403,161 +384,145 @@ function chatRenderPending() {
     panel.innerHTML = html;
 }
 
-// ============ F4 view 协议分发 ============
-// 八种 renderType：user/stream/text/reason/toolcard/control/retry/error（S2 §8.4 retry 重试记录；A55 error 错误气泡）
-// toolcard 两段式——LLM 输出工具即出"进行中"卡（无 result → ⏳ 处理中），完成/中断以 replaceSeq 原位替换为完整卡
-// stream 流式增量——seq 复用=同容器追加；新 seq=新建容器（text 与 reason 各自独立容器）
-// text/reason 整块——replaceSeq 指向被替换的流式容器序号（流式→整块替换；无容器则新建）
-// retry 独立气泡——replaceSeq≥0 更新已有重试气泡（多次重试替换不堆叠）；-1 新建
+// ============ A162 状态推送分发（快照模型） ============
+// full——连接建立时服务端推一次（网页刷新 / 断线重连同一路径）：清容器后整体重绘
+// delta——帧轮增量：blocks 逐块按块键应用（同键覆盖）+ remove 逐键删容器；无变化服务端零字节
+// control——阶段控制（usage / chatdone / paused / note / session_reset）
+// 旧 op 面（live.add / live.update / live.remove / persist.append）随 A162 退役
 
 function chatOnView(d) {
-    if (chatState === 'loading') { return; }
+    // A162 状态推送——loading 态放行全量帧（全量即服务端送达的初始状态；其余事件待就绪后再收）
+    if (chatState === 'loading' && d.op !== 'full') { return; }
     // A77 静默提示撤销——view 事件到达即撤（宿主复活自愈；不残留误报）
     chatClearStall();
     // 跟随判定取样——「新内容到达前」是否贴近底部（新块自身高度不计入判定：多行 user 气泡 / 整块回复等
     // 大块会把插入后的距底距离顶过 80px 阈值 → 被误判为用户已上翻 → 不跟随、只延伸滚动条——2026-09-17 修复）
     var stickBottom = chatNearBottom();
-    var type = d.renderType;
-    var payload = d.payload || {};
-    if (type === 'user') {
-        chatOnUser(payload);
-    } else if (type === 'stream') {
-        chatOnStream(d.seq, payload);
-    } else if (type === 'text') {
-        chatOnText(d.seq, d.replaceSeq, payload);
-    } else if (type === 'reason') {
-        chatOnReason(d.seq, d.replaceSeq, payload);
-    } else if (type === 'toolcard') {
-        // 两段式——先行卡（replaceSeq=-1 新建）→ 完成/中断原位替换（replaceSeq = 先行卡 seq）
-        chatOnToolCard(d.seq, d.replaceSeq, payload);
-    } else if (type === 'retry') {
-        // S2 §8.4——重试过程记录（独立气泡，弱化样式；replaceSeq≥0 更新已有气泡，否则新建）
-        chatOnRetry(d.seq, d.replaceSeq, payload);
-    } else if (type === 'error') {
-        // A55——LLM 错误（独立渲染面：seal 流式容器 + 无容器新建错误气泡；视图块随 view.json 落盘）
-        chatOnError(payload);
-    } else if (type === 'control') {
-        chatOnControl(payload);
-    } else if (type === 'roundsum') {
-        // roundsum 轮末统计——独立气泡（本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时）
-        chatOnRoundSum(payload);
+    var op = d.op;
+    if (op === 'full') {
+        chatOnViewFull(d);
+    } else if (op === 'delta') {
+        chatOnViewDelta(d);
+    } else if (op === 'control') {
+        chatOnControl(d.payload || {});
     }
     // 末尾按取样结果滚动——stickBottom（到达前已贴近底部）则维持在最下层；否则尊重用户上翻位置不动
     if (stickBottom) { chatMsgs.scrollTop = chatMsgs.scrollHeight; }
 }
 
-function chatOnStream(seq, payload) {
+// 全量——清空流式容器与对话区后整体重绘（全量的唯一入口：连接建立时服务端推送）
+function chatOnViewFull(d) {
+    chatClearLiveRegion();
+    chatMsgs.textContent = '';
+    var blocks = d.blocks || [];
+    for (var i = 0; i < blocks.length; i++) {
+        chatApplyBlock(blocks[i]);
+    }
+    chatSyncRunningMarks();
+    chatLiveSyncTimer();
+    // A162——全量帧即初始状态就绪：退出 loading 态（此前由 chatLoadHistory 收尾置位，纯化后改由此处收口）
+    if (chatState === 'loading') { chatSetState('idle'); }
+}
+
+// 增量——blocks 逐块应用（同键覆盖）+ remove 逐键删容器
+function chatOnViewDelta(d) {
+    var blocks = d.blocks || [];
+    for (var i = 0; i < blocks.length; i++) {
+        chatApplyBlock(blocks[i]);
+    }
+    var remove = d.remove || [];
+    for (var j = 0; j < remove.length; j++) {
+        chatOnLiveRemove(remove[j]);
+    }
+    chatSyncRunningMarks();
+    chatLiveSyncTimer();
+}
+
+// 单块应用——按块键定位容器：流式类（stream / toolcard）走实时渲染，其余走历史块渲染
+function chatApplyBlock(b) {
+    var key = b.key || '';
+    var payload = b.payload || {};
+    if (b.renderType === 'stream') {
+        chatOnLiveStream(key, payload);
+        return;
+    }
+    if (b.renderType === 'toolcard') {
+        chatOnLiveToolCard(key, payload);
+        return;
+    }
+    if (b.renderType === 'user') {
+        // 进内核消息——保留实时语义（source 前缀 + 插话队列确认）
+        chatOnUser(payload);
+        return;
+    }
+    chatAppendHistoryBlock(b);
+    // A55——错误块到达即恢复 idle（旧 chatOnError 的收尾语义）
+    if (b.renderType === 'error') { chatSetState('idle'); }
+}
+
+// 流式区移除——区里没了就删气泡（delta 的 remove 表达）
+function chatOnLiveRemove(key) {
+    var c = viewContainers[key];
+    if (!c) { return; }
+    delete viewContainers[key];
+    if (c.bubble) { chatRemoveBubble(c.bubble); }
+    chatLiveSyncTimer();
+    chatSyncRunningMarks();
+}
+
+// 流式增量（文本 / 思考）——按块键建容器或追加（空增量不建气泡）
+function chatOnLiveStream(key, payload) {
     chatKeepAlive();
     if (payload.kind === 'reasoning') {
-        // A85——think 流式态（live-only）：首帧新建独立块；终结由后端 reason 整块驱动（前端不自判）
-        if (!viewContainers[seq]) {
+        // A85——think 流式态（live-only）：首帧建块；终结由后端 live.remove 驱动（前端不自判）
+        if (!viewContainers[key]) {
             var rb = chatBubble('assistant', 'reason');
             var tk = chatThinkStream();
             rb.appendChild(tk.box);
-            viewContainers[seq] = { type: 'thinkstream', bubble: rb, head: tk.head, body: tk.body, cursor: tk.cursor };
+            viewContainers[key] = { type: 'thinkstream', bubble: rb, head: tk.head, body: tk.body, cursor: tk.cursor };
             // 起点登记——头行 data-start（活跃计时表按此时刻算已输出时长与速率）
             chatLiveMark(rb);
         }
-        var rc = viewContainers[seq];
+        var rc = viewContainers[key];
         chatThinkAppend(rc.body, rc.cursor, payload.text || '');
         chatThinkScroll(rc.body);
         // 头行实时刷新——与 1 秒表同一出口（增量到达即更新，不等下一秒）
         chatLiveTick();
-    } else if (payload.kind === 'text') {
-        // 回复流式——独立气泡流式；空增量（tool_calls 前的空 content 块）跳过——不建空气泡
-        var t = payload.text || '';
-        if (t.length === 0) { return; }
-        if (!viewContainers[seq]) {
-            // 思考段终结——折叠由后端思考整块（reason 事件）驱动，本路径不自判（唯一出口）
-            var tb = chatBubble('assistant');
-            viewContainers[seq] = { type: 'text', bubble: tb, reasonPre: null };
-        }
-        var tc = viewContainers[seq];
-        tc.bubble.classList.remove('error');
-        chatAppend(tc.bubble, t);
-    }
-    // 进行中标记——全局态唯一出入口（新建容器后立即按当前态同步）
-    chatSyncRunningMarks();
-    // 活跃计时表——think 流式块新建后保证表在跑（无活跃元素时为空操作）
-    chatLiveSyncTimer();
-}
-
-function chatOnText(seq, replaceSeq, payload) {
-    // 回复整块——replaceSeq≥0 且容器存在 → 替换流式容器；否则新建气泡
-    // F3 MD 渲染——整块 content 一次渲染（流式阶段 textContent 追加，不渲染不完整字符流）；md-block 包裹=CSS 作用域锚点
-    var content = payload.content || '';
-    // P6b 节点操作条——正式回复块底部两按钮（回滚/分支）；msgIndex<0（工具轮 seal 文本）不挂
-    var msgIndex = (payload.msgIndex !== undefined) ? payload.msgIndex : -1;
-    // A85——think 段终结不在此兜底（流式块由后端 reason 整块销毁；完成块默认压缩档）
-    var c = viewContainers[replaceSeq];
-    if (c && c.type === 'text') {
-        c.bubble.classList.remove('streaming');
-        // A65 整块渲染改 DOM 填充——图片包裹命中时先出缩略图组；无包裹与旧行为同构（md-block 单块）
-        c.bubble.textContent = '';
-        chatMdFill(c.bubble, content);
-        chatAppendNodeActions(c.bubble, msgIndex);
-        delete viewContainers[replaceSeq];
-    } else {
-        var b = chatBubble('assistant');
-        chatMdFill(b, content);
-        chatAppendNodeActions(b, msgIndex);
-    }
-}
-
-function chatOnReason(seq, replaceSeq, payload) {
-    // A85 思考整块——流式块**销毁** + 新建完成块（两态是两个实体，不再原位替换）
-    // 统计取流式终值（字符 / 行数 / 已输出时间）——销毁前读流式头行 data-start 与正文
-    var content = payload.content || '';
-    var c = viewContainers[replaceSeq];
-    if (c && c.type === 'thinkstream') {
-        var start = parseInt(c.head.getAttribute('data-start'), 10);
-        var elapsed = isNaN(start) ? null : (Date.now() - start);
-        var streamText = chatThinkBodyText(c.body);
-        var stats = chatThinkStats(streamText.length > 0 ? streamText : content, elapsed);
-        chatRemoveBubble(c.bubble);
-        delete viewContainers[replaceSeq];
-        var nb = chatBubble('assistant', 'reason');
-        nb.appendChild(chatThinkBlock(content, stats));
-        chatLiveSyncTimer();
-        chatSyncRunningMarks();
         return;
     }
-    // 无流式容器（重连 / 直接整块到达）——无时长来源：头行标识「未统计」
-    if (content.length > 0) {
-        var b = chatBubble('assistant', 'reason');
-        b.appendChild(chatThinkBlock(content));
+    // 回复流式——独立气泡流式；空增量（tool_calls 前的空 content 块）跳过——不建空气泡
+    var t = payload.text || '';
+    if (t.length === 0) { return; }
+    if (!viewContainers[key]) {
+        var tb = chatBubble('assistant');
+        viewContainers[key] = { type: 'text', bubble: tb };
     }
-    chatLiveSyncTimer();
+    var tc = viewContainers[key];
+    tc.bubble.classList.remove('error');
+    chatAppend(tc.bubble, t);
 }
 
-// 工具卡两段式——先行"进行中"卡（无 result → ⏳ 处理中，展开态）+ 完成/中断原位替换为完整卡（同气泡不新增）
-function chatOnToolCard(seq, replaceSeq, payload) {
+// 工具卡（流式区）——先行卡与终态卡同在块键容器内换卡（后端 op 决定时机，前端不做配对）
+function chatOnLiveToolCard(key, payload) {
     chatKeepAlive();
     var pending = (payload.result === undefined);
-    // 原位替换——命中先行卡容器（replaceSeq 指向其 seq）→ 换卡不换气泡
-    if (replaceSeq !== undefined && replaceSeq >= 0) {
-        var ec = viewContainers['toolcard_' + replaceSeq];
-        if (ec) {
-            var replaced = chatToolCard(payload, false);
-            ec.bubble.replaceChild(replaced, ec.card);
-            ec.card = replaced;
-            ec.bubble.classList.remove('pending');
-            delete viewContainers['toolcard_' + replaceSeq];
-            // A84——该卡占位已随换卡消失；并发其他运行中卡仍在则表继续（无活跃元素即自停）
-            chatLiveSyncTimer();
-            return;
-        }
+    var c = viewContainers[key];
+    if (c && c.type === 'toolcard') {
+        var replaced = chatToolCard(payload, pending);
+        c.bubble.replaceChild(replaced, c.card);
+        c.card = replaced;
+        if (!pending) { c.bubble.classList.remove('pending'); }
+        return;
     }
     var tb = chatBubble('assistant', 'tool');
     var card = chatToolCard(payload, pending);
     tb.appendChild(card);
+    viewContainers[key] = { type: 'toolcard', bubble: tb, card: card };
     if (pending) {
-        // 先行卡登记——完成/中断事件以 replaceSeq 命中此处（完成卡不登记：无后续替换）
-        viewContainers['toolcard_' + seq] = { type: 'toolcard', bubble: tb, card: card };
         // A84——登记已运行时长起点（卡内占位元素 data-start）并保证计时表在跑
         chatLiveMark(tb);
     }
-    // 进行中标记——全局态唯一出入口（先行卡按当前态决定是否挂 pending）
+    // A158——函数自足收尾（旧 chatOnToolCard 同源：直调路径也须同步进行中标记与计时表）
     chatSyncRunningMarks();
     chatLiveSyncTimer();
 }
@@ -598,27 +563,6 @@ function chatRenderRetry(payload) {
     return b;
 }
 
-// S2 §8.4——重试过程记录气泡（独立视图条目：⟳ 重试中 / ✓ 已恢复；弱化样式不抢占对话主视觉）
-function chatOnRetry(seq, replaceSeq, payload) {
-    chatKeepAlive();
-    // 端点切换提示——顶栏标签同步刷新（自动故障转移后角色 + 两站模型名）
-    if (payload && payload.state === 'failover') { chatApiRoleRefresh(); }
-    // replaceSeq 指向首次 retry 事件的 seq——命中已有气泡更新（多次重试不堆叠）；-1/无 → 新建
-    var existing = null;
-    if (replaceSeq !== undefined && replaceSeq >= 0) {
-        var rc = viewContainers['retry_' + replaceSeq];
-        if (rc) { existing = rc; }
-    }
-    if (existing) {
-        existing.bubble.textContent = chatRetryText(payload);
-        chatApplyRetryState(existing.bubble, payload);
-    } else {
-        var b = chatRenderRetry(payload);
-        // 记录用 seq——后续 replaceSeq 指向本次 seq 实现原位更新
-        viewContainers['retry_' + seq] = { type: 'retry', bubble: b, reasonPre: null };
-    }
-}
-
 // A55——错误渲染单例：新建错误气泡（历史重建与实时事件共用同一渲染面）
 function chatRenderError(text) {
     var eb = chatBubble('assistant');
@@ -629,23 +573,6 @@ function chatRenderError(text) {
 
 // A55——错误事件（renderType=error）：seal 全部流式容器（已生成内容保留，不追加错误文本）+
 // 恒定新建独立错误气泡——错误与重试解耦（重试气泡只表达重试过程；莎 2026-09-16 拍板 A）
-function chatOnError(payload) {
-    chatKeepAlive();
-    chatPhaseReset();
-    var text = payload.text || 'LLM 错误';
-    chatClearLiveThink();   // A95——live 块清理（错误路径兜底：不依赖后端 reason 事件是否推得到）
-    for (var k in viewContainers) {
-        var c = viewContainers[k];
-        if (c && c.bubble) {
-            c.bubble.classList.remove('streaming');
-        }
-    }
-    viewContainers = {};
-    chatRenderError(text);
-    if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
-    chatSetState('idle');
-}
-
 function chatOnControl(payload) {
     var type = payload.type;
     if (type === 'usage') {
@@ -665,7 +592,6 @@ function chatOnControl(payload) {
     } else if (type === 'chatdone') {
         // 会话终态——seal 全部流式容器 + 未回填兜底已由 toolcard 整块覆盖 + 恢复 idle
         chatPhaseReset();
-        chatClearLiveThink();   // A95——live 块清理（终态兜底）
         for (var k2 in viewContainers) {
             var c2 = viewContainers[k2];
             if (c2 && c2.bubble) {
@@ -689,7 +615,6 @@ function chatOnControl(payload) {
     } else if (type === 'paused') {
         // P6 中止——独立气泡提示（宿主文本；单向数据流：前端只渲染）+ seal 全部流式容器 + 复位 idle（已生成内容保留显示）
         chatPhaseReset();
-        chatClearLiveThink();   // A95——live 块清理（中止兜底：seal 无内容时后端不推 reason 事件）
         for (var kp in viewContainers) {
             var cp = viewContainers[kp];
             if (cp && cp.bubble) {
@@ -725,13 +650,7 @@ function chatOnControl(payload) {
     }
 }
 
-// SSE 落差处理计时句柄——防抖补拉（3 秒窗口内只补一次）
-var chatGapReloadTimer = null;
-
-// A142——重连续传基线（全量加载/增量续传时维护；-1 = 无基线 → 走全量）
-var chatViewGen = -1;      // 块序代际号（宿主视图层；变即前缀失效）
-var chatViewCount = 0;     // 已渲染块数（当前窗口内）
-// 窗口起点（全局块序；-1 = 未加载）——首屏只拉尾部一页（最新数据最先出现），更早的块按需上拉补齐
+// 上拉补历史——窗口起点（全局块序；0 = 窗口含会话开头，-1 = 未加载）
 var chatViewStart = -1;
 // 每页块数（首屏与上拉同一口径）
 var CHAT_HISTORY_PAGE = 60;
@@ -740,87 +659,39 @@ var CHAT_HISTORY_TOP_GAP = 120;
 // 补历史在途标志——防并发重复请求
 var chatOlderLoading = false;
 
-/**
- * 落差响应——顶部提示缺失条数 + 防抖触发一次补齐拉取
- * 声明：design-ch4-push-perf §3.2（丢帧必须可见）；A142 起补齐走增量续传（有基线时）
- * @param {Object} ev SSE 事件对象
- * @returns {number} 本次落差条数（0=连续）
- */
-function chatSseSeq(ev) {
-    var gap = sseSeqTrack(ev);
-    if (gap <= 0) { return 0; }
-    chatInfo.textContent = '⚠️ 事件缺失 ' + gap + ' 条（本次连接累计 ' + sseGapTotal + '）——正在补齐';
-    if (chatGapReloadTimer === null) {
-        chatGapReloadTimer = setTimeout(function () {
-            chatGapReloadTimer = null;
-            chatReconnectResume();
-        }, 3000);
+// A158——流式区快照重建（全量加载时消费 history 的 live 数组）
+function chatClearLiveRegion() {
+    for (var k in viewContainers) {
+        var c = viewContainers[k];
+        if (c && c.bubble) { chatRemoveBubble(c.bubble); }
     }
-    return gap;
+    viewContainers = {};
+    chatLiveSyncTimer();
 }
 
 /**
- * 重连 / 补齐分流——A142：有基线走增量续传（不清空、不重建），无基线走全量
- * 声明：design-ch4-push-perf §4.1（断线是常态——默认不重建）
- */
-function chatReconnectResume() {
-    if (chatViewGen < 0) {
-        chatLoadHistory();
-        return;
-    }
-    chatLoadHistoryDelta();
-}
-
-/**
- * 首屏历史加载——尾部窗口（最新一页）+ 清空重建（首连 / 会话切换 / 增量不可用时使用）；成功后记录续传基线
- * 窗口语义：只拉最新 CHAT_HISTORY_PAGE 块（最新数据最先出现）；更早的块由 chatLoadOlder 上拉补齐
+ * 全量历史加载——清空重建（首连 / 重连 / 会话切换一律走此口——顶层数据流：连接建立即拉一次全量）
+ * 持久块渲染 + 流式区快照重建（响应 live 数组 = 后端流式区当前内容——忠实镜像）
  */
 function chatLoadHistory() {
     fetch('/api/v1/history?max=' + CHAT_HISTORY_PAGE)
         .then(function (r) { return r.json(); })
         .then(function (d) {
-            // 窗口基线先落——渲染收尾（chatHistoryFinish → chatHistorySettled）要读窗口起点判哨兵态，
-            // 分片渲染在块数 ≤ 批次时同步完成（后置赋值会让哨兵读到上一轮的起点）
-            chatViewGen = (d.gen !== undefined && d.gen !== null) ? d.gen : -1;
-            chatViewCount = (d.blocks || []).length;
-            // 窗口起点（缺字段回落 0 = 窗口含会话开头——保守：不提供更早的块）
+            // 流式区先清——快照随后重建（后端区里有什么就显示什么）
+            chatClearLiveRegion();
+            // 窗口起点（上拉补历史用；0 = 窗口含会话开头）
             chatViewStart = (d.start !== undefined && d.start !== null) ? d.start : 0;
             // 会话归属落库——渲染层只渲染并返回 sessionId（P20-P3-7：渲染层不写全局状态）
             var sid = chatRenderHistory(d);
             if (sid) { CHAT_SESSION = sid; }
+            var live = d.live || [];
+            for (var i = 0; i < live.length; i++) { chatApplyBlock(live[i]); }
             // A61 刷新兜底——后端轮次仍在跑（运行态已由 sessionstate 首帧送达）→ 保持 sending（停止按钮可用）
             chatSetState(chatRunning() ? 'sending' : 'idle');
         })
         .catch(function () {
             chatInfo.textContent = '历史加载失败——宿主未运行？';
             chatSetState('idle');
-        });
-}
-
-/**
- * 增量续传——带 gen + 窗口起点 + 已持有块数请求缺失块（append；前缀失效时回落全量重建）
- * 声明：design-ch4-push-perf §4.2（宿主 prefixOk 判据）
- * 不打断阅读——新块只在用户贴近底部时跟随（原实现无条件拉底：上翻读历史时会被拽回底部）
- */
-function chatLoadHistoryDelta() {
-    fetch('/api/v1/history?gen=' + chatViewGen + '&start=' + (chatViewStart > 0 ? chatViewStart : 0) + '&count=' + chatViewCount)
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-            if (!d || d.prefixOk !== true || (d.sessionId && d.sessionId !== CHAT_SESSION)) {
-                // 前缀失效 / 会话已切换——回落全量重建（尾部窗口）
-                chatLoadHistory();
-                return;
-            }
-            var blocks = d.blocks || [];
-            for (var i = 0; i < blocks.length; i++) { chatAppendHistoryBlock(blocks[i]); }
-            chatViewCount = chatViewCount + blocks.length;
-            if (d.gen !== undefined && d.gen !== null) { chatViewGen = d.gen; }
-            if (blocks.length > 0) { chatScrollSoon(); }
-            chatSetState(chatRunning() ? 'sending' : 'idle');
-        })
-        .catch(function () {
-            // 增量口异常（旧宿主 / 网络）——回落全量
-            chatLoadHistory();
         });
 }
 
@@ -843,11 +714,6 @@ function chatLoadOlder() {
                 chatLoadHistory();
                 return;
             }
-            if (d.gen !== undefined && d.gen !== null && chatViewGen >= 0 && d.gen !== chatViewGen) {
-                // 块序代际号变化 = 视图被重建（回滚 / 新会话）——前缀失效，回落首屏
-                chatLoadHistory();
-                return;
-            }
             var blocks = d.blocks || [];
             if (blocks.length === 0) {
                 chatViewStart = 0;
@@ -856,8 +722,6 @@ function chatLoadOlder() {
             }
             chatPrependHistoryBlocks(blocks);
             chatViewStart = (d.start !== undefined && d.start !== null) ? d.start : (before - blocks.length);
-            chatViewCount = chatViewCount + blocks.length;
-            if (chatViewGen < 0 && d.gen !== undefined && d.gen !== null) { chatViewGen = d.gen; }
             chatOlderSet(chatViewStart > 0 ? 'more' : 'top');
             chatFillViewport();
         })
@@ -925,7 +789,6 @@ function chatFail(msg) {
     // E 系列——失败：四态状态条清零隐藏
     chatPhaseReset();
     // 发送失败——seal 全部流式容器 + 独立错误气泡 + 恢复 idle
-    chatClearLiveThink();   // A95——live 块清理（发送失败兜底）
     for (var k in viewContainers) {
         var c = viewContainers[k];
         if (c && c.bubble) {

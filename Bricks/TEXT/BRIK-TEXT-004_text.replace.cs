@@ -84,6 +84,10 @@ namespace Mau.Bricks
                 if (outcome.Status == TextReplaceStatus.NotFound)
                 {
                     result = "ERR|ANCHOR_NOT_FOUND|第 " + outcome.DiffByteIndex.ToString() + " 字节 期望「" + outcome.Expected + "」实际「" + outcome.Actual + "」";
+                    if (outcome.EntitySuspect)
+                    {
+                        result = result + "｜提示：疑似实体写法——锚点直接写裸符号 < > &；若文件本身是实体文本，锚点写双写形态 &amp;lt;";
+                    }
                     return false;
                 }
                 if (outcome.Status == TextReplaceStatus.Ambiguous)
@@ -92,7 +96,25 @@ namespace Mau.Bricks
                     return false;
                 }
                 string deleteNote = deleteMode ? "——本次 New 为空（删除标记「" + DeleteKey + "」）：删除匹配的 Old 串" : "";
-                result = "OK 替换完成: " + outcome.Count.ToString() + " 处（" + path + "）" + deleteNote + "--目标段--" + outcome.Snippet;
+                string spanNote = "";
+                if (mode == "regex")
+                {
+                    spanNote = " · 匹配跨度 最长 " + outcome.MaxSpanLines.ToString() + " 行 / " + outcome.MaxSpanChars.ToString() + " 字符 · 命中合计 " + outcome.TotalSpanChars.ToString() + " 字符";
+                    if (outcome.SpanWarned)
+                    {
+                        spanNote = spanNote + " ⚠ 单次匹配跨度过大——请核对是否吞入相邻内容";
+                    }
+                }
+                string lineNote = "";
+                if (mode == "all" && outcome.CandidateLines.Length > 0)
+                {
+                    lineNote = " · 命中行 " + string.Join(", ", outcome.CandidateLines);
+                    if (outcome.CandidateLines.Length < outcome.Count)
+                    {
+                        lineNote = lineNote + "…（前 " + outcome.CandidateLines.Length.ToString() + " / 共 " + outcome.Count.ToString() + "）";
+                    }
+                }
+                result = "OK 替换完成: " + outcome.Count.ToString() + " 处（" + path + "）" + spanNote + lineNote + deleteNote + "--目标段--" + outcome.Snippet;
                 return true;
             }
             catch (Exception ex)
@@ -103,4 +125,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:FBD9C276114E55B47A71C3E2F29B1CCB22E0BC774B8CDF786869F31E3D33510D
+// #MAU_CHECKSUM:SHA256:CF7B387571ABCC9E280AD203B7F9BD94CEE1ABA44A220C9D36A7471EA8BFA961

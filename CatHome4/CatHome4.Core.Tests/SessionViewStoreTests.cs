@@ -49,6 +49,38 @@ namespace CatHome4.Core.Tests
 
         // ── 辅助构造 ────────────────────────────────────────────────
 
+        /// <summary>
+        /// 重放辅助——按消息序调用视图钩子（A156：事件直落块取代从前文重建；测试内构造前文派生块用）。
+        /// </summary>
+        /// <param name="store">目标视图存储</param>
+        /// <param name="messages">真实前文消息数组</param>
+        private static void ReplayAll(CH4.SessionViewStore store, LlmMessage[] messages)
+        {
+            for (int i = 0; i < messages.Length; i++)
+            {
+                LlmMessage m = messages[i];
+                if (m.Role == LlmRole.User)
+                {
+                    store.OnUserMessage(m, i);
+                }
+                else if (m.Role == LlmRole.Assistant)
+                {
+                    if ((m.ToolCallsJson ?? "").Length > 0)
+                    {
+                        store.OnAssistantToolCalls(m, i);
+                    }
+                    else
+                    {
+                        store.OnAssistantText(m, i);
+                    }
+                }
+                else if (m.Role == LlmRole.Tool)
+                {
+                    store.OnToolResult(m, i, -1);
+                }
+            }
+        }
+
         /// <summary>构造用户消息</summary>
         private static LlmMessage User(string text, long ts)
         {
@@ -137,11 +169,11 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void OnUserMessage_AppendsUserBlock_CarriesIndexAndPayload()
         {
-            _store.OnUserMessage(User("你好", 100L), 100L, 3);
+            _store.OnUserMessage(User("你好", 100L), 3);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("user", blocks[0].RenderType);
-            Assert.Equal(3, blocks[0].MsgIndex);
+            Assert.Equal(3, blocks[0].Origin.MsgIndex);
             Assert.Equal(100L, blocks[0].Timestamp);
             Assert.Equal("你好", ParsePayload(blocks[0]).GetProperty("content").GetString());
         }
@@ -150,7 +182,7 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void OnAssistantText_AppendsTextBlock()
         {
-            _store.OnAssistantText(Assistant("回复", 200L), 200L, 4);
+            _store.OnAssistantText(Assistant("回复", 200L), 4);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("text", blocks[0].RenderType);
@@ -161,7 +193,7 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void OnAssistantToolCalls_WithReasoning_AppendsReasonBlock()
         {
-            _store.OnAssistantToolCalls(AssistantWithTools("想想", OneToolCall("call_1", "Note", "{}"), 200L), 200L, 4);
+            _store.OnAssistantToolCalls(AssistantWithTools("想想", OneToolCall("call_1", "Note", "{}"), 200L), 4);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("reason", blocks[0].RenderType);
@@ -172,7 +204,7 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void OnAssistantToolCalls_WithoutReasoning_NoBlock()
         {
-            _store.OnAssistantToolCalls(AssistantWithTools("", OneToolCall("call_1", "Note", "{}"), 200L), 200L, 4);
+            _store.OnAssistantToolCalls(AssistantWithTools("", OneToolCall("call_1", "Note", "{}"), 200L), 4);
             Assert.Empty(_store.GetBlocks());
         }
 
@@ -182,12 +214,12 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void OnToolResult_PairedByCallId_AppendsToolCard()
         {
-            _store.OnAssistantToolCalls(AssistantWithTools("", OneToolCall("call_1", "note.set", "{\"k\":1}"), 200L), 200L, 4);
-            _store.OnToolResult(ToolResult("call_1", "note.set", "已写入", 300L), 300L, 5);
+            _store.OnAssistantToolCalls(AssistantWithTools("", OneToolCall("call_1", "note.set", "{\"k\":1}"), 200L), 4);
+            _store.OnToolResult(ToolResult("call_1", "note.set", "已写入", 300L), 5, -1);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("toolcard", blocks[0].RenderType);
-            Assert.Equal(5, blocks[0].MsgIndex);
+            Assert.Equal(5, blocks[0].Origin.MsgIndex);
             JsonElement payload = ParsePayload(blocks[0]);
             Assert.Equal("note.set", payload.GetProperty("name").GetString());
             Assert.Equal("{\"k\":1}", payload.GetProperty("arguments").GetString());
@@ -196,12 +228,22 @@ namespace CatHome4.Core.Tests
             Assert.Equal(1, payload.GetProperty("toolIndex").GetInt32());
             Assert.Equal(1, payload.GetProperty("toolTotal").GetInt32());
         }
+        /// <summary>工具卡载荷带执行序注记——视图块字段与实时推送同源取表（重建路径不再丢前端徽标）</summary>
+        [Fact]
+        public void OnToolResult_CarriesOrderFromTable()
+        {
+            _store.OnAssistantToolCalls(AssistantWithTools("", OneToolCall("call_1", "cs-patch", "{}"), 200L), 4);
+            _store.OnToolResult(ToolResult("call_1", "cs-patch", "结果", 300L), 5, -1);
+            CH4.ViewBlock[] blocks = _store.GetBlocks();
+            Assert.Single(blocks);
+            Assert.Equal(CH4.ToolOrderTable.OrderText("cs-patch"), ParsePayload(blocks[0]).GetProperty("order").GetString());
+        }
 
         /// <summary>孤立工具结果——无声明配对则丢弃（视图容错，不产块）</summary>
         [Fact]
         public void OnToolResult_Orphan_Dropped()
         {
-            _store.OnToolResult(ToolResult("call_x", "note.set", "结果", 300L), 300L, 5);
+            _store.OnToolResult(ToolResult("call_x", "note.set", "结果", 300L), 5, -1);
             Assert.Empty(_store.GetBlocks());
         }
 
@@ -210,9 +252,9 @@ namespace CatHome4.Core.Tests
         public void OnToolResult_ConcurrentBatch_CarriesIndexAndTotal()
         {
             string batch = TwoToolCalls("call_1", "note.set", "call_2", "time");
-            _store.OnAssistantToolCalls(AssistantWithTools("", batch, 200L), 200L, 4);
-            _store.OnToolResult(ToolResult("call_1", "note.set", "甲", 300L), 300L, 5);
-            _store.OnToolResult(ToolResult("call_2", "time", "乙", 301L), 301L, 6);
+            _store.OnAssistantToolCalls(AssistantWithTools("", batch, 200L), 4);
+            _store.OnToolResult(ToolResult("call_1", "note.set", "甲", 300L), 5, -1);
+            _store.OnToolResult(ToolResult("call_2", "time", "乙", 301L), 6, -1);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Equal(2, blocks.Length);
             Assert.Equal(1, ParsePayload(blocks[0]).GetProperty("toolIndex").GetInt32());
@@ -225,8 +267,8 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void OnToolResult_EmptyDeclaredName_FallsBackToMessageToolName()
         {
-            _store.OnAssistantToolCalls(AssistantWithTools("", OneToolCall("call_1", "", "{}"), 200L), 200L, 4);
-            _store.OnToolResult(ToolResult("call_1", "fallback.name", "结果", 300L), 300L, 5);
+            _store.OnAssistantToolCalls(AssistantWithTools("", OneToolCall("call_1", "", "{}"), 200L), 4);
+            _store.OnToolResult(ToolResult("call_1", "fallback.name", "结果", 300L), 5, -1);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("fallback.name", ParsePayload(blocks[0]).GetProperty("name").GetString());
@@ -236,16 +278,16 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void OnAssistantToolCalls_BrokenJson_RegistersNothing()
         {
-            _store.OnAssistantToolCalls(AssistantWithTools("", "not-json", 200L), 200L, 4);
-            _store.OnToolResult(ToolResult("call_1", "note.set", "结果", 300L), 300L, 5);
+            _store.OnAssistantToolCalls(AssistantWithTools("", "not-json", 200L), 4);
+            _store.OnToolResult(ToolResult("call_1", "note.set", "结果", 300L), 5, -1);
             Assert.Empty(_store.GetBlocks());
         }
 
-        // ── 重建 ────────────────────────────────────────────────────
+        // ── 事件直落与载入 ──────────────────────────────────────────
 
-        /// <summary>重建——跳过 system，user / assistant / tool 三类按 CreatedAt 重放并携带真实前文索引</summary>
+        /// <summary>事件重放——跳过 system，user / assistant / tool 三类按消息序生成块并携带前文来源索引</summary>
         [Fact]
-        public void Rebuild_SkipsSystem_ReplaysAllRoles()
+        public void Replay_SkipsSystem_AppendsAllRoles()
         {
             LlmMessage[] messages = new LlmMessage[]
             {
@@ -255,50 +297,104 @@ namespace CatHome4.Core.Tests
                 ToolResult("call_1", "note.set", "结果", 300L),
                 Assistant("回复", 400L)
             };
-            _store.Rebuild(messages);
+            ReplayAll(_store, messages);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Equal(3, blocks.Length);
             Assert.Equal("user", blocks[0].RenderType);
-            Assert.Equal(1, blocks[0].MsgIndex);
+            Assert.Equal(1, blocks[0].Origin.MsgIndex);
             Assert.Equal("toolcard", blocks[1].RenderType);
-            Assert.Equal(3, blocks[1].MsgIndex);
+            Assert.Equal(3, blocks[1].Origin.MsgIndex);
             Assert.Equal("text", blocks[2].RenderType);
-            Assert.Equal(4, blocks[2].MsgIndex);
+            Assert.Equal(4, blocks[2].Origin.MsgIndex);
+            // A156 块契约——前文派生块：src=front / state=final / 键带前文坐标 / 自哈希 ID 已定稿
+            Assert.Equal("front", blocks[0].Src);
+            Assert.Equal("final", blocks[0].State);
+            Assert.Equal("msg:1:user", blocks[0].Key);
+            Assert.Equal(64, blocks[0].Id.Length);
         }
 
-        /// <summary>重建——完全重置消息块（真实前文绝对可用；增量块不留残余）</summary>
+        /// <summary>移出块不随载入复活——timeback 回收后从块序移除 + 落盘，重新载入以文件为准（前文不动：tool_calls 须配对）</summary>
         [Fact]
-        public void Rebuild_ResetsMessageBlocks()
+        public void Load_AfterVoid_MovedBlocksDoNotReturn()
         {
-            _store.OnUserMessage(User("旧", 100L), 100L, 0);
-            _store.Rebuild(new LlmMessage[] { SystemMsg("系统", 10L) });
-            Assert.Empty(_store.GetBlocks());
+            LlmMessage[] messages = new LlmMessage[]
+            {
+                        User("问题", 100L),
+                        AssistantWithTools("", OneToolCall("call_1", "text-read", "{}"), 200L),
+                        ToolResult("call_1", "text-read", "内容", 300L),
+                        Assistant("回复", 400L)
+            };
+            ReplayAll(_store, messages);
+            Assert.Equal(3, _store.GetBlocks().Length);
+            // 前文不动（tool_calls 须配对）——仅视图层移出（用户消息 + sibling 工具卡）
+            int moved = _store.ConvertRangeToVoid(0, 2, "");
+            Assert.Equal(2, moved);
+            // 废弃段留档——hashes 必须是 JSON 数组（片段值须走 Raw 包裹，否则落成转义字符串）
+            CH4.ViewBlock[] afterMove = _store.GetBlocks();
+            Assert.Equal(2, afterMove.Length);
+            JsonElement voidPayload = ParsePayload(afterMove[0]);
+            JsonElement hashesEl = voidPayload.GetProperty("hashes");
+            Assert.Equal(JsonValueKind.Array, hashesEl.ValueKind);
+            Assert.Equal(2, hashesEl.GetArrayLength());
+            // A156：载入以落盘文件为准——已移出块不复活（旧架构靠重建重放 + 哈希过滤，本版不再重建）
+            CH4.SessionViewStore reloaded = new CH4.SessionViewStore(_path);
+            reloaded.Load();
+            CH4.ViewBlock[] blocks = reloaded.GetBlocks();
+            Assert.Equal(2, blocks.Length);
+            Assert.Equal("void", blocks[0].RenderType);
+            Assert.Equal("text", blocks[1].RenderType);
+            Assert.Equal("回复", ParsePayload(blocks[1]).GetProperty("content").GetString());
         }
 
-        /// <summary>重建——非前文派生块（gap / roundsum / error / retry）与注入报告不受重建影响</summary>
+        /// <summary>载入——文件缺失即为空视图（不从前文重建：旧数据不迁移）</summary>
         [Fact]
-        public void Rebuild_KeepsNonMessageBlocks()
+        public void Load_MissingFile_EmptyView()
+        {
+            _store.OnUserMessage(User("旧", 100L), 0);
+            CH4.SessionViewStore fresh = new CH4.SessionViewStore(Path.Combine(_dir, "absent.view.json"));
+            fresh.Load();
+            Assert.Empty(fresh.GetBlocks());
+            Assert.Single(_store.GetBlocks());
+        }
+
+        /// <summary>独立块不受消息重放影响（gap / roundsum / error / retry / 注入报告均为 independent）</summary>
+        [Fact]
+        public void Replay_KeepsIndependentBlocks()
         {
             _store.AppendGapText("间隙", 110L);
             _store.AppendRoundSummary("{\"type\":\"roundsum\"}", 120L);
             _store.AppendError("ERR|TEST|坏", 130L);
-            _store.UpsertRetry("{\"state\":\"wait\"}", 140L, -1);
+            _store.AppendRetry("{\"state\":\"wait\"}", 140L);
             _store.SetInjectReport("{\"file\":\"a.md\"}");
-            _store.Rebuild(new LlmMessage[] { SystemMsg("系统", 10L) });
+            ReplayAll(_store, new LlmMessage[] { SystemMsg("系统", 10L) });
             CH4.ViewBlock[] blocks = _store.GetBlocks();
-            // 四类辅助块 + 合成首块（注入报告）
+            // 四类独立块 + 合成首块（注入报告）
             Assert.Equal(5, blocks.Length);
             Assert.Equal("inject_report", blocks[0].RenderType);
+            Assert.Equal("independent", blocks[1].Src);
         }
 
-        /// <summary>重建——块时间戳取消息 CreatedAt（真实时序权威）</summary>
+        /// <summary>事件重放——块时间戳取消息 CreatedAt（消息块创建时刻）</summary>
         [Fact]
-        public void Rebuild_BlockTimestamp_UsesMessageCreatedAt()
+        public void Replay_BlockTimestamp_UsesMessageCreatedAt()
         {
-            _store.Rebuild(new LlmMessage[] { User("问题", 777L) });
+            ReplayAll(_store, new LlmMessage[] { User("问题", 777L) });
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal(777L, blocks[0].Timestamp);
+        }
+
+        /// <summary>时间戳单调化——同刻多块由写入侧补差，保证块序 = 时间戳序（A156 I5）</summary>
+        [Fact]
+        public void Replay_SameTimestamp_MonotonicAdjusted()
+        {
+            _store.OnUserMessage(User("甲", 100L), 0);
+            _store.OnUserMessage(User("乙", 100L), 1);
+            _store.OnUserMessage(User("丙", 100L), 2);
+            CH4.ViewBlock[] blocks = _store.GetBlocks();
+            Assert.Equal(100L, blocks[0].Timestamp);
+            Assert.Equal(101L, blocks[1].Timestamp);
+            Assert.Equal(102L, blocks[2].Timestamp);
         }
 
         // ── 归并与合成块 ────────────────────────────────────────────
@@ -307,10 +403,10 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void GetBlocks_MergesByTimestampAscending()
         {
+            _store.OnUserMessage(User("问题", 100L), 0);
             _store.AppendGapText("间隙", 150L);
-            _store.AppendRoundSummary("{\"type\":\"roundsum\"}", 250L);
-            _store.OnUserMessage(User("问题", 100L), 100L, 0);
             _store.AppendError("ERR|TEST|坏", 200L);
+            _store.AppendRoundSummary("{\"type\":\"roundsum\"}", 250L);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Equal(4, blocks.Length);
             Assert.Equal(100L, blocks[0].Timestamp);
@@ -323,14 +419,14 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void GetBlocks_InjectReport_PrependsSyntheticBlock()
         {
-            _store.OnUserMessage(User("问题", 100L), 100L, 0);
+            _store.OnUserMessage(User("问题", 100L), 0);
             _store.SetInjectReport("{\"file\":\"a.md\"}");
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Equal(2, blocks.Length);
             Assert.Equal("inject_report", blocks[0].RenderType);
-            Assert.Equal("inject_report", blocks[0].Hash);
+            Assert.Equal("inject_report", blocks[0].Key);
+            Assert.Null(blocks[0].Origin);
             Assert.Equal(0L, blocks[0].Timestamp);
-            Assert.Equal(-1, blocks[0].MsgIndex);
             Assert.Equal("{\"file\":\"a.md\"}", blocks[0].Payload);
         }
 
@@ -340,7 +436,7 @@ namespace CatHome4.Core.Tests
         {
             _store.SetInjectReport("{\"file\":\"a.md\"}");
             _store.SetInjectReport("");
-            _store.OnUserMessage(User("问题", 100L), 100L, 0);
+            _store.OnUserMessage(User("问题", 100L), 0);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.NotEqual("inject_report", blocks[0].RenderType);
@@ -357,9 +453,9 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Equal(2, blocks.Length);
             Assert.Equal("roundsum", blocks[0].RenderType);
-            Assert.Equal("roundsum_0", blocks[0].Hash);
-            Assert.Equal("roundsum_1", blocks[1].Hash);
-            Assert.Equal(-1, blocks[0].MsgIndex);
+            Assert.Equal("roundsum:0", blocks[0].Key);
+            Assert.Equal("roundsum:1", blocks[1].Key);
+            Assert.Null(blocks[0].Origin);
             Assert.Equal("{\"type\":\"roundsum\"}", blocks[0].Payload);
         }
 
@@ -380,7 +476,7 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("text", blocks[0].RenderType);
-            Assert.Equal(-1, blocks[0].MsgIndex);
+            Assert.Null(blocks[0].Origin);
             Assert.Equal("我这就去查", ParsePayload(blocks[0]).GetProperty("content").GetString());
         }
 
@@ -406,39 +502,29 @@ namespace CatHome4.Core.Tests
             Assert.Equal("ERR|LLM|超时", payload.GetProperty("text").GetString());
         }
 
-        /// <summary>重试块——首次写入建块并返回索引 0</summary>
+        /// <summary>重试块——首次写入追加一块（只增不改）</summary>
         [Fact]
-        public void UpsertRetry_FirstCall_CreatesBlock()
+        public void AppendRetry_FirstCall_CreatesBlock()
         {
-            int index = _store.UpsertRetry("{\"state\":\"wait\"}", 300L, -1);
-            Assert.Equal(0, index);
+            _store.AppendRetry("{\"state\":\"wait\"}", 300L);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
             Assert.Equal("retry", blocks[0].RenderType);
-            Assert.Equal("retry_0", blocks[0].Hash);
+            Assert.Equal("retry:0", blocks[0].Key);
         }
 
-        /// <summary>重试块——同一序列原位更新（一块不堆叠，哈希与时间戳不变）</summary>
+        /// <summary>重试块——只增不改：重试中 / 结果各追加一块，不原位更新（莎 2026-10-02 红线）</summary>
         [Fact]
-        public void UpsertRetry_SameIndex_UpdatesInPlace()
+        public void AppendRetry_KeepsEveryState()
         {
-            int first = _store.UpsertRetry("{\"state\":\"wait\"}", 300L, -1);
-            int second = _store.UpsertRetry("{\"state\":\"resolved\"}", 500L, first);
-            Assert.Equal(first, second);
+            _store.AppendRetry("{\"state\":\"wait\"}", 300L);
+            _store.AppendRetry("{\"state\":\"resolved\"}", 500L);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
-            Assert.Single(blocks);
-            Assert.Equal("{\"state\":\"resolved\"}", blocks[0].Payload);
-            Assert.Equal(300L, blocks[0].Timestamp);
-        }
-
-        /// <summary>重试块——索引越界或为负则新建（防误覆盖既有块）</summary>
-        [Fact]
-        public void UpsertRetry_OutOfRange_CreatesNew()
-        {
-            _store.UpsertRetry("{\"state\":\"wait\"}", 300L, -1);
-            int index = _store.UpsertRetry("{\"state\":\"resolved\"}", 400L, 9);
-            Assert.Equal(1, index);
-            Assert.Equal(2, _store.GetBlocks().Length);
+            Assert.Equal(2, blocks.Length);
+            Assert.Equal("retry:0", blocks[0].Key);
+            Assert.Equal("retry:1", blocks[1].Key);
+            Assert.Equal("{\"state\":\"wait\"}", blocks[0].Payload);
+            Assert.Equal("{\"state\":\"resolved\"}", blocks[1].Payload);
         }
 
         // ── 清理语义 ────────────────────────────────────────────────
@@ -447,11 +533,11 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void Clear_RemovesAllIncludingInjectReport()
         {
-            _store.OnUserMessage(User("问题", 100L), 100L, 0);
+            _store.OnUserMessage(User("问题", 100L), 0);
             _store.AppendGapText("间隙", 110L);
             _store.AppendRoundSummary("{\"type\":\"roundsum\"}", 120L);
             _store.AppendError("ERR|TEST|坏", 130L);
-            _store.UpsertRetry("{\"state\":\"wait\"}", 140L, -1);
+            _store.AppendRetry("{\"state\":\"wait\"}", 140L);
             _store.SetInjectReport("{\"file\":\"a.md\"}");
             _store.Clear();
             Assert.Empty(_store.GetBlocks());
@@ -462,7 +548,7 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void ClearRoundSums_KeepsMessageAndGapBlocks()
         {
-            _store.OnUserMessage(User("问题", 100L), 100L, 0);
+            _store.OnUserMessage(User("问题", 100L), 0);
             _store.AppendGapText("间隙", 110L);
             _store.AppendRoundSummary("{\"type\":\"roundsum\"}", 120L);
             _store.ClearRoundSums();
@@ -491,11 +577,11 @@ namespace CatHome4.Core.Tests
             _store.AppendGapText("间隙", 110L);
             _store.AppendRoundSummary("{\"type\":\"roundsum\"}", 120L);
             _store.AppendError("ERR|TEST|坏", 130L);
-            _store.UpsertRetry("{\"state\":\"wait\"}", 140L, -1);
+            _store.AppendRetry("{\"state\":\"wait\"}", 140L);
             _store.SetInjectReport("{\"file\":\"a.md\"}");
             _store.Save();
             CH4.SessionViewStore reloaded = new CH4.SessionViewStore(_path);
-            reloaded.LoadInjectReport();
+            reloaded.Load();
             CH4.ViewBlock[] blocks = reloaded.GetBlocks();
             Assert.Equal(5, blocks.Length);
             Assert.Equal("inject_report", blocks[0].RenderType);
@@ -504,21 +590,21 @@ namespace CatHome4.Core.Tests
 
         /// <summary>加载——文件缺失时静默保持空报告（视图可重建，不阻断启动）</summary>
         [Fact]
-        public void LoadInjectReport_MissingFile_KeepsEmpty()
+        public void Load_MissingFile_KeepsEmpty()
         {
             CH4.SessionViewStore store = new CH4.SessionViewStore(Path.Combine(_dir, "absent.view.json"));
-            store.LoadInjectReport();
+            store.Load();
             Assert.Equal("", store.GetInjectReport());
             Assert.Empty(store.GetBlocks());
         }
 
         /// <summary>加载——文件损坏时静默降级（JSON 不可解析不抛异常）</summary>
         [Fact]
-        public void LoadInjectReport_BrokenFile_DegradesSilently()
+        public void Load_BrokenFile_DegradesSilently()
         {
             File.WriteAllText(_path, "{ broken");
             CH4.SessionViewStore store = new CH4.SessionViewStore(_path);
-            store.LoadInjectReport();
+            store.Load();
             Assert.Equal("", store.GetInjectReport());
         }
 
@@ -528,22 +614,22 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void ContentHash_Stable_AndContentSensitive()
         {
-            _store.OnUserMessage(User("甲", 100L), 100L, 0);
-            _store.OnUserMessage(User("甲", 100L), 101L, 1);
-            _store.OnUserMessage(User("乙", 100L), 102L, 2);
+            _store.OnUserMessage(User("甲", 100L), 0);
+            _store.OnUserMessage(User("甲", 100L), 1);
+            _store.OnUserMessage(User("乙", 100L), 2);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
-            Assert.Equal(blocks[0].Hash, blocks[1].Hash);
-            Assert.NotEqual(blocks[0].Hash, blocks[2].Hash);
+            Assert.Equal(blocks[0].Origin.Hash, blocks[1].Origin.Hash);
+            Assert.NotEqual(blocks[0].Origin.Hash, blocks[2].Origin.Hash);
         }
 
-        /// <summary>块 ID——时间戳:哈希（同内容不同时刻可区分）</summary>
+        /// <summary>块 ID——块自哈希（64 位十六进制；同内容不同键 / 时刻可区分，A156）</summary>
         [Fact]
-        public void BlockId_TimestampColonHash()
+        public void BlockId_SelfHash_UniquePerBlock()
         {
-            _store.OnUserMessage(User("甲", 100L), 100L, 0);
-            _store.OnUserMessage(User("甲", 100L), 200L, 1);
+            _store.OnUserMessage(User("甲", 100L), 0);
+            _store.OnUserMessage(User("甲", 100L), 1);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
-            Assert.Equal(blocks[0].Timestamp.ToString() + ":" + blocks[0].Hash, blocks[0].Id);
+            Assert.Equal(64, blocks[0].Id.Length);
             Assert.NotEqual(blocks[0].Id, blocks[1].Id);
         }
 
@@ -557,10 +643,10 @@ namespace CatHome4.Core.Tests
             Directory.CreateDirectory(sessionDir);
             string viewPath = Path.Combine(sessionDir, "cat_a.view.json");
             CH4.SessionViewStore store = new CH4.SessionViewStore(viewPath);
-            store.OnUserMessage(User("你好", 1000L), 1000L, 1);
-            store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2000L, 2);
-            store.OnToolResult(ToolResult("call_1", "Note", "工具结果", 3000L), 3000L, 3);
-            store.OnAssistantText(Assistant("正式回复", 4000L), 4000L, 4);
+            store.OnUserMessage(User("你好", 1000L), 1);
+            store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2);
+            store.OnToolResult(ToolResult("call_1", "Note", "工具结果", 3000L), 3, -1);
+            store.OnAssistantText(Assistant("正式回复", 4000L), 4);
             store.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{\"prompt\":100,\"completion\":50,\"cacheHit\":10,\"toolCount\":1,\"requests\":2,\"elapsedMs\":1234}}", 5000L);
             store.SetInjectReport("{\"files\":[{\"file\":\"CCBP:SOUL.md\",\"status\":\"ok\",\"chars\":12}],\"total\":1,\"ok\":1,\"missing\":0,\"failed\":0,\"toolGroups\":[{\"group\":\"TextCat\",\"tools\":[{\"name\":\"text-read\",\"desc\":\"读\"}]}]}");
             string path = store.ArchiveLegacy("cat_a", "小A");
@@ -620,8 +706,8 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void BuildKeyInfo_TrailingNonLegacyBlocks_NoRoundsums()
         {
-            _store.OnUserMessage(User("甲", 1000L), 1000L, 1);
-            _store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2000L, 2);
+            _store.OnUserMessage(User("甲", 1000L), 1);
+            _store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2);
             using (JsonDocument doc = JsonDocument.Parse(_store.BuildKeyInfo(200)))
             {
                 Assert.True(doc.RootElement.GetProperty("ok").GetBoolean());
@@ -637,8 +723,8 @@ namespace CatHome4.Core.Tests
             string sessionDir = Path.Combine(_dir, "sessions", "cat_e");
             Directory.CreateDirectory(sessionDir);
             CH4.SessionViewStore store = new CH4.SessionViewStore(Path.Combine(sessionDir, "cat_e.view.json"));
-            store.OnUserMessage(User("甲", 1000L), 1000L, 1);
-            store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2000L, 2);
+            store.OnUserMessage(User("甲", 1000L), 1);
+            store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2);
             string path = store.ArchiveLegacy("cat_e", "小E");
             Assert.True(File.Exists(path));
             Assert.Contains("甲", File.ReadAllText(path));
@@ -648,10 +734,10 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void BuildKeyInfo_FourPartsWithReportFirst()
         {
-            _store.OnUserMessage(User("问题一", 1000L), 1000L, 1);
-            _store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2000L, 2);
-            _store.OnToolResult(ToolResult("call_1", "Note", "工具结果", 3000L), 3000L, 3);
-            _store.OnAssistantText(Assistant("回复一", 4000L), 4000L, 4);
+            _store.OnUserMessage(User("问题一", 1000L), 1);
+            _store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2);
+            _store.OnToolResult(ToolResult("call_1", "Note", "工具结果", 3000L), 3, -1);
+            _store.OnAssistantText(Assistant("回复一", 4000L), 4);
             _store.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{\"prompt\":100,\"completion\":50,\"cacheHit\":10,\"toolCount\":1,\"requests\":2,\"elapsedMs\":1234}}", 5000L);
             _store.SetInjectReport("{\"files\":[{\"file\":\"CCBP:SOUL.md\",\"status\":\"ok\",\"chars\":12}],\"total\":1,\"ok\":1,\"missing\":0,\"failed\":0,\"toolGroups\":[]}");
             using (JsonDocument doc = JsonDocument.Parse(_store.BuildKeyInfo(200)))
@@ -693,9 +779,9 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void BuildKeyInfo_MaxKeepsTailWithAbsoluteIndex()
         {
-            _store.OnUserMessage(User("甲", 1000L), 1000L, 1);
-            _store.OnAssistantText(Assistant("乙", 2000L), 2000L, 2);
-            _store.OnUserMessage(User("丙", 3000L), 3000L, 3);
+            _store.OnUserMessage(User("甲", 1000L), 1);
+            _store.OnAssistantText(Assistant("乙", 2000L), 2);
+            _store.OnUserMessage(User("丙", 3000L), 3);
             using (JsonDocument doc = JsonDocument.Parse(_store.BuildKeyInfo(2)))
             {
                 JsonElement root = doc.RootElement;
@@ -714,7 +800,7 @@ namespace CatHome4.Core.Tests
         public void BuildKeyInfo_LongContent_TruncatedWithRealChars()
         {
             string big = new string('字', 8100);
-            _store.OnUserMessage(User(big, 1000L), 1000L, 1);
+            _store.OnUserMessage(User(big, 1000L), 1);
             using (JsonDocument doc = JsonDocument.Parse(_store.BuildKeyInfo(200)))
             {
                 JsonElement item = doc.RootElement.GetProperty("items")[0];

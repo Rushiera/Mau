@@ -142,6 +142,24 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
+        /// 独占档——cs-* 写操作与工程构建落 2，每次调用各自成批（杜绝「预检读全项目」与「同批写文件」撞车，
+        /// 以及并发编译抢同工程产物目录）。
+        /// </summary>
+        [Fact]
+        public void ExclusiveToolsRankTwo()
+        {
+            Assert.Equal(2, CH4.ToolOrderTable.Resolve("cs-patch"));
+            Assert.Equal(2, CH4.ToolOrderTable.Resolve("cs-member"));
+            Assert.Equal(2, CH4.ToolOrderTable.Resolve("cs-comment"));
+            Assert.Equal(2, CH4.ToolOrderTable.Resolve("cs-format"));
+            Assert.Equal(2, CH4.ToolOrderTable.Resolve("cs-build"));
+            Assert.True(CH4.ToolOrderTable.IsExclusive("cs-patch"));
+            Assert.True(CH4.ToolOrderTable.IsExclusive("cs-build"));
+            Assert.False(CH4.ToolOrderTable.IsExclusive("text-write"));
+            Assert.False(CH4.ToolOrderTable.IsExclusive("cs-read"));
+        }
+
+        /// <summary>
         /// 写入档——变更类工具落 1（后于默认档与只读档）。
         /// </summary>
         [Fact]
@@ -149,21 +167,20 @@ namespace CatHome4.Core.Tests
         {
             Assert.Equal(1, CH4.ToolOrderTable.Resolve("text-write"));
             Assert.Equal(1, CH4.ToolOrderTable.Resolve("file-delete"));
-            Assert.Equal(1, CH4.ToolOrderTable.Resolve("cs-patch"));
+            Assert.Equal(1, CH4.ToolOrderTable.Resolve("text-replace"));
             Assert.Equal(1, CH4.ToolOrderTable.Resolve("config-set"));
         }
 
         /// <summary>
-        /// 构建档——编译 / 执行 / 部署类工具落 2（最后）。
+        /// 构建档——执行 / 部署类工具落 3（最后；cs-build 归独占档 2，不在此列）。
         /// </summary>
         [Fact]
         public void BuildToolsRankTwo()
         {
-            Assert.Equal(2, CH4.ToolOrderTable.Resolve("cs-build"));
-            Assert.Equal(2, CH4.ToolOrderTable.Resolve("mau-proj"));
-            Assert.Equal(2, CH4.ToolOrderTable.Resolve("powershell"));
-            Assert.Equal(2, CH4.ToolOrderTable.Resolve("host-reload"));
-            Assert.Equal(2, CH4.ToolOrderTable.Resolve("mau-setup"));
+            Assert.Equal(3, CH4.ToolOrderTable.Resolve("mau-proj"));
+            Assert.Equal(3, CH4.ToolOrderTable.Resolve("powershell"));
+            Assert.Equal(3, CH4.ToolOrderTable.Resolve("host-reload"));
+            Assert.Equal(3, CH4.ToolOrderTable.Resolve("mau-setup"));
         }
 
         /// <summary>
@@ -264,7 +281,7 @@ namespace CatHome4.Core.Tests
 
         /// <summary>
         /// 批间串行——LLM 声明序与 order 序相反时按 order 分桶执行（宿主直执出口可观测）。
-        /// 声明序 [host-reload(2), host-flows(-1)] → 执行序应为 [host-flows, host-reload]；
+        /// 声明序 [host-reload(3), host-flows(-1)] → 执行序应为 [host-flows, host-reload]；
         /// 未分批实现会按声明序执行（host-reload 先），故本用例对「分批」有鉴别力。
         /// </summary>
         [Fact]
@@ -287,7 +304,7 @@ namespace CatHome4.Core.Tests
 
         /// <summary>
         /// 单批情形——同 order 的工具按批一次派发（顺序仍由 order 决定，不因声明序改写）。
-        /// 声明序 [host-reload, host-reload] 同批（order 2）→ 执行序保持声明序（批内按声明序、批末直执）。
+        /// 声明序 [host-reload, host-reload] 同批（order 3）→ 执行序保持声明序（批内按声明序、批末直执）。
         /// </summary>
         [Fact]
         public void SameOrderFormsSingleBatch()
@@ -306,6 +323,55 @@ namespace CatHome4.Core.Tests
             Assert.Equal(2, execLog.Count);
             Assert.Equal("host-flows", execLog[0]);
             Assert.Equal("host-reload", execLog[1]);
+        }
+
+        /// <summary>
+        /// 分批计划——独占档每次调用各自成批（A144 核心判据）。
+        /// ① [cs-patch, text-write, cs-patch]：写入档 1 先于独占档 2；两个 cs-patch 各自成批 → 3 批（声明序被序值改写）。
+        /// ② [cs-build, cs-build]：同名两次调用也各自成批 → 2 批（静态档位值解不了这一格）。
+        /// ③ 对照组 [text-write, text-replace]：非独占同序工具仍同批 → 1 批。
+        /// </summary>
+        [Fact]
+        public void PlanBatchesIsolatesExclusiveTools()
+        {
+            List<string> names = new List<string>();
+            names.Add("cs-patch");
+            names.Add("text-write");
+            names.Add("cs-patch");
+            List<int> orders = new List<int>();
+            for (int i = 0; i < names.Count; i = i + 1)
+            {
+                orders.Add(CH4.ToolOrderTable.Resolve(names[i]));
+            }
+            List<List<int>> plan = CH4.ToolOrderTable.PlanBatches(names, orders);
+            Assert.Equal(3, plan.Count);
+            Assert.Single(plan[0]);
+            Assert.Equal(1, plan[0][0]);
+            Assert.Single(plan[1]);
+            Assert.Equal(0, plan[1][0]);
+            Assert.Single(plan[2]);
+            Assert.Equal(2, plan[2][0]);
+
+            List<string> twins = new List<string>();
+            twins.Add("cs-build");
+            twins.Add("cs-build");
+            List<int> twinsOrders = new List<int>();
+            twinsOrders.Add(CH4.ToolOrderTable.Resolve("cs-build"));
+            twinsOrders.Add(CH4.ToolOrderTable.Resolve("cs-build"));
+            List<List<int>> twinsPlan = CH4.ToolOrderTable.PlanBatches(twins, twinsOrders);
+            Assert.Equal(2, twinsPlan.Count);
+            Assert.Single(twinsPlan[0]);
+            Assert.Single(twinsPlan[1]);
+
+            List<string> plain = new List<string>();
+            plain.Add("text-write");
+            plain.Add("text-replace");
+            List<int> plainOrders = new List<int>();
+            plainOrders.Add(CH4.ToolOrderTable.Resolve("text-write"));
+            plainOrders.Add(CH4.ToolOrderTable.Resolve("text-replace"));
+            List<List<int>> plainPlan = CH4.ToolOrderTable.PlanBatches(plain, plainOrders);
+            Assert.Single(plainPlan);
+            Assert.Equal(2, plainPlan[0].Count);
         }
     }
 }

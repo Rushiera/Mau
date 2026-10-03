@@ -68,12 +68,7 @@ namespace CH4
                 return;
             }
             AppendMessage(injected.Value);
-            _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
-            if (_httpHost != null)
-            {
-                string userJson = JsonUtil.Object(("content", text), ("source", "systemauto"));
-                _httpHost.PushView("user", userJson, -1, 0);
-            }
+            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
             LogStore.Add("CatHome4", 1, "图片注入：本批 " + paths.Count.ToString() + " 张（首张 " + paths[0] + "）", "IMAGE");
             NoteTimebackEvent();
         }

@@ -95,7 +95,7 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void Apply_ChineseMessage_Unchanged()
         {
-            string line = "ERR|OA_TIMEOUT|工单超时无人认领: text-grep";
+            string line = "ERR|OA_TIMEOUT|工单超时（时限内无回执）: text-grep——超时 ≠ 终止：只失去回执，宿主不中断已认领的执行";
             Assert.Equal(line, ErrorNote.Apply(line));
         }
 

@@ -80,11 +80,8 @@ namespace CH4
         /// <summary>本轮是否发生过重试——首个 Text/Reasoning 到达时回填 retry 视图 resolved（S2 §8.4）</summary>
         private bool _sawRetry;
 
-        /// <summary>retry 气泡视图序号——多次重试复用同一气泡（replaceSeq 替换不堆叠）</summary>
-        private long _retrySeq;
-
-        /// <summary>retry 视图块索引——同一重试序列原位更新落盘块（-1=无块；轮终复位）</summary>
-        private int _retryBlockIndex = -1;
+        /// <summary>本轮是否推过 retry 视图——错误中止措辞分档判据（A158：取代视图出口在途序号；轮终复位）</summary>
+        private bool _retryPushed;
 
         /// <summary>retry 气泡原文快照——最近一次重试的尝试序号（A86：resolved 保留报错信息）</summary>
         private string _retryAttempt = "";
@@ -412,11 +409,7 @@ namespace CH4
         private void PushApiRoleView(string role, string reason)
         {
             string payload = "{\"state\":\"failover\",\"role\":" + JsonUtil.Serialize(role) + ",\"text\":" + JsonUtil.Serialize(reason) + "}";
-            _viewStore.UpsertRetry(payload, ViewTimestamp(), -1);
-            if (_httpHost != null)
-            {
-                _httpHost.PushView("retry", payload, -1, 0);
-            }
+            _viewStore.AppendRetry(payload, ViewTimestamp());
         }
 
         /// <summary>
@@ -469,8 +462,8 @@ namespace CH4
             }
         }
 
-        /// <summary>HTTP 外观层——SSE 转发面（Bootstrap 段6 宿主 HTTP 启动后 Attach 赋值——构造时宿主 HTTP 未启动）</summary>
-        private IHostPush _httpHost;
+        /// <summary>会话视图出口——实时区序号与全部视图 SSE 直推（Bootstrap 段6 宿主 HTTP 启动后 Attach 注入）</summary>
+        private readonly ViewBus _viewBus = new ViewBus();
 
         /// <summary>环境信息提供器——info 内置工具数据源（入口壳注入；空=工具返回不可用）</summary>
         private Func<string> _envInfoProvider;
@@ -521,7 +514,6 @@ namespace CH4
             _llmReasoning = "";
             _llmToolCallsJson = "";
             _llmErrorText = "";
-            _httpHost = null;
         }
 
         /// <summary>真实前文末条消息——append 后取最近一条生成视图块（F4 视图钩子）</summary>
@@ -537,12 +529,31 @@ namespace CH4
             return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         }
 
-        /// <summary>重建视图层——从真实前文完全重置（启动恢复后调用；真实前文绝对可用）</summary>
-        public void RebuildView()
+        /// <summary>
+        /// 载入视图层——读回持久块与独立块（A156：载入即权威，不再从前文重建）。
+        /// 载入后检出待补标记 → 顶尾补差（视图写失败 / 中断留下的尾部缺口）+ 对账抽样哨兵。
+        /// </summary>
+        public void LoadView()
         {
-            _viewStore.Rebuild(_context.GetMessages());
-            // 注入报告——启动恢复时从 view.json 读回（非真实前文派生；Rebuild 不重建）
-            _viewStore.LoadInjectReport();
+            _viewStore.Load();
+            int added = 0;
+            if (System.IO.File.Exists(_viewStore.PendingGapPath()))
+            {
+                added = _viewStore.AppendTailMissing(_context.GetMessages());
+                try
+                {
+                    System.IO.File.Delete(_viewStore.PendingGapPath());
+                }
+                catch (Exception ex)
+                {
+                    LogStore.Add("CatHome4", 2, "待补标记清除失败: " + ex.Message, "SYS");
+                }
+                if (added > 0)
+                {
+                    LogStore.Add("CatHome4", 3, "视图顶尾补差：" + added.ToString() + " 块（上次保存失败留下的尾部缺口）", "SYS");
+                }
+            }
+            _viewStore.AuditOrigins(_context.GetMessages(), 5);
         }
         /// <summary>
         /// 旧会话留档——session.new 清空前导出（A87：user 消息 / 正式回复 / 注入报告 / 每轮结算 → sessions_old 下 MD 文件）。
@@ -706,11 +717,9 @@ namespace CH4
         /// </summary>
         public void PushSessionReset()
         {
-            if (_httpHost != null)
-            {
-                string resetJson = "{\"type\":\"session_reset\"}";
-                _httpHost.PushView("control", resetJson, -1, 0);
-            }
+            string resetJson = "{\"type\":\"session_reset\"}";
+            _viewBus.ResetLive();
+            _viewBus.PushControl(resetJson);
         }
 
         /// <summary>
@@ -832,11 +841,11 @@ namespace CH4
         {
             return _viewStore.GetBlocks();
         }
-
-        /// <summary>块序代际号——A142 增量续传锚（前端重连时带回比对前缀有效性）</summary>
-        public int GetViewGen()
+        /// <summary>取流式区块快照——history 全量载荷随带（期三：前端重连 / 刷新忠实重建流式区）。</summary>
+        /// <returns>流式区块数组（按时间戳升序）</returns>
+        public ViewBlock[] GetLiveBlocks()
         {
-            return _viewStore.GetBlockGen();
+            return _viewBus.GetLiveBlocks();
         }
 
         /// <summary>会话唯一 ID——构造注入 = 猫 key（唯一标识；无独立"会话身份"层）</summary>
@@ -1032,12 +1041,13 @@ namespace CH4
         }
 
         /// <summary>
-        /// 附加 HTTP 外观层——Bootstrap 段6 宿主 HTTP 启动后调用（SSE 转发面就位）。
+        /// 附加宿主推送面——Bootstrap 段6 宿主 HTTP 启动后调用（转交视图出口；SSE 转发面就位）。
         /// </summary>
         /// <param name="host">HTTP 外观层实例</param>
         public void AttachHost(IHostPush host)
         {
-            _httpHost = host;
+            _viewBus.Attach(host);
+            _viewStore.OnBlockAppended = _viewBus.PushPersist;
         }
 
         /// <summary>
@@ -1139,7 +1149,7 @@ namespace CH4
             LogStore.Add("LLM", 2, "本轮运行态统计（中断）: " + BuildRunStateSummary(), "LLM");
             // [段3] 视图序号复位——流式容器由前端 seal（已显示内容保留）；思考段经唯一出口收口
             SealReasonStream();
-            _textStreamSeq = 0;
+            _viewBus.ResetTextStream();
             ResetRetryView();
             // [段4] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——中断非正常完成语义）
             _round = 0;
@@ -1155,10 +1165,7 @@ namespace CH4
             _streamClosedRetry = false;
             SetChatState("idle");
             // [段5] 前端通知——control 事件（seal + 按钮复位）
-            if (_httpHost != null)
-            {
-                _httpHost.PushView("control", ctrlJson, -1, 0);
-            }
+            _viewBus.PushControl(ctrlJson);
         }
 
         /// <summary>
@@ -1259,12 +1266,7 @@ namespace CH4
             }
             string notice = sb.ToString();
             AppendMessage(_context.AddUserMessage(notice));
-            _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
-            if (_httpHost != null)
-            {
-                string userJson = JsonUtil.Object(("content", notice), ("source", "systemauto"));
-                _httpHost.PushView("user", userJson, -1, 0);
-            }
+            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
             LogStore.Add("CatHome4", 1, "sleep 作废（等待被提前启动打断）: cat=" + _catKey + " | 销毁 " + killed.Length.ToString() + " 条 | 触发来源 " + triggerSource, "DELAY");
         }
 
@@ -1335,11 +1337,8 @@ namespace CH4
                     _continueRequested = true;
                     string autoText = "端点切换后自动继续（" + _autoContinueCount.ToString() + "/" + AutoContinueMax.ToString() + "）——延迟重发";
                     LogStore.Add("LLM", 1, autoText, "LLM");
-                    if (_httpHost != null)
-                    {
-                        string autoJson = JsonUtil.Object(("type", "autocontinue"), ("text", autoText));
-                        _httpHost.PushView("control", autoJson, -1, 0);
-                    }
+                    string autoJson = JsonUtil.Object(("type", "autocontinue"), ("text", autoText));
+                    _viewBus.PushControl(autoJson);
                     return;
                 }
                 if (_pending.Count > 0)
@@ -1421,13 +1420,7 @@ namespace CH4
             _autoContinueCount = 0;
             _autoContinueDueTick = 0;
             AppendMessage(_context.AddUserMessage(content));
-            _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
-            // 单向数据流改造——所有进内核的消息统一出口：SSE user 事件（前端只画不判）
-            if (_httpHost != null)
-            {
-                string userJson = JsonUtil.Object(("content", content), ("source", source));
-                _httpHost.PushView("user", userJson, -1, 0);
-            }
+            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
             SetChatState("working");
             LaunchLlm();
         }
@@ -1488,33 +1481,24 @@ namespace CH4
             return JsonUtil.Object(("state", state), ("attempt", _retryAttempt), ("max", _retryMax), ("text", _retryReason));
         }
         /// <summary>
-        /// retry 视图推送统一出口（A94）——构造载荷 + 原位落盘 + 推事件：
-        /// retrying 新建气泡（replaceSeq=-1，返回序号存 _retrySeq）；resolved / failed 替换既有气泡（replaceSeq=_retrySeq）。
+        /// retry 视图推送统一出口（A94；A158 期三改「只增不改」）——构造载荷 + 落盘追加块（推送由建块事件驱动）：
+        /// retrying / resolved / failed 各推一块——不做原位更新（持久区只增不改，前端只追加渲染）。
         /// </summary>
         /// <param name="state">状态（retrying / resolved / failed）</param>
         private void PushRetryView(string state)
         {
             string json = BuildRetryViewJson(state);
-            _retryBlockIndex = _viewStore.UpsertRetry(json, ViewTimestamp(), _retryBlockIndex);
-            if (_httpHost == null)
-            {
-                return;
-            }
-            if (state == "retrying")
-            {
-                _retrySeq = _httpHost.PushView("retry", json, -1, _retrySeq);
-                return;
-            }
-            _httpHost.PushView("retry", json, _retrySeq, 0);
+            long ts = ViewTimestamp();
+            _retryPushed = true;
+            _viewStore.AppendRetry(json, ts);
         }
         /// <summary>
-        /// 重试视图态清零（A94 单一出口）——气泡序号 / 落盘块索引 / 原文三元组 / 待回填标志；
-        /// 轮终（正常 / 中断 / 错误中止）统一调用，防跨轮残留污染（旧原因被复用 / 陈旧序号替换错气泡）。
+        /// 重试视图态清零（A94 单一出口）——在途标志 / 原文三元组 / 待回填标志；
+        /// 轮终（正常 / 中断 / 错误中止）统一调用，防跨轮污染。
         /// </summary>
         private void ResetRetryView()
         {
-            _retrySeq = 0;
-            _retryBlockIndex = -1;
+            _retryPushed = false;
             _retryAttempt = "";
             _retryMax = "";
             _retryReason = "";
@@ -1545,12 +1529,9 @@ namespace CH4
                         text.Append(ev.Text);
                         // 运行态——Text 增量到达即回复态（远端·流；长度由远端决定）
                         PhaseEnter(PhaseReply);
-                        // P6 外观层转发——LLM 增量实时推送 SSE（协议 §4.2 llm 事件）
-                        if (_httpHost != null)
-                        {
-                            string streamTextJson = JsonUtil.Object(("kind", "text"), ("text", ev.Text));
-                            _textStreamSeq = _httpHost.PushView("stream", streamTextJson, -1, _textStreamSeq);
-                        }
+                        // P6 外观层转发——LLM 增量实时推送 SSE（view stream 块；实时区不落盘）
+                        string streamTextJson = JsonUtil.Object(("kind", "text"), ("text", ev.Text));
+                        _viewBus.PushTextStream(streamTextJson);
                     }
                     else if (ev.Kind == LlmStreamKind.Reasoning)
                     {
@@ -1563,11 +1544,8 @@ namespace CH4
                         _reasonAccum.Append(ev.Text);
                         // 运行态——Reasoning 增量到达即思考态（远端·流；长度由远端决定）
                         PhaseEnter(PhaseThink);
-                        if (_httpHost != null)
-                        {
-                            string streamReasonJson = JsonUtil.Object(("kind", "reasoning"), ("text", ev.Text));
-                            _reasonStreamSeq = _httpHost.PushView("stream", streamReasonJson, -1, _reasonStreamSeq);
-                        }
+                        string streamReasonJson = JsonUtil.Object(("kind", "reasoning"), ("text", ev.Text));
+                        _viewBus.PushReasonStream(streamReasonJson);
                     }
                     else if (ev.Kind == LlmStreamKind.ToolCalls)
                     {
@@ -1647,27 +1625,22 @@ namespace CH4
                         _sessionPrompt = _sessionPrompt + (_usagePrompt - reqPrompt);
                         _sessionCompletion = _sessionCompletion + (_usageCompletion - reqCompletion);
                         _sessionCacheHit = _sessionCacheHit + (_usageCacheHit - reqCacheHit);
-                        if (_httpHost != null)
-                        {
-                            string usageJson = JsonUtil.Object(
-                                ("prompt", _usagePrompt),
-                                ("completion", _usageCompletion),
-                                ("cacheHit", _usageCacheHit),
-                                ("context", _contextTokens),
-                                ("count", _context.GetMessageCount()),
-                                ("sessionPrompt", _sessionPrompt),
-                                ("sessionCompletion", _sessionCompletion),
-                                ("sessionCacheHit", _sessionCacheHit));
-                            string usageCtrl = JsonUtil.Object(("type", "usage"), ("data", JsonUtil.Raw(usageJson)));
-                            _httpHost.PushView("control", usageCtrl, -1, 0);
-                        }
+                        // F4 视图——usage 控制块（前端前文长度与条数实时化）
+                        string usageJson = JsonUtil.Object(
+                            ("prompt", _usagePrompt),
+                            ("completion", _usageCompletion),
+                            ("cacheHit", _usageCacheHit),
+                            ("context", _contextTokens),
+                            ("count", _context.GetMessageCount()),
+                            ("sessionPrompt", _sessionPrompt),
+                            ("sessionCompletion", _sessionCompletion),
+                            ("sessionCacheHit", _sessionCacheHit));
+                        string usageCtrl = JsonUtil.Object(("type", "usage"), ("data", JsonUtil.Raw(usageJson)));
+                        _viewBus.PushControl(usageCtrl);
                     }
                     else if (ev.Kind == LlmStreamKind.Done)
                     {
-                        if (_httpHost != null)
-                        {
-                            // F4 视图——done 由整块 replace 表达（流式结束不单独推事件）
-                        }
+                        // F4 视图——done 由整块 replace 表达（流式结束不单独推事件；无需推送）
                     }
                     else if (ev.Kind == LlmStreamKind.Failover)
                     {
@@ -1755,23 +1728,14 @@ namespace CH4
             }
         }
         /// <summary>
-        /// 思考段终结——离开 think 态的唯一收口（莎 2026-09-22 定）：流式思考块转整块（replaceSeq 命中流式容器）+ 序号复位。
-        /// 幂等——无在途思考流式（序号 0 或内容空）时静默返回。调用面：PhaseEnter 离开 think 态 + 中止/暂停收尾。
+        /// 思考段终结——离开 think 态的唯一收口（莎 2026-09-22 定）：撤下流式思考容器（live.remove）。
+        /// A158 期三：思考内容由持久区流容器承载（PushReasonStream 落块 + live.update），本方法只负责撤场——
+        /// 前端见 live.remove 即撤临时气泡，持久块换手由持久区推送完成。
+        /// 幂等——无在途容器时零动作。调用面：PhaseEnter 离开 think 态 + 中止/暂停收尾。
         /// </summary>
         private void SealReasonStream()
         {
-            long seq = _reasonStreamSeq;
-            _reasonStreamSeq = 0;
-            string content = _reasonAccum.ToString();
-            if (seq == 0 || content.Length == 0)
-            {
-                return;
-            }
-            if (_httpHost != null)
-            {
-                string reasonJson = JsonUtil.Object(("content", content));
-                _httpHost.PushView("reason", reasonJson, seq, 0);
-            }
+            _viewBus.ResetReasonStream();
         }
 
         /// <summary>运行态切换——结算旧态累计毫秒 + 进入新态（七态：idle/wait/link/think/tool/run/reply；锁内）；同态连续计时（重复事件不重置起表）；idle 不计时——只作态名。</summary>
@@ -1930,6 +1894,23 @@ namespace CH4
                     ("reply", ms["reply"])))),
                 ("requests", requests));
         }
+        /// <summary>视图全量载荷——A162 状态推送（连接建立首帧取一次；宿主 HTTP 侧注入）</summary>
+        /// <returns>载荷 JSON（{"op":"full","blocks":[…] }）</returns>
+        public string BuildViewFullJson()
+        {
+            return _viewBus.BuildFull();
+        }
+        /// <summary>视图增量载荷——A162 状态推送（帧轮取；变更集为空返回 null）</summary>
+        /// <returns>载荷 JSON（{"op":"delta",…}）或 null</returns>
+        public string TakeViewDeltaJson()
+        {
+            string json;
+            if (_viewBus.TryTakeDelta(out json))
+            {
+                return json;
+            }
+            return null;
+        }
 
         /// <summary>构建 roundsum 载荷——本轮 Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 六态用时（idle 不计时故不入载荷；CloseRound 推送/落盘数据源）+ done（本轮结束语义：stream=流式自然收尾 / tool=工具主动 done）。</summary>
         /// <returns>roundsum 视图载荷 JSON（{"type":"roundsum","data":{...}}）</returns>
@@ -2084,25 +2065,15 @@ namespace CH4
                 // 纯文本回复——本轮完成
                 AppendMessage(_context.AddAssistantMessage(_llmResultText));
                 NoteTimebackEvent();
-                _viewStore.OnAssistantText(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
-                if (_httpHost != null)
-                {
-                    string textJson = JsonUtil.Object(("content", _llmResultText), ("msgIndex", _context.GetMessageCount() - 1));
-                    _httpHost.PushView("text", textJson, _textStreamSeq, 0);
-                }
-                _textStreamSeq = 0;
-                _reasonStreamSeq = 0;
-                // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + user 事件 + 直接开新轮（跳过 Done/CloseRound）
+                _viewStore.OnAssistantText(LastMessage(), _context.GetMessageCount() - 1);
+                _viewBus.ResetTextStream();
+                _viewBus.ResetReasonStream();
+                // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + 直接开新轮（跳过 Done/CloseRound）
                 if (_pending.Count > 0)
                 {
                     PendingMessage next = _pending.Dequeue();
                     AppendMessage(_context.AddUserMessage(next.Content));
-                    _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
-                    if (_httpHost != null)
-                    {
-                        string userJson = JsonUtil.Object(("content", next.Content), ("source", next.Source));
-                        _httpHost.PushView("user", userJson, -1, 0);
-                    }
+                    _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
                     _round = 0;
                     LaunchLlm();
                     return;
@@ -2115,29 +2086,25 @@ namespace CH4
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
             AppendMessage(_context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning));
             NoteTimebackEvent();
-            _viewStore.OnAssistantToolCalls(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
+            _viewStore.OnAssistantToolCalls(LastMessage(), _context.GetMessageCount() - 1);
             // 思考段整块——由 SealReasonStream 在离开 think 态时统一推送（工具决策流首帧即收口；唯一出口，莎 2026-09-22 定）
             // 工具轮 seal——视图层补 gap text 块（全量外观真源：前端历史/QQBot 转发消费）+ SSE 推送（实时）；空文本不推
             if (_llmResultText.Length > 0)
             {
-                _viewStore.AppendGapText(_llmResultText, ViewTimestamp());
-                if (_httpHost != null)
-                {
-                    string sealTextJson = JsonUtil.Object(("content", _llmResultText), ("msgIndex", -1));
-                    _httpHost.PushView("text", sealTextJson, _textStreamSeq, 0);
-                }
+                long gapTs = ViewTimestamp();
+                _viewStore.AppendGapText(_llmResultText, gapTs);
             }
             // 思考段整块——先于工具先行卡推送（实时序对齐视图块生成序：assistant 思考块在工具卡之前）；
             // 判例 2026-09-29：此前直接清序（不推整块），实时面仅剩前端 live 块，F5 重建后 think 块与工具卡换位
             SealReasonStream();
-            _textStreamSeq = 0;
+            _viewBus.ResetTextStream();
             // 工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即出"进行中"卡；完成 / 中断时以同序号原位替换
             List<ToolCallInfo> toolCalls = ParseToolCalls(_llmToolCallsJson);
-            Dictionary<string, long> cardSeqs = PushToolCardPending(toolCalls);
+            PushToolCardPending(toolCalls, LastMessage().CreatedAt);
             // 运行态——发单即执行态（本地·程序过程：工具批到下一请求发出；长度由本地决定）
             PhaseEnter(PhaseRun);
             SetChatState("tools");
-            EnterToolBatch(_llmToolCallsJson, cardSeqs);
+            EnterToolBatch(_llmToolCallsJson);
         }
         /// <summary>
         /// 工具调用条目——tool_calls JSON 解析产物（先行推卡消费；字段与 OpenAI wire 对齐）。
@@ -2216,15 +2183,14 @@ namespace CH4
             return list;
         }
 
-        /// <summary>工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即推“进行中”卡（无 result 字段 → 前端 ⏳ 处理中）；工具完成 / 中断时以同序号 replaceSeq 原位替换（A128 起完成由 FlushToolCard 逐条回填，中断由 PushToolCardFinal 补终态）。声明面外工具不推卡（拦截是即时的——只在完成时出 ERR 卡）。</summary>
+        /// <summary>工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即推“进行中”卡（无 result 字段 → 前端 ⏳ 处理中）；工具完成 / 中断时以同块键原位替换（A128 起完成由 FlushToolCard 逐条回填，中断由 PushToolCardFinal 补终态）。声明面外工具不推卡（拦截是即时的——只在完成时出 ERR 卡）。A157：块键 = tool:&lt;toolCallId&gt;（与持久块同键），时间戳取工具调用声明时刻。</summary>
         /// <param name="calls">工具调用条目（ParseToolCalls 产物）</param>
-        /// <returns>tool_call_id → 先行卡视图序号（空=无推送通道 / 无可推工具）</returns>
-        private Dictionary<string, long> PushToolCardPending(List<ToolCallInfo> calls)
+        /// <param name="declaredTs">声明时刻（Unix 毫秒——工具调用消息 CreatedAt，与持久块同基点）</param>
+        private void PushToolCardPending(List<ToolCallInfo> calls, long declaredTs)
         {
-            Dictionary<string, long> seqs = new Dictionary<string, long>(StringComparer.Ordinal);
-            if (_httpHost == null)
+            if (!_viewBus.Ready)
             {
-                return seqs;
+                return;
             }
             for (int i = 0; i < calls.Count; i = i + 1)
             {
@@ -2233,26 +2199,25 @@ namespace CH4
                 {
                     continue;
                 }
-                string json = JsonUtil.Object(
-                    ("name", call.Name),
-                    ("arguments", InjectCatId(call.Arguments)),
-                    ("toolIndex", call.Index),
-                    ("toolTotal", call.Total),
-                    ("order", ToolOrderTable.OrderText(call.Name)));
-                long seq = _httpHost.PushView("toolcard", json, -1, 0);
-                seqs[call.Id] = seq;
+                Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(call.Name, InjectCatId(call.Arguments), null, call.Index, call.Total);
+                string json = JsonUtil.Serialize(payload);
+                _viewBus.PushToolCardPending("tool:" + call.Id, json, declaredTs);
             }
-            return seqs;
         }
 
-        /// <summary>工具卡终态补推——中断收尾（中止 / 宿主重启）时先行卡补终态：已完成 → 完整卡；未完成 → 已中止卡。无先行卡（CardSeq &lt; 0）或已由 FlushToolCard（A128 逐条回填）终结不推——防重复卡。</summary>
+        /// <summary>工具卡终态补推——中断收尾（中止 / 宿主重启）时先行卡补终态：已完成 → 完整卡；未完成 → 已中止卡。无在途先行卡或已定稿（FlushToolCard 逐条回填）不推——防重复卡（A158：判据取流式区键存在性 + 区内块定稿状态）。</summary>
         /// <param name="dog">工具单</param>
         /// <param name="index">并发序号（1-based）</param>
         /// <param name="total">并发总数</param>
         /// <param name="done">true=已完成（结果保留）；false=未完成（本轮中止）</param>
         private void PushToolCardFinal(ToolOrderDog dog, int index, int total, bool done)
         {
-            if (_httpHost == null || dog.CardSeq < 0)
+            if (!_viewBus.Ready)
+            {
+                return;
+            }
+            string key = "tool:" + dog.ToolCallId;
+            if (!_viewBus.IsToolCardPending(key) || _viewBus.IsToolCardFinaled(key))
             {
                 return;
             }
@@ -2267,19 +2232,11 @@ namespace CH4
             }
             // A69 视图层报错中文注释——真实前文保持原文
             result = ErrorNote.Apply(result);
-            string json = JsonUtil.Object(
-                ("name", dog.Name),
-                ("arguments", dog.ArgsJson),
-                ("result", result),
-                ("toolIndex", index),
-                ("toolTotal", total),
-                ("order", ToolOrderTable.OrderText(dog.Name)));
-            _httpHost.PushView("toolcard", json, dog.CardSeq, 0);
-            dog.CardSeq = -1;
+            Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, result, index, total);
+            string json = JsonUtil.Serialize(payload);
+            _viewBus.PushToolCardDone(key, json, dog.ElapsedMs());
         }
-        /// <summary>工具卡终态哨兵——FlushToolCard 推过终态后置此值（区别于 -1 = 无先行卡、需新建推送）。</summary>
-        private const long ToolCardSeqDone = -2;
-        /// <summary>工具卡逐条回填（A128）——单工具完成即定稿结果并推送终态卡（有先行卡 → 原位替换；无先行卡如声明面拦截 → 新建），不再等整批收口。幂等：已推过终态（CardSeq = ToolCardSeqDone）不重推；结果定稿（超时 / 空结果兜底）在推送前完成。前文消息与持久视图块仍由段3 按声明序统一落位——实时面序（先行卡位）与持久块序不分叉。</summary>
+        /// <summary>工具卡逐条回填（A128）——单工具完成即定稿结果并推送终态卡（有先行卡 → 原位替换；无先行卡如声明面拦截 → 新建），不再等整批收口。幂等：同一工具单终态卡至多一次（A157 由视图出口的定稿记录承担——不再用 dog 标志）；结果定稿（超时 / 空结果兜底）在推送前完成。前文消息与持久视图块仍由段3 按声明序统一落位——实时面序（先行卡位）与持久块序不分叉。</summary>
         /// <param name="dog">工具单</param>
         private void FlushToolCard(ToolOrderDog dog)
         {
@@ -2287,15 +2244,15 @@ namespace CH4
             {
                 if (dog.IsTimedOut)
                 {
-                    LogStore.Add("CatHome4", 2, "工具 " + dog.Name + " 工单 #" + dog.OfficeId + " 超时（无人认领）——诚实 ERR", "TOOL");
-                    dog.Result = "ERR|OA_TIMEOUT|工单超时无人认领: " + dog.Name;
+                    LogStore.Add("CatHome4", 2, "工具 " + dog.Name + " 工单 #" + dog.OfficeId + " 超时（时限内无回执）——诚实 ERR；超时 ≠ 终止：底层执行可能仍在跑", "TOOL");
+                    dog.Result = "ERR|OA_TIMEOUT|工单超时（时限内无回执）: " + dog.Name + "——超时 ≠ 终止：只失去回执，宿主不中断已认领的执行，底层可能仍在跑；勿用同参数重试（可能重复执行），长任务请分片（拆成多次小批）或走断点续传";
                 }
                 else
                 {
                     dog.Result = "ERR|EMPTY_RESULT|工具执行无结果";
                 }
             }
-            if (_httpHost == null || dog.CardSeq == ToolCardSeqDone)
+            if (!_viewBus.Ready)
             {
                 return;
             }
@@ -2307,23 +2264,16 @@ namespace CH4
             }
             // A69 视图层报错中文注释——真实前文（dog.Result）保持原文
             string viewResult = ErrorNote.Apply(dog.Result);
-            string toolJson = JsonUtil.Object(
-                ("name", dog.Name),
-                ("arguments", dog.ArgsJson),
-                ("result", viewResult),
-                ("toolIndex", index + 1),
-                ("toolTotal", _dogs.Count),
-                ("order", ToolOrderTable.OrderText(dog.Name)));
-            _httpHost.PushView("toolcard", toolJson, dog.CardSeq, 0);
-            dog.CardSeq = ToolCardSeqDone;
+            Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, viewResult, index + 1, _dogs.Count);
+            string toolJson = JsonUtil.Serialize(payload);
+            _viewBus.PushToolCardDone("tool:" + dog.ToolCallId, toolJson, dog.ElapsedMs());
         }
 
         /// <summary>
         /// StartToolBatch 动作段——解析 tool_calls → OA 发单（host-* 延迟直执登记 / 普通工单 Post / Post 失败诚实 ERR）→ ToolBatchRunning。解析失败 = 空批（allDone 立即成立——等价原 try-catch 跳过语义：续轮保持）。
         /// </summary>
         /// <param name="toolCallsJson">tool_calls JSON 数组</param>
-        /// <param name="cardSeqs">tool_call_id → 先行"进行中"卡视图序号（PushToolCardPending 产物；缺省 -1=无先行卡）</param>
-        private void EnterToolBatch(string toolCallsJson, Dictionary<string, long> cardSeqs)
+        private void EnterToolBatch(string toolCallsJson)
         {
             _toolBatchActive = true;
             _dogs.Clear();
@@ -2374,8 +2324,6 @@ namespace CH4
             {
                 ToolCallInfo startCall = calls[startIndex];
                 ToolOrderDog preDog = new ToolOrderDog(startCall.Id, startCall.Name, InjectCatId(startCall.Arguments));
-                long startCardSeq;
-                preDog.CardSeq = cardSeqs.TryGetValue(startCall.Id, out startCardSeq) ? startCardSeq : -1;
                 if (!IsToolAllowed(startCall.Name))
                 {
                     preDog.Result = "ERR|TOOL_FORBIDDEN|工具不在当前授权面: " + startCall.Name;
@@ -2450,11 +2398,9 @@ namespace CH4
                 ToolOrderDog dog = new ToolOrderDog(call.Id, call.Name, arguments);
                 // A127——执行序裁决（参数相关：timeback 按 action 分走两端钉死值）
                 dog.Order = ToolOrderTable.Resolve(call.Name, call.Arguments);
-                long pendingCardSeq;
-                dog.CardSeq = cardSeqs.TryGetValue(call.Id, out pendingCardSeq) ? pendingCardSeq : -1;
                 _dogs.Add(dog);
             }
-            // [P3] 分批——按 order 值升序分桶（同值一批 · 批内声明序）+ 启动首批
+            // [P3] 分批——按 order 值升序分桶（同值一批 · 批内声明序；独占档每个调用各自成批）+ 启动首批
             // （A127：批间串行 / 批内并发；timeback start 已在 P1 前置，back 作为末批自然后置）
             BuildBatches();
             // A128——已闭合单（声明面拦截 / start 前置 / 批内重复调用）即刻出终态卡，不随批次推进延后
@@ -2472,15 +2418,16 @@ namespace CH4
             _phase = ChatPhase.ToolBatchRunning;
             _phaseFrames = 0;
         }
-        /// <summary>
-        /// 分批计划构建——按 order 值升序分桶（A127：同值一批 · 批内保持 LLM 声明序）。
-        /// 已闭合单（拦截 / start 前置执行）不入批——它们无待执行动作（由 _dogs 序承担回填与视图编号基准）。
-        /// </summary>
+        /// <summary>分批计划构建——规则单点实装 `ToolOrderTable.PlanBatches`：按 order 值升序分桶（A127：同值一批 · 批内保持 LLM 声明序），**独占档工具每次调用各自成批**（A144：cs-* 预检写与 cs-build 不与任何工具同批）。
+        /// 已闭合单（拦截 / start 前置执行）不入批——它们无待执行动作（由 _dogs 序承担回填与视图编号基准）。</summary>
         private void BuildBatches()
         {
             _batches.Clear();
             _batchIndex = -1;
-            List<int> values = new List<int>();
+            // 批次规则单点实装 → ToolOrderTable.PlanBatches（同值一批 · 值升序 · 批内保持声明序；独占档每次调用各自成批）
+            List<ToolOrderDog> open = new List<ToolOrderDog>();
+            List<string> names = new List<string>();
+            List<int> orders = new List<int>();
             for (int i = 0; i < _dogs.Count; i = i + 1)
             {
                 ToolOrderDog dog = _dogs[i];
@@ -2488,26 +2435,18 @@ namespace CH4
                 {
                     continue;
                 }
-                if (!values.Contains(dog.Order))
-                {
-                    values.Add(dog.Order);
-                }
+                open.Add(dog);
+                names.Add(dog.Name);
+                orders.Add(dog.Order);
             }
-            values.Sort();
-            for (int v = 0; v < values.Count; v = v + 1)
+            List<List<int>> plan = ToolOrderTable.PlanBatches(names, orders);
+            for (int p = 0; p < plan.Count; p = p + 1)
             {
                 List<ToolOrderDog> batch = new List<ToolOrderDog>();
-                for (int i = 0; i < _dogs.Count; i = i + 1)
+                List<int> indexes = plan[p];
+                for (int k = 0; k < indexes.Count; k = k + 1)
                 {
-                    ToolOrderDog dog = _dogs[i];
-                    if (dog.IsClosed)
-                    {
-                        continue;
-                    }
-                    if (dog.Order == values[v])
-                    {
-                        batch.Add(dog);
-                    }
+                    batch.Add(open[indexes[k]]);
                 }
                 _batches.Add(batch);
             }
@@ -2530,6 +2469,8 @@ namespace CH4
                 {
                     continue;
                 }
+                // A157——运行时长起表（工具卡时长基准：批派发时刻 → 完成时刻）
+                dog.StartedAtMs = ViewTimestamp();
                 if (dog.Name.StartsWith("host-", StringComparison.Ordinal))
                 {
                     // host-* 延迟直执登记——本批末尾执行（顺序保证：同批构建类工具先完成产物落地）
@@ -2713,7 +2654,7 @@ namespace CH4
                 AppendMessage(_context.AddToolResult(dog.ToolCallId, dog.Name, dog.Result));
                 NoteTimebackEvent();
                 NoteTimebackWrite(dog.Name, dog.ArgsJson, dog.Result);
-                _viewStore.OnToolResult(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
+                _viewStore.OnToolResult(LastMessage(), _context.GetMessageCount() - 1, dog.ElapsedMs());
             }
             _toolBatchActive = false;
             // [段2d-0] 图片注入——本批 image-inject 登记合并为一条 user 注入消息（落在作用域区间内：back 回收时一并删除）
@@ -2740,17 +2681,12 @@ namespace CH4
             }
             // A72——停机态丢弃在途排队消息（宿主即将重启，不再开新轮）
             DropPendingIfRestarting();
-            // 单向数据流改造——忙时插话：工具批完成有排队消息 → 插入 Ctx + user 事件 + 直接续轮（工具结果 + 插话同轮可见）
+            // 单向数据流改造——忙时插话：工具批完成有排队消息 → 插入 Ctx + 直接续轮（工具结果 + 插话同轮可见）
             if (_pending.Count > 0)
             {
                 PendingMessage next = _pending.Dequeue();
                 AppendMessage(_context.AddUserMessage(next.Content));
-                _viewStore.OnUserMessage(LastMessage(), ViewTimestamp(), _context.GetMessageCount() - 1);
-                if (_httpHost != null)
-                {
-                    string userJson = JsonUtil.Object(("content", next.Content), ("source", next.Source));
-                    _httpHost.PushView("user", userJson, -1, 0);
-                }
+                _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
                 _round = 0;
                 LaunchLlm();
                 return;
@@ -2763,14 +2699,14 @@ namespace CH4
         private void AbortRoundError()
         {
             SealReasonStream();
-            _textStreamSeq = 0;
+            _viewBus.ResetTextStream();
             // 运行态——中止前结算当前态（失败轮同出统计：L2 摘要留档；不推 roundsum 气泡——中止非正常完成语义）
             PhaseSettle();
             LogStore.Add("LLM", 2, "本轮运行态统计（中止）: " + BuildRunStateSummary(), "LLM");
             // 失败措辞如实分档（2026-09-30）——重试型（Runtime 对 429/5xx/传输类有限重试后）与本轮从未重试的单次失败
-            // （4xx 参数/额度类——Runtime 不重试）不可混称「重试耗尽」；判据 = 本轮是否推过 retry 视图（_retrySeq）
+            // （4xx 参数/额度类——Runtime 不重试）不可混称「重试耗尽」；判据 = 本轮是否推过 retry 视图（视图出口在途标志）
             string abortKind;
-            if (_retrySeq != 0)
+            if (_retryPushed)
             {
                 abortKind = "重试耗尽";
             }
@@ -2786,14 +2722,10 @@ namespace CH4
             // [段2] 错误可见——视图块落盘（持久化）+ 前端 error 事件（文本取清空前原值）
             // A69 视图层报错中文注释——错误原文仍进日志与前文面，仅视图块追加中文注释
             string viewError = ErrorNote.Apply(_llmErrorText);
-            _viewStore.AppendError(viewError, ViewTimestamp());
-            if (_httpHost != null)
-            {
-                string errJson = JsonUtil.Object(("type", "error"), ("text", viewError));
-                _httpHost.PushView("error", errJson, -1, 0);
-            }
+            long errTs = ViewTimestamp();
+            _viewStore.AppendError(viewError, errTs);
             // [段3] 重试耗尽终态（A94——本轮推过 retry 气泡则补 failed 终态，保留报错原文；最终错误详情仍归 error 气泡）
-            if (_retrySeq != 0)
+            if (_retryPushed)
             {
                 PushRetryView("failed");
             }
@@ -2851,11 +2783,8 @@ namespace CH4
             // roundsum 轮末统计——相位结算 + 载荷构建（Appender 内落盘）+ SSE 推送（本轮 Token 消耗 + 工具次数 + 总耗时 + 四态用时）
             PhaseSettle();
             string roundsumJson = BuildRoundSumJson();
-            _viewStore.AppendRoundSummary(roundsumJson, ViewTimestamp());
-            if (_httpHost != null)
-            {
-                _httpHost.PushView("roundsum", roundsumJson, -1, 0);
-            }
+            long sumTs = ViewTimestamp();
+            _viewStore.AppendRoundSummary(roundsumJson, sumTs);
             // 完整前文采集入口 4——停工（本轮收尾）强制采集一次：尾部不再依赖 30 秒节流或端点读取兜底
             if (_fullCtx != null)
             {
@@ -2864,19 +2793,16 @@ namespace CH4
             SetChatState("idle");
             // B4 对话区：会话终态事件——前端定型（llm done 仅一轮结束；chatdone 才是整次会话结束；count = 原始消息数——实时同步状态区）
             // E3 扩展——chatdone 带真实 usage（命中/非命中/输出/前文长度；前端状态栏同步显示）
-            if (_httpHost != null)
-            {
-                string statsJson = JsonUtil.Object(
-                    ("prompt", _usagePrompt),
-                    ("cacheHit", _usageCacheHit),
-                    ("completion", _usageCompletion),
-                    ("context", _contextTokens),
-                    ("sessionPrompt", _sessionPrompt),
-                    ("sessionCompletion", _sessionCompletion),
-                    ("sessionCacheHit", _sessionCacheHit));
-                string doneJson = JsonUtil.Object(("type", "chatdone"), ("count", _context.GetMessages().Length), ("stats", JsonUtil.Raw(statsJson)));
-                _httpHost.PushView("control", doneJson, -1, 0);
-            }
+            string statsJson = JsonUtil.Object(
+                ("prompt", _usagePrompt),
+                ("cacheHit", _usageCacheHit),
+                ("completion", _usageCompletion),
+                ("context", _contextTokens),
+                ("sessionPrompt", _sessionPrompt),
+                ("sessionCompletion", _sessionCompletion),
+                ("sessionCacheHit", _sessionCacheHit));
+            string doneJson = JsonUtil.Object(("type", "chatdone"), ("count", _context.GetMessages().Length), ("stats", JsonUtil.Raw(statsJson)));
+            _viewBus.PushControl(doneJson);
             // Q 本轮结束系统通知——配置 app.round_notify 可开关（默认开启）；正文优先末轮回复前 40 字符，空则回退 Token 统计
             if (_roundNotify != null)
             {
@@ -2948,7 +2874,7 @@ namespace CH4
 
         /// <summary>
         /// 回滚——从指定正式回复节点重新开始（P6b：裁剪唯一通道；该节点后消息全部丢弃）。
-        /// 校验：仅 Idle；msgIndex 指向 assistant 正式回复（Content>0——工具声明轮天然排除）。执行：截断上下文 → 落盘 → 统计/视图/Note 复位 → 视图重建 → session_reset 推送。
+        /// 校验：仅 Idle；msgIndex 指向 assistant 正式回复（Content>0——工具声明轮天然排除）。执行：截断上下文 → 落盘 → 统计/视图截断/Note 复位 → session_reset 推送。
         /// </summary>
         /// <param name="msgIndex">真实前文消息索引（指向 assistant 正式回复——前端 text 块 MsgIndex）</param>
         /// <returns>ERR| 前缀失败 / 成功摘要</returns>
@@ -2973,8 +2899,9 @@ namespace CH4
             // [段2] 最近轮统计重置——新起点零统计起算（会话级累计不动：回滚属同会话延续；
             //        原实现调 ResetStats() 会清会话级 token 累计——与 glossary「回滚不归零」口径冲突，2026-09-28 修正）
             _lastStats = new SessionStats();
-            // [段4] 视图——从新前文完全重建 + roundsum 清空（roundsum 非真实前文派生；RebuildView 的 LoadInjectReport 会读回旧 view.json 统计——重建后清空并落盘，防下次启动读回）
-            RebuildView();
+            // [段4] 视图——截断到切点（A156：不再从前文重建；两面并列，裁剪须显式同步）+ roundsum 清空
+            //        （roundsum 非真实前文派生；清空后落盘，防下次启动读回旧统计）
+            _viewStore.TruncateFrom(msgIndex + 1);
             _viewStore.ClearRoundSums();
             _viewStore.Save();
             // [段5] Note 任务清空——防旧任务自动拉起新轮

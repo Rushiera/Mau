@@ -358,6 +358,46 @@ namespace Mau.Runtime.Tests
                 Assert.Equal(TextReplaceStatus.Ok, re.Status);
                 Assert.Equal(3, re.Count);
                 Assert.Equal("V1 V2 V3", fs.ReadTextAuto(p));
+                // [段5b] regex 跨度记账（A146）——单行匹配：各 2 字符 / 合计 6 字符 / 1 行
+                Assert.Equal(1, re.MaxSpanLines);
+                Assert.Equal(2, re.MaxSpanChars);
+                Assert.Equal(6, re.TotalSpanChars);
+                Assert.False(re.SpanWarned);
+                // [段6] regex 跨行匹配——跨度按真实匹配记账（A146）
+                fs.WriteTextAuto(p, "头\n中一\n中二\n尾");
+                TextReplaceOutcome sp = fs.ReplaceTextAuto(p, "中一[\\s\\S]*?尾", "X", "regex");
+                Assert.Equal(TextReplaceStatus.Ok, sp.Status);
+                Assert.Equal(1, sp.Count);
+                Assert.Equal(3, sp.MaxSpanLines);
+                Assert.False(sp.SpanWarned);
+                // [段7] 单次匹配跨度超阈值 → 出声判据置位（A146）
+                fs.WriteTextAuto(p, "头\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n尾");
+                TextReplaceOutcome big = fs.ReplaceTextAuto(p, "头[\\s\\S]*?尾", "X", "regex");
+                Assert.Equal(TextReplaceStatus.Ok, big.Status);
+                Assert.True(big.MaxSpanLines >= 10);
+                Assert.True(big.SpanWarned);
+                // [段8] all 模式成功回执列命中行号（前 5 + 计数——A147）
+                fs.WriteTextAuto(p, "行一\n重复词\n行三\n重复词\n行五");
+                TextReplaceOutcome allMode = fs.ReplaceTextAuto(p, "重复词", "X", "all");
+                Assert.Equal(TextReplaceStatus.Ok, allMode.Status);
+                Assert.Equal(2, allMode.Count);
+                Assert.Equal(2, allMode.CandidateLines.Length);
+                Assert.Equal("2", allMode.CandidateLines[0]);
+                Assert.Equal("4", allMode.CandidateLines[1]);
+                // [段9] 写入风格描述——编码 + BOM / 换行（A148）
+                Assert.Equal("UTF-8 BOM / LF", fs.WriteTextAuto(p, "正文"));
+                Assert.Equal("UTF-8 BOM / CRLF", fs.WriteTextAuto(Path.Combine(rw, "doc.mau"), "正文"));
+                Assert.Equal("UTF-8 / LF", fs.WriteTextAuto(Path.Combine(rw, "note.txt"), "正文"));
+                Assert.Equal("UTF-8 / LF", fs.AppendTextAuto(Path.Combine(rw, "note.txt"), "续行"));
+                // [段10] 锚点未命中疑似实体写法出声（A149）
+                fs.WriteTextAuto(p, "存的是 &lt;PropertyGroup&gt; 实体形状");
+                TextReplaceOutcome ent = fs.ReplaceTextAuto(p, "<PropertyGroup>", "x", "exact");
+                Assert.Equal(TextReplaceStatus.NotFound, ent.Status);
+                Assert.True(ent.EntitySuspect);
+                fs.WriteTextAuto(p, "普通正文，无实体形态");
+                TextReplaceOutcome plain = fs.ReplaceTextAuto(p, "查无此串", "x", "exact");
+                Assert.Equal(TextReplaceStatus.NotFound, plain.Status);
+                Assert.False(plain.EntitySuspect);
             }
             finally
             {

@@ -313,7 +313,13 @@ function chatRenderVoid(p) {
     wrap.appendChild(det);
 }
 
-// A142 历史单块渲染——按 renderType 分派（历史重建与增量续传共用出口；语义与实时渲染一致）
+// 块的前文消息索引——A158 期三：前文来源判据（origin 关系字段；null / 缺字段 = 独立块不挂操作条）
+function chatBlockMsgIndex(blk) {
+    if (!blk || !blk.origin || typeof blk.origin.msgIndex !== 'number') { return -1; }
+    return blk.origin.msgIndex;
+}
+
+// 历史单块渲染——按 renderType 分派（持久块唯一渲染出口：历史重建与实时 persist.append 共用）
 function chatAppendHistoryBlock(blk) {
     var p = blk.payload || {};
     if (blk.renderType === 'user') {
@@ -329,6 +335,8 @@ function chatAppendHistoryBlock(blk) {
     } else if (blk.renderType === 'retry') {
         // S2 §8.4——历史重建：重试过程记录气泡（retry 块随 view.json 落盘；A55 改走渲染单例）
         chatRenderRetry(p);
+        // 端点切换提示——failover 态到达时刷新顶栏 [API:主要/备用] 标签（原 chatOnRetry 内逻辑迁移）
+        if (p && p.state === 'failover') { chatApiRoleRefresh(); }
     } else if (blk.renderType === 'error') {
         // A55——历史重建：LLM 错误气泡（error 块随 view.json 落盘；与实时事件共用渲染单例）
         chatRenderError(p.text || 'LLM 错误');
@@ -344,18 +352,15 @@ function chatAppendHistoryBlock(blk) {
         chatRenderVoid(p);
     } else if (blk.renderType === 'text') {
         // F3 MD 渲染——历史 text 块同样走解析器（与实时渲染一致）；md-block 包裹=CSS 作用域锚点
-        // P6b 节点操作条——msgIndex 顶层字段（视图块携带真实前文顺序；roundsum/inject_report=-1 不挂）
+        // P6b 节点操作条——前文来源判据（A158 期三：msgIndex 顶层字段退役，改读 origin）
         var cb = chatBubble('assistant');
         // A65——历史 text 块同走 chatMdFill（含包裹时先出缩略图组；无包裹与旧行为同构）
         chatMdFill(cb, p.content || '');
-        chatAppendNodeActions(cb, blk.msgIndex);
+        chatAppendNodeActions(cb, chatBlockMsgIndex(blk));
     }
 }
 
-// A142——历史分片渲染批大小（首批同步、后续批让出主线程——长会话重建不再冻结页面）
-var CHAT_HISTORY_CHUNK = 40;
-
-// A142 历史渲染收尾——头部信息行 + 滚动跟随（分片完成后调用）
+// A162 历史渲染收尾——头部信息行 + 滚动跟随
 function chatHistoryFinish(data) {
     // P9.3 会话归属动态化——SSE sessionId 随会话 ID（时间戳）变化；history 先于任何 view 事件到达（loading→idle 时序保证）
     // P20-P3-7 归属修正——渲染层不写全局状态：sessionId 随返回值交调用方（chat-core.chatLoadHistory）落库
@@ -371,26 +376,13 @@ function chatHistoryFinish(data) {
     if (typeof chatHistorySettled === 'function') { chatHistorySettled(); }
 }
 
-// A142 历史全量重建——清空 + 分片渲染（块数 ≤ 批次时同步完成，语义与旧实现等价）
+// A162 历史全量渲染——清空 + 一次性渲染（A142 分片让出主线程已退役：顶层数据流回归「拿到快照即绘制」）
 function chatRenderHistory(data) {
     // F4 视图块历史渲染——按 blocks[] renderType 分派（view 协议；无 messages[] 旧结构）
     chatMsgs.textContent = '';
     var blocks = data.blocks || [];
-    var total = blocks.length;
-    var i = 0;
-    function step() {
-        var end = i + CHAT_HISTORY_CHUNK;
-        if (end > total) { end = total; }
-        for (; i < end; i++) { chatAppendHistoryBlock(blocks[i]); }
-        if (i < total) {
-            // 重建进度可见（不静默）——长会话分片期间顶部提示
-            chatInfo.textContent = '重建中 ' + Math.floor(i * 100 / total) + '%';
-            setTimeout(step, 0);
-            return;
-        }
-        chatHistoryFinish(data);
-    }
-    step();
+    for (var i = 0; i < blocks.length; i++) { chatAppendHistoryBlock(blocks[i]); }
+    chatHistoryFinish(data);
     return data.sessionId || '';
 }
 

@@ -95,6 +95,15 @@ namespace CatHome4.Http
                 json = InjectSnapshotTitle(json, _pageTitle);
             }
             _snapshotCache = json;
+            // A162 状态推送——视图增量：有变化推 delta、无变化零字节（与运行态推送并列，各自独立判据）
+            if (_viewDeltaBuilder != null)
+            {
+                string delta = _viewDeltaBuilder();
+                if (delta != null && delta.Length > 0)
+                {
+                    PushEvent("view", delta);
+                }
+            }
             // 增量流式——只推变化段；无变化零推送（Idle 稳态静默）：对话端口推本猫运行态（sessionstate）、主端口推全局 patch、两者皆缺时回落全量快照
             if (_sessionStateBuilder != null)
             {
@@ -233,22 +242,6 @@ namespace CatHome4.Http
         {
             string frame = "{\"sessionId\":\"" + _sessionId + "\",\"state\":" + json + "}";
             PushEvent("note", frame);
-        }        /// <summary>
-                 /// 工具结果实时推送——宿主 ChatBridge ExecuteToolBatch 调用（B4 对话区：tool 事件）。
-                 /// 载荷与 history 视图同截断（参数 ≤200/结果 ≤300）；事件顺序 = 执行顺序 = toolCalls 数组顺序（前端 FIFO 配对）。
-                 /// </summary>
-                 /// <param name="name">工具名</param>
-                 /// <param name="arguments">参数摘要（≤200）</param>
-                 /// <param name="result">结果摘要（≤300；ERR 前缀失败）</param>
-        public void PushToolResult(string name, string arguments, string result)
-        {
-            var obj = new
-            {
-                name = name,
-                arguments = arguments,
-                result = result
-            };
-            PushEvent("tool", JsonUtil.Serialize(obj));
         }
 
         /// <summary>
@@ -267,87 +260,74 @@ namespace CatHome4.Http
         }
 
         /// <summary>
-        /// LLM 流式事件转发——宿主 ChatBridge 调用（协议 §4.2 llm 事件：seq 单调 + kind 五态 + sessionId 归属）。
-        /// sessionId：本实例归属会话（P9.3 多实例化——每猫 HttpHost 绑定自身会话；B4 归属性保持）。
+        /// 视图事件推送——视图出口统一 op 面（A158 期三：两区镜像）。
+        /// op 取值：persist.append（持久块建块即推）· live.add / live.update / live.remove（流式区镜像）
+        /// · control（瞬时事件面：usage / chatdone / paused / note / session_reset）。
         /// </summary>
-        /// <param name="kind">事件态——text/reasoning/toolCalls/done/error（直映 LlmStreamKind）</param>
-        /// <param name="text">增量文本或错误文本</param>
-        public void PushLlm(string kind, string text)
+        /// <param name="op">出口事件类型</param>
+        /// <param name="payload">载荷 JSON 字符串（内嵌对象；live.remove 为空串——不解析）</param>
+        /// <param name="meta">块元数据 JSON（A158 块字段：key / renderType / ts / durMs / state / id / src / origin——空串 = 不带）</param>
+        public void PushView(string op, string payload, string meta)
         {
-            // 先取自身序号（线性可用与广播推进并存——PushEvent 内部再递增；seq 单调即满足排序锚点语义）
-            int seq = Interlocked.Increment(ref _seq);
-            var obj = new
+            object payloadObj = "";
+            if (payload != null && payload.Length > 0)
             {
-                seq = seq,
-                kind = kind,
-                text = text,
-                sessionId = _sessionId
-            };
-            PushEvent("llm", JsonUtil.Serialize(obj));
+                try
+                {
+                    payloadObj = JsonSerializer.Deserialize<object>(payload);
+                    if (payloadObj == null)
+                    {
+                        payloadObj = "";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogStore.Add("CatHome4", 2, "视图载荷解析失败（按原文）: " + ex.Message, "TOOL");
+                    payloadObj = payload;
+                }
+            }
+            Dictionary<string, object> ev = new Dictionary<string, object>();
+            ev["op"] = op;
+            ev["payload"] = payloadObj;
+            MergeViewMeta(ev, meta);
+            PushEvent("view", JsonUtil.Serialize(ev));
         }
 
         /// <summary>
-        /// 用户消息事件——所有进内核的消息统一出口（单向数据流改造：前端气泡唯一来源）。
+        /// 块元数据并入视图事件（A157）——meta 是 JSON 对象串时逐键并入事件顶层（同名键以 meta 为准）。
+        /// 解析失败或非对象：出声并忽略——元数据缺失可见，不阻断事件推送。
         /// </summary>
-        /// <param name="text">消息文本</param>
-        /// <param name="source">来源——user/system</param>
-        public void PushUserMessage(string text, string source)
+        /// <param name="ev">视图事件字典</param>
+        /// <param name="meta">块元数据 JSON（空串 = 无）</param>
+        private static void MergeViewMeta(Dictionary<string, object> ev, string meta)
         {
-            int seq = Interlocked.Increment(ref _seq);
-            var obj = new
+            if (meta == null || meta.Length == 0)
             {
-                seq = seq,
-                source = source,
-                content = text,
-                sessionId = _sessionId
-            };
-            PushEvent("user", JsonUtil.Serialize(obj));
-        }
-
-        /// <summary>
-        /// 视图事件推送——F4 视图块统一出口（流式增量/整块/控制块；seq 全局单调）。
-        /// 载荷语义：seq = 全局单调序号（流式容器标识）；renderType = 前端渲染类型；
-        /// replaceSeq = 被替换块序号（流式→整块替换）；seqHint &gt; 0 时复用该序号（流式增量不递增）。
-        /// </summary>
-        /// <param name="renderType">渲染类型——stream/user/text/reason/toolcard/control</param>
-        /// <param name="payload">载荷 JSON 字符串（内嵌对象）</param>
-        /// <param name="replaceSeq">被替换块序号（-1=无替换）</param>
-        /// <param name="seqHint">流式增量带已分配序号（&gt;0 不递增；≤0 分配新序号）</param>
-        /// <returns>事件序号</returns>
-        public int PushView(string renderType, string payload, long replaceSeq, long seqHint)
-        {
-            int seq;
-            if (seqHint > 0)
-            {
-                seq = (int)seqHint;
+                return;
             }
-            else
-            {
-                seq = Interlocked.Increment(ref _seq);
-            }
-            object payloadObj;
             try
             {
-                payloadObj = JsonSerializer.Deserialize<object>(payload);
-                if (payloadObj == null)
+                using (JsonDocument doc = JsonUtil.ParseStrict(meta))
                 {
-                    payloadObj = "";
+                    JsonElement root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                    {
+                        LogStore.Add("CatHome4", 2, "视图块元数据非对象——已忽略: " + meta, "TOOL");
+                        return;
+                    }
+                    foreach (JsonProperty prop in root.EnumerateObject())
+                    {
+                        // Clone——值节点独立于 JsonDocument：using 结束释放 doc 后仍可序列化。
+                        // 未 Clone 的 JsonElement 逃出作用域 → 序列化时 ObjectDisposedException
+                        // （2026-10-02 判例：视图事件推送即崩，exit 0xE0434352）
+                        ev[prop.Name] = prop.Value.Clone();
+                    }
                 }
             }
             catch (Exception ex)
             {
-                LogStore.Add("CatHome4", 2, "工具载荷解析失败（按原文）: " + ex.Message, "TOOL");
-                payloadObj = payload;
+                LogStore.Add("CatHome4", 2, "视图块元数据解析失败（已忽略）: " + ex.Message, "TOOL");
             }
-            var obj = new
-            {
-                seq = seq,
-                renderType = renderType,
-                payload = payloadObj,
-                replaceSeq = replaceSeq
-            };
-            PushEvent("view", JsonUtil.Serialize(obj));
-            return seq;
         }
     }
 }

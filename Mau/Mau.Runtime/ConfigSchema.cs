@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 
 namespace Mau.Runtime
@@ -73,6 +74,14 @@ namespace Mau.Runtime
         /// schema 条目表——按键查询（Ordinal）
         /// </summary>
         private readonly Dictionary<string, Item> _items;
+        /// <summary>
+        /// 运行副本路径——Load 时记录（如 Data/config/schema.json；声明通道据此写回）
+        /// </summary>
+        public string SourcePath = "";
+        /// <summary>
+        /// schema 模板路径——宿主 Bootstrap 注入（如 config/schema.json.example）；声明通道同时改写模板与运行副本，避免启动期模板同步覆盖
+        /// </summary>
+        public string TemplatePath = "";
 
         /// <summary>
         /// 建立空 schema
@@ -91,6 +100,10 @@ namespace Mau.Runtime
         public static ConfigSchema Load(string path)
         {
             ConfigSchema schema = new ConfigSchema();
+            if (path != null)
+            {
+                schema.SourcePath = path;
+            }
             if (path == null || path.Length == 0 || !File.Exists(path))
             {
                 return schema;
@@ -332,6 +345,235 @@ namespace Mau.Runtime
 
             error = "未知值类型: " + type;
             return false;
+        }
+
+        // [段4] 声明（A152 派生段创建通道——config-set declare=true 的落地实现）
+        /// <summary>
+        /// 声明新配置项——内存 schema 立即生效 + 模板与运行副本同步插入（两文件内容保持一致，避免下次启动被模板同步覆盖）。
+        /// 约束：键须带段前缀（形如 x.key）；段已有声明项则沿用其文件归属，否则按「段名.cfg」推断。
+        /// </summary>
+        /// <param name="key">配置键（须带段前缀）</param>
+        /// <param name="desc">描述（空则回落默认文案）</param>
+        /// <param name="fileName">归属文件名（出参）</param>
+        /// <param name="newSegment">是否新建段（出参——true 时段文件尚未注册，调用方须 AddFile）</param>
+        /// <param name="error">失败原因（成功为空串）</param>
+        /// <returns>是否声明成功</returns>
+        public bool Declare(string key, string desc, out string fileName, out bool newSegment, out string error)
+        {
+            fileName = "";
+            newSegment = false;
+            error = "";
+            if (key == null || key.Length == 0)
+            {
+                error = "key 为空";
+                return false;
+            }
+            int dot = key.IndexOf('.');
+            if (dot <= 0 || dot == key.Length - 1)
+            {
+                error = "键缺少段前缀（形如 ui.font_scale）";
+                return false;
+            }
+            string segment = key.Substring(0, dot);
+            if (!IsSimpleName(segment) || !IsSimpleName(key.Substring(dot + 1)))
+            {
+                error = "键名只允许字母 / 数字 / 下划线（段与键名各一段）: " + key;
+                return false;
+            }
+            if (_items.ContainsKey(key))
+            {
+                error = "配置键已声明: " + key;
+                return false;
+            }
+            // [段1] 文件归属——段已声明则沿用其文件，否则按「段名.cfg」推断
+            string file = "";
+            bool segmentKnown = false;
+            foreach (KeyValuePair<string, Item> pair in _items)
+            {
+                if (!string.Equals(PrefixOf(pair.Value.Key), segment, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                segmentKnown = true;
+                if (file.Length == 0)
+                {
+                    file = pair.Value.File;
+                }
+            }
+            if (file.Length == 0)
+            {
+                file = segment + ".cfg";
+            }
+            if (!segmentKnown)
+            {
+                newSegment = true;
+            }
+            // [段2] 模板与运行副本文本插入（同一份内容写两处）
+            string templatePath = TemplatePath;
+            if (templatePath == null || templatePath.Length == 0 || !File.Exists(templatePath))
+            {
+                error = "schema 模板未定位（TemplatePath 空或文件不存在）——声明通道需要模板";
+                return false;
+            }
+            string sourcePath = SourcePath;
+            if (sourcePath == null || sourcePath.Length == 0)
+            {
+                error = "schema 运行副本路径未知（Load 未记录 SourcePath）";
+                return false;
+            }
+            string text = File.ReadAllText(templatePath);
+            string updated = InsertItem(text, BuildItemLine(key, file, desc));
+            if (updated.Length == 0)
+            {
+                error = "schema 模板结构不识别（未找到 items 数组闭合）: " + templatePath;
+                return false;
+            }
+            UTF8Encoding encoding = new UTF8Encoding(HasUtf8Bom(templatePath));
+            File.WriteAllText(templatePath, updated, encoding);
+            File.WriteAllText(sourcePath, updated, encoding);
+            // [段3] 内存项——声明后立即可读可写（无需重启）
+            Item item = new Item();
+            item.Key = key;
+            item.File = file;
+            item.Default = "";
+            item.Sensitive = false;
+            item.Writable = true;
+            item.Desc = desc;
+            if (item.Desc == null || item.Desc.Length == 0)
+            {
+                item.Desc = "由 config-set declare 声明（schema 派生段）";
+            }
+            item.Type = "string";
+            _items[key] = item;
+            fileName = file;
+            LogStore.Add("ConfigSchema", 1, "配置键声明: " + key + " → " + file + "（模板与运行副本同步写）", "SYS");
+            return true;
+        }
+
+        /// <summary>
+        /// 段前缀提取——点号前段（无点号或点号在首位返回空串）
+        /// </summary>
+        /// <param name="key">配置键</param>
+        /// <returns>段名（空=无段）</returns>
+        private static string PrefixOf(string key)
+        {
+            if (key == null)
+            {
+                return "";
+            }
+            int dot = key.IndexOf('.');
+            if (dot <= 0)
+            {
+                return "";
+            }
+            return key.Substring(0, dot);
+        }
+
+        /// <summary>
+        /// 简易名判定——字母 / 数字 / 下划线，非空
+        /// </summary>
+        /// <param name="text">候选名</param>
+        /// <returns>是否合法</returns>
+        private static bool IsSimpleName(string text)
+        {
+            if (text == null || text.Length == 0)
+            {
+                return false;
+            }
+            for (int i = 0; i < text.Length; i = i + 1)
+            {
+                char c = text[i];
+                bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+                if (!ok)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 新项 JSON 行构造——缩进 4 空格，与模板既有排版一致
+        /// </summary>
+        /// <param name="key">配置键</param>
+        /// <param name="file">归属文件名</param>
+        /// <param name="desc">描述（空则回落默认文案）</param>
+        /// <returns>单行 JSON 项</returns>
+        private static string BuildItemLine(string key, string file, string desc)
+        {
+            string text = desc;
+            if (text == null || text.Length == 0)
+            {
+                text = "由 config-set declare 声明（schema 派生段）";
+            }
+            return "    { \"key\": " + JsonUtil.Str(key) + ", \"file\": " + JsonUtil.Str(file)
+                + ", \"default\": \"\", \"sensitive\": false, \"writable\": true, \"type\": \"string\", \"desc\": " + JsonUtil.Str(text) + " }";
+        }
+
+        /// <summary>
+        /// 文本插入——在 items 数组闭合行前追加一项（补前项逗号；换行风格跟随原文件）
+        /// </summary>
+        /// <param name="text">模板全文</param>
+        /// <param name="itemLine">新项行（不含换行）</param>
+        /// <returns>插入后的全文（结构不识别返回空串）</returns>
+        private static string InsertItem(string text, string itemLine)
+        {
+            if (text == null || text.Length == 0)
+            {
+                return "";
+            }
+            int close = text.LastIndexOf("\n  ]", StringComparison.Ordinal);
+            if (close < 0)
+            {
+                return "";
+            }
+            string newline = "\n";
+            if (text.IndexOf("\r\n", StringComparison.Ordinal) >= 0)
+            {
+                newline = "\r\n";
+            }
+            string head = text.Substring(0, close);
+            string tail = text.Substring(close);
+            int end = head.Length;
+            while (end > 0 && (head[end - 1] == ' ' || head[end - 1] == '\t' || head[end - 1] == '\r' || head[end - 1] == '\n'))
+            {
+                end = end - 1;
+            }
+            string trimmed = head.Substring(0, end);
+            string whitespace = head.Substring(end);
+            if (!trimmed.EndsWith(",", StringComparison.Ordinal))
+            {
+                trimmed = trimmed + ",";
+            }
+            return trimmed + newline + itemLine + whitespace + tail;
+        }
+
+        /// <summary>
+        /// UTF-8 BOM 探测——读前三字节判定（写回时保持同一编码形态）
+        /// </summary>
+        /// <param name="path">文件路径</param>
+        /// <returns>是否有 BOM（探测失败按无 BOM 处理 + WARN）</returns>
+        private static bool HasUtf8Bom(string path)
+        {
+            try
+            {
+                byte[] head = new byte[3];
+                int read = 0;
+                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    read = fs.Read(head, 0, 3);
+                }
+                if (read < 3)
+                {
+                    return false;
+                }
+                return head[0] == 0xEF && head[1] == 0xBB && head[2] == 0xBF;
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("ConfigSchema", 2, "BOM 探测失败（按无 BOM 处理）: " + ex.Message, "SYS");
+                return false;
+            }
         }
     }
 }

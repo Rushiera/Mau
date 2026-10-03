@@ -240,6 +240,9 @@ namespace CH4
             string dataRoot = ResolveDataRoot();
             WorkspaceConfig workspace = WorkspaceConfig.Load(Path.Combine(dataRoot, "Data", "config", "workspace.json"), dataRoot);
             DataBox.Bind<WorkspaceConfig>(workspace);
+            // A153 受控根启动对账——生效根回显 + 同 path 多根检出（文本在 LogStore 就绪后于段3b 落盘）
+            bool rootsConflict = false;
+            string rootsNote = RootsAuditNote(workspace, out rootsConflict);
             // mau 仓库根注入——受控根 id=mau → MauGroupBuilder/BrickIndex 静态入口（BRIK-MAU 工具 + 翻译器积木索引解析优先注入值）
             for (int i = 0; i < workspace.Roots.Length; i = i + 1)
             {
@@ -265,8 +268,11 @@ namespace CH4
             // P8.5 配置群 schema——schema.json 元声明（默认值/敏感/可写/空值语义——/api/v1/config 输出面）
             // §4.1 schema 同步（模板为准：不一致 → .bak 备份 + 整体覆盖）→ §4.2 schema 驱动段注册（宿主零硬编码段清单）
             // 两条结论在 LogStore 就绪后补记审计（启动期只有 Console——落盘补记见段3b）
-            string schemaSyncNote = EnsureSchemaSync(configDir);
+            string schemaTemplatePath;
+            string schemaSyncNote = EnsureSchemaSync(configDir, out schemaTemplatePath);
             ConfigSchema schema = ConfigSchema.Load(Path.Combine(configDir, "schema.json"));
+            // A152 派生段声明通道——模板路径注入（声明时模板与运行副本同步写，避免启动期模板同步覆盖）
+            schema.TemplatePath = schemaTemplatePath;
             DataBox.Bind<ConfigSchema>(schema);
             ConfigStore llmConfig = ConfigStore.Load(Path.Combine(configDir, "llm.cfg"));
             string segmentNote = RegisterSchemaSegments(llmConfig, schema, configDir);
@@ -311,8 +317,17 @@ namespace CH4
             {
                 Console.WriteLine(line);
             };
-            // [段3b] 配置面启动审计补记——schema 同步与段注册结论（启动期仅 Console 输出，此处落盘可回溯）
+            // [段3b] 配置面启动审计补记——schema 同步与段注册结论 + 受控根对账（启动期仅 Console 输出，此处落盘可回溯）
             LogStore.Add("CatHome4", 1, "config.boot | " + schemaSyncNote + " | " + segmentNote, "CONFIG");
+            // A153 受控根对账落盘——同 path 多根走 L2（WARN）出声
+            if (rootsConflict)
+            {
+                LogStore.Add("CatHome4", 2, "roots.boot | " + rootsNote, "WORKSPACE");
+            }
+            else
+            {
+                LogStore.Add("CatHome4", 1, "roots.boot | " + rootsNote, "WORKSPACE");
+            }
             // [段4] 语料加载——扫描 Flows/FL_*.dll 统一装配（design-ch4-flow-scan §3.2：QuickCat + 全部工具组 Flow）
             // 扫描化：文件名去 FL_ 前缀得 Flow 名（dll 名 = 组名——QuickCat 与工具组一视同仁）
             // 容错：加载失败 → 警告 + 跳过注册（该组工具工单无人认领 → 超时诚实 ERR——不再宿主直执）
@@ -487,7 +502,7 @@ namespace CH4
             _chatBridge.DefaultSession.AttachRoundNotify(Program.NotifyBalloon);
             _chatBridge.RegisterSession(_chatBridge.DefaultSession);
             // F4 视图——从真实前文重建视图层（恢复/注入后——真实前文绝对可用）
-            _chatBridge.DefaultSession.RebuildView();
+            _chatBridge.DefaultSession.LoadView();
             // E3 前文统计——启动恢复持久化真实 usage（旧文件 null=零值）
             _chatBridge.DefaultSession.SetLoadedStats(restoredStats);
             // LLM 注入探测——默认端点解析（无默认端点 = 未注入；启动失败语义由语料面消费时暴露）
@@ -565,7 +580,6 @@ namespace CH4
                 EnvelopeBuilder = AdminService.MakeChatEnvelopeBuilder(_chatBridge.DefaultSession),
                 FrameBuilder = ObserveService.BuildCompactFrameJson,
                 HistoryBuilder = (int before, int max) => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession, before, max),
-                HistoryDeltaBuilder = (int gen, int start, int count) => _chatBridge.BuildHistoryDelta(_chatBridge.DefaultSession, gen, start, count),
                 CatsBuilder = AdminService.BuildCatsJson,
                 NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
                 DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),

@@ -1392,7 +1392,7 @@ namespace Mau.Development
         private static string WriteAtomicText(string path, string text)
         {
             bool bom = File.Exists(path) && HasUtf8Bom(path);
-            return WriteFilePreserving(path, text, bom);
+            return WriteFilePreserving(path, text, bom, "");
         }
 
         /// <summary>

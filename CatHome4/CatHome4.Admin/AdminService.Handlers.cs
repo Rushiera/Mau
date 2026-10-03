@@ -734,9 +734,9 @@ namespace CatHome4.Admin
             return true;
         }
 
-        /// <summary>每猫配置写入——POST /api/v1/cat-config（body: cat + 任意字段子集）。
-        /// 字段级合并写（2026-10-01 语义统一，与 cat.cfg.set 同规）——出现即覆盖 / 缺省即保留：部分字段提交（工具清单 / 目录白名单弹层）不再清空其余字段。
-        /// 空值语义：apiConfigId 空/全零 = 回默认端点 · qqbotId 空 = 解绑 · displayName 空 = 拒绝。
+        /// <summary>
+        /// 每猫配置写入——POST /api/v1/cat-config（body: cat/apiConfigId/persona/toolNames/injectList/packs/enabledRoots/qqbotId/qqbotEnable）。
+        /// 🔴 字段级合并写（PUT 语义 · 2026-10-02 判例蒸馏轮）——字段出现才落盘，缺省保留磁盘现值；显式空值（空数组 / 空串）= 清空。
         /// toolNames 写时校验（非法名过滤）；落盘 HTTP 线程原子写；运行时生效（字段更新 + Swap）入队主线程泵 catcfg.apply。
         /// 生效语义：apiConfigId 立即生效（SwapLlmRuntime）；persona/toolNames/injectList 新会话生效（session.new 重注入）。</summary>
         /// <param name="ctx">HTTP 上下文</param>
@@ -750,17 +750,17 @@ namespace CatHome4.Admin
             bool displayNamePresent = false;
             string apiConfigId = "";
             bool apiConfigIdPresent = false;
-            string persona = "";
             bool personaPresent = false;
-            string toolNames = "";
             bool toolNamesPresent = false;
+            bool qqbotEnablePresent = false;
+            bool injectListPresent = false;
+            bool packsPresent = false;
+            bool enabledRootsPresent = false;
+            string persona = "";
+            string toolNames = "";
             string qqbotId = "";
             bool qqbotIdPresent = false;
             bool qqbotEnable = false;
-            bool qqbotEnablePresent = false;
-            bool injectListPresent = false;
-            bool enabledRootsPresent = false;
-            bool packsPresent = false;
             List<string> injectList = new List<string>();
             List<string> enabledRoots = new List<string>();
             List<string> packs = new List<string>();
@@ -955,6 +955,7 @@ namespace CatHome4.Admin
                     cfg.QqBotId = trimmedQqBotId;
                 }
             }
+            // 字段级合并写（2026-10-02 判例蒸馏轮）——字段出现才落盘，缺省保留磁盘现值（空数组 / 空串 = 显式清空）
             if (qqbotEnablePresent)
             {
                 cfg.QqBotEnable = qqbotEnable;
@@ -984,9 +985,10 @@ namespace CatHome4.Admin
             SaveCatCfgData(catKey, cfg);
             // 运行时生效——入队主线程泵（注册表/会话面仅主线程触碰）
             _catQueue.Enqueue("catcfg.apply " + catKey);
-            LogStore.Add("CatHome4", 1, "猫配置已写入：" + catKey + "（字段级合并写——未提交字段逐字保留；工具面 " + validToolNames + "）", "CONFIG");
+            LogStore.Add("CatHome4", 1, "猫配置已受理：" + catKey + "（工具面 " + cfg.ToolNames + "）", "CONFIG");
             // A132 剔除出声——被剔名字随响应带回（调用方可见；明细已记日志，不静默）
-            return Results.Json(new { ok = true, cat = catKey, toolNames = validToolNames, removedToolNames = removedToolNames });
+            // 字段级合并写——回执取落盘实况（cfg.ToolNames），不取本次提交值（字段缺省时二者不同）
+            return Results.Json(new { ok = true, cat = catKey, toolNames = cfg.ToolNames, removedToolNames = removedToolNames });
         }
 
         /// <summary>

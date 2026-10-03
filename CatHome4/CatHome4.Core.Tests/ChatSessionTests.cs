@@ -198,28 +198,23 @@ namespace CatHome4.Core.Tests
         /// </summary>
         private sealed class MockHost : IHostPush
         {
-            /// <summary>捕获的 PushLlm 调用——kind → text 列表</summary>
-            public Dictionary<string, List<string>> LlmEvents = new Dictionary<string, List<string>>();
+            /// <summary>被观察会话——A162 状态推送：视图变更经会话增量取用回放（表读取时自动回放未取走的增量）</summary>
+            public CH4.ChatSession Session;
 
-            /// <summary>用户消息事件（不捕获）</summary>
-            public void PushUserMessage(string text, string source) { }
+            /// <summary>已见块键 → 渲染类型（增量移除条目无 renderType，按此回溯归属）</summary>
+            private readonly Dictionary<string, string> _keyRenderTypes = new Dictionary<string, string>();
 
-            /// <summary>LLM 事件捕获——按 kind 累积</summary>
-            /// <param name="kind">事件类型</param>
-            /// <param name="text">载荷</param>
-            public void PushLlm(string kind, string text)
-            {
-                List<string> list;
-                if (!LlmEvents.TryGetValue(kind, out list))
-                {
-                    list = new List<string>();
-                    LlmEvents[kind] = list;
-                }
-                list.Add(text);
-            }
+            /// <summary>捕获的视图块——renderType → payload 列表（F4 视图事件）</summary>
+            private readonly Dictionary<string, List<string>> _viewEvents = new Dictionary<string, List<string>>();
 
-            /// <summary>工具结果事件（不捕获）</summary>
-            public void PushToolResult(string name, string arguments, string result) { }
+            /// <summary>捕获的事件 op——renderType → op 列表（A162：块面统一 delta；旧 live.* / persist.append 已退役）</summary>
+            private readonly Dictionary<string, List<string>> _viewOps = new Dictionary<string, List<string>>();
+
+            /// <summary>捕获的事件块键——renderType → key 列表（同键原位更新断言用）</summary>
+            private readonly Dictionary<string, List<string>> _viewKeys = new Dictionary<string, List<string>>();
+
+            /// <summary>事件到达序——renderType 列表（跨类型时序断言用）</summary>
+            private readonly List<string> _eventOrder = new List<string>();
 
             /// <summary>会话完成事件（不捕获）</summary>
             public void PushChatDone(int count) { }
@@ -227,49 +222,139 @@ namespace CatHome4.Core.Tests
             /// <summary>Note 状态事件（不捕获）</summary>
             public void PushNoteState(string json) { }
 
-            /// <summary>捕获的 PushView 调用——renderType → payload 列表（F4 视图事件）</summary>
-            public Dictionary<string, List<string>> ViewEvents = new Dictionary<string, List<string>>();
+            /// <summary>捕获视图块——renderType → payload 列表（读取即先回放未取走的增量）</summary>
+            public Dictionary<string, List<string>> ViewEvents
+            {
+                get
+                {
+                    FlushView();
+                    return _viewEvents;
+                }
+            }
 
-            /// <summary>捕获的 PushView 替换序号——renderType → replaceSeq 列表（-1=新建；工具卡先行→替换断言用）</summary>
-            public Dictionary<string, List<long>> ViewReplaceSeqs = new Dictionary<string, List<long>>();
+            /// <summary>捕获事件 op——renderType → op 列表（读取即先回放未取走的增量）</summary>
+            public Dictionary<string, List<string>> ViewOps
+            {
+                get
+                {
+                    FlushView();
+                    return _viewOps;
+                }
+            }
 
-            /// <summary>捕获的 PushView 分配序号——renderType → seq 列表（先行卡 seq 与完成卡 replaceSeq 对照用）</summary>
-            public Dictionary<string, List<long>> ViewSeqs = new Dictionary<string, List<long>>();
+            /// <summary>捕获事件块键——renderType → key 列表（读取即先回放未取走的增量）</summary>
+            public Dictionary<string, List<string>> ViewKeys
+            {
+                get
+                {
+                    FlushView();
+                    return _viewKeys;
+                }
+            }
 
-            /// <summary>视图事件序号——递增分配（F4）</summary>
-            private int _viewSeq;
+            /// <summary>事件到达序——renderType 列表（读取即先回放未取走的增量）</summary>
+            public List<string> EventOrder
+            {
+                get
+                {
+                    FlushView();
+                    return _eventOrder;
+                }
+            }
 
-            /// <summary>视图事件捕获——按 renderType 累积（F4）</summary>
-            /// <param name="renderType">渲染类型</param>
+            /// <summary>
+            /// A162——取会话未取走的视图增量并回放为捕获事件：块按 renderType / key / payload 入表（op 记 delta），
+            /// 移除条目按键回溯已见 renderType。增量取走即清（会话侧变更集），故表读取可反复安全调用。
+            /// </summary>
+            public void FlushView()
+            {
+                if (Session == null)
+                {
+                    return;
+                }
+                string json = Session.TakeViewDeltaJson();
+                if (json == null || json.Length == 0)
+                {
+                    return;
+                }
+                using (JsonDocument doc = JsonDocument.Parse(json))
+                {
+                    JsonElement blocks = doc.RootElement.GetProperty("blocks");
+                    foreach (JsonElement b in blocks.EnumerateArray())
+                    {
+                        string renderType = b.GetProperty("renderType").GetString();
+                        string key = b.GetProperty("key").GetString();
+                        string payload = "";
+                        JsonElement p;
+                        if (b.TryGetProperty("payload", out p))
+                        {
+                            payload = p.GetRawText();
+                        }
+                        Accumulate(_viewEvents, renderType, payload);
+                        Accumulate(_viewOps, renderType, "delta");
+                        Accumulate(_viewKeys, renderType, key);
+                        _eventOrder.Add(renderType);
+                        _keyRenderTypes[key] = renderType;
+                    }
+                    JsonElement removes = doc.RootElement.GetProperty("remove");
+                    foreach (JsonElement r in removes.EnumerateArray())
+                    {
+                        string key = r.GetString();
+                        string renderType;
+                        if (!_keyRenderTypes.TryGetValue(key, out renderType))
+                        {
+                            renderType = "unknown";
+                        }
+                        Accumulate(_viewOps, renderType, "delta");
+                        _eventOrder.Add(renderType);
+                    }
+                }
+            }
+
+            /// <summary>即时事件捕获——control 等非块事件仍走推送面（A162：块面不再即时推送）</summary>
+            /// <param name="op">事件语义（control）</param>
             /// <param name="payload">载荷 JSON</param>
-            /// <param name="replaceSeq">被替换序号（记录——先行卡替换断言）</param>
-            /// <param name="seqHint">序号提示（忽略——测试独立分配）</param>
-            /// <returns>分配序号</returns>
-            public int PushView(string renderType, string payload, long replaceSeq, long seqHint)
+            /// <param name="meta">块元数据 JSON</param>
+            public void PushView(string op, string payload, string meta)
+            {
+                string renderType = MetaValue(meta, "renderType");
+                string key = MetaValue(meta, "key");
+                Accumulate(_viewEvents, renderType, payload);
+                Accumulate(_viewOps, renderType, op);
+                Accumulate(_viewKeys, renderType, key);
+                _eventOrder.Add(renderType);
+            }
+
+            /// <summary>累积辅助——按 renderType 列表追加</summary>
+            /// <param name="map">目标表</param>
+            /// <param name="renderType">渲染类型键</param>
+            /// <param name="value">追加值</param>
+            private static void Accumulate(Dictionary<string, List<string>> map, string renderType, string value)
             {
                 List<string> list;
-                if (!ViewEvents.TryGetValue(renderType, out list))
+                if (!map.TryGetValue(renderType, out list))
                 {
                     list = new List<string>();
-                    ViewEvents[renderType] = list;
+                    map[renderType] = list;
                 }
-                list.Add(payload);
-                List<long> repSeqs;
-                if (!ViewReplaceSeqs.TryGetValue(renderType, out repSeqs))
+                list.Add(value);
+            }
+
+            /// <summary>块元数据取值——meta JSON 内单键字符串（缺失回空串）</summary>
+            /// <param name="meta">块元数据 JSON</param>
+            /// <param name="name">键名</param>
+            /// <returns>字符串值（缺失 = 空串）</returns>
+            private static string MetaValue(string meta, string name)
+            {
+                using (JsonDocument doc = JsonDocument.Parse(meta))
                 {
-                    repSeqs = new List<long>();
-                    ViewReplaceSeqs[renderType] = repSeqs;
+                    JsonElement el;
+                    if (!doc.RootElement.TryGetProperty(name, out el))
+                    {
+                        return "";
+                    }
+                    return el.ToString();
                 }
-                repSeqs.Add(replaceSeq);
-                _viewSeq = _viewSeq + 1;
-                List<long> allocatedSeqs;
-                if (!ViewSeqs.TryGetValue(renderType, out allocatedSeqs))
-                {
-                    allocatedSeqs = new List<long>();
-                    ViewSeqs[renderType] = allocatedSeqs;
-                }
-                allocatedSeqs.Add(_viewSeq);
-                return _viewSeq;
             }
         }
 
@@ -770,21 +855,27 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("并发调用工具");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
             List<string> cards = host.ViewEvents["toolcard"];
-            Assert.Equal(2, cards.Count);
-            using (JsonDocument d1 = JsonDocument.Parse(cards[0]))
+            Assert.True(cards.Count >= 2);
+            // 期三——每次推送都是一条新事件（无原位替换）；批内编号按工具逐条核
+            bool sawFirst = false;
+            bool sawSecond = false;
+            for (int i = 0; i < cards.Count; i = i + 1)
             {
-                Assert.Equal(1, d1.RootElement.GetProperty("toolIndex").GetInt32());
-                Assert.Equal(2, d1.RootElement.GetProperty("toolTotal").GetInt32());
+                using (JsonDocument d = JsonDocument.Parse(cards[i]))
+                {
+                    Assert.Equal(2, d.RootElement.GetProperty("toolTotal").GetInt32());
+                    int idx = d.RootElement.GetProperty("toolIndex").GetInt32();
+                    if (idx == 1) { sawFirst = true; }
+                    if (idx == 2) { sawSecond = true; }
+                }
             }
-            using (JsonDocument d2 = JsonDocument.Parse(cards[1]))
-            {
-                Assert.Equal(2, d2.RootElement.GetProperty("toolIndex").GetInt32());
-                Assert.Equal(2, d2.RootElement.GetProperty("toolTotal").GetInt32());
-            }
+            Assert.True(sawFirst);
+            Assert.True(sawSecond);
         }
 
         /// <summary>
@@ -803,29 +894,23 @@ namespace CatHome4.Core.Tests
             };
             CH4.ChatSession session = CreateSession(llm, declared);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("调用工具");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
             List<string> cards = host.ViewEvents["toolcard"];
-            Assert.Equal(2, cards.Count);
-            // 先行卡——无 result 字段（前端 ⏳ 处理中）+ 工具名 + 并发编号
-            using (JsonDocument p = JsonDocument.Parse(cards[0]))
-            {
-                JsonElement res;
-                Assert.False(p.RootElement.TryGetProperty("result", out res));
-                Assert.Equal("time", p.RootElement.GetProperty("name").GetString());
-                Assert.Equal(1, p.RootElement.GetProperty("toolIndex").GetInt32());
-                Assert.Equal(1, p.RootElement.GetProperty("toolTotal").GetInt32());
-            }
-            // 完成卡——以先行卡序号原位替换（replaceSeq = 先行卡 seq）
-            List<long> repSeqs = host.ViewReplaceSeqs["toolcard"];
-            Assert.Equal(-1, repSeqs[0]);
-            Assert.Equal(host.ViewSeqs["toolcard"][0], repSeqs[1]);
-            using (JsonDocument d = JsonDocument.Parse(cards[1]))
+            Assert.True(cards.Count >= 1);
+            // A162 状态同步——同键在未取走期间合并（先行态被终态覆盖）：末条即最终卡（含 result）
+            using (JsonDocument d = JsonDocument.Parse(cards[cards.Count - 1]))
             {
                 JsonElement res;
                 Assert.True(d.RootElement.TryGetProperty("result", out res));
+                Assert.Equal("time", d.RootElement.GetProperty("name").GetString());
+                Assert.Equal(1, d.RootElement.GetProperty("toolIndex").GetInt32());
+                Assert.Equal(1, d.RootElement.GetProperty("toolTotal").GetInt32());
             }
+            List<string> cardOps = host.ViewOps["toolcard"];
+            Assert.Equal("delta", cardOps[0]);
         }
 
         /// <summary>
@@ -845,6 +930,7 @@ namespace CatHome4.Core.Tests
             };
             CH4.ChatSession session = CreateSession(llm, declared);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("调用 OA 工具");
             // 泵帧直到先行卡出现（工具批已进入）
             for (int i = 0; i < 200; i = i + 1)
@@ -863,10 +949,10 @@ namespace CatHome4.Core.Tests
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
             List<string> cards = host.ViewEvents["toolcard"];
-            Assert.Equal(2, cards.Count);
-            List<long> repSeqs = host.ViewReplaceSeqs["toolcard"];
-            Assert.Equal(-1, repSeqs[0]);
-            Assert.Equal(host.ViewSeqs["toolcard"][0], repSeqs[1]);
+            Assert.True(cards.Count >= 2);
+            List<string> abortOps = host.ViewOps["toolcard"];
+            Assert.Equal("delta", abortOps[0]);
+            Assert.Equal("delta", abortOps[1]);
             using (JsonDocument d = JsonDocument.Parse(cards[1]))
             {
                 Assert.Contains("已中止", d.RootElement.GetProperty("result").GetString());
@@ -891,6 +977,7 @@ namespace CatHome4.Core.Tests
             };
             CH4.ChatSession session = CreateSession(llm, declared);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("逐条回填验证");
             // 泵到 host-flows 终态卡出现（此时后批 text-write 仍在进行中）
             for (int i = 0; i < 200; i = i + 1)
@@ -932,6 +1019,7 @@ namespace CatHome4.Core.Tests
             };
             CH4.ChatSession session = CreateSession(llm, declared);
             session.AttachHost(host);
+            host.Session = session;
             CH4.ChatSession.AuthorizedToolNamesProvider = delegate (string catKey) { return new string[] { "Note" }; };
             try
             {
@@ -948,7 +1036,7 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// E3 usage 转发——LLM 流带 Usage 事件 → 宿主收到 PushLlm("usage") 且累计整轮（覆盖式）。
+        /// E3 usage 转发——LLM 流带 Usage 事件 → 宿主收到 view 事件（control 段 usage 块）且累计整轮（覆盖式）。
         /// </summary>
         [Fact]
         public void Usage_ForwardedToHost()
@@ -959,6 +1047,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("统计一下");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
@@ -1003,6 +1092,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("算一下");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
@@ -1165,7 +1255,8 @@ namespace CatHome4.Core.Tests
                     payload = blocks[i].Payload;
                 }
             }
-            Assert.Equal(1, retryCount);
+            // 期三——只增不改：retrying 与 resolved 各落一块（莎 2026-10-02 红线）
+            Assert.Equal(2, retryCount);
             Assert.Contains("resolved", payload);
         }
 
@@ -1182,6 +1273,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("重试可见性");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
@@ -1223,6 +1315,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("续传终态载荷");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
@@ -1250,6 +1343,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("重试耗尽终态");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
@@ -1365,6 +1459,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("测试暂停");
             // 泵帧直到进入活跃相位（后台流挂起在 HoldStream——保证 Pause 时 LlmRunning）
             for (int i = 0; i < 100 && session.IsIdle; i++)
@@ -1419,6 +1514,7 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("暂停重试测试");
             // 泵帧直到活跃（后台流挂起在 Retrying 前——等待取消）
             for (int i = 0; i < 100 && session.IsIdle; i++)
@@ -1470,7 +1566,7 @@ namespace CatHome4.Core.Tests
             ctx.AddUserMessage("第三轮问题");
             ctx.AddAssistantMessage("第三轮回复");
             LlmMessage[] msgs = ctx.GetMessages();
-            // 增量写入视图（与真实运行一致：每轮 CloseRound 追加 roundsum——时间戳 = 轮末块之后）
+            // 增量写入视图（与真实运行一致：每轮末 CloseRound 追加 roundsum——时间戳 = 轮末块之后）
             string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.json");
             CH4.SessionViewStore viewStore = new CH4.SessionViewStore(tmp);
             for (int i = 0; i < msgs.Length; i++)
@@ -1482,21 +1578,18 @@ namespace CatHome4.Core.Tests
                 }
                 if (m.Role == LlmRole.User)
                 {
-                    viewStore.OnUserMessage(m, m.CreatedAt, i);
+                    viewStore.OnUserMessage(m, i);
                 }
                 else if (m.Role == LlmRole.Assistant)
                 {
-                    viewStore.OnAssistantText(m, m.CreatedAt, i);
+                    viewStore.OnAssistantText(m, i);
+                    // 该轮末 CloseRound——rs 时间戳略大于本轮末块（真实语义：CloseRound 在该轮结束后）
+                    viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", m.CreatedAt + 1);
                 }
             }
-            // 每轮 CloseRound——rs 时间戳略大于该轮末块（真实语义：CloseRound 在该轮结束后）
-            viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[2].CreatedAt + 1);
-            viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[4].CreatedAt + 1);
-            viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[6].CreatedAt + 1);
             viewStore.Save();
-            // 重建——从真实前文（重启场景；rs 从 view.json 读回——LoadInjectReport）
-            viewStore.Rebuild(msgs);
-            viewStore.LoadInjectReport();
+            // A156：重启场景 = 载入持久块（不再从前文重建）
+            viewStore.Load();
             // 归并顺序断言——每轮：user, text, roundsum（rs 紧跟轮末块，不在末尾堆叠）
             CH4.ViewBlock[] merged = viewStore.GetBlocks();
             Assert.Equal(9, merged.Length); // 6 blocks + 3 rs（无注入报告）
@@ -1541,9 +1634,9 @@ namespace CatHome4.Core.Tests
             CH4.ViewBlock[] blocks = session.GetViewBlocks();
             Assert.Equal(2, blocks.Length);
             Assert.Equal("user", blocks[0].RenderType);
-            Assert.Equal(0, blocks[0].MsgIndex);
+            Assert.Equal(0, blocks[0].Origin.MsgIndex);
             Assert.Equal("text", blocks[1].RenderType);
-            Assert.Equal(1, blocks[1].MsgIndex);
+            Assert.Equal(1, blocks[1].Origin.MsgIndex);
             // 统计复位——新起点零统计
             Assert.Equal(0, session.LastStats.EntryCount);
         }
@@ -1604,19 +1697,19 @@ namespace CatHome4.Core.Tests
                 }
                 if (m.Role == LlmRole.User)
                 {
-                    viewStore.OnUserMessage(m, m.CreatedAt, i);
+                    viewStore.OnUserMessage(m, i);
                 }
                 else if (m.Role == LlmRole.Assistant)
                 {
-                    viewStore.OnAssistantText(m, m.CreatedAt, i);
+                    viewStore.OnAssistantText(m, i);
                 }
             }
             viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", msgs[2].CreatedAt + 1);
             CH4.ViewBlock[] blocks = viewStore.GetBlocks();
             Assert.Equal(3, blocks.Length);
-            Assert.Equal(1, blocks[0].MsgIndex);
-            Assert.Equal(2, blocks[1].MsgIndex);
-            Assert.Equal(-1, blocks[2].MsgIndex);
+            Assert.Equal(1, blocks[0].Origin.MsgIndex);
+            Assert.Equal(2, blocks[1].Origin.MsgIndex);
+            Assert.Null(blocks[2].Origin);
         }
 
         /// <summary>
@@ -1758,18 +1851,14 @@ namespace CatHome4.Core.Tests
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("想一想");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
-            // 流式容器事件——思考两条 + 回复一条（同 renderType=stream）
-            Assert.Equal(3, host.ViewEvents["stream"].Count);
-            // 思考整块——离开 think 态推一次，内容为流式累积值，replaceSeq 命中末条思考流式容器
-            Assert.Single(host.ViewEvents["reason"]);
-            using (JsonDocument d = JsonDocument.Parse(host.ViewEvents["reason"][0]))
-            {
-                Assert.Equal("思思", d.RootElement.GetProperty("content").GetString());
-            }
-            Assert.Equal(host.ViewSeqs["stream"][1], host.ViewReplaceSeqs["reason"][0]);
+            // A162 状态同步——流式容器在轮末全部撤离（作为 remove 条目送出，不进状态表）：ViewEvents 无 stream 键
+            Assert.False(host.ViewEvents.ContainsKey("stream"));
+            // 纯文本轮的思考段只属流式区：前文消息不带 reasoning → 不产 reason 持久块
+            Assert.False(host.ViewEvents.ContainsKey("reason"));
         }
 
         /// <summary>
@@ -1787,6 +1876,7 @@ namespace CatHome4.Core.Tests
                 new ToolSpec("time", "当前时间", "{}")
             });
             session.AttachHost(host);
+            host.Session = session;
             session.PostUserMessage("用工具");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
@@ -1797,7 +1887,7 @@ namespace CatHome4.Core.Tests
                 Assert.Equal("思思", d.RootElement.GetProperty("content").GetString());
             }
             // 时序——思考整块先于工具卡（决策流首帧收口）
-            Assert.True(host.ViewSeqs["reason"][0] < host.ViewSeqs["toolcard"][0]);
+            Assert.True(host.EventOrder.IndexOf("reason") < host.EventOrder.IndexOf("toolcard"));
         }
         /// <summary>
         /// 继续轮——不追加任何用户消息，直接用当前前文发一次 LLM 请求（cat.continue 后端语义）。

@@ -470,17 +470,18 @@ namespace CH4
                 start = end - max;
             }
             List<object> view = new List<object>();
-            long seq = 0;
             for (int i = start; i < end; i++)
             {
-                seq = seq + 1;
                 ViewBlock b = blocks[i];
                 Dictionary<string, object> entry = new Dictionary<string, object>();
-                entry["seq"] = seq;
                 entry["id"] = b.Id;
+                entry["key"] = b.Key;
+                entry["ts"] = b.Timestamp;
+                entry["src"] = b.Src;
+                entry["durMs"] = b.DurMs;
+                entry["state"] = b.State;
                 entry["renderType"] = b.RenderType;
-                // P6b 节点定位锚——真实前文消息索引（前端操作条数据源；-1=非消息派生块）
-                entry["msgIndex"] = b.MsgIndex;
+                entry["origin"] = BuildOrigin(b.Origin);
                 entry["payload"] = ParseViewPayload(b.Payload);
                 view.Add(entry);
             }
@@ -488,9 +489,27 @@ namespace CH4
             resp["version"] = 1;
             resp["sessionId"] = session.Id;
             resp["count"] = blocks.Length;
-            // A142 增量续传锚——窗口起点（全局块序）+ 块序代际号（前端重连时带回比对前缀有效性）
+            // 窗口起点——分片拉取用（期三：增量续传口退役，重连 / 刷新一律全量）
             resp["start"] = start;
-            resp["gen"] = session.GetViewGen();
+            // 期三——流式区快照随带（前端重连 / 刷新后忠实重建流式区；莎红线：流式区只映后端现状）
+            ViewBlock[] liveBlocks = session.GetLiveBlocks();
+            List<object> liveView = new List<object>();
+            for (int i = 0; i < liveBlocks.Length; i = i + 1)
+            {
+                ViewBlock lb = liveBlocks[i];
+                Dictionary<string, object> le = new Dictionary<string, object>();
+                le["id"] = lb.Id;
+                le["key"] = lb.Key;
+                le["ts"] = lb.Timestamp;
+                le["src"] = lb.Src;
+                le["durMs"] = lb.DurMs;
+                le["state"] = lb.State;
+                le["renderType"] = lb.RenderType;
+                le["origin"] = BuildOrigin(lb.Origin);
+                le["payload"] = ParseViewPayload(lb.Payload);
+                liveView.Add(le);
+            }
+            resp["live"] = liveView;
             // A65 前文条数——送入 LLM 的消息数（含注入块）；前端「前文 n 条」文案唯一口径（与包裹编号同源）
             resp["ctxCount"] = session.ContextCount;
             resp["blocks"] = view;
@@ -658,50 +677,23 @@ namespace CH4
             if (role == LlmRole.Assistant) { return "assistant"; }
             return "tool";
         }
-        /// <summary>
-        /// 构建会话历史增量响应——A142 重连续传（GET /api/v1/history 带 gen/start/count 三参）。
-        /// 语义：前端持块序代际号 + 窗口起点 + 已持有块数；宿主比对代际号判断前缀是否仍有效——
-        /// 有效则只回 blocks[from..]（from = start + count；窗口起点缺省 0 = 会话开头）；失效则回 prefixOk=false，由前端回落全量重建。
+
+        /// 前文来源对象——A157 块契约（msgIndex + hash 双字段）；无来源 = null（独立块）。
         /// </summary>
-        /// <param name="session">目标会话（P9.3 按猫参数化）</param>
-        /// <param name="gen">前端持有的块序代际号</param>
-        /// <param name="start">前端当前窗口起点（全局块序；0 = 会话开头）</param>
-        /// <param name="count">前端已持有的块数（当前窗口内）</param>
-        /// <returns>增量响应 JSON（含 gen / count / start / prefixOk / blocks）</returns>
-        public string BuildHistoryDelta(ChatSession session, int gen, int start, int count)
+        /// <param name="origin">块前文来源</param>
+        /// <returns>来源字典（null = 独立块）</returns>
+        private static Dictionary<string, object> BuildOrigin(ViewOrigin origin)
         {
-            ViewBlock[] blocks = session.GetViewBlocks();
-            int curGen = session.GetViewGen();
-            // 窗口起点 = 前端当前窗口起点（全局块序；0 = 会话开头）——上拉补历史后不再恒为 0
-            int win = start > 0 ? start : 0;
-            int from = win + count;
-            bool prefixOk = gen == curGen && count >= 0 && from <= blocks.Length;
-            Dictionary<string, object> resp = new Dictionary<string, object>();
-            resp["version"] = 1;
-            resp["sessionId"] = session.Id;
-            resp["gen"] = curGen;
-            resp["count"] = blocks.Length;
-            resp["start"] = win;
-            resp["ctxCount"] = session.ContextCount;
-            resp["prefixOk"] = prefixOk;
-            List<object> view = new List<object>();
-            if (prefixOk)
+            if (origin == null)
             {
-                for (int i = from; i < blocks.Length; i++)
-                {
-                    ViewBlock b = blocks[i];
-                    Dictionary<string, object> entry = new Dictionary<string, object>();
-                    entry["seq"] = i - win + 1;
-                    entry["id"] = b.Id;
-                    entry["renderType"] = b.RenderType;
-                    entry["msgIndex"] = b.MsgIndex;
-                    entry["payload"] = ParseViewPayload(b.Payload);
-                    view.Add(entry);
-                }
+                return null;
             }
-            resp["blocks"] = view;
-            return JsonUtil.Serialize(resp);
+            Dictionary<string, object> o = new Dictionary<string, object>();
+            o["msgIndex"] = origin.MsgIndex;
+            o["hash"] = origin.Hash;
+            return o;
         }
+
         /// <summary>
         /// 视图块载荷 JSON 字符串 → JSON 元素（history 响应内嵌对象；解析失败回退字符串）
         /// </summary>

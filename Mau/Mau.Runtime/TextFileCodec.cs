@@ -188,5 +188,33 @@ namespace Mau.Runtime
             }
             return ProfileFor(path);
         }
+        /// <summary>
+        /// 写入风格描述——「编码 / 换行」可读串（回执声明用——A148）；非 UTF-8 族（.bat=GBK(936)）不适用 BOM 语义。
+        /// </summary>
+        /// <param name="path">文件路径（编码族判定用）</param>
+        /// <param name="bom">写入是否带 BOM</param>
+        /// <param name="newline">写入换行串</param>
+        /// <returns>风格描述（如 UTF-8 BOM / CRLF）</returns>
+        public static string DescribeStyle(string path, bool bom, string newline)
+        {
+            string enc = "GBK(936)";
+            if (ProfileFor(path) is UTF8Encoding)
+            {
+                if (bom)
+                {
+                    enc = "UTF-8 BOM";
+                }
+                else
+                {
+                    enc = "UTF-8";
+                }
+            }
+            string nl = "LF";
+            if (newline == "\r\n")
+            {
+                nl = "CRLF";
+            }
+            return enc + " / " + nl;
+        }
     }
 }

@@ -10,7 +10,8 @@ namespace CH4
     /// order 是宿主内部静态表，**不是 LLM 可写参数**：无论 LLM 以何序返回工具调用，一律按 order 分桶执行
     /// （同值一批 · 值升序 · 批间串行 / 批内并发）。LLM 知道机制存在（工具定义注释 + L1 元规则），
     /// 但调用序本身不承载语义。
-    /// 档位：-100 timeback(start) 钉死 / -1 只读 / 0 默认 / 1 写入变更 / 2 构建执行部署 / 100 timeback(back) 钉死。
+    /// 档位：-100 timeback(start) 钉死 / -1 只读 / 0 默认 / 1 写入变更 / 2 独占（每次调用各自成批）
+    /// / 3 构建执行部署 / 100 timeback(back) 钉死。
     /// 默认 0 落在只读之后、写入之前——未登记工具不会插到只读工具前面。
     /// 维护：全量登记——新增工具必须入表，对账门禁（ToolOrderTableTests）会红。
     /// </summary>
@@ -28,8 +29,16 @@ namespace CH4
         /// <summary>写入 / 变更档</summary>
         public const int OrderWrite = 1;
 
+        /// <summary>
+        /// 独占档——本档工具**每次调用各自成一批**：不与任何工具同批，彼此之间也不同批（A144）。
+        /// 适用面 = 「预检读全项目再落盘」与「独占工程构建面」——cs-* 语法树写操作在预检期读全项目源码，
+        /// 与同批的文件写入撞车即 IOException（目标文件不同也冲突，判例 2026-10-02）；
+        /// cs-build 并发编译同一工程会争抢产物目录。本档把并发控制交给批次机制，工具层零锁。
+        /// </summary>
+        public const int OrderExclusive = 2;
+
         /// <summary>构建 / 执行 / 部署档</summary>
-        public const int OrderBuild = 2;
+        public const int OrderBuild = 3;
 
         /// <summary>钉死档——timeback(action=back)：会话结构约束优先，忽略 LLM 调用序</summary>
         public const int OrderTimebackBack = 100;
@@ -54,17 +63,24 @@ namespace CH4
         {
             "text-write", "text-append", "text-replace",
             "file-move", "file-delete", "file-copy",
-            "cs-patch", "cs-member", "cs-comment", "cs-format",
             "config-set", "config-reset", "config-cat-set",
             "image-inject",
             "browser-eval", "browser-tabs"
         };
 
-        /// <summary>构建 / 执行 / 部署档清单（2）——编译、外部通道执行、宿主动作</summary>
+        /// <summary>
+        /// 独占档清单（2）——cs-* 写操作与工程构建：预检读全项目 / 争抢构建产物目录，
+        /// 每次调用各自成批（PlanBatches 单点裁决）。
+        /// </summary>
+        private static readonly string[] ExclusiveNames =
+        {
+            "cs-patch", "cs-member", "cs-comment", "cs-format", "cs-build"
+        };
+
+        /// <summary>构建 / 执行 / 部署档清单（3）——外部通道执行、宿主动作</summary>
         private static readonly string[] BuildNames =
         {
             "powershell", "powershell7",
-            "cs-build",
             "mau-gen", "mau-proj", "host-reload", "mau-setup",
             "restart-full", "restart-incr", "restart-host", "majordomo-cmd",
             "temp-exec"
@@ -102,6 +118,10 @@ namespace CH4
             {
                 return OrderWrite;
             }
+            if (Contains(ExclusiveNames, name))
+            {
+                return OrderExclusive;
+            }
             if (Contains(BuildNames, name))
             {
                 return OrderBuild;
@@ -132,6 +152,78 @@ namespace CH4
                 return OrderDefault;
             }
             return Resolve(name);
+        }
+
+        /// <summary>
+        /// 独占判据——本档工具每次调用各自成一批（不与任何工具同批）。
+        /// 单点裁决：批次计划（PlanBatches）与对账门禁共用本出口。
+        /// </summary>
+        /// <param name="name">工具名</param>
+        /// <returns>true = 独占档</returns>
+        public static bool IsExclusive(string name)
+        {
+            if (name == null || name.Length == 0)
+            {
+                return false;
+            }
+            return Contains(ExclusiveNames, name);
+        }
+
+        /// <summary>
+        /// 分批计划——按 order 值升序分桶（同值一批 · 批内保持入参声明序）；独占档工具每次调用各自成批。
+        /// 单点实装：ChatSession.BuildBatches 与测试共用本出口（批次规则只有一处）。
+        /// </summary>
+        /// <param name="names">工具名（入参序 = LLM 声明序；已闭合单须由调用方预筛）</param>
+        /// <param name="orders">对应执行序值（与 names 同长）</param>
+        /// <returns>批计划——每批为下标列表（下标指向入参序）</returns>
+        public static List<List<int>> PlanBatches(IList<string> names, IList<int> orders)
+        {
+            List<List<int>> plan = new List<List<int>>();
+            if (names == null || orders == null || names.Count != orders.Count)
+            {
+                return plan;
+            }
+            List<int> values = new List<int>();
+            for (int i = 0; i < orders.Count; i = i + 1)
+            {
+                if (!values.Contains(orders[i]))
+                {
+                    values.Add(orders[i]);
+                }
+            }
+            values.Sort();
+            for (int v = 0; v < values.Count; v = v + 1)
+            {
+                List<int> current = new List<int>();
+                for (int i = 0; i < orders.Count; i = i + 1)
+                {
+                    if (orders[i] != values[v])
+                    {
+                        continue;
+                    }
+                    if (IsExclusive(names[i]))
+                    {
+                        // 独占——当前批先闭合，本单自成一第二批（保证「每次调用各自成批」）
+                        if (current.Count > 0)
+                        {
+                            plan.Add(current);
+                            current = new List<int>();
+                        }
+                        List<int> single = new List<int>();
+                        single.Add(i);
+                        plan.Add(single);
+                    }
+                    else
+                    {
+                        current.Add(i);
+                    }
+                }
+                if (current.Count > 0)
+                {
+                    plan.Add(current);
+                }
+            }
+            return plan;
         }
 
         /// <summary>
@@ -166,7 +258,7 @@ namespace CH4
         /// <returns>已登记工具名数组（含默认档显式登记项）</returns>
         public static string[] RegisteredNames()
         {
-            string[] all = new string[ReadOnlyNames.Length + WriteNames.Length + BuildNames.Length + DefaultNames.Length + PinnedNames.Length];
+            string[] all = new string[ReadOnlyNames.Length + WriteNames.Length + ExclusiveNames.Length + BuildNames.Length + DefaultNames.Length + PinnedNames.Length];
             int cursor = 0;
             for (int i = 0; i < ReadOnlyNames.Length; i = i + 1)
             {
@@ -176,6 +268,11 @@ namespace CH4
             for (int i = 0; i < WriteNames.Length; i = i + 1)
             {
                 all[cursor] = WriteNames[i];
+                cursor = cursor + 1;
+            }
+            for (int i = 0; i < ExclusiveNames.Length; i = i + 1)
+            {
+                all[cursor] = ExclusiveNames[i];
                 cursor = cursor + 1;
             }
             for (int i = 0; i < BuildNames.Length; i = i + 1)
@@ -225,7 +322,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 名单线性查找——名单规模小（＜70），线性查找免建索引（勿增实体）。
+        /// 名单线性查找——名单规模小（＜100），线性查找免建索引（勿增实体）。
         /// </summary>
         /// <param name="names">名单</param>
         /// <param name="name">工具名</param>

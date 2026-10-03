@@ -508,7 +508,7 @@ namespace CatHome4.Admin
         }
         /// <summary>
         /// cat.cfg.set——字段级合并写（读现值 → 改单字段 → 全量写回；未提交字段逐字保留）。
-        /// 🔴 不复用 POST /api/v1/cat-config 的整对象替换语义（判例 2026-09-16：部分字段提交致 qqbotEnable 被关、enabledRoots 收窄）。
+        /// 🔴 两条写入通道同语义（2026-10-02 判例蒸馏轮收口：POST /api/v1/cat-config 已改为字段级合并写；2026-09-16 的「整对象替换」语义退役）。
         /// 返回落盘实况（写后读回全量对照）；生效走 catcfg.apply 链（apiConfigId 立即，其余前文项新会话生效）。
         /// </summary>
         /// <param name="rest">参数串：&lt;key&gt; &lt;字段&gt; &lt;值…&gt;（值取行内剩余全部原文——persona 多行原样直达）</param>
@@ -1316,7 +1316,7 @@ namespace CatHome4.Admin
                 AdminService.ApplyCatRoots(id);
                 session.AttachEnvInfo(() => BuildEnvInfoProvider());
                 session.AttachRoundNotify(NotifyBalloon);
-                session.RebuildView();
+                session.LoadView();
                 // E3 前文统计——启动恢复持久化真实 usage（旧文件 null=零值）
                 session.SetLoadedStats(restoredStats);
                 _chatBridge.RegisterSession(session);
@@ -1642,14 +1642,8 @@ namespace CatHome4.Admin
                 item.RenderType = b.RenderType ?? "";
                 item.Content = "";
                 item.Done = "";
-                if (b.Hash == null)
-                {
-                    item.Hash = "";
-                }
-                else
-                {
-                    item.Hash = b.Hash;
-                }
+                // A156：游标锚取块键——稳定句柄（前文派生 msg:序:型 / 工具 tool:callId / 独立块 容器:序号）
+                item.Hash = b.Key == null ? "" : b.Key;
                 if (item.RenderType == "text")
                 {
                     item.Content = ExtractTextContent(b.Payload);
@@ -1918,7 +1912,6 @@ namespace CatHome4.Admin
                 ContextBuilder = (int max) => _chatBridge.BuildContextView(cat.Session, max),
                 KeyInfoBuilder = (int max) => _chatBridge.BuildKeyInfoView(cat.Session, max),
                 FullContextBuilder = (int max) => _chatBridge.BuildFullContextView(cat.Session, max),
-                HistoryDeltaBuilder = (int gen, int start, int count) => _chatBridge.BuildHistoryDelta(cat.Session, gen, start, count),
                 CatsBuilder = null,
                 NoteBuilder = () => cat.Session.BuildNoteJson(),
                 DelayBuilder = () => DelayQueue.BuildListJson(cat.Session.Id),
@@ -1926,6 +1919,8 @@ namespace CatHome4.Admin
                 SessionStateBuilder = () => cat.Session.BuildRunStateJson(),
                 ApiRoleBuilder = () => BuildApiRoleJson(cat.Session),
                 ApiRoleToggler = () => ToggleApiRoleJson(cat.Session),
+                ViewFullBuilder = () => cat.Session.BuildViewFullJson(),
+                ViewDeltaBuilder = () => cat.Session.TakeViewDeltaJson(),
                 ServeChatPage = true,
                 RouteRegistrar = RegisterChatPageRoutes,
                 HtmlRootProvider = HtmlRoot,
@@ -1964,7 +1959,6 @@ namespace CatHome4.Admin
                 ContextBuilder = (int max) => _chatBridge.BuildContextView(_chatBridge.DefaultSession, max),
                 KeyInfoBuilder = (int max) => _chatBridge.BuildKeyInfoView(_chatBridge.DefaultSession, max),
                 FullContextBuilder = (int max) => _chatBridge.BuildFullContextView(_chatBridge.DefaultSession, max),
-                HistoryDeltaBuilder = (int gen, int start, int count) => _chatBridge.BuildHistoryDelta(_chatBridge.DefaultSession, gen, start, count),
                 CatsBuilder = null,
                 NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
                 DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),
@@ -1972,6 +1966,8 @@ namespace CatHome4.Admin
                 SessionStateBuilder = () => _chatBridge.DefaultSession.BuildRunStateJson(),
                 ApiRoleBuilder = () => BuildApiRoleJson(_chatBridge.DefaultSession),
                 ApiRoleToggler = () => ToggleApiRoleJson(_chatBridge.DefaultSession),
+                ViewFullBuilder = () => _chatBridge.DefaultSession.BuildViewFullJson(),
+                ViewDeltaBuilder = () => _chatBridge.DefaultSession.TakeViewDeltaJson(),
                 ServeChatPage = true,
                 RouteRegistrar = RegisterChatPageRoutes,
                 HtmlRootProvider = HtmlRoot,

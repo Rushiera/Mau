@@ -49,8 +49,8 @@ namespace CH4
         /// </summary>
         public long TimeoutFrames;
 
-        /// <summary>工具卡视图序号——LLM 输出工具时先行推送的“进行中”卡序号（完成 / 中断时以该序号 replaceSeq 原位替换）。取值：正值 = 先行卡序号；-1 = 无先行卡（推送即新建）；-2 = 已推过终态（ChatSession.ToolCardSeqDone 哨兵，不重推）。</summary>
-        public long CardSeq;
+        /// <summary>派发时刻（Unix 毫秒）——本单进入派发的墙钟时刻（A157：工具卡运行时长起点；0 = 未派发）。</summary>
+        public long StartedAtMs;
 
         /// <summary>
         /// 执行序值——工具分批调度的分桶依据（A127；宿主内部静态表裁决，非 LLM 传参）。
@@ -73,7 +73,7 @@ namespace CH4
             IsClosed = false;
             IsTimedOut = false;
             Result = "";
-            CardSeq = -1;
+            StartedAtMs = 0;
             Order = ToolOrderTable.OrderDefault;
             TimeoutFrames = MapTimeoutFrames(name);
         }
@@ -123,6 +123,25 @@ namespace CH4
                 IsTimedOut = true;
             }
         }
+        /// <summary>
+        /// 运行时长——派发时刻 → 现在（毫秒）；未派发（StartedAtMs = 0）返回 -1（未记录，不造值）。
+        /// </summary>
+        /// <returns>运行时长毫秒（-1 = 未记录）</returns>
+        public long ElapsedMs()
+        {
+            if (StartedAtMs <= 0)
+            {
+                return -1;
+            }
+            long now = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            long span = now - StartedAtMs;
+            if (span < 0)
+            {
+                return -1;
+            }
+            return span;
+        }
+
         /// <summary>
         /// 按工具名映射超时帧数——A48（2026-09-14）统一 120 秒（2400 帧），与 CAT 后台执行层时限 [t=2400, par] 对齐
         /// </summary>

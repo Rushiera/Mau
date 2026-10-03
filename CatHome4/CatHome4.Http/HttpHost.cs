@@ -58,9 +58,6 @@ namespace CatHome4.Http
         /// <summary>完整前文构建回调（可空=不注册该端点）——GET /api/v1/fullctx（对话页弹层「完整前文」数据源）</summary>
         public Func<int, string> FullContextBuilder { get; set; }
 
-        /// <summary>会话历史增量构建回调（A142 重连续传；(gen, start, count) 三参；可空=不支持增量——端点回落全量语义）</summary>
-        public Func<int, int, int, string> HistoryDeltaBuilder { get; set; }
-
         /// <summary>多猫列表构建回调（可空=不注册该端点）</summary>
         public Func<string> CatsBuilder { get; set; }
 
@@ -81,6 +78,12 @@ namespace CatHome4.Http
 
         /// <summary>端点角色手动对调回调（可空=不注册该端点）——POST /api/v1/api-role/toggle（仅本会话有效）</summary>
         public Func<string> ApiRoleToggler { get; set; }
+
+        /// <summary>视图全量构建回调（可空=连接建立不推视图）——A162 状态推送：连接建立取一次（连接私有首帧）</summary>
+        public Func<string> ViewFullBuilder { get; set; }
+
+        /// <summary>视图增量构建回调（可空=不推视图增量）——A162 状态推送：帧轮取，无变化返回 null/空（零推送）</summary>
+        public Func<string> ViewDeltaBuilder { get; set; }
 
         /// <summary>静态页模式（true=chat.html / false=index.html）</summary>
         public bool ServeChatPage { get; set; }
@@ -124,6 +127,12 @@ namespace CatHome4.Http
 
         /// <summary>端点角色手动对调回调——POST /api/v1/api-role/toggle（可空=不注册）</summary>
         private Func<string> _apiRoleToggler;
+
+        /// <summary>视图全量构建回调——对话端口注入（Session.BuildViewFullJson；可空=连接建立不推视图）</summary>
+        private Func<string> _viewFullBuilder;
+
+        /// <summary>视图增量构建回调——对话端口注入（Session.TakeViewDeltaJson；可空=不推视图增量）</summary>
+        private Func<string> _viewDeltaBuilder;
 
         /// <summary>上次运行态 JSON——本地 diff（变化才推；空闲期零推送）——主线程独占</summary>
         private string _lastSessionState;
@@ -174,9 +183,6 @@ namespace CatHome4.Http
         /// <summary>完整前文构建回调——ChatBridge.BuildFullContextView（对话页弹层「完整前文」；GET /api/v1/fullctx）</summary>
         private Func<int, string> _fullContextBuilder;
 
-        /// <summary>会话历史增量构建回调——ChatBridge.BuildHistoryDelta（A142 重连续传；(gen, start, count) 三参；可空=不支持增量）</summary>
-        private Func<int, int, int, string> _historyDeltaBuilder;
-
         /// <summary>会话归属 ID——SSE llm/chatdone 事件 sessionId 字段（P9.3 多实例化：每猫实例绑定自身会话）</summary>
         private string _sessionId;
 
@@ -225,7 +231,6 @@ namespace CatHome4.Http
             host._contextBuilder = options.ContextBuilder;
             host._keyInfoBuilder = options.KeyInfoBuilder;
             host._fullContextBuilder = options.FullContextBuilder;
-            host._historyDeltaBuilder = options.HistoryDeltaBuilder;
             host._catsBuilder = options.CatsBuilder;
             host._noteBuilder = options.NoteBuilder;
             host._delayBuilder = options.DelayBuilder;
@@ -233,6 +238,8 @@ namespace CatHome4.Http
             host._sessionStateBuilder = options.SessionStateBuilder;
             host._apiRoleBuilder = options.ApiRoleBuilder;
             host._apiRoleToggler = options.ApiRoleToggler;
+            host._viewFullBuilder = options.ViewFullBuilder;
+            host._viewDeltaBuilder = options.ViewDeltaBuilder;
             host._serveChatPage = options.ServeChatPage;
             host._routeRegistrar = options.RouteRegistrar;
             host._htmlRootProvider = options.HtmlRootProvider;
@@ -283,19 +290,20 @@ namespace CatHome4.Http
             _app.MapPost("/api/v1/config", (Delegate)HandleConfigPost);
             _app.MapGet("/api/v1/history", (HttpContext ctx) =>
             {
-                // B4 对话区——会话历史视图（内存 ChatContext 实时真源；窗口语义——?before= 排他上界 / ?max= 窗口块数，缺省 = 全量）
-                // A142——带 gen+count 走增量续传（重连路径不重建；start = 前端窗口起点）；否则窗口语义
-                if (_historyDeltaBuilder != null && ctx.Request.Query.ContainsKey("gen") && ctx.Request.Query.ContainsKey("count"))
+                // B4 对话区——会话历史视图（内存 ChatContext 实时真源；max 夹取 1-2000 缺省 200）
+                // 期三——增量续传口退役：重连 / 刷新一律全量（前端两区镜像，零配对）
+                // 窗口分页——?before= 排他上界（0 / 缺省 = 会话末尾）；上拉补历史按页取更早块
+                int max = 200;
+                string raw = ctx.Request.Query["max"].ToString();
+                int parsed;
+                if (int.TryParse(raw, out parsed) && parsed > 0)
                 {
-                    int gen = 0;
-                    int have = 0;
-                    int winStart = 0;
-                    int.TryParse(ctx.Request.Query["gen"].ToString(), out gen);
-                    int.TryParse(ctx.Request.Query["count"].ToString(), out have);
-                    int.TryParse(ctx.Request.Query["start"].ToString(), out winStart);
-                    return Results.Text(_historyDeltaBuilder(gen, winStart, have), "application/json");
+                    max = parsed;
                 }
-                int max = ReadMaxQuery(ctx);
+                if (max > 2000)
+                {
+                    max = 2000;
+                }
                 int before = ReadBeforeQuery(ctx);
                 return Results.Text(_historyBuilder(before, max), "application/json");
             });
