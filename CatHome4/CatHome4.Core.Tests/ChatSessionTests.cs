@@ -57,8 +57,8 @@ namespace CatHome4.Core.Tests
             /// <summary>STREAM_CLOSED 次数——前 N 次调用产 Error（0=每次）</summary>
             public int StreamClosedTimes = 0;
 
-            /// <summary>A94——重试耗尽模拟：产 Retrying 事件后直接产 Error（Runtime 重试后仍失败路径）</summary>
-            public bool RetryThenFail = false;
+            /// <summary>A94——重试耗尽模拟：前 N 次调用产 Retrying 事件后直接产 Error（Runtime 重试后仍失败路径；0=不模拟）</summary>
+            public int RetryThenFailTimes = 0;
 
             /// <summary>端点切换模拟——前 N 次调用产 Failover + Error（切换后重发仍失败路径；0=不模拟）</summary>
             public int FailoverThenFailTimes = 0;
@@ -98,7 +98,7 @@ namespace CatHome4.Core.Tests
                     yield break;
                 }
                 // A94——重试耗尽模拟：产 Retrying → 产 Error（Runtime 有限重试后仍失败路径）
-                if (RetryThenFail)
+                if (RetryThenFailTimes > 0 && CallCount <= RetryThenFailTimes)
                 {
                     yield return new LlmStreamEvent(LlmStreamKind.Retrying, "RETRY|1/3|ERR|TRANSPORT|模拟连接失败");
                     yield return new LlmStreamEvent(LlmStreamKind.Error, "ERR|TRANSPORT|模拟连接失败（重试耗尽）");
@@ -1339,9 +1339,11 @@ namespace CatHome4.Core.Tests
         public void A94_RetryExhaustedPushesFailedTerminal()
         {
             MockLlm llm = new MockLlm();
-            llm.RetryThenFail = true;
+            llm.RetryThenFailTimes = 1;
             MockHost host = new MockHost();
             CH4.ChatSession session = CreateSession(llm);
+            // 延迟注入 0 秒——自动继续不等 15 秒间隔（生产默认走常量）
+            session.SetAutoContinueDelaySeconds(0);
             session.AttachHost(host);
             host.Session = session;
             session.PostUserMessage("重试耗尽终态");
@@ -1365,6 +1367,42 @@ namespace CatHome4.Core.Tests
                 Assert.False(string.IsNullOrEmpty(dLast.RootElement.GetProperty("text").GetString()));
             }
             Assert.True(host.ViewEvents.ContainsKey("error"));
+        }
+        /// <summary>
+        /// 重试耗尽自动继续——本轮 Runtime 对可重试类错误（传输 / 429 / 5xx）重试耗尽后以错误中止：
+        /// 即使未发生端点切换，也应延迟自动重发（限流 / 上游抖动是暂时性故障——不把会话停在断点等人工点继续）。
+        /// 判据：请求次数 +1（自动重发）· 前文只多一条 assistant 回复（继续轮不追加 user 消息）· autocontinue 控制事件可见。
+        /// </summary>
+        [Fact]
+        public void RetryExhausted_AutoContinue_ResendsWithoutUserClick()
+        {
+            MockLlm llm = new MockLlm();
+            // 首次调用重试耗尽（产 Retrying + Error）——后续正常回复
+            llm.RetryThenFailTimes = 1;
+            llm.ReplyText = "自动续写内容";
+            MockHost host = new MockHost();
+            CH4.ChatSession session = CreateSession(llm);
+            // 延迟注入 0 秒——测试不等 15 秒间隔（生产默认走常量）
+            session.SetAutoContinueDelaySeconds(0);
+            session.AttachHost(host);
+            session.PostUserMessage("第一轮问题");
+            for (int i = 0; i < 200; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+                if (llm.CallCount >= 2 && session.IsIdle)
+                {
+                    break;
+                }
+            }
+            // 自动重发——第二次请求由会话自行发起（无人点继续）
+            Assert.Equal(2, llm.CallCount);
+            Assert.True(session.IsIdle);
+            LlmMessage[] msgs = session.Context.GetMessages();
+            Assert.Equal(LlmRole.Assistant, msgs[msgs.Length - 1].Role);
+            Assert.Equal("自动续写内容", msgs[msgs.Length - 1].Content);
+            // 可见性——自动继续控制事件已推（不静默）
+            Assert.True(host.ViewEvents.ContainsKey("control"));
         }
 
         /// <summary>

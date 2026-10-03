@@ -38,7 +38,7 @@ namespace CH4
         /// <summary>工具单 Dog owner ID——宿主 Dog 域（同 ToolOwnerId——OA 未开存活校验，多 Dog 未来可扩展独立 ID）</summary>
         private const long ToolOwnerId = 1;
 
-        /// <summary>连续自动继续上限——端点切换后自动重发轮次上限（两侧站点均不可用时停止，避免无限重发烧量）</summary>
+        /// <summary>连续自动继续上限——上游异常（端点切换 / 可重试类错误重试耗尽）后自动重发轮次上限（站点持续不可用时停止，避免无限重发烧量）</summary>
         private const int AutoContinueMax = 12;
 
         /// <summary>连续自动继续间隔——每次重发前的等待秒数（站点恢复需时间，连发无益）</summary>
@@ -98,10 +98,10 @@ namespace CH4
         /// <summary>STREAM_CLOSED 续传标志——SSE 流未以 [DONE] 结束时置位（PumpLlm 检查；续传后复位）</summary>
         private bool _streamClosedRetry;
 
-        /// <summary>本轮发生过端点切换标志——自动故障转移事件到达即置位（错误中止后自动继续判据；轮首清零）</summary>
+        /// <summary>本轮发生过端点切换标志——自动故障转移事件到达即置位（错误中止后自动继续判据之一；轮首清零）</summary>
         private bool _sawFailover;
 
-        /// <summary>连续自动继续计数——端点切换后自动重发轮次；正常完成 / 用户新消息清零</summary>
+        /// <summary>连续自动继续计数——上游异常后自动重发轮次；正常完成 / 用户新消息清零</summary>
         private int _autoContinueCount;
 
         /// <summary>待自动继续到点时刻（UTC ticks；0=无待继续）——错误中止后延迟重发；用户接管（新消息 / 手动继续 / 新会话）即作废</summary>
@@ -2727,7 +2727,8 @@ namespace CH4
             long errTs = ViewTimestamp();
             _viewStore.AppendError(viewError, errTs);
             // [段3] 重试耗尽终态（A94——本轮推过 retry 气泡则补 failed 终态，保留报错原文；最终错误详情仍归 error 气泡）
-            if (_retryPushed)
+            bool retried = _retryPushed;
+            if (retried)
             {
                 PushRetryView("failed");
             }
@@ -2745,16 +2746,18 @@ namespace CH4
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
             SetChatState("idle");
-            // [段5] 端点切换自动继续——本轮因上游异常中止且期间发生过端点切换：延迟重发（避免会话停在断点等人工点继续）
-            if (_sawFailover && _autoContinueCount < AutoContinueMax)
+            // [段5] 上游异常自动继续——本轮因暂时性故障中止（端点切换 或 可重试类错误重试耗尽）：延迟重发
+            // （限流 / 上游抖动 / 站级故障都会自行恢复——不把会话停在断点等人工点继续；4xx 参数鉴权类 Runtime 不重试故不触发）
+            bool autoContinuable = _sawFailover || retried;
+            if (autoContinuable && _autoContinueCount < AutoContinueMax)
             {
                 _autoContinueCount = _autoContinueCount + 1;
                 _autoContinueDueTick = DateTime.UtcNow.AddSeconds(_autoContinueDelaySeconds).Ticks;
-                LogStore.Add("LLM", 1, "端点切换后 " + _autoContinueDelaySeconds.ToString() + " 秒自动继续（" + _autoContinueCount.ToString() + "/" + AutoContinueMax.ToString() + "）——本轮中止后延迟重发", "LLM");
+                LogStore.Add("LLM", 1, "上游异常后 " + _autoContinueDelaySeconds.ToString() + " 秒自动继续（" + _autoContinueCount.ToString() + "/" + AutoContinueMax.ToString() + "）——本轮中止后延迟重发", "LLM");
             }
-            else if (_sawFailover)
+            else if (autoContinuable)
             {
-                LogStore.Add("LLM", 2, "端点切换自动继续已达上限（" + AutoContinueMax.ToString() + " 次）——停止重发，等待人工继续", "LLM");
+                LogStore.Add("LLM", 2, "上游异常自动继续已达上限（" + AutoContinueMax.ToString() + " 次）——停止重发，等待人工继续", "LLM");
             }
         }
 
