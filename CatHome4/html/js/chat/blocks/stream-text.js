@@ -5,10 +5,9 @@
 //   item = { type:'stream.text', payload:{ kind:'text', text } }
 //   text = 当前该流式块的全部文本（live 区按帧全量镜像）；空文本 = 尚无内容，不建块
 //
-// 用法（两态）：
+// 用法：
 //   var h = buildStreamText();              // 造块（新块到达时一次）
-//   appendStreamText(h, chunk);             // 追加增量（每帧）
-//   setStreamText(h, fullText);             // 或按全量镜像覆盖
+//   setStreamText(h, fullText);             // 按帧全量镜像覆盖（live 区按帧全量送达）
 //
 // 产出：.chat-row.assistant > .chat-plain[.streaming] >（专用文本节点）（形态见 registry.js §形态声明）
 //
@@ -28,21 +27,8 @@ function buildStreamText() {
     return { row: row, bubble: bubble };
 }
 
-function appendStreamText(h, chunk) {
-    // 增量追加——专用文本节点（textContent 拼接会销毁子元素：工具卡 / details 被后续 text 事件清空）
-    if (!h || !h.bubble) { return; }
-    var text = (chunk === undefined || chunk === null) ? '' : String(chunk);
-    if (text.length === 0) { return; }
-    var bubble = h.bubble;
-    if (!bubble.textNode) {
-        bubble.textNode = document.createTextNode('');
-        bubble.insertBefore(bubble.textNode, bubble.firstChild);
-    }
-    bubble.textNode.data = bubble.textNode.data + text;
-}
-
 function setStreamText(h, fullText) {
-    // 全量镜像覆盖——live 区按帧全量送达时用此入口（与增量模式二选一，由主干的传输模式决定）
+    // 全量镜像覆盖——live 区按帧全量送达时用此入口（无增量模式：live 区按帧全量镜像）
     if (!h || !h.bubble) { return; }
     var text = (fullText === undefined || fullText === null) ? '' : String(fullText);
     var bubble = h.bubble;
@@ -53,8 +39,9 @@ function setStreamText(h, fullText) {
     bubble.textNode.data = text;
 }
 
-function sealStreamText(h) {
-    // 收尾——撤进行中外观（流式块完成时调用；块的去留由主干按 live 镜像决定）
-    if (!h || !h.bubble) { return; }
-    h.bubble.classList.remove('streaming');
+/// live 区入口——按帧全量镜像，一次到位写入全文（registry.js 的 LIVE_RENDERERS 消费）
+function liveStreamText(payload) {
+    var h = buildStreamText();
+    setStreamText(h, (payload || {}).text || '');
+    return h.row;
 }

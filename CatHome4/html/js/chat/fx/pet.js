@@ -1,7 +1,8 @@
 // ═══════════════════════════════════════════
-// chat/pet.js —— 桌宠渲染（侧翼件 A171 · 纯前端运算）
+// chat/fx/pet.js —— 桌宠渲染（独立功能件 A171 · 纯前端运算）
 //
 // 定位：读状态段的 runState（六态）→ 态映射动画资源 → 调度空闲节律与交互反应。
+// 启动：由 fx/registry.js 的 fxBoot 统一调用 chatPetInit（脚本加载不自启）
 // 铁律：前端零业务逻辑——本件只做「态 / 交互 → 资源」映射与动画调度，不产生业务事件、不介入会话状态机。
 // 数据源：`appState.runState`（state.js——经 stateRenderPet 汇聚点调入）· SSE 断线由 main.js 的 onerror / onopen 置位。
 // 资源：`html/pet/*.webp`（286x256 原尺寸 1:1 · 20ms/帧 · 透明底）；清单与时长 → `js/pet-manifest.js`（生成物）。
@@ -625,11 +626,10 @@ function chatPetDragEnd() {
     chatPetDrag = null;
 }
 
-/// 轻量提示——复用顶部状态位（缺失则退到 console）
+/// 轻量提示——经主干顶部信息位单点（chatInfoSet）；单点不可用时退到 console
 function chatPetTip(msg) {
-    var el = document.getElementById('chatInfo');
-    if (el !== null) {
-        el.textContent = msg;
+    if (typeof chatInfoSet === 'function') {
+        chatInfoSet(msg);
         return;
     }
     if (typeof console !== 'undefined' && console.log) {
@@ -659,5 +659,3 @@ function chatPetClearCache() {
         warn('桌宠缓存清理失败', e);
     });
 }
-
-chatPetInit();

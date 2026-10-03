@@ -17,12 +17,12 @@
 // ═══════════════════════════════════════════
 
 function buildUserBlock(payload) {
-    // payload.text 为最终展示文本（前缀已由主干拼好）；旧落盘块字段为 content——兼容读，旧数据退役后移除
+    // payload.text 为最终展示文本（前缀已由主干拼好）
     var p = payload || {};
     var row = el('div', 'chat-row user');
     var bubble = el('div', formClass('user'));
     row.appendChild(bubble);
-    fillUserBubble(bubble, p.text || p.content || '');
+    fillUserBubble(bubble, p.text || '');
     return row;
 }
 

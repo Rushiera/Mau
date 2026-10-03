@@ -21,11 +21,11 @@
 
     <!-- ═══ 持久区——对话区（契约 §12.2 ②：每块对应一个气泡渲染函数） ═══ -->
     <div id="chatMsgs"></div>
-    <!-- 自绘滚动带（js/chat/scroll.js · design-ch4-frontend-scroll）——IDE 风格滚动带：视口指示块 + 消息刻度 + 点击跳转 + 拖拽；
+    <!-- 自绘滚动带（js/chat/fx/scroll.js · design-ch4-frontend-scroll）——IDE 风格滚动带：视口指示块 + 消息刻度 + 点击跳转 + 拖拽；
          原生滚动条已隐藏；几何由 JS 按对话区矩形同步 -->
     <div id="chatScrollBand"><div id="sbThumb"></div><div id="sbTicks"></div></div>
 
-    <!-- ═══ 插话队列显示区（pending.js——本地入列 / user 块到达出列；纯展示，空表自动隐藏） ═══ -->
+    <!-- ═══ 插话队列显示区（js/chat/fx/pending.js——本地入列 / user 块到达出列；纯展示，空表自动隐藏） ═══ -->
     <div id="chatPendingPanel"></div>
 
     <!-- ═══ 输入区 ═══ -->
@@ -87,15 +87,16 @@
 
     <!-- ═══ 状态区——六态计时（契约 §12.2 ① state 段投影） ═══ -->
     <div id="chatStatus"></div>
-    <!-- 桌宠（纯前端渲染——js/chat/pet.js；素材清单 js/pet-manifest.js） -->
+    <!-- 桌宠（纯前端渲染——js/chat/fx/pet.js；素材清单 js/pet-manifest.js） -->
     <div id="chatPet"><img id="chatPetImgA" alt="桌宠"><img id="chatPetImgB" alt=""></div>
 
     <!-- ═══════════════════════════════════════════
          脚本清单——加载顺序即依赖顺序：
-           ① 公共件（两页共用）→ ② 素材 lib → ③ 素材 blocks → ④ 主干
+           ① 公共件（两页共用）→ ② 素材 lib → ③ 素材 blocks → ④ 主干 → ⑤ 面板 / 侧翼 → ⑥ 独立功能 fx
          素材与主干的边界：素材零全局状态（返回元素即完）；挂载 / 排序 / 跟随 / 指令归主干。
          函数声明在脚本加载时即注册全局，故跨件引用按运行时解析——
-         唯一硬顺序是 ③ 先于 ④：registry.js 顶层把 blocks 的函数引用收进映射表。
+         硬顺序两处：③ 先于 ④（registry.js 顶层把 blocks 的函数引用收进映射表）；
+                     ⑥ 段末 registry.js 在其各件之后（fx 表持有入口名），fxBoot 由引导层调用。
          ═══════════════════════════════════════════ -->
     <script src="js/ui-common.js?v=__V__"></script>
     <!-- 桌宠素材清单（生成物——`WorkSpace/pet/convert_pet.py` 产出；A171 桌宠渲染用） -->
@@ -110,6 +111,7 @@
     <script src="js/chat/lib/images.js?v=__V__"></script>
     <script src="js/chat/lib/think-head.js?v=__V__"></script>
     <script src="js/chat/lib/tool-format.js?v=__V__"></script>
+    <script src="js/chat/lib/fallback.js?v=__V__"></script>
     <script src="js/chat/lib/cmd.js?v=__V__"></script>
 
     <!-- ③ 素材 blocks——契约 11 类块型各一件（persist 8 + live 3） -->
@@ -132,18 +134,26 @@
     <script src="js/chat/state.js?v=__V__"></script>
     <script src="js/chat/main.js?v=__V__"></script>
     <script src="js/chat/input.js?v=__V__"></script>
-    <script src="js/chat/scroll.js?v=__V__"></script>
+
+    <!-- ⑤ 面板与侧翼（主干层）——note / delay 面板 · paste 出口面 -->
     <script src="js/chat/note.js?v=__V__"></script>
     <script src="js/chat/delay.js?v=__V__"></script>
-    <script src="js/chat/pet.js?v=__V__"></script>
     <script src="js/chat/paste.js?v=__V__"></script>
-    <script src="js/chat/pending.js?v=__V__"></script>
+
+    <!-- ⑥ 独立功能（fx）——每功能一件 · registry.js 在段末（表持有各件入口名）；启动由引导层 fxBoot() 统一执行 -->
+    <script src="js/chat/fx/pet.js?v=__V__"></script>
+    <script src="js/chat/fx/scroll.js?v=__V__"></script>
+    <script src="js/chat/fx/pending.js?v=__V__"></script>
+    <script src="js/chat/fx/cmd-intent.js?v=__V__"></script>
+    <script src="js/chat/fx/controls.js?v=__V__"></script>
+    <script src="js/chat/fx/registry.js?v=__V__"></script>
 
     <script>
         // 引导层——只做接线与启动，不含业务逻辑
         loadUiVersion();
         loadUiConfig();
         chatBoot();
+        fxBoot();
     </script>
 </body>
 </html>

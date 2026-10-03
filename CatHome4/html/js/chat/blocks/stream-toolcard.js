@@ -36,3 +36,13 @@ function replaceStreamToolCard(h, payload) {
     h.card = next;
     if (h.row) { h.row.classList.remove('pending'); }
 }
+
+/// live 区入口——payload.result 有值即终态（同一次调用，两态不是两条记录；LIVE_RENDERERS 消费）
+function liveToolCardPending(payload) {
+    var p = payload || {};
+    var h = buildStreamToolCard(p);
+    if (p.result !== undefined) {
+        replaceStreamToolCard(h, p);
+    }
+    return h.row;
+}

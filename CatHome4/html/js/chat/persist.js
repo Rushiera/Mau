@@ -9,6 +9,7 @@
 //
 // 边界：块函数只产出元素（素材零全局状态）；挂载、滚动跟随归本层。
 //       本层不判流式结束、不判换手、不配对——契约 D「前端 = 纯渲染」。
+//       兜底件（未识别 type / 渲染异常）→ `lib/fallback.js`（两区共用，A178 归位）
 // ═══════════════════════════════════════════
 
 /// 持久区容器——对话区
@@ -68,7 +69,7 @@ function persistAppend(items) {
     scrollSoon();
 }
 
-/// 单条渲染——type 直指渲染函数；未登记 type → **兜底报错气泡**（失败可见：块不消失，显式告诉人不认识）
+/// 单条渲染——type 直指渲染函数；未登记 type → 兜底报错气泡（lib/fallback.js，两区共用）
 function persistRender(item) {
     if (!item) {
         return null;
@@ -78,32 +79,4 @@ function persistRender(item) {
         return buildUnknownBlock(item);
     }
     return fn(item.payload || {});
-}
-
-/// 未识别块型兜底——默认报错气泡（type + 载荷摘要；两区共用：持久区与临时区同一兜底件）
-function buildUnknownBlock(item) {
-    var row = el('div', 'chat-row assistant');
-    var bubble = el('div', formClass('error') + ' error');
-    var payload = '';
-    try {
-        payload = JSON.stringify(item.payload || {});
-    } catch (e) {
-        payload = '[载荷不可序列化]';
-    }
-    if (payload.length > 200) {
-        payload = payload.substring(0, 200) + '…';
-    }
-    bubble.textContent = '⚠ 未识别的块型「' + item.type + '」——前端渲染表无此 type；载荷：' + payload;
-    row.appendChild(bubble);
-    return row;
-}
-
-/// 渲染异常兜底——单块抛错时替代该块（**功能隔离**：一个异常不中断其他；异常可见，不静默丢块）
-function buildRenderErrorBlock(item, err) {
-    var row = el('div', 'chat-row assistant');
-    var bubble = el('div', formClass('error') + ' error');
-    var msg = (err && err.message) ? err.message : String(err);
-    bubble.textContent = '⚠ 块渲染失败「' + ((item && item.type) ? item.type : '?') + '」：' + msg + '——该块已跳过，其余不受影响';
-    row.appendChild(bubble);
-    return row;
 }

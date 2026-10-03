@@ -13,10 +13,10 @@
 //
 // 来源：chat-view.js chatToolCard（第 152-250 行）+ chatResultInfo / chatResultSuffix（第 41-72 行）
 //
-// 丢弃（原项目的垃圾）：
-//   · 覆盖表体系（chatToolHeadline / chatToolFallbackHeadline / CHAT_TOOL_OVERRIDES）——见 lib/tool-format.js 头注
-//   · 命令解码（cmdDecodeTool + cmdReportUnknown 未识别段上报）
-//   · chatBindBodyCollapse → 收口 lib/press.js（bindPressToggle）
+// 归属：
+//   · 覆盖表体系（chatToolHeadline / chatToolFallbackHeadline / CHAT_TOOL_OVERRIDES）**不采用**——见 lib/tool-format.js 头注
+//   · 命令解码显示 → fx/cmd-intent（独立功能面——A176 归位；本件只调用，不自持解码与显示构造）
+//   · 展开态点击收起 → lib/press.js（bindPressToggle）
 //   · DOM 挂载 / 滚动跟随 / 计时表（data-start / chatLiveMark）——时刻归主干注入
 // ═══════════════════════════════════════════
 
@@ -96,22 +96,19 @@ function buildToolCard(tool, open) {
         sum.appendChild(document.createTextNode(' '));
     }
 
-    // 折叠行文案——PS 双线：命令意图硬解码（lib/cmd.js）→ 骨架中文名兜底 → 工具名
-    // （逐工具自然语言 headline 覆盖层不采用；**PS 解码与未识别上报属渲染的一部分**——A174 恢复）
-    var cmdIntent = null;
-    if ((t.name === 'powershell' || t.name === 'powershell7') && typeof cmdDecodeTool === 'function') {
-        cmdIntent = cmdDecodeTool(t.arguments);
+    // 折叠行文案——PS 双线：命令意图显示（fx/cmd-intent 独立功能件）→ 骨架中文名兜底 → 工具名
+    // （逐工具自然语言 headline 覆盖层不采用；解码与显示构造归 fx 件，本件只调用）
+    var cmdIntent = (typeof fxCmdIntentDecode === 'function') ? fxCmdIntentDecode(t.name, t.arguments) : null;
+    if (cmdIntent && typeof fxCmdIntentReport === 'function') {
         // 覆盖率采集——规则表未命中的命令段上报（异步 fire-and-forget；渲染零阻塞）
-        if (cmdIntent && typeof cmdReportUnknown === 'function') {
-            cmdReportUnknown(cmdIntent.unknown);
-        }
+        fxCmdIntentReport(cmdIntent);
     }
     var headline = cmdIntent ? cmdIntent.brief : (SKEL_LABELS[skeletonOf(t.name)] || t.name || '?');
     sum.appendChild(document.createTextNode(headline + (body ? resultSuffix(resultInfo2) : '')));
     det.appendChild(sum);
-    if (cmdIntent) {
+    if (cmdIntent && typeof fxCmdIntentAttach === 'function') {
         // 展开区首块——逐段意图对照（命令原文仍在输入段；未识别段标 ❓）
-        det.appendChild(elText('div', 'cmd-intent', cmdIntent.detail));
+        fxCmdIntentAttach(det, cmdIntent);
     }
 
     if (body && body.segs) {

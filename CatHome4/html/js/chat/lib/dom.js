@@ -17,10 +17,3 @@ function elText(tag, cls, text) {
     n.textContent = (text === undefined || text === null) ? '' : String(text);
     return n;
 }
-
-function elHtml(tag, cls, html) {
-    // 造元素 + 受控 HTML——仅限本层自产 HTML（md 渲染器输出 / 结构化模板），禁接用户原文
-    var n = el(tag, cls);
-    n.innerHTML = html || '';
-    return n;
-}

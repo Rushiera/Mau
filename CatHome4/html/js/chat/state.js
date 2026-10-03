@@ -8,8 +8,8 @@
 //   { sessionId, runState, runMs{idle,wait,link,think,tool,run,reply}, requests, note{…},
 //     tokens{prompt, completion, cacheHit, context, count, sessionPrompt, sessionCompletion, sessionCacheHit} }
 //
-// 观察项：按钮可用性未在 state 段显式给（契约 §12.2 ① 列为状态段内容）——本层按 runState 派生，
-//         待后端补字段后改为直取（记 A167 观察项，不自行扩协议面）。
+// 观察项：按钮可用性原列在契约 §12.2 ①（状态段字段面）——按设计口径属**外观层派生**（A184 改写契约），
+//         派生处 = fx/controls（独立功能面，A176 归位）；本层只做整段分发 + 状态条 / 头部数字投影。
 // ═══════════════════════════════════════════
 
 /// 当前状态——state 段整段投影（唯一状态源的前端副本）
@@ -32,7 +32,7 @@ var RUN_PHASES = [
     { key: 'reply', label: 'Reply', icon: '💬' }
 ];
 
-/// 状态段应用——整段覆盖后重绘三个消费面（状态条 / 头部数字 / 按钮可用性）
+/// 状态段应用——整段覆盖后重绘各消费面（状态条 / 头部数字 / 按钮态 / Note / 桌宠）
 function stateApply(st) {
     if (!st) {
         return;
@@ -47,7 +47,7 @@ function stateApply(st) {
     };
     stateRenderStatus();
     stateRenderTokens();
-    stateSyncControls();
+    stateApplyControls();
     stateRenderNote();
     stateRenderPet();
 }
@@ -58,10 +58,11 @@ function stateApplyNote(note) {
     stateRenderNote();
 }
 
-/// 轮进行中判据——runState 非空且非 idle（后端权威态，前端不猜）
-function stateIsRunning() {
-    var s = appState.runState || '';
-    return s !== '' && s !== 'idle';
+/// 按钮态投影——动作按钮可用性归 fx/controls（独立功能面：外观层派生）；件缺失时零动作
+function stateApplyControls() {
+    if (typeof fxControlsApply === 'function') {
+        fxControlsApply(appState);
+    }
 }
 
 /// 状态条——六态完成后端时长（当前态高亮）+ ⏱ 总 + 请求次数；无数据整行空
@@ -97,28 +98,16 @@ function stateRenderStatus() {
     bar.innerHTML = html;
 }
 
-/// 头部数字——前文条数 / sessionId / 前文长度（请求级最新值）
+/// 头部数字——前文条数 / sessionId / 前文长度（请求级最新值）；经主干信息位单点写（chatInfoSet）
 function stateRenderTokens() {
-    var info = document.getElementById('chatInfo');
-    if (!info) {
-        return;
-    }
     var t = appState.tokens || {};
     var txt = '前文 ' + fmtCount(t.count || 0) + ' 条 | sessionId=' + appState.sessionId;
     if (t.context > 0) {
         txt += ' | 前文 ' + fmtCount(t.context) + ' tokens';
     }
-    info.textContent = txt;
-}
-
-/// 按钮可用性——按轮进行态派生（发送恒可用；忙时插话走队列语义）
-function stateSyncControls() {
-    var running = stateIsRunning();
-    setDisabled('chatPause', !running);
-    setDisabled('chatContinue', running);
-    setDisabled('noteStartBtn', running);
-    setDisabled('chatSendBtn', false);
-    setDisabled('chatSendInput', false);
+    if (typeof chatInfoSet === 'function') {
+        chatInfoSet(txt);
+    }
 }
 
 /// Note 投影——待 Note 面板件接入（本轮留钩子，无容器时零动作）

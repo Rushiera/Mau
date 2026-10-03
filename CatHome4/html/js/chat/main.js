@@ -14,23 +14,21 @@
 /// SSE 连接句柄——页面生命周期内单连接（断线由浏览器自动重连，重连即服务端再推全量帧）
 var chatSse = null;
 
+/// 顶部信息位（#chatInfo）唯一写入口——状态数字 / 告警 / 临时提示共用（A178 收口）
+/// 语义：后到者胜——state 帧写常态基线，告警与临时提示为瞬时覆盖（下一次基线刷新即替换）
+function chatInfoSet(text) {
+    var info = document.getElementById('chatInfo');
+    if (info) {
+        info.textContent = text;
+    }
+}
+
 /// 失败可见——控制台出声 + 头部提示（不静默吞；AGENTS 底线四）
 function warn(msg, err) {
     if (typeof console !== 'undefined' && console.warn) {
         console.warn('[chat] ' + msg, err || '');
     }
-    var info = document.getElementById('chatInfo');
-    if (info) {
-        info.textContent = '⚠ ' + msg;
-    }
-}
-
-/// 按钮可用性小件——元素缺失即跳过（防御式）
-function setDisabled(id, disabled) {
-    var node = document.getElementById(id);
-    if (node) {
-        node.disabled = (disabled === true);
-    }
+    chatInfoSet('⚠ ' + msg);
 }
 
 // ── 滚动跟随（对话区）──────────────────────────

@@ -34,7 +34,7 @@ function thinkPeek(text) {
 function buildReasonBlock(payload) {
     // 完成态思考块——头行 + 两档正文（两档内容同置 DOM，显示切换纯 CSS：点击只切类，零内容重建）
     var p = payload || {};
-    var content = (typeof p.text === 'string') ? p.text : ((typeof p.content === 'string') ? p.content : '');
+    var content = (typeof p.text === 'string') ? p.text : '';
     var stats = (typeof p.durMs === 'number') ? thinkStats(content, p.durMs) : null;
 
     var row = el('div', 'chat-row assistant reason');

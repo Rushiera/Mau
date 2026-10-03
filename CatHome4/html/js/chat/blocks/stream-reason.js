@@ -5,10 +5,11 @@
 //   item = { type:'stream.reason', payload:{ kind:'reasoning', text } }
 //   text = 当前该流式块的全部文本
 //
-// 用法（两态）：
+// 用法：
 //   var h = buildStreamReason();            // 造块（首帧一次）
 //   appendStreamReason(h, chunk);           // 追加增量
-//   thinkHeadRefresh(h.head, h.body, ms);   // 头行刷新（lib/think-head.js；时刻由主干注入）
+// 头行统计：建块时写初始值（thinkHeadFill(head, thinkStats('', 0))）——流式期不刷新
+//          （原 thinkHeadRefresh 路径零调用，A177 已删；头行统计缺口记 A198 核对面）
 //
 // 产出：.chat-row.assistant.reason > .chat-think.stream > .ct-head + .ct-body >（文本节点 + .ct-cursor）
 //
@@ -60,4 +61,11 @@ function scrollStreamReason(body) {
     var near = body.scrollHeight - body.scrollTop - body.clientHeight;
     if (near >= 40) { return; }
     body.scrollTop = body.scrollHeight;
+}
+
+/// live 区入口——句柄随帧重建，一次追加即等价全量（LIVE_RENDERERS 消费）
+function liveStreamReason(payload) {
+    var h = buildStreamReason();
+    appendStreamReason(h, (payload || {}).text || '');
+    return h.row;
 }

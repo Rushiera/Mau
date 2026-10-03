@@ -10,10 +10,11 @@
 
 | 目录 | 内容 |
 |:--|:--|
-| `lib/` | 渲染共用件（9 件）——DOM 构造 `el` / 格式化 `fmtCount`·`fmtMs` / MD 渲染 / 图片包裹 / 按压判据 / 思考头行 / 工具骨架 / **命令解码 `cmd`（PS 意图 + 未识别上报）** |
+| `lib/` | 渲染共用件（10 件）——DOM 构造 `el`/`elText` / 格式化 `fmtCount`·`fmtMs` / MD 渲染 / 图片包裹 / 按压判据 / 思考头行 / 工具骨架 / 兜底件 `fallback`（未识别 type · 渲染异常——两区共用） / **命令解码 `cmd`（PS 意图 + 未识别上报）** |
 | `blocks/` | 契约 11 类块型，**每类一件**（persist 8 + live 3） |
-| 主干 | `registry.js`（映射表）· `persist.js`（持久区）· `live.js`（临时区）· `state.js`（状态投影）· `main.js`（收包入口）· `input.js`（用户出口） |
-| 侧翼件 | `scroll.js`（滚动自持——滚轮兜底转发 + 自绘滚动带）· `note.js`（Note 面板——气泡 + 弹层）· `delay.js`（定时面板——列表 / 倒计时 / 改时刻）· `pet.js`（桌宠渲染——纯前端调度；素材清单 `../pet-manifest.js`）· `paste.js`（图片粘贴上传 + 待发区）· `pending.js`（插话队列显示——本地入列 / user 块出列） |
+| `fx/` | **独立功能——每功能一件 + 声明表**（A176 归位）：`pet`（桌宠）· `scroll`（滚动带）· `pending`（插话队列）· `cmd-intent`（命令解码显示）· `controls`（按钮态）；登记在 `fx/registry.js` 的 `FX_FEATURES`（名称 / 输入源 / 输出面 / 启动入口），启动由 `fxBoot()` 统一执行 |
+| 主干 | `registry.js`（**映射表 + 形态声明**——A178 起不兼实现）· `persist.js`（持久区）· `live.js`（临时区）· `state.js`（状态投影）· `main.js`（收包入口 + 公共小件：信息位单点 `chatInfoSet`）· `input.js`（用户出口） |
+| 面板与侧翼 | `note.js`（Note 面板——气泡 + 弹层）· `delay.js`（定时面板——列表 / 倒计时 / 改时刻）· `paste.js`（图片粘贴上传 + 待发区） |
 
 ---
 
@@ -66,5 +67,5 @@
 ## 四、边界
 
 - **不含**：面板面（`../app.js` · `../panel*.js` · `../index.html`）· 两页共用件（`../ui-common.js`）
-- **侧翼件全部就位**（A168-A174 转移完成）：`scroll.js` 滚动自持 · `note.js` · `delay.js` · `pet.js` · `paste.js` · `pending.js` · 命令解码并入 `lib/cmd.js`（清单与要点 → `design-ch4-frontend-rebuild_log.md` 阶段 3 §侧翼件清单）
+- **独立功能归位 `fx/`**（A176——独立功能面）：桌宠 / 滚动带 / 插话队列 / 命令解码显示 / 按钮态各一件 + 声明表 `fx/registry.js`（登记 = 契约 §12「独立功能面」节）；面板与出口面（`note.js` / `delay.js` / `paste.js`）留主干层；转移清单与要点 → `design-ch4-frontend-rebuild_log.md` 阶段 3 §侧翼件清单
 - **测试**：`../tests/`（vitest；对话面用例随重构销毁，面板面用例保留）

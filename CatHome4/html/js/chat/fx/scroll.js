@@ -1,8 +1,9 @@
 // ═══════════════════════════════════════════
-// chat/scroll.js —— 对话区滚动自持层（侧翼件 A168）
+// chat/fx/scroll.js —— 对话区滚动自持层（独立功能件 A168）
 //
 // 规格：design-ch4-frontend-scroll.md —— §一 滚轮兜底转发 · §二 自绘滚动带
-// 加载：chat.html 脚本清单末件（页面尾部，DOM 已就绪）；本件自持 DOM 引用，不依赖其它件的全局变量
+// 启动：由 fx/registry.js 的 fxBoot 统一调用 chatScrollInit（脚本加载不自启，DOM 已就绪）
+//     本件自持 DOM 引用，不依赖其它件的全局变量
 //
 // 最简口径（2026-10-03 莎定）：
 //   · 对话区行只有两种形态——**气泡**（.chat-bubble）与**普通条**（工具卡 .chat-tool · 思考块 .chat-think）
@@ -413,5 +414,3 @@ function chatScrollInit() {
     document.addEventListener('pointercancel', bandPointerUp);
     bandRebuild();
 }
-
-chatScrollInit();

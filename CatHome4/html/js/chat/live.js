@@ -35,7 +35,7 @@ function liveApply(seg) {
     }
 }
 
-/// 单条渲染——type 直指渲染函数；未登记 type → 兜底报错气泡（与持久区同一兜底件）
+/// 单条渲染——type 直指渲染函数；未登记 type → 兜底报错气泡（lib/fallback.js，与持久区共用）
 function liveRender(item) {
     if (!item) {
         return null;

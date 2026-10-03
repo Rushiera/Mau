@@ -1,8 +1,8 @@
 // CH4 外观层——chat/lib/cmd.js：PowerShell 命令解读器（纯函数，无依赖 · A174 恢复）
 // 定位：powershell / powershell7 工具 command 原文硬解码为自然语言意图——工具卡折叠行 + 展开区首块
-// 消费：blocks/toolcard.js buildToolCard（PS 双线：折叠行文案 + 展开区 .cmd-intent + 未识别段上报）
+// 消费：fx/cmd-intent.js（独立功能件 · A176 归位）——工具卡经该件取折叠行简报与展开区 `.cmd-intent`；未识别段上报同经该件
 // 原则：表驱动确定性解析——零 LLM / 零网络 / 零状态；未识别段原样标注（不编造、不静默）
-// 加载顺序：lib 段（chat.html 脚本清单）→ blocks/toolcard.js 运行期调用
+// 加载顺序：lib 段（chat.html 脚本清单）→ fx/cmd-intent.js 运行期调用
 // 🔴 cmdUnescapeJson 为 C# TextUtil.JsonUnescape 的前端镜像（同规则，双实现须同步——L1/TOOL-REF §三-B）
 
 // ═══════════════════════════════════════════

@@ -8,9 +8,10 @@
 //   persist item = { type, ts, msgIndex, round, payload }
 //   live    item = { type, payload }
 //
-// 两族渲染函数的形态不同（见各素材头注）：
+// 两族渲染函数形态（见各素材头注）：
 //   persist 族：function(payload) → 行元素（返回即完，挂载由 persist.js 承担）
-//   live    族：build*() → 句柄 + 后续操作；本表用薄包装把句柄收敛为行元素
+//   live    族：function(payload) → 行元素（一件式入口自各 live 件提供——A178 归位：
+//               `build*()` → 句柄的中间形态留在件内，本表只登记入口名，不兼实现）
 // ═══════════════════════════════════════════
 
 // ── 形态声明（单一真相源 · 2026-10-03 莎定）────────────────────────
@@ -51,33 +52,9 @@ var PERSIST_RENDERERS = {
     'roundsum': buildRoundSumBlock
 };
 
-/// 临时区渲染表——type → function(payload) → 行元素
+/// 临时区渲染表——type → function(payload) → 行元素（各 live 件自提供一件式入口）
 var LIVE_RENDERERS = {
     'stream.text': liveStreamText,
     'stream.reason': liveStreamReason,
     'toolcard.pending': liveToolCardPending
 };
-
-/// 流式文本——live 区按帧全量镜像，故一次到位写入全文（增量模式留后续优化口）
-function liveStreamText(payload) {
-    var h = buildStreamText();
-    setStreamText(h, (payload || {}).text || '');
-    return h.row;
-}
-
-/// 流式思考——同上；素材只提供追加入口，句柄随帧重建故一次追加即等价全量
-function liveStreamReason(payload) {
-    var h = buildStreamReason();
-    appendStreamReason(h, (payload || {}).text || '');
-    return h.row;
-}
-
-/// 进行中工具卡——payload.result 有值即终态（同一次调用，两态不是两条记录）
-function liveToolCardPending(payload) {
-    var p = payload || {};
-    var h = buildStreamToolCard(p);
-    if (p.result !== undefined) {
-        replaceStreamToolCard(h, p);
-    }
-    return h.row;
-}
