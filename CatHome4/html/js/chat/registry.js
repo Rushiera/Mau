@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════
-// chat/registry.js —— 渲染函数注册表（契约 design-ch4-protocol §12.5）
+// chat/registry.js —— 块声明表 + 渲染函数注册表（契约 design-ch4-protocol §12.5）
 //
-// 定位：块 type → 渲染函数的**唯一映射处**。前端唯一扩展点——新增块型 = 后端加一个
-//       type + 本表加一行 + 一个渲染函数，其余不管。
+// 定位：块 type 的**唯一声明处**（形态 / 行语义 / 刻度角色）+ 渲染函数**唯一映射处**。
+//      前端唯一扩展点——新增块型 = 后端加一个 type + 本表加一行 + 一个渲染函数，其余不管。
 //
 // 契约：
 //   persist item = { type, ts, msgIndex, round, payload }
@@ -14,31 +14,70 @@
 //               `build*()` → 句柄的中间形态留在件内，本表只登记入口名，不兼实现）
 // ═══════════════════════════════════════════
 
-// ── 形态声明（单一真相源 · 2026-10-03 莎定）────────────────────────
-// 契约：对话区只有**两种行形态**——气泡（`.chat-bubble`）与朴素件（`.chat-plain`）。
-// 形态是 **type 的特征**，不是区域（持久 / 临时）也不是持久性的特征：
-//   · 气泡   = 会被人当「对话内容」读的块——用户输入（`user`）· LLM 最终输出（`text`）
-//   · 朴素件 = 其余一切——思考 / 工具卡 / 错误 / 重试 / 注入报告 / 轮末结算 / 临时区流式件
-// 🔴 本表是形态的唯一声明处：渲染函数一律经 `formClass()` 取类名，**不自持形态字符串**
-//    （改形态 = 改本表一行，不动渲染函数）。
-var BLOCK_FORM = {
-    'user': 'bubble',
-    'text': 'bubble',
-    'reason': 'plain',
-    'toolcard': 'plain',
-    'retry': 'plain',
-    'error': 'plain',
-    'inject_report': 'plain',
-    'roundsum': 'plain',
-    'stream.text': 'plain',
-    'stream.reason': 'plain',
-    'toolcard.pending': 'plain'
+// ── 块声明表（单一真相源 · A179 收口）────────────────────────────
+// 每 type 一行四列：
+//   form 形态——`bubble`（会被人当对话内容读：用户输入 / LLM 最终输出）| `plain`（其余一切）
+//              契约：对话区只有两种行形态（2026-10-03 莎定）
+//   row  行语义类——`.chat-row` 上的变体类（左右分侧 / 布局）；渲染件不拼类名字符串
+//   tick 刻度角色——滚动带刻度色（`user` / `reply` / `tool` / `think` / `sum`；CSS `.sb-tick.*`）
+//   body 块体语义类（可选）——块体元素上的语义类（CSS 点名用，如 `.chat-plain.error`）；渲染件不拼类名字符串
+// 🔴 本表是形态 / 行语义 / 刻度角色 / 块体语义的唯一声明处——渲染函数一律经 `formClass()`（形态）/
+//    `bodyClass()`（块体 = 形态 + 语义）/ `blockRow()`（行容器）取用，**不自持类名字符串**
+//    （改形态或语义 = 改本表一行，不动渲染函数）；滚动带经行元素的 `data-type` 反查本表
+//    （不再探测类名——新增块型自动跟上）。
+var BLOCK_DECL = {
+    'user': { form: 'bubble', row: 'user', tick: 'user' },
+    'text': { form: 'bubble', row: 'assistant', tick: 'reply' },
+    'reason': { form: 'plain', row: 'assistant reason', tick: 'think' },
+    'toolcard': { form: 'plain', row: 'assistant tool', tick: 'tool' },
+    'retry': { form: 'plain', row: 'assistant', tick: 'reply', body: 'retry' },
+    'error': { form: 'plain', row: 'assistant', tick: 'reply', body: 'error' },
+    'inject_report': { form: 'plain', row: 'assistant inject', tick: 'reply', body: 'inject' },
+    'roundsum': { form: 'plain', row: 'assistant roundsum', tick: 'sum', body: 'roundsum' },
+    'stream.text': { form: 'plain', row: 'assistant', tick: 'reply', body: 'streaming' },
+    'stream.reason': { form: 'plain', row: 'assistant reason', tick: 'think' },
+    'toolcard.pending': { form: 'plain', row: 'assistant tool', tick: 'tool' }
 };
 
 /// 形态类名——表驱动唯一取用口；未声明的 type 回落朴素件（形态缺失不出气泡）
 function formClass(type) {
-    return (BLOCK_FORM[type] === 'bubble') ? 'chat-bubble' : 'chat-plain';
+    var d = BLOCK_DECL[type];
+    return (d && d.form === 'bubble') ? 'chat-bubble' : 'chat-plain';
 }
+
+/// 块体类名——形态基类 + 语义类（`body` 缺省时等同形态基类）；块体构造的唯一取用口
+function bodyClass(type) {
+    var d = BLOCK_DECL[type];
+    var base = formClass(type);
+    return (d && d.body) ? (base + ' ' + d.body) : base;
+}
+
+/// 行容器——`.chat-row` + 行语义变体 + `data-type`（滚动带据此查刻度角色）
+/// 🔴 行构造唯一入口：渲染件不拼类名字符串（未声明的 type 回落 assistant 行）
+function blockRow(type) {
+    var d = BLOCK_DECL[type];
+    var row = el('div', 'chat-row ' + ((d && d.row) ? d.row : 'assistant'));
+    row.setAttribute('data-type', (type || ''));
+    return row;
+}
+
+/// 刻度角色——表驱动唯一取用口；未声明 / 无 type 的行回落 `reply`
+function tickRole(type) {
+    var d = BLOCK_DECL[type];
+    return (d && d.tick) ? d.tick : 'reply';
+}
+
+// ── 六态元信息（A179 收口——状态条与轮末统计共用一份）──────────────
+// 契约：state 段 `runMs` 与 roundsum `payload.data.phases` 同键（link/wait/think/tool/run/reply）
+// 消费：state.js 状态条（key + label + icon）· blocks/roundsum.js 六态用时行（key + label）
+var RUN_PHASES = [
+    { key: 'link', label: 'Link', icon: '🔗' },
+    { key: 'wait', label: 'Wait', icon: '⏳' },
+    { key: 'think', label: 'Think', icon: '🧠' },
+    { key: 'tool', label: 'Tool', icon: '🔧' },
+    { key: 'run', label: 'Run', icon: '⚙️' },
+    { key: 'reply', label: 'Reply', icon: '💬' }
+];
 
 /// 持久区渲染表——type → function(payload) → 行元素
 var PERSIST_RENDERERS = {

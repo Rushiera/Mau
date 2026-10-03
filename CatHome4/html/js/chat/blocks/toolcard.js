@@ -22,7 +22,7 @@
 
 function buildToolBlock(payload) {
     // 完成态工具卡——行容器 + 折叠卡（默认折叠）
-    var row = el('div', 'chat-row assistant tool');
+    var row = blockRow('toolcard');
     row.appendChild(buildToolCard(payload, false));
     return row;
 }

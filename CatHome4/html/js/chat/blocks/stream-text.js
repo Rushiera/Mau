@@ -21,8 +21,8 @@
 
 function buildStreamText() {
     // 流式文本块——新建（气泡内只有文本节点，随增量增长）
-    var row = el('div', 'chat-row assistant');
-    var bubble = el('div', formClass('stream.text') + ' streaming');
+    var row = blockRow('stream.text');
+    var bubble = el('div', bodyClass('stream.text'));
     row.appendChild(bubble);
     return { row: row, bubble: bubble };
 }

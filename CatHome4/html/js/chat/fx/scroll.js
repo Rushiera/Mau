@@ -5,9 +5,10 @@
 // 启动：由 fx/registry.js 的 fxBoot 统一调用 chatScrollInit（脚本加载不自启，DOM 已就绪）
 //     本件自持 DOM 引用，不依赖其它件的全局变量
 //
-// 最简口径（2026-10-03 莎定）：
-//   · 对话区行只有两种形态——**气泡**（.chat-bubble）与**普通条**（工具卡 .chat-tool · 思考块 .chat-think）
-//     → 刻度分类走单一判据 scrollTickRole()，不复刻旧实现的展开 / 折叠分档与排除表
+// 最简口径（2026-10-03 莎定；A179 收口）：
+//   · 对话区行只有两种形态——**气泡**（.chat-bubble）与**朴素件**（.chat-plain）
+//     → 刻度分类走单一判据 scrollTickRole()：按行 `data-type` 查块声明表（registry.js 的 tickRole），
+//       不探测行类名、不复刻旧实现的展开 / 折叠分档与排除表
 //   · 基本算法与渲染规则继承旧实现——几何比例映射（带体高 ↔ 内容高）+ 既有 CSS .sb-tick 规则（零新增样式）
 //   · #chatMsgs.scrollTop 是唯一滚动执行器——本件只读写它，不产生消息、不改业务状态
 // ═══════════════════════════════════════════
@@ -74,22 +75,14 @@ function wheelForward(e) {
 
 // ═══ §二 自绘滚动带 ═══
 
-/// 刻度角色——单一判据，按行的语义类取既有 CSS 规则：
-///   气泡两色（user / reply）· 普通条两色（tool / think）· 结算（sum）
+/// 刻度角色——单一判据：按行声明的 `data-type` 查块声明表（registry.js 的 tickRole 取用口）；
+/// 旧实现按行语义类探测（user / roundsum / tool / reason）——新增块型必漏，A179 收口
 function scrollTickRole(row) {
-    if (row.classList.contains('user')) {
-        return 'user';
+    var type = '';
+    if (row && typeof row.getAttribute === 'function') {
+        type = row.getAttribute('data-type') || '';
     }
-    if (row.classList.contains('roundsum')) {
-        return 'sum';
-    }
-    if (row.classList.contains('tool')) {
-        return 'tool';
-    }
-    if (row.classList.contains('reason')) {
-        return 'think';
-    }
-    return 'reply';
+    return tickRole(type);
 }
 
 /// 刻度收集——对话区每个 .chat-row 一条刻度（推送序即渲染序，本件不排序、不过滤）

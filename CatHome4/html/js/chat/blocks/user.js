@@ -19,8 +19,8 @@
 function buildUserBlock(payload) {
     // payload.text 为最终展示文本（前缀已由主干拼好）
     var p = payload || {};
-    var row = el('div', 'chat-row user');
-    var bubble = el('div', formClass('user'));
+    var row = blockRow('user');
+    var bubble = el('div', bodyClass('user'));
     row.appendChild(bubble);
     fillUserBubble(bubble, p.text || '');
     return row;

@@ -38,8 +38,8 @@ function applyRetryState(bubble, payload) {
 
 function buildRetryBlock(payload) {
     // 重试气泡——历史重建与实时事件共用同一渲染面
-    var row = el('div', 'chat-row assistant');
-    var bubble = el('div', formClass('retry') + ' retry');
+    var row = blockRow('retry');
+    var bubble = el('div', bodyClass('retry'));
     bubble.textContent = chatRetryText(payload);
     applyRetryState(bubble, payload);
     row.appendChild(bubble);

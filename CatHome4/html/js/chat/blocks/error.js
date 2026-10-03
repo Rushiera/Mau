@@ -16,8 +16,8 @@
 function buildErrorBlock(payload) {
     // 错误气泡——恒定新建独立块（不与重试气泡合并）
     var p = payload || {};
-    var row = el('div', 'chat-row assistant');
-    var bubble = el('div', formClass('error') + ' error');
+    var row = blockRow('error');
+    var bubble = el('div', bodyClass('error'));
     bubble.textContent = p.text || 'LLM 错误';
     row.appendChild(bubble);
     return row;

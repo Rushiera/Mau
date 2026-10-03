@@ -18,7 +18,8 @@
 //          期满按**当前真实态**跳转；断线态优先让位
 // 素材加载：初始化即串行加载 → blob 持有 + Cache API 缓存（失效键 = 每张素材的内容哈希）
 //          · 加载门禁——首图 loop-sseErr 就位前桌宠不启动；就位后常显该图作加载态；全量就绪才开放调度
-//          · blob 持有 = 断线时零网络依赖；右上角「清理缓存」按钮主动清桶
+//          · blob 持有 = 断线时零网络依赖；右键菜单「清理缓存」主动清桶（A179——按钮随桌宠本体，不再挂顶栏）
+// 通知面（A179 收尾）：前端提示 / 告警的输出口 = 桌宠「说话」气泡 `chatPetSay`——不再写顶栏信息位
 // ═══════════════════════════════════════════
 
 // ── 状态与常量 ───────────────────────────────
@@ -553,10 +554,10 @@ function chatPetInit() {
     box.addEventListener('mousedown', chatPetDragStart);
     document.addEventListener('mousemove', chatPetDragMove);
     document.addEventListener('mouseup', chatPetDragEnd);
-    var elClear = document.getElementById('chatCacheClear');
-    if (elClear !== null) {
-        elClear.addEventListener('click', chatPetClearCache);
-    }
+    box.addEventListener('contextmenu', function (e) {
+        e.preventDefault();
+        chatPetMenuToggle();
+    });
     chatPetLoadAll();
 }
 
@@ -565,6 +566,10 @@ function chatPetDragStart(e) {
     if (chatPetLoading === true) {
         return;   // 加载门禁——未启动前不可拖
     }
+    if (e && e.button !== 0) {
+        return;   // 仅左键拖拽——右键归菜单（A179）
+    }
+    chatPetMenuClose();
     var box = document.getElementById('chatPet');
     if (box === null) {
         return;
@@ -626,21 +631,47 @@ function chatPetDragEnd() {
     chatPetDrag = null;
 }
 
-/// 轻量提示——经主干顶部信息位单点（chatInfoSet）；单点不可用时退到 console
-function chatPetTip(msg) {
-    if (typeof chatInfoSet === 'function') {
-        chatInfoSet(msg);
+// ── 通知面（桌宠气泡 · A179 收尾）──────────────
+var chatPetSayEl = null;      // 气泡元素（首次说话时创建——单例）
+var chatPetSayTimer = null;   // TTL 定时器（新消息重置）
+var CHAT_PET_SAY_MS = 5000;   // 气泡驻留时长（ms）
+
+/// 前端通知输出——桌宠「说话」气泡（挂桌宠下方 · TTL 自动消失）
+/// 归位（A179 收尾）：前端提示 / 告警不再写顶栏信息位——那是 state 段的后端信息输出口
+function chatPetSay(msg) {
+    if (!msg) {
         return;
     }
-    if (typeof console !== 'undefined' && console.log) {
-        console.log('[桌宠] ' + msg);
+    var box = document.getElementById('chatPet');
+    if (box === null) {
+        if (typeof console !== 'undefined' && console.log) {
+            console.log('[chat] ' + msg);
+        }
+        return;
     }
+    if (chatPetSayEl === null) {
+        chatPetSayEl = document.createElement('div');
+        chatPetSayEl.className = 'chat-pet-say';
+        chatPetSayEl.style.display = 'none';
+        box.appendChild(chatPetSayEl);
+    }
+    chatPetSayEl.textContent = msg;
+    chatPetSayEl.style.display = 'block';
+    if (chatPetSayTimer !== null) {
+        clearTimeout(chatPetSayTimer);
+    }
+    chatPetSayTimer = setTimeout(function () {
+        chatPetSayTimer = null;
+        if (chatPetSayEl !== null) {
+            chatPetSayEl.style.display = 'none';
+        }
+    }, CHAT_PET_SAY_MS);
 }
 
 /// 硬保底——清空素材缓存桶（改图不改名 / 缓存脏数据时的主动恢复手段）
 function chatPetClearCache() {
     if (typeof caches === 'undefined' || caches === null) {
-        chatPetTip('本环境不支持缓存');
+        chatPetSay('本环境不支持缓存');
         return;
     }
     caches.keys().then(function (keys) {
@@ -654,8 +685,75 @@ function chatPetClearCache() {
             return jobs.length;
         });
     }).then(function (n) {
-        chatPetTip('素材缓存已清理（' + n + ' 桶）——刷新后重新加载');
+        chatPetSay('素材缓存已清理（' + n + ' 桶）——刷新后重新加载');
     }).catch(function (e) {
         warn('桌宠缓存清理失败', e);
     });
+}
+
+// ── 右键菜单（A179 归位——「清理缓存」随桌宠本体，不再挂顶栏）──────────
+var chatPetMenuEl = null;   // 菜单元素（首次打开时创建——单例）
+
+/// 创建菜单——挂桌宠容器内（随桌宠定位）；件内指针事件不冒泡（按下不触发拖拽、点击不当摸头）
+function chatPetMenuEnsure() {
+    if (chatPetMenuEl !== null) {
+        return chatPetMenuEl;
+    }
+    var box = document.getElementById('chatPet');
+    if (box === null) {
+        return null;
+    }
+    var menu = document.createElement('div');
+    menu.className = 'chat-pet-menu';
+    menu.style.display = 'none';
+    menu.addEventListener('mousedown', function (e) {
+        e.stopPropagation();
+    });
+    menu.addEventListener('click', function (e) {
+        e.stopPropagation();
+    });
+    menu.addEventListener('contextmenu', function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+    });
+    var btn = document.createElement('button');
+    btn.id = 'chatPetCacheClear';
+    btn.textContent = '清理缓存';
+    btn.title = '清空桌宠素材缓存桶——改图不改名 / 缓存脏数据时用；下次刷新重新下载';
+    btn.addEventListener('click', function () {
+        chatPetMenuClose();
+        chatPetClearCache();
+    });
+    menu.appendChild(btn);
+    box.appendChild(menu);
+    chatPetMenuEl = menu;
+    return menu;
+}
+
+/// 打开菜单——贴近桌宠：上方空间不足（贴顶）时改挂下方
+function chatPetMenuOpen() {
+    var menu = chatPetMenuEnsure();
+    var box = document.getElementById('chatPet');
+    if (menu === null || box === null) {
+        return;
+    }
+    var above = box.getBoundingClientRect().top >= 44;
+    menu.className = 'chat-pet-menu ' + (above ? 'up' : 'down');
+    menu.style.display = 'block';
+}
+
+/// 关闭菜单
+function chatPetMenuClose() {
+    if (chatPetMenuEl !== null) {
+        chatPetMenuEl.style.display = 'none';
+    }
+}
+
+/// 开关——右键点击同一入口（开着即关，再右键消失）
+function chatPetMenuToggle() {
+    if (chatPetMenuEl !== null && chatPetMenuEl.style.display !== 'none') {
+        chatPetMenuClose();
+        return;
+    }
+    chatPetMenuOpen();
 }

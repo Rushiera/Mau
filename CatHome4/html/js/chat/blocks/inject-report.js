@@ -63,8 +63,8 @@ function injectReportHtml(p) {
 
 function buildInjectReportBlock(payload) {
     // 注入报告块——前文加载明细（独立持久化字段，重建不清）
-    var row = el('div', 'chat-row assistant inject');
-    var bubble = el('div', formClass('inject_report') + ' inject');
+    var row = blockRow('inject_report');
+    var bubble = el('div', bodyClass('inject_report'));
     bubble.innerHTML = injectReportHtml(payload);
     row.appendChild(bubble);
     return row;

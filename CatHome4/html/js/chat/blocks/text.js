@@ -20,8 +20,8 @@
 function buildTextBlock(payload) {
     // payload.text = Markdown 原文
     var p = payload || {};
-    var row = el('div', 'chat-row assistant');
-    var bubble = el('div', formClass('text'));
+    var row = blockRow('text');
+    var bubble = el('div', bodyClass('text'));
     row.appendChild(bubble);
     fillMdBlock(bubble, p.text || '');
     return row;

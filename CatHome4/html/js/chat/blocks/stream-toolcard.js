@@ -21,7 +21,7 @@
 
 function buildStreamToolCard(payload) {
     // 进行中工具卡——展开态（两段式先行卡直接展示 ⏳ 占位行）
-    var row = el('div', 'chat-row assistant tool');
+    var row = blockRow('toolcard.pending');
     var card = buildToolCard(payload, true);
     row.appendChild(card);
     return { row: row, card: card };

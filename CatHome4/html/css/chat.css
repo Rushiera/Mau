@@ -113,8 +113,8 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 #chatbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--ch-line-faint); font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); }
 #chatbar .sid { color: var(--ch-identity); font-weight: bold; }
 #uiVer { background: var(--ch-bg-deep); border: 1px solid var(--ch-line); border-radius: 4px; padding: 1px 8px; color: var(--ch-ok-weak); font-size: var(--ch-fs-tag); }
-#chatNew, #chatRefresh, #chatCacheClear { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
-#chatNew:hover, #chatRefresh:hover, #chatCacheClear:hover { background: var(--ch-bg-hover); }
+#chatNew, #chatRefresh { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
+#chatNew:hover, #chatRefresh:hover { background: var(--ch-bg-hover); }
 /* A59——六态状态条（链路/等待/思考/工具/执行/回复；时长数据源 = 后端运行态）；位于页面最底部（输入框下方）持久存在
    2026-09-22：内容整体居中（原左下靠左 + 右下本轮 Token 统计——后者已去，Token 信息归 roundsum 轮末块） */
 #chatStatus { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 4px 12px; border-top: 1px solid var(--ch-line-faint); font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); background: var(--ch-bg-page); min-height: 22px; flex-wrap: wrap; }
@@ -183,7 +183,7 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-row.assistant { justify-content: flex-start; }
 /* 朴素件（形态契约 · 2026-10-03 莎定）——非气泡块的公共基类：**无底 / 无描边 / 无圆角 / 无内边距**，
    只有字号与语义字色（与 .chat-bubble 同一层级的另一种形态）。
-   形态归属（谁气泡 / 谁朴素）的唯一声明处 = `js/chat/registry.js` §形态声明 BLOCK_FORM。
+   形态归属（谁气泡 / 谁朴素）与行语义类、刻度角色的唯一声明处 = `js/chat/registry.js` 的块声明表 BLOCK_DECL（A179）。
    适用：思考 · 工具卡 · 错误 · 重试 · 注入报告 · 轮末结算 · 临时区流式件 */
 .chat-plain { font-size: var(--ch-fs-tag); line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
 /* 气泡描边（2026-09-17）——线色 --bubble-line 与半透明度 --bubble-alpha 均按块类型赋值（基础 = Reply 态色 · 20%）；
@@ -540,6 +540,15 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 #chatPet { position: fixed; right: 14px; bottom: 146px; width: 286px; height: 256px; z-index: 9999; pointer-events: auto; cursor: pointer; user-select: none; }
 /* 双层交叉溶解——两层绝对定位叠放，切换时新层淡入 / 旧层淡出（0.25s） */
 #chatPet img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 0.25s ease; -webkit-user-drag: none; user-select: none; }
+/* 桌宠右键菜单（A179 归位——「清理缓存」随桌宠本体，不再挂顶栏）——右键开合；up/down 依上方空间择位 */
+.chat-pet-menu { position: absolute; left: 0; z-index: 10000; }
+.chat-pet-menu.up { bottom: calc(100% + 6px); }
+.chat-pet-menu.down { top: calc(100% + 6px); }
+.chat-pet-menu button { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); white-space: nowrap; }
+.chat-pet-menu button:hover { background: var(--ch-bg-hover); color: var(--ch-fg-strong); }
+/* 桌宠气泡（前端通知面 · A179 收尾）——桌宠「说话」：前端提示 / 告警的输出口（挂桌宠下方 · TTL 消失）
+   口径：后端必要信息 → 顶栏信息位（state 段独占）；前端瞬时提示 → 本气泡；两者互不覆盖 */
+.chat-pet-say { position: absolute; left: 0; top: calc(100% + 6px); width: 286px; background: var(--ch-bg-raised); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-bubble); padding: 6px 10px; color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); line-height: 1.5; word-break: break-all; pointer-events: none; animation: chat-in 0.18s ease-out; }
 
 /* ── 临时区（A167 · 契约 §6.1-F/G）——输入区切换面板，全量镜像替换 ──
    与持久区物理分离：显示时对话区与滚动带让位（由 input.js 切换 display）。

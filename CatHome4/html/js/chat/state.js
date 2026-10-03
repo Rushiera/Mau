@@ -22,15 +22,7 @@ var appState = {
     tokens: {}
 };
 
-/// 六态元信息——状态条渲染顺序与图标（后端 runMs 键名对齐）
-var RUN_PHASES = [
-    { key: 'link', label: 'Link', icon: '🔗' },
-    { key: 'wait', label: 'Wait', icon: '⏳' },
-    { key: 'think', label: 'Think', icon: '🧠' },
-    { key: 'tool', label: 'Tool', icon: '🔧' },
-    { key: 'run', label: 'Run', icon: '⚙️' },
-    { key: 'reply', label: 'Reply', icon: '💬' }
-];
+/// 六态元信息——单点声明在 registry.js（A179 收口：状态条与轮末统计共用一份，后端 runMs 键名对齐）
 
 /// 状态段应用——整段覆盖后重绘各消费面（状态条 / 头部数字 / 按钮态 / Note / 桌宠）
 function stateApply(st) {
@@ -98,7 +90,7 @@ function stateRenderStatus() {
     bar.innerHTML = html;
 }
 
-/// 头部数字——前文条数 / sessionId / 前文长度（请求级最新值）；经主干信息位单点写（chatInfoSet）
+/// 头部数字——前文条数 / sessionId / 前文长度（请求级最新值）；经信息位单点写（chatInfoSet——state 段专属）
 function stateRenderTokens() {
     var t = appState.tokens || {};
     var txt = '前文 ' + fmtCount(t.count || 0) + ' 条 | sessionId=' + appState.sessionId;

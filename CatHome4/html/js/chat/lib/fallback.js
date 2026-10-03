@@ -10,8 +10,8 @@
 
 /// 未识别块型兜底——默认报错气泡（type + 载荷摘要）
 function buildUnknownBlock(item) {
-    var row = el('div', 'chat-row assistant');
-    var bubble = el('div', formClass('error') + ' error');
+    var row = blockRow((item && item.type) ? item.type : '');
+    var bubble = el('div', bodyClass('error'));
     var payload = '';
     try {
         payload = JSON.stringify(item.payload || {});
@@ -28,8 +28,8 @@ function buildUnknownBlock(item) {
 
 /// 渲染异常兜底——单块抛错时替代该块（**功能隔离**：一个异常不中断其他；异常可见，不静默丢块）
 function buildRenderErrorBlock(item, err) {
-    var row = el('div', 'chat-row assistant');
-    var bubble = el('div', formClass('error') + ' error');
+    var row = blockRow((item && item.type) ? item.type : '');
+    var bubble = el('div', bodyClass('error'));
     var msg = (err && err.message) ? err.message : String(err);
     bubble.textContent = '⚠ 块渲染失败「' + ((item && item.type) ? item.type : '?') + '」：' + msg + '——该块已跳过，其余不受影响';
     row.appendChild(bubble);

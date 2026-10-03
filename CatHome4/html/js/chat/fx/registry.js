@@ -13,8 +13,8 @@
 var FX_FEATURES = [
     {
         id: 'pet', name: '桌宠',
-        inputs: ['state.runState', 'SSE 连接态（onopen / onerror）'],
-        outputs: ['#chatPet 动画（双层交叉溶解）'],
+        inputs: ['state.runState', 'SSE 连接态（onopen / onerror）', '前端通知文本（主干告警 / 件内提示）'],
+        outputs: ['#chatPet 动画（双层交叉溶解）', '#chatPet 右键菜单（清理缓存——A179 归位）', '#chatPet 气泡 `.chat-pet-say`（前端通知面——A179 收尾）'],
         init: 'chatPetInit'
     },
     {

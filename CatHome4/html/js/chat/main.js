@@ -14,8 +14,8 @@
 /// SSE 连接句柄——页面生命周期内单连接（断线由浏览器自动重连，重连即服务端再推全量帧）
 var chatSse = null;
 
-/// 顶部信息位（#chatInfo）唯一写入口——状态数字 / 告警 / 临时提示共用（A178 收口）
-/// 语义：后到者胜——state 帧写常态基线，告警与临时提示为瞬时覆盖（下一次基线刷新即替换）
+/// 顶部信息位（#chatInfo）唯一写入口——**state 段专属**（后端必要信息：前文条数 / sessionId / 前文长度）
+/// 归位（A179 收尾）：前端告警 / 提示不走此处（→ 通知面 `chatPetSay` 桌宠气泡）——本处不再有竞写
 function chatInfoSet(text) {
     var info = document.getElementById('chatInfo');
     if (info) {
@@ -23,12 +23,15 @@ function chatInfoSet(text) {
     }
 }
 
-/// 失败可见——控制台出声 + 头部提示（不静默吞；AGENTS 底线四）
+/// 失败可见——控制台出声 + 前端通知面（桌宠气泡；AGENTS 底线四——不静默吞）
+/// 归位（A179 收尾）：告警不写顶栏信息位——那是 state 段的后端信息输出口
 function warn(msg, err) {
     if (typeof console !== 'undefined' && console.warn) {
         console.warn('[chat] ' + msg, err || '');
     }
-    chatInfoSet('⚠ ' + msg);
+    if (typeof chatPetSay === 'function') {
+        chatPetSay('⚠ ' + msg);
+    }
 }
 
 // ── 滚动跟随（对话区）──────────────────────────

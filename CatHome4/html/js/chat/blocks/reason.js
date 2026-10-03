@@ -37,7 +37,7 @@ function buildReasonBlock(payload) {
     var content = (typeof p.text === 'string') ? p.text : '';
     var stats = (typeof p.durMs === 'number') ? thinkStats(content, p.durMs) : null;
 
-    var row = el('div', 'chat-row assistant reason');
+    var row = blockRow('reason');
     var box = el('div', 'chat-think done');
 
     var head = el('div', 'ct-head');

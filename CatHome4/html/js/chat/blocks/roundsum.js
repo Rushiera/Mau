@@ -15,15 +15,7 @@
 // 取舍：三段结构与文案原样保留；丢弃气泡构造（chatBubble → el）与 DOM 挂载 / 滚动跟随
 // ═══════════════════════════════════════════
 
-// 六态用时标签（idle 不计时故不入载荷）
-var ROUNDSUM_PHASES = [
-    { key: 'link', label: 'Link' },
-    { key: 'wait', label: 'Wait' },
-    { key: 'think', label: 'Think' },
-    { key: 'tool', label: 'Tool' },
-    { key: 'run', label: 'Run' },
-    { key: 'reply', label: 'Reply' }
-];
+// 六态用时标签（idle 不计时故不入载荷）——单点声明在 registry.js 的 RUN_PHASES（A179 收口）
 
 function roundsumHtml(payload) {
     var d = (payload && payload.data) || {};
@@ -58,9 +50,9 @@ function roundsumHtml(payload) {
 
     // 第三行——六态用时（非零态上尾巴；单色弱化）
     var tparts = [];
-    for (var pi = 0; pi < ROUNDSUM_PHASES.length; pi++) {
-        var pv = phases[ROUNDSUM_PHASES[pi].key] || 0;
-        if (pv > 0) { tparts.push(ROUNDSUM_PHASES[pi].label + ' ' + fmtMs(pv)); }
+    for (var pi = 0; pi < RUN_PHASES.length; pi++) {
+        var pv = phases[RUN_PHASES[pi].key] || 0;
+        if (pv > 0) { tparts.push(RUN_PHASES[pi].label + ' ' + fmtMs(pv)); }
     }
     html += '<div class="rs-times">' + tparts.join(' · ') + '</div>';
     return html;
@@ -68,8 +60,8 @@ function roundsumHtml(payload) {
 
 function buildRoundSumBlock(payload) {
     // 轮末统计气泡——弱化系统样式；历史重建与实时推送共用同一渲染面
-    var row = el('div', 'chat-row assistant roundsum');
-    var bubble = el('div', formClass('roundsum') + ' roundsum');
+    var row = blockRow('roundsum');
+    var bubble = el('div', bodyClass('roundsum'));
     bubble.innerHTML = roundsumHtml(payload);
     row.appendChild(bubble);
     return row;

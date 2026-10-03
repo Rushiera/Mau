@@ -25,7 +25,7 @@
 function buildStreamReason() {
     // 流式思考块——头行 + 正文（恒展开：500px 封顶 + 溢出滚动）+ 尾部光标
     // 🔴 流式态不参与高度档切换（内容在增长，压缩无意义）
-    var row = el('div', 'chat-row assistant reason');
+    var row = blockRow('stream.reason');
     var box = el('div', 'chat-think stream');
 
     var head = el('div', 'ct-head');
