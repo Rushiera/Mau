@@ -75,11 +75,7 @@ describe('前端符号自检', () => {
                 }
                 // 字符串与正则字面量剥离——引号 / 斜杠内是内容、不参与求值
                 // （CSS `var(--x)` · 文案 `'Note ('` · 规则表 `/^git(\.exe)?/` 均非调用）
-                const text = raw
-                    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
-                    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
-                    .replace(/`(?:[^`\\]|\\.)*`/g, '``')
-                    .replace(/\/(?:[^\n\/\\\[]|\\.|\[(?:[^\]\\]|\\.)*\])+\/[gimsuy]*/g, '/re/');
+                const text = stripLiterals(raw);
                 let m;
                 // 声明 ①：函数（含缩进——局部函数也算「声明过」，宁宽勿误报）
                 const reDefFn = /\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g;
@@ -123,5 +119,91 @@ describe('前端符号自检', () => {
             return c.name + ' @ ' + c.where;
         });
         expect(report).toEqual([]);
+    });
+});
+
+// ── 字面量剥离（两用例共用）────────────────────────────────
+/**
+ * 剥离字符串与正则字面量（引号 / 斜杠内是内容、不参与求值）
+ * 例：CSS `var(--x)` · 文案 `'Note ('` · 规则表 `/^git(\.exe)?/` 均非调用
+ * @param {string} raw 原始行文本
+ * @returns {string} 剥离后的文本
+ */
+function stripLiterals(raw) {
+    return raw
+        .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+        .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+        .replace(/`(?:[^`\\]|\\.)*`/g, '``')
+        .replace(/\/(?:[^\n\/\\\[]|\\.|\[(?:[^\]\\]|\\.)*\])+\/[gimsuy]*/g, '/re/');
+}
+
+// ═══════════════════════════════════════════
+// 死代码自检（A182 扩面）——抓「声明后就再没人用过」的函数
+//
+// 定位：原用例只抓「零声明的裸调用」（拼错名 / 漏件），看不见反方向——**声明了但零引用**的死函数
+//      （A177 删的 4 件正是此类，当初靠人工通读发现）。本用例即该方向的哨兵。
+//
+// 判据：对 `js/chat/**` 内每个函数声明名，统计全仓**词频**（`\bNAME\b`）——
+//   词频 ≤ 声明处数 → 死函数（声明自身占一次；重复声明按声明数扣）。
+//
+// 口径取舍：**宁漏勿误报**（与原用例一致）
+//   · 引用面**不剥字面量**——`FX_FEATURES` 的 `init: 'chatPetInit'` 是合法引用（字符串即入口名）
+//   · 注释行跳过——注释里提到的历史名不算引用（否则死函数被自己的说明行救活）
+//   · 不判作用域 / 不判可达性——只判「有没有人提这个名字」
+// ═══════════════════════════════════════════
+describe('前端死代码自检', () => {
+    it('js/chat/** 无「声明后全仓零引用」的函数', () => {
+        // 引用面语料 = js/chat/** + chat.html（引导层 inline 脚本是 chatBoot / fxBoot 的唯一调用点——
+        // 只扫 js 会把这二者误判为死函数）
+        const page = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'chat.html');
+        const corpus = jsFiles(ROOT).map((p) => ({ path: p, rel: p.slice(ROOT.length + 1) }));
+        corpus.push({ path: page, rel: 'chat.html' });
+        const decls = [];
+        const wordCount = new Map();
+
+        for (const entry of corpus) {
+            const file = entry.path;
+            const rel = entry.rel;
+            const lines = readFileSync(file, 'utf-8').split(/\r?\n/);
+            for (let i = 0; i < lines.length; i = i + 1) {
+                const raw = lines[i];
+                const trimmed = raw.replace(/^\s+/, '');
+                if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) {
+                    continue;
+                }
+                // 声明面——剥字面量（字符串里不会声明函数）
+                const declText = stripLiterals(raw);
+                const where = rel + ':' + (i + 1);
+                let m;
+                const reFn = /\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g;
+                while ((m = reFn.exec(declText)) !== null) {
+                    decls.push({ name: m[1], where: where });
+                }
+                const reFnVar = /\bvar\s+([A-Za-z_$][\w$]*)\s*=\s*function\b/g;
+                while ((m = reFnVar.exec(declText)) !== null) {
+                    decls.push({ name: m[1], where: where });
+                }
+                // 引用面——不剥字面量（字符串里的入口名是合法引用）
+                const reWord = /[A-Za-z_$][\w$]*/g;
+                while ((m = reWord.exec(raw)) !== null) {
+                    wordCount.set(m[0], (wordCount.get(m[0]) || 0) + 1);
+                }
+            }
+        }
+
+        const dead = [];
+        const seen = new Set();
+        for (const d of decls) {
+            if (seen.has(d.name)) {
+                continue;
+            }
+            seen.add(d.name);
+            const total = wordCount.get(d.name) || 0;
+            const declCount = decls.filter(function (x) { return x.name === d.name; }).length;
+            if (total - declCount <= 0) {
+                dead.push(d.name + ' @ ' + d.where);
+            }
+        }
+        expect(dead).toEqual([]);
     });
 });

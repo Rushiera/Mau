@@ -94,12 +94,6 @@ function field(obj, key) {
     return obj[key];
 }
 
-function fieldNum(obj, key) {
-    // 取数值字段——非数值返回空串（键值行不写 NaN / 空值行）
-    if (!obj || typeof obj[key] !== 'number') { return ''; }
-    return String(obj[key]);
-}
-
 // ═══ 结构化返回头 ═══
 // 后端约定：结果首行 JSON（含 tool 字段）+ 其后正文；未结构化结果返回 null（走原文路径）
 

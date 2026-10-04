@@ -114,7 +114,9 @@ function chatConnect() {
         warn('本浏览器不支持 EventSource');
         return;
     }
-    chatSse = new EventSource('/api/v1/stream?topics=view,note,cmd');
+    // A181——只订 chat 面事件（管理面事件 snapshot/patch/log/cmd 与本面无监听器、契约 §12.1 两面分开）
+    // `note` 为兼容面（状态段已自足，契约 §12.2 ①）——退役随 A191
+    chatSse = new EventSource('/api/v1/stream?topics=view,note');
     chatSse.addEventListener('view', function (ev) {
         chatOnFrame(chatParseFrame(ev.data));
     });

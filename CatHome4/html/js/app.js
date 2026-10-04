@@ -38,7 +38,7 @@ for (var i = 0; i < tabs.length; i++) {
 }
 
 // [段3] SSE 事件流——四类事件分派
-// A141——按订阅推送：面板只订阅四类（对话页另订阅 view/sessionstate/note/cmd）
+// A141——按订阅推送：面板只订阅四类（对话页另订阅 view/note——管理面事件不入 chat 流，A181）
 var es = new EventSource('/api/v1/stream?topics=snapshot,patch,log,cmd');
 es.addEventListener('snapshot', function (ev) {
     // 增量流式——全量快照到达（helloFrame 重连兜底）整体替换本地全快照
