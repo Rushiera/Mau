@@ -161,13 +161,7 @@ namespace CH4
                 {
                     if (_chatBridge.DefaultSession.IsIdle)
                     {
-                        _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs, delegate (int n)
-                        {
-                            if (_httpHost != null)
-                            {
-                                _httpHost.PushChatDone(n);
-                            }
-                        });
+                        _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs);
                     }
                     else
                     {
@@ -303,13 +297,7 @@ namespace CH4
                 if (_chatBridge.DefaultSession.IsIdle)
                 {
                     _chatBridge.SessionNewRequested = false;
-                    _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs, delegate (int n)
-                    {
-                        if (_httpHost != null)
-                        {
-                            _httpHost.PushChatDone(n);
-                        }
-                    });
+                    _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs);
                 }
             }
             // D8：QuickCat 指令泵消费（HTTP 线程投递——主线程 OA 驱动）

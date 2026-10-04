@@ -205,8 +205,7 @@ namespace CH4
         /// <param name="persona">角色段（空=仅基础角色）</param>
         /// <param name="injectList">注入清单（空=不注入）</param>
         /// <param name="specs">该会话工具声明面（裁剪后）</param>
-        /// <param name="pushChatDone">该会话外观层推送（chatdone 事件；null=不推）</param>
-        public void HandleSessionNew(ChatSession session, string persona, string[] injectList, ToolSpec[] specs, Action<int> pushChatDone)
+        public void HandleSessionNew(ChatSession session, string persona, string[] injectList, ToolSpec[] specs)
         {
             WorkspaceConfig ws = null;
             DataBox.TryResolve<WorkspaceConfig>(out ws);
@@ -239,11 +238,6 @@ namespace CH4
             }
             string summary = "会话已重建：注入 " + injectCount.ToString() + " 个知识文件，前文已清空";
             LogStore.Add("CatHome4", 1, summary, "CHAT");
-            if (pushChatDone != null)
-            {
-                pushChatDone(session.Context.GetMessages().Length);
-            }
-
         }
 
         /// <summary>
@@ -450,70 +444,6 @@ namespace CH4
             }
         }
 
-        /// <summary>
-        /// 构建会话历史视图 JSON——B4 对话区（GET /api/v1/history 回调）。
-        /// 会话视图转换：system 跳过；user/assistant 文本直出；assistant tool_calls 与后续 tool 结果配对合入工具卡片（参数 ≤200/结果 ≤300）；
-        /// 孤立 tool 丢弃；全量块序列（design-ch4-frontend-history §二——后端一次发完整，前端零分页拼接）。
-        /// </summary>
-        /// <param name="session">目标会话（P9.3 按猫参数化——每猫闭包传各自会话）</param>
-        /// <returns>会话视图 JSON</returns>
-        public string BuildHistoryView(ChatSession session)
-        {
-            ViewBlock[] blocks = session.GetViewBlocks();
-            // 全量语义——一次发完整块序列（design-ch4-frontend-history §二；无窗口 / 无分页）
-            List<object> view = new List<object>();
-            for (int i = 0; i < blocks.Length; i++)
-            {
-                ViewBlock b = blocks[i];
-                Dictionary<string, object> entry = new Dictionary<string, object>();
-                entry["id"] = b.Id;
-                entry["key"] = b.Key;
-                entry["ts"] = b.Timestamp;
-                entry["src"] = b.Src;
-                entry["durMs"] = b.DurMs;
-                entry["state"] = b.State;
-                entry["renderType"] = b.RenderType;
-                entry["origin"] = BuildOrigin(b.Origin);
-                entry["payload"] = ParseViewPayload(b.Payload);
-                view.Add(entry);
-            }
-            Dictionary<string, object> resp = new Dictionary<string, object>();
-            resp["version"] = 1;
-            resp["sessionId"] = session.Id;
-            resp["count"] = blocks.Length;
-            // 期三——流式区快照随带（前端重连 / 刷新后忠实重建流式区；莎红线：流式区只映后端现状）
-            ViewBlock[] liveBlocks = session.GetLiveBlocks();
-            List<object> liveView = new List<object>();
-            for (int i = 0; i < liveBlocks.Length; i = i + 1)
-            {
-                ViewBlock lb = liveBlocks[i];
-                Dictionary<string, object> le = new Dictionary<string, object>();
-                le["id"] = lb.Id;
-                le["key"] = lb.Key;
-                le["ts"] = lb.Timestamp;
-                le["src"] = lb.Src;
-                le["durMs"] = lb.DurMs;
-                le["state"] = lb.State;
-                le["renderType"] = lb.RenderType;
-                le["origin"] = BuildOrigin(lb.Origin);
-                le["payload"] = ParseViewPayload(lb.Payload);
-                liveView.Add(le);
-            }
-            resp["live"] = liveView;
-            // A65 前文条数——送入 LLM 的消息数（含注入块）；前端「前文 n 条」文案唯一口径（与包裹编号同源）
-            resp["ctxCount"] = session.ContextCount;
-            resp["blocks"] = view;
-            // E3 真实 usage 统计——history 载荷携带（前端状态栏显示；零估算）
-            SessionStats st = session.LastStats;
-            Dictionary<string, object> stats = new Dictionary<string, object>();
-            stats["entryCount"] = st.EntryCount;
-            stats["prompt"] = st.LastPromptTokens;
-            stats["cacheHit"] = st.LastCacheHitTokens;
-            stats["completion"] = st.LastCompletionTokens;
-            stats["context"] = st.LastContextTokens;
-            resp["stats"] = stats;
-            return JsonUtil.Serialize(resp);
-        }
 
         /// <summary>前文条目单条正文上限（字符）——弹层展示截断阈值（truncated 标记 + chars 给真实长度）</summary>
         private const int ContextItemLimit = 8000;
@@ -524,7 +454,7 @@ namespace CH4
         /// <summary>
         /// 构建前文条目视图 JSON——对话页状态栏「前文 n 条 / n tokens」点击弹层数据源（GET /api/v1/context）。
         /// 条目源 = 会话消息序列（送入 LLM 的真实前文——含 system 注入与 tool 结果）；每条正文截断 ≤ContextItemLimit 字符（truncated 标记 + chars 真实长度）。
-        /// ctxTokens = ContextTokensKnown（真实 usage 值，零估算）；线程模型同 BuildHistoryView（HTTP 线程直读内存真源）。
+        /// ctxTokens = ContextTokensKnown（真实 usage 值，零估算）；线程模型同其余视图出口（HTTP 线程直读内存真源）。
         /// </summary>
         /// <param name="session">目标会话（P9.3 按猫参数化——每猫闭包传各自会话）</param>
         /// <param name="max">返回条目上限（1-500 夹取，缺省 200；超出取尾部 + 恒含首条）</param>
@@ -668,42 +598,7 @@ namespace CH4
             return "tool";
         }
 
-        /// 前文来源对象——A157 块契约（msgIndex + hash 双字段）；无来源 = null（独立块）。
-        /// </summary>
-        /// <param name="origin">块前文来源</param>
-        /// <returns>来源字典（null = 独立块）</returns>
-        private static Dictionary<string, object> BuildOrigin(ViewOrigin origin)
-        {
-            if (origin == null)
-            {
-                return null;
-            }
-            Dictionary<string, object> o = new Dictionary<string, object>();
-            o["msgIndex"] = origin.MsgIndex;
-            o["hash"] = origin.Hash;
-            return o;
-        }
 
-        /// <summary>
-        /// 视图块载荷 JSON 字符串 → JSON 元素（history 响应内嵌对象；解析失败回退字符串）
-        /// </summary>
-        /// <param name="json">载荷 JSON 字符串</param>
-        /// <returns>JSON 元素或原字符串</returns>
-        private object ParseViewPayload(string json)
-        {
-            try
-            {
-                using (JsonDocument doc = JsonUtil.ParseStrict(json))
-                {
-                    return doc.RootElement.Clone();
-                }
-            }
-            catch (Exception ex)
-            {
-                LogStore.Add("CatHome4", 2, "JSON 解析失败（按原文返回）: " + ex.Message, "HTTP");
-                return json;
-            }
-        }
     }
 }
 

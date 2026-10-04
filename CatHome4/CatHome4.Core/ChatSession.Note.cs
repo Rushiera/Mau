@@ -194,13 +194,12 @@ namespace CH4
         }
 
         /// <summary>
-        /// Note 状态推送——SSE note 事件（M4c 前端悬浮气泡实时重绘；宿主未 Attach 时静默）。
+        /// Note 状态推送——Note 变化触发状态段推送（v2：状态段承载 note 字段，无独立事件面）。
         /// </summary>
         private void PushNoteState()
         {
-            // F4 视图——note 控制块（SSE view 事件；前端悬浮气泡实时重绘）
-            string noteJson = JsonUtil.Object(("type", "note"), ("state", JsonUtil.Raw(BuildNoteJson())));
-            _viewBus.PushControl(noteJson);
+            // F4 视图——状态段推送（Note 变化；v2：状态段承载 note 字段，无独立事件）
+            PushState();
         }
 
         /// <summary>
@@ -258,7 +257,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// Note 状态 JSON——GET /api/v1/note 数据源（tasks/current/done；空计划 tasks=[]；数组引用替换原子——HTTP 线程读安全）。
+        /// Note 状态 JSON——state 段 note 字段数据源（tasks/current/done；空计划 tasks=[]；数组引用替换原子——HTTP 线程读安全）。
         /// </summary>
         /// <returns>Note 状态 JSON 文本</returns>
         public string BuildNoteJson()

@@ -349,12 +349,7 @@ namespace CH4
                 // 索引超界（前文被外部改动）——不删，仅出声
                 LogStore.Add("CatHome4", 2, "timeback 回收区间越界（from " + from.ToString() + " / to " + to.ToString() + " / len " + all.Length.ToString() + "）——本次未删", "TIMEBACK");
             }
-            // [段3] 视图层移出——与前文删除面**解耦**：从**锚定声明之后**起算（比前文删除面宽一段——锚定批的 sibling 结果卡一并归入废弃段；
-            // 前文里它们删不得：assistant 声明的 tool_calls 必须与结果配对）。前文无删除区间时同样执行——sibling 卡仍应归段。
-            // 上界**含 back 声明**（back 声明之前的删除面不含它）——发起回收那条声明消息的 reason 块同属回收决策过程，一并归段
-            // （判例 2026-09-29 莎定：「think 后使用工具，那么这个 think 不被锚回收吗」——三段式须干净为 锚定卡 → 废弃段 → 回收卡，中间不留 think）；
-            // timeback 自己的工具卡（锚定 / 回收）保留在对话流（keepToolName 保留面；实时面不重建，屏幕上是正常块）。
-            _viewStore.ConvertRangeToVoid(scope.StartDeclIndex + 1, scope.BackDeclIndex, "timeback");
+            // [段3] 视图层——不动（A165 v2 契约：持久即持久，移出 / 废弃面退役；回收只作用于送入 LLM 的前文）
             // [段4] 归档——一次回收一个文件（A104）：首行 meta + 该猫 info 快照 + 被删前文消息
             bool archived = WriteTimebackArchiveFile(scope, removed, removedMessages, infoJson, nowMs, seconds);
             // [段5] 释放条数对账——back 返回值给出的预算 vs 批后实际删除数（归档记实际；不一致必须出声）

@@ -1,0 +1,136 @@
+// ═══════════════════════════════════════════
+// lib/images.js —— 对话图片附件（包裹解析 + 缩略图组）
+// 来源：chat-view.js 第 496-644 行（A65 对话图片附件）· 规格 design-ch4-chat-images.md §四/§六
+// 契约：包裹格式（严格门：段头 + ≥1 条目 + 段尾齐备，包裹内部无杂行；不成立 = 整段按普通文本）
+//   [image-open]
+//   图片<前文条数>-<批内序号>：<路径>
+//   [image-end]
+//   <正文>
+// 取舍：保留整节（解析 + 路径→URL 四态 + 缩略图）——去掉 chat 前缀；取图端点路径为宿主契约，保留
+// ═══════════════════════════════════════════
+
+var IMG_OPEN = '[image-open]';
+var IMG_END = '[image-end]';
+var IMG_ITEM = /^图片(\d+)-(\d+)：(.+)$/;
+
+function imgSplit(text) {
+    // 包裹解析——命中 {items:[{ref,path}], body}；不成立 {items:[], body:原文}
+    var raw = (text === undefined || text === null) ? '' : String(text);
+    var lines = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    var i = 0;
+    while (i < lines.length && lines[i].trim() === '') { i = i + 1; }
+    if (i >= lines.length || lines[i].trim() !== IMG_OPEN) { return { items: [], body: raw }; }
+    i = i + 1;
+    var items = [];
+    while (i < lines.length) {
+        var t = lines[i].trim();
+        if (t === IMG_END) { break; }
+        if (t === '') { return { items: [], body: raw }; }
+        var m = IMG_ITEM.exec(t);
+        if (!m) { return { items: [], body: raw }; }
+        items.push({ ref: m[1] + '-' + m[2], path: m[3].trim() });
+        i = i + 1;
+    }
+    if (items.length === 0 || i >= lines.length) { return { items: [], body: raw }; }
+    i = i + 1;
+    return { items: items, body: lines.slice(i).join('\n').replace(/^\s+/, '').replace(/\s+$/, '') };
+}
+
+function imgName(path) {
+    // 路径末段——文件名（本地路径与 http(s) URL 通用；查询串剥离）
+    var parts = String(path === undefined || path === null ? '' : path).split(/[\\/]/);
+    var name = parts.length > 0 ? parts[parts.length - 1] : '';
+    if (name.indexOf('?') >= 0) { name = name.split('?')[0]; }
+    return name;
+}
+
+function imgIsAbsolutePath(path) {
+    // 本地绝对路径判定——UNC `\\host\share` / 正斜杠根 `/x` / 盘符 `C:\` 或 `C:/`
+    var raw = String(path === undefined || path === null ? '' : path);
+    if (raw.length === 0) { return false; }
+    if (raw.indexOf('\\\\') === 0) { return true; }
+    if (raw.indexOf('/') === 0) { return true; }
+    return /^[a-zA-Z]:[\\/]/.test(raw);
+}
+
+function imgIsRootAddress(path) {
+    // 受控根寻址判定——首个冒号在首个分隔符之前（Windows 盘符 C:\ 不算）；与宿主 IsRootAddress 同判据
+    var raw = String(path === undefined || path === null ? '' : path);
+    var colon = raw.indexOf(':');
+    if (colon <= 0) { return false; }
+    var slash = raw.indexOf('/');
+    var back = raw.indexOf('\\');
+    var sep = -1;
+    if (slash >= 0 && back >= 0) { sep = slash < back ? slash : back; }
+    else if (slash >= 0) { sep = slash; }
+    else { sep = back; }
+    if (sep >= 0 && sep < colon) { return false; }
+    if (colon === 1 && sep === 2) { return false; }
+    return true;
+}
+
+function imgRootUrl(path) {
+    // 受控根 URL 段——分隔符统一为 /；首段（含根 id 与冒号）原样，其余逐段编码（保 / 不被转义）
+    var raw = String(path === undefined || path === null ? '' : path).trim().replace(/\\/g, '/');
+    var parts = raw.split('/');
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+        if (i === 0) { out.push(parts[i]); } else { out.push(encodeURIComponent(parts[i])); }
+    }
+    return out.join('/');
+}
+
+function imgUrl(path) {
+    // 路径 → 可渲染 URL（单一出口）——四态：
+    // ① http(s) 直通；② 受控根寻址 `<rootId>:<rel>` 整串进端点；③ 本地绝对路径整串进端点
+    //   （宿主按受控根前缀匹配，不在根内则回落缓存目录文件名）；④ 裸文件名进缓存目录分支
+    var raw = String(path === undefined || path === null ? '' : path).trim();
+    if (raw.length === 0) { return ''; }
+    if (raw.indexOf('http://') === 0 || raw.indexOf('https://') === 0) { return raw; }
+    if (imgIsRootAddress(raw) || imgIsAbsolutePath(raw)) {
+        return '/api/v1/cache-image/' + imgRootUrl(raw);
+    }
+    var name = imgName(raw);
+    if (name === '') { return ''; }
+    return '/api/v1/cache-image/' + encodeURIComponent(name);
+}
+
+function imgThumb(item) {
+    // 缩略图——角标（包裹条目）/ 文件名（工具输入） + 点击新标签开原图；取图失败原位回落原始路径文本
+    var label = item.ref ? ('图片' + item.ref) : imgName(item.path);
+    var fig = el('figure', 'chat-img');
+    var url = imgUrl(item.path);
+    var a = el('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    var img = el('img');
+    img.src = url;
+    img.alt = item.ref ? ('图片' + item.ref) : '输入图片';
+    img.addEventListener('error', function () {
+        fig.className = 'chat-img missing';
+        fig.textContent = (label ? (label + '：') : '') + item.path + '（取图失败）';
+    });
+    a.appendChild(img);
+    fig.appendChild(a);
+    if (label) {
+        fig.appendChild(elText('figcaption', '', label));
+    }
+    return fig;
+}
+
+function imageGroup(items) {
+    // 缩略图组——包裹命中时的图片块（各泡共用）
+    var wrap = el('div', 'chat-imgs');
+    for (var i = 0; i < items.length; i++) {
+        wrap.appendChild(imgThumb(items[i]));
+    }
+    return wrap;
+}
+
+function imageGroupFromPaths(paths) {
+    // 工具输入图片组——路径列表 → 缩略图组（无编号：非包裹条目，标题走文件名）
+    var items = [];
+    for (var i = 0; i < paths.length; i++) { items.push({ ref: '', path: paths[i] }); }
+    return imageGroup(items);
+}

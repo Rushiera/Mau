@@ -529,12 +529,11 @@ namespace CatHome4.Admin
 
         /// <summary>
         /// 对话页路由注册——chat.html 专用（不含管理 CRUD），可安全下发到每猫 host（RouteRegistrar 槽）。
-        /// 内容：待识别命令采集（RegisterCmdUnknownRoutes）+ 图片上传与取图。
+        /// 内容：图片上传与取图。
         /// </summary>
         /// <param name="sink">HTTP 路由注册面</param>
         internal static void RegisterChatPageRoutes(IHttpRouteSink sink)
         {
-            RegisterCmdUnknownRoutes(sink);
             RegisterChatImageRoutes(sink);
         }
 

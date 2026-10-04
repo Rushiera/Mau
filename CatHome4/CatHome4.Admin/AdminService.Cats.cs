@@ -693,13 +693,7 @@ namespace CatHome4.Admin
                     if (cat.Session.IsIdle)
                     {
                         cat.SessionNewRequested = false;
-                        _chatBridge.HandleSessionNew(cat.Session, cat.Persona, cat.InjectList, cat.ToolSpecs, delegate (int n)
-                        {
-                            if (cat.Host != null)
-                            {
-                                cat.Host.PushChatDone(n);
-                            }
-                        });
+                        _chatBridge.HandleSessionNew(cat.Session, cat.Persona, cat.InjectList, cat.ToolSpecs);
                     }
                 }
                 string job;
@@ -733,13 +727,7 @@ namespace CatHome4.Admin
                 if (_chatBridge.DefaultSession.IsIdle)
                 {
                     _majorSessionNewRequested = false;
-                    _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs, delegate (int n)
-                    {
-                        if (_majorHost != null)
-                        {
-                            _majorHost.PushChatDone(n);
-                        }
-                    });
+                    _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs);
                 }
             }
             string majorJob;
@@ -1089,7 +1077,7 @@ namespace CatHome4.Admin
             cat.Running = true;
             cat.Port = port;
             cat.Host = host;
-            cat.Session.AttachHost(host);
+            AttachSessionHost(cat.Session, host);
             SetCatRuntime(cat.Id, true, port);
             LogStore.Add("CatHome4", 1, "已启动猫「" + cat.DisplayName + "」，端口 " + port.ToString(), "CHAT");
             return "cat.start | " + cat.DisplayName + " | http://127.0.0.1:" + port.ToString();
@@ -1307,8 +1295,6 @@ namespace CatHome4.Admin
                 ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, catSpecs, ExecuteTool, viewStore);
                 session.AttachApiRole(apiRole);
                 session.SetApiConfigId(apiConfigId);
-                // A111——块序变更通知接线（视图层变更 → 转发面游标校正；猫 key 在组合根注入）
-                AttachViewOrderNotify(id, viewStore);
                 // 完整前文留档——落点 sessions_ctx（与 sessions / sessions_old 同级；份数走 chat.full_ctx_keep）
                 session.AttachFullContext(Path.Combine(_dataRoot, "Data", "sessions_ctx"));
                 // M4e 猫级白名单——多猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
@@ -1605,26 +1591,8 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 装配块序变更通知（A111）——视图层变更（清除 / 重建 / 轮统计清理 / 区间转废弃）→ QQ 转发面游标校正。
-        /// 猫 key 由组合根注入（Core 不知猫 key、QQ 不知视图层——两侧零耦合）；未挂 qqbot 的猫同样接线（无转发态即无动作）。
-        /// </summary>
-        /// <param name="catKey">猫 key（转发态游标键——与 QqTarget.Key 同源）</param>
-        /// <param name="viewStore">会话视图存储</param>
-        internal static void AttachViewOrderNotify(string catKey, SessionViewStore viewStore)
-        {
-            if (viewStore == null)
-            {
-                return;
-            }
-            viewStore.OnBlocksReordered = delegate (ViewOrderChange change)
-            {
-                QQBotService.NotifyBlocksReordered(catKey, change);
-            };
-        }
-
-        /// <summary>
-        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType / Content / Done / Hash；text 块提取 payload.content，
-        /// Hash 供转发面锚定游标——A111）。
+        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType / Content / Done / Round；text / gap_text 块提取 payload.text，
+        /// Round 供转发面按轮次定位——A165 v2 无键面）。
         /// </summary>
         /// <param name="blocks">视图块数组</param>
         /// <returns>QQ 转发项数组</returns>
@@ -1642,9 +1610,9 @@ namespace CatHome4.Admin
                 item.RenderType = b.RenderType ?? "";
                 item.Content = "";
                 item.Done = "";
-                // A156：游标锚取块键——稳定句柄（前文派生 msg:序:型 / 工具 tool:callId / 独立块 容器:序号）
-                item.Hash = b.Key == null ? "" : b.Key;
-                if (item.RenderType == "text")
+                // A165 v2：无键面——按轮次定位（Round 随块给，重启续接跳过已消费轮）
+                item.Round = b.Round;
+                if (item.RenderType == "text" || item.RenderType == "gap_text")
                 {
                     item.Content = ExtractTextContent(b.Payload);
                 }
@@ -1658,7 +1626,7 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 提取 text 块内容——payload JSON 的 content 字段（防御式解析失败返回空串）。
+        /// 提取 text 块内容——payload JSON 的 text 字段（A165 v2 键名统一；防御式解析失败返回空串）。
         /// </summary>
         /// <param name="payloadJson">块载荷 JSON</param>
         /// <returns>内容文本</returns>
@@ -1672,7 +1640,7 @@ namespace CatHome4.Admin
             {
                 using (JsonDocument d = JsonUtil.ParseStrict(payloadJson))
                 {
-                    if (d.RootElement.TryGetProperty("content", out JsonElement c) && c.ValueKind == JsonValueKind.String)
+                    if (d.RootElement.TryGetProperty("text", out JsonElement c) && c.ValueKind == JsonValueKind.String)
                     {
                         return c.GetString() ?? "";
                     }
@@ -1680,7 +1648,7 @@ namespace CatHome4.Admin
             }
             catch (Exception ex)
             {
-                LogStore.Add("CatHome4", 2, "载荷 content 提取失败（回落空）: " + ex.Message, "CHAT");
+                LogStore.Add("CatHome4", 2, "载荷 text 提取失败（回落空）: " + ex.Message, "CHAT");
             }
             return "";
         }
@@ -1897,6 +1865,19 @@ namespace CatHome4.Admin
         /// <param name="cat">猫实体</param>
         /// <param name="port">监听端口</param>
         /// <returns>HttpHost 实例</returns>
+        /// <summary>
+        /// 会话 ↔ 宿主绑定——推送面 + 连接面一次注入（单一出口；三条启动路径共用）。
+        /// 连接面 = state 段 conn.clients 数据源（A186）；漏注入时 clients 恒 0——该值本身在契约里可见，不静默。
+        /// </summary>
+        /// <param name="session">目标会话</param>
+        /// <param name="host">该会话的 HTTP 外观层实例</param>
+        private static void AttachSessionHost(ChatSession session, HttpHost host)
+        {
+            session.AttachHost(host);
+            session.AttachConnInfo(() => host.ClientCount);
+        }
+
+        /// <summary>启动猫的 HTTP 外观层实例——按端口起 Host 并返回句柄（三条启动路径共用）。</summary>
         private static HttpHost StartCatHost(CatEntry cat, int port)
         {
             return HttpHost.Start(new HttpHostOptions
@@ -1908,19 +1889,15 @@ namespace CatHome4.Admin
                 Dispatcher = (string line) => DispatchCommandForCat(cat, line),
                 EnvelopeBuilder = MakeChatEnvelopeBuilder(cat.Session),
                 FrameBuilder = null,
-                HistoryBuilder = () => _chatBridge.BuildHistoryView(cat.Session),
                 ContextBuilder = (int max) => _chatBridge.BuildContextView(cat.Session, max),
                 KeyInfoBuilder = (int max) => _chatBridge.BuildKeyInfoView(cat.Session, max),
                 FullContextBuilder = (int max) => _chatBridge.BuildFullContextView(cat.Session, max),
                 CatsBuilder = null,
-                NoteBuilder = () => cat.Session.BuildNoteJson(),
-                DelayBuilder = () => DelayQueue.BuildListJson(cat.Session.Id),
                 PatchBuilder = null,
-                SessionStateBuilder = () => cat.Session.BuildRunStateJson(),
                 ApiRoleBuilder = () => BuildApiRoleJson(cat.Session),
                 ApiRoleToggler = () => ToggleApiRoleJson(cat.Session),
                 ViewFullBuilder = () => cat.Session.BuildViewFullJson(),
-                ViewDeltaBuilder = () => cat.Session.TakeViewDeltaJson(),
+                ViewFrameBuilder = () => cat.Session.TakeViewFrameJson(),
                 ServeChatPage = true,
                 RouteRegistrar = RegisterChatPageRoutes,
                 HtmlRootProvider = HtmlRoot,
@@ -1955,19 +1932,15 @@ namespace CatHome4.Admin
                 Dispatcher = (string line) => DispatchCommandForMajor(line),
                 EnvelopeBuilder = MakeChatEnvelopeBuilder(_chatBridge.DefaultSession),
                 FrameBuilder = null,
-                HistoryBuilder = () => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession),
                 ContextBuilder = (int max) => _chatBridge.BuildContextView(_chatBridge.DefaultSession, max),
                 KeyInfoBuilder = (int max) => _chatBridge.BuildKeyInfoView(_chatBridge.DefaultSession, max),
                 FullContextBuilder = (int max) => _chatBridge.BuildFullContextView(_chatBridge.DefaultSession, max),
                 CatsBuilder = null,
-                NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
-                DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),
                 PatchBuilder = null,
-                SessionStateBuilder = () => _chatBridge.DefaultSession.BuildRunStateJson(),
                 ApiRoleBuilder = () => BuildApiRoleJson(_chatBridge.DefaultSession),
                 ApiRoleToggler = () => ToggleApiRoleJson(_chatBridge.DefaultSession),
                 ViewFullBuilder = () => _chatBridge.DefaultSession.BuildViewFullJson(),
-                ViewDeltaBuilder = () => _chatBridge.DefaultSession.TakeViewDeltaJson(),
+                ViewFrameBuilder = () => _chatBridge.DefaultSession.TakeViewFrameJson(),
                 ServeChatPage = true,
                 RouteRegistrar = RegisterChatPageRoutes,
                 HtmlRootProvider = HtmlRoot,
@@ -1976,7 +1949,7 @@ namespace CatHome4.Admin
             _majorHost = host;
             _majorPort = port;
             // 会话事件推送改绑 majordomo 独立对话端口（主端口 index.html 管理面板不再消费 chat 事件——F2.1）
-            _chatBridge.DefaultSession.AttachHost(host);
+            AttachSessionHost(_chatBridge.DefaultSession, host);
             LogStore.Add("CatHome4", 1, "majordomo 独立对话端口已启动：" + port.ToString(), "CHAT");
             return true;
         }
@@ -2327,7 +2300,7 @@ namespace CatHome4.Admin
                 }
                 cat.Running = true;
                 cat.Port = port;
-                cat.Session.AttachHost(cat.Host);
+                AttachSessionHost(cat.Session, cat.Host);
                 // 端口与登记值不一致（被占回落）→ 只更新运行态文件（启动链不写 cat.cfg）
                 if (port != rt.Port)
                 {

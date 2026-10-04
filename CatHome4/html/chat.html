@@ -8,26 +8,32 @@
     <link rel="stylesheet" href="css/chat.css?v=__V__">
 </head>
 <body>
+    <!-- ═══ 顶部栏 ═══ -->
     <div id="chatbar">
         <span class="sid" id="chatTitle">—</span>
-        <button id="chatApiRole" title="LLM 端点角色——点击对调主要 / 备用（仅本会话有效）；方括号内为当前生效站模型名">API 主要[—]</button>
         <span id="chatInfo">—</span>
         <span style="flex:1"></span>
         <span id="uiVer" data-version title="前端版本——每次 Vitest 自动递增 + 最后更新时间">UI v?</span>
         <button id="chatNew" title="新会话（session.new——清前文并重新注入）">新会话</button>
         <button id="chatRefresh" title="刷新——重建界面气泡（纯前端）">刷新</button>
-        <button id="chatCacheClear" title="清理素材缓存——下次刷新重新下载桌宠素材（改图不改名 / 缓存脏数据时用）">清理缓存</button>
     </div>
+
+    <!-- ═══ 持久区——对话区（契约 §12.2 ②：每块对应一个气泡渲染函数） ═══ -->
     <div id="chatMsgs"></div>
-    <!-- 自绘滚动带（design-ch4-frontend-scroll）——IDE 风格滚动带：视口指示块 + 消息刻度 + 点击跳转 + 拖拽；
-         原生滚动条已隐藏（js/chat-scroll.js §二 为滚动执行器的呈现层）；几何由 JS 按对话区矩形同步 -->
+    <!-- 自绘滚动带（js/chat/fx/scroll.js · design-ch4-frontend-scroll）——IDE 风格滚动带：视口指示块 + 消息刻度 + 点击跳转 + 拖拽；
+         原生滚动条已隐藏；几何由 JS 按对话区矩形同步 -->
     <div id="chatScrollBand"><div id="sbThumb"></div><div id="sbTicks"></div></div>
 
-    <!-- 单向数据流改造——插话队列显示区（纯展示；正常流堆叠，对话区自动上移） -->
+    <!-- ═══ 插话队列显示区（js/chat/fx/pending.js——本地入列 / user 块到达出列；纯展示，空表自动隐藏） ═══ -->
     <div id="chatPendingPanel"></div>
+
+    <!-- ═══ 输入区 ═══ -->
     <div id="chatinput">
-        <!-- Note / 定时 / 跳底 按钮行（A121）——绝对定位贴输入区上缘（不占布局：按钮行与 popover 均不影响聊天区高度）；
-             位置随 #chatinput 高度自动让位——ui.font_scale / 输入行数 / 待发图片行 / 插话队列变化均不再遮挡输入区 -->
+        <!-- 临时区（契约 §12.2 ③ / §6.1-F）——与持久区物理分离：输入区左侧切换面板（全量镜像替换）；
+             隐藏时即流式显示态；回车发送时主干自动切回本态 -->
+        <div id="chatLivePanel" class="chat-live" style="display:none"></div>
+
+        <!-- Note / 定时 / 跳底 按钮行（绝对定位贴输入区上缘；Note 面板 note.js · 定时面板 delay.js · 跳底在 main.js） -->
         <div id="noteWrap" class="note-wrap">
             <div id="notePopover" class="note-popover" style="display:none">
                 <div class="note-popover-head"><span id="noteTitle">Note</span></div>
@@ -41,7 +47,7 @@
             <div id="noteBubble" class="note-bubble" title="Note 工作进度——点击展开/收起">
                 <span id="noteBubbleText">Note · 空</span>
             </div>
-            <!-- 延迟指令队列（design-ch4-delay §六）——定时按钮 + 弹层（列表/倒计时/改时刻/取消/新建） -->
+            <!-- 延迟指令队列（design-ch4-delay §六）——定时按钮 + 弹层（delay.js） -->
             <div id="delayWrap" class="delay-wrap">
                 <button id="delayBtn" title="定时指令队列——延迟注入 / 改时刻 / 取消">定时<span id="delayCount"></span></button>
                 <div id="delayPopover" class="delay-popover" style="display:none">
@@ -66,136 +72,88 @@
             </div>
             <button id="chatJumpBottom" title="跳到最下层（回到最新内容）">↓</button>
         </div>
+
         <div id="chatImages" class="chat-images"></div>
         <textarea id="chatSendInput" rows="5" placeholder="输入文本…（Enter 发送；Shift+Enter 换行；可直接粘贴图片）"></textarea>
-        <!-- 输入区动作列（2026-09-30）——停止/继续/发送竖排同列、同款实心（底色区分语义）；原「停止」在顶部栏 -->
+        <!-- 输入区动作列——临时区切换 / 停止 / 继续 / 发送（竖排同列、同款实心；底色区分语义） -->
         <div id="chatActions">
+            <button id="chatLiveToggle" class="ch-iabtn ch-iabtn-live" title="查看进行中的临时内容（流式 / 工具卡）——再点回到对话流">临时</button>
             <button id="chatPause" class="ch-iabtn ch-iabtn-stop" title="停止本轮（cat.pause——已生成内容保留，前文格式修复）" disabled>停止</button>
             <button id="chatContinue" class="ch-iabtn ch-iabtn-continue" title="继续——用当前前文直接发一次 LLM 请求（cat.continue：不追加消息，模型续写）" disabled>继续</button>
             <button id="chatSendBtn" class="ch-iabtn ch-iabtn-send">发送</button>
         </div>
     </div>
-    <!-- E 系列——状态区（四态计时 + Token 统计）：最底部持久存在 -->
+
+    <!-- ═══ 状态区——六态计时（契约 §12.2 ① state 段投影） ═══ -->
     <div id="chatStatus"></div>
-    <!-- 桌宠（纯前端渲染）——fixed 浮动层不占布局；纯展示（pointer-events:none，不拦对话区操作） -->
+    <!-- 桌宠（纯前端渲染——js/chat/fx/pet.js；素材清单 js/pet-manifest.js） -->
     <div id="chatPet"><img id="chatPetImgA" alt="桌宠"><img id="chatPetImgB" alt=""></div>
 
-    <!-- 前文弹层（js/chat-ctx.js）——状态栏「前文 n 条 / n tokens / 前文关键信息」点击开的小窗口；四视图：按条（list）/ 按 token（tokens）/ 关键信息（key）/ 完整前文（full） -->
-    <div id="ctxPopover" class="ctx-popover" style="display:none">
-        <div class="ctx-head">
-            <span id="ctxTitle">前文条目</span>
-            <span id="ctxMeta"></span>
-            <span style="flex:1"></span>
-            <span id="ctxModeList" class="ctx-mode" title="按条目顺序显示前文">按条</span>
-            <span id="ctxModeTokens" class="ctx-mode" title="按字符规模显示前文分布">按 tokens</span>
-            <span id="ctxModeKey" class="ctx-mode" title="本次会话关键信息——加载报告 / 用户消息 / 正式回复 / 轮结算">关键信息</span>
-            <span id="ctxModeFull" class="ctx-mode" title="本次会话完整前文——送入 LLM 的全量消息（留档文本剥离修饰后还原）">完整前文</span>
-            <button id="ctxRefresh" title="刷新——①确保完整前文采集就绪（端点读取前强制采集）②完全重建会话页面（全量重拉，含首块注入报告）；关闭走 Esc / 点弹层外">⟳</button>
-        </div>
-        <div id="ctxList" class="ctx-list"></div>
-    </div>
-
-    <!-- F2.3 引导层——对话核心逻辑在外部模块（js/chat-md.js 渲染器 + js/chat-view.js 渲染面 + js/chat-core.js 状态分发 + js/chat-note.js——对话逻辑唯一真相源）；本页只承接引导：SSE/按钮绑定（防御式）/初始化 -->
-    <!-- 两页共用前端工具（loadUiVersion/applyUiConfig/loadUiConfig）——js/ui-common.js 单一定义（消除内联副本） -->
+    <!-- ═══════════════════════════════════════════
+         脚本清单——加载顺序即依赖顺序：
+           ① 公共件（两页共用）→ ② 素材 lib → ③ 素材 blocks → ④ 主干 → ⑤ 面板 / 侧翼 → ⑥ 独立功能 fx
+         素材与主干的边界：素材零全局状态（返回元素即完）；挂载 / 排序 / 跟随 / 指令归主干。
+         函数声明在脚本加载时即注册全局，故跨件引用按运行时解析——
+         硬顺序两处：③ 先于 ④（registry.js 顶层把 blocks 的函数引用收进映射表）；
+                     ⑥ 段末 registry.js 在其各件之后（fx 表持有入口名），fxBoot 由引导层调用。
+         ═══════════════════════════════════════════ -->
     <script src="js/ui-common.js?v=__V__"></script>
-    <!-- F3 MD 渲染——chat-md.js 手写解析器（纯函数，无依赖），必须先于 chat-view/chat-core 加载（chatOnText 调用 mdToHtml） -->
-    <script src="js/chat-md.js?v=__V__"></script>
-    <!-- 命令解读——chat-cmd.js 纯函数模块（powershell 工具卡可见性适配），必须先于 chat-view.js 加载（chatToolCard 调用 cmdDecodeTool） -->
-    <script src="js/chat-cmd.js?v=__V__"></script>
-    <!-- 工具块渲染——chat-tools.js 骨架层（语义大类）+ 逐工具填充单例（规格 design-ch4-frontend-tools）；必须先于 chat-view.js 加载（chatToolCard 调用 chatToolBody） -->
-    <script src="js/chat-tools.js?v=__V__"></script>
-    <!-- A85 Think 块两态渲染（流式态 live-only / 完成态落盘）——须先于 chat-view.js 与 chat-core.js -->
-    <script src="js/chat-think.js?v=__V__"></script>
-    <script src="js/chat-view.js?v=__V__"></script>
-    <script src="js/chat-core.js?v=__V__"></script>
-    <!-- 前文弹层——状态栏「前文 n 条 / n tokens」点击开的小窗口（按条 / 按 token 两视图）；须在 chat-view.js 之后（chatFmtCount 依赖） -->
-    <script src="js/chat-ctx.js?v=__V__"></script>
-    <!-- 对话区滚动自持层（design-ch4-frontend-scroll）——滚轮兜底转发 + 自绘滚动带；须在 chat-core.js 之后加载（#chatMsgs 已就位） -->
-    <script src="js/chat-scroll.js?v=__V__"></script>
-    <script src="js/chat-note.js?v=__V__"></script>
-    <!-- 延迟指令队列——列表/倒计时/新建/改时刻/取消（design-ch4-delay §六） -->
-    <script src="js/chat-delay.js?v=__V__"></script>
-    <!-- 桌宠素材清单（WorkSpace/pet/convert_pet.py 生成——缓存失效键；须先于 chat-pet.js） -->
+    <!-- 桌宠素材清单（生成物——`WorkSpace/pet/convert_pet.py` 产出；A171 桌宠渲染用） -->
     <script src="js/pet-manifest.js?v=__V__"></script>
-    <!-- 桌宠——纯前端渲染（js/chat-pet.js）：读运行态与停留计时调整形态；须在 chat-core.js 之后加载 -->
-    <script src="js/chat-pet.js?v=__V__"></script>
+
+    <!-- ② 素材 lib——块渲染共用件（DOM 构造 / 格式化 / MD / 图片 / 按压判据 / 思考头行 / 工具骨架） -->
+    <script src="js/chat/lib/dom.js?v=__V__"></script>
+    <script src="js/chat/lib/format.js?v=__V__"></script>
+    <script src="js/chat/lib/press.js?v=__V__"></script>
+    <script src="js/chat/lib/md.js?v=__V__"></script>
+    <script src="js/chat/lib/md-copy.js?v=__V__"></script>
+    <script src="js/chat/lib/images.js?v=__V__"></script>
+    <script src="js/chat/lib/think-head.js?v=__V__"></script>
+    <script src="js/chat/lib/tool-format.js?v=__V__"></script>
+    <script src="js/chat/lib/fallback.js?v=__V__"></script>
+    <script src="js/chat/lib/cmd.js?v=__V__"></script>
+
+    <!-- ③ 素材 blocks——契约 12 类块型各一件（persist 9 + live 3） -->
+    <script src="js/chat/blocks/user.js?v=__V__"></script>
+    <script src="js/chat/blocks/text.js?v=__V__"></script>
+    <script src="js/chat/blocks/gap-text.js?v=__V__"></script>
+    <script src="js/chat/blocks/reason.js?v=__V__"></script>
+    <script src="js/chat/blocks/toolcard.js?v=__V__"></script>
+    <script src="js/chat/blocks/retry.js?v=__V__"></script>
+    <script src="js/chat/blocks/error.js?v=__V__"></script>
+    <script src="js/chat/blocks/inject-report.js?v=__V__"></script>
+    <script src="js/chat/blocks/roundsum.js?v=__V__"></script>
+    <script src="js/chat/blocks/reply-sse.js?v=__V__"></script>
+    <script src="js/chat/blocks/think-sse.js?v=__V__"></script>
+    <script src="js/chat/blocks/tool-run.js?v=__V__"></script>
+
+    <!-- ④ 主干——映射表 → 两区入口 → 状态投影 → 单一应用入口 -->
+    <script src="js/chat/registry.js?v=__V__"></script>
+    <script src="js/chat/persist.js?v=__V__"></script>
+    <script src="js/chat/live.js?v=__V__"></script>
+    <script src="js/chat/state.js?v=__V__"></script>
+    <script src="js/chat/main.js?v=__V__"></script>
+    <script src="js/chat/input.js?v=__V__"></script>
+
+    <!-- ⑤ 面板与侧翼（主干层）——note / delay 面板 · paste 出口面 -->
+    <script src="js/chat/note.js?v=__V__"></script>
+    <script src="js/chat/delay.js?v=__V__"></script>
+    <script src="js/chat/paste.js?v=__V__"></script>
+
+    <!-- ⑥ 独立功能（fx）——每功能一件 · registry.js 在段末（表持有各件入口名）；启动由引导层 fxBoot() 统一执行 -->
+    <script src="js/chat/fx/pet.js?v=__V__"></script>
+    <script src="js/chat/fx/scroll.js?v=__V__"></script>
+    <script src="js/chat/fx/pending.js?v=__V__"></script>
+    <script src="js/chat/fx/cmd-intent.js?v=__V__"></script>
+    <script src="js/chat/fx/controls.js?v=__V__"></script>
+    <script src="js/chat/fx/registry.js?v=__V__"></script>
+
     <script>
+        // 引导层——只做接线与启动，不含业务逻辑
         loadUiVersion();
         loadUiConfig();
-
-        // [段2] SSE 事件流——view/note 两事件（相对路径——天然按端口路由；F4 view 协议收敛唯一入口）
-        // A141——按订阅推送：本页只订阅四类，不订阅 log（日志帧不进本连接队列）
-        var es = new EventSource('/api/v1/stream?topics=view,sessionstate,note,cmd');
-        es.addEventListener('view', function (ev) { chatOnView(JSON.parse(ev.data)); });
-        es.addEventListener('note', function (ev) { noteOnEvent(JSON.parse(ev.data)); });   // M4c——Note 状态实时重绘
-        // A59——运行态：本猫运行态（sessionstate）变化时推送 → 状态条；空闲期零推送（前端零轮询、零自算计时）
-        es.addEventListener('sessionstate', function (ev) { chatOnSessionState(JSON.parse(ev.data)); });
-        es.onerror = function () { chatInfo.textContent = 'SSE 断线——自动重连...'; chatPetSetOffline(true); };
-        es.onopen = function () {
-            // A162——连接建立（首连 / 自动重连同一路径）：服务端随首帧推一次全量（view.op=full），前端零请求。
-            // 事件流补课机制（落差检测 / 增量续传 / 重连分流 / 本地清容器）已退役。
-            chatPetSetOffline(false);
-        };
-
-        // [段3] 按钮绑定（防御式——元素缺失跳过；F2.3 从内联 onclick 迁出）
-        var elChatNew = document.getElementById('chatNew');
-        if (elChatNew) { elChatNew.addEventListener('click', chatNewSession); }
-        // 端点角色——[API 主要[模型]] / [API 备用[模型]] 标签（只显当前生效站；点击对调）
-        var elChatApiRole = document.getElementById('chatApiRole');
-        if (elChatApiRole) {
-            elChatApiRole.addEventListener('click', chatApiRoleToggle);
-            chatApiRoleRefresh();
-        }
-        var elChatRefresh = document.getElementById('chatRefresh');
-        if (elChatRefresh) { elChatRefresh.addEventListener('click', chatRefresh); }
-        var elChatPause = document.getElementById('chatPause');
-        if (elChatPause) { elChatPause.addEventListener('click', chatPause); }
-        var elChatContinue = document.getElementById('chatContinue');
-        if (elChatContinue) { elChatContinue.addEventListener('click', chatContinue); }
-        var elChatSendBtn = document.getElementById('chatSendBtn');
-        if (elChatSendBtn) { elChatSendBtn.addEventListener('click', chatSend); }
-        var elChatSendInput = document.getElementById('chatSendInput');
-        if (elChatSendInput) {
-            // 多排输入——Enter 发送（preventDefault 阻止 textarea 插入换行）；Shift+Enter 走默认换行
-            elChatSendInput.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chatSend(); }
-            });
-            // A65 图片粘贴——仅图片项被拦截（上传进缓存区），纯文本粘贴原样入框
-            elChatSendInput.addEventListener('paste', chatOnPaste);
-        }
-        var elNoteBubble = document.getElementById('noteBubble');
-        if (elNoteBubble) { elNoteBubble.addEventListener('click', function (e) { e.stopPropagation(); noteToggle(); }); }
-        // 跳底按钮——回到最新内容（无条件滚到底；2026-09-17）
-        var elJumpBottom = document.getElementById('chatJumpBottom');
-        if (elJumpBottom) { elJumpBottom.addEventListener('click', chatJumpBottom); }
-        var elNoteAddBtn = document.getElementById('noteAddBtn');
-        if (elNoteAddBtn) { elNoteAddBtn.addEventListener('click', noteAdd); }
-        var elNoteAddInput = document.getElementById('noteAddInput');
-        if (elNoteAddInput) {
-            elNoteAddInput.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') { noteAdd(); }
-            });
-        }
-        var elNoteStartBtn = document.getElementById('noteStartBtn');
-        if (elNoteStartBtn) { elNoteStartBtn.addEventListener('click', noteStart); }
-        // Q6 页面标题——快照 title 字段（displayName · Chat；SSE snapshot 事件实时应用 + 初始化兜底 fetch；前端零业务逻辑）
-        function chatApplyTitle(t) {
-            if (!t) { return; }
-            document.title = t;
-            var st = document.getElementById('chatTitle');
-            if (st) { st.textContent = t; }
-        }
-        es.addEventListener('snapshot', function (ev) {
-            try { chatApplyTitle(JSON.parse(ev.data).title); } catch (e) { uiWarn('标题快照解析', e); }
-        });
-        fetch('/api/v1/snapshot').then(function (r) { return r.json(); }).then(function (snap) {
-            chatApplyTitle(snap.title);
-        }).catch(function (e) { uiWarn('标题快照', e); });
-
-        // [段4] 初始化——Note 兜底拉取（历史加载已由服务端连接建立首帧送达；版本填充已在引导头部完成）
-        chatPetInit();
-        delayInit();
-        fetch('/api/v1/note').then(function (r) { return r.json(); }).then(function (j) { noteState = j; noteRender(); }).catch(function (e) { uiWarn('Note 兜底拉取', e); });
+        chatBoot();
+        fxBoot();
     </script>
 </body>
 </html>

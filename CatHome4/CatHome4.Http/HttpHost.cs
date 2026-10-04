@@ -32,7 +32,7 @@ namespace CatHome4.Http
         /// <summary>前端测试服务端口（/api/v1/frontend-test 转发目标——区段值：开发区 8069 / 部署区 8099）</summary>
         public int FrontendTestPort { get; set; }
 
-        /// <summary>会话归属 ID——SSE llm/chatdone 事件的 sessionId</summary>
+        /// <summary>会话归属 ID——SSE 帧的 sessionId 归属</summary>
         public string SessionId { get; set; }
 
         /// <summary>快照 JSON 构建回调</summary>
@@ -47,9 +47,6 @@ namespace CatHome4.Http
         /// <summary>紧凑帧构建回调（可空=不落帧）</summary>
         public Func<string> FrameBuilder { get; set; }
 
-        /// <summary>会话历史构建回调（可空=不注册该端点）——全量块序列（design-ch4-frontend-history §二）</summary>
-        public Func<string> HistoryBuilder { get; set; }
-
         /// <summary>前文条目构建回调（可空=不注册该端点）——GET /api/v1/context（对话页状态栏「前文 n 条 / n tokens」点击弹层数据源）</summary>
         public Func<int, string> ContextBuilder { get; set; }
         /// <summary>关键信息构建回调（可空=不注册该端点）——GET /api/v1/keyinfo（对话页状态栏「前文关键信息」点击弹层数据源）</summary>
@@ -61,17 +58,8 @@ namespace CatHome4.Http
         /// <summary>多猫列表构建回调（可空=不注册该端点）</summary>
         public Func<string> CatsBuilder { get; set; }
 
-        /// <summary>Note 状态构建回调（可空）</summary>
-        public Func<string> NoteBuilder { get; set; }
-
-        /// <summary>延迟队列状态构建回调（可空=不注册该端点）——GET /api/v1/delay（design-ch4-delay §5.2）</summary>
-        public Func<string> DelayBuilder { get; set; }
-
         /// <summary>增量 patch 构建回调（可空=全量推送）</summary>
         public Func<string> PatchBuilder { get; set; }
-
-        /// <summary>本猫运行态构建回调（可空=不推运行态）——对话端口用：变化才推（替代每 250ms 全量快照推送）</summary>
-        public Func<string> SessionStateBuilder { get; set; }
 
         /// <summary>端点角色读取回调（可空=不注册该端点）——GET /api/v1/api-role（对话页 [API:主要/备用] 标签）</summary>
         public Func<string> ApiRoleBuilder { get; set; }
@@ -79,11 +67,11 @@ namespace CatHome4.Http
         /// <summary>端点角色手动对调回调（可空=不注册该端点）——POST /api/v1/api-role/toggle（仅本会话有效）</summary>
         public Func<string> ApiRoleToggler { get; set; }
 
-        /// <summary>视图全量构建回调（可空=连接建立不推视图）——A162 状态推送：连接建立取一次（连接私有首帧）</summary>
+        /// <summary>视图全量帧构建回调（可空=连接建立不推视图）——v2 契约：连接建立取一次（连接私有首帧）</summary>
         public Func<string> ViewFullBuilder { get; set; }
 
-        /// <summary>视图增量构建回调（可空=不推视图增量）——A162 状态推送：帧轮取，无变化返回 null/空（零推送）</summary>
-        public Func<string> ViewDeltaBuilder { get; set; }
+        /// <summary>视图增量帧构建回调（可空=不推）——v2 契约：帧轮取，无变化返回 null/空（零推送）</summary>
+        public Func<string> ViewFrameBuilder { get; set; }
 
         /// <summary>静态页模式（true=chat.html / false=index.html）</summary>
         public bool ServeChatPage { get; set; }
@@ -119,9 +107,6 @@ namespace CatHome4.Http
         /// <summary>增量 patch 构建回调——宿主侧注入（Program.BuildPatchJson；可空=不推 patch 保持全量推送）</summary>
         private Func<string> _patchBuilder;
 
-        /// <summary>本猫运行态构建回调——对话端口注入（Session.BuildRunStateJson；可空=不推运行态）</summary>
-        private Func<string> _sessionStateBuilder;
-
         /// <summary>端点角色读取回调——GET /api/v1/api-role（可空=不注册；对话端口注入）</summary>
         private Func<string> _apiRoleBuilder;
 
@@ -131,11 +116,8 @@ namespace CatHome4.Http
         /// <summary>视图全量构建回调——对话端口注入（Session.BuildViewFullJson；可空=连接建立不推视图）</summary>
         private Func<string> _viewFullBuilder;
 
-        /// <summary>视图增量构建回调——对话端口注入（Session.TakeViewDeltaJson；可空=不推视图增量）</summary>
-        private Func<string> _viewDeltaBuilder;
-
-        /// <summary>上次运行态 JSON——本地 diff（变化才推；空闲期零推送）——主线程独占</summary>
-        private string _lastSessionState;
+        /// <summary>视图增量帧构建回调——对话端口注入（Session.TakeViewFrameJson；可空=不推）</summary>
+        private Func<string> _viewFrameBuilder;
 
         /// <summary>指令投递回调——宿主侧注入（Program.DispatchCommand）</summary>
         private Func<string, bool> _dispatcher;
@@ -145,6 +127,18 @@ namespace CatHome4.Http
 
         /// <summary>SSE 事件序号——单调递增（协议 §4.3 seq 锚点；多线程并发写走 Interlocked——HTTP/LLM/泵三线程）</summary>
         private int _seq;
+
+        /// <summary>当前 SSE 连接数——连接健康字段数据源（state 段 conn.clients；锁内读取）</summary>
+        public int ClientCount
+        {
+            get
+            {
+                lock (_clientLock)
+                {
+                    return _clients.Count;
+                }
+            }
+        }
 
         /// <summary>SSE 客户端集合——锁保护（多连接独立广播）</summary>
         private readonly List<SseClient> _clients = new List<SseClient>();
@@ -173,9 +167,6 @@ namespace CatHome4.Http
         /// <summary>紧凑帧构建回调——frame.txt 帧流（可空=不落帧）</summary>
         private Func<string> _frameBuilder;
 
-        /// <summary>会话历史构建回调——Program.BuildHistoryView（B4 对话区；GET /api/v1/history——全量语义）</summary>
-        private Func<string> _historyBuilder;
-
         /// <summary>前文条目构建回调——ChatBridge.BuildContextView（对话页前文弹层；GET /api/v1/context）</summary>
         private Func<int, string> _contextBuilder;
         /// <summary>关键信息构建回调——ChatBridge.BuildKeyInfoView（对话页「前文关键信息」弹层；GET /api/v1/keyinfo）</summary>
@@ -191,12 +182,6 @@ namespace CatHome4.Http
 
         /// <summary>静态页模式——true=chat.html 独立对话页 / false=index.html 主面板（P9.3 双页模式）</summary>
         private bool _serveChatPage;
-
-        /// <summary>Note 状态构建回调——GET /api/v1/note（M4c 前端面板数据源）</summary>
-        private Func<string> _noteBuilder;
-
-        /// <summary>延迟队列状态构建回调——GET /api/v1/delay（前端定时面板数据源；design-ch4-delay §5.2）</summary>
-        private Func<string> _delayBuilder;
 
         /// <summary>管理路由注册回调——入口壳注入（Admin 域经 IHttpRouteSink 注册 llm-apis/qqbot-apis/workspace 等；仅主端口非空）</summary>
         private Action<IHttpRouteSink> _routeRegistrar;
@@ -227,19 +212,15 @@ namespace CatHome4.Http
             host._dispatcher = options.Dispatcher;
             host._envelopeBuilder = options.EnvelopeBuilder;
             host._frameBuilder = options.FrameBuilder;
-            host._historyBuilder = options.HistoryBuilder;
             host._contextBuilder = options.ContextBuilder;
             host._keyInfoBuilder = options.KeyInfoBuilder;
             host._fullContextBuilder = options.FullContextBuilder;
             host._catsBuilder = options.CatsBuilder;
-            host._noteBuilder = options.NoteBuilder;
-            host._delayBuilder = options.DelayBuilder;
             host._patchBuilder = options.PatchBuilder;
-            host._sessionStateBuilder = options.SessionStateBuilder;
             host._apiRoleBuilder = options.ApiRoleBuilder;
             host._apiRoleToggler = options.ApiRoleToggler;
             host._viewFullBuilder = options.ViewFullBuilder;
-            host._viewDeltaBuilder = options.ViewDeltaBuilder;
+            host._viewFrameBuilder = options.ViewFrameBuilder;
             host._serveChatPage = options.ServeChatPage;
             host._routeRegistrar = options.RouteRegistrar;
             host._htmlRootProvider = options.HtmlRootProvider;
@@ -288,26 +269,6 @@ namespace CatHome4.Http
             _app.MapGet("/api/v1/logs", (Delegate)HandleLogs);
             _app.MapGet("/api/v1/config", (Delegate)HandleConfigGet);
             _app.MapPost("/api/v1/config", (Delegate)HandleConfigPost);
-            _app.MapGet("/api/v1/history", () =>
-            {
-                // B4 对话区——会话历史视图（内存 ChatContext 实时真源；全量块序列）
-                // 期三——增量续传口退役：重连 / 刷新一律全量（前端两区镜像，零配对）
-                // A95——分页参数退役（max / before）：后端一次发完整，前端从尾往头渐进渲染（design-ch4-frontend-history §二）
-                return Results.Text(_historyBuilder(), "application/json");
-            });
-            _app.MapGet("/api/v1/note", (HttpContext ctx) =>
-            {
-                // M4c Note 状态——前端悬浮气泡数据源（页面加载兜底；实时更新走 SSE note 事件）
-                return Results.Text(_noteBuilder(), "application/json");
-            });
-            if (_delayBuilder != null)
-            {
-                _app.MapGet("/api/v1/delay", (HttpContext ctx) =>
-                {
-                    // 延迟队列状态——前端定时面板数据源（列表 + dueAt 绝对时刻；倒计时由外观层自算——design-ch4-delay §5.2）
-                    return Results.Text(_delayBuilder(), "application/json");
-                });
-            }
             if (_catsBuilder != null)
             {
                 _app.MapGet("/api/v1/cats", (HttpContext ctx) =>
@@ -376,8 +337,10 @@ namespace CatHome4.Http
                 return ServeIndex();
             });
             // 2026-08-25 模块化拆分——静态资源多文件路由（css/js 子目录；禁缓存同 index 策略；路径穿越校验）
+            // A167——js 面改 catch-all（{**file}）：前端重构后脚本分 lib/ · blocks/ 子目录，单段 {file} 匹配不到含斜杠路径；
+            //        css 面仍平铺（无子目录），保持单段
             _app.MapGet("/css/{file}", (HttpContext ctx) => ServeStatic(ctx, "css", "text/css"));
-            _app.MapGet("/js/{file}", (HttpContext ctx) => ServeStatic(ctx, "js", "application/javascript"));
+            _app.MapGet("/js/{**file}", (HttpContext ctx) => ServeStatic(ctx, "js", "application/javascript"));
             // 桌宠资源——html/pet/*.webp（动画 WebP 二进制；禁缓存同 index 策略；路径穿越校验）
             _app.MapGet("/pet/{file}", (HttpContext ctx) => ServeStatic(ctx, "pet", "image/webp"));
             // A120 字体资源——html/fonts/*.ttf（web 字体二进制；缓存口径与其余静态资源不同——见 ServeStatic）

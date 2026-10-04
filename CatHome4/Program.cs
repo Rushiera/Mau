@@ -491,8 +491,6 @@ namespace CH4
             _chatBridge.DefaultSession = new ChatSession(defaultSessionId, "majordomo", chatCtx, chatStore,
                 new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig, defaultApiRole), _oa, _chatBridge.DefaultToolSpecs, ExecuteTool, chatViewStore);
             _chatBridge.DefaultSession.AttachApiRole(defaultApiRole);
-            // A111——块序变更通知接线（视图层变更 → 转发面游标校正）
-            AdminService.AttachViewOrderNotify("majordomo", chatViewStore);
             // 完整前文留档——落点 sessions_ctx（与 sessions / sessions_old 同级；份数走 chat.full_ctx_keep）
             _chatBridge.DefaultSession.AttachFullContext(Path.Combine(dataRoot, "Data", "sessions_ctx"));
             // M4e 猫级白名单——默认猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
@@ -579,10 +577,7 @@ namespace CH4
                 Dispatcher = DispatchCommand,
                 EnvelopeBuilder = AdminService.MakeChatEnvelopeBuilder(_chatBridge.DefaultSession),
                 FrameBuilder = ObserveService.BuildCompactFrameJson,
-                HistoryBuilder = () => _chatBridge.BuildHistoryView(_chatBridge.DefaultSession),
                 CatsBuilder = AdminService.BuildCatsJson,
-                NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
-                DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),
                 PatchBuilder = ObserveService.BuildPatchJson,
                 ServeChatPage = false,
                 RouteRegistrar = AdminService.RegisterAdminRoutes,

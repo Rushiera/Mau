@@ -8,7 +8,7 @@ namespace CH4
     /// 延迟指令族——delay.* 指令解析与执行（design-ch4-delay §5.1）。
     /// 通道：POST /api/v1/command（Program.DispatchCommand 与 AdminService 每猫/majordomo 路由三处共用本入口）。
     /// 分隔符 |（沿用 QuickCat 双参先例）——内容可含空格与 | 之外字符，无需转义。
-    /// 结果文本写日志（HTTP 通道只回投递回执；前端以 GET /api/v1/delay 列表为准）。
+    /// 结果文本写日志（HTTP 通道只回投递回执；前端列表以 state 段 delay 字段为准——A185）。
     /// </summary>
     public static class DelayCommand
     {

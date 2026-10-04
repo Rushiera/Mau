@@ -333,11 +333,11 @@ namespace CH4
         }
 
         /// <summary>
-        /// 待触发条目 JSON——GET /api/v1/delay 数据源（前端列表与倒计时）。
+        /// 待触发条目数组 JSON——视图出口 state 段 delay 字段数据源（A185：原 GET /api/v1/delay 旁路端点退役）。
         /// </summary>
         /// <param name="catKey">归属会话（猫 key）</param>
-        /// <returns>{"ok":true,"now":&lt;ms&gt;,"entries":[{"id","content","dueAt","createdAt","source"}]}</returns>
-        public static string BuildListJson(string catKey)
+        /// <returns>[{"id","content","dueAt","createdAt","source","loop","intervalMs","fired"}, …]</returns>
+        public static JsonFragment BuildEntriesFragment(string catKey)
         {
             DelayEntry[] list = List(catKey);
             List<string> items = new List<string>();
@@ -353,7 +353,17 @@ namespace CH4
                     ("intervalMs", list[i].IntervalMs),
                     ("fired", list[i].Fired)));
             }
-            return JsonUtil.Object(("ok", true), ("now", NowProvider()), ("entries", JsonUtil.RawArray(items.ToArray())));
+            return JsonUtil.RawArray(items.ToArray());
+        }
+
+        /// <summary>
+        /// 待触发条目 JSON——CLI / 工具面（delay.list）。
+        /// </summary>
+        /// <param name="catKey">归属会话（猫 key）</param>
+        /// <returns>{"ok":true,"now":&lt;ms&gt;,"entries":[{"id","content","dueAt","createdAt","source"}]}</returns>
+        public static string BuildListJson(string catKey)
+        {
+            return JsonUtil.Object(("ok", true), ("now", NowProvider()), ("entries", BuildEntriesFragment(catKey)));
         }
 
         /// <summary>

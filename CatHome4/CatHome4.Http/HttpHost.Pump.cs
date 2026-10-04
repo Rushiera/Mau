@@ -95,26 +95,16 @@ namespace CatHome4.Http
                 json = InjectSnapshotTitle(json, _pageTitle);
             }
             _snapshotCache = json;
-            // A162 状态推送——视图增量：有变化推 delta、无变化零字节（与运行态推送并列，各自独立判据）
-            if (_viewDeltaBuilder != null)
+            // v2 契约——视图增量帧（状态段 + 临时区）：有变化推一帧、无变化零字节
+            if (_viewFrameBuilder != null)
             {
-                string delta = _viewDeltaBuilder();
-                if (delta != null && delta.Length > 0)
+                string frame = _viewFrameBuilder();
+                if (frame != null && frame.Length > 0)
                 {
-                    PushEvent("view", delta);
+                    PushEvent("view", frame);
                 }
             }
-            // 增量流式——只推变化段；无变化零推送（Idle 稳态静默）：对话端口推本猫运行态（sessionstate）、主端口推全局 patch、两者皆缺时回落全量快照
-            if (_sessionStateBuilder != null)
-            {
-                // 对话端口——本猫运行态变化才推（替代每 250ms 全量快照：空闲零推送、前端零轮询）
-                string state = _sessionStateBuilder();
-                if (state != null && state.Length > 0 && !string.Equals(state, _lastSessionState, StringComparison.Ordinal))
-                {
-                    _lastSessionState = state;
-                    PushEvent("sessionstate", state);
-                }
-            }
+            // 主端口——增量 patch / 全量快照回落（chat 面内容与状态由帧承载，不再单推运行态）
             else if (_patchBuilder != null)
             {
                 string patch = _patchBuilder();
@@ -235,34 +225,9 @@ namespace CatHome4.Http
             }
         }
         /// <summary>
-        /// Note 状态事件——会话 Note 变化推送（M4c：前端悬浮气泡实时重绘；载荷含 sessionId 归属）。
-        /// </summary>
-        /// <param name="json">Note 状态 JSON（ChatSession.BuildNoteJson 产物）</param>
-        public void PushNoteState(string json)
-        {
-            string frame = "{\"sessionId\":\"" + _sessionId + "\",\"state\":" + json + "}";
-            PushEvent("note", frame);
-        }
-
-        /// <summary>
-        /// 会话完成事件——宿主 ChatBridge HandleChat 端末调用（B4 对话区：chatdone 事件）。
-        /// 语义：llm done 仅代表"一轮 LLM 流结束"（工具轮还有 tool 事件 + 续轮）；chatdone = 整次会话终态。
-        /// 前端以 chatdone 为准定型（去光标/未回填兜底/恢复 idle）——修复"工具轮 done 被当终态"的时序 bug。
-        /// </summary>
-        public void PushChatDone(int count)
-        {
-            var obj = new
-            {
-                sessionId = _sessionId,
-                count = count
-            };
-            PushEvent("chatdone", JsonUtil.Serialize(obj));
-        }
-
-        /// <summary>
         /// 视图事件推送——视图出口统一 op 面（A158 期三：两区镜像）。
         /// op 取值：persist.append（持久块建块即推）· live.add / live.update / live.remove（流式区镜像）
-        /// · control（瞬时事件面：usage / chatdone / paused / note / session_reset）。
+        /// · control（瞬时事件面：usage / paused / session_reset——chatdone / note 已于 A191 退役）。
         /// </summary>
         /// <param name="op">出口事件类型</param>
         /// <param name="payload">载荷 JSON 字符串（内嵌对象；live.remove 为空串——不解析）</param>
