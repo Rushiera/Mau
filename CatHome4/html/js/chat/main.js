@@ -115,17 +115,10 @@ function chatConnect() {
         return;
     }
     // A181——只订 chat 面事件（管理面事件 snapshot/patch/log/cmd 与本面无监听器、契约 §12.1 两面分开）
-    // `note` 为兼容面（状态段已自足，契约 §12.2 ①）——退役随 A191
-    chatSse = new EventSource('/api/v1/stream?topics=view,note');
+    // A191——去 `note` 兼容订面（Note 状态单源 = state 段，契约 §12.2 ①；note 事件已退役）
+    chatSse = new EventSource('/api/v1/stream?topics=view');
     chatSse.addEventListener('view', function (ev) {
         chatOnFrame(chatParseFrame(ev.data));
-    });
-    chatSse.addEventListener('note', function (ev) {
-        // 兼容面——状态段已含 Note（契约 §12.2 ①）；本事件仅作兜底
-        var j = chatParseFrame(ev.data);
-        if (j) {
-            stateApplyNote(j);
-        }
     });
     chatSse.onopen = function () {
         // 连接建立（首连 / 自动重连同一路径）：服务端随首帧推全量——前端零请求、零补课

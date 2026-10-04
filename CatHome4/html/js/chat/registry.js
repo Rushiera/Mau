@@ -28,6 +28,7 @@
 var BLOCK_DECL = {
     'user': { form: 'bubble', row: 'user', tick: 'user' },
     'text': { form: 'bubble', row: 'assistant', tick: 'reply' },
+    'gap_text': { form: 'bubble', row: 'assistant', tick: 'reply' },
     'reason': { form: 'plain', row: 'assistant reason', tick: 'think' },
     'toolcard': { form: 'plain', row: 'assistant tool', tick: 'tool' },
     'retry': { form: 'plain', row: 'assistant', tick: 'reply', body: 'retry' },
@@ -83,6 +84,7 @@ var RUN_PHASES = [
 var PERSIST_RENDERERS = {
     'user': buildUserBlock,
     'text': buildTextBlock,
+    'gap_text': buildGapTextBlock,
     'reason': buildReasonBlock,
     'toolcard': buildToolBlock,
     'retry': buildRetryBlock,

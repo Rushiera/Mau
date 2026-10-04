@@ -63,11 +63,12 @@ describe('引导——单流 + 订阅面（契约 §12.1）', () => {
         expect(window.chatSse.url).toContain('/api/v1/stream');
     });
 
-    it('订阅面只含 chat 面事件（A181 回归哨兵：管理面事件不得入 chat 流）', () => {
+    it('订阅面只含 chat 面事件（A181 + A191 回归哨兵：管理面事件与旧 note 事件不得入 chat 流）', () => {
         const q = window.chatSse.url.split('topics=')[1] || '';
         const topics = q.split(',');
         expect(topics).toContain('view');
         expect(topics).not.toContain('cmd');
+        expect(topics).not.toContain('note');
         expect(topics).not.toContain('patch');
         expect(topics).not.toContain('snapshot');
         expect(topics).not.toContain('log');

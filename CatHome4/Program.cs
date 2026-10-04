@@ -572,7 +572,6 @@ namespace CH4
                 EnvelopeBuilder = AdminService.MakeChatEnvelopeBuilder(_chatBridge.DefaultSession),
                 FrameBuilder = ObserveService.BuildCompactFrameJson,
                 CatsBuilder = AdminService.BuildCatsJson,
-                NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
                 PatchBuilder = ObserveService.BuildPatchJson,
                 ServeChatPage = false,
                 RouteRegistrar = AdminService.RegisterAdminRoutes,

@@ -7,18 +7,10 @@
     /// </summary>
     public interface IHostPush
     {
-        /// <summary>会话完成事件——chatdone（前端阶段封口）</summary>
-        /// <param name="count">会话消息数</param>
-        void PushChatDone(int count);
-
-        /// <summary>Note 状态事件——前端悬浮气泡实时重绘</summary>
-        /// <param name="json">Note 状态 JSON</param>
-        void PushNoteState(string json);
-
         /// <summary>
         /// 视图事件推送——视图出口统一 op 面（A158 期三：两区镜像）。
         /// op 取值：persist.append（持久块建块即推）· live.add / live.update / live.remove（流式区镜像）
-        /// · control（瞬时事件面：usage / chatdone / paused / note / session_reset）。
+        /// · control（瞬时事件面：usage / paused / session_reset——chatdone / note 已于 A191 退役）。
         /// </summary>
         /// <param name="op">出口事件类型——persist.append / live.add / live.update / live.remove / control</param>
         /// <param name="payload">载荷 JSON 字符串（live.remove 为空串）</param>

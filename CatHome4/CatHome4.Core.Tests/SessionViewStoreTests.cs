@@ -429,14 +429,14 @@ namespace CatHome4.Core.Tests
             Assert.Empty(_store.GetBlocks());
         }
 
-        /// <summary>间隙文本块——渲染类型 text（前端与转发统一消费）+ 内容载荷</summary>
+        /// <summary>间隙文本块——渲染类型 gap_text（A188：与正式回复 text 分型；前端与转发统一消费）+ 内容载荷</summary>
         [Fact]
-        public void AppendGapText_AppendsTextBlock()
+        public void AppendGapText_AppendsGapTextBlock()
         {
             _store.AppendGapText("我这就去查", 150L);
             CH4.ViewBlock[] blocks = _store.GetBlocks();
             Assert.Single(blocks);
-            Assert.Equal("text", blocks[0].RenderType);
+            Assert.Equal("gap_text", blocks[0].RenderType);
             Assert.Equal(-1, blocks[0].MsgIndex);
             Assert.Equal("我这就去查", ParsePayload(blocks[0]).GetProperty("text").GetString());
         }

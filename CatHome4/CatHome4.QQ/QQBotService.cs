@@ -894,7 +894,7 @@ namespace CatHome4.QQ
             }
             return null;
         }
-        /// <summary>构建 /last 回复（A58）——取绑定猫（1:1 唯一）视图层最后一条 text 块，正文不截断。
+        /// <summary>构建 /last 回复（A58）——取绑定猫（1:1 唯一）视图层最后一条 text 块（正式回复；A188 起 gap_text 间隙文本不取），正文不截断。
         /// 超长由发送面（SendLastReply）按 MD 结构切分，最多 4 段独立发送（末尾段优先）；文件标记（A112）同样由发送面扫描剥离并经文件通道发送。</summary>
         /// <param name="qqBotId">Bot 配置身份——1:1 唯一绑定猫</param>
         /// <returns>回复正文（含【猫名：】前缀）</returns>
@@ -1290,9 +1290,9 @@ namespace CatHome4.QQ
                             _rounds[tg.Key] = it.Round;
                         }
                     }
-                    else if (it.RenderType == "text" && it.Content.Length > 0)
+                    else if ((it.RenderType == "text" || it.RenderType == "gap_text") && it.Content.Length > 0)
                     {
-                        // 即时转发 ≤2（短块）；超长块与超额块累计到轮末最终回复池
+                        // 即时转发 ≤2（短块）——正式回复与工具轮间隙文本（A188 分型）同走此路；超长块与超额块累计到轮末最终回复池
                         ForwardText(tg, it.Content);
                     }
                 }

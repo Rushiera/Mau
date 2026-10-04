@@ -2,9 +2,10 @@
 // tests/unit/chat-blocks.test.mjs —— 契约块型结构面回归网（A182）
 //
 // 覆盖（契约 §12.4 / §12.5 的**结构面**）：
-//   ① 11 类块型（persist 8 + live 3）空载荷渲染不抛
+//   ① 12 类块型（persist 9 + live 3）空载荷渲染不抛
 //   ② 行的形态 / 行语义 / data-type 全部由 `BLOCK_DECL` 表驱动（渲染件不自拼类名）
-//   ③ 形态契约——气泡仅 `user` / `text`（2026-10-03 莎裁）
+//   ③ 形态契约——气泡仅 `user` / `text` / `gap_text`（2026-10-03 莎裁 + A188 分型：间隙文本
+//      自 `text` 独立为条目型，外观形态不变——仍是会被人当对话内容读的模型输出）
 //   ④ 取用口回落语义（未声明 type → 朴素件 + assistant 行 + reply 刻度）
 //
 // 边界：**不测块内载荷语义**（各 type 的字段渲染是否好看 / 完整）——那是 A198「逐 type 核对」的范围；
@@ -18,7 +19,7 @@ beforeAll(async () => {
     await bootChatPage();
 });
 
-const PERSIST_TYPES = ['user', 'text', 'reason', 'toolcard', 'retry', 'error', 'inject_report', 'roundsum'];
+const PERSIST_TYPES = ['user', 'text', 'gap_text', 'reason', 'toolcard', 'retry', 'error', 'inject_report', 'roundsum'];
 const LIVE_TYPES = ['stream.text', 'stream.reason', 'toolcard.pending'];
 
 /// 块体类例外——思考族自持 `.chat-think`、工具族自持 `.chat-tool`（`BLOCK_DECL` 未建模这两族块体；
@@ -85,9 +86,9 @@ describe('块型渲染——结构契约', () => {
 });
 
 describe('形态契约', () => {
-    it('气泡形态仅 user / text（其余 9 类为朴素件）', () => {
+    it('气泡形态仅 user / text / gap_text（其余 9 类为朴素件）', () => {
         const bubbles = Object.keys(window.BLOCK_DECL).filter((t) => window.BLOCK_DECL[t].form === 'bubble');
-        expect(bubbles.sort()).toEqual(['text', 'user']);
+        expect(bubbles.sort()).toEqual(['gap_text', 'text', 'user']);
     });
 
     it('取用口——形态 / 块体 / 行 / 刻度四口语义', () => {

@@ -205,8 +205,7 @@ namespace CH4
         /// <param name="persona">角色段（空=仅基础角色）</param>
         /// <param name="injectList">注入清单（空=不注入）</param>
         /// <param name="specs">该会话工具声明面（裁剪后）</param>
-        /// <param name="pushChatDone">该会话外观层推送（chatdone 事件；null=不推）</param>
-        public void HandleSessionNew(ChatSession session, string persona, string[] injectList, ToolSpec[] specs, Action<int> pushChatDone)
+        public void HandleSessionNew(ChatSession session, string persona, string[] injectList, ToolSpec[] specs)
         {
             WorkspaceConfig ws = null;
             DataBox.TryResolve<WorkspaceConfig>(out ws);
@@ -237,10 +236,6 @@ namespace CH4
             }
             string summary = "会话已重建：注入 " + injectCount.ToString() + " 个知识文件，前文已清空";
             LogStore.Add("CatHome4", 1, summary, "CHAT");
-            if (pushChatDone != null)
-            {
-                pushChatDone(session.Context.GetMessages().Length);
-            }
 
         }
 

@@ -156,13 +156,12 @@ describe('命令解码显示（fx/cmd-intent）', () => {
         expect(window.fxCmdIntentDecode('text-read', '{"path":"a"}')).toBeNull();
     });
 
-    it('解码——适用工具返回 brief / detail / unknown', () => {
+    it('解码——适用工具返回 brief / detail', () => {
         const d = window.fxCmdIntentDecode('powershell', JSON.stringify({ command: 'git status' }));
         expect(d).toBeTruthy();
         expect(typeof d.brief).toBe('string');
         expect(d.brief.length).toBeGreaterThan(0);
         expect(typeof d.detail).toBe('string');
-        expect(Array.isArray(d.unknown)).toBe(true);
     });
 
     it('展开块挂载——非空解码结果追加 .cmd-intent', () => {
@@ -176,18 +175,6 @@ describe('命令解码显示（fx/cmd-intent）', () => {
         const host = window.el('div', 'detail');
         window.fxCmdIntentAttach(host, null);
         expect(host.childNodes.length).toBe(0);
-    });
-
-    it('未识别上报——经 cmdReportUnknown 转发（件内不含上报实现）', () => {
-        const orig = window.cmdReportUnknown;
-        const seen = [];
-        window.cmdReportUnknown = function (u) { seen.push(u); };
-        try {
-            window.fxCmdIntentReport({ unknown: [{ seg: 'x' }] });
-        } finally {
-            window.cmdReportUnknown = orig;
-        }
-        expect(seen.length).toBe(1);
     });
 });
 

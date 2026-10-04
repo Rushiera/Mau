@@ -99,10 +99,6 @@ function buildToolCard(tool, open) {
     // 折叠行文案——PS 双线：命令意图显示（fx/cmd-intent 独立功能件）→ 骨架中文名兜底 → 工具名
     // （逐工具自然语言 headline 覆盖层不采用；解码与显示构造归 fx 件，本件只调用）
     var cmdIntent = (typeof fxCmdIntentDecode === 'function') ? fxCmdIntentDecode(t.name, t.arguments) : null;
-    if (cmdIntent && typeof fxCmdIntentReport === 'function') {
-        // 覆盖率采集——规则表未命中的命令段上报（异步 fire-and-forget；渲染零阻塞）
-        fxCmdIntentReport(cmdIntent);
-    }
     var headline = cmdIntent ? cmdIntent.brief : (SKEL_LABELS[skeletonOf(t.name)] || t.name || '?');
     sum.appendChild(document.createTextNode(headline + (body ? resultSuffix(resultInfo2) : '')));
     det.appendChild(sum);

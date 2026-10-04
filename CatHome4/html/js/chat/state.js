@@ -92,11 +92,6 @@ function stateRenderDelay() {
     }
 }
 
-/// Note 段单独应用——note 事件为兼容面（状态段已含 Note）；载荷形态与 state.note 一致
-function stateApplyNote(note) {
-    appState.note = note || null;
-    stateRenderNote();
-}
 
 /// 按钮态投影——动作按钮可用性归 fx/controls（独立功能面：外观层派生）；件缺失时零动作
 function stateApplyControls() {

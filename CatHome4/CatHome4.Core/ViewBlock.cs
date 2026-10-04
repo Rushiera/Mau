@@ -11,7 +11,7 @@
         /// <summary>创建时间戳——Unix 毫秒（前文派生取消息 CreatedAt，独立块取生成时刻；同刻由写入侧单调补差保证全序）</summary>
         public long Timestamp { get; set; }
 
-        /// <summary>渲染类型——持久族 user/text/reason/toolcard/retry/error/inject_report/roundsum；临时族 stream.text/stream.reason/toolcard.pending</summary>
+        /// <summary>渲染类型——持久族 user/text/gap_text/reason/toolcard/retry/error/inject_report/roundsum（A188 起间隙文本独立 gap_text）；临时族 stream.text/stream.reason/toolcard.pending</summary>
         public string RenderType { get; set; }
 
         /// <summary>渲染载荷——JSON 字符串（按渲染类型结构不同；字段面按「给全 / 命名统一 / 去冗余 / 扁平」原则）</summary>

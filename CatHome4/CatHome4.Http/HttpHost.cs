@@ -32,7 +32,7 @@ namespace CatHome4.Http
         /// <summary>前端测试服务端口（/api/v1/frontend-test 转发目标——区段值：开发区 8069 / 部署区 8099）</summary>
         public int FrontendTestPort { get; set; }
 
-        /// <summary>会话归属 ID——SSE llm/chatdone 事件的 sessionId</summary>
+        /// <summary>会话归属 ID——SSE 帧的 sessionId 归属</summary>
         public string SessionId { get; set; }
 
         /// <summary>快照 JSON 构建回调</summary>
@@ -49,9 +49,6 @@ namespace CatHome4.Http
 
         /// <summary>多猫列表构建回调（可空=不注册该端点）</summary>
         public Func<string> CatsBuilder { get; set; }
-
-        /// <summary>Note 状态构建回调（可空）</summary>
-        public Func<string> NoteBuilder { get; set; }
 
         /// <summary>增量 patch 构建回调（可空=全量推送）</summary>
         public Func<string> PatchBuilder { get; set; }
@@ -150,7 +147,7 @@ namespace CatHome4.Http
         /// <summary>紧凑帧构建回调——frame.txt 帧流（可空=不落帧）</summary>
         private Func<string> _frameBuilder;
 
-        /// <summary>会话归属 ID——SSE llm/chatdone 事件 sessionId 字段（P9.3 多实例化：每猫实例绑定自身会话）</summary>
+        /// <summary>会话归属 ID——SSE 帧 sessionId 字段（P9.3 多实例化：每猫实例绑定自身会话）</summary>
         private string _sessionId;
 
         /// <summary>多猫列表构建回调——GET /api/v1/cats（可空=不注册该端点——P9.3b 注册表就位后传入）</summary>
@@ -158,9 +155,6 @@ namespace CatHome4.Http
 
         /// <summary>静态页模式——true=chat.html 独立对话页 / false=index.html 主面板（P9.3 双页模式）</summary>
         private bool _serveChatPage;
-
-        /// <summary>Note 状态构建回调——GET /api/v1/note（M4c 前端面板数据源）</summary>
-        private Func<string> _noteBuilder;
 
         /// <summary>管理路由注册回调——入口壳注入（Admin 域经 IHttpRouteSink 注册 llm-apis/qqbot-apis/workspace 等；仅主端口非空）</summary>
         private Action<IHttpRouteSink> _routeRegistrar;
@@ -192,7 +186,6 @@ namespace CatHome4.Http
             host._envelopeBuilder = options.EnvelopeBuilder;
             host._frameBuilder = options.FrameBuilder;
             host._catsBuilder = options.CatsBuilder;
-            host._noteBuilder = options.NoteBuilder;
             host._patchBuilder = options.PatchBuilder;
             host._viewFullBuilder = options.ViewFullBuilder;
             host._viewFrameBuilder = options.ViewFrameBuilder;
@@ -244,11 +237,6 @@ namespace CatHome4.Http
             _app.MapGet("/api/v1/logs", (Delegate)HandleLogs);
             _app.MapGet("/api/v1/config", (Delegate)HandleConfigGet);
             _app.MapPost("/api/v1/config", (Delegate)HandleConfigPost);
-            _app.MapGet("/api/v1/note", (HttpContext ctx) =>
-            {
-                // M4c Note 状态——前端悬浮气泡数据源（页面加载兜底；实时更新走 SSE note 事件）
-                return Results.Text(_noteBuilder(), "application/json");
-            });
             if (_catsBuilder != null)
             {
                 _app.MapGet("/api/v1/cats", (HttpContext ctx) =>

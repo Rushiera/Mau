@@ -398,7 +398,8 @@ namespace CH4
             EmitBlock(block);
         }
 
-        /// <summary>追加间隙文本条目——工具轮 seal 文本（模型调用工具前说的话）。非真实前文派生；写入即落盘——工具轮中途中断不丢。视图层 = 全部外观真源——前端与 QQBot 转发统一消费此条目。</summary>
+        /// <summary>追加间隙文本条目——工具轮 seal 文本（模型调用工具前说的话）。非真实前文派生；写入即落盘——工具轮中途中断不丢。视图层 = 全部外观真源——前端与 QQBot 转发统一消费此条目。
+        /// 条目型 = `gap_text`（A188：与正式回复 `text` 分型——消费方据此区分两义；外观形态仍为气泡件）。</summary>
         /// <param name="content">间隙文本</param>
         /// <param name="timestamp">创建时间戳（Unix 毫秒——与消息条目同坐标系）</param>
         public void AppendGapText(string content, long timestamp)
@@ -409,7 +410,7 @@ namespace CH4
             }
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["text"] = content;
-            ViewBlock block = NewBlock("text", JsonUtil.Serialize(payload), timestamp, -1);
+            ViewBlock block = NewBlock("gap_text", JsonUtil.Serialize(payload), timestamp, -1);
             _gapTexts.Add(block);
             Save();
             EmitBlock(block);

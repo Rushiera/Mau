@@ -861,7 +861,7 @@ namespace CH4
             SealReasonStream();
             _viewBus.ResetTextStream();
             ResetRetryView();
-            // [段4] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——中断非正常完成语义）
+            // [段4] 状态复位——Idle（不推 roundsum/Note 拉起——中断非正常完成语义）
             _round = 0;
             _phase = ChatPhase.Idle;
             _phaseFrames = 0;
@@ -880,7 +880,7 @@ namespace CH4
 
         /// <summary>
         /// 宿主重启请求登记（A72——design-ch4-delay §7.2）：登记重启请求 + 置停机态，**不中断本轮**。
-        /// 本轮照常续 LLM 轮并正常 CloseRound 完整结算（roundsum / chatdone / 前文落盘齐全）；
+        /// 本轮照常续 LLM 轮并正常 CloseRound 完整结算（roundsum / 前文落盘齐全）；
         /// 停机态拒收新输入（在途排队消息丢弃并出声）；全局 Idle 后由主循环闸门执行接力（design-ch4-host-restart §三 T2/T3）。
         /// </summary>
         /// <param name="requestJson">重启请求 JSON（target/push，由 majordomo 工具组积木落盒）</param>
@@ -1729,7 +1729,7 @@ namespace CH4
                     RetryEmptyReply("SSE 流中断（未以 [DONE] 结束）");
                     return;
                 }
-                // API 错误中止——重试策略归 Runtime（429/5xx/传输类有限重试；4xx 参数/额度类单次即返），此处统一收尾：落盘断点 + 错误气泡（不走 CloseRound——不 roundsum/chatdone/Note 拉起）
+                // API 错误中止——重试策略归 Runtime（429/5xx/传输类有限重试；4xx 参数/额度类单次即返），此处统一收尾：落盘断点 + 错误气泡（不走 CloseRound——不 roundsum/Note 拉起）
                 AbortRoundError();
                 return;
             }
@@ -2413,7 +2413,7 @@ namespace CH4
             {
                 PushRetryView("failed");
             }
-            // [段4] 状态复位——Idle（不推 chatdone/roundsum/Note 拉起——错误中止非正常完成语义）
+            // [段4] 状态复位——Idle（不推 roundsum/Note 拉起——错误中止非正常完成语义）
             _round = 0;
             _phase = ChatPhase.Idle;
             _phaseFrames = 0;
@@ -2430,7 +2430,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// Done 相位——前文落盘（落盘保真）+ chat_state=idle + PushChatDone + 复位（原 HandleChat 段4）。
+        /// Done 相位——前文落盘（落盘保真）+ chat_state=idle + 复位（原 HandleChat 段4）。
         /// </summary>
         private void CloseRound()
         {
@@ -2441,7 +2441,7 @@ namespace CH4
             _lastStats.LastCompletionTokens = _usageCompletion;
             _lastStats.LastContextTokens = _contextTokens;
             _store.AppendMeta(_lastStats);
-            // M4a Note 自动拉起提前——剩余≥2 条时以 user 名义推下一轮（最后 1 条不拉起——LLM 完成后自然结束；Q2 顺序：Note 未完成 = 本轮未结束——不 roundsum/chatdone；全部完成天然跳过——防无限循环闸门）
+            // M4a Note 自动拉起提前——剩余≥2 条时以 user 名义推下一轮（最后 1 条不拉起——LLM 完成后自然结束；Q2 顺序：Note 未完成 = 本轮未结束——不 roundsum；全部完成天然跳过——防无限循环闸门）
             if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent + 1 < _noteTasks.Length)
             {
                 int remain = _noteTasks.Length - _noteCurrent;

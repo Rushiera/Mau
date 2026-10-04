@@ -22,14 +22,6 @@ namespace CatHome4.Core.Tests
             /// <summary>事件 op 序列（按发出序）</summary>
             public readonly List<string> Ops = new List<string>();
 
-            /// <summary>会话完成事件（不捕获）</summary>
-            /// <param name="count">会话消息数</param>
-            public void PushChatDone(int count) { }
-
-            /// <summary>Note 状态事件（不捕获）</summary>
-            /// <param name="json">Note 状态 JSON</param>
-            public void PushNoteState(string json) { }
-
             /// <summary>视图事件捕获——op</summary>
             /// <param name="op">事件操作</param>
             /// <param name="payload">载荷 JSON</param>

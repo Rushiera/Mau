@@ -20,7 +20,7 @@ function fxCmdIntentApplies(name) {
     return false;
 }
 
-/// 解码——适用且可解析时返回 `{brief, detail, truncated, unknown}`；否则 null（调用方回落骨架 / 工具名）
+/// 解码——适用且可解析时返回 `{brief, detail, truncated}`；否则 null（调用方回落骨架 / 工具名）
 function fxCmdIntentDecode(name, argsText) {
     if (fxCmdIntentApplies(name) !== true) {
         return null;
@@ -37,14 +37,4 @@ function fxCmdIntentAttach(det, decoded) {
         return;
     }
     det.appendChild(elText('div', 'cmd-intent', decoded.detail));
-}
-
-/// 未识别段上报——覆盖率采集（后端聚合，异步 fire-and-forget）；上报失败由解码器侧释放标记，渲染零阻塞
-function fxCmdIntentReport(decoded) {
-    if (!decoded) {
-        return;
-    }
-    if (typeof cmdReportUnknown === 'function') {
-        cmdReportUnknown(decoded.unknown);
-    }
 }

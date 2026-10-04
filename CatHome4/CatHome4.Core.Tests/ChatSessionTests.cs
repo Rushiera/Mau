@@ -200,12 +200,6 @@ namespace CatHome4.Core.Tests
             /// <summary>事件到达序——renderType 列表（跨类型时序断言用）</summary>
             private readonly List<string> _eventOrder = new List<string>();
 
-            /// <summary>会话完成事件（不捕获）</summary>
-            public void PushChatDone(int count) { }
-
-            /// <summary>Note 状态事件（不捕获）</summary>
-            public void PushNoteState(string json) { }
-
             /// <summary>捕获视图块——renderType → payload 列表（读取即先回放未取走的增量）</summary>
             public Dictionary<string, List<string>> ViewEvents
             {

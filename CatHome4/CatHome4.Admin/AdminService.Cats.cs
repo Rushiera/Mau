@@ -670,13 +670,7 @@ namespace CatHome4.Admin
                     if (cat.Session.IsIdle)
                     {
                         cat.SessionNewRequested = false;
-                        _chatBridge.HandleSessionNew(cat.Session, cat.Persona, cat.InjectList, cat.ToolSpecs, delegate (int n)
-                        {
-                            if (cat.Host != null)
-                            {
-                                cat.Host.PushChatDone(n);
-                            }
-                        });
+                        _chatBridge.HandleSessionNew(cat.Session, cat.Persona, cat.InjectList, cat.ToolSpecs);
                     }
                 }
                 string job;
@@ -710,13 +704,7 @@ namespace CatHome4.Admin
                 if (_chatBridge.DefaultSession.IsIdle)
                 {
                     _majorSessionNewRequested = false;
-                    _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs, delegate (int n)
-                    {
-                        if (_majorHost != null)
-                        {
-                            _majorHost.PushChatDone(n);
-                        }
-                    });
+                    _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs);
                 }
             }
             string majorJob;
@@ -1538,7 +1526,7 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType / Content / Done / Round；text 块提取 payload.text，
+        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType / Content / Done / Round；text / gap_text 块提取 payload.text，
         /// Round 供转发面按轮次定位——A165 v2 无键面）。
         /// </summary>
         /// <param name="blocks">视图块数组</param>
@@ -1559,7 +1547,7 @@ namespace CatHome4.Admin
                 item.Done = "";
                 // A165 v2：无键面——按轮次定位（Round 随块给，重启续接跳过已消费轮）
                 item.Round = b.Round;
-                if (item.RenderType == "text")
+                if (item.RenderType == "text" || item.RenderType == "gap_text")
                 {
                     item.Content = ExtractTextContent(b.Payload);
                 }
@@ -1824,6 +1812,7 @@ namespace CatHome4.Admin
             session.AttachConnInfo(() => host.ClientCount);
         }
 
+        /// <summary>启动猫的 HTTP 外观层实例——按端口起 Host 并返回句柄（三条启动路径共用）。</summary>
         private static HttpHost StartCatHost(CatEntry cat, int port)
         {
             return HttpHost.Start(new HttpHostOptions
@@ -1836,7 +1825,6 @@ namespace CatHome4.Admin
                 EnvelopeBuilder = MakeChatEnvelopeBuilder(cat.Session),
                 FrameBuilder = null,
                 CatsBuilder = null,
-                NoteBuilder = () => cat.Session.BuildNoteJson(),
                 PatchBuilder = null,
                 ViewFullBuilder = () => cat.Session.BuildViewFullJson(),
                 ViewFrameBuilder = () => cat.Session.TakeViewFrameJson(),
@@ -1875,7 +1863,6 @@ namespace CatHome4.Admin
                 EnvelopeBuilder = MakeChatEnvelopeBuilder(_chatBridge.DefaultSession),
                 FrameBuilder = null,
                 CatsBuilder = null,
-                NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
                 PatchBuilder = null,
                 ViewFullBuilder = () => _chatBridge.DefaultSession.BuildViewFullJson(),
                 ViewFrameBuilder = () => _chatBridge.DefaultSession.TakeViewFrameJson(),
