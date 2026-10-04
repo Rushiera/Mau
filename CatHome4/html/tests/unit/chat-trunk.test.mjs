@@ -131,6 +131,25 @@ describe('收包三段（契约 §12.2 / §12.3）', () => {
         expect(document.getElementById('chatMsgs').textContent).not.toContain('L');
         expect(document.getElementById('chatLivePanel').textContent).toContain('L');
     });
+
+    it('state 段 delay 投影到定时面板（A185 回归哨兵：旁路端点退役）', async () => {
+        const calls = captureFetch();
+        window.stateApply({
+            delay: { entries: [{ id: 7, content: '测试', dueAt: Date.now() + 60000, createdAt: 1, source: 'delay', loop: false, intervalMs: 0, fired: 0 }] }
+        });
+        await flushMicro();
+        expect(window.delayEntries.length).toBe(1);
+        expect(calls.filter((c) => String(c.url).indexOf('/api/v1/delay') >= 0).length).toBe(0);
+    });
+
+    it('state 段 conn 投影到状态条（A186——服务端健康 / 多页连接）', () => {
+        window.stateApply({ conn: { server: 'ok', clients: 2 } });
+        expect(document.getElementById('chatStatus').textContent).toContain('👥 2');
+        window.stateApply({ conn: { server: 'stopping', clients: 1 } });
+        expect(document.getElementById('chatStatus').textContent).toContain('重启中');
+        window.stateApply({ conn: { server: 'ok', clients: 1 } });
+        expect(document.getElementById('chatConn')).toBeNull();
+    });
 });
 
 // ── ③ 兜底与隔离 ─────────────────────────────

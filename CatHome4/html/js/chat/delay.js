@@ -1,16 +1,16 @@
 // ═══════════════════════════════════════════
 // chat/delay.js —— 定时指令面板（侧翼件 A170 · 规格 design-ch4-delay §六）
 //
-// 数据源：GET /api/v1/delay（条目含绝对 dueAt——倒计时本地自算，1 秒粒度，页面不可见停表）
+// 数据源：state 段 `delay` 字段（A185——原 GET /api/v1/delay 旁路端点退役；条目含绝对 dueAt，
+//         倒计时本地自算，1 秒粒度，页面不可见停表）——本件退化为纯显示（经主干 stateRenderDelay 分发）
 // 写面：指令总线（delay.add|sec|content · delay.addat · delay.addatloop · delay.set · delay.cancel · delay.loop）
-//       ——复用 input.js 的 postCommand，零新写端点
+//       ——复用 input.js 的 postCommand，零新写端点；变更后列表由 state 帧推送自更新（不回拉）
 // 交互：按钮展开弹层（与 Note 弹层互斥）；分区 = 待触发（列表 · 倒计时主信息）+ 插入指令（快捷档 / 自定义 / 循环）
 //
 // 形态：弹层——DOM 在 chat.html（#delayWrap 段），样式 chat.css「延迟指令队列」段；本件零新增样式
-// 与旧件的差异：网络面收口 postCommand（不再自持 fetch）+ 失败上报走主干 warn；逻辑其余原样
 // ═══════════════════════════════════════════
 
-/// 当前列表（数据源快照）
+/// 当前列表（数据源快照——state 段投影）
 var delayEntries = [];
 /// 倒计时句柄（有可见条目且页面可见才跑）
 var delayTimer = null;
@@ -29,19 +29,10 @@ var delayQuickDefs = [
     { label: '1h', sec: 3600 }
 ];
 
-/// 列表拉取——页面加载 / 每次变更后调用（列表为准）
-function delayLoad() {
-    fetch('/api/v1/delay')
-        .then(function (r) {
-            return r.json();
-        })
-        .then(function (j) {
-            delayEntries = (j && j.entries) ? j.entries : [];
-            delayRender();
-        })
-        .catch(function (e) {
-            warn('延迟队列拉取失败', e);
-        });
+/// state 段投影——整段接收（由主干 stateRenderDelay 分发；空段 = 空表）
+function delayApplyState(d) {
+    delayEntries = (d && d.entries) ? d.entries : [];
+    delayRender();
 }
 
 /// 面板展开 / 收起——与 Note 弹层互斥（两弹层同位置）
@@ -52,7 +43,7 @@ function delayToggle() {
     }
     if (pop.style.display === 'none' || pop.style.display === '') {
         noteClose();
-        delayLoad();
+        delayRender();
         pop.style.display = 'flex';
         delaySyncTimer();
     } else {
@@ -498,14 +489,9 @@ function delayLoopClick(t) {
     delaySend(delayLoopLine(id, next === '1'));
 }
 
-/// 指令投递——写面复用指令总线；随后重拉列表（列表为准）
+/// 指令投递——写面复用指令总线；列表变更由 state 帧推送自更新（A185：不再回拉列表）
 function delaySend(line) {
-    var p = postCommand(line);
-    if (p && typeof p.then === 'function') {
-        p.then(function () {
-            delayLoad();
-        });
-    }
+    postCommand(line);
 }
 
 /// 初始化——按钮 / 输入绑定 + 快捷档渲染 + 首次拉取 + 页面可见性联动
@@ -561,7 +547,6 @@ function delayInit() {
             delaySyncTimer();
         }
     });
-    delayLoad();
 }
 
 delayInit();

@@ -573,7 +573,6 @@ namespace CH4
                 FrameBuilder = ObserveService.BuildCompactFrameJson,
                 CatsBuilder = AdminService.BuildCatsJson,
                 NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
-                DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),
                 PatchBuilder = ObserveService.BuildPatchJson,
                 ServeChatPage = false,
                 RouteRegistrar = AdminService.RegisterAdminRoutes,

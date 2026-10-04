@@ -749,6 +749,20 @@ namespace CH4
             _viewBus.AttachSource(_viewStore.GetBlocks);
         }
 
+        /// <summary>连接数提供器——state 段 conn.clients 数据源（入口壳注入 host.ClientCount；未注入 = 0）</summary>
+        private Func<int> _clientCountProvider;
+
+        /// <summary>
+        /// 注入连接数提供器——连接健康字段数据源（state 段 conn.clients；入口壳注入 host.ClientCount）。
+        /// 连接健康是「服务端知道而前端不知道」的信息（重启停机中 / 多页面连接）；
+        /// 断线可见性不由此字段承担（断线后收不到帧）——那属外观层本地信号（契约 §12.2 / §12.8）。
+        /// </summary>
+        /// <param name="provider">连接数提供委托</param>
+        public void AttachConnInfo(Func<int> provider)
+        {
+            _clientCountProvider = provider;
+        }
+
         /// <summary>
         /// 注入环境信息提供器——info 内置工具数据源（拆分后由入口壳注入；原直接调用 Program.BuildEnvInfo）
         /// </summary>
@@ -1561,7 +1575,7 @@ namespace CH4
             return null;
         }
         /// <summary>
-        /// 状态段整段 JSON——后端权威业务态（v2 契约：轮阶段 / 六态用时 / Note / Token 三级 / 前文长度与条数）。
+        /// 状态段整段 JSON——后端权威业务态（v2 契约：轮阶段 / 六态用时 / Note / 延迟队列 / Token 三级 / 前文长度与条数）。
         /// 前端零推断：状态位与数字就位即渲染；整段比对去重由视图出口承担（无变化零字节）。
         /// </summary>
         /// <returns>状态段 JSON</returns>
@@ -1570,6 +1584,7 @@ namespace CH4
             string name;
             int requests;
             Dictionary<string, long> ms = GetRunState(out name, out requests);
+            int clients = _clientCountProvider != null ? _clientCountProvider() : 0;
             string runMsJson = JsonUtil.Object(
                 ("idle", ms["idle"]),
                 ("wait", ms["wait"]),
@@ -1587,12 +1602,15 @@ namespace CH4
                 ("sessionPrompt", _sessionPrompt),
                 ("sessionCompletion", _sessionCompletion),
                 ("sessionCacheHit", _sessionCacheHit));
+            string delayJson = JsonUtil.Object(("entries", DelayQueue.BuildEntriesFragment(_catKey)));
             return JsonUtil.Object(
                 ("sessionId", Id),
                 ("runState", name),
                 ("runMs", JsonUtil.Raw(runMsJson)),
                 ("requests", requests),
                 ("note", JsonUtil.Raw(BuildNoteJson())),
+                ("delay", JsonUtil.Raw(delayJson)),
+                ("conn", JsonUtil.Raw(JsonUtil.Object(("server", IsHostRestarting() ? "stopping" : "ok"), ("clients", clients)))),
                 ("tokens", JsonUtil.Raw(tokensJson)));
         }
         /// <summary>状态段推送——状态变化即推（视图出口整段比对去重；未 Attach 时静默）</summary>

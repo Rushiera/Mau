@@ -53,9 +53,6 @@ namespace CatHome4.Http
         /// <summary>Note 状态构建回调（可空）</summary>
         public Func<string> NoteBuilder { get; set; }
 
-        /// <summary>延迟队列状态构建回调（可空=不注册该端点）——GET /api/v1/delay（design-ch4-delay §5.2）</summary>
-        public Func<string> DelayBuilder { get; set; }
-
         /// <summary>增量 patch 构建回调（可空=全量推送）</summary>
         public Func<string> PatchBuilder { get; set; }
 
@@ -114,6 +111,18 @@ namespace CatHome4.Http
         /// <summary>SSE 事件序号——单调递增（协议 §4.3 seq 锚点；多线程并发写走 Interlocked——HTTP/LLM/泵三线程）</summary>
         private int _seq;
 
+        /// <summary>当前 SSE 连接数——连接健康字段数据源（state 段 conn.clients；锁内读取）</summary>
+        public int ClientCount
+        {
+            get
+            {
+                lock (_clientLock)
+                {
+                    return _clients.Count;
+                }
+            }
+        }
+
         /// <summary>SSE 客户端集合——锁保护（多连接独立广播）</summary>
         private readonly List<SseClient> _clients = new List<SseClient>();
 
@@ -153,9 +162,6 @@ namespace CatHome4.Http
         /// <summary>Note 状态构建回调——GET /api/v1/note（M4c 前端面板数据源）</summary>
         private Func<string> _noteBuilder;
 
-        /// <summary>延迟队列状态构建回调——GET /api/v1/delay（前端定时面板数据源；design-ch4-delay §5.2）</summary>
-        private Func<string> _delayBuilder;
-
         /// <summary>管理路由注册回调——入口壳注入（Admin 域经 IHttpRouteSink 注册 llm-apis/qqbot-apis/workspace 等；仅主端口非空）</summary>
         private Action<IHttpRouteSink> _routeRegistrar;
 
@@ -187,7 +193,6 @@ namespace CatHome4.Http
             host._frameBuilder = options.FrameBuilder;
             host._catsBuilder = options.CatsBuilder;
             host._noteBuilder = options.NoteBuilder;
-            host._delayBuilder = options.DelayBuilder;
             host._patchBuilder = options.PatchBuilder;
             host._viewFullBuilder = options.ViewFullBuilder;
             host._viewFrameBuilder = options.ViewFrameBuilder;
@@ -244,14 +249,6 @@ namespace CatHome4.Http
                 // M4c Note 状态——前端悬浮气泡数据源（页面加载兜底；实时更新走 SSE note 事件）
                 return Results.Text(_noteBuilder(), "application/json");
             });
-            if (_delayBuilder != null)
-            {
-                _app.MapGet("/api/v1/delay", (HttpContext ctx) =>
-                {
-                    // 延迟队列状态——前端定时面板数据源（列表 + dueAt 绝对时刻；倒计时由外观层自算——design-ch4-delay §5.2）
-                    return Results.Text(_delayBuilder(), "application/json");
-                });
-            }
             if (_catsBuilder != null)
             {
                 _app.MapGet("/api/v1/cats", (HttpContext ctx) =>

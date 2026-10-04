@@ -1031,7 +1031,7 @@ namespace CatHome4.Admin
             cat.Running = true;
             cat.Port = port;
             cat.Host = host;
-            cat.Session.AttachHost(host);
+            AttachSessionHost(cat.Session, host);
             SetCatRuntime(cat.Id, true, port);
             LogStore.Add("CatHome4", 1, "已启动猫「" + cat.DisplayName + "」，端口 " + port.ToString(), "CHAT");
             return "cat.start | " + cat.DisplayName + " | http://127.0.0.1:" + port.ToString();
@@ -1812,6 +1812,18 @@ namespace CatHome4.Admin
         /// <param name="cat">猫实体</param>
         /// <param name="port">监听端口</param>
         /// <returns>HttpHost 实例</returns>
+        /// <summary>
+        /// 会话 ↔ 宿主绑定——推送面 + 连接面一次注入（单一出口；三条启动路径共用）。
+        /// 连接面 = state 段 conn.clients 数据源（A186）；漏注入时 clients 恒 0——该值本身在契约里可见，不静默。
+        /// </summary>
+        /// <param name="session">目标会话</param>
+        /// <param name="host">该会话的 HTTP 外观层实例</param>
+        private static void AttachSessionHost(ChatSession session, HttpHost host)
+        {
+            session.AttachHost(host);
+            session.AttachConnInfo(() => host.ClientCount);
+        }
+
         private static HttpHost StartCatHost(CatEntry cat, int port)
         {
             return HttpHost.Start(new HttpHostOptions
@@ -1825,7 +1837,6 @@ namespace CatHome4.Admin
                 FrameBuilder = null,
                 CatsBuilder = null,
                 NoteBuilder = () => cat.Session.BuildNoteJson(),
-                DelayBuilder = () => DelayQueue.BuildListJson(cat.Session.Id),
                 PatchBuilder = null,
                 ViewFullBuilder = () => cat.Session.BuildViewFullJson(),
                 ViewFrameBuilder = () => cat.Session.TakeViewFrameJson(),
@@ -1865,7 +1876,6 @@ namespace CatHome4.Admin
                 FrameBuilder = null,
                 CatsBuilder = null,
                 NoteBuilder = () => _chatBridge.DefaultSession.BuildNoteJson(),
-                DelayBuilder = () => DelayQueue.BuildListJson(_chatBridge.DefaultSession.Id),
                 PatchBuilder = null,
                 ViewFullBuilder = () => _chatBridge.DefaultSession.BuildViewFullJson(),
                 ViewFrameBuilder = () => _chatBridge.DefaultSession.TakeViewFrameJson(),
@@ -1877,7 +1887,7 @@ namespace CatHome4.Admin
             _majorHost = host;
             _majorPort = port;
             // 会话事件推送改绑 majordomo 独立对话端口（主端口 index.html 管理面板不再消费 chat 事件——F2.1）
-            _chatBridge.DefaultSession.AttachHost(host);
+            AttachSessionHost(_chatBridge.DefaultSession, host);
             LogStore.Add("CatHome4", 1, "majordomo 独立对话端口已启动：" + port.ToString(), "CHAT");
             return true;
         }
@@ -2183,7 +2193,7 @@ namespace CatHome4.Admin
                 }
                 cat.Running = true;
                 cat.Port = port;
-                cat.Session.AttachHost(cat.Host);
+                AttachSessionHost(cat.Session, cat.Host);
                 // 端口与登记值不一致（被占回落）→ 只更新运行态文件（启动链不写 cat.cfg）
                 if (port != rt.Port)
                 {
