@@ -6,7 +6,7 @@
 //
 // 契约：
 //   persist item = { type, ts, msgIndex, round, payload }
-//   live    item = { type, payload }
+//   live    item = { type, payload }（type ∈ thinksse / replysse / toolrun / empty——契约 §12.5「live 生命周期语义」）
 //
 // 两族渲染函数形态（见各素材头注）：
 //   persist 族：function(payload) → 行元素（返回即完，挂载由 persist.js 承担）
@@ -35,9 +35,9 @@ var BLOCK_DECL = {
     'error': { form: 'plain', row: 'assistant', tick: 'reply', body: 'error' },
     'inject_report': { form: 'plain', row: 'assistant inject', tick: 'reply', body: 'inject' },
     'roundsum': { form: 'plain', row: 'assistant roundsum', tick: 'sum', body: 'roundsum' },
-    'stream.text': { form: 'plain', row: 'assistant', tick: 'reply', body: 'streaming' },
-    'stream.reason': { form: 'plain', row: 'assistant reason', tick: 'think' },
-    'toolcard.pending': { form: 'plain', row: 'assistant tool', tick: 'tool' }
+    'replysse': { form: 'plain', row: 'assistant', tick: 'reply', body: 'streaming' },
+    'thinksse': { form: 'plain', row: 'assistant reason', tick: 'think' },
+    'toolrun': { form: 'plain', row: 'assistant tool', tick: 'tool' }
 };
 
 /// 形态类名——表驱动唯一取用口；未声明的 type 回落朴素件（形态缺失不出气泡）
@@ -93,9 +93,9 @@ var PERSIST_RENDERERS = {
     'roundsum': buildRoundSumBlock
 };
 
-/// 临时区渲染表——type → function(payload) → 行元素（各 live 件自提供一件式入口）
+/// 临时区渲染表——type → function(payload) → 行元素（各 live 件自提供纯渲染入口；`empty` 不产行元素——由 live.js 显式处理，契约 §12.5）
 var LIVE_RENDERERS = {
-    'stream.text': liveStreamText,
-    'stream.reason': liveStreamReason,
-    'toolcard.pending': liveToolCardPending
+    'replysse': liveReplySse,
+    'thinksse': liveThinkSse,
+    'toolrun': liveToolRun
 };

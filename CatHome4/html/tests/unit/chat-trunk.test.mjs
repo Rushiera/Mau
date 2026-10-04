@@ -97,7 +97,7 @@ describe('收包三段（契约 §12.2 / §12.3）', () => {
             v: 2,
             state: { sessionId: 'cat1', runState: 'think', runMs: { think: 1500 }, requests: 0, tokens: { count: 3 } },
             persist: { mode: 'full', items: [{ type: 'user', payload: { text: '你好' } }] },
-            live: { items: [{ type: 'stream.text', payload: { text: '流式中' } }] }
+            live: { items: [{ type: 'replysse', payload: { text: '流式中' } }] }
         });
         expect(box.querySelector('.stale')).toBeNull();
         expect(box.querySelectorAll('.chat-row').length).toBe(1);
@@ -114,11 +114,14 @@ describe('收包三段（契约 §12.2 / §12.3）', () => {
 
     it('变化增量帧——live 整体替换（全量镜像语义，不合并）', () => {
         const panel = document.getElementById('chatLivePanel');
-        window.liveApply({ items: [{ type: 'stream.text', payload: { text: '一' } }, { type: 'stream.reason', payload: { text: '二' } }] });
+        window.liveApply({ items: [{ type: 'replysse', payload: { text: '一' } }, { type: 'thinksse', payload: { text: '二' } }] });
         expect(panel.querySelectorAll('.chat-row').length).toBe(2);
-        window.liveApply({ items: [{ type: 'stream.text', payload: { text: '一' } }] });
+        window.liveApply({ items: [{ type: 'replysse', payload: { text: '一' } }] });
         expect(panel.querySelectorAll('.chat-row').length).toBe(1);
         window.liveApply({ items: [] });
+        expect(panel.querySelectorAll('.chat-row').length).toBe(0);
+        // A187——empty 占位（链路正常、内容为空）不产元素：面板仍为空
+        window.liveApply({ items: [{ type: 'empty', payload: {} }] });
         expect(panel.querySelectorAll('.chat-row').length).toBe(0);
     });
 
@@ -126,7 +129,7 @@ describe('收包三段（契约 §12.2 / §12.3）', () => {
         window.chatOnFrame({
             state: { runState: 'idle' },
             persist: { mode: 'append', items: [{ type: 'user', payload: { text: 'P' } }] },
-            live: { items: [{ type: 'stream.reason', payload: { text: 'L' } }] }
+            live: { items: [{ type: 'thinksse', payload: { text: 'L' } }] }
         });
         expect(document.getElementById('chatMsgs').textContent).toContain('P');
         expect(document.getElementById('chatMsgs').textContent).not.toContain('L');

@@ -947,7 +947,7 @@ namespace CatHome4.Core.Tests
                 session.Pump();
                 Thread.Sleep(5);
                 List<string> cardsNow;
-                if (host.ViewEvents.TryGetValue("toolcard.pending", out cardsNow) && cardsNow.Count > 0)
+                if (host.ViewEvents.TryGetValue("toolrun", out cardsNow) && cardsNow.Count > 0)
                 {
                     break;
                 }
@@ -957,9 +957,9 @@ namespace CatHome4.Core.Tests
             session.Pause();
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
-            List<string> cards = host.ViewEvents["toolcard.pending"];
+            List<string> cards = host.ViewEvents["toolrun"];
             Assert.True(cards.Count >= 2);
-            List<string> abortOps = host.ViewOps["toolcard.pending"];
+            List<string> abortOps = host.ViewOps["toolrun"];
             Assert.Equal("live", abortOps[0]);
             Assert.Equal("live", abortOps[1]);
             using (JsonDocument d = JsonDocument.Parse(cards[1]))
@@ -994,7 +994,7 @@ namespace CatHome4.Core.Tests
                 session.Pump();
                 Thread.Sleep(5);
                 List<string> now;
-                if (host.ViewEvents.TryGetValue("toolcard.pending", out now) && now.Count >= 1
+                if (host.ViewEvents.TryGetValue("toolrun", out now) && now.Count >= 1
                     && now[now.Count - 1].Contains("text-write", StringComparison.Ordinal))
                 {
                     break;
@@ -1005,7 +1005,7 @@ namespace CatHome4.Core.Tests
             // A165——批未收口时持久区尚无工具卡（持久卡按声明序待整批收口落位）；
             // 两个工具都在临时区面板（已完成的 host-flows 待整批收口时交接给持久块）
             Assert.False(host.ViewEvents.ContainsKey("toolcard"));
-            List<string> pendingCards = host.ViewEvents["toolcard.pending"];
+            List<string> pendingCards = host.ViewEvents["toolrun"];
             Assert.True(pendingCards.Count >= 1);
             bool sawFlows = false;
             bool sawWrite = false;
@@ -1819,8 +1819,8 @@ namespace CatHome4.Core.Tests
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
             // A165——流式容器在轮末全部撤离（临时区全量镜像随之清空）：ViewEvents 无流式两类型键
-            Assert.False(host.ViewEvents.ContainsKey("stream.text"));
-            Assert.False(host.ViewEvents.ContainsKey("stream.reason"));
+            Assert.False(host.ViewEvents.ContainsKey("replysse"));
+            Assert.False(host.ViewEvents.ContainsKey("thinksse"));
             // 纯文本轮的思考段只属流式区：前文消息不带 reasoning → 不产 reason 持久块
             Assert.False(host.ViewEvents.ContainsKey("reason"));
         }

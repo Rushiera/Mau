@@ -8,7 +8,7 @@ namespace CH4
 {
     /// <summary>
     /// 会话视图出口——chat 快照协议 v2 出口（A165 阶段 1；取代 A162 状态推送出口）。
-    /// 三段结构：state（前端状态 · 后端权威业务态）/ persist（持久对话区 · 只增）/ live（临时区 · 全量镜像）。
+    /// 三段结构：state（前端状态 · 后端权威业务态）/ persist（持久对话区 · 只增）/ live（临时区 · **运行态镜像**：thinksse / replysse / toolrun——全空时单条 empty 占位，契约 §12.5）。
     /// 三种传输模式：全量（连接建立与重置后重发）· 追加（新持久条目）· 变化增量（状态与临时区变化）。
     /// 同步标识面（块键 / 块 ID / 生命周期态 / 移除指令 / 两区换手）全部退役——前端零键算术、零配对、零排序；
     /// 后端内部槽位自持（流式容器与工具卡定位），槽位键不进协议。
@@ -223,7 +223,7 @@ namespace CH4
             if (_textSlot == null)
             {
                 _textSlot = NextSlot("text");
-                AddLive(_textSlot, "stream.text", payload, NowMs());
+                AddLive(_textSlot, "replysse", payload, NowMs());
                 return;
             }
             UpdateLive(_textSlot, payload);
@@ -245,7 +245,7 @@ namespace CH4
             if (_reasonSlot == null)
             {
                 _reasonSlot = NextSlot("reason");
-                AddLive(_reasonSlot, "stream.reason", payload, NowMs());
+                AddLive(_reasonSlot, "thinksse", payload, NowMs());
                 return;
             }
             UpdateLive(_reasonSlot, payload);
@@ -315,13 +315,11 @@ namespace CH4
                 UpdateLive(slotKey, json);
                 return;
             }
-            AddLive(slotKey, "toolcard.pending", json, ts);
+            AddLive(slotKey, "toolrun", json, ts);
         }
 
-        /// <summary>
-        /// 工具卡终态——面板区原位覆盖（完成由 FlushToolCard 逐条回填 / 中断由收尾补推）；
-        /// 记入已定稿集合（幂等）并登记交接时刻——持久卡以同时间戳落地时清面板项。
-        /// </summary>
+        /// <summary>工具卡终态——面板区原位覆盖（完成由 FlushToolCard 逐条回填 / 中断由收尾补推）；记入已定稿集合（幂等）并登记交接时刻——持久卡以同时间戳（工具调用声明时刻）落地时清面板项。
+        /// 🔴 无在途卡不补建（2026-10-04 · c 修复）：先行卡被声明面跳过的工具在面板上本无卡，终态由持久 toolcard 承载——曾补建（时间戳取 NowMs）致交接键不等 → 面板项滞留。</summary>
         /// <param name="slotKey">内部槽位键（tool:&lt;toolCallId&gt;）</param>
         /// <param name="json">载荷 JSON（含 result 与 durMs）</param>
         public void PushToolCardDone(string slotKey, string json)
@@ -330,12 +328,14 @@ namespace CH4
             {
                 return;
             }
+            _finaledSlots.Add(slotKey);
             if (!_live.ContainsKey(slotKey))
             {
-                AddLive(slotKey, "toolcard.pending", json, NowMs());
+                // c 修复（2026-10-04）——无在途卡不补建：先行卡被声明面跳过的工具在面板上本无卡，
+                // 终态由持久 toolcard 承载即可；曾补建（时间戳取 NowMs）→ 交接键与持久卡声明时刻不等 → 面板项滞留
+                return;
             }
             UpdateLive(slotKey, json);
-            _finaledSlots.Add(slotKey);
             ViewBlock block;
             if (_live.TryGetValue(slotKey, out block))
             {
@@ -434,6 +434,11 @@ namespace CH4
                 {
                     result.Add(LiveItemJson(block));
                 }
+            }
+            if (result.Count == 0)
+            {
+                // 全空占位（契约 §12.5「live 生命周期语义」· A187）——链路正常、内容为空：显式信号，非错误
+                result.Add(JsonUtil.Object(("type", "empty"), ("payload", JsonUtil.Raw("{}"))));
             }
             return result.ToArray();
         }

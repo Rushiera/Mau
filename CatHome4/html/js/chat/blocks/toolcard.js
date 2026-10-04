@@ -4,7 +4,7 @@
 // 契约：
 //   item = { type:'toolcard', ts, msgIndex, round,
 //            payload:{ name, arguments, result, order?, toolIndex?, toolTotal?, images? } }
-//   · result === undefined 表示进行中（新契约下由 live 面的 toolcard.pending 承载，persist 面恒为终态）
+//   · result === undefined 表示进行中（新契约下由 live 面 `toolrun` 承载，persist 面恒为终态）
 //   · name = 工具名；arguments = 参数 JSON 原文；result = 结果原文（可带结构化头）
 //   · order = 执行序档位（缺省不渲染徽标）；toolIndex / toolTotal = 批次内序号（并发批次显示 [icon n/m]）
 //

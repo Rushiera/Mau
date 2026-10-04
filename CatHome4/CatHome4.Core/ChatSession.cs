@@ -537,7 +537,7 @@ namespace CH4
         {
             return _viewStore.GetBlocks();
         }
-        /// <summary>取流式区块快照——history 全量载荷随带（期三：前端重连 / 刷新忠实重建流式区）。</summary>
+        /// <summary>取流式区条目快照——全量帧 live 段取数（前端重连 / 刷新由全量首帧重建面板）。</summary>
         /// <returns>流式区块数组（按时间戳升序）</returns>
         public ViewBlock[] GetLiveBlocks()
         {
@@ -857,7 +857,7 @@ namespace CH4
             // [段2b] 运行态——中断结算（失败/中止轮同出统计：L2 摘要留档——design-ch4-llm §2.1 终止语义）
             PhaseSettle();
             LogStore.Add("LLM", 2, "本轮运行态统计（中断）: " + BuildRunStateSummary(), "LLM");
-            // [段3] 视图序号复位——流式容器由前端 seal（已显示内容保留）；思考段经唯一出口收口
+            // [段3] 流式条目移出 live 段（A187：live 是运行态镜像——未落持久块的内容随条目移出而消失，不进前文 / 存档）；思考段经唯一出口收口
             SealReasonStream();
             _viewBus.ResetTextStream();
             ResetRetryView();
@@ -1388,12 +1388,9 @@ namespace CH4
                 _llmBusy = false;
             }
         }
-        /// <summary>
-        /// 思考段终结——离开 think 态的唯一收口（莎 2026-09-22 定）：撤下流式思考容器（live.remove）。
-        /// A158 期三：思考内容由持久区流容器承载（PushReasonStream 落块 + live.update），本方法只负责撤场——
-        /// 前端见 live.remove 即撤临时气泡，持久块换手由持久区推送完成。
-        /// 幂等——无在途容器时零动作。调用面：PhaseEnter 离开 think 态 + 中止/暂停收尾。
-        /// </summary>
+        /// <summary>思考段终结——离开 think 态的唯一收口（莎 2026-09-22 定）：撤下流式思考容器（live 段 `thinksse` 条目移出）。
+        /// v2 契约（A187）：live 是运行态镜像——条目移出即前端面板不再渲染该流；思考内容由持久区 `reason` 整块承载（同帧收口）。
+        /// 幂等——无在途容器时零动作。调用面：PhaseEnter 离开 think 态 + 中止 / 暂停收尾。</summary>
         private void SealReasonStream()
         {
             _viewBus.ResetReasonStream();
@@ -1867,7 +1864,9 @@ namespace CH4
             return list;
         }
 
-        /// <summary>工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即推“进行中”卡（无 result 字段 → 前端 ⏳ 处理中）；工具完成 / 中断时以同块键原位替换（A128 起完成由 FlushToolCard 逐条回填，中断由 PushToolCardFinal 补终态）。声明面外工具不推卡（拦截是即时的——只在完成时出 ERR 卡）。A157：块键 = tool:&lt;toolCallId&gt;（与持久块同键），时间戳取工具调用声明时刻。</summary>
+        /// <summary>工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即推 live 段 `toolrun` 条目（载荷无 result 即进行中态）。
+        /// 完成 / 中断时同槽位原位覆盖为终态载荷（A128 起完成由 FlushToolCard 逐条回填，中断由 PushToolCardFinal 补终态）；持久 `toolcard` 以同时间戳（声明时刻）落地时移出该条目——契约 §12.5「live 生命周期语义」（A187）。
+        /// 声明面外工具不推卡（无在途卡 → 不补建，终态由持久卡承载）。槽位键 = tool:&lt;toolCallId&gt;（内部定位，不进协议）。</summary>
         /// <param name="calls">工具调用条目（ParseToolCalls 产物）</param>
         /// <param name="declaredTs">声明时刻（Unix 毫秒——工具调用消息 CreatedAt，与持久块同基点）</param>
         private void PushToolCardPending(List<ToolCallInfo> calls, long declaredTs)

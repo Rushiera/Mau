@@ -11,7 +11,7 @@ namespace CatHome4.Core.Tests
     /// <summary>
     /// 会话视图出口测试（A165 阶段 1 · chat 快照协议 v2）——三段结构：
     /// state（后端权威业务态整段比对，变化才推）· persist（持久对话区只增：全量 / 追加两模式）·
-    /// live（临时区全量镜像：stream.text / stream.reason / toolcard.pending）。
+    /// live（临时区 · 运行态镜像：thinksse / replysse / toolrun——全空时单条 empty 占位，契约 §12.5）。
     /// 铁律：无事发生零字节 · 推送序即渲染序 · 同步标识面（块键 / 块 ID / 生命周期态 / 移除指令 / 两区换手）全部退役。
     /// </summary>
     public sealed class ViewBusTests
@@ -135,7 +135,7 @@ namespace CatHome4.Core.Tests
             Assert.False(item.TryGetProperty("key", out unused));
             Assert.False(item.TryGetProperty("id", out unused));
             Assert.False(item.TryGetProperty("state", out unused));
-            Assert.Equal("stream.text", LiveItems(full)[0].GetProperty("type").GetString());
+            Assert.Equal("replysse", LiveItems(full)[0].GetProperty("type").GetString());
         }
 
         /// <summary>追加帧——新持久条目按 append 模式推送（其余段省略）</summary>
@@ -189,7 +189,7 @@ namespace CatHome4.Core.Tests
             Assert.Equal("wait", Root(frame).GetProperty("state").GetProperty("runState").GetString());
         }
 
-        /// <summary>临时区全量镜像——流式文本累积全文（非增量）；出区后条目消失</summary>
+        /// <summary>临时区全量镜像——流式文本累积全文（非增量）；出区后段内转为 empty 占位（契约 §12.5）</summary>
         [Fact]
         public void TextStreamMirrorsAccumulatedText()
         {
@@ -204,7 +204,7 @@ namespace CatHome4.Core.Tests
             Assert.Equal("甲乙", LiveItems(TakeFrame(bus))[0].GetProperty("payload").GetProperty("text").GetString());
 
             bus.ResetTextStream();
-            Assert.Equal(0, LiveItems(TakeFrame(bus)).GetArrayLength());
+            Assert.Equal("empty", LiveItems(TakeFrame(bus))[0].GetProperty("type").GetString());
             Assert.Null(TakeFrame(bus));
         }
 
@@ -220,8 +220,8 @@ namespace CatHome4.Core.Tests
             bus.PushReasonStream("乙");
             JsonElement items = LiveItems(TakeFrame(bus));
             Assert.Equal(2, items.GetArrayLength());
-            Assert.Equal("stream.text", items[0].GetProperty("type").GetString());
-            Assert.Equal("stream.reason", items[1].GetProperty("type").GetString());
+            Assert.Equal("replysse", items[0].GetProperty("type").GetString());
+            Assert.Equal("thinksse", items[1].GetProperty("type").GetString());
 
             bus.PushReasonStream("丙");
             JsonElement mirror = LiveItems(TakeFrame(bus));
@@ -242,7 +242,7 @@ namespace CatHome4.Core.Tests
             Assert.False(bus.IsToolCardFinaled("tool:c1"));
             JsonElement pending = LiveItems(TakeFrame(bus));
             Assert.Equal(1, pending.GetArrayLength());
-            Assert.Equal("toolcard.pending", pending[0].GetProperty("type").GetString());
+            Assert.Equal("toolrun", pending[0].GetProperty("type").GetString());
             Assert.Equal("t", pending[0].GetProperty("payload").GetProperty("name").GetString());
 
             bus.PushToolCardPending("tool:c1", "{\"name\":\"t\"}", 100);
@@ -255,14 +255,14 @@ namespace CatHome4.Core.Tests
             bus.PushPersist(Block("toolcard", "{\"name\":\"t\",\"result\":\"ok\"}", 100, -1, 3));
             string frame = TakeFrame(bus);
             Assert.Equal(1, Root(frame).GetProperty("persist").GetProperty("items").GetArrayLength());
-            Assert.Equal(0, LiveItems(frame).GetArrayLength());
+            Assert.Equal("empty", LiveItems(frame)[0].GetProperty("type").GetString());
             Assert.False(bus.IsToolCardPending("tool:c1"));
             Assert.Null(TakeFrame(bus));
         }
 
-        /// <summary>工具卡终态无先行卡——直接建面板项并登记交接（被拦工具 / 直执路径）</summary>
+        /// <summary>工具卡终态无先行卡——不补建面板项（c 修复 2026-10-04）：被声明面跳过的工具在面板上本无卡，终态由持久 toolcard 承载；仅记入已定稿集合（幂等）</summary>
         [Fact]
-        public void ToolCardDoneWithoutPendingCreatesLive()
+        public void ToolCardDoneWithoutPendingIsNoOp()
         {
             RecordingHost host = new RecordingHost();
             CH4.ViewBus bus = new CH4.ViewBus();
@@ -270,9 +270,27 @@ namespace CatHome4.Core.Tests
 
             bus.PushToolCardDone("tool:c9", "{\"name\":\"t\",\"result\":\"err\"}");
             Assert.True(bus.IsToolCardFinaled("tool:c9"));
+            // c 修复（2026-10-04）——无在途卡不补建：面板不出现该卡（终态由持久 toolcard 承载）
+            Assert.False(bus.IsToolCardPending("tool:c9"));
+            Assert.Empty(bus.GetLiveBlocks());
+            Assert.Null(TakeFrame(bus));
+        }
+        /// <summary>live 全空占位——条目清空后推单条 empty（链路正常、内容为空；契约 §12.5「live 生命周期语义」）</summary>
+        [Fact]
+        public void LiveItemsCarryEmptyPlaceholderWhenIdle()
+        {
+            RecordingHost host = new RecordingHost();
+            CH4.ViewBus bus = new CH4.ViewBus();
+            bus.Attach(host);
+
+            bus.PushTextStream("甲");
+            Assert.Equal("replysse", LiveItems(TakeFrame(bus))[0].GetProperty("type").GetString());
+
+            bus.ResetTextStream();
             JsonElement items = LiveItems(TakeFrame(bus));
             Assert.Equal(1, items.GetArrayLength());
-            Assert.Equal("err", items[0].GetProperty("payload").GetProperty("result").GetString());
+            Assert.Equal("empty", items[0].GetProperty("type").GetString());
+            Assert.Null(TakeFrame(bus));
         }
 
         /// <summary>重置——两区全清并置全量待发（帧轮广播空态全量帧，前端整体重绘）</summary>
@@ -292,7 +310,7 @@ namespace CatHome4.Core.Tests
             JsonElement root = Root(frame);
             Assert.Equal("full", root.GetProperty("persist").GetProperty("mode").GetString());
             Assert.Equal(0, root.GetProperty("persist").GetProperty("items").GetArrayLength());
-            Assert.Equal(0, root.GetProperty("live").GetProperty("items").GetArrayLength());
+            Assert.Equal("empty", root.GetProperty("live").GetProperty("items")[0].GetProperty("type").GetString());
             Assert.Null(TakeFrame(bus));
         }
 

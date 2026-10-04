@@ -7,6 +7,10 @@
 //           故无区分、无配对、无寻址）。不参与对话流、不进会话存档。
 //
 // 推法：后端有变化才推（无变化零字节）；推即全量，前端只管替换。
+//
+// 条目语义（A187 · 契约 §12.5「live 生命周期语义」）：type ∈ {thinksse, replysse, toolrun}——运行态镜像，
+//   前端按 type 渲染、不判终态；条目自段内移出即不渲染。全空时后端推单条 `empty`（链路正常、内容为空）
+//   → 本层不产元素 → 面板由 `.chat-live:empty` 兜底隐藏。
 // ═══════════════════════════════════════════
 
 /// 临时区容器——输入区切换面板
@@ -35,9 +39,13 @@ function liveApply(seg) {
     }
 }
 
-/// 单条渲染——type 直指渲染函数；未登记 type → 兜底报错气泡（lib/fallback.js，与持久区共用）
+/// 单条渲染——type 直指渲染函数；`empty` = 全空占位（链路正常、内容为空）不产元素（契约 §12.5）；
+/// 未登记 type → 兜底报错气泡（lib/fallback.js，与持久区共用）
 function liveRender(item) {
     if (!item) {
+        return null;
+    }
+    if (item.type === 'empty') {
         return null;
     }
     var fn = LIVE_RENDERERS[item.type];

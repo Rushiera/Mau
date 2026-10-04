@@ -41,9 +41,10 @@
 
 | type | 文件 | 渲染函数 | 形态 |
 |:--|:--|:--|:--:|
-| `stream.text` | `blocks/stream-text.js` | `buildStreamText()` + `setStreamText(h, full)` | ▬ 朴素 |
-| `stream.reason` | `blocks/stream-reason.js` | `buildStreamReason()` + `appendStreamReason(h, text)` | ▬ 朴素 |
-| `toolcard.pending` | `blocks/stream-toolcard.js` | `buildStreamToolCard(payload)`（`payload.result` 有值即终态） | ▬ 朴素 |
+| `replysse` | `blocks/reply-sse.js` | `liveReplySse(payload)`（累计全文一次成块） | ▬ 朴素 |
+| `thinksse` | `blocks/think-sse.js` | `liveThinkSse(payload)`（累计全文 + 尾部光标） | ▬ 朴素 |
+| `toolrun` | `blocks/tool-run.js` | `liveToolRun(payload)`（载荷 `result` 有值 = 结果态——同函数载荷分支） | ▬ 朴素 |
+| `empty` | —（`live.js` 显式处理） | 不产元素——面板空态（链路正常、内容为空） | — |
 
 **形态契约（2026-10-03 莎定；A188 扩一类）**——气泡只给「会被人当对话内容读」的模型 / 用户输出：**用户输入（`user`）+ 模型输出（`text` 正式回复 · `gap_text` 工具轮间隙文本）**；
 其余一切（过程件 / 系统件 / 临时区）一律朴素件。两种形态的样式：`.chat-bubble`（底 + 描边 + 圆角 + 内边距）· `.chat-plain`（无底无描边无圆角无内边距，只有字号与语义字色）。

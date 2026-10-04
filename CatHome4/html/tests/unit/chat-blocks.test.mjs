@@ -20,7 +20,7 @@ beforeAll(async () => {
 });
 
 const PERSIST_TYPES = ['user', 'text', 'gap_text', 'reason', 'toolcard', 'retry', 'error', 'inject_report', 'roundsum'];
-const LIVE_TYPES = ['stream.text', 'stream.reason', 'toolcard.pending'];
+const LIVE_TYPES = ['replysse', 'thinksse', 'toolrun'];
 
 /// 块体类例外——思考族自持 `.chat-think`、工具族自持 `.chat-tool`（`BLOCK_DECL` 未建模这两族块体；
 /// 形态判据不受影响——`form:'plain'` 语义 =「不作对话内容读」，与二者一致，故非渲染缺陷）。
@@ -28,9 +28,9 @@ const LIVE_TYPES = ['stream.text', 'stream.reason', 'toolcard.pending'];
 /// 口径统一（块体族是否入表 / `body` 列是否改全类名）归 A198「逐 type 核对」。
 const BODY_EXCEPTIONS = {
     'reason': 'chat-think',
-    'stream.reason': 'chat-think',
+    'thinksse': 'chat-think',
     'toolcard': 'chat-tool',
-    'toolcard.pending': 'chat-tool'
+    'toolrun': 'chat-tool'
 };
 
 /** 断言——行元素符合 `BLOCK_DECL` 声明（行类 / data-type / 块体类） */
