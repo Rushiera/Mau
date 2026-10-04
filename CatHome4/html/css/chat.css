@@ -242,8 +242,6 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-tool .ps-tag { display: inline-block; margin-right: 2px; padding: 0 4px; border-radius: 3px; font-size: var(--ch-fs-tag); }
 .chat-tool .ps-tag.ps5 { color: var(--ch-tool-ps5-fg); background: var(--ch-tool-ps5-bg); }
 .chat-tool .ps-tag.ps7 { color: var(--ch-tool-ps7-fg); background: var(--ch-tool-ps7-bg); }
-/* A127 执行序徽标——宿主 order 表裁决（折叠行：-1 只读 / 0 默认 / 1 写入 / 2 构建 / -100·100 钉死） */
-.chat-tool .chat-order { display: inline-block; margin-right: 2px; padding: 0 4px; border-radius: 3px; font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); background: var(--ch-bg-hover); }
 /* 段折叠摘要（2026-09-18）——行数 >5 的段折叠态即「5 行摘要」（首 2 + 折叠提示 + 末 2）；
    摘要挂 summary 内（details 折叠时非 summary 子元素会被隐藏），展开态隐藏 */
 .chat-tool .seg-peek { display: block; color: var(--ch-fg-muted); white-space: pre-wrap; word-break: break-all; margin-top: 3px; }
@@ -497,18 +495,35 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
    口径：后端必要信息 → 顶栏信息位（state 段独占）；前端瞬时提示 → 本气泡；两者互不覆盖 */
 .chat-pet-say { position: absolute; left: 0; top: calc(100% + 6px); width: 286px; background: var(--ch-bg-raised); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-bubble); padding: 6px 10px; color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); line-height: 1.5; word-break: break-all; pointer-events: none; animation: chat-in 0.18s ease-out; }
 
-/* ── 临时区（A167 · 契约 §6.1-F/G）——输入区切换面板，全量镜像替换 ──
-   与持久区物理分离：显示时对话区与滚动带让位（由 input.js 切换 display）。
-   空面板不占位（:empty 兜底——inline display 由切换逻辑控制）。 */
+/* ── 临时区（契约 §12.2 ③）——与输入框**同区域互斥**（同列同位；显隐由 input.js 切内联 display）──
+   形态 = 输入框同款气泡（同底 / 同圆角 / 同内边距 / 同字号），描边取军绿（与切换按钮同色）；
+   全量镜像整体替换；空段不产元素（无内容即零高，不占位）。 */
 .chat-live {
-    margin-bottom: 6px;
+    grid-column: 2;
     max-height: 320px;
     overflow-y: auto;
+    background: var(--ch-bg-panel);
+    border: 1px solid var(--ch-state-tool);
+    border-radius: var(--ch-radius-bubble);
+    padding: 7px 10px;
+    font-size: var(--ch-fs-tag);
+    line-height: 1.5;
 }
-.chat-live:empty {
-    display: none;
+/* 临时区切换按钮——输入框左侧（军绿底 + 白字；绝对定位贴输入框左缘与底边——
+   参与 grid 会触发列回退换行，把动作列顶到下一行） */
+.ch-livebtn {
+    position: absolute;
+    left: calc(var(--ch-col-left) - var(--ch-send-w) - 6px);
+    bottom: 8px;
+    width: var(--ch-send-w);
+    height: 40px;
+    border: none;
+    border-radius: var(--ch-radius-bubble);
+    background: var(--ch-state-tool);
+    color: var(--ch-fg-inverse);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: var(--ch-fs-tag);
 }
-/* 切换按钮激活态——复用 .ch-iabtn 基底，仅加轮廓标识（配色不新引令牌） */
-.ch-iabtn-live.on {
-    outline: 1px solid currentColor;
-}
+.ch-livebtn:hover { filter: brightness(1.15); }
+.ch-livebtn.on { outline: 1px solid var(--ch-fg-inverse); outline-offset: 1px; }

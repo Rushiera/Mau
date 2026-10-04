@@ -249,13 +249,14 @@ describe('出口面（input.js——投递即回执）', () => {
         expect(calls.map((c) => JSON.parse(c.opt.body).text)).toEqual(['cat.pause', 'cat.continue', 'session.new']);
     });
 
-    it('临时区切换——面板与对话区互斥显示', () => {
+    it('临时区切换——输入框与面板同区域互斥（对话区不受影响）', () => {
         window.chatLiveToggle();
         expect(document.getElementById('chatLivePanel').style.display).toBe('');
-        expect(document.getElementById('chatMsgs').style.display).toBe('none');
-        window.chatLiveToggle();
+        expect(document.getElementById('chatSendInput').style.display).toBe('none');
         expect(document.getElementById('chatMsgs').style.display).toBe('');
+        window.chatLiveToggle();
         expect(document.getElementById('chatLivePanel').style.display).toBe('none');
+        expect(document.getElementById('chatSendInput').style.display).toBe('');
     });
 });
 

@@ -93,9 +93,10 @@ var PERSIST_RENDERERS = {
     'roundsum': buildRoundSumBlock
 };
 
-/// 临时区渲染表——type → function(payload) → 行元素（各 live 件自提供纯渲染入口；`empty` 不产行元素——由 live.js 显式处理，契约 §12.5）
+/// 临时区渲染表——type → function(payload) → 行元素（`empty` 不产行元素——由 live.js 显式处理，契约 §12.5）
+/// `toolrun` 直接复用持久区工具卡渲染件（工具卡两区同源，不另设 live 件）
 var LIVE_RENDERERS = {
     'replysse': liveReplySse,
     'thinksse': liveThinkSse,
-    'toolrun': liveToolRun
+    'toolrun': function (payload) { return buildToolBlock(payload, 'toolrun'); }
 };

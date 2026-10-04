@@ -2,12 +2,12 @@
 // lib/tool-format.js —— 工具卡内部渲染（骨架层）
 //
 // 定位：工具结果 → 分区结构（输入段 / 输出段 + 二级折叠）的通用渲染。
-//       骨架只决定分区结构与头要素，不猜工具语义——解析不出计数就不标计数，不改写原文。
+//       骨架只决定分区结构，不猜工具语义；计数 / 规模类信息不在前端计算——前端只渲染语义（规模由后端给）。
 //
 // 来源：chat-tools.js（骨架层 + 阈值小件 + 结构化返回头拆分）
 //
 // 保留（我们需要的）：
-//   · 段落小件——seg / segPeekText / segSize / segKv / segLines（二级折叠 + 折叠摘要）
+//   · 段落小件——seg / segPeekText / segKv / segLines（二级折叠 + 折叠摘要）
 //   · 输入段 / 输出段通用外壳（处理中 / 无输出 / 失败三态）
 //   · 八类骨架形态——exec / diagnostics / listing / matches / lines / file / json / text
 //   · 结构化返回头拆分（metaHead：首行 JSON 元数据 + 正文定界行）
@@ -27,15 +27,6 @@
 var SEG_FOLD_LINES = 5;      // 段折叠阈值——行数 ≤5 默认展开；>5 折叠为「前 2 + 摘要行 + 后 2」
 var SEG_PEEK_HEAD = 2;       // 折叠摘要——保留的首行数
 var SEG_PEEK_TAIL = 2;       // 折叠摘要——保留的末行数
-
-var PENDING_HOLD_CLS = 'pending-hold';   // 工具卡「运行中」占位行类名（与 CSS 同源）
-
-function segSize(text) {
-    // 规模描述——「1.50k 字符 / 42 行」
-    var t = text || '';
-    var lines = (t.length === 0) ? 0 : t.split('\n').length;
-    return fmtCount(t.length) + ' 字符 / ' + lines + ' 行';
-}
 
 function seg(cls, cap, fill, peek) {
     // 段落——details.seg（二级折叠：点折叠头展开全量；限高滚动由 CSS 承担）
@@ -63,8 +54,7 @@ function segPeekText(text) {
     if (lines.length <= SEG_FOLD_LINES) { return ''; }
     var head = lines.slice(0, SEG_PEEK_HEAD);
     var tail = lines.slice(lines.length - SEG_PEEK_TAIL);
-    var mid = lines.slice(SEG_PEEK_HEAD, lines.length - SEG_PEEK_TAIL);
-    return head.join('\n') + '\n… 折叠了 ' + mid.length + ' 行 ' + mid.join('\n').length + ' 字符 …\n' + tail.join('\n');
+    return head.join('\n') + '\n…（中段已折叠）…\n' + tail.join('\n');
 }
 
 function segBlock(parent, cls, text) {
@@ -120,27 +110,12 @@ function linesOf(text) {
     return text.split('\n');
 }
 
-function countLines(lines) {
-    // 非空行数——空白行不计
-    var n = 0;
-    for (var i = 0; i < lines.length; i++) {
-        if (lines[i].replace(/\s/g, '').length > 0) { n = n + 1; }
-    }
-    return n;
-}
-
 function isErrResult(text) {
     // 失败态——ERR / ROLLED_BACK / FAIL 前缀，或结构化返回头 ok:false（单一出口，各骨架不再自加后缀）
     if (typeof text !== 'string' || text.length === 0) { return false; }
     if (text.indexOf('ERR') === 0 || text.indexOf('ROLLED_BACK') === 0 || text.indexOf('FAIL') === 0) { return true; }
     var head = metaHead(text);
     return !!(head && head.meta.ok === false);
-}
-
-function pendingHoldText(ms) {
-    // 「运行中」占位行文本——「⏳ 处理中…（已运行 12s）」；粒度 1 秒（整秒向下取整）
-    var s = Math.floor(Math.max(0, ms) / 1000);
-    return '⏳ 处理中…（已运行 ' + s + 's）';
 }
 
 // ═══ 输入 / 输出段 ═══
@@ -182,7 +157,7 @@ function segInput(tool, cap) {
     for (var j = 0; j < pairs.length; j++) { peekLines.push(pairs[j].k + ': ' + pairs[j].v); }
     var head = cap;
     if (!head || head.length === 0) {
-        head = '输入' + (pairs.length > 0 ? ' · ' + pairs.length + ' 项' : '');
+        head = '输入';
     }
     return seg('seg-in', head, function (body) {
         if (pairs.length === 0) { segBlock(body, 'ta', '（无参数）'); return; }
@@ -193,7 +168,7 @@ function segInput(tool, cap) {
 function segImages(paths) {
     // 输入图片段——被处理的图片先行（无路径 → null，调用方跳过）
     if (!paths || paths.length === 0) { return null; }
-    return seg('seg-img', '输入图片 · ' + paths.length + ' 张', function (body) {
+    return seg('seg-img', '输入图片', function (body) {
         body.appendChild(imageGroupFromPaths(paths));
     }, paths.join('\n'));
 }
@@ -207,7 +182,7 @@ function segOutput(tool, cap, render, peek) {
     else if (isErrResult(text)) { head = head + ' · 失败'; }
     var peekText = (typeof peek === 'string') ? peek : text;
     return seg('seg-out', head, function (body) {
-        if (text === undefined) { segBlock(body, 'ta ' + PENDING_HOLD_CLS, pendingHoldText(0)); return; }
+        if (text === undefined) { return; }
         if (text === '') { segBlock(body, 'tr', '（无输出）'); return; }
         render(body, text, isErrResult(text));
     }, peekText);
@@ -229,7 +204,7 @@ function skelExec(tool) {
         if (cwd.length > 0) { inParts.push('cwd: ' + cwd); }
         inParts.push(cmd);
         var inText = inParts.join('\n');
-        var inCap = '输入 · 命令 ' + cmd.length + ' 字符' + (cwd.length > 0 ? ' · 指定 cwd' : '');
+        var inCap = '输入 · 命令' + (cwd.length > 0 ? ' · 指定 cwd' : '');
         segs.push(seg('seg-in', inCap, function (body) {
             segBlock(body, 'ta', inText);
         }, inText));
@@ -246,7 +221,6 @@ function skelExec(tool) {
     var blocks = [];
     if (tool.result === undefined) {
         outCap = '输出 · 处理中';
-        blocks.push({ cap: '', cls: 'ta ' + PENDING_HOLD_CLS, text: pendingHoldText(0) });
     } else if (head && typeof head.meta.stdoutLines === 'number') {
         // 结构化回执——正文按 stdoutLines / stderrLines 切分（不依赖内容分隔符，零撞车）
         var allLines = linesOf(bodyText);
@@ -255,8 +229,8 @@ function skelExec(tool) {
         var out = (soCount > 0) ? allLines.slice(0, soCount).join('\n') : '';
         var err = (seCount > 0) ? allLines.slice(soCount, soCount + seCount).join('\n') : '';
         outCap = '输出 · exit ' + head.meta.exit;
-        if (out.length > 0) { blocks.push({ cap: 'stdout · ' + segSize(out), cls: 'tr', text: out }); }
-        if (err.length > 0) { blocks.push({ cap: 'stderr · ' + segSize(err), cls: 'tr err', text: err }); }
+        if (out.length > 0) { blocks.push({ cap: 'stdout', cls: 'tr', text: out }); }
+        if (err.length > 0) { blocks.push({ cap: 'stderr', cls: 'tr err', text: err }); }
         if (out.length === 0 && err.length === 0) { outCap = outCap + ' · 无输出'; }
         if (head.meta.truncated === true) {
             outCap = outCap + ' · ⚠️ 已截断';
@@ -266,8 +240,8 @@ function skelExec(tool) {
         var out2 = field(r, 'stdout');
         var err2 = field(r, 'stderr');
         outCap = '输出 · exit ' + r.exit;
-        if (out2.length > 0) { blocks.push({ cap: 'stdout · ' + segSize(out2), cls: 'tr', text: out2 }); }
-        if (err2.length > 0) { blocks.push({ cap: 'stderr · ' + segSize(err2), cls: 'tr err', text: err2 }); }
+        if (out2.length > 0) { blocks.push({ cap: 'stdout', cls: 'tr', text: out2 }); }
+        if (err2.length > 0) { blocks.push({ cap: 'stderr', cls: 'tr err', text: err2 }); }
         if (out2.length === 0 && err2.length === 0) { outCap = outCap + ' · 无输出'; }
         if (r.truncated === true) {
             outCap = outCap + ' · ⚠️ 已截断';
@@ -327,8 +301,6 @@ function skelDiagnostics(tool) {
     var cap = '输出';
     if (counts) {
         cap = '输出 · ' + counts.errors + ' 错 ' + counts.warnings + ' 警';
-    } else if (lines.length > 0) {
-        cap = '输出 · ' + countLines(lines) + ' 行';
     }
     segs.push(segOutput(tool, cap, function (body, text, isErr) {
         if (lines.length === 0) { segBlock(body, 'tr', '（无诊断输出）'); return; }
@@ -351,7 +323,6 @@ function skelListing(tool) {
         items.push(lines[i]);
     }
     var cap = '输出';
-    if (typeof bodyText === 'string' && bodyText.length > 0) { cap = '输出 · ' + items.length + ' 条目'; }
     segs.push(segOutput(tool, cap, function (body, text, isErr) {
         if (items.length === 0) { segBlock(body, 'tr', '（无匹配条目）'); return; }
         segLines(body, items, isErr ? 'tr err' : 'seg-line');
@@ -392,7 +363,6 @@ function skelMatches(tool) {
     var bodyText = head ? head.body : tool.result;
     var hits = parseHits(linesOf(bodyText));
     var cap = '输出';
-    if (typeof bodyText === 'string' && bodyText.length > 0) { cap = '输出 · ' + hits.length + ' 命中'; }
     segs.push(segOutput(tool, cap, function (body, text, isErr) {
         if (hits.length === 0) { segBlock(body, 'tr', '（无命中）'); return; }
         for (var i = 0; i < hits.length; i++) {
@@ -421,7 +391,6 @@ function skelLines(tool) {
     var lines = linesOf(bodyText);
     var startNo = (head && typeof head.meta.start === 'number') ? head.meta.start : -1;
     var cap = '输出';
-    if (typeof bodyText === 'string' && bodyText.length > 0) { cap = '输出 · ' + countLines(lines) + ' 行'; }
     segs.push(segOutput(tool, cap, function (body, text, isErr) {
         if (lines.length === 0) { segBlock(body, 'tr', '（无输出）'); return; }
         for (var i = 0; i < lines.length; i++) {
@@ -446,8 +415,7 @@ function skelLines(tool) {
 }
 
 // ── file / text：正文渲染（共用一支）──
-// withSize=true（file）标规模「字符 / 行」；false（text）只标行数——纯文本兜底不给体量噪音
-function skelPlain(tool, withSize) {
+function skelPlain(tool) {
     var segs = [];
     // 被处理的图片先行（载荷面 images 数组 —— 字段名以主干契约为准，此处示例）
     var imgSeg = segImages(tool.images);
@@ -455,11 +423,7 @@ function skelPlain(tool, withSize) {
     segs.push(segInput(tool, ''));
     var head = metaHead(tool.result);
     var bodyText = head ? head.body : tool.result;
-    var cap = '输出';
-    if (typeof bodyText === 'string' && bodyText.length > 0) {
-        cap = withSize ? ('输出 · ' + segSize(bodyText)) : ('输出 · ' + countLines(linesOf(bodyText)) + ' 行');
-    }
-    segs.push(segOutput(tool, cap, function (body, text, isErr) {
+    segs.push(segOutput(tool, '输出', function (body, text, isErr) {
         segBlock(body, isErr ? 'tr err' : 'tr', bodyText);
     }, bodyText));
     return { tag: '', tagCls: '', segs: segs };
@@ -483,8 +447,7 @@ function skelJson(tool) {
     }
     var hasBody = (head !== null) && (bodyText.length > 0);
     var cap = '输出';
-    if (parsed) { cap = '输出 · ' + pairs.length + ' 键' + (hasBody ? ' + 正文' : ''); }
-    else if (tool.result !== undefined && tool.result !== '') { cap = '输出 · 原始输出'; }
+    if (!parsed && tool.result !== undefined && tool.result !== '') { cap = '输出 · 原始输出'; }
     segs.push(segOutput(tool, cap, function (body, text, isErr) {
         if (parsed) {
             segKv(body, pairs);
@@ -504,9 +467,9 @@ var SKEL_RENDERERS = {
     'listing': skelListing,
     'matches': skelMatches,
     'lines': skelLines,
-    'file': function (tool) { return skelPlain(tool, true); },
+    'file': function (tool) { return skelPlain(tool); },
     'json': skelJson,
-    'text': function (tool) { return skelPlain(tool, false); }
+    'text': function (tool) { return skelPlain(tool); }
 };
 
 // 骨架图标 / 中文名——折叠行与图标兜底用（与骨架一一对应）
@@ -563,7 +526,7 @@ function iconOf(name) {
 function probeSkeleton(tool) {
     // 形态探测回落——未登记的工具：可解析 → json 骨架；否则 text 骨架（禁止空白、禁止静默）
     if (tryJson(tool.result)) { return skelJson(tool); }
-    return skelPlain(tool, false);
+    return skelPlain(tool);
 }
 
 function toolBody(tool) {

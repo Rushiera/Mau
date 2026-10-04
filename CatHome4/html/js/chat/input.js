@@ -1,14 +1,15 @@
 // ═══════════════════════════════════════════
-// chat/input.js —— 输入区与动作按钮（契约 §6.1-F）
+// chat/input.js —— 输入区与动作按钮
 //
 // 定位：用户侧唯一出口。发送 / 停止 / 继续 / 新会话 / 刷新 / 临时区切换。
 // 指令一律走指令总线（POST /api/v1/command）——前端不拼业务指令串以外的逻辑。
 //
-// 临时区切换（§6.1-F）：输入 ↔ 临时内容显示（输入框区域左侧一个切换）；
-//   回车发送时**自动切回流式显示**，想看临时内容自己点回来（纯前端可视化，判据取全局态）。
+// 输入区与临时区**同区域互斥**：同一列同位，输入框与 live 面板二选一（代码切内联 display）；
+//   回车发送时自动切回输入态，想看临时内容自己点回来（纯前端可视化，判据取全局态）。
+//   本件只切本区两块——不碰对话区（#chatMsgs）与滚动带（#chatScrollBand，显隐归 fx/scroll）。
 // ═══════════════════════════════════════════
 
-/// 临时区显示态——false = 流式显示（对话区可见），true = 临时内容（面板可见）
+/// 临时区显示态——false = 输入态（输入框可见），true = 临时内容（面板可见）
 var liveShown = false;
 
 /// 指令投递——统一出口（失败可见；投递即回执，结果异步经 SSE 回来）
@@ -35,7 +36,7 @@ function postCommand(text, images) {
     });
 }
 
-/// 发送——空文本且无待发图零动作；发送后自动切回流式显示（用户想看内容而非留在临时面板）
+/// 发送——空文本且无待发图零动作；发送后自动切回输入态（用户想看内容而非留在临时面板）
 function chatSend() {
     var box = document.getElementById('chatSendInput');
     if (!box) {
@@ -56,7 +57,6 @@ function chatSend() {
         pendingAdd(text.length > 0 ? text : '（图片）');
     }
     // 🔴 用户消息必须带 `Chat ` 前缀——宿主 `DispatchCommandForCat` 只认前缀行，裸文本 `return false` 不投递
-    //    （A167 主干重建时漏掉，判例 2026-10-03：前端回车发送收不到）
     postCommand('Chat ' + text, paths).then(function (j) {
         if (!j || j.ok !== true) {
             // 投递未受理——本地在途记录失去意义（防幽灵队列）
@@ -82,7 +82,7 @@ function chatContinue() {
     postCommand('cat.continue');
 }
 
-/// 新会话——清前文并重新注入；服务端随后在流内重发全量帧（契约 §12.3）
+/// 新会话——清前文并重新注入；服务端随后在流内重发全量帧
 function chatNewSession() {
     postCommand('session.new');
 }
@@ -96,24 +96,30 @@ function chatRefresh() {
     chatConnect();
 }
 
-/// 临时区 / 对话区切换
+/// 临时区 / 输入区切换——同区域互斥（按钮点击入口）
 function chatLiveToggle() {
     liveShown = (liveShown !== true);
+    inputSwap(liveShown);
+}
+
+/// 区域显隐单点——输入框与 live 面板二选一（元素缺失即跳过）；按钮激活态随动
+/// 面板高度上限 = 输入框实测高度（同一把尺：切换前后区域高度一致，不被撑大）
+function inputSwap(shown) {
+    var input = document.getElementById('chatSendInput');
     var panel = liveContainer();
-    var msgs = persistContainer();
-    var band = document.getElementById('chatScrollBand');
     if (panel) {
-        panel.style.display = liveShown ? '' : 'none';
+        if (shown === true && input) {
+            var h = input.offsetHeight;
+            panel.style.maxHeight = (h > 0 ? h : 0) + 'px';
+        }
+        panel.style.display = shown ? '' : 'none';
     }
-    if (msgs) {
-        msgs.style.display = liveShown ? 'none' : '';
-    }
-    if (band) {
-        band.style.display = liveShown ? 'none' : '';
+    if (input) {
+        input.style.display = shown ? 'none' : '';
     }
     var btn = document.getElementById('chatLiveToggle');
     if (btn) {
-        if (liveShown) {
+        if (shown) {
             btn.classList.add('on');
         } else {
             btn.classList.remove('on');
@@ -121,10 +127,11 @@ function chatLiveToggle() {
     }
 }
 
-/// 切回流式显示——发送时的自动动作（已在流式态则零动作）
+/// 切回输入态——发送时的自动动作（已在输入态则零动作）
 function showStreamArea() {
     if (liveShown === true) {
-        chatLiveToggle();
+        liveShown = false;
+        inputSwap(false);
     }
     scrollBottomNow(true);
 }

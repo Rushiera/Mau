@@ -29,10 +29,6 @@
 
     <!-- ═══ 输入区 ═══ -->
     <div id="chatinput">
-        <!-- 临时区（契约 §12.2 ③ / §6.1-F）——与持久区物理分离：输入区左侧切换面板（全量镜像替换）；
-             隐藏时即流式显示态；回车发送时主干自动切回本态 -->
-        <div id="chatLivePanel" class="chat-live" style="display:none"></div>
-
         <!-- Note / 定时 / 跳底 按钮行（绝对定位贴输入区上缘；Note 面板 note.js · 定时面板 delay.js · 跳底在 main.js） -->
         <div id="noteWrap" class="note-wrap">
             <div id="notePopover" class="note-popover" style="display:none">
@@ -75,9 +71,14 @@
 
         <div id="chatImages" class="chat-images"></div>
         <textarea id="chatSendInput" rows="5" placeholder="输入文本…（Enter 发送；Shift+Enter 换行；可直接粘贴图片）"></textarea>
-        <!-- 输入区动作列——临时区切换 / 停止 / 继续 / 发送（竖排同列、同款实心；底色区分语义） -->
+        <!-- 临时区切换——输入框左侧（军绿底 + 白字；点开显示临时内容，再点回到输入态。
+             面板高度上限 = 输入框实测高度——由 input.js 切换时写入，避免切换后区域被撑大） -->
+        <button id="chatLiveToggle" class="ch-livebtn" title="查看进行中的临时内容（流式 / 工具卡）——再点回到输入态">临时</button>
+        <!-- 临时区（契约 §12.2 ③）——与输入框**同区域互斥**（同一列同位，代码切内联 display）：
+             显示时输入框让位、全量镜像整体替换；空段不产元素（面板零高）；回车发送自动切回输入态 -->
+        <div id="chatLivePanel" class="chat-live" style="display:none"></div>
+        <!-- 输入区动作列——停止 / 继续 / 发送（竖排同列、同款实心；底色区分语义） -->
         <div id="chatActions">
-            <button id="chatLiveToggle" class="ch-iabtn ch-iabtn-live" title="查看进行中的临时内容（流式 / 工具卡）——再点回到对话流">临时</button>
             <button id="chatPause" class="ch-iabtn ch-iabtn-stop" title="停止本轮（cat.pause——已生成内容保留，前文格式修复）" disabled>停止</button>
             <button id="chatContinue" class="ch-iabtn ch-iabtn-continue" title="继续——用当前前文直接发一次 LLM 请求（cat.continue：不追加消息，模型续写）" disabled>继续</button>
             <button id="chatSendBtn" class="ch-iabtn ch-iabtn-send">发送</button>
@@ -108,7 +109,6 @@
     <script src="js/chat/lib/md.js?v=__V__"></script>
     <script src="js/chat/lib/md-copy.js?v=__V__"></script>
     <script src="js/chat/lib/images.js?v=__V__"></script>
-    <script src="js/chat/lib/think-head.js?v=__V__"></script>
     <script src="js/chat/lib/tool-format.js?v=__V__"></script>
     <script src="js/chat/lib/fallback.js?v=__V__"></script>
     <script src="js/chat/lib/cmd.js?v=__V__"></script>
@@ -125,7 +125,6 @@
     <script src="js/chat/blocks/roundsum.js?v=__V__"></script>
     <script src="js/chat/blocks/reply-sse.js?v=__V__"></script>
     <script src="js/chat/blocks/think-sse.js?v=__V__"></script>
-    <script src="js/chat/blocks/tool-run.js?v=__V__"></script>
 
     <!-- ③b state 投影——各投影件（每件一个输出面）+ 分发表（表持入口名，置于段末） -->
     <script src="js/chat/state/status.js?v=__V__"></script>

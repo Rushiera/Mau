@@ -10,8 +10,8 @@
 
 | 目录 | 内容 |
 |:--|:--|
-| `lib/` | 渲染共用件（10 件）——DOM 构造 `el`/`elText` / 格式化 `fmtCount`·`fmtMs` / MD 渲染 / 图片包裹 / 按压判据 / 思考头行 / 工具骨架 / 兜底件 `fallback`（未识别 type · 渲染异常——两区共用） / **命令解码 `cmd`（PS 意图 + 未识别上报）** |
-| `blocks/` | 契约 12 类块型，**每类一件**（persist 9 + live 3） |
+| `lib/` | 渲染共用件（9 件）——DOM 构造 `el`/`elText` / 格式化 `fmtCount`·`fmtMs` / MD 渲染 / 图片包裹 / 按压判据 / 工具骨架 / 兜底件 `fallback`（未识别 type · 渲染异常——两区共用） / **命令解码 `cmd`（PS 意图）** |
+| `blocks/` | 契约 12 类块型——persist 9 + live 3（live 的 `toolrun` 复用持久区工具卡渲染件，**独立件 2 个**：`reply-sse` / `think-sse`） |
 | `state/` | **state 段投影——各投影件 + 分发表**（A194 完成）：`status.js`（六态状态条——容器唯一写者）· `info.js`（顶栏信息位）· `note.js` · `delay.js` · `conn.js`；`registry.js` 的 `STATE_DECL`（投影件 → 消费字段 / 输出面 / 入口的唯一映射处）+ `stateProjectAll()` 整段分发 |
 | `fx/` | **独立功能——每功能一件 + 声明表**（A176 归位）：`pet`（桌宠）· `scroll`（滚动带）· `pending`（插话队列）· `cmd-intent`（命令解码显示）· `controls`（按钮态）；登记在 `fx/registry.js` 的 `FX_FEATURES`（名称 / 输入源 / 输出面 / 启动入口），启动由 `fxBoot()` 统一执行 |
 | 主干 | `registry.js`（**块声明表 + 映射表**——A178 起不兼实现）· `persist.js`（持久区）· `live.js`（临时区）· `state.js`（状态投影——**整段覆盖 + 按分发表分发薄层**）· `main.js`（收包入口 + 公共小件：信息位单点 `chatInfoSet`——**state 段专属**）· `input.js`（用户出口） |
@@ -44,7 +44,7 @@
 |:--|:--|:--|:--:|
 | `replysse` | `blocks/reply-sse.js` | `liveReplySse(payload)`（累计全文一次成块） | ▬ 朴素 |
 | `thinksse` | `blocks/think-sse.js` | `liveThinkSse(payload)`（累计全文 + 尾部光标） | ▬ 朴素 |
-| `toolrun` | `blocks/tool-run.js` | `liveToolRun(payload)`（载荷 `result` 有值 = 结果态——同函数载荷分支） | ▬ 朴素 |
+| `toolrun` | （复用）`blocks/toolcard.js` | `buildToolBlock(payload, 'toolrun')`——工具卡两区同源，不另设 live 件（进行中 / 结果态由载荷 `result` 有无分支） | ▬ 朴素 |
 | `empty` | —（`live.js` 显式处理） | 不产元素——面板空态（链路正常、内容为空） | — |
 
 **形态契约（2026-10-03 莎定；A188 扩一类）**——气泡只给「会被人当对话内容读」的模型 / 用户输出：**用户输入（`user`）+ 模型输出（`text` 正式回复 · `gap_text` 工具轮间隙文本）**；
@@ -62,7 +62,7 @@
 | `persist.js` | 持久区——`full` 清区重绘 / `append` 逐条追加；不判流式结束、不判换手 | §12.2 ② / §6.1-D |
 | `live.js` | 临时区——全量镜像整体替换（不比对、不 diff） | §12.2 ③ / §6.1-G |
 | `registry.js` | type → 渲染函数映射 + **块声明表 `BLOCK_DECL`**（形态 / 行语义类 / 刻度角色 / 块体语义）+ 六态元信息 `RUN_PHASES`——**前端唯一扩展点**：新增块型 = 后端加 type + 本表加一行（渲染函数 + 声明）+ 一个渲染函数；类名一律经 `formClass(type)` / `bodyClass(type)` / `blockRow(type)` 取用 | §12.5 |
-| `input.js` | 用户出口——发送 / 停止 / 继续 / 新会话 / 刷新 / 临时区切换（回车发送自动切回流式态） | §6.1-F |
+| `input.js` | 用户出口——发送 / 停止 / 继续 / 新会话 / 刷新 / 临时区切换（输入框 ↔ 面板**同区域互斥**，回车发送自动切回输入态） | §12.2 ③ |
 
 **帧形**（后端 `ViewBus`）：全量 `{v:2, state, persist:{mode:"full",items}, live:{items}}` · 追加 `{persist:{mode:"append",items}}` · 变化增量 `{state:{…整段…}}` / `{live:{items}}`；无事发生零字节。
 
