@@ -11,7 +11,7 @@
 | 目录 | 内容 |
 |:--|:--|
 | `lib/` | 渲染共用件（9 件）——DOM 构造 `el`/`elText` / 格式化 `fmtCount`·`fmtMs` / MD 渲染 / 图片包裹 / 按压判据 / 工具骨架 / 兜底件 `fallback`（未识别 type · 渲染异常——两区共用） / **命令解码 `cmd`（PS 意图）** |
-| `blocks/` | 持久块型 9 类（persist）+ 流式件 2 个（live 的 `replysse` / `thinksse`；`toolrun` 复用持久区工具卡渲染件） |
+| `blocks/` | 持久块型 8 类（persist——`gap_text` 与 `text` 视觉同形，收包即归一为 `text`，见 §二）+ 流式件 2 个（live 的 `replysse` / `thinksse`；`toolrun` 复用持久区工具卡渲染件） |
 | `state/` | **state 段投影——各投影件 + 分发表**（A194 完成）：`status.js`（六态状态条——容器唯一写者）· `info.js`（顶栏信息位）· `note.js` · `delay.js` · `conn.js`；`registry.js` 的 `STATE_DECL`（投影件 → 消费字段 / 输出面 / 入口的唯一映射处）+ `stateProjectAll()` 整段分发 |
 | `fx/` | **独立功能——每功能一件 + 声明表**（A176 归位）：`pet`（桌宠）· `scroll`（滚动带）· `pending`（插话队列）· `cmd-intent`（命令解码显示）· `controls`（按钮态）；登记在 `fx/registry.js` 的 `FX_FEATURES`（名称 / 输入源 / 输出面 / 启动入口），启动由 `fxBoot()` 统一执行 |
 | 主干 | `registry.js`（**块声明表 + 映射表**——A178 起不兼实现）· `persist.js`（持久区）· `live.js`（临时区）· `state.js`（状态投影——**整段覆盖 + 按分发表分发薄层**）· `main.js`（收包入口 + 公共小件：信息位单点 `chatInfoSet`——**state 段专属**）· `input.js`（用户出口） |
@@ -30,13 +30,12 @@
 |:--|:--|:--|:--:|
 | `user` | `blocks/user.js` | `buildUserBlock(payload)` | 🫧 气泡 |
 | `text` | `blocks/text.js` | `buildTextBlock(payload)` | 🫧 气泡 |
-| `gap_text` | `blocks/gap-text.js` | `buildGapTextBlock(payload)` | 🫧 气泡 |
-| `reason` | `blocks/reason.js` | `buildReasonBlock(payload)` | ▬ 朴素 |
-| `toolcard` | `blocks/toolcard.js` | `buildToolBlock(payload)` | ▬ 朴素 |
-| `retry` | `blocks/retry.js` | `buildRetryBlock(payload)` | ▬ 朴素 |
-| `error` | `blocks/error.js` | `buildErrorBlock(payload)` | ▬ 朴素 |
-| `inject_report` | `blocks/inject-report.js` | `buildInjectReportBlock(payload)` | ▬ 朴素 |
-| `roundsum` | `blocks/roundsum.js` | `buildRoundSumBlock(payload)` | ▬ 朴素 |
+| `reason` | `blocks/reason.js` | `buildReasonBlock(payload)` | 🫧 气泡 |
+| `toolcard` | `blocks/toolcard.js` | `buildToolBlock(payload)` | 🫧 气泡 |
+| `retry` | `blocks/retry.js` | `buildRetryBlock(payload)` | 🫧 气泡 |
+| `error` | `blocks/error.js` | `buildErrorBlock(payload)` | 🫧 气泡 |
+| `inject_report` | `blocks/inject-report.js` | `buildInjectReportBlock(payload)` | 🫧 气泡 |
+| `roundsum` | `blocks/roundsum.js` | `buildRoundSumBlock(payload)` | 🫧 气泡 |
 
 ### live 类——段 `{ type, context }`（A196 状态投影——两个字符串，整段覆盖）
 
@@ -47,8 +46,8 @@
 | `toolrun` | `context` = 未完成工具卡**数组 JSON**，由 `live.js` 逐卡调 `buildToolBlock(card, 'toolrun')`（复用 `blocks/toolcard.js`，两区同源） | ▬ 朴素 |
 | `empty` | 不产元素——面板空态（链路正常、内容为空） | — |
 
-**形态契约（2026-10-03 莎定；A188 扩一类）**——气泡只给「会被人当对话内容读」的模型 / 用户输出：**用户输入（`user`）+ 模型输出（`text` 正式回复 · `gap_text` 工具轮间隙文本）**；
-其余一切（过程件 / 系统件 / 临时区）一律朴素件。两种形态的样式：`.chat-bubble`（底 + 描边 + 圆角 + 内边距）· `.chat-plain`（无底无描边无圆角无内边距，只有字号与语义字色）。
+**形态契约（2026-10-03 立 · 2026-10-05 改判 · 莎定）**——**persist 八类全部气泡**（`.chat-bubble`：底 + 描边 + 圆角 + 内边距）；**live 三件朴素**（`.chat-plain`——面板自身即泡，内部件不再套壳）。类别区分由**描边色**承担（色相 = 语义，与状态条 / 滚动带刻度同源）；底色四档不新增令牌：内容类 `--ch-bg-panel` · 过程类 `--ch-bg-sunken`（reason）· 系统类 `--ch-bg-faint`（retry / error）· 注入报告 `--ch-note-bg`；**`inject_report` 与 `roundsum` 描边同为淡紫**（`--ch-state-all`）。
+间隙文本（后端 type `gap_text`）与 `text` 视觉同形——前端收包即归一为 `text`（`persist.js::TYPE_ALIAS`）；后端保留该 type，供 QQ `/last` 与会话存档区分。
 
 ---
 

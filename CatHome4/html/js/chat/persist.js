@@ -12,6 +12,20 @@
 //       兜底件（未识别 type / 渲染异常）→ `lib/fallback.js`（两区共用，A178 归位）
 // ═══════════════════════════════════════════
 
+// ── type 归一（前端视觉口径 · 2026-10-05）─────────────────────
+// `gap_text`（工具轮间隙文本）与 `text`（正式回复）在前端**视觉同形**——同气泡形态 / 同行语义 /
+// 同 MD 填充件；语义区分（QQ `/last` 只取正式回复 · 会话存档不进间隙文本）由**后端消费方**承担。
+// 前端零业务效果 → 收包即归一，不设第二件、不设第二张分型表。
+// 新增同形 type：本表登记一行即可。
+var TYPE_ALIAS = {
+    'gap_text': 'text'
+};
+
+/// 类型归一——收包后第一个动作（`persistAppend` 内逐条调用；full / append 两路同经此）
+function normalizeType(t) {
+    return TYPE_ALIAS[t] || t;
+}
+
 /// 持久区容器——对话区
 function persistContainer() {
     return document.getElementById('chatMsgs');
@@ -52,6 +66,10 @@ function persistAppend(items) {
         return;
     }
     for (var i = 0; i < items.length; i++) {
+        // type 归一——收包后第一个动作：此后所有 type 消费（判据 / 分派 / 兜底）都在归一口径上
+        if (items[i]) {
+            items[i].type = normalizeType(items[i].type);
+        }
         // 插话队列——user 块到达 = 内核确认，本地在途记录 FIFO 出队
         if (items[i] && items[i].type === 'user' && typeof pendingConsume === 'function') {
             pendingConsume();

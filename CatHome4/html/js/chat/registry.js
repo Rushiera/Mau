@@ -17,8 +17,8 @@
 
 // ── 块声明表（单一真相源 · A179 收口）────────────────────────────
 // 每 type 一行四列：
-//   form 形态——`bubble`（会被人当对话内容读：用户输入 / LLM 最终输出）| `plain`（其余一切）
-//              契约：对话区只有两种行形态（2026-10-03 莎定）
+//   form 形态——`bubble`（对话内容体——persist 八类全量，2026-10-05 莎定改判）| `plain`（临时区三件——
+//              面板自身即泡，内部件不再套壳；cursor / 流式光标等仍在 plain 面）
 //   row  行语义类——`.chat-row` 上的变体类（左右分侧 / 布局）；渲染件不拼类名字符串
 //   tick 刻度角色——滚动带刻度色（`user` / `reply` / `tool` / `think` / `sum`；CSS `.sb-tick.*`）
 //   body 块体语义类（可选）——块体元素上的语义类（CSS 点名用，如 `.chat-plain.error`）；渲染件不拼类名字符串
@@ -29,13 +29,12 @@
 var BLOCK_DECL = {
     'user': { form: 'bubble', row: 'user', tick: 'user' },
     'text': { form: 'bubble', row: 'assistant', tick: 'reply' },
-    'gap_text': { form: 'bubble', row: 'assistant', tick: 'reply' },
-    'reason': { form: 'plain', row: 'assistant reason', tick: 'think' },
-    'toolcard': { form: 'plain', row: 'assistant tool', tick: 'tool' },
-    'retry': { form: 'plain', row: 'assistant', tick: 'reply', body: 'retry' },
-    'error': { form: 'plain', row: 'assistant', tick: 'reply', body: 'error' },
-    'inject_report': { form: 'plain', row: 'assistant inject', tick: 'reply', body: 'inject' },
-    'roundsum': { form: 'plain', row: 'assistant roundsum', tick: 'sum', body: 'roundsum' },
+    'reason': { form: 'bubble', row: 'assistant reason', tick: 'think' },
+    'toolcard': { form: 'bubble', row: 'assistant tool', tick: 'tool' },
+    'retry': { form: 'bubble', row: 'assistant', tick: 'reply', body: 'retry' },
+    'error': { form: 'bubble', row: 'assistant', tick: 'reply', body: 'error' },
+    'inject_report': { form: 'bubble', row: 'assistant inject', tick: 'reply', body: 'inject' },
+    'roundsum': { form: 'bubble', row: 'assistant roundsum', tick: 'sum', body: 'roundsum' },
     'replysse': { form: 'plain', row: 'assistant', tick: 'reply', body: 'streaming' },
     'thinksse': { form: 'plain', row: 'assistant reason', tick: 'think' },
     'toolrun': { form: 'plain', row: 'assistant tool', tick: 'tool' }
@@ -85,7 +84,6 @@ var RUN_PHASES = [
 var PERSIST_RENDERERS = {
     'user': buildUserBlock,
     'text': buildTextBlock,
-    'gap_text': buildGapTextBlock,
     'reason': buildReasonBlock,
     'toolcard': buildToolBlock,
     'retry': buildRetryBlock,

@@ -22,10 +22,12 @@ function thinkPeek(text) {
 
 function buildReasonBlock(payload) {
     // 完成态思考块——头行 + 两档正文（两档内容同置 DOM，显示切换纯 CSS：点击只切类，零内容重建）
+    // 气泡外壳（2026-10-05 气泡化）——块体 = 气泡；内层 .chat-think 保留原结构（底色与描边由外壳承担）
     var p = payload || {};
     var content = (typeof p.text === 'string') ? p.text : '';
 
     var row = blockRow('reason');
+    var bubble = el('div', bodyClass('reason'));
     var box = el('div', 'chat-think done');
 
     var head = el('div', 'ct-head');
@@ -38,7 +40,8 @@ function buildReasonBlock(payload) {
     box.appendChild(body);
 
     bindPressToggle(box, thinkToggle);
-    row.appendChild(box);
+    bubble.appendChild(box);
+    row.appendChild(bubble);
     return row;
 }
 

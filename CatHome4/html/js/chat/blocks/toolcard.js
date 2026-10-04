@@ -19,8 +19,12 @@
 function buildToolBlock(payload, type) {
     // 工具卡——行容器 + 折叠卡（默认折叠）
     // type 可指定（缺省 toolcard）——live 面以 'toolrun' 复用本渲染件（两区同源，行身份随来源）
-    var row = blockRow(type || 'toolcard');
-    row.appendChild(buildToolCard(payload, false));
+    // 气泡外壳（2026-10-05 气泡化）——persist 面得 .chat-bubble；live 面（toolrun）仍 .chat-plain（面板自身即泡，内部件不再套壳）
+    var t = type || 'toolcard';
+    var row = blockRow(t);
+    var bubble = el('div', bodyClass(t));
+    bubble.appendChild(buildToolCard(payload, false));
+    row.appendChild(bubble);
     return row;
 }
 

@@ -68,8 +68,14 @@
     --ch-note-fg-hover: #c8e6d0;
     --ch-note-done: #4a6a4a;
     --ch-inject-fg: var(--ch-note-fg);
-    --ch-inject-line: var(--ch-note-line);
+    --ch-inject-line: var(--ch-state-all);      /* 注入报告线——淡紫（2026-10-05 莎定：与轮末结算同族） */
     --ch-inject-miss: #b5a25e;
+    /* 块型气泡描边（2026-10-05 气泡化 · 莎定）——色相 = 语义，与状态条 / 滚动带刻度同源；
+       底档不新增令牌（直接引 L1）：内容类 panel · 过程类 sunken · 系统类 faint · 注入报告 note-bg */
+    --ch-chat-reason-line: var(--ch-state-think);
+    --ch-chat-tool-line: var(--ch-state-tool);
+    --ch-chat-retry-line: var(--ch-state-wait);
+    --ch-chat-sum-line: var(--ch-state-all);
     --ch-round-gap: 200px;  /* 轮次分隔——本轮结算块行下留白（带上形成每轮之间的空隙，2026-09-24） */
     --ch-roundsum-fg: #9aa8b8;
     --ch-cmd-intent-bg: #0c1218;
@@ -181,6 +187,16 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
    形态归属（谁气泡 / 谁朴素）与行语义类、刻度角色的唯一声明处 = `js/chat/registry.js` 的块声明表 BLOCK_DECL（A179）。
    适用：思考 · 工具卡 · 错误 · 重试 · 注入报告 · 轮末结算 · 临时区流式件 */
 .chat-plain { font-size: var(--ch-fs-tag); line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+/* ── 块型气泡配色（2026-10-05 · 莎定——persist 八类全部气泡）────────────────
+   类别区分由**描边色**承担（色相 = 语义，与状态条 / 滚动带刻度同源）；底色四档直接引 L1（panel / sunken / faint / note-bg）。
+   🔴 一律带 #chatMsgs 前缀：`.chat-row.assistant .chat-bubble`（0,3,0）会压过 2 类选择器——曾致「所有助手气泡被统一染色」。 */
+#chatMsgs .chat-row[data-type="text"] .chat-bubble { --bubble-line: var(--ch-state-reply); }
+#chatMsgs .chat-row[data-type="reason"] .chat-bubble { background: var(--ch-bg-sunken); --bubble-line: var(--ch-chat-reason-line); }
+#chatMsgs .chat-row[data-type="toolcard"] .chat-bubble { --bubble-line: var(--ch-chat-tool-line); }
+#chatMsgs .chat-row[data-type="retry"] .chat-bubble { background: var(--ch-bg-faint); --bubble-line: var(--ch-chat-retry-line); }
+#chatMsgs .chat-row[data-type="error"] .chat-bubble { background: var(--ch-bg-faint); --bubble-line: var(--ch-err); }
+#chatMsgs .chat-row[data-type="inject_report"] .chat-bubble { background: var(--ch-note-bg); --bubble-line: var(--ch-inject-line); }
+#chatMsgs .chat-row[data-type="roundsum"] .chat-bubble { --bubble-line: var(--ch-chat-sum-line); }
 /* 气泡描边（2026-09-17）——线色 --bubble-line 与半透明度 --bubble-alpha 均按块类型赋值（基础 = Reply 态色 · 20%）；
    默认半透明（压亮度）；hover 经 0.3s ease-in-out 渐强到实心，移出即反向渐弱
    transition 可中断——渐强中移出从当前值转弱、渐弱中移入从当前值续强；用户气泡显式无边框 */
@@ -194,7 +210,7 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 }
 .chat-row.user .chat-bubble { background: var(--ch-chat-user-bg); color: var(--ch-chat-user-fg); border: none; }
 .chat-row.assistant .chat-bubble { background: var(--ch-chat-ai-bg); color: var(--ch-chat-ai-fg); }
-.chat-plain.error { color: var(--ch-chat-error-fg); }
+#chatMsgs .chat-bubble.error { color: var(--ch-chat-error-fg); }
 .chat-plain.streaming::after { content: '▌'; color: var(--ch-ok); animation: chatblink 1s infinite; }
 @keyframes chatblink { 50% { opacity: 0; } }
 /* A85 Think 块——两态两渲染器（流式态 .stream live-only / 完成态 .done 落盘；规格 design-ch4-frontend-theme §六）
@@ -263,13 +279,13 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 /* S2 §8.4——重试过程记录（独立视图条目：朴素件 · ⟳ 重试中 / ✓ 已恢复）
    A86——resolved 不覆盖报错原文：仅换文本色，文本 = 原文 + 追加「已恢复」
    2026-10-03 形态改判（莎定）：去气泡壳——灰底 / 内边距 / 描边全撤，只留语义字色 */
-.chat-plain.retry { color: var(--ch-chat-sys-fg); }
-.chat-plain.retry.resolved { color: var(--ch-chat-sys-ok); }
+#chatMsgs .chat-bubble.retry { color: var(--ch-chat-sys-fg); }
+#chatMsgs .chat-bubble.retry.resolved { color: var(--ch-chat-sys-ok); }
 /* A94——重试耗尽终态：原文保留 + 「⚠ 重试失败」（文本色同错误面） */
-.chat-plain.retry.failed { color: var(--ch-chat-error-fg); }
+#chatMsgs .chat-bubble.retry.failed { color: var(--ch-chat-error-fg); }
 /* 注入报告（朴素件）——新会话前文加载明细（📚 汇总头 + 逐文件三态）
    2026-10-03 形态改判：去气泡壳——浅底与描边全撤 */
-.chat-plain.inject { color: var(--ch-inject-fg); }
+#chatMsgs .chat-bubble.inject { color: var(--ch-inject-fg); }
 .inject-report .ir-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 4px; }
 .inject-report .ir-list { display: flex; flex-direction: column; gap: 2px; }
 .inject-report .ir-item { word-break: break-all; white-space: pre-wrap; }
@@ -283,17 +299,17 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 /* roundsum 轮末统计（朴素件）——本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时
    2026-09-24：居中试作后撤回——保持靠左（与 assistant 正文同侧）；带上刻度的中心对称渐变不受影响
    2026-10-03 形态改判：去气泡壳——底与描边全撤（呼吸描边随气泡基类一并消失） */
-.chat-plain.roundsum { color: var(--ch-roundsum-fg); }
+#chatMsgs .chat-bubble.roundsum { color: var(--ch-roundsum-fg); }
 /* 轮次分隔（2026-09-24）——结算块所在行下留白；带上呈空隙（刻度按内容坐标映射，留白即成段间隔） */
-.chat-row:has(.chat-plain.roundsum) { margin-bottom: var(--ch-round-gap); }
-.chat-plain.roundsum .rs-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 3px; }
-.chat-plain.roundsum .rs-tok { color: var(--ch-tok-completion); word-break: break-all; white-space: pre-wrap; }
-.chat-plain.roundsum .rs-tools { color: var(--ch-warn); margin-top: 2px; }
-.chat-plain.roundsum .rs-times { color: var(--ch-fg-muted); margin-top: 2px; }
+.chat-row:has(.chat-bubble.roundsum) { margin-bottom: var(--ch-round-gap); }
+#chatMsgs .chat-bubble.roundsum .rs-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 3px; }
+#chatMsgs .chat-bubble.roundsum .rs-tok { color: var(--ch-tok-completion); word-break: break-all; white-space: pre-wrap; }
+#chatMsgs .chat-bubble.roundsum .rs-tools { color: var(--ch-warn); margin-top: 2px; }
+#chatMsgs .chat-bubble.roundsum .rs-times { color: var(--ch-fg-muted); margin-top: 2px; }
 /* 轮末第二行分色（2026-09-17——Tool/Api/All 三段；第三行六态保持单色弱化） */
-.chat-plain.roundsum .rs-tool { color: var(--ch-state-tool); }
-.chat-plain.roundsum .rs-api { color: var(--ch-state-api); }
-.chat-plain.roundsum .rs-all { color: var(--ch-state-all); }
+#chatMsgs .chat-bubble.roundsum .rs-tool { color: var(--ch-state-tool); }
+#chatMsgs .chat-bubble.roundsum .rs-api { color: var(--ch-state-api); }
+#chatMsgs .chat-bubble.roundsum .rs-all { color: var(--ch-state-all); }
 /* 2026-10-03 形态改判（莎定）——**呼吸描边机制整体退役**：`@keyframes bubble-breathe` 与五类触发选择器
    （pending / retry / streaming / live / paused）全删。理由：呼吸只动 border-color，而新形态下这些块
    已全部改朴素件（`.chat-plain`——无底无描边，没有可呼吸的属性）；且 A167/A168 重构后
