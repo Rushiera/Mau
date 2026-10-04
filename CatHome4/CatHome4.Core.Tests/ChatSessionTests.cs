@@ -200,6 +200,32 @@ namespace CatHome4.Core.Tests
             /// <summary>事件到达序——renderType 列表（跨类型时序断言用）</summary>
             private readonly List<string> _eventOrder = new List<string>();
 
+            /// <summary>最近一帧 live 段的 type 存储</summary>
+            private string _lastLiveType = "";
+
+            /// <summary>最近一帧 live 段的 context 存储</summary>
+            private string _lastLiveContext = "";
+
+            /// <summary>最近一帧 live 段的 type（A196 状态投影——中止回空态 / 完成移出断言用；读取即先回放未取走的帧）</summary>
+            public string LastLiveType
+            {
+                get
+                {
+                    FlushView();
+                    return _lastLiveType;
+                }
+            }
+
+            /// <summary>最近一帧 live 段的 context（A196——未完成工具清单断言用；读取即先回放未取走的帧）</summary>
+            public string LastLiveContext
+            {
+                get
+                {
+                    FlushView();
+                    return _lastLiveContext;
+                }
+            }
+
             /// <summary>捕获视图块——renderType → payload 列表（读取即先回放未取走的增量）</summary>
             public Dictionary<string, List<string>> ViewEvents
             {
@@ -279,18 +305,29 @@ namespace CatHome4.Core.Tests
                     JsonElement live;
                     if (doc.RootElement.TryGetProperty("live", out live))
                     {
-                        foreach (JsonElement it in live.GetProperty("items").EnumerateArray())
+                        // A196——live 段为 {type, context} 两字符串：toolrun 的 context 是未完成工具卡数组，
+                        // 逐卡登记（保持旧 items 语义——按工具卡元素文本核）；thinksse / replysse 登记全文；empty 不登记
+                        string liveType = live.GetProperty("type").GetString();
+                        string liveContext = live.GetProperty("context").GetString();
+                        _lastLiveType = liveType;
+                        _lastLiveContext = liveContext;
+                        if (liveType == "toolrun")
                         {
-                            string renderType = it.GetProperty("type").GetString();
-                            string payload = "";
-                            JsonElement p;
-                            if (it.TryGetProperty("payload", out p))
+                            using (JsonDocument cards = JsonDocument.Parse(liveContext.Length > 0 ? liveContext : "[]"))
                             {
-                                payload = p.GetRawText();
+                                foreach (JsonElement card in cards.RootElement.EnumerateArray())
+                                {
+                                    Accumulate(_viewEvents, "toolrun", card.GetRawText());
+                                    Accumulate(_viewOps, "toolrun", "live");
+                                    _eventOrder.Add("toolrun");
+                                }
                             }
-                            Accumulate(_viewEvents, renderType, payload);
-                            Accumulate(_viewOps, renderType, "live");
-                            _eventOrder.Add(renderType);
+                        }
+                        else if (liveType != "empty")
+                        {
+                            Accumulate(_viewEvents, liveType, liveContext);
+                            Accumulate(_viewOps, liveType, "live");
+                            _eventOrder.Add(liveType);
                         }
                     }
                     JsonElement state;
@@ -923,7 +960,8 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 工具卡中断终态——工具批进行中（OA 工具无消费者）Pause 中止：先行"进行中"卡以同序号替换为已中止卡。
+        /// 工具区中止（A196 更新）——工具批进行中（OA 工具无消费者）Pause 中止：临时区写空态（未完成工具不在面板残留）；
+        /// 中止前在途卡如实可见（toolrun 段带该工具）。
         /// </summary>
         [Fact]
         public void ToolCard_PendingAbortedOnPause()
@@ -953,25 +991,18 @@ namespace CatHome4.Core.Tests
                 }
             }
             Assert.False(session.IsIdle);
-            // 中止——面板项补终态（已中止）而非停留"处理中"（A165：进行中工具在临时区面板）
+            // 中止——临时区覆盖为空态（面板清空；未落前文的内容随覆盖消失）
             session.Pause();
             PumpUntilIdle(session);
             Assert.True(session.IsIdle);
-            List<string> cards = host.ViewEvents["toolrun"];
-            Assert.True(cards.Count >= 2);
-            List<string> abortOps = host.ViewOps["toolrun"];
-            Assert.Equal("live", abortOps[0]);
-            Assert.Equal("live", abortOps[1]);
-            using (JsonDocument d = JsonDocument.Parse(cards[1]))
-            {
-                Assert.Contains("已中止", d.RootElement.GetProperty("result").GetString());
-            }
-        }
-        /// <summary>
-        /// 分批调度的观测面（A165 改写）——声明序 [text-write(order 1), host-flows(order -1)]：
-        /// 执行按 order 分桶（host-flows 批先、text-write 批后，OA 无消费者 → 停留）。
-        /// v2 契约下持久卡按声明序待整批收口落位，进行中工具在临时区面板——此刻两工具均在面板。
-        /// </summary>
+            Assert.Equal("empty", host.LastLiveType);
+            Assert.Equal("", host.LastLiveContext);
+            Assert.Contains("text-read", string.Join("|", host.ViewEvents["toolrun"]));
+        }        /// <summary>
+                 /// 分批调度的观测面（A165 改写 · A196 更新）——声明序 [text-write(order 1), host-flows(order -1)]：
+                 /// 执行按 order 分桶（host-flows 批先、text-write 批后，OA 无消费者 → 停留）。
+                 /// 持久卡按声明序待整批收口落位；临时区只列**未完成**工具——已完成者当帧移出面板。
+                 /// </summary>
         [Fact]
         public void ToolCard_PendingBatchStaysInLivePanel()
         {
@@ -1002,26 +1033,15 @@ namespace CatHome4.Core.Tests
             }
             // 批未收口——后批 OA 工具仍在进行中
             Assert.False(session.IsIdle);
-            // A165——批未收口时持久区尚无工具卡（持久卡按声明序待整批收口落位）；
-            // 两个工具都在临时区面板（已完成的 host-flows 待整批收口时交接给持久块）
+            // 批未收口——持久区尚无工具卡（持久卡按声明序待整批收口落位）
             Assert.False(host.ViewEvents.ContainsKey("toolcard"));
             List<string> pendingCards = host.ViewEvents["toolrun"];
             Assert.True(pendingCards.Count >= 1);
-            bool sawFlows = false;
-            bool sawWrite = false;
-            for (int i = 0; i < pendingCards.Count; i = i + 1)
-            {
-                if (pendingCards[i].Contains("\"host-flows\"", StringComparison.Ordinal))
-                {
-                    sawFlows = true;
-                }
-                if (pendingCards[i].Contains("\"text-write\"", StringComparison.Ordinal))
-                {
-                    sawWrite = true;
-                }
-            }
-            Assert.True(sawFlows);
-            Assert.True(sawWrite);
+            // A196——live 是状态投影（整段覆盖，无历史帧）：此刻只列**未完成**工具
+            // （host-flows 已完成即移出面板；其持久卡按声明序待整批收口落位）
+            Assert.Equal("toolrun", host.LastLiveType);
+            Assert.Contains("text-write", host.LastLiveContext, StringComparison.Ordinal);
+            Assert.DoesNotContain("host-flows", host.LastLiveContext, StringComparison.Ordinal);
         }
         /// <summary>
         /// 授权面实时查询——AuthorizedToolNamesProvider 压过会话注入面：声明面含 text-read 而提供者未放行 → 调用被 TOOL_FORBIDDEN 拒（design-ch4-tools §三·十一）。

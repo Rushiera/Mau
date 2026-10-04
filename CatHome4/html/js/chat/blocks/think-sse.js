@@ -1,9 +1,8 @@
 // ═══════════════════════════════════════════
 // chat/blocks/think-sse.js —— thinksse（live 类 · 思考流）
 //
-// 契约（design-ch4-protocol §12.4 / §12.5）：
-//   item = { type:'thinksse', payload:{ text } }
-//   text = 该流当前的全部文本（live 段按帧全量镜像——后端给累计全文，前端只管渲染）
+// 契约（design-ch4-protocol §12.5）：
+//   live 段 = { type:'thinksse', context }（A196 状态投影——后端给该流当前全集，前端只管渲染）
 //   形态：.chat-think.stream（恒展开 + 尾部光标；行语义 / 刻度见 registry.js BLOCK_DECL）
 //
 // 纯渲染：payload → 行元素一次成型——无句柄、无判态、无统计无计数（计数类信息归后端）。

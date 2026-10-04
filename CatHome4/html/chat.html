@@ -72,10 +72,10 @@
         <div id="chatImages" class="chat-images"></div>
         <textarea id="chatSendInput" rows="5" placeholder="输入文本…（Enter 发送；Shift+Enter 换行；可直接粘贴图片）"></textarea>
         <!-- 临时区切换——输入框左侧（军绿底 + 白字；点开显示临时内容，再点回到输入态。
-             面板高度上限 = 输入框实测高度——由 input.js 切换时写入，避免切换后区域被撑大） -->
+             面板高度 = 输入框实测高度（固定）——由 input.js 切换时写入，空态亦保持同高） -->
         <button id="chatLiveToggle" class="ch-livebtn" title="查看进行中的临时内容（流式 / 工具卡）——再点回到输入态">临时</button>
         <!-- 临时区（契约 §12.2 ③）——与输入框**同区域互斥**（同一列同位，代码切内联 display）：
-             显示时输入框让位、全量镜像整体替换；空段不产元素（面板零高）；回车发送自动切回输入态 -->
+             显示时输入框让位、状态投影整体替换；高度固定 = 输入框实测高（空态亦同高）；回车发送自动切回输入态 -->
         <div id="chatLivePanel" class="chat-live" style="display:none"></div>
         <!-- 输入区动作列——停止 / 继续 / 发送（竖排同列、同款实心；底色区分语义） -->
         <div id="chatActions">

@@ -6,7 +6,8 @@
 //
 // 契约：
 //   persist item = { type, ts, msgIndex, round, payload }
-//   live    item = { type, payload }（type ∈ thinksse / replysse / toolrun / empty——契约 §12.5「live 生命周期语义」）
+//   live    seg  = { type, context }（A196 状态投影：type ∈ toolrun / thinksse / replysse / empty；
+//                   context = 该 type 当前整段内容——思考全文 / 回复全文 / 未完成工具卡数组 JSON / 空串）
 //
 // 两族渲染函数形态（见各素材头注）：
 //   persist 族：function(payload) → 行元素（返回即完，挂载由 persist.js 承担）
@@ -93,10 +94,10 @@ var PERSIST_RENDERERS = {
     'roundsum': buildRoundSumBlock
 };
 
-/// 临时区渲染表——type → function(payload) → 行元素（`empty` 不产行元素——由 live.js 显式处理，契约 §12.5）
-/// `toolrun` 直接复用持久区工具卡渲染件（工具卡两区同源，不另设 live 件）
+/// 临时区渲染表——type → function(payload) → 行元素（A196：live 段为 {type, context} 两字符串）
+/// `empty` 不产元素（live.js 显式处理）；`toolrun` 的 context 是**数组**，由 live.js 逐卡调
+/// `buildToolBlock(card, 'toolrun')`（工具卡两区同源，不另设 live 件）——故不入本表
 var LIVE_RENDERERS = {
     'replysse': liveReplySse,
-    'thinksse': liveThinkSse,
-    'toolrun': function (payload) { return buildToolBlock(payload, 'toolrun'); }
+    'thinksse': liveThinkSse
 };

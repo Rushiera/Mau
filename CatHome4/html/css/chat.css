@@ -497,10 +497,9 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 
 /* ── 临时区（契约 §12.2 ③）——与输入框**同区域互斥**（同列同位；显隐由 input.js 切内联 display）──
    形态 = 输入框同款气泡（同底 / 同圆角 / 同内边距 / 同字号），描边取军绿（与切换按钮同色）；
-   全量镜像整体替换；空段不产元素（无内容即零高，不占位）。 */
+   状态投影整体替换；**高度 = 输入框实测高度（固定）**——切换时由 input.js 写入内联 height，空态亦保持同高不被压缩。 */
 .chat-live {
     grid-column: 2;
-    max-height: 320px;
     overflow-y: auto;
     background: var(--ch-bg-panel);
     border: 1px solid var(--ch-state-tool);

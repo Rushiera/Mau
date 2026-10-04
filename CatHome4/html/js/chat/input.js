@@ -103,14 +103,14 @@ function chatLiveToggle() {
 }
 
 /// 区域显隐单点——输入框与 live 面板二选一（元素缺失即跳过）；按钮激活态随动
-/// 面板高度上限 = 输入框实测高度（同一把尺：切换前后区域高度一致，不被撑大）
+/// 🔴 面板高度**固定** = 输入框实测高度（同一把尺：切换前后区域高度一致；空态亦保持同高，不被压缩成一行）
 function inputSwap(shown) {
     var input = document.getElementById('chatSendInput');
     var panel = liveContainer();
     if (panel) {
         if (shown === true && input) {
             var h = input.offsetHeight;
-            panel.style.maxHeight = (h > 0 ? h : 0) + 'px';
+            panel.style.height = (h > 0 ? h : 0) + 'px';
         }
         panel.style.display = shown ? '' : 'none';
     }

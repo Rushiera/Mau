@@ -225,13 +225,11 @@ namespace CatHome4.Http
             }
         }
         /// <summary>
-        /// 视图事件推送——视图出口统一 op 面（A158 期三：两区镜像）。
-        /// op 取值：persist.append（持久块建块即推）· live.add / live.update / live.remove（流式区镜像）
-        /// · control（瞬时事件面：usage / paused / session_reset——chatdone / note 已于 A191 退役）。
+        /// 视图事件推送——接口保底出口（A165 起块面不再走此通道：块经 chat 快照帧下发；本方法保留以满足 IHostPush 契约）。
         /// </summary>
-        /// <param name="op">出口事件类型</param>
-        /// <param name="payload">载荷 JSON 字符串（内嵌对象；live.remove 为空串——不解析）</param>
-        /// <param name="meta">块元数据 JSON（A158 块字段：key / renderType / ts / durMs / state / id / src / origin——空串 = 不带）</param>
+        /// <param name="op">出口事件类型（历史 op 面：persist.append / live.* / control——现行均不再发出）</param>
+        /// <param name="payload">载荷 JSON 字符串（内嵌对象）</param>
+        /// <param name="meta">块元数据 JSON（空串 = 不带）</param>
         public void PushView(string op, string payload, string meta)
         {
             object payloadObj = "";
