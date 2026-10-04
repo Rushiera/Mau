@@ -4,7 +4,7 @@
 // 定位：读状态段的 runState（六态）→ 态映射动画资源 → 调度空闲节律与交互反应。
 // 启动：由 fx/registry.js 的 fxBoot 统一调用 chatPetInit（脚本加载不自启）
 // 铁律：前端零业务逻辑——本件只做「态 / 交互 → 资源」映射与动画调度，不产生业务事件、不介入会话状态机。
-// 数据源：`appState.runState`（state.js——经 stateRenderPet 汇聚点调入）· SSE 断线由 main.js 的 onerror / onopen 置位。
+// 数据源：`appState.runState`（state 段——经分发表 `state/registry.js::STATE_DECL` 的 pet 行调入本件入口）· SSE 断线由 main.js 的 onerror / onopen 置位。
 // 资源：`html/pet/*.webp`（286x256 原尺寸 1:1 · 20ms/帧 · 透明底）；清单与时长 → `js/pet-manifest.js`（生成物）。
 //
 // 形态语义（素材约定）：
@@ -326,7 +326,7 @@ function chatPetStartSleep() {
 }
 
 // ── 对外接口 ─────────────────────────────────
-/// 状态同步——state.js 的 stateRenderPet 汇聚点调入（每次状态段渲染后）
+/// 状态同步——state 段分发表（`state/registry.js::STATE_DECL` 的 pet 行）调入（每次状态段渲染后）
 function chatPetSync() {
     if (chatPetImgs[0] === null) {
         return;

@@ -12,8 +12,9 @@
 |:--|:--|
 | `lib/` | 渲染共用件（10 件）——DOM 构造 `el`/`elText` / 格式化 `fmtCount`·`fmtMs` / MD 渲染 / 图片包裹 / 按压判据 / 思考头行 / 工具骨架 / 兜底件 `fallback`（未识别 type · 渲染异常——两区共用） / **命令解码 `cmd`（PS 意图 + 未识别上报）** |
 | `blocks/` | 契约 12 类块型，**每类一件**（persist 9 + live 3） |
+| `state/` | **state 段投影——各投影件 + 分发表**（A194 完成）：`status.js`（六态状态条——容器唯一写者）· `info.js`（顶栏信息位）· `note.js` · `delay.js` · `conn.js`；`registry.js` 的 `STATE_DECL`（投影件 → 消费字段 / 输出面 / 入口的唯一映射处）+ `stateProjectAll()` 整段分发 |
 | `fx/` | **独立功能——每功能一件 + 声明表**（A176 归位）：`pet`（桌宠）· `scroll`（滚动带）· `pending`（插话队列）· `cmd-intent`（命令解码显示）· `controls`（按钮态）；登记在 `fx/registry.js` 的 `FX_FEATURES`（名称 / 输入源 / 输出面 / 启动入口），启动由 `fxBoot()` 统一执行 |
-| 主干 | `registry.js`（**块声明表 + 映射表**——A178 起不兼实现）· `persist.js`（持久区）· `live.js`（临时区）· `state.js`（状态投影）· `main.js`（收包入口 + 公共小件：信息位单点 `chatInfoSet`——**state 段专属**）· `input.js`（用户出口） |
+| 主干 | `registry.js`（**块声明表 + 映射表**——A178 起不兼实现）· `persist.js`（持久区）· `live.js`（临时区）· `state.js`（状态投影——**整段覆盖 + 按分发表分发薄层**）· `main.js`（收包入口 + 公共小件：信息位单点 `chatInfoSet`——**state 段专属**）· `input.js`（用户出口） |
 | 面板与侧翼 | `note.js`（Note 面板——气泡 + 弹层）· `delay.js`（定时面板——列表 / 倒计时 / 改时刻）· `paste.js`（图片粘贴上传 + 待发区） |
 
 ---
@@ -56,7 +57,8 @@
 | 件 | 职责 | 契约依据 |
 |:--|:--|:--|
 | `main.js` | 单一应用入口——一个 SSE 流收包 → `chatOnFrame` → 三段各归各位（**无事件分派 / 无键算术 / 无配对 / 无排序**）；滚动跟随；公共小件 | §12.1 / §12.3 |
-| `state.js` | state 段整段投影——六态状态条 / 头部数字 / 按钮可用性 / Note 钩子 | §12.2 ① |
+| `state.js` | state 段**整段覆盖 + 按表分发薄层**（分发表见下行） | §12.2 ① |
+| `state/registry.js` | state 段分发表 `STATE_DECL`——投影件 → 消费字段 / 输出面 / 入口的**唯一映射处**（字段面 = 表内 `fields` 并集）；无入口时出声、单件异常隔离；新增字段 = 加一件 + 表加一行 | §12.2 ① |
 | `persist.js` | 持久区——`full` 清区重绘 / `append` 逐条追加；不判流式结束、不判换手 | §12.2 ② / §6.1-D |
 | `live.js` | 临时区——全量镜像整体替换（不比对、不 diff） | §12.2 ③ / §6.1-G |
 | `registry.js` | type → 渲染函数映射 + **块声明表 `BLOCK_DECL`**（形态 / 行语义类 / 刻度角色 / 块体语义）+ 六态元信息 `RUN_PHASES`——**前端唯一扩展点**：新增块型 = 后端加 type + 本表加一行（渲染函数 + 声明）+ 一个渲染函数；类名一律经 `formClass(type)` / `bodyClass(type)` / `blockRow(type)` 取用 | §12.5 |
