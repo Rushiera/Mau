@@ -153,7 +153,7 @@ namespace CH4
                     result = BuildNoteProgress();
                 }
             }
-            // M4c 前端面板——状态变化推送 SSE note 事件
+            // 状态推送——Note 经 state 段输出（view 帧承载；独立 note 事件已退役，见 A191）
             PushNoteState();
             return result;
         }
