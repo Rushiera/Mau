@@ -133,16 +133,31 @@ function stateRenderStatus() {
     bar.innerHTML = html;
 }
 
-/// 头部数字——前文条数 / sessionId / 前文长度（请求级最新值）；经信息位单点写（chatInfoSet——state 段专属）
+/// 头部数字——前文条数 / sessionId / 前文长度 / 关键信息（请求级最新值）；经信息位单点写（chatInfoSet——state 段专属）
+/// 三段入口（条数 → list · tokens → tokens · 关键信息 → key）经 `data-ctx` 标注——点击开前文弹层（js/chat/ctx.js 委托处理）
 function stateRenderTokens() {
     var t = appState.tokens || {};
-    var txt = '前文 ' + fmtCount(t.count || 0) + ' 条 | sessionId=' + appState.sessionId;
+    var parts = [];
+    parts.push('前文 ');
+    parts.push(stateCtxLink(fmtCount(t.count || 0) + ' 条', 'list', '前文条目——点击查看（按条 / 按 tokens / 关键信息 / 完整前文）'));
+    parts.push(' | sessionId=' + appState.sessionId);
     if (t.context > 0) {
-        txt += ' | 前文 ' + fmtCount(t.context) + ' tokens';
+        parts.push(' | ');
+        parts.push(stateCtxLink('前文 ' + fmtCount(t.context) + ' tokens', 'tokens', '前文长度——点击查看 token 分布（按字符占比估算）'));
     }
+    parts.push(' | ');
+    parts.push(stateCtxLink('关键信息', 'key', '本次会话关键信息——加载报告 / 用户消息 / 正式回复 / 轮结算'));
     if (typeof chatInfoSet === 'function') {
-        chatInfoSet(txt);
+        chatInfoSet(parts);
     }
+}
+
+/// 信息位可点击段——`data-ctx` 标注目标视图（本件只出内容与标注，点击处理归 ctx.js）
+function stateCtxLink(text, mode, title) {
+    var node = elText('span', 'ctx-link', text);
+    node.setAttribute('data-ctx', mode);
+    node.title = title;
+    return node;
 }
 
 /// Note 投影——待 Note 面板件接入（本轮留钩子，无容器时零动作）

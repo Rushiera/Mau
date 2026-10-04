@@ -14,12 +14,24 @@
 /// SSE 连接句柄——页面生命周期内单连接（断线由浏览器自动重连，重连即服务端再推全量帧）
 var chatSse = null;
 
-/// 顶部信息位（#chatInfo）唯一写入口——**state 段专属**（后端必要信息：前文条数 / sessionId / 前文长度）
+/// 顶部信息位（#chatInfo）唯一写入口——**state 段专属**（后端必要信息：前文条数 / sessionId / 前文长度 / 关键信息）
+/// 入参：段数组（字符串 = 文本段；元素 = 段节点，如可点击的前文段——点击处理归 ctx.js）——数组序即呈现序
 /// 归位（A179 收尾）：前端告警 / 提示不走此处（→ 通知面 `chatPetSay` 桌宠气泡）——本处不再有竞写
-function chatInfoSet(text) {
+function chatInfoSet(parts) {
     var info = document.getElementById('chatInfo');
-    if (info) {
-        info.textContent = text;
+    if (!info) {
+        return;
+    }
+    var list = (parts && parts.length !== undefined && typeof parts !== 'string') ? parts : [parts];
+    info.textContent = '';
+    for (var i = 0; i < list.length; i = i + 1) {
+        var p = list[i];
+        if (p === null || p === undefined) { continue; }
+        if (typeof p === 'string') {
+            info.appendChild(document.createTextNode(p));
+            continue;
+        }
+        info.appendChild(p);
     }
 }
 

@@ -110,6 +110,47 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 #uiVer { background: var(--ch-bg-deep); border: 1px solid var(--ch-line); border-radius: 4px; padding: 1px 8px; color: var(--ch-ok-weak); font-size: var(--ch-fs-tag); }
 #chatNew, #chatRefresh { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
 #chatNew:hover, #chatRefresh:hover { background: var(--ch-bg-hover); }
+/* 端点角色标签（js/chat/apirole.js）——只显当前生效站；主要=常规弱信息色，备用=绿（与 API 池备用标记同色系） */
+#chatApiRole { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
+#chatApiRole:hover { background: var(--ch-bg-hover); }
+#chatApiRole.backup { color: var(--ch-ok); border-color: var(--ch-ok); }
+/* 前文弹层（js/chat/ctx.js）——信息位「前文 n 条 / n tokens / 关键信息」点击开的小窗口（四视图：按条 / 按 tokens / 关键信息 / 完整前文） */
+.ctx-link { cursor: pointer; color: var(--ch-fg-muted); border-bottom: 1px dashed var(--ch-line); }
+.ctx-link:hover { color: var(--ch-identity); border-bottom-color: var(--ch-identity); }
+#ctxPopover { position: fixed; top: 42px; left: 12px; z-index: 62; background: var(--ch-bg-page); border: 1px solid var(--ch-line); border-radius: 8px; width: min(760px, 86vw); max-height: 68vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px var(--ch-shadow-strong); }
+.ctx-head { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--ch-line-faint); font-size: var(--ch-fs-tag); }
+#ctxTitle { color: var(--ch-identity); font-weight: bold; }
+#ctxMeta { color: var(--ch-fg-weak); }
+.ctx-mode { cursor: pointer; color: var(--ch-fg-muted); border: 1px solid var(--ch-line); border-radius: 4px; padding: 1px 8px; user-select: none; }
+.ctx-mode:hover { color: var(--ch-fg); }
+.ctx-mode-on { color: var(--ch-bg-page); background: var(--ch-identity); border-color: var(--ch-identity); }
+#ctxRefresh { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); line-height: 1; padding: 1px 8px; }
+#ctxRefresh:hover { background: var(--ch-bg-hover); }
+.ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 14px; display: flex; flex-direction: column; gap: 4px; }
+.ctx-item { border: 1px solid var(--ch-line-faint); border-radius: 4px; padding: 4px 8px; }
+.ctx-item.open { border-color: var(--ch-line); }
+.ctx-item-head { display: flex; align-items: baseline; gap: 8px; cursor: pointer; font-size: var(--ch-fs-tag); }
+.ctx-role { border-radius: 3px; padding: 0 6px; font-size: var(--ch-fs-sub); }
+.ctx-role-system { color: var(--ch-state-all); border: 1px solid var(--ch-state-all); }
+.ctx-role-user { color: var(--ch-chat-user-bg); border: 1px solid var(--ch-chat-user-bg); }
+.ctx-role-assistant { color: var(--ch-ok-weak); border: 1px solid var(--ch-ok-weak); }
+.ctx-role-tool { color: var(--ch-state-tool); border: 1px solid var(--ch-state-tool); }
+/* 关键信息四类——用户 / 回复 / 加载报告 / 轮结算（key 视图 role 标签；用户沿用 ctx-role-user） */
+.ctx-role-reply { color: var(--ch-ok-weak); border: 1px solid var(--ch-ok-weak); }
+.ctx-role-report { color: var(--ch-identity); border: 1px solid var(--ch-identity); }
+.ctx-role-roundsum { color: var(--ch-state-run); border: 1px solid var(--ch-state-run); }
+.ctx-role-bg-system { background: var(--ch-state-all); }
+.ctx-role-bg-user { background: var(--ch-chat-user-bg); }
+.ctx-role-bg-assistant { background: var(--ch-ok-weak); }
+.ctx-role-bg-tool { background: var(--ch-state-tool); }
+.ctx-i { color: var(--ch-fg-faint); }
+.ctx-size { color: var(--ch-fg-weak); }
+.ctx-tool { color: var(--ch-tool-name); }
+.ctx-time, .ctx-pct { color: var(--ch-fg-faint); margin-left: auto; }
+.ctx-body { color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); margin-top: 2px; word-break: break-all; }
+.ctx-full { display: none; margin-top: 4px; padding: 6px 8px; background: var(--ch-bg-sunken); border-radius: 4px; color: var(--ch-fg-strong); font-family: var(--ch-font-content); font-size: var(--ch-fs-tag); white-space: pre-wrap; word-break: break-all; max-height: 40vh; overflow-y: auto; }
+.ctx-bar { height: 4px; margin-top: 3px; background: var(--ch-bg-sunken); border-radius: 2px; overflow: hidden; }
+.ctx-bar-fill { height: 100%; border-radius: 2px; }
 /* A59——六态状态条（链路/等待/思考/工具/执行/回复；时长数据源 = 后端运行态）；位于页面最底部（输入框下方）持久存在
    2026-09-22：内容整体居中（原左下靠左 + 右下本轮 Token 统计——后者已去，Token 信息归 roundsum 轮末块） */
 #chatStatus { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 4px 12px; border-top: 1px solid var(--ch-line-faint); font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); background: var(--ch-bg-page); min-height: 22px; flex-wrap: wrap; }

@@ -13,9 +13,26 @@
         <span class="sid" id="chatTitle">—</span>
         <span id="chatInfo">—</span>
         <span style="flex:1"></span>
+        <!-- 端点角色标签（js/chat/apirole.js）——只显当前生效站模型名；点击手动对调（仅本会话有效） -->
+        <span id="chatApiRole" title="当前生效端点——点击对调主要 / 备用（仅本会话有效）">API —</span>
         <span id="uiVer" data-version title="前端版本——每次 Vitest 自动递增 + 最后更新时间">UI v?</span>
         <button id="chatNew" title="新会话（session.new——清前文并重新注入）">新会话</button>
         <button id="chatRefresh" title="刷新——重建界面气泡（纯前端）">刷新</button>
+    </div>
+
+    <!-- 前文弹层（js/chat/ctx.js）——信息位「前文 n 条 / n tokens / 关键信息」点击开的小窗口；四视图：按条（list）/ 按 tokens（tokens）/ 关键信息（key）/ 完整前文（full） -->
+    <div id="ctxPopover" class="ctx-popover" style="display:none">
+        <div class="ctx-head">
+            <span id="ctxTitle">前文条目</span>
+            <span id="ctxMeta"></span>
+            <span style="flex:1"></span>
+            <span id="ctxModeList" class="ctx-mode" title="按条目顺序显示前文">按条</span>
+            <span id="ctxModeTokens" class="ctx-mode" title="按字符规模显示前文分布（估算口径）">按 tokens</span>
+            <span id="ctxModeKey" class="ctx-mode" title="本次会话关键信息——加载报告 / 用户消息 / 正式回复 / 轮结算">关键信息</span>
+            <span id="ctxModeFull" class="ctx-mode" title="本次会话完整前文——送入 LLM 的全量消息（留档文本剥离修饰后还原）">完整前文</span>
+            <button id="ctxRefresh" title="刷新——①确保完整前文采集就绪（端点读取前强制采集）②重建会话页面（断开重连 → 服务端重推全量帧）；关闭走 Esc / 点弹层外">⟳</button>
+        </div>
+        <div id="ctxList" class="ctx-list"></div>
     </div>
 
     <!-- ═══ 持久区——对话区（契约 §12.2 ②：每块对应一个气泡渲染函数） ═══ -->
@@ -139,6 +156,10 @@
     <script src="js/chat/note.js?v=__V__"></script>
     <script src="js/chat/delay.js?v=__V__"></script>
     <script src="js/chat/paste.js?v=__V__"></script>
+    <!-- 前文弹层（信息位三段入口 + 四视图；数据源 = /api/v1/context·keyinfo·fullctx 三端点） -->
+    <script src="js/chat/ctx.js?v=__V__"></script>
+    <!-- 端点角色标签（/api/v1/api-role 读 + /toggle 写） -->
+    <script src="js/chat/apirole.js?v=__V__"></script>
 
     <!-- ⑥ 独立功能（fx）——每功能一件 · registry.js 在段末（表持有各件入口名）；启动由引导层 fxBoot() 统一执行 -->
     <script src="js/chat/fx/pet.js?v=__V__"></script>
