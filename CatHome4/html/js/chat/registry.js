@@ -6,7 +6,8 @@
 //
 // 契约：
 //   persist item = { type, ts, msgIndex, round, payload }
-//   live    item = { type, payload }（type ∈ thinksse / replysse / toolrun / empty——契约 §12.5「live 生命周期语义」）
+//   live    seg  = { type, context }（A196 状态投影：type ∈ toolrun / thinksse / replysse / empty；
+//                   context = 该 type 当前整段内容——思考全文 / 回复全文 / 未完成工具卡数组 JSON / 空串）
 //
 // 两族渲染函数形态（见各素材头注）：
 //   persist 族：function(payload) → 行元素（返回即完，挂载由 persist.js 承担）
@@ -16,8 +17,8 @@
 
 // ── 块声明表（单一真相源 · A179 收口）────────────────────────────
 // 每 type 一行四列：
-//   form 形态——`bubble`（会被人当对话内容读：用户输入 / LLM 最终输出）| `plain`（其余一切）
-//              契约：对话区只有两种行形态（2026-10-03 莎定）
+//   form 形态——`bubble`（对话内容体——persist 八类全量，2026-10-05 莎定改判）| `plain`（临时区三件——
+//              面板自身即泡，内部件不再套壳；cursor / 流式光标等仍在 plain 面）
 //   row  行语义类——`.chat-row` 上的变体类（左右分侧 / 布局）；渲染件不拼类名字符串
 //   tick 刻度角色——滚动带刻度色（`user` / `reply` / `tool` / `think` / `sum`；CSS `.sb-tick.*`）
 //   body 块体语义类（可选）——块体元素上的语义类（CSS 点名用，如 `.chat-plain.error`）；渲染件不拼类名字符串
@@ -28,13 +29,12 @@
 var BLOCK_DECL = {
     'user': { form: 'bubble', row: 'user', tick: 'user' },
     'text': { form: 'bubble', row: 'assistant', tick: 'reply' },
-    'gap_text': { form: 'bubble', row: 'assistant', tick: 'reply' },
-    'reason': { form: 'plain', row: 'assistant reason', tick: 'think' },
-    'toolcard': { form: 'plain', row: 'assistant tool', tick: 'tool' },
-    'retry': { form: 'plain', row: 'assistant', tick: 'reply', body: 'retry' },
-    'error': { form: 'plain', row: 'assistant', tick: 'reply', body: 'error' },
-    'inject_report': { form: 'plain', row: 'assistant inject', tick: 'reply', body: 'inject' },
-    'roundsum': { form: 'plain', row: 'assistant roundsum', tick: 'sum', body: 'roundsum' },
+    'reason': { form: 'bubble', row: 'assistant reason', tick: 'think' },
+    'toolcard': { form: 'bubble', row: 'assistant tool', tick: 'tool' },
+    'retry': { form: 'bubble', row: 'assistant', tick: 'reply', body: 'retry' },
+    'error': { form: 'bubble', row: 'assistant', tick: 'reply', body: 'error' },
+    'inject_report': { form: 'bubble', row: 'assistant inject', tick: 'reply', body: 'inject' },
+    'roundsum': { form: 'bubble', row: 'assistant roundsum', tick: 'sum', body: 'roundsum' },
     'replysse': { form: 'plain', row: 'assistant', tick: 'reply', body: 'streaming' },
     'thinksse': { form: 'plain', row: 'assistant reason', tick: 'think' },
     'toolrun': { form: 'plain', row: 'assistant tool', tick: 'tool' }
@@ -84,7 +84,6 @@ var RUN_PHASES = [
 var PERSIST_RENDERERS = {
     'user': buildUserBlock,
     'text': buildTextBlock,
-    'gap_text': buildGapTextBlock,
     'reason': buildReasonBlock,
     'toolcard': buildToolBlock,
     'retry': buildRetryBlock,
@@ -93,9 +92,10 @@ var PERSIST_RENDERERS = {
     'roundsum': buildRoundSumBlock
 };
 
-/// 临时区渲染表——type → function(payload) → 行元素（各 live 件自提供纯渲染入口；`empty` 不产行元素——由 live.js 显式处理，契约 §12.5）
+/// 临时区渲染表——type → function(payload) → 行元素（A196：live 段为 {type, context} 两字符串）
+/// `empty` 不产元素（live.js 显式处理）；`toolrun` 的 context 是**数组**，由 live.js 逐卡调
+/// `buildToolBlock(card, 'toolrun')`（工具卡两区同源，不另设 live 件）——故不入本表
 var LIVE_RENDERERS = {
     'replysse': liveReplySse,
-    'thinksse': liveThinkSse,
-    'toolrun': liveToolRun
+    'thinksse': liveThinkSse
 };

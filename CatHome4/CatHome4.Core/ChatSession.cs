@@ -839,12 +839,6 @@ namespace CH4
         {
             return _viewStore.GetBlocks();
         }
-        /// <summary>取流式区条目快照——全量帧 live 段取数（前端重连 / 刷新由全量首帧重建面板）。</summary>
-        /// <returns>流式区块数组（按时间戳升序）</returns>
-        public ViewBlock[] GetLiveBlocks()
-        {
-            return _viewBus.GetLiveBlocks();
-        }
 
         /// <summary>会话唯一 ID——构造注入 = 猫 key（唯一标识；无独立"会话身份"层）</summary>
         public string Id
@@ -1145,7 +1139,6 @@ namespace CH4
                     NoteTimebackEvent();
                     NoteTimebackWrite(dog.Name, dog.ArgsJson, dog.Result);
                 }
-                PushToolCardFinal(dog, i + 1, _dogs.Count, done);
             }
             _dogs.Clear();
             _hostDogs.Clear();
@@ -1161,9 +1154,8 @@ namespace CH4
             // [段2b] 运行态——中断结算（失败/中止轮同出统计：L2 摘要留档——design-ch4-llm §2.1 终止语义）
             PhaseSettle();
             LogStore.Add("LLM", 2, "本轮运行态统计（中断）: " + BuildRunStateSummary(), "LLM");
-            // [段3] 流式条目移出 live 段（A187：live 是运行态镜像——未落持久块的内容随条目移出而消失，不进前文 / 存档）；思考段经唯一出口收口
+            // [段3] 临时区写空态（A196：live 是状态投影——未落持久块的内容随覆盖而消失，不进前文 / 存档）
             SealReasonStream();
-            _viewBus.ResetTextStream();
             ResetRetryView();
             // [段4] 状态复位——Idle（不推 roundsum/Note 拉起——中断非正常完成语义）
             _round = 0;
@@ -1542,9 +1534,8 @@ namespace CH4
                         text.Append(ev.Text);
                         // 运行态——Text 增量到达即回复态（远端·流；长度由远端决定）
                         PhaseEnter(PhaseReply);
-                        // P6 外观层转发——LLM 增量实时推送 SSE（view stream 块；实时区不落盘）
-                        string streamTextJson = JsonUtil.Object(("kind", "text"), ("text", ev.Text));
-                        _viewBus.PushTextStream(streamTextJson);
+                        // A196 临时区——状态投影：回复流当前全文整段覆盖（前端按 type 投给渲染结构）
+                        _viewBus.SetLive("replysse", text.ToString());
                     }
                     else if (ev.Kind == LlmStreamKind.Reasoning)
                     {
@@ -1557,8 +1548,8 @@ namespace CH4
                         _reasonAccum.Append(ev.Text);
                         // 运行态——Reasoning 增量到达即思考态（远端·流；长度由远端决定）
                         PhaseEnter(PhaseThink);
-                        string streamReasonJson = JsonUtil.Object(("kind", "reasoning"), ("text", ev.Text));
-                        _viewBus.PushReasonStream(streamReasonJson);
+                        // A196 临时区——状态投影：思考流当前全文整段覆盖
+                        _viewBus.SetLive("thinksse", _reasonAccum.ToString());
                     }
                     else if (ev.Kind == LlmStreamKind.ToolCalls)
                     {
@@ -1730,12 +1721,11 @@ namespace CH4
                 _llmBusy = false;
             }
         }
-        /// <summary>思考段终结——离开 think 态的唯一收口（莎 2026-09-22 定）：撤下流式思考容器（live 段 `thinksse` 条目移出）。
-        /// v2 契约（A187）：live 是运行态镜像——条目移出即前端面板不再渲染该流；思考内容由持久区 `reason` 整块承载（同帧收口）。
-        /// 幂等——无在途容器时零动作。调用面：PhaseEnter 离开 think 态 + 中止 / 暂停收尾。</summary>
+        /// <summary>思考段终结——离开 think 态的唯一收口（莎 2026-09-22 定）：临时区写空态（A196 状态投影——写 empty 即清面板）。
+        /// 思考内容由持久区 `reason` 整块承载（同帧收口）。调用面：PhaseEnter 离开 think 态 + 中止 / 暂停收尾。</summary>
         private void SealReasonStream()
         {
-            _viewBus.ResetReasonStream();
+            _viewBus.SetLive("empty", "");
         }
 
         /// <summary>运行态切换——结算旧态累计毫秒 + 进入新态（七态：idle/wait/link/think/tool/run/reply；锁内）；同态连续计时（重复事件不重置起表）；idle 不计时——只作态名。</summary>
@@ -2090,8 +2080,8 @@ namespace CH4
                 AppendMessage(_context.AddAssistantMessage(_llmResultText));
                 NoteTimebackEvent();
                 _viewStore.OnAssistantText(LastMessage(), _context.GetMessageCount() - 1);
-                _viewBus.ResetTextStream();
-                _viewBus.ResetReasonStream();
+                // A196 临时区——本轮收尾写空态（内容已由持久区承载）
+                _viewBus.SetLive("empty", "");
                 // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + 直接开新轮（跳过 Done/CloseRound）
                 if (_pending.Count > 0)
                 {
@@ -2121,14 +2111,13 @@ namespace CH4
             // 思考段整块——先于工具先行卡推送（实时序对齐视图块生成序：assistant 思考块在工具卡之前）；
             // 判例 2026-09-29：此前直接清序（不推整块），实时面仅剩前端 live 块，F5 重建后 think 块与工具卡换位
             SealReasonStream();
-            _viewBus.ResetTextStream();
-            // 工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即出"进行中"卡；完成 / 中断时以同序号原位替换
-            List<ToolCallInfo> toolCalls = ParseToolCalls(_llmToolCallsJson);
-            PushToolCardPending(toolCalls, LastMessage().CreatedAt);
+            _viewBus.SetLive("empty", "");
             // 运行态——发单即执行态（本地·程序过程：工具批到下一请求发出；长度由本地决定）
             PhaseEnter(PhaseRun);
             SetChatState("tools");
             EnterToolBatch(_llmToolCallsJson);
+            // A196 临时区——工具运行态：未完成工具卡数组入 context（派发即写；单个完成即减；全清后由收尾点写 empty）
+            RefreshToolLive();
         }
         /// <summary>
         /// 工具调用条目——tool_calls JSON 解析产物（先行推卡消费；字段与 OpenAI wire 对齐）。
@@ -2207,62 +2196,37 @@ namespace CH4
             return list;
         }
 
-        /// <summary>工具卡先行推送——LLM 输出工具（tool_calls 聚合完成）即推 live 段 `toolrun` 条目（载荷无 result 即进行中态）。
-        /// 完成 / 中断时同槽位原位覆盖为终态载荷（A128 起完成由 FlushToolCard 逐条回填，中断由 PushToolCardFinal 补终态）；持久 `toolcard` 以同时间戳（声明时刻）落地时移出该条目——契约 §12.5「live 生命周期语义」（A187）。
-        /// 声明面外工具不推卡（无在途卡 → 不补建，终态由持久卡承载）。槽位键 = tool:&lt;toolCallId&gt;（内部定位，不进协议）。</summary>
-        /// <param name="calls">工具调用条目（ParseToolCalls 产物）</param>
-        /// <param name="declaredTs">声明时刻（Unix 毫秒——工具调用消息 CreatedAt，与持久块同基点）</param>
-        private void PushToolCardPending(List<ToolCallInfo> calls, long declaredTs)
+        /// <summary>工具运行态重写——未完成工具卡数组 JSON 入 live 段（A196：主干按「还没完成的 tool」决定 context）。
+        /// 完成即从 context 移除（该卡由持久区承载，整批收口时落位）；全部收口后由收尾点写 empty。声明面外工具不入列。</summary>
+        private void RefreshToolLive()
         {
-            if (!_viewBus.Ready)
+            _viewBus.SetLive("toolrun", BuildPendingToolsJson());
+        }
+
+        /// <summary>未完成工具卡数组 JSON——live 段 toolrun 的 context（元素形态与持久工具卡载荷同构，前端复用同一渲染件）。</summary>
+        /// <returns>JSON 数组字符串（无未完成工具 = "[]"）</returns>
+        private string BuildPendingToolsJson()
+        {
+            List<string> cards = new List<string>();
+            for (int i = 0; i < _dogs.Count; i = i + 1)
             {
-                return;
-            }
-            for (int i = 0; i < calls.Count; i = i + 1)
-            {
-                ToolCallInfo call = calls[i];
-                if (!IsToolAllowed(call.Name))
+                ToolOrderDog dog = _dogs[i];
+                if (dog.IsClosed)
                 {
                     continue;
                 }
-                Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(call.Name, InjectCatId(call.Arguments), null, call.Index, call.Total);
-                string json = JsonUtil.Serialize(payload);
-                _viewBus.PushToolCardPending("tool:" + call.Id, json, declaredTs);
+                Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, InjectCatId(dog.ArgsJson), null, i + 1, _dogs.Count);
+                cards.Add(JsonUtil.Serialize(payload));
             }
+            if (cards.Count == 0)
+            {
+                return "[]";
+            }
+            return JsonUtil.RawArray(cards.ToArray()).Json;
         }
 
-        /// <summary>工具卡终态补推——中断收尾（中止 / 宿主重启）时先行卡补终态：已完成 → 完整卡；未完成 → 已中止卡。无在途先行卡或已定稿（FlushToolCard 逐条回填）不推——防重复卡（A158：判据取流式区键存在性 + 区内块定稿状态）。</summary>
-        /// <param name="dog">工具单</param>
-        /// <param name="index">并发序号（1-based）</param>
-        /// <param name="total">并发总数</param>
-        /// <param name="done">true=已完成（结果保留）；false=未完成（本轮中止）</param>
-        private void PushToolCardFinal(ToolOrderDog dog, int index, int total, bool done)
-        {
-            if (!_viewBus.Ready)
-            {
-                return;
-            }
-            string key = "tool:" + dog.ToolCallId;
-            if (!_viewBus.IsToolCardPending(key) || _viewBus.IsToolCardFinaled(key))
-            {
-                return;
-            }
-            string result;
-            if (done)
-            {
-                result = dog.Result;
-            }
-            else
-            {
-                result = "（本轮已中止——工具未执行完成）";
-            }
-            // A69 视图层报错中文注释——真实前文保持原文
-            result = ErrorNote.Apply(result);
-            Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, result, index, total, dog.ElapsedMs());
-            string json = JsonUtil.Serialize(payload);
-            _viewBus.PushToolCardDone(key, json);
-        }
-        /// <summary>工具卡逐条回填（A128）——单工具完成即定稿结果并推送终态卡（有先行卡 → 原位替换；无先行卡如声明面拦截 → 新建），不再等整批收口。幂等：同一工具单终态卡至多一次（A157 由视图出口的定稿记录承担——不再用 dog 标志）；结果定稿（超时 / 空结果兜底）在推送前完成。前文消息与持久视图块仍由段3 按声明序统一落位——实时面序（先行卡位）与持久块序不分叉。</summary>
+        /// <summary>工具卡逐条回填（A128）——单工具完成即定稿结果（超时 / 空结果兜底）并重写 live 段未完成清单（完成即从面板移除）。
+        /// A196：临时区为状态投影——不发终态卡、不做两区配对；该工具的卡由持久区承载（段3 按声明序统一落位）。</summary>
         /// <param name="dog">工具单</param>
         private void FlushToolCard(ToolOrderDog dog)
         {
@@ -2278,21 +2242,7 @@ namespace CH4
                     dog.Result = "ERR|EMPTY_RESULT|工具执行无结果";
                 }
             }
-            if (!_viewBus.Ready)
-            {
-                return;
-            }
-            int index = _dogs.IndexOf(dog);
-            if (index < 0)
-            {
-                LogStore.Add("CatHome4", 2, "工具卡回填——工具单不在声明列（内部错误）: " + dog.Name, "TOOL");
-                return;
-            }
-            // A69 视图层报错中文注释——真实前文（dog.Result）保持原文
-            string viewResult = ErrorNote.Apply(dog.Result);
-            Dictionary<string, object> payload = ViewCardPayload.BuildToolCard(dog.Name, dog.ArgsJson, viewResult, index + 1, _dogs.Count, dog.ElapsedMs());
-            string toolJson = JsonUtil.Serialize(payload);
-            _viewBus.PushToolCardDone("tool:" + dog.ToolCallId, toolJson);
+            RefreshToolLive();
         }
 
         /// <summary>
@@ -2725,7 +2675,6 @@ namespace CH4
         private void AbortRoundError()
         {
             SealReasonStream();
-            _viewBus.ResetTextStream();
             // 运行态——中止前结算当前态（失败轮同出统计：L2 摘要留档；不推 roundsum 气泡——中止非正常完成语义）
             PhaseSettle();
             LogStore.Add("LLM", 2, "本轮运行态统计（中止）: " + BuildRunStateSummary(), "LLM");

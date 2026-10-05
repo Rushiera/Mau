@@ -1,22 +1,26 @@
 // ═══════════════════════════════════════════
-// chat/state.js —— 状态段投影（契约 §12.2 ①）
+// chat/state.js —— 状态段分发薄层（契约 §12.2 ①）
 //
-// 定位：state 段的唯一应用入口。state = **后端权威业务态整段**（每帧整段覆盖，非增量字段），
+// 定位：state 段的「整段覆盖 + 按表分发」。state = **后端权威业务态整段**（每帧整段覆盖，非增量字段），
 //       前端零推断：状态位与数字就位即渲染，不自行计时、不自行推算。
+//
+// 分层（A193 骨架 / A194 迁出）：分发表 = `state/registry.js::STATE_DECL`——投影件 → 消费字段 / 输出面 /
+//       入口的**唯一映射处**；投影件分居 `state/`（status · info · note · delay · conn）与
+//       `fx/`（controls · pet——外观层派生，A176 独立功能面）。
+//       本件只剩「整段覆盖 + 按表分发」——**新增字段 = 加一件 + 表加一行，本件不动**。
 //
 // 字段面（后端 ChatSession.BuildStateJson）：
 //   { sessionId, runState, runMs{idle,wait,link,think,tool,run,reply}, requests, note{…},
 //     delay{entries[…]}, conn{server,clients},
 //     tokens{prompt, completion, cacheHit, context, count, sessionPrompt, sessionCompletion, sessionCacheHit} }
 //
-// 观察项：按钮可用性原列在契约 §12.2 ①（状态段字段面）——按设计口径属**外观层派生**（A184 改写契约），
-//         派生处 = fx/controls（独立功能面，A176 归位）；本层只做整段分发 + 状态条 / 头部数字投影。
-//         delay 段（A185）为定时面板数据源——原 GET /api/v1/delay 旁路端点退役，面板退化为纯显示。
-//         conn 段（A186）为**连接健康**（服务端视角：重启停机中 / 多页面连接数）——它补不了断线可见性
-//         （断线后收不到帧），断线态仍由本地 SSE 信号派生（§12.8 pet 行）；重连自愈 = 全量首帧。
+// 观察项：按钮可用性属**外观层派生**（A184 改写契约），派生处 = fx/controls；delay 段（A185）为定时面板
+//         数据源（原 GET /api/v1/delay 旁路端点退役，面板退化为纯显示）；conn 段（A186）为**连接健康**
+//         （服务端视角：重启停机中 / 多页面连接数）——它补不了断线可见性（断线后收不到帧），
+//         断线态仍由本地 SSE 信号派生（§12.8 pet 行）；重连自愈 = 全量首帧。
 // ═══════════════════════════════════════════
 
-/// 当前状态——state 段整段投影（唯一状态源的前端副本）
+/// 当前状态——state 段整段投影（唯一状态源的前端副本；分发器按表传给各投影件）
 var appState = {
     sessionId: '',
     runState: '',
@@ -28,9 +32,8 @@ var appState = {
     tokens: {}
 };
 
-/// 六态元信息——单点声明在 registry.js（A179 收口：状态条与轮末统计共用一份，后端 runMs 键名对齐）
-
-/// 状态段应用——整段覆盖后重绘各消费面（状态条 / 头部数字 / 按钮态 / Note / 延迟面板 / 连接标 / 桌宠）
+/// 状态段应用——整段覆盖后按分发表分发（入口与顺序的唯一处 = `state/registry.js::STATE_DECL`）
+/// @param {object} st state 段整段（帧到达时三段之一；缺省字段回落默认值）
 function stateApply(st) {
     if (!st) {
         return;
@@ -45,131 +48,5 @@ function stateApply(st) {
         conn: st.conn || null,
         tokens: st.tokens || {}
     };
-    stateRenderStatus();
-    stateRenderTokens();
-    stateApplyControls();
-    stateRenderNote();
-    stateRenderDelay();
-    stateRenderConn();
-    stateRenderPet();
-}
-
-/// 连接健康投影——状态条尾部单标（服务端重启中 / 多页面连接；皆无 → 零标记）。
-/// 幂等：先移除旧标再追加——stateRenderStatus 重建时旧标已被清，此处兜底防累积。
-function stateRenderConn() {
-    var bar = document.getElementById('chatStatus');
-    if (!bar) {
-        return;
-    }
-    var old = document.getElementById('chatConn');
-    if (old && old.parentNode) {
-        old.parentNode.removeChild(old);
-    }
-    var c = appState.conn;
-    if (!c) {
-        return;
-    }
-    var txt = '';
-    if (c.server === 'stopping') {
-        txt = '🔄 重启中';
-    } else if (c.clients > 1) {
-        txt = '👥 ' + c.clients;
-    }
-    if (txt.length === 0) {
-        return;
-    }
-    var span = document.createElement('span');
-    span.className = 'st conn';
-    span.id = 'chatConn';
-    span.textContent = txt;
-    bar.appendChild(span);
-}
-
-/// 延迟面板投影——state 段 delay 段整段交给面板件（数据源入段后退化为纯显示；件缺失时零动作）
-function stateRenderDelay() {
-    if (typeof delayApplyState === 'function') {
-        delayApplyState(appState.delay);
-    }
-}
-
-
-/// 按钮态投影——动作按钮可用性归 fx/controls（独立功能面：外观层派生）；件缺失时零动作
-function stateApplyControls() {
-    if (typeof fxControlsApply === 'function') {
-        fxControlsApply(appState);
-    }
-}
-
-/// 状态条——六态完成后端时长（当前态高亮）+ ⏱ 总 + 请求次数；无数据整行空
-function stateRenderStatus() {
-    var bar = document.getElementById('chatStatus');
-    if (!bar) {
-        return;
-    }
-    var ms = appState.runMs || {};
-    var active = appState.runState || '';
-    var html = '';
-    var total = 0;
-    for (var i = 0; i < RUN_PHASES.length; i++) {
-        var p = RUN_PHASES[i];
-        var v = ms[p.key] || 0;
-        total = total + v;
-        if (v <= 0 && active !== p.key) {
-            continue;
-        }
-        var cls = (active === p.key) ? ' active' : '';
-        html += '<span class="st ' + p.key + cls + '">' + p.icon + ' ' + p.label + ' ' + fmtMs(v) + '</span>';
-    }
-    if (total > 0) {
-        html += '<span class="st total">⏱ All ' + fmtMs(total) + '</span>';
-    }
-    if (appState.requests > 0) {
-        var api = '🔄 Api ' + appState.requests;
-        if ((ms.link || 0) > 0) {
-            api += '（' + (ms.link / 1000 / appState.requests).toFixed(2) + ' s /use）';
-        }
-        html += '<span class="st req">' + api + '</span>';
-    }
-    bar.innerHTML = html;
-}
-
-/// 头部数字——前文条数 / sessionId / 前文长度 / 关键信息（请求级最新值）；经信息位单点写（chatInfoSet——state 段专属）
-/// 三段入口（条数 → list · tokens → tokens · 关键信息 → key）经 `data-ctx` 标注——点击开前文弹层（js/chat/ctx.js 委托处理）
-function stateRenderTokens() {
-    var t = appState.tokens || {};
-    var parts = [];
-    parts.push('前文 ');
-    parts.push(stateCtxLink(fmtCount(t.count || 0) + ' 条', 'list', '前文条目——点击查看（按条 / 按 tokens / 关键信息 / 完整前文）'));
-    parts.push(' | sessionId=' + appState.sessionId);
-    if (t.context > 0) {
-        parts.push(' | ');
-        parts.push(stateCtxLink('前文 ' + fmtCount(t.context) + ' tokens', 'tokens', '前文长度——点击查看 token 分布（按字符占比估算）'));
-    }
-    parts.push(' | ');
-    parts.push(stateCtxLink('关键信息', 'key', '本次会话关键信息——加载报告 / 用户消息 / 正式回复 / 轮结算'));
-    if (typeof chatInfoSet === 'function') {
-        chatInfoSet(parts);
-    }
-}
-
-/// 信息位可点击段——`data-ctx` 标注目标视图（本件只出内容与标注，点击处理归 ctx.js）
-function stateCtxLink(text, mode, title) {
-    var node = elText('span', 'ctx-link', text);
-    node.setAttribute('data-ctx', mode);
-    node.title = title;
-    return node;
-}
-
-/// Note 投影——待 Note 面板件接入（本轮留钩子，无容器时零动作）
-function stateRenderNote() {
-    if (typeof noteRenderFromState === 'function') {
-        noteRenderFromState(appState.note);
-    }
-}
-
-/// 桌宠投影——状态段渲染后同步桌宠（纯前端调度，零后端面；无容器时零动作）
-function stateRenderPet() {
-    if (typeof chatPetSync === 'function') {
-        chatPetSync();
-    }
+    stateProjectAll(appState);
 }

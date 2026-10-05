@@ -14,7 +14,7 @@
 // ═══════════════════════════════════════════
 
 function injectReportHtml(p) {
-    // 注入报告 HTML——新会话前文加载明细（ok/missing/error 三态 + 字符数 + 注入工具组）
+    // 注入报告 HTML——新会话前文加载明细（ok/missing/error 三态 + 注入工具组）
     var d = p || {};
     var files = d.files || [];
     var total = d.total || 0;
@@ -35,7 +35,6 @@ function injectReportHtml(p) {
             if (f.status === 'missing') { icon = '⚠️'; cls = 'missing'; }
             else if (f.status === 'error') { icon = '❌'; cls = 'error'; }
             html += '<div class="ir-item ' + cls + '">' + icon + ' ' + mdEscapeHtml(f.file || '')
-                + (f.status === 'ok' && f.chars > 0 ? '（' + f.chars + ' 字符）' : '')
                 + (f.message ? ' — ' + mdEscapeHtml(f.message) : '')
                 + '</div>';
         }

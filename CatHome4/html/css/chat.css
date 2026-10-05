@@ -68,8 +68,14 @@
     --ch-note-fg-hover: #c8e6d0;
     --ch-note-done: #4a6a4a;
     --ch-inject-fg: var(--ch-note-fg);
-    --ch-inject-line: var(--ch-note-line);
+    --ch-inject-line: var(--ch-state-all);      /* 注入报告线——淡紫（2026-10-05 莎定：与轮末结算同族） */
     --ch-inject-miss: #b5a25e;
+    /* 块型气泡描边（2026-10-05 气泡化 · 莎定）——色相 = 语义，与状态条 / 滚动带刻度同源；
+       底档不新增令牌（直接引 L1）：内容类 panel · 过程类 sunken · 系统类 faint · 注入报告 note-bg */
+    --ch-chat-reason-line: var(--ch-state-think);
+    --ch-chat-tool-line: var(--ch-state-tool);
+    --ch-chat-retry-line: var(--ch-state-wait);
+    --ch-chat-sum-line: var(--ch-state-all);
     --ch-round-gap: 200px;  /* 轮次分隔——本轮结算块行下留白（带上形成每轮之间的空隙，2026-09-24） */
     --ch-roundsum-fg: #9aa8b8;
     --ch-cmd-intent-bg: #0c1218;
@@ -222,6 +228,16 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
    形态归属（谁气泡 / 谁朴素）与行语义类、刻度角色的唯一声明处 = `js/chat/registry.js` 的块声明表 BLOCK_DECL（A179）。
    适用：思考 · 工具卡 · 错误 · 重试 · 注入报告 · 轮末结算 · 临时区流式件 */
 .chat-plain { font-size: var(--ch-fs-tag); line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+/* ── 块型气泡配色（2026-10-05 · 莎定——persist 八类全部气泡）────────────────
+   类别区分由**描边色**承担（色相 = 语义，与状态条 / 滚动带刻度同源）；底色四档直接引 L1（panel / sunken / faint / note-bg）。
+   🔴 一律带 #chatMsgs 前缀：`.chat-row.assistant .chat-bubble`（0,3,0）会压过 2 类选择器——曾致「所有助手气泡被统一染色」。 */
+#chatMsgs .chat-row[data-type="text"] .chat-bubble { --bubble-line: var(--ch-state-reply); }
+#chatMsgs .chat-row[data-type="reason"] .chat-bubble { background: var(--ch-bg-sunken); --bubble-line: var(--ch-chat-reason-line); }
+#chatMsgs .chat-row[data-type="toolcard"] .chat-bubble { --bubble-line: var(--ch-chat-tool-line); }
+#chatMsgs .chat-row[data-type="retry"] .chat-bubble { background: var(--ch-bg-faint); --bubble-line: var(--ch-chat-retry-line); }
+#chatMsgs .chat-row[data-type="error"] .chat-bubble { background: var(--ch-bg-faint); --bubble-line: var(--ch-err); }
+#chatMsgs .chat-row[data-type="inject_report"] .chat-bubble { background: var(--ch-note-bg); --bubble-line: var(--ch-inject-line); }
+#chatMsgs .chat-row[data-type="roundsum"] .chat-bubble { --bubble-line: var(--ch-chat-sum-line); }
 /* 气泡描边（2026-09-17）——线色 --bubble-line 与半透明度 --bubble-alpha 均按块类型赋值（基础 = Reply 态色 · 20%）；
    默认半透明（压亮度）；hover 经 0.3s ease-in-out 渐强到实心，移出即反向渐弱
    transition 可中断——渐强中移出从当前值转弱、渐弱中移入从当前值续强；用户气泡显式无边框 */
@@ -235,7 +251,7 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 }
 .chat-row.user .chat-bubble { background: var(--ch-chat-user-bg); color: var(--ch-chat-user-fg); border: none; }
 .chat-row.assistant .chat-bubble { background: var(--ch-chat-ai-bg); color: var(--ch-chat-ai-fg); }
-.chat-plain.error { color: var(--ch-chat-error-fg); }
+#chatMsgs .chat-bubble.error { color: var(--ch-chat-error-fg); }
 .chat-plain.streaming::after { content: '▌'; color: var(--ch-ok); animation: chatblink 1s infinite; }
 @keyframes chatblink { 50% { opacity: 0; } }
 /* A85 Think 块——两态两渲染器（流式态 .stream live-only / 完成态 .done 落盘；规格 design-ch4-frontend-theme §六）
@@ -283,8 +299,6 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-tool .ps-tag { display: inline-block; margin-right: 2px; padding: 0 4px; border-radius: 3px; font-size: var(--ch-fs-tag); }
 .chat-tool .ps-tag.ps5 { color: var(--ch-tool-ps5-fg); background: var(--ch-tool-ps5-bg); }
 .chat-tool .ps-tag.ps7 { color: var(--ch-tool-ps7-fg); background: var(--ch-tool-ps7-bg); }
-/* A127 执行序徽标——宿主 order 表裁决（折叠行：-1 只读 / 0 默认 / 1 写入 / 2 构建 / -100·100 钉死） */
-.chat-tool .chat-order { display: inline-block; margin-right: 2px; padding: 0 4px; border-radius: 3px; font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); background: var(--ch-bg-hover); }
 /* 段折叠摘要（2026-09-18）——行数 >5 的段折叠态即「5 行摘要」（首 2 + 折叠提示 + 末 2）；
    摘要挂 summary 内（details 折叠时非 summary 子元素会被隐藏），展开态隐藏 */
 .chat-tool .seg-peek { display: block; color: var(--ch-fg-muted); white-space: pre-wrap; word-break: break-all; margin-top: 3px; }
@@ -306,13 +320,13 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 /* S2 §8.4——重试过程记录（独立视图条目：朴素件 · ⟳ 重试中 / ✓ 已恢复）
    A86——resolved 不覆盖报错原文：仅换文本色，文本 = 原文 + 追加「已恢复」
    2026-10-03 形态改判（莎定）：去气泡壳——灰底 / 内边距 / 描边全撤，只留语义字色 */
-.chat-plain.retry { color: var(--ch-chat-sys-fg); }
-.chat-plain.retry.resolved { color: var(--ch-chat-sys-ok); }
+#chatMsgs .chat-bubble.retry { color: var(--ch-chat-sys-fg); }
+#chatMsgs .chat-bubble.retry.resolved { color: var(--ch-chat-sys-ok); }
 /* A94——重试耗尽终态：原文保留 + 「⚠ 重试失败」（文本色同错误面） */
-.chat-plain.retry.failed { color: var(--ch-chat-error-fg); }
+#chatMsgs .chat-bubble.retry.failed { color: var(--ch-chat-error-fg); }
 /* 注入报告（朴素件）——新会话前文加载明细（📚 汇总头 + 逐文件三态）
    2026-10-03 形态改判：去气泡壳——浅底与描边全撤 */
-.chat-plain.inject { color: var(--ch-inject-fg); }
+#chatMsgs .chat-bubble.inject { color: var(--ch-inject-fg); }
 .inject-report .ir-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 4px; }
 .inject-report .ir-list { display: flex; flex-direction: column; gap: 2px; }
 .inject-report .ir-item { word-break: break-all; white-space: pre-wrap; }
@@ -326,17 +340,17 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 /* roundsum 轮末统计（朴素件）——本轮 Token 消耗 + 工具次数 + 四态用时 + 总耗时
    2026-09-24：居中试作后撤回——保持靠左（与 assistant 正文同侧）；带上刻度的中心对称渐变不受影响
    2026-10-03 形态改判：去气泡壳——底与描边全撤（呼吸描边随气泡基类一并消失） */
-.chat-plain.roundsum { color: var(--ch-roundsum-fg); }
+#chatMsgs .chat-bubble.roundsum { color: var(--ch-roundsum-fg); }
 /* 轮次分隔（2026-09-24）——结算块所在行下留白；带上呈空隙（刻度按内容坐标映射，留白即成段间隔） */
-.chat-row:has(.chat-plain.roundsum) { margin-bottom: var(--ch-round-gap); }
-.chat-plain.roundsum .rs-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 3px; }
-.chat-plain.roundsum .rs-tok { color: var(--ch-tok-completion); word-break: break-all; white-space: pre-wrap; }
-.chat-plain.roundsum .rs-tools { color: var(--ch-warn); margin-top: 2px; }
-.chat-plain.roundsum .rs-times { color: var(--ch-fg-muted); margin-top: 2px; }
+.chat-row:has(.chat-bubble.roundsum) { margin-bottom: var(--ch-round-gap); }
+#chatMsgs .chat-bubble.roundsum .rs-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 3px; }
+#chatMsgs .chat-bubble.roundsum .rs-tok { color: var(--ch-tok-completion); word-break: break-all; white-space: pre-wrap; }
+#chatMsgs .chat-bubble.roundsum .rs-tools { color: var(--ch-warn); margin-top: 2px; }
+#chatMsgs .chat-bubble.roundsum .rs-times { color: var(--ch-fg-muted); margin-top: 2px; }
 /* 轮末第二行分色（2026-09-17——Tool/Api/All 三段；第三行六态保持单色弱化） */
-.chat-plain.roundsum .rs-tool { color: var(--ch-state-tool); }
-.chat-plain.roundsum .rs-api { color: var(--ch-state-api); }
-.chat-plain.roundsum .rs-all { color: var(--ch-state-all); }
+#chatMsgs .chat-bubble.roundsum .rs-tool { color: var(--ch-state-tool); }
+#chatMsgs .chat-bubble.roundsum .rs-api { color: var(--ch-state-api); }
+#chatMsgs .chat-bubble.roundsum .rs-all { color: var(--ch-state-all); }
 /* 2026-10-03 形态改判（莎定）——**呼吸描边机制整体退役**：`@keyframes bubble-breathe` 与五类触发选择器
    （pending / retry / streaming / live / paused）全删。理由：呼吸只动 border-color，而新形态下这些块
    已全部改朴素件（`.chat-plain`——无底无描边，没有可呼吸的属性）；且 A167/A168 重构后
@@ -538,18 +552,34 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
    口径：后端必要信息 → 顶栏信息位（state 段独占）；前端瞬时提示 → 本气泡；两者互不覆盖 */
 .chat-pet-say { position: absolute; left: 0; top: calc(100% + 6px); width: 286px; background: var(--ch-bg-raised); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-bubble); padding: 6px 10px; color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); line-height: 1.5; word-break: break-all; pointer-events: none; animation: chat-in 0.18s ease-out; }
 
-/* ── 临时区（A167 · 契约 §6.1-F/G）——输入区切换面板，全量镜像替换 ──
-   与持久区物理分离：显示时对话区与滚动带让位（由 input.js 切换 display）。
-   空面板不占位（:empty 兜底——inline display 由切换逻辑控制）。 */
+/* ── 临时区（契约 §12.2 ③）——与输入框**同区域互斥**（同列同位；显隐由 input.js 切内联 display）──
+   形态 = 输入框同款气泡（同底 / 同圆角 / 同内边距 / 同字号），描边取军绿（与切换按钮同色）；
+   状态投影整体替换；**高度 = 输入框实测高度（固定）**——切换时由 input.js 写入内联 height，空态亦保持同高不被压缩。 */
 .chat-live {
-    margin-bottom: 6px;
-    max-height: 320px;
+    grid-column: 2;
     overflow-y: auto;
+    background: var(--ch-bg-panel);
+    border: 1px solid var(--ch-state-tool);
+    border-radius: var(--ch-radius-bubble);
+    padding: 7px 10px;
+    font-size: var(--ch-fs-tag);
+    line-height: 1.5;
 }
-.chat-live:empty {
-    display: none;
+/* 临时区切换按钮——输入框左侧（军绿底 + 白字；绝对定位贴输入框左缘与底边——
+   参与 grid 会触发列回退换行，把动作列顶到下一行） */
+.ch-livebtn {
+    position: absolute;
+    left: calc(var(--ch-col-left) - var(--ch-send-w) - 6px);
+    bottom: 8px;
+    width: var(--ch-send-w);
+    height: 40px;
+    border: none;
+    border-radius: var(--ch-radius-bubble);
+    background: var(--ch-state-tool);
+    color: var(--ch-fg-inverse);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: var(--ch-fs-tag);
 }
-/* 切换按钮激活态——复用 .ch-iabtn 基底，仅加轮廓标识（配色不新引令牌） */
-.ch-iabtn-live.on {
-    outline: 1px solid currentColor;
-}
+.ch-livebtn:hover { filter: brightness(1.15); }
+.ch-livebtn.on { outline: 1px solid var(--ch-fg-inverse); outline-offset: 1px; }

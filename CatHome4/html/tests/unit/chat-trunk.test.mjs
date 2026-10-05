@@ -49,7 +49,8 @@ describe('装配——脚本清单与入口', () => {
         const decl = Object.keys(window.BLOCK_DECL);
         const persist = Object.keys(window.PERSIST_RENDERERS);
         const live = Object.keys(window.LIVE_RENDERERS);
-        expect(persist.concat(live).sort()).toEqual(decl.slice().sort());
+        // A196——toolrun 由 live.js 逐卡复用工具卡渲染件（不入 LIVE_RENDERERS）；empty 不入块声明表（不产元素）
+        expect(persist.concat(live, ['toolrun']).sort()).toEqual(decl.slice().sort());
         expect(window.RUN_PHASES.length).toBe(6);
         expect(window.FX_FEATURES.length).toBe(5);
     });
@@ -97,7 +98,7 @@ describe('收包三段（契约 §12.2 / §12.3）', () => {
             v: 2,
             state: { sessionId: 'cat1', runState: 'think', runMs: { think: 1500 }, requests: 0, tokens: { count: 3 } },
             persist: { mode: 'full', items: [{ type: 'user', payload: { text: '你好' } }] },
-            live: { items: [{ type: 'replysse', payload: { text: '流式中' } }] }
+            live: { type: 'replysse', context: '流式中' }
         });
         expect(box.querySelector('.stale')).toBeNull();
         expect(box.querySelectorAll('.chat-row').length).toBe(1);
@@ -112,16 +113,18 @@ describe('收包三段（契约 §12.2 / §12.3）', () => {
         expect(box.querySelectorAll('.chat-row').length).toBe(2);
     });
 
-    it('变化增量帧——live 整体替换（全量镜像语义，不合并）', () => {
+    it('变化增量帧——live 段整体替换（状态投影：type + context 两字符串）', () => {
         const panel = document.getElementById('chatLivePanel');
-        window.liveApply({ items: [{ type: 'replysse', payload: { text: '一' } }, { type: 'thinksse', payload: { text: '二' } }] });
-        expect(panel.querySelectorAll('.chat-row').length).toBe(2);
-        window.liveApply({ items: [{ type: 'replysse', payload: { text: '一' } }] });
+        window.liveApply({ type: 'replysse', context: '一' });
         expect(panel.querySelectorAll('.chat-row').length).toBe(1);
-        window.liveApply({ items: [] });
-        expect(panel.querySelectorAll('.chat-row').length).toBe(0);
-        // A187——empty 占位（链路正常、内容为空）不产元素：面板仍为空
-        window.liveApply({ items: [{ type: 'empty', payload: {} }] });
+        window.liveApply({ type: 'thinksse', context: '二' });
+        expect(panel.querySelectorAll('.chat-row').length).toBe(1);
+        expect(panel.textContent).toContain('二');
+        // toolrun——context 为未完成工具卡数组 JSON：逐卡复用持久区渲染件
+        window.liveApply({ type: 'toolrun', context: '[{"name":"time","arguments":"{}","toolIndex":1,"toolTotal":2},{"name":"random","arguments":"{}","toolIndex":2,"toolTotal":2}]' });
+        expect(panel.querySelectorAll('.chat-row').length).toBe(2);
+        // empty——链路正常、内容为空：不产元素
+        window.liveApply({ type: 'empty', context: '' });
         expect(panel.querySelectorAll('.chat-row').length).toBe(0);
     });
 
@@ -129,7 +132,7 @@ describe('收包三段（契约 §12.2 / §12.3）', () => {
         window.chatOnFrame({
             state: { runState: 'idle' },
             persist: { mode: 'append', items: [{ type: 'user', payload: { text: 'P' } }] },
-            live: { items: [{ type: 'thinksse', payload: { text: 'L' } }] }
+            live: { type: 'thinksse', context: 'L' }
         });
         expect(document.getElementById('chatMsgs').textContent).toContain('P');
         expect(document.getElementById('chatMsgs').textContent).not.toContain('L');
@@ -249,13 +252,17 @@ describe('出口面（input.js——投递即回执）', () => {
         expect(calls.map((c) => JSON.parse(c.opt.body).text)).toEqual(['cat.pause', 'cat.continue', 'session.new']);
     });
 
-    it('临时区切换——面板与对话区互斥显示', () => {
+    it('临时区切换——输入框与面板同区域互斥 + 面板高度固定（对话区不受影响）', () => {
+        const panel = document.getElementById('chatLivePanel');
         window.chatLiveToggle();
-        expect(document.getElementById('chatLivePanel').style.display).toBe('');
-        expect(document.getElementById('chatMsgs').style.display).toBe('none');
-        window.chatLiveToggle();
+        expect(panel.style.display).toBe('');
+        expect(document.getElementById('chatSendInput').style.display).toBe('none');
         expect(document.getElementById('chatMsgs').style.display).toBe('');
-        expect(document.getElementById('chatLivePanel').style.display).toBe('none');
+        // 高度哨兵——固定高度随切换写入（jsdom 下 offsetHeight = 0，断言「写入行为」而非数值）
+        expect(panel.style.height).not.toBe('');
+        window.chatLiveToggle();
+        expect(panel.style.display).toBe('none');
+        expect(document.getElementById('chatSendInput').style.display).toBe('');
     });
 });
 

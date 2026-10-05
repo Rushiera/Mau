@@ -1,9 +1,8 @@
 // ═══════════════════════════════════════════
 // chat/blocks/reply-sse.js —— replysse（live 类 · 回复流）
 //
-// 契约（design-ch4-protocol §12.4 / §12.5）：
-//   item = { type:'replysse', payload:{ kind:'text', text } }
-//   text = 该流当前的全部文本（live 段按帧全量镜像——后端给累计全文，前端只管渲染）
+// 契约（design-ch4-protocol §12.5）：
+//   live 段 = { type:'replysse', context }（A196 状态投影——后端给该流当前全集，前端只管渲染）
 //   形态：朴素件 + 流式语义类（行语义 / 刻度见 registry.js BLOCK_DECL）
 //
 // 纯渲染（A187）：payload → 行元素一次成型——不持句柄、不判终态、不配对；
