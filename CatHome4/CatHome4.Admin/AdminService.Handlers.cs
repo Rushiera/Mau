@@ -1157,14 +1157,7 @@ namespace CatHome4.Admin
             List<object> roots = new List<object>();
             for (int i = 0; i < ws.Roots.Length; i++)
             {
-                roots.Add(new
-                {
-                    id = ws.Roots[i].Id,
-                    path = ws.Roots[i].Path,
-                    writable = ws.Roots[i].Writable,
-                    note = ws.Roots[i].Note,
-                    fixedRoot = IsFixedRootId(ws.Roots[i].Id)
-                });
+                roots.Add(BuildRootJson(ws.Roots[i]));
             }
             return Results.Json(new { ok = true, roots = roots });
         }
@@ -1182,14 +1175,7 @@ namespace CatHome4.Admin
             {
                 for (int i = 0; i < ws.Roots.Length; i++)
                 {
-                    roots.Add(new
-                    {
-                        id = ws.Roots[i].Id,
-                        path = ws.Roots[i].Path,
-                        writable = ws.Roots[i].Writable,
-                        note = ws.Roots[i].Note,
-                        fixedRoot = IsFixedRootId(ws.Roots[i].Id)
-                    });
+                    roots.Add(BuildRootJson(ws.Roots[i]));
                 }
             }
             return roots.ToArray();

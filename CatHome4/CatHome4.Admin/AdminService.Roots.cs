@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using Mau.Runtime;
 
 namespace CatHome4.Admin
 {
@@ -137,11 +138,52 @@ namespace CatHome4.Admin
         {
             return FindFixedRoot(id) != null;
         }
+        /// <summary>
+        /// 固定根三列归一——id / note / writable 以系统定义为准，提交值就地覆盖（path 由管理面维护）。
+        /// 语义：固定根三列是系统契约——存量 workspace.json 携带旧 note 时自动收敛，不阻塞保存（前端已灰化，直调 API 同规）。
+        /// </summary>
+        /// <param name="input">提交条目（Id 须已归一为小写；命中固定根时就地改写 Note / Writable）</param>
+        /// <returns>true=命中固定根（已归一）</returns>
+        private static bool ApplyFixedRootDef(WorkspaceRootInput input)
+        {
+            FixedRootDef def = FindFixedRoot(input.Id);
+            if (def == null)
+            {
+                return false;
+            }
+            input.Note = def.Note;
+            input.Writable = def.Writable;
+            return true;
+        }
+        /// <summary>
+        /// 受控根读面条目（管理面 JSON）——固定根 note / writable 以系统定义渲染，磁盘旧值不回流到编辑面。
+        /// </summary>
+        /// <param name="entry">磁盘根条目</param>
+        /// <returns>匿名对象 {id,path,writable,note,fixedRoot}</returns>
+        internal static object BuildRootJson(WorkspaceConfig.RootEntry entry)
+        {
+            FixedRootDef def = FindFixedRoot(entry.Id);
+            string note = entry.Note;
+            bool writable = entry.Writable;
+            if (def != null)
+            {
+                note = def.Note;
+                writable = def.Writable;
+            }
+            return new
+            {
+                id = entry.Id,
+                path = entry.Path,
+                writable = writable,
+                note = note,
+                fixedRoot = def != null
+            };
+        }
 
         // [段2] 写入校验
         /// <summary>
-        /// 受控根提交校验——id 字符集（小写字母数字）+ 非 PS 内置驱动器名 + 重名（忽略大小写）+ path 绝对且存在 + 固定根齐备且三列一致。
-        /// 语义：缺任一固定根 → 拒绝（不静默造根）；固定根 note/writable 与定义不符 → 拒绝（前端已灰化，直调 API 亦同规）。
+        /// 受控根提交校验——id 字符集（小写字母数字）+ 非 PS 内置驱动器名 + 重名（忽略大小写）+ path 绝对且存在 + 固定根齐备；命中固定根时就地归一三列。
+        /// 语义：缺任一固定根 → 拒绝（不静默造根）；固定根 note/writable 以系统定义为准（提交值被覆盖，不拒绝——存量旧值自动收敛）。
         /// </summary>
         /// <param name="rootsIn">提交条目（Id 须已归一为小写）</param>
         /// <returns>错误文案（空 = 通过）</returns>
@@ -189,19 +231,8 @@ namespace CatHome4.Admin
                 {
                     return "roots[" + i.ToString() + "] 目录不存在: " + input.Path;
                 }
-                FixedRootDef def = FindFixedRoot(input.Id);
-                if (def != null)
-                {
-                    if (!string.Equals(input.Note, def.Note, StringComparison.Ordinal))
-                    {
-                        return "系统根 " + def.Id + " 的注释固定为「" + def.Note + "」，不可修改";
-                    }
-                    if (input.Writable != def.Writable)
-                    {
-                        string want = def.Writable ? "读写" : "只读";
-                        return "系统根 " + def.Id + " 的读写标志固定为「" + want + "」，不可修改";
-                    }
-                }
+                // 固定根三列（id / note / writable）以系统定义为准——就地归一（存量旧 note 不阻塞保存）
+                ApplyFixedRootDef(input);
             }
             for (int f = 0; f < FixedRoots.Length; f = f + 1)
             {

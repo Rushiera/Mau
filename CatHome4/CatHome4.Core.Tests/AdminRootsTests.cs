@@ -66,5 +66,39 @@ namespace CatHome4.Core.Tests
             Assert.False(AdminService.IsReservedPsDriveName("c2"));
             Assert.False(AdminService.IsReservedPsDriveName("gitee"));
         }
+
+        /// <summary>
+        /// 固定根读面归一——磁盘旧 note / writable 不回流管理面（存量 workspace.json 旧值曾致保存死锁）。
+        /// </summary>
+        [Fact]
+        public void BuildRootJson_FixedRoot_UsesSystemDefinition()
+        {
+            Mau.Runtime.WorkspaceConfig.RootEntry entry = new Mau.Runtime.WorkspaceConfig.RootEntry();
+            entry.Id = "workspace";
+            entry.Path = "D:/Mau/WorkSpace";
+            entry.Writable = false;
+            entry.Note = "默认WorkSpace";
+            object json = AdminService.BuildRootJson(entry);
+            Assert.Equal("系统工作区（必选）", (string)json.GetType().GetProperty("note").GetValue(json));
+            Assert.True((bool)json.GetType().GetProperty("writable").GetValue(json));
+            Assert.True((bool)json.GetType().GetProperty("fixedRoot").GetValue(json));
+        }
+
+        /// <summary>
+        /// 非固定根读面透传——磁盘值原样渲染（归一只作用于固定命名根）。
+        /// </summary>
+        [Fact]
+        public void BuildRootJson_BusinessRoot_PassesThrough()
+        {
+            Mau.Runtime.WorkspaceConfig.RootEntry entry = new Mau.Runtime.WorkspaceConfig.RootEntry();
+            entry.Id = "ccbp";
+            entry.Path = "D:/Mau/CatCatBigParty";
+            entry.Writable = true;
+            entry.Note = "CCBP知识网络";
+            object json = AdminService.BuildRootJson(entry);
+            Assert.Equal("CCBP知识网络", (string)json.GetType().GetProperty("note").GetValue(json));
+            Assert.True((bool)json.GetType().GetProperty("writable").GetValue(json));
+            Assert.False((bool)json.GetType().GetProperty("fixedRoot").GetValue(json));
+        }
     }
 }
