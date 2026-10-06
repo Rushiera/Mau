@@ -2,14 +2,16 @@
 // chat/live.js —— 临时区（契约 §12.5）
 //
 // 定位：临时区的唯一应用入口。**状态投影**——后端只给两个字符串（type + context），
-//   每次收帧整体替换面板内容，不比对、不 diff、不合并。
+//   输入面恒为「该 type 的当前整段」（全集）——协议面不做合并、不下发增量。
+//   **呈现面两路**：
+//     · 挂载件（`stream.js::STREAM_TYPES` 白名单——当前 `thinksse` / `replysse`）：交给
+//       **流式呈现机制**（前缀增量 + 打字机 + 面板跟随 + 段期光标——整套效果的单点承载处）；
+//     · 其余件（`toolrun` / `empty` / 非白名单流）：**整体替换**（状态投影原语义——清区重绘）。
 //
 // 物理位置：输入区内、与输入框**同区域互斥**（同一列同位——显隐由 input.js 切内联 display）；
 //           不参与对话流、不进会话存档。
-// 切换开关：本件每帧把当前 type 标到输入区容器上（`#chatinput` 的 `data-live`）——
-//           开关流式页签色与临时区气泡描边同源（chat.css `--ch-live-color`），有内容时描边呼吸高亮。
-//
-// 推法：后端有变化才推（无变化零字节）；推即整段，前端只管替换。
+// 切换开关：本件每帧把当前 type 标到输入区容器上（`#chatinput` 的 `data-live`）——开关流式页签色
+//           与临时区气泡描边同源（chat.css `--ch-live-color`），有内容时描边呼吸高亮。
 //
 // 语义（A196 · 契约 §12.5）：type ∈ {thinksse, replysse, toolrun, empty}
 //   thinksse / replysse——context = 该流当前全文（文本，直接投给对应渲染件）
@@ -31,19 +33,30 @@ function liveMarkType(type) {
     }
 }
 
-/// 临时段入口——整体替换（状态投影语义）；**功能隔离**：单段异常不中断其他
+/// 临时段入口——挂载件走流式呈现机制（stream.js），其余走整体替换；**功能隔离**：单段异常不中断其他
 function liveApply(seg) {
     var box = liveContainer();
     if (!box) {
         return;
     }
-    box.textContent = '';
     var type = seg ? (seg.type || 'empty') : 'empty';
+    var ctx = seg ? ((seg.context === undefined || seg.context === null) ? '' : String(seg.context)) : '';
     liveMarkType(type);
+    if (streamWanted(type)) {
+        try {
+            streamApply(box, type, ctx);
+        } catch (e) {
+            streamReset();
+            box.textContent = '';
+            box.appendChild(buildRenderErrorBlock({ type: type, payload: { text: ctx } }, e));
+        }
+        return;
+    }
+    streamReset();
+    box.textContent = '';
     if (type === 'empty') {
         return;
     }
-    var ctx = seg ? ((seg.context === undefined || seg.context === null) ? '' : String(seg.context)) : '';
     try {
         liveRender(type, ctx, box);
     } catch (e) {

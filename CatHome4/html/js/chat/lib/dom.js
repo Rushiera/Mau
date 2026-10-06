@@ -17,3 +17,10 @@ function elText(tag, cls, text) {
     n.textContent = (text === undefined || text === null) ? '' : String(text);
     return n;
 }
+
+/// 容器贴底——滚到最新内容（「切到流式区看最新」与流式呈现机制的跟随步共用同一实现）
+function scrollBoxBottom(box) {
+    if (box) {
+        box.scrollTop = box.scrollHeight;
+    }
+}

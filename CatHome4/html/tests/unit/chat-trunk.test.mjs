@@ -52,7 +52,7 @@ describe('装配——脚本清单与入口', () => {
         // A196——toolrun 由 live.js 逐卡复用工具卡渲染件（不入 LIVE_RENDERERS）；empty 不入块声明表（不产元素）
         expect(persist.concat(live, ['toolrun']).sort()).toEqual(decl.slice().sort());
         expect(window.RUN_PHASES.length).toBe(6);
-        expect(window.FX_FEATURES.length).toBe(5);
+        expect(window.FX_FEATURES.length).toBe(6);
     });
 });
 

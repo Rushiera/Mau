@@ -76,6 +76,9 @@
              （挂 `#chatinput` 的 `data-live` 上，由 live.js 写入，映射归 chat.css 令牌——
              thinksse 黄 / toolrun 军绿 / replysse 米白 / empty 灰；与临时区气泡描边同源）。
              面板高度 = 输入框实测高度（固定）——由 input.js 切换时写入，空态亦保持同高） -->
+        <!-- 流式统计行（fx/live-stats.js · 契约 §12.8 独立功能面）——切换开关正上方灰色三行读数
+             （line 行数 / char 字符数 / spd 速度）；无活跃流式段即隐藏（不占位）；内容向左展开（左预留带内） -->
+        <div id="chatLiveStats"></div>
         <div id="chatLiveToggle" class="ch-livetoggle" title="切换：输入区 / 流式区（进行中的思考 · 工具 · 回复流）">
             <span class="ch-lt-thumb"></span>
             <span class="ch-lt-tab ch-lt-input">输入</span>
@@ -219,8 +222,9 @@
     <script src="js/chat/state/meta.js?v=__V__"></script>
     <script src="js/chat/state/registry.js?v=__V__"></script>
 
-    <!-- ④ 主干——映射表 → 两区入口 → 状态投影 → 单一应用入口 -->
+    <!-- ④ 主干——映射表 → 流式呈现机制 → 两区入口 → 状态投影 → 单一应用入口 -->
     <script src="js/chat/registry.js?v=__V__"></script>
+    <script src="js/chat/stream.js?v=__V__"></script>
     <script src="js/chat/persist.js?v=__V__"></script>
     <script src="js/chat/live.js?v=__V__"></script>
     <script src="js/chat/state.js?v=__V__"></script>
@@ -238,6 +242,7 @@
     <script src="js/chat/fx/pending.js?v=__V__"></script>
     <script src="js/chat/fx/cmd-intent.js?v=__V__"></script>
     <script src="js/chat/fx/controls.js?v=__V__"></script>
+    <script src="js/chat/fx/live-stats.js?v=__V__"></script>
     <script src="js/chat/fx/registry.js?v=__V__"></script>
 
     <script>

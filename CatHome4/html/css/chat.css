@@ -619,3 +619,22 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .ch-lt-live { --ch-lt-c: var(--ch-lt-live); }
 .ch-livetoggle:not(.on) .ch-lt-input, .ch-livetoggle.on .ch-lt-live { color: var(--ch-fg-inverse); }
 .ch-livetoggle:hover { filter: brightness(1.1); }
+
+/* 流式统计行（fx/live-stats.js · 契约 §12.8 独立功能面 · 2026-10-06 莎定）——切换开关**正上方**的灰色读数：
+   三行 `label: value`（line 行数 / char 字符数 / spd 速度）。右缘与开关右缘对齐、内容向左展开（左预留带内），
+   窄屏（左预留带 = 下限档）下亦不被裁；无活跃流式段即 `display:none`（不占位、不留空档）。
+   纯读数——不接指针事件（点击照常落到开关上） */
+#chatLiveStats {
+    position: absolute;
+    right: calc(100% - var(--ch-col-left) + 6px);
+    bottom: calc(8px + 56px + 6px);
+    max-width: calc(var(--ch-col-left) - 6px);
+    text-align: right;
+    font-size: var(--ch-fs-tag);
+    line-height: 1.45;
+    color: var(--ch-fg-muted);
+    white-space: pre-line;
+    overflow: hidden;
+    pointer-events: none;
+    user-select: none;
+}

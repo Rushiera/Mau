@@ -40,6 +40,12 @@ var FX_FEATURES = [
         inputs: ['state.runState'],
         outputs: ['动作按钮 disabled 态（停止 / 继续 / 开始 Note / 发送）'],
         init: null
+    },
+    {
+        id: 'liveStats', name: '流式统计行',
+        inputs: ['stream.js::streamStats()（流式段原始事实——字符数 / 行数 / 段用时）'],
+        outputs: ['#chatLiveStats（切换开关上方灰色三行读数——line / char / spd）'],
+        init: 'liveStatsInit'
     }
 ];
 

@@ -129,6 +129,10 @@ function inputSwap(shown) {
             panel.style.height = (h > 0 ? h : 0) + 'px';
         }
         panel.style.display = shown ? '' : 'none';
+        if (shown) {
+            // 切到流式区即贴底——面板是「看最新」的窥视窗（流式跟随步见 stream.js）
+            scrollBoxBottom(panel);
+        }
     }
     if (input) {
         input.style.display = shown ? 'none' : '';
