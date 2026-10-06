@@ -22,13 +22,13 @@ beforeAll(async () => {
 const PERSIST_TYPES = ['user', 'text', 'reason', 'toolcard', 'retry', 'error', 'inject_report', 'roundsum'];
 const LIVE_TYPES = ['replysse', 'thinksse'];
 
-/// 块体类例外——思考族自持 `.chat-think`、工具族自持 `.chat-tool`（`BLOCK_DECL` 未建模这两族块体；
+/// 块体类例外——完成态思考自持 `.chat-think`、工具族自持 `.chat-tool`（`BLOCK_DECL` 未建模这两族块体；
 /// 形态判据不受影响——`form:'plain'` 语义 =「不作对话内容读」，与二者一致，故非渲染缺陷）。
+/// `thinksse` 走通用路径（2026-10-06 临时最小态——无内部结构，仅 `.chat-plain` 载体）。
 /// 🔴 这是**显式登记**而非放宽断言：新增例外必须来此登记，否则测试变红。
 /// 口径统一（块体族是否入表 / `body` 列是否改全类名）归 A198「逐 type 核对」。
 const BODY_EXCEPTIONS = {
     'reason': 'chat-think',
-    'thinksse': 'chat-think',
     'toolcard': 'chat-tool',
     'toolrun': 'chat-tool'
 };

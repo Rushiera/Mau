@@ -39,5 +39,31 @@ namespace CH4
             payload["durMs"] = durMs;
             return payload;
         }
+        /// <summary>
+        /// 思考块载荷——text / durMs / chars / cps 四字段的唯一拼装处（两处构造点：纯文本轮 / 工具轮）。
+        /// 三项计数为后端规整化产出：chars = 正文长度；cps = 字符数 ÷ 思考用时（用时未记录或为 0 时该比值不成立，取 -1）。
+        /// </summary>
+        /// <param name="text">思考正文</param>
+        /// <param name="durMs">思考用时（毫秒；-1 = 未记录——载入顶尾补差等无实时数据路径）</param>
+        /// <returns>思考块载荷字典</returns>
+        public static Dictionary<string, object> BuildReason(string text, long durMs = -1)
+        {
+            string body = text;
+            if (body == null)
+            {
+                body = "";
+            }
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["text"] = body;
+            payload["durMs"] = durMs;
+            payload["chars"] = body.Length;
+            double cps = -1;
+            if (durMs > 0)
+            {
+                cps = System.Math.Round(body.Length * 1000.0 / durMs, 1);
+            }
+            payload["cps"] = cps;
+            return payload;
+        }
     }
 }

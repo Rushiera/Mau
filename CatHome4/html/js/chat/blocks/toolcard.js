@@ -5,7 +5,7 @@
 //   item = { type:'toolcard', ts, msgIndex, round,
 //            payload:{ name, arguments, result, images? } }
 //   · name = 工具名；arguments = 参数 JSON 原文；result = 结果原文（可带结构化头）
-//   · 计数类字段（toolIndex / toolTotal / order / durMs / 字符规模）不进渲染——规模信息归后端
+//   · 计数类字段（toolIndex / toolTotal / order / durMs）——字段面见契约 §12.5
 //
 // 产出：.chat-row.assistant.tool > details.chat-tool[.err]
 //         └ summary.tn（图标 + 变体标签 + 折叠行文案） + 段数组（lib/tool-format 骨架）

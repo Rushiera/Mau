@@ -195,15 +195,14 @@ namespace CH4
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="msgIndex">真实前文消息索引（条目业务定位字段）</param>
-        public void OnAssistantText(LlmMessage m, int msgIndex)
+        /// <param name="reasonDurMs">思考用时（毫秒；-1 = 未记录——载入顶尾补差等无实时数据路径）</param>
+        public void OnAssistantText(LlmMessage m, int msgIndex, long reasonDurMs = -1)
         {
             // A158 期三——纯文本轮的思考段落条目（工具轮走 OnAssistantToolCalls；缺此路径思考内容在持久区丢失）
             string reasoning = m.ReasoningContent ?? "";
             if (reasoning.Length > 0)
             {
-                Dictionary<string, object> reasonPayload = new Dictionary<string, object>();
-                reasonPayload["text"] = reasoning;
-                Append(m, "reason", reasonPayload, msgIndex);
+                Append(m, "reason", ViewCardPayload.BuildReason(reasoning, reasonDurMs), msgIndex);
             }
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["text"] = m.Content ?? "";
@@ -215,14 +214,13 @@ namespace CH4
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="msgIndex">真实前文消息索引（条目业务定位字段）</param>
-        public void OnAssistantToolCalls(LlmMessage m, int msgIndex)
+        /// <param name="reasonDurMs">思考用时（毫秒；-1 = 未记录——载入顶尾补差等无实时数据路径）</param>
+        public void OnAssistantToolCalls(LlmMessage m, int msgIndex, long reasonDurMs = -1)
         {
             string reasoning = m.ReasoningContent ?? "";
             if (reasoning.Length > 0)
             {
-                Dictionary<string, object> payload = new Dictionary<string, object>();
-                payload["text"] = reasoning;
-                Append(m, "reason", payload, msgIndex);
+                Append(m, "reason", ViewCardPayload.BuildReason(reasoning, reasonDurMs), msgIndex);
             }
             RegisterPendingTools(m.ToolCallsJson ?? "", m.CreatedAt);
         }

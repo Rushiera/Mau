@@ -59,6 +59,11 @@ namespace CH4
 
         /// <summary>LLM 后台结果——完整思考文本（工具轮次回传铁律）</summary>
         private string _llmReasoning;
+        /// <summary>
+        /// 本块思考用时累计毫秒——think 态内部实现（进入 think 态开表、离开即结算，不跨态；重试退避等非 think 段不计入）。
+        /// 单块生命周期：推入 view.json 时由 TakeReasonDuration 取走并归零（不跨轮 / 不跨块残留）。
+        /// </summary>
+        private long _reasonDurMs;
 
         /// <summary>LLM 后台结果——tool_calls JSON 数组（translate 聚合后整体）</summary>
         private string _llmToolCallsJson;
@@ -1099,6 +1104,8 @@ namespace CH4
             _llmResultText = "";
             _llmReasoning = "";
             _reasonAccum.Clear();
+            // 思考计时同弃——思考内容被清（新一轮 / 空回复续传重发），本块用时同步归零
+            _reasonDurMs = 0;
             _llmToolCallsJson = "";
             _llmError = false;
             _llmErrorText = "";
@@ -1394,6 +1401,11 @@ namespace CH4
                     long ms = (now - _phaseStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
                     if (ms < 0) { ms = 0; }
                     _phaseAccumMs[_phaseKind] = _phaseAccumMs[_phaseKind] + ms;
+                    // 思考用时——think 态内部实现：离开 think 即把本段净时长累进本块（不跨态；推入视图时取走并归零）
+                    if (_phaseKind == PhaseThink)
+                    {
+                        _reasonDurMs = _reasonDurMs + ms;
+                    }
                 }
                 _phaseKind = kind;
                 // 空闲态不计时——idle 只作态名（轮未开始 / 收尾中）；计时效用为零，且实时增量会让快照 sessions 段每帧脏变化
@@ -1426,9 +1438,27 @@ namespace CH4
                     long ms = (now - _phaseStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
                     if (ms < 0) { ms = 0; }
                     _phaseAccumMs[_phaseKind] = _phaseAccumMs[_phaseKind] + ms;
+                    // 思考用时——收尾结算同口径（think 态内部实现：任何离开 think 的路径都入账，不跨态）
+                    if (_phaseKind == PhaseThink)
+                    {
+                        _reasonDurMs = _reasonDurMs + ms;
+                    }
                     _phaseKind = -1;
                     _phaseStartTick = 0;
                 }
+            }
+        }
+        /// <summary>
+        /// 取走本块思考用时——推入 view.json 的时刻调用（取走即归零：计时生命周期止于落到视图层，不残留跨块）。
+        /// </summary>
+        /// <returns>本块思考用时毫秒（0 = 无思考段或已取走）</returns>
+        private long TakeReasonDuration()
+        {
+            lock (_phaseLock)
+            {
+                long ms = _reasonDurMs;
+                _reasonDurMs = 0;
+                return ms;
             }
         }
         /// <summary>
@@ -1753,7 +1783,7 @@ namespace CH4
                 // 纯文本回复——本轮完成
                 AppendMessage(_context.AddAssistantMessage(_llmResultText));
                 NoteTimebackEvent();
-                _viewStore.OnAssistantText(LastMessage(), _context.GetMessageCount() - 1);
+                _viewStore.OnAssistantText(LastMessage(), _context.GetMessageCount() - 1, TakeReasonDuration());
                 // A196 临时区——本轮收尾写空态（内容已由持久区承载）
                 _viewBus.SetLive("empty", "");
                 // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + 直接开新轮（跳过 Done/CloseRound）
@@ -1774,7 +1804,7 @@ namespace CH4
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
             AppendMessage(_context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning));
             NoteTimebackEvent();
-            _viewStore.OnAssistantToolCalls(LastMessage(), _context.GetMessageCount() - 1);
+            _viewStore.OnAssistantToolCalls(LastMessage(), _context.GetMessageCount() - 1, TakeReasonDuration());
             // 思考段整块——由 SealReasonStream 在离开 think 态时统一推送（工具决策流首帧即收口；唯一出口，莎 2026-09-22 定）
             // 工具轮 seal——视图层补 gap text 块（全量外观真源：前端历史/QQBot 转发消费）+ SSE 推送（实时）；空文本不推
             if (_llmResultText.Length > 0)

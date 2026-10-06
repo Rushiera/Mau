@@ -217,13 +217,11 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
    头行 = Think 标签（态色）+ 统计项（弱色）；完成态默认压缩档（缩略摘要），点击切展开档（全文 500px 滚动） */
 .chat-think { font-size: var(--ch-fs-tag); color: var(--ch-chat-reason-fg); }
 .chat-think:not(:first-child) { margin-top: 6px; }
-.chat-think .ct-head { cursor: pointer; }
+/* 切档热区（A199 2026-10-06）——只落完成态头行（热区与指针提示同源）；正文可自由选中复制；
+   流式态（.stream）不参与切档，不出指针 */
+.chat-think.done .ct-head { cursor: pointer; }
 .chat-think .ct-label { color: var(--ch-think-head); }
 .chat-think .ct-stat { color: var(--ch-think-stat); }
-/* 流式态——正文恒展开（500px 封顶 + 溢出滚动；内容在增长，压缩无意义） */
-.chat-think.stream .ct-body { margin-top: 3px; max-height: var(--ch-think-max-h); overflow: auto; white-space: pre-wrap; word-break: break-all; }
-/* 流式态光标——块内自绘（不再走气泡级 .chat-bubble.streaming::after） */
-.chat-think .ct-cursor { animation: chatblink 1s infinite; }
 /* 完成态两档——压缩档为默认（缩略摘要，与旧折叠摘要同形）；点击切展开档（全文 500px 滚动） */
 .chat-think.done .ct-body { margin-top: 3px; }
 .chat-think.done .ct-peek { white-space: pre-wrap; word-break: break-all; }
