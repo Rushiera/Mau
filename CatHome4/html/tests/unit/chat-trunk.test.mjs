@@ -280,6 +280,53 @@ describe('出口面（input.js——投递即回执）', () => {
         expect(panel.style.display).toBe('none');
         expect(document.getElementById('chatSendInput').style.display).toBe('');
     });
+
+    it('切换开关——页签直达该态（点「输入」回输入区 / 点「流式」去流式区）', () => {
+        const sw = document.getElementById('chatLiveToggle');
+        const panel = document.getElementById('chatLivePanel');
+        const input = document.getElementById('chatSendInput');
+        window.chatLiveShow(true);
+        expect(panel.style.display).toBe('');
+        expect(input.style.display).toBe('none');
+        expect(sw.classList.contains('on')).toBe(true);
+        window.chatLiveShow(true);
+        expect(sw.classList.contains('on')).toBe(true);
+        window.chatLiveShow(false);
+        expect(panel.style.display).toBe('none');
+        expect(input.style.display).toBe('');
+        expect(sw.classList.contains('on')).toBe(false);
+    });
+
+    it('流式态标记——输入区 data-live 随 live 段 type（态色单一色源，映射归 CSS 令牌）', () => {
+        const zone = document.getElementById('chatinput');
+        window.liveApply({ type: 'toolrun', context: '[]' });
+        expect(zone.getAttribute('data-live')).toBe('toolrun');
+        window.liveApply({ type: 'thinksse', context: '想' });
+        expect(zone.getAttribute('data-live')).toBe('thinksse');
+        window.liveApply({ type: 'empty', context: '' });
+        expect(zone.getAttribute('data-live')).toBe('empty');
+    });
+
+    it('自动切换——user 块到达切流式 / roundsum 到达切回输入（判据取持久区新块）', () => {
+        const sw = document.getElementById('chatLiveToggle');
+        const panel = document.getElementById('chatLivePanel');
+        const input = document.getElementById('chatSendInput');
+        window.chatLiveShow(false);
+        window.persistApply({ mode: 'append', items: [{ type: 'user', payload: { text: '你好' } }] });
+        expect(sw.classList.contains('on')).toBe(true);
+        expect(panel.style.display).toBe('');
+        expect(input.style.display).toBe('none');
+        window.persistApply({ mode: 'append', items: [{ type: 'roundsum', payload: {} }] });
+        expect(sw.classList.contains('on')).toBe(false);
+        expect(input.style.display).toBe('');
+    });
+
+    it('自动切换——full 重放不触发（首帧 / 重连不跳态）', () => {
+        const sw = document.getElementById('chatLiveToggle');
+        window.chatLiveShow(false);
+        window.persistApply({ mode: 'full', items: [{ type: 'user', payload: { text: '旧消息' } }] });
+        expect(sw.classList.contains('on')).toBe(false);
+    });
 });
 
 // ── ⑥ 按钮态派生 ─────────────────────────────

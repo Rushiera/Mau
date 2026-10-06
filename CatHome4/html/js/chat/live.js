@@ -6,6 +6,8 @@
 //
 // 物理位置：输入区内、与输入框**同区域互斥**（同一列同位——显隐由 input.js 切内联 display）；
 //           不参与对话流、不进会话存档。
+// 切换开关：本件每帧把当前 type 标到输入区容器上（`#chatinput` 的 `data-live`）——
+//           开关流式页签色与临时区气泡描边同源（chat.css `--ch-live-color`），有内容时描边呼吸高亮。
 //
 // 推法：后端有变化才推（无变化零字节）；推即整段，前端只管替换。
 //
@@ -20,6 +22,15 @@ function liveContainer() {
     return document.getElementById('chatLivePanel');
 }
 
+/// 流式态标记——把当前 live type 写到输入区容器上（`#chatinput` 的 `data-live`）：
+/// 色映射归 chat.css 单一色源 `--ch-live-color`——切换开关流式页签 / 滑块与临时区气泡描边共用，本件不碰色值
+function liveMarkType(type) {
+    var box = document.getElementById('chatinput');
+    if (box) {
+        box.setAttribute('data-live', type);
+    }
+}
+
 /// 临时段入口——整体替换（状态投影语义）；**功能隔离**：单段异常不中断其他
 function liveApply(seg) {
     var box = liveContainer();
@@ -28,6 +39,7 @@ function liveApply(seg) {
     }
     box.textContent = '';
     var type = seg ? (seg.type || 'empty') : 'empty';
+    liveMarkType(type);
     if (type === 'empty') {
         return;
     }

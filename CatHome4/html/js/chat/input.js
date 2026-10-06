@@ -5,6 +5,7 @@
 // 指令一律走指令总线（POST /api/v1/command）——前端不拼业务指令串以外的逻辑。
 //
 // 输入区与临时区**同区域互斥**：同一列同位，输入框与 live 面板二选一（代码切内联 display）；
+//   切换入口 = 输入框左侧竖向滑块开关（双标签「输入 / 流式」——点页签直达该态、点滑块与空白处翻转）。
 //   回车发送时自动切回输入态，想看临时内容自己点回来（纯前端可视化，判据取全局态）。
 //   本件只切本区两块——不碰对话区（#chatMsgs）与滚动带（#chatScrollBand，显隐归 fx/scroll）。
 // ═══════════════════════════════════════════
@@ -36,7 +37,8 @@ function postCommand(text, images) {
     });
 }
 
-/// 发送——空文本且无待发图零动作；发送后自动切回输入态（用户想看内容而非留在临时面板）
+/// 发送——空文本且无待发图零动作；发送时只滚底，不本地切态（切态由持久区新块驱动：
+///   user 块到达 → 切流式；roundsum 到达 → 切回输入）
 function chatSend() {
     var box = document.getElementById('chatSendInput');
     if (!box) {
@@ -69,7 +71,8 @@ function chatSend() {
     if (typeof pendClear === 'function') {
         pendClear();
     }
-    showStreamArea();
+    // 切态归持久区新块（user 块 → 流式 / roundsum → 输入；persist.js persistAutoSwap）——本处只滚底
+    scrollBottomNow();
 }
 
 /// 停止本轮——已生成内容保留（后端负责前文格式修复）
@@ -99,10 +102,20 @@ function chatRefresh() {
     chatConnect();
 }
 
-/// 临时区 / 输入区切换——同区域互斥（按钮点击入口）
+/// 临时区 / 输入区切换——同区域互斥（开关整体点击入口：翻转当前态）
 function chatLiveToggle() {
     liveShown = (liveShown !== true);
     inputSwap(liveShown);
+}
+
+/// 直达指定态——开关页签点击入口（点「输入」格去输入态 / 点「流式」格去流式态；已在目标态零动作）
+function chatLiveShow(shown) {
+    var want = (shown === true);
+    if (liveShown === want) {
+        return;
+    }
+    liveShown = want;
+    inputSwap(want);
 }
 
 /// 区域显隐单点——输入框与 live 面板二选一（元素缺失即跳过）；按钮激活态随动
@@ -120,23 +133,14 @@ function inputSwap(shown) {
     if (input) {
         input.style.display = shown ? 'none' : '';
     }
-    var btn = document.getElementById('chatLiveToggle');
-    if (btn) {
+    var sw = document.getElementById('chatLiveToggle');
+    if (sw) {
         if (shown) {
-            btn.classList.add('on');
+            sw.classList.add('on');
         } else {
-            btn.classList.remove('on');
+            sw.classList.remove('on');
         }
     }
-}
-
-/// 切回输入态——发送时的自动动作（已在输入态则零动作）
-function showStreamArea() {
-    if (liveShown === true) {
-        liveShown = false;
-        inputSwap(false);
-    }
-    scrollBottomNow();
 }
 
 /// 输入区接线——元素缺失即跳过（防御式）；本件加载于页面尾部，DOM 已就绪
@@ -173,7 +177,17 @@ function inputBind() {
     }
     var toggle = document.getElementById('chatLiveToggle');
     if (toggle) {
-        toggle.addEventListener('click', chatLiveToggle);
+        // 开关点击——点页签直达该态（输入 / 流式）；点滑块与空白处翻转当前态
+        toggle.addEventListener('click', function (e) {
+            var cls = (e.target && e.target.classList) ? e.target.classList : null;
+            if (cls && cls.contains('ch-lt-input')) {
+                chatLiveShow(false);
+            } else if (cls && cls.contains('ch-lt-live')) {
+                chatLiveShow(true);
+            } else {
+                chatLiveToggle();
+            }
+        });
     }
     var jump = document.getElementById('chatJumpBottom');
     if (jump) {

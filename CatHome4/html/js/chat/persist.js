@@ -8,6 +8,7 @@
 //   append —— 逐条追加（新持久条目）
 //
 // 边界：块函数只产出元素（素材零全局状态）；挂载、滚动跟随归本层。
+//       自动切换（user 块 → 流式区 / roundsum → 输入区）由本层在**追加路**触发——判据取持久区新块，不按指令。
 //       本层不判流式结束、不判换手、不配对——契约 D「前端 = 纯渲染」。
 //       兜底件（未识别 type / 渲染异常）→ `lib/fallback.js`（两区共用，A178 归位）
 // ═══════════════════════════════════════════
@@ -38,10 +39,12 @@ function persistApply(seg) {
     }
     var items = seg.items || [];
     if (seg.mode === 'full') {
+        // 全量重绘 = 历史重放（连接首帧 / 重连 / 新会话）——不触发自动切换
         persistFull(items);
         return;
     }
-    persistAppend(items);
+    // 追加路 = 新块到达——按块型做自动切换（见 persistAutoSwap）
+    persistAppend(items, true);
 }
 
 /// 全量重绘——清空后按序重建，并强制滚底（内容整体换过，跟随复位）
@@ -60,7 +63,8 @@ function persistFull(items) {
 }
 
 /// 追加——逐条渲染挂载；**功能隔离**：单块渲染异常不中断整批（异常块落可见错误气泡）
-function persistAppend(items) {
+/// auto=true 时按新块类型做输入区 / 流式区自动切换（仅追加路传入；full 重放不触发）
+function persistAppend(items, auto) {
     var box = persistContainer();
     if (!box || !items || items.length === 0) {
         return;
@@ -76,6 +80,11 @@ function persistAppend(items) {
         if (items[i] && items[i].type === 'user' && typeof pendingConsume === 'function') {
             pendingConsume();
         }
+        // 自动切换——两个节点各一次（判据取持久区新块，不按指令）：
+        //   user 块 = 本轮输入已落前文 → 切流式看流；roundsum = 本轮结算 → 切回输入
+        if (auto) {
+            persistAutoSwap(items[i] ? items[i].type : '');
+        }
         var node = null;
         try {
             node = persistRender(items[i]);
@@ -88,6 +97,22 @@ function persistAppend(items) {
     }
     if (follow) {
         scrollFollow();
+    }
+}
+
+/// 自动切换——按新块类型切输入区 / 流式区（追加路专用；同态零动作 = 幂等）
+/// ① user 块 → 流式（本轮输入已落前文，看流）② roundsum → 输入（本轮结算，允许输入）
+/// 🔴 当前 user 判据**不分渠道**（人工 / 系统注入同判）——收窄待 todo A204（后端 sys 渠道 user 打标准标记）
+function persistAutoSwap(type) {
+    if (typeof chatLiveShow !== 'function') {
+        return;
+    }
+    if (type === 'user') {
+        chatLiveShow(true);
+        return;
+    }
+    if (type === 'roundsum') {
+        chatLiveShow(false);
     }
 }
 

@@ -334,6 +334,14 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
    `.chat-bubble.tool` / `.pending` / `.reason` 系列早已失去产出方（工具卡 / 思考块改挂自有类），
    **A180 已随本轮一并删除**。
    原规则见 git 历史。正在进行态的标识改由各块自有通道承担（流式光标 `.chat-plain.streaming::after`）。 */
+/* 流式态色（2026-10-06）——live 段 type → **单一色源** `--ch-live-color`：切换开关的流式页签 / 滑块
+   与临时区气泡描边**共用同一值**（think 黄 / tool 军绿 / text 米白 / empty 灰）。
+   类型由 live.js 写在 `#chatinput` 的 `data-live` 上——两处消费面零各自映射（加态只改本块一行） */
+#chatinput { --ch-live-color: var(--ch-fg-weak); }   /* 未标记 / empty——灰 */
+#chatinput[data-live="thinksse"] { --ch-live-color: var(--ch-state-think); }
+#chatinput[data-live="toolrun"] { --ch-live-color: var(--ch-state-tool); }
+#chatinput[data-live="replysse"] { --ch-live-color: var(--ch-state-reply); }
+#chatinput[data-live="empty"] { --ch-live-color: var(--ch-fg-weak); }
 /* 输入区（2026-09-22）——三列网格：左预留带 | 内容列 | 右预留带（1fr）
    列宽基准 = 视口宽（本容器无左右 padding）；输入框与气泡同宽同左缘，发送按钮固定宽落在右预留带、贴列右缘；
    无上边框——输入区与气泡区之间不画分割线。
@@ -538,33 +546,76 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-pet-say { position: absolute; left: 0; top: calc(100% + 6px); width: 286px; background: var(--ch-bg-raised); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-bubble); padding: 6px 10px; color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); line-height: 1.5; word-break: break-all; pointer-events: none; animation: chat-in 0.18s ease-out; }
 
 /* ── 临时区（契约 §12.2 ③）——与输入框**同区域互斥**（同列同位；显隐由 input.js 切内联 display）──
-   形态 = 输入框同款气泡（同底 / 同圆角 / 同内边距 / 同字号），描边取军绿（与切换按钮同色）；
-   状态投影整体替换；**高度 = 输入框实测高度（固定）**——切换时由 input.js 写入内联 height，空态亦保持同高不被压缩。 */
+   形态 = 输入框同款气泡（同底 / 同圆角 / 同内边距 / 同字号）；**描边色随 live 态**——与切换开关的流式
+   页签同源（`--ch-live-color`：think 黄 / tool 军绿 / text 米白 / empty 灰）；有流式内容（非 empty）时
+   描边做**呼吸高亮**（2s 脉动：弱档 ↔ 实心档），empty 静止。
+   **高度 = 输入框实测高度（固定）**——切换时由 input.js 写入内联 height，空态亦保持同高不被压缩。 */
 .chat-live {
     grid-column: 2;
     overflow-y: auto;
     background: var(--ch-bg-panel);
-    border: 1px solid var(--ch-state-tool);
+    border: 1px solid color-mix(in srgb, var(--ch-live-color) 35%, transparent);
     border-radius: var(--ch-radius-bubble);
     padding: 7px 10px;
     font-size: var(--ch-fs-tag);
     line-height: 1.5;
 }
-/* 临时区切换按钮——输入框左侧（军绿底 + 白字；绝对定位贴输入框左缘与底边——
-   参与 grid 会触发列回退换行，把动作列顶到下一行） */
-.ch-livebtn {
+/* 呼吸高亮——有流式内容时脉动（empty 不参与：面板无内容不抢注意力） */
+#chatinput[data-live="thinksse"] .chat-live,
+#chatinput[data-live="toolrun"] .chat-live,
+#chatinput[data-live="replysse"] .chat-live {
+    animation: ch-live-breathe 2s ease-in-out infinite;
+}
+@keyframes ch-live-breathe {
+    0%, 100% { border-color: color-mix(in srgb, var(--ch-live-color) 35%, transparent); }
+    50% { border-color: var(--ch-live-color); }
+}
+/* 临时区切换开关（2026-10-06 莎定：按钮 → 竖向滑块）——输入框左侧左预留带内，双标签「输入 / 流式」：
+   上格 = 输入区（页签色 = 输入区主色蓝）；下格 = 流式区（页签色随当前 live 态——见 data-live 映射）。
+   滑块 = 当前态指示块（半高实心），随态上下移动；激活格文字以反白压在其上。
+   绝对定位贴输入框左缘与底边——参与 grid 会触发列回退换行，把动作列顶到下一行 */
+.ch-livetoggle {
     position: absolute;
     left: calc(var(--ch-col-left) - var(--ch-send-w) - 6px);
     bottom: 8px;
     width: var(--ch-send-w);
-    height: 40px;
-    border: none;
+    height: 56px;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--ch-line);
     border-radius: var(--ch-radius-bubble);
-    background: var(--ch-state-tool);
-    color: var(--ch-fg-inverse);
+    background: var(--ch-bg-panel);
     cursor: pointer;
+    user-select: none;
+    overflow: hidden;
+    --ch-lt-input: var(--ch-bg-accent);   /* 输入页签色——输入区主色蓝 */
+    --ch-lt-live: var(--ch-live-color);   /* 流式页签色——统一态色（映射见上「流式态色」块） */
+}
+/* 滑块——半高实心块：输入态在上（蓝）/ 流式态在下（当前态色） */
+.ch-lt-thumb {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 50%;
+    background: var(--ch-lt-input);
+    transition: top 0.18s ease, background 0.18s ease;
+}
+.ch-livetoggle.on .ch-lt-thumb { top: 50%; background: var(--ch-lt-live); }
+/* 页签——上下两格均分；非激活格取本格色降一档（可见但退居背景），激活格反白压在滑块上 */
+.ch-lt-tab {
+    flex: 1 1 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
     font-family: inherit;
     font-size: var(--ch-fs-tag);
+    color: color-mix(in srgb, var(--ch-lt-c) 60%, var(--ch-bg-panel));
+    transition: color 0.18s ease;
 }
-.ch-livebtn:hover { filter: brightness(1.15); }
-.ch-livebtn.on { outline: 1px solid var(--ch-fg-inverse); outline-offset: 1px; }
+.ch-lt-input { --ch-lt-c: var(--ch-lt-input); }
+.ch-lt-live { --ch-lt-c: var(--ch-lt-live); }
+.ch-livetoggle:not(.on) .ch-lt-input, .ch-livetoggle.on .ch-lt-live { color: var(--ch-fg-inverse); }
+.ch-livetoggle:hover { filter: brightness(1.1); }
