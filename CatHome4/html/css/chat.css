@@ -113,9 +113,20 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-bubble .md-block table::-webkit-scrollbar-thumb:hover { background-color: var(--ch-scroll-thumb-hover); }
 #chatbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--ch-line-faint); font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); }
 #chatbar .sid { color: var(--ch-identity); font-weight: bold; }
-/* 信息位富文本分片（2026-10-06 · 莎定）——数值随正文高亮色；命中率淡紫（与 roundsum / inject 描边同源色） */
+/* 信息位富文本分片（2026-10-06 · 莎定）——数值随正文高亮色（信息位专用） */
 #chatInfo .ci-num { color: var(--ch-chat-ai-fg); }
-#chatInfo .ci-rate { color: var(--ch-state-all); }
+/* 命中率分片（2026-10-06 · 莎定）——淡紫（与 roundsum / inject 描边同源色）；小数走 `.num-frac` */
+.ci-rate { color: var(--ch-state-all); }
+/* 数值标签分片（2026-10-06 · 莎定）——Hit 淡蓝（执行态色）· Miss 橙黄（思考态色）· Down 淡红（错误色）；
+   三者均比常规大 1px（1em 基准跟随容器，随 --ch-fs-scale 缩放）；展示顺序按计费从高到低（命中率 → Hit → Miss → Down）
+   消费面：信息位（#chatInfo）· 轮末结算（.rs-tok）——选择器不带容器前缀，两处共用同一分片机制 */
+.ci-hit { color: var(--ch-state-run); font-size: calc(1em + 1px); }
+.ci-miss { color: var(--ch-state-think); font-size: calc(1em + 1px); }
+.ci-down { color: var(--ch-err); font-size: calc(1em + 1px); }
+/* 数字小数分片（2026-10-06 · 莎定）——整数与小数独立渲染：小数部分（含小数点）弱化为信息位文字灰 + 小 1px；
+   字号以 1em 为基准跟随所在容器（--ch-fs-tag 已是 calc 乘积，不二次相乘）；消费面现行 = 信息位，
+   单位与 % 留在整数侧（随 `.ci-num` / `.ci-rate` 原色） */
+.num-frac { font-style: normal; color: var(--ch-fg-weak); font-size: calc(1em - 1px); }
 #uiVer { background: var(--ch-bg-deep); border: 1px solid var(--ch-line); border-radius: 4px; padding: 1px 8px; color: var(--ch-ok-weak); font-size: var(--ch-fs-tag); }
 #chatNew, #chatRefresh { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
 #chatNew:hover, #chatRefresh:hover { background: var(--ch-bg-hover); }
@@ -307,6 +318,10 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-row:has(.chat-bubble.roundsum) { margin-bottom: var(--ch-round-gap); }
 #chatMsgs .chat-bubble.roundsum .rs-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 3px; }
 #chatMsgs .chat-bubble.roundsum .rs-tok { color: var(--ch-tok-completion); word-break: break-all; white-space: pre-wrap; }
+/* 四项行弱化（2026-10-06 · 莎定）——括号 / 数字单位（K·M）/ 小数点统一走第三行同款灰（与 `.rs-times` 同值），
+   主体数值（整数）与三个标签保留各自色 */
+#chatMsgs .chat-bubble.roundsum .rs-tok .rs-dim { color: var(--ch-fg-muted); }
+#chatMsgs .chat-bubble.roundsum .rs-tok .num-frac { color: var(--ch-fg-muted); }
 #chatMsgs .chat-bubble.roundsum .rs-tools { color: var(--ch-warn); margin-top: 2px; }
 #chatMsgs .chat-bubble.roundsum .rs-times { color: var(--ch-fg-muted); margin-top: 2px; }
 /* 轮末第二行分色（2026-09-17——Tool/Api/All 三段；第三行六态保持单色弱化） */
@@ -424,7 +439,9 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 
 /* F3 MD 渲染——手写解析器输出（chat-md.js）——表格/代码块/标题/列表样式 */
 /* 注意：.chat-bubble 有 white-space:pre-wrap + word-break:break-all，会干扰表格/代码块——在 MD 渲染容器内重置 */
-.chat-bubble .md-block { white-space: normal; word-break: normal; }
+/* MD 正文色单一入口（2026-10-06 修复）——`.md-block` 原不设 color，正文实际继承气泡色 `--ch-chat-ai-fg`，
+   致 L3 正文令牌 `--ch-md-text` 零引用（改它不生效）；此处显式落消费点：MD 正文色一律走令牌 */
+.chat-bubble .md-block { white-space: normal; word-break: normal; color: var(--ch-md-text); }
 .chat-bubble .md-block > *:first-child { margin-top: 0; }
 .chat-bubble .md-block > *:last-child { margin-bottom: 0; }
 /* 标题 */

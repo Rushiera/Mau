@@ -165,3 +165,24 @@ describe('text 块操作条（P6b 复归 · 2026-10-06）', () => {
         expect(sent).toEqual(['session.rollback 7']);
     });
 });
+
+describe('轮末结算载荷（2026-10-06 · 莎定）——四项分片', () => {
+    it('命中率 → Hit → Miss → Down；Hit = prompt − miss；数值走 num-frac 小数分片', () => {
+        const node = window.buildRoundSumBlock({
+            data: {
+                prompt: 1000000, completion: 50000, cacheHit: 900000, miss: 100000,
+                toolCount: 0, requests: 0, elapsedMs: 1000, phases: {}
+            }
+        });
+        const tok = node.querySelector('.rs-tok');
+        expect(tok.querySelector('.ci-rate').textContent).toBe('90.00%');
+        expect(tok.querySelector('.ci-hit').textContent).toBe('Hit');
+        expect(tok.querySelector('.ci-miss').textContent).toBe('Miss');
+        expect(tok.querySelector('.ci-down').textContent).toBe('Down');
+        expect(tok.textContent).toContain('（🎯90.00%） Hit900.00K Miss100.00K  Down50.00K');
+        const fracs = Array.from(tok.querySelectorAll('.num-frac')).map((n) => n.textContent);
+        expect(fracs).toEqual(['.00', '.00', '.00', '.00']);
+        // 弱化件（2026-10-06 · 莎定）——括号（2）· 数字单位与百分号（4）均包 `.rs-dim`
+        expect(tok.querySelectorAll('.rs-dim').length).toBe(6);
+    });
+});

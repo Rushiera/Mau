@@ -136,7 +136,7 @@ function showStreamArea() {
         liveShown = false;
         inputSwap(false);
     }
-    scrollBottomNow(true);
+    scrollBottomNow();
 }
 
 /// 输入区接线——元素缺失即跳过（防御式）；本件加载于页面尾部，DOM 已就绪
@@ -177,7 +177,7 @@ function inputBind() {
     }
     var jump = document.getElementById('chatJumpBottom');
     if (jump) {
-        jump.addEventListener('click', jumpBottom);
+        jump.addEventListener('click', scrollBottomNow);
     }
 }
 

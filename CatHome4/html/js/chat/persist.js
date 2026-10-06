@@ -56,7 +56,7 @@ function persistFull(items) {
         pendingClear();
     }
     persistAppend(items);
-    scrollBottomNow(true);
+    scrollBottomNow();
 }
 
 /// 追加——逐条渲染挂载；**功能隔离**：单块渲染异常不中断整批（异常块落可见错误气泡）
@@ -65,6 +65,8 @@ function persistAppend(items) {
     if (!box || !items || items.length === 0) {
         return;
     }
+    // 跟随判定前置——**追加前**采样视口位置（追加后采样会被新块自身高度顶出阈值；2026-10-06 判例）
+    var follow = scrollWanted();
     for (var i = 0; i < items.length; i++) {
         // type 归一——收包后第一个动作：此后所有 type 消费（判据 / 分派 / 兜底）都在归一口径上
         if (items[i]) {
@@ -84,7 +86,9 @@ function persistAppend(items) {
             box.appendChild(node);
         }
     }
-    scrollSoon();
+    if (follow) {
+        scrollFollow();
+    }
 }
 
 /// 单条渲染——type 直指渲染函数；未登记 type → 兜底报错气泡（lib/fallback.js，两区共用）

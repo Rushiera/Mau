@@ -206,11 +206,19 @@ describe('顶栏信息位（A201 统一格式化）', () => {
         const el = document.getElementById('chatInfo');
         const txt = el.textContent;
         expect(txt).toContain('前文 81 条 143.12K token（132.30K字符）');
-        expect(txt).toContain('|↑ 291.33K ↓ 2.19K miss 39.68K');
+        expect(txt).toContain('| （🎯86.38%） Hit251.65K Miss39.68K  Down2.19K');
+        // 会话级标签分片（2026-10-06 · 莎定）——Hit 淡蓝 / Miss 橙黄 / Down 淡红，各 +1px
+        expect(el.querySelector('.ci-hit').textContent).toBe('Hit');
+        expect(el.querySelector('.ci-miss').textContent).toBe('Miss');
+        expect(el.querySelector('.ci-down').textContent).toBe('Down');
         expect(txt).toContain('（🎯86.38%）');
         // 富文本分片（2026-10-06 · 莎定）——数值六件包 `.ci-num`（随正文高亮），命中率包 `.ci-rate`（淡紫）
         expect(el.querySelectorAll('.ci-num').length).toBe(6);
         expect(el.querySelector('.ci-rate').textContent).toBe('86.38%');
+        // 小数分片（2026-10-06 · 莎定）——整数与小数独立渲染：小数（含小数点）包 `.num-frac`（同文字灰 + 小 1px）
+        const fracs = Array.from(el.querySelectorAll('.num-frac')).map((n) => n.textContent);
+        expect(fracs).toEqual(['.12', '.30', '.38', '.65', '.68', '.19']);
+        expect(el.querySelector('.ci-rate .num-frac').textContent).toBe('.38');
     });
 
     it('统计数字统一走 fmtCount——两位小数 · K/M 进位 · M 为最大单位', () => {

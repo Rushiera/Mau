@@ -25,14 +25,22 @@ function roundsumHtml(payload) {
 
     var html = '<div class="rs-head">📊 Round</div>';
 
-    // cache 命中率——cacheHit / prompt（prompt=0 时 0%）
+    // cache 命中率——cacheHit / prompt（prompt=0 时 0%；仍为前端自算——§12.5 已知待收口项）
     var promptTotal = d.prompt || 0;
     var hitRate = (promptTotal > 0) ? ((d.cacheHit || 0) / promptTotal * 100) : 0;
-    html += '<div class="rs-tok">↑' + fmtCount(promptTotal)
-        + ' ↓' + fmtCount(d.completion || 0)
-        + ' cache ' + fmtCount(d.cacheHit || 0)
-        + ' miss ' + fmtCount(miss)
-        + ' 🎯' + hitRate.toFixed(1) + '%</div>';
+    // 轮级四项（2026-10-06 · 莎定）——与信息位同格式同机制：顺序按计费从高到低（命中率 → Hit → Miss → Down）
+    // Hit = 净命中量（prompt − miss；与后端 cacheHit 等价——miss 即由其派生）；数值走 fmtNumHtml 分片（小数灰小）
+    var hit = promptTotal - miss;
+    if (hit < 0) {
+        hit = 0;
+    }
+    // 弱化件（2026-10-06 · 莎定）——括号与数字单位（K·M·%）包 `.rs-dim`（第三行同款灰）；小数点由 `.num-frac` 承载同色
+    html += '<div class="rs-tok">'
+        + '<span class="rs-dim">（🎯</span><span class="ci-rate">' + fmtNumHtml(hitRate.toFixed(2) + '%', 'rs-dim') + '</span><span class="rs-dim">）</span>'
+        + ' <span class="ci-hit">Hit</span>' + fmtNumHtml(fmtCount(hit), 'rs-dim')
+        + ' <span class="ci-miss">Miss</span>' + fmtNumHtml(fmtCount(miss), 'rs-dim')
+        + '  <span class="ci-down">Down</span>' + fmtNumHtml(fmtCount(d.completion || 0), 'rs-dim')
+        + '</div>';
 
     // 第二行——工具次数 · 请求次数 · All 总耗时（三段各自着色）
     var toolsLine = '';
