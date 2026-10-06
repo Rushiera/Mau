@@ -1614,12 +1614,20 @@ namespace CH4
                 ("sessionRate", sessionTokens.Rate));
             string delayJson = JsonUtil.Object(("entries", DelayQueue.BuildEntriesFragment(_catKey)));
             // A201 会话元数据面——displayName / 会话实例 ID / 时间戳 / 前文条数与字符数（持久化面见 design-ch4-protocol §十三）
+            // 易用性修复（A201 前端轮）：① lastActiveAt 在恢复导入后为 0（ReplaceMessages 不刷新）→ 回落创建时刻（与落盘面 SaveMeta 同口径）
+            //                       ② contextChars 原缓存只在轮末刷新（轮内滞后）→ 推送时实时刷新
+            long lastActive = _context.LastChangeAt;
+            if (lastActive <= 0)
+            {
+                lastActive = _sessionCreatedAt;
+            }
+            _contextChars = ComputeContextChars();
             string metaJson = JsonUtil.Object(
                 ("catId", _id),
                 ("displayName", _displayName),
                 ("sessionId", _sessionInstanceId),
                 ("createdAt", _sessionCreatedAt),
-                ("lastActiveAt", _context.LastChangeAt),
+                ("lastActiveAt", lastActive),
                 ("contextCount", _context.GetMessageCount()),
                 ("contextChars", _contextChars));
             return JsonUtil.Object(

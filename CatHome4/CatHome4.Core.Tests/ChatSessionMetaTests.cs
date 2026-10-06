@@ -177,7 +177,9 @@ namespace CatHome4.Core.Tests
                     Assert.Equal(0.8, tokens.GetProperty("sessionRate").GetDouble(), 4);
                     JsonElement metaElement = doc.RootElement.GetProperty("meta");
                     Assert.Equal("恢复猫", metaElement.GetProperty("displayName").GetString());
-                    Assert.Equal(999L, metaElement.GetProperty("contextChars").GetInt64());
+                    // 易用性修复（A201 前端轮）：contextChars 改为推送时实时刷新——state 段给前文实况
+                    // （LoadMeta 恢复的文件值由落盘面承载；本用例前文为空，故实况为 0）
+                    Assert.Equal(0L, metaElement.GetProperty("contextChars").GetInt64());
                 }
             }
             finally
@@ -247,6 +249,45 @@ namespace CatHome4.Core.Tests
             Assert.Equal("原名", session.DisplayName);
             session.SetDisplayName("新名");
             Assert.Equal("新名", session.DisplayName);
+        }
+
+        /// <summary>state 段 contextChars——推送时实时刷新（前文实况；A201 易用性修复：原实现只在轮末刷新，轮内滞后）。</summary>
+        [Fact]
+        public void BuildStateJson_ContextChars_Realtime()
+        {
+            string catId = "meta-chars-" + Guid.NewGuid().ToString("N");
+            CH4.ToolRegistry.Init(new ToolSpec[0], null, new Dictionary<string, bool>());
+            ChatContext ctx = new ChatContext();
+            ctx.AddUserMessage("12345");
+            SessionStore store = new SessionStore(TempPath(catId, ".jsonl"));
+            OA oa = new OA(new ThreadGuard());
+            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(TempPath(catId, ".view.json"));
+            CH4.ChatSession session = new CH4.ChatSession(catId, "字符猫", ctx, store, new NullLlm(), oa, new ToolSpec[0], delegate (string name, string args) { return "ERR|NO_TOOL|" + name; }, viewStore);
+            string json = session.BuildStateJson();
+            using (JsonDocument doc = JsonDocument.Parse(json))
+            {
+                JsonElement metaElement = doc.RootElement.GetProperty("meta");
+                // 前文 = 1 条用户消息（5 字符）——实时字符数与条数同源
+                Assert.Equal(5L, metaElement.GetProperty("contextChars").GetInt64());
+                Assert.Equal(1L, metaElement.GetProperty("contextCount").GetInt64());
+            }
+        }
+
+        /// <summary>state 段 lastActiveAt——前文从未变动时回落创建时刻（A201 易用性修复：原直取 LastChangeAt，恢复导入后为 0）。</summary>
+        [Fact]
+        public void BuildStateJson_LastActiveAt_FallsBackToCreatedAt()
+        {
+            string catId = "meta-active-" + Guid.NewGuid().ToString("N");
+            CH4.ChatSession session = CreateSession(catId, "回落猫");
+            session.LoadMeta();
+            string json = session.BuildStateJson();
+            using (JsonDocument doc = JsonDocument.Parse(json))
+            {
+                JsonElement metaElement = doc.RootElement.GetProperty("meta");
+                long lastActive = metaElement.GetProperty("lastActiveAt").GetInt64();
+                Assert.True(lastActive > 0);
+                Assert.Equal(session.SessionCreatedAt, lastActive);
+            }
         }
     }
 }

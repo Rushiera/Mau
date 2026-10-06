@@ -96,14 +96,16 @@ describe('收包三段（契约 §12.2 / §12.3）', () => {
         box.innerHTML = '<div class="stale">旧内容</div>';
         window.chatOnFrame({
             v: 2,
-            state: { sessionId: 'cat1', runState: 'think', runMs: { think: 1500 }, requests: 0, tokens: { count: 3 } },
+            state: { sessionId: 'cat1', runState: 'think', runMs: { think: 1500 }, requests: 0, tokens: { count: 3 }, meta: { displayName: 'cat1' } },
             persist: { mode: 'full', items: [{ type: 'user', payload: { text: '你好' } }] },
             live: { type: 'replysse', context: '流式中' }
         });
         expect(box.querySelector('.stale')).toBeNull();
         expect(box.querySelectorAll('.chat-row').length).toBe(1);
         expect(document.getElementById('chatLivePanel').querySelectorAll('.chat-row').length).toBe(1);
-        expect(document.getElementById('chatInfo').textContent).toContain('cat1');
+        // A201 改写：信息位 = 前文条数与长度 / 前文字符数 / 会话级消耗（原显示猫 key 的 sessionId 位已弃）
+        expect(document.getElementById('chatInfo').textContent).toContain('前文 3 条');
+        expect(document.title).toBe('cat1');
     });
 
     it('追加帧——persist append 逐条挂载（不清理既有块）', () => {
