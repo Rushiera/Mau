@@ -10,7 +10,8 @@
 //                   context = 该 type 当前整段内容——思考全文 / 回复全文 / 未完成工具卡数组 JSON / 空串）
 //
 // 两族渲染函数形态（见各素材头注）：
-//   persist 族：function(payload) → 行元素（返回即完，挂载由 persist.js 承担）
+//   persist 族：function(payload, item) → 行元素（返回即完，挂载由 persist.js 承担；
+//              第二参 = 整条条目——块级字段取用口，如 text 块操作条读 msgIndex）
 //   live    族：function(payload) → 行元素（一件式入口自各 live 件提供——A178 归位：
 //               `build*()` → 句柄的中间形态留在件内，本表只登记入口名，不兼实现）
 // ═══════════════════════════════════════════
@@ -94,7 +95,7 @@ var PERSIST_RENDERERS = {
 
 /// 临时区渲染表——type → function(payload) → 行元素（A196：live 段为 {type, context} 两字符串）
 /// `empty` 不产元素（live.js 显式处理）；`toolrun` 的 context 是**数组**，由 live.js 逐卡调
-/// `buildToolBlock(card, 'toolrun')`（工具卡两区同源，不另设 live 件）——故不入本表
+/// `buildToolBlock(card, null, 'toolrun')`（第三参 = 行身份；工具卡两区同源，不另设 live 件）——故不入本表
 var LIVE_RENDERERS = {
     'replysse': liveReplySse,
     'thinksse': liveThinkSse

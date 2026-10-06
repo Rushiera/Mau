@@ -16,9 +16,10 @@
 //   · DOM 挂载 / 滚动跟随归主干
 // ═══════════════════════════════════════════
 
-function buildToolBlock(payload, type) {
+function buildToolBlock(payload, item, type) {
     // 工具卡——行容器 + 折叠卡（默认折叠）
-    // type 可指定（缺省 toolcard）——live 面以 'toolrun' 复用本渲染件（两区同源，行身份随来源）
+    // 签名 = persist 族通用形态（payload, item）；item 本件不用（只作签名一致——避免第二参语义重载）
+    // type = 行身份（**第三参**，缺省 'toolcard'）——live 面以 'toolrun' 复用本渲染件（两区同源，行身份随来源）
     // 气泡外壳（2026-10-05 气泡化）——persist 面得 .chat-bubble；live 面（toolrun）仍 .chat-plain（面板自身即泡，内部件不再套壳）
     var t = type || 'toolcard';
     var row = blockRow(t);

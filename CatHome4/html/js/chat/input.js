@@ -82,8 +82,11 @@ function chatContinue() {
     postCommand('cat.continue');
 }
 
-/// 新会话——清前文并重新注入；服务端随后在流内重发全量帧
+/// 新会话——清前文并重新注入；**二次确认**（前文不可恢复：文档要求与节点操作条同款确认框）；服务端随后在流内重发全量帧
 function chatNewSession() {
+    if (!window.confirm('新建会话？前文将被清空并重新注入知识文件（不可恢复）。')) {
+        return;
+    }
     postCommand('session.new');
 }
 

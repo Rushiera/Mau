@@ -77,7 +77,7 @@ describe('块型渲染——结构契约', () => {
             expectRowContract(node, t);
         }
         // toolrun——live.js 逐卡调持久区渲染件（两区同源；进行中 / 结果态由载荷 result 有无分支）
-        const card = window.buildToolBlock({ name: 'time', arguments: '{}', toolIndex: 1, toolTotal: 1 }, 'toolrun');
+        const card = window.buildToolBlock({ name: 'time', arguments: '{}', toolIndex: 1, toolTotal: 1 }, null, 'toolrun');
         expect(card).toBeTruthy();
         expectRowContract(card, 'toolrun');
     });
@@ -88,6 +88,22 @@ describe('块型渲染——结构契约', () => {
         const special = ['toolrun'];
         const implemented = Object.keys(window.PERSIST_RENDERERS).length + Object.keys(window.LIVE_RENDERERS).length + special.length;
         expect(implemented).toBe(declared);
+    });
+
+    it('persist 真实调用路径——第二参恒为条目对象（防参数语义重载回归）', () => {
+        // 回归锚（2026-10-06 真机抓获）：toolcard 曾把第二参当行身份字符串，persistRender 喂条目对象后
+        // data-type 变 "[object Object]" 且形态回落——测试必须走 persistRender 真实调用形态，不用单参直调
+        const card = window.persistRender({
+            type: 'toolcard',
+            msgIndex: 1,
+            payload: { name: 'time', arguments: '{}', result: 'ok', toolIndex: 1, toolTotal: 1, order: '-1' }
+        });
+        expect(card.getAttribute('data-type')).toBe('toolcard');
+        expect(card.classList.contains('tool')).toBe(true);
+        expect(card.querySelectorAll('.chat-bubble').length).toBe(1);
+        const txt = window.persistRender({ type: 'text', msgIndex: 3, payload: { text: 'hi' } });
+        expect(txt.getAttribute('data-type')).toBe('text');
+        expect(txt.querySelector('.node-actions')).toBeTruthy();
     });
 });
 
@@ -117,5 +133,35 @@ describe('形态契约', () => {
         const row = window.blockRow('nope');
         expect(row.classList.contains('assistant')).toBe(true);
         expect(row.getAttribute('data-type')).toBe('nope');
+    });
+});
+
+describe('text 块操作条（P6b 复归 · 2026-10-06）', () => {
+    it('带 msgIndex——挂操作条（两按钮 + 悬浮提示）', () => {
+        const node = window.buildTextBlock({ text: 'hi' }, { type: 'text', msgIndex: 7 });
+        const bar = node.querySelector('.node-actions');
+        expect(bar).toBeTruthy();
+        expect(node.querySelectorAll('.node-btn').length).toBe(2);
+        expect(node.querySelector('.node-btn-rollback').textContent).toBe('⟲ 回滚');
+        expect(node.querySelector('.node-btn-fork').textContent).toBe('⧉ 分支');
+        expect(node.querySelector('.node-btn-rollback').title).toContain('回滚');
+        expect(node.querySelector('.node-btn-fork').title).toContain('分支');
+    });
+
+    it('msgIndex 缺失 / -1——不挂操作条（独立块与旧块零回归）', () => {
+        expect(window.buildTextBlock({ text: 'hi' }, { type: 'text', msgIndex: -1 }).querySelector('.node-actions')).toBe(null);
+        expect(window.buildTextBlock({ text: 'hi' }, {}).querySelector('.node-actions')).toBe(null);
+    });
+
+    it('回滚按钮——确认后经指令总线投递 session.rollback <msgIndex>', () => {
+        const sent = [];
+        window.confirm = () => true;
+        window.fetch = (url, opt) => {
+            sent.push(JSON.parse(opt.body).text);
+            return Promise.resolve({ json: () => Promise.resolve({ ok: true }) });
+        };
+        const node = window.buildTextBlock({ text: 'hi' }, { type: 'text', msgIndex: 7 });
+        node.querySelector('.node-btn-rollback').click();
+        expect(sent).toEqual(['session.rollback 7']);
     });
 });

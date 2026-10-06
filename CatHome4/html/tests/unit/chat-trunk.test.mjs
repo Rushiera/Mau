@@ -246,12 +246,26 @@ describe('出口面（input.js——投递即回执）', () => {
     });
 
     it('停止 / 继续 / 新会话——指令串固定', async () => {
+        window.confirm = () => true;   // 新会话二次确认（2026-10-06）——本用例只验指令串
         const calls = captureFetch();
         window.chatPause();
         window.chatContinue();
         window.chatNewSession();
         await flushMicro();
         expect(calls.map((c) => JSON.parse(c.opt.body).text)).toEqual(['cat.pause', 'cat.continue', 'session.new']);
+    });
+
+    it('新会话——二次确认（取消不投递 · 2026-10-06）', async () => {
+        window.confirm = () => false;
+        const calls = captureFetch();
+        window.chatNewSession();
+        await flushMicro();
+        expect(calls.length).toBe(0);
+        window.confirm = () => true;
+        window.chatNewSession();
+        await flushMicro();
+        expect(calls.length).toBe(1);
+        expect(JSON.parse(calls[0].opt.body).text).toBe('session.new');
     });
 
     it('临时区切换——输入框与面板同区域互斥 + 面板高度固定（对话区不受影响）', () => {

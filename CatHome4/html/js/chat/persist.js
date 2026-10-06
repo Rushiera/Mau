@@ -96,5 +96,6 @@ function persistRender(item) {
     if (typeof fn !== 'function') {
         return buildUnknownBlock(item);
     }
-    return fn(item.payload || {});
+    // 第二参 = 整条条目——块级字段取用口（如 text 块操作条读 msgIndex 定回滚 / 分支切点）
+    return fn(item.payload || {}, item);
 }

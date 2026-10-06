@@ -203,10 +203,14 @@ describe('顶栏信息位（A201 统一格式化）', () => {
             },
             meta: { contextChars: 132301 }
         });
-        const txt = document.getElementById('chatInfo').textContent;
-        expect(txt).toContain('前文 81 条。143.12K token（132.30K字符）');
+        const el = document.getElementById('chatInfo');
+        const txt = el.textContent;
+        expect(txt).toContain('前文 81 条 143.12K token（132.30K字符）');
         expect(txt).toContain('|↑ 291.33K ↓ 2.19K miss 39.68K');
         expect(txt).toContain('（🎯86.38%）');
+        // 富文本分片（2026-10-06 · 莎定）——数值六件包 `.ci-num`（随正文高亮），命中率包 `.ci-rate`（淡紫）
+        expect(el.querySelectorAll('.ci-num').length).toBe(6);
+        expect(el.querySelector('.ci-rate').textContent).toBe('86.38%');
     });
 
     it('统计数字统一走 fmtCount——两位小数 · K/M 进位 · M 为最大单位', () => {

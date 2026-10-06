@@ -45,7 +45,7 @@ function liveRender(type, ctx, box) {
         // 后端保证合法 JSON 数组（空数组 = 无在途工具，阵列零卡）；解析异常由 liveApply 兜底
         var cards = JSON.parse(ctx.length > 0 ? ctx : '[]');
         for (var i = 0; i < cards.length; i++) {
-            box.appendChild(buildToolBlock(cards[i], 'toolrun'));
+            box.appendChild(buildToolBlock(cards[i], null, 'toolrun'));
         }
         return;
     }

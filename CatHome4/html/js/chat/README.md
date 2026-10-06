@@ -29,7 +29,7 @@
 | type | 文件 | 渲染函数 | 形态 |
 |:--|:--|:--|:--:|
 | `user` | `blocks/user.js` | `buildUserBlock(payload)` | 🫧 气泡 |
-| `text` | `blocks/text.js` | `buildTextBlock(payload)` | 🫧 气泡 |
+| `text` | `blocks/text.js` | `buildTextBlock(payload, item)` | 🫧 气泡 |
 | `reason` | `blocks/reason.js` | `buildReasonBlock(payload)` | 🫧 气泡 |
 | `toolcard` | `blocks/toolcard.js` | `buildToolBlock(payload)` | 🫧 气泡 |
 | `retry` | `blocks/retry.js` | `buildRetryBlock(payload)` | 🫧 气泡 |
@@ -43,11 +43,13 @@
 |:--|:--|:--:|
 | `replysse` | `liveReplySse({ text: context })`（`blocks/reply-sse.js`）——该流当前全文 | ▬ 朴素 |
 | `thinksse` | `liveThinkSse({ text: context })`（`blocks/think-sse.js`）——该流当前全文 + 尾部光标 | ▬ 朴素 |
-| `toolrun` | `context` = 未完成工具卡**数组 JSON**，由 `live.js` 逐卡调 `buildToolBlock(card, 'toolrun')`（复用 `blocks/toolcard.js`，两区同源） | ▬ 朴素 |
+| `toolrun` | `context` = 未完成工具卡**数组 JSON**，由 `live.js` 逐卡调 `buildToolBlock(card, null, 'toolrun')`（第三参 = 行身份；复用 `blocks/toolcard.js`，两区同源） | ▬ 朴素 |
 | `empty` | 不产元素——面板空态（链路正常、内容为空） | — |
 
 **形态契约（2026-10-03 立 · 2026-10-05 改判 · 莎定）**——**persist 八类全部气泡**（`.chat-bubble`：底 + 描边 + 圆角 + 内边距）；**live 三件朴素**（`.chat-plain`——面板自身即泡，内部件不再套壳）。类别区分由**描边色**承担（色相 = 语义，与状态条 / 滚动带刻度同源）；底色四档不新增令牌：内容类 `--ch-bg-panel` · 过程类 `--ch-bg-sunken`（reason）· 系统类 `--ch-bg-faint`（retry / error）· 注入报告 `--ch-note-bg`；**`inject_report` 与 `roundsum` 描边同为淡紫**（`--ch-state-all`）。
 间隙文本（后端 type `gap_text`）与 `text` 视觉同形——前端收包即归一为 `text`（`persist.js::TYPE_ALIAS`）；后端保留该 type，供 QQ `/last` 与会话存档区分。
+
+**节点操作条（P6b · 2026-10-06 复归）**——`text` 块底部两按钮（`⟲` 回滚 / `⧉` 分支：`session.rollback <msgIndex>` · `session.fork <名> <msgIndex>`）；入口判据 = 块级 `msgIndex ≥ 0`（独立块 / 旧块不挂）；指令走指令总线 `postCommand`（出口面），投递回执走桌宠气泡 `warn`（通知面）。渲染件**第二参 `item`** = 整条条目——块级字段取用口（挂载入口 `persist.js::persistRender`）。
 
 ---
 
@@ -55,7 +57,7 @@
 
 | 件 | 职责 | 契约依据 |
 |:--|:--|:--|
-| `main.js` | 单一应用入口——一个 SSE 流收包 → `chatOnFrame` → 三段各归各位（**无事件分派 / 无键算术 / 无配对 / 无排序**）；滚动跟随；公共小件 | §12.1 / §12.3 |
+| `main.js` | 单一应用入口——一个 SSE 流收包 → `chatOnFrame` → 三段各归各位（**无事件分派 / 无键算术 / 无配对 / 无排序**）；滚动跟随；公共小件（信息位单点 `chatInfoSet`——**富文本分片载荷**，2026-10-06） | §12.1 / §12.3 |
 | `state.js` | state 段**整段覆盖 + 按表分发薄层**（分发表见下行） | §12.2 ① |
 | `state/registry.js` | state 段分发表 `STATE_DECL`——投影件 → 消费字段 / 输出面 / 入口的**唯一映射处**（字段面 = 表内 `fields` 并集须**覆盖**后端清单，A201）；无入口时出声、单件异常隔离；新增字段 = 加一件 + 表加一行 | §12.2 ① |
 | `persist.js` | 持久区——`full` 清区重绘 / `append` 逐条追加；不判流式结束、不判换手 | §12.2 ② / §6.1-D |

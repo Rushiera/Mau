@@ -14,12 +14,14 @@
 /// SSE 连接句柄——页面生命周期内单连接（断线由浏览器自动重连，重连即服务端再推全量帧）
 var chatSse = null;
 
-/// 顶部信息位（#chatInfo）唯一写入口——**state 段专属**（后端必要信息：前文条数 / sessionId / 前文长度）
+/// 顶部信息位（#chatInfo）唯一写入口——**state 段专属**（后端必要信息：前文条数 / 前文长度 / 会话消耗）
 /// 归位（A179 收尾）：前端告警 / 提示不走此处（→ 通知面 `chatPetSay` 桌宠气泡）——本处不再有竞写
-function chatInfoSet(text) {
+/// 富文本载荷（2026-10-06）：内容由投影件组装为分片（数值 `.ci-num` 高亮 / 命中率 `.ci-rate` 淡紫）——
+///   片段全部为固定字面量 + 数值，**无用户文本**，故直投 innerHTML（转义面为空）
+function chatInfoSet(html) {
     var info = document.getElementById('chatInfo');
     if (info) {
-        info.textContent = text;
+        info.innerHTML = html;
     }
 }
 

@@ -20,8 +20,8 @@
 function roundsumHtml(payload) {
     var d = (payload && payload.data) || {};
     var phases = d.phases || {};
-    var miss = (d.miss !== undefined) ? d.miss : ((d.prompt || 0) - (d.cacheHit || 0));
-    if (miss < 0) { miss = 0; }
+    // miss 为后端派生值（§12.10 口径：miss = prompt − cacheHit）——前端零兜底，字段缺失即显 0
+    var miss = d.miss || 0;
 
     var html = '<div class="rs-head">📊 Round</div>';
 
