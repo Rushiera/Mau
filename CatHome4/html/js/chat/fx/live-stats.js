@@ -13,14 +13,15 @@
 //   · 速度 = 字符数 ÷ 段用时，一位小数；**段用时 < 1s 显示 —**（分母无意义——与思考块完成态口径一致）
 //   · 行数口径 = 段内换行数 + 1（空段不显示行数：0）
 //
-// 刷新两路：① 机制侧钩子（`stream.js::streamNotifyStats` —— 内容变化即时同步）
-//          ② 本件 500ms 心跳（文字静止时速度读数仍随时间走，不冻在旧值）
+// 刷新：**单一 100ms 心跳**（10 次/秒）——三行同一节拍（2026-10-06 莎定：原「机制钩子逐帧 + 500ms
+//   心跳」两路合并为一路）。机制侧**不推送**（`stream.js` 只提供取值口），本件按自身节拍轮询——
+//   读数按 10 次/秒刷新已够跟手，且省掉每帧写 DOM；打字机的连续观感由面板正文自身承担。
 // ═══════════════════════════════════════════
 
-/// 心跳周期（毫秒）——内容静止时维持速度读数
-var LIVE_STATS_TICK_MS = 500;
+/// 刷新节拍（毫秒）——10 次/秒；line / char / spd 三行同此节拍
+var LIVE_STATS_TICK_MS = 100;
 
-/// 上次写入的文案——相同即不碰 DOM（帧级调用去抖）
+/// 上次写入的文案——相同即不碰 DOM（节拍级去抖）
 var liveStatsLast = '';
 
 /// 统计行元素（缺失即零动作——防御式）
@@ -40,7 +41,7 @@ function liveStatsText(st) {
     return 'line: ' + st.lines + '\nchar: ' + st.chars + '\nspd: ' + spd;
 }
 
-/// 刷新——文案变化才写 DOM；无活跃段（或元素缺失）即隐藏
+/// 刷新——按节拍取值：文案变化才写 DOM；无活跃段（或元素缺失）即隐藏
 function liveStatsRefresh() {
     var el = liveStatsEl();
     if (!el) {
@@ -62,7 +63,7 @@ function liveStatsRefresh() {
     }
 }
 
-/// 启动入口（`fx/registry.js` 表内 init）——初态刷新 + 心跳
+/// 启动入口（`fx/registry.js` 表内 init）——初态刷新 + 100ms 心跳（本件唯一刷新驱动）
 function liveStatsInit() {
     liveStatsRefresh();
     if (typeof setInterval === 'function') {

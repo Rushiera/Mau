@@ -231,14 +231,20 @@ describe('流式统计行（fx/live-stats）', () => {
         window.liveStatsRefresh();
     });
 
-    it('机制联动——挂载件收帧即刷新统计行，离段即隐藏', () => {
+    it('刷新节拍——单一 100ms 心跳（10 次/秒；机制侧不推送）', () => {
+        expect(window.LIVE_STATS_TICK_MS).toBe(100);
+    });
+
+    it('轮询取值——有活跃段即显示（line / char 取自机制事实），离段即隐藏', () => {
         const el = document.getElementById('chatLiveStats');
         window.liveApply({ type: 'thinksse', context: '第一行\n第二行' });
+        window.liveStatsRefresh();
         expect(el.style.display).toBe('');
         expect(el.textContent).toContain('line: 2');
         expect(el.textContent).toContain('char: 7');
 
         window.liveApply({ type: 'empty', context: '' });
+        window.liveStatsRefresh();
         expect(el.style.display).toBe('none');
     });
 });

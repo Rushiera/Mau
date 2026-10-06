@@ -16,7 +16,8 @@
 //   夹逼 [每步下限, `STREAM_FRAME_MAX`]；每批增量在窗口 `STREAM_DRAIN_MS` 内追平（后端 250ms 一推）。
 //
 // 统计出口（`streamStats`）：把段内原始事实（类型 / 字符数 / 行数 / 段用时）交给显示件——
-//   本件只报事实、不算显示口径（口径归 `fx/live-stats.js` · 契约 §12.8 独立功能面）。
+//   本件只报事实、不算显示口径（口径与刷新节拍归 `fx/live-stats.js` · 契约 §12.8 独立功能面）；
+//   **推送面为零**——机制不通知显示件，显示件按自身节拍（100ms）轮询取值。
 //
 // 状态：单实例（临时区一次只有一条流）——`streamState` 持容器 / 行 / 块体 / 写入点 / 已显 / 待吐 / 走步。
 // ═══════════════════════════════════════════
@@ -120,7 +121,6 @@ function streamApply(box, type, text) {
     streamState.dueAt = streamState.stepBase + STREAM_DRAIN_MS;
     streamCursor(true);
     streamSchedule();
-    streamNotifyStats();
 }
 
 /// 流式行就位——容器 / 行 / 块体 / 写入点四件；同 type 且行仍在原容器即复用（返回 false = 复用）
@@ -174,7 +174,6 @@ function streamReset() {
     streamState.stepsDone = 0;
     streamState.startedAt = 0;
     streamState.newlines = 0;
-    streamNotifyStats();
 }
 
 /// 走步排程——有积压才排帧；宿主无帧回调（单测 / 老浏览器）即当场铺完（诚实降级，不留半屏）
@@ -245,7 +244,6 @@ function streamPump(nowMs) {
     if (want) {
         scrollBoxBottom(streamState.box);
     }
-    streamNotifyStats();
     return streamState.queue.length > 0;
 }
 
@@ -259,7 +257,8 @@ function streamDrain() {
 }
 
 /// 统计出口——把段内**原始事实**交给显示件：类型 / 字符数（已显 + 待吐 = 已收到全文）/ 行数 / 段用时；
-///   返回 null = 当前无活跃流式段（显示件据此隐藏）。显示口径（速度取整 / 一位小数）不在此处
+///   返回 null = 当前无活跃流式段（显示件据此隐藏）。显示口径（速度取整 / 一位小数）与刷新节拍
+///   （100ms 轮询）均不在此处——本件只在被取值时报事实，**不推送**
 function streamStats() {
     if (!streamState.type) {
         return null;
@@ -277,13 +276,6 @@ function streamStats() {
         elapsed = 0;
     }
     return { type: streamState.type, chars: chars, lines: lines, elapsedMs: elapsed };
-}
-
-/// 统计刷新通知——显示件（`fx/live-stats.js`）在场才调（防御式可选钩子：机制不依赖显示件）
-function streamNotifyStats() {
-    if (typeof liveStatsRefresh === 'function') {
-        liveStatsRefresh();
-    }
 }
 
 /// 进行中光标——块体挂 `streaming`（CSS `.chat-plain.streaming::after` 单点出 ▌ 闪烁）。
