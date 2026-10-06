@@ -54,6 +54,45 @@ namespace CH4
     }
 
     /// <summary>
+    /// 本轮六态累计毫秒（A202）——idle 不计时故不落盘（与 roundsum 载荷同口径）。
+    /// </summary>
+    internal struct SessionPhases
+    {
+        /// <summary>等待（本地退避——重试退避期间）</summary>
+        public long Wait;
+
+        /// <summary>链路（远端等待——请求发出到首个语义增量帧）</summary>
+        public long Link;
+
+        /// <summary>思考（远端流——reasoning_content 增量）</summary>
+        public long Think;
+
+        /// <summary>工具（远端流——tool_calls 决策流式过程）</summary>
+        public long Tool;
+
+        /// <summary>执行（本地——工具批发单到下一请求发出）</summary>
+        public long Run;
+
+        /// <summary>回复（远端流——content 增量）</summary>
+        public long Reply;
+    }
+
+    /// <summary>
+    /// 任务追踪（Note）持久化形态（A202）——空计划 = Tasks 空数组。
+    /// </summary>
+    internal struct SessionNote
+    {
+        /// <summary>任务列表（当前计划全文；null / 空 = 无计划）</summary>
+        public string[] Tasks;
+
+        /// <summary>当前任务索引（0-based）</summary>
+        public long Current;
+
+        /// <summary>已完成任务数</summary>
+        public long Done;
+    }
+
+    /// <summary>
     /// 会话元数据——会话自身参数的持久化模型（A201 · design-ch4-protocol §十三）。
     /// 独立于 cat.cfg（每猫配置）· 前文 jsonl（真实前文）· view.json（视图前文）。
     /// </summary>
@@ -86,8 +125,23 @@ namespace CH4
         /// <summary>会话级累计三项——New 到下一个 New</summary>
         public SessionTokens SessionTokens;
 
-        /// <summary>轮级累计三项——最近一轮（结算后落盘；内存值结算即清零）</summary>
+        /// <summary>轮级累计三项——最后一次请求边界态（A202：每请求结算后落盘；内存值轮首清零）</summary>
         public SessionTokens RoundTokens;
+
+        /// <summary>本轮六态累计毫秒——最后一次请求边界态（A202；idle 不落盘）</summary>
+        public SessionPhases RoundPhases;
+
+        /// <summary>本轮 API 请求次数（= link 段数）——最后一次请求边界态</summary>
+        public long RoundRequests;
+
+        /// <summary>本轮工具调用次数——最后一次请求边界态</summary>
+        public long RoundTools;
+
+        /// <summary>本轮起算 → 最后一次请求结算的耗时毫秒</summary>
+        public long RoundElapsedMs;
+
+        /// <summary>任务追踪（Note）——未完成时随重启恢复并继续自动拉起（莎 2026-10-06 批准）</summary>
+        public SessionNote Note;
     }
 
     /// <summary>
@@ -172,7 +226,8 @@ namespace CH4
                     Directory.CreateDirectory(dir);
                 }
                 string json = JsonSerializer.Serialize(meta, SerializerOptions);
-                string tmp = _path + ".tmp";
+                // 🔴 A202 临时名唯一——本面写者跨线程（主线程 session.new + 流消费线程每请求结算）
+                string tmp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 File.WriteAllText(tmp, json, Utf8NoBom);
                 File.Move(tmp, _path, true);
             }

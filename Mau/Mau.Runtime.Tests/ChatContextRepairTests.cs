@@ -440,11 +440,9 @@ namespace Mau.Runtime.Tests
                 store.SessionId = "sid-a47";
                 store.Append(MakeMessage(LlmRole.System, "sys"));
                 store.Append(MakeMessage(LlmRole.User, "你好"));
-                store.AppendMeta(new SessionStats());
                 SessionStore reloaded = new SessionStore(path);
                 LlmMessage[] got;
-                SessionStats? loaded;
-                Assert.True(reloaded.TryLoad(out got, out loaded));
+                Assert.True(reloaded.TryLoad(out got));
                 Assert.Equal(2, got.Length);
                 Assert.Equal("sys", got[0].Content);
                 Assert.Equal("你好", got[1].Content);

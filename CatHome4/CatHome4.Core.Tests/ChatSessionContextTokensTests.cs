@@ -10,7 +10,7 @@ using Xunit;
 namespace CatHome4.Core.Tests
 {
     /// <summary>
-    /// 已知最新前文长度（ContextTokensKnown）测试——请求级实时优先 / 未发起请求回落轮末落盘值（A91 修订）。
+    /// 已知最新前文长度（ContextTokensKnown）测试——请求级实时优先 / 未发起请求回落落盘快照（A202：最后一次请求边界态）。
     /// </summary>
     [Collection("GlobalToolState")]
     public class ChatSessionContextTokensTests
@@ -49,26 +49,41 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 无统计（新会话 / 未落盘）——回落值为 0（不估算、不造值）。
+        /// 无落盘快照（新会话 / 未落盘）——回落值为 0（不估算、不造值）。
         /// </summary>
         [Fact]
-        public void ContextTokensKnown_WithoutStats_ReturnsZero()
+        public void ContextTokensKnown_NoPersistedMeta_ReturnsZero()
         {
             CH4.ChatSession session = CreateSession();
             Assert.Equal(0L, session.ContextTokensKnown);
         }
 
         /// <summary>
-        /// 恢复已落盘统计（宿主重启后未发起请求）——回落值为轮末落盘的前文长度（「看别猫」场景有值）。
+        /// 恢复已落盘快照（宿主重启后未发起请求）——回落值为 session.json 的 ContextTokens
+        /// （A202：最后一次请求边界态；「看别猫」场景有值）。
         /// </summary>
         [Fact]
-        public void ContextTokensKnown_WithLoadedStats_ReturnsLastContextTokens()
+        public void ContextTokensKnown_WithPersistedMeta_ReturnsSnapshot()
         {
-            CH4.ChatSession session = CreateSession();
-            SessionStats stats = new SessionStats();
-            stats.LastContextTokens = 224497;
-            session.SetLoadedStats(stats);
-            Assert.Equal(224497L, session.ContextTokensKnown);
+            string catId = "ctx-persist-" + Guid.NewGuid().ToString("N");
+            string metaPath = Path.Combine(Path.GetTempPath(), "cat4ctx_" + Guid.NewGuid().ToString("N") + ".session.json");
+            CH4.SessionMeta meta = new CH4.SessionMeta();
+            meta.SessionId = "instance-ctx";
+            meta.CatId = catId;
+            meta.ContextTokens = 224497;
+            new CH4.SessionMetaStore(metaPath).Save(meta);
+            Func<string, string> prev = CH4.ChatSession.SessionMetaPathProvider;
+            try
+            {
+                CH4.ChatSession.SessionMetaPathProvider = delegate (string key) { return metaPath; };
+                CH4.ChatSession session = CreateSession();
+                session.LoadMeta();
+                Assert.Equal(224497L, session.ContextTokensKnown);
+            }
+            finally
+            {
+                CH4.ChatSession.SessionMetaPathProvider = prev;
+            }
         }
     }
 }

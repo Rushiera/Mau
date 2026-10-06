@@ -222,7 +222,7 @@ namespace CH4
             session.Context.Clear();
             // E3 真实 usage 统计——新会话零统计起算
             session.ResetStats();
-            session.Store.Rewrite(session.Context.GetMessages(), session.LastStats);
+            session.Store.Rewrite(session.Context.GetMessages());
             // A87 旧会话留档——清空前导出（user / 正式回复 / 加载报告 / 每轮结算 → sessions_old 落盘）
             session.ArchiveLegacyView();
             // F4 视图——session.new 清前文 → 视图随生命周期清空

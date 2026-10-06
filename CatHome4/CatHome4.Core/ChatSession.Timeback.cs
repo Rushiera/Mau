@@ -341,8 +341,7 @@ namespace CH4
                 // [段2] 前文落盘——区间删除重写（append-only 的合法例外）
                 _context.ReplaceMessages(keep.ToArray());
                 LlmMessage[] toSave = _context.GetMessages();
-                _lastStats.EntryCount = toSave.Length;
-                _store.Rewrite(toSave, _lastStats);
+                _store.Rewrite(toSave);
             }
             else if (from <= to)
             {

@@ -119,9 +119,6 @@ namespace CH4
         /// <summary>Token 用量会话累计——cache hit（跨轮持续累加；仅新会话复位）</summary>
         private long _sessionCacheHit;
 
-        /// <summary>最近一轮真实 usage 统计——CloseRound 落盘（info 自查/前端显示数据源；零估算）</summary>
-        private SessionStats _lastStats;
-
         /// <summary>单次前文长度——最近一次请求的 prompt（覆盖式；非累计——前文长度数据源）</summary>
         private long _contextTokens;
 
@@ -437,23 +434,11 @@ namespace CH4
         }
 
         /// <summary>
-        /// 设置已加载统计——启动恢复时从会话文件读出（TryLoad 带 stats 重载；旧文件 null=零值）。
-        /// </summary>
-        /// <param name="stats">持久化统计（可空）</param>
-        public void SetLoadedStats(SessionStats? stats)
-        {
-            if (stats != null)
-            {
-                _lastStats = stats.Value;
-            }
-        }
-
-        /// <summary>
         /// 重置统计——session.new 清前文后调用（新会话零统计起算；会话级 token 累计同归零）。
+        /// A202：会话元数据面与其余两面同批即时落盘（写新会话初始态）。
         /// </summary>
         public void ResetStats()
         {
-            _lastStats = new SessionStats();
             // 会话级 token 累计——新会话唯一归零点（轮级由 StartRound 逐轮清零；回滚不清——同会话延续）
             _sessionPrompt = 0;
             _sessionCompletion = 0;
@@ -462,22 +447,12 @@ namespace CH4
             _sessionInstanceId = SessionStore.NewSessionId();
             _sessionCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             _lastRoundTokens = new SessionTokens();
+            _persistedContextTokens = 0;
             _usagePrompt = 0;
             _usageCompletion = 0;
             _usageCacheHit = 0;
             // 元数据落盘——新会话初始态（contextCount / chars 取当前注入后的前文）
             SaveMeta();
-        }
-
-        /// <summary>
-        /// 最近一轮真实 usage 统计——info 自查/前端显示数据源（零估算；CloseRound 更新）。
-        /// </summary>
-        public SessionStats LastStats
-        {
-            get
-            {
-                return _lastStats;
-            }
         }
 
         /// <summary>
@@ -506,7 +481,7 @@ namespace CH4
 
         /// <summary>
         /// 实时前文长度——最近一次请求的 prompt（请求级；每次 usage 帧覆盖）。
-        /// 对照 LastStats.LastContextTokens（轮末落盘的最近一轮值）；info / cat.info 消费 ContextTokensKnown（实时优先 + 轮末回落）。
+        /// 对照 _persistedContextTokens（落盘快照——最后一次请求边界值）；info / cat.info 消费 ContextTokensKnown（实时优先 + 落盘回落）。
         /// </summary>
         public long ContextTokens
         {
@@ -516,7 +491,7 @@ namespace CH4
             }
         }
         /// <summary>
-        /// 已知最新前文长度——请求级实时值优先，未发起过请求（或宿主重启后未请求）回落最近一轮轮末落盘值。
+        /// 已知最新前文长度——请求级实时值优先，未发起过请求（或宿主重启后未请求）回落落盘快照（A202：最后一次请求边界态）。
         /// 消费面：info tokens 段 / cat.info 每猫 context 字段——「看别猫」场景需要 idle 猫也有可读值（两者皆真实 usage 值，零估算）。
         /// </summary>
         public long ContextTokensKnown
@@ -527,7 +502,7 @@ namespace CH4
                 {
                     return _contextTokens;
                 }
-                return _lastStats.LastContextTokens;
+                return _persistedContextTokens;
             }
         }
 
@@ -852,10 +827,7 @@ namespace CH4
             _toolBatchActive = false;
             // [段1] 上下文格式修复——S3 ReplaceMessages 原地（幂等；孤儿 tool_calls 补占位/孤立结果丢弃）
             _context.ReplaceMessages(_context.GetMessages());
-            // [段2] 前文落盘——落盘保真
-            LlmMessage[] toSave = _context.GetMessages();
-            _lastStats.EntryCount = toSave.Length;
-            _store.AppendMeta(_lastStats);
+            // [段2] 前文落盘——落盘保真（消息行随追加即落盘；A202 起元数据行不再承载统计）
             // [段2b] 运行态——中断结算（失败/中止轮同出统计：L2 摘要留档——design-ch4-llm §2.1 终止语义）
             PhaseSettle();
             LogStore.Add("LLM", 2, "本轮运行态统计（中断）: " + BuildRunStateSummary(), "LLM");
@@ -1311,6 +1283,10 @@ namespace CH4
                         _sessionPrompt = _sessionPrompt + (_usagePrompt - reqPrompt);
                         _sessionCompletion = _sessionCompletion + (_usageCompletion - reqCompletion);
                         _sessionCacheHit = _sessionCacheHit + (_usageCacheHit - reqCacheHit);
+                        // 🔴 A202 落盘点（唯一常规写点）——请求边界即物化点：全量落盘会话元数据（本轮六态 / 计数 / 耗时 / Note）
+                        _lastRoundTokens = CaptureRoundTokens();
+                        _persistedContextTokens = _contextTokens;
+                        SaveMeta();
                         // F4 视图——状态段推送（前文长度与条数实时化；v2：状态段承载，无独立事件）
                         PushState();
                     }
@@ -2388,10 +2364,7 @@ namespace CH4
                 abortKind = "请求失败（未重试）";
             }
             LogStore.Add("LLM", 3, "LLM 错误（" + abortKind + "——本轮中止，上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
-            // [段1] 前文落盘——落盘保真
-            LlmMessage[] toSave = _context.GetMessages();
-            _lastStats.EntryCount = toSave.Length;
-            _store.AppendMeta(_lastStats);
+            // [段1] 前文落盘——落盘保真（消息行随追加即落盘；A202 起元数据行不再承载统计）
             // [段2] 错误可见——视图块落盘（持久化）+ 前端 error 事件（文本取清空前原值）
             // A69 视图层报错中文注释——错误原文仍进日志与前文面，仅视图块追加中文注释
             string viewError = ErrorNote.Apply(_llmErrorText);
@@ -2423,16 +2396,8 @@ namespace CH4
         /// </summary>
         private void CloseRound()
         {
-            // E3 真实 usage 统计——轮末落盘（info 自查/前端显示数据源；零估算）
-            _lastStats.EntryCount = _context.GetMessageCount();
-            _lastStats.LastPromptTokens = _usagePrompt;
-            _lastStats.LastCacheHitTokens = _usageCacheHit;
-            _lastStats.LastCompletionTokens = _usageCompletion;
-            _lastStats.LastContextTokens = _contextTokens;
-            _store.AppendMeta(_lastStats);
-            // A201 会话元数据——轮级快照（读面回落源）+ 全量落盘（此刻两级累计尚未清零）
-            _lastRoundTokens = CaptureRoundTokens();
-            SaveMeta();
+            // A202 落盘时机——元数据面只在每次 API 请求结算后落盘（usage 处置点）；
+            // 轮末与 Note 拉起轮均为纯内存行为：轮末只写 view.json（roundsum 块），元数据面不写
             // M4a Note 自动拉起提前——剩余≥2 条时以 user 名义推下一轮（最后 1 条不拉起——LLM 完成后自然结束；Q2 顺序：Note 未完成 = 本轮未结束——不 roundsum；全部完成天然跳过——防无限循环闸门）
             if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent + 1 < _noteTasks.Length)
             {
@@ -2441,9 +2406,6 @@ namespace CH4
                 PhaseSettle();
                 PostUserMessage("[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent], "system");
                 _viewStore.Save();
-                // A201 会话元数据——拉起轮同属本轮结算（轮级快照 + 会话累计落盘）
-                _lastRoundTokens = CaptureRoundTokens();
-                SaveMeta();
                 _round = 0;
                 _phase = ChatPhase.Idle;
                 return;
@@ -2514,15 +2476,15 @@ namespace CH4
                 keep[i] = all[i];
             }
             _context.ReplaceMessages(keep);
-            // [段2] 前文落盘——落盘保真（截断重写：append-only 的合法例外）
+            // [段2] 前文落盘——落盘保真（截断重写：append-only 的合法例外；A202 起元数据行不再承载统计）
             LlmMessage[] toSave = _context.GetMessages();
-            _lastStats.EntryCount = toSave.Length;
-            _store.Rewrite(toSave, _lastStats);
+            _store.Rewrite(toSave);
             // [段3] 轮级计数复位——新起点零统计起算（会话级累计不动——同会话延续）
             _usagePrompt = 0;
             _usageCompletion = 0;
             _usageCacheHit = 0;
             _contextTokens = 0;
+            _persistedContextTokens = 0;
             _toolCallCount = 0;
         }
 
@@ -2551,8 +2513,10 @@ namespace CH4
             // [段1] 截断前文到切点——共用实现（timeback 回卷同源；含落盘与轮级计数复位）
             TruncateMessages(msgIndex + 1);
             // [段2] 最近轮统计重置——新起点零统计起算（会话级累计不动：回滚属同会话延续；
-            //        原实现调 ResetStats() 会清会话级 token 累计——与 glossary「回滚不归零」口径冲突，2026-09-28 修正）
-            _lastStats = new SessionStats();
+            //        原实现调 ResetStats() 会清会话级 token 累计——与 glossary「回滚不归零」口径冲突，2026-09-28 修正；
+            //        A202：轮级读面回落源与请求级前文长度一并归零）
+            _lastRoundTokens = new SessionTokens();
+            _persistedContextTokens = 0;
             // [段4] 视图——不动（v2 契约：持久即持久，截断通道退役；视图层与真实前文并列，回滚只作用于前文）
             // [段5] Note 任务清空——防旧任务自动拉起新轮
             _noteTasks = null;

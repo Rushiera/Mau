@@ -8,28 +8,6 @@ using System.Text.Json.Nodes;
 namespace Mau.Runtime
 {
     /// <summary>
-    /// 会话统计——前文真实 usage 持久化（轮末/中断收尾写入；旧文件缺字段兼容——可空）。
-    /// 只存真实值（LLM usage 回传），不做任何估算。
-    /// </summary>
-    public struct SessionStats
-    {
-        /// <summary>消息条数——真实前文消息数（含 system）</summary>
-        public long EntryCount;
-
-        /// <summary>最近一轮真实 prompt token——命中 + 非命中总和（usage.prompt_tokens）</summary>
-        public long LastPromptTokens;
-
-        /// <summary>最近一轮缓存命中 token（usage.prompt_tokens_details.cached_tokens）</summary>
-        public long LastCacheHitTokens;
-
-        /// <summary>最近一轮输出 token（usage.completion_tokens）</summary>
-        public long LastCompletionTokens;
-
-        /// <summary>最近一次请求的单次前文长度（非累计——前文长度数据源；旧文件缺省 0）</summary>
-        public long LastContextTokens;
-    }
-
-    /// <summary>
     /// 会话前文管理器——JSONL 增量落盘（A47）。
     /// 落盘：sessions/&lt;id&gt;/&lt;id&gt;.jsonl——每行一条独立 JSON 记录（消息行 t=m / 元数据行 t=meta）。
     /// 写面：每消息完成即 append（崩溃只影响最后一行）+ 会话起点/截断原子重写。
@@ -108,29 +86,17 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 尝试加载前文——文件不存在返回 false；无可用消息返回 false（调用方走隐式新会话注入）
-        /// </summary>
-        /// <param name="messages">加载的消息数组</param>
-        /// <returns>true=加载成功</returns>
-        public bool TryLoad(out LlmMessage[] messages)
-        {
-            SessionStats? stats;
-            return TryLoad(out messages, out stats);
-        }
-
-        /// <summary>
-        /// 尝试加载前文含统计——逐行解析 + 末行残缺补全（结构补齐 + 显式标注）。
+        /// 尝试加载前文——逐行解析 + 末行残缺补全（结构补齐 + 显式标注）。
         /// 末行残缺：补全为合法 JSON 后按消息消费（Content 追加修复标注）；无法构成消息 → 丢弃 + 告警。
         /// 非末行损坏：跳过坏行 + 告警，其余照常加载（不整文件作废）。
         /// 全文件不可解析 → 备份 .bad + 返回 false。
+        /// 🔴 A202：只读真实前文——元数据行仅承载会话标识，不再解析统计（统计下放 session.json）。
         /// </summary>
         /// <param name="messages">加载的消息数组</param>
-        /// <param name="stats">会话统计（可空=文件无统计）</param>
         /// <returns>true=加载成功（至少一条可用消息）</returns>
-        public bool TryLoad(out LlmMessage[] messages, out SessionStats? stats)
+        public bool TryLoad(out LlmMessage[] messages)
         {
             messages = new LlmMessage[0];
-            stats = null;
             if (!File.Exists(_path))
             {
                 return false;
@@ -197,13 +163,7 @@ namespace Mau.Runtime
                 string tag = ReadString(obj, "t");
                 if (tag == MetaTag)
                 {
-                    // 元数据行——只取统计；会话标识不进读面（身份 = 猫 key，宿主构造注入）
-                    JsonNode? statsNode = obj["Stats"];
-                    if (statsNode != null)
-                    {
-                        SessionStats got = DeserializeStats(statsNode);
-                        stats = got;
-                    }
+                    // 元数据行——A202 起只承载会话标识（不进读面：身份 = 猫 key，宿主构造注入）；跳过
                     continue;
                 }
                 if (!obj.ContainsKey("Role"))
@@ -268,36 +228,18 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 追加一条元数据行——统计更新（轮末 / 中断收尾）与标识更新各 append 一行，读面取最后出现值。
-        /// </summary>
-        /// <param name="stats">会话统计（可空=只写标识）</param>
-        public void AppendMeta(SessionStats? stats)
-        {
-            AppendLine(BuildMetaLine(stats), false);
-        }
-
-        /// <summary>
-        /// 重写会话文件（原子——临时文件 + 替换）——会话起点 / 截断场景唯一写通道（无统计）。
+        /// 重写会话文件（原子——临时文件 + 替换）——会话起点 / 截断场景唯一写通道。
+        /// append-only 的合法例外：起点写入与尾部截断无法用追加表达（低频操作）。
+        /// 🔴 A202：只写真实前文 + 元数据行（会话标识）——统计字段已下放 session.json。
         /// </summary>
         /// <param name="messages">保留的消息数组</param>
         public void Rewrite(LlmMessage[] messages)
-        {
-            Rewrite(messages, null);
-        }
-
-        /// <summary>
-        /// 重写会话文件（原子——临时文件 + 替换）——会话起点 / 截断场景唯一写通道。
-        /// append-only 的合法例外：起点写入与尾部截断无法用追加表达（低频操作）。
-        /// </summary>
-        /// <param name="messages">保留的消息数组</param>
-        /// <param name="stats">会话统计（可空=不写统计）</param>
-        public void Rewrite(LlmMessage[] messages, SessionStats? stats)
         {
             try
             {
                 EnsureDirectory();
                 StringBuilder sb = new StringBuilder();
-                sb.Append(BuildMetaLine(stats));
+                sb.Append(BuildMetaLine());
                 sb.Append('\n');
                 if (messages != null)
                 {
@@ -307,7 +249,7 @@ namespace Mau.Runtime
                         sb.Append('\n');
                     }
                 }
-                string tmp = _path + ".tmp";
+                string tmp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 File.WriteAllText(tmp, sb.ToString(), Utf8NoBom);
                 File.Move(tmp, _path, true);
             }
@@ -335,7 +277,7 @@ namespace Mau.Runtime
                     {
                         if (ensureMeta && fs.Length == 0)
                         {
-                            sw.Write(BuildMetaLine(null));
+                            sw.Write(BuildMetaLine());
                             sw.Write('\n');
                         }
                         sw.Write(line);
@@ -388,23 +330,14 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 构建元数据行——t 标记 + 会话标识 + 统计（可空）。
+        /// 构建元数据行——t 标记 + 会话标识（A202：统计字段退役，只留 SessionId）。
         /// </summary>
-        /// <param name="stats">会话统计（可空=不写）</param>
         /// <returns>单行 JSON</returns>
-        private string BuildMetaLine(SessionStats? stats)
+        private string BuildMetaLine()
         {
             JsonObject obj = new JsonObject();
             obj["t"] = MetaTag;
             obj["SessionId"] = _sessionId == null ? "" : _sessionId;
-            if (stats != null)
-            {
-                JsonNode? statsNode = JsonSerializer.SerializeToNode(stats.Value, SerializerOptions);
-                if (statsNode != null)
-                {
-                    obj["Stats"] = statsNode;
-                }
-            }
             return obj.ToJsonString(SerializerOptions);
         }
 
@@ -451,23 +384,6 @@ namespace Mau.Runtime
         {
             LlmMessage msg = obj.Deserialize<LlmMessage>(SerializerOptions);
             return Normalize(msg);
-        }
-
-        /// <summary>
-        /// 反序列化统计——损坏字段回落零值（不阻断加载）。
-        /// </summary>
-        /// <param name="node">统计节点</param>
-        /// <returns>统计（解析失败=零值）</returns>
-        private static SessionStats DeserializeStats(JsonNode node)
-        {
-            try
-            {
-                return node.Deserialize<SessionStats>(SerializerOptions);
-            }
-            catch (Exception)
-            {
-                return new SessionStats();
-            }
         }
 
         /// <summary>
@@ -626,7 +542,7 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 构建序列化选项——字段序列化（LlmMessage / SessionStats 为 struct）+ 中文直出。
+        /// 构建序列化选项——字段序列化（LlmMessage 为 struct）+ 中文直出。
         /// </summary>
         /// <returns>序列化选项</returns>
         private static JsonSerializerOptions BuildOptions()

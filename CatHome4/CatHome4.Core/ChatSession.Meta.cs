@@ -22,8 +22,11 @@ namespace CH4
         /// <summary>会话创建时刻——Unix 毫秒（session.new 重置；启动无文件时按首建生成）</summary>
         private long _sessionCreatedAt;
 
-        /// <summary>最近一轮 token 三项快照——结算时捕获（读面空闲回落源 + 元数据落盘数据源）</summary>
+        /// <summary>最近一轮 token 三项快照——每次请求结算时捕获（读面空闲回落源 + 元数据落盘数据源；A202）</summary>
         private SessionTokens _lastRoundTokens;
+
+        /// <summary>最近一次请求的前文长度（token）——落盘快照；未发起请求时读面回落此值（A202）</summary>
+        private long _persistedContextTokens;
 
         /// <summary>前文总字符数——轮末 / 恢复时刷新（state 段读此缓存，不逐帧重算）</summary>
         private long _contextChars;
@@ -90,12 +93,27 @@ namespace CH4
             _sessionPrompt = meta.SessionTokens.Prompt;
             _sessionCacheHit = meta.SessionTokens.CacheHit;
             _sessionCompletion = meta.SessionTokens.Completion;
+            // A202 请求边界态恢复——轮级三项 + 六态累计 + 计数 + 耗时 + Note（落什么恢复什么；相位不恢复）
             _lastRoundTokens = meta.RoundTokens;
+            _persistedContextTokens = meta.ContextTokens;
+            _requestCount = (int)meta.RoundRequests;
+            _toolCallCount = (int)meta.RoundTools;
+            lock (_phaseLock)
+            {
+                _phaseAccumMs[PhaseWait] = meta.RoundPhases.Wait;
+                _phaseAccumMs[PhaseLink] = meta.RoundPhases.Link;
+                _phaseAccumMs[PhaseThink] = meta.RoundPhases.Think;
+                _phaseAccumMs[PhaseTool] = meta.RoundPhases.Tool;
+                _phaseAccumMs[PhaseRun] = meta.RoundPhases.Run;
+                _phaseAccumMs[PhaseReply] = meta.RoundPhases.Reply;
+            }
+            ApplyPersistedNote(meta.Note);
             _contextChars = meta.ContextChars;
         }
 
         /// <summary>
-        /// 落盘会话元数据——轮末 / session.new / 中断收尾（覆盖式原子写；失败出声不阻断）。
+        /// 落盘会话元数据——A202 唯一常规写点 = 每次 API 请求结算后（usage 处置点），
+        /// 另加 session.new 初始态（与真实前文面 / 视图面同批即时落盘）。覆盖式原子写；失败出声不阻断。
         /// </summary>
         private void SaveMeta()
         {
@@ -121,6 +139,22 @@ namespace CH4
             st.Completion = _sessionCompletion;
             meta.SessionTokens = st;
             meta.RoundTokens = _lastRoundTokens;
+            // A202 请求边界态——六态累计（含活跃态实时增量）+ 计数 + 耗时 + Note
+            string stateName;
+            int requests;
+            var ms = GetRunState(out stateName, out requests);
+            SessionPhases phases = new SessionPhases();
+            phases.Wait = ms["wait"];
+            phases.Link = ms["link"];
+            phases.Think = ms["think"];
+            phases.Tool = ms["tool"];
+            phases.Run = ms["run"];
+            phases.Reply = ms["reply"];
+            meta.RoundPhases = phases;
+            meta.RoundRequests = requests;
+            meta.RoundTools = _toolCallCount;
+            meta.RoundElapsedMs = ComputeRoundElapsedMs();
+            meta.Note = BuildPersistedNote();
             store.Save(meta);
         }
 
@@ -178,6 +212,67 @@ namespace CH4
             }
             _metaStore = new SessionMetaStore(path);
             return _metaStore;
+        }
+
+        /// <summary>
+        /// 本轮起算 → 当前的耗时毫秒——roundsum 载荷与元数据落盘共用单点（A202）。
+        /// </summary>
+        /// <returns>耗时毫秒（轮未起表 = 0）</returns>
+        private long ComputeRoundElapsedMs()
+        {
+            if (_roundStartTick <= 0)
+            {
+                return 0;
+            }
+            long ms = (System.Diagnostics.Stopwatch.GetTimestamp() - _roundStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
+            if (ms < 0)
+            {
+                return 0;
+            }
+            return ms;
+        }
+
+        /// <summary>
+        /// 构建 Note 持久化形态——任务列表 + 索引 + 完成数（A202；空计划 = 空数组）。
+        /// </summary>
+        /// <returns>Note 落盘形态</returns>
+        private SessionNote BuildPersistedNote()
+        {
+            SessionNote note = new SessionNote();
+            if (_noteTasks == null || _noteTasks.Length == 0)
+            {
+                note.Tasks = new string[0];
+            }
+            else
+            {
+                note.Tasks = _noteTasks;
+            }
+            note.Current = _noteCurrent;
+            note.Done = _noteDone;
+            return note;
+        }
+
+        /// <summary>
+        /// 应用落盘 Note——启动恢复（A202；未完成计划在下一轮轮末按现有机制继续自动拉起——莎 2026-10-06 批准）。
+        /// </summary>
+        /// <param name="note">落盘形态（Tasks 空 = 无计划，不改内存态）</param>
+        private void ApplyPersistedNote(SessionNote note)
+        {
+            if (note.Tasks == null || note.Tasks.Length == 0)
+            {
+                return;
+            }
+            _noteTasks = note.Tasks;
+            _noteCurrent = (int)note.Current;
+            _noteDone = (int)note.Done;
+            if (_noteCurrent < 0)
+            {
+                _noteCurrent = 0;
+            }
+            if (_noteCurrent >= _noteTasks.Length)
+            {
+                _noteCurrent = _noteTasks.Length - 1;
+            }
         }
     }
 }

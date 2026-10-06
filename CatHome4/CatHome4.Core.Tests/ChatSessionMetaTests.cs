@@ -110,6 +110,22 @@ namespace CatHome4.Core.Tests
             rt.CacheHit = 600;
             rt.Completion = 50;
             meta.RoundTokens = rt;
+            // A202——请求边界态四件 + Note
+            CH4.SessionPhases ph = new CH4.SessionPhases();
+            ph.Link = 5800;
+            ph.Think = 5100;
+            ph.Tool = 1500;
+            ph.Run = 1800;
+            ph.Reply = 1800;
+            meta.RoundPhases = ph;
+            meta.RoundRequests = 7;
+            meta.RoundTools = 15;
+            meta.RoundElapsedMs = 15900;
+            CH4.SessionNote note = new CH4.SessionNote();
+            note.Tasks = new string[] { "甲", "乙" };
+            note.Current = 1;
+            note.Done = 0;
+            meta.Note = note;
             store.Save(meta);
             Assert.True(File.Exists(path));
             // 派生值不落盘（design-ch4-protocol §13.2——文件只承载真实值）
@@ -128,6 +144,20 @@ namespace CatHome4.Core.Tests
             Assert.Equal(300L, loaded.SessionTokens.Completion);
             Assert.Equal(1000L, loaded.SessionTokens.Miss);
             Assert.Equal(700L, loaded.RoundTokens.Prompt);
+            // A202——请求边界态 + Note 往返
+            Assert.Equal(5800L, loaded.RoundPhases.Link);
+            Assert.Equal(5100L, loaded.RoundPhases.Think);
+            Assert.Equal(1500L, loaded.RoundPhases.Tool);
+            Assert.Equal(1800L, loaded.RoundPhases.Run);
+            Assert.Equal(1800L, loaded.RoundPhases.Reply);
+            Assert.Equal(0L, loaded.RoundPhases.Wait);
+            Assert.Equal(7L, loaded.RoundRequests);
+            Assert.Equal(15L, loaded.RoundTools);
+            Assert.Equal(15900L, loaded.RoundElapsedMs);
+            Assert.NotNull(loaded.Note.Tasks);
+            Assert.Equal(2, loaded.Note.Tasks.Length);
+            Assert.Equal("乙", loaded.Note.Tasks[1]);
+            Assert.Equal(1L, loaded.Note.Current);
         }
 
         /// <summary>落盘缺失——Load 返回 null（调用方走首建，不抛异常）。</summary>
@@ -180,6 +210,59 @@ namespace CatHome4.Core.Tests
                     // 易用性修复（A201 前端轮）：contextChars 改为推送时实时刷新——state 段给前文实况
                     // （LoadMeta 恢复的文件值由落盘面承载；本用例前文为空，故实况为 0）
                     Assert.Equal(0L, metaElement.GetProperty("contextChars").GetInt64());
+                }
+            }
+            finally
+            {
+                CH4.ChatSession.SessionMetaPathProvider = prev;
+            }
+        }
+
+        /// <summary>
+        /// 启动恢复——A202 请求边界态回落：六态累计 / 请求次数 / Note 经 state 段暴露；
+        /// 相位不恢复（恢复后一律 idle——瞬时态不落盘）。
+        /// </summary>
+        [Fact]
+        public void LoadMeta_RestoresRoundSnapshot_IntoStateJson()
+        {
+            string catId = "meta-round-" + Guid.NewGuid().ToString("N");
+            string path = TempPath(catId, ".session.json");
+            CH4.SessionMeta meta = new CH4.SessionMeta();
+            meta.SessionId = "instance-round";
+            meta.CatId = catId;
+            meta.ContextTokens = 12345;
+            CH4.SessionPhases ph = new CH4.SessionPhases();
+            ph.Link = 5800;
+            ph.Reply = 1800;
+            meta.RoundPhases = ph;
+            meta.RoundRequests = 7;
+            CH4.SessionNote note = new CH4.SessionNote();
+            note.Tasks = new string[] { "甲", "乙", "丙" };
+            note.Current = 1;
+            note.Done = 1;
+            meta.Note = note;
+            new CH4.SessionMetaStore(path).Save(meta);
+            Func<string, string> prev = CH4.ChatSession.SessionMetaPathProvider;
+            try
+            {
+                CH4.ChatSession.SessionMetaPathProvider = delegate (string key) { return path; };
+                CH4.ChatSession session = CreateSession(catId, "边界猫");
+                session.LoadMeta();
+                Assert.Equal(12345L, session.ContextTokensKnown);
+                string json = session.BuildStateJson();
+                using (JsonDocument doc = JsonDocument.Parse(json))
+                {
+                    JsonElement runMs = doc.RootElement.GetProperty("runMs");
+                    Assert.Equal(5800L, runMs.GetProperty("link").GetInt64());
+                    Assert.Equal(1800L, runMs.GetProperty("reply").GetInt64());
+                    Assert.Equal(0L, runMs.GetProperty("think").GetInt64());
+                    // 相位不恢复——恢复后一律 idle
+                    Assert.Equal("idle", doc.RootElement.GetProperty("runState").GetString());
+                    Assert.Equal(7, doc.RootElement.GetProperty("requests").GetInt32());
+                    JsonElement noteElement = doc.RootElement.GetProperty("note");
+                    Assert.Equal(3, noteElement.GetProperty("tasks").GetArrayLength());
+                    Assert.Equal(1, noteElement.GetProperty("current").GetInt32());
+                    Assert.Equal(1, noteElement.GetProperty("done").GetInt32());
                 }
             }
             finally
