@@ -205,7 +205,7 @@ describe('顶栏信息位（A201 统一格式化）', () => {
         });
         const el = document.getElementById('chatInfo');
         const txt = el.textContent;
-        expect(txt).toContain('前文 81 条 143.12K token（132.30K字符）');
+        expect(txt).toContain('前文 143.12K token 81 条（132.30K字符）');
         expect(txt).toContain('| （🎯86.38%） Hit251.65K Miss39.68K  Down2.19K');
         // 会话级标签分片（2026-10-06 · 莎定）——Hit 淡蓝 / Miss 橙黄 / Down 淡红，各 +1px
         expect(el.querySelector('.ci-hit').textContent).toBe('Hit');

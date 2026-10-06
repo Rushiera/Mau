@@ -209,3 +209,31 @@ describe('断线收尾——chatLiveAbort（A206）', () => {
         expect(window.streamStats(), '无活跃流式段').toBe(null);
     });
 });
+
+describe('统计出口口径（2026-10-06 微调 · 莎定）', () => {
+    it('字符 / 行数取已吐文本——积压不计入（读数随打字机增长）', () => {
+        window.liveApply({ type: 'replysse', context: '甲\n乙丙丁' });
+        window.streamPump(window.streamState.stepBase);
+        let st = window.streamStats();
+        expect(st.chars, '积压未吐 → 0').toBe(0);
+        expect(st.lines, '空段不报行数').toBe(0);
+
+        window.streamPump(window.streamState.stepBase + 20);
+        st = window.streamStats();
+        expect(st.chars, '已吐部分上身').toBeGreaterThan(0);
+        expect(st.chars, '未吐部分不计入').toBeLessThan(5);
+
+        window.streamDrain();
+        st = window.streamStats();
+        expect(st.chars, '吐完 = 全文').toBe(5);
+        expect(st.lines, '换行 1 + 1').toBe(2);
+    });
+
+    it('段用时——自本段第一次成形起算（0.1s 分度由显示件落）', () => {
+        window.liveApply({ type: 'replysse', context: '甲' });
+        const st = window.streamStats();
+        expect(st.type).toBe('replysse');
+        expect(st.elapsedMs).toBeGreaterThanOrEqual(0);
+        expect(window.liveStatsText(st)).toBe('line: 0\nchar: 0\ntime: 0.0s');
+    });
+});

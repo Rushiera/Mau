@@ -179,10 +179,10 @@ describe('轮末结算载荷（2026-10-06 · 莎定）——四项分片', () =>
         expect(tok.querySelector('.ci-hit').textContent).toBe('Hit');
         expect(tok.querySelector('.ci-miss').textContent).toBe('Miss');
         expect(tok.querySelector('.ci-down').textContent).toBe('Down');
-        expect(tok.textContent).toContain('（🎯90.00%） Hit900.00K Miss100.00K  Down50.00K');
+        expect(tok.textContent).toContain('（🎯90.00%）    Hit900.00K   Miss100.00K   Down50.00K');
         const fracs = Array.from(tok.querySelectorAll('.num-frac')).map((n) => n.textContent);
         expect(fracs).toEqual(['.00', '.00', '.00', '.00']);
-        // 弱化件（2026-10-06 · 莎定）——括号（2）· 数字单位与百分号（4）均包 `.rs-dim`
-        expect(tok.querySelectorAll('.rs-dim').length).toBe(6);
+        // 弱化件（2026-10-06 · 莎定；同日微调：K/M 单位随整数原色）——括号（2）· 百分号（1）包 `.rs-dim`
+        expect(tok.querySelectorAll('.rs-dim').length).toBe(3);
     });
 });

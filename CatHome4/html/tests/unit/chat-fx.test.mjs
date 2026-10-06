@@ -195,15 +195,17 @@ describe('滚动带与桌宠——入口就位（几何 / 素材面归运行态�
 
 // ── ⑦ liveStats（流式统计行——契约 §12.8 · 2026-10-06 莎定）────
 describe('流式统计行（fx/live-stats）', () => {
-    it('文案组装——无活跃段空串；有段三行 label: value（整数直出 + 速度一位小数）', () => {
+    it('文案组装——无活跃段空串；有段三行 label: value（整数直出 + 用时一位小数）', () => {
         expect(window.liveStatsText(null)).toBe('');
         expect(window.liveStatsText({ type: 'thinksse', chars: 340, lines: 12, elapsedMs: 5000 }))
-            .toBe('line: 12\nchar: 340\nspd: 68.0/s');
+            .toBe('line: 12\nchar: 340\ntime: 5.0s');
     });
 
-    it('速度口径——段用时 < 1s 显示 —（分母无意义）', () => {
+    it('用时口径——0.1 秒为最小分度（不足 1s 段照常显示，无「—」占位）', () => {
         expect(window.liveStatsText({ type: 'replysse', chars: 5, lines: 1, elapsedMs: 400 }))
-            .toBe('line: 1\nchar: 5\nspd: —');
+            .toBe('line: 1\nchar: 5\ntime: 0.4s');
+        expect(window.liveStatsText({ type: 'replysse', chars: 5, lines: 1, elapsedMs: 1250 }))
+            .toBe('line: 1\nchar: 5\ntime: 1.3s');
     });
 
     it('刷新落盘——无活跃段隐藏 / 有活跃段写入并显示；元素缺失不抛', () => {
@@ -214,11 +216,10 @@ describe('流式统计行（fx/live-stats）', () => {
 
         window.streamState.type = 'thinksse';
         window.streamState.revealed = '甲\n乙';
-        window.streamState.newlines = 1;
         window.streamState.startedAt = window.streamNow() - 2000;
         window.liveStatsRefresh();
         expect(el.style.display).toBe('');
-        expect(el.textContent).toBe('line: 2\nchar: 3\nspd: 1.5/s');
+        expect(el.textContent).toBe('line: 2\nchar: 3\ntime: 2.0s');
 
         const parent = el.parentNode;
         parent.removeChild(el);
@@ -235,11 +236,13 @@ describe('流式统计行（fx/live-stats）', () => {
         expect(window.LIVE_STATS_TICK_MS).toBe(100);
     });
 
-    it('轮询取值——有活跃段即显示（line / char 取自机制事实），离段即隐藏', () => {
+    it('轮询取值——有活跃段即显示（line / char 取已吐文本），离段即隐藏', () => {
         const el = document.getElementById('chatLiveStats');
         window.liveApply({ type: 'thinksse', context: '第一行\n第二行' });
         window.liveStatsRefresh();
-        expect(el.style.display).toBe('');
+        expect(el.style.display, '有活跃段即显示（未吐字也属活跃段）').toBe('');
+        window.streamDrain();
+        window.liveStatsRefresh();
         expect(el.textContent).toContain('line: 2');
         expect(el.textContent).toContain('char: 7');
 

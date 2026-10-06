@@ -104,7 +104,7 @@ describe('收包三段（契约 §12.2 / §12.3）', () => {
         expect(box.querySelectorAll('.chat-row').length).toBe(1);
         expect(document.getElementById('chatLivePanel').querySelectorAll('.chat-row').length).toBe(1);
         // A201 改写：信息位 = 前文条数与长度 / 前文字符数 / 会话级消耗（原显示猫 key 的 sessionId 位已弃）
-        expect(document.getElementById('chatInfo').textContent).toContain('前文 3 条');
+        expect(document.getElementById('chatInfo').textContent).toContain('前文 0.00 token 3 条');
         expect(document.title).toBe('cat1');
     });
 
@@ -281,20 +281,37 @@ describe('出口面（input.js——投递即回执）', () => {
         expect(document.getElementById('chatSendInput').style.display).toBe('');
     });
 
-    it('切换开关——页签直达该态（点「输入」回输入区 / 点「流式」去流式区）', () => {
+    it('切换开关——单按钮整体点击翻转（标签随态改字）', () => {
         const sw = document.getElementById('chatLiveToggle');
         const panel = document.getElementById('chatLivePanel');
         const input = document.getElementById('chatSendInput');
-        window.chatLiveShow(true);
+        const label = document.getElementById('chatLiveLabel');
+        window.chatLiveShow(false);
+        expect(label.textContent).toBe('输入');
+        sw.click();
         expect(panel.style.display).toBe('');
         expect(input.style.display).toBe('none');
         expect(sw.classList.contains('on')).toBe(true);
-        window.chatLiveShow(true);
-        expect(sw.classList.contains('on')).toBe(true);
-        window.chatLiveShow(false);
+        expect(label.textContent).toBe('流式');
+        sw.click();
         expect(panel.style.display).toBe('none');
         expect(input.style.display).toBe('');
         expect(sw.classList.contains('on')).toBe(false);
+        expect(label.textContent).toBe('输入');
+    });
+
+    it('直达入口——chatLiveShow 幂等（自动切换驱动面；同态零动作）', () => {
+        const sw = document.getElementById('chatLiveToggle');
+        const label = document.getElementById('chatLiveLabel');
+        window.chatLiveShow(true);
+        expect(sw.classList.contains('on')).toBe(true);
+        expect(label.textContent).toBe('流式');
+        window.chatLiveShow(true);
+        expect(sw.classList.contains('on')).toBe(true);
+        expect(label.textContent).toBe('流式');
+        window.chatLiveShow(false);
+        expect(sw.classList.contains('on')).toBe(false);
+        expect(label.textContent).toBe('输入');
     });
 
     it('流式态标记——输入区 data-live 随 live 段 type（态色单一色源，映射归 CSS 令牌）', () => {

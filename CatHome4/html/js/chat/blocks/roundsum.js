@@ -34,12 +34,13 @@ function roundsumHtml(payload) {
     if (hit < 0) {
         hit = 0;
     }
-    // 弱化件（2026-10-06 · 莎定）——括号与数字单位（K·M·%）包 `.rs-dim`（第三行同款灰）；小数点由 `.num-frac` 承载同色
+    // 弱化件（2026-10-06 · 莎定）——括号与百分号包 `.rs-dim`（第三行同款灰）；小数点由 `.num-frac` 承载同色
+    // 2026-10-06 微调（莎定）——K/M 单位随整数原色（去 `.rs-dim` 包裹，不再弱化）；间隔统一：命中率 ↔ Hit 四空格 · Hit ↔ Miss ↔ Down 各三空格
     html += '<div class="rs-tok">'
         + '<span class="rs-dim">（🎯</span><span class="ci-rate">' + fmtNumHtml(hitRate.toFixed(2) + '%', 'rs-dim') + '</span><span class="rs-dim">）</span>'
-        + ' <span class="ci-hit">Hit</span>' + fmtNumHtml(fmtCount(hit), 'rs-dim')
-        + ' <span class="ci-miss">Miss</span>' + fmtNumHtml(fmtCount(miss), 'rs-dim')
-        + '  <span class="ci-down">Down</span>' + fmtNumHtml(fmtCount(d.completion || 0), 'rs-dim')
+        + '    <span class="ci-hit">Hit</span>' + fmtNumHtml(fmtCount(hit))
+        + '   <span class="ci-miss">Miss</span>' + fmtNumHtml(fmtCount(miss))
+        + '   <span class="ci-down">Down</span>' + fmtNumHtml(fmtCount(d.completion || 0))
         + '</div>';
 
     // 第二行——工具次数 · 请求次数 · All 总耗时（三段各自着色）

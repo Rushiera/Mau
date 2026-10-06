@@ -3,7 +3,7 @@
 //
 // 输入：state 段 `tokens`（`count` 前文条数 · `context` 前文长度 · `session*` 会话级消耗三项）
 //       `meta`（`contextChars` 前文字符数）
-// 输出：#chatInfo——「前文 N 条 X.XXK token（Y.YYK字符）| （🎯…%）Hit… Miss…  Down…」（经信息位单点 `chatInfoSet`）
+// 输出：#chatInfo——「前文 X.XXK token N 条（Y.YYK字符）| （🎯…%）Hit… Miss…  Down…」（经信息位单点 `chatInfoSet`）
 // 判据：只读自己声明的字段、只写自己的输出面（对应 `state/registry.js::STATE_DECL` 的 `info` 行）
 // 归位（A179）：告警 / 提示不走此处（→ 通知面 `chatPetSay` 桌宠气泡）——本条信息位是 state 段专属
 // 格式化（A201）：统计数字一律走 `fmtCount`（两位小数 + K/M 进位）；条数为离散计数，整数直出
@@ -30,8 +30,8 @@ function stateRenderInfo(st) {
     }
     // 会话级四项（2026-10-06 · 莎定）——顺序按计费从高到低：命中率 → Hit（命中量）→ Miss（未命中）→ Down（输出 completion）
     // 间隔：命中率 / Hit / Miss 之间各一空格 · Miss 与 Down 之间两空格；标签首字母大写 + 比常规大 1px（见 css）
-    var html = '前文 <span class="ci-num">' + (t.count || 0) + '</span>'
-        + ' 条 ' + num(t.context) + ' token（' + num(m.contextChars) + '字符）'
+    var html = '前文 ' + num(t.context) + ' token'
+        + ' <span class="ci-num">' + (t.count || 0) + '</span> 条（' + num(m.contextChars) + '字符）'
         + '| （🎯<span class="ci-rate">' + fmtNumHtml((Number(t.sessionRate || 0) * 100).toFixed(2) + '%') + '</span>）'
         + ' <span class="ci-hit">Hit</span>' + num(hit)
         + ' <span class="ci-miss">Miss</span>' + num(t.sessionMiss)

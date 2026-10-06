@@ -5,7 +5,7 @@
 // 指令一律走指令总线（POST /api/v1/command）——前端不拼业务指令串以外的逻辑。
 //
 // 输入区与临时区**同区域互斥**：同一列同位，输入框与 live 面板二选一（代码切内联 display）；
-//   切换入口 = 输入框左侧竖向滑块开关（双标签「输入 / 流式」——点页签直达该态、点滑块与空白处翻转）。
+//   切换入口 = 输入框左侧竖向滑块开关（**单按钮**——整体点击即在输入 / 流式之间翻转，标签随态改字）。
 //   回车发送时自动切回输入态，想看临时内容自己点回来（纯前端可视化，判据取全局态）。
 //   本件只切本区两块——不碰对话区（#chatMsgs）与滚动带（#chatScrollBand，显隐归 fx/scroll）。
 // ═══════════════════════════════════════════
@@ -108,7 +108,7 @@ function chatLiveToggle() {
     inputSwap(liveShown);
 }
 
-/// 直达指定态——开关页签点击入口（点「输入」格去输入态 / 点「流式」格去流式态；已在目标态零动作）
+/// 直达指定态——**自动切换入口**（persist 新块驱动：user 块 → 流式 / roundsum → 输入）；同态零动作（幂等）
 function chatLiveShow(shown) {
     var want = (shown === true);
     if (liveShown === want) {
@@ -144,6 +144,11 @@ function inputSwap(shown) {
         } else {
             sw.classList.remove('on');
         }
+    }
+    // 单按钮标签随态改字（2026-10-06 合并）——输入态「输入」/ 流式态「流式」（上下位置随滑块，归 CSS）
+    var label = document.getElementById('chatLiveLabel');
+    if (label) {
+        label.textContent = shown ? '流式' : '输入';
     }
 }
 
@@ -181,17 +186,8 @@ function inputBind() {
     }
     var toggle = document.getElementById('chatLiveToggle');
     if (toggle) {
-        // 开关点击——点页签直达该态（输入 / 流式）；点滑块与空白处翻转当前态
-        toggle.addEventListener('click', function (e) {
-            var cls = (e.target && e.target.classList) ? e.target.classList : null;
-            if (cls && cls.contains('ch-lt-input')) {
-                chatLiveShow(false);
-            } else if (cls && cls.contains('ch-lt-live')) {
-                chatLiveShow(true);
-            } else {
-                chatLiveToggle();
-            }
-        });
+        // 开关点击——单按钮：整体点击即在输入 / 流式之间翻转（标签随态改字，位置归 CSS）
+        toggle.addEventListener('click', chatLiveToggle);
     }
     var jump = document.getElementById('chatJumpBottom');
     if (jump) {

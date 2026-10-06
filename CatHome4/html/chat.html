@@ -71,18 +71,18 @@
 
         <div id="chatImages" class="chat-images"></div>
         <textarea id="chatSendInput" rows="5" placeholder="输入文本…（Enter 发送；Shift+Enter 换行；可直接粘贴图片）"></textarea>
-        <!-- 临时区切换开关（2026-10-06 莎定：按钮 → 竖向滑块）——输入框左侧左预留带内，双标签「输入 / 流式」，
-             滑块随当前态上下移动：输入页签色 = 输入区主色蓝；流式页签色 = 统一态色 `--ch-live-color`
+        <!-- 临时区切换开关（2026-10-06 莎定：按钮 → 竖向滑块；同日合并为单按钮）——输入框左侧左预留带内，
+             滑块随当前态上下移动：输入态色 = 输入区主色蓝；流式态色 = 统一态色 `--ch-live-color`
              （挂 `#chatinput` 的 `data-live` 上，由 live.js 写入，映射归 chat.css 令牌——
              thinksse 黄 / toolrun 军绿 / replysse 米白 / empty 灰；与临时区气泡描边同源）。
+             单标签随态上下移动并改字（输入 / 流式）——点击整体翻转。
              面板高度 = 输入框实测高度（固定）——由 input.js 切换时写入，空态亦保持同高） -->
         <!-- 流式统计行（fx/live-stats.js · 契约 §12.8 独立功能面）——切换开关正上方灰色三行读数
-             （line 行数 / char 字符数 / spd 速度）；无活跃流式段即隐藏（不占位）；内容向左展开（左预留带内） -->
+             （line 行数 / char 字符数 / time 段用时）；无活跃流式段即隐藏（不占位）；内容向左展开（左预留带内） -->
         <div id="chatLiveStats"></div>
         <div id="chatLiveToggle" class="ch-livetoggle" title="切换：输入区 / 流式区（进行中的思考 · 工具 · 回复流）">
             <span class="ch-lt-thumb"></span>
-            <span class="ch-lt-tab ch-lt-input">输入</span>
-            <span class="ch-lt-tab ch-lt-live">流式</span>
+            <span class="ch-lt-label" id="chatLiveLabel">输入</span>
         </div>
         <!-- 临时区（契约 §12.2 ③）——与输入框**同区域互斥**（同一列同位，代码切内联 display）：
              显示时输入框让位、状态投影整体替换；高度固定 = 输入框实测高（空态亦同高）；回车发送自动切回输入态 -->

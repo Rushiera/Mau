@@ -15,7 +15,9 @@
 //   **标称 60 步/秒 · 按墙钟走步**（与显示器刷新率解耦）——每步吐字 = ceil(剩余积压 ÷ 剩余步数)，
 //   夹逼 [每步下限, `STREAM_FRAME_MAX`]；每批增量在窗口 `STREAM_DRAIN_MS` 内追平（后端 250ms 一推）。
 //
-// 统计出口（`streamStats`）：把段内原始事实（类型 / 字符数 / 行数 / 段用时）交给显示件——
+// 统计出口（`streamStats`）：把段内**已吐事实**（类型 / 已显字符数 / 已显行数 / 段用时）交给显示件——
+//   2026-10-06 微调（莎定）：字符与行数取打字机**已显部分**（`revealed`），待吐积压不计入——
+//   读数随吐字逐帧增长，天然复用打字机渐变机制；
 //   本件只报事实、不算显示口径（口径与刷新节拍归 `fx/live-stats.js` · 契约 §12.8 独立功能面）；
 //   **推送面为零**——机制不通知显示件，显示件按自身节拍（100ms）轮询取值。
 //
@@ -49,7 +51,7 @@ var STREAM_CATCHUP_STEPS = 8;
 ///   box——容器（跟随面）；row / body / node——行 / 块体 / 写入点；
 ///   revealed——已吐到屏幕的文本（前缀比对基准）；queue——待吐尾巴；
 ///   dueAt——本批增量的追平时刻；stepBase / stepsDone——走步起点与已走步数（每批重起）；
-///   startedAt——**本段起点**（统计用：段用时 = now − startedAt）；newlines——段内换行数（统计用）
+///   startedAt——**本段起点**（统计用：段用时 = now − startedAt）
 var streamState = {
     box: null,
     type: '',
@@ -62,7 +64,6 @@ var streamState = {
     stepBase: 0,
     stepsDone: 0,
     startedAt: 0,
-    newlines: 0,
     raf: 0
 };
 
@@ -79,7 +80,7 @@ function streamFrameMs() {
     return 1000 / STREAM_FPS;
 }
 
-/// 换行计数——统计用（每次收帧重算一遍：字符数与行数同源，批级成本可忽略）
+/// 换行计数——统计用（取**已吐文本**的换行数；显示件 100ms 轮询时各算一次，成本可忽略）
 function streamCountBreaks(text) {
     var n = 0;
     var i = text.indexOf('\n');
@@ -114,7 +115,6 @@ function streamApply(box, type, text) {
             streamState.queue = text;
         }
     }
-    streamState.newlines = streamCountBreaks(streamState.revealed) + streamCountBreaks(streamState.queue);
     // 走步窗口每批重起——批间剩余步数不互相污染（否则攒下的「剩余步数」会变成突发）
     streamState.stepBase = streamNow();
     streamState.stepsDone = 0;
@@ -173,7 +173,6 @@ function streamReset() {
     streamState.stepBase = 0;
     streamState.stepsDone = 0;
     streamState.startedAt = 0;
-    streamState.newlines = 0;
 }
 
 /// 走步排程——有积压才排帧；宿主无帧回调（单测 / 老浏览器）即当场铺完（诚实降级，不留半屏）
@@ -256,17 +255,18 @@ function streamDrain() {
     }
 }
 
-/// 统计出口——把段内**原始事实**交给显示件：类型 / 字符数（已显 + 待吐 = 已收到全文）/ 行数 / 段用时；
-///   返回 null = 当前无活跃流式段（显示件据此隐藏）。显示口径（速度取整 / 一位小数）与刷新节拍
+/// 统计出口——把段内**已吐事实**交给显示件：类型 / 已显字符数 / 已显行数 / 段用时；
+///   字符与行数取打字机**已显部分**（`revealed`）——待吐积压不计入，读数随吐字增长（2026-10-06 微调）。
+///   返回 null = 当前无活跃流式段（显示件据此隐藏）。显示口径（用时一位小数）与刷新节拍
 ///   （100ms 轮询）均不在此处——本件只在被取值时报事实，**不推送**
 function streamStats() {
     if (!streamState.type) {
         return null;
     }
-    var chars = streamState.revealed.length + streamState.queue.length;
+    var chars = streamState.revealed.length;
     var lines = 0;
     if (chars > 0) {
-        lines = streamState.newlines + 1;
+        lines = streamCountBreaks(streamState.revealed) + 1;
     }
     var elapsed = 0;
     if (streamState.startedAt > 0) {

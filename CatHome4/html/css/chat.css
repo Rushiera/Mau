@@ -318,7 +318,7 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-row:has(.chat-bubble.roundsum) { margin-bottom: var(--ch-round-gap); }
 #chatMsgs .chat-bubble.roundsum .rs-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 3px; }
 #chatMsgs .chat-bubble.roundsum .rs-tok { color: var(--ch-tok-completion); word-break: break-all; white-space: pre-wrap; }
-/* 四项行弱化（2026-10-06 · 莎定）——括号 / 数字单位（K·M）/ 小数点统一走第三行同款灰（与 `.rs-times` 同值），
+/* 四项行弱化（2026-10-06 · 莎定；同日微调——K·M 单位随整数原色，不再弱化）——括号 · 百分号 / 小数点统一走第三行同款灰（与 `.rs-times` 同值），
    主体数值（整数）与三个标签保留各自色 */
 #chatMsgs .chat-bubble.roundsum .rs-tok .rs-dim { color: var(--ch-fg-muted); }
 #chatMsgs .chat-bubble.roundsum .rs-tok .num-frac { color: var(--ch-fg-muted); }
@@ -570,9 +570,9 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
     0%, 100% { border-color: color-mix(in srgb, var(--ch-live-color) 35%, transparent); }
     50% { border-color: var(--ch-live-color); }
 }
-/* 临时区切换开关（2026-10-06 莎定：按钮 → 竖向滑块）——输入框左侧左预留带内，双标签「输入 / 流式」：
-   上格 = 输入区（页签色 = 输入区主色蓝）；下格 = 流式区（页签色随当前 live 态——见 data-live 映射）。
-   滑块 = 当前态指示块（半高实心），随态上下移动；激活格文字以反白压在其上。
+/* 临时区切换开关（2026-10-06 莎定：按钮 → 竖向滑块；同日合并为单按钮）——输入框左侧左预留带内：
+   滑块 = 当前态指示块（半高实心）——输入态居上（输入区主色蓝）/ 流式态居下（随当前 live 态——见 data-live 映射）。
+   标签一枚与滑块同高同位（随态上下移动），文字随态改（输入 / 流式），反白压在滑块上。
    绝对定位贴输入框左缘与底边——参与 grid 会触发列回退换行，把动作列顶到下一行 */
 .ch-livetoggle {
     position: absolute;
@@ -602,22 +602,23 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
     transition: top 0.18s ease, background 0.18s ease;
 }
 .ch-livetoggle.on .ch-lt-thumb { top: 50%; background: var(--ch-lt-live); }
-/* 页签——上下两格均分；非激活格取本格色降一档（可见但退居背景），激活格反白压在滑块上 */
-.ch-lt-tab {
-    flex: 1 1 0;
+/* 标签——与滑块同高同位（top 随态切换，0.18s 与滑块同步），文字反白压在滑块上 */
+.ch-lt-label {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    position: relative;
     z-index: 1;
     font-family: inherit;
     font-size: var(--ch-fs-tag);
-    color: color-mix(in srgb, var(--ch-lt-c) 60%, var(--ch-bg-panel));
-    transition: color 0.18s ease;
+    color: var(--ch-fg-inverse);
+    transition: top 0.18s ease;
 }
-.ch-lt-input { --ch-lt-c: var(--ch-lt-input); }
-.ch-lt-live { --ch-lt-c: var(--ch-lt-live); }
-.ch-livetoggle:not(.on) .ch-lt-input, .ch-livetoggle.on .ch-lt-live { color: var(--ch-fg-inverse); }
+.ch-livetoggle.on .ch-lt-label { top: 50%; }
 .ch-livetoggle:hover { filter: brightness(1.1); }
 
 /* 流式统计行（fx/live-stats.js · 契约 §12.8 独立功能面 · 2026-10-06 莎定）——切换开关**正上方**的灰色读数：
