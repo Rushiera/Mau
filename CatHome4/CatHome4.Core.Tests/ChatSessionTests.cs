@@ -1120,6 +1120,47 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
+        /// A202 落盘时机——会话元数据面在每次 API 请求结算后落盘（轮末不写）。
+        /// 本例单请求轮：盘上应留请求边界态（两级 token + 前文长度 + 请求次数），
+        /// 而内存轮级值已被 CloseRound 归零——验证「结算后清零、盘上不丢」。
+        /// </summary>
+        [Fact]
+        public void Meta_PersistedOnEveryRequest()
+        {
+            string metaPath = Path.Combine(Path.GetTempPath(), "cat4a202_" + Guid.NewGuid().ToString("N") + ".session.json");
+            Func<string, string> prev = CH4.ChatSession.SessionMetaPathProvider;
+            try
+            {
+                CH4.ChatSession.SessionMetaPathProvider = delegate (string key) { return metaPath; };
+                MockLlm llm = new MockLlm();
+                llm.ReplyText = "落盘验证";
+                llm.UsageJson = "{\"prompt\":900,\"completion\":120,\"cacheHit\":700}";
+                CH4.ChatSession session = CreateSession(llm);
+                session.LoadMeta();
+                session.PostUserMessage("落个盘");
+                PumpUntilIdle(session);
+                Assert.True(session.IsIdle);
+                CH4.SessionMeta saved = new CH4.SessionMetaStore(metaPath).Load();
+                Assert.NotNull(saved);
+                // 请求边界态——两级 token + 请求级前文长度 + 本轮计数
+                Assert.Equal(900L, saved.RoundTokens.Prompt);
+                Assert.Equal(120L, saved.RoundTokens.Completion);
+                Assert.Equal(700L, saved.RoundTokens.CacheHit);
+                Assert.Equal(900L, saved.ContextTokens);
+                Assert.Equal(900L, saved.SessionTokens.Prompt);
+                Assert.Equal(1L, saved.RoundRequests);
+                Assert.True(saved.RoundElapsedMs >= 0);
+                // 前文条数——请求边界态：usage 帧先于回复文本到达，此刻上下文仅含本轮 user 一条
+                // （盘值 = 边界快照，不等于轮末终值——轮末终值只进 view.json roundsum 块）
+                Assert.Equal(1L, saved.ContextCount);
+            }
+            finally
+            {
+                CH4.ChatSession.SessionMetaPathProvider = prev;
+            }
+        }
+
+        /// <summary>
         /// roundsum 轮末统计——CloseRound 推送（Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 六态用时；chatdone stats 带 context 前文长度）。
         /// </summary>
         [Fact]
@@ -1662,8 +1703,7 @@ namespace CatHome4.Core.Tests
             Assert.Equal("第一轮回复", after[1].Content);
             // 落盘验证——从文件重载仍是截断后前文
             LlmMessage[] restored;
-            SessionStats? stats;
-            Assert.True(session.Store.TryLoad(out restored, out stats));
+            Assert.True(session.Store.TryLoad(out restored));
             Assert.Equal(2, restored.Length);
             // 视图验证——A165 契约 H：回滚只截断真实前文，视图层持久区只增不改（不裁剪、不产生移除面）
             CH4.ViewBlock[] blocks = session.GetViewBlocks();
@@ -1672,8 +1712,8 @@ namespace CatHome4.Core.Tests
             Assert.Equal(0, blocks[0].MsgIndex);
             Assert.Equal("text", blocks[1].RenderType);
             Assert.Equal(1, blocks[1].MsgIndex);
-            // 统计复位——新起点零统计
-            Assert.Equal(0, session.LastStats.EntryCount);
+            // 统计复位——新起点零统计（A202：请求级前文长度回落值归零）
+            Assert.Equal(0L, session.ContextTokensKnown);
         }
 
         /// <summary>

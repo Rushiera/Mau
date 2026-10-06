@@ -72,6 +72,15 @@ export function clearAreas() {
     if (typeof window.pendingClear === 'function') {
         window.pendingClear();
     }
+    // 切换态复位——新块驱动的自动切换会改输入区 / 流式区显隐（每例从输入态起，隔离用例间影响）
+    if (typeof window.chatLiveShow === 'function') {
+        window.chatLiveShow(false);
+    }
+    // 流式态色复位（态色标在输入区容器上，归零到 empty——同属用例间隔离）
+    const zone = document.getElementById('chatinput');
+    if (zone) {
+        zone.setAttribute('data-live', 'empty');
+    }
 }
 
 /**

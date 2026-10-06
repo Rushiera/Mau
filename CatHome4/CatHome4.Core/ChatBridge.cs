@@ -133,6 +133,29 @@ namespace CH4
         {
             _sessions.Remove(session);
         }
+        /// <summary>
+        /// 系统注入入口——等价于「系统在前端输入一行」：按 catKey 定位会话 → 会话侧 sys 入口（类型校验 + 前缀加工 + 入队）。
+        /// 失败可见：目标为空 / 会话不存在 / 未知类型 / 空内容 / 停机态未受理一律返回 ERR（不静默丢弃）。
+        /// </summary>
+        /// <param name="catKey">目标会话（猫 key）</param>
+        /// <param name="kind">类型参数（现行仅 systemauto）</param>
+        /// <param name="content">注入内容（渠道自带前缀由调用方拼在内容里）</param>
+        /// <returns>OK 受理 / ERR|CODE|msg</returns>
+        public string PostSystemMessage(string catKey, string kind, string content)
+        {
+            if (catKey == null || catKey.Length == 0)
+            {
+                return "ERR|BAD_ARGS|目标 Cat 为空";
+            }
+            for (int i = 0; i < _sessions.Count; i = i + 1)
+            {
+                if (_sessions[i].Id == catKey)
+                {
+                    return _sessions[i].PostSystemMessage(kind, content);
+                }
+            }
+            return "ERR|NO_CAT|目标会话不存在: " + catKey;
+        }
 
         /// <summary>
         /// 会话轮转泵——主循环每帧调用：活跃会话各推进一步。LLM 后台流式与工具批等待期间主线程自由泵其他会话——状态机化核心。
@@ -211,13 +234,18 @@ namespace CH4
             DataBox.TryResolve<WorkspaceConfig>(out ws);
             // M3 新会话生效——拦截面同步最新声明面（改 toolNames 后 session.new 才拉取生效）
             session.SetToolSpecs(specs);
+            // A201 显示名按 cat.cfg 现值刷新（新会话取最新；Provider 未接线时保持原值）
+            if (ChatSession.DisplayNameProvider != null)
+            {
+                session.SetDisplayName(ChatSession.DisplayNameProvider(session.Id));
+            }
             // 会话标识 ≡ 猫 key（唯一标识）——session.new 不再另起会话身份（LLM 侧身份随猫稳定）
             InjectPromptResult injectResult = _buildInjectPrompt(ws, specs, persona, injectList);
             session.Context.SetSystemPrompt(injectResult.Prompt);
             session.Context.Clear();
             // E3 真实 usage 统计——新会话零统计起算
             session.ResetStats();
-            session.Store.Rewrite(session.Context.GetMessages(), session.LastStats);
+            session.Store.Rewrite(session.Context.GetMessages());
             // A87 旧会话留档——清空前导出（user / 正式回复 / 加载报告 / 每轮结算 → sessions_old 落盘）
             session.ArchiveLegacyView();
             // 完整前文定稿——当前份转历史 + 份数轮转（清空前文之前；与留档各自独立）

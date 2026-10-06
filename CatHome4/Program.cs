@@ -389,6 +389,10 @@ namespace CH4
             DelayQueue.Load();
             // timeback 归档落点接线——Data/runtime/timeback（全局计数 + 每次回收一个作用域文件；A104）
             ChatSession.TimebackArchiveDirProvider = AdminService.ResolveTimebackArchiveDir;
+            // A201 会话元数据落点接线——Data/sessions/<id>/<id>.session.json（会话自身参数持久化；design-ch4-protocol §十三）
+            ChatSession.SessionMetaPathProvider = AdminService.ResolveSessionMetaPath;
+            // A201 显示名解析接线——session.new 时按 cat.cfg 现值刷新（新会话取最新）
+            ChatSession.DisplayNameProvider = AdminService.ResolveCatDisplayName;
             // timeback 归档现场记录接线——回收时采集本猫 info 快照（归档文件第二行）
             ChatSession.TimebackInfoProvider = BuildEnvInfo;
             AdminService.NotifyBalloon = Program.NotifyBalloon;
@@ -396,7 +400,6 @@ namespace CH4
             ObserveService.Configure(_oa, _chatBridge, _quickHandle, _toolFlowHandles, _quickId, _toolFlowIds, _runner, null);
             SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.jsonl"));
             LlmMessage[] restored;
-            SessionStats? restoredStats;
             // M1 默认猫——API 配置身份从 sessions/majordomo/cat.cfg 读取；缺省 Guid.Empty=默认端点语义（每次调用实时解析）
             // M2 默认猫同构——persona/toolNames/injectList 三字段同迁（每猫配置完全独立；注入源从 workspace.inject 切到 cat.cfg）
             Guid defaultApiConfigId = Guid.Empty;
@@ -462,7 +465,7 @@ namespace CH4
             }
             _chatBridge.DefaultQqBotId = defaultQqBotId;
             _chatBridge.DefaultQqBotEnable = defaultQqBotEnable;
-            if (chatStore.TryLoad(out restored, out restoredStats))
+            if (chatStore.TryLoad(out restored))
             {
                 chatCtx.ReplaceMessages(restored);
                 Console.WriteLine("[CMD] 会话前文恢复: " + restored.Length.ToString() + " 条消息（有前文——不注入）");
@@ -480,7 +483,7 @@ namespace CH4
             {
                 defaultSessionId = "majordomo";
                 chatStore.SessionId = defaultSessionId;
-                chatStore.Rewrite(chatCtx.GetMessages(), restoredStats);
+                chatStore.Rewrite(chatCtx.GetMessages());
                 Console.WriteLine("[CMD] 会话标识对齐猫 key: " + defaultSessionId);
             }
             // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面；M2c 声明面按猫裁剪）
@@ -501,8 +504,8 @@ namespace CH4
             _chatBridge.RegisterSession(_chatBridge.DefaultSession);
             // F4 视图——从真实前文重建视图层（恢复/注入后——真实前文绝对可用）
             _chatBridge.DefaultSession.LoadView();
-            // E3 前文统计——启动恢复持久化真实 usage（旧文件 null=零值）
-            _chatBridge.DefaultSession.SetLoadedStats(restoredStats);
+            // A201 会话元数据——启动恢复（实例 ID / 创建时刻 / 两级 token 累计 + A202 请求边界态；文件缺失走首建）
+            _chatBridge.DefaultSession.LoadMeta();
             // LLM 注入探测——默认端点解析（无默认端点 = 未注入；启动失败语义由语料面消费时暴露）
             CH_LlmApiConfig llmProbeConfig = apiConfigStore.ResolveDefault();
             string llmKeyProbe = "";

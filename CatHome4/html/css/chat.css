@@ -113,6 +113,20 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-bubble .md-block table::-webkit-scrollbar-thumb:hover { background-color: var(--ch-scroll-thumb-hover); }
 #chatbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--ch-line-faint); font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); }
 #chatbar .sid { color: var(--ch-identity); font-weight: bold; }
+/* 信息位富文本分片（2026-10-06 · 莎定）——数值随正文高亮色（信息位专用） */
+#chatInfo .ci-num { color: var(--ch-chat-ai-fg); }
+/* 命中率分片（2026-10-06 · 莎定）——淡紫（与 roundsum / inject 描边同源色）；小数走 `.num-frac` */
+.ci-rate { color: var(--ch-state-all); }
+/* 数值标签分片（2026-10-06 · 莎定）——Hit 淡蓝（执行态色）· Miss 橙黄（思考态色）· Down 淡红（错误色）；
+   三者均比常规大 1px（1em 基准跟随容器，随 --ch-fs-scale 缩放）；展示顺序按计费从高到低（命中率 → Hit → Miss → Down）
+   消费面：信息位（#chatInfo）· 轮末结算（.rs-tok）——选择器不带容器前缀，两处共用同一分片机制 */
+.ci-hit { color: var(--ch-state-run); font-size: calc(1em + 1px); }
+.ci-miss { color: var(--ch-state-think); font-size: calc(1em + 1px); }
+.ci-down { color: var(--ch-err); font-size: calc(1em + 1px); }
+/* 数字小数分片（2026-10-06 · 莎定）——整数与小数独立渲染：小数部分（含小数点）弱化为信息位文字灰 + 小 1px；
+   字号以 1em 为基准跟随所在容器（--ch-fs-tag 已是 calc 乘积，不二次相乘）；消费面现行 = 信息位，
+   单位与 % 留在整数侧（随 `.ci-num` / `.ci-rate` 原色） */
+.num-frac { font-style: normal; color: var(--ch-fg-weak); font-size: calc(1em - 1px); }
 #uiVer { background: var(--ch-bg-deep); border: 1px solid var(--ch-line); border-radius: 4px; padding: 1px 8px; color: var(--ch-ok-weak); font-size: var(--ch-fs-tag); }
 #chatNew, #chatRefresh { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
 #chatNew:hover, #chatRefresh:hover { background: var(--ch-bg-hover); }
@@ -120,9 +134,9 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 #chatApiRole { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
 #chatApiRole:hover { background: var(--ch-bg-hover); }
 #chatApiRole.backup { color: var(--ch-ok); border-color: var(--ch-ok); }
-/* 前文弹层（js/chat/ctx.js）——信息位「前文 n 条 / n tokens / 关键信息」点击开的小窗口（四视图：按条 / 按 tokens / 关键信息 / 完整前文） */
-.ctx-link { cursor: pointer; color: var(--ch-fg-muted); border-bottom: 1px dashed var(--ch-line); }
-.ctx-link:hover { color: var(--ch-identity); border-bottom-color: var(--ch-identity); }
+/* 前文弹层（js/chat/ctx.js）——信息位整行点击开的小窗口（四视图：按条 / 按 tokens / 关键信息 / 完整前文） */
+#chatInfo { cursor: pointer; }
+#chatInfo:hover { color: var(--ch-identity); }
 #ctxPopover { position: fixed; top: 42px; left: 12px; z-index: 62; background: var(--ch-bg-page); border: 1px solid var(--ch-line); border-radius: 8px; width: min(760px, 86vw); max-height: 68vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px var(--ch-shadow-strong); }
 .ctx-head { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--ch-line-faint); font-size: var(--ch-fs-tag); }
 #ctxTitle { color: var(--ch-identity); font-weight: bold; }
@@ -196,6 +210,7 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
    🔴 高度由 JS 按块真实像素高比例写入（内联样式覆盖此处默认值）；此处默认值只在未同步时兜底
    形态——横向 **S 曲线淡出**（8 采样色标，无实心平段；曲线由 mask 层承载，色由 background 纯色给）
      user  ：起手在右、向左淡出（最缓——到 90% 才全透明，节拍点最醒目）
+      user-sys：起手在左、向右淡出（停点同 user——系统注入 user 行靠左，曲线镜像；A204）
      sum   ：中心向两侧对称淡出（覆盖整宽——2026-09-24 莎定）
      reply ：起手在左、向右淡出（最急——35% 即全透明；占比最高，最快让位）
      tool  ：起手在左、向右淡出（终点 50%——展开态工具卡）
@@ -211,6 +226,8 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 /* 横向 S 曲线层（8 采样色标：100% → 95% → 80% → 60% → 40% → 20% → 5% → 0，无实心平段）
    与纵向羽化层两层 alpha 相乘——颜色由 background 纯色承载（mask 只管透明度曲线） */
 .sb-tick.user { background: var(--ch-band-tick-user); -webkit-mask-image: linear-gradient(to left, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 13%, rgba(0,0,0,.8) 26%, rgba(0,0,0,.6) 39%, rgba(0,0,0,.4) 51%, rgba(0,0,0,.2) 64%, rgba(0,0,0,.05) 77%, transparent 90%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to left, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 13%, rgba(0,0,0,.8) 26%, rgba(0,0,0,.6) 39%, rgba(0,0,0,.4) 51%, rgba(0,0,0,.2) 64%, rgba(0,0,0,.05) 77%, transparent 90%, transparent 100%), var(--ch-band-fade-v); }
+/* 系统注入 user 刻度（A204）——曲线镜像：起手在左、向右淡出（停点与 user 同，最缓）；色仍取 user 刻度色 */
+.sb-tick.user-sys { background: var(--ch-band-tick-user); -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 13%, rgba(0,0,0,.8) 26%, rgba(0,0,0,.6) 39%, rgba(0,0,0,.4) 51%, rgba(0,0,0,.2) 64%, rgba(0,0,0,.05) 77%, transparent 90%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 13%, rgba(0,0,0,.8) 26%, rgba(0,0,0,.6) 39%, rgba(0,0,0,.4) 51%, rgba(0,0,0,.2) 64%, rgba(0,0,0,.05) 77%, transparent 90%, transparent 100%), var(--ch-band-fade-v); }
 .sb-tick.reply { background: var(--ch-band-tick-reply); -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 9%, rgba(0,0,0,.8) 17%, rgba(0,0,0,.6) 26%, rgba(0,0,0,.4) 34%, rgba(0,0,0,.2) 43%, rgba(0,0,0,.05) 51%, transparent 60%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 9%, rgba(0,0,0,.8) 17%, rgba(0,0,0,.6) 26%, rgba(0,0,0,.4) 34%, rgba(0,0,0,.2) 43%, rgba(0,0,0,.05) 51%, transparent 60%, transparent 100%), var(--ch-band-fade-v); }
 .sb-tick.sum { background: var(--ch-band-tick-sum); -webkit-mask-image: linear-gradient(to right, transparent 0, rgba(0,0,0,.05) 10%, rgba(0,0,0,.2) 20%, rgba(0,0,0,.4) 30%, rgba(0,0,0,.6) 40%, rgba(0,0,0,.8) 45%, rgba(0,0,0,1) 50%, rgba(0,0,0,.8) 55%, rgba(0,0,0,.6) 60%, rgba(0,0,0,.4) 70%, rgba(0,0,0,.2) 80%, rgba(0,0,0,.05) 90%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, transparent 0, rgba(0,0,0,.05) 10%, rgba(0,0,0,.2) 20%, rgba(0,0,0,.4) 30%, rgba(0,0,0,.6) 40%, rgba(0,0,0,.8) 45%, rgba(0,0,0,1) 50%, rgba(0,0,0,.8) 55%, rgba(0,0,0,.6) 60%, rgba(0,0,0,.4) 70%, rgba(0,0,0,.2) 80%, rgba(0,0,0,.05) 90%, transparent 100%), var(--ch-band-fade-v); }
 .sb-tick.tool { background: var(--ch-band-tick-tool); -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 11%, rgba(0,0,0,.8) 23%, rgba(0,0,0,.6) 34%, rgba(0,0,0,.4) 46%, rgba(0,0,0,.2) 57%, rgba(0,0,0,.05) 69%, transparent 80%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 11%, rgba(0,0,0,.8) 23%, rgba(0,0,0,.6) 34%, rgba(0,0,0,.4) 46%, rgba(0,0,0,.2) 57%, rgba(0,0,0,.05) 69%, transparent 80%, transparent 100%), var(--ch-band-fade-v); }
@@ -222,6 +239,9 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-row { display: flex; animation: chat-in 0.18s ease-out; }
 @keyframes chat-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 .chat-row.user { justify-content: flex-end; }
+/* 系统注入的 user 行（A204）——与常规 user 左右翻转：气泡靠左（同助手侧）；配色不变（仍是 user 泡）
+   判据 = 行变体类 `sys`（载荷 `src` 非空且非 `user`；类名声明处 = registry.js） */
+#chatMsgs .chat-row.user.sys { justify-content: flex-start; }
 .chat-row.assistant { justify-content: flex-start; }
 /* 朴素件（形态契约 · 2026-10-03 莎定）——非气泡块的公共基类：**无底 / 无描边 / 无圆角 / 无内边距**，
    只有字号与语义字色（与 .chat-bubble 同一层级的另一种形态）。
@@ -258,13 +278,11 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
    头行 = Think 标签（态色）+ 统计项（弱色）；完成态默认压缩档（缩略摘要），点击切展开档（全文 500px 滚动） */
 .chat-think { font-size: var(--ch-fs-tag); color: var(--ch-chat-reason-fg); }
 .chat-think:not(:first-child) { margin-top: 6px; }
-.chat-think .ct-head { cursor: pointer; }
+/* 切档热区（A199 2026-10-06）——只落完成态头行（热区与指针提示同源）；正文可自由选中复制；
+   流式态（.stream）不参与切档，不出指针 */
+.chat-think.done .ct-head { cursor: pointer; }
 .chat-think .ct-label { color: var(--ch-think-head); }
 .chat-think .ct-stat { color: var(--ch-think-stat); }
-/* 流式态——正文恒展开（500px 封顶 + 溢出滚动；内容在增长，压缩无意义） */
-.chat-think.stream .ct-body { margin-top: 3px; max-height: var(--ch-think-max-h); overflow: auto; white-space: pre-wrap; word-break: break-all; }
-/* 流式态光标——块内自绘（不再走气泡级 .chat-bubble.streaming::after） */
-.chat-think .ct-cursor { animation: chatblink 1s infinite; }
 /* 完成态两档——压缩档为默认（缩略摘要，与旧折叠摘要同形）；点击切展开档（全文 500px 滚动） */
 .chat-think.done .ct-body { margin-top: 3px; }
 .chat-think.done .ct-peek { white-space: pre-wrap; word-break: break-all; }
@@ -299,6 +317,8 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-tool .ps-tag { display: inline-block; margin-right: 2px; padding: 0 4px; border-radius: 3px; font-size: var(--ch-fs-tag); }
 .chat-tool .ps-tag.ps5 { color: var(--ch-tool-ps5-fg); background: var(--ch-tool-ps5-bg); }
 .chat-tool .ps-tag.ps7 { color: var(--ch-tool-ps7-fg); background: var(--ch-tool-ps7-bg); }
+/* 执行序徽标（宿主 order 表裁决——折叠行：-1 只读 / 0 默认 / 1 写入 / 2 独占 / 3 构建 / -100·100 timeback 钉死） */
+.chat-tool .chat-order { display: inline-block; margin-right: 2px; padding: 0 4px; border-radius: 3px; font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); background: var(--ch-bg-hover); }
 /* 段折叠摘要（2026-09-18）——行数 >5 的段折叠态即「5 行摘要」（首 2 + 折叠提示 + 末 2）；
    摘要挂 summary 内（details 折叠时非 summary 子元素会被隐藏），展开态隐藏 */
 .chat-tool .seg-peek { display: block; color: var(--ch-fg-muted); white-space: pre-wrap; word-break: break-all; margin-top: 3px; }
@@ -345,6 +365,10 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-row:has(.chat-bubble.roundsum) { margin-bottom: var(--ch-round-gap); }
 #chatMsgs .chat-bubble.roundsum .rs-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 3px; }
 #chatMsgs .chat-bubble.roundsum .rs-tok { color: var(--ch-tok-completion); word-break: break-all; white-space: pre-wrap; }
+/* 四项行弱化（2026-10-06 · 莎定；同日微调——K·M 单位随整数原色，不再弱化）——括号 · 百分号 / 小数点统一走第三行同款灰（与 `.rs-times` 同值），
+   主体数值（整数）与三个标签保留各自色 */
+#chatMsgs .chat-bubble.roundsum .rs-tok .rs-dim { color: var(--ch-fg-muted); }
+#chatMsgs .chat-bubble.roundsum .rs-tok .num-frac { color: var(--ch-fg-muted); }
 #chatMsgs .chat-bubble.roundsum .rs-tools { color: var(--ch-warn); margin-top: 2px; }
 #chatMsgs .chat-bubble.roundsum .rs-times { color: var(--ch-fg-muted); margin-top: 2px; }
 /* 轮末第二行分色（2026-09-17——Tool/Api/All 三段；第三行六态保持单色弱化） */
@@ -357,6 +381,14 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
    `.chat-bubble.tool` / `.pending` / `.reason` 系列早已失去产出方（工具卡 / 思考块改挂自有类），
    **A180 已随本轮一并删除**。
    原规则见 git 历史。正在进行态的标识改由各块自有通道承担（流式光标 `.chat-plain.streaming::after`）。 */
+/* 流式态色（2026-10-06）——live 段 type → **单一色源** `--ch-live-color`：切换开关的流式页签 / 滑块
+   与临时区气泡描边**共用同一值**（think 黄 / tool 军绿 / text 米白 / empty 灰）。
+   类型由 live.js 写在 `#chatinput` 的 `data-live` 上——两处消费面零各自映射（加态只改本块一行） */
+#chatinput { --ch-live-color: var(--ch-fg-weak); }   /* 未标记 / empty——灰 */
+#chatinput[data-live="thinksse"] { --ch-live-color: var(--ch-state-think); }
+#chatinput[data-live="toolrun"] { --ch-live-color: var(--ch-state-tool); }
+#chatinput[data-live="replysse"] { --ch-live-color: var(--ch-state-reply); }
+#chatinput[data-live="empty"] { --ch-live-color: var(--ch-fg-weak); }
 /* 输入区（2026-09-22）——三列网格：左预留带 | 内容列 | 右预留带（1fr）
    列宽基准 = 视口宽（本容器无左右 padding）；输入框与气泡同宽同左缘，发送按钮固定宽落在右预留带、贴列右缘；
    无上边框——输入区与气泡区之间不画分割线。
@@ -462,7 +494,9 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 
 /* F3 MD 渲染——手写解析器输出（chat-md.js）——表格/代码块/标题/列表样式 */
 /* 注意：.chat-bubble 有 white-space:pre-wrap + word-break:break-all，会干扰表格/代码块——在 MD 渲染容器内重置 */
-.chat-bubble .md-block { white-space: normal; word-break: normal; }
+/* MD 正文色单一入口（2026-10-06 修复）——`.md-block` 原不设 color，正文实际继承气泡色 `--ch-chat-ai-fg`，
+   致 L3 正文令牌 `--ch-md-text` 零引用（改它不生效）；此处显式落消费点：MD 正文色一律走令牌 */
+.chat-bubble .md-block { white-space: normal; word-break: normal; color: var(--ch-md-text); }
 .chat-bubble .md-block > *:first-child { margin-top: 0; }
 .chat-bubble .md-block > *:last-child { margin-bottom: 0; }
 /* 标题 */
@@ -536,6 +570,12 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-bubble .md-block .md-copy:hover .md-copy-btn { opacity: 1; }
 .chat-bubble .md-block .md-copy-btn:hover { background: var(--ch-hover-overlay); color: var(--ch-fg-strong); }
 
+/* ============ P6b 节点操作条——text 块底部回滚 / 分支按钮（⟲ / ⧉ + 悬浮提示） ============ */
+/* 2026-10-06 复归：A167 重构时随 text 件剥离丢失——引擎与指令面（session.rollback / session.fork）一直在 */
+.node-actions { display: flex; gap: 6px; margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--ch-line-soft); }
+.node-btn { background: none; border: none; cursor: pointer; font-size: var(--ch-fs-body); color: var(--ch-fg-muted); padding: 2px 6px; border-radius: 4px; line-height: 1; }
+.node-btn:hover { background: var(--ch-hover-overlay); color: var(--ch-fg-strong); }
+
 /* ============ 桌宠（纯前端渲染——js/chat-pet.js） ============ */
 /* 定位：对话页固定浮动层（右下角，输入区上方）——可交互（移入 hook / 点击 check，故开启指针事件） */
 /* 尺寸：素材原尺寸 1:1 显示（286x256——不作缩放，像素对齐最清晰）；bottom 随输入区 3→5 行 +36px（110→146） */
@@ -553,33 +593,96 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-pet-say { position: absolute; left: 0; top: calc(100% + 6px); width: 286px; background: var(--ch-bg-raised); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-bubble); padding: 6px 10px; color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); line-height: 1.5; word-break: break-all; pointer-events: none; animation: chat-in 0.18s ease-out; }
 
 /* ── 临时区（契约 §12.2 ③）——与输入框**同区域互斥**（同列同位；显隐由 input.js 切内联 display）──
-   形态 = 输入框同款气泡（同底 / 同圆角 / 同内边距 / 同字号），描边取军绿（与切换按钮同色）；
-   状态投影整体替换；**高度 = 输入框实测高度（固定）**——切换时由 input.js 写入内联 height，空态亦保持同高不被压缩。 */
+   形态 = 输入框同款气泡（同底 / 同圆角 / 同内边距 / 同字号）；**描边色随 live 态**——与切换开关的流式
+   页签同源（`--ch-live-color`：think 黄 / tool 军绿 / text 米白 / empty 灰）；有流式内容（非 empty）时
+   描边做**呼吸高亮**（2s 脉动：弱档 ↔ 实心档），empty 静止。
+   **高度 = 输入框实测高度（固定）**——切换时由 input.js 写入内联 height，空态亦保持同高不被压缩。 */
 .chat-live {
     grid-column: 2;
     overflow-y: auto;
     background: var(--ch-bg-panel);
-    border: 1px solid var(--ch-state-tool);
+    border: 1px solid color-mix(in srgb, var(--ch-live-color) 35%, transparent);
     border-radius: var(--ch-radius-bubble);
     padding: 7px 10px;
     font-size: var(--ch-fs-tag);
     line-height: 1.5;
 }
-/* 临时区切换按钮——输入框左侧（军绿底 + 白字；绝对定位贴输入框左缘与底边——
-   参与 grid 会触发列回退换行，把动作列顶到下一行） */
-.ch-livebtn {
+/* 呼吸高亮——有流式内容时脉动（empty 不参与：面板无内容不抢注意力） */
+#chatinput[data-live="thinksse"] .chat-live,
+#chatinput[data-live="toolrun"] .chat-live,
+#chatinput[data-live="replysse"] .chat-live {
+    animation: ch-live-breathe 2s ease-in-out infinite;
+}
+@keyframes ch-live-breathe {
+    0%, 100% { border-color: color-mix(in srgb, var(--ch-live-color) 35%, transparent); }
+    50% { border-color: var(--ch-live-color); }
+}
+/* 临时区切换开关（2026-10-06 莎定：按钮 → 竖向滑块；同日合并为单按钮）——输入框左侧左预留带内：
+   滑块 = 当前态指示块（半高实心）——输入态居上（输入区主色蓝）/ 流式态居下（随当前 live 态——见 data-live 映射）。
+   标签一枚与滑块同高同位（随态上下移动），文字随态改（输入 / 流式），反白压在滑块上。
+   绝对定位贴输入框左缘与底边——参与 grid 会触发列回退换行，把动作列顶到下一行 */
+.ch-livetoggle {
     position: absolute;
     left: calc(var(--ch-col-left) - var(--ch-send-w) - 6px);
     bottom: 8px;
     width: var(--ch-send-w);
-    height: 40px;
-    border: none;
+    height: 56px;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--ch-line);
     border-radius: var(--ch-radius-bubble);
-    background: var(--ch-state-tool);
-    color: var(--ch-fg-inverse);
+    background: var(--ch-bg-panel);
     cursor: pointer;
+    user-select: none;
+    overflow: hidden;
+    --ch-lt-input: var(--ch-bg-accent);   /* 输入页签色——输入区主色蓝 */
+    --ch-lt-live: var(--ch-live-color);   /* 流式页签色——统一态色（映射见上「流式态色」块） */
+}
+/* 滑块——半高实心块：输入态在上（蓝）/ 流式态在下（当前态色） */
+.ch-lt-thumb {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 50%;
+    background: var(--ch-lt-input);
+    transition: top 0.18s ease, background 0.18s ease;
+}
+.ch-livetoggle.on .ch-lt-thumb { top: 50%; background: var(--ch-lt-live); }
+/* 标签——与滑块同高同位（top 随态切换，0.18s 与滑块同步），文字反白压在滑块上 */
+.ch-lt-label {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
     font-family: inherit;
     font-size: var(--ch-fs-tag);
+    color: var(--ch-fg-inverse);
+    transition: top 0.18s ease;
 }
-.ch-livebtn:hover { filter: brightness(1.15); }
-.ch-livebtn.on { outline: 1px solid var(--ch-fg-inverse); outline-offset: 1px; }
+.ch-livetoggle.on .ch-lt-label { top: 50%; }
+.ch-livetoggle:hover { filter: brightness(1.1); }
+
+/* 流式统计行（fx/live-stats.js · 契约 §12.8 独立功能面 · 2026-10-06 莎定）——切换开关**正上方**的灰色读数：
+   三行 `label: value`（line 行数 / char 字符数 / spd 速度）。右缘与开关右缘对齐、内容向左展开（左预留带内），
+   窄屏（左预留带 = 下限档）下亦不被裁；无活跃流式段即 `display:none`（不占位、不留空档）。
+   纯读数——不接指针事件（点击照常落到开关上） */
+#chatLiveStats {
+    position: absolute;
+    right: calc(100% - var(--ch-col-left) + 6px);
+    bottom: calc(8px + 56px + 6px);
+    max-width: calc(var(--ch-col-left) - 6px);
+    text-align: right;
+    font-size: var(--ch-fs-tag);
+    line-height: 1.45;
+    color: var(--ch-fg-muted);
+    white-space: pre-line;
+    overflow: hidden;
+    pointer-events: none;
+    user-select: none;
+}

@@ -10,7 +10,8 @@
 //                   context = 该 type 当前整段内容——思考全文 / 回复全文 / 未完成工具卡数组 JSON / 空串）
 //
 // 两族渲染函数形态（见各素材头注）：
-//   persist 族：function(payload) → 行元素（返回即完，挂载由 persist.js 承担）
+//   persist 族：function(payload, item) → 行元素（返回即完，挂载由 persist.js 承担；
+//              第二参 = 整条条目——块级字段取用口，如 text 块操作条读 msgIndex）
 //   live    族：function(payload) → 行元素（一件式入口自各 live 件提供——A178 归位：
 //               `build*()` → 句柄的中间形态留在件内，本表只登记入口名，不兼实现）
 // ═══════════════════════════════════════════
@@ -26,6 +27,7 @@
 //    `bodyClass()`（块体 = 形态 + 语义）/ `blockRow()`（行容器）取用，**不自持类名字符串**
 //    （改形态或语义 = 改本表一行，不动渲染函数）；滚动带经行元素的 `data-type` 反查本表
 //    （不再探测类名——新增块型自动跟上）。
+//    数据驱动的行变体（非 type 维度）另见下方「来源变体」段——A204 系统注入 user 行 `.sys`。
 var BLOCK_DECL = {
     'user': { form: 'bubble', row: 'user', tick: 'user' },
     'text': { form: 'bubble', row: 'assistant', tick: 'reply' },
@@ -68,6 +70,27 @@ function tickRole(type) {
     return (d && d.tick) ? d.tick : 'reply';
 }
 
+// ── 来源变体（A204——数据驱动行变体；类名字符串的唯一声明处）──────
+// 载荷 `src` 非空且非 `user` ⇒ 系统注入行（后端 sys 入口标记）。
+// 消费面两处：气泡靠左（CSS `#chatMsgs .chat-row.user.sys`）· 滚动带刻度曲线镜像（CSS `.sb-tick.user-sys`）。
+// 🔴 类名字符串只在本文件出现——渲染件与滚动带一律经取用口，不自拼。
+var ROW_SYS = 'sys';
+
+/// 行来源变体——系统注入返回 `sys`；人工（缺字段 / `user`）返回空串（零动作）
+function rowSourceClass(payload) {
+    var s = (payload && payload.src) ? String(payload.src) : '';
+    if (s === '' || s === 'user') {
+        return '';
+    }
+    return ROW_SYS;
+}
+
+/// 系统注入判定——载荷 `src` 非空且非 `user`（`rowSourceClass` 的布尔取用口；
+/// 消费面：自动切换 / 插话队列出队判据——系统注入块一律**不当作「我的输入」**）
+function isSysPayload(payload) {
+    return rowSourceClass(payload) !== '';
+}
+
 // ── 六态元信息（A179 收口——状态条与轮末统计共用一份）──────────────
 // 契约：state 段 `runMs` 与 roundsum `payload.data.phases` 同键（link/wait/think/tool/run/reply）
 // 消费：state.js 状态条（key + label + icon）· blocks/roundsum.js 六态用时行（key + label）
@@ -94,7 +117,7 @@ var PERSIST_RENDERERS = {
 
 /// 临时区渲染表——type → function(payload) → 行元素（A196：live 段为 {type, context} 两字符串）
 /// `empty` 不产元素（live.js 显式处理）；`toolrun` 的 context 是**数组**，由 live.js 逐卡调
-/// `buildToolBlock(card, 'toolrun')`（工具卡两区同源，不另设 live 件）——故不入本表
+/// `buildToolBlock(card, null, 'toolrun')`（第三参 = 行身份；工具卡两区同源，不另设 live 件）——故不入本表
 var LIVE_RENDERERS = {
     'replysse': liveReplySse,
     'thinksse': liveThinkSse

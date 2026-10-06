@@ -39,10 +39,10 @@ function captureWarn(body) {
 
 // ── ① / ② 声明表与启动 ───────────────────────
 describe('声明表与启动（fx/registry）', () => {
-    it('五件齐备且字段面完整', () => {
+    it('六件齐备且字段面完整', () => {
         const table = window.FX_FEATURES;
-        expect(table.length).toBe(5);
-        expect(table.map((f) => f.id).sort()).toEqual(['cmdIntent', 'controls', 'pending', 'pet', 'scroll']);
+        expect(table.length).toBe(6);
+        expect(table.map((f) => f.id).sort()).toEqual(['cmdIntent', 'controls', 'liveStats', 'pending', 'pet', 'scroll']);
         for (const f of table) {
             expect(typeof f.name, f.id).toBe('string');
             expect(Array.isArray(f.inputs), f.id + ' inputs').toBe(true);
@@ -143,6 +143,37 @@ describe('插话队列（fx/pending）', () => {
     });
 });
 
+// ── ④b 系统注入不打断输入（A204）──────────────
+describe('系统注入不打断输入（A204）', () => {
+    it('系统注入 user 块——不出队在途记录、不切流式', () => {
+        window.pendingClear();
+        window.pendingAdd('我正在打的一条');
+        window.chatLiveShow(false);
+        window.persistAppend([{ type: 'user', payload: { text: '[systemauto]（系统自动）x', src: 'systemauto' } }], true);
+        // 在途记录仍在——系统注入块未被当成「我的输入已确认」
+        expect(window.pendQueue.length).toBe(1);
+        expect(document.getElementById('chatPendingPanel').textContent).toContain('我正在打的一条');
+        // 临时区未切走——输入区仍在原位（不打断输入）
+        expect(window.liveShown).toBe(false);
+        window.pendingClear();
+    });
+
+    it('人工 user 块——出队 + 切流式（原语义不回归）', () => {
+        window.pendingClear();
+        window.pendingAdd('我发的');
+        window.chatLiveShow(false);
+        window.persistAppend([{ type: 'user', payload: { text: '我发的' } }], true);
+        expect(window.pendQueue.length).toBe(0);
+        expect(window.liveShown).toBe(true);
+    });
+
+    it('roundsum——切回输入（放行输入；与谁触发本轮无关）', () => {
+        window.chatLiveShow(true);
+        window.persistAppend([{ type: 'roundsum', payload: { type: 'roundsum', data: {} } }], true);
+        expect(window.liveShown).toBe(false);
+    });
+});
+
 // ── ⑤ cmdIntent ──────────────────────────────
 describe('命令解码显示（fx/cmd-intent）', () => {
     it('适用判据——仅 powershell / powershell7', () => {
@@ -190,5 +221,64 @@ describe('滚动带与桌宠——入口就位（几何 / 素材面归运行态�
             expect(typeof window[n], n).toBe('function');
         }
         expect(() => { window.chatPetSetOffline(true); window.chatPetSetOffline(false); }).not.toThrow();
+    });
+});
+
+// ── ⑦ liveStats（流式统计行——契约 §12.8 · 2026-10-06 莎定）────
+describe('流式统计行（fx/live-stats）', () => {
+    it('文案组装——无活跃段空串；有段三行 label: value（整数直出 + 用时一位小数）', () => {
+        expect(window.liveStatsText(null)).toBe('');
+        expect(window.liveStatsText({ type: 'thinksse', chars: 340, lines: 12, elapsedMs: 5000 }))
+            .toBe('line: 12\nchar: 340\ntime: 5.0s');
+    });
+
+    it('用时口径——0.1 秒为最小分度（不足 1s 段照常显示，无「—」占位）', () => {
+        expect(window.liveStatsText({ type: 'replysse', chars: 5, lines: 1, elapsedMs: 400 }))
+            .toBe('line: 1\nchar: 5\ntime: 0.4s');
+        expect(window.liveStatsText({ type: 'replysse', chars: 5, lines: 1, elapsedMs: 1250 }))
+            .toBe('line: 1\nchar: 5\ntime: 1.3s');
+    });
+
+    it('刷新落盘——无活跃段隐藏 / 有活跃段写入并显示；元素缺失不抛', () => {
+        const el = document.getElementById('chatLiveStats');
+        window.liveApply({ type: 'empty', context: '' });
+        window.liveStatsRefresh();
+        expect(el.style.display).toBe('none');
+
+        window.streamState.type = 'thinksse';
+        window.streamState.revealed = '甲\n乙';
+        window.streamState.startedAt = window.streamNow() - 2000;
+        window.liveStatsRefresh();
+        expect(el.style.display).toBe('');
+        expect(el.textContent).toBe('line: 2\nchar: 3\ntime: 2.0s');
+
+        const parent = el.parentNode;
+        parent.removeChild(el);
+        try {
+            expect(() => { window.liveStatsRefresh(); }).not.toThrow();
+        } finally {
+            parent.appendChild(el);
+        }
+        window.liveApply({ type: 'empty', context: '' });
+        window.liveStatsRefresh();
+    });
+
+    it('刷新节拍——单一 100ms 心跳（10 次/秒；机制侧不推送）', () => {
+        expect(window.LIVE_STATS_TICK_MS).toBe(100);
+    });
+
+    it('轮询取值——有活跃段即显示（line / char 取已吐文本），离段即隐藏', () => {
+        const el = document.getElementById('chatLiveStats');
+        window.liveApply({ type: 'thinksse', context: '第一行\n第二行' });
+        window.liveStatsRefresh();
+        expect(el.style.display, '有活跃段即显示（未吐字也属活跃段）').toBe('');
+        window.streamDrain();
+        window.liveStatsRefresh();
+        expect(el.textContent).toContain('line: 2');
+        expect(el.textContent).toContain('char: 7');
+
+        window.liveApply({ type: 'empty', context: '' });
+        window.liveStatsRefresh();
+        expect(el.style.display).toBe('none');
     });
 });

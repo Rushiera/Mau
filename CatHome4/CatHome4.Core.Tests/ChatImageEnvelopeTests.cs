@@ -6,8 +6,9 @@ using Xunit;
 namespace CatHome4.Core.Tests
 {
     /// <summary>
-    /// 对话图片包裹测试（A65）——组装格式 / 严格门解析 / 指令行套用 / 往返一致。
+    /// 对话图片包裹测试（A65；2026-10-06 放宽位置判据）——组装格式 / 严格门解析 / 指令行套用 / 往返一致。
     /// 规格：Project/CH4/design-ch4-chat-images.md §四（格式唯一权威）。
+    /// 🔴 放宽（2026-10-06 · 莎裁）：包裹可在消息**任意位置**——解析输出前段（before）与后段（after）两段文本。
     /// </summary>
     public sealed class ChatImageEnvelopeTests
     {
@@ -63,35 +64,75 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 解析——合法包裹：条目按序取出，正文去掉包裹（前导空行分隔被吸收）。
+        /// 解析——合法包裹（消息开头）：条目按序取出，正文进后段，前段为空。
         /// </summary>
         [Fact]
         public void TryParse_ValidEnvelope_SplitsItemsAndBody()
         {
             string text = "[image-open]\n图片92-1：C:\\a b\\a1b2.png\n图片92-2：C:\\c\\c3d4.jpg\n[image-end]\n\n第一行\n第二行";
             List<ChatImageItem> items;
-            string body;
-            bool ok = ChatImageEnvelope.TryParse(text, out items, out body);
+            string before;
+            string after;
+            bool ok = ChatImageEnvelope.TryParse(text, out items, out before, out after);
             Assert.True(ok);
             Assert.Equal(2, items.Count);
             Assert.Equal("92-1", items[0].Ref);
             Assert.Equal("C:\\a b\\a1b2.png", items[0].Path);
             Assert.Equal("92-2", items[1].Ref);
-            Assert.Equal("第一行\n第二行", body);
+            Assert.Equal("", before);
+            Assert.Equal("第一行\n第二行", after);
         }
 
         /// <summary>
-        /// 严格门——缺段尾：整段按普通文本（items 空，body = 原文）。
+        /// 解析——包裹在消息**中间**（放宽后新支持）：前段与后段各自取出，顺序保持原文。
+        /// </summary>
+        [Fact]
+        public void TryParse_EnvelopeInMiddle_SplitsBeforeAndAfter()
+        {
+            string text = "A200 完成。\n\n[image-open]\n图片276-1：C:\\a.png\n[image-end]\n\n以下是说明。";
+            List<ChatImageItem> items;
+            string before;
+            string after;
+            bool ok = ChatImageEnvelope.TryParse(text, out items, out before, out after);
+            Assert.True(ok);
+            Assert.Single(items);
+            Assert.Equal("276-1", items[0].Ref);
+            Assert.Equal("A200 完成。", before);
+            Assert.Equal("以下是说明。", after);
+        }
+
+        /// <summary>
+        /// 解析——前一处段头残缺（有段头无段尾）：继续向后找下一处合法包裹。
+        /// </summary>
+        [Fact]
+        public void TryParse_BrokenCandidateThenValid_ResolvesToLater()
+        {
+            string text = "[image-open]\n图片1-1：C:\\a.png\n中间没有段尾\n\n[image-open]\n图片2-1：C:\\b.png\n[image-end]\n尾部正文";
+            List<ChatImageItem> items;
+            string before;
+            string after;
+            bool ok = ChatImageEnvelope.TryParse(text, out items, out before, out after);
+            Assert.True(ok);
+            Assert.Single(items);
+            Assert.Equal("2-1", items[0].Ref);
+            Assert.Contains("中间没有段尾", before);
+            Assert.Equal("尾部正文", after);
+        }
+
+        /// <summary>
+        /// 严格门——缺段尾：整段按普通文本（items 空，before = 原文）。
         /// </summary>
         [Fact]
         public void TryParse_MissingEndTag_Rejected()
         {
             string text = "[image-open]\n图片1-1：C:\\a.png\n正文";
             List<ChatImageItem> items;
-            string body;
-            Assert.False(ChatImageEnvelope.TryParse(text, out items, out body));
+            string before;
+            string after;
+            Assert.False(ChatImageEnvelope.TryParse(text, out items, out before, out after));
             Assert.Empty(items);
-            Assert.Equal(text, body);
+            Assert.Equal(text, before);
+            Assert.Equal("", after);
         }
 
         /// <summary>
@@ -101,8 +142,9 @@ namespace CatHome4.Core.Tests
         public void TryParse_MissingOpenTag_Rejected()
         {
             List<ChatImageItem> items;
-            string body;
-            Assert.False(ChatImageEnvelope.TryParse("图片1-1：C:\\a.png\n[image-end]", out items, out body));
+            string before;
+            string after;
+            Assert.False(ChatImageEnvelope.TryParse("图片1-1：C:\\a.png\n[image-end]", out items, out before, out after));
             Assert.Empty(items);
         }
 
@@ -113,8 +155,9 @@ namespace CatHome4.Core.Tests
         public void TryParse_BlankLineInside_Rejected()
         {
             List<ChatImageItem> items;
-            string body;
-            Assert.False(ChatImageEnvelope.TryParse("[image-open]\n图片1-1：C:\\a.png\n\n[image-end]", out items, out body));
+            string before;
+            string after;
+            Assert.False(ChatImageEnvelope.TryParse("[image-open]\n图片1-1：C:\\a.png\n\n[image-end]", out items, out before, out after));
             Assert.Empty(items);
         }
 
@@ -125,8 +168,9 @@ namespace CatHome4.Core.Tests
         public void TryParse_UnknownLineInside_Rejected()
         {
             List<ChatImageItem> items;
-            string body;
-            Assert.False(ChatImageEnvelope.TryParse("[image-open]\n这里说明一下\n图片1-1：C:\\a.png\n[image-end]", out items, out body));
+            string before;
+            string after;
+            Assert.False(ChatImageEnvelope.TryParse("[image-open]\n这里说明一下\n图片1-1：C:\\a.png\n[image-end]", out items, out before, out after));
             Assert.Empty(items);
         }
 
@@ -137,8 +181,9 @@ namespace CatHome4.Core.Tests
         public void TryParse_NoItems_Rejected()
         {
             List<ChatImageItem> items;
-            string body;
-            Assert.False(ChatImageEnvelope.TryParse("[image-open]\n[image-end]\n正文", out items, out body));
+            string before;
+            string after;
+            Assert.False(ChatImageEnvelope.TryParse("[image-open]\n[image-end]\n正文", out items, out before, out after));
             Assert.Empty(items);
         }
 
@@ -153,14 +198,16 @@ namespace CatHome4.Core.Tests
             images.Add(@"C:\Data\chat-images\c3d4.webp");
             string text = ChatImageEnvelope.Build(images, 41, "两行\n正文");
             List<ChatImageItem> items;
-            string body;
-            Assert.True(ChatImageEnvelope.TryParse(text, out items, out body));
+            string before;
+            string after;
+            Assert.True(ChatImageEnvelope.TryParse(text, out items, out before, out after));
             Assert.Equal(2, items.Count);
             Assert.Equal("41-1", items[0].Ref);
             Assert.Equal("41-2", items[1].Ref);
             Assert.Equal(@"C:\Data\chat-images\a1b2.png", items[0].Path);
             Assert.Equal(@"C:\Data\chat-images\c3d4.webp", items[1].Path);
-            Assert.Equal("两行\n正文", body);
+            Assert.Equal("", before);
+            Assert.Equal("两行\n正文", after);
         }
 
         /// <summary>

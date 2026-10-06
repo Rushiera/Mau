@@ -193,6 +193,8 @@ namespace CatHome4.Core.Tests
             dogs.Add(d1);
             dogs.Add(d2);
             session.FlushImageInjections(dogs);
+            // 注入经队列受理（A204）——批后段同帧消费，测试须泵一轮落前文
+            PumpUntilIdle(session);
             Assert.Equal(1, CountInjectedMessages(session));
             LlmMessage[] all = session.Context.GetMessages();
             string imagesJson = "";
@@ -260,6 +262,8 @@ namespace CatHome4.Core.Tests
                 d1.Result = "{\"path\":\"imgs:a.png\"}";
                 dogs.Add(d1);
                 session.FlushImageInjections(dogs);
+                // 注入经队列受理（A204）——批后段同帧消费，测试须泵一轮落前文
+                PumpUntilIdle(session);
                 Assert.Equal(1, CountInjectedMessages(session));
                 string imagesJson = LastImagesJson(session);
                 // 引用已解析为绝对路径（根寻址形态不再出现在引用数组里）
@@ -297,6 +301,8 @@ namespace CatHome4.Core.Tests
             dogs.Add(d1);
             dogs.Add(d2);
             session.FlushImageInjections(dogs);
+            // 注入经队列受理（A204）——批后段同帧消费，测试须泵一轮落前文
+            PumpUntilIdle(session);
             string imagesJson = LastImagesJson(session);
             Assert.Contains("https://example.com/a.png", imagesJson, StringComparison.Ordinal);
             Assert.Contains("b.png", imagesJson, StringComparison.Ordinal);

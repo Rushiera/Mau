@@ -52,7 +52,7 @@ describe('装配——脚本清单与入口', () => {
         // A196——toolrun 由 live.js 逐卡复用工具卡渲染件（不入 LIVE_RENDERERS）；empty 不入块声明表（不产元素）
         expect(persist.concat(live, ['toolrun']).sort()).toEqual(decl.slice().sort());
         expect(window.RUN_PHASES.length).toBe(6);
-        expect(window.FX_FEATURES.length).toBe(5);
+        expect(window.FX_FEATURES.length).toBe(6);
     });
 });
 
@@ -96,14 +96,16 @@ describe('收包三段（契约 §12.2 / §12.3）', () => {
         box.innerHTML = '<div class="stale">旧内容</div>';
         window.chatOnFrame({
             v: 2,
-            state: { sessionId: 'cat1', runState: 'think', runMs: { think: 1500 }, requests: 0, tokens: { count: 3 } },
+            state: { sessionId: 'cat1', runState: 'think', runMs: { think: 1500 }, requests: 0, tokens: { count: 3 }, meta: { displayName: 'cat1' } },
             persist: { mode: 'full', items: [{ type: 'user', payload: { text: '你好' } }] },
             live: { type: 'replysse', context: '流式中' }
         });
         expect(box.querySelector('.stale')).toBeNull();
         expect(box.querySelectorAll('.chat-row').length).toBe(1);
         expect(document.getElementById('chatLivePanel').querySelectorAll('.chat-row').length).toBe(1);
-        expect(document.getElementById('chatInfo').textContent).toContain('cat1');
+        // A201 改写：信息位 = 前文条数与长度 / 前文字符数 / 会话级消耗（原显示猫 key 的 sessionId 位已弃）
+        expect(document.getElementById('chatInfo').textContent).toContain('前文 0.00 token 3 条');
+        expect(document.title).toBe('cat1');
     });
 
     it('追加帧——persist append 逐条挂载（不清理既有块）', () => {
@@ -244,12 +246,26 @@ describe('出口面（input.js——投递即回执）', () => {
     });
 
     it('停止 / 继续 / 新会话——指令串固定', async () => {
+        window.confirm = () => true;   // 新会话二次确认（2026-10-06）——本用例只验指令串
         const calls = captureFetch();
         window.chatPause();
         window.chatContinue();
         window.chatNewSession();
         await flushMicro();
         expect(calls.map((c) => JSON.parse(c.opt.body).text)).toEqual(['cat.pause', 'cat.continue', 'session.new']);
+    });
+
+    it('新会话——二次确认（取消不投递 · 2026-10-06）', async () => {
+        window.confirm = () => false;
+        const calls = captureFetch();
+        window.chatNewSession();
+        await flushMicro();
+        expect(calls.length).toBe(0);
+        window.confirm = () => true;
+        window.chatNewSession();
+        await flushMicro();
+        expect(calls.length).toBe(1);
+        expect(JSON.parse(calls[0].opt.body).text).toBe('session.new');
     });
 
     it('临时区切换——输入框与面板同区域互斥 + 面板高度固定（对话区不受影响）', () => {
@@ -263,6 +279,70 @@ describe('出口面（input.js——投递即回执）', () => {
         window.chatLiveToggle();
         expect(panel.style.display).toBe('none');
         expect(document.getElementById('chatSendInput').style.display).toBe('');
+    });
+
+    it('切换开关——单按钮整体点击翻转（标签随态改字）', () => {
+        const sw = document.getElementById('chatLiveToggle');
+        const panel = document.getElementById('chatLivePanel');
+        const input = document.getElementById('chatSendInput');
+        const label = document.getElementById('chatLiveLabel');
+        window.chatLiveShow(false);
+        expect(label.textContent).toBe('输入');
+        sw.click();
+        expect(panel.style.display).toBe('');
+        expect(input.style.display).toBe('none');
+        expect(sw.classList.contains('on')).toBe(true);
+        expect(label.textContent).toBe('流式');
+        sw.click();
+        expect(panel.style.display).toBe('none');
+        expect(input.style.display).toBe('');
+        expect(sw.classList.contains('on')).toBe(false);
+        expect(label.textContent).toBe('输入');
+    });
+
+    it('直达入口——chatLiveShow 幂等（自动切换驱动面；同态零动作）', () => {
+        const sw = document.getElementById('chatLiveToggle');
+        const label = document.getElementById('chatLiveLabel');
+        window.chatLiveShow(true);
+        expect(sw.classList.contains('on')).toBe(true);
+        expect(label.textContent).toBe('流式');
+        window.chatLiveShow(true);
+        expect(sw.classList.contains('on')).toBe(true);
+        expect(label.textContent).toBe('流式');
+        window.chatLiveShow(false);
+        expect(sw.classList.contains('on')).toBe(false);
+        expect(label.textContent).toBe('输入');
+    });
+
+    it('流式态标记——输入区 data-live 随 live 段 type（态色单一色源，映射归 CSS 令牌）', () => {
+        const zone = document.getElementById('chatinput');
+        window.liveApply({ type: 'toolrun', context: '[]' });
+        expect(zone.getAttribute('data-live')).toBe('toolrun');
+        window.liveApply({ type: 'thinksse', context: '想' });
+        expect(zone.getAttribute('data-live')).toBe('thinksse');
+        window.liveApply({ type: 'empty', context: '' });
+        expect(zone.getAttribute('data-live')).toBe('empty');
+    });
+
+    it('自动切换——user 块到达切流式 / roundsum 到达切回输入（判据取持久区新块）', () => {
+        const sw = document.getElementById('chatLiveToggle');
+        const panel = document.getElementById('chatLivePanel');
+        const input = document.getElementById('chatSendInput');
+        window.chatLiveShow(false);
+        window.persistApply({ mode: 'append', items: [{ type: 'user', payload: { text: '你好' } }] });
+        expect(sw.classList.contains('on')).toBe(true);
+        expect(panel.style.display).toBe('');
+        expect(input.style.display).toBe('none');
+        window.persistApply({ mode: 'append', items: [{ type: 'roundsum', payload: {} }] });
+        expect(sw.classList.contains('on')).toBe(false);
+        expect(input.style.display).toBe('');
+    });
+
+    it('自动切换——full 重放不触发（首帧 / 重连不跳态）', () => {
+        const sw = document.getElementById('chatLiveToggle');
+        window.chatLiveShow(false);
+        window.persistApply({ mode: 'full', items: [{ type: 'user', payload: { text: '旧消息' } }] });
+        expect(sw.classList.contains('on')).toBe(false);
     });
 });
 

@@ -101,78 +101,94 @@ namespace CH4
         }
 
         /// <summary>
-        /// 解析包裹——严格门：段头 + ≥1 条目 + 段尾齐备，内部无杂行。
-        /// 不成立时：items 空列表、body = 原文（调用方按普通文本处理）。
+        /// 解析包裹——严格门：段头 + ≥1 条目 + 段尾齐备，包裹内部无杂行。
+        /// 🔴 2026-10-06 放宽：包裹可位于消息**任意位置**（行粒度）——原「必须首个非空行」退役；
+        ///    前一候选不成立（缺段尾 / 内部杂行 / 零条目）继续向后找下一处段头。
+        /// 不成立时：items 空列表、before = 原文 Trim、after = 空串（调用方按普通文本处理）。
         /// </summary>
         /// <param name="text">消息文本（可空）</param>
         /// <param name="items">出参——条目列表（按出现顺序）</param>
-        /// <param name="body">出参——去掉包裹后的正文（无包裹 = 原文 Trim）</param>
+        /// <param name="before">出参——包裹**之前**的文本（无包裹 = 原文 Trim）</param>
+        /// <param name="after">出参——包裹**之后**的文本（无包裹 = 空串）</param>
         /// <returns>true=命中合法包裹</returns>
-        internal static bool TryParse(string text, out List<ChatImageItem> items, out string body)
+        internal static bool TryParse(string text, out List<ChatImageItem> items, out string before, out string after)
         {
             items = new List<ChatImageItem>();
+            before = "";
+            after = "";
             if (text == null || text.Length == 0)
             {
-                body = "";
                 return false;
             }
-            body = text.Trim();
+            before = text.Trim();
             string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
-            // [段1] 段头定位——跳过前导空行（容错读旧数据；组装侧不留空行）
-            int i = 0;
-            while (i < lines.Length && lines[i].Trim().Length == 0)
+            // [段1] 段头定位——任意位置扫描（放宽后不再要求首个非空行）
+            for (int s = 0; s < lines.Length; s = s + 1)
             {
-                i = i + 1;
-            }
-            if (i >= lines.Length || lines[i].Trim() != OpenTag)
-            {
-                return false;
-            }
-            i = i + 1;
-            // [段2] 条目行——≥1；段尾之前不得出现空行或非条目行（严格门）
-            // 局部收集——任一判定失败即整段判不成立，不留下半截条目（调用方 items 恒空）
-            List<ChatImageItem> found = new List<ChatImageItem>();
-            while (i < lines.Length)
-            {
-                string t = lines[i].Trim();
-                if (t == EndTag)
+                if (lines[s].Trim() != OpenTag)
                 {
-                    break;
+                    continue;
                 }
-                if (t.Length == 0)
+                // [段2] 条目行——≥1；段尾之前不得出现空行或非条目行（严格门）
+                // 局部收集——本候选任一判定失败即放弃本候选（不留半截条目），继续向后找
+                List<ChatImageItem> found = new List<ChatImageItem>();
+                int i = s + 1;
+                bool broken = false;
+                while (i < lines.Length)
                 {
-                    return false;
+                    string t = lines[i].Trim();
+                    if (t == EndTag)
+                    {
+                        break;
+                    }
+                    if (t.Length == 0)
+                    {
+                        broken = true;
+                        break;
+                    }
+                    Match m = _itemRegex.Match(t);
+                    if (!m.Success)
+                    {
+                        broken = true;
+                        break;
+                    }
+                    ChatImageItem item = new ChatImageItem();
+                    item.Ref = m.Groups[1].Value + "-" + m.Groups[2].Value;
+                    item.Path = m.Groups[3].Value.Trim();
+                    found.Add(item);
+                    i = i + 1;
                 }
-                Match m = _itemRegex.Match(t);
-                if (!m.Success)
+                if (broken || found.Count == 0 || i >= lines.Length)
                 {
-                    return false;
+                    continue;
                 }
-                ChatImageItem item = new ChatImageItem();
-                item.Ref = m.Groups[1].Value + "-" + m.Groups[2].Value;
-                item.Path = m.Groups[3].Value.Trim();
-                found.Add(item);
-                i = i + 1;
+                items = found;
+                before = JoinLines(lines, 0, s).Trim();
+                after = JoinLines(lines, i + 1, lines.Length).Trim();
+                return true;
             }
-            if (found.Count == 0 || i >= lines.Length)
-            {
-                return false;
-            }
-            i = i + 1;
-            // [段3] 正文——段尾之后全部内容（前导空行分隔被 Trim 吸收）
+            return false;
+        }
+
+        /// <summary>
+        /// 行区间拼接——[from, to) 逐行以 \n 连接（空区间返回空串）。
+        /// </summary>
+        /// <param name="lines">行数组</param>
+        /// <param name="from">起始下标（含）</param>
+        /// <param name="to">结束下标（不含）</param>
+        /// <returns>拼接文本</returns>
+        private static string JoinLines(string[] lines, int from, int to)
+        {
             StringBuilder sb = new StringBuilder();
-            while (i < lines.Length)
+            for (int i = from; i < to; i = i + 1)
             {
                 if (sb.Length > 0)
                 {
                     sb.Append("\n");
                 }
                 sb.Append(lines[i]);
-                i = i + 1;
             }
-            items = found;
-            body = sb.ToString().Trim();
-            return true;
+            return sb.ToString();
         }
 
         /// <summary>

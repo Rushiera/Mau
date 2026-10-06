@@ -317,6 +317,37 @@ namespace CatHome4.Admin
             return Path.Combine(_dataRoot, "Data", "runtime", "timeback");
         }
 
+        /// <summary>会话元数据文件路径——Data/sessions/&lt;id&gt;/&lt;id&gt;.session.json（A201 · design-ch4-protocol §十三）。接线：ChatSession.SessionMetaPathProvider（Core 零配置面依赖）。</summary>
+        /// <param name="catKey">猫 key</param>
+        /// <returns>元数据文件绝对路径（猫 key 空 = 空串，调用方不落盘）</returns>
+        public static string ResolveSessionMetaPath(string catKey)
+        {
+            string id = catKey == null ? "" : catKey;
+            if (id.Length == 0)
+            {
+                return "";
+            }
+            return Path.Combine(_dataRoot, "Data", "sessions", id, id + ".session.json");
+        }
+
+        /// <summary>猫显示名现值——cat.cfg 的 displayName（A201：session.new 时刷新会话显示名）。接线：ChatSession.DisplayNameProvider。</summary>
+        /// <param name="catKey">猫 key</param>
+        /// <returns>显示名（猫 key 空 / 配置缺失 = 空串，调用方保持原值）</returns>
+        public static string ResolveCatDisplayName(string catKey)
+        {
+            string id = catKey == null ? "" : catKey;
+            if (id.Length == 0)
+            {
+                return "";
+            }
+            CatCfgData cfg = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", id, "cat.cfg"));
+            if (cfg == null || cfg.DisplayName == null)
+            {
+                return "";
+            }
+            return cfg.DisplayName;
+        }
+
         /// <summary>
         /// 删除猫文件——sessions/&lt;id&gt;/ 目录（含前文 jsonl；异常不阻断删除流程）。
         /// </summary>

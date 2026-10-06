@@ -8,6 +8,7 @@
 //   append —— 逐条追加（新持久条目）
 //
 // 边界：块函数只产出元素（素材零全局状态）；挂载、滚动跟随归本层。
+//       自动切换（user 块 → 流式区 / roundsum → 输入区）由本层在**追加路**触发——判据取持久区新块，不按指令。
 //       本层不判流式结束、不判换手、不配对——契约 D「前端 = 纯渲染」。
 //       兜底件（未识别 type / 渲染异常）→ `lib/fallback.js`（两区共用，A178 归位）
 // ═══════════════════════════════════════════
@@ -38,10 +39,12 @@ function persistApply(seg) {
     }
     var items = seg.items || [];
     if (seg.mode === 'full') {
+        // 全量重绘 = 历史重放（连接首帧 / 重连 / 新会话）——不触发自动切换
         persistFull(items);
         return;
     }
-    persistAppend(items);
+    // 追加路 = 新块到达——按块型做自动切换（**人工** user 才切流式；系统注入零动作——见 persistAutoSwap）
+    persistAppend(items, true);
 }
 
 /// 全量重绘——清空后按序重建，并强制滚底（内容整体换过，跟随复位）
@@ -56,23 +59,32 @@ function persistFull(items) {
         pendingClear();
     }
     persistAppend(items);
-    scrollBottomNow(true);
+    scrollBottomNow();
 }
 
 /// 追加——逐条渲染挂载；**功能隔离**：单块渲染异常不中断整批（异常块落可见错误气泡）
-function persistAppend(items) {
+/// auto=true 时按新块类型做输入区 / 流式区自动切换（仅追加路传入；full 重放不触发）
+function persistAppend(items, auto) {
     var box = persistContainer();
     if (!box || !items || items.length === 0) {
         return;
     }
+    // 跟随判定前置——**追加前**采样视口位置（追加后采样会被新块自身高度顶出阈值；2026-10-06 判例）
+    var follow = scrollWanted();
     for (var i = 0; i < items.length; i++) {
         // type 归一——收包后第一个动作：此后所有 type 消费（判据 / 分派 / 兜底）都在归一口径上
         if (items[i]) {
             items[i].type = normalizeType(items[i].type);
         }
-        // 插话队列——user 块到达 = 内核确认，本地在途记录 FIFO 出队
-        if (items[i] && items[i].type === 'user' && typeof pendingConsume === 'function') {
+        // 插话队列——**人工** user 块到达 = 内核确认，本地在途记录 FIFO 出队
+        // 🔴 系统注入块不是「我的输入」的确认（A204）——出队会误吞在途记录（等于打断输入过程）
+        if (items[i] && items[i].type === 'user' && !isSysPayload(items[i].payload) && typeof pendingConsume === 'function') {
             pendingConsume();
+        }
+        // 自动切换——两个节点各一次（判据取持久区新块，不按指令）：
+        //   人工 user 块 = 我的输入已落前文 → 切流式看流；roundsum = 本轮结算 → 切回输入
+        if (auto) {
+            persistAutoSwap(items[i]);
         }
         var node = null;
         try {
@@ -84,7 +96,31 @@ function persistAppend(items) {
             box.appendChild(node);
         }
     }
-    scrollSoon();
+    if (follow) {
+        scrollFollow();
+    }
+}
+
+/// 自动切换——按新块切输入区 / 流式区（追加路专用；同态零动作 = 幂等）
+/// ① **人工** user 块 → 流式（我的输入已落前文，看流）② roundsum → 输入（本轮结算，放行输入）
+/// 🔴 系统注入块（A204）**零动作**——不抢视线、不打断输入：输入区与流式区同区互斥，
+///    切走输入区等于把用户正在打的字挤下屏。系统注入照常落持久区与滚动带，只是不动临时区。
+///    roundsum 仍切回输入：它是「轮已结算、放行输入」的信号，与谁触发本轮无关（且同态即幂等）。
+function persistAutoSwap(item) {
+    if (typeof chatLiveShow !== 'function') {
+        return;
+    }
+    var type = item ? item.type : '';
+    if (type === 'user') {
+        if (isSysPayload(item.payload)) {
+            return;
+        }
+        chatLiveShow(true);
+        return;
+    }
+    if (type === 'roundsum') {
+        chatLiveShow(false);
+    }
 }
 
 /// 单条渲染——type 直指渲染函数；未登记 type → 兜底报错气泡（lib/fallback.js，两区共用）
@@ -96,5 +132,6 @@ function persistRender(item) {
     if (typeof fn !== 'function') {
         return buildUnknownBlock(item);
     }
-    return fn(item.payload || {});
+    // 第二参 = 整条条目——块级字段取用口（如 text 块操作条读 msgIndex 定回滚 / 分支切点）
+    return fn(item.payload || {}, item);
 }

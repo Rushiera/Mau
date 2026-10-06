@@ -14,24 +14,14 @@
 /// SSE 连接句柄——页面生命周期内单连接（断线由浏览器自动重连，重连即服务端再推全量帧）
 var chatSse = null;
 
-/// 顶部信息位（#chatInfo）唯一写入口——**state 段专属**（后端必要信息：前文条数 / sessionId / 前文长度 / 关键信息）
-/// 入参：段数组（字符串 = 文本段；元素 = 段节点，如可点击的前文段——点击处理归 ctx.js）——数组序即呈现序
+/// 顶部信息位（#chatInfo）唯一写入口——**state 段专属**（后端必要信息：前文条数 / 前文长度 / 会话消耗）
 /// 归位（A179 收尾）：前端告警 / 提示不走此处（→ 通知面 `chatPetSay` 桌宠气泡）——本处不再有竞写
-function chatInfoSet(parts) {
+/// 富文本载荷（2026-10-06）：内容由投影件组装为分片（数值 `.ci-num` 高亮 / 命中率 `.ci-rate` 淡紫）——
+///   片段全部为固定字面量 + 数值，**无用户文本**，故直投 innerHTML（转义面为空）
+function chatInfoSet(html) {
     var info = document.getElementById('chatInfo');
-    if (!info) {
-        return;
-    }
-    var list = (parts && parts.length !== undefined && typeof parts !== 'string') ? parts : [parts];
-    info.textContent = '';
-    for (var i = 0; i < list.length; i = i + 1) {
-        var p = list[i];
-        if (p === null || p === undefined) { continue; }
-        if (typeof p === 'string') {
-            info.appendChild(document.createTextNode(p));
-            continue;
-        }
-        info.appendChild(p);
+    if (info) {
+        info.innerHTML = html;
     }
 }
 
@@ -47,45 +37,66 @@ function warn(msg, err) {
 }
 
 // ── 滚动跟随（对话区）──────────────────────────
-/// 跟随合并句柄——流式期间每增量一次强制布局是主线程最大开销源之一，合并到一帧至多一次
-var scrollRaf = 0;
-
-/// 智能跟随——贴近底部才滚（用户上翻读历史时不打扰）；合并到一帧至多一次
-function scrollSoon() {
-    if (typeof requestAnimationFrame !== 'function') {
-        scrollBottomNow(false);
-        return;
+/// 贴近底部判定——距底 < 80px 视为「用户在看最新内容」（用户上翻读历史时不打扰）
+/// 🔴 采样时机 = **内容追加之前**（2026-10-06 判例：追加后采样会被新块自身高度顶出阈值 → 永不跟随）
+function scrollWanted() {
+    var box = persistContainer();
+    if (!box) {
+        return false;
     }
-    if (scrollRaf !== 0) {
-        return;
-    }
-    scrollRaf = requestAnimationFrame(function () {
-        scrollRaf = 0;
-        scrollBottomNow(false);
-    });
+    return box.scrollHeight - box.scrollTop - box.clientHeight < 80;
 }
 
-/// 滚底——force=true 无条件滚底（全量重绘 / 新会话）；否则仅贴近底部时跟随
-function scrollBottomNow(force) {
+/// 跟随循环序号——**单例守卫**：新请求递增序号并接管，旧循环下一帧自行退出
+/// （多循环并存会互相把对方的设值判成「用户滚动」→ 集体退出 = 滚不到底；2026-10-06 判例）
+var scrollFollowSeq = 0;
+
+/// 平滑跟随——追加后调用：视口向内容底部**渐变推移**（每帧走剩余距离约 1/4，非跳转），
+/// 内容稳定且已在底部即收工；用户主动滚动即让位（交还控制权）
+function scrollFollow() {
     var box = persistContainer();
     if (!box) {
         return;
     }
-    if (scrollRaf !== 0 && typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(scrollRaf);
-        scrollRaf = 0;
+    if (typeof requestAnimationFrame !== 'function') {
+        box.scrollTop = box.scrollHeight;
+        return;
     }
-    if (force !== true) {
-        var near = box.scrollHeight - box.scrollTop - box.clientHeight;
-        if (near >= 80) {
+    scrollFollowSeq = scrollFollowSeq + 1;
+    var seq = scrollFollowSeq;
+    var lastSet = box.scrollTop;
+    var idle = 0;
+    var step = function () {
+        if (seq !== scrollFollowSeq) {
             return;
         }
-    }
-    box.scrollTop = box.scrollHeight;
+        // 让位判定（同步值比对）——我方是唯一设值方，现值与上帧设定值不符 = 用户滚动/拖动 → 交还控制权
+        // （不用 scroll 事件：它异步派发，到达时我方已更新期望值，判据恒看不出用户动作——2026-10-06 判例）
+        if (Math.abs(box.scrollTop - lastSet) > 2) {
+            return;
+        }
+        var target = box.scrollHeight - box.clientHeight;
+        if (box.scrollTop >= target - 0.5) {
+            // 已到底——连续约 0.2s 无新增即收工（内容继续增长会复位 idle，自动接着跟随）
+            idle = idle + 1;
+            if (idle > 12) {
+                return;
+            }
+        }
+        else {
+            idle = 0;
+            // 渐变逼近——每帧走剩余距离的一部分（至少 1px）：观感为平滑推移，非跳转
+            var next = box.scrollTop + Math.max(1, (target - box.scrollTop) / 4);
+            box.scrollTop = next > target ? target : next;
+        }
+        lastSet = box.scrollTop;
+        requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
 }
 
-/// 无条件跳底——快捷按钮（用户显式要求回到最新内容）
-function jumpBottom() {
+/// 滚底——无条件瞬时贴底（全量重绘 / 新会话 / 快捷跳底按钮）
+function scrollBottomNow() {
     var box = persistContainer();
     if (box) {
         box.scrollTop = box.scrollHeight;
@@ -139,6 +150,8 @@ function chatConnect() {
     chatSse.onerror = function () {
         warn('SSE 断线——自动重连中');
         if (typeof chatPetSetOffline === 'function') { chatPetSetOffline(true); }
+        // A206——断线即收临时区：不让半句残影 + 进行中光标留到重连（持久区由重连全量首帧重建）
+        if (typeof chatLiveAbort === 'function') { chatLiveAbort(); }
     };
 }
 

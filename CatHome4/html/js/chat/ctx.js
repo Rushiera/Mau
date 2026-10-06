@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════
 // chat/ctx.js —— 前文弹层（侧翼件）
 //
-// 定位：顶栏信息位三段（前文条数 / 前文 tokens / 关键信息）与弹层四视图的**唯一实现处**。
+// 定位：顶栏信息位（整行入口）与弹层四视图的**唯一实现处**。
 // 数据源（只读端点——后端已就位，本件零新增后端面）：
 //   GET /api/v1/context   前文条目（送入 LLM 的真实消息；ctxTokens = 最近一次请求真实 prompt 值）
 //   GET /api/v1/keyinfo   本次会话关键信息（加载报告 / user 消息 / 正式回复 / 轮结算——与旧会话留档同源）
@@ -9,7 +9,7 @@
 // 四视图：list（按条目顺序 · 点击条目展开全文）/ tokens（按字符规模降序 · 占比条）/ key（关键信息）/ full（完整前文）
 // 口径：逐条 token 无真实值（端点只回总量）——tokens 视图按字符占比呈现并显式标注为估算，不假装精确
 // 形态：DOM 在 chat.html（#ctxPopover 段），样式 chat.css「前文弹层」段；本件只填内容，零新增结构
-// 入口：信息位 `[data-ctx]` 段点击（委托）· 弹层内四页签 · ⟳ 刷新；关闭走 Esc / 点弹层外
+// 入口：信息位整行点击（再点收起）· 弹层内四页签 · ⟳ 刷新；关闭走 Esc / 点弹层外
 // 边界：数据全部来自后端端点（前端零推断）；失败在弹层内出声 + 通知面告警（不静默留白）
 // ═══════════════════════════════════════════
 
@@ -302,21 +302,15 @@ function ctxFmtTime(ms) {
     return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
 }
 
-/// 接线——信息位委托点击（`[data-ctx]` 段）+ 弹层控件 + 关闭面；本件加载于页面尾部，DOM 已就绪
+/// 接线——信息位整行点击 + 弹层控件 + 关闭面；本件加载于页面尾部，DOM 已就绪
 function ctxBind() {
     var info = document.getElementById('chatInfo');
     if (info) {
+        // 整行入口（2026-10-07 合并定：信息位走上游富文本，不再分段）——整行点击开弹层（按上次视图，默认按条），再点收起
         info.addEventListener('click', function (ev) {
-            var node = ev.target;
-            while (node && node !== info) {
-                if (node.getAttribute && node.getAttribute('data-ctx')) {
-                    // 入口点击不冒泡到文档——否则刚开就被「点弹层外」误判关闭（判例同 note.js 的 wrap 排除）
-                    ev.stopPropagation();
-                    ctxOpen(node.getAttribute('data-ctx'));
-                    return;
-                }
-                node = node.parentNode;
-            }
+            // 入口点击不冒泡到文档——否则刚开就被「点弹层外」误判关闭（判例同 note.js 的 wrap 排除）
+            ev.stopPropagation();
+            ctxOpen(ctxMode);
         });
     }
     var refresh = document.getElementById('ctxRefresh');

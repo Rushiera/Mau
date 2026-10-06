@@ -207,6 +207,37 @@ namespace CatHome4.Core.Tests
             _store.OnAssistantToolCalls(AssistantWithTools("", OneToolCall("call_1", "Note", "{}"), 200L), 4);
             Assert.Empty(_store.GetBlocks());
         }
+        /// <summary>工具调用钩子（有思考 + 用时）——reason 载荷带用时规整化三件（durMs / chars / cps）</summary>
+        [Fact]
+        public void OnAssistantToolCalls_WithReasoning_CarriesThinkingMetrics()
+        {
+            _store.OnAssistantToolCalls(AssistantWithTools("想想吧", OneToolCall("call_1", "Note", "{}"), 200L), 4, 1000);
+            CH4.ViewBlock[] blocks = _store.GetBlocks();
+            Assert.Equal("reason", blocks[0].RenderType);
+            JsonElement payload = ParsePayload(blocks[0]);
+            Assert.Equal("想想吧", payload.GetProperty("text").GetString());
+            Assert.Equal(1000L, payload.GetProperty("durMs").GetInt64());
+            Assert.Equal(3, payload.GetProperty("chars").GetInt32());
+            Assert.Equal(3.0, payload.GetProperty("cps").GetDouble());
+        }
+        /// <summary>纯文本钩子（有思考）——reason 先落 + text 在后；reason 带用时三件，text 载荷不受影响</summary>
+        [Fact]
+        public void OnAssistantText_WithReasoning_AppendsReasonWithMetrics()
+        {
+            LlmMessage m = Assistant("正式回复", 200L);
+            m.ReasoningContent = "想想";
+            _store.OnAssistantText(m, 4, 500);
+            CH4.ViewBlock[] blocks = _store.GetBlocks();
+            Assert.Equal(2, blocks.Length);
+            Assert.Equal("reason", blocks[0].RenderType);
+            Assert.Equal("text", blocks[1].RenderType);
+            Assert.Equal(500L, ParsePayload(blocks[0]).GetProperty("durMs").GetInt64());
+            Assert.Equal(4.0, ParsePayload(blocks[0]).GetProperty("cps").GetDouble());
+            JsonElement textPayload = ParsePayload(blocks[1]);
+            Assert.Equal("正式回复", textPayload.GetProperty("text").GetString());
+            JsonElement durIgnored;
+            Assert.False(textPayload.TryGetProperty("durMs", out durIgnored));
+        }
 
         // ── 工具配对 ────────────────────────────────────────────────
 

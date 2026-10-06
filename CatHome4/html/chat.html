@@ -20,7 +20,7 @@
         <button id="chatRefresh" title="刷新——重建界面气泡（纯前端）">刷新</button>
     </div>
 
-    <!-- 前文弹层（js/chat/ctx.js）——信息位「前文 n 条 / n tokens / 关键信息」点击开的小窗口；四视图：按条（list）/ 按 tokens（tokens）/ 关键信息（key）/ 完整前文（full） -->
+    <!-- 前文弹层（js/chat/ctx.js）——信息位整行点击开的小窗口；四视图：按条（list）/ 按 tokens（tokens）/ 关键信息（key）/ 完整前文（full） -->
     <div id="ctxPopover" class="ctx-popover" style="display:none">
         <div class="ctx-head">
             <span id="ctxTitle">前文条目</span>
@@ -45,7 +45,7 @@
     <div id="chatPendingPanel"></div>
 
     <!-- ═══ 输入区 ═══ -->
-    <div id="chatinput">
+    <div id="chatinput" data-live="empty">
         <!-- Note / 定时 / 跳底 按钮行（绝对定位贴输入区上缘；Note 面板 note.js · 定时面板 delay.js · 跳底在 main.js） -->
         <div id="noteWrap" class="note-wrap">
             <div id="notePopover" class="note-popover" style="display:none">
@@ -88,9 +88,19 @@
 
         <div id="chatImages" class="chat-images"></div>
         <textarea id="chatSendInput" rows="5" placeholder="输入文本…（Enter 发送；Shift+Enter 换行；可直接粘贴图片）"></textarea>
-        <!-- 临时区切换——输入框左侧（军绿底 + 白字；点开显示临时内容，再点回到输入态。
+        <!-- 临时区切换开关（2026-10-06 莎定：按钮 → 竖向滑块；同日合并为单按钮）——输入框左侧左预留带内，
+             滑块随当前态上下移动：输入态色 = 输入区主色蓝；流式态色 = 统一态色 `--ch-live-color`
+             （挂 `#chatinput` 的 `data-live` 上，由 live.js 写入，映射归 chat.css 令牌——
+             thinksse 黄 / toolrun 军绿 / replysse 米白 / empty 灰；与临时区气泡描边同源）。
+             单标签随态上下移动并改字（输入 / 流式）——点击整体翻转。
              面板高度 = 输入框实测高度（固定）——由 input.js 切换时写入，空态亦保持同高） -->
-        <button id="chatLiveToggle" class="ch-livebtn" title="查看进行中的临时内容（流式 / 工具卡）——再点回到输入态">临时</button>
+        <!-- 流式统计行（fx/live-stats.js · 契约 §12.8 独立功能面）——切换开关正上方灰色三行读数
+             （line 行数 / char 字符数 / time 段用时）；无活跃流式段即隐藏（不占位）；内容向左展开（左预留带内） -->
+        <div id="chatLiveStats"></div>
+        <div id="chatLiveToggle" class="ch-livetoggle" title="切换：输入区 / 流式区（进行中的思考 · 工具 · 回复流）">
+            <span class="ch-lt-thumb"></span>
+            <span class="ch-lt-label" id="chatLiveLabel">输入</span>
+        </div>
         <!-- 临时区（契约 §12.2 ③）——与输入框**同区域互斥**（同一列同位，代码切内联 display）：
              显示时输入框让位、状态投影整体替换；高度固定 = 输入框实测高（空态亦同高）；回车发送自动切回输入态 -->
         <div id="chatLivePanel" class="chat-live" style="display:none"></div>
@@ -130,6 +140,84 @@
     <script src="js/chat/lib/fallback.js?v=__V__"></script>
     <script src="js/chat/lib/cmd.js?v=__V__"></script>
 
+    <!-- ②b 工具声明层——逐工具一件（按工具组分子目录）+ 基建两件（A200 恢复）
+         顺序：基建（decl 注册口 / helpers 取用小件）→ 各件（件底一行 toolDecl(name, {…}) 自注册） -->
+    <script src="js/chat/tools/decl.js?v=__V__"></script>
+    <script src="js/chat/tools/helpers.js?v=__V__"></script>
+    <!-- TextCat（7） -->
+    <script src="js/chat/tools/text/text-read.js?v=__V__"></script>
+    <script src="js/chat/tools/text/text-read_lines.js?v=__V__"></script>
+    <script src="js/chat/tools/text/text-read_between.js?v=__V__"></script>
+    <script src="js/chat/tools/text/text-write.js?v=__V__"></script>
+    <script src="js/chat/tools/text/text-append.js?v=__V__"></script>
+    <script src="js/chat/tools/text/text-replace.js?v=__V__"></script>
+    <script src="js/chat/tools/text/text-grep.js?v=__V__"></script>
+    <!-- FileCat（6） -->
+    <script src="js/chat/tools/file/file-tree.js?v=__V__"></script>
+    <script src="js/chat/tools/file/file-find.js?v=__V__"></script>
+    <script src="js/chat/tools/file/file-move.js?v=__V__"></script>
+    <script src="js/chat/tools/file/file-delete.js?v=__V__"></script>
+    <script src="js/chat/tools/file/file-copy.js?v=__V__"></script>
+    <script src="js/chat/tools/file/file-version.js?v=__V__"></script>
+    <!-- CsCat（12） -->
+    <script src="js/chat/tools/cs/cs-check.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-build.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-list.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-read.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-find_ref.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-find.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-patch.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-member.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-comment.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-dead.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-comment_check.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-format.js?v=__V__"></script>
+    <!-- MauCat（4） -->
+    <script src="js/chat/tools/mau/mau-verify.js?v=__V__"></script>
+    <script src="js/chat/tools/mau/mau-gen.js?v=__V__"></script>
+    <script src="js/chat/tools/mau/mau-proj.js?v=__V__"></script>
+    <script src="js/chat/tools/mau/mau-setup.js?v=__V__"></script>
+    <!-- ConfigCat（6） -->
+    <script src="js/chat/tools/config/config-list.js?v=__V__"></script>
+    <script src="js/chat/tools/config/config-get.js?v=__V__"></script>
+    <script src="js/chat/tools/config/config-set.js?v=__V__"></script>
+    <script src="js/chat/tools/config/config-reset.js?v=__V__"></script>
+    <script src="js/chat/tools/config/config-cat-get.js?v=__V__"></script>
+    <script src="js/chat/tools/config/config-cat-set.js?v=__V__"></script>
+    <!-- BrowserCat（5） -->
+    <script src="js/chat/tools/browser/browser-open.js?v=__V__"></script>
+    <script src="js/chat/tools/browser/browser-read.js?v=__V__"></script>
+    <script src="js/chat/tools/browser/browser-eval.js?v=__V__"></script>
+    <script src="js/chat/tools/browser/browser-shot.js?v=__V__"></script>
+    <script src="js/chat/tools/browser/browser-tabs.js?v=__V__"></script>
+    <!-- PsCat（2） -->
+    <script src="js/chat/tools/ps/powershell.js?v=__V__"></script>
+    <script src="js/chat/tools/ps/powershell7.js?v=__V__"></script>
+    <!-- TempToolCat（2） -->
+    <script src="js/chat/tools/temp/temp-info.js?v=__V__"></script>
+    <script src="js/chat/tools/temp/temp-exec.js?v=__V__"></script>
+    <!-- Majordomo（5） -->
+    <script src="js/chat/tools/majordomo/restart-full.js?v=__V__"></script>
+    <script src="js/chat/tools/majordomo/restart-incr.js?v=__V__"></script>
+    <script src="js/chat/tools/majordomo/restart-host.js?v=__V__"></script>
+    <script src="js/chat/tools/majordomo/majordomo-cmd.js?v=__V__"></script>
+    <script src="js/chat/tools/majordomo/majordomo-catinfo.js?v=__V__"></script>
+    <!-- SearchCat（1）· VisionCat（2） -->
+    <script src="js/chat/tools/search/web-search.js?v=__V__"></script>
+    <script src="js/chat/tools/vision/image-analyze.js?v=__V__"></script>
+    <script src="js/chat/tools/vision/image-inject.js?v=__V__"></script>
+    <!-- 内置（10） -->
+    <script src="js/chat/tools/builtin/info.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/Note.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/time.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/random.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/pack.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/host-reload.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/host-flows.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/sleep.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/timer.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/timeback.js?v=__V__"></script>
+
     <!-- ③ 素材 blocks——渲染件 10 件（persist 8 + live 2；`toolrun` 复用工具卡件 · `empty` 不产元素） -->
     <script src="js/chat/blocks/user.js?v=__V__"></script>
     <script src="js/chat/blocks/text.js?v=__V__"></script>
@@ -148,10 +236,12 @@
     <script src="js/chat/state/note.js?v=__V__"></script>
     <script src="js/chat/state/delay.js?v=__V__"></script>
     <script src="js/chat/state/conn.js?v=__V__"></script>
+    <script src="js/chat/state/meta.js?v=__V__"></script>
     <script src="js/chat/state/registry.js?v=__V__"></script>
 
-    <!-- ④ 主干——映射表 → 两区入口 → 状态投影 → 单一应用入口 -->
+    <!-- ④ 主干——映射表 → 流式呈现机制 → 两区入口 → 状态投影 → 单一应用入口 -->
     <script src="js/chat/registry.js?v=__V__"></script>
+    <script src="js/chat/stream.js?v=__V__"></script>
     <script src="js/chat/persist.js?v=__V__"></script>
     <script src="js/chat/live.js?v=__V__"></script>
     <script src="js/chat/state.js?v=__V__"></script>
@@ -173,6 +263,7 @@
     <script src="js/chat/fx/pending.js?v=__V__"></script>
     <script src="js/chat/fx/cmd-intent.js?v=__V__"></script>
     <script src="js/chat/fx/controls.js?v=__V__"></script>
+    <script src="js/chat/fx/live-stats.js?v=__V__"></script>
     <script src="js/chat/fx/registry.js?v=__V__"></script>
 
     <script>

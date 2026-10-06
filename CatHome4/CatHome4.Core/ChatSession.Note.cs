@@ -8,7 +8,8 @@ namespace CH4
 {
     /// <summary>
     /// 宿主会话实体——Note 任务追踪分部（M4a 会话内直执工具——CH2 语义移植）。
-    /// 内存态不落盘，会话关闭即消失；前端面板经 SSE note 事件实时重绘。
+    /// A202 起随会话元数据面持久化（`session.json` 的 `Note` 字段——每请求结算后落盘；重启恢复并继续自动拉起）；
+    /// 前端面板经 state 段 `note` 字段实时重绘。
     /// </summary>
     internal sealed partial class ChatSession
     {
@@ -252,7 +253,7 @@ namespace CH4
                 sb.Append('\n');
             }
             sb.Append("请从当前任务开始逐条执行，每条完成后调用 Note 推进。");
-            PostUserMessage(sb.ToString());
+            PostSystemMessage(SysKindSystemAuto, sb.ToString());
             LogStore.Add("CatHome4", 1, "Note 启动：共 " + _noteTasks.Length + " 条任务，当前第 " + (_noteCurrent + 1) + " 条", "CHAT");
         }
 

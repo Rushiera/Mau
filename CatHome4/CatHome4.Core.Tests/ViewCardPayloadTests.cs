@@ -45,5 +45,35 @@ namespace CatHome4.Core.Tests
             Assert.Equal("", payload["result"]);
             Assert.Equal(7, payload.Count);
         }
+        /// <summary>思考块载荷——text / durMs / chars / cps 四字段齐备（cps = 字符数 ÷ 用时，保留一位小数）</summary>
+        [Fact]
+        public void BuildReason_CarriesCounts_WithCpsFromDuration()
+        {
+            Dictionary<string, object> payload = CH4.ViewCardPayload.BuildReason("一二三四五", 500);
+            Assert.Equal("一二三四五", payload["text"]);
+            Assert.Equal(500L, (long)payload["durMs"]);
+            Assert.Equal(5, (int)payload["chars"]);
+            Assert.Equal(10.0, (double)payload["cps"]);
+            Assert.Equal(4, payload.Count);
+        }
+        /// <summary>用时未记录（载入顶尾补差路径）——durMs / cps 取 -1；chars 由正文算出，恒有值</summary>
+        [Fact]
+        public void BuildReason_UnknownDuration_CpsUnavailable()
+        {
+            Dictionary<string, object> payload = CH4.ViewCardPayload.BuildReason("想想", -1);
+            Assert.Equal(-1L, (long)payload["durMs"]);
+            Assert.Equal(2, (int)payload["chars"]);
+            Assert.Equal(-1.0, (double)payload["cps"]);
+        }
+        /// <summary>用时为 0——比值不成立取 -1（不出 Infinity / NaN）；非整除法取一位小数</summary>
+        [Fact]
+        public void BuildReason_ZeroDuration_CpsUnavailable()
+        {
+            Dictionary<string, object> zero = CH4.ViewCardPayload.BuildReason("想想", 0);
+            Assert.Equal(0L, (long)zero["durMs"]);
+            Assert.Equal(-1.0, (double)zero["cps"]);
+            Dictionary<string, object> rounded = CH4.ViewCardPayload.BuildReason("abc", 700);
+            Assert.Equal(4.3, (double)rounded["cps"]);
+        }
     }
 }

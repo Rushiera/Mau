@@ -62,6 +62,49 @@ namespace CatHome4.Admin
             }
         }
 
+        /// <summary>
+        /// 全部会话的视图推送面是否仍有待推内容——重启闸门第二判据（A206）。
+        /// 多猫下任一会话在途都要等：判据取「或」——只有全部会话的推送面都清空才放行重启。
+        /// </summary>
+        /// <returns>true=仍有待推内容</returns>
+        internal static bool AnyViewPending()
+        {
+            if (_chatBridge != null && _chatBridge.DefaultSession.ViewHasPendingContent)
+            {
+                return true;
+            }
+            for (int i = 0; i < _cats.Count; i = i + 1)
+            {
+                CatEntry cat = _cats[i];
+                if (cat.Session != null && cat.Session.ViewHasPendingContent)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 全部 HttpHost 退出前收尾——逐 host 推最后一帧 + 等连接队列排空（A206；重启退出路径调用）。
+        /// 动机：视图帧「入队 ≠ 写出」，Environment.Exit 会丢弃在途帧（判例 2026-10-06）。
+        /// </summary>
+        /// <param name="timeoutMs">单 host 排空等待上限毫秒</param>
+        internal static void FlushAllHosts(int timeoutMs)
+        {
+            if (_majorHost != null)
+            {
+                _majorHost.FlushViewBeforeExit(timeoutMs);
+            }
+            for (int i = 0; i < _cats.Count; i = i + 1)
+            {
+                HttpHost host = _cats[i].Host;
+                if (host != null)
+                {
+                    host.FlushViewBeforeExit(timeoutMs);
+                }
+            }
+        }
+
         /// <summary>majordomo 独立对话端口——AllocatePort 分配（F2.2）</summary>
         private static int _majorPort = -1;
 
@@ -925,7 +968,7 @@ namespace CatHome4.Admin
                 return "session.fork | 会话构造失败";
             }
             // [段3b] 播种前文立即落盘——会话文件不存在时重启扫描会走注入分支（播种丢失）；Save 保证重启恢复播种
-            cat.Session.Store.Rewrite(cat.Session.Context.GetMessages(), cat.Session.LastStats);
+            cat.Session.Store.Rewrite(cat.Session.Context.GetMessages());
             _cats.Add(cat);
             LogStore.Add("CatHome4", 1, "已从「" + source.DisplayName + "」节点 " + msgIndex.ToString() + " 分支新猫「" + name + "」（id " + id + "），静默待启动", "CHAT");
             return "session.fork | id=" + id + " | name=" + name + " | 已从节点 " + msgIndex.ToString() + " 分支（静默态，cat.start 启动）";
@@ -1262,8 +1305,7 @@ namespace CatHome4.Admin
                 SessionStore store = new SessionStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".jsonl"));
                 store.SessionId = id;
                 LlmMessage[] restored;
-                SessionStats? restoredStats;
-                if (store.TryLoad(out restored, out restoredStats))
+                if (store.TryLoad(out restored))
                 {
                     context.ReplaceMessages(restored);
                 }
@@ -1284,7 +1326,7 @@ namespace CatHome4.Admin
                 if (!string.Equals(store.SessionId, id, StringComparison.Ordinal))
                 {
                     store.SessionId = id;
-                    store.Rewrite(context.GetMessages(), restoredStats);
+                    store.Rewrite(context.GetMessages());
                     LogStore.Add("CatHome4", 1, "会话标识对齐猫 key: " + id, "CHAT");
                 }
                 // [段4] 会话构造——M1c 每猫独立 Runtime（API 配置池按该猫 apiConfigId 构造）；M2c 声明面按猫裁剪
@@ -1303,8 +1345,8 @@ namespace CatHome4.Admin
                 session.AttachEnvInfo(() => BuildEnvInfoProvider());
                 session.AttachRoundNotify(NotifyBalloon);
                 session.LoadView();
-                // E3 前文统计——启动恢复持久化真实 usage（旧文件 null=零值）
-                session.SetLoadedStats(restoredStats);
+                // A201 会话元数据——启动恢复（实例 ID / 创建时刻 / 两级 token 累计 + A202 请求边界态；文件缺失走首建）
+                session.LoadMeta();
                 _chatBridge.RegisterSession(session);
                 CatEntry cat = new CatEntry();
                 cat.Id = id;

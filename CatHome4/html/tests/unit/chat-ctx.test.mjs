@@ -2,7 +2,7 @@
 // tests/unit/chat-ctx.test.mjs —— 前文弹层 + 端点角色标签回归网
 //
 // 覆盖：
-//   ① 信息位三段入口——state 段投影后三段可点击段就位（条数 / tokens / 关键信息 · data-ctx 标注）
+//   ① 信息位整行入口——整行点击开弹层（默认按条视图）；内容走上游富文本分片（不再分段）
 //   ② 弹层四视图——打开即读对应端点；同视图再点收起；异视图切并复用缓存
 //   ③ 条目展开——点条目头切全文（摘要 ↔ 全文）
 //   ④ 失败可见——端点报错 / 未响应在弹层内出声（不静默留白）
@@ -59,22 +59,32 @@ const FULL_OK = {
     items: [{ i: 1, role: 'system', chars: 12, preview: '系统段', content: '系统段全文' }]
 };
 
-// ── ① 信息位三段入口 ─────────────────────────
-describe('信息位三段入口（state 段投影）', () => {
-    it('投影后三段可点击段就位且带 data-ctx 标注', () => {
+// ── ① 信息位整行入口 ─────────────────────────
+describe('信息位整行入口（state 段投影）', () => {
+    it('整行点击开弹层——默认按条视图并读取 /api/v1/context', async () => {
+        const calls = mockEndpoints({ '/api/v1/context': CTX_OK });
         window.stateApply({ sessionId: 'majordomo', tokens: { count: 12, context: 3456 } });
-        const links = document.querySelectorAll('#chatInfo [data-ctx]');
-        expect(links.length).toBe(3);
-        const modes = Array.from(links).map((n) => n.getAttribute('data-ctx'));
-        expect(modes).toEqual(['list', 'tokens', 'key']);
-        expect(document.getElementById('chatInfo').textContent).toContain('sessionId=majordomo');
+        expect(document.querySelectorAll('#chatInfo [data-ctx]').length).toBe(0);
+        document.getElementById('chatInfo').click();
+        await flushMicro();
+        expect(document.getElementById('ctxPopover').style.display).toBe('flex');
+        expect(calls.length).toBe(1);
+        expect(calls[0].url).toContain('/api/v1/context');
+        expect(document.getElementById('ctxTitle').textContent).toBe('前文条目');
     });
 
-    it('无前文长度时仍出条数段与关键信息段（tokens 段缺省不出）', () => {
-        window.stateApply({ sessionId: 'cat_a', tokens: { count: 0, context: 0 } });
-        const modes = Array.from(document.querySelectorAll('#chatInfo [data-ctx]'))
-            .map((n) => n.getAttribute('data-ctx'));
-        expect(modes).toEqual(['list', 'key']);
+    it('信息位内容走上游富文本分片（数值包 .ci-num，不再出可点段）', () => {
+        window.stateApply({
+            meta: { contextChars: 3000 },
+            tokens: {
+                count: 12, context: 3456, sessionPrompt: 100, sessionMiss: 10,
+                sessionCompletion: 20, sessionRate: 0.9
+            }
+        });
+        const info = document.getElementById('chatInfo');
+        expect(info.querySelectorAll('.ci-num').length).toBeGreaterThan(0);
+        expect(info.textContent).toContain('前文');
+        expect(info.textContent).toContain('条');
     });
 });
 
@@ -83,7 +93,7 @@ describe('前文弹层——四视图与三态', () => {
     it('点条数段打开并读取 /api/v1/context，条目按序渲染', async () => {
         const calls = mockEndpoints({ '/api/v1/context': CTX_OK });
         window.stateApply({ sessionId: 'majordomo', tokens: { count: 2, context: 1234 } });
-        document.querySelector('#chatInfo [data-ctx="list"]').click();
+        document.getElementById('chatInfo').click();
         await flushMicro();
         expect(document.getElementById('ctxPopover').style.display).toBe('flex');
         expect(calls.length).toBe(1);
@@ -95,7 +105,7 @@ describe('前文弹层——四视图与三态', () => {
     it('已开且同视图再点收起（不重复读取）', async () => {
         const calls = mockEndpoints({ '/api/v1/context': CTX_OK });
         window.stateApply({ sessionId: 'majordomo', tokens: { count: 2, context: 1234 } });
-        const link = document.querySelector('#chatInfo [data-ctx="list"]');
+        const link = document.getElementById('chatInfo');
         link.click();
         await flushMicro();
         link.click();
@@ -107,7 +117,7 @@ describe('前文弹层——四视图与三态', () => {
     it('已开切 tokens 页签复用缓存（不重复读取）并渲染占比条', async () => {
         const calls = mockEndpoints({ '/api/v1/context': CTX_OK });
         window.stateApply({ sessionId: 'majordomo', tokens: { count: 2, context: 1234 } });
-        document.querySelector('#chatInfo [data-ctx="list"]').click();
+        document.getElementById('chatInfo').click();
         await flushMicro();
         document.getElementById('ctxModeTokens').click();
         await flushMicro();
@@ -120,9 +130,11 @@ describe('前文弹层——四视图与三态', () => {
     it('切关键信息读 /api/v1/keyinfo（role 标签走中文名）', async () => {
         const calls = mockEndpoints({ '/api/v1/context': CTX_OK, '/api/v1/keyinfo': KEY_OK });
         window.stateApply({ sessionId: 'majordomo', tokens: { count: 2, context: 1234 } });
-        document.querySelector('#chatInfo [data-ctx="key"]').click();
+        document.getElementById('chatInfo').click();
         await flushMicro();
-        expect(calls[0].url).toContain('/api/v1/keyinfo');
+        document.getElementById('ctxModeKey').click();
+        await flushMicro();
+        expect(calls[1].url).toContain('/api/v1/keyinfo');
         expect(document.getElementById('ctxTitle').textContent).toBe('前文关键信息');
         expect(document.querySelector('#ctxList .ctx-role').textContent).toBe('加载报告');
     });
@@ -130,7 +142,7 @@ describe('前文弹层——四视图与三态', () => {
     it('切完整前文读 /api/v1/fullctx（token 文案随宿主折算值）', async () => {
         const calls = mockEndpoints({ '/api/v1/context': CTX_OK, '/api/v1/fullctx': FULL_OK });
         window.stateApply({ sessionId: 'majordomo', tokens: { count: 2, context: 1234 } });
-        document.querySelector('#chatInfo [data-ctx="list"]').click();
+        document.getElementById('chatInfo').click();
         await flushMicro();
         document.getElementById('ctxModeFull').click();
         await flushMicro();
@@ -142,7 +154,7 @@ describe('前文弹层——四视图与三态', () => {
     it('Esc 关闭弹层', async () => {
         mockEndpoints({ '/api/v1/context': CTX_OK });
         window.stateApply({ sessionId: 'majordomo', tokens: { count: 2, context: 1234 } });
-        document.querySelector('#chatInfo [data-ctx="list"]').click();
+        document.getElementById('chatInfo').click();
         await flushMicro();
         document.dispatchEvent(new window.Event('keydown'));
         window.ctxClose();
@@ -155,7 +167,7 @@ describe('前文弹层——条目展开', () => {
     it('点条目头展开全文，再点折叠', async () => {
         mockEndpoints({ '/api/v1/context': CTX_OK });
         window.stateApply({ sessionId: 'majordomo', tokens: { count: 2, context: 1234 } });
-        document.querySelector('#chatInfo [data-ctx="list"]').click();
+        document.getElementById('chatInfo').click();
         await flushMicro();
         const item = document.querySelector('#ctxList .ctx-item');
         const head = item.querySelector('.ctx-item-head');
@@ -175,7 +187,7 @@ describe('前文弹层——失败可见', () => {
     it('端点回 ok=false 时弹层内出声（不静默留白）', async () => {
         mockEndpoints({});
         window.stateApply({ sessionId: 'majordomo', tokens: { count: 2, context: 1234 } });
-        document.querySelector('#chatInfo [data-ctx="list"]').click();
+        document.getElementById('chatInfo').click();
         await flushMicro();
         expect(document.getElementById('ctxList').textContent).toContain('不可读');
         expect(document.getElementById('ctxList').textContent).toContain('端点未注册');
@@ -184,7 +196,7 @@ describe('前文弹层——失败可见', () => {
     it('读取异常时弹层内出声', async () => {
         globalThis.fetch = async () => { throw new Error('网络断了'); };
         window.stateApply({ sessionId: 'majordomo', tokens: { count: 2, context: 1234 } });
-        document.querySelector('#chatInfo [data-ctx="list"]').click();
+        document.getElementById('chatInfo').click();
         await flushMicro();
         expect(document.getElementById('ctxList').textContent).toContain('读取失败');
     });

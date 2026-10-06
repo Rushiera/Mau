@@ -61,14 +61,13 @@ namespace CH4
             string imagesJson = JsonUtil.Array(paths.ToArray());
             string text = notice.ToString();
 
-            // [段2] 注入消息——只追加不改写；视图层走 user 系统通道（source=systemauto）
-            LlmMessage? injected = _context.AddUserMessage(text, imagesJson);
-            if (injected == null)
+            // [段2] 注入消息——经系统注入口入队（等价于系统输入一行；附件随条目携带，批后段同帧消费）
+            string posted = PostSystemMessage(SysKindSystemAuto, text, imagesJson);
+            if (posted.StartsWith("ERR|", StringComparison.Ordinal))
             {
+                LogStore.Add("CatHome4", 2, "图片注入未受理: " + posted, "IMAGE");
                 return;
             }
-            AppendMessage(injected.Value);
-            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
             LogStore.Add("CatHome4", 1, "图片注入：本批 " + paths.Count.ToString() + " 张（首张 " + paths[0] + "）", "IMAGE");
             NoteTimebackEvent();
         }

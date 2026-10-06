@@ -405,7 +405,7 @@ namespace CatHome4.Core.Tests
             Assert.True(session.TimebackActive);
         }
         /// <summary>
-        /// start 回执带 findings 骨架（2026-10-02 定）——开锚即给格式，八段齐备（结论 / 事实 / 进度 / 跑测 / 变更 / 卡点与解法 / 失败 / 指针）。
+        /// start 回执带 findings 骨架（2026-10-06 改 · 成果定位口径）——开锚即给格式，四段齐备（成果 / 未竟 / 卡点 / 失败）+ 位置硬约束句（只写位置不写结论）。
         /// </summary>
         [Fact]
         public void Start_ReceiptCarriesFindingsSkeleton()
@@ -417,14 +417,12 @@ namespace CatHome4.Core.Tests
             PumpUntilIdle(session);
             string receipt = ToolResultText(session, 0);
             Assert.Contains("已锚定", receipt);
-            Assert.Contains("结论：", receipt);
-            Assert.Contains("事实：", receipt);
-            Assert.Contains("进度：", receipt);
-            Assert.Contains("跑测：", receipt);
-            Assert.Contains("变更：", receipt);
-            Assert.Contains("卡点与解法：", receipt);
+            Assert.Contains("成果：", receipt);
+            Assert.Contains("未竟：", receipt);
+            Assert.Contains("卡点：", receipt);
             Assert.Contains("失败：", receipt);
-            Assert.Contains("指针：", receipt);
+            Assert.Contains("只写「成果在哪」", receipt);
+            Assert.Contains("位置必须是这趟真实读到", receipt);
         }
         /// <summary>
         /// 写操作台账——域内 order ≥ 1 的工具逐条登记（宿主记录），只读面不入账；back 回执附于 findings 之前。

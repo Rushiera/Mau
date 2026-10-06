@@ -37,6 +37,88 @@ namespace CH4
 
         /// <summary>工具单 Dog owner ID——宿主 Dog 域（同 ToolOwnerId——OA 未开存活校验，多 Dog 未来可扩展独立 ID）</summary>
         private const long ToolOwnerId = 1;
+        /// <summary>系统注入类型——现行唯一值 systemauto（后续类型扩在此处；未知值一律拒绝，不静默回落）。</summary>
+        internal const string SysKindSystemAuto = "systemauto";
+        /// <summary>系统注入行头前缀——固定标记（判据规范见 `L1/Discipline.md` §三：user 消息内容以该前缀开头 = 系统注入）。</summary>
+        internal const string SysInjectPrefix = "[systemauto]";
+        /// <summary>来源标记——人工输入（视图层不写 src 字段；缺省即人工）。</summary>
+        internal const string SourceUser = "user";
+        /// <summary>系统注入类型值域校验——当前仅 systemauto（参数面零容忍：未知类型拒绝并出声）。</summary>
+        /// <param name="kind">类型参数</param>
+        /// <returns>true=已知类型</returns>
+        internal static bool IsKnownSysKind(string kind)
+        {
+            return string.Equals(kind, SysKindSystemAuto, StringComparison.Ordinal);
+        }
+        /// <summary>视图层来源投影——人工（user / 空 / 未知）返回空串（不落字段）；系统注入返回 systemauto。</summary>
+        /// <param name="source">队列来源标记</param>
+        /// <returns>视图 src 值（空串=人工——前端缺省判据）</returns>
+        internal static string ViewSrcOf(string source)
+        {
+            if (source == null || source.Length == 0 || string.Equals(source, SourceUser, StringComparison.Ordinal))
+            {
+                return "";
+            }
+            return SysKindSystemAuto;
+        }
+        /// <summary>系统注入文本加工——唯一实现：套 [systemauto] 行头前缀（渠道自带前缀由内容携带，本处只加外层标记）。</summary>
+        /// <param name="content">注入内容（含渠道自定义前缀）</param>
+        /// <returns>入前文文本</returns>
+        internal static string BuildSysInjectText(string content)
+        {
+            if (content == null)
+            {
+                content = "";
+            }
+            // 幂等——已带行头前缀不重复套（入口侧与落前文侧两处调用共用本实现）
+            if (content.StartsWith(SysInjectPrefix, StringComparison.Ordinal))
+            {
+                return content;
+            }
+            return SysInjectPrefix + content;
+        }
+        /// <summary>来源回落判定——补差路径从内容行头前缀识别系统注入（前缀缺失 = 人工）。</summary>
+        /// <param name="content">用户消息内容</param>
+        /// <returns>视图 src 值（空串=人工 / systemauto=系统注入）</returns>
+        internal static string SysSrcFromContent(string content)
+        {
+            if (content == null || !content.StartsWith(SysInjectPrefix, StringComparison.Ordinal))
+            {
+                return "";
+            }
+            return SysKindSystemAuto;
+        }
+        /// <summary>
+        /// 系统注入入口——等价于「系统在前端输入一行」：类型校验 + 前缀加工 + 入队（走 PostUserMessage 全部受理门禁）。
+        /// 失败可见：未知类型 / 空内容 / 停机态未受理一律返回 ERR（不静默丢弃）。
+        /// </summary>
+        /// <param name="kind">类型参数（现行仅 systemauto）</param>
+        /// <param name="content">注入内容（渠道自带前缀由调用方拼在内容里）</param>
+        /// <param name="imagesJson">附件引用 JSON 数组（图片注入用；空串=无附件）</param>
+        /// <returns>OK 受理 / ERR|CODE|msg</returns>
+        public string PostSystemMessage(string kind, string content, string imagesJson = "")
+        {
+            if (!IsKnownSysKind(kind))
+            {
+                string shown = kind;
+                if (shown == null)
+                {
+                    shown = "";
+                }
+                return "ERR|BAD_ARGS|未知系统注入类型: " + shown;
+            }
+            if (content == null || content.Trim().Length == 0)
+            {
+                return "ERR|BAD_ARGS|系统注入内容为空";
+            }
+            string text = BuildSysInjectText(content);
+            if (!PostUserMessage(text, kind, imagesJson))
+            {
+                return "ERR|HOST_RESTARTING|系统注入未受理（宿主重启停机态 · 类型 " + kind + "）";
+            }
+            LogStore.Add("CatHome4", 1, "系统注入入队: cat=" + _id + " | 类型 " + kind + " | 长度 " + content.Length.ToString(), "CHAT");
+            return "OK";
+        }
 
         /// <summary>连续自动继续上限——上游异常（端点切换 / 可重试类错误重试耗尽）后自动重发轮次上限（站点持续不可用时停止，避免无限重发烧量）</summary>
         private const int AutoContinueMax = 12;
@@ -50,8 +132,8 @@ namespace CH4
         /// <summary>会话唯一 ID——构造注入 = 猫 key（唯一标识；会话重建不换键）</summary>
         private string _id;
 
-        /// <summary>显示名——P9.1 为 "majordomo"；P9.3 用户输入</summary>
-        private readonly string _displayName;
+        /// <summary>显示名——P9.1 为 "majordomo"；P9.3 用户输入（A201：session.new 时按 cat.cfg 刷新）</summary>
+        private string _displayName;
 
         /// <summary>消息历史——会话上下文容器（第一条 system；Mau.Runtime 实体复用）</summary>
         private readonly ChatContext _context;
@@ -67,6 +149,11 @@ namespace CH4
 
         /// <summary>LLM 后台结果——完整思考文本（工具轮次回传铁律）</summary>
         private string _llmReasoning;
+        /// <summary>
+        /// 本块思考用时累计毫秒——think 态内部实现（进入 think 态开表、离开即结算，不跨态；重试退避等非 think 段不计入）。
+        /// 单块生命周期：推入 view.json 时由 TakeReasonDuration 取走并归零（不跨轮 / 不跨块残留）。
+        /// </summary>
+        private long _reasonDurMs;
 
         /// <summary>LLM 后台结果——tool_calls JSON 数组（translate 聚合后整体）</summary>
         private string _llmToolCallsJson;
@@ -138,9 +225,6 @@ namespace CH4
 
         /// <summary>Token 用量会话累计——cache hit（跨轮持续累加；仅新会话复位）</summary>
         private long _sessionCacheHit;
-
-        /// <summary>最近一轮真实 usage 统计——CloseRound 落盘（info 自查/前端显示数据源；零估算）</summary>
-        private SessionStats _lastStats;
 
         /// <summary>单次前文长度——最近一次请求的 prompt（覆盖式；非累计——前文长度数据源）</summary>
         private long _contextTokens;
@@ -230,8 +314,11 @@ namespace CH4
             /// <summary>消息内容</summary>
             public string Content;
 
-            /// <summary>来源——user/system</summary>
+            /// <summary>来源——user（人工）/ systemauto · sleep · timer · delay · restart（系统注入——视图层 src 一律投影 systemauto）</summary>
             public string Source;
+
+            /// <summary>附件引用 JSON 数组（图片绝对路径；空串=无附件——图片注入经队列携带，见 ImagesJson 语义）</summary>
+            public string ImagesJson;
         }
 
         /// <summary>待处理用户消息队列——忙时排队（原同步阻塞天然排队语义保持）</summary>
@@ -685,8 +772,7 @@ namespace CH4
             // [段2] 落盘——重写唯一通道（append-only 的合法例外：重建）；只改内存 = 一次修复只保一次
             if (_store != null)
             {
-                _lastStats.EntryCount = saved.Length;
-                _store.Rewrite(saved, _lastStats);
+                _store.Rewrite(saved);
             }
             // [段3] 留档对齐——重建后强制采集一次（尾锚命中即追加；头部已复原）
             _fullCtx.Capture(true);
@@ -721,38 +807,25 @@ namespace CH4
         }
 
         /// <summary>
-        /// 设置已加载统计——启动恢复时从会话文件读出（TryLoad 带 stats 重载；旧文件 null=零值）。
-        /// </summary>
-        /// <param name="stats">持久化统计（可空）</param>
-        public void SetLoadedStats(SessionStats? stats)
-        {
-            if (stats != null)
-            {
-                _lastStats = stats.Value;
-            }
-        }
-
-        /// <summary>
         /// 重置统计——session.new 清前文后调用（新会话零统计起算；会话级 token 累计同归零）。
+        /// A202：会话元数据面与其余两面同批即时落盘（写新会话初始态）。
         /// </summary>
         public void ResetStats()
         {
-            _lastStats = new SessionStats();
-            // 会话级 token 累计——新会话唯一归零点（轮级由 StartRound 逐轮清零；回滚不清——同会话延续）
+            // 会话级 token 累计——新会话唯一归零点（轮级由 ResetRoundCounters 逐轮清零；回滚不清——同会话延续）
             _sessionPrompt = 0;
             _sessionCompletion = 0;
             _sessionCacheHit = 0;
-        }
-
-        /// <summary>
-        /// 最近一轮真实 usage 统计——info 自查/前端显示数据源（零估算；CloseRound 更新）。
-        /// </summary>
-        public SessionStats LastStats
-        {
-            get
-            {
-                return _lastStats;
-            }
+            // A201 会话元数据——新实例 ID + 新创建时刻 + 两级快照清零（会话生命周期重新起算）
+            _sessionInstanceId = SessionStore.NewSessionId();
+            _sessionCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _lastRoundTokens = new SessionTokens();
+            _persistedContextTokens = 0;
+            _usagePrompt = 0;
+            _usageCompletion = 0;
+            _usageCacheHit = 0;
+            // 元数据落盘——新会话初始态（contextCount / chars 取当前注入后的前文）
+            SaveMeta();
         }
 
         /// <summary>
@@ -781,7 +854,7 @@ namespace CH4
 
         /// <summary>
         /// 实时前文长度——最近一次请求的 prompt（请求级；每次 usage 帧覆盖）。
-        /// 对照 LastStats.LastContextTokens（轮末落盘的最近一轮值）；info / cat.info 消费 ContextTokensKnown（实时优先 + 轮末回落）。
+        /// 对照 _persistedContextTokens（落盘快照——最后一次请求边界值）；info / cat.info 消费 ContextTokensKnown（实时优先 + 落盘回落）。
         /// </summary>
         public long ContextTokens
         {
@@ -791,7 +864,7 @@ namespace CH4
             }
         }
         /// <summary>
-        /// 已知最新前文长度——请求级实时值优先，未发起过请求（或宿主重启后未请求）回落最近一轮轮末落盘值。
+        /// 已知最新前文长度——请求级实时值优先，未发起过请求（或宿主重启后未请求）回落落盘快照（A202：最后一次请求边界态）。
         /// 消费面：info tokens 段 / cat.info 每猫 context 字段——「看别猫」场景需要 idle 猫也有可读值（两者皆真实 usage 值，零估算）。
         /// </summary>
         public long ContextTokensKnown
@@ -802,7 +875,7 @@ namespace CH4
                 {
                     return _contextTokens;
                 }
-                return _lastStats.LastContextTokens;
+                return _persistedContextTokens;
             }
         }
 
@@ -1147,10 +1220,7 @@ namespace CH4
             _toolBatchActive = false;
             // [段1] 上下文格式修复——S3 ReplaceMessages 原地（幂等；孤儿 tool_calls 补占位/孤立结果丢弃）
             _context.ReplaceMessages(_context.GetMessages());
-            // [段2] 前文落盘——落盘保真
-            LlmMessage[] toSave = _context.GetMessages();
-            _lastStats.EntryCount = toSave.Length;
-            _store.AppendMeta(_lastStats);
+            // [段2] 前文落盘——落盘保真（消息行随追加即落盘；A202 起元数据行不再承载统计）
             // [段2b] 运行态——中断结算（失败/中止轮同出统计：L2 摘要留档——design-ch4-llm §2.1 终止语义）
             PhaseSettle();
             LogStore.Add("LLM", 2, "本轮运行态统计（中断）: " + BuildRunStateSummary(), "LLM");
@@ -1243,20 +1313,21 @@ namespace CH4
 
         /// <summary>
         /// sleep 作废——主干被「非 sleep 输入」启动时，本猫未到点 sleep 全部销毁（等待语义：人回来了就不再需要叫醒）。
-        /// 告知以 systemauto 名义汇总一条注入（在触发消息之前落前文 + 视图 + SSE）。
-        /// 触发点：Pump Idle 分支启动轮之前（唯一入口——含 QQ 消息 / Note 拉起 / timer / delay / restart 回执）。
+        /// 返回告知文本（调用方以系统注入口径入队落前文——FIFO 保证其位于触发消息之前）。
+        /// 触发点：轮首取尽之前（唯一入口——含 QQ 消息 / Note 拉起 / timer / delay / restart 回执）。
         /// </summary>
         /// <param name="triggerSource">触发本轮的输入来源（sleep=自身到点，不销毁）</param>
-        private void ConsumeSleepOnWake(string triggerSource)
+        /// <returns>告知文本（空串=无作废 · 无需注入）</returns>
+        private string ConsumeSleepOnWake(string triggerSource)
         {
             if (triggerSource == "sleep")
             {
-                return;
+                return "";
             }
             DelayEntry[] killed = DelayQueue.CancelBySource(_catKey, "sleep");
             if (killed.Length == 0)
             {
-                return;
+                return "";
             }
             StringBuilder sb = new StringBuilder();
             sb.Append("（系统自动 · sleep 作废）等待被提前启动打断——以下定时唤醒已销毁（共 ");
@@ -1270,10 +1341,8 @@ namespace CH4
                 sb.Append(DelayQueue.FormatTime(killed[i].DueAt));
                 sb.Append(" 到期");
             }
-            string notice = sb.ToString();
-            AppendMessage(_context.AddUserMessage(notice));
-            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
             LogStore.Add("CatHome4", 1, "sleep 作废（等待被提前启动打断）: cat=" + _catKey + " | 销毁 " + killed.Length.ToString() + " 条 | 触发来源 " + triggerSource, "DELAY");
+            return sb.ToString();
         }
 
         /// <summary>
@@ -1281,12 +1350,23 @@ namespace CH4
         /// 主线程泵消费调用（ThreadGuard：不推进相位——启动在 Pump）。
         /// </summary>
         /// <param name="content">用户消息内容</param>
-        /// <param name="source">来源——user（人发送，默认）/system（系统自动）</param>
-        public void PostUserMessage(string content, string source = "user")
+        /// <param name="source">来源——user（人发送，默认）/ systemauto · sleep · timer · delay · restart（系统注入——视图层 src 一律投影为 systemauto）</param>
+        /// <param name="imagesJson">附件引用 JSON 数组（图片绝对路径；空串=无附件——图片注入经队列携带）</param>
+        /// <returns>true=已受理入队 / false=未受理（空内容 · 宿主停机态）</returns>
+        public bool PostUserMessage(string content, string source = "user", string imagesJson = "")
         {
-            if (content == null || content.Length == 0)
+            if (content == null)
             {
-                return;
+                content = "";
+            }
+            if (imagesJson == null)
+            {
+                imagesJson = "";
+            }
+            // 空输入零受理——文本与附件皆空才拒（图片注入可无正文，故两者合并判定）
+            if (content.Length == 0 && imagesJson.Length == 0)
+            {
+                return false;
             }
             if (source == null || source.Length == 0)
             {
@@ -1297,12 +1377,14 @@ namespace CH4
             if (DataBox.TryGet<string>("global", "host_restart_state", out restartState) && restartState == "requested")
             {
                 LogStore.Add("CatHome4", 2, "宿主重启中——本条输入未受理（来源 " + source + "）", "RESTART");
-                return;
+                return false;
             }
             PendingMessage msg = new PendingMessage();
             msg.Content = content;
             msg.Source = source;
+            msg.ImagesJson = imagesJson;
             _pending.Enqueue(msg);
+            return true;
         }
 
         /// <summary>
@@ -1348,12 +1430,10 @@ namespace CH4
                 }
                 if (_pending.Count > 0)
                 {
-                    PendingMessage next = _pending.Dequeue();
-                    // sleep 作废——主干被「非 sleep 输入」启动即销毁本猫未到点 sleep（等待语义；告知先于触发消息）
-                    ConsumeSleepOnWake(next.Source);
                     // 请求前巡检——重建先于消息追加与请求构造（design-ch4-ctx-rebuild §五）
                     PatrolContext(false);
-                    StartRound(next.Content, next.Source);
+                    // 轮首取尽——本帧排队条目全部落前文（FIFO）后启一轮；sleep 作废告知置最前
+                    StartRoundFromPending();
                 }
                 return;
             }
@@ -1375,7 +1455,7 @@ namespace CH4
             }
         }
         /// <summary>
-        /// 轮首计数与相位复位——StartRound 与 StartContinueRound 共用（统计清零 + 进入 link 相位；消息追加由各自承担）。
+        /// 轮首计数与相位复位——StartRoundFromPending 与 StartContinueRound 共用（统计清零 + 进入 link 相位；消息追加由各自承担）。
         /// </summary>
         private void ResetRoundCounters()
         {
@@ -1403,7 +1483,7 @@ namespace CH4
         }
         /// <summary>
         /// 启动继续轮——不追加任何消息，直接用当前前文发起请求（继续入口 pump 消费点）。
-        /// 与 StartRound 的差别仅在「不追加用户消息 / 不推 user 事件」（无新消息即无新视图块）。
+        /// 与 StartRoundFromPending 的差别仅在「不追加用户消息 / 不推 user 事件」（无新消息即无新视图块）。
         /// </summary>
         private void StartContinueRound()
         {
@@ -1411,23 +1491,71 @@ namespace CH4
             SetChatState("working");
             LaunchLlm();
         }
-
         /// <summary>
-        /// 启动新轮次——追加用户消息 + chat_state=working + StartLlm 动作段（构造消息序列 → 后台流式消费）。
+        /// 轮首取尽——本帧排队条目全部落前文（FIFO 序）后启动一轮；sleep 作废告知置于最前（先于触发消息）。
         /// </summary>
-        /// <param name="content">用户消息</param>
-        /// <param name="source">来源——user/system</param>
-        private void StartRound(string content, string source)
+        private void StartRoundFromPending()
         {
-            // 轮首计数与相位复位——与继续轮共用（统计清零 + 进入 link 相位）
+            List<PendingMessage> batch = new List<PendingMessage>();
+            while (_pending.Count > 0)
+            {
+                batch.Add(_pending.Dequeue());
+            }
+            if (batch.Count == 0)
+            {
+                return;
+            }
+            // 轮首计数与相位复位（与继续轮共用）
             ResetRoundCounters();
             // 用户新消息 = 人在场——连续自动继续计数与待继续作废（自动链让位人工）
             _autoContinueCount = 0;
             _autoContinueDueTick = 0;
-            AppendMessage(_context.AddUserMessage(content));
-            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
+            // sleep 作废——主干被「非 sleep 输入」启动即销毁未到点 sleep（等待语义）
+            string notice = ConsumeSleepOnWake(batch[0].Source);
+            if (notice.Length > 0)
+            {
+                AppendUserInjection(notice, SysKindSystemAuto, "");
+            }
+            for (int i = 0; i < batch.Count; i = i + 1)
+            {
+                AppendUserInjection(batch[i].Content, batch[i].Source, batch[i].ImagesJson);
+            }
             SetChatState("working");
             LaunchLlm();
+        }
+        /// <summary>
+        /// 用户注入落前文 + 视图——来源贯通（视图层按 ViewSrcOf 投影 src；附件随消息落盘）。
+        /// </summary>
+        /// <param name="content">注入内容（系统注入已含行头前缀）</param>
+        /// <param name="source">队列来源标记</param>
+        /// <param name="imagesJson">附件引用 JSON 数组（空串=无附件）</param>
+        private void AppendUserInjection(string content, string source, string imagesJson)
+        {
+            string text = content;
+            if (text == null)
+            {
+                text = "";
+            }
+            // 系统注入标记——落前文单点兜底：凡系统来源（含延迟族 sleep/timer/delay/restart）统一套行头前缀
+            if (ViewSrcOf(source).Length > 0)
+            {
+                text = BuildSysInjectText(text);
+            }
+            LlmMessage? msg;
+            if (imagesJson != null && imagesJson.Length > 0)
+            {
+                msg = _context.AddUserMessage(text, imagesJson);
+            }
+            else
+            {
+                msg = _context.AddUserMessage(text);
+            }
+            if (msg == null)
+            {
+                return;
+            }
+            AppendMessage(msg.Value);
+            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1, ViewSrcOf(source));
         }
 
         /// <summary>
@@ -1442,6 +1570,8 @@ namespace CH4
             _llmResultText = "";
             _llmReasoning = "";
             _reasonAccum.Clear();
+            // 思考计时同弃——思考内容被清（新一轮 / 空回复续传重发），本块用时同步归零
+            _reasonDurMs = 0;
             _llmToolCallsJson = "";
             _llmError = false;
             _llmErrorText = "";
@@ -1629,6 +1759,10 @@ namespace CH4
                         _sessionPrompt = _sessionPrompt + (_usagePrompt - reqPrompt);
                         _sessionCompletion = _sessionCompletion + (_usageCompletion - reqCompletion);
                         _sessionCacheHit = _sessionCacheHit + (_usageCacheHit - reqCacheHit);
+                        // 🔴 A202 落盘点（唯一常规写点）——请求边界即物化点：全量落盘会话元数据（本轮六态 / 计数 / 耗时 / Note）
+                        _lastRoundTokens = CaptureRoundTokens();
+                        _persistedContextTokens = _contextTokens;
+                        SaveMeta();
                         // F4 视图——状态段推送（前文长度与条数实时化；v2：状态段承载，无独立事件）
                         PushState();
                     }
@@ -1751,6 +1885,11 @@ namespace CH4
                     long ms = (now - _phaseStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
                     if (ms < 0) { ms = 0; }
                     _phaseAccumMs[_phaseKind] = _phaseAccumMs[_phaseKind] + ms;
+                    // 思考用时——think 态内部实现：离开 think 即把本段净时长累进本块（不跨态；推入视图时取走并归零）
+                    if (_phaseKind == PhaseThink)
+                    {
+                        _reasonDurMs = _reasonDurMs + ms;
+                    }
                 }
                 _phaseKind = kind;
                 // 空闲态不计时——idle 只作态名（轮未开始 / 收尾中）；计时效用为零，且实时增量会让快照 sessions 段每帧脏变化
@@ -1783,9 +1922,27 @@ namespace CH4
                     long ms = (now - _phaseStartTick) * 1000 / System.Diagnostics.Stopwatch.Frequency;
                     if (ms < 0) { ms = 0; }
                     _phaseAccumMs[_phaseKind] = _phaseAccumMs[_phaseKind] + ms;
+                    // 思考用时——收尾结算同口径（think 态内部实现：任何离开 think 的路径都入账，不跨态）
+                    if (_phaseKind == PhaseThink)
+                    {
+                        _reasonDurMs = _reasonDurMs + ms;
+                    }
                     _phaseKind = -1;
                     _phaseStartTick = 0;
                 }
+            }
+        }
+        /// <summary>
+        /// 取走本块思考用时——推入 view.json 的时刻调用（取走即归零：计时生命周期止于落到视图层，不残留跨块）。
+        /// </summary>
+        /// <returns>本块思考用时毫秒（0 = 无思考段或已取走）</returns>
+        private long TakeReasonDuration()
+        {
+            lock (_phaseLock)
+            {
+                long ms = _reasonDurMs;
+                _reasonDurMs = 0;
+                return ms;
             }
         }
         /// <summary>
@@ -1882,6 +2039,17 @@ namespace CH4
             return null;
         }
         /// <summary>
+        /// 视图推送面是否仍有待推内容——重启闸门第二判据（A206：业务 Idle ≠ 推送面清空）。
+        /// 只探测内容面（持久块 / 临时区），不含状态段——状态段每帧变化，纳入即永久置位。
+        /// </summary>
+        public bool ViewHasPendingContent
+        {
+            get
+            {
+                return _viewBus.HasPendingContent;
+            }
+        }
+        /// <summary>
         /// 状态段整段 JSON——后端权威业务态（v2 契约：轮阶段 / 六态用时 / Note / 延迟队列 / Token 三级 / 前文长度与条数）。
         /// 前端零推断：状态位与数字就位即渲染；整段比对去重由视图出口承担（无变化零字节）。
         /// </summary>
@@ -1900,16 +2068,47 @@ namespace CH4
                 ("tool", ms["tool"]),
                 ("run", ms["run"]),
                 ("reply", ms["reply"]));
+            // A201 token 双类计量——轮级（空闲回落最近落盘快照，与 ContextTokensKnown 同模式）+ 会话级 + 派生值与命中率
+            bool roundIdle = _phase == ChatPhase.Idle;
+            SessionTokens roundTokens = new SessionTokens();
+            roundTokens.Prompt = roundIdle ? _lastRoundTokens.Prompt : _usagePrompt;
+            roundTokens.CacheHit = roundIdle ? _lastRoundTokens.CacheHit : _usageCacheHit;
+            roundTokens.Completion = roundIdle ? _lastRoundTokens.Completion : _usageCompletion;
+            SessionTokens sessionTokens = new SessionTokens();
+            sessionTokens.Prompt = _sessionPrompt;
+            sessionTokens.CacheHit = _sessionCacheHit;
+            sessionTokens.Completion = _sessionCompletion;
             string tokensJson = JsonUtil.Object(
-                ("prompt", _usagePrompt),
-                ("completion", _usageCompletion),
-                ("cacheHit", _usageCacheHit),
+                ("prompt", roundTokens.Prompt),
+                ("completion", roundTokens.Completion),
+                ("cacheHit", roundTokens.CacheHit),
+                ("miss", roundTokens.Miss),
+                ("rate", roundTokens.Rate),
                 ("context", _contextTokens),
                 ("count", _context.GetMessageCount()),
-                ("sessionPrompt", _sessionPrompt),
-                ("sessionCompletion", _sessionCompletion),
-                ("sessionCacheHit", _sessionCacheHit));
+                ("sessionPrompt", sessionTokens.Prompt),
+                ("sessionCompletion", sessionTokens.Completion),
+                ("sessionCacheHit", sessionTokens.CacheHit),
+                ("sessionMiss", sessionTokens.Miss),
+                ("sessionRate", sessionTokens.Rate));
             string delayJson = JsonUtil.Object(("entries", DelayQueue.BuildEntriesFragment(_catKey)));
+            // A201 会话元数据面——displayName / 会话实例 ID / 时间戳 / 前文条数与字符数（持久化面见 design-ch4-protocol §十三）
+            // 易用性修复（A201 前端轮）：① lastActiveAt 在恢复导入后为 0（ReplaceMessages 不刷新）→ 回落创建时刻（与落盘面 SaveMeta 同口径）
+            //                       ② contextChars 原缓存只在轮末刷新（轮内滞后）→ 推送时实时刷新
+            long lastActive = _context.LastChangeAt;
+            if (lastActive <= 0)
+            {
+                lastActive = _sessionCreatedAt;
+            }
+            _contextChars = ComputeContextChars();
+            string metaJson = JsonUtil.Object(
+                ("catId", _id),
+                ("displayName", _displayName),
+                ("sessionId", _sessionInstanceId),
+                ("createdAt", _sessionCreatedAt),
+                ("lastActiveAt", lastActive),
+                ("contextCount", _context.GetMessageCount()),
+                ("contextChars", _contextChars));
             return JsonUtil.Object(
                 ("sessionId", Id),
                 ("runState", name),
@@ -1918,7 +2117,8 @@ namespace CH4
                 ("note", JsonUtil.Raw(BuildNoteJson())),
                 ("delay", JsonUtil.Raw(delayJson)),
                 ("conn", JsonUtil.Raw(JsonUtil.Object(("server", IsHostRestarting() ? "stopping" : "ok"), ("clients", clients)))),
-                ("tokens", JsonUtil.Raw(tokensJson)));
+                ("tokens", JsonUtil.Raw(tokensJson)),
+                ("meta", JsonUtil.Raw(metaJson)));
         }
         /// <summary>状态段推送——状态变化即推（视图出口整段比对去重；未 Attach 时静默）</summary>
         public void PushState()
@@ -2079,15 +2279,14 @@ namespace CH4
                 // 纯文本回复——本轮完成
                 AppendMessage(_context.AddAssistantMessage(_llmResultText));
                 NoteTimebackEvent();
-                _viewStore.OnAssistantText(LastMessage(), _context.GetMessageCount() - 1);
+                _viewStore.OnAssistantText(LastMessage(), _context.GetMessageCount() - 1, TakeReasonDuration());
                 // A196 临时区——本轮收尾写空态（内容已由持久区承载）
                 _viewBus.SetLive("empty", "");
                 // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + 直接开新轮（跳过 Done/CloseRound）
                 if (_pending.Count > 0)
                 {
                     PendingMessage next = _pending.Dequeue();
-                    AppendMessage(_context.AddUserMessage(next.Content));
-                    _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
+                    AppendUserInjection(next.Content, next.Source, next.ImagesJson);
                     _round = 0;
                     LaunchLlm();
                     return;
@@ -2100,7 +2299,7 @@ namespace CH4
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
             AppendMessage(_context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning));
             NoteTimebackEvent();
-            _viewStore.OnAssistantToolCalls(LastMessage(), _context.GetMessageCount() - 1);
+            _viewStore.OnAssistantToolCalls(LastMessage(), _context.GetMessageCount() - 1, TakeReasonDuration());
             // 思考段整块——由 SealReasonStream 在离开 think 态时统一推送（工具决策流首帧即收口；唯一出口，莎 2026-09-22 定）
             // 工具轮 seal——视图层补 gap text 块（全量外观真源：前端历史/QQBot 转发消费）+ SSE 推送（实时）；空文本不推
             if (_llmResultText.Length > 0)
@@ -2661,8 +2860,7 @@ namespace CH4
             if (_pending.Count > 0)
             {
                 PendingMessage next = _pending.Dequeue();
-                AppendMessage(_context.AddUserMessage(next.Content));
-                _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
+                AppendUserInjection(next.Content, next.Source, next.ImagesJson);
                 _round = 0;
                 LaunchLlm();
                 return;
@@ -2690,10 +2888,7 @@ namespace CH4
                 abortKind = "请求失败（未重试）";
             }
             LogStore.Add("LLM", 3, "LLM 错误（" + abortKind + "——本轮中止，上下文保持断点）: " + TrimDisplay(_llmErrorText, 300), "LLM");
-            // [段1] 前文落盘——落盘保真
-            LlmMessage[] toSave = _context.GetMessages();
-            _lastStats.EntryCount = toSave.Length;
-            _store.AppendMeta(_lastStats);
+            // [段1] 前文落盘——落盘保真（消息行随追加即落盘；A202 起元数据行不再承载统计）
             // [段2] 错误可见——视图块落盘（持久化）+ 前端 error 事件（文本取清空前原值）
             // A69 视图层报错中文注释——错误原文仍进日志与前文面，仅视图块追加中文注释
             string viewError = ErrorNote.Apply(_llmErrorText);
@@ -2739,20 +2934,15 @@ namespace CH4
         /// </summary>
         private void CloseRound()
         {
-            // E3 真实 usage 统计——轮末落盘（info 自查/前端显示数据源；零估算）
-            _lastStats.EntryCount = _context.GetMessageCount();
-            _lastStats.LastPromptTokens = _usagePrompt;
-            _lastStats.LastCacheHitTokens = _usageCacheHit;
-            _lastStats.LastCompletionTokens = _usageCompletion;
-            _lastStats.LastContextTokens = _contextTokens;
-            _store.AppendMeta(_lastStats);
+            // A202 落盘时机——元数据面只在每次 API 请求结算后落盘（usage 处置点）；
+            // 轮末与 Note 拉起轮均为纯内存行为：轮末只写 view.json（roundsum 块），元数据面不写
             // M4a Note 自动拉起提前——剩余≥2 条时以 user 名义推下一轮（最后 1 条不拉起——LLM 完成后自然结束；Q2 顺序：Note 未完成 = 本轮未结束——不 roundsum；全部完成天然跳过——防无限循环闸门）
             if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent + 1 < _noteTasks.Length)
             {
                 int remain = _noteTasks.Length - _noteCurrent;
                 // 运行态——Note 拉起轮同样结算（本轮统计留档——design-ch4-llm §2.1 终止语义）
                 PhaseSettle();
-                PostUserMessage("[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent], "system");
+                PostSystemMessage(SysKindSystemAuto, "[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent]);
                 _viewStore.Save();
                 _round = 0;
                 _phase = ChatPhase.Idle;
@@ -2801,6 +2991,10 @@ namespace CH4
             // 正常完成——连续自动继续计数与待继续清零（自动链终止于一次成功轮）
             _autoContinueCount = 0;
             _autoContinueDueTick = 0;
+            // A201 轮级归零——本轮结算视图推入之后（design-ch4-protocol §十三：结算后清零；轮间读面回落落盘快照）
+            _usagePrompt = 0;
+            _usageCompletion = 0;
+            _usageCacheHit = 0;
         }
 
         /// <summary>
@@ -2828,15 +3022,15 @@ namespace CH4
                 keep[i] = all[i];
             }
             _context.ReplaceMessages(keep);
-            // [段2] 前文落盘——落盘保真（截断重写：append-only 的合法例外）
+            // [段2] 前文落盘——落盘保真（截断重写：append-only 的合法例外；A202 起元数据行不再承载统计）
             LlmMessage[] toSave = _context.GetMessages();
-            _lastStats.EntryCount = toSave.Length;
-            _store.Rewrite(toSave, _lastStats);
+            _store.Rewrite(toSave);
             // [段3] 轮级计数复位——新起点零统计起算（会话级累计不动——同会话延续）
             _usagePrompt = 0;
             _usageCompletion = 0;
             _usageCacheHit = 0;
             _contextTokens = 0;
+            _persistedContextTokens = 0;
             _toolCallCount = 0;
         }
 
@@ -2865,8 +3059,10 @@ namespace CH4
             // [段1] 截断前文到切点——共用实现（timeback 回卷同源；含落盘与轮级计数复位）
             TruncateMessages(msgIndex + 1);
             // [段2] 最近轮统计重置——新起点零统计起算（会话级累计不动：回滚属同会话延续；
-            //        原实现调 ResetStats() 会清会话级 token 累计——与 glossary「回滚不归零」口径冲突，2026-09-28 修正）
-            _lastStats = new SessionStats();
+            //        原实现调 ResetStats() 会清会话级 token 累计——与 glossary「回滚不归零」口径冲突，2026-09-28 修正；
+            //        A202：轮级读面回落源与请求级前文长度一并归零）
+            _lastRoundTokens = new SessionTokens();
+            _persistedContextTokens = 0;
             // [段4] 视图——不动（v2 契约：持久即持久，截断通道退役；视图层与真实前文并列，回滚只作用于前文）
             // [段5] Note 任务清空——防旧任务自动拉起新轮
             _noteTasks = null;

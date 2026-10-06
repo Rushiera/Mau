@@ -22,13 +22,13 @@ beforeAll(async () => {
 const PERSIST_TYPES = ['user', 'text', 'reason', 'toolcard', 'retry', 'error', 'inject_report', 'roundsum'];
 const LIVE_TYPES = ['replysse', 'thinksse'];
 
-/// 块体类例外——思考族自持 `.chat-think`、工具族自持 `.chat-tool`（`BLOCK_DECL` 未建模这两族块体；
+/// 块体类例外——完成态思考自持 `.chat-think`、工具族自持 `.chat-tool`（`BLOCK_DECL` 未建模这两族块体；
 /// 形态判据不受影响——`form:'plain'` 语义 =「不作对话内容读」，与二者一致，故非渲染缺陷）。
+/// `thinksse` 走通用路径（2026-10-06 临时最小态——无内部结构，仅 `.chat-plain` 载体）。
 /// 🔴 这是**显式登记**而非放宽断言：新增例外必须来此登记，否则测试变红。
 /// 口径统一（块体族是否入表 / `body` 列是否改全类名）归 A198「逐 type 核对」。
 const BODY_EXCEPTIONS = {
     'reason': 'chat-think',
-    'thinksse': 'chat-think',
     'toolcard': 'chat-tool',
     'toolrun': 'chat-tool'
 };
@@ -77,7 +77,7 @@ describe('块型渲染——结构契约', () => {
             expectRowContract(node, t);
         }
         // toolrun——live.js 逐卡调持久区渲染件（两区同源；进行中 / 结果态由载荷 result 有无分支）
-        const card = window.buildToolBlock({ name: 'time', arguments: '{}', toolIndex: 1, toolTotal: 1 }, 'toolrun');
+        const card = window.buildToolBlock({ name: 'time', arguments: '{}', toolIndex: 1, toolTotal: 1 }, null, 'toolrun');
         expect(card).toBeTruthy();
         expectRowContract(card, 'toolrun');
     });
@@ -88,6 +88,22 @@ describe('块型渲染——结构契约', () => {
         const special = ['toolrun'];
         const implemented = Object.keys(window.PERSIST_RENDERERS).length + Object.keys(window.LIVE_RENDERERS).length + special.length;
         expect(implemented).toBe(declared);
+    });
+
+    it('persist 真实调用路径——第二参恒为条目对象（防参数语义重载回归）', () => {
+        // 回归锚（2026-10-06 真机抓获）：toolcard 曾把第二参当行身份字符串，persistRender 喂条目对象后
+        // data-type 变 "[object Object]" 且形态回落——测试必须走 persistRender 真实调用形态，不用单参直调
+        const card = window.persistRender({
+            type: 'toolcard',
+            msgIndex: 1,
+            payload: { name: 'time', arguments: '{}', result: 'ok', toolIndex: 1, toolTotal: 1, order: '-1' }
+        });
+        expect(card.getAttribute('data-type')).toBe('toolcard');
+        expect(card.classList.contains('tool')).toBe(true);
+        expect(card.querySelectorAll('.chat-bubble').length).toBe(1);
+        const txt = window.persistRender({ type: 'text', msgIndex: 3, payload: { text: 'hi' } });
+        expect(txt.getAttribute('data-type')).toBe('text');
+        expect(txt.querySelector('.node-actions')).toBeTruthy();
     });
 });
 
@@ -117,5 +133,84 @@ describe('形态契约', () => {
         const row = window.blockRow('nope');
         expect(row.classList.contains('assistant')).toBe(true);
         expect(row.getAttribute('data-type')).toBe('nope');
+    });
+});
+
+describe('来源变体（A204——系统注入 user 行）', () => {
+    it('取用口——sys 判据：缺字段 / `user` = 人工；其余非空 = 系统', () => {
+        expect(window.rowSourceClass({})).toBe('');
+        expect(window.rowSourceClass(null)).toBe('');
+        expect(window.rowSourceClass({ src: '' })).toBe('');
+        expect(window.rowSourceClass({ src: 'user' })).toBe('');
+        expect(window.rowSourceClass({ src: 'systemauto' })).toBe('sys');
+    });
+
+    it('user 渲染——系统注入加行变体类，人工不加（缺字段 = 人工）', () => {
+        const human = window.persistRender({ type: 'user', msgIndex: 1, payload: { text: '人工' } });
+        expect(human.classList.contains('user')).toBe(true);
+        expect(human.classList.contains('sys')).toBe(false);
+        const sys = window.persistRender({ type: 'user', msgIndex: 2, payload: { text: '[systemauto]注入', src: 'systemauto' } });
+        expect(sys.classList.contains('sys')).toBe(true);
+        expect(sys.querySelectorAll('.chat-bubble').length).toBe(1);
+    });
+
+    it('刻度角色——sys 行镜像 `user-sys`；普通 user 与其它 type 不变', () => {
+        const sys = window.persistRender({ type: 'user', msgIndex: 3, payload: { text: 'x', src: 'systemauto' } });
+        expect(window.scrollTickRole(sys)).toBe('user-sys');
+        const human = window.persistRender({ type: 'user', msgIndex: 4, payload: { text: 'y' } });
+        expect(window.scrollTickRole(human)).toBe('user');
+        const text = window.persistRender({ type: 'text', msgIndex: 5, payload: { text: 'z' } });
+        expect(window.scrollTickRole(text)).toBe('reply');
+    });
+});
+
+describe('text 块操作条（P6b 复归 · 2026-10-06）', () => {
+    it('带 msgIndex——挂操作条（两按钮 + 悬浮提示）', () => {
+        const node = window.buildTextBlock({ text: 'hi' }, { type: 'text', msgIndex: 7 });
+        const bar = node.querySelector('.node-actions');
+        expect(bar).toBeTruthy();
+        expect(node.querySelectorAll('.node-btn').length).toBe(2);
+        expect(node.querySelector('.node-btn-rollback').textContent).toBe('⟲ 回滚');
+        expect(node.querySelector('.node-btn-fork').textContent).toBe('⧉ 分支');
+        expect(node.querySelector('.node-btn-rollback').title).toContain('回滚');
+        expect(node.querySelector('.node-btn-fork').title).toContain('分支');
+    });
+
+    it('msgIndex 缺失 / -1——不挂操作条（独立块与旧块零回归）', () => {
+        expect(window.buildTextBlock({ text: 'hi' }, { type: 'text', msgIndex: -1 }).querySelector('.node-actions')).toBe(null);
+        expect(window.buildTextBlock({ text: 'hi' }, {}).querySelector('.node-actions')).toBe(null);
+    });
+
+    it('回滚按钮——确认后经指令总线投递 session.rollback <msgIndex>', () => {
+        const sent = [];
+        window.confirm = () => true;
+        window.fetch = (url, opt) => {
+            sent.push(JSON.parse(opt.body).text);
+            return Promise.resolve({ json: () => Promise.resolve({ ok: true }) });
+        };
+        const node = window.buildTextBlock({ text: 'hi' }, { type: 'text', msgIndex: 7 });
+        node.querySelector('.node-btn-rollback').click();
+        expect(sent).toEqual(['session.rollback 7']);
+    });
+});
+
+describe('轮末结算载荷（2026-10-06 · 莎定）——四项分片', () => {
+    it('命中率 → Hit → Miss → Down；Hit = prompt − miss；数值走 num-frac 小数分片', () => {
+        const node = window.buildRoundSumBlock({
+            data: {
+                prompt: 1000000, completion: 50000, cacheHit: 900000, miss: 100000,
+                toolCount: 0, requests: 0, elapsedMs: 1000, phases: {}
+            }
+        });
+        const tok = node.querySelector('.rs-tok');
+        expect(tok.querySelector('.ci-rate').textContent).toBe('90.00%');
+        expect(tok.querySelector('.ci-hit').textContent).toBe('Hit');
+        expect(tok.querySelector('.ci-miss').textContent).toBe('Miss');
+        expect(tok.querySelector('.ci-down').textContent).toBe('Down');
+        expect(tok.textContent).toContain('（🎯90.00%）    Hit900.00K   Miss100.00K   Down50.00K');
+        const fracs = Array.from(tok.querySelectorAll('.num-frac')).map((n) => n.textContent);
+        expect(fracs).toEqual(['.00', '.00', '.00', '.00']);
+        // 弱化件（2026-10-06 · 莎定；同日微调：K/M 单位随整数原色）——括号（2）· 百分号（1）包 `.rs-dim`
+        expect(tok.querySelectorAll('.rs-dim').length).toBe(3);
     });
 });

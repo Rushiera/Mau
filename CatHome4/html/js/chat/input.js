@@ -5,6 +5,7 @@
 // 指令一律走指令总线（POST /api/v1/command）——前端不拼业务指令串以外的逻辑。
 //
 // 输入区与临时区**同区域互斥**：同一列同位，输入框与 live 面板二选一（代码切内联 display）；
+//   切换入口 = 输入框左侧竖向滑块开关（**单按钮**——整体点击即在输入 / 流式之间翻转，标签随态改字）。
 //   回车发送时自动切回输入态，想看临时内容自己点回来（纯前端可视化，判据取全局态）。
 //   本件只切本区两块——不碰对话区（#chatMsgs）与滚动带（#chatScrollBand，显隐归 fx/scroll）。
 // ═══════════════════════════════════════════
@@ -36,7 +37,8 @@ function postCommand(text, images) {
     });
 }
 
-/// 发送——空文本且无待发图零动作；发送后自动切回输入态（用户想看内容而非留在临时面板）
+/// 发送——空文本且无待发图零动作；发送时只滚底，不本地切态（切态由持久区新块驱动：
+///   user 块到达 → 切流式；roundsum 到达 → 切回输入）
 function chatSend() {
     var box = document.getElementById('chatSendInput');
     if (!box) {
@@ -69,7 +71,8 @@ function chatSend() {
     if (typeof pendClear === 'function') {
         pendClear();
     }
-    showStreamArea();
+    // 切态归持久区新块（user 块 → 流式 / roundsum → 输入；persist.js persistAutoSwap）——本处只滚底
+    scrollBottomNow();
 }
 
 /// 停止本轮——已生成内容保留（后端负责前文格式修复）
@@ -82,8 +85,11 @@ function chatContinue() {
     postCommand('cat.continue');
 }
 
-/// 新会话——清前文并重新注入；服务端随后在流内重发全量帧
+/// 新会话——清前文并重新注入；**二次确认**（前文不可恢复：文档要求与节点操作条同款确认框）；服务端随后在流内重发全量帧
 function chatNewSession() {
+    if (!window.confirm('新建会话？前文将被清空并重新注入知识文件（不可恢复）。')) {
+        return;
+    }
     postCommand('session.new');
 }
 
@@ -96,10 +102,21 @@ function chatRefresh() {
     chatConnect();
 }
 
-/// 临时区 / 输入区切换——同区域互斥（按钮点击入口）
+/// 临时区 / 输入区切换——同区域互斥（开关整体点击入口：翻转当前态）
 function chatLiveToggle() {
     liveShown = (liveShown !== true);
     inputSwap(liveShown);
+}
+
+/// 直达指定态——**自动切换入口**（persist 新块驱动：**人工** user 块 → 流式 / roundsum → 输入；
+/// 系统注入块不触发本入口——A204）；同态零动作（幂等）
+function chatLiveShow(shown) {
+    var want = (shown === true);
+    if (liveShown === want) {
+        return;
+    }
+    liveShown = want;
+    inputSwap(want);
 }
 
 /// 区域显隐单点——输入框与 live 面板二选一（元素缺失即跳过）；按钮激活态随动
@@ -113,27 +130,27 @@ function inputSwap(shown) {
             panel.style.height = (h > 0 ? h : 0) + 'px';
         }
         panel.style.display = shown ? '' : 'none';
+        if (shown) {
+            // 切到流式区即贴底——面板是「看最新」的窥视窗（流式跟随步见 stream.js）
+            scrollBoxBottom(panel);
+        }
     }
     if (input) {
         input.style.display = shown ? 'none' : '';
     }
-    var btn = document.getElementById('chatLiveToggle');
-    if (btn) {
+    var sw = document.getElementById('chatLiveToggle');
+    if (sw) {
         if (shown) {
-            btn.classList.add('on');
+            sw.classList.add('on');
         } else {
-            btn.classList.remove('on');
+            sw.classList.remove('on');
         }
     }
-}
-
-/// 切回输入态——发送时的自动动作（已在输入态则零动作）
-function showStreamArea() {
-    if (liveShown === true) {
-        liveShown = false;
-        inputSwap(false);
+    // 单按钮标签随态改字（2026-10-06 合并）——输入态「输入」/ 流式态「流式」（上下位置随滑块，归 CSS）
+    var label = document.getElementById('chatLiveLabel');
+    if (label) {
+        label.textContent = shown ? '流式' : '输入';
     }
-    scrollBottomNow(true);
 }
 
 /// 输入区接线——元素缺失即跳过（防御式）；本件加载于页面尾部，DOM 已就绪
@@ -170,11 +187,12 @@ function inputBind() {
     }
     var toggle = document.getElementById('chatLiveToggle');
     if (toggle) {
+        // 开关点击——单按钮：整体点击即在输入 / 流式之间翻转（标签随态改字，位置归 CSS）
         toggle.addEventListener('click', chatLiveToggle);
     }
     var jump = document.getElementById('chatJumpBottom');
     if (jump) {
-        jump.addEventListener('click', jumpBottom);
+        jump.addEventListener('click', scrollBottomNow);
     }
 }
 

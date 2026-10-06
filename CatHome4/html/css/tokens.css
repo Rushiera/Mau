@@ -79,8 +79,8 @@
     --ch-hover-overlay: rgba(128, 128, 128, 0.18);
 
     /* ============ L3 MD 内容（独立色系——不引 L1，可自造值） ============ */
-    --ch-md-text: #d4d4d4;              /* 正文 */
-    --ch-md-heading: #d4d4d4;           /* 标题 h1-h4 */
+    --ch-md-text: #FFFFF0;              /* 正文（象牙白 · 2026-10-06 莎定；MD 正文唯一色源） */
+    --ch-md-heading: #FFFFF0;           /* 标题 h1-h4（随正文——与正文同值关系保持） */
     --ch-md-heading-weak: #a8a8a8;      /* 标题 h5 / h6 */
     --ch-md-line: #2a2a2a;              /* 块边 / 表框 / 水平线 / 标题下框线 */
     --ch-md-quote-bar: #569cd6;         /* 引用左条 */

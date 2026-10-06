@@ -15,8 +15,10 @@
 import { beforeAll, afterEach, describe, expect, it } from 'vitest';
 import { bootChatPage } from './chat-env.mjs';
 
-/// 契约 §12.2 ① 字段面（后端 `ChatSession.BuildStateJson` 八字段）
-const STATE_FIELDS = ['sessionId', 'runState', 'runMs', 'requests', 'note', 'delay', 'conn', 'tokens'];
+/// 契约 §12.2 ① 字段面（后端 `ChatSession.BuildStateJson` 九字段）
+/// 判据：表内 fields 并集须**覆盖**本清单（每字段至少一件声明消费）——`sessionId`（猫 key）当前
+///       无显示位（会话标识显示走 `meta`，A201）
+const STATE_FIELDS = ['sessionId', 'runState', 'runMs', 'requests', 'note', 'delay', 'conn', 'tokens', 'meta'];
 
 /// 字段面派生——分发表各行 `fields` 的并集（与产品侧同口径：表是唯一声明处）
 function fieldKeys(rows) {
@@ -68,8 +70,12 @@ function captureWarn(fn) {
 }
 
 describe('state 分发表（A193 骨架）', () => {
-    it('字段面覆盖契约八字段（表内 fields 并集）', () => {
-        expect(fieldKeys(window.STATE_DECL).slice().sort()).toEqual(STATE_FIELDS.slice().sort());
+    it('字段面覆盖契约九字段（表内 fields 并集 ⊇ 清单）', () => {
+        // 后端字段清单中当前无前端消费位的字段——显式登记（不是遗漏；新增字段须有消费件或被登记于此）
+        const unconsumed = ['sessionId'];
+        const union = fieldKeys(window.STATE_DECL);
+        const missing = STATE_FIELDS.filter((f) => unconsumed.indexOf(f) < 0 && union.indexOf(f) < 0);
+        expect(missing).toEqual([]);
     });
 
     it('表行形态完整且入口全部可解析', () => {
@@ -169,5 +175,55 @@ describe('件 ↔ 表一致性（A194）', () => {
             }
             expect(names.some((n) => applies.indexOf(n) >= 0)).toBe(true);
         }
+    });
+});
+
+// ── A201 前端轮：会话标识 + 顶栏信息位（消费点断言）──────────────
+describe('会话标识投影（A201）', () => {
+    it('displayName → document.title + #chatTitle', () => {
+        window.stateApply({ meta: { displayName: 'CH4Coder' } });
+        expect(document.title).toBe('CH4Coder');
+        expect(document.getElementById('chatTitle').textContent).toBe('CH4Coder');
+    });
+
+    it('空 displayName → 零动作（不写空标题）', () => {
+        document.title = 'Cat Chat';
+        window.stateApply({ meta: { displayName: '' } });
+        expect(document.title).toBe('Cat Chat');
+    });
+});
+
+describe('顶栏信息位（A201 统一格式化）', () => {
+    it('前文条数 / 长度 / 字符数 + 会话级消耗与命中率（两位小数 + K/M 进位）', () => {
+        window.stateApply({
+            tokens: {
+                count: 81, context: 143120,
+                sessionPrompt: 291328, sessionCompletion: 2187,
+                sessionMiss: 39680, sessionRate: 0.8638
+            },
+            meta: { contextChars: 132301 }
+        });
+        const el = document.getElementById('chatInfo');
+        const txt = el.textContent;
+        expect(txt).toContain('前文 143.12K token 81 条（132.30K字符）');
+        expect(txt).toContain('| （🎯86.38%） Hit251.65K Miss39.68K  Down2.19K');
+        // 会话级标签分片（2026-10-06 · 莎定）——Hit 淡蓝 / Miss 橙黄 / Down 淡红，各 +1px
+        expect(el.querySelector('.ci-hit').textContent).toBe('Hit');
+        expect(el.querySelector('.ci-miss').textContent).toBe('Miss');
+        expect(el.querySelector('.ci-down').textContent).toBe('Down');
+        expect(txt).toContain('（🎯86.38%）');
+        // 富文本分片（2026-10-06 · 莎定）——数值六件包 `.ci-num`（随正文高亮），命中率包 `.ci-rate`（淡紫）
+        expect(el.querySelectorAll('.ci-num').length).toBe(6);
+        expect(el.querySelector('.ci-rate').textContent).toBe('86.38%');
+        // 小数分片（2026-10-06 · 莎定）——整数与小数独立渲染：小数（含小数点）包 `.num-frac`（同文字灰 + 小 1px）
+        const fracs = Array.from(el.querySelectorAll('.num-frac')).map((n) => n.textContent);
+        expect(fracs).toEqual(['.12', '.30', '.38', '.65', '.68', '.19']);
+        expect(el.querySelector('.ci-rate .num-frac').textContent).toBe('.38');
+    });
+
+    it('统计数字统一走 fmtCount——两位小数 · K/M 进位 · M 为最大单位', () => {
+        expect(window.fmtCount(999)).toBe('999.00');
+        expect(window.fmtCount(1000)).toBe('1.00K');
+        expect(window.fmtCount(1234567)).toBe('1.23M');
     });
 });

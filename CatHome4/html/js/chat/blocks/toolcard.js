@@ -5,7 +5,7 @@
 //   item = { type:'toolcard', ts, msgIndex, round,
 //            payload:{ name, arguments, result, images? } }
 //   · name = 工具名；arguments = 参数 JSON 原文；result = 结果原文（可带结构化头）
-//   · 计数类字段（toolIndex / toolTotal / order / durMs / 字符规模）不进渲染——规模信息归后端
+//   · 计数类字段（toolIndex / toolTotal / order / durMs）——字段面见契约 §12.5
 //
 // 产出：.chat-row.assistant.tool > details.chat-tool[.err]
 //         └ summary.tn（图标 + 变体标签 + 折叠行文案） + 段数组（lib/tool-format 骨架）
@@ -16,9 +16,10 @@
 //   · DOM 挂载 / 滚动跟随归主干
 // ═══════════════════════════════════════════
 
-function buildToolBlock(payload, type) {
+function buildToolBlock(payload, item, type) {
     // 工具卡——行容器 + 折叠卡（默认折叠）
-    // type 可指定（缺省 toolcard）——live 面以 'toolrun' 复用本渲染件（两区同源，行身份随来源）
+    // 签名 = persist 族通用形态（payload, item）；item 本件不用（只作签名一致——避免第二参语义重载）
+    // type = 行身份（**第三参**，缺省 'toolcard'）——live 面以 'toolrun' 复用本渲染件（两区同源，行身份随来源）
     // 气泡外壳（2026-10-05 气泡化）——persist 面得 .chat-bubble；live 面（toolrun）仍 .chat-plain（面板自身即泡，内部件不再套壳）
     var t = type || 'toolcard';
     var row = blockRow(t);
@@ -56,20 +57,38 @@ function buildToolCard(tool, open) {
     det.open = (open === true);
     var sum = el('summary', 'tn');
 
-    // 折叠行前缀——失败态警示；其余按工具类型图标（无批次编号、无执行序徽标）
-    sum.appendChild(document.createTextNode((isErr ? '⚠️ ' : iconOf(t.name)) + ' '));
+    // [段1] 折叠行前缀——失败态警示 / 并发批次序（`[图标 n/m]`）/ 工具图标（专属 → 骨架 → ❓）
+    sum.appendChild(document.createTextNode(toolPrefix(t, isErr)));
 
-    // 骨架分派（lib/tool-format）——命中 → 段结构 + 工具变体标签；未命中 → 探测骨架
+    // [段2] 执行序徽标——宿主 order 表裁决（载荷缺字段 = 旧块 → 不渲染，零猜测）
+    if (t.order !== undefined && t.order !== null && String(t.order).length > 0) {
+        sum.appendChild(elText('span', 'chat-order', '⚙' + t.order));
+        sum.appendChild(document.createTextNode(' '));
+    }
+
+    // [段3] 骨架分派（lib/tool-format）——命中 → 段结构 + 工具变体标签；未命中 → 探测骨架
     var body = toolBody(t);
     if (body && body.tag) {
         sum.appendChild(elText('span', 'ps-tag ' + (body.tagCls || ''), body.tag));
         sum.appendChild(document.createTextNode(' '));
     }
 
-    // 折叠行文案——PS 双线：命令意图显示（fx/cmd-intent 独立功能件）→ 骨架中文名兜底 → 工具名
+    // [段4] 折叠行文案——PS 命令意图（fx/cmd-intent 独立功能件）→ 声明层 headline → 骨架中文名兜底
+    //        无 headline 时追加结果规模后缀（同一语义不两处实现）
     var cmdIntent = (typeof fxCmdIntentDecode === 'function') ? fxCmdIntentDecode(t.name, t.arguments) : null;
-    var headline = cmdIntent ? cmdIntent.brief : (SKEL_LABELS[skeletonOf(t.name)] || t.name || '?');
-    sum.appendChild(document.createTextNode(headline));
+    var headline = '';
+    var hasHeadline = false;
+    if (cmdIntent) {
+        headline = cmdIntent.brief;
+    } else {
+        headline = (typeof toolHeadline === 'function') ? toolHeadline(t) : '';
+        if (headline.length > 0) {
+            hasHeadline = true;
+        } else {
+            headline = (typeof toolFallbackHeadline === 'function') ? toolFallbackHeadline(t) : (t.name || '?');
+        }
+    }
+    sum.appendChild(document.createTextNode(headline + (hasHeadline ? '' : toolResultSuffix(resultInfo(t.result)))));
     det.appendChild(sum);
     if (cmdIntent && typeof fxCmdIntentAttach === 'function') {
         // 展开区首块——逐段意图对照（命令原文仍在输入段；未识别段标 ❓）

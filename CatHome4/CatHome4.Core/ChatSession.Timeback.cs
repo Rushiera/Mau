@@ -12,6 +12,8 @@ namespace CH4
     ///   回收动作：删除「start 结果之后、back 声明之前」的全部消息——两次调用对与结论原样保留。
     /// 由此收益：历史里不新增注入消息（无连续 user）、无绕点搜索、无轮末特判、无「劈开工具对」风险；
     /// 回卷后序列天然合法，本轮照常续跑（LLM 直接从 back 的工具返回继续）。
+    /// 用途（2026-10-03 莎裁）：仅两个域限定工具解锁——主干识图（image-inject）· 浏览网页（browser-*）；域内不做工作、不写计划。
+    /// findings 口径（A205 · 2026-10-06 莎定）：**只写「成果在哪」，不写「结论是什么」**——域内不下判断，主干按位置回读、以回读到的真实内容为准（治域内复述致幻觉）。
     /// 锁定：作用域存活期间 Note / sleep / timer 不可用（ERR|TIMEBACK_LOCKED——与区间删除语义冲突）。
     /// 视图层：删除区间对应的前文派生块合并为一个废弃块（Rebuild 不清——跨宿主重启仍可回看）。
     /// 归档（A104）：全局计数（Data/runtime/timeback/count.json）+ 每次回收一个作用域文件（&lt;编号&gt;-&lt;时间戳&gt;.jsonl）。
@@ -84,7 +86,7 @@ namespace CH4
         /// <summary>
         /// timeback 执行体——参数面（action 必填：start 需 purpose / back 需 findings；未知参数拒绝）。
         /// start：锚点 = 本刻前文末条（即本次 start 的 tool_calls 声明）+ 归档 open 行。
-        /// back：结论即本次调用的返回值（findings 全文）——区间删除在工具批后段执行。
+        /// back：载荷即本次调用的返回值（findings 全文——成果定位：位置 + 简短描述，不下结论）——区间删除在工具批后段执行。
         /// </summary>
         /// <param name="argsJson">参数 JSON（action / purpose / findings）</param>
         /// <returns>结构化结果（元数据头 + 正文；失败 ERR| 前缀）</returns>
@@ -205,23 +207,21 @@ namespace CH4
             string body = "timeback #" + scope.Id.ToString() + " 已锚定（锚点 = 本次调用声明 · 节点 " + declIndex.ToString() + " · 用途「" + scope.Purpose + "」）——过程留在作用域内；"
                 + "回收时用 back 带回 findings（作为该调用的返回值），两次调用之间的内容一并删除。"
                 + "作用域内 Note / sleep / timer 已锁定。\n"
-                + "findings 按骨架写（段内无内容写「（无）」· 每段 ≤5 条）：\n"
-                + "  结论：<这一趟做完了什么 / 成还是败——一句话>\n"
-                + "  事实：<可直接用的事实，逐条——取证型的主段>\n"
-                + "  进度：<已完成步骤 / 未完成步骤>\n"
-                + "  跑测：<编译 0/0 ｜ 测试 N 绿 ｜ 未通过——附命令与结果>\n"
-                + "  变更：<逐条：文件:行 — 改了什么——与宿主台账交叉核对>\n"
-                + "  卡点与解法：<卡在哪 · 怎么绕过去——决策理由只在这里留得下>\n"
-                + "  失败：<失败原因（未失败写「（无）」）>\n"
-                + "  指针：<路径 / 行号 / 日志位置——复取入口>";
+                + "findings 只写「成果在哪」，不写「结论是什么」——域内不下判断；主干按位置回读，以回读到的真实内容为准（段内无内容写「（无）」）：\n"
+                + "  成果：<逐条：位置（文件:行区间 / URL / 截图路径）+ 一句话说那里是什么——主干据此回读>\n"
+                + "  未竟：<没查完 / 没覆盖的>\n"
+                + "  卡点：<被什么挡住 / 读不通的地方>\n"
+                + "  失败：<失败原因>\n"
+                + "每条 ≤1 行 · 每段 ≤5 条；位置必须是这趟真实读到 / 打开过的——没读到的、凭印象复述的一律不写。\n"
+                + "例：成果：mau:CatHome4/Program.Tools.cs 的 timeback 描述块——findings 参数说明所在行（行号以你实读到的为准），请回读确认";
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 开锚（锚点 " + declIndex.ToString() + " / 用途 " + scope.Purpose + "）", "TIMEBACK");
             return ToolMetaHead.With("timeback", true, fields, body);
         }
 
         /// <summary>
-        /// back——校验后返回结论（findings 即本次工具调用的返回值）；区间删除在工具批后段执行。
+        /// back——校验后返回载荷（findings 即本次工具调用的返回值）；区间删除在工具批后段执行。
         /// </summary>
-        /// <param name="findings">带回载荷（事实 + 指针）</param>
+        /// <param name="findings">带回载荷（成果定位：位置 + 简短描述，不下结论）</param>
         /// <returns>回执 + findings 全文（工具返回值）</returns>
         private string TimebackBack(string findings)
         {
@@ -341,8 +341,7 @@ namespace CH4
                 // [段2] 前文落盘——区间删除重写（append-only 的合法例外）
                 _context.ReplaceMessages(keep.ToArray());
                 LlmMessage[] toSave = _context.GetMessages();
-                _lastStats.EntryCount = toSave.Length;
-                _store.Rewrite(toSave, _lastStats);
+                _store.Rewrite(toSave);
             }
             else if (from <= to)
             {
@@ -619,9 +618,13 @@ namespace CH4
             }
             scope.LastNotifyCount = scope.EventCount;
             string text = "（系统自动 · timeback #" + scope.Id.ToString() + "）你处在 timeback 中，已经历【" + scope.EventCount.ToString()
-                + "】条前文条目（已用 " + seconds.ToString() + " 秒）——回收时用 back 带回 findings。";
-            AppendMessage(_context.AddUserMessage(text));
-            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
+                + "】条前文条目（已用 " + seconds.ToString() + " 秒）——回收时用 back 带回 findings（只写成果位置，不写结论）。";
+            string posted = PostSystemMessage(SysKindSystemAuto, text);
+            if (posted.StartsWith("ERR|", StringComparison.Ordinal))
+            {
+                LogStore.Add("CatHome4", 2, "timeback 状态提示未受理: " + posted, "TIMEBACK");
+                return;
+            }
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 状态提示注入（累计 " + scope.EventCount.ToString()
                 + " 事件 / 已用 " + seconds.ToString() + " 秒）", "TIMEBACK");
         }

@@ -65,6 +65,23 @@ namespace CH4
                 return _host != null;
             }
         }
+        /// <summary>
+        /// 是否仍有待推的**内容**——只读探测（不消耗）：持久区追加 / 全量待发 / 临时区变更任一置位即 true。
+        /// 🔴 不含状态段：state 段含运行时长 / 帧号等每帧变化的值，纳入即永久置位（闸门永不通过）。
+        /// 消费面 = 重启闸门（A206：业务 Idle ≠ 推送面清空——在途帧随进程退出被丢弃）。
+        /// 未接线（宿主推送面未附加）时恒 false——无推送面即无待推。
+        /// </summary>
+        public bool HasPendingContent
+        {
+            get
+            {
+                if (_host == null)
+                {
+                    return false;
+                }
+                return _fullPending || _pendingAppend.Count > 0 || _liveDirty;
+            }
+        }
 
         /// <summary>
         /// 附加宿主推送面——Bootstrap 段6 宿主 HTTP 启动后调用（SSE 转发面就位）。

@@ -9,7 +9,8 @@
 //   · 对话区行只有两种形态——**气泡**（.chat-bubble）与**朴素件**（.chat-plain）
 //     → 刻度分类走单一判据 scrollTickRole()：按行 `data-type` 查块声明表（registry.js 的 tickRole），
 //       不探测行类名、不复刻旧实现的展开 / 折叠分档与排除表
-//   · 基本算法与渲染规则继承旧实现——几何比例映射（带体高 ↔ 内容高）+ 既有 CSS .sb-tick 规则（零新增样式）
+//   · 基本算法与渲染规则继承旧实现——几何比例映射（带体高 ↔ 内容高）+ 既有 CSS .sb-tick 规则
+//     （A204 增 `user-sys` 一道——系统注入 user 行刻度曲线镜像）
 //   · #chatMsgs.scrollTop 是唯一滚动执行器——本件只读写它，不产生消息、不改业务状态
 // ═══════════════════════════════════════════
 
@@ -82,7 +83,12 @@ function scrollTickRole(row) {
     if (row && typeof row.getAttribute === 'function') {
         type = row.getAttribute('data-type') || '';
     }
-    return tickRole(type);
+    var role = tickRole(type);
+    // A204——系统注入的 user 行气泡靠左，刻度曲线同步镜像（`.sb-tick.user-sys`）
+    if (role === 'user' && row && row.classList && row.classList.contains(ROW_SYS)) {
+        role = role + '-' + ROW_SYS;
+    }
+    return role;
 }
 
 /// 刻度收集——对话区每个 .chat-row 一条刻度（推送序即渲染序，本件不排序、不过滤）

@@ -7,10 +7,11 @@
 // 同构：与 blocks（`registry.js` 的 `BLOCK_DECL` + 两张渲染表）· fx（`fx/registry.js` 的 `FX_FEATURES`）
 //       同一形态——可独立变化的东西一件 + 一张声明表；**新增字段 = 加一件 + 表加一行**。
 //
-// 字段面：契约 §12.2 ① = 后端 `ChatSession.BuildStateJson` 八字段——
-//         `sessionId` / `runState` / `runMs` / `requests` / `note` / `delay` / `conn` / `tokens`；
-//         本表各行 `fields` 的并集即该清单（不另立第二份字段清单；全覆盖由门禁用例断言
-//         `tests/unit/chat-state.test.mjs`）。
+// 字段面：契约 §12.2 ① = 后端 `ChatSession.BuildStateJson` 九字段——
+//         `sessionId` / `runState` / `runMs` / `requests` / `note` / `delay` / `conn` / `tokens` / `meta`；
+//         本表各行 `fields` 的并集**覆盖**该清单（每字段至少一件声明消费——不另立第二份字段清单；
+//         覆盖性由门禁用例断言 `tests/unit/chat-state.test.mjs`）。`sessionId`（猫 key）当前无显示位
+//         ——会话标识显示走 `meta.displayName`（A201）。
 //
 // 判据：每件只读自己声明的 `fields`、只写自己声明的 `output`——不跨面写别人的 DOM。
 //
@@ -32,9 +33,15 @@ var STATE_DECL = [
     },
     {
         id: 'info', name: '顶栏信息位', owner: 'state',
-        fields: ['sessionId', 'tokens'],
-        output: '#chatInfo（前文条数 / sessionId / 前文长度——经信息位单点 chatInfoSet）',
+        fields: ['tokens', 'meta'],
+        output: '#chatInfo（前文条数 / 前文长度 / 前文字符数 / 会话级消耗与命中率——经信息位单点 chatInfoSet）',
         apply: 'stateRenderInfo'
+    },
+    {
+        id: 'meta', name: '会话标识', owner: 'state',
+        fields: ['meta'],
+        output: 'document.title（浏览器标题）+ #chatTitle（左上角）——displayName',
+        apply: 'stateRenderMeta'
     },
     {
         id: 'note', name: 'Note 投影', owner: 'state',

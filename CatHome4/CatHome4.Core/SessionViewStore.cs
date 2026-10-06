@@ -179,14 +179,20 @@ namespace CH4
         }
 
         /// <summary>
-        /// 真实前文 append 钩子——用户消息 → user 条目
+        /// 真实前文 append 钩子——用户消息 → user 条目（载荷可选带 src——系统注入标记）。
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="msgIndex">真实前文消息索引（条目业务定位字段）</param>
-        public void OnUserMessage(LlmMessage m, int msgIndex)
+        /// <param name="src">来源（空串=人工——不落字段；非空=系统注入类型，落载荷 src）</param>
+        public void OnUserMessage(LlmMessage m, int msgIndex, string src = "")
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["text"] = m.Content ?? "";
+            // 来源字段——人工不落字段（缺省即人工，旧 view.json 零迁移）；系统注入落 src
+            if (src != null && src.Length > 0)
+            {
+                payload["src"] = src;
+            }
             Append(m, "user", payload, msgIndex);
         }
 
@@ -195,15 +201,14 @@ namespace CH4
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="msgIndex">真实前文消息索引（条目业务定位字段）</param>
-        public void OnAssistantText(LlmMessage m, int msgIndex)
+        /// <param name="reasonDurMs">思考用时（毫秒；-1 = 未记录——载入顶尾补差等无实时数据路径）</param>
+        public void OnAssistantText(LlmMessage m, int msgIndex, long reasonDurMs = -1)
         {
             // A158 期三——纯文本轮的思考段落条目（工具轮走 OnAssistantToolCalls；缺此路径思考内容在持久区丢失）
             string reasoning = m.ReasoningContent ?? "";
             if (reasoning.Length > 0)
             {
-                Dictionary<string, object> reasonPayload = new Dictionary<string, object>();
-                reasonPayload["text"] = reasoning;
-                Append(m, "reason", reasonPayload, msgIndex);
+                Append(m, "reason", ViewCardPayload.BuildReason(reasoning, reasonDurMs), msgIndex);
             }
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["text"] = m.Content ?? "";
@@ -215,14 +220,13 @@ namespace CH4
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="msgIndex">真实前文消息索引（条目业务定位字段）</param>
-        public void OnAssistantToolCalls(LlmMessage m, int msgIndex)
+        /// <param name="reasonDurMs">思考用时（毫秒；-1 = 未记录——载入顶尾补差等无实时数据路径）</param>
+        public void OnAssistantToolCalls(LlmMessage m, int msgIndex, long reasonDurMs = -1)
         {
             string reasoning = m.ReasoningContent ?? "";
             if (reasoning.Length > 0)
             {
-                Dictionary<string, object> payload = new Dictionary<string, object>();
-                payload["text"] = reasoning;
-                Append(m, "reason", payload, msgIndex);
+                Append(m, "reason", ViewCardPayload.BuildReason(reasoning, reasonDurMs), msgIndex);
             }
             RegisterPendingTools(m.ToolCallsJson ?? "", m.CreatedAt);
         }
@@ -281,7 +285,8 @@ namespace CH4
                 }
                 if (m.Role == LlmRole.User)
                 {
-                    OnUserMessage(m, i);
+                    // 来源回落——补差路径从内容行头前缀识别系统注入（条目缺 src 时的唯一补法）
+                    OnUserMessage(m, i, ChatSession.SysSrcFromContent(m.Content));
                     added = added + 1;
                     continue;
                 }
