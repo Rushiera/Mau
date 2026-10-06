@@ -221,7 +221,7 @@ namespace CatHome4.Observe
             // [段3] 快照组装——version/pid/frame/cats/sessions/oa/tools/boxes/logs（协议 v1.2：前端状态区会话卡 + 工具注册表）
             var snapshot = new
             {
-                version = 2,
+                version = 3,
                 pid = Environment.ProcessId,
                 frame = FlowRunner.GlobalFrame,
                 cats = cats,
