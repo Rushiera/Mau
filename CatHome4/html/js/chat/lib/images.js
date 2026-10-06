@@ -14,26 +14,40 @@ var IMG_END = '[image-end]';
 var IMG_ITEM = /^图片(\d+)-(\d+)：(.+)$/;
 
 function imgSplit(text) {
-    // 包裹解析——命中 {items:[{ref,path}], body}；不成立 {items:[], body:原文}
+    // 包裹解析——包裹可位于文本**任意位置**（行粒度；2026-10-06 放宽——原「必须首行」退役）
+    //   命中   → { items:[{ref,path}], before, after }（包裹前 / 后文本，各去首尾空行）
+    //   不成立 → { items:[], before:原文, after:'' }（整段按普通文本）
+    // 严格门保留：段头 + ≥1 条目 + 段尾**齐备**且包裹内部无杂行（空行 / 非条目行 → 此候选不成立，
+    // 继续向后找下一处段头；全部候选不成立才整段按普通文本）
     var raw = (text === undefined || text === null) ? '' : String(text);
     var lines = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-    var i = 0;
-    while (i < lines.length && lines[i].trim() === '') { i = i + 1; }
-    if (i >= lines.length || lines[i].trim() !== IMG_OPEN) { return { items: [], body: raw }; }
-    i = i + 1;
-    var items = [];
-    while (i < lines.length) {
-        var t = lines[i].trim();
-        if (t === IMG_END) { break; }
-        if (t === '') { return { items: [], body: raw }; }
-        var m = IMG_ITEM.exec(t);
-        if (!m) { return { items: [], body: raw }; }
-        items.push({ ref: m[1] + '-' + m[2], path: m[3].trim() });
-        i = i + 1;
+    for (var s = 0; s < lines.length; s = s + 1) {
+        if (lines[s].trim() !== IMG_OPEN) { continue; }
+        var items = [];
+        var i = s + 1;
+        var broken = false;
+        while (i < lines.length) {
+            var t = lines[i].trim();
+            if (t === IMG_END) { break; }
+            if (t === '') { broken = true; break; }
+            var m = IMG_ITEM.exec(t);
+            if (!m) { broken = true; break; }
+            items.push({ ref: m[1] + '-' + m[2], path: m[3].trim() });
+            i = i + 1;
+        }
+        if (broken || items.length === 0 || i >= lines.length) { continue; }
+        return {
+            items: items,
+            before: imgTrimBlank(lines.slice(0, s).join('\n')),
+            after: imgTrimBlank(lines.slice(i + 1).join('\n'))
+        };
     }
-    if (items.length === 0 || i >= lines.length) { return { items: [], body: raw }; }
-    i = i + 1;
-    return { items: items, body: lines.slice(i).join('\n').replace(/^\s+/, '').replace(/\s+$/, '') };
+    return { items: [], before: raw, after: '' };
+}
+
+function imgTrimBlank(text) {
+    // 首尾空行剥离——包裹前后段的标准化（内部空行保留）
+    return String(text).replace(/^\s*\n+/, '').replace(/\n+\s*$/, '').replace(/^\s+$/, '');
 }
 
 function imgName(path) {

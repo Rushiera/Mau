@@ -113,6 +113,84 @@
     <script src="js/chat/lib/fallback.js?v=__V__"></script>
     <script src="js/chat/lib/cmd.js?v=__V__"></script>
 
+    <!-- ②b 工具声明层——逐工具一件（按工具组分子目录）+ 基建两件（A200 恢复）
+         顺序：基建（decl 注册口 / helpers 取用小件）→ 各件（件底一行 toolDecl(name, {…}) 自注册） -->
+    <script src="js/chat/tools/decl.js?v=__V__"></script>
+    <script src="js/chat/tools/helpers.js?v=__V__"></script>
+    <!-- TextCat（7） -->
+    <script src="js/chat/tools/text/text-read.js?v=__V__"></script>
+    <script src="js/chat/tools/text/text-read_lines.js?v=__V__"></script>
+    <script src="js/chat/tools/text/text-read_between.js?v=__V__"></script>
+    <script src="js/chat/tools/text/text-write.js?v=__V__"></script>
+    <script src="js/chat/tools/text/text-append.js?v=__V__"></script>
+    <script src="js/chat/tools/text/text-replace.js?v=__V__"></script>
+    <script src="js/chat/tools/text/text-grep.js?v=__V__"></script>
+    <!-- FileCat（6） -->
+    <script src="js/chat/tools/file/file-tree.js?v=__V__"></script>
+    <script src="js/chat/tools/file/file-find.js?v=__V__"></script>
+    <script src="js/chat/tools/file/file-move.js?v=__V__"></script>
+    <script src="js/chat/tools/file/file-delete.js?v=__V__"></script>
+    <script src="js/chat/tools/file/file-copy.js?v=__V__"></script>
+    <script src="js/chat/tools/file/file-version.js?v=__V__"></script>
+    <!-- CsCat（12） -->
+    <script src="js/chat/tools/cs/cs-check.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-build.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-list.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-read.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-find_ref.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-find.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-patch.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-member.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-comment.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-dead.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-comment_check.js?v=__V__"></script>
+    <script src="js/chat/tools/cs/cs-format.js?v=__V__"></script>
+    <!-- MauCat（4） -->
+    <script src="js/chat/tools/mau/mau-verify.js?v=__V__"></script>
+    <script src="js/chat/tools/mau/mau-gen.js?v=__V__"></script>
+    <script src="js/chat/tools/mau/mau-proj.js?v=__V__"></script>
+    <script src="js/chat/tools/mau/mau-setup.js?v=__V__"></script>
+    <!-- ConfigCat（6） -->
+    <script src="js/chat/tools/config/config-list.js?v=__V__"></script>
+    <script src="js/chat/tools/config/config-get.js?v=__V__"></script>
+    <script src="js/chat/tools/config/config-set.js?v=__V__"></script>
+    <script src="js/chat/tools/config/config-reset.js?v=__V__"></script>
+    <script src="js/chat/tools/config/config-cat-get.js?v=__V__"></script>
+    <script src="js/chat/tools/config/config-cat-set.js?v=__V__"></script>
+    <!-- BrowserCat（5） -->
+    <script src="js/chat/tools/browser/browser-open.js?v=__V__"></script>
+    <script src="js/chat/tools/browser/browser-read.js?v=__V__"></script>
+    <script src="js/chat/tools/browser/browser-eval.js?v=__V__"></script>
+    <script src="js/chat/tools/browser/browser-shot.js?v=__V__"></script>
+    <script src="js/chat/tools/browser/browser-tabs.js?v=__V__"></script>
+    <!-- PsCat（2） -->
+    <script src="js/chat/tools/ps/powershell.js?v=__V__"></script>
+    <script src="js/chat/tools/ps/powershell7.js?v=__V__"></script>
+    <!-- TempToolCat（2） -->
+    <script src="js/chat/tools/temp/temp-info.js?v=__V__"></script>
+    <script src="js/chat/tools/temp/temp-exec.js?v=__V__"></script>
+    <!-- Majordomo（5） -->
+    <script src="js/chat/tools/majordomo/restart-full.js?v=__V__"></script>
+    <script src="js/chat/tools/majordomo/restart-incr.js?v=__V__"></script>
+    <script src="js/chat/tools/majordomo/restart-host.js?v=__V__"></script>
+    <script src="js/chat/tools/majordomo/majordomo-cmd.js?v=__V__"></script>
+    <script src="js/chat/tools/majordomo/majordomo-catinfo.js?v=__V__"></script>
+    <!-- SearchCat（1）· VisionCat（2） -->
+    <script src="js/chat/tools/search/web-search.js?v=__V__"></script>
+    <script src="js/chat/tools/vision/image-analyze.js?v=__V__"></script>
+    <script src="js/chat/tools/vision/image-inject.js?v=__V__"></script>
+    <!-- 内置（10） -->
+    <script src="js/chat/tools/builtin/info.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/Note.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/time.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/random.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/pack.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/host-reload.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/host-flows.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/sleep.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/timer.js?v=__V__"></script>
+    <script src="js/chat/tools/builtin/timeback.js?v=__V__"></script>
+
     <!-- ③ 素材 blocks——渲染件 10 件（persist 8 + live 2；`toolrun` 复用工具卡件 · `empty` 不产元素） -->
     <script src="js/chat/blocks/user.js?v=__V__"></script>
     <script src="js/chat/blocks/text.js?v=__V__"></script>

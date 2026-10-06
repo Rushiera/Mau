@@ -56,20 +56,38 @@ function buildToolCard(tool, open) {
     det.open = (open === true);
     var sum = el('summary', 'tn');
 
-    // 折叠行前缀——失败态警示；其余按工具类型图标（无批次编号、无执行序徽标）
-    sum.appendChild(document.createTextNode((isErr ? '⚠️ ' : iconOf(t.name)) + ' '));
+    // [段1] 折叠行前缀——失败态警示 / 并发批次序（`[图标 n/m]`）/ 工具图标（专属 → 骨架 → ❓）
+    sum.appendChild(document.createTextNode(toolPrefix(t, isErr)));
 
-    // 骨架分派（lib/tool-format）——命中 → 段结构 + 工具变体标签；未命中 → 探测骨架
+    // [段2] 执行序徽标——宿主 order 表裁决（载荷缺字段 = 旧块 → 不渲染，零猜测）
+    if (t.order !== undefined && t.order !== null && String(t.order).length > 0) {
+        sum.appendChild(elText('span', 'chat-order', '⚙' + t.order));
+        sum.appendChild(document.createTextNode(' '));
+    }
+
+    // [段3] 骨架分派（lib/tool-format）——命中 → 段结构 + 工具变体标签；未命中 → 探测骨架
     var body = toolBody(t);
     if (body && body.tag) {
         sum.appendChild(elText('span', 'ps-tag ' + (body.tagCls || ''), body.tag));
         sum.appendChild(document.createTextNode(' '));
     }
 
-    // 折叠行文案——PS 双线：命令意图显示（fx/cmd-intent 独立功能件）→ 骨架中文名兜底 → 工具名
+    // [段4] 折叠行文案——PS 命令意图（fx/cmd-intent 独立功能件）→ 声明层 headline → 骨架中文名兜底
+    //        无 headline 时追加结果规模后缀（同一语义不两处实现）
     var cmdIntent = (typeof fxCmdIntentDecode === 'function') ? fxCmdIntentDecode(t.name, t.arguments) : null;
-    var headline = cmdIntent ? cmdIntent.brief : (SKEL_LABELS[skeletonOf(t.name)] || t.name || '?');
-    sum.appendChild(document.createTextNode(headline));
+    var headline = '';
+    var hasHeadline = false;
+    if (cmdIntent) {
+        headline = cmdIntent.brief;
+    } else {
+        headline = (typeof toolHeadline === 'function') ? toolHeadline(t) : '';
+        if (headline.length > 0) {
+            hasHeadline = true;
+        } else {
+            headline = (typeof toolFallbackHeadline === 'function') ? toolFallbackHeadline(t) : (t.name || '?');
+        }
+    }
+    sum.appendChild(document.createTextNode(headline + (hasHeadline ? '' : toolResultSuffix(resultInfo(t.result)))));
     det.appendChild(sum);
     if (cmdIntent && typeof fxCmdIntentAttach === 'function') {
         // 展开区首块——逐段意图对照（命令原文仍在输入段；未识别段标 ❓）

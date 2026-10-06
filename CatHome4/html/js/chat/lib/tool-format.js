@@ -2,24 +2,24 @@
 // lib/tool-format.js —— 工具卡内部渲染（骨架层）
 //
 // 定位：工具结果 → 分区结构（输入段 / 输出段 + 二级折叠）的通用渲染。
-//       骨架只决定分区结构，不猜工具语义；计数 / 规模类信息不在前端计算——前端只渲染语义（规模由后端给）。
+//       骨架只决定分区结构，不猜工具语义；**逐工具的「肉」归声明层**（`chat/tools/<组>/<工具名>.js`，
+//       件底 `toolDecl()` 自注册）——本件在运行时取声明（inputLines / outputLines / badge / inputImages）。
 //
-// 来源：chat-tools.js（骨架层 + 阈值小件 + 结构化返回头拆分）
+// 骨架面：八类通用（exec / diagnostics / listing / matches / lines / file / json / text）
+//         + 两类专属（info / catinfo——逐字段摊平，实现随工具置于 `tools/` 下）
+// 声明层：注册口 / 落位表 / 图标 / 中文名 / 折叠行取值口 → `chat/tools/decl.js`；公共取用小件 → `chat/tools/helpers.js`
 //
-// 保留（我们需要的）：
-//   · 段落小件——seg / segPeekText / segKv / segLines（二级折叠 + 折叠摘要）
-//   · 输入段 / 输出段通用外壳（处理中 / 无输出 / 失败三态）
-//   · 八类骨架形态——exec / diagnostics / listing / matches / lines / file / json / text
+// 来源：chat-tools.js（骨架层 + 阈值小件 + 结构化返回头拆分）→ A167 前端重构重建 → A200 恢复声明层（2026-10-06）
+//
+// 保留：
+//   · 段落小件——seg / segPeekText / segKv / segLines（二级折叠 + 折叠摘要「折叠了 N 行 M 字符」）
+//   · 输入段 / 输出段通用外壳（处理中 / 无输出 / 失败三态；声明层覆盖优先）
+//   · 八类通用骨架形态 + 形态探测回落（未登记工具：JSON 可解析 → json 骨架，否则 text 骨架）
 //   · 结构化返回头拆分（metaHead：首行 JSON 元数据 + 正文定界行）
-//   · 形态探测回落（未登记工具：JSON 可解析 → json 骨架，否则 text 骨架）
 //
-// 丢弃（原项目的垃圾）：
-//   · 60 工具落位表（CHAT_TOOL_SKELETONS）——数据非逻辑；本文件只留一张示例表
-//   · 逐工具覆盖表（CHAT_TOOL_OVERRIDES：icon / tag / inputLines / outputLines / badge）
-//   · info / catinfo 的逐字段摊平（chatInfoPairs / chatCatInfoPairs）——逐工具定制
-//
-// 不在本件（但保留为渲染的一部分）：
-//   · PS 命令解码与未识别段上报 → `lib/cmd.js`（A174 恢复；`blocks/toolcard.js` 折叠行 + 展开区消费）
+// 不在本件：
+//   · 逐工具声明（含折叠行文案 / 图标 / 输入意图行 / 输出自然语言化）→ `chat/tools/**`
+//   · 折叠行组装 → `blocks/toolcard.js`；PS 命令解码 → `lib/cmd.js` + `fx/cmd-intent.js`
 // ═══════════════════════════════════════════
 
 // ═══ 阈值与小件 ═══
@@ -54,7 +54,8 @@ function segPeekText(text) {
     if (lines.length <= SEG_FOLD_LINES) { return ''; }
     var head = lines.slice(0, SEG_PEEK_HEAD);
     var tail = lines.slice(lines.length - SEG_PEEK_TAIL);
-    return head.join('\n') + '\n…（中段已折叠）…\n' + tail.join('\n');
+    var mid = lines.slice(SEG_PEEK_HEAD, lines.length - SEG_PEEK_TAIL);
+    return head.join('\n') + '\n… 折叠了 ' + mid.length + ' 行 ' + mid.join('\n').length + ' 字符 …\n' + tail.join('\n');
 }
 
 function segBlock(parent, cls, text) {
@@ -151,40 +152,70 @@ function segKv(body, pairs) {
 }
 
 function segInput(tool, cap) {
-    // 输入段——通用键值表（逐工具自然语言意图行属覆盖层，已丢弃）
-    var pairs = argPairs(tool);
+    // 输入段——声明层 inputLines（逐工具自然语言意图行）优先；未声明则通用键值表
+    var ov = (typeof toolDeclOf === 'function') ? toolDeclOf(tool.name) : null;
+    var lines = null;
+    if (ov && typeof ov.inputLines === 'function') {
+        lines = ov.inputLines(argObj(tool)) || [];
+    }
+    var pairs = lines ? [] : argPairs(tool);
     var peekLines = [];
-    for (var j = 0; j < pairs.length; j++) { peekLines.push(pairs[j].k + ': ' + pairs[j].v); }
     var head = cap;
-    if (!head || head.length === 0) {
-        head = '输入';
+    if (lines) {
+        for (var i = 0; i < lines.length; i++) { peekLines.push(lines[i]); }
+        if (!head || head.length === 0) { head = '输入 · ' + lines.length + ' 行'; }
+    } else {
+        for (var j = 0; j < pairs.length; j++) { peekLines.push(pairs[j].k + ': ' + pairs[j].v); }
+        if (!head || head.length === 0) { head = '输入' + (pairs.length > 0 ? ' · ' + pairs.length + ' 项' : ''); }
     }
     return seg('seg-in', head, function (body) {
+        if (lines) {
+            if (lines.length === 0) { segBlock(body, 'ta', '（无参数）'); return; }
+            segLines(body, lines, 'seg-line');
+            return;
+        }
         if (pairs.length === 0) { segBlock(body, 'ta', '（无参数）'); return; }
         segKv(body, pairs);
     }, peekLines.join('\n'));
 }
 
-function segImages(paths) {
-    // 输入图片段——被处理的图片先行（无路径 → null，调用方跳过）
-    if (!paths || paths.length === 0) { return null; }
-    return seg('seg-img', '输入图片', function (body) {
+function segImages(tool) {
+    // 输入图片段——声明层 inputImages 声明的被处理图片先行（未声明 / 空 → null，调用方跳过）
+    var ov = (typeof toolDeclOf === 'function') ? toolDeclOf(tool.name) : null;
+    if (!ov || typeof ov.inputImages !== 'function') { return null; }
+    if (typeof imageGroupFromPaths !== 'function') { return null; }
+    var paths = ov.inputImages(argObj(tool)) || [];
+    if (paths.length === 0) { return null; }
+    return seg('seg-img', '输入图片 · ' + paths.length + ' 张', function (body) {
         body.appendChild(imageGroupFromPaths(paths));
     }, paths.join('\n'));
 }
 
 function segOutput(tool, cap, render, peek) {
-    // 输出段通用外壳——处理中 / 无输出 / 失败三态统一
+    // 输出段通用外壳——处理中 / 无输出 / 失败三态统一；声明层 badge / outputLines 优先
+    var ov = (typeof toolDeclOf === 'function') ? toolDeclOf(tool.name) : null;
     var text = tool.result;
     var head = cap || '输出';
+    if (ov && typeof ov.badge === 'function' && typeof text === 'string' && text.length > 0) {
+        var extra = ov.badge(text, argObj(tool));
+        if (typeof extra === 'string' && extra.length > 0) { head = '输出' + extra; }
+    }
     if (text === undefined) { head = head + ' · 处理中'; }
     else if (text === '') { head = head + ' · 无输出'; }
     else if (isErrResult(text)) { head = head + ' · 失败'; }
     var peekText = (typeof peek === 'string') ? peek : text;
+    var draw = render;
+    if (ov && typeof ov.outputLines === 'function') {
+        draw = function (body, t, isErr) {
+            var ls = ov.outputLines(t, argObj(tool), isErr);
+            if (!ls) { render(body, t, isErr); return; }
+            segLines(body, ls, isErr ? 'seg-line err' : 'seg-line');
+        };
+    }
     return seg('seg-out', head, function (body) {
         if (text === undefined) { return; }
         if (text === '') { segBlock(body, 'tr', '（无输出）'); return; }
-        render(body, text, isErrResult(text));
+        draw(body, text, isErrResult(text));
     }, peekText);
 }
 
@@ -272,7 +303,11 @@ function skelExec(tool) {
         }
     }, outPeek));
 
-    return { tag: '', tagCls: '', segs: segs };
+    // 工具变体标签——声明层 tag / tagCls（如 PowerShell 双线 PS 5.1 / PS 7）
+    var ovTag = (typeof toolDeclOf === 'function') ? toolDeclOf(tool.name) : null;
+    var tag = (ovTag && typeof ovTag.tag === 'string') ? ovTag.tag : '';
+    var tagCls = (ovTag && typeof ovTag.tagCls === 'string') ? ovTag.tagCls : '';
+    return { tag: tag, tagCls: tagCls, segs: segs };
 }
 
 // ── diagnostics：诊断列表（输出：计数徽标 + 诊断行列表）──
@@ -417,8 +452,8 @@ function skelLines(tool) {
 // ── file / text：正文渲染（共用一支）──
 function skelPlain(tool) {
     var segs = [];
-    // 被处理的图片先行（载荷面 images 数组 —— 字段名以主干契约为准，此处示例）
-    var imgSeg = segImages(tool.images);
+    // 被处理的图片先行（声明层 inputImages——如 image-analyze / image-inject）
+    var imgSeg = segImages(tool);
     if (imgSeg) { segs.push(imgSeg); }
     segs.push(segInput(tool, ''));
     var head = metaHead(tool.result);
@@ -461,6 +496,8 @@ function skelJson(tool) {
 
 // ═══ 分派 ═══
 
+// 骨架 → 渲染函数（八类通用 + info / catinfo 两支专属骨架——专属件随工具置于 tools/ 下）
+// 骨架落位表（工具名 → 骨架 id）· 骨架图标 · 中文名 · skeletonOf / iconOf → `chat/tools/decl.js`（声明层单点）
 var SKEL_RENDERERS = {
     'exec': skelExec,
     'diagnostics': skelDiagnostics,
@@ -469,59 +506,12 @@ var SKEL_RENDERERS = {
     'lines': skelLines,
     'file': function (tool) { return skelPlain(tool); },
     'json': skelJson,
+    'info': function (tool) { return skelInfo(tool); },
+    'catinfo': function (tool) { return skelCatInfo(tool); },
     'text': function (tool) { return skelPlain(tool); }
 };
 
-// 骨架图标 / 中文名——折叠行与图标兜底用（与骨架一一对应）
-var SKEL_ICONS = {
-    'exec': '💻', 'diagnostics': '🩺', 'listing': '📂', 'matches': '🔍',
-    'lines': '🔢', 'file': '📖', 'json': '🧩', 'text': '📝'
-};
-var SKEL_LABELS = {
-    'exec': '命令执行', 'diagnostics': '诊断', 'listing': '列举', 'matches': '检索',
-    'lines': '按行读取', 'file': '读取文件', 'json': '结构查看', 'text': '工具调用'
-};
-
-// 示例落位表——工具名 → 骨架 id（示例：每条已上线工具在此登记一行；未登记走形态探测）
-// 🔴 本表是数据不是逻辑：增减工具只动此表，渲染面（上列骨架）不动
-var TOOL_SKELETONS = {
-    'powershell': 'exec',
-    'powershell7': 'exec',
-    'mau-setup': 'exec',
-    'host-reload': 'exec',
-    'cs-check': 'diagnostics',
-    'cs-build': 'diagnostics',
-    'mau-verify': 'diagnostics',
-    'file-tree': 'listing',
-    'file-find': 'listing',
-    'cs-list': 'listing',
-    'config-list': 'listing',
-    'text-grep': 'matches',
-    'cs-find_ref': 'matches',
-    'cs-find': 'matches',
-    'text-read_lines': 'lines',
-    'cs-read': 'lines',
-    'text-read': 'file',
-    'text-read_between': 'file',
-    'config-get': 'json',
-    'host-flows': 'json',
-    'info': 'json',
-    'text-write': 'text',
-    'text-replace': 'text',
-    'cs-patch': 'text'
-};
-
-function skeletonOf(name) {
-    // 工具 → 骨架 id（未登记返回空串）
-    var skel = TOOL_SKELETONS[name];
-    return (typeof skel === 'string') ? skel : '';
-}
-
-function iconOf(name) {
-    // 折叠行图标——骨架图标；未登记（含探测回落）返回空串，调用方回落默认
-    var icon = SKEL_ICONS[skeletonOf(name)];
-    return (typeof icon === 'string') ? icon : '';
-}
+// 骨架图标 / 中文名 / 落位表 / skeletonOf / iconOf —— 已迁至声明层 `chat/tools/decl.js`（单点真相源）。
 
 function probeSkeleton(tool) {
     // 形态探测回落——未登记的工具：可解析 → json 骨架；否则 text 骨架（禁止空白、禁止静默）
@@ -533,8 +523,8 @@ function toolBody(tool) {
     // 工具块内部渲染——三级分派：落位表（壳）→ 骨架通用渲染 → 形态探测回落
     // 返回 {tag, tagCls, segs}——永不返回 null（未登记工具走探测骨架，禁止空白、禁止静默）
     if (!tool || typeof tool.name !== 'string' || tool.name.length === 0) { return null; }
-    var skel = TOOL_SKELETONS[tool.name];
-    if (typeof skel === 'string') {
+    var skel = (typeof skeletonOf === 'function') ? skeletonOf(tool.name) : '';
+    if (skel.length > 0) {
         var fn = SKEL_RENDERERS[skel];
         if (typeof fn === 'function') { return fn(tool); }
     }

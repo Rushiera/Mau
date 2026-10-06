@@ -28,14 +28,27 @@ function buildTextBlock(payload) {
 }
 
 function fillMdBlock(bubble, content) {
-    // assistant 泡内容填充——无图片包裹走原路径（md-block 单块）；有包裹 = 缩略图组 + MD 正文块
+    // assistant 泡内容填充——无图片包裹走原路径（md-block 单块）；有包裹 = 前段 + 缩略图组 + 后段
+    // （2026-10-06 放宽：包裹可位于任意位置——前 / 后段各自成 MD 块，顺序即原文顺序）
     var r = imgSplit(content);
-    var text = (r.items.length > 0) ? r.body : content;
-    if (r.items.length > 0) {
-        bubble.appendChild(imageGroup(r.items));
+    if (r.items.length === 0) {
+        fillMdPart(bubble, content);
+        return;
     }
+    if (r.before.length > 0) {
+        fillMdPart(bubble, r.before);
+    }
+    bubble.appendChild(imageGroup(r.items));
+    if (r.after.length > 0) {
+        fillMdPart(bubble, r.after);
+    }
+}
+
+function fillMdPart(bubble, text) {
+    // MD 块填充——代码块 / 表格挂复制按钮（整块渲染后一次性挂载）
     var md = el('div', 'md-block');
     md.innerHTML = mdToHtml(text);
-    mdBindCopy(md);   // 代码块 / 表格挂复制按钮（整块渲染后一次性挂载）
+    mdBindCopy(md);
     bubble.appendChild(md);
+    return md;
 }

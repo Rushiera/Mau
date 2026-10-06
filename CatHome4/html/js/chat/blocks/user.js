@@ -27,14 +27,18 @@ function buildUserBlock(payload) {
 }
 
 function fillUserBubble(bubble, content) {
-    // user 泡内容填充——无图片包裹走原路径（textContent，零回归）；有包裹 = 缩略图组 + 正文文本
+    // user 泡内容填充——无图片包裹走原路径（textContent，零回归）；有包裹 = 前段 + 缩略图组 + 后段
+    // （2026-10-06 放宽：包裹可位于任意位置；组装侧仍拼在正文之前——用户消息形态不变）
     var r = imgSplit(content);
     if (r.items.length === 0) {
         bubble.textContent = content;
         return;
     }
+    if (r.before.length > 0) {
+        bubble.appendChild(elText('div', 'chat-user-text', r.before));
+    }
     bubble.appendChild(imageGroup(r.items));
-    if (r.body.length > 0) {
-        bubble.appendChild(elText('div', 'chat-user-text', r.body));
+    if (r.after.length > 0) {
+        bubble.appendChild(elText('div', 'chat-user-text', r.after));
     }
 }
