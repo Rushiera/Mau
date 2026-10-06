@@ -108,7 +108,8 @@ function chatLiveToggle() {
     inputSwap(liveShown);
 }
 
-/// 直达指定态——**自动切换入口**（persist 新块驱动：user 块 → 流式 / roundsum → 输入）；同态零动作（幂等）
+/// 直达指定态——**自动切换入口**（persist 新块驱动：**人工** user 块 → 流式 / roundsum → 输入；
+/// 系统注入块不触发本入口——A204）；同态零动作（幂等）
 function chatLiveShow(shown) {
     var want = (shown === true);
     if (liveShown === want) {

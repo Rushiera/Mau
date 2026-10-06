@@ -133,6 +133,29 @@ namespace CH4
         {
             _sessions.Remove(session);
         }
+        /// <summary>
+        /// 系统注入入口——等价于「系统在前端输入一行」：按 catKey 定位会话 → 会话侧 sys 入口（类型校验 + 前缀加工 + 入队）。
+        /// 失败可见：目标为空 / 会话不存在 / 未知类型 / 空内容 / 停机态未受理一律返回 ERR（不静默丢弃）。
+        /// </summary>
+        /// <param name="catKey">目标会话（猫 key）</param>
+        /// <param name="kind">类型参数（现行仅 systemauto）</param>
+        /// <param name="content">注入内容（渠道自带前缀由调用方拼在内容里）</param>
+        /// <returns>OK 受理 / ERR|CODE|msg</returns>
+        public string PostSystemMessage(string catKey, string kind, string content)
+        {
+            if (catKey == null || catKey.Length == 0)
+            {
+                return "ERR|BAD_ARGS|目标 Cat 为空";
+            }
+            for (int i = 0; i < _sessions.Count; i = i + 1)
+            {
+                if (_sessions[i].Id == catKey)
+                {
+                    return _sessions[i].PostSystemMessage(kind, content);
+                }
+            }
+            return "ERR|NO_CAT|目标会话不存在: " + catKey;
+        }
 
         /// <summary>
         /// 会话轮转泵——主循环每帧调用：活跃会话各推进一步。LLM 后台流式与工具批等待期间主线程自由泵其他会话——状态机化核心。

@@ -143,6 +143,37 @@ describe('插话队列（fx/pending）', () => {
     });
 });
 
+// ── ④b 系统注入不打断输入（A204）──────────────
+describe('系统注入不打断输入（A204）', () => {
+    it('系统注入 user 块——不出队在途记录、不切流式', () => {
+        window.pendingClear();
+        window.pendingAdd('我正在打的一条');
+        window.chatLiveShow(false);
+        window.persistAppend([{ type: 'user', payload: { text: '[systemauto]（系统自动）x', src: 'systemauto' } }], true);
+        // 在途记录仍在——系统注入块未被当成「我的输入已确认」
+        expect(window.pendQueue.length).toBe(1);
+        expect(document.getElementById('chatPendingPanel').textContent).toContain('我正在打的一条');
+        // 临时区未切走——输入区仍在原位（不打断输入）
+        expect(window.liveShown).toBe(false);
+        window.pendingClear();
+    });
+
+    it('人工 user 块——出队 + 切流式（原语义不回归）', () => {
+        window.pendingClear();
+        window.pendingAdd('我发的');
+        window.chatLiveShow(false);
+        window.persistAppend([{ type: 'user', payload: { text: '我发的' } }], true);
+        expect(window.pendQueue.length).toBe(0);
+        expect(window.liveShown).toBe(true);
+    });
+
+    it('roundsum——切回输入（放行输入；与谁触发本轮无关）', () => {
+        window.chatLiveShow(true);
+        window.persistAppend([{ type: 'roundsum', payload: { type: 'roundsum', data: {} } }], true);
+        expect(window.liveShown).toBe(false);
+    });
+});
+
 // ── ⑤ cmdIntent ──────────────────────────────
 describe('命令解码显示（fx/cmd-intent）', () => {
     it('适用判据——仅 powershell / powershell7', () => {

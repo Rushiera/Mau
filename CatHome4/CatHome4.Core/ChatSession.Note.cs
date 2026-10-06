@@ -253,7 +253,7 @@ namespace CH4
                 sb.Append('\n');
             }
             sb.Append("请从当前任务开始逐条执行，每条完成后调用 Note 推进。");
-            PostUserMessage(sb.ToString());
+            PostSystemMessage(SysKindSystemAuto, sb.ToString());
             LogStore.Add("CatHome4", 1, "Note 启动：共 " + _noteTasks.Length + " 条任务，当前第 " + (_noteCurrent + 1) + " 条", "CHAT");
         }
 

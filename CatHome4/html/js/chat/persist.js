@@ -43,7 +43,7 @@ function persistApply(seg) {
         persistFull(items);
         return;
     }
-    // 追加路 = 新块到达——按块型做自动切换（见 persistAutoSwap）
+    // 追加路 = 新块到达——按块型做自动切换（**人工** user 才切流式；系统注入零动作——见 persistAutoSwap）
     persistAppend(items, true);
 }
 
@@ -76,14 +76,15 @@ function persistAppend(items, auto) {
         if (items[i]) {
             items[i].type = normalizeType(items[i].type);
         }
-        // 插话队列——user 块到达 = 内核确认，本地在途记录 FIFO 出队
-        if (items[i] && items[i].type === 'user' && typeof pendingConsume === 'function') {
+        // 插话队列——**人工** user 块到达 = 内核确认，本地在途记录 FIFO 出队
+        // 🔴 系统注入块不是「我的输入」的确认（A204）——出队会误吞在途记录（等于打断输入过程）
+        if (items[i] && items[i].type === 'user' && !isSysPayload(items[i].payload) && typeof pendingConsume === 'function') {
             pendingConsume();
         }
         // 自动切换——两个节点各一次（判据取持久区新块，不按指令）：
-        //   user 块 = 本轮输入已落前文 → 切流式看流；roundsum = 本轮结算 → 切回输入
+        //   人工 user 块 = 我的输入已落前文 → 切流式看流；roundsum = 本轮结算 → 切回输入
         if (auto) {
-            persistAutoSwap(items[i] ? items[i].type : '');
+            persistAutoSwap(items[i]);
         }
         var node = null;
         try {
@@ -100,14 +101,20 @@ function persistAppend(items, auto) {
     }
 }
 
-/// 自动切换——按新块类型切输入区 / 流式区（追加路专用；同态零动作 = 幂等）
-/// ① user 块 → 流式（本轮输入已落前文，看流）② roundsum → 输入（本轮结算，允许输入）
-/// 🔴 当前 user 判据**不分渠道**（人工 / 系统注入同判）——收窄待 todo A204（后端 sys 渠道 user 打标准标记）
-function persistAutoSwap(type) {
+/// 自动切换——按新块切输入区 / 流式区（追加路专用；同态零动作 = 幂等）
+/// ① **人工** user 块 → 流式（我的输入已落前文，看流）② roundsum → 输入（本轮结算，放行输入）
+/// 🔴 系统注入块（A204）**零动作**——不抢视线、不打断输入：输入区与流式区同区互斥，
+///    切走输入区等于把用户正在打的字挤下屏。系统注入照常落持久区与滚动带，只是不动临时区。
+///    roundsum 仍切回输入：它是「轮已结算、放行输入」的信号，与谁触发本轮无关（且同态即幂等）。
+function persistAutoSwap(item) {
     if (typeof chatLiveShow !== 'function') {
         return;
     }
+    var type = item ? item.type : '';
     if (type === 'user') {
+        if (isSysPayload(item.payload)) {
+            return;
+        }
         chatLiveShow(true);
         return;
     }

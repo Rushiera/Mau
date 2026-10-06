@@ -140,7 +140,7 @@ namespace CH4
             {
                 // 失败可见——回落直投（回执不丢），并出声
                 LogStore.Add("CatHome4", 2, "宿主启动回执登记延迟队列失败（回落直投）: " + added, "RESTART");
-                _chatBridge.DefaultSession.PostUserMessage(push, "system");
+                _chatBridge.PostSystemMessage(_chatBridge.DefaultSession.Id, ChatSession.SysKindSystemAuto, push);
                 return;
             }
             LogStore.Add("CatHome4", 1, "宿主启动回执已登记延迟队列（到点注入 Majordomo 会话）", "RESTART");
@@ -540,7 +540,7 @@ namespace CH4
             string text = "[宿主自更新] 重启未执行"
                 + Environment.NewLine + "原因: " + reason
                 + Environment.NewLine + "宿主继续运行（运行区未改动）。";
-            _chatBridge.DefaultSession.PostUserMessage(text, "system");
+            _chatBridge.PostSystemMessage(_chatBridge.DefaultSession.Id, ChatSession.SysKindSystemAuto, text);
         }
         /// <summary>
         /// 取 JSON 对象布尔字段——防御式（非对象 / 缺字段 / 类型不符返回 false）。

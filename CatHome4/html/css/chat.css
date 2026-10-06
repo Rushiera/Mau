@@ -169,6 +169,7 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
    🔴 高度由 JS 按块真实像素高比例写入（内联样式覆盖此处默认值）；此处默认值只在未同步时兜底
    形态——横向 **S 曲线淡出**（8 采样色标，无实心平段；曲线由 mask 层承载，色由 background 纯色给）
      user  ：起手在右、向左淡出（最缓——到 90% 才全透明，节拍点最醒目）
+      user-sys：起手在左、向右淡出（停点同 user——系统注入 user 行靠左，曲线镜像；A204）
      sum   ：中心向两侧对称淡出（覆盖整宽——2026-09-24 莎定）
      reply ：起手在左、向右淡出（最急——35% 即全透明；占比最高，最快让位）
      tool  ：起手在左、向右淡出（终点 50%——展开态工具卡）
@@ -184,6 +185,8 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 /* 横向 S 曲线层（8 采样色标：100% → 95% → 80% → 60% → 40% → 20% → 5% → 0，无实心平段）
    与纵向羽化层两层 alpha 相乘——颜色由 background 纯色承载（mask 只管透明度曲线） */
 .sb-tick.user { background: var(--ch-band-tick-user); -webkit-mask-image: linear-gradient(to left, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 13%, rgba(0,0,0,.8) 26%, rgba(0,0,0,.6) 39%, rgba(0,0,0,.4) 51%, rgba(0,0,0,.2) 64%, rgba(0,0,0,.05) 77%, transparent 90%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to left, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 13%, rgba(0,0,0,.8) 26%, rgba(0,0,0,.6) 39%, rgba(0,0,0,.4) 51%, rgba(0,0,0,.2) 64%, rgba(0,0,0,.05) 77%, transparent 90%, transparent 100%), var(--ch-band-fade-v); }
+/* 系统注入 user 刻度（A204）——曲线镜像：起手在左、向右淡出（停点与 user 同，最缓）；色仍取 user 刻度色 */
+.sb-tick.user-sys { background: var(--ch-band-tick-user); -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 13%, rgba(0,0,0,.8) 26%, rgba(0,0,0,.6) 39%, rgba(0,0,0,.4) 51%, rgba(0,0,0,.2) 64%, rgba(0,0,0,.05) 77%, transparent 90%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 13%, rgba(0,0,0,.8) 26%, rgba(0,0,0,.6) 39%, rgba(0,0,0,.4) 51%, rgba(0,0,0,.2) 64%, rgba(0,0,0,.05) 77%, transparent 90%, transparent 100%), var(--ch-band-fade-v); }
 .sb-tick.reply { background: var(--ch-band-tick-reply); -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 9%, rgba(0,0,0,.8) 17%, rgba(0,0,0,.6) 26%, rgba(0,0,0,.4) 34%, rgba(0,0,0,.2) 43%, rgba(0,0,0,.05) 51%, transparent 60%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 9%, rgba(0,0,0,.8) 17%, rgba(0,0,0,.6) 26%, rgba(0,0,0,.4) 34%, rgba(0,0,0,.2) 43%, rgba(0,0,0,.05) 51%, transparent 60%, transparent 100%), var(--ch-band-fade-v); }
 .sb-tick.sum { background: var(--ch-band-tick-sum); -webkit-mask-image: linear-gradient(to right, transparent 0, rgba(0,0,0,.05) 10%, rgba(0,0,0,.2) 20%, rgba(0,0,0,.4) 30%, rgba(0,0,0,.6) 40%, rgba(0,0,0,.8) 45%, rgba(0,0,0,1) 50%, rgba(0,0,0,.8) 55%, rgba(0,0,0,.6) 60%, rgba(0,0,0,.4) 70%, rgba(0,0,0,.2) 80%, rgba(0,0,0,.05) 90%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, transparent 0, rgba(0,0,0,.05) 10%, rgba(0,0,0,.2) 20%, rgba(0,0,0,.4) 30%, rgba(0,0,0,.6) 40%, rgba(0,0,0,.8) 45%, rgba(0,0,0,1) 50%, rgba(0,0,0,.8) 55%, rgba(0,0,0,.6) 60%, rgba(0,0,0,.4) 70%, rgba(0,0,0,.2) 80%, rgba(0,0,0,.05) 90%, transparent 100%), var(--ch-band-fade-v); }
 .sb-tick.tool { background: var(--ch-band-tick-tool); -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 11%, rgba(0,0,0,.8) 23%, rgba(0,0,0,.6) 34%, rgba(0,0,0,.4) 46%, rgba(0,0,0,.2) 57%, rgba(0,0,0,.05) 69%, transparent 80%, transparent 100%), var(--ch-band-fade-v); mask-image: linear-gradient(to right, rgba(0,0,0,1) 0, rgba(0,0,0,.95) 11%, rgba(0,0,0,.8) 23%, rgba(0,0,0,.6) 34%, rgba(0,0,0,.4) 46%, rgba(0,0,0,.2) 57%, rgba(0,0,0,.05) 69%, transparent 80%, transparent 100%), var(--ch-band-fade-v); }
@@ -195,6 +198,9 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-row { display: flex; animation: chat-in 0.18s ease-out; }
 @keyframes chat-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 .chat-row.user { justify-content: flex-end; }
+/* 系统注入的 user 行（A204）——与常规 user 左右翻转：气泡靠左（同助手侧）；配色不变（仍是 user 泡）
+   判据 = 行变体类 `sys`（载荷 `src` 非空且非 `user`；类名声明处 = registry.js） */
+#chatMsgs .chat-row.user.sys { justify-content: flex-start; }
 .chat-row.assistant { justify-content: flex-start; }
 /* 朴素件（形态契约 · 2026-10-03 莎定）——非气泡块的公共基类：**无底 / 无描边 / 无圆角 / 无内边距**，
    只有字号与语义字色（与 .chat-bubble 同一层级的另一种形态）。

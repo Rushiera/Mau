@@ -619,8 +619,12 @@ namespace CH4
             scope.LastNotifyCount = scope.EventCount;
             string text = "（系统自动 · timeback #" + scope.Id.ToString() + "）你处在 timeback 中，已经历【" + scope.EventCount.ToString()
                 + "】条前文条目（已用 " + seconds.ToString() + " 秒）——回收时用 back 带回 findings（只写成果位置，不写结论）。";
-            AppendMessage(_context.AddUserMessage(text));
-            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1);
+            string posted = PostSystemMessage(SysKindSystemAuto, text);
+            if (posted.StartsWith("ERR|", StringComparison.Ordinal))
+            {
+                LogStore.Add("CatHome4", 2, "timeback 状态提示未受理: " + posted, "TIMEBACK");
+                return;
+            }
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 状态提示注入（累计 " + scope.EventCount.ToString()
                 + " 事件 / 已用 " + seconds.ToString() + " 秒）", "TIMEBACK");
         }

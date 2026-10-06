@@ -136,6 +136,34 @@ describe('形态契约', () => {
     });
 });
 
+describe('来源变体（A204——系统注入 user 行）', () => {
+    it('取用口——sys 判据：缺字段 / `user` = 人工；其余非空 = 系统', () => {
+        expect(window.rowSourceClass({})).toBe('');
+        expect(window.rowSourceClass(null)).toBe('');
+        expect(window.rowSourceClass({ src: '' })).toBe('');
+        expect(window.rowSourceClass({ src: 'user' })).toBe('');
+        expect(window.rowSourceClass({ src: 'systemauto' })).toBe('sys');
+    });
+
+    it('user 渲染——系统注入加行变体类，人工不加（缺字段 = 人工）', () => {
+        const human = window.persistRender({ type: 'user', msgIndex: 1, payload: { text: '人工' } });
+        expect(human.classList.contains('user')).toBe(true);
+        expect(human.classList.contains('sys')).toBe(false);
+        const sys = window.persistRender({ type: 'user', msgIndex: 2, payload: { text: '[systemauto]注入', src: 'systemauto' } });
+        expect(sys.classList.contains('sys')).toBe(true);
+        expect(sys.querySelectorAll('.chat-bubble').length).toBe(1);
+    });
+
+    it('刻度角色——sys 行镜像 `user-sys`；普通 user 与其它 type 不变', () => {
+        const sys = window.persistRender({ type: 'user', msgIndex: 3, payload: { text: 'x', src: 'systemauto' } });
+        expect(window.scrollTickRole(sys)).toBe('user-sys');
+        const human = window.persistRender({ type: 'user', msgIndex: 4, payload: { text: 'y' } });
+        expect(window.scrollTickRole(human)).toBe('user');
+        const text = window.persistRender({ type: 'text', msgIndex: 5, payload: { text: 'z' } });
+        expect(window.scrollTickRole(text)).toBe('reply');
+    });
+});
+
 describe('text 块操作条（P6b 复归 · 2026-10-06）', () => {
     it('带 msgIndex——挂操作条（两按钮 + 悬浮提示）', () => {
         const node = window.buildTextBlock({ text: 'hi' }, { type: 'text', msgIndex: 7 });
