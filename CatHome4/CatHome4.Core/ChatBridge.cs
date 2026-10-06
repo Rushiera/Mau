@@ -211,6 +211,11 @@ namespace CH4
             DataBox.TryResolve<WorkspaceConfig>(out ws);
             // M3 新会话生效——拦截面同步最新声明面（改 toolNames 后 session.new 才拉取生效）
             session.SetToolSpecs(specs);
+            // A201 显示名按 cat.cfg 现值刷新（新会话取最新；Provider 未接线时保持原值）
+            if (ChatSession.DisplayNameProvider != null)
+            {
+                session.SetDisplayName(ChatSession.DisplayNameProvider(session.Id));
+            }
             // 会话标识 ≡ 猫 key（唯一标识）——session.new 不再另起会话身份（LLM 侧身份随猫稳定）
             InjectPromptResult injectResult = _buildInjectPrompt(ws, specs, persona, injectList);
             session.Context.SetSystemPrompt(injectResult.Prompt);

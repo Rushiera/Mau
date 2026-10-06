@@ -1241,6 +1241,8 @@ namespace CatHome4.Admin
                 session.LoadView();
                 // E3 前文统计——启动恢复持久化真实 usage（旧文件 null=零值）
                 session.SetLoadedStats(restoredStats);
+                // A201 会话元数据——启动恢复（实例 ID / 创建时刻 / 两级 token 累计；文件缺失走首建）
+                session.LoadMeta();
                 _chatBridge.RegisterSession(session);
                 CatEntry cat = new CatEntry();
                 cat.Id = id;

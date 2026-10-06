@@ -42,8 +42,8 @@ namespace CH4
         /// <summary>会话唯一 ID——构造注入 = 猫 key（唯一标识；会话重建不换键）</summary>
         private string _id;
 
-        /// <summary>显示名——P9.1 为 "majordomo"；P9.3 用户输入</summary>
-        private readonly string _displayName;
+        /// <summary>显示名——P9.1 为 "majordomo"；P9.3 用户输入（A201：session.new 时按 cat.cfg 刷新）</summary>
+        private string _displayName;
 
         /// <summary>消息历史——会话上下文容器（第一条 system；Mau.Runtime 实体复用）</summary>
         private readonly ChatContext _context;
@@ -458,6 +458,15 @@ namespace CH4
             _sessionPrompt = 0;
             _sessionCompletion = 0;
             _sessionCacheHit = 0;
+            // A201 会话元数据——新实例 ID + 新创建时刻 + 两级快照清零（会话生命周期重新起算）
+            _sessionInstanceId = SessionStore.NewSessionId();
+            _sessionCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _lastRoundTokens = new SessionTokens();
+            _usagePrompt = 0;
+            _usageCompletion = 0;
+            _usageCacheHit = 0;
+            // 元数据落盘——新会话初始态（contextCount / chars 取当前注入后的前文）
+            SaveMeta();
         }
 
         /// <summary>
@@ -1580,16 +1589,39 @@ namespace CH4
                 ("tool", ms["tool"]),
                 ("run", ms["run"]),
                 ("reply", ms["reply"]));
+            // A201 token 双类计量——轮级（空闲回落最近落盘快照，与 ContextTokensKnown 同模式）+ 会话级 + 派生值与命中率
+            bool roundIdle = _phase == ChatPhase.Idle;
+            SessionTokens roundTokens = new SessionTokens();
+            roundTokens.Prompt = roundIdle ? _lastRoundTokens.Prompt : _usagePrompt;
+            roundTokens.CacheHit = roundIdle ? _lastRoundTokens.CacheHit : _usageCacheHit;
+            roundTokens.Completion = roundIdle ? _lastRoundTokens.Completion : _usageCompletion;
+            SessionTokens sessionTokens = new SessionTokens();
+            sessionTokens.Prompt = _sessionPrompt;
+            sessionTokens.CacheHit = _sessionCacheHit;
+            sessionTokens.Completion = _sessionCompletion;
             string tokensJson = JsonUtil.Object(
-                ("prompt", _usagePrompt),
-                ("completion", _usageCompletion),
-                ("cacheHit", _usageCacheHit),
+                ("prompt", roundTokens.Prompt),
+                ("completion", roundTokens.Completion),
+                ("cacheHit", roundTokens.CacheHit),
+                ("miss", roundTokens.Miss),
+                ("rate", roundTokens.Rate),
                 ("context", _contextTokens),
                 ("count", _context.GetMessageCount()),
-                ("sessionPrompt", _sessionPrompt),
-                ("sessionCompletion", _sessionCompletion),
-                ("sessionCacheHit", _sessionCacheHit));
+                ("sessionPrompt", sessionTokens.Prompt),
+                ("sessionCompletion", sessionTokens.Completion),
+                ("sessionCacheHit", sessionTokens.CacheHit),
+                ("sessionMiss", sessionTokens.Miss),
+                ("sessionRate", sessionTokens.Rate));
             string delayJson = JsonUtil.Object(("entries", DelayQueue.BuildEntriesFragment(_catKey)));
+            // A201 会话元数据面——displayName / 会话实例 ID / 时间戳 / 前文条数与字符数（持久化面见 design-ch4-protocol §十三）
+            string metaJson = JsonUtil.Object(
+                ("catId", _id),
+                ("displayName", _displayName),
+                ("sessionId", _sessionInstanceId),
+                ("createdAt", _sessionCreatedAt),
+                ("lastActiveAt", _context.LastChangeAt),
+                ("contextCount", _context.GetMessageCount()),
+                ("contextChars", _contextChars));
             return JsonUtil.Object(
                 ("sessionId", Id),
                 ("runState", name),
@@ -1598,7 +1630,8 @@ namespace CH4
                 ("note", JsonUtil.Raw(BuildNoteJson())),
                 ("delay", JsonUtil.Raw(delayJson)),
                 ("conn", JsonUtil.Raw(JsonUtil.Object(("server", IsHostRestarting() ? "stopping" : "ok"), ("clients", clients)))),
-                ("tokens", JsonUtil.Raw(tokensJson)));
+                ("tokens", JsonUtil.Raw(tokensJson)),
+                ("meta", JsonUtil.Raw(metaJson)));
         }
         /// <summary>状态段推送——状态变化即推（视图出口整段比对去重；未 Attach 时静默）</summary>
         public void PushState()
@@ -2389,6 +2422,9 @@ namespace CH4
             _lastStats.LastCompletionTokens = _usageCompletion;
             _lastStats.LastContextTokens = _contextTokens;
             _store.AppendMeta(_lastStats);
+            // A201 会话元数据——轮级快照（读面回落源）+ 全量落盘（此刻两级累计尚未清零）
+            _lastRoundTokens = CaptureRoundTokens();
+            SaveMeta();
             // M4a Note 自动拉起提前——剩余≥2 条时以 user 名义推下一轮（最后 1 条不拉起——LLM 完成后自然结束；Q2 顺序：Note 未完成 = 本轮未结束——不 roundsum；全部完成天然跳过——防无限循环闸门）
             if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent + 1 < _noteTasks.Length)
             {
@@ -2397,6 +2433,9 @@ namespace CH4
                 PhaseSettle();
                 PostUserMessage("[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent], "system");
                 _viewStore.Save();
+                // A201 会话元数据——拉起轮同属本轮结算（轮级快照 + 会话累计落盘）
+                _lastRoundTokens = CaptureRoundTokens();
+                SaveMeta();
                 _round = 0;
                 _phase = ChatPhase.Idle;
                 return;
@@ -2436,6 +2475,10 @@ namespace CH4
             _round = 0;
             _phase = ChatPhase.Idle;
             ResetRetryView();
+            // A201 轮级归零——本轮结算视图推入之后（design-ch4-protocol §十三：结算后清零；轮间读面回落落盘快照）
+            _usagePrompt = 0;
+            _usageCompletion = 0;
+            _usageCacheHit = 0;
         }
 
         /// <summary>
