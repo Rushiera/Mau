@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using Mau.Runtime;
+using CatHome4.Admin;
 
 namespace CH4
 {
@@ -165,6 +166,12 @@ namespace CH4
             {
                 return;
             }
+            // A206——推送面闸门：业务 Idle ≠ 视图面已清空（在途帧会被退出路径丢弃——判例 2026-10-06：
+            // full 重启时最后一帧未送达，前端停在半句）
+            if (AdminService.AnyViewPending())
+            {
+                return;
+            }
             ExecuteRestart();
         }
 
@@ -282,7 +289,18 @@ namespace CH4
                 return;
             }
             // 确认接力者确已起来——1 秒内未退出即视为存活（先起接力者，再自杀）
-            bool relayDead = relay.WaitForExit(1000);
+            // A206——分片等待：原整体阻塞 1 秒会让推送面停摆（期间待推帧无处可推——判例 2026-10-06）
+            bool relayDead = false;
+            long relayWaitStart = Environment.TickCount64;
+            while (Environment.TickCount64 - relayWaitStart < 1000)
+            {
+                if (relay.WaitForExit(50))
+                {
+                    relayDead = true;
+                    break;
+                }
+                AdminService.PumpAllHosts();
+            }
             if (relayDead)
             {
                 // A134——incr 早退不是「接力者起不来」：前置段失败会正常退出，结论落在 ready 哨兵里（先读哨兵再定性）
@@ -574,6 +592,9 @@ namespace CH4
         /// </summary>
         private static void FinishRestartAndExit()
         {
+            // A206——SSE 收尾：先推最后一帧，再等各连接队列排空（视图帧「入队 ≠ 写出」——
+            // Environment.Exit 直接终止进程会丢弃在途帧，前端停在半句；判例 2026-10-06 重启现场）
+            AdminService.FlushAllHosts(800);
             // A33——转发态全量快照兜底（T4）：稳态虽已「变更即落盘」，此处再覆写一次（覆盖收尾窗口内尚未落盘的状态变更）
             CatHome4.QQ.QQBotService.SaveForwardState();
             // 观测收尾——四文件 flush（与 Main finally 同一路径）

@@ -81,3 +81,15 @@ function liveRender(type, ctx, box) {
     }
     box.appendChild(fn({ text: ctx }));
 }
+
+/// 断线收尾（A206）——SSE 断开时把临时区收干净：停打字机 + 清面板 + 摘流式态标记。
+/// 动机：断线后帧送不达，live 区半句残影 + 进行中光标会一直卡到重连（判例 2026-10-06 重启现场）；
+///   持久区不受影响（重连后全量首帧重建），故此处只动临时区。
+function chatLiveAbort() {
+    streamReset();
+    var box = liveContainer();
+    if (box) {
+        box.textContent = '';
+    }
+    liveMarkType('empty');
+}

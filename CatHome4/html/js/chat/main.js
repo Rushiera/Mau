@@ -150,6 +150,8 @@ function chatConnect() {
     chatSse.onerror = function () {
         warn('SSE 断线——自动重连中');
         if (typeof chatPetSetOffline === 'function') { chatPetSetOffline(true); }
+        // A206——断线即收临时区：不让半句残影 + 进行中光标留到重连（持久区由重连全量首帧重建）
+        if (typeof chatLiveAbort === 'function') { chatLiveAbort(); }
     };
 }
 

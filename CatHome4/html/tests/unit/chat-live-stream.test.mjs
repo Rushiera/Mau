@@ -196,3 +196,16 @@ describe('非挂载件——整体替换不受影响', () => {
         expect(panelText(), '停泵后不再吐字').toBe('');
     });
 });
+
+describe('断线收尾——chatLiveAbort（A206）', () => {
+    it('清临时区并停打字机——半句残影与进行中光标不留到重连', () => {
+        const panel = document.getElementById('chatLivePanel');
+        window.liveApply({ type: 'replysse', context: '半句话' });
+        window.streamDrain();
+        expect(panelText()).toBe('半句话');
+        window.chatLiveAbort();
+        expect(panelText(), '面板已清').toBe('');
+        expect(document.getElementById('chatinput').getAttribute('data-live'), '流式态标记已摘').toBe('empty');
+        expect(window.streamStats(), '无活跃流式段').toBe(null);
+    });
+});

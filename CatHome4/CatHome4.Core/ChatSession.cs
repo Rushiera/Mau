@@ -1577,6 +1577,17 @@ namespace CH4
             return null;
         }
         /// <summary>
+        /// 视图推送面是否仍有待推内容——重启闸门第二判据（A206：业务 Idle ≠ 推送面清空）。
+        /// 只探测内容面（持久块 / 临时区），不含状态段——状态段每帧变化，纳入即永久置位。
+        /// </summary>
+        public bool ViewHasPendingContent
+        {
+            get
+            {
+                return _viewBus.HasPendingContent;
+            }
+        }
+        /// <summary>
         /// 状态段整段 JSON——后端权威业务态（v2 契约：轮阶段 / 六态用时 / Note / 延迟队列 / Token 三级 / 前文长度与条数）。
         /// 前端零推断：状态位与数字就位即渲染；整段比对去重由视图出口承担（无变化零字节）。
         /// </summary>

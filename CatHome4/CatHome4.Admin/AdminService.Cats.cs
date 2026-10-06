@@ -62,6 +62,49 @@ namespace CatHome4.Admin
             }
         }
 
+        /// <summary>
+        /// 全部会话的视图推送面是否仍有待推内容——重启闸门第二判据（A206）。
+        /// 多猫下任一会话在途都要等：判据取「或」——只有全部会话的推送面都清空才放行重启。
+        /// </summary>
+        /// <returns>true=仍有待推内容</returns>
+        internal static bool AnyViewPending()
+        {
+            if (_chatBridge != null && _chatBridge.DefaultSession.ViewHasPendingContent)
+            {
+                return true;
+            }
+            for (int i = 0; i < _cats.Count; i = i + 1)
+            {
+                CatEntry cat = _cats[i];
+                if (cat.Session != null && cat.Session.ViewHasPendingContent)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 全部 HttpHost 退出前收尾——逐 host 推最后一帧 + 等连接队列排空（A206；重启退出路径调用）。
+        /// 动机：视图帧「入队 ≠ 写出」，Environment.Exit 会丢弃在途帧（判例 2026-10-06）。
+        /// </summary>
+        /// <param name="timeoutMs">单 host 排空等待上限毫秒</param>
+        internal static void FlushAllHosts(int timeoutMs)
+        {
+            if (_majorHost != null)
+            {
+                _majorHost.FlushViewBeforeExit(timeoutMs);
+            }
+            for (int i = 0; i < _cats.Count; i = i + 1)
+            {
+                HttpHost host = _cats[i].Host;
+                if (host != null)
+                {
+                    host.FlushViewBeforeExit(timeoutMs);
+                }
+            }
+        }
+
         /// <summary>majordomo 独立对话端口——AllocatePort 分配（F2.2）</summary>
         private static int _majorPort = -1;
 

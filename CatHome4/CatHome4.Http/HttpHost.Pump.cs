@@ -135,6 +135,56 @@ namespace CatHome4.Http
                 }
             }
         }
+        /// <summary>
+        /// 退出前视图收尾（A206）——强制取一帧推送 + 等各连接队列排空（有限等待）。
+        /// 动机：视图帧「入队 ≠ 写出」——Environment.Exit 直接终止进程会丢弃在途帧，
+        /// 前端停在半句（判例 2026-10-06：full 重启时最后一帧未送达）。
+        /// 顺序：先推最后一帧（把待推内容送出）→ 再等各连接队列排空 → 超时即走（重启不因慢客户端拖延）。
+        /// </summary>
+        /// <param name="timeoutMs">排空等待上限毫秒</param>
+        public void FlushViewBeforeExit(int timeoutMs)
+        {
+            if (_stopped)
+            {
+                return;
+            }
+            if (_viewFrameBuilder != null)
+            {
+                string frame = _viewFrameBuilder();
+                if (frame != null && frame.Length > 0)
+                {
+                    PushEvent("view", frame);
+                }
+            }
+            long start = Environment.TickCount64;
+            while (true)
+            {
+                int pending = 0;
+                lock (_clientLock)
+                {
+                    for (int i = 0; i < _clients.Count; i = i + 1)
+                    {
+                        SseClient client = _clients[i];
+                        if (client.Queue.Reader.CanCount)
+                        {
+                            pending = pending + client.Queue.Reader.Count;
+                        }
+                    }
+                }
+                if (pending == 0)
+                {
+                    // 队列已空——消费端出队即已 WriteAsync + FlushAsync，留一小段让最后一条帧落到 socket
+                    Thread.Sleep(60);
+                    return;
+                }
+                if (Environment.TickCount64 - start >= timeoutMs)
+                {
+                    LogStore.Add("HttpHost", 2, "退出前 SSE 排空超时——仍有 " + pending.ToString() + " 帧未写出（上限 " + timeoutMs.ToString() + " ms）", "SYS");
+                    return;
+                }
+                Thread.Sleep(15);
+            }
+        }
         /// <summary>LogStore 增量推送——锁内只取区间快照 + 推进游标，序列化与广播在锁外；一轮泵的多条日志批量合帧为单个 log 事件（载荷数组，A141）；trace 类审计不进前端（IsTraceAudit，2026-09-17）。</summary>
         private void PushLogIncrements()
         {

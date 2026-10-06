@@ -87,6 +87,34 @@ namespace CatHome4.Core.Tests
             Assert.Equal("reason", items[0].GetProperty("type").GetString());
             Assert.Equal("user", items[1].GetProperty("type").GetString());
         }
+        /// <summary>
+        /// 待推内容探测（A206）——重启闸门第二判据：内容面（持久块 / 临时区）置位，
+        /// 状态段**不计入**（含运行时长等每帧变化的值，纳入即永久置位——闸门永不通过）；
+        /// 未接线（推送面未附加）恒 false。
+        /// </summary>
+        [Fact]
+        public void HasPendingContent_CoversContentOnly()
+        {
+            CH4.ViewBus bus = new CH4.ViewBus();
+            Assert.False(bus.HasPendingContent);
+            RecordingHost host = new RecordingHost();
+            bus.Attach(host);
+            Assert.False(bus.HasPendingContent);
+            // 状态段变更不计入
+            bus.SetState("{\"runState\":\"idle\"}");
+            Assert.False(bus.HasPendingContent);
+            // 临时区变更计入——探测本身不消耗（连续两次探测同值）
+            bus.SetLive("replysse", "甲");
+            Assert.True(bus.HasPendingContent);
+            Assert.True(bus.HasPendingContent);
+            Assert.NotNull(TakeFrame(bus));
+            Assert.False(bus.HasPendingContent);
+            // 持久块追加计入
+            bus.PushPersist(Block("text", "{\"text\":\"乙\"}", 1000, 0, 1));
+            Assert.True(bus.HasPendingContent);
+            Assert.NotNull(TakeFrame(bus));
+            Assert.False(bus.HasPendingContent);
+        }
 
         /// <summary>解析 JSON 根节点（独立副本——原 document 立刻释放）</summary>
         /// <param name="json">JSON 文本</param>
