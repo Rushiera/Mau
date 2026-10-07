@@ -234,6 +234,31 @@ namespace Mau.Development.Tests
             string result = InvokeFormat(outside, "check");
             Assert.StartsWith("ERR|BAD_PATH", result);
         }
+        /// <summary>
+        /// csproj 入口按**项目源文件集**收集——DefaultItemExcludes 子项目目录排除生效（同级子项目不被吞）；
+        /// 与扫描面同一实现（CollectProjectSources），项目边界不再被「取所在目录递归」放大。
+        /// </summary>
+        [Fact]
+        public void ProjectEntryRespectsSubProjectExcludes()
+        {
+            string projDir = Path.Combine(_root, "Domain");
+            string subDir = Path.Combine(projDir, "Domain.Sub");
+            Directory.CreateDirectory(subDir);
+            File.WriteAllText(Path.Combine(projDir, "Main.cs"), BadText(), new UTF8Encoding(true));
+            File.WriteAllText(Path.Combine(subDir, "Sub.cs"), BadText(), new UTF8Encoding(true));
+            string csproj = "<Project Sdk=\"Microsoft.NET.Sdk\">" + Environment.NewLine +
+                "  <PropertyGroup>" + Environment.NewLine +
+                "    <TargetFramework>net10.0</TargetFramework>" + Environment.NewLine +
+                "    <DefaultItemExcludes>$(DefaultItemExcludes);Domain.Sub\\**</DefaultItemExcludes>" + Environment.NewLine +
+                "  </PropertyGroup>" + Environment.NewLine +
+                "</Project>" + Environment.NewLine;
+            File.WriteAllText(Path.Combine(projDir, "Domain.csproj"), csproj, new UTF8Encoding(true));
+            string result = InvokeFormat(Path.Combine(projDir, "Domain.csproj"), "check");
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"check\"", result);
+            Assert.Contains("\"files\":1", result);
+            Assert.Contains("Main.cs", result);
+            Assert.DoesNotContain("Sub.cs", result);
+        }
 
         /// <summary>
         /// 调用 cs.format——mode 缺省即 check

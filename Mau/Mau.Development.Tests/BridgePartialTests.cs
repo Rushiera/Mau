@@ -163,7 +163,7 @@ namespace Mau.Development.Tests
         public void AmbiguousAcrossPartsListsBothFiles()
         {
             string result = Call("read", "\"class\":\"Probe\",\"member\":\"Same\"");
-            Assert.StartsWith("ERR|AMBIGUOUS", result);
+            Assert.StartsWith("ERR|MEMBER_AMBIGUOUS", result);
             Assert.Contains("Probe.cs", result);
             Assert.Contains("Probe.Extra.cs", result);
         }

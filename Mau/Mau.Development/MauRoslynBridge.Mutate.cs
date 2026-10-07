@@ -29,7 +29,7 @@ namespace Mau.Development
             string member = Arg(args, "member");
             if (member.Length == 0)
             {
-                result = "ERR|BAD_ARGS|缺少参数 member";
+                result = "ERR|BAD_ARGS|缺参数 member（必填：path class member）";
                 return false;
             }
             string resolveError;
@@ -242,7 +242,7 @@ namespace Mau.Development
             string body = Arg(args, "body");
             if (className.Length == 0 || methodName.Length == 0 || body.Length == 0)
             {
-                result = "ERR|BAD_ARGS|缺少参数 class/method/body";
+                result = "ERR|BAD_ARGS|缺参数 class/method/body（必填：path class method body）";
                 return false;
             }
             string csproj;
@@ -274,7 +274,7 @@ namespace Mau.Development
                 if (methodFind == 2)
                 {
                     StringBuilder sb = new StringBuilder();
-                    sb.Append("ERR|AMBIGUOUS|方法重载歧义——请用 find_ref 区分签名（当前 patch 锚点=类+方法名，重载需先唯一化）:");
+                    sb.Append("ERR|METHOD_AMBIGUOUS|方法重载歧义——请用 cs-find_ref 区分签名（cs-patch 锚点 = 类 + 方法名，重载需先唯一化）:");
                     for (int i = 0; i < signatures.Count; i = i + 1)
                     {
                         sb.Append(Environment.NewLine + "  " + methodName + signatures[i]);
@@ -346,7 +346,7 @@ namespace Mau.Development
                 if (!ValidateNoNewErrors(cache.Compilation, newCompilation, out newErrors))
                 {
                     StringBuilder sb = new StringBuilder();
-                    sb.Append("ROLLED_BACK|新增编译错误 " + newErrors.Count + " 条——未落盘:");
+                    sb.Append("ROLLED_BACK|COMPILE_ERROR|新增编译错误 " + newErrors.Count + " 条——未落盘:");
                     for (int i = 0; i < newErrors.Count; i = i + 1)
                     {
                         sb.Append(Environment.NewLine + "  " + newErrors[i]);

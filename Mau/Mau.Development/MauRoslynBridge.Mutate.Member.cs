@@ -37,7 +37,7 @@ namespace Mau.Development
             {
                 return MemberRename(args, out result);
             }
-            result = "ERR|BAD_ARGS|op 必须是 insert/delete/rename";
+            result = "ERR|BAD_ARGS|op 非法值: " + op + "（insert|delete|rename）";
             return false;
         }
 
@@ -54,7 +54,7 @@ namespace Mau.Development
             string anchor = Arg(args, "anchor");
             if (className.Length == 0)
             {
-                result = "ERR|BAD_ARGS|缺少参数 class";
+                result = "ERR|BAD_ARGS|缺参数 class（必填：path class op）";
                 return false;
             }
             // [段1] 入参形态归一——code 单成员 / codes 批量数组二选一（A92；互斥在参数面拦，此处兜底）
@@ -86,7 +86,7 @@ namespace Mau.Development
             {
                 if (code.Length == 0)
                 {
-                    result = "ERR|BAD_ARGS|缺少参数 code 或 codes";
+                    result = "ERR|BAD_ARGS|缺参数 code 或 codes（code 与 codes 二选一）";
                     return false;
                 }
                 codes.Add(code);
@@ -191,7 +191,7 @@ namespace Mau.Development
                 }
                 else
                 {
-                    result = "ERR|BAD_ARGS|position 必须是 end/before/after/after_fields";
+                    result = "ERR|BAD_ARGS|position 非法值: " + position + "（end|before|after|after_fields）";
                     return true;
                 }
                 SyntaxTree foundTree = targetPart.Tree;
@@ -215,13 +215,13 @@ namespace Mau.Development
                     MemberDeclarationSyntax? parsedMember = SyntaxFactory.ParseMemberDeclaration(NormalizeNewLineText(codes[i], memberNewline));
                     if (parsedMember == null)
                     {
-                        result = "ERR|BAD_CODE|" + label + "不是有效的成员声明";
+                        result = "ERR|BAD_CODE|" + label + " 不是有效的成员声明";
                         return true;
                     }
                     MemberDeclarationSyntax? formattedMember = SyntaxFactory.ParseMemberDeclaration(FormatNodeText(parsedMember, memberIndent, memberNewline));
                     if (formattedMember == null)
                     {
-                        result = "ERR|BAD_CODE|" + label + "不是有效的成员声明";
+                        result = "ERR|BAD_CODE|" + label + " 不是有效的成员声明";
                         return true;
                     }
                     SyntaxAnnotation insertMark = new SyntaxAnnotation();
@@ -238,7 +238,7 @@ namespace Mau.Development
                 if (!ValidateNoNewErrors(cache.Compilation, trial, out newErrors))
                 {
                     StringBuilder sb = new StringBuilder();
-                    sb.Append("ROLLED_BACK|新增编译错误 " + newErrors.Count + " 条——未落盘:");
+                    sb.Append("ROLLED_BACK|COMPILE_ERROR|新增编译错误 " + newErrors.Count + " 条——未落盘:");
                     for (int i = 0; i < newErrors.Count; i = i + 1)
                     {
                         sb.Append(Environment.NewLine + "  " + newErrors[i]);
@@ -360,7 +360,7 @@ namespace Mau.Development
             string member = Arg(args, "member");
             if (className.Length == 0 || member.Length == 0)
             {
-                result = "ERR|BAD_ARGS|缺少参数 class/member";
+                result = "ERR|BAD_ARGS|缺参数 class/member（必填：path class op member）";
                 return false;
             }
             string csproj;
@@ -389,7 +389,7 @@ namespace Mau.Development
                 {
                     if (memberCount > 1)
                     {
-                        result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
+                        result = "ERR|MEMBER_AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
                         return true;
                     }
                     result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member + PartialHint(parts.Count);
@@ -410,7 +410,7 @@ namespace Mau.Development
                 if (!ValidateNoNewErrors(cache.Compilation, trial, out newErrors))
                 {
                     StringBuilder sb = new StringBuilder();
-                    sb.Append("ROLLED_BACK|删除引入 " + newErrors.Count + " 处新增错误——未落盘（成员仍被引用？）:");
+                    sb.Append("ROLLED_BACK|COMPILE_ERROR|删除引入 " + newErrors.Count + " 处新增错误——未落盘（成员仍被引用）:");
                     for (int i = 0; i < newErrors.Count; i = i + 1)
                     {
                         sb.Append(Environment.NewLine + "  " + newErrors[i]);
@@ -453,7 +453,7 @@ namespace Mau.Development
             string newName = Arg(args, "newName");
             if (className.Length == 0 || oldName.Length == 0 || newName.Length == 0)
             {
-                result = "ERR|BAD_ARGS|缺少参数 class/oldName/newName";
+                result = "ERR|BAD_ARGS|缺参数 class/oldName/newName（必填：path class op oldName newName）";
                 return false;
             }
             string csproj;
@@ -524,7 +524,7 @@ namespace Mau.Development
                 if (!ValidateNoNewErrors(cache.Compilation, trial, out newErrors))
                 {
                     StringBuilder sb = new StringBuilder();
-                    sb.Append("ROLLED_BACK|重命名引入 " + newErrors.Count + " 处新增错误——全部未落盘:");
+                    sb.Append("ROLLED_BACK|COMPILE_ERROR|重命名引入 " + newErrors.Count + " 处新增错误——全部未落盘:");
                     for (int i = 0; i < newErrors.Count; i = i + 1)
                     {
                         sb.Append(Environment.NewLine + "  " + newErrors[i]);

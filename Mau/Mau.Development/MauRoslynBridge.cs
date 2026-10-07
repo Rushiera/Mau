@@ -233,7 +233,7 @@ namespace Mau.Development
                 {
                     sb.Append(Environment.NewLine + "  " + hitPlaces[i]);
                 }
-                sb.Append(Environment.NewLine + "请改传命中项目的 csproj 路径");
+                sb.Append(Environment.NewLine + "——请改传命中项目的 csproj 路径");
                 error = sb.ToString();
                 return false;
             }
@@ -252,10 +252,8 @@ namespace Mau.Development
         {
             List<string> places = new List<string>();
             ProjectCache probe = new ProjectCache();
-            probe.CsprojPath = csproj;
             probe.ProjectDir = Path.GetDirectoryName(csproj) ?? "";
-            ParseCsproj(probe);
-            string[] sources = CollectSources(probe);
+            string[] sources = CollectProjectSources(csproj, true);
             for (int i = 0; i < sources.Length; i = i + 1)
             {
                 SyntaxTree tree;
@@ -284,7 +282,7 @@ namespace Mau.Development
             return places;
         }
         /// <summary>
-        /// 受控根内路径归一——id: 命名空间寻址（与 ResolveSingleProject / ResolveEntryPath 同源口径）；不要求路径存在。
+        /// 受控根内路径归一——id: 命名空间寻址（项目面与文件面共用的**唯一**入口路径解析；不要求路径存在）。
         /// </summary>
         /// <param name="pathParam">路径参数</param>
         /// <returns>绝对路径（越界 / 空返回空串）</returns>
@@ -384,7 +382,7 @@ namespace Mau.Development
         /// <summary>
         /// 三态入口解析——csproj / .sln / 目录 → csproj 绝对路径列表（唯一入口解析实现；受控根校验 + id: 命名空间寻址）。
         /// 目录入口候选序：顶层 csproj（≥1 时全收）→ 顶层 .sln（唯一则展开，多个出声）→ 无可识别入口。
-        /// 失败原因含错误码（BAD_PATH / ENTRY_UNSUPPORTED / ENTRY_EMPTY / ENTRY_AMBIGUOUS）——调用点直出。
+        /// 失败原因含错误码（BAD_PATH / PATH_NOT_FOUND / ENTRY_UNSUPPORTED / ENTRY_EMPTY / ENTRY_AMBIGUOUS）——调用点直出。
         /// </summary>
         /// <param name="pathParam">路径参数（csproj / .sln / 目录）</param>
         /// <param name="error">出参：失败原因（含错误码；成功为空串）</param>
@@ -427,7 +425,7 @@ namespace Mau.Development
                 if (solutions.Length > 1)
                 {
                     StringBuilder multi = new StringBuilder();
-                    multi.Append("ERR|ENTRY_AMBIGUOUS|目录内有 " + solutions.Length + " 个 .sln（仅扫顶层），请指定其一:");
+                    multi.Append("ERR|ENTRY_AMBIGUOUS|目录内有 " + solutions.Length + " 个 .sln（仅扫顶层）——请指定其一:");
                     for (int i = 0; i < solutions.Length; i = i + 1)
                     {
                         multi.Append(Environment.NewLine + "  " + RelativeToRoots(solutions[i]));
@@ -455,10 +453,10 @@ namespace Mau.Development
             // 诊断面分列——「路径不是 csproj / .sln / 目录」对不存在路径具误导性（判例 2026-09-14）
             if (File.Exists(full))
             {
-                error = "ERR|ENTRY_UNSUPPORTED|路径存在但类型不符（需 csproj / .sln / 目录）: " + full;
+                error = "ERR|ENTRY_UNSUPPORTED|路径存在但类型不符（支持 csproj / .sln / 目录）: " + full;
                 return projects;
             }
-            error = "ERR|BAD_PATH|路径不存在: " + full + NeighborCandidates(full);
+            error = "ERR|PATH_NOT_FOUND|路径不存在: " + full + NeighborCandidates(full);
             return projects;
         }
         /// <summary>

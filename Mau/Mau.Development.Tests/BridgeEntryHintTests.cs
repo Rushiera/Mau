@@ -74,7 +74,7 @@ namespace Mau.Development.Tests
         {
             string missing = Path.Combine(_root, "Repo", "CatHome4", "CatHome4.sln");
             string result = Invoke("check", missing);
-            Assert.StartsWith("ERR|BAD_PATH|", result);
+            Assert.StartsWith("ERR|PATH_NOT_FOUND|", result);
             Assert.Contains("路径不存在", result);
             Assert.Contains("邻近候选（仅提示，不自动切换）", result);
             Assert.Contains("同级: tmp:Repo/CatHome4/CatHome4.csproj", result);
@@ -89,7 +89,7 @@ namespace Mau.Development.Tests
         {
             string missing = Path.Combine(_root, "Empty", "Missing.sln");
             string result = Invoke("check", missing);
-            Assert.StartsWith("ERR|BAD_PATH|", result);
+            Assert.StartsWith("ERR|PATH_NOT_FOUND|", result);
             Assert.Contains("路径不存在", result);
             Assert.False(result.Contains("邻近候选"), "无候选时不得产出提示段");
         }
@@ -104,7 +104,7 @@ namespace Mau.Development.Tests
             string args = "{\"path\":\"" + Escape(missing) + "\",\"class\":\"Foo\",\"method\":\"Bar\",\"body\":\"{\\n}\"}";
             string result = "";
             _bridge.Invoke("patch", args, out result);
-            Assert.StartsWith("ERR|BAD_PATH|", result);
+            Assert.StartsWith("ERR|PATH_NOT_FOUND|", result);
             Assert.Contains("上一级同名: tmp:Repo/CatHome4.sln", result);
         }
 

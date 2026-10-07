@@ -246,7 +246,7 @@ namespace Mau.Development
             long elapsedMs = watch.ElapsedMilliseconds;
             if (!run.Started)
             {
-                result = "ERR|BUILD_START|dotnet 进程启动失败（PATH 中无 dotnet？）";
+                result = "ERR|BUILD_START|dotnet 进程启动失败（PATH 中无 dotnet）";
                 return false;
             }
             if (!run.Exited)
@@ -533,7 +533,7 @@ namespace Mau.Development
                 {
                     if (memberCount > 1)
                     {
-                        result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
+                        result = "ERR|MEMBER_AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
                         return false;
                     }
                     result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member + PartialHint(parts.Count);

@@ -153,7 +153,7 @@ namespace Mau.Development.Tests
         {
             string result = Invoke("check", "{\"path\":\"" + Escape(Path.Combine(_root, "Notes.txt")) + "\"}");
             Assert.StartsWith("ERR|ENTRY_UNSUPPORTED|", result);
-            Assert.Contains("需 csproj / .sln / 目录", result);
+            Assert.Contains("支持 csproj / .sln / 目录", result);
         }
 
         /// <summary>
@@ -191,17 +191,17 @@ namespace Mau.Development.Tests
         {
             string result = Invoke("format", "{\"path\":\"" + Escape(Path.Combine(_root, "Solo.sln")) + "\",\"mode\":\"check\"}");
             Assert.StartsWith("ERR|ENTRY_UNSUPPORTED|", result);
-            Assert.Contains("需 .cs 文件 / 目录 / csproj", result);
+            Assert.Contains("支持 .cs 文件 / 目录 / csproj", result);
         }
 
         /// <summary>
-        /// cs-format 传不存在路径 ⇒ BAD_PATH（不再回落成空产物 + OK）
+        /// cs-format 传不存在路径 ⇒ PATH_NOT_FOUND（不再回落成空产物 + OK）
         /// </summary>
         [Fact]
         public void FormatMissingPathReportsBadPath()
         {
             string result = Invoke("format", "{\"path\":\"" + Escape(Path.Combine(_root, "Missing.cs")) + "\",\"mode\":\"check\"}");
-            Assert.StartsWith("ERR|BAD_PATH|", result);
+            Assert.StartsWith("ERR|PATH_NOT_FOUND|", result);
             Assert.Contains("路径不存在", result);
         }
 
