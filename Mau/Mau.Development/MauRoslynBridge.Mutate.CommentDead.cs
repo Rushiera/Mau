@@ -45,10 +45,11 @@ namespace Mau.Development
                 result = "ERR|BAD_ARGS|type=param 需要 param 参数名";
                 return false;
             }
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string csproj;
+            string entryError;
+            if (!ResolveSingleProject(path, className, out csproj, out entryError))
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path + ProjectPathDiagnostic(path);
+                result = entryError;
                 return false;
             }
             ProjectCache cache = EnsureProject(csproj);
@@ -370,7 +371,7 @@ namespace Mau.Development
             List<string> projects = ResolveProjects(path, out resolveError);
             if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|" + resolveError;
+                result = resolveError;
                 return false;
             }
             if (projects.Count == 1)
@@ -424,7 +425,7 @@ namespace Mau.Development
             List<string> projects = ResolveProjects(path, out resolveError);
             if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|" + resolveError;
+                result = resolveError;
                 return false;
             }
             if (projects.Count == 1)

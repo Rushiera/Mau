@@ -35,11 +35,23 @@ namespace Mau.Development
                 mode = "check";
             }
 
-            // [段2] 入口路径解析——文件 / 目录 / csproj（受控根内）
+            // [段2] 入口路径解析——文件 / 目录 / csproj（受控根内）；存在性与类型分列出声（不存在 / 类型不支持不再落成静默空产物）
             string entry = ResolveEntryPath(pathParam);
             if (entry.Length == 0)
             {
-                result = "ERR|BAD_PATH|路径无效或越界（受控根内，支持 .cs 文件 / 目录 / csproj）: " + pathParam;
+                result = "ERR|BAD_PATH|路径越界或为空（受控根内，支持 .cs 文件 / 目录 / csproj）: " + pathParam;
+                return false;
+            }
+            if (!Directory.Exists(entry) && !File.Exists(entry))
+            {
+                result = "ERR|BAD_PATH|路径不存在: " + entry;
+                return false;
+            }
+            if (!Directory.Exists(entry) &&
+                !entry.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) &&
+                !entry.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+            {
+                result = "ERR|ENTRY_UNSUPPORTED|入口类型不支持（需 .cs 文件 / 目录 / csproj）: " + pathParam;
                 return false;
             }
 
@@ -159,8 +171,8 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 入口路径解析——文件 / 目录 / csproj（受控根校验；对齐 ResolveProject 的 id: 命名空间寻址语义）。
-        /// 与 ResolveProject 的分工：本方法不要求 csproj 存在（format 面向文件树），项目面解析仍走 ResolveProject。
+        /// 入口路径解析——文件 / 目录 / csproj（受控根校验；对齐 ResolveProjects 的 id: 命名空间寻址语义）。
+        /// 与 ResolveProjects 的分工：本方法不要求 csproj 存在（format 面向文件树），项目面解析走 ResolveProjects / ResolveSingleProject。
         /// </summary>
         /// <param name="pathParam">路径参数</param>
         /// <returns>绝对路径（越界 / 缺失返回空串）</returns>

@@ -114,10 +114,11 @@ namespace Mau.Development
             {
                 position = "end";
             }
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string csproj;
+            string entryError;
+            if (!ResolveSingleProject(path, className, out csproj, out entryError))
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path + ProjectPathDiagnostic(path);
+                result = entryError;
                 return false;
             }
             ProjectCache cache = EnsureProject(csproj);
@@ -362,10 +363,11 @@ namespace Mau.Development
                 result = "ERR|BAD_ARGS|缺少参数 class/member";
                 return false;
             }
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string csproj;
+            string entryError;
+            if (!ResolveSingleProject(path, className, out csproj, out entryError))
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path + ProjectPathDiagnostic(path);
+                result = entryError;
                 return false;
             }
             ProjectCache cache = EnsureProject(csproj);
@@ -454,10 +456,11 @@ namespace Mau.Development
                 result = "ERR|BAD_ARGS|缺少参数 class/oldName/newName";
                 return false;
             }
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string csproj;
+            string entryError;
+            if (!ResolveSingleProject(path, className, out csproj, out entryError))
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path + ProjectPathDiagnostic(path);
+                result = entryError;
                 return false;
             }
             ProjectCache cache = EnsureProject(csproj);

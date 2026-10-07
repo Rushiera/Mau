@@ -140,7 +140,8 @@ namespace Mau.Development.Tests
                 File.WriteAllText(Path.Combine(sub, "SubProj.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <TargetFramework>net10.0</TargetFramework>\n  </PropertyGroup>\n</Project>\n");
                 string result;
                 _bridge.Invoke("check", "{\"path\":\"" + dir.Replace("\\", "\\\\") + "\"}", out result);
-                Assert.StartsWith("ERR|BAD_PATH|", result);
+                // 判据变更（2026-10-07 入口统一）：目录顶层无 csproj / .sln 时归 ENTRY_EMPTY（原笼统 BAD_PATH）
+                Assert.StartsWith("ERR|ENTRY_EMPTY|", result);
                 Assert.Contains("仅扫顶层", result);
                 Assert.Contains("子目录发现", result);
             }

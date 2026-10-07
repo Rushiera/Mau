@@ -4,6 +4,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Mau.Runtime;
 
 namespace Mau.Development
@@ -179,77 +182,109 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 受控根校验 + csproj 规范化——目录参数自动补 *.csproj
+        /// 单项目入口解析——三态入口（csproj / .sln / 目录）统一解析后定位目标项目。
+        /// 入口恰含一个项目时直接采用；多项目入口按类声明跨项目定位（唯一命中即采用，多处命中出声）。
         /// </summary>
-        /// <param name="pathParam">路径参数</param>
-        /// <returns>csproj 绝对路径（越界/缺失返回空串）</returns>
-        private string ResolveProject(string pathParam)
+        /// <param name="pathParam">路径参数（受控根内，支持 csproj / .sln / 目录）</param>
+        /// <param name="className">类名（多项目入口的定位依据）</param>
+        /// <param name="csproj">出参：目标 csproj 绝对路径（失败为空串）</param>
+        /// <param name="error">出参：失败原因（含错误码；成功为空串）</param>
+        /// <returns>是否解析成功</returns>
+        private bool ResolveSingleProject(string pathParam, string className, out string csproj, out string error)
         {
-            if (string.IsNullOrWhiteSpace(pathParam))
+            csproj = "";
+            List<string> projects = ResolveProjects(pathParam, out error);
+            if (projects.Count == 0)
             {
-                return "";
+                return false;
             }
-            // P1 修复：id: 命名空间寻址（runtime:/mau:/ccbp:）——对齐 FileSystemService.Resolve（P8.5b）
-            // LLM 习惯传 runtime:s1press/csproj_press，此前被当作字面路径导致 BAD_PATH 试错循环
-            string path = pathParam;
-            int nsSep = path.IndexOf(':');
-            if (nsSep > 0)
+            if (projects.Count == 1)
             {
-                string nsId = path.Substring(0, nsSep);
-                string nsRel = path.Substring(nsSep + 1);
-                for (int i = 0; i < _roots.Length; i = i + 1)
+                csproj = projects[0];
+                error = "";
+                return true;
+            }
+            // 多项目入口——按类声明定位（轻量扫描；唯一命中即采用）
+            List<string> hitProjects = new List<string>();
+            List<string> hitPlaces = new List<string>();
+            for (int i = 0; i < projects.Count; i = i + 1)
+            {
+                List<string> places = LocateClassInProject(projects[i], className);
+                if (places.Count == 0)
                 {
-                    if (string.Equals(_rootIds[i], nsId, StringComparison.Ordinal))
+                    continue;
+                }
+                hitProjects.Add(projects[i]);
+                for (int j = 0; j < places.Count; j = j + 1)
+                {
+                    hitPlaces.Add(RelativeToRoots(projects[i]).Replace(Path.DirectorySeparatorChar, '/') + " · " + places[j]);
+                }
+            }
+            if (hitProjects.Count == 0)
+            {
+                error = "ERR|CLASS_NOT_FOUND|类不存在: " + className + "（入口含 " + projects.Count + " 个项目，已全扫）";
+                return false;
+            }
+            if (hitProjects.Count > 1)
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("ERR|CLASS_AMBIGUOUS|类名在 " + hitProjects.Count + " 个项目内命中: " + className);
+                for (int i = 0; i < hitPlaces.Count; i = i + 1)
+                {
+                    sb.Append(Environment.NewLine + "  " + hitPlaces[i]);
+                }
+                sb.Append(Environment.NewLine + "请改传命中项目的 csproj 路径");
+                error = sb.ToString();
+                return false;
+            }
+            csproj = hitProjects[0];
+            error = "";
+            return true;
+        }
+
+        /// <summary>
+        /// 项目内核验类声明——轻量语法扫描（逐源文件 Parse 找类声明，不建引用集 / 编译态），供多项目入口定位使用。
+        /// </summary>
+        /// <param name="csproj">csproj 绝对路径</param>
+        /// <param name="className">类名</param>
+        /// <returns>命中位置清单（「相对路径:L行」；无命中为空列表）</returns>
+        private List<string> LocateClassInProject(string csproj, string className)
+        {
+            List<string> places = new List<string>();
+            ProjectCache probe = new ProjectCache();
+            probe.CsprojPath = csproj;
+            probe.ProjectDir = Path.GetDirectoryName(csproj) ?? "";
+            ParseCsproj(probe);
+            string[] sources = CollectSources(probe);
+            for (int i = 0; i < sources.Length; i = i + 1)
+            {
+                SyntaxTree tree;
+                try
+                {
+                    tree = ParseFile(sources[i]);
+                }
+                catch (IOException)
+                {
+                    continue;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    continue;
+                }
+                foreach (SyntaxNode node in tree.GetRoot().DescendantNodes())
+                {
+                    ClassDeclarationSyntax? decl = node as ClassDeclarationSyntax;
+                    if (decl != null && decl.Identifier.Text == className)
                     {
-                        path = Path.Combine(_roots[i], nsRel);
-                        break;
+                        int line = decl.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+                        places.Add(RelativeToProject(probe, sources[i]).Replace(Path.DirectorySeparatorChar, '/') + ":L" + line);
                     }
                 }
             }
-            string full;
-            if (Path.IsPathFullyQualified(path))
-            {
-                full = Path.GetFullPath(path);
-            }
-            else
-            {
-                full = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path));
-            }
-            bool inside = false;
-            for (int i = 0; i < _roots.Length; i = i + 1)
-            {
-                if (full.StartsWith(_roots[i] + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(full, _roots[i], StringComparison.OrdinalIgnoreCase))
-                {
-                    inside = true;
-                    break;
-                }
-            }
-            if (!inside)
-            {
-                return "";
-            }
-            if (Directory.Exists(full))
-            {
-                string[] projects = Directory.GetFiles(full, "*.csproj", SearchOption.TopDirectoryOnly);
-                if (projects.Length == 1)
-                {
-                    return Path.GetFullPath(projects[0]);
-                }
-                if (projects.Length == 0)
-                {
-                    return "";
-                }
-                return "";
-            }
-            if (File.Exists(full) && full.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
-            {
-                return Path.GetFullPath(full);
-            }
-            return "";
+            return places;
         }
         /// <summary>
-        /// 受控根内路径归一——id: 命名空间寻址（与 ResolveProject / ResolveEntryPath 同源口径）；不要求路径存在。
+        /// 受控根内路径归一——id: 命名空间寻址（与 ResolveSingleProject / ResolveEntryPath 同源口径）；不要求路径存在。
         /// </summary>
         /// <param name="pathParam">路径参数</param>
         /// <returns>绝对路径（越界 / 空返回空串）</returns>
@@ -347,10 +382,12 @@ namespace Mau.Development
             }
         }
         /// <summary>
-        /// 多项目入口解析——csproj / .sln / 目录 → csproj 绝对路径列表（受控根校验 + id: 命名空间寻址与 ResolveProject 同源）。
+        /// 三态入口解析——csproj / .sln / 目录 → csproj 绝对路径列表（唯一入口解析实现；受控根校验 + id: 命名空间寻址）。
+        /// 目录入口候选序：顶层 csproj（≥1 时全收）→ 顶层 .sln（唯一则展开，多个出声）→ 无可识别入口。
+        /// 失败原因含错误码（BAD_PATH / ENTRY_UNSUPPORTED / ENTRY_EMPTY / ENTRY_AMBIGUOUS）——调用点直出。
         /// </summary>
         /// <param name="pathParam">路径参数（csproj / .sln / 目录）</param>
-        /// <param name="error">出参：失败原因（成功为空串）</param>
+        /// <param name="error">出参：失败原因（含错误码；成功为空串）</param>
         /// <returns>csproj 绝对路径列表（目录按名称序；失败返回空列表）</returns>
         private List<string> ResolveProjects(string pathParam, out string error)
         {
@@ -359,7 +396,7 @@ namespace Mau.Development
             string full = ResolveInRoots(pathParam);
             if (full.Length == 0)
             {
-                error = "项目路径无效或越界（受控根内，支持 csproj / .sln / 目录）: " + pathParam;
+                error = "ERR|BAD_PATH|路径越界或为空（受控根内，支持 csproj / .sln / 目录）: " + pathParam;
                 return projects;
             }
             if (Directory.Exists(full))
@@ -370,11 +407,35 @@ namespace Mau.Development
                 {
                     projects.Add(Path.GetFullPath(found[i]));
                 }
-                if (projects.Count == 0)
+                if (projects.Count > 0)
                 {
-                    // 目录入口只扫顶层——子目录有项目时给出可执行指引（多项目聚合的规范入口是 .sln）
-                    error = "目录内无 csproj（仅扫顶层）: " + full + SubdirCsprojHint(full);
+                    return projects;
                 }
+                // 顶层无 csproj → 顶层 .sln（多项目聚合的规范入口；与 csproj 同为只扫顶层）
+                string[] solutions = Directory.GetFiles(full, "*.sln", SearchOption.TopDirectoryOnly);
+                Array.Sort(solutions, StringComparer.OrdinalIgnoreCase);
+                if (solutions.Length == 1)
+                {
+                    string solutionPath = Path.GetFullPath(solutions[0]);
+                    ReadSolutionProjects(solutionPath, projects);
+                    if (projects.Count == 0)
+                    {
+                        error = "ERR|ENTRY_EMPTY|解决方案内无 csproj: " + solutionPath;
+                    }
+                    return projects;
+                }
+                if (solutions.Length > 1)
+                {
+                    StringBuilder multi = new StringBuilder();
+                    multi.Append("ERR|ENTRY_AMBIGUOUS|目录内有 " + solutions.Length + " 个 .sln（仅扫顶层），请指定其一:");
+                    for (int i = 0; i < solutions.Length; i = i + 1)
+                    {
+                        multi.Append(Environment.NewLine + "  " + RelativeToRoots(solutions[i]));
+                    }
+                    error = multi.ToString();
+                    return projects;
+                }
+                error = "ERR|ENTRY_EMPTY|目录内无 csproj / .sln（仅扫顶层）: " + full + SubdirCsprojHint(full);
                 return projects;
             }
             if (File.Exists(full) && full.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
@@ -382,7 +443,7 @@ namespace Mau.Development
                 ReadSolutionProjects(full, projects);
                 if (projects.Count == 0)
                 {
-                    error = "解决方案内无 csproj: " + full;
+                    error = "ERR|ENTRY_EMPTY|解决方案内无 csproj: " + full;
                 }
                 return projects;
             }
@@ -394,10 +455,10 @@ namespace Mau.Development
             // 诊断面分列——「路径不是 csproj / .sln / 目录」对不存在路径具误导性（判例 2026-09-14）
             if (File.Exists(full))
             {
-                error = "路径存在但类型不符（需 csproj / .sln / 目录）: " + full;
+                error = "ERR|ENTRY_UNSUPPORTED|路径存在但类型不符（需 csproj / .sln / 目录）: " + full;
                 return projects;
             }
-            error = "路径不存在: " + full + NeighborCandidates(full);
+            error = "ERR|BAD_PATH|路径不存在: " + full + NeighborCandidates(full);
             return projects;
         }
         /// <summary>
@@ -536,25 +597,6 @@ namespace Mau.Development
             }
             return full;
         }
-        /// <summary>
-        /// 单项目入口的诊断串——请求路径归一后仅在「路径不存在」时附邻近候选（其余情形返回空串）
-        /// </summary>
-        /// <param name="pathParam">原始路径参数</param>
-        /// <returns>诊断串（空安全）</returns>
-        private string ProjectPathDiagnostic(string pathParam)
-        {
-            string full = ResolveInRoots(pathParam);
-            if (full.Length == 0)
-            {
-                return "";
-            }
-            if (File.Exists(full) || Directory.Exists(full))
-            {
-                return "";
-            }
-            return NeighborCandidates(full);
-        }
-
         /// <summary>
         /// LRU 淘汰——池超限时淘汰 LastAccess 最旧条目（跳过当前正在用的 key）
         /// </summary>
