@@ -524,7 +524,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 重置统计——session.new 清前文后调用（新会话零统计起算；会话级 token 累计同归零）。
+        /// 重置统计——session.new 清前文后调用（新会话零统计起算；会话级 token 累计 + 前文长度同归零）。
         /// A202：会话元数据面与其余两面同批即时落盘（写新会话初始态）。
         /// </summary>
         public void ResetStats()
@@ -537,6 +537,8 @@ namespace CH4
             _sessionInstanceId = SessionStore.NewSessionId();
             _sessionCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             _lastRoundTokens = new SessionTokens();
+            // 前文长度——请求级实时值 + 落盘快照同归零（读面不回落旧会话值；新会话尚无请求）
+            _contextTokens = 0;
             _persistedContextTokens = 0;
             _usagePrompt = 0;
             _usageCompletion = 0;
@@ -2699,6 +2701,8 @@ namespace CH4
             //        原实现调 ResetStats() 会清会话级 token 累计——与 glossary「回滚不归零」口径冲突，2026-09-28 修正；
             //        A202：轮级读面回落源与请求级前文长度一并归零）
             _lastRoundTokens = new SessionTokens();
+            // 前文长度——请求级实时值 + 落盘回落源同归零（读面不显示回滚点之前的旧值）
+            _contextTokens = 0;
             _persistedContextTokens = 0;
             // [段4] 视图——不动（v2 契约：持久即持久，截断通道退役；视图层与真实前文并列，回滚只作用于前文）
             // [段5] Note 任务清空——防旧任务自动拉起新轮

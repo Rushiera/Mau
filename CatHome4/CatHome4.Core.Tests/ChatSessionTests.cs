@@ -1632,6 +1632,7 @@ namespace CatHome4.Core.Tests
         {
             MockLlm llm = new MockLlm();
             llm.ReplyText = "第一轮回复";
+            llm.UsageJson = "{\"prompt\":900,\"completion\":30,\"cacheHit\":700}";
             CH4.ChatSession session = CreateSession(llm);
             // 两轮对话——user1+reply1+user2+reply2 = 4 条（测试环境无 system）
             session.PostUserMessage("第一轮问题");
@@ -1642,6 +1643,8 @@ namespace CatHome4.Core.Tests
             LlmMessage[] before = session.Context.GetMessages();
             Assert.Equal(4, before.Length);
             CH4.ViewBlock[] viewBefore = session.GetViewBlocks();
+            // 回滚前——请求级前文长度有值（末次请求 prompt；回滚后必须归零）
+            Assert.Equal(900L, session.ContextTokensKnown);
             // 回滚到第一个正式回复（索引 1）
             string result = session.Rollback(1);
             Assert.StartsWith("rollback", result);
@@ -1660,7 +1663,25 @@ namespace CatHome4.Core.Tests
             Assert.Equal(0, blocks[0].MsgIndex);
             Assert.Equal("text", blocks[1].RenderType);
             Assert.Equal(1, blocks[1].MsgIndex);
-            // 统计复位——新起点零统计（A202：请求级前文长度回落值归零）
+            // 统计复位——新起点零统计（A202：请求级前文长度实时值与落盘回落源一并归零）
+            Assert.Equal(0L, session.ContextTokensKnown);
+        }
+        /// <summary>
+        /// session.new 统计重置——前文长度（请求级实时值 + 落盘回落源）一并归零：新会话后读面不显示旧会话 context。
+        /// </summary>
+        [Fact]
+        public void ResetStats_ClearsContextTokensKnown()
+        {
+            MockLlm llm = new MockLlm();
+            llm.ReplyText = "回复";
+            llm.UsageJson = "{\"prompt\":1234,\"completion\":10,\"cacheHit\":0}";
+            CH4.ChatSession session = CreateSession(llm);
+            session.PostUserMessage("问题");
+            PumpUntilIdle(session);
+            // 请求结束——前文长度 = 该次请求 prompt（请求级实时值）
+            Assert.Equal(1234L, session.ContextTokensKnown);
+            // session.new 重置——读面归零（不回落旧会话值）
+            session.ResetStats();
             Assert.Equal(0L, session.ContextTokensKnown);
         }
 
