@@ -144,6 +144,9 @@ namespace CatHome4.Admin
 
             /// <summary>新猫默认前文注入清单（完整路径数组；空=不注入）</summary>
             public string[] DefaultInjectList { get; set; }
+
+            /// <summary>新猫默认目录白名单——全局根池子集（未配置=仅常驻 workspace 可用）</summary>
+            public string[] DefaultEnabledRoots { get; set; }
         }
 
         /// <summary>内置基础角色段——模板缺失时回退（行为不倒退）</summary>
@@ -181,6 +184,7 @@ namespace CatHome4.Admin
                     data.DefaultToolNames = GetStringProp(root, "defaultToolNames");
                     data.DefaultInjectList = GetStringArrayProp(root, "defaultInjectList");
                     data.DefaultPacks = GetStringArrayProp(root, "defaultPacks");
+                    data.DefaultEnabledRoots = GetStringArrayProp(root, "defaultEnabledRoots");
                     return data;
                 }
             }
@@ -203,7 +207,8 @@ namespace CatHome4.Admin
                 defaultPersona = data.DefaultPersona,
                 defaultToolNames = ValidateToolNames(data.DefaultToolNames),
                 defaultInjectList = data.DefaultInjectList,
-                defaultPacks = data.DefaultPacks
+                defaultPacks = data.DefaultPacks,
+                defaultEnabledRoots = data.DefaultEnabledRoots
             };
             try
             {

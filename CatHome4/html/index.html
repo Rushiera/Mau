@@ -165,6 +165,15 @@
                                     <button id="tplInjectAddBtn" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">添加</button>
                                 </div>
                             </div>
+                            <div class="cfg-sec" data-cfg="tpl-roots">
+                                <div class="cfg-sec-head">
+                                    <span class="cfg-sec-mark">▾</span>
+                                    <span class="cfg-sec-title">默认目录白名单</span>
+                                    <span class="cfg-sec-desc">新猫创建时继承的启用根清单（全局根池子集）</span>
+                                </div>
+                                <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);display:block">默认目录白名单（defaultEnabledRoots——全局根池子集；workspace 系统根必选不可取消；空=新猫仅常驻 workspace 可用）</label>
+                                <div id="tplRoots" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
+                            </div>
                         </div>
                         <div class="tpl-savebar">
                             <button id="tplRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>

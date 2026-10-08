@@ -1001,6 +1001,7 @@ namespace CatHome4.Admin
             string defaultToolNames = "";
             string[] defaultInjectList = new string[0];
             string[] defaultPacks = new string[0];
+            string[] defaultEnabledRoots = new string[0];
             if (tpl != null)
             {
                 if (tpl.BaseRole != null)
@@ -1023,6 +1024,10 @@ namespace CatHome4.Admin
                 {
                     defaultPacks = tpl.DefaultPacks;
                 }
+                if (tpl.DefaultEnabledRoots != null)
+                {
+                    defaultEnabledRoots = tpl.DefaultEnabledRoots;
+                }
             }
             var resp = new
             {
@@ -1032,6 +1037,8 @@ namespace CatHome4.Admin
                 defaultToolNames = defaultToolNames,
                 defaultInjectList = defaultInjectList,
                 defaultPacks = defaultPacks,
+                defaultEnabledRoots = defaultEnabledRoots,
+                allRoots = BuildAllRootsJson(),
                 allToolNames = GetConfigurableToolNames(),
                 allTools = GetToolsWithGroupForConfig(),
                 defectGroups = BuildToolDefectItems(),
@@ -1056,6 +1063,7 @@ namespace CatHome4.Admin
             string defaultToolNames = "";
             List<string> defaultInjectList = new List<string>();
             List<string> defaultPacks = new List<string>();
+            List<string> defaultEnabledRoots = new List<string>();
             try
             {
                 using (JsonDocument doc = JsonUtil.ParseStrict(body))
@@ -1076,6 +1084,22 @@ namespace CatHome4.Admin
                                 if (gotPack != null && gotPack.Length > 0)
                                 {
                                     defaultPacks.Add(gotPack.Trim());
+                                }
+                            }
+                        }
+                    }
+                    JsonElement rootsEl;
+                    if (root.TryGetProperty("defaultEnabledRoots", out rootsEl) && rootsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        for (int i = 0; i < rootsEl.GetArrayLength(); i = i + 1)
+                        {
+                            JsonElement item = rootsEl[i];
+                            if (item.ValueKind == JsonValueKind.String)
+                            {
+                                string gotRoot = item.GetString();
+                                if (gotRoot != null && gotRoot.Length > 0)
+                                {
+                                    defaultEnabledRoots.Add(gotRoot.Trim());
                                 }
                             }
                         }
@@ -1118,6 +1142,8 @@ namespace CatHome4.Admin
             data.DefaultToolNames = ValidateToolNames(defaultToolNames, out removedDefaultToolNames);
             data.DefaultInjectList = defaultInjectList.ToArray();
             data.DefaultPacks = defaultPacks.ToArray();
+            // 目录白名单——与猫配置同规（workspace 强制 + 全局池子集；空=物化常驻根）
+            data.DefaultEnabledRoots = ValidateEnabledRoots(defaultEnabledRoots.ToArray());
             SaveCatDefaultCfg(data);
             LogStore.Add("CatHome4", 1, "全局默认模板已保存（注入 " + defaultInjectList.Count.ToString() + " 条）", "CONFIG");
             // A132 剔除出声——被剔名字随响应带回（调用方可见；明细已记日志，不静默）

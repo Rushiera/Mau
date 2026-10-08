@@ -182,13 +182,14 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 .cfg-sec.collapsed > *:not(.cfg-sec-head) { display: none !important; }
 .cfg-hint { color: var(--ch-fg-weak); font-size: var(--ch-fs-tag); margin-bottom: 6px; }
 
-/* ── 新猫默认模板（顶部整行「保存并应用」主操作；两列网格：左列「默认人设」+「默认加载包和前文」，右列「默认工具」双宽跨两行；底部横条=刷新 + 回执）── */
+/* ── 新猫默认模板（顶部整行「保存并应用」主操作；两列网格：左列「默认人设」+「默认加载包和前文」，右列「默认工具」双宽跨两行，第三行「默认目录白名单」整行；底部横条=刷新 + 回执）── */
 .tpl-applybar { margin-top: 8px; }
 .tpl-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 10px; margin-top: 8px; align-items: start; }
 .tpl-cols > .cfg-sec { margin-bottom: 0; }
 .tpl-cols > [data-cfg="tpl-persona"] { grid-column: 1; grid-row: 1; }
 .tpl-cols > [data-cfg="tpl-packs"] { grid-column: 1; grid-row: 2; }
 .tpl-cols > [data-cfg="tpl-tools"] { grid-column: 2; grid-row: 1 / span 2; }
+.tpl-cols > [data-cfg="tpl-roots"] { grid-column: 1 / -1; grid-row: 3; }
 .tpl-savebar { display: flex; gap: 6px; align-items: center; margin-top: 10px; border-top: 1px solid var(--ch-line); padding-top: 8px; }
 /* A127 执行序徽标——配置页工具勾选项（与对话页 .chat-order 同口径：显示宿主 order 表裁决的层级） */
 .tool-order { display: inline-block; margin-left: 4px; padding: 0 4px; border-radius: 3px; font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); background: var(--ch-bg-hover); }

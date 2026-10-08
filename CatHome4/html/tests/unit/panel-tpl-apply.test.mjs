@@ -1,7 +1,7 @@
-// tests/unit/panel-tpl-apply.test.mjs —— 新猫默认模板（三列三大类 + 保存后套用询问）（2026-10-01）
-// 覆盖：三列结构（默认人设 / 默认工具 / 默认加载包和前文）· 「保存并应用」整行按钮在区标题下、三列上 · 底部横条=刷新+回执 · 子类可收起
+// tests/unit/panel-tpl-apply.test.mjs —— 新猫默认模板（四列四大类 + 保存后套用询问）（2026-10-01；2026-10-08 增默认目录白名单）
+// 覆盖：四列结构（默认人设 / 默认工具 / 默认加载包和前文 / 默认目录白名单）· 「保存并应用」整行按钮在区标题下、四列上 · 底部横条=刷新+回执 · 子类可收起
 //       · 模板面特权组整组隐藏（每猫面保持可见不可配）
-//       · 保存后弹层：一致者自动勾选 / 不一致不勾 / 读取失败禁用 · 套用载荷（模板四字段 + 保留猫的 API/QQBot/白名单）
+//       · 保存后弹层：一致者自动勾选 / 不一致不勾 / 读取失败禁用 · 套用载荷（模板五字段 + 保留猫的 API/QQBot）
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { expect, test, beforeAll } from 'vitest';
@@ -45,25 +45,26 @@ test('新猫模板——基础角色并入默认人设列；保存横条在网�
   for (const el of cols.children) {
     if (el.classList.contains('cfg-sec')) { subs.push(el); }
   }
-  expect(subs.length).toBe(3);
+  expect(subs.length).toBe(4);
   const titles = [];
   const keys = [];
   for (const s of subs) {
     titles.push(s.querySelector('.cfg-sec-title').textContent.trim());
     keys.push(s.getAttribute('data-cfg'));
   }
-  expect(titles).toEqual(['默认人设', '默认工具', '默认加载包和前文']);
-  expect(keys).toEqual(['tpl-persona', 'tpl-tools', 'tpl-packs']);
+  expect(titles).toEqual(['默认人设', '默认工具', '默认加载包和前文', '默认目录白名单']);
+  expect(keys).toEqual(['tpl-persona', 'tpl-tools', 'tpl-packs', 'tpl-roots']);
 
   // 基础角色段并入默认人设列（与默认人设同列）——原 .tpl-base 容器退役
   expect(subs[0].contains(document.getElementById('tplBaseRole'))).toBe(true);
   expect(subs[0].contains(document.getElementById('tplPersona'))).toBe(true);
   expect(document.querySelector('.tpl-base')).toBeNull();
 
-  // 三列内容归属
+  // 四列内容归属
   expect(subs[1].contains(document.getElementById('tplTools'))).toBe(true);
   expect(subs[2].contains(document.getElementById('tplPacks'))).toBe(true);
   expect(subs[2].contains(document.getElementById('tplInject'))).toBe(true);
+  expect(subs[3].contains(document.getElementById('tplRoots'))).toBe(true);
 
   // 保存并应用——整行按钮位于区标题之下、三列之上（2026-10-01 体验轮）
   const applyBar = document.querySelector('.tpl-applybar');
@@ -105,13 +106,14 @@ test('模板面——特权组整组隐藏（组头与工具项都不出）；�
   expect(box.textContent).toContain('config-get · 特权面');
 });
 
-test('新猫模板——网格版式契约（左列人设 + 包 1fr / 右列工具 2fr 跨两行）', async () => {
+test('新猫模板——网格版式契约（左列人设 + 包 1fr / 右列工具 2fr 跨两行 / 第三行白名单整行）', async () => {
   // jsdom 不解析 grid 版式——判据落在样式文件契约（生产由 <link> 加载同一份）
   const css = await readFile(new URL('../../css/style.css', import.meta.url), 'utf-8');
   expect(css).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 2fr)');
   expect(css).toContain('.tpl-cols > [data-cfg="tpl-persona"] { grid-column: 1; grid-row: 1; }');
   expect(css).toContain('.tpl-cols > [data-cfg="tpl-packs"] { grid-column: 1; grid-row: 2; }');
   expect(css).toContain('.tpl-cols > [data-cfg="tpl-tools"] { grid-column: 2; grid-row: 1 / span 2; }');
+  expect(css).toContain('.tpl-cols > [data-cfg="tpl-roots"] { grid-column: 1 / -1; grid-row: 3; }');
 });
 
 test('三大类各自可收起——复用配置区大项机制（类 + 箭头 + 正文隐藏）', () => {
@@ -138,15 +140,27 @@ test('三大类各自可收起——复用配置区大项机制（类 + 箭头 +
   expect(view.getComputedStyle(textarea).display).not.toBe('none');
 });
 
-test('一致性判据——四项全同才算一致（工具名 / 加载包按集合比，前文 List 按序列比）', () => {
+test('一致性判据——五项全同才算一致（工具名 / 加载包 / 启用根按集合比，前文 List 按序列比）', () => {
   document.getElementById('tplPersona').value = 'P1';
   window.renderGroupedChecks('tplTools', ['text-read', 'cs-build'], { 'text-read': true, 'cs-build': true }, 'off');
   window.renderTplPacks([{ key: 'overwork', desc: '收工加载包' }], ['overwork']);
   window.tplInjectList = ['ccbp:L1/Tree.md'];
+  window.renderRootChecks('tplRoots', [
+    { id: 'workspace', path: 'D:\\ws', writable: true, fixedRoot: true },
+    { id: 'ccbp', path: 'D:\\ccbp', writable: true }
+  ], ['workspace'], '');
 
   // 工具名顺序不同 → 集合相同 → 一致
   expect(window.isCatMatchingTpl({
-    persona: 'P1', toolNames: 'cs-build,text-read', packs: ['overwork'], injectList: ['ccbp:L1/Tree.md']
+    persona: 'P1', toolNames: 'cs-build,text-read', packs: ['overwork'], injectList: ['ccbp:L1/Tree.md'], enabledRoots: ['workspace']
+  })).toBe(true);
+
+  // 启用根多一根 → 不一致；未配置（空）与「仅常驻根」等价 → 一致
+  expect(window.isCatMatchingTpl({
+    persona: 'P1', toolNames: 'text-read,cs-build', packs: ['overwork'], injectList: ['ccbp:L1/Tree.md'], enabledRoots: ['workspace', 'ccbp']
+  })).toBe(false);
+  expect(window.isCatMatchingTpl({
+    persona: 'P1', toolNames: 'text-read,cs-build', packs: ['overwork'], injectList: ['ccbp:L1/Tree.md'], enabledRoots: []
   })).toBe(true);
 
   // 前文 List 顺序不同 → 不一致
@@ -192,7 +206,12 @@ test('套用弹层——一致者自动勾选 / 不一致不勾 / 读取失败�
   expect(document.getElementById('tplApplyList').textContent).toContain('配置读取失败（不可套用）');
 });
 
-test('一键套用——载荷含模板四字段 + 保留该猫 qqbotEnable/enabledRoots；不带 apiConfigId', async () => {
+test('一键套用——载荷含模板五字段（含目录白名单）+ 保留该猫 qqbotEnable；不带 apiConfigId', async () => {
+  // 模板端启用根显式渲染——workspace 系统根恒勾选（套用载荷取模板值，不取该猫现值）
+  window.renderRootChecks('tplRoots', [
+    { id: 'workspace', path: 'D:\\ws', writable: true, fixedRoot: true },
+    { id: 'ccbp', path: 'D:\\ccbp', writable: true }
+  ], ['workspace'], '');
   calls = [];
   globalThis.fetch = async (url, opt) => {
     let body = null;

@@ -369,7 +369,8 @@ document.getElementById('catCfgInjectPick').onclick = function () {
 // 默认猫配置入口——统一由多猫页 Majordomo 行「配置」按钮承担（openCatCfg 见 panel.js renderCatRow；F2.1 对话页签已移除，页面无独立 chatCfg 元素）
 
 // M4e 猫级白名单——启用根勾选（allRoots 全局池；enabledRoots 当前猫已启用；workspace 强制常驻不可取消）
-function renderRootChecks(boxId, allRoots, enabledRoots) {
+// tipText：未配置提示文案（猫配置面 / 新猫模板面各自措辞；缺省=猫配置面口径）
+function renderRootChecks(boxId, allRoots, enabledRoots, tipText) {
     var box = document.getElementById(boxId);
     box.textContent = '';
     if (!allRoots || allRoots.length === 0) {
@@ -388,7 +389,7 @@ function renderRootChecks(boxId, allRoots, enabledRoots) {
     if (!hasEnabled) {
         var tip = document.createElement('div');
         tip.style.cssText = 'width:100%;font-size:var(--ch-fs-tag);color:var(--ch-err);margin-bottom:4px';
-        tip.textContent = '⚠ 未配置根白名单——本猫仅常驻 workspace 可用（保存一次即固化为显式清单）';
+        tip.textContent = tipText || '⚠ 未配置根白名单——本猫仅常驻 workspace 可用（保存一次即固化为显式清单）';
         box.appendChild(tip);
     }
     for (var j = 0; j < allRoots.length; j++) {
@@ -513,6 +514,7 @@ function loadTpl() {
             tplInjectList = (d.defaultInjectList || []).slice();
             renderTplInject();
             renderTplPacks(d.allPacks || [], d.defaultPacks || []);
+            renderRootChecks('tplRoots', d.allRoots || [], d.defaultEnabledRoots || [], '⚠ 未配置——新猫仅常驻 workspace 可用（勾选后新猫创建时继承）');
         })
         .catch(function () {
             document.getElementById('tplMsg').textContent = '读取失败——宿主未运行？';
@@ -526,7 +528,8 @@ function tplFormValues() {
         defaultPersona: document.getElementById('tplPersona').value,
         defaultToolNames: collectChecked('tplTools').join(','),
         defaultInjectList: tplInjectList.slice(),
-        defaultPacks: collectTplPacks()
+        defaultPacks: collectTplPacks(),
+        defaultEnabledRoots: collectRootChecks('tplRoots')
     };
 }
 
@@ -588,13 +591,26 @@ function sameSeq(a, b) {
     return true;
 }
 
-// 猫配置 vs 当前模板表单——四项全同才算「一模一样」（baseRole 非猫级字段，不参与）
+// 启用根归一——空/null 视同「仅常驻根」（与后端 ValidateEnabledRoots 物化语义同源）
+function normalizeRoots(list) {
+    var out = [];
+    var src = list || [];
+    for (var i = 0; i < src.length; i++) {
+        if (src[i] && src[i].length > 0) { out.push(String(src[i]).toLowerCase()); }
+    }
+    if (out.length === 0) { out.push('workspace'); }
+    out.sort();
+    return out;
+}
+
+// 猫配置 vs 当前模板表单——五项全同才算「一模一样」（baseRole 非猫级字段，不参与）
 function isCatMatchingTpl(cfg) {
     var tpl = tplFormValues();
     if ((cfg.persona || '') !== tpl.defaultPersona) { return false; }
     if (!sameSet(splitCsvNames(cfg.toolNames), splitCsvNames(tpl.defaultToolNames))) { return false; }
     if (!sameSet((cfg.packs || []).slice().sort(), tpl.defaultPacks.slice().sort())) { return false; }
     if (!sameSeq(cfg.injectList || [], tpl.defaultInjectList)) { return false; }
+    if (!sameSet(normalizeRoots(cfg.enabledRoots), normalizeRoots(tpl.defaultEnabledRoots))) { return false; }
     return true;
 }
 
@@ -664,8 +680,8 @@ function closeTplApply() {
     document.getElementById('tplApplyModal').style.display = 'none';
 }
 
-// 一键套用——逐猫串行：模板四字段覆盖 + 该猫 API/QQBot/白名单原样带回
-// （后端 cat-config 2026-10-01 起为字段级合并写——缺省即保留；此处显式带回 qqbotId/qqbotEnable/enabledRoots 属幂等冗余，行为不变）
+// 一键套用——逐猫串行：模板五字段覆盖（含目录白名单）+ 该猫 API/QQBot 原样带回
+// （后端 cat-config 2026-10-01 起为字段级合并写——缺省即保留；此处显式带回 qqbotId/qqbotEnable 属幂等冗余，行为不变）
 function applyTplToCats() {
     var boxes = document.querySelectorAll('#tplApplyList input.tpl-apply-cb');
     var targets = [];
@@ -706,7 +722,7 @@ function applyTplToCats() {
             packs: tpl.defaultPacks,
             injectList: tpl.defaultInjectList,
             qqbotEnable: !!item.cfg.qqbotEnable,
-            enabledRoots: item.cfg.enabledRoots || []
+            enabledRoots: tpl.defaultEnabledRoots
         };
         if (item.cfg.qqbotId) { payload.qqbotId = item.cfg.qqbotId; }
         msg.textContent = '套用中… ' + idx + '/' + targets.length;

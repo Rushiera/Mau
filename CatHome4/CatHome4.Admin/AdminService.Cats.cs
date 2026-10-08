@@ -146,6 +146,15 @@ namespace CatHome4.Admin
             {
                 enabled = cfg.EnabledRoots;
             }
+            else
+            {
+                // 未声明（新猫 cat.cfg 落 null）——继承新猫默认模板的目录白名单（模板空=空白名单）
+                CatDefaultCfgData tpl = LoadCatDefaultCfg();
+                if (tpl != null && tpl.DefaultEnabledRoots != null && tpl.DefaultEnabledRoots.Length > 0)
+                {
+                    enabled = tpl.DefaultEnabledRoots;
+                }
+            }
             List<WorkspaceConfig.RootEntry> entries = new List<WorkspaceConfig.RootEntry>();
             for (int i = 0; i < ws.Roots.Length; i++)
             {
