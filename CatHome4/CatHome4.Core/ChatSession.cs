@@ -1765,7 +1765,8 @@ namespace CH4
                 ("cacheHit", roundTokens.CacheHit),
                 ("miss", roundTokens.Miss),
                 ("rate", roundTokens.Rate),
-                ("context", _contextTokens),
+                // 前文长度（请求级）——轮首清零后回落落盘快照（契约 §12.10 轮间读面口径；原直取 _contextTokens 致轮内闪 0）
+                ("context", ContextTokensKnown),
                 ("count", _context.GetMessageCount()),
                 ("sessionPrompt", sessionTokens.Prompt),
                 ("sessionCompletion", sessionTokens.Completion),

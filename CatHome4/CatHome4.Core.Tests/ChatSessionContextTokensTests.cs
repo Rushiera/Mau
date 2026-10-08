@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Mau.Runtime;
@@ -79,6 +80,56 @@ namespace CatHome4.Core.Tests
                 CH4.ChatSession session = CreateSession();
                 session.LoadMeta();
                 Assert.Equal(224497L, session.ContextTokensKnown);
+            }
+            finally
+            {
+                CH4.ChatSession.SessionMetaPathProvider = prev;
+            }
+        }
+        /// <summary>
+        /// state 段出口——无落盘快照时 tokens.context 为 0（不估算、不造值）；与属性面同判据，覆盖前端顶栏信息位消费的那一格。
+        /// </summary>
+        [Fact]
+        public void BuildStateJson_Context_NoPersistedMeta_ReturnsZero()
+        {
+            CH4.ChatSession session = CreateSession();
+            string json = session.BuildStateJson();
+            using (JsonDocument doc = JsonDocument.Parse(json))
+            {
+                JsonElement tokens = doc.RootElement.GetProperty("tokens");
+                Assert.Equal(0L, tokens.GetProperty("context").GetInt64());
+            }
+        }
+        /// <summary>
+        /// state 段出口——轮首清零态回落落盘快照（首个 usage 帧到达前不得显示 0）。
+        /// 场景等价：_contextTokens = 0 + 落盘快照有值——LoadMeta 恢复后即此态，轮首 ResetRoundCounters 后同态。
+        /// </summary>
+        [Fact]
+        public void BuildStateJson_Context_FallsBackToPersistedSnapshot()
+        {
+            // [段1] 准备落盘快照——最后一次请求边界态
+            string catId = "ctx-state-" + Guid.NewGuid().ToString("N");
+            string metaPath = Path.Combine(Path.GetTempPath(), "cat4ctx_" + Guid.NewGuid().ToString("N") + ".session.json");
+            CH4.SessionMeta meta = new CH4.SessionMeta();
+            meta.SessionId = "instance-ctx-state";
+            meta.CatId = catId;
+            meta.ContextTokens = 224497;
+            new CH4.SessionMetaStore(metaPath).Save(meta);
+            // [段2] 恢复态断言——出口取快照值（非清零值）；同段条数键仍在（归零面只在长度）
+            Func<string, string> prev = CH4.ChatSession.SessionMetaPathProvider;
+            try
+            {
+                CH4.ChatSession.SessionMetaPathProvider = delegate (string key) { return metaPath; };
+                CH4.ChatSession session = CreateSession();
+                session.LoadMeta();
+                string json = session.BuildStateJson();
+                using (JsonDocument doc = JsonDocument.Parse(json))
+                {
+                    JsonElement tokens = doc.RootElement.GetProperty("tokens");
+                    Assert.Equal(224497L, tokens.GetProperty("context").GetInt64());
+                    JsonElement countElement;
+                    Assert.True(tokens.TryGetProperty("count", out countElement));
+                }
             }
             finally
             {
