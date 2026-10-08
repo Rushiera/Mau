@@ -184,7 +184,8 @@ namespace CH4
         /// <param name="m">真实前文消息</param>
         /// <param name="msgIndex">真实前文消息索引（条目业务定位字段）</param>
         /// <param name="src">来源（空串=人工——不落字段；非空=系统注入类型，落载荷 src）</param>
-        public void OnUserMessage(LlmMessage m, int msgIndex, string src = "")
+        /// <param name="origin">原注入来源标记（空串=非 QQ 注入——不落字段；非空=QQ 注入的轮起点锚，落载荷 origin）</param>
+        public void OnUserMessage(LlmMessage m, int msgIndex, string src = "", string origin = "")
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["text"] = m.Content ?? "";
@@ -192,6 +193,11 @@ namespace CH4
             if (src != null && src.Length > 0)
             {
                 payload["src"] = src;
+            }
+            // 原注入来源标记——QQ 注入的轮起点锚（缺省不落字段，旧 view.json 零迁移）
+            if (origin != null && origin.Length > 0)
+            {
+                payload["origin"] = origin;
             }
             Append(m, "user", payload, msgIndex);
         }

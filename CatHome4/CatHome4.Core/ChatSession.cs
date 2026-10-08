@@ -296,6 +296,9 @@ namespace CH4
 
             /// <summary>附件引用 JSON 数组（图片绝对路径；空串=无附件——图片注入经队列携带，见 ImagesJson 语义）</summary>
             public string ImagesJson;
+
+            /// <summary>原注入来源标记——QQ 注入轮起点锚（空=非 QQ 注入 / 系统注入）；输出转发面据此把「来源」绑定到该消息开启的轮</summary>
+            public string Origin;
         }
 
         /// <summary>待处理用户消息队列——忙时排队（原同步阻塞天然排队语义保持）</summary>
@@ -1052,7 +1055,8 @@ namespace CH4
         /// <param name="source">来源——user（人发送，默认）/ systemauto · sleep · timer · delay · restart（系统注入——视图层 src 一律投影为 systemauto）</param>
         /// <param name="imagesJson">附件引用 JSON 数组（图片绝对路径；空串=无附件——图片注入经队列携带）</param>
         /// <returns>true=已受理入队 / false=未受理（空内容 · 宿主停机态）</returns>
-        public bool PostUserMessage(string content, string source = "user", string imagesJson = "")
+        /// <param name="origin">原注入来源标记——QQ 注入的轮起点锚（空=非 QQ 注入 / 系统注入）；输出转发面据此把来源绑定到该消息开启的轮</param>
+        public bool PostUserMessage(string content, string source = "user", string imagesJson = "", string origin = "")
         {
             if (content == null)
             {
@@ -1061,6 +1065,10 @@ namespace CH4
             if (imagesJson == null)
             {
                 imagesJson = "";
+            }
+            if (origin == null)
+            {
+                origin = "";
             }
             // 空输入零受理——文本与附件皆空才拒（图片注入可无正文，故两者合并判定）
             if (content.Length == 0 && imagesJson.Length == 0)
@@ -1082,6 +1090,7 @@ namespace CH4
             msg.Content = content;
             msg.Source = source;
             msg.ImagesJson = imagesJson;
+            msg.Origin = origin;
             _pending.Enqueue(msg);
             return true;
         }
@@ -1197,7 +1206,7 @@ namespace CH4
             }
             for (int i = 0; i < batch.Count; i = i + 1)
             {
-                AppendUserInjection(batch[i].Content, batch[i].Source, batch[i].ImagesJson);
+                AppendUserInjection(batch[i].Content, batch[i].Source, batch[i].ImagesJson, batch[i].Origin);
             }
             SetChatState("working");
             LaunchLlm();
@@ -1208,7 +1217,8 @@ namespace CH4
         /// <param name="content">注入内容（系统注入已含行头前缀）</param>
         /// <param name="source">队列来源标记</param>
         /// <param name="imagesJson">附件引用 JSON 数组（空串=无附件）</param>
-        private void AppendUserInjection(string content, string source, string imagesJson)
+        /// <param name="origin">原注入来源标记（空串=非 QQ 注入；非空=QQ 注入的轮起点锚——视图层落载荷 origin 供转发面轮绑定）</param>
+        private void AppendUserInjection(string content, string source, string imagesJson, string origin = "")
         {
             string text = content;
             if (text == null)
@@ -1219,6 +1229,10 @@ namespace CH4
             if (ViewSrcOf(source).Length > 0)
             {
                 text = BuildSysInjectText(text);
+            }
+            if (origin == null)
+            {
+                origin = "";
             }
             LlmMessage? msg;
             if (imagesJson != null && imagesJson.Length > 0)
@@ -1234,7 +1248,7 @@ namespace CH4
                 return;
             }
             AppendMessage(msg.Value);
-            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1, ViewSrcOf(source));
+            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1, ViewSrcOf(source), origin);
         }
 
         /// <summary>
@@ -1947,7 +1961,7 @@ namespace CH4
                 if (_pending.Count > 0)
                 {
                     PendingMessage next = _pending.Dequeue();
-                    AppendUserInjection(next.Content, next.Source, next.ImagesJson);
+                    AppendUserInjection(next.Content, next.Source, next.ImagesJson, next.Origin);
                     _round = 0;
                     LaunchLlm();
                     return;
@@ -2521,7 +2535,7 @@ namespace CH4
             if (_pending.Count > 0)
             {
                 PendingMessage next = _pending.Dequeue();
-                AppendUserInjection(next.Content, next.Source, next.ImagesJson);
+                AppendUserInjection(next.Content, next.Source, next.ImagesJson, next.Origin);
                 _round = 0;
                 LaunchLlm();
                 return;
