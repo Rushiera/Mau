@@ -102,7 +102,7 @@ namespace Mau.Development.Tests
         public void PatchAmbiguousConstructorsReportSignatures()
         {
             string result = InvokePatch("MultiCtorProbe", ".ctor", CtorBody());
-            Assert.StartsWith("ERR|AMBIGUOUS", result);
+            Assert.StartsWith("ERR|METHOD_AMBIGUOUS", result);
             Assert.Contains(".ctor()", result);
             Assert.Contains(".ctor(int value)", result);
             Assert.False(File.ReadAllText(_sourcePath).Contains("_value = 2;"), "歧义时不得落盘");

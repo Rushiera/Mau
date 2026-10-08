@@ -34,7 +34,7 @@ namespace Mau.Development
             List<string> projects = ResolveProjects(path, out resolveError);
             if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|" + resolveError;
+                result = resolveError;
                 return false;
             }
             List<string> exact = new List<string>();

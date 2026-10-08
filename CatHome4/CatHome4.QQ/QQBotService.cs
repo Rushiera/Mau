@@ -23,8 +23,11 @@ namespace CatHome4.QQ
         /// <summary>Bot 连接集合——QqBotId → 连接实例</summary>
         private static readonly Dictionary<Guid, QQBotConnection> _connections = new Dictionary<Guid, QQBotConnection>();
 
-        /// <summary>注入来源队列——猫 Key → QqSource FIFO（注入时入队，轮结束 roundsum 出队消费）</summary>
-        private static readonly Dictionary<string, Queue<QqSource>> _sourceQueues = new Dictionary<string, Queue<QqSource>>();
+        /// <summary>注入来源队列——猫 Key → 待认领来源 FIFO（注入时入队；轮起点块到达即认领，轮末 roundsum 出队消费）</summary>
+        private static readonly Dictionary<string, Queue<QqPendingSource>> _sourceQueues = new Dictionary<string, Queue<QqPendingSource>>();
+
+        /// <summary>续接锚点——猫 Key → 末次处理块的内容指纹（A111；块序变更后按指纹重定位游标，不靠裸块数）</summary>
+        private static readonly Dictionary<string, string> _anchors = new Dictionary<string, string>();
 
         /// <summary>本轮即时转发计数——猫 Key → 已即时转发数（2+2 预算：≤2 即时，其余入轮末最终回复池）</summary>
         private static readonly Dictionary<string, int> _immediateCounts = new Dictionary<string, int>();
@@ -102,11 +105,10 @@ namespace CatHome4.QQ
                 _statePath = path;
             }
         }
-        /// <summary>来源续约态——猫 Key → true（工具主动 done 轮末来源保留：回执轮 / 唤醒轮才是回复轮；接力载入的残留来源同列）。保留期内兜底清理不生效。</summary>
-        private static readonly Dictionary<string, bool> _renewed = new Dictionary<string, bool>();
         /// <summary>
         /// 转发态落盘——独立文件（A33：挂载功能自持，不介入核心基座与真实会话）。
-        /// 载荷：每猫 {游标、残留来源、轮状态（即时计数 / 最终回复池 / 轮内预算）} + 每连接 msg_seq 水位（不续号则重启后首条被官方去重拒）。
+        /// 载荷：每猫 {游标、续接锚点指纹、待认领来源队列（来源 + 轮起点锚 + 认领态）、轮状态（即时计数 / 最终回复池 / 轮内预算）}
+        /// + 每连接 msg_seq 水位（不续号则重启后首条被官方去重拒）。
         /// 时机：变更即落盘（来源入队 / 游标推进 / 轮结束 / 残留清理）——T4 收尾不调 QQ Stop，退出前 flush 不可依赖。
         /// </summary>
         public static void SaveForwardState()
@@ -144,13 +146,10 @@ namespace CatHome4.QQ
                     {
                         calls = 0;
                     }
-                    QqSource src;
-                    string srcJson = "null";
-                    if (PeekSource(key, out src) && src != null)
+                    string anchor = "";
+                    if (_anchors.TryGetValue(key, out anchor))
                     {
-                        srcJson = "{\"type\":" + JsonUtil.Scalar(src.Type) + ",\"targetId\":" + JsonUtil.Scalar(src.TargetId)
-                            + ",\"msgId\":" + JsonUtil.Scalar(src.MsgId) + ",\"displayName\":" + JsonUtil.Scalar(src.DisplayName)
-                            + ",\"role\":" + JsonUtil.Scalar(src.Role) + "}";
+                        // 命中即用（缺失保持空串——续接回落位置夹取）
                     }
                     System.Text.StringBuilder acc;
                     string accText = "";
@@ -158,19 +157,16 @@ namespace CatHome4.QQ
                     {
                         accText = acc.ToString();
                     }
-                    int round;
-                    if (!_rounds.TryGetValue(key, out round))
-                    {
-                        round = 0;
-                    }
                     if (!first)
                     {
                         sb.Append(",");
                     }
                     first = false;
-                    sb.Append(JsonUtil.Scalar(key) + ":{\"cursor\":" + kv.Value.ToString() + ",\"imm\":" + imm.ToString()
-                        + ",\"calls\":" + calls.ToString() + ",\"acc\":" + JsonUtil.Scalar(accText) + ",\"renew\":"
-                        + (_renewed.ContainsKey(key) ? "true" : "false") + ",\"round\":" + round.ToString() + ",\"src\":" + srcJson + "}");
+                    sb.Append(JsonUtil.Scalar(key) + ":{\"cursor\":" + kv.Value.ToString()
+                        + ",\"anchor\":" + JsonUtil.Scalar(anchor)
+                        + ",\"imm\":" + imm.ToString()
+                        + ",\"calls\":" + calls.ToString() + ",\"acc\":" + JsonUtil.Scalar(accText)
+                        + ",\"queue\":" + BuildQueueJson(key) + "}");
                 }
                 sb.Append("}}");
                 File.WriteAllText(_statePath, sb.ToString(), Encoding.UTF8);
@@ -179,6 +175,34 @@ namespace CatHome4.QQ
             {
                 LogStore.Add("QQBot", 2, "转发态落盘失败: " + e.Message, "QQBOT");
             }
+        }
+        /// <summary>待认领来源队列 → JSON 数组（落盘用；逐项 origin / claimed / src）。</summary>
+        /// <param name="catKey">猫标识</param>
+        /// <returns>JSON 数组文本（空队列 []）</returns>
+        private static string BuildQueueJson(string catKey)
+        {
+            Queue<QqPendingSource> q;
+            StringBuilder sb = new StringBuilder();
+            sb.Append("[");
+            if (_sourceQueues.TryGetValue(catKey, out q))
+            {
+                QqPendingSource[] all = q.ToArray();
+                for (int i = 0; i < all.Length; i = i + 1)
+                {
+                    if (i > 0)
+                    {
+                        sb.Append(",");
+                    }
+                    QqSource s = all[i].Source;
+                    sb.Append("{\"origin\":" + JsonUtil.Scalar(all[i].Origin)
+                        + ",\"claimed\":" + (all[i].Claimed ? "true" : "false")
+                        + ",\"src\":{\"type\":" + JsonUtil.Scalar(s.Type) + ",\"targetId\":" + JsonUtil.Scalar(s.TargetId)
+                        + ",\"msgId\":" + JsonUtil.Scalar(s.MsgId) + ",\"displayName\":" + JsonUtil.Scalar(s.DisplayName)
+                        + ",\"role\":" + JsonUtil.Scalar(s.Role) + "}}");
+                }
+            }
+            sb.Append("]");
+            return sb.ToString();
         }
         /// <summary>
         /// 读 JSON 字符串属性——缺失/类型不符返回空串（转发态解析用）。
@@ -196,13 +220,62 @@ namespace CatHome4.QQ
             return "";
         }
         /// <summary>
+        /// 待认领来源队列恢复——新格式 queue 数组优先（含 origin / claimed）；旧快照（src / renew 单来源）回落兼容。
+        /// 接力载入的来源：轮中途重启时认领态随盘恢复（回执轮 / 唤醒轮消费）；旧快照无锚 → 载入即认领（保守：窗口直接开）。
+        /// </summary>
+        /// <param name="catKey">猫标识</param>
+        /// <param name="c">该猫的状态对象</param>
+        private static void RestoreQueue(string catKey, JsonElement c)
+        {
+            if (c.ValueKind != JsonValueKind.Object)
+            {
+                return;
+            }
+            JsonElement queue;
+            if (c.TryGetProperty("queue", out queue) && queue.ValueKind == JsonValueKind.Array)
+            {
+                for (int i = 0; i < queue.GetArrayLength(); i = i + 1)
+                {
+                    JsonElement e = queue[i];
+                    JsonElement src;
+                    if (e.ValueKind != JsonValueKind.Object || !e.TryGetProperty("src", out src) || src.ValueKind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+                    QqSource s = new QqSource(ReadJsonStr(src, "type"), ReadJsonStr(src, "targetId"), ReadJsonStr(src, "msgId"), ReadJsonStr(src, "displayName"), ReadJsonStr(src, "role"));
+                    if (s.Type.Length == 0 || s.TargetId.Length == 0)
+                    {
+                        continue;
+                    }
+                    EnqueueSource(catKey, s, ReadJsonStr(e, "origin"));
+                    JsonElement claimed;
+                    if (e.TryGetProperty("claimed", out claimed) && claimed.ValueKind == JsonValueKind.True)
+                    {
+                        ClaimSource(catKey);
+                    }
+                }
+                return;
+            }
+            // 旧快照回落——单来源（src）+ 续约态（renew）：载入即认领（窗口直接开）
+            JsonElement legacy;
+            if (c.TryGetProperty("src", out legacy) && legacy.ValueKind == JsonValueKind.Object)
+            {
+                QqSource s = new QqSource(ReadJsonStr(legacy, "type"), ReadJsonStr(legacy, "targetId"), ReadJsonStr(legacy, "msgId"), ReadJsonStr(legacy, "displayName"), ReadJsonStr(legacy, "role"));
+                if (s.Type.Length > 0 && s.TargetId.Length > 0)
+                {
+                    EnqueueSource(catKey, s, "");
+                    ClaimSource(catKey);
+                }
+            }
+        }
+        /// <summary>
         /// 转发态加载与续接——启动时调用（此时前文/视图已恢复，避免读到半成品块数）。
-        /// 续接判据（防重放，A111）：优先按锚点内容哈希定位（命中 = 精确续接——块数增长但前缀一致同样命中）；
-        /// 锚点未命中 → 保守前看（游标 = 当前块数，不追发历史）；锚点缺失（旧快照）→ 回落块数比对（块数 == 游标 → 直接续接）。
-        /// 残留来源恢复入队——重启后回执轮的回复据此转发回 QQ。
+        /// 续接判据（A111）：优先按锚点内容指纹定位（命中 = 精确续接——块数增长但前缀一致同样命中）；
+        /// 锚点未命中 / 缺失 → 位置夹取（越界 = 旧快照 / 视图收缩 → 保守前看，不追发历史）。
+        /// 残留来源恢复入队（含轮起点锚与认领态）——重启后回执轮的回复据此转发回 QQ。
         /// </summary>
         /// <param name="targets">当前绑定目标集合</param>
-        private static void LoadForwardState(List<QqTarget> targets)
+        internal static void LoadForwardState(List<QqTarget> targets)
         {
             if (_statePath.Length == 0 || !File.Exists(_statePath))
             {
@@ -270,34 +343,32 @@ namespace CatHome4.QQ
                             cursor = numEl.GetInt32();
                         }
                         QqViewItem[] items = tg.GetViewItems != null ? tg.GetViewItems() : new QqViewItem[0];
-                        // v2 续接判据（防重放）：持久区只增 ⇒ 位置语义天然稳定——夹取到 [0, 块数] 即续接；
-                        // 越界（旧快照 / 块数回退）→ 保守前看（不追发历史，/last 兜底）；已消费轮次随游标同批复位
-                        int resolved = ClampCursor(cursor, items.Length);
-                        string how = (resolved == cursor) ? "位置续接" : "保守前看（越界夹取）";
-                        _cursors[p.Name] = resolved;
-                        JsonElement roundEl;
-                        int consumedRound = 0;
-                        if (c.ValueKind == JsonValueKind.Object && c.TryGetProperty("round", out roundEl) && roundEl.ValueKind == JsonValueKind.Number)
+                        // 续接判据（A111）：锚点内容指纹命中 → 精确续接（命中位置 + 1，覆盖「块数增长但前缀一致」）；
+                        // 未命中 / 无锚 → 位置夹取（越界 = 旧快照 / 视图收缩 → 保守前看，不追发历史）
+                        string anchor = ReadJsonStr(c, "anchor");
+                        int resolved = -1;
+                        string how = "";
+                        if (anchor.Length > 0 && tg.GetBlockFingerprint != null)
                         {
-                            consumedRound = roundEl.GetInt32();
-                        }
-                        _rounds[p.Name] = consumedRound;
-                        JsonElement src;
-                        if (c.ValueKind == JsonValueKind.Object && c.TryGetProperty("src", out src) && src.ValueKind == JsonValueKind.Object)
-                        {
-                            QqSource s = new QqSource(ReadJsonStr(src, "type"), ReadJsonStr(src, "targetId"), ReadJsonStr(src, "msgId"), ReadJsonStr(src, "displayName"), ReadJsonStr(src, "role"));
-                            if (s.Type.Length > 0 && s.TargetId.Length > 0)
+                            for (int k = items.Length - 1; k >= 0; k = k - 1)
                             {
-                                EnqueueSource(p.Name, s);
-                                // 接力来源 → 续约态（保留期内免兜底清理；回执轮 / 唤醒轮消费后解除）
-                                _renewed[p.Name] = true;
+                                if (tg.GetBlockFingerprint(k) == anchor)
+                                {
+                                    resolved = k + 1;
+                                    how = "锚点续接（指纹命中）";
+                                    break;
+                                }
                             }
                         }
-                        JsonElement renewEl;
-                        if (c.ValueKind == JsonValueKind.Object && c.TryGetProperty("renew", out renewEl) && renewEl.ValueKind == JsonValueKind.True)
+                        if (resolved < 0)
                         {
-                            _renewed[p.Name] = true;
+                            resolved = ClampCursor(cursor, items.Length);
+                            how = (resolved == cursor) ? "位置续接" : "保守前看（越界夹取）";
                         }
+                        _cursors[p.Name] = resolved;
+                        // 残留来源恢复——队列（含轮起点锚 / 认领态）；旧快照回落单来源
+                        _anchors[p.Name] = anchor;
+                        RestoreQueue(p.Name, c);
                         int imm = 0;
                         if (c.ValueKind == JsonValueKind.Object && c.TryGetProperty("imm", out numEl) && numEl.ValueKind == JsonValueKind.Number)
                         {
@@ -507,8 +578,21 @@ namespace CatHome4.QQ
             }
             // 注入唯一绑定猫——消息头区分渠道+来源+身份（design-ch4-user-state：私聊=当前用户 / 群@ 昵称+角色+本人或非用户标记）
             // 🔴 三字典单线程化（R6-P1-01）——WS 线程只入队事件，EnqueueSource/ResetRound 由主线程 Tick 事件泵统一消费
-            tg.Inject("[来自QQ]" + BuildHeader(source) + " " + text + attachText);
-            _eventQueue.Enqueue(new QqServiceEvent { Kind = "source", CatKey = tg.Key, Source = source });
+            if (tg.Inject == null)
+            {
+                LogStore.Add("QQBot", 2, "注入面未接线——消息未受理 | " + tg.Key, "QQBOT");
+                SendToSource(qqBotId, source, "（消息未受理——猫注入面未就绪）");
+                return;
+            }
+            bool accepted = tg.Inject("[来自QQ]" + BuildHeader(source) + " " + text + attachText, QqInjectionOrigin);
+            if (!accepted)
+            {
+                // 注入未受理（停机态 / 空内容）——出声 + 回执；不入队来源（无注入即无回复可路由）
+                LogStore.Add("QQBot", 2, "注入未受理（停机态 / 空内容）——消息未进会话 | " + tg.Key, "QQBOT");
+                SendToSource(qqBotId, source, "（消息未受理——宿主正在收尾 / 停机，请稍后重发）");
+                return;
+            }
+            _eventQueue.Enqueue(new QqServiceEvent { Kind = "source", CatKey = tg.Key, Source = source, Origin = QqInjectionOrigin });
             _eventQueue.Enqueue(new QqServiceEvent { Kind = "reset", CatKey = tg.Key });
         }
         /// <summary>
@@ -1127,52 +1211,78 @@ namespace CatHome4.QQ
         }
 
         /// <summary>
-        /// 注入来源入队——猫 Key → QqSource FIFO（R2.3.5 输出转发消费）。
+        /// 注入来源入队——猫 Key → 待认领来源 FIFO（R2.3.5 输出转发消费）。
         /// </summary>
         /// <param name="catKey">猫标识（majordomo / cat id）</param>
         /// <param name="source">来源</param>
-        private static void EnqueueSource(string catKey, QqSource source)
+        /// <param name="origin">轮起点锚（注入时给；空=接力载入无锚——载入即认领）</param>
+        internal static void EnqueueSource(string catKey, QqSource source, string origin)
         {
-            Queue<QqSource> q;
+            Queue<QqPendingSource> q;
             if (!_sourceQueues.TryGetValue(catKey, out q))
             {
-                q = new Queue<QqSource>();
+                q = new Queue<QqPendingSource>();
                 _sourceQueues[catKey] = q;
             }
-            q.Enqueue(source);
+            QqPendingSource p = new QqPendingSource();
+            p.Source = source;
+            p.Origin = origin == null ? "" : origin;
+            p.Claimed = false;
+            q.Enqueue(p);
         }
         /// <summary>
-        /// 出队来源——R2.3.5 输出转发：回复目标 = 触发来源（FIFO 对齐注入顺序）。
-        /// </summary>
-        /// <param name="catKey">猫标识（majordomo / cat id）</param>
-        /// <param name="source">出队来源</param>
-        /// <returns>有来源 true</returns>
-        internal static bool TryDequeueSource(string catKey, out QqSource source)
-        {
-            Queue<QqSource> q;
-            if (_sourceQueues.TryGetValue(catKey, out q) && q.Count > 0)
-            {
-                source = q.Dequeue();
-                return true;
-            }
-            source = null;
-            return false;
-        }
-        /// <summary>
-        /// 队首来源读取——不消费（整轮转发同一来源；roundsum 轮结束才出队）。
+        /// 认领来源——本猫 QQ 注入的 user 块（轮起点）到达时调用：认领队列中第一个未认领项。
+        /// 认领面恒为「已认领前缀之后第一个」——与注入 FIFO 序一致（同轮多消息逐个认领）。
         /// </summary>
         /// <param name="catKey">猫标识</param>
-        /// <param name="source">队首来源</param>
-        /// <returns>有来源 true</returns>
-        private static bool PeekSource(string catKey, out QqSource source)
+        private static void ClaimSource(string catKey)
         {
-            Queue<QqSource> q;
-            if (_sourceQueues.TryGetValue(catKey, out q) && q.Count > 0)
+            Queue<QqPendingSource> q;
+            if (!_sourceQueues.TryGetValue(catKey, out q) || q.Count == 0)
             {
-                source = q.Peek();
+                return;
+            }
+            QqPendingSource[] all = q.ToArray();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (!all[i].Claimed)
+                {
+                    all[i].Claimed = true;
+                    return;
+                }
+            }
+        }
+        /// <summary>转发窗开启判定——队首已认领（本轮由 QQ 注入消息开启，块可转发）。</summary>
+        /// <param name="catKey">猫标识</param>
+        /// <returns>窗口开启 true</returns>
+        private static bool WindowOpen(string catKey)
+        {
+            QqPendingSource head = PeekClaimedSource(catKey);
+            return head != null;
+        }
+        /// <summary>队首已认领来源读取——不消费（整轮转发同一来源；roundsum / 隐式轮边界才出队）。</summary>
+        /// <param name="catKey">猫标识</param>
+        /// <returns>已认领队首来源（未开启转发窗返回 null）</returns>
+        private static QqPendingSource PeekClaimedSource(string catKey)
+        {
+            Queue<QqPendingSource> q;
+            if (_sourceQueues.TryGetValue(catKey, out q) && q.Count > 0 && q.Peek().Claimed)
+            {
+                return q.Peek();
+            }
+            return null;
+        }
+        /// <summary>出队一个已认领来源——轮末消费（done=stream / 隐式轮边界）。</summary>
+        /// <param name="catKey">猫标识</param>
+        /// <returns>消费到 true</returns>
+        private static bool TryDequeueClaimed(string catKey)
+        {
+            Queue<QqPendingSource> q;
+            if (_sourceQueues.TryGetValue(catKey, out q) && q.Count > 0 && q.Peek().Claimed)
+            {
+                q.Dequeue();
                 return true;
             }
-            source = null;
             return false;
         }
         /// <summary>
@@ -1182,7 +1292,7 @@ namespace CatHome4.QQ
         /// <returns>队列非空 true</returns>
         private static bool HasPendingSource(string catKey)
         {
-            Queue<QqSource> q;
+            Queue<QqPendingSource> q;
             return _sourceQueues.TryGetValue(catKey, out q) && q.Count > 0;
         }                /// <summary>重置交互轮状态——新用户消息注入时调用（即时计数归零 + 最终回复池清空 + 轮内预算归零）。</summary>
 /// <param name="catKey">猫标识</param>
@@ -1193,38 +1303,40 @@ namespace CatHome4.QQ
             _roundCalls.Remove(catKey);
         }
         /// <summary>
-        /// 清空交互轮状态——异常中止轮残留来源兜底（会话 Idle 且队列残留 = 上轮无 roundsum 结束）：来源丢弃 + 计数/累计清零。
+        /// 清空交互轮状态——残留来源兜底（会话 Idle 且队列残留 = 该消息未开启任何轮）：逐条出声 + 回执告知 + 丢弃 + 计数/累计清零。
+        /// 静默丢弃不可接受（A207）——用户侧必须知道「这条消息没产生回复」。
         /// </summary>
-        /// <param name="catKey">猫标识</param>
-        private static void ClearRoundState(string catKey)
+        /// <param name="tg">绑定目标（回执经 QqBotId 定位连接）</param>
+        private static void ClearRoundState(QqTarget tg)
         {
-            Queue<QqSource> q;
-            if (_sourceQueues.TryGetValue(catKey, out q))
+            Queue<QqPendingSource> q;
+            if (_sourceQueues.TryGetValue(tg.Key, out q))
             {
                 while (q.Count > 0)
                 {
-                    q.Dequeue();
+                    QqPendingSource p = q.Dequeue();
+                    LogStore.Add("QQBot", 2, "残留来源清理 | " + tg.Key + "（" + (p.Claimed ? "轮已开启未收口" : "轮未开启") + "——来源丢弃） | " + p.Source.ToString(), "QQBOT");
+                    SendToSource(tg.QqBotId, p.Source, "（上一条消息未产生回复——该轮未正常收尾，请重发）");
                 }
             }
-            ResetRound(catKey);
-            LogStore.Add("QQBot", 2, "残留来源清理 | " + catKey + "（异常中止轮兜底）", "QQBOT");
+            ResetRound(tg.Key);
             // A33——残留清理即落盘（防重启后恢复已清理来源）
             SaveForwardState();
         }
         /// <summary>
         /// 即时转发——2+2 预算（A58）：短块（含前缀 ≤ 单段上限）且计数 &lt; 2 → 立即转发；
         /// 超长块与超额块入最终回复池（超长块必走轮末切分——即时通道的整条截断会丢内容）。
-        /// 无 qqbot 来源（前端对话）→ 不转发（被动机制——只有用户主动输入后才启用回复）。
+        /// 转发窗未开（前端对话 / 来源未认领）→ 不转发（被动机制——只有用户主动输入开启的轮才转发）。
         /// </summary>
         /// <param name="tg">绑定目标</param>
         /// <param name="content">text 块内容</param>
         private static void ForwardText(QqTarget tg, string content)
         {
-            QqSource source;
-            if (!PeekSource(tg.Key, out source))
+            QqPendingSource head = PeekClaimedSource(tg.Key);
+            if (head == null)
             {
-                // A34——无来源不转发但必留痕（原静默 return：重启轮/前端轮的漏转发无从诊断）
-                LogStore.Add("QQBot", 1, "转发跳过（无来源） | " + tg.Key + " ← " + Truncate(content, 30), "QQBOT");
+                // A34——不转发但必留痕（原静默 return：重启轮/前端轮的漏转发无从诊断）
+                LogStore.Add("QQBot", 1, "转发跳过（窗口未开） | " + tg.Key + " ← " + Truncate(content, 30), "QQBOT");
                 return;
             }
             int n;
@@ -1238,7 +1350,7 @@ namespace CatHome4.QQ
             {
                 // 短块——即时转发（单段不切分；占轮内预算）
                 _immediateCounts[tg.Key] = n + 1;
-                SendRouted(tg, source, content, 1, tg.Key);
+                SendRouted(tg, head.Source, content, 1, tg.Key);
                 return;
             }
             System.Text.StringBuilder sb;
@@ -1254,51 +1366,46 @@ namespace CatHome4.QQ
             sb.Append(content);
         }
         /// <summary>
-        /// 轮结束——roundsum 块哨兵：最终回复池非空 → 按 MD 结构切分（最多 2 段——2+2 预算的第二个 2）逐段发送；
-        /// 段数超限丢弃尾部 + L2 留痕；来源按 done 语义处置（tool=续约保留 / stream=出队消费）；重置轮状态（即时计数 / 池 / 预算）。
+        /// 轮结束——roundsum 块哨兵 / 隐式轮边界共用：最终回复池非空 → 按 MD 结构切分（最多 2 段——2+2 预算的第二个 2）逐段发送；
+        /// 段数超限丢弃尾部 + L2 留痕；来源按 done 语义处置（tool=保留待下一轮 / stream=出队消费）；重置轮状态（即时计数 / 池 / 预算）。
         /// </summary>
         /// <param name="tg">绑定目标</param>
-        /// <param name="done">本轮结束语义——tool=工具主动 done（来源续约）/ stream=流式自然收尾（来源出队）</param>
+        /// <param name="done">本轮结束语义——tool=工具主动 done（来源保留）/ stream=流式自然收尾（来源出队）</param>
         private static void FinishRound(QqTarget tg, string done)
         {
-            QqSource source;
-            bool hasSource = PeekSource(tg.Key, out source);
-            if (hasSource && source != null)
+            QqPendingSource head = PeekClaimedSource(tg.Key);
+            if (head != null)
             {
                 System.Text.StringBuilder sb;
                 if (_accumulated.TryGetValue(tg.Key, out sb) && sb.Length > 0)
                 {
                     // 段数上限 = 轮内被动预算（A58 甲——用尽剩余预算）：无即时转发时可发满 4 段，
                     // 即时转发占用的次数自然把最终回复收敛为 2 段（即 2+2）；绝不超过官方 4 次上限。
-                    SendRouted(tg, source, sb.ToString(), MaxRoundCalls, tg.Key);
+                    SendRouted(tg, head.Source, sb.ToString(), MaxRoundCalls, tg.Key);
                 }
             }
-            // 来源处置——done=tool（工具主动 done：本轮登记了等待/收尾，真正的回复在下一轮注入）→ 来源续约保留；
-            // done=stream（流式自然收尾）→ 出队消费（本轮即回复轮）
+            // 来源处置——done=tool（工具主动 done：本轮登记了等待/收尾，真正的回复在下一轮注入）→ 保留（认领态不退）；
+            // done=stream（流式自然收尾 / 隐式轮边界）→ 出队消费（本轮即回复轮）
             if (done == "tool")
             {
-                if (hasSource)
+                if (head != null)
                 {
-                    _renewed[tg.Key] = true;
-                    LogStore.Add("QQBot", 1, "来源续约（工具主动 done） | " + tg.Key, "QQBOT");
+                    LogStore.Add("QQBot", 1, "来源保留（工具主动 done——等下一轮消费） | " + tg.Key, "QQBOT");
                 }
             }
             else
             {
-                QqSource dropped;
-                if (TryDequeueSource(tg.Key, out dropped))
+                while (TryDequeueClaimed(tg.Key))
                 {
-                    _renewed.Remove(tg.Key);
+                    // 同轮多消息：已认领来源全部消费（本轮即回复轮）
                 }
             }
             ResetRound(tg.Key);
             // A33——来源处置即落盘（防重启后恢复已消费来源 → 错配转发）
             SaveForwardState();
         }
-        /// <summary>游标——猫 Key → 已处理消息数（R2.3.5 只转发启用后新块）</summary>
+        /// <summary>游标——猫 Key → 已处理消息数（只转发启用后新块）</summary>
         private static readonly Dictionary<string, int> _cursors = new Dictionary<string, int>();
-        /// <summary>已消费轮次——猫 Key → 最近一次完成转发的轮号（无键面后按轮次定位：重启续接跳过已消费轮，防重放）</summary>
-        private static readonly Dictionary<string, int> _rounds = new Dictionary<string, int>();
         /// <summary>
         /// 事件泵——WS 线程入队事件统一在主线程消费（R6-P1-01 单线程化）。
         /// source 事件 → 注入来源入队；reset 事件 → 轮状态重置（即时计数归零 + 最终回复池清空 + 轮内预算归零）。
@@ -1311,9 +1418,7 @@ namespace CatHome4.QQ
             {
                 if (ev.Kind == "source")
                 {
-                    EnqueueSource(ev.CatKey, ev.Source);
-                    // 新 QQ 输入开启新交互——续约态终结（保留来源仍在队首，由本轮 roundsum 消费）
-                    _renewed.Remove(ev.CatKey);
+                    EnqueueSource(ev.CatKey, ev.Source, ev.Origin);
                     changed = true;
                 }
                 else if (ev.Kind == "reset")
@@ -1328,7 +1433,14 @@ namespace CatHome4.QQ
                 SaveForwardState();
             }
         }
-        /// <summary>输出转发轮询——主线程每帧调用（宿主主循环接入）。视图块游标增量：text 块 → 即时转发 ≤2（超长块入池）/ 其余入池；roundsum 块 → 轮结束哨兵（最终回复池按 MD 结构切分 ≤2 段 + 出队来源 + 重置）。无 qqbot 来源（前端对话）不转发——被动机制。v2——无键面：位置只增故续接免校正，按块 `Round` 跳过已消费轮次（防重放），游标推进即落盘。</summary>
+        /// <summary>
+        /// 输出转发轮询——主线程每帧调用（宿主主循环接入）。
+        /// 转发窗模型：本猫 QQ 注入的 user 块（Origin 非空）= 轮起点——到达即认领来源、开窗；
+        /// 窗内 text 块 → 即时转发 ≤2（超长块入池）；roundsum → 轮结束哨兵（发池 + 来源按 done 处置 + 重置）；
+        /// 窗未开（前端对话 / 来源未认领）→ 不转发（被动机制）。
+        /// 隐式轮边界：轮起点先于上一轮收口到达（忙时插话跳过 CloseRound ⇒ 上一轮无 roundsum）→ 先按自然收尾收口。
+        /// 续接：锚点指纹优先；越界夹取回写 + 出声（游标不随视图收缩校正会永久失配——A207 根因）。
+        /// </summary>
         public static void Tick()
         {
             if (!_started)
@@ -1342,9 +1454,22 @@ namespace CatHome4.QQ
             {
                 targets = _collector.CollectAll();
             }
+            TickTargets(targets);
+        }
+
+        /// <summary>
+        /// 转发轮询内核——按目标集合逐猫推进（Tick 的宿主门面之外的全部逻辑；单测可直接喂目标集合）。
+        /// </summary>
+        /// <param name="targets">绑定目标集合</param>
+        internal static void TickTargets(List<QqTarget> targets)
+        {
             for (int i = 0; i < targets.Count; i = i + 1)
             {
                 QqTarget tg = targets[i];
+                if (tg == null || tg.GetViewItems == null)
+                {
+                    continue;
+                }
                 QqViewItem[] items = tg.GetViewItems();
                 int count = items.Length;
                 // timeback 活跃期——不计入转发（design-ch4-timeback §11.1）：游标跟随但不消费（取证过程不外发、
@@ -1359,44 +1484,51 @@ namespace CatHome4.QQ
                     continue;
                 }
                 int cursor = GetCursor(tg.Key);
-                // v2——位置夹取（持久区只增 ⇒ 位置语义天然稳定；越界 = 旧快照 / 块数回退 → 保守前看，不追发历史）
+                // 位置夹取（持久区只增 ⇒ 位置语义天然稳定；越界 = 旧快照 / 视图收缩 → 保守前看，不追发历史）
+                // 🔴 越界必须回写 + 出声——只改局部变量会让游标永久失配、扫描面整体停摆（A207 根因）
                 if (count < cursor)
                 {
+                    LogStore.Add("QQBot", 2, "游标越界夹取 | " + tg.Key + " | " + cursor.ToString() + " → " + count.ToString() + "（视图收缩 / 旧快照——保守前看，已回写）", "QQBOT");
                     cursor = count;
+                    _cursors[tg.Key] = cursor;
+                    SaveForwardState();
                 }
                 if (count <= cursor)
                 {
-                    // 无新块——异常中止轮残留来源兜底清理（会话 Idle 且队列残留 = 上轮无 roundsum 结束）
-                    // 续约态（工具主动 done 保留的来源 / 接力载入的来源）免疫——留给真正的回复轮消费
+                    // 无新块——残留来源兜底清理（会话 Idle 且队列残留 = 该消息未开启任何轮）
+                    // 已认领来源（工具主动 done 保留 / 接力载入）免疫——留给真正的回复轮消费
                     if (HasPendingSource(tg.Key) && tg.IsIdle())
                     {
-                        if (_renewed.ContainsKey(tg.Key))
+                        if (PeekClaimedSource(tg.Key) != null)
                         {
-                            // 保留期内不清——由回执轮 / 唤醒轮经 FinishRound 消费后解除
+                            // 轮已开启未收口——保留：由回执轮 / 唤醒轮经 FinishRound 消费
                         }
                         else
                         {
-                            ClearRoundState(tg.Key);
+                            ClearRoundState(tg);
                         }
                     }
                     continue;
                 }
-                int lastRound = GetLastRound(tg.Key);
                 for (int j = cursor; j < count; j = j + 1)
                 {
                     QqViewItem it = items[j];
-                    // 按轮次定位——已消费轮次的块不重复转发（重启续接 / 回放场景防重放）
-                    if (lastRound > 0 && it.Round > 0 && it.Round <= lastRound)
+                    if (it.RenderType == "user" && it.Origin != null && it.Origin.Length > 0)
                     {
+                        // 轮起点——本猫 QQ 注入消息开启本轮：窗已开（上一轮无 roundsum 未收口）→ 先按自然收尾收口
+                        if (WindowOpen(tg.Key))
+                        {
+                            FinishRound(tg, "stream");
+                        }
+                        ClaimSource(tg.Key);
                         continue;
                     }
                     if (it.RenderType == "roundsum")
                     {
-                        // 轮结束哨兵——最终回复池切分发送（≤2 段）+ 来源按 done 处置 + 重置轮状态
-                        FinishRound(tg, it.Done);
-                        if (it.Round > 0)
+                        // 轮结束哨兵——最终回复池切分发送（≤2 段）+ 来源按 done 处置 + 重置轮状态（窗未开则不理）
+                        if (WindowOpen(tg.Key))
                         {
-                            _rounds[tg.Key] = it.Round;
+                            FinishRound(tg, it.Done);
                         }
                     }
                     else if ((it.RenderType == "text" || it.RenderType == "gap_text") && it.Content.Length > 0)
@@ -1406,8 +1538,26 @@ namespace CatHome4.QQ
                     }
                 }
                 _cursors[tg.Key] = count;
+                // A111——末次处理块的内容指纹（块序变更后续接锚点）
+                RecordAnchor(tg, count - 1);
                 // A33——游标推进即落盘（T4 收尾不调 QQ Stop，退出前 flush 不可依赖）
                 SaveForwardState();
+            }
+        }
+
+        /// <summary>记录续接锚点——末次处理块的内容指纹（A111：块序变更后按指纹重定位游标，不靠裸块数）。</summary>
+        /// <param name="tg">绑定目标</param>
+        /// <param name="index">末次处理块下标（&lt; 0 不记）</param>
+        private static void RecordAnchor(QqTarget tg, int index)
+        {
+            if (index < 0 || tg.GetBlockFingerprint == null)
+            {
+                return;
+            }
+            string fp = tg.GetBlockFingerprint(index);
+            if (fp != null && fp.Length > 0)
+            {
+                _anchors[tg.Key] = fp;
             }
         }
         /// <summary>读取游标——缺省 0</summary>
@@ -1421,15 +1571,71 @@ namespace CatHome4.QQ
             return 0;
         }
 
-        /// <summary>已消费轮次——缺省 0（0=尚未消费任何轮；按轮次定位的续接判据）</summary>
-        private static int GetLastRound(string catKey)
+        /// <summary>
+        /// 启用转发态落盘/读回——单测用（生产由入口壳 SetStatePath + Start 设置；空路径=禁用）。
+        /// </summary>
+        /// <param name="path">状态文件路径（空=禁用）</param>
+        internal static void EnableStateForTest(string path)
         {
-            int r;
-            if (_rounds.TryGetValue(catKey, out r))
+            _statePath = path == null ? "" : path;
+            _stateLoaded = _statePath.Length > 0;
+        }
+
+        /// <summary>
+        /// 清空转发态——单测隔离用（生产不调用：状态只由 Tick / LoadForwardState 驱动）。
+        /// </summary>
+        internal static void ResetStateForTest()
+        {
+            _sourceQueues.Clear();
+            _cursors.Clear();
+            _anchors.Clear();
+            _immediateCounts.Clear();
+            _accumulated.Clear();
+            _roundCalls.Clear();
+            while (_eventQueue.TryDequeue(out _))
             {
-                return r;
+                // 排空事件队列（异步来源事件不进测试）
             }
-            return 0;
+        }
+
+        /// <summary>
+        /// 转发态摘要——诊断与单测观测面（游标 / 锚点 / 转发窗 / 队列与认领数 / 轮内计数）。
+        /// </summary>
+        /// <param name="catKey">猫标识</param>
+        /// <returns>紧凑状态串</returns>
+        internal static string DescribeState(string catKey)
+        {
+            int cursor = GetCursor(catKey);
+            int anchored = _anchors.ContainsKey(catKey) ? 1 : 0;
+            int open = WindowOpen(catKey) ? 1 : 0;
+            int pending = 0;
+            int claimed = 0;
+            Queue<QqPendingSource> q;
+            if (_sourceQueues.TryGetValue(catKey, out q))
+            {
+                pending = q.Count;
+                QqPendingSource[] all = q.ToArray();
+                for (int i = 0; i < all.Length; i = i + 1)
+                {
+                    if (all[i].Claimed)
+                    {
+                        claimed = claimed + 1;
+                    }
+                }
+            }
+            int imm;
+            if (!_immediateCounts.TryGetValue(catKey, out imm))
+            {
+                imm = 0;
+            }
+            int calls;
+            if (!_roundCalls.TryGetValue(catKey, out calls))
+            {
+                calls = 0;
+            }
+            return "cursor=" + cursor.ToString() + " anchor=" + anchored.ToString() + " window=" + open.ToString()
+                + " queue=" + pending.ToString() + " claimed=" + claimed.ToString()
+                + " imm=" + imm.ToString() + " calls=" + calls.ToString();
         }
 
         /// <summary>游标夹取——限定在 [0, 块数]（越界安全）</summary>
@@ -1475,6 +1681,9 @@ namespace CatHome4.QQ
             return ok;
         }
 
+        /// <summary>轮起点锚——QQ 注入标记（落 user 块载荷 origin；转发面据此把来源绑定到该消息开启的轮）</summary>
+        private const string QqInjectionOrigin = "qq";
+
         /// <summary>单段字符上限——切分粒度（社区经验 ~2000，留余量）；超长块不入即时通道，必走轮末切分</summary>
         private const int MaxChunkChars = 1800;
 
@@ -1515,6 +1724,9 @@ namespace CatHome4.QQ
 
             /// <summary>来源——Kind=source 时有效</summary>
             public QqSource Source;
+
+            /// <summary>轮起点锚——Kind=source 时有效（QQ 注入的 origin；空=无锚）</summary>
+            public string Origin;
         }
         /// <summary>
         /// 轮内被动调用预算——文本段与文件发送共用官方 4 次上限（A58）；超限拒绝 + L2 留痕（可诊断）。
@@ -1696,6 +1908,22 @@ namespace CatHome4.QQ
                 }
             }
         }
+
+        /// <summary>
+        /// 待认领来源——注入来源 + 轮绑定态（A207 批二：来源与轮绑定）。
+        /// 认领 = 该来源触发的消息在视图层出现轮起点块（QQ 注入的 user 块）——转发窗据此开启。
+        /// </summary>
+        private sealed class QqPendingSource
+        {
+            /// <summary>来源——被动回复目标（type / targetId / msgId / 昵称 / 角色）</summary>
+            public QqSource Source;
+
+            /// <summary>轮起点锚——注入时给的 origin（空=接力载入无锚——载入即认领）</summary>
+            public string Origin;
+
+            /// <summary>认领态——轮起点块已到达（转发窗开启；轮末消费 / done=tool 保留）</summary>
+            public bool Claimed;
+        }
     }
 
     /// <summary>
@@ -1789,11 +2017,14 @@ namespace CatHome4.QQ
         /// <summary>启用标志——false=不注入不转发</summary>
         public bool Enable;
 
-        /// <summary>注入回调——PostUserMessage</summary>
-        public Action<string> Inject;
+        /// <summary>注入回调——PostUserMessage(content, origin)；返回 false=未受理（停机态 / 空内容——调用方必须出声）</summary>
+        public Func<string, string, bool> Inject;
 
-        /// <summary>视图块流读取——游标增量轮询（QQBot 转发数据源：text=转发候选 / roundsum=轮结束哨兵）</summary>
+        /// <summary>视图块流读取——游标增量轮询（QQBot 转发数据源：text=转发候选 / roundsum=轮结束哨兵 / user+origin=轮起点）</summary>
         public Func<QqViewItem[]> GetViewItems;
+
+        /// <summary>块内容指纹读取——按块下标取内容指纹（A111 续接锚点；越界返回空串；null=不做锚点续接）</summary>
+        public Func<int, string> GetBlockFingerprint;
 
         /// <summary>会话空闲判定——异常中止轮残留来源兜底清理（null=永不空闲）</summary>
         public Func<bool> IsIdle;
@@ -1809,21 +2040,21 @@ namespace CatHome4.QQ
     }
 
     /// <summary>
-    /// QQ 转发视图项——视图块窄 DTO（转发面只消费 RenderType + Content；装配侧从 SessionViewStore 转换——解耦 QQ 域与视图层内部结构）。
+    /// QQ 转发视图项——视图块窄 DTO（转发面消费 RenderType + Content + Done + Origin；装配侧从 SessionViewStore 转换——解耦 QQ 域与视图层内部结构）。
     /// </summary>
     public sealed class QqViewItem
     {
-        /// <summary>渲染类型——text=转发候选 / roundsum=轮结束哨兵 / 其他跳过</summary>
+        /// <summary>渲染类型——user=轮起点候选（Origin 非空即 QQ 注入的轮起点） / text=转发候选 / roundsum=轮结束哨兵 / 其他跳过</summary>
         public string RenderType;
 
-        /// <summary>文本内容——text 块内容（已解析 payload.content）；其他类型空串</summary>
+        /// <summary>文本内容——text 块内容（已解析 payload.text）；其他类型空串</summary>
         public string Content;
 
         /// <summary>本轮结束语义——roundsum 块携带（tool=工具主动 done / stream=流式自然收尾）；其他类型空串</summary>
         public string Done;
 
-        /// <summary>所属轮次——视图块 Round（0=轮前 / 独立块；转发面按轮次定位：重启续接跳过已消费轮，防重放）</summary>
-        public int Round;
+        /// <summary>原注入来源标记——user 块携带（非空=QQ 注入的轮起点；其他类型空串）</summary>
+        public string Origin;
     }
 
 }

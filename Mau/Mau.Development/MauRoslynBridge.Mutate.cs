@@ -29,14 +29,14 @@ namespace Mau.Development
             string member = Arg(args, "member");
             if (member.Length == 0)
             {
-                result = "ERR|BAD_ARGS|缺少参数 member";
+                result = "ERR|BAD_ARGS|缺参数 member（必填：path class member）";
                 return false;
             }
             string resolveError;
             List<string> projects = ResolveProjects(path, out resolveError);
             if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|" + resolveError;
+                result = resolveError;
                 return false;
             }
             // 定义所在项目定位——多项目入口（.sln / 目录）下逐项目查找类声明，命中即为 ownerCache
@@ -242,13 +242,14 @@ namespace Mau.Development
             string body = Arg(args, "body");
             if (className.Length == 0 || methodName.Length == 0 || body.Length == 0)
             {
-                result = "ERR|BAD_ARGS|缺少参数 class/method/body";
+                result = "ERR|BAD_ARGS|缺参数 class/method/body（必填：path class method body）";
                 return false;
             }
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string csproj;
+            string entryError;
+            if (!ResolveSingleProject(path, className, out csproj, out entryError))
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path + ProjectPathDiagnostic(path);
+                result = entryError;
                 return false;
             }
             ProjectCache cache = EnsureProject(csproj);
@@ -273,7 +274,7 @@ namespace Mau.Development
                 if (methodFind == 2)
                 {
                     StringBuilder sb = new StringBuilder();
-                    sb.Append("ERR|AMBIGUOUS|方法重载歧义——请用 find_ref 区分签名（当前 patch 锚点=类+方法名，重载需先唯一化）:");
+                    sb.Append("ERR|METHOD_AMBIGUOUS|方法重载歧义——请用 cs-find_ref 区分签名（cs-patch 锚点 = 类 + 方法名，重载需先唯一化）:");
                     for (int i = 0; i < signatures.Count; i = i + 1)
                     {
                         sb.Append(Environment.NewLine + "  " + methodName + signatures[i]);
@@ -345,7 +346,7 @@ namespace Mau.Development
                 if (!ValidateNoNewErrors(cache.Compilation, newCompilation, out newErrors))
                 {
                     StringBuilder sb = new StringBuilder();
-                    sb.Append("ROLLED_BACK|新增编译错误 " + newErrors.Count + " 条——未落盘:");
+                    sb.Append("ROLLED_BACK|COMPILE_ERROR|新增编译错误 " + newErrors.Count + " 条——未落盘:");
                     for (int i = 0; i < newErrors.Count; i = i + 1)
                     {
                         sb.Append(Environment.NewLine + "  " + newErrors[i]);

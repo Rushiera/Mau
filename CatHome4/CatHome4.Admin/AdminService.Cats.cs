@@ -1443,8 +1443,9 @@ namespace CatHome4.Admin
                     DisplayName = "majordomo",
                     QqBotId = _chatBridge.DefaultQqBotId,
                     Enable = _chatBridge.DefaultQqBotEnable,
-                    Inject = delegate (string s) { captured.PostUserMessage(s); },
+                    Inject = delegate (string s, string origin) { return captured.PostUserMessage(s, "user", "", origin); },
                     GetViewItems = delegate () { return ConvertQqViewItems(captured.ViewStore.GetBlocks()); },
+                    GetBlockFingerprint = delegate (int index) { return ComputeBlockFingerprint(captured.ViewStore.GetBlocks(), index); },
                     IsIdle = delegate () { return captured.IsIdle; },
                     IsTimebackActive = delegate () { return captured.TimebackActive; },
                     NewSession = delegate ()
@@ -1467,8 +1468,9 @@ namespace CatHome4.Admin
                         DisplayName = cat.DisplayName,
                         QqBotId = cat.QqBotId,
                         Enable = cat.QqBotEnable,
-                        Inject = delegate (string s) { captured.Session.PostUserMessage(s); },
+                        Inject = delegate (string s, string origin) { return captured.Session.PostUserMessage(s, "user", "", origin); },
                         GetViewItems = delegate () { return ConvertQqViewItems(captured.Session.ViewStore.GetBlocks()); },
+                        GetBlockFingerprint = delegate (int index) { return ComputeBlockFingerprint(captured.Session.ViewStore.GetBlocks(), index); },
                         IsIdle = delegate () { return captured.Session.IsIdle; },
                         IsTimebackActive = delegate () { return captured.Session.TimebackActive; },
                         NewSession = delegate ()
@@ -1633,8 +1635,8 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域只消费 RenderType / Content / Done / Round；text / gap_text 块提取 payload.text，
-        /// Round 供转发面按轮次定位——A165 v2 无键面）。
+        /// 视图块 → QQ 转发项转换——窄 DTO（QQ 域消费 RenderType / Content / Done / Origin）。
+        /// text / gap_text 块提取 payload.text；user 块提取 payload.origin（QQ 注入的轮起点锚——转发面据此绑定来源与轮）。
         /// </summary>
         /// <param name="blocks">视图块数组</param>
         /// <returns>QQ 转发项数组</returns>
@@ -1652,8 +1654,7 @@ namespace CatHome4.Admin
                 item.RenderType = b.RenderType ?? "";
                 item.Content = "";
                 item.Done = "";
-                // A165 v2：无键面——按轮次定位（Round 随块给，重启续接跳过已消费轮）
-                item.Round = b.Round;
+                item.Origin = "";
                 if (item.RenderType == "text" || item.RenderType == "gap_text")
                 {
                     item.Content = ExtractTextContent(b.Payload);
@@ -1662,9 +1663,65 @@ namespace CatHome4.Admin
                 {
                     item.Done = ExtractRoundSumDone(b.Payload);
                 }
+                else if (item.RenderType == "user")
+                {
+                    item.Origin = ExtractOrigin(b.Payload);
+                }
                 items[i] = item;
             }
             return items;
+        }
+
+        /// <summary>
+        /// 提取 user 块的原注入来源标记——payload.origin（空 / 缺失 = 非 QQ 注入；防御式解析失败回落空串）。
+        /// </summary>
+        /// <param name="payloadJson">块载荷 JSON</param>
+        /// <returns>origin 值（空=非 QQ 注入）</returns>
+        private static string ExtractOrigin(string payloadJson)
+        {
+            if (payloadJson == null || payloadJson.Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                using (JsonDocument d = JsonUtil.ParseStrict(payloadJson))
+                {
+                    if (d.RootElement.TryGetProperty("origin", out JsonElement c) && c.ValueKind == JsonValueKind.String)
+                    {
+                        return c.GetString() ?? "";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 2, "载荷 origin 提取失败（回落空）: " + ex.Message, "CHAT");
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// 块内容指纹——按块下标取（A111 续接锚点）：渲染类型 + 前文索引 + 载荷全文经 SHA256 取前 16 位十六进制。
+        /// 判据：与实际产物同源（同一 ViewBlock 载荷）——重建后前缀一致则指纹一致，块序变更后仍可精确定位。
+        /// </summary>
+        /// <param name="blocks">视图块数组</param>
+        /// <param name="index">块下标（越界返回空串）</param>
+        /// <returns>指纹（空=不可作锚）</returns>
+        private static string ComputeBlockFingerprint(ViewBlock[] blocks, int index)
+        {
+            if (blocks == null || index < 0 || index >= blocks.Length)
+            {
+                return "";
+            }
+            ViewBlock b = blocks[index];
+            string raw = (b.RenderType ?? "") + "\u0001" + b.MsgIndex.ToString() + "\u0001" + (b.Payload ?? "");
+            byte[] hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw));
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            for (int i = 0; i < 8; i = i + 1)
+            {
+                sb.Append(hash[i].ToString("x2"));
+            }
+            return sb.ToString();
         }
 
         /// <summary>

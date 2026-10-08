@@ -32,23 +32,24 @@ namespace Mau.Development
             string paramName = Arg(args, "param");
             if (className.Length == 0 || type.Length == 0 || text.Length == 0)
             {
-                result = "ERR|BAD_ARGS|缺少参数 class/type/text";
+                result = "ERR|BAD_ARGS|缺参数 class/type/text（必填：path class type text）";
                 return false;
             }
             if (type != "summary" && type != "param" && type != "returns")
             {
-                result = "ERR|BAD_ARGS|type 必须是 summary/param/returns";
+                result = "ERR|BAD_ARGS|type 非法值: " + type + "（summary|param|returns）";
                 return false;
             }
             if (type == "param" && paramName.Length == 0)
             {
-                result = "ERR|BAD_ARGS|type=param 需要 param 参数名";
+                result = "ERR|BAD_ARGS|缺参数 param（type=param 时必须）";
                 return false;
             }
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string csproj;
+            string entryError;
+            if (!ResolveSingleProject(path, className, out csproj, out entryError))
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path + ProjectPathDiagnostic(path);
+                result = entryError;
                 return false;
             }
             ProjectCache cache = EnsureProject(csproj);
@@ -75,7 +76,7 @@ namespace Mau.Development
                     {
                         if (memberCount > 1)
                         {
-                            result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
+                            result = "ERR|MEMBER_AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
                             return true;
                         }
                         result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member + PartialHint(parts.Count);
@@ -225,7 +226,7 @@ namespace Mau.Development
                 if (!ValidateNoNewErrors(cache.Compilation, trial, out newErrors))
                 {
                     StringBuilder fail = new StringBuilder();
-                    fail.Append("ROLLED_BACK|新增编译错误 " + newErrors.Count + " 条——未落盘:");
+                    fail.Append("ROLLED_BACK|COMPILE_ERROR|新增编译错误 " + newErrors.Count + " 条——未落盘:");
                     for (int i = 0; i < newErrors.Count; i = i + 1)
                     {
                         fail.Append(Environment.NewLine + "  " + newErrors[i]);
@@ -370,7 +371,7 @@ namespace Mau.Development
             List<string> projects = ResolveProjects(path, out resolveError);
             if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|" + resolveError;
+                result = resolveError;
                 return false;
             }
             if (projects.Count == 1)
@@ -424,7 +425,7 @@ namespace Mau.Development
             List<string> projects = ResolveProjects(path, out resolveError);
             if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|" + resolveError;
+                result = resolveError;
                 return false;
             }
             if (projects.Count == 1)

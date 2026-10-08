@@ -319,6 +319,9 @@ namespace CH4
 
             /// <summary>附件引用 JSON 数组（图片绝对路径；空串=无附件——图片注入经队列携带，见 ImagesJson 语义）</summary>
             public string ImagesJson;
+
+            /// <summary>原注入来源标记——QQ 注入轮起点锚（空=非 QQ 注入 / 系统注入）；输出转发面据此把「来源」绑定到该消息开启的轮</summary>
+            public string Origin;
         }
 
         /// <summary>待处理用户消息队列——忙时排队（原同步阻塞天然排队语义保持）</summary>
@@ -807,7 +810,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 重置统计——session.new 清前文后调用（新会话零统计起算；会话级 token 累计同归零）。
+        /// 重置统计——session.new 清前文后调用（新会话零统计起算；会话级 token 累计 + 前文长度同归零）。
         /// A202：会话元数据面与其余两面同批即时落盘（写新会话初始态）。
         /// </summary>
         public void ResetStats()
@@ -820,6 +823,8 @@ namespace CH4
             _sessionInstanceId = SessionStore.NewSessionId();
             _sessionCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             _lastRoundTokens = new SessionTokens();
+            // 前文长度——请求级实时值 + 落盘快照同归零（读面不回落旧会话值；新会话尚无请求）
+            _contextTokens = 0;
             _persistedContextTokens = 0;
             _usagePrompt = 0;
             _usageCompletion = 0;
@@ -1353,7 +1358,8 @@ namespace CH4
         /// <param name="source">来源——user（人发送，默认）/ systemauto · sleep · timer · delay · restart（系统注入——视图层 src 一律投影为 systemauto）</param>
         /// <param name="imagesJson">附件引用 JSON 数组（图片绝对路径；空串=无附件——图片注入经队列携带）</param>
         /// <returns>true=已受理入队 / false=未受理（空内容 · 宿主停机态）</returns>
-        public bool PostUserMessage(string content, string source = "user", string imagesJson = "")
+        /// <param name="origin">原注入来源标记——QQ 注入的轮起点锚（空=非 QQ 注入 / 系统注入）；输出转发面据此把来源绑定到该消息开启的轮</param>
+        public bool PostUserMessage(string content, string source = "user", string imagesJson = "", string origin = "")
         {
             if (content == null)
             {
@@ -1362,6 +1368,10 @@ namespace CH4
             if (imagesJson == null)
             {
                 imagesJson = "";
+            }
+            if (origin == null)
+            {
+                origin = "";
             }
             // 空输入零受理——文本与附件皆空才拒（图片注入可无正文，故两者合并判定）
             if (content.Length == 0 && imagesJson.Length == 0)
@@ -1383,6 +1393,7 @@ namespace CH4
             msg.Content = content;
             msg.Source = source;
             msg.ImagesJson = imagesJson;
+            msg.Origin = origin;
             _pending.Enqueue(msg);
             return true;
         }
@@ -1518,7 +1529,7 @@ namespace CH4
             }
             for (int i = 0; i < batch.Count; i = i + 1)
             {
-                AppendUserInjection(batch[i].Content, batch[i].Source, batch[i].ImagesJson);
+                AppendUserInjection(batch[i].Content, batch[i].Source, batch[i].ImagesJson, batch[i].Origin);
             }
             SetChatState("working");
             LaunchLlm();
@@ -1529,7 +1540,8 @@ namespace CH4
         /// <param name="content">注入内容（系统注入已含行头前缀）</param>
         /// <param name="source">队列来源标记</param>
         /// <param name="imagesJson">附件引用 JSON 数组（空串=无附件）</param>
-        private void AppendUserInjection(string content, string source, string imagesJson)
+        /// <param name="origin">原注入来源标记（空串=非 QQ 注入；非空=QQ 注入的轮起点锚——视图层落载荷 origin 供转发面轮绑定）</param>
+        private void AppendUserInjection(string content, string source, string imagesJson, string origin = "")
         {
             string text = content;
             if (text == null)
@@ -1540,6 +1552,10 @@ namespace CH4
             if (ViewSrcOf(source).Length > 0)
             {
                 text = BuildSysInjectText(text);
+            }
+            if (origin == null)
+            {
+                origin = "";
             }
             LlmMessage? msg;
             if (imagesJson != null && imagesJson.Length > 0)
@@ -1555,7 +1571,7 @@ namespace CH4
                 return;
             }
             AppendMessage(msg.Value);
-            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1, ViewSrcOf(source));
+            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1, ViewSrcOf(source), origin);
         }
 
         /// <summary>
@@ -2084,7 +2100,8 @@ namespace CH4
                 ("cacheHit", roundTokens.CacheHit),
                 ("miss", roundTokens.Miss),
                 ("rate", roundTokens.Rate),
-                ("context", _contextTokens),
+                // 前文长度（请求级）——轮首清零后回落落盘快照（契约 §12.10 轮间读面口径；原直取 _contextTokens 致轮内闪 0）
+                ("context", ContextTokensKnown),
                 ("count", _context.GetMessageCount()),
                 ("sessionPrompt", sessionTokens.Prompt),
                 ("sessionCompletion", sessionTokens.Completion),
@@ -2286,7 +2303,7 @@ namespace CH4
                 if (_pending.Count > 0)
                 {
                     PendingMessage next = _pending.Dequeue();
-                    AppendUserInjection(next.Content, next.Source, next.ImagesJson);
+                    AppendUserInjection(next.Content, next.Source, next.ImagesJson, next.Origin);
                     _round = 0;
                     LaunchLlm();
                     return;
@@ -2860,7 +2877,7 @@ namespace CH4
             if (_pending.Count > 0)
             {
                 PendingMessage next = _pending.Dequeue();
-                AppendUserInjection(next.Content, next.Source, next.ImagesJson);
+                AppendUserInjection(next.Content, next.Source, next.ImagesJson, next.Origin);
                 _round = 0;
                 LaunchLlm();
                 return;
@@ -3062,6 +3079,8 @@ namespace CH4
             //        原实现调 ResetStats() 会清会话级 token 累计——与 glossary「回滚不归零」口径冲突，2026-09-28 修正；
             //        A202：轮级读面回落源与请求级前文长度一并归零）
             _lastRoundTokens = new SessionTokens();
+            // 前文长度——请求级实时值 + 落盘回落源同归零（读面不显示回滚点之前的旧值）
+            _contextTokens = 0;
             _persistedContextTokens = 0;
             // [段4] 视图——不动（v2 契约：持久即持久，截断通道退役；视图层与真实前文并列，回滚只作用于前文）
             // [段5] Note 任务清空——防旧任务自动拉起新轮

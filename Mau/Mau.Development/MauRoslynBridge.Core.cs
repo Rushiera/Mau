@@ -217,6 +217,37 @@ namespace Mau.Development
             result.Sort(StringComparer.OrdinalIgnoreCase);
             return result.ToArray();
         }
+        /// <summary>
+        /// 项目源文件集——csproj 声明的编译单元（DefaultItemExcludes 子项目目录排除 + obj/bin 排除）。
+        /// 🔴 单一实现——cs-format 的 csproj 入口（按项目边界规整）与跨项目类定位（LocateClassInProject）同源调用；
+        /// includeGenerated=true 时含 obj 下程序集属性文件（扫描面编译语义），false 时只留手写源（format 面）。
+        /// </summary>
+        /// <param name="csprojPath">csproj 绝对路径</param>
+        /// <param name="includeGenerated">true=含 obj 生成物（程序集属性文件）</param>
+        /// <returns>源文件绝对路径数组（路径序）</returns>
+        internal string[] CollectProjectSources(string csprojPath, bool includeGenerated)
+        {
+            ProjectCache probe = new ProjectCache();
+            probe.CsprojPath = csprojPath;
+            probe.ProjectDir = Path.GetDirectoryName(csprojPath) ?? "";
+            ParseCsproj(probe);
+            string[] all = CollectSources(probe);
+            if (includeGenerated)
+            {
+                return all;
+            }
+            List<string> handwritten = new List<string>();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                if (all[i].IndexOf("\\obj\\", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    all[i].IndexOf("/obj/", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    continue;
+                }
+                handwritten.Add(all[i]);
+            }
+            return handwritten.ToArray();
+        }
 
         /// <summary>
         /// 从旧树创建带新根的树——CSharpSyntaxTree.Create（WithRoot 在工具编译器 Roslyn 集不可用的替代）

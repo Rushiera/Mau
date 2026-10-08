@@ -28,7 +28,7 @@ namespace Mau.Development
             List<string> projects = ResolveProjects(path, out resolveError);
             if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|" + resolveError;
+                result = resolveError;
                 return false;
             }
             if (projects.Count == 1)
@@ -176,7 +176,7 @@ namespace Mau.Development
             List<string> projects = ResolveProjects(path, out resolveError);
             if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|" + resolveError;
+                result = resolveError;
                 return false;
             }
             string slnPath = ResolveSolutionPath(path);
@@ -246,7 +246,7 @@ namespace Mau.Development
             long elapsedMs = watch.ElapsedMilliseconds;
             if (!run.Started)
             {
-                result = "ERR|BUILD_START|dotnet 进程启动失败（PATH 中无 dotnet？）";
+                result = "ERR|BUILD_START|dotnet 进程启动失败（PATH 中无 dotnet）";
                 return false;
             }
             if (!run.Exited)
@@ -280,7 +280,7 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 解决方案入口探测——传 .sln 时返回绝对路径（否则空串）；用于 build 直达 sln（不经逐项目展开）。
+        /// 解决方案入口探测——传 .sln 或「顶层含唯一 .sln 的目录」时返回 sln 绝对路径（否则空串）；用于 build 直达 sln（不经逐项目展开）。
         /// </summary>
         /// <param name="pathParam">路径参数</param>
         /// <returns>.sln 绝对路径（非 sln / 越界返回空串）</returns>
@@ -290,6 +290,15 @@ namespace Mau.Development
             if (full.Length > 0 && File.Exists(full) && full.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
             {
                 return full;
+            }
+            // 目录入口——顶层唯一 .sln 直达（与 ResolveProjects 的目录候选序一致）
+            if (full.Length > 0 && Directory.Exists(full))
+            {
+                string[] solutions = Directory.GetFiles(full, "*.sln", SearchOption.TopDirectoryOnly);
+                if (solutions.Length == 1)
+                {
+                    return Path.GetFullPath(solutions[0]);
+                }
             }
             return "";
         }
@@ -360,7 +369,7 @@ namespace Mau.Development
             List<string> projects = ResolveProjects(path, out resolveError);
             if (projects.Count == 0)
             {
-                result = "ERR|BAD_PATH|" + resolveError;
+                result = resolveError;
                 return false;
             }
             if (projects.Count == 1)
@@ -470,10 +479,11 @@ namespace Mau.Development
             string path = Arg(args, "path");
             string className = Arg(args, "class");
             string member = Arg(args, "member");
-            string csproj = ResolveProject(path);
-            if (csproj.Length == 0)
+            string csproj;
+            string entryError;
+            if (!ResolveSingleProject(path, className, out csproj, out entryError))
             {
-                result = "ERR|BAD_PATH|项目路径无效或越界: " + path + ProjectPathDiagnostic(path);
+                result = entryError;
                 return false;
             }
             ProjectCache cache = EnsureProject(csproj);
@@ -523,7 +533,7 @@ namespace Mau.Development
                 {
                     if (memberCount > 1)
                     {
-                        result = "ERR|AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
+                        result = "ERR|MEMBER_AMBIGUOUS|成员歧义——同名 " + memberCount + " 处，候选签名: " + string.Join(" / ", memberCandidates) + "——member 传签名后缀区分（如 " + member + "(int)）";
                         return false;
                     }
                     result = "ERR|MEMBER_NOT_FOUND|成员不存在: " + className + "." + member + PartialHint(parts.Count);

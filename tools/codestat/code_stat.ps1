@@ -19,7 +19,7 @@ param(
     [string]$Root = '',
     [string]$Out = '',
     [string[]]$Ext = @('.cs', '.mau', '.mauproj', '.html', '.js', '.css', '.ts', '.ps1', '.json'),
-    [string[]]$ExcludeDirs = @('bin', 'obj', 'node_modules', '.git', 'public', 'Mau-public', 'Data', 'CatTemp', 'MauOut', '.vs'),
+    [string[]]$ExcludeDirs = @('bin', 'obj', 'node_modules', '.git', 'public', 'Mau-public', 'Data', 'CatTemp', 'MauOut', '.vs', 'tokencount'),
     [int]$GroupDepth = 2
 )
 

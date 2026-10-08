@@ -35,11 +35,23 @@ namespace Mau.Development
                 mode = "check";
             }
 
-            // [段2] 入口路径解析——文件 / 目录 / csproj（受控根内）
-            string entry = ResolveEntryPath(pathParam);
+            // [段2] 入口路径解析——文件 / 目录 / csproj（受控根内）；存在性与类型分列出声（不存在 / 类型不支持不再落成静默空产物）
+            string entry = ResolveInRoots(pathParam);
             if (entry.Length == 0)
             {
-                result = "ERR|BAD_PATH|路径无效或越界（受控根内，支持 .cs 文件 / 目录 / csproj）: " + pathParam;
+                result = "ERR|BAD_PATH|路径越界或为空（受控根内，支持 .cs 文件 / 目录 / csproj）: " + pathParam;
+                return false;
+            }
+            if (!Directory.Exists(entry) && !File.Exists(entry))
+            {
+                result = "ERR|PATH_NOT_FOUND|路径不存在: " + entry;
+                return false;
+            }
+            if (!Directory.Exists(entry) &&
+                !entry.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) &&
+                !entry.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+            {
+                result = "ERR|ENTRY_UNSUPPORTED|入口类型不支持（支持 .cs 文件 / 目录 / csproj）: " + pathParam;
                 return false;
             }
 
@@ -159,67 +171,22 @@ namespace Mau.Development
         }
 
         /// <summary>
-        /// 入口路径解析——文件 / 目录 / csproj（受控根校验；对齐 ResolveProject 的 id: 命名空间寻址语义）。
-        /// 与 ResolveProject 的分工：本方法不要求 csproj 存在（format 面向文件树），项目面解析仍走 ResolveProject。
-        /// </summary>
-        /// <param name="pathParam">路径参数</param>
-        /// <returns>绝对路径（越界 / 缺失返回空串）</returns>
-        private string ResolveEntryPath(string pathParam)
-        {
-            if (string.IsNullOrWhiteSpace(pathParam))
-            {
-                return "";
-            }
-            string path = pathParam;
-            int nsSep = path.IndexOf(':');
-            if (nsSep > 0)
-            {
-                string nsId = path.Substring(0, nsSep);
-                string nsRel = path.Substring(nsSep + 1);
-                for (int i = 0; i < _roots.Length; i = i + 1)
-                {
-                    if (string.Equals(_rootIds[i], nsId, StringComparison.Ordinal))
-                    {
-                        path = Path.Combine(_roots[i], nsRel);
-                        break;
-                    }
-                }
-            }
-            string full;
-            if (Path.IsPathFullyQualified(path))
-            {
-                full = Path.GetFullPath(path);
-            }
-            else
-            {
-                full = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path));
-            }
-            for (int i = 0; i < _roots.Length; i = i + 1)
-            {
-                if (full.StartsWith(_roots[i] + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(full, _roots[i], StringComparison.OrdinalIgnoreCase))
-                {
-                    return full;
-                }
-            }
-            return "";
-        }
-
-        /// <summary>
-        /// 目标文件收集——.cs 文件 / 目录递归 / csproj（取所在目录）；排除面内建。
+        /// 目标文件收集——.cs 文件 / 目录递归 / csproj。
+        /// csproj 走**项目源文件集**（与扫描面同一实现 CollectProjectSources——DefaultItemExcludes 子项目目录排除生效，
+        /// 不含 obj 生成物）；.cs 与目录入口保持文件树语义（目录 = 显式全树意图，只排内建忽略面）。
         /// </summary>
         /// <param name="entry">入口绝对路径</param>
         /// <param name="files">收集结果</param>
-        private static void CollectCsFiles(string entry, List<string> files)
+        private void CollectCsFiles(string entry, List<string> files)
         {
             if (File.Exists(entry))
             {
                 if (entry.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
                 {
-                    string directory = Path.GetDirectoryName(entry) ?? "";
-                    if (directory.Length > 0)
+                    string[] sources = CollectProjectSources(entry, false);
+                    for (int i = 0; i < sources.Length; i = i + 1)
                     {
-                        CollectDirectory(directory, files);
+                        files.Add(sources[i]);
                     }
                     return;
                 }
