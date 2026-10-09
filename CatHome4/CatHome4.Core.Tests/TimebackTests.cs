@@ -775,13 +775,15 @@ namespace CatHome4.Core.Tests
             session.PostUserMessage("收域");
             PumpUntilIdle(session);
             string receipt = ToolResultText(session, 1);
-            // 情报行——返回体正文自带裁剪读数（条数 / token / 工具使用数）
+            // 情报行——返回体正文自带裁剪读数（条数 / 节约 token / 工具使用数）
             Assert.Contains("📉 释放 ", receipt);
+            Assert.Contains("域内节约 ", receipt);
             Assert.Contains("工具使用 2 次（详见下表）", receipt);
-            Assert.Contains("本域工具台账", receipt);
-            // 被拒工具（host-reload 撞 C5）入账并记 FAIL
+            // 台账头声明全量口径（含只读与被拒）
+            Assert.Contains("本域工具台账 · 宿主记录 · 2 条 · 含只读与被拒", receipt);
+            // 被拒工具（host-reload 撞 C5）入账并记 DENY（拒与败分列）
             Assert.Contains("host-reload", receipt);
-            Assert.Contains("FAIL", receipt);
+            Assert.Contains("DENY", receipt);
             // 只读工具（time）同样入账——全量口径（原「只读不入账」已退役）
             Assert.Contains("time · ", receipt);
             // 机制自用两件不入账——台账里不出现 back 自身

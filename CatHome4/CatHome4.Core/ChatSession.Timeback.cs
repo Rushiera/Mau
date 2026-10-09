@@ -287,8 +287,8 @@ namespace CH4
             fields["tools"] = _timebackScope.WriteLog.Count;
             // 情报行——裁剪读数以自然语言进正文（条数 / token / 写入三项皆宿主实测），令**返回体自足**：
             // 不必回解结构头即可读到准确情报；表体（工具台账）紧随其后。
-            string infoLine = "📉 释放 " + _timebackScope.PendingReleased.ToString() + " 条前文，裁剪 "
-                + (tokensNow - _timebackScope.TokensAtOpen).ToString() + "token 工具使用 "
+            string infoLine = "📉 释放 " + _timebackScope.PendingReleased.ToString() + " 条前文 · 域内节约 "
+                + (tokensNow - _timebackScope.TokensAtOpen).ToString() + "token · 工具使用 "
                 + _timebackScope.WriteLog.Count.ToString() + " 次";
             if (_timebackScope.WriteLog.Count > 0)
             {
@@ -571,12 +571,28 @@ namespace CH4
             {
                 return;
             }
-            bool ok = true;
-            if (result != null && result.Length > 0)
+            scope.WriteLog.Add(name + " · " + TimebackWriteTarget(argsJson) + " · " + TimebackToolStatus(result));
+        }
+        /// <summary>台账状态列——OK（成功）· DENY（被权限 / 域门禁拒）· ERR（执行失败）；拒与败分开，读面可区分。</summary>
+        /// <param name="result">工具结果文本</param>
+        /// <returns>状态列取值</returns>
+        internal static string TimebackToolStatus(string result)
+        {
+            if (result == null || result.Length == 0)
             {
-                ok = !result.StartsWith("ERR|", StringComparison.Ordinal) && !result.StartsWith("ROLLED_BACK", StringComparison.Ordinal);
+                return "OK";
             }
-            scope.WriteLog.Add(name + " · " + TimebackWriteTarget(argsJson) + " · " + (ok ? "OK" : "FAIL"));
+            if (result.StartsWith("ERR|TIMEBACK_PROFILE", StringComparison.Ordinal)
+                || result.StartsWith("ERR|TIMEBACK_LOCKED", StringComparison.Ordinal)
+                || result.StartsWith("ERR|TOOL_FORBIDDEN", StringComparison.Ordinal))
+            {
+                return "DENY";
+            }
+            if (result.StartsWith("ERR|", StringComparison.Ordinal) || result.StartsWith("ROLLED_BACK", StringComparison.Ordinal))
+            {
+                return "ERR";
+            }
+            return "OK";
         }
         /// <summary>台账目标标识——从参数约定键取首个非空值（路径 / 目录类取文件名，标识类原样）；powershell 取命令行原文（外部通道 · 单行指令一次一条，不截断）。</summary>
         /// <param name="argsJson">工具参数 JSON</param>
@@ -652,7 +668,7 @@ namespace CH4
             {
                 return "";
             }
-            string text = "[本域工具台账 · 宿主记录 · " + scope.WriteLog.Count.ToString() + " 条]\n";
+            string text = "[本域工具台账 · 宿主记录 · " + scope.WriteLog.Count.ToString() + " 条 · 含只读与被拒]\n";
             int shown = scope.WriteLog.Count;
             if (shown > TimebackWriteLogInlineLimit)
             {
@@ -664,7 +680,7 @@ namespace CH4
             }
             if (shown < scope.WriteLog.Count)
             {
-                text = text + "…（余 " + (scope.WriteLog.Count - shown).ToString() + " 条见归档 jsonl）\n";
+                text = text + "…（余 " + (scope.WriteLog.Count - shown).ToString() + " 条见归档 · timeback #" + scope.Id.ToString() + " · data:runtime/timeback）\n";
             }
             return text + "\n";
         }
@@ -691,7 +707,7 @@ namespace CH4
             }
             scope.LastNotifyCount = scope.EventCount;
             string text = "（系统自动 · timeback #" + scope.Id.ToString() + "）你处在 timeback 中，已经历【" + scope.EventCount.ToString()
-                + "】条前文条目（已用 " + seconds.ToString() + " 秒）——回收时用 back 带回 findings（只写成果位置，不写结论）。";
+                + "】条前文条目（已用 " + seconds.ToString() + " 秒）";
             string posted = PostSystemMessage(SysKindSystemAuto, text);
             if (posted.StartsWith("ERR|", StringComparison.Ordinal))
             {
