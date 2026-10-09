@@ -84,17 +84,21 @@ toolDecl('timeback-start', {
         var out = [];
         out.push('⚓ 作用域 #' + ovMetaNum(m, 'id', 0) + typeTail + ' · 锚点 ' + ovMetaNum(m, 'anchor', 0)
             + ((purpose.length > 0) ? (' · 用途「' + purpose + '」') : ''));
-        out.push('⏳ 域内锁定：Note / sleep / timer（回收前不可用）');
         // 正文——丢掉与状态行重复的首行（`timeback #N 已锚定（…）`），其余按 findings 段渲染
         var cut = tbSplitWrites(h.body);
         var lines = cut.rest;
         if (lines.length > 0 && /^\s*timeback #/.test(lines[0])) {
             lines = lines.slice(1);
         }
-        out.push('📋 回收时按骨架带回 findings：');
         var body2 = tbFindingsLines(lines);
-        for (var i = 0; i < body2.length; i = i + 1) {
-            out.push(body2[i]);
+        // §十一（2026-10-09）——start 结果**只留结构化头**，规范与本段骨架迁入「域规范卡」（systemauto user）。
+        // 正文为空 = 新形态 → 只留状态行；正文非空 = 存量视图条目（旧格式）→ 照旧渲染，存量零迁移。
+        if (body2.length > 0) {
+            out.push('⏳ 域内锁定：Note / sleep / timer（回收前不可用）');
+            out.push('📋 回收时按骨架带回 findings：');
+            for (var i = 0; i < body2.length; i = i + 1) {
+                out.push(body2[i]);
+            }
         }
         return out;
     }

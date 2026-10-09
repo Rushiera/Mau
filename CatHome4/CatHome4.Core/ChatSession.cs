@@ -2522,6 +2522,9 @@ namespace CH4
             FlushImageInjections();
             // [段2d] timeback 回卷——本批请求了 back 则在此执行（工具结果已全部回填：截断 + 结论注入 + 工具主动 done）
             ApplyTimebackBack();
+            // [段2d-1] timeback 域规范卡注入（§十一）——作用域活跃且未注入 → 入队一条 systemauto user（落在区间内 · 闭合随删）
+            // 位于回收之后：同批 start+back 时作用域已关 → 零动作（区间为空，注入会落在删除区间之外）
+            PostTimebackCard();
             // [段2e] timeback 状态自述——回收后作用域已关（自然跳过）；未关且累计满 10 事件则追加一条 assistant 自述
             FlushTimebackNotice();
             // [段2c] 宿主重启检测——majordomo-restart 成功回执 → 登记重启请求 + 停机态（A72：本轮走常规结束流程，不强制中断）

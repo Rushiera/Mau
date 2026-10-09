@@ -149,7 +149,7 @@ namespace CH4
             tools[9] = new
             {
                 name = "timeback-start",
-                description = "上下文作用域·开锚——type 选域类型（决定域内可用工具白名单 / 回执骨架 / 资源预热），purpose 记用途；过程在作用域内膨胀，回收时用 timeback-back 回卷（膨胀过程从上下文销毁，只把 findings 带回主干——下一轮首条可见）。域类型枚举：browser_vision（浏览网页 + 识图：browser-* / image-*）· text_search（文本与文档检索：text 读面 / file-tree / file-find）· code_review（代码审查：上述 + cs 只读面）· code_write（代码实现：cs 写面 + text 读写）。🔴 域内只放行本类型白名单——名单外调用被拒（ERR|TIMEBACK_PROFILE，需用则先 back 回主干，不在域内换类型）；域内不做计划、不调 Note / sleep / timer。热重载 / 重启 / 部署不在域内（进程中断即失域）。v1 未闭合前禁止再次 start。",
+                description = "上下文作用域·开锚——type 选域类型（决定域内可用工具白名单 / 回执骨架 / 资源预热），purpose 记用途；过程在作用域内膨胀，回收时用 timeback-back 回卷（膨胀过程从上下文销毁，只把 findings 带回主干——下一轮首条可见）。域类型枚举：browser_vision（浏览网页 + 识图：browser-* / image-* + 基础读面）· text_search（文本与文档检索：文本读面 + 文件结构面）· code_review（代码审查取证：基础读面 + cs 只读七件，不含跑测面）· code_write（代码实现：基础读面 + cs 全套十二件 + 文本写面 + mau-verify——读 / 改 / 编译 / 跑测一域内完成）。🔴 域内只放行本类型白名单——名单外调用被拒（ERR|TIMEBACK_PROFILE，需用则先 back 回主干，不在域内换类型）；系统信息类工具（info / host-flows）不进任何域；域内不做计划、不调 Note / sleep / timer。热重载 / 重启 / 部署不在域内（进程中断即失域）。v1 未闭合前禁止再次 start。",
                 parameters = new
                 {
                     type = "object",

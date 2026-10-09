@@ -69,6 +69,9 @@ namespace CH4
             /// 客观事实面：从实际执行流水提取（不由 LLM 自述）；back 回执附于 findings 之前，主干据此抽样核对。
             /// </summary>
             public List<string> WriteLog = new List<string>();
+
+            /// <summary>域规范卡是否已注入——批后段一次性（§十一）；防同域重复注入。</summary>
+            public bool CardPosted;
         }
 
         /// <summary>当前未闭合作用域——null=无作用域。</summary>
@@ -246,12 +249,10 @@ namespace CH4
             fields["anchor"] = declIndex;
             fields["type"] = scope.Type;
             fields["purpose"] = scope.Purpose;
-            string body = "timeback #" + scope.Id.ToString() + " 已锚定（域类型「" + scope.Type + "」· 锚点 = 本次调用声明 · 节点 " + declIndex.ToString() + " · 用途「" + scope.Purpose + "」）——过程留在作用域内；"
-                + "回收时用 back 带回 findings（作为该调用的返回值），两次调用之间的内容一并删除。"
-                + "作用域内 Note / sleep / timer 已锁定；**域内可用工具以本 type 白名单为准**——名单外调用会被拒（需用则先 back 回主干，不在域内换类型）。\n"
-                + FindingsSkeletonFor(scope.Type);
+            // §十一——start 结果**只留结构化头**：规范与骨架迁入「域规范卡」（TimebackCard · 批后段注入 systemauto user）。
+            // 动机：规范住在 start 结果里 + 每域重复一份 → 同形模板随会话堆积，模型失去「哪份是活跃的」锚点（判例见 §十一 · `_log` 批 4）。
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 开锚（锚点 " + declIndex.ToString() + " / 用途 " + scope.Purpose + "）", "TIMEBACK");
-            return ToolMetaHead.With("timeback-start", true, fields, body);
+            return ToolMetaHead.With("timeback-start", true, fields, "");
         }
 
         /// <summary>
@@ -762,33 +763,28 @@ namespace CH4
         }
 
         /// <summary>
-        /// findings 骨架——按域类型类别分派（批 2 · design-ch4-timeback-type §四）。开锚即给格式，回收前不必回翻工具定义。
-        /// **审查类**（browser_vision / text_search / code_review）给「成果位置」清单——主干按位置回读，以回读内容为准；
-        /// **实现类**（code_write）给「变更 + 可复跑跑测」——主干按位置回读改动、照命令复跑，`变更` 段须与宿主工具台账对得上。
-        /// 提示词措辞的进一步打磨归后续批次；本条只负责分派与段定义（两类的可核验面不同）。
+        /// 域规范卡注入——批后段调用（`ApplyTimebackBack` 之后 · design-ch4-timeback-type §十一）。
+        /// 作用域活跃且未注入过 → 经系统注入口入队一条 systemauto user 卡。
+        /// 卡的落点天然在区间 `[start 结果之后 .. back 声明之前]` 内 → 闭合时随区间一并删除（零新增回收逻辑）。
+        /// 零动作：无作用域（同批开收——`ApplyTimebackBack` 已关域）· 已注入 · back 已 pending（区间为空，注入即残留在区间外）。
+        /// 不计入作用域事件数——机制消息，非域内工作产出（25 事件状态自述的口径不受其影响）。
         /// </summary>
-        /// <param name="type">域类型（TimebackProfile 枚举）</param>
-        /// <returns>骨架文本（含引导句 / 段定义 / 硬约束句）</returns>
-        private static string FindingsSkeletonFor(string type)
+        internal void PostTimebackCard()
         {
-            if (TimebackProfile.Kind(type) == TimebackProfile.KindWrite)
+            TimebackScope scope = _timebackScope;
+            if (scope == null || scope.CardPosted || scope.PendingFindings != null)
             {
-                return "findings 写「改了什么 + 怎么复验」——主干按位置回读改动、照命令复跑（段内无内容写「（无）」）：\n"
-                    + "  变更：<逐条：文件:行区间 — 改了什么——须与宿主工具台账对得上（台账有而未提=漏报；提了台账没有=幻觉）>\n"
-                    + "  跑测：<可复制命令> → 期望 <判据>\n"
-                    + "  未竟：<没做完的>\n"
-                    + "  卡点与解法：<卡在哪 · 怎么绕过去——为什么这么改只在这里留得下>\n"
-                    + "  失败：<失败原因>\n"
-                    + "每条 ≤1 行 · 每段 ≤5 条；位置与命令必须是这趟真改过 / 真跑过的——没跑的、凭印象复述的一律不写。\n"
-                    + "例：变更：mau:CatHome4/CatHome4.Core/TimebackProfile.cs:120-140 — 新增白名单对账出口；跑测：dotnet test <csproj> --filter <名> → 期望 12 绿";
+                return;
             }
-            return "findings 只写「成果在哪」，不写「结论是什么」——域内不下判断；主干按位置回读，以回读到的真实内容为准（段内无内容写「（无）」）：\n"
-                + "  成果：<逐条：位置（文件:行区间 / URL / 截图路径）+ 一句话说那里是什么——主干据此回读>\n"
-                + "  未竟：<没查完 / 没覆盖的>\n"
-                + "  卡点：<被什么挡住 / 读不通的地方>\n"
-                + "  失败：<失败原因>\n"
-                + "每条 ≤1 行 · 每段 ≤5 条；位置必须是这趟真实读到 / 打开过的——没读到的、凭印象复述的一律不写。\n"
-                + "例：成果：mau:CatHome4/Program.Tools.cs 的 timeback 描述块——findings 参数说明所在行（行号以你实读到的为准），请回读确认";
+            scope.CardPosted = true;
+            string text = TimebackCard.Card(scope.Type, scope.Purpose, scope.Id, scope.StartDeclIndex);
+            string posted = PostSystemMessage(SysKindSystemAuto, text);
+            if (posted.StartsWith("ERR|", StringComparison.Ordinal))
+            {
+                LogStore.Add("CatHome4", 2, "timeback #" + scope.Id.ToString() + " 域规范卡未受理: " + posted, "TIMEBACK");
+                return;
+            }
+            LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 域规范卡注入（" + scope.Type + "）", "TIMEBACK");
         }
 
         /// <summary>back 声明思考占位句——回收时替换原思考内容（莎 2026-10-09 定；原文留视图层与归档）。</summary>

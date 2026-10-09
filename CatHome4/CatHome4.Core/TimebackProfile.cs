@@ -9,6 +9,7 @@ namespace CH4
     /// 与「域外专属集」（`image-inject` / `browser-*` 域外不可用——`IsTimebackScopedTool`）是**两个正交维度**：
     ///   本表只决定「域内给不给」；域外专属集决定「域外给不给」。两者不可合并（合并会让 text-read 变成域内专属）。
     /// 会话授权面（每猫工具面 M2）之外的工具**不做先验**——授权面自会拒绝，本表只判「是否属于本 type」。
+    /// 不进域：系统信息类（`info` / `host-flows`）——域是"做事的地方"，不是"问系统状态的地方"（莎 2026-10-09）。
     /// 维护：名单增删即改本文件；拼写漂移由 `Unknown()` 对账（宿主启动记账 + 测试）。
     /// </summary>
     public static class TimebackProfile
@@ -19,19 +20,26 @@ namespace CH4
         /// <summary>域类型·文本检索——文本 / 文档只读检索。</summary>
         public const string TextSearch = "text_search";
 
-        /// <summary>域类型·代码审查——文本检索面 + cs 只读面 + 自举只读面。</summary>
+        /// <summary>域类型·代码审查——基础读面 + cs 只读面（纯取证：不含跑测面）。</summary>
         public const string CodeReview = "code_review";
 
-        /// <summary>域类型·代码实现——cs 写面 + text 读写；不含 file-* / powershell（改文件面由 text-* 承担）。</summary>
+        /// <summary>域类型·代码实现——基础读面 + cs 全套 + 文本写面 + 语料检查（一域内完成读 / 改 / 编译 / 跑测）。</summary>
         public const string CodeWrite = "code_write";
 
-        /// <summary>基础读面（文本检索 + 观测）——被多个 type 复用。</summary>
-        private static readonly string[] ReadBaseNames =
+        /// <summary>文本读面——被多个 type 复用（域内只读取证：文本检索 + 内容检索）。</summary>
+        private static readonly string[] TextReadNames =
         {
-            "text-read", "text-read_lines", "text-read_between", "text-grep",
-            "file-tree", "file-find", "file-version",
-            "info"
+            "text-read", "text-read_lines", "text-read_between", "text-grep"
         };
+
+        /// <summary>文件结构面——目录 / 文件名 / 产物版本（域内只读取证）。</summary>
+        private static readonly string[] FileShapeNames =
+        {
+            "file-tree", "file-find", "file-version"
+        };
+
+        /// <summary>基础读面 = 文本读面 + 文件结构面——只读类 type 的共同底座。</summary>
+        private static readonly string[] ReadBaseNames = Concat(TextReadNames, FileShapeNames);
 
         /// <summary>browser_vision 名单——浏览器族五件 + 识图两件 + 基础读面。</summary>
         private static readonly string[] BrowserVisionNames = Concat(new string[]
@@ -43,20 +51,21 @@ namespace CH4
         /// <summary>text_search 名单——基础读面。</summary>
         private static readonly string[] TextSearchNames = ReadBaseNames;
 
-        /// <summary>code_review 名单——基础读面 + cs 只读面 + 自举只读面。</summary>
+        /// <summary>code_review 名单——基础读面 + cs 只读七件（纯取证：读码 / 查引用 / 查死码，不含任何跑测面）。</summary>
         private static readonly string[] CodeReviewNames = Concat(ReadBaseNames, new string[]
         {
-            "cs-check", "cs-list", "cs-read", "cs-find", "cs-find_ref", "cs-dead", "cs-comment_check",
-            "mau-verify", "host-flows"
+            "cs-check", "cs-list", "cs-read", "cs-find", "cs-find_ref", "cs-dead", "cs-comment_check"
         });
 
-        /// <summary>code_write 名单——cs 写面 + text 读写面。</summary>
-        private static readonly string[] CodeWriteNames =
+        /// <summary>code_write 名单——基础读面 + cs 全套十二件 + 文本写面 + 语料检查。
+        /// 域内一次完成「读 → 改 → 编译 → 跑测」：编译输出与诊断清单一律随域回收，不持久化进主干。</summary>
+        private static readonly string[] CodeWriteNames = Concat(new string[]
         {
-            "cs-read", "cs-patch", "cs-member", "cs-comment", "cs-format", "cs-build",
-            "text-read", "text-read_lines", "text-read_between", "text-replace", "text-write", "text-append",
-            "info"
-        };
+            "cs-check", "cs-list", "cs-read", "cs-patch", "cs-member", "cs-comment",
+            "cs-find", "cs-find_ref", "cs-dead", "cs-comment_check", "cs-format", "cs-build",
+            "text-replace", "text-write", "text-append",
+            "mau-verify"
+        }, ReadBaseNames);
 
         /// <summary>
         /// 全部域类型——枚举顺序即 start 回执的枚举展示序（渐进扩展唯一入口）。
