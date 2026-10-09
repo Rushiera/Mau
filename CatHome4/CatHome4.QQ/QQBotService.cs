@@ -548,6 +548,8 @@ namespace CatHome4.QQ
             string cmdReply = HandleSlashCommand(text, qqBotId);
             if (cmdReply != null)
             {
+                // A208——指令受理统一留痕（兜底 / 状态 / 重开会话族同出口；此前全族静默）
+                LogStore.Add("QQBot", 1, "指令受理 | " + ResolveCatKey(qqBotId) + " | " + text, "QQBOT");
                 if (text == "/last")
                 {
                     // /last 独立通道——切分 ≤4 段逐条发送（不占转发预算）
@@ -584,7 +586,8 @@ namespace CatHome4.QQ
                 SendToSource(qqBotId, source, "（消息未受理——猫注入面未就绪）");
                 return;
             }
-            bool accepted = tg.Inject("[来自QQ]" + BuildHeader(source) + " " + text + attachText, QqInjectionOrigin);
+            string payload = "[来自QQ]" + BuildHeader(source) + " " + text + attachText;
+            bool accepted = tg.Inject(payload, QqInjectionOrigin);
             if (!accepted)
             {
                 // 注入未受理（停机态 / 空内容）——出声 + 回执；不入队来源（无注入即无回复可路由）
@@ -592,8 +595,28 @@ namespace CatHome4.QQ
                 SendToSource(qqBotId, source, "（消息未受理——宿主正在收尾 / 停机，请稍后重发）");
                 return;
             }
+            // A208——受理面正向留痕（与拒绝面 L2 对称：此前成功路径静默，无从判断消息是否进了会话）
+            LogStore.Add("QQBot", 1, "注入受理 | " + tg.Key + " | " + payload.Length.ToString() + " 字符 | origin=" + QqInjectionOrigin, "QQBOT");
             _eventQueue.Enqueue(new QqServiceEvent { Kind = "source", CatKey = tg.Key, Source = source, Origin = QqInjectionOrigin });
             _eventQueue.Enqueue(new QqServiceEvent { Kind = "reset", CatKey = tg.Key });
+        }
+        /// <summary>
+        /// 取 Bot 绑定猫标识——日志标识用（1:1 唯一绑定；收集面未就绪 / 未绑定给可读占位）。
+        /// </summary>
+        /// <param name="qqBotId">Bot 配置身份</param>
+        /// <returns>猫标识（或占位文本）</returns>
+        private static string ResolveCatKey(Guid qqBotId)
+        {
+            if (_collector == null)
+            {
+                return "（收集器未就绪）";
+            }
+            List<QqTarget> targets = _collector.CollectByBot(qqBotId);
+            if (targets.Count == 0)
+            {
+                return "（无绑定猫）";
+            }
+            return targets[0].Key;
         }
         /// <summary>
         /// 解析消息——C2C 私聊 / GROUP_AT 群@。
@@ -979,23 +1002,27 @@ namespace CatHome4.QQ
             return null;
         }
         /// <summary>构建 /last 回复（A58）——取绑定猫（1:1 唯一）视图层最后一条 text 块（正式回复；A188 起 gap_text 间隙文本不取），正文不截断。
-        /// 超长由发送面（SendLastReply）按 MD 结构切分，最多 4 段独立发送（末尾段优先）；文件标记（A112）同样由发送面扫描剥离并经文件通道发送。</summary>
+        /// 超长由发送面（SendLastReply）按 MD 结构切分，最多 4 段独立发送（末尾段优先）；文件标记（A112）同样由发送面扫描剥离并经文件通道发送。
+        /// A208——取块结果 L1 留痕（命中位置 / 字符数 / 无回复三态）；internal 供单测直调。</summary>
         /// <param name="qqBotId">Bot 配置身份——1:1 唯一绑定猫</param>
         /// <returns>回复正文（含【猫名：】前缀）</returns>
-        private static string BuildLastText(Guid qqBotId)
+        internal static string BuildLastText(Guid qqBotId)
         {
             if (_collector == null)
             {
+                LogStore.Add("QQBot", 1, "/last 取块 | （收集器未就绪）", "QQBOT");
                 return "无视图数据（绑定目标收集面未注入）";
             }
             List<QqTarget> targets = _collector.CollectByBot(qqBotId);
             if (targets.Count == 0)
             {
+                LogStore.Add("QQBot", 1, "/last 取块 | （无绑定猫）", "QQBOT");
                 return "无猫";
             }
             QqTarget tg = targets[0];
             if (tg.GetViewItems == null)
             {
+                LogStore.Add("QQBot", 1, "/last 取块 | " + tg.Key + " | 无已生成回复（视图面未接线）", "QQBOT");
                 return "【" + tg.DisplayName + "】无已生成回复";
             }
             QqViewItem[] items = tg.GetViewItems();
@@ -1004,9 +1031,12 @@ namespace CatHome4.QQ
                 QqViewItem it = items[i];
                 if (it.RenderType == "text" && it.Content.Length > 0)
                 {
+                    // A208——取块结果留痕（命中位置与字符数；兜底通道取到什么可回溯）
+                    LogStore.Add("QQBot", 1, "/last 取块 | " + tg.Key + " | 命中第 " + (i + 1).ToString() + " / " + items.Length.ToString() + " 块（" + it.Content.Length.ToString() + " 字符）", "QQBOT");
                     return tg.DisplayName + "：\n" + it.Content;
                 }
             }
+            LogStore.Add("QQBot", 1, "/last 取块 | " + tg.Key + " | 无已生成回复（共 " + items.Length.ToString() + " 块）", "QQBOT");
             return "【" + tg.DisplayName + "】无已生成回复";
         }
 
@@ -1747,7 +1777,8 @@ namespace CatHome4.QQ
         }
         /// <summary>/last 回复发送（A58 / A112）——先扫描剥离文件标记（标记行不进正文，文件经文件通道发送，与转发路共用同一实现）；
         /// 正文按 MD 结构切分，最多 4 段独立发送；超出取末尾段（丢弃开头段 + L2 留痕）。
-        /// 文本段与文件发送共用同一被动调用上限（planner 按剩余额度分配，执行期不再判定）；不占转发轮预算（指令通道独立 msg_id 配额）；任一段失败停止后续 + L2 留痕。</summary>
+        /// 文本段与文件发送共用同一被动调用上限（planner 按剩余额度分配，执行期不再判定）；不占转发轮预算（指令通道独立 msg_id 配额）；任一段失败停止后续 + L2 留痕。
+        /// A208——服务留痕（实际段 / 文件数）+ 连接缺失 L2。</summary>
         /// <param name="qqBotId">Bot 配置身份</param>
         /// <param name="source">来源</param>
         /// <param name="body">回复正文（含【猫名：】前缀）</param>
@@ -1756,11 +1787,15 @@ namespace CatHome4.QQ
             QQBotConnection conn;
             if (!_connections.TryGetValue(qqBotId, out conn))
             {
+                // A208——兜底通道不可达出声（此前静默返回：发送面缺失无从诊断）
+                LogStore.Add("QQBot", 2, "/last 发送跳过（连接不存在） | " + qqBotId.ToString(), "QQBOT");
                 return;
             }
             // A112——文件标记扫描面统一：标记行剥离（不被当普通文本发出），文件经文件通道发送（与转发路同一实现）
             List<string> files = QqFileMarker.Extract(body, out string textBody);
             QqLastReplyPlan plan = QqLastReplyPlanner.Plan(textBody, files, MaxChunkChars, MaxLastParts);
+            // A208——服务留痕（实际发出段数与文件数；此前仅异常出声，兜底发送量不可观测）
+            LogStore.Add("QQBot", 1, "/last 服务 | " + source.ToString() + " | " + plan.Segments.Count.ToString() + " 段 + " + plan.Files.Count.ToString() + " 文件", "QQBOT");
             if (plan.DroppedHeadSegments > 0)
             {
                 LogStore.Add("QQBot", 2, "/last 段数超限（取末尾段） | 丢弃前 " + plan.DroppedHeadSegments.ToString() + " 段 | " + source.ToString(), "QQBOT");
