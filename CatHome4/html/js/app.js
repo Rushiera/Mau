@@ -612,7 +612,11 @@ function renderConfig(items) {
         var btn = document.createElement('button');
         btn.textContent = '保存';
         btn.className = 'btn-mini tight';
+        // §4.5 只读项（schema writable=false）——输入框同禁 + 可见标注（避免「可改却点不动」的错觉）
         if (it.writable === false) {
+            inp.readOnly = true;
+            inp.className = inp.className + ' ro';
+            inp.title = '只读项——不可修改（schema writable=false）｜' + (it.desc || '');
             btn.disabled = true;
             btn.title = '只读项（schema writable=false）';
         }
