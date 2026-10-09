@@ -373,6 +373,8 @@ namespace CH4
             LogToolPoolDefects();
             // A127——执行序对账：池内工具须在 ToolOrderTable 全量登记（未登记者静默落默认档 = 隐性缺口，此处出声）
             LogToolOrderAccounting();
+            // A210——域类型白名单对账：白名单里的名字须在池内（拼写漂移 / 工具退役漏改 = 域内静默缺件，此处出声）
+            LogTimebackProfileAccounting();
             // [段5] 会话面——上下文 + 前文恢复 + 工具定义 + 默认会话注册（P9.1 会话对象化：ChatSession 承载状态机——design-llm-streaming §六）
             ChatContext chatCtx = new ChatContext();
             // S1 ChatBridge 化——会话协调实例（注入提示词构建委托——CatCfg 域静态面 BuildInjectPrompt）
@@ -868,6 +870,11 @@ namespace CH4
                     if (root.TryGetProperty("purpose", out purposeNode) && purposeNode.ValueKind == JsonValueKind.String)
                     {
                         item["purpose"] = purposeNode.GetString();
+                    }
+                    JsonElement typeNode;
+                    if (root.TryGetProperty("type", out typeNode) && typeNode.ValueKind == JsonValueKind.String)
+                    {
+                        item["type"] = typeNode.GetString();
                     }
                     return item;
                 }

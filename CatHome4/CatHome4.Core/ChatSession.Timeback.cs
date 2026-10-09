@@ -15,6 +15,8 @@ namespace CH4
     /// 回卷后序列天然合法，本轮照常续跑（LLM 直接从 back 的工具返回继续）。
     /// 用途（2026-10-03 莎裁）：仅两个域限定工具解锁——主干识图（image-inject）· 浏览网页（browser-*）；域内不做工作、不写计划。
     /// findings 口径（A205 · 2026-10-06 莎定）：**只写「成果在哪」，不写「结论是什么」**——域内不下判断，主干按位置回读、以回读到的真实内容为准（治域内复述致幻觉）。
+    /// 思考净化（2026-10-09 莎定）：回收时把 **back 声明**的 `ReasoningContent` 换成占位句——它与 findings 同源（回域时的断言），
+    ///   且不在 findings 治理面（模型自然输出）；start 声明的思考（工具需求生成过程）保留。原文留视图层与归档。
     /// 锁定：作用域存活期间 Note / sleep / timer 不可用（ERR|TIMEBACK_LOCKED——与区间删除语义冲突）。
     /// 视图层：删除区间对应的前文派生块合并为一个废弃块（Rebuild 不清——跨宿主重启仍可回看）。
     /// 归档（A104）：全局计数（Data/runtime/timeback/count.json）+ 每次回收一个作用域文件（&lt;编号&gt;-&lt;时间戳&gt;.jsonl）。
@@ -42,6 +44,9 @@ namespace CH4
             /// <summary>开锚时刻——Unix 毫秒。</summary>
             public long StartAtMs;
 
+            /// <summary>域类型（`TimebackProfile` 枚举）——决定域内工具白名单 / 回执骨架 / 资源预热；开锚时登记。</summary>
+            public string Type = "";
+
             /// <summary>用途标签——归档与事后判读原料。</summary>
             public string Purpose = "";
 
@@ -60,7 +65,7 @@ namespace CH4
             /// <summary>本次回收的释放条数——back 时刻预算（区间上下界已定，精确可算）；随返回值送出，并与批后实际删除数对账。</summary>
             public int PendingReleased;
             /// <summary>
-            /// 本域写操作台账——宿主记录（order ≥ 1 的工具逐条登记：工具名 · 目标标识 · 成败）。
+            /// 本域工具台账——宿主记录（域内**用过的每个工具**逐条登记：工具名 · 目标标识 · 成败；含只读与被拒）。
             /// 客观事实面：从实际执行流水提取（不由 LLM 自述）；back 回执附于 findings 之前，主干据此抽样核对。
             /// </summary>
             public List<string> WriteLog = new List<string>();
@@ -92,8 +97,9 @@ namespace CH4
         /// <returns>结构化结果（元数据头 + 正文；失败 ERR| 前缀）</returns>
         private string ExecuteTimebackStart(string argsJson)
         {
+            string type = "";
             string purpose = "";
-            // [段0] 参数面——purpose 必填 + 未知参数拒绝（零容忍；catId 宿主保留键放行）
+            // [段0] 参数面——type / purpose 必填 + 未知参数拒绝（零容忍；catId 宿主保留键放行）
             if (argsJson != null && argsJson.Length > 0 && argsJson.StartsWith("{"))
             {
                 try
@@ -107,6 +113,15 @@ namespace CH4
                             {
                                 continue;
                             }
+                            if (property.Name == "type")
+                            {
+                                if (property.Value.ValueKind != JsonValueKind.String)
+                                {
+                                    return "ERR|TIMEBACK_ARGS|type 需为字符串";
+                                }
+                                type = property.Value.GetString() ?? "";
+                                continue;
+                            }
                             if (property.Name == "purpose")
                             {
                                 if (property.Value.ValueKind != JsonValueKind.String)
@@ -116,7 +131,7 @@ namespace CH4
                                 purpose = property.Value.GetString() ?? "";
                                 continue;
                             }
-                            return "ERR|TIMEBACK_ARGS|未知参数: " + property.Name + "（支持 purpose）";
+                            return "ERR|TIMEBACK_ARGS|未知参数: " + property.Name + "（支持 type / purpose）";
                         }
                     }
                 }
@@ -125,7 +140,7 @@ namespace CH4
                     return "ERR|TIMEBACK_ARGS|timeback-start 参数解析失败: " + ex.Message;
                 }
             }
-            return TimebackStart(purpose);
+            return TimebackStart(type, purpose);
         }
         /// <summary>
         /// timeback-back 执行体——参数面（findings 必填；未知参数拒绝）。
@@ -175,13 +190,19 @@ namespace CH4
         /// start——登记作用域：锚点 = 本刻前文末条（本次 start 的 tool_calls 声明，工具批执行点已在盘上）。
         /// v1 未闭合前禁止再次 start。
         /// </summary>
+        /// <param name="type">域类型（`TimebackProfile` 枚举——必填；决定域内白名单 / 回执骨架 / 资源预热）</param>
         /// <param name="purpose">用途标签</param>
         /// <returns>回执文本</returns>
-        private string TimebackStart(string purpose)
+        private string TimebackStart(string type, string purpose)
         {
             if (_timebackScope != null)
             {
                 return "ERR|TIMEBACK_NESTED|已有未闭合作用域 #" + _timebackScope.Id.ToString() + "——先 back 再 start";
+            }
+            if (!TimebackProfile.IsValid(type))
+            {
+                return "ERR|TIMEBACK_ARGS|start 需要合法 type（域类型）: " + TimebackProfile.TypeListText()
+                    + (type.Length == 0 ? "" : "——收到「" + type + "」");
             }
             if (purpose.Length == 0)
             {
@@ -195,6 +216,7 @@ namespace CH4
             TimebackScope scope = new TimebackScope();
             scope.StartDeclIndex = declIndex;
             scope.StartAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            scope.Type = type;
             scope.Purpose = purpose.Length > 48 ? purpose.Substring(0, 48) : purpose;
             // 开锚快照——回收时据此算作用域净增 token（真实 usage 值，不估算）
             scope.TokensAtOpen = ContextTokensKnown;
@@ -206,29 +228,28 @@ namespace CH4
                 scope.Id = archive.NextId();
             }
             _timebackScope = scope;
-            // [段6] 浏览器实例预热（A123）——域 = 浏览器进程容器：开锚即起进程，锚关即关（CloseCat）；
+            // [段6] 浏览器实例预热——**按域类型**（design-ch4-timeback-type §五）：仅名单含浏览器族的 type 预热；
+            // 其余 type 不起进程（免「每次开域起一个浏览器后台」）。域 = 浏览器进程容器：开锚即起，锚关即关（CloseCat）；
             // 锚内 browser-* 工具只操作该进程（多页签 = 同一进程内的多个 target），不涉及孤儿与交接。
             // 失败不阻断开锚（浏览器起不来不该让取证任务开不了局）——锚内工具调用会重试并如实返回 ERR
-            Mau.Runtime.IBrowserLifecycle browserLifecycle;
-            Mau.Runtime.DataBox.TryResolve<Mau.Runtime.IBrowserLifecycle>(out browserLifecycle);
-            if (browserLifecycle != null)
+            if (TimebackProfile.NeedsBrowser(scope.Type))
             {
-                browserLifecycle.PrepareCat(_catKey);
+                Mau.Runtime.IBrowserLifecycle browserLifecycle;
+                Mau.Runtime.DataBox.TryResolve<Mau.Runtime.IBrowserLifecycle>(out browserLifecycle);
+                if (browserLifecycle != null)
+                {
+                    browserLifecycle.PrepareCat(_catKey);
+                }
             }
             Dictionary<string, object> fields = new Dictionary<string, object>();
             fields["id"] = scope.Id;
             fields["anchor"] = declIndex;
+            fields["type"] = scope.Type;
             fields["purpose"] = scope.Purpose;
-            string body = "timeback #" + scope.Id.ToString() + " 已锚定（锚点 = 本次调用声明 · 节点 " + declIndex.ToString() + " · 用途「" + scope.Purpose + "」）——过程留在作用域内；"
+            string body = "timeback #" + scope.Id.ToString() + " 已锚定（域类型「" + scope.Type + "」· 锚点 = 本次调用声明 · 节点 " + declIndex.ToString() + " · 用途「" + scope.Purpose + "」）——过程留在作用域内；"
                 + "回收时用 back 带回 findings（作为该调用的返回值），两次调用之间的内容一并删除。"
-                + "作用域内 Note / sleep / timer 已锁定。\n"
-                + "findings 只写「成果在哪」，不写「结论是什么」——域内不下判断；主干按位置回读，以回读到的真实内容为准（段内无内容写「（无）」）：\n"
-                + "  成果：<逐条：位置（文件:行区间 / URL / 截图路径）+ 一句话说那里是什么——主干据此回读>\n"
-                + "  未竟：<没查完 / 没覆盖的>\n"
-                + "  卡点：<被什么挡住 / 读不通的地方>\n"
-                + "  失败：<失败原因>\n"
-                + "每条 ≤1 行 · 每段 ≤5 条；位置必须是这趟真实读到 / 打开过的——没读到的、凭印象复述的一律不写。\n"
-                + "例：成果：mau:CatHome4/Program.Tools.cs 的 timeback 描述块——findings 参数说明所在行（行号以你实读到的为准），请回读确认";
+                + "作用域内 Note / sleep / timer 已锁定；**域内可用工具以本 type 白名单为准**——名单外调用会被拒（需用则先 back 回主干，不在域内换类型）。\n"
+                + FindingsSkeletonFor(scope.Type);
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 开锚（锚点 " + declIndex.ToString() + " / 用途 " + scope.Purpose + "）", "TIMEBACK");
             return ToolMetaHead.With("timeback-start", true, fields, body);
         }
@@ -257,16 +278,17 @@ namespace CH4
             Dictionary<string, object> fields = new Dictionary<string, object>();
             fields["id"] = _timebackScope.Id;
             fields["anchor"] = _timebackScope.StartDeclIndex;
+            fields["type"] = _timebackScope.Type;
             fields["purpose"] = _timebackScope.Purpose;
             fields["released"] = _timebackScope.PendingReleased;
             fields["tokens"] = tokensNow;
             fields["grew"] = tokensNow - _timebackScope.TokensAtOpen;
-            fields["writes"] = _timebackScope.WriteLog.Count;
+            fields["tools"] = _timebackScope.WriteLog.Count;
             // 情报行——裁剪读数以自然语言进正文（条数 / token / 写入三项皆宿主实测），令**返回体自足**：
-            // 不必回解结构头即可读到准确情报；表体（写操作台账）紧随其后。
+            // 不必回解结构头即可读到准确情报；表体（工具台账）紧随其后。
             string infoLine = "📉 释放 " + _timebackScope.PendingReleased.ToString() + " 条前文，裁剪 "
-                + (tokensNow - _timebackScope.TokensAtOpen).ToString() + "token 写入操作 "
-                + _timebackScope.WriteLog.Count.ToString() + " 处";
+                + (tokensNow - _timebackScope.TokensAtOpen).ToString() + "token 工具使用 "
+                + _timebackScope.WriteLog.Count.ToString() + " 次";
             if (_timebackScope.WriteLog.Count > 0)
             {
                 infoLine = infoLine + "（详见下表）";
@@ -304,7 +326,7 @@ namespace CH4
 
         /// <summary>
         /// 批后回收执行——工具批结果全部回填后调用（design §12.2）：
-        /// ① 前文删除「start 结果之后、back 声明之前」的全部消息（两次调用对与结论保留）
+        /// ① 前文删除「start 结果之后、back 声明之前」的全部消息（两次调用对与结论保留）；back 声明的思考换成占位句（净化 · 2026-10-09）
         /// ② 视图层移出「**锚定声明之后**、back 声明（含）」的块 → 合并为一个废弃块（`void`；timeback 自己的卡保留在对话流）
         /// ③ 归档一次成档（A104：首行 meta + 该猫 info 快照 + 被删前文消息）→ 关闭作用域。本轮照常续跑（不置工具主动 done、不注入消息）。
         /// 前文无可删区间（同批 start+back / 索引异常）时跳过 ①，② 仍执行（锚定批的 sibling 结果卡照归废弃段）。
@@ -354,6 +376,13 @@ namespace CH4
                 }
                 for (int i = secondStart; i < all.Length; i = i + 1)
                 {
+                    // back 声明——思考净化（莎 2026-10-09 定）：该思考是对域内工作的断言，不是工具事实；
+                    // 换成占位句，原文留视图层与归档（start 声明的思考 = 工具需求生成过程，保留）
+                    if (i == scope.BackDeclIndex)
+                    {
+                        keep.Add(WithTimebackBackReasoningCleared(all[i]));
+                        continue;
+                    }
                     keep.Add(all[i]);
                 }
                 // 被删前文快照——归档文件的正文（删除前按原序取值）
@@ -367,10 +396,25 @@ namespace CH4
                 LlmMessage[] toSave = _context.GetMessages();
                 _store.Rewrite(toSave);
             }
-            else if (from <= to)
+            else
             {
-                // 索引超界（前文被外部改动）——不删，仅出声
-                LogStore.Add("CatHome4", 2, "timeback 回收区间越界（from " + from.ToString() + " / to " + to.ToString() + " / len " + all.Length.ToString() + "）——本次未删", "TIMEBACK");
+                if (from <= to)
+                {
+                    // 索引超界（前文被外部改动）——不删，仅出声
+                    LogStore.Add("CatHome4", 2, "timeback 回收区间越界（from " + from.ToString() + " / to " + to.ToString() + " / len " + all.Length.ToString() + "）——本次未删", "TIMEBACK");
+                }
+                // [段1b] back 声明思考净化——未走删除路径（同批开收 / 区间为空 / 索引越界）时索引未变，就地处理
+                LlmMessage[] current = _context.GetMessages();
+                if (scope.BackDeclIndex >= 0 && scope.BackDeclIndex < current.Length)
+                {
+                    LlmMessage clearedDecl = WithTimebackBackReasoningCleared(current[scope.BackDeclIndex]);
+                    if (!string.Equals(clearedDecl.ReasoningContent, current[scope.BackDeclIndex].ReasoningContent, StringComparison.Ordinal))
+                    {
+                        current[scope.BackDeclIndex] = clearedDecl;
+                        _context.ReplaceMessages(current);
+                        _store.Rewrite(_context.GetMessages());
+                    }
+                }
             }
             // [段3] 视图层——不动（A165 v2 契约：持久即持久，移出 / 废弃面退役；回收只作用于送入 LLM 的前文）
             // [段4] 归档——一次回收一个文件（A104）：首行 meta + 该猫 info 快照 + 被删前文消息
@@ -441,6 +485,7 @@ namespace CH4
             TimebackScopeRecord record = new TimebackScopeRecord();
             record.Id = scope.Id;
             record.CatKey = _catKey;
+            record.Type = scope.Type;
             record.Purpose = scope.Purpose;
             record.Anchor = scope.StartDeclIndex;
             record.StartAt = scope.StartAtMs;
@@ -505,8 +550,10 @@ namespace CH4
         /// </summary>
         private const int TimebackWriteLogInlineLimit = 20;
         /// <summary>
-        /// 作用域内写操作台账——工具结果回填时登记（order ≥ 1：写入 / 构建执行）。
-        /// 判据复用 ToolOrderTable.Resolve（与工具分批调度同源）；只记事实，不做语义判断。
+        /// 作用域内工具台账——工具结果回填时登记（**全量**：域内用过的每个工具都记）。
+        /// 口径（莎 2026-10-09 定）：谨慎优先——记全所有使用过的工具（含只读 / 被拒），不做语义收窄；
+        /// 唯二例外是域机制自用的围栏本身（`timeback-start` / `timeback-back`——记它等于每条都带噪声）。
+        /// 只记事实，不做语义判断。
         /// </summary>
         /// <param name="name">工具名</param>
         /// <param name="argsJson">工具参数 JSON</param>
@@ -518,7 +565,8 @@ namespace CH4
             {
                 return;
             }
-            if (ToolOrderTable.Resolve(name) < 1)
+            // 域机制自用两件不入账——台账记「域内工作用过的工具」，围栏本身（开锚 / 回收）不算
+            if (name == "timeback-start" || name == "timeback-back")
             {
                 return;
             }
@@ -592,7 +640,7 @@ namespace CH4
             return text;
         }
         /// <summary>
-        /// 本域写操作台账文本——附于 findings 之前（头 = 宿主事实，体 = LLM 自述）。
+        /// 本域工具台账文本——附于 findings 之前（头 = 宿主事实，体 = LLM 自述）。
         /// 超上限给「计数 + 首 N 条 + 归档指针」，全文进归档 jsonl——不静默截断。
         /// </summary>
         /// <returns>台账段（无写操作返回空串）</returns>
@@ -603,7 +651,7 @@ namespace CH4
             {
                 return "";
             }
-            string text = "[本域写操作台账 · 宿主记录 · " + scope.WriteLog.Count.ToString() + " 条]\n";
+            string text = "[本域工具台账 · 宿主记录 · " + scope.WriteLog.Count.ToString() + " 条]\n";
             int shown = scope.WriteLog.Count;
             if (shown > TimebackWriteLogInlineLimit)
             {
@@ -665,6 +713,7 @@ namespace CH4
             }
             Dictionary<string, object> map = new Dictionary<string, object>();
             map["id"] = scope.Id;
+            map["type"] = scope.Type;
             map["purpose"] = scope.Purpose;
             map["anchor"] = scope.StartDeclIndex;
             map["startAt"] = scope.StartAtMs;
@@ -695,6 +744,72 @@ namespace CH4
                 return true;
             }
             return name.StartsWith("browser-", StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// 域类型白名单豁免——不归白名单管辖的工具（交各自机制报错）：
+        /// timeback 两件（域机制自用）· Note / sleep / timer（C3 锁定——报 `TIMEBACK_LOCKED` 语义比 `TIMEBACK_PROFILE` 准）。
+        /// </summary>
+        /// <param name="name">工具名</param>
+        /// <returns>true=不参与域白名单判定</returns>
+        private static bool IsTimebackProfileExempt(string name)
+        {
+            if (name == "timeback-start" || name == "timeback-back")
+            {
+                return true;
+            }
+            return name == "Note" || name == "sleep" || name == "timer";
+        }
+
+        /// <summary>
+        /// findings 骨架——按域类型类别分派（批 2 · design-ch4-timeback-type §四）。开锚即给格式，回收前不必回翻工具定义。
+        /// **审查类**（browser_vision / text_search / code_review）给「成果位置」清单——主干按位置回读，以回读内容为准；
+        /// **实现类**（code_write）给「变更 + 可复跑跑测」——主干按位置回读改动、照命令复跑，`变更` 段须与宿主工具台账对得上。
+        /// 提示词措辞的进一步打磨归后续批次；本条只负责分派与段定义（两类的可核验面不同）。
+        /// </summary>
+        /// <param name="type">域类型（TimebackProfile 枚举）</param>
+        /// <returns>骨架文本（含引导句 / 段定义 / 硬约束句）</returns>
+        private static string FindingsSkeletonFor(string type)
+        {
+            if (TimebackProfile.Kind(type) == TimebackProfile.KindWrite)
+            {
+                return "findings 写「改了什么 + 怎么复验」——主干按位置回读改动、照命令复跑（段内无内容写「（无）」）：\n"
+                    + "  变更：<逐条：文件:行区间 — 改了什么——须与宿主工具台账对得上（台账有而未提=漏报；提了台账没有=幻觉）>\n"
+                    + "  跑测：<可复制命令> → 期望 <判据>\n"
+                    + "  未竟：<没做完的>\n"
+                    + "  卡点与解法：<卡在哪 · 怎么绕过去——为什么这么改只在这里留得下>\n"
+                    + "  失败：<失败原因>\n"
+                    + "每条 ≤1 行 · 每段 ≤5 条；位置与命令必须是这趟真改过 / 真跑过的——没跑的、凭印象复述的一律不写。\n"
+                    + "例：变更：mau:CatHome4/CatHome4.Core/TimebackProfile.cs:120-140 — 新增白名单对账出口；跑测：dotnet test <csproj> --filter <名> → 期望 12 绿";
+            }
+            return "findings 只写「成果在哪」，不写「结论是什么」——域内不下判断；主干按位置回读，以回读到的真实内容为准（段内无内容写「（无）」）：\n"
+                + "  成果：<逐条：位置（文件:行区间 / URL / 截图路径）+ 一句话说那里是什么——主干据此回读>\n"
+                + "  未竟：<没查完 / 没覆盖的>\n"
+                + "  卡点：<被什么挡住 / 读不通的地方>\n"
+                + "  失败：<失败原因>\n"
+                + "每条 ≤1 行 · 每段 ≤5 条；位置必须是这趟真实读到 / 打开过的——没读到的、凭印象复述的一律不写。\n"
+                + "例：成果：mau:CatHome4/Program.Tools.cs 的 timeback 描述块——findings 参数说明所在行（行号以你实读到的为准），请回读确认";
+        }
+
+        /// <summary>back 声明思考占位句——回收时替换原思考内容（莎 2026-10-09 定；原文留视图层与归档）。</summary>
+        private const string TimebackBackReasoningPlaceholder = "原思考内容已因锚回收被清除";
+
+        /// <summary>
+        /// back 声明思考净化——把该条 assistant 消息的 ReasoningContent 换成占位句（其余字段原样）。
+        /// 判据（莎 2026-10-09 定）：back 声明是回收动作本身，其思考是对域内工作的「断言」而非工具事实——
+        /// 回收即净化，防止后续轮次把它当事实引用（判例：timeback 域内空转致 findings 幻觉 · ReasoningContent 为真污染载体）；
+        /// start 声明的思考是「工具需求生成过程」，属正常推理，保留。原文留视图层与归档，不做全局改写。
+        /// </summary>
+        /// <param name="m">前文消息（非 assistant 或思考为空时原样返回）</param>
+        /// <returns>净化后的消息副本（struct 值语义——调用方须换入数组）</returns>
+        private static LlmMessage WithTimebackBackReasoningCleared(LlmMessage m)
+        {
+            if (m.Role != LlmRole.Assistant || m.ReasoningContent == null || m.ReasoningContent.Length == 0)
+            {
+                return m;
+            }
+            m.ReasoningContent = TimebackBackReasoningPlaceholder;
+            return m;
         }
     }
 }

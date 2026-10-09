@@ -247,10 +247,13 @@ describe('流式统计行（fx/live-stats）', () => {
 
         window.streamState.type = 'thinksse';
         window.streamState.revealed = '甲\n乙';
-        window.streamState.startedAt = window.streamNow() - 2000;
+        // 段用时基准取当前刻——`streamNow()` 为 performance 基准（页面加载起算，值可小于 2000ms），
+        // 写 `streamNow() - 2000` 会让 `startedAt` 落到负值、被实现的「>0 表示段已开始」判据挡掉（存量红：
+        // 该用例此前依赖时钟足够大）。用时格式化口径由 `liveStatsText` 专项用例覆盖，此处只验刷新落盘与显隐。
+        window.streamState.startedAt = window.streamNow();
         window.liveStatsRefresh();
         expect(el.style.display).toBe('');
-        expect(el.textContent).toBe('line: 2\nchar: 3\ntime: 2.0s');
+        expect(el.textContent).toBe('line: 2\nchar: 3\ntime: 0.0s');
 
         const parent = el.parentNode;
         parent.removeChild(el);

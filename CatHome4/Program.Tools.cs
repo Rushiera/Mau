@@ -149,21 +149,22 @@ namespace CH4
             tools[9] = new
             {
                 name = "timeback-start",
-                description = "上下文作用域·开锚——purpose 记用途；过程在作用域内膨胀，回收时用 timeback-back 回卷（膨胀过程从上下文销毁，只把 findings 带回主干——下一轮首条可见）。用途收窄（莎定 2026-10-03）：仅为两个域限定工具解锁——主干识图（image-inject）· 浏览网页（browser-*）；域内不做工作、不写计划，用完即回卷。热重载 / 重启 / 部署不在域内（进程中断即失域）——这类收尾留域外。v1 未闭合前禁止再次 start。",
+                description = "上下文作用域·开锚——type 选域类型（决定域内可用工具白名单 / 回执骨架 / 资源预热），purpose 记用途；过程在作用域内膨胀，回收时用 timeback-back 回卷（膨胀过程从上下文销毁，只把 findings 带回主干——下一轮首条可见）。域类型枚举：browser_vision（浏览网页 + 识图：browser-* / image-*）· text_search（文本与文档检索：text 读面 / file-tree / file-find）· code_review（代码审查：上述 + cs 只读面）· code_write（代码实现：cs 写面 + text 读写）。🔴 域内只放行本类型白名单——名单外调用被拒（ERR|TIMEBACK_PROFILE，需用则先 back 回主干，不在域内换类型）；域内不做计划、不调 Note / sleep / timer。热重载 / 重启 / 部署不在域内（进程中断即失域）。v1 未闭合前禁止再次 start。",
                 parameters = new
                 {
                     type = "object",
                     properties = new Dictionary<string, object>
                             {
+                                { "type", new { type = "string", description = "域类型（必填）——browser_vision | text_search | code_review | code_write" } },
                                 { "purpose", new { type = "string", description = "用途标签（短）" } }
                             },
-                    required = new string[] { "purpose" }
+                    required = new string[] { "type", "purpose" }
                 }
             };
             tools[10] = new
             {
                 name = "timeback-back",
-                description = "上下文作用域·回卷回收——findings 即本次调用的返回值，回卷后作用域关闭（区间内容从上下文销毁）。findings 按 start 回执给出的骨架写（成果 / 未竟 / 卡点 / 失败）——只写「成果在哪」不写「结论是什么」：逐条给可回读位置（文件:行 / URL / 截图路径）+ 一句话描述，主干按位置回读、以回读到的真实内容为准；没读到的、凭印象复述的一律不写。回执另附宿主写操作台账。",
+                description = "上下文作用域·回卷回收——findings 即本次调用的返回值，回卷后作用域关闭（区间内容从上下文销毁）。findings 按 start 回执给出的骨架写（审查类给「成果位置」· 实现类给「变更 + 可复跑跑测」）——只写「在哪 / 改了什么」不写「结论是什么」；没读到的、凭印象复述的一律不写。回执另附宿主**工具台账**（域内用过的每个工具：工具名 · 目标 · 成败——含只读与被拒）。回收时本调用的思考内容会被替换为占位句（原文留视图层）——防「回域断言」被后续轮次误当事实。",
                 parameters = new
                 {
                     type = "object",
@@ -256,6 +257,29 @@ namespace CH4
                 sb.Append(missing[i]);
             }
             LogStore.Add("CatHome4", 2, "工具执行序未登记（落默认档 0）| " + sb.ToString(), "TOOL");
+        }
+
+        /// <summary>
+        /// 域类型白名单对账出声——白名单里的名字必须在工具池内（拼写漂移 / 工具退役漏改的哨兵 ·
+        /// design-ch4-timeback-type §十）：缺失即出声 L2，不静默（域内静默缺件 = 静默族）。
+        /// </summary>
+        private static void LogTimebackProfileAccounting()
+        {
+            string[] missing = TimebackProfile.Unknown(ToolPool.AllNames());
+            if (missing.Length == 0)
+            {
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < missing.Length; i = i + 1)
+            {
+                if (i > 0)
+                {
+                    sb.Append(",");
+                }
+                sb.Append(missing[i]);
+            }
+            LogStore.Add("CatHome4", 2, "域类型白名单含池外工具名（拼写漂移 / 工具退役漏改）| " + sb.ToString(), "TIMEBACK");
         }
 
         /// <summary>

@@ -34,6 +34,9 @@ namespace CatHome4.Core.Tests
             /// <summary>ChatStream 调用次数</summary>
             public int CallCount = 0;
 
+            /// <summary>思考增量队列——每次调用取一项作为该轮 reasoning_content（空=不产思考事件）</summary>
+            public Queue<string> ReasoningQueue = new Queue<string>();
+
             /// <summary>
             /// 流式对话——队列有内容则产 tool_calls（含决策流开始帧），否则产纯文本。
             /// </summary>
@@ -45,6 +48,14 @@ namespace CatHome4.Core.Tests
             public async IAsyncEnumerable<LlmStreamEvent> ChatStream(LlmMessage[] messages, ToolSpec[] tools, string userId = "", [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
             {
                 CallCount = CallCount + 1;
+                if (ReasoningQueue.Count > 0)
+                {
+                    string reasoning = ReasoningQueue.Dequeue();
+                    if (reasoning.Length > 0)
+                    {
+                        yield return new LlmStreamEvent(LlmStreamKind.Reasoning, reasoning);
+                    }
+                }
                 if (ToolCallsQueue.Count > 0)
                 {
                     string tc = ToolCallsQueue.Dequeue();
@@ -61,13 +72,13 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 构造测试会话——临时前文文件 + 唯一临时归档路径 + Mock LLM（Note / timeback-* / random 工具面）。
+        /// 构造测试会话——临时前文文件 + 唯一临时归档路径 + Mock LLM（Note / timeback-* / info 工具面）。
         /// </summary>
         /// <param name="llm">Mock LLM</param>
         /// <returns>会话实体</returns>
         private static CH4.ChatSession CreateSession(MockLlm llm)
         {
-            return CreateSession(llm, new string[] { "Note", "timeback-start", "timeback-back", "random", "sleep", "timer" });
+            return CreateSession(llm, new string[] { "Note", "timeback-start", "timeback-back", "info", "sleep", "timer" });
         }
         /// <summary>
         /// 构造测试会话（指定工具面）——临时前文文件 + 唯一临时归档路径 + Mock LLM。
@@ -220,15 +231,15 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 跨轮取证——start → 查证（random）→ back：区间删除后前文只留两次调用对与结论。
+        /// 跨轮取证——start → 查证（info）→ back：区间删除后前文只留两次调用对与结论。
         /// </summary>
         [Fact]
         public void Back_DeletesScopeRange_KeepsBothCalls()
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"purpose\":\"跨轮取证\"}"));
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "f1", "{\"min\":1,\"max\":10}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"跨轮取证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("info", "f1", "{}"));
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-back", "t2", "{\"findings\":\"结论：目录 85 个\"}"));
             session.PostUserMessage("开始取证");
             PumpUntilIdle(session);
@@ -264,15 +275,218 @@ namespace CatHome4.Core.Tests
             Assert.Contains("\"released\":2", backResult);
             Assert.Contains("\"tokens\":0", backResult);
             Assert.Contains("\"grew\":0", backResult);
-            // 查证过程（random 调用与结果）已删
+            // 查证过程（info 调用声明）已删——只看调用声明（back 回执的工具台账正文提及工具名不算残留）
             for (int i = 0; i < all.Length; i = i + 1)
             {
-                Assert.DoesNotContain("random", all[i].Content == null ? "" : all[i].Content);
-                Assert.DoesNotContain("random", all[i].ToolCallsJson == null ? "" : all[i].ToolCallsJson);
+                Assert.DoesNotContain("info", all[i].ToolCallsJson == null ? "" : all[i].ToolCallsJson);
             }
             // 序列合法：末尾为结论轮的正式回复
             Assert.Equal(LlmRole.Assistant, all[all.Length - 1].Role);
             Assert.False(session.TimebackActive);
+        }
+
+        /// <summary>
+        /// back 声明思考净化（莎 2026-10-09 定）——回收后 back 声明的 ReasoningContent 换占位句；
+        /// start 声明的思考保留（工具需求生成过程）；视图层保留原文（不动）。
+        /// </summary>
+        [Fact]
+        public void Back_ClearsBackDeclarationReasoning()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            llm.ReasoningQueue.Enqueue("开域计划：查 A 与 B");
+            llm.ReasoningQueue.Enqueue("域内巡检");
+            llm.ReasoningQueue.Enqueue("断言：A、B 均已查完并落盘");
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"净化验证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("info", "f1", "{}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-back", "t2", "{\"findings\":\"成果：（无）\"}"));
+            session.PostUserMessage("净化验证");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
+            LlmMessage[] all = session.Context.GetMessages();
+            string startReason = "";
+            string backReason = "";
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                string tcJson = all[i].ToolCallsJson == null ? "" : all[i].ToolCallsJson;
+                if (all[i].Role != LlmRole.Assistant || !tcJson.Contains("timeback", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                if (tcJson.Contains("timeback-start", StringComparison.Ordinal))
+                {
+                    startReason = all[i].ReasoningContent == null ? "" : all[i].ReasoningContent;
+                }
+                if (tcJson.Contains("timeback-back", StringComparison.Ordinal))
+                {
+                    backReason = all[i].ReasoningContent == null ? "" : all[i].ReasoningContent;
+                }
+            }
+            // start 声明——思考保留原文
+            Assert.Contains("开域计划", startReason, StringComparison.Ordinal);
+            // back 声明——思考已换占位句（断言原文不残留）
+            Assert.Equal("原思考内容已因锚回收被清除", backReason);
+            // 查证轮的思考随区间删除——前文零残留
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                Assert.DoesNotContain("域内巡检", all[i].ReasoningContent == null ? "" : all[i].ReasoningContent);
+            }
+            // 视图层不动——原文仍可回看
+            Assert.True(ViewHas(session, "均已查完"));
+        }
+
+        /// <summary>
+        /// 回执骨架按域类型类别分派（批 2）——实现类（code_write）给「变更 + 跑测」（可回调）；
+        /// 审查类（text_search）给「成果位置」（可回读）。两类的可核验面不同，骨架不可互换。
+        /// </summary>
+        [Fact]
+        public void Start_SkeletonDispatchesByType()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"code_write\",\"purpose\":\"实现类骨架\"}"));
+            session.PostUserMessage("实现类骨架");
+            PumpUntilIdle(session);
+            string writeReceipt = ToolResultText(session, 0);
+            Assert.Contains("变更：", writeReceipt);
+            Assert.Contains("跑测：", writeReceipt);
+            Assert.Contains("台账", writeReceipt);
+            Assert.DoesNotContain("成果：<逐条", writeReceipt);
+
+            MockLlm llm2 = new MockLlm();
+            CH4.ChatSession session2 = CreateSession(llm2);
+            llm2.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"审查类骨架\"}"));
+            session2.PostUserMessage("审查类骨架");
+            PumpUntilIdle(session2);
+            string reviewReceipt = ToolResultText(session2, 0);
+            Assert.Contains("成果：", reviewReceipt);
+            Assert.Contains("按位置回读", reviewReceipt);
+            Assert.DoesNotContain("跑测：", reviewReceipt);
+        }
+
+        /// <summary>
+        /// 域类型参数面——type 缺失 / 非法一律拒开锚（ERR|TIMEBACK_ARGS，附合法枚举；域不建立）。
+        /// </summary>
+        [Fact]
+        public void Start_RejectsUnknownType()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"purpose\":\"缺类型\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t2", "{\"type\":\"impl\",\"purpose\":\"非法类型\"}"));
+            session.PostUserMessage("类型参数面");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
+            Assert.Contains("TIMEBACK_ARGS", ToolResultText(session, 0));
+            Assert.Contains("TIMEBACK_ARGS", ToolResultText(session, 1));
+            Assert.False(session.TimebackActive);
+        }
+
+        /// <summary>
+        /// 域类型白名单——名单外工具一律拒（ERR|TIMEBACK_PROFILE）；域保持活跃（拒绝不关域）。
+        /// 说明：本用例不收域——被拒结果留在前文供断言（收域会随区间删除）。
+        /// </summary>
+        [Fact]
+        public void Scope_ProfileRejectsToolOutsideWhitelist()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm, new string[] { "timeback-start", "timeback-back", "text-grep", "cs-patch", "file-delete" });
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"白名单验证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCallsBatch(
+                new string[] { "cs-patch", "file-delete" },
+                new string[] { "p1", "d1" },
+                new string[] { "{}", "{}" }));
+            session.PostUserMessage("白名单验证");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
+            Assert.Contains("TIMEBACK_PROFILE", ToolResultText(session, 1));
+            Assert.Contains("TIMEBACK_PROFILE", ToolResultText(session, 2));
+            Assert.True(session.TimebackActive);
+        }
+
+        /// <summary>
+        /// 域类型白名单——名单内工具放行（不被 PROFILE 拒）。用内置只读工具 `info`（域内白名单内）验证放行面。
+        /// 说明：本用例不收域——放行结果留在前文供断言。
+        /// </summary>
+        [Fact]
+        public void Scope_ProfileAllowsToolInsideWhitelist()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"放行验证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("info", "g1", "{}"));
+            session.PostUserMessage("放行验证");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
+            string result = ToolResultText(session, 1);
+            Assert.False(result.Contains("TIMEBACK_PROFILE", StringComparison.Ordinal), "名单内工具被误拒: " + result);
+            Assert.True(session.TimebackActive);
+            // info.timeback.active 与 recent 对齐——活跃域快照须带 type（轮内实测发现：原缺该字段）
+            Dictionary<string, object> active = session.TimebackActiveSnapshot();
+            Assert.NotNull(active);
+            Assert.Equal("text_search", active["type"]);
+        }
+
+        /// <summary>
+        /// 域类型白名单——豁免面不进本表：Note / sleep / timer 交 C3 报 LOCKED，
+        /// 语义比 PROFILE 准（`IsTimebackProfileExempt`）。
+        /// </summary>
+        [Fact]
+        public void Scope_ProfileExemptToolsReportC3Lock()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            llm.ToolCallsQueue.Enqueue(BuildToolCallsBatch(
+                new string[] { "timeback-start", "Note" },
+                new string[] { "t1", "n1" },
+                new string[] { "{\"type\":\"code_write\",\"purpose\":\"豁免面验证\"}", "{\"action\":\"set\",\"content\":\"任务A\"}" }));
+            session.PostUserMessage("豁免面验证");
+            PumpUntilIdle(session);
+            Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
+            string noteResult = ToolResultText(session, 1);
+            Assert.Contains("TIMEBACK_LOCKED", noteResult);
+            Assert.DoesNotContain("TIMEBACK_PROFILE", noteResult);
+        }
+
+        /// <summary>
+        /// 域类型档案——静态判据：浏览器预热仅 browser_vision；类型合法性判定；写面归属分域。
+        /// </summary>
+        [Fact]
+        public void Profile_TypeJudgements()
+        {
+            Assert.True(CH4.TimebackProfile.NeedsBrowser("browser_vision"));
+            Assert.False(CH4.TimebackProfile.NeedsBrowser("text_search"));
+            Assert.False(CH4.TimebackProfile.NeedsBrowser("code_review"));
+            Assert.False(CH4.TimebackProfile.NeedsBrowser("code_write"));
+            Assert.True(CH4.TimebackProfile.IsValid("code_write"));
+            Assert.False(CH4.TimebackProfile.IsValid("impl"));
+            Assert.False(CH4.TimebackProfile.IsValid(""));
+            Assert.True(CH4.TimebackProfile.Allows("code_write", "cs-patch"));
+            Assert.True(CH4.TimebackProfile.Allows("code_write", "text-write"));
+            Assert.False(CH4.TimebackProfile.Allows("code_write", "file-delete"));
+            Assert.False(CH4.TimebackProfile.Allows("code_write", "powershell"));
+            Assert.False(CH4.TimebackProfile.Allows("code_review", "cs-patch"));
+            Assert.True(CH4.TimebackProfile.Allows("code_review", "cs-read"));
+            Assert.True(CH4.TimebackProfile.Allows("browser_vision", "image-inject"));
+            Assert.False(CH4.TimebackProfile.Allows("text_search", "image-inject"));
+            Assert.Equal(CH4.TimebackProfile.KindWrite, CH4.TimebackProfile.Kind("code_write"));
+            Assert.Equal(CH4.TimebackProfile.KindReview, CH4.TimebackProfile.Kind("code_review"));
+            Assert.Equal(CH4.TimebackProfile.KindReview, CH4.TimebackProfile.Kind("browser_vision"));
+            Assert.Equal(CH4.TimebackProfile.KindReview, CH4.TimebackProfile.Kind("text_search"));
+        }
+
+        /// <summary>
+        /// 域类型档案——白名单对账：池中缺失的名字必须显形（拼写漂移 / 工具退役漏改的哨兵）。
+        /// </summary>
+        [Fact]
+        public void Profile_UnknownReportsWhitelistDrift()
+        {
+            string[] pool = new string[] { "text-read", "cs-read", "info", "browser-open", "image-inject", "browser-read", "browser-eval", "browser-shot", "browser-tabs", "image-analyze", "file-version", "file-tree", "file-find", "text-grep", "text-read_lines", "text-read_between" };
+            string[] missing = CH4.TimebackProfile.Unknown(pool);
+            Assert.Contains("cs-patch", missing);
+            Assert.Contains("text-write", missing);
+            Assert.DoesNotContain("text-read", missing);
+            Assert.DoesNotContain("browser-open", missing);
         }
 
         /// <summary>
@@ -284,8 +498,8 @@ namespace CatHome4.Core.Tests
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"purpose\":\"回执用途验证\"}"));
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "f1", "{\"min\":1,\"max\":10}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"回执用途验证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("info", "f1", "{}"));
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-back", "t2", "{\"findings\":\"结论：验证\\n事实：（无）\\n指针：（无）\"}"));
             session.PostUserMessage("开始取证");
             PumpUntilIdle(session);
@@ -304,7 +518,7 @@ namespace CatHome4.Core.Tests
             string batch = BuildToolCallsBatch(
                 new string[] { "timeback-start", "timeback-back" },
                 new string[] { "t1", "t2" },
-                new string[] { "{\"purpose\":\"同批\"}", "{\"findings\":\"结论：同批\"}" });
+                new string[] { "{\"type\":\"text_search\",\"purpose\":\"同批\"}", "{\"findings\":\"结论：同批\"}" });
             llm.ToolCallsQueue.Enqueue(batch);
             session.PostUserMessage("同批开收");
             PumpUntilIdle(session);
@@ -325,11 +539,11 @@ namespace CatHome4.Core.Tests
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
             string batch = BuildToolCallsBatch(
-                new string[] { "timeback-start", "random" },
+                new string[] { "timeback-start", "info" },
                 new string[] { "t1", "r1" },
-                new string[] { "{\"purpose\":\"同批多调用\"}", "{\"min\":1,\"max\":10}" });
+                new string[] { "{\"type\":\"text_search\",\"purpose\":\"同批多调用\"}", "{}" });
             llm.ToolCallsQueue.Enqueue(batch);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "r2", "{\"min\":1,\"max\":10}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("info", "r2", "{}"));
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-back", "t2", "{\"findings\":\"结论：多调用\"}"));
             session.PostUserMessage("同批多调用取证");
             PumpUntilIdle(session);
@@ -353,7 +567,7 @@ namespace CatHome4.Core.Tests
             string batch = BuildToolCallsBatch(
                 new string[] { "timeback-start", "Note", "sleep", "timer" },
                 new string[] { "t1", "n1", "s1", "m1" },
-                new string[] { "{\"purpose\":\"锁定验证\"}", "{\"action\":\"set\",\"content\":\"任务A\"}", "{\"seconds\":30}", "{\"content\":\"回来看看\",\"seconds\":60}" });
+                new string[] { "{\"type\":\"text_search\",\"purpose\":\"锁定验证\"}", "{\"action\":\"set\",\"content\":\"任务A\"}", "{\"seconds\":30}", "{\"content\":\"回来看看\",\"seconds\":60}" });
             llm.ToolCallsQueue.Enqueue(batch);
             session.PostUserMessage("锁定验证");
             PumpUntilIdle(session);
@@ -370,7 +584,7 @@ namespace CatHome4.Core.Tests
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm, new string[]
             {
-                                "timeback-start", "timeback-back", "random", "info", "host-flows", "host-reload", "restart-full"
+                                "timeback-start", "timeback-back", "info", "info", "host-flows", "host-reload", "restart-full"
             });
             // 作用域外——host-reload 不被该判定拦（测试环境直执回落 ERR|NO_TOOL）
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("host-reload", "h0", "{\"cat\":\"TextCat\"}"));
@@ -378,16 +592,16 @@ namespace CatHome4.Core.Tests
             // mau-setup 已于 2026-10-02 放行（deploy 从工具面退役后无暴毙风险），但它是 OA 工具——
             // 测试环境无工单消费者会挂起，故不在此批验证；黑名单清单本身由 §C5 规格 + 代码审查锁定。
             string batch = BuildToolCallsBatch(
-                new string[] { "timeback-start", "host-reload", "restart-full", "host-flows", "info", "random" },
+                new string[] { "timeback-start", "host-reload", "restart-full", "host-flows", "info", "info" },
                 new string[] { "t1", "h1", "r1", "f1", "i1", "x1" },
                 new string[]
                 {
-                                    "{\"purpose\":\"黑名单验证\"}",
+                                    "{\"type\":\"text_search\",\"purpose\":\"黑名单验证\"}",
                                     "{\"cat\":\"TextCat\"}",
                                     "{}",
                                     "{}",
                                     "{}",
-                                    "{\"min\":1,\"max\":10}"
+                                    "{}"
                 });
             llm.ToolCallsQueue.Enqueue(batch);
             session.PostUserMessage("黑名单验证");
@@ -414,7 +628,7 @@ namespace CatHome4.Core.Tests
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "s1", "{\"purpose\":\"骨架验证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "s1", "{\"type\":\"text_search\",\"purpose\":\"骨架验证\"}"));
             session.PostUserMessage("骨架验证");
             PumpUntilIdle(session);
             string receipt = ToolResultText(session, 0);
@@ -427,14 +641,15 @@ namespace CatHome4.Core.Tests
             Assert.Contains("位置必须是这趟真实读到", receipt);
         }
         /// <summary>
-        /// 写操作台账——域内 order ≥ 1 的工具逐条登记（宿主记录），只读面不入账；back 回执附于 findings 之前。
+        /// 工具台账——域内**用过的每个工具**逐条登记（宿主记录；含只读与被拒——莎 2026-10-09 定：谨慎口径，记全），
+        /// 唯域机制自用两件（start / back）不入账；back 回执附于 findings 之前。
         /// </summary>
         [Fact]
         public void Back_ReceiptCarriesWriteLog()
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "s1", "{\"purpose\":\"台账验证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "s1", "{\"type\":\"text_search\",\"purpose\":\"台账验证\"}"));
             session.PostUserMessage("开锚");
             PumpUntilIdle(session);
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("time", "s2", "{}"));
@@ -443,17 +658,21 @@ namespace CatHome4.Core.Tests
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("host-reload", "s3", "{\"cat\":\"TextCat\"}"));
             session.PostUserMessage("域内热重载");
             PumpUntilIdle(session);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-back", "s4", "{\"findings\":\"结论：台账验证\\n事实：（无）\\n指针：（无）\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-back", "s4", "{\"findings\":\"成果：台账验证\\n未竟：（无）\"}"));
             session.PostUserMessage("收域");
             PumpUntilIdle(session);
             string receipt = ToolResultText(session, 1);
-            // 情报行——返回体正文自带裁剪读数（条数 / token / 写入；本次 1 处写入 → 带下表指引）
+            // 情报行——返回体正文自带裁剪读数（条数 / token / 工具使用数）
             Assert.Contains("📉 释放 ", receipt);
-            Assert.Contains("写入操作 1 处（详见下表）", receipt);
-            Assert.Contains("本域写操作台账", receipt);
+            Assert.Contains("工具使用 2 次（详见下表）", receipt);
+            Assert.Contains("本域工具台账", receipt);
+            // 被拒工具（host-reload 撞 C5）入账并记 FAIL
             Assert.Contains("host-reload", receipt);
             Assert.Contains("FAIL", receipt);
-            Assert.DoesNotContain("time · ", receipt);
+            // 只读工具（time）同样入账——全量口径（原「只读不入账」已退役）
+            Assert.Contains("time · ", receipt);
+            // 机制自用两件不入账——台账里不出现 back 自身
+            Assert.DoesNotContain("timeback-back · ", receipt);
         }
 
         /// <summary>
@@ -477,13 +696,13 @@ namespace CatHome4.Core.Tests
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"purpose\":\"视图转 gap\"}"));
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "f1", "{\"min\":1,\"max\":10}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"视图转 gap\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("info", "f1", "{}"));
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-back", "t2", "{\"findings\":\"结论：视图验证\"}"));
             session.PostUserMessage("开始取证");
             PumpUntilIdle(session);
-            // 被删的 random 工具卡内容仍在视图层（转 gap 文本）
-            Assert.True(ViewHas(session, "random"));
+            // 被删的 info 工具卡内容仍在视图层（转 gap 文本）
+            Assert.True(ViewHas(session, "info"));
             Assert.True(ViewHas(session, "结论：视图验证"));
         }
 
@@ -500,8 +719,8 @@ namespace CatHome4.Core.Tests
             {
                 return archiveDir;
             };
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"purpose\":\"归档验证\"}"));
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "f1", "{\"min\":1,\"max\":10}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"归档验证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("info", "f1", "{}"));
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-back", "t2", "{\"findings\":\"结论：A\"}"));
             session.PostUserMessage("开始取证");
             PumpUntilIdle(session);
@@ -543,14 +762,14 @@ namespace CatHome4.Core.Tests
             string batch = BuildToolCallsBatch(
                 new string[] { "timeback-start", "timeback-start" },
                 new string[] { "t1", "t2" },
-                new string[] { "{\"purpose\":\"甲\"}", "{\"purpose\":\"乙\"}" });
+                new string[] { "{\"type\":\"text_search\",\"purpose\":\"甲\"}", "{\"type\":\"text_search\",\"purpose\":\"乙\"}" });
             llm.ToolCallsQueue.Enqueue(batch);
             session.PostUserMessage("同批连开两次");
             PumpUntilIdle(session);
             Assert.Contains("批内不允许多条", ToolResultText(session, 2));
             Assert.True(session.TimebackActive);
             // 跨批再次 start——嵌套拒绝（ERR|TIMEBACK_NESTED）
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t4", "{\"purpose\":\"丙\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t4", "{\"type\":\"text_search\",\"purpose\":\"丙\"}"));
             session.PostUserMessage("再开一次");
             PumpUntilIdle(session);
             Assert.Contains("TIMEBACK_NESTED", ToolResultText(session, 3));
@@ -588,12 +807,12 @@ namespace CatHome4.Core.Tests
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"purpose\":\"计数取证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"计数取证\"}"));
             // 计数从作用域开启后起算：start 批只计其结果 1（该批 assistant 产出于开锚之前）；
-            // 其后每批 +2（assistant + 工具完成）——第 12 个 random 批后累计 25，越过 25 阈值触发一次自述
+            // 其后每批 +2（assistant + 工具完成）——第 12 个 info 批后累计 25，越过 25 阈值触发一次自述
             for (int i = 0; i < 12; i = i + 1)
             {
-                llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "r" + i.ToString(), "{\"min\":1,\"max\":10}"));
+                llm.ToolCallsQueue.Enqueue(BuildToolCalls("info", "r" + i.ToString(), "{}"));
             }
             session.PostUserMessage("计数取证");
             PumpUntilIdle(session);
@@ -610,11 +829,11 @@ namespace CatHome4.Core.Tests
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"purpose\":\"计数取证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"计数取证\"}"));
             // 先凑满 25 阈值触发一次状态提示（1 + 2×12），再由 back 批验证提示随区间回收删除
             for (int i = 0; i < 12; i = i + 1)
             {
-                llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "r" + i.ToString(), "{\"min\":1,\"max\":10}"));
+                llm.ToolCallsQueue.Enqueue(BuildToolCalls("info", "r" + i.ToString(), "{}"));
             }
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-back", "t2", "{\"findings\":\"结论：计数取证\"}"));
             session.PostUserMessage("计数取证");
@@ -626,10 +845,11 @@ namespace CatHome4.Core.Tests
             Assert.False(HasMessage(session, LlmRole.User, "你处在 timeback 中"));
             Assert.True(HasMessage(session, LlmRole.Tool, "结论：计数取证"));
             LlmMessage[] all = session.Context.GetMessages();
+            // 区间内容已删——判据取调用声明（back 回执的工具台账正文提及工具名不算残留）
             for (int i = 0; i < all.Length; i = i + 1)
             {
-                string content = all[i].Content == null ? "" : all[i].Content;
-                Assert.DoesNotContain("random", content);
+                string toolCalls = all[i].ToolCallsJson == null ? "" : all[i].ToolCallsJson;
+                Assert.DoesNotContain("info", toolCalls);
             }
         }
         /// <summary>
@@ -716,7 +936,7 @@ namespace CatHome4.Core.Tests
             string batch = BuildToolCallsBatch(
                 new string[] { "host-reload", "timeback-start" },
                 new string[] { "h1", "t1" },
-                new string[] { "{\"cat\":\"TextCat\"}", "{\"purpose\":\"批内次序\"}" });
+                new string[] { "{\"cat\":\"TextCat\"}", "{\"type\":\"text_search\",\"purpose\":\"批内次序\"}" });
             llm.ToolCallsQueue.Enqueue(batch);
             session.PostUserMessage("批内次序");
             PumpUntilIdle(session);
@@ -757,9 +977,9 @@ namespace CatHome4.Core.Tests
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
             string batch = BuildToolCallsBatch(
-                new string[] { "timeback-back", "random", "timeback-start" },
+                new string[] { "timeback-back", "info", "timeback-start" },
                 new string[] { "t2", "r1", "t1" },
-                new string[] { "{\"findings\":\"结论：乱序开收\"}", "{\"min\":1,\"max\":10}", "{\"purpose\":\"乱序开收\"}" });
+                new string[] { "{\"findings\":\"结论：乱序开收\"}", "{}", "{\"type\":\"text_search\",\"purpose\":\"乱序开收\"}" });
             llm.ToolCallsQueue.Enqueue(batch);
             session.PostUserMessage("乱序开收");
             PumpUntilIdle(session);
@@ -780,19 +1000,19 @@ namespace CatHome4.Core.Tests
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"purpose\":\"批内 sibling\"}"));
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "f1", "{\"min\":1,\"max\":10}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"批内 sibling\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("info", "f1", "{}"));
             llm.ToolCallsQueue.Enqueue(BuildToolCallsBatch(
-                new string[] { "timeback-back", "random" },
+                new string[] { "timeback-back", "info" },
                 new string[] { "t2", "r2" },
-                new string[] { "{\"findings\":\"结论：批内 sibling\"}", "{\"min\":1,\"max\":10}" }));
+                new string[] { "{\"findings\":\"结论：批内 sibling\"}", "{}" }));
             session.PostUserMessage("批内 sibling 取证");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
-            // 跨批查证区间（random 声明 + 结果）删除 → released:2
+            // 跨批查证区间（info 声明 + 结果）删除 → released:2
             Assert.Contains("\"released\":2", ToolResultText(session, 1));
             // 同批 sibling 结果保留（back 后置执行 → 区间上界仍为本批声明）
-            Assert.Contains("min", ToolResultText(session, 2));
+            Assert.Contains("INFO", ToolResultText(session, 2));
             Assert.True(HasMessage(session, LlmRole.Tool, "结论：批内 sibling"));
             Assert.False(session.TimebackActive);
         }
@@ -807,7 +1027,7 @@ namespace CatHome4.Core.Tests
             string batch = BuildToolCallsBatch(
                 new string[] { "timeback-start", "timeback-start" },
                 new string[] { "t1", "t2" },
-                new string[] { "{\"purpose\":\"首条\"}", "{\"purpose\":\"重复\"}" });
+                new string[] { "{\"type\":\"text_search\",\"purpose\":\"首条\"}", "{\"type\":\"text_search\",\"purpose\":\"重复\"}" });
             llm.ToolCallsQueue.Enqueue(batch);
             session.PostUserMessage("重复 timeback");
             PumpUntilIdle(session);
@@ -825,8 +1045,8 @@ namespace CatHome4.Core.Tests
         {
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"purpose\":\"视图不受影响验证\"}"));
-            llm.ToolCallsQueue.Enqueue(BuildToolCalls("random", "f1", "{\"min\":1,\"max\":10}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"视图不受影响验证\"}"));
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("info", "f1", "{}"));
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-back", "t2", "{\"findings\":\"结论：视图不受影响\"}"));
             session.PostUserMessage("视图不受影响验证");
             PumpUntilIdle(session);
@@ -854,9 +1074,9 @@ namespace CatHome4.Core.Tests
             MockLlm llm = new MockLlm();
             CH4.ChatSession session = CreateSession(llm);
             string batch = BuildToolCallsBatch(
-                new string[] { "timeback-start", "random" },
+                new string[] { "timeback-start", "info" },
                 new string[] { "t1", "r1" },
-                new string[] { "{\"purpose\":\"sibling 保留\"}", "{\"min\":1,\"max\":10}" });
+                new string[] { "{\"type\":\"text_search\",\"purpose\":\"sibling 保留\"}", "{}" });
             llm.ToolCallsQueue.Enqueue(batch);
             llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-back", "t2", "{\"findings\":\"结论：sibling\"}"));
             session.PostUserMessage("sibling 保留");
@@ -877,7 +1097,7 @@ namespace CatHome4.Core.Tests
                 {
                     anchorCardKept = true;
                 }
-                if (blocks[i].RenderType == "toolcard" && candidatePayload.Contains("\"random\"", StringComparison.Ordinal))
+                if (blocks[i].RenderType == "toolcard" && candidatePayload.Contains("\"info\"", StringComparison.Ordinal))
                 {
                     siblingCardKept = true;
                 }

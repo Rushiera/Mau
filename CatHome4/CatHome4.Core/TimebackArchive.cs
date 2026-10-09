@@ -19,6 +19,9 @@ namespace CH4
         /// <summary>归属猫 key</summary>
         public string CatKey = "";
 
+        /// <summary>域类型（`TimebackProfile` 枚举——start 时登记；观测按类型分布统计）</summary>
+        public string Type = "";
+
         /// <summary>用途标签（start 时登记）</summary>
         public string Purpose = "";
 
@@ -49,7 +52,7 @@ namespace CH4
         /// <summary>带回载荷全文（findings）</summary>
         public string Findings = "";
         /// <summary>
-        /// 本域写操作台账——宿主记录（order ≥ 1 的工具逐条：工具名 · 目标标识 · 成败）；空=无写操作。
+        /// 本域工具台账——宿主记录（域内用过的每个工具逐条：工具名 · 目标标识 · 成败；含只读与被拒）；空=域内零调用。
         /// </summary>
         public List<string> Writes = new List<string>();
     }
@@ -440,6 +443,7 @@ namespace CH4
             obj["t"] = "timeback";
             obj["id"] = record.Id;
             obj["catKey"] = record.CatKey == null ? "" : record.CatKey;
+            obj["type"] = record.Type == null ? "" : record.Type;
             obj["purpose"] = record.Purpose == null ? "" : record.Purpose;
             obj["anchor"] = record.Anchor;
             obj["startAt"] = record.StartAt;
@@ -449,7 +453,7 @@ namespace CH4
             obj["tokens"] = record.Tokens;
             obj["grew"] = record.Grew;
             obj["released"] = record.Released;
-            obj["writes"] = JsonSerializer.SerializeToNode(record.Writes, SerializerOptions);
+            obj["tools"] = JsonSerializer.SerializeToNode(record.Writes, SerializerOptions);
             obj["findings"] = record.Findings == null ? "" : record.Findings;
             return obj.ToJsonString(SerializerOptions);
         }

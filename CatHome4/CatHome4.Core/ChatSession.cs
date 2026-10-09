@@ -2236,6 +2236,22 @@ namespace CH4
                     LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：timeback 作用域外不可用", "TIMEBACK");
                     continue;
                 }
+                // 域类型白名单（design-ch4-timeback-type §三 第 2 道）——域内只给本 type 的工具面（fail-closed）；
+                // 由 start 登记的类型决定，与「域外专属集」正交（前者判"域内给不给"，后者判"域外给不给"）。
+                // 三类不放本表管辖、交各自机制报错：timeback 两件（域机制自用）· Note/sleep/timer（C3 锁定——
+                // 报 TIMEBACK_LOCKED 语义比 PROFILE 准）；C5 暴毙名单在上方已拒。
+                // 会话授权面之外的工具亦不做先验——声明面在上方已拒，本表只判「是否属于本 type」
+                if (_timebackScope != null && !IsTimebackProfileExempt(call.Name)
+                    && !TimebackProfile.Allows(_timebackScope.Type, call.Name))
+                {
+                    ToolOrderDog profileDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
+                    profileDog.Result = "ERR|TIMEBACK_PROFILE|" + call.Name + " 不在本域类型「" + _timebackScope.Type
+                        + "」的白名单内——域类型决定域内可用工具面；需用则先 back 回收、回主干调用";
+                    profileDog.IsClosed = true;
+                    _dogs.Add(profileDog);
+                    LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：不在域类型 " + _timebackScope.Type + " 白名单内", "TIMEBACK");
+                    continue;
+                }
                 // per-cat 路由——载荷注入猫 key（会话标识 ≡ 猫 key；积木按 catId 解析猫级文件系统与配置面）
                 string arguments = InjectCatId(call.Arguments);
                 // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
