@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text.Json;
-using Mau.Runtime;
 
 namespace CH4
 {
@@ -10,14 +8,14 @@ namespace CH4
     /// order 是宿主内部静态表，**不是 LLM 可写参数**：无论 LLM 以何序返回工具调用，一律按 order 分桶执行
     /// （同值一批 · 值升序 · 批间串行 / 批内并发）。LLM 知道机制存在（工具定义注释 + L1 元规则），
     /// 但调用序本身不承载语义。
-    /// 档位：-100 timeback(start) 钉死 / -1 只读 / 0 默认 / 1 写入变更 / 2 独占（每次调用各自成批）
-    /// / 3 构建执行部署 / 100 timeback(back) 钉死。
+    /// 档位：-100 timeback-start 钉死 / -1 只读 / 0 默认 / 1 写入变更 / 2 独占（每次调用各自成批）
+    /// / 3 构建执行部署 / 100 timeback-back 钉死。
     /// 默认 0 落在只读之后、写入之前——未登记工具不会插到只读工具前面。
     /// 维护：全量登记——新增工具必须入表，对账门禁（ToolOrderTableTests）会红。
     /// </summary>
     public static class ToolOrderTable
     {
-        /// <summary>钉死档——timeback(action=start)：会话结构约束优先，忽略 LLM 调用序</summary>
+        /// <summary>钉死档——timeback-start：会话结构约束优先，忽略 LLM 调用序</summary>
         public const int OrderTimebackStart = -100;
 
         /// <summary>只读 / 无副作用档</summary>
@@ -40,7 +38,7 @@ namespace CH4
         /// <summary>构建 / 执行 / 部署档</summary>
         public const int OrderBuild = 3;
 
-        /// <summary>钉死档——timeback(action=back)：会话结构约束优先，忽略 LLM 调用序</summary>
+        /// <summary>钉死档——timeback-back：会话结构约束优先，忽略 LLM 调用序</summary>
         public const int OrderTimebackBack = 100;
 
         /// <summary>只读档清单（-1）——观测 / 查询类，无外部副作用</summary>
@@ -92,15 +90,14 @@ namespace CH4
             "sleep", "timer"
         };
 
-        /// <summary>钉死档清单——值由调用参数（action）决定，非静态可解析；对账面须登记，裁决走 Resolve(name, args)</summary>
+        /// <summary>钉死档清单——静态两名（timeback-start / timeback-back），值由工具名直接裁决（参数面无关）</summary>
         private static readonly string[] PinnedNames =
         {
-            "timeback"
+            "timeback-start", "timeback-back"
         };
 
         /// <summary>
-        /// 解析工具执行序——参数无关面（配置面 / 定义注记用）。timeback 取代表值前需带 action，
-        /// 无 action 语义时落默认档（钉死值由带参重载裁决）。
+        /// 解析工具执行序——静态表裁决入口（timeback 两态 = 两个独立工具名，各取一端钉死值）。
         /// </summary>
         /// <param name="name">工具名</param>
         /// <returns>执行序值（未登记 = 默认档）</returns>
@@ -109,6 +106,14 @@ namespace CH4
             if (name == null || name.Length == 0)
             {
                 return OrderDefault;
+            }
+            if (name == "timeback-start")
+            {
+                return OrderTimebackStart;
+            }
+            if (name == "timeback-back")
+            {
+                return OrderTimebackBack;
             }
             if (Contains(ReadOnlyNames, name))
             {
@@ -127,31 +132,6 @@ namespace CH4
                 return OrderBuild;
             }
             return OrderDefault;
-        }
-
-        /// <summary>
-        /// 解析工具执行序——带参数面（分桶裁决用）。timeback 按 action 取钉死值：
-        /// start = -100 / back = 100；action 缺失或非法落默认档（参数面由工具校验层另行拒绝）。
-        /// </summary>
-        /// <param name="name">工具名</param>
-        /// <param name="argsJson">参数 JSON</param>
-        /// <returns>执行序值</returns>
-        public static int Resolve(string name, string argsJson)
-        {
-            if (name == "timeback")
-            {
-                string action = ExtractAction(argsJson);
-                if (action == "start")
-                {
-                    return OrderTimebackStart;
-                }
-                if (action == "back")
-                {
-                    return OrderTimebackBack;
-                }
-                return OrderDefault;
-            }
-            return Resolve(name);
         }
 
         /// <summary>
@@ -228,22 +208,18 @@ namespace CH4
 
         /// <summary>
         /// 执行序显示文本——toolcard 载荷与配置面共用出口（前端零裁决）。
-        /// timeback 双钉死值（按 action 分走两端）→ 显示 "-100/100"；其余为单值数字串。
+        /// timeback 两态各自一名 → 单值数字串（-100 / 100）。
         /// </summary>
         /// <param name="name">工具名</param>
         /// <returns>显示文本（未知工具 = 默认档文本）</returns>
         public static string OrderText(string name)
         {
-            if (name == "timeback")
-            {
-                return OrderTimebackStart.ToString() + "/" + OrderTimebackBack.ToString();
-            }
             return Resolve(name).ToString();
         }
 
         /// <summary>
         /// 工具定义标准注记——ToolPool.RebuildAll 单点注入（工具描述尾行）。
-        /// 形态与 LLM 面约定一致：`order: &lt;n&gt;`（timeback 双值并列）。
+        /// 形态与 LLM 面约定一致：`order: &lt;n&gt;`。
         /// </summary>
         /// <param name="name">工具名</param>
         /// <returns>注记行（永不为空）</returns>
@@ -337,45 +313,6 @@ namespace CH4
                 }
             }
             return false;
-        }
-
-        /// <summary>
-        /// 取 timeback action 字段——缺失 / 非字符串 / JSON 不可析一律空串（调用方按默认档处理）。
-        /// </summary>
-        /// <param name="argsJson">参数 JSON</param>
-        /// <returns>action 文本（空 = 未取到）</returns>
-        private static string ExtractAction(string argsJson)
-        {
-            if (argsJson == null || argsJson.Length == 0)
-            {
-                return "";
-            }
-            try
-            {
-                using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
-                {
-                    JsonElement root = doc.RootElement;
-                    if (root.ValueKind != JsonValueKind.Object)
-                    {
-                        return "";
-                    }
-                    JsonElement actionEl;
-                    if (!root.TryGetProperty("action", out actionEl) || actionEl.ValueKind != JsonValueKind.String)
-                    {
-                        return "";
-                    }
-                    string action = actionEl.GetString();
-                    if (action == null)
-                    {
-                        return "";
-                    }
-                    return action.Trim();
-                }
-            }
-            catch (Exception)
-            {
-                return "";
-            }
         }
     }
 }

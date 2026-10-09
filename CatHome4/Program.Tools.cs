@@ -22,7 +22,7 @@ namespace CH4
         private static string BuildBuiltinToolsJson()
         {
             // 结构化构建——匿名对象树 → JsonSerializer（R6-P3-08：原手写字符串拼接易漏转义、难维护）
-            object[] tools = new object[10];
+            object[] tools = new object[11];
             tools[0] = new
             {
                 name = "Note",
@@ -148,18 +148,30 @@ namespace CH4
             };
             tools[9] = new
             {
-                name = "timeback",
-                description = "上下文作用域——action='start' 开锚（purpose 记用途）→ 过程在作用域内膨胀 → action='back' 回卷：膨胀过程从上下文销毁，只把 findings 带回主干（下一轮首条可见）。用途收窄（莎定 2026-10-03）：仅为两个域限定工具解锁——主干识图（image-inject）· 浏览网页（browser-*）；域内不做工作、不写计划，用完即 back。热重载 / 重启 / 部署不在域内（进程中断即失域）——这类收尾留域外。back 的 findings 按 start 回执给出的骨架写（成果 / 未竟 / 卡点 / 失败）——只写「成果在哪」不写「结论是什么」：逐条给可回读位置（文件:行 / URL / 截图路径）+ 一句话描述，主干按位置回读、以回读到的真实内容为准；没读到的、凭印象复述的一律不写。v1 未闭合前禁止再次 start。",
+                name = "timeback-start",
+                description = "上下文作用域·开锚——purpose 记用途；过程在作用域内膨胀，回收时用 timeback-back 回卷（膨胀过程从上下文销毁，只把 findings 带回主干——下一轮首条可见）。用途收窄（莎定 2026-10-03）：仅为两个域限定工具解锁——主干识图（image-inject）· 浏览网页（browser-*）；域内不做工作、不写计划，用完即回卷。热重载 / 重启 / 部署不在域内（进程中断即失域）——这类收尾留域外。v1 未闭合前禁止再次 start。",
                 parameters = new
                 {
                     type = "object",
                     properties = new Dictionary<string, object>
                             {
-                                { "action", new { type = "string", description = "start=开锚 / back=回卷回收" } },
-                                { "purpose", new { type = "string", description = "start 必填——用途标签（短）" } },
-                                { "findings", new { type = "string", description = "back 必填——带回载荷（骨架见 start 回执：成果 / 未竟 / 卡点 / 失败——只写位置与简短描述，不写结论）" } }
+                                { "purpose", new { type = "string", description = "用途标签（短）" } }
                             },
-                    required = new string[] { "action" }
+                    required = new string[] { "purpose" }
+                }
+            };
+            tools[10] = new
+            {
+                name = "timeback-back",
+                description = "上下文作用域·回卷回收——findings 即本次调用的返回值，回卷后作用域关闭（区间内容从上下文销毁）。findings 按 start 回执给出的骨架写（成果 / 未竟 / 卡点 / 失败）——只写「成果在哪」不写「结论是什么」：逐条给可回读位置（文件:行 / URL / 截图路径）+ 一句话描述，主干按位置回读、以回读到的真实内容为准；没读到的、凭印象复述的一律不写。回执另附宿主写操作台账。",
+                parameters = new
+                {
+                    type = "object",
+                    properties = new Dictionary<string, object>
+                            {
+                                { "findings", new { type = "string", description = "带回载荷（骨架：成果 / 未竟 / 卡点 / 失败——只写位置与简短描述，不写结论）" } }
+                            },
+                    required = new string[] { "findings" }
                 }
             };
             // 统一序列化入口——中文与 < > 直显（JsonUtil=UnsafeRelaxedJsonEscaping 单一真相源）

@@ -3,7 +3,7 @@
 //
 // 覆盖：
 //   ① 声明面 ↔ 落位面不漂移——`TOOL_DECL`（各件自注册）与 `TOOL_SKELETONS`（落位表）键集必须一致，
-//      且同为运行态工具池 62 件（基准 = 宿主 `ToolOrderTable` 全量登记表）
+//      且同为运行态工具池 63 件（基准 = 宿主 `ToolOrderTable` 全量登记表）
 //   ② 骨架分派——登记工具走对应骨架；未登记工具走形态探测回落（禁止空白）
 //   ③ 专属骨架——`info`（分类摊平）/ `catinfo`（每猫一行）
 //   ④ 折叠行四级——前缀（图标 / 批次 / 失败）· 声明层 headline · 骨架兜底 · 规模后缀
@@ -19,7 +19,7 @@ beforeAll(async () => {
     await bootChatPage();
 });
 
-// 工具池基准——62 件（按工具组；新增工具须同批登记落位表 + 落件 + 本表）
+// 工具池基准——63 件（按工具组；新增工具须同批登记落位表 + 落件 + 本表）
 const POOL = [
     // TextCat 7
     'text-read', 'text-read_lines', 'text-read_between', 'text-write', 'text-append', 'text-replace', 'text-grep',
@@ -40,8 +40,8 @@ const POOL = [
     'restart-full', 'restart-incr', 'restart-host', 'majordomo-cmd', 'majordomo-catinfo',
     // SearchCat 1 · VisionCat 2
     'web-search', 'image-analyze', 'image-inject',
-    // 内置 10
-    'info', 'Note', 'time', 'random', 'pack', 'host-reload', 'host-flows', 'sleep', 'timer', 'timeback'
+    // 内置 11
+    'info', 'Note', 'time', 'random', 'pack', 'host-reload', 'host-flows', 'sleep', 'timer', 'timeback-start', 'timeback-back'
 ].sort();
 
 /** 工具卡载荷——参数 JSON + 结果原文 */
@@ -63,9 +63,9 @@ function summaryOf(payload) {
 }
 
 describe('声明层——覆盖与注册', () => {
-    it('落位表 = 工具池 62 件', () => {
+    it('落位表 = 工具池 63 件', () => {
         expect(Object.keys(window.TOOL_SKELETONS).sort()).toEqual(POOL);
-        expect(POOL.length).toBe(62);
+        expect(POOL.length).toBe(63);
     });
 
     it('声明件与落位表键集一致（有落位必有件，防「有壳无肉」）', () => {

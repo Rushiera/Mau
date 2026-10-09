@@ -62,7 +62,7 @@ namespace CatHome4.Core.Tests
         /// <returns>会话实体</returns>
         private static CH4.ChatSession CreateSession(MockLlm llm)
         {
-            string[] toolNames = new string[] { "timeback", "image-inject", "random" };
+            string[] toolNames = new string[] { "timeback-start", "timeback-back", "image-inject", "random" };
             ToolSpec[] tools = new ToolSpec[toolNames.Length];
             for (int i = 0; i < toolNames.Length; i = i + 1)
             {

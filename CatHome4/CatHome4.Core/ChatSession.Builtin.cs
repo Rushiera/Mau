@@ -82,9 +82,13 @@ namespace CH4
             {
                 return ExecuteTimer(argsJson);
             }
-            if (name == "timeback")
+            if (name == "timeback-start")
             {
-                return ExecuteTimeback(argsJson);
+                return ExecuteTimebackStart(argsJson);
+            }
+            if (name == "timeback-back")
+            {
+                return ExecuteTimebackBack(argsJson);
             }
             return "ERR|UNKNOWN_BUILTIN|未知内置工具: " + name;
         }

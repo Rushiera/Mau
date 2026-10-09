@@ -2131,19 +2131,14 @@ namespace CH4
             _batches.Clear();
             _batchIndex = -1;
             List<ToolCallInfo> calls = ParseToolCalls(toolCallsJson);
-            // [P0] 剥离——批内 timeback 至多 start × 1 + back × 1（design-ch4-timeback §2.4）：
+            // [P0] 剥离——批内 timeback-start / timeback-back 各至多 1 条（design-ch4-timeback §2.4）：
             // 各取首条剥离，重复调用（同类第 2 条起）判参数面拒绝（不静默丢弃）
             int startIndex = -1;
             int backIndex = -1;
             bool[] duplicated = new bool[calls.Count];
             for (int i = 0; i < calls.Count; i = i + 1)
             {
-                if (calls[i].Name != "timeback")
-                {
-                    continue;
-                }
-                string action = ExtractTimebackAction(calls[i].Arguments);
-                if (action == "start")
+                if (calls[i].Name == "timeback-start")
                 {
                     if (startIndex < 0)
                     {
@@ -2155,7 +2150,7 @@ namespace CH4
                     }
                     continue;
                 }
-                if (action == "back")
+                if (calls[i].Name == "timeback-back")
                 {
                     if (backIndex < 0)
                     {
@@ -2193,11 +2188,11 @@ namespace CH4
             for (int i = 0; i < calls.Count; i = i + 1)
             {
                 ToolCallInfo call = calls[i];
-                // 批内重复 timeback——参数面拒绝（批内至多 start × 1 + back × 1）
+                // 批内重复 timeback-start / timeback-back——参数面拒绝（各至多 × 1）
                 if (duplicated[i])
                 {
                     ToolOrderDog dupDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
-                    dupDog.Result = "ERR|TIMEBACK_ARGS|批内不允许多条 timeback 调用（至多 start × 1 + back × 1）——第 " + (i + 1).ToString() + " 条被拒";
+                    dupDog.Result = "ERR|TIMEBACK_ARGS|批内不允许多条 timeback-start / timeback-back 调用（各至多 × 1）——第 " + (i + 1).ToString() + " 条被拒";
                     dupDog.IsClosed = true;
                     _dogs.Add(dupDog);
                     LogStore.Add("CatHome4", 2, "timeback 批内重复调用被拒（第 " + (i + 1).ToString() + " 条）", "TIMEBACK");
@@ -2246,8 +2241,8 @@ namespace CH4
                 // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
                 _toolCallCount = _toolCallCount + 1;
                 ToolOrderDog dog = new ToolOrderDog(call.Id, call.Name, arguments);
-                // A127——执行序裁决（参数相关：timeback 按 action 分走两端钉死值）
-                dog.Order = ToolOrderTable.Resolve(call.Name, call.Arguments);
+                // A127——执行序裁决（静态表：timeback-start / timeback-back 各取一端钉死值）
+                dog.Order = ToolOrderTable.Resolve(call.Name);
                 _dogs.Add(dog);
             }
             // [P3] 分批——按 order 值升序分桶（同值一批 · 批内声明序；独占档每个调用各自成批）+ 启动首批

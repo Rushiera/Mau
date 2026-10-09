@@ -6,7 +6,8 @@ using Mau.Runtime;
 namespace CH4
 {
     /// <summary>
-    /// 宿主会话实体——timeback 上下文作用域分部（design-ch4-timeback §2 / §三 · 2026-09-28 语义重设）。
+    /// 宿主会话实体——timeback 上下文作用域分部（design-ch4-timeback §2 / §三 · 2026-09-28 语义重设 · 2026-10-09 拆两名）。
+    /// 工具面：timeback-start（开锚）· timeback-back（回卷回收）——原单工具 timeback（action=start|back）拆分，功能不变。
     /// 语义（莎定）：**锚点 = start 的 tool_calls 声明本身；回收 = back 的返回值**。
     ///   前文形态：[start 声明][start 结果] [查证过程…] [back 声明][back 结果 = findings]
     ///   回收动作：删除「start 结果之后、back 声明之前」的全部消息——两次调用对与结论原样保留。
@@ -84,18 +85,15 @@ namespace CH4
         }
 
         /// <summary>
-        /// timeback 执行体——参数面（action 必填：start 需 purpose / back 需 findings；未知参数拒绝）。
-        /// start：锚点 = 本刻前文末条（即本次 start 的 tool_calls 声明）+ 归档 open 行。
-        /// back：载荷即本次调用的返回值（findings 全文——成果定位：位置 + 简短描述，不下结论）——区间删除在工具批后段执行。
+        /// timeback-start 执行体——参数面（purpose 必填；未知参数拒绝）。
+        /// 锚点 = 本刻前文末条（即本次调用的 tool_calls 声明）；回收由 timeback-back 承担。
         /// </summary>
-        /// <param name="argsJson">参数 JSON（action / purpose / findings）</param>
+        /// <param name="argsJson">参数 JSON（purpose）</param>
         /// <returns>结构化结果（元数据头 + 正文；失败 ERR| 前缀）</returns>
-        private string ExecuteTimeback(string argsJson)
+        private string ExecuteTimebackStart(string argsJson)
         {
-            string action = "";
             string purpose = "";
-            string findings = "";
-            // [段0] 参数面——action 必填 + 未知参数拒绝（零容忍）
+            // [段0] 参数面——purpose 必填 + 未知参数拒绝（零容忍；catId 宿主保留键放行）
             if (argsJson != null && argsJson.Length > 0 && argsJson.StartsWith("{"))
             {
                 try
@@ -109,15 +107,6 @@ namespace CH4
                             {
                                 continue;
                             }
-                            if (property.Name == "action")
-                            {
-                                if (property.Value.ValueKind != JsonValueKind.String)
-                                {
-                                    return "ERR|TIMEBACK_ARGS|action 需为字符串";
-                                }
-                                action = property.Value.GetString() ?? "";
-                                continue;
-                            }
                             if (property.Name == "purpose")
                             {
                                 if (property.Value.ValueKind != JsonValueKind.String)
@@ -125,6 +114,40 @@ namespace CH4
                                     return "ERR|TIMEBACK_ARGS|purpose 需为字符串";
                                 }
                                 purpose = property.Value.GetString() ?? "";
+                                continue;
+                            }
+                            return "ERR|TIMEBACK_ARGS|未知参数: " + property.Name + "（支持 purpose）";
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return "ERR|TIMEBACK_ARGS|timeback-start 参数解析失败: " + ex.Message;
+                }
+            }
+            return TimebackStart(purpose);
+        }
+        /// <summary>
+        /// timeback-back 执行体——参数面（findings 必填；未知参数拒绝）。
+        /// 载荷即本次调用的返回值；区间删除在工具批后段执行（ApplyTimebackBack）。
+        /// </summary>
+        /// <param name="argsJson">参数 JSON（findings）</param>
+        /// <returns>结构化结果（元数据头 + 正文；失败 ERR| 前缀）</returns>
+        private string ExecuteTimebackBack(string argsJson)
+        {
+            string findings = "";
+            // [段0] 参数面——findings 必填 + 未知参数拒绝（零容忍；catId 宿主保留键放行）
+            if (argsJson != null && argsJson.Length > 0 && argsJson.StartsWith("{"))
+            {
+                try
+                {
+                    using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
+                    {
+                        JsonElement root = doc.RootElement;
+                        foreach (JsonProperty property in root.EnumerateObject())
+                        {
+                            if (property.Name == "catId")
+                            {
                                 continue;
                             }
                             if (property.Name == "findings")
@@ -136,24 +159,16 @@ namespace CH4
                                 findings = property.Value.GetString() ?? "";
                                 continue;
                             }
-                            return "ERR|TIMEBACK_ARGS|未知参数: " + property.Name + "（支持 action / purpose / findings）";
+                            return "ERR|TIMEBACK_ARGS|未知参数: " + property.Name + "（支持 findings）";
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    return "ERR|TIMEBACK_ARGS|timeback 参数解析失败: " + ex.Message;
+                    return "ERR|TIMEBACK_ARGS|timeback-back 参数解析失败: " + ex.Message;
                 }
             }
-            if (action == "start")
-            {
-                return TimebackStart(purpose);
-            }
-            if (action == "back")
-            {
-                return TimebackBack(findings);
-            }
-            return "ERR|TIMEBACK_ARGS|action 需为 start 或 back";
+            return TimebackBack(findings);
         }
 
         /// <summary>
@@ -215,7 +230,7 @@ namespace CH4
                 + "每条 ≤1 行 · 每段 ≤5 条；位置必须是这趟真实读到 / 打开过的——没读到的、凭印象复述的一律不写。\n"
                 + "例：成果：mau:CatHome4/Program.Tools.cs 的 timeback 描述块——findings 参数说明所在行（行号以你实读到的为准），请回读确认";
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 开锚（锚点 " + declIndex.ToString() + " / 用途 " + scope.Purpose + "）", "TIMEBACK");
-            return ToolMetaHead.With("timeback", true, fields, body);
+            return ToolMetaHead.With("timeback-start", true, fields, body);
         }
 
         /// <summary>
@@ -247,8 +262,17 @@ namespace CH4
             fields["tokens"] = tokensNow;
             fields["grew"] = tokensNow - _timebackScope.TokensAtOpen;
             fields["writes"] = _timebackScope.WriteLog.Count;
+            // 情报行——裁剪读数以自然语言进正文（条数 / token / 写入三项皆宿主实测），令**返回体自足**：
+            // 不必回解结构头即可读到准确情报；表体（写操作台账）紧随其后。
+            string infoLine = "📉 释放 " + _timebackScope.PendingReleased.ToString() + " 条前文，裁剪 "
+                + (tokensNow - _timebackScope.TokensAtOpen).ToString() + "token 写入操作 "
+                + _timebackScope.WriteLog.Count.ToString() + " 处";
+            if (_timebackScope.WriteLog.Count > 0)
+            {
+                infoLine = infoLine + "（详见下表）";
+            }
             // 台账附于 findings 之前——头 = 宿主事实（从执行流水提取，不可编），体 = LLM 自述；主干据此抽样核对
-            return ToolMetaHead.With("timeback", true, fields, BuildTimebackWrites() + findings);
+            return ToolMetaHead.With("timeback-back", true, fields, infoLine + "\n" + BuildTimebackWrites() + findings);
         }
 
         /// <summary>
@@ -494,7 +518,7 @@ namespace CH4
             {
                 return;
             }
-            if (ToolOrderTable.Resolve(name, argsJson) < 1)
+            if (ToolOrderTable.Resolve(name) < 1)
             {
                 return;
             }
@@ -646,45 +670,6 @@ namespace CH4
             map["startAt"] = scope.StartAtMs;
             map["events"] = scope.EventCount;
             return map;
-        }
-        /// <summary>
-        /// 提取 timeback 参数中的 action——批内剥离判定专用（start / back 各取首条；A106 批内次序）。
-        /// 解析失败 / 缺失 / 非对象 → 空串（该条不剥离，留主体段由执行体按参数面拒绝）。
-        /// </summary>
-        /// <param name="argsJson">参数 JSON</param>
-        /// <returns>action 值（空=无法识别）</returns>
-        private static string ExtractTimebackAction(string argsJson)
-        {
-            if (argsJson == null || argsJson.Length == 0 || !argsJson.StartsWith("{"))
-            {
-                return "";
-            }
-            try
-            {
-                using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
-                {
-                    JsonElement root = doc.RootElement;
-                    if (root.ValueKind != JsonValueKind.Object)
-                    {
-                        return "";
-                    }
-                    JsonElement actionEl;
-                    if (!root.TryGetProperty("action", out actionEl) || actionEl.ValueKind != JsonValueKind.String)
-                    {
-                        return "";
-                    }
-                    string action = actionEl.GetString();
-                    if (action == null)
-                    {
-                        return "";
-                    }
-                    return action.Trim();
-                }
-            }
-            catch (Exception)
-            {
-                return "";
-            }
         }
 
         /// <summary>timeback 暴毙风险黑名单（莎 2026-09-28 定 · 2026-10-01 宽松化 · 2026-10-02 放行 mau-setup）——只隔离「会让 Mau 框架 / 宿主进程自身当场失效」的行为，判据 = 该动作是否可能立刻中断进程或让作用域上下文失效（重启 / 程序集句柄替换）。拦两类：restart-*（重启族——本轮中断，作用域随内存丢失）· host-reload（换程序集句柄 + 重建工具池，无后悔药）。其余一律放行——只读（mau-verify / host-flows / config-get / cat.list 类指令）、写仓库产物区（mau-gen / mau-proj）、一键链（prepare / sync-html——只写仓库与静态资源，不换程序集）、配置写（config-*）、管理指令（majordomo-cmd）。判据 = 工具名精确匹配（黑名单式，不用前缀通配）。与 C3 的 Note / sleep / timer 锁定并列：前者防「区间删除语义冲突」，本项防「作用域内把本体搞崩」。🔴 本判据是工具边界要求（机制层），不是使用授权——放行不等于该在域内用，开域时机归规范层（环节判据，见工具描述与设计 §三）。</summary>
