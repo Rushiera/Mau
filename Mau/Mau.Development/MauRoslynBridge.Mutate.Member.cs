@@ -253,7 +253,7 @@ namespace Mau.Development
                 cache.Stamps[filePath] = SnapshotOf(filePath);
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
-                // [段5] 结构化返回——行号基准 = 完整文件树上的 attached 节点（插入节点未挂载，Span 从片段起点起算）
+                // [段5] 统一口径（A210）：头（ok/tool/target/items + op/file/…）+ 摘要行——行号基准 = 完整文件树上的 attached 节点
                 string relFile = RelativeToProject(cache, filePath);
                 if (!batch)
                 {
@@ -265,7 +265,6 @@ namespace Mau.Development
                     }
                     Dictionary<string, object> miMeta = new Dictionary<string, object>();
                     miMeta["op"] = "insert";
-                    miMeta["class"] = className;
                     miMeta["file"] = relFile;
                     miMeta["start"] = newTree.GetText().Lines.GetLineFromPosition(insertedMember.FullSpan.Start).LineNumber + 1;
                     miMeta["end"] = insertedMember.GetLocation().GetLineSpan().EndLinePosition.Line + 1;
@@ -274,7 +273,7 @@ namespace Mau.Development
                     {
                         miMeta["writeNote"] = writeNote;
                     }
-                    result = MetaHead("cs-member", true, miMeta);
+                    result = MetaHead("cs-member", true, className, 1, miMeta) + Environment.NewLine + Echo(className, "插入 1 成员");
                     return true;
                 }
                 List<Dictionary<string, object>> items = new List<Dictionary<string, object>>();
@@ -294,15 +293,13 @@ namespace Mau.Development
                 }
                 Dictionary<string, object> mbMeta = new Dictionary<string, object>();
                 mbMeta["op"] = "insert";
-                mbMeta["class"] = className;
                 mbMeta["file"] = relFile;
-                mbMeta["count"] = items.Count;
-                mbMeta["items"] = items;
+                mbMeta["entries"] = items;
                 if (writeNote.Length > 0)
                 {
                     mbMeta["writeNote"] = writeNote;
                 }
-                result = MetaHead("cs-member", true, mbMeta);
+                result = MetaHead("cs-member", true, className, items.Count, mbMeta) + Environment.NewLine + Echo(className, "插入 " + items.Count + " 成员");
                 return true;
             }
         }
@@ -425,16 +422,16 @@ namespace Mau.Development
                 cache.Stamps[filePath] = SnapshotOf(filePath);
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
+                // 统一口径（A210）：头（ok/tool/target/items + op/member/file）+ 摘要行
                 Dictionary<string, object> mdMeta = new Dictionary<string, object>();
                 mdMeta["op"] = "delete";
-                mdMeta["class"] = className;
                 mdMeta["member"] = member;
                 mdMeta["file"] = RelativeToProject(cache, filePath);
                 if (writeNote.Length > 0)
                 {
                     mdMeta["writeNote"] = writeNote;
                 }
-                result = MetaHead("cs-member", true, mdMeta);
+                result = MetaHead("cs-member", true, className, 1, mdMeta) + Environment.NewLine + Echo(className, "删除 " + member);
                 return true;
             }
         }
@@ -506,13 +503,12 @@ namespace Mau.Development
                 }
                 if (changedTrees.Count == 0)
                 {
+                    // 统一口径（A210）：头（ok/tool/target/items + op/oldName/newName）+ 摘要行
                     Dictionary<string, object> mrNoneMeta = new Dictionary<string, object>();
                     mrNoneMeta["op"] = "rename";
-                    mrNoneMeta["class"] = className;
                     mrNoneMeta["oldName"] = oldName;
                     mrNoneMeta["newName"] = newName;
-                    mrNoneMeta["files"] = 0;
-                    result = MetaHead("cs-member", true, mrNoneMeta);
+                    result = MetaHead("cs-member", true, className, 0, mrNoneMeta) + Environment.NewLine + Echo(className, "重命名 " + oldName + "→" + newName + " · 0 文件");
                     return true;
                 }
                 CSharpCompilation trial = cache.Compilation;
@@ -548,17 +544,16 @@ namespace Mau.Development
                     cache.Semantics.TryRemove(filePath, out removed);
                 }
                 cache.Compilation = trial;
+                // 统一口径（A210）：头（ok/tool/target/items + op/oldName/newName）+ 摘要行
                 Dictionary<string, object> mrMeta = new Dictionary<string, object>();
                 mrMeta["op"] = "rename";
-                mrMeta["class"] = className;
                 mrMeta["oldName"] = oldName;
                 mrMeta["newName"] = newName;
-                mrMeta["files"] = changedFiles.Count;
                 if (writeNotes.Count > 0)
                 {
                     mrMeta["writeNote"] = string.Join(" | ", writeNotes);
                 }
-                result = MetaHead("cs-member", true, mrMeta);
+                result = MetaHead("cs-member", true, className, changedFiles.Count, mrMeta) + Environment.NewLine + Echo(className, "重命名 " + oldName + "→" + newName + " · " + changedFiles.Count + " 文件");
                 return true;
             }
         }

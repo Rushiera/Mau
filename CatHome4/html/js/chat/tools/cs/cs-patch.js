@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════
 // chat/tools/cs/cs-patch.js —— cs-patch / 方法体级替换（CsCat）
-// 声明：折叠行读结构化头（state / start / end）+ 输入意图行；输出段逐行自然语言化（落盘源码，剥行尾标注）。
+// 声明：折叠行读结构化头（ok / start / end）+ 输入意图行；输出段逐行自然语言化（落盘源码，剥行尾标注）。
 // ═══════════════════════════════════════════
 
 toolDecl('cs-patch', {
@@ -16,8 +16,7 @@ toolDecl('cs-patch', {
         var m = h.meta;
         var start = ovMetaNum(m, 'start', -1);
         var range = (start > 0) ? (' · L' + start + '-' + ovMetaNum(m, 'end', start)) : '';
-        var state = ovMetaStr(m, 'state');
-        return '改写 ' + target + ' · ' + (state.length > 0 ? state : 'OK') + range;
+        return '改写 ' + target + ' · ' + (m.ok === true ? 'OK' : '未落盘') + range;
     },
     outputLines: function (r) {
         var h = ovHead(r);

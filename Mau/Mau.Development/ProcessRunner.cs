@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Text;
 using System.Threading.Tasks;
 using Mau.Runtime;
 
@@ -69,6 +70,9 @@ namespace Mau.Development
             psi.CreateNoWindow = true;
             psi.RedirectStandardOutput = true;
             psi.RedirectStandardError = true;
+            // 输出编码显式 UTF-8——子进程（dotnet / Mau 系）输出为 UTF-8，默认按控制台编码解会乱码（中文 Windows 控制台 = GBK，判例 A210）
+            psi.StandardOutputEncoding = new UTF8Encoding(false);
+            psi.StandardErrorEncoding = new UTF8Encoding(false);
             if (!string.IsNullOrEmpty(workingDirectory))
             {
                 psi.WorkingDirectory = workingDirectory;

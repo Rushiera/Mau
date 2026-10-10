@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════
 // chat/tools/cs/cs-comment_check.js —— cs-comment_check / 缺 summary 扫描（CsCat）
-// 声明：折叠行读结构化头（missing / checked）+ 输入意图行；段结构归骨架 `diagnostics`。
+// 声明：折叠行读结构化头（missing / items）+ 输入意图行；段结构归骨架 `diagnostics`。
 // ═══════════════════════════════════════════
 
 toolDecl('cs-comment_check', {
@@ -16,6 +16,6 @@ toolDecl('cs-comment_check', {
         if (miss > 0) {
             return '注释检查 ' + ovShort(a.path) + ' · ' + miss + ' 处缺 summary';
         }
-        return '注释检查 ' + ovShort(a.path) + ' · 齐全 ' + ovMetaNum(h.meta, 'checked', 0) + ' 项';
+        return '注释检查 ' + ovShort(a.path) + ' · 齐全 ' + ovMetaNum(h.meta, 'items', 0) + ' 项';
     }
 });

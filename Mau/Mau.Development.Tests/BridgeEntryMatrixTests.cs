@@ -128,7 +128,7 @@ namespace Mau.Development.Tests
         public void DirectoryEntryUsesTopLevelSolution()
         {
             string result = Invoke("list", "{\"path\":\"" + Escape(_root) + "\"}");
-            Assert.Contains("聚合 2 个项目", result);
+            Assert.Contains("\"items\":2", result);
             Assert.Contains("AppFoo", result);
             Assert.Contains("LibBar", result);
         }

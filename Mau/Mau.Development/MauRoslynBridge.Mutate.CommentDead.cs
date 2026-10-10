@@ -241,16 +241,15 @@ namespace Mau.Development
                 cache.Stamps[filePath] = SnapshotOf(filePath);
                 SemanticModel removed = null!;
                 cache.Semantics.TryRemove(filePath, out removed);
-                // 结构化返回（2026-09-18）：JSON 元数据头（正文由前端按字段生成）
+                // 统一口径（A210）：头（ok/tool/target/items + type）+ 摘要行
+                string commentTarget = member.Length > 0 ? className + "." + member : className;
                 Dictionary<string, object> cmMeta = new Dictionary<string, object>();
-                cmMeta["class"] = className;
-                cmMeta["member"] = member;
                 cmMeta["type"] = type;
                 if (writeNote.Length > 0)
                 {
                     cmMeta["writeNote"] = writeNote;
                 }
-                result = MetaHead("cs-comment", true, cmMeta);
+                result = MetaHead("cs-comment", true, commentTarget, -1, cmMeta) + Environment.NewLine + Echo(commentTarget, "改 " + type);
                 return true;
             }
         }
@@ -388,12 +387,26 @@ namespace Mau.Development
                 caches.Add(cache);
             }
             HashSet<string> crossKeys = CollectReferenceKeys(caches);
-            StringBuilder sb = new StringBuilder();
-            sb.Append("聚合 " + projects.Count + " 个项目（含跨程序集引用复核）：" + Environment.NewLine);
+            // 统一口径（A210）：聚合头（ok/tool/target/items/dead）+ 摘要行 + 逐项目分节（节内无头）
+            string entry = RelativeToRoots(ResolveInRoots(path));
+            int totalDead = 0;
+            List<string> sections = new List<string>();
             for (int i = 0; i < caches.Count; i = i + 1)
             {
-                sb.Append("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine);
-                sb.Append(DeadInCache(caches[i], crossKeys) + Environment.NewLine);
+                int oneDead;
+                string one = DeadInCache(caches[i], crossKeys, out oneDead);
+                totalDead = totalDead + oneDead;
+                sections.Add("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine + StripHead(one));
+            }
+            Dictionary<string, object> aggMeta = new Dictionary<string, object>();
+            aggMeta["dead"] = totalDead;
+            StringBuilder sb = new StringBuilder();
+            sb.Append(MetaHead("cs-dead", totalDead == 0, entry, projects.Count, aggMeta));
+            sb.Append(Environment.NewLine + Echo(entry, projects.Count + " 项目 · 死码 " + totalDead));
+            for (int i = 0; i < sections.Count; i = i + 1)
+            {
+                sb.Append(Environment.NewLine);
+                sb.Append(sections[i]);
             }
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;
@@ -408,7 +421,8 @@ namespace Mau.Development
         {
             ProjectCache cache = EnsureProject(csproj);
             FullScan(cache);
-            result = DeadInCache(cache, null);
+            int deadCount;
+            result = DeadInCache(cache, null, out deadCount);
             return true;
         }
 
@@ -430,16 +444,30 @@ namespace Mau.Development
             }
             if (projects.Count == 1)
             {
-                return CommentCheckSingle(projects[0], out result);
+                int singleMissing;
+                return CommentCheckSingle(projects[0], out singleMissing, out result);
             }
+            // 统一口径（A210）：聚合头（ok/tool/target/items/missing）+ 摘要行 + 逐项目分节（节内无头）
+            string ccEntry = RelativeToRoots(ResolveInRoots(path));
+            int totalMissing = 0;
             StringBuilder sb = new StringBuilder();
-            sb.Append("聚合 " + projects.Count + " 个项目：" + Environment.NewLine);
+            List<string> ccSections = new List<string>();
             for (int i = 0; i < projects.Count; i = i + 1)
             {
-                sb.Append("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine);
                 string one;
-                CommentCheckSingle(projects[i], out one);
-                sb.Append(one + Environment.NewLine);
+                int oneMissing;
+                CommentCheckSingle(projects[i], out oneMissing, out one);
+                totalMissing = totalMissing + oneMissing;
+                ccSections.Add("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine + StripHead(one));
+            }
+            Dictionary<string, object> ccAgg = new Dictionary<string, object>();
+            ccAgg["missing"] = totalMissing;
+            sb.Append(MetaHead("cs-comment_check", totalMissing == 0, ccEntry, projects.Count, ccAgg));
+            sb.Append(Environment.NewLine + Echo(ccEntry, projects.Count + " 项目 · 缺 " + totalMissing));
+            for (int i = 0; i < ccSections.Count; i = i + 1)
+            {
+                sb.Append(Environment.NewLine);
+                sb.Append(ccSections[i]);
             }
             result = TrimResult(sb.ToString(), MaxResultChars);
             return true;
@@ -448,9 +476,10 @@ namespace Mau.Development
         /// 单项目 comment_check——缺 summary 注释扫描（类 + 成员；语法层——复用 FirstSummary）。
         /// </summary>
         /// <param name="csproj">csproj 绝对路径</param>
+        /// <param name="missingCount">缺失 summary 条数</param>
         /// <param name="result">结果文本</param>
         /// <returns>调用完成</returns>
-        private bool CommentCheckSingle(string csproj, out string result)
+        private bool CommentCheckSingle(string csproj, out int missingCount, out string result)
         {
             ProjectCache cache = EnsureProject(csproj);
             FullScan(cache);
@@ -491,12 +520,13 @@ namespace Mau.Development
                 }
             }
             missingLines.Sort(StringComparer.Ordinal);
-            // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文缺失清单（`类型.成员 // 缺 summary（Lnn）`）
+            // 统一口径（A210）：头（ok/tool/target/items + missing）+ 摘要行 + 缺失清单
+            missingCount = missingLines.Count;
             Dictionary<string, object> ccMeta = new Dictionary<string, object>();
-            ccMeta["checked"] = checkedCount;
-            ccMeta["missing"] = missingLines.Count;
+            ccMeta["missing"] = missingCount;
             StringBuilder sb = new StringBuilder();
-            sb.Append(MetaHead("cs-comment_check", missingLines.Count == 0, ccMeta));
+            sb.Append(MetaHead("cs-comment_check", missingLines.Count == 0, cache.AssemblyName, checkedCount, ccMeta));
+            sb.Append(Environment.NewLine + Echo(cache.AssemblyName, checkedCount + " 成员 · 缺 " + missingLines.Count));
             for (int i = 0; i < missingLines.Count; i = i + 1)
             {
                 sb.Append(Environment.NewLine + missingLines[i].TrimStart());

@@ -175,7 +175,7 @@ describe('折叠行', () => {
     });
 
     it('声明层 headline——读结构化头产出自然语言（cs-build）', () => {
-        const head = '{"ok":true,"tool":"cs-build","project":"CatHome4.Core","exit":0,"errors":0,"warnings":0,"ms":2100,"scope":"工程"}';
+        const head = '{"ok":true,"tool":"cs-build","target":"CatHome4.Core","exit":0,"errors":0,"warnings":0,"ms":2100,"scope":"single"}';
         const s = summaryOf(card('cs-build', { path: 'mau:CatHome4/CatHome4.Core/CatHome4.Core.csproj' }, head + '\nBuild succeeded.'));
         const text = s.textContent;
         expect(text).toContain('编译 CatHome4.Core.csproj · 成功 0 错 0 警 · 2.1s');
@@ -219,7 +219,7 @@ describe('声明层覆盖——段内容生效', () => {
     });
 
     it('输出段——cs-member 批量落盘逐条列行号区间', () => {
-        const head = '{"ok":true,"tool":"cs-member","op":"insert","class":"Foo","file":"Foo.cs","count":2,"items":[{"start":10,"end":14,"kind":"Method"},{"start":16,"end":20,"kind":"Property"}]}';
+        const head = '{"ok":true,"tool":"cs-member","op":"insert","target":"Foo","file":"Foo.cs","items":2,"entries":[{"start":10,"end":14,"kind":"Method"},{"start":16,"end":20,"kind":"Property"}]}';
         const node = window.buildToolBlock(card('cs-member', { op: 'insert', class: 'Foo', codes: ['a', 'b'] }, head), 'toolcard');
         const text = node.textContent;
         expect(text).toContain('#1 L10-14 · Method');

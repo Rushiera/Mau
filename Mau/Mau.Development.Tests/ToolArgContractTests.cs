@@ -385,9 +385,49 @@ namespace Mau.Development.Tests
             MauRoslynBridge bridge = new MauRoslynBridge(new WorkspaceConfig.RootEntry[] { entry });
             string result;
             bridge.Invoke("list", "{\"path\":\"" + sln.Replace("\\", "\\\\") + "\"}", out result);
-            Assert.Contains("聚合 ", result);
+            Assert.Contains("\"tool\":\"cs-list\"", result);
             Assert.Contains("Mau.Contracts", result);
             Assert.Contains("Mau.Runtime", result);
+        }
+        /// <summary>
+        /// 多项目 comment_check 聚合计数自洽——聚合头 missing == 各项目分节 missing 之和
+        /// （防「按正文非空行数统计」把摘要行计入——A210 缺陷回归锚）。
+        /// </summary>
+        [Fact]
+        public void CommentCheckAggregateMissingMatchesSections()
+        {
+            string dir = AppContext.BaseDirectory;
+            while (dir.Length > 3 && !File.Exists(Path.Combine(dir, "Mau.sln")))
+            {
+                dir = Path.GetDirectoryName(dir) ?? "";
+            }
+            string sln = Path.Combine(dir, "Mau.sln");
+            Assert.True(File.Exists(sln), "仓库根 sln 缺失: " + sln);
+            WorkspaceConfig.RootEntry entry = new WorkspaceConfig.RootEntry();
+            entry.Id = "repo";
+            entry.Path = dir;
+            entry.Writable = false;
+            MauRoslynBridge bridge = new MauRoslynBridge(new WorkspaceConfig.RootEntry[] { entry });
+            string result;
+            bridge.Invoke("comment_check", "{\"path\":\"" + sln.Replace("\\", "\\\\") + "\"}", out result);
+            string[] lines = result.Replace("\r\n", "\n").Split('\n');
+            Assert.True(lines.Length > 0, "空回执");
+            Match headMatch = Regex.Match(lines[0], "\"missing\":(\\d+)");
+            Assert.True(headMatch.Success, "聚合头缺 missing 字段: " + lines[0]);
+            int headMissing = int.Parse(headMatch.Groups[1].Value);
+            int sectionSum = 0;
+            int sectionCount = 0;
+            for (int i = 1; i < lines.Length; i = i + 1)
+            {
+                Match sectionMatch = Regex.Match(lines[i], " 成员 · 缺 (\\d+)$");
+                if (sectionMatch.Success)
+                {
+                    sectionCount = sectionCount + 1;
+                    sectionSum = sectionSum + int.Parse(sectionMatch.Groups[1].Value);
+                }
+            }
+            Assert.True(sectionCount > 1, "分节数应 >1（多项目），实得 " + sectionCount);
+            Assert.Equal(headMissing, sectionSum);
         }
     }
 }
