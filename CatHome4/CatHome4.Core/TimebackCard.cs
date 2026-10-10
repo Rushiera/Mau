@@ -111,7 +111,21 @@ namespace CH4
         }
 
         /// <summary>
-        /// 域规范卡全文——注入用的 systemauto user 文本（五段：边界 / 可用 / 不可用 / 骨架 / 建议长度）。
+        /// 浏览器操作指引——仅 `browser_vision` 域追加（§十一 卡扩展 · 2026-10-10）。
+        /// 承载时机敏感、易踩的操作面（寻路 / 取值 / 截图落点 / 看图分流 / 扒图链 / 边界）。
+        /// </summary>
+        private const string BrowserGuideText = "⑥ 浏览器操作（本域专属）：\n"
+            + "  · 寻路：open 只开页，不能点击/输入——翻页改 URL，或先 read(mode=links) 拿候选\n"
+            + "  · 读页：read(mode=text|ax|links) 落盘；DOM 属性 / 内嵌数据 / img 直链一律用 eval 取\n"
+            + "  · 截图：shot(full) 落盘返回路径——存 data:browser/<cat>/out/（tree 自 data:browser 下扫会漏 out，给全路径才有）\n"
+            + "  · 页签：tabs 保留来过哪一页，可回退对比\n"
+            + "  · 流程：开列表页（query 拼进 URL 直开）→ 取下一跳 → 逐个开详情（截图 / 取值）→ 回卷\n"
+            + "  · 看图：域内要「看见」用 image-inject；要「转文字」才 image-analyze\n"
+            + "  · 扒图：eval 取 img 直链 → 出域后 powershell 落盘 → 图片包裹回主干\n"
+            + "  · 边界：原图直链常 403（CDN 缩略图可取）；未登录态不影响截图；网络可达性因机而异";
+
+        /// <summary>
+        /// 域规范卡全文——注入用的 systemauto user 文本（五段：边界 / 可用 / 不可用 / 骨架 / 建议长度；`browser_vision` 追加第⑥段）。
         /// </summary>
         /// <param name="type">域类型</param>
         /// <param name="purpose">用途标签</param>
@@ -128,6 +142,10 @@ namespace CH4
             text.Append("\n③ 域内不可用：").Append(LockedText);
             text.Append("\n④ 回执骨架（back 的 findings 按此写）：\n").Append(Findings(type));
             text.Append("\n⑤ 建议长度：本域建议 ≤").Append(SuggestedLength.ToString()).Append(" 条前文条目——超出先阶段性 back（建议非闸门）");
+            if (type == TimebackProfile.BrowserVision)
+            {
+                text.Append("\n\n").Append(BrowserGuideText);
+            }
             return text.ToString();
         }
     }

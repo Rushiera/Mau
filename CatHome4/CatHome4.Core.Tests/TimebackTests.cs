@@ -687,6 +687,25 @@ namespace CatHome4.Core.Tests
             Assert.True(HasMessage(session, LlmRole.User, "失败："));
             Assert.True(HasMessage(session, LlmRole.User, "只写「成果在哪」"));
             Assert.True(HasMessage(session, LlmRole.User, "位置必须是这趟真实读到"));
+            Assert.False(HasMessage(session, LlmRole.User, "⑥ 浏览器操作"), "text_search 卡不应含浏览器段");
+        }
+
+        /// <summary>
+        /// 域规范卡——browser_vision 追加第⑥段浏览器操作指引（寻路 / 取值 / 截图落点 / 看图分流 / 扒图 / 边界）；其他 type 不含。
+        /// </summary>
+        [Fact]
+        public void Card_BrowserVisionCarriesBrowserGuide()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "s1", "{\"type\":\"browser_vision\",\"purpose\":\"操作指引验证\"}"));
+            session.PostUserMessage("操作指引验证");
+            PumpUntilIdle(session);
+            Assert.True(HasMessage(session, LlmRole.User, "⑥ 浏览器操作（本域专属）"));
+            Assert.True(HasMessage(session, LlmRole.User, "data:browser/<cat>/out/"));
+            Assert.True(HasMessage(session, LlmRole.User, "用 image-inject"));
+            Assert.True(HasMessage(session, LlmRole.User, "页签：tabs"));
+            Assert.True(HasMessage(session, LlmRole.User, "原图直链常 403"));
         }
 
         /// <summary>
