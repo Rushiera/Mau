@@ -227,6 +227,23 @@ namespace CatHome4.QQ
         /// <returns>发送成功 true（≥300 或异常 false）</returns>
         public bool SendReply(string msgType, string targetId, string text, string msgId, bool isMarkdown)
         {
+            string ignored = "";
+            return SendReplyWithCode(msgType, targetId, text, msgId, isMarkdown, out ignored);
+        }
+
+        /// <summary>
+        /// 发送回复并回传错误码（A217）——失败时解析响应体 code 字段（窗口超时 40034005 判定用）。
+        /// </summary>
+        /// <param name="msgType">消息类型——private / group</param>
+        /// <param name="targetId">目标 ID（群聊含 gid:mid 段）</param>
+        /// <param name="text">回复文本</param>
+        /// <param name="msgId">被动回复 msg_id——事件 d.id；空=不携带</param>
+        /// <param name="isMarkdown">true=Markdown 通道 / false=文本通道</param>
+        /// <param name="errCode">出参——失败时代码串（成功 / 无 code 为空串）</param>
+        /// <returns>发送成功 true（≥300 或异常 false）</returns>
+        public bool SendReplyWithCode(string msgType, string targetId, string text, string msgId, bool isMarkdown, out string errCode)
+        {
+            errCode = "";
             try
             {
                 // 端点按消息类型分派（与文件发送共用 BuildScope——单一真相源）
@@ -247,6 +264,7 @@ namespace CatHome4.QQ
                     {
                         Log("QQBot | " + _displayName + " | 错误响应体读取失败: " + ex.Message, 2);
                     }
+                    errCode = ExtractErrorCode(errBody);
                     Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(OneLine(text), 30) + " (" + status + ") " + Truncate(OneLine(errBody), 200), 2);
                     return false;
                 }
@@ -258,6 +276,38 @@ namespace CatHome4.QQ
                 Log("QQBot | " + _displayName + " | 发送失败: " + e.Message, 2);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 提取错误码——响应体 code 字段（失败响应如 {"code":40034005,...}）；解析失败返回空串。
+        /// </summary>
+        /// <param name="body">响应体</param>
+        /// <returns>代码串（无 code / 解析失败 = 空串）</returns>
+        private static string ExtractErrorCode(string body)
+        {
+            if (body == null || body.Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                using (JsonDocument d = JsonUtil.ParseStrict(body))
+                {
+                    if (d.RootElement.TryGetProperty("code", out JsonElement c))
+                    {
+                        if (c.ValueKind == JsonValueKind.Number)
+                        {
+                            return c.GetInt64().ToString();
+                        }
+                        return c.GetString() ?? "";
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+            return "";
         }
         /// <summary>
         /// 目标端点段构造——按消息类型分派（私聊 /v2/users/{openid} · 群聊 /v2/groups/{gid}）。

@@ -12,14 +12,16 @@ namespace CatHome4.QQ
     {
         /// <summary>
         /// 生成发送计划——正文按 MD 结构切分（QqTextSplitter），段数超上限取末尾段（丢弃开头段）；
-        /// 剩余额度分配给文件（超出部分丢弃）。执行序：文本段在前、文件在后。
+        /// 剩余额度分配给文件、再分配给图片（各自超出部分丢弃）。执行序：文本段在前、文件次之、图片最后。
         /// </summary>
-        /// <param name="body">正文（已剥离文件标记；空=无文本段）</param>
+        /// <param name="body">正文（已剥离文件标记与图片包裹；空=无文本段）</param>
         /// <param name="files">待发送文件路径（已剥离；空=无文件）</param>
+        /// <param name="images">待发送图片路径（已剥离；空=无图片）</param>
         /// <param name="maxChunkChars">单段字符上限</param>
-        /// <param name="maxCalls">被动调用上限（文本段 + 文件共用）</param>
-        /// <returns>发送计划——段 / 文件 / 丢弃计数</returns>
-        internal static QqLastReplyPlan Plan(string body, List<string> files, int maxChunkChars, int maxCalls)
+        /// <param name="maxCalls">被动调用上限（文本段 + 文件 + 图片共用）</param>
+        /// <param name="maxImages">图片张数上限（A216 定死值——与剩余额度取小）</param>
+        /// <returns>发送计划——段 / 文件 / 图片 / 丢弃计数</returns>
+        internal static QqLastReplyPlan Plan(string body, List<string> files, List<string> images, int maxChunkChars, int maxCalls, int maxImages)
         {
             QqLastReplyPlan plan = new QqLastReplyPlan();
             // [段1] 正文切分——超上限取末尾段（/last 语义：补感知，尾部最新）
@@ -57,12 +59,36 @@ namespace CatHome4.QQ
                     }
                 }
             }
+            // [段3] 图片用剩余额度——与文本段 / 文件共用同一被动调用上限，且受张数上限约束（A216）
+            if (images != null && images.Count > 0)
+            {
+                int remain = maxCalls - plan.Segments.Count - plan.Files.Count;
+                if (remain > maxImages)
+                {
+                    remain = maxImages;
+                }
+                if (remain < 0)
+                {
+                    remain = 0;
+                }
+                for (int i = 0; i < images.Count; i = i + 1)
+                {
+                    if (i < remain)
+                    {
+                        plan.Images.Add(images[i]);
+                    }
+                    else
+                    {
+                        plan.DroppedImages = plan.DroppedImages + 1;
+                    }
+                }
+            }
             return plan;
         }
     }
 
     /// <summary>
-    /// /last 发送计划——文本段（末尾优先）+ 文件（剩余额度）+ 丢弃计数（L2 留痕用；A112）。
+    /// /last 发送计划——文本段（末尾优先）+ 文件 + 图片（剩余额度）+ 丢弃计数（L2 留痕用；A112 / A216）。
     /// </summary>
     internal sealed class QqLastReplyPlan
     {
@@ -72,10 +98,16 @@ namespace CatHome4.QQ
         /// <summary>待发文件路径——按出现顺序（受剩余额度约束）</summary>
         public List<string> Files = new List<string>();
 
+        /// <summary>待发图片路径——按出现顺序（受剩余额度与张数上限约束）</summary>
+        public List<string> Images = new List<string>();
+
         /// <summary>因段数超上限丢弃的开头段数（0=未丢）</summary>
         public int DroppedHeadSegments;
 
         /// <summary>因预算耗尽丢弃的文件数（0=未丢）</summary>
         public int DroppedFiles;
+
+        /// <summary>因预算耗尽丢弃的图片张数（0=未丢）</summary>
+        public int DroppedImages;
     }
 }

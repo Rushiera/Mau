@@ -1381,6 +1381,7 @@ namespace CatHome4.Admin
                     Inject = delegate (string s, string origin) { return captured.PostUserMessage(s, "user", "", origin); },
                     GetViewItems = delegate () { return ConvertQqViewItems(captured.ViewStore.GetBlocks()); },
                     GetBlockFingerprint = delegate (int index) { return ComputeBlockFingerprint(captured.ViewStore.GetBlocks(), index); },
+                    ParseImages = ParseQqImages,
                     IsIdle = delegate () { return captured.IsIdle; },
                     IsTimebackActive = delegate () { return captured.TimebackActive; },
                     NewSession = delegate ()
@@ -1406,6 +1407,7 @@ namespace CatHome4.Admin
                         Inject = delegate (string s, string origin) { return captured.Session.PostUserMessage(s, "user", "", origin); },
                         GetViewItems = delegate () { return ConvertQqViewItems(captured.Session.ViewStore.GetBlocks()); },
                         GetBlockFingerprint = delegate (int index) { return ComputeBlockFingerprint(captured.Session.ViewStore.GetBlocks(), index); },
+                        ParseImages = ParseQqImages,
                         IsIdle = delegate () { return captured.Session.IsIdle; },
                         IsTimebackActive = delegate () { return captured.Session.TimebackActive; },
                         NewSession = delegate ()

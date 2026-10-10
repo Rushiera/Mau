@@ -37,6 +37,9 @@ namespace CatHome4.QQ
 
         /// <summary>轮内被动调用计数——猫 Key → 本轮已用被动回复次数（文本段 + 文件发送共用；官方上限 4 次）</summary>
         private static readonly Dictionary<string, int> _roundCalls = new Dictionary<string, int>();
+
+        /// <summary>轮内图片发送计数——猫 Key → 本轮已发图片张数（A216 定死上限 3；随交互轮重置）</summary>
+        private static readonly Dictionary<string, int> _imageCounts = new Dictionary<string, int>();
         /// <summary>服务事件队列——WS 线程入队 / 主线程 Tick 事件泵消费（R6-P1-01 单线程化：三字典访问面收敛主线程）</summary>
         private static readonly System.Collections.Concurrent.ConcurrentQueue<QqServiceEvent> _eventQueue = new System.Collections.Concurrent.ConcurrentQueue<QqServiceEvent>();
         /// <summary>启动标志——防重复 Start</summary>
@@ -1222,6 +1225,7 @@ namespace CatHome4.QQ
             _immediateCounts[catKey] = 0;
             _accumulated.Remove(catKey);
             _roundCalls.Remove(catKey);
+            _imageCounts.Remove(catKey);
         }
         /// <summary>
         /// 清空交互轮状态——残留来源兜底（会话 Idle 且队列残留 = 该消息未开启任何轮）：逐条出声 + 回执告知 + 丢弃 + 计数/累计清零。
@@ -1513,6 +1517,7 @@ namespace CatHome4.QQ
             _immediateCounts.Clear();
             _accumulated.Clear();
             _roundCalls.Clear();
+            _imageCounts.Clear();
             while (_eventQueue.TryDequeue(out _))
             {
                 // 排空事件队列（异步来源事件不进测试）
@@ -1577,7 +1582,8 @@ namespace CatHome4.QQ
         }
 
         /// <summary>
-        /// 发送回复（被动优先 + 超窗降级）——首次失败且携带 msg_id 时，清 msg_id 走主动消息重试一次（design-qqbot-forward §六）。
+        /// 发送回复（被动优先 + 超窗降级）——A217 定则：**仅私聊**且失败码为 **40034005（msg_id 窗口过期）** 时，
+        /// 清 msg_id 走主动消息重试一次；群聊无主动权限（40034105 实测），不做降级尝试。成功直返；未降级面 L2 留痕（响应体由 SendReply 留）。
         /// </summary>
         /// <param name="conn">Bot 连接</param>
         /// <param name="msgType">消息类型——private / group</param>
@@ -1588,17 +1594,24 @@ namespace CatHome4.QQ
         /// <returns>发送成功 true</returns>
         private static bool SendWithFallback(QQBotConnection conn, string msgType, string targetId, string text, string msgId, bool isMarkdown)
         {
-            if (conn.SendReply(msgType, targetId, text, msgId, isMarkdown))
+            if (msgId == null || msgId.Length == 0)
+            {
+                // 本就主动通道——无被动引用可失效，降级无意义
+                return conn.SendReply(msgType, targetId, text, "", isMarkdown);
+            }
+            string errCode = "";
+            if (conn.SendReplyWithCode(msgType, targetId, text, msgId, isMarkdown, out errCode))
             {
                 return true;
             }
-            if (msgId == null || msgId.Length == 0)
+            // A217——仅私聊 + 仅窗口超时降级；群聊主动消息无权限（40034105），不做尝试
+            if (msgType != "private" || errCode != "40034005")
             {
+                LogStore.Add("QQBot", 2, "被动回复失败（不降级主动） | " + msgType + " | code=" + errCode, "QQBOT");
                 return false;
             }
-            // 被动失败（超窗/去重/次数超限）——降级主动消息一次；成败均 L2 留痕（失败响应体由 SendReply 留）
             bool ok = conn.SendReply(msgType, targetId, text, "", isMarkdown);
-            LogStore.Add("QQBot", 2, (ok ? "被动回复失败 → 主动消息降级成功 | " : "被动回复失败 → 主动消息降级亦失败 | ") + msgType + ":" + targetId, "QQBOT");
+            LogStore.Add("QQBot", 2, (ok ? "被动回复超窗 → 主动消息降级成功 | " : "被动回复超窗 → 主动消息降级亦失败 | ") + msgType + ":" + targetId, "QQBOT");
             return ok;
         }
 
@@ -1616,6 +1629,9 @@ namespace CatHome4.QQ
 
         /// <summary>轮内被动调用预算——被动回复次数上限（文本段 + 文件发送共用）；统一取 4——私聊实测值；群聊实测为 5（2026-10-10 A215 探针），保守统一不分档。</summary>
         private const int MaxRoundCalls = 4;
+
+        /// <summary>轮内图片发送上限——一轮最多转发 3 张（A216 定死；与文本段 / 文件共用轮内 4 次被动预算，常见形态 1 文本 + 3 图片）</summary>
+        private const int MaxImageSends = 3;
         /// <summary>QQ 富文本 faceType 标记正则——表情/大表情图片标记（v0.96.1 简化）</summary>
         private static readonly Regex _faceTagRegex = new Regex("<faceType=[^>]*>", RegexOptions.Compiled);
         /// <summary>转发态文件路径——入口壳注入（A33：Data/qq-forward.json；空=转发态不落盘）</summary>
@@ -1727,7 +1743,122 @@ namespace CatHome4.QQ
                 SendFileToTarget(tg, source, files[i]);
             }
         }
-        /// <summary>转发发送统一出口（A58 / A112）——提取文件标记 → 正文加【猫名：】前缀 → MD 结构切分 → 逐段发送 → 文件逐条发送（经文件发送统一出口）。
+        /// <summary>
+        /// 轮内图片发送额度判定（A216）——定死上限 MaxImageSends 张（跨同一轮多次调用累计）；budgetKey 空 = 不占额度（调用方已按额度规划）。
+        /// </summary>
+        /// <param name="budgetKey">预算键（猫标识；空=不占额度）</param>
+        /// <returns>可发送 true</returns>
+        private static bool TakeImageBudget(string budgetKey)
+        {
+            if (budgetKey.Length == 0)
+            {
+                return true;
+            }
+            int n;
+            if (!_imageCounts.TryGetValue(budgetKey, out n))
+            {
+                n = 0;
+            }
+            if (n >= MaxImageSends)
+            {
+                return false;
+            }
+            _imageCounts[budgetKey] = n + 1;
+            return true;
+        }
+        /// <summary>
+        /// 图片路径解析（A216）——受控根寻址（&lt;rootId&gt;:&lt;rel&gt;）经 FileSystemService.Resolve 展开为绝对路径；
+        /// 绝对路径 / 盘符路径原样返回；http(s) URL 返回空串（QQ 媒体通道只接受本地文件字节，远端不入通道）。
+        /// 解析失败原样透传——失败在下游 File.Exists 处可见（不静默改写成别的路径）。
+        /// </summary>
+        /// <param name="path">包裹条目路径</param>
+        /// <param name="catKey">猫标识——猫级文件系统解析键（空=回退全局）</param>
+        /// <returns>可用于文件通道的路径（空=不可发送）</returns>
+        private static string ResolveImagePath(string path, string catKey)
+        {
+            if (path == null)
+            {
+                return "";
+            }
+            string p = path.Trim();
+            if (p.Length == 0)
+            {
+                return "";
+            }
+            if (p.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || p.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return "";
+            }
+            // 已绝对路径（盘符 `C:\…`）直接用——不再进 Resolve（全局面按「无匹配根」对根外绝对路径抛越界；判例 2026-10-10 自测）
+            if (p.Length >= 2 && p[1] == ':')
+            {
+                return p;
+            }
+            // 无命名空间寻址（相对路径 / 裸文件名 / UNC）原样——不猜测根
+            if (p.IndexOf(':') <= 0)
+            {
+                return p;
+            }
+            // 命名空间寻址（<rootId>:<rel>）——猫级文件系统解析（与 text-* / cs-* 同一实现）；未注册回退全局
+            FileSystemService fs = FileSystemRegistry.Resolve(catKey);
+            if (fs == null)
+            {
+                DataBox.TryResolve<FileSystemService>(out fs);
+            }
+            if (fs == null)
+            {
+                return p;
+            }
+            try
+            {
+                string full = fs.Resolve(p, false);
+                if (full != null && full.Length > 0)
+                {
+                    return full;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("QQBot", 2, "图片路径解析失败，原样透传 | " + p + " | " + ex.Message, "QQBOT");
+            }
+            return p;
+        }
+        /// <summary>
+        /// 图片发送段（A216）——逐条经文件通道发送（msg_type=7 · file_type 按扩展名判定，图片=1），每图独立一次调用。
+        /// 上限 MaxImageSends（定死 3 张 · 轮内累计）；占轮内被动预算（与文本段 / 文件共用官方 4 次）。
+        /// 超限 / 路径不可用一律 L2 留痕（不静默）。/last 路由 budgetKey 空——额度由 planner 按剩余分配，执行期不再判定。
+        /// </summary>
+        /// <param name="tg">绑定目标（空=不发送）</param>
+        /// <param name="source">来源</param>
+        /// <param name="images">图片路径列表</param>
+        /// <param name="budgetKey">预算键（猫标识；空=不占预算——调用方已按额度规划）</param>
+        private static void SendImagesToTarget(QqTarget tg, QqSource source, List<string> images, string budgetKey)
+        {
+            if (tg == null || images == null)
+            {
+                return;
+            }
+            for (int i = 0; i < images.Count; i = i + 1)
+            {
+                if (!TakeImageBudget(budgetKey))
+                {
+                    LogStore.Add("QQBot", 2, "图片发送超限（跳过） | " + tg.Key + " | 上限 " + MaxImageSends.ToString() + " 张", "QQBOT");
+                    return;
+                }
+                if (budgetKey.Length > 0 && !TakeRoundBudget(budgetKey, "image"))
+                {
+                    return;
+                }
+                string path = ResolveImagePath(images[i], tg.Key);
+                if (path.Length == 0)
+                {
+                    LogStore.Add("QQBot", 2, "图片发送跳过（非本地文件路径） | " + images[i], "QQBOT");
+                    continue;
+                }
+                SendFileToTarget(tg, source, path);
+            }
+        }
+        /// <summary>转发发送统一出口（A58 / A112 / A216）——统一扫描（文件标记 + 图片包裹）→ 正文加【猫名：】前缀 → MD 结构切分 → 逐段发送 → 文件逐条发送 → 图片逐条发送。
         /// 段数超上限丢弃尾部 + L2 留痕；每次被动调用占轮内预算（budgetKey 空 = 不占，指令通道独立配额）。</summary>
         /// <param name="tg">绑定目标</param>
         /// <param name="source">来源</param>
@@ -1736,8 +1867,8 @@ namespace CatHome4.QQ
         /// <param name="budgetKey">预算键（猫标识；空=不占预算）</param>
         private static void SendRouted(QqTarget tg, QqSource source, string text, int maxParts, string budgetKey)
         {
-            // [段1] 文件标记先摘出——强匹配独占行格式（QqFileMarker）；避免标记被切分截断（正文与文件分别发送）
-            List<string> files = QqFileMarker.Extract(text, out string body);
+            // [段1] 附件识别——文件标记 + 图片包裹一次扫描（A216 统一识别结构）；避免标记 / 包裹被切分截断（正文与附件分别发送）
+            QqReplyScan.Scan(text, tg.ParseImages, out string body, out List<string> files, out List<string> images);
             if (body.Length > 0)
             {
                 // [段2] 前缀拼进正文首部再切分——前缀自然计入首段预算（历史规格口径）
@@ -1769,11 +1900,13 @@ namespace CatHome4.QQ
             }
             // [段3] 文件逐条发送（A112——统一出口；预算与文本段共用官方 4 次上限）
             SendFilesToTarget(tg, source, files, budgetKey);
+            // [段4] 图片逐条发送（A216——每图独立一次；上限 3 张；预算与文本段 / 文件共用）
+            SendImagesToTarget(tg, source, images, budgetKey);
         }
-        /// <summary>/last 回复发送（A58 / A112）——先扫描剥离文件标记（标记行不进正文，文件经文件通道发送，与转发路共用同一实现）；
+        /// <summary>/last 回复发送（A58 / A112 / A216）——统一识别结构先扫描剥离文件标记与图片包裹（标记 / 包裹不进正文，附件经对应通道发送，与转发路共用同一实现）；
         /// 正文按 MD 结构切分，最多 4 段独立发送；超出取末尾段（丢弃开头段 + L2 留痕）。
-        /// 文本段与文件发送共用同一被动调用上限（planner 按剩余额度分配，执行期不再判定）；不占转发轮预算（指令通道独立 msg_id 配额）；任一段失败停止后续 + L2 留痕。
-        /// A208——服务留痕（实际段 / 文件数）+ 连接缺失 L2。</summary>
+        /// 文本段与附件发送共用同一被动调用上限（planner 按剩余额度分配，执行期不再判定）；不占转发轮预算（指令通道独立 msg_id 配额）；任一段失败停止后续 + L2 留痕。
+        /// A208——服务留痕（实际段 / 文件 / 图片数）+ 连接缺失 L2。</summary>
         /// <param name="qqBotId">Bot 配置身份</param>
         /// <param name="source">来源</param>
         /// <param name="body">回复正文（含【猫名：】前缀）</param>
@@ -1786,11 +1919,26 @@ namespace CatHome4.QQ
                 LogStore.Add("QQBot", 2, "/last 发送跳过（连接不存在） | " + qqBotId.ToString(), "QQBOT");
                 return;
             }
-            // A112——文件标记扫描面统一：标记行剥离（不被当普通文本发出），文件经文件通道发送（与转发路同一实现）
-            List<string> files = QqFileMarker.Extract(body, out string textBody);
-            QqLastReplyPlan plan = QqLastReplyPlanner.Plan(textBody, files, MaxChunkChars, MaxLastParts);
-            // A208——服务留痕（实际发出段数与文件数；此前仅异常出声，兜底发送量不可观测）
-            LogStore.Add("QQBot", 1, "/last 服务 | " + source.ToString() + " | " + plan.Segments.Count.ToString() + " 段 + " + plan.Files.Count.ToString() + " 文件", "QQBOT");
+            // 绑定目标——图片包裹识别委托与附件发送共用（A216：与转发路同一识别结构）
+            QqTarget tg = null;
+            if (_collector != null)
+            {
+                List<QqTarget> targets = _collector.CollectByBot(qqBotId);
+                if (targets.Count > 0)
+                {
+                    tg = targets[0];
+                }
+            }
+            // A112 / A216——附件识别统一：文件标记 + 图片包裹一次扫描（标记 / 包裹不进正文，经对应通道发送——与转发路同一实现）
+            Func<string, QqImageScan> parseImages = null;
+            if (tg != null)
+            {
+                parseImages = tg.ParseImages;
+            }
+            QqReplyScan.Scan(body, parseImages, out string textBody, out List<string> files, out List<string> images);
+            QqLastReplyPlan plan = QqLastReplyPlanner.Plan(textBody, files, images, MaxChunkChars, MaxLastParts, MaxImageSends);
+            // A208——服务留痕（实际发出段数与附件数；此前仅异常出声，兜底发送量不可观测）
+            LogStore.Add("QQBot", 1, "/last 服务 | " + source.ToString() + " | " + plan.Segments.Count.ToString() + " 段 + " + plan.Files.Count.ToString() + " 文件 + " + plan.Images.Count.ToString() + " 图片", "QQBOT");
             if (plan.DroppedHeadSegments > 0)
             {
                 LogStore.Add("QQBot", 2, "/last 段数超限（取末尾段） | 丢弃前 " + plan.DroppedHeadSegments.ToString() + " 段 | " + source.ToString(), "QQBOT");
@@ -1798,6 +1946,10 @@ namespace CatHome4.QQ
             if (plan.DroppedFiles > 0)
             {
                 LogStore.Add("QQBot", 2, "/last 文件预算耗尽（跳过） | " + plan.DroppedFiles.ToString() + " 个 | " + source.ToString(), "QQBOT");
+            }
+            if (plan.DroppedImages > 0)
+            {
+                LogStore.Add("QQBot", 2, "/last 图片预算耗尽（跳过） | " + plan.DroppedImages.ToString() + " 张 | " + source.ToString(), "QQBOT");
             }
             for (int i = 0; i < plan.Segments.Count; i = i + 1)
             {
@@ -1807,18 +1959,9 @@ namespace CatHome4.QQ
                     return;
                 }
             }
-            // 文件发送——文本段与文件共用被动调用预算（planner 已按剩余额度截断，执行期不再判定）
+            // 附件发送——文本段与附件共用被动调用预算（planner 已按剩余额度截断，执行期不再判定）
             if (plan.Files.Count > 0)
             {
-                QqTarget tg = null;
-                if (_collector != null)
-                {
-                    List<QqTarget> targets = _collector.CollectByBot(qqBotId);
-                    if (targets.Count > 0)
-                    {
-                        tg = targets[0];
-                    }
-                }
                 if (tg == null)
                 {
                     LogStore.Add("QQBot", 2, "/last 文件发送跳过（无绑定目标） | " + plan.Files.Count.ToString() + " 个 | " + source.ToString(), "QQBOT");
@@ -1826,6 +1969,17 @@ namespace CatHome4.QQ
                 else
                 {
                     SendFilesToTarget(tg, source, plan.Files, "");
+                }
+            }
+            if (plan.Images.Count > 0)
+            {
+                if (tg == null)
+                {
+                    LogStore.Add("QQBot", 2, "/last 图片发送跳过（无绑定目标） | " + plan.Images.Count.ToString() + " 张 | " + source.ToString(), "QQBOT");
+                }
+                else
+                {
+                    SendImagesToTarget(tg, source, plan.Images, "");
                 }
             }
         }
@@ -1934,6 +2088,9 @@ namespace CatHome4.QQ
 
         /// <summary>块内容指纹读取——按块下标取内容指纹（A111 续接锚点；越界返回空串；null=不做锚点续接）</summary>
         public Func<int, string> GetBlockFingerprint;
+
+        /// <summary>图片包裹识别——回复文本 → 正文（剥离包裹）+ 图片路径（A216：Core 域协议经装配侧桥接注入；null=不识别图片）</summary>
+        public Func<string, QqImageScan> ParseImages;
 
         /// <summary>会话空闲判定——异常中止轮残留来源兜底清理（null=永不空闲）</summary>
         public Func<bool> IsIdle;
