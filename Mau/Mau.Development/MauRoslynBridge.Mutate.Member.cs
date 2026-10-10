@@ -59,6 +59,7 @@ namespace Mau.Development
             }
             // [段1] 入参形态归一——code 单成员 / codes 批量数组二选一（A92；互斥在参数面拦，此处兜底）
             List<string> codes = new List<string>();
+            bool useCodes = false;
             JsonElement codesElement;
             if (args.TryGetProperty("codes", out codesElement))
             {
@@ -81,6 +82,10 @@ namespace Mau.Development
                     }
                     codes.Add(itemText);
                 }
+                if (codes.Count > 0)
+                {
+                    useCodes = true;
+                }
             }
             if (codes.Count == 0)
             {
@@ -92,21 +97,21 @@ namespace Mau.Development
                 codes.Add(code);
             }
             bool batch = codes.Count > 1;
-            // [段2] 声明数防线——单成员路径一次一成员；批量路径每元素恰一成员（防 ParseMemberDeclaration 静默截断）
+            // [段2] 声明数防线——code 路径一次一成员；codes 路径每元素恰一成员（防 ParseMemberDeclaration 静默截断）
             for (int i = 0; i < codes.Count; i = i + 1)
             {
                 int declared = CountMemberDeclarations(codes[i]);
-                if (batch)
+                if (useCodes)
                 {
                     if (declared != 1)
                     {
-                        result = "ERR|BAD_ARGS|codes 第 " + (i + 1) + " 个元素含 " + declared + " 个成员声明——批量路径每个元素须恰一个成员声明";
+                        result = "ERR|BAD_ARGS|codes 第 " + (i + 1) + " 个元素含 " + declared + " 个成员声明——codes 批量路径每个元素须恰一个成员声明";
                         return true;
                     }
                 }
                 else if (declared > 1)
                 {
-                    result = "ERR|BAD_ARGS|code 含 " + declared + " 个成员声明——member insert 一次一成员，请分多次调用";
+                    result = "ERR|BAD_ARGS|code 含 " + declared + " 个成员声明——单成员用 code；多成员请改用 codes 批量（整批一次编译预检）";
                     return true;
                 }
             }
@@ -204,7 +209,7 @@ namespace Mau.Development
                 for (int i = 0; i < codes.Count; i = i + 1)
                 {
                     string label;
-                    if (batch)
+                    if (useCodes)
                     {
                         label = "codes 第 " + (i + 1) + " 个元素";
                     }

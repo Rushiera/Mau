@@ -130,6 +130,10 @@ namespace Mau.Development
                     {
                         return ToolBuild(root, out result);
                     }
+                    if (method == "test")
+                    {
+                        return ToolTest(root, out result);
+                    }
                     if (method == "list")
                     {
                         return ToolList(root, out result);
@@ -716,6 +720,11 @@ namespace Mau.Development
             else if (method == "build")
             {
                 allowed = "path";
+                required = "path";
+            }
+            else if (method == "test")
+            {
+                allowed = "path filter noBuild";
                 required = "path";
             }
             else if (method == "list")

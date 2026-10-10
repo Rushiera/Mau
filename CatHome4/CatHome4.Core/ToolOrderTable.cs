@@ -31,7 +31,7 @@ namespace CH4
         /// 独占档——本档工具**每次调用各自成一批**：不与任何工具同批，彼此之间也不同批（A144）。
         /// 适用面 = 「预检读全项目再落盘」与「独占工程构建面」——cs-* 语法树写操作在预检期读全项目源码，
         /// 与同批的文件写入撞车即 IOException（目标文件不同也冲突，判例 2026-10-02）；
-        /// cs-build 并发编译同一工程会争抢产物目录。本档把并发控制交给批次机制，工具层零锁。
+        /// cs-build / cs-test 并发编译同一工程会争抢产物目录。本档把并发控制交给批次机制，工具层零锁。
         /// </summary>
         public const int OrderExclusive = 2;
 
@@ -72,7 +72,7 @@ namespace CH4
         /// </summary>
         private static readonly string[] ExclusiveNames =
         {
-            "cs-patch", "cs-member", "cs-comment", "cs-format", "cs-build"
+            "cs-patch", "cs-member", "cs-comment", "cs-format", "cs-build", "cs-test"
         };
 
         /// <summary>构建 / 执行 / 部署档清单（3）——外部通道执行、宿主动作</summary>

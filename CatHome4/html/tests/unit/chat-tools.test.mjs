@@ -19,15 +19,15 @@ beforeAll(async () => {
     await bootChatPage();
 });
 
-// 工具池基准——63 件（按工具组；新增工具须同批登记落位表 + 落件 + 本表）
+// 工具池基准——64 件（按工具组；新增工具须同批登记落位表 + 落件 + 本表）
 const POOL = [
     // TextCat 7
     'text-read', 'text-read_lines', 'text-read_between', 'text-write', 'text-append', 'text-replace', 'text-grep',
     // FileCat 6
     'file-tree', 'file-find', 'file-move', 'file-delete', 'file-copy', 'file-version',
-    // CsCat 12
+    // CsCat 13
     'cs-check', 'cs-build', 'cs-list', 'cs-read', 'cs-find_ref', 'cs-find',
-    'cs-patch', 'cs-member', 'cs-comment', 'cs-dead', 'cs-comment_check', 'cs-format',
+    'cs-patch', 'cs-member', 'cs-comment', 'cs-dead', 'cs-comment_check', 'cs-format', 'cs-test',
     // MauCat 4
     'mau-verify', 'mau-gen', 'mau-proj', 'mau-setup',
     // ConfigCat 6
@@ -63,9 +63,9 @@ function summaryOf(payload) {
 }
 
 describe('声明层——覆盖与注册', () => {
-    it('落位表 = 工具池 63 件', () => {
+    it('落位表 = 工具池 64 件', () => {
         expect(Object.keys(window.TOOL_SKELETONS).sort()).toEqual(POOL);
-        expect(POOL.length).toBe(63);
+        expect(POOL.length).toBe(64);
     });
 
     it('声明件与落位表键集一致（有落位必有件，防「有壳无肉」）', () => {

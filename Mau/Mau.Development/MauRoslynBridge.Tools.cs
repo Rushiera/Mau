@@ -293,6 +293,298 @@ namespace Mau.Development
         }
 
         /// <summary>
+        /// cs.test——dotnet test 子进程（csproj / .sln / 目录三态）；回执降噪——只留每项目摘要行（通过 / 失败），剥还原 / 编译噪声。
+        /// </summary>
+        /// <param name="args">参数</param>
+        /// <param name="result">结果文本</param>
+        /// <returns>调用完成</returns>
+        private bool ToolTest(JsonElement args, out string result)
+        {
+            string path = Arg(args, "path");
+            string filter = Arg(args, "filter");
+            bool noBuild = Arg(args, "noBuild") == "true";
+            string resolveError;
+            List<string> projects = ResolveProjects(path, out resolveError);
+            if (projects.Count == 0)
+            {
+                result = resolveError;
+                return false;
+            }
+            string slnPath = ResolveSolutionPath(path);
+            if (slnPath.Length > 0)
+            {
+                int passedSln;
+                int failedSln;
+                return TestOne(slnPath, filter, noBuild, out result, out passedSln, out failedSln);
+            }
+            if (projects.Count == 1)
+            {
+                int passedOne;
+                int failedOne;
+                return TestOne(projects[0], filter, noBuild, out result, out passedOne, out failedOne);
+            }
+            // 统一口径（A210）：聚合头（ok/tool/target/items/failed + passed/failedTests）+ 摘要行 + 逐项目分节（节内无头）
+            string entry = RelativeToRoots(ResolveInRoots(path));
+            StringBuilder sb = new StringBuilder();
+            List<string> sections = new List<string>();
+            int failedProjects = 0;
+            int passedTotal = 0;
+            int failedTotal = 0;
+            for (int i = 0; i < projects.Count; i = i + 1)
+            {
+                string one;
+                int passedOne;
+                int failedOne;
+                TestOne(projects[i], filter, noBuild, out one, out passedOne, out failedOne);
+                if (one.StartsWith("{\"ok\":false", StringComparison.Ordinal))
+                {
+                    failedProjects = failedProjects + 1;
+                }
+                if (passedOne > 0)
+                {
+                    passedTotal = passedTotal + passedOne;
+                }
+                if (failedOne > 0)
+                {
+                    failedTotal = failedTotal + failedOne;
+                }
+                sections.Add("── " + RelativeToRoots(projects[i]) + " ──" + Environment.NewLine + StripHead(one));
+            }
+            Dictionary<string, object> aggMeta = new Dictionary<string, object>();
+            aggMeta["failed"] = failedProjects;
+            aggMeta["passed"] = passedTotal;
+            aggMeta["failedTests"] = failedTotal;
+            sb.Append(MetaHead("cs-test", failedProjects == 0, entry, projects.Count, aggMeta));
+            sb.Append(Environment.NewLine);
+            sb.Append(Echo(entry, projects.Count + " 项目 · 通过 " + passedTotal + " / 失败 " + failedTotal));
+            for (int i = 0; i < sections.Count; i = i + 1)
+            {
+                sb.Append(Environment.NewLine);
+                sb.Append(sections[i]);
+            }
+            result = TrimResult(sb.ToString(), MaxResultChars);
+            return true;
+        }
+
+        /// <summary>
+        /// 单目标 test——dotnet test 子进程（csproj 或 .sln）；回执降噪（每项目摘要行，剥还原 / 编译噪声）。
+        /// </summary>
+        /// <param name="target">csproj / .sln 绝对路径</param>
+        /// <param name="filter">测试过滤器（空 = 不过滤）</param>
+        /// <param name="noBuild">true=跳过编译直跑（--no-build）</param>
+        /// <param name="result">结果文本</param>
+        /// <param name="passed">出参：通过数</param>
+        /// <param name="failed">出参：失败数</param>
+        /// <returns>调用完成</returns>
+        private bool TestOne(string target, string filter, bool noBuild, out string result, out int passed, out int failed)
+        {
+            passed = 0;
+            failed = 0;
+            string arg = "test \"" + target + "\" --nologo";
+            if (noBuild)
+            {
+                arg = arg + " --no-build";
+            }
+            if (filter.Length > 0)
+            {
+                arg = arg + " --filter \"" + filter + "\"";
+            }
+            string workDir = Path.GetDirectoryName(target) ?? "";
+            Stopwatch watch = Stopwatch.StartNew();
+            ProcessRunResult run = ProcessRunner.RunAndCapture("dotnet", arg, workDir, 120000);
+            watch.Stop();
+            long elapsedMs = watch.ElapsedMilliseconds;
+            if (!run.Started)
+            {
+                result = "ERR|TEST_START|dotnet 进程启动失败（PATH 中无 dotnet）";
+                return false;
+            }
+            if (!run.Exited)
+            {
+                result = "ERR|TEST_TIMEOUT|dotnet test 超时（120s）";
+                return false;
+            }
+            string testText = run.Stdout + "\n" + run.Stderr;
+            int skipped = 0;
+            int total = 0;
+            int summaryCount = 0;
+            string[] lines = testText.Replace("\r", "").Split('\n');
+            for (int i = 0; i < lines.Length; i = i + 1)
+            {
+                if (!IsTestSummaryLine(lines[i]))
+                {
+                    continue;
+                }
+                summaryCount = summaryCount + 1;
+                int p = ExtractAfter(lines[i], "通过:");
+                if (p < 0)
+                {
+                    p = ExtractAfter(lines[i], "Passed:");
+                }
+                int f = ExtractAfter(lines[i], "失败:");
+                if (f < 0)
+                {
+                    f = ExtractAfter(lines[i], "Failed:");
+                }
+                int s = ExtractAfter(lines[i], "已跳过:");
+                if (s < 0)
+                {
+                    s = ExtractAfter(lines[i], "Skipped:");
+                }
+                int t = ExtractAfter(lines[i], "总计:");
+                if (t < 0)
+                {
+                    t = ExtractAfter(lines[i], "Total:");
+                }
+                if (p >= 0)
+                {
+                    passed = passed + p;
+                }
+                if (f >= 0)
+                {
+                    failed = failed + f;
+                }
+                if (s >= 0)
+                {
+                    skipped = skipped + s;
+                }
+                if (t >= 0)
+                {
+                    total = total + t;
+                }
+            }
+            string name = Path.GetFileNameWithoutExtension(target);
+            if (summaryCount == 0)
+            {
+                // 无摘要行（编译失败 / 无测试匹配）——退出码定成败，附降噪关键行
+                Dictionary<string, object> noSumMeta = new Dictionary<string, object>();
+                noSumMeta["exit"] = run.ExitCode;
+                noSumMeta["ms"] = elapsedMs;
+                noSumMeta["scope"] = BuildScopeLabel(target);
+                StringBuilder noSum = new StringBuilder();
+                noSum.Append(MetaHead("cs-test", run.ExitCode == 0, name, -1, noSumMeta));
+                noSum.Append(Environment.NewLine);
+                noSum.Append(Echo(name, "无测试摘要行 · exit " + run.ExitCode));
+                string noise0 = KeepTestNoise(testText);
+                if (noise0.Length > 0)
+                {
+                    noSum.Append(Environment.NewLine);
+                    noSum.Append(noise0);
+                }
+                result = TrimResult(noSum.ToString(), MaxResultChars);
+                return true;
+            }
+            int scopeItems = -1;
+            if (target.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+            {
+                scopeItems = CountSolutionProjects(target);
+            }
+            Dictionary<string, object> meta = new Dictionary<string, object>();
+            meta["exit"] = run.ExitCode;
+            meta["passed"] = passed;
+            meta["failed"] = failed;
+            meta["skipped"] = skipped;
+            meta["total"] = total;
+            meta["ms"] = elapsedMs;
+            meta["scope"] = BuildScopeLabel(target);
+            StringBuilder sb = new StringBuilder();
+            sb.Append(MetaHead("cs-test", run.ExitCode == 0 && failed == 0, name, scopeItems, meta));
+            sb.Append(Environment.NewLine);
+            sb.Append(Echo(name, "通过 " + passed + " / 失败 " + failed + " · " + SecondsLabel(elapsedMs) + "s"));
+            if (run.ExitCode != 0 || failed > 0)
+            {
+                string noise = KeepTestNoise(testText);
+                if (noise.Length > 0)
+                {
+                    sb.Append(Environment.NewLine);
+                    sb.Append(noise);
+                }
+            }
+            result = TrimResult(sb.ToString(), MaxResultChars);
+            return true;
+        }
+
+        /// <summary>dotnet test 摘要行识别——含通过 / 失败标记（中英双形态）。</summary>
+        /// <param name="line">输出行</param>
+        /// <returns>true=摘要行</returns>
+        private static bool IsTestSummaryLine(string line)
+        {
+            return line.Contains("已通过!", StringComparison.Ordinal)
+                || line.Contains("已失败!", StringComparison.Ordinal)
+                || line.Contains("Passed!", StringComparison.Ordinal)
+                || line.Contains("Failed!", StringComparison.Ordinal);
+        }
+
+        /// <summary>提取标记后的第一个数字（如「通过:  27」→ 27；提不到 -1）。</summary>
+        /// <param name="line">输出行</param>
+        /// <param name="mark">标记文本</param>
+        /// <returns>数字（提不到 -1）</returns>
+        private static int ExtractAfter(string line, string mark)
+        {
+            int idx = line.IndexOf(mark, StringComparison.Ordinal);
+            if (idx < 0)
+            {
+                return -1;
+            }
+            int p = idx + mark.Length;
+            while (p < line.Length && (line[p] == ' ' || line[p] == '\t'))
+            {
+                p = p + 1;
+            }
+            int start = p;
+            while (p < line.Length && line[p] >= '0' && line[p] <= '9')
+            {
+                p = p + 1;
+            }
+            if (p == start)
+            {
+                return -1;
+            }
+            int v;
+            if (int.TryParse(line.Substring(start, p - start), out v))
+            {
+                return v;
+            }
+            return -1;
+        }
+
+        /// <summary>dotnet test 噪声过滤——保留摘要行与失败 / 错误相关行（还原 / 编译产物行剥除；上限 30 行）。</summary>
+        /// <param name="text">输出全文</param>
+        /// <returns>降噪文本（无保留行时空串）</returns>
+        private static string KeepTestNoise(string text)
+        {
+            string[] lines = text.Replace("\r", "").Split('\n');
+            StringBuilder sb = new StringBuilder();
+            int kept = 0;
+            for (int i = 0; i < lines.Length; i = i + 1)
+            {
+                string line = lines[i].Trim();
+                if (line.Length == 0)
+                {
+                    continue;
+                }
+                bool keep = IsTestSummaryLine(lines[i])
+                    || line.Contains("已失败", StringComparison.Ordinal)
+                    || line.Contains("错误消息", StringComparison.Ordinal)
+                    || line.Contains("Error Message", StringComparison.Ordinal)
+                    || line.Contains("Assert.", StringComparison.Ordinal)
+                    || line.Contains("error CS", StringComparison.Ordinal);
+                if (!keep)
+                {
+                    continue;
+                }
+                sb.Append(line);
+                sb.Append(Environment.NewLine);
+                kept = kept + 1;
+                if (kept >= 30)
+                {
+                    break;
+                }
+            }
+            return sb.ToString().TrimEnd();
+        }
+
+        /// <summary>
         /// 解决方案入口探测——传 .sln 或「顶层含唯一 .sln 的目录」时返回 sln 绝对路径（否则空串）；用于 build 直达 sln（不经逐项目展开）。
         /// </summary>
         /// <param name="pathParam">路径参数</param>

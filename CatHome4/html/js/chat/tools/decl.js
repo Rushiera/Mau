@@ -44,7 +44,7 @@ function toolDeclOf(name) {
 
 // ── 骨架落位表（工具名 → 骨架 id）──────────────────────────
 // 未登记的工具走形态探测回落（结果可解析 { → json 骨架，否则 text 骨架）——禁止空白、禁止静默。
-// 口径：本表是数据不是逻辑；63 件与运行态工具池同步（基准 = 宿主 `ToolOrderTable` 全量登记表）。
+// 口径：本表是数据不是逻辑；64 件与运行态工具池同步（基准 = 宿主 `ToolOrderTable` 全量登记表）。
 var TOOL_SKELETONS = {
     // exec——进程 / 命令执行
     'powershell': 'exec',
@@ -62,6 +62,7 @@ var TOOL_SKELETONS = {
     'cs-comment_check': 'diagnostics',
     'cs-dead': 'diagnostics',
     'cs-format': 'diagnostics',
+    'cs-test': 'diagnostics',
     'mau-verify': 'diagnostics',
     'mau-gen': 'diagnostics',
     'mau-proj': 'diagnostics',

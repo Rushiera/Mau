@@ -24,6 +24,7 @@ namespace Mau.Bricks
             return "{\"group\":\"CsCat\",\"tools\":[" +
                 "{\"name\":\"cs-check\",\"description\":\"C# 语法层验证——写完代码后的第一轮全量语法检查（逐文件语法诊断，不解析类型/引用；多项目入口聚合分组输出）；full=true 含语法警告；默认附空 catch 块检测（CS_EMPTY_CATCH——块内无语句即报（注释不算），计入 warnings）；程序集引用与编译裁决以 cs-build 为唯一权威\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj / .sln / 目录\"},\"full\":{\"type\":\"boolean\",\"description\":\"true=输出全部语法警告\"}},\"required\":[\"path\"]}}," +
                 "{\"name\":\"cs-build\",\"description\":\"C# 实机编译——dotnet build 子进程（唯一权威裁决；成功后引用集自动刷新；多项目入口逐个执行）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj / .sln / 目录\"}},\"required\":[\"path\"]}}," +
+                "{\"name\":\"cs-test\",\"description\":\"C# 跑测——dotnet test 子进程（csproj / .sln / 目录三态；回执降噪——只留每项目摘要行『通过 N / 失败 M』，剥还原 / 编译噪声）；filter=测试过滤器（--filter）；noBuild=true 跳过编译直跑（依赖先 cs-build 出产物）；超时 120s\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj / .sln / 目录\"},\"filter\":{\"type\":\"string\",\"description\":\"测试过滤器（--filter 值，如 FullyQualifiedName~Foo）\"},\"noBuild\":{\"type\":\"boolean\",\"description\":\"true=跳过编译直跑测试\"}},\"required\":[\"path\"]}}," +
                 "{\"name\":\"cs-list\",\"description\":\"类/成员签名清单（语法层；class 空=全项目类清单；多项目入口聚合分组输出）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj / .sln / 目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名（空=全项目）\"}},\"required\":[\"path\"]}}," +
                 "{\"name\":\"cs-read\",\"description\":\"成员源码 + 文件行号标注（统一文件坐标系；member 空=类概览；多项目入口按 class 定位所属项目）\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj / .sln / 目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名（空=类概览；支持签名后缀如 SubmitChoice(int) 区分重载；.ctor/类名=构造函数）\"}},\"required\":[\"path\",\"class\"]}}," +
                 "{\"name\":\"cs-find_ref\",\"description\":\"成员全引用（含重载全匹配；语义级）——多项目入口扫描全部项目，跨程序集命中标 [跨程序集]\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"csproj / .sln / 目录\"},\"class\":{\"type\":\"string\",\"description\":\"类名\"},\"member\":{\"type\":\"string\",\"description\":\"成员名\"}},\"required\":[\"path\",\"class\",\"member\"]}}," +
@@ -38,4 +39,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:1C7B438E947161290A33B7683B4EB1BA4FADA8A84E00BD3ED4515B537A779A8F
+// #MAU_CHECKSUM:SHA256:B1E70E9E5C87D1213C59467BF14AEE8DA89A8FD4A9B88EECE69A0981541E2852
