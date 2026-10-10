@@ -215,6 +215,13 @@ namespace CH4
                 {
                     browserLifecycle.Shutdown();
                 }
+                // 网页资产下载收尾——停通知泵 + 取消在途任务（不置终态：半截 .part 留待下次续传）
+                IWebFetchService webFetchLifecycle;
+                DataBox.TryResolve<IWebFetchService>(out webFetchLifecycle);
+                if (webFetchLifecycle != null)
+                {
+                    webFetchLifecycle.Shutdown();
+                }
             }
         }
         /// <summary>
@@ -302,6 +309,9 @@ namespace CH4
             CdpBrowserService browserSvc = new CdpBrowserService(dataRoot);
             DataBox.Bind<IBrowserService>(browserSvc);
             DataBox.Bind<IBrowserLifecycle>(browserSvc);
+            // 网页资产下载服务——全局单一下载器（HttpClient + 后台 Task；任务态落盘 + 跨重启续传——design-ch4-webfetch）
+            WebFetchService webFetchSvc = new WebFetchService();
+            DataBox.Bind<IWebFetchService>(webFetchSvc);
             // 宿主指令服务——工具面触达内核指令族（host.command 积木 → IHostCommandService；与 CLI/HTTP 面板同源单内核）
             DataBox.Bind<IHostCommandService>(new HostCommandService());
             AuditStore audit = new AuditStore();
@@ -389,6 +399,24 @@ namespace CH4
             // 延迟队列落盘接线——Data/runtime/delays.json（跨宿主重启保留；design-ch4-delay §七）
             DelayQueue.Configure(Path.Combine(dataRoot, "Data", "runtime", "delays.json"));
             DelayQueue.Load();
+            // 网页资产下载接线——任务表落盘 + 产物目录（workspace 根下 Downloads）+ 完成注入回调（design-ch4-webfetch）
+            string downloadsDir = "";
+            for (int i = 0; i < workspace.Roots.Length; i = i + 1)
+            {
+                if (string.Equals(workspace.Roots[i].Id, "workspace", StringComparison.OrdinalIgnoreCase))
+                {
+                    downloadsDir = Path.Combine(workspace.Roots[i].Path, "Downloads");
+                    break;
+                }
+            }
+            webFetchSvc.Configure(
+                Path.Combine(dataRoot, "Data", "runtime", "downloads.json"),
+                downloadsDir,
+                delegate (string downloadCatKey, string downloadText)
+                {
+                    return _chatBridge.PostSystemMessage(downloadCatKey, "systemauto", downloadText) == "OK";
+                });
+            webFetchSvc.Start();
             // timeback 归档落点接线——Data/runtime/timeback（全局计数 + 每次回收一个作用域文件；A104）
             ChatSession.TimebackArchiveDirProvider = AdminService.ResolveTimebackArchiveDir;
             // A201 会话元数据落点接线——Data/sessions/<id>/<id>.session.json（会话自身参数持久化；design-ch4-protocol §十三）

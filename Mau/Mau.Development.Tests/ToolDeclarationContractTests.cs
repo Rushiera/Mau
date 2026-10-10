@@ -11,7 +11,7 @@ namespace Mau.Development.Tests
     /// <summary>
     /// 工具声明面 ↔ 校验面对账（A99）——Bricks/TOOLS 工具定义 JSON（LLM 消费面）与积木内联 ValidateArgs 字面量（宿主校验面）文本级一致性。
     /// 动机：参数契约手写在两处（声明面给 LLM 填参 / 校验面拒绝非法）——改一边另一边不跟，编译与门禁均不可见（同族判例：BRIK-TOOLS-009 JSON 畸形整组静默丢弃）。
-    /// 覆盖：TextCat / FileCat / MauCat / VisionCat / SearchCat / TempToolCat（标准五参 ValidateArgs 形态）。
+    /// 覆盖：TextCat / FileCat / MauCat / VisionCat / WebCat / TempToolCat（标准五参 ValidateArgs 形态）。
     /// 豁免：CsCat（ToolArgContractTests 行为级已覆盖）· ConfigCat（config.bridge 按 method 分支设变量，静态不可判）· MajordomoCat（单参重载）· 无参工具（声明面 properties 空——如 temp-info，语料层直接认领）。
     /// </summary>
     public class ToolDeclarationContractTests
@@ -92,7 +92,7 @@ namespace Mau.Development.Tests
             list.Add(MakeGroup("FileCat", "BRIK-TOOLS-011_tools.filecat.cs", "FILE"));
             list.Add(MakeGroup("MauCat", "BRIK-TOOLS-002_tools.maucat.cs", "MAU"));
             list.Add(MakeGroup("VisionCat", "BRIK-TOOLS-006_tools.visioncat.cs", "VISION"));
-            list.Add(MakeGroup("SearchCat", "BRIK-TOOLS-005_tools.searchcat.cs", "WEB"));
+            list.Add(MakeGroup("WebCat", "BRIK-TOOLS-013_tools.webcat.cs", "WEB"));
             list.Add(MakeGroup("TempToolCat", "BRIK-TOOLS-007_tools.temptoolcat.cs", "TEMP"));
             return list;
         }
