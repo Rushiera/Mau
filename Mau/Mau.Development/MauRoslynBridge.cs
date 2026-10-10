@@ -300,7 +300,8 @@ namespace Mau.Development
                 string nsRel = path.Substring(nsSep + 1);
                 for (int i = 0; i < _roots.Length; i = i + 1)
                 {
-                    if (string.Equals(_rootIds[i], nsId, StringComparison.Ordinal))
+                    // A211 根 id 读面大小写不敏感——对齐 FileSystemService.Resolve（全局规范：根 id 一律小写，读取比较点统一 OrdinalIgnoreCase）
+                    if (string.Equals(_rootIds[i], nsId, StringComparison.OrdinalIgnoreCase))
                     {
                         path = Path.Combine(_roots[i], nsRel);
                         break;
