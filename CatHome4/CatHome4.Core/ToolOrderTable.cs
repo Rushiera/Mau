@@ -68,12 +68,13 @@ namespace CH4
         };
 
         /// <summary>
-        /// 独占档清单（2）——cs-* 写操作与工程构建：预检读全项目 / 争抢构建产物目录，
-        /// 每次调用各自成批（PlanBatches 单点裁决）。
+        /// 独占档清单（2）——cs-* 写操作 / 工程构建 / 浏览器实例动作：预检读全项目、争抢构建产物目录、
+        /// 同 profile 进程互斥（open 与 close 必须保序），每次调用各自成批（PlanBatches 单点裁决）。
         /// </summary>
         private static readonly string[] ExclusiveNames =
         {
-            "cs-patch", "cs-member", "cs-comment", "cs-format", "cs-build", "cs-test"
+            "cs-patch", "cs-member", "cs-comment", "cs-format", "cs-build", "cs-test",
+            "browser-headful"
         };
 
         /// <summary>构建 / 执行 / 部署档清单（3）——外部通道执行、宿主动作</summary>
