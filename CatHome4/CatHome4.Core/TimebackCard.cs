@@ -94,6 +94,21 @@ namespace CH4
                 + "🔴 每行只写下方台账里有对应调用的——写完自问「这行来自哪次调用」，答不出即删；台账为空而 findings 非空 = 必红。\n"
                 + "例：成果：mau:CatHome4/Program.Tools.cs 的 timeback 描述块——findings 参数说明所在行（行号以你实读到的为准）";
         }
+        /// <summary>
+        /// 收域后回读规范——附于 back 返回体的 findings **之后**（载体注 §十一 同源 · 2026-10-10 莎裁止血）。
+        /// 动机：findings 是域内自述，主干须按位置回读实况才算收域完成；规范原先只在开域的域规范卡里
+        /// （回收时刻早已离开注意力）→ 在**动作点**再挂一条，令不变量与动作同处一屏。
+        /// </summary>
+        /// <param name="type">域类型（TimebackProfile 枚举）</param>
+        /// <returns>回读规范文本</returns>
+        public static string Readback(string type)
+        {
+            if (TimebackProfile.Kind(type) == TimebackProfile.KindWrite)
+            {
+                return "🔴 回读规范（收域第一步）——findings 是自述不是实况：按 `变更` 的位置逐条读回改动面";
+            }
+            return "🔴 回读规范（收域第一步）——findings 是自述不是实况：按 `成果` 的位置逐条读回原文";
+        }
 
         /// <summary>
         /// 域规范卡全文——注入用的 systemauto user 文本（五段：边界 / 可用 / 不可用 / 骨架 / 建议长度）。

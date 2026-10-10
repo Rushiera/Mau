@@ -295,7 +295,7 @@ namespace CH4
                 infoLine = infoLine + "（详见下表）";
             }
             // 台账附于 findings 之前——头 = 宿主事实（从执行流水提取，不可编），体 = LLM 自述；主干据此抽样核对
-            return ToolMetaHead.With("timeback-back", true, fields, infoLine + "\n" + BuildTimebackWrites() + findings);
+            return ToolMetaHead.With("timeback-back", true, fields, infoLine + "\n" + BuildTimebackWrites() + findings + Environment.NewLine + Environment.NewLine + TimebackCard.Readback(_timebackScope.Type));
         }
 
         /// <summary>
