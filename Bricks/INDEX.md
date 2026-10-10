@@ -64,7 +64,6 @@
 | BRIK-TOOLS-002 | tools.maucat | TOOLS | TOOLS/BRIK-TOOLS-002_tools.maucat.cs | 无 | active |  |
 | BRIK-TOOLS-003 | tools.cscat | TOOLS | TOOLS/BRIK-TOOLS-003_tools.cscat.cs | 无 | active |  |
 | BRIK-TOOLS-004 | tools.configcat | TOOLS | TOOLS/BRIK-TOOLS-004_tools.configcat.cs | 无 | active |  |
-| BRIK-TOOLS-005 | tools.searchcat | TOOLS | TOOLS/BRIK-TOOLS-005_tools.searchcat.cs | 无 | active |  |
 | BRIK-TOOLS-006 | tools.visioncat | TOOLS | TOOLS/BRIK-TOOLS-006_tools.visioncat.cs | 无 | active |  |
 | BRIK-TOOLS-007 | tools.temptoolcat | TOOLS | TOOLS/BRIK-TOOLS-007_tools.temptoolcat.cs | 无 | active |  |
 | BRIK-TOOLS-008 | tools.pscat | TOOLS | TOOLS/BRIK-TOOLS-008_tools.pscat.cs | 无 | active |  |
@@ -72,9 +71,12 @@
 | BRIK-TOOLS-010 | tools.quickcat | TOOLS | TOOLS/BRIK-TOOLS-010_tools.quickcat.cs | 无 | active |  |
 | BRIK-TOOLS-011 | tools.filecat | TOOLS | TOOLS/BRIK-TOOLS-011_tools.filecat.cs | 无 | active |  |
 | BRIK-TOOLS-012 | tools.browsercat | TOOLS | TOOLS/BRIK-TOOLS-012_tools.browsercat.cs | 无 | active |  |
+| BRIK-TOOLS-013 | tools.webcat | TOOLS | TOOLS/BRIK-TOOLS-013_tools.webcat.cs | 无 | active |  |
 | BRIK-VISION-001 | vision.analyze | VISION | VISION/BRIK-VISION-001_vision.analyze.cs | 无 | active |  |
 | BRIK-VISION-002 | image.inject | VISION | VISION/BRIK-VISION-002_image.inject.cs | 无 | active |  |
 | BRIK-WEB-001 | web.search | WEB | WEB/BRIK-WEB-001_web.search.cs | 无 | active |  |
+| BRIK-WEB-002 | web.fetch | WEB | WEB/BRIK-WEB-002_web.fetch.cs | 无 | active |  |
+| BRIK-WEB-003 | web.fetch.jobs | WEB | WEB/BRIK-WEB-003_web.fetch.jobs.cs | 无 | active |  |
 
 ---
 

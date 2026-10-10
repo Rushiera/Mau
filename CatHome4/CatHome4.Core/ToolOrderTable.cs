@@ -63,7 +63,8 @@ namespace CH4
             "file-move", "file-delete", "file-copy",
             "config-set", "config-reset", "config-cat-set",
             "image-inject",
-            "browser-eval", "browser-tabs"
+            "browser-eval", "browser-tabs",
+            "web-fetch", "web-fetch-jobs"
         };
 
         /// <summary>

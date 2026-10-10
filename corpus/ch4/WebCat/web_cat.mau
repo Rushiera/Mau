@@ -1,0 +1,75 @@
+﻿// web_cat.mau —— WebCat 语料（web 类工具组——SearchCat 升格，2026-10-10）
+// 角色：工具组 Flow——认领 TOOL 域 web-search / web-fetch / web-fetch-jobs 3 工具
+// 单级 OA 单：Dog（宿主 ToolOrderDog 实体）Post → 本 Flow 3 线认领执行 → complete_str 回执
+// 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON
+// 无值分支：每工具一条认领线，工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
+// 数据面：@srOffice/@wfOffice/@wjOffice 等私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
+// 线程模型（A48 后台化）：收单/读参/回执主线程同步；执行步 [t=2400, par] 后台线程执行（主线程零阻塞）
+//   —— 在途期间状态停在 Ready（不接新单，新单留 OA 队列）
+//   —— web-fetch 非阻塞：登记即返回任务号，完成 / 失败走系统注入
+// 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）
+// 变更（2026-10-10）：SearchCat 升格 WebCat + 新增 web-fetch / web-fetch-jobs（design-ch4-webfetch）
+
+// ── 状态机（3 线——每线独立生命周期）──
+§ 'S_Search' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Fetch' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Jobs' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+
+// T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
+§ 'T_Init' : 'S_Search' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Search' = 'Idle' | 'S_Search' = 'Idle'
+
+// ── 主动传感器壳——3 线各自探测（纯只读判断积木 → bool 落盒）──
+§ 'P_SearchOpen' ↻ [1]: 'oa.is_open'["TOOL", "web-search"] > @srOpen
+§ 'P_FetchOpen' ↻ [1]: 'oa.is_open'["TOOL", "web-fetch"] > @wfOpen
+§ 'P_JobsOpen' ↻ [1]: 'oa.is_open'["TOOL", "web-fetch-jobs"] > @wjOpen
+
+// ══════════════ web-search 线 ══════════════
+
+// T_SearchClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_SearchClaim' : @srOpen & 'S_Search' = 'Idle' → 'oa.claim_next_simple'["TOOL", "web-search"] > @srOffice | 'S_Search' = 'Claimed' | 'S_Search' = 'Idle'
+
+// T_SearchArgs：读载荷 args（整包工具参数 JSON）+ 执行中自述（par 导线单动作约束——desc 前移）
+§ 'T_SearchArgs' : 'S_Search' = 'Claimed' → 'oa.get_str'[@srOffice, "args"] > @srArgs | 'self.desc'["web-search 执行中", "", ""] | 'S_Search' = 'Ready' | 'S_Search' = 'Failed'
+
+// T_SearchExec：执行积木（联网搜索——服务端自动执行全链；失败侧 ERR 文本也在 @srRes）——后台执行
+§ 'T_SearchExec' [t=2400, par] : 'S_Search' = 'Ready' → 'web.search'[@srArgs] > @srRes | 'S_Search' = 'Done' | 'S_Search' = 'Failed'
+
+// T_SearchReply：成功回执（result=最终回答文本）
+§ 'T_SearchReply' : 'S_Search' = 'Done' → 'oa.complete_str'[@srOffice, @srRes] | 'self.desc'["空闲待命", "", ""] | 'S_Search' = 'Idle' | 'S_Search' = 'Idle'
+
+// T_SearchAbort：失败回执（@srRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
+§ 'T_SearchAbort' : 'S_Search' = 'Failed' → 'oa.complete_str'[@srOffice, @srRes] | 'S_Search' = 'Idle' | 'S_Search' = 'Idle'
+
+// ══════════════ web-fetch 线 ══════════════
+
+// T_FetchClaim：探测真 + Idle → 原子接单
+§ 'T_FetchClaim' : @wfOpen & 'S_Fetch' = 'Idle' → 'oa.claim_next_simple'["TOOL", "web-fetch"] > @wfOffice | 'S_Fetch' = 'Claimed' | 'S_Fetch' = 'Idle'
+
+// T_FetchArgs：读载荷 args + 执行中自述（desc 前移）
+§ 'T_FetchArgs' : 'S_Fetch' = 'Claimed' → 'oa.get_str'[@wfOffice, "args"] > @wfArgs | 'self.desc'["web-fetch 执行中", "", ""] | 'S_Fetch' = 'Ready' | 'S_Fetch' = 'Failed'
+
+// T_FetchExec：执行积木（推入下载任务——最高 10s 观测窗口）——后台执行
+§ 'T_FetchExec' [t=2400, par] : 'S_Fetch' = 'Ready' → 'web.fetch'[@wfArgs] > @wfRes | 'S_Fetch' = 'Done' | 'S_Fetch' = 'Failed'
+
+// T_FetchReply：成功回执（产物路径+规模 / 任务号+进度）
+§ 'T_FetchReply' : 'S_Fetch' = 'Done' → 'oa.complete_str'[@wfOffice, @wfRes] | 'self.desc'["空闲待命", "", ""] | 'S_Fetch' = 'Idle' | 'S_Fetch' = 'Idle'
+
+// T_FetchAbort：失败回执
+§ 'T_FetchAbort' : 'S_Fetch' = 'Failed' → 'oa.complete_str'[@wfOffice, @wfRes] | 'S_Fetch' = 'Idle' | 'S_Fetch' = 'Idle'
+
+// ══════════════ web-fetch-jobs 线 ══════════════
+
+// T_JobsClaim：探测真 + Idle → 原子接单
+§ 'T_JobsClaim' : @wjOpen & 'S_Jobs' = 'Idle' → 'oa.claim_next_simple'["TOOL", "web-fetch-jobs"] > @wjOffice | 'S_Jobs' = 'Claimed' | 'S_Jobs' = 'Idle'
+
+// T_JobsArgs：读载荷 args + 执行中自述（desc 前移）
+§ 'T_JobsArgs' : 'S_Jobs' = 'Claimed' → 'oa.get_str'[@wjOffice, "args"] > @wjArgs | 'self.desc'["web-fetch-jobs 执行中", "", ""] | 'S_Jobs' = 'Ready' | 'S_Jobs' = 'Failed'
+
+// T_JobsExec：执行积木（任务表查询与取消）——后台执行
+§ 'T_JobsExec' [t=2400, par] : 'S_Jobs' = 'Ready' → 'web.fetch.jobs'[@wjArgs] > @wjRes | 'S_Jobs' = 'Done' | 'S_Jobs' = 'Failed'
+
+// T_JobsReply：成功回执（清单 / 详情 / 取消结果）
+§ 'T_JobsReply' : 'S_Jobs' = 'Done' → 'oa.complete_str'[@wjOffice, @wjRes] | 'self.desc'["空闲待命", "", ""] | 'S_Jobs' = 'Idle' | 'S_Jobs' = 'Idle'
+
+// T_JobsAbort：失败回执
+§ 'T_JobsAbort' : 'S_Jobs' = 'Failed' → 'oa.complete_str'[@wjOffice, @wjRes] | 'S_Jobs' = 'Idle' | 'S_Jobs' = 'Idle'
