@@ -111,6 +111,7 @@ var TOOL_SKELETONS = {
     'browser-eval': 'text',
     'browser-shot': 'text',
     'browser-tabs': 'text',
+    'browser-headful': 'text',
     'Note': 'text',
     'time': 'text',
     'random': 'text',

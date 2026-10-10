@@ -1,13 +1,13 @@
 ﻿// ═══════════════════════════════════════════════════
-// 积木: web.fetch
-// ID:   BRIK-WEB-002
-// 类别: WEB
-// 作用: 网页资产下载——推入下载任务（登记即返回，非阻塞；完成 / 失败走系统注入）
+// 积木: browser.headful
+// ID:   BRIK-BROWSER-006
+// 类别: BROWSER
+// 作用: 有头登录实例——open（起有头窗口供人工登录）/ close（优雅关闭，profile 落盘保留登录态）
 // 依赖: 无
-// 引用: Mau.Runtime（IWebFetchService/DataBox）
-// 原理: DataBox.TryResolve<IWebFetchService> → Fetch(catId, url, fileName)；全局单一下载器（任务表全猫共用）
-// 常用: web_cat.mau 认领线——'web.fetch'[@args] > @result
-// 门禁: 不域限定（产物落盘、不占前文——对照 browser-* 的域内限定）
+// 引用: Mau.Runtime（IBrowserLifecycle/DataBox）
+// 原理: DataBox.TryResolve<IBrowserLifecycle> → Headful(catId, action, url)；关旧实例 + 同 profile 起有头
+// 常用: browser_cat.mau 认领线——'browser.headful'[@args] > @result
+// 门禁: **域外专属**（主干登录工具）——其余 browser-* 域内专属，本件方向相反（宿主 IsTimebackScopedTool 例外放行）
 // ═══════════════════════════════════════════════════
 using System;
 using System.Text.Json;
@@ -16,38 +16,42 @@ using Mau.Runtime;
 namespace Mau.Bricks
 {
     /// <summary>
-    /// 网页资产下载积木——web-fetch 工具执行面（全局单一下载器推入面）
+    /// 浏览器有头登录积木——browser-headful 工具执行面（A1：域外专属 · 主干人工登录）
     /// </summary>
-    public static class WebFetchBrick
+    public static class BrowserHeadfulBrick
     {
         /// <summary>
-        /// 推入下载任务
+        /// 有头实例开关——open（起有头）/ close（关有头）
         /// </summary>
-        /// <param name="argsJson">工具参数 JSON（url / file_name；catId 保留键由宿主注入）</param>
-        /// <param name="result">回执或 ERR| 错误文本</param>
+        /// <param name="argsJson">工具参数 JSON（action / url；catId 保留键由宿主注入）</param>
+        /// <param name="result">状态摘要或 ERR| 错误文本</param>
         /// <returns>true=执行成功</returns>
-        public static bool Fetch(string argsJson, out string result)
+        public static bool Headful(string argsJson, out string result)
         {
             result = "";
-            string badArgs = JsonArgs.Validate(argsJson, "url file_name", "url", "", "");
+            string badArgs = JsonArgs.Validate(argsJson, "action url", "", "", "");
             if (badArgs.Length > 0)
             {
                 result = badArgs;
                 return false;
             }
             string catId = JsonArgs.Get(argsJson, "catId");
+            string action = JsonArgs.Get(argsJson, "action");
             string url = JsonArgs.Get(argsJson, "url");
-            string fileName = JsonArgs.Get(argsJson, "file_name");
+            if (action.Length == 0)
+            {
+                action = "open";
+            }
             try
             {
-                IWebFetchService? service;
-                DataBox.TryResolve<IWebFetchService>(out service);
-                if (service == null)
+                IBrowserLifecycle? lifecycle;
+                DataBox.TryResolve<IBrowserLifecycle>(out lifecycle);
+                if (lifecycle == null)
                 {
-                    result = "ERR|DOWNLOAD_NO_SERVICE|宿主未注入 IWebFetchService";
+                    result = "ERR|BROWSER_NO_SERVICE|宿主未注入 IBrowserLifecycle";
                     return false;
                 }
-                string body = service.Fetch(catId, url, fileName);
+                string body = lifecycle.Headful(catId, action, url);
                 if (body.StartsWith("ERR|", StringComparison.Ordinal))
                 {
                     result = body;
@@ -55,12 +59,16 @@ namespace Mau.Bricks
                 }
                 System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
                 fields["chars"] = body.Length;
-                result = MetaHead("web-fetch", true, url, -1, fields) + "\n" + body;
+                result = MetaHead("browser-headful", true, action, -1, fields) + "\n" + action + " | " + body.Length.ToString() + " 字";
+                if (body.Length > 0)
+                {
+                    result = result + "\n" + body;
+                }
                 return true;
             }
             catch (Exception ex)
             {
-                result = "ERR|DOWNLOAD_BRICK|" + ex.GetType().Name + ": " + ex.Message;
+                result = "ERR|BROWSER_BRICK|" + ex.GetType().Name + ": " + ex.Message;
                 return false;
             }
         }
@@ -95,4 +103,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:35BCD6F1EC239DAB2EB75F6F6F70D25E5B88FD33F782FC7DA9A61B9158582A08
+// #MAU_CHECKSUM:SHA256:7BC6512C53C8FB2C9A27BB7841F81648D9D4603DC825529A2A4DD74D80E47D0F

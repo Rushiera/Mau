@@ -762,6 +762,11 @@ namespace CH4
             {
                 return true;
             }
+            // 例外（A1）——browser-headful 是主干登录工具（域外专属），与其余 browser-* 方向相反
+            if (name == "browser-headful")
+            {
+                return false;
+            }
             return name.StartsWith("browser-", StringComparison.Ordinal);
         }
 

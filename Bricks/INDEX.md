@@ -1,6 +1,6 @@
 ﻿# Mau 积木索引 — INDEX
 
-> 版本：v3.3 | 更新：2026-10-10（mau bricks index --update 源码驱动重建）
+> 版本：v3.3 | 更新：2026-10-11（mau bricks index --update 源码驱动重建）
 > 全量积木登记——一行一条。ID 永不重用。
 
 ## 全部积木
@@ -12,6 +12,7 @@
 | BRIK-BROWSER-003 | browser.eval | BROWSER | BROWSER/BRIK-BROWSER-003_browser.eval.cs | 无 | active |  |
 | BRIK-BROWSER-004 | browser.shot | BROWSER | BROWSER/BRIK-BROWSER-004_browser.shot.cs | 无 | active |  |
 | BRIK-BROWSER-005 | browser.tabs | BROWSER | BROWSER/BRIK-BROWSER-005_browser.tabs.cs | 无 | active |  |
+| BRIK-BROWSER-006 | browser.headful | BROWSER | BROWSER/BRIK-BROWSER-006_browser.headful.cs | 无 | active |  |
 | BRIK-DATA-001 | data.box_set_str | DATA | DATA/BRIK-DATA-001_data.box_set_str.cs | 无 | active |  |
 | BRIK-DATA-002 | data.box_get_str | DATA | DATA/BRIK-DATA-002_data.box_get_str.cs | 无 | active |  |
 | BRIK-FILE-001 | file.tree | FILE | FILE/BRIK-FILE-001_file.tree.cs | 无 | active |  |
@@ -80,4 +81,4 @@
 
 ---
 
-_版本：v3.3 | 2026-10-10 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_
+_版本：v3.3 | 2026-10-11 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_

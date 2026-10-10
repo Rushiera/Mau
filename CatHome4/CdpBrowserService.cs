@@ -472,11 +472,11 @@ namespace CH4
                 CatBrowser existing;
                 if (_cats.TryGetValue(catId, out existing))
                 {
-                    if (existing.IsAlive())
+                    if (existing.IsAlive() && !existing.IsHeadful)
                     {
                         return existing;
                     }
-                    // 残留实例——清理后重建
+                    // 残留实例 / 有头实例（域开锚语义 = 默认无头）——清理后重建
                     Cleanup(existing);
                     _cats.Remove(catId);
                 }
@@ -490,13 +490,73 @@ namespace CH4
                     _cats[catId] = adopted;
                     return adopted;
                 }
-                CatBrowser launched = Launch(catId, out error);
+                CatBrowser launched = Launch(catId, false, out error);
                 if (launched == null)
                 {
                     return null;
                 }
                 return launched;
             }
+        }
+        /// <summary>
+        /// 有头登录工具（A1）——browser-headful 执行面：域外专属（主干人工登录用）。
+        /// open：关现有实例 → 用同 profile 起有头浏览器（窗口弹出供人工登录）→ 可选导航 url。
+        /// close：优雅关闭（CDP Browser.close——profile 落盘，登录态保留）。
+        /// 同 profile 一次只能一个浏览器进程，故 open 必先关旧实例（含无头——域开锚预热的那个）。
+        /// </summary>
+        /// <param name="catId">猫 key</param>
+        /// <param name="action">动作：open（缺省，起有头）/ close（关有头）</param>
+        /// <param name="url">open 时可选导航地址（http/https；空=停在空白页）</param>
+        /// <returns>状态摘要或 ERR| 错误文本</returns>
+        public string Headful(string catId, string action, string url)
+        {
+            if (catId.Length == 0)
+            {
+                return "ERR|BROWSER_ARGS|缺少 catId";
+            }
+            if (action.Length > 0 && action != "open" && action != "close")
+            {
+                return "ERR|BROWSER_ARGS|action 非法（open / close）: " + action;
+            }
+            if (action == "close")
+            {
+                CloseCat(catId);
+                LogStore.Add("CatHome4", 1, "browser.headful 关闭 " + catId, "BROWSER");
+                return "有头浏览器已关闭（profile 已落盘——登录态保留）";
+            }
+            if (url.Length > 0)
+            {
+                if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "ERR|BROWSER_ARGS|url 仅支持 http(s): " + url;
+                }
+            }
+            CloseCat(catId);
+            string error = "";
+            CatBrowser browser = Launch(catId, true, out error);
+            if (browser == null)
+            {
+                return error;
+            }
+            string nav = "";
+            if (url.Length > 0)
+            {
+                lock (browser.Sync)
+                {
+                    try
+                    {
+                        browser.Cdp.Call("Page.navigate", JsonUtil.Serialize(new { url = url }));
+                        string state = WaitReady(browser.Cdp, NavTimeoutMs);
+                        nav = " | url=" + url + " | ready=" + state;
+                    }
+                    catch (Exception ex)
+                    {
+                        nav = " | 导航失败: " + ex.GetType().Name + ": " + ex.Message;
+                    }
+                }
+            }
+            LogStore.Add("CatHome4", 1, "browser.headful 就绪 " + catId + " port=" + browser.Port.ToString(), "BROWSER");
+            return "有头浏览器已就绪（窗口已弹出——请登录；完成后调本工具 action=close 关闭）| port=" + browser.Port.ToString() + nav;
         }
         /// <summary>
         /// 读端口锚文件（首行端口号）——文件缺失 / 首行非正整数 / 读取异常一律返回 0（调用方按无锚处理）
@@ -580,7 +640,7 @@ namespace CH4
         /// <param name="catId">猫 key</param>
         /// <param name="error">失败时的 ERR| 文本</param>
         /// <returns>新实例或 null</returns>
-        private CatBrowser Launch(string catId, out string error)
+        private CatBrowser Launch(string catId, bool headful, out string error)
         {
             error = "";
             string kernelPath = ResolveKernelPath(out error);
@@ -617,19 +677,37 @@ namespace CH4
             // 启动前自愈——清掉上次宿主遗留、可能仍占用 profile 的实例（Chromium detach：宿主退出不带走子进程）
             SelfHeal(pidFile);
 
+            // 有头模式（A1）——由调用方指定（browser-headful 传 true；域开锚一律 false）。
+            // 不读配置：域开锚默认无头，有头仅在主干显式调 browser-headful 时出现
+            string mode = "headless";
+            if (headful)
+            {
+                mode = "headful";
+            }
+
             ProcessStartInfo psi = new ProcessStartInfo(kernelPath);
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
             psi.RedirectStandardOutput = true;
             psi.RedirectStandardError = true;
-            psi.ArgumentList.Add("--headless=new");
+            if (!headful)
+            {
+                psi.ArgumentList.Add("--headless=new");
+            }
             psi.ArgumentList.Add("--remote-debugging-port=0");
             psi.ArgumentList.Add("--user-data-dir=" + profileDir);
             psi.ArgumentList.Add("--no-first-run");
             psi.ArgumentList.Add("--no-default-browser-check");
             psi.ArgumentList.Add("--disable-extensions");
+            // 同步切断（A1 附）——Edge 同步会把 session.restore_on_startup 从 5 覆盖回 1（实测 settings_diagnostic 记
+            // source=sync），导致启动恢复上次会话、页签累积。本 profile 是每猫独立自动化 profile，同步本就不该有
+            psi.ArgumentList.Add("--disable-sync");
             psi.ArgumentList.Add("--window-size=" + ViewportWidth.ToString() + "," + ViewportHeight.ToString());
-            psi.ArgumentList.Add("--hide-scrollbars");
+            if (!headful)
+            {
+                // 无头才藏滚动条——有头是给人看的窗口，滚动条要在
+                psi.ArgumentList.Add("--hide-scrollbars");
+            }
             psi.ArgumentList.Add("about:blank");
 
             Process proc = Process.Start(psi);
@@ -660,6 +738,7 @@ namespace CH4
             browser.Port = port;
             browser.ProfileDir = profileDir;
             browser.OutDir = outDir;
+            browser.IsHeadful = headful;
             try
             {
                 // 连接首个 page target——多页签下"当前页签"由 TargetId 标识（page 操作面都作用于它）
@@ -682,14 +761,10 @@ namespace CH4
             {
                 LogStore.Add("CatHome4", 2, "端口锚落盘失败（接管能力降级）: " + ex.Message, "BROWSER");
             }
-            LogStore.Add("CatHome4", 1, "浏览器实例就绪: " + catId + " port=" + port.ToString() + " pid=" + proc.Id.ToString() + " target=" + browser.TargetId, "BROWSER");
+            LogStore.Add("CatHome4", 1, "浏览器实例就绪: " + catId + " port=" + port.ToString() + " pid=" + proc.Id.ToString() + " target=" + browser.TargetId + " mode=" + mode, "BROWSER");
             return browser;
         }
-        /// <summary>
-        /// 关闭浏览器进程（A123）——连 browser 级 CDP 端点发 Browser.close，浏览器自行退出（连带全部子进程）。
-        /// 为什么不靠进程句柄：`Process.Start` 拿到的是 Chromium **启动器进程**，它写完 DevToolsActivePort 即退出；
-        /// 真正持有 profile 的 browser 进程既不在这条句柄链上、也不在任何 pid 文件里——只有 CDP 端点认得它。
-        /// </summary>
+        /// <summary>关闭浏览器进程（A123）——发 Browser.close 令浏览器自行退出（连带全部子进程），并等端口失效（进程真正退出）再返回（A1 起新实例前置——不等会撞上未退出的旧实例占用 profile）。为什么不靠进程句柄：`Process.Start` 拿到的是 Chromium 启动器进程，它写完 DevToolsActivePort 即退出；真正持有 profile 的 browser 进程既不在这条句柄链上、也不在任何 pid 文件里——只有 CDP 端点认得它。</summary>
         /// <param name="port">CDP 端口（≤0 视为无实例，直接返回）</param>
         private static void CloseBrowserProcess(int port)
         {
@@ -697,6 +772,17 @@ namespace CH4
             {
                 return;
             }
+            SendBrowserClose(port);
+            WaitPortClosed(port, 5000);
+        }
+        /// <summary>
+        /// 发 Browser.close（A123）——连 browser 级 CDP 端点令浏览器自行退出（连带全部子进程）。
+        /// 为什么不靠进程句柄：`Process.Start` 拿到的是 Chromium 启动器进程，它写完 DevToolsActivePort 即退出；
+        /// 真正持有 profile 的 browser 进程既不在这条句柄链上、也不在任何 pid 文件里——只有 CDP 端点认得它。
+        /// </summary>
+        /// <param name="port">CDP 端口（≤0 视为无实例，直接返回）</param>
+        private static void SendBrowserClose(int port)
+        {
             try
             {
                 string version = HttpCall("http://127.0.0.1:" + port.ToString() + "/json/version", false);
@@ -726,6 +812,50 @@ namespace CH4
             {
                 LogStore.Add("CatHome4", 1, "Browser.close 未能发出（实例可能已退出）: " + ex.Message, "BROWSER");
             }
+        }
+        /// <summary>
+        /// CDP 端口存活探测（静默）——不写日志（轮询等待期大量失败属预期，记日志会刷屏）。
+        /// </summary>
+        /// <param name="port">CDP 端口</param>
+        /// <returns>true=端点有响应</returns>
+        private static bool PortAlive(int port)
+        {
+            try
+            {
+                using (HttpClient http = new HttpClient())
+                {
+                    http.Timeout = TimeSpan.FromSeconds(2);
+                    string probe = http.GetStringAsync("http://127.0.0.1:" + port.ToString() + "/json/version").GetAwaiter().GetResult();
+                    return probe.Length > 0;
+                }
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+        /// <summary>
+        /// 等旧实例端口失效（A1）——Browser.close 异步生效：不等待就起新进程会撞上未退出的旧实例
+        /// （同 profile 转交 → 新进程被转交后退出 → DevToolsActivePort 永不出现 → 启动超时，与 A122 同源）。
+        /// </summary>
+        /// <param name="port">CDP 端口（≤0 直接返回）</param>
+        /// <param name="timeoutMs">等待上限毫秒</param>
+        private static void WaitPortClosed(int port, long timeoutMs)
+        {
+            if (port <= 0)
+            {
+                return;
+            }
+            Stopwatch sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                if (!PortAlive(port))
+                {
+                    return;
+                }
+                Thread.Sleep(100);
+            }
+            LogStore.Add("CatHome4", 2, "等待旧实例端口关闭超时: port=" + port.ToString(), "BROWSER");
         }
         /// <summary>
         /// 清理端口锚文件——域回收 / 实例关闭后调用：锚只在实例存活期间有意义，
@@ -1386,6 +1516,9 @@ namespace CH4
 
             /// <summary>CDP 端口（DevToolsActivePort 发现）</summary>
             public int Port;
+
+            /// <summary>有头标记（browser-headful 起的实例）——域开锚 Ensure 见有头实例即关掉重起无头（保「每次开域默认无头」）</summary>
+            public bool IsHeadful;
 
             /// <summary>当前页签 id——操作面（Read / Eval / Shot）作用的 target</summary>
             public string TargetId = "";

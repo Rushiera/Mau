@@ -19,6 +19,7 @@
 § 'S_Eval' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Shot' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Tabs' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Headful' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
 § 'T_Init' : 'S_Open' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Open' = 'Idle' | 'S_Open' = 'Idle'
@@ -94,3 +95,19 @@
 § 'T_TabsReply' : 'S_Tabs' = 'Done' → 'oa.complete_str'[@btOffice, @btRes] | 'self.desc'["空闲待命", "", ""] | 'S_Tabs' = 'Idle' | 'S_Tabs' = 'Idle'
 
 § 'T_TabsAbort' : 'S_Tabs' = 'Failed' → 'oa.complete_str'[@btOffice, @btRes] | 'S_Tabs' = 'Idle' | 'S_Tabs' = 'Idle'
+
+// ══════════════ browser-headful 线（A1 域外专属登录工具——主干人工登录用） ══════════════
+
+// 域外专属：IsTimebackScopedTool 例外放行（与其余 browser-* 域内专属相反）；域内调用被 type 白名单拒（TIMEBACK_PROFILE）
+
+§ 'P_HeadfulOpen' ↻ [1]: 'oa.is_open'["TOOL", "browser-headful"] > @bhOpen
+
+§ 'T_HeadfulClaim' : @bhOpen & 'S_Headful' = 'Idle' → 'oa.claim_next_simple'["TOOL", "browser-headful"] > @bhOffice | 'S_Headful' = 'Claimed' | 'S_Headful' = 'Idle'
+
+§ 'T_HeadfulArgs' : 'S_Headful' = 'Claimed' → 'oa.get_str'[@bhOffice, "args"] > @bhArgs | 'self.desc'["browser-headful 执行中", "", ""] | 'S_Headful' = 'Ready' | 'S_Headful' = 'Failed'
+
+§ 'T_HeadfulExec' [t=2400, par] : 'S_Headful' = 'Ready' → 'browser.headful'[@bhArgs] > @bhRes | 'S_Headful' = 'Done' | 'S_Headful' = 'Failed'
+
+§ 'T_HeadfulReply' : 'S_Headful' = 'Done' → 'oa.complete_str'[@bhOffice, @bhRes] | 'self.desc'["空闲待命", "", ""] | 'S_Headful' = 'Idle' | 'S_Headful' = 'Idle'
+
+§ 'T_HeadfulAbort' : 'S_Headful' = 'Failed' → 'oa.complete_str'[@bhOffice, @bhRes] | 'S_Headful' = 'Idle' | 'S_Headful' = 'Idle'
