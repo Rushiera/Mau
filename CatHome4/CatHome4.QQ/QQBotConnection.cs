@@ -227,24 +227,29 @@ namespace CatHome4.QQ
         /// <returns>发送成功 true（≥300 或异常 false）</returns>
         public bool SendReply(string msgType, string targetId, string text, string msgId, bool isMarkdown)
         {
+            string ignored = "";
+            return SendReplyWithCode(msgType, targetId, text, msgId, isMarkdown, out ignored);
+        }
+
+        /// <summary>
+        /// 发送回复并回传错误码（A217）——失败时解析响应体 code 字段（窗口超时 40034005 判定用）。
+        /// </summary>
+        /// <param name="msgType">消息类型——private / group</param>
+        /// <param name="targetId">目标 ID（群聊含 gid:mid 段）</param>
+        /// <param name="text">回复文本</param>
+        /// <param name="msgId">被动回复 msg_id——事件 d.id；空=不携带</param>
+        /// <param name="isMarkdown">true=Markdown 通道 / false=文本通道</param>
+        /// <param name="errCode">出参——失败时代码串（成功 / 无 code 为空串）</param>
+        /// <returns>发送成功 true（≥300 或异常 false）</returns>
+        public bool SendReplyWithCode(string msgType, string targetId, string text, string msgId, bool isMarkdown, out string errCode)
+        {
+            errCode = "";
             try
             {
-                string url;
-                string json;
-                if (msgType == "private")
-                {
-                    url = _apiHost + "/v2/users/" + targetId + "/messages";
-                    _msgSeq = _msgSeq + 1;
-                    json = BuildBody(text, isMarkdown, msgId, _msgSeq);
-                }
-                else
-                {
-                    int ci = targetId.IndexOf(':');
-                    string gid = ci > 0 ? targetId.Substring(0, ci) : targetId;
-                    url = _apiHost + "/v2/groups/" + gid + "/messages";
-                    _msgSeq = _msgSeq + 1;
-                    json = BuildBody(text, isMarkdown, msgId, _msgSeq);
-                }
+                // 端点按消息类型分派（与文件发送共用 BuildScope——单一真相源）
+                string url = _apiHost + BuildScope(msgType, targetId) + "/messages";
+                _msgSeq = _msgSeq + 1;
+                string json = BuildBody(text, isMarkdown, msgId, _msgSeq);
                 System.Net.Http.HttpResponseMessage r = PostJson(url, json, true);
                 int status = (int)r.StatusCode;
                 if (status >= 300)
@@ -259,6 +264,7 @@ namespace CatHome4.QQ
                     {
                         Log("QQBot | " + _displayName + " | 错误响应体读取失败: " + ex.Message, 2);
                     }
+                    errCode = ExtractErrorCode(errBody);
                     Log("QQBot | " + _displayName + " | 发: " + msgType + ":" + targetId + " ← " + Truncate(OneLine(text), 30) + " (" + status + ") " + Truncate(OneLine(errBody), 200), 2);
                     return false;
                 }
@@ -270,6 +276,55 @@ namespace CatHome4.QQ
                 Log("QQBot | " + _displayName + " | 发送失败: " + e.Message, 2);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 提取错误码——响应体 code 字段（失败响应如 {"code":40034005,...}）；解析失败返回空串。
+        /// </summary>
+        /// <param name="body">响应体</param>
+        /// <returns>代码串（无 code / 解析失败 = 空串）</returns>
+        private static string ExtractErrorCode(string body)
+        {
+            if (body == null || body.Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                using (JsonDocument d = JsonUtil.ParseStrict(body))
+                {
+                    if (d.RootElement.TryGetProperty("code", out JsonElement c))
+                    {
+                        if (c.ValueKind == JsonValueKind.Number)
+                        {
+                            return c.GetInt64().ToString();
+                        }
+                        return c.GetString() ?? "";
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+            return "";
+        }
+        /// <summary>
+        /// 目标端点段构造——按消息类型分派（私聊 /v2/users/{openid} · 群聊 /v2/groups/{gid}）。
+        /// 群聊 targetId 形如 `gid:mid`，取冒号前的 gid 段。文本与文件发送共用本实现（单一真相源）。
+        /// </summary>
+        /// <param name="msgType">消息类型——private / group</param>
+        /// <param name="targetId">目标 ID——私聊 user_openid / 群聊 gid:mid</param>
+        /// <returns>端点前缀（含 /v2 段，不含末尾 /messages 或 /files）</returns>
+        internal static string BuildScope(string msgType, string targetId)
+        {
+            if (msgType == "private")
+            {
+                return "/v2/users/" + targetId;
+            }
+            int ci = targetId.IndexOf(':');
+            string gid = ci > 0 ? targetId.Substring(0, ci) : targetId;
+            return "/v2/groups/" + gid;
         }
         /// <summary>
         /// 构造发送请求体——文本 / Markdown 双通道 + 可选被动 msg_id（P8）。
@@ -326,13 +381,14 @@ namespace CatHome4.QQ
         }
 
         /// <summary>
-        /// 发送本地文件——≤10MB file_data 上传 → msg_type=7 发送（带被动 msg_id；P9 发送）。
+        /// 发送本地文件——≤10MB file_data 上传 → msg_type=7 发送（带被动 msg_id + msg_seq；A215 私聊 / 群聊双端点）。
         /// </summary>
-        /// <param name="targetId">私聊 user_openid</param>
+        /// <param name="msgType">消息类型——private / group（决定端点 /v2/users 或 /v2/groups）</param>
+        /// <param name="targetId">目标 ID——私聊 user_openid / 群聊 gid:mid（取 gid 段）</param>
         /// <param name="path">本地文件路径</param>
         /// <param name="msgId">被动回复 msg_id——空=不携带</param>
         /// <returns>成功返回空串；失败返回错误文本（由调用方嵌入消息渠道）</returns>
-        public string SendFile(string targetId, string path, string msgId)
+        public string SendFile(string msgType, string targetId, string path, string msgId)
         {
             try
             {
@@ -349,12 +405,13 @@ namespace CatHome4.QQ
                 {
                     return "文件发送失败: 超过 10MB 上传上限";
                 }
+                // [段1] 端点按消息类型分派（与文本发送共用 BuildScope——单一真相源）
+                string scope = BuildScope(msgType, targetId);
                 string fileName = Path.GetFileName(path);
                 int fileType = ResolveFileType(fileName);
                 byte[] data = File.ReadAllBytes(path);
                 string json = JsonUtil.Object(("file_type", fileType), ("srv_send_msg", false), ("file_data", Convert.ToBase64String(data)), ("file_name", fileName));
-                string uploadUrl = _apiHost + "/v2/users/" + targetId + "/files";
-                System.Net.Http.HttpResponseMessage r = PostJson(uploadUrl, json, true);
+                System.Net.Http.HttpResponseMessage r = PostJson(_apiHost + scope + "/files", json, true);
                 if (!r.IsSuccessStatusCode)
                 {
                     Log("QQBot | " + _displayName + " | 文件上传失败: " + (int)r.StatusCode + " | " + fileName, 2);
@@ -373,16 +430,21 @@ namespace CatHome4.QQ
                 {
                     return "文件发送失败: 上传未返回 file_info";
                 }
-                // 发送媒体消息——msg_type=7 + 可选被动 msg_id
-                string msg = "{\"msg_type\":7,\"media\":{\"file_info\":" + JsonUtil.Str(fileInfo) + "}"
-                    + (msgId.Length > 0 ? ",\"msg_id\":" + JsonUtil.Str(msgId) : "") + "}";
-                System.Net.Http.HttpResponseMessage r2 = PostJson(_apiHost + "/v2/users/" + targetId + "/messages", msg, true);
+                // [段2] 发送媒体消息——msg_type=7 + 可选被动 msg_id（msg_seq 递增：同 msg_id 多次回复须递增，否则 40054005 去重拒）
+                string msg = "{\"msg_type\":7,\"media\":{\"file_info\":" + JsonUtil.Str(fileInfo) + "}";
+                if (msgId.Length > 0)
+                {
+                    _msgSeq = _msgSeq + 1;
+                    msg = msg + ",\"msg_id\":" + JsonUtil.Str(msgId) + ",\"msg_seq\":" + _msgSeq.ToString();
+                }
+                msg = msg + "}";
+                System.Net.Http.HttpResponseMessage r2 = PostJson(_apiHost + scope + "/messages", msg, true);
                 if (!r2.IsSuccessStatusCode)
                 {
                     Log("QQBot | " + _displayName + " | 文件消息发送失败: " + (int)r2.StatusCode + " | " + fileName, 2);
                     return "文件发送失败: 发送 " + (int)r2.StatusCode;
                 }
-                Log("QQBot | " + _displayName + " | 发文件: " + fileName + " (" + fi.Length + "B)", 1);
+                Log("QQBot | " + _displayName + " | 发文件: " + msgType + ":" + targetId + " ← " + fileName + " (" + fi.Length + "B)", 1);
                 return "";
             }
             catch (Exception e)

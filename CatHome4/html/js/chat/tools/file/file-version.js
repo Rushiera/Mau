@@ -8,8 +8,10 @@ toolDecl('file-version', {
         return ['读取版本信息 ' + ovText(a.path)];
     },
     headline: function (a, r) {
+        var h = ovHead(r);
+        var body = h ? h.body : r;
         var name = ovShort(a.path);
-        var v = ovLineField(r, '版本:');
+        var v = ovLineField(body, '版本:');
         var plus = v.indexOf('+');
         if (plus > 0) {
             v = v.substring(0, plus);

@@ -77,7 +77,21 @@ namespace Mau.Development.Tests
             string code = "        public string Added()\r\n        {\r\n            return \"added\";\r\n        }\r\n\r\n        public string Added2()\r\n        {\r\n            return \"added2\";\r\n        }\r\n";
             string result = InvokeMember("end", "", code);
             Assert.StartsWith("ERR|BAD_ARGS", result);
-            Assert.Contains("一次一成员", result);
+            Assert.Contains("codes 批量", result);
+            Assert.Equal(before, File.ReadAllText(_sourcePath));
+        }
+
+        /// <summary>
+        /// member insert——codes 单元素含多个成员声明 ⇒ 报错按参数名（codes 第 1 个元素），不误称 code（A212）
+        /// </summary>
+        [Fact]
+        public void MemberInsertCodesSingleElementReportsCodesLabel()
+        {
+            string before = File.ReadAllText(_sourcePath);
+            string multi = "        public string Added()\r\n        {\r\n            return \"added\";\r\n        }\r\n\r\n        public string Added2()\r\n        {\r\n            return \"added2\";\r\n        }\r\n";
+            string result = InvokeMemberCodes(new string[] { multi });
+            Assert.StartsWith("ERR|BAD_ARGS", result);
+            Assert.Contains("codes 第 1 个元素", result);
             Assert.Equal(before, File.ReadAllText(_sourcePath));
         }
 
@@ -300,6 +314,29 @@ namespace Mau.Development.Tests
                 + "\",\"anchor\":\"" + anchor + "\",\"code\":\"" + Escape(code) + "\"}";
             string result = "";
             _bridge.Invoke("member", args, out result);
+            return result;
+        }
+
+        /// <summary>
+        /// 调用 member 工具（op=insert，codes 批量数组）
+        /// </summary>
+        /// <param name="codes">成员源码数组</param>
+        /// <returns>工具结果文本</returns>
+        private string InvokeMemberCodes(string[] codes)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append("{\"path\":\"" + Escape(_projectPath) + "\",\"class\":\"Probe\",\"op\":\"insert\",\"position\":\"end\",\"codes\":[");
+            for (int i = 0; i < codes.Length; i = i + 1)
+            {
+                if (i > 0)
+                {
+                    sb.Append(",");
+                }
+                sb.Append("\"" + Escape(codes[i]) + "\"");
+            }
+            sb.Append("]}");
+            string result = "";
+            _bridge.Invoke("member", sb.ToString(), out result);
             return result;
         }
 

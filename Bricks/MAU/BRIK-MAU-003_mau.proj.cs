@@ -65,7 +65,7 @@ namespace Mau.Bricks
                     result = "ERR|NO_REPO|未找到仓库根（Mau.sln 向上探测）";
                     return false;
                 }
-                string abs = ResolveRepoPath(root, projParam);
+                string abs = ResolveRepoPath(root, projParam, JsonArgs.Get(argsJson, "catId"));
                 if (abs.Length == 0)
                 {
                     result = "ERR|PATH_ESCAPE|路径越界（仅允许仓库根内）: " + projParam;
@@ -87,18 +87,14 @@ namespace Mau.Bricks
                 string dllDir = System.IO.Path.Combine(root, "public", "app", "Flows");
                 MauGroupBuildResult r = MauGroupBuilder.Build(abs, srcDir, dllDir, doBuild);
                 StringBuilder sb = new StringBuilder();
+                sb.Append(proj.Name + " | " + r.Steps.Count.ToString() + " 步");
                 for (int i = 0; i < r.Steps.Count; i++)
                 {
-                    if (i > 0)
-                    {
-                        sb.Append(Environment.NewLine);
-                    }
+                    sb.Append(Environment.NewLine);
                     sb.Append(r.Steps[i]);
                 }
-                // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
                 System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
-                fields["proj"] = proj.Name;
-                fields["steps"] = r.Steps.Count;
                 fields["errors"] = r.FailDiagnostics.Count;
                 fields["build"] = doBuild;
                 if (!r.Success)
@@ -113,10 +109,10 @@ namespace Mau.Bricks
                         sb.Append(Environment.NewLine);
                         sb.Append("FAIL|GEN|" + r.Error);
                     }
-                    result = MetaHead("mau-proj", false, fields) + "\n" + sb.ToString();
+                    result = MetaHead("mau-proj", false, proj.Name, r.Steps.Count, fields) + "\n" + sb.ToString();
                     return false;
                 }
-                result = MetaHead("mau-proj", true, fields) + "\n" + sb.ToString();
+                result = MetaHead("mau-proj", true, proj.Name, r.Steps.Count, fields) + "\n" + sb.ToString();
                 return true;
             }
             catch (Exception ex)
@@ -141,20 +137,25 @@ namespace Mau.Bricks
         }
 
         /// <summary>
-        /// 路径解析——受控根前缀（id:relative）走通用接口解码（对齐 text-*/cs-* 寻址约定），无前缀按仓库根拼接；统一验证在仓库根内
+        /// 路径解析——受控根前缀（id:relative）走统一寻址（猫级 fs 优先，对齐 text-*/file-* 约定），无前缀按仓库根拼接；统一验证在仓库根内
         /// </summary>
         /// <param name="root">仓库根</param>
         /// <param name="relPath">路径参数（支持 mau: 前缀）</param>
+        /// <param name="catId">会话猫 key（catId 保留键；空=当前猫）</param>
         /// <returns>绝对路径（越界返回空串）</returns>
-        private static string ResolveRepoPath(string root, string relPath)
+        private static string ResolveRepoPath(string root, string relPath, string catId)
         {
             string full;
             int nsSep = relPath.IndexOf(':');
             if (nsSep > 0)
             {
-                // 受控根前缀——通用解码接口（FileSystemService.Resolve：id 映射 + 越界 + 只读根；盘符 C:\ 无匹配 id 原样回落）
-                FileSystemService fs;
-                if (!DataBox.TryResolve<FileSystemService>(out fs))
+                // 受控根前缀——统一寻址（对齐 text-*/file-*）：猫级 fs（ResolveScoped：显式 catId → 当前猫）优先，回落全局 DataBox
+                FileSystemService? fs = FileSystemRegistry.ResolveScoped(catId);
+                if (fs == null)
+                {
+                    DataBox.TryResolve<FileSystemService>(out fs);
+                }
+                if (fs == null)
                 {
                     return "";
                 }
@@ -190,13 +191,23 @@ namespace Mau.Bricks
         /// </summary>
         /// <param name="tool">工具名（mau-verify / mau-gen / mau-proj / mau-setup）</param>
         /// <param name="ok">成败（编译 / 验证是否通过）</param>
+        /// <param name="target">主来源（文件 / 项目名；空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
         /// <param name="fields">附加字段（按插入序输出）</param>
         /// <returns>单行 JSON</returns>
-        private static string MetaHead(string tool, bool ok, System.Collections.Generic.Dictionary<string, object> fields)
+        private static string MetaHead(string tool, bool ok, string target, int items, System.Collections.Generic.Dictionary<string, object> fields)
         {
             System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
             head["ok"] = ok;
             head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
             foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
             {
                 head[kv.Key] = kv.Value;
@@ -205,4 +216,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:3C2ABBF5877918F3F0CF63554BFE741C31DD058D68D1C6F11CFC95C60CA147AD
+// #MAU_CHECKSUM:SHA256:2C2A7663DB0C94DF6F54D35D4E2CEAFBCB9CACA327D36CA553A4893EC53E7F13

@@ -52,11 +52,10 @@ namespace Mau.Development
                 return false;
             }
             Dictionary<string, object> meta = new Dictionary<string, object>();
-            meta["name"] = name;
-            meta["hits"] = total;
             meta["projects"] = projects.Count;
             StringBuilder sb = new StringBuilder();
-            sb.Append(MetaHead("cs-find", true, meta));
+            sb.Append(MetaHead("cs-find", true, name, total, meta));
+            sb.Append(Environment.NewLine + Echo(name, total + " 命中"));
             int written = AppendFindLines(exact, sb, 0);
             written = AppendFindLines(partial, sb, written);
             if (total > written)

@@ -71,8 +71,8 @@ namespace Mau.Bricks
                 body = "宿主全链重启请求已登记（prepare + 原子切换 + 重启；目标运行区: " + targetShow
                     + "）。宿主在全局空闲后接力部署并重启，结果回执将自动注入本会话。";
             }
-            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
-            result = MetaHead(mode, targetShow, push.Length > 0) + "\n" + body;
+            // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target 已含）+ 正文摘要行
+            result = MetaHead(mode, targetShow, push.Length > 0) + "\n" + targetShow + " | " + mode + " 重启请求已登记" + "\n" + body;
             return true;
         }
 
@@ -105,4 +105,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:8547AD781C8CA5B4508090646BA0FAD9F922572866F420D91AC8FF911152866A
+// #MAU_CHECKSUM:SHA256:35C9B016E9CE1442A905205F63960D18A2D3C73D4AB7B5CFB2D9EAB38A013A87

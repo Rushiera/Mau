@@ -59,7 +59,7 @@ namespace Mau.Bricks
                     return false;
                 }
                 RecycleOutcome outcome = fs.Recycle(path);
-                result = "OK 已软删除 → " + outcome.Target + FormatStats(outcome);
+                result = MetaHead("file-delete", true, path, -1) + "\n" + path + " → " + outcome.Target + FormatStats(outcome);
                 return true;
             }
             catch (Exception ex)
@@ -67,6 +67,30 @@ namespace Mau.Bricks
                 result = "ERR|" + ex.GetType().Name + "|" + ex.Message;
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（空串 / 负值 = 省略）。
+        /// </summary>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, string target, int items)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            return JsonSerializer.Serialize(head);
         }
 
         /// <summary>
@@ -106,4 +130,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:49FC1FD5CCE990EEABB02FF7D59321D6BD6BA4FE1EFA96372A85A508D915FCE3
+// #MAU_CHECKSUM:SHA256:74B6C423F181E27C98D80B070C9D2E93995BA7CE98033BFF83B1AD57EA130059

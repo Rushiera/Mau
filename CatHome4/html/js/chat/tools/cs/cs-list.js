@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════
 // chat/tools/cs/cs-list.js —— cs-list / 类与成员签名清单（CsCat）
-// 声明：折叠行读结构化头（project / classes）+ 输入意图行；段结构归骨架 `listing`。
+// 声明：折叠行读结构化头（target / items）+ 输入意图行；段结构归骨架 `listing`。
 // ═══════════════════════════════════════════
 
 toolDecl('cs-list', {
@@ -15,7 +15,7 @@ toolDecl('cs-list', {
         if (!h) {
             return '列出 ' + ovShort(a.path) + ovStat(r);
         }
-        var proj = ovMetaStr(h.meta, 'project');
-        return '列出 ' + (proj.length > 0 ? proj : ovShort(a.path)) + ' · ' + ovMetaNum(h.meta, 'classes', 0) + ' 类';
+        var proj = ovMetaStr(h.meta, 'target');
+        return '列出 ' + (proj.length > 0 ? proj : ovShort(a.path)) + ' · ' + ovMetaNum(h.meta, 'items', 0) + ' 类';
     }
 });

@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using CatHome4.Contracts;
+using CatHome4.QQ;
 using Mau.Runtime;
 using CH4;
 
@@ -525,6 +526,47 @@ namespace CatHome4.Admin
             {
                 return BuildChatEnvelope(session, line, images);
             };
+        }
+
+        /// <summary>
+        /// QQ 图片包裹解析桥（A216）——转发面经 QqTarget.ParseImages 委托调用：Core 域协议（ChatImageEnvelope.TryParse）
+        /// 解析结果投影为 QQ 域窄 DTO（QqImageScan）——QQ 域不依赖 Core（依赖注入的委托桥接）。
+        /// 包裹前后文本按原文顺序拼回正文；未命中时正文原样返回（零回归）。
+        /// </summary>
+        /// <param name="text">回复正文</param>
+        /// <returns>正文（剥离包裹）+ 图片路径列表</returns>
+        internal static QqImageScan ParseQqImages(string text)
+        {
+            QqImageScan scan = new QqImageScan();
+            if (text == null || text.Length == 0)
+            {
+                return scan;
+            }
+            if (ChatImageEnvelope.TryParse(text, out List<ChatImageItem> items, out string before, out string after))
+            {
+                string body = before;
+                if (after.Length > 0)
+                {
+                    if (body.Length > 0)
+                    {
+                        body = body + "\n" + after;
+                    }
+                    else
+                    {
+                        body = after;
+                    }
+                }
+                scan.Body = body.Trim();
+                for (int i = 0; i < items.Count; i = i + 1)
+                {
+                    scan.Images.Add(items[i].Path);
+                }
+            }
+            else
+            {
+                scan.Body = text;
+            }
+            return scan;
         }
 
         /// <summary>

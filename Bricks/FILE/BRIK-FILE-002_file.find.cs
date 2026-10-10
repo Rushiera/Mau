@@ -84,10 +84,10 @@ namespace Mau.Bricks
                 string[] rows = fs.Find(dir, pattern, recursive, limit);
                 if (rows == null || rows.Length == 0)
                 {
-                    result = "（未找到匹配文件）";
+                    result = MetaHead("file-find", true, dir, 0) + "\n" + dir + " | 0 条";
                     return true;
                 }
-                result = string.Join("\n", rows);
+                result = MetaHead("file-find", true, dir, rows.Length) + "\n" + dir + " | " + rows.Length.ToString() + " 条" + "\n" + string.Join("\n", rows);
                 return true;
             }
             catch (Exception ex)
@@ -96,6 +96,30 @@ namespace Mau.Bricks
                 return false;
             }
         }
+
+        /// <summary>
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（空串 / 负值 = 省略）。
+        /// </summary>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, string target, int items)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            return JsonSerializer.Serialize(head);
+        }
     }
 }
-// #MAU_CHECKSUM:SHA256:5681C792503508149A91E63ED8B252B505E7593B4EA45FE11C6E50E364D5E1C3
+// #MAU_CHECKSUM:SHA256:5004CDBE95B1D8C6A0440C3ABB03D679E4C34D64373AB7B6D1F22CECA1DAA488

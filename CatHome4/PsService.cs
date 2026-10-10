@@ -154,13 +154,14 @@ namespace CH4
             int stderrLines = CountLinesOf(errText);
             string shellName = string.Equals(shell, "powershell7", StringComparison.Ordinal) ? "powershell7" : "powershell";
             Dictionary<string, object> fields = new Dictionary<string, object>();
-            fields["exit"] = timeout ? -1 : proc.ExitCode;
+            int exitCode = timeout ? -1 : proc.ExitCode;
+            fields["exit"] = exitCode;
             fields["truncated"] = outTrunc || errTrunc;
             fields["timeout"] = timeout;
             fields["stdoutLines"] = stdoutLines;
             fields["stderrLines"] = stderrLines;
             string bodyText = errText.Length > 0 ? (outText + "\n" + errText) : outText;
-            return ToolMetaHead.With(shellName, true, fields, bodyText);
+            return ToolMetaHead.With(shellName, true, shellName, -1, fields, shellName + " | 退出 " + exitCode.ToString() + " · " + stdoutLines.ToString() + " 行" + "\n" + bodyText);
         }
 
         /// <summary>

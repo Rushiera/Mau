@@ -2473,19 +2473,14 @@ namespace CH4
             _batches.Clear();
             _batchIndex = -1;
             List<ToolCallInfo> calls = ParseToolCalls(toolCallsJson);
-            // [P0] 剥离——批内 timeback 至多 start × 1 + back × 1（design-ch4-timeback §2.4）：
+            // [P0] 剥离——批内 timeback-start / timeback-back 各至多 1 条（design-ch4-timeback §2.4）：
             // 各取首条剥离，重复调用（同类第 2 条起）判参数面拒绝（不静默丢弃）
             int startIndex = -1;
             int backIndex = -1;
             bool[] duplicated = new bool[calls.Count];
             for (int i = 0; i < calls.Count; i = i + 1)
             {
-                if (calls[i].Name != "timeback")
-                {
-                    continue;
-                }
-                string action = ExtractTimebackAction(calls[i].Arguments);
-                if (action == "start")
+                if (calls[i].Name == "timeback-start")
                 {
                     if (startIndex < 0)
                     {
@@ -2497,7 +2492,7 @@ namespace CH4
                     }
                     continue;
                 }
-                if (action == "back")
+                if (calls[i].Name == "timeback-back")
                 {
                     if (backIndex < 0)
                     {
@@ -2535,11 +2530,11 @@ namespace CH4
             for (int i = 0; i < calls.Count; i = i + 1)
             {
                 ToolCallInfo call = calls[i];
-                // 批内重复 timeback——参数面拒绝（批内至多 start × 1 + back × 1）
+                // 批内重复 timeback-start / timeback-back——参数面拒绝（各至多 × 1）
                 if (duplicated[i])
                 {
                     ToolOrderDog dupDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
-                    dupDog.Result = "ERR|TIMEBACK_ARGS|批内不允许多条 timeback 调用（至多 start × 1 + back × 1）——第 " + (i + 1).ToString() + " 条被拒";
+                    dupDog.Result = "ERR|TIMEBACK_ARGS|批内不允许多条 timeback-start / timeback-back 调用（各至多 × 1）——第 " + (i + 1).ToString() + " 条被拒";
                     dupDog.IsClosed = true;
                     _dogs.Add(dupDog);
                     LogStore.Add("CatHome4", 2, "timeback 批内重复调用被拒（第 " + (i + 1).ToString() + " 条）", "TIMEBACK");
@@ -2583,13 +2578,29 @@ namespace CH4
                     LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：timeback 作用域外不可用", "TIMEBACK");
                     continue;
                 }
+                // 域类型白名单（design-ch4-timeback-type §三 第 2 道）——域内只给本 type 的工具面（fail-closed）；
+                // 由 start 登记的类型决定，与「域外专属集」正交（前者判"域内给不给"，后者判"域外给不给"）。
+                // 三类不放本表管辖、交各自机制报错：timeback 两件（域机制自用）· Note/sleep/timer（C3 锁定——
+                // 报 TIMEBACK_LOCKED 语义比 PROFILE 准）；C5 暴毙名单在上方已拒。
+                // 会话授权面之外的工具亦不做先验——声明面在上方已拒，本表只判「是否属于本 type」
+                if (_timebackScope != null && !IsTimebackProfileExempt(call.Name)
+                    && !TimebackProfile.Allows(_timebackScope.Type, call.Name))
+                {
+                    ToolOrderDog profileDog = new ToolOrderDog(call.Id, call.Name, call.Arguments);
+                    profileDog.Result = "ERR|TIMEBACK_PROFILE|" + call.Name + " 不在本域类型「" + _timebackScope.Type
+                        + "」的白名单内——域类型决定域内可用工具面；需用则先 back 回收、回主干调用";
+                    profileDog.IsClosed = true;
+                    _dogs.Add(profileDog);
+                    LogStore.Add("CatHome4", 2, "工具 " + call.Name + " 被拒绝：不在域类型 " + _timebackScope.Type + " 白名单内", "TIMEBACK");
+                    continue;
+                }
                 // per-cat 路由——载荷注入猫 key（会话标识 ≡ 猫 key；积木按 catId 解析猫级文件系统与配置面）
                 string arguments = InjectCatId(call.Arguments);
                 // roundsum 工具计数——合法工具调用 +1（被拒工具不计）
                 _toolCallCount = _toolCallCount + 1;
                 ToolOrderDog dog = new ToolOrderDog(call.Id, call.Name, arguments);
-                // A127——执行序裁决（参数相关：timeback 按 action 分走两端钉死值）
-                dog.Order = ToolOrderTable.Resolve(call.Name, call.Arguments);
+                // A127——执行序裁决（静态表：timeback-start / timeback-back 各取一端钉死值）
+                dog.Order = ToolOrderTable.Resolve(call.Name);
                 _dogs.Add(dog);
             }
             // [P3] 分批——按 order 值升序分桶（同值一批 · 批内声明序；独占档每个调用各自成批）+ 启动首批
@@ -2853,6 +2864,9 @@ namespace CH4
             FlushImageInjections();
             // [段2d] timeback 回卷——本批请求了 back 则在此执行（工具结果已全部回填：截断 + 结论注入 + 工具主动 done）
             ApplyTimebackBack();
+            // [段2d-1] timeback 域规范卡注入（§十一）——作用域活跃且未注入 → 入队一条 systemauto user（落在区间内 · 闭合随删）
+            // 位于回收之后：同批 start+back 时作用域已关 → 零动作（区间为空，注入会落在删除区间之外）
+            PostTimebackCard();
             // [段2e] timeback 状态自述——回收后作用域已关（自然跳过）；未关且累计满 10 事件则追加一条 assistant 自述
             FlushTimebackNotice();
             // [段2c] 宿主重启检测——majordomo-restart 成功回执 → 登记重启请求 + 停机态（A72：本轮走常规结束流程，不强制中断）

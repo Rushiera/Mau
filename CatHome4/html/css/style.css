@@ -161,6 +161,7 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 .btn-mini.tight { padding: 2px 8px; }
 .input-mini { background: var(--ch-bg-panel); border: 1px solid var(--ch-line); color: var(--ch-fg); padding: 3px 6px; font-family: inherit; font-size: var(--ch-fs-tag); }
 .input-mini.text { color: var(--ch-fg-strong); }
+.input-mini.ro { color: var(--ch-fg-muted); background: var(--ch-bg-hover); cursor: not-allowed; }
 
 /* ── API 池默认 / 备用列（2026-10-01 默认列轮——紫星=当前默认 / 灰星=非默认；备用轮——绿菱=当前备用）── */
 .api-star-on { color: var(--ch-identity); }

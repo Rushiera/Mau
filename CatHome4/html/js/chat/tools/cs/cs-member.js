@@ -28,16 +28,16 @@ toolDecl('cs-member', {
         }
         var m = h.meta;
         if (m.op === 'insert') {
-            if (m.items && m.items.length) {
-                return '批量插入 ' + ovMetaNum(m, 'count', 0) + ' 个成员 · 落盘 L' + m.items[0].start + '-' + m.items[m.items.length - 1].end;
+            if (m.entries && m.entries.length) {
+                return '批量插入 ' + ovMetaNum(m, 'items', 0) + ' 个成员 · 落盘 L' + m.entries[0].start + '-' + m.entries[m.entries.length - 1].end;
             }
-            return '插入 ' + ovMetaStr(m, 'class') + ' · 落盘 L' + ovMetaNum(m, 'start', 0) + '-' + ovMetaNum(m, 'end', 0);
+            return '插入 ' + ovMetaStr(m, 'target') + ' · 落盘 L' + ovMetaNum(m, 'start', 0) + '-' + ovMetaNum(m, 'end', 0);
         }
         if (m.op === 'delete') {
-            return '删除 ' + ovMetaStr(m, 'class') + '.' + ovMetaStr(m, 'member');
+            return '删除 ' + ovMetaStr(m, 'target') + '.' + ovMetaStr(m, 'member');
         }
         if (m.op === 'rename') {
-            return '重命名 ' + ovMetaStr(m, 'oldName') + ' → ' + ovMetaStr(m, 'newName') + ' · ' + ovMetaNum(m, 'files', 0) + ' 文件';
+            return '重命名 ' + ovMetaStr(m, 'oldName') + ' → ' + ovMetaStr(m, 'newName') + ' · ' + ovMetaNum(m, 'items', 0) + ' 文件';
         }
         return '成员操作 ' + ovText(a.class);
     },
@@ -48,20 +48,20 @@ toolDecl('cs-member', {
         }
         var m = h.meta;
         if (m.op === 'insert') {
-            if (m.items && m.items.length) {
+            if (m.entries && m.entries.length) {
                 var bulk = [];
-                for (var bi = 0; bi < m.items.length; bi = bi + 1) {
-                    bulk.push('#' + (bi + 1) + ' L' + m.items[bi].start + '-' + m.items[bi].end + ' · ' + (m.items[bi].kind || ''));
+                for (var bi = 0; bi < m.entries.length; bi = bi + 1) {
+                    bulk.push('#' + (bi + 1) + ' L' + m.entries[bi].start + '-' + m.entries[bi].end + ' · ' + (m.entries[bi].kind || ''));
                 }
                 return bulk;
             }
             return ['已落盘 ' + ovMetaStr(m, 'file') + ' · L' + ovMetaNum(m, 'start', 0) + '-' + ovMetaNum(m, 'end', 0) + ' · ' + ovMetaStr(m, 'kind')];
         }
         if (m.op === 'delete') {
-            return ['已删除 ' + ovMetaStr(m, 'class') + '.' + ovMetaStr(m, 'member') + '（' + ovMetaStr(m, 'file') + '）'];
+            return ['已删除 ' + ovMetaStr(m, 'target') + '.' + ovMetaStr(m, 'member') + '（' + ovMetaStr(m, 'file') + '）'];
         }
         if (m.op === 'rename') {
-            return ['已重命名 ' + ovMetaStr(m, 'oldName') + ' → ' + ovMetaStr(m, 'newName') + ' · ' + ovMetaNum(m, 'files', 0) + ' 文件'];
+            return ['已重命名 ' + ovMetaStr(m, 'oldName') + ' → ' + ovMetaStr(m, 'newName') + ' · ' + ovMetaNum(m, 'items', 0) + ' 文件'];
         }
         return ['（已应用）'];
     }

@@ -58,11 +58,15 @@ namespace Mau.Bricks
                     result = body;
                     return true;
                 }
-                // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
-                result = MetaHead(path, question, body);
+                // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target + 专有）+ 正文摘要行 + 载荷
+                System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
+                fields["question"] = question;
+                fields["chars"] = body.Length;
+                string headline = path + " | " + body.Length.ToString() + " 字";
+                result = MetaHead("image-analyze", true, path, -1, fields);
                 if (body.Length > 0)
                 {
-                    result = result + "\n" + body;
+                    result = result + "\n" + headline + "\n" + body;
                 }
                 return true;
             }
@@ -79,23 +83,34 @@ namespace Mau.Bricks
         /// <param name="argumentsJson">参数 JSON</param>
         /// <param name="key">参数名</param>
         /// <summary>
-        /// 结构化元数据头——首行单行 JSON（ok/tool/path/question/chars；键序稳定 = 插入序）
-        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（负值 = 省略）+ 专有字段（插入序）
+        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文摘要行 + 载荷（正文不塞进 JSON——避免转义膨胀）
         /// </summary>
-        /// <param name="path">图片路径</param>
-        /// <param name="question">提示词</param>
-        /// <param name="body">分析正文</param>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（图片路径；空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <param name="fields">附加字段（按插入序输出）</param>
         /// <returns>单行 JSON</returns>
-        private static string MetaHead(string path, string question, string body)
+        private static string MetaHead(string tool, bool ok, string target, int items, System.Collections.Generic.Dictionary<string, object> fields)
         {
             System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
-            head["ok"] = true;
-            head["tool"] = "image-analyze";
-            head["path"] = path;
-            head["question"] = question;
-            head["chars"] = body.Length;
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
+            {
+                head[kv.Key] = kv.Value;
+            }
             return JsonSerializer.Serialize(head);
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:5A3C2D739A77D344F844DBABB184A4C68AF9370CD4DCB82738548F78350AD3D1
+// #MAU_CHECKSUM:SHA256:9C00A535014CBB1C7ABFD499AD70720C525A1C2DED0D014EEC18F8B94C36DEAE

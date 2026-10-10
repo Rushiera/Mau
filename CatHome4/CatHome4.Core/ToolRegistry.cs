@@ -52,7 +52,7 @@ namespace CH4
             for (int i = 0; i < specs.Length; i = i + 1)
             {
                 ToolSpec s = specs[i];
-                bool builtin = s.Name == "Note" || s.Name == "time" || s.Name == "random" || s.Name == "info" || s.Name == "pack" || s.Name == "sleep" || s.Name == "timer" || s.Name == "timeback" || s.Name.StartsWith("host-", StringComparison.Ordinal);
+                bool builtin = s.Name == "Note" || s.Name == "time" || s.Name == "random" || s.Name == "info" || s.Name == "pack" || s.Name == "sleep" || s.Name == "timer" || s.Name == "timeback-start" || s.Name == "timeback-back" || s.Name.StartsWith("host-", StringComparison.Ordinal);
                 string ownerFlow = "";
                 if (ownerFlowMap != null && ownerFlowMap.TryGetValue(s.Name, out ownerFlow))
                 {

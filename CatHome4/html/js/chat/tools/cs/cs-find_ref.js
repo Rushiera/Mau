@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════
 // chat/tools/cs/cs-find_ref.js —— cs-find_ref / 成员全引用（CsCat）
-// 声明：折叠行读结构化头（hits / projects）+ 输入意图行；段结构归骨架 `matches`（三列命中）。
+// 声明：折叠行读结构化头（items / projects）+ 输入意图行；段结构归骨架 `matches`（三列命中）。
 // ═══════════════════════════════════════════
 
 toolDecl('cs-find_ref', {
@@ -13,6 +13,6 @@ toolDecl('cs-find_ref', {
         if (!h) {
             return '引用 ' + target + ovStat(r);
         }
-        return '引用 ' + target + ' · ' + ovMetaNum(h.meta, 'hits', 0) + ' 处 · ' + ovMetaNum(h.meta, 'projects', 0) + ' 项目';
+        return '引用 ' + target + ' · ' + ovMetaNum(h.meta, 'items', 0) + ' 处 · ' + ovMetaNum(h.meta, 'projects', 0) + ' 项目';
     }
 });

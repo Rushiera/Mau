@@ -58,7 +58,8 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                result = fs.ReadVersionInfo(path);
+                string info = fs.ReadVersionInfo(path);
+                result = MetaHead("file-version", true, path, -1) + "\n" + path + " | " + info;
                 return true;
             }
             catch (Exception ex)
@@ -67,6 +68,30 @@ namespace Mau.Bricks
                 return false;
             }
         }
+
+        /// <summary>
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（空串 / 负值 = 省略）。
+        /// </summary>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, string target, int items)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            return JsonSerializer.Serialize(head);
+        }
     }
 }
-// #MAU_CHECKSUM:SHA256:D098A9DD3AAE53BF704D7389293203D00B6BC372B3441060211835F05A07452B
+// #MAU_CHECKSUM:SHA256:2C600CD0311F3340188D1260C9ABD34EF96C7D37762D921154E7162D69042352

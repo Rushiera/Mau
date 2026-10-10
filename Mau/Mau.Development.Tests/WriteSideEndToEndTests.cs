@@ -112,7 +112,7 @@ namespace Mau.Development.Tests
             string check = "{\"path\":\"" + Escape(_target) + "\",\"mode\":\"check\"}";
             string result = "";
             _bridge.Invoke("format", check, out result);
-            Assert.DoesNotContain("A22Probe.cs", result);
+            Assert.Contains("\"changedFiles\":0", result);
         }
 
         /// <summary>
@@ -125,7 +125,7 @@ namespace Mau.Development.Tests
             string codeB = "/// <summary>被引用</summary>\\n/// <returns>标记</returns>\\nprivate int Mark()\\n{\\nreturn 1;\\n}";
             string result = Call("member", "\"class\":\"A22Probe\",\"op\":\"insert\",\"position\":\"end\",\"codes\":[\"" + codeA + "\",\"" + codeB + "\"]");
             Assert.StartsWith("{\"ok\":true", result);
-            Assert.Contains("\"count\":2", result);
+            Assert.Contains("\"items\":2", result);
             string after = File.ReadAllText(_target);
             Assert.Contains("public int Entry()", after);
             Assert.Contains("private int Mark()", after);

@@ -77,7 +77,17 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                result = fs.ReadLinesAuto(path, start, end);
+                string body = fs.ReadLinesAuto(path, start, end);
+                int lines = 1;
+                for (int i = 0; i < body.Length; i = i + 1)
+                {
+                    if (body[i] == '\n')
+                    {
+                        lines = lines + 1;
+                    }
+                }
+                // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
+                result = MetaHead("text-read_lines", true, path, lines) + "\n" + path + " | " + lines.ToString() + " 行" + "\n" + body;
                 return true;
             }
             catch (Exception ex)
@@ -86,6 +96,29 @@ namespace Mau.Bricks
                 return false;
             }
         }
+        /// <summary>
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（空串 / 负值 = 省略）。
+        /// </summary>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, string target, int items)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            return JsonSerializer.Serialize(head);
+        }
     }
 }
-// #MAU_CHECKSUM:SHA256:1A9D66EB0C36D4E66BA0888D7CC355C6532D9540A4CCF7F58C70A957C7A82858
+// #MAU_CHECKSUM:SHA256:6AB7A0E91B435C543564B7301CF4570EEE7CAE6904615C8F5AEA1A81D60B5BAC

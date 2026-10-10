@@ -58,7 +58,17 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                result = TrimResult(fs.ReadTextAuto(path), 20000);
+                string content = fs.ReadTextAuto(path);
+                int lines = 1;
+                for (int i = 0; i < content.Length; i = i + 1)
+                {
+                    if (content[i] == '\n')
+                    {
+                        lines = lines + 1;
+                    }
+                }
+                // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
+                result = MetaHead("text-read", true, path, lines) + "\n" + path + " | " + lines.ToString() + " 行" + "\n" + TrimResult(content, 20000);
                 return true;
             }
             catch (Exception ex)
@@ -66,6 +76,29 @@ namespace Mau.Bricks
                 result = "ERR|" + ex.GetType().Name + "|" + ex.Message;
                 return false;
             }
+        }
+        /// <summary>
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（空串 / 负值 = 省略）。
+        /// </summary>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, string target, int items)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            return JsonSerializer.Serialize(head);
         }
         /// <summary>
         /// 结果截断——超长文本保留头部 + 截断提示（上下文防爆）
@@ -83,4 +116,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:D0AAA29C03F1EA3DB811292E2825E76C48936A045E891AAF6CB3FD4C7082A983
+// #MAU_CHECKSUM:SHA256:2313B0BBE573674D1BE425E952430728E9F8DCE84FDF48952A38E4DA7DFD98FA

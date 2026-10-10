@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════
 // chat/tools/cs/cs-comment.js —— cs-comment / XML 注释增改（CsCat）
-// 声明：折叠行读结构化头（type）+ 输入意图行（目标 → 类型）；输出段自然语言化（已写入 …）。
+// 声明：折叠行读结构化头（target / type）+ 输入意图行（目标 → 类型）；输出段自然语言化（已写入 …）。
 // ═══════════════════════════════════════════
 
 toolDecl('cs-comment', {
@@ -22,7 +22,6 @@ toolDecl('cs-comment', {
             return null;
         }
         var m = h.meta;
-        var target = ovMetaStr(m, 'class') + (ovMetaStr(m, 'member').length > 0 ? '.' + ovMetaStr(m, 'member') : '');
-        return ['已写入 ' + target + ' 的 ' + ovMetaStr(m, 'type') + ' 注释'];
+        return ['已写入 ' + ovMetaStr(m, 'target') + ' 的 ' + ovMetaStr(m, 'type') + ' 注释'];
     }
 });

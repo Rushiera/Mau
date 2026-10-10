@@ -146,8 +146,7 @@ namespace CH4
                     // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
                     System.Collections.Generic.Dictionary<string, object> doneFields = new System.Collections.Generic.Dictionary<string, object>();
                     doneFields["state"] = "done";
-                    doneFields["total"] = total;
-                    result = ToolMetaHead.With("Note", true, doneFields, "[Note] 🎉 全部 " + total + " 条任务已完成！");
+                    result = ToolMetaHead.With("Note", true, "", total, doneFields, "[Note] 🎉 全部 " + total + " 条任务已完成！");
                 }
                 else
                 {
@@ -171,7 +170,7 @@ namespace CH4
                 // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
                 System.Collections.Generic.Dictionary<string, object> emptyFields = new System.Collections.Generic.Dictionary<string, object>();
                 emptyFields["state"] = "empty";
-                return ToolMetaHead.With("Note", true, emptyFields, emptyText);
+                return ToolMetaHead.With("Note", true, "", -1, emptyFields, emptyText);
             }
             // [段1] 待完成口径——总数 - 已完成（含当前未完成条）：已完成 + 待完成 == 总数
             int remain = _noteTasks.Length - _noteDone;
@@ -187,11 +186,10 @@ namespace CH4
             System.Collections.Generic.Dictionary<string, object> noteFields = new System.Collections.Generic.Dictionary<string, object>();
             noteFields["state"] = "progress";
             noteFields["index"] = _noteCurrent + 1;
-            noteFields["total"] = _noteTasks.Length;
             noteFields["done"] = _noteDone;
             noteFields["remain"] = remain;
             noteFields["last"] = last;
-            return ToolMetaHead.With("Note", true, noteFields, msg);
+            return ToolMetaHead.With("Note", true, "", _noteTasks.Length, noteFields, msg);
         }
 
         /// <summary>

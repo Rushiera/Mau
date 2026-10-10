@@ -1455,6 +1455,7 @@ namespace CatHome4.Admin
                     Inject = delegate (string s, string origin) { return captured.PostUserMessage(s, "user", "", origin); },
                     GetViewItems = delegate () { return ConvertQqViewItems(captured.ViewStore.GetBlocks()); },
                     GetBlockFingerprint = delegate (int index) { return ComputeBlockFingerprint(captured.ViewStore.GetBlocks(), index); },
+                    ParseImages = ParseQqImages,
                     IsIdle = delegate () { return captured.IsIdle; },
                     IsTimebackActive = delegate () { return captured.TimebackActive; },
                     NewSession = delegate ()
@@ -1480,6 +1481,7 @@ namespace CatHome4.Admin
                         Inject = delegate (string s, string origin) { return captured.Session.PostUserMessage(s, "user", "", origin); },
                         GetViewItems = delegate () { return ConvertQqViewItems(captured.Session.ViewStore.GetBlocks()); },
                         GetBlockFingerprint = delegate (int index) { return ComputeBlockFingerprint(captured.Session.ViewStore.GetBlocks(), index); },
+                        ParseImages = ParseQqImages,
                         IsIdle = delegate () { return captured.Session.IsIdle; },
                         IsTimebackActive = delegate () { return captured.Session.TimebackActive; },
                         NewSession = delegate ()
@@ -1592,7 +1594,7 @@ namespace CatHome4.Admin
             {
                 botName = botId.ToString("D");
             }
-            return botName + "：发本地文件=单独一行写 [QQBot发送文件:\"<真实绝对路径>\"]（≤10MB · 仅私聊）";
+            return botName + "：发本地文件=单独一行写 [QQBot发送文件:\"<真实绝对路径>\"]（≤10MB · 私聊/群聊）";
         }
         /// <summary>
         /// 本地对话端点端口解析——info 环境信息消费（本猫实际监听端口）。

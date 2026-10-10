@@ -157,12 +157,11 @@ namespace Mau.Development
             }
             // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文命中行（`[跨程序集] 文件:行:列: 代码`）
             Dictionary<string, object> refMeta = new Dictionary<string, object>();
-            refMeta["class"] = className;
-            refMeta["member"] = member;
-            refMeta["hits"] = hits.Count;
             refMeta["projects"] = projects.Count;
             StringBuilder sb = new StringBuilder();
-            sb.Append(MetaHead("cs-find_ref", true, refMeta));
+            string refTarget = className + "." + member;
+            sb.Append(MetaHead("cs-find_ref", true, refTarget, hits.Count, refMeta));
+            sb.Append(Environment.NewLine + Echo(refTarget, hits.Count + " 引用"));
             for (int i = 0; i < hits.Count; i = i + 1)
             {
                 sb.Append(Environment.NewLine + hits[i]);
@@ -371,18 +370,18 @@ namespace Mau.Development
                 }
                 int methodStartLine = newTree.GetText().Lines.GetLineFromPosition(patchedNode.FullSpan.Start).LineNumber + 1;
                 int methodEndLine = patchedNode.GetLocation().GetLineSpan().EndLinePosition.Line + 1;
+                // 统一口径（A210）：头（ok/tool/target/items + file/start/end）+ 摘要行 + 改后方法段源码
+                string patchTarget = className + "." + methodName;
+                int patchLines = methodEndLine - methodStartLine + 1;
                 Dictionary<string, object> ptMeta = new Dictionary<string, object>();
-                ptMeta["state"] = "OK";
                 ptMeta["file"] = RelativeToProject(cache, filePath);
-                ptMeta["class"] = className;
-                ptMeta["method"] = methodName;
                 ptMeta["start"] = methodStartLine;
                 ptMeta["end"] = methodEndLine;
                 if (writeNote.Length > 0)
                 {
                     ptMeta["writeNote"] = writeNote;
                 }
-                result = TrimResult(MetaHead("cs-patch", true, ptMeta) + Environment.NewLine + NumberedSource(patchedNode.ToFullString(), methodStartLine), MaxResultChars);
+                result = TrimResult(MetaHead("cs-patch", true, patchTarget, patchLines, ptMeta) + Environment.NewLine + Echo(patchTarget, patchLines + " 行") + Environment.NewLine + NumberedSource(patchedNode.ToFullString(), methodStartLine), MaxResultChars);
                 return true;
             }
         }
@@ -494,8 +493,9 @@ namespace Mau.Development
         /// </summary>
         /// <param name="cache">项目缓存</param>
         /// <param name="crossKeys">跨程序集引用键集（null=仅项目内判定）</param>
+        /// <param name="deadCount">输出——零引用成员数</param>
         /// <returns>报告文本</returns>
-        private string DeadInCache(ProjectCache cache, HashSet<string>? crossKeys)
+        private string DeadInCache(ProjectCache cache, HashSet<string>? crossKeys, out int deadCount)
         {
             HashSet<ISymbol> targets = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
             foreach (KeyValuePair<string, SyntaxTree> pair in cache.Trees)
@@ -607,12 +607,13 @@ namespace Mau.Development
                 deadLines.Add(typeName + "." + target.Name + " // " + lineText);
             }
             deadLines.Sort(StringComparer.Ordinal);
-            // 结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文零引用清单（`类型.成员 // 文件:行`）
+            deadCount = deadLines.Count;
+            // 统一口径（A210）：头（ok/tool/target/items + dead）+ 摘要行 + 零引用清单（`类型.成员 // 文件:行`）
             Dictionary<string, object> deadMeta = new Dictionary<string, object>();
             deadMeta["dead"] = deadLines.Count;
-            deadMeta["scanned"] = targets.Count;
             StringBuilder sb = new StringBuilder();
-            sb.Append(MetaHead("cs-dead", deadLines.Count == 0, deadMeta));
+            sb.Append(MetaHead("cs-dead", deadLines.Count == 0, cache.AssemblyName, targets.Count, deadMeta));
+            sb.Append(Environment.NewLine + Echo(cache.AssemblyName, targets.Count + " 成员 · 死码 " + deadLines.Count));
             for (int i = 0; i < deadLines.Count; i = i + 1)
             {
                 sb.Append(Environment.NewLine + deadLines[i]);

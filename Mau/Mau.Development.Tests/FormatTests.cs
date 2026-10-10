@@ -106,7 +106,7 @@ namespace Mau.Development.Tests
             string before = File.ReadAllText(_badPath);
             long beforeLength = new FileInfo(_badPath).Length;
             string result = InvokeFormat(_root, "check");
-            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"check\"", result);
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\"", result);
             Assert.Contains("Bad.cs", result);
             Assert.Equal(before, File.ReadAllText(_badPath));
             Assert.Equal(beforeLength, new FileInfo(_badPath).Length);
@@ -119,7 +119,7 @@ namespace Mau.Development.Tests
         public void ApplyFixesIndentAndKeepsBom()
         {
             string result = InvokeFormat(_badPath, "apply");
-            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"apply\"", result);
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\"", result);
             string text = File.ReadAllText(_badPath);
             Assert.Contains("    public int Run()\r\n", text);
             Assert.Contains("        {\r\n            int value = 1;\r\n            return value;\r\n        }\r\n", text);
@@ -134,7 +134,7 @@ namespace Mau.Development.Tests
         public void ApplyKeepsMissingBom()
         {
             string result = InvokeFormat(_badNoBomPath, "apply");
-            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"apply\"", result);
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\"", result);
             Assert.False(HasBom(_badNoBomPath), "无 BOM 文件被写入 BOM");
         }
         /// <summary>
@@ -144,7 +144,7 @@ namespace Mau.Development.Tests
         public void ApplyKeepsLfNewline()
         {
             string result = InvokeFormat(_badLfPath, "apply");
-            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"apply\"", result);
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\"", result);
             string text = File.ReadAllText(_badLfPath);
             Assert.Contains("    public int Run()\n", text);
             Assert.True(AllLf(text), "出现 CRLF 行尾（LF 文件被写成混行）");
@@ -156,7 +156,7 @@ namespace Mau.Development.Tests
         public void ApplyNormalizesMixedToMajority()
         {
             string result = InvokeFormat(_mixedPath, "apply");
-            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"apply\"", result);
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\"", result);
             Assert.Contains("MIXED|", result);
             string text = File.ReadAllText(_mixedPath);
             Assert.True(AllCrlf(text), "混合行尾未被归一");
@@ -168,10 +168,10 @@ namespace Mau.Development.Tests
         public void ApplyKeepsLfIdempotent()
         {
             string first = InvokeFormat(_badLfPath, "apply");
-            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"apply\"", first);
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\"", first);
             string second = InvokeFormat(_badLfPath, "check");
-            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"check\"", second);
-            Assert.DoesNotContain("BadLf.cs", second);
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\"", second);
+            Assert.DoesNotContain("| lines=", second);
         }
 
         /// <summary>
@@ -192,9 +192,9 @@ namespace Mau.Development.Tests
         public void ApplyIsIdempotent()
         {
             string first = InvokeFormat(_root, "apply");
-            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"apply\"", first);
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\"", first);
             string second = InvokeFormat(_root, "check");
-            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"check\"", second);
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\"", second);
             Assert.DoesNotContain("Bad.cs", second);
         }
 
@@ -220,7 +220,7 @@ namespace Mau.Development.Tests
         {
             string args = "{\"path\":\"" + Escape(_root) + "\",\"mode\":\"check\",\"catId\":\"majordomo\"}";
             string result = Invoke("format", args);
-            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"check\"", result);
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\"", result);
             Assert.Contains("Bad.cs", result);
         }
 
@@ -254,8 +254,8 @@ namespace Mau.Development.Tests
                 "</Project>" + Environment.NewLine;
             File.WriteAllText(Path.Combine(projDir, "Domain.csproj"), csproj, new UTF8Encoding(true));
             string result = InvokeFormat(Path.Combine(projDir, "Domain.csproj"), "check");
-            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\",\"mode\":\"check\"", result);
-            Assert.Contains("\"files\":1", result);
+            Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-format\"", result);
+            Assert.Contains("\"items\":1", result);
             Assert.Contains("Main.cs", result);
             Assert.DoesNotContain("Sub.cs", result);
         }

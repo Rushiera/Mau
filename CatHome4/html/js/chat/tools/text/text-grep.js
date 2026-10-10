@@ -10,6 +10,10 @@ toolDecl('text-grep', {
     },
     headline: function (a, r) {
         var pat = a.pattern ? ' · 文件名 ' + a.pattern : '';
-        return '检索 ' + ovText(a.dir) + ' · 含 ' + ovText(a.keyword) + pat + ' · ' + ovItems(r) + ' 命中';
+        var h = ovHead(r);
+        if (!h) {
+            return '检索 ' + ovText(a.dir) + ' · 含 ' + ovText(a.keyword) + pat + ' · ' + ovItems(r) + ' 命中';
+        }
+        return '检索 ' + ovMetaStr(h.meta, 'target') + ' · 含 ' + ovText(a.keyword) + pat + ' · ' + ovMetaNum(h.meta, 'items', 0) + ' 命中';
     }
 });

@@ -8,6 +8,10 @@ toolDecl('text-read_lines', {
         return ['按行读取 ' + ovText(a.path) + ' · ' + ovRange(a)];
     },
     headline: function (a, r) {
-        return '按行读取 ' + ovText(a.path) + ' · ' + ovRange(a) + ovStat(r);
+        var h = ovHead(r);
+        if (!h) {
+            return '按行读取 ' + ovText(a.path) + ' · ' + ovRange(a) + ovStat(r);
+        }
+        return '按行读取 ' + ovMetaStr(h.meta, 'target') + ' · ' + ovRange(a) + ' · ' + ovMetaNum(h.meta, 'items', 0) + ' 行';
     }
 });

@@ -190,14 +190,13 @@ namespace Mau.Bricks
                     sensitive = sensitive + 1;
                 }
             }
-            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
             System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
-            fields["count"] = items.Length;
             fields["writable"] = writable;
             fields["sensitive"] = sensitive;
             // A152——段清单（schema 声明前缀 ∪ 落盘键前缀：派生段亦可发现）
             fields["sections"] = string.Join(" / ", ListSegments(cfg, readSchema).ToArray());
-            return MetaHead("config-list", fields) + "\n" + TrimResult(sb.ToString(), 20000);
+            return MetaHead("config-list", true, "", items.Length, fields) + "\n" + items.Length.ToString() + " 项 · 可写 " + writable.ToString() + " · 敏感 " + sensitive.ToString() + "\n" + TrimResult(sb.ToString(), 20000);
         }
 
         /// <summary>
@@ -258,14 +257,13 @@ namespace Mau.Bricks
             }
             sb.Append(" | ");
             sb.Append(entry.Desc);
-            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
             System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
-            fields["key"] = key;
             fields["source"] = entry.Source;
             fields["declared"] = entry.Declared;
             fields["writable"] = entry.Writable;
             fields["sensitive"] = entry.Sensitive;
-            return MetaHead("config-get", fields) + "\n" + sb.ToString();
+            return MetaHead("config-get", true, key, -1, fields) + "\n" + key + " | 来源 " + entry.Source + "\n" + sb.ToString();
         }
 
         /// <summary>
@@ -331,12 +329,11 @@ namespace Mau.Bricks
                 return "ERR|CONFIG_REJECT|" + error;
             }
             bool sensitive = schemaBound && schema != null && schema.IsSensitive(key);
-            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
             System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
-            fields["key"] = key;
             fields["sensitive"] = sensitive;
             fields["declaredNow"] = !declared;
-            return MetaHead("config-set", fields) + "\n" + "配置已更新: " + key + "=" + (sensitive ? "****" : value) + declareNote;
+            return MetaHead("config-set", true, key, -1, fields) + "\n" + key + " | 已更新 = " + (sensitive ? "****" : value) + declareNote;
         }
 
         /// <summary>
@@ -361,15 +358,14 @@ namespace Mau.Bricks
                 keyText = key;
             }
             bool all = (keyText.Length == 0);
+            int resetCount = all ? CountWritable(schema, schemaBound) : 1;
             System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
-            fields["key"] = keyText;
             fields["scope"] = all ? "all" : "single";
-            fields["count"] = all ? CountWritable(schema, schemaBound) : 1;
             if (all)
             {
-                return MetaHead("config-reset", fields) + "\n" + "已还原默认: 全部可写配置项";
+                return MetaHead("config-reset", true, "", resetCount, fields) + "\n" + "全部可写配置项 | 已还原 " + resetCount.ToString() + " 项";
             }
-            return MetaHead("config-reset", fields) + "\n" + "已还原默认: " + keyText;
+            return MetaHead("config-reset", true, keyText, resetCount, fields) + "\n" + keyText + " | 已还原";
         }
 
         /// <summary>
@@ -542,17 +538,28 @@ namespace Mau.Bricks
         }
 
         /// <summary>
-        /// 结构化元数据头——首行单行 JSON（ok/tool + 调用方字段；键序稳定 = 插入序）
-        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items + 专有字段（插入序）。
+        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文摘要行（正文不塞进 JSON——避免转义膨胀）。
         /// </summary>
         /// <param name="tool">工具名（config-list / config-get / config-set / config-reset）</param>
+        /// <param name="ok">成败（带头即成功——失败走 ERR| 不带头）</param>
+        /// <param name="target">主来源（配置键；空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
         /// <param name="fields">附加字段（按插入序输出）</param>
         /// <returns>单行 JSON</returns>
-        private static string MetaHead(string tool, System.Collections.Generic.Dictionary<string, object> fields)
+        private static string MetaHead(string tool, bool ok, string target, int items, System.Collections.Generic.Dictionary<string, object> fields)
         {
             System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
-            head["ok"] = true;
+            head["ok"] = ok;
             head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
             foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
             {
                 head[kv.Key] = kv.Value;
@@ -600,4 +607,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:53350F53F69D9689BE5482D07A508B510533547617243BDEA6FD5DB04988C6BD
+// #MAU_CHECKSUM:SHA256:C66E2ACD684806BCB189D4B130D15A91CAFBECFFE4378CE0D0C3F9DF7BFD3BCF

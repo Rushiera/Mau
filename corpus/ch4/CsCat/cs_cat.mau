@@ -1,6 +1,6 @@
 ﻿// cs_cat.mau —— CsCat 语料（CH4 R0.2 工具组 Flow 化——CS 编码工具域独立 Flow，原 DevCat 分部拆分）
-// 角色：工具组 Flow——认领 TOOL 域 cs-* 12 工具（check/build/list/read/find_ref/find/patch/member/comment/dead/comment_check/format）
-// 单级 OA 单：Dog Post → 本 Flow 12 线认领执行 → complete_str 回执
+// 角色：工具组 Flow——认领 TOOL 域 cs-* 13 工具（check/build/test/list/read/find_ref/find/patch/member/comment/dead/comment_check/format）
+// 单级 OA 单：Dog Post → 本 Flow 13 线认领执行 → complete_str 回执
 // 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON
 // 无值分支：每工具一条认领线，工具名写死在候选列表（信号即解析结果——分支拓扑靠多传感器）
 // 数据面：@ckOffice 等私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
@@ -24,6 +24,7 @@
 § 'S_Dead' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_CommentCheck' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Format' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_Test' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
 § 'T_Init' : 'S_Check' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Check' = 'Idle' | 'S_Check' = 'Idle'
@@ -41,6 +42,7 @@
 § 'P_DeadOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-dead"] > @ddOpen
 § 'P_CommentCheckOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-comment_check"] > @ccOpen
 § 'P_FormatOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-format"] > @fmOpen
+§ 'P_TestOpen' ↻ [1]: 'oa.is_open'["TOOL", "cs-test"] > @ttOpen
 
 // ══════════════ cs-check 线 ══════════════
 § 'T_CheckClaim' : @ckOpen & 'S_Check' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-check"] > @ckOffice | 'S_Check' = 'Claimed' | 'S_Check' = 'Idle'
@@ -125,3 +127,10 @@
 § 'T_FormatExec' [t=2400, par] : 'S_Format' = 'Ready' → 'csharp.bridge'["format", @fmArgs] > @fmRes | 'S_Format' = 'Done' | 'S_Format' = 'Failed'
 § 'T_FormatReply' : 'S_Format' = 'Done' → 'oa.complete_str'[@fmOffice, @fmRes] | 'self.desc'["空闲待命", "", ""] | 'S_Format' = 'Idle' | 'S_Format' = 'Idle'
 § 'T_FormatAbort' : 'S_Format' = 'Failed' → 'oa.complete_str'[@fmOffice, @fmRes] | 'S_Format' = 'Idle' | 'S_Format' = 'Idle'
+
+// ══════════════ cs-test 线 ══════════════
+§ 'T_TestClaim' : @ttOpen & 'S_Test' = 'Idle' → 'oa.claim_next_simple'["TOOL", "cs-test"] > @ttOffice | 'S_Test' = 'Claimed' | 'S_Test' = 'Idle'
+§ 'T_TestArgs' : 'S_Test' = 'Claimed' → 'oa.get_str'[@ttOffice, "args"] > @ttArgs | 'self.desc'["cs-test 执行中", "", ""] | 'S_Test' = 'Ready' | 'S_Test' = 'Failed'
+§ 'T_TestExec' [t=2400, par] : 'S_Test' = 'Ready' → 'csharp.bridge'["test", @ttArgs] > @ttRes | 'S_Test' = 'Done' | 'S_Test' = 'Failed'
+§ 'T_TestReply' : 'S_Test' = 'Done' → 'oa.complete_str'[@ttOffice, @ttRes] | 'self.desc'["空闲待命", "", ""] | 'S_Test' = 'Idle' | 'S_Test' = 'Idle'
+§ 'T_TestAbort' : 'S_Test' = 'Failed' → 'oa.complete_str'[@ttOffice, @ttRes] | 'S_Test' = 'Idle' | 'S_Test' = 'Idle'

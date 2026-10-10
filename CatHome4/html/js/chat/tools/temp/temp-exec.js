@@ -12,6 +12,6 @@ toolDecl('temp-exec', {
         if (!h) {
             return '临时执行 ' + ovText(a.key) + ovStat(r);
         }
-        return '临时执行 ' + ovMetaStr(h.meta, 'key') + ' · ' + ovMetaNum(h.meta, 'chars', 0) + ' 字';
+        return '临时执行 ' + ovMetaStr(h.meta, 'target') + ' · ' + ovMetaNum(h.meta, 'chars', 0) + ' 字';
     }
 });

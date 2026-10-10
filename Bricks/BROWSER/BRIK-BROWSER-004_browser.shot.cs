@@ -53,7 +53,11 @@ namespace Mau.Bricks
                     result = body;
                     return true;
                 }
-                result = MetaHead(fullPage, body);
+                System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
+                fields["full"] = fullPage;
+                fields["chars"] = body.Length;
+                // A214——无来源语义（target 省略）+ 正文摘要行
+                result = MetaHead("browser-shot", true, "", -1, fields) + "\n" + "截图 · " + body.Length.ToString() + " 字";
                 if (body.Length > 0)
                 {
                     result = result + "\n" + body;
@@ -68,20 +72,33 @@ namespace Mau.Bricks
         }
 
         /// <summary>
-        /// 结构化元数据头——首行单行 JSON（ok/tool/full/chars；键序稳定 = 插入序）
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items + 专有字段（插入序）。
         /// </summary>
-        /// <param name="fullPage">是否全页截图</param>
-        /// <param name="body">正文</param>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <param name="fields">专有字段（按插入序）</param>
         /// <returns>单行 JSON</returns>
-        private static string MetaHead(bool fullPage, string body)
+        private static string MetaHead(string tool, bool ok, string target, int items, System.Collections.Generic.Dictionary<string, object> fields)
         {
             System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
-            head["ok"] = true;
-            head["tool"] = "browser-shot";
-            head["full"] = fullPage;
-            head["chars"] = body.Length;
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
+            {
+                head[kv.Key] = kv.Value;
+            }
             return JsonSerializer.Serialize(head);
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:765105E3872F3AB8E0411514440023E9620A0317EE99595AA03CAF750CE5FF57
+// #MAU_CHECKSUM:SHA256:CFCE55E1ED6DDCB8C01043D8D4CB69A25C9E85716B23059B753EE576568F1EF4

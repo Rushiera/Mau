@@ -61,7 +61,10 @@ namespace Mau.Development
             files.Sort(StringComparer.OrdinalIgnoreCase);
             if (files.Count == 0)
             {
-                result = "OK|FORMAT_" + mode.ToUpperInvariant() + "|未找到目标 .cs 文件（排除 bin/obj/node_modules/Flows/Data/CatTemp/Mau-public 与生成物）: " + pathParam;
+                // 统一口径（A210）：无目标文件同样走结构化头（原 OK|FORMAT_ 纯文本特例退役）
+                Dictionary<string, object> emptyMeta = new Dictionary<string, object>();
+                emptyMeta["mode"] = mode;
+                result = MetaHead("cs-format", true, RelativeToRoots(entry), 0, emptyMeta) + Environment.NewLine + Echo(RelativeToRoots(entry), "0 文件 · 无目标 .cs");
                 return true;
             }
 
@@ -133,10 +136,9 @@ namespace Mau.Development
                 }
             }
 
-            // [段5] 结果拼装——结构化返回（2026-09-18）：首行 JSON 元数据头 + 正文逐文件差异行
+            // 统一口径（A210）：头（ok/tool/target/items + mode/变更族/eol）+ 摘要行；成功零差异不再带明细与行尾策略行
             Dictionary<string, object> fmtMeta = new Dictionary<string, object>();
             fmtMeta["mode"] = mode;
-            fmtMeta["files"] = files.Count;
             fmtMeta["changedFiles"] = changedFiles;
             fmtMeta["changedLines"] = changedLines;
             fmtMeta["failedFiles"] = failedFiles;
@@ -154,18 +156,23 @@ namespace Mau.Development
                 fmtMeta["writtenFiles"] = writtenFiles;
                 fmtMeta["writeFailures"] = writeFailures;
             }
+            string fmtTarget = RelativeToRoots(entry);
             StringBuilder output = new StringBuilder();
-            output.Append(MetaHead("cs-format", failedFiles == 0 && writeFailures == 0, fmtMeta));
+            output.Append(MetaHead("cs-format", failedFiles == 0 && writeFailures == 0, fmtTarget, files.Count, fmtMeta));
             output.AppendLine();
-            if (projectEol.Length > 0)
+            output.AppendLine(Echo(fmtTarget, files.Count + " 文件 · " + (changedFiles == 0 ? "零差异" : changedFiles + " 文件变更 " + changedLines + " 行")));
+            if (changedFiles > 0 || failedFiles > 0 || writeFailures > 0)
             {
-                output.AppendLine("── 行尾策略：项目属性 eol=" + projectEol + "（来源 " + RelativeToRoots(eolSource) + "）──");
+                if (projectEol.Length > 0)
+                {
+                    output.AppendLine("── 行尾策略：项目属性 eol=" + projectEol + "（来源 " + RelativeToRoots(eolSource) + "）──");
+                }
+                else
+                {
+                    output.AppendLine("── 行尾策略：按各文件现状多数归一（未发现 .editorconfig / .gitattributes 的 eol 声明）──");
+                }
+                output.Append(sb.ToString());
             }
-            else
-            {
-                output.AppendLine("── 行尾策略：按各文件现状多数归一（未发现 .editorconfig / .gitattributes 的 eol 声明）──");
-            }
-            output.Append(sb.ToString());
             result = TrimResult(output.ToString(), MaxResultChars);
             return true;
         }

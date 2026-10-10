@@ -9,6 +9,10 @@ toolDecl('text-read_between', {
             '锚点 ' + ovText(a.str1 || '（文件头）') + ' ~ ' + ovText(a.str2 || '（文件尾）')];
     },
     headline: function (a, r) {
-        return '区间读取 ' + ovText(a.path) + ovAnchor(a) + ovStat(r);
+        var h = ovHead(r);
+        if (!h) {
+            return '区间读取 ' + ovText(a.path) + ovAnchor(a) + ovStat(r);
+        }
+        return '区间读取 ' + ovMetaStr(h.meta, 'target') + ovAnchor(a) + ' · ' + ovMetaNum(h.meta, 'items', 0) + ' 行';
     }
 });

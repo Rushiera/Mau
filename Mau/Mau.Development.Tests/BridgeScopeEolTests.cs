@@ -8,7 +8,7 @@ using Xunit;
 namespace Mau.Development.Tests
 {
     /// <summary>
-    /// cs-build 构建面声明 + cs-format 行尾策略（项目属性 eol）测试。
+    /// 入口类型标签 / 项目计数 + cs-format 行尾策略（项目属性 eol）测试。
     /// </summary>
     public class BridgeScopeEolTests : IDisposable
     {
@@ -38,10 +38,10 @@ namespace Mau.Development.Tests
         }
 
         /// <summary>
-        /// 解决方案入口——构建面声明带项目数与文件名；单项目入口标签为 single。
+        /// 入口类型标签——解决方案计项目数、标签 solution；单项目入口标签 single。
         /// </summary>
         [Fact]
-        public void SolutionScopeDeclaresProjectCount()
+        public void SolutionProjectCountAndScopeLabels()
         {
             string sln = Path.Combine(_root, "Probe.sln");
             string nl = "\r\n";
@@ -52,9 +52,6 @@ namespace Mau.Development.Tests
                 + "EndProject" + nl;
             File.WriteAllText(sln, text, new UTF8Encoding(false));
             Assert.Equal(2, MauRoslynBridge.CountSolutionProjects(sln));
-            string scope = MauRoslynBridge.SolutionScopeLine(sln);
-            Assert.Contains("2 个项目", scope);
-            Assert.Contains("Probe.sln", scope);
             Assert.Equal("solution", MauRoslynBridge.BuildScopeLabel(sln));
             Assert.Equal("single", MauRoslynBridge.BuildScopeLabel(Path.Combine(_root, "A.csproj")));
         }
@@ -122,7 +119,7 @@ namespace Mau.Development.Tests
         public void FormatReportsFileStrategyWhenNoProjectEol()
         {
             string csFile = Path.Combine(_root, "Plain.cs");
-            File.WriteAllText(csFile, "namespace P" + "\n" + "{" + "\n" + "}" + "\n", new UTF8Encoding(false));
+            File.WriteAllText(csFile, "namespace P" + "\n" + "{" + "\n" + "public class Eol" + "\n" + "{" + "\n" + "}" + "\n" + "}" + "\n", new UTF8Encoding(false));
             MauRoslynBridge bridge = NewBridge();
             string args = "{\"path\":\"" + Escape(csFile) + "\",\"mode\":\"check\"}";
             string result = "";

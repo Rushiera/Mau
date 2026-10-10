@@ -73,7 +73,7 @@ namespace Mau.Development.Tests
             // 结构化返回（2026-09-18）：首行 JSON 元数据头（ok / tool / 计数）——正文只承载诊断行
             Assert.StartsWith("{\"ok\":true,\"tool\":\"cs-check\"", result);
             Assert.Contains("\"errors\":0", result);
-            Assert.Contains("\"files\":", result);
+            Assert.Contains("\"items\":", result);
         }
 
         /// <summary>

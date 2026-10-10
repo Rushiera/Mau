@@ -54,7 +54,7 @@ namespace CH4
 
         /// <summary>
         /// 执行序值——工具分批调度的分桶依据（A127；宿主内部静态表裁决，非 LLM 传参）。
-        /// 缺省 0 = 默认档；timeback 按 action 取 ±100 钉死值。
+        /// 缺省 0 = 默认档；timeback-start / timeback-back 各取 ±100 钉死值。
         /// </summary>
         public int Order;
 

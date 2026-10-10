@@ -60,7 +60,7 @@ namespace Mau.Bricks
                     return false;
                 }
                 fs.Move(src, dest);
-                result = "OK 已移动: " + src + " → " + dest;
+                result = MetaHead("file-move", true, src, -1) + "\n" + src + " → " + dest;
                 return true;
             }
             catch (Exception ex)
@@ -69,6 +69,30 @@ namespace Mau.Bricks
                 return false;
             }
         }
+
+        /// <summary>
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（空串 / 负值 = 省略）。
+        /// </summary>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, string target, int items)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            return JsonSerializer.Serialize(head);
+        }
     }
 }
-// #MAU_CHECKSUM:SHA256:102121854C2B03D65FD722FDD23F4AD1D273B2C8F0BA5BF9D79B9FB6E20D2BE3
+// #MAU_CHECKSUM:SHA256:9E20C2B606B0B39D240B50CCB4864E51C9108607514967370A6ED8D5BF87E839

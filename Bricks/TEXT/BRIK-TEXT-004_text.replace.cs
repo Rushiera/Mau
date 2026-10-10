@@ -114,7 +114,8 @@ namespace Mau.Bricks
                         lineNote = lineNote + "…（前 " + outcome.CandidateLines.Length.ToString() + " / 共 " + outcome.Count.ToString() + "）";
                     }
                 }
-                result = "OK 替换完成: " + outcome.Count.ToString() + " 处（" + path + "）" + spanNote + lineNote + deleteNote + "--目标段--" + outcome.Snippet;
+                // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
+                result = MetaHead("text-replace", true, path, outcome.Count) + "\n" + path + " | 替换 " + outcome.Count.ToString() + " 处" + spanNote + lineNote + deleteNote + "\n" + outcome.Snippet;
                 return true;
             }
             catch (Exception ex)
@@ -123,6 +124,29 @@ namespace Mau.Bricks
                 return false;
             }
         }
+        /// <summary>
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（空串 / 负值 = 省略）。
+        /// </summary>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, string target, int items)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            return JsonSerializer.Serialize(head);
+        }
     }
 }
-// #MAU_CHECKSUM:SHA256:CF7B387571ABCC9E280AD203B7F9BD94CEE1ABA44A220C9D36A7471EA8BFA961
+// #MAU_CHECKSUM:SHA256:A67F253C06536C11041B2C26C362A76CA49216CC4AF77DB72336284879D6A4E9

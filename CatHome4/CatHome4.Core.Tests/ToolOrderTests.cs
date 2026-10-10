@@ -195,24 +195,23 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// timeback 按 action 取钉死值——start = -100 / back = 100；无 action 落默认档。
+        /// timeback 两态各具一名——timeback-start = -100 / timeback-back = 100（静态表按名裁死，参数面无关）。
         /// </summary>
         [Fact]
-        public void TimebackPinnedByAction()
+        public void TimebackPinnedByName()
         {
-            Assert.Equal(-100, CH4.ToolOrderTable.Resolve("timeback", "{\"action\":\"start\",\"purpose\":\"x\"}"));
-            Assert.Equal(100, CH4.ToolOrderTable.Resolve("timeback", "{\"action\":\"back\",\"findings\":\"x\"}"));
-            Assert.Equal(0, CH4.ToolOrderTable.Resolve("timeback", "{\"purpose\":\"x\"}"));
-            Assert.Equal(0, CH4.ToolOrderTable.Resolve("timeback", ""));
+            Assert.Equal(-100, CH4.ToolOrderTable.Resolve("timeback-start"));
+            Assert.Equal(100, CH4.ToolOrderTable.Resolve("timeback-back"));
         }
 
         /// <summary>
-        /// 显示文本——timeback 双钉死值并列（前端零裁决）；其余为单值数字串。
+        /// 显示文本——timeback 两态各自单值（-100 / 100，前端零裁决）；其余为单值数字串。
         /// </summary>
         [Fact]
-        public void OrderTextIsDualForTimeback()
+        public void OrderTextIsSingleValuePerName()
         {
-            Assert.Equal("-100/100", CH4.ToolOrderTable.OrderText("timeback"));
+            Assert.Equal("-100", CH4.ToolOrderTable.OrderText("timeback-start"));
+            Assert.Equal("100", CH4.ToolOrderTable.OrderText("timeback-back"));
             Assert.Equal("-1", CH4.ToolOrderTable.OrderText("text-read"));
             Assert.Equal("2", CH4.ToolOrderTable.OrderText("cs-build"));
             Assert.Equal("0", CH4.ToolOrderTable.OrderText("未登记的工具名"));
@@ -225,11 +224,12 @@ namespace CatHome4.Core.Tests
         public void NoteLineCarriesOrder()
         {
             Assert.Equal("order: -1", CH4.ToolOrderTable.NoteLine("text-read"));
-            Assert.Equal("order: -100/100", CH4.ToolOrderTable.NoteLine("timeback"));
+            Assert.Equal("order: -100", CH4.ToolOrderTable.NoteLine("timeback-start"));
+            Assert.Equal("order: 100", CH4.ToolOrderTable.NoteLine("timeback-back"));
         }
 
         /// <summary>
-        /// 登记面自洽——无重复名，且三档代表均在册（对账基准可用）。
+        /// 登记面自洽——无重复名，且各档代表均在册（对账基准可用）。
         /// </summary>
         [Fact]
         public void RegisteredNamesAreUnique()
@@ -247,7 +247,8 @@ namespace CatHome4.Core.Tests
             Assert.Contains("text-write", names);
             Assert.Contains("cs-build", names);
             Assert.Contains("sleep", names);
-            Assert.Contains("timeback", names);
+            Assert.Contains("timeback-start", names);
+            Assert.Contains("timeback-back", names);
         }
 
         /// <summary>
