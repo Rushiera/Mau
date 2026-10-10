@@ -12,6 +12,6 @@ toolDecl('host-flows', {
         if (!h) {
             return 'Flow 现状' + ovStat(r);
         }
-        return 'Flow 现状 · ' + ovMetaNum(h.meta, 'count', 0) + ' 个';
+        return 'Flow 现状 · ' + ovMetaNum(h.meta, 'items', 0) + ' 个';
     }
 });

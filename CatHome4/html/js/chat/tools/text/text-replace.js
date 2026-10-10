@@ -10,6 +10,10 @@ toolDecl('text-replace', {
         return [head, '旧：' + ovPeek(a.old), '新：' + ovPeek(a.new)];
     },
     headline: function (a, r) {
-        return '替换 ' + ovText(a.path) + ovMode(a) + ovReplaceTail(r);
+        var h = ovHead(r);
+        if (!h) {
+            return '替换 ' + ovText(a.path) + ovMode(a) + ovReplaceTail(r);
+        }
+        return '替换 ' + ovMetaStr(h.meta, 'target') + ovMode(a) + ' · ' + ovMetaNum(h.meta, 'items', 0) + ' 处';
     }
 });

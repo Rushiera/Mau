@@ -62,11 +62,11 @@ namespace Mau.Bricks
                 result = reply;
                 return false;
             }
-            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
-            Dictionary<string, object> head = new Dictionary<string, object>();
+            // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items 均省略）+ 正文摘要行
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
             head["ok"] = true;
             head["tool"] = "majordomo-cmd";
-            result = JsonSerializer.Serialize(head) + "\n" + reply;
+            result = JsonSerializer.Serialize(head) + "\n" + "宿主指令已执行" + "\n" + reply;
             return true;
         }
 
@@ -120,4 +120,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:314FF9EB3A232B584E9E13FD3E77C58DD7846171CA44891196C83E391AD5B6FD
+// #MAU_CHECKSUM:SHA256:C5DC41B344AEEBE8C10AA9E46399673F30FBDC17435BA90E2ED2291E90ECBF1C

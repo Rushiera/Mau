@@ -60,7 +60,16 @@ namespace Mau.Bricks
                     return false;
                 }
                 string style = fs.WriteTextAuto(path, content);
-                result = "OK 已覆写: " + path + "（" + content.Length.ToString() + " 字符 · " + style + "）";
+                int lines = 1;
+                for (int i = 0; i < content.Length; i = i + 1)
+                {
+                    if (content[i] == '\n')
+                    {
+                        lines = lines + 1;
+                    }
+                }
+                // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
+                result = MetaHead("text-write", true, path, lines) + "\n" + path + " | 已覆写 · " + lines.ToString() + " 行 · " + style;
                 return true;
             }
             catch (Exception ex)
@@ -69,6 +78,29 @@ namespace Mau.Bricks
                 return false;
             }
         }
+        /// <summary>
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（空串 / 负值 = 省略）。
+        /// </summary>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, string target, int items)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            return JsonSerializer.Serialize(head);
+        }
     }
 }
-// #MAU_CHECKSUM:SHA256:747E57185895F1EB219E9340F516AE78D88E3E7D233FE2A0D3E29D28A5D4262F
+// #MAU_CHECKSUM:SHA256:8C8FB0F1D598B74F9A3509FDA6DD7AE3C13A6D5EB6F72EC2774A6843305EEE6F

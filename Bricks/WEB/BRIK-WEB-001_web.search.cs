@@ -75,11 +75,16 @@ namespace Mau.Bricks
                     result = body;
                     return true;
                 }
-                // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
-                result = MetaHead(query, protocol, body);
+                // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target + 专有）+ 正文摘要行 + 载荷
+                System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
+                fields["protocol"] = protocol;
+                fields["citations"] = CountCitations(body);
+                fields["chars"] = body.Length;
+                string headline = query + " | " + body.Length.ToString() + " 字 · " + CountCitations(body).ToString() + " 引用";
+                result = MetaHead("web-search", true, query, -1, fields);
                 if (body.Length > 0)
                 {
-                    result = result + "\n" + body;
+                    result = result + "\n" + headline + "\n" + body;
                 }
                 return true;
             }
@@ -623,22 +628,32 @@ namespace Mau.Bricks
         /// <param name="s">原文</param>
         /// <returns>转义后文本</returns>
         /// <summary>
-        /// 结构化元数据头——首行单行 JSON（ok/tool/query/protocol/citations/chars；键序稳定 = 插入序）
-        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（负值 = 省略）+ 专有字段（插入序）
+        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文摘要行 + 载荷（正文不塞进 JSON——避免转义膨胀）
         /// </summary>
-        /// <param name="query">检索词</param>
-        /// <param name="protocol">协议标识（anthropic / responses）</param>
-        /// <param name="body">回答正文</param>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（检索词；空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <param name="fields">附加字段（按插入序输出）</param>
         /// <returns>单行 JSON</returns>
-        private static string MetaHead(string query, string protocol, string body)
+        private static string MetaHead(string tool, bool ok, string target, int items, System.Collections.Generic.Dictionary<string, object> fields)
         {
             System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
-            head["ok"] = true;
-            head["tool"] = "web-search";
-            head["query"] = query;
-            head["protocol"] = protocol;
-            head["citations"] = CountCitations(body);
-            head["chars"] = body.Length;
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
+            {
+                head[kv.Key] = kv.Value;
+            }
             return JsonSerializer.Serialize(head);
         }
 
@@ -671,4 +686,4 @@ namespace Mau.Bricks
         /// <param name="key">参数名</param>
     }
 }
-// #MAU_CHECKSUM:SHA256:1957DA0594978DBC79A251220FE0B0AD1869FEAC9EA10C62F4BD83BBDBB22031
+// #MAU_CHECKSUM:SHA256:A8A8E19FDBD12A52EC1157F8C2B315305DC0EB398DB7DBA5EF0D22FD3D1DE331

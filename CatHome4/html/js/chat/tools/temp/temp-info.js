@@ -12,7 +12,7 @@ toolDecl('temp-info', {
         if (!h) {
             return '临时工具 Key' + ovStat(r);
         }
-        var n = ovMetaNum(h.meta, 'count', 0);
+        var n = ovMetaNum(h.meta, 'items', 0);
         return '临时工具 · ' + (n > 0 ? (n + ' 个可用 Key') : '暂无注册');
     }
 });

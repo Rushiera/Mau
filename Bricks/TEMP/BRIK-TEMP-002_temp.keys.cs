@@ -24,34 +24,50 @@ namespace Mau.Bricks
         /// <param name="keys">Key 组文本（逗号分隔；空 = 暂无临时工具）</param>
         /// <returns>true=已输出</returns>
         /// <summary>
-        /// 结构化元数据头——首行单行 JSON（ok/tool/count/keys；键序稳定 = 插入序）
-        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行（正文不塞进 JSON——避免转义膨胀）
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（负值 = 省略）+ 专有字段（插入序）
+        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文摘要行 + 载荷（正文不塞进 JSON——避免转义膨胀）
         /// </summary>
-        /// <param name="list">逗号分隔 Key 组</param>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <param name="fields">附加字段（按插入序输出）</param>
         /// <returns>单行 JSON</returns>
-        private static string MetaHead(string list)
+        private static string MetaHead(string tool, bool ok, string target, int items, System.Collections.Generic.Dictionary<string, object> fields)
         {
-            string[] items = (list.Length == 0) ? new string[0] : list.Split(',');
-            System.Collections.Generic.List<object> keys = new System.Collections.Generic.List<object>();
-            for (int i = 0; i < items.Length; i = i + 1)
-            {
-                keys.Add(items[i]);
-            }
             System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
-            head["ok"] = true;
-            head["tool"] = "temp-info";
-            head["count"] = items.Length;
-            head["keys"] = keys;
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
+            {
+                head[kv.Key] = kv.Value;
+            }
             return System.Text.Json.JsonSerializer.Serialize(head);
         }
 
         public static bool Keys(out string keys)
         {
             string list = TempRegistry.ListKeys();
-            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
-            keys = MetaHead(list) + ((list.Length == 0) ? "" : ("\n" + list));
+            // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（items + 专有）+ 正文摘要行 + 载荷
+            string[] parts = (list.Length == 0) ? new string[0] : list.Split(',');
+            System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
+            System.Collections.Generic.List<object> keysList = new System.Collections.Generic.List<object>();
+            for (int i = 0; i < parts.Length; i = i + 1)
+            {
+                keysList.Add(parts[i]);
+            }
+            fields["keys"] = keysList;
+            keys = MetaHead("temp-info", true, "", parts.Length, fields) + ((list.Length == 0) ? "" : ("\n" + parts.Length.ToString() + " 个 Key\n" + list));
             return true;
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:32E0F4829A0BC9633D771FDB69E16ECDD8664999ED4C17A8D37D3FA4EB8205FB
+// #MAU_CHECKSUM:SHA256:256B6D6829EBD213266B03CFE495D29DEC105E8B7EA3F2C95132ED2E1071DD63

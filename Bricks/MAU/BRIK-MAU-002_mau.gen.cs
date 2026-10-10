@@ -85,18 +85,14 @@ namespace Mau.Bricks
                 string dllDir = System.IO.Path.Combine(root, "public", "app", "Flows");
                 MauGroupBuildResult r = MauGroupBuilder.Build(abs, srcDir, dllDir, doBuild);
                 StringBuilder sb = new StringBuilder();
+                sb.Append(proj.Name + " | " + r.Steps.Count.ToString() + " 步");
                 for (int i = 0; i < r.Steps.Count; i++)
                 {
-                    if (i > 0)
-                    {
-                        sb.Append(Environment.NewLine);
-                    }
+                    sb.Append(Environment.NewLine);
                     sb.Append(r.Steps[i]);
                 }
-                // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
                 System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
-                fields["proj"] = proj.Name;
-                fields["steps"] = r.Steps.Count;
                 fields["errors"] = r.FailDiagnostics.Count;
                 fields["build"] = doBuild;
                 if (!r.Success)
@@ -111,10 +107,10 @@ namespace Mau.Bricks
                         sb.Append(Environment.NewLine);
                         sb.Append("FAIL|GEN|" + r.Error);
                     }
-                    result = MetaHead("mau-gen", false, fields) + "\n" + sb.ToString();
+                    result = MetaHead("mau-gen", false, proj.Name, r.Steps.Count, fields) + "\n" + sb.ToString();
                     return false;
                 }
-                result = MetaHead("mau-gen", true, fields) + "\n" + sb.ToString();
+                result = MetaHead("mau-gen", true, proj.Name, r.Steps.Count, fields) + "\n" + sb.ToString();
                 return true;
             }
             catch (Exception ex)
@@ -193,13 +189,23 @@ namespace Mau.Bricks
         /// </summary>
         /// <param name="tool">工具名（mau-verify / mau-gen / mau-proj / mau-setup）</param>
         /// <param name="ok">成败（编译 / 验证是否通过）</param>
+        /// <param name="target">主来源（文件 / 项目名；空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
         /// <param name="fields">附加字段（按插入序输出）</param>
         /// <returns>单行 JSON</returns>
-        private static string MetaHead(string tool, bool ok, System.Collections.Generic.Dictionary<string, object> fields)
+        private static string MetaHead(string tool, bool ok, string target, int items, System.Collections.Generic.Dictionary<string, object> fields)
         {
             System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
             head["ok"] = ok;
             head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
             foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
             {
                 head[kv.Key] = kv.Value;
@@ -208,4 +214,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:1178040F9A9B991A4D63EB857F7ADBD5E6975B521D19904E6F250E2E0452AD6C
+// #MAU_CHECKSUM:SHA256:B125E3668CE86C6F158608050A1801AFD41DAE172AAED5A89905A1976746FA74

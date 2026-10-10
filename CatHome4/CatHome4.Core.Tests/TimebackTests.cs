@@ -275,7 +275,7 @@ namespace CatHome4.Core.Tests
             // 返回值元数据——释放条数（back 时刻预算）+ 前文长度快照与净增（真实 usage 值；测试环境尚未请求 → 0）
             string backResult = ToolResultText(session, 1);
             // 释放条数 3 = 域规范卡（§十一——卡注在区间内，随回收一并删）+ info 调用声明 + 其结果
-            Assert.Contains("\"released\":3", backResult);
+            Assert.Contains("\"items\":3", backResult);
             Assert.Contains("\"tokens\":0", backResult);
             Assert.Contains("\"grew\":0", backResult);
             // 查证过程（info 调用声明）已删——只看调用声明（back 回执的工具台账正文提及工具名不算残留）
@@ -1150,8 +1150,8 @@ namespace CatHome4.Core.Tests
             session.PostUserMessage("批内 sibling 取证");
             PumpUntilIdle(session);
             Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
-            // 跨批查证区间（域规范卡 + 被拒 sibling 声明 + 结果）删除 → released:3
-            Assert.Contains("\"released\":3", ToolResultText(session, 1));
+            // 跨批查证区间（域规范卡 + 被拒 sibling 声明 + 结果）删除 → items:3
+            Assert.Contains("\"items\":3", ToolResultText(session, 1));
             // 同批 sibling 结果保留（back 后置执行 → 区间上界仍为本批声明）
             Assert.Contains("TIMEBACK_PROFILE", ToolResultText(session, 2));
             Assert.True(HasMessage(session, LlmRole.Tool, "结论：批内 sibling"));

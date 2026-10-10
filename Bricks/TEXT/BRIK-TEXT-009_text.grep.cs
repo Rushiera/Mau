@@ -72,12 +72,15 @@ namespace Mau.Bricks
                     return false;
                 }
                 string[] rows = fs.Grep(dir, keyword, pattern, limit);
-                if (rows == null || rows.Length == 0)
+                int hits = (rows == null) ? 0 : rows.Length;
+                // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
+                string head = MetaHead("text-grep", true, dir, hits) + "\n" + dir + " | 命中 " + hits.ToString();
+                if (hits == 0)
                 {
-                    result = "（无匹配）";
+                    result = head;
                     return true;
                 }
-                result = string.Join("\n", rows);
+                result = head + "\n" + string.Join("\n", rows);
                 return true;
             }
             catch (Exception ex)
@@ -86,6 +89,29 @@ namespace Mau.Bricks
                 return false;
             }
         }
+        /// <summary>
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（空串 / 负值 = 省略）。
+        /// </summary>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, string target, int items)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            return JsonSerializer.Serialize(head);
+        }
     }
 }
-// #MAU_CHECKSUM:SHA256:70EA9318D19ACFC242AA9CBDF6100388796DCB4A4042B8671A9A82DAF061EB0E
+// #MAU_CHECKSUM:SHA256:2B496F89FC279BF64945A3B1B5893028C5FF07BEEB7BE7C0CAFC158B656D84C5

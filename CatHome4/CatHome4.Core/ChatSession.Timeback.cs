@@ -245,14 +245,13 @@ namespace CH4
                 }
             }
             Dictionary<string, object> fields = new Dictionary<string, object>();
-            fields["id"] = scope.Id;
             fields["anchor"] = declIndex;
             fields["type"] = scope.Type;
             fields["purpose"] = scope.Purpose;
             // §十一——start 结果**只留结构化头**：规范与骨架迁入「域规范卡」（TimebackCard · 批后段注入 systemauto user）。
             // 动机：规范住在 start 结果里 + 每域重复一份 → 同形模板随会话堆积，模型失去「哪份是活跃的」锚点（判例见 §十一 · `_log` 批 4）。
             LogStore.Add("CatHome4", 1, "timeback #" + scope.Id.ToString() + " 开锚（锚点 " + declIndex.ToString() + " / 用途 " + scope.Purpose + "）", "TIMEBACK");
-            return ToolMetaHead.With("timeback-start", true, fields, "");
+            return ToolMetaHead.With("timeback-start", true, scope.Id.ToString(), -1, fields, "");
         }
 
         /// <summary>
@@ -277,11 +276,9 @@ namespace CH4
             _timebackScope.PendingReleased = CountTimebackReleased(_timebackScope);
             long tokensNow = ContextTokensKnown;
             Dictionary<string, object> fields = new Dictionary<string, object>();
-            fields["id"] = _timebackScope.Id;
             fields["anchor"] = _timebackScope.StartDeclIndex;
             fields["type"] = _timebackScope.Type;
             fields["purpose"] = _timebackScope.Purpose;
-            fields["released"] = _timebackScope.PendingReleased;
             fields["tokens"] = tokensNow;
             fields["grew"] = tokensNow - _timebackScope.TokensAtOpen;
             fields["tools"] = _timebackScope.WriteLog.Count;
@@ -295,7 +292,7 @@ namespace CH4
                 infoLine = infoLine + "（详见下表）";
             }
             // 台账附于 findings 之前——头 = 宿主事实（从执行流水提取，不可编），体 = LLM 自述；主干据此抽样核对
-            return ToolMetaHead.With("timeback-back", true, fields, infoLine + "\n" + BuildTimebackWrites() + findings + Environment.NewLine + Environment.NewLine + TimebackCard.Readback(_timebackScope.Type));
+            return ToolMetaHead.With("timeback-back", true, _timebackScope.Id.ToString(), _timebackScope.PendingReleased, fields, infoLine + "\n" + BuildTimebackWrites() + findings + Environment.NewLine + Environment.NewLine + TimebackCard.Readback(_timebackScope.Type));
         }
 
         /// <summary>

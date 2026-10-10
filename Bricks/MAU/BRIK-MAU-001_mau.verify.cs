@@ -69,21 +69,21 @@ namespace Mau.Bricks
                 if (r.Success)
                 {
                     StringBuilder sb = new StringBuilder();
-                    sb.Append("OK 验证通过: " + file + " → FL_" + flowName);
+                    sb.Append(file + " | 验证通过 · " + r.Reports.Count.ToString() + " 报告");
                     for (int i = 0; i < r.Reports.Count; i++)
                     {
                         sb.Append(Environment.NewLine);
                         sb.Append("报告: " + r.Reports[i]);
                     }
-                    // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+                    // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
                     System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
-                    fields["file"] = file;
                     fields["flow"] = "FL_" + flowName;
-                    fields["reports"] = r.Reports.Count;
-                    result = MetaHead("mau-verify", true, fields) + "\n" + sb.ToString();
+                    result = MetaHead("mau-verify", true, file, r.Reports.Count, fields) + "\n" + sb.ToString();
                     return true;
                 }
                 StringBuilder err = new StringBuilder();
+                err.Append(file + " | 验证失败 · " + r.Diagnostics.Count.ToString() + " 错误");
+                err.Append(Environment.NewLine);
                 err.Append("FAIL|VALIDATE|" + file);
                 for (int i = 0; i < r.Diagnostics.Count; i++)
                 {
@@ -93,10 +93,9 @@ namespace Mau.Bricks
                 }
                 // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
                 System.Collections.Generic.Dictionary<string, object> errFields = new System.Collections.Generic.Dictionary<string, object>();
-                errFields["file"] = file;
                 errFields["flow"] = "FL_" + flowName;
                 errFields["errors"] = r.Diagnostics.Count;
-                result = MetaHead("mau-verify", false, errFields) + "\n" + err.ToString();
+                result = MetaHead("mau-verify", false, file, -1, errFields) + "\n" + err.ToString();
                 return false;
             }
             catch (Exception ex)
@@ -170,13 +169,23 @@ namespace Mau.Bricks
         /// </summary>
         /// <param name="tool">工具名（mau-verify / mau-gen / mau-proj / mau-setup）</param>
         /// <param name="ok">成败（编译 / 验证是否通过）</param>
+        /// <param name="target">主来源（文件 / 项目名；空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
         /// <param name="fields">附加字段（按插入序输出）</param>
         /// <returns>单行 JSON</returns>
-        private static string MetaHead(string tool, bool ok, System.Collections.Generic.Dictionary<string, object> fields)
+        private static string MetaHead(string tool, bool ok, string target, int items, System.Collections.Generic.Dictionary<string, object> fields)
         {
             System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
             head["ok"] = ok;
             head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
             foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
             {
                 head[kv.Key] = kv.Value;
@@ -185,4 +194,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:1DB06EEDEEA941BE629067148061022D31E68BA7B2381DE592EE8308D8F4B2F7
+// #MAU_CHECKSUM:SHA256:FF3C5BC0B0A3C58E7D8D121BFD713350296061833D5B43037CF05A1B3C264C82

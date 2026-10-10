@@ -60,7 +60,7 @@ namespace CH4
                 // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
                 Dictionary<string, object> timeFields = new Dictionary<string, object>();
                 timeFields["ts"] = nowText;
-                return ToolMetaHead.With("time", true, timeFields, nowText);
+                return ToolMetaHead.With("time", true, "", -1, timeFields, "时间 | " + nowText);
             }
             if (name == "random")
             {
@@ -141,7 +141,7 @@ namespace CH4
             randomFields["min"] = min;
             randomFields["max"] = max;
             randomFields["value"] = picked;
-            return ToolMetaHead.With("random", true, randomFields, picked.ToString());
+            return ToolMetaHead.With("random", true, "", -1, randomFields, "随机 | " + min.ToString() + ".." + max.ToString() + " = " + picked.ToString());
         }
 
         /// <summary>
@@ -224,8 +224,8 @@ namespace CH4
             sleepFields["minutes"] = minutes;
             sleepFields["seconds"] = seconds;
             sleepFields["dueAt"] = dueAt;
-            string body = "已登记定时唤醒：" + DelayQueue.FormatTime(dueAt) + "（" + total.ToString() + " 秒后）——本轮请正常回复，到点会自动唤醒。";
-            return ToolMetaHead.With("sleep", true, sleepFields, body);
+            string body = "唤醒 | " + DelayQueue.FormatTime(dueAt) + "（" + total.ToString() + " 秒后）——本轮请正常回复，到点会自动唤醒。";
+            return ToolMetaHead.With("sleep", true, "", -1, sleepFields, body);
         }
 
         /// <summary>timer 时长上限（秒）——24 小时（排程语义允许长周期；与 sleep 的 1 小时挂起防呆不同）</summary>
@@ -338,8 +338,8 @@ namespace CH4
             {
                 loopText = "循环（每 " + total.ToString() + " 秒）";
             }
-            string body = "已登记定时注入：" + DelayQueue.FormatTime(dueAt) + "（" + total.ToString() + " 秒后 · " + loopText + "）——到点自动注入本指令，本轮正常继续。";
-            return ToolMetaHead.With("timer", true, timerFields, body);
+            string body = "排程 | " + DelayQueue.FormatTime(dueAt) + "（" + total.ToString() + " 秒后 · " + loopText + "）——到点自动注入本指令，本轮正常继续。";
+            return ToolMetaHead.With("timer", true, "", -1, timerFields, body);
         }
 
         /// <summary>
@@ -572,10 +572,8 @@ namespace CH4
             LogStore.Add("CatHome4", 1, "pack 注入: cat=" + _catKey + " | key=" + packKey + " | " + targets.Count.ToString() + " 件 / " + totalChars.ToString() + " 字符", "INJECT");
             // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
             Dictionary<string, object> packFields = new Dictionary<string, object>();
-            packFields["key"] = packKey;
-            packFields["files"] = targets.Count;
             packFields["chars"] = totalChars;
-            return ToolMetaHead.With("pack", true, packFields, sb.ToString());
+            return ToolMetaHead.With("pack", true, packKey, targets.Count, packFields, packKey + " | " + targets.Count.ToString() + " 件 · " + totalChars.ToString() + " 字符" + "\n" + sb.ToString());
         }
 
         /// <summary>info 执行体——本会话环境自省，返回分类 JSON 块（version / time / llm / endpoint / roots / tokens / packs / qqbot；M4e：info 是猫自省目录范围的通道）。</summary>

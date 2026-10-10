@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════
 // chat/tools/config/config-set.js —— config-set / 写配置项（ConfigCat）
-// 声明：折叠行读结构化头（key）+ 输入意图行（key = value 预览）。
+// 声明：折叠行读结构化头（target）+ 输入意图行（key = value 预览）。
 // ═══════════════════════════════════════════
 
 toolDecl('config-set', {
@@ -12,6 +12,6 @@ toolDecl('config-set', {
         if (!h) {
             return '设置配置 ' + ovText(a.key) + ovStat(r);
         }
-        return '设置配置 ' + ovMetaStr(h.meta, 'key') + ' · 已更新';
+        return '设置配置 ' + ovMetaStr(h.meta, 'target') + ' · 已更新';
     }
 });

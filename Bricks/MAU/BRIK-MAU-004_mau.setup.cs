@@ -108,12 +108,17 @@ namespace Mau.Bricks
                 // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
                 System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
                 fields["mode"] = mode;
-                fields["target"] = mode == "sync-html" ? target : "";
                 fields["exit"] = exitCode;
-                fields["steps"] = stepCount;
                 fields["stepsOk"] = stepOk;
                 fields["artifacts"] = artifactCount;
-                result = MetaHead("mau-setup", exitCode == 0, fields) + "\n" + sb.ToString();
+                // A214——target 主来源（sync-html 取运行区路径，否则 mode）+ items = 步数
+                string targetLabel = mode;
+                if (target.Length > 0)
+                {
+                    targetLabel = target;
+                }
+                string summaryLine = targetLabel + " | " + mode + " · 步 " + stepOk.ToString() + "/" + stepCount.ToString() + " · 产物 " + artifactCount.ToString() + " 件";
+                result = MetaHead("mau-setup", exitCode == 0, targetLabel, stepCount, fields) + "\n" + summaryLine + Environment.NewLine + sb.ToString();
                 return exitCode == 0;
             }
             catch (Exception ex)
@@ -327,13 +332,23 @@ namespace Mau.Bricks
         /// </summary>
         /// <param name="tool">工具名（mau-verify / mau-gen / mau-proj / mau-setup）</param>
         /// <param name="ok">成败（部署链成败）</param>
+        /// <param name="target">主来源（文件 / 项目名；空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
         /// <param name="fields">附加字段（按插入序输出）</param>
         /// <returns>单行 JSON</returns>
-        private static string MetaHead(string tool, bool ok, System.Collections.Generic.Dictionary<string, object> fields)
+        private static string MetaHead(string tool, bool ok, string target, int items, System.Collections.Generic.Dictionary<string, object> fields)
         {
             System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
             head["ok"] = ok;
             head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
             foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
             {
                 head[kv.Key] = kv.Value;
@@ -342,4 +357,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:DB16DE43CFCE4790E307B97F763D7402B5BF64FD1ADB02856B57FCA72C83DFF2
+// #MAU_CHECKSUM:SHA256:E69ACF011E9E70DC04FFEAB5E7C54B85CBC032BA2EC7D686BDD5CCEF0E248C35

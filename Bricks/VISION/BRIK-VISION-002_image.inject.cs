@@ -41,24 +41,41 @@ namespace Mau.Bricks
                 result = "ERR|BAD_ARGS|缺少参数 path";
                 return false;
             }
-            result = MetaHead(path);
+            // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target）+ 正文摘要行
+            System.Collections.Generic.Dictionary<string, object> fields = new System.Collections.Generic.Dictionary<string, object>();
+            result = MetaHead("image-inject", true, path, -1, fields) + "\n" + path + " | 已登记（宿主批后段注入）";
             return true;
         }
 
         /// <summary>
-        /// 结构化元数据头——首行单行 JSON（ok/tool/path；键序稳定 = 插入序）
-        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文定界行
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（负值 = 省略）+ 专有字段（插入序）
+        /// 约定（design-ch4-tools 附录）：返回体 = 首行 JSON 头 + 正文摘要行
         /// </summary>
-        /// <param name="path">图片路径</param>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（图片路径；空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <param name="fields">附加字段（按插入序输出）</param>
         /// <returns>单行 JSON</returns>
-        private static string MetaHead(string path)
+        private static string MetaHead(string tool, bool ok, string target, int items, System.Collections.Generic.Dictionary<string, object> fields)
         {
             System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
-            head["ok"] = true;
-            head["tool"] = "image-inject";
-            head["path"] = path;
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            foreach (System.Collections.Generic.KeyValuePair<string, object> kv in fields)
+            {
+                head[kv.Key] = kv.Value;
+            }
             return JsonSerializer.Serialize(head);
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:D4A541B6B583BE64FF48A0DFC72783D72B833EBBD6C52589F069BB4BAC027374
+// #MAU_CHECKSUM:SHA256:1A3292777CCA0E4EC752432C9130792603AFF3CA25A5CEDCB93CDEF968C6EB06

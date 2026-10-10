@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════
 // chat/tools/config/config-cat-set.js —— config-cat-set / 写每猫配置（ConfigCat）
-// 声明：折叠行读结构化头（cat）+ 输入意图行（猫 / 字段）。
+// 声明：折叠行读结构化头（target）+ 输入意图行（猫 / 字段）。
 // ═══════════════════════════════════════════
 
 toolDecl('config-cat-set', {
@@ -12,6 +12,6 @@ toolDecl('config-cat-set', {
         if (!h) {
             return '每猫配置 ' + ovText(a.cat) + ovStat(r);
         }
-        return '每猫配置 ' + ovMetaStr(h.meta, 'cat') + ' · ' + ovText(a.field) + ' 已更新';
+        return '每猫配置 ' + ovMetaStr(h.meta, 'target') + ' · ' + ovText(a.field) + ' 已更新';
     }
 });

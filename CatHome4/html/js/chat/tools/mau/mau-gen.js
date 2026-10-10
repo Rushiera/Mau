@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════
 // chat/tools/mau/mau-gen.js —— mau-gen / 组翻译（不编译）（MauCat）
-// 声明：折叠行读结构化头（ok / proj / steps / errors）+ 输入意图行；段结构归骨架 `diagnostics`。
+// 声明：折叠行读结构化头（ok / target / items / errors）+ 输入意图行；段结构归骨架 `diagnostics`。
 // ═══════════════════════════════════════════
 
 toolDecl('mau-gen', {
@@ -14,8 +14,8 @@ toolDecl('mau-gen', {
         }
         var m = h.meta;
         if (m.ok === false) {
-            return 'Mau 生成 ' + ovMetaStr(m, 'proj') + ' · ' + ovMetaNum(m, 'errors', 0) + ' 个错误';
+            return 'Mau 生成 ' + ovMetaStr(m, 'target') + ' · ' + ovMetaNum(m, 'errors', 0) + ' 个错误';
         }
-        return 'Mau 生成 ' + ovMetaStr(m, 'proj') + ' · ' + ovMetaNum(m, 'steps', 0) + ' 步';
+        return 'Mau 生成 ' + ovMetaStr(m, 'target') + ' · ' + ovMetaNum(m, 'items', 0) + ' 步';
     }
 });

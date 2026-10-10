@@ -60,7 +60,16 @@ namespace Mau.Bricks
                     return false;
                 }
                 string style = fs.AppendTextAuto(path, content);
-                result = "OK 已追加: " + path + "（+" + content.Length.ToString() + " 字符 · " + style + "）";
+                int lines = 1;
+                for (int i = 0; i < content.Length; i = i + 1)
+                {
+                    if (content[i] == '\n')
+                    {
+                        lines = lines + 1;
+                    }
+                }
+                // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
+                result = MetaHead("text-append", true, path, lines) + "\n" + path + " | 已追加 · " + lines.ToString() + " 行 · " + style;
                 return true;
             }
             catch (Exception ex)
@@ -69,6 +78,29 @@ namespace Mau.Bricks
                 return false;
             }
         }
+        /// <summary>
+        /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（空串 / 负值 = 省略）。
+        /// </summary>
+        /// <param name="tool">工具名</param>
+        /// <param name="ok">成败</param>
+        /// <param name="target">主来源（空串 = 省略）</param>
+        /// <param name="items">主计数（负值 = 省略）</param>
+        /// <returns>单行 JSON</returns>
+        private static string MetaHead(string tool, bool ok, string target, int items)
+        {
+            System.Collections.Generic.Dictionary<string, object> head = new System.Collections.Generic.Dictionary<string, object>();
+            head["ok"] = ok;
+            head["tool"] = tool;
+            if (target.Length > 0)
+            {
+                head["target"] = target;
+            }
+            if (items >= 0)
+            {
+                head["items"] = items;
+            }
+            return JsonSerializer.Serialize(head);
+        }
     }
 }
-// #MAU_CHECKSUM:SHA256:64DFCC15EAC3843AE4EF4ABDB13F867C844857BD6A092DDF4F4651F3A0CF8CB5
+// #MAU_CHECKSUM:SHA256:2AA5BC7A541155B20A89E5295F722F623284D400A992167AAE0837A0D1EDC349

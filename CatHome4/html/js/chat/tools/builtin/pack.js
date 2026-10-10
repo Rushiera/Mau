@@ -13,6 +13,6 @@ toolDecl('pack', {
         if (!h) {
             return '加载包 ' + ovText(a.key) + ovStat(r);
         }
-        return '加载包 ' + ovMetaStr(h.meta, 'key') + ' · ' + ovMetaNum(h.meta, 'files', 0) + ' 件';
+        return '加载包 ' + ovMetaStr(h.meta, 'target') + ' · ' + ovMetaNum(h.meta, 'items', 0) + ' 件';
     }
 });

@@ -9,6 +9,8 @@ toolDecl('file-tree', {
         return ['展开 ' + ovText(a.path) + ' · depth ' + ovText(a.depth) + extra];
     },
     headline: function (a, r) {
-        return '展开 ' + ovText(a.path) + ' · depth ' + ovText(a.depth) + ' · ' + ovItems(r) + ' 条目' + ovTotalTail(r);
+        var h = ovHead(r);
+        var cnt = h ? ovMetaNum(h.meta, 'items', 0) : ovItems(r);
+        return '展开 ' + ovText(a.path) + ' · depth ' + ovText(a.depth) + ' · ' + cnt + ' 条目' + ovTotalTail(h ? h.body : r);
     }
 });

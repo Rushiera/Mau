@@ -9,6 +9,8 @@ toolDecl('file-find', {
         return ['搜索 ' + ovText(a.dir) + ' · glob ' + ovText(a.pattern)];
     },
     headline: function (a, r) {
-        return '搜索 ' + ovText(a.dir) + ' · glob ' + ovText(a.pattern) + ' · ' + ovItems(r) + ' 条目' + ovTotalTail(r);
+        var h = ovHead(r);
+        var cnt = h ? ovMetaNum(h.meta, 'items', 0) : ovItems(r);
+        return '搜索 ' + ovText(a.dir) + ' · glob ' + ovText(a.pattern) + ' · ' + cnt + ' 条目' + ovTotalTail(h ? h.body : r);
     }
 });

@@ -221,11 +221,10 @@ namespace CH4
             }
             // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
             System.Collections.Generic.Dictionary<string, object> reloadFields = new System.Collections.Generic.Dictionary<string, object>();
-            reloadFields["cat"] = name;
             reloadFields["oldId"] = oldId;
             reloadFields["newId"] = newId;
             reloadFields["pid"] = Environment.ProcessId;
-            return ToolMetaHead.With("host-reload", true, reloadFields, sb.ToString());
+            return ToolMetaHead.With("host-reload", true, name, -1, reloadFields, name + " | 已重载" + "\n" + sb.ToString());
         }
 
         /// <summary>
@@ -468,9 +467,7 @@ namespace CH4
                 sb.Append("  #" + entry.Id.ToString() + " " + entry.Name + " kind=" + (entry.Kind != null ? entry.Kind : "") + " " + state + dllInfo + timeInfo);
             }
             // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
-            System.Collections.Generic.Dictionary<string, object> flowFields = new System.Collections.Generic.Dictionary<string, object>();
-            flowFields["count"] = entries.Length;
-            return ToolMetaHead.With("host-flows", true, flowFields, sb.ToString());
+            return ToolMetaHead.With("host-flows", true, "", entries.Length, null, entries.Length.ToString() + " 个 Flow" + "\n" + sb.ToString());
         }
 
         /// <summary>

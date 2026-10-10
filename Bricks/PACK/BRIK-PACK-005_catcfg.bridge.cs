@@ -87,14 +87,14 @@ namespace Mau.Bricks
                 result = reply;
                 return false;
             }
-            // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
+            // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target = cat）+ 正文摘要行
             Dictionary<string, object> head = new Dictionary<string, object>();
             head["ok"] = true;
             head["tool"] = (method == "get") ? "config-cat-get" : "config-cat-set";
-            head["cat"] = cat;
-            result = JsonSerializer.Serialize(head) + "\n" + reply;
+            head["target"] = cat;
+            result = JsonSerializer.Serialize(head) + "\n" + cat + " | cat.cfg " + ((method == "get") ? "读取" : "写入") + "\n" + reply;
             return true;
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:B14E0C32F1A3586D21B23E6E6732C2F9B18FDA2A27496898432A37F29DC8C992
+// #MAU_CHECKSUM:SHA256:0842C60C387056C42B275E37BCC144169B85EAB147ECEA5A9F97FDD387A42200

@@ -8,6 +8,10 @@ toolDecl('text-read', {
         return ['读取 ' + ovText(a.path)];
     },
     headline: function (a, r) {
-        return '读取 ' + ovText(a.path) + ovStat(r);
+        var h = ovHead(r);
+        if (!h) {
+            return '读取 ' + ovText(a.path) + ovStat(r);
+        }
+        return '读取 ' + ovMetaStr(h.meta, 'target') + ' · ' + ovMetaNum(h.meta, 'items', 0) + ' 行';
     }
 });
