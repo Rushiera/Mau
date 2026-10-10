@@ -34,7 +34,8 @@ namespace Mau.Runtime.Tests
         {
             ThreadGuard guard = new ThreadGuard();
             Exception? captured = null;
-            await Task.Run(delegate
+            // LongRunning——委托独占专用线程，避免线程池复用 await 释放的同一线程导致误判
+            await Task.Factory.StartNew(delegate
             {
                 try
                 {
@@ -44,7 +45,7 @@ namespace Mau.Runtime.Tests
                 {
                     captured = ex;
                 }
-            }, TestContext.Current.CancellationToken);
+            }, TestContext.Current.CancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
             Assert.NotNull(captured);
             Assert.IsType<InvalidOperationException>(captured);
