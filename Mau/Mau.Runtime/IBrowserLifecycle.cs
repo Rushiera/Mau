@@ -29,5 +29,15 @@
         /// 正常退出路径；被强杀时不会执行，靠启动前 PID 自愈兜底。
         /// </summary>
         void Shutdown();
+
+        /// <summary>
+        /// 有头登录实例（A1）——browser-headful 执行面：域外专属（主干人工登录用，与其余 browser-* 域内专属相反）。
+        /// open：关现有实例 → 同 profile 起有头浏览器（窗口供人工登录）；close：优雅关闭（profile 落盘，登录态保留）。
+        /// </summary>
+        /// <param name="catId">猫 key</param>
+        /// <param name="action">动作：open（起有头）/ close（关有头）</param>
+        /// <param name="url">open 时可选导航地址（http/https；空=空白页）</param>
+        /// <returns>状态摘要或 ERR| 错误文本</returns>
+        string Headful(string catId, string action, string url);
     }
 }

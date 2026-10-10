@@ -12,6 +12,7 @@
 | BRIK-BROWSER-003 | browser.eval | BROWSER | BROWSER/BRIK-BROWSER-003_browser.eval.cs | 无 | active |  |
 | BRIK-BROWSER-004 | browser.shot | BROWSER | BROWSER/BRIK-BROWSER-004_browser.shot.cs | 无 | active |  |
 | BRIK-BROWSER-005 | browser.tabs | BROWSER | BROWSER/BRIK-BROWSER-005_browser.tabs.cs | 无 | active |  |
+| BRIK-BROWSER-006 | browser.headful | BROWSER | BROWSER/BRIK-BROWSER-006_browser.headful.cs | 无 | active |  |
 | BRIK-DATA-001 | data.box_set_str | DATA | DATA/BRIK-DATA-001_data.box_set_str.cs | 无 | active |  |
 | BRIK-DATA-002 | data.box_get_str | DATA | DATA/BRIK-DATA-002_data.box_get_str.cs | 无 | active |  |
 | BRIK-FILE-001 | file.tree | FILE | FILE/BRIK-FILE-001_file.tree.cs | 无 | active |  |
