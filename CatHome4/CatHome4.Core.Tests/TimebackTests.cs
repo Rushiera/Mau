@@ -102,7 +102,9 @@ namespace CatHome4.Core.Tests
             };
             CH4.ChatSession.TimebackInfoProvider = delegate ()
             {
-                return "{\"cat\":\"tb-session\",\"note\":\"info 快照占位\"}";
+                // 探针——采集点猫上下文（修复前读到空猫 → 归档第二行空心）
+                string cat = CH4.ToolCatContext.CurrentCatKey;
+                return "快照:" + (cat == null ? "" : cat);
             };
             ChatContext ctx = new ChatContext();
             string tmp = Path.Combine(Path.GetTempPath(), "cat4tb_" + Guid.NewGuid().ToString("N") + ".jsonl");
@@ -853,7 +855,7 @@ namespace CatHome4.Core.Tests
             Assert.Contains("归档验证", lines[0]);
             Assert.Contains("\"n\":3", lines[0]);
             Assert.Contains("\"findings\":\"结论：A\"", lines[0]);
-            Assert.Contains("info 快照占位", lines[1]);
+            Assert.Contains("快照:tb-session", lines[1]);
             // 被删前文 3 条 = 域规范卡（§十一）+ info 声明 + 其结果
             Assert.True(lines.Length >= 5);
             Assert.Contains("\"t\":\"m\"", lines[2]);

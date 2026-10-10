@@ -506,16 +506,17 @@ namespace CH4
             }
             return ok;
         }
-        /// <summary>
-        /// 采集本猫 info 快照——归档文件第二行的现场记录（provider 未接线 / 采集失败 = 空串，不阻断回收）。
-        /// </summary>
+        /// <summary>采集本猫 info 快照——归档文件第二行的现场记录。采集前临时设本会话猫上下文（provider 经 ToolCatContext 解析猫级 roots / 端点 / llm）；批后段不在工具执行上下文内，缺此步 info 即空心。provider 未接线 / 采集失败 = 空串，不阻断回收。</summary>
         /// <returns>info JSON（单行；不可用=空串）</returns>
-        private static string CollectTimebackInfo()
+        private string CollectTimebackInfo()
         {
             if (TimebackInfoProvider == null)
             {
                 return "";
             }
+            // [段1] 猫上下文对齐——归档采集发生在批后段（工具执行上下文之外），provider 读 ToolCatContext 会读到空猫；与 ExecuteInfo 同模式，临时设本会话猫 key、采集后恢复（修复归档第二行空心）
+            string prev = ToolCatContext.CurrentCatKey;
+            ToolCatContext.SetCat(_catKey);
             try
             {
                 string info = TimebackInfoProvider();
@@ -529,6 +530,10 @@ namespace CH4
             {
                 LogStore.Add("CatHome4", 2, "timeback info 快照采集失败（归档缺该行）: " + ex.Message, "TIMEBACK");
                 return "";
+            }
+            finally
+            {
+                ToolCatContext.SetCat(prev);
             }
         }
         /// <summary>状态自述步长——作用域内每累计 25 个事件注入一条 user 系统提示（莎 2026-09-30 定：10 → 25）。</summary>
