@@ -1518,7 +1518,7 @@ namespace CatHome4.Admin
             {
                 botName = botId.ToString("D");
             }
-            return botName + "：发本地文件=单独一行写 [QQBot发送文件:\"<真实绝对路径>\"]（≤10MB · 仅私聊）";
+            return botName + "：发本地文件=单独一行写 [QQBot发送文件:\"<真实绝对路径>\"]（≤10MB · 私聊/群聊）";
         }
         /// <summary>
         /// 本地对话端点端口解析——info 环境信息消费（本猫实际监听端口）。

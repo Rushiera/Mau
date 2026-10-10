@@ -1614,7 +1614,7 @@ namespace CatHome4.QQ
         /// <summary>/last 段数上限——最多 4 段独立发送（末尾段优先，丢弃开头段 + L2 留痕）</summary>
         private const int MaxLastParts = 4;
 
-        /// <summary>轮内被动调用预算——官方被动回复 4 次上限（文本段 + 文件发送共用）</summary>
+        /// <summary>轮内被动调用预算——被动回复次数上限（文本段 + 文件发送共用）；统一取 4——私聊实测值；群聊实测为 5（2026-10-10 A215 探针），保守统一不分档。</summary>
         private const int MaxRoundCalls = 4;
         /// <summary>QQ 富文本 faceType 标记正则——表情/大表情图片标记（v0.96.1 简化）</summary>
         private static readonly Regex _faceTagRegex = new Regex("<faceType=[^>]*>", RegexOptions.Compiled);
@@ -1686,7 +1686,7 @@ namespace CatHome4.QQ
             SendWithFallback(conn, source.Type, source.TargetId, text, source.MsgId, true);
         }
         /// <summary>
-        /// 发送文件到来源——仅私聊通道（C2C msg_type=7；群聊无文件通道——跳过 + L2 留痕）；失败错误文本嵌回消息渠道。
+        /// 发送文件到来源——私聊 / 群聊双通道（A215：群聊放开，端点由来源类型分派）；失败错误文本嵌回消息渠道。
         /// </summary>
         /// <param name="tg">绑定目标</param>
         /// <param name="source">来源</param>
@@ -1698,19 +1698,14 @@ namespace CatHome4.QQ
             {
                 return;
             }
-            if (source.Type != "private")
-            {
-                LogStore.Add("QQBot", 2, "文件发送跳过（群聊无文件通道） | " + tg.Key + " | " + path, "QQBOT");
-                return;
-            }
-            string err = conn.SendFile(source.TargetId, path, source.MsgId);
+            string err = conn.SendFile(source.Type, source.TargetId, path, source.MsgId);
             if (err.Length > 0)
             {
-                conn.SendReply("private", source.TargetId, err, source.MsgId, false);
+                conn.SendReply(source.Type, source.TargetId, err, source.MsgId, false);
             }
         }
         /// <summary>
-        /// 文件发送段（A112 统一出口）——逐条经文件通道发送（仅私聊；失败错误文本由 SendFileToTarget 嵌回消息渠道）。
+        /// 文件发送段（A112 统一出口）——逐条经文件通道发送（私聊 / 群聊；失败错误文本由 SendFileToTarget 嵌回消息渠道）。
         /// 转发路与 /last 共用本实现——文件标记扫描（QqFileMarker）与文件发送各只有一处实现。
         /// </summary>
         /// <param name="tg">绑定目标（空=不发送）</param>
