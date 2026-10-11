@@ -235,6 +235,12 @@ namespace CH4
         /// <summary>单次前文长度——最近一次请求的 prompt（覆盖式；非累计——前文长度数据源）</summary>
         private long _contextTokens;
 
+        /// <summary>Token 预警阈值——单次请求 miss（未命中缓存的 prompt）超过此值即投 error 气泡（固定 100k——长前文缓存断裂定位点）</summary>
+        private const long MissAlertThreshold = 100000;
+
+        /// <summary>已预警请求号——同一请求多 usage 帧只报一次（比对 _requestCount；0 为起点哨兵，请求号自 1 起）</summary>
+        private int _lastMissAlertReq;
+
         /// <summary>本轮开始时间戳——Stopwatch.GetTimestamp（roundsum 总耗时）</summary>
         private long _roundStartTick;
 
@@ -1533,6 +1539,17 @@ namespace CH4
                         SaveMeta();
                         // F4 视图——状态段推送（前文长度与条数实时化；v2：状态段承载，无独立事件）
                         PushState();
+                        // 请求 miss 超阈预警——长前文缓存断裂定位点：单次请求 miss（未命中缓存 prompt）超过阈值即投 error 气泡（同请求多 usage 帧只报一次）
+                        long reqMiss = (_usagePrompt - reqPrompt) - (_usageCacheHit - reqCacheHit);
+                        if (reqMiss > MissAlertThreshold && _lastMissAlertReq != _requestCount)
+                        {
+                            _lastMissAlertReq = _requestCount;
+                            long oncePrompt = _usagePrompt - reqPrompt;
+                            long onceCacheHit = _usageCacheHit - reqCacheHit;
+                            long onceCompletion = _usageCompletion - reqCompletion;
+                            string missAlert = "⚠ Token 预警：本次请求 miss " + reqMiss.ToString() + "（> " + MissAlertThreshold.ToString() + "）——前文 " + oncePrompt.ToString() + " / 命中 " + onceCacheHit.ToString() + " / 补全 " + onceCompletion.ToString() + "；本轮第 " + _requestCount.ToString() + " 次请求";
+                            _viewStore.AppendError(missAlert, ViewTimestamp());
+                        }
                     }
                     else if (ev.Kind == LlmStreamKind.Done)
                     {
@@ -2420,6 +2437,7 @@ namespace CH4
                     // 内置工具会话内直执——不需 OA（R0.2 分层：Note 状态在会话实例；time/random/info 宿主直执）
                     dog.Result = ExecuteBuiltin(dog.Name, dog.ArgsJson);
                     dog.IsClosed = true;
+                    dog.ClosedAtMs = ViewTimestamp();
                     continue;
                 }
                 dog.Post(_oa, ToolOwnerId);
@@ -2428,6 +2446,7 @@ namespace CH4
                     // Post 失败——诚实失败（直执面已移除 2026-09-04——OA 不可用即 ERR，不静默降级）
                     dog.Result = "ERR|OA_POST_FAIL|工单提交失败（OA 不可用）: " + dog.Name;
                     dog.IsClosed = true;
+                    dog.ClosedAtMs = ViewTimestamp();
                     LogStore.Add("CatHome4", 2, "工具 " + dog.Name + " 工单提交失败（OA 不可用）——诚实 ERR", "TOOL");
                 }
             }
@@ -2563,6 +2582,7 @@ namespace CH4
                     hr = "ERR|EMPTY_RESULT|工具执行无结果";
                 }
                 dog.Result = hr;
+                dog.ClosedAtMs = ViewTimestamp();
                 // A128 逐条回填——host-* 直执结果就位即出终态卡（不等段3 收口）
                 FlushToolCard(dog);
             }
