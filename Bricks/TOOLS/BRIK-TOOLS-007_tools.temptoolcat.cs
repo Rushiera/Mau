@@ -22,10 +22,10 @@ namespace Mau.Bricks
         public static string GetToolsJson()
         {
             return "{\"group\":\"TempToolCat\",\"tools\":[" +
-                "{\"name\":\"temp-info\",\"description\":\"临时工具信息——返回当前全部可用临时工具 Key 组（逗号分隔）\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}," +
+                "{\"name\":\"temp-info\",\"description\":\"临时工具信息——返回当前全部可用临时工具 Key 列表（回执 = 元数据头 items 计数 + keys 数组 + 摘要行；空注册时 items=0、无载荷行）\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}," +
                 "{\"name\":\"temp-exec\",\"description\":\"临时工具万能执行——按 Key 调度到临时工具并返回结果文本；Key 不存在报 ERR|TEMP_KEY_NOT_FOUND\",\"parameters\":{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"临时工具 Key（temp-info 可查当前可用 Key 组）\"},\"content\":{\"type\":\"string\",\"description\":\"输入内容\"}},\"required\":[\"key\",\"content\"]}}" +
                 "]}";
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:14DD65C412893C7FCAAA6C4B47C8B08CCAC3582A092F426D08EFBDEA94B61F67
+// #MAU_CHECKSUM:SHA256:3764F3C4300302A7866AC7BEF8562D86B8DC5266B80ECB3D2222DEA23720582B

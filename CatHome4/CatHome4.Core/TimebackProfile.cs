@@ -23,7 +23,7 @@ namespace CH4
         /// <summary>域类型·代码审查——基础读面 + cs 只读面（纯取证：不含跑测面）。</summary>
         public const string CodeReview = "code_review";
 
-        /// <summary>域类型·代码实现——基础读面 + cs 全套 + 文本写面 + 语料检查（一域内完成读 / 改 / 编译 / 跑测）。</summary>
+        /// <summary>域类型·代码实现——基础读面 + cs 全套 + 文本写面 + 语料检查（域内完成读 / 改 / 编译；跑测不在名单，收尾验收另开域）。</summary>
         public const string CodeWrite = "code_write";
 
         /// <summary>文本读面——被多个 type 复用（域内只读取证：文本检索 + 内容检索）。</summary>
@@ -58,7 +58,7 @@ namespace CH4
         });
 
         /// <summary>code_write 名单——基础读面 + cs 全套十二件 + 文本写面 + 语料检查。
-        /// 域内一次完成「读 → 改 → 编译 → 跑测」：编译输出与诊断清单一律随域回收，不持久化进主干。</summary>
+        /// 域内一次完成「读 → 改 → 编译」：编译输出与诊断清单一律随域回收，不持久化进主干（跑测不在名单——收尾验收另开域）。</summary>
         private static readonly string[] CodeWriteNames = Concat(new string[]
         {
             "cs-check", "cs-list", "cs-read", "cs-patch", "cs-member", "cs-comment",

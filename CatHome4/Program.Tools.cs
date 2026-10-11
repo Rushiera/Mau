@@ -10,12 +10,12 @@ namespace CH4
 {
     /// <summary>
     /// Program 的工具执行面分部——工具声明表 + 名单管理 + 内置工具定义源（P8 工具组）。
-    /// 归属：agent 循环基建（宿主侧）。工具执行只走 OA 认领线（工具组 Flow）——宿主直执仅 host-reload 保留。
+    /// 归属：agent 循环基建（宿主侧）。工具执行双轨——OA 认领线（工具组 Flow）承载 OA 工具；内置工具（Note/time/random/info/host-*/pack/sleep/timer/timeback-*）宿主直执。
     /// </summary>
     public static partial class Program
     {
         /// <summary>
-        /// 内置工具定义源——宿主内建小表（本质也是 BRIK，只是内置：Note/time/random/info/host-*/pack/sleep）。
+        /// 内置工具定义源——宿主内建小表（本质也是 BRIK，只是内置：Note/time/random/info/host-*/pack/sleep/timer/timeback-start/timeback-back）。
         /// 格式与 Flow.GetToolsJson 同构（{"group":"","tools":[...]}）——同一解析器，统一工具池。
         /// </summary>
         /// <returns>内置工具定义 JSON</returns>
@@ -26,7 +26,7 @@ namespace CH4
             tools[0] = new
             {
                 name = "Note",
-                description = "轻量任务追踪器（内存存储，会话关闭即消失）。无参数=推进到下一条；action='set'+content=[\"任务1\",\"任务2\"]=写入新计划（已有未完成需force=true强制覆盖）。返回当前第X/Y条 已完成Z 待完成W 任务目标：... 最后一条时追加提示（已是最后一条需求，完成后可结束本轮）。全部完成后自动清空。剩余1条时引擎不自动拉起。",
+                description = "轻量任务追踪器（内存存储，会话关闭即消失）。只记可自主执行的步骤——等确认 / 等回应的闸门项不写入（引擎对未完成项强制拉起）。无参数=推进到下一条；action='set'+content=[\"任务1\",\"任务2\"]=写入新计划（已有未完成需force=true强制覆盖）。返回当前第X/Y条 已完成Z 待完成W 任务目标：... 最后一条时追加提示（已是最后一条需求，完成后可结束本轮）。全部完成后自动清空。剩余1条时引擎不自动拉起。",
                 parameters = new
                 {
                     type = "object",
@@ -149,7 +149,7 @@ namespace CH4
             tools[9] = new
             {
                 name = "timeback-start",
-                description = "上下文作用域·开锚——type 选域类型（决定域内可用工具白名单 / 回执骨架 / 资源预热），purpose 记用途；过程在作用域内膨胀，回收时用 timeback-back 回卷（膨胀过程从上下文销毁，只把 findings 带回主干——下一轮首条可见）。域类型枚举：browser_vision（浏览网页 + 识图：browser-* / image-* + 基础读面）· text_search（文本与文档检索：文本读面 + 文件结构面）· code_review（代码审查取证：基础读面 + cs 只读七件，不含跑测面）· code_write（代码实现：基础读面 + cs 全套十二件 + 文本写面 + mau-verify——读 / 改 / 编译 / 跑测一域内完成）。🔴 域内只放行本类型白名单——名单外调用被拒（ERR|TIMEBACK_PROFILE，需用则先 back 回主干，不在域内换类型）；系统信息类工具（info / host-flows）不进任何域；域内不做计划、不调 Note / sleep / timer。热重载 / 重启 / 部署不在域内（进程中断即失域）。v1 未闭合前禁止再次 start。",
+                description = "上下文作用域·开锚——type 选域类型（决定域内可用工具白名单 / 回执骨架 / 资源预热），purpose 记用途；过程在作用域内膨胀，回收时用 timeback-back 回卷（膨胀过程从上下文销毁，只把 findings 带回主干——下一轮首条可见）。域类型枚举：browser_vision（浏览网页 + 识图：browser-* / image-* + 基础读面）· text_search（文本与文档检索：文本读面 + 文件结构面）· code_review（代码审查取证：基础读面 + cs 只读七件，不含跑测面）· code_write（代码实现：基础读面 + cs 全套十二件 + 文本写面 + mau-verify——读 / 改 / 编译在域内完成；跑测不在名单，收尾验收另开域）。🔴 域内只放行本类型白名单——名单外调用被拒（ERR|TIMEBACK_PROFILE，需用则先 back 回主干，不在域内换类型）；系统信息类工具（info / host-flows）不进任何域；域内不做计划、不调 Note / sleep / timer。热重载 / 重启 / 部署不在域内（进程中断即失域）。🔴 开域判据：本环节预期串接 ≥3 次工具调用才收口——单次 / 两次即得答案留主干。v1 未闭合前禁止再次 start。",
                 parameters = new
                 {
                     type = "object",

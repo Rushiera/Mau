@@ -657,6 +657,23 @@ namespace CatHome4.Admin
                     return "cat.cfg.set | qqbotEnable 非法值: " + value + "（true/false）";
                 }
             }
+            else if (field == "userInjectIdleOnly")
+            {
+                if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase))
+                {
+                    cfg.UserInjectIdleOnly = true;
+                    applied = "userInjectIdleOnly=true";
+                }
+                else if (string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
+                {
+                    cfg.UserInjectIdleOnly = false;
+                    applied = "userInjectIdleOnly=false";
+                }
+                else
+                {
+                    return "cat.cfg.set | userInjectIdleOnly 非法值: " + value + "（true/false）";
+                }
+            }
             else if (field == "enabledRoots")
             {
                 string[] roots = ValidateEnabledRoots(SplitList(value));
@@ -665,7 +682,7 @@ namespace CatHome4.Admin
             }
             else
             {
-                return "cat.cfg.set | 非法字段: " + field + "（可用: displayName/apiConfigId/persona/toolNames/injectList/packs/qqbotId/qqbotEnable/enabledRoots）";
+                return "cat.cfg.set | 非法字段: " + field + "（可用: displayName/apiConfigId/persona/toolNames/injectList/packs/qqbotId/qqbotEnable/enabledRoots/userInjectIdleOnly）";
             }
             // [段2] 全量写回 + 生效入队（与端点同源：写后 catcfg.apply 主线程泵消费）
             SaveCatCfgData(id, cfg);
@@ -1277,7 +1294,9 @@ namespace CatHome4.Admin
                 // [段4] 会话构造——M1c 每猫独立 Runtime（API 配置池按该猫 apiConfigId 构造）；M2c 声明面按猫裁剪
                 ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig);
                 SessionViewStore viewStore = new SessionViewStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".view.json"));
-                ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, catSpecs, ExecuteTool, viewStore);
+                // A221 工具面解析——持久化快照优先（会话工具头与 system prompt 同命；重启不改面）
+                ToolSpec[] sessionTools = ChatSession.ResolveSessionTools(id, catSpecs);
+                ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, sessionTools, ExecuteTool, viewStore);
                 // M4e 猫级白名单——多猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
                 session.SetCatKey(id);
                 AdminService.ApplyCatRoots(id);

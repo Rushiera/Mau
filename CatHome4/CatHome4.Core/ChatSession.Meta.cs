@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Mau.Runtime;
 
 namespace CH4
@@ -82,6 +83,8 @@ namespace CH4
             {
                 _sessionInstanceId = SessionStore.NewSessionId();
                 _sessionCreatedAt = now;
+                // A221 首建——把当前注入面冻结进快照（无档会话以本次启动面为起点）
+                SaveMeta();
                 return;
             }
             _sessionInstanceId = meta.SessionId == null ? "" : meta.SessionId;
@@ -109,6 +112,11 @@ namespace CH4
             }
             ApplyPersistedNote(meta.Note);
             _contextChars = meta.ContextChars;
+            // A221 旧档补写——快照缺失（升级前落的档）时以本次注入面为起点冻结
+            if (meta.Tools == null || meta.Tools.Length == 0)
+            {
+                SaveMeta();
+            }
         }
 
         /// <summary>
@@ -155,6 +163,8 @@ namespace CH4
             meta.RoundTools = _toolCallCount;
             meta.RoundElapsedMs = ComputeRoundElapsedMs();
             meta.Note = BuildPersistedNote();
+            // A221 工具面快照——与 system prompt 同命：随会话落盘，重启原样恢复
+            meta.Tools = BuildPersistedTools();
             store.Save(meta);
         }
 
@@ -273,6 +283,113 @@ namespace CH4
             {
                 _noteCurrent = _noteTasks.Length - 1;
             }
+        }
+
+        /// <summary>
+        /// 构建工具面持久化形态——当前注入面快照（A221；逐字节冻结，重启恢复原样沿用）。
+        /// </summary>
+        /// <returns>工具面快照（注入面为空 = null）</returns>
+        private SessionToolSpec[] BuildPersistedTools()
+        {
+            if (_tools == null || _tools.Length == 0)
+            {
+                return null;
+            }
+            SessionToolSpec[] tools = new SessionToolSpec[_tools.Length];
+            for (int i = 0; i < _tools.Length; i = i + 1)
+            {
+                SessionToolSpec item = new SessionToolSpec();
+                item.Name = _tools[i].Name;
+                item.Description = _tools[i].Description;
+                item.ParametersJson = _tools[i].ParametersJson;
+                tools[i] = item;
+            }
+            return tools;
+        }
+
+        /// <summary>
+        /// 解析会话工具面——**构造前**调用（A221）：持久化快照优先，无快照（旧档 / 首建）回落池面。
+        /// 🔴 语义 = 会话工具头与 system prompt 同命——仅 session.new 时更换，重启不改面。
+        /// 快照中池已不存在的工具名剔除并出声（工具退役——失败可见，不静默）。
+        /// </summary>
+        /// <param name="catId">猫 key（元数据路径寻址）</param>
+        /// <param name="poolSpecs">当前池面（回落源）</param>
+        /// <returns>本次会话使用的工具面</returns>
+        public static ToolSpec[] ResolveSessionTools(string catId, ToolSpec[] poolSpecs)
+        {
+            SessionToolSpec[] persisted = LoadPersistedTools(catId);
+            if (persisted == null || persisted.Length == 0)
+            {
+                return poolSpecs;
+            }
+            List<ToolSpec> list = new List<ToolSpec>();
+            int dropped = 0;
+            for (int i = 0; i < persisted.Length; i = i + 1)
+            {
+                if (PoolHasName(poolSpecs, persisted[i].Name))
+                {
+                    list.Add(new ToolSpec(persisted[i].Name, persisted[i].Description, persisted[i].ParametersJson));
+                }
+                else
+                {
+                    dropped = dropped + 1;
+                }
+            }
+            if (dropped > 0)
+            {
+                LogStore.Add("CatHome4", 2, "会话工具面快照剔除池外工具 " + dropped.ToString() + " 个（已退役）: " + catId, "TOOL");
+            }
+            if (list.Count == 0)
+            {
+                return poolSpecs;
+            }
+            return list.ToArray();
+        }
+
+        /// <summary>
+        /// 读取持久化工具面快照——路径经 SessionMetaPathProvider 解析（未接线 / 无文件 = null）。
+        /// </summary>
+        /// <param name="catId">猫 key</param>
+        /// <returns>快照；缺失 = null</returns>
+        private static SessionToolSpec[] LoadPersistedTools(string catId)
+        {
+            if (SessionMetaPathProvider == null || catId == null || catId.Length == 0)
+            {
+                return null;
+            }
+            string path = SessionMetaPathProvider(catId);
+            if (path == null || path.Length == 0)
+            {
+                return null;
+            }
+            SessionMeta meta = new SessionMetaStore(path).Load();
+            if (meta == null)
+            {
+                return null;
+            }
+            return meta.Tools;
+        }
+
+        /// <summary>
+        /// 池面名字命中——快照条目是否仍在当前池中（退役剔除判据）。
+        /// </summary>
+        /// <param name="poolSpecs">池面</param>
+        /// <param name="name">工具名</param>
+        /// <returns>true = 仍在池中</returns>
+        private static bool PoolHasName(ToolSpec[] poolSpecs, string name)
+        {
+            if (poolSpecs == null || name == null)
+            {
+                return false;
+            }
+            for (int i = 0; i < poolSpecs.Length; i = i + 1)
+            {
+                if (string.Equals(poolSpecs[i].Name, name, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

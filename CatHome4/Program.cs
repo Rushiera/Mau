@@ -518,8 +518,10 @@ namespace CH4
             }
             // P9.1 会话对象化——默认会话注册（工具表就位后构造——ChatSession 状态机承载面；M2c 声明面按猫裁剪）
             SessionViewStore chatViewStore = new SessionViewStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.view.json"));
+            // A221 工具面解析——持久化快照优先（会话工具头与 system prompt 同命；重启不改面）
+            ToolSpec[] defaultTools = ChatSession.ResolveSessionTools(defaultSessionId, _chatBridge.DefaultToolSpecs);
             _chatBridge.DefaultSession = new ChatSession(defaultSessionId, "majordomo", chatCtx, chatStore,
-                new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _chatBridge.DefaultToolSpecs, ExecuteTool, chatViewStore);
+                new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, defaultTools, ExecuteTool, chatViewStore);
             // M4e 猫级白名单——默认猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
             _chatBridge.DefaultSession.SetCatKey("majordomo");
             _chatBridge.DefaultSession.SetUserInjectIdleOnly(defaultCfg != null && defaultCfg.UserInjectIdleOnly);

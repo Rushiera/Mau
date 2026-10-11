@@ -709,6 +709,8 @@ namespace CH4
         public void SetToolSpecs(ToolSpec[] specs)
         {
             _tools = FilterPrivilegedSpecs(specs);
+            // A221 新会话换面——快照随新会话同步落盘（与 system prompt 同批；design-ch4-tools §三·十一）
+            SaveMeta();
         }
         /// <summary>
         /// 会话注入面工具名——_tools 快照派生（info tools_drift 左值：与本猫当前授权集比对；design-ch4-tools §三·十一）。
