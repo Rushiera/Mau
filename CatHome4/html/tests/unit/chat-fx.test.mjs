@@ -216,6 +216,35 @@ describe('滚动带与桌宠——入口就位（几何 / 素材面归运行态�
         expect(() => { window.chatScrollInit(); window.chatScrollInit(); }).not.toThrow();
     });
 
+    it('滚动带——连续同 data-type 折叠成段，异类断段（A222）', () => {
+        const mk = (type) => {
+            const r = window.el('div', 'chat-row');
+            r.setAttribute('data-type', type);
+            return { row: r, type: type };
+        };
+        const items = [mk('text'), mk('text'), mk('toolcard'), mk('toolcard'), mk('toolcard'), mk('text')];
+        const segs = window.bandFoldSegs(items);
+        expect(segs.map((s) => s.type)).toEqual(['text', 'toolcard', 'text']);
+        expect(segs.map((s) => s.row)).toEqual([items[0].row, items[2].row, items[5].row]);
+        expect(segs.map((s) => s.last)).toEqual([items[1].row, items[4].row, items[5].row]);
+    });
+
+    it('滚动带——段内任一条 .err 整段标失败（A222）', () => {
+        const mk = (cls) => {
+            const r = window.el('div', 'chat-row tool' + (cls ? ' ' + cls : ''));
+            r.setAttribute('data-type', 'toolcard');
+            return { row: r, type: 'toolcard' };
+        };
+        const a = mk('');
+        const b = mk('err');
+        const c = mk('');
+        const segs = window.bandFoldSegs([a, b, c]);
+        expect(segs.length).toBe(1);
+        expect(segs[0].type).toBe('toolcard');
+        expect(segs[0].err).toBe(true);
+        expect(segs[0].last).toBe(c.row);
+    });
+
     it('桌宠——入口声明 + 连接态置位不抛', () => {
         for (const n of ['chatPetInit', 'chatPetSync', 'chatPetSetOffline', 'chatPetSay']) {
             expect(typeof window[n], n).toBe('function');

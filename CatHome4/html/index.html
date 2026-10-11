@@ -192,9 +192,9 @@
                     <button id="catNewBtn" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">新建</button>
                     <button id="catsRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
                 </div>
+                <div id="catsMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag);padding:6px 12px 0 12px"></div>
                 <div style="flex:1;overflow-y:auto;padding:8px 12px">
-                    <table class="box-table" id="catsTable"><thead><tr><th style="width:22%">名称</th><th style="width:30%">ID</th><th style="width:14%">状态</th><th style="width:10%">端口</th><th style="width:24%">操作</th></tr></thead><tbody></tbody></table>
-                    <div id="catsMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag);margin-top:6px"></div>
+                    <div id="catsGroups"></div>
                 </div>
             </section>
         </main>

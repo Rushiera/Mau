@@ -56,6 +56,24 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 .cat-desc { color: var(--ch-title); font-size: var(--ch-fs-strong); margin-bottom: 6px; word-break: break-all; background: var(--ch-desc-bg); border: 1px solid var(--ch-desc-line); border-left: 3px solid var(--ch-title); border-radius: 4px; padding: 4px 8px; }
 .cat-row { font-size: var(--ch-fs-body); color: var(--ch-fg-muted); margin-top: 2px; word-break: break-all; }
 .cat-row .k { color: var(--ch-ok-weak); }
+
+/* ── 多猫管理卡（A223——List→Card 自然排布 + 分组容器）──
+   网格 minmax(300px,1fr)：卡片宽度随容器自适应、同行等高；分组容器现全落默认组（A224 接会话 type 标签分区） */
+.cat-grid-manage { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.cat-grid-manage .cat-card { transition: border-color 0.15s ease-in-out, background-color 0.15s ease-in-out; }
+.cat-grid-manage .cat-card:hover { background: var(--ch-bg-raised); border-color: var(--ch-bg-accent); }
+.cat-group { margin-bottom: 16px; }
+.cat-group-title { color: var(--ch-title); font-size: var(--ch-fs-strong); margin: 2px 0 8px 2px; letter-spacing: 1px; }
+.cat-badge { font-size: var(--ch-fs-body); border-radius: 3px; padding: 1px 6px; border: 1px solid var(--ch-line); background: var(--ch-bg-raised); margin-left: auto; white-space: nowrap; }
+.cat-grid-manage .cat-head { flex-wrap: wrap; }
+.cat-grid-manage .cat-name { white-space: nowrap; }
+.cat-grid-manage .cat-id { white-space: nowrap; }
+.cat-badge.run { color: var(--ch-ok); border-color: var(--ch-ok); }
+.cat-badge.idle { color: var(--ch-fg-faint); }
+.cat-ops { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.cat-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: var(--ch-fs-body); color: var(--ch-fg-muted); margin-top: 4px; }
+.cat-port { color: var(--ch-fg-weak); }
+.cat-ops .btn-mini + .btn-mini { margin-left: 0; }
 .sen-on { color: var(--ch-ok); }
 .sen-off { color: var(--ch-fg-faint); }
 .wire-busy { color: var(--ch-warn); }

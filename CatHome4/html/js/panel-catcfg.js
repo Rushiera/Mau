@@ -1,5 +1,5 @@
 // CH4 外观层——panel-catcfg.js：每猫配置弹层 + 新猫默认模板 + 受控根编辑面（M3c/M3d/M4e）——panel.js 拆分（2026-09-08 体量治理）
-// 依赖：app.js + panel.js 先加载（全局状态已就位；renderCatRow 点击时调用本文件 openCatCfg）；本文件承载 cat.cfg 配置弹层与 workspace 管理
+// 依赖：app.js + panel.js 先加载（全局状态已就位；renderCatCard 点击时调用本文件 openCatCfg）；本文件承载 cat.cfg 配置弹层与 workspace 管理
 // 段15（M3c 每猫配置）+ 段[受控根编辑面]（M3d）原样迁出，逻辑零改动
 
 // [段15] M3c 每猫配置弹层——API 下拉/人设/工具勾选/前文 List
@@ -372,7 +372,7 @@ document.getElementById('catCfgInjectAddBtn').onclick = function () {
     input.value = '';
     renderInjectList(catCfgInjectList);
 };
-// 默认猫配置入口——统一由多猫页 Majordomo 行「配置」按钮承担（openCatCfg 见 panel.js renderCatRow；F2.1 对话页签已移除，页面无独立 chatCfg 元素）
+// 默认猫配置入口——统一由多猫页 Majordomo 行「配置」按钮承担（openCatCfg 见 panel.js renderCatCard；F2.1 对话页签已移除，页面无独立 chatCfg 元素）
 
 // M4e 猫级白名单——启用根勾选（allRoots 全局池；enabledRoots 当前猫已启用；workspace 强制常驻不可取消）
 function renderRootChecks(allRoots, enabledRoots) {
