@@ -179,27 +179,39 @@ namespace CH4
         }
 
         /// <summary>
-        /// 真实前文 append 钩子——用户消息 → user 条目（载荷可选带 src——系统注入标记）。
+        /// 真实前文 append 钩子——用户消息 → user 条目（人工路径专属）。
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="msgIndex">真实前文消息索引（条目业务定位字段）</param>
-        /// <param name="src">来源（空串=人工——不落字段；非空=系统注入类型，落载荷 src）</param>
         /// <param name="origin">原注入来源标记（空串=非 QQ 注入——不落字段；非空=QQ 注入的轮起点锚，落载荷 origin）</param>
-        public void OnUserMessage(LlmMessage m, int msgIndex, string src = "", string origin = "")
+        public void OnUserMessage(LlmMessage m, int msgIndex, string origin = "")
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["text"] = m.Content ?? "";
-            // 来源字段——人工不落字段（缺省即人工，旧 view.json 零迁移）；系统注入落 src
-            if (src != null && src.Length > 0)
-            {
-                payload["src"] = src;
-            }
             // 原注入来源标记——QQ 注入的轮起点锚（缺省不落字段，旧 view.json 零迁移）
             if (origin != null && origin.Length > 0)
             {
                 payload["origin"] = origin;
             }
             Append(m, "user", payload, msgIndex);
+        }
+        /// <summary>
+        /// 真实前文 append 钩子——系统注入消息 → systemautomessage 条目（载荷携带原始来源族名）。
+        /// </summary>
+        /// <param name="m">真实前文消息</param>
+        /// <param name="msgIndex">真实前文消息索引（条目业务定位字段）</param>
+        /// <param name="source">来源族名（systemauto / sleep / timer / delay / restart——原值入载荷，不塌缩）</param>
+        /// <param name="origin">原注入来源标记（空串=非 QQ 注入——不落字段；非空=QQ 注入的轮起点锚，落载荷 origin）</param>
+        public void OnSystemMessage(LlmMessage m, int msgIndex, string source, string origin = "")
+        {
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["text"] = m.Content ?? "";
+            payload["source"] = source ?? "";
+            if (origin != null && origin.Length > 0)
+            {
+                payload["origin"] = origin;
+            }
+            Append(m, "systemautomessage", payload, msgIndex);
         }
 
         /// <summary>
@@ -269,57 +281,6 @@ namespace CH4
         }
 
         /// <summary>
-        /// 顶尾补差——从最后一条的前文来源之后重放缺失消息（A156：视图层写失败 / 中断留下的缺口修复）。
-        /// 判据：只补尾部缺口——不重置已有条目、不追改历史（无既有条目时不做全量重放：旧数据不迁移）。
-        /// </summary>
-        /// <param name="messages">真实前文消息数组</param>
-        /// <returns>补入的条目数（0 = 无缺口 / 无锚不可补）</returns>
-        public int AppendTailMissing(LlmMessage[] messages)
-        {
-            int from = LastMsgIndex() + 1;
-            if (from <= 0)
-            {
-                return 0;
-            }
-            int added = 0;
-            for (int i = from; i < messages.Length; i++)
-            {
-                LlmMessage m = messages[i];
-                if (m.Role == LlmRole.System)
-                {
-                    continue;
-                }
-                if (m.Role == LlmRole.User)
-                {
-                    // 来源回落——补差路径从内容行头前缀识别系统注入（条目缺 src 时的唯一补法）
-                    OnUserMessage(m, i, ChatSession.SysSrcFromContent(m.Content));
-                    added = added + 1;
-                    continue;
-                }
-                if (m.Role == LlmRole.Assistant)
-                {
-                    string toolCalls = m.ToolCallsJson ?? "";
-                    if (toolCalls.Length > 0)
-                    {
-                        OnAssistantToolCalls(m, i);
-                    }
-                    else
-                    {
-                        OnAssistantText(m, i);
-                    }
-                    added = added + 1;
-                    continue;
-                }
-                if (m.Role == LlmRole.Tool)
-                {
-                    OnToolResult(m, i, -1);
-                    added = added + 1;
-                }
-            }
-            return added;
-        }
-
-        /// <summary>
         /// 最后一条的前文来源消息索引——补差锚（-1 = 无前文派生条目）。
         /// </summary>
         /// <returns>消息索引（-1 = 无）</returns>
@@ -366,36 +327,9 @@ namespace CH4
             }
             catch (Exception ex)
             {
-                // A156：视图层为权威（不再可从前文重建）——保存失败必须可见 + 落待补标记（下次载入顶尾补差）
-                LogStore.Add("SessionViewStore", 3, "视图保存失败（已落待补标记，下次载入顶尾补差）: " + ex.Message, "SYS");
-                MarkPendingGap(ex.Message);
+                // A156：视图层为权威——保存失败必须可见（不兜底、不遮蔽：写盘失败是必须暴露的缺陷）
+                LogStore.Add("SessionViewStore", 3, "视图保存失败: " + ex.Message, "SYS");
             }
-        }
-
-        /// <summary>
-        /// 落待补标记——视图保存失败留痕（A156：视图层为权威，静默失败不可接受）。
-        /// 标记文件 = view 文件同址 + ".pending"；载入时检出即顶尾补差并清除。
-        /// </summary>
-        /// <param name="reason">失败原因</param>
-        private void MarkPendingGap(string reason)
-        {
-            try
-            {
-                File.WriteAllText(_path + ".pending", reason == null ? "" : reason);
-            }
-            catch (Exception ex)
-            {
-                LogStore.Add("SessionViewStore", 2, "待补标记写入失败: " + ex.Message, "SYS");
-            }
-        }
-
-        /// <summary>
-        /// 待补标记路径——保存失败留痕文件（载入时据此触发顶尾补差）。
-        /// </summary>
-        /// <returns>标记文件路径</returns>
-        public string PendingGapPath()
-        {
-            return _path + ".pending";
         }
 
         /// <summary>追加轮末统计条目——roundsum（Token 消耗 + 工具次数 + 总耗时 + 用时）。非真实前文派生；写入即落盘——宿主中断不丢。</summary>
@@ -1100,7 +1034,7 @@ namespace CH4
         /// <returns>true=相符</returns>
         private static bool RoleMatches(string renderType, LlmMessage m)
         {
-            if (renderType == "user")
+            if (renderType == "user" || renderType == "systemautomessage")
             {
                 return m.Role == LlmRole.User;
             }

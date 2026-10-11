@@ -146,6 +146,9 @@
                         <textarea id="tplBaseRole" rows="2" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px;resize:vertical"></textarea>
                         <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">默认人设（defaultPersona——新猫创建时继承）</label>
                         <textarea id="tplPersona" rows="2" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px;resize:vertical"></textarea>
+                        <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:flex;align-items:center;gap:6px;cursor:pointer">
+                            <input type="checkbox" id="tplIdleOnly"> 默认人工输入空闲注入（defaultUserInjectIdleOnly——新猫创建时继承；true=人工输入仅在空闲时推送）
+                        </label>
                         <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">默认工具（defaultToolNames——空=全量保底）</label>
                         <div id="tplTools" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
                         <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">默认加载包（defaultPacks——池内 key 子集；新猫创建时继承；空=不挂载；池在「加载包池」区管理）</label>
@@ -213,6 +216,9 @@
             <select id="catCfgQqBot" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px"></select>
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="checkbox" id="catCfgQqEnable"> 启用 qqbot 转发（qqbotEnable——false=不注入不转发）
+            </label>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="catCfgIdleOnly"> 人工输入空闲注入（userInjectIdleOnly——true=人工输入仅在空闲时推送，轮内不插；sys 注入不受影响）
             </label>
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">人设（persona——注入后追加角色段；空=仅基础角色）</label>
             <textarea id="catCfgPersona" rows="3" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px;resize:vertical"></textarea>

@@ -29,6 +29,7 @@
 | type | 文件 | 渲染函数 | 形态 |
 |:--|:--|:--|:--:|
 | `user` | `blocks/user.js` | `buildUserBlock(payload)` | 🫧 气泡 |
+| `systemautomessage` | `blocks/systemautomessage.js` | `buildSystemAutoMessageBlock(payload)` | 🫧 气泡 |
 | `text` | `blocks/text.js` | `buildTextBlock(payload, item)` | 🫧 气泡 |
 | `reason` | `blocks/reason.js` | `buildReasonBlock(payload)` | 🫧 气泡 |
 | `toolcard` | `blocks/toolcard.js` | `buildToolBlock(payload)` | 🫧 气泡 |

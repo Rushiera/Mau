@@ -143,13 +143,13 @@ describe('插话队列（fx/pending）', () => {
     });
 });
 
-// ── ④b 系统注入不打断输入（A204）──────────────
-describe('系统注入不打断输入（A204）', () => {
-    it('系统注入 user 块——不出队在途记录、不切流式', () => {
+// ── ④b 系统注入不打断输入（A219）──────────────
+describe('系统注入不打断输入（A219）', () => {
+    it('系统注入块——不出队在途记录、不切流式', () => {
         window.pendingClear();
         window.pendingAdd('我正在打的一条');
         window.chatLiveShow(false);
-        window.persistAppend([{ type: 'user', payload: { text: '[systemauto]（系统自动）x', src: 'systemauto' } }], true);
+        window.persistAppend([{ type: 'systemautomessage', payload: { text: '[systemauto]（系统自动）x', source: 'systemauto' } }], true);
         // 在途记录仍在——系统注入块未被当成「我的输入已确认」
         expect(window.pendQueue.length).toBe(1);
         expect(document.getElementById('chatPendingPanel').textContent).toContain('我正在打的一条');

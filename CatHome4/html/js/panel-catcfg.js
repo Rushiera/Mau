@@ -29,6 +29,7 @@ function openCatCfg(catId, name) {
             renderApiOptions(d.apiOptions || [], d.apiConfigId || '');
             renderQqBotOptions(d.qqbotOptions || [], d.qqbotId || '');
             document.getElementById('catCfgQqEnable').checked = !!d.qqbotEnable;
+            document.getElementById('catCfgIdleOnly').checked = !!d.userInjectIdleOnly;
             document.getElementById('catCfgPersona').value = d.persona || '';
             renderToolChecks(d.toolNames || '');
             renderInjectList(d.injectList || []);
@@ -332,6 +333,7 @@ function saveCatCfg() {
         packs: collectPackChecks(),
         qqbotId: document.getElementById('catCfgQqBot').value,
         qqbotEnable: document.getElementById('catCfgQqEnable').checked,
+        userInjectIdleOnly: document.getElementById('catCfgIdleOnly').checked,
         enabledRoots: collectRootChecks()
     };
     fetch('/api/v1/cat-config', {
@@ -498,6 +500,7 @@ function loadTpl() {
             }
             document.getElementById('tplBaseRole').value = d.baseRole || '';
             document.getElementById('tplPersona').value = d.defaultPersona || '';
+            document.getElementById('tplIdleOnly').checked = !!d.defaultUserInjectIdleOnly;
             catCfgDefectGroups = d.defectGroups || [];
             renderGroupedChecks('tplTools', d.allTools || d.allToolNames || [], parseToolChecked(d.defaultToolNames || ''), 'off');
             tplInjectList = (d.defaultInjectList || []).slice();
@@ -515,7 +518,8 @@ function saveTpl() {
         defaultPersona: document.getElementById('tplPersona').value,
         defaultToolNames: collectChecked('tplTools').join(','),
         defaultInjectList: tplInjectList,
-        defaultPacks: collectTplPacks()
+        defaultPacks: collectTplPacks(),
+        defaultUserInjectIdleOnly: document.getElementById('tplIdleOnly').checked,
     };
     fetch('/api/v1/cat-default', {
         method: 'POST',

@@ -607,6 +607,7 @@ namespace CatHome4.Admin
                 allPacks = BuildAllPacks(),
                 qqbotId = cfg.QqBotId,
                 qqbotEnable = cfg.QqBotEnable,
+                userInjectIdleOnly = cfg.UserInjectIdleOnly,
                 enabledRoots = cfg.EnabledRoots,
                 allRoots = BuildAllRootsJson(),
                 allToolNames = GetConfigurableToolNames(),
@@ -670,10 +671,12 @@ namespace CatHome4.Admin
             bool injectListPresent = false;
             bool packsPresent = false;
             bool enabledRootsPresent = false;
+            bool userInjectIdleOnlyPresent = false;
             string persona = "";
             string toolNames = "";
             string qqbotId = "";
             bool qqbotEnable = false;
+            bool userInjectIdleOnly = false;
             List<string> injectList = new List<string>();
             List<string> enabledRoots = new List<string>();
             List<string> packs = new List<string>();
@@ -689,6 +692,7 @@ namespace CatHome4.Admin
                     toolNamesPresent = root.TryGetProperty("toolNames", out probeEl);
                     qqbotEnablePresent = root.TryGetProperty("qqbotEnable", out probeEl);
                     enabledRootsPresent = root.TryGetProperty("enabledRoots", out probeEl);
+                    userInjectIdleOnlyPresent = root.TryGetProperty("userInjectIdleOnly", out probeEl);
                     packsPresent = root.TryGetProperty("packs", out probeEl);
                     injectListPresent = root.TryGetProperty("injectList", out probeEl);
                     JsonElement apiConfigIdEl;
@@ -701,6 +705,7 @@ namespace CatHome4.Admin
                     toolNames = GetJsonString(root, "toolNames");
                     qqbotId = GetJsonString(root, "qqbotId");
                     qqbotEnable = GetBoolProp(root, "qqbotEnable");
+                    userInjectIdleOnly = GetBoolProp(root, "userInjectIdleOnly");
                     JsonElement rootsEl;
                     if (root.TryGetProperty("enabledRoots", out rootsEl) && rootsEl.ValueKind == JsonValueKind.Array)
                     {
@@ -826,6 +831,10 @@ namespace CatHome4.Admin
             {
                 cfg.QqBotEnable = qqbotEnable;
             }
+            if (userInjectIdleOnlyPresent)
+            {
+                cfg.UserInjectIdleOnly = userInjectIdleOnly;
+            }
             if (personaPresent)
             {
                 cfg.Persona = persona;
@@ -870,6 +879,7 @@ namespace CatHome4.Admin
             string defaultToolNames = "";
             string[] defaultInjectList = new string[0];
             string[] defaultPacks = new string[0];
+            bool defaultUserInjectIdleOnly = false;
             if (tpl != null)
             {
                 if (tpl.BaseRole != null)
@@ -892,6 +902,7 @@ namespace CatHome4.Admin
                 {
                     defaultPacks = tpl.DefaultPacks;
                 }
+                defaultUserInjectIdleOnly = tpl.DefaultUserInjectIdleOnly;
             }
             var resp = new
             {
@@ -901,6 +912,7 @@ namespace CatHome4.Admin
                 defaultToolNames = defaultToolNames,
                 defaultInjectList = defaultInjectList,
                 defaultPacks = defaultPacks,
+                defaultUserInjectIdleOnly = defaultUserInjectIdleOnly,
                 allToolNames = GetConfigurableToolNames(),
                 allTools = GetToolsWithGroupForConfig(),
                 defectGroups = BuildToolDefectItems(),
@@ -925,6 +937,7 @@ namespace CatHome4.Admin
             string defaultToolNames = "";
             List<string> defaultInjectList = new List<string>();
             List<string> defaultPacks = new List<string>();
+            bool defaultUserInjectIdleOnly = false;
             try
             {
                 using (JsonDocument doc = JsonUtil.ParseStrict(body))
@@ -933,6 +946,7 @@ namespace CatHome4.Admin
                     baseRole = GetJsonString(root, "baseRole");
                     defaultPersona = GetJsonString(root, "defaultPersona");
                     defaultToolNames = GetJsonString(root, "defaultToolNames");
+                    defaultUserInjectIdleOnly = GetBoolProp(root, "defaultUserInjectIdleOnly");
                     JsonElement dPacksEl;
                     if (root.TryGetProperty("defaultPacks", out dPacksEl) && dPacksEl.ValueKind == JsonValueKind.Array)
                     {
@@ -987,6 +1001,7 @@ namespace CatHome4.Admin
             data.DefaultToolNames = ValidateToolNames(defaultToolNames, out removedDefaultToolNames);
             data.DefaultInjectList = defaultInjectList.ToArray();
             data.DefaultPacks = defaultPacks.ToArray();
+            data.DefaultUserInjectIdleOnly = defaultUserInjectIdleOnly;
             SaveCatDefaultCfg(data);
             LogStore.Add("CatHome4", 1, "全局默认模板已保存（注入 " + defaultInjectList.Count.ToString() + " 条）", "CONFIG");
             // A132 剔除出声——被剔名字随响应带回（调用方可见；明细已记日志，不静默）
@@ -1337,6 +1352,7 @@ namespace CatHome4.Admin
                 _chatBridge.DefaultToolNames = toolNames;
                 _chatBridge.DefaultQqBotId = ResolveQqBotId(cfg);
                 _chatBridge.DefaultQqBotEnable = cfg.QqBotEnable;
+                _chatBridge.DefaultSession.SetUserInjectIdleOnly(cfg.UserInjectIdleOnly);
                 Guid newApi = ResolveApiConfigId(cfg);
                 if (_defaultApiConfigId != newApi)
                 {
@@ -1357,6 +1373,8 @@ namespace CatHome4.Admin
             cat.ToolSpecs = specs;
             cat.QqBotId = ResolveQqBotId(cfg);
             cat.QqBotEnable = cfg.QqBotEnable;
+            cat.UserInjectIdleOnly = cfg.UserInjectIdleOnly;
+            cat.Session.SetUserInjectIdleOnly(cfg.UserInjectIdleOnly);
             // M4e 猫级白名单——运行时猫文件系统已在上方 ApplyCatRoots 重建（含本分支）
             Guid newApiId = ResolveApiConfigId(cfg);
             if (cat.ApiConfigId != newApiId)
@@ -1433,7 +1451,8 @@ namespace CatHome4.Admin
                 qqbotId = data.QqBotId,
                 qqbotEnable = data.QqBotEnable,
                 enabledRoots = data.EnabledRoots,
-                packs = data.Packs
+                packs = data.Packs,
+                userInjectIdleOnly = data.UserInjectIdleOnly
             };
             try
             {
@@ -1526,6 +1545,10 @@ namespace CatHome4.Admin
                 data.InjectList = new string[0];
             }
 
+            if (tpl != null)
+            {
+                data.UserInjectIdleOnly = tpl.DefaultUserInjectIdleOnly;
+            }
             SaveCatCfgData("majordomo", data);
             LogStore.Add("CatHome4", 1, "majordomo cat.cfg 缺失——已按默认模板补建", "CONFIG");
         }

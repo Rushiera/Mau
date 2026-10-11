@@ -108,9 +108,9 @@ describe('块型渲染——结构契约', () => {
 });
 
 describe('形态契约', () => {
-    it('persist 八类全气泡，live 三件朴素（2026-10-05 气泡化改判）', () => {
+    it('persist 九类全气泡，live 三件朴素（A219 起）', () => {
         const bubbles = Object.keys(window.BLOCK_DECL).filter((t) => window.BLOCK_DECL[t].form === 'bubble');
-        expect(bubbles.sort()).toEqual(['error', 'inject_report', 'reason', 'retry', 'roundsum', 'text', 'toolcard', 'user']);
+        expect(bubbles.sort()).toEqual(['error', 'inject_report', 'reason', 'retry', 'roundsum', 'systemautomessage', 'text', 'toolcard', 'user']);
         const plains = Object.keys(window.BLOCK_DECL).filter((t) => window.BLOCK_DECL[t].form === 'plain');
         expect(plains.sort()).toEqual(['replysse', 'thinksse', 'toolrun']);
     });
@@ -136,29 +136,25 @@ describe('形态契约', () => {
     });
 });
 
-describe('来源变体（A204——系统注入 user 行）', () => {
-    it('取用口——sys 判据：缺字段 / `user` = 人工；其余非空 = 系统', () => {
-        expect(window.rowSourceClass({})).toBe('');
-        expect(window.rowSourceClass(null)).toBe('');
-        expect(window.rowSourceClass({ src: '' })).toBe('');
-        expect(window.rowSourceClass({ src: 'user' })).toBe('');
-        expect(window.rowSourceClass({ src: 'systemauto' })).toBe('sys');
+describe('系统注入块（A219——systemautomessage）', () => {
+    it('渲染——独立块型；行变体 sysmsg；气泡一件', () => {
+        const node = window.persistRender({ type: 'systemautomessage', msgIndex: 2, payload: { text: '[systemauto]注入', source: 'systemauto' } });
+        expect(node.classList.contains('sysmsg')).toBe(true);
+        expect(node.getAttribute('data-type')).toBe('systemautomessage');
+        expect(node.querySelectorAll('.chat-bubble').length).toBe(1);
     });
 
-    it('user 渲染——系统注入加行变体类，人工不加（缺字段 = 人工）', () => {
+    it('人工 user 块——不带行变体类', () => {
         const human = window.persistRender({ type: 'user', msgIndex: 1, payload: { text: '人工' } });
         expect(human.classList.contains('user')).toBe(true);
-        expect(human.classList.contains('sys')).toBe(false);
-        const sys = window.persistRender({ type: 'user', msgIndex: 2, payload: { text: '[systemauto]注入', src: 'systemauto' } });
-        expect(sys.classList.contains('sys')).toBe(true);
-        expect(sys.querySelectorAll('.chat-bubble').length).toBe(1);
+        expect(human.classList.contains('sysmsg')).toBe(false);
     });
 
-    it('刻度角色——sys 行镜像 `user-sys`；普通 user 与其它 type 不变', () => {
-        const sys = window.persistRender({ type: 'user', msgIndex: 3, payload: { text: 'x', src: 'systemauto' } });
+    it('刻度角色——systemautomessage 走 user-sys；user / text 不变', () => {
+        const sys = window.persistRender({ type: 'systemautomessage', msgIndex: 3, payload: { text: 'x', source: 'sleep' } });
         expect(window.scrollTickRole(sys)).toBe('user-sys');
-        const human = window.persistRender({ type: 'user', msgIndex: 4, payload: { text: 'y' } });
-        expect(window.scrollTickRole(human)).toBe('user');
+        const human2 = window.persistRender({ type: 'user', msgIndex: 4, payload: { text: 'y' } });
+        expect(window.scrollTickRole(human2)).toBe('user');
         const text = window.persistRender({ type: 'text', msgIndex: 5, payload: { text: 'z' } });
         expect(window.scrollTickRole(text)).toBe('reply');
     });

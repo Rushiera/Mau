@@ -198,9 +198,10 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-row { display: flex; animation: chat-in 0.18s ease-out; }
 @keyframes chat-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 .chat-row.user { justify-content: flex-end; }
-/* 系统注入的 user 行（A204）——与常规 user 左右翻转：气泡靠左（同助手侧）；配色不变（仍是 user 泡）
-   判据 = 行变体类 `sys`（载荷 `src` 非空且非 `user`；类名声明处 = registry.js） */
-#chatMsgs .chat-row.user.sys { justify-content: flex-start; }
+/* 系统注入块（A219）——独立块型 systemautomessage：气泡靠左（同助手侧），配色暂用 user 泡（后续单开美化）
+   判据 = 行语义类 `sysmsg`（声明处 = registry.js 的 BLOCK_DECL）；刻度曲线走 `user-sys`（镜像） */
+#chatMsgs .chat-row.sysmsg { justify-content: flex-start; }
+#chatMsgs .chat-row.sysmsg .chat-bubble { background: var(--ch-chat-user-bg); color: var(--ch-chat-user-fg); border: none; }
 .chat-row.assistant { justify-content: flex-start; }
 /* 朴素件（形态契约 · 2026-10-03 莎定）——非气泡块的公共基类：**无底 / 无描边 / 无圆角 / 无内边距**，
    只有字号与语义字色（与 .chat-bubble 同一层级的另一种形态）。

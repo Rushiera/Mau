@@ -1209,6 +1209,7 @@ namespace CatHome4.Admin
                 string toolNames = "";
                 string[] injectList = new string[0];
                 string[] packs = new string[0];
+                bool userInjectIdleOnly = false;
                 if (cfgData != null)
                 {
                     if (cfgData.Persona != null)
@@ -1227,6 +1228,7 @@ namespace CatHome4.Admin
                     {
                         packs = cfgData.Packs;
                     }
+                    userInjectIdleOnly = cfgData.UserInjectIdleOnly;
                 }
                 else
                 {
@@ -1238,6 +1240,7 @@ namespace CatHome4.Admin
                         toolNames = tpl.DefaultToolNames != null ? tpl.DefaultToolNames : "";
                         injectList = tpl.DefaultInjectList != null ? tpl.DefaultInjectList : new string[0];
                         packs = tpl.DefaultPacks != null ? tpl.DefaultPacks : new string[0];
+                        userInjectIdleOnly = tpl.DefaultUserInjectIdleOnly;
                     }
                 }
                 // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）
@@ -1280,6 +1283,7 @@ namespace CatHome4.Admin
                 AdminService.ApplyCatRoots(id);
                 session.AttachEnvInfo(() => BuildEnvInfoProvider());
                 session.AttachRoundNotify(NotifyBalloon);
+                session.SetUserInjectIdleOnly(userInjectIdleOnly);
                 session.LoadView();
                 // A201 会话元数据——启动恢复（实例 ID / 创建时刻 / 两级 token 累计 + A202 请求边界态；文件缺失走首建）
                 session.LoadMeta();
@@ -1300,6 +1304,7 @@ namespace CatHome4.Admin
                 cat.ToolNames = toolNames;
                 cat.InjectList = injectList;
                 cat.Packs = packs;
+                cat.UserInjectIdleOnly = userInjectIdleOnly;
                 cat.ToolSpecs = catSpecs;
                 // §4.3 空值语义可观测——toolNames 空=全量保底（反直觉默认）：解析结果落审计行
                 string toolSource = "子集";

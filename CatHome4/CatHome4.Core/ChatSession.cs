@@ -39,27 +39,47 @@ namespace CH4
         private const long ToolOwnerId = 1;
         /// <summary>系统注入类型——现行唯一值 systemauto（后续类型扩在此处；未知值一律拒绝，不静默回落）。</summary>
         internal const string SysKindSystemAuto = "systemauto";
+
+        /// <summary>系统注入族名——延迟族（与 systemauto 并列，均属 sys 路径）。</summary>
+        internal const string SysKindSleep = "sleep";
+        internal const string SysKindTimer = "timer";
+        internal const string SysKindDelay = "delay";
+        internal const string SysKindRestart = "restart";
+
+        /// <summary>系统注入族名集合——sys 路径来源值域（systemauto + 延迟族）。</summary>
+        internal static readonly string[] SysKindFamily = new string[] { SysKindSystemAuto, SysKindSleep, SysKindTimer, SysKindDelay, SysKindRestart };
         /// <summary>系统注入行头前缀——固定标记（判据规范见 `L1/Discipline.md` §三：user 消息内容以该前缀开头 = 系统注入）。</summary>
         internal const string SysInjectPrefix = "[systemauto]";
         /// <summary>来源标记——人工输入（视图层不写 src 字段；缺省即人工）。</summary>
         internal const string SourceUser = "user";
-        /// <summary>系统注入类型值域校验——当前仅 systemauto（参数面零容忍：未知类型拒绝并出声）。</summary>
-        /// <param name="kind">类型参数</param>
-        /// <returns>true=已知类型</returns>
+        /// <summary>系统注入来源值域校验——systemauto + 延迟族（参数面零容忍：未知来源拒绝并出声）。</summary>
+        /// <param name="kind">来源族名（systemauto / sleep / timer / delay / restart）</param>
+        /// <returns>true=已知来源</returns>
         internal static bool IsKnownSysKind(string kind)
         {
-            return string.Equals(kind, SysKindSystemAuto, StringComparison.Ordinal);
+            if (kind == null)
+            {
+                return false;
+            }
+            for (int i = 0; i < SysKindFamily.Length; i = i + 1)
+            {
+                if (string.Equals(kind, SysKindFamily[i], StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
-        /// <summary>视图层来源投影——人工（user / 空 / 未知）返回空串（不落字段）；系统注入返回 systemauto。</summary>
+        /// <summary>路径判定——来源标记是否属系统注入路径（user / 空 = 人工路径；其余族名 = sys 路径）。</summary>
         /// <param name="source">队列来源标记</param>
-        /// <returns>视图 src 值（空串=人工——前端缺省判据）</returns>
-        internal static string ViewSrcOf(string source)
+        /// <returns>true=系统注入路径</returns>
+        internal static bool IsSysSource(string source)
         {
             if (source == null || source.Length == 0 || string.Equals(source, SourceUser, StringComparison.Ordinal))
             {
-                return "";
+                return false;
             }
-            return SysKindSystemAuto;
+            return true;
         }
         /// <summary>系统注入文本加工——唯一实现：套 [systemauto] 行头前缀（渠道自带前缀由内容携带，本处只加外层标记）。</summary>
         /// <param name="content">注入内容（含渠道自定义前缀）</param>
@@ -77,23 +97,12 @@ namespace CH4
             }
             return SysInjectPrefix + content;
         }
-        /// <summary>来源回落判定——补差路径从内容行头前缀识别系统注入（前缀缺失 = 人工）。</summary>
-        /// <param name="content">用户消息内容</param>
-        /// <returns>视图 src 值（空串=人工 / systemauto=系统注入）</returns>
-        internal static string SysSrcFromContent(string content)
-        {
-            if (content == null || !content.StartsWith(SysInjectPrefix, StringComparison.Ordinal))
-            {
-                return "";
-            }
-            return SysKindSystemAuto;
-        }
         /// <summary>
-        /// 系统注入入口——等价于「系统在前端输入一行」：类型校验 + 前缀加工 + 入队（走 PostUserMessage 全部受理门禁）。
+        /// 系统注入入口——sys 独立路径：类型校验 + 停机态校验 + 入 _sysPending 队列（固定前缀在落前文单点套用）。
         /// 失败可见：未知类型 / 空内容 / 停机态未受理一律返回 ERR（不静默丢弃）。
         /// </summary>
         /// <param name="kind">类型参数（现行仅 systemauto）</param>
-        /// <param name="content">注入内容（渠道自带前缀由调用方拼在内容里）</param>
+        /// <param name="content">注入内容（原值存入——固定前缀在落前文单点套用）</param>
         /// <param name="imagesJson">附件引用 JSON 数组（图片注入用；空串=无附件）</param>
         /// <returns>OK 受理 / ERR|CODE|msg</returns>
         public string PostSystemMessage(string kind, string content, string imagesJson = "")
@@ -111,11 +120,28 @@ namespace CH4
             {
                 return "ERR|BAD_ARGS|系统注入内容为空";
             }
-            string text = BuildSysInjectText(content);
-            if (!PostUserMessage(text, kind, imagesJson))
+            // 停机态拒收——与 user 路径同口径（design-ch4-host-restart §三 T2：停机后等的是在途轮次）
+            string restartState;
+            if (DataBox.TryGet<string>("global", "host_restart_state", out restartState) && restartState == "requested")
             {
+                LogStore.Add("CatHome4", 2, "宿主重启中——sys 注入未受理（类型 " + kind + "）", "RESTART");
                 return "ERR|HOST_RESTARTING|系统注入未受理（宿主重启停机态 · 类型 " + kind + "）";
             }
+            PendingMessage msg = new PendingMessage();
+            msg.Content = content;
+            msg.Source = kind;
+            if (imagesJson == null)
+            {
+                msg.ImagesJson = "";
+            }
+            else
+            {
+                msg.ImagesJson = imagesJson;
+            }
+            msg.Origin = "";
+            msg.Seq = _pendingSeq;
+            _pendingSeq = _pendingSeq + 1;
+            _sysPending.Enqueue(msg);
             LogStore.Add("CatHome4", 1, "系统注入入队: cat=" + _id + " | 类型 " + kind + " | 长度 " + content.Length.ToString(), "CHAT");
             return "OK";
         }
@@ -299,10 +325,19 @@ namespace CH4
 
             /// <summary>原注入来源标记——QQ 注入轮起点锚（空=非 QQ 注入 / 系统注入）；输出转发面据此把「来源」绑定到该消息开启的轮</summary>
             public string Origin;
+
+            /// <summary>入队序号（到达序——两队列合并排序键）</summary>
+            public long Seq;
         }
 
         /// <summary>待处理用户消息队列——忙时排队（原同步阻塞天然排队语义保持）</summary>
         private readonly Queue<PendingMessage> _pending;
+        /// <summary>待处理 sys 消息队列——系统注入独立路径（来源族名随条目携带；与 user 队列并行消费）</summary>
+        private readonly Queue<PendingMessage> _sysPending;
+        /// <summary>入队序号计数器——两队列共享（到达序排序键来源）</summary>
+        private long _pendingSeq;
+        /// <summary>人工输入空闲注入开关——true=人工输入仅在 Idle 时推送（轮内不插）；sys 不受影响（cat.cfg userInjectIdleOnly）</summary>
+        private bool _userInjectIdleOnly;
 
         // [段5] 宿主服务引用（构造注入——宿主级共享面）
         /// <summary>LLM 运行时——ChatStream 调度（宿主 Bootstrap 注入；M3 apiConfigId 切换 SwapLlmRuntime 替换）</summary>
@@ -340,6 +375,12 @@ namespace CH4
         public void SetCatKey(string catKey)
         {
             _catKey = catKey;
+        }
+        /// <summary>设置人工输入空闲注入开关——catcfg.apply 即时应用（cat.cfg userInjectIdleOnly）。</summary>
+        /// <param name="value">true=人工输入仅在 Idle 时推送（轮内不插）；false=现状</param>
+        public void SetUserInjectIdleOnly(bool value)
+        {
+            _userInjectIdleOnly = value;
         }
 
         /// <summary>
@@ -437,6 +478,7 @@ namespace CH4
             _batches = new List<List<ToolOrderDog>>();
             _batchIndex = -1;
             _pending = new Queue<PendingMessage>();
+            _sysPending = new Queue<PendingMessage>();
             _phase = ChatPhase.Idle;
             _round = 0;
             _phaseFrames = 0;
@@ -461,28 +503,11 @@ namespace CH4
 
         /// <summary>
         /// 载入视图层——读回持久块与独立块（A156：载入即权威，不再从前文重建）。
-        /// 载入后检出待补标记 → 顶尾补差（视图写失败 / 中断留下的尾部缺口）+ 对账抽样哨兵。
+        /// 载入后跑对账抽样哨兵（条目来源索引 / 角色一致性核验）。
         /// </summary>
         public void LoadView()
         {
             _viewStore.Load();
-            int added = 0;
-            if (System.IO.File.Exists(_viewStore.PendingGapPath()))
-            {
-                added = _viewStore.AppendTailMissing(_context.GetMessages());
-                try
-                {
-                    System.IO.File.Delete(_viewStore.PendingGapPath());
-                }
-                catch (Exception ex)
-                {
-                    LogStore.Add("CatHome4", 2, "待补标记清除失败: " + ex.Message, "SYS");
-                }
-                if (added > 0)
-                {
-                    LogStore.Add("CatHome4", 3, "视图顶尾补差：" + added.ToString() + " 块（上次保存失败留下的尾部缺口）", "SYS");
-                }
-            }
             _viewStore.AuditEntries(_context.GetMessages(), 5);
         }
         /// <summary>
@@ -796,7 +821,7 @@ namespace CH4
         {
             get
             {
-                return _pending.Count;
+                return _pending.Count + _sysPending.Count;
             }
         }
 
@@ -1000,7 +1025,8 @@ namespace CH4
         /// </summary>
         private void DropPendingIfRestarting()
         {
-            if (_pending.Count == 0)
+            int total = _pending.Count + _sysPending.Count;
+            if (total == 0)
             {
                 return;
             }
@@ -1008,9 +1034,54 @@ namespace CH4
             {
                 return;
             }
-            int dropped = _pending.Count;
+            int dropped = total;
             _pending.Clear();
+            _sysPending.Clear();
             LogStore.Add("CatHome4", 2, "宿主重启停机态——丢弃在途排队消息 " + dropped.ToString() + " 条", "RESTART");
+        }
+        /// <summary>待处理消息合并排序键——入队序号升序（到达序）。</summary>
+        /// <param name="a">条目 A</param>
+        /// <param name="b">条目 B</param>
+        /// <returns>比较结果</returns>
+        private static int ComparePendingBySeq(PendingMessage a, PendingMessage b)
+        {
+            return a.Seq.CompareTo(b.Seq);
+        }
+        /// <summary>两队列按到达时间序合并取尽（user / sys 平行路径）。</summary>
+        /// <param name="includeUser">true=取人工队列（Idle 启动 / 未开启空闲注入）；false=仅取 sys 队列</param>
+        /// <returns>按入队序升序的消息清单</returns>
+        private List<PendingMessage> TakeAllPendingByTime(bool includeUser)
+        {
+            List<PendingMessage> all = new List<PendingMessage>();
+            // 人工队列——空闲注入开启时轮内不取（仅 Idle 启动取）
+            if (includeUser)
+            {
+                while (_pending.Count > 0)
+                {
+                    all.Add(_pending.Dequeue());
+                }
+            }
+            while (_sysPending.Count > 0)
+            {
+                all.Add(_sysPending.Dequeue());
+            }
+            all.Sort(ComparePendingBySeq);
+            return all;
+        }
+        /// <summary>本轮边界——两队列按到达序取尽并插入前文（user / sys 双路径；同注入点多条一并）。</summary>
+        /// <returns>true=有插入（调用方据此续轮）</returns>
+        private bool FlushPendingIntoRound()
+        {
+            List<PendingMessage> pending = TakeAllPendingByTime(!_userInjectIdleOnly);
+            if (pending.Count == 0)
+            {
+                return false;
+            }
+            for (int i = 0; i < pending.Count; i = i + 1)
+            {
+                AppendInjection(pending[i].Content, pending[i].Source, pending[i].ImagesJson, pending[i].Origin);
+            }
+            return true;
         }
 
         /// <summary>
@@ -1091,6 +1162,8 @@ namespace CH4
             msg.Source = source;
             msg.ImagesJson = imagesJson;
             msg.Origin = origin;
+            msg.Seq = _pendingSeq;
+            _pendingSeq = _pendingSeq + 1;
             _pending.Enqueue(msg);
             return true;
         }
@@ -1124,7 +1197,7 @@ namespace CH4
                     StartContinueRound();
                     return;
                 }
-                if (_pending.Count > 0)
+                if (_pending.Count > 0 || _sysPending.Count > 0)
                 {
                     // 轮首取尽——本帧排队条目全部落前文（FIFO）后启一轮；sleep 作废告知置最前
                     StartRoundFromPending();
@@ -1187,11 +1260,7 @@ namespace CH4
         /// </summary>
         private void StartRoundFromPending()
         {
-            List<PendingMessage> batch = new List<PendingMessage>();
-            while (_pending.Count > 0)
-            {
-                batch.Add(_pending.Dequeue());
-            }
+            List<PendingMessage> batch = TakeAllPendingByTime(true);
             if (batch.Count == 0)
             {
                 return;
@@ -1202,37 +1271,38 @@ namespace CH4
             string notice = ConsumeSleepOnWake(batch[0].Source);
             if (notice.Length > 0)
             {
-                AppendUserInjection(notice, SysKindSystemAuto, "");
+                AppendInjection(notice, SysKindSystemAuto, "");
             }
             for (int i = 0; i < batch.Count; i = i + 1)
             {
-                AppendUserInjection(batch[i].Content, batch[i].Source, batch[i].ImagesJson, batch[i].Origin);
+                AppendInjection(batch[i].Content, batch[i].Source, batch[i].ImagesJson, batch[i].Origin);
             }
             SetChatState("working");
             LaunchLlm();
         }
         /// <summary>
-        /// 用户注入落前文 + 视图——来源贯通（视图层按 ViewSrcOf 投影 src；附件随消息落盘）。
+        /// 消息注入落前文 + 视图——路径分派（sys → systemautomessage 块 + 固定前缀；人工 → user 块）。
         /// </summary>
-        /// <param name="content">注入内容（系统注入已含行头前缀）</param>
+        /// <param name="content">注入内容（sys 路径在方法内套固定前缀——入口无须预处理）</param>
         /// <param name="source">队列来源标记</param>
         /// <param name="imagesJson">附件引用 JSON 数组（空串=无附件）</param>
         /// <param name="origin">原注入来源标记（空串=非 QQ 注入；非空=QQ 注入的轮起点锚——视图层落载荷 origin 供转发面轮绑定）</param>
-        private void AppendUserInjection(string content, string source, string imagesJson, string origin = "")
+        private void AppendInjection(string content, string source, string imagesJson, string origin = "")
         {
             string text = content;
             if (text == null)
             {
                 text = "";
             }
-            // 系统注入标记——落前文单点兜底：凡系统来源（含延迟族 sleep/timer/delay/restart）统一套行头前缀
-            if (ViewSrcOf(source).Length > 0)
-            {
-                text = BuildSysInjectText(text);
-            }
             if (origin == null)
             {
                 origin = "";
+            }
+            // 路径分派——sys 来源套固定行头前缀并落 systemautomessage 块；人工路径落 user 块
+            bool isSys = IsSysSource(source);
+            if (isSys)
+            {
+                text = BuildSysInjectText(text);
             }
             LlmMessage? msg;
             if (imagesJson != null && imagesJson.Length > 0)
@@ -1248,7 +1318,15 @@ namespace CH4
                 return;
             }
             AppendMessage(msg.Value);
-            _viewStore.OnUserMessage(LastMessage(), _context.GetMessageCount() - 1, ViewSrcOf(source), origin);
+            int msgIndex = _context.GetMessageCount() - 1;
+            if (isSys)
+            {
+                _viewStore.OnSystemMessage(LastMessage(), msgIndex, source, origin);
+            }
+            else
+            {
+                _viewStore.OnUserMessage(LastMessage(), msgIndex, origin);
+            }
         }
 
         /// <summary>
@@ -1958,10 +2036,8 @@ namespace CH4
                 // A196 临时区——本轮收尾写空态（内容已由持久区承载）
                 _viewBus.SetLive("empty", "");
                 // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + 直接开新轮（跳过 Done/CloseRound）
-                if (_pending.Count > 0)
+                if (FlushPendingIntoRound())
                 {
-                    PendingMessage next = _pending.Dequeue();
-                    AppendUserInjection(next.Content, next.Source, next.ImagesJson, next.Origin);
                     _round = 0;
                     LaunchLlm();
                     return;
@@ -2546,10 +2622,8 @@ namespace CH4
             // A72——停机态丢弃在途排队消息（宿主即将重启，不再开新轮）
             DropPendingIfRestarting();
             // 单向数据流改造——忙时插话：工具批完成有排队消息 → 插入 Ctx + 直接续轮（工具结果 + 插话同轮可见）
-            if (_pending.Count > 0)
+            if (FlushPendingIntoRound())
             {
-                PendingMessage next = _pending.Dequeue();
-                AppendUserInjection(next.Content, next.Source, next.ImagesJson, next.Origin);
                 _round = 0;
                 LaunchLlm();
                 return;

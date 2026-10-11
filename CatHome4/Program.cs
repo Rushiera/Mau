@@ -522,6 +522,7 @@ namespace CH4
                 new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, _chatBridge.DefaultToolSpecs, ExecuteTool, chatViewStore);
             // M4e 猫级白名单——默认猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
             _chatBridge.DefaultSession.SetCatKey("majordomo");
+            _chatBridge.DefaultSession.SetUserInjectIdleOnly(defaultCfg != null && defaultCfg.UserInjectIdleOnly);
             AdminService.ApplyCatRoots("majordomo");
             _chatBridge.DefaultSession.AttachEnvInfo(() => BuildEnvInfo());
             _chatBridge.DefaultSession.AttachRoundNotify(Program.NotifyBalloon);

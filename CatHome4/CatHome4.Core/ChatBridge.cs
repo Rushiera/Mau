@@ -179,7 +179,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 延迟条目投递——按猫 key 找会话 → PostUserMessage（忙时天然排队，不打断在途轮次）。
+        /// 延迟条目投递——按猫 key 找会话 → sys 投递入口（入 sys 队列；忙时排队，不打断在途轮次）。
         /// 停机态：未受理（条目保留待重投）；归属会话不存在：条目丢弃并出声（不静默）。
         /// </summary>
         /// <param name="catKey">归属会话（猫 key）</param>
@@ -197,7 +197,7 @@ namespace CH4
             {
                 if (_sessions[i].Id == catKey)
                 {
-                    _sessions[i].PostUserMessage(content, source);
+                    _sessions[i].PostSystemMessage(source, content);
                     return true;
                 }
             }
