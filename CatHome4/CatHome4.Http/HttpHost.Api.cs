@@ -41,6 +41,11 @@ namespace CatHome4.Http
                 {
                     client.Queue.Writer.TryWrite(client.NextFrame("snapshot", _snapshotCache));
                 }
+                // A225c——连接建立补猫卡 state 首帧（重连即自愈；仅订阅者；连接私有帧不广播）
+                if (client.Wants("state") && _catsStateCache.Length > 0)
+                {
+                    client.Queue.Writer.TryWrite(client.NextFrame("state", _catsStateCache));
+                }
                 // v2 契约——视图全量首帧（含状态段）：新连接取一次当前快照（替代前端连接建立后自行拉取）；
                 // 连接私有帧（不广播、不进变更集）——此后帧轮增量自然接续；断线重连即自愈（自动再取一次全量）
                 if (_viewFullBuilder != null && client.Wants("view"))

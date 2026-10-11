@@ -252,48 +252,14 @@ namespace CatHome4.Observe
             for (int i = 0; i < all.Count; i++)
             {
                 ChatSession s = all[i];
-                // 运行态七态（2026-09-16）——当前态 + 各态累计毫秒 + 本轮请求次数（前端拉取口子：快照 sessions 段）
-                string runStateName;
-                int runRequests;
-                Dictionary<string, long> runMs = s.GetRunState(out runStateName, out runRequests);
-                sessions.Add(new
-                {
-                    id = s.Id,
-                    name = s.DisplayName,
-                    phase = PhaseText(s.Phase),
-                    runState = runStateName,
-                    runMs = runMs,
-                    requests = runRequests,
-                    round = s.Round,
-                    msgCount = s.MsgCount,
-                    pending = s.PendingCount,
-                    noteActive = s.NoteActive,
-                    lastContextChangeAt = s.LastContextChangeAt
-                });
+                // A225 会话态统一投影——与猫列表 / cat.info 同源（ChatSession.BuildStateEntry）
+                Dictionary<string, object> entry = s.BuildStateEntry();
+                entry["id"] = s.Id;
+                entry["name"] = s.DisplayName;
+                entry["lastContextChangeAt"] = s.LastContextChangeAt;
+                sessions.Add(entry);
             }
             return sessions;
-        }
-
-        /// <summary>
-        /// 相位文本化——ChatPhase 枚举 → 状态徽标串（快照对外文本；未知回退 Idle）
-        /// </summary>
-        /// <param name="phase">会话相位</param>
-        /// <returns>文本（Idle/LlmRunning/ToolBatchRunning/Done）</returns>
-        private static string PhaseText(ChatPhase phase)
-        {
-            if (phase == ChatPhase.LlmRunning)
-            {
-                return "LlmRunning";
-            }
-            if (phase == ChatPhase.ToolBatchRunning)
-            {
-                return "ToolBatchRunning";
-            }
-            if (phase == ChatPhase.Done)
-            {
-                return "Done";
-            }
-            return "Idle";
         }
 
         /// <summary>

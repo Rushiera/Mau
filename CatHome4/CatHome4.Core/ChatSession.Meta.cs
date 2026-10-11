@@ -29,6 +29,9 @@ namespace CH4
         /// <summary>最近一次请求的前文长度（token）——落盘快照；未发起请求时读面回落此值（A202）</summary>
         private long _persistedContextTokens;
 
+        /// <summary>最后活跃时刻落盘快照（session.json LastActiveAt）——内存前文变动时刻为 0 时读面回落源（A225b）</summary>
+        private long _persistedLastActiveAt;
+
         /// <summary>前文总字符数——轮末 / 恢复时刷新（state 段读此缓存，不逐帧重算）</summary>
         private long _contextChars;
 
@@ -93,6 +96,7 @@ namespace CH4
                 _sessionInstanceId = SessionStore.NewSessionId();
             }
             _sessionCreatedAt = meta.CreatedAt;
+            _persistedLastActiveAt = meta.LastActiveAt;
             _sessionPrompt = meta.SessionTokens.Prompt;
             _sessionCacheHit = meta.SessionTokens.CacheHit;
             _sessionCompletion = meta.SessionTokens.Completion;

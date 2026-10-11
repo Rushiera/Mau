@@ -42,8 +42,11 @@ namespace CH4
 
         /// <summary>系统注入族名——延迟族（与 systemauto 并列，均属 sys 路径）。</summary>
         internal const string SysKindSleep = "sleep";
+        /// <summary>延迟族——timer 排程注入来源。</summary>
         internal const string SysKindTimer = "timer";
+        /// <summary>延迟族——delay 人工延迟来源。</summary>
         internal const string SysKindDelay = "delay";
+        /// <summary>延迟族——restart 宿主重启回执来源。</summary>
         internal const string SysKindRestart = "restart";
 
         /// <summary>系统注入族名集合——sys 路径来源值域（systemauto + 延迟族）。</summary>
@@ -602,6 +605,20 @@ namespace CH4
             get
             {
                 return _context.LastChangeAt;
+            }
+        }
+
+        /// <summary>
+        /// 已知最后活跃时刻——内存前文变动时刻优先；为 0（恢复导入不刷新）回落落盘快照，再为 0 回落创建时刻。
+        /// 控制台「最后活跃」统一消费本属性（A225b——通道不再空置）。
+        /// </summary>
+        public long LastActiveAtKnown
+        {
+            get
+            {
+                if (_context.LastChangeAt > 0) { return _context.LastChangeAt; }
+                if (_persistedLastActiveAt > 0) { return _persistedLastActiveAt; }
+                return _sessionCreatedAt;
             }
         }
 
@@ -1813,6 +1830,40 @@ namespace CH4
                     ("reply", ms["reply"])))),
                 ("requests", requests));
         }
+        /// <summary>
+        /// 会话态统一投影——控制台各通道（猫列表 / 快照会话段 / cat.info）单一数据源（A225）。
+        /// 字段 = 运行态 + 计数 + 前文 + 会话级 token；猫元数据（id / name / 端口 / 类型）由调用方补齐。
+        /// </summary>
+        /// <returns>会话态字段字典</returns>
+        internal Dictionary<string, object> BuildStateEntry()
+        {
+            Dictionary<string, object> entry = new Dictionary<string, object>();
+            string runStateName;
+            int requests;
+            Dictionary<string, long> runMs = GetRunState(out runStateName, out requests);
+            entry["phase"] = Phase.ToString();
+            entry["runState"] = runStateName;
+            entry["runMs"] = runMs;
+            entry["requests"] = requests;
+            entry["round"] = Round;
+            entry["msgCount"] = MsgCount;
+            entry["pending"] = PendingCount;
+            entry["noteActive"] = NoteActive;
+            entry["contextCount"] = ContextCount;
+            entry["context"] = ContextTokensKnown;
+            entry["contextChars"] = ComputeContextChars();
+            entry["lastActiveAt"] = LastActiveAtKnown;
+            entry["sessionPrompt"] = _sessionPrompt;
+            entry["sessionCompletion"] = _sessionCompletion;
+            entry["sessionCacheHit"] = _sessionCacheHit;
+            SessionTokens st = new SessionTokens();
+            st.Prompt = _sessionPrompt;
+            st.CacheHit = _sessionCacheHit;
+            st.Completion = _sessionCompletion;
+            entry["sessionMiss"] = st.Miss;
+            entry["sessionRate"] = st.Rate;
+            return entry;
+        }
         /// <summary>快照全量帧——v2 契约（连接建立首帧取一次；宿主 HTTP 侧注入）</summary>
         /// <returns>全量帧 JSON（state + persist:full + live）</returns>
         public string BuildViewFullJson()
@@ -1890,11 +1941,7 @@ namespace CH4
             // A201 会话元数据面——displayName / 会话实例 ID / 时间戳 / 前文条数与字符数（持久化面见 design-ch4-protocol §十三）
             // 易用性修复（A201 前端轮）：① lastActiveAt 在恢复导入后为 0（ReplaceMessages 不刷新）→ 回落创建时刻（与落盘面 SaveMeta 同口径）
             //                       ② contextChars 原缓存只在轮末刷新（轮内滞后）→ 推送时实时刷新
-            long lastActive = _context.LastChangeAt;
-            if (lastActive <= 0)
-            {
-                lastActive = _sessionCreatedAt;
-            }
+            long lastActive = LastActiveAtKnown;
             _contextChars = ComputeContextChars();
             string metaJson = JsonUtil.Object(
                 ("catId", _id),

@@ -27,6 +27,9 @@ namespace CatHome4.Admin
             /// <summary>显示名——用户输入（cat.new 参数）</summary>
             public string DisplayName;
 
+            /// <summary>会话 Type 标签——cat.cfg 持久化（A224；空=默认组；自由文本）</summary>
+            public string Type;
+
             /// <summary>运行态——true=HttpHost 监听中</summary>
             public bool Running;
 
@@ -92,6 +95,9 @@ namespace CatHome4.Admin
 
             /// <summary>显示名</summary>
             public string DisplayName { get; set; }
+
+            /// <summary>会话 Type 标签——前端按标签分区排布 Cat Card（A224；空=默认组；自由文本）</summary>
+            public string Type { get; set; }
 
             /// <summary>运行态——启动扫描拉起依据</summary>
             public bool Running { get; set; }
@@ -273,6 +279,7 @@ namespace CatHome4.Admin
                     CatCfgData data = new CatCfgData();
                     data.Id = GetStringProp(root, "id");
                     data.DisplayName = GetStringProp(root, "displayName");
+                    data.Type = GetStringProp(root, "type");
                     data.Running = GetBoolProp(root, "running");
                     data.Port = GetIntProp(root, "port");
                     data.ApiConfigId = GetStringProp(root, "apiConfigId");
@@ -303,6 +310,7 @@ namespace CatHome4.Admin
             CatCfgData data = new CatCfgData();
             data.Id = cat.Id;
             data.DisplayName = cat.DisplayName;
+            data.Type = cat.Type;
             data.ApiConfigId = cat.ApiConfigId.ToString("D");
             data.Persona = cat.Persona;
             data.ToolNames = cat.ToolNames;

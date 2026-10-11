@@ -599,6 +599,7 @@ namespace CatHome4.Admin
             {
                 ok = true,
                 cat = catKey,
+                type = cfg.Type,
                 apiConfigId = cfg.ApiConfigId,
                 persona = cfg.Persona,
                 toolNames = cfg.ToolNames,
@@ -666,6 +667,7 @@ namespace CatHome4.Admin
             // A41-3 显式空值语义——字段出现且为空/全零 = 清空回默认端点（字段缺省 = 保留旧值）
             bool apiConfigIdPresent = false;
             bool personaPresent = false;
+            bool typePresent = false;
             bool toolNamesPresent = false;
             bool qqbotEnablePresent = false;
             bool injectListPresent = false;
@@ -673,6 +675,7 @@ namespace CatHome4.Admin
             bool enabledRootsPresent = false;
             bool userInjectIdleOnlyPresent = false;
             string persona = "";
+            string typeValue = "";
             string toolNames = "";
             string qqbotId = "";
             bool qqbotEnable = false;
@@ -689,6 +692,7 @@ namespace CatHome4.Admin
                     // 字段级合并写（2026-10-02 判例蒸馏轮）——先登记本请求出现的字段（缺省 = 保留旧值）
                     JsonElement probeEl;
                     personaPresent = root.TryGetProperty("persona", out probeEl);
+                    typePresent = root.TryGetProperty("type", out probeEl);
                     toolNamesPresent = root.TryGetProperty("toolNames", out probeEl);
                     qqbotEnablePresent = root.TryGetProperty("qqbotEnable", out probeEl);
                     enabledRootsPresent = root.TryGetProperty("enabledRoots", out probeEl);
@@ -702,6 +706,7 @@ namespace CatHome4.Admin
                     }
                     apiConfigId = GetJsonString(root, "apiConfigId");
                     persona = GetJsonString(root, "persona");
+                    typeValue = GetJsonString(root, "type");
                     toolNames = GetJsonString(root, "toolNames");
                     qqbotId = GetJsonString(root, "qqbotId");
                     qqbotEnable = GetBoolProp(root, "qqbotEnable");
@@ -838,6 +843,10 @@ namespace CatHome4.Admin
             if (personaPresent)
             {
                 cfg.Persona = persona;
+            }
+            if (typePresent)
+            {
+                cfg.Type = typeValue == null ? "" : typeValue.Trim();
             }
             if (toolNamesPresent)
             {
@@ -1368,6 +1377,7 @@ namespace CatHome4.Admin
                 return "catcfg.apply | 猫不存在: " + key;
             }
             cat.Persona = persona;
+            cat.Type = cfg.Type == null ? "" : cfg.Type;
             cat.InjectList = injectList;
             cat.ToolNames = toolNames;
             cat.ToolSpecs = specs;
@@ -1443,6 +1453,7 @@ namespace CatHome4.Admin
             {
                 id = data.Id,
                 displayName = data.DisplayName,
+                type = data.Type,
                 apiConfigId = data.ApiConfigId,
                 persona = data.Persona,
                 // M2c 写时校验——序列化前比对内置清单过滤非法名（外部损坏防御：持久化面只落合法名）

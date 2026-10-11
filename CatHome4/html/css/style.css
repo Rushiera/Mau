@@ -8,6 +8,15 @@
     --ch-phase-llm-bg: var(--ch-info);
     --ch-phase-tool-bg: var(--ch-warn);
     --ch-phase-done-bg: var(--ch-ok);
+    /* L2 主面板运行态七态（猫卡相位——值与 chat.css 六态同源） */
+    --ch-state-link: #8a8a8a;
+    --ch-state-wait: #7a8a7a;
+    --ch-state-think: #e6c255;
+    --ch-state-tool: #7a8b3f;
+    --ch-state-run: #8ab8d8;
+    --ch-state-reply: #f0e6d2;
+    --ch-state-all: #c0a8e0;
+    --ch-chat-ai-fg: var(--ch-fg-strong);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var(--ch-fg); height: 100vh; overflow: hidden; }
@@ -64,15 +73,31 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 .cat-grid-manage .cat-card:hover { background: var(--ch-bg-raised); border-color: var(--ch-bg-accent); }
 .cat-group { margin-bottom: 16px; }
 .cat-group-title { color: var(--ch-title); font-size: var(--ch-fs-strong); margin: 2px 0 8px 2px; letter-spacing: 1px; }
-.cat-badge { font-size: var(--ch-fs-body); border-radius: 3px; padding: 1px 6px; border: 1px solid var(--ch-line); background: var(--ch-bg-raised); margin-left: auto; white-space: nowrap; }
 .cat-grid-manage .cat-head { flex-wrap: wrap; }
 .cat-grid-manage .cat-name { white-space: nowrap; }
 .cat-grid-manage .cat-id { white-space: nowrap; }
-.cat-badge.run { color: var(--ch-ok); border-color: var(--ch-ok); }
-.cat-badge.idle { color: var(--ch-fg-faint); }
-.cat-ops { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+/* 运行态——右：当前七态名（仅运行中显示）+ 圆点（绿=运行 / 灰=停；A225） */
+.cat-status { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.cat-runstate { font-size: var(--ch-fs-sub); color: var(--ch-fg-weak); white-space: nowrap; }
+.cat-runstate.link { color: var(--ch-state-link); }
+.cat-runstate.wait { color: var(--ch-state-wait); }
+.cat-runstate.think { color: var(--ch-state-think); }
+.cat-runstate.tool { color: var(--ch-state-tool); }
+.cat-runstate.run { color: var(--ch-state-run); }
+.cat-runstate.reply { color: var(--ch-state-reply); }
+.cat-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ch-fg-faint); flex: none; }
+.cat-dot.on { background: var(--ch-ok); }
+.cat-ops { display: flex; flex-wrap: wrap; gap: 6px; margin-top: calc(10px + var(--ch-fs-body) / 2); }
 .cat-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: var(--ch-fs-body); color: var(--ch-fg-muted); margin-top: 4px; }
 .cat-port { color: var(--ch-fg-weak); }
+.cat-foot { font-size: var(--ch-fs-body); color: var(--ch-fg-weak); margin-top: 4px; }
+.cat-foot-line { margin-top: 2px; }
+.cat-foot .ci-num { color: var(--ch-chat-ai-fg); }
+.cat-foot .ci-rate { color: var(--ch-state-all); }
+.cat-foot .ci-hit { color: var(--ch-state-run); font-size: calc(1em + 1px); }
+.cat-foot .ci-miss { color: var(--ch-state-think); font-size: calc(1em + 1px); }
+.cat-foot .ci-down { color: var(--ch-err); font-size: calc(1em + 1px); }
+.cat-foot .num-frac { font-style: normal; color: var(--ch-fg-weak); font-size: calc(1em - 1px); }
 .cat-ops .btn-mini + .btn-mini { margin-left: 0; }
 .sen-on { color: var(--ch-ok); }
 .sen-off { color: var(--ch-fg-faint); }

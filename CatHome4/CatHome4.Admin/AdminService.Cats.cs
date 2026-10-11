@@ -588,6 +588,11 @@ namespace CatHome4.Admin
                 applied = "apiConfigId=" + normalized;
                 immediate = true;
             }
+            else if (field == "type")
+            {
+                cfg.Type = value.Trim();
+                applied = "type=" + (cfg.Type.Length > 0 ? cfg.Type : "（已清空）");
+            }
             else if (field == "persona")
             {
                 cfg.Persona = value;
@@ -682,7 +687,7 @@ namespace CatHome4.Admin
             }
             else
             {
-                return "cat.cfg.set | 非法字段: " + field + "（可用: displayName/apiConfigId/persona/toolNames/injectList/packs/qqbotId/qqbotEnable/enabledRoots/userInjectIdleOnly）";
+                return "cat.cfg.set | 非法字段: " + field + "（可用: displayName/apiConfigId/persona/type/toolNames/injectList/packs/qqbotId/qqbotEnable/enabledRoots/userInjectIdleOnly）";
             }
             // [段2] 全量写回 + 生效入队（与端点同源：写后 catcfg.apply 主线程泵消费）
             SaveCatCfgData(id, cfg);
@@ -984,11 +989,11 @@ namespace CatHome4.Admin
             {
                 majorSession = _chatBridge.DefaultSession;
             }
-            catList.Add(BuildCatInfoEntry("majordomo", "majordomo", _majorHost != null, _majorPort, true, majorSession));
+            catList.Add(BuildCatInfoEntry("majordomo", "majordomo", _majorHost != null, _majorPort, true, majorSession, ""));
             for (int i = 0; i < _cats.Count; i = i + 1)
             {
                 CatEntry cat = _cats[i];
-                catList.Add(BuildCatInfoEntry(cat.Id, cat.DisplayName, cat.Running, cat.Port, false, cat.Session));
+                catList.Add(BuildCatInfoEntry(cat.Id, cat.DisplayName, cat.Running, cat.Port, false, cat.Session, cat.Type));
             }
             Dictionary<string, object> info = new Dictionary<string, object>();
             info["ok"] = true;
@@ -1010,11 +1015,12 @@ namespace CatHome4.Admin
         /// <param name="special">是否主干特殊会话（禁停禁删）</param>
         /// <param name="session">会话实体（可空）</param>
         /// <returns>状态条目字典</returns>
-        private static Dictionary<string, object> BuildCatInfoEntry(string id, string name, bool running, int port, bool special, ChatSession session)
+        private static Dictionary<string, object> BuildCatInfoEntry(string id, string name, bool running, int port, bool special, ChatSession session, string type)
         {
             Dictionary<string, object> entry = new Dictionary<string, object>();
             entry["id"] = id;
             entry["name"] = name;
+            entry["type"] = type == null ? "" : type;
             entry["special"] = special;
             entry["running"] = running;
             entry["port"] = port;
@@ -1022,20 +1028,12 @@ namespace CatHome4.Admin
             {
                 return entry;
             }
-            string runStateName;
-            int requests;
-            Dictionary<string, long> runMs = session.GetRunState(out runStateName, out requests);
-            entry["phase"] = session.Phase.ToString();
-            entry["runState"] = runStateName;
-            entry["runMs"] = runMs;
-            entry["requests"] = requests;
-            entry["round"] = session.Round;
-            entry["msgCount"] = session.MsgCount;
-            entry["pending"] = session.PendingCount;
-            entry["noteActive"] = session.NoteActive;
-            entry["contextCount"] = session.ContextCount;
-            entry["context"] = session.ContextTokensKnown;
-            entry["lastActiveAt"] = session.LastContextChangeAt;
+            // A225 会话态统一投影——猫列表 / 快照会话段 / cat.info 同源（ChatSession.BuildStateEntry）
+            Dictionary<string, object> state = session.BuildStateEntry();
+            foreach (KeyValuePair<string, object> kv in state)
+            {
+                entry[kv.Key] = kv.Value;
+            }
             return entry;
         }
 
@@ -1223,6 +1221,7 @@ namespace CatHome4.Admin
                 }
                 // [段2] 每猫配置四字段——persona/toolNames/injectList/packs（M2/R4；cfg 缺失=新猫走全局默认模板继承）
                 string persona = "";
+                string type = "";
                 string toolNames = "";
                 string[] injectList = new string[0];
                 string[] packs = new string[0];
@@ -1232,6 +1231,10 @@ namespace CatHome4.Admin
                     if (cfgData.Persona != null)
                     {
                         persona = cfgData.Persona;
+                    }
+                    if (cfgData.Type != null)
+                    {
+                        type = cfgData.Type;
                     }
                     if (cfgData.ToolNames != null)
                     {
@@ -1320,6 +1323,7 @@ namespace CatHome4.Admin
                 cat.ApiConfigId = apiConfigId;
                 cat.ApiConfig = apiConfig;
                 cat.Persona = persona;
+                cat.Type = type;
                 cat.ToolNames = toolNames;
                 cat.InjectList = injectList;
                 cat.Packs = packs;
@@ -2193,24 +2197,12 @@ namespace CatHome4.Admin
         {
             List<object> list = new List<object>();
             // F2.2 majordomo 特殊会话——置顶 + special 标记（前端不视为多猫；无停止/删除）
-            list.Add(new
-            {
-                id = "majordomo",
-                name = "majordomo",
-                running = _majorHost != null,
-                port = _majorPort,
-                special = true
-            });
+            // A225 会话态统一投影——与 cat.info / 快照会话段同源（BuildCatInfoEntry → ChatSession.BuildStateEntry）
+            list.Add(BuildCatInfoEntry("majordomo", "majordomo", _majorHost != null, _majorPort, true, _chatBridge != null ? _chatBridge.DefaultSession : null, ""));
             for (int i = 0; i < _cats.Count; i++)
             {
                 CatEntry cat = _cats[i];
-                list.Add(new
-                {
-                    id = cat.Id,
-                    name = cat.DisplayName,
-                    running = cat.Running,
-                    port = cat.Port
-                });
+                list.Add(BuildCatInfoEntry(cat.Id, cat.DisplayName, cat.Running, cat.Port, false, cat.Session, cat.Type));
             }
             var resp = new
             {

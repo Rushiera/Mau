@@ -281,24 +281,6 @@ namespace CH4
         }
 
         /// <summary>
-        /// 最后一条的前文来源消息索引——补差锚（-1 = 无前文派生条目）。
-        /// </summary>
-        /// <returns>消息索引（-1 = 无）</returns>
-        private int LastMsgIndex()
-        {
-            int best = -1;
-            for (int i = 0; i < _blocks.Count; i = i + 1)
-            {
-                ViewBlock b = _blocks[i];
-                if (b.MsgIndex > best)
-                {
-                    best = b.MsgIndex;
-                }
-            }
-            return best;
-        }
-
-        /// <summary>
         /// 视图文件落盘——全量覆写（CloseRound 与真实前文同批；流式中间态不含）
         /// </summary>
         public void Save()

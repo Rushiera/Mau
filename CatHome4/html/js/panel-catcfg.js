@@ -30,6 +30,7 @@ function openCatCfg(catId, name) {
             renderQqBotOptions(d.qqbotOptions || [], d.qqbotId || '');
             document.getElementById('catCfgQqEnable').checked = !!d.qqbotEnable;
             document.getElementById('catCfgIdleOnly').checked = !!d.userInjectIdleOnly;
+            document.getElementById('catCfgType').value = d.type || '';
             document.getElementById('catCfgPersona').value = d.persona || '';
             renderToolChecks(d.toolNames || '');
             renderInjectList(d.injectList || []);
@@ -327,6 +328,7 @@ function saveCatCfg() {
     var payload = {
         cat: catCfgTarget,
         apiConfigId: document.getElementById('catCfgApi').value,
+        type: document.getElementById('catCfgType').value,
         persona: document.getElementById('catCfgPersona').value,
         toolNames: toolNames.join(','),
         injectList: catCfgInjectList,
