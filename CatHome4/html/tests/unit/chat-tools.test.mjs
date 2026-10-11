@@ -76,7 +76,7 @@ describe('声明层——覆盖与注册', () => {
         for (const name of POOL) {
             const d = window.toolDeclOf(name);
             expect(typeof d, name + ' 声明').toBe('object');
-            for (const key of ['inputLines', 'outputLines', 'badge', 'headline', 'inputImages']) {
+            for (const key of ['inputLines', 'outputLines', 'badge', 'headline', 'inputImages', 'outputImages']) {
                 if (d[key] !== undefined) {
                     expect(typeof d[key], name + ' 声明.' + key).toBe('function');
                 }
@@ -174,6 +174,21 @@ describe('折叠行', () => {
         expect(without.querySelector('.chat-order')).toBeNull();
     });
 
+    it('原始工具名——载荷 name 直显（紧跟执行序徽标）', () => {
+        const s = summaryOf(card('text-read_lines', { path: 'x' }, 'ok'));
+        const name = s.querySelector('.chat-toolname');
+        expect(name).toBeTruthy();
+        expect(name.textContent).toBe('text-read_lines');
+    });
+
+    it('工具用时——durMs > 0 显示（走 fmtMs）；缺字段 / -1 不写', () => {
+        const withDur = summaryOf(card('cs-build', { path: 'x' }, 'ok', { durMs: 1200 }));
+        expect(withDur.querySelector('.chat-dur')).toBeTruthy();
+        expect(withDur.querySelector('.chat-dur').textContent).toBe(' · 1.2s');
+        expect(summaryOf(card('cs-build', { path: 'x' }, 'ok', { durMs: -1 })).querySelector('.chat-dur')).toBeNull();
+        expect(summaryOf(card('cs-build', { path: 'x' }, 'ok')).querySelector('.chat-dur')).toBeNull();
+    });
+
     it('声明层 headline——读结构化头产出自然语言（cs-build）', () => {
         const head = '{"ok":true,"tool":"cs-build","target":"CatHome4.Core","exit":0,"errors":0,"warnings":0,"ms":2100,"scope":"single"}';
         const s = summaryOf(card('cs-build', { path: 'mau:CatHome4/CatHome4.Core/CatHome4.Core.csproj' }, head + '\nBuild succeeded.'));
@@ -236,5 +251,13 @@ describe('声明层覆盖——段内容生效', () => {
         const node = window.buildToolBlock(card('image-analyze', { path: 'mau:shot.png', question: '看什么' }, '描述文本'), 'toolcard');
         expect(node.textContent).toContain('识别图片 mau:shot.png');
         expect(node.textContent).toContain('提示词 看什么');
+    });
+
+    it('输出图片段——声明 outputImages 的工具有缩略图组（如 browser-shot 截图）', () => {
+        const res = 'file=C:/Users/x/Data/browser/c1/out/1-shot.png | full=false | px=800x600';
+        const node = window.buildToolBlock(card('browser-shot', { full: false }, res), 'toolcard');
+        const group = node.querySelector('.chat-imgs');
+        expect(group).toBeTruthy();
+        expect(group.querySelector('img')).toBeTruthy();
     });
 });

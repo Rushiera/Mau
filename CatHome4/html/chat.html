@@ -22,7 +22,14 @@
     <div id="chatMsgs"></div>
     <!-- 自绘滚动带（js/chat/fx/scroll.js · design-ch4-frontend-scroll）——IDE 风格滚动带：视口指示块 + 消息刻度 + 点击跳转 + 拖拽；
          原生滚动条已隐藏；几何由 JS 按对话区矩形同步 -->
-    <div id="chatScrollBand"><div id="sbThumb"></div><div id="sbTicks"></div></div>
+    <div id="chatScrollBand"><div id="sbScopes"></div><div id="sbThumb"></div><div id="sbTicks"></div></div>
+
+    <!-- 核心对话显隐开关（2026-10-11 莎定）——左预留带顶部（与输入区切换开关同款竖向滑块）；默认全显示（F5 重建即复位）；
+         切「精简」→ #chatMsgs 加 .core-only → 隐藏非 user / text 行（只留核心对话）；滚动带随类变化自动重算 -->
+    <div id="chatCoreToggle" class="ch-livetoggle ch-lt-top" title="切换：全显示 / 只留核心对话（隐藏思考 · 工具 · 结算等）">
+        <span class="ch-lt-thumb"></span>
+        <span class="ch-lt-label" id="chatCoreLabel">全部</span>
+    </div>
 
     <!-- ═══ 插话队列显示区（js/chat/fx/pending.js——本地入列 / user 块到达出列；纯展示，空表自动隐藏） ═══ -->
     <div id="chatPendingPanel"></div>

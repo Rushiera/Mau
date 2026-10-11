@@ -59,6 +59,7 @@ function persistFull(items) {
         pendingClear();
     }
     persistAppend(items);
+    tbScopeMark();
     scrollBottomNow();
 }
 
@@ -96,6 +97,7 @@ function persistAppend(items, auto) {
             box.appendChild(node);
         }
     }
+    tbScopeMark();
     if (follow) {
         scrollFollow();
     }
@@ -131,4 +133,41 @@ function persistRender(item) {
     }
     // 第二参 = 整条条目——块级字段取用口（如 text 块操作条读 msgIndex 定回滚 / 分支切点）
     return fn(item.payload || {}, item);
+}
+
+/// timeback 域区间标记——从 `timeback-start` 行到 `timeback-back` 行之间（**不含两端**）的块加 `.tb-scope`（气泡描边转粉）；
+/// 两端工具卡保持原色；失败块（`.err`）由 CSS 事后覆盖为红（红优先，粉不盖红）。
+/// 每次渲染后全量重标（重放 / 追加同路）——行数有限，O(n) 可接受。
+function tbScopeMark() {
+    var box = persistContainer();
+    if (!box) {
+        return;
+    }
+    var rows = box.children;
+    if (!rows) {
+        return;
+    }
+    var open = false;
+    for (var i = 0; i < rows.length; i = i + 1) {
+        var row = rows[i];
+        if (!row || typeof row.getAttribute !== 'function') {
+            continue;
+        }
+        var tool = row.getAttribute('data-tool') || '';
+        if (tool === 'timeback-start') {
+            open = true;
+            row.classList.remove('tb-scope');
+            continue;
+        }
+        if (tool === 'timeback-back') {
+            open = false;
+            row.classList.remove('tb-scope');
+            continue;
+        }
+        if (open) {
+            row.classList.add('tb-scope');
+        } else {
+            row.classList.remove('tb-scope');
+        }
+    }
 }

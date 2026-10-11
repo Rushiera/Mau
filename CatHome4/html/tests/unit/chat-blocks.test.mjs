@@ -158,6 +158,28 @@ describe('系统注入块（A219——systemautomessage）', () => {
         const text = window.persistRender({ type: 'text', msgIndex: 5, payload: { text: 'z' } });
         expect(window.scrollTickRole(text)).toBe('reply');
     });
+
+    it('独立渲染——题头 `System · 字符 · 行 · 来源` + 两档结构（压缩档默认）', () => {
+        const node = window.persistRender({ type: 'systemautomessage', msgIndex: 1, payload: { text: 'a\nb\nc', source: 'sleep' } });
+        expect(node.querySelector('.sy-label').textContent).toBe('System');
+        const stat = node.querySelector('.sy-stat').textContent;
+        expect(stat).toContain('5 字符');
+        expect(stat).toContain('3 行');
+        expect(stat).toContain('sleep');
+        expect(node.querySelector('.sy-peek')).toBeTruthy();
+        expect(node.querySelector('.sy-full')).toBeTruthy();
+        expect(node.querySelector('.chat-sys').classList.contains('full')).toBe(false);
+    });
+
+    it('切档——sysToggle 切 .full（独立于 Think 的 thinkToggle / .chat-think）', () => {
+        const node = window.persistRender({ type: 'systemautomessage', msgIndex: 1, payload: { text: 'a\nb\nc', source: 'timer' } });
+        const box = node.querySelector('.chat-sys');
+        expect(node.querySelector('.chat-think')).toBeNull();
+        window.sysToggle(box);
+        expect(box.classList.contains('full')).toBe(true);
+        window.sysToggle(box);
+        expect(box.classList.contains('full')).toBe(false);
+    });
 });
 
 describe('text 块操作条（P6b 复归 · 2026-10-06）', () => {
@@ -208,5 +230,36 @@ describe('轮末结算载荷（2026-10-06 · 莎定）——四项分片', () =>
         expect(fracs).toEqual(['.00', '.00', '.00', '.00']);
         // 弱化件（2026-10-06 · 莎定；同日微调：K/M 单位随整数原色）——括号（2）· 百分号（1）包 `.rs-dim`
         expect(tok.querySelectorAll('.rs-dim').length).toBe(3);
+    });
+});
+
+// ── 行级标记——失败 / timeback 域区间（2026-10-11） ──────────
+describe('行级标记——失败 / timeback 域区间', () => {
+    it('失败工具卡——行加 .err + data-tool', () => {
+        const node = window.buildToolBlock({ name: 'cs-build', arguments: '{}', result: 'ERR|BUILD_TIMEOUT|x' }, {}, 'toolcard');
+        expect(node.classList.contains('err')).toBe(true);
+        expect(node.getAttribute('data-tool')).toBe('cs-build');
+    });
+
+    it('正常工具卡——无 .err（原色）', () => {
+        const node = window.buildToolBlock({ name: 'file-tree', arguments: '{}', result: 'ok' }, {}, 'toolcard');
+        expect(node.classList.contains('err')).toBe(false);
+    });
+
+    it('timeback 域区间——start..back 之间（不含两端）加 .tb-scope', () => {
+        const box = document.getElementById('chatMsgs');
+        box.textContent = '';
+        const mk = (name, res) => window.buildToolBlock({ name: name, arguments: '{}', result: res || 'ok' }, {}, 'toolcard');
+        box.appendChild(mk('timeback-start'));
+        box.appendChild(mk('file-tree'));
+        box.appendChild(mk('cs-build'));
+        box.appendChild(mk('timeback-back'));
+        box.appendChild(mk('time-list'));
+        window.tbScopeMark();
+        expect(box.children[0].classList.contains('tb-scope')).toBe(false);
+        expect(box.children[1].classList.contains('tb-scope')).toBe(true);
+        expect(box.children[2].classList.contains('tb-scope')).toBe(true);
+        expect(box.children[3].classList.contains('tb-scope')).toBe(false);
+        expect(box.children[4].classList.contains('tb-scope')).toBe(false);
     });
 });

@@ -217,6 +217,20 @@ describe('跨件契约——插话队列（fx/pending）', () => {
 
 // ── ⑤ 出口面 ─────────────────────────────────
 describe('出口面（input.js——投递即回执）', () => {
+    it('核心对话开关——coreSwap 切 #chatMsgs .core-only + 标签/滑块态（默认全显）', () => {
+        const msgs = document.getElementById('chatMsgs');
+        const sw = document.getElementById('chatCoreToggle');
+        expect(msgs.classList.contains('core-only')).toBe(false);
+        window.chatCoreToggle();
+        expect(msgs.classList.contains('core-only')).toBe(true);
+        expect(sw.classList.contains('on')).toBe(true);
+        expect(document.getElementById('chatCoreLabel').textContent).toBe('精简');
+        window.chatCoreToggle();
+        expect(msgs.classList.contains('core-only')).toBe(false);
+        expect(sw.classList.contains('on')).toBe(false);
+        expect(document.getElementById('chatCoreLabel').textContent).toBe('全部');
+    });
+
     it('空文本零动作（不发请求）', async () => {
         const calls = captureFetch();
         document.getElementById('chatSendInput').value = '   ';

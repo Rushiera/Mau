@@ -19,6 +19,7 @@ var bandMsgs = document.getElementById('chatMsgs');
 var bandBox = document.getElementById('chatScrollBand');
 var bandThumb = document.getElementById('sbThumb');
 var bandTicks = document.getElementById('sbTicks');
+var bandScopes = document.getElementById('sbScopes');
 
 // ── 常量 ─────────────────────────────────────
 var BAND_MIN_THUMB = 24;    // 指示块最小高——内容极长时仍可抓取
@@ -86,7 +87,15 @@ function scrollTickRole(row) {
     return tickRole(type);
 }
 
-/// 刻度收集——对话区每个 .chat-row 一条刻度（推送序即渲染序，本件不排序、不过滤）
+/// 块型——行元素 data-type（刻度按块型取色与渐变参数；缺属性 → 空串）
+function bandRowType(row) {
+    if (row && typeof row.getAttribute === 'function') {
+        return row.getAttribute('data-type') || '';
+    }
+    return '';
+}
+
+/// 刻度收集——对话区每个**可见** .chat-row 一条刻度（隐藏行不占刻度——精简态只映核心对话；推送序即渲染序，本件不排序）
 function bandCollect() {
     var out = [];
     if (!bandMsgs) {
@@ -94,7 +103,11 @@ function bandCollect() {
     }
     var rows = bandMsgs.querySelectorAll('.chat-row');
     for (var i = 0; i < rows.length; i = i + 1) {
-        out.push({ row: rows[i], role: scrollTickRole(rows[i]) });
+        // display:none 的行 offsetParent 为 null（真实浏览器）→ 跳过；vm 测试无布局属性（undefined）→ 视为可见
+        if (rows[i].offsetParent === null) {
+            continue;
+        }
+        out.push({ row: rows[i], role: scrollTickRole(rows[i]), type: bandRowType(rows[i]) });
     }
     return out;
 }
@@ -238,6 +251,51 @@ function bandTicksSync() {
         kids[j].style.top = Math.round(g.top) + 'px';
         kids[j].style.height = Math.round(g.height) + 'px';
     }
+    bandScopesSync();
+}
+
+/// 区段底色同步（2026-10-11 · B 方案）——timeback 域（连续 .tb-scope 行）→ 带上底块；
+/// 圆角与 2px 羽化归 CSS（.sb-scope）；几何与刻度同源（比例映射）——区间数少，全量重建代价低
+function bandScopesSync() {
+    if (!bandScopes || !bandMsgs) {
+        return;
+    }
+    bandScopes.textContent = '';
+    var bandH = bandHeight();
+    var sh = bandMsgs.scrollHeight;
+    if (bandH <= 0 || sh <= 0) {
+        return;
+    }
+    var i = 0;
+    while (i < bandItems.length) {
+        var r = bandItems[i].row;
+        if (!r || !r.classList || !r.classList.contains('tb-scope')) {
+            i = i + 1;
+            continue;
+        }
+        var j = i;
+        while (j + 1 < bandItems.length) {
+            var nx = bandItems[j + 1].row;
+            if (!nx || !nx.classList || !nx.classList.contains('tb-scope')) {
+                break;
+            }
+            j = j + 1;
+        }
+        var topY = bandContentY(bandItems[i].row);
+        var lastRow = bandItems[j].row;
+        var botY = bandContentY(lastRow) + lastRow.getBoundingClientRect().height;
+        var top = bandH * (topY / sh);
+        var bottom = bandH * (botY / sh);
+        if (top < 0) { top = 0; }
+        if (bottom > bandH) { bottom = bandH; }
+        if (bottom - top < 2) { bottom = top + 2; }
+        var d = document.createElement('div');
+        d.className = 'sb-scope';
+        d.style.top = Math.round(top) + 'px';
+        d.style.height = Math.round(bottom - top) + 'px';
+        bandScopes.appendChild(d);
+        i = j + 1;
+    }
 }
 
 /// 带体几何同步——位置与高度对齐对话区矩形（fixed 浮层，随标题栏 / 输入区高度变化自动跟随）
@@ -277,10 +335,19 @@ function bandRebuild() {
         bandTicks.textContent = '';
         for (var i = 0; i < bandItems.length; i = i + 1) {
             var d = document.createElement('div');
-            d.className = 'sb-tick ' + bandItems[i].role;
+            var rw = bandItems[i].row;
+            var cls = 'sb-tick';
+            if (rw && rw.classList) {
+                // 失败（红）/ timeback 域内（粉）——刻度随气泡同标；红由 CSS 事后覆盖（不盖红）
+                if (rw.classList.contains('err')) { cls = cls + ' err'; }
+                if (rw.classList.contains('tb-scope')) { cls = cls + ' tb-scope'; }
+            }
+            d.className = cls;
+            d.setAttribute('data-type', bandItems[i].type || '');
             bandTicks.appendChild(d);
         }
     }
+    bandScopesSync();
     bandLayout();
 }
 
