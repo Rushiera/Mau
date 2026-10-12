@@ -23,7 +23,7 @@ namespace CH4
         /// <summary>域类型·代码审查——基础读面 + cs 只读面（纯取证：不含跑测面）。</summary>
         public const string CodeReview = "code_review";
 
-        /// <summary>域类型·代码实现——基础读面 + cs 全套 + 文本写面 + 语料检查（域内完成读 / 改 / 编译；跑测不在名单，收尾验收另开域）。</summary>
+        /// <summary>域类型·代码实现——基础读面 + cs 全套十三件 + 文本写面 + 语料检查（域内完成读 / 改 / 编译 / 跑测）。</summary>
         public const string CodeWrite = "code_write";
 
         /// <summary>文本读面——被多个 type 复用（域内只读取证：文本检索 + 内容检索）。</summary>
@@ -57,12 +57,13 @@ namespace CH4
             "cs-check", "cs-list", "cs-read", "cs-find", "cs-find_ref", "cs-dead", "cs-comment_check"
         });
 
-        /// <summary>code_write 名单——基础读面 + cs 全套十二件 + 文本写面 + 语料检查。
-        /// 域内一次完成「读 → 改 → 编译」：编译输出与诊断清单一律随域回收，不持久化进主干（跑测不在名单——收尾验收另开域）。</summary>
+        /// <summary>code_write 名单——基础读面 + cs 全套十三件 + 文本写面 + 语料检查。
+        /// 域内一次完成「读 → 改 → 编译 → 跑测」：编译输出 / 跑测流水 / 诊断清单一律随域回收，不持久化进主干
+        /// （`cs-test` 在名单内——实现域自带验证环；未通过的读数经台账 `FAIL` 态回报，不记 OK）。</summary>
         private static readonly string[] CodeWriteNames = Concat(new string[]
         {
             "cs-check", "cs-list", "cs-read", "cs-patch", "cs-member", "cs-comment",
-            "cs-find", "cs-find_ref", "cs-dead", "cs-comment_check", "cs-format", "cs-build",
+            "cs-find", "cs-find_ref", "cs-dead", "cs-comment_check", "cs-format", "cs-build", "cs-test",
             "text-replace", "text-write", "text-append",
             "mau-verify"
         }, ReadBaseNames);

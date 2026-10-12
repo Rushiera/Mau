@@ -414,7 +414,7 @@ namespace CatHome4.Core.Tests
 
         /// <summary>
         /// 域类型白名单——表级形态：四类型均含基础读面（文本读面 + 文件结构面）；系统信息类（info / host-flows）
-        /// 不进任何域；审查类不含写面 / 跑测面；实现类含 cs 全套 + 文本写面 + mau-verify。
+        /// 不进任何域；审查类不含写面 / 跑测面；实现类含 cs 全套十三件（含跑测件 cs-test）+ 文本写面 + mau-verify。
         /// 说明：域内名单工具均为 OA 工具——单测无工单消费者（Post 后无回执 → 批次不闭合），
         /// 故放行面在表级验证；会话级「名单外一律拒」由 `Scope_ProfileRejectsToolOutsideWhitelist` 反向覆盖。
         /// </summary>
@@ -435,14 +435,33 @@ namespace CatHome4.Core.Tests
             }
             Assert.False(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeReview, "cs-patch"));
             Assert.False(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeReview, "mau-verify"));
+            Assert.False(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeReview, "cs-test"));
             Assert.True(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeWrite, "cs-patch"));
             Assert.True(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeWrite, "cs-build"));
+            Assert.True(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeWrite, "cs-test"));
             Assert.True(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeWrite, "text-replace"));
             Assert.True(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeWrite, "mau-verify"));
             Assert.False(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeWrite, "file-delete"));
             Assert.Equal(CH4.TimebackProfile.KindReview, CH4.TimebackProfile.Kind(CH4.TimebackProfile.TextSearch));
             Assert.Equal(CH4.TimebackProfile.KindReview, CH4.TimebackProfile.Kind(CH4.TimebackProfile.CodeReview));
             Assert.Equal(CH4.TimebackProfile.KindWrite, CH4.TimebackProfile.Kind(CH4.TimebackProfile.CodeWrite));
+        }
+
+        /// <summary>
+        /// 台账状态列——JSON 头形态（cs-build / cs-test / cs-check 桥工具）：业务失败记 `FAIL` 而非 `OK`；
+        /// 解析不出出声 `UNPARSED`（不回落 OK）；`ERR|` 与域门禁拒仍走 ERR / DENY。
+        /// </summary>
+        [Fact]
+        public void ToolStatus_JsonHeadBusinessFailure()
+        {
+            Assert.Equal("OK", CH4.ChatSession.TimebackToolStatus("{\"ok\":true,\"tool\":\"cs-build\",\"errors\":0}"));
+            Assert.Equal("FAIL(exit=1,errors=3)", CH4.ChatSession.TimebackToolStatus("{\"ok\":false,\"tool\":\"cs-build\",\"exit\":1,\"errors\":3}\n编译失败 · 3 错误"));
+            Assert.Equal("FAIL(failed=2)", CH4.ChatSession.TimebackToolStatus("{\"ok\":false,\"failed\":2}"));
+            Assert.Equal("FAIL", CH4.ChatSession.TimebackToolStatus("{\"ok\":false}"));
+            Assert.Equal("UNPARSED", CH4.ChatSession.TimebackToolStatus("{ 不是 JSON"));
+            Assert.Equal("ERR", CH4.ChatSession.TimebackToolStatus("ERR|BUILD_TIMEOUT|构建超时"));
+            Assert.Equal("DENY", CH4.ChatSession.TimebackToolStatus("ERR|TIMEBACK_PROFILE|不在名单"));
+            Assert.Equal("OK", CH4.ChatSession.TimebackToolStatus("OK|编译通过"));
         }
 
         /// <summary>
