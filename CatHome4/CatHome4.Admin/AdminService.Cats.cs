@@ -902,6 +902,7 @@ namespace CatHome4.Admin
                 cfgData.InjectList = srcCat.InjectList;
                 cfgData.QqBotId = srcCat.QqBotId == Guid.Empty ? "" : srcCat.QqBotId.ToString("D");
                 cfgData.QqBotEnable = srcCat.QqBotEnable;
+                cfgData.Type = srcCat.Type;
                 // EnabledRoots CatEntry 不持有——从源磁盘 cfg 补读
                 CatCfgData srcDisk = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", srcCat.Id, "cat.cfg"));
                 if (srcDisk != null)
@@ -925,8 +926,8 @@ namespace CatHome4.Admin
             // qqbotId 继承保留（防双猫抢 Bot 靠 enable=false——莎拍板：复制配置、默认不开启转发）
             cfgData.QqBotEnable = false;
             SaveCatCfgData(id, cfgData);
-            // [段3] 创建 + 播种 + 注册（CreateCatEntry 读新 cfg——克隆配置生效）
-            CatEntry cat = CreateCatEntry(id, name, seed);
+            // [段3] 创建 + 播种 + 注册（CreateCatEntry 读新 cfg——克隆配置生效；视图面与会话元数据面随前文播种）
+            CatEntry cat = CreateCatEntry(id, name, seed, source, msgIndex);
             if (cat == null)
             {
                 return "session.fork | 会话构造失败";
@@ -1167,7 +1168,9 @@ namespace CatHome4.Admin
         /// <param name="displayName">显示名</param>
         /// <param name="seedMessages">fork 播种前文（null/空=不播种——正常注入/恢复语义）</param>
         /// <returns>猫实体；构造失败 null</returns>
-        private static CatEntry CreateCatEntry(string id, string displayName, LlmMessage[] seedMessages)
+        /// <param name="forkSource">fork 源会话（空 = 常规建造路径——视图 / 元数据走读盘恢复）</param>
+        /// <param name="forkMsgIndex">fork 切点前文索引（-1 = 非 fork 路径）</param>
+        private static CatEntry CreateCatEntry(string id, string displayName, LlmMessage[] seedMessages, ChatSession forkSource = null, int forkMsgIndex = -1)
         {
             try
             {
@@ -1306,9 +1309,18 @@ namespace CatHome4.Admin
                 session.AttachEnvInfo(() => BuildEnvInfoProvider());
                 session.AttachRoundNotify(NotifyBalloon);
                 session.SetUserInjectIdleOnly(userInjectIdleOnly);
-                session.LoadView();
-                // A201 会话元数据——启动恢复（实例 ID / 创建时刻 / 两级 token 累计 + A202 请求边界态；文件缺失走首建）
-                session.LoadMeta();
+                // [段3b] 视图面 / 元数据面——fork 播种走克隆（源面保留部分），常规路径读盘恢复
+                if (forkSource != null && forkMsgIndex >= 0)
+                {
+                    session.SeedViewFrom(forkSource, forkMsgIndex);
+                    session.SeedMetaFrom(forkSource);
+                }
+                else
+                {
+                    session.LoadView();
+                    // A201 会话元数据——启动恢复（实例 ID / 创建时刻 / 两级 token 累计 + A202 请求边界态；文件缺失走首建）
+                    session.LoadMeta();
+                }
                 _chatBridge.RegisterSession(session);
                 CatEntry cat = new CatEntry();
                 cat.Id = id;

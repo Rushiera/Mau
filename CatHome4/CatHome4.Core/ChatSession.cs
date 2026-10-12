@@ -522,6 +522,68 @@ namespace CH4
             _viewStore.AuditEntries(_context.GetMessages(), 5);
         }
         /// <summary>
+        /// 视图层播种——fork（session.fork）：从源会话视图复制 ≤ 切点的条目（新猫视图面 = 源视图保留面；写盘）。
+        /// 与播种前文（seedMessages）同批调用——消息索引坐标系一致，条目原样沿用。
+        /// </summary>
+        /// <param name="source">源会话</param>
+        /// <param name="msgIndex">切点前文索引</param>
+        public void SeedViewFrom(ChatSession source, int msgIndex)
+        {
+            if (source == null)
+            {
+                return;
+            }
+            _viewStore.CopyFrom(source._viewStore, msgIndex);
+            _viewStore.AuditEntries(_context.GetMessages(), 5);
+        }
+        /// <summary>
+        /// 会话元数据播种——fork（session.fork）：新实例 ID / 新创建时刻 + 会话级 token 累计继承 +
+        /// 工具面快照继承（A221：会话工具头与 system prompt 同命）+ 轮级面归零（新会话起点）。
+        /// Note 不继承——防双猫抢跑同一计划；落盘。
+        /// </summary>
+        /// <param name="source">源会话</param>
+        public void SeedMetaFrom(ChatSession source)
+        {
+            if (source == null)
+            {
+                return;
+            }
+            long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _sessionInstanceId = SessionStore.NewSessionId();
+            _sessionCreatedAt = now;
+            _persistedLastActiveAt = now;
+            // 会话级 token 累计继承——分支延续同一历史成本（与回滚「会话级累计不动」同口径）
+            _sessionPrompt = source._sessionPrompt;
+            _sessionCacheHit = source._sessionCacheHit;
+            _sessionCompletion = source._sessionCompletion;
+            // 轮级面归零——新会话起点无当前轮
+            _lastRoundTokens = new SessionTokens();
+            _persistedContextTokens = 0;
+            _contextTokens = 0;
+            _requestCount = 0;
+            _toolCallCount = 0;
+            lock (_phaseLock)
+            {
+                _phaseAccumMs[PhaseWait] = 0;
+                _phaseAccumMs[PhaseLink] = 0;
+                _phaseAccumMs[PhaseThink] = 0;
+                _phaseAccumMs[PhaseTool] = 0;
+                _phaseAccumMs[PhaseRun] = 0;
+                _phaseAccumMs[PhaseReply] = 0;
+            }
+            // 工具面快照继承——源会话注入面原样沿用（池面回落由构造期 ResolveSessionTools 完成）
+            if (source._tools != null)
+            {
+                ToolSpec[] tools = new ToolSpec[source._tools.Length];
+                for (int i = 0; i < tools.Length; i = i + 1)
+                {
+                    tools[i] = source._tools[i];
+                }
+                _tools = tools;
+            }
+            SaveMeta();
+        }
+        /// <summary>
         /// 旧会话留档——session.new 清空前导出（A87：user 消息 / 正式回复 / 注入报告 / 每轮结算 → sessions_old 下 MD 文件）。
         /// </summary>
         /// <returns>落盘文件绝对路径（空串=未生成——失败已由视图层记 ERR 日志）</returns>
@@ -2936,14 +2998,16 @@ namespace CH4
             // 前文长度——请求级实时值 + 落盘回落源同归零（读面不显示回滚点之前的旧值）
             _contextTokens = 0;
             _persistedContextTokens = 0;
-            // [段4] 视图——不动（v2 契约：持久即持久，截断通道退役；视图层与真实前文并列，回滚只作用于前文）
+            // [段4] 视图层截断——与真实前文同批（视图层截断通道回归：此前「视图不动」使回滚在观感上无效——
+            //        帧轮重置后的全量帧取数源正是视图层，未截断即把已回滚的消息原样重发）
+            _viewStore.TruncateFrom(msgIndex);
             // [段5] Note 任务清空——防旧任务自动拉起新轮
             _noteTasks = null;
             _noteCurrent = 0;
             _noteDone = 0;
             _noteJustCompleted = false;
             PushNoteState();
-            // [段6] 前端通知——session_reset（前端清空气泡重拉 history；渲染层零改动）
+            // [段6] 前端通知——session_reset（帧轮广播全量帧：前端持久区清空后按截断后的视图层整体重绘）
             PushSessionReset();
             SetChatState("idle");
             LogStore.Add("CatHome4", 1, "已回滚到节点 " + msgIndex.ToString() + "（保留 " + (msgIndex + 1).ToString() + " 条消息）", "CHAT");

@@ -759,6 +759,110 @@ namespace CH4
             // 重试过程条目随视图层清理——新会话不保留旧重试记录
             _retries.Clear();
         }
+        /// <summary>
+        /// 视图层截断——回滚（session.rollback）：丢弃前文索引大于切点的条目，与真实前文截断同批物化。
+        /// 判定：前文派生条目（MsgIndex ≥ 0）按索引；非前文派生条目（-1）按时间戳界限——时间戳单调化
+        /// 保证全局严格递增，故被截区间内产生的一切条目时间戳必不小于「被丢弃前文条目的最小时间戳」。
+        /// 保留面 = 切点及之前的全部条目（注入报告为独立字段，随会话延续保留）；写盘。
+        /// </summary>
+        /// <param name="msgIndex">切点前文索引（保留 ≤ 该索引的条目）</param>
+        public void TruncateFrom(int msgIndex)
+        {
+            // [段1] 前文派生条目——按索引判定（保留 ≤ msgIndex）
+            long dropMinTs = long.MaxValue;
+            for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
+            {
+                if (_blocks[i].MsgIndex > msgIndex)
+                {
+                    if (_blocks[i].Timestamp < dropMinTs)
+                    {
+                        dropMinTs = _blocks[i].Timestamp;
+                    }
+                    _blocks.RemoveAt(i);
+                }
+            }
+            // [段2] 非前文派生条目——按时间戳界限丢弃（不早于被截区间起点者属于被截区间）
+            if (dropMinTs < long.MaxValue)
+            {
+                DropBlocksFrom(_gapTexts, dropMinTs);
+                DropBlocksFrom(_roundSums, dropMinTs);
+                DropBlocksFrom(_errors, dropMinTs);
+                DropBlocksFrom(_retries, dropMinTs);
+            }
+            // [段3] 待配对工具——被截区间内的工具声明不再配对（回滚仅空闲时执行，通常本就为空）
+            _pendingTools.Clear();
+            Save();
+        }
+        /// <summary>
+        /// 视图层播种——fork（session.fork）：把源视图存储的保留面（≤ 切点）复制进本存储，与新猫播种前文同步。
+        /// 保留口径与 <see cref="TruncateFrom"/> 同源（前文派生按索引 · 非前文派生按时间戳界限）；
+        /// 条目按引用搬入（只读沿用，不复制对象）；注入报告随面搬入；写盘。
+        /// </summary>
+        /// <param name="source">源视图存储（同类实例）</param>
+        /// <param name="msgIndex">切点前文索引（保留 ≤ 该索引）</param>
+        public void CopyFrom(SessionViewStore source, int msgIndex)
+        {
+            if (source == null)
+            {
+                return;
+            }
+            long dropMinTs = long.MaxValue;
+            _blocks.Clear();
+            for (int i = 0; i < source._blocks.Count; i = i + 1)
+            {
+                ViewBlock b = source._blocks[i];
+                if (b.MsgIndex > msgIndex)
+                {
+                    if (b.Timestamp < dropMinTs)
+                    {
+                        dropMinTs = b.Timestamp;
+                    }
+                }
+                else
+                {
+                    _blocks.Add(b);
+                }
+            }
+            _gapTexts.Clear();
+            CopyBlocksBefore(source._gapTexts, _gapTexts, dropMinTs);
+            _roundSums.Clear();
+            CopyBlocksBefore(source._roundSums, _roundSums, dropMinTs);
+            _errors.Clear();
+            CopyBlocksBefore(source._errors, _errors, dropMinTs);
+            _retries.Clear();
+            CopyBlocksBefore(source._retries, _retries, dropMinTs);
+            _pendingTools.Clear();
+            _injectReport = source._injectReport;
+            _lastTs = MaxTimestamp();
+            Save();
+        }
+        /// <summary>丢弃时间戳不早于界限的条目——截断用（保留面 = 界限之前）。</summary>
+        /// <param name="list">条目容器（原地删）</param>
+        /// <param name="cutoff">界限（时间戳 ≥ 该值即丢弃）</param>
+        private static void DropBlocksFrom(List<ViewBlock> list, long cutoff)
+        {
+            for (int i = list.Count - 1; i >= 0; i = i - 1)
+            {
+                if (list[i].Timestamp >= cutoff)
+                {
+                    list.RemoveAt(i);
+                }
+            }
+        }
+        /// <summary>搬运时间戳早于界限的条目——播种用（复制引用，不改对象）。</summary>
+        /// <param name="source">源容器</param>
+        /// <param name="dest">目标容器</param>
+        /// <param name="cutoff">界限（时间戳 ≥ 该值即跳过）</param>
+        private static void CopyBlocksBefore(List<ViewBlock> source, List<ViewBlock> dest, long cutoff)
+        {
+            for (int i = 0; i < source.Count; i = i + 1)
+            {
+                if (source[i].Timestamp < cutoff)
+                {
+                    dest.Add(source[i]);
+                }
+            }
+        }
 
         /// <summary>
         /// 生成前文派生视图条目——时间戳取消息 CreatedAt（A157：工具卡可指定时间戳覆盖——取工具调用声明时刻，与实时区先行卡同基点）。
