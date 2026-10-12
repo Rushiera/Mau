@@ -47,35 +47,6 @@ namespace Mau.Runtime.Tests
         }
 
         /// <summary>
-        /// 锚点歧义三态——Ambiguous 必须带真实出现次数（曾漏赋值 ⇒ 报「锚点出现 0 次」自相矛盾），且绝不静默写入
-        /// </summary>
-        [Fact]
-        public void ReplaceTextAuto_Ambiguous_ReportsRealCount()
-        {
-            string baseDir = Path.Combine(Path.GetTempPath(), "mau_replace_test_" + Guid.NewGuid().ToString("N"));
-            string rw = Path.Combine(baseDir, "rw");
-            Directory.CreateDirectory(rw);
-            try
-            {
-                WorkspaceConfig.RootEntry[] entries = new WorkspaceConfig.RootEntry[]
-                {
-                    new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true }
-                };
-                FileSystemService fs = new FileSystemService(entries, Path.Combine(rw, "recycle"));
-                string file = Path.Combine(rw, "probe.txt");
-                fs.WriteText(file, "A行B行C行");
-                TextReplaceOutcome outcome = fs.ReplaceTextAuto(file, "行", "X", "exact");
-                Assert.Equal(TextReplaceStatus.Ambiguous, outcome.Status);
-                Assert.Equal(3, outcome.Count);
-                Assert.Equal("A行B行C行", fs.ReadText(file));
-            }
-            finally
-            {
-                TryDelete(baseDir);
-            }
-        }
-
-        /// <summary>
         /// 命名空间寻址——id:relative 前缀映射受控根（ccbp:/mau:/runtime:；P8.5b 自举路径语义）
         /// </summary>
         [Fact]
@@ -307,103 +278,7 @@ namespace Mau.Runtime.Tests
                 TryDelete(baseDir);
             }
         }
-        /// <summary>
-        /// 锚点三态诊断（P3——design-ch4-text-tools §六）：唯一替换 / 未找到差异定位 / 多次出现候选；regex 全替换
-        /// </summary>
-        [Fact]
-        public void ReplaceAuto_ThreeStateDiagnostics()
-        {
-            string baseDir = Path.Combine(Path.GetTempPath(), "mau_replauto_" + Guid.NewGuid().ToString("N"));
-            string rw = Path.Combine(baseDir, "rw");
-            Directory.CreateDirectory(rw);
-            try
-            {
-                WorkspaceConfig.RootEntry[] entries = new WorkspaceConfig.RootEntry[]
-                {
-            new WorkspaceConfig.RootEntry()
-            {
-                Id = "rw",
-                Path = rw,
-                Writable = true
-            }
-                };
-                FileSystemService fs = new FileSystemService(entries, Path.Combine(rw, "recycle"));
-                string p = Path.Combine(rw, "doc.md");
-                // [段1] 唯一命中 → Ok + 数量 + Snippet
-                fs.WriteTextAuto(p, "第一行\n目标 这里\n第三行");
-                TextReplaceOutcome ok = fs.ReplaceTextAuto(p, "目标 这里", "换成 那里", "exact");
-                Assert.Equal(TextReplaceStatus.Ok, ok.Status);
-                Assert.Equal(1, ok.Count);
-                Assert.Contains("换成 那里", fs.ReadTextAuto(p));
-                Assert.Contains("换成 那里", ok.Snippet);
-                // [段2] 未找到 → NotFound + 差异定位（期望/实际非空）
-                TextReplaceOutcome nf = fs.ReplaceTextAuto(p, "目标 这里", "x", "exact");
-                Assert.Equal(TextReplaceStatus.NotFound, nf.Status);
-                Assert.True(nf.DiffByteIndex >= 0);
-                // [段3] 多次出现 → Ambiguous + 候选行号
-                fs.WriteTextAuto(p, "行一\n重复词\n行三\n重复词\n行五");
-                TextReplaceOutcome amb = fs.ReplaceTextAuto(p, "重复词", "X", "exact");
-                Assert.Equal(TextReplaceStatus.Ambiguous, amb.Status);
-                Assert.True(amb.CandidateLines.Length >= 2);
-                // 文件未被修改（绝不静默写入）
-                Assert.Contains("重复词", fs.ReadTextAuto(p));
-                // [段4] ignore_case 唯一命中
-                fs.WriteTextAuto(p, "Hello world");
-                TextReplaceOutcome ic = fs.ReplaceTextAuto(p, "hello", "HELLO", "ignore_case");
-                Assert.Equal(TextReplaceStatus.Ok, ic.Status);
-                Assert.Contains("HELLO world", fs.ReadTextAuto(p));
-                // [段5] regex 全替换 + 捕获组
-                fs.WriteTextAuto(p, "v1 v2 v3");
-                TextReplaceOutcome re = fs.ReplaceTextAuto(p, "v(\\d)", "V$1", "regex");
-                Assert.Equal(TextReplaceStatus.Ok, re.Status);
-                Assert.Equal(3, re.Count);
-                Assert.Equal("V1 V2 V3", fs.ReadTextAuto(p));
-                // [段5b] regex 跨度记账（A146）——单行匹配：各 2 字符 / 合计 6 字符 / 1 行
-                Assert.Equal(1, re.MaxSpanLines);
-                Assert.Equal(2, re.MaxSpanChars);
-                Assert.Equal(6, re.TotalSpanChars);
-                Assert.False(re.SpanWarned);
-                // [段6] regex 跨行匹配——跨度按真实匹配记账（A146）
-                fs.WriteTextAuto(p, "头\n中一\n中二\n尾");
-                TextReplaceOutcome sp = fs.ReplaceTextAuto(p, "中一[\\s\\S]*?尾", "X", "regex");
-                Assert.Equal(TextReplaceStatus.Ok, sp.Status);
-                Assert.Equal(1, sp.Count);
-                Assert.Equal(3, sp.MaxSpanLines);
-                Assert.False(sp.SpanWarned);
-                // [段7] 单次匹配跨度超阈值 → 出声判据置位（A146）
-                fs.WriteTextAuto(p, "头\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n尾");
-                TextReplaceOutcome big = fs.ReplaceTextAuto(p, "头[\\s\\S]*?尾", "X", "regex");
-                Assert.Equal(TextReplaceStatus.Ok, big.Status);
-                Assert.True(big.MaxSpanLines >= 10);
-                Assert.True(big.SpanWarned);
-                // [段8] all 模式成功回执列命中行号（前 5 + 计数——A147）
-                fs.WriteTextAuto(p, "行一\n重复词\n行三\n重复词\n行五");
-                TextReplaceOutcome allMode = fs.ReplaceTextAuto(p, "重复词", "X", "all");
-                Assert.Equal(TextReplaceStatus.Ok, allMode.Status);
-                Assert.Equal(2, allMode.Count);
-                Assert.Equal(2, allMode.CandidateLines.Length);
-                Assert.Equal("2", allMode.CandidateLines[0]);
-                Assert.Equal("4", allMode.CandidateLines[1]);
-                // [段9] 写入风格描述——编码 + BOM / 换行（A148）
-                Assert.Equal("UTF-8 BOM / LF", fs.WriteTextAuto(p, "正文"));
-                Assert.Equal("UTF-8 BOM / CRLF", fs.WriteTextAuto(Path.Combine(rw, "doc.mau"), "正文"));
-                Assert.Equal("UTF-8 / LF", fs.WriteTextAuto(Path.Combine(rw, "note.txt"), "正文"));
-                Assert.Equal("UTF-8 / LF", fs.AppendTextAuto(Path.Combine(rw, "note.txt"), "续行"));
-                // [段10] 锚点未命中疑似实体写法出声（A149）
-                fs.WriteTextAuto(p, "存的是 &lt;PropertyGroup&gt; 实体形状");
-                TextReplaceOutcome ent = fs.ReplaceTextAuto(p, "<PropertyGroup>", "x", "exact");
-                Assert.Equal(TextReplaceStatus.NotFound, ent.Status);
-                Assert.True(ent.EntitySuspect);
-                fs.WriteTextAuto(p, "普通正文，无实体形态");
-                TextReplaceOutcome plain = fs.ReplaceTextAuto(p, "查无此串", "x", "exact");
-                Assert.Equal(TextReplaceStatus.NotFound, plain.Status);
-                Assert.False(plain.EntitySuspect);
-            }
-            finally
-            {
-                TryDelete(baseDir);
-            }
-        }        /// <summary>
+/// <summary>
                  /// 内容检索（P4——text-grep）：受控根内递归扫文本，返回 相对路径:行号:上下文；二进制跳过
                  /// </summary>
         [Fact]

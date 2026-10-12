@@ -4,8 +4,8 @@
 // 类别: TEXT
 // 作用: 锚点区间读取——str1 与 str2 之间内容（str1 空=文件头 / str2 空=文件尾；锚点须全文唯一；编码自动探测）——LLM 工具 text-read_between 语料执行面
 // 依赖: 无
-// 引用: Mau.Runtime（FileSystemService/DataBox）
-// 原理: DataBox.TryResolve<FileSystemService> → ReadBetweenAuto(path, str1, str2)；argsJson 内解析 path/str1/str2
+// 引用: Mau.Runtime（FileSystemService/DataBox/TextAlgorithms）
+// 原理: ReadTextAuto 读 → TextAlgorithms 定位锚点 → 区间子串；唯一契约与全部文案在本积木（A227 归位——算法面只给事实）
 // 常用: TextCat 认领线——'text.read_between'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
@@ -46,6 +46,13 @@ namespace Mau.Bricks
                 result = "ERR|BAD_ARGS|缺少参数 path";
                 return false;
             }
+            string str1 = JsonArgs.Get(argsJson, "str1");
+            string str2 = JsonArgs.Get(argsJson, "str2");
+            if (str1 == "§PARSE_FAIL§" || str2 == "§PARSE_FAIL§")
+            {
+                result = "ERR|BAD_ARGS|工具参数 JSON 解析失败（LLM 生成参数可能被截断——超长内容请分段写入）";
+                return false;
+            }
             try
             {
                 FileSystemService? fs = FileSystemRegistry.ResolveScoped(JsonArgs.Get(argsJson, "catId"));
@@ -58,7 +65,49 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                string body = fs.ReadBetweenAuto(path, JsonArgs.Get(argsJson, "str1"), JsonArgs.Get(argsJson, "str2"));
+                // [IO] 读取（编码内建——去 BOM）→ 换行归一供匹配
+                string content = fs.ReadTextAuto(path);
+                string unified = content.Replace("\r\n", "\n");
+                string a1 = str1.Replace("\r\n", "\n");
+                string a2 = str2.Replace("\r\n", "\n");
+                int start = 0;
+                if (a1.Length > 0)
+                {
+                    int[] idx1 = TextAlgorithms.FindOccurrences(unified, a1, TextMatchMode.Exact);
+                    if (idx1.Length == 0)
+                    {
+                        result = "ERR|ANCHOR_NOT_FOUND|起始锚点未找到: " + a1 + EscapeHint(a1);
+                        return false;
+                    }
+                    if (idx1.Length > 1)
+                    {
+                        result = "ERR|ANCHOR_AMBIGUOUS|起始锚点多次出现: " + a1;
+                        return false;
+                    }
+                    start = idx1[0] + a1.Length;
+                }
+                int end = unified.Length;
+                if (a2.Length > 0)
+                {
+                    int[] idx2 = TextAlgorithms.FindOccurrences(unified, a2, TextMatchMode.Exact);
+                    if (idx2.Length == 0)
+                    {
+                        result = "ERR|ANCHOR_NOT_FOUND|结束锚点未找到: " + a2 + EscapeHint(a2);
+                        return false;
+                    }
+                    if (idx2.Length > 1)
+                    {
+                        result = "ERR|ANCHOR_AMBIGUOUS|结束锚点多次出现: " + a2;
+                        return false;
+                    }
+                    end = idx2[0];
+                }
+                if (end < start)
+                {
+                    result = "ERR|ANCHOR_ORDER|结束锚点位于起始锚点之前";
+                    return false;
+                }
+                string body = unified.Substring(start, end - start);
                 int lines = 1;
                 for (int i = 0; i < body.Length; i = i + 1)
                 {
@@ -77,6 +126,22 @@ namespace Mau.Bricks
                 return false;
             }
         }
+
+        /// <summary>锚点含转义字符（反斜杠或双引号）时的报错引导后缀——标准 JSON 语义提示</summary>
+        /// <param name="anchor">锚点文本</param>
+        /// <returns>提示后缀（无条件时为空串）</returns>
+        private static string EscapeHint(string anchor)
+        {
+            for (int i = 0; i < anchor.Length; i = i + 1)
+            {
+                if (anchor[i] == '\\' || anchor[i] == '"')
+                {
+                    return "｜提示：锚点按标准 JSON 语义——字面反斜杠写成两个反斜杠、字面引号写成反斜杠加引号；锚点取 text-read 的原文行，勿把源码里的字符串结束引号当作已转义引号。";
+                }
+            }
+            return "";
+        }
+
         /// <summary>
         /// 结构化元数据头（统一口径·A214）——恒定 ok / tool + 主来源 target + 主计数 items（空串 / 负值 = 省略）。
         /// </summary>
@@ -102,4 +167,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:ED90D7D9118AEB1F0BA72FCB791C572ECCC854F31F859A155FB763E063A89525
+// #MAU_CHECKSUM:SHA256:79998ED6D8BAF08B28FD29F75F59CB659B44590211B562A7B67F43E1FD9AC62F
