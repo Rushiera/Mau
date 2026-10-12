@@ -24,12 +24,6 @@ var FX_FEATURES = [
         init: 'chatScrollInit'
     },
     {
-        id: 'pending', name: '插话队列',
-        inputs: ['发送时刻（input.js）', 'persist user 块到达（persist.js）'],
-        outputs: ['#chatPendingPanel'],
-        init: null
-    },
-    {
         id: 'cmdIntent', name: '命令解码显示',
         inputs: ['toolcard payload.name / arguments'],
         outputs: ['工具卡折叠行文案 · .cmd-intent 展开块'],

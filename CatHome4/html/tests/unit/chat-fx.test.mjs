@@ -5,7 +5,7 @@
 //   ① 声明表 `FX_FEATURES` 五件齐备 + 字段面完整（id / name / inputs / outputs / init）
 //   ② `fxBoot` —— 入口查空出声 + 一件抛错不拖累其余（异常隔离）
 //   ③ controls —— 轮进行态判据与四按钮派生
-//   ④ pending —— FIFO 出列 / 清队 / 空表隐藏 / HTML 转义
+//   ④ pending —— 退役（A233 迁入 state 投影——契约 §12.2 ①；渲染断言见 chat-trunk）
 //   ⑤ cmdIntent —— 适用判据 / 解码接线 / 展开块挂载 / 未识别上报
 //   ⑥ scroll / pet —— 入口就位与幂等（几何与素材面属运行态验收，jsdom 无布局不可测）
 //
@@ -39,10 +39,10 @@ function captureWarn(body) {
 
 // ── ① / ② 声明表与启动 ───────────────────────
 describe('声明表与启动（fx/registry）', () => {
-    it('六件齐备且字段面完整', () => {
+    it('五件齐备且字段面完整', () => {
         const table = window.FX_FEATURES;
-        expect(table.length).toBe(6);
-        expect(table.map((f) => f.id).sort()).toEqual(['cmdIntent', 'controls', 'liveStats', 'pending', 'pet', 'scroll']);
+        expect(table.length).toBe(5);
+        expect(table.map((f) => f.id).sort()).toEqual(['cmdIntent', 'controls', 'liveStats', 'pet', 'scroll']);
         for (const f of table) {
             expect(typeof f.name, f.id).toBe('string');
             expect(Array.isArray(f.inputs), f.id + ' inputs').toBe(true);
@@ -117,53 +117,18 @@ describe('按钮态（fx/controls）', () => {
     });
 });
 
-// ── ④ pending ────────────────────────────────
-describe('插话队列（fx/pending）', () => {
-    it('FIFO 出列——先入先出', () => {
-        window.pendingAdd('一');
-        window.pendingAdd('二');
-        expect(document.querySelectorAll('#chatPendingPanel > div').length).toBe(2);
-        window.pendingConsume();
-        const html = document.getElementById('chatPendingPanel').innerHTML;
-        expect(html).toContain('二');
-        expect(html).not.toContain('一');
-    });
-
-    it('空队零动作 / 空表清空面板（:empty 隐藏）', () => {
-        window.pendingConsume();
-        window.pendingClear();
-        expect(document.getElementById('chatPendingPanel').innerHTML).toBe('');
-    });
-
-    it('渲染转义——HTML 标签按文本落盘（不注入）', () => {
-        window.pendingAdd('<img src=x onerror=alert(1)>');
-        const panel = document.getElementById('chatPendingPanel');
-        expect(panel.querySelector('img')).toBeNull();
-        expect(panel.textContent).toContain('<img src=x');
-    });
-});
-
 // ── ④b 系统注入不打断输入（A219）──────────────
 describe('系统注入不打断输入（A219）', () => {
-    it('系统注入块——不出队在途记录、不切流式', () => {
-        window.pendingClear();
-        window.pendingAdd('我正在打的一条');
+    it('系统注入块——不切流式（输入区仍在原位）', () => {
         window.chatLiveShow(false);
         window.persistAppend([{ type: 'systemautomessage', payload: { text: '[systemauto]（系统自动）x', source: 'systemauto' } }], true);
-        // 在途记录仍在——系统注入块未被当成「我的输入已确认」
-        expect(window.pendQueue.length).toBe(1);
-        expect(document.getElementById('chatPendingPanel').textContent).toContain('我正在打的一条');
         // 临时区未切走——输入区仍在原位（不打断输入）
         expect(window.liveShown).toBe(false);
-        window.pendingClear();
     });
 
-    it('人工 user 块——出队 + 切流式（原语义不回归）', () => {
-        window.pendingClear();
-        window.pendingAdd('我发的');
+    it('人工 user 块——切流式（原语义不回归）', () => {
         window.chatLiveShow(false);
         window.persistAppend([{ type: 'user', payload: { text: '我发的' } }], true);
-        expect(window.pendQueue.length).toBe(0);
         expect(window.liveShown).toBe(true);
     });
 

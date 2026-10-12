@@ -5,13 +5,13 @@
 //       前端零推断：状态位与数字就位即渲染，不自行计时、不自行推算。
 //
 // 分层（A193 骨架 / A194 迁出）：分发表 = `state/registry.js::STATE_DECL`——投影件 → 消费字段 / 输出面 /
-//       入口的**唯一映射处**；投影件分居 `state/`（status · info · meta · note · delay · conn）与
+//       入口的**唯一映射处**；投影件分居 `state/`（status · info · meta · note · delay · pending · conn）与
 //       `fx/`（controls · pet——外观层派生，A176 独立功能面）。
 //       本件只剩「整段覆盖 + 按表分发」——**新增字段 = 加一件 + 表加一行，本件不动**。
 //
-// 字段面（后端 ChatSession.BuildStateJson · 九字段）：
+// 字段面（后端 ChatSession.BuildStateJson · 十字段）：
 //   { sessionId, runState, runMs{idle,wait,link,think,tool,run,reply}, requests, note{…},
-//     delay{entries[…]}, conn{server,clients},
+//     delay{entries[…]}, pending{entries[…]}, conn{server,clients},
 //     tokens{prompt, completion, cacheHit, miss, rate, context, count,
 //            sessionPrompt, sessionCompletion, sessionCacheHit, sessionMiss, sessionRate},
 //     meta{catId, displayName, sessionId, createdAt, lastActiveAt, contextCount, contextChars} }
@@ -30,6 +30,7 @@ var appState = {
     requests: 0,
     note: null,
     delay: null,
+    pending: null,
     conn: null,
     tokens: {},
     meta: null
@@ -48,6 +49,7 @@ function stateApply(st) {
         requests: st.requests || 0,
         note: st.note || null,
         delay: st.delay || null,
+        pending: st.pending || null,
         conn: st.conn || null,
         tokens: st.tokens || {},
         meta: st.meta || null

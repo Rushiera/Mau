@@ -1266,5 +1266,51 @@ namespace CatHome4.Core.Tests
             Assert.True(anchorCardKept);
             Assert.True(siblingCardKept);
         }
+        /// <summary>
+        /// A229 timeback 未闭合自动拉起——域未回收 = 本轮未结束：轮末注入固定提示拉起（优先于 Note）；
+        /// 连续拉起达上限（3 次）后放行本轮结束（防模型不回收导致的无限空转）。
+        /// </summary>
+        [Fact]
+        public void A229_TimebackOpen_PullsUntilLimit()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"未回收验证\"}"));
+            session.PostUserMessage("开域后不回收");
+            // 拉起瞬间即回 Idle（与 Note 拉起同构）——PumpUntilIdle 在首次 Idle 即退出、拉起消息尚未入前文，
+            // 故泵到「提示出现 3 次且回到 Idle」或上限 500 帧
+            for (int i = 0; i < 500; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+                if (CountPullText(session) >= 3 && session.IsIdle)
+                {
+                    break;
+                }
+            }
+            // 闸门生效——最终回到 Idle（不无限空转）
+            Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
+            // 域仍未回收
+            Assert.True(session.TimebackActive);
+            // 拉起提示入前文——固定文案，恰好 3 次（上限）
+            Assert.Equal(3, CountPullText(session));
+        }
+        /// <summary>统计前文里 A229 拉起提示出现次数。</summary>
+        /// <param name="session">会话</param>
+        /// <returns>出现次数</returns>
+        private static int CountPullText(CH4.ChatSession session)
+        {
+            int n = 0;
+            LlmMessage[] all = session.Context.GetMessages();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                string c = all[i].Content == null ? "" : all[i].Content;
+                if (c.Contains("先回收timeback域再结束工作", StringComparison.Ordinal))
+                {
+                    n = n + 1;
+                }
+            }
+            return n;
+        }
     }
 }

@@ -57,19 +57,8 @@ function chatSend() {
     if (text.length === 0 && paths.length === 0) {
         return;
     }
-    // 插话队列——本地入列（内核 user 块到达时出列——见 pending.js / persist.js 钩子）
-    if (typeof pendingAdd === 'function') {
-        pendingAdd(text.length > 0 ? text : '（图片）');
-    }
     // 🔴 用户消息必须带 `Chat ` 前缀——宿主 `DispatchCommandForCat` 只认前缀行，裸文本 `return false` 不投递
-    postCommand('Chat ' + text, paths).then(function (j) {
-        if (!j || j.ok !== true) {
-            // 投递未受理——本地在途记录失去意义（防幽灵队列）
-            if (typeof pendingClear === 'function') {
-                pendingClear();
-            }
-        }
-    });
+    postCommand('Chat ' + text, paths);
     box.value = '';
     if (typeof pendClear === 'function') {
         pendClear();

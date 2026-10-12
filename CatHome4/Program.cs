@@ -399,6 +399,8 @@ namespace CH4
             // 延迟队列落盘接线——Data/runtime/delays.json（跨宿主重启保留；design-ch4-delay §七）
             DelayQueue.Configure(Path.Combine(dataRoot, "Data", "runtime", "delays.json"));
             DelayQueue.Load();
+            // 待处理消息队列落盘接线——Data/runtime/pending_<catKey>.json（A232：入队即物化 · 跨宿主重启保留；须先于会话创建）
+            ChatSession.ConfigurePendingStore(Path.Combine(dataRoot, "Data", "runtime"));
             // 网页资产下载接线——任务表落盘 + 产物目录（workspace 根下 Downloads）+ 完成注入回调（design-ch4-webfetch）
             string downloadsDir = "";
             for (int i = 0; i < workspace.Roots.Length; i = i + 1)

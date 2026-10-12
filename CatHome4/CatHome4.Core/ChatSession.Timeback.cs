@@ -77,6 +77,9 @@ namespace CH4
         /// <summary>当前未闭合作用域——null=无作用域。</summary>
         private TimebackScope _timebackScope;
 
+        /// <summary>timeback 未闭合自动拉起计数——同域累计（A229；达上限后放行本轮结束——防模型不回收导致的无限空转）。</summary>
+        private int _timebackPullCount;
+
         /// <summary>归档实例——懒建（首次使用时按本猫路径构造）。</summary>
         private TimebackArchive _timebackArchive;
 

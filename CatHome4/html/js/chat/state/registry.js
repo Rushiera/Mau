@@ -7,8 +7,8 @@
 // 同构：与 blocks（`registry.js` 的 `BLOCK_DECL` + 两张渲染表）· fx（`fx/registry.js` 的 `FX_FEATURES`）
 //       同一形态——可独立变化的东西一件 + 一张声明表；**新增字段 = 加一件 + 表加一行**。
 //
-// 字段面：契约 §12.2 ① = 后端 `ChatSession.BuildStateJson` 九字段——
-//         `sessionId` / `runState` / `runMs` / `requests` / `note` / `delay` / `conn` / `tokens` / `meta`；
+// 字段面：契约 §12.2 ① = 后端 `ChatSession.BuildStateJson` 十字段——
+//         `sessionId` / `runState` / `runMs` / `requests` / `note` / `delay` / `pending` / `conn` / `tokens` / `meta`；
 //         本表各行 `fields` 的并集**覆盖**该清单（每字段至少一件声明消费——不另立第二份字段清单；
 //         覆盖性由门禁用例断言 `tests/unit/chat-state.test.mjs`）。`sessionId`（猫 key）当前无显示位
 //         ——会话标识显示走 `meta.displayName`（A201）。
@@ -54,6 +54,12 @@ var STATE_DECL = [
         fields: ['delay'],
         output: '定时面板列表（delay.js——纯显示，写面走指令总线）',
         apply: 'stateRenderDelay'
+    },
+    {
+        id: 'pending', name: '插话队列', owner: 'state',
+        fields: ['pending'],
+        output: '#chatPendingPanel（⏳ 待处理消息——含 QQ / 指令 / 定时等非前端来源）',
+        apply: 'stateRenderPending'
     },
     {
         id: 'conn', name: '连接健康', owner: 'state',

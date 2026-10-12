@@ -209,8 +209,10 @@
                 <span style="flex:1"></span>
                 <button id="catCfgClose" style="background:transparent;border:none;color:var(--ch-fg-weak);font-size:var(--ch-fs-title);cursor:pointer">✕</button>
             </div>
-            <div style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-bottom:10px">API 切换立即生效；人设/工具/前文 List 保存后「新会话」生效</div>
-            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak)">LLM API 配置</label>
+            <div style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-bottom:10px">API 切换与显示名立即生效；人设/工具/前文 List 保存后「新会话」生效</div>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak)">显示名（displayName——猫卡片标题 / 托盘提示 / 转发前缀）</label>
+            <input id="catCfgName" placeholder="如 雾理莎（留空不允许）" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px">
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">LLM API 配置</label>
             <select id="catCfgApi" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px"></select>
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">QQ Bot 绑定（qqbotId——一只 Bot 只能绑一只猫；空=未绑定）</label>
             <select id="catCfgQqBot" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px"></select>

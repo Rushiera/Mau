@@ -15,10 +15,10 @@
 import { beforeAll, afterEach, describe, expect, it } from 'vitest';
 import { bootChatPage } from './chat-env.mjs';
 
-/// 契约 §12.2 ① 字段面（后端 `ChatSession.BuildStateJson` 九字段）
+/// 契约 §12.2 ① 字段面（后端 `ChatSession.BuildStateJson` 十字段）
 /// 判据：表内 fields 并集须**覆盖**本清单（每字段至少一件声明消费）——`sessionId`（猫 key）当前
 ///       无显示位（会话标识显示走 `meta`，A201）
-const STATE_FIELDS = ['sessionId', 'runState', 'runMs', 'requests', 'note', 'delay', 'conn', 'tokens', 'meta'];
+const STATE_FIELDS = ['sessionId', 'runState', 'runMs', 'requests', 'note', 'delay', 'pending', 'conn', 'tokens', 'meta'];
 
 /// 字段面派生——分发表各行 `fields` 的并集（与产品侧同口径：表是唯一声明处）
 function fieldKeys(rows) {

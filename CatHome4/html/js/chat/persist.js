@@ -54,10 +54,6 @@ function persistFull(items) {
         return;
     }
     box.textContent = '';
-    // 插话队列——全量重绘即清队（连接首帧 / 重连 / 新会话：本地在途记录失去意义）
-    if (typeof pendingClear === 'function') {
-        pendingClear();
-    }
     persistAppend(items);
     tbScopeMark();
     scrollBottomNow();
@@ -76,11 +72,6 @@ function persistAppend(items, auto) {
         // type 归一——收包后第一个动作：此后所有 type 消费（判据 / 分派 / 兜底）都在归一口径上
         if (items[i]) {
             items[i].type = normalizeType(items[i].type);
-        }
-        // 插话队列——**人工** user 块到达 = 内核确认，本地在途记录 FIFO 出队
-        // 🔴 系统注入块（type=systemautomessage，A219）不是「我的输入」的确认——它压根不匹配本判据
-        if (items[i] && items[i].type === 'user' && typeof pendingConsume === 'function') {
-            pendingConsume();
         }
         // 自动切换——两个节点各一次（判据取持久区新块，不按指令）：
         //   人工 user 块 = 我的输入已落前文 → 切流式看流；roundsum = 本轮结算 → 切回输入

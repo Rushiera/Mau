@@ -539,7 +539,7 @@ namespace CatHome4.Admin
 
         /// <summary>
         /// 每猫配置读取——GET /api/v1/cat-config?cat=&lt;id|majordomo&gt;。
-        /// 返回：apiConfigId/persona/toolNames/injectList + allToolNames（工具勾选清单）+ apiOptions（API 下拉清单）。
+        /// 返回：displayName/apiConfigId/persona/toolNames/injectList + allToolNames（工具勾选清单）+ apiOptions（API 下拉清单）。
         /// </summary>
         /// <param name="ctx">HTTP 上下文</param>
         /// <returns>配置 JSON</returns>
@@ -599,6 +599,7 @@ namespace CatHome4.Admin
             {
                 ok = true,
                 cat = catKey,
+                displayName = cfg.DisplayName,
                 type = cfg.Type,
                 apiConfigId = cfg.ApiConfigId,
                 persona = cfg.Persona,
@@ -652,10 +653,11 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 每猫配置写入——POST /api/v1/cat-config（body: cat/apiConfigId/persona/toolNames/injectList/packs/enabledRoots/qqbotId/qqbotEnable）。
+        /// 每猫配置写入——POST /api/v1/cat-config（body: cat/displayName/apiConfigId/persona/type/toolNames/injectList/packs/enabledRoots/qqbotId/qqbotEnable/userInjectIdleOnly）。
         /// 🔴 字段级合并写（PUT 语义 · 2026-10-02 判例蒸馏轮）——字段出现才落盘，缺省保留磁盘现值；显式空值（空数组 / 空串）= 清空。
+        /// displayName 非空校验（空一律拒绝——与 cat.cfg.set 同源）。
         /// toolNames 写时校验（非法名过滤）；落盘 HTTP 线程原子写；运行时生效（字段更新 + Swap）入队主线程泵 catcfg.apply。
-        /// 生效语义：apiConfigId 立即生效（SwapLlmRuntime）；persona/toolNames/injectList 新会话生效（session.new 重注入）。
+        /// 生效语义：apiConfigId 立即生效（SwapLlmRuntime）；persona/toolNames/injectList/displayName 新会话生效（session.new 重注入）。
         /// </summary>
         /// <param name="ctx">HTTP 上下文</param>
         /// <returns>回执 JSON（ok=已受理落盘）</returns>
@@ -666,6 +668,7 @@ namespace CatHome4.Admin
             string apiConfigId = "";
             // A41-3 显式空值语义——字段出现且为空/全零 = 清空回默认端点（字段缺省 = 保留旧值）
             bool apiConfigIdPresent = false;
+            bool displayNamePresent = false;
             bool personaPresent = false;
             bool typePresent = false;
             bool toolNamesPresent = false;
@@ -674,6 +677,7 @@ namespace CatHome4.Admin
             bool packsPresent = false;
             bool enabledRootsPresent = false;
             bool userInjectIdleOnlyPresent = false;
+            string displayName = "";
             string persona = "";
             string typeValue = "";
             string toolNames = "";
@@ -691,6 +695,7 @@ namespace CatHome4.Admin
                     catKey = GetJsonString(root, "cat");
                     // 字段级合并写（2026-10-02 判例蒸馏轮）——先登记本请求出现的字段（缺省 = 保留旧值）
                     JsonElement probeEl;
+                    displayNamePresent = root.TryGetProperty("displayName", out probeEl);
                     personaPresent = root.TryGetProperty("persona", out probeEl);
                     typePresent = root.TryGetProperty("type", out probeEl);
                     toolNamesPresent = root.TryGetProperty("toolNames", out probeEl);
@@ -705,6 +710,7 @@ namespace CatHome4.Admin
                         apiConfigIdPresent = true;
                     }
                     apiConfigId = GetJsonString(root, "apiConfigId");
+                    displayName = GetJsonString(root, "displayName");
                     persona = GetJsonString(root, "persona");
                     typeValue = GetJsonString(root, "type");
                     toolNames = GetJsonString(root, "toolNames");
@@ -832,6 +838,15 @@ namespace CatHome4.Admin
                 cfg.QqBotId = qqbotId;
             }
             // 字段级合并写（2026-10-02 判例蒸馏轮）——字段出现才落盘，缺省保留磁盘现值（空数组 / 空串 = 显式清空）
+            if (displayNamePresent)
+            {
+                string trimmedName = displayName.Trim();
+                if (trimmedName.Length == 0)
+                {
+                    return Results.Json(new { ok = false, error = "displayName 不能为空" });
+                }
+                cfg.DisplayName = trimmedName;
+            }
             if (qqbotEnablePresent)
             {
                 cfg.QqBotEnable = qqbotEnable;
@@ -1362,6 +1377,11 @@ namespace CatHome4.Admin
                 _chatBridge.DefaultQqBotId = ResolveQqBotId(cfg);
                 _chatBridge.DefaultQqBotEnable = cfg.QqBotEnable;
                 _chatBridge.DefaultSession.SetUserInjectIdleOnly(cfg.UserInjectIdleOnly);
+                // A230 显示名立即刷新（改配置即改内存；空值保持原值）
+                if (cfg.DisplayName != null && cfg.DisplayName.Length > 0)
+                {
+                    _chatBridge.DefaultSession.SetDisplayName(cfg.DisplayName);
+                }
                 Guid newApi = ResolveApiConfigId(cfg);
                 if (_defaultApiConfigId != newApi)
                 {
@@ -1377,6 +1397,12 @@ namespace CatHome4.Admin
                 return "catcfg.apply | 猫不存在: " + key;
             }
             cat.Persona = persona;
+            // A230 显示名立即刷新（改配置即改内存；空值保持原值）
+            if (cfg.DisplayName != null && cfg.DisplayName.Length > 0)
+            {
+                cat.DisplayName = cfg.DisplayName;
+                cat.Session.SetDisplayName(cfg.DisplayName);
+            }
             cat.Type = cfg.Type == null ? "" : cfg.Type;
             cat.InjectList = injectList;
             cat.ToolNames = toolNames;

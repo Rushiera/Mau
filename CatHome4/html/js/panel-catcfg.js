@@ -30,6 +30,7 @@ function openCatCfg(catId, name) {
             renderQqBotOptions(d.qqbotOptions || [], d.qqbotId || '');
             document.getElementById('catCfgQqEnable').checked = !!d.qqbotEnable;
             document.getElementById('catCfgIdleOnly').checked = !!d.userInjectIdleOnly;
+            document.getElementById('catCfgName').value = d.displayName || '';
             document.getElementById('catCfgType').value = d.type || '';
             document.getElementById('catCfgPersona').value = d.persona || '';
             renderToolChecks(d.toolNames || '');
@@ -327,6 +328,7 @@ function saveCatCfg() {
     var toolNames = collectChecked('catCfgTools');
     var payload = {
         cat: catCfgTarget,
+        displayName: document.getElementById('catCfgName').value,
         apiConfigId: document.getElementById('catCfgApi').value,
         type: document.getElementById('catCfgType').value,
         persona: document.getElementById('catCfgPersona').value,
@@ -351,7 +353,7 @@ function saveCatCfg() {
                 if (removed && removed.length > 0) {
                     document.getElementById('catCfgMsg').textContent = '已保存——⚠️ 已剔除池外工具名 ' + removed.length + ' 个：' + removed.join('、') + '（请重开配置确认名单）';
                 } else {
-                    document.getElementById('catCfgMsg').textContent = '已保存——API 即时生效；人设/工具/前文 List 新会话生效';
+                    document.getElementById('catCfgMsg').textContent = '已保存——API 即时生效；人设/工具/前文 List/显示名 新会话生效';
                 }
             } else {
                 document.getElementById('catCfgMsg').textContent = '保存失败: ' + d.error;

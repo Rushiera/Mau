@@ -384,6 +384,8 @@ namespace CH4
         public void SetCatKey(string catKey)
         {
             _catKey = catKey;
+            // A232——待处理消息恢复：catKey 就位后加载（构造期 catKey 未定，故不放在构造）
+            LoadPendingFromDisk();
         }
         /// <summary>设置人工输入空闲注入开关——catcfg.apply 即时应用（cat.cfg userInjectIdleOnly）。</summary>
         /// <param name="value">true=人工输入仅在 Idle 时推送（轮内不插）；false=现状</param>
@@ -1046,12 +1048,16 @@ namespace CH4
         }
 
         /// <summary>
-        /// 停机态丢弃在途排队消息（A72）——宿主即将重启，不再开新轮；丢弃并出声（不静默）。
+        /// 停机态丢弃在途**系统注入**（A72 · A232 收窄）——宿主即将重启，不再开新轮；丢弃并出声（不静默）。
+        /// 人工队列（_pending）自 A232 起跨重启保留（入队即物化），不在本方法清理面。
         /// </summary>
         private void DropPendingIfRestarting()
         {
-            int total = _pending.Count + _sysPending.Count;
-            if (total == 0)
+            // A232——人工队列（_pending）跨重启保留：入队即物化，重启后由 LoadPendingFromDisk 恢复；
+            // 本方法只清 sys 队列（系统注入生命周期短，不跨重启保留）。停的是「新输入受理」（见 PostUserMessage），
+            // 不是「已受理消息」。
+            int sysCount = _sysPending.Count;
+            if (sysCount == 0)
             {
                 return;
             }
@@ -1059,10 +1065,8 @@ namespace CH4
             {
                 return;
             }
-            int dropped = total;
-            _pending.Clear();
             _sysPending.Clear();
-            LogStore.Add("CatHome4", 2, "宿主重启停机态——丢弃在途排队消息 " + dropped.ToString() + " 条", "RESTART");
+            LogStore.Add("CatHome4", 2, "宿主重启停机态——丢弃在途系统注入 " + sysCount.ToString() + " 条", "RESTART");
         }
         /// <summary>待处理消息合并排序键——入队序号升序（到达序）。</summary>
         /// <param name="a">条目 A</param>
@@ -1079,11 +1083,13 @@ namespace CH4
         {
             List<PendingMessage> all = new List<PendingMessage>();
             // 人工队列——空闲注入开启时轮内不取（仅 Idle 启动取）
+            bool tookUser = false;
             if (includeUser)
             {
                 while (_pending.Count > 0)
                 {
                     all.Add(_pending.Dequeue());
+                    tookUser = true;
                 }
             }
             while (_sysPending.Count > 0)
@@ -1091,6 +1097,11 @@ namespace CH4
                 all.Add(_sysPending.Dequeue());
             }
             all.Sort(ComparePendingBySeq);
+            // A232——消费即移除（人工队列被取走即重写落盘；仅本趟真取走人工条目时写——空队列零写）
+            if (tookUser)
+            {
+                SavePendingToDisk();
+            }
             return all;
         }
         /// <summary>本轮边界——两队列按到达序取尽并插入前文（user / sys 双路径；同注入点多条一并）。</summary>
@@ -1190,6 +1201,8 @@ namespace CH4
             msg.Seq = _pendingSeq;
             _pendingSeq = _pendingSeq + 1;
             _pending.Enqueue(msg);
+            // A232——入队即物化（跨宿主重启保留）
+            SavePendingToDisk();
             return true;
         }
 
@@ -1938,6 +1951,8 @@ namespace CH4
                 ("sessionMiss", sessionTokens.Miss),
                 ("sessionRate", sessionTokens.Rate));
             string delayJson = JsonUtil.Object(("entries", DelayQueue.BuildEntriesFragment(_catKey)));
+            // A233 pending 段——人工队列待处理消息投影（含非前端来源：QQ / 指令 / 定时转投）
+            string pendingJson = BuildPendingFragment();
             // A201 会话元数据面——displayName / 会话实例 ID / 时间戳 / 前文条数与字符数（持久化面见 design-ch4-protocol §十三）
             // 易用性修复（A201 前端轮）：① lastActiveAt 在恢复导入后为 0（ReplaceMessages 不刷新）→ 回落创建时刻（与落盘面 SaveMeta 同口径）
             //                       ② contextChars 原缓存只在轮末刷新（轮内滞后）→ 推送时实时刷新
@@ -1958,6 +1973,7 @@ namespace CH4
                 ("requests", requests),
                 ("note", JsonUtil.Raw(BuildNoteJson())),
                 ("delay", JsonUtil.Raw(delayJson)),
+                ("pending", JsonUtil.Raw(pendingJson)),
                 ("conn", JsonUtil.Raw(JsonUtil.Object(("server", IsHostRestarting() ? "stopping" : "ok"), ("clients", clients)))),
                 ("tokens", JsonUtil.Raw(tokensJson)),
                 ("meta", JsonUtil.Raw(metaJson)));
@@ -1966,6 +1982,26 @@ namespace CH4
         public void PushState()
         {
             _viewBus.SetState(BuildStateJson());
+        }
+        /// <summary>
+        /// pending 段 JSON——人工队列（_pending）待处理消息投影（A233；按入队序升序）。
+        /// 含全部来源：前端输入（user）· QQ 注入（user + origin）· 指令 / 定时 / --run 注入。
+        /// 条目字段：content / source / origin（附件面 ImagesJson 不投影——展示面用不到）。
+        /// </summary>
+        /// <returns>{"entries":[{"content","source","origin"}, …]}</returns>
+        public string BuildPendingFragment()
+        {
+            List<PendingMessage> list = new List<PendingMessage>(_pending);
+            list.Sort(ComparePendingBySeq);
+            List<string> items = new List<string>();
+            for (int i = 0; i < list.Count; i = i + 1)
+            {
+                items.Add(JsonUtil.Object(
+                    ("content", list[i].Content),
+                    ("source", list[i].Source),
+                    ("origin", list[i].Origin)));
+            }
+            return JsonUtil.Object(("entries", JsonUtil.RawArray(items.ToArray())));
         }
 
         /// <summary>构建 roundsum 载荷——本轮 Token 消耗 + 工具次数 + 请求次数 + 总耗时 + 六态用时（idle 不计时故不入载荷；CloseRound 推送/落盘数据源）+ done（本轮结束语义：stream=流式自然收尾 / tool=工具主动 done）。</summary>
@@ -2754,6 +2790,31 @@ namespace CH4
         {
             // A202 落盘时机——元数据面只在每次 API 请求结算后落盘（usage 处置点）；
             // 轮末与 Note 拉起轮均为纯内存行为：轮末只写 view.json（roundsum 块），元数据面不写
+            // A229 timeback 未闭合自动拉起——优先于 Note（莎 2026-10-12 定）：域未回收 = 本轮未结束，同样不 roundsum；
+            // 上限 3 次防无限空转（模型不回收时出声后放行本轮结束）
+            if (TimebackActive)
+            {
+                if (_timebackPullCount < 3)
+                {
+                    _timebackPullCount = _timebackPullCount + 1;
+                    PhaseSettle();
+                    PostSystemMessage(SysKindSystemAuto, "先回收timeback域再结束工作");
+                    _viewStore.Save();
+                    _round = 0;
+                    _phase = ChatPhase.Idle;
+                    return;
+                }
+                if (_timebackPullCount == 3)
+                {
+                    // 上限已出声一次——此后不再拉起（防每轮重复告警刷屏）；域回收后计数归零，下一个域重新计数
+                    _timebackPullCount = 4;
+                    LogStore.Add("CatHome4", 2, "timeback 未闭合拉起达上限（3 次）——不再拉起，放行本轮结束: cat=" + _catKey, "TIMEBACK");
+                }
+            }
+            else
+            {
+                _timebackPullCount = 0;
+            }
             // M4a Note 自动拉起提前——剩余≥2 条时以 user 名义推下一轮（最后 1 条不拉起——LLM 完成后自然结束；Q2 顺序：Note 未完成 = 本轮未结束——不 roundsum；全部完成天然跳过——防无限循环闸门）
             if (_noteTasks != null && _noteTasks.Length > 0 && _noteCurrent + 1 < _noteTasks.Length)
             {

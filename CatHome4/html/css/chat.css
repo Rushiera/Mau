@@ -279,6 +279,8 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-think.done .ct-full { display: none; }
 .chat-think.done.full .ct-peek { display: none; }
 .chat-think.done.full .ct-full { display: block; max-height: var(--ch-think-max-h); overflow: auto; white-space: pre-wrap; word-break: break-all; }
+/* A231 轻量 md——think 正文行内标签最小样式（<code> 底色；<strong>/<em> 用浏览器默认） */
+.chat-think .ct-body code { background: var(--ch-bg-chip); border-radius: 3px; padding: 0 3px; }
 /* 系统注入块（2026-10-11 莎定）——独立渲染：结构照搬 Think 两档（压缩档默认 / 点击头行切展开档），类独立（不引用 .chat-think） */
 .chat-sys { font-size: var(--ch-fs-tag); color: var(--ch-chat-ai-fg); }
 .chat-sys:not(:first-child) { margin-top: 6px; }

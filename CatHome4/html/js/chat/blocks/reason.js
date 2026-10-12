@@ -15,6 +15,7 @@
 //
 // 渲染口径（A199）：计数类全部取后端载荷——chars / durMs / cps 直用，前端不自算；
 //   仅「行数」为显示派生（正文换行符计数——外观格式化，零业务效果）；
+//   A231 补充：正文走轻量 md 行内渲染（thinkToHtml——**粗体** / *斜体* / `代码`；块级语法不进）；
 //   统计缺失（durMs 未记录）→ 时间与速率位不显示，尾附「未统计」。
 // ═══════════════════════════════════════════
 
@@ -61,6 +62,13 @@ function thinkPeek(text) {
     return lines[0] + '\n…已折叠 ' + hiddenLines + '行 ' + hiddenChars + '字符…\n' + lines[lines.length - 1];
 }
 
+// A231 轻量 md——think 正文只做行内渲染（**粗体** / *斜体* / `代码`）+ 原文换行保留（CSS pre-wrap）；
+// 块级语法（标题/列表/表格/代码块）不进——think 以散文为主，块级会破坏紧凑观感。转义与解析复用 md.js 的 mdParseInline。
+function thinkToHtml(text) {
+    if (!text || text.length === 0) { return ''; }
+    return mdParseInline(text);
+}
+
 function buildReasonBlock(payload) {
     // 完成态思考块——头行（标签 + 统计）+ 两档正文（两档内容同置 DOM，显示切换纯 CSS：点击只切类，零内容重建）
     // 气泡外壳（2026-10-05 气泡化）——块体 = 气泡；内层 .chat-think 保留原结构（底色与描边由外壳承担）
@@ -77,8 +85,12 @@ function buildReasonBlock(payload) {
     box.appendChild(head);
 
     var body = el('div', 'ct-body');
-    body.appendChild(elText('div', 'ct-peek', thinkPeek(content)));
-    body.appendChild(elText('div', 'ct-full', content));
+    var peek = el('div', 'ct-peek');
+    peek.innerHTML = thinkToHtml(thinkPeek(content));
+    body.appendChild(peek);
+    var full = el('div', 'ct-full');
+    full.innerHTML = thinkToHtml(content);
+    body.appendChild(full);
     box.appendChild(body);
 
     // 切档交互（A199 收窄）——热区只落头行（正文可自由选中复制）；CSS 指针提示同源
