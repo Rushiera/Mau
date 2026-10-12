@@ -396,13 +396,16 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 收集 .git 特征行——HEAD 指向 + 本地分支 commit（零外部依赖：直读 HEAD + refs/ 文件；detached HEAD 回退 HEAD 原文）。
+        /// 收集 .git 特征事实——HEAD 指向 + 本地分支 commit（零外部依赖：直读 HEAD + refs/ 文件；detached HEAD 回退 HEAD 原文）。
+        /// 展示文案归积木层（A228 档 2 · B3）。
         /// </summary>
         /// <param name="rel">相对根路径（含 .git）</param>
         /// <param name="gitDir">.git 绝对路径</param>
-        /// <returns>[git] 特征行——SummarizeFileTree 识别前缀不计入文件统计</returns>
-        private static string CollectGitInfo(string rel, string gitDir)
+        /// <returns>git 特征事实（相对路径 + HEAD 摘要）</returns>
+        private static FsGitFact CollectGitFact(string rel, string gitDir)
         {
+            FsGitFact fact = new FsGitFact();
+            fact.RelativePath = rel;
             string head = "";
             try
             {
@@ -431,311 +434,16 @@ namespace Mau.Runtime
                 {
                     commit = commit.Substring(0, 7);
                 }
-                return "[git] 存在 .git（" + rel + "——HEAD: " + branch + (commit.Length > 0 ? " → " + commit : "") + "）";
+                fact.Head = branch + (commit.Length > 0 ? " → " + commit : "");
+                return fact;
             }
             // detached HEAD——HEAD 即 commit
             if (head.Length > 7)
             {
                 head = head.Substring(0, 7);
             }
-            return "[git] 存在 .git（" + rel + "——HEAD: " + head + "）";
-        }
-
-        /// <summary>
-        /// 读取文件版本信息——PE 文件（exe/dll）的版本三件（Product/File/回落值）+ 修改时间与大小；
-        /// 非 PE 文件 / PE 无版本资源明确报错（不返回空版本，失败可见）。
-        /// </summary>
-        /// <param name="path">文件路径（受控根寻址——只读语义）</param>
-        /// <returns>版本信息多行文本（路径 / 版本 / FileVersion / ProductVersion / 修改时间 / 大小）</returns>
-        public string ReadVersionInfo(string path)
-        {
-            string resolved = Resolve(path, false);
-            if (!File.Exists(resolved))
-            {
-                throw new FileNotFoundException("File was not found.", resolved);
-            }
-            // [段1] PE 判定——首两字节 "MZ"（非 PE 直接报错，不让空版本伪装成正常）
-            bool isPe = false;
-            FileStream probe = new FileStream(resolved, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            try
-            {
-                int b0 = probe.ReadByte();
-                int b1 = probe.ReadByte();
-                isPe = b0 == 'M' && b1 == 'Z';
-            }
-            finally
-            {
-                probe.Dispose();
-            }
-            if (!isPe)
-            {
-                throw new InvalidDataException("Not a PE file (no version resource).");
-            }
-            // [段2] 版本三件——ProductVersion 承载 InformationalVersion（.NET SDK 注入 $(Version)+编译时刻——A53）
-            FileVersionInfo info = FileVersionInfo.GetVersionInfo(resolved);
-            string product = SafeText(info.ProductVersion);
-            string file = SafeText(info.FileVersion);
-            string version = product;
-            string fallbackNote = "";
-            if (version.Length == 0)
-            {
-                version = file;
-                fallbackNote = "（ProductVersion 为空——回落 FileVersion）";
-            }
-            if (version.Length == 0)
-            {
-                throw new InvalidDataException("PE file has no version resource.");
-            }
-            string fileText = file;
-            if (fileText.Length == 0)
-            {
-                fileText = "(无)";
-            }
-            string productText = product;
-            if (productText.Length == 0)
-            {
-                productText = "(无)";
-            }
-            // [段3] 元数据——修改时间与大小（同一次读取的自然产物）
-            FileInfo fi = new FileInfo(resolved);
-            StringBuilder sb = new StringBuilder();
-            sb.Append("路径: ").Append(resolved);
-            sb.Append("\n版本: ").Append(version).Append(fallbackNote);
-            sb.Append("\nFileVersion: ").Append(fileText);
-            sb.Append("\nProductVersion: ").Append(productText);
-            sb.Append("\n修改时间: ").Append(fi.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"));
-            sb.Append("\n大小: ").Append(fi.Length.ToString()).Append(" 字节");
-            return sb.ToString();
-        }
-
-        /// <summary>
-        /// 列稳定排序目录树——广度优先逐层推进（同层出完再进下一层；limit 截断先保上层结构完整）。
-        /// </summary>
-        /// <param name="path">受控目录</param>
-        /// <param name="depth">输出层数（1–10；1 = 只列直属子项——自然语义）</param>
-        /// <param name="limit">最大条数（上限 10000）——触顶时末行附 [截断] 提示（含总条数；提示行不占配额）</param>
-        /// <returns>相对目录路径列表 + 尾部行（[git] 特征 / [skip] 忽略目录计数 / [截断]）</returns>
-        public string[] Tree(string path, int depth, int limit)
-        {
-            if (depth < 1 || depth > 10 || limit < 1 || limit > 10000)
-            {
-                throw new ArgumentOutOfRangeException("depth");
-            }
-            string root = Resolve(path, false);
-            if (!Directory.Exists(root))
-            {
-                throw new DirectoryNotFoundException("Tree root was not found.");
-            }
-            List<string> output = new List<string>();
-            List<string> gitLines = new List<string>();
-            int ignoredDirs = 0;
-            int total = 0;
-            // [段1] 广度优先逐层推进——同层条目全部出完再进下一层；depth = 输出层数（自然语义，1 起）
-            // 遍历不因 limit 提前退出——超出部分只计数：截断提示报告总量，忽略目录计数同时补齐
-            List<string> currentLayer = new List<string>();
-            currentLayer.Add(root);
-            int remainLayer = depth;
-            while (currentLayer.Count > 0)
-            {
-                List<string> nextLayer = new List<string>();
-                for (int d = 0; d < currentLayer.Count; d = d + 1)
-                {
-                    string[] entries = Directory.GetFileSystemEntries(currentLayer[d]);
-                    Array.Sort(entries, StringComparer.OrdinalIgnoreCase);
-                    for (int i = 0; i < entries.Length; i = i + 1)
-                    {
-                        string rel = Path.GetRelativePath(root, entries[i]);
-                        bool isDir = Directory.Exists(entries[i]);
-                        // Q4 忽略目录——.git 记录特征行（不列出），其余忽略名单目录跳过（子项不展开）；计数提示不静默
-                        if (isDir && IsIgnoredDir(Path.GetFileName(entries[i])))
-                        {
-                            if (string.Equals(Path.GetFileName(entries[i]), ".git", StringComparison.OrdinalIgnoreCase))
-                            {
-                                gitLines.Add(CollectGitInfo(rel, entries[i]));
-                            }
-                            ignoredDirs = ignoredDirs + 1;
-                            continue;
-                        }
-                        total = total + 1;
-                        if (total <= limit)
-                        {
-                            // 目录行尾加 "/" 标记——显示约定（前端 file-tree 原样展示，供人眼区分目录/文件；Z8 起宿主侧摘要已退役，不再有按尾斜杠计数的消费方）
-                            if (isDir)
-                            {
-                                rel = rel + "/";
-                            }
-                            output.Add(rel);
-                        }
-                        if (remainLayer > 1 && isDir
-                            && !PathBoundary.IsReparsePoint(entries[i]))
-                        {
-                            nextLayer.Add(entries[i]);
-                        }
-                    }
-                }
-                if (remainLayer <= 1)
-                {
-                    break;
-                }
-                remainLayer = remainLayer - 1;
-                currentLayer = nextLayer;
-            }
-            bool truncated = total > limit;
-            // [段2] 尾部行——git 特征行（limit 有余量时补位）+ 提示行（不占 limit 配额）
-            List<string> tail = new List<string>();
-            for (int i = 0; i < gitLines.Count; i = i + 1)
-            {
-                if (output.Count + tail.Count >= limit)
-                {
-                    break;
-                }
-                tail.Add(gitLines[i]);
-            }
-            if (ignoredDirs > 0)
-            {
-                tail.Add("[skip] " + ignoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——条目在其内已跳过");
-            }
-            if (truncated)
-            {
-                tail.Add("[截断] 共 " + total.ToString() + " 条，已列 " + output.Count.ToString() + " 条——提高 limit 至 ≥" + total.ToString() + "，或收窄 path / 降 depth 可看全");
-            }
-            string[] result = new string[output.Count + tail.Count];
-            for (int i = 0; i < output.Count; i = i + 1)
-            {
-                result[i] = output[i];
-            }
-            for (int i = 0; i < tail.Count; i = i + 1)
-            {
-                result[output.Count + i] = tail[i];
-            }
-            return result;
-        }
-
-        /// <summary>
-        /// 按文件名通配符搜索并稳定排序——达 limit 时末行附 [截断] 提示（含总条数；提示行不占配额）。
-        /// </summary>
-        /// <param name="directory">受控目录</param>
-        /// <param name="pattern">文件名模式</param>
-        /// <param name="recursive">是否递归</param>
-        /// <param name="limit">最大结果条数（收集上限）</param>
-        /// <returns>相对搜索根路径列表 + 尾部行（[skip] 忽略目录计数 / [截断]）</returns>
-        public string[] Find(string directory, string pattern, bool recursive, int limit)
-        {
-            if (string.IsNullOrWhiteSpace(pattern) || limit < 1 || limit > 10000)
-            {
-                throw new ArgumentException("Find parameters are invalid.", "pattern");
-            }
-            string root = Resolve(directory, false);
-            List<string> files = new List<string>();
-            int ignoredDirs = 0;
-            int matched = 0;
-            AppendFind(root, root, pattern, recursive, limit, files, ref ignoredDirs, ref matched);
-            files.Sort(StringComparer.OrdinalIgnoreCase);
-            // [段1] 尾部行——提示行不占 limit 配额（与 Tree 同口径）
-            List<string> tail = new List<string>();
-            if (ignoredDirs > 0)
-            {
-                // Q4 忽略目录提示——不静默（find 与 tree 一致：忽略目录内条目不列出但计数可见）
-                tail.Add("[skip] " + ignoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——条目在其内已跳过");
-            }
-            if (matched > files.Count)
-            {
-                tail.Add("[截断] 共 " + matched.ToString() + " 条，已列 " + files.Count.ToString() + " 条——提高 limit 至 ≥" + matched.ToString() + "，或收窄 dir / pattern 可看全");
-            }
-            string[] result = new string[files.Count + tail.Count];
-            for (int i = 0; i < files.Count; i = i + 1)
-            {
-                result[i] = Path.GetRelativePath(root, files[i]);
-            }
-            for (int i = 0; i < tail.Count; i = i + 1)
-            {
-                result[files.Count + i] = tail[i];
-            }
-            return result;
-        }
-        /// <summary>
-        /// 内容关键词搜索——受控根内递归扫描文本文件，返回 相对路径:行号:上下文（前后 ≤10 字符）
-        /// </summary>
-        /// <param name="directory">受控目录</param>
-        /// <param name="keyword">关键词（大小写敏感）</param>
-        /// <param name="pattern">文件名过滤（默认 *）</param>
-        /// <param name="limit">最大结果条数——触顶时末行附 [截断] 提示（含总条数；提示行不占配额）</param>
-        /// <returns>匹配行（相对搜索根的路径:行号:上下文）+ 尾部行（[skip] 忽略 / [skip-file] 不可读 / [截断]）</returns>
-        public string[] Grep(string directory, string keyword, string pattern, int limit)
-        {
-            if (string.IsNullOrWhiteSpace(keyword) || limit < 1 || limit > 10000)
-            {
-                throw new ArgumentException("Grep parameters are invalid.", "keyword");
-            }
-
-            string root = Resolve(directory, false);
-            string filter = (string.IsNullOrWhiteSpace(pattern) || pattern == "*") ? "*" : pattern;
-            List<string> files = new List<string>();
-            int ignoredDirs = 0;
-            // 文件收集上限 10000——收集超出部分只计数（与 Tree / Find 同口径）
-            int collectMatched = 0;
-            AppendFind(root, root, filter, true, 10000, files, ref ignoredDirs, ref collectMatched);
-            List<string> hits = new List<string>();
-            List<string> skipped = new List<string>();
-            int hitTotal = 0;
-            // 命中上限 limit——超出部分只计数（不提前退出：截断提示需报总条数）
-            for (int i = 0; i < files.Count; i = i + 1)
-            {
-                string file = files[i];
-                if (PathBoundary.IsReparsePoint(file))
-                {
-                    continue;
-                }
-
-                string relative = Path.GetRelativePath(root, file);
-                try
-                {
-                    byte[] raw = ReadAllBytesShared(file);
-                    System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(file, raw);
-                    int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
-                    string[] lines = enc.GetString(raw, bom, raw.Length - bom).Replace("\r\n", "\n").Split('\n');
-                    for (int n = 0; n < lines.Length; n = n + 1)
-                    {
-                        string line = lines[n];
-                        int idx = line.IndexOf(keyword, StringComparison.Ordinal);
-                        if (idx >= 0)
-                        {
-                            hitTotal = hitTotal + 1;
-                            if (hits.Count < limit)
-                            {
-                                int start = Math.Max(0, idx - 10);
-                                int len = Math.Min(10 + keyword.Length + 10, line.Length - start);
-                                string ctx = line.Substring(start, len);
-                                hits.Add(relative + ":" + (n + 1).ToString() + ":" + ctx);
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // 不可读文件（二进制/权限/被独占）跳过——不静默：具名告警随结果返回（失败可见——判例 2026-09-15）
-                    skipped.Add("[skip-file] " + relative + " | " + ex.GetType().Name);
-                }
-            }
-
-            // [段1] 尾部行——忽略计数 / 截断提示（均不占 limit 配额；顺序与 Tree / Find 一致）
-            int shownHits = hits.Count;
-            if (ignoredDirs > 0)
-            {
-                // Q4 忽略目录提示——不静默（grep 与 tree/find 一致：忽略目录内不扫描但计数可见）
-                hits.Add("[skip] " + ignoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——匹配条目在其内已跳过");
-            }
-            if (hitTotal > shownHits)
-            {
-                hits.Add("[截断] 共 " + hitTotal.ToString() + " 条，已列 " + shownHits.ToString() + " 条——提高 limit 至 ≥" + hitTotal.ToString() + "，或收窄 dir / keyword 可看全");
-            }
-
-            for (int i = 0; i < skipped.Count; i = i + 1)
-            {
-                hits.Add(skipped[i]);
-            }
-
-            return hits.ToArray();
+            fact.Head = head;
+            return fact;
         }
         /// <summary>
         /// 移动文件且拒绝覆盖目标
@@ -1164,6 +872,243 @@ namespace Mau.Runtime
                 }
             }
             return false;
+        }
+        /// <summary>
+        /// 目录树事实（结构化——A228 档 2 · B3：条目 / git 特征 / 计数；展示文案归积木层）。
+        /// </summary>
+        /// <param name="path">受控目录</param>
+        /// <param name="depth">输出层数（1–10；1 = 只列直属子项）</param>
+        /// <param name="limit">条目上限（1..10000）——只影响 Entries 条数；Total 仍按全量计数</param>
+        /// <returns>目录树事实</returns>
+        public FsTreeFacts TreeFacts(string path, int depth, int limit)
+        {
+            if (depth < 1 || depth > 10 || limit < 1 || limit > 10000)
+            {
+                throw new ArgumentOutOfRangeException("depth");
+            }
+            string root = Resolve(path, false);
+            if (!Directory.Exists(root))
+            {
+                throw new DirectoryNotFoundException("Tree root was not found.");
+            }
+            List<FsEntry> entries = new List<FsEntry>();
+            List<FsGitFact> gitFacts = new List<FsGitFact>();
+            int ignoredDirs = 0;
+            int total = 0;
+            // [段1] 广度优先逐层推进——同层条目全部出完再进下一层；遍历不因 limit 提前退出（超出部分只计数）
+            List<string> currentLayer = new List<string>();
+            currentLayer.Add(root);
+            int remainLayer = depth;
+            while (currentLayer.Count > 0)
+            {
+                List<string> nextLayer = new List<string>();
+                for (int d = 0; d < currentLayer.Count; d = d + 1)
+                {
+                    string[] layerItems = Directory.GetFileSystemEntries(currentLayer[d]);
+                    Array.Sort(layerItems, StringComparer.OrdinalIgnoreCase);
+                    for (int i = 0; i < layerItems.Length; i = i + 1)
+                    {
+                        string rel = Path.GetRelativePath(root, layerItems[i]);
+                        bool isDir = Directory.Exists(layerItems[i]);
+                        // Q4 忽略目录——.git 记特征事实（不列出），其余忽略名单目录跳过（子项不展开）；计数不静默
+                        if (isDir && IsIgnoredDir(Path.GetFileName(layerItems[i])))
+                        {
+                            if (string.Equals(Path.GetFileName(layerItems[i]), ".git", StringComparison.OrdinalIgnoreCase))
+                            {
+                                gitFacts.Add(CollectGitFact(rel, layerItems[i]));
+                            }
+                            ignoredDirs = ignoredDirs + 1;
+                            continue;
+                        }
+                        total = total + 1;
+                        if (total <= limit)
+                        {
+                            FsEntry entry = new FsEntry();
+                            entry.RelativePath = rel;
+                            entry.IsDir = isDir;
+                            entries.Add(entry);
+                        }
+                        if (remainLayer > 1 && isDir && !PathBoundary.IsReparsePoint(layerItems[i]))
+                        {
+                            nextLayer.Add(layerItems[i]);
+                        }
+                    }
+                }
+                if (remainLayer <= 1)
+                {
+                    break;
+                }
+                remainLayer = remainLayer - 1;
+                currentLayer = nextLayer;
+            }
+            FsTreeFacts facts = new FsTreeFacts();
+            facts.Entries = entries.ToArray();
+            facts.GitFacts = gitFacts.ToArray();
+            facts.IgnoredDirs = ignoredDirs;
+            facts.Total = total;
+            return facts;
+        }
+        /// <summary>
+        /// PE 版本事实（结构化——A228 档 2 · B3：版本三件 + 元数据；展示文案与回落注记归积木层）。
+        /// </summary>
+        /// <param name="path">文件路径（受控根寻址——只读语义）</param>
+        /// <returns>版本事实</returns>
+        public FsVersionFacts VersionFacts(string path)
+        {
+            string resolved = Resolve(path, false);
+            if (!File.Exists(resolved))
+            {
+                throw new FileNotFoundException("File was not found.", resolved);
+            }
+            // [段1] PE 判定——首两字节 "MZ"（非 PE 直接报错，不让空版本伪装成正常）
+            bool isPe = false;
+            FileStream probe = new FileStream(resolved, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            try
+            {
+                int b0 = probe.ReadByte();
+                int b1 = probe.ReadByte();
+                isPe = b0 == 'M' && b1 == 'Z';
+            }
+            finally
+            {
+                probe.Dispose();
+            }
+            if (!isPe)
+            {
+                throw new InvalidDataException("Not a PE file (no version resource).");
+            }
+            // [段2] 版本三件——ProductVersion 承载 InformationalVersion（.NET SDK 注入 $(Version)+编译时刻——A53）
+            FileVersionInfo info = FileVersionInfo.GetVersionInfo(resolved);
+            string product = SafeText(info.ProductVersion);
+            string file = SafeText(info.FileVersion);
+            FsVersionFacts facts = new FsVersionFacts();
+            facts.ResolvedPath = resolved;
+            facts.ProductVersion = product;
+            facts.FileVersion = file;
+            if (product.Length > 0)
+            {
+                facts.Version = product;
+            }
+            else
+            {
+                facts.Version = file;
+                facts.FallbackUsed = true;
+            }
+            if (facts.Version.Length == 0)
+            {
+                throw new InvalidDataException("PE file has no version resource.");
+            }
+            // [段3] 元数据——修改时间与大小（同一次读取的自然产物）
+            FileInfo fi = new FileInfo(resolved);
+            facts.LastWrite = fi.LastWriteTime;
+            facts.SizeBytes = fi.Length;
+            return facts;
+        }
+        /// <summary>
+        /// 文件名搜索事实（结构化——A228 档 2 · B3：相对路径 + 计数；展示文案归积木层）。
+        /// </summary>
+        /// <param name="directory">受控目录</param>
+        /// <param name="pattern">文件名模式</param>
+        /// <param name="recursive">是否递归</param>
+        /// <param name="limit">结果上限（收集上限）</param>
+        /// <returns>搜索结果事实</returns>
+        public FsFindFacts FindFacts(string directory, string pattern, bool recursive, int limit)
+        {
+            if (string.IsNullOrWhiteSpace(pattern) || limit < 1 || limit > 10000)
+            {
+                throw new ArgumentException("Find parameters are invalid.", "pattern");
+            }
+            string root = Resolve(directory, false);
+            List<string> files = new List<string>();
+            int ignoredDirs = 0;
+            int matched = 0;
+            AppendFind(root, root, pattern, recursive, limit, files, ref ignoredDirs, ref matched);
+            files.Sort(StringComparer.OrdinalIgnoreCase);
+            string[] rels = new string[files.Count];
+            for (int i = 0; i < files.Count; i = i + 1)
+            {
+                rels[i] = Path.GetRelativePath(root, files[i]);
+            }
+            FsFindFacts facts = new FsFindFacts();
+            facts.RelativePaths = rels;
+            facts.IgnoredDirs = ignoredDirs;
+            facts.Matched = matched;
+            return facts;
+        }
+        /// <summary>
+        /// 内容搜索事实（结构化——A228 档 2 · B3：命中 / 跳过 / 计数；展示文案归积木层）。
+        /// </summary>
+        /// <param name="directory">受控目录</param>
+        /// <param name="keyword">关键词（大小写敏感）</param>
+        /// <param name="pattern">文件名过滤（默认 *）</param>
+        /// <param name="limit">命中上限（1..10000）——只影响 Hits 条数；HitTotal 仍按全量计数</param>
+        /// <returns>内容搜索事实</returns>
+        public FsGrepFacts GrepFacts(string directory, string keyword, string pattern, int limit)
+        {
+            if (string.IsNullOrWhiteSpace(keyword) || limit < 1 || limit > 10000)
+            {
+                throw new ArgumentException("Grep parameters are invalid.", "keyword");
+            }
+            string root = Resolve(directory, false);
+            string filter = (string.IsNullOrWhiteSpace(pattern) || pattern == "*") ? "*" : pattern;
+            List<string> files = new List<string>();
+            int ignoredDirs = 0;
+            // 文件收集上限 10000——收集超出部分只计数（与 Tree / Find 同口径）
+            int collectMatched = 0;
+            AppendFind(root, root, filter, true, 10000, files, ref ignoredDirs, ref collectMatched);
+            List<FsGrepHit> hits = new List<FsGrepHit>();
+            List<FsGrepSkip> skipped = new List<FsGrepSkip>();
+            int hitTotal = 0;
+            // 命中上限 limit——超出部分只计数（不提前退出：截断提示需报总条数）
+            for (int i = 0; i < files.Count; i = i + 1)
+            {
+                string file = files[i];
+                if (PathBoundary.IsReparsePoint(file))
+                {
+                    continue;
+                }
+                string relative = Path.GetRelativePath(root, file);
+                try
+                {
+                    byte[] raw = ReadAllBytesShared(file);
+                    System.Text.Encoding enc = TextFileCodec.DetectReadEncoding(file, raw);
+                    int bom = (enc is UTF8Encoding u && u.GetPreamble().Length > 0 && raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) ? 3 : 0;
+                    string[] lines = enc.GetString(raw, bom, raw.Length - bom).Replace("\r\n", "\n").Split('\n');
+                    for (int n = 0; n < lines.Length; n = n + 1)
+                    {
+                        string line = lines[n];
+                        int idx = line.IndexOf(keyword, StringComparison.Ordinal);
+                        if (idx >= 0)
+                        {
+                            hitTotal = hitTotal + 1;
+                            if (hits.Count < limit)
+                            {
+                                int start = Math.Max(0, idx - 10);
+                                int len = Math.Min(10 + keyword.Length + 10, line.Length - start);
+                                FsGrepHit hit = new FsGrepHit();
+                                hit.RelativePath = relative;
+                                hit.Line = n + 1;
+                                hit.Context = line.Substring(start, len);
+                                hits.Add(hit);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 不可读文件（二进制/权限/被独占）跳过——不静默：具名告警随结果返回（失败可见）
+                    FsGrepSkip skip = new FsGrepSkip();
+                    skip.RelativePath = relative;
+                    skip.Reason = ex.GetType().Name;
+                    skipped.Add(skip);
+                }
+            }
+            FsGrepFacts facts = new FsGrepFacts();
+            facts.Hits = hits.ToArray();
+            facts.Skipped = skipped.ToArray();
+            facts.IgnoredDirs = ignoredDirs;
+            facts.HitTotal = hitTotal;
+            return facts;
         }
     }
 

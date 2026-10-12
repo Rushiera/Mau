@@ -180,7 +180,8 @@ namespace CH4
         }
 
         /// <summary>
-        /// 宿主内置工具参数面校验——白名单键 / 未知参数拒绝（ERR|BAD_ARGS；宿主注入保留键 catId 放行）。
+        /// 宿主内置工具参数面校验——薄封装：仅承接「空参数 = 通过」的宿主语义，校验本体归
+        /// <see cref="JsonArgs.Validate"/>（单点真相源——与积木面同一实现，A228 档 1）。
         /// </summary>
         /// <param name="argsJson">参数 JSON（空=无参工具）</param>
         /// <param name="allowed">允许键（空格分隔；空=无参数）</param>
@@ -191,37 +192,7 @@ namespace CH4
             {
                 return "";
             }
-            try
-            {
-                using (JsonDocument doc = JsonUtil.ParseStrict(argsJson))
-                {
-                    JsonElement root = doc.RootElement;
-                    if (root.ValueKind != JsonValueKind.Object)
-                    {
-                        return "ERR|BAD_ARGS|参数必须是 JSON 对象";
-                    }
-                    foreach (JsonProperty property in root.EnumerateObject())
-                    {
-                        if (property.Name == "catId")
-                        {
-                            continue;
-                        }
-                        if (allowed.Length == 0)
-                        {
-                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（本工具无参数）";
-                        }
-                        if ((" " + allowed + " ").IndexOf(" " + property.Name + " ", StringComparison.Ordinal) < 0)
-                        {
-                            return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 " + allowed + "）";
-                        }
-                    }
-                    return "";
-                }
-            }
-            catch (Exception ex)
-            {
-                return "ERR|BAD_ARGS|参数 JSON 解析失败: " + ex.Message;
-            }
+            return JsonArgs.Validate(argsJson, allowed, "", "", "");
         }
 
         /// <summary>

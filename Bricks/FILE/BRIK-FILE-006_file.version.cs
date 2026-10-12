@@ -4,8 +4,8 @@
 // 类别: FILE
 // 作用: 读取 PE 文件（exe/dll）版本信息——版本三件（Product/File/回落值）+ 修改时间 + 大小；非 PE / 无版本资源明确报错（失败可见）——LLM 工具 file-version 语料执行面
 // 依赖: 无
-// 引用: Mau.Runtime（FileSystemService/DataBox）
-// 原理: FileSystemRegistry/DataBox 解析 FileSystemService → ReadVersionInfo(path)；argsJson 内解析 path
+// 引用: Mau.Runtime（FileSystemService / FsVersionFacts / DataBox）
+// 原理: FileSystemRegistry/DataBox 解析 FileSystemService → VersionFacts(path)；展示文案（回落注记 / (无) 形态）归积木层（A228 档 2 · B3）；argsJson 内解析 path
 // 常用: FileCat 认领线——'file.version'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
@@ -58,8 +58,20 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                string info = fs.ReadVersionInfo(path);
-                result = MetaHead("file-version", true, path, -1) + "\n" + path + " | " + info;
+                FsVersionFacts facts = fs.VersionFacts(path);
+                System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                // [展示层] 文案与回落注记归积木层（A228 档 2 · B3）
+                sb.Append("路径: ").Append(facts.ResolvedPath);
+                sb.Append("\n版本: ").Append(facts.Version);
+                if (facts.FallbackUsed)
+                {
+                    sb.Append("（ProductVersion 为空——回落 FileVersion）");
+                }
+                sb.Append("\nFileVersion: ").Append(facts.FileVersion.Length == 0 ? "(无)" : facts.FileVersion);
+                sb.Append("\nProductVersion: ").Append(facts.ProductVersion.Length == 0 ? "(无)" : facts.ProductVersion);
+                sb.Append("\n修改时间: ").Append(facts.LastWrite.ToString("yyyy-MM-dd HH:mm:ss"));
+                sb.Append("\n大小: ").Append(facts.SizeBytes.ToString()).Append(" 字节");
+                result = MetaHead("file-version", true, path, -1) + "\n" + path + " | " + sb.ToString();
                 return true;
             }
             catch (Exception ex)

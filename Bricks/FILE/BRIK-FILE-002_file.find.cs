@@ -4,8 +4,8 @@
 // 类别: FILE
 // 作用: 文件名 glob 搜索——按文件名模式找文件（pattern 如 *.md / **/*.cs；recursive 默认 true）——LLM 工具 file-find 语料执行面
 // 依赖: 无
-// 引用: Mau.Runtime（FileSystemService/DataBox）
-// 原理: DataBox.TryResolve<FileSystemService> → Find(dir, pattern, recursive, limit)；argsJson 内解析 dir/pattern/recursive/limit
+// 引用: Mau.Runtime（FileSystemService / FsFindFacts / DataBox）
+// 原理: DataBox.TryResolve<FileSystemService> → FindFacts(dir, pattern, recursive, limit)；提示行拼装（[skip] / [截断] 文案）归积木层（A228 档 2 · B3）
 // 常用: FileCat 认领线——'file.find'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
@@ -81,13 +81,26 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                string[] rows = fs.Find(dir, pattern, recursive, limit);
-                if (rows == null || rows.Length == 0)
+                FsFindFacts facts = fs.FindFacts(dir, pattern, recursive, limit);
+                System.Collections.Generic.List<string> lines = new System.Collections.Generic.List<string>();
+                for (int i = 0; i < facts.RelativePaths.Length; i = i + 1)
+                {
+                    lines.Add(facts.RelativePaths[i]);
+                }
+                if (facts.IgnoredDirs > 0)
+                {
+                    lines.Add("[skip] " + facts.IgnoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——条目在其内已跳过");
+                }
+                if (facts.Matched > facts.RelativePaths.Length)
+                {
+                    lines.Add("[截断] 共 " + facts.Matched.ToString() + " 条，已列 " + facts.RelativePaths.Length.ToString() + " 条——提高 limit 至 ≥" + facts.Matched.ToString() + "，或收窄 dir / pattern 可看全");
+                }
+                if (lines.Count == 0)
                 {
                     result = MetaHead("file-find", true, dir, 0) + "\n" + dir + " | 0 条";
                     return true;
                 }
-                result = MetaHead("file-find", true, dir, rows.Length) + "\n" + dir + " | " + rows.Length.ToString() + " 条" + "\n" + string.Join("\n", rows);
+                result = MetaHead("file-find", true, dir, lines.Count) + "\n" + dir + " | " + lines.Count.ToString() + " 条" + "\n" + string.Join("\n", lines.ToArray());
                 return true;
             }
             catch (Exception ex)
@@ -122,4 +135,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:5004CDBE95B1D8C6A0440C3ABB03D679E4C34D64373AB7B6D1F22CECA1DAA488
+// #MAU_CHECKSUM:SHA256:B14F3B19D43A4B924F87451952C4FAC91438D35647F3BC1958BE8CA205A1C737

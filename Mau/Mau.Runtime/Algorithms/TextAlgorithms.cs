@@ -135,26 +135,26 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 差异点定位——取与 anchor 最长公共前缀的最佳对齐位（锚点未命中时的定位诊断）
+        /// 差异点定位——取与目标串最长公共前缀的最佳对齐位（未命中时给出定位事实）
         /// </summary>
         /// <param name="text">被搜索文本</param>
-        /// <param name="anchor">目标锚点</param>
+        /// <param name="target">目标串</param>
         /// <returns>差异点（分叉字节位 + 最长公共前缀长度）</returns>
-        public static TextDiffPoint LocateBestMatch(string text, string anchor)
+        public static TextDiffPoint LocateBestMatch(string text, string target)
         {
-            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(anchor))
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(target))
             {
                 return new TextDiffPoint(0, 0);
             }
 
-            string first = anchor.Substring(0, 1);
+            string first = target.Substring(0, 1);
             int bestPos = 0;
             int bestCommon = -1;
             int scan = text.IndexOf(first, StringComparison.Ordinal);
             while (scan >= 0)
             {
                 int common = 0;
-                while (common < anchor.Length && scan + common < text.Length && text[scan + common] == anchor[common])
+                while (common < target.Length && scan + common < text.Length && text[scan + common] == target[common])
                 {
                     common = common + 1;
                 }
@@ -165,7 +165,7 @@ namespace Mau.Runtime
                     bestPos = scan;
                 }
 
-                if (common >= anchor.Length)
+                if (common >= target.Length)
                 {
                     break;
                 }
