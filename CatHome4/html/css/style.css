@@ -165,6 +165,18 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 .cat-state-run { color: var(--ch-ok); font-size: var(--ch-fs-sub); }
 .cat-state-idle { color: var(--ch-fg-weak); font-size: var(--ch-fs-sub); }
 
+/* ── 表格面板兼并上游猫卡特性（2026-10-13——卡片化不采纳，特性并入表格）──
+   命中率行 / 数字分片 / 分组标题行 / Type 标签：口径与卡片面（.cat-foot）同源，作用域换到表格单元格 */
+.cat-state-rate { color: var(--ch-fg-weak); font-size: var(--ch-fs-tag); }
+.cat-state-info .ci-num, .cat-state-rate .ci-num { color: var(--ch-chat-ai-fg); }
+.cat-state-rate .ci-rate { color: var(--ch-state-all); }
+.cat-state-rate .ci-hit { color: var(--ch-state-run); font-size: calc(1em + 1px); }
+.cat-state-rate .ci-miss { color: var(--ch-state-think); font-size: calc(1em + 1px); }
+.cat-state-rate .ci-down { color: var(--ch-err); font-size: calc(1em + 1px); }
+.cat-state-info .num-frac, .cat-state-rate .num-frac { font-style: normal; color: var(--ch-fg-weak); font-size: calc(1em - 1px); }
+.cat-group-row td { color: var(--ch-title); font-size: var(--ch-fs-strong); letter-spacing: 1px; padding-top: 10px; border-bottom: 1px solid var(--ch-line-soft); }
+.cat-type-tag { color: var(--ch-fg-weak); font-size: var(--ch-fs-sub); background: var(--ch-bg-raised); border: 1px solid var(--ch-line); border-radius: 3px; padding: 0 4px; white-space: nowrap; }
+
 /* ── 会话详情弹层（会话状态卡点击——上一条输入 / 预设动作 / 会话留档）── */
 .cd-status { color: var(--ch-fg-weak); font-size: var(--ch-fs-body); padding-bottom: 6px; border-bottom: 1px solid var(--ch-line-faint); margin-bottom: 8px; }
 .cd-block { border: 1px solid var(--ch-line); border-radius: 6px; background: var(--ch-bg-raised); margin-bottom: 8px; }

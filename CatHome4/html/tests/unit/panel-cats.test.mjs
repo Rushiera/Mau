@@ -149,10 +149,10 @@ test('LLM API / QQ Bot 下拉——change 即提交 cat-config 单字段（空�
   expect(posts[0].body.qqbotId).toBe(undefined);
 });
 
-test('会话状态列——phase 徽标 + Note 标 + 前文 tokens / 轮次 · 消息 · 待处理', () => {
+test('会话状态列——phase 徽标 + 七态名 + Note 标 + 前文（token/条/字符）/ 轮次 · 消息 · 待处理', () => {
   const row = Object.assign({}, CAT_ROW, {
-    running: true, port: 8081, phase: 'LlmRunning', round: 3, msgCount: 8, pending: 1,
-    noteActive: true, context: 12345, contextCount: 42, lastContextChangeAt: 0
+    running: true, port: 8081, phase: 'LlmRunning', runState: 'think', round: 3, msgCount: 8, pending: 1,
+    noteActive: true, context: 12345, contextCount: 42, contextChars: 45678, lastContextChangeAt: 0
   });
   const tr = renderRow(row);
   const td = tr.children[0];
@@ -160,11 +160,38 @@ test('会话状态列——phase 徽标 + Note 标 + 前文 tokens / 轮次 · �
   expect(badge).not.toBeNull();
   expect(badge.className).toContain('ph-LlmRunning');
   expect(badge.textContent).toBe('LlmRunning');
+  // 七态名（吸收 A225c）——独立徽标，class 带态名
+  const rs = td.querySelector('.cat-runstate');
+  expect(rs).not.toBeNull();
+  expect(rs.textContent).toBe('think');
+  expect(rs.className).toContain('think');
   expect(td.textContent).toContain('📋 Note');
-  expect(td.textContent).toContain('前文 12345 tokens / 42 条');
+  // 前文行（吸收 A225b 口径）——K 位计数 + 条数 + 字符
+  expect(td.textContent).toContain('前文 12.35K token 42 条');
+  expect(td.textContent).toContain('45.68K 字符');
   expect(td.textContent).toContain('轮次 3 · 消息 8 · 待处理 1');
   // 顺序——参数在前，前文变动在后
   expect(td.textContent.indexOf('前文')).toBeLessThan(td.textContent.indexOf('轮次'));
+});
+
+test('会话状态列——命中率行（吸收 A225b/A225d：🎯率 + Hit / Miss / Down）', () => {
+  const row = Object.assign({}, CAT_ROW, {
+    running: true, port: 8081, phase: 'Idle', round: 1, msgCount: 2, pending: 0,
+    context: 1000, contextCount: 3, contextChars: 2000, lastContextChangeAt: 0,
+    sessionPrompt: 100000, sessionMiss: 20000, sessionCompletion: 5000, sessionRate: 0.8
+  });
+  const tr = renderRow(row);
+  const td = tr.children[0];
+  const rate = td.querySelector('.cat-state-rate');
+  expect(rate).not.toBeNull();
+  expect(rate.textContent).toContain('🎯80.00%');
+  expect(rate.textContent).toContain('Hit');
+  expect(rate.textContent).toContain('Miss');
+  expect(rate.textContent).toContain('Down');
+  // Hit = prompt − miss = 80K
+  expect(rate.textContent).toContain('80.00K');
+  // 无会话数据（未跑过轮）→ 不出命中率行
+  expect(renderRow(CAT_ROW).children[0].querySelector('.cat-state-rate')).toBeNull();
 });
 
 test('会话状态列——静默猫显示「静默」标（无 phase 徽标）', () => {
@@ -199,4 +226,51 @@ test('整行点击——内容区开会话详情；按钮 / 输入控件不触�
   expect(document.getElementById('catDetailModal').style.display).toBe('none');
   expect(document.getElementById('catInjectModal').style.display).toBe('flex');
   document.getElementById('catInjectModal').style.display = 'none';
+});
+
+test('Type 标签与分组——applyCatState 按 type 分区（组标题行）+ 名称格 Type 标', () => {
+  const cats = [
+    { id: 'm', name: '管家', special: true, running: false, port: -1 },
+    { id: 'a', name: '甲', type: '开发', running: false, port: -1 },
+    { id: 'b', name: '乙', type: '开发', running: false, port: -1 },
+    { id: 'c', name: '丙', running: false, port: -1 }
+  ];
+  window.lastCatSig = '';
+  window.applyCatState(cats);
+  const body = document.querySelector('#catsTable tbody');
+  const groupRows = body.querySelectorAll('tr.cat-group-row');
+  // 三组：majordomo（special 置顶）/ 开发 / 默认
+  expect(groupRows.length).toBe(3);
+  expect(groupRows[0].textContent).toContain('majordomo');
+  expect(groupRows[1].textContent).toContain('开发');
+  expect(groupRows[1].textContent).toContain('（2）');
+  expect(groupRows[2].textContent).toContain('默认');
+  // 行序——special 组第一行，其后开发组两行，再默认组
+  const dataRows = body.querySelectorAll('tr[data-cat]');
+  expect(dataRows.length).toBe(4);
+  expect(dataRows[0].getAttribute('data-cat')).toBe('m');
+  expect(dataRows[1].getAttribute('data-cat')).toBe('a');
+  // 名称格 Type 标（空 type 不出标）
+  expect(dataRows[1].children[1].querySelector('.cat-type-tag').textContent).toBe('开发');
+  expect(dataRows[3].children[1].querySelector('.cat-type-tag')).toBeNull();
+});
+
+test('猫卡实时——applyCatState 数据未变跳过重绘 / 行内编辑时不打断', () => {
+  window.lastCatSig = '';
+  window.applyCatState([{ id: 'x', name: '甲', running: false, port: -1 }]);
+  const body = document.querySelector('#catsTable tbody');
+  const firstRow = body.querySelector('tr[data-cat]');
+  // 同一数据再推——签名相同，跳过重绘（节点仍是同一枚）
+  window.applyCatState([{ id: 'x', name: '甲', running: false, port: -1 }]);
+  expect(body.querySelector('tr[data-cat]')).toBe(firstRow);
+  // 数据变化 → 重绘
+  window.applyCatState([{ id: 'x', name: '甲改', running: false, port: -1 }]);
+  expect(body.querySelector('tr[data-cat]')).not.toBe(firstRow);
+  // 行内编辑进行中——聚焦输入框时跳过（不打断输入）
+  const input = body.querySelector('tr[data-cat] input');
+  input.focus();
+  const rowInEdit = body.querySelector('tr[data-cat]');
+  window.applyCatState([{ id: 'x', name: '另一改', running: false, port: -1 }]);
+  expect(body.querySelector('tr[data-cat]')).toBe(rowInEdit);
+  input.blur();
 });

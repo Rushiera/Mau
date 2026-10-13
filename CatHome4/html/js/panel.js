@@ -33,30 +33,125 @@ function loadCatPools() {
         .catch(function () { step(); });
 }
 
-// 猫列表加载——渲染表格（名称/LLM API/QQ Bot/目录白名单/工具清单/状态/端口/操作）
+// 猫列表加载——HTTP 拉一次（初始 / 手动刷新 / 指令回执后）；实时跟随走 SSE state 事件（applyCatState）
 function loadCats() {
     fetch('/api/v1/cats')
         .then(function (r) { return r.json(); })
-        .then(function (d) {
-            catsTableBody.textContent = '';
-            var cats = d.cats || [];
-            if (cats.length === 0) {
-                catsMsgEl.textContent = '暂无猫——输入显示名新建';
-                return;
-            }
-            catsMsgEl.textContent = cats.length + ' 只猫';
-            // F2.1 前端唯一化——special 猫（Majordomo）置顶显示（固化入口；前端不视为多猫——零差异渲染靠 special 标记）
-            var specials = [];
-            var normals = [];
-            for (var i = 0; i < cats.length; i++) {
-                if (cats[i].special) { specials.push(cats[i]); } else { normals.push(cats[i]); }
-            }
-            for (var s = 0; s < specials.length; s++) { renderCatRow(specials[s]); }
-            for (var n = 0; n < normals.length; n++) { renderCatRow(normals[n]); }
-        })
+        .then(function (d) { applyCatState(d.cats || []); })
         .catch(function () {
             catsMsgEl.textContent = '列表加载失败——宿主未运行？';
         });
+}
+
+// 猫列表态应用（兼并上游 A223/A224/A225 特性到表格形态）——初始拉取与 SSE state 事件共用同一渲染路径。
+// 表格形态：special（Majordomo）置顶 + 按 Type 标签分区（组标题行）；行内编辑进行中跳过重绘（不打断输入）；数据未变跳过。
+var lastCatSig = '';
+
+function catsInEdit() {
+    var el = document.activeElement;
+    if (!el || !el.tagName) { return false; }
+    var tag = el.tagName.toLowerCase();
+    if (tag !== 'input' && tag !== 'select' && tag !== 'textarea') { return false; }
+    return catsTableBody != null && catsTableBody.contains(el);
+}
+
+function applyCatState(cats) {
+    if (catsInEdit()) { return; }
+    var sig = JSON.stringify(cats);
+    if (sig === lastCatSig) { return; }
+    lastCatSig = sig;
+    catsTableBody.textContent = '';
+    if (!cats || cats.length === 0) {
+        catsMsgEl.textContent = '暂无猫——输入显示名新建';
+        return;
+    }
+    catsMsgEl.textContent = cats.length + ' 只猫';
+    var groups = groupCats(cats);
+    var showTitle = groups.length > 1;
+    for (var g = 0; g < groups.length; g = g + 1) {
+        if (showTitle) {
+            catsTableBody.appendChild(renderGroupRow(catGroupLabel(groups[g].key), groups[g].cats.length));
+        }
+        for (var c = 0; c < groups[g].cats.length; c = c + 1) {
+            renderCatRow(groups[g].cats[c]);
+        }
+    }
+}
+
+// 分组标题行——Type 标签分区（A223 分组语义的表格形态：单行跨列标题 + 该组猫数）
+function renderGroupRow(label, count) {
+    var tr = document.createElement('tr');
+    tr.className = 'cat-group-row';
+    var td = document.createElement('td');
+    td.colSpan = 9;
+    td.textContent = '▸ ' + label + '（' + count + '）';
+    tr.appendChild(td);
+    return tr;
+}
+
+// 分组键——special（Majordomo）固定 'majordomo' 组（置顶）；其余按会话 type 标签，缺字段 / 空串 → 默认组
+function catGroupKey(cat) {
+    if (cat && cat.special) { return 'majordomo'; }
+    if (cat && cat.type) { return String(cat.type).trim(); }
+    return '';
+}
+
+// 分组标签——空键即默认组
+function catGroupLabel(key) {
+    return key.length > 0 ? key : '默认';
+}
+
+// 分组——special 猫置顶（F2.1 固化入口），再按 type 分区（插入序 = 组序）
+function groupCats(cats) {
+    var ordered = [];
+    var i;
+    for (i = 0; i < cats.length; i = i + 1) {
+        if (cats[i].special) { ordered.push(cats[i]); }
+    }
+    for (i = 0; i < cats.length; i = i + 1) {
+        if (!cats[i].special) { ordered.push(cats[i]); }
+    }
+    var groups = [];
+    var index = {};
+    for (i = 0; i < ordered.length; i = i + 1) {
+        var key = catGroupKey(ordered[i]);
+        if (index[key] === undefined) {
+            index[key] = groups.length;
+            groups.push({ key: key, cats: [] });
+        }
+        groups[index[key]].cats.push(ordered[i]);
+    }
+    return groups;
+}
+
+// 前文行 HTML（A225b 口径）——照对话页左上角排版：前文 <num> token <num> 条 · <num> 字符
+function catStateContextHtml(cat) {
+    var num = function (v) {
+        return '<span class="ci-num">' + fmtNumHtml(fmtCount(v)) + '</span>';
+    };
+    return '前文 ' + num(cat.context) + ' token '
+        + '<span class="ci-num">' + (cat.contextCount || 0) + '</span> 条'
+        + ' · ' + num(cat.contextChars) + ' 字符';
+}
+
+// 命中率行 HTML（A225b/A225d 口径）——（🎯xx%）Hit…；Hit = prompt − miss
+function catStateRateHtml(cat) {
+    var num = function (v) {
+        return '<span class="ci-num">' + fmtNumHtml(fmtCount(v)) + '</span>';
+    };
+    var hit = (Number(cat.sessionPrompt) || 0) - (Number(cat.sessionMiss) || 0);
+    if (hit < 0) { hit = 0; }
+    return '（🎯<span class="ci-rate">' + fmtNumHtml((Number(cat.sessionRate || 0) * 100).toFixed(2) + '%') + '</span>）'
+        + ' <span class="ci-hit">Hit</span>' + num(hit);
+}
+
+// 未命中 / 输出行 HTML（A225d 口径）——Miss… Down…
+function catStateMissHtml(cat) {
+    var num = function (v) {
+        return '<span class="ci-num">' + fmtNumHtml(fmtCount(v)) + '</span>';
+    };
+    return '<span class="ci-miss">Miss</span>' + num(cat.sessionMiss)
+        + '  <span class="ci-down">Down</span>' + num(cat.sessionCompletion);
 }
 
 // 单猫行渲染——名称/LLM API/QQ Bot 行内直改；目录白名单 + 工具清单走专用弹层；操作按钮按状态启用（special 强制自启 + 无停止/删除）
@@ -65,8 +160,9 @@ function renderCatRow(cat) {
     // 行点击入口——整行可点开会话详情（排除按钮 / 输入类控件；事件委托见文件末 tbody 绑定）
     tr.setAttribute('data-cat', cat.id);
     tr.setAttribute('data-name', cat.name || cat.id);
-    // [列首] 会话状态——phase 徽标 + Note 标（上行）/ 前文 tokens · 轮次 · 消息 · 待处理 · 前文变动（下行）
-    // 数据面 = /api/v1/cats 会话字段（BuildCatInfoEntry 产物——与 cat.info / 快照 sessions 段同源）
+    // [列首] 会话状态（兼并上游猫卡四行 → 表格单元格）——上行：phase 徽标 + 七态名 + Note；
+    // 行一：前文（token/条/字符）· 轮次/消息/待处理 · 活跃 · 前文变动；行二：命中率 + Miss/Down
+    // 数据面 = /api/v1/cats 会话字段（BuildCatInfoEntry → ChatSession.BuildStateEntry 单一数据源）
     var tdState = document.createElement('td');
     var stateWrap = document.createElement('div');
     stateWrap.className = 'cat-state';
@@ -84,6 +180,13 @@ function renderCatRow(cat) {
             runTag.textContent = '运行中';
             stateHead.appendChild(runTag);
         }
+        // 七态名（吸收 A225c——当前运行态细分；idle 不显示，与卡片口径一致）
+        if (cat.runState && cat.runState !== 'idle') {
+            var rsBadge = document.createElement('span');
+            rsBadge.className = 'cat-runstate ' + cat.runState;
+            rsBadge.textContent = cat.runState;
+            stateHead.appendChild(rsBadge);
+        }
     } else {
         var idleTag = document.createElement('span');
         idleTag.className = 'cat-state-idle';
@@ -99,10 +202,14 @@ function renderCatRow(cat) {
     stateWrap.appendChild(stateHead);
     var stateBits = [];
     if (typeof cat.context !== 'undefined' && cat.context !== null) {
-        stateBits.push('前文 ' + cat.context + ' tokens' + (cat.contextCount ? ' / ' + cat.contextCount + ' 条' : ''));
+        stateBits.push(catStateContextHtml(cat));
     }
     if (typeof cat.round !== 'undefined' && cat.round !== null) {
         stateBits.push('轮次 ' + cat.round + ' · 消息 ' + cat.msgCount + ' · 待处理 ' + cat.pending);
+    }
+    var activeAgo = fmtAgo(cat.lastActiveAt);
+    if (activeAgo) {
+        stateBits.push('活跃 ' + activeAgo);
     }
     var stateAgo = fmtAgo(cat.lastContextChangeAt);
     if (stateAgo) {
@@ -111,8 +218,15 @@ function renderCatRow(cat) {
     if (stateBits.length > 0) {
         var stateInfo = document.createElement('div');
         stateInfo.className = 'cat-state-info';
-        stateInfo.textContent = stateBits.join(' · ');
+        stateInfo.innerHTML = stateBits.join(' · ');
         stateWrap.appendChild(stateInfo);
+    }
+    // 命中率行（吸收 A225b/A225d）——会话级 token 命中率与 Miss/Down（有会话数据才出）
+    if (typeof cat.sessionPrompt !== 'undefined' && cat.sessionPrompt !== null) {
+        var stateRate = document.createElement('div');
+        stateRate.className = 'cat-state-rate';
+        stateRate.innerHTML = catStateRateHtml(cat) + ' · ' + catStateMissHtml(cat);
+        stateWrap.appendChild(stateRate);
     }
     tdState.appendChild(stateWrap);
     tr.appendChild(tdState);
@@ -135,6 +249,13 @@ function renderCatRow(cat) {
     nameInput.placeholder = '名称';
     wireInlineEdit(nameInput, cat.name || '', function (v) { submitCatField(cat, 'displayName', v, '名称'); });
     nameWrap.appendChild(nameInput);
+    // Type 标签（吸收 A224）——名称格内小标；表格另按 type 分区（组标题行，见 applyCatState）
+    if (cat.type && String(cat.type).length > 0) {
+        var typeTag = document.createElement('span');
+        typeTag.className = 'cat-type-tag';
+        typeTag.textContent = cat.type;
+        nameWrap.appendChild(typeTag);
+    }
     tdName.appendChild(nameWrap);
     tr.appendChild(tdName);
 
