@@ -47,6 +47,8 @@ git clone git@gitee.com:wu_lisha/mau.git
 cd mau
 ```
 
+> **GitHub 只读镜像**：`https://github.com/WuLiSha-HUB/mau.git` —— 由 Gitee「Push 方向」镜像自动同步（仅自动进项）；请向 Gitee 仓库提交，勿直接推 GitHub。
+
 ### 2.2 图形界面部署（推荐——首次使用走这条）
 
 1. **双击仓库根目录下的 `SetUp.exe`** —— 合法位置即 Mau 仓库根（同目录需能见到 `Mau.sln`，否则会拒绝运行）。
@@ -81,7 +83,7 @@ SetUp.exe deploy C:\MauTest\MauOut    ← 发布正式运行实体到仓库外
 
 | 子目录 | 主要内容 |
 |:--|:--|
-| `config/` | 配置群 —— `app.cfg`（全局）、`cat-default.cfg`（每猫默认）、`llm.cfg` / `llm-api.json`（LLM）、`ui.cfg`、`search.cfg`、`vision.cfg`、`qqbot.json`、`workspace.json`（受控根表） |
+| `config/` | 配置群 —— `app.cfg`（全局）、`cat-default.cfg`（每猫默认）、`llm.cfg` / `llm-api.json`（LLM）、`ui.cfg`、`search.cfg`、`vision.cfg`、`browser.cfg`、`ps.cfg`、`qqbot.json`、`packs.json`（加载包）、`workspace.json`（受控根表）、`schema.json`（配置元声明） |
 | `secrets/` | 密钥 —— `llm-api.cfg`（LLM 端点与密钥）、`qqbot.cfg` |
 | `sessions/` | 每猫一个目录 —— 会话状态 `<会话号>.json`、视图 `<会话号>.view.json`、该猫配置 `cat.cfg` |
 | `runs/` | 每次运行一个目录 —— `log_all.txt` / `oa_all.txt` / `err_all.txt` / `frame.txt`（帧号可溯的观测面；**帧体无变化只落帧号行**——缺席字段沿用上一完整帧） |
@@ -124,7 +126,7 @@ mau proj corpus\ch4\Majordomo\majordomo_cat.mauproj   -o public\src\Majordomo --
 mau proj corpus\ch4\MauCat\mau_cat.mauproj            -o public\src\MauCat --build
 mau proj corpus\ch4\PsCat\ps_cat.mauproj              -o public\src\PsCat --build
 mau proj corpus\ch4\QuickCat\quick_cat.mauproj        -o public\src\QuickCat --build
-mau proj corpus\ch4\SearchCat\search_cat.mauproj      -o public\src\SearchCat --build
+mau proj corpus\ch4\WebCat\web_cat.mauproj      -o public\src\WebCat --build
 mau proj corpus\ch4\TempToolCat\temp_tool_cat.mauproj -o public\src\TempToolCat --build
 mau proj corpus\ch4\TextCat\text_cat.mauproj          -o public\src\TextCat --build
 mau proj corpus\ch4\VisionCat\vision_cat.mauproj      -o public\src\VisionCat --build
