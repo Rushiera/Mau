@@ -47,7 +47,7 @@ git clone git@gitee.com:wu_lisha/mau.git
 cd mau
 ```
 
-> **GitHub 只读镜像**：`https://github.com/WuLiSha-HUB/mau.git` —— 由 Gitee「Push 方向」镜像自动同步（仅自动进项）；请向 Gitee 仓库提交，勿直接推 GitHub。
+> 同步 Gitee 仓库，GitHub 地址：`https://github.com/WuLiSha-HUB/mau.git`
 
 ### 2.2 图形界面部署（推荐——首次使用走这条）
 
