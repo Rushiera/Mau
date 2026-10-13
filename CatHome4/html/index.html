@@ -140,6 +140,9 @@
                                 <textarea id="tplBaseRole" rows="2" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px;resize:vertical"></textarea>
                                 <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">默认人设（defaultPersona——新猫创建时继承）</label>
                                 <textarea id="tplPersona" rows="6" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px;resize:vertical"></textarea>
+                                <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:flex;align-items:center;gap:6px;cursor:pointer">
+                                    <input type="checkbox" id="tplIdleOnly"> 默认人工输入空闲注入（defaultUserInjectIdleOnly——新猫创建时继承；true=人工输入仅在空闲时推送）
+                                </label>
                             </div>
                             <div class="cfg-sec" data-cfg="tpl-tools">
                                 <div class="cfg-sec-head">
@@ -267,14 +270,26 @@
                 <span style="flex:1"></span>
                 <button id="catCfgClose" style="background:transparent;border:none;color:var(--ch-fg-weak);font-size:var(--ch-fs-title);cursor:pointer">✕</button>
             </div>
-            <div style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-bottom:10px">API 切换立即生效；人设/工具/前文 List 保存后「新会话」生效</div>
-            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak)">LLM API 配置</label>
+            <div style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-bottom:10px">API 切换与显示名立即生效；人设/工具/前文 List/显示名 保存后「新会话」生效</div>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak)">显示名（displayName——猫卡片标题 / 托盘提示 / 转发前缀）</label>
+            <input id="catCfgName" placeholder="如 雾理莎（留空不允许）" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px">
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">LLM API 配置</label>
             <select id="catCfgApi" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px"></select>
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">QQ Bot 绑定（qqbotId——一只 Bot 只能绑一只猫；空=未绑定）</label>
             <select id="catCfgQqBot" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px"></select>
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="checkbox" id="catCfgQqEnable"> 启用 qqbot 转发（qqbotEnable——false=不注入不转发）
             </label>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="catCfgIdleOnly"> 人工输入空闲注入（userInjectIdleOnly——true=人工输入仅在空闲时推送，轮内不插；sys 注入不受影响）
+            </label>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="catCfgRoundSummary"> 轮末总结（roundSummary——每轮结束后调度 LLMSimpleRequest 产出一句总结，做新视图块插入；用本猫的 LLM 配置）
+            </label>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">思考强度（reasoningEffort——空=跟随全局；low/high/max）</label>
+            <select id="catCfgEffort" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px"></select>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">Type 标签（type——猫卡按标签分区排布；空=默认组；同文本自动同组）</label>
+            <input id="catCfgType" placeholder="如 开发 / 助手 / 实验（留空归默认组）" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px">
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">工具清单（toolNames——全勾=全量；空=全量保底；非法名自动过滤）</label>
             <div id="catCfgTools" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px"></div>
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">人设（persona——注入后追加角色段；空=仅基础角色）</label>

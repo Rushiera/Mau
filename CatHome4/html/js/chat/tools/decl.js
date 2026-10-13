@@ -13,7 +13,7 @@
 //       —— A200 按新框架恢复为拆件形态（2026-10-06）。
 // ═══════════════════════════════════════════
 
-// ── 声明契约（八项，全部可选）─────────────────────────────
+// ── 声明契约（九项，全部可选）─────────────────────────────
 //   icon        折叠行专属图标（默认：骨架图标 → ❓）
 //   tag/tagCls  折叠行工具变体标签（如 PowerShell 的 PS 5.1 / PS 7——tagCls 走 ps5 / ps7 配色）
 //   inputLines  function(args) → 行数组 | null（输入段自然语言意图；缺省 = 通用键值表）
@@ -21,6 +21,7 @@
 //   badge       function(result, args) → 折叠头徽标后缀（缺省 = 骨架计数徽标）
 //   headline    function(args, result) → 折叠行文案（缺省 = 骨架中文名 · 工具名）
 //   inputImages function(args) → 路径数组（输入图片预览段；空数组 = 不显示）
+//   outputImages function(result, args) → 路径数组（输出图片预览段——如 browser-shot 截图；空数组 = 不显示）
 //   skeleton    （可选）件内声明骨架——仅在 TOOL_SKELETONS 未登记时作补充来源
 
 var TOOL_DECL = {};

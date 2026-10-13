@@ -52,6 +52,9 @@ namespace CH4
         /// <summary>派发时刻（Unix 毫秒）——本单进入派发的墙钟时刻（A157：工具卡运行时长起点；0 = 未派发）。</summary>
         public long StartedAtMs;
 
+        /// <summary>闭合时刻（Unix 毫秒）——本单回执 / 直执完成的墙钟时刻（工具卡运行时长终点·单工具口径；0 = 未闭合——回落采样时刻）。</summary>
+        public long ClosedAtMs;
+
         /// <summary>
         /// 执行序值——工具分批调度的分桶依据（A127；宿主内部静态表裁决，非 LLM 传参）。
         /// 缺省 0 = 默认档；timeback-start / timeback-back 各取 ±100 钉死值。
@@ -117,6 +120,8 @@ namespace CH4
                     Result = "ERR|EMPTY_RESULT|工单回执无 result";
                 }
                 IsClosed = true;
+                // 单工具计时终点——OA 回执到达帧置闭合时刻（工具卡运行时长按各自回执计）
+                ClosedAtMs = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             }
             else if (state == OfficeState.TimeOut)
             {
@@ -124,7 +129,7 @@ namespace CH4
             }
         }
         /// <summary>
-        /// 运行时长——派发时刻 → 现在（毫秒）；未派发（StartedAtMs = 0）返回 -1（未记录，不造值）。
+        /// 运行时长——派发时刻 → 闭合时刻（毫秒·单工具口径：按各自回执计）；未闭合回落采样时刻。未派发（StartedAtMs = 0）返回 -1（未记录，不造值）。
         /// </summary>
         /// <returns>运行时长毫秒（-1 = 未记录）</returns>
         public long ElapsedMs()
@@ -133,8 +138,12 @@ namespace CH4
             {
                 return -1;
             }
-            long now = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            long span = now - StartedAtMs;
+            long endMs = ClosedAtMs;
+            if (endMs <= 0)
+            {
+                endMs = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            }
+            long span = endMs - StartedAtMs;
             if (span < 0)
             {
                 return -1;

@@ -4,8 +4,8 @@
 // 类别: FILE
 // 作用: 目录树——列目录结构（depth 层级 / limit 条数上限；稳定排序）——LLM 工具 file-tree 语料执行面
 // 依赖: 无
-// 引用: Mau.Runtime（FileSystemService/DataBox）
-// 原理: DataBox.TryResolve<FileSystemService> → Tree(path, depth, limit)；argsJson 内解析 path/depth/limit
+// 引用: Mau.Runtime（FileSystemService / FsTreeFacts / DataBox）
+// 原理: DataBox.TryResolve<FileSystemService> → TreeFacts(path, depth, limit)；条目与提示行拼装（[git] / [skip] / [截断] 文案）归积木层（A228 档 2 · B3）
 // 常用: FileCat 认领线——'file.tree'[@args] > @result
 // ═══════════════════════════════════════════════════
 using System;
@@ -72,13 +72,39 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                string[] rows = fs.Tree(path, depth, limit);
-                if (rows == null || rows.Length == 0)
+                FsTreeFacts facts = fs.TreeFacts(path, depth, limit);
+                System.Collections.Generic.List<string> lines = new System.Collections.Generic.List<string>();
+                // [段1] 条目行——目录加尾标（显示约定归积木层）
+                for (int i = 0; i < facts.Entries.Length; i = i + 1)
+                {
+                    FsEntry entry = facts.Entries[i];
+                    lines.Add(entry.IsDir ? entry.RelativePath + "/" : entry.RelativePath);
+                }
+                // [段2] git 特征行——limit 有余量时补位
+                for (int i = 0; i < facts.GitFacts.Length; i = i + 1)
+                {
+                    if (lines.Count >= limit)
+                    {
+                        break;
+                    }
+                    lines.Add("[git] 存在 .git（" + facts.GitFacts[i].RelativePath + "——HEAD: " + facts.GitFacts[i].Head + "）");
+                }
+                // [段3] 提示行——不占 limit 配额
+                if (facts.IgnoredDirs > 0)
+                {
+                    lines.Add("[skip] " + facts.IgnoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——条目在其内已跳过");
+                }
+                if (facts.Total > facts.Entries.Length)
+                {
+                    lines.Add("[截断] 共 " + facts.Total.ToString() + " 条，已列 " + facts.Entries.Length.ToString() + " 条——提高 limit 至 ≥" + facts.Total.ToString() + "，或收窄 path / 降 depth 可看全");
+                }
+                int shown = lines.Count;
+                if (shown == 0)
                 {
                     result = MetaHead("file-tree", true, path, 0) + "\n" + path + " | 0 条";
                     return true;
                 }
-                result = MetaHead("file-tree", true, path, rows.Length) + "\n" + path + " | " + rows.Length.ToString() + " 条" + "\n" + string.Join("\n", rows);
+                result = MetaHead("file-tree", true, path, shown) + "\n" + path + " | " + shown.ToString() + " 条" + "\n" + string.Join("\n", lines.ToArray());
                 return true;
             }
             catch (Exception ex)
@@ -113,4 +139,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:6E42974CF51BD1B2585F7EB1253742D0959A221A11437BF46B6ACD27438C4BD6
+// #MAU_CHECKSUM:SHA256:71C9CE79E363EC680508BB7556FA043DFA67AEB2BE492073C80542E715D69CEA

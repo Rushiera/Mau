@@ -48,15 +48,8 @@ namespace CH4
             FlowHandle oldHandle;
             long oldId;
             string name;
-            if (cat == "QuickCat")
             {
-                oldHandle = _quickHandle;
-                oldId = _quickId;
-                name = "QuickCat";
-            }
-            else
-            {
-                // R0.2 工具组按 Flow 名寻址——Registry 动态许可已由 ExecHostReload 校验；此处查宿主句柄表
+                // 工具组按 Flow 名寻址——Registry 动态许可已由 ExecHostReload 校验；此处查宿主句柄表
                 name = cat;
                 if (!_toolFlowHandles.TryGetValue(name, out oldHandle))
                 {
@@ -176,22 +169,21 @@ namespace CH4
             oldHandle.TryUnload(3);
             SetCatHandle(cat, newHandle, newId);
             // 工具定义热同步——新版本 GetToolsJson 可能已变（改 tools.<组> 积木描述 → reload 生效；design-ch4-tools-pool §七）
-            if (name != "QuickCat")
             {
                 List<ToolGroupSource> poolGroups = new List<ToolGroupSource>();
                 foreach (KeyValuePair<string, FlowHandle> kv in _toolFlowHandles)
                 {
+                    // 池化组兄弟实例（base~N）——工具定义归基础名，兄弟跳过（避免重复/缺陷误报）
+                    if (kv.Key.IndexOf('~') >= 0)
+                    {
+                        continue;
+                    }
                     ToolGroupSource groupSource = new ToolGroupSource();
                     groupSource.Name = kv.Key;
                     groupSource.Flow = kv.Value.Flow;
                     poolGroups.Add(groupSource);
                 }
-                IFlow quickFlow = null;
-                if (_quickHandle != null)
-                {
-                    quickFlow = _quickHandle.Flow;
-                }
-                ToolPool.RebuildAll(poolGroups, quickFlow, BuildBuiltinToolsJson());
+                ToolPool.RebuildAll(poolGroups, BuildBuiltinToolsJson());
                 // A107——定义缺陷出声：日志落 L3（改积木改坏 JSON 当场可见）
                 LogToolPoolDefects();
                 ToolRegistry.Init(ToolPool.BuildSpecs(), ToolPool.BuildOwnerFlowMap(), ToolPool.BuildPrivilegedMap());
@@ -219,6 +211,13 @@ namespace CH4
             {
                 sb.AppendLine("定义缺陷: " + reloadDefects[d].Group + " | " + reloadDefects[d].Stage + " | " + reloadDefects[d].Reason);
             }
+            // [段4] 池化组——连带重载兄弟实例（基础名 base 的 ~2..~K；同 dll 文件、各自 ALC）
+            string[] poolSiblings = PoolSiblingNames(name);
+            for (int s = 0; s < poolSiblings.Length; s = s + 1)
+            {
+                ExecuteReload(poolSiblings[s]);
+                sb.AppendLine("池化兄弟实例已重载: " + poolSiblings[s]);
+            }
             // 结构化返回体（design-ch4-tools 附录）——首行 JSON 元数据头 + 正文定界
             System.Collections.Generic.Dictionary<string, object> reloadFields = new System.Collections.Generic.Dictionary<string, object>();
             reloadFields["oldId"] = oldId;
@@ -234,12 +233,19 @@ namespace CH4
         /// <returns>源 dll 绝对路径或空串</returns>
         private static string ResolveFlowSourceDll(string name)
         {
+            // 池化组兄弟实例（base~N）——产物源归基础名（FL_base.dll）
+            string baseName = name;
+            int tilde = name.IndexOf('~');
+            if (tilde >= 0)
+            {
+                baseName = name.Substring(0, tilde);
+            }
             string root = ResolveRepoRootForDeploy();
             if (root.Length == 0)
             {
                 return "";
             }
-            string path = System.IO.Path.Combine(root, "public", "app", "Flows", "FL_" + name + ".dll");
+            string path = System.IO.Path.Combine(root, "public", "app", "Flows", "FL_" + baseName + ".dll");
             if (!System.IO.File.Exists(path))
             {
                 return "";
@@ -417,16 +423,6 @@ namespace CH4
                 string state;
                 string dll = "";
                 FlowHandle curHandle = null;
-                if (string.Equals(entry.Name, "QuickCat", StringComparison.Ordinal))
-                {
-                    state = _quickHandle != null ? "alive" : "missing";
-                    if (_quickHandle != null)
-                    {
-                        dll = _quickHandle.SourceDll;
-                        curHandle = _quickHandle;
-                    }
-                }
-                else
                 {
                     FlowHandle handle;
                     if (_toolFlowHandles.TryGetValue(entry.Name, out handle))
@@ -471,21 +467,13 @@ namespace CH4
         }
 
         /// <summary>
-        /// 更新指定 Flow 的句柄 + 注册 ID 字段——QuickCat 独立字段；工具组按 Flow 名写字典（R0.2）
+        /// 更新指定 Flow 的句柄 + 注册 ID 字段——工具组按 Flow 名写字典（R0.2）
         /// </summary>
-        /// <param name="cat">Flow 注册名（QuickCat/TextCat/MauCat/CsCat/ConfigCat/...）</param>
+        /// <param name="cat">Flow 注册名（TextCat/MauCat/CsCat/ConfigCat/...）</param>
         /// <param name="handle">新句柄</param>
         /// <param name="id">新注册 ID</param>
         private static void SetCatHandle(string cat, FlowHandle handle, long id)
         {
-            if (cat == "QuickCat")
-            {
-                _quickHandle = handle;
-                _quickId = id;
-                // 观测面句柄同步——reload 后旧快照访问已 dispose 句柄崩溃（ObjectDisposedException 判例 2026-09-08）
-                CatHome4.Observe.ObserveService.UpdateQuickHandle(handle, id);
-                return;
-            }
             _toolFlowHandles[cat] = handle;
             _toolFlowIds[cat] = id;
         }

@@ -122,9 +122,9 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void ToolPoolRebuild_ReplacesSnapshot()
         {
-            ToolPool.RebuildAll(null, null, "{\"group\":\"\",\"tools\":[{\"name\":\"x-tool\",\"description\":\"X\"}]}");
+            ToolPool.RebuildAll(null, "{\"group\":\"\",\"tools\":[{\"name\":\"x-tool\",\"description\":\"X\"}]}");
             Assert.Contains("x-tool", ToolPool.AllNames());
-            ToolPool.RebuildAll(null, null, "{\"group\":\"\",\"tools\":[{\"name\":\"y-tool\",\"description\":\"Y\"}]}");
+            ToolPool.RebuildAll(null, "{\"group\":\"\",\"tools\":[{\"name\":\"y-tool\",\"description\":\"Y\"}]}");
             string[] names = ToolPool.AllNames();
             Assert.Contains("y-tool", names);
             Assert.DoesNotContain("x-tool", names);

@@ -27,6 +27,15 @@ namespace Mau.Runtime.Tests
         }
 
         /// <summary>
+        /// 无参数工具——allowed 空时未知键文案为「本工具无参数」（A228 档 1：宿主 CheckHostArgs 文案并入单点）
+        /// </summary>
+        [Fact]
+        public void Validate_NoAllowedKeys_Rejected()
+        {
+            Assert.Equal("ERR|BAD_ARGS|未知参数: cat（本工具无参数）", JsonArgs.Validate("{\"cat\":\"x\"}", "", "", "", ""));
+        }
+
+        /// <summary>
         /// 必填校验——缺失 / 空字符串均视同缺值
         /// </summary>
         [Fact]

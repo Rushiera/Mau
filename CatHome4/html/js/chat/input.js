@@ -13,6 +13,9 @@
 /// 临时区显示态——false = 输入态（输入框可见），true = 临时内容（面板可见）
 var liveShown = false;
 
+/// 核心对话显示态——false = 全显示（默认），true = 只留核心对话（隐藏非 user / text 行）
+var coreOnly = false;
+
 /// 指令投递——统一出口（失败可见；投递即回执，结果异步经 SSE 回来）
 /// images 可选——图片绝对路径列表（待发区）；编号与包裹由后端组装，前端只投路径
 function postCommand(text, images) {
@@ -54,19 +57,8 @@ function chatSend() {
     if (text.length === 0 && paths.length === 0) {
         return;
     }
-    // 插话队列——本地入列（内核 user 块到达时出列——见 pending.js / persist.js 钩子）
-    if (typeof pendingAdd === 'function') {
-        pendingAdd(text.length > 0 ? text : '（图片）');
-    }
     // 🔴 用户消息必须带 `Chat ` 前缀——宿主 `DispatchCommandForCat` 只认前缀行，裸文本 `return false` 不投递
-    postCommand('Chat ' + text, paths).then(function (j) {
-        if (!j || j.ok !== true) {
-            // 投递未受理——本地在途记录失去意义（防幽灵队列）
-            if (typeof pendingClear === 'function') {
-                pendingClear();
-            }
-        }
-    });
+    postCommand('Chat ' + text, paths);
     box.value = '';
     if (typeof pendClear === 'function') {
         pendClear();
@@ -153,6 +145,47 @@ function inputSwap(shown) {
     }
 }
 
+/// 核心对话显隐——左预留带顶部开关（整体点击翻转；默认全显示，无持久化）
+function chatCoreToggle() {
+    coreSwap(coreOnly !== true);
+}
+
+/// 核心对话显隐单点——#chatMsgs 加 / 去 .core-only（隐藏非 user / text 行）；开关激活态与标签随动
+/// 🔴 滚动带几何随 #chatMsgs 类变化自动重算（fx/scroll.js MutationObserver attributeFilter 含 class）
+function coreSwap(on) {
+    coreOnly = (on === true);
+    var msgs = document.getElementById('chatMsgs');
+    if (msgs) {
+        if (coreOnly) {
+            msgs.classList.add('core-only');
+        } else {
+            msgs.classList.remove('core-only');
+        }
+    }
+    var sw = document.getElementById('chatCoreToggle');
+    if (sw) {
+        if (coreOnly) {
+            sw.classList.add('on');
+        } else {
+            sw.classList.remove('on');
+        }
+    }
+    var label = document.getElementById('chatCoreLabel');
+    if (label) {
+        label.textContent = coreOnly ? '精简' : '全部';
+    }
+}
+
+/// 核心对话开关定位——fixed 顶边对齐对话区顶部（#chatbar 高度随字号变化，故用 JS 而非固定像素）
+function coreToggleLayout() {
+    var sw = document.getElementById('chatCoreToggle');
+    var msgs = document.getElementById('chatMsgs');
+    if (!sw || !msgs) {
+        return;
+    }
+    sw.style.top = Math.round(msgs.getBoundingClientRect().top + 8) + 'px';
+}
+
 /// 输入区接线——元素缺失即跳过（防御式）；本件加载于页面尾部，DOM 已就绪
 function inputBind() {
     var send = document.getElementById('chatSendBtn');
@@ -189,6 +222,16 @@ function inputBind() {
     if (toggle) {
         // 开关点击——单按钮：整体点击即在输入 / 流式之间翻转（标签随态改字，位置归 CSS）
         toggle.addEventListener('click', chatLiveToggle);
+    }
+    var core = document.getElementById('chatCoreToggle');
+    if (core) {
+        // 核心对话开关——整体点击翻转；顶边对齐对话区（字号缩放 / 窗口变化时重算）
+        core.addEventListener('click', chatCoreToggle);
+        coreToggleLayout();
+        if (typeof window.addEventListener === 'function') {
+            window.addEventListener('resize', coreToggleLayout);
+            window.addEventListener('load', coreToggleLayout);
+        }
     }
     var jump = document.getElementById('chatJumpBottom');
     if (jump) {

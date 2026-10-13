@@ -47,7 +47,8 @@ namespace Mau.Runtime
                     }
                     if ((" " + allowed + " ").IndexOf(" " + property.Name + " ", StringComparison.Ordinal) < 0)
                     {
-                        return "ERR|BAD_ARGS|未知参数: " + property.Name + "（支持 " + allowed + "）";
+                        string supported = allowed.Length == 0 ? "（本工具无参数）" : "（支持 " + allowed + "）";
+                        return "ERR|BAD_ARGS|未知参数: " + property.Name + supported;
                     }
                 }
                 // [段2] 必填校验——字符串空值视同缺失；required 空 = 无必填（跳过：原样板对空 required 会 Split 出空键并误报「缺参数 」）

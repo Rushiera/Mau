@@ -108,9 +108,9 @@ describe('块型渲染——结构契约', () => {
 });
 
 describe('形态契约', () => {
-    it('persist 八类全气泡，live 三件朴素（2026-10-05 气泡化改判）', () => {
+    it('persist 十类全气泡，live 三件朴素（A219 起；A237 补 roundsummary）', () => {
         const bubbles = Object.keys(window.BLOCK_DECL).filter((t) => window.BLOCK_DECL[t].form === 'bubble');
-        expect(bubbles.sort()).toEqual(['error', 'inject_report', 'reason', 'retry', 'roundsum', 'text', 'toolcard', 'user']);
+        expect(bubbles.sort()).toEqual(['error', 'inject_report', 'reason', 'retry', 'roundsum', 'roundsummary', 'systemautomessage', 'text', 'toolcard', 'user']);
         const plains = Object.keys(window.BLOCK_DECL).filter((t) => window.BLOCK_DECL[t].form === 'plain');
         expect(plains.sort()).toEqual(['replysse', 'thinksse', 'toolrun']);
     });
@@ -136,31 +136,49 @@ describe('形态契约', () => {
     });
 });
 
-describe('来源变体（A204——系统注入 user 行）', () => {
-    it('取用口——sys 判据：缺字段 / `user` = 人工；其余非空 = 系统', () => {
-        expect(window.rowSourceClass({})).toBe('');
-        expect(window.rowSourceClass(null)).toBe('');
-        expect(window.rowSourceClass({ src: '' })).toBe('');
-        expect(window.rowSourceClass({ src: 'user' })).toBe('');
-        expect(window.rowSourceClass({ src: 'systemauto' })).toBe('sys');
+describe('系统注入块（A219——systemautomessage）', () => {
+    it('渲染——独立块型；行变体 sysmsg；气泡一件', () => {
+        const node = window.persistRender({ type: 'systemautomessage', msgIndex: 2, payload: { text: '[systemauto]注入', source: 'systemauto' } });
+        expect(node.classList.contains('sysmsg')).toBe(true);
+        expect(node.getAttribute('data-type')).toBe('systemautomessage');
+        expect(node.querySelectorAll('.chat-bubble').length).toBe(1);
     });
 
-    it('user 渲染——系统注入加行变体类，人工不加（缺字段 = 人工）', () => {
+    it('人工 user 块——不带行变体类', () => {
         const human = window.persistRender({ type: 'user', msgIndex: 1, payload: { text: '人工' } });
         expect(human.classList.contains('user')).toBe(true);
-        expect(human.classList.contains('sys')).toBe(false);
-        const sys = window.persistRender({ type: 'user', msgIndex: 2, payload: { text: '[systemauto]注入', src: 'systemauto' } });
-        expect(sys.classList.contains('sys')).toBe(true);
-        expect(sys.querySelectorAll('.chat-bubble').length).toBe(1);
+        expect(human.classList.contains('sysmsg')).toBe(false);
     });
 
-    it('刻度角色——sys 行镜像 `user-sys`；普通 user 与其它 type 不变', () => {
-        const sys = window.persistRender({ type: 'user', msgIndex: 3, payload: { text: 'x', src: 'systemauto' } });
+    it('刻度角色——systemautomessage 走 user-sys；user / text 不变', () => {
+        const sys = window.persistRender({ type: 'systemautomessage', msgIndex: 3, payload: { text: 'x', source: 'sleep' } });
         expect(window.scrollTickRole(sys)).toBe('user-sys');
-        const human = window.persistRender({ type: 'user', msgIndex: 4, payload: { text: 'y' } });
-        expect(window.scrollTickRole(human)).toBe('user');
+        const human2 = window.persistRender({ type: 'user', msgIndex: 4, payload: { text: 'y' } });
+        expect(window.scrollTickRole(human2)).toBe('user');
         const text = window.persistRender({ type: 'text', msgIndex: 5, payload: { text: 'z' } });
         expect(window.scrollTickRole(text)).toBe('reply');
+    });
+
+    it('独立渲染——题头 `System · 字符 · 行 · 来源` + 两档结构（压缩档默认）', () => {
+        const node = window.persistRender({ type: 'systemautomessage', msgIndex: 1, payload: { text: 'a\nb\nc', source: 'sleep' } });
+        expect(node.querySelector('.sy-label').textContent).toBe('System');
+        const stat = node.querySelector('.sy-stat').textContent;
+        expect(stat).toContain('5 字符');
+        expect(stat).toContain('3 行');
+        expect(stat).toContain('sleep');
+        expect(node.querySelector('.sy-peek')).toBeTruthy();
+        expect(node.querySelector('.sy-full')).toBeTruthy();
+        expect(node.querySelector('.chat-sys').classList.contains('full')).toBe(false);
+    });
+
+    it('切档——sysToggle 切 .full（独立于 Think 的 thinkToggle / .chat-think）', () => {
+        const node = window.persistRender({ type: 'systemautomessage', msgIndex: 1, payload: { text: 'a\nb\nc', source: 'timer' } });
+        const box = node.querySelector('.chat-sys');
+        expect(node.querySelector('.chat-think')).toBeNull();
+        window.sysToggle(box);
+        expect(box.classList.contains('full')).toBe(true);
+        window.sysToggle(box);
+        expect(box.classList.contains('full')).toBe(false);
     });
 });
 
@@ -212,5 +230,36 @@ describe('轮末结算载荷（2026-10-06 · 莎定）——四项分片', () =>
         expect(fracs).toEqual(['.00', '.00', '.00', '.00']);
         // 弱化件（2026-10-06 · 莎定；同日微调：K/M 单位随整数原色）——括号（2）· 百分号（1）包 `.rs-dim`
         expect(tok.querySelectorAll('.rs-dim').length).toBe(3);
+    });
+});
+
+// ── 行级标记——失败 / timeback 域区间（2026-10-11） ──────────
+describe('行级标记——失败 / timeback 域区间', () => {
+    it('失败工具卡——行加 .err + data-tool', () => {
+        const node = window.buildToolBlock({ name: 'cs-build', arguments: '{}', result: 'ERR|BUILD_TIMEOUT|x' }, {}, 'toolcard');
+        expect(node.classList.contains('err')).toBe(true);
+        expect(node.getAttribute('data-tool')).toBe('cs-build');
+    });
+
+    it('正常工具卡——无 .err（原色）', () => {
+        const node = window.buildToolBlock({ name: 'file-tree', arguments: '{}', result: 'ok' }, {}, 'toolcard');
+        expect(node.classList.contains('err')).toBe(false);
+    });
+
+    it('timeback 域区间——start..back 之间（不含两端）加 .tb-scope', () => {
+        const box = document.getElementById('chatMsgs');
+        box.textContent = '';
+        const mk = (name, res) => window.buildToolBlock({ name: name, arguments: '{}', result: res || 'ok' }, {}, 'toolcard');
+        box.appendChild(mk('timeback-start'));
+        box.appendChild(mk('file-tree'));
+        box.appendChild(mk('cs-build'));
+        box.appendChild(mk('timeback-back'));
+        box.appendChild(mk('time-list'));
+        window.tbScopeMark();
+        expect(box.children[0].classList.contains('tb-scope')).toBe(false);
+        expect(box.children[1].classList.contains('tb-scope')).toBe(true);
+        expect(box.children[2].classList.contains('tb-scope')).toBe(true);
+        expect(box.children[3].classList.contains('tb-scope')).toBe(false);
+        expect(box.children[4].classList.contains('tb-scope')).toBe(false);
     });
 });

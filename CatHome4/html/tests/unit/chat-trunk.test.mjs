@@ -52,7 +52,7 @@ describe('装配——脚本清单与入口', () => {
         // A196——toolrun 由 live.js 逐卡复用工具卡渲染件（不入 LIVE_RENDERERS）；empty 不入块声明表（不产元素）
         expect(persist.concat(live, ['toolrun']).sort()).toEqual(decl.slice().sort());
         expect(window.RUN_PHASES.length).toBe(6);
-        expect(window.FX_FEATURES.length).toBe(6);
+        expect(window.FX_FEATURES.length).toBe(5);
     });
 });
 
@@ -200,23 +200,40 @@ describe('兜底与隔离（失败必须可见）', () => {
 });
 
 // ── ④ 跨件契约 ───────────────────────────────
-describe('跨件契约——插话队列（fx/pending）', () => {
-    it('入列于发送时刻；user 块到达即出列', () => {
-        window.pendingAdd('在途消息');
-        expect(document.querySelectorAll('#chatPendingPanel > div').length).toBe(1);
-        window.persistApply({ mode: 'append', items: [{ type: 'user', payload: { text: '在途消息' } }] });
-        expect(document.querySelectorAll('#chatPendingPanel > div').length).toBe(0);
+describe('跨件契约——插话队列（state/pending · A233）', () => {
+    it('state 段 pending.entries 逐条渲染（含非前端来源标记）', () => {
+        window.stateApply({ pending: { entries: [{ content: '在途消息', source: 'user', origin: '' }, { content: 'QQ来的一条', source: 'user', origin: 'qq' }] } });
+        const rows = document.querySelectorAll('#chatPendingPanel > div');
+        expect(rows.length).toBe(2);
+        expect(rows[1].textContent).toContain('[QQ] QQ来的一条');
     });
 
-    it('全量重绘即清队（本地在途记录失去意义）', () => {
-        window.pendingAdd('x');
-        window.persistApply({ mode: 'full', items: [] });
-        expect(document.querySelectorAll('#chatPendingPanel > div').length).toBe(0);
+    it('空队列清空面板 / 渲染转义（HTML 按文本落盘，不注入）', () => {
+        window.stateApply({ pending: { entries: [{ content: '<img src=x onerror=alert(1)>', source: 'user', origin: '' }] } });
+        const panel = document.getElementById('chatPendingPanel');
+        expect(panel.querySelector('img')).toBeNull();
+        expect(panel.textContent).toContain('<img src=x');
+        window.stateApply({ pending: { entries: [] } });
+        expect(panel.innerHTML).toBe('');
     });
 });
 
 // ── ⑤ 出口面 ─────────────────────────────────
 describe('出口面（input.js——投递即回执）', () => {
+    it('核心对话开关——coreSwap 切 #chatMsgs .core-only + 标签/滑块态（默认全显）', () => {
+        const msgs = document.getElementById('chatMsgs');
+        const sw = document.getElementById('chatCoreToggle');
+        expect(msgs.classList.contains('core-only')).toBe(false);
+        window.chatCoreToggle();
+        expect(msgs.classList.contains('core-only')).toBe(true);
+        expect(sw.classList.contains('on')).toBe(true);
+        expect(document.getElementById('chatCoreLabel').textContent).toBe('精简');
+        window.chatCoreToggle();
+        expect(msgs.classList.contains('core-only')).toBe(false);
+        expect(sw.classList.contains('on')).toBe(false);
+        expect(document.getElementById('chatCoreLabel').textContent).toBe('全部');
+    });
+
     it('空文本零动作（不发请求）', async () => {
         const calls = captureFetch();
         document.getElementById('chatSendInput').value = '   ';
@@ -234,15 +251,6 @@ describe('出口面（input.js——投递即回执）', () => {
         expect(calls.length).toBe(1);
         expect(JSON.parse(calls[0].opt.body).text).toBe('Chat 你好');
         expect(box.value).toBe('');
-    });
-
-    it('投递未受理 → 清队（防幽灵队列）', async () => {
-        globalThis.fetch = async () => ({ json: async () => ({ ok: false, error: '未识别' }) });
-        window.pendingAdd('在途');
-        document.getElementById('chatSendInput').value = '在途';
-        window.chatSend();
-        await flushMicro();
-        expect(document.querySelectorAll('#chatPendingPanel > div').length).toBe(0);
     });
 
     it('停止 / 继续 / 新会话——指令串固定', async () => {

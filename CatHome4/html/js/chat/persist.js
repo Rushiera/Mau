@@ -54,11 +54,8 @@ function persistFull(items) {
         return;
     }
     box.textContent = '';
-    // 插话队列——全量重绘即清队（连接首帧 / 重连 / 新会话：本地在途记录失去意义）
-    if (typeof pendingClear === 'function') {
-        pendingClear();
-    }
     persistAppend(items);
+    tbScopeMark();
     scrollBottomNow();
 }
 
@@ -76,11 +73,6 @@ function persistAppend(items, auto) {
         if (items[i]) {
             items[i].type = normalizeType(items[i].type);
         }
-        // 插话队列——**人工** user 块到达 = 内核确认，本地在途记录 FIFO 出队
-        // 🔴 系统注入块不是「我的输入」的确认（A204）——出队会误吞在途记录（等于打断输入过程）
-        if (items[i] && items[i].type === 'user' && !isSysPayload(items[i].payload) && typeof pendingConsume === 'function') {
-            pendingConsume();
-        }
         // 自动切换——两个节点各一次（判据取持久区新块，不按指令）：
         //   人工 user 块 = 我的输入已落前文 → 切流式看流；roundsum = 本轮结算 → 切回输入
         if (auto) {
@@ -96,6 +88,7 @@ function persistAppend(items, auto) {
             box.appendChild(node);
         }
     }
+    tbScopeMark();
     if (follow) {
         scrollFollow();
     }
@@ -103,7 +96,7 @@ function persistAppend(items, auto) {
 
 /// 自动切换——按新块切输入区 / 流式区（追加路专用；同态零动作 = 幂等）
 /// ① **人工** user 块 → 流式（我的输入已落前文，看流）② roundsum → 输入（本轮结算，放行输入）
-/// 🔴 系统注入块（A204）**零动作**——不抢视线、不打断输入：输入区与流式区同区互斥，
+/// 🔴 系统注入块（type=systemautomessage · A219）**零动作**——不抢视线、不打断输入：输入区与流式区同区互斥，
 ///    切走输入区等于把用户正在打的字挤下屏。系统注入照常落持久区与滚动带，只是不动临时区。
 ///    roundsum 仍切回输入：它是「轮已结算、放行输入」的信号，与谁触发本轮无关（且同态即幂等）。
 function persistAutoSwap(item) {
@@ -112,9 +105,6 @@ function persistAutoSwap(item) {
     }
     var type = item ? item.type : '';
     if (type === 'user') {
-        if (isSysPayload(item.payload)) {
-            return;
-        }
         chatLiveShow(true);
         return;
     }
@@ -134,4 +124,41 @@ function persistRender(item) {
     }
     // 第二参 = 整条条目——块级字段取用口（如 text 块操作条读 msgIndex 定回滚 / 分支切点）
     return fn(item.payload || {}, item);
+}
+
+/// timeback 域区间标记——从 `timeback-start` 行到 `timeback-back` 行之间（**不含两端**）的块加 `.tb-scope`（气泡描边转粉）；
+/// 两端工具卡保持原色；失败块（`.err`）由 CSS 事后覆盖为红（红优先，粉不盖红）。
+/// 每次渲染后全量重标（重放 / 追加同路）——行数有限，O(n) 可接受。
+function tbScopeMark() {
+    var box = persistContainer();
+    if (!box) {
+        return;
+    }
+    var rows = box.children;
+    if (!rows) {
+        return;
+    }
+    var open = false;
+    for (var i = 0; i < rows.length; i = i + 1) {
+        var row = rows[i];
+        if (!row || typeof row.getAttribute !== 'function') {
+            continue;
+        }
+        var tool = row.getAttribute('data-tool') || '';
+        if (tool === 'timeback-start') {
+            open = true;
+            row.classList.remove('tb-scope');
+            continue;
+        }
+        if (tool === 'timeback-back') {
+            open = false;
+            row.classList.remove('tb-scope');
+            continue;
+        }
+        if (open) {
+            row.classList.add('tb-scope');
+        } else {
+            row.classList.remove('tb-scope');
+        }
+    }
 }

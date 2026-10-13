@@ -272,12 +272,12 @@ namespace CatHome4.Core.Tests
         public void PoolAccountingFindsUnknownTool()
         {
             string poolJson = "{\"group\":\"\",\"tools\":[{\"name\":\"text-read\",\"description\":\"d\",\"parameters\":{}},{\"name\":\"zz-unknown\",\"description\":\"d\",\"parameters\":{}}]}";
-            CH4.ToolPool.RebuildAll(null, null, poolJson);
+            CH4.ToolPool.RebuildAll(null, poolJson);
             string[] missing = CH4.ToolOrderTable.FindUnregistered(CH4.ToolPool.AllNames());
             Assert.Single(missing);
             Assert.Equal("zz-unknown", missing[0]);
             // 清池——不给后续用例留残余
-            CH4.ToolPool.RebuildAll(null, null, "{\"group\":\"\",\"tools\":[]}");
+            CH4.ToolPool.RebuildAll(null, "{\"group\":\"\",\"tools\":[]}");
         }
 
         /// <summary>

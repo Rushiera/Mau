@@ -77,6 +77,9 @@ namespace CH4
         /// <summary>当前未闭合作用域——null=无作用域。</summary>
         private TimebackScope _timebackScope;
 
+        /// <summary>timeback 未闭合自动拉起计数——同域累计（A229；达上限后放行本轮结束——防模型不回收导致的无限空转）。</summary>
+        private int _timebackPullCount;
+
         /// <summary>归档实例——懒建（首次使用时按本猫路径构造）。</summary>
         private TimebackArchive _timebackArchive;
 
@@ -575,9 +578,9 @@ namespace CH4
             }
             scope.WriteLog.Add(name + " · " + TimebackWriteTarget(argsJson) + " · " + TimebackToolStatus(result));
         }
-        /// <summary>台账状态列——OK（成功）· DENY（被权限 / 域门禁拒）· ERR（执行失败）；拒与败分开，读面可区分。</summary>
+        /// <summary>台账状态列——OK（成功）· DENY（被权限 / 域门禁拒）· ERR（工具自身执行失败）· FAIL（工具跑通但业务未过——编译 / 跑测未通过）；拒 / 败 / 业务未过分列，读面可区分。</summary>
         /// <param name="result">工具结果文本</param>
-        /// <returns>状态列取值</returns>
+        /// <returns>状态列取值（OK / DENY / ERR / FAIL / FAIL(明细) / UNPARSED）</returns>
         internal static string TimebackToolStatus(string result)
         {
             if (result == null || result.Length == 0)
@@ -594,7 +597,110 @@ namespace CH4
             {
                 return "ERR";
             }
+            if (result.StartsWith("{", StringComparison.Ordinal))
+            {
+                return JsonHeadStatus(result);
+            }
             return "OK";
+        }
+        /// <summary>台账状态列·JSON 头分支——cs-build / cs-test / cs-check 等桥工具以首行 `{"ok":…}` 回报业务成败，不以 `ERR|` 开头；
+        /// 只认前缀会把编译 / 跑测失败记成 OK（事实列说谎）。ok 缺失 / 解析失败出声 `UNPARSED`——不回落 OK（静默族）。</summary>
+        /// <param name="result">工具结果文本（首行为结构化头）</param>
+        /// <returns>状态列取值（OK / FAIL / FAIL(明细) / UNPARSED）</returns>
+        private static string JsonHeadStatus(string result)
+        {
+            string head = result;
+            int lineEnd = result.IndexOf('\n');
+            if (lineEnd >= 0)
+            {
+                head = result.Substring(0, lineEnd);
+            }
+            JsonDocument doc = JsonUtil.Parse(head.Trim(), "timeback.toolstatus");
+            if (doc == null)
+            {
+                return "UNPARSED";
+            }
+            JsonElement root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return "UNPARSED";
+            }
+            JsonElement ok;
+            if (root.TryGetProperty("ok", out ok) == false)
+            {
+                return "UNPARSED";
+            }
+            if (ok.ValueKind == JsonValueKind.True)
+            {
+                return "OK";
+            }
+            if (ok.ValueKind != JsonValueKind.False)
+            {
+                return "UNPARSED";
+            }
+            string detail = JsonFailDetail(root);
+            if (detail.Length == 0)
+            {
+                return "FAIL";
+            }
+            return "FAIL(" + detail + ")";
+        }
+        /// <summary>失败明细——从结构化头取可读计数（exit / errors / failedTests / failed），全缺返回空串。</summary>
+        /// <param name="root">结构化头根元素</param>
+        /// <returns>以逗号分隔的计数串</returns>
+        private static string JsonFailDetail(JsonElement root)
+        {
+            string detail = "";
+            int exit = JsonHeadInt(root, "exit");
+            int errors = JsonHeadInt(root, "errors");
+            int failed = JsonHeadInt(root, "failedTests");
+            if (failed <= 0)
+            {
+                failed = JsonHeadInt(root, "failed");
+            }
+            if (exit != 0)
+            {
+                detail = detail + "exit=" + exit.ToString();
+            }
+            if (errors > 0)
+            {
+                detail = AppendDetail(detail, "errors=" + errors.ToString());
+            }
+            if (failed > 0)
+            {
+                detail = AppendDetail(detail, "failed=" + failed.ToString());
+            }
+            return detail;
+        }
+        /// <summary>计数取值——缺字段 / 非数字一律 0（计数只作展示，缺失不构成失败判定）。</summary>
+        /// <param name="root">结构化头根元素</param>
+        /// <param name="key">键名</param>
+        /// <returns>整数值（取不到 0）</returns>
+        private static int JsonHeadInt(JsonElement root, string key)
+        {
+            JsonElement value;
+            if (root.TryGetProperty(key, out value) == false)
+            {
+                return 0;
+            }
+            int number;
+            if (value.ValueKind != JsonValueKind.Number || value.TryGetInt32(out number) == false)
+            {
+                return 0;
+            }
+            return number;
+        }
+        /// <summary>明细追加——已有时以逗号连接。</summary>
+        /// <param name="detail">已有明细</param>
+        /// <param name="item">新增项</param>
+        /// <returns>拼接后的明细</returns>
+        private static string AppendDetail(string detail, string item)
+        {
+            if (detail.Length == 0)
+            {
+                return item;
+            }
+            return detail + "," + item;
         }
         /// <summary>台账目标标识——从参数约定键取首个非空值（路径 / 目录类取文件名，标识类原样）；powershell 取命令行原文（外部通道 · 单行指令一次一条，不截断）。</summary>
         /// <param name="argsJson">工具参数 JSON</param>

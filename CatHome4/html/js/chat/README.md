@@ -12,8 +12,8 @@
 |:--|:--|
 | `lib/` | 渲染共用件（9 件）——DOM 构造 `el`/`elText` / 格式化 `fmtCount`（**统计数字统一入口**：两位小数 + K/M 进位，M 为最大单位）·`fmtMs` / MD 渲染 / 图片包裹 / 按压判据 / 工具骨架 / 兜底件 `fallback`（未识别 type · 渲染异常——两区共用） / **命令解码 `cmd`（PS 意图）** |
 | `blocks/` | 持久块型 8 类（persist——`gap_text` 与 `text` 视觉同形，收包即归一为 `text`，见 §二）+ 流式件 2 个（live 的 `replysse` / `thinksse`；`toolrun` 复用持久区工具卡渲染件） |
-| `state/` | **state 段投影——各投影件 + 分发表**（A194 完成）：`status.js`（六态状态条——容器唯一写者）· `info.js`（顶栏信息位）· `meta.js`（会话标识——浏览器标题 + 左上角 `#chatTitle`）· `note.js` · `delay.js` · `conn.js`；`registry.js` 的 `STATE_DECL`（投影件 → 消费字段 / 输出面 / 入口的唯一映射处）+ `stateProjectAll()` 整段分发 |
-| `fx/` | **独立功能——每功能一件 + 声明表**（A176 归位）：`pet`（桌宠）· `scroll`（滚动带）· `pending`（插话队列）· `cmd-intent`（命令解码显示）· `controls`（按钮态）· `live-stats`（流式统计行——开关上方 line / char / spd）；登记在 `fx/registry.js` 的 `FX_FEATURES`（名称 / 输入源 / 输出面 / 启动入口），启动由 `fxBoot()` 统一执行 |
+| `state/` | **state 段投影——各投影件 + 分发表**（A194 完成）：`status.js`（六态状态条——容器唯一写者）· `info.js`（顶栏信息位）· `meta.js`（会话标识——浏览器标题 + 左上角 `#chatTitle`）· `note.js` · `delay.js` · `pending.js`（插话队列——内核 `_pending` 队列投影，含 QQ / 指令 / 定时等非前端来源）· `conn.js`；`registry.js` 的 `STATE_DECL`（投影件 → 消费字段 / 输出面 / 入口的唯一映射处）+ `stateProjectAll()` 整段分发 |
+| `fx/` | **独立功能——每功能一件 + 声明表**（A176 归位）：`pet`（桌宠）· `scroll`（滚动带）· `cmd-intent`（命令解码显示）· `controls`（按钮态）· `live-stats`（流式统计行——开关上方 line / char / spd）；登记在 `fx/registry.js` 的 `FX_FEATURES`（名称 / 输入源 / 输出面 / 启动入口），启动由 `fxBoot()` 统一执行 |
 | 主干 | `registry.js`（**块声明表 + 映射表**——A178 起不兼实现）· `persist.js`（持久区）· `stream.js`（**流式呈现机制**——前缀增量 + 打字机 + 跟随 + 段期光标，整套效果单点承载）· `live.js`（临时区）· `state.js`（状态投影——**整段覆盖 + 按分发表分发薄层**）· `main.js`（收包入口 + 公共小件：信息位单点 `chatInfoSet`——**state 段专属**）· `input.js`（用户出口） |
 | 面板与侧翼 | `note.js`（Note 面板——气泡 + 弹层）· `delay.js`（定时面板——列表 / 倒计时 / 改时刻）· `paste.js`（图片粘贴上传 + 待发区） |
 
@@ -29,6 +29,7 @@
 | type | 文件 | 渲染函数 | 形态 |
 |:--|:--|:--|:--:|
 | `user` | `blocks/user.js` | `buildUserBlock(payload)` | 🫧 气泡 |
+| `systemautomessage` | `blocks/systemautomessage.js` | `buildSystemAutoMessageBlock(payload)` | 🫧 气泡 |
 | `text` | `blocks/text.js` | `buildTextBlock(payload, item)` | 🫧 气泡 |
 | `reason` | `blocks/reason.js` | `buildReasonBlock(payload)` | 🫧 气泡 |
 | `toolcard` | `blocks/toolcard.js` | `buildToolBlock(payload)` | 🫧 气泡 |

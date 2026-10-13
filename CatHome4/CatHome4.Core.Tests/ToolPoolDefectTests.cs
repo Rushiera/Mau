@@ -22,7 +22,7 @@ namespace CatHome4.Core.Tests
         /// </summary>
         public void Dispose()
         {
-            ToolPool.RebuildAll(null, null, BuiltinJson);
+            ToolPool.RebuildAll(null, BuiltinJson);
         }
 
         /// <summary>
@@ -103,7 +103,7 @@ namespace CatHome4.Core.Tests
         {
             FakeFlow flow = new FakeFlow();
             flow.ToolsJson = "{\"group\":\"BadCat\",\"tools\":[{\"name\":\"a\"} {\"name\":\"b\"}]}";
-            ToolPool.RebuildAll(Sources("BadCat", flow), null, BuiltinJson);
+            ToolPool.RebuildAll(Sources("BadCat", flow), BuiltinJson);
             ToolDefect defect = FindDefect("BadCat");
             Assert.NotNull(defect);
             Assert.Equal("parse", defect.Stage);
@@ -119,7 +119,7 @@ namespace CatHome4.Core.Tests
         {
             FakeFlow flow = new FakeFlow();
             flow.ThrowOnTools = true;
-            ToolPool.RebuildAll(Sources("ThrowCat", flow), null, BuiltinJson);
+            ToolPool.RebuildAll(Sources("ThrowCat", flow), BuiltinJson);
             ToolDefect defect = FindDefect("ThrowCat");
             Assert.NotNull(defect);
             Assert.Equal("throw", defect.Stage);
@@ -133,22 +133,22 @@ namespace CatHome4.Core.Tests
         {
             FakeFlow flow = new FakeFlow();
             flow.ToolsJson = "{\"group\":\"ShapeCat\"}";
-            ToolPool.RebuildAll(Sources("ShapeCat", flow), null, BuiltinJson);
+            ToolPool.RebuildAll(Sources("ShapeCat", flow), BuiltinJson);
             ToolDefect defect = FindDefect("ShapeCat");
             Assert.NotNull(defect);
             Assert.Equal("shape", defect.Stage);
         }
 
         /// <summary>
-        /// 合法空组声明（tools:[]）不判缺陷——QuickCat 范式（显式空组合法）。
+        /// 合法空组声明（tools:[]）不判缺陷——非工具组范式（显式空组合法；现行例 = LLMSimpleRequest）。
         /// </summary>
         [Fact]
         public void ExplicitEmptyGroupNotReported()
         {
             FakeFlow flow = new FakeFlow();
-            flow.ToolsJson = "{\"group\":\"QuickCat\",\"tools\":[]}";
-            ToolPool.RebuildAll(Sources("QuickCat", flow), null, BuiltinJson);
-            Assert.Null(FindDefect("QuickCat"));
+            flow.ToolsJson = "{\"group\":\"LLMSimpleRequest\",\"tools\":[]}";
+            ToolPool.RebuildAll(Sources("LLMSimpleRequest", flow), BuiltinJson);
+            Assert.Null(FindDefect("LLMSimpleRequest"));
         }
 
         /// <summary>
@@ -162,7 +162,7 @@ namespace CatHome4.Core.Tests
             source.Flow = null;
             List<ToolGroupSource> list = new List<ToolGroupSource>();
             list.Add(source);
-            ToolPool.RebuildAll(list, null, BuiltinJson);
+            ToolPool.RebuildAll(list, BuiltinJson);
             ToolDefect defect = FindDefect("GhostCat");
             Assert.NotNull(defect);
             Assert.Equal("empty", defect.Stage);
@@ -176,7 +176,7 @@ namespace CatHome4.Core.Tests
         {
             FakeFlow flow = new FakeFlow();
             flow.ToolsJson = "{\"group\":\"GoodCat\",\"tools\":[{\"name\":\"good-tool\",\"description\":\"d\",\"parameters\":{\"type\":\"object\"}}]}";
-            ToolPool.RebuildAll(Sources("GoodCat", flow), null, BuiltinJson);
+            ToolPool.RebuildAll(Sources("GoodCat", flow), BuiltinJson);
             Assert.Null(FindDefect("GoodCat"));
             Assert.Contains("good-tool", ToolPool.AllNames());
         }
@@ -189,11 +189,11 @@ namespace CatHome4.Core.Tests
         {
             FakeFlow bad = new FakeFlow();
             bad.ToolsJson = "{\"group\":\"FixCat\",\"tools\":[}";
-            ToolPool.RebuildAll(Sources("FixCat", bad), null, BuiltinJson);
+            ToolPool.RebuildAll(Sources("FixCat", bad), BuiltinJson);
             Assert.NotNull(FindDefect("FixCat"));
             FakeFlow good = new FakeFlow();
             good.ToolsJson = "{\"group\":\"FixCat\",\"tools\":[{\"name\":\"fix-tool\"}]}";
-            ToolPool.RebuildAll(Sources("FixCat", good), null, BuiltinJson);
+            ToolPool.RebuildAll(Sources("FixCat", good), BuiltinJson);
             Assert.Null(FindDefect("FixCat"));
             Assert.Contains("fix-tool", ToolPool.AllNames());
         }

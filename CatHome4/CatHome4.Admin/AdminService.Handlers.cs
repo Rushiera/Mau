@@ -34,6 +34,48 @@ namespace CatHome4.Admin
         /// <summary>默认猫端点角色——Bootstrap 赋值（自动故障转移与手动对调共用；catcfg.apply 换 Runtime 时复用）</summary>
         internal static LlmEndpointRole _defaultApiRole;
 
+        /// <summary>默认猫当前思考强度覆盖——Bootstrap / catcfg.apply 变更比对（A234；空=跟随全局）</summary>
+        internal static string _defaultReasoningEffort = "";
+
+        /// <summary>
+        /// 思考强度归一——A234（low/high/max 之外一律空=跟随全局；防上游协议拒绝）。
+        /// </summary>
+        /// <param name="value">原始值（可 null）</param>
+        /// <returns>归一值（low/high/max/空）</returns>
+        internal static string NormalizeReasoningEffort(string value)
+        {
+            string norm = value == null ? "" : value.Trim().ToLowerInvariant();
+            if (norm == "low" || norm == "high" || norm == "max")
+            {
+                return norm;
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// 全局思考强度解析——A234（llm.reasoning_effort → env → 默认 high；GET cat-config 回执展示"跟随的是谁"）。
+        /// </summary>
+        /// <returns>全局生效强度（low/high/max）</returns>
+        internal static string ResolveGlobalReasoningEffort()
+        {
+            string value = "";
+            if (_globalConfig != null)
+            {
+                value = _globalConfig.Get("llm.reasoning_effort", "");
+            }
+            string norm = NormalizeReasoningEffort(value);
+            if (norm.Length == 0)
+            {
+                string env = Environment.GetEnvironmentVariable("MAU_LLM_REASONING_EFFORT");
+                norm = NormalizeReasoningEffort(env);
+            }
+            if (norm.Length == 0)
+            {
+                norm = "high";
+            }
+            return norm;
+        }
+
         /// <summary>
         /// 管理路由注册——S2 解耦：入口壳经 IHttpRouteSink 向 Http 域注册管理端点（主端口仅一次）。
         /// 归属：Admin 域——llm-apis/qqbot-apis/cat-config/cat-default/workspace 管理面（S4 随 Admin 域迁 CatHome4.Admin）。
@@ -620,7 +662,7 @@ namespace CatHome4.Admin
 
         /// <summary>
         /// 每猫配置读取——GET /api/v1/cat-config?cat=&lt;id|majordomo&gt;。
-        /// 返回：apiConfigId/persona/toolNames/injectList + allToolNames（工具勾选清单）+ apiOptions（API 下拉清单）。
+        /// 返回：displayName/apiConfigId/persona/toolNames/injectList + allToolNames（工具勾选清单）+ apiOptions（API 下拉清单）。
         /// </summary>
         /// <param name="ctx">HTTP 上下文</param>
         /// <returns>配置 JSON</returns>
@@ -680,6 +722,8 @@ namespace CatHome4.Admin
             {
                 ok = true,
                 cat = catKey,
+                displayName = cfg.DisplayName,
+                type = cfg.Type,
                 apiConfigId = cfg.ApiConfigId,
                 persona = cfg.Persona,
                 toolNames = cfg.ToolNames,
@@ -688,6 +732,10 @@ namespace CatHome4.Admin
                 allPacks = BuildAllPacks(),
                 qqbotId = cfg.QqBotId,
                 qqbotEnable = cfg.QqBotEnable,
+                userInjectIdleOnly = cfg.UserInjectIdleOnly,
+                reasoningEffort = cfg.ReasoningEffort,
+                roundSummary = cfg.RoundSummary,
+                defaultReasoningEffort = ResolveGlobalReasoningEffort(),
                 enabledRoots = cfg.EnabledRoots,
                 allRoots = BuildAllRootsJson(),
                 allToolNames = GetConfigurableToolNames(),
@@ -731,32 +779,42 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
-        /// 每猫配置写入——POST /api/v1/cat-config（body: cat/apiConfigId/persona/toolNames/injectList/packs/enabledRoots/qqbotId/qqbotEnable）。
+        /// 每猫配置写入——POST /api/v1/cat-config（body: cat/displayName/apiConfigId/persona/type/toolNames/injectList/packs/enabledRoots/qqbotId/qqbotEnable/userInjectIdleOnly）。
         /// 🔴 字段级合并写（PUT 语义 · 2026-10-02 判例蒸馏轮）——字段出现才落盘，缺省保留磁盘现值；显式空值（空数组 / 空串）= 清空。
+        /// displayName 非空校验（空一律拒绝——与 cat.cfg.set 同源）。
         /// toolNames 写时校验（非法名过滤）；落盘 HTTP 线程原子写；运行时生效（字段更新 + Swap）入队主线程泵 catcfg.apply。
-        /// 生效语义：apiConfigId 立即生效（SwapLlmRuntime）；persona/toolNames/injectList 新会话生效（session.new 重注入）。</summary>
+        /// 生效语义：apiConfigId 立即生效（SwapLlmRuntime）；persona/toolNames/injectList/displayName 新会话生效（session.new 重注入）。
+        /// </summary>
         /// <param name="ctx">HTTP 上下文</param>
         /// <returns>回执 JSON（ok=已受理落盘）</returns>
         internal static async Task<IResult> HandleCatConfigPost(HttpContext ctx)
         {
             string body = await ReadBodyText(ctx);
             string catKey = "";
-            // 字段级合并写（2026-10-01 语义统一：与 cat.cfg.set 同规）——出现即覆盖 / 缺省即保留；数组字段出现即整表替换（空数组 = 清空）
-            string displayName = "";
-            bool displayNamePresent = false;
             string apiConfigId = "";
+            // A41-3 显式空值语义——字段出现且为空/全零 = 清空回默认端点（字段缺省 = 保留旧值）
             bool apiConfigIdPresent = false;
+            bool displayNamePresent = false;
             bool personaPresent = false;
+            bool typePresent = false;
             bool toolNamesPresent = false;
+            bool qqbotIdPresent = false;
             bool qqbotEnablePresent = false;
             bool injectListPresent = false;
             bool packsPresent = false;
             bool enabledRootsPresent = false;
+            bool userInjectIdleOnlyPresent = false;
+            bool reasoningEffortPresent = false;
+            bool roundSummaryPresent = false;
+            string displayName = "";
             string persona = "";
+            string typeValue = "";
             string toolNames = "";
             string qqbotId = "";
-            bool qqbotIdPresent = false;
+            string reasoningEffort = "";
             bool qqbotEnable = false;
+            bool userInjectIdleOnly = false;
+            bool roundSummaryValue = false;
             List<string> injectList = new List<string>();
             List<string> enabledRoots = new List<string>();
             List<string> packs = new List<string>();
@@ -766,37 +824,35 @@ namespace CatHome4.Admin
                 {
                     JsonElement root = doc.RootElement;
                     catKey = GetJsonString(root, "cat");
-                    JsonElement propEl;
-                    if (root.TryGetProperty("displayName", out propEl))
-                    {
-                        displayNamePresent = true;
-                        displayName = GetJsonString(root, "displayName");
-                    }
-                    if (root.TryGetProperty("apiConfigId", out propEl))
+                    // 字段级合并写（2026-10-02 判例蒸馏轮）——先登记本请求出现的字段（缺省 = 保留旧值）
+                    JsonElement probeEl;
+                    displayNamePresent = root.TryGetProperty("displayName", out probeEl);
+                    personaPresent = root.TryGetProperty("persona", out probeEl);
+                    typePresent = root.TryGetProperty("type", out probeEl);
+                    toolNamesPresent = root.TryGetProperty("toolNames", out probeEl);
+                    qqbotIdPresent = root.TryGetProperty("qqbotId", out probeEl);
+                    qqbotEnablePresent = root.TryGetProperty("qqbotEnable", out probeEl);
+                    enabledRootsPresent = root.TryGetProperty("enabledRoots", out probeEl);
+                    userInjectIdleOnlyPresent = root.TryGetProperty("userInjectIdleOnly", out probeEl);
+                    reasoningEffortPresent = root.TryGetProperty("reasoningEffort", out probeEl);
+                    roundSummaryPresent = root.TryGetProperty("roundSummary", out probeEl);
+                    packsPresent = root.TryGetProperty("packs", out probeEl);
+                    injectListPresent = root.TryGetProperty("injectList", out probeEl);
+                    JsonElement apiConfigIdEl;
+                    if (root.TryGetProperty("apiConfigId", out apiConfigIdEl))
                     {
                         apiConfigIdPresent = true;
-                        apiConfigId = GetJsonString(root, "apiConfigId");
                     }
-                    if (root.TryGetProperty("persona", out propEl))
-                    {
-                        personaPresent = true;
-                        persona = GetJsonString(root, "persona");
-                    }
-                    if (root.TryGetProperty("toolNames", out propEl))
-                    {
-                        toolNamesPresent = true;
-                        toolNames = GetJsonString(root, "toolNames");
-                    }
-                    if (root.TryGetProperty("qqbotId", out propEl))
-                    {
-                        qqbotIdPresent = true;
-                        qqbotId = GetJsonString(root, "qqbotId");
-                    }
-                    if (root.TryGetProperty("qqbotEnable", out propEl))
-                    {
-                        qqbotEnablePresent = true;
-                        qqbotEnable = GetBoolProp(root, "qqbotEnable");
-                    }
+                    apiConfigId = GetJsonString(root, "apiConfigId");
+                    displayName = GetJsonString(root, "displayName");
+                    persona = GetJsonString(root, "persona");
+                    typeValue = GetJsonString(root, "type");
+                    toolNames = GetJsonString(root, "toolNames");
+                    qqbotId = GetJsonString(root, "qqbotId");
+                    qqbotEnable = GetBoolProp(root, "qqbotEnable");
+                    userInjectIdleOnly = GetBoolProp(root, "userInjectIdleOnly");
+                    reasoningEffort = GetJsonString(root, "reasoningEffort");
+                    roundSummaryValue = GetBoolProp(root, "roundSummary");
                     JsonElement rootsEl;
                     if (root.TryGetProperty("enabledRoots", out rootsEl))
                     {
@@ -951,14 +1007,42 @@ namespace CatHome4.Admin
                     cfg.QqBotId = trimmedQqBotId;
                 }
             }
-            // 字段级合并写（2026-10-02 判例蒸馏轮）——字段出现才落盘，缺省保留磁盘现值（空数组 / 空串 = 显式清空）
             if (qqbotEnablePresent)
             {
                 cfg.QqBotEnable = qqbotEnable;
             }
+            if (userInjectIdleOnlyPresent)
+            {
+                cfg.UserInjectIdleOnly = userInjectIdleOnly;
+            }
+            if (reasoningEffortPresent)
+            {
+                // A234——空=跟随全局；非空白名单校验（非法拒绝）
+                string effNorm = reasoningEffort == null ? "" : reasoningEffort.Trim().ToLowerInvariant();
+                if (effNorm.Length == 0)
+                {
+                    cfg.ReasoningEffort = "";
+                }
+                else if (effNorm == "low" || effNorm == "high" || effNorm == "max")
+                {
+                    cfg.ReasoningEffort = effNorm;
+                }
+                else
+                {
+                    return Results.Json(new { ok = false, error = "reasoningEffort 非法（low/high/max/空）" });
+                }
+            }
+            if (roundSummaryPresent)
+            {
+                cfg.RoundSummary = roundSummaryValue;
+            }
             if (personaPresent)
             {
                 cfg.Persona = persona;
+            }
+            if (typePresent)
+            {
+                cfg.Type = typeValue == null ? "" : typeValue.Trim();
             }
             if (toolNamesPresent)
             {
@@ -1002,6 +1086,7 @@ namespace CatHome4.Admin
             string[] defaultInjectList = new string[0];
             string[] defaultPacks = new string[0];
             string[] defaultEnabledRoots = new string[0];
+            bool defaultUserInjectIdleOnly = false;
             if (tpl != null)
             {
                 if (tpl.BaseRole != null)
@@ -1028,6 +1113,7 @@ namespace CatHome4.Admin
                 {
                     defaultEnabledRoots = tpl.DefaultEnabledRoots;
                 }
+                defaultUserInjectIdleOnly = tpl.DefaultUserInjectIdleOnly;
             }
             var resp = new
             {
@@ -1039,6 +1125,7 @@ namespace CatHome4.Admin
                 defaultPacks = defaultPacks,
                 defaultEnabledRoots = defaultEnabledRoots,
                 allRoots = BuildAllRootsJson(),
+                defaultUserInjectIdleOnly = defaultUserInjectIdleOnly,
                 allToolNames = GetConfigurableToolNames(),
                 allTools = GetToolsWithGroupForConfig(),
                 defectGroups = BuildToolDefectItems(),
@@ -1064,6 +1151,7 @@ namespace CatHome4.Admin
             List<string> defaultInjectList = new List<string>();
             List<string> defaultPacks = new List<string>();
             List<string> defaultEnabledRoots = new List<string>();
+            bool defaultUserInjectIdleOnly = false;
             try
             {
                 using (JsonDocument doc = JsonUtil.ParseStrict(body))
@@ -1072,6 +1160,7 @@ namespace CatHome4.Admin
                     baseRole = GetJsonString(root, "baseRole");
                     defaultPersona = GetJsonString(root, "defaultPersona");
                     defaultToolNames = GetJsonString(root, "defaultToolNames");
+                    defaultUserInjectIdleOnly = GetBoolProp(root, "defaultUserInjectIdleOnly");
                     JsonElement dPacksEl;
                     if (root.TryGetProperty("defaultPacks", out dPacksEl) && dPacksEl.ValueKind == JsonValueKind.Array)
                     {
@@ -1144,6 +1233,7 @@ namespace CatHome4.Admin
             data.DefaultPacks = defaultPacks.ToArray();
             // 目录白名单——与猫配置同规（workspace 强制 + 全局池子集；空=物化常驻根）
             data.DefaultEnabledRoots = ValidateEnabledRoots(defaultEnabledRoots.ToArray());
+            data.DefaultUserInjectIdleOnly = defaultUserInjectIdleOnly;
             SaveCatDefaultCfg(data);
             LogStore.Add("CatHome4", 1, "全局默认模板已保存（注入 " + defaultInjectList.Count.ToString() + " 条）", "CONFIG");
             // A132 剔除出声——被剔名字随响应带回（调用方可见；明细已记日志，不静默）
@@ -1480,12 +1570,21 @@ namespace CatHome4.Admin
                 _chatBridge.DefaultToolNames = toolNames;
                 _chatBridge.DefaultQqBotId = ResolveQqBotId(cfg);
                 _chatBridge.DefaultQqBotEnable = cfg.QqBotEnable;
+                _chatBridge.DefaultSession.SetUserInjectIdleOnly(cfg.UserInjectIdleOnly);
+                _chatBridge.DefaultSession.SetRoundSummary(cfg.RoundSummary);
+                // A230 显示名立即刷新（改配置即改内存；空值保持原值）
+                if (cfg.DisplayName != null && cfg.DisplayName.Length > 0)
+                {
+                    _chatBridge.DefaultSession.SetDisplayName(cfg.DisplayName);
+                }
                 Guid newApi = ResolveApiConfigId(cfg);
-                if (_defaultApiConfigId != newApi)
+                string newEffort = NormalizeReasoningEffort(cfg.ReasoningEffort);
+                if (_defaultApiConfigId != newApi || _defaultReasoningEffort != newEffort)
                 {
                     _defaultApiConfigId = newApi;
-                    _chatBridge.DefaultSession.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApi, _globalConfig, _defaultApiRole));
-                    LogStore.Add("CatHome4", 1, "majordomo 配置生效：LLM 端点切换为 " + newApi.ToString("D"), "CONFIG");
+                    _defaultReasoningEffort = newEffort;
+                    _chatBridge.DefaultSession.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApi, _globalConfig, _defaultApiRole, newEffort));
+                    LogStore.Add("CatHome4", 1, "majordomo 配置生效：LLM 端点 " + newApi.ToString("D") + "，思考强度 " + (newEffort.Length > 0 ? newEffort : "跟随全局"), "CONFIG");
                 }
                 return "catcfg.apply | majordomo | 已生效（前文项新会话生效）";
             }
@@ -1500,17 +1599,30 @@ namespace CatHome4.Admin
                 cat.DisplayName = cfg.DisplayName;
             }
             cat.Persona = persona;
+            // A230 显示名立即刷新（改配置即改内存；空值保持原值）
+            if (cfg.DisplayName != null && cfg.DisplayName.Length > 0)
+            {
+                cat.DisplayName = cfg.DisplayName;
+                cat.Session.SetDisplayName(cfg.DisplayName);
+            }
+            cat.Type = cfg.Type == null ? "" : cfg.Type;
             cat.InjectList = injectList;
             cat.ToolNames = toolNames;
             cat.ToolSpecs = specs;
             cat.QqBotId = ResolveQqBotId(cfg);
             cat.QqBotEnable = cfg.QqBotEnable;
+            cat.UserInjectIdleOnly = cfg.UserInjectIdleOnly;
+            cat.Session.SetUserInjectIdleOnly(cfg.UserInjectIdleOnly);
+            cat.RoundSummary = cfg.RoundSummary;
+            cat.Session.SetRoundSummary(cfg.RoundSummary);
             // M4e 猫级白名单——运行时猫文件系统已在上方 ApplyCatRoots 重建（含本分支）
             Guid newApiId = ResolveApiConfigId(cfg);
-            if (cat.ApiConfigId != newApiId)
+            string newCatEffort = NormalizeReasoningEffort(cfg.ReasoningEffort);
+            if (cat.ApiConfigId != newApiId || cat.ReasoningEffort != newCatEffort)
             {
                 cat.ApiConfigId = newApiId;
                 cat.Session.SetApiConfigId(newApiId);
+                cat.ReasoningEffort = newCatEffort;
                 CH_LlmApiConfig apiConfig = new CH_LlmApiConfig();
                 if (_apiStore != null)
                 {
@@ -1522,8 +1634,8 @@ namespace CatHome4.Admin
                     cat.ApiRole = new LlmEndpointRole();
                     cat.Session.AttachApiRole(cat.ApiRole);
                 }
-                cat.Session.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApiId, _globalConfig, cat.ApiRole));
-                LogStore.Add("CatHome4", 1, "猫「" + cat.DisplayName + "」配置生效：LLM 端点切换为 " + newApiId.ToString("D"), "CONFIG");
+                cat.Session.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApiId, _globalConfig, cat.ApiRole, newCatEffort));
+                LogStore.Add("CatHome4", 1, "猫「" + cat.DisplayName + "」配置生效：LLM 端点 " + newApiId.ToString("D") + "，思考强度 " + (newCatEffort.Length > 0 ? newCatEffort : "跟随全局"), "CONFIG");
             }
             return "catcfg.apply | " + cat.DisplayName + " | 已生效（前文项新会话生效）";
         }
@@ -1579,6 +1691,7 @@ namespace CatHome4.Admin
             {
                 id = data.Id,
                 displayName = data.DisplayName,
+                type = data.Type,
                 apiConfigId = data.ApiConfigId,
                 persona = data.Persona,
                 // M2c 写时校验——序列化前比对内置清单过滤非法名（外部损坏防御：持久化面只落合法名）
@@ -1587,7 +1700,10 @@ namespace CatHome4.Admin
                 qqbotId = data.QqBotId,
                 qqbotEnable = data.QqBotEnable,
                 enabledRoots = data.EnabledRoots,
-                packs = data.Packs
+                packs = data.Packs,
+                userInjectIdleOnly = data.UserInjectIdleOnly,
+                roundSummary = data.RoundSummary,
+                reasoningEffort = data.ReasoningEffort
             };
             try
             {
@@ -1680,6 +1796,10 @@ namespace CatHome4.Admin
                 data.InjectList = new string[0];
             }
 
+            if (tpl != null)
+            {
+                data.UserInjectIdleOnly = tpl.DefaultUserInjectIdleOnly;
+            }
             SaveCatCfgData("majordomo", data);
             LogStore.Add("CatHome4", 1, "majordomo cat.cfg 缺失——已按默认模板补建", "CONFIG");
         }

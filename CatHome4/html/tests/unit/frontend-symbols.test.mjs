@@ -21,6 +21,10 @@ import { describe, it, expect } from 'vitest';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'js', 'chat');
 
+// 两页共用件（chat.html 与 index.html 均以 <script> 加载）——其函数是 chat 侧合法调用来源。
+// A225b：fmtCount / fmtNumHtml 由 chat/lib/format.js 迁此，静态扫描须认可共享件为声明源。
+const SHARED = [join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'js', 'ui-common.js')];
+
 // 语言关键字 + 宿主内置——裸调用的合法来源
 const BUILTIN = new Set([
     // 语句关键字（`catch (` / `if (` 等会被裸调用正则命中）
@@ -63,7 +67,8 @@ describe('前端符号自检', () => {
         const declared = new Set();
         const calls = [];
 
-        for (const file of files) {
+        for (const file of files.concat(SHARED)) {
+            const inChat = file.startsWith(ROOT);
             const rel = file.slice(ROOT.length + 1);
             const lines = readFileSync(file, 'utf-8').split(/\r?\n/);
             for (let i = 0; i < lines.length; i = i + 1) {
@@ -104,6 +109,8 @@ describe('前端符号自检', () => {
                 while ((m = reTypeof.exec(raw)) !== null) {
                     declared.add(m[1]);
                 }
+                // 共享件只贡献声明、不贡献引用（A225b——其内部可能引用主面板函数）
+                if (!inChat) { continue; }
                 // 引用：裸调用（前置字符非「.」非标识符字符——排除 obj.method(）
                 const reCall = /(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g;
                 while ((m = reCall.exec(text)) !== null) {

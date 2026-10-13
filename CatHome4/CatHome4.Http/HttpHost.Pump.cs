@@ -95,6 +95,16 @@ namespace CatHome4.Http
                 json = InjectSnapshotTitle(json, _pageTitle);
             }
             _snapshotCache = json;
+            // A225c——猫卡 state 推送：多猫列表变化即推（管理页猫卡实时跟随；无变化零字节）
+            if (_catsBuilder != null)
+            {
+                string catsJson = _catsBuilder();
+                if (catsJson != null && catsJson.Length > 0 && !string.Equals(catsJson, _catsStateCache, StringComparison.Ordinal))
+                {
+                    _catsStateCache = catsJson;
+                    PushEvent("state", catsJson);
+                }
+            }
             // v2 契约——视图增量帧（状态段 + 临时区）：有变化推一帧、无变化零字节
             if (_viewFrameBuilder != null)
             {

@@ -39,7 +39,7 @@ for (var i = 0; i < tabs.length; i++) {
 
 // [段3] SSE 事件流——四类事件分派
 // A141——按订阅推送：面板只订阅四类（对话页另订阅 view/note——管理面事件不入 chat 流，A181）
-var es = new EventSource('/api/v1/stream?topics=snapshot,patch,log,cmd');
+var es = new EventSource('/api/v1/stream?topics=snapshot,patch,log,cmd,state');
 es.addEventListener('snapshot', function (ev) {
     // 增量流式——全量快照到达（helloFrame 重连兜底）整体替换本地全快照
     var s = JSON.parse(ev.data);
@@ -47,6 +47,11 @@ es.addEventListener('snapshot', function (ev) {
     applySnapshot(s);
 });
 es.addEventListener('patch', function (ev) { applyPatch(JSON.parse(ev.data)); });   // 增量流式——变化段合并进本地全快照
+es.addEventListener('state', function (ev) {
+    // A225c——猫卡实时状态（后端多猫列表变化即推；管理页猫卡自动跟随，不再靠手动刷新）
+    var d = JSON.parse(ev.data);
+    if (typeof applyCatState === 'function') { applyCatState(d.cats || []); }
+});
 es.addEventListener('log', function (ev) {
     // A141——服务端批量合帧：载荷为数组（兼容单条形态）
     var d = JSON.parse(ev.data);

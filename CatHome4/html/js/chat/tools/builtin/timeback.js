@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════
 // chat/tools/builtin/timeback.js —— timeback-start / timeback-back · 上下文作用域（内置）
 // 声明：图标 ⚓（开锚）/ ♻️（回收）+ 折叠行读结构化头；
-//       输出段**专属解析**——开锚：状态行（单行）——规范与骨架由「域规范卡」（systemauto user）承载；
+//       输出段**专属解析**——开锚：状态行（单行）——规范与骨架由「域规范卡」（systemauto 系统注入）承载；
 //                            回收：节约读数（条数 / token / 工具）+ 宿主台账段（⚙）+ findings 四段（emoji 分段）。
 // 节约口径：条数与 token 取自结构头（宿主实测）——`items`（释放条数）· `grew`（域内净增 token
 //          = 开锚时取值与回收时取值之差，随域回收销毁）· `tools`（域内工具使用条数——全量台账，含只读/被拒）。
@@ -54,7 +54,7 @@ function tbFindingsLines(lines) {
     return out;
 }
 
-/// 开锚卡——状态行（结构头）单行；规范与骨架迁入「域规范卡」（systemauto user），本层不再承载
+/// 开锚卡——状态行（结构头）单行；规范与骨架迁入「域规范卡」（systemauto 系统注入），本层不再承载
 toolDecl('timeback-start', {
     icon: '⚓',
     inputLines: function (a) {

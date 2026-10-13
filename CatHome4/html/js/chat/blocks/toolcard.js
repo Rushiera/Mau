@@ -23,6 +23,14 @@ function buildToolBlock(payload, item, type) {
     // 气泡外壳（2026-10-05 气泡化）——persist 面得 .chat-bubble；live 面（toolrun）仍 .chat-plain（面板自身即泡，内部件不再套壳）
     var t = type || 'toolcard';
     var row = blockRow(t);
+    // 失败态标记——行级 `.err`：气泡描边 + 滚动带刻度同转红（刻度色取气泡描边色，一处标记两处生效）
+    if (isErrResult(payload ? payload.result : undefined)) {
+        row.classList.add('err');
+    }
+    // 工具名标记——`data-tool`：timeback 域区间（start..back）链着色用（其余仅作标识）
+    if (payload && typeof payload.name === 'string' && payload.name.length > 0) {
+        row.setAttribute('data-tool', payload.name);
+    }
     var bubble = el('div', bodyClass(t));
     bubble.appendChild(buildToolCard(payload, false));
     row.appendChild(bubble);
@@ -66,14 +74,20 @@ function buildToolCard(tool, open) {
         sum.appendChild(document.createTextNode(' '));
     }
 
-    // [段3] 骨架分派（lib/tool-format）——命中 → 段结构 + 工具变体标签；未命中 → 探测骨架
+    // [段3] 原始工具名——载荷 name 直显（紧跟执行序徽标；一眼可辨工具身份）
+    if (typeof t.name === 'string' && t.name.length > 0) {
+        sum.appendChild(elText('span', 'chat-toolname', t.name));
+        sum.appendChild(document.createTextNode(' '));
+    }
+
+    // [段4] 骨架分派（lib/tool-format）——命中 → 段结构 + 工具变体标签；未命中 → 探测骨架
     var body = toolBody(t);
     if (body && body.tag) {
         sum.appendChild(elText('span', 'ps-tag ' + (body.tagCls || ''), body.tag));
         sum.appendChild(document.createTextNode(' '));
     }
 
-    // [段4] 折叠行文案——PS 命令意图（fx/cmd-intent 独立功能件）→ 声明层 headline → 骨架中文名兜底
+    // [段5] 折叠行文案——PS 命令意图（fx/cmd-intent 独立功能件）→ 声明层 headline → 骨架中文名兜底
     //        无 headline 时追加结果规模后缀（同一语义不两处实现）
     var cmdIntent = (typeof fxCmdIntentDecode === 'function') ? fxCmdIntentDecode(t.name, t.arguments) : null;
     var headline = '';
@@ -89,6 +103,12 @@ function buildToolCard(tool, open) {
         }
     }
     sum.appendChild(document.createTextNode(headline + (hasHeadline ? '' : toolResultSuffix(resultInfo(t.result)))));
+
+    // [段6] 工具用时——后端 durMs 真值（>0 显示；未记录 / 不适用不写）
+    var dur = (typeof t.durMs === 'number') ? t.durMs : -1;
+    if (dur > 0 && typeof fmtMs === 'function') {
+        sum.appendChild(elText('span', 'chat-dur', ' · ' + fmtMs(dur)));
+    }
     det.appendChild(sum);
     if (cmdIntent && typeof fxCmdIntentAttach === 'function') {
         // 展开区首块——逐段意图对照（命令原文仍在输入段；未识别段标 ❓）

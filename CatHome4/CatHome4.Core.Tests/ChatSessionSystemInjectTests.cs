@@ -11,7 +11,7 @@ using Xunit;
 namespace CatHome4.Core.Tests
 {
     /// <summary>
-    /// 系统注入（sys 入口）测试——A204 后端面：类型值域 / 前缀加工 / 队列受理门禁 / 视图 src 标记 / 补差回落 / 人工缺省兼容 / 轮首取尽。
+    /// 系统注入（sys 入口）测试——A219 后端面：来源值域 / 前缀加工 / 双队列门禁 / systemautomessage 视图块 / 人工缺省兼容 / 轮首取尽。
     /// </summary>
     [Collection("GlobalToolState")]
     public class ChatSessionSystemInjectTests
@@ -131,7 +131,7 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 类型值域——未知类型拒绝（参数面零容忍：不静默回落）。
+        /// 来源值域——未知来源拒绝（参数面零容忍：不静默回落）。
         /// </summary>
         [Fact]
         public void PostSystemMessage_UnknownKind_Rejected()
@@ -160,10 +160,10 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// systemauto 受理——行头前缀入前文 + 视图载荷落 src。
+        /// systemauto 受理——行头前缀入前文 + 落 systemautomessage 块（载荷 source）。
         /// </summary>
         [Fact]
-        public void PostSystemMessage_SystemAuto_PrefixAndSrc()
+        public void PostSystemMessage_SystemAuto_PrefixAndSysBlock()
         {
             PlainLlm llm = new PlainLlm();
             CH4.SessionViewStore viewStore;
@@ -174,34 +174,36 @@ namespace CatHome4.Core.Tests
             Assert.Single(users);
             Assert.StartsWith(CH4.ChatSession.SysInjectPrefix, users[0]);
             Assert.EndsWith("内容", users[0]);
-            using (JsonDocument doc = JsonDocument.Parse(LastPayload(viewStore, "user")))
+            Assert.Empty(Payloads(viewStore, "user"));
+            using (JsonDocument doc = JsonDocument.Parse(LastPayload(viewStore, "systemautomessage")))
             {
-                Assert.Equal("systemauto", doc.RootElement.GetProperty("src").GetString());
+                Assert.Equal("systemauto", doc.RootElement.GetProperty("source").GetString());
                 Assert.StartsWith(CH4.ChatSession.SysInjectPrefix, doc.RootElement.GetProperty("text").GetString());
             }
         }
 
         /// <summary>
-        /// 人工输入——视图载荷不落 src（缺省即人工，旧 view.json 零迁移）。
+        /// 人工输入——落 user 块，载荷不含 source（缺省即人工）。
         /// </summary>
         [Fact]
-        public void PostUserMessage_HumanPayload_NoSrcField()
+        public void PostUserMessage_HumanPayload_NoSourceField()
         {
             PlainLlm llm = new PlainLlm();
             CH4.SessionViewStore viewStore;
             CH4.ChatSession session = CreateSession(llm, out viewStore);
             Assert.True(session.PostUserMessage("人工一行"));
             PumpUntilIdle(session);
+            Assert.Empty(Payloads(viewStore, "systemautomessage"));
             using (JsonDocument doc = JsonDocument.Parse(LastPayload(viewStore, "user")))
             {
                 Assert.Equal("人工一行", doc.RootElement.GetProperty("text").GetString());
                 JsonElement ignored;
-                Assert.False(doc.RootElement.TryGetProperty("src", out ignored));
+                Assert.False(doc.RootElement.TryGetProperty("source", out ignored));
             }
         }
 
         /// <summary>
-        /// 混合注入——系统与人工各按自身标记落字段，且前文顺序按入队序（FIFO）。
+        /// 混合注入——系统与人工各落各自块型，且前文顺序按入队序（到达序）。
         /// </summary>
         [Fact]
         public void MixedInject_OrderAndMark()
@@ -216,16 +218,17 @@ namespace CatHome4.Core.Tests
             Assert.Equal(2, users.Count);
             Assert.StartsWith(CH4.ChatSession.SysInjectPrefix, users[0]);
             Assert.Equal("人工条", users[1]);
-            List<string> payloads = Payloads(viewStore, "user");
-            Assert.Equal(2, payloads.Count);
-            using (JsonDocument doc = JsonDocument.Parse(payloads[0]))
+            List<string> sysBlocks = Payloads(viewStore, "systemautomessage");
+            Assert.Single(sysBlocks);
+            using (JsonDocument doc = JsonDocument.Parse(sysBlocks[0]))
             {
-                Assert.Equal("systemauto", doc.RootElement.GetProperty("src").GetString());
+                Assert.Equal("systemauto", doc.RootElement.GetProperty("source").GetString());
             }
-            using (JsonDocument doc = JsonDocument.Parse(payloads[1]))
+            List<string> userBlocks = Payloads(viewStore, "user");
+            Assert.Single(userBlocks);
+            using (JsonDocument doc = JsonDocument.Parse(userBlocks[0]))
             {
-                JsonElement ignored;
-                Assert.False(doc.RootElement.TryGetProperty("src", out ignored));
+                Assert.Equal("人工条", doc.RootElement.GetProperty("text").GetString());
             }
         }
 
@@ -249,31 +252,19 @@ namespace CatHome4.Core.Tests
         }
 
         /// <summary>
-        /// 视图来源投影——人工（user / 空 / null）空串；系统注入（含延迟族）一律 systemauto。
+        /// 路径判定——人工（user / 空 / null）false；系统族名（含延迟族）true。
         /// </summary>
         [Fact]
-        public void ViewSrcOf_HumanAndSystem()
+        public void IsSysSource_HumanAndSystem()
         {
-            Assert.Equal("", CH4.ChatSession.ViewSrcOf("user"));
-            Assert.Equal("", CH4.ChatSession.ViewSrcOf(""));
-            Assert.Equal("", CH4.ChatSession.ViewSrcOf(null));
-            Assert.Equal("systemauto", CH4.ChatSession.ViewSrcOf("systemauto"));
-            Assert.Equal("systemauto", CH4.ChatSession.ViewSrcOf("sleep"));
-            Assert.Equal("systemauto", CH4.ChatSession.ViewSrcOf("timer"));
-            Assert.Equal("systemauto", CH4.ChatSession.ViewSrcOf("delay"));
-            Assert.Equal("systemauto", CH4.ChatSession.ViewSrcOf("restart"));
-        }
-
-        /// <summary>
-        /// 补差回落——行头前缀判系统注入；前缀缺失 / 前缀非行头 = 人工。
-        /// </summary>
-        [Fact]
-        public void SysSrcFromContent_PrefixFallback()
-        {
-            Assert.Equal("systemauto", CH4.ChatSession.SysSrcFromContent("[systemauto]（系统自动 · x）y"));
-            Assert.Equal("", CH4.ChatSession.SysSrcFromContent("人工输入"));
-            Assert.Equal("", CH4.ChatSession.SysSrcFromContent("前缀在中间 [systemauto]"));
-            Assert.Equal("", CH4.ChatSession.SysSrcFromContent(null));
+            Assert.False(CH4.ChatSession.IsSysSource("user"));
+            Assert.False(CH4.ChatSession.IsSysSource(""));
+            Assert.False(CH4.ChatSession.IsSysSource(null));
+            Assert.True(CH4.ChatSession.IsSysSource("systemauto"));
+            Assert.True(CH4.ChatSession.IsSysSource("sleep"));
+            Assert.True(CH4.ChatSession.IsSysSource("timer"));
+            Assert.True(CH4.ChatSession.IsSysSource("delay"));
+            Assert.True(CH4.ChatSession.IsSysSource("restart"));
         }
 
         /// <summary>
@@ -332,26 +323,26 @@ namespace CatHome4.Core.Tests
             PumpUntilIdle(session);
             Assert.Collection(UserContents(session),
                 delegate (string c) { Assert.EndsWith("双面落位", c); });
-            Assert.Single(Payloads(viewStore, "user"));
+            Assert.Single(Payloads(viewStore, "systemautomessage"));
         }
 
         /// <summary>
-        /// 延迟族来源——入前文同样带行头前缀，视图 src 同为 systemauto（口径与 sys 入口一致）。
+        /// 延迟族来源——经 sys 路径入前文带固定前缀，视图落 systemautomessage 块（source=sleep）。
         /// </summary>
         [Fact]
-        public void DelaySource_GetsPrefixAndSrc()
+        public void DelaySource_GetsPrefixAndSysBlock()
         {
             PlainLlm llm = new PlainLlm();
             CH4.SessionViewStore viewStore;
             CH4.ChatSession session = CreateSession(llm, out viewStore);
-            Assert.True(session.PostUserMessage("（定时唤醒 · 60 秒已到）", "sleep"));
+            Assert.Equal("OK", session.PostSystemMessage("sleep", "（定时唤醒 · 60 秒已到）"));
             PumpUntilIdle(session);
             List<string> users = UserContents(session);
             Assert.Single(users);
             Assert.StartsWith(CH4.ChatSession.SysInjectPrefix, users[0]);
-            using (JsonDocument doc = JsonDocument.Parse(LastPayload(viewStore, "user")))
+            using (JsonDocument doc = JsonDocument.Parse(LastPayload(viewStore, "systemautomessage")))
             {
-                Assert.Equal("systemauto", doc.RootElement.GetProperty("src").GetString());
+                Assert.Equal("sleep", doc.RootElement.GetProperty("source").GetString());
             }
         }
 
@@ -364,6 +355,63 @@ namespace CatHome4.Core.Tests
             Assert.Equal("[systemauto]内容", CH4.ChatSession.BuildSysInjectText("内容"));
             Assert.Equal("[systemauto]内容", CH4.ChatSession.BuildSysInjectText("[systemauto]内容"));
             Assert.Equal("[systemauto]", CH4.ChatSession.BuildSysInjectText(null));
+        }
+
+        /// <summary>
+        /// 空闲注入开启——轮内到达的人工消息不插当前轮，推迟到 Idle 后另起一轮（两轮两次结算）。
+        /// </summary>
+        [Fact]
+        public void IdleOnlyUserInject_DefersToNextRound()
+        {
+            PlainLlm llm = new PlainLlm();
+            CH4.SessionViewStore viewStore;
+            CH4.ChatSession session = CreateSession(llm, out viewStore);
+            session.SetUserInjectIdleOnly(true);
+            Assert.True(session.PostUserMessage("第一条"));
+            session.Pump();
+            Assert.False(session.IsIdle);
+            Assert.True(session.PostUserMessage("第二条"));
+            for (int i = 0; i < 200; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+                if (session.IsIdle && llm.CallCount >= 2 && i >= 4)
+                {
+                    break;
+                }
+            }
+            List<string> users = UserContents(session);
+            Assert.Equal(2, users.Count);
+            Assert.Equal("第一条", users[0]);
+            Assert.Equal("第二条", users[1]);
+            Assert.Equal(2, Payloads(viewStore, "roundsum").Count);
+        }
+
+        /// <summary>
+        /// 空闲注入开启——sys 消息仍在轮内插入（不受开关影响；一轮一次结算）。
+        /// </summary>
+        [Fact]
+        public void IdleOnlyUserInject_SysStillInsertsInRound()
+        {
+            PlainLlm llm = new PlainLlm();
+            CH4.SessionViewStore viewStore;
+            CH4.ChatSession session = CreateSession(llm, out viewStore);
+            session.SetUserInjectIdleOnly(true);
+            Assert.True(session.PostUserMessage("第一条"));
+            session.Pump();
+            Assert.False(session.IsIdle);
+            Assert.Equal("OK", session.PostSystemMessage("systemauto", "轮内系统条"));
+            for (int i = 0; i < 200; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+                if (session.IsIdle && llm.CallCount >= 2 && i >= 4)
+                {
+                    break;
+                }
+            }
+            Assert.Single(Payloads(viewStore, "systemautomessage"));
+            Assert.Single(Payloads(viewStore, "roundsum"));
         }
     }
 }

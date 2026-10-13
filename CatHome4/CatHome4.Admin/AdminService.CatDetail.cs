@@ -67,7 +67,7 @@ namespace CatHome4.Admin
                 session = cat.Session;
             }
             // [段1] 状态字段——与 cat.info 同源（BuildCatInfoEntry 单一实现，不另起数据面）
-            Dictionary<string, object> resp = BuildCatInfoEntry(id, name, running, port, special, session);
+            Dictionary<string, object> resp = BuildCatInfoEntry(id, name, running, port, special, session, "");
             resp["ok"] = true;
             resp["cat"] = id;
             resp["isIdle"] = session == null || session.IsIdle;

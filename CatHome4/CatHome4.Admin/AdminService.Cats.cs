@@ -85,6 +85,47 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
+        /// 轮末总结 LLM 配置解析——catKey → [endpoint, apikey, model]（apiConfigId → 配置池；缺则回落默认端点）。
+        /// 供 ChatSession.RoundSummaryLlmProvider 接线（Core 零配置面依赖）；不可用返回 null（调用方静默跳过）。
+        /// </summary>
+        /// <param name="catKey">猫 key（majordomo=默认猫）</param>
+        /// <returns>[endpoint, apikey, model]；不可用 null</returns>
+        internal static string[] ResolveRoundSummaryLlm(string catKey)
+        {
+            Guid id = Guid.Empty;
+            if (IsDefaultCatKey(catKey))
+            {
+                id = _defaultApiConfigId;
+            }
+            else
+            {
+                CatEntry cat = FindCat(catKey);
+                if (cat != null)
+                {
+                    id = cat.ApiConfigId;
+                }
+            }
+            CH_LlmApiConfig cfg = null;
+            if (_apiStore != null)
+            {
+                if (id != Guid.Empty)
+                {
+                    _apiStore.TryGet(id, out cfg);
+                }
+                else
+                {
+                    cfg = _apiStore.ResolveDefault();
+                }
+            }
+            if (cfg == null || cfg.Endpoint == null || cfg.Endpoint.Length == 0)
+            {
+                return null;
+            }
+            string secret = _apiStore != null ? _apiStore.GetSecret(cfg.ApiConfigId) : "";
+            return new string[] { cfg.Endpoint, secret, cfg.DefaultModel == null ? "" : cfg.DefaultModel };
+        }
+
+        /// <summary>
         /// 全部 HttpHost 退出前收尾——逐 host 推最后一帧 + 等连接队列排空（A206；重启退出路径调用）。
         /// 动机：视图帧「入队 ≠ 写出」，Environment.Exit 会丢弃在途帧（判例 2026-10-06）。
         /// </summary>
@@ -620,6 +661,11 @@ namespace CatHome4.Admin
                 applied = "apiConfigId=" + normalized;
                 immediate = true;
             }
+            else if (field == "type")
+            {
+                cfg.Type = value.Trim();
+                applied = "type=" + (cfg.Type.Length > 0 ? cfg.Type : "（已清空）");
+            }
             else if (field == "persona")
             {
                 cfg.Persona = value;
@@ -689,6 +735,60 @@ namespace CatHome4.Admin
                     return "cat.cfg.set | qqbotEnable 非法值: " + value + "（true/false）";
                 }
             }
+            else if (field == "userInjectIdleOnly")
+            {
+                if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase))
+                {
+                    cfg.UserInjectIdleOnly = true;
+                    applied = "userInjectIdleOnly=true";
+                }
+                else if (string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
+                {
+                    cfg.UserInjectIdleOnly = false;
+                    applied = "userInjectIdleOnly=false";
+                }
+                else
+                {
+                    return "cat.cfg.set | userInjectIdleOnly 非法值: " + value + "（true/false）";
+                }
+            }
+            else if (field == "reasoningEffort")
+            {
+                // A234——思考强度覆盖（空=跟随全局）；白名单 low/high/max
+                string norm = value.Trim().ToLowerInvariant();
+                if (norm.Length == 0)
+                {
+                    cfg.ReasoningEffort = "";
+                    applied = "reasoningEffort=（跟随全局）";
+                }
+                else if (norm == "low" || norm == "high" || norm == "max")
+                {
+                    cfg.ReasoningEffort = norm;
+                    applied = "reasoningEffort=" + norm;
+                }
+                else
+                {
+                    return "cat.cfg.set | reasoningEffort 非法值: " + value + "（low/high/max/空）";
+                }
+            }
+            else if (field == "roundSummary")
+            {
+                // 轮末总结开关（roundSummary）；白名单 true/false
+                if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase))
+                {
+                    cfg.RoundSummary = true;
+                    applied = "roundSummary=true";
+                }
+                else if (string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
+                {
+                    cfg.RoundSummary = false;
+                    applied = "roundSummary=false";
+                }
+                else
+                {
+                    return "cat.cfg.set | roundSummary 非法值: " + value + "（true/false）";
+                }
+            }
             else if (field == "enabledRoots")
             {
                 string[] roots = ValidateEnabledRoots(SplitList(value));
@@ -697,7 +797,7 @@ namespace CatHome4.Admin
             }
             else
             {
-                return "cat.cfg.set | 非法字段: " + field + "（可用: displayName/apiConfigId/persona/toolNames/injectList/packs/qqbotId/qqbotEnable/enabledRoots）";
+                return "cat.cfg.set | 非法字段: " + field + "（可用: displayName/apiConfigId/persona/type/toolNames/injectList/packs/qqbotId/qqbotEnable/enabledRoots/userInjectIdleOnly/reasoningEffort）";
             }
             // [段2] 全量写回 + 生效入队（与端点同源：写后 catcfg.apply 主线程泵消费）
             SaveCatCfgData(id, cfg);
@@ -947,6 +1047,7 @@ namespace CatHome4.Admin
                 cfgData.InjectList = srcCat.InjectList;
                 cfgData.QqBotId = srcCat.QqBotId == Guid.Empty ? "" : srcCat.QqBotId.ToString("D");
                 cfgData.QqBotEnable = srcCat.QqBotEnable;
+                cfgData.Type = srcCat.Type;
                 // EnabledRoots CatEntry 不持有——从源磁盘 cfg 补读
                 CatCfgData srcDisk = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", srcCat.Id, "cat.cfg"));
                 if (srcDisk != null)
@@ -970,8 +1071,8 @@ namespace CatHome4.Admin
             // qqbotId 继承保留（防双猫抢 Bot 靠 enable=false——莎拍板：复制配置、默认不开启转发）
             cfgData.QqBotEnable = false;
             SaveCatCfgData(id, cfgData);
-            // [段3] 创建 + 播种 + 注册（CreateCatEntry 读新 cfg——克隆配置生效）
-            CatEntry cat = CreateCatEntry(id, name, seed);
+            // [段3] 创建 + 播种 + 注册（CreateCatEntry 读新 cfg——克隆配置生效；视图面与会话元数据面随前文播种）
+            CatEntry cat = CreateCatEntry(id, name, seed, source, msgIndex);
             if (cat == null)
             {
                 return "session.fork | 会话构造失败";
@@ -1034,11 +1135,11 @@ namespace CatHome4.Admin
             {
                 majorSession = _chatBridge.DefaultSession;
             }
-            catList.Add(BuildCatInfoEntry("majordomo", "majordomo", _majorHost != null, _majorPort, true, majorSession));
+            catList.Add(BuildCatInfoEntry("majordomo", "majordomo", _majorHost != null, _majorPort, true, majorSession, ""));
             for (int i = 0; i < _cats.Count; i = i + 1)
             {
                 CatEntry cat = _cats[i];
-                catList.Add(BuildCatInfoEntry(cat.Id, cat.DisplayName, cat.Running, cat.Port, false, cat.Session));
+                catList.Add(BuildCatInfoEntry(cat.Id, cat.DisplayName, cat.Running, cat.Port, false, cat.Session, cat.Type));
             }
             Dictionary<string, object> info = new Dictionary<string, object>();
             info["ok"] = true;
@@ -1060,11 +1161,12 @@ namespace CatHome4.Admin
         /// <param name="special">是否主干特殊会话（禁停禁删）</param>
         /// <param name="session">会话实体（可空）</param>
         /// <returns>状态条目字典</returns>
-        private static Dictionary<string, object> BuildCatInfoEntry(string id, string name, bool running, int port, bool special, ChatSession session)
+        private static Dictionary<string, object> BuildCatInfoEntry(string id, string name, bool running, int port, bool special, ChatSession session, string type)
         {
             Dictionary<string, object> entry = new Dictionary<string, object>();
             entry["id"] = id;
             entry["name"] = name;
+            entry["type"] = type == null ? "" : type;
             entry["special"] = special;
             entry["running"] = running;
             entry["port"] = port;
@@ -1072,20 +1174,12 @@ namespace CatHome4.Admin
             {
                 return entry;
             }
-            string runStateName;
-            int requests;
-            Dictionary<string, long> runMs = session.GetRunState(out runStateName, out requests);
-            entry["phase"] = session.Phase.ToString();
-            entry["runState"] = runStateName;
-            entry["runMs"] = runMs;
-            entry["requests"] = requests;
-            entry["round"] = session.Round;
-            entry["msgCount"] = session.MsgCount;
-            entry["pending"] = session.PendingCount;
-            entry["noteActive"] = session.NoteActive;
-            entry["contextCount"] = session.ContextCount;
-            entry["context"] = session.ContextTokensKnown;
-            entry["lastActiveAt"] = session.LastContextChangeAt;
+            // A225 会话态统一投影——猫列表 / 快照会话段 / cat.info 同源（ChatSession.BuildStateEntry）
+            Dictionary<string, object> state = session.BuildStateEntry();
+            foreach (KeyValuePair<string, object> kv in state)
+            {
+                entry[kv.Key] = kv.Value;
+            }
             return entry;
         }
 
@@ -1219,7 +1313,9 @@ namespace CatHome4.Admin
         /// <param name="displayName">显示名</param>
         /// <param name="seedMessages">fork 播种前文（null/空=不播种——正常注入/恢复语义）</param>
         /// <returns>猫实体；构造失败 null</returns>
-        private static CatEntry CreateCatEntry(string id, string displayName, LlmMessage[] seedMessages)
+        /// <param name="forkSource">fork 源会话（空 = 常规建造路径——视图 / 元数据走读盘恢复）</param>
+        /// <param name="forkMsgIndex">fork 切点前文索引（-1 = 非 fork 路径）</param>
+        private static CatEntry CreateCatEntry(string id, string displayName, LlmMessage[] seedMessages, ChatSession forkSource = null, int forkMsgIndex = -1)
         {
             try
             {
@@ -1273,14 +1369,22 @@ namespace CatHome4.Admin
                 }
                 // [段2] 每猫配置四字段——persona/toolNames/injectList/packs（M2/R4；cfg 缺失=新猫走全局默认模板继承）
                 string persona = "";
+                string type = "";
                 string toolNames = "";
                 string[] injectList = new string[0];
                 string[] packs = new string[0];
+                bool userInjectIdleOnly = false;
+                string reasoningEffort = "";
+                bool roundSummary = false;
                 if (cfgData != null)
                 {
                     if (cfgData.Persona != null)
                     {
                         persona = cfgData.Persona;
+                    }
+                    if (cfgData.Type != null)
+                    {
+                        type = cfgData.Type;
                     }
                     if (cfgData.ToolNames != null)
                     {
@@ -1294,6 +1398,12 @@ namespace CatHome4.Admin
                     {
                         packs = cfgData.Packs;
                     }
+                    userInjectIdleOnly = cfgData.UserInjectIdleOnly;
+                    if (cfgData.ReasoningEffort != null)
+                    {
+                        reasoningEffort = cfgData.ReasoningEffort;
+                    }
+                    roundSummary = cfgData.RoundSummary;
                 }
                 else
                 {
@@ -1305,6 +1415,7 @@ namespace CatHome4.Admin
                         toolNames = tpl.DefaultToolNames != null ? tpl.DefaultToolNames : "";
                         injectList = tpl.DefaultInjectList != null ? tpl.DefaultInjectList : new string[0];
                         packs = tpl.DefaultPacks != null ? tpl.DefaultPacks : new string[0];
+                        userInjectIdleOnly = tpl.DefaultUserInjectIdleOnly;
                     }
                 }
                 // M2c 声明面裁剪——读时比对（非法名过滤/全空全量保底）
@@ -1341,9 +1452,11 @@ namespace CatHome4.Admin
                 // [段4] 会话构造——M1c 每猫独立 Runtime（API 配置池按该猫 apiConfigId 构造）；M2c 声明面按猫裁剪
                 // 端点角色——会话级主要 / 备用（同一实例注入 Runtime 与会话：自动故障转移与手动对调共用一份状态）
                 LlmEndpointRole apiRole = new LlmEndpointRole();
-                ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig, apiRole);
+                ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig, apiRole, reasoningEffort);
                 SessionViewStore viewStore = new SessionViewStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".view.json"));
-                ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, catSpecs, ExecuteTool, viewStore);
+                // A221 工具面解析——持久化快照优先（会话工具头与 system prompt 同命；重启不改面）
+                ToolSpec[] sessionTools = ChatSession.ResolveSessionTools(id, catSpecs);
+                ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, sessionTools, ExecuteTool, viewStore);
                 session.AttachApiRole(apiRole);
                 session.SetApiConfigId(apiConfigId);
                 // 完整前文留档——落点 sessions_ctx（与 sessions / sessions_old 同级；份数走 chat.full_ctx_keep）
@@ -1353,9 +1466,20 @@ namespace CatHome4.Admin
                 AdminService.ApplyCatRoots(id);
                 session.AttachEnvInfo(() => BuildEnvInfoProvider());
                 session.AttachRoundNotify(NotifyBalloon);
-                session.LoadView();
-                // A201 会话元数据——启动恢复（实例 ID / 创建时刻 / 两级 token 累计 + A202 请求边界态；文件缺失走首建）
-                session.LoadMeta();
+                session.SetUserInjectIdleOnly(userInjectIdleOnly);
+                session.SetRoundSummary(roundSummary);
+                // [段3b] 视图面 / 元数据面——fork 播种走克隆（源面保留部分），常规路径读盘恢复
+                if (forkSource != null && forkMsgIndex >= 0)
+                {
+                    session.SeedViewFrom(forkSource, forkMsgIndex);
+                    session.SeedMetaFrom(forkSource);
+                }
+                else
+                {
+                    session.LoadView();
+                    // A201 会话元数据——启动恢复（实例 ID / 创建时刻 / 两级 token 累计 + A202 请求边界态；文件缺失走首建）
+                    session.LoadMeta();
+                }
                 _chatBridge.RegisterSession(session);
                 CatEntry cat = new CatEntry();
                 cat.Id = id;
@@ -1371,9 +1495,13 @@ namespace CatHome4.Admin
                 cat.ApiConfig = apiConfig;
                 cat.ApiRole = apiRole;
                 cat.Persona = persona;
+                cat.Type = type;
                 cat.ToolNames = toolNames;
                 cat.InjectList = injectList;
                 cat.Packs = packs;
+                cat.UserInjectIdleOnly = userInjectIdleOnly;
+                cat.ReasoningEffort = reasoningEffort;
+                cat.RoundSummary = roundSummary;
                 cat.ToolSpecs = catSpecs;
                 // §4.3 空值语义可观测——toolNames 空=全量保底（反直觉默认）：解析结果落审计行
                 string toolSource = "子集";
@@ -2284,7 +2412,7 @@ namespace CatHome4.Admin
             {
                 majorSession = _chatBridge.DefaultSession;
             }
-            Dictionary<string, object> majorEntry = BuildCatInfoEntry("majordomo", majorName, _majorHost != null, _majorPort, true, majorSession);
+            Dictionary<string, object> majorEntry = BuildCatInfoEntry("majordomo", majorName, _majorHost != null, _majorPort, true, majorSession, "");
             majorEntry["apiConfigId"] = majorApi;
             majorEntry["qqbotId"] = majorQq;
             majorEntry["enabledRoots"] = majorRoots;
@@ -2311,7 +2439,7 @@ namespace CatHome4.Admin
                         enabledRoots = cfg.EnabledRoots;
                     }
                 }
-                Dictionary<string, object> entry = BuildCatInfoEntry(cat.Id, cat.DisplayName, cat.Running, cat.Port, false, cat.Session);
+                Dictionary<string, object> entry = BuildCatInfoEntry(cat.Id, cat.DisplayName, cat.Running, cat.Port, false, cat.Session, cat.Type);
                 entry["apiConfigId"] = apiConfigId;
                 entry["qqbotId"] = qqbotId;
                 entry["enabledRoots"] = enabledRoots;

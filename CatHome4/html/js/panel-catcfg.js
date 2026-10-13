@@ -1,5 +1,5 @@
 // CH4 外观层——panel-catcfg.js：每猫配置弹层 + 新猫默认模板 + 受控根编辑面（M3c/M3d/M4e）——panel.js 拆分（2026-09-08 体量治理）
-// 依赖：app.js + panel.js 先加载（全局状态已就位；renderCatRow 点击时调用本文件 openCatCfg）；本文件承载 cat.cfg 配置弹层与 workspace 管理
+// 依赖：app.js + panel.js 先加载（全局状态已就位；renderCatCard 点击时调用本文件 openCatCfg）；本文件承载 cat.cfg 配置弹层与 workspace 管理
 // 段15（M3c 每猫配置）+ 段[受控根编辑面]（M3d）原样迁出，逻辑零改动
 
 // [段15] M3c 每猫配置弹层——API 下拉/人设/工具勾选/前文 List
@@ -31,6 +31,11 @@ function openCatCfg(catId, name) {
             renderApiOptions(d.apiOptions || [], d.apiConfigId || '');
             renderQqBotOptions(d.qqbotOptions || [], d.qqbotId || '');
             document.getElementById('catCfgQqEnable').checked = !!d.qqbotEnable;
+            document.getElementById('catCfgIdleOnly').checked = !!d.userInjectIdleOnly;
+            document.getElementById('catCfgRoundSummary').checked = !!d.roundSummary;
+            renderEffortOptions(d.reasoningEffort || '', d.defaultReasoningEffort || '');
+            document.getElementById('catCfgName').value = d.displayName || '';
+            document.getElementById('catCfgType').value = d.type || '';
             document.getElementById('catCfgPersona').value = d.persona || '';
             renderToolChecks(d.toolNames || '');
             renderInjectList(d.injectList || []);
@@ -71,6 +76,25 @@ function renderApiOptions(options, current) {
         if (options[i].isDefault) { label = label + ' · 全局默认'; }
         opt.textContent = label;
         if (options[i].apiConfigId === current) { opt.selected = true; }
+        sel.appendChild(opt);
+    }
+}
+
+// A234 思考强度下拉——首项「跟随全局」= 零值语义（空 → 后端回落全局 llm.reasoning_effort）
+function renderEffortOptions(current, globalValue) {
+    var sel = document.getElementById('catCfgEffort');
+    sel.textContent = '';
+    var def = document.createElement('option');
+    def.value = '';
+    def.textContent = '（默认 · 跟随全局 → ' + (globalValue || 'high') + '）';
+    if (!current || current.length === 0) { def.selected = true; }
+    sel.appendChild(def);
+    var values = ['low', 'high', 'max'];
+    for (var i = 0; i < values.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = values[i];
+        opt.textContent = values[i];
+        if (values[i] === current) { opt.selected = true; }
         sel.appendChild(opt);
     }
 }
@@ -328,13 +352,18 @@ function saveCatCfg() {
     var toolNames = collectChecked('catCfgTools');
     var payload = {
         cat: catCfgTarget,
+        displayName: document.getElementById('catCfgName').value,
         apiConfigId: document.getElementById('catCfgApi').value,
+        type: document.getElementById('catCfgType').value,
         persona: document.getElementById('catCfgPersona').value,
         toolNames: toolNames.join(','),
         injectList: catCfgInjectList,
         packs: collectPackChecks(),
         qqbotId: document.getElementById('catCfgQqBot').value,
         qqbotEnable: document.getElementById('catCfgQqEnable').checked,
+        userInjectIdleOnly: document.getElementById('catCfgIdleOnly').checked,
+        roundSummary: document.getElementById('catCfgRoundSummary').checked,
+        reasoningEffort: document.getElementById('catCfgEffort').value,
         enabledRoots: collectRootChecks('catCfgRoots')
     };
     fetch('/api/v1/cat-config', {
@@ -350,7 +379,7 @@ function saveCatCfg() {
                 if (removed && removed.length > 0) {
                     document.getElementById('catCfgMsg').textContent = '已保存——⚠️ 已剔除池外工具名 ' + removed.length + ' 个：' + removed.join('、') + '（请重开配置确认名单）';
                 } else {
-                    document.getElementById('catCfgMsg').textContent = '已保存——API 即时生效；人设/工具/前文 List 新会话生效';
+                    document.getElementById('catCfgMsg').textContent = '已保存——API 即时生效；人设/工具/前文 List/显示名 新会话生效';
                 }
             } else {
                 document.getElementById('catCfgMsg').textContent = '保存失败: ' + d.error;
@@ -366,7 +395,7 @@ document.getElementById('catCfgClose').onclick = function () { catCfgModal.style
 document.getElementById('catCfgInjectPick').onclick = function () {
     openCatInject(catCfgTarget, catCfgName, function (list) { renderInjectList(list); });
 };
-// 默认猫配置入口——统一由多猫页 Majordomo 行「配置」按钮承担（openCatCfg 见 panel.js renderCatRow；F2.1 对话页签已移除，页面无独立 chatCfg 元素）
+// 默认猫配置入口——统一由多猫页 Majordomo 行「配置」按钮承担（openCatCfg 见 panel.js renderCatCard；F2.1 对话页签已移除，页面无独立 chatCfg 元素）
 
 // M4e 猫级白名单——启用根勾选（allRoots 全局池；enabledRoots 当前猫已启用；workspace 强制常驻不可取消）
 // tipText：未配置提示文案（猫配置面 / 新猫模板面各自措辞；缺省=猫配置面口径）
@@ -508,6 +537,7 @@ function loadTpl() {
             }
             document.getElementById('tplBaseRole').value = d.baseRole || '';
             document.getElementById('tplPersona').value = d.defaultPersona || '';
+            document.getElementById('tplIdleOnly').checked = !!d.defaultUserInjectIdleOnly;
             catCfgDefectGroups = d.defectGroups || [];
             // 模板面——特权组（ConfigCat / MajordomoCat）整组隐藏：新猫模板不该配特权工具，见亦不可配（2026-10-01 体验轮）
             renderGroupedChecks('tplTools', d.allTools || d.allToolNames || [], parseToolChecked(d.defaultToolNames || ''), 'hide');
@@ -529,7 +559,8 @@ function tplFormValues() {
         defaultToolNames: collectChecked('tplTools').join(','),
         defaultInjectList: tplInjectList.slice(),
         defaultPacks: collectTplPacks(),
-        defaultEnabledRoots: collectRootChecks('tplRoots')
+        defaultEnabledRoots: collectRootChecks('tplRoots'),
+        defaultUserInjectIdleOnly: document.getElementById('tplIdleOnly').checked,
     };
 }
 

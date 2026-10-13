@@ -1694,7 +1694,6 @@ namespace CatHome4.Core.Tests
             PumpUntilIdle(session);
             LlmMessage[] before = session.Context.GetMessages();
             Assert.Equal(4, before.Length);
-            CH4.ViewBlock[] viewBefore = session.GetViewBlocks();
             // 回滚前——请求级前文长度有值（末次请求 prompt；回滚后必须归零）
             Assert.Equal(900L, session.ContextTokensKnown);
             // 回滚到第一个正式回复（索引 1）
@@ -1708,9 +1707,24 @@ namespace CatHome4.Core.Tests
             LlmMessage[] restored;
             Assert.True(session.Store.TryLoad(out restored));
             Assert.Equal(2, restored.Length);
-            // 视图验证——A165 契约 H：回滚只截断真实前文，视图层持久区只增不改（不裁剪、不产生移除面）
+            // 视图验证——视图层截断随真实前文同步（回滚：切点之后的前文派生条目一并移除——此前「视图不动」
+            //           使帧轮重置后的全量帧取数源仍带已回滚消息，前端观感无效）
             CH4.ViewBlock[] blocks = session.GetViewBlocks();
-            Assert.Equal(viewBefore.Length, blocks.Length);
+            Assert.Equal("user", blocks[0].RenderType);
+            Assert.Equal(0, blocks[0].MsgIndex);
+            Assert.Equal("text", blocks[1].RenderType);
+            Assert.Equal(1, blocks[1].MsgIndex);
+            // 前文派生块——切点之后零残留（非前文派生块 roundsum 按时间界限保留）
+            int kept = 0;
+            for (int i = 0; i < blocks.Length; i = i + 1)
+            {
+                if (blocks[i].MsgIndex >= 0)
+                {
+                    Assert.True(blocks[i].MsgIndex <= 1);
+                    kept = kept + 1;
+                }
+            }
+            Assert.Equal(2, kept);
             Assert.Equal("user", blocks[0].RenderType);
             Assert.Equal(0, blocks[0].MsgIndex);
             Assert.Equal("text", blocks[1].RenderType);

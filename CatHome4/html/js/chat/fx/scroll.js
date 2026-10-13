@@ -9,8 +9,11 @@
 //   · 对话区行只有两种形态——**气泡**（.chat-bubble）与**朴素件**（.chat-plain）
 //     → 刻度分类走单一判据 scrollTickRole()：按行 `data-type` 查块声明表（registry.js 的 tickRole），
 //       不探测行类名、不复刻旧实现的展开 / 折叠分档与排除表
+//   · 刻度合并（A222 · 2026-10-11 莎定）——连续同 `data-type` 的可见行折叠成**一段刻度**
+//     （合并键 = data-type，非 tick 角色——retry / error / inject_report 角色同为 reply 但刻度色各异）；
+//     段内任一行带 `.err` → 整段标红；空档 / 异类行天然断段
 //   · 基本算法与渲染规则继承旧实现——几何比例映射（带体高 ↔ 内容高）+ 既有 CSS .sb-tick 规则
-//     （A204 增 `user-sys` 一道——系统注入 user 行刻度曲线镜像）
+//     （`user-sys` 一道 = 系统注入块 systemautomessage 的刻度曲线镜像——A219）
 //   · #chatMsgs.scrollTop 是唯一滚动执行器——本件只读写它，不产生消息、不改业务状态
 // ═══════════════════════════════════════════
 
@@ -19,6 +22,7 @@ var bandMsgs = document.getElementById('chatMsgs');
 var bandBox = document.getElementById('chatScrollBand');
 var bandThumb = document.getElementById('sbThumb');
 var bandTicks = document.getElementById('sbTicks');
+var bandScopes = document.getElementById('sbScopes');
 
 // ── 常量 ─────────────────────────────────────
 var BAND_MIN_THUMB = 24;    // 指示块最小高——内容极长时仍可抓取
@@ -27,7 +31,8 @@ var BAND_TICK_HIT = 6;      // 刻度命中半径——刻度线仅 2px，点击
 var BAND_REBUILD_MS = 50;   // 刻度重建节流——展开 / 折叠属高频属性变化，合并到一帧后处理
 
 // ── 状态 ─────────────────────────────────────
-var bandItems = [];              // 刻度表 [{ row, role }]——重建时机 = 对话区子节点 / 展开态变化
+var bandItems = [];              // 可见行表 [{ row, role, type }]——重建时机 = 对话区子节点 / 展开态变化（A222 起供区段底色）
+var bandSegs = [];               // 刻度段表 [{ row, last, type, err, scope }]——连续同 data-type 行折叠成段（A222）
 var bandDragging = false;
 var bandRebuildTimer = null;
 
@@ -83,15 +88,19 @@ function scrollTickRole(row) {
     if (row && typeof row.getAttribute === 'function') {
         type = row.getAttribute('data-type') || '';
     }
-    var role = tickRole(type);
-    // A204——系统注入的 user 行气泡靠左，刻度曲线同步镜像（`.sb-tick.user-sys`）
-    if (role === 'user' && row && row.classList && row.classList.contains(ROW_SYS)) {
-        role = role + '-' + ROW_SYS;
-    }
-    return role;
+    return tickRole(type);
 }
 
-/// 刻度收集——对话区每个 .chat-row 一条刻度（推送序即渲染序，本件不排序、不过滤）
+/// 块型——行元素 data-type（刻度按块型取色与渐变参数；缺属性 → 空串）
+function bandRowType(row) {
+    if (row && typeof row.getAttribute === 'function') {
+        return row.getAttribute('data-type') || '';
+    }
+    return '';
+}
+
+/// 刻度收集——对话区每个**可见** .chat-row 收一条可见行（隐藏行不占刻度——精简态只映核心对话；推送序即渲染序，本件不排序）；
+/// 刻度折叠（连续同 data-type 并段）在其后由 bandFoldSegs 完成（A222）
 function bandCollect() {
     var out = [];
     if (!bandMsgs) {
@@ -99,9 +108,38 @@ function bandCollect() {
     }
     var rows = bandMsgs.querySelectorAll('.chat-row');
     for (var i = 0; i < rows.length; i = i + 1) {
-        out.push({ row: rows[i], role: scrollTickRole(rows[i]) });
+        // display:none 的行 offsetParent 为 null（真实浏览器）→ 跳过；vm 测试无布局属性（undefined）→ 视为可见
+        if (rows[i].offsetParent === null) {
+            continue;
+        }
+        out.push({ row: rows[i], role: scrollTickRole(rows[i]), type: bandRowType(rows[i]) });
     }
     return out;
+}
+
+/// 刻度段折叠（A222）——连续同 `data-type` 的可见行并成一段；
+/// 合并键 = `data-type`（非 tick 角色——retry / error / inject_report 角色同为 reply 但刻度颜色各异）；
+/// 段内任一行带 `.err` → 整段标失败（红优先）；`.tb-scope` 同理（区间感由底块承担，本类仅沿用）
+function bandFoldSegs(items) {
+    var segs = [];
+    for (var i = 0; i < items.length; i = i + 1) {
+        var it = items[i];
+        var cur = (segs.length > 0) ? segs[segs.length - 1] : null;
+        var isErr = !!(it.row.classList && it.row.classList.contains('err'));
+        var isScope = !!(it.row.classList && it.row.classList.contains('tb-scope'));
+        if (cur !== null && cur.type === it.type) {
+            cur.last = it.row;
+            if (isErr) {
+                cur.err = true;
+            }
+            if (isScope) {
+                cur.scope = true;
+            }
+        } else {
+            segs.push({ row: it.row, last: it.row, type: it.type, err: isErr, scope: isScope });
+        }
+    }
+    return segs;
 }
 
 /// 指示块几何——视口框高 = 视口占比，位置按滚动比例（纯函数）
@@ -232,16 +270,64 @@ function bandTicksSync() {
     }
     var sh = bandMsgs.scrollHeight;
     var kids = bandTicks.children;
-    var n = bandItems.length;
+    var n = bandSegs.length;
     var tops = [];
     for (var i = 0; i < n; i = i + 1) {
-        tops.push(bandContentY(bandItems[i].row));
+        tops.push(bandContentY(bandSegs[i].row));
     }
     for (var j = 0; j < kids.length && j < n; j = j + 1) {
         var nextY = (j + 1 < n) ? tops[j + 1] : -1;
-        var g = bandTickGeom(tops[j], bandItems[j].row.getBoundingClientRect().height, nextY, sh, bandH);
+        var seg = bandSegs[j];
+        // 段真实高 = 段末行底 − 段首行顶（跨多行段按整段占位，A222）
+        var realH = bandContentY(seg.last) + seg.last.getBoundingClientRect().height - tops[j];
+        var g = bandTickGeom(tops[j], realH, nextY, sh, bandH);
         kids[j].style.top = Math.round(g.top) + 'px';
         kids[j].style.height = Math.round(g.height) + 'px';
+    }
+    bandScopesSync();
+}
+
+/// 区段底色同步（2026-10-11 · B 方案）——timeback 域（连续 .tb-scope 行）→ 带上底块；
+/// 圆角与 2px 羽化归 CSS（.sb-scope）；几何与刻度同源（比例映射）——区间数少，全量重建代价低
+function bandScopesSync() {
+    if (!bandScopes || !bandMsgs) {
+        return;
+    }
+    bandScopes.textContent = '';
+    var bandH = bandHeight();
+    var sh = bandMsgs.scrollHeight;
+    if (bandH <= 0 || sh <= 0) {
+        return;
+    }
+    var i = 0;
+    while (i < bandItems.length) {
+        var r = bandItems[i].row;
+        if (!r || !r.classList || !r.classList.contains('tb-scope')) {
+            i = i + 1;
+            continue;
+        }
+        var j = i;
+        while (j + 1 < bandItems.length) {
+            var nx = bandItems[j + 1].row;
+            if (!nx || !nx.classList || !nx.classList.contains('tb-scope')) {
+                break;
+            }
+            j = j + 1;
+        }
+        var topY = bandContentY(bandItems[i].row);
+        var lastRow = bandItems[j].row;
+        var botY = bandContentY(lastRow) + lastRow.getBoundingClientRect().height;
+        var top = bandH * (topY / sh);
+        var bottom = bandH * (botY / sh);
+        if (top < 0) { top = 0; }
+        if (bottom > bandH) { bottom = bandH; }
+        if (bottom - top < 2) { bottom = top + 2; }
+        var d = document.createElement('div');
+        d.className = 'sb-scope';
+        d.style.top = Math.round(top) + 'px';
+        d.style.height = Math.round(bottom - top) + 'px';
+        bandScopes.appendChild(d);
+        i = j + 1;
     }
 }
 
@@ -278,14 +364,22 @@ function bandScheduleRebuild() {
 /// 刻度重建——刻度表刷新 + 刻度元素重建 + 全量几何同步
 function bandRebuild() {
     bandItems = bandCollect();
+    bandSegs = bandFoldSegs(bandItems);
     if (bandTicks) {
         bandTicks.textContent = '';
-        for (var i = 0; i < bandItems.length; i = i + 1) {
+        for (var i = 0; i < bandSegs.length; i = i + 1) {
             var d = document.createElement('div');
-            d.className = 'sb-tick ' + bandItems[i].role;
+            var seg = bandSegs[i];
+            var cls = 'sb-tick';
+            // 失败（红）/ timeback 域内（粉）——段级标记（段内任一条即标）；红由 CSS 事后覆盖（不盖红）
+            if (seg.err) { cls = cls + ' err'; }
+            if (seg.scope) { cls = cls + ' tb-scope'; }
+            d.className = cls;
+            d.setAttribute('data-type', seg.type || '');
             bandTicks.appendChild(d);
         }
     }
+    bandScopesSync();
     bandLayout();
 }
 
@@ -321,8 +415,8 @@ function bandTickIndexAt(clientY) {
     var sh = bandMsgs.scrollHeight;
     var best = -1;
     var bestD = BAND_TICK_HIT;
-    for (var i = 0; i < bandItems.length; i = i + 1) {
-        var y = bandTickY(bandContentY(bandItems[i].row), sh, bandH) + rect.top;
+    for (var i = 0; i < bandSegs.length; i = i + 1) {
+        var y = bandTickY(bandContentY(bandSegs[i].row), sh, bandH) + rect.top;
         var d = Math.abs(y - clientY);
         if (d <= bestD) {
             bestD = d;
@@ -334,10 +428,10 @@ function bandTickIndexAt(clientY) {
 
 /// 跳转到第 idx 条刻度（顶部留 8px 余量）
 function bandJumpTo(idx) {
-    if (!bandMsgs || idx < 0 || idx >= bandItems.length) {
+    if (!bandMsgs || idx < 0 || idx >= bandSegs.length) {
         return;
     }
-    bandMsgs.scrollTop = bandContentY(bandItems[idx].row) - 8;
+    bandMsgs.scrollTop = bandContentY(bandSegs[idx].row) - 8;
 }
 
 /// 带体按下——命中刻度则跳该条，否则按比例定位并进入拖拽

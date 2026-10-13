@@ -46,6 +46,11 @@ namespace Mau.Providers
         private readonly LlmEndpointRole? _role;
 
         /// <summary>
+        /// 每猫思考强度覆盖——A234（空=跟随全局 llm.reasoning_effort；low/high/max）
+        /// </summary>
+        private readonly string _reasoningEffort;
+
+        /// <summary>
         /// 默认兜底模型名——官方现役 v4-pro / v4-flash（deepseek-chat 已废弃）
         /// </summary>
         private const string FallbackModel = "deepseek-v4-flash";
@@ -79,8 +84,10 @@ namespace Mau.Providers
         /// <param name="apiStore">LLM API 配置池</param>
         /// <param name="apiConfigId">API 配置身份</param>
         /// <param name="globalConfig">全局配置存储（可 null——默认值）</param>
+        /// <param name="role">会话级端点角色（可 null——不启用故障转移；角色状态归会话，运行期实时读取）</param>
+        /// <param name="reasoningEffort">每猫思考强度覆盖（A234；空=跟随全局 llm.reasoning_effort；low/high/max）</param>
         public DeepSeekLlmRuntime(CH_LlmApiConfigStore apiStore,
-            Guid apiConfigId, ConfigStore? globalConfig, LlmEndpointRole? role = null)
+            Guid apiConfigId, ConfigStore? globalConfig, LlmEndpointRole? role = null, string reasoningEffort = "")
         {
             // [段1] 配置源持有——运行期实时读取（P7 热载拍板：配置以本地持久化为准，构造期快照退役）
             _apiStore = apiStore;
@@ -88,6 +95,7 @@ namespace Mau.Providers
             _globalConfig = globalConfig;
             // [段2] 会话级端点角色——备用 / 故障转移（空=不启用角色切换；角色状态归会话，运行期实时读取）
             _role = role;
+            _reasoningEffort = reasoningEffort == null ? "" : reasoningEffort;
             _client = new HttpClient();
             _client.Timeout = TimeSpan.FromSeconds(60);
         }
@@ -496,6 +504,15 @@ namespace Mau.Providers
         /// <returns>推理强度 low/high/max</returns>
         private string GetReasoningEffort()
         {
+            // A234——每猫覆盖优先（非空且合法即用；否则回落全局三层）
+            if (_reasoningEffort.Length > 0)
+            {
+                string catNorm = _reasoningEffort.Trim().ToLowerInvariant();
+                if (catNorm == "low" || catNorm == "high" || catNorm == "max")
+                {
+                    return catNorm;
+                }
+            }
             string value = "";
             if (_globalConfig != null)
             {

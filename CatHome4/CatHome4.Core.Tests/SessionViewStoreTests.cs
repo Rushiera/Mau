@@ -803,5 +803,74 @@ namespace CatHome4.Core.Tests
             Assert.False(CH4.SessionViewStore.TryReadLastLegacyEntry(md, "系统", out timeText, out content));
             Assert.False(CH4.SessionViewStore.TryReadLastLegacyEntry("", "用户", out timeText, out content));
         }
+
+        /// <summary>
+        /// 视图层截断——回滚：前文派生条目按索引裁掉切点之后者，非前文派生条目按时间戳界限同批裁掉。
+        /// </summary>
+        [Fact]
+        public void TruncateFrom_DropsAfterCutPoint()
+        {
+            LlmMessage[] msgs = new LlmMessage[]
+            {
+                        User("u1", 1000),
+                        Assistant("a1", 1100),
+                        User("u2", 2000),
+                        Assistant("a2", 2100)
+            };
+            // 真实时序——块与轮结算交替产生（时间戳单调化基准随建块推进；不可先把消息全建完再补结算）
+            _store.OnUserMessage(msgs[0], 0);
+            _store.OnAssistantText(msgs[1], 1);
+            _store.AppendRoundSummary("{}", 1500);
+            _store.OnUserMessage(msgs[2], 2);
+            _store.OnAssistantText(msgs[3], 3);
+            _store.AppendRoundSummary("{}", 2500);
+            _store.TruncateFrom(1);
+            CH4.ViewBlock[] blocks = _store.GetBlocks();
+            int front = 0;
+            int sums = 0;
+            for (int i = 0; i < blocks.Length; i = i + 1)
+            {
+                if (blocks[i].RenderType == "roundsum")
+                {
+                    sums = sums + 1;
+                }
+                else
+                {
+                    Assert.True(blocks[i].MsgIndex <= 1);
+                    front = front + 1;
+                }
+            }
+            Assert.Equal(2, front);
+            Assert.Equal(1, sums);
+        }
+        /// <summary>
+        /// 视图层播种——fork：目标存储取得源保留面（≤ 切点），源面不受影响且落盘可往返。
+        /// </summary>
+        [Fact]
+        public void CopyFrom_SeedsSubset()
+        {
+            LlmMessage[] msgs = new LlmMessage[]
+            {
+                        User("u1", 1000),
+                        Assistant("a1", 1100),
+                        User("u2", 2000),
+                        Assistant("a2", 2100)
+            };
+            ReplayAll(_store, msgs);
+            CH4.SessionViewStore target = new CH4.SessionViewStore(Path.Combine(_dir, "view2.json"));
+            target.CopyFrom(_store, 1);
+            CH4.ViewBlock[] seeded = target.GetBlocks();
+            Assert.Equal(2, seeded.Length);
+            Assert.Equal("user", seeded[0].RenderType);
+            Assert.Equal(0, seeded[0].MsgIndex);
+            Assert.Equal("text", seeded[1].RenderType);
+            Assert.Equal(1, seeded[1].MsgIndex);
+            // 源面不受影响——播种是单向复制
+            Assert.Equal(4, _store.GetBlocks().Length);
+            // 落盘往返——播种面可读回
+            CH4.SessionViewStore reloaded = new CH4.SessionViewStore(Path.Combine(_dir, "view2.json"));
+            reloaded.Load();
+            Assert.Equal(2, reloaded.GetBlocks().Length);
+        }
     }
 }

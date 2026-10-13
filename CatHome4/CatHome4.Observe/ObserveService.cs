@@ -21,7 +21,6 @@ namespace CatHome4.Observe
         internal static void PrintStatus()
         {
             Console.WriteLine("[CMD] ── Flow 状态 ──");
-            PrintFlowStatus("QuickCat", _quickHandle);
             PrintToolGroupStatuses();
             // [段1] OA 快照 + 盒子截面 + 审计帧序（杂音过滤——trace.sample 每帧采样隐藏，关键事件帧序可回溯）
             OAView oaView = _oa.GetSnapshot();
@@ -140,7 +139,6 @@ namespace CatHome4.Observe
         internal static void PrintStatusShort()
         {
             Console.WriteLine("[CMD] ── Flow 状态 ──");
-            PrintFlowStatus("QuickCat", _quickHandle);
             PrintToolGroupStatuses();
             List<LogStore.LogEntry> logs = LogStore.AllLog;
             int start = logs.Count - 10;

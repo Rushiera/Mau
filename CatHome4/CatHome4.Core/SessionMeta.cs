@@ -93,6 +93,23 @@ namespace CH4
     }
 
     /// <summary>
+    /// 工具面快照条目——会话工具头的持久化形态（A221 · design-ch4-tools §三·十一）。
+    /// 与 ToolSpec 同形但**不复用基座类型**：ToolSpec 只有带参构造（System.Text.Json 直接反序列化不成立），
+    /// 故在本层定义 DTO——不为反序列化去改基座程序集（勿增实体）。
+    /// </summary>
+    internal sealed class SessionToolSpec
+    {
+        /// <summary>工具名（wire 声明名）</summary>
+        public string Name = "";
+
+        /// <summary>语义化描述（含 order 注记——会话创建时的原文，逐字节冻结）</summary>
+        public string Description = "";
+
+        /// <summary>参数 JSON Schema（原样透传；空串 = 无参数工具）</summary>
+        public string ParametersJson = "";
+    }
+
+    /// <summary>
     /// 会话元数据——会话自身参数的持久化模型（A201 · design-ch4-protocol §十三）。
     /// 独立于 cat.cfg（每猫配置）· 前文 jsonl（真实前文）· view.json（视图前文）。
     /// </summary>
@@ -142,6 +159,14 @@ namespace CH4
 
         /// <summary>任务追踪（Note）——未完成时随重启恢复并继续自动拉起（莎 2026-10-06 批准）</summary>
         public SessionNote Note;
+
+        /// <summary>
+        /// 工具面快照（A221）——会话工具头的持久化形态：**非空 = 会话创建时冻结的工具面**，
+        /// 重启恢复时沿用（不再从池取）；空 = 旧档 / 首建（调用方走池面 + 立即补写）。
+        /// 🔴 与 system prompt（前文 0 号消息）**同命**——请求头的两部分必须同时持久化、
+        /// 同时仅在 session.new 时更换（design-ch4-tools §三·十一）。
+        /// </summary>
+        public SessionToolSpec[] Tools;
     }
 
     /// <summary>

@@ -8,6 +8,7 @@
 // 原理: GetToolsJson() 返回本组工具定义整包 JSON——改描述只动本文件，mau proj 重建即生效
 //       命名铁律：工具定义积木约定名 = tools.<flowName 小写>——flowName 由语料文件名派生
 //       （majordomo_cat.mau → MajordomoCat → tools.majordomocat）；名不符则静默跳过（池内无定义）
+//       JSON group 取 .mauproj 声明的组名（本组 = Majordomo）——组名与积木约定名是两个面
 // 常用: FL_MajordomoCat.GetToolsJson() 自曝调用面（IFlow 接口）
 // ═══════════════════════════════════════════════════
 namespace Mau.Bricks
@@ -25,7 +26,7 @@ namespace Mau.Bricks
         /// <returns>工具定义 JSON 字符串</returns>
         public static string GetToolsJson()
         {
-            return "{\"group\":\"MajordomoCat\",\"privileged\":true,\"tools\":[" +
+            return "{\"group\":\"Majordomo\",\"privileged\":true,\"tools\":[" +
                 "{\"name\":\"restart-full\",\"description\":\"宿主全链重启（保底路径）：重建发布链（编译/测试/组翻译/自检）+ 原子切换运行区 + 重启宿主，完成后结果回执自动注入本会话。唯一带版本自增的重启方式——改语料/积木/宿主源码后的正式回填用它。架构级变更（Runtime 机制/协议/签名）不要用本工具。\",\"parameters\":{\"type\":\"object\",\"properties\":{\"target\":{\"type\":\"string\",\"description\":\"目标运行区绝对路径（缺省=受控根 mauout）\"},\"push\":{\"type\":\"string\",\"description\":\"重启后附加说明串（随部署报告一起注入本会话，可空）\"}},\"required\":[]}}," +
                 "{\"name\":\"restart-incr\",\"description\":\"宿主增量重启（纯搬运）：把已在一键部署中验证过的产物区搬运到运行区（含前置离线探活）后重启——不编译、不测试、不组翻译。适用于刚跑过一键部署（prepare）后的日常回填，停摆窗口更短。改 Bricks / Mau 基座 / 语料（未重翻）会被哨兵拒绝并提示走 restart-full。\",\"parameters\":{\"type\":\"object\",\"properties\":{\"target\":{\"type\":\"string\",\"description\":\"目标运行区绝对路径（缺省=受控根 mauout）\"},\"push\":{\"type\":\"string\",\"description\":\"重启后附加说明串（随部署报告一起注入本会话，可空）\"}},\"required\":[]}}," +
                 "{\"name\":\"restart-host\",\"description\":\"宿主原地重启：不编译、不覆盖运行区，仅重启宿主进程。适用于配置 / Data 面改动后重读、宿主卡死恢复。版本不变（不自增）。\",\"parameters\":{\"type\":\"object\",\"properties\":{\"target\":{\"type\":\"string\",\"description\":\"目标运行区绝对路径（缺省=受控根 mauout）\"},\"push\":{\"type\":\"string\",\"description\":\"重启后附加说明串（随部署报告一起注入本会话，可空）\"}},\"required\":[]}}," +
@@ -35,4 +36,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:FD886D3CA025923A5FDF727620F0EDF1B950E76240BCA03D6281A951EC62CD12
+// #MAU_CHECKSUM:SHA256:603EF365D0410592DDBC9333E78AEEB0A819434BC525CABAA4D60A49DFB6E18A

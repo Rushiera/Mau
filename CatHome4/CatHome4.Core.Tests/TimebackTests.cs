@@ -414,7 +414,7 @@ namespace CatHome4.Core.Tests
 
         /// <summary>
         /// 域类型白名单——表级形态：四类型均含基础读面（文本读面 + 文件结构面）；系统信息类（info / host-flows）
-        /// 不进任何域；审查类不含写面 / 跑测面；实现类含 cs 全套 + 文本写面 + mau-verify。
+        /// 不进任何域；审查类不含写面 / 跑测面；实现类含 cs 全套十三件（含跑测件 cs-test）+ 文本写面 + mau-verify。
         /// 说明：域内名单工具均为 OA 工具——单测无工单消费者（Post 后无回执 → 批次不闭合），
         /// 故放行面在表级验证；会话级「名单外一律拒」由 `Scope_ProfileRejectsToolOutsideWhitelist` 反向覆盖。
         /// </summary>
@@ -435,14 +435,33 @@ namespace CatHome4.Core.Tests
             }
             Assert.False(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeReview, "cs-patch"));
             Assert.False(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeReview, "mau-verify"));
+            Assert.False(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeReview, "cs-test"));
             Assert.True(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeWrite, "cs-patch"));
             Assert.True(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeWrite, "cs-build"));
+            Assert.True(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeWrite, "cs-test"));
             Assert.True(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeWrite, "text-replace"));
             Assert.True(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeWrite, "mau-verify"));
             Assert.False(CH4.TimebackProfile.Allows(CH4.TimebackProfile.CodeWrite, "file-delete"));
             Assert.Equal(CH4.TimebackProfile.KindReview, CH4.TimebackProfile.Kind(CH4.TimebackProfile.TextSearch));
             Assert.Equal(CH4.TimebackProfile.KindReview, CH4.TimebackProfile.Kind(CH4.TimebackProfile.CodeReview));
             Assert.Equal(CH4.TimebackProfile.KindWrite, CH4.TimebackProfile.Kind(CH4.TimebackProfile.CodeWrite));
+        }
+
+        /// <summary>
+        /// 台账状态列——JSON 头形态（cs-build / cs-test / cs-check 桥工具）：业务失败记 `FAIL` 而非 `OK`；
+        /// 解析不出出声 `UNPARSED`（不回落 OK）；`ERR|` 与域门禁拒仍走 ERR / DENY。
+        /// </summary>
+        [Fact]
+        public void ToolStatus_JsonHeadBusinessFailure()
+        {
+            Assert.Equal("OK", CH4.ChatSession.TimebackToolStatus("{\"ok\":true,\"tool\":\"cs-build\",\"errors\":0}"));
+            Assert.Equal("FAIL(exit=1,errors=3)", CH4.ChatSession.TimebackToolStatus("{\"ok\":false,\"tool\":\"cs-build\",\"exit\":1,\"errors\":3}\n编译失败 · 3 错误"));
+            Assert.Equal("FAIL(failed=2)", CH4.ChatSession.TimebackToolStatus("{\"ok\":false,\"failed\":2}"));
+            Assert.Equal("FAIL", CH4.ChatSession.TimebackToolStatus("{\"ok\":false}"));
+            Assert.Equal("UNPARSED", CH4.ChatSession.TimebackToolStatus("{ 不是 JSON"));
+            Assert.Equal("ERR", CH4.ChatSession.TimebackToolStatus("ERR|BUILD_TIMEOUT|构建超时"));
+            Assert.Equal("DENY", CH4.ChatSession.TimebackToolStatus("ERR|TIMEBACK_PROFILE|不在名单"));
+            Assert.Equal("OK", CH4.ChatSession.TimebackToolStatus("OK|编译通过"));
         }
 
         /// <summary>
@@ -1246,6 +1265,52 @@ namespace CatHome4.Core.Tests
             Assert.Equal(0, voidCount);
             Assert.True(anchorCardKept);
             Assert.True(siblingCardKept);
+        }
+        /// <summary>
+        /// A229 timeback 未闭合自动拉起——域未回收 = 本轮未结束：轮末注入固定提示拉起（优先于 Note）；
+        /// 连续拉起达上限（3 次）后放行本轮结束（防模型不回收导致的无限空转）。
+        /// </summary>
+        [Fact]
+        public void A229_TimebackOpen_PullsUntilLimit()
+        {
+            MockLlm llm = new MockLlm();
+            CH4.ChatSession session = CreateSession(llm);
+            llm.ToolCallsQueue.Enqueue(BuildToolCalls("timeback-start", "t1", "{\"type\":\"text_search\",\"purpose\":\"未回收验证\"}"));
+            session.PostUserMessage("开域后不回收");
+            // 拉起瞬间即回 Idle（与 Note 拉起同构）——PumpUntilIdle 在首次 Idle 即退出、拉起消息尚未入前文，
+            // 故泵到「提示出现 3 次且回到 Idle」或上限 500 帧
+            for (int i = 0; i < 500; i = i + 1)
+            {
+                session.Pump();
+                Thread.Sleep(5);
+                if (CountPullText(session) >= 3 && session.IsIdle)
+                {
+                    break;
+                }
+            }
+            // 闸门生效——最终回到 Idle（不无限空转）
+            Assert.True(session.IsIdle, "phase=" + session.Phase.ToString());
+            // 域仍未回收
+            Assert.True(session.TimebackActive);
+            // 拉起提示入前文——固定文案，恰好 3 次（上限）
+            Assert.Equal(3, CountPullText(session));
+        }
+        /// <summary>统计前文里 A229 拉起提示出现次数。</summary>
+        /// <param name="session">会话</param>
+        /// <returns>出现次数</returns>
+        private static int CountPullText(CH4.ChatSession session)
+        {
+            int n = 0;
+            LlmMessage[] all = session.Context.GetMessages();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                string c = all[i].Content == null ? "" : all[i].Content;
+                if (c.Contains("先回收timeback域再结束工作", StringComparison.Ordinal))
+                {
+                    n = n + 1;
+                }
+            }
+            return n;
         }
     }
 }

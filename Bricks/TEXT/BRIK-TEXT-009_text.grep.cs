@@ -71,16 +71,34 @@ namespace Mau.Bricks
                     result = "ERR|FS_NO_SERVICE|宿主未注入 FileSystemService";
                     return false;
                 }
-                string[] rows = fs.Grep(dir, keyword, pattern, limit);
-                int hits = (rows == null) ? 0 : rows.Length;
-                // 结构化返回体（design-ch4-tools 附录 · A214）——首行 JSON 头（target/items）+ 正文摘要行
+                FsGrepFacts facts = fs.GrepFacts(dir, keyword, pattern, limit);
+                System.Collections.Generic.List<string> lines = new System.Collections.Generic.List<string>();
+                // [段1] 命中行——相对路径:行号:上下文（展示格式归积木层）
+                for (int i = 0; i < facts.Hits.Length; i = i + 1)
+                {
+                    lines.Add(facts.Hits[i].RelativePath + ":" + facts.Hits[i].Line.ToString() + ":" + facts.Hits[i].Context);
+                }
+                // [段2] 忽略目录提示——不静默（与其他提示行同序：忽略 → 截断 → 跳过文件）
+                if (facts.IgnoredDirs > 0)
+                {
+                    lines.Add("[skip] " + facts.IgnoredDirs.ToString() + " 个忽略目录（.git/bin/obj/node_modules 等）未扫描——匹配条目在其内已跳过");
+                }
+                if (facts.HitTotal > facts.Hits.Length)
+                {
+                    lines.Add("[截断] 共 " + facts.HitTotal.ToString() + " 条，已列 " + facts.Hits.Length.ToString() + " 条——提高 limit 至 ≥" + facts.HitTotal.ToString() + "，或收窄 dir / keyword 可看全");
+                }
+                for (int i = 0; i < facts.Skipped.Length; i = i + 1)
+                {
+                    lines.Add("[skip-file] " + facts.Skipped[i].RelativePath + " | " + facts.Skipped[i].Reason);
+                }
+                int hits = lines.Count;
                 string head = MetaHead("text-grep", true, dir, hits) + "\n" + dir + " | 命中 " + hits.ToString();
                 if (hits == 0)
                 {
                     result = head;
                     return true;
                 }
-                result = head + "\n" + string.Join("\n", rows);
+                result = head + "\n" + string.Join("\n", lines.ToArray());
                 return true;
             }
             catch (Exception ex)
@@ -114,4 +132,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:2B496F89FC279BF64945A3B1B5893028C5FF07BEEB7BE7C0CAFC158B656D84C5
+// #MAU_CHECKSUM:SHA256:19441CEC807975CD71A4A69C8C9AF97465CE8A156C16906AD985603011E62ED1

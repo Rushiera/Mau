@@ -47,35 +47,6 @@ namespace Mau.Runtime.Tests
         }
 
         /// <summary>
-        /// 锚点歧义三态——Ambiguous 必须带真实出现次数（曾漏赋值 ⇒ 报「锚点出现 0 次」自相矛盾），且绝不静默写入
-        /// </summary>
-        [Fact]
-        public void ReplaceTextAuto_Ambiguous_ReportsRealCount()
-        {
-            string baseDir = Path.Combine(Path.GetTempPath(), "mau_replace_test_" + Guid.NewGuid().ToString("N"));
-            string rw = Path.Combine(baseDir, "rw");
-            Directory.CreateDirectory(rw);
-            try
-            {
-                WorkspaceConfig.RootEntry[] entries = new WorkspaceConfig.RootEntry[]
-                {
-                    new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true }
-                };
-                FileSystemService fs = new FileSystemService(entries, Path.Combine(rw, "recycle"));
-                string file = Path.Combine(rw, "probe.txt");
-                fs.WriteText(file, "A行B行C行");
-                TextReplaceOutcome outcome = fs.ReplaceTextAuto(file, "行", "X", "exact");
-                Assert.Equal(TextReplaceStatus.Ambiguous, outcome.Status);
-                Assert.Equal(3, outcome.Count);
-                Assert.Equal("A行B行C行", fs.ReadText(file));
-            }
-            finally
-            {
-                TryDelete(baseDir);
-            }
-        }
-
-        /// <summary>
         /// 命名空间寻址——id:relative 前缀映射受控根（ccbp:/mau:/runtime:；P8.5b 自举路径语义）
         /// </summary>
         [Fact]
@@ -128,9 +99,18 @@ namespace Mau.Runtime.Tests
                 Assert.Equal(Path.GetFullPath(rw), fs.Resolve("rw", false));
                 Assert.Equal(Path.GetFullPath(rw), fs.Resolve("rw:", false));
                 Assert.Equal(Path.GetFullPath(rw), fs.Resolve("RW", false));
-                Assert.Contains("probe.txt", fs.Tree("rw", 1, 10));
+                FsTreeFacts probe = fs.TreeFacts("rw", 1, 10);
+                bool hasProbe = false;
+                for (int i = 0; i < probe.Entries.Length; i = i + 1)
+                {
+                    if (probe.Entries[i].RelativePath == "probe.txt")
+                    {
+                        hasProbe = true;
+                    }
+                }
+                Assert.True(hasProbe);
                 // 非根名——不误判为根，仍按默认根下相对路径（目录不存在 → 显式失败）
-                Assert.Throws<DirectoryNotFoundException>(() => fs.Tree("not-a-root", 1, 10));
+                Assert.Throws<DirectoryNotFoundException>(() => fs.TreeFacts("not-a-root", 1, 10));
             }
             finally
             {
@@ -308,104 +288,8 @@ namespace Mau.Runtime.Tests
             }
         }
         /// <summary>
-        /// 锚点三态诊断（P3——design-ch4-text-tools §六）：唯一替换 / 未找到差异定位 / 多次出现候选；regex 全替换
+        /// 内容检索（P4——text-grep）：受控根内递归扫文本，返回 相对路径:行号:上下文；二进制跳过
         /// </summary>
-        [Fact]
-        public void ReplaceAuto_ThreeStateDiagnostics()
-        {
-            string baseDir = Path.Combine(Path.GetTempPath(), "mau_replauto_" + Guid.NewGuid().ToString("N"));
-            string rw = Path.Combine(baseDir, "rw");
-            Directory.CreateDirectory(rw);
-            try
-            {
-                WorkspaceConfig.RootEntry[] entries = new WorkspaceConfig.RootEntry[]
-                {
-            new WorkspaceConfig.RootEntry()
-            {
-                Id = "rw",
-                Path = rw,
-                Writable = true
-            }
-                };
-                FileSystemService fs = new FileSystemService(entries, Path.Combine(rw, "recycle"));
-                string p = Path.Combine(rw, "doc.md");
-                // [段1] 唯一命中 → Ok + 数量 + Snippet
-                fs.WriteTextAuto(p, "第一行\n目标 这里\n第三行");
-                TextReplaceOutcome ok = fs.ReplaceTextAuto(p, "目标 这里", "换成 那里", "exact");
-                Assert.Equal(TextReplaceStatus.Ok, ok.Status);
-                Assert.Equal(1, ok.Count);
-                Assert.Contains("换成 那里", fs.ReadTextAuto(p));
-                Assert.Contains("换成 那里", ok.Snippet);
-                // [段2] 未找到 → NotFound + 差异定位（期望/实际非空）
-                TextReplaceOutcome nf = fs.ReplaceTextAuto(p, "目标 这里", "x", "exact");
-                Assert.Equal(TextReplaceStatus.NotFound, nf.Status);
-                Assert.True(nf.DiffByteIndex >= 0);
-                // [段3] 多次出现 → Ambiguous + 候选行号
-                fs.WriteTextAuto(p, "行一\n重复词\n行三\n重复词\n行五");
-                TextReplaceOutcome amb = fs.ReplaceTextAuto(p, "重复词", "X", "exact");
-                Assert.Equal(TextReplaceStatus.Ambiguous, amb.Status);
-                Assert.True(amb.CandidateLines.Length >= 2);
-                // 文件未被修改（绝不静默写入）
-                Assert.Contains("重复词", fs.ReadTextAuto(p));
-                // [段4] ignore_case 唯一命中
-                fs.WriteTextAuto(p, "Hello world");
-                TextReplaceOutcome ic = fs.ReplaceTextAuto(p, "hello", "HELLO", "ignore_case");
-                Assert.Equal(TextReplaceStatus.Ok, ic.Status);
-                Assert.Contains("HELLO world", fs.ReadTextAuto(p));
-                // [段5] regex 全替换 + 捕获组
-                fs.WriteTextAuto(p, "v1 v2 v3");
-                TextReplaceOutcome re = fs.ReplaceTextAuto(p, "v(\\d)", "V$1", "regex");
-                Assert.Equal(TextReplaceStatus.Ok, re.Status);
-                Assert.Equal(3, re.Count);
-                Assert.Equal("V1 V2 V3", fs.ReadTextAuto(p));
-                // [段5b] regex 跨度记账（A146）——单行匹配：各 2 字符 / 合计 6 字符 / 1 行
-                Assert.Equal(1, re.MaxSpanLines);
-                Assert.Equal(2, re.MaxSpanChars);
-                Assert.Equal(6, re.TotalSpanChars);
-                Assert.False(re.SpanWarned);
-                // [段6] regex 跨行匹配——跨度按真实匹配记账（A146）
-                fs.WriteTextAuto(p, "头\n中一\n中二\n尾");
-                TextReplaceOutcome sp = fs.ReplaceTextAuto(p, "中一[\\s\\S]*?尾", "X", "regex");
-                Assert.Equal(TextReplaceStatus.Ok, sp.Status);
-                Assert.Equal(1, sp.Count);
-                Assert.Equal(3, sp.MaxSpanLines);
-                Assert.False(sp.SpanWarned);
-                // [段7] 单次匹配跨度超阈值 → 出声判据置位（A146）
-                fs.WriteTextAuto(p, "头\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n尾");
-                TextReplaceOutcome big = fs.ReplaceTextAuto(p, "头[\\s\\S]*?尾", "X", "regex");
-                Assert.Equal(TextReplaceStatus.Ok, big.Status);
-                Assert.True(big.MaxSpanLines >= 10);
-                Assert.True(big.SpanWarned);
-                // [段8] all 模式成功回执列命中行号（前 5 + 计数——A147）
-                fs.WriteTextAuto(p, "行一\n重复词\n行三\n重复词\n行五");
-                TextReplaceOutcome allMode = fs.ReplaceTextAuto(p, "重复词", "X", "all");
-                Assert.Equal(TextReplaceStatus.Ok, allMode.Status);
-                Assert.Equal(2, allMode.Count);
-                Assert.Equal(2, allMode.CandidateLines.Length);
-                Assert.Equal("2", allMode.CandidateLines[0]);
-                Assert.Equal("4", allMode.CandidateLines[1]);
-                // [段9] 写入风格描述——编码 + BOM / 换行（A148）
-                Assert.Equal("UTF-8 BOM / LF", fs.WriteTextAuto(p, "正文"));
-                Assert.Equal("UTF-8 BOM / CRLF", fs.WriteTextAuto(Path.Combine(rw, "doc.mau"), "正文"));
-                Assert.Equal("UTF-8 / LF", fs.WriteTextAuto(Path.Combine(rw, "note.txt"), "正文"));
-                Assert.Equal("UTF-8 / LF", fs.AppendTextAuto(Path.Combine(rw, "note.txt"), "续行"));
-                // [段10] 锚点未命中疑似实体写法出声（A149）
-                fs.WriteTextAuto(p, "存的是 &lt;PropertyGroup&gt; 实体形状");
-                TextReplaceOutcome ent = fs.ReplaceTextAuto(p, "<PropertyGroup>", "x", "exact");
-                Assert.Equal(TextReplaceStatus.NotFound, ent.Status);
-                Assert.True(ent.EntitySuspect);
-                fs.WriteTextAuto(p, "普通正文，无实体形态");
-                TextReplaceOutcome plain = fs.ReplaceTextAuto(p, "查无此串", "x", "exact");
-                Assert.Equal(TextReplaceStatus.NotFound, plain.Status);
-                Assert.False(plain.EntitySuspect);
-            }
-            finally
-            {
-                TryDelete(baseDir);
-            }
-        }        /// <summary>
-                 /// 内容检索（P4——text-grep）：受控根内递归扫文本，返回 相对路径:行号:上下文；二进制跳过
-                 /// </summary>
         [Fact]
         public void Grep_ContentSearchWithinRoot()
         {
@@ -427,14 +311,15 @@ namespace Mau.Runtime.Tests
                 Directory.CreateDirectory(Path.Combine(rw, "sub"));
                 fs.WriteText(Path.Combine(rw, "a.txt"), "hello world\nfoo bar");
                 fs.WriteText(Path.Combine(rw, "sub", "b.txt"), "line with target here\nnothing");
-                string[] hits = fs.Grep(rw, "target", "*", 100);
-                Assert.Single(hits);
-                Assert.Contains("b.txt:1:", hits[0]);
-                Assert.Contains("target", hits[0]);
+                FsGrepFacts hits = fs.GrepFacts(rw, "target", "*", 100);
+                Assert.Single(hits.Hits);
+                Assert.Contains("b.txt", hits.Hits[0].RelativePath);
+                Assert.Equal(1, hits.Hits[0].Line);
+                Assert.Contains("target", hits.Hits[0].Context);
                 // 大小写敏感——hello 不命中 HELLO
                 fs.WriteText(Path.Combine(rw, "sub", "c.txt"), "HELLO case");
-                string[] sensitive = fs.Grep(rw, "hello", "*", 100);
-                Assert.Single(sensitive);
+                FsGrepFacts sensitive = fs.GrepFacts(rw, "hello", "*", 100);
+                Assert.Single(sensitive.Hits);
             }
             finally
             {
@@ -466,21 +351,21 @@ namespace Mau.Runtime.Tests
                 fs.WriteText(Path.Combine(rw, "sub", "deep", "c.cs"), "x");
                 fs.WriteText(Path.Combine(rw, "sub", "d.md"), "x");
                 // [段1] **/*.txt 前缀——recursive=false 也被强制递归，返回全部 txt
-                string[] allTxt = fs.Find(rw, "**/*.txt", false, 100);
-                Assert.Equal(2, allTxt.Length);
-                Assert.Contains("a.txt", allTxt);
-                Assert.Contains("sub" + Path.DirectorySeparatorChar + "b.txt", allTxt);
+                FsFindFacts allTxt = fs.FindFacts(rw, "**/*.txt", false, 100);
+                Assert.Equal(2, allTxt.RelativePaths.Length);
+                Assert.Contains("a.txt", allTxt.RelativePaths);
+                Assert.Contains("sub" + Path.DirectorySeparatorChar + "b.txt", allTxt.RelativePaths);
                 // [段2] 纯文件名模式非递归——只扫当前目录
-                string[] topTxt = fs.Find(rw, "*.txt", false, 100);
-                Assert.Single(topTxt);
-                Assert.Contains("a.txt", topTxt);
+                FsFindFacts topTxt = fs.FindFacts(rw, "*.txt", false, 100);
+                Assert.Single(topTxt.RelativePaths);
+                Assert.Contains("a.txt", topTxt.RelativePaths);
                 // [段3] **/*.cs 递归——深层文件命中
-                string[] cs = fs.Find(rw, "**/*.cs", true, 100);
-                Assert.Single(cs);
-                Assert.Contains("sub" + Path.DirectorySeparatorChar + "deep" + Path.DirectorySeparatorChar + "c.cs", cs);
+                FsFindFacts cs = fs.FindFacts(rw, "**/*.cs", true, 100);
+                Assert.Single(cs.RelativePaths);
+                Assert.Contains("sub" + Path.DirectorySeparatorChar + "deep" + Path.DirectorySeparatorChar + "c.cs", cs.RelativePaths);
                 // [段4] **/ 剥空回退 *——全部文件
-                string[] all = fs.Find(rw, "**/", true, 100);
-                Assert.Equal(4, all.Length);
+                FsFindFacts all = fs.FindFacts(rw, "**/", true, 100);
+                Assert.Equal(4, all.RelativePaths.Length);
             }
             finally
             {
@@ -543,9 +428,9 @@ namespace Mau.Runtime.Tests
             string baseDir = Path.Combine(Path.GetTempPath(), "mau_grepenc_" + Guid.NewGuid().ToString("N")); string rw = Path.Combine(baseDir, "rw"); Directory.CreateDirectory(rw); try
             {
                 WorkspaceConfig.RootEntry[] entries = new WorkspaceConfig.RootEntry[] { new WorkspaceConfig.RootEntry() { Id = "rw", Path = rw, Writable = true } }; FileSystemService fs = new FileSystemService(entries, Path.Combine(rw, "recycle"));  // [段1] GBK 文件中文命中——.bat 写中文 → grep 中文关键词
-                string batPath = Path.Combine(rw, "run.bat"); fs.WriteTextAuto(batPath, "echo 你好世界\necho 再见"); string[] batHits = fs.Grep(rw, "你好", "*", 100); Assert.Single(batHits); Assert.Contains("run.bat:1:", batHits[0]); Assert.Contains("你好", batHits[0]);  // [段2] .md BOM 文件命中——BOM 剥离后首行可搜
-                string mdPath = Path.Combine(rw, "doc.md"); fs.WriteTextAuto(mdPath, "# 标题\n正文含目标"); string[] mdHits = fs.Grep(rw, "目标", "*", 100); Assert.Single(mdHits); Assert.Contains("doc.md:2:", mdHits[0]);  // [段3] 大小写敏感仍成立——无 HELLO 命中
-                string[] noHit = fs.Grep(rw, "HELLO", "*", 100); Assert.Empty(noHit);
+                string batPath = Path.Combine(rw, "run.bat"); fs.WriteTextAuto(batPath, "echo 你好世界\necho 再见"); FsGrepFacts batHits = fs.GrepFacts(rw, "你好", "*", 100); Assert.Single(batHits.Hits); Assert.Contains("run.bat", batHits.Hits[0].RelativePath); Assert.Equal(1, batHits.Hits[0].Line); Assert.Contains("你好", batHits.Hits[0].Context);  // [段2] .md BOM 文件命中——BOM 剥离后首行可搜
+                string mdPath = Path.Combine(rw, "doc.md"); fs.WriteTextAuto(mdPath, "# 标题\n正文含目标"); FsGrepFacts mdHits = fs.GrepFacts(rw, "目标", "*", 100); Assert.Single(mdHits.Hits); Assert.Contains("doc.md", mdHits.Hits[0].RelativePath); Assert.Equal(2, mdHits.Hits[0].Line);  // [段3] 大小写敏感仍成立——无 HELLO 命中
+                FsGrepFacts noHit = fs.GrepFacts(rw, "HELLO", "*", 100); Assert.Empty(noHit.Hits);
             }
             finally { TryDelete(baseDir); }
         }
@@ -575,29 +460,29 @@ namespace Mau.Runtime.Tests
                 File.WriteAllText(Path.Combine(rw, "keep.txt"), "keep");
                 Directory.CreateDirectory(Path.Combine(rw, "sub", ".git"));
                 File.WriteAllText(Path.Combine(rw, "sub", "sub.txt"), "sub");
-                // [段1] Tree——.git/bin 不列出；末尾 [git] 特征行（多 .git 多行）；正常条目保留
-                string[] tree = fs.Tree(rw, 5, 500);
-                Assert.DoesNotContain(tree, line => line.Contains(".git") && !line.StartsWith("[git]") && !line.StartsWith("[skip]"));
-                // Tree 忽略计数提示——与 Find/Grep 同口径（2026-09-28 补齐；原为静默跳过）
-                Assert.Contains(tree, line => line.StartsWith("[skip] "));
-                Assert.DoesNotContain(tree, line => line == "bin/");
-                Assert.Contains(tree, line => line == "keep.txt");
-                Assert.Contains(tree, line => line.StartsWith("[git] 存在 .git（.git——HEAD: refs/heads/main", StringComparison.Ordinal));
-                Assert.Contains(tree, line => line.StartsWith("[git] 存在 .git（sub", StringComparison.Ordinal));
-                // [段2] Find——忽略目录内条目不列出 + [skip] 提示（提示行本身含 .git/bin 字样——按前缀排除）
-                string[] found = fs.Find(rw, "*", true, 500);
-                Assert.DoesNotContain(found, line => line.StartsWith("bin"));
-                Assert.DoesNotContain(found, line => line.StartsWith(".git"));
-                Assert.Contains(found, line => line.StartsWith("[skip] "));
-                Assert.Contains(found, line => line == "keep.txt");
-                // [段3] Grep——忽略目录不扫描 + [skip] 提示（bin 内文本不会被搜到；提示行本身是结果的一部分）
-                string[] hits = fs.Grep(rw, "x.dll", "*", 100);
-                Assert.DoesNotContain(hits, line => !line.StartsWith("[skip]"));
-                string[] hits2 = fs.Grep(rw, "keep", "*", 100);
-                Assert.Contains(hits2, line => line.StartsWith("keep.txt:"));
+                // [段1] Tree 事实——.git/bin 不进条目；忽略计数与 git 特征单列（展示文案归积木层）
+                FsTreeFacts tree = fs.TreeFacts(rw, 5, 500);
+                Assert.DoesNotContain(tree.Entries, entry => entry.RelativePath.Contains(".git"));
+                Assert.True(tree.IgnoredDirs > 0);
+                Assert.DoesNotContain(tree.Entries, entry => entry.RelativePath == "bin");
+                Assert.Contains(tree.Entries, entry => entry.RelativePath == "keep.txt");
+                Assert.Equal(2, tree.GitFacts.Length);
+                Assert.Equal(".git", tree.GitFacts[0].RelativePath);
+                Assert.Equal("refs/heads/main → abcdef0", tree.GitFacts[0].Head);
+                // [段2] Find 事实——忽略目录内条目不出现；忽略计数可见
+                FsFindFacts found = fs.FindFacts(rw, "*", true, 500);
+                Assert.DoesNotContain(found.RelativePaths, path => path.StartsWith("bin"));
+                Assert.DoesNotContain(found.RelativePaths, path => path.StartsWith(".git"));
+                Assert.True(found.IgnoredDirs > 0);
+                Assert.Contains("keep.txt", found.RelativePaths);
+                // [段3] Grep 事实——忽略目录不扫描（bin 内文本搜不到）
+                FsGrepFacts hits = fs.GrepFacts(rw, "x.dll", "*", 100);
+                Assert.Empty(hits.Hits);
+                FsGrepFacts hits2 = fs.GrepFacts(rw, "keep", "*", 100);
+                Assert.Contains(hits2.Hits, hit => hit.RelativePath.StartsWith("keep.txt"));
                 // [段4] 显式以忽略名为根——bin 本身可列（忽略只在子项遍历生效）
-                string[] binTree = fs.Tree(Path.Combine(rw, "bin"), 2, 100);
-                Assert.Contains(binTree, line => line == "x.dll");
+                FsTreeFacts binTree = fs.TreeFacts(Path.Combine(rw, "bin"), 2, 100);
+                Assert.Contains(binTree.Entries, entry => entry.RelativePath == "x.dll");
             }
             finally
             {
@@ -708,7 +593,8 @@ namespace Mau.Runtime.Tests
             }
         }
         /// <summary>
-        /// Tree 广度优先与截断提示（2026-09-28）——同层条目先出（顶层结构不被深层吃掉）；limit 触顶时末行附 [截断] 提示
+        /// Tree 广度优先与截断计数（2026-09-28；A228 档 2 · B3 转事实断言）——同层条目先出（顶层结构不被深层吃掉）；
+        /// limit 只截条目，Total 仍按全量计数（展示形态归积木层，不在本测试面）
         /// </summary>
         [Fact]
         public void Tree_BreadthFirst_TruncationHint()
@@ -729,18 +615,16 @@ namespace Mau.Runtime.Tests
                 File.WriteAllText(Path.Combine(rw, "bb", "b1.txt"), "b");
                 Directory.CreateDirectory(Path.Combine(rw, "cc"));
                 File.WriteAllText(Path.Combine(rw, "cc", "c1.txt"), "c");
-                // [段1] 广度优先——顶层三目录占据前三行（深度优先会把 aa 的整棵子树提前）
-                string[] all = fs.Tree(rw, 3, 500);
-                Assert.Equal(new string[] { "aa/", "bb/", "cc/" }, new string[] { all[0], all[1], all[2] });
-                // [段2] limit 截断——先保顶层（aa/bb/cc 一个不少）+ 末行 [截断] 提示
-                string[] cut = fs.Tree(rw, 3, 3);
-                Assert.Contains(cut, line => line == "aa/");
-                Assert.Contains(cut, line => line == "bb/");
-                Assert.Contains(cut, line => line == "cc/");
-                // 截断提示含总量——总数取未截断时的条目数（不写死字面量）
-                Assert.StartsWith("[截断] 共 " + all.Length.ToString() + " 条，已列 3 条", cut[cut.Length - 1]);
-                // [段3] 未截断——无 [截断] 行
-                Assert.DoesNotContain(all, line => line.StartsWith("[截断]"));
+                // [段1] 广度优先——顶层三目录占前三（相对路径不含尾标——尾标属积木展示层）
+                FsTreeFacts all = fs.TreeFacts(rw, 3, 500);
+                Assert.Equal(new string[] { "aa", "bb", "cc" }, new string[] { all.Entries[0].RelativePath, all.Entries[1].RelativePath, all.Entries[2].RelativePath });
+                Assert.True(all.Entries[0].IsDir);
+                // [段2] limit 截断——先保顶层（aa/bb/cc 一个不少）；Total 仍按全量计数
+                FsTreeFacts cut = fs.TreeFacts(rw, 3, 3);
+                Assert.Equal(3, cut.Entries.Length);
+                Assert.Equal(new string[] { "aa", "bb", "cc" }, new string[] { cut.Entries[0].RelativePath, cut.Entries[1].RelativePath, cut.Entries[2].RelativePath });
+                // [段3] 未截断——Total 与条目数一致
+                Assert.Equal(all.Entries.Length, all.Total);
             }
             finally
             {
@@ -748,7 +632,7 @@ namespace Mau.Runtime.Tests
             }
         }
         /// <summary>
-        /// Find limit 截断提示（2026-09-28）——达上限时末行附 [截断]（原为静默截断）；未触顶无该行
+        /// Find limit 截断计数（2026-09-28；A228 档 2 · B3 转事实断言）——达上限只截条目，Matched 仍报全量
         /// </summary>
         [Fact]
         public void Find_LimitTruncationHint()
@@ -765,15 +649,14 @@ namespace Mau.Runtime.Tests
                 {
                     File.WriteAllText(Path.Combine(rw, "f" + i.ToString() + ".txt"), "x");
                 }
-                // [段1] 未触顶——5 条全出、无 [截断] 行
-                string[] all = fs.Find(rw, "*.txt", true, 500);
-                Assert.Equal(5, all.Length);
-                Assert.DoesNotContain(all, line => line.StartsWith("[截断]"));
-                // [段2] 触顶——3 条 + 末行 [截断]
-                string[] cut = fs.Find(rw, "*.txt", true, 3);
-                Assert.Equal(4, cut.Length);
-                // 截断提示含总量——5 个匹配，limit=3
-                Assert.StartsWith("[截断] 共 5 条，已列 3 条", cut[cut.Length - 1]);
+                // [段1] 未触顶——5 条全出、Matched == 条数
+                FsFindFacts all = fs.FindFacts(rw, "*.txt", true, 500);
+                Assert.Equal(5, all.RelativePaths.Length);
+                Assert.Equal(5, all.Matched);
+                // [段2] 触顶——3 条；Matched 仍报全量 5
+                FsFindFacts cut = fs.FindFacts(rw, "*.txt", true, 3);
+                Assert.Equal(3, cut.RelativePaths.Length);
+                Assert.Equal(5, cut.Matched);
             }
             finally
             {
@@ -781,7 +664,7 @@ namespace Mau.Runtime.Tests
             }
         }
         /// <summary>
-        /// Grep limit 截断提示（2026-09-28）——命中达上限时末行附 [截断]（含总条数）；未触顶无该行
+        /// Grep limit 截断计数（2026-09-28；A228 档 2 · B3 转事实断言）——命中达上限只截条目，HitTotal 仍报全量
         /// </summary>
         [Fact]
         public void Grep_LimitTruncationHint()
@@ -796,14 +679,14 @@ namespace Mau.Runtime.Tests
                     Path.Combine(rw, "recycle"));
                 File.WriteAllText(Path.Combine(rw, "a.txt"), "hit\nhit\nhit\nhit");
                 File.WriteAllText(Path.Combine(rw, "b.txt"), "hit\nhit");
-                // [段1] 未触顶——6 命中全出、无 [截断] 行
-                string[] all = fs.Grep(rw, "hit", "*", 100);
-                Assert.Equal(6, all.Length);
-                Assert.DoesNotContain(all, line => line.StartsWith("[截断]"));
-                // [段2] 触顶——limit=2 出 2 条 + 末行 [截断] 共 6 条
-                string[] cut = fs.Grep(rw, "hit", "*", 2);
-                Assert.Equal(3, cut.Length);
-                Assert.StartsWith("[截断] 共 6 条，已列 2 条", cut[cut.Length - 1]);
+                // [段1] 未触顶——6 命中全出、HitTotal == 命中数
+                FsGrepFacts all = fs.GrepFacts(rw, "hit", "*", 100);
+                Assert.Equal(6, all.Hits.Length);
+                Assert.Equal(6, all.HitTotal);
+                // [段2] 触顶——limit=2 出 2 条；HitTotal 仍报 6
+                FsGrepFacts cut = fs.GrepFacts(rw, "hit", "*", 2);
+                Assert.Equal(2, cut.Hits.Length);
+                Assert.Equal(6, cut.HitTotal);
             }
             finally
             {

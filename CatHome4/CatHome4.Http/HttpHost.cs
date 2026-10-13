@@ -180,6 +180,9 @@ namespace CatHome4.Http
         /// <summary>多猫列表构建回调——GET /api/v1/cats（可空=不注册该端点——P9.3b 注册表就位后传入）</summary>
         private Func<string> _catsBuilder;
 
+        /// <summary>猫卡 state 缓存——最近一次推送的猫列表 JSON（A225c：SSE state 首帧 + 变化对比；主线程独占）</summary>
+        private string _catsStateCache = "";
+
         /// <summary>静态页模式——true=chat.html 独立对话页 / false=index.html 主面板（P9.3 双页模式）</summary>
         private bool _serveChatPage;
 

@@ -179,27 +179,39 @@ namespace CH4
         }
 
         /// <summary>
-        /// 真实前文 append 钩子——用户消息 → user 条目（载荷可选带 src——系统注入标记）。
+        /// 真实前文 append 钩子——用户消息 → user 条目（人工路径专属）。
         /// </summary>
         /// <param name="m">真实前文消息</param>
         /// <param name="msgIndex">真实前文消息索引（条目业务定位字段）</param>
-        /// <param name="src">来源（空串=人工——不落字段；非空=系统注入类型，落载荷 src）</param>
         /// <param name="origin">原注入来源标记（空串=非 QQ 注入——不落字段；非空=QQ 注入的轮起点锚，落载荷 origin）</param>
-        public void OnUserMessage(LlmMessage m, int msgIndex, string src = "", string origin = "")
+        public void OnUserMessage(LlmMessage m, int msgIndex, string origin = "")
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["text"] = m.Content ?? "";
-            // 来源字段——人工不落字段（缺省即人工，旧 view.json 零迁移）；系统注入落 src
-            if (src != null && src.Length > 0)
-            {
-                payload["src"] = src;
-            }
             // 原注入来源标记——QQ 注入的轮起点锚（缺省不落字段，旧 view.json 零迁移）
             if (origin != null && origin.Length > 0)
             {
                 payload["origin"] = origin;
             }
             Append(m, "user", payload, msgIndex);
+        }
+        /// <summary>
+        /// 真实前文 append 钩子——系统注入消息 → systemautomessage 条目（载荷携带原始来源族名）。
+        /// </summary>
+        /// <param name="m">真实前文消息</param>
+        /// <param name="msgIndex">真实前文消息索引（条目业务定位字段）</param>
+        /// <param name="source">来源族名（systemauto / sleep / timer / delay / restart——原值入载荷，不塌缩）</param>
+        /// <param name="origin">原注入来源标记（空串=非 QQ 注入——不落字段；非空=QQ 注入的轮起点锚，落载荷 origin）</param>
+        public void OnSystemMessage(LlmMessage m, int msgIndex, string source, string origin = "")
+        {
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["text"] = m.Content ?? "";
+            payload["source"] = source ?? "";
+            if (origin != null && origin.Length > 0)
+            {
+                payload["origin"] = origin;
+            }
+            Append(m, "systemautomessage", payload, msgIndex);
         }
 
         /// <summary>
@@ -269,75 +281,6 @@ namespace CH4
         }
 
         /// <summary>
-        /// 顶尾补差——从最后一条的前文来源之后重放缺失消息（A156：视图层写失败 / 中断留下的缺口修复）。
-        /// 判据：只补尾部缺口——不重置已有条目、不追改历史（无既有条目时不做全量重放：旧数据不迁移）。
-        /// </summary>
-        /// <param name="messages">真实前文消息数组</param>
-        /// <returns>补入的条目数（0 = 无缺口 / 无锚不可补）</returns>
-        public int AppendTailMissing(LlmMessage[] messages)
-        {
-            int from = LastMsgIndex() + 1;
-            if (from <= 0)
-            {
-                return 0;
-            }
-            int added = 0;
-            for (int i = from; i < messages.Length; i++)
-            {
-                LlmMessage m = messages[i];
-                if (m.Role == LlmRole.System)
-                {
-                    continue;
-                }
-                if (m.Role == LlmRole.User)
-                {
-                    // 来源回落——补差路径从内容行头前缀识别系统注入（条目缺 src 时的唯一补法）
-                    OnUserMessage(m, i, ChatSession.SysSrcFromContent(m.Content));
-                    added = added + 1;
-                    continue;
-                }
-                if (m.Role == LlmRole.Assistant)
-                {
-                    string toolCalls = m.ToolCallsJson ?? "";
-                    if (toolCalls.Length > 0)
-                    {
-                        OnAssistantToolCalls(m, i);
-                    }
-                    else
-                    {
-                        OnAssistantText(m, i);
-                    }
-                    added = added + 1;
-                    continue;
-                }
-                if (m.Role == LlmRole.Tool)
-                {
-                    OnToolResult(m, i, -1);
-                    added = added + 1;
-                }
-            }
-            return added;
-        }
-
-        /// <summary>
-        /// 最后一条的前文来源消息索引——补差锚（-1 = 无前文派生条目）。
-        /// </summary>
-        /// <returns>消息索引（-1 = 无）</returns>
-        private int LastMsgIndex()
-        {
-            int best = -1;
-            for (int i = 0; i < _blocks.Count; i = i + 1)
-            {
-                ViewBlock b = _blocks[i];
-                if (b.MsgIndex > best)
-                {
-                    best = b.MsgIndex;
-                }
-            }
-            return best;
-        }
-
-        /// <summary>
         /// 视图文件落盘——全量覆写（CloseRound 与真实前文同批；流式中间态不含）
         /// </summary>
         public void Save()
@@ -366,36 +309,9 @@ namespace CH4
             }
             catch (Exception ex)
             {
-                // A156：视图层为权威（不再可从前文重建）——保存失败必须可见 + 落待补标记（下次载入顶尾补差）
-                LogStore.Add("SessionViewStore", 3, "视图保存失败（已落待补标记，下次载入顶尾补差）: " + ex.Message, "SYS");
-                MarkPendingGap(ex.Message);
+                // A156：视图层为权威——保存失败必须可见（不兜底、不遮蔽：写盘失败是必须暴露的缺陷）
+                LogStore.Add("SessionViewStore", 3, "视图保存失败: " + ex.Message, "SYS");
             }
-        }
-
-        /// <summary>
-        /// 落待补标记——视图保存失败留痕（A156：视图层为权威，静默失败不可接受）。
-        /// 标记文件 = view 文件同址 + ".pending"；载入时检出即顶尾补差并清除。
-        /// </summary>
-        /// <param name="reason">失败原因</param>
-        private void MarkPendingGap(string reason)
-        {
-            try
-            {
-                File.WriteAllText(_path + ".pending", reason == null ? "" : reason);
-            }
-            catch (Exception ex)
-            {
-                LogStore.Add("SessionViewStore", 2, "待补标记写入失败: " + ex.Message, "SYS");
-            }
-        }
-
-        /// <summary>
-        /// 待补标记路径——保存失败留痕文件（载入时据此触发顶尾补差）。
-        /// </summary>
-        /// <returns>标记文件路径</returns>
-        public string PendingGapPath()
-        {
-            return _path + ".pending";
         }
 
         /// <summary>追加轮末统计条目——roundsum（Token 消耗 + 工具次数 + 总耗时 + 用时）。非真实前文派生；写入即落盘——宿主中断不丢。</summary>
@@ -404,6 +320,23 @@ namespace CH4
         public void AppendRoundSummary(string payloadJson, long timestamp)
         {
             ViewBlock block = NewBlock("roundsum", payloadJson, timestamp, -1);
+            _roundSums.Add(block);
+            Save();
+            EmitBlock(block);
+        }
+
+        /// <summary>追加轮末总结条目——roundsummary（LLMSimpleRequest 产出一句话总结）。与 roundsum 同属轮末条目族（同容器承载、type 区分——复用车、落盘、合并、补差全链）；写入即落盘——宿主中断不丢。</summary>
+        /// <param name="text">总结文本（失败侧为 ERR| 文本——失败可见）</param>
+        /// <param name="timestamp">创建时间戳（= roundsum ts + 1——固定插在轮末统计之后）</param>
+        public void AppendRoundSummaryNote(string text, long timestamp)
+        {
+            if (text == null || text.Length == 0)
+            {
+                return;
+            }
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["text"] = text;
+            ViewBlock block = NewBlock("roundsummary", JsonUtil.Serialize(payload), timestamp, -1);
             _roundSums.Add(block);
             Save();
             EmitBlock(block);
@@ -762,6 +695,110 @@ namespace CH4
             // 重试过程条目随视图层清理——新会话不保留旧重试记录
             _retries.Clear();
         }
+        /// <summary>
+        /// 视图层截断——回滚（session.rollback）：丢弃前文索引大于切点的条目，与真实前文截断同批物化。
+        /// 判定：前文派生条目（MsgIndex ≥ 0）按索引；非前文派生条目（-1）按时间戳界限——时间戳单调化
+        /// 保证全局严格递增，故被截区间内产生的一切条目时间戳必不小于「被丢弃前文条目的最小时间戳」。
+        /// 保留面 = 切点及之前的全部条目（注入报告为独立字段，随会话延续保留）；写盘。
+        /// </summary>
+        /// <param name="msgIndex">切点前文索引（保留 ≤ 该索引的条目）</param>
+        public void TruncateFrom(int msgIndex)
+        {
+            // [段1] 前文派生条目——按索引判定（保留 ≤ msgIndex）
+            long dropMinTs = long.MaxValue;
+            for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
+            {
+                if (_blocks[i].MsgIndex > msgIndex)
+                {
+                    if (_blocks[i].Timestamp < dropMinTs)
+                    {
+                        dropMinTs = _blocks[i].Timestamp;
+                    }
+                    _blocks.RemoveAt(i);
+                }
+            }
+            // [段2] 非前文派生条目——按时间戳界限丢弃（不早于被截区间起点者属于被截区间）
+            if (dropMinTs < long.MaxValue)
+            {
+                DropBlocksFrom(_gapTexts, dropMinTs);
+                DropBlocksFrom(_roundSums, dropMinTs);
+                DropBlocksFrom(_errors, dropMinTs);
+                DropBlocksFrom(_retries, dropMinTs);
+            }
+            // [段3] 待配对工具——被截区间内的工具声明不再配对（回滚仅空闲时执行，通常本就为空）
+            _pendingTools.Clear();
+            Save();
+        }
+        /// <summary>
+        /// 视图层播种——fork（session.fork）：把源视图存储的保留面（≤ 切点）复制进本存储，与新猫播种前文同步。
+        /// 保留口径与 <see cref="TruncateFrom"/> 同源（前文派生按索引 · 非前文派生按时间戳界限）；
+        /// 条目按引用搬入（只读沿用，不复制对象）；注入报告随面搬入；写盘。
+        /// </summary>
+        /// <param name="source">源视图存储（同类实例）</param>
+        /// <param name="msgIndex">切点前文索引（保留 ≤ 该索引）</param>
+        public void CopyFrom(SessionViewStore source, int msgIndex)
+        {
+            if (source == null)
+            {
+                return;
+            }
+            long dropMinTs = long.MaxValue;
+            _blocks.Clear();
+            for (int i = 0; i < source._blocks.Count; i = i + 1)
+            {
+                ViewBlock b = source._blocks[i];
+                if (b.MsgIndex > msgIndex)
+                {
+                    if (b.Timestamp < dropMinTs)
+                    {
+                        dropMinTs = b.Timestamp;
+                    }
+                }
+                else
+                {
+                    _blocks.Add(b);
+                }
+            }
+            _gapTexts.Clear();
+            CopyBlocksBefore(source._gapTexts, _gapTexts, dropMinTs);
+            _roundSums.Clear();
+            CopyBlocksBefore(source._roundSums, _roundSums, dropMinTs);
+            _errors.Clear();
+            CopyBlocksBefore(source._errors, _errors, dropMinTs);
+            _retries.Clear();
+            CopyBlocksBefore(source._retries, _retries, dropMinTs);
+            _pendingTools.Clear();
+            _injectReport = source._injectReport;
+            _lastTs = MaxTimestamp();
+            Save();
+        }
+        /// <summary>丢弃时间戳不早于界限的条目——截断用（保留面 = 界限之前）。</summary>
+        /// <param name="list">条目容器（原地删）</param>
+        /// <param name="cutoff">界限（时间戳 ≥ 该值即丢弃）</param>
+        private static void DropBlocksFrom(List<ViewBlock> list, long cutoff)
+        {
+            for (int i = list.Count - 1; i >= 0; i = i - 1)
+            {
+                if (list[i].Timestamp >= cutoff)
+                {
+                    list.RemoveAt(i);
+                }
+            }
+        }
+        /// <summary>搬运时间戳早于界限的条目——播种用（复制引用，不改对象）。</summary>
+        /// <param name="source">源容器</param>
+        /// <param name="dest">目标容器</param>
+        /// <param name="cutoff">界限（时间戳 ≥ 该值即跳过）</param>
+        private static void CopyBlocksBefore(List<ViewBlock> source, List<ViewBlock> dest, long cutoff)
+        {
+            for (int i = 0; i < source.Count; i = i + 1)
+            {
+                if (source[i].Timestamp < cutoff)
+                {
+                    dest.Add(source[i]);
+                }
+            }
+        }
 
         /// <summary>
         /// 生成前文派生视图条目——时间戳取消息 CreatedAt（A157：工具卡可指定时间戳覆盖——取工具调用声明时刻，与实时区先行卡同基点）。
@@ -1019,7 +1056,7 @@ namespace CH4
         /// <returns>true=相符</returns>
         private static bool RoleMatches(string renderType, LlmMessage m)
         {
-            if (renderType == "user")
+            if (renderType == "user" || renderType == "systemautomessage")
             {
                 return m.Role == LlmRole.User;
             }

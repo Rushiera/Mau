@@ -27,6 +27,9 @@ namespace CatHome4.Admin
             /// <summary>显示名——用户输入（cat.new 参数）</summary>
             public string DisplayName;
 
+            /// <summary>会话 Type 标签——cat.cfg 持久化（A224；空=默认组；自由文本）</summary>
+            public string Type;
+
             /// <summary>运行态——true=HttpHost 监听中</summary>
             public bool Running;
 
@@ -75,6 +78,15 @@ namespace CatHome4.Admin
             /// <summary>qqbot 启用标志——cat.cfg 持久化（R2.3；false=不注入不转发）</summary>
             public bool QqBotEnable;
 
+            /// <summary>人工输入空闲注入开关——cat.cfg 持久化（A219-3；true=人工输入仅在 Idle 时推送）</summary>
+            public bool UserInjectIdleOnly;
+
+            /// <summary>思考强度覆盖——cat.cfg 持久化（A234；空=跟随全局 llm.reasoning_effort；low/high/max）</summary>
+            public string ReasoningEffort;
+
+            /// <summary>轮末总结开关——cat.cfg 持久化（roundSummary；true=每轮结束调度 LLMSimpleRequest 产出总结块）</summary>
+            public bool RoundSummary;
+
             /// <summary>工具声明面——M2c 裁剪后（session.new 重注入复用）</summary>
             public ToolSpec[] ToolSpecs;
 
@@ -92,6 +104,9 @@ namespace CatHome4.Admin
 
             /// <summary>显示名</summary>
             public string DisplayName { get; set; }
+
+            /// <summary>会话 Type 标签——前端按标签分区排布 Cat Card（A224；空=默认组；自由文本）</summary>
+            public string Type { get; set; }
 
             /// <summary>运行态——启动扫描拉起依据</summary>
             public bool Running { get; set; }
@@ -116,6 +131,15 @@ namespace CatHome4.Admin
 
             /// <summary>qqbot 启用标志——缺省 false</summary>
             public bool QqBotEnable { get; set; }
+
+            /// <summary>人工输入空闲注入开关——缺省 false（=现状：人工输入可轮内插入）</summary>
+            public bool UserInjectIdleOnly { get; set; }
+
+            /// <summary>思考强度覆盖——空=跟随全局（llm.reasoning_effort）；low/high/max</summary>
+            public string ReasoningEffort { get; set; }
+
+            /// <summary>轮末总结开关——缺省 false（关）</summary>
+            public bool RoundSummary { get; set; }
 
             /// <summary>启用根 id 清单——全局根池子集（null/空=全量；workspace 强制必选不可取消）</summary>
             public string[] EnabledRoots { get; set; }
@@ -147,6 +171,9 @@ namespace CatHome4.Admin
 
             /// <summary>新猫默认目录白名单——全局根池子集（未配置=仅常驻 workspace 可用）</summary>
             public string[] DefaultEnabledRoots { get; set; }
+
+            /// <summary>新猫默认人工输入空闲注入开关（缺省 false）</summary>
+            public bool DefaultUserInjectIdleOnly { get; set; }
         }
 
         /// <summary>内置基础角色段——模板缺失时回退（行为不倒退）</summary>
@@ -185,6 +212,7 @@ namespace CatHome4.Admin
                     data.DefaultInjectList = GetStringArrayProp(root, "defaultInjectList");
                     data.DefaultPacks = GetStringArrayProp(root, "defaultPacks");
                     data.DefaultEnabledRoots = GetStringArrayProp(root, "defaultEnabledRoots");
+                    data.DefaultUserInjectIdleOnly = GetBoolProp(root, "defaultUserInjectIdleOnly");
                     return data;
                 }
             }
@@ -208,7 +236,8 @@ namespace CatHome4.Admin
                 defaultToolNames = ValidateToolNames(data.DefaultToolNames),
                 defaultInjectList = data.DefaultInjectList,
                 defaultPacks = data.DefaultPacks,
-                defaultEnabledRoots = data.DefaultEnabledRoots
+                defaultEnabledRoots = data.DefaultEnabledRoots,
+                defaultUserInjectIdleOnly = data.DefaultUserInjectIdleOnly
             };
             try
             {
@@ -270,6 +299,7 @@ namespace CatHome4.Admin
                     CatCfgData data = new CatCfgData();
                     data.Id = GetStringProp(root, "id");
                     data.DisplayName = GetStringProp(root, "displayName");
+                    data.Type = GetStringProp(root, "type");
                     data.Running = GetBoolProp(root, "running");
                     data.Port = GetIntProp(root, "port");
                     data.ApiConfigId = GetStringProp(root, "apiConfigId");
@@ -280,6 +310,9 @@ namespace CatHome4.Admin
                     data.QqBotEnable = GetBoolProp(root, "qqbotEnable");
                     data.EnabledRoots = GetStringArrayProp(root, "enabledRoots");
                     data.Packs = GetStringArrayProp(root, "packs");
+                    data.UserInjectIdleOnly = GetBoolProp(root, "userInjectIdleOnly");
+                    data.ReasoningEffort = GetStringProp(root, "reasoningEffort");
+                    data.RoundSummary = GetBoolProp(root, "roundSummary");
                     return data;
                 }
             }
@@ -299,6 +332,7 @@ namespace CatHome4.Admin
             CatCfgData data = new CatCfgData();
             data.Id = cat.Id;
             data.DisplayName = cat.DisplayName;
+            data.Type = cat.Type;
             data.ApiConfigId = cat.ApiConfigId.ToString("D");
             data.Persona = cat.Persona;
             data.ToolNames = cat.ToolNames;
@@ -306,6 +340,9 @@ namespace CatHome4.Admin
             data.Packs = cat.Packs;
             data.QqBotId = cat.QqBotId.ToString("D");
             data.QqBotEnable = cat.QqBotEnable;
+            data.UserInjectIdleOnly = cat.UserInjectIdleOnly;
+            data.ReasoningEffort = cat.ReasoningEffort;
+            data.RoundSummary = cat.RoundSummary;
             SaveCatCfgData(cat.Id, data);
         }
 

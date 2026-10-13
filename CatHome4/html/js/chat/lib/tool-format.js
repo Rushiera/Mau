@@ -3,7 +3,7 @@
 //
 // 定位：工具结果 → 分区结构（输入段 / 输出段 + 二级折叠）的通用渲染。
 //       骨架只决定分区结构，不猜工具语义；**逐工具的「肉」归声明层**（`chat/tools/<组>/<工具名>.js`，
-//       件底 `toolDecl()` 自注册）——本件在运行时取声明（inputLines / outputLines / badge / inputImages）。
+//       件底 `toolDecl()` 自注册）——本件在运行时取声明（inputLines / outputLines / badge / inputImages / outputImages）。
 //
 // 骨架面：八类通用（exec / diagnostics / listing / matches / lines / file / json / text）
 //         + 两类专属（info / catinfo——逐字段摊平，实现随工具置于 `tools/` 下）
@@ -212,7 +212,15 @@ function segOutput(tool, cap, render, peek) {
             segLines(body, ls, isErr ? 'seg-line err' : 'seg-line');
         };
     }
+    // 输出图片段——声明层 outputImages（如 browser-shot 截图）→ 缩略图组先行（失败态不出图）
+    var outImgs = null;
+    if (ov && typeof ov.outputImages === 'function' && typeof text === 'string' && text.length > 0 && !isErrResult(text)) {
+        outImgs = ov.outputImages(text, argObj(tool));
+    }
     return seg('seg-out', head, function (body) {
+        if (outImgs && outImgs.length > 0 && typeof imageGroupFromPaths === 'function') {
+            body.appendChild(imageGroupFromPaths(outImgs));
+        }
         if (text === undefined) { return; }
         if (text === '') { segBlock(body, 'tr', '（无输出）'); return; }
         draw(body, text, isErrResult(text));

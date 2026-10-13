@@ -74,3 +74,31 @@ function wireInlineEdit(inp, origValue, onCommit) {
     });
 }
 
+// 计数格式化——统计数字统一入口（A201；A225b 由 chat/lib/format.js 迁入，两页共用）
+// 口径：一律两位小数；≥1000 → x.xx K；≥1000000 → x.xx M（M 为最大单位，不再进位）
+// 不入此列：离散计数（前文条数 / 工具次数 / 请求次数）——按整数直出
+function fmtCount(n) {
+    var v = Number(n) || 0;
+    if (v >= 1000000) { return (v / 1000000).toFixed(2) + 'M'; }
+    if (v >= 1000) { return (v / 1000).toFixed(2) + 'K'; }
+    return v.toFixed(2);
+}
+
+// 数字分片（2026-10-06 · 莎定；A225b 由 chat/lib/format.js 迁入）——整数与小数独立渲染：小数（含小数点）包 `.num-frac`
+// 口径：输入 = 已格式化数字串（`fmtCount` 产物，允许 K/M 单位与 % 等尾缀）；无小数段则原样返回
+function fmtNumHtml(s, tailCls) {
+    var str = String(s == null ? '' : s);
+    var m = /^([0-9]+)(\.[0-9]+)?(.*)$/.exec(str);
+    if (m == null) {
+        return str;
+    }
+    var tail = m[3];
+    if (tailCls && tail.length > 0) {
+        tail = '<span class="' + tailCls + '">' + tail + '</span>';
+    }
+    if (m[2] === undefined) {
+        return m[1] + tail;
+    }
+    return m[1] + '<i class="num-frac">' + m[2] + '</i>' + tail;
+}
+
