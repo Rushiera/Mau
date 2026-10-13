@@ -78,6 +78,9 @@ namespace CatHome4.Admin
             /// <summary>人工输入空闲注入开关——cat.cfg 持久化（A219-3；true=人工输入仅在 Idle 时推送）</summary>
             public bool UserInjectIdleOnly;
 
+            /// <summary>思考强度覆盖——cat.cfg 持久化（A234；空=跟随全局 llm.reasoning_effort；low/high/max）</summary>
+            public string ReasoningEffort;
+
             /// <summary>工具声明面——M2c 裁剪后（session.new 重注入复用）</summary>
             public ToolSpec[] ToolSpecs;
 
@@ -125,6 +128,9 @@ namespace CatHome4.Admin
 
             /// <summary>人工输入空闲注入开关——缺省 false（=现状：人工输入可轮内插入）</summary>
             public bool UserInjectIdleOnly { get; set; }
+
+            /// <summary>思考强度覆盖——空=跟随全局（llm.reasoning_effort）；low/high/max</summary>
+            public string ReasoningEffort { get; set; }
 
             /// <summary>启用根 id 清单——全局根池子集（null/空=全量；workspace 强制必选不可取消）</summary>
             public string[] EnabledRoots { get; set; }
@@ -291,6 +297,7 @@ namespace CatHome4.Admin
                     data.EnabledRoots = GetStringArrayProp(root, "enabledRoots");
                     data.Packs = GetStringArrayProp(root, "packs");
                     data.UserInjectIdleOnly = GetBoolProp(root, "userInjectIdleOnly");
+                    data.ReasoningEffort = GetStringProp(root, "reasoningEffort");
                     return data;
                 }
             }
@@ -319,6 +326,7 @@ namespace CatHome4.Admin
             data.QqBotId = cat.QqBotId.ToString("D");
             data.QqBotEnable = cat.QqBotEnable;
             data.UserInjectIdleOnly = cat.UserInjectIdleOnly;
+            data.ReasoningEffort = cat.ReasoningEffort;
             SaveCatCfgData(cat.Id, data);
         }
 

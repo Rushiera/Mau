@@ -30,6 +30,7 @@ function openCatCfg(catId, name) {
             renderQqBotOptions(d.qqbotOptions || [], d.qqbotId || '');
             document.getElementById('catCfgQqEnable').checked = !!d.qqbotEnable;
             document.getElementById('catCfgIdleOnly').checked = !!d.userInjectIdleOnly;
+            renderEffortOptions(d.reasoningEffort || '', d.defaultReasoningEffort || '');
             document.getElementById('catCfgName').value = d.displayName || '';
             document.getElementById('catCfgType').value = d.type || '';
             document.getElementById('catCfgPersona').value = d.persona || '';
@@ -72,6 +73,25 @@ function renderApiOptions(options, current) {
         if (options[i].isDefault) { label = label + ' · 全局默认'; }
         opt.textContent = label;
         if (options[i].apiConfigId === current) { opt.selected = true; }
+        sel.appendChild(opt);
+    }
+}
+
+// A234 思考强度下拉——首项「跟随全局」= 零值语义（空 → 后端回落全局 llm.reasoning_effort）
+function renderEffortOptions(current, globalValue) {
+    var sel = document.getElementById('catCfgEffort');
+    sel.textContent = '';
+    var def = document.createElement('option');
+    def.value = '';
+    def.textContent = '（默认 · 跟随全局 → ' + (globalValue || 'high') + '）';
+    if (!current || current.length === 0) { def.selected = true; }
+    sel.appendChild(def);
+    var values = ['low', 'high', 'max'];
+    for (var i = 0; i < values.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = values[i];
+        opt.textContent = values[i];
+        if (values[i] === current) { opt.selected = true; }
         sel.appendChild(opt);
     }
 }
@@ -338,6 +358,7 @@ function saveCatCfg() {
         qqbotId: document.getElementById('catCfgQqBot').value,
         qqbotEnable: document.getElementById('catCfgQqEnable').checked,
         userInjectIdleOnly: document.getElementById('catCfgIdleOnly').checked,
+        reasoningEffort: document.getElementById('catCfgEffort').value,
         enabledRoots: collectRootChecks()
     };
     fetch('/api/v1/cat-config', {

@@ -31,6 +31,48 @@ namespace CatHome4.Admin
         /// <summary>默认猫当前 API 配置身份——Bootstrap 赋值（catcfg.apply 变更比对）</summary>
         internal static Guid _defaultApiConfigId;
 
+        /// <summary>默认猫当前思考强度覆盖——Bootstrap / catcfg.apply 变更比对（A234；空=跟随全局）</summary>
+        internal static string _defaultReasoningEffort = "";
+
+        /// <summary>
+        /// 思考强度归一——A234（low/high/max 之外一律空=跟随全局；防上游协议拒绝）。
+        /// </summary>
+        /// <param name="value">原始值（可 null）</param>
+        /// <returns>归一值（low/high/max/空）</returns>
+        internal static string NormalizeReasoningEffort(string value)
+        {
+            string norm = value == null ? "" : value.Trim().ToLowerInvariant();
+            if (norm == "low" || norm == "high" || norm == "max")
+            {
+                return norm;
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// 全局思考强度解析——A234（llm.reasoning_effort → env → 默认 high；GET cat-config 回执展示"跟随的是谁"）。
+        /// </summary>
+        /// <returns>全局生效强度（low/high/max）</returns>
+        internal static string ResolveGlobalReasoningEffort()
+        {
+            string value = "";
+            if (_globalConfig != null)
+            {
+                value = _globalConfig.Get("llm.reasoning_effort", "");
+            }
+            string norm = NormalizeReasoningEffort(value);
+            if (norm.Length == 0)
+            {
+                string env = Environment.GetEnvironmentVariable("MAU_LLM_REASONING_EFFORT");
+                norm = NormalizeReasoningEffort(env);
+            }
+            if (norm.Length == 0)
+            {
+                norm = "high";
+            }
+            return norm;
+        }
+
         /// <summary>
         /// 管理路由注册——S2 解耦：入口壳经 IHttpRouteSink 向 Http 域注册管理端点（主端口仅一次）。
         /// 归属：Admin 域——llm-apis/qqbot-apis/cat-config/cat-default/workspace 管理面（S4 随 Admin 域迁 CatHome4.Admin）。
@@ -610,6 +652,8 @@ namespace CatHome4.Admin
                 qqbotId = cfg.QqBotId,
                 qqbotEnable = cfg.QqBotEnable,
                 userInjectIdleOnly = cfg.UserInjectIdleOnly,
+                reasoningEffort = cfg.ReasoningEffort,
+                defaultReasoningEffort = ResolveGlobalReasoningEffort(),
                 enabledRoots = cfg.EnabledRoots,
                 allRoots = BuildAllRootsJson(),
                 allToolNames = GetConfigurableToolNames(),
@@ -677,11 +721,13 @@ namespace CatHome4.Admin
             bool packsPresent = false;
             bool enabledRootsPresent = false;
             bool userInjectIdleOnlyPresent = false;
+            bool reasoningEffortPresent = false;
             string displayName = "";
             string persona = "";
             string typeValue = "";
             string toolNames = "";
             string qqbotId = "";
+            string reasoningEffort = "";
             bool qqbotEnable = false;
             bool userInjectIdleOnly = false;
             List<string> injectList = new List<string>();
@@ -702,6 +748,7 @@ namespace CatHome4.Admin
                     qqbotEnablePresent = root.TryGetProperty("qqbotEnable", out probeEl);
                     enabledRootsPresent = root.TryGetProperty("enabledRoots", out probeEl);
                     userInjectIdleOnlyPresent = root.TryGetProperty("userInjectIdleOnly", out probeEl);
+                    reasoningEffortPresent = root.TryGetProperty("reasoningEffort", out probeEl);
                     packsPresent = root.TryGetProperty("packs", out probeEl);
                     injectListPresent = root.TryGetProperty("injectList", out probeEl);
                     JsonElement apiConfigIdEl;
@@ -717,6 +764,7 @@ namespace CatHome4.Admin
                     qqbotId = GetJsonString(root, "qqbotId");
                     qqbotEnable = GetBoolProp(root, "qqbotEnable");
                     userInjectIdleOnly = GetBoolProp(root, "userInjectIdleOnly");
+                    reasoningEffort = GetJsonString(root, "reasoningEffort");
                     JsonElement rootsEl;
                     if (root.TryGetProperty("enabledRoots", out rootsEl) && rootsEl.ValueKind == JsonValueKind.Array)
                     {
@@ -854,6 +902,23 @@ namespace CatHome4.Admin
             if (userInjectIdleOnlyPresent)
             {
                 cfg.UserInjectIdleOnly = userInjectIdleOnly;
+            }
+            if (reasoningEffortPresent)
+            {
+                // A234——空=跟随全局；非空白名单校验（非法拒绝）
+                string effNorm = reasoningEffort == null ? "" : reasoningEffort.Trim().ToLowerInvariant();
+                if (effNorm.Length == 0)
+                {
+                    cfg.ReasoningEffort = "";
+                }
+                else if (effNorm == "low" || effNorm == "high" || effNorm == "max")
+                {
+                    cfg.ReasoningEffort = effNorm;
+                }
+                else
+                {
+                    return Results.Json(new { ok = false, error = "reasoningEffort 非法（low/high/max/空）" });
+                }
             }
             if (personaPresent)
             {
@@ -1383,11 +1448,13 @@ namespace CatHome4.Admin
                     _chatBridge.DefaultSession.SetDisplayName(cfg.DisplayName);
                 }
                 Guid newApi = ResolveApiConfigId(cfg);
-                if (_defaultApiConfigId != newApi)
+                string newEffort = NormalizeReasoningEffort(cfg.ReasoningEffort);
+                if (_defaultApiConfigId != newApi || _defaultReasoningEffort != newEffort)
                 {
                     _defaultApiConfigId = newApi;
-                    _chatBridge.DefaultSession.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApi, _globalConfig));
-                    LogStore.Add("CatHome4", 1, "majordomo 配置生效：LLM 端点切换为 " + newApi.ToString("D"), "CONFIG");
+                    _defaultReasoningEffort = newEffort;
+                    _chatBridge.DefaultSession.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApi, _globalConfig, newEffort));
+                    LogStore.Add("CatHome4", 1, "majordomo 配置生效：LLM 端点 " + newApi.ToString("D") + "，思考强度 " + (newEffort.Length > 0 ? newEffort : "跟随全局"), "CONFIG");
                 }
                 return "catcfg.apply | majordomo | 已生效（前文项新会话生效）";
             }
@@ -1413,17 +1480,19 @@ namespace CatHome4.Admin
             cat.Session.SetUserInjectIdleOnly(cfg.UserInjectIdleOnly);
             // M4e 猫级白名单——运行时猫文件系统已在上方 ApplyCatRoots 重建（含本分支）
             Guid newApiId = ResolveApiConfigId(cfg);
-            if (cat.ApiConfigId != newApiId)
+            string newCatEffort = NormalizeReasoningEffort(cfg.ReasoningEffort);
+            if (cat.ApiConfigId != newApiId || cat.ReasoningEffort != newCatEffort)
             {
                 cat.ApiConfigId = newApiId;
+                cat.ReasoningEffort = newCatEffort;
                 CH_LlmApiConfig apiConfig = new CH_LlmApiConfig();
                 if (_apiStore != null)
                 {
                     _apiStore.TryGet(newApiId, out apiConfig);
                 }
                 cat.ApiConfig = apiConfig;
-                cat.Session.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApiId, _globalConfig));
-                LogStore.Add("CatHome4", 1, "猫「" + cat.DisplayName + "」配置生效：LLM 端点切换为 " + newApiId.ToString("D"), "CONFIG");
+                cat.Session.SwapLlmRuntime(new DeepSeekLlmRuntime(_apiStore, newApiId, _globalConfig, newCatEffort));
+                LogStore.Add("CatHome4", 1, "猫「" + cat.DisplayName + "」配置生效：LLM 端点 " + newApiId.ToString("D") + "，思考强度 " + (newCatEffort.Length > 0 ? newCatEffort : "跟随全局"), "CONFIG");
             }
             return "catcfg.apply | " + cat.DisplayName + " | 已生效（前文项新会话生效）";
         }
@@ -1489,7 +1558,8 @@ namespace CatHome4.Admin
                 qqbotEnable = data.QqBotEnable,
                 enabledRoots = data.EnabledRoots,
                 packs = data.Packs,
-                userInjectIdleOnly = data.UserInjectIdleOnly
+                userInjectIdleOnly = data.UserInjectIdleOnly,
+                reasoningEffort = data.ReasoningEffort
             };
             try
             {

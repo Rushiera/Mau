@@ -480,6 +480,7 @@ namespace CH4
             // 授权面原始串——实时解析输入（design-ch4-tools §三·十一）
             _chatBridge.DefaultToolNames = defaultToolNames;
             AdminService._defaultApiConfigId = defaultApiConfigId;
+            AdminService._defaultReasoningEffort = defaultCfg != null ? AdminService.NormalizeReasoningEffort(defaultCfg.ReasoningEffort) : "";
             // R2.3 默认猫 qqbot 配置——majordomo cat.cfg 读取（缺省未绑定/禁用）
             Guid defaultQqBotId = Guid.Empty;
             bool defaultQqBotEnable = false;
@@ -523,7 +524,7 @@ namespace CH4
             // A221 工具面解析——持久化快照优先（会话工具头与 system prompt 同命；重启不改面）
             ToolSpec[] defaultTools = ChatSession.ResolveSessionTools(defaultSessionId, _chatBridge.DefaultToolSpecs);
             _chatBridge.DefaultSession = new ChatSession(defaultSessionId, "majordomo", chatCtx, chatStore,
-                new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig), _oa, defaultTools, ExecuteTool, chatViewStore);
+                new DeepSeekLlmRuntime(apiConfigStore, defaultApiConfigId, llmConfig, AdminService._defaultReasoningEffort), _oa, defaultTools, ExecuteTool, chatViewStore);
             // M4e 猫级白名单——默认猫启用根（cat.cfg enabledRoots；缺省全量）+ 工具执行猫上下文
             _chatBridge.DefaultSession.SetCatKey("majordomo");
             _chatBridge.DefaultSession.SetUserInjectIdleOnly(defaultCfg != null && defaultCfg.UserInjectIdleOnly);

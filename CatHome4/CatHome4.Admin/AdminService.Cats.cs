@@ -679,6 +679,25 @@ namespace CatHome4.Admin
                     return "cat.cfg.set | userInjectIdleOnly 非法值: " + value + "（true/false）";
                 }
             }
+            else if (field == "reasoningEffort")
+            {
+                // A234——思考强度覆盖（空=跟随全局）；白名单 low/high/max
+                string norm = value.Trim().ToLowerInvariant();
+                if (norm.Length == 0)
+                {
+                    cfg.ReasoningEffort = "";
+                    applied = "reasoningEffort=（跟随全局）";
+                }
+                else if (norm == "low" || norm == "high" || norm == "max")
+                {
+                    cfg.ReasoningEffort = norm;
+                    applied = "reasoningEffort=" + norm;
+                }
+                else
+                {
+                    return "cat.cfg.set | reasoningEffort 非法值: " + value + "（low/high/max/空）";
+                }
+            }
             else if (field == "enabledRoots")
             {
                 string[] roots = ValidateEnabledRoots(SplitList(value));
@@ -687,7 +706,7 @@ namespace CatHome4.Admin
             }
             else
             {
-                return "cat.cfg.set | 非法字段: " + field + "（可用: displayName/apiConfigId/persona/type/toolNames/injectList/packs/qqbotId/qqbotEnable/enabledRoots/userInjectIdleOnly）";
+                return "cat.cfg.set | 非法字段: " + field + "（可用: displayName/apiConfigId/persona/type/toolNames/injectList/packs/qqbotId/qqbotEnable/enabledRoots/userInjectIdleOnly/reasoningEffort）";
             }
             // [段2] 全量写回 + 生效入队（与端点同源：写后 catcfg.apply 主线程泵消费）
             SaveCatCfgData(id, cfg);
@@ -1229,6 +1248,7 @@ namespace CatHome4.Admin
                 string[] injectList = new string[0];
                 string[] packs = new string[0];
                 bool userInjectIdleOnly = false;
+                string reasoningEffort = "";
                 if (cfgData != null)
                 {
                     if (cfgData.Persona != null)
@@ -1252,6 +1272,10 @@ namespace CatHome4.Admin
                         packs = cfgData.Packs;
                     }
                     userInjectIdleOnly = cfgData.UserInjectIdleOnly;
+                    if (cfgData.ReasoningEffort != null)
+                    {
+                        reasoningEffort = cfgData.ReasoningEffort;
+                    }
                 }
                 else
                 {
@@ -1298,7 +1322,7 @@ namespace CatHome4.Admin
                     LogStore.Add("CatHome4", 1, "会话标识对齐猫 key: " + id, "CHAT");
                 }
                 // [段4] 会话构造——M1c 每猫独立 Runtime（API 配置池按该猫 apiConfigId 构造）；M2c 声明面按猫裁剪
-                ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig);
+                ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig, reasoningEffort);
                 SessionViewStore viewStore = new SessionViewStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".view.json"));
                 // A221 工具面解析——持久化快照优先（会话工具头与 system prompt 同命；重启不改面）
                 ToolSpec[] sessionTools = ChatSession.ResolveSessionTools(id, catSpecs);
@@ -1340,6 +1364,7 @@ namespace CatHome4.Admin
                 cat.InjectList = injectList;
                 cat.Packs = packs;
                 cat.UserInjectIdleOnly = userInjectIdleOnly;
+                cat.ReasoningEffort = reasoningEffort;
                 cat.ToolSpecs = catSpecs;
                 // §4.3 空值语义可观测——toolNames 空=全量保底（反直觉默认）：解析结果落审计行
                 string toolSource = "子集";
