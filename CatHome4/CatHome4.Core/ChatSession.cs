@@ -37,6 +37,18 @@ namespace CH4
 
         /// <summary>工具单 Dog owner ID——宿主 Dog 域（同 ToolOwnerId——OA 未开存活校验，多 Dog 未来可扩展独立 ID）</summary>
         private const long ToolOwnerId = 1;
+
+        /// <summary>RoundSummary 工单 owner ID——独立于会话工具工单（避免 RemoveByOwner 互扰）</summary>
+        private const long RoundSummaryOwnerId = 2;
+
+        /// <summary>RoundSummary 工单超时帧上限——一次性 LLM 调用（60s 现实耗时 + 余量）</summary>
+        private const long RoundSummaryTimeoutFrames = 2400;
+
+        /// <summary>RoundSummary 前段提示词（注入服务 system 参——语气 / 输出 / 风格规范）。</summary>
+        private const string RoundSummaryPromptHead = "你是轮次总结器。用一句自然语言（20-50 字）概括给定的一轮对话，直接陈述结论；语气平实、信息密度高；不要客套、不要分点、不要引号、不要复述原文。";
+
+        /// <summary>RoundSummary 后段提示词（拼在待总结内容之后——固定分隔符，界定待总结范围）。</summary>
+        private const string RoundSummaryPromptTail = "\n——以上为本轮对话的全部内容（用户输入与助手回复按序合并），请据此给出一句总结。";
         /// <summary>系统注入类型——现行唯一值 systemauto（后续类型扩在此处；未知值一律拒绝，不静默回落）。</summary>
         internal const string SysKindSystemAuto = "systemauto";
 
@@ -347,6 +359,16 @@ namespace CH4
         private long _pendingSeq;
         /// <summary>人工输入空闲注入开关——true=人工输入仅在 Idle 时推送（轮内不插）；sys 不受影响（cat.cfg userInjectIdleOnly）</summary>
         private bool _userInjectIdleOnly;
+        /// <summary>轮末总结开关——cat.cfg roundSummary（默认关）；关则轮末零成本跳过</summary>
+        private bool _roundSummaryEnabled;
+        /// <summary>本轮 user 文本缓冲——轮末总结输入（全部 user 按序合并）。</summary>
+        private readonly StringBuilder _roundSummaryUserBuf = new StringBuilder();
+        /// <summary>本轮 text 缓冲——轮末总结输入（全部 text 按序合并）。</summary>
+        private readonly StringBuilder _roundSummaryTextBuf = new StringBuilder();
+        /// <summary>在途总结工单 officeId——0=无在途；&gt;0=待回收（谁发谁收，会话内自持）</summary>
+        private long _roundSummaryOfficeId;
+        /// <summary>在途总结块时间戳——固定插在 roundsum 之后（= roundsum ts + 1）。</summary>
+        private long _roundSummaryPendingTs;
 
         // [段5] 宿主服务引用（构造注入——宿主级共享面）
         /// <summary>LLM 运行时——ChatStream 调度（宿主 Bootstrap 注入；M3 apiConfigId 切换 SwapLlmRuntime 替换）</summary>
@@ -393,6 +415,19 @@ namespace CH4
         {
             _userInjectIdleOnly = value;
         }
+
+        /// <summary>设置轮末总结开关——catcfg.apply 即时应用（cat.cfg roundSummary）。</summary>
+        /// <param name="value">true=每轮结束后调度 LLMSimpleRequest 产出总结块</param>
+        public void SetRoundSummary(bool value)
+        {
+            _roundSummaryEnabled = value;
+        }
+
+        /// <summary>
+        /// 轮末总结 LLM 配置提供者——catKey → [endpoint, apikey, model]（Admin 域按 cat.cfg apiConfigId 解析；宿主启动期组合根注入）。
+        /// 未接线 / 返回空数组 → 本轮不出总结（不静默放行、不误报成功）。
+        /// </summary>
+        internal static Func<string, string[]> RoundSummaryLlmProvider;
 
         /// <summary>
         /// 缓存隔离键——LLM 请求身份（请求体 user_id + x-opencode-session 头）。
@@ -1273,6 +1308,8 @@ namespace CH4
         /// </summary>
         public void Pump()
         {
+            // RoundSummary——在途总结工单回收（每帧；无在途零成本返回）
+            PumpRoundSummary();
             // P6 中止——暂停请求消费（任何相位统一收尾：LLM 流取消/工具批放弃/已完成保留）
             if (_pauseRequested)
             {
@@ -1336,6 +1373,9 @@ namespace CH4
             _emptyReplyRetry = 0;
             _streamClosedRetry = false;
             _toolDone = false;
+            // RoundSummary——本轮输入缓冲清零（全部 user / 全部 text 按序累积）
+            _roundSummaryUserBuf.Clear();
+            _roundSummaryTextBuf.Clear();
             _roundStartTick = System.Diagnostics.Stopwatch.GetTimestamp();
             lock (_phaseLock)
             {
@@ -1426,6 +1466,8 @@ namespace CH4
             else
             {
                 _viewStore.OnUserMessage(LastMessage(), msgIndex, origin);
+                // RoundSummary——本轮 user 文本入缓冲（全部 user 按序；sys 注入不计入）
+                _roundSummaryUserBuf.AppendLine(text);
             }
         }
 
@@ -1669,6 +1711,11 @@ namespace CH4
                 }
                 // [段2] 结果槽落位
                 _llmResultText = text.ToString();
+                // RoundSummary——本轮 text 入缓冲（全部 text 按序：工具轮间隙文本与最终回复同收）
+                if (_llmResultText.Length > 0)
+                {
+                    _roundSummaryTextBuf.AppendLine(_llmResultText);
+                }
                 _llmReasoning = _reasonAccum.ToString();
                 _llmToolCallsJson = toolCalls;
                 // L1-META 结算行（D5 分级——观测全链：LLM 流完成一行为准，SSE log 事件实时可见）
@@ -2894,6 +2941,8 @@ namespace CH4
             string roundsumJson = BuildRoundSumJson();
             long sumTs = ViewTimestamp();
             _viewStore.AppendRoundSummary(roundsumJson, sumTs);
+            // RoundSummary——轮末调度总结服务（开关开 + 配置可用；块固定插在 roundsum 之后 = ts + 1）
+            PostRoundSummary(sumTs + 1);
             SetChatState("idle");
             // B4 对话区：轮末状态段推送——v2 契约下会话终态由 state 段承载（runState 回 idle + Token 三级就位；前端零推断）
             PushState();
@@ -2928,6 +2977,92 @@ namespace CH4
             _usagePrompt = 0;
             _usageCompletion = 0;
             _usageCacheHit = 0;
+        }
+        /// <summary>
+        /// RoundSummary——轮末调度：组 prompt 并投 LLMSimpleRequest 服务工单（开关开 + 配置可用 + 有内容时才发）。
+        /// 谁发谁收——officeId 记入 _roundSummaryOfficeId，由 Pump 每帧轮询回收。
+        /// </summary>
+        /// <param name="insertTs">总结块时间戳（= roundsum ts + 1——固定插在轮末统计之后）</param>
+        private void PostRoundSummary(long insertTs)
+        {
+            _roundSummaryOfficeId = 0;
+            _roundSummaryPendingTs = insertTs;
+            if (!_roundSummaryEnabled)
+            {
+                return;
+            }
+            string[] llm = RoundSummaryLlmProvider != null ? RoundSummaryLlmProvider(_catKey) : null;
+            if (llm == null || llm.Length < 3 || llm[0].Length == 0 || llm[1].Length == 0 || llm[2].Length == 0)
+            {
+                return;
+            }
+            string content = BuildRoundSummaryContent();
+            if (content.Length == 0)
+            {
+                return;
+            }
+            long officeId = _oa.Post(RoundSummaryOwnerId, "SVC", "LLMSimpleRequest", RoundSummaryTimeoutFrames);
+            if (officeId <= 0)
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结发单失败（OA.Post 未受理）: cat=" + _catKey, "CHAT");
+                return;
+            }
+            _oa.SetStr(officeId, RoundSummaryOwnerId, "endpoint", llm[0]);
+            _oa.SetStr(officeId, RoundSummaryOwnerId, "apikey", llm[1]);
+            _oa.SetStr(officeId, RoundSummaryOwnerId, "model", llm[2]);
+            _oa.SetStr(officeId, RoundSummaryOwnerId, "system", RoundSummaryPromptHead);
+            _oa.SetStr(officeId, RoundSummaryOwnerId, "content", content);
+            _roundSummaryOfficeId = officeId;
+        }
+        /// <summary>
+        /// RoundSummary——本轮待总结内容：全部 user + 全部 text 按序合并 + 后段提示词（固定分隔符）。
+        /// </summary>
+        /// <returns>普通段文本（轮内无内容返回空串）</returns>
+        private string BuildRoundSummaryContent()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append(_roundSummaryUserBuf.ToString());
+            sb.Append(_roundSummaryTextBuf.ToString());
+            if (sb.Length == 0)
+            {
+                return "";
+            }
+            sb.Append(RoundSummaryPromptTail);
+            return sb.ToString();
+        }
+        /// <summary>
+        /// RoundSummary——在途工单回收（每帧调用）：闭合即取回执注入总结块；超时亦出声（失败可见）。
+        /// </summary>
+        private void PumpRoundSummary()
+        {
+            if (_roundSummaryOfficeId <= 0)
+            {
+                return;
+            }
+            long officeId = _roundSummaryOfficeId;
+            OfficeState st = _oa.GetStatus(officeId);
+            if (st != OfficeState.Closed && st != OfficeState.TimeOut)
+            {
+                return;
+            }
+            _roundSummaryOfficeId = 0;
+            string result = "";
+            Office office = _oa.GetOffice(officeId);
+            if (office.Result.Strs != null && office.Result.Strs.ContainsKey("result"))
+            {
+                result = office.Result.Strs["result"];
+            }
+            _oa.RemoveByOwner(RoundSummaryOwnerId);
+            if (st == OfficeState.TimeOut)
+            {
+                result = "ERR|TIMEOUT|轮末总结超时";
+            }
+            if (result.Length == 0)
+            {
+                result = "ERR|EMPTY|轮末总结无可读回执";
+            }
+            long ts = _roundSummaryPendingTs > 0 ? _roundSummaryPendingTs : ViewTimestamp();
+            _viewStore.AppendRoundSummaryNote(result, ts);
         }
 
         /// <summary>

@@ -653,6 +653,7 @@ namespace CatHome4.Admin
                 qqbotEnable = cfg.QqBotEnable,
                 userInjectIdleOnly = cfg.UserInjectIdleOnly,
                 reasoningEffort = cfg.ReasoningEffort,
+                roundSummary = cfg.RoundSummary,
                 defaultReasoningEffort = ResolveGlobalReasoningEffort(),
                 enabledRoots = cfg.EnabledRoots,
                 allRoots = BuildAllRootsJson(),
@@ -722,6 +723,7 @@ namespace CatHome4.Admin
             bool enabledRootsPresent = false;
             bool userInjectIdleOnlyPresent = false;
             bool reasoningEffortPresent = false;
+            bool roundSummaryPresent = false;
             string displayName = "";
             string persona = "";
             string typeValue = "";
@@ -730,6 +732,7 @@ namespace CatHome4.Admin
             string reasoningEffort = "";
             bool qqbotEnable = false;
             bool userInjectIdleOnly = false;
+            bool roundSummaryValue = false;
             List<string> injectList = new List<string>();
             List<string> enabledRoots = new List<string>();
             List<string> packs = new List<string>();
@@ -749,6 +752,7 @@ namespace CatHome4.Admin
                     enabledRootsPresent = root.TryGetProperty("enabledRoots", out probeEl);
                     userInjectIdleOnlyPresent = root.TryGetProperty("userInjectIdleOnly", out probeEl);
                     reasoningEffortPresent = root.TryGetProperty("reasoningEffort", out probeEl);
+                    roundSummaryPresent = root.TryGetProperty("roundSummary", out probeEl);
                     packsPresent = root.TryGetProperty("packs", out probeEl);
                     injectListPresent = root.TryGetProperty("injectList", out probeEl);
                     JsonElement apiConfigIdEl;
@@ -765,6 +769,7 @@ namespace CatHome4.Admin
                     qqbotEnable = GetBoolProp(root, "qqbotEnable");
                     userInjectIdleOnly = GetBoolProp(root, "userInjectIdleOnly");
                     reasoningEffort = GetJsonString(root, "reasoningEffort");
+                    roundSummaryValue = GetBoolProp(root, "roundSummary");
                     JsonElement rootsEl;
                     if (root.TryGetProperty("enabledRoots", out rootsEl) && rootsEl.ValueKind == JsonValueKind.Array)
                     {
@@ -919,6 +924,10 @@ namespace CatHome4.Admin
                 {
                     return Results.Json(new { ok = false, error = "reasoningEffort 非法（low/high/max/空）" });
                 }
+            }
+            if (roundSummaryPresent)
+            {
+                cfg.RoundSummary = roundSummaryValue;
             }
             if (personaPresent)
             {
@@ -1442,6 +1451,7 @@ namespace CatHome4.Admin
                 _chatBridge.DefaultQqBotId = ResolveQqBotId(cfg);
                 _chatBridge.DefaultQqBotEnable = cfg.QqBotEnable;
                 _chatBridge.DefaultSession.SetUserInjectIdleOnly(cfg.UserInjectIdleOnly);
+                _chatBridge.DefaultSession.SetRoundSummary(cfg.RoundSummary);
                 // A230 显示名立即刷新（改配置即改内存；空值保持原值）
                 if (cfg.DisplayName != null && cfg.DisplayName.Length > 0)
                 {
@@ -1478,6 +1488,8 @@ namespace CatHome4.Admin
             cat.QqBotEnable = cfg.QqBotEnable;
             cat.UserInjectIdleOnly = cfg.UserInjectIdleOnly;
             cat.Session.SetUserInjectIdleOnly(cfg.UserInjectIdleOnly);
+            cat.RoundSummary = cfg.RoundSummary;
+            cat.Session.SetRoundSummary(cfg.RoundSummary);
             // M4e 猫级白名单——运行时猫文件系统已在上方 ApplyCatRoots 重建（含本分支）
             Guid newApiId = ResolveApiConfigId(cfg);
             string newCatEffort = NormalizeReasoningEffort(cfg.ReasoningEffort);
@@ -1559,6 +1571,7 @@ namespace CatHome4.Admin
                 enabledRoots = data.EnabledRoots,
                 packs = data.Packs,
                 userInjectIdleOnly = data.UserInjectIdleOnly,
+                roundSummary = data.RoundSummary,
                 reasoningEffort = data.ReasoningEffort
             };
             try

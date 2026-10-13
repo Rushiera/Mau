@@ -109,32 +109,6 @@ namespace CH4
                 Console.WriteLine("[CMD] 宿主重启中——指令未受理：" + line);
                 return true;
             }
-            if (line.StartsWith("QuickCat ", StringComparison.Ordinal))
-            {
-                string payload = line.Substring(9).Trim();
-                int sep = payload.IndexOf('|');
-                if (sep < 0)
-                {
-                    return false;
-                }
-                string system = payload.Substring(0, sep).Trim();
-                string content = payload.Substring(sep + 1).Trim();
-                if (content.Length == 0)
-                {
-                    return false;
-                }
-                if (Environment.CurrentManagedThreadId == _mainThreadId)
-                {
-                    // 主线程（CLI）——直接执行（ThreadGuard 合规）
-                    HandleQuickCat(system, content);
-                }
-                else
-                {
-                    // HTTP 线程——入队主线程泵（OA 等待循环必须主线程驱动）
-                    _quickQueue.Enqueue(system + "\u0001" + content);
-                }
-                return true;
-            }
             if (line.StartsWith("Chat ", StringComparison.Ordinal))
             {
                 string chatContent = line.Substring(5).Trim();
@@ -277,11 +251,6 @@ namespace CH4
         private static System.Collections.Concurrent.ConcurrentQueue<string> _chatQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
 
         /// <summary>
-        /// QuickCat 指令队列——HTTP 线程投递 / 主线程泵消费（D8 修复：OA 发单等待回执需主线程驱动——ThreadGuard 契约）
-        /// </summary>
-        private static System.Collections.Concurrent.ConcurrentQueue<string> _quickQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
-
-        /// <summary>
         /// 会话调试指令队列——session clear/count（HTTP 线程投递 / 主线程泵消费——_chatContext 仅主线程触碰）
         /// </summary>
         private static System.Collections.Concurrent.ConcurrentQueue<string> _sessionCmdQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
@@ -298,16 +267,6 @@ namespace CH4
                 {
                     _chatBridge.SessionNewRequested = false;
                     _chatBridge.HandleSessionNew(_chatBridge.DefaultSession, _chatBridge.DefaultPersona, _chatBridge.DefaultInjectList, _chatBridge.DefaultToolSpecs);
-                }
-            }
-            // D8：QuickCat 指令泵消费（HTTP 线程投递——主线程 OA 驱动）
-            string quickJob;
-            while (_quickQueue.TryDequeue(out quickJob))
-            {
-                int quickSep = quickJob.IndexOf('\u0001');
-                if (quickSep >= 0)
-                {
-                    HandleQuickCat(quickJob.Substring(0, quickSep), quickJob.Substring(quickSep + 1));
                 }
             }
             // 会话调试指令泵消费（session clear/count——HTTP 线程投递 / 主线程执行；会话忙时保留队列——下帧重判）
@@ -329,55 +288,6 @@ namespace CH4
         }
 
 
-
-        /// <summary>
-        /// QuickCat 指令执行——D8 修复（2026-08-20）：OA 发单（officeName=QuickCat）→ 双参载荷 → 驱动帧等待回执 → 输出。
-        /// 旧路径 CommandBus SetText 已死（ToolTestCat 退役后未适配——REJECT 未注册）；语料 oa.is_open["TOOL","QuickCat"] 接单。
-        /// </summary>
-        /// <param name="system">系统提示词</param>
-        /// <param name="content">用户内容</param>
-        private static void HandleQuickCat(string system, string content)
-        {
-            const long QuickOwnerId = 100;
-            const long QuickTimeoutFrames = 2400;
-            const long QuickWaitFrames = 2400 + 600;
-            long officeId = _oa.Post(QuickOwnerId, "TOOL", "QuickCat", QuickTimeoutFrames);
-            if (officeId <= 0)
-            {
-                Console.WriteLine("[CMD] QuickCat 发单失败");
-                return;
-            }
-            _oa.SetStr(officeId, QuickOwnerId, "system", system);
-            _oa.SetStr(officeId, QuickOwnerId, "content", content);
-            // 等待回执——同步问答语义：驱动帧直至 Closed/TimeOut（LLM 流式 60s+ 宽裕）
-            for (long f = 0; f < QuickWaitFrames; f = f + 1)
-            {
-                OfficeState st = _oa.GetStatus(officeId);
-                if (st == OfficeState.Closed || st == OfficeState.TimeOut)
-                {
-                    break;
-                }
-                _runner.Tick();
-                if (_httpHost != null)
-                {
-                    _httpHost.PumpMainThread();
-                }
-                AdminService.PumpAllHosts();
-                System.Threading.Thread.Sleep(FrameSleepMs);
-            }
-            Office quickOffice = _oa.GetOffice(officeId);
-            string quickResult = "";
-            if (quickOffice.Result.Strs != null && quickOffice.Result.Strs.ContainsKey("result"))
-            {
-                quickResult = quickOffice.Result.Strs["result"];
-            }
-            if (quickResult.Length == 0)
-            {
-                quickResult = "ERR|EMPTY_RESULT|QuickCat 无回执（状态 " + quickOffice.Status.ToString() + "）";
-            }
-            Console.WriteLine("[CMD] QuickCat: " + quickResult);
-            _oa.RemoveByOwner(QuickOwnerId);
-        }
 
         /// <summary>
         /// 驱动直到三 Cat 全部 Idle——指令投递后连续 Tick；帧上限兜底（LLM 60s 现实耗时 + OA 超时结算窗口）
@@ -419,11 +329,7 @@ namespace CH4
                     return false;
                 }
             }
-            if (!IsFlowIdle(_quickHandle))
-            {
-                return false;
-            }
-            // R0.2 工具组 Flow 全部 Idle 判定——遍历句柄表（TextCat/MauCat/CsCat/ConfigCat）
+            // 工具组 Flow 全部 Idle 判定——遍历句柄表（TextCat/MauCat/CsCat/ConfigCat）
             foreach (KeyValuePair<string, FlowHandle> kv in _toolFlowHandles)
             {
                 if (!IsFlowIdle(kv.Value))
@@ -431,7 +337,7 @@ namespace CH4
                     return false;
                 }
             }
-            // OA 无未完成工单——三 Cat Idle 但工单 Open = 接单窗口期（QuickCat 探测壳 1 帧延迟），不得判空闲提前退出
+            // OA 无未完成工单——Flow Idle 但工单 Open = 接单窗口期（探测壳 1 帧延迟），不得判空闲提前退出
             OAView view = _oa.GetSnapshot();
             return view.OpenCount == 0 && view.WorkCount == 0;
         }
@@ -520,14 +426,14 @@ namespace CH4
                 // 只投递不驱动——配合 run <n> 手动帧驱动（超时/挂单场景精确帧数控制）
                 if (!DispatchCommand(line.Substring(5).Trim()))
                 {
-                    Console.WriteLine("[CMD] 格式: send QuickCat <system>|<content> 或 send Chat <内容>");
+                    Console.WriteLine("[CMD] 格式: send Chat <内容>");
                 }
                 return true;
             }
 
             if (!DispatchCommand(line))
             {
-                Console.WriteLine("[CMD] 格式: QuickCat <system>|<content> 或 Chat <内容>");
+                Console.WriteLine("[CMD] 格式: Chat <内容>");
                 return true;
             }
             DriveUntilIdle();

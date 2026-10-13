@@ -30,6 +30,7 @@ function openCatCfg(catId, name) {
             renderQqBotOptions(d.qqbotOptions || [], d.qqbotId || '');
             document.getElementById('catCfgQqEnable').checked = !!d.qqbotEnable;
             document.getElementById('catCfgIdleOnly').checked = !!d.userInjectIdleOnly;
+            document.getElementById('catCfgRoundSummary').checked = !!d.roundSummary;
             renderEffortOptions(d.reasoningEffort || '', d.defaultReasoningEffort || '');
             document.getElementById('catCfgName').value = d.displayName || '';
             document.getElementById('catCfgType').value = d.type || '';
@@ -358,6 +359,7 @@ function saveCatCfg() {
         qqbotId: document.getElementById('catCfgQqBot').value,
         qqbotEnable: document.getElementById('catCfgQqEnable').checked,
         userInjectIdleOnly: document.getElementById('catCfgIdleOnly').checked,
+        roundSummary: document.getElementById('catCfgRoundSummary').checked,
         reasoningEffort: document.getElementById('catCfgEffort').value,
         enabledRoots: collectRootChecks()
     };

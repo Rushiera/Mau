@@ -1,0 +1,38 @@
+﻿// llm_simple_request.mau —— LLMSimpleRequest 服务语料（一次性 LLM 请求服务）
+// 角色：OA 服务工单（officeType="SVC" / officeName="LLMSimpleRequest"）消费者——
+//       接单 → 读参数（endpoint/apikey/model/system/content）→ 后台一次性 LLM 调用 → 探测完成 → 回执
+// 通道：OA 服务工单（与工具工单 "TOOL" 区分）；工单唯一编号 → 并发提交安全
+// 数据面：私有盒 @* 由翻译器拼 FlowId 隔离；实例段盒 llm_simple_reply:<officeId> / llm_simple_done:<officeId>
+//         （写源在积木 llm.simple_request 内——B1 豁免）
+// 线程模型：接单/读参/探测/回执主线程同步；HTTP 调用在积木后台（Task.Run——主线程零阻塞）
+// 处理模型：单管线串行（一次一单，处理完再接下单）——并发提交由 OA 队列安全承载
+// 回执：result = 生成文本（成功）/ ERR| 文本（失败可见）
+
+// ── 状态机 ──
+§ 'S_Llm' = { 'Init', 'Idle', 'Claimed', 'Calling', 'Waiting', 'Done', 'Failed' }
+
+// T_Init：初始化自述
+§ 'T_Init' : 'S_Llm' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Llm' = 'Idle' | 'S_Llm' = 'Idle'
+
+// ── 主动传感器壳（探测 → bool 落盒，帧门控 1）──
+§ 'P_AnyOpen' ↻ [1]: 'oa.is_open'["SVC", "LLMSimpleRequest"] > @anyOpen
+
+// ── 导线链 ──
+// T_Claim：原子接单（竞态失败回 Idle 重试）
+§ 'T_Claim' : @anyOpen & 'S_Llm' = 'Idle' → 'oa.claim_next_simple'["SVC", "LLMSimpleRequest"] > @office | 'self.desc'["接单处理中", "", ""] | 'S_Llm' = 'Claimed' | 'S_Llm' = 'Idle'
+
+// T_Read：读工单参数（五键一次读全）
+§ 'T_Read' : 'S_Llm' = 'Claimed' → 'oa.get_str'[@office, "endpoint"] > @endpoint | 'oa.get_str'[@office, "apikey"] > @apikey | 'oa.get_str'[@office, "model"] > @model | 'oa.get_str'[@office, "system"] > @system | 'oa.get_str'[@office, "content"] > @content | 'S_Llm' = 'Calling' | 'S_Llm' = 'Failed'
+
+// T_Call：启动后台一次性 LLM 调用（主线程立即返回——后台执行）
+§ 'T_Call' : 'S_Llm' = 'Calling' → 'llm.simple_request'[@endpoint, @apikey, @model, @system, @content, @office] | 'self.desc'["调用中", "", ""] | 'S_Llm' = 'Waiting' | 'S_Llm' = 'Failed'
+
+// T_Reply：轮询取数——积木返回即就绪判据（不依赖传感器滞后值）；未就绪自环回 Waiting 下帧再试
+// （修 2026-10-13 竞态：传感器 @office 滞后一帧 → 提前判就绪 → 空回执）
+§ 'T_Reply' : 'S_Llm' = 'Waiting' → 'llm.simple_read'[@office] > @reply | 'S_Llm' = 'Done' | 'S_Llm' = 'Waiting'
+
+// T_Done：回执——就绪后单发（与取数分导线，避免失败侧仍执行 complete_str）
+§ 'T_Done' : 'S_Llm' = 'Done' → 'oa.complete_str'[@office, @reply] | 'self.desc'["空闲待命", "", ""] | 'S_Llm' = 'Idle' | 'S_Llm' = 'Failed'
+
+// T_Abort：失败回执（ERR| 文本——失败侧也回执，调用方可见失败原因）
+§ 'T_Abort' : 'S_Llm' = 'Failed' → 'oa.complete_str'[@office, "ERR|LLM_SIMPLE|请求处理失败"] | 'self.desc'["执行失败", "", ""] | 'S_Llm' = 'Idle' | 'S_Llm' = 'Idle'

@@ -81,6 +81,9 @@ namespace CatHome4.Admin
             /// <summary>思考强度覆盖——cat.cfg 持久化（A234；空=跟随全局 llm.reasoning_effort；low/high/max）</summary>
             public string ReasoningEffort;
 
+            /// <summary>轮末总结开关——cat.cfg 持久化（roundSummary；true=每轮结束调度 LLMSimpleRequest 产出总结块）</summary>
+            public bool RoundSummary;
+
             /// <summary>工具声明面——M2c 裁剪后（session.new 重注入复用）</summary>
             public ToolSpec[] ToolSpecs;
 
@@ -131,6 +134,9 @@ namespace CatHome4.Admin
 
             /// <summary>思考强度覆盖——空=跟随全局（llm.reasoning_effort）；low/high/max</summary>
             public string ReasoningEffort { get; set; }
+
+            /// <summary>轮末总结开关——缺省 false（关）</summary>
+            public bool RoundSummary { get; set; }
 
             /// <summary>启用根 id 清单——全局根池子集（null/空=全量；workspace 强制必选不可取消）</summary>
             public string[] EnabledRoots { get; set; }
@@ -298,6 +304,7 @@ namespace CatHome4.Admin
                     data.Packs = GetStringArrayProp(root, "packs");
                     data.UserInjectIdleOnly = GetBoolProp(root, "userInjectIdleOnly");
                     data.ReasoningEffort = GetStringProp(root, "reasoningEffort");
+                    data.RoundSummary = GetBoolProp(root, "roundSummary");
                     return data;
                 }
             }
@@ -327,6 +334,7 @@ namespace CatHome4.Admin
             data.QqBotEnable = cat.QqBotEnable;
             data.UserInjectIdleOnly = cat.UserInjectIdleOnly;
             data.ReasoningEffort = cat.ReasoningEffort;
+            data.RoundSummary = cat.RoundSummary;
             SaveCatCfgData(cat.Id, data);
         }
 

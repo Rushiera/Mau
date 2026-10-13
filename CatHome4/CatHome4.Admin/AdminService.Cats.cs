@@ -85,6 +85,47 @@ namespace CatHome4.Admin
         }
 
         /// <summary>
+        /// 轮末总结 LLM 配置解析——catKey → [endpoint, apikey, model]（apiConfigId → 配置池；缺则回落默认端点）。
+        /// 供 ChatSession.RoundSummaryLlmProvider 接线（Core 零配置面依赖）；不可用返回 null（调用方静默跳过）。
+        /// </summary>
+        /// <param name="catKey">猫 key（majordomo=默认猫）</param>
+        /// <returns>[endpoint, apikey, model]；不可用 null</returns>
+        internal static string[] ResolveRoundSummaryLlm(string catKey)
+        {
+            Guid id = Guid.Empty;
+            if (IsDefaultCatKey(catKey))
+            {
+                id = _defaultApiConfigId;
+            }
+            else
+            {
+                CatEntry cat = FindCat(catKey);
+                if (cat != null)
+                {
+                    id = cat.ApiConfigId;
+                }
+            }
+            CH_LlmApiConfig cfg = null;
+            if (_apiStore != null)
+            {
+                if (id != Guid.Empty)
+                {
+                    _apiStore.TryGet(id, out cfg);
+                }
+                else
+                {
+                    cfg = _apiStore.ResolveDefault();
+                }
+            }
+            if (cfg == null || cfg.Endpoint == null || cfg.Endpoint.Length == 0)
+            {
+                return null;
+            }
+            string secret = _apiStore != null ? _apiStore.GetSecret(cfg.ApiConfigId) : "";
+            return new string[] { cfg.Endpoint, secret, cfg.DefaultModel == null ? "" : cfg.DefaultModel };
+        }
+
+        /// <summary>
         /// 全部 HttpHost 退出前收尾——逐 host 推最后一帧 + 等连接队列排空（A206；重启退出路径调用）。
         /// 动机：视图帧「入队 ≠ 写出」，Environment.Exit 会丢弃在途帧（判例 2026-10-06）。
         /// </summary>
@@ -698,6 +739,24 @@ namespace CatHome4.Admin
                     return "cat.cfg.set | reasoningEffort 非法值: " + value + "（low/high/max/空）";
                 }
             }
+            else if (field == "roundSummary")
+            {
+                // 轮末总结开关（roundSummary）；白名单 true/false
+                if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase))
+                {
+                    cfg.RoundSummary = true;
+                    applied = "roundSummary=true";
+                }
+                else if (string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
+                {
+                    cfg.RoundSummary = false;
+                    applied = "roundSummary=false";
+                }
+                else
+                {
+                    return "cat.cfg.set | roundSummary 非法值: " + value + "（true/false）";
+                }
+            }
             else if (field == "enabledRoots")
             {
                 string[] roots = ValidateEnabledRoots(SplitList(value));
@@ -1249,6 +1308,7 @@ namespace CatHome4.Admin
                 string[] packs = new string[0];
                 bool userInjectIdleOnly = false;
                 string reasoningEffort = "";
+                bool roundSummary = false;
                 if (cfgData != null)
                 {
                     if (cfgData.Persona != null)
@@ -1276,6 +1336,7 @@ namespace CatHome4.Admin
                     {
                         reasoningEffort = cfgData.ReasoningEffort;
                     }
+                    roundSummary = cfgData.RoundSummary;
                 }
                 else
                 {
@@ -1333,6 +1394,7 @@ namespace CatHome4.Admin
                 session.AttachEnvInfo(() => BuildEnvInfoProvider());
                 session.AttachRoundNotify(NotifyBalloon);
                 session.SetUserInjectIdleOnly(userInjectIdleOnly);
+                session.SetRoundSummary(roundSummary);
                 // [段3b] 视图面 / 元数据面——fork 播种走克隆（源面保留部分），常规路径读盘恢复
                 if (forkSource != null && forkMsgIndex >= 0)
                 {
@@ -1365,6 +1427,7 @@ namespace CatHome4.Admin
                 cat.Packs = packs;
                 cat.UserInjectIdleOnly = userInjectIdleOnly;
                 cat.ReasoningEffort = reasoningEffort;
+                cat.RoundSummary = roundSummary;
                 cat.ToolSpecs = catSpecs;
                 // §4.3 空值语义可观测——toolNames 空=全量保底（反直觉默认）：解析结果落审计行
                 string toolSource = "子集";

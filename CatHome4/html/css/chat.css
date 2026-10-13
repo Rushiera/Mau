@@ -370,6 +370,9 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 #chatMsgs .chat-bubble.roundsum { color: var(--ch-roundsum-fg); }
 /* 轮次分隔（2026-09-24）——结算块所在行下留白；带上呈空隙（刻度按内容坐标映射，留白即成段间隔） */
 .chat-row:has(.chat-bubble.roundsum) { margin-bottom: var(--ch-round-gap); }
+/* 轮末总结（roundsummary）紧邻统计之后——统计行的轮次留白由总结行上提抵消（间隔改在总结之后）；
+   不用嵌套 :has(+ )（实测该形态未生效），改用相邻兄弟 + 负上边距——兼容性稳 */
+.chat-row.roundsum + .chat-row.summary { margin-top: calc(-1 * var(--ch-round-gap)); margin-bottom: var(--ch-round-gap); }
 #chatMsgs .chat-bubble.roundsum .rs-head { color: var(--ch-ok-weak); font-weight: bold; margin-bottom: 3px; }
 #chatMsgs .chat-bubble.roundsum .rs-tok { color: var(--ch-tok-completion); word-break: break-all; white-space: pre-wrap; }
 /* 四项行弱化（2026-10-06 · 莎定；同日微调——K·M 单位随整数原色，不再弱化）——括号 · 百分号 / 小数点统一走第三行同款灰（与 `.rs-times` 同值），

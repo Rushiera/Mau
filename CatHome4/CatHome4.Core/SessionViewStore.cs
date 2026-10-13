@@ -325,6 +325,23 @@ namespace CH4
             EmitBlock(block);
         }
 
+        /// <summary>追加轮末总结条目——roundsummary（LLMSimpleRequest 产出一句话总结）。与 roundsum 同属轮末条目族（同容器承载、type 区分——复用车、落盘、合并、补差全链）；写入即落盘——宿主中断不丢。</summary>
+        /// <param name="text">总结文本（失败侧为 ERR| 文本——失败可见）</param>
+        /// <param name="timestamp">创建时间戳（= roundsum ts + 1——固定插在轮末统计之后）</param>
+        public void AppendRoundSummaryNote(string text, long timestamp)
+        {
+            if (text == null || text.Length == 0)
+            {
+                return;
+            }
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["text"] = text;
+            ViewBlock block = NewBlock("roundsummary", JsonUtil.Serialize(payload), timestamp, -1);
+            _roundSums.Add(block);
+            Save();
+            EmitBlock(block);
+        }
+
         /// <summary>追加间隙文本条目——工具轮 seal 文本（模型调用工具前说的话）。非真实前文派生；写入即落盘——工具轮中途中断不丢。视图层 = 全部外观真源——前端与 QQBot 转发统一消费此条目。
         /// 条目型 = `gap_text`（A188：与正式回复 `text` 分型——消费方据此区分两义；外观形态仍为气泡件）。</summary>
         /// <param name="content">间隙文本</param>

@@ -19,14 +19,8 @@ namespace CatHome4.Observe
         /// <summary>会话协调桥——会话段数据源（Core 域）</summary>
         public static ChatBridge _chatBridge;
 
-        /// <summary>QuickCat Flow 句柄——状态观测（入口壳注入）</summary>
-        public static FlowHandle _quickHandle;
-
         /// <summary>工具组 Flow 句柄表——按 Flow 名索引（入口壳注入）</summary>
         public static Dictionary<string, FlowHandle> _toolFlowHandles;
-
-        /// <summary>注册 ID——观测与回收用</summary>
-        public static long _quickId;
 
         /// <summary>工具组 Flow 注册 ID 表——按 Flow 名索引（入口壳注入）</summary>
         public static Dictionary<string, long> _toolFlowIds;
@@ -38,34 +32,19 @@ namespace CatHome4.Observe
         public static HttpHost _httpHost;
 
         /// <summary>
-        /// 热重载后同步 QuickCat 句柄——reload 替换句柄时调用（观测面持有启动快照——不更新则 PrintStatus 访问已 dispose 旧句柄崩溃）
-        /// </summary>
-        /// <param name="handle">新句柄</param>
-        /// <param name="id">新注册 ID</param>
-        public static void UpdateQuickHandle(FlowHandle handle, long id)
-        {
-            _quickHandle = handle;
-            _quickId = id;
-        }
-
-        /// <summary>
         /// 注入 Observe 域依赖——入口壳 Bootstrap 调用（S5：程序集拆分接线）。
         /// </summary>
         /// <param name="oa">OA 工单平台</param>
         /// <param name="chatBridge">会话协调桥</param>
-        /// <param name="quickHandle">QuickCat Flow 句柄</param>
         /// <param name="toolFlowHandles">工具组 Flow 句柄表</param>
-        /// <param name="quickId">QuickCat 注册 ID</param>
         /// <param name="toolFlowIds">工具组注册 ID 表</param>
         /// <param name="runner">Flow 驱动</param>
         /// <param name="httpHost">HTTP 外观层（可空）</param>
-        public static void Configure(OA oa, ChatBridge chatBridge, FlowHandle quickHandle, Dictionary<string, FlowHandle> toolFlowHandles, long quickId, Dictionary<string, long> toolFlowIds, FlowRunner runner, HttpHost httpHost)
+        public static void Configure(OA oa, ChatBridge chatBridge, Dictionary<string, FlowHandle> toolFlowHandles, Dictionary<string, long> toolFlowIds, FlowRunner runner, HttpHost httpHost)
         {
             _oa = oa;
             _chatBridge = chatBridge;
-            _quickHandle = quickHandle;
             _toolFlowHandles = toolFlowHandles;
-            _quickId = quickId;
             _toolFlowIds = toolFlowIds;
             _runner = runner;
             _httpHost = httpHost;

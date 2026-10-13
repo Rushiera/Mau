@@ -1,6 +1,6 @@
 ﻿# Mau 积木索引 — INDEX
 
-> 版本：v3.3 | 更新：2026-10-12（mau bricks index --update 源码驱动重建）
+> 版本：v3.3 | 更新：2026-10-13（mau bricks index --update 源码驱动重建）
 > 全量积木登记——一行一条。ID 永不重用。
 
 ## 全部积木
@@ -29,6 +29,9 @@
 | BRIK-LLM-004 | llm.done_ready | LLM | LLM/BRIK-LLM-004_llm.done_ready.cs | 无 | active |  |
 | BRIK-LLM-005 | llm.reply_read | LLM | LLM/BRIK-LLM-005_llm.reply_read.cs | 无 | active |  |
 | BRIK-LLM-006 | llm.chunk_read | LLM | LLM/BRIK-LLM-006_llm.chunk_read.cs | 无 | active |  |
+| BRIK-LLM-007 | llm.simple_request | LLM | LLM/BRIK-LLM-007_llm.simple_request.cs | 无 | active |  |
+| BRIK-LLM-008 | llm.simple_ready | LLM | LLM/BRIK-LLM-008_llm.simple_ready.cs | 无 | active |  |
+| BRIK-LLM-009 | llm.simple_read | LLM | LLM/BRIK-LLM-009_llm.simple_read.cs | 无 | active |  |
 | BRIK-LOG-001 | log.write | LOG | LOG/BRIK-LOG-001_log.write.cs | 无 | active |  |
 | BRIK-MAU-001 | mau.verify | MAU | MAU/BRIK-MAU-001_mau.verify.cs | 无 | active |  |
 | BRIK-MAU-002 | mau.gen | MAU | MAU/BRIK-MAU-002_mau.gen.cs | 无 | active |  |
@@ -69,10 +72,10 @@
 | BRIK-TOOLS-007 | tools.temptoolcat | TOOLS | TOOLS/BRIK-TOOLS-007_tools.temptoolcat.cs | 无 | active |  |
 | BRIK-TOOLS-008 | tools.pscat | TOOLS | TOOLS/BRIK-TOOLS-008_tools.pscat.cs | 无 | active |  |
 | BRIK-TOOLS-009 | tools.majordomocat | TOOLS | TOOLS/BRIK-TOOLS-009_tools.majordomocat.cs | 无 | active |  |
-| BRIK-TOOLS-010 | tools.quickcat | TOOLS | TOOLS/BRIK-TOOLS-010_tools.quickcat.cs | 无 | active |  |
 | BRIK-TOOLS-011 | tools.filecat | TOOLS | TOOLS/BRIK-TOOLS-011_tools.filecat.cs | 无 | active |  |
 | BRIK-TOOLS-012 | tools.browsercat | TOOLS | TOOLS/BRIK-TOOLS-012_tools.browsercat.cs | 无 | active |  |
 | BRIK-TOOLS-013 | tools.webcat | TOOLS | TOOLS/BRIK-TOOLS-013_tools.webcat.cs | 无 | active |  |
+| BRIK-TOOLS-014 | tools.llmsimplerequest | TOOLS | TOOLS/BRIK-TOOLS-014_tools.llmsimplerequest.cs | 无 | active |  |
 | BRIK-VISION-001 | vision.analyze | VISION | VISION/BRIK-VISION-001_vision.analyze.cs | 无 | active |  |
 | BRIK-VISION-002 | image.inject | VISION | VISION/BRIK-VISION-002_image.inject.cs | 无 | active |  |
 | BRIK-WEB-001 | web.search | WEB | WEB/BRIK-WEB-001_web.search.cs | 无 | active |  |
@@ -81,4 +84,4 @@
 
 ---
 
-_版本：v3.3 | 2026-10-12 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_
+_版本：v3.3 | 2026-10-13 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_

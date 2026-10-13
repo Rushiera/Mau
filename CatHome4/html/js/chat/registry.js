@@ -38,6 +38,7 @@ var BLOCK_DECL = {
     'error': { form: 'bubble', row: 'assistant', tick: 'reply', body: 'error' },
     'inject_report': { form: 'bubble', row: 'assistant inject', tick: 'reply', body: 'inject' },
     'roundsum': { form: 'bubble', row: 'assistant roundsum', tick: 'sum', body: 'roundsum' },
+    'roundsummary': { form: 'bubble', row: 'assistant summary', tick: 'sum', body: 'roundsummary' },
     'replysse': { form: 'plain', row: 'assistant', tick: 'reply', body: 'streaming' },
     'thinksse': { form: 'plain', row: 'assistant reason', tick: 'think' },
     'toolrun': { form: 'plain', row: 'assistant tool', tick: 'tool' }
@@ -95,7 +96,8 @@ var PERSIST_RENDERERS = {
     'retry': buildRetryBlock,
     'error': buildErrorBlock,
     'inject_report': buildInjectReportBlock,
-    'roundsum': buildRoundSumBlock
+    'roundsum': buildRoundSumBlock,
+    'roundsummary': buildRoundSummaryNoteBlock
 };
 
 /// 临时区渲染表——type → function(payload) → 行元素（A196：live 段为 {type, context} 两字符串）

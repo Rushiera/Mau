@@ -222,6 +222,9 @@
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="checkbox" id="catCfgIdleOnly"> 人工输入空闲注入（userInjectIdleOnly——true=人工输入仅在空闲时推送，轮内不插；sys 注入不受影响）
             </label>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="catCfgRoundSummary"> 轮末总结（roundSummary——每轮结束后调度 LLMSimpleRequest 产出一句总结，做新视图块插入；用本猫的 LLM 配置）
+            </label>
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">思考强度（reasoningEffort——空=跟随全局；low/high/max）</label>
             <select id="catCfgEffort" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px"></select>
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">Type 标签（type——猫卡按标签分区排布；空=默认组；同文本自动同组）</label>

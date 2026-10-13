@@ -37,15 +37,10 @@ namespace CH4
         /// <summary>宿主组件——Flow 注册/驱动入口</summary>
         private static FlowRunner _runner;
 
-        /// <summary>QuickCat Flow 句柄——热重载面</summary>
-        private static FlowHandle _quickHandle;
-
         /// <summary>工具组 Flow 句柄表——按 Flow 名索引（R0.2：TextCat/MauCat/CsCat/ConfigCat 独立 Flow——独立热重载/独立退役）。🔴 线程契约：主线程独占（写 = Bootstrap/reload；读 = 观测打印 + 主循环 Idle 判定）——无跨线程访问，故不加锁；新增写点必须遵守本契约</summary>
         private static readonly Dictionary<string, FlowHandle> _toolFlowHandles = new Dictionary<string, FlowHandle>();
 
         /// <summary>注册 ID——观测与回收用</summary>
-        private static long _quickId;
-
         /// <summary>工具组 Flow 注册 ID 表——按 Flow 名索引（观测与回收用）。🔴 线程契约：主线程独占（与 _toolFlowHandles 同源同寿命）——无跨线程访问</summary>
         private static readonly Dictionary<string, long> _toolFlowIds = new Dictionary<string, long>();
 
@@ -344,7 +339,6 @@ namespace CH4
             // 路由表数据化 + 工具定义数据化：加载后经 IFlow.GetMetaJson/GetToolsJson 读自曝 → 统一工具池（design-ch4-tools-pool §六）
             // 工具组来源（组名 + Flow——A107：定义自曝失败时必须报得出是哪一组）
             List<ToolGroupSource> poolGroups = new List<ToolGroupSource>();
-            IFlow quickFlow = null;
             string[] flowDlls = Directory.GetFiles(dllDir, "FL_*.dll");
             Array.Sort(flowDlls, StringComparer.OrdinalIgnoreCase);
             for (int f = 0; f < flowDlls.Length; f = f + 1)
@@ -358,14 +352,6 @@ namespace CH4
                 {
                     continue;
                 }
-                if (flowName == "QuickCat")
-                {
-                    // QuickCat 特殊字段——ObserveService/Reload/Run 引用（独立于工具组句柄表）
-                    _quickHandle = FlowHandle.Load(flowDlls[f]);
-                    _quickId = _runner.RegisterFlow(_quickHandle.Flow, "QuickCat");
-                    quickFlow = _quickHandle.Flow;
-                }
-                else
                 {
                     FlowHandle handle = LoadToolGroup(flowName, dllDir);
                     if (handle != null)
@@ -378,7 +364,7 @@ namespace CH4
                 }
             }
             // 内置工具定义源——宿主内建小表（本质也是 BRIK，只是内置：Note/time/random/info/host-*）
-            ToolPool.RebuildAll(poolGroups, quickFlow, BuildBuiltinToolsJson());
+            ToolPool.RebuildAll(poolGroups, BuildBuiltinToolsJson());
             // A107——定义缺陷出声：逐条 L3 落盘（判例：整组静默消失无人知）
             LogToolPoolDefects();
             // A127——执行序对账：池内工具须在 ToolOrderTable 全量登记（未登记者静默落默认档 = 隐性缺口，此处出声）
@@ -396,6 +382,8 @@ namespace CH4
             ChatSession.PackPayloadProvider = AdminService.BuildPackPayload;
             // 授权面实时查询接线——工具调用判定按当前 cat.cfg 名单实时解析（design-ch4-tools §三·十一：注入面=提示，授权面=真相）
             ChatSession.AuthorizedToolNamesProvider = AdminService.ResolveCatAuthorizedToolNames;
+            // 轮末总结 LLM 配置接线——catKey → [endpoint, apikey, model]（LLMSimpleRequest 服务工单参数；roundsummary）
+            ChatSession.RoundSummaryLlmProvider = AdminService.ResolveRoundSummaryLlm;
             // 延迟队列落盘接线——Data/runtime/delays.json（跨宿主重启保留；design-ch4-delay §七）
             DelayQueue.Configure(Path.Combine(dataRoot, "Data", "runtime", "delays.json"));
             DelayQueue.Load();
@@ -429,7 +417,7 @@ namespace CH4
             ChatSession.TimebackInfoProvider = BuildEnvInfo;
             AdminService.NotifyBalloon = Program.NotifyBalloon;
             // S5 Observe 域接线——依赖注入（观测面迁入 CatHome4.Observe）
-            ObserveService.Configure(_oa, _chatBridge, _quickHandle, _toolFlowHandles, _quickId, _toolFlowIds, _runner, null);
+            ObserveService.Configure(_oa, _chatBridge, _toolFlowHandles, _toolFlowIds, _runner, null);
             SessionStore chatStore = new SessionStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.jsonl"));
             LlmMessage[] restored;
             // M1 默认猫——API 配置身份从 sessions/majordomo/cat.cfg 读取；缺省 Guid.Empty=默认端点语义（每次调用实时解析）
@@ -590,7 +578,7 @@ namespace CH4
             }
             DataBox.Set<string>("global", "workspace.roots", rootSummary.ToString());
             LogStore.Add("CatHome4", 1, "工作区已加载：" + workspace.Roots.Length.ToString() + " 个根、" + workspace.Inject.Length.ToString() + " 条注入（" + rootSummary.ToString() + "）", "CONFIG");
-            Console.WriteLine("[CMD] 就绪 | Flows: QuickCat#" + _quickId + " " + ToolGroupSummary() + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
+            Console.WriteLine("[CMD] 就绪 | Flows: " + ToolGroupSummary() + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
             // P9.3 多实例化签名——sessionId 归属默认会话；catsBuilder 多猫列表（管理页签数据源）；主端口服务 index.html
             // F2.1/F2.2——主端口纯管理面板（index.html）；majordomo 对话走独立端口（chat.html，与多猫同构）
@@ -1029,19 +1017,93 @@ namespace CH4
         /// <param name="dllDir">语料 dll 目录</param>
         private static FlowHandle LoadToolGroup(string flowName, string dllDir)
         {
+            string dllPath = Path.Combine(dllDir, "FL_" + flowName + ".dll");
+            int size = PoolSizeOf(flowName);
+            List<FlowHandle> loaded = new List<FlowHandle>();
+            List<string> loadedNames = new List<string>();
+            FlowHandle first = null;
             try
             {
-                FlowHandle handle = FlowHandle.Load(Path.Combine(dllDir, "FL_" + flowName + ".dll"));
-                long id = _runner.RegisterFlow(handle.Flow, flowName);
-                _toolFlowHandles[flowName] = handle;
-                _toolFlowIds[flowName] = id;
-                return handle;
+                for (int k = 0; k < size; k = k + 1)
+                {
+                    // 实例池——首实例用基础名，其余加 ~N 后缀（同 dll、各自 ALC、各自 FlowId——OA 原子接单天然分流）
+                    string instName = k == 0 ? flowName : flowName + "~" + (k + 1).ToString();
+                    FlowHandle handle = FlowHandle.Load(dllPath);
+                    long id = _runner.RegisterFlow(handle.Flow, instName);
+                    _toolFlowHandles[instName] = handle;
+                    _toolFlowIds[instName] = id;
+                    loaded.Add(handle);
+                    loadedNames.Add(instName);
+                    if (k == 0)
+                    {
+                        first = handle;
+                    }
+                }
+                if (size > 1)
+                {
+                    Console.WriteLine("[CMD] 实例池: " + flowName + " × " + size.ToString());
+                }
+                return first;
             }
             catch (Exception ex)
             {
+                // 池化加载失败——回滚已加载实例（不留半池）
+                for (int i = 0; i < loaded.Count; i = i + 1)
+                {
+                    long rid;
+                    if (_toolFlowIds.TryGetValue(loadedNames[i], out rid))
+                    {
+                        _runner.UnregisterFlow(rid);
+                    }
+                    _toolFlowHandles.Remove(loadedNames[i]);
+                    _toolFlowIds.Remove(loadedNames[i]);
+                    try
+                    {
+                        loaded[i].TryUnload(1);
+                    }
+                    catch (Exception unloadEx)
+                    {
+                        LogStore.Add("CatHome4", 2, "池化回滚卸载异常: " + unloadEx.Message, "RELOAD");
+                    }
+                }
                 Console.WriteLine("[CMD] 警告: FL_" + flowName + ".dll 加载失败——该组工具不可用（工单将超时 ERR）: " + ex.Message);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 工具组实例池尺寸——组名 → 实例数（缺省 1 = 单实例）。
+        /// 池化组一次加载 K 个实例（独立 FlowId），由 OA 原子接单天然分流——服务型组并发吞吐。
+        /// </summary>
+        /// <param name="flowName">Flow 名</param>
+        /// <returns>实例数（≥1）</returns>
+        private static int PoolSizeOf(string flowName)
+        {
+            if (flowName == "LLMSimpleRequest")
+            {
+                return 4;
+            }
+            return 1;
+        }
+
+        /// <summary>
+        /// 池化组兄弟实例名——基础名 base 对应 base~2..base~K；非池化组 / 已是兄弟名返回空数组。
+        /// </summary>
+        /// <param name="flowName">Flow 名</param>
+        /// <returns>兄弟实例名数组</returns>
+        private static string[] PoolSiblingNames(string flowName)
+        {
+            int size = PoolSizeOf(flowName);
+            if (size <= 1 || flowName.IndexOf('~') >= 0)
+            {
+                return new string[0];
+            }
+            string[] names = new string[size - 1];
+            for (int k = 1; k < size; k = k + 1)
+            {
+                names[k - 1] = flowName + "~" + (k + 1).ToString();
+            }
+            return names;
         }
 
         /// <summary>

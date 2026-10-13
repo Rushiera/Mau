@@ -426,9 +426,8 @@ namespace CH4
         /// 读者要么看到全旧、要么看到全新（无半更新窗口）；不在新表的工具随旧快照淘汰（无陈旧残留）。
         /// </summary>
         /// <param name="toolGroups">工具组来源列表（组名 + Flow——A107：失败时能报出是哪一组）</param>
-        /// <param name="quickFlow">QuickCat Flow（组级工单消费者——空组声明；null=未加载）</param>
         /// <param name="builtinJson">内置工具定义 JSON（Note/time/random/info/host-* 等）</param>
-        public static void RebuildAll(List<ToolGroupSource> toolGroups, IFlow quickFlow, string builtinJson)
+        public static void RebuildAll(List<ToolGroupSource> toolGroups, string builtinJson)
         {
             // [段1] 局部构建新快照——旧快照只读，读者不受构建期影响
             PoolState next = new PoolState();
@@ -443,10 +442,6 @@ namespace CH4
                     AddFromFlowTo(next, toolGroups[i].Flow, toolGroups[i].Name);
                 }
             }
-            if (quickFlow != null)
-            {
-                AddFromFlowTo(next, quickFlow, "QuickCat");
-            }
             AddFromJson(next, builtinJson, "内置");
             // [段2] 空产出兜底——组 Flow 已加载却零工具入池，且此前无更具体的缺陷记录（覆盖无异常路径：不报错也不产出）
             if (toolGroups != null)
@@ -459,10 +454,6 @@ namespace CH4
                     }
                     NoteEmptyIfSilent(next, toolGroups[i].Name);
                 }
-            }
-            if (quickFlow != null)
-            {
-                NoteEmptyIfSilent(next, "QuickCat");
             }
             // [段2b] order 注记注入——工具执行序表（A127）作为工具定义标准注释追加到描述尾行
             // （单点 = 此处即全池生效：12 组自曝 + 内置定义同池；改表随池重建）
