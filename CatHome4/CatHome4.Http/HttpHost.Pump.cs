@@ -198,22 +198,20 @@ namespace CatHome4.Http
         /// <summary>LogStore 增量推送——锁内只取区间快照 + 推进游标，序列化与广播在锁外；一轮泵的多条日志批量合帧为单个 log 事件（载荷数组，A141）；trace 类审计不进前端（IsTraceAudit，2026-09-17）。</summary>
         private void PushLogIncrements()
         {
-            List<LogStore.LogEntry> logs = LogStore.AllLog;
             List<LogStore.LogEntry> pending = new List<LogStore.LogEntry>();
-            // A141 锁内只做「取区间快照 + 推进游标」——序列化与广播移到锁外（宿主主循环写日志不再与推送面竞争同一把锁）
-            lock (LogStore.Sync)
+            // A141/A252 锁内只做「取增量快照 + 推进游标」——序列化与广播移到锁外（宿主主循环写日志不再与推送面竞争同一把锁）
+            int endIndex;
+            List<LogStore.LogEntry> logs = LogStore.SnapshotFrom(_logCursor, out endIndex);
+            _logCursor = endIndex;
+            for (int i = 0; i < logs.Count; i = i + 1)
             {
-                while (_logCursor < logs.Count)
+                LogStore.LogEntry entry = logs[i];
+                // trace 类审计不进前端（导线级轨迹——2026-09-17）
+                if (IsTraceAudit(entry))
                 {
-                    LogStore.LogEntry entry = logs[_logCursor];
-                    _logCursor = _logCursor + 1;
-                    // trace 类审计不进前端（导线级轨迹——2026-09-17）
-                    if (IsTraceAudit(entry))
-                    {
-                        continue;
-                    }
-                    pending.Add(entry);
+                    continue;
                 }
+                pending.Add(entry);
             }
             if (pending.Count == 0)
             {

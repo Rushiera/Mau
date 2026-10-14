@@ -1,0 +1,34 @@
+﻿// audio_cat.mau —— AudioCat 语料（AUDIO 域工具组 Flow）
+// 角色：工具组 Flow——认领 TOOL 域 audio-play 工具（本地 WAV 播放）
+// 单级 OA 单：Dog Post → 本 Flow 认领执行 → complete_str 回执
+// 载荷协议：officeName = 工具名；载荷 key "args" = 整包工具参数 JSON（key/path/volume）
+// 数据面：@adOffice 等私有盒（FlowId 隔离）；args/result 经 OA 载荷传输（get_str/complete_str）
+// 线程模型：收单/读参/回执主线程同步；执行积木 audio.play 入队即返回（调度在服务内，主线程零阻塞）
+// 观测：trace 埋点生成器内建 + OA 机制专属 Log（帧号回溯）
+// 变更（2026-10-14 A239）：新建——音频播放能力工具面（design-mau-audio）
+
+// ── 状态机 ──
+§ 'S_Audio' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+
+// T_Init：启动初始化自述
+§ 'T_Init' : 'S_Audio' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Audio' = 'Idle' | 'S_Audio' = 'Idle'
+
+// ── 主动传感器壳——探测（纯只读判断积木 → bool 落盒）──
+§ 'P_AudioOpen' ↻ [1]: 'oa.is_open'["TOOL", "audio-play"] > @adOpen
+
+// ══════════════ audio-play 线 ══════════════
+
+// T_Claim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_Claim' : @adOpen & 'S_Audio' = 'Idle' → 'oa.claim_next_simple'["TOOL", "audio-play"] > @adOffice | 'S_Audio' = 'Claimed' | 'S_Audio' = 'Idle'
+
+// T_Args：读载荷 args（整包工具参数 JSON）+ 执行中自述（desc 前移——避免抢单失败回 Idle 的残留）
+§ 'T_Args' : 'S_Audio' = 'Claimed' → 'oa.get_str'[@adOffice, "args"] > @adArgs | 'self.desc'["audio-play 执行中", "", ""] | 'S_Audio' = 'Ready' | 'S_Audio' = 'Failed'
+
+// T_Exec：执行积木（argsJson 整包——积木内部解析；入队即返回，主线程零阻塞）
+§ 'T_Exec' : 'S_Audio' = 'Ready' → 'audio.play'[@adArgs] > @adRes | 'S_Audio' = 'Done' | 'S_Audio' = 'Failed'
+
+// T_Reply：成功回执（result = "OK|已入队"）
+§ 'T_Reply' : 'S_Audio' = 'Done' → 'oa.complete_str'[@adOffice, @adRes] | 'self.desc'["空闲待命", "", ""] | 'S_Audio' = 'Idle' | 'S_Audio' = 'Idle'
+
+// T_Abort：失败回执（@adRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
+§ 'T_Abort' : 'S_Audio' = 'Failed' → 'oa.complete_str'[@adOffice, @adRes] | 'S_Audio' = 'Idle' | 'S_Audio' = 'Idle'

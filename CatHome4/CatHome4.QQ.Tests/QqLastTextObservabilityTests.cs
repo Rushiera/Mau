@@ -48,16 +48,12 @@ namespace CatHome4.QQ.Tests
         /// <param name="keyword">关键词</param>
         /// <returns>消息文本</returns>
         /// <remarks>
-        /// 加锁快照读——总账是共享可变 List（写入侧 `lock (LogStore.Sync)` 内 Add），
+        /// 走 LogStore.Snapshot() 锁内快照——总账是共享可变 List（写入侧 `lock (LogStore.Sync)` 内 Add），
         /// xUnit 类间并行下裸 foreach 会撞「集合已修改」（2026-10-14 实测：prepare 步 2b 偶发红）。
         /// </remarks>
         private static string FindLog(string keyword)
         {
-            List<LogStore.LogEntry> snapshot;
-            lock (LogStore.Sync)
-            {
-                snapshot = new List<LogStore.LogEntry>(LogStore.AllLog);
-            }
+            List<LogStore.LogEntry> snapshot = LogStore.Snapshot();
             foreach (LogStore.LogEntry e in snapshot)
             {
                 if (e.Message.Contains(keyword))

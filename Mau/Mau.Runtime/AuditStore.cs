@@ -107,36 +107,33 @@ namespace Mau.Runtime
         /// <returns>事件数组</returns>
         public AuditEvent[] Snapshot()
         {
-            System.Collections.Generic.List<LogStore.LogEntry> all = LogStore.AllLog;
+            System.Collections.Generic.List<LogStore.LogEntry> all = LogStore.Snapshot();
             System.Collections.Generic.List<AuditEvent> result = new System.Collections.Generic.List<AuditEvent>();
-            lock (LogStore.Sync)
+            for (int i = 0; i < all.Count; i++)
             {
-                for (int i = 0; i < all.Count; i++)
+                LogStore.LogEntry entry = all[i];
+                if (!entry.Type.StartsWith("audit.", StringComparison.Ordinal))
                 {
-                    LogStore.LogEntry entry = all[i];
-                    if (!entry.Type.StartsWith("audit.", StringComparison.Ordinal))
-                    {
-                        continue;
-                    }
-                    string source = entry.Module;
-                    string category = entry.Type;
-                    // Type = "audit.{source}.{category}"——剥前缀还原 category（Module 即 source——可靠锚）
-                    string prefix = "audit." + source + ".";
-                    if (category.StartsWith(prefix, StringComparison.Ordinal))
-                    {
-                        category = category.Substring(prefix.Length);
-                    }
-                    else
-                    {
-                        int dot = category.IndexOf('.');
-                        if (dot >= 0)
-                        {
-                            category = category.Substring(dot + 1);
-                        }
-                    }
-                    AuditProp[] props = ParsePayload(entry.Payload);
-                    result.Add(new AuditEvent(i + 1, entry.Frame, entry.Time, source, category, props, true));
+                    continue;
                 }
+                string source = entry.Module;
+                string category = entry.Type;
+                // Type = "audit.{source}.{category}"——剥前缀还原 category（Module 即 source——可靠锚）
+                string prefix = "audit." + source + ".";
+                if (category.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    category = category.Substring(prefix.Length);
+                }
+                else
+                {
+                    int dot = category.IndexOf('.');
+                    if (dot >= 0)
+                    {
+                        category = category.Substring(dot + 1);
+                    }
+                }
+                AuditProp[] props = ParsePayload(entry.Payload);
+                result.Add(new AuditEvent(i + 1, entry.Frame, entry.Time, source, category, props, true));
             }
             return result.ToArray();
         }
@@ -149,15 +146,12 @@ namespace Mau.Runtime
             get
             {
                 long count = 0;
-                System.Collections.Generic.List<LogStore.LogEntry> all = LogStore.AllLog;
-                lock (LogStore.Sync)
+                System.Collections.Generic.List<LogStore.LogEntry> all = LogStore.Snapshot();
+                for (int i = 0; i < all.Count; i++)
                 {
-                    for (int i = 0; i < all.Count; i++)
+                    if (all[i].Type.StartsWith("audit.", StringComparison.Ordinal))
                     {
-                        if (all[i].Type.StartsWith("audit.", StringComparison.Ordinal))
-                        {
-                            count = count + 1;
-                        }
+                        count = count + 1;
                     }
                 }
                 return count;

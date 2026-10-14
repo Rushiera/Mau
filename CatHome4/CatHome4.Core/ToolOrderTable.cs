@@ -64,7 +64,8 @@ namespace CH4
             "config-set", "config-reset", "config-cat-set",
             "image-inject",
             "browser-eval", "browser-tabs",
-            "web-fetch", "web-fetch-jobs"
+            "web-fetch", "web-fetch-jobs",
+            "audio-play"
         };
 
         /// <summary>

@@ -57,9 +57,9 @@ namespace Mau.Runtime
         }
 
         /// <summary>
-        /// 总账列表——DataBox scope "log"
+        /// 总账列表——DataBox scope "log"（内部写入面；读取一律走 Snapshot / SnapshotFrom——读取面收口，不对外暴露可变引用）
         /// </summary>
-        public static List<LogEntry> AllLog
+        private static List<LogEntry> AllLog
         {
             get { return DataBox.GetOrCreate<List<LogEntry>>("log", "entries"); }
         }
@@ -70,6 +70,66 @@ namespace Mau.Runtime
         public static object Sync
         {
             get { return DataBox.GetOrCreate<object>("log", "sync"); }
+        }
+
+        /// <summary>
+        /// 读取面快照——锁内复制总账副本，消费面遍历副本、无需再持 Sync（治本读入口）。
+        /// </summary>
+        /// <param name="tail">大于 0 时只取尾部 N 条；0 取全量</param>
+        /// <returns>总账只读副本（元素为值语义 LogEntry，独立于后续写入）</returns>
+        public static List<LogEntry> Snapshot(int tail = 0)
+        {
+            lock (Sync)
+            {
+                List<LogEntry> all = AllLog;
+                int start = 0;
+                if (tail > 0 && all.Count > tail)
+                {
+                    start = all.Count - tail;
+                }
+                return CopyLogRange(all, start);
+            }
+        }
+
+        /// <summary>
+        /// 增量快照——锁内复制 [fromIndex, endIndex) 区间并回报末端游标，供增量消费方一次取尽。
+        /// </summary>
+        /// <param name="fromIndex">起始索引（小于 0 收敛到 0；超过总数收敛到末尾）</param>
+        /// <param name="endIndex">出参——本次快照覆盖到的末端索引（复制时刻的总数）</param>
+        /// <returns>区间只读副本</returns>
+        public static List<LogEntry> SnapshotFrom(int fromIndex, out int endIndex)
+        {
+            lock (Sync)
+            {
+                List<LogEntry> all = AllLog;
+                int start = fromIndex;
+                if (start < 0)
+                {
+                    start = 0;
+                }
+                if (start > all.Count)
+                {
+                    start = all.Count;
+                }
+                endIndex = all.Count;
+                return CopyLogRange(all, start);
+            }
+        }
+
+        /// <summary>
+        /// 复制总账区间——锁内调用（start 已收敛）；集中一处避免消费面重复实现。
+        /// </summary>
+        /// <param name="all">总账引用</param>
+        /// <param name="start">起始索引（已收敛到合法区间）</param>
+        /// <returns>区间只读副本</returns>
+        private static List<LogEntry> CopyLogRange(List<LogEntry> all, int start)
+        {
+            List<LogEntry> copy = new List<LogEntry>(all.Count - start);
+            for (int i = start; i < all.Count; i = i + 1)
+            {
+                copy.Add(all[i]);
+            }
+            return copy;
         }
 
         /// <summary>

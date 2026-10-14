@@ -313,6 +313,8 @@ namespace CH4
             DataBox.Bind<IWebFetchService>(webFetchSvc);
             // 宿主指令服务——工具面触达内核指令族（host.command 积木 → IHostCommandService；与 CLI/HTTP 面板同源单内核）
             DataBox.Bind<IHostCommandService>(new HostCommandService());
+            // A239 音频播放服务——per-Key 串行 + 组间并发（NAudio.Wasapi；design-mau-audio §三）
+            DataBox.Bind<Mau.Contracts.IAudioService>(new Mau.Audio.AudioService());
             AuditStore audit = new AuditStore();
             AuditStore.Default = audit;
             _runner.Audit = audit;

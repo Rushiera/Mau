@@ -18,6 +18,7 @@
     { "key": "vision.detail", "file": "vision.cfg", "default": "auto", "sensitive": false, "writable": true, "desc": "图片细节（low/high/original/auto）" },
     { "key": "vision.timeout_ms", "file": "vision.cfg", "default": "120000", "sensitive": false, "writable": true, "type": "int", "min": "1000", "max": "120000", "desc": "视觉超时毫秒（上限 120 秒——与工具执行层统一口径）" },
     { "key": "ps.pwsh_path", "file": "ps.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=未配置 → powershell7 工具明示不可用（不静默回落默认解释器）", "desc": "PowerShell 7 可执行路径（pwsh.exe 全路径；空=未配置——powershell7 工具明示不可用）" },
-    { "key": "browser.kernel_path", "file": "browser.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=未配置 → browser-* 工具明示不可用（不静默回落探测路径）", "desc": "浏览器内核可执行路径（Chromium 系全路径：msedge.exe / chrome.exe 等；空=未配置——浏览器工具明示不可用；换内核只需改本项——协议同为 CDP）" }
+    { "key": "browser.kernel_path", "file": "browser.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=未配置 → browser-* 工具明示不可用（不静默回落探测路径）", "desc": "浏览器内核可执行路径（Chromium 系全路径：msedge.exe / chrome.exe 等；空=未配置——浏览器工具明示不可用；换内核只需改本项——协议同为 CDP）" },
+    { "key": "audio.volume", "file": "audio.cfg", "default": "100", "sensitive": false, "writable": true, "type": "int", "min": "0", "max": "200", "desc": "音频播放音量（百分比）——100=基准；0~200 允许放大；audio-play 未显式指定 volume 时采用（design-mau-audio §五）" }
   ]
 }

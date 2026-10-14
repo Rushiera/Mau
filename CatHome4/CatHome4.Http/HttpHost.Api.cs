@@ -189,28 +189,25 @@ namespace CatHome4.Http
             string cat = ctx.Request.Query["cat"].ToString();
             string typePrefix = ctx.Request.Query["type"].ToString();
             List<object> list = new List<object>();
-            List<LogStore.LogEntry> all = LogStore.AllLog;
-            lock (LogStore.Sync)
+            List<LogStore.LogEntry> all = LogStore.Snapshot();
+            // 尾部倒序扫描——匹配 cat/type 收集 count 条（防全量遍历）
+            for (int i = all.Count - 1; i >= 0 && list.Count < count; i--)
             {
-                // 尾部倒序扫描——匹配 cat/type 收集 count 条（防全量遍历）
-                for (int i = all.Count - 1; i >= 0 && list.Count < count; i--)
+                LogStore.LogEntry entry = all[i];
+                // trace 类审计不进前端（导线级轨迹——2026-09-17）
+                if (IsTraceAudit(entry))
                 {
-                    LogStore.LogEntry entry = all[i];
-                    // trace 类审计不进前端（导线级轨迹——2026-09-17）
-                    if (IsTraceAudit(entry))
-                    {
-                        continue;
-                    }
-                    if (cat.Length > 0 && entry.Category != cat)
-                    {
-                        continue;
-                    }
-                    if (typePrefix.Length > 0 && !entry.Type.StartsWith(typePrefix, StringComparison.Ordinal))
-                    {
-                        continue;
-                    }
-                    list.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, type = entry.Type, message = entry.Message });
+                    continue;
                 }
+                if (cat.Length > 0 && entry.Category != cat)
+                {
+                    continue;
+                }
+                if (typePrefix.Length > 0 && !entry.Type.StartsWith(typePrefix, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                list.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, type = entry.Type, message = entry.Message });
             }
             // 倒序收集——还原时间序（旧→新）
             list.Reverse();
@@ -251,27 +248,19 @@ namespace CatHome4.Http
         /// <returns>日志数组 JSON；无日志返回空串（不拼接）</returns>
         private static string BuildLogsJson(int count)
         {
-            List<LogStore.LogEntry> logs = LogStore.AllLog;
-            lock (LogStore.Sync)
+            List<LogStore.LogEntry> logs = LogStore.Snapshot(count);
+            List<object> list = new List<object>();
+            for (int i = 0; i < logs.Count; i++)
             {
-                int start = logs.Count - count;
-                if (start < 0)
+                LogStore.LogEntry entry = logs[i];
+                // trace 类审计不进前端（导线级轨迹——2026-09-17）
+                if (IsTraceAudit(entry))
                 {
-                    start = 0;
+                    continue;
                 }
-                List<object> list = new List<object>();
-                for (int i = start; i < logs.Count; i++)
-                {
-                    LogStore.LogEntry entry = logs[i];
-                    // trace 类审计不进前端（导线级轨迹——2026-09-17）
-                    if (IsTraceAudit(entry))
-                    {
-                        continue;
-                    }
-                    list.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, message = entry.Message });
-                }
-                return JsonUtil.Serialize(list);
+                list.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, message = entry.Message });
             }
+            return JsonUtil.Serialize(list);
         }
 
         /// <summary>

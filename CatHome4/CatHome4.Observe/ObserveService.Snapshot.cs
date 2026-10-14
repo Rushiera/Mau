@@ -198,19 +198,11 @@ namespace CatHome4.Observe
             if (includeLogs)
             {
                 List<object> logList = new List<object>();
-                List<LogStore.LogEntry> all = LogStore.AllLog;
-                lock (LogStore.Sync)
+                List<LogStore.LogEntry> all = LogStore.Snapshot(50);
+                for (int i = 0; i < all.Count; i++)
                 {
-                    int start = all.Count - 50;
-                    if (start < 0)
-                    {
-                        start = 0;
-                    }
-                    for (int i = start; i < all.Count; i++)
-                    {
-                        LogStore.LogEntry entry = all[i];
-                        logList.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, message = entry.Message });
-                    }
+                    LogStore.LogEntry entry = all[i];
+                    logList.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, message = entry.Message });
                 }
                 logs = logList;
             }
