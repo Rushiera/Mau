@@ -111,7 +111,7 @@ namespace CH4
 
     /// <summary>
     /// 会话元数据——会话自身参数的持久化模型（A201 · design-ch4-protocol §十三）。
-    /// 独立于 cat.cfg（每猫配置）· 前文 jsonl（真实前文）· view.json（视图前文）。
+    /// 独立于 cat.cfg（每猫配置）· 前文 jsonl（真实前文）· view.jsonl（视图前文）。
     /// </summary>
     internal sealed class SessionMeta
     {

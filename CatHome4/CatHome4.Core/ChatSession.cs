@@ -184,7 +184,7 @@ namespace CH4
         private string _llmReasoning;
         /// <summary>
         /// 本块思考用时累计毫秒——think 态内部实现（进入 think 态开表、离开即结算，不跨态；重试退避等非 think 段不计入）。
-        /// 单块生命周期：推入 view.json 时由 TakeReasonDuration 取走并归零（不跨轮 / 不跨块残留）。
+        /// 单块生命周期：推入视图层时由 TakeReasonDuration 取走并归零（不跨轮 / 不跨块残留）。
         /// </summary>
         private long _reasonDurMs;
 
@@ -749,13 +749,12 @@ namespace CH4
         }
 
         /// <summary>
-        /// 设置注入报告——session.new 后调用（持久化进视图：内存设置 + view.json 落盘；独立字段 Rebuild 不清）。
+        /// 设置注入报告——session.new 后调用（持久化进视图：内存设置 + JSONL 元数据行落盘；独立字段不清）。
         /// </summary>
         /// <param name="json">注入报告 JSON（BuildInjectReportJson 产物）</param>
         public void SetInjectReport(string json)
         {
             _viewStore.SetInjectReport(json);
-            _viewStore.Save();
         }
 
         /// <summary>内存视图块——按生成序（history 数据源；F4 视图持久化）</summary>
@@ -1844,7 +1843,7 @@ namespace CH4
             }
         }
         /// <summary>
-        /// 取走本块思考用时——推入 view.json 的时刻调用（取走即归零：计时生命周期止于落到视图层，不残留跨块）。
+        /// 取走本块思考用时——推入视图层的时刻调用（取走即归零：计时生命周期止于落到视图层，不残留跨块）。
         /// </summary>
         /// <returns>本块思考用时毫秒（0 = 无思考段或已取走）</returns>
         private long TakeReasonDuration()
@@ -2898,7 +2897,7 @@ namespace CH4
         private void CloseRound()
         {
             // A202 落盘时机——元数据面只在每次 API 请求结算后落盘（usage 处置点）；
-            // 轮末与 Note 拉起轮均为纯内存行为：轮末只写 view.json（roundsum 块），元数据面不写
+            // 轮末与 Note 拉起轮均为纯内存行为：轮末只写视图层 roundsum 块（A248 起每块即时落盘——轮末无额外落盘动作），元数据面不写
             // A229 timeback 未闭合自动拉起——优先于 Note（莎 2026-10-12 定）：域未回收 = 本轮未结束，同样不 roundsum；
             // 上限 3 次防无限空转（模型不回收时出声后放行本轮结束）
             if (TimebackActive)
@@ -2908,7 +2907,6 @@ namespace CH4
                     _timebackPullCount = _timebackPullCount + 1;
                     PhaseSettle();
                     PostSystemMessage(SysKindSystemAuto, "先回收timeback域再结束工作");
-                    _viewStore.Save();
                     _round = 0;
                     _phase = ChatPhase.Idle;
                     return;
@@ -2931,7 +2929,6 @@ namespace CH4
                 // 运行态——Note 拉起轮同样结算（本轮统计留档——design-ch4-llm §2.1 终止语义）
                 PhaseSettle();
                 PostSystemMessage(SysKindSystemAuto, "[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent]);
-                _viewStore.Save();
                 _round = 0;
                 _phase = ChatPhase.Idle;
                 return;

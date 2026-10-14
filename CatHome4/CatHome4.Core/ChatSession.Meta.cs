@@ -7,7 +7,7 @@ namespace CH4
     /// <summary>
     /// 宿主会话实体——会话元数据持久化段（A201 · design-ch4-protocol §十三）。
     /// 会话自身参数（实例 ID / displayName / 时间戳 / 前文三项 / 两级 token 累计）独立落盘，
-    /// 与 cat.cfg（配置面）· jsonl（真实前文）· view.json（视图前文）并列——重启可恢复。
+    /// 与 cat.cfg（配置面）· jsonl（真实前文）· view.jsonl（视图前文）并列——重启可恢复。
     /// </summary>
     internal sealed partial class ChatSession
     {

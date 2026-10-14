@@ -29,7 +29,7 @@ namespace CatHome4.Core.Tests
         {
             _dir = Path.Combine(Path.GetTempPath(), "cat4view_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_dir);
-            _path = Path.Combine(_dir, "view.json");
+            _path = Path.Combine(_dir, "view.jsonl");
             _store = new CH4.SessionViewStore(_path);
         }
 
@@ -346,7 +346,7 @@ namespace CatHome4.Core.Tests
         public void Load_MissingFile_EmptyView()
         {
             _store.OnUserMessage(User("旧", 100L), 0);
-            CH4.SessionViewStore fresh = new CH4.SessionViewStore(Path.Combine(_dir, "absent.view.json"));
+            CH4.SessionViewStore fresh = new CH4.SessionViewStore(Path.Combine(_dir, "absent.view.jsonl"));
             fresh.Load();
             Assert.Empty(fresh.GetBlocks());
             Assert.Single(_store.GetBlocks());
@@ -530,30 +530,34 @@ namespace CatHome4.Core.Tests
             _store.Clear();
             Assert.Empty(_store.GetBlocks());
             Assert.Equal("", _store.GetInjectReport());
+            // A248：清空同步落盘（原子重写为空）——新实例读回仍为空，否则旧行被读回、清空语义失效
+            CH4.SessionViewStore reloaded = new CH4.SessionViewStore(_path);
+            reloaded.Load();
+            Assert.Empty(reloaded.GetBlocks());
+            Assert.Equal("", reloaded.GetInjectReport());
         }
 
         // ── 落盘与往返 ──────────────────────────────────────────────
 
-        /// <summary>落盘——目标目录不存在时自动创建</summary>
+        /// <summary>落盘——目标目录不存在时自动创建（A248：每块 append 即落盘，无需显式写盘动作）</summary>
         [Fact]
-        public void Save_CreatesMissingDirectory()
+        public void Append_CreatesMissingDirectory()
         {
-            string nested = Path.Combine(_dir, "sessions", "s1", "s1.view.json");
+            string nested = Path.Combine(_dir, "sessions", "s1", "s1.view.jsonl");
             CH4.SessionViewStore store = new CH4.SessionViewStore(nested);
             store.AppendGapText("间隙", 100L);
             Assert.True(File.Exists(nested));
         }
 
-        /// <summary>落盘往返——辅助块（gap / roundsum / error / retry）与注入报告经新实例读回</summary>
+        /// <summary>落盘往返——辅助块（gap / roundsum / error / retry）与注入报告经新实例读回（A248：append 即落盘，无显式写盘步骤）</summary>
         [Fact]
-        public void SaveThenLoad_RestoresHelperBlocksAndReport()
+        public void AppendThenLoad_RestoresHelperBlocksAndReport()
         {
             _store.AppendGapText("间隙", 110L);
             _store.AppendRoundSummary("{\"type\":\"roundsum\"}", 120L);
             _store.AppendError("ERR|TEST|坏", 130L);
             _store.AppendRetry("{\"state\":\"wait\"}", 140L);
             _store.SetInjectReport("{\"file\":\"a.md\"}");
-            _store.Save();
             CH4.SessionViewStore reloaded = new CH4.SessionViewStore(_path);
             reloaded.Load();
             CH4.ViewBlock[] blocks = reloaded.GetBlocks();
@@ -566,20 +570,24 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void Load_MissingFile_KeepsEmpty()
         {
-            CH4.SessionViewStore store = new CH4.SessionViewStore(Path.Combine(_dir, "absent.view.json"));
+            CH4.SessionViewStore store = new CH4.SessionViewStore(Path.Combine(_dir, "absent.view.jsonl"));
             store.Load();
             Assert.Equal("", store.GetInjectReport());
             Assert.Empty(store.GetBlocks());
         }
 
-        /// <summary>加载——文件损坏时静默降级（JSON 不可解析不抛异常）</summary>
+        /// <summary>加载——坏行不毁整文件：合法块行照常读回，坏行跳过（A248：JSONL 逐行独立）</summary>
         [Fact]
-        public void Load_BrokenFile_DegradesSilently()
+        public void Load_BrokenLine_SkipsBadKeepsGood()
         {
-            File.WriteAllText(_path, "{ broken");
+            File.WriteAllText(_path, "{\"t\":\"b\",\"Timestamp\":100,\"RenderType\":\"user\",\"Payload\":\"{}\",\"MsgIndex\":0,\"Round\":0}\n{ broken");
             CH4.SessionViewStore store = new CH4.SessionViewStore(_path);
             store.Load();
             Assert.Equal("", store.GetInjectReport());
+            CH4.ViewBlock[] blocks = store.GetBlocks();
+            Assert.Single(blocks);
+            Assert.Equal("user", blocks[0].RenderType);
+            Assert.Equal(100L, blocks[0].Timestamp);
         }
 
         // ── A87 旧会话留档 ──────────────────────────────────────────
@@ -590,7 +598,7 @@ namespace CatHome4.Core.Tests
         {
             string sessionDir = Path.Combine(_dir, "sessions", "cat_a");
             Directory.CreateDirectory(sessionDir);
-            string viewPath = Path.Combine(sessionDir, "cat_a.view.json");
+            string viewPath = Path.Combine(sessionDir, "cat_a.view.jsonl");
             CH4.SessionViewStore store = new CH4.SessionViewStore(viewPath);
             store.OnUserMessage(User("你好", 1000L), 1);
             store.OnAssistantToolCalls(AssistantWithTools("思考内容", OneToolCall("call_1", "Note", "{}"), 2000L), 2);
@@ -621,7 +629,7 @@ namespace CatHome4.Core.Tests
         {
             string sessionDir = Path.Combine(_dir, "sessions", "cat_b");
             Directory.CreateDirectory(sessionDir);
-            CH4.SessionViewStore store = new CH4.SessionViewStore(Path.Combine(sessionDir, "cat_b.view.json"));
+            CH4.SessionViewStore store = new CH4.SessionViewStore(Path.Combine(sessionDir, "cat_b.view.jsonl"));
             string path = store.ArchiveLegacy("cat_b", "小B");
             Assert.True(File.Exists(path));
             string text = File.ReadAllText(path);
@@ -633,7 +641,7 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void ArchiveLegacy_UnexpectedPathShape_ReturnsEmpty()
         {
-            CH4.SessionViewStore store = new CH4.SessionViewStore("bare.view.json");
+            CH4.SessionViewStore store = new CH4.SessionViewStore("bare.view.jsonl");
             Assert.Equal("", store.ArchiveLegacy("cat_c", "小C"));
             Assert.False(Directory.Exists(Path.Combine(_dir, "sessions_old")));
         }
@@ -644,7 +652,7 @@ namespace CatHome4.Core.Tests
         {
             string sessionDir = Path.Combine(_dir, "sessions", "cat_d");
             Directory.CreateDirectory(sessionDir);
-            CH4.SessionViewStore store = new CH4.SessionViewStore(Path.Combine(sessionDir, "cat_d.view.json"));
+            CH4.SessionViewStore store = new CH4.SessionViewStore(Path.Combine(sessionDir, "cat_d.view.jsonl"));
             string path = store.ArchiveLegacy("cat_d", "");
             Assert.StartsWith("cat_d_", Path.GetFileName(path));
         }
@@ -686,6 +694,10 @@ namespace CatHome4.Core.Tests
             }
             Assert.Equal(2, front);
             Assert.Equal(1, sums);
+            // A248：截断同步重写落盘——读回保留面（被截条目不再出现）
+            CH4.SessionViewStore reloaded = new CH4.SessionViewStore(_path);
+            reloaded.Load();
+            Assert.Equal(3, reloaded.GetBlocks().Length);
         }
         /// <summary>
         /// 视图层播种——fork：目标存储取得源保留面（≤ 切点），源面不受影响且落盘可往返。
@@ -701,7 +713,7 @@ namespace CatHome4.Core.Tests
                         Assistant("a2", 2100)
             };
             ReplayAll(_store, msgs);
-            CH4.SessionViewStore target = new CH4.SessionViewStore(Path.Combine(_dir, "view2.json"));
+            CH4.SessionViewStore target = new CH4.SessionViewStore(Path.Combine(_dir, "view2.view.jsonl"));
             target.CopyFrom(_store, 1);
             CH4.ViewBlock[] seeded = target.GetBlocks();
             Assert.Equal(2, seeded.Length);
@@ -712,7 +724,7 @@ namespace CatHome4.Core.Tests
             // 源面不受影响——播种是单向复制
             Assert.Equal(4, _store.GetBlocks().Length);
             // 落盘往返——播种面可读回
-            CH4.SessionViewStore reloaded = new CH4.SessionViewStore(Path.Combine(_dir, "view2.json"));
+            CH4.SessionViewStore reloaded = new CH4.SessionViewStore(Path.Combine(_dir, "view2.view.jsonl"));
             reloaded.Load();
             Assert.Equal(2, reloaded.GetBlocks().Length);
         }

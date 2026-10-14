@@ -74,7 +74,7 @@ namespace CatHome4.Core.Tests
             string tmp = Path.Combine(Path.GetTempPath(), "cat4ord_" + Guid.NewGuid().ToString("N") + ".jsonl");
             SessionStore store = new SessionStore(tmp);
             OA oa = new OA(new ThreadGuard());
-            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4ord_" + Guid.NewGuid().ToString("N") + ".view.json"));
+            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4ord_" + Guid.NewGuid().ToString("N") + ".view.jsonl"));
             Func<string, string, string> runner = delegate (string name, string args)
             {
                 if (execLog != null)

@@ -110,7 +110,7 @@ namespace CatHome4.Core.Tests
             string tmp = Path.Combine(Path.GetTempPath(), "cat4tb_" + Guid.NewGuid().ToString("N") + ".jsonl");
             SessionStore store = new SessionStore(tmp);
             OA oa = new OA(new ThreadGuard());
-            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4tb_" + Guid.NewGuid().ToString("N") + ".view.json"));
+            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4tb_" + Guid.NewGuid().ToString("N") + ".view.jsonl"));
             CH4.ChatSession session = new CH4.ChatSession("tb-session", "tb", ctx, store, llm, oa, tools, delegate (string name, string args) { return "ERR|NO_TOOL|" + name; }, viewStore);
             session.SetCatKey("tb-session");
             return session;

@@ -1384,7 +1384,7 @@ namespace CatHome4.Admin
                 }
                 // [段4] 会话构造——M1c 每猫独立 Runtime（API 配置池按该猫 apiConfigId 构造）；M2c 声明面按猫裁剪
                 ILlmRuntime catRuntime = new DeepSeekLlmRuntime(apiStore, apiConfigId, globalConfig, reasoningEffort);
-                SessionViewStore viewStore = new SessionViewStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".view.json"));
+                SessionViewStore viewStore = new SessionViewStore(Path.Combine(_dataRoot, "Data", "sessions", id, id + ".view.jsonl"));
                 // A221 工具面解析——持久化快照优先（会话工具头与 system prompt 同命；重启不改面）
                 ToolSpec[] sessionTools = ChatSession.ResolveSessionTools(id, catSpecs);
                 ChatSession session = new ChatSession(id, displayName, context, store, catRuntime, _oa, sessionTools, ExecuteTool, viewStore);
