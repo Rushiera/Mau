@@ -88,6 +88,37 @@ namespace CH4
         }
 
         /// <summary>
+        /// 系统通知服务——工具面「发声」通道（ISystemNotifyService 实现）。
+        /// 等价 ChatBridge.PostSystemMessage(catKey, "systemauto", content)：前台可见的系统块、随轮次消费（忙时排队）。
+        /// 现行消费：web.search 验证升级（搜索通道命中验证码时通知人工处理）。
+        /// </summary>
+        private sealed class SystemNotifyService : ISystemNotifyService
+        {
+            /// <summary>会话协调桥——通知投递出口</summary>
+            private readonly ChatBridge _bridge;
+
+            /// <summary>
+            /// 构造——注入会话桥
+            /// </summary>
+            /// <param name="bridge">会话协调桥</param>
+            public SystemNotifyService(ChatBridge bridge)
+            {
+                _bridge = bridge;
+            }
+
+            /// <summary>
+            /// 投递系统通知——systemauto 注入（失败可见，原样返回内核回执）
+            /// </summary>
+            /// <param name="catKey">目标猫（会话标识）</param>
+            /// <param name="content">通知内容</param>
+            /// <returns>内核回执原文</returns>
+            public string Notify(string catKey, string content)
+            {
+                return _bridge.PostSystemMessage(catKey, "systemauto", content);
+            }
+        }
+
+        /// <summary>
         /// 主程序入口——参数路由：无参=交互模式 / --selfcheck=启动自检 / --run "指令"=单指令脚本模式 / --script &lt;file&gt;=指令文件批量模式（P3a 热重载实测通道）/ --probe-llm &lt;目标&gt;=LLM 返回体探针（方案 B 诊断通道——不启动宿主）/ --tool-check &lt;工具名&gt; &lt;参数JSON&gt;=工具全链自检（A23：OA 走单 → 认领线 → 桥）
         /// </summary>
         public static int Main(string[] args)
@@ -375,6 +406,8 @@ namespace CH4
             ChatContext chatCtx = new ChatContext();
             // S1 ChatBridge 化——会话协调实例（注入提示词构建委托——CatCfg 域静态面 BuildInjectPrompt）
             _chatBridge = new ChatBridge(BuildInjectPrompt);
+            // 系统通知服务——工具面「发声」通道（brick → DataBox → ChatBridge.PostSystemMessage systemauto；现行消费：web.search 验证升级）
+            DataBox.Bind<ISystemNotifyService>(new SystemNotifyService(_chatBridge));
             // S4 Admin 域接线——依赖注入（管理 API 处理器 + cat.* 指令族迁入 CatHome4.Admin）
             AdminService.Configure(_chatBridge, _oa, dataRoot, _mainThreadId, ExecuteTool, ObserveService.BuildSnapshotJson, new HtmlRootProvider(), apiConfigStore, qqBotStore, llmConfig, _portBand);
             AdminService.BuildEnvInfoProvider = BuildEnvInfo;

@@ -12,6 +12,8 @@
     { "key": "search.endpoint", "file": "search.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=取 LLM 池配置端点原值（不拼后缀；协议按端点是否含 /anthropic/ 分流）", "desc": "搜索端点——含 /anthropic/ 走 Anthropic 消息协议（x-api-key 头），否则走 OpenAI Responses（Bearer）；空=取 LLM 池配置端点原值；现行使用 https://api.deepseek.com/anthropic/v1/messages（DS 官方 Anthropic 端点）" },
     { "key": "search.model", "file": "search.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=池配置默认模型", "desc": "搜索模型（空=池配置默认模型）" },
     { "key": "search.timeout_ms", "file": "search.cfg", "default": "120000", "sensitive": false, "writable": true, "type": "int", "min": "1000", "max": "120000", "desc": "搜索超时毫秒（上限 120 秒——与工具执行层统一口径）" },
+    { "key": "search.web_min_interval_ms", "file": "search.cfg", "default": "3000", "sensitive": false, "writable": true, "type": "int", "min": "0", "max": "60000", "desc": "网页通道最小请求间隔毫秒（同引擎两次请求之间；防连发触发风控）" },
+    { "key": "search.web_cooldown_ms", "file": "search.cfg", "default": "900000", "sensitive": false, "writable": true, "type": "int", "min": "60000", "max": "86400000", "desc": "网页通道验证码冷却毫秒（命中验证后该引擎暂停时长）" },
     { "key": "vision.api_config_id", "file": "vision.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=未配置 → 识图工具明示不可用", "desc": "视觉 API 池配置 ID（未配置=识图不可用）" },
     { "key": "vision.endpoint", "file": "vision.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=按池配置推导 /chat/completions", "desc": "视觉端点（空=池配置推导 /chat/completions；示例 https://api.deepseek.com/chat/completions）" },
     { "key": "vision.model", "file": "vision.cfg", "default": "", "sensitive": false, "writable": true, "empty_desc": "空=池配置默认模型", "desc": "视觉模型（空=池配置默认模型）" },
