@@ -134,6 +134,30 @@
                             </div>
                         </div>
                     </div>
+                    <!-- A244 外观配置池——一套外观预设（桌宠 / TTS / 轮末总结 / 总结成音频）；猫级引用在猫配置弹层 -->
+                    <div style="margin-top:16px;border-top:1px solid var(--ch-line);padding-top:10px">
+                        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+                            <h2 style="margin:0">外观池</h2>
+                            <span id="apcMsg" style="color:var(--ch-ok);font-size:var(--ch-fs-tag)"></span>
+                            <span style="flex:1"></span>
+                            <button id="apcRefresh" style="background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:4px 10px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">刷新</button>
+                        </div>
+                        <div style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-bottom:6px">一套外观 = 桌宠种类 + TTS 风格 + 轮末总结 + 总结成音频；某猫要用某套，需在「多猫 → 该猫配置 → 外观」选择（空=跟随默认外观）</div>
+                        <table class="box-table" id="apcTable"><thead><tr><th style="width:16%">名称</th><th style="width:16%">配置 ID</th><th style="width:14%">桌宠</th><th style="width:14%">TTS</th><th style="width:12%">轮末总结</th><th style="width:12%">总结成音频</th><th style="width:16%">操作</th></tr></thead><tbody></tbody></table>
+                        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                            <input id="apcNewName" placeholder="名称" style="width:110px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <input id="apcNewPet" placeholder="桌宠种类（空=默认素材）" style="width:170px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <input id="apcNewTts" placeholder="TTS 风格（空=无）" style="width:150px;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:5px 8px;font-family:inherit;font-size:var(--ch-fs-tag)">
+                            <label style="display:flex;align-items:center;gap:4px;font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);cursor:pointer">
+                                <input type="checkbox" id="apcNewSummary"> 轮末总结
+                            </label>
+                            <label style="display:flex;align-items:center;gap:4px;font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);cursor:pointer">
+                                <input type="checkbox" id="apcNewAudio"> 总结成音频
+                            </label>
+                            <button id="apcAddBtn" style="background:var(--ch-bg-accent);border:none;color:var(--ch-fg-inverse);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">新建</button>
+                            <button id="apcCancelEdit" style="display:none;background:var(--ch-bg-raised);border:1px solid var(--ch-line);color:var(--ch-fg-muted);padding:5px 12px;cursor:pointer;font-family:inherit;font-size:var(--ch-fs-tag)">取消编辑</button>
+                        </div>
+                    </div>
                     <!-- 新猫默认模板——baseRole + 三字段默认值（M3d 体验轮新增） -->
                     <div style="margin-top:16px;border-top:1px solid var(--ch-line);padding-top:10px">
                         <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
@@ -222,9 +246,8 @@
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="checkbox" id="catCfgIdleOnly"> 人工输入空闲注入（userInjectIdleOnly——true=人工输入仅在空闲时推送，轮内不插；sys 注入不受影响）
             </label>
-            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
-                <input type="checkbox" id="catCfgRoundSummary"> 轮末总结（roundSummary——每轮结束后调度 LLMSimpleRequest 产出一句总结，做新视图块插入；用本猫的 LLM 配置）
-            </label>
+            <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">外观（appearanceId——桌宠种类 / TTS 风格 / 轮末总结 一套外观预设；空=跟随默认外观）</label>
+            <select id="catCfgAppearance" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px"></select>
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">思考强度（reasoningEffort——空=跟随全局；low/high/max）</label>
             <select id="catCfgEffort" style="width:100%;background:var(--ch-bg-panel);border:1px solid var(--ch-line);color:var(--ch-fg);padding:6px 8px;font-family:inherit;font-size:var(--ch-fs-tag);margin-top:3px"></select>
             <label style="font-size:var(--ch-fs-tag);color:var(--ch-fg-weak);margin-top:10px;display:block">Type 标签（type——猫卡按标签分区排布；空=默认组；同文本自动同组）</label>
@@ -260,6 +283,7 @@
     <script src="js/app.js?v=__V__"></script>
     <script src="js/panel.js?v=__V__"></script>
     <script src="js/panel-apis.js?v=__V__"></script>
+    <script src="js/panel-appearance.js?v=__V__"></script>
     <script src="js/panel-catcfg.js?v=__V__"></script>
     <script src="js/panel-packs.js?v=__V__"></script>
 </body>

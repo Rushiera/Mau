@@ -108,9 +108,9 @@ describe('块型渲染——结构契约', () => {
 });
 
 describe('形态契约', () => {
-    it('persist 九类全气泡，live 三件朴素（A219 起）', () => {
+    it('persist 十类全气泡，live 三件朴素（A219 起；A235 增 roundsummary）', () => {
         const bubbles = Object.keys(window.BLOCK_DECL).filter((t) => window.BLOCK_DECL[t].form === 'bubble');
-        expect(bubbles.sort()).toEqual(['error', 'inject_report', 'reason', 'retry', 'roundsum', 'systemautomessage', 'text', 'toolcard', 'user']);
+        expect(bubbles.sort()).toEqual(['error', 'inject_report', 'reason', 'retry', 'roundsum', 'roundsummary', 'systemautomessage', 'text', 'toolcard', 'user']);
         const plains = Object.keys(window.BLOCK_DECL).filter((t) => window.BLOCK_DECL[t].form === 'plain');
         expect(plains.sort()).toEqual(['replysse', 'thinksse', 'toolrun']);
     });

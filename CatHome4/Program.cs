@@ -290,6 +290,10 @@ namespace CH4
                 Path.Combine(dataRoot, "Data", "config"),
                 Path.Combine(dataRoot, "Data", "secrets"));
             DataBox.Bind<CH_QqBotConfigStore>(qqBotStore);
+            // A244 外观配置池——appearance.json 明文（无密钥面；每猫 appearanceId 引用 + 唯一默认项）
+            CH_AppearanceConfigStore appearanceStore = new CH_AppearanceConfigStore(
+                Path.Combine(dataRoot, "Data", "config"));
+            DataBox.Bind<CH_AppearanceConfigStore>(appearanceStore);
             // M1 语料面 Runtime——默认端点语义（QuickCat 工单 llm.stream 消费面；Guid.Empty=每次调用实时解析默认配置）
             // 空配置池无默认端点 → 启动失败（不做静默回退——必须先配置端点后才能运行）
             _llmRuntime = new DeepSeekLlmRuntime(apiConfigStore, Guid.Empty, llmConfig);
@@ -376,7 +380,7 @@ namespace CH4
             // S1 ChatBridge 化——会话协调实例（注入提示词构建委托——CatCfg 域静态面 BuildInjectPrompt）
             _chatBridge = new ChatBridge(BuildInjectPrompt);
             // S4 Admin 域接线——依赖注入（管理 API 处理器 + cat.* 指令族迁入 CatHome4.Admin）
-            AdminService.Configure(_chatBridge, _oa, dataRoot, _mainThreadId, ExecuteTool, ObserveService.BuildSnapshotJson, new HtmlRootProvider(), apiConfigStore, qqBotStore, llmConfig, _portBand);
+            AdminService.Configure(_chatBridge, _oa, dataRoot, _mainThreadId, ExecuteTool, ObserveService.BuildSnapshotJson, new HtmlRootProvider(), apiConfigStore, qqBotStore, appearanceStore, llmConfig, _portBand);
             AdminService.BuildEnvInfoProvider = BuildEnvInfo;
             // 加载包数据面接线——pack 内置工具（池定义与猫挂载解析归 Admin 域；Core 零配置面依赖）
             ChatSession.PackPayloadProvider = AdminService.BuildPackPayload;

@@ -25,6 +25,9 @@ namespace CatHome4.Admin
         /// <summary>QQ Bot 配置池——Bootstrap 绑定（qqbot 管理器消费）</summary>
         internal static CH_QqBotConfigStore _qqBotStore;
 
+        /// <summary>外观配置池——Bootstrap 绑定（每猫外观引用解析消费——A244）</summary>
+        internal static CH_AppearanceConfigStore _appearanceStore;
+
         /// <summary>全局配置存储——Bootstrap 绑定（catcfg.apply 重建 Runtime 消费）</summary>
         internal static ConfigStore _globalConfig;
 
@@ -100,6 +103,12 @@ namespace CatHome4.Admin
             // 受控根编辑面——管理员面（M4d）
             sink.MapGet("/api/v1/workspace", (Delegate)HandleWorkspaceGet);
             sink.MapPost("/api/v1/workspace", (Delegate)HandleWorkspacePost);
+            // A244 外观配置池——全局池管理面（每猫 appearanceId 引用 + 唯一默认项）
+            sink.MapGet("/api/v1/appearance-apis", (Delegate)HandleAppearanceApisGet);
+            sink.MapPost("/api/v1/appearance-apis", (Delegate)HandleAppearanceApisPost);
+            sink.MapPost("/api/v1/appearance-apis/edit", (Delegate)HandleAppearanceApisEdit);
+            sink.MapPost("/api/v1/appearance-apis/delete", (Delegate)HandleAppearanceApisDelete);
+            sink.MapPost("/api/v1/appearance-apis/default", (Delegate)HandleAppearanceApisDefault);
             // 加载包池——全局池管理面（R4 加载包）
             sink.MapGet("/api/v1/packs", (Delegate)HandlePacksGet);
             sink.MapPost("/api/v1/packs", (Delegate)HandlePacksPost);
@@ -653,7 +662,8 @@ namespace CatHome4.Admin
                 qqbotEnable = cfg.QqBotEnable,
                 userInjectIdleOnly = cfg.UserInjectIdleOnly,
                 reasoningEffort = cfg.ReasoningEffort,
-                roundSummary = cfg.RoundSummary,
+                appearanceId = cfg.AppearanceId,
+                roundSummary = ResolveEffectiveRoundSummary(catKey),
                 defaultReasoningEffort = ResolveGlobalReasoningEffort(),
                 enabledRoots = cfg.EnabledRoots,
                 allRoots = BuildAllRootsJson(),
@@ -662,7 +672,8 @@ namespace CatHome4.Admin
                 defectGroups = BuildToolDefectItems(),
                 staleToolNames = ResolveStaleToolNames(cfg.ToolNames),
                 apiOptions = apiOptions,
-                qqbotOptions = qqbotOptions
+                qqbotOptions = qqbotOptions,
+                appearanceOptions = BuildAppearanceOptions()
             };
             return Results.Json(resp);
         }
@@ -723,7 +734,7 @@ namespace CatHome4.Admin
             bool enabledRootsPresent = false;
             bool userInjectIdleOnlyPresent = false;
             bool reasoningEffortPresent = false;
-            bool roundSummaryPresent = false;
+            bool appearanceIdPresent = false;
             string displayName = "";
             string persona = "";
             string typeValue = "";
@@ -732,7 +743,7 @@ namespace CatHome4.Admin
             string reasoningEffort = "";
             bool qqbotEnable = false;
             bool userInjectIdleOnly = false;
-            bool roundSummaryValue = false;
+            string appearanceIdValue = "";
             List<string> injectList = new List<string>();
             List<string> enabledRoots = new List<string>();
             List<string> packs = new List<string>();
@@ -752,7 +763,7 @@ namespace CatHome4.Admin
                     enabledRootsPresent = root.TryGetProperty("enabledRoots", out probeEl);
                     userInjectIdleOnlyPresent = root.TryGetProperty("userInjectIdleOnly", out probeEl);
                     reasoningEffortPresent = root.TryGetProperty("reasoningEffort", out probeEl);
-                    roundSummaryPresent = root.TryGetProperty("roundSummary", out probeEl);
+                    appearanceIdPresent = root.TryGetProperty("appearanceId", out probeEl);
                     packsPresent = root.TryGetProperty("packs", out probeEl);
                     injectListPresent = root.TryGetProperty("injectList", out probeEl);
                     JsonElement apiConfigIdEl;
@@ -769,7 +780,7 @@ namespace CatHome4.Admin
                     qqbotEnable = GetBoolProp(root, "qqbotEnable");
                     userInjectIdleOnly = GetBoolProp(root, "userInjectIdleOnly");
                     reasoningEffort = GetJsonString(root, "reasoningEffort");
-                    roundSummaryValue = GetBoolProp(root, "roundSummary");
+                    appearanceIdValue = GetJsonString(root, "appearanceId");
                     JsonElement rootsEl;
                     if (root.TryGetProperty("enabledRoots", out rootsEl) && rootsEl.ValueKind == JsonValueKind.Array)
                     {
@@ -925,9 +936,23 @@ namespace CatHome4.Admin
                     return Results.Json(new { ok = false, error = "reasoningEffort 非法（low/high/max/空）" });
                 }
             }
-            if (roundSummaryPresent)
+            if (appearanceIdPresent)
             {
-                cfg.RoundSummary = roundSummaryValue;
+                // A244——空/全零=跟随默认外观；非零须 GUID（外观条目存在性在解析期判定）
+                string trimmedAppearance = appearanceIdValue == null ? "" : appearanceIdValue.Trim();
+                if (trimmedAppearance.Length == 0 || trimmedAppearance == Guid.Empty.ToString("D"))
+                {
+                    cfg.AppearanceId = Guid.Empty.ToString("D");
+                }
+                else
+                {
+                    Guid parsedAppearance;
+                    if (!Guid.TryParse(trimmedAppearance, out parsedAppearance) || parsedAppearance == Guid.Empty)
+                    {
+                        return Results.Json(new { ok = false, error = "appearanceId 非法" });
+                    }
+                    cfg.AppearanceId = parsedAppearance.ToString("D");
+                }
             }
             if (personaPresent)
             {
@@ -1451,7 +1476,7 @@ namespace CatHome4.Admin
                 _chatBridge.DefaultQqBotId = ResolveQqBotId(cfg);
                 _chatBridge.DefaultQqBotEnable = cfg.QqBotEnable;
                 _chatBridge.DefaultSession.SetUserInjectIdleOnly(cfg.UserInjectIdleOnly);
-                _chatBridge.DefaultSession.SetRoundSummary(cfg.RoundSummary);
+                _chatBridge.DefaultSession.SetRoundSummary(ResolveEffectiveRoundSummary("majordomo"));
                 // A230 显示名立即刷新（改配置即改内存；空值保持原值）
                 if (cfg.DisplayName != null && cfg.DisplayName.Length > 0)
                 {
@@ -1488,8 +1513,9 @@ namespace CatHome4.Admin
             cat.QqBotEnable = cfg.QqBotEnable;
             cat.UserInjectIdleOnly = cfg.UserInjectIdleOnly;
             cat.Session.SetUserInjectIdleOnly(cfg.UserInjectIdleOnly);
-            cat.RoundSummary = cfg.RoundSummary;
-            cat.Session.SetRoundSummary(cfg.RoundSummary);
+            cat.AppearanceId = ResolveAppearanceId(cfg);
+            cat.RoundSummary = ResolveEffectiveRoundSummary(key);
+            cat.Session.SetRoundSummary(cat.RoundSummary);
             // M4e 猫级白名单——运行时猫文件系统已在上方 ApplyCatRoots 重建（含本分支）
             Guid newApiId = ResolveApiConfigId(cfg);
             string newCatEffort = NormalizeReasoningEffort(cfg.ReasoningEffort);
@@ -1571,7 +1597,7 @@ namespace CatHome4.Admin
                 enabledRoots = data.EnabledRoots,
                 packs = data.Packs,
                 userInjectIdleOnly = data.UserInjectIdleOnly,
-                roundSummary = data.RoundSummary,
+                appearanceId = data.AppearanceId,
                 reasoningEffort = data.ReasoningEffort
             };
             try

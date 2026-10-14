@@ -739,22 +739,24 @@ namespace CatHome4.Admin
                     return "cat.cfg.set | reasoningEffort 非法值: " + value + "（low/high/max/空）";
                 }
             }
-            else if (field == "roundSummary")
+            else if (field == "appearanceId")
             {
-                // 轮末总结开关（roundSummary）；白名单 true/false
-                if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase))
+                // 外观配置身份（A244）；空/全零=跟随默认外观；非零须 GUID
+                string trimmedAppearance = value == null ? "" : value.Trim();
+                if (trimmedAppearance.Length == 0 || trimmedAppearance == Guid.Empty.ToString("D"))
                 {
-                    cfg.RoundSummary = true;
-                    applied = "roundSummary=true";
-                }
-                else if (string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
-                {
-                    cfg.RoundSummary = false;
-                    applied = "roundSummary=false";
+                    cfg.AppearanceId = Guid.Empty.ToString("D");
+                    applied = "appearanceId=（跟随默认外观）";
                 }
                 else
                 {
-                    return "cat.cfg.set | roundSummary 非法值: " + value + "（true/false）";
+                    Guid parsedAppearance;
+                    if (!Guid.TryParse(trimmedAppearance, out parsedAppearance) || parsedAppearance == Guid.Empty)
+                    {
+                        return "cat.cfg.set | appearanceId 非法值: " + value + "（GUID 或空）";
+                    }
+                    cfg.AppearanceId = parsedAppearance.ToString("D");
+                    applied = "appearanceId=" + parsedAppearance.ToString("D");
                 }
             }
             else if (field == "enabledRoots")
@@ -765,7 +767,7 @@ namespace CatHome4.Admin
             }
             else
             {
-                return "cat.cfg.set | 非法字段: " + field + "（可用: displayName/apiConfigId/persona/type/toolNames/injectList/packs/qqbotId/qqbotEnable/enabledRoots/userInjectIdleOnly/reasoningEffort）";
+                return "cat.cfg.set | 非法字段: " + field + "（可用: displayName/apiConfigId/persona/type/toolNames/injectList/packs/qqbotId/qqbotEnable/enabledRoots/userInjectIdleOnly/reasoningEffort/appearanceId）";
             }
             // [段2] 全量写回 + 生效入队（与端点同源：写后 catcfg.apply 主线程泵消费）
             SaveCatCfgData(id, cfg);
@@ -1308,6 +1310,7 @@ namespace CatHome4.Admin
                 string[] packs = new string[0];
                 bool userInjectIdleOnly = false;
                 string reasoningEffort = "";
+                Guid appearanceId = Guid.Empty;
                 bool roundSummary = false;
                 if (cfgData != null)
                 {
@@ -1336,7 +1339,9 @@ namespace CatHome4.Admin
                     {
                         reasoningEffort = cfgData.ReasoningEffort;
                     }
-                    roundSummary = cfgData.RoundSummary;
+                    appearanceId = ResolveAppearanceId(cfgData);
+                    // A244——roundSummary 迁入外观池：经猫 key 解析生效值（cat.cfg 不再持该字段）
+                    roundSummary = ResolveEffectiveRoundSummary(id);
                 }
                 else
                 {
@@ -1427,6 +1432,7 @@ namespace CatHome4.Admin
                 cat.Packs = packs;
                 cat.UserInjectIdleOnly = userInjectIdleOnly;
                 cat.ReasoningEffort = reasoningEffort;
+                cat.AppearanceId = appearanceId;
                 cat.RoundSummary = roundSummary;
                 cat.ToolSpecs = catSpecs;
                 // §4.3 空值语义可观测——toolNames 空=全量保底（反直觉默认）：解析结果落审计行

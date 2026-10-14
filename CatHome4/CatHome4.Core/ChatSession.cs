@@ -359,7 +359,7 @@ namespace CH4
         private long _pendingSeq;
         /// <summary>人工输入空闲注入开关——true=人工输入仅在 Idle 时推送（轮内不插）；sys 不受影响（cat.cfg userInjectIdleOnly）</summary>
         private bool _userInjectIdleOnly;
-        /// <summary>轮末总结开关——cat.cfg roundSummary（默认关）；关则轮末零成本跳过</summary>
+        /// <summary>轮末总结开关——值源=外观配置池条目字段（A244 迁入；无生效外观=关）；关则轮末零成本跳过</summary>
         private bool _roundSummaryEnabled;
         /// <summary>本轮 user 文本缓冲——轮末总结输入（全部 user 按序合并）。</summary>
         private readonly StringBuilder _roundSummaryUserBuf = new StringBuilder();
@@ -416,7 +416,7 @@ namespace CH4
             _userInjectIdleOnly = value;
         }
 
-        /// <summary>设置轮末总结开关——catcfg.apply 即时应用（cat.cfg roundSummary）。</summary>
+        /// <summary>设置轮末总结开关——catcfg.apply 即时应用（A244 起值源=外观配置池条目）。</summary>
         /// <param name="value">true=每轮结束后调度 LLMSimpleRequest 产出总结块</param>
         public void SetRoundSummary(bool value)
         {
