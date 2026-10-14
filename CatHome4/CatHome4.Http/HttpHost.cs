@@ -266,8 +266,9 @@ namespace CatHome4.Http
             //        css 面仍平铺（无子目录），保持单段
             _app.MapGet("/css/{file}", (HttpContext ctx) => ServeStatic(ctx, "css", "text/css"));
             _app.MapGet("/js/{**file}", (HttpContext ctx) => ServeStatic(ctx, "js", "application/javascript"));
-            // 桌宠资源——html/pet/*.webp（动画 WebP 二进制；禁缓存同 index 策略；路径穿越校验）
-            _app.MapGet("/pet/{file}", (HttpContext ctx) => ServeStatic(ctx, "pet", "image/webp"));
+            // 桌宠资源——html/pet/<skin>/*.webp（动画 WebP 二进制；禁缓存同 index 策略；路径穿越校验）
+            // A245——按皮肤分子目录，单段 {file} 匹配不到含斜杠路径 → catch-all（同 js 面 A167）
+            _app.MapGet("/pet/{**file}", (HttpContext ctx) => ServeStatic(ctx, "pet", "image/webp"));
             // A120 字体资源——html/fonts/*.ttf（web 字体二进制；缓存口径与其余静态资源不同——见 ServeStatic）
             _app.MapGet("/fonts/{file}", (HttpContext ctx) => ServeStatic(ctx, "fonts", "font/ttf"));
             // A118 应用图标——浏览器标签页 favicon（html/favicon.ico；与 exe 内嵌图标同源，由 tools/icongen 一并产出）

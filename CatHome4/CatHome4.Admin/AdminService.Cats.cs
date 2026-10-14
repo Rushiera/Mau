@@ -1312,6 +1312,7 @@ namespace CatHome4.Admin
                 string reasoningEffort = "";
                 Guid appearanceId = Guid.Empty;
                 bool roundSummary = false;
+                string petKind = "";
                 if (cfgData != null)
                 {
                     if (cfgData.Persona != null)
@@ -1342,6 +1343,7 @@ namespace CatHome4.Admin
                     appearanceId = ResolveAppearanceId(cfgData);
                     // A244——roundSummary 迁入外观池：经猫 key 解析生效值（cat.cfg 不再持该字段）
                     roundSummary = ResolveEffectiveRoundSummary(id);
+                    petKind = ResolveEffectivePetKind(id);
                 }
                 else
                 {
@@ -1400,6 +1402,7 @@ namespace CatHome4.Admin
                 session.AttachRoundNotify(NotifyBalloon);
                 session.SetUserInjectIdleOnly(userInjectIdleOnly);
                 session.SetRoundSummary(roundSummary);
+                session.SetPetKind(petKind);
                 // [段3b] 视图面 / 元数据面——fork 播种走克隆（源面保留部分），常规路径读盘恢复
                 if (forkSource != null && forkMsgIndex >= 0)
                 {

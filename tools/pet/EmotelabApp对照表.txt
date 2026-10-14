@@ -1,4 +1,4 @@
-按		after-idle-check  
+敲头		after-idle-check  
 礼物1	before-idle  
 惊吓		before-idle-hook  
 工作疲	before-idle-sleep
@@ -8,7 +8,7 @@
 思考认	loop-link
 扩音器	loop-reply
 打字气	loop-run 
-坐牢2	loop-sseErr
+加载中	loop-sseErr
 记录1	loop-think
 打字怒	loop-tool
 都好6	loop-wait

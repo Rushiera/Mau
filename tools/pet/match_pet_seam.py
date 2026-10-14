@@ -7,7 +7,8 @@
 输出：数值曲线 + 三联对照图（候选帧 | loop 首帧 | 差异热力）→ CatTemp。
 
 只读，不改素材。用法：
-    python tools/pet/match_pet_seam.py
+    python tools/pet/match_pet_seam.py                       # 默认皮肤 greencat
+    python tools/pet/match_pet_seam.py --skin deepdeep       # 换皮肤
     python tools/pet/match_pet_seam.py --pet <webp目录> --out <对照图目录>
 """
 import os
@@ -19,26 +20,28 @@ from scipy import ndimage
 HERE = os.path.dirname(os.path.abspath(__file__))        # tools/pet
 REPO = os.path.dirname(os.path.dirname(HERE))            # 仓库根
 
-DEFAULT_PET = os.path.join(REPO, "CatHome4", "html", "pet")
+DEFAULT_SKIN = "greencat"                                # 默认皮肤（pet/<skin> 子目录）
+DEFAULT_PET = os.path.join(REPO, "CatHome4", "html", "pet", DEFAULT_SKIN)
 DEFAULT_OUT = os.path.join(REPO, "CatTemp")
 
 PAIRS = [
     ("before-idle-sleep", "loop-idle-sleep"),
     ("before-idle-hook", "loop-idle-hook"),
-    ("before-idle", "loop-idle1"),
+    ("before-idle", "loop-idle"),
 ]
 
 
 def parse_args():
     """命令行——webp 目录与对照图输出目录。"""
     ap = argparse.ArgumentParser(description="before→loop 接缝帧匹配（只读）")
-    ap.add_argument("--pet", default=DEFAULT_PET, help="webp 素材目录（默认 CatHome4/html/pet）")
+    ap.add_argument("--skin", default=DEFAULT_SKIN, help="皮肤名（pet 子目录；默认 greencat）")
+    ap.add_argument("--pet", default=None, help="webp 素材目录（缺省 = CatHome4/html/pet/<skin>）")
     ap.add_argument("--out", default=DEFAULT_OUT, help="对照图输出目录（默认 CatTemp）")
     return ap.parse_args()
 
 
 ARGS = parse_args()
-PET = ARGS.pet
+PET = ARGS.pet if ARGS.pet else os.path.join(REPO, "CatHome4", "html", "pet", ARGS.skin)
 OUT = ARGS.out
 
 

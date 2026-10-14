@@ -289,6 +289,19 @@ namespace CatHome4.Admin
             }
             return appearance.RoundSummary;
         }
+        /// <summary>解析猫的桌宠种类生效值——无生效外观时保守空串（前端回落默认素材 greencat）。</summary>
+        /// <param name="catKey">猫 key</param>
+        /// <returns>素材名；空=默认素材</returns>
+        internal static string ResolveEffectivePetKind(string catKey)
+        {
+            bool ignoredFollow;
+            CH_AppearanceConfig appearance = ResolveEffectiveAppearance(catKey, out ignoredFollow);
+            if (appearance == null || appearance.PetKind == null)
+            {
+                return "";
+            }
+            return appearance.PetKind;
+        }
 
         /// <summary>外观下拉清单——池全量（id + 显示名 + 默认标记；猫配置弹层消费）。</summary>
         /// <returns>下拉项列表</returns>

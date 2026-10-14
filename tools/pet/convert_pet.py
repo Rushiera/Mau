@@ -1,4 +1,4 @@
-"""pet 资产转换：GIF（500x500，1-bit 透明，20ms/帧）→ 统一画布裁剪 → 边缘色外扩 → 缩放 → 边缘羽化 → 动画 WebP。
+"""pet 资产转换：GIF（500x500，1-bit 透明，20ms/帧）→ 原图整帧 → 边缘色外扩 → 缩放 → 边缘羽化 → 动画 WebP。
 
 边缘处理（莎 2026-09-17 定）——**圆角矩形 SDF**（CORNER_R=0 时自然退化为矩形）：
 - EDGE_PX   四边羽化宽度（输出尺寸口径）——四边内缩这么多做平滑淡出
@@ -16,7 +16,7 @@
 用法：
     python tools/pet/convert_pet.py                          # 处理默认皮肤（greencat）全部素材
     python tools/pet/convert_pet.py loop-think before-idle   # 只处理指定素材
-    python tools/pet/convert_pet.py --skin deepdeep          # 换皮肤烘焙（写现有平铺布局）
+    python tools/pet/convert_pet.py --skin deepdeep          # 换皮肤烘焙（写 pet/<skin>/ 子布局）
 """
 import os
 import json
@@ -30,9 +30,8 @@ from scipy import ndimage
 HERE = os.path.dirname(os.path.abspath(__file__))        # tools/pet
 REPO = os.path.dirname(os.path.dirname(HERE))            # tools/pet → tools → 仓库根
 
-BOX = (0, 53, 500, 500)      # 全局联合 bbox（所有帧 alpha>0 并集）——统一画布保证切换不跳
-                             # 素材画布不同则改这里（暂全局；多皮肤落地时可提为 per-skin）
-OUT_H = 256                  # 输出高度（显示高度约 160px 的 1.6 倍）
+# 不裁剪——按原图整帧（2026-10-14 莎裁：原 BOX 硬编码上边界 (0,53,…) 会切掉换素材后的头部）
+OUT_H = 256                  # 输出高度（整帧等比缩到此高）
 DURATION = 20                # 每帧 20ms（源 50fps）
 QUALITY = 78                 # 有损 WebP 质量
 METHOD = 4                   # 编码方法——4 与 6 体积持平（实测 0.44 vs 0.43MB）但快 100 倍
@@ -49,7 +48,7 @@ def parse_args():
     """命令行——素材名（位置参数）+ --skin / --src / --repo。"""
     ap = argparse.ArgumentParser(description="pet 资产转换：GIF → 动画 WebP + 清单")
     ap.add_argument("names", nargs="*", help="素材名（缺省 = 全部 loop-*/before-*/after-*）")
-    ap.add_argument("--skin", default="greencat", help="皮肤名（src 下子目录；默认 greencat）")
+    ap.add_argument("--skin", default="greencat", help="皮肤名（src 下子目录，同时决定产物子目录 pet/<skin>；默认 greencat）")
     ap.add_argument("--src", default=os.path.join(HERE, "src"), help="源素材根目录（默认 tools/pet/src）")
     ap.add_argument("--repo", default=REPO, help="仓库根（默认 = 脚本上三级）")
     return ap.parse_args()
@@ -57,9 +56,9 @@ def parse_args():
 
 ARGS = parse_args()
 SRC = os.path.join(ARGS.src, ARGS.skin)                              # 源素材（按皮肤分子目录）
-DST_SRC = os.path.join(ARGS.repo, "CatHome4", "html", "pet")         # 仓库源码区（git 资产）
+DST_SRC = os.path.join(ARGS.repo, "CatHome4", "html", "pet", ARGS.skin)     # 仓库源码区（git 资产，按皮肤分子目录）
 DST_JS = os.path.join(ARGS.repo, "CatHome4", "html", "js")
-DST_PUB = os.path.join(ARGS.repo, "public", "app", "html", "pet")    # 仓库产物区
+DST_PUB = os.path.join(ARGS.repo, "public", "app", "html", "pet", ARGS.skin)   # 仓库产物区（按皮肤分子目录）
 DST_PUB_JS = os.path.join(ARGS.repo, "public", "app", "html", "js")
 
 
@@ -93,7 +92,7 @@ def convert(name):
     im = Image.open(os.path.join(SRC, name))
     frames = []
     for page in ImageSequence.Iterator(im):
-        fr = np.array(page.convert("RGBA"))[BOX[1]:BOX[3], BOX[0]:BOX[2]]
+        fr = np.array(page.convert("RGBA"))
         alpha = fr[:, :, 3]
         rgb = fr[:, :, :3].copy()
         mask = alpha == 0
@@ -141,8 +140,33 @@ def webp_total_ms(path):
     return total
 
 
+def load_existing_manifest():
+    """读现有清单（多套结构 {skin: {name: {h, ms}}}）；旧扁平单套格式自动迁入 greencat 层。
+    读不到 / 无法解析 → 返回空表并出声（不静默）。"""
+    import re
+    path = os.path.join(DST_JS, "pet-manifest.js")
+    if not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    m = re.search(r"var\s+chatPetManifestData\s*=\s*(\{.*\})\s*;", text, re.S)
+    if m is None:
+        print("manifest 旧文件无法解析——按空表重建（该文件为生成物，勿手改）")
+        return {}
+    try:
+        data = json.loads(m.group(1))
+    except ValueError:
+        print("manifest 旧文件 JSON 非法——按空表重建")
+        return {}
+    # 旧扁平单套格式（顶层值即 {h, ms}）→ 迁入 greencat 层
+    if data and all(isinstance(v, dict) and "h" in v for v in data.values()):
+        data = {"greencat": data}
+    return data
+
+
 def write_manifest():
-    """素材清单——每张产物取 md5 前 8 位（前端缓存失效键：内容或名字一变，URL 即变）。
+    """素材清单——多套结构 {skin: {name: {h, ms}}}（前端缓存失效键：内容或名字一变，URL 即变）。
+    合并写：只更新本皮肤的段，保留其余皮肤（否则换皮肤烘焙会抹掉前一套）。
     产物落 js/pet-manifest.js（全局变量）——走 /js 路由拿 application/javascript；
     不用 .json 是为了不被 /pet 路由标成 image/webp（MIME 与实际不符）。"""
     import hashlib
@@ -154,12 +178,14 @@ def write_manifest():
         with open(p, "rb") as fh:
             h = hashlib.md5(fh.read()).hexdigest()[:8]
         items[os.path.splitext(f)[0]] = {"h": h, "ms": webp_total_ms(p)}
-    body = json.dumps(items, ensure_ascii=False, indent=4, sort_keys=True)
+    data = load_existing_manifest()
+    data[ARGS.skin] = items
+    body = json.dumps(data, ensure_ascii=False, indent=4, sort_keys=True)
     text = "// 自动生成（tools/pet/convert_pet.py）——勿手改\nvar chatPetManifestData = " + body + ";\n"
     for dst in (DST_JS, DST_PUB_JS):
         with open(os.path.join(dst, "pet-manifest.js"), "w", encoding="utf-8") as fh:
             fh.write(text)
-    print("manifest %d 项 → js/pet-manifest.js" % len(items))
+    print("manifest %s %d 项 → js/pet-manifest.js" % (ARGS.skin, len(items)))
 
 
 def main():

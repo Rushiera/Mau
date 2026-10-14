@@ -29,10 +29,10 @@ python tools/pet/convert_pet.py
 # 只烘指定素材
 python tools/pet/convert_pet.py loop-think before-idle
 
-# 换皮肤烘焙（写现有平铺布局 html/pet/*.webp）
+# 换皮肤烘焙（写 pet/<skin>/ 子布局）
 python tools/pet/convert_pet.py --skin deepdeep
 
-# 接缝匹配（只读，对照图输出到 CatTemp）
+# 接缝匹配（只读，对照图输出到 CatTemp；默认皮肤 greencat，可 --skin 换）
 python tools/pet/match_pet_seam.py
 
 # 前端资源核销（只读）——运行区在仓库之外，须显式给 --run
@@ -47,7 +47,8 @@ python tools/pet/verify_frontend.py --run C:/MauTest/MauOut/html
 | | `--skin` | `greencat` | 皮肤名（`src` 下子目录） |
 | | `--src` | `tools/pet/src` | 源素材根 |
 | | `--repo` | 脚本上三级 | 仓库根 |
-| match_pet_seam | `--pet` | `CatHome4/html/pet` | webp 素材目录 |
+| match_pet_seam | `--skin` | `greencat` | 皮肤名（pet 子目录） |
+| | `--pet` | `CatHome4/html/pet/<skin>` | webp 素材目录（覆盖 `--skin`） |
 | | `--out` | `CatTemp` | 对照图输出目录 |
 | verify_frontend | `--repo` | `CatHome4/html` | 仓库 html 目录 |
 | | `--run` | **必填** | 运行区 html 目录 |
@@ -56,8 +57,8 @@ python tools/pet/verify_frontend.py --run C:/MauTest/MauOut/html
 
 | 产物 | 位置 | 说明 |
 |:--|:--|:--|
-| 动画 WebP | `CatHome4/html/pet/*.webp` | 仓库源码区（进 git） |
-| 素材清单 | `CatHome4/html/js/pet-manifest.js` | 生成物（勿手改）——每张内容哈希 + 总时长 |
+| 动画 WebP | `CatHome4/html/pet/<skin>/*.webp` | 仓库源码区（进 git）——按皮肤分子目录 |
+| 素材清单 | `CatHome4/html/js/pet-manifest.js` | 生成物（勿手改）——多套 `{skin:{name:{h,ms}}}`，每张内容哈希 + 总时长 |
 | 同上（副本） | `public/app/html/…` | 仓库产物区——防下次部署前出现清单 / 素材错配 |
 
 🔴 **运行区不再直写**——前端静态资源统一由 `mau-setup mode=sync-html` 同步（源区 → 产物区 + 运行区）。
@@ -65,7 +66,7 @@ python tools/pet/verify_frontend.py --run C:/MauTest/MauOut/html
 
 ## 口径
 
-- **画面统一**：所有帧按全局联合 bbox（`BOX`）裁到同一画布 → 切换不跳。
+- **不裁剪**：按原图整帧（各帧同尺寸即天然统一画布 → 切换不跳）。2026-10-14 莎裁——原 `BOX` 硬编码上边界（`(0,53,…)`）会切掉换素材后的头部，已退役。
 - **透明区外扩**：透明区取最近可见像素色 → 防缩放时黑边。
 - **边缘羽化**：圆角矩形 SDF（`EDGE_PX` 羽化宽 / `CORNER_R` 圆角半径）——内部恒为 1，主体零影响。
 - **帧时长**：WebP 会合并完全相同的帧（把时长累加到保留帧）——总时长 ≠ 帧数 × 每帧时长；清单如实取 ANMF 解出的真实总时长。
@@ -74,5 +75,5 @@ python tools/pet/verify_frontend.py --run C:/MauTest/MauOut/html
 
 - **母本进 git**（莎 2026-10-14 拍板）——`src/<皮肤>/*.gif` 是母本，webp 由它派生。⚠ **git 历史永久**：日后重导素材会再堆体积，只提交「采用的母本」，中间稿留 WorkSpace。
 - **换素材后帧号失效**：`convert_pet.py` 的 `TRIM` 按帧号，换素材须重跑 `match_pet_seam.py` 复算。
-- **多皮肤未接线**：`src` 下已备 `deepdeep`，但前端仍是单皮肤平铺布局——多皮肤切换是后续轮（样式池），本轮只迁生产线。
-- **画布不同**：`BOX` 暂为全局常量；若某套素材画布不同，落地多皮肤时提为 per-skin 配置。
+- **多皮肤已接线**（A245 · 2026-10-14）：素材按 `html/pet/<skin>/` 分目录，前端按每猫生效外观（池字段 `PetKind`，空→默认）选套；`greencat`（默认回落）+ `deepdeep` 两套就绪。清单为多套结构 `{skin:{name:{h,ms}}}`，**合并写**——换皮肤烘焙不抹前一套。
+- **画布不同**：`BOX` 暂为全局常量（greencat / deepdeep 同为 500×500，已验证）；若日后某套画布不同，须提为 per-skin 配置。

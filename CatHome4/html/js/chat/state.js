@@ -7,14 +7,15 @@
 // 分层（A193 骨架 / A194 迁出）：分发表 = `state/registry.js::STATE_DECL`——投影件 → 消费字段 / 输出面 /
 //       入口的**唯一映射处**；投影件分居 `state/`（status · info · meta · note · delay · pending · conn）与
 //       `fx/`（controls · pet——外观层派生，A176 独立功能面）。
-//       本件只剩「整段覆盖 + 按表分发」——**新增字段 = 加一件 + 表加一行，本件不动**。
+//       本件只剩「整段覆盖 + 按表分发」——**新增字段 = 加一件 + 表加一行 + 本件白名单补一字段**。
 //
-// 字段面（后端 ChatSession.BuildStateJson · 十字段）：
+// 字段面（后端 ChatSession.BuildStateJson · 十一字段）：
 //   { sessionId, runState, runMs{idle,wait,link,think,tool,run,reply}, requests, note{…},
 //     delay{entries[…]}, pending{entries[…]}, conn{server,clients},
 //     tokens{prompt, completion, cacheHit, miss, rate, context, count,
 //            sessionPrompt, sessionCompletion, sessionCacheHit, sessionMiss, sessionRate},
-//     meta{catId, displayName, sessionId, createdAt, lastActiveAt, contextCount, contextChars} }
+//     meta{catId, displayName, sessionId, createdAt, lastActiveAt, contextCount, contextChars},
+//     pet{kind} }
 //
 // 观察项：按钮可用性属**外观层派生**（A184 改写契约），派生处 = fx/controls；delay 段（A185）为定时面板
 //         数据源（原 GET /api/v1/delay 旁路端点退役，面板退化为纯显示）；conn 段（A186）为**连接健康**
@@ -33,7 +34,8 @@ var appState = {
     pending: null,
     conn: null,
     tokens: {},
-    meta: null
+    meta: null,
+    pet: null
 };
 
 /// 状态段应用——整段覆盖后按分发表分发（入口与顺序的唯一处 = `state/registry.js::STATE_DECL`）
@@ -52,7 +54,8 @@ function stateApply(st) {
         pending: st.pending || null,
         conn: st.conn || null,
         tokens: st.tokens || {},
-        meta: st.meta || null
+        meta: st.meta || null,
+        pet: st.pet || null
     };
     stateProjectAll(appState);
 }

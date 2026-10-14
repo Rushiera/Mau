@@ -361,6 +361,8 @@ namespace CH4
         private bool _userInjectIdleOnly;
         /// <summary>轮末总结开关——值源=外观配置池条目字段（A244 迁入；无生效外观=关）；关则轮末零成本跳过</summary>
         private bool _roundSummaryEnabled;
+        /// <summary>桌宠种类——值源=外观配置池条目字段（A245；空=默认素材 greencat）</summary>
+        private string _petKind = "";
         /// <summary>本轮 user 文本缓冲——轮末总结输入（全部 user 按序合并）。</summary>
         private readonly StringBuilder _roundSummaryUserBuf = new StringBuilder();
         /// <summary>本轮 text 缓冲——轮末总结输入（全部 text 按序合并）。</summary>
@@ -421,6 +423,12 @@ namespace CH4
         public void SetRoundSummary(bool value)
         {
             _roundSummaryEnabled = value;
+        }
+        /// <summary>设置桌宠种类——catcfg.apply 即时应用（A245 起值源=外观配置池条目字段）。</summary>
+        /// <param name="kind">素材名（空=默认素材 greencat，由前端回落）</param>
+        public void SetPetKind(string kind)
+        {
+            _petKind = kind == null ? "" : kind;
         }
 
         /// <summary>
@@ -2084,7 +2092,8 @@ namespace CH4
                 ("pending", JsonUtil.Raw(pendingJson)),
                 ("conn", JsonUtil.Raw(JsonUtil.Object(("server", IsHostRestarting() ? "stopping" : "ok"), ("clients", clients)))),
                 ("tokens", JsonUtil.Raw(tokensJson)),
-                ("meta", JsonUtil.Raw(metaJson)));
+                ("meta", JsonUtil.Raw(metaJson)),
+                ("pet", JsonUtil.Raw(JsonUtil.Object(("kind", _petKind)))));
         }
         /// <summary>状态段推送——状态变化即推（视图出口整段比对去重；未 Attach 时静默）</summary>
         public void PushState()

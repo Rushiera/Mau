@@ -1477,6 +1477,7 @@ namespace CatHome4.Admin
                 _chatBridge.DefaultQqBotEnable = cfg.QqBotEnable;
                 _chatBridge.DefaultSession.SetUserInjectIdleOnly(cfg.UserInjectIdleOnly);
                 _chatBridge.DefaultSession.SetRoundSummary(ResolveEffectiveRoundSummary("majordomo"));
+                _chatBridge.DefaultSession.SetPetKind(ResolveEffectivePetKind("majordomo"));
                 // A230 显示名立即刷新（改配置即改内存；空值保持原值）
                 if (cfg.DisplayName != null && cfg.DisplayName.Length > 0)
                 {
@@ -1516,6 +1517,7 @@ namespace CatHome4.Admin
             cat.AppearanceId = ResolveAppearanceId(cfg);
             cat.RoundSummary = ResolveEffectiveRoundSummary(key);
             cat.Session.SetRoundSummary(cat.RoundSummary);
+            cat.Session.SetPetKind(ResolveEffectivePetKind(key));
             // M4e 猫级白名单——运行时猫文件系统已在上方 ApplyCatRoots 重建（含本分支）
             Guid newApiId = ResolveApiConfigId(cfg);
             string newCatEffort = NormalizeReasoningEffort(cfg.ReasoningEffort);
