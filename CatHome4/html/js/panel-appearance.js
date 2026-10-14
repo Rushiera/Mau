@@ -36,7 +36,7 @@ function renderAppearanceRow(apc) {
     tdId.style.wordBreak = 'break-all';
     tr.appendChild(tdId);
     var tdPet = document.createElement('td');
-    tdPet.textContent = apc.petKind ? apc.petKind : '（默认素材）';
+    tdPet.textContent = apc.petKind ? apc.petKind : '（不显示）';
     if (!apc.petKind) { tdPet.style.color = 'var(--ch-fg-weak)'; }
     tr.appendChild(tdPet);
     var tdTts = document.createElement('td');

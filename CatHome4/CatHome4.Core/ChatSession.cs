@@ -361,7 +361,7 @@ namespace CH4
         private bool _userInjectIdleOnly;
         /// <summary>轮末总结开关——值源=外观配置池条目字段（A244 迁入；无生效外观=关）；关则轮末零成本跳过</summary>
         private bool _roundSummaryEnabled;
-        /// <summary>桌宠种类——值源=外观配置池条目字段（A245；空=默认素材 greencat）</summary>
+        /// <summary>桌宠种类——值源=外观配置池条目字段（A245/A251；空 = 无桌宠，前端按空值渲染不显示）</summary>
         private string _petKind = "";
         /// <summary>本轮 user 文本缓冲——轮末总结输入（全部 user 按序合并）。</summary>
         private readonly StringBuilder _roundSummaryUserBuf = new StringBuilder();
@@ -425,7 +425,7 @@ namespace CH4
             _roundSummaryEnabled = value;
         }
         /// <summary>设置桌宠种类——catcfg.apply 即时应用（A245 起值源=外观配置池条目字段）。</summary>
-        /// <param name="kind">素材名（空=默认素材 greencat，由前端回落）</param>
+        /// <param name="kind">素材名（空 = 无桌宠不显示，由前端按空值处理）</param>
         public void SetPetKind(string kind)
         {
             _petKind = kind == null ? "" : kind;

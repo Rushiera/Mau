@@ -289,9 +289,9 @@ namespace CatHome4.Admin
             }
             return appearance.RoundSummary;
         }
-        /// <summary>解析猫的桌宠种类生效值——无生效外观时保守空串（前端回落默认素材 greencat）。</summary>
+        /// <summary>解析猫的桌宠种类生效值——无生效外观 / 字段为空时保守空串（A251：空 = 无桌宠，前端按空值渲染，不回落默认素材）。</summary>
         /// <param name="catKey">猫 key</param>
-        /// <returns>素材名；空=默认素材</returns>
+        /// <returns>素材名；空=无桌宠（前端不显示）</returns>
         internal static string ResolveEffectivePetKind(string catKey)
         {
             bool ignoredFollow;
