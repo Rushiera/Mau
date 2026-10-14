@@ -20,11 +20,11 @@ namespace CH4
         /// <summary>视图文件路径——sessions/&lt;id&gt;/&lt;id&gt;.view.jsonl</summary>
         private readonly string _path;
 
-        /// <summary>块行标记——JSONL 行型（{"t":"b",…ViewBlock 全字段}）</summary>
+        /// <summary>块行标记——JSONL 唯一行型（{"t":"b",…ViewBlock 全字段}；注入报告亦为普通块）</summary>
         private const string BlockTag = "b";
 
-        /// <summary>元数据行标记——JSONL 行型（{"t":"meta","InjectReport":…}；读面取最后一次出现值）</summary>
-        private const string MetaTag = "meta";
+        /// <summary>注入报告条目型——普通块（每次 session.new 一条；读面取最后一条；ts=0 恒排最前）</summary>
+        private const string InjectReportType = "inject_report";
 
         /// <summary>落盘编码——UTF-8 无 BOM（JSONL 契约；与前文 jsonl 同源）</summary>
         private static readonly UTF8Encoding Utf8NoBom = new UTF8Encoding(false);
@@ -34,11 +34,6 @@ namespace CH4
 
         /// <summary>待配对工具——assistant 工具调用登记，tool 结果到达时生成工具卡条目</summary>
         private readonly List<PendingTool> _pendingTools = new List<PendingTool>();
-
-        /// <summary>
-        /// 注入报告——session.new 时生成（独立字段：非真实前文派生；写入即落盘，GetBlocks 合成首条）
-        /// </summary>
-        private string _injectReport = "";
 
         /// <summary>
         /// 轮末统计条目——roundsum（每轮 CloseRound 生成：Token 消耗 + 用时；非真实前文派生；写入即落盘，GetBlocks 按帧合并）
@@ -81,19 +76,51 @@ namespace CH4
         public void SetRound(int round) { _round = round; }
 
         /// <summary>
-        /// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）。写入即落盘（元数据行——读面取最后一次出现值）。
+        /// 注入报告条目——普通块（A248 尾：与其余条目同一模型 / 同一落盘 / 同一排序；ts=0 恒排最前）。
+        /// 覆写语义——同型旧块建新条前移除，读面取最后一条。
         /// </summary>
-        /// <param name="json">注入报告 JSON（file/status/…）</param>
+        /// <param name="json">注入报告 JSON（file/status/…；空=清除报告）</param>
         public void SetInjectReport(string json)
         {
-            _injectReport = json ?? "";
-            AppendLine(BuildMetaLine());
+            RemoveInjectReportBlock();
+            if (json == null || json.Length == 0)
+            {
+                // 清除语义——容器已无报告块，落盘反映（低频：会话初始化路径）
+                Rewrite();
+                return;
+            }
+            ViewBlock block = NewBlock(InjectReportType, json, 0, -1, false);
+            // 置首——保持容器内 ts 升序（归并依赖各源有序；报告 ts=0 恒最小）
+            _blocks.Insert(0, block);
+            AppendLine(BuildBlockLine(block));
         }
         /// <summary>
-        /// 注入报告 JSON——读（前端渲染数据源；空串=无注入报告）
+        /// 注入报告 JSON——读（前端渲染数据源 / 留档；空串=无注入报告）
         /// </summary>
         /// <returns>注入报告 JSON</returns>
-        public string GetInjectReport() { return _injectReport; }
+        public string GetInjectReport()
+        {
+            for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
+            {
+                if (_blocks[i].RenderType == InjectReportType)
+                {
+                    return _blocks[i].Payload ?? "";
+                }
+            }
+            return "";
+        }
+
+        /// <summary>移除注入报告块——覆写语义的单点（建新条前 / 载入去重时调用）。</summary>
+        private void RemoveInjectReportBlock()
+        {
+            for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
+            {
+                if (_blocks[i].RenderType == InjectReportType)
+                {
+                    _blocks.RemoveAt(i);
+                }
+            }
+        }
 
         /// <summary>待配对工具条目</summary>
         private sealed class PendingTool
@@ -119,23 +146,10 @@ namespace CH4
 
 
 
-        /// <summary>内存视图条目——按生成序（全量帧数据源）</summary>
+        /// <summary>内存视图条目——按生成序（全量帧数据源；注入报告为普通块，随归并自然排最前——ts=0）</summary>
         public ViewBlock[] GetBlocks()
         {
-            ViewBlock[] merged = MergeBlocks();
-            // 注入报告合成首条——会话元数据（非真实前文派生；前端首条渲染前文加载明细）
-            if (_injectReport.Length > 0)
-            {
-                ViewBlock[] withReport = new ViewBlock[merged.Length + 1];
-                ViewBlock report = NewBlock("inject_report", _injectReport, 0, -1, false);
-                withReport[0] = report;
-                for (int i = 0; i < merged.Length; i = i + 1)
-                {
-                    withReport[i + 1] = merged[i];
-                }
-                return withReport;
-            }
-            return merged;
+            return MergeBlocks();
         }
 
         /// <summary>
@@ -193,17 +207,6 @@ namespace CH4
             return obj.ToJsonString(options);
         }
 
-        /// <summary>构建元数据行——注入报告（t=meta；读面取最后一次出现值）。</summary>
-        /// <returns>单行 JSON</returns>
-        private string BuildMetaLine()
-        {
-            JsonSerializerOptions options = LineOptions();
-            JsonObject obj = new JsonObject();
-            obj["t"] = MetaTag;
-            obj["InjectReport"] = _injectReport ?? "";
-            return obj.ToJsonString(options);
-        }
-
         /// <summary>JSONL 序列化选项——中文直出（默认 \uXXXX 转义人读不便——2026-09-08 全局统一）。</summary>
         /// <returns>选项</returns>
         private static JsonSerializerOptions LineOptions()
@@ -214,17 +217,15 @@ namespace CH4
         }
 
         /// <summary>
-        /// 解析一行——块行（t=b → block）/ 元数据行（t=meta → metaReport）。
+        /// 解析一行——块行（t=b → block；唯一行型，注入报告亦为普通块）。
         /// 解析失败或行型未知 → false（坏行——调用方按位置出警处置）。
         /// </summary>
         /// <param name="line">行内容</param>
         /// <param name="block">解析出的条目（无=null）</param>
-        /// <param name="metaReport">解析出的注入报告（无=null）</param>
         /// <returns>true=行型已识别</returns>
-        private static bool TryParseLine(string line, out ViewBlock block, out string metaReport)
+        private static bool TryParseLine(string line, out ViewBlock block)
         {
             block = null;
-            metaReport = null;
             try
             {
                 using (JsonDocument doc = JsonUtil.ParseStrict(line))
@@ -244,11 +245,6 @@ namespace CH4
                         b.MsgIndex = (int)ReadLongProp(root, "MsgIndex");
                         b.Round = (int)ReadLongProp(root, "Round");
                         block = b;
-                        return true;
-                    }
-                    if (tag == MetaTag)
-                    {
-                        metaReport = GetStringProp(root, "InjectReport");
                         return true;
                     }
                     return false;
@@ -286,10 +282,18 @@ namespace CH4
                 _retries.Add(block);
                 return;
             }
+            if (type == InjectReportType)
+            {
+                // 覆写语义——多行同型只认最后一条（正常路径下文件内至多一条：Clear/Rewrite 会压实）
+                // 置首——保持容器内 ts 升序（归并依赖各源有序；报告 ts=0 恒最小）
+                RemoveInjectReportBlock();
+                _blocks.Insert(0, block);
+                return;
+            }
             _blocks.Add(block);
         }
 
-        /// <summary>合并面——五类块源按时间戳升序归并（同一坐标系；不含注入报告合成）。</summary>
+        /// <summary>合并面——五类块源按时间戳升序归并（同一坐标系；注入报告为普通块，随归并排最前——ts=0）。</summary>
         /// <returns>归并后的条目数组</returns>
         private ViewBlock[] MergeBlocks()
         {
@@ -432,10 +436,8 @@ namespace CH4
         /// </summary>
         public void Rewrite()
         {
-            // [段1] 组装保留面——元数据行 + 条目流（按时间戳升序；注入报告只走元数据行）
+            // [段1] 组装保留面——条目流（按时间戳升序；注入报告为普通块，随流落位——ts=0 居首）
             StringBuilder sb = new StringBuilder();
-            sb.Append(BuildMetaLine());
-            sb.Append('\n');
             ViewBlock[] all = MergeBlocks();
             for (int i = 0; i < all.Length; i = i + 1)
             {
@@ -711,7 +713,7 @@ namespace CH4
             sb.Append("- 块数：user " + userCount.ToString() + " · 回复 " + replyCount.ToString() + " · 轮结算 " + _roundSums.Count.ToString() + "\n\n");
             sb.Append("---\n\n");
             // [段3] 加载报告段 + 对话段
-            AppendInjectReportSection(sb, _injectReport);
+            AppendInjectReportSection(sb, GetInjectReport());
             sb.Append("---\n\n");
             sb.Append("## 对话\n\n");
             sb.Append(body.ToString());
@@ -908,8 +910,7 @@ namespace CH4
         {
             _blocks.Clear();
             _pendingTools.Clear();
-            // 注入报告随视图层清理——session.new 后 HandleSessionNew 重新 Set + Save
-            _injectReport = "";
+            // 注入报告为普通块——随 _blocks 一并清理（session.new 后 HandleSessionNew 重新 Set）
             // 间隙文本随视图层清理——新会话不保留旧 gap 条目
             _gapTexts.Clear();
             // 轮末统计随视图层清理——新会话不保留旧轮统计
@@ -925,7 +926,7 @@ namespace CH4
         /// 视图层截断——回滚（session.rollback）：丢弃前文索引大于切点的条目，与真实前文截断同批物化。
         /// 判定：前文派生条目（MsgIndex ≥ 0）按索引；非前文派生条目（-1）按时间戳界限——时间戳单调化
         /// 保证全局严格递增，故被截区间内产生的一切条目时间戳必不小于「被丢弃前文条目的最小时间戳」。
-        /// 保留面 = 切点及之前的全部条目（注入报告为独立字段，随会话延续保留）；写盘。
+        /// 保留面 = 切点及之前的全部条目（注入报告为普通块——MsgIndex=-1 不参与索引判定，天然保留）；写盘。
         /// </summary>
         /// <param name="msgIndex">切点前文索引（保留 ≤ 该索引的条目）</param>
         public void TruncateFrom(int msgIndex)
@@ -994,7 +995,7 @@ namespace CH4
             _retries.Clear();
             CopyBlocksBefore(source._retries, _retries, dropMinTs);
             _pendingTools.Clear();
-            _injectReport = source._injectReport;
+            // 注入报告为普通块——随 _blocks 搬迁（MsgIndex=-1 不参与索引判定，天然保留）
             _lastTs = MaxTimestamp();
             Rewrite();
         }
@@ -1160,7 +1161,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 载入视图层——逐行读回 JSONL（块行 + 元数据行；A156：载入即权威，不从前文重建）。
+        /// 载入视图层——逐行读回 JSONL（唯一行型块行；注入报告为普通块）。
         /// 末行残缺丢弃、非末行坏行跳过（各自出声）；失败出声——视图层为权威，静默不可接受。
         /// </summary>
         public void Load()
@@ -1180,13 +1181,12 @@ namespace CH4
                 LogStore.Add("SessionViewStore", 3, "视图载入失败（按空视图继续——本会话历史将空白）: " + ex.Message, "SYS");
                 return;
             }
-            // [段1] 容器清零——载入即权威重建（不复用内存残留）
+            // [段1] 容器清零——载入即权威重建（不复用内存残留；注入报告为 _blocks 内普通块，随之一并清零）
             _blocks.Clear();
             _gapTexts.Clear();
             _roundSums.Clear();
             _errors.Clear();
             _retries.Clear();
-            _injectReport = "";
             // [段2] 末条非空行定位——仅末行按残缺处置（末尾截断行：丢弃 + 出警）
             int lastIndex = -1;
             for (int i = lines.Length - 1; i >= 0; i = i - 1)
@@ -1197,7 +1197,7 @@ namespace CH4
                     break;
                 }
             }
-            // [段3] 逐行解析——块行 / 元数据行 / 坏行（非末行坏行跳过——不整文件作废）
+            // [段3] 逐行解析——块行 / 坏行（非末行坏行跳过——不整文件作废）
             for (int i = 0; i < lines.Length; i = i + 1)
             {
                 string line = lines[i].Trim();
@@ -1206,16 +1206,10 @@ namespace CH4
                     continue;
                 }
                 ViewBlock block = null;
-                string metaReport = null;
-                bool parsed = TryParseLine(line, out block, out metaReport);
+                bool parsed = TryParseLine(line, out block);
                 if (parsed && block != null)
                 {
                     AddLoadedBlock(block);
-                    continue;
-                }
-                if (parsed && metaReport != null)
-                {
-                    _injectReport = metaReport;
                     continue;
                 }
                 if (i == lastIndex)

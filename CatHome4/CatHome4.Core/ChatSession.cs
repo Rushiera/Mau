@@ -749,7 +749,7 @@ namespace CH4
         }
 
         /// <summary>
-        /// 设置注入报告——session.new 后调用（持久化进视图：内存设置 + JSONL 元数据行落盘；独立字段不清）。
+        /// 设置注入报告——session.new 后调用（视图层普通块：建条即 append 落盘；覆写语义——同型旧块替换）。
         /// </summary>
         /// <param name="json">注入报告 JSON（BuildInjectReportJson 产物）</param>
         public void SetInjectReport(string json)

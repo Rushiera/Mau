@@ -410,9 +410,9 @@ namespace CatHome4.Core.Tests
             Assert.Equal(250L, blocks[3].Timestamp);
         }
 
-        /// <summary>注入报告——合成渲染首块（时间戳 0 / 固定哈希 / 索引 -1）</summary>
+        /// <summary>注入报告——普通块居首（时间戳 0 / 索引 -1；A248 尾：与其余条目同一模型）</summary>
         [Fact]
-        public void GetBlocks_InjectReport_PrependsSyntheticBlock()
+        public void GetBlocks_InjectReport_LeadsBlockList()
         {
             _store.OnUserMessage(User("问题", 100L), 0);
             _store.SetInjectReport("{\"file\":\"a.md\"}");
@@ -424,9 +424,9 @@ namespace CatHome4.Core.Tests
             Assert.Equal("{\"file\":\"a.md\"}", blocks[0].Payload);
         }
 
-        /// <summary>注入报告清空——空串不合成首块</summary>
+        /// <summary>注入报告清空——空串不建块（覆写语义）</summary>
         [Fact]
-        public void SetInjectReport_Empty_NoSyntheticBlock()
+        public void SetInjectReport_Empty_NoBlock()
         {
             _store.SetInjectReport("{\"file\":\"a.md\"}");
             _store.SetInjectReport("");
@@ -535,6 +535,20 @@ namespace CatHome4.Core.Tests
             reloaded.Load();
             Assert.Empty(reloaded.GetBlocks());
             Assert.Equal("", reloaded.GetInjectReport());
+        }
+
+        /// <summary>注入报告覆写——同型旧块替换（容器与文件各只留一条），载入读回最后一条</summary>
+        [Fact]
+        public void SetInjectReport_Overwrite_KeepsLastOnly()
+        {
+            _store.SetInjectReport("{\"file\":\"a.md\"}");
+            _store.SetInjectReport("{\"file\":\"b.md\"}");
+            Assert.Equal(1, _store.GetBlocks().Length);
+            Assert.Equal("{\"file\":\"b.md\"}", _store.GetInjectReport());
+            CH4.SessionViewStore reloaded = new CH4.SessionViewStore(_path);
+            reloaded.Load();
+            Assert.Equal(1, reloaded.GetBlocks().Length);
+            Assert.Equal("{\"file\":\"b.md\"}", reloaded.GetInjectReport());
         }
 
         // ── 落盘与往返 ──────────────────────────────────────────────
