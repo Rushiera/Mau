@@ -67,6 +67,12 @@ namespace CatHome4.Http
         /// <summary>端点角色手动对调回调（可空=不注册该端点）——POST /api/v1/api-role/toggle（仅本会话有效）</summary>
         public Func<string> ApiRoleToggler { get; set; }
 
+        /// <summary>思考强度读取回调（可空=不注册该端点）——GET /api/v1/effort（对话页 [思考 档位] 标签；本猫覆盖 + 全局值）</summary>
+        public Func<string> EffortBuilder { get; set; }
+
+        /// <summary>思考强度写入回调（可空=不注册该端点）——POST /api/v1/effort（参数=新值，空串=清空覆盖跟随全局）</summary>
+        public Func<string, string> EffortSetter { get; set; }
+
         /// <summary>视图全量帧构建回调（可空=连接建立不推视图）——v2 契约：连接建立取一次（连接私有首帧）</summary>
         public Func<string> ViewFullBuilder { get; set; }
 
@@ -112,6 +118,12 @@ namespace CatHome4.Http
 
         /// <summary>端点角色手动对调回调——POST /api/v1/api-role/toggle（可空=不注册）</summary>
         private Func<string> _apiRoleToggler;
+
+        /// <summary>思考强度读取回调——GET /api/v1/effort（可空=不注册；对话端口注入）</summary>
+        private Func<string> _effortBuilder;
+
+        /// <summary>思考强度写入回调——POST /api/v1/effort（可空=不注册）</summary>
+        private Func<string, string> _effortSetter;
 
         /// <summary>视图全量构建回调——对话端口注入（Session.BuildViewFullJson；可空=连接建立不推视图）</summary>
         private Func<string> _viewFullBuilder;
@@ -222,6 +234,8 @@ namespace CatHome4.Http
             host._patchBuilder = options.PatchBuilder;
             host._apiRoleBuilder = options.ApiRoleBuilder;
             host._apiRoleToggler = options.ApiRoleToggler;
+            host._effortBuilder = options.EffortBuilder;
+            host._effortSetter = options.EffortSetter;
             host._viewFullBuilder = options.ViewFullBuilder;
             host._viewFrameBuilder = options.ViewFrameBuilder;
             host._serveChatPage = options.ServeChatPage;
@@ -294,6 +308,47 @@ namespace CatHome4.Http
                 {
                     // 手动对调——仅本会话有效（清自动窗口；结果视图提示由宿主侧推送）
                     return Results.Text(_apiRoleToggler(), "application/json");
+                });
+            }
+            // 思考强度面——对话页顶栏 [思考 档位] 标签（读 + 写；可空=不注册——管理端口不注入）
+            if (_effortBuilder != null)
+            {
+                _app.MapGet("/api/v1/effort", (HttpContext ctx) =>
+                {
+                    return Results.Text(_effortBuilder(), "application/json");
+                });
+            }
+            if (_effortSetter != null)
+            {
+                _app.MapPost("/api/v1/effort", async (HttpContext ctx) =>
+                {
+                    // body {"value":"low|high|max|"}——空串=清空覆盖（跟随全局）；入口面零容忍：非法 body 拒绝，不静默清空
+                    string body = "";
+                    using (System.IO.StreamReader reader = new System.IO.StreamReader(ctx.Request.Body))
+                    {
+                        body = await reader.ReadToEndAsync();
+                    }
+                    string value = null;
+                    try
+                    {
+                        using (JsonDocument doc = JsonUtil.ParseStrict(body))
+                        {
+                            JsonElement valueEl;
+                            if (doc.RootElement.TryGetProperty("value", out valueEl) && valueEl.ValueKind == JsonValueKind.String)
+                            {
+                                value = valueEl.GetString();
+                            }
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        value = null;
+                    }
+                    if (value == null)
+                    {
+                        return Results.Text("{\"ok\":false,\"error\":\"body 非 JSON 或缺少 value 字段\"}", "application/json");
+                    }
+                    return Results.Text(_effortSetter(value), "application/json");
                 });
             }
             // 前文条目面——对话页状态栏「前文 n 条 / n tokens」点击弹层数据源（可空=不注册——管理端口不注入）

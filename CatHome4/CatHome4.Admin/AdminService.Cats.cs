@@ -2134,6 +2134,8 @@ namespace CatHome4.Admin
                 PatchBuilder = null,
                 ApiRoleBuilder = () => BuildApiRoleJson(cat.Session),
                 ApiRoleToggler = () => ToggleApiRoleJson(cat.Session),
+                EffortBuilder = () => BuildEffortJson(cat.Session.Id),
+                EffortSetter = (string value) => SetEffortJson(cat.Session.Id, value),
                 ViewFullBuilder = () => cat.Session.BuildViewFullJson(),
                 ViewFrameBuilder = () => cat.Session.TakeViewFrameJson(),
                 ServeChatPage = true,
@@ -2177,6 +2179,8 @@ namespace CatHome4.Admin
                 PatchBuilder = null,
                 ApiRoleBuilder = () => BuildApiRoleJson(_chatBridge.DefaultSession),
                 ApiRoleToggler = () => ToggleApiRoleJson(_chatBridge.DefaultSession),
+                EffortBuilder = () => BuildEffortJson(_chatBridge.DefaultSession.Id),
+                EffortSetter = (string value) => SetEffortJson(_chatBridge.DefaultSession.Id, value),
                 ViewFullBuilder = () => _chatBridge.DefaultSession.BuildViewFullJson(),
                 ViewFrameBuilder = () => _chatBridge.DefaultSession.TakeViewFrameJson(),
                 ServeChatPage = true,
@@ -2415,7 +2419,12 @@ namespace CatHome4.Admin
             Dictionary<string, object> majorEntry = BuildCatInfoEntry("majordomo", majorName, _majorHost != null, _majorPort, true, majorSession, "");
             majorEntry["apiConfigId"] = majorApi;
             majorEntry["qqbotId"] = majorQq;
-            majorEntry["enabledRoots"] = majorRoots;
+            string majorEffort = "";
+            if (majorCfg != null && majorCfg.ReasoningEffort != null)
+            {
+                majorEffort = majorCfg.ReasoningEffort;
+            }
+            majorEntry["reasoningEffort"] = majorEffort;
             list.Add(majorEntry);
             for (int i = 0; i < _cats.Count; i++)
             {
@@ -2442,7 +2451,12 @@ namespace CatHome4.Admin
                 Dictionary<string, object> entry = BuildCatInfoEntry(cat.Id, cat.DisplayName, cat.Running, cat.Port, false, cat.Session, cat.Type);
                 entry["apiConfigId"] = apiConfigId;
                 entry["qqbotId"] = qqbotId;
-                entry["enabledRoots"] = enabledRoots;
+                string reasoningEffort = "";
+                if (cfg != null && cfg.ReasoningEffort != null)
+                {
+                    reasoningEffort = cfg.ReasoningEffort;
+                }
+                entry["reasoningEffort"] = reasoningEffort;
                 list.Add(entry);
             }
             var resp = new

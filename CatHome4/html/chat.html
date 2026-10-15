@@ -13,6 +13,8 @@
         <span class="sid" id="chatTitle">—</span>
         <span id="chatInfo">—</span>
         <span style="flex:1"></span>
+        <!-- 思考强度标签（js/chat/effort.js）——本猫 reasoningEffort 覆盖；点击循环 跟随全局 → low → high → max（写盘即生效） -->
+        <span id="chatEffort" title="思考强度——点击循环：跟随全局 → low → high → max（本猫覆盖，实时生效）">思考 —</span>
         <!-- 端点角色标签（js/chat/apirole.js）——只显当前生效站模型名；点击手动对调（仅本会话有效） -->
         <span id="chatApiRole" title="当前生效端点——点击对调主要 / 备用（仅本会话有效）">API —</span>
         <span id="uiVer" data-version title="前端版本——每次 Vitest 自动递增 + 最后更新时间">UI v?</span>
@@ -268,6 +270,8 @@
     <script src="js/chat/ctx.js?v=__V__"></script>
     <!-- 端点角色标签（/api/v1/api-role 读 + /toggle 写） -->
     <script src="js/chat/apirole.js?v=__V__"></script>
+    <!-- 思考强度标签（/api/v1/effort 读 + 写——本猫覆盖，点击循环） -->
+    <script src="js/chat/effort.js?v=__V__"></script>
 
     <!-- ⑥ 独立功能（fx）——每功能一件 · registry.js 在段末（表持有各件入口名）；启动由引导层 fxBoot() 统一执行 -->
     <script src="js/chat/fx/pet.js?v=__V__"></script>

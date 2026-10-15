@@ -352,6 +352,55 @@ namespace CatHome4.Admin
             return session.GetApiRoleJson();
         }
 
+        /// <summary>思考强度信息 JSON——GET /api/v1/effort 数据源（对话页 [思考 档位] 标签；本猫覆盖 + 全局值）。</summary>
+        /// <param name="catKey">猫 key（majordomo=默认猫）</param>
+        /// <returns>信息 JSON（{"effort":"low|high|max|","global":"low|high|max"}）</returns>
+        internal static string BuildEffortJson(string catKey)
+        {
+            string effort = "";
+            if (catKey != null && catKey.Length > 0 && IsSafeCatKey(catKey))
+            {
+                CatCfgData cfg = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", catKey, "cat.cfg"));
+                if (cfg != null && cfg.ReasoningEffort != null)
+                {
+                    effort = NormalizeReasoningEffort(cfg.ReasoningEffort);
+                }
+            }
+            string global = ResolveGlobalReasoningEffort();
+            return JsonUtil.Serialize(new { effort = effort, global = global });
+        }
+
+        /// <summary>
+        /// 思考强度写入——POST /api/v1/effort 数据源（对话页 [思考 档位] 标签；仅本猫覆盖，空=清空跟随全局）。
+        /// 落盘 HTTP 线程原子写；运行时生效入队主线程泵 catcfg.apply（与 cat-config 同通道）。
+        /// </summary>
+        /// <param name="catKey">猫 key（majordomo=默认猫）</param>
+        /// <param name="value">新值（low/high/max/空）</param>
+        /// <returns>回执 JSON（{"ok":true,"effort":"..."} / {"ok":false,"error":"..."}）</returns>
+        internal static string SetEffortJson(string catKey, string value)
+        {
+            if (catKey == null || catKey.Length == 0 || !IsSafeCatKey(catKey))
+            {
+                return JsonUtil.Serialize(new { ok = false, error = "cat 参数非法" });
+            }
+            string raw = value == null ? "" : value.Trim();
+            string norm = NormalizeReasoningEffort(raw);
+            if (norm.Length == 0 && raw.Length > 0)
+            {
+                return JsonUtil.Serialize(new { ok = false, error = "reasoningEffort 非法（low/high/max/空）" });
+            }
+            CatCfgData cfg = LoadCatCfg(Path.Combine(_dataRoot, "Data", "sessions", catKey, "cat.cfg"));
+            if (cfg == null)
+            {
+                return JsonUtil.Serialize(new { ok = false, error = "cat.cfg 不存在: " + catKey });
+            }
+            cfg.ReasoningEffort = norm;
+            SaveCatCfgData(catKey, cfg);
+            _catQueue.Enqueue("catcfg.apply " + catKey);
+            LogStore.Add("CatHome4", 1, "思考强度已受理：" + catKey + "（" + (norm.Length == 0 ? "跟随全局" : norm) + "）", "CONFIG");
+            return JsonUtil.Serialize(new { ok = true, effort = norm });
+        }
+
         /// <summary>
         /// 手动对调端点角色——POST /api/v1/api-role/toggle 数据源（仅本会话有效；视图提示由会话侧推送）。
         /// </summary>

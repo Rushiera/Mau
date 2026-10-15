@@ -306,7 +306,24 @@ function renderCatRow(cat) {
     tdQq.appendChild(qqSel);
     tr.appendChild(tdQq);
 
-    // [列4] 目录白名单——显示无权目录 + 设置入口（专用弹层）
+    // [列4] 思考强度——下拉直改（首项「跟随全局」= 零值语义：空 → 后端回落全局 llm.reasoning_effort；本猫覆盖，实时生效）
+    var tdEffort = document.createElement('td');
+    var effortSel = document.createElement('select');
+    effortSel.className = 'input-mini';
+    effortSel.style.width = '100%';
+    var effortValues = ['', 'low', 'high', 'max'];
+    for (var e = 0; e < effortValues.length; e++) {
+        var effortOpt = document.createElement('option');
+        effortOpt.value = effortValues[e];
+        effortOpt.textContent = (effortValues[e].length === 0) ? '（跟随全局）' : effortValues[e];
+        effortSel.appendChild(effortOpt);
+    }
+    effortSel.value = cat.reasoningEffort || '';
+    effortSel.addEventListener('change', function () { submitCatField(cat, 'reasoningEffort', effortSel.value, '思考强度'); });
+    tdEffort.appendChild(effortSel);
+    tr.appendChild(tdEffort);
+
+    // [列5] 目录白名单——显示无权目录 + 设置入口（专用弹层）
     var tdRoots = document.createElement('td');
     var denied = collectDeniedRoots(cat);
     var deniedSpan = document.createElement('span');
@@ -328,7 +345,7 @@ function renderCatRow(cat) {
     tdRoots.appendChild(rootsBtn);
     tr.appendChild(tdRoots);
 
-    // [列5] 工具清单——单按钮入口（专用弹层：工具勾选 + 人设）
+    // [列6] 工具清单——单按钮入口（专用弹层：工具勾选 + 人设）
     var tdTools = document.createElement('td');
     var toolsBtn = document.createElement('button');
     toolsBtn.textContent = '工具清单';
@@ -337,7 +354,7 @@ function renderCatRow(cat) {
     tdTools.appendChild(toolsBtn);
     tr.appendChild(tdTools);
 
-    // [列6] 前文注入——单按钮入口（专用弹层：候选 = 新猫默认模板的默认前文池）
+    // [列7] 前文注入——单按钮入口（专用弹层：候选 = 新猫默认模板的默认前文池）
     var tdInject = document.createElement('td');
     var injectBtn = document.createElement('button');
     injectBtn.textContent = '前文注入';

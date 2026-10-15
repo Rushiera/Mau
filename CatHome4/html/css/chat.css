@@ -147,6 +147,10 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 #chatApiRole { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
 #chatApiRole:hover { background: var(--ch-bg-hover); }
 #chatApiRole.backup { color: var(--ch-ok); border-color: var(--ch-ok); }
+/* 思考强度标签（js/chat/effort.js）——点击循环 跟随全局 → low → high → max；本猫覆盖 = 高亮（思考态色系） */
+#chatEffort { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); user-select: none; }
+#chatEffort:hover { background: var(--ch-bg-hover); }
+#chatEffort.override { color: var(--ch-warn); border-color: var(--ch-warn); }
 /* 前文弹层（js/chat/ctx.js）——信息位整行点击开的小窗口（四视图：按条 / 按 tokens / 关键信息 / 完整前文） */
 #chatInfo { cursor: pointer; }
 #chatInfo:hover { color: var(--ch-identity); }

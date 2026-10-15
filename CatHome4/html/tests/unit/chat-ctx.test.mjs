@@ -7,6 +7,7 @@
 //   ③ 条目展开——点条目头切全文（摘要 ↔ 全文）
 //   ④ 失败可见——端点报错 / 未响应在弹层内出声（不静默留白）
 //   ⑤ 端点角色标签——读端点渲染（主要 / 备用态类 + 模型名）；点击投递 toggle 后重读
+//   ⑥ 思考强度标签——读端点渲染（本猫覆盖 / 跟随全局）；点击循环投递下一档后重读
 //
 // 边界：只测对外行为（端点调用面 + DOM 可见结果），不测内部函数拆分。
 // ═══════════════════════════════════════════
@@ -243,5 +244,53 @@ describe('端点角色标签（apirole.js）', () => {
         window.apiRoleRefresh();
         await flushMicro();
         expect(document.getElementById('chatApiRole').textContent).toBe('API —');
+    });
+});
+
+// ── ⑥ 思考强度标签 ───────────────────────────
+describe('思考强度标签（effort.js）', () => {
+    it('读端点渲染——本猫覆盖态加 override 类', async () => {
+        mockEndpoints({ '/api/v1/effort': { effort: 'max', global: 'high' } });
+        window.effortRefresh();
+        await flushMicro();
+        const node = document.getElementById('chatEffort');
+        expect(node.textContent).toBe('思考 max');
+        expect(node.className).toContain('override');
+    });
+
+    it('空覆盖——显示跟随全局并带全局值（无 override 类）', async () => {
+        mockEndpoints({ '/api/v1/effort': { effort: '', global: 'low' } });
+        window.effortRefresh();
+        await flushMicro();
+        const node = document.getElementById('chatEffort');
+        expect(node.textContent).toBe('思考 跟随全局(low)');
+        expect(node.className).not.toContain('override');
+    });
+
+    it('点击循环——读真源取下一档后投递（不本地翻转）+ 写后重读', async () => {
+        const calls = [];
+        globalThis.fetch = async (url, opt) => {
+            calls.push({ url: String(url), opt: opt });
+            if (opt && opt.method === 'POST') {
+                return { json: async () => ({ ok: true, effort: JSON.parse(opt.body).value }) };
+            }
+            return { json: async () => ({ effort: 'low', global: 'high' }) };
+        };
+        document.getElementById('chatEffort').click();
+        await flushMicro();
+        const posts = calls.filter((c) => c.opt && c.opt.method === 'POST');
+        expect(posts.length).toBe(1);
+        expect(posts[0].url).toContain('/api/v1/effort');
+        // low 的下一档 = high（循环序 空 → low → high → max）
+        expect(JSON.parse(posts[0].opt.body).value).toBe('high');
+        // 写后重读真源（GET 至少一次）
+        expect(calls.filter((c) => !c.opt || c.opt.method !== 'POST').length).toBeGreaterThan(0);
+    });
+
+    it('读取失败回落占位（不显示假值）', async () => {
+        globalThis.fetch = async () => { throw new Error('端点不可达'); };
+        window.effortRefresh();
+        await flushMicro();
+        expect(document.getElementById('chatEffort').textContent).toBe('思考 —');
     });
 });
