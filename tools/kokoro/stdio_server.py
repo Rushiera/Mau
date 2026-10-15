@@ -91,12 +91,10 @@ def handle(request, engine):
 
 def main():
     """主循环——读到 EOF 或 quit 即退出。"""
-    argv = sys.argv[1:]
-    if "--home" in argv:
-        os.environ["KOKORO_HOME"] = argv[argv.index("--home") + 1]
+    device = kokoro_env.apply_cli(sys.argv[1:])
 
     started = time.perf_counter()
-    engine = kokoro_env.load_engine()
+    engine = kokoro_env.load_engine(device=device or None)
     emit(
         {
             "ok": True,

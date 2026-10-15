@@ -18,12 +18,15 @@ Kokoro 中文语音合成的**胶水代码**——stdio 驱动 / 单次合成 / 
 
 | 文件 | 用途 |
 |:--|:--|
-| `kokoro_env.py` | 环境定位（`KOKORO_HOME`）+ GPU 预载 + 引擎加载——所有脚本共用 |
-| `stdio_server.py` | **stdio 驱动（主通道）**——严格协议，常驻 |
+| `kokoro_env.py` | 环境定位（`KOKORO_HOME`）+ GPU 预载 + 引擎加载 + 启动开关解析（`apply_cli`）——所有脚本共用 |
+| `stdio_server.py` | **stdio 驱动（主通道）**——严格协议，常驻；认 `--model` / `--device` 启动开关（→ §四·B） |
 | `synth.py` | 单次合成（调试 / 低频调用） |
 | `selftest_stdio.py` | stdio 协议自测——起真实子进程跑完整往返 |
 | `bench.py` | 性能基准——三档文本多轮 + RTF 汇总 |
 | `perf_test.py` | GPU 性能测试——精确 10/30/100 字 × 5 轮，区分首次与稳态 |
+| `probe_mix.py` | **中英混排 G2P 探针**——只打音素串（不合成音频）：对比 `en_callable` 接线前后的产出与 vocab 越界字符 |
+| `make_samples.py` | **音色样本批量生成**——同一段文本 × 多音色（`--list` 列清单 / `--voices a,b` 指定 / `--all` 全量） |
+| `make_variants.py` | **标点变体探针**——同一句话 × 不同标点写法，输出停顿段分布 / 基频走向 / 时长对照表 |
 
 ## 三、环境变量
 
@@ -33,6 +36,8 @@ Kokoro 中文语音合成的**胶水代码**——stdio 驱动 / 单次合成 / 
 | `KOKORO_MODEL` | 模型文件名；默认 `kokoro-v1.1-zh.onnx`（**fp32 + CUDA**） |
 
 所有脚本支持 `--home <目录>` 覆盖 `KOKORO_HOME`（便于单条命令行调用）。
+
+**服务侧另有启动开关**（`--model` / `--device`）——由宿主 `py.service.kokoro.args` 原样传入，详见 §四·B。
 
 ## 四、stdio 协议（严格）
 
@@ -62,6 +67,20 @@ Kokoro 中文语音合成的**胶水代码**——stdio 驱动 / 单次合成 / 
 1. **stdout 只出协议行**——驱动启动即把 `sys.stdout` 改指 stderr，第三方库的 print / 警告不会污染协议面。
 2. **协议面编码固定 UTF-8**——`stdin` / `stdout` 双 `reconfigure`，stdout 另固定 `newline="\n"`。
 3. **解析失败出声**——错误以 `{"ok":false,"error":"…"}` 回执，不静默跳过（规格 §5.1）。
+
+## 四·B 启动开关（服务侧）
+
+`stdio_server.py` 认三个开关——宿主 `py.service.kokoro.args` 写的就是这里（原样拼进命令行）：
+
+| 开关 | 取值 | 作用 |
+|:--|:--|:--|
+| `--home <目录>` | 环境目录 | 覆盖 `KOKORO_HOME`（宿主按配置自动拼，无需写进 args） |
+| `--model <文件名>` | `models/` 下的文件名 | 覆盖 `KOKORO_MODEL`——**换模型档位**（fp32 / fp16 / int8，须文件已存在） |
+| `--device cpu\|cuda` | `cpu` / `cuda` | 强制执行后端——**跨机差异用**（弱机走 CPU、强机走 CUDA）；取值非法即报错；`cuda` 而环境不支持 CUDA 同样报错（不静默回落 CPU） |
+
+**args 示例**：`--device cuda`（显式钉死 GPU，本机默认档）· `--model kokoro-v1.1-zh-fp16.onnx --device cpu`（弱机兜底档）
+
+> 🔴 开关是**启动期**参数（进程拉起时消费一次），改 args 后需重启服务生效；**每次合成**要调的东西（音色 / 语速）走工具参数，不在这里。
 
 ## 五、引用的包
 
@@ -130,7 +149,9 @@ python -m venv .venv
 | 2 | **协议面编码** | 中文以 GBK 写出、父侧按 UTF-8 读 → `UnicodeDecodeError: 0xbf` | 两侧同设 UTF-8（见 §四 铁律 2） |
 | 3 | **stdout 噪声** | 第三方库 print / 警告混入协议面 → 解析崩 | 驱动启动即独占 stdout（见 §四 铁律 1） |
 | 4 | **TensorRT 探测失败** | `Failed to create TensorrtExecutionProvider` 噪声刷屏 | `prepare_gpu` 显式钉死 `CUDAExecutionProvider` |
-| 5 | **参数名撞 PS 拦截** | `--out-dir` 含 `dir` → `PS_LIST_FORBIDDEN` | 改用 `--out`；宿主调用走 `Process.Start` 不受影响 |
+| 5 | **参数名撞 PS 拦截** | `--out-dir` 含 `dir` → `PS_LIST_FORBIDDEN` | 改用 `--out`；宿主调用走 `Process.Start` 不受影响（A255 起拦截改段首命令位判定，`--out-dir` 已不再误拦） |
+| 6 | **中英混排英文无声** | 英文段整段不出声——`en_callable=None` 时 misaki 把英文段替换为 `unk`（`❓`），该字符不在模型 vocab 内被静默丢弃 | `kokoro_env.load_engine` 挂 `EspeakG2P("en-us")` 作 `en_callable`（取元组 `[0]` 适配签名）；核对脚本 `probe_mix.py`（改后 0 越界） |
+| 7 | **args 静默忽略（假绿）** | 宿主 `py.service.*.args` 会原样拼进命令行，但服务脚本原先只解析 `--home` → 配了参数**不生效也不报错** | 补 `--model` / `--device` 两个启动开关，解析统一归 `kokoro_env.apply_cli`；取值非法即抛错、`cuda` 不可用亦抛错（不静默回落 CPU）——§四·B |
 
 ## 八、用法
 
@@ -144,8 +165,20 @@ python -m venv .venv
 :: 性能基准
 <venv>\Scripts\python.exe tools\kokoro\bench.py zf_001 --home <KOKORO_HOME>
 
-:: 常驻驱动（由宿主 IPyService 拉起）
+:: 中英混排探针（只打音素串，不合成）
+<venv>\Scripts\python.exe tools\kokoro\probe_mix.py "任务完成了。Now loading the model, 用时 1.2 秒。" --home <KOKORO_HOME>
+
+:: 音色样本批量生成（同文本 × 多音色）
+<venv>\Scripts\python.exe tools\kokoro\make_samples.py --list --home <KOKORO_HOME>
+<venv>\Scripts\python.exe tools\kokoro\make_samples.py --out <目录> --voices zf_001,zm_013 --home <KOKORO_HOME>
+<venv>\Scripts\python.exe tools\kokoro\make_samples.py --out <目录> --all --home <KOKORO_HOME>
+
+:: 常驻驱动（由宿主 IPyService 拉起——配置里的 args 就拼在这条命令后面）
 <venv>\Scripts\python.exe tools\kokoro\stdio_server.py --home <KOKORO_HOME>
+
+:: 常驻驱动 + 启动开关（--model / --device 用法见 §四·B）
+<venv>\Scripts\python.exe tools\kokoro\stdio_server.py --device cuda --home <KOKORO_HOME>
+<venv>\Scripts\python.exe tools\kokoro\stdio_server.py --model kokoro-v1.1-zh-fp16.onnx --device cpu --home <KOKORO_HOME>
 ```
 
 > 解释器用**外部 venv** 的 python（依赖 kokoro-onnx / onnxruntime-gpu / soundfile），

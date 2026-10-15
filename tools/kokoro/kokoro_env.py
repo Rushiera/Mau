@@ -13,7 +13,7 @@ import os
 import espeakng_loader
 import onnxruntime as ort
 from kokoro_onnx import Kokoro
-from misaki import zh
+from misaki import espeak, zh
 
 os.environ["PHONEMIZER_ESPEAK_LIBRARY"] = str(espeakng_loader.get_library_path())
 os.environ["ESPEAK_DATA_PATH"] = str(espeakng_loader.get_data_path())
@@ -42,21 +42,56 @@ def models_dir():
     return os.path.join(home(), "models")
 
 
-def prepare_gpu():
-    """挂载 NVIDIA dll 搜索路径；CUDA 可用时钉死 EP（避开 TensorRT 探测失败）。"""
+def apply_cli(argv):
+    """解析命令行开关——`--home` / `--model` / `--device`，返回 device（空=自动）。
+
+    失败可见：`--device` 取值非法即抛错，不静默回落。
+    """
+    def value_of(flag):
+        index = argv.index(flag)
+        return argv[index + 1] if index + 1 < len(argv) else ""
+
+    if "--home" in argv:
+        os.environ["KOKORO_HOME"] = value_of("--home")
+    if "--model" in argv:
+        os.environ["KOKORO_MODEL"] = value_of("--model")
+
+    device = value_of("--device") if "--device" in argv else ""
+    if device and device not in ("cpu", "cuda"):
+        raise RuntimeError("--device 取值非法：" + device + "（仅支持 cpu / cuda）")
+    return device
+
+
+def prepare_gpu(device=None):
+    """挂载 NVIDIA dll 搜索路径并钉死 EP（避开 TensorRT 探测失败）。
+
+    device：空=自动（CUDA 可用即用）· `cuda`=强制 CUDA（不可用即抛错）· `cpu`=强制 CPU。
+    """
+    if device == "cpu":
+        os.environ["ONNX_PROVIDER"] = "CPUExecutionProvider"
+        return
     if hasattr(ort, "preload_dlls"):
         ort.preload_dlls()
     if "CUDAExecutionProvider" in ort.get_available_providers():
         os.environ["ONNX_PROVIDER"] = "CUDAExecutionProvider"
+        return
+    if device == "cuda":
+        raise RuntimeError(
+            "--device cuda 已指定，但本环境未提供 CUDAExecutionProvider"
+            "（检查 onnxruntime-gpu 与 CUDA 运行库）")
 
 
-def load_engine(model_name=None):
+def load_engine(model_name=None, device=None):
     """加载 G2P 与模型，返回 (g2p, kokoro, model_name)。"""
     name = model_name or os.environ.get("KOKORO_MODEL", DEFAULT_MODEL)
     folder = models_dir()
     config = os.path.join(folder, CONFIG_NAME)
-    prepare_gpu()
-    g2p = zh.ZHG2P(version="1.1")
+    prepare_gpu(device)
+    # 英文段走 espeak G2P——无 en_callable 时 misaki 把英文整段替换成 unk（'❓'），
+    # 该字符不在模型 vocab 内 → tokenizer 静默丢弃 → 英文无声（判例 2026-10-15）。
+    # EspeakG2P 返回 (音素, None) 元组，取 [0] 适配 zh.ZHG2P 的 en_callable 签名。
+    english = espeak.EspeakG2P("en-us")
+    g2p = zh.ZHG2P(version="1.1", en_callable=lambda value: english(value)[0])
     kokoro = Kokoro(
         os.path.join(folder, name),
         os.path.join(folder, VOICES_NAME),
