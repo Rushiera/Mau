@@ -53,6 +53,7 @@ namespace CH4
             "temp-info",
             "browser-open", "browser-read", "browser-shot",
             "majordomo-catinfo",
+            "py-list",
             "host-flows", "info", "time", "random", "pack", "Note"
         };
 
@@ -84,6 +85,7 @@ namespace CH4
             "powershell", "powershell7",
             "mau-gen", "mau-proj", "host-reload", "mau-setup",
             "restart-full", "restart-incr", "restart-host", "majordomo-cmd",
+            "py-run", "py-service",
             "temp-exec"
         };
 

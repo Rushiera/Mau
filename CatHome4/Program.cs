@@ -304,6 +304,8 @@ namespace CH4
             DataBox.Bind<IVisionService>(new Mau.Providers.DeepSeekVisionService(apiConfigStore, llmConfig));
             // PsCat PowerShell 执行服务——EncodedCommand 免转义 + UTF-8 内建 + 写文件拦截 + 超时进程树杀（PsService）
             DataBox.Bind<IPsService>(new PsService());
+            // py 执行与 py 服务进程管理——解释器读配置 py.python_path；句柄归基座持有（design-ch4-pytools §二）
+            DataBox.Bind<IPyService>(new Mau.Runtime.PyService(WritableRootPaths(workspace)));
             // A110 浏览器服务——系统 Edge headless + 裸 CDP（零第三方依赖 · 每猫独立 profile · timeback 域限定）
             CdpBrowserService browserSvc = new CdpBrowserService(dataRoot);
             DataBox.Bind<IBrowserService>(browserSvc);
