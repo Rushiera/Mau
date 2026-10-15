@@ -16,7 +16,7 @@ namespace CH4
     /// 形态：浏览器内核 headless（Chromium 系：Edge / Chrome / Brave 等）+ 裸 CDP（零第三方依赖——HttpClient + ClientWebSocket）。
     /// 🔴 换内核 = 换配置 browser.kernel_path——Chromium 系协议同为 CDP，无协议分支（Firefox / WebKit 不支持 CDP，需另写实现）。
     /// 每猫独立实例：Data/browser/&lt;catId&gt;/profile（user-data-dir，持久）+ out（产物）。
-    /// 生命周期域级——首次调用懒启动，timeback back 回收即关（IBrowserLifecycle.CloseCat）。
+    /// 生命周期域级——首次调用懒启动，timeback back 回收即关（IBrowserLifecycle.CloseCat）；有头实例除外——跨域保活（域内直接复用，仅显式 browser-headful close / open 换新时关闭）。
     /// 非主干信息：域门禁由宿主派发面判定（见 ChatSession），本服务不重复判定；同猫调用串行，跨猫互不干扰。
     /// </summary>
     public sealed class CdpBrowserService : IBrowserService, IBrowserLifecycle
@@ -253,17 +253,22 @@ namespace CH4
             }
         }
 
-        /// <summary>
-        /// 关闭并清理全部实例——宿主退出钩子调用（Main finally 与 CloseWriters 同处）。
-        /// 🔴 Chromium 启动后 detach：宿主被杀不带走子进程；不清理则孤儿实例持续占用 profile。
-        /// </summary>
+        /// <summary>关闭并清理全部实例——宿主退出钩子调用（Main finally 与 CloseWriters 同处）；有头实例保活（不关闭——等待人的动作）。🔴 Chromium 启动后 detach：宿主被杀不带走子进程；不清理则孤儿实例持续占用 profile。</summary>
         public void Shutdown()
         {
             List<CatBrowser> all = new List<CatBrowser>();
+            int kept = 0;
             lock (_gate)
             {
                 foreach (KeyValuePair<string, CatBrowser> pair in _cats)
                 {
+                    if (pair.Value.IsHeadful && pair.Value.IsAlive())
+                    {
+                        // 有头实例保活（A1 续）——人工登录窗口等待人的动作，不随宿主收尾关闭
+                        // （判例：人机验证页处置与有头关闭链路——运行收尾不得提前关掉它）
+                        kept = kept + 1;
+                        continue;
+                    }
                     all.Add(pair.Value);
                 }
                 _cats.Clear();
@@ -273,6 +278,10 @@ namespace CH4
             {
                 Cleanup(all[i]);
                 i = i + 1;
+            }
+            if (kept > 0)
+            {
+                LogStore.Add("CatHome4", 1, "有头实例保活（不随宿主退出关闭）: " + kept.ToString() + " 个", "BROWSER");
             }
             LogStore.Add("CatHome4", 1, "浏览器实例清理完成，共 " + i.ToString() + " 个", "BROWSER");
         }
@@ -297,31 +306,44 @@ namespace CH4
             LogStore.Add("CatHome4", 1, "开锚预热浏览器就绪: " + catId + " port=" + browser.Port.ToString(), "BROWSER");
         }
 
-        /// <summary>
-        /// 关闭并清理指定猫的实例——timeback 作用域回收时调用（域级生命周期主路径）。
-        /// </summary>
+        /// <summary>关闭并清理指定猫的实例——timeback 作用域回收时调用（域级生命周期主路径）。有头实例保活（不关闭——等待人的动作；见 CloseInstances）</summary>
         /// <param name="catId">猫 key（空=全部）</param>
         public void CloseCat(string catId)
         {
+            CloseInstances(catId, false);
+        }
+        /// <summary>
+        /// 关闭实例核心（A1 续）——includeHeadful=false（域回收）：有头实例保活（人工登录窗口等待人的动作，不随域回收关闭）；
+        /// includeHeadful=true（browser-headful open 换新 / close 收尾）：有头实例一并关闭。
+        /// </summary>
+        /// <param name="catId">猫 key（空=全部）</param>
+        /// <param name="includeHeadful">true=连有头实例一并关闭</param>
+        private void CloseInstances(string catId, bool includeHeadful)
+        {
             List<CatBrowser> targets = new List<CatBrowser>();
+            bool keptHeadful = false;
             lock (_gate)
             {
-                if (catId.Length == 0)
+                List<string> removeKeys = new List<string>();
+                foreach (KeyValuePair<string, CatBrowser> pair in _cats)
                 {
-                    foreach (KeyValuePair<string, CatBrowser> pair in _cats)
+                    if (catId.Length > 0 && pair.Key != catId)
                     {
-                        targets.Add(pair.Value);
+                        continue;
                     }
-                    _cats.Clear();
+                    if (!includeHeadful && pair.Value.IsHeadful && pair.Value.IsAlive())
+                    {
+                        keptHeadful = true;
+                        continue;
+                    }
+                    targets.Add(pair.Value);
+                    removeKeys.Add(pair.Key);
                 }
-                else
+                int k = 0;
+                while (k < removeKeys.Count)
                 {
-                    CatBrowser one;
-                    if (_cats.TryGetValue(catId, out one))
-                    {
-                        targets.Add(one);
-                        _cats.Remove(catId);
-                    }
+                    _cats.Remove(removeKeys[k]);
+                    k = k + 1;
                 }
             }
             int i = 0;
@@ -331,8 +353,9 @@ namespace CH4
                 i = i + 1;
             }
             // 兜底（A123）——本次宿主未曾接管的残留实例（宿主上次被强杀遗留）不在内存表里，
-            // 但锚文件仍指向它：域结束 = 实例不该存在，按锚补一刀（探测不通即静默返回）
-            if (catId.Length > 0)
+            // 但锚文件仍指向它：域结束 = 实例不该存在，按锚补一刀（探测不通即静默返回）。
+            // 有头保活时跳过——锚指向的正是保活实例，补刀会把它误杀。
+            if (catId.Length > 0 && !keptHeadful)
             {
                 string anchor = Path.Combine(_dataRoot, "Data", "browser", catId, "port.txt");
                 int stale = ReadAnchorPort(anchor);
@@ -349,7 +372,11 @@ namespace CH4
                 {
                     scope = "全部";
                 }
-                LogStore.Add("CatHome4", 1, "浏览器实例关闭（域回收）: " + scope + " · 共 " + i.ToString() + " 个", "BROWSER");
+                LogStore.Add("CatHome4", 1, "浏览器实例关闭: " + scope + " · 共 " + i.ToString() + " 个", "BROWSER");
+            }
+            if (keptHeadful)
+            {
+                LogStore.Add("CatHome4", 1, "有头实例保活（不随域回收关闭）: " + catId, "BROWSER");
             }
         }
 
@@ -455,7 +482,7 @@ namespace CH4
             }
         }
 
-        /// <summary>取本猫实例——三级取用：内存实例存活复用 → 接管 profile 内活实例（A122）→ 懒启动（失败返回 null 并给错误文本）</summary>
+        /// <summary>取本猫实例——三级取用：内存实例存活复用（含有头人工窗口——域内直接驱动）→ 接管 profile 内活实例（A122）→ 懒启动（失败返回 null 并给错误文本）</summary>
         /// <param name="catId">猫 key</param>
         /// <param name="error">失败时的 ERR| 文本</param>
         /// <returns>可用实例或 null</returns>
@@ -472,11 +499,12 @@ namespace CH4
                 CatBrowser existing;
                 if (_cats.TryGetValue(catId, out existing))
                 {
-                    if (existing.IsAlive() && !existing.IsHeadful)
+                    if (existing.IsAlive())
                     {
+                        // 存活实例一律复用——含人工登录的有头窗口（域内工具就地驱动它，不再关掉换无头）
                         return existing;
                     }
-                    // 残留实例 / 有头实例（域开锚语义 = 默认无头）——清理后重建
+                    // 残留实例（连接已断）——清理后重建
                     Cleanup(existing);
                     _cats.Remove(catId);
                 }
@@ -500,9 +528,10 @@ namespace CH4
         }
         /// <summary>
         /// 有头登录工具（A1）——browser-headful 执行面：域外专属（主干人工登录用）。
-        /// open：关现有实例 → 用同 profile 起有头浏览器（窗口弹出供人工登录）→ 可选导航 url。
+        /// open：关现有实例（含有头——换新窗口）→ 用同 profile 起有头浏览器（窗口弹出供人工登录）→ 可选导航 url。
         /// close：优雅关闭（CDP Browser.close——profile 落盘，登录态保留）。
         /// 同 profile 一次只能一个浏览器进程，故 open 必先关旧实例（含无头——域开锚预热的那个）。
+        /// A1 续——有头实例跨域保活：域回收 / 宿主退出不关闭它（见 CloseInstances / Shutdown）；域内 browser-* 直接驱动同一窗口。
         /// </summary>
         /// <param name="catId">猫 key</param>
         /// <param name="action">动作：open（缺省，起有头）/ close（关有头）</param>
@@ -520,7 +549,7 @@ namespace CH4
             }
             if (action == "close")
             {
-                CloseCat(catId);
+                CloseInstances(catId, true);
                 LogStore.Add("CatHome4", 1, "browser.headful 关闭 " + catId, "BROWSER");
                 return "有头浏览器已关闭（profile 已落盘——登录态保留）";
             }
@@ -531,7 +560,7 @@ namespace CH4
                     return "ERR|BROWSER_ARGS|url 仅支持 http(s): " + url;
                 }
             }
-            CloseCat(catId);
+            CloseInstances(catId, true);
             string error = "";
             CatBrowser browser = Launch(catId, true, out error);
             if (browser == null)
@@ -623,8 +652,12 @@ namespace CH4
                 adopted.Port = port;
                 adopted.ProfileDir = profileDir;
                 adopted.OutDir = Path.Combine(dir, "out");
+                // 有头判别（A1 续）——/json/version 的 User-Agent 带 HeadlessChrome 即无头；
+                // 宿主重启后接管人工窗口时据此保活（域回收 / 宿主退出不关闭它）。UA 缺失按无头处理
+                string adoptedUa = ExtractJsonString(probe, "User-Agent");
+                adopted.IsHeadful = adoptedUa.Length > 0 && adoptedUa.IndexOf("HeadlessChrome", StringComparison.OrdinalIgnoreCase) < 0;
                 AttachTarget(adopted, "");
-                LogStore.Add("CatHome4", 1, "接管已有浏览器实例: " + catId + " port=" + port.ToString(), "BROWSER");
+                LogStore.Add("CatHome4", 1, "接管已有浏览器实例: " + catId + " port=" + port.ToString() + " headful=" + adopted.IsHeadful.ToString(), "BROWSER");
                 return adopted;
             }
             catch (Exception ex)
@@ -1517,7 +1550,7 @@ namespace CH4
             /// <summary>CDP 端口（DevToolsActivePort 发现）</summary>
             public int Port;
 
-            /// <summary>有头标记（browser-headful 起的实例）——域开锚 Ensure 见有头实例即关掉重起无头（保「每次开域默认无头」）</summary>
+            /// <summary>有头标记（browser-headful 起的实例 / 接管时按 UA 判别）——域内工具直接复用；域回收与宿主退出不关闭（人工窗口保活，仅显式 browser-headful close / open 换新时关闭）</summary>
             public bool IsHeadful;
 
             /// <summary>当前页签 id——操作面（Read / Eval / Shot）作用的 target</summary>
