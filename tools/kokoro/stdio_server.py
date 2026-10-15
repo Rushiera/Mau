@@ -28,7 +28,8 @@ import time
 
 # 🔴 协议面编码固定 UTF-8——管道捕获时 Python 默认用 locale 编码（Windows = GBK）
 if hasattr(sys.stdin, "reconfigure"):
-    sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+    # 🔴 utf-8-sig——读侧自动剥 BOM（.NET StreamWriter 首次写入会带 BOM：EncoderShouldEmitUTF8Identifier）
+    sys.stdin.reconfigure(encoding="utf-8-sig", errors="replace")
 
 _PROTOCOL = sys.stdout
 _PROTOCOL.reconfigure(encoding="utf-8", newline="\n")

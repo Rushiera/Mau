@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
@@ -67,6 +68,11 @@ namespace Mau.Runtime
         private const int MaxLaunchFailures = 5;
 
         /// <summary>
+        /// Job 对象句柄——强杀兜底（构造时建立；不可用 0）
+        /// </summary>
+        private readonly IntPtr _jobHandle;
+
+        /// <summary>
         /// 释放标志
         /// </summary>
         private bool _disposed;
@@ -103,6 +109,7 @@ namespace Mau.Runtime
             _roots = writable.ToArray();
             _defaultScanDir = ResolveDefaultScanDir(roots);
             AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
+            _jobHandle = EnsureJob();
         }
 
         /// <summary>
@@ -136,6 +143,7 @@ namespace Mau.Runtime
         /// <returns>结果 JSON（started / skipped / errors 数组）或 ERR| 前缀错误文本</returns>
         public string Autostart()
         {
+            SelfHealOrphans();
             ConfigStore? cfg;
             DataBox.TryResolve<ConfigStore>(out cfg);
             if (cfg == null)
@@ -228,6 +236,7 @@ namespace Mau.Runtime
                     }
                     string stopError = existing.Stop();
                     _servers.Remove(name);
+                    RemoveAnchor(name);
                     if (stopError.Length > 0)
                     {
                         return stopError;
@@ -260,7 +269,10 @@ namespace Mau.Runtime
                 }
                 int timeoutMs = ParseServiceTimeout(name);
 
-                PyServer server = new PyServer(name, python, script, Path.GetDirectoryName(script) ?? "", timeoutMs);
+                string servArgs = ResolveServiceArgs(name);
+                string servHome = ResolveServiceHome(name);
+                PyServer server = new PyServer(name, python, script, Path.GetDirectoryName(script) ?? "", timeoutMs, servArgs, servHome);
+                server.JobHandle = _jobHandle;
                 _servers[name] = server;
                 string startError = server.Start();
                 if (startError.Length > 0)
@@ -268,6 +280,7 @@ namespace Mau.Runtime
                     _servers.Remove(name);
                     return startError;
                 }
+                WriteAnchor(name, server.ProcessId());
                 return ServiceJson(name, "running", "", true);
             }
         }
@@ -310,11 +323,138 @@ namespace Mau.Runtime
                     {
                         return pythonError;
                     }
-                    server = new PyServer(name, python, script, Path.GetDirectoryName(script) ?? "", ParseServiceTimeout(name));
+                    string servArgs = ResolveServiceArgs(name);
+                    string servHome = ResolveServiceHome(name);
+                    server = new PyServer(name, python, script, Path.GetDirectoryName(script) ?? "", ParseServiceTimeout(name), servArgs, servHome);
+                    server.JobHandle = _jobHandle;
                     _servers[name] = server;
                 }
-                return server.Invoke(payload);
+                string invokeReply = server.Invoke(payload);
+                if (server.IsAlive())
+                {
+                    WriteAnchor(name, server.ProcessId());
+                }
+                return invokeReply;
             }
+        }
+
+        // [段6b] 强杀兜底——Job 对象（Windows；KILL_ON_JOB_CLOSE：宿主进程终止即连带终止全部子进程）
+        /// <summary>Job 扩展限制信息类——JOBOBJECTINFOCLASS.JobObjectExtendedLimitInformation</summary>
+        private const int JobObjectExtendedLimitInformation = 9;
+
+        /// <summary>KILL_ON_JOB_CLOSE 标志——Job 最后一个句柄关闭时终止其内全部进程</summary>
+        private const uint JobObjectLimitKillOnJobClose = 0x2000;
+
+        /// <summary>创建 Job 对象（Win32 kernel32.CreateJobObject）</summary>
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string? lpName);
+
+        /// <summary>设置 Job 限制信息（Win32 kernel32.SetInformationJobObject）</summary>
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetInformationJobObject(IntPtr hJob, int infoClass, IntPtr info, uint infoLength);
+
+        /// <summary>把进程加入 Job（Win32 kernel32.AssignProcessToJobObject）</summary>
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+        /// <summary>Job 基本限制信息（Win32 JOBOBJECT_BASIC_LIMIT_INFORMATION）</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JobBasicLimitInformation
+        {
+            /// <summary>单进程用户态时间上限</summary>
+            public long PerProcessUserTimeLimit;
+            /// <summary>单 Job 用户态时间上限</summary>
+            public long PerJobUserTimeLimit;
+            /// <summary>限制标志（承载 KILL_ON_JOB_CLOSE）</summary>
+            public uint LimitFlags;
+            /// <summary>最小工作集</summary>
+            public UIntPtr MinimumWorkingSetSize;
+            /// <summary>最大工作集</summary>
+            public UIntPtr MaximumWorkingSetSize;
+            /// <summary>活动进程数上限</summary>
+            public uint ActiveProcessLimit;
+            /// <summary>CPU 亲和性掩码</summary>
+            public UIntPtr Affinity;
+            /// <summary>优先级类</summary>
+            public uint PriorityClass;
+            /// <summary>调度类</summary>
+            public uint SchedulingClass;
+        }
+
+        /// <summary>Job IO 计数器（Win32 IO_COUNTERS）</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JobIoCounters
+        {
+            /// <summary>读操作次数</summary>
+            public ulong ReadOperationCount;
+            /// <summary>写操作次数</summary>
+            public ulong WriteOperationCount;
+            /// <summary>其它操作次数</summary>
+            public ulong OtherOperationCount;
+            /// <summary>读取字节数</summary>
+            public ulong ReadTransferCount;
+            /// <summary>写入字节数</summary>
+            public ulong WriteTransferCount;
+            /// <summary>其它传输字节数</summary>
+            public ulong OtherTransferCount;
+        }
+
+        /// <summary>Job 扩展限制信息（Win32 JOBOBJECT_EXTENDED_LIMIT_INFORMATION）</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JobExtendedLimitInformation
+        {
+            /// <summary>基本限制信息</summary>
+            public JobBasicLimitInformation BasicLimitInformation;
+            /// <summary>IO 计数器</summary>
+            public JobIoCounters IoInfo;
+            /// <summary>单进程内存上限</summary>
+            public UIntPtr ProcessMemoryLimit;
+            /// <summary>Job 内存上限</summary>
+            public UIntPtr JobMemoryLimit;
+            /// <summary>进程峰值内存</summary>
+            public UIntPtr PeakProcessMemoryUsed;
+            /// <summary>Job 峰值内存</summary>
+            public UIntPtr PeakJobMemoryUsed;
+        }
+
+        /// <summary>
+        /// 建立 Job 对象——惰性创建（KILL_ON_JOB_CLOSE）。
+        /// 非 Windows / 创建失败返回 <see cref="IntPtr.Zero"/>（强杀兜底关闭，启动前自愈仍生效，其余功能不受影响）。
+        /// </summary>
+        /// <returns>Job 句柄；不可用 0</returns>
+        private IntPtr EnsureJob()
+        {
+            if (OperatingSystem.IsWindows() == false)
+            {
+                return IntPtr.Zero;
+            }
+            IntPtr job = CreateJobObject(IntPtr.Zero, null);
+            if (job == IntPtr.Zero)
+            {
+                LogStore.Add("PyService", 2, "Job 对象创建失败——强杀兜底关闭（启动前自愈仍生效）", "SYS");
+                return IntPtr.Zero;
+            }
+            JobBasicLimitInformation basic = new JobBasicLimitInformation();
+            basic.LimitFlags = JobObjectLimitKillOnJobClose;
+            JobExtendedLimitInformation extended = new JobExtendedLimitInformation();
+            extended.BasicLimitInformation = basic;
+            int size = Marshal.SizeOf(extended);
+            IntPtr buffer = Marshal.AllocHGlobal(size);
+            try
+            {
+                Marshal.StructureToPtr(extended, buffer, false);
+                bool applied = SetInformationJobObject(job, JobObjectExtendedLimitInformation, buffer, (uint)size);
+                if (!applied)
+                {
+                    LogStore.Add("PyService", 2, "Job 限制设置失败——强杀兜底关闭（启动前自愈仍生效）", "SYS");
+                    return IntPtr.Zero;
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+            return job;
         }
 
         // [段7] 释放
@@ -340,6 +480,7 @@ namespace Mau.Runtime
                     {
                         LogStore.Add("PyService", 2, "服务停止异常（" + pair.Key + "）: " + ex.Message, "SYS");
                     }
+                    RemoveAnchor(pair.Key);
                 }
                 _servers.Clear();
             }
@@ -396,13 +537,11 @@ namespace Mau.Runtime
             return path;
         }
 
-        /// <summary>
-        /// 解析服务入口脚本——读配置 py.service.&lt;name&gt;.script（受控根内校验）。
-        /// </summary>
+        /// <summary>解析服务入口脚本——读配置 py.service.&lt;name&gt;.script（受控根寻址：mau:tools/... 或全路径）；不存在即明示 ERR（失败可见，不静默）。</summary>
         /// <param name="serviceName">服务名</param>
         /// <param name="error">错误文本（空=成功）</param>
         /// <returns>脚本全路径（失败返回空串）</returns>
-        private static string ResolveServiceScript(string serviceName, out string error)
+        private string ResolveServiceScript(string serviceName, out string error)
         {
             error = "";
             ConfigStore? cfg;
@@ -413,7 +552,43 @@ namespace Mau.Runtime
                 error = "ERR|PY_SERVICE_NOT_CONFIGURED|服务未配置：" + serviceName + "——请在配置面填写 py.service." + serviceName + ".script";
                 return "";
             }
-            return script;
+            string full = ExpandRootPath(script);
+            if (!IsUnderWritableRoot(full))
+            {
+                error = "ERR|PY_SCRIPT_OUTSIDE_ROOT|服务脚本超出受控根：" + full + "——只允许可写受控根内的脚本";
+                return "";
+            }
+            if (!File.Exists(full))
+            {
+                error = "ERR|PY_SCRIPT_NOT_FOUND|服务脚本不存在：" + full;
+                return "";
+            }
+            return full;
+        }
+
+        /// <summary>
+        /// 解析服务启动参数——py.service 服务名对应的 args（命令行附加串；空=无）。
+        /// </summary>
+        /// <param name="serviceName">服务名</param>
+        /// <returns>附加参数串（空=无）</returns>
+        private static string ResolveServiceArgs(string serviceName)
+        {
+            ConfigStore? cfg;
+            DataBox.TryResolve<ConfigStore>(out cfg);
+            string args = cfg == null ? "" : cfg.Get("py.service." + serviceName + ".args", "");
+            return args;
+        }
+        /// <summary>
+        /// 解析服务环境目录——py.service.&lt;name&gt;.home（外部环境根，如 Kokoro 的 KOKORO_HOME）。
+        /// 起服务时以 --home 传入（服务脚本自行消费）；空=不传（不推导、不回落）。
+        /// </summary>
+        /// <param name="serviceName">服务名</param>
+        /// <returns>环境目录（空=不传）</returns>
+        private static string ResolveServiceHome(string serviceName)
+        {
+            ConfigStore? cfg;
+            DataBox.TryResolve<ConfigStore>(out cfg);
+            return cfg == null ? "" : cfg.Get("py.service." + serviceName + ".home", "");
         }
 
         /// <summary>
@@ -574,6 +749,16 @@ namespace Mau.Runtime
             private readonly int _timeoutMs;
 
             /// <summary>
+            /// 启动参数（命令行附加串——如 Kokoro 的 --home &lt;KOKORO_HOME&gt;；空=无）
+            /// </summary>
+            private readonly string _args;
+
+            /// <summary>
+            /// 环境目录（起服务时以 --home 传入；空=不传）
+            /// </summary>
+            private readonly string _home;
+
+            /// <summary>
             /// 往返串行锁
             /// </summary>
             private readonly object _gate = new object();
@@ -589,6 +774,11 @@ namespace Mau.Runtime
             private Process? _process;
 
             /// <summary>
+            /// Job 对象句柄——强杀兜底（外层注入；0 = 不加入 Job）
+            /// </summary>
+            public IntPtr JobHandle = IntPtr.Zero;
+
+            /// <summary>
             /// 连续拉起失败计数
             /// </summary>
             private int _failCount;
@@ -601,13 +791,42 @@ namespace Mau.Runtime
             /// <param name="script">入口脚本全路径</param>
             /// <param name="workDir">工作目录</param>
             /// <param name="timeoutMs">单次调用超时毫秒</param>
-            public PyServer(string name, string exe, string script, string workDir, int timeoutMs)
+            /// <param name="args">启动参数（命令行附加串；空=无）</param>
+            /// <param name="home">环境目录（--home 传参；空=不传）</param>
+            public PyServer(string name, string exe, string script, string workDir, int timeoutMs, string args, string home)
             {
                 _name = name;
                 _exe = exe;
                 _script = script;
                 _workDir = workDir;
                 _timeoutMs = timeoutMs;
+                _args = args ?? "";
+                _home = home ?? "";
+            }
+
+            /// <summary>
+            /// 进程号——锚文件记录用（未启动 / 已退出返回 0）。
+            /// </summary>
+            /// <returns>进程号；无进程 0</returns>
+            public int ProcessId()
+            {
+                Process? proc = _process;
+                if (proc == null)
+                {
+                    return 0;
+                }
+                try
+                {
+                    if (proc.HasExited)
+                    {
+                        return 0;
+                    }
+                    return proc.Id;
+                }
+                catch (Exception)
+                {
+                    return 0;
+                }
             }
 
             /// <summary>
@@ -744,7 +963,7 @@ namespace Mau.Runtime
                     _failCount = 0;
                     if (restarted)
                     {
-                        return "{\"restarted\":true,\"reply\":" + JsonUtil.Str(line) + "}";
+                        return MergeRestartedReply(line);
                     }
                     return line;
                 }
@@ -763,7 +982,12 @@ namespace Mau.Runtime
 
                 ProcessStartInfo psi = new ProcessStartInfo();
                 psi.FileName = _exe;
-                psi.Arguments = "-u \"" + _script + "\"";
+                string argsSuffix = _args.Length > 0 ? " " + _args : "";
+                if (_home.Length > 0)
+                {
+                    argsSuffix = argsSuffix + " --home \"" + _home + "\"";
+                }
+                psi.Arguments = "-u \"" + _script + "\"" + argsSuffix;
                 psi.UseShellExecute = false;
                 psi.CreateNoWindow = true;
                 psi.RedirectStandardInput = true;
@@ -771,7 +995,7 @@ namespace Mau.Runtime
                 psi.RedirectStandardError = true;
                 psi.StandardOutputEncoding = Encoding.UTF8;
                 psi.StandardErrorEncoding = Encoding.UTF8;
-                psi.StandardInputEncoding = Encoding.UTF8;
+                psi.StandardInputEncoding = new UTF8Encoding(false);
                 if (_workDir.Length > 0 && Directory.Exists(_workDir))
                 {
                     psi.WorkingDirectory = _workDir;
@@ -830,6 +1054,10 @@ namespace Mau.Runtime
                 logReader.Start();
 
                 _process = proc;
+                if (JobHandle != IntPtr.Zero && !AssignProcessToJobObject(JobHandle, proc.Handle))
+                {
+                    LogStore.Add("PyService", 2, "进程加入 Job 失败（" + _name + "）——该进程无强杀兜底", "SYS");
+                }
 
                 // [段1] ready 握手——首行必须为 ready 事件（严格协议，见 design-ch4-pytools §5.1）
                 string? first;
@@ -848,6 +1076,184 @@ namespace Mau.Runtime
                 }
                 _failCount = 0;
                 return "";
+            }
+        }
+        /// <summary>
+        /// 首次拉起回执装配——内层为 JSON 对象时浅合并 restarted 字段（调用方读 ok/out 等零感知）；
+        /// 非对象形态退回包装（回执原文受保护）。
+        /// </summary>
+        /// <param name="reply">服务原样回执行</param>
+        /// <returns>带 restarted 标注的回执 JSON</returns>
+        private static string MergeRestartedReply(string reply)
+        {
+            System.Text.Json.JsonDocument? doc = JsonUtil.Parse(reply, "PyService");
+            if (doc == null || doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+            {
+                if (doc != null)
+                {
+                    doc.Dispose();
+                }
+                return "{\"restarted\":true,\"reply\":" + JsonUtil.Str(reply) + "}";
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.Append("{");
+            bool first = true;
+            foreach (System.Text.Json.JsonProperty prop in doc.RootElement.EnumerateObject())
+            {
+                if (!first)
+                {
+                    sb.Append(",");
+                }
+                sb.Append(JsonUtil.Str(prop.Name));
+                sb.Append(":");
+                sb.Append(prop.Value.GetRawText());
+                first = false;
+            }
+            if (!first)
+            {
+                sb.Append(",");
+            }
+            sb.Append("\"restarted\":true}");
+            doc.Dispose();
+            return sb.ToString();
+        }
+        /// <summary>
+        /// 运行期落盘目录——py 服务锚文件（py_&lt;服务名&gt;.pid）落点；空 = 不写锚（自愈面关闭）。
+        /// </summary>
+        private string _runtimeDir = "";
+        /// <summary>
+        /// 配置运行期落盘目录——锚文件落点（宿主启动链注入；design-ch4-pytools §5.2 清理第③层）。
+        /// </summary>
+        /// <param name="runtimeDir">数据根 runtime 目录（空 = 关闭自愈面）</param>
+        public void Configure(string runtimeDir)
+        {
+            _runtimeDir = runtimeDir == null ? "" : runtimeDir;
+        }
+        /// <summary>
+        /// 受控根内判据——可写根子树判定（带分隔符边界，防兄弟目录误伤）。
+        /// </summary>
+        /// <param name="fullPath">已解析的全路径</param>
+        /// <returns>true = 在某个可写受控根内</returns>
+        private bool IsUnderWritableRoot(string fullPath)
+        {
+            if (fullPath == null || fullPath.Length == 0)
+            {
+                return false;
+            }
+            for (int i = 0; i < _roots.Length; i = i + 1)
+            {
+                string root = _roots[i];
+                if (fullPath.Length == root.Length && string.Equals(fullPath, root, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+                if (fullPath.Length > root.Length && fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                {
+                    char boundary = fullPath[root.Length];
+                    if (boundary == Path.DirectorySeparatorChar || boundary == Path.AltDirectorySeparatorChar)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        /// <summary>
+        /// 启动前自愈——清理上次宿主遗留的服务进程（锚文件记录；调用时机 = 宿主启动链、本实例尚未拉起服务）。
+        /// </summary>
+        /// <returns>清理条数</returns>
+        private int SelfHealOrphans()
+        {
+            if (_runtimeDir.Length == 0 || !Directory.Exists(_runtimeDir))
+            {
+                return 0;
+            }
+            int cleaned = 0;
+            string[] anchors = Directory.GetFiles(_runtimeDir, "py_*.pid");
+            for (int i = 0; i < anchors.Length; i = i + 1)
+            {
+                string anchor = anchors[i];
+                int pid = 0;
+                try
+                {
+                    string raw = File.ReadAllText(anchor).Trim();
+                    int.TryParse(raw, out pid);
+                }
+                catch (Exception)
+                {
+                    pid = 0;
+                }
+                if (pid > 0 && pid != Environment.ProcessId)
+                {
+                    try
+                    {
+                        Process orphan = Process.GetProcessById(pid);
+                        if (!orphan.HasExited)
+                        {
+                            orphan.Kill(true);
+                            cleaned = cleaned + 1;
+                            LogStore.Add("PyService", 1, "自愈清理遗留 py 服务进程 pid=" + pid.ToString(), "SYS");
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // 进程不存在 / 无权限——锚直接清
+                    }
+                }
+                try
+                {
+                    File.Delete(anchor);
+                }
+                catch (Exception)
+                {
+                }
+            }
+            return cleaned;
+        }
+        /// <summary>
+        /// 写服务锚——拉起成功后落盘（自愈唯一依据；不主动删，正常停止时 RemoveAnchor 清）。
+        /// </summary>
+        /// <param name="serviceName">服务名</param>
+        /// <param name="pid">进程号</param>
+        private void WriteAnchor(string serviceName, int pid)
+        {
+            if (_runtimeDir.Length == 0 || pid <= 0)
+            {
+                return;
+            }
+            try
+            {
+                if (!Directory.Exists(_runtimeDir))
+                {
+                    Directory.CreateDirectory(_runtimeDir);
+                }
+                File.WriteAllText(Path.Combine(_runtimeDir, "py_" + serviceName + ".pid"), pid.ToString());
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("PyService", 2, "锚文件写入失败（" + serviceName + "）: " + ex.Message, "SYS");
+            }
+        }
+        /// <summary>
+        /// 删服务锚——服务正常停止后清理（异常残留由 SelfHealOrphans 兜底）。
+        /// </summary>
+        /// <param name="serviceName">服务名</param>
+        private void RemoveAnchor(string serviceName)
+        {
+            if (_runtimeDir.Length == 0)
+            {
+                return;
+            }
+            try
+            {
+                string anchor = Path.Combine(_runtimeDir, "py_" + serviceName + ".pid");
+                if (File.Exists(anchor))
+                {
+                    File.Delete(anchor);
+                }
+            }
+            catch (Exception)
+            {
             }
         }
     }

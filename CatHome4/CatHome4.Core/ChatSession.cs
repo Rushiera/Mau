@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Mau.Runtime;
+using Mau.Contracts;
 using CatHome4.Contracts;
 
 namespace CH4
@@ -436,6 +438,12 @@ namespace CH4
         /// 未接线 / 返回空数组 → 本轮不出总结（不静默放行、不误报成功）。
         /// </summary>
         internal static Func<string, string[]> RoundSummaryLlmProvider;
+
+        /// <summary>
+        /// 轮末总结播报提供者——catKey → [启用标志（"1"/"0"）, 音色槽位值]（Admin 域按外观池条目解析；宿主启动期组合根注入）。
+        /// 未接线 / 启用标志非 "1" → 不出声（不静默放行、不误报成功）。
+        /// </summary>
+        internal static Func<string, string[]> SummaryAudioProvider;
 
         /// <summary>
         /// 缓存隔离键——LLM 请求身份（请求体 user_id + x-opencode-session 头）。
@@ -3069,6 +3077,11 @@ namespace CH4
             }
             long ts = _roundSummaryPendingTs > 0 ? _roundSummaryPendingTs : ViewTimestamp();
             _viewStore.AppendRoundSummaryNote(result, ts);
+            // A247——总结自动出声（外观配置启用时；失败记 Log、不影响轮次）
+            if (!result.StartsWith("ERR|", StringComparison.Ordinal))
+            {
+                SpeakRoundSummary(result);
+            }
         }
 
         /// <summary>
@@ -3192,6 +3205,135 @@ namespace CH4
                 return text;
             }
             return text.Substring(0, max) + "...";
+        }
+        /// <summary>
+        /// RoundSummary——总结文本自动出声：外观配置启用时后台合成并播放（不阻塞主线程；失败记 Log、不影响轮次）。
+        /// </summary>
+        /// <param name="text">总结文本（非 ERR| 的正常总结）</param>
+        private void SpeakRoundSummary(string text)
+        {
+            Func<string, string[]> provider = SummaryAudioProvider;
+            if (provider == null || text.Length == 0)
+            {
+                return;
+            }
+            string catKey = _catKey;
+            string[] cfg = provider(catKey);
+            if (cfg == null || cfg.Length < 2 || !string.Equals(cfg[0], "1", StringComparison.Ordinal))
+            {
+                return;
+            }
+            string voice = cfg[1] == null ? "" : cfg[1];
+            Task.Run(delegate ()
+            {
+                try
+                {
+                    RunSummarySpeak(catKey, voice, text);
+                }
+                catch (Exception ex)
+                {
+                    LogStore.Add("CatHome4", 3, "轮末总结播报异常: " + ex.Message, "CHAT");
+                }
+            });
+        }
+        /// <summary>
+        /// 总结播报执行体（后台线程）——合成 WAV 后入队播放；全程失败可见（Log），不影响轮次。
+        /// </summary>
+        /// <param name="catKey">猫 key（播放串行分组键）</param>
+        /// <param name="voice">音色槽位值（空 = 服务默认音色）</param>
+        /// <param name="text">待合成文本</param>
+        private static void RunSummarySpeak(string catKey, string voice, string text)
+        {
+            IPyService py = null;
+            if (!DataBox.TryResolve<IPyService>(out py) || py == null)
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结播报跳过——IPyService 未注入", "CHAT");
+                return;
+            }
+            string outPath = BuildSummaryAudioPath();
+            if (outPath.Length == 0)
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结播报跳过——产物目录未配置（py.service.kokoro.out_dir）", "CHAT");
+                return;
+            }
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["id"] = "summary";
+            payload["op"] = "speak";
+            payload["text"] = text;
+            if (voice.Length > 0)
+            {
+                payload["voice"] = voice;
+            }
+            payload["speed"] = 1.0;
+            payload["out"] = outPath;
+            string invokeArgs = JsonUtil.Object(("name", "kokoro"), ("payload", JsonUtil.Serialize(payload)));
+            string reply = py.Invoke(invokeArgs);
+            if (reply == null || reply.Length == 0 || reply.StartsWith("ERR|", StringComparison.Ordinal))
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结合成失败: " + (reply == null ? "(无回执)" : reply), "CHAT");
+                return;
+            }
+            string produced = outPath;
+            JsonDocument doc = JsonUtil.Parse(reply, "summary-speak");
+            if (doc == null)
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结合成回执不可解析: " + reply, "CHAT");
+                return;
+            }
+            try
+            {
+                JsonElement root = doc.RootElement;
+                if (!JsonUtil.GetBool(root, "ok", false))
+                {
+                    LogStore.Add("CatHome4", 2, "轮末总结合成失败: " + reply, "CHAT");
+                    return;
+                }
+                produced = JsonUtil.GetStr(root, "out", outPath);
+            }
+            finally
+            {
+                doc.Dispose();
+            }
+            IAudioService audio = null;
+            if (!DataBox.TryResolve<IAudioService>(out audio) || audio == null)
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结播报跳过——IAudioService 未注入", "CHAT");
+                return;
+            }
+            string enqueue = audio.Enqueue(catKey, produced, -1f);
+            if (enqueue != null && enqueue.Length > 0)
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结播放入队失败: " + enqueue, "CHAT");
+            }
+        }
+        /// <summary>
+        /// 总结播报产物路径——配置 py.service.kokoro.out_dir 下按时间戳命名（未配置返回空串，不猜目录）。
+        /// </summary>
+        /// <returns>WAV 全路径；未配置空串</returns>
+        private static string BuildSummaryAudioPath()
+        {
+            ConfigStore cfg = null;
+            string dir = "";
+            if (DataBox.TryResolve<ConfigStore>(out cfg) && cfg != null)
+            {
+                dir = cfg.Get("py.service.kokoro.out_dir", "");
+            }
+            if (dir.Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                if (!System.IO.Directory.Exists(dir))
+                {
+                    System.IO.Directory.CreateDirectory(dir);
+                }
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+            return System.IO.Path.Combine(dir, "summary_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".wav");
         }
     }
 }

@@ -1,9 +1,10 @@
 ﻿{
   "version": 3,
-  "generatedAt": "2026-10-15T04:59:40Z",
+  "generatedAt": "2026-10-15T06:46:25Z",
   "packages": ["Microsoft.CodeAnalysis.CSharp@4.11.0"],
   "bricks": [
     {"id":"BRIK-AUDIO-001","name":"audio.play","category":"AUDIO","path":"Audio/BRIK-AUDIO-001_audio.play.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.AudioPlayBrick.Play","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}]},"return":"Bool","duration":"Sync","thread":"main"},
+    {"id":"BRIK-AUDIO-002","name":"audio.speak","category":"AUDIO","path":"Audio/BRIK-AUDIO-002_audio.speak.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.AudioSpeakBrick.Speak","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}]},"return":"Bool","duration":"Sync","thread":"main"},
     {"id":"BRIK-BROWSER-001","name":"browser.open","category":"BROWSER","path":"BROWSER/BRIK-BROWSER-001_browser.open.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.BrowserOpenBrick.Open","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}]},"return":"Bool","duration":"Sync","thread":"main"},
     {"id":"BRIK-BROWSER-002","name":"browser.read","category":"BROWSER","path":"BROWSER/BRIK-BROWSER-002_browser.read.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.BrowserReadBrick.Read","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}]},"return":"Bool","duration":"Sync","thread":"main"},
     {"id":"BRIK-BROWSER-003","name":"browser.eval","category":"BROWSER","path":"BROWSER/BRIK-BROWSER-003_browser.eval.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.BrowserEvalBrick.Eval","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}]},"return":"Bool","duration":"Sync","thread":"main"},

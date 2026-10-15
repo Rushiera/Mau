@@ -85,7 +85,7 @@ namespace CH4
             "powershell", "powershell7",
             "mau-gen", "mau-proj", "host-reload", "mau-setup",
             "restart-full", "restart-incr", "restart-host", "majordomo-cmd",
-            "py-run", "py-service",
+            "py-run", "py-service", "audio-speak",
             "temp-exec"
         };
 

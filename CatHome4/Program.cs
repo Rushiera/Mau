@@ -305,7 +305,10 @@ namespace CH4
             // PsCat PowerShell 执行服务——EncodedCommand 免转义 + UTF-8 内建 + 写文件拦截 + 超时进程树杀（PsService）
             DataBox.Bind<IPsService>(new PsService());
             // py 执行与 py 服务进程管理——解释器读配置 py.python_path；句柄归基座持有（design-ch4-pytools §二）
-            DataBox.Bind<IPyService>(new Mau.Runtime.PyService(WritableRootPaths(workspace)));
+            // 运行期目录注入——锚文件落点（启动前自愈 + 服务锚；§5.2 清理第③层）
+            Mau.Runtime.PyService pySvc = new Mau.Runtime.PyService(WritableRootPaths(workspace));
+            pySvc.Configure(System.IO.Path.Combine(dataRoot, "Data", "runtime"));
+            DataBox.Bind<IPyService>(pySvc);
             // A110 浏览器服务——系统 Edge headless + 裸 CDP（零第三方依赖 · 每猫独立 profile · timeback 域限定）
             CdpBrowserService browserSvc = new CdpBrowserService(dataRoot);
             DataBox.Bind<IBrowserService>(browserSvc);
@@ -392,6 +395,8 @@ namespace CH4
             ChatSession.AuthorizedToolNamesProvider = AdminService.ResolveCatAuthorizedToolNames;
             // 轮末总结 LLM 配置接线——catKey → [endpoint, apikey, model]（LLMSimpleRequest 服务工单参数；roundsummary）
             ChatSession.RoundSummaryLlmProvider = AdminService.ResolveRoundSummaryLlm;
+            // 轮末总结播报接线——catKey → [启用标志, 音色槽位值]（A247：总结自动出声）
+            ChatSession.SummaryAudioProvider = AdminService.ResolveSummaryAudio;
             // 延迟队列落盘接线——Data/runtime/delays.json（跨宿主重启保留；design-ch4-delay §七）
             DelayQueue.Configure(Path.Combine(dataRoot, "Data", "runtime", "delays.json"));
             DelayQueue.Load();
@@ -415,6 +420,14 @@ namespace CH4
                     return _chatBridge.PostSystemMessage(downloadCatKey, "systemauto", downloadText) == "OK";
                 });
             webFetchSvc.Start();
+            // py 服务自启——follow=true 的服务随宿主启动拉起（design-ch4-pytools §5.2；接线 2026-10-15）
+            {
+                IPyService pyAutostart;
+                if (DataBox.TryResolve<IPyService>(out pyAutostart) && pyAutostart != null)
+                {
+                    LogStore.Add("CatHome4", 1, "py.boot | " + pyAutostart.Autostart(), "CONFIG");
+                }
+            }
             // timeback 归档落点接线——Data/runtime/timeback（全局计数 + 每次回收一个作用域文件；A104）
             ChatSession.TimebackArchiveDirProvider = AdminService.ResolveTimebackArchiveDir;
             // A201 会话元数据落点接线——Data/sessions/<id>/<id>.session.json（会话自身参数持久化；design-ch4-protocol §十三）

@@ -302,6 +302,20 @@ namespace CatHome4.Admin
             }
             return appearance.PetKind;
         }
+        /// <summary>解析猫的总结自动出声配置——无生效外观时保守关闭（不出声）。</summary>
+        /// <param name="catKey">猫 key</param>
+        /// <returns>[0]=启用标志（"1"/"0"）；[1]=音色槽位值（空=服务默认音色）</returns>
+        internal static string[] ResolveSummaryAudio(string catKey)
+        {
+            bool ignoredFollow;
+            CH_AppearanceConfig appearance = ResolveEffectiveAppearance(catKey, out ignoredFollow);
+            if (appearance == null)
+            {
+                return new string[] { "0", "" };
+            }
+            string voice = appearance.TtsStyle == null ? "" : appearance.TtsStyle;
+            return new string[] { appearance.SummaryAudio ? "1" : "0", voice };
+        }
 
         /// <summary>外观下拉清单——池全量（id + 显示名 + 默认标记；猫配置弹层消费）。</summary>
         /// <returns>下拉项列表</returns>

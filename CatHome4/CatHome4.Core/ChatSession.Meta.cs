@@ -341,7 +341,7 @@ namespace CH4
             }
             if (dropped > 0)
             {
-                LogStore.Add("CatHome4", 2, "会话工具面快照剔除池外工具 " + dropped.ToString() + " 个（已退役）: " + catId, "TOOL");
+                LogStore.Add("CatHome4", 2, "会话工具面快照剔除非本猫当前工具面项 " + dropped.ToString() + " 个（快照 ∩ 当前授权）: " + catId, "TOOL");
             }
             if (list.Count == 0)
             {

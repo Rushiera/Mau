@@ -8,6 +8,7 @@
 | ID | 名字 | 类别 | 工程路径 | 依赖 | 状态 | 来源 |
 |:--|:--|:--|:--|:--|:--|:--|
 | BRIK-AUDIO-001 | audio.play | AUDIO | Audio/BRIK-AUDIO-001_audio.play.cs | 无 | active |  |
+| BRIK-AUDIO-002 | audio.speak | AUDIO | Audio/BRIK-AUDIO-002_audio.speak.cs | 无 | active |  |
 | BRIK-BROWSER-001 | browser.open | BROWSER | BROWSER/BRIK-BROWSER-001_browser.open.cs | 无 | active |  |
 | BRIK-BROWSER-002 | browser.read | BROWSER | BROWSER/BRIK-BROWSER-002_browser.read.cs | 无 | active |  |
 | BRIK-BROWSER-003 | browser.eval | BROWSER | BROWSER/BRIK-BROWSER-003_browser.eval.cs | 无 | active |  |

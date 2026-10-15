@@ -99,6 +99,7 @@ function startAppearanceEdit(apc) {
     document.getElementById('apcAddBtn').textContent = '保存';
     document.getElementById('apcCancelEdit').style.display = '';
     apcMsgEl.textContent = '编辑中: ' + apc.displayName;
+    syncSummaryAudioEnabled();
 }
 
 function cancelAppearanceEdit() {
@@ -111,6 +112,15 @@ function cancelAppearanceEdit() {
     document.getElementById('apcAddBtn').textContent = '新建';
     document.getElementById('apcCancelEdit').style.display = 'none';
     apcMsgEl.textContent = '';
+    syncSummaryAudioEnabled();
+}
+
+// 开关关联——轮末总结未开则总结成音频不可开（design-ch4-appearance §一 判据）
+function syncSummaryAudioEnabled() {
+    var summaryOn = document.getElementById('apcNewSummary').checked;
+    var audioEl = document.getElementById('apcNewAudio');
+    audioEl.disabled = !summaryOn;
+    if (!summaryOn) { audioEl.checked = false; }
 }
 
 function appearanceSubmit() {
@@ -160,6 +170,8 @@ function setDefaultAppearance(apc) {
 }
 
 document.getElementById('apcAddBtn').onclick = appearanceSubmit;
+document.getElementById('apcNewSummary').onchange = syncSummaryAudioEnabled;
+syncSummaryAudioEnabled();
 document.getElementById('apcRefresh').onclick = loadAppearances;
 document.getElementById('apcCancelEdit').onclick = cancelAppearanceEdit;
 loadAppearances();
