@@ -221,6 +221,33 @@ namespace Mau.Runtime
             }
             return Path.GetFullPath(file);
         }
+        /// <summary>
+        /// 根寻址展开——<c>&lt;根id&gt;:&lt;相对&gt;</c> → 规范绝对路径；非根寻址 / 未知根 id 原样返回。
+        /// </summary>
+        /// <param name="path">输入路径（根寻址形态或普通路径）</param>
+        /// <returns>展开后的路径（非根寻址原样）</returns>
+        public string ExpandRootPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return "";
+            }
+            int sep = path.IndexOf(':');
+            if (sep <= 0)
+            {
+                return path;
+            }
+            string id = path.Substring(0, sep);
+            string rel = path.Substring(sep + 1);
+            for (int i = 0; i < Roots.Length; i = i + 1)
+            {
+                if (string.Equals(Roots[i].Id, id, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Path.GetFullPath(Path.Combine(Roots[i].Path, rel));
+                }
+            }
+            return path;
+        }
 
         /// <summary>
         /// 规范化根路径——与 FileSystemService 同规（GetFullPath + 去掉尾部分隔符）

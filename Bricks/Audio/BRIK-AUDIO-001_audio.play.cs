@@ -4,8 +4,8 @@
 // 类别: AUDIO
 // 作用: 播放本地 WAV 音频（per-Key 串行 + 组间并发，投递即返回）——LLM 工具 audio-play 的语料执行面
 // 依赖: 无
-// 引用: Mau.Runtime（DataBox/JsonArgs）· Mau.Contracts（IAudioService）
-// 原理: JsonArgs 解析 key/path/volume → DataBox.TryResolve<IAudioService> → Enqueue（入队即返回；调度全在服务内）
+// 引用: Mau.Runtime（DataBox/JsonArgs/WorkspaceConfig）· Mau.Contracts（IAudioService）
+// 原理: JsonArgs 解析 key/path/volume → path 根寻址展开 → DataBox.TryResolve<IAudioService> → Enqueue（入队即返回；调度全在服务内）
 // 常用: audio_cat.mau 认领线——'audio.play'[@adArgs] > @adRes
 // 注意: 只进不出——入队成功不等待播放完成（完成信号不回业务；design-mau-audio §四）
 // ═══════════════════════════════════════════════════
@@ -43,6 +43,8 @@ namespace Mau.Bricks
                 result = "ERR|BAD_ARGS|缺少参数 path";
                 return false;
             }
+            // [段1] 根寻址展开——顶层设计：<根id>:<相对> 映射受控根（与 py-run script 同口径）
+            path = ExpandPath(path);
             string key = JsonArgs.Get(argsJson, "key");
             if (key == "§PARSE_FAIL§")
             {
@@ -74,6 +76,25 @@ namespace Mau.Bricks
             result = "OK|已入队";
             return true;
         }
+
+        /// <summary>
+        /// 根寻址展开——经工作区根表（WorkspaceConfig 全局绑定）；未绑定 / 未知根 id 原样返回。
+        /// </summary>
+        /// <param name="path">输入路径（根寻址形态或普通路径）</param>
+        /// <returns>展开后的路径</returns>
+        private static string ExpandPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return "";
+            }
+            WorkspaceConfig workspace = null;
+            if (DataBox.TryResolve<WorkspaceConfig>(out workspace) && workspace != null)
+            {
+                return workspace.ExpandRootPath(path);
+            }
+            return path;
+        }
     }
 }
-// #MAU_CHECKSUM:SHA256:5C723847D0AD0715B68CDCC17C528472E070A96B80342D1B3AD6EDF7EEDC4245
+// #MAU_CHECKSUM:SHA256:5D979313A9EE805C47974070FE7301F7F47B242B624E02532F428401A60885F1

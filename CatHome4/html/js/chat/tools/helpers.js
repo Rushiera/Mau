@@ -175,6 +175,15 @@ function ovReplaceTail(r) {
     return '';
 }
 
+/// 成功回执尾段——`OK|<尾段>` → 尾段；非 OK / 无尾段 → 空串
+function ovOkTail(r) {
+    if (typeof r !== 'string' || r.indexOf('OK') !== 0) {
+        return '';
+    }
+    var i = r.indexOf('|');
+    return (i >= 0) ? r.substring(i + 1) : '';
+}
+
 /// 多行文本字段值——取以 key 开头的行，返回其后值（无匹配返回空串）
 function ovLineField(r, key) {
     if (typeof r !== 'string' || r.length === 0) {
@@ -188,6 +197,18 @@ function ovLineField(r, key) {
         }
     }
     return '';
+}
+
+/// 纯 JSON 结果解析——首字符非 `{` / 解析失败 → null（无结构化头的 JSON 回执走这里）
+function ovJson(text) {
+    if (typeof text !== 'string' || text.length === 0 || text.charAt(0) !== '{') {
+        return null;
+    }
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        return null;
+    }
 }
 
 // ── 结构化头读取（防御式——字段缺失不写 NaN / undefined）──────

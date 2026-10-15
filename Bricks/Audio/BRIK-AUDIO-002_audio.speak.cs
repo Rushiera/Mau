@@ -4,8 +4,8 @@
 // 类别: AUDIO
 // 作用: 文本转语音并播放——调 Kokoro py 服务合成 WAV，再入队播放（LLM 工具 audio-speak 语料执行面）
 // 依赖: 无
-// 引用: Mau.Runtime（DataBox/JsonArgs/JsonUtil/IPyService）· Mau.Contracts（IAudioService）
-// 原理: 解析 text/voice/speed/key/out → IPyService.Invoke(kokoro,{op:speak}) → 取产物路径 → IAudioService.Enqueue
+// 引用: Mau.Runtime（DataBox/JsonArgs/JsonUtil/IPyService/WorkspaceConfig）· Mau.Contracts（IAudioService）
+// 原理: 解析 text/voice/speed/key/out → out 根寻址展开 → IPyService.Invoke(kokoro,{op:speak}) → 取产物路径 → IAudioService.Enqueue
 // 常用: audio_cat.mau 认领线——'audio.speak'[@adArgs] > @adRes
 // 注意: 合成为同步往返（含冷启动，主线程等待）；播放入队即返回（design-mau-audio §四）
 // ═══════════════════════════════════════════════════
@@ -49,7 +49,8 @@ namespace Mau.Bricks
             string key = Clean(JsonArgs.Get(argsJson, "key"));
             string outArg = Clean(JsonArgs.Get(argsJson, "out"));
             float speed = ParseSpeed(JsonArgs.Get(argsJson, "speed"));
-            string outPath = outArg.Length > 0 ? outArg : BuildOutPath();
+            // 根寻址展开——out 显式给定时按工作区根表展开；缺省产物路径已是绝对路径
+            string outPath = outArg.Length > 0 ? ExpandPath(outArg) : BuildOutPath();
 
             // [段1] 合成——py 服务同步往返
             IPyService py = null;
@@ -127,6 +128,25 @@ namespace Mau.Bricks
         }
 
         /// <summary>
+        /// 根寻址展开——经工作区根表（WorkspaceConfig 全局绑定）；未绑定 / 未知根 id 原样返回。
+        /// </summary>
+        /// <param name="path">输入路径（根寻址形态或普通路径）</param>
+        /// <returns>展开后的路径</returns>
+        private static string ExpandPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return "";
+            }
+            WorkspaceConfig workspace = null;
+            if (DataBox.TryResolve<WorkspaceConfig>(out workspace) && workspace != null)
+            {
+                return workspace.ExpandRootPath(path);
+            }
+            return path;
+        }
+
+        /// <summary>
         /// 归一取值——解析失败标记 / 空转空串。
         /// </summary>
         /// <param name="value">原始取值</param>
@@ -180,4 +200,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:053BEC9CED5867EB1B035E6B280FE69C16E0F21F0497647E69616B994B27C39A
+// #MAU_CHECKSUM:SHA256:7B0A6D0A229C7F4D5D522EA78E590D678DFDFE7861BF6FA6D0B06988BE025063
