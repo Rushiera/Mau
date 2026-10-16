@@ -70,6 +70,12 @@ namespace CatHome4.Http
 
         /// <summary>页面标题展示名（null=不注入）</summary>
         public string DisplayName { get; set; }
+
+        /// <summary>依赖探测手动刷新回调（可空=不注册 /api/v1/deps/refresh）——宿主侧注入 DependencyProbe.Refresh（A253 5b）</summary>
+        public Action DepsRefresh { get; set; }
+
+        /// <summary>LLM 端点池探活回调（可空=不注册 /api/v1/llm/probe）——宿主侧注入 LlmEndpointProbe.ProbeAsync（A253 扩展）</summary>
+        public Func<Task<string>> LlmProbe { get; set; }
     }
 
     /// <summary>
@@ -101,6 +107,12 @@ namespace CatHome4.Http
 
         /// <summary>指令投递回调——宿主侧注入（Program.DispatchCommand）</summary>
         private Func<string, bool> _dispatcher;
+
+        /// <summary>依赖探测手动刷新回调——宿主侧注入（DependencyProbe.Refresh；可空=不注册刷新端点）</summary>
+        private Action _depsRefresh;
+
+        /// <summary>LLM 端点池探活回调——宿主侧注入（LlmEndpointProbe.ProbeAsync；可空=不注册探活端点）</summary>
+        private Func<Task<string>> _llmProbe;
 
         /// <summary>图片包裹组装回调——宿主侧注入（Admin 按会话前文条数拼编号；可空 = 不组装）</summary>
         private Func<string, IList<string>, string> _envelopeBuilder;
@@ -186,6 +198,8 @@ namespace CatHome4.Http
             host._sessionId = options.SessionId;
             host._snapshotBuilder = options.SnapshotBuilder;
             host._dispatcher = options.Dispatcher;
+            host._depsRefresh = options.DepsRefresh;
+            host._llmProbe = options.LlmProbe;
             host._envelopeBuilder = options.EnvelopeBuilder;
             host._frameBuilder = options.FrameBuilder;
             host._catsBuilder = options.CatsBuilder;
@@ -237,6 +251,24 @@ namespace CatHome4.Http
             });
             _app.MapGet("/api/v1/stream", (RequestDelegate)StreamEvents);
             _app.MapPost("/api/v1/command", (Delegate)HandleCommand);
+            // A253 5b——依赖探测手动刷新：重置全部条目探测时刻（下一轮快照全量重探；一次性档亦随之刷新）
+            if (_depsRefresh != null)
+            {
+                _app.MapPost("/api/v1/deps/refresh", (HttpContext ctx) =>
+                {
+                    _depsRefresh();
+                    return Results.Text("{\"ok\":true}", "application/json");
+                });
+            }
+            // A253 扩展——LLM 端点池探活：手动触发，逐个端点发一次最小请求（真实链路）
+            if (_llmProbe != null)
+            {
+                _app.MapPost("/api/v1/llm/probe", async (HttpContext ctx) =>
+                {
+                    string probeJson = await _llmProbe().ConfigureAwait(false);
+                    return Results.Text(probeJson, "application/json");
+                });
+            }
             _app.MapGet("/api/v1/logs", (Delegate)HandleLogs);
             _app.MapGet("/api/v1/config", (Delegate)HandleConfigGet);
             _app.MapPost("/api/v1/config", (Delegate)HandleConfigPost);

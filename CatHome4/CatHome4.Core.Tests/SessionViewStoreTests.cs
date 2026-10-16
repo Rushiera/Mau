@@ -543,11 +543,11 @@ namespace CatHome4.Core.Tests
         {
             _store.SetInjectReport("{\"file\":\"a.md\"}");
             _store.SetInjectReport("{\"file\":\"b.md\"}");
-            Assert.Equal(1, _store.GetBlocks().Length);
+            Assert.Single(_store.GetBlocks());
             Assert.Equal("{\"file\":\"b.md\"}", _store.GetInjectReport());
             CH4.SessionViewStore reloaded = new CH4.SessionViewStore(_path);
             reloaded.Load();
-            Assert.Equal(1, reloaded.GetBlocks().Length);
+            Assert.Single(reloaded.GetBlocks());
             Assert.Equal("{\"file\":\"b.md\"}", reloaded.GetInjectReport());
         }
 

@@ -187,3 +187,7 @@ h2 { font-size: var(--ch-fs-strong); color: var(--ch-title); margin: 10px 12px 6
 
 /* 执行序徽标——配置页工具勾选项（显示宿主 order 表裁决的层级） */
 .tool-order { display: inline-block; margin-left: 4px; padding: 0 4px; border-radius: 3px; font-size: var(--ch-fs-tag); color: var(--ch-fg-weak); background: var(--ch-bg-hover); }
+
+/* A253 依赖页签按钮——对齐既有规范（与 chat 页 #chatNew / #chatRefresh 同款，2026-10-16 莎定） */
+#depsRefresh, #llmProbeBtn { background: var(--ch-bg-raised); border: 1px solid var(--ch-line); color: var(--ch-fg-muted); padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: var(--ch-fs-tag); }
+#depsRefresh:hover, #llmProbeBtn:hover { background: var(--ch-bg-hover); }

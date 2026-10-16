@@ -86,7 +86,7 @@ namespace Mau.Runtime
         /// <param name="roots">受控根表（全局表；空表时相对与裸根形态按普通路径处理）</param>
         /// <param name="basePath">相对路径基准（空 = 根表首根；要 CWD 语义显式传 Environment.CurrentDirectory）</param>
         /// <returns>解析结果（Ok / FullPath / RootId / RootPath / ErrorCode / Message）</returns>
-        public static RootResolveResult Expand(string path, WorkspaceConfig.RootEntry[] roots, string basePath)
+        public static RootResolveResult Expand(string path, WorkspaceConfig.RootEntry[] roots, string? basePath)
         {
             RootResolveResult result = new RootResolveResult();
             if (path == null || path.Length == 0)
@@ -102,7 +102,7 @@ namespace Mau.Runtime
             if (sep > 0)
             {
                 string id = path.Substring(0, sep);
-                WorkspaceConfig.RootEntry hit = FindById(table, id);
+                WorkspaceConfig.RootEntry? hit = FindById(table, id);
                 if (hit != null)
                 {
                     return CombineWithRoot(hit, path.Substring(sep + 1), result);
@@ -118,7 +118,7 @@ namespace Mau.Runtime
             else if (sep <= 0 && table.Length > 0)
             {
                 // 裸根名——整串即某根 id（无冒号）→ 该根根目录
-                WorkspaceConfig.RootEntry bare = FindById(table, path);
+                WorkspaceConfig.RootEntry? bare = FindById(table, path);
                 if (bare != null)
                 {
                     string barePath = NormalizeRootPath(bare.Path);
@@ -153,7 +153,7 @@ namespace Mau.Runtime
         /// <param name="roots">受控根表（全局表）</param>
         /// <param name="basePath">相对路径基准（空 = 根表首根）</param>
         /// <returns>解析结果（归属成功时 RootId / RootPath 已填）</returns>
-        public static RootResolveResult ResolveOwned(string path, WorkspaceConfig.RootEntry[] roots, string basePath)
+        public static RootResolveResult ResolveOwned(string path, WorkspaceConfig.RootEntry[] roots, string? basePath)
         {
             RootResolveResult result = Expand(path, roots, basePath);
             if (!result.Ok)
@@ -165,7 +165,7 @@ namespace Mau.Runtime
             {
                 return result;
             }
-            WorkspaceConfig.RootEntry owner = FindOwningRoot(table, result.FullPath);
+            WorkspaceConfig.RootEntry? owner = FindOwningRoot(table, result.FullPath);
             if (owner == null)
             {
                 RootResolveResult fail = new RootResolveResult();
@@ -186,7 +186,7 @@ namespace Mau.Runtime
         /// </summary>
         /// <param name="path">输入路径</param>
         /// <returns>true=按受控根寻址解析</returns>
-        public static bool IsRootAddress(string path)
+        public static bool IsRootAddress(string? path)
         {
             if (path == null || path.Length == 0)
             {
@@ -230,7 +230,7 @@ namespace Mau.Runtime
         /// <param name="table">根表</param>
         /// <param name="id">根 id</param>
         /// <returns>命中条目；未命中返回 null</returns>
-        private static WorkspaceConfig.RootEntry FindById(WorkspaceConfig.RootEntry[] table, string id)
+        private static WorkspaceConfig.RootEntry? FindById(WorkspaceConfig.RootEntry[] table, string id)
         {
             for (int i = 0; i < table.Length; i = i + 1)
             {
@@ -253,9 +253,9 @@ namespace Mau.Runtime
         /// <param name="table">根表</param>
         /// <param name="full">规范绝对路径</param>
         /// <returns>归属条目；不在任何根内返回 null</returns>
-        private static WorkspaceConfig.RootEntry FindOwningRoot(WorkspaceConfig.RootEntry[] table, string full)
+        private static WorkspaceConfig.RootEntry? FindOwningRoot(WorkspaceConfig.RootEntry[] table, string full)
         {
-            WorkspaceConfig.RootEntry best = null;
+            WorkspaceConfig.RootEntry? best = null;
             int bestLength = -1;
             string separator = Path.DirectorySeparatorChar.ToString();
             for (int i = 0; i < table.Length; i = i + 1)
@@ -316,10 +316,14 @@ namespace Mau.Runtime
         /// <param name="basePath">相对基准</param>
         /// <param name="result">结果载体</param>
         /// <returns>解析结果</returns>
-        private static RootResolveResult Absolutize(string path, WorkspaceConfig.RootEntry[] table, string basePath, RootResolveResult result)
+        private static RootResolveResult Absolutize(string path, WorkspaceConfig.RootEntry[] table, string? basePath, RootResolveResult result)
         {
-            string basis = basePath;
-            if (basis == null || basis.Length == 0)
+            string basis = "";
+            if (basePath != null)
+            {
+                basis = basePath;
+            }
+            if (basis.Length == 0)
             {
                 basis = table.Length > 0 ? NormalizeRootPath(table[0].Path) : "";
             }
@@ -357,7 +361,7 @@ namespace Mau.Runtime
                 return "";
             }
             string full = Path.GetFullPath(root);
-            string volume = Path.GetPathRoot(full);
+            string? volume = Path.GetPathRoot(full);
             if (volume != null && string.Equals(full, volume, StringComparison.OrdinalIgnoreCase))
             {
                 return full;

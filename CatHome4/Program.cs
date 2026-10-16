@@ -623,6 +623,8 @@ namespace CH4
                 PatchBuilder = ObserveService.BuildPatchJson,
                 ServeChatPage = false,
                 RouteRegistrar = AdminService.RegisterAdminRoutes,
+                DepsRefresh = DependencyProbe.Refresh,
+                LlmProbe = LlmEndpointProbe.ProbeAsync,
                 HtmlRootProvider = new HtmlRootProvider()
             });
             // F2.2 majordomo 特殊会话——独立端口 serve chat.html + 强制自启（DefaultSession 事件推送绑独立端口 host）

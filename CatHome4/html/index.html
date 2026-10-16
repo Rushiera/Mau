@@ -14,6 +14,7 @@
             <button data-tab="config">配置</button>
             <button data-tab="state">状态</button>
             <button data-tab="log">日志</button>
+            <button data-tab="deps">依赖</button>
             <button data-tab="raw">原始</button>
             <!-- 前端版本标记——每次改动前端递增；刷新后数字变化 = 拿到新版（人眼 cache-busting） -->
             <div style="margin-top:auto;color:var(--ch-fg-faint);font-size:var(--ch-fs-tag);writing-mode:vertical-rl" data-version>UI v?</div>
@@ -59,6 +60,23 @@
                     <span id="rawInfo" style="color:var(--ch-fg-weak);font-size:var(--ch-fs-tag)"></span>
                 </div>
                 <pre id="rawJson"></pre>
+            </section>
+            <!-- A253 5b 依赖检测区——快照 deps 段渲染（后端统一探测快照；手动刷新走 POST /api/v1/deps/refresh） -->
+            <section id="tab-deps" class="tab">
+                <div id="depsbar">
+                    <span id="depsInfo" style="color:var(--ch-fg-weak);font-size:var(--ch-fs-tag)">外部依赖与自举链——按级别分组（运行必需 / 可选功能 / 开发辅助）</span>
+                    <span style="flex:1"></span>
+                    <button id="depsRefresh">刷新探测</button>
+                </div>
+                <div id="depsList"></div>
+                <!-- A253 扩展——LLM 端点池独立区块：手动探活（POST /api/v1/llm/probe），逐个端点报可用状态 -->
+                <div id="llmProbeBar" style="display:flex;gap:6px;padding:12px 12px 8px 12px;border-top:1px solid var(--ch-line);border-bottom:1px solid var(--ch-line-faint);align-items:center;margin-top:16px">
+                    <h2 style="margin:0">LLM 端点池</h2>
+                    <span id="llmProbeInfo" style="color:var(--ch-fg-weak);font-size:var(--ch-fs-tag)">手动触发——对池内每个端点发一次最小请求（max_tokens=1）；常态只查配置完整性，不自动请求</span>
+                    <span style="flex:1"></span>
+                    <button id="llmProbeBtn">发送探针</button>
+                </div>
+                <div id="llmProbeList"></div>
             </section>
             <!-- 配置区 -->
             <section id="tab-config" class="tab">
@@ -286,5 +304,6 @@
     <script src="js/panel-appearance.js?v=__V__"></script>
     <script src="js/panel-catcfg.js?v=__V__"></script>
     <script src="js/panel-packs.js?v=__V__"></script>
+    <script src="js/panel-deps.js?v=__V__"></script>
 </body>
 </html>

@@ -227,9 +227,33 @@ namespace CatHome4.Observe
                 },
                 tools = BuildToolsJson(),
                 boxes = boxes,
+                deps = BuildDepsJson(out _),
                 logs = logs
             };
             return JsonUtil.Serialize(snapshot);
+        }
+
+        /// <summary>
+        /// deps 段——外部依赖探测结果（A253；DependencyProbe 后端统一快照 · D1）。
+        /// 主线程调用：EnsureFresh（采集配置类 + 触发后台 IO）→ 取当前快照。
+        /// stableJson = 「去时刻」稳定视图（patch 对比用——probedAt 每轮变化，混入 diff 面即每帧误推）。
+        /// </summary>
+        /// <param name="stableJson">稳定视图 JSON（不含 probedAt；对比面）</param>
+        /// <returns>条目数组（含 probedAt——全量快照面）</returns>
+        private static List<object> BuildDepsJson(out string stableJson)
+        {
+            DependencyProbe.EnsureFresh();
+            DependencyProbe.ProbeResult[] results = DependencyProbe.Snapshot();
+            List<object> deps = new List<object>();
+            List<object> stable = new List<object>();
+            for (int i = 0; i < results.Length; i++)
+            {
+                DependencyProbe.ProbeResult r = results[i];
+                deps.Add(new { level = r.Level, name = r.Name, state = r.State, detail = r.Detail, probedAt = r.ProbedAtMs });
+                stable.Add(new { level = r.Level, name = r.Name, state = r.State, detail = r.Detail });
+            }
+            stableJson = JsonUtil.Serialize(stable);
+            return deps;
         }
 
         /// <summary>
@@ -320,6 +344,9 @@ namespace CatHome4.Observe
         /// <summary>上次 sessions 段 JSON——变化检测（会话四相环预览）</summary>
         private static string _lastSessionsJson = "";
 
+        /// <summary>上次 deps 段稳定视图 JSON——变化检测（依赖探测；probedAt 不入对比面）</summary>
+        private static string _lastDepsJson = "";
+
         /// <summary>上次 boxes 字典——scope+key → 条目 JSON（变化检测）</summary>
         private static Dictionary<string, string> _lastBoxes = new Dictionary<string, string>();
 
@@ -339,6 +366,10 @@ namespace CatHome4.Observe
             List<object> sessions = BuildSessionsJson();
             string sessionsJson = JsonUtil.Serialize(sessions);
             bool sessionsChanged = !string.Equals(sessionsJson, _lastSessionsJson, StringComparison.Ordinal);
+            // [段1c] deps 段——稳定视图对比（A253 依赖探测；probedAt 不进对比面——观测元数据混入 diff 即每帧误推）
+            string depsStableJson = "";
+            List<object> deps = BuildDepsJson(out depsStableJson);
+            bool depsChanged = !string.Equals(depsStableJson, _lastDepsJson, StringComparison.Ordinal);
             // [段2] oa 段——四计数对比
             OAView oa = _oa.GetSnapshot();
             object oaObj = new
@@ -383,7 +414,7 @@ namespace CatHome4.Observe
             }
             bool boxesChanged = boxSet.Count > 0 || boxDel.Count > 0;
             // [段4] 无变化零推送——Idle 稳态静默
-            if (!catsChanged && !sessionsChanged && !oaChanged && !boxesChanged)
+            if (!catsChanged && !sessionsChanged && !oaChanged && !boxesChanged && !depsChanged)
             {
                 return null;
             }
@@ -399,6 +430,11 @@ namespace CatHome4.Observe
             {
                 patch["sessions"] = sessions;
                 _lastSessionsJson = sessionsJson;
+            }
+            if (depsChanged)
+            {
+                patch["deps"] = deps;
+                _lastDepsJson = depsStableJson;
             }
             if (oaChanged)
             {
