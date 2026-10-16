@@ -741,6 +741,12 @@ namespace CH4
                 // 无头才藏滚动条——有头是给人看的窗口，滚动条要在
                 psi.ArgumentList.Add("--hide-scrollbars");
             }
+            else
+            {
+                // 有头登录窗口（B 试验 2026-10-16）——关掉自动化特征开关，降低站点反自动化判据命中率。
+                // 起因：BOSS直聘在默认有头实例下加载成功后把页面自毁为 about:blank（同窗 baidu / example 正常）
+                psi.ArgumentList.Add("--disable-blink-features=AutomationControlled");
+            }
             psi.ArgumentList.Add("about:blank");
 
             Process proc = Process.Start(psi);
@@ -1104,7 +1110,13 @@ namespace CH4
             CdpClient cdp = new CdpClient(ws);
             cdp.Call("Page.enable", "{}");
             cdp.Call("Runtime.enable", "{}");
-            cdp.Call("Emulation.setDeviceMetricsOverride", JsonUtil.Serialize(new { width = ViewportWidth, height = ViewportHeight, deviceScaleFactor = 1, mobile = false }));
+            // 视口覆盖（B 试验续 2026-10-16）——有头实例跳过：有头窗口尺寸由启动参数 --window-size 决定，
+            // 覆盖会让 innerWidth == outerWidth（真实窗口不可能相等），成为页面侧自动化判据。
+            // 实测：有头实例附着后 zhipin 页面被重置为 about:blank，同窗 baidu 不受影响
+            if (!browser.IsHeadful)
+            {
+                cdp.Call("Emulation.setDeviceMetricsOverride", JsonUtil.Serialize(new { width = ViewportWidth, height = ViewportHeight, deviceScaleFactor = 1, mobile = false }));
+            }
             browser.Ws = ws;
             browser.Cdp = cdp;
             browser.TargetId = target.Id;
