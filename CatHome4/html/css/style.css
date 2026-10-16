@@ -17,6 +17,13 @@
     --ch-state-reply: #f0e6d2;
     --ch-state-all: #c0a8e0;
     --ch-chat-ai-fg: var(--ch-fg-strong);
+    /* L2 主面板资源页签曲线（A259——canvas 手绘，色值经 JS 读取注入） */
+    --ch-chart-mem: #4a9eff;                    /* 本体内存曲线 */
+    --ch-chart-gpu: #ffa64a;                    /* GPU 占用曲线 */
+    --ch-chart-loop: #7ec97e;                   /* 主循环耗时曲线 */
+    --ch-chart-frame: var(--ch-line-strong);    /* 绘图区边框 */
+    --ch-chart-grid: var(--ch-line);            /* 网格线 */
+    --ch-chart-axis-fg: var(--ch-fg-weak);      /* 刻度文字 */
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var(--ch-fg); height: 100vh; overflow: hidden; }

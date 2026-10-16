@@ -87,6 +87,10 @@
                     <button id="resPause">暂停曲线</button>
                 </div>
                 <div id="resScroll">
+                    <h2>本体工作集 / GPU 占用 / 主循环耗时（最近 3 分钟）</h2>
+                    <canvas id="resChartMem" style="width:100%;height:300px;display:block"></canvas>
+                    <canvas id="resChartGpu" style="width:100%;height:300px;display:block;margin-top:6px"></canvas>
+                    <canvas id="resChartLoop" style="width:100%;height:300px;display:block;margin-top:6px"></canvas>
                     <h2>本体进程</h2>
                     <div id="resProc"></div>
                     <h2>主循环分段耗时</h2>
@@ -95,10 +99,6 @@
                     <div id="resPy"></div>
                     <h2>GPU 显存</h2>
                     <div id="resGpu"></div>
-                    <h2>本体工作集 / GPU 占用 / 主循环耗时（最近 3 分钟）</h2>
-                    <canvas id="resChartMem" style="width:100%;height:300px;display:block"></canvas>
-                    <canvas id="resChartGpu" style="width:100%;height:300px;display:block;margin-top:6px"></canvas>
-                    <canvas id="resChartLoop" style="width:100%;height:300px;display:block;margin-top:6px"></canvas>
                 </div>
             </section>
             <!-- 配置区 -->
