@@ -56,9 +56,12 @@ namespace Mau.Audio
             {
                 return "ERR|BAD_ARGS|path 为空";
             }
-            if (!File.Exists(path))
+            // A258——路径权威落点：入口幂等展开根寻址（已解析绝对路径原样返回）；
+            // 消费者不止积木一层（轮末总结经 ChatSession 直调），契约钉在服务自身
+            string resolved = ResolvePath(path);
+            if (!File.Exists(resolved))
             {
-                return "ERR|NOT_FOUND|文件不存在: " + path;
+                return "ERR|NOT_FOUND|文件不存在: " + resolved;
             }
             string k = (key == null || key.Length == 0) ? DefaultKey : key;
             lock (_gate)
@@ -71,11 +74,11 @@ namespace Mau.Audio
                         q = new Queue<AudioItem>();
                         _queues[k] = q;
                     }
-                    q.Enqueue(new AudioItem(path, volume));
+                    q.Enqueue(new AudioItem(resolved, volume));
                     return "";
                 }
                 _playing.Add(k);
-                StartPlay(k, path, volume);
+                StartPlay(k, resolved, volume);
             }
             return "";
         }
@@ -195,6 +198,25 @@ namespace Mau.Audio
                     LogFail(key, "读取器释放异常: " + ex.Message);
                 }
             }
+        }
+        /// <summary>
+        /// 路径展开（幂等）——根寻址 &lt;根id&gt;:&lt;相对&gt; 映射受控根；已解析绝对路径 / 非根寻址原样返回。
+        /// A258——路径权威落点在服务入口（消费者含积木与宿主直调两层）；根表未注入时原样返回（失败可见归下游 File.Exists）。
+        /// </summary>
+        /// <param name="path">输入路径（根寻址形态或普通路径）</param>
+        /// <returns>展开后的路径</returns>
+        private static string ResolvePath(string path)
+        {
+            Mau.Runtime.WorkspaceConfig workspace = null;
+            if (Mau.Runtime.DataBox.TryResolve<Mau.Runtime.WorkspaceConfig>(out workspace) && workspace != null)
+            {
+                Mau.Runtime.RootResolveResult rr = Mau.Runtime.RootPathResolver.Expand(path, workspace.Roots);
+                if (rr.Ok && rr.FullPath.Length > 0)
+                {
+                    return rr.FullPath;
+                }
+            }
+            return path;
         }
 
         /// <summary>

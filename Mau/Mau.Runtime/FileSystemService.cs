@@ -40,6 +40,11 @@ namespace Mau.Runtime
         private readonly string[] _rootIds;
 
         /// <summary>
+        /// 根条目表——A257 根寻址公共服务入参（与 _roots / _rootIds / _readOnly 同源）
+        /// </summary>
+        private readonly WorkspaceConfig.RootEntry[] _entries;
+
+        /// <summary>
         /// 建立明确根目录和位于其中的回收站
         /// </summary>
         /// <param name="roots">允许根目录</param>
@@ -53,6 +58,7 @@ namespace Mau.Runtime
             _roots = new string[roots.Length];
             _readOnly = new bool[roots.Length];
             _rootIds = new string[roots.Length];
+            _entries = new WorkspaceConfig.RootEntry[roots.Length];
             for (int i = 0; i < roots.Length; i = i + 1)
             {
                 if (string.IsNullOrWhiteSpace(roots[i]))
@@ -61,6 +67,7 @@ namespace Mau.Runtime
                 }
                 _roots[i] = PathBoundary.NormalizeRoot(roots[i]);
                 _rootIds[i] = "root" + i.ToString();
+                _entries[i] = new WorkspaceConfig.RootEntry() { Id = _rootIds[i], Path = _roots[i], Writable = true };
             }
             _recycleRoot = Resolve(recycleRoot, true);
             Directory.CreateDirectory(_recycleRoot);
@@ -610,54 +617,19 @@ namespace Mau.Runtime
                 // v3 机制纯净——空路径是调用方错误（参数校验，不做产品级回落；LLM 适配归自举层语料）
                 throw new ArgumentException("Path is empty.", "path");
             }
-            // P8.5b 命名空间寻址——id:relative（受控根 id 前缀；LLM 工具路径语义——同 WorkspaceConfig.ResolveInjectFile；Windows 盘符如 C:\ 前缀不匹配则跳过）
-            int nsSep = path.IndexOf(':');
-            if (nsSep > 0)
+            // A257 根寻址统一解析（公共服务·点二：展开 + 归属判定）——越界 / 未知 id / 非法路径在此转异常，保本类既有契约
+            RootResolveResult rr = RootPathResolver.ResolveOwned(path, _entries);
+            if (!rr.Ok)
             {
-                string nsId = path.Substring(0, nsSep);
-                string nsRel = path.Substring(nsSep + 1);
-                for (int i = 0; i < _roots.Length; i = i + 1)
-                {
-                    if (string.Equals(_rootIds[i], nsId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        path = Path.Combine(_roots[i], nsRel);
-                        break;
-                    }
-                }
+                throw new UnauthorizedAccessException("Path resolve failed: " + rr.ErrorCode + " | " + rr.Message);
             }
-            else
+            // P8.5 只读根校验——forWrite 且归属根只读 → 拒绝（安全层归本类；公共服务不插手）
+            if (forWrite && IsReadOnlyRoot(rr.RootPath))
             {
-                // 裸根名适配——整串即某根 id（无冒号）→ 该根根目录（text-tree("CCBP") ≡ "CCBP:"；2026-09-18）
-                // 歧义 escape：指根下同名子目录仍写 "根id:同名子目录" 显式形态
-                for (int i = 0; i < _roots.Length; i = i + 1)
-                {
-                    if (string.Equals(_rootIds[i], path, StringComparison.OrdinalIgnoreCase))
-                    {
-                        path = _roots[i];
-                        break;
-                    }
-                }
+                throw new UnauthorizedAccessException("Path is in a read-only root: " + rr.RootPath);
             }
-            string resolved;
-            if (Path.IsPathFullyQualified(path))
-            {
-                resolved = Path.GetFullPath(path);
-            }
-            else
-            {
-                resolved = Path.GetFullPath(Path.Combine(_roots[0], path));
-            }
-            string? owningRoot = FindOwningRoot(resolved);
-            if (owningRoot == null)
-            {
-                throw new UnauthorizedAccessException("Path is outside allowed roots.");
-            }
-            // P8.5 只读根校验——forWrite 且归属根只读 → 拒绝（ccbp 等知识根默认只读）
-            if (forWrite && IsReadOnlyRoot(owningRoot))
-            {
-                throw new UnauthorizedAccessException("Path is in a read-only root: " + owningRoot);
-            }
-            return PathBoundary.ResolveOwnedPath(owningRoot, resolved);
+            // 重解析点边界证明（安全层归本类；公共服务不插手）
+            return PathBoundary.ResolveOwnedPath(rr.RootPath, rr.FullPath);
         }
 
         /// <summary>
@@ -722,28 +694,6 @@ namespace Mau.Runtime
                 PathBoundary.ResolveOwnedPath(root, directories[i]);
                 AppendFind(root, directories[i], pattern, true, limit, output, ref ignoredDirs, ref matched);
             }
-        }
-        /// <summary>
-        /// 寻找包含目标的最长允许根
-        /// </summary>
-        /// <param name="path">绝对路径</param>
-        /// <returns>允许根或 null</returns>
-        private string? FindOwningRoot(string path)
-        {
-            string? owner = null;
-            for (int i = 0; i < _roots.Length; i = i + 1)
-            {
-                string root = _roots[i];
-                if (string.Equals(path, root, StringComparison.OrdinalIgnoreCase)
-                    || path.StartsWith(root + Path.DirectorySeparatorChar.ToString(), StringComparison.OrdinalIgnoreCase))
-                {
-                    if (owner == null || root.Length > owner.Length)
-                    {
-                        owner = root;
-                    }
-                }
-            }
-            return owner;
         }
 
         /// <summary>
@@ -822,6 +772,7 @@ namespace Mau.Runtime
             _roots = new string[rootEntries.Length];
             _readOnly = new bool[rootEntries.Length];
             _rootIds = new string[rootEntries.Length];
+            _entries = new WorkspaceConfig.RootEntry[rootEntries.Length];
             for (int i = 0; i < rootEntries.Length; i = i + 1)
             {
                 WorkspaceConfig.RootEntry entry = rootEntries[i];
@@ -837,6 +788,7 @@ namespace Mau.Runtime
                     entryId = "root" + i.ToString();
                 }
                 _rootIds[i] = entryId;
+                _entries[i] = new WorkspaceConfig.RootEntry() { Id = _rootIds[i], Path = _roots[i], Writable = entry.Writable };
             }
             _recycleRoot = Resolve(recycleRoot, true);
             Directory.CreateDirectory(_recycleRoot);

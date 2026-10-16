@@ -270,7 +270,7 @@ namespace CatHome4.Admin
             WorkspaceConfig ws = null;
             DataBox.TryResolve<WorkspaceConfig>(out ws);
             // [段1] 受控根寻址分支——`<rootId>:<rel>`（冒号在首个分隔符之前才视为根寻址）
-            if (IsRootAddress(file))
+            if (RootPathResolver.IsRootAddress(file))
             {
                 string rootFull = "";
                 string rootMime = "";
@@ -354,79 +354,20 @@ namespace CatHome4.Admin
             {
                 return false;
             }
-            string candidate;
-            try
-            {
-                candidate = Path.GetFullPath(path);
-            }
-            catch (Exception)
+            // A257——归属判定统一走公共服务（点二；相对路径按 CWD 基准，与原 Path.GetFullPath 语义一致）
+            RootResolveResult rr = RootPathResolver.ResolveOwned(path, ws.Roots, Environment.CurrentDirectory);
+            if (!rr.Ok)
             {
                 return false;
             }
             // 扩展名白名单——端点只服务图片（非图片类型不借道取图面）
-            string resolvedMime = ImageMimeOfExt(Path.GetExtension(candidate));
+            string resolvedMime = ImageMimeOfExt(Path.GetExtension(rr.FullPath));
             if (resolvedMime == "application/octet-stream")
             {
                 return false;
             }
-            for (int i = 0; i < ws.Roots.Length; i = i + 1)
-            {
-                string rootPath = ws.Roots[i].Path;
-                if (rootPath == null || rootPath.Length == 0)
-                {
-                    continue;
-                }
-                string prefix = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-                if (candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    full = candidate;
-                    mime = resolvedMime;
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// 受控根寻址判定——`&lt;rootId&gt;:&lt;rel&gt;` 形态（首个冒号出现在首个路径分隔符之前；Windows 盘符 `C:\` 不算）。
-        /// </summary>
-        /// <param name="addr">路由取值</param>
-        /// <returns>true=按受控根寻址解析</returns>
-        internal static bool IsRootAddress(string addr)
-        {
-            if (addr == null || addr.Length == 0)
-            {
-                return false;
-            }
-            int colon = addr.IndexOf(':');
-            if (colon <= 0)
-            {
-                return false;
-            }
-            int slash = addr.IndexOf('/');
-            int back = addr.IndexOf('\\');
-            int sep = -1;
-            if (slash >= 0 && back >= 0)
-            {
-                sep = slash < back ? slash : back;
-            }
-            else if (slash >= 0)
-            {
-                sep = slash;
-            }
-            else
-            {
-                sep = back;
-            }
-            if (sep >= 0 && sep < colon)
-            {
-                return false;
-            }
-            // 单字母盘符 + 随后的分隔符（C:\…）——按本地绝对路径处理，不作根寻址
-            if (colon == 1 && sep == 2)
-            {
-                return false;
-            }
+            full = rr.FullPath;
+            mime = resolvedMime;
             return true;
         }
 
@@ -444,55 +385,23 @@ namespace CatHome4.Admin
         {
             full = "";
             mime = "";
-            if (ws == null || addr == null)
+            if (ws == null || addr == null || addr.Length == 0)
             {
                 return false;
             }
-            int colon = addr.IndexOf(':');
-            if (colon <= 0)
-            {
-                return false;
-            }
-            string rootId = addr.Substring(0, colon).Trim();
-            string rel = addr.Substring(colon + 1).Trim();
-            if (rootId.Length == 0 || rel.Length == 0)
-            {
-                return false;
-            }
-            string rootPath = "";
-            for (int i = 0; i < ws.Roots.Length; i = i + 1)
-            {
-                if (string.Equals(ws.Roots[i].Id, rootId, StringComparison.OrdinalIgnoreCase))
-                {
-                    rootPath = ws.Roots[i].Path;
-                    break;
-                }
-            }
-            if (rootPath == null || rootPath.Length == 0)
+            // A257——根寻址统一走公共服务（点二：展开 + 归属判定）
+            RootResolveResult rr = RootPathResolver.ResolveOwned(addr, ws.Roots);
+            if (!rr.Ok)
             {
                 return false;
             }
             // 扩展名白名单——端点只服务图片（非图片类型不借道取图面）
-            string resolvedMime = ImageMimeOfExt(Path.GetExtension(rel));
+            string resolvedMime = ImageMimeOfExt(Path.GetExtension(rr.FullPath));
             if (resolvedMime == "application/octet-stream")
             {
                 return false;
             }
-            string candidate;
-            try
-            {
-                candidate = Path.GetFullPath(Path.Combine(rootPath, rel.Replace('/', Path.DirectorySeparatorChar)));
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-            string rootPrefix = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            if (!candidate.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-            full = candidate;
+            full = rr.FullPath;
             mime = resolvedMime;
             return true;
         }

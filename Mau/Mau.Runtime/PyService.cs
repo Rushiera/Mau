@@ -33,6 +33,11 @@ namespace Mau.Runtime
         private readonly string[] _roots;
 
         /// <summary>
+        /// 可写根条目表——A257 根寻址公共服务入参（只含 writable 根）
+        /// </summary>
+        private readonly WorkspaceConfig.RootEntry[] _entries;
+
+        /// <summary>
         /// 默认脚本扫描面——mau 根下的 tools 目录（List 未给 dir 时的默认面；无 mau 根即空串 → 明示不可用）
         /// </summary>
         private readonly string _defaultScanDir;
@@ -89,6 +94,7 @@ namespace Mau.Runtime
                 throw new ArgumentException("At least one workspace root is required.", "roots");
             }
             List<string> writable = new List<string>();
+            List<WorkspaceConfig.RootEntry> writableEntries = new List<WorkspaceConfig.RootEntry>();
             for (int i = 0; i < roots.Length; i = i + 1)
             {
                 if (!roots[i].Writable || roots[i].Path.Length == 0)
@@ -97,6 +103,11 @@ namespace Mau.Runtime
                 }
                 string normalized = Path.GetFullPath(roots[i].Path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 writable.Add(normalized);
+                WorkspaceConfig.RootEntry entry = new WorkspaceConfig.RootEntry();
+                entry.Id = roots[i].Id == null ? "" : roots[i].Id;
+                entry.Path = normalized;
+                entry.Writable = true;
+                writableEntries.Add(entry);
                 if (roots[i].Id != null && roots[i].Id.Length > 0)
                 {
                     _rootIndex[roots[i].Id] = normalized;
@@ -107,6 +118,7 @@ namespace Mau.Runtime
                 throw new ArgumentException("At least one writable root is required.", "roots");
             }
             _roots = writable.ToArray();
+            _entries = writableEntries.ToArray();
             _defaultScanDir = ResolveDefaultScanDir(roots);
             AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
             _jobHandle = EnsureJob();
@@ -552,7 +564,13 @@ namespace Mau.Runtime
                 error = "ERR|PY_SERVICE_NOT_CONFIGURED|服务未配置：" + serviceName + "——请在配置面填写 py.service." + serviceName + ".script";
                 return "";
             }
-            string full = ExpandRootPath(script);
+            RootResolveResult rr = RootPathResolver.Expand(script, _entries, Environment.CurrentDirectory);
+            if (!rr.Ok)
+            {
+                error = "ERR|PY_BAD_PATH|服务脚本路径非法: " + rr.Message;
+                return "";
+            }
+            string full = rr.FullPath;
             if (!IsUnderWritableRoot(full))
             {
                 error = "ERR|PY_SCRIPT_OUTSIDE_ROOT|服务脚本超出受控根：" + full + "——只允许可写受控根内的脚本";
@@ -1195,17 +1213,19 @@ namespace Mau.Runtime
                             LogStore.Add("PyService", 1, "自愈清理遗留 py 服务进程 pid=" + pid.ToString(), "SYS");
                         }
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
-                        // 进程不存在 / 无权限——锚直接清
+                        // 进程不存在 / 无权限——锚直接清（出声：失败可见）
+                        LogStore.Add("PyService", 2, "自愈清理遗留进程失败 pid=" + pid.ToString() + ": " + ex.Message, "SYS");
                     }
                 }
                 try
                 {
                     File.Delete(anchor);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    LogStore.Add("PyService", 2, "自愈清理锚文件失败: " + anchor + " | " + ex.Message, "SYS");
                 }
             }
             return cleaned;
@@ -1252,8 +1272,9 @@ namespace Mau.Runtime
                     File.Delete(anchor);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                LogStore.Add("PyService", 2, "清除服务锚失败（" + serviceName + "）: " + ex.Message, "SYS");
             }
         }
     }

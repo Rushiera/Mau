@@ -208,30 +208,6 @@ namespace Mau.Runtime
             return JsonUtil.Serialize(payload);
         }
 
-        // [段3] 路径校验
-        /// <summary>
-        /// 根寻址展开——<c>&lt;根id&gt;:&lt;相对&gt;</c> → 绝对路径（与 text-* / file-* 同源）；其余原样返回。
-        /// 盘符冒号（C:）因「id 不在根表」自然不被当寻址前缀。
-        /// </summary>
-        /// <param name="path">输入路径（根寻址形态或普通路径）</param>
-        /// <returns>展开后的路径</returns>
-        private string ExpandRootPath(string path)
-        {
-            int colon = path.IndexOf(':');
-            if (colon <= 0)
-            {
-                return path;
-            }
-            string id = path.Substring(0, colon);
-            string? rootPath;
-            if (!_rootIndex.TryGetValue(id, out rootPath) || rootPath == null)
-            {
-                return path;
-            }
-            string rest = path.Substring(colon + 1).TrimStart('/', '\\');
-            return rest.Length == 0 ? rootPath : Path.Combine(rootPath, rest);
-        }
-
         /// <summary>
         /// 脚本路径校验——必须在可写受控根内且存在。
         /// </summary>
@@ -241,16 +217,13 @@ namespace Mau.Runtime
         private string ResolveScript(string script, out string error)
         {
             error = "";
-            string full;
-            try
+            RootResolveResult rr = RootPathResolver.Expand(script, _entries, Environment.CurrentDirectory);
+            if (!rr.Ok)
             {
-                full = Path.GetFullPath(ExpandRootPath(script));
-            }
-            catch (Exception ex)
-            {
-                error = "ERR|PY_BAD_PATH|脚本路径非法: " + ex.Message;
+                error = "ERR|PY_BAD_PATH|脚本路径非法: " + rr.Message;
                 return "";
             }
+            string full = rr.FullPath;
             if (!InRoots(full))
             {
                 error = "ERR|PY_OUT_OF_ROOT|脚本超出受控根范围：" + full;
@@ -273,16 +246,13 @@ namespace Mau.Runtime
         private string ResolveDirectory(string dir, out string error)
         {
             error = "";
-            string full;
-            try
+            RootResolveResult rr = RootPathResolver.Expand(dir, _entries, Environment.CurrentDirectory);
+            if (!rr.Ok)
             {
-                full = Path.GetFullPath(ExpandRootPath(dir));
-            }
-            catch (Exception ex)
-            {
-                error = "ERR|PY_BAD_PATH|目录路径非法: " + ex.Message;
+                error = "ERR|PY_BAD_PATH|目录路径非法: " + rr.Message;
                 return "";
             }
+            string full = rr.FullPath;
             if (!InRoots(full))
             {
                 error = "ERR|PY_OUT_OF_ROOT|目录超出受控根范围：" + full;

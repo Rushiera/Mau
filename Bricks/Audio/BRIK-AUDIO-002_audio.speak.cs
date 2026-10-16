@@ -141,7 +141,11 @@ namespace Mau.Bricks
             WorkspaceConfig workspace = null;
             if (DataBox.TryResolve<WorkspaceConfig>(out workspace) && workspace != null)
             {
-                return workspace.ExpandRootPath(path);
+                RootResolveResult rr = RootPathResolver.Expand(path, workspace.Roots);
+                if (rr.Ok && rr.FullPath.Length > 0)
+                {
+                    return rr.FullPath;
+                }
             }
             return path;
         }
@@ -200,4 +204,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:7B0A6D0A229C7F4D5D522EA78E590D678DFDFE7861BF6FA6D0B06988BE025063
+// #MAU_CHECKSUM:SHA256:E8E3117E723A8DD0BD7609DF17F37026BB12BDCFF06090546B3931A0F009A794

@@ -111,14 +111,14 @@ namespace CatHome4.Core.Tests
         [Fact]
         public void IsRootAddress_RootFormVsDrivePath()
         {
-            Assert.True(AdminService.IsRootAddress("mau:CatTemp/a.png"));
-            Assert.True(AdminService.IsRootAddress("mau:a.png"));
-            Assert.True(AdminService.IsRootAddress("WorkSpace:out/shot 图.png"));
-            Assert.False(AdminService.IsRootAddress(@"C:\x\a.png"));
-            Assert.False(AdminService.IsRootAddress("C:/x/a.png"));
-            Assert.False(AdminService.IsRootAddress("a1b2.png"));
-            Assert.False(AdminService.IsRootAddress(""));
-            Assert.False(AdminService.IsRootAddress(null));
+            Assert.True(RootPathResolver.IsRootAddress("mau:CatTemp/a.png"));
+            Assert.True(RootPathResolver.IsRootAddress("mau:a.png"));
+            Assert.True(RootPathResolver.IsRootAddress("WorkSpace:out/shot 图.png"));
+            Assert.False(RootPathResolver.IsRootAddress(@"C:\x\a.png"));
+            Assert.False(RootPathResolver.IsRootAddress("C:/x/a.png"));
+            Assert.False(RootPathResolver.IsRootAddress("a1b2.png"));
+            Assert.False(RootPathResolver.IsRootAddress(""));
+            Assert.False(RootPathResolver.IsRootAddress(null));
         }
 
         /// <summary>

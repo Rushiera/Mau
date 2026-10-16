@@ -32,9 +32,10 @@ namespace CatHome4.Core.Tests
                     Directory.Delete(_dir, true);
                 }
             }
-            catch (IOException)
+            catch (IOException ex)
             {
                 // 清理失败不改变测试结论（临时目录可延时回收）
+                Console.WriteLine("[测试清理] 外观配置临时目录删除失败: " + ex.Message);
             }
         }
 

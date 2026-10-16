@@ -205,48 +205,13 @@ namespace Mau.Runtime
         public string ResolveInjectFile(InjectEntry entry)
         {
             string file = entry.File;
-            int sep = file.IndexOf(':');
-            if (sep > 0)
+            // A257——复用公共服务展开段（点一·不判归属：清单是管理员静态动作，允许纯路径直用）
+            RootResolveResult rr = RootPathResolver.Expand(file, Roots, Environment.CurrentDirectory);
+            if (!rr.Ok)
             {
-                string id = file.Substring(0, sep);
-                string rel = file.Substring(sep + 1);
-                for (int i = 0; i < Roots.Length; i++)
-                {
-                    if (string.Equals(Roots[i].Id, id, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return Path.GetFullPath(Path.Combine(Roots[i].Path, rel));
-                    }
-                }
-                throw new InvalidDataException("注入清单引用了未知根: " + id);
+                throw new InvalidDataException("注入清单寻址非法: " + rr.ErrorCode + " | " + rr.Message);
             }
-            return Path.GetFullPath(file);
-        }
-        /// <summary>
-        /// 根寻址展开——<c>&lt;根id&gt;:&lt;相对&gt;</c> → 规范绝对路径；非根寻址 / 未知根 id 原样返回。
-        /// </summary>
-        /// <param name="path">输入路径（根寻址形态或普通路径）</param>
-        /// <returns>展开后的路径（非根寻址原样）</returns>
-        public string ExpandRootPath(string path)
-        {
-            if (string.IsNullOrEmpty(path))
-            {
-                return "";
-            }
-            int sep = path.IndexOf(':');
-            if (sep <= 0)
-            {
-                return path;
-            }
-            string id = path.Substring(0, sep);
-            string rel = path.Substring(sep + 1);
-            for (int i = 0; i < Roots.Length; i = i + 1)
-            {
-                if (string.Equals(Roots[i].Id, id, StringComparison.OrdinalIgnoreCase))
-                {
-                    return Path.GetFullPath(Path.Combine(Roots[i].Path, rel));
-                }
-            }
-            return path;
+            return rr.FullPath;
         }
 
         /// <summary>
