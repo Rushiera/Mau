@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Mau.Runtime;
 
 namespace CH4
@@ -244,7 +245,11 @@ namespace CH4
                 Mau.Runtime.DataBox.TryResolve<Mau.Runtime.IBrowserLifecycle>(out browserLifecycle);
                 if (browserLifecycle != null)
                 {
-                    browserLifecycle.PrepareCat(_catKey);
+                    // A254 主循环耗时治理（2026-10-16）——预热转后台：开锚不阻塞 tick；
+                    // 锚内首次 browser-* 调用经 Ensure 的 _gate 锁自然等待预热完成（等待计入该工具自身执行耗时）
+                    Mau.Runtime.IBrowserLifecycle warmLifecycle = browserLifecycle;
+                    string warmCatKey = _catKey;
+                    Task.Run(delegate () { warmLifecycle.PrepareCat(warmCatKey); });
                 }
             }
             Dictionary<string, object> fields = new Dictionary<string, object>();

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -1323,16 +1324,22 @@ namespace CH4
         /// </summary>
         public void Pump()
         {
+            // A254 会话内部分段埋点——cs.* 段进 LoopTiming（与主循环段同表展示在资源页签）
+            long segTicks = Stopwatch.GetTimestamp();
             // RoundSummary——在途总结工单回收（每帧；无在途零成本返回）
             PumpRoundSummary();
+            LoopTiming.Accumulate("cs.summary", ElapsedMsSince(segTicks));
             // P6 中止——暂停请求消费（任何相位统一收尾：LLM 流取消/工具批放弃/已完成保留）
             if (_pauseRequested)
             {
+                segTicks = Stopwatch.GetTimestamp();
                 PauseFinalize();
+                LoopTiming.Accumulate("cs.pause", ElapsedMsSince(segTicks));
                 return;
             }
             if (_phase == ChatPhase.Idle)
             {
+                segTicks = Stopwatch.GetTimestamp();
                 // A72——停机态丢弃在途排队消息（宿主即将重启，不再开新轮）
                 DropPendingIfRestarting();
                 // 继续——HTTP 线程置位、主线程消费（与 Pause / SessionNewRequested 同模式）：Idle 才启动继续轮
@@ -1342,11 +1349,13 @@ namespace CH4
                     if (IsHostRestarting())
                     {
                         LogStore.Add("CatHome4", 2, "宿主重启中——继续请求未受理", "RESTART");
+                        LoopTiming.Accumulate("cs.idle", ElapsedMsSince(segTicks));
                         return;
                     }
                     // sleep 作废——继续属「非 sleep 输入」（与常规轮同口径）
                     ConsumeSleepOnWake("continue");
                     StartContinueRound();
+                    LoopTiming.Accumulate("cs.idle", ElapsedMsSince(segTicks));
                     return;
                 }
                 if (_pending.Count > 0 || _sysPending.Count > 0)
@@ -1354,22 +1363,38 @@ namespace CH4
                     // 轮首取尽——本帧排队条目全部落前文（FIFO）后启一轮；sleep 作废告知置最前
                     StartRoundFromPending();
                 }
+                LoopTiming.Accumulate("cs.idle", ElapsedMsSince(segTicks));
                 return;
             }
             if (_phase == ChatPhase.LlmRunning)
             {
+                segTicks = Stopwatch.GetTimestamp();
                 PumpLlm();
+                LoopTiming.Accumulate("cs.llm", ElapsedMsSince(segTicks));
                 return;
             }
             if (_phase == ChatPhase.ToolBatchRunning)
             {
+                segTicks = Stopwatch.GetTimestamp();
                 PumpToolBatch();
+                LoopTiming.Accumulate("cs.tool", ElapsedMsSince(segTicks));
                 return;
             }
             if (_phase == ChatPhase.Done)
             {
+                segTicks = Stopwatch.GetTimestamp();
                 CloseRound();
+                LoopTiming.Accumulate("cs.close", ElapsedMsSince(segTicks));
             }
+        }
+        /// <summary>
+        /// 读自指定时刻起的毫秒差——会话内部分段埋点用（A254）。
+        /// </summary>
+        /// <param name="startTicks">起始 Stopwatch 时间戳</param>
+        /// <returns>毫秒数</returns>
+        private static double ElapsedMsSince(long startTicks)
+        {
+            return (Stopwatch.GetTimestamp() - startTicks) * 1000.0 / Stopwatch.Frequency;
         }
         /// <summary>
         /// 轮首计数与相位复位——StartRoundFromPending 与 StartContinueRound 共用（统计清零 + 进入 link 相位；消息追加由各自承担）。
@@ -2257,9 +2282,13 @@ namespace CH4
                     return;
                 }
                 // 纯文本回复——本轮完成
+                long textTicks = Stopwatch.GetTimestamp();
                 AppendMessage(_context.AddAssistantMessage(_llmResultText));
+                LoopTiming.Accumulate("cs.done.append", ElapsedMsSince(textTicks));
                 NoteTimebackEvent();
+                textTicks = Stopwatch.GetTimestamp();
                 _viewStore.OnAssistantText(LastMessage(), _context.GetMessageCount() - 1, TakeReasonDuration());
+                LoopTiming.Accumulate("cs.done.view", ElapsedMsSince(textTicks));
                 // A196 临时区——本轮收尾写空态（内容已由持久区承载）
                 _viewBus.SetLive("empty", "");
                 // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + 直接开新轮（跳过 Done/CloseRound）
@@ -2275,9 +2304,13 @@ namespace CH4
                 return;
             }
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
+            long doneTicks = Stopwatch.GetTimestamp();
             AppendMessage(_context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning));
+            LoopTiming.Accumulate("cs.done.append", ElapsedMsSince(doneTicks));
             NoteTimebackEvent();
+            doneTicks = Stopwatch.GetTimestamp();
             _viewStore.OnAssistantToolCalls(LastMessage(), _context.GetMessageCount() - 1, TakeReasonDuration());
+            LoopTiming.Accumulate("cs.done.view", ElapsedMsSince(doneTicks));
             // 思考段整块——由 SealReasonStream 在离开 think 态时统一推送（工具决策流首帧即收口；唯一出口，莎 2026-09-22 定）
             // 工具轮 seal——视图层补 gap text 块（全量外观真源：前端历史/QQBot 转发消费）+ SSE 推送（实时）；空文本不推
             if (_llmResultText.Length > 0)
@@ -2292,9 +2325,11 @@ namespace CH4
             // 运行态——发单即执行态（本地·程序过程：工具批到下一请求发出；长度由本地决定）
             PhaseEnter(PhaseRun);
             SetChatState("tools");
+            long toolsTicks = Stopwatch.GetTimestamp();
             EnterToolBatch(_llmToolCallsJson);
             // A196 临时区——工具运行态：未完成工具卡数组入 context（派发即写；单个完成即减；全清后由收尾点写 empty）
             RefreshToolLive();
+            LoopTiming.Accumulate("cs.done.tools", ElapsedMsSince(toolsTicks));
         }
         /// <summary>
         /// 工具调用条目——tool_calls JSON 解析产物（先行推卡消费；字段与 OpenAI wire 对齐）。

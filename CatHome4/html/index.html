@@ -15,6 +15,7 @@
             <button data-tab="state">状态</button>
             <button data-tab="log">日志</button>
             <button data-tab="deps">依赖</button>
+            <button data-tab="res">资源</button>
             <button data-tab="raw">原始</button>
             <!-- 前端版本标记——每次改动前端递增；刷新后数字变化 = 拿到新版（人眼 cache-busting） -->
             <div style="margin-top:auto;color:var(--ch-fg-faint);font-size:var(--ch-fs-tag);writing-mode:vertical-rl" data-version>UI v?</div>
@@ -77,6 +78,28 @@
                     <button id="llmProbeBtn">发送探针</button>
                 </div>
                 <div id="llmProbeList"></div>
+            </section>
+            <!-- A254 资源占用区——快照 res 段渲染（本体 / py 服务 / GPU 显存 + 三分钟折线；前端自缓存自绘制，F5 重置） -->
+            <section id="tab-res" class="tab">
+                <div id="resbar">
+                    <span id="resInfo" style="color:var(--ch-fg-weak);font-size:var(--ch-fs-tag)">资源占用——本体进程 / py 服务 / GPU 显存（每秒采样；曲线保留最近 3 分钟）</span>
+                    <span style="flex:1"></span>
+                    <button id="resPause">暂停曲线</button>
+                </div>
+                <div id="resScroll">
+                    <h2>本体进程</h2>
+                    <div id="resProc"></div>
+                    <h2>主循环分段耗时</h2>
+                    <div id="resLoop"></div>
+                    <h2>py 服务</h2>
+                    <div id="resPy"></div>
+                    <h2>GPU 显存</h2>
+                    <div id="resGpu"></div>
+                    <h2>本体工作集 / GPU 占用 / 主循环耗时（最近 3 分钟）</h2>
+                    <canvas id="resChartMem" style="width:100%;height:300px;display:block"></canvas>
+                    <canvas id="resChartGpu" style="width:100%;height:300px;display:block;margin-top:6px"></canvas>
+                    <canvas id="resChartLoop" style="width:100%;height:300px;display:block;margin-top:6px"></canvas>
+                </div>
             </section>
             <!-- 配置区 -->
             <section id="tab-config" class="tab">
@@ -305,5 +328,6 @@
     <script src="js/panel-catcfg.js?v=__V__"></script>
     <script src="js/panel-packs.js?v=__V__"></script>
     <script src="js/panel-deps.js?v=__V__"></script>
+    <script src="js/panel-res.js?v=__V__"></script>
 </body>
 </html>

@@ -47,5 +47,11 @@
         /// <param name="argsJson">参数 JSON（name 必填——服务名；payload 必填——请求体 JSON 文本）</param>
         /// <returns>服务回执 JSON 或 ERR| 前缀错误文本</returns>
         string Invoke(string argsJson);
+
+        /// <summary>
+        /// 服务枚举——列出全部已声明服务（自配置扫描）及运行态与进程内存占用（A254 资源占用页签）。
+        /// </summary>
+        /// <returns>结果 JSON（services 数组：name / state / alive / pid / ws——ws 为进程工作集字节数，未运行 0）或 ERR| 前缀错误文本</returns>
+        string Enumerate();
     }
 }

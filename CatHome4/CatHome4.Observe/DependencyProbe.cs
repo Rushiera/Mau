@@ -33,8 +33,6 @@ namespace CatHome4.Observe
         internal const string LevelOptional = "optional";
         /// <summary>级别——开发辅助</summary>
         internal const string LevelDev = "dev";
-        /// <summary>分档——动态面（秒级；服务存活 / 内存类，A254 消费）</summary>
-        private const int TtlDynamicMs = 1000;
         /// <summary>分档——静态面（路径 / 配置 / PE 版本）</summary>
         private const int TtlStaticMs = 30000;
         /// <summary>分档——一次性（外部命令版本——手动刷新才重探）</summary>

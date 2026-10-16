@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text.Json;
 using Mau.Runtime;
+using CatHome4.Contracts;
 
 namespace CH4
 {
@@ -166,7 +168,10 @@ namespace CH4
             {
                 _sessions[i].Pump();
             }
+            double delaysTicks = Stopwatch.GetTimestamp();
             PumpDelays();
+            // A254 延迟队列泵分段埋点——cs.delays 段（会话内各段由 ChatSession.Pump 自行埋）
+            LoopTiming.Accumulate("cs.delays", (Stopwatch.GetTimestamp() - delaysTicks) * 1000.0 / Stopwatch.Frequency);
         }
 
         /// <summary>

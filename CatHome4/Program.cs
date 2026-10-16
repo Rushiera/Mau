@@ -25,8 +25,17 @@ namespace CH4
     public static partial class Program
     {
         // [段1] LLM 桥常量——P4 配置项机制接管：llm.* 从 Data/config/llm.cfg 拉起（改配置不重编译）；key 优先级：配置 → 环境变量 DEEPSEEK_API_KEY
-        /// <summary>宿主帧节流——每帧现实毫秒（600 帧工单超时 ≈ 30s；QuickCat LLM 回投窗口 5-60s）</summary>
-        private const int FrameSleepMs = 50;
+        /// <summary>
+        /// 宿主帧预算——主循环目标帧周期（毫秒）。主循环按「补足式」推进：本帧工作实际耗时不足预算则睡差额，
+        /// 超出则不睡（该帧即「超帧」——LoopTiming 计数）；其余模式（自检 / --run 驱动）仍按固定睡眠解释本值。
+        /// <para>
+        /// 🔴 语义变更（2026-10-16 · 50 → 100）：帧数口径的时限随之**等比放大**——语料 <c>[t=2400]</c>（≈240 s）
+        /// 与宿主对齐常量（`ToolBatchWaitFrames` / `RoundSummaryTimeoutFrames` / `MapTimeoutFrames` / `AutoStartPollFrames`）
+        /// **保持原值不动**（语料侧为翻译期字面量、不可运行时换算）；一致性不破——等待上限仍大于语料侧超时。
+        /// 调本值 = 帧率变化 + 所有帧数时限的实际时间等比变化，改前先核连带面。
+        /// </para>
+        /// </summary>
+        private const int FrameTargetMs = 100;
 
         /// <summary>单轮驱动帧上限——LLM 最坏 60s + 超时结算余量（30000 帧 ≈ 25 分钟空转上限，实际由 Idle 判定提前退出）</summary>
         private const int MaxFramesPerRun = 30000;
@@ -599,7 +608,7 @@ namespace CH4
             }
             DataBox.Set<string>("global", "workspace.roots", rootSummary.ToString());
             LogStore.Add("CatHome4", 1, "工作区已加载：" + workspace.Roots.Length.ToString() + " 个根、" + workspace.Inject.Length.ToString() + " 条注入（" + rootSummary.ToString() + "）", "CONFIG");
-            Console.WriteLine("[CMD] 就绪 | Flows: " + ToolGroupSummary() + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
+            Console.WriteLine("[CMD] 就绪 | Flows: " + ToolGroupSummary() + " | LLM: " + llmState + " | 帧节流 " + FrameTargetMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
             // P9.3 多实例化签名——sessionId 归属默认会话；catsBuilder 多猫列表（管理页签数据源）；主端口服务 index.html
             // F2.1/F2.2——主端口纯管理面板（index.html）；majordomo 对话走独立端口（chat.html，与多猫同构）

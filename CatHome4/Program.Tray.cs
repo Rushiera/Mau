@@ -25,7 +25,7 @@ namespace CH4
         /// <summary>注册表值名——按 exe 名（部署实例自引用自适应）</summary>
         private const string AutoStartRunName = "CatHome4";
 
-        /// <summary>主循环轮询间隔帧——5 秒（FrameSleepMs=50ms × 100）</summary>
+        /// <summary>主循环轮询间隔帧——10 秒（FrameTargetMs=100ms × 100；2026-10-16 帧预算 50→100 后随之放大）</summary>
         private const int AutoStartPollFrames = 100;
 
         /// <summary>退出请求标志——托盘"退出"置位，主循环轮询 break（走 Main finally 优雅收尾）</summary>
