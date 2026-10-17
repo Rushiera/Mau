@@ -38,8 +38,8 @@ const POOL = [
     'powershell', 'powershell7', 'temp-info', 'temp-exec',
     // Majordomo 5
     'restart-full', 'restart-incr', 'restart-host', 'majordomo-cmd', 'majordomo-catinfo',
-    // WebCat 3 · VisionCat 2
-    'web-search', 'web-fetch', 'web-fetch-jobs', 'image-analyze', 'image-inject',
+    // WebCat 4 · VisionCat 2
+    'web-search', 'web-ds-search', 'web-fetch', 'web-fetch-jobs', 'image-analyze', 'image-inject',
     // AudioCat 2 · PyCat 3
     'audio-play', 'audio-speak', 'py-run', 'py-list', 'py-service',
     // 内置 11
@@ -65,9 +65,9 @@ function summaryOf(payload) {
 }
 
 describe('声明层——覆盖与注册', () => {
-    it('落位表 = 工具池 72 件', () => {
+    it('落位表 = 工具池 73 件', () => {
         expect(Object.keys(window.TOOL_SKELETONS).sort()).toEqual(POOL);
-        expect(POOL.length).toBe(72);
+        expect(POOL.length).toBe(73);
     });
 
     it('声明件与落位表键集一致（有落位必有件，防「有壳无肉」）', () => {

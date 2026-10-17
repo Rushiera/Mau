@@ -1,6 +1,6 @@
 ﻿{
   "version": 3,
-  "generatedAt": "2026-10-16T03:37:20Z",
+  "generatedAt": "2026-10-17T09:37:21Z",
   "packages": ["Microsoft.CodeAnalysis.CSharp@4.11.0"],
   "bricks": [
     {"id":"BRIK-AUDIO-001","name":"audio.play","category":"AUDIO","path":"Audio/BRIK-AUDIO-001_audio.play.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.AudioPlayBrick.Play","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}]},"return":"Bool","duration":"Sync","thread":"main"},
@@ -83,6 +83,7 @@
     {"id":"BRIK-VISION-002","name":"image.inject","category":"VISION","path":"VISION/BRIK-VISION-002_image.inject.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.ImageInjectBrick.Inject","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}]},"return":"Bool","duration":"Sync","thread":"main"},
     {"id":"BRIK-WEB-001","name":"web.search","category":"WEB","path":"WEB/BRIK-WEB-001_web.search.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.WebSearchBrick.Search","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}]},"return":"Bool","duration":"Sync","thread":"main"},
     {"id":"BRIK-WEB-002","name":"web.fetch","category":"WEB","path":"WEB/BRIK-WEB-002_web.fetch.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.WebFetchBrick.Fetch","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}]},"return":"Bool","duration":"Sync","thread":"main"},
-    {"id":"BRIK-WEB-003","name":"web.fetch.jobs","category":"WEB","path":"WEB/BRIK-WEB-003_web.fetch.jobs.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.WebFetchJobsBrick.Jobs","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}]},"return":"Bool","duration":"Sync","thread":"main"}
+    {"id":"BRIK-WEB-003","name":"web.fetch.jobs","category":"WEB","path":"WEB/BRIK-WEB-003_web.fetch.jobs.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.WebFetchJobsBrick.Jobs","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}]},"return":"Bool","duration":"Sync","thread":"main"},
+    {"id":"BRIK-WEB-004","name":"web.ds.search","category":"WEB","path":"WEB/BRIK-WEB-004_web.ds.search.cs","dependencies":[],"packages":[],"status":"active","contract":{"implementation":"Mau.Bricks.WebDsSearchBrick.Search","inputs":[{"name":"argsJson","type":"string"}],"outputs":[{"name":"result","type":"string"}]},"return":"Bool","duration":"Sync","thread":"main"}
   ]
 }

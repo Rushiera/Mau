@@ -14,6 +14,7 @@
 § 'S_Search' = { 'Init', 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Fetch' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 § 'S_Jobs' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
+§ 'S_DsSearch' = { 'Idle', 'Claimed', 'Ready', 'Done', 'Failed' }
 
 // T_Init：启动初始化自述——Init → Idle 首帧写"空闲待命"（R0.2 外观层：启动即有自述横幅）
 § 'T_Init' : 'S_Search' = 'Init' → 'self.desc'["空闲待命", "", ""] | 'S_Search' = 'Idle' | 'S_Search' = 'Idle'
@@ -22,6 +23,7 @@
 § 'P_SearchOpen' ↻ [1]: 'oa.is_open'["TOOL", "web-search"] > @srOpen
 § 'P_FetchOpen' ↻ [1]: 'oa.is_open'["TOOL", "web-fetch"] > @wfOpen
 § 'P_JobsOpen' ↻ [1]: 'oa.is_open'["TOOL", "web-fetch-jobs"] > @wjOpen
+§ 'P_DsOpen' ↻ [1]: 'oa.is_open'["TOOL", "web-ds-search"] > @dsOpen
 
 // ══════════════ web-search 线 ══════════════
 
@@ -73,3 +75,20 @@
 
 // T_JobsAbort：失败回执
 § 'T_JobsAbort' : 'S_Jobs' = 'Failed' → 'oa.complete_str'[@wjOffice, @wjRes] | 'S_Jobs' = 'Idle' | 'S_Jobs' = 'Idle'
+
+// ══════════════ web-ds-search 线 ══════════════
+
+// T_DsClaim：探测真 + Idle → 原子接单（竞态失败回 Idle 重试）
+§ 'T_DsClaim' : @dsOpen & 'S_DsSearch' = 'Idle' → 'oa.claim_next_simple'["TOOL", "web-ds-search"] > @dsOffice | 'S_DsSearch' = 'Claimed' | 'S_DsSearch' = 'Idle'
+
+// T_DsArgs：读载荷 args + 执行中自述（par 导线单动作约束——desc 前移）
+§ 'T_DsArgs' : 'S_DsSearch' = 'Claimed' → 'oa.get_str'[@dsOffice, "args"] > @dsArgs | 'self.desc'["web-ds-search 执行中", "", ""] | 'S_DsSearch' = 'Ready' | 'S_DsSearch' = 'Failed'
+
+// T_DsExec：执行积木（DeepSeek Search API 结构化检索——原料直出，不做模型总结）——后台执行
+§ 'T_DsExec' [t=2400, par] : 'S_DsSearch' = 'Ready' → 'web.ds.search'[@dsArgs] > @dsRes | 'S_DsSearch' = 'Done' | 'S_DsSearch' = 'Failed'
+
+// T_DsReply：成功回执（结构化结果清单）
+§ 'T_DsReply' : 'S_DsSearch' = 'Done' → 'oa.complete_str'[@dsOffice, @dsRes] | 'self.desc'["空闲待命", "", ""] | 'S_DsSearch' = 'Idle' | 'S_DsSearch' = 'Idle'
+
+// T_DsAbort：失败回执（@dsRes 含 ERR| 文本——失败侧也回执，Dog 可见失败原因）
+§ 'T_DsAbort' : 'S_DsSearch' = 'Failed' → 'oa.complete_str'[@dsOffice, @dsRes] | 'S_DsSearch' = 'Idle' | 'S_DsSearch' = 'Idle'

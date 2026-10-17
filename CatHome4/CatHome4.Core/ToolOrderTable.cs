@@ -49,7 +49,7 @@ namespace CH4
             "cs-check", "cs-list", "cs-read", "cs-find_ref", "cs-find", "cs-dead", "cs-comment_check",
             "mau-verify",
             "config-list", "config-get", "config-cat-get",
-            "web-search", "image-analyze",
+            "web-search", "web-ds-search", "image-analyze",
             "temp-info",
             "browser-open", "browser-read", "browser-shot",
             "majordomo-catinfo",

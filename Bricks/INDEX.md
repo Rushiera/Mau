@@ -1,6 +1,6 @@
 ﻿# Mau 积木索引 — INDEX
 
-> 版本：v3.3 | 更新：2026-10-16（mau bricks index --update 源码驱动重建）
+> 版本：v3.3 | 更新：2026-10-17（mau bricks index --update 源码驱动重建）
 > 全量积木登记——一行一条。ID 永不重用。
 
 ## 全部积木
@@ -88,7 +88,8 @@
 | BRIK-WEB-001 | web.search | WEB | WEB/BRIK-WEB-001_web.search.cs | 无 | active |  |
 | BRIK-WEB-002 | web.fetch | WEB | WEB/BRIK-WEB-002_web.fetch.cs | 无 | active |  |
 | BRIK-WEB-003 | web.fetch.jobs | WEB | WEB/BRIK-WEB-003_web.fetch.jobs.cs | 无 | active |  |
+| BRIK-WEB-004 | web.ds.search | WEB | WEB/BRIK-WEB-004_web.ds.search.cs | 无 | active |  |
 
 ---
 
-_版本：v3.3 | 2026-10-16 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_
+_版本：v3.3 | 2026-10-17 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_

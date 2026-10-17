@@ -106,6 +106,7 @@ var TOOL_SKELETONS = {
     'config-cat-get': 'text',
     'config-cat-set': 'text',
     'web-search': 'text',
+    'web-ds-search': 'text',
     'image-analyze': 'text',
     'image-inject': 'text',
     'browser-open': 'text',
