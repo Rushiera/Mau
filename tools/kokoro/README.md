@@ -14,6 +14,8 @@ Kokoro 中文语音合成的**胶水代码**——stdio 驱动 / 单次合成 / 
 
 外部目录的重建与升级都是**纯拉取操作**——自写物全在本目录，不涉及迁移。
 
+> 文档分工：**操作面**（协议 / 启动开关 / 文件清单 / 依赖 / 部署步骤 / 用法）在本文件；**知识台账**（选型论证 / 本体与许可 / 性能实测 / 装机实录 / 宿主集成契约）→ `KNOWLEDGE.md`。
+
 ## 二、文件
 
 | 文件 | 用途 |
@@ -112,6 +114,19 @@ python -m venv .venv
 ```
 
 > ⚠️ **两个包名坑（命名规则相反）**：`nvidia-cudnn` 在 PyPI 是**占位包**，真实包名是 `nvidia-cudnn-cu13`；而 `nvidia-cublas-cu13` 反而报废弃，要用**无后缀**的 `nvidia-cublas`。
+
+🔴 **顺序铁律——GPU 版必须最后装**：`kokoro-onnx` 的依赖写的是 `onnxruntime>=1.20.1`，而 `onnxruntime-gpu` 的发行名**不满足**该 requirement——只要它后装，就会把 CPU 版装回来并**覆盖同名模块文件**（两发行包写同一目录）。判据 = `ping` 回执的 `providers` 含 `CUDAExecutionProvider`；被覆盖时 `--force-reinstall onnxruntime-gpu==1.31.0` 扳回。**卸载 / 重装前先停服务**——服务进程持有 `capi/*.dll` 句柄，会留下 `~api` / `~umpy*` 残留目录。
+
+**源（国内网络实测 2026-10-17）**
+
+| 面 | 可用通道 |
+|:--|:--|
+| PyPI | 清华源——`-i https://pypi.tuna.tsinghua.edu.cn/simple`（15–22 MB/s） |
+| nvidia 包 | 追加 `--extra-index-url https://pypi.nvidia.com` |
+| 模型（GitHub release） | 直连失败 → 代理前缀 `https://ghfast.top/` + 原地址；备选 ModelScope（30–60 MB/s） |
+| `config.json`（HF） | 直连失败 → `https://hf-mirror.com/hexgrad/Kokoro-82M-v1.1-zh/raw/main/config.json` |
+
+> 装机过程实况（含包版本清单、验证数据、冷启差异）→ `KNOWLEDGE.md` §四。
 
 **4. 模型文件**（放入 `models/`）：
 

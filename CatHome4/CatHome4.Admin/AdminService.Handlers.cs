@@ -1164,13 +1164,14 @@ namespace CatHome4.Admin
             List<object> roots = new List<object>();
             for (int i = 0; i < ws.Roots.Length; i++)
             {
+                FixedRootDef rdef = FindFixedRoot(ws.Roots[i].Id);
                 roots.Add(new
                 {
                     id = ws.Roots[i].Id,
                     path = ws.Roots[i].Path,
-                    writable = ws.Roots[i].Writable,
-                    note = ws.Roots[i].Note,
-                    fixedRoot = IsFixedRootId(ws.Roots[i].Id)
+                    writable = rdef != null ? rdef.Writable : ws.Roots[i].Writable,
+                    note = rdef != null ? rdef.Note : ws.Roots[i].Note,
+                    fixedRoot = rdef != null
                 });
             }
             return Results.Json(new { ok = true, roots = roots });
@@ -1189,13 +1190,14 @@ namespace CatHome4.Admin
             {
                 for (int i = 0; i < ws.Roots.Length; i++)
                 {
+                    FixedRootDef rdef = FindFixedRoot(ws.Roots[i].Id);
                     roots.Add(new
                     {
                         id = ws.Roots[i].Id,
                         path = ws.Roots[i].Path,
-                        writable = ws.Roots[i].Writable,
-                        note = ws.Roots[i].Note,
-                        fixedRoot = IsFixedRootId(ws.Roots[i].Id)
+                        writable = rdef != null ? rdef.Writable : ws.Roots[i].Writable,
+                        note = rdef != null ? rdef.Note : ws.Roots[i].Note,
+                        fixedRoot = rdef != null
                     });
                 }
             }
@@ -1332,6 +1334,43 @@ namespace CatHome4.Admin
             }
             return legacy;
         }
+        /// <summary>
+        /// 现存根 path 映射读取——写面存量容留判定用（不可达根原样提交时不拒）；文件缺失/损坏返回空映射（按无容留处理，出声）。
+        /// </summary>
+        /// <returns>id（归一为小写）→ path 原值</returns>
+        private static Dictionary<string, string> LoadExistingRootPaths()
+        {
+            Dictionary<string, string> map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string wsPath = Path.Combine(_dataRoot, "Data", "config", "workspace.json");
+            if (!File.Exists(wsPath))
+            {
+                return map;
+            }
+            try
+            {
+                using (JsonDocument oldDoc = JsonUtil.ParseStrict(File.ReadAllText(wsPath)))
+                {
+                    JsonElement rootsEl;
+                    if (oldDoc.RootElement.TryGetProperty("roots", out rootsEl) && rootsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        for (int i = 0; i < rootsEl.GetArrayLength(); i = i + 1)
+                        {
+                            string id = NormalizeRootId(GetJsonString(rootsEl[i], "id"));
+                            string path = GetJsonString(rootsEl[i], "path");
+                            if (id.Length > 0 && path.Length > 0)
+                            {
+                                map[id] = path;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("CatHome4", 2, "现存根表读取失败（按无存量容留处理）: " + ex.Message, "CONFIG");
+            }
+            return map;
+        }
 
         /// <summary>
         /// 受控根写入——POST /api/v1/workspace（body: {roots:[{id,path,writable,note}]}）。
@@ -1379,8 +1418,10 @@ namespace CatHome4.Admin
             {
                 rootsIn[i].Id = NormalizeRootId(rootsIn[i].Id);
             }
-            // [段2] 校验——字符集（小写字母数字）+ 重名（忽略大小写）+ path 绝对且存在 + 固定命名根齐备且三列一致
-            string rootErr = ValidateRootsInput(rootsIn);
+            // [段2a] 现存根 path 映射——存量容留判定（不可达根可原样提交以移除或改路径，不构成改根死锁）
+            Dictionary<string, string> existingPaths = LoadExistingRootPaths();
+            // [段2] 校验——字符集（小写字母数字）+ 重名（忽略大小写）+ path 绝对且存在（存量容留）+ 固定命名根齐备
+            string rootErr = ValidateRootsInput(rootsIn, existingPaths);
             if (rootErr.Length > 0)
             {
                 return Results.Json(new { ok = false, error = rootErr });

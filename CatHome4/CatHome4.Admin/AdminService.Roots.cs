@@ -140,12 +140,13 @@ namespace CatHome4.Admin
 
         // [段2] 写入校验
         /// <summary>
-        /// 受控根提交校验——id 字符集（小写字母数字）+ 非 PS 内置驱动器名 + 重名（忽略大小写）+ path 绝对且存在 + 固定根齐备且三列一致。
-        /// 语义：缺任一固定根 → 拒绝（不静默造根）；固定根 note/writable 与定义不符 → 拒绝（前端已灰化，直调 API 亦同规）。
+        /// 受控根提交校验——id 字符集（小写字母数字）+ 非 PS 内置驱动器名 + 重名（忽略大小写）+ path 绝对且存在 + 固定根齐备。
+        /// 语义：缺任一固定根 → 拒绝（不静默造根）；固定根 note/writable 由系统权威覆盖——提交值不参与判定（存量配置缺 note / 直调 API 传错值一律归一，不构成保存死锁）。
         /// </summary>
         /// <param name="rootsIn">提交条目（Id 须已归一为小写）</param>
+        /// <param name="existingPaths">现存根 path 映射（id → path；与提交值等值的存量根跳过存在性校验——目录离线/搬迁不构成改根死锁）</param>
         /// <returns>错误文案（空 = 通过）</returns>
-        private static string ValidateRootsInput(List<WorkspaceRootInput> rootsIn)
+        private static string ValidateRootsInput(List<WorkspaceRootInput> rootsIn, Dictionary<string, string> existingPaths)
         {
             List<string> ids = new List<string>();
             for (int i = 0; i < rootsIn.Count; i = i + 1)
@@ -187,20 +188,24 @@ namespace CatHome4.Admin
                 }
                 if (!Directory.Exists(input.Path))
                 {
-                    return "roots[" + i.ToString() + "] 目录不存在: " + input.Path;
+                    // 存量容留——与现存同 id 根 path 等值（规范化后）时不要求可达：目录离线/搬迁后仍可原样提交以移除或改路径
+                    string oldPath = null;
+                    if (existingPaths != null)
+                    {
+                        existingPaths.TryGetValue(input.Id, out oldPath);
+                    }
+                    bool retained = oldPath != null && oldPath.Length > 0 && string.Equals(Mau.Runtime.WorkspaceConfig.NormalizeRoot(input.Path), Mau.Runtime.WorkspaceConfig.NormalizeRoot(oldPath), StringComparison.OrdinalIgnoreCase);
+                    if (!retained)
+                    {
+                        return "roots[" + i.ToString() + "] 目录不存在: " + input.Path;
+                    }
                 }
                 FixedRootDef def = FindFixedRoot(input.Id);
                 if (def != null)
                 {
-                    if (!string.Equals(input.Note, def.Note, StringComparison.Ordinal))
-                    {
-                        return "系统根 " + def.Id + " 的注释固定为「" + def.Note + "」，不可修改";
-                    }
-                    if (input.Writable != def.Writable)
-                    {
-                        string want = def.Writable ? "读写" : "只读";
-                        return "系统根 " + def.Id + " 的读写标志固定为「" + want + "」，不可修改";
-                    }
+                    // 固定列系统权威——note / writable 取定义值（不以提交值为准）；存量配置缺 note、直调 API 传错值一律归一，不构成保存死锁
+                    input.Note = def.Note;
+                    input.Writable = def.Writable;
                 }
             }
             for (int f = 0; f < FixedRoots.Length; f = f + 1)

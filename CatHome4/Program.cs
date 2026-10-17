@@ -353,6 +353,11 @@ namespace CH4
             {
                 LogStore.Add("CatHome4", 1, "roots.boot | " + rootsNote, "WORKSPACE");
             }
+            // 根不可达告警——加载期跳过的非常驻根在此出声（L2）：面板可修正路径后重启恢复
+            for (int warnIdx = 0; warnIdx < workspace.LoadWarnings.Count; warnIdx = warnIdx + 1)
+            {
+                LogStore.Add("CatHome4", 2, "roots.boot | " + workspace.LoadWarnings[warnIdx], "WORKSPACE");
+            }
             // [段4] 语料加载——扫描 Flows/FL_*.dll 统一装配（design-ch4-flow-scan §3.2：QuickCat + 全部工具组 Flow）
             // 扫描化：文件名去 FL_ 前缀得 Flow 名（dll 名 = 组名——QuickCat 与工具组一视同仁）
             // 容错：加载失败 → 警告 + 跳过注册（该组工具工单无人认领 → 超时诚实 ERR——不再宿主直执）
