@@ -2428,6 +2428,8 @@ namespace CatHome4.Admin
             Dictionary<string, object> majorEntry = BuildCatInfoEntry("majordomo", majorName, _majorHost != null, _majorPort, true, majorSession, "");
             majorEntry["apiConfigId"] = majorApi;
             majorEntry["qqbotId"] = majorQq;
+            // 目录白名单实况——前端列展示（无权目录差集）以此为准；缺此字段前端恒按「空白名单」渲染（显示与实际不符）
+            majorEntry["enabledRoots"] = majorRoots;
             string majorEffort = "";
             if (majorCfg != null && majorCfg.ReasoningEffort != null)
             {
@@ -2460,6 +2462,8 @@ namespace CatHome4.Admin
                 Dictionary<string, object> entry = BuildCatInfoEntry(cat.Id, cat.DisplayName, cat.Running, cat.Port, false, cat.Session, cat.Type);
                 entry["apiConfigId"] = apiConfigId;
                 entry["qqbotId"] = qqbotId;
+                // 目录白名单实况——前端列展示（无权目录差集）以此为准；缺此字段前端恒按「空白名单」渲染（显示与实际不符）
+                entry["enabledRoots"] = enabledRoots;
                 string reasoningEffort = "";
                 if (cfg != null && cfg.ReasoningEffort != null)
                 {
