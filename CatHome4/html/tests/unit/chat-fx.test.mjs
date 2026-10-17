@@ -216,6 +216,20 @@ describe('滚动带与桌宠——入口就位（几何 / 素材面归运行态�
         }
         expect(() => { window.chatPetSetOffline(true); window.chatPetSetOffline(false); }).not.toThrow();
     });
+
+    it('桌宠——皮肤空 / 无匹配不回落默认素材（A251）', () => {
+        expect(window.chatPetNormalizeSkin('')).toBe('');
+        expect(window.chatPetNormalizeSkin(null)).toBe('');
+        expect(window.chatPetNormalizeSkin('no-such-skin')).toBe('');
+    });
+
+    it('桌宠——显隐开关按空值关掉容器（A251）', () => {
+        const box = document.getElementById('chatPet');
+        window.chatPetSetVisible(false);
+        expect(box.style.display).toBe('none');
+        window.chatPetSetVisible(true);
+        expect(box.style.display).toBe('');
+    });
 });
 
 // ── ⑦ liveStats（流式统计行——契约 §12.8 · 2026-10-06 莎定）────

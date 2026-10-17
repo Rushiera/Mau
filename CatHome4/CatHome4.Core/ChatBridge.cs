@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text.Json;
 using Mau.Runtime;
+using CatHome4.Contracts;
 
 namespace CH4
 {
@@ -166,7 +168,10 @@ namespace CH4
             {
                 _sessions[i].Pump();
             }
+            double delaysTicks = Stopwatch.GetTimestamp();
             PumpDelays();
+            // A254 延迟队列泵分段埋点——cs.delays 段（会话内各段由 ChatSession.Pump 自行埋）
+            LoopTiming.Accumulate("cs.delays", (Stopwatch.GetTimestamp() - delaysTicks) * 1000.0 / Stopwatch.Frequency);
         }
 
         /// <summary>
@@ -252,7 +257,7 @@ namespace CH4
             session.FinalizeFullContext();
             // F4 视图——session.new 清前文 → 视图随生命周期清空
             session.ClearView();
-            // 注入报告——逐文件结果持久化进视图（独立字段：Rebuild 不清，Save 落盘；前端 history 首块渲染）
+            // 注入报告——逐文件结果持久化进视图（视图层普通块：ts=0 居首，前端首块渲染）
             session.SetInjectReport(BuildInjectReportJson(injectResult.Files, injectList, specs));
             // 问题一修复——会话重置显式事件（前端收到后清空气泡再拉 history——消除清空竞态）
             session.PushSessionReset();

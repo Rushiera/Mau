@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Mau.Runtime;
 using CatHome4.Contracts;
 
@@ -10,14 +11,23 @@ namespace CH4
 {
     /// <summary>
     /// 会话视图存储——视图层持久区（A156：与真实前文并列，载入即权威；A165 阶段 1：条目模型 v2）。
-    /// 条目在事件发生点一次性定稿落盘（写入序即权威序）；载入读回持久条目与独立条目，不从前文重建。
+    /// 条目在事件发生点一次性定稿落盘（A248：JSONL 每块 append 一行——写入序即权威序）；载入逐行读回，不从前文重建。
     /// v2 契约：持久即持久——无键面 / 无换手 / 无移出（块键、生命周期状态、废弃块、截断通道全部退役）。
     /// 残留面只余顶尾补差（AppendTailMissing）与对账哨兵（AuditEntries），且不得改写已有条目。
     /// </summary>
     internal sealed class SessionViewStore
     {
-        /// <summary>视图文件路径——sessions/&lt;id&gt;/&lt;id&gt;.view.json</summary>
+        /// <summary>视图文件路径——sessions/&lt;id&gt;/&lt;id&gt;.view.jsonl</summary>
         private readonly string _path;
+
+        /// <summary>块行标记——JSONL 唯一行型（{"t":"b",…ViewBlock 全字段}；注入报告亦为普通块）</summary>
+        private const string BlockTag = "b";
+
+        /// <summary>注入报告条目型——普通块（每次 session.new 一条；读面取最后一条；ts=0 恒排最前）</summary>
+        private const string InjectReportType = "inject_report";
+
+        /// <summary>落盘编码——UTF-8 无 BOM（JSONL 契约；与前文 jsonl 同源）</summary>
+        private static readonly UTF8Encoding Utf8NoBom = new UTF8Encoding(false);
 
         /// <summary>内存视图条目——按生成序（真实前文 append 序）</summary>
         private readonly List<ViewBlock> _blocks = new List<ViewBlock>();
@@ -26,16 +36,11 @@ namespace CH4
         private readonly List<PendingTool> _pendingTools = new List<PendingTool>();
 
         /// <summary>
-        /// 注入报告——session.new 时生成（独立字段：非真实前文派生；Save 落盘，GetBlocks 合成首条）
-        /// </summary>
-        private string _injectReport = "";
-
-        /// <summary>
-        /// 轮末统计条目——roundsum（每轮 CloseRound 生成：Token 消耗 + 用时；非真实前文派生；Save 落盘，GetBlocks 按帧合并）
+        /// 轮末统计条目——roundsum（每轮 CloseRound 生成：Token 消耗 + 用时；非真实前文派生；写入即落盘，GetBlocks 按帧合并）
         /// </summary>
         private readonly List<ViewBlock> _roundSums = new List<ViewBlock>();
 
-        /// <summary>间隙文本条目——工具轮 seal 文本（非真实前文派生；Save 落盘；QQBot 转发与前端数据源）</summary>
+        /// <summary>间隙文本条目——工具轮 seal 文本（非真实前文派生；写入即落盘；QQBot 转发与前端数据源）</summary>
         private readonly List<ViewBlock> _gapTexts = new List<ViewBlock>();
 
         /// <summary>错误条目——LLM 错误气泡（非真实前文派生；写入即落盘——刷新可回看）</summary>
@@ -71,15 +76,51 @@ namespace CH4
         public void SetRound(int round) { _round = round; }
 
         /// <summary>
-        /// 注入报告 JSON——写（HandleSessionNew 生成后调用；空=无注入报告）
+        /// 注入报告条目——普通块（A248 尾：与其余条目同一模型 / 同一落盘 / 同一排序；ts=0 恒排最前）。
+        /// 覆写语义——同型旧块建新条前移除，读面取最后一条。
         /// </summary>
-        /// <param name="json">注入报告 JSON（file/status/…）</param>
-        public void SetInjectReport(string json) { _injectReport = json ?? ""; }
+        /// <param name="json">注入报告 JSON（file/status/…；空=清除报告）</param>
+        public void SetInjectReport(string json)
+        {
+            RemoveInjectReportBlock();
+            if (json == null || json.Length == 0)
+            {
+                // 清除语义——容器已无报告块，落盘反映（低频：会话初始化路径）
+                Rewrite();
+                return;
+            }
+            ViewBlock block = NewBlock(InjectReportType, json, 0, -1, false);
+            // 置首——保持容器内 ts 升序（归并依赖各源有序；报告 ts=0 恒最小）
+            _blocks.Insert(0, block);
+            AppendLine(BuildBlockLine(block));
+        }
         /// <summary>
-        /// 注入报告 JSON——读（前端渲染数据源；空串=无注入报告）
+        /// 注入报告 JSON——读（前端渲染数据源 / 留档；空串=无注入报告）
         /// </summary>
         /// <returns>注入报告 JSON</returns>
-        public string GetInjectReport() { return _injectReport; }
+        public string GetInjectReport()
+        {
+            for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
+            {
+                if (_blocks[i].RenderType == InjectReportType)
+                {
+                    return _blocks[i].Payload ?? "";
+                }
+            }
+            return "";
+        }
+
+        /// <summary>移除注入报告块——覆写语义的单点（建新条前 / 载入去重时调用）。</summary>
+        private void RemoveInjectReportBlock()
+        {
+            for (int i = _blocks.Count - 1; i >= 0; i = i - 1)
+            {
+                if (_blocks[i].RenderType == InjectReportType)
+                {
+                    _blocks.RemoveAt(i);
+                }
+            }
+        }
 
         /// <summary>待配对工具条目</summary>
         private sealed class PendingTool
@@ -103,38 +144,159 @@ namespace CH4
             public long Ts;
         }
 
-        /// <summary>视图文件数据——JSON 形态（blocks 按到达序）</summary>
-        private sealed class ViewFileData
-        {
-            /// <summary>协议版本（v2 条目模型 = 3）</summary>
-            public int Version { get; set; }
 
-            /// <summary>会话 ID</summary>
-            public string SessionId { get; set; }
 
-            /// <summary>视图条目数组（写入序——事件直落，载入即权威；A156）</summary>
-            public ViewBlock[] Blocks { get; set; }
-
-            /// <summary>注入报告 JSON——会话元数据（非真实前文派生；Save 落盘，Load 恢复）</summary>
-            public string InjectReport { get; set; }
-
-            /// <summary>间隙文本条目数组——gap text（非真实前文派生；Save 落盘，Load 恢复）</summary>
-            public ViewBlock[] GapTexts { get; set; }
-
-            /// <summary>轮末统计条目数组——roundsum（非真实前文派生；Save 落盘，Load 恢复）</summary>
-            public ViewBlock[] RoundSums { get; set; }
-
-            /// <summary>错误条目数组——error（非真实前文派生；Save 落盘，Load 恢复）</summary>
-            public ViewBlock[] Errors { get; set; }
-
-            /// <summary>重试过程条目数组——retry（非真实前文派生；Save 落盘，Load 恢复）</summary>
-            public ViewBlock[] Retries { get; set; }
-        }
-
-        /// <summary>内存视图条目——按生成序（全量帧数据源）</summary>
+        /// <summary>内存视图条目——按生成序（全量帧数据源；注入报告为普通块，随归并自然排最前——ts=0）</summary>
         public ViewBlock[] GetBlocks()
         {
-            // 合并面——真实前文条目 + 间隙文本条目 + roundsum 轮末统计 + error 错误 + retry 重试（按时间戳升序——同一坐标系）
+            return MergeBlocks();
+        }
+
+        /// <summary>
+        /// 追加一行到视图文件——开-写-关（无长驻句柄；读侧共享无冲突）。
+        /// 失败不阻断会话——记 L3 告警（失败必须可见）。
+        /// </summary>
+        /// <param name="line">行内容（单行 JSON）</param>
+        private void AppendLine(string line)
+        {
+            if (line == null || line.Length == 0)
+            {
+                return;
+            }
+            try
+            {
+                EnsureDirectory();
+                using (FileStream fs = new FileStream(_path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+                {
+                    using (StreamWriter sw = new StreamWriter(fs, Utf8NoBom))
+                    {
+                        sw.Write(line);
+                        sw.Write('\n');
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStore.Add("SessionViewStore", 3, "视图增量落盘失败（本条未落盘）: " + ex.Message, "SYS");
+            }
+        }
+
+        /// <summary>确保视图文件目录存在。</summary>
+        private void EnsureDirectory()
+        {
+            string dir = Path.GetDirectoryName(_path);
+            if (dir != null && dir.Length > 0 && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+        }
+
+        /// <summary>构建块行——ViewBlock 全字段 + 行型标记（t=b）。</summary>
+        /// <param name="block">视图条目</param>
+        /// <returns>单行 JSON</returns>
+        private static string BuildBlockLine(ViewBlock block)
+        {
+            JsonSerializerOptions options = LineOptions();
+            JsonNode node = JsonSerializer.SerializeToNode(block, options);
+            if (node == null)
+            {
+                return "";
+            }
+            JsonObject obj = node.AsObject();
+            obj["t"] = BlockTag;
+            return obj.ToJsonString(options);
+        }
+
+        /// <summary>JSONL 序列化选项——中文直出（默认 \uXXXX 转义人读不便——2026-09-08 全局统一）。</summary>
+        /// <returns>选项</returns>
+        private static JsonSerializerOptions LineOptions()
+        {
+            JsonSerializerOptions options = new JsonSerializerOptions();
+            options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+            return options;
+        }
+
+        /// <summary>
+        /// 解析一行——块行（t=b → block；唯一行型，注入报告亦为普通块）。
+        /// 解析失败或行型未知 → false（坏行——调用方按位置出警处置）。
+        /// </summary>
+        /// <param name="line">行内容</param>
+        /// <param name="block">解析出的条目（无=null）</param>
+        /// <returns>true=行型已识别</returns>
+        private static bool TryParseLine(string line, out ViewBlock block)
+        {
+            block = null;
+            try
+            {
+                using (JsonDocument doc = JsonUtil.ParseStrict(line))
+                {
+                    JsonElement root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                    {
+                        return false;
+                    }
+                    string tag = GetStringProp(root, "t");
+                    if (tag == BlockTag)
+                    {
+                        ViewBlock b = new ViewBlock();
+                        b.RenderType = GetStringProp(root, "RenderType");
+                        b.Payload = GetStringProp(root, "Payload");
+                        b.Timestamp = ReadLongProp(root, "Timestamp");
+                        b.MsgIndex = (int)ReadLongProp(root, "MsgIndex");
+                        b.Round = (int)ReadLongProp(root, "Round");
+                        block = b;
+                        return true;
+                    }
+                    return false;
+                }
+            }
+            catch (Exception)
+            {
+                // 解析失败 = 坏行（载入侧按位置出警——此处不重复出声）
+                return false;
+            }
+        }
+
+        /// <summary>载入分流——按条目型归入对应容器（缺省前文派生面）。</summary>
+        /// <param name="block">载入条目</param>
+        private void AddLoadedBlock(ViewBlock block)
+        {
+            string type = block.RenderType == null ? "" : block.RenderType;
+            if (type == "gap_text")
+            {
+                _gapTexts.Add(block);
+                return;
+            }
+            if (type == "roundsum" || type == "roundsummary")
+            {
+                _roundSums.Add(block);
+                return;
+            }
+            if (type == "error")
+            {
+                _errors.Add(block);
+                return;
+            }
+            if (type == "retry")
+            {
+                _retries.Add(block);
+                return;
+            }
+            if (type == InjectReportType)
+            {
+                // 覆写语义——多行同型只认最后一条（正常路径下文件内至多一条：Clear/Rewrite 会压实）
+                // 置首——保持容器内 ts 升序（归并依赖各源有序；报告 ts=0 恒最小）
+                RemoveInjectReportBlock();
+                _blocks.Insert(0, block);
+                return;
+            }
+            _blocks.Add(block);
+        }
+
+        /// <summary>合并面——五类块源按时间戳升序归并（同一坐标系；注入报告为普通块，随归并排最前——ts=0）。</summary>
+        /// <returns>归并后的条目数组</returns>
+        private ViewBlock[] MergeBlocks()
+        {
             List<ViewBlock>[] sources = new List<ViewBlock>[] { _blocks, _gapTexts, _roundSums, _errors, _retries };
             int total = 0;
             for (int si = 0; si < sources.Length; si = si + 1)
@@ -163,18 +325,6 @@ namespace CH4
                 merged[mi] = sources[best][cursors[best]];
                 cursors[best] = cursors[best] + 1;
             }
-            // 注入报告合成首条——会话元数据（非真实前文派生；前端首条渲染前文加载明细）
-            if (_injectReport.Length > 0)
-            {
-                ViewBlock[] withReport = new ViewBlock[merged.Length + 1];
-                ViewBlock report = NewBlock("inject_report", _injectReport, 0, -1, false);
-                withReport[0] = report;
-                for (int i = 0; i < merged.Length; i = i + 1)
-                {
-                    withReport[i + 1] = merged[i];
-                }
-                return withReport;
-            }
             return merged;
         }
 
@@ -188,7 +338,7 @@ namespace CH4
         {
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["text"] = m.Content ?? "";
-            // 原注入来源标记——QQ 注入的轮起点锚（缺省不落字段，旧 view.json 零迁移）
+            // 原注入来源标记——QQ 注入的轮起点锚（缺省不落字段——旧视图文件零迁移）
             if (origin != null && origin.Length > 0)
             {
                 payload["origin"] = origin;
@@ -281,36 +431,31 @@ namespace CH4
         }
 
         /// <summary>
-        /// 视图文件落盘——全量覆写（CloseRound 与真实前文同批；流式中间态不含）
+        /// 全量重写视图文件（原子——临时文件 + 替换）——清空 / 截断 / 播种场景唯一写通道。
+        /// append-only 的合法例外：清空与尾部截断无法用追加表达（低频操作）。
         /// </summary>
-        public void Save()
+        public void Rewrite()
         {
+            // [段1] 组装保留面——条目流（按时间戳升序；注入报告为普通块，随流落位——ts=0 居首）
+            StringBuilder sb = new StringBuilder();
+            ViewBlock[] all = MergeBlocks();
+            for (int i = 0; i < all.Length; i = i + 1)
+            {
+                sb.Append(BuildBlockLine(all[i]));
+                sb.Append('\n');
+            }
+            // [段2] 原子替换——临时文件写全量 → 更名上架（写中崩不毁既有文件）
             try
             {
-                string dir = Path.GetDirectoryName(_path);
-                if (dir != null && !Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
-                ViewFileData data = new ViewFileData();
-                data.Version = 3;
-                data.SessionId = "";
-                data.Blocks = _blocks.ToArray();
-                data.InjectReport = _injectReport;
-                data.GapTexts = _gapTexts.ToArray();
-                data.RoundSums = _roundSums.ToArray();
-                data.Errors = _errors.ToArray();
-                data.Retries = _retries.ToArray();
-                JsonSerializerOptions options = new JsonSerializerOptions();
-                options.IncludeFields = true;
-                options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;   // 中文直出（默认 \uXXXX 转义人读不便——2026-09-08 全局统一）
-                string json = JsonSerializer.Serialize(data, options);
-                File.WriteAllText(_path, json);
+                EnsureDirectory();
+                string tmp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                File.WriteAllText(tmp, sb.ToString(), Utf8NoBom);
+                File.Move(tmp, _path, true);
             }
             catch (Exception ex)
             {
                 // A156：视图层为权威——保存失败必须可见（不兜底、不遮蔽：写盘失败是必须暴露的缺陷）
-                LogStore.Add("SessionViewStore", 3, "视图保存失败: " + ex.Message, "SYS");
+                LogStore.Add("SessionViewStore", 3, "视图重写失败: " + ex.Message, "SYS");
             }
         }
 
@@ -321,7 +466,7 @@ namespace CH4
         {
             ViewBlock block = NewBlock("roundsum", payloadJson, timestamp, -1);
             _roundSums.Add(block);
-            Save();
+            AppendLine(BuildBlockLine(block));
             EmitBlock(block);
         }
 
@@ -338,7 +483,7 @@ namespace CH4
             payload["text"] = text;
             ViewBlock block = NewBlock("roundsummary", JsonUtil.Serialize(payload), timestamp, -1);
             _roundSums.Add(block);
-            Save();
+            AppendLine(BuildBlockLine(block));
             EmitBlock(block);
         }
 
@@ -356,7 +501,7 @@ namespace CH4
             payload["text"] = content;
             ViewBlock block = NewBlock("gap_text", JsonUtil.Serialize(payload), timestamp, -1);
             _gapTexts.Add(block);
-            Save();
+            AppendLine(BuildBlockLine(block));
             EmitBlock(block);
         }
 
@@ -375,7 +520,7 @@ namespace CH4
             payload["text"] = text;
             ViewBlock block = NewBlock("error", JsonUtil.Serialize(payload), timestamp, -1);
             _errors.Add(block);
-            Save();
+            AppendLine(BuildBlockLine(block));
             EmitBlock(block);
         }
 
@@ -388,7 +533,7 @@ namespace CH4
         {
             ViewBlock block = NewBlock("retry", payloadJson, timestamp, -1);
             _retries.Add(block);
-            Save();
+            AppendLine(BuildBlockLine(block));
             EmitBlock(block);
         }
 
@@ -438,7 +583,7 @@ namespace CH4
         {
             try
             {
-                // [段1] 落点——sessions_old 与 sessions 同级（视图路径形态 <data>/sessions/<id>/<id>.view.json）
+                // [段1] 落点——sessions_old 与 sessions 同级（视图路径形态 <data>/sessions/<id>/<id>.view.jsonl）
                 string sessionDir = Path.GetDirectoryName(_path);
                 string sessionsRoot = null;
                 if (sessionDir != null && sessionDir.Length > 0)
@@ -545,7 +690,7 @@ namespace CH4
             sb.Append("- 块数：user " + userCount.ToString() + " · 回复 " + replyCount.ToString() + " · 轮结算 " + sumCount.ToString() + "\n\n");
             sb.Append("---\n\n");
             // [段3] 加载报告段 + 对话段
-            AppendInjectReportSection(sb, _injectReport);
+            AppendInjectReportSection(sb, GetInjectReport());
             sb.Append("---\n\n");
             sb.Append("## 对话\n\n");
             sb.Append(body.ToString());
@@ -684,8 +829,7 @@ namespace CH4
         {
             _blocks.Clear();
             _pendingTools.Clear();
-            // 注入报告随视图层清理——session.new 后 HandleSessionNew 重新 Set + Save
-            _injectReport = "";
+            // 注入报告为普通块——随 _blocks 一并清理（session.new 后 HandleSessionNew 重新 Set）
             // 间隙文本随视图层清理——新会话不保留旧 gap 条目
             _gapTexts.Clear();
             // 轮末统计随视图层清理——新会话不保留旧轮统计
@@ -694,12 +838,14 @@ namespace CH4
             _errors.Clear();
             // 重试过程条目随视图层清理——新会话不保留旧重试记录
             _retries.Clear();
+            // A248：清空同步落盘（原子重写为空）——否则旧行在载入时被读回，清空语义失效
+            Rewrite();
         }
         /// <summary>
         /// 视图层截断——回滚（session.rollback）：丢弃前文索引大于切点的条目，与真实前文截断同批物化。
         /// 判定：前文派生条目（MsgIndex ≥ 0）按索引；非前文派生条目（-1）按时间戳界限——时间戳单调化
         /// 保证全局严格递增，故被截区间内产生的一切条目时间戳必不小于「被丢弃前文条目的最小时间戳」。
-        /// 保留面 = 切点及之前的全部条目（注入报告为独立字段，随会话延续保留）；写盘。
+        /// 保留面 = 切点及之前的全部条目（注入报告为普通块——MsgIndex=-1 不参与索引判定，天然保留）；写盘。
         /// </summary>
         /// <param name="msgIndex">切点前文索引（保留 ≤ 该索引的条目）</param>
         public void TruncateFrom(int msgIndex)
@@ -727,7 +873,7 @@ namespace CH4
             }
             // [段3] 待配对工具——被截区间内的工具声明不再配对（回滚仅空闲时执行，通常本就为空）
             _pendingTools.Clear();
-            Save();
+            Rewrite();
         }
         /// <summary>
         /// 视图层播种——fork（session.fork）：把源视图存储的保留面（≤ 切点）复制进本存储，与新猫播种前文同步。
@@ -768,9 +914,9 @@ namespace CH4
             _retries.Clear();
             CopyBlocksBefore(source._retries, _retries, dropMinTs);
             _pendingTools.Clear();
-            _injectReport = source._injectReport;
+            // 注入报告为普通块——随 _blocks 搬迁（MsgIndex=-1 不参与索引判定，天然保留）
             _lastTs = MaxTimestamp();
-            Save();
+            Rewrite();
         }
         /// <summary>丢弃时间戳不早于界限的条目——截断用（保留面 = 界限之前）。</summary>
         /// <param name="list">条目容器（原地删）</param>
@@ -814,6 +960,7 @@ namespace CH4
             long timestamp = timestampOverride > 0 ? timestampOverride : m.CreatedAt;
             ViewBlock block = NewBlock(renderType, payloadJson, timestamp, msgIndex);
             _blocks.Add(block);
+            AppendLine(BuildBlockLine(block));
             EmitBlock(block);
         }
 
@@ -933,63 +1080,67 @@ namespace CH4
         }
 
         /// <summary>
-        /// 载入视图层——读回持久条目 + 四个独立数组 + 注入报告（A156：载入即权威，不再从前文重建）。
-        /// 失败出声——视图层为权威，空视图继续 = 前端历史整体缺口，静默不可接受。
+        /// 载入视图层——逐行读回 JSONL（唯一行型块行；注入报告为普通块）。
+        /// 末行残缺丢弃、非末行坏行跳过（各自出声）；失败出声——视图层为权威，静默不可接受。
         /// </summary>
         public void Load()
         {
+            if (!File.Exists(_path))
+            {
+                return;
+            }
+            string[] lines;
             try
             {
-                if (!System.IO.File.Exists(_path))
-                {
-                    return;
-                }
-
-                string json = System.IO.File.ReadAllText(_path);
-                JsonSerializerOptions options = new JsonSerializerOptions();
-                options.IncludeFields = true;
-                ViewFileData data = JsonSerializer.Deserialize<ViewFileData>(json, options);
-                if (data == null)
-                {
-                    LogStore.Add("SessionViewStore", 3, "视图载入失败——文件内容为空（视图层为权威：本会话历史将为空白）", "SYS");
-                    return;
-                }
-                _blocks.Clear();
-                if (data.Blocks != null)
-                {
-                    _blocks.AddRange(data.Blocks);
-                }
-                if (data.InjectReport != null)
-                {
-                    _injectReport = data.InjectReport;
-                }
-                _gapTexts.Clear();
-                if (data.GapTexts != null)
-                {
-                    _gapTexts.AddRange(data.GapTexts);
-                }
-                _roundSums.Clear();
-                if (data.RoundSums != null)
-                {
-                    _roundSums.AddRange(data.RoundSums);
-                }
-                _errors.Clear();
-                if (data.Errors != null)
-                {
-                    _errors.AddRange(data.Errors);
-                }
-                _retries.Clear();
-                if (data.Retries != null)
-                {
-                    _retries.AddRange(data.Retries);
-                }
-                _lastTs = MaxTimestamp();
+                lines = File.ReadAllLines(_path, Encoding.UTF8);
             }
             catch (Exception ex)
             {
                 // A156：视图层为权威——载入失败出声（空视图继续 = 前端历史整体缺口）
                 LogStore.Add("SessionViewStore", 3, "视图载入失败（按空视图继续——本会话历史将空白）: " + ex.Message, "SYS");
+                return;
             }
+            // [段1] 容器清零——载入即权威重建（不复用内存残留；注入报告为 _blocks 内普通块，随之一并清零）
+            _blocks.Clear();
+            _gapTexts.Clear();
+            _roundSums.Clear();
+            _errors.Clear();
+            _retries.Clear();
+            // [段2] 末条非空行定位——仅末行按残缺处置（末尾截断行：丢弃 + 出警）
+            int lastIndex = -1;
+            for (int i = lines.Length - 1; i >= 0; i = i - 1)
+            {
+                if (lines[i].Trim().Length > 0)
+                {
+                    lastIndex = i;
+                    break;
+                }
+            }
+            // [段3] 逐行解析——块行 / 坏行（非末行坏行跳过——不整文件作废）
+            for (int i = 0; i < lines.Length; i = i + 1)
+            {
+                string line = lines[i].Trim();
+                if (line.Length == 0)
+                {
+                    continue;
+                }
+                ViewBlock block = null;
+                bool parsed = TryParseLine(line, out block);
+                if (parsed && block != null)
+                {
+                    AddLoadedBlock(block);
+                    continue;
+                }
+                if (i == lastIndex)
+                {
+                    LogStore.Add("SessionViewStore", 2, "视图末行残缺——该行丢弃（无块信息）", "SYS");
+                }
+                else
+                {
+                    LogStore.Add("SessionViewStore", 2, "视图第 " + (i + 1).ToString() + " 行损坏——跳过（其余照常加载）", "SYS");
+                }
+            }
+            _lastTs = MaxTimestamp();
         }
 
         /// <summary>
@@ -1315,12 +1466,13 @@ namespace CH4
         /// <returns>报告文本（空报告=空串）</returns>
         private string BuildInjectReportText()
         {
-            if (_injectReport == null || _injectReport.Length == 0)
+            string injectReport = GetInjectReport();
+            if (injectReport.Length == 0)
             {
                 return "";
             }
             StringBuilder sb = new StringBuilder();
-            AppendInjectReportBody(sb, _injectReport);
+            AppendInjectReportBody(sb, injectReport);
             return sb.ToString().Trim();
         }
         /// <summary>

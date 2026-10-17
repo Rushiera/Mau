@@ -1,45 +1,103 @@
-﻿# Mau —— 会自己长大的系统
+﻿# CatHome4 — C# / .NET AI 工作站
 
-> 埃及语"猫"（mau/mjw）。古埃及太阳神 Ra 亦被称为"伟大的猫 Mau"。
-> 仓库历史一直在——Mau 这个名字是象征。
+![CatHome4](docs/header.png)
 
----
+> 一个自己写自己、自己修自己家的多猫 AI 工作站。小想法，搭起明亮的日子。
 
-## 一、项目简介
-
-**我们在造一个 AI 用自己的语言、写自己的宿主、自己的工具、自己的家。**
-
-不是"让 AI 帮人写代码"——是让 AI 从零搭建一套自己能持续进化的运行时：
-
-```
-LLM 写 .mau 语料 → 门禁验真（词法/解析/验证/E2xx 引用/E3xx 图论/E4xx 积木——失败拒绝生成）
-  → 翻译 C# → 编译 dll → 热重载加载（宿主不重启）→ 观测（帧号可溯）→ 迭代
-```
-
-**自举循环：** 业务代码 100% 由语料表达——改语料、重编译、即生效。AI 自己闭环自己。
-
-**哲学：** LLM 负责表达，确定性代码负责验真。语言为 LLM 输出稳定性设计（符号化 + 白名单词法）；分析门禁（图论验证）填补 LLM 的逻辑盲区——表达自由，验证严格。
-
-**定位：** 私人方言，只服务一个消费者——从不为陌生用户建防护，不为未来产品留接口。不考虑市场与通用性，只把自己的家修好。
-
-**双区块（同仓推进）：**
-
-| 区块 | 是什么 | 位置 |
-|:--|:--|:--|
-| **Mau 基座** | 私人方言语言内核 + 数字电路运行时 + 门禁工具链 + 积木原子能力 | `Mau/`（Mau.sln） |
-| **CH4 宿主** | 自举循环宿主——agent 循环基建走 C#，业务 100% 语料化热重载 | `CatHome4/`（CatHome4.sln）· `corpus/ch4/` |
-
-**版本线：** 基座 `v3.x` · 宿主 `v1.x`——同仓推进。版本与规格的唯一真相源在 CCBP 知识库（`Project/Mau/`、`Project/CH4/`）；本仓库只承载代码与语料。
-
-**目标框架：** 全链 `net10.0`（宿主与部署工具为 `net10.0-windows`）——A113 起由 net8.0 升级（.NET 8/9 于 2026-11-10 EOL）。
+📖 **[用户手册 · docs/manual](docs/manual/index.md)** —— 能力全景与基础用法（面向使用者与接手改造者）
 
 ---
 
-## 二、部署与运行
+## 一、概览
 
-### 2.1 前置
+**CatHome4 是一个本地运行的 AI 工作站。** 它把大模型变成一群能自己干活的"猫"——每只猫有人格、有工具、有自己的记忆，能在你的电脑上读写文件、写代码、查网页、看图片、执行命令，并在一个对话界面里把全过程展示给你。
 
-- Windows + .NET 10 SDK（`dotnet --version` ≥ 10.0——部署全程需要 SDK，运行需要 Runtime）
+宿主常驻桌面（托盘），数据全部留在本机。它不是一个聊天窗口，是一个**能持续干活的工作台**。
+
+### 技术栈
+
+| 层 | 用什么 |
+|:--|:--|
+| 运行时 | C# / .NET 10 |
+| 大模型接入 | 直连 API（自填端点与密钥；多端点配置池，无中间平台） |
+| 代码能力 | Roslyn 语法树（语义级读写 + 编译裁决） |
+| 业务表达 | **Mau** —— 自研方言，业务全部由语料表达，改完热重载即生效 |
+| 外观层 | 原生 HTML / JS / CSS（零框架、零外部依赖） |
+
+### 主要能力
+
+| 能力 | 说明 |
+|:--|:--|
+| **多猫并行** | 一进程跑多只猫——各自人格、工具面、配置、会话互不干扰 |
+| **全工具面** | 文件 / 代码 / 终端 / 网页 / 图像 —— 猫真能动手，不是只会聊天 |
+| **有据可查** | 每一步工具调用、每一次回复过程都在界面里可见 |
+| **多通道** | 浏览器面板 + QQ，同一只猫随时找得到 |
+| **自我成长** | 底层用自研方言 Mau 表达，业务逻辑改动无需重启（详见 §四） |
+
+---
+
+## 二、主要功能
+
+### 2.1 多猫
+
+- **一进程多会话**：同时运行多只猫，各自独立端口与配置面，互不影响。
+- **每猫定制**：显示名、人格设定、可用的工具、系统提示、绑定的模型端点——逐猫单独配。
+- **猫卡管理**：面板里以卡片列出全部猫，一眼看到各猫的运行状态、当前轮次、前文长度与最近活跃。
+
+### 2.2 对话与呈现
+
+- **流式回复**：思考、工具调用、正文三种内容实时分开呈现，一眼看清猫在想什么、做什么。
+- **工具卡**：每次工具调用渲染成一张卡（参数、结果、耗时），可展开看细节。
+- **轮末统计**：每轮结束给出 Token 消耗、工具次数与各阶段耗时。
+- **图片直读**：可直接粘贴图片给猫看；猫也能把图片贴回对话。
+- **对话导航**：右侧自绘滚动带——按消息类型标刻度，点哪跳哪，长对话不迷路。
+- **桌宠**：可拖动的桌面伙伴，随猫的运行状态换表情。
+
+### 2.3 会话管理
+
+- **新会话 / 清空**：随时开一段新对话；旧会话自动留档成可读文件。
+- **回滚 / 分支**：从任意一条消息切断重来（回滚），或从该点分叉出新会话（分支）——试错不丢历史。
+- **续写 / 中止**：中断后可"继续"让猫接着写；随时"停止"当前回合。
+
+### 2.4 猫的能力（工具面）
+
+| 类别 | 猫能做什么 |
+|:--|:--|
+| **文本与文件** | 读 / 写 / 搜索文本，浏览目录树，移动、复制、删除文件（删除进回收站，可恢复） |
+| **代码** | 读写 C# 工程、查引用、编译、跑测试 —— 语法树级操作，不是字符串替换 |
+| **终端** | 执行 PowerShell 命令（进程 / 端口 / 网络等） |
+| **网页** | 搜索、抓取正文、下载文件、无头浏览器自动化（可截图 / 取值） |
+| **图像** | 识别图片内容；也能直接把图"看"进对话 |
+| **配置与管理** | 修改配置、管理猫、重启与部署宿主（管理面，用户授权后可用） |
+
+> 工具按组加载（12 个工具组），可逐猫裁剪——给猫的能力范围由你定。
+
+### 2.5 接入通道
+
+- **浏览器**：本机面板与独立对话页，开箱即用。
+- **QQ**：把猫接到 QQ（私聊 / 群聊）——支持文字、图片、文件收发与几条内置指令（`/new`、`/last`、`/info`、`/ping`）。一个 Bot 对应一只猫。
+
+### 2.6 自动化
+
+- **定时与延迟**：让猫"过一会儿再做"或"每 N 分钟看一眼"——支持一次性等待与周期任务。
+- **任务追踪**：多步任务写成清单，逐条推进，进度可见。
+- **加载包**：把一组知识文件一次性装进猫的上下文。
+
+### 2.7 数据与隐私
+
+一切都在本机：
+
+- **配置与数据**在数据目录（见 §3.4）；**密钥单独存放**，不进对话、不进快照。
+- **运行日志**按次落盘（帧号可追溯），出问题能回看每一步。
+- **正式实例的数据独立于源码仓库**——重建或删除仓库都不影响你的数据。
+
+---
+
+## 三、部署与运行
+
+### 3.1 前置
+
+- Windows + **.NET 10 SDK**（`dotnet --version` ≥ 10.0）
 - 取仓库：
 
 ```
@@ -47,35 +105,34 @@ git clone git@gitee.com:wu_lisha/mau.git
 cd mau
 ```
 
-> 同步 Gitee 仓库，GitHub 地址：`https://github.com/WuLiSha-HUB/mau.git`
+> 同步 Gitee 仓库；GitHub 镜像：`https://github.com/WuLiSha-HUB/mau.git`
 
-### 2.2 图形界面部署（推荐——首次使用走这条）
+### 3.2 一键部署（图形界面 —— 推荐）
 
-1. **双击仓库根目录下的 `SetUp.exe`** —— 合法位置即 Mau 仓库根（同目录需能见到 `Mau.sln`，否则会拒绝运行）。
-2. 界面先做环境检测（.NET 10 Runtime / SDK）。点 **prepare** —— 一键重建全发布链：构建 → 测试 → 基座部署区 → 12 组语料编译 → 宿主发布。全程有日志，等它跑完。
-3. 点 **deploy**，把运行实体发布到 **mau 仓库目录之外**的目标目录 —— 例如 `C:\MauTest\MauOut`。
-   🔴 **必须部署到仓库之外**：部署目录是正式运行实体，与仓库解耦；此后重建/删除仓库都不影响它。
-4. 部署完成后，**部署目录根下的 `CatHome4.exe` 就是程序入口** —— 双击即启动。
+1. **双击仓库根目录下的 `SetUp.exe`**（必须放在仓库根，同目录要能看到 `Mau.sln`）。
+2. 先做环境检测（.NET 10 Runtime / SDK），点 **prepare** —— 自动完成全链：构建 → 测试 → 编译语料 → 发布。全程有日志，等它跑完。
+3. 点 **deploy**，把运行实体发布到**仓库之外**的目录 —— 例如 `C:\MauTest\MauOut`。
+   🔴 **必须部署到仓库之外**：部署目录是正式运行实体，与仓库解耦；此后重建或删除仓库都不影响它。
+4. 部署完成后，**目标目录里的 `CatHome4.exe` 就是程序入口**，双击即启动。
 
-命令行等价（与图形界面同链，二选一）：
+命令行等价（二选一）：
 
 ```
 SetUp.exe prepare                     ← 重建全发布链
 SetUp.exe deploy C:\MauTest\MauOut    ← 发布正式运行实体到仓库外
 ```
 
-| 模式 | 做什么 | 产物 |
-|:--|:--|:--|
-| **prepare** | 重建全发布链——构建/测试/基座部署区/语料编译/宿主发布 | 仓库内 `public/` + `Mau-public/`（就地自举） |
-| **deploy** | 把可运行版本发布到外部目标目录 | 仓库外的正式运行实体 |
+### 3.3 首次运行
 
-### 2.3 首次运行
+1. 启动部署目录下的 **`CatHome4.exe`** —— 宿主常驻系统托盘，自动加载工具组并开启界面服务。
+2. 浏览器打开 **http://127.0.0.1:8080** —— 主面板（部署区端口；开发区实例为 8079）。对话页按猫走独立端口。
+3. 首次启动自动生成配置与数据目录；**填入 LLM 端点与密钥**即可开始对话。
 
-1. 启动部署目录下的 **`CatHome4.exe`** —— 宿主自动加载语料 Flows（12 个工具组）并开启 HTTP 外观层。
-2. 浏览器打开 **http://127.0.0.1:8080** —— 主面板（部署区主端口；开发区实例为 8079）。对话页按猫走独立端口（端口段内分配）。
-3. 首次启动会自动生成配置与数据目录；LLM 端点与密钥在面板或数据目录中填写。
+> 托盘图标：左键开控制台，右键可开机自启 / 打开数据目录 / 退出。
 
-**运行实体的数据目录（部署实例持久区）：**
+### 3.4 数据目录
+
+运行实体的数据目录（部署实例持久区）：
 
 ```
 %LOCALAPPDATA%\CatHome4\Data
@@ -83,111 +140,92 @@ SetUp.exe deploy C:\MauTest\MauOut    ← 发布正式运行实体到仓库外
 
 | 子目录 | 主要内容 |
 |:--|:--|
-| `config/` | 配置群 —— `app.cfg`（全局）、`cat-default.cfg`（每猫默认）、`llm.cfg` / `llm-api.json`（LLM）、`ui.cfg`、`search.cfg`、`vision.cfg`、`browser.cfg`、`ps.cfg`、`qqbot.json`、`packs.json`（加载包）、`workspace.json`（受控根表）、`schema.json`（配置元声明） |
-| `secrets/` | 密钥 —— `llm-api.cfg`（LLM 端点与密钥）、`qqbot.cfg` |
-| `sessions/` | 每猫一个目录 —— 会话状态 `<会话号>.json`、视图 `<会话号>.view.json`、该猫配置 `cat.cfg` |
-| `runs/` | 每次运行一个目录 —— `log_all.txt` / `oa_all.txt` / `err_all.txt` / `frame.txt`（帧号可溯的观测面；**帧体无变化只落帧号行**——缺席字段沿用上一完整帧） |
+| `config/` | 配置群 —— 全局 / 每猫默认 / 界面 / 搜索 / 视觉 / 浏览器 / QQ / 受控根表等 |
+| `secrets/` | 密钥 —— LLM 端点与密钥、QQ 凭据（**不在对话与快照中出现**） |
+| `sessions/` | 每猫一个目录 —— 会话前文、视图层、该猫配置 |
+| `runs/` | 每次运行一个目录 —— 完整日志、工单轨迹、错误、状态快照 |
 | `qqbot-files/` | QQ 通道收发的文件缓存 |
 
-**Data 三级锚定：** `CH4_DATA_ROOT` 环境变量（显式覆盖）→ 仓库根 `Data/`（就地开发与跑测的隔离区）→ `%LOCALAPPDATA%\CatHome4\Data`（部署实例的持久区）。
+**数据位置三级：** `CH4_DATA_ROOT` 环境变量 → 仓库根 `Data/`（就地开发隔离区）→ `%LOCALAPPDATA%\CatHome4\Data`（正式持久区）。
 
-🔴 正式实例的数据恒在第三级 —— **重建或删除仓库都不会丢**；仓库根那一级只服务就地跑测，可随时清空。
+🔴 正式实例的数据恒在第三级 —— 仓库怎么折腾都不丢。
+
+### 3.5 更新
+
+改完源码后重新部署：
+
+```
+SetUp.exe prepare            ← 仓库内重建（宿主照常运行）
+```
+
+再经宿主控制台重启（用户授权后由管理面触发）——**重启前置零停机，验证不过则保持原版本运行**。
 
 ---
 
-### 2.4 手动部署链（等价明细 —— 顺序不可跳）
+## 四、技术底座
+
+<details>
+<summary>开发者参考（点击展开）</summary>
+
+### 4.1 自举：Mau 方言
+
+业务代码不写 C#，写 **Mau** —— 一门为"让大模型稳定产出"而设计的自研方言：
+
+```
+LLM 写 .mau 语料 → 门禁验真（词法/解析/验证/引用/图论/积木）→ 翻译 C# → 编译 dll
+  → 热重载加载（宿主不重启）→ 观测（帧号可溯）→ 迭代
+```
+
+**哲学：** 大模型负责表达，确定性代码负责验真——表达自由，验证严格。业务 100% 语料化，改一行即生效。
+
+### 4.2 手动部署链（顺序不可跳）
 
 ```
 1. dotnet build Mau.sln
 2. dotnet test Mau.sln
 3. dotnet publish Mau\Mau.Cli -c Debug -o Mau-public
-4. mau proj corpus\ch4\<Flow>\<组>.mauproj -o public\src\<Flow> --build   （×12——见下方清单）
+4. mau proj corpus\ch4\<Flow>\<组>.mauproj -o public\src\<Flow> --build   （×12）
 5. dotnet publish CatHome4 -c Debug -o public\app
 6. public\app\CatHome4.exe --run "session count"
 ```
 
 | 步 | 做什么 | 验收 |
 |:--|:--|:--|
-| 1 | 构建 + NuGet 还原（唯一真相源 = git） | 0 错误 0 警告 |
-| 2 | 全量测试 | 全绿（`mau test` → `MAU_CHECKS_OK` 为门禁底线） |
-| 3 | **基座部署区** —— 组构建的引用源（缺此步 `mau proj` 报 M3245 找不到 Mau.Runtime） | `Mau-public/Mau.Runtime.dll` 存在 |
-| 4 | 语料 → 组翻译 → 编译 dll（12 个工具组 Flow） | `public/app/Flows/FL_<组>.dll` 存在 |
+| 1 | 构建 + 还原 | 0 错误 0 警告 |
+| 2 | 全量测试 | 全绿（`MAU_CHECKS_OK`） |
+| 3 | 基座部署区（组构建的引用源） | `Mau-public/Mau.Runtime.dll` 存在 |
+| 4 | 语料 → 组翻译 → dll（12 组） | `public/app/Flows/FL_<组>.dll` 存在 |
 | 5 | 宿主部署 | `public/app/CatHome4.exe` 存在 |
-| 6 | 宿主自检 —— CLI 全链（主线程直执 + 进程自退） | 各 Cat 注册 + 会话消息数正常 |
+| 6 | 宿主自检 | 各猫注册 + 会话消息数正常 |
 
-**步骤 4 的 12 个 mauproj（`corpus/ch4` 每个 Flow 一个）：**
+> 步骤 3-4 是硬约束：改基座源码后必须重跑。语料 dll 运行中可热重载（不锁文件）；宿主 publish 前先停进程。
 
-```
-mau proj corpus\ch4\BrowserCat\browser_cat.mauproj    -o public\src\BrowserCat --build
-mau proj corpus\ch4\ConfigCat\config_cat.mauproj      -o public\src\ConfigCat --build
-mau proj corpus\ch4\CsCat\cs_cat.mauproj              -o public\src\CsCat --build
-mau proj corpus\ch4\FileCat\file_cat.mauproj          -o public\src\FileCat --build
-mau proj corpus\ch4\Majordomo\majordomo_cat.mauproj   -o public\src\Majordomo --build
-mau proj corpus\ch4\MauCat\mau_cat.mauproj            -o public\src\MauCat --build
-mau proj corpus\ch4\PsCat\ps_cat.mauproj              -o public\src\PsCat --build
-mau proj corpus\ch4\QuickCat\quick_cat.mauproj        -o public\src\QuickCat --build
-mau proj corpus\ch4\WebCat\web_cat.mauproj      -o public\src\WebCat --build
-mau proj corpus\ch4\TempToolCat\temp_tool_cat.mauproj -o public\src\TempToolCat --build
-mau proj corpus\ch4\TextCat\text_cat.mauproj          -o public\src\TextCat --build
-mau proj corpus\ch4\VisionCat\vision_cat.mauproj      -o public\src\VisionCat --build
-```
+**12 组 mauproj 清单：** `browser_cat` / `config_cat` / `cs_cat` / `file_cat` / `llm_simple_request` / `majordomo_cat` / `mau_cat` / `ps_cat` / `temp_tool_cat` / `text_cat` / `vision_cat` / `web_cat`（各位于 `corpus/ch4/<组>/`）。
 
-> 步骤 3-4 是硬约束：改基座源码后必须重跑 3-4（`Mau-public/` 是编译与运行时的同源点）。语料层随时可重建（`public/app/Flows/*.dll` 运行中热重载、不锁文件）；宿主自身 publish 前先停进程。
+### 4.3 常用命令（工作目录 = 仓库根）
 
-**SetUp 自身更新（🔴 改动 `SetUp/` 源码后必做）：** `SetUp.exe` 是发布产物、不是源码 —— git 提交的是构建出的单文件 exe。改源码后必须重新发布并同次提交：
-
-```
-dotnet publish SetUp\SetUp.csproj -c Release -o <临时目录>   ← 1. 重新发布
-复制 SetUp.exe 覆盖仓库根（旧版先移 CatTemp 备份）           ← 2. 替换
-SetUp.exe prepare                                           ← 3. 全链验证（步 4 组扫描全收录）
-git add SetUp/ SetUp.exe && commit && push                  ← 4. 源码 + exe 同次提交
-```
-
----
-
-### 2.5 常用指令（工作目录 = 仓库根）
-
-**mau CLI —— 构筑与门禁：**
-
-| 指令 | 用途 |
+| 命令 | 用途 |
 |:--|:--|
-| `mau verify <file.mau>` | 全链检查（词法→解析→验证→分析，不产出） |
-| `mau gen <file.mau> -o <dir>` | 全链编译 + C# 生成物 |
-| `mau proj <组.mauproj> -o <srcDir> [--build]` | 统一构筑链 —— 组翻译落盘；`--build` 走 dotnet build → `Flows/FL_<组>.dll` |
-| `mau build <组.mauproj>` | 统一链路由（转发 `mau proj --build`） |
-| `mau test` | 三段门禁 —— L2 翻译器+Runtime / L3 黄金哈希 / L4 积木谱 → `MAU_CHECKS_OK` |
-| `mau check` | 语法谱 + 负例谱 + 关键路径报告 → `MAU_CHECK_OK` |
-| `mau debug <file.mau> [--ticks N] [--step]` | 四柱状态表 + 单步 + 状态断点 |
-| `mau bricks list / index --update / index --verify` | 积木枚举 / 契约提取重算索引（唯一写入通道）/ 索引校验 |
+| `mau verify <file.mau>` | 语料全链检查（不产出） |
+| `mau proj <组.mauproj> -o <dir> [--build]` | 组翻译（`--build` 出 dll） |
+| `mau test` / `mau check` | 三段门禁 / 语法谱 + 负例谱 |
+| `mau bricks list / index --update / index --verify` | 积木枚举 / 重建索引 / 校验 |
+| `dotnet build Mau.sln` · `dotnet build CatHome4.sln` | 基座 / 宿主全量构建 |
+| `CatHome4.exe --run "<指令>"` | CLI 全链（脚本化跑测，端口零占用） |
 
-**CLI 参数纪律：** 未知参数、缺值、非法值一律报错退出（不静默忽略、不回落默认值）—— 入口接收面与用法声明必须一致。
+**SetUp 自身更新：** `SetUp.exe` 是发布产物——改 `SetUp/` 源码后重新 publish 并同次提交。
 
-**dotnet —— 标准入口：**
-
-| 指令 | 用途 |
-|:--|:--|
-| `dotnet build Mau.sln` | 基座全量构建 —— 0 错误 0 警告是提交底线 |
-| `dotnet test Mau.sln` | 基座测试入口（三测试项目全量） |
-| `dotnet build CatHome4.sln` | 宿主全量构建 —— 同上底线 |
-| `dotnet test CatHome4.sln` | 宿主测试入口 |
-
-**宿主（CatHome4）：**
-
-| 指令 | 用途 |
-|:--|:--|
-| `CatHome4.exe`（无参） | 程序入口 —— 扫描 `Flows/` 加载语料 + HTTP 外观层（端口按区段：开发区 `http://127.0.0.1:8079` / 部署区 `http://127.0.0.1:8080`） |
-| `CatHome4.exe --run "<指令>"` | CLI 全链 —— 主线程直执指令 + 进程自退（脚本化跑测通道；**非交互模式不启外观层与常驻附属——端口零占用**，与常驻实例并存） |
-
-**git 约定：**
+### 4.4 git 约定
 
 | 约定 | 内容 |
 |:--|:--|
-| 提交信息 | `vX.Y: 变更摘要`（≤30 字，动词开头；一次提交一个主题） |
-| 发布标签 | 重要版本打 `v<版本号>` 标签（如 `v1.04.000`）——随推送同步，版本可回溯 |
-| 双版本线 | 基座 `v3.x` 与宿主 `v1.x` 同仓推进；历史唯一真相 = CCBP 双 CHANGELOG |
-| SetUp.exe | 跟随 git 提交的单文件发布产物 —— 改源码必须重发同次提交（见 2.4） |
+| 提交信息 | `vX.Y: 变更摘要`（≤30 字，动词开头） |
+| 发布标签 | 重要版本打 `v<版本号>` 标签 |
+| 双版本线 | 宿主 `v1.x` · 基座 `v3.x` 同仓推进 |
 
-**规格权威：** CCBP 知识库 `Project/Mau/`（基座设计）与 `Project/CH4/`（宿主设计、部署架构、发布规范）。
+**规格权威：** CCBP 知识库 `Project/CH4/`（宿主）与 `Project/Mau/`（基座）。
+
+</details>
 
 ---
 

@@ -218,11 +218,7 @@ namespace Mau.Runtime
         private string SysCategoryLog(string title, string category, Dictionary<string, string> args)
         {
             int tail = ArgInt(args, "tail", 0);
-            List<LogStore.LogEntry> all;
-            lock (LogStore.Sync)
-            {
-                all = new List<LogStore.LogEntry>(LogStore.AllLog);
-            }
+            List<LogStore.LogEntry> all = LogStore.Snapshot();
             List<LogStore.LogEntry> filtered = new List<LogStore.LogEntry>();
             for (int i = 0; i < all.Count; i = i + 1)
             {

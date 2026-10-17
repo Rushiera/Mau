@@ -1,12 +1,14 @@
 ﻿# Mau 积木索引 — INDEX
 
-> 版本：v3.3 | 更新：2026-10-14（mau bricks index --update 源码驱动重建）
+> 版本：v3.3 | 更新：2026-10-18（mau bricks index --update 源码驱动重建）
 > 全量积木登记——一行一条。ID 永不重用。
 
 ## 全部积木
 
 | ID | 名字 | 类别 | 工程路径 | 依赖 | 状态 | 来源 |
 |:--|:--|:--|:--|:--|:--|:--|
+| BRIK-AUDIO-001 | audio.play | AUDIO | Audio/BRIK-AUDIO-001_audio.play.cs | 无 | active |  |
+| BRIK-AUDIO-002 | audio.speak | AUDIO | Audio/BRIK-AUDIO-002_audio.speak.cs | 无 | active |  |
 | BRIK-BROWSER-001 | browser.open | BROWSER | BROWSER/BRIK-BROWSER-001_browser.open.cs | 无 | active |  |
 | BRIK-BROWSER-002 | browser.read | BROWSER | BROWSER/BRIK-BROWSER-002_browser.read.cs | 无 | active |  |
 | BRIK-BROWSER-003 | browser.eval | BROWSER | BROWSER/BRIK-BROWSER-003_browser.eval.cs | 无 | active |  |
@@ -50,6 +52,9 @@
 | BRIK-PACK-004 | config.bridge | PACK | PACK/BRIK-PACK-004_config.bridge.cs | 无 | active |  |
 | BRIK-PACK-005 | catcfg.bridge | PACK | PACK/BRIK-PACK-005_catcfg.bridge.cs | 无 | active |  |
 | BRIK-PS-001 | ps.exec | PS | PS/BRIK-PS-001_ps.exec.cs | 无 | active |  |
+| BRIK-PY-001 | py.run | PY | PY/BRIK-PY-001_py.run.cs | 无 | active |  |
+| BRIK-PY-002 | py.list | PY | PY/BRIK-PY-002_py.list.cs | 无 | active |  |
+| BRIK-PY-003 | py.service | PY | PY/BRIK-PY-003_py.service.cs | 无 | active |  |
 | BRIK-SELF-001 | self.desc | SELF | SELF/BRIK-SELF-001_self.desc.cs | 无 | active |  |
 | BRIK-SELF-002 | self.desc.add | SELF | SELF/BRIK-SELF-002_self.desc.add.cs | 无 | active |  |
 | BRIK-TEMP-001 | temp.exec | TEMP | TEMP/BRIK-TEMP-001_temp.exec.cs | 无 | active |  |
@@ -76,12 +81,15 @@
 | BRIK-TOOLS-012 | tools.browsercat | TOOLS | TOOLS/BRIK-TOOLS-012_tools.browsercat.cs | 无 | active |  |
 | BRIK-TOOLS-013 | tools.webcat | TOOLS | TOOLS/BRIK-TOOLS-013_tools.webcat.cs | 无 | active |  |
 | BRIK-TOOLS-014 | tools.llmsimplerequest | TOOLS | TOOLS/BRIK-TOOLS-014_tools.llmsimplerequest.cs | 无 | active |  |
+| BRIK-TOOLS-015 | tools.audiocat | TOOLS | TOOLS/BRIK-TOOLS-015_tools.audiocat.cs | 无 | active |  |
+| BRIK-TOOLS-016 | tools.pycat | TOOLS | TOOLS/BRIK-TOOLS-016_tools.pycat.cs | 无 | active |  |
 | BRIK-VISION-001 | vision.analyze | VISION | VISION/BRIK-VISION-001_vision.analyze.cs | 无 | active |  |
 | BRIK-VISION-002 | image.inject | VISION | VISION/BRIK-VISION-002_image.inject.cs | 无 | active |  |
 | BRIK-WEB-001 | web.search | WEB | WEB/BRIK-WEB-001_web.search.cs | 无 | active |  |
 | BRIK-WEB-002 | web.fetch | WEB | WEB/BRIK-WEB-002_web.fetch.cs | 无 | active |  |
 | BRIK-WEB-003 | web.fetch.jobs | WEB | WEB/BRIK-WEB-003_web.fetch.jobs.cs | 无 | active |  |
+| BRIK-WEB-004 | web.ds.search | WEB | WEB/BRIK-WEB-004_web.ds.search.cs | 无 | active |  |
 
 ---
 
-_版本：v3.3 | 2026-10-14 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_
+_版本：v3.3 | 2026-10-18 | 自动生成——mau bricks index --update（源码唯一真相源：文件头 + 静态签名；来源列为人工维护区）_

@@ -47,9 +47,14 @@ namespace CatHome4.QQ.Tests
         /// <summary>在总账里找含关键词的首条消息——找不到返回空串。</summary>
         /// <param name="keyword">关键词</param>
         /// <returns>消息文本</returns>
+        /// <remarks>
+        /// 走 LogStore.Snapshot() 锁内快照——总账是共享可变 List（写入侧 `lock (LogStore.Sync)` 内 Add），
+        /// xUnit 类间并行下裸 foreach 会撞「集合已修改」（2026-10-14 实测：prepare 步 2b 偶发红）。
+        /// </remarks>
         private static string FindLog(string keyword)
         {
-            foreach (LogStore.LogEntry e in LogStore.AllLog)
+            List<LogStore.LogEntry> snapshot = LogStore.Snapshot();
+            foreach (LogStore.LogEntry e in snapshot)
             {
                 if (e.Message.Contains(keyword))
                 {

@@ -75,7 +75,7 @@ var STATE_DECL = [
     },
     {
         id: 'pet', name: '桌宠同步', owner: 'fx',
-        fields: ['runState'],
+        fields: ['runState', 'pet'],
         output: '#chatPet 动画（fx/pet——外观层派生，契约 §12.8 登记行）',
         apply: 'chatPetSync'
     }

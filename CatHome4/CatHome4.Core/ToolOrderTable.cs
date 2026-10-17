@@ -49,10 +49,11 @@ namespace CH4
             "cs-check", "cs-list", "cs-read", "cs-find_ref", "cs-find", "cs-dead", "cs-comment_check",
             "mau-verify",
             "config-list", "config-get", "config-cat-get",
-            "web-search", "image-analyze",
+            "web-search", "web-ds-search", "image-analyze",
             "temp-info",
             "browser-open", "browser-read", "browser-shot",
             "majordomo-catinfo",
+            "py-list",
             "host-flows", "info", "time", "random", "pack", "Note"
         };
 
@@ -64,7 +65,8 @@ namespace CH4
             "config-set", "config-reset", "config-cat-set",
             "image-inject",
             "browser-eval", "browser-tabs",
-            "web-fetch", "web-fetch-jobs"
+            "web-fetch", "web-fetch-jobs",
+            "audio-play"
         };
 
         /// <summary>
@@ -83,6 +85,7 @@ namespace CH4
             "powershell", "powershell7",
             "mau-gen", "mau-proj", "host-reload", "mau-setup",
             "restart-full", "restart-incr", "restart-host", "majordomo-cmd",
+            "py-run", "py-service", "audio-speak",
             "temp-exec"
         };
 

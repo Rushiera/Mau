@@ -1,0 +1,14 @@
+敲头		after-idle-check  
+礼物1	before-idle  
+惊吓		before-idle-hook  
+工作疲	before-idle-sleep
+工作普	loop-idle
+害怕2	loop-idle-hook
+工作睡	loop-idle-sleep
+思考认	loop-link
+扩音器	loop-reply
+打字气	loop-run 
+加载中	loop-sseErr
+记录1	loop-think
+打字怒	loop-tool
+都好6	loop-wait

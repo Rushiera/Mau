@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Mau.Runtime;
+using Mau.Contracts;
 using CatHome4.Contracts;
 
 namespace CH4
@@ -192,7 +195,7 @@ namespace CH4
         private string _llmReasoning;
         /// <summary>
         /// 本块思考用时累计毫秒——think 态内部实现（进入 think 态开表、离开即结算，不跨态；重试退避等非 think 段不计入）。
-        /// 单块生命周期：推入 view.json 时由 TakeReasonDuration 取走并归零（不跨轮 / 不跨块残留）。
+        /// 单块生命周期：推入视图层时由 TakeReasonDuration 取走并归零（不跨轮 / 不跨块残留）。
         /// </summary>
         private long _reasonDurMs;
 
@@ -382,8 +385,10 @@ namespace CH4
         private long _pendingSeq;
         /// <summary>人工输入空闲注入开关——true=人工输入仅在 Idle 时推送（轮内不插）；sys 不受影响（cat.cfg userInjectIdleOnly）</summary>
         private bool _userInjectIdleOnly;
-        /// <summary>轮末总结开关——cat.cfg roundSummary（默认关）；关则轮末零成本跳过</summary>
+        /// <summary>轮末总结开关——值源=外观配置池条目字段（A244 迁入；无生效外观=关）；关则轮末零成本跳过</summary>
         private bool _roundSummaryEnabled;
+        /// <summary>桌宠种类——值源=外观配置池条目字段（A245/A251；空 = 无桌宠，前端按空值渲染不显示）</summary>
+        private string _petKind = "";
         /// <summary>本轮 user 文本缓冲——轮末总结输入（全部 user 按序合并）。</summary>
         private readonly StringBuilder _roundSummaryUserBuf = new StringBuilder();
         /// <summary>本轮 text 缓冲——轮末总结输入（全部 text 按序合并）。</summary>
@@ -451,11 +456,17 @@ namespace CH4
             _userInjectIdleOnly = value;
         }
 
-        /// <summary>设置轮末总结开关——catcfg.apply 即时应用（cat.cfg roundSummary）。</summary>
+        /// <summary>设置轮末总结开关——catcfg.apply 即时应用（A244 起值源=外观配置池条目）。</summary>
         /// <param name="value">true=每轮结束后调度 LLMSimpleRequest 产出总结块</param>
         public void SetRoundSummary(bool value)
         {
             _roundSummaryEnabled = value;
+        }
+        /// <summary>设置桌宠种类——catcfg.apply 即时应用（A245 起值源=外观配置池条目字段）。</summary>
+        /// <param name="kind">素材名（空 = 无桌宠不显示，由前端按空值处理）</param>
+        public void SetPetKind(string kind)
+        {
+            _petKind = kind == null ? "" : kind;
         }
 
         /// <summary>
@@ -588,6 +599,12 @@ namespace CH4
             string payload = "{\"state\":\"failover\",\"role\":" + JsonUtil.Serialize(role) + ",\"text\":" + JsonUtil.Serialize(reason) + "}";
             _viewStore.AppendRetry(payload, ViewTimestamp());
         }
+
+        /// <summary>
+        /// 轮末总结播报提供者——catKey → [启用标志（"1"/"0"）, 音色槽位值]（Admin 域按外观池条目解析；宿主启动期组合根注入）。
+        /// 未接线 / 启用标志非 "1" → 不出声（不静默放行、不误报成功）。
+        /// </summary>
+        internal static Func<string, string[]> SummaryAudioProvider;
 
         /// <summary>
         /// 缓存隔离键——LLM 请求身份（请求体 user_id + x-opencode-session 头）。
@@ -1050,13 +1067,12 @@ namespace CH4
         }
 
         /// <summary>
-        /// 设置注入报告——session.new 后调用（持久化进视图：内存设置 + view.json 落盘；独立字段 Rebuild 不清）。
+        /// 设置注入报告——session.new 后调用（视图层普通块：建条即 append 落盘；覆写语义——同型旧块替换）。
         /// </summary>
         /// <param name="json">注入报告 JSON（BuildInjectReportJson 产物）</param>
         public void SetInjectReport(string json)
         {
             _viewStore.SetInjectReport(json);
-            _viewStore.Save();
         }
 
         /// <summary>内存视图块——按生成序（history 数据源；F4 视图持久化）</summary>
@@ -1611,16 +1627,22 @@ namespace CH4
         /// </summary>
         public void Pump()
         {
+            // A254 会话内部分段埋点——cs.* 段进 LoopTiming（与主循环段同表展示在资源页签）
+            long segTicks = Stopwatch.GetTimestamp();
             // RoundSummary——在途总结工单回收（每帧；无在途零成本返回）
             PumpRoundSummary();
+            LoopTiming.Accumulate("cs.summary", ElapsedMsSince(segTicks));
             // P6 中止——暂停请求消费（任何相位统一收尾：LLM 流取消/工具批放弃/已完成保留）
             if (_pauseRequested)
             {
+                segTicks = Stopwatch.GetTimestamp();
                 PauseFinalize();
+                LoopTiming.Accumulate("cs.pause", ElapsedMsSince(segTicks));
                 return;
             }
             if (_phase == ChatPhase.Idle)
             {
+                segTicks = Stopwatch.GetTimestamp();
                 // A72——停机态丢弃在途排队消息（宿主即将重启，不再开新轮）
                 DropPendingIfRestarting();
                 // 继续——HTTP 线程置位、主线程消费（与 Pause / SessionNewRequested 同模式）：Idle 才启动继续轮
@@ -1630,6 +1652,7 @@ namespace CH4
                     if (IsHostRestarting())
                     {
                         LogStore.Add("CatHome4", 2, "宿主重启中——继续请求未受理", "RESTART");
+                        LoopTiming.Accumulate("cs.idle", ElapsedMsSince(segTicks));
                         return;
                     }
                     // sleep 作废——继续属「非 sleep 输入」（与常规轮同口径）
@@ -1637,6 +1660,7 @@ namespace CH4
                     // 请求前巡检——重建先于请求构造（前文丢头时本次请求即用重建结果）
                     PatrolContext(false);
                     StartContinueRound();
+                    LoopTiming.Accumulate("cs.idle", ElapsedMsSince(segTicks));
                     return;
                 }
                 // 端点切换自动继续——延迟到点后置继续请求（下一帧走上方 continue 分支；有排队消息时让位用户输入）
@@ -1656,24 +1680,40 @@ namespace CH4
                     // 轮首取尽——本帧排队条目全部落前文（FIFO）后启一轮；sleep 作废告知置最前
                     StartRoundFromPending();
                 }
+                LoopTiming.Accumulate("cs.idle", ElapsedMsSince(segTicks));
                 return;
             }
             // 非空闲巡检——每 60 秒一次；本帧相位推进之前完成重建（后续请求自动放行）
             PatrolContext(true);
             if (_phase == ChatPhase.LlmRunning)
             {
+                segTicks = Stopwatch.GetTimestamp();
                 PumpLlm();
+                LoopTiming.Accumulate("cs.llm", ElapsedMsSince(segTicks));
                 return;
             }
             if (_phase == ChatPhase.ToolBatchRunning)
             {
+                segTicks = Stopwatch.GetTimestamp();
                 PumpToolBatch();
+                LoopTiming.Accumulate("cs.tool", ElapsedMsSince(segTicks));
                 return;
             }
             if (_phase == ChatPhase.Done)
             {
+                segTicks = Stopwatch.GetTimestamp();
                 CloseRound();
+                LoopTiming.Accumulate("cs.close", ElapsedMsSince(segTicks));
             }
+        }
+        /// <summary>
+        /// 读自指定时刻起的毫秒差——会话内部分段埋点用（A254）。
+        /// </summary>
+        /// <param name="startTicks">起始 Stopwatch 时间戳</param>
+        /// <returns>毫秒数</returns>
+        private static double ElapsedMsSince(long startTicks)
+        {
+            return (Stopwatch.GetTimestamp() - startTicks) * 1000.0 / Stopwatch.Frequency;
         }
         /// <summary>
         /// 轮首计数与相位复位——StartRoundFromPending 与 StartContinueRound 共用（统计清零 + 进入 link 相位；消息追加由各自承担）。
@@ -2185,7 +2225,7 @@ namespace CH4
             }
         }
         /// <summary>
-        /// 取走本块思考用时——推入 view.json 的时刻调用（取走即归零：计时生命周期止于落到视图层，不残留跨块）。
+        /// 取走本块思考用时——推入视图层的时刻调用（取走即归零：计时生命周期止于落到视图层，不残留跨块）。
         /// </summary>
         /// <returns>本块思考用时毫秒（0 = 无思考段或已取走）</returns>
         private long TakeReasonDuration()
@@ -2426,7 +2466,8 @@ namespace CH4
                 ("pending", JsonUtil.Raw(pendingJson)),
                 ("conn", JsonUtil.Raw(JsonUtil.Object(("server", IsHostRestarting() ? "stopping" : "ok"), ("clients", clients)))),
                 ("tokens", JsonUtil.Raw(tokensJson)),
-                ("meta", JsonUtil.Raw(metaJson)));
+                ("meta", JsonUtil.Raw(metaJson)),
+                ("pet", JsonUtil.Raw(JsonUtil.Object(("kind", _petKind)))));
         }
         /// <summary>状态段推送——状态变化即推（视图出口整段比对去重；未 Attach 时静默）</summary>
         public void PushState()
@@ -2605,9 +2646,13 @@ namespace CH4
                     return;
                 }
                 // 纯文本回复——本轮完成
+                long textTicks = Stopwatch.GetTimestamp();
                 AppendMessage(_context.AddAssistantMessage(_llmResultText));
+                LoopTiming.Accumulate("cs.done.append", ElapsedMsSince(textTicks));
                 NoteTimebackEvent();
+                textTicks = Stopwatch.GetTimestamp();
                 _viewStore.OnAssistantText(LastMessage(), _context.GetMessageCount() - 1, TakeReasonDuration());
+                LoopTiming.Accumulate("cs.done.view", ElapsedMsSince(textTicks));
                 // A196 临时区——本轮收尾写空态（内容已由持久区承载）
                 _viewBus.SetLive("empty", "");
                 // 单向数据流改造——忙时插话：本轮结束有排队消息 → 插入 Ctx + 直接开新轮（跳过 Done/CloseRound）
@@ -2623,9 +2668,13 @@ namespace CH4
                 return;
             }
             // StartToolBatch 动作段——assistant tool_calls 入上下文 + chat_state=tools + 发单
+            long doneTicks = Stopwatch.GetTimestamp();
             AppendMessage(_context.AddAssistantToolCalls(_llmToolCallsJson, _llmReasoning));
+            LoopTiming.Accumulate("cs.done.append", ElapsedMsSince(doneTicks));
             NoteTimebackEvent();
+            doneTicks = Stopwatch.GetTimestamp();
             _viewStore.OnAssistantToolCalls(LastMessage(), _context.GetMessageCount() - 1, TakeReasonDuration());
+            LoopTiming.Accumulate("cs.done.view", ElapsedMsSince(doneTicks));
             // 思考段整块——由 SealReasonStream 在离开 think 态时统一推送（工具决策流首帧即收口；唯一出口，莎 2026-09-22 定）
             // 工具轮 seal——视图层补 gap text 块（全量外观真源：前端历史/QQBot 转发消费）+ SSE 推送（实时）；空文本不推
             if (_llmResultText.Length > 0)
@@ -2640,9 +2689,11 @@ namespace CH4
             // 运行态——发单即执行态（本地·程序过程：工具批到下一请求发出；长度由本地决定）
             PhaseEnter(PhaseRun);
             SetChatState("tools");
+            long toolsTicks = Stopwatch.GetTimestamp();
             EnterToolBatch(_llmToolCallsJson);
             // A196 临时区——工具运行态：未完成工具卡数组入 context（派发即写；单个完成即减；全清后由收尾点写 empty）
             RefreshToolLive();
+            LoopTiming.Accumulate("cs.done.tools", ElapsedMsSince(toolsTicks));
         }
         /// <summary>
         /// 工具调用条目——tool_calls JSON 解析产物（先行推卡消费；字段与 OpenAI wire 对齐）。
@@ -3276,7 +3327,7 @@ namespace CH4
         private void CloseRound()
         {
             // A202 落盘时机——元数据面只在每次 API 请求结算后落盘（usage 处置点）；
-            // 轮末与 Note 拉起轮均为纯内存行为：轮末只写 view.json（roundsum 块），元数据面不写
+            // 轮末与 Note 拉起轮均为纯内存行为：轮末只写视图层 roundsum 块（A248 起每块即时落盘——轮末无额外落盘动作），元数据面不写
             // A229 timeback 未闭合自动拉起——优先于 Note（莎 2026-10-12 定）：域未回收 = 本轮未结束，同样不 roundsum；
             // 上限 3 次防无限空转（模型不回收时出声后放行本轮结束）
             if (TimebackActive)
@@ -3286,7 +3337,6 @@ namespace CH4
                     _timebackPullCount = _timebackPullCount + 1;
                     PhaseSettle();
                     PostSystemMessage(SysKindSystemAuto, "先回收timeback域再结束工作");
-                    _viewStore.Save();
                     _round = 0;
                     _phase = ChatPhase.Idle;
                     return;
@@ -3309,7 +3359,6 @@ namespace CH4
                 // 运行态——Note 拉起轮同样结算（本轮统计留档——design-ch4-llm §2.1 终止语义）
                 PhaseSettle();
                 PostSystemMessage(SysKindSystemAuto, "[Note 未完成] 剩余 " + remain + " 条\n当前任务：" + _noteTasks[_noteCurrent]);
-                _viewStore.Save();
                 _round = 0;
                 _phase = ChatPhase.Idle;
                 return;
@@ -3449,6 +3498,11 @@ namespace CH4
             }
             long ts = _roundSummaryPendingTs > 0 ? _roundSummaryPendingTs : ViewTimestamp();
             _viewStore.AppendRoundSummaryNote(result, ts);
+            // A247——总结自动出声（外观配置启用时；失败记 Log、不影响轮次）
+            if (!result.StartsWith("ERR|", StringComparison.Ordinal))
+            {
+                SpeakRoundSummary(result);
+            }
         }
 
         /// <summary>
@@ -3572,6 +3626,135 @@ namespace CH4
                 return text;
             }
             return text.Substring(0, max) + "...";
+        }
+        /// <summary>
+        /// RoundSummary——总结文本自动出声：外观配置启用时后台合成并播放（不阻塞主线程；失败记 Log、不影响轮次）。
+        /// </summary>
+        /// <param name="text">总结文本（非 ERR| 的正常总结）</param>
+        private void SpeakRoundSummary(string text)
+        {
+            Func<string, string[]> provider = SummaryAudioProvider;
+            if (provider == null || text.Length == 0)
+            {
+                return;
+            }
+            string catKey = _catKey;
+            string[] cfg = provider(catKey);
+            if (cfg == null || cfg.Length < 2 || !string.Equals(cfg[0], "1", StringComparison.Ordinal))
+            {
+                return;
+            }
+            string voice = cfg[1] == null ? "" : cfg[1];
+            Task.Run(delegate ()
+            {
+                try
+                {
+                    RunSummarySpeak(catKey, voice, text);
+                }
+                catch (Exception ex)
+                {
+                    LogStore.Add("CatHome4", 3, "轮末总结播报异常: " + ex.Message, "CHAT");
+                }
+            });
+        }
+        /// <summary>
+        /// 总结播报执行体（后台线程）——合成 WAV 后入队播放；全程失败可见（Log），不影响轮次。
+        /// </summary>
+        /// <param name="catKey">猫 key（播放串行分组键）</param>
+        /// <param name="voice">音色槽位值（空 = 服务默认音色）</param>
+        /// <param name="text">待合成文本</param>
+        private static void RunSummarySpeak(string catKey, string voice, string text)
+        {
+            IPyService py = null;
+            if (!DataBox.TryResolve<IPyService>(out py) || py == null)
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结播报跳过——IPyService 未注入", "CHAT");
+                return;
+            }
+            string outPath = BuildSummaryAudioPath();
+            if (outPath.Length == 0)
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结播报跳过——产物目录未配置（py.service.kokoro.out_dir）", "CHAT");
+                return;
+            }
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["id"] = "summary";
+            payload["op"] = "speak";
+            payload["text"] = text;
+            if (voice.Length > 0)
+            {
+                payload["voice"] = voice;
+            }
+            payload["speed"] = 1.0;
+            payload["out"] = outPath;
+            string invokeArgs = JsonUtil.Object(("name", "kokoro"), ("payload", JsonUtil.Serialize(payload)));
+            string reply = py.Invoke(invokeArgs);
+            if (reply == null || reply.Length == 0 || reply.StartsWith("ERR|", StringComparison.Ordinal))
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结合成失败: " + (reply == null ? "(无回执)" : reply), "CHAT");
+                return;
+            }
+            string produced = outPath;
+            JsonDocument doc = JsonUtil.Parse(reply, "summary-speak");
+            if (doc == null)
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结合成回执不可解析: " + reply, "CHAT");
+                return;
+            }
+            try
+            {
+                JsonElement root = doc.RootElement;
+                if (!JsonUtil.GetBool(root, "ok", false))
+                {
+                    LogStore.Add("CatHome4", 2, "轮末总结合成失败: " + reply, "CHAT");
+                    return;
+                }
+                produced = JsonUtil.GetStr(root, "out", outPath);
+            }
+            finally
+            {
+                doc.Dispose();
+            }
+            IAudioService audio = null;
+            if (!DataBox.TryResolve<IAudioService>(out audio) || audio == null)
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结播报跳过——IAudioService 未注入", "CHAT");
+                return;
+            }
+            string enqueue = audio.Enqueue(catKey, produced, -1f);
+            if (enqueue != null && enqueue.Length > 0)
+            {
+                LogStore.Add("CatHome4", 2, "轮末总结播放入队失败: " + enqueue, "CHAT");
+            }
+        }
+        /// <summary>
+        /// 总结播报产物路径——配置 py.service.kokoro.out_dir 下按时间戳命名（未配置返回空串，不猜目录）。
+        /// </summary>
+        /// <returns>WAV 全路径；未配置空串</returns>
+        private static string BuildSummaryAudioPath()
+        {
+            ConfigStore cfg = null;
+            string dir = "";
+            if (DataBox.TryResolve<ConfigStore>(out cfg) && cfg != null)
+            {
+                dir = cfg.Get("py.service.kokoro.out_dir", "");
+            }
+            if (dir.Length == 0)
+            {
+                return "";
+            }
+            try
+            {
+                if (!System.IO.Directory.Exists(dir))
+                {
+                    System.IO.Directory.CreateDirectory(dir);
+                }
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+            return System.IO.Path.Combine(dir, "summary_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".wav");
         }
     }
 }

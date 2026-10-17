@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Mau\Mau.Runtime\Mau.Runtime.csproj" />
+    <ProjectReference Include="..\..\Mau\Mau.Contracts\Mau.Contracts.csproj" />
     <ProjectReference Include="..\CatHome4.Contracts\CatHome4.Contracts.csproj" />
   </ItemGroup>
 

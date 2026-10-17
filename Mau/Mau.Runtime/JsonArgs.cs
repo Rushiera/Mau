@@ -102,6 +102,11 @@ namespace Mau.Runtime
             }
             using (doc)
             {
+                if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    // 载荷非对象（null / 数组 / 标量）——视同无参数（不抛 InvalidOperationException）
+                    return "";
+                }
                 if (doc.RootElement.TryGetProperty(key, out JsonElement el))
                 {
                     if (el.ValueKind == JsonValueKind.String)

@@ -7,7 +7,8 @@ namespace Mau.Runtime
 {
     /// <summary>
     /// 工作区配置——workspace.json 解析（受控根 + 注入清单）。design-ch4-workspace §三/§五——Mau 基座标准能力。
-    /// 语义：工作区文件缺失 / roots 为空 = 默认单根 runtime 兜底（全局白名单语义——空=未配置白名单）；文件存在但 JSON 损坏 / 根不存在 → 显式失败（不静默降级到裸根）。
+    /// 语义：工作区文件缺失 / roots 为空 = 默认单根 runtime 兜底（全局白名单语义——空=未配置白名单）；文件存在但 JSON 损坏 → 显式失败；
+    /// 根不可达分级：常驻根（workspace/runtime）硬失败，其余根跳过 + LoadWarnings 告警（宿主可启动改配置，工具面按缺失根出声）。
     /// </summary>
     public sealed class WorkspaceConfig
     {
@@ -73,6 +74,11 @@ namespace Mau.Runtime
         /// </summary>
         public InjectEntry[] Inject = new InjectEntry[0];
 
+        /// <summary>
+        /// 加载告警——不可达的非常驻根（跳过不注册；宿主启动后落 WORKSPACE 审计，不静默）
+        /// </summary>
+        public List<string> LoadWarnings = new List<string>();
+
         // [段1] 加载
         /// <summary>
         /// 从 workspace.json 加载——文件缺失或 roots 为空返回默认配置（单根 defaultRoot 可写 + 空注入）；存在则解析，损坏/根不存在抛异常
@@ -115,7 +121,14 @@ namespace Mau.Runtime
                         string norm = NormalizeRoot(raw);
                         if (!Directory.Exists(norm))
                         {
-                            throw new InvalidDataException("workspace root 不存在: " + norm);
+                            // 分级容错：常驻根（workspace / 旧 runtime）不可达 → 硬失败（数据面不可用，启动无意义）；
+                            // 其余根不可达 → 跳过 + 告警（宿主照常启动，管理员可进面板修正路径——工具面按 ROOT_UNKNOWN 出声，不静默）
+                            if (string.Equals(id, "workspace", StringComparison.OrdinalIgnoreCase) || string.Equals(id, "runtime", StringComparison.OrdinalIgnoreCase))
+                            {
+                                throw new InvalidDataException("workspace root 不存在: " + norm);
+                            }
+                            cfg.LoadWarnings.Add("根不可达已跳过: " + id + " → " + norm);
+                            continue;
                         }
                         string note = GetProp(item, "note");
                         roots.Add(new RootEntry() { Id = id, Path = norm, Writable = writable, Note = TruncateNote(note) });
@@ -205,21 +218,13 @@ namespace Mau.Runtime
         public string ResolveInjectFile(InjectEntry entry)
         {
             string file = entry.File;
-            int sep = file.IndexOf(':');
-            if (sep > 0)
+            // A257——复用公共服务展开段（点一·不判归属：清单是管理员静态动作，允许纯路径直用）
+            RootResolveResult rr = RootPathResolver.Expand(file, Roots, Environment.CurrentDirectory);
+            if (!rr.Ok)
             {
-                string id = file.Substring(0, sep);
-                string rel = file.Substring(sep + 1);
-                for (int i = 0; i < Roots.Length; i++)
-                {
-                    if (string.Equals(Roots[i].Id, id, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return Path.GetFullPath(Path.Combine(Roots[i].Path, rel));
-                    }
-                }
-                throw new InvalidDataException("注入清单引用了未知根: " + id);
+                throw new InvalidDataException("注入清单寻址非法: " + rr.ErrorCode + " | " + rr.Message);
             }
-            return Path.GetFullPath(file);
+            return rr.FullPath;
         }
 
         /// <summary>

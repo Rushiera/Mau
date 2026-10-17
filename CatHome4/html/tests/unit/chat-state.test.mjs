@@ -2,7 +2,7 @@
 // tests/unit/chat-state.test.mjs —— state 段投影回归网（A193）
 //
 // 覆盖组 3 判据（design-ch4-frontend-purify §三 组 3）：
-//   ① 分发表为唯一映射处——字段面覆盖契约 §12.2 ① 八字段 · 表行形态完整 · 入口全可解析
+//   ① 分发表为唯一映射处——字段面覆盖契约 §12.2 ① 十一字段 · 表行形态完整 · 入口全可解析
 //   ② 分发——按表逐行调用（顺序 = 表序）
 //   ③ 失败可见——入口缺失出声 + 其余照常 · 单件异常隔离
 //   ④ state.js 退化为薄层——整段覆盖（缺省字段回落默认）+ 字段面完整
@@ -15,10 +15,10 @@
 import { beforeAll, afterEach, describe, expect, it } from 'vitest';
 import { bootChatPage } from './chat-env.mjs';
 
-/// 契约 §12.2 ① 字段面（后端 `ChatSession.BuildStateJson` 十字段）
+/// 契约 §12.2 ① 字段面（后端 `ChatSession.BuildStateJson` 十一字段）
 /// 判据：表内 fields 并集须**覆盖**本清单（每字段至少一件声明消费）——`sessionId`（猫 key）当前
 ///       无显示位（会话标识显示走 `meta`，A201）
-const STATE_FIELDS = ['sessionId', 'runState', 'runMs', 'requests', 'note', 'delay', 'pending', 'conn', 'tokens', 'meta'];
+const STATE_FIELDS = ['sessionId', 'runState', 'runMs', 'requests', 'note', 'delay', 'pending', 'conn', 'tokens', 'meta', 'pet'];
 
 /// 字段面派生——分发表各行 `fields` 的并集（与产品侧同口径：表是唯一声明处）
 function fieldKeys(rows) {

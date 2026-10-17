@@ -178,6 +178,16 @@ namespace CatHome4.Observe
         /// <returns>快照 JSON 文本</returns>
         internal static string BuildSnapshotJson(bool includeLogs)
         {
+            // [段0] 帧级缓存——同帧同参数直接复用（主端口 + majordomo + 各猫 host 各调一次 PumpMainThread，
+            // 数据源是同一份全局快照 → 不缓存即 N 倍冗余构建；2026-10-16 A254 主循环耗时定位）
+            long cacheFrameNow = FlowRunner.GlobalFrame;
+            lock (_snapshotCacheGate)
+            {
+                if (_snapshotCacheFrame == cacheFrameNow && _snapshotCacheLogs == includeLogs && _snapshotCacheJson.Length > 0)
+                {
+                    return _snapshotCacheJson;
+                }
+            }
             List<object> cats = new List<object>();
             AppendRegistryCats(cats);
             OAView oa = _oa.GetSnapshot();
@@ -198,19 +208,11 @@ namespace CatHome4.Observe
             if (includeLogs)
             {
                 List<object> logList = new List<object>();
-                List<LogStore.LogEntry> all = LogStore.AllLog;
-                lock (LogStore.Sync)
+                List<LogStore.LogEntry> all = LogStore.Snapshot(50);
+                for (int i = 0; i < all.Count; i++)
                 {
-                    int start = all.Count - 50;
-                    if (start < 0)
-                    {
-                        start = 0;
-                    }
-                    for (int i = start; i < all.Count; i++)
-                    {
-                        LogStore.LogEntry entry = all[i];
-                        logList.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, message = entry.Message });
-                    }
+                    LogStore.LogEntry entry = all[i];
+                    logList.Add(new { time = entry.Time, frame = entry.Frame, level = LogStore.LevelText(entry.Level), category = entry.Category, module = entry.Module, message = entry.Message });
                 }
                 logs = logList;
             }
@@ -235,9 +237,42 @@ namespace CatHome4.Observe
                 },
                 tools = BuildToolsJson(),
                 boxes = boxes,
+                deps = BuildDepsJson(out _),
+                res = ResProbe.Capture(),
                 logs = logs
             };
-            return JsonUtil.Serialize(snapshot);
+            string snapshotJson = JsonUtil.Serialize(snapshot);
+            // 写回帧级缓存（构建过程不持锁——并发最坏重复构建一次，无害）
+            lock (_snapshotCacheGate)
+            {
+                _snapshotCacheFrame = cacheFrameNow;
+                _snapshotCacheLogs = includeLogs;
+                _snapshotCacheJson = snapshotJson;
+            }
+            return snapshotJson;
+        }
+
+        /// <summary>
+        /// deps 段——外部依赖探测结果（A253；DependencyProbe 后端统一快照 · D1）。
+        /// 主线程调用：EnsureFresh（采集配置类 + 触发后台 IO）→ 取当前快照。
+        /// stableJson = 「去时刻」稳定视图（patch 对比用——probedAt 每轮变化，混入 diff 面即每帧误推）。
+        /// </summary>
+        /// <param name="stableJson">稳定视图 JSON（不含 probedAt；对比面）</param>
+        /// <returns>条目数组（含 probedAt——全量快照面）</returns>
+        private static List<object> BuildDepsJson(out string stableJson)
+        {
+            DependencyProbe.EnsureFresh();
+            DependencyProbe.ProbeResult[] results = DependencyProbe.Snapshot();
+            List<object> deps = new List<object>();
+            List<object> stable = new List<object>();
+            for (int i = 0; i < results.Length; i++)
+            {
+                DependencyProbe.ProbeResult r = results[i];
+                deps.Add(new { level = r.Level, name = r.Name, state = r.State, detail = r.Detail, probedAt = r.ProbedAtMs });
+                stable.Add(new { level = r.Level, name = r.Name, state = r.State, detail = r.Detail });
+            }
+            stableJson = JsonUtil.Serialize(stable);
+            return deps;
         }
 
         /// <summary>
@@ -328,6 +363,27 @@ namespace CatHome4.Observe
         /// <summary>上次 sessions 段 JSON——变化检测（会话四相环预览）</summary>
         private static string _lastSessionsJson = "";
 
+        /// <summary>上次 deps 段稳定视图 JSON——变化检测（依赖探测；probedAt 不入对比面）</summary>
+        private static string _lastDepsJson = "";
+
+        /// <summary>快照 JSON 帧级缓存锁——多 host 主线程泵 + HTTP 线程 GET 快照并发访问</summary>
+        private static readonly object _snapshotCacheGate = new object();
+
+        /// <summary>快照缓存——命中帧号（-1 = 无缓存）</summary>
+        private static long _snapshotCacheFrame = -1;
+
+        /// <summary>快照缓存——是否含日志维（缓存键第二维）</summary>
+        private static bool _snapshotCacheLogs;
+
+        /// <summary>快照缓存——JSON 文本</summary>
+        private static string _snapshotCacheJson = "";
+
+        /// <summary>res 段推送节拍毫秒——固定刷新参（A254 资源占用：每秒一带，不参与内容比对）</summary>
+        private const int ResIntervalMs = 1000;
+
+        /// <summary>上次 res 段推送时刻（Environment.TickCount64；0 = 未推——首帧即带）</summary>
+        private static long _lastResPushMs;
+
         /// <summary>上次 boxes 字典——scope+key → 条目 JSON（变化检测）</summary>
         private static Dictionary<string, string> _lastBoxes = new Dictionary<string, string>();
 
@@ -347,6 +403,19 @@ namespace CatHome4.Observe
             List<object> sessions = BuildSessionsJson();
             string sessionsJson = JsonUtil.Serialize(sessions);
             bool sessionsChanged = !string.Equals(sessionsJson, _lastSessionsJson, StringComparison.Ordinal);
+            // [段1c] deps 段——稳定视图对比（A253 依赖探测；probedAt 不进对比面——观测元数据混入 diff 即每帧误推）
+            string depsStableJson = "";
+            List<object> deps = BuildDepsJson(out depsStableJson);
+            bool depsChanged = !string.Equals(depsStableJson, _lastDepsJson, StringComparison.Ordinal);
+            // [段1d] res 段——资源占用（A254）：固定刷新参（1 秒节拍强制带——内存数字每秒都在变，
+            // 不参与内容比对；到点即带，从而打破 Idle 稳态的零推送静默）
+            long resNow = Environment.TickCount64;
+            bool resDue = resNow - _lastResPushMs >= ResIntervalMs;
+            object resObj = null;
+            if (resDue)
+            {
+                resObj = ResProbe.Capture();
+            }
             // [段2] oa 段——四计数对比
             OAView oa = _oa.GetSnapshot();
             object oaObj = new
@@ -391,7 +460,7 @@ namespace CatHome4.Observe
             }
             bool boxesChanged = boxSet.Count > 0 || boxDel.Count > 0;
             // [段4] 无变化零推送——Idle 稳态静默
-            if (!catsChanged && !sessionsChanged && !oaChanged && !boxesChanged)
+            if (!catsChanged && !sessionsChanged && !oaChanged && !boxesChanged && !depsChanged && !resDue)
             {
                 return null;
             }
@@ -407,6 +476,16 @@ namespace CatHome4.Observe
             {
                 patch["sessions"] = sessions;
                 _lastSessionsJson = sessionsJson;
+            }
+            if (depsChanged)
+            {
+                patch["deps"] = deps;
+                _lastDepsJson = depsStableJson;
+            }
+            if (resDue)
+            {
+                patch["res"] = resObj;
+                _lastResPushMs = resNow;
             }
             if (oaChanged)
             {

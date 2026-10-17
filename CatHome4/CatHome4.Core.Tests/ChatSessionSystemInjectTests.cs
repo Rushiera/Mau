@@ -57,7 +57,7 @@ namespace CatHome4.Core.Tests
             SessionStore store = new SessionStore(tmp);
             OA oa = new OA(new ThreadGuard());
             ToolSpec[] tools = new ToolSpec[] { new ToolSpec("Note", "Note 任务追踪", "{}") };
-            viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4sysinj_" + Guid.NewGuid().ToString("N") + ".view.json"));
+            viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4sysinj_" + Guid.NewGuid().ToString("N") + ".view.jsonl"));
             return new CH4.ChatSession("test-session", "test", ctx, store, llm, oa, tools, delegate (string name, string args) { return "ERR|NO_TOOL|" + name; }, viewStore);
         }
 

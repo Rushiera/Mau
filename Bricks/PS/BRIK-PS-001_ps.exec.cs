@@ -111,14 +111,14 @@ namespace Mau.Bricks
                         return "ERR|PS_READ_FILE_FORBIDDEN|命令含文件读取语义（" + readApis[i] + "）——文件内容读取请走 text-* 工具（text-read / text-read_between / text-read_lines）";
                     }
                 }
-                // [段3c] 目录列举语义——列目录一律走 file-tree（按文件名查找走 file-find）；git 豁免同族（路径文本防误伤）
+                // [段3c] 目录列举语义——段首命令位判定（参数名 / 参数值 / 路径中的同形词不误伤，如 --out-dir / \dir\ / $dir；判例 2026-10-15 A255）；列目录一律走 file-tree（按文件名查找走 file-find）；git 豁免同族（路径文本防误伤）
                 string[] listCmdlets = new string[]
                 {
                             "Get-ChildItem", "gci", "ls", "dir"
                 };
                 for (int i = 0; i < listCmdlets.Length; i = i + 1)
                 {
-                    if (ContainsWord(command, listCmdlets[i]))
+                    if (StartsWithWord(command.TrimStart(), listCmdlets[i]))
                     {
                         return ListForbidden(listCmdlets[i]);
                     }
@@ -517,4 +517,4 @@ namespace Mau.Bricks
         }
     }
 }
-// #MAU_CHECKSUM:SHA256:E1CC269BDBDE87417F6C1D9A2A531155BF5032F152B3FE860FDA4124E9F6413C
+// #MAU_CHECKSUM:SHA256:F7B4DB9D6BDC0F76B7307BB51D2A1682ACEA86F3672F15ACE454297B9BDFE066

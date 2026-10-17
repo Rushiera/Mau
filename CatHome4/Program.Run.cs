@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
@@ -7,6 +8,7 @@ using Mau.Runtime;
 using CatHome4.Admin;
 using CatHome4.QQ;
 using CatHome4.Observe;
+using CatHome4.Contracts;
 using Mau.Providers;
 
 namespace CH4
@@ -26,7 +28,7 @@ namespace CH4
             for (int i = 0; i < WarmupFrames; i = i + 1)
             {
                 _runner.Tick();
-                Thread.Sleep(FrameSleepMs);
+                Thread.Sleep(FrameTargetMs);
             }
             ObserveService.PrintStatus();
             Console.WriteLine("[CMD] 自检通过");
@@ -65,18 +67,33 @@ namespace CH4
             int autoStartPoll = 0;
             while (true)
             {
+                long loopStartTicks = Stopwatch.GetTimestamp();
+                LoopTiming.BeginFrame();
                 // [段1] 帧驱动——HTTP 快照推送主线程泵（ThreadGuard：快照构建须宿主主线程；空闲时也持续 Tick）
+                long segTicks = Stopwatch.GetTimestamp();
                 _runner.Tick();
+                LoopTiming.Accumulate("tick", ElapsedMsSince(segTicks));
+                segTicks = Stopwatch.GetTimestamp();
                 if (_httpHost != null)
                 {
                     _httpHost.PumpMainThread();
                 }
+                LoopTiming.Accumulate("http", ElapsedMsSince(segTicks));
+                segTicks = Stopwatch.GetTimestamp();
                 AdminService.PumpAllHosts();
+                LoopTiming.Accumulate("hosts", ElapsedMsSince(segTicks));
+                segTicks = Stopwatch.GetTimestamp();
                 _chatBridge.PumpSessions();
                 PumpChatQueue();
+                LoopTiming.Accumulate("sessions", ElapsedMsSince(segTicks));
+                segTicks = Stopwatch.GetTimestamp();
                 AdminService.PumpCatQueues();
+                LoopTiming.Accumulate("catqueue", ElapsedMsSince(segTicks));
+                segTicks = Stopwatch.GetTimestamp();
                 QQBotService.Tick();
+                LoopTiming.Accumulate("qqbot", ElapsedMsSince(segTicks));
                 // 宿主自更新——启动回执注入（一次性）+ 重启闸门（停机态 + 全局 Idle → 接力拉起）
+                segTicks = Stopwatch.GetTimestamp();
                 PumpMajordomoPush();
                 PumpHostRestart();
                 // [段1a] P1 托盘退出 + 自启轮询——退出走 break（Main finally 优雅收尾）；5s 粒度覆盖前端/config-* 写路径
@@ -90,11 +107,31 @@ namespace CH4
                     autoStartPoll = 0;
                     CheckAutoStartPoll();
                 }
+                LoopTiming.Accumulate("misc", ElapsedMsSince(segTicks));
                 // [段2] A118 起交互输入面退役——WinExe 无控制台（Console.KeyAvailable 会抛 InvalidOperationException）；
                 // 控制台指令（status / pid / reload / Chat / quit）不再由交互形态承载，仅 --script / --run 等非交互通道保留 ExecuteLine
-                Thread.Sleep(FrameSleepMs);
+                // [段2a] 主循环帧耗时采样（A254）——整帧工作实际耗时（不含节拍余量）+ 逐段分解，窗口统计供资源页签
+                double loopWorkMs = (Stopwatch.GetTimestamp() - loopStartTicks) * 1000.0 / Stopwatch.Frequency;
+                LoopTiming.EndFrame(loopWorkMs, FrameTargetMs);
+                // [段2b] 补足式节拍（2026-10-16）——睡「帧预算 − 本帧工作时长」的差额；工作已超预算则不睡
+                //（该帧即「超帧」——LoopTiming 计数；固定睡会被工作时长叠加成实际周期 work + 预算）
+                int loopSleepMs = FrameTargetMs - (int)loopWorkMs;
+                if (loopSleepMs > 0)
+                {
+                    Thread.Sleep(loopSleepMs);
+                }
             }
             return 0;
+        }
+
+        /// <summary>
+        /// 自起始时刻起的耗时（毫秒）——主循环分段计时用（帧内逐段工作量分解）。
+        /// </summary>
+        /// <param name="startTicks">起始 Stopwatch 时间戳</param>
+        /// <returns>耗时毫秒</returns>
+        private static double ElapsedMsSince(long startTicks)
+        {
+            return (Stopwatch.GetTimestamp() - startTicks) * 1000.0 / Stopwatch.Frequency;
         }
         /// <summary>
         /// Command 解析与投递——宿主做字符串值识别（语料面零值比较）；QuickCat 双参同帧投两个 key
@@ -310,7 +347,7 @@ namespace CH4
                 {
                     return;
                 }
-                Thread.Sleep(FrameSleepMs);
+                Thread.Sleep(FrameTargetMs);
             }
             Console.WriteLine("[CMD] 驱动帧上限 " + MaxFramesPerRun + " 到达——仍有未闭环活动");
         }
@@ -410,7 +447,7 @@ namespace CH4
                 for (long i = 0; i < frames; i = i + 1)
                 {
                     _runner.Tick();
-                    Thread.Sleep(FrameSleepMs);
+                    Thread.Sleep(FrameTargetMs);
                 }
 
                 return true;

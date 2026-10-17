@@ -68,7 +68,7 @@ function imgIsAbsolutePath(path) {
 }
 
 function imgIsRootAddress(path) {
-    // 受控根寻址判定——首个冒号在首个分隔符之前（Windows 盘符 C:\ 不算）；与宿主 IsRootAddress 同判据
+    // 受控根寻址判定——首个冒号在首个分隔符之前（Windows 盘符 C:\ 不算）；与宿主 RootPathResolver.IsRootAddress 同判据（A257 收口锁定——JS 不能引用程序集，判据须手工同步）
     var raw = String(path === undefined || path === null ? '' : path);
     var colon = raw.indexOf(':');
     if (colon <= 0) { return false; }

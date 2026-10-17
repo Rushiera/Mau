@@ -88,6 +88,8 @@ function applyPatch(p) {
     if (p.cats) { fullSnapshot.cats = p.cats; }
     if (p.sessions) { fullSnapshot.sessions = p.sessions; }
     if (p.oa) { fullSnapshot.oa = p.oa; }
+    if (p.deps) { fullSnapshot.deps = p.deps; }
+    if (p.res) { fullSnapshot.res = p.res; }
     if (p.boxes) {
         var map = {};
         var cur = fullSnapshot.boxes || [];
@@ -122,6 +124,8 @@ function applySnapshot(s) {
     renderTools(s.tools || []);
     oaEl.textContent = 'Open=' + s.oa.open + ' Work=' + s.oa.work + ' Closed=' + s.oa.closed + ' Timeout=' + s.oa.timeout;
     renderBoxes(s.boxes || []);
+    if (typeof renderDeps === 'function') { renderDeps(s.deps || []); }
+    if (typeof renderRes === 'function') { renderRes(s.res || null); }
     if (!rawPaused) {
         rawJsonEl.textContent = JSON.stringify(s, null, 2);
         rawInfoEl.textContent = 'frame=' + s.frame + ' · ' + s.cats.length + ' cats · ' + (s.boxes ? s.boxes.length : 0) + ' boxes';

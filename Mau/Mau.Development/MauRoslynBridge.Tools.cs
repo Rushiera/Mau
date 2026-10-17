@@ -504,7 +504,7 @@ namespace Mau.Development
             return true;
         }
 
-        /// <summary>dotnet test 摘要行识别——含通过 / 失败标记（中英双形态）。</summary>
+        /// <summary>dotnet test 摘要行识别——含通过 / 失败标记（中英双形态 · 「已通过!」与「失败!」两代文案）。</summary>
         /// <param name="line">输出行</param>
         /// <returns>true=摘要行</returns>
         private static bool IsTestSummaryLine(string line)
@@ -512,7 +512,9 @@ namespace Mau.Development
             return line.Contains("已通过!", StringComparison.Ordinal)
                 || line.Contains("已失败!", StringComparison.Ordinal)
                 || line.Contains("Passed!", StringComparison.Ordinal)
-                || line.Contains("Failed!", StringComparison.Ordinal);
+                || line.Contains("Failed!", StringComparison.Ordinal)
+                || line.Contains("通过!", StringComparison.Ordinal)
+                || line.Contains("失败!", StringComparison.Ordinal);
         }
 
         /// <summary>提取标记后的第一个数字（如「通过:  27」→ 27；提不到 -1）。</summary>
@@ -548,7 +550,7 @@ namespace Mau.Development
             return -1;
         }
 
-        /// <summary>dotnet test 噪声过滤——保留摘要行与失败 / 错误相关行（还原 / 编译产物行剥除；上限 30 行）。</summary>
+        /// <summary>dotnet test 噪声过滤——失败测试输出完整块（「失败 / 已失败 / Failed 」起至下一测试头行或摘要行 · 保原始行形 · 不限行）；其余行保留摘要 / 错误相关行（上限 30 行）。</summary>
         /// <param name="text">输出全文</param>
         /// <returns>降噪文本（无保留行时空串）</returns>
         private static string KeepTestNoise(string text)
@@ -556,15 +558,36 @@ namespace Mau.Development
             string[] lines = text.Replace("\r", "").Split('\n');
             StringBuilder sb = new StringBuilder();
             int kept = 0;
+            bool inBlock = false;
             for (int i = 0; i < lines.Length; i = i + 1)
             {
-                string line = lines[i].Trim();
+                string raw = lines[i];
+                string line = raw.Trim();
+                bool blockHead = line.StartsWith("失败 ", StringComparison.Ordinal)
+                    || line.StartsWith("已失败 ", StringComparison.Ordinal)
+                    || line.StartsWith("Failed ", StringComparison.Ordinal);
+                if (blockHead)
+                {
+                    inBlock = true;
+                    sb.Append(raw.TrimEnd());
+                    sb.Append(Environment.NewLine);
+                    continue;
+                }
+                if (inBlock)
+                {
+                    if (!IsTestSummaryLine(line))
+                    {
+                        sb.Append(raw.TrimEnd());
+                        sb.Append(Environment.NewLine);
+                        continue;
+                    }
+                    inBlock = false;
+                }
                 if (line.Length == 0)
                 {
                     continue;
                 }
-                bool keep = IsTestSummaryLine(lines[i])
-                    || line.Contains("已失败", StringComparison.Ordinal)
+                bool keep = IsTestSummaryLine(line)
                     || line.Contains("错误消息", StringComparison.Ordinal)
                     || line.Contains("Error Message", StringComparison.Ordinal)
                     || line.Contains("Assert.", StringComparison.Ordinal)

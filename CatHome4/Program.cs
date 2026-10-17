@@ -25,8 +25,17 @@ namespace CH4
     public static partial class Program
     {
         // [段1] LLM 桥常量——P4 配置项机制接管：llm.* 从 Data/config/llm.cfg 拉起（改配置不重编译）；key 优先级：配置 → 环境变量 DEEPSEEK_API_KEY
-        /// <summary>宿主帧节流——每帧现实毫秒（600 帧工单超时 ≈ 30s；QuickCat LLM 回投窗口 5-60s）</summary>
-        private const int FrameSleepMs = 50;
+        /// <summary>
+        /// 宿主帧预算——主循环目标帧周期（毫秒）。主循环按「补足式」推进：本帧工作实际耗时不足预算则睡差额，
+        /// 超出则不睡（该帧即「超帧」——LoopTiming 计数）；其余模式（自检 / --run 驱动）仍按固定睡眠解释本值。
+        /// <para>
+        /// 🔴 语义变更（2026-10-16 · 50 → 100）：帧数口径的时限随之**等比放大**——语料 <c>[t=2400]</c>（≈240 s）
+        /// 与宿主对齐常量（`ToolBatchWaitFrames` / `RoundSummaryTimeoutFrames` / `MapTimeoutFrames` / `AutoStartPollFrames`）
+        /// **保持原值不动**（语料侧为翻译期字面量、不可运行时换算）；一致性不破——等待上限仍大于语料侧超时。
+        /// 调本值 = 帧率变化 + 所有帧数时限的实际时间等比变化，改前先核连带面。
+        /// </para>
+        /// </summary>
+        private const int FrameTargetMs = 100;
 
         /// <summary>单轮驱动帧上限——LLM 最坏 60s + 超时结算余量（30000 帧 ≈ 25 分钟空转上限，实际由 Idle 判定提前退出）</summary>
         private const int MaxFramesPerRun = 30000;
@@ -321,6 +330,10 @@ namespace CH4
                 Path.Combine(dataRoot, "Data", "config"),
                 Path.Combine(dataRoot, "Data", "secrets"));
             DataBox.Bind<CH_QqBotConfigStore>(qqBotStore);
+            // A244 外观配置池——appearance.json 明文（无密钥面；每猫 appearanceId 引用 + 唯一默认项）
+            CH_AppearanceConfigStore appearanceStore = new CH_AppearanceConfigStore(
+                Path.Combine(dataRoot, "Data", "config"));
+            DataBox.Bind<CH_AppearanceConfigStore>(appearanceStore);
             // M1 语料面 Runtime——默认端点语义（QuickCat 工单 llm.stream 消费面；Guid.Empty=每次调用实时解析默认配置）
             // 空配置池无默认端点 → 启动失败（不做静默回退——必须先配置端点后才能运行）
             _llmRuntime = new DeepSeekLlmRuntime(apiConfigStore, Guid.Empty, llmConfig);
@@ -331,6 +344,11 @@ namespace CH4
             DataBox.Bind<IVisionService>(new Mau.Providers.DeepSeekVisionService(apiConfigStore, llmConfig));
             // PsCat PowerShell 执行服务——EncodedCommand 免转义 + UTF-8 内建 + 写文件拦截 + 超时进程树杀（PsService）
             DataBox.Bind<IPsService>(new PsService());
+            // py 执行与 py 服务进程管理——解释器读配置 py.python_path；句柄归基座持有（design-ch4-pytools §二）
+            // 运行期目录注入——锚文件落点（启动前自愈 + 服务锚；§5.2 清理第③层）
+            Mau.Runtime.PyService pySvc = new Mau.Runtime.PyService(WritableRootPaths(workspace));
+            pySvc.Configure(System.IO.Path.Combine(dataRoot, "Data", "runtime"));
+            DataBox.Bind<IPyService>(pySvc);
             // A110 浏览器服务——系统 Edge headless + 裸 CDP（零第三方依赖 · 每猫独立 profile · timeback 域限定）
             CdpBrowserService browserSvc = new CdpBrowserService(dataRoot);
             DataBox.Bind<IBrowserService>(browserSvc);
@@ -340,6 +358,8 @@ namespace CH4
             DataBox.Bind<IWebFetchService>(webFetchSvc);
             // 宿主指令服务——工具面触达内核指令族（host.command 积木 → IHostCommandService；与 CLI/HTTP 面板同源单内核）
             DataBox.Bind<IHostCommandService>(new HostCommandService());
+            // A239 音频播放服务——per-Key 串行 + 组间并发（NAudio.Wasapi；design-mau-audio §三）
+            DataBox.Bind<Mau.Contracts.IAudioService>(new Mau.Audio.AudioService());
             AuditStore audit = new AuditStore();
             AuditStore.Default = audit;
             _runner.Audit = audit;
@@ -363,6 +383,11 @@ namespace CH4
             else
             {
                 LogStore.Add("CatHome4", 1, "roots.boot | " + rootsNote, "WORKSPACE");
+            }
+            // 根不可达告警——加载期跳过的非常驻根在此出声（L2）：面板可修正路径后重启恢复
+            for (int warnIdx = 0; warnIdx < workspace.LoadWarnings.Count; warnIdx = warnIdx + 1)
+            {
+                LogStore.Add("CatHome4", 2, "roots.boot | " + workspace.LoadWarnings[warnIdx], "WORKSPACE");
             }
             // [段4] 语料加载——扫描 Flows/FL_*.dll 统一装配（design-ch4-flow-scan §3.2：QuickCat + 全部工具组 Flow）
             // 扫描化：文件名去 FL_ 前缀得 Flow 名（dll 名 = 组名——QuickCat 与工具组一视同仁）
@@ -409,7 +434,7 @@ namespace CH4
             // 系统通知服务——工具面「发声」通道（brick → DataBox → ChatBridge.PostSystemMessage systemauto；现行消费：web.search 验证升级）
             DataBox.Bind<ISystemNotifyService>(new SystemNotifyService(_chatBridge));
             // S4 Admin 域接线——依赖注入（管理 API 处理器 + cat.* 指令族迁入 CatHome4.Admin）
-            AdminService.Configure(_chatBridge, _oa, dataRoot, _mainThreadId, ExecuteTool, ObserveService.BuildSnapshotJson, new HtmlRootProvider(), apiConfigStore, qqBotStore, llmConfig, _portBand);
+            AdminService.Configure(_chatBridge, _oa, dataRoot, _mainThreadId, ExecuteTool, ObserveService.BuildSnapshotJson, new HtmlRootProvider(), apiConfigStore, qqBotStore, appearanceStore, llmConfig, _portBand);
             AdminService.BuildEnvInfoProvider = BuildEnvInfo;
             // 加载包数据面接线——pack 内置工具（池定义与猫挂载解析归 Admin 域；Core 零配置面依赖）
             ChatSession.PackPayloadProvider = AdminService.BuildPackPayload;
@@ -417,6 +442,8 @@ namespace CH4
             ChatSession.AuthorizedToolNamesProvider = AdminService.ResolveCatAuthorizedToolNames;
             // 轮末总结 LLM 配置接线——catKey → [endpoint, apikey, model]（LLMSimpleRequest 服务工单参数；roundsummary）
             ChatSession.RoundSummaryLlmProvider = AdminService.ResolveRoundSummaryLlm;
+            // 轮末总结播报接线——catKey → [启用标志, 音色槽位值]（A247：总结自动出声）
+            ChatSession.SummaryAudioProvider = AdminService.ResolveSummaryAudio;
             // 延迟队列落盘接线——Data/runtime/delays.json（跨宿主重启保留；design-ch4-delay §七）
             DelayQueue.Configure(Path.Combine(dataRoot, "Data", "runtime", "delays.json"));
             DelayQueue.Load();
@@ -440,6 +467,14 @@ namespace CH4
                     return _chatBridge.PostSystemMessage(downloadCatKey, "systemauto", downloadText) == "OK";
                 });
             webFetchSvc.Start();
+            // py 服务自启——follow=true 的服务随宿主启动拉起（design-ch4-pytools §5.2；接线 2026-10-15）
+            {
+                IPyService pyAutostart;
+                if (DataBox.TryResolve<IPyService>(out pyAutostart) && pyAutostart != null)
+                {
+                    LogStore.Add("CatHome4", 1, "py.boot | " + pyAutostart.Autostart(), "CONFIG");
+                }
+            }
             // timeback 归档落点接线——Data/runtime/timeback（全局计数 + 每次回收一个作用域文件；A104）
             ChatSession.TimebackArchiveDirProvider = AdminService.ResolveTimebackArchiveDir;
             // A201 会话元数据落点接线——Data/sessions/<id>/<id>.session.json（会话自身参数持久化；design-ch4-protocol §十三）
@@ -544,7 +579,7 @@ namespace CH4
             // 端点角色——默认猫主要 / 备用（同一实例注入 Runtime 与会话；自动故障转移与手动对调共用）
             LlmEndpointRole defaultApiRole = new LlmEndpointRole();
             AdminService._defaultApiRole = defaultApiRole;
-            SessionViewStore chatViewStore = new SessionViewStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.view.json"));
+            SessionViewStore chatViewStore = new SessionViewStore(Path.Combine(dataRoot, "Data", "sessions", "majordomo", "majordomo.view.jsonl"));
             // A221 工具面解析——持久化快照优先（会话工具头与 system prompt 同命；重启不改面）
             ToolSpec[] defaultTools = ChatSession.ResolveSessionTools(defaultSessionId, _chatBridge.DefaultToolSpecs);
             _chatBridge.DefaultSession = new ChatSession(defaultSessionId, "majordomo", chatCtx, chatStore,
@@ -617,7 +652,7 @@ namespace CH4
             }
             DataBox.Set<string>("global", "workspace.roots", rootSummary.ToString());
             LogStore.Add("CatHome4", 1, "工作区已加载：" + workspace.Roots.Length.ToString() + " 个根、" + workspace.Inject.Length.ToString() + " 条注入（" + rootSummary.ToString() + "）", "CONFIG");
-            Console.WriteLine("[CMD] 就绪 | Flows: " + ToolGroupSummary() + " | LLM: " + llmState + " | 帧节流 " + FrameSleepMs + "ms");
+            Console.WriteLine("[CMD] 就绪 | Flows: " + ToolGroupSummary() + " | LLM: " + llmState + " | 帧节流 " + FrameTargetMs + "ms");
             // [段6] HTTP 外观层启动——P6 最小闭环（协议 design-ch4-protocol.md；快照回调 + 指令投递回调注入）
             // P9.3 多实例化签名——sessionId 归属默认会话；catsBuilder 多猫列表（管理页签数据源）；主端口服务 index.html
             // F2.1/F2.2——主端口纯管理面板（index.html）；majordomo 对话走独立端口（chat.html，与多猫同构）
@@ -641,6 +676,8 @@ namespace CH4
                 PatchBuilder = ObserveService.BuildPatchJson,
                 ServeChatPage = false,
                 RouteRegistrar = AdminService.RegisterAdminRoutes,
+                DepsRefresh = DependencyProbe.Refresh,
+                LlmProbe = CatHome4.Observe.LlmEndpointProbe.ProbeAsync,
                 HtmlRootProvider = new HtmlRootProvider()
             });
             // F2.2 majordomo 特殊会话——独立端口 serve chat.html + 强制自启（DefaultSession 事件推送绑独立端口 host）

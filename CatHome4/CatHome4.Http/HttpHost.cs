@@ -90,6 +90,12 @@ namespace CatHome4.Http
 
         /// <summary>页面标题展示名（null=不注入）</summary>
         public string DisplayName { get; set; }
+
+        /// <summary>依赖探测手动刷新回调（可空=不注册 /api/v1/deps/refresh）——宿主侧注入 DependencyProbe.Refresh（A253 5b）</summary>
+        public Action DepsRefresh { get; set; }
+
+        /// <summary>LLM 端点池探活回调（可空=不注册 /api/v1/llm/probe）——宿主侧注入 LlmEndpointProbe.ProbeAsync（A253 扩展）</summary>
+        public Func<Task<string>> LlmProbe { get; set; }
     }
 
     /// <summary>
@@ -133,6 +139,12 @@ namespace CatHome4.Http
 
         /// <summary>指令投递回调——宿主侧注入（Program.DispatchCommand）</summary>
         private Func<string, bool> _dispatcher;
+
+        /// <summary>依赖探测手动刷新回调——宿主侧注入（DependencyProbe.Refresh；可空=不注册刷新端点）</summary>
+        private Action _depsRefresh;
+
+        /// <summary>LLM 端点池探活回调——宿主侧注入（LlmEndpointProbe.ProbeAsync；可空=不注册探活端点）</summary>
+        private Func<Task<string>> _llmProbe;
 
         /// <summary>图片包裹组装回调——宿主侧注入（Admin 按会话前文条数拼编号；可空 = 不组装）</summary>
         private Func<string, IList<string>, string> _envelopeBuilder;
@@ -225,6 +237,8 @@ namespace CatHome4.Http
             host._sessionId = options.SessionId;
             host._snapshotBuilder = options.SnapshotBuilder;
             host._dispatcher = options.Dispatcher;
+            host._depsRefresh = options.DepsRefresh;
+            host._llmProbe = options.LlmProbe;
             host._envelopeBuilder = options.EnvelopeBuilder;
             host._frameBuilder = options.FrameBuilder;
             host._contextBuilder = options.ContextBuilder;
@@ -283,6 +297,24 @@ namespace CatHome4.Http
             });
             _app.MapGet("/api/v1/stream", (RequestDelegate)StreamEvents);
             _app.MapPost("/api/v1/command", (Delegate)HandleCommand);
+            // A253 5b——依赖探测手动刷新：重置全部条目探测时刻（下一轮快照全量重探；一次性档亦随之刷新）
+            if (_depsRefresh != null)
+            {
+                _app.MapPost("/api/v1/deps/refresh", (HttpContext ctx) =>
+                {
+                    _depsRefresh();
+                    return Results.Text("{\"ok\":true}", "application/json");
+                });
+            }
+            // A253 扩展——LLM 端点池探活：手动触发，逐个端点发一次最小请求（真实链路）
+            if (_llmProbe != null)
+            {
+                _app.MapPost("/api/v1/llm/probe", async (HttpContext ctx) =>
+                {
+                    string probeJson = await _llmProbe().ConfigureAwait(false);
+                    return Results.Text(probeJson, "application/json");
+                });
+            }
             _app.MapGet("/api/v1/logs", (Delegate)HandleLogs);
             _app.MapGet("/api/v1/config", (Delegate)HandleConfigGet);
             _app.MapPost("/api/v1/config", (Delegate)HandleConfigPost);
@@ -399,8 +431,9 @@ namespace CatHome4.Http
             //        css 面仍平铺（无子目录），保持单段
             _app.MapGet("/css/{file}", (HttpContext ctx) => ServeStatic(ctx, "css", "text/css"));
             _app.MapGet("/js/{**file}", (HttpContext ctx) => ServeStatic(ctx, "js", "application/javascript"));
-            // 桌宠资源——html/pet/*.webp（动画 WebP 二进制；禁缓存同 index 策略；路径穿越校验）
-            _app.MapGet("/pet/{file}", (HttpContext ctx) => ServeStatic(ctx, "pet", "image/webp"));
+            // 桌宠资源——html/pet/<skin>/*.webp（动画 WebP 二进制；禁缓存同 index 策略；路径穿越校验）
+            // A245——按皮肤分子目录，单段 {file} 匹配不到含斜杠路径 → catch-all（同 js 面 A167）
+            _app.MapGet("/pet/{**file}", (HttpContext ctx) => ServeStatic(ctx, "pet", "image/webp"));
             // A120 字体资源——html/fonts/*.ttf（web 字体二进制；缓存口径与其余静态资源不同——见 ServeStatic）
             _app.MapGet("/fonts/{file}", (HttpContext ctx) => ServeStatic(ctx, "fonts", "font/ttf"));
             // A118 应用图标——浏览器标签页 favicon（html/favicon.ico；与 exe 内嵌图标同源，由 tools/icongen 一并产出）

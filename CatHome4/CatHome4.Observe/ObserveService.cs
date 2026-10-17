@@ -41,14 +41,9 @@ namespace CatHome4.Observe
             Console.WriteLine("[CMD] ── 审计帧序（trace.sample 已过滤）──");
             Console.WriteLine("[CMD] " + query.FormatEvents(FilterNoise(events)));
             // [段2] 最近日志——LogStore 内存总账尾部（CMD/OA 专属类别 + 帧号可见）
-            List<LogStore.LogEntry> logs = LogStore.AllLog;
-            int start = logs.Count - 20;
-            if (start < 0)
-            {
-                start = 0;
-            }
+            List<LogStore.LogEntry> logs = LogStore.Snapshot(20);
             Console.WriteLine("[CMD] ── 最近日志 ──");
-            for (int i = start; i < logs.Count; i++)
+            for (int i = 0; i < logs.Count; i++)
             {
                 LogStore.LogEntry entry = logs[i];
                 string cat;
@@ -140,15 +135,9 @@ namespace CatHome4.Observe
         {
             Console.WriteLine("[CMD] ── Flow 状态 ──");
             PrintToolGroupStatuses();
-            List<LogStore.LogEntry> logs = LogStore.AllLog;
-            int start = logs.Count - 10;
-            if (start < 0)
-            {
-                start = 0;
-            }
-
+            List<LogStore.LogEntry> logs = LogStore.Snapshot(10);
             Console.WriteLine("[CMD] ── 最近日志 ──");
-            for (int i = start; i < logs.Count; i++)
+            for (int i = 0; i < logs.Count; i++)
             {
                 LogStore.LogEntry entry = logs[i];
                 string cat;

@@ -17,7 +17,7 @@
        刻度色区分消息角色（user / reply），带体悬停加亮 */
     --ch-band-w: 60px;      /* 带体宽——占气泡区右侧保留地（列右缘 + 20px 起；保留地 100px 时左右各留 20px） */
     --ch-band-gap: 20px;    /* 带体左缘与列右缘的间距 */
-    --ch-band-thumb: var(--ch-scroll-thumb);   /* 视口框线基色（hover 转 Reply 亮白） */
+    --ch-band-thumb: color-mix(in srgb, var(--ch-state-reply) 45%, var(--ch-scroll-thumb));   /* 视口框线基色（A241——常态提亮档 45% 亮白，hover 转 Reply 亮白） */
     /* 块型气泡描边色（2026-10-11 · 莎定）——唯一色源：气泡描边（--bubble-line）与滚动带刻度同引；
        对外暴露可变：JS 可 setProperty 覆盖任一 —— 改此一处，该 type 气泡描边 + 滚动条同时变 */
     --ch-bubble-line-user: var(--ch-chat-user-bg);          /* user 泡无描边——刻度取主色蓝 */
@@ -632,9 +632,9 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .node-btn:hover { background: var(--ch-hover-overlay); color: var(--ch-fg-strong); }
 
 /* ============ 桌宠（纯前端渲染——js/chat-pet.js） ============ */
-/* 定位：对话页固定浮动层（右下角，输入区上方）——可交互（移入 hook / 点击 check，故开启指针事件） */
-/* 尺寸：素材原尺寸 1:1 显示（286x256——不作缩放，像素对齐最清晰）；bottom 随输入区 3→5 行 +36px（110→146） */
-#chatPet { position: fixed; right: 14px; bottom: 146px; width: 286px; height: 256px; z-index: 9999; pointer-events: auto; cursor: pointer; user-select: none; }
+/* 定位：对话页固定浮动层（右上角——距窗口右边框 150px / 距上边框 50px）——可交互（移入 hook / 点击 check，故开启指针事件） */
+/* 尺寸：素材原尺寸 1:1 显示（256x256——整帧不裁剪后为方图；不作缩放，像素对齐最清晰）；拖动结束后位置换算回 right/bottom（pet.js chatPetDragEnd） */
+#chatPet { position: fixed; right: 150px; top: 50px; width: 256px; height: 256px; z-index: 9999; pointer-events: auto; cursor: pointer; user-select: none; }
 /* 双层交叉溶解——两层绝对定位叠放，切换时新层淡入 / 旧层淡出（0.25s） */
 #chatPet img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 0.25s ease; -webkit-user-drag: none; user-select: none; }
 /* 桌宠右键菜单（A179 归位——「清理缓存」随桌宠本体，不再挂顶栏）——右键开合；up/down 依上方空间择位 */
@@ -645,7 +645,7 @@ body { font-family: var(--ch-font-ui); background: var(--ch-bg-page); color: var
 .chat-pet-menu button:hover { background: var(--ch-bg-hover); color: var(--ch-fg-strong); }
 /* 桌宠气泡（前端通知面 · A179 收尾）——桌宠「说话」：前端提示 / 告警的输出口（挂桌宠下方 · TTL 消失）
    口径：后端必要信息 → 顶栏信息位（state 段独占）；前端瞬时提示 → 本气泡；两者互不覆盖 */
-.chat-pet-say { position: absolute; left: 0; top: calc(100% + 6px); width: 286px; background: var(--ch-bg-raised); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-bubble); padding: 6px 10px; color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); line-height: 1.5; word-break: break-all; pointer-events: none; animation: chat-in 0.18s ease-out; }
+.chat-pet-say { position: absolute; left: 0; top: calc(100% + 6px); width: 256px; background: var(--ch-bg-raised); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-bubble); padding: 6px 10px; color: var(--ch-fg-muted); font-size: var(--ch-fs-tag); line-height: 1.5; word-break: break-all; pointer-events: none; animation: chat-in 0.18s ease-out; }
 
 /* ── 临时区（契约 §12.2 ③）——与输入框**同区域互斥**（同列同位；显隐由 input.js 切内联 display）──
    形态 = 输入框同款气泡（同底 / 同圆角 / 同内边距 / 同字号）；**描边色随 live 态**——与切换开关的流式

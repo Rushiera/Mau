@@ -98,10 +98,10 @@ namespace CH4
         private string _downloadsDir = "";
 
         /// <summary>完成注入回调（catKey, content）→ 是否受理</summary>
-        private Func<string, string, bool>? _inject;
+        private Func<string, string, bool> _inject;
 
         /// <summary>通知泵取消源（空 = 未启动）</summary>
-        private CancellationTokenSource? _pumpCts;
+        private CancellationTokenSource _pumpCts;
 
         /// <summary>
         /// 推入下载任务——登记（含冲突检查）→ 起后台下载 → 立即返回任务号（非阻塞；完成 / 失败走注入回调）。
@@ -236,7 +236,7 @@ namespace CH4
             {
                 lock (_lock)
                 {
-                    WebFetchTask? row = FindLocked(taskId);
+                    WebFetchTask row = FindLocked(taskId);
                     if (row == null)
                     {
                         return "ERR|DOWNLOAD_NO_TASK|任务不存在: #" + taskId.ToString();
@@ -349,7 +349,7 @@ namespace CH4
                 _tokens[taskId] = cts;
             }
             CancellationToken token = cts.Token;
-            Task.Run(delegate { RunTaskAsync(taskId, token); });
+            Task.Run(async delegate { await RunTaskAsync(taskId, token); });
         }
 
         /// <summary>
@@ -359,7 +359,7 @@ namespace CH4
         /// <param name="token">取消令牌</param>
         private async Task RunTaskAsync(long taskId, CancellationToken token)
         {
-            WebFetchTask? task;
+            WebFetchTask task;
             lock (_lock)
             {
                 task = FindLocked(taskId);
@@ -463,7 +463,7 @@ namespace CH4
             long received = 0;
             lock (_lock)
             {
-                WebFetchTask? task = FindLocked(taskId);
+                WebFetchTask task = FindLocked(taskId);
                 if (task == null)
                 {
                     return;
@@ -563,7 +563,7 @@ namespace CH4
             {
                 return;
             }
-            Func<string, string, bool>? inject = _inject;
+            Func<string, string, bool> inject = _inject;
             if (inject == null)
             {
                 return;
@@ -598,11 +598,11 @@ namespace CH4
         /// <returns>结果文本（失败 ERR| 前缀）</returns>
         private string CancelTask(long taskId)
         {
-            CancellationTokenSource? cts = null;
+            CancellationTokenSource cts = null;
             string fileName = "";
             lock (_lock)
             {
-                WebFetchTask? row = FindLocked(taskId);
+                WebFetchTask row = FindLocked(taskId);
                 if (row == null)
                 {
                     return "ERR|DOWNLOAD_NO_TASK|任务不存在: #" + taskId.ToString();
@@ -673,7 +673,7 @@ namespace CH4
                                 {
                                     continue;
                                 }
-                                WebFetchTask? row = ParseTask(item);
+                                WebFetchTask row = ParseTask(item);
                                 if (row != null)
                                 {
                                     _tasks.Add(row);
@@ -749,7 +749,7 @@ namespace CH4
         /// </summary>
         /// <param name="item">JSON 对象</param>
         /// <returns>任务实体（无效行 null）</returns>
-        private static WebFetchTask? ParseTask(JsonElement item)
+        private static WebFetchTask ParseTask(JsonElement item)
         {
             WebFetchTask row = new WebFetchTask();
             JsonElement el;
@@ -809,7 +809,7 @@ namespace CH4
         /// </summary>
         /// <param name="taskId">任务号</param>
         /// <returns>任务实体（未命中 null）</returns>
-        private WebFetchTask? FindLocked(long taskId)
+        private WebFetchTask FindLocked(long taskId)
         {
             for (int i = 0; i < _tasks.Count; i = i + 1)
             {

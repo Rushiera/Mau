@@ -7,7 +7,7 @@ namespace CH4
     /// <summary>
     /// 宿主会话实体——会话元数据持久化段（A201 · design-ch4-protocol §十三）。
     /// 会话自身参数（实例 ID / displayName / 时间戳 / 前文三项 / 两级 token 累计）独立落盘，
-    /// 与 cat.cfg（配置面）· jsonl（真实前文）· view.json（视图前文）并列——重启可恢复。
+    /// 与 cat.cfg（配置面）· jsonl（真实前文）· view.jsonl（视图前文）并列——重启可恢复。
     /// </summary>
     internal sealed partial class ChatSession
     {
@@ -341,7 +341,7 @@ namespace CH4
             }
             if (dropped > 0)
             {
-                LogStore.Add("CatHome4", 2, "会话工具面快照剔除池外工具 " + dropped.ToString() + " 个（已退役）: " + catId, "TOOL");
+                LogStore.Add("CatHome4", 2, "会话工具面快照剔除非本猫当前工具面项 " + dropped.ToString() + " 个（快照 ∩ 当前授权）: " + catId, "TOOL");
             }
             if (list.Count == 0)
             {

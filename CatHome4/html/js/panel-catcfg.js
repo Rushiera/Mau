@@ -30,9 +30,9 @@ function openCatCfg(catId, name) {
             renderToolDefectNote(catCfgDefectGroups, d.staleToolNames || []);
             renderApiOptions(d.apiOptions || [], d.apiConfigId || '');
             renderQqBotOptions(d.qqbotOptions || [], d.qqbotId || '');
+            renderAppearanceOptions(d.appearanceOptions || [], d.appearanceId || '');
             document.getElementById('catCfgQqEnable').checked = !!d.qqbotEnable;
             document.getElementById('catCfgIdleOnly').checked = !!d.userInjectIdleOnly;
-            document.getElementById('catCfgRoundSummary').checked = !!d.roundSummary;
             renderEffortOptions(d.reasoningEffort || '', d.defaultReasoningEffort || '');
             document.getElementById('catCfgName').value = d.displayName || '';
             document.getElementById('catCfgType').value = d.type || '';
@@ -76,6 +76,30 @@ function renderApiOptions(options, current) {
         if (options[i].isDefault) { label = label + ' · 全局默认'; }
         opt.textContent = label;
         if (options[i].apiConfigId === current) { opt.selected = true; }
+        sel.appendChild(opt);
+    }
+}
+
+// A244 外观下拉——首项「默认 · 跟随全局默认外观」= 零值语义（空 → 后端 ResolveDefault 实时解析）
+function renderAppearanceOptions(options, current) {
+    var sel = document.getElementById('catCfgAppearance');
+    sel.textContent = '';
+    var def = document.createElement('option');
+    def.value = '';
+    var defLabel = '（默认 · 跟随全局默认外观）';
+    for (var k = 0; k < options.length; k++) {
+        if (options[k].isDefault) { defLabel = '（默认 · 跟随全局 → ' + options[k].displayName + '）'; }
+    }
+    def.textContent = defLabel;
+    if (isDefaultApiValue(current)) { def.selected = true; }
+    sel.appendChild(def);
+    for (var i = 0; i < options.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = options[i].appearanceId;
+        var label = options[i].displayName + ' (' + options[i].appearanceId.substring(0, 8) + '…)';
+        if (options[i].isDefault) { label = label + ' · 全局默认'; }
+        opt.textContent = label;
+        if (options[i].appearanceId === current) { opt.selected = true; }
         sel.appendChild(opt);
     }
 }
@@ -362,7 +386,7 @@ function saveCatCfg() {
         qqbotId: document.getElementById('catCfgQqBot').value,
         qqbotEnable: document.getElementById('catCfgQqEnable').checked,
         userInjectIdleOnly: document.getElementById('catCfgIdleOnly').checked,
-        roundSummary: document.getElementById('catCfgRoundSummary').checked,
+        appearanceId: document.getElementById('catCfgAppearance').value,
         reasoningEffort: document.getElementById('catCfgEffort').value,
         enabledRoots: collectRootChecks('catCfgRoots')
     };

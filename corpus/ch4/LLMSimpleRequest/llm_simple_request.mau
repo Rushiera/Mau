@@ -19,10 +19,10 @@
 
 // ── 导线链 ──
 // T_Claim：原子接单（竞态失败回 Idle 重试）
-§ 'T_Claim' : @anyOpen & 'S_Llm' = 'Idle' → 'oa.claim_next_simple'["SVC", "LLMSimpleRequest"] > @office | 'self.desc'["接单处理中", "", ""] | 'S_Llm' = 'Claimed' | 'S_Llm' = 'Idle'
+§ 'T_Claim' : @anyOpen & 'S_Llm' = 'Idle' → 'oa.claim_next_simple'["SVC", "LLMSimpleRequest"] > @office | 'S_Llm' = 'Claimed' | 'S_Llm' = 'Idle'
 
-// T_Read：读工单参数（五键一次读全）
-§ 'T_Read' : 'S_Llm' = 'Claimed' → 'oa.get_str'[@office, "endpoint"] > @endpoint | 'oa.get_str'[@office, "apikey"] > @apikey | 'oa.get_str'[@office, "model"] > @model | 'oa.get_str'[@office, "system"] > @system | 'oa.get_str'[@office, "content"] > @content | 'S_Llm' = 'Calling' | 'S_Llm' = 'Failed'
+// T_Read：读工单参数（五键一次读全）+ 接单处理中自述（desc 前移——避免抢单失败回 Idle 的残留）
+§ 'T_Read' : 'S_Llm' = 'Claimed' → 'oa.get_str'[@office, "endpoint"] > @endpoint | 'oa.get_str'[@office, "apikey"] > @apikey | 'oa.get_str'[@office, "model"] > @model | 'oa.get_str'[@office, "system"] > @system | 'oa.get_str'[@office, "content"] > @content | 'self.desc'["接单处理中", "", ""] | 'S_Llm' = 'Calling' | 'S_Llm' = 'Failed'
 
 // T_Call：启动后台一次性 LLM 调用（主线程立即返回——后台执行）
 § 'T_Call' : 'S_Llm' = 'Calling' → 'llm.simple_request'[@endpoint, @apikey, @model, @system, @content, @office] | 'self.desc'["调用中", "", ""] | 'S_Llm' = 'Waiting' | 'S_Llm' = 'Failed'

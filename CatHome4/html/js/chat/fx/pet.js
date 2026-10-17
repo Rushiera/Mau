@@ -4,8 +4,8 @@
 // 定位：读状态段的 runState（六态）→ 态映射动画资源 → 调度空闲节律与交互反应。
 // 启动：由 fx/registry.js 的 fxBoot 统一调用 chatPetInit（脚本加载不自启）
 // 铁律：前端零业务逻辑——本件只做「态 / 交互 → 资源」映射与动画调度，不产生业务事件、不介入会话状态机。
-// 数据源：`appState.runState`（state 段——经分发表 `state/registry.js::STATE_DECL` 的 pet 行调入本件入口）· SSE 断线由 main.js 的 onerror / onopen 置位。
-// 资源：`html/pet/*.webp`（286x256 原尺寸 1:1 · 20ms/帧 · 透明底）；清单与时长 → `js/pet-manifest.js`（生成物）。
+// 数据源：`appState.runState`（六态） + `appState.pet.kind`（皮肤——A245）——经分发表 `state/registry.js::STATE_DECL` 的 pet 行调入本件入口 · SSE 断线由 main.js 的 onerror / onopen 置位。
+// 资源：`html/pet/<skin>/*.webp`（256x256 原尺寸 1:1——整帧不裁剪 · 20ms/帧 · 透明底；skin 空 / 无匹配 = 无桌宠不显示，不回落——A251）；清单与时长 → `js/pet-manifest.js`（生成物，多套 {skin:{name:{h,ms}}}）。
 //
 // 形态语义（素材约定）：
 //   loop-*   循环态（link/wait/think/tool/run/reply/sseErr/idle/idle-hook/idle-sleep）
@@ -46,7 +46,9 @@ var chatPetLoading = true;        // 加载门禁——true 期间不开放调�
 var chatPetBooted = false;        // 首图（loop-sseErr）是否已就位
 var chatPetFail = 0;              // 加载失败计数——全量结束后汇总告警（不静默）
 var CHAT_PET_CACHE_PREFIX = 'ch4-pet';   // Cache API 桶名（固定——失效靠逐张内容哈希，不靠换桶名）
-var chatPetManifest = (typeof chatPetManifestData !== 'undefined') ? chatPetManifestData : {};   // 素材清单（缺失降级空表）
+var chatPetManifest = (typeof chatPetManifestData !== 'undefined') ? chatPetManifestData : {};   // 素材清单（多套 {skin:{name:{h,ms}}}；缺失降级空表）
+var chatPetSkin = '';             // 当前皮肤（state 段 pet.kind；空/无匹配=无桌宠不显示——A245/A251）
+var chatPetLoadStarted = false;   // 素材加载哨兵（皮肤确定后启动一次——A245）
 // 接缝溶解名单——before 末帧与 loop 首帧姿态不接的对，强制走溶解盖接缝
 var CHAT_PET_SEAM_BLEND = {
     'loop-idle-sleep': true, 'loop-idle-hook': true, 'loop-idle': true
@@ -326,10 +328,65 @@ function chatPetStartSleep() {
 }
 
 // ── 对外接口 ─────────────────────────────────
+/// 从 state 段确定皮肤——读到即锁定并触发加载（A245；kind 空 / 无匹配 → 无桌宠，A251）
+function chatPetApplySkinFromState() {
+    var kind = (typeof appState !== 'undefined' && appState && appState.pet && appState.pet.kind !== undefined) ? appState.pet.kind : '';
+    var skin = chatPetNormalizeSkin(kind);
+    if (chatPetSkin === skin) {
+        return;
+    }
+    chatPetSkin = skin;
+    chatPetSetVisible(skin.length > 0);
+    if (skin.length === 0) {
+        return;
+    }
+    chatPetEnsureLoaded();
+}
+
+/// 规范化皮肤名——对齐 manifest 实际键（大小写不敏感）；空 / 无匹配 → ''（无桌宠，不回落——A251）
+/// A245 判例：池字段为人工输入，`DeepDeep` 须命中 `deepdeep`——原先仅靠文件系统大小写不敏感容错，
+///          且 manifest 查不中 → URL 失内容哈希版本（素材更新后浏览器缓存不失效），故显式归一。
+function chatPetNormalizeSkin(kind) {
+    var k = (kind === null || kind === undefined) ? '' : String(kind);
+    if (k.length === 0) {
+        return '';
+    }
+    var lower = k.toLowerCase();
+    if (chatPetManifest[lower] !== undefined) {
+        return lower;
+    }
+    if (chatPetManifest[k] !== undefined) {
+        return k;
+    }
+    return '';
+}
+
+/// 桌宠显隐——皮肤空 / 无匹配即隐藏（空值即无桌宠，A251）
+function chatPetSetVisible(on) {
+    var box = document.getElementById('chatPet');
+    if (box === null) {
+        return;
+    }
+    box.style.display = (on === true) ? '' : 'none';
+}
+
+/// 素材加载哨兵——皮肤确定后启动一次（皮肤为空不加载——A251）
+function chatPetEnsureLoaded() {
+    if (chatPetLoadStarted === true) {
+        return;
+    }
+    chatPetLoadStarted = true;
+    chatPetLoadAll();
+}
+
 /// 状态同步——state 段分发表（`state/registry.js::STATE_DECL` 的 pet 行）调入（每次状态段渲染后）
 function chatPetSync() {
+    chatPetApplySkinFromState();
     if (chatPetImgs[0] === null) {
         return;
+    }
+    if (chatPetSkin.length === 0) {
+        return;   // 无桌宠——皮肤空 / 无匹配：不加载不调度，容器保持隐藏（A251）
     }
     if (chatPetLoading === true) {
         return;   // 加载门禁——未就绪不调度（保持 sseErr 加载态）
@@ -352,18 +409,28 @@ function chatPetSetOffline(on) {
     chatPetSync();
 }
 
-/// 素材 URL——带内容哈希版本（改图 / 改名即换 URL，缓存自动失效且只重下变动那张）
-function chatPetUrl(name) {
-    var m = chatPetManifest[name];
-    if (m === undefined || m.h === undefined) {
-        return 'pet/' + name + '.webp';
+/// 当前皮肤的素材清单项——清单为多套结构 {skin:{name:{h,ms}}}（A245；皮肤空 = 无项——A251）
+function chatPetManifestItem(name) {
+    var skinData = chatPetManifest[chatPetSkin];
+    if (skinData === undefined || skinData === null) {
+        return undefined;
     }
-    return 'pet/' + name + '.webp?v=' + m.h;
+    return skinData[name];
+}
+
+/// 素材 URL——按皮肤分目录 + 内容哈希版本（改图 / 换皮肤即换 URL，缓存自动失效且只重下变动那张）
+function chatPetUrl(name) {
+    var base = 'pet/' + chatPetSkin + '/' + name + '.webp';
+    var m = chatPetManifestItem(name);
+    if (m === undefined || m.h === undefined) {
+        return base;
+    }
+    return base + '?v=' + m.h;
 }
 
 /// 素材播放时长——单一真相在 manifest（素材重转即跟随，前端不留漂移常量）
 function chatPetMs(name, fallback) {
-    var m = chatPetManifest[name];
+    var m = chatPetManifestItem(name);
     if (m === undefined || m.ms === undefined || m.ms <= 0) {
         return fallback;
     }
@@ -473,6 +540,7 @@ function chatPetBoot() {
         return;
     }
     chatPetBooted = true;
+    chatPetSetVisible(true);   // 加载态起即显形（皮肤非空才走得到这里——A251）
     chatPetMode = 'loading';
     chatPetKey = 'loading';
     chatPetKeyAt = Date.now();
@@ -537,6 +605,7 @@ function chatPetInit() {
     if (chatPetImgs[0] === null || chatPetImgs[1] === null || box === null) {
         return;
     }
+    chatPetSetVisible(false);   // 皮肤确定前不显示——空 / 无匹配即无桌宠（A251）
     box.addEventListener('mouseenter', function () {
         chatPetHovered = true;
         chatPetIdleHook(true);
@@ -558,7 +627,8 @@ function chatPetInit() {
         e.preventDefault();
         chatPetMenuToggle();
     });
-    chatPetLoadAll();
+    // A245/A251：皮肤待 state 段 pet.kind 确定后加载（首帧到达即触发）——空 / 无匹配即无桌宠，
+    //          不做超时兜底（原先「超时回落默认皮肤」已退役）
 }
 
 /// 按下——记录抓取偏移；right/bottom 定位换算为 left/top（此后以左上角定位）
@@ -636,14 +706,14 @@ var chatPetSayEl = null;      // 气泡元素（首次说话时创建——单�
 var chatPetSayTimer = null;   // TTL 定时器（新消息重置）
 var CHAT_PET_SAY_MS = 5000;   // 气泡驻留时长（ms）
 
-/// 前端通知输出——桌宠「说话」气泡（挂桌宠下方 · TTL 自动消失）
+/// 前端通知输出——桌宠「说话」气泡（挂桌宠下方 · TTL 自动消失）；无桌宠（容器缺失 / 已隐藏）落控制台保底（A251）
 /// 归位（A179 收尾）：前端提示 / 告警不再写顶栏信息位——那是 state 段的后端信息输出口
 function chatPetSay(msg) {
     if (!msg) {
         return;
     }
     var box = document.getElementById('chatPet');
-    if (box === null) {
+    if (box === null || box.style.display === 'none') {
         if (typeof console !== 'undefined' && console.log) {
             console.log('[chat] ' + msg);
         }

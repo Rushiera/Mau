@@ -56,7 +56,7 @@ namespace CatHome4.Core.Tests
             ChatContext ctx = new ChatContext();
             SessionStore store = new SessionStore(TempPath(catId, ".jsonl"));
             OA oa = new OA(new ThreadGuard());
-            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(TempPath(catId, ".view.json"));
+            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(TempPath(catId, ".view.jsonl"));
             return new CH4.ChatSession(catId, displayName, ctx, store, new NullLlm(), oa, new ToolSpec[0], delegate (string name, string args) { return "ERR|NO_TOOL|" + name; }, viewStore);
         }
 
@@ -344,7 +344,7 @@ namespace CatHome4.Core.Tests
             ctx.AddUserMessage("12345");
             SessionStore store = new SessionStore(TempPath(catId, ".jsonl"));
             OA oa = new OA(new ThreadGuard());
-            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(TempPath(catId, ".view.json"));
+            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(TempPath(catId, ".view.jsonl"));
             CH4.ChatSession session = new CH4.ChatSession(catId, "字符猫", ctx, store, new NullLlm(), oa, new ToolSpec[0], delegate (string name, string args) { return "ERR|NO_TOOL|" + name; }, viewStore);
             string json = session.BuildStateJson();
             using (JsonDocument doc = JsonDocument.Parse(json))

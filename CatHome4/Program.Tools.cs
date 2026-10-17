@@ -281,7 +281,7 @@ namespace CH4
                 _runner.Tick();
                 dog.Tick(_oa);
                 frames = frames + 1;
-                Thread.Sleep(FrameSleepMs);
+                Thread.Sleep(FrameTargetMs);
             }
             Console.WriteLine("[TOOLCHECK] frames=" + frames + " closed=" + dog.IsClosed + " timedOut=" + dog.IsTimedOut);
             Console.WriteLine("[TOOLCHECK] result=" + (dog.Result == null ? "" : dog.Result));

@@ -471,7 +471,7 @@ namespace CatHome4.Core.Tests
             {
                 tools = declared;
             }
-            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.json"));
+            CH4.SessionViewStore viewStore = new CH4.SessionViewStore(Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.jsonl"));
             CH4.ChatSession session = new CH4.ChatSession("test-session", "test", ctx, store, llm, oa, tools, delegate (string name, string args) { return "ERR|NO_TOOL|" + name; }, viewStore);
             return session;
         }
@@ -1151,7 +1151,7 @@ namespace CatHome4.Core.Tests
                 Assert.Equal(1L, saved.RoundRequests);
                 Assert.True(saved.RoundElapsedMs >= 0);
                 // 前文条数——请求边界态：usage 帧先于回复文本到达，此刻上下文仅含本轮 user 一条
-                // （盘值 = 边界快照，不等于轮末终值——轮末终值只进 view.json roundsum 块）
+                // （盘值 = 边界快照，不等于轮末终值——轮末终值只进视图层 roundsum 块）
                 Assert.Equal(1L, saved.ContextCount);
             }
             finally
@@ -1642,7 +1642,7 @@ namespace CatHome4.Core.Tests
             ctx.AddAssistantMessage("第三轮回复");
             LlmMessage[] msgs = ctx.GetMessages();
             // 增量写入视图（与真实运行一致：每轮末 CloseRound 追加 roundsum——时间戳 = 轮末块之后）
-            string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.json");
+            string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.jsonl");
             CH4.SessionViewStore viewStore = new CH4.SessionViewStore(tmp);
             for (int i = 0; i < msgs.Length; i++)
             {
@@ -1662,7 +1662,7 @@ namespace CatHome4.Core.Tests
                     viewStore.AppendRoundSummary("{\"type\":\"roundsum\",\"data\":{}}", m.CreatedAt + 1);
                 }
             }
-            viewStore.Save();
+            // A248：每块 append 即落盘——重启场景无需显式写盘
             // A156：重启场景 = 载入持久块（不再从前文重建）
             viewStore.Load();
             // 归并顺序断言——每轮：user, text, roundsum（rs 紧跟轮末块，不在末尾堆叠）
@@ -1796,7 +1796,7 @@ namespace CatHome4.Core.Tests
             ctx.AddUserMessage("问题");
             ctx.AddAssistantMessage("回复");
             LlmMessage[] msgs = ctx.GetMessages();
-            string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.json");
+            string tmp = Path.Combine(Path.GetTempPath(), "cat4test_" + Guid.NewGuid().ToString("N") + ".view.jsonl");
             CH4.SessionViewStore viewStore = new CH4.SessionViewStore(tmp);
             for (int i = 0; i < msgs.Length; i = i + 1)
             {
