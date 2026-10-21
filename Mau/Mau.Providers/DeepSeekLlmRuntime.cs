@@ -56,6 +56,16 @@ namespace Mau.Providers
         private const string FallbackModel = "deepseek-v4-flash";
 
         /// <summary>
+        /// mewbius 网关域名特征——该站按 User-Agent 判客户端，白名单外一律 403 client_not_allowed（实测 2026-10-21）
+        /// </summary>
+        private const string MewbiusHost = "mewbius.com";
+
+        /// <summary>
+        /// mewbius 网关客户端 UA——仅对该站点挂载，避免给其它端点凭空加头
+        /// </summary>
+        private const string MewbiusClientUserAgent = "WorkBuddy/1.0";
+
+        /// <summary>
         /// 请求重试上限——S2 规格：同端点重试 3 次（共 4 次尝试），失败后中止（无配置池降级）
         /// </summary>
         private const int MaxRetries = 3;
@@ -121,6 +131,11 @@ namespace Mau.Providers
                 {
                     request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + GetApiKey());
                     request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
+                    // mewbius 网关客户端门禁——该站只放行 WorkBuddy / CodeBuddy 客户端 UA（实测 2026-10-21，白名单外 403 client_not_allowed）
+                    if (GetBaseUrl().IndexOf(MewbiusHost, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        request.Headers.TryAddWithoutValidation("User-Agent", MewbiusClientUserAgent);
+                    }
                     // opencode.ai zen/go 网关会话路由头——缺失拒绝请求（实测 2026-09-07；userId 即缓存隔离键——llm.cache_isolation 语义对齐）
                     request.Headers.TryAddWithoutValidation("x-opencode-session", "cat-home4-" + (userId.Length > 0 ? userId : "default"));
                     request.Content = new StringContent(body, Encoding.UTF8, "application/json");
