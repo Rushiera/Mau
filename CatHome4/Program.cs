@@ -278,7 +278,7 @@ namespace CH4
             // [段2] DataBox 服务绑定——积木 TryResolve 面（OA/CommandBus/ILlmRuntime）
             DataBox.Bind<IOA>(_oa);
             DataBox.Bind<ICommandBus>(_bus);
-            // 文件系统服务——file.* 积木依赖（受控根 = workspace.json 配置 roots；回收站=可写根 CatTemp/fs_recycle——P8.5 配置群）
+            // 文件系统服务——file.* 积木依赖（受控根 = workspace.json 配置 roots；回收站=可写根 tools/CatTemp/fs_recycle——P8.5 配置群）
             string dataRoot = ResolveDataRoot();
             WorkspaceConfig workspace = WorkspaceConfig.Load(Path.Combine(dataRoot, "Data", "config", "workspace.json"), dataRoot);
             DataBox.Bind<WorkspaceConfig>(workspace);
@@ -305,7 +305,7 @@ namespace CH4
                     fallbackRoots.Add(entry);
                 }
             }
-            DataBox.Bind<FileSystemService>(new FileSystemService(fallbackRoots.ToArray(), Path.Combine(WorkspaceRecycleRoot(workspace, dataRoot), "CatTemp", "fs_recycle")));
+            DataBox.Bind<FileSystemService>(new FileSystemService(fallbackRoots.ToArray(), Path.Combine(WorkspaceRecycleRoot(workspace, dataRoot), "tools", "CatTemp", "fs_recycle")));
             string configDir = Path.Combine(dataRoot, "Data", "config");
             // P8.5 配置群 schema——schema.json 元声明（默认值/敏感/可写/空值语义——/api/v1/config 输出面）
             // §4.1 schema 同步（模板为准：不一致 → .bak 备份 + 整体覆盖）→ §4.2 schema 驱动段注册（宿主零硬编码段清单）
@@ -449,13 +449,13 @@ namespace CH4
             DelayQueue.Load();
             // 待处理消息队列落盘接线——Data/runtime/pending_<catKey>.json（A232：入队即物化 · 跨宿主重启保留；须先于会话创建）
             ChatSession.ConfigurePendingStore(Path.Combine(dataRoot, "Data", "runtime"));
-            // 网页资产下载接线——任务表落盘 + 产物目录（workspace 根下 Downloads）+ 完成注入回调（design-ch4-webfetch）
+            // 网页资产下载接线——任务表落盘 + 产物目录（workspace 根下 tools/Downloads）+ 完成注入回调（design-ch4-webfetch）
             string downloadsDir = "";
             for (int i = 0; i < workspace.Roots.Length; i = i + 1)
             {
                 if (string.Equals(workspace.Roots[i].Id, "workspace", StringComparison.OrdinalIgnoreCase))
                 {
-                    downloadsDir = Path.Combine(workspace.Roots[i].Path, "Downloads");
+                    downloadsDir = Path.Combine(Path.Combine(workspace.Roots[i].Path, "tools"), "Downloads");
                     break;
                 }
             }

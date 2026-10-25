@@ -255,7 +255,7 @@ namespace CatHome4.Admin
                 ToolCatContext.UpdateCatFileSystem(catKey, null, "");
                 return;
             }
-            string recycleRoot = Path.Combine(WorkspaceRecycleRootFor(entries, _dataRoot), "CatTemp", "fs_recycle");
+            string recycleRoot = Path.Combine(Path.Combine(WorkspaceRecycleRootFor(entries, _dataRoot), "tools"), "CatTemp", "fs_recycle");
             ToolCatContext.UpdateCatFileSystem(catKey, entries, recycleRoot);
         }
 

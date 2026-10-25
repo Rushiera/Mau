@@ -94,7 +94,7 @@ namespace CH4
         /// <summary>任务表落盘路径（空 = 仅内存）</summary>
         private string _storePath = "";
 
-        /// <summary>产物目录（WorkSpace:Downloads）</summary>
+        /// <summary>产物目录（WorkSpace:tools/Downloads）</summary>
         private string _downloadsDir = "";
 
         /// <summary>完成注入回调（catKey, content）→ 是否受理</summary>

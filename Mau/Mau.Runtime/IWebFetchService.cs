@@ -34,7 +34,7 @@ namespace Mau.Runtime
         /// 注入回调返回 true = 受理 / false = 拒收（服务侧留存，后续重试投递）。
         /// </summary>
         /// <param name="storePath">任务表路径（downloads.json；空 = 仅内存）</param>
-        /// <param name="downloadsDir">产物目录（WorkSpace:Downloads）</param>
+        /// <param name="downloadsDir">产物目录（WorkSpace:tools/Downloads）</param>
         /// <param name="inject">注入回调（catKey, content）→ 是否受理</param>
         void Configure(string storePath, string downloadsDir, Func<string, string, bool> inject);
 
